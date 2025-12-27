@@ -1,0 +1,55 @@
+# Quick Reference Paths
+# Source this file or use as reference
+
+# Original JOP repository (READ-ONLY REFERENCE)
+export JOP_REFERENCE=/home/peter/git/jop.arch/jop
+export JOP_VHDL=$JOP_REFERENCE/vhdl
+
+# Common directories
+export JOP_CORE=$JOP_VHDL/core
+export JOP_MEMORY=$JOP_VHDL/memory
+export JOP_SCIO=$JOP_VHDL/scio
+export JOP_SIMPCON=$JOP_VHDL/simpcon
+
+# Project directories
+export JOP_PROJECT=/home/peter/workspaces/ai/jop
+export JOP_ORIGINAL=$JOP_PROJECT/original
+export JOP_SPINALHDL=$JOP_PROJECT/core/spinalhdl
+export JOP_VECTORS=$JOP_PROJECT/verification/test-vectors
+export JOP_COCOTB=$JOP_PROJECT/verification/cocotb
+export JOP_SCALATEST=$JOP_PROJECT/verification/scalatest
+
+# Quick access functions
+jop_ref() {
+    # View a file from reference
+    if [ -z "$1" ]; then
+        ls $JOP_CORE
+    else
+        less $JOP_CORE/$1
+    fi
+}
+
+jop_find() {
+    # Find a signal/entity in reference
+    grep -r "$1" $JOP_CORE/
+}
+
+jop_copy() {
+    # Copy a file from reference to local
+    if [ -n "$1" ]; then
+        cp $JOP_CORE/$1 $JOP_ORIGINAL/vhdl/core/
+        echo "Copied $1 to original/vhdl/core/"
+    fi
+}
+
+jop_types() {
+    # View type definitions
+    less $JOP_CORE/jop_types.vhd
+}
+
+# Usage:
+# source .reference-paths
+# jop_ref bcfetch.vhd     # View bcfetch.vhd
+# jop_find "entity"       # Find all entities
+# jop_copy bcfetch.vhd    # Copy to local
+# jop_types               # View type definitions

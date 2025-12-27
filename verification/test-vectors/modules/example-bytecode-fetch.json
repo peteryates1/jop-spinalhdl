@@ -1,0 +1,262 @@
+{
+  "module": "bytecode-fetch",
+  "version": "1.0.0",
+  "description": "Test vectors for bytecode fetch stage",
+  "metadata": {
+    "author": "vhdl-tester",
+    "created": "2025-01-15T10:00:00Z",
+    "modified": "2025-01-15T10:00:00Z",
+    "tags": ["pipeline", "fetch"],
+    "reference": "original/vhdl/core/fetch.vhd"
+  },
+  "test_cases": [
+    {
+      "name": "reset_clears_state",
+      "type": "reset",
+      "description": "Verify reset clears all registers to known state",
+      "tags": ["reset", "basic", "critical"],
+      "enabled": true,
+      "initial_state": {
+        "pc": "0xDEAD",
+        "bytecode": "0xBEEF",
+        "valid": "0x1"
+      },
+      "inputs": [
+        {
+          "cycle": 0,
+          "signals": {
+            "reset": "0x1"
+          }
+        },
+        {
+          "cycle": 1,
+          "signals": {
+            "reset": "0x0"
+          }
+        }
+      ],
+      "expected_state": {
+        "pc": "0x0",
+        "bytecode": "0x0",
+        "valid": "0x0"
+      },
+      "cycles": 2
+    },
+    {
+      "name": "sequential_fetch",
+      "type": "microcode",
+      "description": "Fetch sequential bytecode instructions and increment PC",
+      "tags": ["sequential", "basic", "critical"],
+      "enabled": true,
+      "initial_state": {
+        "pc": "0x0",
+        "valid": "0x0"
+      },
+      "inputs": [
+        {
+          "cycle": 1,
+          "signals": {
+            "enable": "0x1",
+            "mem_data": "0x60"
+          }
+        },
+        {
+          "cycle": 2,
+          "signals": {
+            "enable": "0x1",
+            "mem_data": "0x61"
+          }
+        },
+        {
+          "cycle": 3,
+          "signals": {
+            "enable": "0x1",
+            "mem_data": "0x62"
+          }
+        }
+      ],
+      "expected_outputs": [
+        {
+          "cycle": 1,
+          "signals": {
+            "bytecode": "0x60",
+            "valid": "0x1",
+            "pc": "0x1"
+          }
+        },
+        {
+          "cycle": 2,
+          "signals": {
+            "bytecode": "0x61",
+            "valid": "0x1",
+            "pc": "0x2"
+          }
+        },
+        {
+          "cycle": 3,
+          "signals": {
+            "bytecode": "0x62",
+            "valid": "0x1",
+            "pc": "0x3"
+          }
+        }
+      ],
+      "expected_state": {
+        "pc": "0x3",
+        "bytecode": "0x62",
+        "valid": "0x1"
+      },
+      "cycles": 3,
+      "assertions": [
+        {
+          "cycle": 1,
+          "signal": "pc",
+          "operator": "==",
+          "value": "0x1",
+          "message": "PC should increment after first fetch"
+        }
+      ]
+    },
+    {
+      "name": "stall_on_disable",
+      "type": "microcode",
+      "description": "Verify fetch stalls and preserves state when disabled",
+      "tags": ["stall", "control"],
+      "enabled": true,
+      "initial_state": {
+        "pc": "0x5",
+        "bytecode": "0xAB",
+        "valid": "0x1"
+      },
+      "inputs": [
+        {
+          "cycle": 1,
+          "signals": {
+            "enable": "0x0",
+            "mem_data": "0x99"
+          }
+        },
+        {
+          "cycle": 2,
+          "signals": {
+            "enable": "0x0",
+            "mem_data": "0x88"
+          }
+        }
+      ],
+      "expected_state": {
+        "pc": "0x5",
+        "bytecode": "0xAB",
+        "valid": "0x1"
+      },
+      "cycles": 2
+    },
+    {
+      "name": "pc_overflow",
+      "type": "edge_case",
+      "description": "Verify PC wraps correctly at maximum address",
+      "tags": ["overflow", "edge_case"],
+      "enabled": true,
+      "initial_state": {
+        "pc": "0xFFFFFFFE"
+      },
+      "inputs": [
+        {
+          "cycle": 1,
+          "signals": {
+            "enable": "0x1",
+            "mem_data": "0xAA"
+          }
+        },
+        {
+          "cycle": 2,
+          "signals": {
+            "enable": "0x1",
+            "mem_data": "0xBB"
+          }
+        },
+        {
+          "cycle": 3,
+          "signals": {
+            "enable": "0x1",
+            "mem_data": "0xCC"
+          }
+        }
+      ],
+      "expected_outputs": [
+        {
+          "cycle": 1,
+          "signals": {
+            "pc": "0xFFFFFFFF"
+          }
+        },
+        {
+          "cycle": 2,
+          "signals": {
+            "pc": "0x0"
+          }
+        },
+        {
+          "cycle": 3,
+          "signals": {
+            "pc": "0x1"
+          }
+        }
+      ],
+      "cycles": 3,
+      "assertions": [
+        {
+          "cycle": 2,
+          "signal": "pc",
+          "operator": "==",
+          "value": "0x0",
+          "message": "PC should wrap to 0 after overflow"
+        }
+      ]
+    },
+    {
+      "name": "jump_target",
+      "type": "microcode",
+      "description": "Verify PC loads jump target correctly",
+      "tags": ["jump", "control"],
+      "enabled": true,
+      "initial_state": {
+        "pc": "0x10"
+      },
+      "inputs": [
+        {
+          "cycle": 1,
+          "signals": {
+            "enable": "0x1",
+            "jump": "0x1",
+            "jump_target": "0x100",
+            "mem_data": "0xFF"
+          }
+        },
+        {
+          "cycle": 2,
+          "signals": {
+            "enable": "0x1",
+            "jump": "0x0",
+            "mem_data": "0xEE"
+          }
+        }
+      ],
+      "expected_outputs": [
+        {
+          "cycle": 1,
+          "signals": {
+            "pc": "0x100"
+          }
+        },
+        {
+          "cycle": 2,
+          "signals": {
+            "pc": "0x101"
+          }
+        }
+      ],
+      "cycles": 2
+    }
+  ]
+}

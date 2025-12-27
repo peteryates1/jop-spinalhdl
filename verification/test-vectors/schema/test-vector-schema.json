@@ -1,0 +1,191 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://jop.org/schemas/test-vector.json",
+  "title": "JOP Test Vector",
+  "description": "Test vector format for JOP processor verification",
+  "type": "object",
+  "required": ["module", "version", "test_cases"],
+  "properties": {
+    "module": {
+      "type": "string",
+      "description": "Module name (e.g., 'bytecode-fetch', 'execute')",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "version": {
+      "type": "string",
+      "description": "Test vector version (semver)",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of test suite"
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "author": {
+          "type": "string",
+          "description": "Author of test vectors"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "modified": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last modification timestamp"
+        },
+        "tags": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Classification tags"
+        },
+        "reference": {
+          "type": "string",
+          "description": "Reference to specification or original VHDL"
+        }
+      }
+    },
+    "test_cases": {
+      "type": "array",
+      "description": "Array of test cases",
+      "minItems": 1,
+      "items": {"$ref": "#/definitions/test_case"}
+    }
+  },
+  "definitions": {
+    "test_case": {
+      "type": "object",
+      "required": ["name", "type", "cycles"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique test case name (snake_case)",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["reset", "microcode", "edge_case", "integration", "performance"],
+          "description": "Test case category"
+        },
+        "description": {
+          "type": "string",
+          "description": "What this test verifies"
+        },
+        "tags": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Tags for filtering (e.g., ['overflow', 'critical'])"
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether this test is enabled (default: true)",
+          "default": true
+        },
+        "initial_state": {
+          "type": "object",
+          "description": "Initial register/signal values",
+          "additionalProperties": {
+            "type": "string",
+            "description": "Value in format: 0xHEX, 0bBIN, or decimal"
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["cycle", "signals"],
+            "properties": {
+              "cycle": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Cycle number (0-based)"
+              },
+              "signals": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Signal values for this cycle"
+              }
+            }
+          },
+          "description": "Input signals per cycle"
+        },
+        "expected_outputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["cycle", "signals"],
+            "properties": {
+              "cycle": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Cycle number (0-based)"
+              },
+              "signals": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Expected signal values for this cycle"
+              }
+            }
+          },
+          "description": "Expected output signals per cycle"
+        },
+        "expected_state": {
+          "type": "object",
+          "description": "Expected final register/signal values",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "cycles": {
+          "type": "integer",
+          "description": "Number of clock cycles for this test",
+          "minimum": 1
+        },
+        "assertions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["cycle", "signal", "operator", "value"],
+            "properties": {
+              "cycle": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Cycle to check assertion"
+              },
+              "signal": {
+                "type": "string",
+                "description": "Signal name to check"
+              },
+              "operator": {
+                "type": "string",
+                "enum": ["==", "!=", "<", ">", "<=", ">=", "&", "|", "^"],
+                "description": "Comparison operator"
+              },
+              "value": {
+                "type": "string",
+                "description": "Value to compare against"
+              },
+              "message": {
+                "type": "string",
+                "description": "Custom error message if assertion fails"
+              }
+            }
+          },
+          "description": "Custom assertions at specific cycles"
+        },
+        "timeout_cycles": {
+          "type": "integer",
+          "description": "Maximum cycles before timeout (default: cycles * 2)",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,82 @@
+# JOP Project .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Scala/SBT
+target/
+project/target/
+project/project/
+.bsp/
+.metals/
+.bloop/
+metals.sbt
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# CocoTB
+sim_build/
+waveforms/
+*.ghw
+*.vcd
+*.fst
+results.xml
+
+# GHDL
+*.cf
+work-obj*.cf
+
+# SpinalHDL generated
+core/spinalhdl/generated/*.vhd
+core/spinalhdl/generated/*.v
+core/spinalhdl/simWorkspace/
+
+# Quartus
+*.qpf
+*.qsf
+*.rpt
+*.summary
+*.sld
+*.jdi
+*.pin
+*.sof
+*.pof
+db/
+incremental_db/
+output_files/
+
+# Vivado
+*.jou
+*.log
+*.str
+.Xil/
+*.xpr
+
+# Test results
+test-results/
+coverage/
+*.coverage
+htmlcov/
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
