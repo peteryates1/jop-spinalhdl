@@ -1,0 +1,258 @@
+{
+  "module": "mul",
+  "version": "1.0.0",
+  "description": "Test vectors for bit-serial multiplier unit (mul.vhd)",
+  "metadata": {
+    "author": "vhdl-tester",
+    "created": "2025-12-27T00:00:00Z",
+    "tags": ["alu", "multiply", "arithmetic"],
+    "notes": [
+      "Multiplier is bit-serial radix-4 (processes 2 bits/cycle)",
+      "Latency: 17 cycles from wr='1' to final result",
+      "Unsigned multiplication only",
+      "Result is lower 32 bits of full product"
+    ]
+  },
+  "test_cases": [
+    {
+      "name": "startup_output_zero",
+      "type": "reset",
+      "description": "Output should be zero at startup before any multiplication",
+      "tags": ["reset", "basic"],
+      "initial_state": {},
+      "inputs": [],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x0"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "multiply_5_times_3",
+      "type": "microcode",
+      "description": "Simple multiplication: 5 × 3 = 15",
+      "tags": ["basic", "multiply"],
+      "initial_state": {},
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0x5", "bin": "0x3", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0xF"}}
+      ],
+      "cycles": 18
+    },
+    {
+      "name": "multiply_by_zero_a",
+      "type": "edge_case",
+      "description": "Multiply by zero: 0 × 123 = 0",
+      "tags": ["edge_case", "zero"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0x0", "bin": "0x7B", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0x0"}}
+      ],
+      "cycles": 18
+    },
+    {
+      "name": "multiply_by_zero_b",
+      "type": "edge_case",
+      "description": "Multiply by zero: 456 × 0 = 0",
+      "tags": ["edge_case", "zero"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0x1C8", "bin": "0x0", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0x0"}}
+      ],
+      "cycles": 18
+    },
+    {
+      "name": "multiply_by_one_a",
+      "type": "edge_case",
+      "description": "Multiply by one: 1 × 789 = 789",
+      "tags": ["edge_case", "one"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0x1", "bin": "0x315", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0x315"}}
+      ],
+      "cycles": 18
+    },
+    {
+      "name": "multiply_by_one_b",
+      "type": "edge_case",
+      "description": "Multiply by one: 999 × 1 = 999",
+      "tags": ["edge_case", "one"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0x3E7", "bin": "0x1", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0x3E7"}}
+      ],
+      "cycles": 18
+    },
+    {
+      "name": "multiply_power_of_2",
+      "type": "microcode",
+      "description": "Multiply by power of 2: 17 × 4 = 68",
+      "tags": ["basic", "shift"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0x11", "bin": "0x4", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0x44"}}
+      ],
+      "cycles": 18
+    },
+    {
+      "name": "multiply_power_of_2_large",
+      "type": "microcode",
+      "description": "Multiply by larger power of 2: 255 × 256 = 65280",
+      "tags": ["basic", "shift"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0xFF", "bin": "0x100", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0xFF00"}}
+      ],
+      "cycles": 18
+    },
+    {
+      "name": "multiply_medium_values",
+      "type": "microcode",
+      "description": "Medium values: 1000 × 2000 = 2000000",
+      "tags": ["basic", "multiply"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0x3E8", "bin": "0x7D0", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0x1E8480"}}
+      ],
+      "cycles": 18
+    },
+    {
+      "name": "multiply_large_values",
+      "type": "microcode",
+      "description": "Large values: 65535 × 65536 = 4294836225 (lower 32 bits: 0xFFFF0001)",
+      "tags": ["basic", "large"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0xFFFF", "bin": "0x10000", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0xFFFF0000"}}
+      ],
+      "cycles": 18
+    },
+    {
+      "name": "multiply_overflow",
+      "type": "edge_case",
+      "description": "Overflow: 0xFFFFFFFF × 0x2 = 0x1FFFFFFFE (lower 32 bits: 0xFFFFFFFE)",
+      "tags": ["edge_case", "overflow"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0xFFFFFFFF", "bin": "0x2", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0xFFFFFFFE"}}
+      ],
+      "cycles": 18
+    },
+    {
+      "name": "multiply_max_overflow",
+      "type": "edge_case",
+      "description": "Maximum overflow: 0xFFFFFFFF × 0xFFFFFFFF = ...FFFE00000001 (lower: 0x1)",
+      "tags": ["edge_case", "overflow", "max"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0xFFFFFFFF", "bin": "0xFFFFFFFF", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0x1"}}
+      ],
+      "cycles": 18
+    },
+    {
+      "name": "multiply_sequential_no_gap",
+      "type": "integration",
+      "description": "Sequential multiplications with no gap (test overwrite)",
+      "tags": ["integration", "pipelining"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0xA", "bin": "0xB", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"ain": "0x5", "bin": "0x6", "wr": "0x1"}},
+        {"cycle": 2, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 18, "signals": {"dout": "0x1E"}}
+      ],
+      "cycles": 19,
+      "notes": [
+        "First multiplication (10×11=110) is overwritten by second (5×6=30)",
+        "Only second result should appear"
+      ]
+    },
+    {
+      "name": "multiply_sequential_with_gap",
+      "type": "integration",
+      "description": "Sequential multiplications with proper gap",
+      "tags": ["integration", "pipelining"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0x7", "bin": "0x8", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}},
+        {"cycle": 18, "signals": {"ain": "0xC", "bin": "0xD", "wr": "0x1"}},
+        {"cycle": 19, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0x38"}},
+        {"cycle": 35, "signals": {"dout": "0x9C"}}
+      ],
+      "cycles": 36,
+      "notes": [
+        "First: 7×8=56 (0x38) at cycle 17",
+        "Second: 12×13=156 (0x9C) at cycle 35"
+      ]
+    },
+    {
+      "name": "multiply_all_ones_nibble",
+      "type": "microcode",
+      "description": "All ones in low nibble: 0xF × 0xF = 0xE1",
+      "tags": ["basic", "pattern"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0xF", "bin": "0xF", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0xE1"}}
+      ],
+      "cycles": 18
+    },
+    {
+      "name": "multiply_alternating_bits",
+      "type": "microcode",
+      "description": "Alternating bit patterns: 0xAAAAAAAA × 0x55555555",
+      "tags": ["pattern"],
+      "inputs": [
+        {"cycle": 0, "signals": {"ain": "0xAAAAAAAA", "bin": "0x55555555", "wr": "0x1"}},
+        {"cycle": 1, "signals": {"wr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 17, "signals": {"dout": "0x38E38E38"}}
+      ],
+      "cycles": 18,
+      "notes": [
+        "0xAAAAAAAA = 10101010... (binary)",
+        "0x55555555 = 01010101... (binary)",
+        "Product tests bit-serial operation with alternating patterns"
+      ]
+    }
+  ]
+}

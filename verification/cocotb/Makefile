@@ -22,13 +22,13 @@ TOPLEVEL ?= example
 # Python search path
 export PYTHONPATH := $(PWD):$(PYTHONPATH)
 
-# Waveform configuration
-ifeq ($(WAVES),1)
-    EXTRA_ARGS += --wave=waveforms/$(TOPLEVEL).ghw
-endif
-
 # GHDL specific flags
 GHDL_ARGS = --std=08 --ieee=synopsys -frelaxed
+
+# Waveform configuration (for runtime, not compilation)
+ifeq ($(WAVES),1)
+    SIM_ARGS += --wave=waveforms/$(TOPLEVEL).ghw
+endif
 
 # Include cocotb makefiles
 include $(shell cocotb-config --makefiles)/Makefile.sim
@@ -47,7 +47,15 @@ clean::
 # Test all modules
 test_all:
 	@echo "Running all module tests..."
-	# Add test targets here as modules are implemented
+	$(MAKE) test_mul
+
+# Test mul.vhd (multiplier)
+test_mul:
+	@echo "Testing mul.vhd (bit-serial multiplier)..."
+	@mkdir -p waveforms
+	$(MAKE) VHDL_SOURCES="$(VHDL_SOURCES_DIR)/mul.vhd" \
+		TOPLEVEL=mul \
+		MODULE=tests.test_mul
 
 # Help
 help:
