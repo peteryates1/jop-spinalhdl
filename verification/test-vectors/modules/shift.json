@@ -651,6 +651,71 @@
         {"cycle": 0, "signals": {"dout": "0xC0000000"}}
       ],
       "cycles": 1
+    },
+    {
+      "name": "ushr_msb_set_zero_shift",
+      "type": "basic",
+      "description": "Unsigned shift right by 0 with MSB set (should equal input)",
+      "tags": ["basic", "ushr", "zero"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x80000000", "off": "0x0", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x80000000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_java_small_shift",
+      "type": "microcode",
+      "description": "Java ishl example: 1 << 5 = 32",
+      "tags": ["java", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x00000001", "off": "0x5", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00000020"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_java_byte_shift",
+      "type": "microcode",
+      "description": "Java ishl example: 255 << 8 = 65280",
+      "tags": ["java", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x000000FF", "off": "0x8", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x0000FF00"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_java_max_int_overflow",
+      "type": "microcode",
+      "description": "Java ishl overflow: MAX_INT << 1 (overflow to negative)",
+      "tags": ["java", "shl", "overflow"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x7FFFFFFF", "off": "0x1", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFFFFFFFE"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_java_divide_by_32",
+      "type": "microcode",
+      "description": "Java ishr example: 32 >> 5 = 1 (divide by 32)",
+      "tags": ["java", "shr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x00000020", "off": "0x5", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00000001"}}
+      ],
+      "cycles": 1
     }
   ]
 }

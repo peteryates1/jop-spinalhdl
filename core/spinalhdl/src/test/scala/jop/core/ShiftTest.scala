@@ -238,9 +238,9 @@ class ShiftTest extends AnyFunSuite {
     println(s"Version: ${testVectors.version}")
     println(s"Total test cases: ${testVectors.testCases.length}")
 
-    // Verify we have 49 test cases to match VHDL tests
-    assert(testVectors.testCases.length == 49,
-      s"Expected 49 test cases to match VHDL test parity, got ${testVectors.testCases.length}")
+    // Verify we have 54 test cases to match VHDL tests
+    assert(testVectors.testCases.length == 54,
+      s"Expected 54 test cases to match VHDL test parity, got ${testVectors.testCases.length}")
 
     // Print test case categories
     val byType = testVectors.testCases.groupBy(_.testType)
