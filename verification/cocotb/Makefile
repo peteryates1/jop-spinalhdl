@@ -36,7 +36,7 @@ endif
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Phony targets
-.PHONY: clean test_all help
+.PHONY: clean test_all test_mul test_shift help
 
 # Clean build artifacts
 clean::
@@ -50,6 +50,7 @@ clean::
 test_all:
 	@echo "Running all module tests..."
 	$(MAKE) test_mul
+	$(MAKE) test_shift
 
 # Test mul.vhd (multiplier)
 test_mul:
@@ -58,6 +59,13 @@ test_mul:
 	@cp -f $(ORIG_VHDL_DIR)/mul.vhd $(LOCAL_VHDL_DIR)/mul.vhd
 	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/mul.vhd" TOPLEVEL=mul MODULE=tests.test_mul
 
+# Test shift.vhd (barrel shifter)
+test_shift:
+	@echo "Testing shift.vhd (barrel shifter)..."
+	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	@cp -f $(ORIG_VHDL_DIR)/shift.vhd $(LOCAL_VHDL_DIR)/shift.vhd
+	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/shift.vhd" TOPLEVEL=shift MODULE=tests.test_shift
+
 # Help
 help:
 	@echo "JOP CocoTB Test Makefile"
@@ -65,6 +73,8 @@ help:
 	@echo "Targets:"
 	@echo "  make                 - Run default test"
 	@echo "  make test_all        - Run all tests"
+	@echo "  make test_mul        - Test mul.vhd (bit-serial multiplier)"
+	@echo "  make test_shift      - Test shift.vhd (barrel shifter)"
 	@echo "  make clean           - Clean build artifacts"
 	@echo ""
 	@echo "Variables:"

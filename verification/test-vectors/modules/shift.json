@@ -1,0 +1,656 @@
+{
+  "module": "shift",
+  "version": "1.0.0",
+  "description": "Test vectors for barrel shifter unit (shift.vhd)",
+  "metadata": {
+    "author": "vhdl-tester",
+    "created": "2025-12-28T00:00:00Z",
+    "tags": ["alu", "shift", "barrel"],
+    "notes": [
+      "Barrel shifter is purely combinational (no clock)",
+      "Latency: 0 cycles (result available immediately)",
+      "Supports three shift types: ushr (00), shl (01), shr (10)",
+      "Shift amount: 0-31 bits (5-bit offset)",
+      "Uses multi-stage shifting (16, 8, 4, 2, 1 bits)"
+    ]
+  },
+  "test_cases": [
+    {
+      "name": "ushr_zero_shift",
+      "type": "basic",
+      "description": "Unsigned shift right by 0 - output equals input",
+      "tags": ["basic", "ushr", "zero"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xDEADBEEF", "off": "0x0", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xDEADBEEF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_zero_shift",
+      "type": "basic",
+      "description": "Shift left by 0 - output equals input",
+      "tags": ["basic", "shl", "zero"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xDEADBEEF", "off": "0x0", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xDEADBEEF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_zero_shift",
+      "type": "basic",
+      "description": "Arithmetic shift right by 0 - output equals input",
+      "tags": ["basic", "shr", "zero"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xDEADBEEF", "off": "0x0", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xDEADBEEF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_by_1",
+      "type": "basic",
+      "description": "Unsigned shift right by 1 bit",
+      "tags": ["basic", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x80000000", "off": "0x1", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x40000000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_by_1",
+      "type": "basic",
+      "description": "Shift left by 1 bit",
+      "tags": ["basic", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x40000000", "off": "0x1", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x80000000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_by_1_positive",
+      "type": "basic",
+      "description": "Arithmetic shift right by 1 on positive number",
+      "tags": ["basic", "shr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x7FFFFFFE", "off": "0x1", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x3FFFFFFF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_by_1_negative",
+      "type": "basic",
+      "description": "Arithmetic shift right by 1 on negative number (sign extension)",
+      "tags": ["basic", "shr", "sign"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x80000000", "off": "0x1", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xC0000000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_by_4",
+      "type": "basic",
+      "description": "Unsigned shift right by 4 bits (one nibble)",
+      "tags": ["basic", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x12345678", "off": "0x4", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x01234567"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_by_4",
+      "type": "basic",
+      "description": "Shift left by 4 bits (one nibble)",
+      "tags": ["basic", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x12345678", "off": "0x4", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x23456780"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_by_8",
+      "type": "basic",
+      "description": "Unsigned shift right by 8 bits (one byte)",
+      "tags": ["basic", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xAABBCCDD", "off": "0x8", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00AABBCC"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_by_8",
+      "type": "basic",
+      "description": "Shift left by 8 bits (one byte)",
+      "tags": ["basic", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xAABBCCDD", "off": "0x8", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xBBCCDD00"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_by_16",
+      "type": "basic",
+      "description": "Unsigned shift right by 16 bits (half word)",
+      "tags": ["basic", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xFFFF0000", "off": "0x10", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x0000FFFF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_by_16",
+      "type": "basic",
+      "description": "Shift left by 16 bits (half word)",
+      "tags": ["basic", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x0000FFFF", "off": "0x10", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFFFF0000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_by_31",
+      "type": "edge_case",
+      "description": "Unsigned shift right by 31 bits (maximum shift)",
+      "tags": ["edge_case", "ushr", "max"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x80000000", "off": "0x1F", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00000001"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_by_31",
+      "type": "edge_case",
+      "description": "Shift left by 31 bits (maximum shift)",
+      "tags": ["edge_case", "shl", "max"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x00000001", "off": "0x1F", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x80000000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_by_31_positive",
+      "type": "edge_case",
+      "description": "Arithmetic shift right by 31 on positive (becomes 0)",
+      "tags": ["edge_case", "shr", "max"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x7FFFFFFF", "off": "0x1F", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00000000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_by_31_negative",
+      "type": "edge_case",
+      "description": "Arithmetic shift right by 31 on negative (becomes -1)",
+      "tags": ["edge_case", "shr", "max", "sign"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x80000000", "off": "0x1F", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFFFFFFFF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_all_ones",
+      "type": "pattern",
+      "description": "Unsigned shift right of all ones by 16",
+      "tags": ["pattern", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xFFFFFFFF", "off": "0x10", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x0000FFFF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_all_ones",
+      "type": "pattern",
+      "description": "Shift left of all ones by 16",
+      "tags": ["pattern", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xFFFFFFFF", "off": "0x10", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFFFF0000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_all_ones",
+      "type": "pattern",
+      "description": "Arithmetic shift right of all ones (negative -1) by 16",
+      "tags": ["pattern", "shr", "sign"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xFFFFFFFF", "off": "0x10", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFFFFFFFF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_alternating_10",
+      "type": "pattern",
+      "description": "Unsigned shift right alternating 10... pattern",
+      "tags": ["pattern", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xAAAAAAAA", "off": "0x1", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x55555555"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_alternating_01",
+      "type": "pattern",
+      "description": "Shift left alternating 01... pattern",
+      "tags": ["pattern", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x55555555", "off": "0x1", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xAAAAAAAA"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_single_bit_high",
+      "type": "edge_case",
+      "description": "Unsigned shift right single high bit by various amounts",
+      "tags": ["edge_case", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x80000000", "off": "0x10", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00008000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_single_bit_low",
+      "type": "edge_case",
+      "description": "Shift left single low bit by various amounts",
+      "tags": ["edge_case", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x00000001", "off": "0x10", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00010000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_by_2",
+      "type": "basic",
+      "description": "Unsigned shift right by 2 bits",
+      "tags": ["basic", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xFFFFFFFC", "off": "0x2", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x3FFFFFFF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_by_2",
+      "type": "basic",
+      "description": "Shift left by 2 bits",
+      "tags": ["basic", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x3FFFFFFF", "off": "0x2", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFFFFFFFC"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_by_4_negative",
+      "type": "basic",
+      "description": "Arithmetic shift right by 4 on negative number",
+      "tags": ["basic", "shr", "sign"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xF0000000", "off": "0x4", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFF000000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_by_8_negative",
+      "type": "basic",
+      "description": "Arithmetic shift right by 8 on negative number",
+      "tags": ["basic", "shr", "sign"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x80000000", "off": "0x8", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFF800000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_by_16_negative",
+      "type": "basic",
+      "description": "Arithmetic shift right by 16 on negative number",
+      "tags": ["basic", "shr", "sign"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x80000000", "off": "0x10", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFFFF8000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_by_17",
+      "type": "basic",
+      "description": "Unsigned shift right by 17 bits (compound shift)",
+      "tags": ["basic", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xFFFFFFFF", "off": "0x11", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00007FFF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_by_17",
+      "type": "basic",
+      "description": "Shift left by 17 bits (compound shift)",
+      "tags": ["basic", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xFFFFFFFF", "off": "0x11", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFFFE0000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_zero_value",
+      "type": "edge_case",
+      "description": "Shift zero right",
+      "tags": ["edge_case", "ushr", "zero"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x00000000", "off": "0x10", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00000000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_zero_value",
+      "type": "edge_case",
+      "description": "Shift zero left",
+      "tags": ["edge_case", "shl", "zero"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x00000000", "off": "0x10", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00000000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_zero_value",
+      "type": "edge_case",
+      "description": "Arithmetic shift zero right",
+      "tags": ["edge_case", "shr", "zero"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x00000000", "off": "0x10", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00000000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_comprehensive_7",
+      "type": "microcode",
+      "description": "Comprehensive test - shift by 7 bits",
+      "tags": ["comprehensive", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x12345678", "off": "0x7", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x002468AC"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_comprehensive_7",
+      "type": "microcode",
+      "description": "Comprehensive test - shift left by 7 bits",
+      "tags": ["comprehensive", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x12345678", "off": "0x7", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x1A2B3C00"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_comprehensive_7_negative",
+      "type": "microcode",
+      "description": "Comprehensive test - arithmetic shift right by 7 bits (negative)",
+      "tags": ["comprehensive", "shr", "sign"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x92345678", "off": "0x7", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFF2468AC"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_by_15",
+      "type": "basic",
+      "description": "Unsigned shift right by 15 bits",
+      "tags": ["basic", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xFFFF8000", "off": "0xF", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x0001FFFF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_by_15",
+      "type": "basic",
+      "description": "Shift left by 15 bits",
+      "tags": ["basic", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x0001FFFF", "off": "0xF", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFFFF8000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_java_example",
+      "type": "microcode",
+      "description": "Java iushr example: -1 >>> 24 = 255",
+      "tags": ["java", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xFFFFFFFF", "off": "0x18", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x000000FF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_java_example",
+      "type": "microcode",
+      "description": "Java ishl example: 1 << 24 = 16777216",
+      "tags": ["java", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x00000001", "off": "0x18", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x01000000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_java_example",
+      "type": "microcode",
+      "description": "Java ishr example: -256 >> 4 = -16",
+      "tags": ["java", "shr", "sign"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xFFFFFF00", "off": "0x4", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFFFFFFF0"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_by_20",
+      "type": "basic",
+      "description": "Unsigned shift right by 20 bits",
+      "tags": ["basic", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xFFF00000", "off": "0x14", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00000FFF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_by_20",
+      "type": "basic",
+      "description": "Shift left by 20 bits",
+      "tags": ["basic", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x00000FFF", "off": "0x14", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFFF00000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shr_by_20_negative",
+      "type": "basic",
+      "description": "Arithmetic shift right by 20 on negative",
+      "tags": ["basic", "shr", "sign"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xFFF00000", "off": "0x14", "shtyp": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xFFFFFFFF"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_by_24",
+      "type": "basic",
+      "description": "Unsigned shift right by 24 bits (3 bytes)",
+      "tags": ["basic", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xABCDEF12", "off": "0x18", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x000000AB"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_by_24",
+      "type": "basic",
+      "description": "Shift left by 24 bits (3 bytes)",
+      "tags": ["basic", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x000000AB", "off": "0x18", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xAB000000"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "ushr_boundary_max_minus_1",
+      "type": "edge_case",
+      "description": "Unsigned shift right by 30 bits",
+      "tags": ["edge_case", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0xC0000000", "off": "0x1E", "shtyp": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0x00000003"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "shl_boundary_max_minus_1",
+      "type": "edge_case",
+      "description": "Shift left by 30 bits",
+      "tags": ["edge_case", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"din": "0x00000003", "off": "0x1E", "shtyp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"dout": "0xC0000000"}}
+      ],
+      "cycles": 1
+    }
+  ]
+}
