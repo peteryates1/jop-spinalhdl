@@ -1,0 +1,463 @@
+{
+  "module": "fetch",
+  "version": "1.0.0",
+  "description": "Test vectors for microcode ROM fetch stage (fetch.vhd)",
+  "metadata": {
+    "author": "vhdl-tester",
+    "created": "2025-12-28T00:00:00Z",
+    "tags": ["pipeline", "fetch", "microcode", "rom"],
+    "notes": [
+      "Microcode ROM fetch stage for JOP pipeline",
+      "Configurable PC width (pc_width generic) and instruction width (i_width generic)",
+      "Default test config: pc_width=10, i_width=10 (1024 ROM entries, 10-bit instructions)",
+      "ROM output includes 2 extra bits: jfetch (bit i_width+1) and jopdfetch (bit i_width)",
+      "PC increment is automatic unless branch/jump/wait occurs",
+      "Branch uses 6-bit signed offset from ir[5:0]",
+      "Jump uses 9-bit signed offset from ir[i_width-2:0]",
+      "Wait instruction (0b0100000001 = 0x101) stalls PC when bsy='1'",
+      "jfetch='1' loads PC from jpaddr (Java bytecode fetch)",
+      "First instruction at address 0 is NEVER executed (pc_mux=1 during reset)"
+    ],
+    "signal_widths": {
+      "pc_width": 10,
+      "i_width": 10,
+      "dout": 10,
+      "jpaddr": 10
+    },
+    "timing": {
+      "latency_cycles": 1,
+      "rom_registered_address": true,
+      "rom_unregistered_output": true,
+      "ir_registered": true,
+      "notes": [
+        "ROM address registered on rising edge",
+        "ROM output (rom_data) is combinational from address",
+        "IR (instruction register) captures rom_data on next rising edge",
+        "dout = ir (registered instruction output)"
+      ]
+    }
+  },
+  "test_cases": [
+    {
+      "name": "reset_state",
+      "type": "reset",
+      "description": "PC should be 0 after reset, first instruction fetched from address 0",
+      "tags": ["reset", "basic"],
+      "initial_state": {},
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"nxt": "0xX", "opd": "0xX"}}
+      ],
+      "cycles": 2,
+      "notes": ["PC initialized to 0 after reset", "First ROM output depends on ROM contents at address 0"]
+    },
+    {
+      "name": "sequential_fetch_basic",
+      "type": "microcode",
+      "description": "PC increments sequentially on each cycle when no branch/jump",
+      "tags": ["basic", "sequential"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 3, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 4, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 6,
+      "notes": ["PC should be 1, 2, 3, 4, 5 at end of cycles 0-4", "Verify ROM is read sequentially"]
+    },
+    {
+      "name": "jfetch_address_load",
+      "type": "microcode",
+      "description": "When jfetch=1 (from ROM), PC loads from jpaddr",
+      "tags": ["jfetch", "jump"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x100"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x100"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x200"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 4,
+      "notes": [
+        "jfetch signal comes from ROM bit i_width+1",
+        "When jfetch=1, pc_mux takes jpaddr value",
+        "Used for Java bytecode dispatch"
+      ]
+    },
+    {
+      "name": "branch_forward_positive",
+      "type": "microcode",
+      "description": "Branch forward with positive 6-bit offset",
+      "tags": ["branch", "forward"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x1", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 4,
+      "notes": [
+        "Branch offset from ir[5:0] as 6-bit signed value",
+        "brdly = PC + sign_extend(ir[5:0])",
+        "brdly is registered, so branch takes effect cycle after br=1"
+      ]
+    },
+    {
+      "name": "branch_backward_negative",
+      "type": "microcode",
+      "description": "Branch backward with negative 6-bit offset",
+      "tags": ["branch", "backward"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 3, "signals": {"br": "0x1", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 4, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 6,
+      "notes": [
+        "Negative offset (-3) encoded as 6-bit two's complement: 0b111101 = 0x3D",
+        "PC at branch: ~4, branch target: PC + (-3) = ~1"
+      ]
+    },
+    {
+      "name": "jump_forward_positive",
+      "type": "microcode",
+      "description": "Jump forward with positive 9-bit offset",
+      "tags": ["jump", "forward"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x1", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 4,
+      "notes": [
+        "Jump offset from ir[i_width-2:0] as 9-bit signed value",
+        "jpdly = PC + sign_extend(ir[8:0])",
+        "jpdly is registered, so jump takes effect cycle after jmp=1"
+      ]
+    },
+    {
+      "name": "jump_backward_negative",
+      "type": "microcode",
+      "description": "Jump backward with negative 9-bit offset",
+      "tags": ["jump", "backward"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 3, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 4, "signals": {"br": "0x0", "jmp": "0x1", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 5, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 7,
+      "notes": [
+        "Negative offset encoded as 9-bit two's complement",
+        "Jump can reach further than branch (9-bit vs 6-bit offset)"
+      ]
+    },
+    {
+      "name": "wait_instruction_stall",
+      "type": "microcode",
+      "description": "Wait instruction (0x101) stalls PC when bsy=1",
+      "tags": ["wait", "stall", "memory"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x1", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x1", "jpaddr": "0x0"}},
+        {"cycle": 3, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 4, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 6,
+      "notes": [
+        "Wait instruction opcode: 0b0100000001 (0x101)",
+        "pcwait is set when current instruction is wait",
+        "When pcwait=1 AND bsy=1, PC holds (pc_mux <= pc)",
+        "When bsy=0, PC resumes incrementing"
+      ]
+    },
+    {
+      "name": "wait_no_stall_bsy_low",
+      "type": "microcode",
+      "description": "Wait instruction does not stall when bsy=0",
+      "tags": ["wait", "no_stall"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 4,
+      "notes": [
+        "Even if current instruction is wait, PC increments if bsy=0",
+        "pcwait AND bsy must both be 1 for stall"
+      ]
+    },
+    {
+      "name": "branch_priority_over_increment",
+      "type": "microcode",
+      "description": "Branch has priority over normal increment",
+      "tags": ["branch", "priority"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x1", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 4,
+      "notes": [
+        "When br=1, pc_mux takes brdly regardless of other conditions",
+        "jfetch has higher priority than br (checked first)"
+      ]
+    },
+    {
+      "name": "jump_priority_over_branch",
+      "type": "edge_case",
+      "description": "Jump and branch simultaneous - branch wins (checked first after jfetch)",
+      "tags": ["priority", "edge_case"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x1", "jmp": "0x1", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 4,
+      "notes": [
+        "Priority order: jfetch > br > jmp > (pcwait AND bsy) > pc_inc",
+        "When both br and jmp are 1, br wins"
+      ]
+    },
+    {
+      "name": "jfetch_priority_highest",
+      "type": "edge_case",
+      "description": "jfetch has highest priority over all other PC sources",
+      "tags": ["priority", "jfetch", "edge_case"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x1", "jmp": "0x1", "bsy": "0x1", "jpaddr": "0x123"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 3,
+      "notes": [
+        "When jfetch=1 (from ROM), jpaddr is loaded regardless of br, jmp, or bsy",
+        "jfetch comes from ROM output, not external signal"
+      ]
+    },
+    {
+      "name": "pc_wraparound",
+      "type": "edge_case",
+      "description": "PC wraps around at ROM boundary",
+      "tags": ["edge_case", "wraparound"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 10,
+      "notes": [
+        "PC is pc_width bits, wraps from max to 0",
+        "For pc_width=10: 0x3FF + 1 = 0x000"
+      ]
+    },
+    {
+      "name": "branch_max_positive_offset",
+      "type": "edge_case",
+      "description": "Branch with maximum positive 6-bit offset (+31)",
+      "tags": ["edge_case", "branch", "max"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x1", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 4,
+      "notes": [
+        "Maximum positive 6-bit signed: +31 (0b011111 = 0x1F)",
+        "Branch target: PC + 31"
+      ]
+    },
+    {
+      "name": "branch_max_negative_offset",
+      "type": "edge_case",
+      "description": "Branch with maximum negative 6-bit offset (-32)",
+      "tags": ["edge_case", "branch", "min"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 40,
+      "notes": [
+        "Maximum negative 6-bit signed: -32 (0b100000 = 0x20)",
+        "Branch target: PC - 32",
+        "Need to advance PC first so branch doesn't go negative"
+      ]
+    },
+    {
+      "name": "jump_max_positive_offset",
+      "type": "edge_case",
+      "description": "Jump with maximum positive 9-bit offset (+255)",
+      "tags": ["edge_case", "jump", "max"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x1", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 4,
+      "notes": [
+        "Maximum positive 9-bit signed: +255 (0b011111111 = 0xFF)",
+        "Jump target: PC + 255"
+      ]
+    },
+    {
+      "name": "jump_max_negative_offset",
+      "type": "edge_case",
+      "description": "Jump with maximum negative 9-bit offset (-256)",
+      "tags": ["edge_case", "jump", "min"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 300,
+      "notes": [
+        "Maximum negative 9-bit signed: -256 (0b100000000 = 0x100)",
+        "Jump target: PC - 256",
+        "Need to advance PC first so jump doesn't go negative"
+      ]
+    },
+    {
+      "name": "nxt_opd_from_rom",
+      "type": "microcode",
+      "description": "nxt and opd outputs come from ROM high bits",
+      "tags": ["output", "rom"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 3,
+      "notes": [
+        "nxt = jfetch = rom_data[i_width+1]",
+        "opd = jopdfetch = rom_data[i_width]",
+        "These are combinational outputs from ROM (unregistered)"
+      ]
+    },
+    {
+      "name": "dout_registered",
+      "type": "microcode",
+      "description": "dout is registered (1 cycle delay from ROM)",
+      "tags": ["output", "timing"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 4,
+      "notes": [
+        "dout = ir (instruction register)",
+        "ir captures rom_data[i_width-1:0] on rising edge",
+        "dout has 1 cycle latency from address change"
+      ]
+    },
+    {
+      "name": "multiple_stall_cycles",
+      "type": "integration",
+      "description": "Multiple consecutive stall cycles with wait instruction",
+      "tags": ["integration", "stall"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x1", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x1", "jpaddr": "0x0"}},
+        {"cycle": 3, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x1", "jpaddr": "0x0"}},
+        {"cycle": 4, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x1", "jpaddr": "0x0"}},
+        {"cycle": 5, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 7,
+      "notes": [
+        "PC should hold for 4 cycles when wait instruction and bsy=1",
+        "PC resumes on cycle 5 when bsy goes low"
+      ]
+    },
+    {
+      "name": "branch_after_stall",
+      "type": "integration",
+      "description": "Branch immediately after stall ends",
+      "tags": ["integration", "branch", "stall"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x1", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x1", "jpaddr": "0x0"}},
+        {"cycle": 3, "signals": {"br": "0x1", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 4, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 6,
+      "notes": [
+        "Branch should work correctly immediately after stall ends",
+        "brdly should have correct value based on current PC"
+      ]
+    },
+    {
+      "name": "jfetch_during_stall",
+      "type": "edge_case",
+      "description": "jfetch signal during stall should override stall",
+      "tags": ["edge_case", "jfetch", "stall"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x1", "jpaddr": "0x200"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x1", "jpaddr": "0x200"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 4,
+      "notes": [
+        "jfetch has highest priority",
+        "Even during stall (pcwait AND bsy), jfetch should load jpaddr"
+      ]
+    },
+    {
+      "name": "rapid_branch_sequence",
+      "type": "integration",
+      "description": "Multiple branches in rapid succession",
+      "tags": ["integration", "branch"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 1, "signals": {"br": "0x1", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 2, "signals": {"br": "0x1", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 3, "signals": {"br": "0x1", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}},
+        {"cycle": 4, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 6,
+      "notes": [
+        "Consecutive branches should use brdly from current PC",
+        "Each branch target depends on current ir[5:0]"
+      ]
+    },
+    {
+      "name": "jpaddr_change_no_effect",
+      "type": "microcode",
+      "description": "jpaddr changes have no effect unless jfetch=1",
+      "tags": ["jpaddr", "no_effect"],
+      "inputs": [
+        {"cycle": 0, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x100"}},
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x200"}},
+        {"cycle": 2, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x300"}},
+        {"cycle": 3, "signals": {"br": "0x0", "jmp": "0x0", "bsy": "0x0", "jpaddr": "0x0"}}
+      ],
+      "expected_outputs": [],
+      "cycles": 5,
+      "notes": [
+        "jpaddr is only used when jfetch=1",
+        "PC should increment normally despite jpaddr changes"
+      ]
+    }
+  ]
+}

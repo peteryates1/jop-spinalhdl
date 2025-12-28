@@ -36,7 +36,7 @@ endif
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Phony targets
-.PHONY: clean test_all test_mul test_shift help
+.PHONY: clean test_all test_mul test_shift test_fetch help
 
 # Clean build artifacts
 clean::
@@ -51,6 +51,7 @@ test_all:
 	@echo "Running all module tests..."
 	$(MAKE) test_mul
 	$(MAKE) test_shift
+	$(MAKE) test_fetch
 
 # Test mul.vhd (multiplier)
 test_mul:
@@ -66,6 +67,13 @@ test_shift:
 	@cp -f $(ORIG_VHDL_DIR)/shift.vhd $(LOCAL_VHDL_DIR)/shift.vhd
 	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/shift.vhd" TOPLEVEL=shift MODULE=tests.test_shift
 
+# Test fetch.vhd (microcode ROM fetch stage)
+# Uses fetch_tb.vhd wrapper which includes integrated ROM for testing
+test_fetch:
+	@echo "Testing fetch.vhd (microcode ROM fetch stage)..."
+	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/fetch_tb.vhd" TOPLEVEL=fetch_tb MODULE=tests.test_fetch
+
 # Help
 help:
 	@echo "JOP CocoTB Test Makefile"
@@ -75,6 +83,7 @@ help:
 	@echo "  make test_all        - Run all tests"
 	@echo "  make test_mul        - Test mul.vhd (bit-serial multiplier)"
 	@echo "  make test_shift      - Test shift.vhd (barrel shifter)"
+	@echo "  make test_fetch      - Test fetch.vhd (microcode ROM fetch stage)"
 	@echo "  make clean           - Clean build artifacts"
 	@echo ""
 	@echo "Variables:"
