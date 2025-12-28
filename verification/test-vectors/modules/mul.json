@@ -37,9 +37,9 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0xF"}}
+        {"cycle": 18, "signals": {"dout": "0xF"}}
       ],
-      "cycles": 18
+      "cycles": 19
     },
     {
       "name": "multiply_by_zero_a",
@@ -51,9 +51,9 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0x0"}}
+        {"cycle": 18, "signals": {"dout": "0x0"}}
       ],
-      "cycles": 18
+      "cycles": 19
     },
     {
       "name": "multiply_by_zero_b",
@@ -65,9 +65,9 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0x0"}}
+        {"cycle": 18, "signals": {"dout": "0x0"}}
       ],
-      "cycles": 18
+      "cycles": 19
     },
     {
       "name": "multiply_by_one_a",
@@ -79,9 +79,9 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0x315"}}
+        {"cycle": 18, "signals": {"dout": "0x315"}}
       ],
-      "cycles": 18
+      "cycles": 19
     },
     {
       "name": "multiply_by_one_b",
@@ -93,9 +93,9 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0x3E7"}}
+        {"cycle": 18, "signals": {"dout": "0x3E7"}}
       ],
-      "cycles": 18
+      "cycles": 19
     },
     {
       "name": "multiply_power_of_2",
@@ -107,9 +107,9 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0x44"}}
+        {"cycle": 18, "signals": {"dout": "0x44"}}
       ],
-      "cycles": 18
+      "cycles": 19
     },
     {
       "name": "multiply_power_of_2_large",
@@ -121,9 +121,9 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0xFF00"}}
+        {"cycle": 18, "signals": {"dout": "0xFF00"}}
       ],
-      "cycles": 18
+      "cycles": 19
     },
     {
       "name": "multiply_medium_values",
@@ -135,9 +135,9 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0x1E8480"}}
+        {"cycle": 18, "signals": {"dout": "0x1E8480"}}
       ],
-      "cycles": 18
+      "cycles": 19
     },
     {
       "name": "multiply_large_values",
@@ -149,9 +149,9 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0xFFFF0000"}}
+        {"cycle": 18, "signals": {"dout": "0xFFFF0000"}}
       ],
-      "cycles": 18
+      "cycles": 19
     },
     {
       "name": "multiply_overflow",
@@ -163,9 +163,9 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0xFFFFFFFE"}}
+        {"cycle": 18, "signals": {"dout": "0xFFFFFFFE"}}
       ],
-      "cycles": 18
+      "cycles": 19
     },
     {
       "name": "multiply_max_overflow",
@@ -177,9 +177,9 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0x1"}}
+        {"cycle": 18, "signals": {"dout": "0x1"}}
       ],
-      "cycles": 18
+      "cycles": 19
     },
     {
       "name": "multiply_sequential_no_gap",
@@ -192,12 +192,12 @@
         {"cycle": 2, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 18, "signals": {"dout": "0x1E"}}
+        {"cycle": 19, "signals": {"dout": "0x1E"}}
       ],
-      "cycles": 19,
+      "cycles": 20,
       "notes": [
         "First multiplication (10×11=110) is overwritten by second (5×6=30)",
-        "Only second result should appear"
+        "Only second result should appear at cycle 19 (second mult starts at cycle 1)"
       ]
     },
     {
@@ -208,17 +208,17 @@
       "inputs": [
         {"cycle": 0, "signals": {"ain": "0x7", "bin": "0x8", "wr": "0x1"}},
         {"cycle": 1, "signals": {"wr": "0x0"}},
-        {"cycle": 18, "signals": {"ain": "0xC", "bin": "0xD", "wr": "0x1"}},
-        {"cycle": 19, "signals": {"wr": "0x0"}}
+        {"cycle": 19, "signals": {"ain": "0xC", "bin": "0xD", "wr": "0x1"}},
+        {"cycle": 20, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0x38"}},
-        {"cycle": 35, "signals": {"dout": "0x9C"}}
+        {"cycle": 18, "signals": {"dout": "0x38"}},
+        {"cycle": 37, "signals": {"dout": "0x9C"}}
       ],
-      "cycles": 36,
+      "cycles": 38,
       "notes": [
-        "First: 7×8=56 (0x38) at cycle 17",
-        "Second: 12×13=156 (0x9C) at cycle 35"
+        "First: 7×8=56 (0x38) at cycle 18",
+        "Second: 12×13=156 (0x9C) at cycle 37"
       ]
     },
     {
@@ -231,9 +231,9 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0xE1"}}
+        {"cycle": 18, "signals": {"dout": "0xE1"}}
       ],
-      "cycles": 18
+      "cycles": 19
     },
     {
       "name": "multiply_alternating_bits",
@@ -245,13 +245,14 @@
         {"cycle": 1, "signals": {"wr": "0x0"}}
       ],
       "expected_outputs": [
-        {"cycle": 17, "signals": {"dout": "0x38E38E38"}}
+        {"cycle": 18, "signals": {"dout": "0x71C71C72"}}
       ],
-      "cycles": 18,
+      "cycles": 19,
       "notes": [
         "0xAAAAAAAA = 10101010... (binary)",
         "0x55555555 = 01010101... (binary)",
-        "Product tests bit-serial operation with alternating patterns"
+        "Product: 0x38E38E3871C71C72 (lower 32 bits: 0x71C71C72)",
+        "Tests bit-serial operation with alternating patterns"
       ]
     }
   ]

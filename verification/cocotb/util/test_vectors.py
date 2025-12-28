@@ -14,12 +14,12 @@ from typing import Dict, List, Any, Optional
 class TestVectorLoader:
     """Load and parse test vectors from JSON files"""
 
-    def __init__(self, vectors_dir: str = "../../test-vectors"):
+    def __init__(self, vectors_dir: str = "../test-vectors"):
         """
         Initialize loader
 
         Args:
-            vectors_dir: Path to test-vectors directory (relative to test file)
+            vectors_dir: Path to test-vectors directory (relative to cocotb directory)
         """
         self.vectors_dir = Path(vectors_dir)
 

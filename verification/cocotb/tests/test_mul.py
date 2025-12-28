@@ -21,26 +21,38 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from util.test_vectors import TestVectorLoader
 
 # Load test vectors
-loader = TestVectorLoader("../../test-vectors")
+loader = TestVectorLoader("../test-vectors")
 
 
 @cocotb.test()
 async def test_mul_startup(dut):
-    """Test initial state before any multiplication"""
+    """Test initial state after initialization (no reset signal in mul.vhd)"""
 
     # Start clock
     clock = Clock(dut.clk, 10, units="ns")
     cocotb.start_soon(clock.start())
 
-    # Wait a few cycles
-    await RisingEdge(dut.clk)
+    # Initialize inputs to known state (mul.vhd has no reset signal)
+    dut.ain.value = 0
+    dut.bin.value = 0
+    dut.wr.value = 0
+
+    # Wait for initial clock to start
     await RisingEdge(dut.clk)
 
-    # Output should be zero at startup
+    # Perform write to initialize internal state
+    dut.wr.value = 1
+    await RisingEdge(dut.clk)
+    dut.wr.value = 0
+
+    # Wait another cycle for the write to complete and output to update
+    await RisingEdge(dut.clk)
+
+    # Output should be zero after initialization write of 0×0
     assert int(dut.dout.value) == 0, \
-        f"Startup output should be 0, got {int(dut.dout.value):#x}"
+        f"Output after init should be 0, got {int(dut.dout.value):#x}"
 
-    dut._log.info("✓ Startup state verified")
+    dut._log.info("✓ Startup state verified (initialized with wr)")
 
 
 @cocotb.test()
@@ -63,13 +75,18 @@ async def test_mul_from_vectors(dut):
         dut._log.info(f"Description: {tc['description']}")
         dut._log.info(f"{'='*60}")
 
-        # Initialize inputs to known state
-        dut.wr.value = 0
+        # Initialize state (mul.vhd has no reset signal)
+        # Perform a 0×0 write to clear internal state, then wait for completion
         dut.ain.value = 0
         dut.bin.value = 0
-
-        # Wait a cycle
+        dut.wr.value = 1
         await RisingEdge(dut.clk)
+
+        dut.wr.value = 0
+        # Wait for the full 17 cycles to ensure multiplication completes
+        for _ in range(17):
+            await RisingEdge(dut.clk)
+
 
         # Track cycle count
         current_cycle = 0

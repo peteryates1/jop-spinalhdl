@@ -1,41 +1,207 @@
 # Reviewer Agent Workflow
 
 ## Role
-Cross-validate work from all agents, ensure quality, verify equivalence, and track migration progress.
+**Execute comprehensive reviews** of all agent outputs, **perform** quality assurance validation, **verify** cycle-accurate behavioral equivalence, and **track** migration progress. This agent **conducts** the reviews, **validates** acceptance criteria, and **provides actionable feedback** to other agents - it does not merely coordinate.
 
 ## Responsibilities
 
-### 1. Cross-Validation
-- Verify test parity between CocoTB and ScalaTest
-- Review SpinalHDL implementation against VHDL
-- Validate generated VHDL against original
-- Check cycle accuracy across all implementations
+### 1. Execute Cross-Validation Reviews
+- **Verify** test parity between CocoTB and ScalaTest (identical results required)
+- **Review** SpinalHDL implementation against VHDL (cycle-accurate equivalence)
+- **Validate** generated VHDL against original (behavioral match)
+- **Check** cycle accuracy across all implementations
+- **Execute** comparison tools and generate reports
 
-### 2. Quality Assurance
-- Code review (VHDL, Scala, Python)
-- Documentation completeness
-- Test coverage verification
-- Architecture consistency
+### 2. Perform Quality Assurance Validation
+- **Execute** code reviews (VHDL, Scala, Python)
+- **Validate** documentation completeness
+- **Verify** test coverage ≥ 95%
+- **Check** architecture consistency
+- **Run** static analysis and linters
 
-### 3. Progress Tracking
-- Migration status tracking
-- Issue identification and tracking
-- Milestone verification
-- Deliverable acceptance
+### 3. Track Progress and Provide Feedback
+- **Maintain** migration status dashboard
+- **Identify** and track issues
+- **Verify** milestone completion
+- **Accept/reject** deliverables with detailed feedback
+- **Route** issues to appropriate agents
 
 ## Workflow Template
 
-### Input Artifacts
+### Input Artifacts (from all agents)
 ```
-All outputs from:
-- vhdl-tester
-- spinalhdl-developer
-- spinalhdl-tester
+From vhdl-tester-workflow:
+- verification/test-vectors/modules/<module>.json
+- verification/cocotb/tests/test_<module>.py
+- CocoTB test results (golden standard)
+- docs/verification/modules/<module>-analysis.md
+
+From spinalhdl-developer-workflow:
+- core/spinalhdl/src/main/scala/jop/pipeline/<Module>.scala
+- core/spinalhdl/generated/<Module>.vhd
+- CocoTB test results (SpinalHDL-generated VHDL)
+- docs/migration/<Module>-comparison.md
+
+From spinalhdl-tester-workflow:
+- verification/scalatest/src/test/scala/jop/pipeline/<Module>Spec.scala
+- ScalaTest test results
+- Test parity verification report
+- Coverage reports
 ```
+
+## Agent Integration
+
+This agent **validates outputs** from all other agents:
+
+```
+vhdl-tester-workflow
+        ↓
+    (outputs)
+        ↓
+    REVIEWER ← validates → ACCEPT/REJECT → feedback
+        ↑                                       ↓
+        ↑                                  vhdl-tester
+        |
+spinalhdl-developer-workflow
+        ↓
+    (outputs)
+        ↓
+    REVIEWER ← validates → ACCEPT/REJECT → feedback
+        ↑                                       ↓
+        ↑                              spinalhdl-developer
+        |
+spinalhdl-tester-workflow
+        ↓
+    (outputs)
+        ↓
+    REVIEWER ← validates → ACCEPT/REJECT → feedback
+                                                ↓
+                                       spinalhdl-tester
+```
+
+**Workflow:**
+1. Agent completes work and submits deliverables
+2. Reviewer **executes** validation checks
+3. Reviewer **accepts** OR **rejects with actionable feedback**
+4. If rejected, issue routed back to originating agent
+5. Agent fixes issues and resubmits
+6. Repeat until accepted
 
 ### Process Steps
 
-#### Step 1: Review Test Suite (vhdl-tester)
+#### Step 0: Debug Review Infrastructure
+
+**When to use:** When review tools fail, comparison scripts break, or validation processes encounter errors. This step focuses on fixing the review infrastructure itself.
+
+**Common Issues:**
+
+1. **Tool/Script Failures**
+   - Comparison scripts crash or hang
+   - Coverage report generation fails
+   - Test result parsing errors
+   - Missing dependencies for review tools
+
+2. **Missing Artifacts**
+   - Agent didn't produce expected outputs
+   - File paths changed
+   - Incomplete deliverables
+   - Version mismatches
+
+3. **CI/CD Pipeline Issues**
+   - Automated checks not running
+   - Report generation failing
+   - Artifact collection broken
+   - Permission/access issues
+
+4. **Data Format Problems**
+   - JSON parsing errors
+   - XML format mismatches
+   - CSV encoding issues
+   - Waveform file corruption
+
+**Debugging Process:**
+
+```bash
+# Step 0.1: Verify all required artifacts exist
+python tools/scripts/check_artifacts.py <module>
+
+# Step 0.2: Test comparison tools in isolation
+python tools/scripts/compare_test_results.py --test-mode
+
+# Step 0.3: Validate input data formats
+python tools/scripts/validate_formats.py \
+    --cocotb verification/cocotb/results.xml \
+    --scalatest verification/scalatest/target/test-reports/
+
+# Step 0.4: Check tool versions
+ghdl --version
+verilator --version
+python --version
+sbt --version
+```
+
+**Common Fixes:**
+
+```python
+# ISSUE: Comparison script crashes on missing fields
+# Add defensive checks
+def compare_results(cocotb_file, scalatest_file):
+    try:
+        with open(cocotb_file) as f:
+            cocotb_data = json.load(f)
+    except FileNotFoundError:
+        raise ReviewError(f"CocoTB results not found: {cocotb_file}")
+    except json.JSONDecodeError as e:
+        raise ReviewError(f"Invalid CocoTB JSON: {e}")
+
+    # Validate required fields exist
+    if 'test_cases' not in cocotb_data:
+        raise ReviewError("CocoTB results missing 'test_cases' field")
+```
+
+```bash
+# ISSUE: Coverage report generation fails
+# Check for missing coverage data
+if [ ! -f "verification/cocotb/coverage/coverage.json" ]; then
+    echo "ERROR: CocoTB coverage data missing"
+    echo "Did vhdl-tester-workflow run with coverage enabled?"
+    echo "Run: make test_<module> COVERAGE=1"
+    exit 1
+fi
+```
+
+**Feedback to Agents When Artifacts Missing:**
+
+```markdown
+# Review Blocked: Missing Artifacts
+
+**Module:** mul
+**Agent:** spinalhdl-developer-workflow
+**Status:** REJECTED - Incomplete Deliverables
+
+**Missing:**
+- [ ] Generated VHDL file: `core/spinalhdl/generated/Mul.vhd` not found
+- [ ] CocoTB test results for SpinalHDL version
+- [ ] Migration comparison document
+
+**Action Required:**
+1. Run: `sbt "runMain jop.pipeline.Mul"`
+2. Run: `cd verification/cocotb && make test_mul_spinalhdl`
+3. Create: `docs/migration/Mul-comparison.md`
+4. Resubmit when complete
+
+**Blocked Until:** All artifacts present
+```
+
+**Deliverables:**
+- Working review infrastructure
+- All review tools operational
+- Clear feedback to agents about missing artifacts
+
+**When to Move to Step 1:**
+Once all artifacts are present and review tools are working, proceed to execute actual reviews.
+
+#### Step 1: Execute Test Suite Review (vhdl-tester-workflow)
 
 **Checklist:**
 - [ ] All microcode instructions have tests
@@ -62,10 +228,57 @@ firefox coverage/index.html
 python tools/analyze_coverage.py
 ```
 
+**Acceptance Decision:**
+
+```markdown
+# CocoTB Test Suite Review: <Module>
+
+**Reviewer:** [Agent Name]
+**Date:** [Date]
+**Module:** <module>
+**Status:** ACCEPTED | REJECTED | NEEDS-WORK
+
+## Test Results
+- Total Tests: X
+- Passed: X (100% required)
+- Failed: X
+- Coverage: X% (≥95% required)
+
+## Checklist Results
+- [x] All microcode instructions have tests
+- [x] Test coverage ≥ 95%
+- [x] Tests are cycle-accurate
+- [x] Test vectors are comprehensive
+- [x] Edge cases documented and tested
+- [x] Golden outputs captured
+- [x] Documentation is complete
+
+## Issues Found
+[If any issues, list them with severity]
+
+## Decision
+**ACCEPTED** - All criteria met, proceed to SpinalHDL development
+
+OR
+
+**REJECTED** - Cannot proceed due to:
+1. Test coverage only 72% (need ≥95%)
+2. Missing edge case tests for overflow conditions
+3. Documentation incomplete
+
+**Action Required:**
+1. Add tests for overflow/underflow edge cases
+2. Improve coverage to ≥95%
+3. Complete module analysis documentation
+4. Resubmit to reviewer
+
+**Assigned Back To:** vhdl-tester-workflow
+```
+
 **Deliverables:**
-- `docs/reviews/<module>-cocotb-review.md`
-- Issue list for vhdl-tester
-- Acceptance status (pass/fail/needs-work)
+- `docs/reviews/<module>-cocotb-review.md` (detailed review)
+- Issue list for vhdl-tester-workflow (if rejected)
+- **Acceptance decision** (ACCEPTED/REJECTED/NEEDS-WORK)
 
 #### Step 2: Review SpinalHDL Implementation (spinalhdl-developer)
 
@@ -111,11 +324,52 @@ sbt scalafmtCheck
 sbt scalafix
 ```
 
+**Acceptance Decision:**
+
+```markdown
+# SpinalHDL Implementation Review: <Module>
+
+**Status:** ACCEPTED | REJECTED | NEEDS-WORK
+
+## Code Quality
+- [x] Compiles without errors
+- [x] Follows style guidelines
+- [x] Well documented
+- [ ] Generated VHDL readable
+
+## Behavioral Equivalence
+- [ ] All CocoTB tests pass on generated VHDL
+- [ ] Cycle-accurate match with original
+- [ ] No timing differences
+
+## Issues Found
+1. **CRITICAL:** Generated VHDL fails test `multiply_max_overflow`
+   - Expected: 0x1 at cycle 18
+   - Actual: 0xC0000001
+   - Root cause: Reset behavior differs from original VHDL
+
+2. **MAJOR:** Generated VHDL has unreadable signal names
+   - Example: `tmp_when_Mul_l_47` instead of `product`
+
+## Decision
+**REJECTED** - Critical behavioral difference found
+
+**Action Required:**
+1. Fix reset behavior to match original VHDL asynchronous reset
+2. Improve signal naming in generated VHDL (use `setName()`)
+3. Re-run CocoTB tests until all pass
+4. Resubmit to reviewer
+
+**Assigned Back To:** spinalhdl-developer-workflow
+**Priority:** HIGH
+**Blocking:** Cannot proceed to ScalaTest development
+```
+
 **Deliverables:**
 - `docs/reviews/<module>-spinalhdl-review.md`
-- Diff analysis
-- Issue list for spinalhdl-developer
-- Acceptance status
+- Diff analysis report
+- **Actionable issue list** for spinalhdl-developer-workflow
+- **Acceptance decision** with clear next steps
 
 #### Step 3: Verify Generated VHDL (cross-check)
 
@@ -193,12 +447,89 @@ python tools/verify_test_parity.py \
     --scalatest test-results/index.html
 ```
 
+**Test Parity Validation (Critical):**
+
+```bash
+# Execute automated parity check
+python tools/scripts/verify_test_parity.py mul
+
+# Expected output:
+# ✓ Test count: CocoTB=16, ScalaTest=16 (MATCH)
+# ✓ Using same JSON vectors: YES
+# ✓ Test results: Both PASS=16, FAIL=0 (MATCH)
+# ✓ Coverage: CocoTB=96%, ScalaTest=97% (EQUIVALENT)
+#
+# VERDICT: PARITY VERIFIED
+```
+
+**Acceptance Decision:**
+
+```markdown
+# ScalaTest Suite Review: <Module>
+
+**Status:** ACCEPTED | REJECTED | NEEDS-WORK
+
+## Test Parity
+- [x] Test count matches CocoTB (16 tests)
+- [x] Using SAME JSON test vectors (verified)
+- [x] Results match CocoTB (all pass/fail identical)
+- [x] Coverage equivalent (96% CocoTB, 97% ScalaTest)
+
+## Quality
+- [x] All tests passing
+- [x] Waveforms generate correctly
+- [x] Performance acceptable
+- [x] Well documented
+
+## Issues Found
+None - full parity achieved
+
+## Decision
+**ACCEPTED** - ScalaTest suite complete and verified
+
+Module <module> is now FULLY VALIDATED:
+✓ CocoTB golden standard established
+✓ SpinalHDL implementation matches original VHDL
+✓ ScalaTest suite matches CocoTB
+
+**Next Step:** Integration review (if all modules complete)
+```
+
+OR if issues found:
+
+```markdown
+**Status:** REJECTED
+
+## Issues Found
+1. **CRITICAL:** Test parity broken
+   - CocoTB: PASS=16, FAIL=0
+   - ScalaTest: PASS=15, FAIL=1
+   - Failing test: `multiply_max_overflow`
+
+2. **MAJOR:** Not using shared test vectors
+   - Found duplicate JSON file in ScalaTest directory
+   - Must use `verification/test-vectors/modules/mul.json`
+
+## Decision
+**REJECTED** - Test parity not verified
+
+**Action Required:**
+1. Delete duplicate test vectors from ScalaTest
+2. Fix TestVectorLoader to use shared JSON files
+3. Debug failing `multiply_max_overflow` test
+4. Re-run comparison until results match CocoTB exactly
+5. Resubmit to reviewer
+
+**Assigned Back To:** spinalhdl-tester-workflow
+**Priority:** HIGH
+```
+
 **Deliverables:**
 - `docs/reviews/<module>-scalatest-review.md`
+- **Test parity verification report** (automated)
 - Coverage comparison
-- Test parity report
-- Issue list for spinalhdl-tester
-- Acceptance status
+- **Actionable issue list** (if rejected)
+- **Acceptance decision** (ACCEPTED/REJECTED)
 
 #### Step 5: Integration Review
 
@@ -450,31 +781,115 @@ python tools/scripts/verify_test_parity.py <module>
 python tools/scripts/check_acceptance.py <module>
 ```
 
-## Success Criteria
+## Success Criteria (Module Acceptance)
 
-- [ ] All modules reviewed and accepted
-- [ ] Zero critical issues
-- [ ] Test parity verified across all modules
-- [ ] Coverage ≥ 95% overall
+A module is **ACCEPTED** only when ALL criteria pass:
+
+**Gate 1: CocoTB Golden Standard (vhdl-tester-workflow)**
+- [ ] **ALL tests pass (FAIL=0)**
+- [ ] **Coverage ≥ 95%**
+- [ ] All microcode instructions tested
+- [ ] Edge cases documented and tested
+- [ ] Test vectors in JSON format
 - [ ] Documentation complete
+
+**Gate 2: SpinalHDL Implementation (spinalhdl-developer-workflow)**
+- [ ] **Generated VHDL passes ALL CocoTB tests (FAIL=0)**
+- [ ] **Cycle-accurate match with original VHDL**
+- [ ] Code review passed
+- [ ] Generated VHDL is readable
+- [ ] Configuration works
+- [ ] Documentation complete
+
+**Gate 3: ScalaTest Suite (spinalhdl-tester-workflow)**
+- [ ] **Test parity verified (results match CocoTB exactly)**
+- [ ] **Using SAME JSON test vectors** (no duplication)
+- [ ] **ALL tests pass (FAIL=0)**
+- [ ] Coverage equivalent to CocoTB
+- [ ] Documentation complete
+
+**Gate 4: Integration (all modules)**
+- [ ] All modules individually accepted
+- [ ] Pipeline integration correct
 - [ ] Integration tests passing
-- [ ] Migration complete
+- [ ] No blocking issues
+
+## Feedback Loop
+
+When reviews fail, provide **actionable feedback**:
+
+```markdown
+# Template: Rejection Feedback
+
+**Module:** <module>
+**Agent:** <agent-workflow>
+**Status:** REJECTED
+**Priority:** HIGH | MEDIUM | LOW
+**Blocking:** YES | NO
+
+## Issues Found
+1. [Issue description with severity]
+   - Root cause: [Analysis]
+   - Impact: [What this breaks]
+
+## Action Required
+1. [Specific action item]
+2. [Specific action item]
+3. [Specific action item]
+
+## Acceptance Criteria
+To be accepted, must:
+- [ ] [Specific criterion]
+- [ ] [Specific criterion]
+
+## Resubmission
+When fixed:
+1. Run: [specific commands to verify fix]
+2. Resubmit deliverables to reviewer
+3. Reviewer will re-execute validation
+
+**Assigned Back To:** <agent-workflow>
+**Due:** [If time-sensitive]
+```
+
+## Project Success Criteria
+
+Project is **COMPLETE** when:
+
+- [ ] **All modules reviewed and ACCEPTED**
+- [ ] **Zero critical issues**
+- [ ] **Test parity verified across ALL modules**
+- [ ] **Coverage ≥ 95% overall**
+- [ ] **Documentation complete**
+- [ ] **Integration tests passing**
+- [ ] **Migration fully validated**
 
 ## Handoff to Users
 
 ### Final Deliverables:
-- Complete SpinalHDL JOP core
-- Full test suite (CocoTB + ScalaTest)
-- Comprehensive documentation
-- Migration report
-- Known issues list
-- Future work recommendations
+- **Complete SpinalHDL JOP core** (all modules accepted)
+- **Full test suite** (CocoTB + ScalaTest, verified parity)
+- **Comprehensive documentation**
+- **Migration report** (all reviews documented)
+- **Known issues list** (if any remain)
+- **Performance benchmarks**
+- **Future work recommendations**
 
-## Notes
+## Reviewer Guidelines
 
-- Be objective and thorough
-- Document all findings clearly
-- Escalate blocking issues immediately
-- Maintain traceability
-- Update status frequently
-- Celebrate milestones!
+**This agent EXECUTES reviews, not just coordinates:**
+
+- ✅ **DO:** Run all validation scripts and tools
+- ✅ **DO:** Generate comparison reports
+- ✅ **DO:** Make accept/reject decisions
+- ✅ **DO:** Provide actionable feedback
+- ✅ **DO:** Route issues back to originating agents
+- ✅ **DO:** Track progress and update dashboards
+
+- ❌ **DON'T:** Just describe what should be reviewed
+- ❌ **DON'T:** Accept incomplete deliverables
+- ❌ **DON'T:** Give vague feedback ("needs improvement")
+- ❌ **DON'T:** Let blocking issues linger
+- ❌ **DON'T:** Skip automated validation checks
+
+**Be objective, thorough, and provide clear next steps.**

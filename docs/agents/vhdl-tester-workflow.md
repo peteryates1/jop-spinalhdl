@@ -39,6 +39,150 @@ docs/architecture/microcode-spec.md (if exists)
 
 ### Process Steps
 
+#### Step 0: Debug & Fix Test Infrastructure
+
+**When to use:** Tests exist but are failing due to infrastructure issues rather than design bugs. This step validates and repairs the test environment before proceeding with test development or execution.
+
+**Common Issues:**
+
+1. **Build/Configuration Problems**
+   - Makefile variable conflicts (CocoTB's `VHDL_SOURCES_*` pattern matching)
+   - Path resolution issues (relative paths, working directory assumptions)
+   - Missing or incorrect simulator flags
+   - Tool version incompatibilities
+
+2. **Timing/Cycle Issues**
+   - Off-by-one errors in cycle counting
+   - Results appearing at unexpected cycles due to tool behavior
+   - Misunderstanding of when signals are captured vs when they're set
+   - Pipelined vs combinational signal timing
+
+3. **Test Vector Errors**
+   - Wrong expected values (e.g., upper vs lower 32 bits in multiplication)
+   - Incorrect cycle timing in multi-cycle operations
+   - Missing initialization requirements for stateful modules
+   - Assumptions about reset behavior in modules without reset signals
+
+4. **Integration Issues**
+   - CocoTB/GHDL specific quirks and limitations
+   - Signal initialization for modules without reset signals
+   - State contamination between sequential tests
+   - VPI interface timing considerations
+
+**Debugging Process:**
+
+```python
+# Step 0.1: Identify the failure mode
+# Run tests and capture full output
+make test_<module> 2>&1 | tee test_output.log
+
+# Step 0.2: Create isolated test case
+# Strip down to minimal reproduction
+@cocotb.test()
+async def test_isolated_case(dut):
+    """Reproduce specific failure in isolation"""
+    clock = Clock(dut.clk, 10, units="ns")
+    cocotb.start_soon(clock.start())
+
+    # Minimal setup
+    dut.ain.value = 0xFFFFFFFF
+    dut.bin.value = 0xFFFFFFFF
+    dut.wr.value = 1
+    await RisingEdge(dut.clk)
+
+    # Check at multiple cycles to find actual timing
+    for cycle in range(15, 20):
+        await RisingEdge(dut.clk)
+        dut._log.info(f"Cycle {cycle}: result = {int(dut.dout.value):#x}")
+
+# Step 0.3: Verify against golden behavior
+# Use Python or other reference to validate expected values
+a = 0xFFFFFFFF
+b = 0xFFFFFFFF
+expected_64bit = a * b
+expected_32bit = expected_64bit & 0xFFFFFFFF
+print(f"Reference calculation: {expected_32bit:#x}")
+
+# Step 0.4: Update test vectors
+# Correct cycle timing and expected values based on actual VHDL behavior
+```
+
+**Resolution Checklist:**
+
+- [ ] Makefile variables don't conflict with tool patterns
+- [ ] All paths resolve correctly from test execution directory
+- [ ] Signal initialization handles modules without reset
+- [ ] Test vectors use correct cycle timing (validate with isolated tests)
+- [ ] Expected values verified against VHDL behavior (not assumptions)
+- [ ] Tests properly isolated (no state leakage between cases)
+- [ ] Clean between tests (run full operation cycles, not partial)
+
+**Example Fixes:**
+
+```makefile
+# WRONG: CocoTB interprets VHDL_SOURCES_DIR as a source list for library "DIR"
+VHDL_SOURCES_DIR = ../../original/vhdl/core
+
+# CORRECT: Use different naming pattern
+ORIG_VHDL_DIR = ../../original/vhdl/core
+```
+
+```python
+# WRONG: Assumes signals initialize to 0
+@cocotb.test()
+async def test_startup(dut):
+    await RisingEdge(dut.clk)
+    assert int(dut.dout.value) == 0  # May be 'U' (uninitialized)
+
+# CORRECT: Initialize via write operation (if no reset signal)
+@cocotb.test()
+async def test_startup(dut):
+    dut.ain.value = 0
+    dut.bin.value = 0
+    dut.wr.value = 1
+    await RisingEdge(dut.clk)
+    dut.wr.value = 0
+    await RisingEdge(dut.clk)
+    assert int(dut.dout.value) == 0  # Now properly initialized
+```
+
+```python
+# WRONG: Checking at cycle 17 based on documentation
+{"cycle": 17, "signals": {"dout": "0x1"}}
+
+# CORRECT: Checking at cycle 18 based on actual VHDL timing
+# (Result appears 18 cycles after wr='1' due to tool behavior)
+{"cycle": 18, "signals": {"dout": "0x1"}}
+```
+
+**Deliverables:**
+- Fixed Makefile and test infrastructure
+- Corrected test vectors matching actual VHDL behavior
+- Documentation of VHDL timing quirks and tool-specific behavior
+- Isolated test cases demonstrating correct behavior
+- Updated test execution procedures if needed
+
+**Tools for Debugging:**
+```bash
+# Check simulator version
+ghdl --version
+
+# Verify CocoTB installation
+cocotb-config --version
+cocotb-config --lib-name-path vpi ghdl
+
+# Test VHDL compilation directly
+ghdl -a --std=08 --ieee=synopsys vhdl/module.vhd
+ghdl -e --std=08 --ieee=synopsys module
+
+# Enable verbose CocoTB logging
+export COCOTB_LOG_LEVEL=DEBUG
+make test_<module>
+```
+
+**When to Move to Step 1:**
+Once all tests execute without infrastructure errors (even if they fail on assertions), and you've validated the test infrastructure is correctly configured, proceed to Step 1 for new module development or continue with test execution for existing modules.
+
 #### Step 1: Module Analysis
 ```python
 # Template: analyze_module.py

@@ -22,6 +22,7 @@ project/project/
 .metals/
 .bloop/
 metals.sbt
+.scala-build/
 
 # IDE
 .idea/
@@ -48,6 +49,7 @@ work-obj*.cf
 core/spinalhdl/generated/*.vhd
 core/spinalhdl/generated/*.v
 core/spinalhdl/simWorkspace/
+core/spinalhdl/tmp/
 
 # Quartus
 *.qpf

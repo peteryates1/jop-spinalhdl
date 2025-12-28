@@ -5,9 +5,11 @@ SIM ?= ghdl
 TOPLEVEL_LANG ?= vhdl
 WAVES ?= 1
 
-# Directories
-VHDL_SOURCES_DIR = ../../original/vhdl/core
-SPINALHDL_VHDL_DIR = ../../core/spinalhdl/generated
+# Directories (avoid VHDL_SOURCES_* prefix as CocoTB treats those as source lists)
+ORIG_VHDL_DIR = ../../original/vhdl/core
+# Local copy for CocoTB testing
+LOCAL_VHDL_DIR = vhdl
+SPINALHDL_GEN_DIR = ../../core/spinalhdl/generated
 TEST_VECTORS_DIR = ../test-vectors
 
 # VHDL source files (will be populated based on module)
@@ -52,10 +54,9 @@ test_all:
 # Test mul.vhd (multiplier)
 test_mul:
 	@echo "Testing mul.vhd (bit-serial multiplier)..."
-	@mkdir -p waveforms
-	$(MAKE) VHDL_SOURCES="$(VHDL_SOURCES_DIR)/mul.vhd" \
-		TOPLEVEL=mul \
-		MODULE=tests.test_mul
+	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	@cp -f $(ORIG_VHDL_DIR)/mul.vhd $(LOCAL_VHDL_DIR)/mul.vhd
+	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/mul.vhd" TOPLEVEL=mul MODULE=tests.test_mul
 
 # Help
 help:

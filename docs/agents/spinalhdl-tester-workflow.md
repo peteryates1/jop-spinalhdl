@@ -1,45 +1,161 @@
 # SpinalHDL Tester Agent Workflow
 
 ## Role
-Create and maintain native SpinalHDL/SpinalSim test suite, porting tests from CocoTB and ensuring equivalence.
+**Implement and maintain** native SpinalHDL/SpinalSim test suite using the **same JSON test vectors** established by vhdl-tester-workflow. This agent **executes** the test porting, **validates** behavioral equivalence, and **debugs** test failures - ensuring SpinalHDL implementation matches the golden standard.
 
 ## Technologies
 - Scala 2.13+
 - ScalaTest
 - SpinalSim (SpinalHDL's simulation framework)
 - Verilator backend
+- Play JSON (for test vector loading)
 
 ## Responsibilities
 
-### 1. Port CocoTB Tests to ScalaTest
-- Translate Python CocoTB tests to Scala ScalaTest
-- Maintain test case equivalence
-- Use SpinalSim for simulation
-- Ensure same coverage as CocoTB suite
+### 1. Implement ScalaTest Suite Using Golden Test Vectors
+- **Port** Python CocoTB tests to Scala ScalaTest
+- **Use** the same JSON test vectors from vhdl-tester-workflow (no duplication)
+- **Maintain** exact test case equivalence
+- **Execute** tests via SpinalSim
+- **Validate** same coverage as CocoTB suite
 
-### 2. Create Native SpinalHDL Tests
-- Write idiomatic Scala tests
-- Leverage SpinalHDL's simulation features
-- Create reusable test utilities
-- Performance benchmarking
+### 2. Create Native SpinalHDL Test Infrastructure
+- **Implement** idiomatic Scala tests
+- **Leverage** SpinalHDL's simulation features (waveforms, assertions)
+- **Build** reusable test utilities and helpers
+- **Execute** performance benchmarking
 
-### 3. Maintain Test Parity
-- Verify same test vectors used
-- Compare results with CocoTB
-- Track coverage equivalence
-- CI/CD integration
+### 3. Validate Test Parity and Debug Failures
+- **Verify** same test vectors used (no duplication)
+- **Compare** results with CocoTB golden standard
+- **Track** coverage equivalence
+- **Debug** test failures (implementation vs test issues)
+- **Integrate** with CI/CD
 
 ## Workflow Template
 
-### Input Artifacts
+### Input Artifacts (from vhdl-tester-workflow)
 ```
-verification/cocotb/tests/test_<module>.py
-verification/cocotb/fixtures/vectors_<module>.py
-core/spinalhdl/src/main/scala/jop/pipeline/<Module>.scala
-docs/verification/modules/<module>-analysis.md
+verification/test-vectors/modules/<module>.json    # Golden test vectors (SHARED with CocoTB)
+verification/cocotb/tests/test_<module>.py         # CocoTB test structure to port
+core/spinalhdl/src/main/scala/jop/pipeline/<Module>.scala  # SpinalHDL implementation to test
+docs/verification/modules/<module>-analysis.md     # Module documentation (if exists)
 ```
 
+**Critical:** Test vectors are **SHARED** between CocoTB and ScalaTest - both use the same JSON files from vhdl-tester-workflow. Do NOT duplicate test vectors.
+
 ### Process Steps
+
+#### Step 0: Debug ScalaTest/SpinalSim Infrastructure
+
+**When to use:** When ScalaTest suite won't compile, tests won't run, or SpinalSim has issues. This step focuses on test infrastructure problems, not behavioral test failures (use Step 5 for test failures).
+
+**Common Issues:**
+
+1. **Build/Dependency Problems**
+   - sbt configuration errors
+   - Missing Verilator or wrong version
+   - ScalaTest or SpinalHDL version conflicts
+   - Play JSON library issues for test vector loading
+
+2. **SpinalSim Configuration Issues**
+   - Verilator compilation failures
+   - Waveform generation not working
+   - Clock domain configuration errors
+   - Workspace directory permissions
+
+3. **Test Vector Loading Problems**
+   - JSON file path resolution issues
+   - Parsing errors (malformed JSON)
+   - Type conversion issues (String to Int, hex parsing)
+   - Missing test vector files
+
+4. **Runtime Issues**
+   - Simulation doesn't start
+   - Tests hang indefinitely
+   - Memory issues with large simulations
+   - Waveform files not generated
+
+**Debugging Process:**
+
+```bash
+# Step 0.1: Verify build environment
+sbt --version  # Should be 1.9+
+verilator --version  # Should be 4.0+
+scala --version  # Should be 2.13+
+
+# Step 0.2: Clean build
+sbt clean
+rm -rf simWorkspace/
+rm -rf target/
+
+# Step 0.3: Test basic compilation
+sbt compile
+sbt test:compile
+
+# Step 0.4: Run single simple test
+sbt "testOnly jop.util.TestVectorLoaderSpec"
+```
+
+**Common Fixes:**
+
+```scala
+// ISSUE: Can't find test vectors
+// WRONG: Relative path from test file
+val source = Source.fromFile("../../test-vectors/modules/mul.json")
+
+// CORRECT: Relative path from project root (where sbt runs)
+val source = Source.fromFile("verification/test-vectors/modules/mul.json")
+```
+
+```scala
+// ISSUE: Verilator compilation fails
+// Add to build.sbt:
+fork := true
+javaOptions += "-Xmx4G"  // Increase memory for large designs
+```
+
+```scala
+// ISSUE: Tests hang
+// Add timeout to SpinalSim config
+val simConfig = SimConfig
+  .withWave
+  .withVerilator
+  .workspacePath("simWorkspace/Module")
+  .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(50 MHz)))
+
+// In test, add watchdog
+dut.clockDomain.forkStimulus(period = 10)
+fork {
+  dut.clockDomain.waitRisingEdge(10000)
+  simFailure("Test timeout after 10000 cycles")
+}
+```
+
+```scala
+// ISSUE: Waveform not generating
+// Ensure wave file path is accessible
+val simConfig = SimConfig
+  .withWave
+  .withConfig(SpinalConfig(
+    defaultClockDomainFrequency = FixedFrequency(50 MHz)
+  ))
+  .workspacePath("simWorkspace/Module")
+
+simConfig.compile(new Module(config)).doSim { dut =>
+  // Test code
+}
+// Waveform will be at: simWorkspace/Module/test.vcd
+```
+
+**Deliverables:**
+- Working ScalaTest infrastructure
+- Test vectors loading successfully
+- SpinalSim compiling and running
+- Waveforms generating (if enabled)
+
+**When to Move to Step 1:**
+Once basic test infrastructure works (tests compile and run, even if they fail assertions), proceed to Step 1 to port actual tests.
 
 #### Step 1: Analyze CocoTB Test
 
@@ -54,9 +170,9 @@ Read and understand the CocoTB test structure:
 - Test porting notes
 - Identified test cases to port
 
-#### Step 2: Load Test Vectors from JSON
+#### Step 2: Load Test Vectors from Golden Standard (JSON)
 
-Test vectors are loaded from shared JSON files (see `docs/test-vectors/test-vector-format.md`).
+**Critical:** These are the **SAME** test vectors used by CocoTB from vhdl-tester-workflow. Load from the shared JSON files - do NOT duplicate or recreate test vectors.
 
 ```scala
 // Template: verification/scalatest/src/test/scala/jop/util/TestVectorLoader.scala
@@ -66,42 +182,117 @@ package jop.util
 import play.api.libs.json._
 import scala.io.Source
 
+case class Signal(name: String, value: String)
+
+case class InputCycle(
+  cycle: Int,
+  signals: Map[String, String]
+)
+
+case class ExpectedOutput(
+  cycle: Int,
+  signals: Map[String, String]
+)
+
 case class TestCase(
   name: String,
-  testType: String,
-  description: Option[String],
+  @JsonProperty("type") testType: String,
+  description: String,
   tags: Seq[String],
-  initialState: Map[String, String],
-  expectedState: Map[String, String],
-  cycles: Int
+  inputs: Seq[InputCycle],
+  @JsonProperty("expected_outputs") expectedOutputs: Seq[ExpectedOutput],
+  cycles: Int,
+  enabled: Option[Boolean] = Some(true)
+)
+
+case class TestVectorFile(
+  module: String,
+  version: String,
+  description: String,
+  @JsonProperty("test_cases") testCases: Seq[TestCase]
 )
 
 object TestVectorLoader {
+  implicit val inputCycleReads: Reads[InputCycle] = Json.reads[InputCycle]
+  implicit val expectedOutputReads: Reads[ExpectedOutput] = Json.reads[ExpectedOutput]
   implicit val testCaseReads: Reads[TestCase] = Json.reads[TestCase]
+  implicit val testVectorFileReads: Reads[TestVectorFile] = Json.reads[TestVectorFile]
 
+  /**
+   * Load test vectors from SHARED JSON file
+   * Path is relative to project root where sbt runs
+   */
   def load(module: String): Seq[TestCase] = {
-    val source = Source.fromFile(s"verification/test-vectors/modules/$module.json")
+    val vectorFile = s"verification/test-vectors/modules/$module.json"
+    val source = Source.fromFile(vectorFile)
     try {
       val json = Json.parse(source.mkString)
-      (json \ "test_cases").as[Seq[TestCase]]
+      val file = json.as[TestVectorFile]
+
+      // Filter to enabled tests only
+      file.testCases.filter(_.enabled.getOrElse(true))
+    } catch {
+      case e: Exception =>
+        throw new RuntimeException(s"Failed to load test vectors from $vectorFile", e)
     } finally {
       source.close()
     }
   }
 
-  def parseValue(valueStr: String): Option[Int] = {
-    if (valueStr.startsWith("0x")) {
-      Some(Integer.parseInt(valueStr.substring(2), 16))
-    } else {
-      Some(valueStr.toInt)
+  /**
+   * Parse value string (0x prefix for hex, otherwise decimal)
+   * Returns None for don't-care values
+   */
+  def parseValue(valueStr: String): Option[BigInt] = {
+    val trimmed = valueStr.trim
+
+    // Don't-care value
+    if (trimmed.startsWith("0xX") || trimmed.startsWith("0XX")) {
+      None
+    }
+    // Hexadecimal
+    else if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
+      Some(BigInt(trimmed.substring(2), 16))
+    }
+    // Binary
+    else if (trimmed.startsWith("0b") || trimmed.startsWith("0B")) {
+      Some(BigInt(trimmed.substring(2), 2))
+    }
+    // Decimal
+    else {
+      Some(BigInt(trimmed))
     }
   }
 }
 ```
 
+**Validation:**
+
+```scala
+// Verify we're using the SAME vectors as CocoTB
+test("verify using shared test vectors") {
+  val vectors = TestVectorLoader.load("mul")
+
+  // Should load from verification/test-vectors/modules/mul.json
+  // This is the SAME file CocoTB uses
+  assert(vectors.nonEmpty, "Test vectors should load")
+
+  // Verify against known test from vhdl-tester-workflow
+  val maxOverflow = vectors.find(_.name == "multiply_max_overflow")
+  assert(maxOverflow.isDefined, "Should have multiply_max_overflow test")
+
+  // Verify structure matches CocoTB expectations
+  maxOverflow.foreach { tc =>
+    assert(tc.expectedOutputs.nonEmpty)
+    assert(tc.cycles > 0)
+  }
+}
+```
+
 **Deliverables:**
-- Test vector loader utility
-- No duplicate test vectors (shared with CocoTB)
+- Test vector loader utility loading from **SHARED JSON files**
+- Validation that vectors match CocoTB
+- **NO duplicate test vectors** (both use same files)
 
 #### Step 3: Create Test Utilities
 
@@ -320,45 +511,170 @@ class <Module>Spec extends AnyFunSuite {
 - Waveform output configuration
 - Test documentation
 
-#### Step 5: Verify Test Parity
+#### Step 5: Validate Test Parity and Debug Failures
+
+**This is critical validation.** ScalaTest must produce **identical** results to CocoTB since both use the same test vectors and test the same implementation.
+
+**Process:**
+
+```bash
+# Step 5.1: Run CocoTB tests (golden standard)
+cd verification/cocotb
+make test_mul 2>&1 | tee cocotb_results.log
+
+# Note the results:
+# ** TESTS=5 PASS=5 FAIL=0 SKIP=0 **
+
+# Step 5.2: Run ScalaTest tests
+cd ../../verification/scalatest
+sbt "testOnly jop.pipeline.MulSpec" 2>&1 | tee scalatest_results.log
+
+# Step 5.3: Compare results
+# Both should have same number of passing/failing tests
+```
+
+**Test Parity Validation:**
 
 ```scala
-// Template: verification/scalatest/src/test/scala/jop/util/TestParity.scala
+// Template: verification/scalatest/src/test/scala/jop/util/TestParitySpec.scala
 
 package jop.util
 
 import org.scalatest.funsuite.AnyFunSuite
-import jop.fixtures._
 
 /**
- * Verify that Scala test vectors match CocoTB test vectors
+ * Verify that ScalaTest uses SAME test vectors as CocoTB
+ * and produces SAME results
  */
 class TestParitySpec extends AnyFunSuite {
 
-  test("verify vector count matches CocoTB") {
-    // Read CocoTB vector counts from JSON export
-    val cocotbCounts = Map(
-      "reset" -> 5,
-      "microcode" -> 120,
-      "edge_cases" -> 15
-    )
+  test("verify using shared JSON test vectors") {
+    // Load test vectors (same file CocoTB uses)
+    val mulVectors = TestVectorLoader.load("mul")
 
-    assert(<Module>Vectors.resetVectors.size == cocotbCounts("reset"))
-    assert(<Module>Vectors.microcodeVectors.size == cocotbCounts("microcode"))
+    // Verify we loaded vectors successfully
+    assert(mulVectors.nonEmpty, "Should load test vectors from shared JSON")
+
+    // Verify specific test cases exist (same as CocoTB)
+    val testNames = mulVectors.map(_.name).toSet
+    assert(testNames.contains("multiply_5_times_3"))
+    assert(testNames.contains("multiply_max_overflow"))
+    assert(testNames.contains("multiply_alternating_bits"))
+
+    println(s"Loaded ${mulVectors.size} test vectors from shared JSON")
   }
 
-  test("verify test coverage matches CocoTB") {
-    // Load CocoTB coverage report
-    // Compare with ScalaTest coverage
-    // Assert equivalence
+  test("verify test count matches CocoTB") {
+    val mulVectors = TestVectorLoader.load("mul")
+
+    // Should match CocoTB test count
+    // CocoTB has 16 test vectors for mul
+    assert(mulVectors.size == 16,
+      s"Expected 16 test vectors (matching CocoTB), got ${mulVectors.size}")
+  }
+
+  test("verify no duplicate test vectors") {
+    // Ensure we're not creating our own vectors
+    // Should ONLY load from verification/test-vectors/
+    import java.io.File
+
+    val scalaTestDir = new File("verification/scalatest/src/test/scala")
+    val jsonFiles = findFiles(scalaTestDir, ".json")
+
+    assert(jsonFiles.isEmpty,
+      "ScalaTest should NOT have its own JSON test vectors - use shared ones!")
+  }
+
+  private def findFiles(dir: File, extension: String): Seq[File] = {
+    if (!dir.exists()) Seq.empty
+    else {
+      val files = dir.listFiles().toSeq
+      val matching = files.filter(_.getName.endsWith(extension))
+      val fromSubdirs = files.filter(_.isDirectory).flatMap(findFiles(_, extension))
+      matching ++ fromSubdirs
+    }
+  }
+}
+```
+
+**When Tests Fail - Debugging Decision Tree:**
+
+```
+ScalaTest fails → What type of failure?
+                ↓
+                ├─ Infrastructure failure (won't compile, won't run)
+                │  → Use Step 0 (Debug Infrastructure)
+                │
+                ├─ Test vector loading failure
+                │  → Check JSON file exists and is valid
+                │  → Use Step 0 or check with vhdl-tester-workflow
+                │
+                ├─ Behavioral failure (wrong result at specific cycle)
+                │  → Compare with CocoTB result for same test
+                │  │
+                │  ├─ CocoTB PASSES, ScalaTest FAILS
+                │  │  → SpinalSim issue or test porting bug
+                │  │  → Debug SpinalHDL test implementation (this workflow)
+                │  │
+                │  ├─ CocoTB FAILS, ScalaTest FAILS (same way)
+                │  │  → SpinalHDL implementation bug
+                │  │  → Send to spinalhdl-developer-workflow
+                │  │
+                │  └─ CocoTB FAILS, ScalaTest PASSES
+                │     → Test vector issue or CocoTB setup problem
+                │     → Check with vhdl-tester-workflow
+                │
+                └─ All tests fail
+                   → Likely SpinalHDL implementation is broken
+                   → Send to spinalhdl-developer-workflow
+```
+
+**Debugging Behavioral Differences:**
+
+```scala
+test("debug specific failure - isolated") {
+  // When a test fails, isolate it
+  val simConfig = SimConfig.withWave.withVerilator
+
+  simConfig.compile(new Mul(MulConfig())).doSim { dut =>
+    dut.clockDomain.forkStimulus(period = 10)
+
+    // Reproduce exact test case that failed
+    dut.io.ain #= 0xFFFFFFFF
+    dut.io.bin #= 0xFFFFFFFF
+    dut.io.wr #= true
+    dut.clockDomain.waitRisingEdge(1)
+
+    dut.io.wr #= false
+
+    // Check cycle-by-cycle and compare with CocoTB log
+    for (cycle <- 2 to 20) {
+      dut.clockDomain.waitRisingEdge(1)
+      val dout = dut.io.dout.toBigInt
+      println(f"Cycle $cycle: dout = 0x${dout.toString(16)}")
+
+      // At cycle 18, CocoTB expects 0x1
+      if (cycle == 18) {
+        val expected = BigInt(0x1)
+        if (dout != expected) {
+          println(s"MISMATCH at cycle $cycle!")
+          println(s"  CocoTB (expected): 0x${expected.toString(16)}")
+          println(s"  ScalaTest (actual): 0x${dout.toString(16)}")
+          println("Check waveform: simWorkspace/Mul/test.vcd")
+          fail("Behavioral difference - check SpinalHDL implementation")
+        }
+      }
+    }
   }
 }
 ```
 
 **Deliverables:**
-- Parity verification tests
-- Coverage comparison reports
-- Documentation of differences (if any)
+- Parity verification tests passing
+- Test count matches CocoTB exactly
+- Results match CocoTB exactly (same pass/fail)
+- Documentation of any differences (with justification)
+- Debug logs for any failures
 
 #### Step 6: Performance Benchmarking
 
@@ -450,29 +766,74 @@ Test / parallelExecution := false
 Test / testOptions += Tests.Argument("-oD")  // Show durations
 ```
 
-## Success Criteria
+## Success Criteria (Module Completion)
+
+For each module, ALL criteria must be met:
 
 - [ ] All CocoTB tests ported to ScalaTest
-- [ ] Test vector parity verified
+- [ ] **Using SAME JSON test vectors** (no duplication)
+- [ ] **Test count matches CocoTB exactly**
+- [ ] **All tests passing (FAIL=0)**
+- [ ] **Results match CocoTB exactly** (same pass/fail for each test)
 - [ ] Coverage equivalent to CocoTB suite
-- [ ] All tests passing
 - [ ] Waveform generation working
 - [ ] Performance benchmarks established
+- [ ] Test parity validation passing
 - [ ] CI/CD integration complete
+
+## Integration with vhdl-tester-workflow
+
+**Critical:** This agent **depends on** vhdl-tester-workflow outputs and **validates** spinalhdl-developer-workflow outputs:
+
+```
+vhdl-tester-workflow → Creates test vectors + CocoTB tests
+                    ↓
+                (provides)
+                    ↓
+        JSON test vectors (SHARED)
+                    ↓
+                (used by)
+                    ↓
+    ┌───────────────┴───────────────┐
+    ↓                               ↓
+CocoTB (tests VHDL)          ScalaTest (tests SpinalHDL)
+    ↓                               ↓
+Golden standard             Must match golden standard
+```
+
+**Workflow:**
+1. vhdl-tester-workflow creates JSON test vectors
+2. vhdl-tester-workflow validates vectors against original VHDL (golden standard)
+3. spinalhdl-developer implements SpinalHDL port
+4. spinalhdl-tester (THIS) creates ScalaTest using SAME vectors
+5. ScalaTest validates SpinalHDL matches golden standard
+6. **Both CocoTB and ScalaTest must produce identical results**
 
 ## Handoff to Next Agent
 
-### To reviewer:
-- Complete test suite
+### From vhdl-tester-workflow (inputs):
+- **Test vectors** (`verification/test-vectors/modules/<module>.json`) - SHARED
+- CocoTB test structure (for porting reference)
+- Golden standard test results
+- Expected behavior documentation
+
+### From spinalhdl-developer (inputs):
+- SpinalHDL implementation to test
+- Generated VHDL (for reference)
+- Module documentation
+
+### To spinalhdl-developer (outputs - when tests fail):
+- **Test failures** indicating SpinalHDL bugs
+- Behavioral differences from golden standard
+- Cycle-by-cycle comparison logs
+- Waveforms showing differences
+
+### To reviewer (outputs):
+- Complete ScalaTest suite
+- **Test parity verification** (matching CocoTB)
 - Coverage reports
-- Parity verification results
 - Performance benchmarks
 - Test documentation
-
-### To spinalhdl-developer:
-- Test failures or bugs found
-- Performance issues
-- Suggested improvements
 
 ## Test Execution Commands
 
