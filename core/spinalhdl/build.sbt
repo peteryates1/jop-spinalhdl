@@ -6,9 +6,9 @@ scalaVersion := "2.13.12"
 
 // SpinalHDL dependencies
 libraryDependencies ++= Seq(
-  "com.github.spinalhdl" %% "spinalhdl-core" % "1.10.1",
-  "com.github.spinalhdl" %% "spinalhdl-lib" % "1.10.1",
-  compilerPlugin("com.github.spinalhdl" %% "spinalhdl-idsl-plugin" % "1.10.1")
+  "com.github.spinalhdl" %% "spinalhdl-core" % "1.12.2",
+  "com.github.spinalhdl" %% "spinalhdl-lib" % "1.12.2",
+  compilerPlugin("com.github.spinalhdl" %% "spinalhdl-idsl-plugin" % "1.12.2")
 )
 
 // Testing dependencies
