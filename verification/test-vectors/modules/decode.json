@@ -1,0 +1,807 @@
+{
+  "module": "decode",
+  "version": "1.0.0",
+  "description": "Test vectors for instruction decoder (decode.vhd)",
+  "metadata": {
+    "author": "vhdl-tester",
+    "created": "2025-12-28T00:00:00Z",
+    "tags": ["control", "decode", "pipeline"],
+    "notes": [
+      "Decode stage converts 10-bit microcode instructions into control signals",
+      "Mixed timing: some outputs combinational (jbr, sel_rda, sel_wra, sel_smux), others registered (br, jmp, ALU control)",
+      "40+ output signals organized into functional groups",
+      "Instruction format: [9:0] where bits [9:6] determine instruction class",
+      "Branch/jump signals have 1 cycle latency",
+      "Stack control signals are combinational (0 cycle latency)"
+    ]
+  },
+  "test_cases": [
+    {
+      "name": "reset_clears_all",
+      "type": "reset",
+      "description": "Verify all registered outputs are cleared after reset",
+      "tags": ["reset", "basic"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x1", "instr": "0x000", "zf": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"br": "0x0", "jmp": "0x0", "sel_sub": "0x0", "sel_amux": "0x0", "ena_a": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "pop_instruction",
+      "type": "stack",
+      "description": "POP instruction (0x000) - decrements SP, pass-through logic unit",
+      "tags": ["stack", "pop", "basic"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x000", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x1", "sel_rda": "0x6", "wr_ena": "0x0", "jbr": "0x0"}},
+        {"cycle": 1, "signals": {"sel_log": "0x0", "sel_lmux": "0x0", "ena_a": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "and_instruction",
+      "type": "alu",
+      "description": "AND instruction (0x001) - logic operation with sel_log=01",
+      "tags": ["alu", "logic", "and"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x001", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x1"}},
+        {"cycle": 1, "signals": {"sel_log": "0x1", "sel_lmux": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "or_instruction",
+      "type": "alu",
+      "description": "OR instruction (0x002) - logic operation with sel_log=10",
+      "tags": ["alu", "logic", "or"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x002", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x1"}},
+        {"cycle": 1, "signals": {"sel_log": "0x2", "sel_lmux": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "xor_instruction",
+      "type": "alu",
+      "description": "XOR instruction (0x003) - logic operation with sel_log=11",
+      "tags": ["alu", "logic", "xor"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x003", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x1"}},
+        {"cycle": 1, "signals": {"sel_log": "0x3", "sel_lmux": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "add_instruction",
+      "type": "alu",
+      "description": "ADD instruction (0x004) - arithmetic add with sel_sub=0, sel_amux=0",
+      "tags": ["alu", "arithmetic", "add"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x004", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x1"}},
+        {"cycle": 1, "signals": {"sel_sub": "0x0", "sel_amux": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "sub_instruction",
+      "type": "alu",
+      "description": "SUB instruction (0x005) - arithmetic sub with sel_sub=1, sel_amux=0",
+      "tags": ["alu", "arithmetic", "sub"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x005", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x1"}},
+        {"cycle": 1, "signals": {"sel_sub": "0x1", "sel_amux": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "st0_instruction",
+      "type": "store",
+      "description": "ST0 instruction (0x010) - store to local variable 0",
+      "tags": ["store", "local", "basic"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x010", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_wra": "0x0", "wr_ena": "0x1", "sel_smux": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "st1_instruction",
+      "type": "store",
+      "description": "ST1 instruction (0x011) - store to local variable 1",
+      "tags": ["store", "local"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x011", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_wra": "0x1", "wr_ena": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "st2_instruction",
+      "type": "store",
+      "description": "ST2 instruction (0x012) - store to local variable 2",
+      "tags": ["store", "local"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x012", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_wra": "0x2", "wr_ena": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "st3_instruction",
+      "type": "store",
+      "description": "ST3 instruction (0x013) - store to local variable 3",
+      "tags": ["store", "local"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x013", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_wra": "0x3", "wr_ena": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "st_instruction",
+      "type": "store",
+      "description": "ST instruction (0x014) - store to local variable 4",
+      "tags": ["store", "local"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x014", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_wra": "0x4", "wr_ena": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stmi_instruction",
+      "type": "store",
+      "description": "STMI instruction (0x015) - store to indirect address",
+      "tags": ["store", "indirect"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x015", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_wra": "0x5", "wr_ena": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stvp_instruction",
+      "type": "register",
+      "description": "STVP instruction (0x018) - store to VP register",
+      "tags": ["register", "vp"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x018", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"ena_vp": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stjpc_instruction",
+      "type": "register",
+      "description": "STJPC instruction (0x019) - store to JPC register",
+      "tags": ["register", "jpc"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x019", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"ena_jpc": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "star_instruction",
+      "type": "register",
+      "description": "STAR instruction (0x01A) - store to AR register",
+      "tags": ["register", "ar"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x01A", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"ena_ar": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stsp_instruction",
+      "type": "register",
+      "description": "STSP instruction (0x01B) - store to SP register",
+      "tags": ["register", "sp"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x01B", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x3"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ushr_instruction",
+      "type": "shift",
+      "description": "USHR instruction (0x01C) - unsigned shift right",
+      "tags": ["shift", "ushr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x01C", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"sel_lmux": "0x1", "sel_shf": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "shl_instruction",
+      "type": "shift",
+      "description": "SHL instruction (0x01D) - shift left",
+      "tags": ["shift", "shl"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x01D", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"sel_lmux": "0x1", "sel_shf": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "shr_instruction",
+      "type": "shift",
+      "description": "SHR instruction (0x01E) - arithmetic shift right",
+      "tags": ["shift", "shr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x01E", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"sel_lmux": "0x1", "sel_shf": "0x2"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stm_instruction",
+      "type": "store",
+      "description": "STM instruction (0x020) - store to memory address 0",
+      "tags": ["store", "memory"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x020", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_wra": "0x7", "wr_ena": "0x1", "dir": "0x00"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stmul_instruction",
+      "type": "mmu",
+      "description": "STMUL instruction (0x040) - start multiplier",
+      "tags": ["mmu", "mul"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x040", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mul_wr": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stmwa_instruction",
+      "type": "mmu",
+      "description": "STMWA instruction (0x041) - store memory write address",
+      "tags": ["mmu", "memory"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x041", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_addr_wr": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stmra_instruction",
+      "type": "mmu",
+      "description": "STMRA instruction (0x042) - start memory read",
+      "tags": ["mmu", "memory"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x042", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_rd": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stmwd_instruction",
+      "type": "mmu",
+      "description": "STMWD instruction (0x043) - start memory write",
+      "tags": ["mmu", "memory"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x043", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_wr": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stald_instruction",
+      "type": "mmu",
+      "description": "STALD instruction (0x044) - array load",
+      "tags": ["mmu", "array"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x044", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_iaload": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stast_instruction",
+      "type": "mmu",
+      "description": "STAST instruction (0x045) - array store",
+      "tags": ["mmu", "array"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x045", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_iastore": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stgf_instruction",
+      "type": "mmu",
+      "description": "STGF instruction (0x046) - getfield",
+      "tags": ["mmu", "object"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x046", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_getfield": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stpf_instruction",
+      "type": "mmu",
+      "description": "STPF instruction (0x047) - putfield",
+      "tags": ["mmu", "object"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x047", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_putfield": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stcp_instruction",
+      "type": "mmu",
+      "description": "STCP instruction (0x048) - copy operation",
+      "tags": ["mmu", "copy"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x048", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_copy": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stbcr_instruction",
+      "type": "mmu",
+      "description": "STBCR instruction (0x049) - bytecode read",
+      "tags": ["mmu", "bytecode"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x049", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_bc_rd": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ldm_instruction",
+      "type": "load",
+      "description": "LDM instruction (0x0A0) - load from memory address 0",
+      "tags": ["load", "memory"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0A0", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_rda": "0x7", "sel_smux": "0x2", "wr_ena": "0x1"}},
+        {"cycle": 1, "signals": {"sel_lmux": "0x2"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ldi_instruction",
+      "type": "load",
+      "description": "LDI instruction (0x0C0) - load immediate constant 0",
+      "tags": ["load", "immediate"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0C0", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_rda": "0x7", "sel_smux": "0x2", "dir": "0x20"}},
+        {"cycle": 1, "signals": {"sel_lmux": "0x2"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ldmrd_instruction",
+      "type": "load",
+      "description": "LDMRD instruction (0x0E0) - load from MMU result",
+      "tags": ["load", "mmu"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0E0", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"sel_lmux": "0x4"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ldmul_instruction",
+      "type": "load",
+      "description": "LDMUL instruction (0x0E1) - load multiplier result",
+      "tags": ["load", "mul"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0E1", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"sel_lmux": "0x4"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ld0_instruction",
+      "type": "load",
+      "description": "LD0 instruction (0x0E8) - load local variable 0",
+      "tags": ["load", "local"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0E8", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_rda": "0x0", "sel_smux": "0x2", "wr_ena": "0x1"}},
+        {"cycle": 1, "signals": {"sel_lmux": "0x2"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ld1_instruction",
+      "type": "load",
+      "description": "LD1 instruction (0x0E9) - load local variable 1",
+      "tags": ["load", "local"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0E9", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_rda": "0x1", "sel_smux": "0x2", "wr_ena": "0x1"}},
+        {"cycle": 1, "signals": {"sel_lmux": "0x2"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ld2_instruction",
+      "type": "load",
+      "description": "LD2 instruction (0x0EA) - load local variable 2",
+      "tags": ["load", "local"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0EA", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_rda": "0x2", "sel_smux": "0x2", "wr_ena": "0x1"}},
+        {"cycle": 1, "signals": {"sel_lmux": "0x2"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ld3_instruction",
+      "type": "load",
+      "description": "LD3 instruction (0x0EB) - load local variable 3",
+      "tags": ["load", "local"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0EB", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_rda": "0x3", "sel_smux": "0x2", "wr_ena": "0x1"}},
+        {"cycle": 1, "signals": {"sel_lmux": "0x2"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ldsp_instruction",
+      "type": "load",
+      "description": "LDSP instruction (0x0F0) - load SP register",
+      "tags": ["load", "register"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0F0", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"sel_lmux": "0x5", "sel_rmux": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ldvp_instruction",
+      "type": "load",
+      "description": "LDVP instruction (0x0F1) - load VP register",
+      "tags": ["load", "register"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0F1", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"sel_lmux": "0x5", "sel_rmux": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ldjpc_instruction",
+      "type": "load",
+      "description": "LDJPC instruction (0x0F2) - load JPC register",
+      "tags": ["load", "register"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0F2", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"sel_lmux": "0x5", "sel_rmux": "0x2"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ld_opd_8u_instruction",
+      "type": "load",
+      "description": "LD_OPD_8U instruction (0x0F4) - load 8-bit unsigned operand",
+      "tags": ["load", "operand"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0F4", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"sel_lmux": "0x3", "sel_imux": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "dup_instruction",
+      "type": "stack",
+      "description": "DUP instruction (0x0F8) - duplicate top of stack",
+      "tags": ["stack", "dup"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x0F8", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x2", "wr_ena": "0x1"}},
+        {"cycle": 1, "signals": {"ena_a": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "nop_instruction",
+      "type": "control",
+      "description": "NOP instruction (0x100) - no operation",
+      "tags": ["control", "nop"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x100", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x0"}},
+        {"cycle": 1, "signals": {"ena_a": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "wait_instruction",
+      "type": "control",
+      "description": "WAIT instruction (0x101) - wait for memory",
+      "tags": ["control", "wait"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x101", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x0"}},
+        {"cycle": 1, "signals": {"ena_a": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "jbr_instruction",
+      "type": "branch",
+      "description": "JBR instruction (0x102) - bytecode branch",
+      "tags": ["branch", "jbr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x102", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"jbr": "0x1"}},
+        {"cycle": 1, "signals": {"ena_a": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stgs_instruction",
+      "type": "mmu",
+      "description": "STGS instruction (0x110) - getstatic",
+      "tags": ["mmu", "static"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x110", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_getstatic": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "cinval_instruction",
+      "type": "mmu",
+      "description": "CINVAL instruction (0x111) - cache invalidate",
+      "tags": ["mmu", "cache"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x111", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_cinval": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "bz_taken",
+      "type": "branch",
+      "description": "BZ instruction (0x180) taken when zf=1",
+      "tags": ["branch", "bz", "conditional"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x180", "zf": "0x1", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x1"}},
+        {"cycle": 1, "signals": {"br": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "bz_not_taken",
+      "type": "branch",
+      "description": "BZ instruction (0x180) not taken when zf=0",
+      "tags": ["branch", "bz", "conditional"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x180", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x1"}},
+        {"cycle": 1, "signals": {"br": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "bnz_taken",
+      "type": "branch",
+      "description": "BNZ instruction (0x1C0) taken when zf=0",
+      "tags": ["branch", "bnz", "conditional"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x1C0", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x1"}},
+        {"cycle": 1, "signals": {"br": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "bnz_not_taken",
+      "type": "branch",
+      "description": "BNZ instruction (0x1C0) not taken when zf=1",
+      "tags": ["branch", "bnz", "conditional"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x1C0", "zf": "0x1", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"sel_smux": "0x1"}},
+        {"cycle": 1, "signals": {"br": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "jmp_instruction",
+      "type": "branch",
+      "description": "JMP instruction (0x200) - unconditional jump",
+      "tags": ["branch", "jmp"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x200", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"jmp": "0x1", "ena_a": "0x0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "jmp_with_offset",
+      "type": "branch",
+      "description": "JMP instruction with offset (0x205) - jump +5",
+      "tags": ["branch", "jmp"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x205", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"jmp": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "bcopd_passthrough",
+      "type": "mmu",
+      "description": "Verify bcopd is passed through to mem_in.bcopd",
+      "tags": ["mmu", "bcopd"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x000", "zf": "0x0", "bcopd": "0xABCD"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"mem_in_bcopd": "0xABCD"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "mmu_instr_output",
+      "type": "mmu",
+      "description": "Verify mmu_instr output equals lower 4 bits of instruction",
+      "tags": ["mmu", "mmu_instr"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x04A", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"mmu_instr": "0xA"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stpfr_instruction",
+      "type": "mmu",
+      "description": "STPFR instruction (0x04F) - putfield reference",
+      "tags": ["mmu", "object", "reference"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x04F", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_putfield": "0x1", "mem_in_putref": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "stps_instruction",
+      "type": "mmu",
+      "description": "STPS instruction (0x04B) - putstatic",
+      "tags": ["mmu", "static"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "instr": "0x04B", "zf": "0x0", "bcopd": "0x0000"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"mem_in_putstatic": "0x1", "wr_dly": "0x1"}}
+      ],
+      "cycles": 2
+    }
+  ]
+}

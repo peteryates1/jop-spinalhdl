@@ -36,7 +36,7 @@ endif
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Phony targets
-.PHONY: clean test_all test_mul test_shift test_fetch help
+.PHONY: clean test_all test_mul test_shift test_fetch test_decode help
 
 # Clean build artifacts
 clean::
@@ -52,6 +52,7 @@ test_all:
 	$(MAKE) test_mul
 	$(MAKE) test_shift
 	$(MAKE) test_fetch
+	$(MAKE) test_decode
 
 # Test mul.vhd (multiplier)
 test_mul:
@@ -74,6 +75,14 @@ test_fetch:
 	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
 	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/fetch_tb.vhd" TOPLEVEL=fetch_tb MODULE=tests.test_fetch
 
+# Test decode.vhd (microcode instruction decoder)
+# Uses decode_tb.vhd wrapper which includes embedded configuration constants
+# and exposes mem_in record fields as individual ports
+test_decode:
+	@echo "Testing decode.vhd (microcode instruction decoder)..."
+	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/decode_tb.vhd" TOPLEVEL=decode_tb MODULE=tests.test_decode
+
 # Help
 help:
 	@echo "JOP CocoTB Test Makefile"
@@ -84,6 +93,7 @@ help:
 	@echo "  make test_mul        - Test mul.vhd (bit-serial multiplier)"
 	@echo "  make test_shift      - Test shift.vhd (barrel shifter)"
 	@echo "  make test_fetch      - Test fetch.vhd (microcode ROM fetch stage)"
+	@echo "  make test_decode     - Test decode.vhd (microcode instruction decoder)"
 	@echo "  make clean           - Clean build artifacts"
 	@echo ""
 	@echo "Variables:"
