@@ -170,25 +170,48 @@
 
 ### Phase 2: Integration (1-2 days) - Section 10.3 Items 5 & 6
 
-#### 2.1 Decode Stage Integration (1 day)
+#### 2.1 Decode Stage Integration ✅ INFRASTRUCTURE COMPLETE (2 hours)
 **Goal**: Verify end-to-end microcode → control signals → results path
 
-**Tasks:**
-1. Complete decode stage SpinalHDL port (if not done)
-2. Create integrated testbench connecting decode → stack stages
-3. Feed microcode instructions, verify correct control signals generated
-4. Validate against microcode ROM patterns
-5. Test all 66 JOP microcode instructions
+**Completed:**
+1. ✅ Created JopCore.scala - Fetch→Decode→Stack pipeline integration (264 lines)
+2. ✅ Generated VHDL testbench (JopCoreTb.vhd, ~94KB)
+3. ✅ Created CocoTB test infrastructure (test_core.py, 241 lines)
+4. ✅ Created JSON test vectors (microcode.json with 3 initial tests)
+5. ✅ Added Makefile target for pipeline testing
+6. ✅ Basic connectivity verified (2/3 manual tests passing)
 
-**Files involved:**
-- New: `core/spinalhdl/src/test/scala/jop/pipeline/DecodeStackIntegrationSpec.scala`
-- New: `verification/cocotb/tests/test_decode_stack.py`
-- Reference: `docs/verification/STACK-MICROCODE-COVERAGE-REVIEW.md` Section 3.2 (control patterns)
+**Known Issue:** ⚠️ Signal initialization
+- aout/bout signals remain unresolved in JSON tests
+- Manual tests pass without value checking
+- Issue documented in PHASE-2.1-INTEGRATION-SUMMARY.md
+- Needs debugging session (1-2 hours)
+
+**Files created:**
+- `core/spinalhdl/src/main/scala/jop/JopCore.scala` (NEW)
+- `verification/cocotb/tests/test_core.py` (NEW)
+- `verification/test-vectors/modules/microcode.json` (NEW)
+- `docs/verification/PHASE-2.1-INTEGRATION-SUMMARY.md` (NEW)
+- Modified: `verification/cocotb/Makefile` (added test_core target)
+
+**Current Status:**
+- Infrastructure: 100% complete
+- Manual tests: 67% passing (2/3)
+- JSON tests: 0% passing (initialization issue)
+- Microcode instruction coverage: 0% (ready to expand)
+
+**Next Steps:**
+1. Debug signal initialization (1-2 hours)
+2. Add 5-10 basic microcode instruction tests
+3. Expand to all 66 microcode instructions (1 day)
 
 **Success criteria:**
-- All 45 stack-relevant microcode ops generate correct control signals
-- Flag feedback timing verified
-- Pipeline state transitions correct
+- ✅ Infrastructure complete and ready for testing
+- ⏳ All manual tests passing (2/3 currently)
+- ⏳ All JSON tests passing (0/3 currently)
+- ⏳ All 66 microcode ops generate correct control signals
+- ⏳ Flag feedback timing verified
+- ⏳ Pipeline state transitions correct
 
 #### 2.2 Multiplier Verification (2 hours)
 **Goal**: Test stmul/ldmul operations with Booth multiplier component

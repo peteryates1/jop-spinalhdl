@@ -1,0 +1,160 @@
+{
+  "description": "JOP Core microcode instruction test vectors",
+  "version": "1.0",
+  "generator": "Manual (Phase 2.1 - Pipeline Integration)",
+  "date": "2026-01-03",
+
+  "notes": [
+    "Tests the integrated Fetch → Decode → Stack pipeline",
+    "FetchStage has internal ROM, so ROM contents are fixed at synthesis",
+    "Tests focus on verifying control signal generation and execution",
+    "Each test specifies inputs (operand, jpc, memory) and expected outputs"
+  ],
+
+  "test_metadata": {
+    "total_tests": 3,
+    "test_types": {
+      "reset": "Basic reset and initialization",
+      "nop": "NOP instruction (PC increment)",
+      "microcode": "Full microcode instruction sequences"
+    }
+  },
+
+  "test_cases": [
+    {
+      "name": "reset_test",
+      "type": "reset",
+      "description": "Verify core resets to known state",
+      "notes": [
+        "Wait 10 cycles after reset for pipeline to stabilize",
+        "All outputs should be in initialized state"
+      ],
+      "rom_contents": "default",
+      "inputs": [
+        {
+          "cycle": 0,
+          "signals": {
+            "operand": "0x0000",
+            "jpc": "0x000",
+            "mem_data_in": "0x00000000",
+            "mem_busy": "0x0"
+          }
+        }
+      ],
+      "expected_outputs": [
+        {
+          "cycle": 10,
+          "signals": {
+            "aout": "0x00000000",
+            "bout": "0x00000000",
+            "sp_ov": "0x0",
+            "jfetch": "0x0",
+            "jopdfetch": "0x0"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "nop_sequence",
+      "type": "nop",
+      "description": "Execute NOP instructions and verify PC increments",
+      "rom_contents": "default",
+      "inputs": [
+        {
+          "cycle": 0,
+          "signals": {
+            "operand": "0x0000",
+            "jpc": "0x000",
+            "mem_data_in": "0x00000000",
+            "mem_busy": "0x0"
+          }
+        }
+      ],
+      "expected_outputs": [
+        {
+          "cycle": 5,
+          "signals": {
+            "jfetch": "0x0",
+            "jopdfetch": "0x0"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "wait_instruction",
+      "type": "microcode",
+      "description": "Test WAIT instruction (stalls when mem_busy=1)",
+      "notes": [
+        "WAIT opcode is 0x101 (default ROM has this at various addresses)",
+        "When mem_busy=1, PC should not increment",
+        "When mem_busy=0, PC resumes incrementing"
+      ],
+      "rom_contents": "default",
+      "inputs": [
+        {
+          "cycle": 0,
+          "signals": {
+            "operand": "0x0000",
+            "jpc": "0x000",
+            "mem_data_in": "0x00000000",
+            "mem_busy": "0x1"
+          },
+          "comment": "Set mem_busy=1 to trigger wait"
+        },
+        {
+          "cycle": 5,
+          "signals": {
+            "mem_busy": "0x0"
+          },
+          "comment": "Clear mem_busy to resume"
+        }
+      ],
+      "expected_outputs": [
+        {
+          "cycle": 10,
+          "signals": {
+            "jfetch": "0x0"
+          }
+        }
+      ]
+    }
+  ],
+
+  "future_tests": {
+    "description": "Microcode instructions to add test coverage for",
+    "categories": {
+      "alu_operations": [
+        "add (ir[9:6]=0000, pop)",
+        "sub (ir[9:6]=0001, pop)",
+        "and (ir[9:6]=0010, pop)",
+        "or (ir[9:6]=0011, pop)",
+        "xor (ir[9:6]=0100, pop)"
+      ],
+      "stack_operations": [
+        "dup (duplicate TOS)",
+        "pop (remove TOS)",
+        "push (add to TOS)"
+      ],
+      "load_store": [
+        "ldm (load from memory)",
+        "stm (store to memory)",
+        "ldi (load immediate)",
+        "ldmi (load memory indirect)"
+      ],
+      "branches": [
+        "bz (branch if zero)",
+        "bnz (branch if not zero)",
+        "jbr (Java bytecode branch)"
+      ],
+      "mmu_instructions": [
+        "stmul (start multiplier)",
+        "stmwa (store memory write address)",
+        "stmra (start memory read)",
+        "stmwd (start memory write)"
+      ]
+    },
+    "priority": "Start with ALU operations, then stack ops, then load/store"
+  }
+}

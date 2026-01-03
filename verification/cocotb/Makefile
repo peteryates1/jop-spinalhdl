@@ -36,7 +36,7 @@ endif
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Phony targets
-.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal help
+.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal test_core help
 
 # Clean build artifacts
 clean::
@@ -101,6 +101,16 @@ test_stack_spinal:
 	@echo "Testing SpinalHDL StackStageTb..."
 	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
 	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/StackStageTb.vhd" TOPLEVEL=stackstagetb MODULE=tests.test_stack
+
+# Test JopCore (integrated Fetch → Decode → Stack pipeline)
+# Uses SpinalHDL-generated JopCoreTb
+test_core:
+	@echo "Testing JopCore (Fetch → Decode → Stack pipeline)..."
+	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	@echo "Copying JopCoreTb.vhd from SpinalHDL generated directory..."
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreTb.vhd $(LOCAL_VHDL_DIR)/JopCoreTb.vhd || \
+		(echo "ERROR: JopCoreTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreTb.vhd" TOPLEVEL=jopcoretb MODULE=tests.test_core
 
 # Help
 help:
