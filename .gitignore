@@ -49,8 +49,9 @@ results.xml
 work-obj*.cf
 
 # SpinalHDL generated
-core/spinalhdl/generated/*.vhd
-core/spinalhdl/generated/*.v
+core/spinalhdl/generated/
+core/spinalhdl/*.vhd
+core/spinalhdl/*.v
 core/spinalhdl/simWorkspace/
 core/spinalhdl/tmp/
 
