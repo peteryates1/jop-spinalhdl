@@ -1,0 +1,1014 @@
+{
+  "module": "stack",
+  "version": "1.0.0",
+  "description": "Test vectors for stack/execute stage (stack.vhd)",
+  "metadata": {
+    "author": "vhdl-tester",
+    "created": "2025-12-29T00:00:00Z",
+    "tags": ["execute", "stack", "alu", "pipeline"],
+    "notes": [
+      "Stack stage integrates ALU, stack RAM, shifter, and register management",
+      "32-bit data path with 33-bit arithmetic for comparison",
+      "Registered outputs: A, B, SP, VP0-3, AR, sp_ov, opddly, immval",
+      "Combinational outputs: zf, nf, eq, lt, aout, bout",
+      "RAM has 1-cycle write delay, combinational read",
+      "SP initializes to 128 after reset (not 0)"
+    ]
+  },
+  "test_cases": [
+    {
+      "name": "reset_clears_registers",
+      "type": "reset",
+      "description": "Verify A and B registers clear to 0 after reset",
+      "tags": ["reset", "basic"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000000", "bout": "0x00000000"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "reset_sp_init",
+      "type": "reset",
+      "description": "Verify SP initializes to 128 after reset (not 0)",
+      "tags": ["reset", "sp"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000000"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "reset_flags",
+      "type": "reset",
+      "description": "Verify flags after reset (zf=1 since A=0)",
+      "tags": ["reset", "flags"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"zf": "0x1", "nf": "0x0", "eq": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "add_positive_numbers",
+      "type": "alu",
+      "description": "ADD: 5 + 3 = 8",
+      "tags": ["alu", "add", "basic"],
+      "initial_state": {
+        "a_reg": "0x00000005",
+        "b_reg": "0x00000003"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x0", "sel_amux": "0x0", "ena_a": "0x1", "sel_lmux": "0x0", "sel_log": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000008"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "add_with_overflow",
+      "type": "alu",
+      "description": "ADD: 0x7FFFFFFF + 1 = 0x80000000 (overflow to negative)",
+      "tags": ["alu", "add", "overflow"],
+      "initial_state": {
+        "a_reg": "0x00000001",
+        "b_reg": "0x7FFFFFFF"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x0", "sel_amux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x80000000", "nf": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "add_negative_numbers",
+      "type": "alu",
+      "description": "ADD: -5 + -3 = -8",
+      "tags": ["alu", "add", "negative"],
+      "initial_state": {
+        "a_reg": "0xFFFFFFFD",
+        "b_reg": "0xFFFFFFFB"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x0", "sel_amux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0xFFFFFFF8"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "sub_positive_result",
+      "type": "alu",
+      "description": "SUB: 10 - 3 = 7",
+      "tags": ["alu", "sub", "basic"],
+      "initial_state": {
+        "a_reg": "0x00000003",
+        "b_reg": "0x0000000A"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x1", "sel_amux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000007"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "sub_negative_result",
+      "type": "alu",
+      "description": "SUB: 3 - 10 = -7",
+      "tags": ["alu", "sub", "negative"],
+      "initial_state": {
+        "a_reg": "0x0000000A",
+        "b_reg": "0x00000003"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x1", "sel_amux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0xFFFFFFF9", "nf": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "sub_zero_result",
+      "type": "alu",
+      "description": "SUB: 5 - 5 = 0 (zf set)",
+      "tags": ["alu", "sub", "zero"],
+      "initial_state": {
+        "a_reg": "0x00000005",
+        "b_reg": "0x00000005"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x1", "sel_amux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000000", "zf": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "lt_flag_positive",
+      "type": "alu",
+      "description": "LT flag: 3 < 10 should set lt=1",
+      "tags": ["alu", "flags", "lt"],
+      "initial_state": {
+        "a_reg": "0x0000000A",
+        "b_reg": "0x00000003"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x1", "sel_amux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"lt": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "lt_flag_equal",
+      "type": "alu",
+      "description": "LT flag: 5 < 5 should set lt=0",
+      "tags": ["alu", "flags", "lt"],
+      "initial_state": {
+        "a_reg": "0x00000005",
+        "b_reg": "0x00000005"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x1", "sel_amux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"lt": "0x0", "eq": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "lt_flag_negative",
+      "type": "alu",
+      "description": "LT flag: -1 < 1 should set lt=1 (signed comparison)",
+      "tags": ["alu", "flags", "lt", "signed"],
+      "initial_state": {
+        "a_reg": "0x00000001",
+        "b_reg": "0xFFFFFFFF"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x1", "sel_amux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"lt": "0x1"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "logic_and",
+      "type": "logic",
+      "description": "AND: 0xFF00FF00 AND 0x0F0F0F0F = 0x0F000F00",
+      "tags": ["logic", "and"],
+      "initial_state": {
+        "a_reg": "0xFF00FF00",
+        "b_reg": "0x0F0F0F0F"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_log": "0x1", "sel_amux": "0x1", "sel_lmux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x0F000F00"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "logic_or",
+      "type": "logic",
+      "description": "OR: 0xFF00FF00 OR 0x0F0F0F0F = 0xFF0FFF0F",
+      "tags": ["logic", "or"],
+      "initial_state": {
+        "a_reg": "0xFF00FF00",
+        "b_reg": "0x0F0F0F0F"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_log": "0x2", "sel_amux": "0x1", "sel_lmux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0xFF0FFF0F"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "logic_xor",
+      "type": "logic",
+      "description": "XOR: 0xFF00FF00 XOR 0x0F0F0F0F = 0xF00FF00F",
+      "tags": ["logic", "xor"],
+      "initial_state": {
+        "a_reg": "0xFF00FF00",
+        "b_reg": "0x0F0F0F0F"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_log": "0x3", "sel_amux": "0x1", "sel_lmux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0xF00FF00F"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "logic_pass_through",
+      "type": "logic",
+      "description": "Pass-through (sel_log=00): B passes to output",
+      "tags": ["logic", "pass"],
+      "initial_state": {
+        "a_reg": "0xDEADBEEF",
+        "b_reg": "0x12345678"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_log": "0x0", "sel_amux": "0x1", "sel_lmux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x12345678"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "logic_all_ones",
+      "type": "logic",
+      "description": "AND with all 1s: 0xFFFFFFFF AND 0x12345678 = 0x12345678",
+      "tags": ["logic", "and", "edge"],
+      "initial_state": {
+        "a_reg": "0xFFFFFFFF",
+        "b_reg": "0x12345678"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_log": "0x1", "sel_amux": "0x1", "sel_lmux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x12345678"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "logic_all_zeros",
+      "type": "logic",
+      "description": "OR with all 0s: 0x00000000 OR 0x12345678 = 0x12345678",
+      "tags": ["logic", "or", "edge"],
+      "initial_state": {
+        "a_reg": "0x00000000",
+        "b_reg": "0x12345678"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_log": "0x2", "sel_amux": "0x1", "sel_lmux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x12345678"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "shift_ushr_by_4",
+      "type": "shift",
+      "description": "USHR: 0xF0000000 >>> 4 = 0x0F000000",
+      "tags": ["shift", "ushr"],
+      "initial_state": {
+        "a_reg": "0x00000004",
+        "b_reg": "0xF0000000"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_shf": "0x0", "sel_amux": "0x1", "sel_lmux": "0x1", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x0F000000"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "shift_shl_by_4",
+      "type": "shift",
+      "description": "SHL: 0x0000000F << 4 = 0x000000F0",
+      "tags": ["shift", "shl"],
+      "initial_state": {
+        "a_reg": "0x00000004",
+        "b_reg": "0x0000000F"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_shf": "0x1", "sel_amux": "0x1", "sel_lmux": "0x1", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x000000F0"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "shift_shr_positive",
+      "type": "shift",
+      "description": "SHR (arithmetic): 0x7F000000 >> 4 = 0x07F00000",
+      "tags": ["shift", "shr", "positive"],
+      "initial_state": {
+        "a_reg": "0x00000004",
+        "b_reg": "0x7F000000"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_shf": "0x2", "sel_amux": "0x1", "sel_lmux": "0x1", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x07F00000"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "shift_shr_negative",
+      "type": "shift",
+      "description": "SHR (arithmetic): 0x80000000 >> 4 = 0xF8000000 (sign extended)",
+      "tags": ["shift", "shr", "negative"],
+      "initial_state": {
+        "a_reg": "0x00000004",
+        "b_reg": "0x80000000"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_shf": "0x2", "sel_amux": "0x1", "sel_lmux": "0x1", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0xF8000000"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "shift_by_zero",
+      "type": "shift",
+      "description": "Shift by 0: value unchanged",
+      "tags": ["shift", "edge"],
+      "initial_state": {
+        "a_reg": "0x00000000",
+        "b_reg": "0x12345678"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_shf": "0x0", "sel_amux": "0x1", "sel_lmux": "0x1", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x12345678"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "shift_by_31",
+      "type": "shift",
+      "description": "USHR by 31: 0x80000000 >>> 31 = 0x00000001",
+      "tags": ["shift", "ushr", "edge"],
+      "initial_state": {
+        "a_reg": "0x0000001F",
+        "b_reg": "0x80000000"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_shf": "0x0", "sel_amux": "0x1", "sel_lmux": "0x1", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000001"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "shift_shl_by_31",
+      "type": "shift",
+      "description": "SHL by 31: 0x00000001 << 31 = 0x80000000",
+      "tags": ["shift", "shl", "edge"],
+      "initial_state": {
+        "a_reg": "0x0000001F",
+        "b_reg": "0x00000001"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_shf": "0x1", "sel_amux": "0x1", "sel_lmux": "0x1", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x80000000"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "shift_shr_all_ones",
+      "type": "shift",
+      "description": "SHR on all 1s: 0xFFFFFFFF >> 4 = 0xFFFFFFFF (sign extended)",
+      "tags": ["shift", "shr", "edge"],
+      "initial_state": {
+        "a_reg": "0x00000004",
+        "b_reg": "0xFFFFFFFF"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_shf": "0x2", "sel_amux": "0x1", "sel_lmux": "0x1", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0xFFFFFFFF"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "sp_unchanged",
+      "type": "sp",
+      "description": "Stack pointer unchanged when sel_smux=00",
+      "tags": ["sp", "no_change"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_smux": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 2, "signals": {}}
+      ],
+      "cycles": 3
+    },
+    {
+      "name": "sp_decrement",
+      "type": "sp",
+      "description": "Stack pointer decrement (pop) when sel_smux=01",
+      "tags": ["sp", "pop"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_smux": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 2, "signals": {}}
+      ],
+      "cycles": 3
+    },
+    {
+      "name": "sp_increment",
+      "type": "sp",
+      "description": "Stack pointer increment (push) when sel_smux=10",
+      "tags": ["sp", "push"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_smux": "0x2"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 2, "signals": {}}
+      ],
+      "cycles": 3
+    },
+    {
+      "name": "lmux_log",
+      "type": "datapath",
+      "description": "Load from logic unit (sel_lmux=000)",
+      "tags": ["datapath", "lmux"],
+      "initial_state": {
+        "a_reg": "0xAAAAAAAA",
+        "b_reg": "0x55555555"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_log": "0x1", "sel_amux": "0x1", "sel_lmux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000000"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "lmux_shift",
+      "type": "datapath",
+      "description": "Load from shift unit (sel_lmux=001)",
+      "tags": ["datapath", "lmux"],
+      "initial_state": {
+        "a_reg": "0x00000008",
+        "b_reg": "0xFF000000"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_shf": "0x0", "sel_amux": "0x1", "sel_lmux": "0x1", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00FF0000"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "lmux_din",
+      "type": "datapath",
+      "description": "Load from external data input (sel_lmux=100)",
+      "tags": ["datapath", "lmux", "din"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "din": "0xCAFEBABE", "sel_amux": "0x1", "sel_lmux": "0x4", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0xCAFEBABE"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "b_from_a",
+      "type": "datapath",
+      "description": "B register loads from A (sel_bmux=0)",
+      "tags": ["datapath", "bmux"],
+      "initial_state": {
+        "a_reg": "0xDEADBEEF"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_bmux": "0x0", "ena_b": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"bout": "0xDEADBEEF"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "mmux_a",
+      "type": "datapath",
+      "description": "Memory data from A (sel_mmux=0)",
+      "tags": ["datapath", "mmux"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_mmux": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "mmux_b",
+      "type": "datapath",
+      "description": "Memory data from B (sel_mmux=1)",
+      "tags": ["datapath", "mmux"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_mmux": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "imux_8u",
+      "type": "immediate",
+      "description": "Immediate 8-bit unsigned: 0xFF -> 0x000000FF",
+      "tags": ["immediate", "8bit", "unsigned"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "opd": "0x00FF", "sel_imux": "0x0", "sel_amux": "0x1", "sel_lmux": "0x3", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 3, "signals": {"aout": "0x000000FF"}}
+      ],
+      "cycles": 4
+    },
+    {
+      "name": "imux_8s_positive",
+      "type": "immediate",
+      "description": "Immediate 8-bit signed positive: 0x7F -> 0x0000007F",
+      "tags": ["immediate", "8bit", "signed"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "opd": "0x007F", "sel_imux": "0x1", "sel_amux": "0x1", "sel_lmux": "0x3", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 3, "signals": {"aout": "0x0000007F"}}
+      ],
+      "cycles": 4
+    },
+    {
+      "name": "imux_8s_negative",
+      "type": "immediate",
+      "description": "Immediate 8-bit signed negative: 0x80 -> 0xFFFFFF80",
+      "tags": ["immediate", "8bit", "signed"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "opd": "0x0080", "sel_imux": "0x1", "sel_amux": "0x1", "sel_lmux": "0x3", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 3, "signals": {"aout": "0xFFFFFF80"}}
+      ],
+      "cycles": 4
+    },
+    {
+      "name": "imux_16u",
+      "type": "immediate",
+      "description": "Immediate 16-bit unsigned: 0xFFFF -> 0x0000FFFF",
+      "tags": ["immediate", "16bit", "unsigned"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "opd": "0xFFFF", "sel_imux": "0x2", "sel_amux": "0x1", "sel_lmux": "0x3", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 3, "signals": {"aout": "0x0000FFFF"}}
+      ],
+      "cycles": 4
+    },
+    {
+      "name": "imux_16s_positive",
+      "type": "immediate",
+      "description": "Immediate 16-bit signed positive: 0x7FFF -> 0x00007FFF",
+      "tags": ["immediate", "16bit", "signed"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "opd": "0x7FFF", "sel_imux": "0x3", "sel_amux": "0x1", "sel_lmux": "0x3", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 3, "signals": {"aout": "0x00007FFF"}}
+      ],
+      "cycles": 4
+    },
+    {
+      "name": "imux_16s_negative",
+      "type": "immediate",
+      "description": "Immediate 16-bit signed negative: 0x8000 -> 0xFFFF8000",
+      "tags": ["immediate", "16bit", "signed"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "opd": "0x8000", "sel_imux": "0x3", "sel_amux": "0x1", "sel_lmux": "0x3", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 3, "signals": {"aout": "0xFFFF8000"}}
+      ],
+      "cycles": 4
+    },
+    {
+      "name": "ena_a_disabled",
+      "type": "enable",
+      "description": "A register unchanged when ena_a=0",
+      "tags": ["enable", "a_reg"],
+      "initial_state": {
+        "a_reg": "0x12345678"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x0", "sel_amux": "0x0", "ena_a": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x12345678"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ena_b_disabled",
+      "type": "enable",
+      "description": "B register unchanged when ena_b=0",
+      "tags": ["enable", "b_reg"],
+      "initial_state": {
+        "b_reg": "0x87654321"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_bmux": "0x0", "ena_b": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"bout": "0x87654321"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ram_write_read_vp0",
+      "type": "ram",
+      "description": "Write to and read from VP0 address",
+      "tags": ["ram", "vp"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_wra": "0x0", "sel_rda": "0x0", "wr_ena": "0x1", "sel_mmux": "0x0"}},
+        {"cycle": 1, "signals": {"wr_ena": "0x0"}},
+        {"cycle": 2, "signals": {"sel_amux": "0x1", "sel_lmux": "0x2", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 3, "signals": {}}
+      ],
+      "cycles": 4
+    },
+    {
+      "name": "ram_write_read_ar",
+      "type": "ram",
+      "description": "Write to and read from AR address",
+      "tags": ["ram", "ar"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_wra": "0x5", "sel_rda": "0x5", "wr_ena": "0x1", "sel_mmux": "0x0"}},
+        {"cycle": 1, "signals": {"wr_ena": "0x0"}},
+        {"cycle": 2, "signals": {"sel_amux": "0x1", "sel_lmux": "0x2", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 3, "signals": {}}
+      ],
+      "cycles": 4
+    },
+    {
+      "name": "ram_write_read_dir",
+      "type": "ram",
+      "description": "Write to and read from direct address",
+      "tags": ["ram", "dir"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "dir": "0x10", "sel_wra": "0x7", "sel_rda": "0x7", "wr_ena": "0x1", "sel_mmux": "0x0"}},
+        {"cycle": 1, "signals": {"wr_ena": "0x0"}},
+        {"cycle": 2, "signals": {"sel_amux": "0x1", "sel_lmux": "0x2", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 3, "signals": {}}
+      ],
+      "cycles": 4
+    },
+    {
+      "name": "ram_write_read_sp",
+      "type": "ram",
+      "description": "Write to SPP and read from SP",
+      "tags": ["ram", "sp"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_wra": "0x6", "sel_rda": "0x6", "wr_ena": "0x1", "sel_mmux": "0x1"}},
+        {"cycle": 1, "signals": {"wr_ena": "0x0"}},
+        {"cycle": 2, "signals": {"sel_amux": "0x1", "sel_lmux": "0x2", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 3, "signals": {}}
+      ],
+      "cycles": 4
+    },
+    {
+      "name": "vp_register_load",
+      "type": "vp",
+      "description": "Load VP registers from A (ena_vp=1)",
+      "tags": ["vp", "enable"],
+      "initial_state": {
+        "a_reg": "0x00000040"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "ena_vp": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "ar_register_load",
+      "type": "ar",
+      "description": "Load AR register from A (ena_ar=1)",
+      "tags": ["ar", "enable"],
+      "initial_state": {
+        "a_reg": "0x00000020"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "ena_ar": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "zf_flag_zero",
+      "type": "flags",
+      "description": "Zero flag set when A=0",
+      "tags": ["flags", "zf"],
+      "initial_state": {
+        "a_reg": "0x00000000"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"zf": "0x1"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "zf_flag_nonzero",
+      "type": "flags",
+      "description": "Zero flag clear when A!=0",
+      "tags": ["flags", "zf"],
+      "initial_state": {
+        "a_reg": "0x00000001"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"zf": "0x0"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "nf_flag_negative",
+      "type": "flags",
+      "description": "Negative flag set when A[31]=1",
+      "tags": ["flags", "nf"],
+      "initial_state": {
+        "a_reg": "0x80000000"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"nf": "0x1"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "nf_flag_positive",
+      "type": "flags",
+      "description": "Negative flag clear when A[31]=0",
+      "tags": ["flags", "nf"],
+      "initial_state": {
+        "a_reg": "0x7FFFFFFF"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"nf": "0x0"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "eq_flag_equal",
+      "type": "flags",
+      "description": "Equal flag set when A=B",
+      "tags": ["flags", "eq"],
+      "initial_state": {
+        "a_reg": "0x12345678",
+        "b_reg": "0x12345678"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"eq": "0x1"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "eq_flag_not_equal",
+      "type": "flags",
+      "description": "Equal flag clear when A!=B",
+      "tags": ["flags", "eq"],
+      "initial_state": {
+        "a_reg": "0x12345678",
+        "b_reg": "0x87654321"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"eq": "0x0"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "max_positive_value",
+      "type": "edge",
+      "description": "Maximum positive value: 0x7FFFFFFF",
+      "tags": ["edge", "max"],
+      "initial_state": {
+        "a_reg": "0x7FFFFFFF"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"nf": "0x0", "zf": "0x0"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "min_negative_value",
+      "type": "edge",
+      "description": "Minimum negative value: 0x80000000",
+      "tags": ["edge", "min"],
+      "initial_state": {
+        "a_reg": "0x80000000"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"nf": "0x1", "zf": "0x0"}}
+      ],
+      "cycles": 1
+    },
+    {
+      "name": "alternating_bits",
+      "type": "edge",
+      "description": "Alternating bits: 0xAAAAAAAA XOR 0x55555555 = 0xFFFFFFFF",
+      "tags": ["edge", "pattern"],
+      "initial_state": {
+        "a_reg": "0xAAAAAAAA",
+        "b_reg": "0x55555555"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_log": "0x3", "sel_amux": "0x1", "sel_lmux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0xFFFFFFFF"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "push_pop_sequence",
+      "type": "sequence",
+      "description": "Push then pop sequence (SP should return to original)",
+      "tags": ["sequence", "sp"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_smux": "0x2"}},
+        {"cycle": 1, "signals": {"sel_smux": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 2, "signals": {}}
+      ],
+      "cycles": 3
+    },
+    {
+      "name": "add_then_sub",
+      "type": "sequence",
+      "description": "Add then subtract same value (should return to original)",
+      "tags": ["sequence", "alu"],
+      "initial_state": {
+        "a_reg": "0x00000005",
+        "b_reg": "0x00000010"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x0", "sel_amux": "0x0", "ena_a": "0x1"}},
+        {"cycle": 1, "signals": {"sel_sub": "0x1", "sel_amux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000015"}},
+        {"cycle": 2, "signals": {"aout": "0x00000010"}}
+      ],
+      "cycles": 3
+    },
+    {
+      "name": "rmux_sp",
+      "type": "datapath",
+      "description": "Load SP via rmux (sel_rmux=00, sel_lmux=101)",
+      "tags": ["datapath", "rmux", "sp"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_rmux": "0x0", "sel_amux": "0x1", "sel_lmux": "0x5", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000080"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "rmux_vp",
+      "type": "datapath",
+      "description": "Load VP0 via rmux (sel_rmux=01, sel_lmux=101)",
+      "tags": ["datapath", "rmux", "vp"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_rmux": "0x1", "sel_amux": "0x1", "sel_lmux": "0x5", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000000"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "rmux_jpc",
+      "type": "datapath",
+      "description": "Load JPC via rmux (sel_rmux=10, sel_lmux=101)",
+      "tags": ["datapath", "rmux", "jpc"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "jpc": "0x123", "sel_rmux": "0x2", "sel_amux": "0x1", "sel_lmux": "0x5", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000123"}}
+      ],
+      "cycles": 2
+    },
+    {
+      "name": "sp_overflow_flag",
+      "type": "flags",
+      "description": "Verify sp_ov flag sets when SP reaches overflow threshold (2^RAM_WIDTH - 1 - 16 = 239)",
+      "tags": ["flags", "sp", "overflow", "coverage"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "din": "0x000000EF", "sel_lmux": "0x4", "sel_amux": "0x1", "ena_a": "0x1"}},
+        {"cycle": 1, "signals": {"sel_smux": "0x3", "ena_a": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x000000EF"}},
+        {"cycle": 3, "signals": {"sp_ov": "0x1"}}
+      ],
+      "cycles": 4
+    }
+  ]
+}
