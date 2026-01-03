@@ -36,7 +36,7 @@ endif
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Phony targets
-.PHONY: clean test_all test_mul test_shift test_fetch test_decode help
+.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal help
 
 # Clean build artifacts
 clean::
@@ -53,6 +53,7 @@ test_all:
 	$(MAKE) test_shift
 	$(MAKE) test_fetch
 	$(MAKE) test_decode
+	$(MAKE) test_stack
 
 # Test mul.vhd (multiplier)
 test_mul:
@@ -83,6 +84,24 @@ test_decode:
 	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
 	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/decode_tb.vhd" TOPLEVEL=decode_tb MODULE=tests.test_decode
 
+# Test stack.vhd (stack/execute stage)
+# Uses stack_tb.vhd wrapper which includes:
+# - Embedded shift component (barrel shifter)
+# - Embedded dual-port RAM for stack storage
+# - Debug outputs for internal state visibility
+test_stack:
+	@echo "Testing stack.vhd (stack/execute stage)..."
+	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/stack_tb.vhd" TOPLEVEL=stack_tb MODULE=tests.test_stack
+
+# Test SpinalHDL-generated StackStageTb
+# Uses SpinalHDL-generated VHDL with same interface as stack_tb.vhd
+# Note: Use lowercase toplevel name for GHDL compatibility (VHDL case insensitive)
+test_stack_spinal:
+	@echo "Testing SpinalHDL StackStageTb..."
+	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/StackStageTb.vhd" TOPLEVEL=stackstagetb MODULE=tests.test_stack
+
 # Help
 help:
 	@echo "JOP CocoTB Test Makefile"
@@ -94,6 +113,7 @@ help:
 	@echo "  make test_shift      - Test shift.vhd (barrel shifter)"
 	@echo "  make test_fetch      - Test fetch.vhd (microcode ROM fetch stage)"
 	@echo "  make test_decode     - Test decode.vhd (microcode instruction decoder)"
+	@echo "  make test_stack      - Test stack.vhd (stack/execute stage)"
 	@echo "  make clean           - Clean build artifacts"
 	@echo ""
 	@echo "Variables:"

@@ -2,7 +2,7 @@ name := "jop-spinalhdl"
 
 version := "0.1.0"
 
-scalaVersion := "2.13.12"
+scalaVersion := "2.13.18"
 
 // SpinalHDL dependencies
 libraryDependencies ++= Seq(

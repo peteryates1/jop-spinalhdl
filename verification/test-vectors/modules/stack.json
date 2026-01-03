@@ -1009,6 +1009,109 @@
         {"cycle": 3, "signals": {"sp_ov": "0x1"}}
       ],
       "cycles": 4
+    },
+    {
+      "name": "seq_immediate_alu_store",
+      "type": "sequence",
+      "description": "Sequence: Load immediate 0x10 -> Load immediate 0x20 -> Add -> Store to RAM (validates immediate→ALU→RAM pipeline)",
+      "tags": ["sequence", "immediate", "alu", "ram", "integration"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "opd": "0x0010", "sel_imux": "0x0", "sel_lmux": "0x3", "sel_amux": "0x1", "ena_a": "0x1", "sel_bmux": "0x0", "ena_b": "0x1", "sel_smux": "0x2"}},
+        {"cycle": 3, "signals": {"opd": "0x0020", "sel_imux": "0x0", "sel_lmux": "0x3", "sel_amux": "0x1", "ena_a": "0x1", "sel_bmux": "0x0", "ena_b": "0x1", "sel_smux": "0x2"}},
+        {"cycle": 6, "signals": {"sel_sub": "0x0", "sel_amux": "0x0", "ena_a": "0x1", "sel_bmux": "0x1", "ena_b": "0x1", "sel_smux": "0x1"}},
+        {"cycle": 7, "signals": {"sel_wra": "0x0", "wr_ena": "0x1", "sel_mmux": "0x0", "sel_smux": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 3, "signals": {"aout": "0x00000010"}},
+        {"cycle": 6, "signals": {"aout": "0x00000020", "bout": "0x00000010"}},
+        {"cycle": 7, "signals": {"aout": "0x00000030"}}
+      ],
+      "cycles": 10
+    },
+    {
+      "name": "seq_vp_save_restore",
+      "type": "sequence",
+      "description": "Sequence: Save VP -> modify VP -> verify new VP (validates VP register management in method calls)",
+      "tags": ["sequence", "vp", "register", "integration"],
+      "initial_state": {
+        "vp_reg": "0x00000040"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_rmux": "0x1", "sel_lmux": "0x5", "sel_amux": "0x1", "ena_a": "0x1"}},
+        {"cycle": 1, "signals": {"din": "0x00000080", "sel_lmux": "0x4", "sel_amux": "0x1", "ena_a": "0x1", "ena_vp": "0x1"}},
+        {"cycle": 2, "signals": {"sel_rmux": "0x1", "sel_lmux": "0x5", "sel_amux": "0x1", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000040"}},
+        {"cycle": 2, "signals": {"aout": "0x00000080"}},
+        {"cycle": 3, "signals": {"aout": "0x00000080"}}
+      ],
+      "cycles": 4
+    },
+    {
+      "name": "seq_alu_chain",
+      "type": "sequence",
+      "description": "Sequence: Load values -> Add -> Subtract (validates chained ALU operations and A/B register state transitions)",
+      "tags": ["sequence", "alu", "chain", "integration"],
+      "initial_state": {
+        "a_reg": "0x00000005",
+        "b_reg": "0x0000000A"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x0", "sel_amux": "0x0", "ena_a": "0x1", "sel_bmux": "0x0", "ena_b": "0x1"}},
+        {"cycle": 1, "signals": {"din": "0x00000003", "sel_lmux": "0x4", "sel_amux": "0x1", "ena_a": "0x1", "sel_bmux": "0x0", "ena_b": "0x1"}},
+        {"cycle": 2, "signals": {"sel_sub": "0x1", "sel_amux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x0000000F", "bout": "0x00000005"}},
+        {"cycle": 2, "signals": {"aout": "0x00000003", "bout": "0x0000000F"}},
+        {"cycle": 3, "signals": {"aout": "0x0000000C"}}
+      ],
+      "cycles": 4
+    },
+    {
+      "name": "seq_ram_alu_ram",
+      "type": "sequence",
+      "description": "Sequence: Write to RAM -> Read from RAM -> Add value (validates RAM→ALU datapath with proper timing)",
+      "tags": ["sequence", "ram", "alu", "integration"],
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "din": "0x00000100", "sel_lmux": "0x4", "sel_amux": "0x1", "ena_a": "0x1"}},
+        {"cycle": 1, "signals": {"sel_wra": "0x0", "wr_ena": "0x1", "sel_mmux": "0x0"}},
+        {"cycle": 2, "signals": {"wr_ena": "0x0"}},
+        {"cycle": 3, "signals": {"sel_rda": "0x0", "sel_lmux": "0x2", "sel_amux": "0x1", "ena_a": "0x1"}},
+        {"cycle": 4, "signals": {"din": "0x00000050", "sel_lmux": "0x4", "sel_amux": "0x1", "ena_a": "0x1", "sel_bmux": "0x0", "ena_b": "0x1"}},
+        {"cycle": 5, "signals": {"sel_sub": "0x0", "sel_amux": "0x0", "ena_a": "0x1"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"aout": "0x00000100"}},
+        {"cycle": 4, "signals": {"aout": "0x00000000"}},
+        {"cycle": 5, "signals": {"aout": "0x00000050", "bout": "0x00000050"}},
+        {"cycle": 6, "signals": {"aout": "0x000000A0"}}
+      ],
+      "cycles": 7
+    },
+    {
+      "name": "seq_comparison_flags",
+      "type": "sequence",
+      "description": "Sequence: Load value 1 -> Load value 2 -> Subtract and check comparison flags (validates 33-bit signed comparison for branch prep)",
+      "tags": ["sequence", "comparison", "flags", "integration"],
+      "initial_state": {
+        "a_reg": "0x00000200",
+        "b_reg": "0x00000100"
+      },
+      "inputs": [
+        {"cycle": 0, "signals": {"reset": "0x0", "sel_sub": "0x1", "sel_amux": "0x0", "ena_a": "0x1"}},
+        {"cycle": 1, "signals": {"din": "0x00000100", "sel_lmux": "0x4", "sel_amux": "0x1", "ena_a": "0x1", "sel_bmux": "0x0", "ena_b": "0x1"}},
+        {"cycle": 2, "signals": {"din": "0x00000200", "sel_lmux": "0x4", "sel_amux": "0x1", "ena_a": "0x1"}},
+        {"cycle": 3, "signals": {"sel_sub": "0x1", "sel_amux": "0x0", "ena_a": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 0, "signals": {"lt": "0x1"}},
+        {"cycle": 1, "signals": {"aout": "0xFFFFFF00", "nf": "0x1"}},
+        {"cycle": 2, "signals": {"aout": "0x00000100", "bout": "0xFFFFFF00"}},
+        {"cycle": 3, "signals": {"aout": "0x00000200", "bout": "0x00000100", "lt": "0x0"}}
+      ],
+      "cycles": 5
     }
   ]
 }
