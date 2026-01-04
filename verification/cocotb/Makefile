@@ -7,8 +7,10 @@ WAVES ?= 1
 
 # Directories (avoid VHDL_SOURCES_* prefix as CocoTB treats those as source lists)
 ORIG_VHDL_DIR = ../../original/vhdl/core
-# Local copy for CocoTB testing
-LOCAL_VHDL_DIR = vhdl
+# Local VHDL testbenches (hand-written)
+VHDL_TB_DIR = vhdl
+# Generated VHDL files (copied from SpinalHDL for testing)
+GENERATED_DIR = generated
 SPINALHDL_GEN_DIR = ../../core/spinalhdl/generated
 TEST_VECTORS_DIR = ../test-vectors
 
@@ -58,31 +60,31 @@ test_all:
 # Test mul.vhd (multiplier)
 test_mul:
 	@echo "Testing mul.vhd (bit-serial multiplier)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	@cp -f $(ORIG_VHDL_DIR)/mul.vhd $(LOCAL_VHDL_DIR)/mul.vhd
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/mul.vhd" TOPLEVEL=mul MODULE=tests.test_mul
+	@mkdir -p waveforms $(VHDL_TB_DIR)
+	@cp -f $(ORIG_VHDL_DIR)/mul.vhd $(VHDL_TB_DIR)/mul.vhd
+	$(MAKE) VHDL_SOURCES="$(VHDL_TB_DIR)/mul.vhd" TOPLEVEL=mul MODULE=tests.test_mul
 
 # Test shift.vhd (barrel shifter)
 test_shift:
 	@echo "Testing shift.vhd (barrel shifter)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	@cp -f $(ORIG_VHDL_DIR)/shift.vhd $(LOCAL_VHDL_DIR)/shift.vhd
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/shift.vhd" TOPLEVEL=shift MODULE=tests.test_shift
+	@mkdir -p waveforms $(VHDL_TB_DIR)
+	@cp -f $(ORIG_VHDL_DIR)/shift.vhd $(VHDL_TB_DIR)/shift.vhd
+	$(MAKE) VHDL_SOURCES="$(VHDL_TB_DIR)/shift.vhd" TOPLEVEL=shift MODULE=tests.test_shift
 
 # Test fetch.vhd (microcode ROM fetch stage)
 # Uses fetch_tb.vhd wrapper which includes integrated ROM for testing
 test_fetch:
 	@echo "Testing fetch.vhd (microcode ROM fetch stage)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/fetch_tb.vhd" TOPLEVEL=fetch_tb MODULE=tests.test_fetch
+	@mkdir -p waveforms $(VHDL_TB_DIR)
+	$(MAKE) VHDL_SOURCES="$(VHDL_TB_DIR)/fetch_tb.vhd" TOPLEVEL=fetch_tb MODULE=tests.test_fetch
 
 # Test decode.vhd (microcode instruction decoder)
 # Uses decode_tb.vhd wrapper which includes embedded configuration constants
 # and exposes mem_in record fields as individual ports
 test_decode:
 	@echo "Testing decode.vhd (microcode instruction decoder)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/decode_tb.vhd" TOPLEVEL=decode_tb MODULE=tests.test_decode
+	@mkdir -p waveforms $(VHDL_TB_DIR)
+	$(MAKE) VHDL_SOURCES="$(VHDL_TB_DIR)/decode_tb.vhd" TOPLEVEL=decode_tb MODULE=tests.test_decode
 
 # Test stack.vhd (stack/execute stage)
 # Uses stack_tb.vhd wrapper which includes:
@@ -91,130 +93,130 @@ test_decode:
 # - Debug outputs for internal state visibility
 test_stack:
 	@echo "Testing stack.vhd (stack/execute stage)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/stack_tb.vhd" TOPLEVEL=stack_tb MODULE=tests.test_stack
+	@mkdir -p waveforms $(VHDL_TB_DIR)
+	$(MAKE) VHDL_SOURCES="$(VHDL_TB_DIR)/stack_tb.vhd" TOPLEVEL=stack_tb MODULE=tests.test_stack
 
 # Test SpinalHDL-generated StackStageTb
 # Uses SpinalHDL-generated VHDL with same interface as stack_tb.vhd
 # Note: Use lowercase toplevel name for GHDL compatibility (VHDL case insensitive)
 test_stack_spinal:
 	@echo "Testing SpinalHDL StackStageTb..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/StackStageTb.vhd" TOPLEVEL=stackstagetb MODULE=tests.test_stack
+	@mkdir -p waveforms $(VHDL_TB_DIR)
+	$(MAKE) VHDL_SOURCES="$(VHDL_TB_DIR)/StackStageTb.vhd" TOPLEVEL=stackstagetb MODULE=tests.test_stack
 
 # Test JopCore (integrated Fetch → Decode → Stack pipeline)
 # Uses SpinalHDL-generated JopCoreTb
 test_core:
 	@echo "Testing JopCore (Fetch → Decode → Stack pipeline)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	@mkdir -p waveforms $(GENERATED_DIR)
 	@echo "Copying JopCoreTb.vhd from SpinalHDL generated directory..."
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreTb.vhd $(LOCAL_VHDL_DIR)/JopCoreTb.vhd || \
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreTb.vhd $(GENERATED_DIR)/JopCoreTb.vhd || \
 		(echo "ERROR: JopCoreTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreTb.vhd" TOPLEVEL=jopcoretb MODULE=tests.test_core
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreTb.vhd" TOPLEVEL=jopcoretb MODULE=tests.test_core
 
 # Test JopCore with ALU operations (custom ROM)
 # Uses SpinalHDL-generated JopCoreAluTestTb with ALU instruction ROM
 test_core_alu:
 	@echo "Testing JopCore ALU operations (custom ROM)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	@mkdir -p waveforms $(GENERATED_DIR)
 	@echo "Copying JopCoreAluTestTb.vhd from SpinalHDL generated directory..."
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreAluTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreAluTestTb.vhd || \
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreAluTestTb.vhd $(GENERATED_DIR)/JopCoreAluTestTb.vhd || \
 		(echo "ERROR: JopCoreAluTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreAluTestTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreAluTestTb.vhd" TOPLEVEL=jopcorealutesttb MODULE=tests.test_core_alu
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreAluTestTb.vhd" TOPLEVEL=jopcorealutesttb MODULE=tests.test_core_alu
 
 # Test JopCore with shift operations (custom ROM)
 # Uses SpinalHDL-generated JopCoreShiftTestTb with shift instruction ROM
 test_core_shift:
 	@echo "Testing JopCore shift operations (custom ROM)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	@mkdir -p waveforms $(GENERATED_DIR)
 	@echo "Copying JopCoreShiftTestTb.vhd from SpinalHDL generated directory..."
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreShiftTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreShiftTestTb.vhd || \
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreShiftTestTb.vhd $(GENERATED_DIR)/JopCoreShiftTestTb.vhd || \
 		(echo "ERROR: JopCoreShiftTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreShiftTestTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreShiftTestTb.vhd" TOPLEVEL=jopcoreshifttesttb MODULE=tests.test_core_shift
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreShiftTestTb.vhd" TOPLEVEL=jopcoreshifttesttb MODULE=tests.test_core_shift
 
 # Test JopCore with load/store operations (custom ROM)
 # Uses SpinalHDL-generated JopCoreLoadStoreTestTb with load/store instruction ROM
 test_core_loadstore:
 	@echo "Testing JopCore load/store operations (custom ROM)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	@mkdir -p waveforms $(GENERATED_DIR)
 	@echo "Copying JopCoreLoadStoreTestTb.vhd from SpinalHDL generated directory..."
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreLoadStoreTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreLoadStoreTestTb.vhd || \
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreLoadStoreTestTb.vhd $(GENERATED_DIR)/JopCoreLoadStoreTestTb.vhd || \
 		(echo "ERROR: JopCoreLoadStoreTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreLoadStoreTestTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreLoadStoreTestTb.vhd" TOPLEVEL=jopcoreloadstoretesttb MODULE=tests.test_core_loadstore
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreLoadStoreTestTb.vhd" TOPLEVEL=jopcoreloadstoretesttb MODULE=tests.test_core_loadstore
 
 # Test JopCore with branch operations (custom ROM)
 # Uses SpinalHDL-generated JopCoreBranchTestTb with branch instruction ROM
 test_core_branch:
 	@echo "Testing JopCore branch operations (custom ROM)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	@mkdir -p waveforms $(GENERATED_DIR)
 	@echo "Copying JopCoreBranchTestTb.vhd from SpinalHDL generated directory..."
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreBranchTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreBranchTestTb.vhd || \
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreBranchTestTb.vhd $(GENERATED_DIR)/JopCoreBranchTestTb.vhd || \
 		(echo "ERROR: JopCoreBranchTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreBranchTestTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreBranchTestTb.vhd" TOPLEVEL=jopcorebranchtesttb MODULE=tests.test_core_branch
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreBranchTestTb.vhd" TOPLEVEL=jopcorebranchtesttb MODULE=tests.test_core_branch
 
 # Test JopCore with stack operations (custom ROM)
 test_core_stack:
 	@echo "Testing JopCore stack operations (custom ROM)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreStackTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreStackTestTb.vhd || \
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreStackTestTb.vhd $(GENERATED_DIR)/JopCoreStackTestTb.vhd || \
 		(echo "ERROR: JopCoreStackTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreStackTestTb.vhd" TOPLEVEL=jopcorestacktesttb MODULE=tests.test_core_stack
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreStackTestTb.vhd" TOPLEVEL=jopcorestacktesttb MODULE=tests.test_core_stack
 
 # Test JopCore with register store operations (custom ROM)
 test_core_regstore:
 	@echo "Testing JopCore register store operations (custom ROM)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreRegStoreTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreRegStoreTestTb.vhd || \
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreRegStoreTestTb.vhd $(GENERATED_DIR)/JopCoreRegStoreTestTb.vhd || \
 		(echo "ERROR: JopCoreRegStoreTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreRegStoreTestTb.vhd" TOPLEVEL=jopcoreregstoretesttb MODULE=tests.test_core_regstore
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreRegStoreTestTb.vhd" TOPLEVEL=jopcoreregstoretesttb MODULE=tests.test_core_regstore
 
 # Test JopCore with register load operations (custom ROM)
 test_core_regload:
 	@echo "Testing JopCore register load operations (custom ROM)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreRegLoadTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreRegLoadTestTb.vhd || \
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreRegLoadTestTb.vhd $(GENERATED_DIR)/JopCoreRegLoadTestTb.vhd || \
 		(echo "ERROR: JopCoreRegLoadTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreRegLoadTestTb.vhd" TOPLEVEL=jopcoreregloadtesttb MODULE=tests.test_core_regload
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreRegLoadTestTb.vhd" TOPLEVEL=jopcoreregloadtesttb MODULE=tests.test_core_regload
 
 # Test JopCore with store operations (custom ROM)
 test_core_store:
 	@echo "Testing JopCore store operations (custom ROM)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreStoreTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreStoreTestTb.vhd || \
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreStoreTestTb.vhd $(GENERATED_DIR)/JopCoreStoreTestTb.vhd || \
 		(echo "ERROR: JopCoreStoreTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreStoreTestTb.vhd" TOPLEVEL=jopcorestoretesttb MODULE=tests.test_core_store
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreStoreTestTb.vhd" TOPLEVEL=jopcorestoretesttb MODULE=tests.test_core_store
 
 # Test JopCore with load operations (custom ROM)
 test_core_load:
 	@echo "Testing JopCore load operations (custom ROM)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreLoadTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreLoadTestTb.vhd || \
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreLoadTestTb.vhd $(GENERATED_DIR)/JopCoreLoadTestTb.vhd || \
 		(echo "ERROR: JopCoreLoadTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreLoadTestTb.vhd" TOPLEVEL=jopcoreloadtesttb MODULE=tests.test_core_load
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreLoadTestTb.vhd" TOPLEVEL=jopcoreloadtesttb MODULE=tests.test_core_load
 
 # Test JopCore with load operand operations (custom ROM)
 test_core_loadopd:
 	@echo "Testing JopCore load operand operations (custom ROM)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreLoadOpdTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreLoadOpdTestTb.vhd || \
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreLoadOpdTestTb.vhd $(GENERATED_DIR)/JopCoreLoadOpdTestTb.vhd || \
 		(echo "ERROR: JopCoreLoadOpdTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreLoadOpdTestTb.vhd" TOPLEVEL=jopcoreloadopdtesttb MODULE=tests.test_core_loadopd
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreLoadOpdTestTb.vhd" TOPLEVEL=jopcoreloadopdtesttb MODULE=tests.test_core_loadopd
 
 # Test JopCore with MMU operations (custom ROM)
 test_core_mmu:
 	@echo "Testing JopCore MMU operations (custom ROM)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreMmuTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreMmuTestTb.vhd || \
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreMmuTestTb.vhd $(GENERATED_DIR)/JopCoreMmuTestTb.vhd || \
 		(echo "ERROR: JopCoreMmuTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreMmuTestTb.vhd" TOPLEVEL=jopcoremmutesttb MODULE=tests.test_core_mmu
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreMmuTestTb.vhd" TOPLEVEL=jopcoremmutesttb MODULE=tests.test_core_mmu
 
 # Test JopCore with control operations (custom ROM)
 test_core_control:
 	@echo "Testing JopCore control operations (custom ROM)..."
-	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreControlTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreControlTestTb.vhd || \
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreControlTestTb.vhd $(GENERATED_DIR)/JopCoreControlTestTb.vhd || \
 		(echo "ERROR: JopCoreControlTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreControlTestTb.vhd" TOPLEVEL=jopcorecontroltesttb MODULE=tests.test_core_control
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreControlTestTb.vhd" TOPLEVEL=jopcorecontroltesttb MODULE=tests.test_core_control
 
 # Help
 help:

@@ -43,6 +43,7 @@ waveforms/
 *.vcd
 *.fst
 results.xml
+verification/cocotb/generated/
 
 # GHDL
 *.cf
