@@ -490,6 +490,193 @@ object TestRomPatterns {
 
     rom.toSeq
   }
+
+  /**
+   * JVM Instruction Sequences Test ROM (Phase 3.1)
+   *
+   * Tests realistic JVM bytecode execution patterns using microcode sequences.
+   * Each sequence represents a complete JVM operation: load → operate → store.
+   *
+   * Sequences implemented:
+   * 1. IADD: iload_0; iload_1; iadd; istore_2 (addrs 10-15)
+   * 2. ISUB: iload_0; iload_1; isub; istore_2 (addrs 20-25)
+   * 3. IMUL: iload_0; iload_1; imul; istore_2 (addrs 30-50)
+   * 4. IAND: iload_0; iload_1; iand; istore_2 (addrs 60-65)
+   * 5. IOR: iload_0; iload_1; ior; istore_2 (addrs 70-75)
+   * 6. IXOR: iload_0; iload_1; ixor; istore_2 (addrs 80-85)
+   * 7. ISHL: iload_0; iload_1; ishl; istore_2 (addrs 90-95)
+   * 8. ISHR: iload_0; iload_1; ishr; istore_2 (addrs 100-105)
+   * 9. IUSHR: iload_0; iload_1; iushr; istore_2 (addrs 110-115)
+   * 10. DUP_IADD: iload_0; dup; iadd; istore_1 (addrs 120-125)
+   * 11. BIPUSH_STORE_LOAD_ADD: bipush 5; istore_0; iload_0; iload_0; iadd; istore_1 (addrs 130-145)
+   * 12. COMPLEX_STACK: dup, swap, add sequence (addrs 150-160)
+   *
+   * Test setup (initialized in local variables before tests):
+   * - var[0] = 10
+   * - var[1] = 3
+   * - var[2] = 0 (result)
+   */
+  def jvmSequencesRom(romDepth: Int, romWidth: Int): Seq[BigInt] = {
+    val rom = Array.fill(romDepth)(BigInt(0))
+
+    def setRom(addr: Int, jf: Int, jod: Int, instr: Int): Unit = {
+      val value = (jf << (romWidth - 2)) | (jod << (romWidth - 3)) | instr
+      rom(addr) = BigInt(value)
+    }
+
+    // ========================================================================
+    // Initialization: Set up test variables (addrs 0-9)
+    // ========================================================================
+    setRom(0, 0, 0, 0x000)  // NOP
+    setRom(1, 0, 0, 0x000)  // NOP
+
+    // Load immediate 10 into var[0] (vp+0)
+    setRom(2, 0, 0, 0x2C0)  // ld_opd_16u
+    setRom(3, 0, 0, 0x000)  // high byte = 0
+    setRom(4, 0, 0, 0x00A)  // low byte = 10
+    setRom(5, 0, 0, 0x000)  // pop (remove from stack)
+    setRom(6, 0, 0, 0x010)  // st0 (store to var[0])
+
+    // Load immediate 3 into var[1] (vp+1)
+    setRom(7, 0, 0, 0x2C0)  // ld_opd_16u
+    setRom(8, 0, 0, 0x000)  // high byte = 0
+    setRom(9, 0, 0, 0x003)  // low byte = 3
+    setRom(10, 0, 0, 0x000)  // pop
+    setRom(11, 0, 0, 0x011)  // st1 (store to var[1])
+
+    // ========================================================================
+    // Sequence 1: IADD - iload_0; iload_1; iadd; istore_2 (addrs 20-23)
+    // Expected: var[2] = 10 + 3 = 13
+    // ========================================================================
+    setRom(20, 0, 0, 0x3A0)  // ld0 (load var[0] = 10)
+    setRom(21, 0, 0, 0x3A1)  // ld1 (load var[1] = 3)
+    setRom(22, 0, 0, 0x004)  // add (10 + 3 = 13)
+    setRom(23, 0, 0, 0x012)  // st2 (store to var[2])
+
+    // ========================================================================
+    // Sequence 2: ISUB - iload_0; iload_1; isub; istore_2 (addrs 30-33)
+    // Expected: var[2] = 10 - 3 = 7
+    // ========================================================================
+    setRom(30, 0, 0, 0x3A0)  // ld0 (load var[0] = 10)
+    setRom(31, 0, 0, 0x3A1)  // ld1 (load var[1] = 3)
+    setRom(32, 0, 0, 0x005)  // sub (10 - 3 = 7)
+    setRom(33, 0, 0, 0x012)  // st2 (store to var[2])
+
+    // ========================================================================
+    // Sequence 3: IMUL - iload_0; iload_1; imul; istore_2 (addrs 40-61)
+    // Expected: var[2] = 10 * 3 = 30
+    // ========================================================================
+    setRom(40, 0, 0, 0x3A0)  // ld0 (load var[0] = 10)
+    setRom(41, 0, 0, 0x3A1)  // ld1 (load var[1] = 3)
+    setRom(42, 0, 0, 0x040)  // stmul (start multiplication)
+
+    // Wait 17 cycles for multiplier (addrs 43-59)
+    for (i <- 43 to 59) {
+      setRom(i, 0, 0, 0x100)  // NOP
+    }
+
+    setRom(60, 0, 0, 0x3C1)  // ldmul (read result = 30)
+    setRom(61, 0, 0, 0x000)  // pop (remove NOS from stmul)
+    setRom(62, 0, 0, 0x012)  // st2 (store to var[2])
+
+    // ========================================================================
+    // Sequence 4: IAND - iload_0; iload_1; iand; istore_2 (addrs 70-73)
+    // Expected: var[2] = 10 & 3 = 2 (0b1010 & 0b0011 = 0b0010)
+    // ========================================================================
+    setRom(70, 0, 0, 0x3A0)  // ld0 (load var[0] = 10)
+    setRom(71, 0, 0, 0x3A1)  // ld1 (load var[1] = 3)
+    setRom(72, 0, 0, 0x001)  // and (10 & 3 = 2)
+    setRom(73, 0, 0, 0x012)  // st2 (store to var[2])
+
+    // ========================================================================
+    // Sequence 5: IOR - iload_0; iload_1; ior; istore_2 (addrs 80-83)
+    // Expected: var[2] = 10 | 3 = 11 (0b1010 | 0b0011 = 0b1011)
+    // ========================================================================
+    setRom(80, 0, 0, 0x3A0)  // ld0 (load var[0] = 10)
+    setRom(81, 0, 0, 0x3A1)  // ld1 (load var[1] = 3)
+    setRom(82, 0, 0, 0x002)  // or (10 | 3 = 11)
+    setRom(83, 0, 0, 0x012)  // st2 (store to var[2])
+
+    // ========================================================================
+    // Sequence 6: IXOR - iload_0; iload_1; ixor; istore_2 (addrs 90-93)
+    // Expected: var[2] = 10 ^ 3 = 9 (0b1010 ^ 0b0011 = 0b1001)
+    // ========================================================================
+    setRom(90, 0, 0, 0x3A0)  // ld0 (load var[0] = 10)
+    setRom(91, 0, 0, 0x3A1)  // ld1 (load var[1] = 3)
+    setRom(92, 0, 0, 0x003)  // xor (10 ^ 3 = 9)
+    setRom(93, 0, 0, 0x012)  // st2 (store to var[2])
+
+    // ========================================================================
+    // Sequence 7: ISHL - iload_0; iload_1; ishl; istore_2 (addrs 100-103)
+    // Expected: var[2] = 10 << 3 = 80 (shift left 3 positions)
+    // ========================================================================
+    setRom(100, 0, 0, 0x3A0)  // ld0 (load var[0] = 10)
+    setRom(101, 0, 0, 0x3A1)  // ld1 (load var[1] = 3)
+    setRom(102, 0, 0, 0x01D)  // shl (10 << 3 = 80)
+    setRom(103, 0, 0, 0x012)  // st2 (store to var[2])
+
+    // ========================================================================
+    // Sequence 8: ISHR - iload_0; iload_1; ishr; istore_2 (addrs 110-113)
+    // Expected: var[2] = 10 >> 3 = 1 (arithmetic shift right 3 positions)
+    // ========================================================================
+    setRom(110, 0, 0, 0x3A0)  // ld0 (load var[0] = 10)
+    setRom(111, 0, 0, 0x3A1)  // ld1 (load var[1] = 3)
+    setRom(112, 0, 0, 0x01E)  // shr (10 >> 3 = 1)
+    setRom(113, 0, 0, 0x012)  // st2 (store to var[2])
+
+    // ========================================================================
+    // Sequence 9: IUSHR - iload_0; iload_1; iushr; istore_2 (addrs 120-123)
+    // Expected: var[2] = 10 >>> 3 = 1 (logical shift right 3 positions)
+    // ========================================================================
+    setRom(120, 0, 0, 0x3A0)  // ld0 (load var[0] = 10)
+    setRom(121, 0, 0, 0x3A1)  // ld1 (load var[1] = 3)
+    setRom(122, 0, 0, 0x01C)  // ushr (10 >>> 3 = 1)
+    setRom(123, 0, 0, 0x012)  // st2 (store to var[2])
+
+    // ========================================================================
+    // Sequence 10: DUP_IADD - iload_0; dup; iadd; istore_1 (addrs 130-133)
+    // Expected: var[1] = 10 + 10 = 20 (duplicate and add to self)
+    // ========================================================================
+    setRom(130, 0, 0, 0x3A0)  // ld0 (load var[0] = 10)
+    setRom(131, 0, 0, 0x3F8)  // dup (duplicate TOS)
+    setRom(132, 0, 0, 0x004)  // add (10 + 10 = 20)
+    setRom(133, 0, 0, 0x011)  // st1 (store to var[1])
+
+    // ========================================================================
+    // Sequence 11: BIPUSH_SEQUENCE - bipush 5; istore_0; iload_0; iload_0; iadd; istore_1
+    // (addrs 140-146)
+    // Expected: Load 5, store to var[0], load twice, add, store to var[1]
+    // var[0] = 5, var[1] = 5 + 5 = 10
+    // ========================================================================
+    setRom(140, 0, 0, 0x3F4)  // ld_opd_8u (load 8-bit unsigned immediate)
+    setRom(141, 0, 0, 0x005)  // operand = 5
+    setRom(142, 0, 0, 0x010)  // st0 (store 5 to var[0])
+    setRom(143, 0, 0, 0x3A0)  // ld0 (load var[0] = 5)
+    setRom(144, 0, 0, 0x3A0)  // ld0 (load var[0] = 5 again)
+    setRom(145, 0, 0, 0x004)  // add (5 + 5 = 10)
+    setRom(146, 0, 0, 0x011)  // st1 (store to var[1])
+
+    // ========================================================================
+    // Sequence 12: COMPLEX_STACK - Load 2 values, dup, swap, operations (addrs 150-158)
+    // Tests: ld_opd_8u 7; ld_opd_8u 4; dup; (stack: 7, 4, 4)
+    // Expected: Complex stack manipulation pattern
+    // ========================================================================
+    setRom(150, 0, 0, 0x3F4)  // ld_opd_8u
+    setRom(151, 0, 0, 0x007)  // operand = 7
+    setRom(152, 0, 0, 0x3F4)  // ld_opd_8u
+    setRom(153, 0, 0, 0x004)  // operand = 4
+    setRom(154, 0, 0, 0x3F8)  // dup (stack: 7, 4, 4)
+    setRom(155, 0, 0, 0x004)  // add (stack: 7, 8)
+    setRom(156, 0, 0, 0x004)  // add (stack: 15)
+    setRom(157, 0, 0, 0x012)  // st2 (store to var[2])
+
+    // Fill rest with NOPs
+    for (i <- 158 until romDepth) {
+      setRom(i, 0, 0, 0x000)
+    }
+
+    rom.toSeq
+  }
 }
 
 /**
@@ -1320,4 +1507,86 @@ object JopCoreMultiplierTestTbVhdl extends App {
 
   config.generateVhdl(new JopCoreMultiplierTestTb)
   println("JopCoreMultiplierTestTb VHDL generated in generated/JopCoreMultiplierTestTb.vhd")
+}
+
+/**
+ * JopCore JVM Sequences Test Testbench VHDL Generator (Phase 3.1)
+ *
+ * Generates a VHDL testbench for testing realistic JVM bytecode execution patterns
+ * using microcode sequences. Each test sequence represents a complete JVM operation:
+ * load → operate → store.
+ *
+ * Test sequences:
+ * 1. IADD: iload_0; iload_1; iadd; istore_2
+ * 2. ISUB: iload_0; iload_1; isub; istore_2
+ * 3. IMUL: iload_0; iload_1; imul; istore_2
+ * 4. IAND: iload_0; iload_1; iand; istore_2
+ * 5. IOR: iload_0; iload_1; ior; istore_2
+ * 6. IXOR: iload_0; iload_1; ixor; istore_2
+ * 7. ISHL: iload_0; iload_1; ishl; istore_2
+ * 8. ISHR: iload_0; iload_1; ishr; istore_2
+ * 9. IUSHR: iload_0; iload_1; iushr; istore_2
+ * 10. DUP_IADD: iload_0; dup; iadd; istore_1
+ * 11. BIPUSH_SEQUENCE: bipush 5; istore_0; iload_0; iload_0; iadd; istore_1
+ * 12. COMPLEX_STACK: Multi-value stack manipulation with dup and add
+ *
+ * This tests multi-instruction pipeline interactions, stack management,
+ * register state transitions, and complex control flow.
+ *
+ * Usage: sbt "runMain jop.JopCoreJvmSequencesTestTbVhdl"
+ */
+object JopCoreJvmSequencesTestTbVhdl extends App {
+  val config = SpinalConfig(
+    targetDirectory = "generated",
+    defaultClockDomainFrequency = FixedFrequency(50 MHz)
+  )
+
+  class JopCoreJvmSequencesTestTb extends Component {
+    noIoPrefix()
+
+    val clk = in Bool()
+    val reset = in Bool()
+    val mem_data_in = in Bits(32 bits)
+    val mem_busy = in Bool()
+    val operand = in Bits(16 bits)
+    val jpc = in UInt(11 bits)
+    val aout = out Bits(32 bits)
+    val bout = out Bits(32 bits)
+    val sp_ov = out Bool()
+    val jfetch = out Bool()
+    val jopdfetch = out Bool()
+    val mul_dout = out UInt(32 bits)
+
+    val coreClockDomain = ClockDomain(
+      clock = clk,
+      reset = reset,
+      config = ClockDomainConfig(
+        clockEdge = RISING,
+        resetKind = ASYNC,
+        resetActiveLevel = HIGH
+      )
+    )
+
+    val coreArea = new ClockingArea(coreClockDomain) {
+      val core = new JopCoreTestRom(
+        config = JopCoreConfig(),
+        romPattern = TestRomPatterns.jvmSequencesRom(2048, 12)
+      )
+
+      core.io.memDataIn := mem_data_in
+      core.io.memBusy := mem_busy
+      core.io.operand := operand
+      core.io.jpc := jpc
+
+      aout := core.io.aout
+      bout := core.io.bout
+      sp_ov := core.io.spOv
+      jfetch := core.io.jfetch
+      jopdfetch := core.io.jopdfetch
+      mul_dout := core.io.mulDout
+    }
+  }
+
+  config.generateVhdl(new JopCoreJvmSequencesTestTb)
+  println("JopCoreJvmSequencesTestTb VHDL generated in generated/JopCoreJvmSequencesTestTb.vhd")
 }

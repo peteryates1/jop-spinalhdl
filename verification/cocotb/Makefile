@@ -228,6 +228,14 @@ test_core_multiplier:
 		(echo "ERROR: JopCoreMultiplierTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreMultiplierTestTbVhdl\"' first" && exit 1)
 	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreMultiplierTestTb.vhd" TOPLEVEL=jopcoremultipliertesttb MODULE=tests.test_core_multiplier
 
+# Test JopCore with JVM instruction sequences (Phase 3.1)
+test_jvm_sequences:
+	@echo "Testing JopCore JVM instruction sequences (Phase 3.1)..."
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreJvmSequencesTestTb.vhd $(GENERATED_DIR)/JopCoreJvmSequencesTestTb.vhd || \
+		(echo "ERROR: JopCoreJvmSequencesTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreJvmSequencesTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreJvmSequencesTestTb.vhd" TOPLEVEL=jopcorejvmsequencestesttb MODULE=tests.test_jvm_sequences
+
 # Help
 help:
 	@echo "JOP CocoTB Test Makefile"
