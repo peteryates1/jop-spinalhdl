@@ -3,6 +3,7 @@ package jop
 import spinal.core._
 import spinal.lib._
 import jop.pipeline._
+import jop.core.Mul
 
 /**
  * JOP Core - Microcode Pipeline Integration
@@ -64,9 +65,12 @@ case class JopCoreIO(config: JopCoreConfig) extends Bundle with IMasterSlave {
   val jfetch = out(Bool())      // Java bytecode fetch signal
   val jopdfetch = out(Bool())   // Java operand fetch signal
 
+  // Multiplier output (for debugging/observation)
+  val mulDout = out(UInt(config.dataWidth bits))
+
   override def asMaster(): Unit = {
     in(memDataIn, memBusy, operand, jpc)
-    out(aout, bout, spOv, jfetch, jopdfetch)
+    out(aout, bout, spOv, jfetch, jopdfetch, mulDout)
   }
 }
 
@@ -86,6 +90,7 @@ class JopCore(val config: JopCoreConfig = JopCoreConfig()) extends Component {
   val fetchStage = new FetchStage(config.fetchConfig)
   val decodeStage = new DecodeStage(config.decodeConfig)
   val stackStage = new StackStage(config.stackConfig)
+  val multiplier = Mul(config.dataWidth)
 
   // ========================================================================
   // Fetch Stage Connections
@@ -158,6 +163,20 @@ class JopCore(val config: JopCoreConfig = JopCoreConfig()) extends Component {
   io.spOv := stackStage.io.spOv
 
   // ========================================================================
+  // Multiplier Connections
+  // ========================================================================
+
+  // Multiplier inputs from stack (TOS and NOS)
+  multiplier.io.ain := stackStage.io.aout.asUInt
+  multiplier.io.bin := stackStage.io.bout.asUInt
+
+  // Multiplier write enable from decode (stmul instruction)
+  multiplier.io.wr := decodeStage.io.mulWr
+
+  // Multiplier output to external interface (for debugging/ldmul)
+  io.mulDout := multiplier.io.dout
+
+  // ========================================================================
   // Debug/Monitoring (can be removed for synthesis)
   // ========================================================================
 
@@ -165,6 +184,7 @@ class JopCore(val config: JopCoreConfig = JopCoreConfig()) extends Component {
   fetchStage.setName("fetch")
   decodeStage.setName("decode")
   stackStage.setName("stack")
+  multiplier.setName("mul")
 }
 
 /**
@@ -219,6 +239,7 @@ object JopCoreTbVhdl extends App {
     val sp_ov = out Bool()
     val jfetch = out Bool()
     val jopdfetch = out Bool()
+    val mul_dout = out UInt(32 bits)
 
     // Create explicit clock domain
     val coreClockDomain = ClockDomain(
@@ -245,6 +266,7 @@ object JopCoreTbVhdl extends App {
       sp_ov := core.io.spOv
       jfetch := core.io.jfetch
       jopdfetch := core.io.jopdfetch
+      mul_dout := core.io.mulDout
     }
   }
 

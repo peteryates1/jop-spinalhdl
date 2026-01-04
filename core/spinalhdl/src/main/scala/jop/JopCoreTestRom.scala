@@ -398,6 +398,72 @@ object TestRomPatterns {
   }
 
   /**
+   * Multiplier Operations Test ROM
+   *
+   * Tests the multiplier integration through stmul/ldmul operations.
+   *
+   * Multiplication sequence:
+   * 1. Load operand 1 (16-bit unsigned immediate)
+   * 2. Load operand 2 (16-bit unsigned immediate)
+   * 3. Execute stmul - starts multiplication (ain=TOS, bin=NOS)
+   * 4. Wait 17 cycles for bit-serial multiplier
+   * 5. Execute ldmul - reads result
+   *
+   * Test cases (embedded in ROM as operand values):
+   * - 5 × 7 = 35
+   * - 12 × 8 = 96
+   * - 100 × 200 = 20000
+   *
+   * Instructions:
+   * - Addr 0-1: NOP
+   * - Addr 2-4: Load operand 1 (ld_opd_16u takes 3 ROM addresses)
+   * - Addr 5-7: Load operand 2
+   * - Addr 8: stmul - Start multiplication
+   * - Addr 9-25: NOP (wait 17 cycles for multiplier)
+   * - Addr 26: ldmul - Read result
+   */
+  def multiplierOpsRom(romDepth: Int, romWidth: Int): Seq[BigInt] = {
+    val rom = Array.fill(romDepth)(BigInt(0))
+
+    def setRom(addr: Int, jf: Int, jod: Int, instr: Int): Unit = {
+      val value = (jf << (romWidth - 2)) | (jod << (romWidth - 3)) | instr
+      rom(addr) = BigInt(value)
+    }
+
+    setRom(0, 0, 0, 0x000)  // NOP
+    setRom(1, 0, 0, 0x000)  // NOP
+
+    // Test case 1: 5 × 7 = 35
+    // Load first operand (5) - ld_opd_16u = 0x2C0 + high byte, low byte
+    setRom(2, 0, 0, 0x2C0)  // ld_opd_16u instruction
+    setRom(3, 0, 0, 0x000)  // high byte = 0
+    setRom(4, 0, 0, 0x005)  // low byte = 5
+
+    // Load second operand (7)
+    setRom(5, 0, 0, 0x2C0)  // ld_opd_16u instruction
+    setRom(6, 0, 0, 0x000)  // high byte = 0
+    setRom(7, 0, 0, 0x007)  // low byte = 7
+
+    // Start multiplication
+    setRom(8, 0, 0, 0x040)  // stmul
+
+    // Wait 17 cycles for multiplier (addr 9-25)
+    for (i <- 9 to 25) {
+      setRom(i, 0, 0, 0x100)  // NOP
+    }
+
+    // Read multiplication result
+    setRom(26, 0, 0, 0x3C1)  // ldmul
+
+    // Fill rest with NOPs
+    for (i <- 27 until romDepth) {
+      setRom(i, 0, 0, 0x000)
+    }
+
+    rom.toSeq
+  }
+
+  /**
    * Control Operations Test ROM
    *
    * Tests control flow operations: jbr
@@ -445,6 +511,7 @@ class JopCoreTestRom(
 
   val decodeStage = new DecodeStage(config.decodeConfig)
   val stackStage = new StackStage(config.stackConfig)
+  val multiplier = jop.core.Mul(config.dataWidth)
 
   // Same connections as JopCore
   fetchStage.io.br := decodeStage.io.br
@@ -489,9 +556,16 @@ class JopCoreTestRom(
   io.bout := stackStage.io.bout
   io.spOv := stackStage.io.spOv
 
+  // Multiplier connections
+  multiplier.io.ain := stackStage.io.aout.asUInt
+  multiplier.io.bin := stackStage.io.bout.asUInt
+  multiplier.io.wr := decodeStage.io.mulWr
+  io.mulDout := multiplier.io.dout
+
   fetchStage.setName("fetch")
   decodeStage.setName("decode")
   stackStage.setName("stack")
+  multiplier.setName("mul")
 }
 
 /**
@@ -1176,4 +1250,74 @@ object JopCoreControlTestTbVhdl extends App {
 
   config.generateVhdl(new JopCoreControlTestTb)
   println("JopCoreControlTestTb VHDL generated in generated/JopCoreControlTestTb.vhd")
+}
+
+/**
+ * JopCore Multiplier Test Testbench VHDL Generator
+ *
+ * Generates a VHDL testbench for testing multiplier integration through
+ * stmul/ldmul microcode operations.
+ *
+ * Test sequence:
+ * 1. Load two 16-bit operands using ld_opd_16u
+ * 2. Execute stmul to start multiplication
+ * 3. Wait 17 cycles for bit-serial multiplier
+ * 4. Execute ldmul to read result
+ *
+ * Usage: sbt "runMain jop.JopCoreMultiplierTestTbVhdl"
+ */
+object JopCoreMultiplierTestTbVhdl extends App {
+  val config = SpinalConfig(
+    targetDirectory = "generated",
+    defaultClockDomainFrequency = FixedFrequency(50 MHz)
+  )
+
+  class JopCoreMultiplierTestTb extends Component {
+    noIoPrefix()
+
+    val clk = in Bool()
+    val reset = in Bool()
+    val mem_data_in = in Bits(32 bits)
+    val mem_busy = in Bool()
+    val operand = in Bits(16 bits)
+    val jpc = in UInt(11 bits)
+    val aout = out Bits(32 bits)
+    val bout = out Bits(32 bits)
+    val sp_ov = out Bool()
+    val jfetch = out Bool()
+    val jopdfetch = out Bool()
+    val mul_dout = out UInt(32 bits)
+
+    val coreClockDomain = ClockDomain(
+      clock = clk,
+      reset = reset,
+      config = ClockDomainConfig(
+        clockEdge = RISING,
+        resetKind = ASYNC,
+        resetActiveLevel = HIGH
+      )
+    )
+
+    val coreArea = new ClockingArea(coreClockDomain) {
+      val core = new JopCoreTestRom(
+        config = JopCoreConfig(),
+        romPattern = TestRomPatterns.multiplierOpsRom(2048, 12)
+      )
+
+      core.io.memDataIn := mem_data_in
+      core.io.memBusy := mem_busy
+      core.io.operand := operand
+      core.io.jpc := jpc
+
+      aout := core.io.aout
+      bout := core.io.bout
+      sp_ov := core.io.spOv
+      jfetch := core.io.jfetch
+      jopdfetch := core.io.jopdfetch
+      mul_dout := core.io.mulDout
+    }
+  }
+
+  config.generateVhdl(new JopCoreMultiplierTestTb)
+  println("JopCoreMultiplierTestTb VHDL generated in generated/JopCoreMultiplierTestTb.vhd")
 }

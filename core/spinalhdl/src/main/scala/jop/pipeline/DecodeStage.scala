@@ -37,28 +37,29 @@ case class DecodeConfig(
  */
 object MmuInstructions {
   // MMU instructions with stack pop (prefix 0x04x)
-  val STMUL  = B"4'b0000"  // Start multiplier
-  val STMWA  = B"4'b0001"  // Store memory write address
-  val STMRA  = B"4'b0010"  // Start memory read
-  val STMWD  = B"4'b0011"  // Start memory write
-  val STALD  = B"4'b0100"  // Array load
-  val STAST  = B"4'b0101"  // Array store
-  val STGF   = B"4'b0110"  // Get field
-  val STPF   = B"4'b0111"  // Put field
-  val STCP   = B"4'b1000"  // Copy
-  val STBCR  = B"4'b1001"  // Bytecode read
-  val STIDX  = B"4'b1010"  // Store index
-  val STPS   = B"4'b1011"  // Put static
-  val STMRAC = B"4'b1100"  // Memory read through constant cache
-  val STMRAF = B"4'b1101"  // Memory read through full assoc cache
-  val STMWDF = B"4'b1110"  // Memory write through full assoc cache
-  val STPFR  = B"4'b1111"  // Put field reference
+  // Note: Using 'def' instead of 'val' to avoid netlist reuse across multiple generators
+  def STMUL  = B"4'b0000"  // Start multiplier
+  def STMWA  = B"4'b0001"  // Store memory write address
+  def STMRA  = B"4'b0010"  // Start memory read
+  def STMWD  = B"4'b0011"  // Start memory write
+  def STALD  = B"4'b0100"  // Array load
+  def STAST  = B"4'b0101"  // Array store
+  def STGF   = B"4'b0110"  // Get field
+  def STPF   = B"4'b0111"  // Put field
+  def STCP   = B"4'b1000"  // Copy
+  def STBCR  = B"4'b1001"  // Bytecode read
+  def STIDX  = B"4'b1010"  // Store index
+  def STPS   = B"4'b1011"  // Put static
+  def STMRAC = B"4'b1100"  // Memory read through constant cache
+  def STMRAF = B"4'b1101"  // Memory read through full assoc cache
+  def STMWDF = B"4'b1110"  // Memory write through full assoc cache
+  def STPFR  = B"4'b1111"  // Put field reference
 
   // MMU instructions without stack change (prefix 0x11x)
-  val STGS     = B"4'b0000"  // Get static
-  val CINVAL   = B"4'b0001"  // Cache invalidate
-  val ATMSTART = B"4'b0010"  // Atomic start
-  val ATMEND   = B"4'b0011"  // Atomic end
+  def STGS     = B"4'b0000"  // Get static
+  def CINVAL   = B"4'b0001"  // Cache invalidate
+  def ATMSTART = B"4'b0010"  // Atomic start
+  def ATMEND   = B"4'b0011"  // Atomic end
 }
 
 /**

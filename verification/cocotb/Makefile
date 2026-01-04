@@ -220,6 +220,14 @@ test_core_control:
 		(echo "ERROR: JopCoreControlTestTb.vhd not found." && exit 1)
 	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreControlTestTb.vhd" TOPLEVEL=jopcorecontroltesttb MODULE=tests.test_core_control
 
+# Test JopCore with multiplier operations (stmul/ldmul)
+test_core_multiplier:
+	@echo "Testing JopCore multiplier integration (stmul/ldmul)..."
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreMultiplierTestTb.vhd $(GENERATED_DIR)/JopCoreMultiplierTestTb.vhd || \
+		(echo "ERROR: JopCoreMultiplierTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreMultiplierTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreMultiplierTestTb.vhd" TOPLEVEL=jopcoremultipliertesttb MODULE=tests.test_core_multiplier
+
 # Help
 help:
 	@echo "JOP CocoTB Test Makefile"
