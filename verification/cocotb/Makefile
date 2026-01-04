@@ -36,7 +36,7 @@ endif
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Phony targets
-.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal test_core help
+.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal test_core test_core_alu help
 
 # Clean build artifacts
 clean::
@@ -111,6 +111,16 @@ test_core:
 	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreTb.vhd $(LOCAL_VHDL_DIR)/JopCoreTb.vhd || \
 		(echo "ERROR: JopCoreTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreTbVhdl\"' first" && exit 1)
 	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreTb.vhd" TOPLEVEL=jopcoretb MODULE=tests.test_core
+
+# Test JopCore with ALU operations (custom ROM)
+# Uses SpinalHDL-generated JopCoreAluTestTb with ALU instruction ROM
+test_core_alu:
+	@echo "Testing JopCore ALU operations (custom ROM)..."
+	@mkdir -p waveforms $(LOCAL_VHDL_DIR)
+	@echo "Copying JopCoreAluTestTb.vhd from SpinalHDL generated directory..."
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreAluTestTb.vhd $(LOCAL_VHDL_DIR)/JopCoreAluTestTb.vhd || \
+		(echo "ERROR: JopCoreAluTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreAluTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(LOCAL_VHDL_DIR)/JopCoreAluTestTb.vhd" TOPLEVEL=jopcorealutesttb MODULE=tests.test_core_alu
 
 # Help
 help:
