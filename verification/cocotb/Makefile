@@ -96,11 +96,13 @@ test_stack:
 	@mkdir -p waveforms $(VHDL_TB_DIR)
 	$(MAKE) VHDL_SOURCES="$(VHDL_TB_DIR)/stack_tb.vhd" TOPLEVEL=stack_tb MODULE=tests.test_stack
 
-# Test SpinalHDL-generated StackStageTb
+# Test SpinalHDL-generated StackStageTb (legacy - generator no longer exists)
 # Uses SpinalHDL-generated VHDL with same interface as stack_tb.vhd
 # Note: Use lowercase toplevel name for GHDL compatibility (VHDL case insensitive)
+# Note: StackStageTb.vhd must be manually placed in vhdl/ directory if needed
 test_stack_spinal:
 	@echo "Testing SpinalHDL StackStageTb..."
+	@echo "WARNING: This target uses a legacy file. Use test_stack instead."
 	@mkdir -p waveforms $(VHDL_TB_DIR)
 	$(MAKE) VHDL_SOURCES="$(VHDL_TB_DIR)/StackStageTb.vhd" TOPLEVEL=stackstagetb MODULE=tests.test_stack
 
