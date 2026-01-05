@@ -87,3 +87,6 @@ htmlcov/
 *.tmp
 *.bak
 *.orig
+
+# Microcode assembler generated files
+asm/generated/

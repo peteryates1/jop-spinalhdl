@@ -13,38 +13,45 @@ Jopa is the microcode assembler for the Java Optimized Processor (JOP). It trans
 ## What Jopa Does
 
 ```
-┌──────────────┐
-│  jvm.asm     │  Microcode assembly source
-│              │  (human-written JVM implementation)
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│  Jopa Tool   │  Microcode assembler (Java)
-│              │  - Parses assembly
-│              │  - Assigns addresses
-│              │  - Creates jump table
-│              │  - Generates multiple formats
-└──────┬───────┘
-       │
-       ├────────────────────────────────────────┐
-       │                                        │
-       ▼                                        ▼
-┌──────────────┐                        ┌──────────────┐
-│ VHDL Outputs │                        │ Data Outputs │
-├──────────────┤                        ├──────────────┤
-│ jtbl.vhd     │  Jump table            │ mem_rom.dat  │  ROM data
-│ rom.vhd      │  Microcode ROM         │ mem_ram.dat  │  RAM data
-│              │                        │ rom.mif      │  Altera ROM
-│              │                        │ ram.mif      │  Altera RAM
-└──────────────┘                        └──────────────┘
-       │                                        │
-       └────────────────┬───────────────────────┘
-                        ▼
-              ┌──────────────────┐
-              │ jvmgen.asm       │  Annotated assembly
-              │                  │  (with addresses)
-              └──────────────────┘
+┌──────────────────┐
+│ asm/src/jvm.asm  │  Microcode assembly source
+│                  │  (human-written with C preprocessor macros)
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  gcc -E -C -P    │  C preprocessor
+│                  │  - Expands #define macros
+│                  │  - Processes #ifdef directives
+│                  │  - Removes C comments
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ generated/       │  Preprocessed assembly
+│   jvm.asm        │  (expanded, ready for assembly)
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Jopa Tool       │  Microcode assembler (Java)
+│                  │  - Parses assembly
+│                  │  - Assigns addresses
+│                  │  - Creates jump table
+│                  │  - Generates multiple formats
+└────────┬─────────┘
+         │
+         ├───────────────────────────────────────────────┐
+         │                                               │
+         ▼                                               ▼
+┌──────────────────┐                        ┌──────────────────┐
+│  VHDL Outputs    │                        │  Data Outputs    │
+├──────────────────┤                        ├──────────────────┤
+│ jtbl.vhd         │  Jump table (VHDL)     │ mem_rom.dat      │  ROM data
+│ JumpTableData    │  Jump table (Scala)    │ mem_ram.dat      │  RAM data
+│   .scala         │    ← NEW               │ rom.mif          │  Altera ROM
+│ rom.vhd          │  Microcode ROM         │ ram.mif          │  Altera RAM
+└──────────────────┘                        └──────────────────┘
 ```
 
 ## Input Files

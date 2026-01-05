@@ -38,6 +38,9 @@ Test / testOptions += Tests.Argument("-oD")  // Show test durations
 // Ensure generated directory exists
 Compile / unmanagedSourceDirectories += baseDirectory.value / "generated"
 
+// Include microcode-generated Scala files (JumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / ".." / ".." / "asm" / "generated"
+
 // Source directories
 Compile / scalaSource := baseDirectory.value / "src" / "main" / "scala"
 Test / scalaSource := baseDirectory.value / "src" / "test" / "scala"
