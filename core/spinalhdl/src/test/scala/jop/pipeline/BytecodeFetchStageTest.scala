@@ -69,22 +69,27 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       // jfetch cycle 1
       dut.io.jfetch #= true
       dut.clockDomain.waitSampling()
+      sleep(1)  // Wait for combinational logic to settle
       assert(dut.io.jpc_out.toInt == 1, "jpc should increment to 1")
 
       // jfetch cycle 2
       dut.clockDomain.waitSampling()
+      sleep(1)
       assert(dut.io.jpc_out.toInt == 2, "jpc should increment to 2")
 
       // jfetch cycle 3
       dut.clockDomain.waitSampling()
+      sleep(1)
       assert(dut.io.jpc_out.toInt == 3, "jpc should increment to 3")
 
       // Hold (jfetch = false)
       dut.io.jfetch #= false
       dut.clockDomain.waitSampling()
+      sleep(1)
       assert(dut.io.jpc_out.toInt == 3, "jpc should hold at 3")
 
       dut.clockDomain.waitSampling()
+      sleep(1)
       assert(dut.io.jpc_out.toInt == 3, "jpc should still hold at 3")
     }
   }
@@ -112,12 +117,14 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jpc_wr #= true
       dut.io.din #= 0x123
       dut.clockDomain.waitSampling()
+      sleep(1)
 
       assert(dut.io.jpc_out.toInt == 0x123, f"jpc should be 0x123, got 0x${dut.io.jpc_out.toInt.toHexString}")
 
       // Clear jpc_wr
       dut.io.jpc_wr #= false
       dut.clockDomain.waitSampling()
+      sleep(1)
       assert(dut.io.jpc_out.toInt == 0x123, "jpc should hold at 0x123")
     }
   }
@@ -150,6 +157,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
 
       // Wait one more cycle for synchronous RAM read
       dut.clockDomain.waitSampling()
+      sleep(1)
 
       // Read NOP at address 0
       val nopAddr = dut.io.jpaddr.toInt
@@ -157,17 +165,22 @@ class BytecodeFetchStageTest extends AnyFunSuite {
 
       // Increment to address 1 (iadd)
       dut.io.jfetch #= true
-      dut.clockDomain.waitSampling()
-      // Wait for synchronous RAM read
-      dut.clockDomain.waitSampling()
+      dut.clockDomain.waitSampling()  // jpc increments 0→1, RAM latches addr 1
+      dut.io.jfetch #= false  // Stop incrementing
+      sleep(1)
+      dut.clockDomain.waitSampling()  // RAM outputs data from addr 1
+      sleep(1)
 
       val iaddAddr = dut.io.jpaddr.toInt
       assert(iaddAddr == 0x26C, f"IADD should map to 0x26C, got 0x$iaddAddr%03x")
 
       // Increment to address 2 (goto)
-      dut.clockDomain.waitSampling()
-      // Wait for synchronous RAM read
-      dut.clockDomain.waitSampling()
+      dut.io.jfetch #= true
+      dut.clockDomain.waitSampling()  // jpc increments 1→2, RAM latches addr 2
+      dut.io.jfetch #= false  // Stop incrementing
+      sleep(1)
+      dut.clockDomain.waitSampling()  // RAM outputs data from addr 2
+      sleep(1)
 
       val gotoAddr = dut.io.jpaddr.toInt
       assert(gotoAddr == 0x296, f"GOTO should map to 0x296, got 0x$gotoAddr%03x")
