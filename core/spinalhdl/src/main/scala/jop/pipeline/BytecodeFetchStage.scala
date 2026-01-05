@@ -23,17 +23,18 @@ case class BytecodeFetchConfig(
 }
 
 /**
- * Java Bytecode Fetch Stage (Simplified Version)
+ * Java Bytecode Fetch Stage
  *
- * Minimal implementation focusing on:
+ * Implemented features (Phase A + Phase B.1):
  * - JPC increment on jfetch
- * - JBC RAM read
+ * - JBC RAM read (synchronous, 2KB)
  * - JumpTable integration for bytecode → microcode translation
+ * - JPC write for method calls (jpc_wr)
+ * - Operand accumulation (jopdfetch) - 16-bit shift register
  *
- * Features to add incrementally:
- * - Operand accumulation (jopdfetch)
- * - Branch logic
- * - Method call (jpc_wr)
+ * Features to add incrementally (Phase B.2+):
+ * - Branch logic (15 branch types)
+ * - Interrupt/exception handling
  *
  * @param config Configuration
  * @param jbcInit Optional JBC RAM initialization
@@ -49,15 +50,16 @@ case class BytecodeFetchStage(
     val din       = in Bits(32 bits)                  // Stack TOS
     val jfetch    = in Bool()                         // Fetch bytecode
 
+    // Operand fetch (Phase B.1 - implemented)
+    val jopdfetch = in Bool()                         // Fetch operand (triggers shift)
+
     // ==========================================================================
-    // DEFERRED FEATURES (Phase B/C)
-    // These inputs are declared but not yet implemented in Phase A:
-    // - jopdfetch: Operand accumulation logic (TODO Phase B)
-    // - jbr: Branch logic and condition evaluation (TODO Phase B)
-    // - zf/nf/eq/lt: Branch condition flags (TODO Phase B)
+    // DEFERRED FEATURES (Phase B.2+)
+    // These inputs are declared but not yet implemented:
+    // - jbr: Branch logic and condition evaluation (TODO Phase B.2)
+    // - zf/nf/eq/lt: Branch condition flags (TODO Phase B.2)
     // ==========================================================================
-    val jopdfetch = in Bool()                         // TODO Phase B: Fetch operand
-    val jbr       = in Bool()                         // TODO Phase B: Branch enable
+    val jbr       = in Bool()                         // TODO Phase B.2: Branch enable
 
     // Branch condition flags (TODO Phase B: used for 15 branch types)
     val zf = in Bool()                                // Zero flag
@@ -67,7 +69,7 @@ case class BytecodeFetchStage(
 
     // Outputs
     val jpaddr   = out UInt(config.pcWidth bits)      // Microcode address from jump table
-    val opd      = out Bits(config.opdWidth bits)     // TODO Phase B: Operand (currently 0)
+    val opd      = out Bits(config.opdWidth bits)     // Operand (16-bit, accumulated via jopdfetch)
     val jpc_out  = out UInt(config.jpcWidth + 1 bits) // Current jpc
   }
 
@@ -86,10 +88,11 @@ case class BytecodeFetchStage(
   }
 
   // ==========================================================================
-  // Java PC Register
+  // Registers
   // ==========================================================================
 
-  val jpc = Reg(UInt(config.jpcWidth + 1 bits)) init(0)
+  val jpc = Reg(UInt(config.jpcWidth + 1 bits)) init(0)  // Java PC
+  val jopd = Reg(Bits(config.opdWidth bits)) init(0)     // Operand accumulator
 
   // ==========================================================================
   // JBC Address and Read
@@ -129,18 +132,29 @@ case class BytecodeFetchStage(
   io.jpc_out := jpc
 
   // ==========================================================================
+  // Operand Accumulation Logic
+  // ==========================================================================
+
+  // Low byte always gets updated with current JBC RAM output
+  jopd(7 downto 0) := jbcData
+
+  // When jopdfetch is asserted, shift low byte to high byte
+  // This allows accumulating multi-byte operands:
+  //   Cycle 1: jfetch=1, bytecode 0x12 → jopd = 0x00_12
+  //   Cycle 2: jopdfetch=1, operand 0x34 → jopd = 0x12_34 (shift + load)
+  when(io.jopdfetch) {
+    jopd(15 downto 8) := jopd(7 downto 0)
+  }
+
+  io.opd := jopd
+
+  // ==========================================================================
   // Jump Table Integration
   // ==========================================================================
 
   val jumpTable = JumpTable(JumpTableConfig(pcWidth = config.pcWidth))
   jumpTable.io.bytecode := jbcData
   io.jpaddr := jumpTable.io.jpaddr
-
-  // ==========================================================================
-  // Operand Output (Not Implemented Yet)
-  // ==========================================================================
-
-  io.opd := 0
 }
 
 /**
