@@ -186,4 +186,110 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       assert(gotoAddr == 0x296, f"GOTO should map to 0x296, got 0x$gotoAddr%03x")
     }
   }
+
+  test("BytecodeFetchStage: jpc_wr has priority over jfetch") {
+    SimConfig.withWave.compile(createDut(Seq.fill(16)(0x00))).doSim { dut =>
+      dut.clockDomain.forkStimulus(period = 10)
+
+      // Reset
+      dut.clockDomain.assertReset()
+      dut.io.jpc_wr #= false
+      dut.io.din #= 0
+      dut.io.jfetch #= false
+      dut.io.jopdfetch #= false
+      dut.io.jbr #= false
+      dut.io.zf #= false
+      dut.io.nf #= false
+      dut.io.eq #= false
+      dut.io.lt #= false
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling()
+
+      // Assert both jpc_wr and jfetch - jpc_wr should win
+      dut.io.jpc_wr #= true
+      dut.io.din #= 0x456
+      dut.io.jfetch #= true
+      dut.clockDomain.waitSampling()
+      sleep(1)
+
+      // Should load 0x456, not increment from 0
+      assert(dut.io.jpc_out.toInt == 0x456, f"jpc_wr should have priority, got 0x${dut.io.jpc_out.toInt.toHexString}")
+    }
+  }
+
+  test("BytecodeFetchStage: jpc overflow behavior") {
+    SimConfig.withWave.compile(createDut(Seq.fill(2048)(0x00))).doSim { dut =>
+      dut.clockDomain.forkStimulus(period = 10)
+
+      // Reset
+      dut.clockDomain.assertReset()
+      dut.io.jpc_wr #= false
+      dut.io.din #= 0
+      dut.io.jfetch #= false
+      dut.io.jopdfetch #= false
+      dut.io.jbr #= false
+      dut.io.zf #= false
+      dut.io.nf #= false
+      dut.io.eq #= false
+      dut.io.lt #= false
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling()
+
+      // Set jpc to near maximum (2047 = 0x7FF)
+      dut.io.jpc_wr #= true
+      dut.io.din #= 0x7FF
+      dut.clockDomain.waitSampling()
+      sleep(1)
+      assert(dut.io.jpc_out.toInt == 0x7FF, "jpc should be at 0x7FF")
+
+      // Clear jpc_wr and increment
+      dut.io.jpc_wr #= false
+      dut.io.jfetch #= true
+      dut.clockDomain.waitSampling()
+      sleep(1)
+
+      // Should overflow to 0x800 (bit 11 set, indicating overflow)
+      val jpcAfterOverflow = dut.io.jpc_out.toInt
+      assert(jpcAfterOverflow == 0x800, f"jpc should overflow to 0x800, got 0x$jpcAfterOverflow%03x")
+    }
+  }
+
+  test("BytecodeFetchStage: operand output remains zero in Phase A") {
+    SimConfig.withWave.compile(createDut(Seq.fill(16)(0x00))).doSim { dut =>
+      dut.clockDomain.forkStimulus(period = 10)
+
+      // Reset
+      dut.clockDomain.assertReset()
+      dut.io.jpc_wr #= false
+      dut.io.din #= 0
+      dut.io.jfetch #= false
+      dut.io.jopdfetch #= false
+      dut.io.jbr #= false
+      dut.io.zf #= false
+      dut.io.nf #= false
+      dut.io.eq #= false
+      dut.io.lt #= false
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling()
+
+      // Verify opd is 0 after reset
+      assert(dut.io.opd.toInt == 0, "opd should be 0 after reset")
+
+      // Try jfetch - opd should remain 0 (Phase A simplified)
+      dut.io.jfetch #= true
+      dut.clockDomain.waitSampling()
+      sleep(1)
+      assert(dut.io.opd.toInt == 0, "opd should remain 0 during jfetch")
+
+      // Try jopdfetch - opd should remain 0 (not implemented in Phase A)
+      dut.io.jfetch #= false
+      dut.io.jopdfetch #= true
+      dut.clockDomain.waitSampling()
+      sleep(1)
+      assert(dut.io.opd.toInt == 0, "opd should remain 0 during jopdfetch (Phase A)")
+    }
+  }
 }

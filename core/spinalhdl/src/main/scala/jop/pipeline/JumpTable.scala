@@ -74,8 +74,10 @@ case class JumpTable(
   // Lookup Logic
   // ==========================================================================
 
-  // Asynchronous ROM read (combinational)
+  // Asynchronous ROM read (combinational, 0-cycle latency)
   // bytecode → ROM address → microcode address
+  // Note: readAsync generates a Verilog warning "can only be write first"
+  //       This is safe here since ROM has no writes (read-only data)
   io.jpaddr := rom.readAsync(io.bytecode.asUInt)
 
   // ==========================================================================

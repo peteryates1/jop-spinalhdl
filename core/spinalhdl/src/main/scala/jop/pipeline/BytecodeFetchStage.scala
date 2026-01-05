@@ -44,22 +44,30 @@ case class BytecodeFetchStage(
 ) extends Component {
 
   val io = new Bundle {
-    // Control inputs
+    // Control inputs (Phase A - implemented)
     val jpc_wr    = in Bool()                         // Write jpc (method call)
     val din       = in Bits(32 bits)                  // Stack TOS
     val jfetch    = in Bool()                         // Fetch bytecode
-    val jopdfetch = in Bool()                         // Fetch operand (not implemented yet)
-    val jbr       = in Bool()                         // Branch enable (not implemented yet)
 
-    // Branch conditions (not used yet)
-    val zf = in Bool()
-    val nf = in Bool()
-    val eq = in Bool()
-    val lt = in Bool()
+    // ==========================================================================
+    // DEFERRED FEATURES (Phase B/C)
+    // These inputs are declared but not yet implemented in Phase A:
+    // - jopdfetch: Operand accumulation logic (TODO Phase B)
+    // - jbr: Branch logic and condition evaluation (TODO Phase B)
+    // - zf/nf/eq/lt: Branch condition flags (TODO Phase B)
+    // ==========================================================================
+    val jopdfetch = in Bool()                         // TODO Phase B: Fetch operand
+    val jbr       = in Bool()                         // TODO Phase B: Branch enable
+
+    // Branch condition flags (TODO Phase B: used for 15 branch types)
+    val zf = in Bool()                                // Zero flag
+    val nf = in Bool()                                // Negative flag
+    val eq = in Bool()                                // Equal flag
+    val lt = in Bool()                                // Less-than flag
 
     // Outputs
     val jpaddr   = out UInt(config.pcWidth bits)      // Microcode address from jump table
-    val opd      = out Bits(config.opdWidth bits)     // Operand (not implemented yet)
+    val opd      = out Bits(config.opdWidth bits)     // TODO Phase B: Operand (currently 0)
     val jpc_out  = out UInt(config.jpcWidth + 1 bits) // Current jpc
   }
 
@@ -87,12 +95,16 @@ case class BytecodeFetchStage(
   // JBC Address and Read
   // ==========================================================================
 
-  // Simple logic: JBC address = jpc (no branches yet)
-  // On jfetch or jopdfetch, read next address (jpc + 1)
-  // Otherwise, read current address (jpc)
+  // JBC address calculation
+  // Note: jpc is (jpcWidth + 1) bits (12 bits) to detect overflow,
+  //       jbcAddr is jpcWidth bits (11 bits) for RAM addressing (2KB = 2048 bytes)
+  //       The upper bit is intentionally truncated via slicing.
+  //
+  // Logic: On jfetch or jopdfetch, read next address (jpc + 1)
+  //        Otherwise, read current address (jpc)
   val jbcAddr = UInt(config.jpcWidth bits)
   when(io.jfetch || io.jopdfetch) {
-    jbcAddr := (jpc + 1)(config.jpcWidth - 1 downto 0)
+    jbcAddr := (jpc + 1)(config.jpcWidth - 1 downto 0)  // Truncate to RAM address width
   }.otherwise {
     jbcAddr := jpc(config.jpcWidth - 1 downto 0)
   }
@@ -104,17 +116,15 @@ case class BytecodeFetchStage(
   // JPC Update Logic
   // ==========================================================================
 
-  // Simple priority: jpc_wr > jfetch > hold
+  // Priority: jpc_wr > jfetch/jopdfetch > hold (register holds by default)
   when(io.jpc_wr) {
     // Method call: load from stack
     jpc := io.din(config.jpcWidth downto 0).asUInt
   }.elsewhen(io.jfetch || io.jopdfetch) {
     // Increment
     jpc := jpc + 1
-  }.otherwise {
-    // Hold
-    jpc := jpc
   }
+  // No .otherwise needed - register holds its value by default
 
   io.jpc_out := jpc
 
