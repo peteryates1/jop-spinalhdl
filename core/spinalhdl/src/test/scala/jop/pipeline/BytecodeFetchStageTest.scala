@@ -1,0 +1,176 @@
+package jop.pipeline
+
+import org.scalatest.funsuite.AnyFunSuite
+import spinal.core._
+import spinal.core.sim._
+
+class BytecodeFetchStageTest extends AnyFunSuite {
+
+  // Helper to create DUT with test bytecode ROM
+  def createDut(jbcData: Seq[Int]): BytecodeFetchStage = {
+    val config = BytecodeFetchConfig(jpcWidth = 11, pcWidth = 11)
+    // Pad to full JBC RAM size (2^11 = 2048 bytes)
+    val paddedData = jbcData.padTo(1 << config.jpcWidth, 0)
+    BytecodeFetchStage(
+      config = config,
+      jbcInit = Some(paddedData.map(BigInt(_)))
+    )
+  }
+
+  test("BytecodeFetchStage: reset clears state") {
+    SimConfig.withWave.compile(createDut(Seq.fill(16)(0x00))).doSim { dut =>
+      dut.clockDomain.forkStimulus(period = 10)
+
+      // Apply reset
+      dut.clockDomain.assertReset()
+      dut.io.jpc_wr #= false
+      dut.io.din #= 0
+      dut.io.jfetch #= false
+      dut.io.jopdfetch #= false
+      dut.io.jbr #= false
+      dut.io.zf #= false
+      dut.io.nf #= false
+      dut.io.eq #= false
+      dut.io.lt #= false
+
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling()
+
+      // Verify reset state
+      assert(dut.io.jpc_out.toInt == 0, "jpc should be 0 after reset")
+      assert(dut.io.opd.toInt == 0, "opd should be 0 after reset")
+    }
+  }
+
+  test("BytecodeFetchStage: jpc increments on jfetch") {
+    // Simple ROM: all NOP (0x00)
+    SimConfig.withWave.compile(createDut(Seq.fill(16)(0x00))).doSim { dut =>
+      dut.clockDomain.forkStimulus(period = 10)
+
+      // Reset
+      dut.clockDomain.assertReset()
+      dut.io.jpc_wr #= false
+      dut.io.din #= 0
+      dut.io.jfetch #= false
+      dut.io.jopdfetch #= false
+      dut.io.jbr #= false
+      dut.io.zf #= false
+      dut.io.nf #= false
+      dut.io.eq #= false
+      dut.io.lt #= false
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling()
+
+      // Initial jpc = 0
+      assert(dut.io.jpc_out.toInt == 0, "Initial jpc should be 0")
+
+      // jfetch cycle 1
+      dut.io.jfetch #= true
+      dut.clockDomain.waitSampling()
+      assert(dut.io.jpc_out.toInt == 1, "jpc should increment to 1")
+
+      // jfetch cycle 2
+      dut.clockDomain.waitSampling()
+      assert(dut.io.jpc_out.toInt == 2, "jpc should increment to 2")
+
+      // jfetch cycle 3
+      dut.clockDomain.waitSampling()
+      assert(dut.io.jpc_out.toInt == 3, "jpc should increment to 3")
+
+      // Hold (jfetch = false)
+      dut.io.jfetch #= false
+      dut.clockDomain.waitSampling()
+      assert(dut.io.jpc_out.toInt == 3, "jpc should hold at 3")
+
+      dut.clockDomain.waitSampling()
+      assert(dut.io.jpc_out.toInt == 3, "jpc should still hold at 3")
+    }
+  }
+
+  test("BytecodeFetchStage: jpc_wr loads from stack") {
+    SimConfig.withWave.compile(createDut(Seq.fill(16)(0x00))).doSim { dut =>
+      dut.clockDomain.forkStimulus(period = 10)
+
+      // Reset
+      dut.clockDomain.assertReset()
+      dut.io.jpc_wr #= false
+      dut.io.din #= 0
+      dut.io.jfetch #= false
+      dut.io.jopdfetch #= false
+      dut.io.jbr #= false
+      dut.io.zf #= false
+      dut.io.nf #= false
+      dut.io.eq #= false
+      dut.io.lt #= false
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling()
+
+      // Write jpc = 0x123
+      dut.io.jpc_wr #= true
+      dut.io.din #= 0x123
+      dut.clockDomain.waitSampling()
+
+      assert(dut.io.jpc_out.toInt == 0x123, f"jpc should be 0x123, got 0x${dut.io.jpc_out.toInt.toHexString}")
+
+      // Clear jpc_wr
+      dut.io.jpc_wr #= false
+      dut.clockDomain.waitSampling()
+      assert(dut.io.jpc_out.toInt == 0x123, "jpc should hold at 0x123")
+    }
+  }
+
+  test("BytecodeFetchStage: JumpTable integration") {
+    // ROM with known bytecodes
+    val jbcData = Seq(
+      0x00,  // nop at address 0
+      0x60,  // iadd at address 1
+      0xA7   // goto at address 2
+    )
+
+    SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
+      dut.clockDomain.forkStimulus(period = 10)
+
+      // Reset
+      dut.clockDomain.assertReset()
+      dut.io.jpc_wr #= false
+      dut.io.din #= 0
+      dut.io.jfetch #= false
+      dut.io.jopdfetch #= false
+      dut.io.jbr #= false
+      dut.io.zf #= false
+      dut.io.nf #= false
+      dut.io.eq #= false
+      dut.io.lt #= false
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling()
+
+      // Wait one more cycle for synchronous RAM read
+      dut.clockDomain.waitSampling()
+
+      // Read NOP at address 0
+      val nopAddr = dut.io.jpaddr.toInt
+      assert(nopAddr == 0x218, f"NOP should map to 0x218, got 0x$nopAddr%03x")
+
+      // Increment to address 1 (iadd)
+      dut.io.jfetch #= true
+      dut.clockDomain.waitSampling()
+      // Wait for synchronous RAM read
+      dut.clockDomain.waitSampling()
+
+      val iaddAddr = dut.io.jpaddr.toInt
+      assert(iaddAddr == 0x26C, f"IADD should map to 0x26C, got 0x$iaddAddr%03x")
+
+      // Increment to address 2 (goto)
+      dut.clockDomain.waitSampling()
+      // Wait for synchronous RAM read
+      dut.clockDomain.waitSampling()
+
+      val gotoAddr = dut.io.jpaddr.toInt
+      assert(gotoAddr == 0x296, f"GOTO should map to 0x296, got 0x$gotoAddr%03x")
+    }
+  }
+}
