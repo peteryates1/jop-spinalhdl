@@ -25,16 +25,17 @@ case class BytecodeFetchConfig(
 /**
  * Java Bytecode Fetch Stage
  *
- * Implemented features (Phase A + Phase B.1):
+ * Implemented features (Phase A + Phase B):
  * - JPC increment on jfetch
  * - JBC RAM read (synchronous, 2KB)
  * - JumpTable integration for bytecode → microcode translation
  * - JPC write for method calls (jpc_wr)
  * - Operand accumulation (jopdfetch) - 16-bit shift register
+ * - Branch logic - 15 branch types with condition evaluation
  *
- * Features to add incrementally (Phase B.2+):
- * - Branch logic (15 branch types)
+ * Features to add incrementally (Phase C+):
  * - Interrupt/exception handling
+ * - Method cache integration
  *
  * @param config Configuration
  * @param jbcInit Optional JBC RAM initialization
@@ -50,22 +51,15 @@ case class BytecodeFetchStage(
     val din       = in Bits(32 bits)                  // Stack TOS
     val jfetch    = in Bool()                         // Fetch bytecode
 
-    // Operand fetch (Phase B.1 - implemented)
+    // Operand and branch control (Phase B - implemented)
     val jopdfetch = in Bool()                         // Fetch operand (triggers shift)
+    val jbr       = in Bool()                         // Branch evaluation enable
 
-    // ==========================================================================
-    // DEFERRED FEATURES (Phase B.2+)
-    // These inputs are declared but not yet implemented:
-    // - jbr: Branch logic and condition evaluation (TODO Phase B.2)
-    // - zf/nf/eq/lt: Branch condition flags (TODO Phase B.2)
-    // ==========================================================================
-    val jbr       = in Bool()                         // TODO Phase B.2: Branch enable
-
-    // Branch condition flags (TODO Phase B: used for 15 branch types)
-    val zf = in Bool()                                // Zero flag
-    val nf = in Bool()                                // Negative flag
-    val eq = in Bool()                                // Equal flag
-    val lt = in Bool()                                // Less-than flag
+    // Branch condition flags (Phase B - implemented, used for 15 branch types)
+    val zf = in Bool()                                // Zero flag (for ifeq, ifne, ifgt, ifle)
+    val nf = in Bool()                                // Negative flag (for iflt, ifge, ifgt, ifle)
+    val eq = in Bool()                                // Equal flag (for if_icmpeq, if_icmpne, if_icmpgt, if_icmple)
+    val lt = in Bool()                                // Less-than flag (for if_icmplt, if_icmpge, if_icmpgt, if_icmple)
 
     // Outputs
     val jpaddr   = out UInt(config.pcWidth bits)      // Microcode address from jump table
@@ -91,25 +85,36 @@ case class BytecodeFetchStage(
   // Registers
   // ==========================================================================
 
-  val jpc = Reg(UInt(config.jpcWidth + 1 bits)) init(0)  // Java PC
-  val jopd = Reg(Bits(config.opdWidth bits)) init(0)     // Operand accumulator
+  val jpc = Reg(UInt(config.jpcWidth + 1 bits)) init(0)       // Java PC
+  val jopd = Reg(Bits(config.opdWidth bits)) init(0)          // Operand accumulator
+  val jpc_br = Reg(UInt(config.jpcWidth + 1 bits)) init(0)    // Branch start address
+  val jinstr = Reg(Bits(8 bits)) init(0)                      // Instruction bytecode
+  val jmp_addr = Reg(UInt(config.jpcWidth + 1 bits)) init(0)  // Branch target address
 
   // ==========================================================================
   // JBC Address and Read
   // ==========================================================================
 
-  // JBC address calculation
+  // JBC address calculation with branch support
   // Note: jpc is (jpcWidth + 1) bits (12 bits) to detect overflow,
   //       jbcAddr is jpcWidth bits (11 bits) for RAM addressing (2KB = 2048 bytes)
   //       The upper bit is intentionally truncated via slicing.
   //
-  // Logic: On jfetch or jopdfetch, read next address (jpc + 1)
-  //        Otherwise, read current address (jpc)
+  // Priority: jmp > (jfetch | jopdfetch) > hold
+  // - If branch taken (jmp), use branch target address (jmp_addr)
+  // - If fetching, read next address (jpc + 1)
+  // - Otherwise, read current address (jpc)
   val jbcAddr = UInt(config.jpcWidth bits)
-  when(io.jfetch || io.jopdfetch) {
-    jbcAddr := (jpc + 1)(config.jpcWidth - 1 downto 0)  // Truncate to RAM address width
+
+  // Forward declare jmp (will be defined in branch logic section)
+  val jmp = Bool()
+
+  when(jmp) {
+    jbcAddr := jmp_addr(config.jpcWidth - 1 downto 0)  // Branch target
+  }.elsewhen(io.jfetch || io.jopdfetch) {
+    jbcAddr := (jpc + 1)(config.jpcWidth - 1 downto 0)  // Next address
   }.otherwise {
-    jbcAddr := jpc(config.jpcWidth - 1 downto 0)
+    jbcAddr := jpc(config.jpcWidth - 1 downto 0)  // Current address
   }
 
   // Synchronous RAM read
@@ -119,10 +124,13 @@ case class BytecodeFetchStage(
   // JPC Update Logic
   // ==========================================================================
 
-  // Priority: jpc_wr > jfetch/jopdfetch > hold (register holds by default)
+  // Priority: jpc_wr > jmp > jfetch/jopdfetch > hold (register holds by default)
   when(io.jpc_wr) {
     // Method call: load from stack
     jpc := io.din(config.jpcWidth downto 0).asUInt
+  }.elsewhen(jmp) {
+    // Branch taken: load branch target
+    jpc := jmp_addr
   }.elsewhen(io.jfetch || io.jopdfetch) {
     // Increment
     jpc := jpc + 1
@@ -147,6 +155,72 @@ case class BytecodeFetchStage(
   }
 
   io.opd := jopd
+
+  // ==========================================================================
+  // Branch Logic
+  // ==========================================================================
+
+  // Capture instruction bytecode and branch start address on jfetch
+  when(io.jfetch) {
+    jinstr := jbcData
+    jpc_br := jpc
+  }
+
+  // Extract branch type from instruction low 4 bits
+  val tp = jinstr(3 downto 0)
+
+  // Branch target address calculation (registered)
+  // Target = jpc_br + sign_extend(jopd_high & jbc_q)
+  // Using upper bits of jopd and current jbc_q to form 16-bit signed offset
+  val branchOffset = (jopd(config.jpcWidth - 8 downto 0) ## jbcData).asSInt.resize(config.jpcWidth + 1 bits)
+  jmp_addr := (jpc_br.asSInt + branchOffset).asUInt
+
+  // Branch condition evaluation (combinational)
+  // Note: jmp was forward-declared earlier for use in jbcAddr calculation
+  jmp := False
+  when(io.jbr) {
+    switch(tp) {
+      is(9) {  // ifeq, ifnull
+        when(io.zf) { jmp := True }
+      }
+      is(10) {  // ifne, ifnonnull
+        when(!io.zf) { jmp := True }
+      }
+      is(11) {  // iflt
+        when(io.nf) { jmp := True }
+      }
+      is(12) {  // ifge
+        when(!io.nf) { jmp := True }
+      }
+      is(13) {  // ifgt
+        when(!io.zf && !io.nf) { jmp := True }
+      }
+      is(14) {  // ifle
+        when(io.zf || io.nf) { jmp := True }
+      }
+      is(15) {  // if_icmpeq, if_acmpeq
+        when(io.eq) { jmp := True }
+      }
+      is(0) {  // if_icmpne, if_acmpne
+        when(!io.eq) { jmp := True }
+      }
+      is(1) {  // if_icmplt
+        when(io.lt) { jmp := True }
+      }
+      is(2) {  // if_icmpge
+        when(!io.lt) { jmp := True }
+      }
+      is(3) {  // if_icmpgt
+        when(!io.eq && !io.lt) { jmp := True }
+      }
+      is(4) {  // if_icmple
+        when(io.eq || io.lt) { jmp := True }
+      }
+      is(7) {  // goto
+        jmp := True
+      }
+    }
+  }
 
   // ==========================================================================
   // Jump Table Integration

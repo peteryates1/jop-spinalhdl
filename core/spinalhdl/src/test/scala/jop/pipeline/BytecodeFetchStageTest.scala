@@ -361,4 +361,238 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       assert(lowByte == 0xAA, f"Low byte should be 0xAA from RAM, got 0x$lowByte%02x")
     }
   }
+
+  test("BytecodeFetchStage: goto branch (unconditional)") {
+    // Test unconditional branch (goto, tp=7)
+    // Bytecode: 0xA7 (goto) with low bits = 0x7
+    val jbcData = Seq(
+      0xA7,  // goto instruction at address 0 (tp = 7)
+      0x00,  // high byte of offset
+      0x05,  // low byte of offset (+5)
+      0x99,  // target at address 6 (0+1+5=6)
+      0x99,
+      0x99,
+      0xAA   // Should jump here
+    )
+
+    SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
+      dut.clockDomain.forkStimulus(period = 10)
+
+      // Reset
+      dut.clockDomain.assertReset()
+      dut.io.jpc_wr #= false
+      dut.io.din #= 0
+      dut.io.jfetch #= false
+      dut.io.jopdfetch #= false
+      dut.io.jbr #= false
+      dut.io.zf #= false
+      dut.io.nf #= false
+      dut.io.eq #= false
+      dut.io.lt #= false
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.waitSampling()
+      sleep(1)
+
+      // Fetch goto instruction at address 0
+      dut.io.jfetch #= true
+      dut.clockDomain.waitSampling()
+      dut.io.jfetch #= false
+      sleep(1)
+      // jpc_br = 0, jinstr = 0xA7, jpc = 1
+
+      // Fetch offset bytes with jopdfetch
+      dut.io.jopdfetch #= true
+      dut.clockDomain.waitSampling()  // Fetch high byte (0x00)
+      dut.clockDomain.waitSampling()  // Fetch low byte (0x05)
+      dut.io.jopdfetch #= false
+      sleep(1)
+      // jopd = 0x0005
+
+      // Assert branch (goto is unconditional)
+      dut.io.jbr #= true
+      dut.clockDomain.waitSampling()
+      sleep(1)
+      // jmp should be true, jmp_addr = jpc_br + offset = 0 + 5 = 5
+      // But wait, target should be jpc_br(0) + 1 (next instruction) + offset(5) = 6
+      // Actually, in VHDL: jmp_addr = jpc_br + (jopd_high & jbc_q)
+      // After jopdfetch twice, jopd has the full offset
+
+      // After branch, jpc should be at target address
+      val jpc_after_branch = dut.io.jpc_out.toInt
+      // Expected: jpc_br(0) + offset(5) = 5, but need to account for instruction fetch
+      // The branch target calculation uses jpc_br (start of instruction = 0)
+      // Target = jpc_br + sign_extend(offset) = 0 + 5 = 5
+      assert(jpc_after_branch == 5, f"JPC should be 5 after goto, got $jpc_after_branch")
+    }
+  }
+
+  test("BytecodeFetchStage: ifeq branch taken") {
+    // Test conditional branch (ifeq, tp=9) when zf=1
+    val jbcData = Seq(
+      0x99,  // ifeq instruction at address 0 (opcode 0x99, tp = 9)
+      0x00,  // high byte of offset
+      0x03,  // low byte of offset (+3)
+      0x11,
+      0x22,
+      0x33   // Should jump here (address 0 + 3 = 3)
+    )
+
+    SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
+      dut.clockDomain.forkStimulus(period = 10)
+
+      // Reset
+      dut.clockDomain.assertReset()
+      dut.io.jpc_wr #= false
+      dut.io.din #= 0
+      dut.io.jfetch #= false
+      dut.io.jopdfetch #= false
+      dut.io.jbr #= false
+      dut.io.zf #= false  // Will set to true for branch
+      dut.io.nf #= false
+      dut.io.eq #= false
+      dut.io.lt #= false
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.waitSampling()
+      sleep(1)
+
+      // Fetch ifeq instruction
+      dut.io.jfetch #= true
+      dut.clockDomain.waitSampling()
+      dut.io.jfetch #= false
+      sleep(1)
+
+      // Fetch offset bytes
+      dut.io.jopdfetch #= true
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.waitSampling()
+      dut.io.jopdfetch #= false
+      sleep(1)
+
+      // Assert branch with zf=1 (condition true)
+      dut.io.zf #= true
+      dut.io.jbr #= true
+      dut.clockDomain.waitSampling()
+      sleep(1)
+
+      val jpc_after = dut.io.jpc_out.toInt
+      assert(jpc_after == 3, f"JPC should be 3 after ifeq with zf=1, got $jpc_after")
+    }
+  }
+
+  test("BytecodeFetchStage: ifeq branch not taken") {
+    // Test conditional branch (ifeq, tp=9) when zf=0
+    val jbcData = Seq(
+      0x99,  // ifeq instruction at address 0
+      0x00,  // offset high
+      0x03,  // offset low
+      0x11,  // Should NOT jump, continue here
+      0x22
+    )
+
+    SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
+      dut.clockDomain.forkStimulus(period = 10)
+
+      // Reset
+      dut.clockDomain.assertReset()
+      dut.io.jpc_wr #= false
+      dut.io.din #= 0
+      dut.io.jfetch #= false
+      dut.io.jopdfetch #= false
+      dut.io.jbr #= false
+      dut.io.zf #= false
+      dut.io.nf #= false
+      dut.io.eq #= false
+      dut.io.lt #= false
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.waitSampling()
+      sleep(1)
+
+      val jpc_before = dut.io.jpc_out.toInt
+
+      // Fetch ifeq instruction
+      dut.io.jfetch #= true
+      dut.clockDomain.waitSampling()
+      dut.io.jfetch #= false
+      sleep(1)
+
+      // Fetch offset bytes
+      dut.io.jopdfetch #= true
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.waitSampling()
+      dut.io.jopdfetch #= false
+      sleep(1)
+
+      val jpc_after_operands = dut.io.jpc_out.toInt
+
+      // Assert branch with zf=0 (condition false - should NOT branch)
+      dut.io.zf #= false
+      dut.io.jbr #= true
+      dut.clockDomain.waitSampling()
+      sleep(1)
+
+      val jpc_after = dut.io.jpc_out.toInt
+      // Should NOT have branched, jpc should remain at current position
+      assert(jpc_after == jpc_after_operands, f"JPC should not change when ifeq with zf=0, was $jpc_after_operands, got $jpc_after")
+    }
+  }
+
+  test("BytecodeFetchStage: if_icmplt branch types") {
+    // Test if_icmplt (tp=1) - branch if lt=1
+    val jbcData = Seq(
+      0xA1,  // if_icmplt at address 0 (opcode 0xA1, tp = 1)
+      0x00,
+      0x04,
+      0x11,
+      0x22   // Target at address 4
+    )
+
+    SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
+      dut.clockDomain.forkStimulus(period = 10)
+
+      // Reset
+      dut.clockDomain.assertReset()
+      dut.io.jpc_wr #= false
+      dut.io.din #= 0
+      dut.io.jfetch #= false
+      dut.io.jopdfetch #= false
+      dut.io.jbr #= false
+      dut.io.zf #= false
+      dut.io.nf #= false
+      dut.io.eq #= false
+      dut.io.lt #= false
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.deassertReset()
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.waitSampling()
+      sleep(1)
+
+      // Fetch instruction
+      dut.io.jfetch #= true
+      dut.clockDomain.waitSampling()
+      dut.io.jfetch #= false
+      sleep(1)
+
+      // Fetch offset
+      dut.io.jopdfetch #= true
+      dut.clockDomain.waitSampling()
+      dut.clockDomain.waitSampling()
+      dut.io.jopdfetch #= false
+      sleep(1)
+
+      // Branch with lt=1 (should take branch)
+      dut.io.lt #= true
+      dut.io.jbr #= true
+      dut.clockDomain.waitSampling()
+      sleep(1)
+
+      val jpc_after = dut.io.jpc_out.toInt
+      assert(jpc_after == 4, f"JPC should be 4 after if_icmplt with lt=1, got $jpc_after")
+    }
+  }
 }
