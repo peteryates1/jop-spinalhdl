@@ -2,7 +2,7 @@
 # Source this file or use as reference
 
 # Original JOP repository (READ-ONLY REFERENCE)
-export JOP_REFERENCE=/home/peter/git/jop.arch/jop
+export JOP_REFERENCE=/home/peter/git/jop
 export JOP_VHDL=$JOP_REFERENCE/vhdl
 
 # Common directories

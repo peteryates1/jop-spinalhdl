@@ -61,6 +61,11 @@ case class BytecodeFetchStage(
     val eq = in Bool()                                // Equal flag (for if_icmpeq, if_icmpne, if_icmpgt, if_icmple)
     val lt = in Bool()                                // Less-than flag (for if_icmplt, if_icmpge, if_icmpgt, if_icmple)
 
+    // JBC write interface (for loading bytecodes into cache)
+    val jbcWrAddr = in UInt((config.jpcWidth - 2) bits)  // Word address (byte_addr / 4)
+    val jbcWrData = in Bits(32 bits)                     // 32-bit word (4 bytes)
+    val jbcWrEn   = in Bool()                            // Write enable
+
     // Outputs
     val jpaddr   = out UInt(config.pcWidth bits)      // Microcode address from jump table
     val opd      = out Bits(config.opdWidth bits)     // Operand (16-bit, accumulated via jopdfetch)
@@ -71,15 +76,30 @@ case class BytecodeFetchStage(
   // JBC RAM (Java Bytecode Storage)
   // ==========================================================================
 
-  val jbcRam = Mem(Bits(8 bits), config.jbcDepth)
+  // JBC RAM is organized as 32-bit words for efficient write access
+  // Read is byte-addressed (8-bit output)
+  val jbcWordDepth = config.jbcDepth / 4  // Number of 32-bit words
+  val jbcRamWord = Mem(Bits(32 bits), jbcWordDepth)
 
-  // Initialize ROM
+  // Initialize RAM (optional)
   jbcInit match {
     case Some(data) =>
-      jbcRam.init(data.map(v => B(v, 8 bits)))
+      // Pack bytes into words
+      val wordData = data.grouped(4).map { bytes =>
+        val padded = bytes.padTo(4, BigInt(0))
+        padded(0) | (padded(1) << 8) | (padded(2) << 16) | (padded(3) << 24)
+      }.toSeq
+      jbcRamWord.init(wordData.map(v => B(v, 32 bits)))
     case None =>
-      jbcRam.init(Seq.fill(config.jbcDepth)(B(0x00, 8 bits)))
+      jbcRamWord.init(Seq.fill(jbcWordDepth)(B(0, 32 bits)))
   }
+
+  // Write port (32-bit words)
+  jbcRamWord.write(
+    address = io.jbcWrAddr,
+    data = io.jbcWrData,
+    enable = io.jbcWrEn
+  )
 
   // ==========================================================================
   // Registers
@@ -117,8 +137,18 @@ case class BytecodeFetchStage(
     jbcAddr := jpc(config.jpcWidth - 1 downto 0)  // Current address
   }
 
-  // Synchronous RAM read
-  val jbcData = jbcRam.readSync(jbcAddr, enable = True)
+  // Synchronous RAM read (word-addressed with byte selection)
+  val jbcWordAddr = jbcAddr(config.jpcWidth - 1 downto 2)  // Word address
+  val jbcByteSelect = RegNext(jbcAddr(1 downto 0))         // Register byte selector (aligned with RAM read)
+  val jbcWordData = jbcRamWord.readSync(jbcWordAddr, enable = True)
+
+  // Byte selection mux (little-endian: byte 0 at bits 7:0, byte 3 at bits 31:24)
+  val jbcData = jbcByteSelect.mux(
+    0 -> jbcWordData(7 downto 0),
+    1 -> jbcWordData(15 downto 8),
+    2 -> jbcWordData(23 downto 16),
+    3 -> jbcWordData(31 downto 24)
+  )
 
   // ==========================================================================
   // JPC Update Logic

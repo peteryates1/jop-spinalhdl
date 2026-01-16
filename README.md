@@ -42,26 +42,30 @@ jop/
 ## Supported FPGA Boards
 
 - [EP4CGX150DF27_CORE_BOARD](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) - Cyclone IV GX
-- [CYCLONE_IV_EP4CE15](https://github.com/ChinaQMTECH/CYCLONE_IV_EP4CE15) - Cyclone IV E
 - [Alchitry Au](https://shop.alchitry.com/products/alchitry-au) - Xilinx Artix-7
-- [MAX1000](https://www.trenz-electronic.de/en/MAX1000-IoT-Maker-Board-8kLE-8-MByte-SDRAM-8-MByte-Flash-6.15-x-2.5-cm/TEI0001-04-DBC87A) - Intel MAX10
-- [CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) - Cyclone V
-- [CYC1000](https://www.trenz-electronic.de/en/CYC1000-with-Intel-Cyclone-10-LP-10CL025-C8-8-MByte-SDRAM-8-MByte-Flash/TEI0003-03-QFCT4A) - Cyclone 10 LP
 
 ## Pipeline Architecture
-
 ```
-┌──────────────┐                    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│   bytecode   │                    │  microcode   │    │  microcode   │    │  microcode   │
-│    fetch     │─────────┬─────────▶│    fetch     │─┬─▶│   decode     │───▶│   execute    │
-│  translate   │         │          │              │ |  │              │    │  (tos/nos)   │
-└──────┬───────┘         │          └──────┬───────┘ |  └──────────────┘    └──────┬───────┘
-       │                 │                 │         |                       spill & fill
-┌──────┴───────┐  ┌──────┴───────┐  ┌──────┴───────┐ |  ┌──────────────┐    ┌──────┴───────┐
-| method cache │  |  jump tbl    │  │microcode rom │ └──│ Address Gen  │───▶│ stack buffer │
-└──────────────┘  └──────────────┘  └──────────────┘    └──────────────┘    └──────────────┘
+ ┌──────────────┐                    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+ │   bytecode   │                    │  microcode   │    │  microcode   │    │  microcode   │
+ │    fetch     ├─────────┬─────────▶│    fetch     ├─┬─▶│   decode     ├───▶│   execute    │◀─┐
+ │  translate   │         │          │              │ |  │              │    │  (tos/nos)   │  |
+ └──────┬───────┘         │          └──────┬───────┘ |  └──────────────┘    └──────┬───────┘  |
+        │                 │                 │         |                       spill & fill     |
+┌───────┼────────┐        │                 │         |                             |          |
+│┌──────┴───────┐│ ┌──────┴───────┐  ┌──────┴───────┐ |  ┌──────────────┐    ┌──────┴───────┐  |
+│| method cache ││ |  jump tbl    │  │microcode rom │ └──│ Address Gen  ├───▶│ stack buffer │  |
+│└──────────────┘│ └──────────────┘  └──────────────┘    └──────────────┘    └──────────────┘  |
+|     memory     │                                                                             | 
+|   controller   │◀────────────────────────────────────────────────────────────────────────────┘
+└───────┬────────┘
+        │  Simp Con
+        ├────────────────┐
+ ┌──────┴───────┐ ┌──────┴───────┐
+ |    memory    │ |     i/o      │
+ |  interface   │ |  interfaces  │
+ └──────────────┘ └──────────────┘
 ```
-
 ## Development Workflow
 
 The project uses a multi-agent approach for systematic migration:

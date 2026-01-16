@@ -22,7 +22,6 @@ Based on: verification/cocotb/tests/test_stack.py
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, Timer
-from cocotb.binary import BinaryValue
 import json
 from pathlib import Path
 

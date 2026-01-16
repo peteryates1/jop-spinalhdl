@@ -1,0 +1,227 @@
+{
+  "module": "JopCoreWithBytecode",
+  "description": "Test vectors for integrated BytecodeFetch + Microcode Pipeline",
+  "version": "1.0",
+  "interface": {
+    "inputs": {
+      "clk": "clock",
+      "reset": "1-bit reset (active high)",
+      "mem_data_in": "32-bit memory data input",
+      "mem_busy": "1-bit memory busy signal",
+      "jbc_wr_addr": "9-bit JBC word address (byte_addr / 4)",
+      "jbc_wr_data": "32-bit JBC write data (4 bytes)",
+      "jbc_wr_en": "1-bit JBC write enable",
+      "jpc_wr": "1-bit JPC write enable"
+    },
+    "outputs": {
+      "aout": "32-bit stack A register output",
+      "bout": "32-bit stack B register output",
+      "sp_ov": "1-bit stack overflow flag",
+      "jpc_out": "12-bit Java PC output",
+      "jfetch": "1-bit bytecode fetch signal",
+      "jopdfetch": "1-bit operand fetch signal",
+      "jpaddr": "11-bit microcode address from jump table",
+      "opd": "16-bit operand output",
+      "mul_dout": "32-bit multiplier output"
+    }
+  },
+  "test_cases": [
+    {
+      "name": "reset_state",
+      "description": "After reset, JPC should be 0",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "check", "jpc_out": "0x000"}
+      ]
+    },
+    {
+      "name": "jbc_write_single_word",
+      "description": "Write a single word to JBC RAM",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x04030201"},
+        {"action": "clock", "cycles": 3},
+        {"action": "settle"}
+      ]
+    },
+    {
+      "name": "bytecode_nop_lookup",
+      "description": "NOP bytecode (0x00) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00000000"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x218", "comment": "NOP maps to microcode 0x218"}
+      ]
+    },
+    {
+      "name": "bytecode_iconst_0_lookup",
+      "description": "iconst_0 bytecode (0x03) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00000003"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x21A", "comment": "iconst_0 maps to microcode 0x21A"}
+      ]
+    },
+    {
+      "name": "bytecode_iconst_1_lookup",
+      "description": "iconst_1 bytecode (0x04) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00000004"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x21B", "comment": "iconst_1 maps to microcode 0x21B"}
+      ]
+    },
+    {
+      "name": "bytecode_iconst_2_lookup",
+      "description": "iconst_2 bytecode (0x05) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00000005"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x21C", "comment": "iconst_2 maps to microcode 0x21C"}
+      ]
+    },
+    {
+      "name": "bytecode_bipush_lookup",
+      "description": "bipush bytecode (0x10) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00004210"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x220", "comment": "bipush maps to microcode 0x220"}
+      ]
+    },
+    {
+      "name": "bytecode_iadd_lookup",
+      "description": "iadd bytecode (0x60) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00000060"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x26C", "comment": "iadd maps to microcode 0x26C"}
+      ]
+    },
+    {
+      "name": "bytecode_isub_lookup",
+      "description": "isub bytecode (0x64) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00000064"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x26D", "comment": "isub maps to microcode 0x26D"}
+      ]
+    },
+    {
+      "name": "bytecode_iand_lookup",
+      "description": "iand bytecode (0x7E) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x0000007E"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x272", "comment": "iand maps to microcode 0x272"}
+      ]
+    },
+    {
+      "name": "bytecode_ior_lookup",
+      "description": "ior bytecode (0x80) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00000080"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x273", "comment": "ior maps to microcode 0x273"}
+      ]
+    },
+    {
+      "name": "bytecode_ixor_lookup",
+      "description": "ixor bytecode (0x82) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00000082"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x274", "comment": "ixor maps to microcode 0x274"}
+      ]
+    },
+    {
+      "name": "bytecode_iload_0_lookup",
+      "description": "iload_0 bytecode (0x1A) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x0000001A"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x236", "comment": "iload_0 maps to microcode 0x236"}
+      ]
+    },
+    {
+      "name": "bytecode_istore_0_lookup",
+      "description": "istore_0 bytecode (0x3B) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x0000003B"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x23C", "comment": "istore_0 maps to microcode 0x23C"}
+      ]
+    },
+    {
+      "name": "bytecode_dup_lookup",
+      "description": "dup bytecode (0x59) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00000059"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x243", "comment": "dup maps to microcode 0x243"}
+      ]
+    },
+    {
+      "name": "bytecode_pop_lookup",
+      "description": "pop bytecode (0x57) jump table lookup",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00000057"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x240", "comment": "pop maps to microcode 0x240"}
+      ]
+    },
+    {
+      "name": "bytecode_sequence_in_ram",
+      "description": "Multiple bytecodes stored in consecutive RAM locations",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x60040303"},
+        {"action": "clock", "cycles": 3},
+        {"action": "check", "jpaddr": "0x21A", "comment": "First byte is iconst_0 (0x03)"}
+      ]
+    },
+    {
+      "name": "jbc_byte_select_0",
+      "description": "Read byte 0 from JBC word (little-endian)",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x44332211"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "comment": "Byte 0 (0x11) should be read at JPC=0"}
+      ]
+    },
+    {
+      "name": "opd_initial_state",
+      "description": "Operand register initial state after reset",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "clock", "cycles": 3},
+        {"action": "settle"}
+      ]
+    },
+    {
+      "name": "unknown_bytecode_to_sys_noim",
+      "description": "Unknown bytecode (0xFF) maps to sys_noim handler",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x000000FF"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x0EC", "comment": "Unknown bytecodes map to sys_noim (0x0EC)"}
+      ]
+    }
+  ]
+}

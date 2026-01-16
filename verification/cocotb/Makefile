@@ -38,7 +38,7 @@ endif
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Phony targets
-.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal test_core test_core_alu test_core_shift test_core_loadstore test_core_branch test_core_stack test_core_regstore test_core_regload test_core_store test_core_load test_core_loadopd test_core_mmu test_core_control help
+.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal test_bcfetch test_core test_core_alu test_core_shift test_core_loadstore test_core_branch test_core_stack test_core_regstore test_core_regload test_core_store test_core_load test_core_loadopd test_core_mmu test_core_control help
 
 # Clean build artifacts
 clean::
@@ -56,6 +56,7 @@ test_all:
 	$(MAKE) test_fetch
 	$(MAKE) test_decode
 	$(MAKE) test_stack
+	$(MAKE) test_bcfetch
 
 # Test mul.vhd (multiplier)
 test_mul:
@@ -95,6 +96,35 @@ test_stack:
 	@echo "Testing stack.vhd (stack/execute stage)..."
 	@mkdir -p waveforms $(VHDL_TB_DIR)
 	$(MAKE) VHDL_SOURCES="$(VHDL_TB_DIR)/stack_tb.vhd" TOPLEVEL=stack_tb MODULE=tests.test_stack
+
+# Test bcfetch.vhd (bytecode fetch stage)
+# Uses bcfetch_tb.vhd wrapper which includes:
+# - Embedded JBC RAM (bytecode cache)
+# - Jump table (jtbl) from asm/generated
+# - IRQ record fields exposed as individual ports
+# - Debug outputs for internal state visibility
+JTBL_DIR = ../../asm/generated
+
+test_bcfetch:
+	@echo "Testing bcfetch.vhd (bytecode fetch stage - SpinalHDL testbench)..."
+	@mkdir -p waveforms $(VHDL_TB_DIR)
+	@if [ ! -f $(JTBL_DIR)/jtbl.vhd ]; then \
+		echo "ERROR: jtbl.vhd not found. Run 'make' in asm/ directory first"; \
+		exit 1; \
+	fi
+	$(MAKE) VHDL_SOURCES="$(JTBL_DIR)/jtbl.vhd $(VHDL_TB_DIR)/bcfetch_tb.vhd" TOPLEVEL=bcfetch_tb MODULE=tests.test_bcfetch
+
+# Test bcfetch reference implementation
+# Uses bcfetch_ref_tb.vhd which replicates the original bcfetch.vhd logic
+# with embedded packages and exposed record fields for CocoTB testing
+test_bcfetch_ref:
+	@echo "Testing bcfetch.vhd (bytecode fetch stage - Reference testbench)..."
+	@mkdir -p waveforms $(VHDL_TB_DIR)
+	@if [ ! -f $(JTBL_DIR)/jtbl.vhd ]; then \
+		echo "ERROR: jtbl.vhd not found. Run 'make' in asm/ directory first"; \
+		exit 1; \
+	fi
+	$(MAKE) VHDL_SOURCES="$(JTBL_DIR)/jtbl.vhd $(VHDL_TB_DIR)/bcfetch_ref_tb.vhd" TOPLEVEL=bcfetch_ref_tb MODULE=tests.test_bcfetch
 
 # Test SpinalHDL-generated StackStageTb (legacy - generator no longer exists)
 # Uses SpinalHDL-generated VHDL with same interface as stack_tb.vhd
@@ -236,6 +266,14 @@ test_jvm_sequences:
 		(echo "ERROR: JopCoreJvmSequencesTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreJvmSequencesTestTbVhdl\"' first" && exit 1)
 	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreJvmSequencesTestTb.vhd" TOPLEVEL=jopcorejvmsequencestesttb MODULE=tests.test_jvm_sequences
 
+# Test JopCoreWithBytecode integration (BytecodeFetch + Microcode Pipeline)
+test_core_bytecode:
+	@echo "Testing JopCoreWithBytecode integration..."
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreWithBytecodeTb.vhd $(GENERATED_DIR)/JopCoreWithBytecodeTb.vhd || \
+		(echo "ERROR: JopCoreWithBytecodeTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreWithBytecodeTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreWithBytecodeTb.vhd" TOPLEVEL=jopcorewithbytecodetb MODULE=tests.test_core_with_bytecode
+
 # Help
 help:
 	@echo "JOP CocoTB Test Makefile"
@@ -248,6 +286,7 @@ help:
 	@echo "  make test_fetch      - Test fetch.vhd (microcode ROM fetch stage)"
 	@echo "  make test_decode     - Test decode.vhd (microcode instruction decoder)"
 	@echo "  make test_stack      - Test stack.vhd (stack/execute stage)"
+	@echo "  make test_bcfetch    - Test bcfetch.vhd (bytecode fetch stage)"
 	@echo "  make clean           - Clean build artifacts"
 	@echo ""
 	@echo "Variables:"

@@ -14,11 +14,11 @@ import jop.core.Shift
  */
 case class StackConfig(
   width: Int = 32,
-  jpcWidth: Int = 10,
+  jpcWidth: Int = 11,
   ramWidth: Int = 8
 ) {
   require(width == 32, "Data width must be 32 bits")
-  require(jpcWidth == 10, "JPC width must be 10 bits")
+  require(jpcWidth >= 10 && jpcWidth <= 16, "JPC width must be between 10 and 16 bits")
   require(ramWidth > 0 && ramWidth <= 16, "RAM width must be between 1 and 16")
 
   /** Stack overflow threshold: max - 16 */
