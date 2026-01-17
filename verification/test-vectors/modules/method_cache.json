@@ -1,0 +1,169 @@
+{
+  "module": "MethodCache",
+  "description": "Test vectors for Method Cache tag lookup and cache management",
+  "version": "1.0",
+  "interface": {
+    "inputs": {
+      "clk": "clock",
+      "reset": "1-bit reset (active high)",
+      "find": "1-bit start lookup signal",
+      "bc_addr": "18-bit method address in main memory",
+      "bc_len": "10-bit method length in words",
+      "ext_wr_addr": "9-bit external write address",
+      "ext_wr_data": "32-bit external write data",
+      "ext_wr_en": "1-bit external write enable",
+      "load_done": "1-bit loading complete signal"
+    },
+    "outputs": {
+      "rdy": "1-bit lookup complete signal",
+      "in_cache": "1-bit hit (true) or miss (false)",
+      "bcstart": "9-bit cache word address for bytecode fetch",
+      "alloc_block": "3-bit block allocated for miss",
+      "jbc_wr_addr": "9-bit JBC write address output",
+      "jbc_wr_data": "32-bit JBC write data output",
+      "jbc_wr_en": "1-bit JBC write enable output"
+    }
+  },
+  "notes": {
+    "timing": "Cache lookup takes 2 cycles for hit (IDLE->S1->IDLE), 3 cycles for miss (IDLE->S1->S2->IDLE)"
+  },
+  "test_cases": [
+    {
+      "name": "reset_state",
+      "description": "After reset, cache should be idle and rdy=1",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "check", "rdy": 1, "in_cache": 0}
+      ]
+    },
+    {
+      "name": "cache_miss_first_lookup",
+      "description": "First lookup should be a cache miss (3 cycles: IDLE->S1->S2->IDLE)",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "set", "find": 1, "bc_addr": "0x1000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 3},
+        {"action": "check", "rdy": 1, "in_cache": 0, "alloc_block": 1, "comment": "After miss, nxt advanced to 1"}
+      ]
+    },
+    {
+      "name": "cache_hit_after_miss",
+      "description": "Second lookup to same address should be a hit (2 cycles: IDLE->S1->IDLE)",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "set", "find": 1, "bc_addr": "0x1000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 3},
+        {"action": "check", "rdy": 1, "in_cache": 0, "comment": "First: miss"},
+        {"action": "set", "find": 0},
+        {"action": "clock", "cycles": 1},
+        {"action": "set", "find": 1, "bc_addr": "0x1000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 2},
+        {"action": "check", "rdy": 1, "in_cache": 1, "bcstart": "0x000", "comment": "Second: hit at block 0"}
+      ]
+    },
+    {
+      "name": "different_address_miss",
+      "description": "Lookup to different address should be a miss",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "set", "find": 1, "bc_addr": "0x1000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 3},
+        {"action": "set", "find": 0},
+        {"action": "clock", "cycles": 1},
+        {"action": "set", "find": 1, "bc_addr": "0x2000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 3},
+        {"action": "check", "rdy": 1, "in_cache": 0, "alloc_block": 2, "comment": "Different addr = miss, nxt advanced to 2"}
+      ]
+    },
+    {
+      "name": "round_robin_allocation",
+      "description": "Blocks should be allocated in round-robin order",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "set", "find": 1, "bc_addr": "0x1000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 1},
+        {"action": "check", "alloc_block": 0, "comment": "Before miss, nxt=0"},
+        {"action": "clock", "cycles": 2},
+        {"action": "check", "alloc_block": 1, "comment": "After miss 1, nxt=1"},
+        {"action": "set", "find": 0},
+        {"action": "clock", "cycles": 1},
+        {"action": "set", "find": 1, "bc_addr": "0x2000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 3},
+        {"action": "check", "alloc_block": 2, "comment": "After miss 2, nxt=2"},
+        {"action": "set", "find": 0},
+        {"action": "clock", "cycles": 1},
+        {"action": "set", "find": 1, "bc_addr": "0x3000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 3},
+        {"action": "check", "alloc_block": 3, "comment": "After miss 3, nxt=3"}
+      ]
+    },
+    {
+      "name": "multiple_addresses_cached",
+      "description": "Multiple addresses cached, all should hit",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "set", "find": 1, "bc_addr": "0x1000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 3},
+        {"action": "set", "find": 0},
+        {"action": "clock", "cycles": 1},
+        {"action": "set", "find": 1, "bc_addr": "0x2000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 3},
+        {"action": "set", "find": 0},
+        {"action": "clock", "cycles": 1},
+        {"action": "set", "find": 1, "bc_addr": "0x1000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 2},
+        {"action": "check", "rdy": 1, "in_cache": 1, "bcstart": "0x000", "comment": "Addr 0x1000 cached at block 0"},
+        {"action": "set", "find": 0},
+        {"action": "clock", "cycles": 1},
+        {"action": "set", "find": 1, "bc_addr": "0x2000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 2},
+        {"action": "check", "rdy": 1, "in_cache": 1, "bcstart": "0x040", "comment": "Addr 0x2000 cached at block 1"}
+      ]
+    },
+    {
+      "name": "bcstart_block_addressing",
+      "description": "Verify bcstart gives correct block start address",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "set", "find": 1, "bc_addr": "0x1000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 2},
+        {"action": "check", "bcstart": "0x000", "comment": "Block 0 starts at word address 0x000"}
+      ]
+    },
+    {
+      "name": "external_write_passthrough",
+      "description": "External write signals pass through to JBC RAM",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "set", "ext_wr_addr": "0x010", "ext_wr_data": "0xDEADBEEF", "ext_wr_en": 1},
+        {"action": "clock", "cycles": 1},
+        {"action": "check", "jbc_wr_addr": "0x010", "jbc_wr_data": "0xDEADBEEF", "jbc_wr_en": 1}
+      ]
+    },
+    {
+      "name": "idle_without_find",
+      "description": "Cache stays idle when find is not asserted",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "set", "find": 0, "bc_addr": "0x1000"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "rdy": 1, "in_cache": 0, "comment": "Still idle"}
+      ]
+    },
+    {
+      "name": "transition_timing",
+      "description": "Verify state machine transitions at correct clock edges",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "check", "rdy": 1, "comment": "Initially in IDLE"},
+        {"action": "set", "find": 1, "bc_addr": "0x1000", "bc_len": "0x10"},
+        {"action": "clock", "cycles": 1},
+        {"action": "check", "rdy": 0, "comment": "After 1 clock: in S1, rdy=0"},
+        {"action": "clock", "cycles": 1},
+        {"action": "check", "rdy": 0, "comment": "After 2 clocks: in S2 (miss), rdy still 0"},
+        {"action": "clock", "cycles": 1},
+        {"action": "check", "rdy": 1, "comment": "After 3 clocks: back in IDLE, rdy=1"}
+      ]
+    }
+  ]
+}

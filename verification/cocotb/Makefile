@@ -38,7 +38,7 @@ endif
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Phony targets
-.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal test_bcfetch test_core test_core_alu test_core_shift test_core_loadstore test_core_branch test_core_stack test_core_regstore test_core_regload test_core_store test_core_load test_core_loadopd test_core_mmu test_core_control help
+.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal test_bcfetch test_core test_core_alu test_core_shift test_core_loadstore test_core_branch test_core_stack test_core_regstore test_core_regload test_core_store test_core_load test_core_loadopd test_core_mmu test_core_control test_method_cache help
 
 # Clean build artifacts
 clean::
@@ -273,6 +273,14 @@ test_core_bytecode:
 	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreWithBytecodeTb.vhd $(GENERATED_DIR)/JopCoreWithBytecodeTb.vhd || \
 		(echo "ERROR: JopCoreWithBytecodeTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreWithBytecodeTbVhdl\"' first" && exit 1)
 	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreWithBytecodeTb.vhd" TOPLEVEL=jopcorewithbytecodetb MODULE=tests.test_core_with_bytecode
+
+# Test MethodCache (method cache tag lookup)
+test_method_cache:
+	@echo "Testing MethodCache (method cache tag lookup)..."
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/MethodCacheTb.vhd $(GENERATED_DIR)/MethodCacheTb.vhd || \
+		(echo "ERROR: MethodCacheTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.memory.MethodCacheTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/MethodCacheTb.vhd" TOPLEVEL=methodcachetb MODULE=tests.test_method_cache
 
 # Help
 help:
