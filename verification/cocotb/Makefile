@@ -38,7 +38,7 @@ endif
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Phony targets
-.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal test_bcfetch test_core test_core_alu test_core_shift test_core_loadstore test_core_branch test_core_stack test_core_regstore test_core_regload test_core_store test_core_load test_core_loadopd test_core_mmu test_core_control test_method_cache test_memory_controller help
+.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal test_bcfetch test_core test_core_alu test_core_shift test_core_loadstore test_core_branch test_core_stack test_core_regstore test_core_regload test_core_store test_core_load test_core_loadopd test_core_mmu test_core_control test_method_cache test_memory_controller test_interrupt help
 
 # Clean build artifacts
 clean::
@@ -305,6 +305,14 @@ test_memory_controller:
 	@cp -f $(SPINALHDL_GEN_DIR)/MemoryControllerTb.vhd $(GENERATED_DIR)/MemoryControllerTb.vhd || \
 		(echo "ERROR: MemoryControllerTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.memory.MemoryControllerTb\"' first" && exit 1)
 	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/MemoryControllerTb.vhd" TOPLEVEL=memorycontrollertb MODULE=tests.test_memory_controller
+
+# Test Interrupt/Exception handling (Phase E)
+test_interrupt:
+	@echo "Testing Interrupt/Exception handling (Phase E)..."
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/InterruptTestTb.vhd $(GENERATED_DIR)/InterruptTestTb.vhd || \
+		(echo "ERROR: InterruptTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.pipeline.InterruptTestTb\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/InterruptTestTb.vhd" TOPLEVEL=interrupttesttb MODULE=tests.test_interrupt
 
 # Help
 help:

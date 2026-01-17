@@ -58,6 +58,10 @@ case class JumpTable(
   val io = new Bundle {
     val bytecode = in Bits(8 bits)              // Java bytecode opcode (0x00-0xFF)
     val jpaddr   = out UInt(config.pcWidth bits) // Microcode ROM address
+
+    // Interrupt/exception priority muxing (Phase E)
+    val intPend = in Bool()                     // Interrupt pending
+    val excPend = in Bool()                     // Exception pending
   }
 
   // ==========================================================================
@@ -78,7 +82,17 @@ case class JumpTable(
   // bytecode → ROM address → microcode address
   // Note: readAsync generates a Verilog warning "can only be write first"
   //       This is safe here since ROM has no writes (read-only data)
-  io.jpaddr := rom.readAsync(io.bytecode.asUInt)
+  val normalAddr = rom.readAsync(io.bytecode.asUInt)
+
+  // Priority muxing: Exception > Interrupt > Normal bytecode
+  // This matches VHDL jtbl.vhd behavior
+  when(io.excPend) {
+    io.jpaddr := U(JumpTableData.sysExcAddr.toInt, config.pcWidth bits)  // 0x0E2
+  }.elsewhen(io.intPend) {
+    io.jpaddr := U(JumpTableData.sysIntAddr.toInt, config.pcWidth bits)  // 0x0DA
+  }.otherwise {
+    io.jpaddr := normalAddr
+  }
 
   // ==========================================================================
   // Verification Helpers

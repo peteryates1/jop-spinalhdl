@@ -25,17 +25,17 @@ case class BytecodeFetchConfig(
 /**
  * Java Bytecode Fetch Stage
  *
- * Implemented features (Phase A + Phase B):
+ * Implemented features (Phase A + Phase B + Phase E):
  * - JPC increment on jfetch
  * - JBC RAM read (synchronous, 2KB)
  * - JumpTable integration for bytecode → microcode translation
  * - JPC write for method calls (jpc_wr)
  * - Operand accumulation (jopdfetch) - 16-bit shift register
  * - Branch logic - 15 branch types with condition evaluation
- *
- * Features to add incrementally (Phase C+):
- * - Interrupt/exception handling
- * - Method cache integration
+ * - Interrupt/exception handling with pending latches (Phase E)
+ *   - int_pend: Set on irq && ena, cleared on ack during jfetch
+ *   - exc_pend: Set on exc, cleared on ack during jfetch
+ *   - Priority: Exception > Interrupt > Normal bytecode
  *
  * @param config Configuration
  * @param jbcInit Optional JBC RAM initialization
@@ -65,6 +65,13 @@ case class BytecodeFetchStage(
     val jbcWrAddr = in UInt((config.jpcWidth - 2) bits)  // Word address (byte_addr / 4)
     val jbcWrData = in Bits(32 bits)                     // 32-bit word (4 bytes)
     val jbcWrEn   = in Bool()                            // Write enable
+
+    // Interrupt/Exception interface (Phase E)
+    val irq = in Bool()                               // Interrupt request
+    val exc = in Bool()                               // Exception request
+    val ena = in Bool()                               // Interrupt enable
+    val ack_irq = out Bool()                          // Interrupt acknowledged
+    val ack_exc = out Bool()                          // Exception acknowledged
 
     // Outputs
     val jpaddr   = out UInt(config.pcWidth bits)      // Microcode address from jump table
@@ -253,11 +260,48 @@ case class BytecodeFetchStage(
   }
 
   // ==========================================================================
+  // Interrupt/Exception Pending Logic (Phase E)
+  // ==========================================================================
+
+  // Pending latches (matching VHDL bcfetch.vhd behavior)
+  // int_pend: Set when irq && ena, cleared on acknowledge during jfetch
+  // exc_pend: Set when exc, cleared on acknowledge during jfetch
+  val intPend = Reg(Bool()) init(False)
+  val excPend = Reg(Bool()) init(False)
+
+  // Acknowledge signals (active during jfetch when pending is cleared)
+  val doAckIrq = Bool()
+  val doAckExc = Bool()
+
+  // Exception has priority
+  doAckExc := excPend && io.jfetch
+  doAckIrq := intPend && !excPend && io.jfetch
+
+  // Update pending latches
+  when(doAckExc) {
+    excPend := False
+  }.elsewhen(io.exc) {
+    excPend := True
+  }
+
+  when(doAckIrq) {
+    intPend := False
+  }.elsewhen(io.irq && io.ena) {
+    intPend := True
+  }
+
+  // Output acknowledge signals
+  io.ack_irq := doAckIrq
+  io.ack_exc := doAckExc
+
+  // ==========================================================================
   // Jump Table Integration
   // ==========================================================================
 
   val jumpTable = JumpTable(JumpTableConfig(pcWidth = config.pcWidth))
   jumpTable.io.bytecode := jbcData
+  jumpTable.io.intPend := intPend
+  jumpTable.io.excPend := excPend
   io.jpaddr := jumpTable.io.jpaddr
 }
 
