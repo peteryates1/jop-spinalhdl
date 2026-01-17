@@ -8,7 +8,7 @@ During the JOP migration, agents will need to reference the original VHDL files.
 
 ### Primary Reference (Read-Only)
 ```
-/home/peter/git/jop.arch/jop/vhdl/
+/home/peter/git/jopmin/vhdl/
 ├── core/           # Core processor (298 total VHDL files in repository)
 ├── memory/         # Memory controllers
 ├── scio/           # I/O peripherals
@@ -34,7 +34,7 @@ When creating test vectors for a module:
 ### Step 1: Identify the Module
 ```bash
 # Module to test
-TARGET=/home/peter/git/jop.arch/jop/vhdl/core/bcfetch.vhd
+TARGET=/home/peter/git/jopmin/vhdl/core/bcfetch.vhd
 ```
 
 ### Step 2: Find Dependencies
@@ -49,13 +49,13 @@ grep "^use " $TARGET
 ### Step 3: Read Required Files
 ```bash
 # Read the main module
-cat /home/peter/git/jop.arch/jop/vhdl/core/bcfetch.vhd
+cat /home/peter/git/jopmin/vhdl/core/bcfetch.vhd
 
 # Read type definitions
-cat /home/peter/git/jop.arch/jop/vhdl/core/jop_types.vhd
+cat /home/peter/git/jopmin/vhdl/core/jop_types.vhd
 
 # Read interface modules (modules that connect to this one)
-cat /home/peter/git/jop.arch/jop/vhdl/core/decode.vhd  # to understand interface
+cat /home/peter/git/jopmin/vhdl/core/decode.vhd  # to understand interface
 ```
 
 ### Step 4: Document in Your Analysis
@@ -72,22 +72,22 @@ When porting a module to SpinalHDL:
 ### Step 1: Reference Files Needed
 ```bash
 # Module being ported
-VHDL_SOURCE=/home/peter/git/jop.arch/jop/vhdl/core/bcfetch.vhd
+VHDL_SOURCE=/home/peter/git/jopmin/vhdl/core/bcfetch.vhd
 
 # Type definitions (translate these first!)
-TYPES=/home/peter/git/jop.arch/jop/vhdl/core/jop_types.vhd
+TYPES=/home/peter/git/jopmin/vhdl/core/jop_types.vhd
 
 # Connected modules (for interface understanding)
-INTERFACES=/home/peter/git/jop.arch/jop/vhdl/core/{decode,fetch,cache}.vhd
+INTERFACES=/home/peter/git/jopmin/vhdl/core/{decode,fetch,cache}.vhd
 ```
 
 ### Step 2: Create Parallel Structure
 ```
-VHDL: /home/peter/git/jop.arch/jop/vhdl/core/bcfetch.vhd
+VHDL: /home/peter/git/jopmin/vhdl/core/bcfetch.vhd
   ↓
 Scala: core/spinalhdl/src/main/scala/jop/pipeline/BytecodeFetch.scala
 
-VHDL: /home/peter/git/jop.arch/jop/vhdl/core/jop_types.vhd
+VHDL: /home/peter/git/jopmin/vhdl/core/jop_types.vhd
   ↓
 Scala: core/spinalhdl/src/main/scala/jop/types/JopTypes.scala
 ```
@@ -104,7 +104,7 @@ This file is used by **ALL** modules and should be translated first.
 
 ### Location
 ```
-/home/peter/git/jop.arch/jop/vhdl/core/jop_types.vhd
+/home/peter/git/jopmin/vhdl/core/jop_types.vhd
 ```
 
 ### Contains
@@ -123,53 +123,53 @@ This file is used by **ALL** modules and should be translated first.
 ### Core Pipeline Stages
 ```bash
 # Bytecode fetch (translates Java bytecode to microcode addresses)
-/home/peter/git/jop.arch/jop/vhdl/core/bcfetch.vhd
+/home/peter/git/jopmin/vhdl/core/bcfetch.vhd
 
 # Microcode fetch (fetches microcode instructions)
-/home/peter/git/jop.arch/jop/vhdl/core/fetch.vhd
+/home/peter/git/jopmin/vhdl/core/fetch.vhd
 
 # Microcode decode
-/home/peter/git/jop.arch/jop/vhdl/core/decode.vhd
+/home/peter/git/jopmin/vhdl/core/decode.vhd
 
 # Stack-based execution (TOS/NOS operations)
-/home/peter/git/jop.arch/jop/vhdl/core/stack.vhd
+/home/peter/git/jopmin/vhdl/core/stack.vhd
 ```
 
 ### Support Modules
 ```bash
 # Method cache
-/home/peter/git/jop.arch/jop/vhdl/core/cache.vhd
+/home/peter/git/jopmin/vhdl/core/cache.vhd
 
 # Multiplier
-/home/peter/git/jop.arch/jop/vhdl/core/mul.vhd
+/home/peter/git/jopmin/vhdl/core/mul.vhd
 
 # Shifter
-/home/peter/git/jop.arch/jop/vhdl/core/shift.vhd
+/home/peter/git/jopmin/vhdl/core/shift.vhd
 
 # Top-level integration
-/home/peter/git/jop.arch/jop/vhdl/core/jopcpu.vhd
+/home/peter/git/jopmin/vhdl/core/jopcpu.vhd
 ```
 
 ## Searching for Information
 
 ### Find where a signal is used
 ```bash
-grep -r "signal_name" /home/peter/git/jop.arch/jop/vhdl/core/
+grep -r "signal_name" /home/peter/git/jopmin/vhdl/core/
 ```
 
 ### Find entity definitions
 ```bash
-grep "^entity " /home/peter/git/jop.arch/jop/vhdl/core/*.vhd
+grep "^entity " /home/peter/git/jopmin/vhdl/core/*.vhd
 ```
 
 ### Find all uses of a type
 ```bash
-grep "jop_types" /home/peter/git/jop.arch/jop/vhdl/core/*.vhd
+grep "jop_types" /home/peter/git/jopmin/vhdl/core/*.vhd
 ```
 
 ### Find component instantiations
 ```bash
-grep -A5 "component " /home/peter/git/jop.arch/jop/vhdl/core/jopcpu.vhd
+grep -A5 "component " /home/peter/git/jopmin/vhdl/core/jopcpu.vhd
 ```
 
 ## Copying Files to Local
@@ -178,12 +178,12 @@ If you need a file locally for easier access:
 
 ```bash
 # Copy to appropriate location
-cp /home/peter/git/jop.arch/jop/vhdl/core/<file>.vhd \
+cp /home/peter/git/jopmin/vhdl/core/<file>.vhd \
    /home/peter/workspaces/ai/jop/original/vhdl/core/
 
 # Or for other subdirectories
 mkdir -p /home/peter/workspaces/ai/jop/original/vhdl/memory
-cp /home/peter/git/jop.arch/jop/vhdl/memory/<file>.vhd \
+cp /home/peter/git/jopmin/vhdl/memory/<file>.vhd \
    /home/peter/workspaces/ai/jop/original/vhdl/memory/
 ```
 
@@ -197,7 +197,7 @@ Test vectors are shared in JSON, but you may need to reference VHDL to understan
 
 ```bash
 # Read the module to understand behavior
-cat /home/peter/git/jop.arch/jop/vhdl/core/bcfetch.vhd
+cat /home/peter/git/jopmin/vhdl/core/bcfetch.vhd
 
 # Look at CocoTB test to see how it's tested
 cat verification/cocotb/tests/test_bcfetch.py
@@ -211,7 +211,7 @@ cat verification/cocotb/tests/test_bcfetch.py
 ### Comparing Implementations
 ```bash
 # Original VHDL
-ORIGINAL=/home/peter/git/jop.arch/jop/vhdl/core/bcfetch.vhd
+ORIGINAL=/home/peter/git/jopmin/vhdl/core/bcfetch.vhd
 
 # Generated VHDL from SpinalHDL
 GENERATED=/home/peter/workspaces/ai/jop/core/spinalhdl/generated/BytecodeFetch.vhd
@@ -231,7 +231,7 @@ diff -u $ORIGINAL $GENERATED > docs/reviews/bcfetch-comparison.diff
 
 ## Important Notes
 
-1. **Never modify** files in `/home/peter/git/jop.arch/` - it's the reference
+1. **Never modify** files in `/home/peter/git/jopmin/` - it's the reference
 2. **Always reference** from the full repository for context
 3. **Copy locally** if you need frequent access
 4. **Document dependencies** in your analysis files
@@ -247,6 +247,27 @@ diff -u $ORIGINAL $GENERATED > docs/reviews/bcfetch-comparison.diff
 6. What are the critical paths?
 7. Are there any synthesis directives or pragmas?
 8. What comments explain non-obvious behavior?
+
+## JOP Program Files
+
+Test programs compiled for JOP are available at:
+```
+/home/peter/workspaces/jop/
+├── Smallest/smallest.jop              # Minimal JOP program
+├── Small/small.jop                    # Small JOP program
+├── SmallestLEDSwitchPattern/LEDSwitchPattern.jop  # LED pattern demo
+└── Jopizer/                           # JOP compiler tooling
+```
+
+### Memory Data Files (from jopmin)
+```
+/home/peter/git/jopmin/asm/generated/
+├── mem_rom.dat      # Microcode ROM data
+├── mem_ram.dat      # RAM initialization data
+├── jtbl.vhd         # Jump table (bytecode -> microcode)
+├── rom.vhd          # ROM entity with initialization
+└── jvmgen.asm       # Generated microcode assembly
+```
 
 ## See Also
 

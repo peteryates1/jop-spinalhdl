@@ -322,7 +322,7 @@ class JumpTable(pcWidth: Int = 11) extends Component {
 **JumpTableData Object:**
 ```scala
 object JumpTableData {
-  // Extracted from /home/peter/git/jop.arch/jop/asm/generated/jtbl.vhd
+  // Extracted from /home/peter/git/jopmin/asm/generated/jtbl.vhd
   def entries: Seq[BigInt] = Seq(
     BigInt(0x218),  // 0x00 - nop
     BigInt(0x218),  // 0x01 - (unused)
@@ -724,7 +724,7 @@ docs/
 - ✅ Bundle, Component, Area (SpinalHDL core)
 
 ### External Data
-- Jump table data (from `/home/peter/git/jop.arch/jop/asm/generated/jtbl.vhd`)
+- Jump table data (from `/home/peter/git/jopmin/asm/generated/jtbl.vhd`)
 - Microcode ROM (from `mem_rom.dat`)
 - Test programs (from `java/target/dist/bin/*.jop`)
 
@@ -946,11 +946,18 @@ docs/
 
 ## References
 
-### VHDL Reference Files
-- `/home/peter/git/jop.arch/jop/vhdl/core/bcfetch.vhd` - Bytecode fetch (495 lines)
-- `/home/peter/git/jop.arch/jop/vhdl/core/cache.vhd` - Method cache (215 lines)
-- `/home/peter/git/jop.arch/jop/vhdl/memory/jbc_generic.vhd` - JBC RAM
-- `/home/peter/git/jop.arch/jop/asm/generated/jtbl.vhd` - Jump table
+### VHDL Reference Files (jopmin - minimal working JOP)
+- `/home/peter/git/jopmin/vhdl/core/bcfetch.vhd` - Bytecode fetch
+- `/home/peter/git/jopmin/vhdl/core/cache.vhd` - Method cache
+- `/home/peter/git/jopmin/vhdl/memory/sdpram.vhd` - Simple dual-port RAM
+- `/home/peter/git/jopmin/asm/generated/jtbl.vhd` - Jump table
+- `/home/peter/git/jopmin/asm/generated/mem_rom.dat` - Microcode ROM data
+- `/home/peter/git/jopmin/asm/generated/mem_ram.dat` - RAM initialization data
+
+### JOP Program Files
+- `/home/peter/workspaces/jop/Smallest/smallest.jop` - Minimal JOP program
+- `/home/peter/workspaces/jop/Small/small.jop` - Small JOP program
+- `/home/peter/workspaces/jop/SmallestLEDSwitchPattern/LEDSwitchPattern.jop` - LED pattern demo
 
 ### SpinalHDL Reference Files
 - `core/spinalhdl/src/main/scala/jop/pipeline/FetchStage.scala` - Existing microcode fetch

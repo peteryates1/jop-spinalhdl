@@ -2,14 +2,14 @@
 
 ## Reference Repository
 
-Location: `/home/peter/git/jop.arch/jop/`
+Location: `/home/peter/git/jopmin/`
 
 This is the original JOP implementation that serves as the golden reference for the SpinalHDL port.
 
 ## Directory Structure
 
 ```
-/home/peter/git/jop.arch/jop/vhdl/
+/home/peter/git/jopmin/vhdl/
 ├── core/           # Core processor (PRIMARY FOCUS for initial migration)
 ├── memory/         # Memory controllers and interfaces
 ├── scio/           # Serial communication and I/O
@@ -20,7 +20,7 @@ This is the original JOP implementation that serves as the golden reference for 
 
 ## Core Files (Primary Migration Target)
 
-Located in: `/home/peter/git/jop.arch/jop/vhdl/core/`
+Located in: `/home/peter/git/jopmin/vhdl/core/`
 
 ### Pipeline Stages
 
@@ -56,11 +56,11 @@ When analyzing modules, you'll need to reference:
 Example for bcfetch:
 ```bash
 # Primary
-/home/peter/git/jop.arch/jop/vhdl/core/bcfetch.vhd
+/home/peter/git/jopmin/vhdl/core/bcfetch.vhd
 
 # Dependencies
-/home/peter/git/jop.arch/jop/vhdl/core/jop_types.vhd
-/home/peter/git/jop.arch/jop/vhdl/core/decode.vhd  # for interface
+/home/peter/git/jopmin/vhdl/core/jop_types.vhd
+/home/peter/git/jopmin/vhdl/core/decode.vhd  # for interface
 ```
 
 ### For spinalhdl-developer Agent
@@ -76,10 +76,10 @@ We've copied core files to `original/vhdl/core/` but you can always reference th
 
 ```bash
 # To view any file
-cat /home/peter/git/jop.arch/jop/vhdl/core/<file>.vhd
+cat /home/peter/git/jopmin/vhdl/core/<file>.vhd
 
 # To copy additional files if needed
-cp /home/peter/git/jop.arch/jop/vhdl/core/<file>.vhd original/vhdl/core/
+cp /home/peter/git/jopmin/vhdl/core/<file>.vhd original/vhdl/core/
 ```
 
 ## Key Dependencies
@@ -158,7 +158,7 @@ These will be migrated in later phases after core is complete.
 
 ### Microcode and Generated Files (CRITICAL!)
 
-**Location**: `/home/peter/git/jop.arch/jop/asm/generated/`
+**Location**: `/home/peter/git/jopmin/asm/generated/`
 
 **Generated Files** (created by microcode assembler):
 
@@ -181,7 +181,7 @@ These will be migrated in later phases after core is complete.
    - ram.mif, rom.mif (Altera format)
    - mem_ram.dat, mem_rom.dat (generic)
 
-**Source Location**: `/home/peter/git/jop.arch/jop/asm/`
+**Source Location**: `/home/peter/git/jopmin/asm/`
 - jvm.asm - Microcode source
 - Jopa.java - Microcode assembler
 - Makefile - Build system
@@ -189,12 +189,18 @@ These will be migrated in later phases after core is complete.
 **See Also**: [docs/MICROCODE_AND_ROMS.md](../docs/MICROCODE_AND_ROMS.md) for detailed documentation
 
 ### Java Runtime
-Location: `/home/peter/git/jop.arch/jop/java/`
-- JVM implementation
-- Will need for functional testing
+Location: `/home/peter/git/jopmin/java/`
+- JOP runtime and tools
+- Jopa microcode assembler (generates jtbl.vhd, rom.vhd)
+- JOPizer bytecode tool
+
+### JOP Program Files
+Location: `/home/peter/workspaces/jop/`
+- Compiled JOP programs (.jop files)
+- Example programs: Smallest, Small, LEDSwitchPattern
 
 ### Documentation
-Location: `/home/peter/git/jop.arch/jop/doc/`
+Location: `/home/peter/git/jopmin/doc/`
 - Architecture documentation
 - Original design notes
 
@@ -202,24 +208,24 @@ Location: `/home/peter/git/jop.arch/jop/doc/`
 
 ```bash
 # List all core VHDL files
-ls /home/peter/git/jop.arch/jop/vhdl/core/*.vhd
+ls /home/peter/git/jopmin/vhdl/core/*.vhd
 
 # View a specific file
-less /home/peter/git/jop.arch/jop/vhdl/core/bcfetch.vhd
+less /home/peter/git/jopmin/vhdl/core/bcfetch.vhd
 
 # Search for a signal/entity across all files
-grep -r "entity bcfetch" /home/peter/git/jop.arch/jop/vhdl/core/
+grep -r "entity bcfetch" /home/peter/git/jopmin/vhdl/core/
 
 # Copy a file to local
-cp /home/peter/git/jop.arch/jop/vhdl/core/<file>.vhd original/vhdl/core/
+cp /home/peter/git/jopmin/vhdl/core/<file>.vhd original/vhdl/core/
 
 # Find dependencies (what a file 'uses')
-grep "^use " /home/peter/git/jop.arch/jop/vhdl/core/bcfetch.vhd
+grep "^use " /home/peter/git/jopmin/vhdl/core/bcfetch.vhd
 ```
 
 ## Notes
 
-- **Don't modify** files in `/home/peter/git/jop.arch/` - it's the reference
+- **Don't modify** files in `/home/peter/git/jopmin/` - it's the reference
 - **Do copy** files you're working on to `original/vhdl/core/`
 - **Do reference** the full repository for context and dependencies
 - Keep notes in `docs/migration/<module>-notes.md` as you analyze files

@@ -2,7 +2,7 @@
 
 **Agent**: vhdl-tester
 **Date**: 2025-12-27
-**Source File**: `/home/peter/git/jop.arch/jop/vhdl/core/jop_types.vhd`
+**Source File**: `/home/peter/git/jopmin/vhdl/core/jop_types.vhd`
 **Status**: Analysis Complete
 
 ## Overview
@@ -22,7 +22,7 @@
 
 ### jop_config_global.vhd Constants
 
-Location: `/home/peter/git/jop.arch/jop/vhdl/top/jop_config_global.vhd`
+Location: `/home/peter/git/jopmin/vhdl/top/jop_config_global.vhd`
 
 ```vhdl
 -- Stack/RAM size
@@ -45,7 +45,7 @@ constant ACACHE_FIELD_BITS : integer := 2;
 
 ### sc_pack.vhd Constants
 
-Location: `/home/peter/git/jop.arch/jop/vhdl/simpcon/sc_pack.vhd`
+Location: `/home/peter/git/jopmin/vhdl/simpcon/sc_pack.vhd`
 
 ```vhdl
 constant SC_ADDR_SIZE : integer := 23;  -- SimpCon address width
@@ -309,8 +309,8 @@ Proceed to **spinalhdl-developer** workflow:
 
 ## References
 
-- **VHDL Source**: `/home/peter/git/jop.arch/jop/vhdl/core/jop_types.vhd`
+- **VHDL Source**: `/home/peter/git/jopmin/vhdl/core/jop_types.vhd`
 - **Dependencies**:
-  - `/home/peter/git/jop.arch/jop/vhdl/top/jop_config_global.vhd`
-  - `/home/peter/git/jop.arch/jop/vhdl/simpcon/sc_pack.vhd`
+  - `/home/peter/git/jopmin/vhdl/top/jop_config_global.vhd`
+  - `/home/peter/git/jopmin/vhdl/simpcon/sc_pack.vhd`
 - **Documentation**: [GETTING_STARTED.md](../../GETTING_STARTED.md)

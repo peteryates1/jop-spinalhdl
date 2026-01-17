@@ -113,7 +113,7 @@ ISTORE 5 → Pop TOS to variables[5]
 
 ## Stack Buffer Initialization
 
-**File**: `/home/peter/git/jop.arch/jop/asm/generated/ram.mif` or `mem_ram.dat`
+**File**: `/home/peter/git/jopmin/asm/generated/ram.mif` or `mem_ram.dat`
 
 **Format**: Initialization data for the 64 pre-defined slots plus stack space
 

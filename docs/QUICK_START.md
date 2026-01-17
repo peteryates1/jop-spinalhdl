@@ -55,7 +55,7 @@ jop/
 
 The original VHDL files are referenced from:
 ```bash
-/home/peter/git/jop.arch/jop/vhdl/
+/home/peter/git/jopmin/vhdl/
 ```
 
 Core files are also copied to `original/vhdl/core/` for convenience.

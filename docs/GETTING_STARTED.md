@@ -10,10 +10,10 @@ This guide walks you through starting the JOP SpinalHDL migration using the mult
 
 ```bash
 # Check original VHDL is accessible
-ls /home/peter/git/jop.arch/jop/vhdl/core/
+ls /home/peter/git/jopmin/vhdl/core/
 
 # Check generated files exist
-ls /home/peter/git/jop.arch/jop/asm/generated/
+ls /home/peter/git/jopmin/asm/generated/
 ```
 
 ### 2. Verify Tools
@@ -45,7 +45,7 @@ python tools/scripts/validate_vectors.py
 
 ```bash
 # Read the file
-less /home/peter/git/jop.arch/jop/vhdl/core/jop_types.vhd
+less /home/peter/git/jopmin/vhdl/core/jop_types.vhd
 ```
 
 **Task**: Document what's in jop_types.vhd
@@ -155,7 +155,7 @@ Now that types are done, let's do a real module with logic.
 
 ```bash
 # Read the multiplier
-less /home/peter/git/jop.arch/jop/vhdl/core/mul.vhd
+less /home/peter/git/jopmin/vhdl/core/mul.vhd
 ```
 
 **Create Analysis**: `docs/verification/modules/mul-analysis.md`
@@ -545,7 +545,7 @@ For each module:
 python tools/scripts/validate_vectors.py
 
 # Start with jop_types analysis
-less /home/peter/git/jop.arch/jop/vhdl/core/jop_types.vhd
+less /home/peter/git/jopmin/vhdl/core/jop_types.vhd
 
 # Let's go! 🚀
 ```

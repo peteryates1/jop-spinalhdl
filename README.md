@@ -89,9 +89,16 @@ Test vectors are maintained in JSON format and shared between CocoTB (Python) an
 
 ## Reference Files
 
-The original JOP VHDL implementation (298 files) is located at:
+### VHDL Reference (jopmin - minimal working JOP)
 ```
-/home/peter/git/jop.arch/jop/vhdl/
+/home/peter/git/jopmin/vhdl/         # VHDL source files
+/home/peter/git/jopmin/asm/generated/ # Generated files (jtbl.vhd, mem_rom.dat, etc.)
+/home/peter/git/jopmin/java/         # Java sources (JOP runtime, tools, Jopa assembler)
+```
+
+### JOP Program Files
+```
+/home/peter/workspaces/jop/          # Compiled JOP programs (.jop files)
 ```
 
 Core files have been copied to `original/vhdl/core/` for convenience, but the full repository should be referenced for context.

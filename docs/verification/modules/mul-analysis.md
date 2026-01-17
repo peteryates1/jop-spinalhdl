@@ -2,7 +2,7 @@
 
 **Agent**: vhdl-tester
 **Date**: 2025-12-27
-**Source File**: `/home/peter/git/jop.arch/jop/vhdl/core/mul.vhd`
+**Source File**: `/home/peter/git/jopmin/vhdl/core/mul.vhd`
 **Status**: Analysis Complete
 
 ## Overview
@@ -285,6 +285,6 @@ class Mul(config: MulConfig) extends Component {
 
 ## References
 
-- **VHDL Source**: `/home/peter/git/jop.arch/jop/vhdl/core/mul.vhd`
+- **VHDL Source**: `/home/peter/git/jopmin/vhdl/core/mul.vhd`
 - **Algorithm**: Radix-4 bit-serial multiplication
 - **JOP Documentation**: Comments indicate 244 LCs for implementation
