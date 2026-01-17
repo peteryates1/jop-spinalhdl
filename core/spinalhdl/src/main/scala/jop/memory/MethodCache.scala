@@ -96,10 +96,11 @@ case class MethodCache(config: MethodCacheConfig = MethodCacheConfig()) extends 
   val state = Reg(MethodCacheState()) init(MethodCacheState.IDLE)
 
   // ==========================================================================
-  // Tag Array (one tag per block)
+  // Tag Array (one tag per block) and Valid Bits
   // ==========================================================================
 
   val tags = Vec(Reg(UInt(config.tagWidth bits)) init(0), config.blocks)
+  val valid = Vec(Reg(Bool()) init(False), config.blocks)  // Valid bit per block
 
   // Next block pointer (round-robin replacement)
   val nxt = Reg(UInt(config.blockBits bits)) init(0)
@@ -117,10 +118,10 @@ case class MethodCache(config: MethodCacheConfig = MethodCacheConfig()) extends 
   // Use address for comparison (may be narrower than full address)
   val useAddr = io.bcAddr
 
-  // Parallel tag comparison
+  // Parallel tag comparison - must match tag AND be valid (like VHDL)
   val hits = Vec(Bool(), config.blocks)
   for (i <- 0 until config.blocks) {
-    hits(i) := (tags(i) === useAddr)
+    hits(i) := valid(i) && (tags(i) === useAddr)
   }
 
   // Any hit?
@@ -175,8 +176,9 @@ case class MethodCache(config: MethodCacheConfig = MethodCacheConfig()) extends 
     }
 
     is(MethodCacheState.S2) {
-      // Update tag for allocated block
+      // Update tag and valid bit for allocated block
       tags(nxt) := useAddr
+      valid(nxt) := True
 
       // Advance next pointer (round-robin)
       nxt := nxt + nrOfBlks + 1

@@ -38,7 +38,7 @@ endif
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Phony targets
-.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal test_bcfetch test_core test_core_alu test_core_shift test_core_loadstore test_core_branch test_core_stack test_core_regstore test_core_regload test_core_store test_core_load test_core_loadopd test_core_mmu test_core_control test_method_cache help
+.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal test_bcfetch test_core test_core_alu test_core_shift test_core_loadstore test_core_branch test_core_stack test_core_regstore test_core_regload test_core_store test_core_load test_core_loadopd test_core_mmu test_core_control test_method_cache test_memory_controller help
 
 # Clean build artifacts
 clean::
@@ -297,6 +297,14 @@ test_method_cache:
 	@cp -f $(SPINALHDL_GEN_DIR)/MethodCacheTb.vhd $(GENERATED_DIR)/MethodCacheTb.vhd || \
 		(echo "ERROR: MethodCacheTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.memory.MethodCacheTbVhdl\"' first" && exit 1)
 	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/MethodCacheTb.vhd" TOPLEVEL=methodcachetb MODULE=tests.test_method_cache
+
+# Test MemoryController (automatic cache miss handling)
+test_memory_controller:
+	@echo "Testing MemoryController (automatic cache miss handling)..."
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/MemoryControllerTb.vhd $(GENERATED_DIR)/MemoryControllerTb.vhd || \
+		(echo "ERROR: MemoryControllerTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.memory.MemoryControllerTb\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/MemoryControllerTb.vhd" TOPLEVEL=memorycontrollertb MODULE=tests.test_memory_controller
 
 # Help
 help:
