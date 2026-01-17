@@ -274,6 +274,22 @@ test_core_bytecode:
 		(echo "ERROR: JopCoreWithBytecodeTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreWithBytecodeTbVhdl\"' first" && exit 1)
 	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreWithBytecodeTb.vhd" TOPLEVEL=jopcorewithbytecodetb MODULE=tests.test_core_with_bytecode
 
+# Test MemorySubsystem (integrated memory subsystem with JOP data)
+test_memory_subsystem:
+	@echo "Testing MemorySubsystem (integrated memory subsystem)..."
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/MemorySubsystemTb.vhd $(GENERATED_DIR)/MemorySubsystemTb.vhd || \
+		(echo "ERROR: MemorySubsystemTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.memory.MemorySubsystemTb\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/MemorySubsystemTb.vhd" TOPLEVEL=memorysubsystemtb MODULE=tests.test_memory_subsystem
+
+# Test MainMemorySim (simulated main memory)
+test_main_memory_sim:
+	@echo "Testing MainMemorySim (simulated main memory)..."
+	@mkdir -p waveforms $(GENERATED_DIR)
+	@cp -f $(SPINALHDL_GEN_DIR)/MainMemorySimTb.vhd $(GENERATED_DIR)/MainMemorySimTb.vhd || \
+		(echo "ERROR: MainMemorySimTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.memory.MainMemorySimTb\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/MainMemorySimTb.vhd" TOPLEVEL=mainmemorysimtb MODULE=tests.test_main_memory_sim
+
 # Test MethodCache (method cache tag lookup)
 test_method_cache:
 	@echo "Testing MethodCache (method cache tag lookup)..."

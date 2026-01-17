@@ -1,0 +1,130 @@
+{
+  "module": "main_memory_sim",
+  "description": "Test vectors for simulated main memory component",
+  "version": "1.0",
+  "signals": {
+    "inputs": {
+      "addr": {"width": 18, "description": "Memory address"},
+      "din": {"width": 32, "description": "Data input for write"},
+      "ncs": {"width": 1, "description": "Chip select (active low)"},
+      "noe": {"width": 1, "description": "Output enable (active low)"},
+      "nwr": {"width": 1, "description": "Write enable (active low)"}
+    },
+    "outputs": {
+      "dout": {"width": 32, "description": "Data output from read"},
+      "ready": {"width": 1, "description": "Memory ready signal"}
+    }
+  },
+  "timing_notes": {
+    "read_latency": "1 clock cycle (synchronous read)",
+    "write_latency": "1 clock cycle (synchronous write)"
+  },
+  "test_cases": [
+    {
+      "name": "reset_clears_outputs",
+      "description": "After reset, outputs should be zeroed",
+      "type": "reset",
+      "expected_outputs": {
+        "dout": "0x0",
+        "ready": "0x1"
+      }
+    },
+    {
+      "name": "read_preloaded_data_addr0",
+      "description": "Read pre-loaded data from address 0",
+      "type": "read",
+      "inputs": [
+        {"cycle": 1, "signals": {"addr": "0x0", "ncs": "0x0", "noe": "0x0", "nwr": "0x1", "din": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 2, "signals": {"dout": "0x0", "ready": "0x1"}}
+      ]
+    },
+    {
+      "name": "read_preloaded_data_addr1",
+      "description": "Read pre-loaded data from address 1",
+      "type": "read",
+      "inputs": [
+        {"cycle": 1, "signals": {"addr": "0x1", "ncs": "0x0", "noe": "0x0", "nwr": "0x1", "din": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 2, "signals": {"dout": "0x1", "ready": "0x1"}}
+      ]
+    },
+    {
+      "name": "read_preloaded_data_addr255",
+      "description": "Read pre-loaded data from address 255",
+      "type": "read",
+      "inputs": [
+        {"cycle": 1, "signals": {"addr": "0xFF", "ncs": "0x0", "noe": "0x0", "nwr": "0x1", "din": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 2, "signals": {"dout": "0xFF", "ready": "0x1"}}
+      ]
+    },
+    {
+      "name": "write_and_read_back",
+      "description": "Write a value and read it back",
+      "type": "write_read",
+      "inputs": [
+        {"cycle": 1, "signals": {"addr": "0x10", "ncs": "0x0", "noe": "0x1", "nwr": "0x0", "din": "0xDEADBEEF"}},
+        {"cycle": 2, "signals": {"addr": "0x10", "ncs": "0x0", "noe": "0x0", "nwr": "0x1", "din": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 3, "signals": {"dout": "0xDEADBEEF"}}
+      ]
+    },
+    {
+      "name": "multiple_writes_sequential",
+      "description": "Write to multiple sequential addresses",
+      "type": "write_sequence",
+      "inputs": [
+        {"cycle": 1, "signals": {"addr": "0x20", "ncs": "0x0", "noe": "0x1", "nwr": "0x0", "din": "0x11111111"}},
+        {"cycle": 2, "signals": {"addr": "0x21", "ncs": "0x0", "noe": "0x1", "nwr": "0x0", "din": "0x22222222"}},
+        {"cycle": 3, "signals": {"addr": "0x22", "ncs": "0x0", "noe": "0x1", "nwr": "0x0", "din": "0x33333333"}},
+        {"cycle": 4, "signals": {"addr": "0x20", "ncs": "0x0", "noe": "0x0", "nwr": "0x1", "din": "0x0"}},
+        {"cycle": 5, "signals": {"addr": "0x21", "ncs": "0x0", "noe": "0x0", "nwr": "0x1", "din": "0x0"}},
+        {"cycle": 6, "signals": {"addr": "0x22", "ncs": "0x0", "noe": "0x0", "nwr": "0x1", "din": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 5, "signals": {"dout": "0x11111111"}},
+        {"cycle": 6, "signals": {"dout": "0x22222222"}},
+        {"cycle": 7, "signals": {"dout": "0x33333333"}}
+      ]
+    },
+    {
+      "name": "chip_select_disables_output",
+      "description": "When ncs=1, output should be 0",
+      "type": "control",
+      "inputs": [
+        {"cycle": 1, "signals": {"addr": "0x1", "ncs": "0x1", "noe": "0x0", "nwr": "0x1", "din": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 2, "signals": {"dout": "0x0"}}
+      ]
+    },
+    {
+      "name": "output_enable_controls_output",
+      "description": "When noe=1, output should be 0 even if ncs=0",
+      "type": "control",
+      "inputs": [
+        {"cycle": 1, "signals": {"addr": "0x1", "ncs": "0x0", "noe": "0x1", "nwr": "0x1", "din": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 2, "signals": {"dout": "0x0"}}
+      ]
+    },
+    {
+      "name": "ready_always_high",
+      "description": "Ready signal should always be high for synchronous memory",
+      "type": "status",
+      "inputs": [
+        {"cycle": 1, "signals": {"addr": "0x0", "ncs": "0x1", "noe": "0x1", "nwr": "0x1", "din": "0x0"}}
+      ],
+      "expected_outputs": [
+        {"cycle": 1, "signals": {"ready": "0x1"}},
+        {"cycle": 2, "signals": {"ready": "0x1"}}
+      ]
+    }
+  ]
+}
