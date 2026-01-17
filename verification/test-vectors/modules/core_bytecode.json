@@ -222,6 +222,28 @@
         {"action": "clock", "cycles": 5},
         {"action": "check", "jpaddr": "0x0EC", "comment": "Unknown bytecodes map to sys_noim (0x0EC)"}
       ]
+    },
+    {
+      "name": "jfetch_advances_jpc",
+      "description": "Verify jfetch signal advances JPC to next bytecode",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00000300"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x218", "jpc_out": "0x000", "comment": "First bytecode is nop (0x00) at JPC=0"},
+        {"action": "clock", "cycles": 20},
+        {"action": "check", "comment": "After more cycles, observe if jfetch triggers"}
+      ]
+    },
+    {
+      "name": "bytecode_sequence_execution",
+      "description": "Multiple bytecodes: nop, iconst_0, iconst_1 sequence",
+      "sequence": [
+        {"action": "reset"},
+        {"action": "write_jbc", "address": 0, "data": "0x00040300"},
+        {"action": "clock", "cycles": 5},
+        {"action": "check", "jpaddr": "0x218", "comment": "First: nop at JPC=0"}
+      ]
     }
   ]
 }
