@@ -394,3 +394,39 @@ async def test_normal_fetch_after_clearing(dut):
     assert final_addr != driver.get_sys_exc_addr(), "Should not be at exception handler"
 
     cocotb.log.info("test_normal_fetch_after_clearing PASSED")
+
+
+@cocotb.test()
+async def test_irq_latched_when_disabled_fires_when_enabled(dut):
+    """Test that IRQ is latched even when ena=0, and fires when ena becomes 1
+
+    This matches the VHDL behavior where int_pend is set on irq regardless of ena,
+    but the interrupt is only acknowledged when ena=1.
+    """
+    driver = InterruptTestDriver(dut)
+    await driver.start_clock()
+    await driver.reset()
+
+    # Ensure interrupts are disabled
+    driver.dut.io_ena.value = 0
+
+    # Assert IRQ while disabled - should be latched but not handled
+    await driver.assert_irq()
+    await driver.clock_cycles(1)
+
+    # Fetch should NOT trigger interrupt handler (ena=0)
+    jpaddr1 = await driver.fetch()
+    sys_int = driver.get_sys_int_addr()
+    cocotb.log.info(f"Fetch with ena=0: jpaddr=0x{jpaddr1:03x}")
+    assert jpaddr1 != sys_int, "Should not handle interrupt when ena=0"
+
+    # Now enable interrupts
+    driver.dut.io_ena.value = 1
+    await driver.clock_cycles(1)
+
+    # Fetch should now trigger interrupt handler (IRQ was latched)
+    jpaddr2 = await driver.fetch()
+    cocotb.log.info(f"Fetch with ena=1: jpaddr=0x{jpaddr2:03x}, sys_int=0x{sys_int:03x}")
+    assert jpaddr2 == sys_int, f"Expected latched IRQ to fire, got 0x{jpaddr2:03x}"
+
+    cocotb.log.info("test_irq_latched_when_disabled_fires_when_enabled PASSED")

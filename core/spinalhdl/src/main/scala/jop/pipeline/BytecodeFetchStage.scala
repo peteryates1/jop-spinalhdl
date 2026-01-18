@@ -33,9 +33,10 @@ case class BytecodeFetchConfig(
  * - Operand accumulation (jopdfetch) - 16-bit shift register
  * - Branch logic - 15 branch types with condition evaluation
  * - Interrupt/exception handling with pending latches (Phase E)
- *   - int_pend: Set on irq && ena, cleared on ack during jfetch
+ *   - int_pend: Set on irq (latched even when ena=0), cleared on ack during jfetch
  *   - exc_pend: Set on exc, cleared on ack during jfetch
  *   - Priority: Exception > Interrupt > Normal bytecode
+ *   - Interrupt only acknowledged when ena=1 (allows deferred interrupt handling)
  *
  * @param config Configuration
  * @param jbcInit Optional JBC RAM initialization
@@ -264,8 +265,11 @@ case class BytecodeFetchStage(
   // ==========================================================================
 
   // Pending latches (matching VHDL bcfetch.vhd behavior)
-  // int_pend: Set when irq && ena, cleared on acknowledge during jfetch
+  // int_pend: Set when irq (latched regardless of ena), cleared on acknowledge during jfetch
   // exc_pend: Set when exc, cleared on acknowledge during jfetch
+  // NOTE: Unlike a naive implementation, IRQ is latched even when ena=0.
+  // The ena check happens at acknowledge time, so an IRQ arriving while
+  // interrupts are disabled will fire once interrupts are re-enabled.
   val intPend = Reg(Bool()) init(False)
   val excPend = Reg(Bool()) init(False)
 
@@ -273,9 +277,9 @@ case class BytecodeFetchStage(
   val doAckIrq = Bool()
   val doAckExc = Bool()
 
-  // Exception has priority
+  // Exception has priority; interrupt requires ena to be acknowledged
   doAckExc := excPend && io.jfetch
-  doAckIrq := intPend && !excPend && io.jfetch
+  doAckIrq := intPend && io.ena && !excPend && io.jfetch
 
   // Update pending latches
   when(doAckExc) {
@@ -286,7 +290,7 @@ case class BytecodeFetchStage(
 
   when(doAckIrq) {
     intPend := False
-  }.elsewhen(io.irq && io.ena) {
+  }.elsewhen(io.irq) {
     intPend := True
   }
 
@@ -300,7 +304,9 @@ case class BytecodeFetchStage(
 
   val jumpTable = JumpTable(JumpTableConfig(pcWidth = config.pcWidth))
   jumpTable.io.bytecode := jbcData
-  jumpTable.io.intPend := intPend
+  // Pass int_req (int_pend AND ena) to JumpTable, matching VHDL behavior
+  // This means the interrupt handler address is only output when interrupts are enabled
+  jumpTable.io.intPend := intPend && io.ena
   jumpTable.io.excPend := excPend
   io.jpaddr := jumpTable.io.jpaddr
 }
