@@ -74,21 +74,28 @@ object JopFileLoader {
     val parsed = lines.flatMap { line =>
       val trimmed = line.trim
       if (trimmed.isEmpty || trimmed.startsWith("//")) {
-        None
+        Seq.empty
       } else {
-        // Extract value before comma, and comment after //
+        // Extract data part before any // comment
         val parts = trimmed.split("//", 2)
-        val valuePart = parts(0).trim.stripSuffix(",").trim
+        val dataPart = parts(0).trim
         val comment = if (parts.length > 1) parts(1).trim else ""
 
-        if (valuePart.isEmpty) None
+        if (dataPart.isEmpty) Seq.empty
         else {
-          Try {
-            val value = valuePart.toLong
-            // Convert to unsigned 32-bit representation
-            val unsigned = value & 0xFFFFFFFFL
-            Some((BigInt(unsigned), comment))
-          }.getOrElse(None)
+          // Handle multiple comma-separated values on one line (e.g., string character arrays)
+          // Lines like: "13, 10, 74, 79, 80, 58, 32, 98, "
+          val values = dataPart.split(",").map(_.trim).filter(_.nonEmpty)
+
+          values.flatMap { valuePart =>
+            Try {
+              val value = valuePart.toLong
+              // Convert to unsigned 32-bit representation
+              val unsigned = value & 0xFFFFFFFFL
+              // Only first value gets the comment
+              Some((BigInt(unsigned), if (values.head == valuePart) comment else ""))
+            }.getOrElse(None)
+          }.toSeq
         }
       }
     }

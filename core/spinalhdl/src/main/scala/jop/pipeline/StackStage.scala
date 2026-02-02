@@ -61,7 +61,8 @@ case class AluFlags() extends Bundle {
  * @param config Stack stage configuration
  */
 case class StackStage(
-  config: StackConfig = StackConfig()
+  config: StackConfig = StackConfig(),
+  ramInit: Option[Seq[BigInt]] = None  // Optional RAM initialization data
 ) extends Component {
 
   val io = new Bundle {
@@ -91,6 +92,22 @@ case class StackStage(
     val enaB    = in Bool()                               // Enable B register
     val enaVp   = in Bool()                               // Enable VP registers
     val enaAr   = in Bool()                               // Enable AR register
+
+    // Debug: direct RAM read port for verification
+    val debugRamAddr = in UInt(config.ramWidth bits)
+    val debugRamData = out Bits(config.width bits)
+
+    // Debug: direct RAM write port for simulation initialization
+    val debugRamWrAddr = in UInt(config.ramWidth bits)
+    val debugRamWrData = in Bits(config.width bits)
+    val debugRamWrEn = in Bool()
+
+    // Debug: stack pointer and write address for tracking
+    val debugSp = out UInt(config.ramWidth bits)
+    val debugWrAddr = out UInt(config.ramWidth bits)
+    val debugWrEn = out Bool()
+    val debugRdAddrReg = out UInt(config.ramWidth bits)
+    val debugRamDout = out Bits(config.width bits)
 
     // Outputs
     val spOv    = out Bool()                              // Stack overflow flag
@@ -147,12 +164,28 @@ case class StackStage(
   // ==========================================================================
   // Stack RAM
   // ==========================================================================
-  // Dual-port RAM with:
-  // - Registered write address, data, and enable (1 cycle delay)
-  // - Registered read address
-  // - Unregistered read data (combinational after address registered)
+  // Matches VHDL aram.vhd timing:
+  // - Write address and enable delayed by 1 cycle (wrEnaDly, wrAddrDly)
+  // - Write data (mmux) is combinational from current sel_mmux and A/B
+  // - Read address registered (ramRdaddrReg)
+  // - Read data unregistered (readAsync after registered address)
 
   val stackRam = Mem(Bits(config.width bits), 1 << config.ramWidth)
+
+  // Initialize RAM if initialization data provided
+  // $readmemb loads: file line N+1 -> array[N] (1-indexed file, 0-indexed array)
+  // SpinalHDL Mem.init: init[N] -> file line N+1
+  // Combined: init[N] -> array[N] - no adjustment needed!
+  ramInit.foreach { initData =>
+    val ramSize = 1 << config.ramWidth
+    val paddedInit = initData.padTo(ramSize, BigInt(0))
+    println(s"Stack RAM init (no shift): want RAM[32]=${initData(32)}, RAM[38]=${initData(38)}, RAM[45]=${initData(45)}")
+    // Convert negative values to unsigned 32-bit representation
+    stackRam.init(paddedInit.map { v =>
+      val unsigned = if (v < 0) v + (BigInt(1) << config.width) else v
+      B(unsigned.toLong, config.width bits)
+    })
+  }
 
   // Read/write address signals (combinational)
   val rdaddr = UInt(config.ramWidth bits)
@@ -166,29 +199,61 @@ case class StackStage(
     mmux := b
   }
 
-  // Registered write interface (write has 1-cycle delay)
-  val ramWraddrReg = Reg(UInt(config.ramWidth bits)) init(0)
-  val ramWrenReg   = Reg(Bool()) init(False)
-  val ramDinReg    = Reg(Bits(config.width bits)) init(0)
+  // VHDL aram.vhd delays write address and enable by 1 cycle:
+  //   process(clock) begin
+  //     if rising_edge(clock) then
+  //       wraddr_dly <= wraddress;
+  //       wren_dly <= wren;
+  //     end if;
+  //   end process;
+  // This is necessary because wr_ena and wraddr are COMBINATIONAL from the decode,
+  // but sel_mmux (which controls the write data mux) is REGISTERED. Without this
+  // delay, the write data would use the PREVIOUS instruction's sel_mmux instead of
+  // the current instruction's. The 1-cycle delay aligns the write with the updated
+  // sel_mmux and A/B register values.
+  val wrEnaDly = RegNext(io.wrEna, init = False)
+  val wrAddrDly = RegNext(wraddr, init = U(0, config.ramWidth bits))
 
-  ramWraddrReg := wraddr
-  ramWrenReg   := io.wrEna
-  ramDinReg    := mmux
+  // Debug write port takes priority and bypasses the pipeline delay
+  val effectiveWrAddr = Mux(io.debugRamWrEn, io.debugRamWrAddr, wrAddrDly)
+  val effectiveWrData = Mux(io.debugRamWrEn, io.debugRamWrData, mmux)
+  val effectiveWrEn = io.debugRamWrEn | wrEnaDly
 
   stackRam.write(
-    address = ramWraddrReg,
-    data    = ramDinReg,
-    enable  = ramWrenReg
+    address = effectiveWrAddr,
+    data    = effectiveWrData,
+    enable  = effectiveWrEn
   )
 
-  // Registered read address (read address is registered, data is combinational)
+  // Debug: track the delayed write values (same timing as actual RAM write)
+  val ramWraddrReg = wrAddrDly
+  val ramWrenReg   = wrEnaDly
+
+  // VHDL's LPM_RAM_DP with LPM_RDADDRESS_CONTROL=REGISTERED has:
+  //   - Address registered internally at clock edge
+  //   - Data output combinationally from registered address (same cycle, after edge)
+  //
+  // In VHDL decode:
+  //   - sel_lmux IS registered (in rising_edge(clk) process)
+  //   - sel_rda, dir are COMBINATIONAL from ir
+  //   - But LPM RAM internally registers rdaddr
+  //
+  // Timing at cycle N edge:
+  //   - selLmuxReg samples new value M from decode of instruction I (cycle N-1)
+  //   - LPM RAM registers rdaddr = address A for instruction I
+  //
+  // During cycle N:
+  //   - lmux = M (selLmuxReg) - from instruction I
+  //   - ramDout = RAM[A] - from instruction I's address
+  //   - These are CONSISTENT because both are registered at the same edge
+  //
+  // To match this in SpinalHDL:
   val ramRdaddrReg = Reg(UInt(config.ramWidth bits)) init(0)
   ramRdaddrReg := rdaddr
+  val ramDout = stackRam.readAsync(ramRdaddrReg)
 
-  val ramDout = stackRam.readSync(
-    address = rdaddr,
-    enable  = True
-  )
+  // Debug: direct async read for RAM verification
+  io.debugRamData := stackRam.readAsync(io.debugRamAddr)
 
   // ==========================================================================
   // 33-bit ALU for Correct Overflow/Comparison
@@ -444,6 +509,13 @@ case class StackStage(
   io.spOv := spOvReg
   io.aout := a
   io.bout := b
+
+  // Debug outputs for simulation
+  io.debugSp := sp
+  io.debugWrAddr := ramWraddrReg
+  io.debugWrEn := ramWrenReg
+  io.debugRdAddrReg := ramRdaddrReg
+  io.debugRamDout := ramDout
 }
 
 
@@ -635,20 +707,19 @@ case class StackStageTb(
       mmux := b
     }
 
-    // Registered write signals (1-cycle delay)
+    // Write directly to RAM - SpinalHDL Mem.write() is synchronous (registers internally)
+    // Matching VHDL RAM component which also has internal registration
+    stackRam.write(
+      address = wraddr,
+      data    = mmux,
+      enable  = wr_ena
+    )
+
+    // Keep registered values for debug output only
     val ramWraddrReg = Reg(UInt(ramWidth bits)) init(0)
     val ramWrenReg   = Reg(Bool()) init(False)
-    val ramDinReg    = Reg(Bits(width bits)) init(0)
-
     ramWraddrReg := wraddr
     ramWrenReg   := wr_ena
-    ramDinReg    := mmux
-
-    stackRam.write(
-      address = ramWraddrReg,
-      data    = ramDinReg,
-      enable  = ramWrenReg
-    )
 
     // Registered read address, combinational read data
     val ramDout = stackRam.readSync(
