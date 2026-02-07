@@ -170,17 +170,34 @@ case class BmbRsp() extends Bundle {
 
 **Goal:** Run on real hardware with SDRAM
 
-7. **Create `SdrSdramBackend.scala`**
-   - Wrap SpinalHDL's `BmbSdramCtrl`
-   - Configuration for common chips (MT48LC16M16A2, etc.)
+**Target:** QMTECH EP4CGX150 + Daughter Board with W9825G6JH6 SDR SDRAM
 
-8. **Create FPGA top-level**
-   - Intel/Altera DE2-115 or similar
-   - Pin assignments, PLLs
+7. **Create `JopSystemWithSdram.scala`**
+   - Wrap SpinalHDL's `BmbSdramCtrl` with W9825G6JH6 configuration
+   - Use SpinalHDL's `SdramModel` for simulation
+   - Run HelloWorld.jop in simulation with SDRAM timing
 
-9. **Test on hardware**
-   - Verify timing
-   - Debug any issues
+8. **Create SDRAM simulation test**
+   - Use `spinal.lib.memory.sdram.sdr.sim.SdramModel`
+   - Verify read/write timing matches W9825G6JH6 datasheet
+   - Run HelloWorld.jop with SDRAM simulation model
+
+9. **Create FPGA top-level for QMTECH EP4CGX150**
+   - Target: `EP4CGX150DF27I7`
+   - SDRAM: W9825G6JH6 (32MB, 16-bit, SDR)
+   - Pin assignments from: `/home/peter/git/jopmin/quartus/qmtech-ep4cgx150gx/jop.qsf`
+   - PLL: 50MHz input → system clock + SDRAM clock (phase shifted)
+   - I/O:
+     - UART: CP2102N (ser_txd/ser_rxd)
+     - LEDs: Core board (2), Daughter board (5), PMOD J10/J11 (16)
+     - Switches: Core board (2), Daughter board (5)
+     - 7-segment display: 3-digit on daughter board
+   - Reference: `/home/peter/git/jopmin/quartus/qmtech-ep4cgx150gx/`
+
+10. **Verify on hardware**
+    - Program FPGA via USB-Blaster
+    - Run HelloWorld.jop
+    - Verify UART output and watchdog LED toggle
 
 ### Phase 4: Multicore
 
@@ -266,3 +283,57 @@ From SpinalHDL maintainer (Dolu1990):
 ### Project Documentation
 - Memory controller comparison: `docs/memory-controller-comparison.md`
 - This architecture plan: `docs/memory-architecture-plan.md`
+
+## Target Hardware: QMTECH EP4CGX150
+
+### Board Details
+- **FPGA:** Cyclone IV GX EP4CGX150DF27I7
+- **Clock:** 50MHz oscillator
+- **SDRAM:** W9825G6JH6 (32MB, 16-bit, SDR)
+  - 4 banks, 13-bit row, 9-bit column
+  - 143MHz max clock (we'll use ~100MHz)
+  - SpinalHDL has pre-defined timing: `W9825G6JH6.timingGrade7`
+
+### Daughter Board (DB_FPGA)
+- **UART:** CP2102N USB-to-Serial
+- **LEDs:** 5 additional LEDs
+- **Switches:** 5 additional switches
+- **7-Segment:** 3-digit display
+- **PMOD:** J10 and J11 headers (used for LED boards showing WD signals)
+- **Ethernet:** RTL8211EG (future use)
+- **SD Card:** MicroSD slot (future use)
+
+### Pin Mapping Summary
+```
+# Clock
+clk_in        → PIN_B14 (50MHz)
+
+# SDRAM (directly from QSF)
+dram_ctrl.cs_n  → PIN_H26
+dram_ctrl.cke   → PIN_K24
+dram_ctrl.clk   → PIN_E22
+dram_ctrl.we_n  → PIN_G25
+dram_ctrl.ras_n → PIN_H25
+dram_ctrl.cas_n → PIN_G26
+dram_ctrl.ba[1:0]   → PIN_J26, J25
+dram_ctrl.addr[12:0] → see jop.qsf
+dram_ctrl.dqm[1:0]  → PIN_H24, F26
+dram_data[15:0]     → see jop.qsf
+
+# UART
+ser_rxd → PIN_AE21
+ser_txd → PIN_AD20
+
+# LEDs (active high)
+led[0:1] → Core board (PIN_A25, A24)
+led[2:6] → Daughter board (AD14, AC14, AD15, AC15, AE15)
+
+# PMOD LEDs (active high)
+pmod_j10[1:8] → See jop.qsf (watchdog indicators)
+pmod_j11[1:8] → See jop.qsf (watchdog indicators)
+```
+
+### Reference Files
+- VHDL Reference: `/home/peter/git/jopmin/quartus/qmtech-ep4cgx150gx/`
+- Core Board Docs: `/home/peter/git/EP4CGX150DF27_CORE_BOARD/`
+- Daughter Board Docs: `/home/peter/git/DB_FPGA/`
