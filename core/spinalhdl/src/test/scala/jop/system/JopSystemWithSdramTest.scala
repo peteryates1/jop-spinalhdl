@@ -45,6 +45,11 @@ case class JopSystemWithSdramTestHarness(
     // UART output
     val uartTxData = out Bits(8 bits)
     val uartTxValid = out Bool()
+
+    // I/O debug (directly from JopSystem)
+    val ioWr = out Bool()
+    val ioAddr = out UInt(8 bits)
+    val ioWrData = out Bits(32 bits)
   }
 
   // Extract JBC init from main memory
@@ -147,6 +152,9 @@ case class JopSystemWithSdramTestHarness(
   io.memBusy := jopSystem.io.memBusy
   io.uartTxData := uartTxDataReg
   io.uartTxValid := uartTxValidReg
+  io.ioWr := jopSystem.io.ioWr
+  io.ioAddr := jopSystem.io.ioAddr
+  io.ioWrData := jopSystem.io.ioWrData
 }
 
 /**

@@ -1,6 +1,6 @@
 GCC_PARAMS=
 ASM_SRC=jvm
-JVM_TYPE=SERIAL
+JVM_TYPE=SIMULATION
 
 all: ../java/jopa/dist/lib/jopa.jar
 	mkdir -p generated

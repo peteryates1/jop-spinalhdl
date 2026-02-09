@@ -600,9 +600,9 @@ case class JopSimulator(
     // 2. Access the field/element at (data_ptr + index)
     //
     // JOP handle format:
-    // - Handle at address H contains pointer to actual data at H[0]
+    // - Handle at address H: H[0] = data pointer, H[1] = array length (for arrays)
     // - For objects: data_ptr[field_index] is the field value
-    // - For arrays: data_ptr+1 is length, data_ptr+1+index is element
+    // - For arrays: data_ptr[index] is the element (length in handle, not data area)
     //
     object HandleOpState extends SpinalEnum {
       val IDLE, READ_HANDLE, WAIT_HANDLE, CALC_ADDR, ACCESS_DATA, WAIT_DATA, DONE = newElement()
@@ -682,11 +682,10 @@ case class JopSimulator(
 
       is(HandleOpState.ACCESS_DATA) {
         // Calculate final address and issue read/write
-        // For arrays, add 1 for length field offset, then index
-        val finalAddr = handleOpIsArray.mux(
-          True  -> (handleOpDataPtr + 1 + handleOpIndex.resized),  // array: data_ptr + 1 + index
-          False -> (handleOpDataPtr + handleOpIndex.resized)       // object: data_ptr + field_index
-        )
+        // Both arrays and objects use data_ptr + index (matching VHDL mem_sc.vhd)
+        // In JOP, array length is stored in the handle (handle[1]), NOT at
+        // data_ptr[0]. So array elements start directly at data_ptr[0].
+        val finalAddr = handleOpDataPtr + handleOpIndex.resized
         handleOpMemAddr := finalAddr
         when(handleOpIsWrite) {
           // Signal write request - actual write handled in memory section

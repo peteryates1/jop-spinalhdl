@@ -94,35 +94,31 @@ case class JopSystemTestHarness(
   val uartTxDataReg = Reg(Bits(8 bits)) init(0)
   val uartTxValidReg = Reg(Bool()) init(False)
 
-  // Default I/O read data
-  val ioRdDataReg = Reg(Bits(32 bits)) init(0)
+  // I/O read data - COMBINATIONAL (must be available same cycle as ioRd)
+  val ioRdData = Bits(32 bits)
+  ioRdData := 0  // default
 
   // Decode I/O address
   val ioSubAddr = jopSystem.io.ioAddr(3 downto 0)
   val ioSlaveId = jopSystem.io.ioAddr(5 downto 4)
 
-  // I/O read handling
-  when(jopSystem.io.ioRd) {
-    switch(ioSlaveId) {
-      is(0) {  // System
-        switch(ioSubAddr) {
-          is(0) { ioRdDataReg := sysCntReg.asBits }        // Counter
-          is(1) { ioRdDataReg := sysCntReg.asBits }        // Microsecond counter
-          is(6) { ioRdDataReg := B(0, 32 bits) }           // CPU ID
-          is(7) { ioRdDataReg := B(0, 32 bits) }           // Signal
-          default { ioRdDataReg := 0 }
-        }
+  // I/O read handling - combinational response
+  switch(ioSlaveId) {
+    is(0) {  // System
+      switch(ioSubAddr) {
+        is(0) { ioRdData := sysCntReg.asBits }        // Counter
+        is(1) { ioRdData := sysCntReg.asBits }        // Microsecond counter
+        is(6) { ioRdData := B(0, 32 bits) }           // CPU ID
+        is(7) { ioRdData := B(0, 32 bits) }           // Signal
       }
-      is(1) {  // UART
-        switch(ioSubAddr) {
-          is(0) { ioRdDataReg := B(0x1, 32 bits) }  // Status: TX ready
-          default { ioRdDataReg := 0 }
-        }
+    }
+    is(1) {  // UART
+      switch(ioSubAddr) {
+        is(0) { ioRdData := B(0x1, 32 bits) }  // Status: TX ready
       }
-      default { ioRdDataReg := 0 }
     }
   }
-  jopSystem.io.ioRdData := ioRdDataReg
+  jopSystem.io.ioRdData := ioRdData
 
   // I/O write handling
   uartTxValidReg := False

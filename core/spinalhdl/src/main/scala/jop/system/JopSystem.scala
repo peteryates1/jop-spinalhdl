@@ -91,6 +91,17 @@ case class JopSystem(
 
     // Debug: bytecode cache fill
     val debugBcRd = out Bool()
+
+    // Debug: memory controller state
+    val debugMemState = out UInt(4 bits)
+    val debugMemHandleActive = out Bool()
+    val debugAddrWr = out Bool()  // Decode stage addrWr signal
+    val debugRdc = out Bool()     // Memory read combined (stmrac)
+    val debugRd = out Bool()      // Memory read (stmra)
+
+    // Debug: RAM slot read
+    val debugRamAddr = in UInt(8 bits)
+    val debugRamData = out Bits(32 bits)
   }
 
   // ==========================================================================
@@ -157,7 +168,10 @@ case class JopSystem(
 
   // Memory control signals from decode
   memCtrl.io.memIn.rd := decode.io.memIn.rd
+  memCtrl.io.memIn.rdc := decode.io.memIn.rdc
+  memCtrl.io.memIn.rdf := decode.io.memIn.rdf
   memCtrl.io.memIn.wr := decode.io.memIn.wr
+  memCtrl.io.memIn.wrf := decode.io.memIn.wrf
   memCtrl.io.memIn.addrWr := decode.io.memIn.addrWr
   memCtrl.io.memIn.bcRd := decode.io.memIn.bcRd
   memCtrl.io.memIn.stidx := decode.io.memIn.stidx
@@ -165,10 +179,14 @@ case class JopSystem(
   memCtrl.io.memIn.iastore := decode.io.memIn.iastore
   memCtrl.io.memIn.getfield := decode.io.memIn.getfield
   memCtrl.io.memIn.putfield := decode.io.memIn.putfield
+  memCtrl.io.memIn.putref := decode.io.memIn.putref
   memCtrl.io.memIn.getstatic := decode.io.memIn.getstatic
   memCtrl.io.memIn.putstatic := decode.io.memIn.putstatic
   memCtrl.io.memIn.copy := decode.io.memIn.copy
   memCtrl.io.memIn.cinval := decode.io.memIn.cinval
+  memCtrl.io.memIn.atmstart := decode.io.memIn.atmstart
+  memCtrl.io.memIn.atmend := decode.io.memIn.atmend
+  memCtrl.io.memIn.bcopd := decode.io.memIn.bcopd
 
   // Stack values for memory operations
   memCtrl.io.aout := stack.io.aout
@@ -217,11 +235,12 @@ case class JopSystem(
   stack.io.enaVp := decode.io.enaVp
   stack.io.enaAr := decode.io.enaAr
 
-  // Debug ports - tie to defaults (can be overridden in simulation)
-  stack.io.debugRamAddr := 0
+  // Debug ports - use input for address, expose data
+  stack.io.debugRamAddr := io.debugRamAddr
   stack.io.debugRamWrAddr := 0
   stack.io.debugRamWrData := 0
   stack.io.debugRamWrEn := False
+  io.debugRamData := stack.io.debugRamData
 
   // ==========================================================================
   // Multiplier
@@ -256,6 +275,11 @@ case class JopSystem(
   io.memBusy := memCtrl.io.memOut.busy
 
   io.debugBcRd := decode.io.memIn.bcRd
+  io.debugMemState := memCtrl.io.debug.state
+  io.debugMemHandleActive := memCtrl.io.debug.handleActive
+  io.debugAddrWr := decode.io.memIn.addrWr
+  io.debugRdc := decode.io.memIn.rdc
+  io.debugRd := decode.io.memIn.rd
 }
 
 /**
