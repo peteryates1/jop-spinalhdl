@@ -56,9 +56,7 @@ core/spinalhdl/*.v
 core/spinalhdl/simWorkspace/
 core/spinalhdl/tmp/
 
-# Quartus
-*.qpf
-*.qsf
+# Quartus build artifacts (project source files .qpf/.qsf/.sdc tracked per project)
 *.rpt
 *.summary
 *.sld
@@ -66,9 +64,9 @@ core/spinalhdl/tmp/
 *.pin
 *.sof
 *.pof
-db/
-incremental_db/
-output_files/
+*.cdf
+*.done
+*.smsg
 
 # Vivado
 *.jou
