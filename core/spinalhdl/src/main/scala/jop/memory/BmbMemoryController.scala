@@ -61,8 +61,10 @@ case class JbcWritePort(jpcWidth: Int) extends Bundle {
  *
  * Layer 1 (Combinational): Simple reads (rd/rdc/rdf) and writes (wr/wrf)
  *   drive the BMB bus COMBINATIONALLY using io.aout (TOS) directly for read
- *   addresses. READ_WAIT and WRITE_WAIT states are NOT busy, allowing the
- *   pipeline to continue.
+ *   addresses. READ_WAIT and WRITE_WAIT are busy only while the BMB response
+ *   has not arrived (rsp.valid=False). For BRAM this is never busy (1-cycle
+ *   response). For SDRAM this stalls the pipeline until data is ready.
+ *   Commands are retried if not immediately accepted (cmdAccepted tracking).
  *
  * Layer 2 (State Machine): Complex operations (bc fill, getfield, putfield,
  *   iaload, iastore, getstatic, putstatic) use a registered state machine
@@ -163,15 +165,57 @@ case class BmbMemoryController(
   val indexReg = Reg(UInt(config.addressWidth bits)) init(0)
   val wasStidx = Reg(Bool()) init(False)
 
+  // Command tracking for BMB handshake (hold cmd until accepted)
+  // SDRAM controllers may not accept commands immediately (cmd.ready=False).
+  // We register the command parameters and keep asserting cmd.valid until cmd.fire.
+  val cmdAccepted = Reg(Bool()) init(True)
+  val pendingCmdAddr = Reg(UInt(config.bmbParameter.access.addressWidth bits)) init(0)
+  val pendingCmdData = Reg(Bits(32 bits)) init(0)
+  val pendingCmdIsWrite = Reg(Bool()) init(False)
+
   // ==========================================================================
   // Busy Signal
   // ==========================================================================
-  // Matching VHDL: rd1 and wr1 have state_bsy='0' (NOT busy)
-  // Only complex operations (state machine) are busy.
+  //
+  // Matches VHDL mem_sc.vhd busy signal:
+  //
+  //   VHDL: mem_out.bsy <= '0';
+  //         if sc_mem_in.rdy_cnt=3 then bsy <= '1';
+  //         elsif state_bsy='1' and state/=ialrb/last/gf4 then bsy <= '1';
+  //
+  //   - state_bsy='0' for idl/rd1/wr1/last → pipeline NOT stalled
+  //   - state_bsy='1' for complex states → pipeline stalled
+  //   - rdy_cnt=3 independently forces bsy='1' (CAS-3 SDRAM only)
+  //
+  //   In VHDL, rdy_cnt is a 2-bit saturating countdown from the SimpCon
+  //   slave: stays at 3 while >3 cycles remain, then counts 2,1,0.
+  //   Pipeline stalls only when rdy_cnt=3, giving 3 free cycles before
+  //   data arrives. For BRAM (rdy_cnt=1), no stall at all.
+  //
+  //   BMB equivalent: we don't have advance rdy_cnt from the slave, so
+  //   we conservatively stall whenever the response hasn't arrived. This
+  //   is correct because WAIT always precedes ldmrd in the microcode.
+  //   For BRAM: response arrives same cycle as READ_WAIT → 0 stall cycles.
+  //   For SDRAM: stalls until response → correct but slightly more
+  //   conservative than VHDL (which allows 2-3 free cycles via rdy_cnt).
+  //
+  //   - IDLE: never busy
+  //   - READ_WAIT/WRITE_WAIT: busy until response arrives
+  //   - Complex states (BC fill, handle, getstatic, putstatic): busy
 
-  val notBusy = state === State.IDLE || state === State.READ_WAIT || state === State.WRITE_WAIT
+  val notBusy = (state === State.IDLE) ||
+    ((state === State.READ_WAIT || state === State.WRITE_WAIT) &&
+      io.bmb.rsp.valid)
   io.memOut.busy := !notBusy
+
+  // Read data: combinational pass-through when BMB response fires in
+  // READ_WAIT. Matches VHDL's combinational mem_out.dout, ensuring
+  // rdData is available in the same cycle the response arrives.
   io.memOut.rdData := rdDataReg
+  when(io.bmb.rsp.fire && state === State.READ_WAIT) {
+    io.memOut.rdData := io.bmb.rsp.fragment.data
+  }
+
   io.memOut.bcStart := bcStartReg
 
   // ==========================================================================
@@ -228,9 +272,10 @@ case class BmbMemoryController(
   // Main State Machine
   // ==========================================================================
   //
-  // IDLE, READ_WAIT, WRITE_WAIT: Not busy. Pipeline runs freely.
+  // IDLE: Not busy. READ_WAIT/WRITE_WAIT: Busy until rsp.valid.
   //   - Layer 1 combinational commands driven from IDLE state.
-  //   - READ_WAIT/WRITE_WAIT handle BMB responses and accept addrWr.
+  //   - READ_WAIT/WRITE_WAIT handle BMB responses, accept addrWr, and
+  //     process I/O operations. Commands retried if not accepted in IDLE.
   //
   // All other states: Busy. Pipeline stalled.
   //   - Layer 2 state machine drives BMB commands via registered state.
@@ -275,6 +320,10 @@ case class BmbMemoryController(
           io.bmb.cmd.valid := True
           io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
           io.bmb.cmd.fragment.address := (aoutAddr << 2).resized
+          // Register command for retry if not immediately accepted
+          pendingCmdAddr := (aoutAddr << 2).resized
+          pendingCmdIsWrite := False
+          cmdAccepted := io.bmb.cmd.ready
           state := State.READ_WAIT
         }
 
@@ -291,6 +340,11 @@ case class BmbMemoryController(
           if(config.bmbParameter.access.canWrite) {
             io.bmb.cmd.fragment.data := io.aout
           }
+          // Register command for retry if not immediately accepted
+          pendingCmdAddr := (addrReg << 2).resized
+          pendingCmdData := io.aout
+          pendingCmdIsWrite := True
+          cmdAccepted := io.bmb.cmd.ready
           state := State.WRITE_WAIT
         }
 
@@ -298,11 +352,13 @@ case class BmbMemoryController(
         // Put static field - address from bcopd (or stidx), data already in valueReg
         addrReg := Mux(wasStidx, indexReg, io.bcopd.asUInt.resize(config.addressWidth))
         state := State.PS_WRITE
+        // (no extra busy needed - matches VHDL)
 
       }.elsewhen(io.memIn.getstatic) {
         // Get static field - address from bcopd (or stidx)
         addrReg := Mux(wasStidx, indexReg, io.bcopd.asUInt.resize(config.addressWidth))
         state := State.GS_READ
+        // (no extra busy needed - matches VHDL)
 
       }.elsewhen(io.memIn.bcRd) {
         // Bytecode cache fill (stbcrd) - TOS has packed start/len
@@ -313,6 +369,7 @@ case class BmbMemoryController(
         bcFillCount := 0
         jbcWrAddrReg := 0
         state := State.BC_READ
+        // (no extra busy needed - matches VHDL)
 
       }.elsewhen(io.memIn.iaload) {
         // Array load - NOS = array ref, TOS = index
@@ -322,6 +379,7 @@ case class BmbMemoryController(
         handleIsWrite := False
         handleIsArray := True
         state := State.HANDLE_READ
+        // (no extra busy needed - matches VHDL)
 
       }.elsewhen(io.memIn.getfield) {
         // Get object field - TOS = object ref, bcopd = field index
@@ -330,6 +388,7 @@ case class BmbMemoryController(
         handleIsWrite := False
         handleIsArray := False
         state := State.HANDLE_READ
+        // (no extra busy needed - matches VHDL)
 
       }.elsewhen(io.memIn.putfield) {
         // Put object field - NOS = object ref, bcopd = field index, value in valueReg
@@ -339,6 +398,7 @@ case class BmbMemoryController(
         handleIsArray := False
         handleWriteData := io.aout  // TOS = value (also captured to valueReg above)
         state := State.HANDLE_READ
+        // (no extra busy needed - matches VHDL)
 
       }.elsewhen(io.memIn.iastore) {
         // Array store - NOS = array ref, TOS = index
@@ -347,6 +407,7 @@ case class BmbMemoryController(
         handleIsWrite := True
         handleIsArray := True
         state := State.HANDLE_READ
+        // (no extra busy needed - matches VHDL)
       }
     }
 
@@ -355,9 +416,33 @@ case class BmbMemoryController(
     // ========================================================================
 
     is(State.READ_WAIT) {
-      // Accept address writes while waiting (matching VHDL addr_next behavior)
+      // Accept address writes while waiting (pipeline is not stalled)
       when(io.memIn.addrWr) {
         addrReg := aoutAddr
+      }
+
+      // Handle I/O reads while waiting for BMB response
+      when(memReadRequested && aoutIsIo) {
+        io.ioAddr := io.aout(7 downto 0).asUInt
+        io.ioRd := True
+        rdDataReg := io.ioRdData
+      }
+
+      // Handle I/O writes while waiting for BMB response
+      when((io.memIn.wr || io.memIn.wrf) && addrIsIo) {
+        io.ioAddr := addrReg(7 downto 0)
+        io.ioWr := True
+        io.ioWrData := io.aout
+      }
+
+      // Keep driving command until accepted by BMB slave
+      when(!cmdAccepted) {
+        io.bmb.cmd.valid := True
+        io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
+        io.bmb.cmd.fragment.address := pendingCmdAddr
+        when(io.bmb.cmd.fire) {
+          cmdAccepted := True
+        }
       }
 
       // Capture BMB response data
@@ -371,6 +456,33 @@ case class BmbMemoryController(
       // Accept address writes while waiting
       when(io.memIn.addrWr) {
         addrReg := aoutAddr
+      }
+
+      // Handle I/O reads while waiting for BMB response
+      when(memReadRequested && aoutIsIo) {
+        io.ioAddr := io.aout(7 downto 0).asUInt
+        io.ioRd := True
+        rdDataReg := io.ioRdData
+      }
+
+      // Handle I/O writes while waiting for BMB response
+      when((io.memIn.wr || io.memIn.wrf) && addrIsIo) {
+        io.ioAddr := addrReg(7 downto 0)
+        io.ioWr := True
+        io.ioWrData := io.aout
+      }
+
+      // Keep driving command until accepted by BMB slave
+      when(!cmdAccepted) {
+        io.bmb.cmd.valid := True
+        io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.WRITE
+        io.bmb.cmd.fragment.address := pendingCmdAddr
+        if(config.bmbParameter.access.canWrite) {
+          io.bmb.cmd.fragment.data := pendingCmdData
+        }
+        when(io.bmb.cmd.fire) {
+          cmdAccepted := True
+        }
       }
 
       when(io.bmb.rsp.fire) {

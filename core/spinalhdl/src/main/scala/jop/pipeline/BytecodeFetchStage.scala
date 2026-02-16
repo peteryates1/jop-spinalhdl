@@ -9,8 +9,9 @@ import spinal.core._
  * @param pcWidth  Address bits of microcode ROM (default: 11 bits)
  */
 case class BytecodeFetchConfig(
-  jpcWidth: Int = 11,
-  pcWidth: Int = 11
+  jpcWidth:  Int              = 11,
+  pcWidth:   Int              = 11,
+  jumpTable: JumpTableInitData = JumpTableInitData.simulation
 ) {
   require(jpcWidth > 0, "JPC width must be positive")
   require(pcWidth > 0, "PC width must be positive")
@@ -146,9 +147,24 @@ case class BytecodeFetchStage(
   }
 
   // Synchronous RAM read (word-addressed with byte selection)
+  // Write-first bypass: SpinalHDL's readSync with dontCare returns undefined
+  // data when the read and write ports access the same word address on the
+  // same clock edge. During BC fill, the last write can coincide with the
+  // bytecode fetch read at the dispatch moment (timing depends on memory
+  // latency). We manually bypass the RAM output with the write data when
+  // a same-cycle read-write collision is detected.
   val jbcWordAddr = jbcAddr(config.jpcWidth - 1 downto 2)  // Word address
   val jbcByteSelect = RegNext(jbcAddr(1 downto 0))         // Register byte selector (aligned with RAM read)
-  val jbcWordData = jbcRamWord.readSync(jbcWordAddr, enable = True)
+  val jbcWordDataRaw = jbcRamWord.readSync(jbcWordAddr, enable = True)
+
+  // Detect read-write collision: register both addresses and write enable,
+  // then compare one cycle later (aligned with readSync output)
+  val bypassWrEn   = RegNext(io.jbcWrEn) init(False)
+  val bypassWrAddr = RegNext(io.jbcWrAddr)
+  val bypassWrData = RegNext(io.jbcWrData)
+  val bypassRdAddr = RegNext(jbcWordAddr)
+  val doBypass = bypassWrEn && (bypassWrAddr === bypassRdAddr)
+  val jbcWordData = Mux(doBypass, bypassWrData, jbcWordDataRaw)
 
   // Byte selection mux (little-endian: byte 0 at bits 7:0, byte 3 at bits 31:24)
   val jbcData = jbcByteSelect.mux(
@@ -302,7 +318,7 @@ case class BytecodeFetchStage(
   // Jump Table Integration
   // ==========================================================================
 
-  val jumpTable = JumpTable(JumpTableConfig(pcWidth = config.pcWidth))
+  val jumpTable = JumpTable(JumpTableConfig(pcWidth = config.pcWidth, initData = config.jumpTable))
   jumpTable.io.bytecode := jbcData
   // Pass int_req (int_pend AND ena) to JumpTable, matching VHDL behavior
   // This means the interrupt handler address is only output when interrupts are enabled

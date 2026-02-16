@@ -9,8 +9,10 @@ import spinal.lib.memory.sdram.sdr._
 /**
  * Fixed version of BmbSdramCtrl that properly drives rsp.last.
  *
- * BmbSdramCtrl in SpinalHDL 1.12.2 doesn't drive the rsp.last signal,
- * causing "NO DRIVER" errors. This is essentially a copy with the fix.
+ * The original BmbSdramCtrl in SpinalHDL 1.12.2 doesn't drive rsp.last.
+ * This version propagates cmd.last through the SdramCtrl context pipeline
+ * so that multi-beat BMB transactions (e.g. from BmbDownSizerBridge)
+ * correctly report which response beat is the last.
  *
  * @param bmbParameter BMB interface parameters
  * @param layout SDRAM layout (chip organization)
@@ -32,6 +34,7 @@ case class BmbSdramCtrlFixed(
   case class Context() extends Bundle {
     val source = UInt(bmbParameter.access.sourceWidth bits)
     val context = Bits(bmbParameter.access.contextWidth bits)
+    val last = Bool()  // Carry cmd.last through pipeline for rsp.last
   }
 
   val ctrl = SdramCtrl(layout, timing, CAS, Context(), produceRspOnWrite = true)
@@ -44,10 +47,11 @@ case class BmbSdramCtrlFixed(
   ctrl.io.bus.cmd.mask := io.bmb.cmd.mask
   ctrl.io.bus.cmd.context.source := io.bmb.cmd.source
   ctrl.io.bus.cmd.context.context := io.bmb.cmd.context
+  ctrl.io.bus.cmd.context.last := io.bmb.cmd.last
 
   // RSP
   io.bmb.rsp.arbitrationFrom(ctrl.io.bus.rsp)
-  io.bmb.rsp.last := True  // FIX: Always last for single-beat responses
+  io.bmb.rsp.last := ctrl.io.bus.rsp.context.last  // Propagated from cmd.last
   io.bmb.rsp.setSuccess()
   io.bmb.rsp.source := ctrl.io.bus.rsp.context.source
   io.bmb.rsp.data := ctrl.io.bus.rsp.data

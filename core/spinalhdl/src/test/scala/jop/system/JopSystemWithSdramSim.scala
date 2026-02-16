@@ -89,8 +89,8 @@ object JopSystemWithSdramSim extends App {
       }
       logLine("")
 
-      // Run simulation - need many more cycles for SDRAM latency
-      val maxCycles = 2000000  // 2M cycles
+      // Run simulation
+      val maxCycles = 200000
       val reportInterval = 10000
       var startTime = System.currentTimeMillis()
 
@@ -99,12 +99,55 @@ object JopSystemWithSdramSim extends App {
       logLine("Format: [cycle] PC=hex JPC=hex event...")
       logLine("-" * 80)
 
+      var bmbTxnCount = 0
+      var lastBusy = false
+      var busyStartCycle = 0
+      var bmbCmdCount = 0
+      var bmbRspCount = 0
+
       for (cycle <- 0 until maxCycles) {
         dut.clockDomain.waitSampling()
 
         val pc = dut.io.pc.toInt
         val jpc = dut.io.jpc.toInt
         val memBusy = dut.io.memBusy.toBoolean
+
+        // Log BMB transactions (all of them after boot, sampled)
+        val cmdFire = dut.io.bmbCmdValid.toBoolean && dut.io.bmbCmdReady.toBoolean
+        val rspFire = dut.io.bmbRspValid.toBoolean
+        if (cmdFire) bmbCmdCount += 1
+        if (rspFire) bmbRspCount += 1
+
+        // Log BMB transactions in critical window (after JOP start, during BC_FILLs)
+        val shouldLogBmb = cycle >= 33000 && cycle <= 200000
+        if (cmdFire && shouldLogBmb) {
+          val addr = dut.io.bmbCmdAddr.toLong
+          val op = if (dut.io.bmbCmdOpcode.toInt == 0) "RD" else "WR"
+          logLine(f"[$cycle%6d] BMB CMD $op addr=0x$addr%08x (word=${addr/4}%d)")
+        }
+        if (rspFire) {
+          if (shouldLogBmb) {
+            val data = dut.io.bmbRspData.toLong & 0xFFFFFFFFL
+            logLine(f"[$cycle%6d] BMB RSP data=0x$data%08x")
+          }
+          bmbTxnCount += 1
+        }
+
+        // Track busy transitions
+        if (memBusy != lastBusy) {
+          if (memBusy) {
+            busyStartCycle = cycle
+            if (cycle > 33000) {
+              logLine(f"[$cycle%6d] BUSY START PC=$pc%04x JPC=$jpc%04x cmds=$bmbCmdCount rsps=$bmbRspCount")
+            }
+          } else {
+            val duration = cycle - busyStartCycle
+            if (cycle > 33000) {
+              logLine(f"[$cycle%6d] BUSY END   PC=$pc%04x JPC=$jpc%04x duration=$duration cmds=$bmbCmdCount rsps=$bmbRspCount")
+            }
+          }
+          lastBusy = memBusy
+        }
 
         // Log PC/JPC changes (first 100 cycles, then every 1000 cycles)
         val shouldLogState = (cycle < 100) || (cycle % 1000 == 0)

@@ -6,6 +6,7 @@ import spinal.lib.bus.bmb._
 import jop.pipeline._
 import jop.core.Mul
 import jop.memory._
+import jop.JumpTableData
 
 /**
  * JOP System Configuration
@@ -20,12 +21,13 @@ import jop.memory._
  * @param memConfig    Memory subsystem configuration
  */
 case class JopSystemConfig(
-  dataWidth: Int = 32,
-  pcWidth: Int = 11,
-  instrWidth: Int = 10,
-  jpcWidth: Int = 11,
-  ramWidth: Int = 8,
-  memConfig: JopMemoryConfig = JopMemoryConfig()
+  dataWidth:  Int              = 32,
+  pcWidth:    Int              = 11,
+  instrWidth: Int              = 10,
+  jpcWidth:   Int              = 11,
+  ramWidth:   Int              = 8,
+  memConfig:  JopMemoryConfig  = JopMemoryConfig(),
+  jumpTable:  JumpTableInitData = JumpTableInitData.simulation
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(instrWidth == 10, "Instruction width must be 10 bits")
@@ -35,7 +37,7 @@ case class JopSystemConfig(
   def fetchConfig = FetchConfig(pcWidth, instrWidth)
   def decodeConfig = DecodeConfig(instrWidth, ramWidth)
   def stackConfig = StackConfig(dataWidth, jpcWidth, ramWidth)
-  def bcfetchConfig = BytecodeFetchConfig(jpcWidth, pcWidth)
+  def bcfetchConfig = BytecodeFetchConfig(jpcWidth, pcWidth, jumpTable)
 }
 
 /**
@@ -152,7 +154,7 @@ case class JopSystem(
   fetch.io.jpaddr := bcfetch.io.jpaddr
   fetch.io.br := decode.io.br
   fetch.io.jmp := decode.io.jmp
-  fetch.io.bsy := memCtrl.io.memOut.busy
+  fetch.io.bsy := decode.io.wrDly || memCtrl.io.memOut.busy
 
   // Decode stage connections
   decode.io.instr := fetch.io.dout

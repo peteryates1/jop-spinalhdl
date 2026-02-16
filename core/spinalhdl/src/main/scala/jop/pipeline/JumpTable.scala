@@ -4,14 +4,48 @@ import spinal.core._
 import jop.JumpTableData
 
 /**
+ * Jump Table Init Data - microcode-layout-specific addresses and entries.
+ *
+ * Holds the 256-entry jump table plus special handler addresses.
+ * Use JumpTableInitData.simulation for SIMULATION microcode (default),
+ * and JumpTableInitData.serial for SERIAL-boot microcode.
+ */
+case class JumpTableInitData(
+  entries:     Seq[BigInt],
+  sysNoimAddr: Int,
+  sysIntAddr:  Int,
+  sysExcAddr:  Int
+)
+
+object JumpTableInitData {
+  /** Default: SIMULATION microcode jump table */
+  def simulation: JumpTableInitData = JumpTableInitData(
+    entries     = JumpTableData.entries,
+    sysNoimAddr = JumpTableData.sysNoimAddr,
+    sysIntAddr  = JumpTableData.sysIntAddr,
+    sysExcAddr  = JumpTableData.sysExcAddr
+  )
+
+  /** SERIAL-boot microcode jump table */
+  def serial: JumpTableInitData = JumpTableInitData(
+    entries     = jop.SerialJumpTableData.entries,
+    sysNoimAddr = jop.SerialJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.SerialJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.SerialJumpTableData.sysExcAddr
+  )
+}
+
+/**
  * Jump Table Configuration
  *
  * Configures the jump table parameters for bytecode-to-microcode address translation.
  *
- * @param pcWidth Address bits of microcode ROM (default: 11 bits = 2K instructions)
+ * @param pcWidth  Address bits of microcode ROM (default: 11 bits = 2K instructions)
+ * @param initData Jump table init data (default: simulation microcode)
  */
 case class JumpTableConfig(
-  pcWidth: Int = 11
+  pcWidth:  Int              = 11,
+  initData: JumpTableInitData = JumpTableInitData.simulation
 ) {
   require(pcWidth > 0, "PC width must be positive")
   require(pcWidth <= 16, "PC width too large (max 16 bits)")
@@ -71,8 +105,8 @@ case class JumpTable(
   // ROM stores microcode addresses (256 entries, one per bytecode)
   val rom = Mem(UInt(config.pcWidth bits), config.entries)
 
-  // Initialize from Jopa-generated data
-  rom.init(JumpTableData.entries.map(addr => U(addr.toInt, config.pcWidth bits)))
+  // Initialize from provided jump table data
+  rom.init(config.initData.entries.map(addr => U(addr.toInt, config.pcWidth bits)))
 
   // ==========================================================================
   // Lookup Logic
@@ -87,9 +121,9 @@ case class JumpTable(
   // Priority muxing: Exception > Interrupt > Normal bytecode
   // This matches VHDL jtbl.vhd behavior
   when(io.excPend) {
-    io.jpaddr := U(JumpTableData.sysExcAddr.toInt, config.pcWidth bits)  // 0x0E2
+    io.jpaddr := U(config.initData.sysExcAddr, config.pcWidth bits)
   }.elsewhen(io.intPend) {
-    io.jpaddr := U(JumpTableData.sysIntAddr.toInt, config.pcWidth bits)  // 0x0DA
+    io.jpaddr := U(config.initData.sysIntAddr, config.pcWidth bits)
   }.otherwise {
     io.jpaddr := normalAddr
   }

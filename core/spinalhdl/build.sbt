@@ -41,6 +41,9 @@ Compile / unmanagedSourceDirectories += baseDirectory.value / "generated"
 // Include microcode-generated Scala files (JumpTableData.scala)
 Compile / unmanagedSourceDirectories += baseDirectory.value / ".." / ".." / "asm" / "generated"
 
+// Include serial microcode Scala files (SerialJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / ".." / ".." / "asm" / "generated" / "serial"
+
 // Source directories
 Compile / scalaSource := baseDirectory.value / "src" / "main" / "scala"
 Test / scalaSource := baseDirectory.value / "src" / "test" / "scala"

@@ -145,7 +145,7 @@ case class FetchStage(
   // 1. jfetch='1': Load from jpaddr (Java bytecode dispatch)
   // 2. br='1': Load from brdly (branch target)
   // 3. jmp='1': Load from jpdly (jump target)
-  // 4. pcwait='1' AND bsy='1': Hold current PC (stall)
+  // 4. pcwait='1' AND bsy='1': Hold current PC (wait instruction stall)
   // 5. Default: Increment PC (pc + 1)
 
   val pcMux = UInt(config.pcWidth bits)
@@ -193,6 +193,30 @@ case class FetchStage(
     jpdly := (pc.asSInt + jumpOffset).asUInt
 
     pc := pcMux
+  }
+
+  // ==========================================================================
+  // Pipeline Freeze During Memory Stall
+  // ==========================================================================
+  //
+  // When the ROM outputs a "wait" instruction (0x101) and the memory
+  // controller is busy, freeze the entire fetch stage. This holds PC, IR,
+  // romAddrReg, and pcwait until bsy goes low.
+  //
+  // The JOP microcode uses DOUBLE wait instructions (e.g., at PCs 01da-01db
+  // and 0195-0196) to ensure both the decode and execute/stack stages are
+  // properly stalled:
+  // - 1st wait: sets pcwait register (takes effect next cycle). Decode still
+  //   processes the previous instruction (last real operation before freeze).
+  // - 2nd wait: pcwait is now True. If bsy=True, pipeline freezes. IR holds
+  //   the 1st wait instruction (NOP for decode), so decode sees NOP.
+  //
+  // Last-assignment-wins in SpinalHDL: this overrides the assignments above.
+  when(pcwait && io.bsy) {
+    romAddrReg := romAddrReg  // Hold ROM address
+    ir         := ir          // Hold IR on wait instruction
+    pcwait     := True        // Keep stall active
+    pc         := pc          // Hold PC
   }
 
   // ==========================================================================
@@ -447,6 +471,14 @@ case class FetchStageTb(
     jpdly := (pc.asSInt + jumpOffset).asUInt
 
     pc := pcMux
+
+    // Pipeline freeze during memory stall (see FetchStage for explanation)
+    when(pcwait && bsy) {
+      romAddrReg := romAddrReg
+      ir         := ir
+      pcwait     := True
+      pc         := pc
+    }
 
     // ==========================================================================
     // Output Assignments

@@ -53,8 +53,8 @@ object JopSystemBramSim extends App {
       dut.clockDomain.waitSampling(5)
 
       // Run simulation
-      val maxCycles = 50000
-      val reportInterval = 5000
+      val maxCycles = 200000
+      val reportInterval = 10000
 
       logLine(s"Starting simulation for $maxCycles cycles...")
       logLine("")
