@@ -35,15 +35,12 @@ fork := true
 Test / parallelExecution := false
 Test / testOptions += Tests.Argument("-oD")  // Show test durations
 
-// Ensure generated directory exists
-Compile / unmanagedSourceDirectories += baseDirectory.value / "generated"
+// Source directories (under core/spinalhdl/)
+Compile / scalaSource := baseDirectory.value / "core" / "spinalhdl" / "src" / "main" / "scala"
+Test / scalaSource := baseDirectory.value / "core" / "spinalhdl" / "src" / "test" / "scala"
 
 // Include microcode-generated Scala files (JumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / ".." / ".." / "asm" / "generated"
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated"
 
 // Include serial microcode Scala files (SerialJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / ".." / ".." / "asm" / "generated" / "serial"
-
-// Source directories
-Compile / scalaSource := baseDirectory.value / "src" / "main" / "scala"
-Test / scalaSource := baseDirectory.value / "src" / "test" / "scala"
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial"
