@@ -1,13 +1,17 @@
 # JOP - Java Optimized Processor (SpinalHDL)
 
-A complete reimplementation of the [Java Optimized Processor](https://github.com/peteryates1/jop) in SpinalHDL. Runs Java programs on FPGA hardware with BRAM or SDRAM memory backends.
+A complete reimplementation of the [Java Optimized Processor](https://github.com/jop-devel/jop) (JOP) in [SpinalHDL](https://spinalhdl.github.io/SpinalDoc-RTD/). JOP is a hardware implementation of the Java Virtual Machine as a soft-core processor for FPGAs, originally developed by Martin Schoeberl. See [jopdesign.com](https://www.jopdesign.com/) for the original project.
+
+This port runs Java programs on FPGA hardware with BRAM or SDRAM memory backends.
+
+Built with [Claude Code](https://claude.ai/claude-code).
 
 ## Status
 
-**Working on hardware.** The processor boots and runs Java programs ("Hello World!" in a loop) on the QMTECH EP4CGX150 board:
+**Working on hardware.** The processor boots and runs Java programs ("Hello World!" in a loop) on the QMTECH EP4CGX150 board at 100 MHz:
 
-- **BRAM mode**: Self-contained at 50 MHz, program embedded in block RAM
-- **SDRAM mode**: Serial boot at 100 MHz, downloads `.jop` files over UART into W9825G6JH6 SDRAM
+- **BRAM mode**: Self-contained, program embedded in block RAM
+- **SDRAM mode**: Serial boot, downloads `.jop` files over UART into W9825G6JH6 SDRAM
 
 ## Project Goals
 
@@ -40,7 +44,7 @@ A complete reimplementation of the [Java Optimized Processor](https://github.com
  └──────────────┘ └──────────────┘
 ```
 
-The pipeline fetches Java bytecodes, translates them via a jump table into microcode addresses, fetches and decodes microcode instructions, then executes them on a two-register stack machine with a 128-entry on-chip stack buffer.
+The pipeline fetches Java bytecodes, translates them via a jump table into microcode addresses, fetches and decodes microcode instructions, then executes them on a two-register stack machine with a 256-entry on-chip stack RAM (64 entries reserved for local variables and constants, 192 for the operand stack).
 
 Memory access uses SpinalHDL's BMB (Bus Master Bridge) interconnect, supporting both on-chip BRAM (single-cycle response) and off-chip SDR SDRAM (variable latency with automatic pipeline stalling).
 
@@ -104,7 +108,7 @@ sbt "Test / runMain jop.system.JopSystemWithSdramSim"
 ### Build for FPGA
 
 ```bash
-# BRAM target (self-contained, 50 MHz)
+# BRAM target (self-contained, 100 MHz)
 cd fpga/qmtech-ep4cgx150-bram
 make generate    # Generate Verilog from SpinalHDL
 make build       # Quartus synthesis
@@ -141,14 +145,11 @@ cd verification/cocotb && make test_jop_simulator
 
 | Board | FPGA | Memory | Status |
 |-------|------|--------|--------|
-| [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Cyclone IV GX | BRAM | Working at 50 MHz |
+| [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Cyclone IV GX | BRAM | Working at 100 MHz |
 | [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Cyclone IV GX | W9825G6JH6 SDRAM | Working at 100 MHz |
 
 ### Planned
 
-- [QMTECH EP4CE15](https://github.com/ChinaQMTECH/CYCLONE_IV_EP4CE15) - Cyclone IV E
-- [Trenz MAX1000](https://www.trenz-electronic.de/en/MAX1000-IoT-Maker-Board-8kLE-8-MByte-SDRAM-8-MByte-Flash-6.15-x-2.5-cm/TEI0001-04-DBC87A) - MAX 10
-- [Trenz CYC1000](https://www.trenz-electronic.de/en/CYC1000-with-Intel-Cyclone-10-LP-10CL025-C8-8-MByte-SDRAM-8-MByte-Flash/TEI0003-03-QFCT4A) - Cyclone 10 LP
 - [Trenz CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) - Cyclone V E
 - [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au) - Xilinx Artix-7
 
@@ -159,12 +160,12 @@ cd verification/cocotb && make test_jop_simulator
 - **Pipeline**: All four stages — bytecode fetch/translate, microcode fetch, decode, execute (stack)
 - **Memory controller**: BMB bus with two-layer design (combinational + state machine for BC fill, getfield, iaload)
 - **Method cache**: Bytecode cache with dynamic loading from main memory
-- **Stack buffer**: 128-entry on-chip RAM with spill/fill, ALU, shifter, 33-bit comparator
+- **Stack buffer**: 256-entry on-chip RAM (64 for 32 local variables + 32 constants, 192 for operand stack) with spill/fill, ALU, shifter, 33-bit comparator
 - **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
 - **UART**: TX with FIFO, RX with FIFO buffer (works around SpinalHDL UartCtrl one-cycle valid pulse)
-- **BRAM system**: `JopBramTop` — complete system with on-chip memory, runs at 50 MHz
-- **SDRAM system**: `JopSdramTop` — serial boot over UART into SDR SDRAM, runs at 100 MHz
+- **BRAM system**: `JopBramTop` — complete system with on-chip memory at 100 MHz
+- **SDRAM system**: `JopSdramTop` — serial boot over UART into SDR SDRAM at 100 MHz
 - **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
 - **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), echo test
 
@@ -185,8 +186,9 @@ cd verification/cocotb && make test_jop_simulator
 
 ## References
 
-- Original JOP: https://github.com/peteryates1/jop
-- JOP Thesis: Martin Schoeberl, "JOP: A Java Optimized Processor for Embedded Real-Time Systems"
+- JOP project: https://github.com/jop-devel/jop
+- JOP web site: https://www.jopdesign.com/
+- JOP Thesis: Martin Schoeberl, [JOP: A Java Optimized Processor for Embedded Real-Time Systems](https://www.jopdesign.com/thesis/thesis.pdf)
 - SpinalHDL: https://spinalhdl.github.io/SpinalDoc-RTD/
 - CocoTB: https://docs.cocotb.org/
 

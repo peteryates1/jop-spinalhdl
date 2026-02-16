@@ -11,7 +11,7 @@ import jop.memory.JopMemoryConfig
  * JOP BRAM FPGA Top-Level for QMTECH EP4CGX150
  *
  * Runs JOP processor with BRAM-backed memory and real UART output.
- * No PLL - uses 50 MHz input clock directly.
+ * Uses PLL to run at 100 MHz from 50 MHz input clock.
  *
  * @param romInit Microcode ROM initialization data
  * @param ramInit Stack RAM initialization data
@@ -33,31 +33,37 @@ case class JopBramTop(
   noIoPrefix()
 
   // ========================================================================
-  // Clock Domain with Power-On Reset Generator
+  // PLL: 50 MHz -> 100 MHz system clock
   // ========================================================================
 
-  // Create a raw clock domain from the input clock (no reset yet)
+  val pll = DramPll()
+  pll.io.inclk0 := io.clk_in
+  pll.io.areset := False
+
+  // ========================================================================
+  // Reset Generator (on PLL c1 = 100 MHz)
+  // ========================================================================
+
+  // Raw clock domain from PLL c1 (100 MHz, no reset yet)
   val rawClockDomain = ClockDomain(
-    clock = io.clk_in,
+    clock = pll.io.c1,
     config = ClockDomainConfig(resetKind = BOOT)
   )
 
-  // Reset generator: 3-bit counter, reset active until all bits set
-  // Matches VHDL pattern from jop_qmtech_ep4cgx150.vhd
+  // Reset active (high) until counter saturates AND PLL locked
   val resetGen = new ClockingArea(rawClockDomain) {
     val res_cnt = Reg(UInt(3 bits)) init(0)
-    when(res_cnt =/= 7) {
+    when(pll.io.locked && res_cnt =/= 7) {
       res_cnt := res_cnt + 1
     }
-    // Reset active (high) until counter reaches 7
-    val int_res = !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
+    val int_res = !pll.io.locked || !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
   }
 
-  // Main clock domain with generated reset
+  // Main clock domain: 100 MHz with generated reset
   val mainClockDomain = ClockDomain(
-    clock = io.clk_in,
+    clock = pll.io.c1,
     reset = resetGen.int_res,
-    frequency = FixedFrequency(50 MHz),
+    frequency = FixedFrequency(100 MHz),
     config = ClockDomainConfig(
       resetKind = SYNC,
       resetActiveLevel = HIGH
@@ -127,8 +133,8 @@ case class JopBramTop(
     // UART
     // ======================================================================
 
-    // 5x oversampling: 50MHz / (10 * 5) = 1,000,000 baud exactly
-    // (default 1+5+2=8x gives 50M/48 = 1.042M, 4.2% off — too much)
+    // At 100 MHz: clockDivider for 1 Mbaud with 5x oversampling
+    // divider = 100MHz / (1Mbaud * 5) = 20 => exact 1 Mbaud
     val uartCtrl = new UartCtrl(UartCtrlGenerics(
       preSamplingSize = 1, samplingSize = 3, postSamplingSize = 1  // 5 samples/bit
     ))
@@ -176,7 +182,7 @@ case class JopBramTop(
       is(0) {  // System
         switch(ioSubAddr) {
           is(0) { ioRdData := sysCntReg.asBits }        // Counter
-          is(1) { ioRdData := sysCntReg.asBits }        // Microsecond counter (same as sys counter at 50MHz)
+          is(1) { ioRdData := sysCntReg.asBits }        // Microsecond counter
           is(6) { ioRdData := B(0, 32 bits) }           // CPU ID
           is(7) { ioRdData := B(0, 32 bits) }           // Signal
         }
@@ -240,7 +246,7 @@ object JopBramTopVerilog extends App {
   SpinalConfig(
     mode = Verilog,
     targetDirectory = "core/spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(50 MHz)
+    defaultClockDomainFrequency = FixedFrequency(100 MHz)
   ).generate(JopBramTop(romData, ramData, mainMemData))
 
   println("Generated: generated/JopBramTop.v")
