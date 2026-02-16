@@ -9,15 +9,15 @@ import jop.utils.JopFileLoader
 import java.io.PrintWriter
 
 /**
- * Extended simulation for JopSystemWithSdram with full logging
+ * Extended simulation for JopCoreWithSdram with full logging
  */
-object JopSystemWithSdramSim extends App {
+object JopCoreWithSdramSim extends App {
 
   // Paths to initialization files
   val jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop"
   val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
   val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
-  val logFilePath = "/home/peter/workspaces/ai/jop/core/spinalhdl/sdram_simulation.log"
+  val logFilePath = "/home/peter/workspaces/ai/jop/spinalhdl/sdram_simulation.log"
 
   // Load initialization data
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
@@ -32,7 +32,7 @@ object JopSystemWithSdramSim extends App {
   SimConfig
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     // .withWave  // Uncomment for waveform
-    .compile(JopSystemWithSdramTestHarness(romData, ramData, mainMemData))
+    .compile(JopCoreWithSdramTestHarness(romData, ramData, mainMemData))
     .doSim { dut =>
       val log = new PrintWriter(logFilePath)
       var uartOutput = new StringBuilder

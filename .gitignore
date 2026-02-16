@@ -50,12 +50,12 @@ verification/cocotb/generated/
 work-obj*.cf
 
 # SpinalHDL generated
-core/spinalhdl/generated/
-core/spinalhdl/*.vhd
-core/spinalhdl/*.v
-core/spinalhdl/simWorkspace/
-core/spinalhdl/tmp/
-core/spinalhdl/spinal/
+spinalhdl/generated/
+spinalhdl/*.vhd
+spinalhdl/*.v
+spinalhdl/simWorkspace/
+spinalhdl/tmp/
+spinalhdl/spinal/
 simWorkspace/
 
 # Quartus build artifacts (project source files .qpf/.qsf/.sdc tracked per project)

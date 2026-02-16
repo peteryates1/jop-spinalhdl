@@ -30,7 +30,7 @@ JOP_FILE ?= /home/peter/git/jopmin/java/Smallest/HelloWorld.jop
 # Project paths (sbt runs from repo root)
 PROJECT_ROOT = ../..
 ASM_DIR = ../../asm
-GENERATED_V = $(PROJECT_ROOT)/core/spinalhdl/generated/JopSdramTop.v
+GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSdramTop.v
 
 # Quartus project
 QP = jop_sdram

@@ -36,8 +36,8 @@ Test / parallelExecution := false
 Test / testOptions += Tests.Argument("-oD")  // Show test durations
 
 // Source directories (under core/spinalhdl/)
-Compile / scalaSource := baseDirectory.value / "core" / "spinalhdl" / "src" / "main" / "scala"
-Test / scalaSource := baseDirectory.value / "core" / "spinalhdl" / "src" / "test" / "scala"
+Compile / scalaSource := baseDirectory.value / "spinalhdl" / "src" / "main" / "scala"
+Test / scalaSource := baseDirectory.value / "spinalhdl" / "src" / "test" / "scala"
 
 // Include microcode-generated Scala files (JumpTableData.scala)
 Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated"

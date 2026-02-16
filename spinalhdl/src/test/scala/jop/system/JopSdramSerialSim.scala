@@ -9,7 +9,7 @@ import jop.utils.JopFileLoader
 import jop.pipeline.JumpTableInitData
 
 /**
- * Test harness for JopSystemWithSdram with serial download simulation.
+ * Test harness for JopCoreWithSdram with serial download simulation.
  *
  * Instead of pre-loading SDRAM, this harness feeds the .jop file
  * byte-by-byte through the UART RX interface, matching the serial
@@ -27,7 +27,7 @@ case class JopSdramSerialHarness(
   downloadBytes: Seq[BigInt]  // .jop file as bytes (MSB-first per word)
 ) extends Component {
 
-  val config = JopSystemConfig(jumpTable = JumpTableInitData.serial)
+  val config = JopCoreConfig(jumpTable = JumpTableInitData.serial)
   val sdramLayout = W9825G6JH6.layout
   val sdramTiming = W9825G6JH6.timingGrade7
   val CAS = 3
@@ -73,7 +73,7 @@ case class JopSdramSerialHarness(
   val jbcInit = Seq.fill(2048)(BigInt(0))
 
   // JOP System with SDRAM
-  val jopSystem = JopSystemWithSdram(
+  val jopSystem = JopCoreWithSdram(
     config = config,
     sdramLayout = sdramLayout,
     sdramTiming = sdramTiming,

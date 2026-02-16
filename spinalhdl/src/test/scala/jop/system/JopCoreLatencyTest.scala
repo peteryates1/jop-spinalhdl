@@ -8,21 +8,21 @@ import jop.utils.JopFileLoader
 import jop.memory.{JopMemoryConfig, BmbLatencyBridge}
 
 /**
- * Test harness for JopSystem with configurable extra BMB response latency.
+ * Test harness for JopCore with configurable extra BMB response latency.
  *
- * Inserts a BmbLatencyBridge between the JopSystem BMB master and BmbOnChipRam:
- *   JopSystem → BmbLatencyBridge(extraLatency) → BmbOnChipRam
+ * Inserts a BmbLatencyBridge between the JopCore BMB master and BmbOnChipRam:
+ *   JopCore → BmbLatencyBridge(extraLatency) → BmbOnChipRam
  *
  * extraLatency=0 is identical to the standard BRAM test harness.
  */
-case class JopSystemLatencyHarness(
+case class JopCoreLatencyHarness(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
   mainMemInit: Seq[BigInt],
   extraLatency: Int = 0
 ) extends Component {
 
-  val config = JopSystemConfig(
+  val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = 32 * 1024)  // 32KB
   )
 
@@ -51,7 +51,7 @@ case class JopSystemLatencyHarness(
   val jbcInit = Seq.fill(2048)(BigInt(0))
 
   // JOP System core
-  val jopSystem = JopSystem(
+  val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
     ramInit = Some(ramInit),
@@ -70,16 +70,16 @@ case class JopSystemLatencyHarness(
   val initData = mainMemInit.take(memWords).padTo(memWords, BigInt(0))
   ram.ram.init(initData.map(v => B(v, 32 bits)))
 
-  // Insert latency bridge between JopSystem and RAM
+  // Insert latency bridge between JopCore and RAM
   if (extraLatency == 0) {
-    ram.io.bus << jopSystem.io.bmb
+    ram.io.bus << jopCore.io.bmb
   } else {
     val bridge = BmbLatencyBridge(config.memConfig.bmbParameter, extraLatency)
-    bridge.io.input << jopSystem.io.bmb
+    bridge.io.input << jopCore.io.bmb
     ram.io.bus << bridge.io.output
   }
 
-  // I/O simulation (same as JopSystemTestHarness)
+  // I/O simulation (same as JopCoreTestHarness)
   val sysCntReg = Reg(UInt(32 bits)) init(1000000)
   sysCntReg := sysCntReg + 10
 
@@ -89,8 +89,8 @@ case class JopSystemLatencyHarness(
   val ioRdData = Bits(32 bits)
   ioRdData := 0
 
-  val ioSubAddr = jopSystem.io.ioAddr(3 downto 0)
-  val ioSlaveId = jopSystem.io.ioAddr(5 downto 4)
+  val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
+  val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
 
   switch(ioSlaveId) {
     is(0) {
@@ -107,15 +107,15 @@ case class JopSystemLatencyHarness(
       }
     }
   }
-  jopSystem.io.ioRdData := ioRdData
+  jopCore.io.ioRdData := ioRdData
 
   uartTxValidReg := False
-  when(jopSystem.io.ioWr) {
+  when(jopCore.io.ioWr) {
     switch(ioSlaveId) {
       is(1) {
         switch(ioSubAddr) {
           is(1) {
-            uartTxDataReg := jopSystem.io.ioWrData(7 downto 0)
+            uartTxDataReg := jopCore.io.ioWrData(7 downto 0)
             uartTxValidReg := True
           }
         }
@@ -123,40 +123,40 @@ case class JopSystemLatencyHarness(
     }
   }
 
-  jopSystem.io.irq := False
-  jopSystem.io.irqEna := False
+  jopCore.io.irq := False
+  jopCore.io.irqEna := False
 
   // Debug RAM port - tie off
-  jopSystem.io.debugRamAddr := 0
+  jopCore.io.debugRamAddr := 0
 
   // Outputs
-  io.pc := jopSystem.io.pc
-  io.jpc := jopSystem.io.jpc
-  io.memBusy := jopSystem.io.memBusy
+  io.pc := jopCore.io.pc
+  io.jpc := jopCore.io.jpc
+  io.memBusy := jopCore.io.memBusy
   io.uartTxData := uartTxDataReg
   io.uartTxValid := uartTxValidReg
-  io.debugState := jopSystem.io.debugMemState
+  io.debugState := jopCore.io.debugMemState
 
   // BMB transaction monitoring
-  io.bmbCmdFire := jopSystem.io.bmb.cmd.fire
-  io.bmbCmdAddr := jopSystem.io.bmb.cmd.fragment.address
-  io.bmbCmdWrite := jopSystem.io.bmb.cmd.fragment.opcode === Bmb.Cmd.Opcode.WRITE
-  io.bmbCmdData := jopSystem.io.bmb.cmd.fragment.data
-  io.bmbRspFire := jopSystem.io.bmb.rsp.fire
-  io.bmbRspData := jopSystem.io.bmb.rsp.fragment.data
-  io.ir := jopSystem.io.instr
-  io.aout := jopSystem.io.aout
-  io.bmbCmdValid := jopSystem.io.bmb.cmd.valid
-  io.bmbCmdReady := jopSystem.io.bmb.cmd.ready
+  io.bmbCmdFire := jopCore.io.bmb.cmd.fire
+  io.bmbCmdAddr := jopCore.io.bmb.cmd.fragment.address
+  io.bmbCmdWrite := jopCore.io.bmb.cmd.fragment.opcode === Bmb.Cmd.Opcode.WRITE
+  io.bmbCmdData := jopCore.io.bmb.cmd.fragment.data
+  io.bmbRspFire := jopCore.io.bmb.rsp.fire
+  io.bmbRspData := jopCore.io.bmb.rsp.fragment.data
+  io.ir := jopCore.io.instr
+  io.aout := jopCore.io.aout
+  io.bmbCmdValid := jopCore.io.bmb.cmd.valid
+  io.bmbCmdReady := jopCore.io.bmb.cmd.ready
 }
 
 /**
  * Latency sweep simulation.
  *
- * Runs the full JopSystem at multiple extra-latency values and reports
+ * Runs the full JopCore at multiple extra-latency values and reports
  * which ones produce "Hello World!" UART output.
  */
-object JopSystemLatencySweep extends App {
+object JopCoreLatencySweep extends App {
 
   val jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop"
   val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
@@ -188,7 +188,7 @@ object JopSystemLatencySweep extends App {
     println(s"${"=" * 60}")
 
     SimConfig
-      .compile(JopSystemLatencyHarness(romData, ramData, mainMemData, extraLatency = lat))
+      .compile(JopCoreLatencyHarness(romData, ramData, mainMemData, extraLatency = lat))
       .doSim { dut =>
         val uartOutput = new StringBuilder
         val bmbLog = scala.collection.mutable.ArrayBuffer[String]()
@@ -276,7 +276,7 @@ object JopSystemLatencySweep extends App {
  * the full sequence of BMB transactions (op, addr, data), and finds
  * the first divergence point.
  */
-object JopSystemLatencyDebug extends App {
+object JopCoreLatencyDebug extends App {
 
   val jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop"
   val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
@@ -294,7 +294,7 @@ object JopSystemLatencyDebug extends App {
     var uart = new StringBuilder
 
     SimConfig
-      .compile(JopSystemLatencyHarness(romData, ramData, mainMemData, extraLatency = lat))
+      .compile(JopCoreLatencyHarness(romData, ramData, mainMemData, extraLatency = lat))
       .doSim { dut =>
         dut.clockDomain.forkStimulus(10)
         dut.clockDomain.waitSampling(5)

@@ -24,7 +24,7 @@ BAUD_RATE = 1000000
 
 # SpinalHDL project (sbt runs from repo root)
 PROJECT_ROOT = ../..
-GENERATED_V = $(PROJECT_ROOT)/core/spinalhdl/generated/JopBramTop.v
+GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopBramTop.v
 
 # Quartus project
 QP = jop_bram

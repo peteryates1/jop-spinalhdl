@@ -14,7 +14,7 @@ set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
 set_global_assignment -name NOMINAL_CORE_SUPPLY_VOLTAGE 1.2V
 
 # Source files
-set_global_assignment -name VERILOG_FILE ../../core/spinalhdl/generated/JopBramTop.v
+set_global_assignment -name VERILOG_FILE ../../spinalhdl/generated/JopBramTop.v
 set_global_assignment -name VHDL_FILE ../qmtech-ep4cgx150-sdram/dram_pll.vhd
 set_global_assignment -name SDC_FILE jop_bram.sdc
 

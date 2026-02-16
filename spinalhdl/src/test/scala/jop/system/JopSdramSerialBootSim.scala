@@ -19,7 +19,7 @@ case class JopSdramSerialBootHarness(
   ramInit: Seq[BigInt]
 ) extends Component {
 
-  val config = JopSystemConfig(jumpTable = JumpTableInitData.serial)
+  val config = JopCoreConfig(jumpTable = JumpTableInitData.serial)
   val sdramLayout = W9825G6JH6.layout
   val sdramTiming = W9825G6JH6.timingGrade7
   val CAS = 3
@@ -58,7 +58,7 @@ case class JopSdramSerialBootHarness(
 
   // JOP System with SDRAM backend, empty JBC (serial boot loads from SDRAM)
   val jbcInit = Seq.fill(2048)(BigInt(0))
-  val jopSystem = JopSystemWithSdram(
+  val jopSystem = JopCoreWithSdram(
     config = config,
     sdramLayout = sdramLayout,
     sdramTiming = sdramTiming,

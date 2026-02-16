@@ -52,13 +52,13 @@ Memory access uses SpinalHDL's BMB (Bus Master Bridge) interconnect, supporting 
 
 ```
 jop/
-├── core/spinalhdl/src/main/scala/jop/
+├── spinalhdl/src/main/scala/jop/
 │   ├── pipeline/              # Pipeline stages (fetch, decode, stack, bytecode)
 │   ├── memory/                # Memory controller, method cache, SDRAM ctrl
-│   ├── system/                # System integration (JopSystem, FPGA tops)
+│   ├── system/                # System integration (JopCore, FPGA tops)
 │   ├── types/                 # JOP types and constants
 │   └── utils/                 # File loaders, utilities
-├── core/spinalhdl/src/test/scala/jop/
+├── spinalhdl/src/test/scala/jop/
 │   ├── system/                # System-level simulations (BRAM, SDRAM, serial boot)
 │   ├── memory/                # Memory controller tests
 │   └── pipeline/              # Pipeline stage tests
@@ -99,10 +99,10 @@ cd ../../asm && make
 sbt compile
 
 # 3. Run BRAM simulation (prints "Hello World!" in a loop)
-sbt "Test / runMain jop.system.JopSystemBramSim"
+sbt "Test / runMain jop.system.JopCoreBramSim"
 
 # 4. Run SDRAM simulation
-sbt "Test / runMain jop.system.JopSystemWithSdramSim"
+sbt "Test / runMain jop.system.JopCoreWithSdramSim"
 ```
 
 ### Build for FPGA
@@ -132,7 +132,7 @@ make monitor     # Watch serial output
 sbt test
 
 # Latency sweep (verify correct operation at 0-5 extra memory cycles)
-sbt "Test / runMain jop.system.JopSystemLatencySweep"
+sbt "Test / runMain jop.system.JopCoreLatencySweep"
 
 # Reference simulator
 sbt "runMain jop.JopSimulatorSim"
@@ -173,8 +173,15 @@ cd verification/cocotb && make test_jop_simulator
 
 - Method cache optimization for SDRAM performance
 - Burst transfers for SDRAM
+- Xilinx/AMD Xilinx Artix-7 and DDR3 on Alchitry Au
+  - Method cache optimization for DDR3 performance
+- Multicore
+- Jopa - refactor
+- JOPizer/WCETPreprocess - refactor - updated libraries.
+- Target JDK modernization 8 as minimum
+- Port some target code over - networking, etc. 
+- Eclipse tools - for both microcode and java code want to debug using simulation verilator, remote debug for hardware in fpga.  asm file editor - with usual syntax highlight and etc.
 - Additional FPGA board targets
-- JDK modernization
 
 ## Key Technical Details
 

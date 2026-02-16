@@ -5,7 +5,27 @@ import spinal.lib._
 import jop.pipeline._
 
 /**
- * JOP Core Test ROM Configurations
+ * Configuration for microcode-only pipeline tests (no bytecode fetch).
+ */
+case class JopPipelineTestConfig(
+  dataWidth: Int = 32,
+  pcWidth: Int = 11,
+  instrWidth: Int = 10,
+  jpcWidth: Int = 10,
+  ramWidth: Int = 8
+) {
+  require(dataWidth == 32, "Only 32-bit data width supported")
+  require(instrWidth == 10, "Instruction width must be 10 bits")
+  require(pcWidth == 11, "PC width must be 11 bits (2K ROM)")
+  require(ramWidth > 0 && ramWidth <= 16, "RAM width must be 1-16 bits")
+
+  def fetchConfig = FetchConfig(pcWidth, instrWidth)
+  def decodeConfig = DecodeConfig(instrWidth, ramWidth)
+  def stackConfig = StackConfig(dataWidth, jpcWidth, ramWidth)
+}
+
+/**
+ * JOP Pipeline Test ROM Configurations
  *
  * Provides custom ROM initializations for testing specific microcode instructions.
  * Each configuration loads the ROM with specific instruction sequences to test
@@ -682,11 +702,11 @@ object TestRomPatterns {
 /**
  * JOP Core Test ROM I/O Bundle
  *
- * Extends JopCoreIO with debug outputs for stack RAM verification.
+ * Extends JopPipeline I/O with debug outputs for stack RAM verification.
  * Exposes local variables (vp+0, vp+1, vp+2) for test assertions.
  */
-case class JopCoreTestRomIO(config: JopCoreConfig) extends Bundle with IMasterSlave {
-  // Standard JopCore interface
+case class JopPipelineTestRomIO(config: JopPipelineTestConfig) extends Bundle with IMasterSlave {
+  // Standard JopPipeline interface
   val memDataIn = in(Bits(config.dataWidth bits))
   val memBusy = in(Bool())
   val aout = out(Bits(config.dataWidth bits))
@@ -715,11 +735,11 @@ case class JopCoreTestRomIO(config: JopCoreConfig) extends Bundle with IMasterSl
  * Allows specifying custom ROM contents for testing specific microcode instructions.
  * Includes debug outputs for stack RAM verification (Phase 3.2).
  */
-class JopCoreTestRom(
-  config: JopCoreConfig = JopCoreConfig(),
+class JopPipelineTestRom(
+  config: JopPipelineTestConfig = JopPipelineTestConfig(),
   romPattern: Seq[BigInt]
 ) extends Component {
-  val io = JopCoreTestRomIO(config)
+  val io = JopPipelineTestRomIO(config)
 
   // Create fetch stage with custom ROM
   val fetchStage = new FetchStage(
@@ -731,7 +751,7 @@ class JopCoreTestRom(
   val stackStage = new StackStage(config.stackConfig)
   val multiplier = jop.core.Mul(config.dataWidth)
 
-  // Same connections as JopCore
+  // Same connections as JopPipeline
   fetchStage.io.br := decodeStage.io.br
   fetchStage.io.jmp := decodeStage.io.jmp
   fetchStage.io.bsy := io.memBusy
@@ -804,13 +824,13 @@ class JopCoreTestRom(
 /**
  * Generate testbench with ALU operations ROM for CocoTB testing
  */
-object JopCoreAluTestTbVhdl extends App {
+object JopPipelineAluTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreAluTestTb extends Component {
+  class JopPipelineAluTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -836,8 +856,8 @@ object JopCoreAluTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.aluOpsRom(2048, 12)
       )
 
@@ -854,20 +874,20 @@ object JopCoreAluTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreAluTestTb)
-  println("JopCoreAluTestTb VHDL generated in generated/JopCoreAluTestTb.vhd")
+  config.generateVhdl(new JopPipelineAluTestTb)
+  println("JopPipelineAluTestTb VHDL generated in generated/JopPipelineAluTestTb.vhd")
 }
 
 /**
  * Generate testbench with Shift operations ROM for CocoTB testing
  */
-object JopCoreShiftTestTbVhdl extends App {
+object JopPipelineShiftTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreShiftTestTb extends Component {
+  class JopPipelineShiftTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -893,8 +913,8 @@ object JopCoreShiftTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.shiftOpsRom(2048, 12)
       )
 
@@ -911,20 +931,20 @@ object JopCoreShiftTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreShiftTestTb)
-  println("JopCoreShiftTestTb VHDL generated in generated/JopCoreShiftTestTb.vhd")
+  config.generateVhdl(new JopPipelineShiftTestTb)
+  println("JopPipelineShiftTestTb VHDL generated in generated/JopPipelineShiftTestTb.vhd")
 }
 
 /**
  * Generate testbench with Load/Store operations ROM for CocoTB testing
  */
-object JopCoreLoadStoreTestTbVhdl extends App {
+object JopPipelineLoadStoreTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreLoadStoreTestTb extends Component {
+  class JopPipelineLoadStoreTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -950,8 +970,8 @@ object JopCoreLoadStoreTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.loadStoreRom(2048, 12)
       )
 
@@ -968,20 +988,20 @@ object JopCoreLoadStoreTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreLoadStoreTestTb)
-  println("JopCoreLoadStoreTestTb VHDL generated in generated/JopCoreLoadStoreTestTb.vhd")
+  config.generateVhdl(new JopPipelineLoadStoreTestTb)
+  println("JopPipelineLoadStoreTestTb VHDL generated in generated/JopPipelineLoadStoreTestTb.vhd")
 }
 
 /**
  * Generate testbench with Branch operations ROM for CocoTB testing
  */
-object JopCoreBranchTestTbVhdl extends App {
+object JopPipelineBranchTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreBranchTestTb extends Component {
+  class JopPipelineBranchTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -1007,8 +1027,8 @@ object JopCoreBranchTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.branchOpsRom(2048, 12)
       )
 
@@ -1025,20 +1045,20 @@ object JopCoreBranchTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreBranchTestTb)
-  println("JopCoreBranchTestTb VHDL generated in generated/JopCoreBranchTestTb.vhd")
+  config.generateVhdl(new JopPipelineBranchTestTb)
+  println("JopPipelineBranchTestTb VHDL generated in generated/JopPipelineBranchTestTb.vhd")
 }
 
 /**
  * Generate testbench with Stack operations ROM for CocoTB testing
  */
-object JopCoreStackTestTbVhdl extends App {
+object JopPipelineStackTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreStackTestTb extends Component {
+  class JopPipelineStackTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -1064,8 +1084,8 @@ object JopCoreStackTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.stackOpsRom(2048, 12)
       )
 
@@ -1082,20 +1102,20 @@ object JopCoreStackTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreStackTestTb)
-  println("JopCoreStackTestTb VHDL generated in generated/JopCoreStackTestTb.vhd")
+  config.generateVhdl(new JopPipelineStackTestTb)
+  println("JopPipelineStackTestTb VHDL generated in generated/JopPipelineStackTestTb.vhd")
 }
 
 /**
  * Generate testbench with Register Store operations ROM for CocoTB testing
  */
-object JopCoreRegStoreTestTbVhdl extends App {
+object JopPipelineRegStoreTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreRegStoreTestTb extends Component {
+  class JopPipelineRegStoreTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -1121,8 +1141,8 @@ object JopCoreRegStoreTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.regStoreOpsRom(2048, 12)
       )
 
@@ -1139,20 +1159,20 @@ object JopCoreRegStoreTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreRegStoreTestTb)
-  println("JopCoreRegStoreTestTb VHDL generated in generated/JopCoreRegStoreTestTb.vhd")
+  config.generateVhdl(new JopPipelineRegStoreTestTb)
+  println("JopPipelineRegStoreTestTb VHDL generated in generated/JopPipelineRegStoreTestTb.vhd")
 }
 
 /**
  * Generate testbench with Register Load operations ROM for CocoTB testing
  */
-object JopCoreRegLoadTestTbVhdl extends App {
+object JopPipelineRegLoadTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreRegLoadTestTb extends Component {
+  class JopPipelineRegLoadTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -1178,8 +1198,8 @@ object JopCoreRegLoadTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.regLoadOpsRom(2048, 12)
       )
 
@@ -1196,20 +1216,20 @@ object JopCoreRegLoadTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreRegLoadTestTb)
-  println("JopCoreRegLoadTestTb VHDL generated in generated/JopCoreRegLoadTestTb.vhd")
+  config.generateVhdl(new JopPipelineRegLoadTestTb)
+  println("JopPipelineRegLoadTestTb VHDL generated in generated/JopPipelineRegLoadTestTb.vhd")
 }
 
 /**
  * Generate testbench with Store operations ROM for CocoTB testing
  */
-object JopCoreStoreTestTbVhdl extends App {
+object JopPipelineStoreTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreStoreTestTb extends Component {
+  class JopPipelineStoreTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -1235,8 +1255,8 @@ object JopCoreStoreTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.storeOpsRom(2048, 12)
       )
 
@@ -1253,20 +1273,20 @@ object JopCoreStoreTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreStoreTestTb)
-  println("JopCoreStoreTestTb VHDL generated in generated/JopCoreStoreTestTb.vhd")
+  config.generateVhdl(new JopPipelineStoreTestTb)
+  println("JopPipelineStoreTestTb VHDL generated in generated/JopPipelineStoreTestTb.vhd")
 }
 
 /**
  * Generate testbench with Load operations ROM for CocoTB testing
  */
-object JopCoreLoadTestTbVhdl extends App {
+object JopPipelineLoadTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreLoadTestTb extends Component {
+  class JopPipelineLoadTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -1292,8 +1312,8 @@ object JopCoreLoadTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.loadOpsRom(2048, 12)
       )
 
@@ -1310,20 +1330,20 @@ object JopCoreLoadTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreLoadTestTb)
-  println("JopCoreLoadTestTb VHDL generated in generated/JopCoreLoadTestTb.vhd")
+  config.generateVhdl(new JopPipelineLoadTestTb)
+  println("JopPipelineLoadTestTb VHDL generated in generated/JopPipelineLoadTestTb.vhd")
 }
 
 /**
  * Generate testbench with Load Operand operations ROM for CocoTB testing
  */
-object JopCoreLoadOpdTestTbVhdl extends App {
+object JopPipelineLoadOpdTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreLoadOpdTestTb extends Component {
+  class JopPipelineLoadOpdTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -1349,8 +1369,8 @@ object JopCoreLoadOpdTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.loadOpdOpsRom(2048, 12)
       )
 
@@ -1367,20 +1387,20 @@ object JopCoreLoadOpdTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreLoadOpdTestTb)
-  println("JopCoreLoadOpdTestTb VHDL generated in generated/JopCoreLoadOpdTestTb.vhd")
+  config.generateVhdl(new JopPipelineLoadOpdTestTb)
+  println("JopPipelineLoadOpdTestTb VHDL generated in generated/JopPipelineLoadOpdTestTb.vhd")
 }
 
 /**
  * Generate testbench with MMU operations ROM for CocoTB testing
  */
-object JopCoreMmuTestTbVhdl extends App {
+object JopPipelineMmuTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreMmuTestTb extends Component {
+  class JopPipelineMmuTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -1406,8 +1426,8 @@ object JopCoreMmuTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.mmuOpsRom(2048, 12)
       )
 
@@ -1424,20 +1444,20 @@ object JopCoreMmuTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreMmuTestTb)
-  println("JopCoreMmuTestTb VHDL generated in generated/JopCoreMmuTestTb.vhd")
+  config.generateVhdl(new JopPipelineMmuTestTb)
+  println("JopPipelineMmuTestTb VHDL generated in generated/JopPipelineMmuTestTb.vhd")
 }
 
 /**
  * Generate testbench with Control operations ROM for CocoTB testing
  */
-object JopCoreControlTestTbVhdl extends App {
+object JopPipelineControlTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreControlTestTb extends Component {
+  class JopPipelineControlTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -1463,8 +1483,8 @@ object JopCoreControlTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.controlOpsRom(2048, 12)
       )
 
@@ -1481,12 +1501,12 @@ object JopCoreControlTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreControlTestTb)
-  println("JopCoreControlTestTb VHDL generated in generated/JopCoreControlTestTb.vhd")
+  config.generateVhdl(new JopPipelineControlTestTb)
+  println("JopPipelineControlTestTb VHDL generated in generated/JopPipelineControlTestTb.vhd")
 }
 
 /**
- * JopCore Multiplier Test Testbench VHDL Generator
+ * JopPipeline Multiplier Test Testbench VHDL Generator
  *
  * Generates a VHDL testbench for testing multiplier integration through
  * stmul/ldmul microcode operations.
@@ -1497,15 +1517,15 @@ object JopCoreControlTestTbVhdl extends App {
  * 3. Wait 17 cycles for bit-serial multiplier
  * 4. Execute ldmul to read result
  *
- * Usage: sbt "runMain jop.JopCoreMultiplierTestTbVhdl"
+ * Usage: sbt "runMain jop.JopPipelineMultiplierTestTbVhdl"
  */
-object JopCoreMultiplierTestTbVhdl extends App {
+object JopPipelineMultiplierTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreMultiplierTestTb extends Component {
+  class JopPipelineMultiplierTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -1532,8 +1552,8 @@ object JopCoreMultiplierTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.multiplierOpsRom(2048, 12)
       )
 
@@ -1551,12 +1571,12 @@ object JopCoreMultiplierTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreMultiplierTestTb)
-  println("JopCoreMultiplierTestTb VHDL generated in generated/JopCoreMultiplierTestTb.vhd")
+  config.generateVhdl(new JopPipelineMultiplierTestTb)
+  println("JopPipelineMultiplierTestTb VHDL generated in generated/JopPipelineMultiplierTestTb.vhd")
 }
 
 /**
- * JopCore JVM Sequences Test Testbench VHDL Generator (Phase 3.1)
+ * JopPipeline JVM Sequences Test Testbench VHDL Generator (Phase 3.1)
  *
  * Generates a VHDL testbench for testing realistic JVM bytecode execution patterns
  * using microcode sequences. Each test sequence represents a complete JVM operation:
@@ -1579,15 +1599,15 @@ object JopCoreMultiplierTestTbVhdl extends App {
  * This tests multi-instruction pipeline interactions, stack management,
  * register state transitions, and complex control flow.
  *
- * Usage: sbt "runMain jop.JopCoreJvmSequencesTestTbVhdl"
+ * Usage: sbt "runMain jop.JopPipelineJvmSequencesTestTbVhdl"
  */
-object JopCoreJvmSequencesTestTbVhdl extends App {
+object JopPipelineJvmSequencesTestTbVhdl extends App {
   val config = SpinalConfig(
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  class JopCoreJvmSequencesTestTb extends Component {
+  class JopPipelineJvmSequencesTestTb extends Component {
     noIoPrefix()
 
     val clk = in Bool()
@@ -1619,8 +1639,8 @@ object JopCoreJvmSequencesTestTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val core = new JopCoreTestRom(
-        config = JopCoreConfig(),
+      val core = new JopPipelineTestRom(
+        config = JopPipelineTestConfig(),
         romPattern = TestRomPatterns.jvmSequencesRom(2048, 12)
       )
 
@@ -1643,6 +1663,6 @@ object JopCoreJvmSequencesTestTbVhdl extends App {
     }
   }
 
-  config.generateVhdl(new JopCoreJvmSequencesTestTb)
-  println("JopCoreJvmSequencesTestTb VHDL generated in generated/JopCoreJvmSequencesTestTb.vhd")
+  config.generateVhdl(new JopPipelineJvmSequencesTestTb)
+  println("JopPipelineJvmSequencesTestTb VHDL generated in generated/JopPipelineJvmSequencesTestTb.vhd")
 }

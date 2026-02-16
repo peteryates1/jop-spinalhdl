@@ -8,7 +8,7 @@ import spinal.lib.memory.sdram.sdr._
 import jop.memory.BmbSdramCtrl32
 
 /**
- * JOP System with SDR SDRAM Backend
+ * JOP Core with SDR SDRAM Backend
  *
  * Complete JOP system using BmbSdramCtrl32 for external 16-bit SDRAM.
  * The BmbSdramCtrl32 handles 32-bit BMB to 16-bit SDRAM width conversion
@@ -16,8 +16,8 @@ import jop.memory.BmbSdramCtrl32
  *
  * Target: W9825G6JH6 on QMTECH EP4CGX150 board.
  */
-case class JopSystemWithSdram(
-  config: JopSystemConfig = JopSystemConfig(),
+case class JopCoreWithSdram(
+  config: JopCoreConfig = JopCoreConfig(),
   sdramLayout: SdramLayout = W9825G6JH6.layout,
   sdramTiming: SdramTimings = W9825G6JH6.timingGrade7,
   CAS: Int = 3,
@@ -64,8 +64,8 @@ case class JopSystemWithSdram(
     val bmbRspData   = out Bits(32 bits)
   }
 
-  // JOP System core
-  val jopSystem = JopSystem(config, romInit, ramInit, jbcInit)
+  // JOP Core core
+  val jopCore = JopCore(config, romInit, ramInit, jbcInit)
 
   // 32-bit BMB to 16-bit SDRAM bridge (handles width conversion internally)
   val sdramCtrl = BmbSdramCtrl32(
@@ -76,50 +76,50 @@ case class JopSystemWithSdram(
   )
 
   // Connect JOP BMB directly to SDRAM controller
-  sdramCtrl.io.bmb <> jopSystem.io.bmb
+  sdramCtrl.io.bmb <> jopCore.io.bmb
 
   // SDRAM interface
   io.sdram <> sdramCtrl.io.sdram
 
   // I/O interface
-  io.ioAddr := jopSystem.io.ioAddr
-  io.ioRd := jopSystem.io.ioRd
-  io.ioWr := jopSystem.io.ioWr
-  io.ioWrData := jopSystem.io.ioWrData
-  jopSystem.io.ioRdData := io.ioRdData
+  io.ioAddr := jopCore.io.ioAddr
+  io.ioRd := jopCore.io.ioRd
+  io.ioWr := jopCore.io.ioWr
+  io.ioWrData := jopCore.io.ioWrData
+  jopCore.io.ioRdData := io.ioRdData
 
   // Pipeline outputs
-  io.pc := jopSystem.io.pc
-  io.jpc := jopSystem.io.jpc
-  io.instr := jopSystem.io.instr
-  io.jfetch := jopSystem.io.jfetch
-  io.jopdfetch := jopSystem.io.jopdfetch
+  io.pc := jopCore.io.pc
+  io.jpc := jopCore.io.jpc
+  io.instr := jopCore.io.instr
+  io.jfetch := jopCore.io.jfetch
+  io.jopdfetch := jopCore.io.jopdfetch
 
-  io.aout := jopSystem.io.aout
-  io.bout := jopSystem.io.bout
+  io.aout := jopCore.io.aout
+  io.bout := jopCore.io.bout
 
-  io.memBusy := jopSystem.io.memBusy
+  io.memBusy := jopCore.io.memBusy
 
   // Interrupt
-  jopSystem.io.irq := io.irq
-  jopSystem.io.irqEna := io.irqEna
+  jopCore.io.irq := io.irq
+  jopCore.io.irqEna := io.irqEna
 
   // BMB debug
-  io.bmbCmdValid := jopSystem.io.bmb.cmd.valid
-  io.bmbCmdReady := jopSystem.io.bmb.cmd.ready
-  io.bmbCmdAddr := jopSystem.io.bmb.cmd.fragment.address
-  io.bmbCmdOpcode := jopSystem.io.bmb.cmd.fragment.opcode.asBits.resized
-  io.bmbRspValid := jopSystem.io.bmb.rsp.valid
-  io.bmbRspData := jopSystem.io.bmb.rsp.fragment.data
+  io.bmbCmdValid := jopCore.io.bmb.cmd.valid
+  io.bmbCmdReady := jopCore.io.bmb.cmd.ready
+  io.bmbCmdAddr := jopCore.io.bmb.cmd.fragment.address
+  io.bmbCmdOpcode := jopCore.io.bmb.cmd.fragment.opcode.asBits.resized
+  io.bmbRspValid := jopCore.io.bmb.rsp.valid
+  io.bmbRspData := jopCore.io.bmb.rsp.fragment.data
 }
 
 /**
- * Generate Verilog for JopSystemWithSdram
+ * Generate Verilog for JopCoreWithSdram
  */
-object JopSystemWithSdramVerilog extends App {
+object JopCoreWithSdramVerilog extends App {
   SpinalConfig(
     mode = Verilog,
     targetDirectory = "generated",
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
-  ).generate(JopSystemWithSdram())
+  ).generate(JopCoreWithSdram())
 }

@@ -2,43 +2,71 @@ package jop.system
 
 import spinal.core._
 import spinal.lib._
-import spinal.lib.bus.bmb._
 import spinal.lib.com.uart._
+import spinal.lib.io.InOutWrapper
+import spinal.lib.memory.sdram.sdr._
 import jop.utils.JopFileLoader
-import jop.memory.JopMemoryConfig
+import jop.pipeline.JumpTableInitData
 
 /**
- * JOP BRAM FPGA Top-Level for QMTECH EP4CGX150
+ * DRAM PLL BlackBox
  *
- * Runs JOP processor with BRAM-backed memory and real UART output.
- * Uses PLL to run at 100 MHz from 50 MHz input clock.
- *
- * @param romInit Microcode ROM initialization data
- * @param ramInit Stack RAM initialization data
- * @param mainMemInit Main memory initialization data (from .jop file)
+ * Wraps the dram_pll VHDL entity (Altera altpll megafunction).
+ * 50 MHz input -> c0=50MHz, c1=100MHz, c2=100MHz/-3ns phase shift
  */
-case class JopBramTop(
+case class DramPll() extends BlackBox {
+  setDefinitionName("dram_pll")
+
+  val io = new Bundle {
+    val inclk0 = in Bool()
+    val areset = in Bool()
+    val c0     = out Bool()
+    val c1     = out Bool()
+    val c2     = out Bool()
+    val locked = out Bool()
+  }
+
+  noIoPrefix()
+}
+
+/**
+ * JOP SDRAM FPGA Top-Level for QMTECH EP4CGX150
+ *
+ * Runs JOP processor with SDRAM-backed memory at 100 MHz.
+ * PLL: 50 MHz input -> 100 MHz system clock, 100 MHz/-3ns SDRAM clock.
+ * Full UART TX+RX for serial download protocol.
+ *
+ * @param romInit Microcode ROM initialization data (serial-boot)
+ * @param ramInit Stack RAM initialization data (serial-boot)
+ */
+case class JopSdramTop(
   romInit: Seq[BigInt],
-  ramInit: Seq[BigInt],
-  mainMemInit: Seq[BigInt]
+  ramInit: Seq[BigInt]
 ) extends Component {
 
   val io = new Bundle {
-    val clk_in  = in Bool()
-    val ser_txd = out Bool()
-    val led     = out Bits(2 bits)
+    val clk_in    = in Bool()
+    val ser_txd   = out Bool()
+    val ser_rxd   = in Bool()
+    val led       = out Bits(2 bits)
+    val sdram_clk = out Bool()
+    val sdram     = master(SdramInterface(W9825G6JH6.layout))
   }
 
-  // Remove auto-generated clock/reset - we manage our own
   noIoPrefix()
 
   // ========================================================================
-  // PLL: 50 MHz -> 100 MHz system clock
+  // PLL: 50 MHz -> 100 MHz system, 100 MHz/-3ns SDRAM clock
   // ========================================================================
 
   val pll = DramPll()
   pll.io.inclk0 := io.clk_in
   pll.io.areset := False
+
+  // SDRAM clock output (PLL c2: 100 MHz with -3ns phase shift)
+  io.sdram_clk := pll.io.c2
+
+  // Note: LED driven from mainArea watchdog register (line 242)
 
   // ========================================================================
   // Reset Generator (on PLL c1 = 100 MHz)
@@ -71,66 +99,33 @@ case class JopBramTop(
   )
 
   // ========================================================================
-  // Main Design Area
+  // Main Design Area (100 MHz)
   // ========================================================================
 
   val mainArea = new ClockingArea(mainClockDomain) {
 
-    val config = JopSystemConfig(
-      memConfig = JopMemoryConfig(mainMemSize = 32 * 1024)  // 32KB BRAM
-    )
+    val config = JopCoreConfig(jumpTable = JumpTableInitData.serial)
 
-    // Extract JBC init from main memory (same logic as JopSystemTestHarness)
-    val mpAddr = if (mainMemInit.length > 1) mainMemInit(1).toInt else 0
-    val bootMethodStructAddr = if (mainMemInit.length > mpAddr) mainMemInit(mpAddr).toInt else 0
-    val bootMethodStartLen = if (mainMemInit.length > bootMethodStructAddr) mainMemInit(bootMethodStructAddr).toLong else 0
-    val bootCodeStart = (bootMethodStartLen >> 10).toInt
-    val bytecodeStartWord = if (bootCodeStart > 0) bootCodeStart else 35
-    val bytecodeWords = mainMemInit.slice(bytecodeStartWord, bytecodeStartWord + 512)
+    // JBC init: empty (zeros) — BC_FILL loads bytecodes dynamically from SDRAM
+    val jbcInit = Seq.fill(2048)(BigInt(0))
 
-    // Convert words to bytes (big-endian)
-    val jbcInit = bytecodeWords.flatMap { word =>
-      val w = word.toLong & 0xFFFFFFFFL
-      Seq(
-        BigInt((w >> 24) & 0xFF),
-        BigInt((w >> 16) & 0xFF),
-        BigInt((w >> 8) & 0xFF),
-        BigInt((w >> 0) & 0xFF)
-      )
-    }.padTo(2048, BigInt(0))
-
-    // JOP System core
-    val jopSystem = JopSystem(
+    // JOP System with SDRAM backend
+    val jopCoreWithSdram = JopCoreWithSdram(
       config = config,
       romInit = Some(romInit),
       ramInit = Some(ramInit),
       jbcInit = Some(jbcInit)
     )
 
-    // Block RAM with BMB interface
-    val ram = BmbOnChipRam(
-      p = config.memConfig.bmbParameter,
-      size = config.memConfig.mainMemSize,
-      hexInit = null
-    )
-
-    // Initialize RAM
-    val memWords = config.memConfig.mainMemWords.toInt
-    val initData = mainMemInit.take(memWords).padTo(memWords, BigInt(0))
-    ram.ram.init(initData.map(v => B(v, 32 bits)))
-
-    // Connect BMB
-    ram.io.bus << jopSystem.io.bmb
-
-    // Drive debug RAM port (unused)
-    jopSystem.io.debugRamAddr := 0
+    // Connect SDRAM interface
+    io.sdram <> jopCoreWithSdram.io.sdram
 
     // Interrupts (disabled)
-    jopSystem.io.irq := False
-    jopSystem.io.irqEna := False
+    jopCoreWithSdram.io.irq := False
+    jopCoreWithSdram.io.irqEna := False
 
     // ======================================================================
-    // UART
+    // UART (TX + RX)
     // ======================================================================
 
     // At 100 MHz: clockDivider for 1 Mbaud with 5x oversampling
@@ -142,6 +137,7 @@ case class JopBramTop(
     uartCtrl.io.config.frame.dataLength := 7  // 8 bits (0-indexed)
     uartCtrl.io.config.frame.parity := UartParityType.NONE
     uartCtrl.io.config.frame.stop := UartStopType.ONE
+    uartCtrl.io.writeBreak := False
 
     // TX FIFO: 16-entry buffer between JOP I/O writes and UART
     val txFifo = StreamFifo(Bits(8 bits), 16)
@@ -151,16 +147,25 @@ case class JopBramTop(
     uartCtrl.io.write.payload := txFifo.io.pop.payload
     txFifo.io.pop.ready := uartCtrl.io.write.ready
 
-    // Unused UART signals
-    uartCtrl.io.uart.rxd := True
-    uartCtrl.io.read.ready := False
-    uartCtrl.io.writeBreak := False
-
     // UART TX output
     io.ser_txd := uartCtrl.io.uart.txd
 
+    // UART RX input
+    uartCtrl.io.uart.rxd := io.ser_rxd
+
+    // RX FIFO: UartCtrl.read.valid is a ONE-CYCLE PULSE (RegNext(False)),
+    // so we must buffer it. Matches VHDL sc_uart which uses a FIFO for RX.
+    // rxFifo.pop.valid stays high until consumed (proper Stream protocol).
+    val rxFifo = StreamFifo(Bits(8 bits), 16)
+    rxFifo.io.push.valid := uartCtrl.io.read.valid
+    rxFifo.io.push.payload := uartCtrl.io.read.payload
+    uartCtrl.io.read.ready := rxFifo.io.push.ready
+
+    // RX consume: driven by I/O decode when JOP reads UART data register
+    rxFifo.io.pop.ready := False
+
     // ======================================================================
-    // I/O Decode (combinational, matching JopSystemTestHarness)
+    // I/O Decode (combinational, matching JopBramTop)
     // ======================================================================
 
     // System counter (free-running)
@@ -174,8 +179,8 @@ case class JopBramTop(
     val ioRdData = Bits(32 bits)
     ioRdData := 0
 
-    val ioSubAddr = jopSystem.io.ioAddr(3 downto 0)
-    val ioSlaveId = jopSystem.io.ioAddr(5 downto 4)
+    val ioSubAddr = jopCoreWithSdram.io.ioAddr(3 downto 0)
+    val ioSlaveId = jopCoreWithSdram.io.ioAddr(5 downto 4)
 
     // I/O read handling
     switch(ioSlaveId) {
@@ -189,29 +194,38 @@ case class JopBramTop(
       }
       is(1) {  // UART
         switch(ioSubAddr) {
-          is(0) { ioRdData := B(0, 31 bits) ## txFifo.io.availability.orR.asBits }  // Status: bit 0 = TX FIFO not full
+          is(0) {
+            // Status: bit 0 = TX FIFO not full (TDRE), bit 1 = RX data available (RDRF)
+            ioRdData := B(0, 30 bits) ## rxFifo.io.pop.valid.asBits ## txFifo.io.availability.orR.asBits
+          }
+          is(1) {
+            // Data read: return RX byte and consume it from RX FIFO
+            ioRdData := B(0, 24 bits) ## rxFifo.io.pop.payload
+            when(jopCoreWithSdram.io.ioRd) {
+              rxFifo.io.pop.ready := True
+            }
+          }
         }
       }
     }
-    jopSystem.io.ioRdData := ioRdData
+    jopCoreWithSdram.io.ioRdData := ioRdData
 
     // I/O write handling
-    // FIFO push defaults
     txFifo.io.push.valid := False
     txFifo.io.push.payload := 0
 
-    when(jopSystem.io.ioWr) {
+    when(jopCoreWithSdram.io.ioWr) {
       switch(ioSlaveId) {
         is(0) {  // System
           switch(ioSubAddr) {
-            is(3) { wdReg := jopSystem.io.ioWrData }    // Watchdog
+            is(3) { wdReg := jopCoreWithSdram.io.ioWrData }    // Watchdog
           }
         }
         is(1) {  // UART
           switch(ioSubAddr) {
             is(1) {  // UART data write
               txFifo.io.push.valid := True
-              txFifo.io.push.payload := jopSystem.io.ioWrData(7 downto 0)
+              txFifo.io.push.payload := jopCoreWithSdram.io.ioWrData(7 downto 0)
             }
           }
         }
@@ -222,32 +236,29 @@ case class JopBramTop(
     // LED Driver
     // ======================================================================
 
-    // LEDs directly from watchdog register (active low on QMTECH board)
+    // LEDs from watchdog register (active low on QMTECH board)
     io.led := ~wdReg(1 downto 0)
   }
 }
 
 /**
- * Generate Verilog for JopBramTop
+ * Generate Verilog for JopSdramTop
  */
-object JopBramTopVerilog extends App {
-  val jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop"
-  val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
-  val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
+object JopSdramTopVerilog extends App {
+  val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/serial/mem_ram.dat"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
-  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 32 * 1024 / 4)
 
   println(s"Loaded ROM: ${romData.length} entries")
   println(s"Loaded RAM: ${ramData.length} entries")
-  println(s"Loaded main memory: ${mainMemData.length} entries")
 
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "core/spinalhdl/generated",
+    targetDirectory = "spinalhdl/generated",
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
-  ).generate(JopBramTop(romData, ramData, mainMemData))
+  ).generate(InOutWrapper(JopSdramTop(romData, ramData)))
 
-  println("Generated: generated/JopBramTop.v")
+  println("Generated: generated/JopSdramTop.v")
 }

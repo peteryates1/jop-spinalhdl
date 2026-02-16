@@ -9,16 +9,16 @@ import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
 
 /**
- * Debug harness for JopSystem BRAM simulation
+ * Debug harness for JopCore BRAM simulation
  * Exposes additional debug signals for tracing BMB transactions
  */
-case class JopSystemBramDebugHarness(
+case class JopCoreBramDebugHarness(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
   mainMemInit: Seq[BigInt]
 ) extends Component {
 
-  val config = JopSystemConfig(
+  val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = 32 * 1024)
   )
 
@@ -82,7 +82,7 @@ case class JopSystemBramDebugHarness(
   }.padTo(2048, BigInt(0))
 
   // JOP System core
-  val jopSystem = JopSystem(
+  val jopSystem = JopCore(
     config = config,
     romInit = Some(romInit),
     ramInit = Some(ramInit),
@@ -193,12 +193,12 @@ case class JopSystemBramDebugHarness(
 /**
  * Debug simulation to trace BMB transactions
  */
-object JopSystemBramDebug extends App {
+object JopCoreBramDebug extends App {
 
   val jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop"
   val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
   val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
-  val logFilePath = "/home/peter/workspaces/ai/jop/core/spinalhdl/bram_debug.log"
+  val logFilePath = "/home/peter/workspaces/ai/jop/spinalhdl/bram_debug.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -210,7 +210,7 @@ object JopSystemBramDebug extends App {
   println(s"Log file: $logFilePath")
 
   SimConfig
-    .compile(JopSystemBramDebugHarness(romData, ramData, mainMemData))
+    .compile(JopCoreBramDebugHarness(romData, ramData, mainMemData))
     .doSim { dut =>
       val log = new PrintWriter(logFilePath)
       var uartOutput = new StringBuilder

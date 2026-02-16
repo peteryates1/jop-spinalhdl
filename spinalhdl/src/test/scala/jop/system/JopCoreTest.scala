@@ -9,16 +9,16 @@ import jop.utils.JopFileLoader
 import jop.memory.JopMemoryConfig
 
 /**
- * Test harness for JopSystem with BmbOnChipRam
+ * Test harness for JopCore with BmbOnChipRam
  * Uses default SpinalHDL clock domain for simpler simulation.
  */
-case class JopSystemTestHarness(
+case class JopCoreTestHarness(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
   mainMemInit: Seq[BigInt]
 ) extends Component {
 
-  val config = JopSystemConfig(
+  val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = 32 * 1024)  // 32KB for faster simulation
   )
 
@@ -65,7 +65,7 @@ case class JopSystemTestHarness(
   }.padTo(2048, BigInt(0))
 
   // JOP System core
-  val jopSystem = JopSystem(
+  val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
     ramInit = Some(ramInit),
@@ -85,7 +85,7 @@ case class JopSystemTestHarness(
   ram.ram.init(initData.map(v => B(v, 32 bits)))
 
   // Connect BMB
-  ram.io.bus << jopSystem.io.bmb
+  ram.io.bus << jopCore.io.bmb
 
   // I/O simulation
   val sysCntReg = Reg(UInt(32 bits)) init(1000000)
@@ -99,8 +99,8 @@ case class JopSystemTestHarness(
   ioRdData := 0  // default
 
   // Decode I/O address
-  val ioSubAddr = jopSystem.io.ioAddr(3 downto 0)
-  val ioSlaveId = jopSystem.io.ioAddr(5 downto 4)
+  val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
+  val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
 
   // I/O read handling - combinational response
   switch(ioSlaveId) {
@@ -118,16 +118,16 @@ case class JopSystemTestHarness(
       }
     }
   }
-  jopSystem.io.ioRdData := ioRdData
+  jopCore.io.ioRdData := ioRdData
 
   // I/O write handling
   uartTxValidReg := False
-  when(jopSystem.io.ioWr) {
+  when(jopCore.io.ioWr) {
     switch(ioSlaveId) {
       is(1) {  // UART
         switch(ioSubAddr) {
           is(1) {  // UART data
-            uartTxDataReg := jopSystem.io.ioWrData(7 downto 0)
+            uartTxDataReg := jopCore.io.ioWrData(7 downto 0)
             uartTxValidReg := True
           }
         }
@@ -136,34 +136,34 @@ case class JopSystemTestHarness(
   }
 
   // Interrupt (disabled for now)
-  jopSystem.io.irq := False
-  jopSystem.io.irqEna := False
+  jopCore.io.irq := False
+  jopCore.io.irqEna := False
 
   // Outputs
-  io.pc := jopSystem.io.pc
-  io.jpc := jopSystem.io.jpc
-  io.instr := jopSystem.io.instr
-  io.jfetch := jopSystem.io.jfetch
-  io.jopdfetch := jopSystem.io.jopdfetch
-  io.aout := jopSystem.io.aout
-  io.bout := jopSystem.io.bout
-  io.memBusy := jopSystem.io.memBusy
+  io.pc := jopCore.io.pc
+  io.jpc := jopCore.io.jpc
+  io.instr := jopCore.io.instr
+  io.jfetch := jopCore.io.jfetch
+  io.jopdfetch := jopCore.io.jopdfetch
+  io.aout := jopCore.io.aout
+  io.bout := jopCore.io.bout
+  io.memBusy := jopCore.io.memBusy
   io.uartTxData := uartTxDataReg
   io.uartTxValid := uartTxValidReg
   io.debugState := 0  // Placeholder - internal signal not accessible
 }
 
 /**
- * JopSystem Tests
+ * JopCore Tests
  */
-class JopSystemTest extends AnyFunSuite {
+class JopCoreTest extends AnyFunSuite {
 
   // Paths to initialization files
   val jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop"
   val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
   val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
 
-  test("JopSystem: basic execution with BMB memory") {
+  test("JopCore: basic execution with BMB memory") {
     // Load initialization data
     val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
     val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -175,7 +175,7 @@ class JopSystemTest extends AnyFunSuite {
 
     SimConfig
       // .withWave  // Disabled for faster testing
-      .compile(JopSystemTestHarness(romData, ramData, mainMemData))
+      .compile(JopCoreTestHarness(romData, ramData, mainMemData))
       .doSim { dut =>
         // Initialize clock
         dut.clockDomain.forkStimulus(10)  // 10ns period
@@ -198,7 +198,7 @@ class JopSystemTest extends AnyFunSuite {
         // Verify the system is running (PC should have changed from initial value)
         val finalPc = dut.io.pc.toInt
         assert(finalPc > 0, "Pipeline should have started executing")
-        println("=== Test PASSED: JopSystem integration works ===")
+        println("=== Test PASSED: JopCore integration works ===")
       }
   }
 }

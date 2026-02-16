@@ -9,15 +9,15 @@ import org.scalatest.funsuite.AnyFunSuite
 import jop.utils.JopFileLoader
 
 /**
- * Test harness for JopSystemWithSdram with SDRAM simulation model
+ * Test harness for JopCoreWithSdram with SDRAM simulation model
  */
-case class JopSystemWithSdramTestHarness(
+case class JopCoreWithSdramTestHarness(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
   mainMemInit: Seq[BigInt]
 ) extends Component {
 
-  val config = JopSystemConfig()
+  val config = JopCoreConfig()
 
   // Use W9825G6JH6 SDRAM parameters
   val sdramLayout = W9825G6JH6.layout
@@ -46,7 +46,7 @@ case class JopSystemWithSdramTestHarness(
     val uartTxData = out Bits(8 bits)
     val uartTxValid = out Bool()
 
-    // I/O debug (directly from JopSystem)
+    // I/O debug (directly from JopCore)
     val ioWr = out Bool()
     val ioAddr = out UInt(8 bits)
     val ioWrData = out Bits(32 bits)
@@ -64,7 +64,7 @@ case class JopSystemWithSdramTestHarness(
   val jbcInit = Seq.fill(2048)(BigInt(0))
 
   // JOP System with SDRAM backend
-  val jopSystem = JopSystemWithSdram(
+  val jopSystem = JopCoreWithSdram(
     config = config,
     sdramLayout = sdramLayout,
     sdramTiming = sdramTiming,
@@ -154,16 +154,16 @@ case class JopSystemWithSdramTestHarness(
 }
 
 /**
- * JopSystemWithSdram Tests
+ * JopCoreWithSdram Tests
  */
-class JopSystemWithSdramTest extends AnyFunSuite {
+class JopCoreWithSdramTest extends AnyFunSuite {
 
   // Paths to initialization files
   val jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop"
   val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
   val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
 
-  test("JopSystemWithSdram: SDRAM integration test") {
+  test("JopCoreWithSdram: SDRAM integration test") {
     // Load initialization data
     val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
     val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -177,7 +177,7 @@ class JopSystemWithSdramTest extends AnyFunSuite {
     SimConfig
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       // .withWave  // Disabled for faster testing
-      .compile(JopSystemWithSdramTestHarness(romData, ramData, mainMemData))
+      .compile(JopCoreWithSdramTestHarness(romData, ramData, mainMemData))
       .doSim { dut =>
         // Initialize clock
         dut.clockDomain.forkStimulus(10)  // 10ns period = 100MHz
@@ -229,11 +229,11 @@ class JopSystemWithSdramTest extends AnyFunSuite {
         // Verify the system is running
         val finalPc = dut.io.pc.toInt
         assert(finalPc > 0, "Pipeline should have started executing")
-        println("=== Test PASSED: JopSystemWithSdram integration works ===")
+        println("=== Test PASSED: JopCoreWithSdram integration works ===")
       }
   }
 
-  test("JopSystemWithSdram: extended execution with HelloWorld") {
+  test("JopCoreWithSdram: extended execution with HelloWorld") {
     // Load initialization data
     val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
     val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -241,7 +241,7 @@ class JopSystemWithSdramTest extends AnyFunSuite {
 
     SimConfig
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
-      .compile(JopSystemWithSdramTestHarness(romData, ramData, mainMemData))
+      .compile(JopCoreWithSdramTestHarness(romData, ramData, mainMemData))
       .doSim { dut =>
         dut.clockDomain.forkStimulus(10)
 

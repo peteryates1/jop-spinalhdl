@@ -25,7 +25,7 @@ case class BmbLatencyBridge(p: BmbParameter, latency: Int) extends Component {
   require(latency >= 0, "Latency must be non-negative")
 
   val io = new Bundle {
-    val input  = slave(Bmb(p))   // Master (JopSystem) side
+    val input  = slave(Bmb(p))   // Master (JopCore) side
     val output = master(Bmb(p))  // Slave (BmbOnChipRam) side
   }
 

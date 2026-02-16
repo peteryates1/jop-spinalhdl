@@ -8,7 +8,7 @@ import jop.utils.JopFileLoader
 import jop.memory.JopMemoryConfig
 
 /**
- * Echo test harness: JopSystem with BRAM, I/O decode inside,
+ * Echo test harness: JopCore with BRAM, I/O decode inside,
  * UART RX data/valid exposed as inputs for simulation.
  */
 case class JopEchoHarness(
@@ -16,7 +16,7 @@ case class JopEchoHarness(
   ramInit: Seq[BigInt]
 ) extends Component {
 
-  val config = JopSystemConfig(
+  val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = 32 * 1024)
   )
 
@@ -44,7 +44,7 @@ case class JopEchoHarness(
   // Empty JBC (echo.asm doesn't use it)
   val jbcInit = Seq.fill(2048)(BigInt(0))
 
-  val jopSystem = JopSystem(
+  val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
     ramInit = Some(ramInit),
@@ -57,14 +57,14 @@ case class JopEchoHarness(
     size = config.memConfig.mainMemSize,
     hexInit = null
   )
-  ram.io.bus << jopSystem.io.bmb
+  ram.io.bus << jopCore.io.bmb
 
   // Drive debug RAM port (unused)
-  jopSystem.io.debugRamAddr := 0
+  jopCore.io.debugRamAddr := 0
 
   // Interrupts disabled
-  jopSystem.io.irq := False
-  jopSystem.io.irqEna := False
+  jopCore.io.irq := False
+  jopCore.io.irqEna := False
 
   // System counter
   val sysCntReg = Reg(UInt(32 bits)) init(0)
@@ -81,8 +81,8 @@ case class JopEchoHarness(
   val ioRdData = Bits(32 bits)
   ioRdData := 0
 
-  val ioSubAddr = jopSystem.io.ioAddr(3 downto 0)
-  val ioSlaveId = jopSystem.io.ioAddr(5 downto 4)
+  val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
+  val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
 
   uartRxReadReg := False
 
@@ -104,23 +104,23 @@ case class JopEchoHarness(
         is(1) {
           // Data read
           ioRdData := B(0, 24 bits) ## io.uartRxData
-          when(jopSystem.io.ioRd) {
+          when(jopCore.io.ioRd) {
             uartRxReadReg := True
           }
         }
       }
     }
   }
-  jopSystem.io.ioRdData := ioRdData
+  jopCore.io.ioRdData := ioRdData
 
   // I/O write handling
   uartTxValidReg := False
-  when(jopSystem.io.ioWr) {
+  when(jopCore.io.ioWr) {
     switch(ioSlaveId) {
       is(1) {
         switch(ioSubAddr) {
           is(1) {
-            uartTxDataReg := jopSystem.io.ioWrData(7 downto 0)
+            uartTxDataReg := jopCore.io.ioWrData(7 downto 0)
             uartTxValidReg := True
           }
         }
@@ -129,16 +129,16 @@ case class JopEchoHarness(
   }
 
   // Outputs
-  io.pc := jopSystem.io.pc
-  io.jpc := jopSystem.io.jpc
-  io.memBusy := jopSystem.io.memBusy
+  io.pc := jopCore.io.pc
+  io.jpc := jopCore.io.jpc
+  io.memBusy := jopCore.io.memBusy
   io.uartTxData := uartTxDataReg
   io.uartTxValid := uartTxValidReg
   io.uartRxRead := uartRxReadReg
-  io.ioRd := jopSystem.io.ioRd
-  io.ioWr := jopSystem.io.ioWr
-  io.ioAddr := jopSystem.io.ioAddr
-  io.ioWrData := jopSystem.io.ioWrData
+  io.ioRd := jopCore.io.ioRd
+  io.ioWr := jopCore.io.ioWr
+  io.ioAddr := jopCore.io.ioAddr
+  io.ioWrData := jopCore.io.ioWrData
 }
 
 /**

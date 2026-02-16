@@ -10,14 +10,14 @@ import jop.memory.JopMemoryConfig
 /**
  * Test harness with configurable BRAM size to test address wrapping effects.
  */
-case class JopSystemLargeBramHarness(
+case class JopCoreLargeBramHarness(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
   mainMemInit: Seq[BigInt],
   bramSize: Int = 2 * 1024 * 1024  // 2MB default
 ) extends Component {
 
-  val config = JopSystemConfig(
+  val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = bramSize)
   )
 
@@ -54,7 +54,7 @@ case class JopSystemLargeBramHarness(
     )
   }.padTo(2048, BigInt(0))
 
-  val jopSystem = JopSystem(
+  val jopSystem = JopCore(
     config = config,
     romInit = Some(romInit),
     ramInit = Some(ramInit),
@@ -73,7 +73,7 @@ case class JopSystemLargeBramHarness(
 
   ram.io.bus << jopSystem.io.bmb
 
-  // I/O simulation (same as JopSystemTestHarness)
+  // I/O simulation (same as JopCoreTestHarness)
   val sysCntReg = Reg(UInt(32 bits)) init(1000000)
   sysCntReg := sysCntReg + 10
 
@@ -137,7 +137,7 @@ case class JopSystemLargeBramHarness(
  * Run BRAM sim with 2MB memory (no address wrapping for typical program addresses)
  * to test if the BRAM sim works because of wrapping or because of correct execution.
  */
-object JopSystemBramLargeSim extends App {
+object JopCoreBramLargeSim extends App {
   val jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop"
   val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
   val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
@@ -154,7 +154,7 @@ object JopSystemBramLargeSim extends App {
   println(s"Loaded main memory: ${mainMemData.length} entries (for ${bramSize/1024}KB BRAM)")
 
   SimConfig
-    .compile(JopSystemLargeBramHarness(romData, ramData, mainMemData, bramSize))
+    .compile(JopCoreLargeBramHarness(romData, ramData, mainMemData, bramSize))
     .doSim { dut =>
       var uartOutput = new StringBuilder
       dut.clockDomain.forkStimulus(10)

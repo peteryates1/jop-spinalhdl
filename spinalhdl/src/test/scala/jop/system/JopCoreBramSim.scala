@@ -11,13 +11,13 @@ import java.io.PrintWriter
 /**
  * Block RAM simulation for comparison with SDRAM
  */
-object JopSystemBramSim extends App {
+object JopCoreBramSim extends App {
 
   // Paths to initialization files
   val jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop"
   val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
   val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
-  val logFilePath = "/home/peter/workspaces/ai/jop/core/spinalhdl/bram_simulation.log"
+  val logFilePath = "/home/peter/workspaces/ai/jop/spinalhdl/bram_simulation.log"
 
   // Load initialization data
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
@@ -30,7 +30,7 @@ object JopSystemBramSim extends App {
   println(s"Log file: $logFilePath")
 
   SimConfig
-    .compile(JopSystemTestHarness(romData, ramData, mainMemData))
+    .compile(JopCoreTestHarness(romData, ramData, mainMemData))
     .doSim { dut =>
       val log = new PrintWriter(logFilePath)
       var uartOutput = new StringBuilder

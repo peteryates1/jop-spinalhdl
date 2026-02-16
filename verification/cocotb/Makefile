@@ -11,7 +11,7 @@ ORIG_VHDL_DIR = ../../original/vhdl/core
 VHDL_TB_DIR = vhdl
 # Generated VHDL files (copied from SpinalHDL for testing)
 GENERATED_DIR = generated
-SPINALHDL_GEN_DIR = ../../core/spinalhdl/generated
+SPINALHDL_GEN_DIR = ../../spinalhdl/generated
 TEST_VECTORS_DIR = ../test-vectors
 
 # VHDL source files (will be populated based on module)
