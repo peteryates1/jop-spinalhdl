@@ -4,12 +4,17 @@ Goals:
 - Modernize and create a port of [jop](https://github.com/peteryates1/jop)
 - Initialally port of [core](https://github.com/peteryates1/jop/tree/main/vhdl/core) to spinalhdl/scala.
 - Create configurable systems based on particular FPGA based boards:
-    - [EP4CGX150DF27_CORE_BOARD](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD)
-    - [CYCLONE_IV_EP4CE15](https://github.com/ChinaQMTECH/CYCLONE_IV_EP4CE15)
-    - [alchitry-au](https://shop.alchitry.com/products/alchitry-au)
-    - [MAX1000](https://www.trenz-electronic.de/en/MAX1000-IoT-Maker-Board-8kLE-8-MByte-SDRAM-8-MByte-Flash-6.15-x-2.5-cm/TEI0001-04-DBC87A)
-    - [CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A)
-    - [CYC1000](https://www.trenz-electronic.de/en/CYC1000-with-Intel-Cyclone-10-LP-10CL025-C8-8-MByte-SDRAM-8-MByte-Flash/TEI0003-03-QFCT4A)
+    - Altera/Intel
+        - QMTECH
+            - [EP4CGX150DF27_CORE_BOARD](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD)
+            - [CYCLONE_IV_EP4CE15](https://github.com/ChinaQMTECH/CYCLONE_IV_EP4CE15)
+            - [Daughter Board V4](https://github.com/ChinaQMTECH/DB_FPGA)
+        - Trenz Electronic
+            - [MAX1000](https://www.trenz-electronic.de/en/MAX1000-IoT-Maker-Board-8kLE-8-MByte-SDRAM-8-MByte-Flash-6.15-x-2.5-cm/TEI0001-04-DBC87A)
+            - [CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A)
+            - [CYC1000](https://www.trenz-electronic.de/en/CYC1000-with-Intel-Cyclone-10-LP-10CL025-C8-8-MByte-SDRAM-8-MByte-Flash/TEI0003-03-QFCT4A)
+    - AMD/Xilinx
+        - [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au)
 
 
 reference: ~/git/jop - local copy of https://github.com/peteryates1/jop

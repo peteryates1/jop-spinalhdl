@@ -49,21 +49,19 @@ def parse_jop_file(filepath):
 
 
 def write32_check(ser, word):
-    """Send a 32-bit word as 4 bytes MSB-first, read echo, verify."""
+    """Send a 32-bit word as 4 bytes MSB-first, read echo after each byte."""
     data = struct.pack(">I", word & 0xFFFFFFFF)
-    ser.write(data)
-    echo = b""
-    while len(echo) < 4:
-        chunk = ser.read(4 - len(echo))
-        if not chunk:
+    for i in range(4):
+        ser.write(data[i : i + 1])
+        echo = ser.read(1)
+        if not echo:
             raise TimeoutError(
-                f"Timeout waiting for echo (got {len(echo)}/4 bytes)"
+                f"Timeout waiting for echo byte {i} of word 0x{word:08x}"
             )
-        echo += chunk
-    if echo != data:
-        raise ValueError(
-            f"Echo mismatch: sent {data.hex()}, received {echo.hex()}"
-        )
+        if echo[0] != data[i]:
+            raise ValueError(
+                f"Echo mismatch byte {i}: sent 0x{data[i]:02x}, got 0x{echo[0]:02x}"
+            )
 
 
 def print_progress(done, total, width=50):

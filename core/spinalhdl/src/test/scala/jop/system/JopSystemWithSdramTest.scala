@@ -60,24 +60,8 @@ case class JopSystemWithSdramTestHarness(
     val bmbRspData = out Bits(32 bits)
   }
 
-  // Extract JBC init from main memory
-  val mpAddr = if (mainMemInit.length > 1) mainMemInit(1).toInt else 0
-  val bootMethodStructAddr = if (mainMemInit.length > mpAddr) mainMemInit(mpAddr).toInt else 0
-  val bootMethodStartLen = if (mainMemInit.length > bootMethodStructAddr) mainMemInit(bootMethodStructAddr).toLong else 0
-  val bootCodeStart = (bootMethodStartLen >> 10).toInt
-  val bytecodeStartWord = if (bootCodeStart > 0) bootCodeStart else 35
-  val bytecodeWords = mainMemInit.slice(bytecodeStartWord, bytecodeStartWord + 512)
-
-  // Convert words to bytes (big-endian)
-  val jbcInit = bytecodeWords.flatMap { word =>
-    val w = word.toLong & 0xFFFFFFFFL
-    Seq(
-      BigInt((w >> 24) & 0xFF),
-      BigInt((w >> 16) & 0xFF),
-      BigInt((w >> 8) & 0xFF),
-      BigInt((w >> 0) & 0xFF)
-    )
-  }.padTo(2048, BigInt(0))
+  // JBC starts empty - BC_FILL must load bytecodes from SDRAM
+  val jbcInit = Seq.fill(2048)(BigInt(0))
 
   // JOP System with SDRAM backend
   val jopSystem = JopSystemWithSdram(

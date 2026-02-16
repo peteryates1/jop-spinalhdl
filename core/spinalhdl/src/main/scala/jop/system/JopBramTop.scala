@@ -239,7 +239,7 @@ object JopBramTopVerilog extends App {
 
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "generated",
+    targetDirectory = "core/spinalhdl/generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   ).generate(JopBramTop(romData, ramData, mainMemData))
 

@@ -22,9 +22,9 @@ BLASTER_TYPE ?= USB-Blaster
 SERIAL_PORT ?= /dev/ttyUSB1
 BAUD_RATE = 1000000
 
-# SpinalHDL project
-SPINALHDL_DIR = ../../core/spinalhdl
-GENERATED_V = $(SPINALHDL_DIR)/generated/JopBramTop.v
+# SpinalHDL project (sbt runs from repo root)
+PROJECT_ROOT = ../..
+GENERATED_V = $(PROJECT_ROOT)/core/spinalhdl/generated/JopBramTop.v
 
 # Quartus project
 QP = jop_bram
@@ -47,7 +47,7 @@ run: program monitor
 # --------------------------------------------------------------------------
 
 generate:
-	cd $(SPINALHDL_DIR) && sbt "runMain jop.system.JopBramTopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopBramTopVerilog"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
 
 # --------------------------------------------------------------------------

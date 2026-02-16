@@ -27,10 +27,10 @@ BAUD_RATE = 1000000
 # JOP application file
 JOP_FILE ?= /home/peter/git/jopmin/java/Smallest/HelloWorld.jop
 
-# Project paths
-SPINALHDL_DIR = ../../core/spinalhdl
+# Project paths (sbt runs from repo root)
+PROJECT_ROOT = ../..
 ASM_DIR = ../../asm
-GENERATED_V = $(SPINALHDL_DIR)/generated/JopSdramTop.v
+GENERATED_V = $(PROJECT_ROOT)/core/spinalhdl/generated/JopSdramTop.v
 
 # Quartus project
 QP = jop_sdram
@@ -66,7 +66,7 @@ microcode:
 # --------------------------------------------------------------------------
 
 generate:
-	cd $(SPINALHDL_DIR) && sbt "runMain jop.system.JopSdramTopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopSdramTopVerilog"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
 
 # --------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import spinal.lib.com.uart._
 import spinal.lib.io.InOutWrapper
 import spinal.lib.memory.sdram.sdr._
 import jop.utils.JopFileLoader
+import jop.pipeline.JumpTableInitData
 
 /**
  * DRAM PLL BlackBox
@@ -65,11 +66,15 @@ case class JopSdramTop(
   // SDRAM clock output (PLL c2: 100 MHz with -3ns phase shift)
   io.sdram_clk := pll.io.c2
 
+  // Diagnostic: LED[0] directly from PLL locked (works even if mainArea stuck)
+  // Will be overridden by mainArea assignment — keep LED[1] for RX diagnostic
+  io.led(0) := ~pll.io.locked
+
   // ========================================================================
   // Reset Generator (on PLL c1 = 100 MHz)
   // ========================================================================
 
-  // Raw clock domain from PLL c1 (no reset yet)
+  // Raw clock domain from PLL c1 (100 MHz, no reset yet)
   val rawClockDomain = ClockDomain(
     clock = pll.io.c1,
     config = ClockDomainConfig(resetKind = BOOT)
@@ -101,7 +106,7 @@ case class JopSdramTop(
 
   val mainArea = new ClockingArea(mainClockDomain) {
 
-    val config = JopSystemConfig()
+    val config = JopSystemConfig(jumpTable = JumpTableInitData.serial)
 
     // JBC init: empty (zeros) — BC_FILL loads bytecodes dynamically from SDRAM
     val jbcInit = Seq.fill(2048)(BigInt(0))
@@ -125,7 +130,6 @@ case class JopSdramTop(
     // UART (TX + RX)
     // ======================================================================
 
-    // 5x oversampling: 100MHz / (100 * 5) = 200,000... no.
     // At 100 MHz: clockDivider for 1 Mbaud with 5x oversampling
     // divider = 100MHz / (1Mbaud * 5) = 20 => exact 1 Mbaud
     val uartCtrl = new UartCtrl(UartCtrlGenerics(
@@ -151,8 +155,16 @@ case class JopSdramTop(
     // UART RX input
     uartCtrl.io.uart.rxd := io.ser_rxd
 
-    // RX: default ready = False, asserted for one cycle on I/O read
-    uartCtrl.io.read.ready := False
+    // RX FIFO: UartCtrl.read.valid is a ONE-CYCLE PULSE (RegNext(False)),
+    // so we must buffer it. Matches VHDL sc_uart which uses a FIFO for RX.
+    // rxFifo.pop.valid stays high until consumed (proper Stream protocol).
+    val rxFifo = StreamFifo(Bits(8 bits), 16)
+    rxFifo.io.push.valid := uartCtrl.io.read.valid
+    rxFifo.io.push.payload := uartCtrl.io.read.payload
+    uartCtrl.io.read.ready := rxFifo.io.push.ready
+
+    // RX consume: driven by I/O decode when JOP reads UART data register
+    rxFifo.io.pop.ready := False
 
     // ======================================================================
     // I/O Decode (combinational, matching JopBramTop)
@@ -186,13 +198,13 @@ case class JopSdramTop(
         switch(ioSubAddr) {
           is(0) {
             // Status: bit 0 = TX FIFO not full (TDRE), bit 1 = RX data available (RDRF)
-            ioRdData := B(0, 30 bits) ## uartCtrl.io.read.valid.asBits ## txFifo.io.availability.orR.asBits
+            ioRdData := B(0, 30 bits) ## rxFifo.io.pop.valid.asBits ## txFifo.io.availability.orR.asBits
           }
           is(1) {
-            // Data read: return RX byte, consume from stream
-            ioRdData := B(0, 24 bits) ## uartCtrl.io.read.payload
+            // Data read: return RX byte and consume it from RX FIFO
+            ioRdData := B(0, 24 bits) ## rxFifo.io.pop.payload
             when(jopSdram.io.ioRd) {
-              uartCtrl.io.read.ready := True
+              rxFifo.io.pop.ready := True
             }
           }
         }
@@ -246,7 +258,7 @@ object JopSdramTopVerilog extends App {
 
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "generated",
+    targetDirectory = "core/spinalhdl/generated",
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
   ).generate(InOutWrapper(JopSdramTop(romData, ramData)))
 
