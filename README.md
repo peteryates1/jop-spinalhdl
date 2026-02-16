@@ -1,50 +1,23 @@
-# JOP - Java Optimized Processor (SpinalHDL Port)
+# JOP - Java Optimized Processor (SpinalHDL)
 
-Modernization and port of the [Java Optimized Processor](https://github.com/peteryates1/jop) from VHDL to SpinalHDL.
+A complete reimplementation of the [Java Optimized Processor](https://github.com/peteryates1/jop) in SpinalHDL. Runs Java programs on FPGA hardware with BRAM or SDRAM memory backends.
+
+## Status
+
+**Working on hardware.** The processor boots and runs Java programs ("Hello World!" in a loop) on the QMTECH EP4CGX150 board:
+
+- **BRAM mode**: Self-contained at 50 MHz, program embedded in block RAM
+- **SDRAM mode**: Serial boot at 100 MHz, downloads `.jop` files over UART into W9825G6JH6 SDRAM
 
 ## Project Goals
 
-- Modernize the JOP processor implementation
-- Port core from VHDL to SpinalHDL/Scala
-- Create configurable systems for various FPGA boards
-- Maintain cycle-accurate compatibility with original
-- Upgrade Java target from JDK 1.5/1.6 to modern versions
+- Port JOP from VHDL to SpinalHDL/Scala for modern tooling and configurability
+- Maintain cycle-accurate compatibility with the original implementation
+- Target multiple FPGA boards with configurable system generation
+- Upgrade Java target from JDK 1.5/1.6 to modern versions (future)
 
-## Project Structure
+## Architecture
 
-```
-jop/
-├── original/              # Reference VHDL implementation
-│   └── vhdl/core/
-├── verification/          # Test infrastructure
-│   ├── test-vectors/     # Shared JSON test vectors
-│   ├── cocotb/           # Python/CocoTB/GHDL tests
-│   └── scalatest/        # Scala/SpinalSim tests
-├── core/
-│   └── spinalhdl/        # New SpinalHDL implementation
-├── asm/                   # Microcode assembler (NEW)
-│   ├── src/              # Microcode source (jvm.asm)
-│   ├── generated/        # Generated files (jtbl.vhd, JumpTableData.scala, etc.)
-│   └── Makefile          # Microcode build system
-├── java/                  # Java tooling (NEW)
-│   └── jopa/             # Jopa microcode assembler
-│       ├── src/          # Jopa source code
-│       ├── dist/         # Built jopa.jar
-│       └── Makefile      # Jopa build system
-├── docs/
-│   ├── agents/           # Agent workflow documentation
-│   ├── verification/     # Test documentation and guides
-│   └── test-vectors/     # Test vector format specification
-└── tools/
-    └── scripts/          # Build and validation tools
-```
-
-## Supported FPGA Boards
-
-- [EP4CGX150DF27_CORE_BOARD](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) - Cyclone IV GX
-- [Alchitry Au](https://shop.alchitry.com/products/alchitry-au) - Xilinx Artix-7
-
-## Pipeline Architecture
 ```
  ┌──────────────┐                    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
  │   bytecode   │                    │  microcode   │    │  microcode   │    │  microcode   │
@@ -56,230 +29,164 @@ jop/
 │┌──────┴───────┐│ ┌──────┴───────┐  ┌──────┴───────┐ |  ┌──────────────┐    ┌──────┴───────┐  |
 │| method cache ││ |  jump tbl    │  │microcode rom │ └──│ Address Gen  ├───▶│ stack buffer │  |
 │└──────────────┘│ └──────────────┘  └──────────────┘    └──────────────┘    └──────────────┘  |
-|     memory     │                                                                             | 
+|     memory     │                                                                             |
 |   controller   │◀────────────────────────────────────────────────────────────────────────────┘
 └───────┬────────┘
-        │  Simp Con
+        │  BMB Bus
         ├────────────────┐
  ┌──────┴───────┐ ┌──────┴───────┐
  |    memory    │ |     i/o      │
- |  interface   │ |  interfaces  │
+ | (BRAM/SDRAM) │ |  (UART)     │
  └──────────────┘ └──────────────┘
 ```
-## Development Workflow
 
-The project uses a multi-agent approach for systematic migration:
+The pipeline fetches Java bytecodes, translates them via a jump table into microcode addresses, fetches and decodes microcode instructions, then executes them on a two-register stack machine with a 128-entry on-chip stack buffer.
 
-### Agents
+Memory access uses SpinalHDL's BMB (Bus Master Bridge) interconnect, supporting both on-chip BRAM (single-cycle response) and off-chip SDR SDRAM (variable latency with automatic pipeline stalling).
 
-1. **vhdl-tester** - Creates golden reference tests using CocoTB/GHDL
-2. **spinalhdl-developer** - Implements SpinalHDL port of VHDL modules
-3. **spinalhdl-tester** - Creates equivalent tests using ScalaTest/SpinalSim
-4. **reviewer** - Validates equivalence and quality across all agents
+## Project Structure
 
-See [docs/agents/](docs/agents/) for detailed workflow documentation.
-
-### Test Vectors
-
-Test vectors are maintained in JSON format and shared between CocoTB (Python) and ScalaTest (Scala) test suites. This ensures a single source of truth.
-
-- Format specification: [docs/test-vectors/test-vector-format.md](docs/test-vectors/test-vector-format.md)
-- Schema: [verification/test-vectors/schema/test-vector-schema.json](verification/test-vectors/schema/test-vector-schema.json)
-- Modules: [verification/test-vectors/modules/](verification/test-vectors/modules/)
-
-## Reference Files
-
-### VHDL Reference (jopmin - minimal working JOP)
 ```
-/home/peter/git/jopmin/vhdl/         # VHDL source files
-/home/peter/git/jopmin/asm/generated/ # Generated files (jtbl.vhd, mem_rom.dat, etc.)
-/home/peter/git/jopmin/java/         # Java sources (JOP runtime, tools, Jopa assembler)
+jop/
+├── core/spinalhdl/src/main/scala/jop/
+│   ├── pipeline/              # Pipeline stages (fetch, decode, stack, bytecode)
+│   ├── memory/                # Memory controller, method cache, SDRAM ctrl
+│   ├── system/                # System integration (JopSystem, FPGA tops)
+│   ├── types/                 # JOP types and constants
+│   └── utils/                 # File loaders, utilities
+├── core/spinalhdl/src/test/scala/jop/
+│   ├── system/                # System-level simulations (BRAM, SDRAM, serial boot)
+│   ├── memory/                # Memory controller tests
+│   └── pipeline/              # Pipeline stage tests
+├── asm/
+│   ├── src/                   # Microcode source (jvm.asm, echo.asm)
+│   └── generated/             # Generated jump tables, ROM/RAM data
+├── fpga/
+│   ├── qmtech-ep4cgx150-bram/ # BRAM FPGA project (Quartus)
+│   └── qmtech-ep4cgx150-sdram/# SDRAM FPGA project (Quartus)
+├── java/jopa/                 # Jopa microcode assembler
+├── verification/
+│   ├── cocotb/                # CocoTB/GHDL golden reference tests
+│   ├── test-vectors/          # Shared JSON test vectors
+│   └── scalatest/             # ScalaTest utilities
+├── original/vhdl/             # Reference VHDL implementation
+├── docs/                      # Architecture and verification docs
+└── build.sbt                  # Top-level SBT build
 ```
-
-### JOP Program Files
-```
-/home/peter/workspaces/jop/          # Compiled JOP programs (.jop files)
-```
-
-Core files have been copied to `original/vhdl/core/` for convenience, but the full repository should be referenced for context.
-
-- [original/REFERENCE.md](original/REFERENCE.md) - Guide to reference repository structure
-- [docs/MODULE_DEPENDENCIES.md](docs/MODULE_DEPENDENCIES.md) - Module dependency graph and translation order
-- [docs/MICROCODE_AND_ROMS.md](docs/MICROCODE_AND_ROMS.md) - **CRITICAL**: Jump table (jtbl.vhd) and microcode ROM
-- [docs/JOPA_TOOL.md](docs/JOPA_TOOL.md) - Jopa microcode assembler (generates jtbl.vhd, rom.vhd, etc.)
-- [docs/JOPA-SCALA-GENERATION-SUMMARY.md](docs/JOPA-SCALA-GENERATION-SUMMARY.md) - **NEW**: Scala jump table generation for SpinalHDL
-- [docs/BYTECODE-FETCH-PLAN.md](docs/BYTECODE-FETCH-PLAN.md) - **NEW**: Bytecode fetch implementation plan
-- [docs/STACK_ARCHITECTURE.md](docs/STACK_ARCHITECTURE.md) - Stack buffer layout (SP starts at 64!)
-- [docs/verification/INTEGRATION-TESTING-GUIDE.md](docs/verification/INTEGRATION-TESTING-GUIDE.md) - Integration testing methodology
-- [docs/verification/STACK-COVERAGE-SUMMARY.md](docs/verification/STACK-COVERAGE-SUMMARY.md) - Test coverage summary
-- [docs/agents/REFERENCE_FILES.md](docs/agents/REFERENCE_FILES.md) - How agents should reference files
-- [.reference-paths](.reference-paths) - Shell helper functions for file access
 
 ## Getting Started
 
 ### Prerequisites
 
-#### For Microcode Assembly (Required)
-- Java 8+ (for Jopa assembler)
-- gcc (for C preprocessor)
-- make
+- **Java 11+** and **sbt** (Scala Build Tool)
+- **Verilator** (simulation backend for SpinalSim)
+- **Java 8+**, **gcc**, **make** (for Jopa microcode assembler)
+- **Quartus Prime** (for FPGA synthesis, optional)
+- **Python 3.8+**, **GHDL**, **CocoTB** (for VHDL reference tests, optional)
 
-#### For VHDL Testing (CocoTB)
-- Python 3.8+
-- GHDL (VHDL simulator)
-- CocoTB framework
-- pytest
+### Build and Run Simulation
 
-#### For SpinalHDL Development
-- Java 11+
-- Scala 2.13
-- sbt (Scala Build Tool)
-- SpinalHDL
-
-#### For SpinalSim Testing
-- Verilator (for simulation backend)
-- ScalaTest
-
-### Setup
-
-1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd jop
-```
+# 1. Build microcode assembler and generate microcode
+cd java/jopa && make
+cd ../../asm && make
 
-2. Build microcode assembler and generate microcode:
-```bash
-# Build Jopa assembler
-cd java/jopa
-make
-
-# Generate microcode (jtbl.vhd, JumpTableData.scala, rom.vhd, etc.)
-cd ../../asm
-make
-```
-
-**Generated files:**
-- `asm/generated/jtbl.vhd` - VHDL jump table (Java bytecode → microcode address)
-- `asm/generated/JumpTableData.scala` - Scala jump table (for SpinalHDL)
-- `asm/generated/rom.vhd` - Microcode ROM (VHDL)
-- `asm/generated/mem_rom.dat` - Microcode ROM (simulation data)
-- `asm/generated/mem_ram.dat` - Stack RAM initialization
-
-3. Setup Python environment for CocoTB:
-```bash
-cd verification/cocotb
-python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-pip install cocotb pytest ghdl
-```
-
-4. Setup Scala/SpinalHDL:
-```bash
-cd core/spinalhdl
+# 2. Compile SpinalHDL (from project root)
 sbt compile
-# Note: Automatically includes asm/generated/JumpTableData.scala
+
+# 3. Run BRAM simulation (prints "Hello World!" in a loop)
+sbt "Test / runMain jop.system.JopSystemBramSim"
+
+# 4. Run SDRAM simulation
+sbt "Test / runMain jop.system.JopSystemWithSdramSim"
 ```
 
-### Build System
-
-#### Microcode Assembly
-The microcode assembler (Jopa) generates both VHDL and Scala outputs from the microcode source:
+### Build for FPGA
 
 ```bash
-cd asm
-make              # Assembles jvm.asm → generates all outputs
-make clean        # Clean generated files
+# BRAM target (self-contained, 50 MHz)
+cd fpga/qmtech-ep4cgx150-bram
+make generate    # Generate Verilog from SpinalHDL
+make build       # Quartus synthesis
+make program     # Program FPGA via USB-Blaster
+make monitor     # Open serial monitor (1 Mbaud)
+
+# SDRAM target (serial boot, 100 MHz)
+cd fpga/qmtech-ep4cgx150-sdram
+make microcode   # Assemble serial boot microcode
+make generate    # Generate Verilog
+make build       # Quartus synthesis
+make program     # Program FPGA
+make download    # Download HelloWorld.jop over UART
+make monitor     # Watch serial output
 ```
-
-**Build Process:**
-1. gcc preprocessor → expands macros in `jvm.asm`
-2. Jopa assembler → generates:
-   - `jtbl.vhd` (VHDL jump table)
-   - `JumpTableData.scala` (Scala jump table) ← **NEW**
-   - `rom.vhd` (microcode ROM)
-   - `mem_rom.dat`, `mem_ram.dat` (simulation data)
-
-**Note:** SpinalHDL's `build.sbt` automatically includes `asm/generated/` as a source directory, so `JumpTableData.scala` is available to all SpinalHDL components.
 
 ### Running Tests
 
-#### Validate Test Vectors
 ```bash
-python tools/scripts/validate_vectors.py
-```
-
-#### Run CocoTB Tests
-```bash
-cd verification/cocotb
-make TOPLEVEL=<module> MODULE=tests.test_<module>
-```
-
-#### Run ScalaTest Tests
-```bash
-cd core/spinalhdl
+# SpinalSim tests (Verilator)
 sbt test
+
+# Latency sweep (verify correct operation at 0-5 extra memory cycles)
+sbt "Test / runMain jop.system.JopSystemLatencySweep"
+
+# Reference simulator
+sbt "runMain jop.JopSimulatorSim"
+
+# CocoTB/GHDL reference tests
+cd verification/cocotb && make test_jop_simulator
 ```
 
-#### Generate VHDL from SpinalHDL
-```bash
-cd core/spinalhdl
-sbt "runMain jop.JopCore"
-# Output in: core/spinalhdl/generated/
-```
+## Supported FPGA Boards
 
-## Migration Status
+| Board | FPGA | Memory | Status |
+|-------|------|--------|--------|
+| [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Cyclone IV GX | BRAM | Working at 50 MHz |
+| [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Cyclone IV GX | W9825G6JH6 SDRAM | Working at 100 MHz |
 
-### Completed Components
+### Planned
 
-**✅ Microcode Fetch Stage** (FetchStage.scala)
-- 100% verified with CocoTB tests
-- ROM-based microcode fetch
-- Integration with decode stage
+- [QMTECH EP4CE15](https://github.com/ChinaQMTECH/CYCLONE_IV_EP4CE15) - Cyclone IV E
+- [Trenz MAX1000](https://www.trenz-electronic.de/en/MAX1000-IoT-Maker-Board-8kLE-8-MByte-SDRAM-8-MByte-Flash-6.15-x-2.5-cm/TEI0001-04-DBC87A) - MAX 10
+- [Trenz CYC1000](https://www.trenz-electronic.de/en/CYC1000-with-Intel-Cyclone-10-LP-10CL025-C8-8-MByte-SDRAM-8-MByte-Flash/TEI0003-03-QFCT4A) - Cyclone 10 LP
+- [Trenz CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) - Cyclone V E
+- [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au) - Xilinx Artix-7
 
-**✅ Decode Stage** (DecodeStage.scala)
-- 100% verified with CocoTB tests
-- All 45 microcode instructions tested
-- Control signal generation
+## Implementation Status
 
-**✅ Stack Stage** (StackStage.scala)
-- ⭐ 98/100 code review score - Production ready
-- 73 unit tests passing (100%)
-- Full stack buffer implementation
-- ALU, shifter, comparison logic
+### Complete
 
-**✅ Pipeline Integration** (JopCore.scala)
-- 61 tests passing (100%)
-- Phases 1-3 complete
-- System-level validation
+- **Pipeline**: All four stages — bytecode fetch/translate, microcode fetch, decode, execute (stack)
+- **Memory controller**: BMB bus with two-layer design (combinational + state machine for BC fill, getfield, iaload)
+- **Method cache**: Bytecode cache with dynamic loading from main memory
+- **Stack buffer**: 128-entry on-chip RAM with spill/fill, ALU, shifter, 33-bit comparator
+- **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
+- **Multiplier**: 17-cycle radix-4 Booth multiplier
+- **UART**: TX with FIFO, RX with FIFO buffer (works around SpinalHDL UartCtrl one-cycle valid pulse)
+- **BRAM system**: `JopBramTop` — complete system with on-chip memory, runs at 50 MHz
+- **SDRAM system**: `JopSdramTop` — serial boot over UART into SDR SDRAM, runs at 100 MHz
+- **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
+- **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), echo test
 
-**✅ Microcode Tooling** (Jopa assembler)
-- Generates VHDL jump table (jtbl.vhd)
-- Generates Scala jump table (JumpTableData.scala) ← **NEW**
-- Microcode ROM generation
-- Integrated build system
+### Next Steps
 
-### In Progress
+- Method cache optimization for SDRAM performance
+- Burst transfers for SDRAM
+- Additional FPGA board targets
+- JDK modernization
 
-**🔄 Bytecode Fetch Stage** (BytecodeFetchStage.scala)
-- Planning complete
-- Jump table data generation ready
-- See [docs/BYTECODE-FETCH-PLAN.md](docs/BYTECODE-FETCH-PLAN.md) for details
+## Key Technical Details
 
-### Deferred
-
-**Method Cache, Memory Interface** - Phases B & C
-**Interrupt/Exception Handling** - Phase E
-
-See [NEXT-STEPS.md](NEXT-STEPS.md) and [docs/BYTECODE-FETCH-PLAN.md](docs/BYTECODE-FETCH-PLAN.md) for detailed roadmap.
-
-## Contributing
-
-This is a systematic migration project following the agent workflows documented in [docs/agents/](docs/agents/).
+- **Bus**: SpinalHDL BMB (Bus Master Bridge). BRAM gives single-cycle accept, next-cycle response (matches original SimpCon `rdy_cnt=1`). SDRAM stalls automatically via busy signal.
+- **Memory controller**: Layer 1 is combinational (simple rd/wr). Layer 2 is a state machine for multi-cycle operations (bytecode fill, getfield, array access).
+- **Handle format**: `H[0]` = data pointer, `H[1]` = array length. Array elements start at `data_ptr[0]`.
+- **Serial boot**: Microcode polls UART for incoming bytes, assembles 4 bytes into 32-bit words, writes to SDRAM. Download script (`download.py`) sends `.jop` files with byte-by-byte echo verification.
+- **UART RX workaround**: SpinalHDL's `UartCtrl` emits `read.valid` as a one-cycle pulse (`RegNext(False)`). A 16-entry `StreamFifo` buffers received bytes so `pop.valid` stays high until consumed — matching the original VHDL `sc_uart` FIFO behavior.
 
 ## References
 
 - Original JOP: https://github.com/peteryates1/jop
+- JOP Thesis: Martin Schoeberl, "JOP: A Java Optimized Processor for Embedded Real-Time Systems"
 - SpinalHDL: https://spinalhdl.github.io/SpinalDoc-RTD/
 - CocoTB: https://docs.cocotb.org/
 
