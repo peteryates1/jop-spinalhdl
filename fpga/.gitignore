@@ -9,3 +9,4 @@ output_files/
 *.smsg
 *.summary
 *.pin
+*.qws

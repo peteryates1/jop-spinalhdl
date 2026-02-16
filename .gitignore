@@ -55,6 +55,8 @@ core/spinalhdl/*.vhd
 core/spinalhdl/*.v
 core/spinalhdl/simWorkspace/
 core/spinalhdl/tmp/
+core/spinalhdl/spinal/
+simWorkspace/
 
 # Quartus build artifacts (project source files .qpf/.qsf/.sdc tracked per project)
 *.rpt
