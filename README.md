@@ -173,6 +173,7 @@ cd verification/cocotb && make test_jop_simulator
 
 - Method cache optimization for SDRAM performance
 - Burst transfers for SDRAM
+- original JOP has Object/Array cache - should we look at adding those?
 - Xilinx/AMD Xilinx Artix-7 and DDR3 on Alchitry Au
   - Method cache optimization for DDR3 performance
 - Multicore
