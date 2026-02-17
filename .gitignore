@@ -19,6 +19,7 @@ build/
 /spinalhdl/target/
 /project/target/
 project/project/
+spinalhdl/project/
 .bsp/
 .metals/
 .bloop/
