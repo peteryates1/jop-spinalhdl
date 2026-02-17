@@ -21,7 +21,7 @@ QUARTUS_BIN = $(QUARTUS_DIR)/bin
 BLASTER_TYPE ?= USB-Blaster
 
 # Serial port for UART
-SERIAL_PORT ?= /dev/ttyUSB1
+SERIAL_PORT ?= /dev/ttyUSB0
 BAUD_RATE = 1000000
 
 # JOP application file

@@ -2,9 +2,9 @@ package jop.system
 
 import spinal.core._
 import spinal.lib._
-import spinal.lib.com.uart._
 import spinal.lib.io.InOutWrapper
 import spinal.lib.memory.sdram.sdr._
+import jop.io.{BmbSys, BmbUart}
 import jop.utils.JopFileLoader
 import jop.memory.JopMemoryConfig
 import jop.pipeline.JumpTableInitData
@@ -129,119 +129,43 @@ case class JopSdramTop(
     jopCoreWithSdram.io.irqEna := False
 
     // ======================================================================
-    // UART (TX + RX)
+    // I/O Slaves
     // ======================================================================
-
-    // At 100 MHz: clockDivider for 1 Mbaud with 5x oversampling
-    // divider = 100MHz / (1Mbaud * 5) = 20 => exact 1 Mbaud
-    val uartCtrl = new UartCtrl(UartCtrlGenerics(
-      preSamplingSize = 1, samplingSize = 3, postSamplingSize = 1  // 5 samples/bit
-    ))
-    uartCtrl.io.config.setClockDivider(1000000 Hz)
-    uartCtrl.io.config.frame.dataLength := 7  // 8 bits (0-indexed)
-    uartCtrl.io.config.frame.parity := UartParityType.NONE
-    uartCtrl.io.config.frame.stop := UartStopType.ONE
-    uartCtrl.io.writeBreak := False
-
-    // TX FIFO: 16-entry buffer between JOP I/O writes and UART
-    val txFifo = StreamFifo(Bits(8 bits), 16)
-
-    // Connect FIFO output to UART TX
-    uartCtrl.io.write.valid := txFifo.io.pop.valid
-    uartCtrl.io.write.payload := txFifo.io.pop.payload
-    txFifo.io.pop.ready := uartCtrl.io.write.ready
-
-    // UART TX output
-    io.ser_txd := uartCtrl.io.uart.txd
-
-    // UART RX input
-    uartCtrl.io.uart.rxd := io.ser_rxd
-
-    // RX FIFO: UartCtrl.read.valid is a ONE-CYCLE PULSE (RegNext(False)),
-    // so we must buffer it. Matches VHDL sc_uart which uses a FIFO for RX.
-    // rxFifo.pop.valid stays high until consumed (proper Stream protocol).
-    val rxFifo = StreamFifo(Bits(8 bits), 16)
-    rxFifo.io.push.valid := uartCtrl.io.read.valid
-    rxFifo.io.push.payload := uartCtrl.io.read.payload
-    uartCtrl.io.read.ready := rxFifo.io.push.ready
-
-    // RX consume: driven by I/O decode when JOP reads UART data register
-    rxFifo.io.pop.ready := False
-
-    // ======================================================================
-    // I/O Decode (combinational, matching JopBramTop)
-    // ======================================================================
-
-    // System counter (free-running)
-    val sysCntReg = Reg(UInt(32 bits)) init(0)
-    sysCntReg := sysCntReg + 1
-
-    // Watchdog register
-    val wdReg = Reg(Bits(32 bits)) init(0)
-
-    // I/O read data - COMBINATIONAL
-    val ioRdData = Bits(32 bits)
-    ioRdData := 0
 
     val ioSubAddr = jopCoreWithSdram.io.ioAddr(3 downto 0)
     val ioSlaveId = jopCoreWithSdram.io.ioAddr(5 downto 4)
 
-    // I/O read handling
+    // System I/O (slave 0)
+    val bmbSys = BmbSys(clkFreqHz = 100000000L)
+    bmbSys.io.addr := ioSubAddr
+    bmbSys.io.rd := jopCoreWithSdram.io.ioRd && ioSlaveId === 0
+    bmbSys.io.wr := jopCoreWithSdram.io.ioWr && ioSlaveId === 0
+    bmbSys.io.wrData := jopCoreWithSdram.io.ioWrData
+
+    // UART (slave 1)
+    val bmbUart = BmbUart()
+    bmbUart.io.addr := ioSubAddr
+    bmbUart.io.rd := jopCoreWithSdram.io.ioRd && ioSlaveId === 1
+    bmbUart.io.wr := jopCoreWithSdram.io.ioWr && ioSlaveId === 1
+    bmbUart.io.wrData := jopCoreWithSdram.io.ioWrData
+    io.ser_txd := bmbUart.io.txd
+    bmbUart.io.rxd := io.ser_rxd
+
+    // I/O read mux
+    val ioRdData = Bits(32 bits)
+    ioRdData := 0
     switch(ioSlaveId) {
-      is(0) {  // System
-        switch(ioSubAddr) {
-          is(0) { ioRdData := sysCntReg.asBits }        // Counter
-          is(1) { ioRdData := sysCntReg.asBits }        // Microsecond counter
-          is(6) { ioRdData := B(0, 32 bits) }           // CPU ID
-          is(7) { ioRdData := B(0, 32 bits) }           // Signal
-        }
-      }
-      is(1) {  // UART
-        switch(ioSubAddr) {
-          is(0) {
-            // Status: bit 0 = TX FIFO not full (TDRE), bit 1 = RX data available (RDRF)
-            ioRdData := B(0, 30 bits) ## rxFifo.io.pop.valid.asBits ## txFifo.io.availability.orR.asBits
-          }
-          is(1) {
-            // Data read: return RX byte and consume it from RX FIFO
-            ioRdData := B(0, 24 bits) ## rxFifo.io.pop.payload
-            when(jopCoreWithSdram.io.ioRd) {
-              rxFifo.io.pop.ready := True
-            }
-          }
-        }
-      }
+      is(0) { ioRdData := bmbSys.io.rdData }
+      is(1) { ioRdData := bmbUart.io.rdData }
     }
     jopCoreWithSdram.io.ioRdData := ioRdData
-
-    // I/O write handling
-    txFifo.io.push.valid := False
-    txFifo.io.push.payload := 0
-
-    when(jopCoreWithSdram.io.ioWr) {
-      switch(ioSlaveId) {
-        is(0) {  // System
-          switch(ioSubAddr) {
-            is(3) { wdReg := jopCoreWithSdram.io.ioWrData }    // Watchdog
-          }
-        }
-        is(1) {  // UART
-          switch(ioSubAddr) {
-            is(1) {  // UART data write
-              txFifo.io.push.valid := True
-              txFifo.io.push.payload := jopCoreWithSdram.io.ioWrData(7 downto 0)
-            }
-          }
-        }
-      }
-    }
 
     // ======================================================================
     // LED Driver
     // ======================================================================
 
     // LEDs from watchdog register (active low on QMTECH board)
-    io.led := ~wdReg(1 downto 0)
+    io.led := ~bmbSys.io.wd(1 downto 0)
   }
 }
 

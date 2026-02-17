@@ -3,7 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import spinal.lib.com.uart._
+import jop.io.{BmbSys, BmbUart}
 import jop.utils.JopFileLoader
 import jop.memory.JopMemoryConfig
 
@@ -130,100 +130,43 @@ case class JopBramTop(
     jopCore.io.irqEna := False
 
     // ======================================================================
-    // UART
+    // I/O Slaves
     // ======================================================================
-
-    // At 100 MHz: clockDivider for 1 Mbaud with 5x oversampling
-    // divider = 100MHz / (1Mbaud * 5) = 20 => exact 1 Mbaud
-    val uartCtrl = new UartCtrl(UartCtrlGenerics(
-      preSamplingSize = 1, samplingSize = 3, postSamplingSize = 1  // 5 samples/bit
-    ))
-    uartCtrl.io.config.setClockDivider(1000000 Hz)
-    uartCtrl.io.config.frame.dataLength := 7  // 8 bits (0-indexed)
-    uartCtrl.io.config.frame.parity := UartParityType.NONE
-    uartCtrl.io.config.frame.stop := UartStopType.ONE
-
-    // TX FIFO: 16-entry buffer between JOP I/O writes and UART
-    val txFifo = StreamFifo(Bits(8 bits), 16)
-
-    // Connect FIFO output to UART TX
-    uartCtrl.io.write.valid := txFifo.io.pop.valid
-    uartCtrl.io.write.payload := txFifo.io.pop.payload
-    txFifo.io.pop.ready := uartCtrl.io.write.ready
-
-    // Unused UART signals
-    uartCtrl.io.uart.rxd := True
-    uartCtrl.io.read.ready := False
-    uartCtrl.io.writeBreak := False
-
-    // UART TX output
-    io.ser_txd := uartCtrl.io.uart.txd
-
-    // ======================================================================
-    // I/O Decode (combinational, matching JopCoreTestHarness)
-    // ======================================================================
-
-    // System counter (free-running)
-    val sysCntReg = Reg(UInt(32 bits)) init(0)
-    sysCntReg := sysCntReg + 1
-
-    // Watchdog register
-    val wdReg = Reg(Bits(32 bits)) init(0)
-
-    // I/O read data - COMBINATIONAL
-    val ioRdData = Bits(32 bits)
-    ioRdData := 0
 
     val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
     val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
 
-    // I/O read handling
+    // System I/O (slave 0)
+    val bmbSys = BmbSys(clkFreqHz = 100000000L)
+    bmbSys.io.addr := ioSubAddr
+    bmbSys.io.rd := jopCore.io.ioRd && ioSlaveId === 0
+    bmbSys.io.wr := jopCore.io.ioWr && ioSlaveId === 0
+    bmbSys.io.wrData := jopCore.io.ioWrData
+
+    // UART (slave 1)
+    val bmbUart = BmbUart()
+    bmbUart.io.addr := ioSubAddr
+    bmbUart.io.rd := jopCore.io.ioRd && ioSlaveId === 1
+    bmbUart.io.wr := jopCore.io.ioWr && ioSlaveId === 1
+    bmbUart.io.wrData := jopCore.io.ioWrData
+    io.ser_txd := bmbUart.io.txd
+    bmbUart.io.rxd := True  // No RX in BRAM top
+
+    // I/O read mux
+    val ioRdData = Bits(32 bits)
+    ioRdData := 0
     switch(ioSlaveId) {
-      is(0) {  // System
-        switch(ioSubAddr) {
-          is(0) { ioRdData := sysCntReg.asBits }        // Counter
-          is(1) { ioRdData := sysCntReg.asBits }        // Microsecond counter
-          is(6) { ioRdData := B(0, 32 bits) }           // CPU ID
-          is(7) { ioRdData := B(0, 32 bits) }           // Signal
-        }
-      }
-      is(1) {  // UART
-        switch(ioSubAddr) {
-          is(0) { ioRdData := B(0, 31 bits) ## txFifo.io.availability.orR.asBits }  // Status: bit 0 = TX FIFO not full
-        }
-      }
+      is(0) { ioRdData := bmbSys.io.rdData }
+      is(1) { ioRdData := bmbUart.io.rdData }
     }
     jopCore.io.ioRdData := ioRdData
-
-    // I/O write handling
-    // FIFO push defaults
-    txFifo.io.push.valid := False
-    txFifo.io.push.payload := 0
-
-    when(jopCore.io.ioWr) {
-      switch(ioSlaveId) {
-        is(0) {  // System
-          switch(ioSubAddr) {
-            is(3) { wdReg := jopCore.io.ioWrData }    // Watchdog
-          }
-        }
-        is(1) {  // UART
-          switch(ioSubAddr) {
-            is(1) {  // UART data write
-              txFifo.io.push.valid := True
-              txFifo.io.push.payload := jopCore.io.ioWrData(7 downto 0)
-            }
-          }
-        }
-      }
-    }
 
     // ======================================================================
     // LED Driver
     // ======================================================================
 
-    // LEDs directly from watchdog register (active low on QMTECH board)
-    io.led := ~wdReg(1 downto 0)
+    // LEDs from watchdog register (active low on QMTECH board)
+    io.led := ~bmbSys.io.wd(1 downto 0)
   }
 }
 
