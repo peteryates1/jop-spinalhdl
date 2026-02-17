@@ -40,7 +40,7 @@ Built with [Claude Code](https://claude.ai/claude-code).
         ├────────────────┐
  ┌──────┴───────┐ ┌──────┴───────┐
  |    memory    │ |     i/o      │
- | (BRAM/SDRAM) │ |  (UART)     │
+ | (BRAM/SDRAM) │ | (sys, uart)  │
  └──────────────┘ └──────────────┘
 ```
 
@@ -55,6 +55,7 @@ jop/
 ├── spinalhdl/src/main/scala/jop/
 │   ├── pipeline/              # Pipeline stages (fetch, decode, stack, bytecode)
 │   ├── memory/                # Memory controller, method cache, SDRAM ctrl
+│   ├── io/                    # I/O slaves (BmbSys, BmbUart)
 │   ├── system/                # System integration (JopCore, FPGA tops)
 │   ├── types/                 # JOP types and constants
 │   └── utils/                 # File loaders, utilities
@@ -69,12 +70,9 @@ jop/
 │   ├── qmtech-ep4cgx150-bram/ # BRAM FPGA project (Quartus)
 │   └── qmtech-ep4cgx150-sdram/# SDRAM FPGA project (Quartus)
 ├── java/jopa/                 # Jopa microcode assembler
-├── verification/
-│   ├── cocotb/                # CocoTB/GHDL golden reference tests
-│   ├── test-vectors/          # Shared JSON test vectors
-│   └── scalatest/             # ScalaTest utilities
-├── original/vhdl/             # Reference VHDL implementation
-├── docs/                      # Architecture and verification docs
+├── verification/cocotb/         # CocoTB/GHDL reference tests (legacy)
+├── original/vhdl/               # Reference VHDL implementation
+├── docs/                        # Architecture and reference docs
 └── build.sbt                  # Top-level SBT build
 ```
 
@@ -158,12 +156,12 @@ cd verification/cocotb && make test_jop_simulator
 ### Complete
 
 - **Pipeline**: All four stages — bytecode fetch/translate, microcode fetch, decode, execute (stack)
-- **Memory controller**: BMB bus with two-layer design (combinational + state machine for BC fill, getfield, iaload), pipelined BC fill overlaps memory reads with JBC writes
+- **Memory controller**: BMB bus with two-layer design (combinational + state machine for BC fill, getfield, iaload), pipelined BC fill overlaps memory reads with JBC writes, configurable BMB burst reads for SDRAM
 - **Method cache**: 16-block tag-only cache (32 words/block, FIFO replacement) skips redundant bytecode fills; 2-cycle hit, 3-cycle + fill on miss
 - **Stack buffer**: 256-entry on-chip RAM (64 for 32 local variables + 32 constants, 192 for operand stack) with spill/fill, ALU, shifter, 33-bit comparator
 - **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
-- **UART**: TX with FIFO, RX with FIFO buffer (works around SpinalHDL UartCtrl one-cycle valid pulse)
+- **I/O subsystem**: `BmbSys` (cycle/microsecond counters, watchdog, CPU ID) and `BmbUart` (TX/RX with 16-entry FIFOs) as reusable `jop.io` components
 - **BRAM system**: `JopBramTop` — complete system with on-chip memory at 100 MHz
 - **SDRAM system**: `JopSdramTop` — serial boot over UART into SDR SDRAM at 100 MHz
 - **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
@@ -171,27 +169,25 @@ cd verification/cocotb && make test_jop_simulator
 
 ### Next Steps
 
-- Burst transfers for SDRAM
-- original JOP has Object/Array cache - should we look at adding those?
-- sc_sys equivalent
-- Xilinx/AMD Xilinx Artix-7 and DDR3 on Alchitry Au
-  - Method cache optimization for DDR3 performance
+- Object/Array cache (O$/A$) — original JOP has these, see `docs/cache-analysis.md`
+- Xilinx/AMD Artix-7 and DDR3 on Alchitry Au
+  - Method cache optimization for DDR3 burst performance
 - Multicore
-- configuration - core(s)/system/memory/caches
-- Jopa - refactor
-- JOPizer/WCETPreprocess - refactor - updated libraries.
-- Target JDK modernization 8 as minimum
-- Port some target code over - networking, etc. 
-- Eclipse tools - for both microcode and java code want to debug using simulation verilator, remote debug for hardware in fpga.  asm file editor - with usual syntax highlight and etc.
+- Configuration — core(s)/system/memory/caches
+- Jopa refactor
+- JOPizer/WCETPreprocess — refactor, updated libraries
+- Target JDK modernization (8 as minimum)
+- Port target code — networking, etc.
+- Eclipse tooling — microcode/Java debug via Verilator simulation and FPGA remote debug
 - Additional FPGA board targets
 
 ## Key Technical Details
 
 - **Bus**: SpinalHDL BMB (Bus Master Bridge). BRAM gives single-cycle accept, next-cycle response (matches original SimpCon `rdy_cnt=1`). SDRAM stalls automatically via busy signal.
-- **Memory controller**: Layer 1 is combinational (simple rd/wr). Layer 2 is a state machine for multi-cycle operations (bytecode fill, getfield, array access). BC fill is pipelined — issues the next read while writing the previous response to JBC RAM, saving ~1 cycle per word.
+- **Memory controller**: Layer 1 is combinational (simple rd/wr). Layer 2 is a state machine for multi-cycle operations (bytecode fill, getfield, array access). BC fill is pipelined — issues the next read while writing the previous response to JBC RAM, saving ~1 cycle per word. Configurable burst reads (`burstLen=4` for SDR SDRAM).
 - **Handle format**: `H[0]` = data pointer, `H[1]` = array length. Array elements start at `data_ptr[0]`.
+- **I/O subsystem**: Reusable `BmbSys` and `BmbUart` components in `jop.io` package. System slave provides clock cycle counter, prescaled microsecond counter, watchdog register, and CPU ID. UART slave provides buffered TX/RX with 16-entry FIFOs.
 - **Serial boot**: Microcode polls UART for incoming bytes, assembles 4 bytes into 32-bit words, writes to SDRAM. Download script (`download.py`) sends `.jop` files with byte-by-byte echo verification.
-- **UART RX workaround**: SpinalHDL's `UartCtrl` emits `read.valid` as a one-cycle pulse (`RegNext(False)`). A 16-entry `StreamFifo` buffers received bytes so `pop.valid` stays high until consumed — matching the original VHDL `sc_uart` FIFO behavior.
 
 ## References
 

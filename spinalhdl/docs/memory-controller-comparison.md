@@ -1,22 +1,23 @@
 # Memory Controller Comparison: VHDL vs SpinalHDL
 
-This document compares the VHDL `mem_sc.vhd` memory controller with the current SpinalHDL implementation in `JopSimulator.scala`.
+This document compares the VHDL `mem_sc.vhd` memory controller with the SpinalHDL `BmbMemoryController`.
 
 ## Overview
 
-| Aspect | VHDL (mem_sc.vhd) | SpinalHDL (JopSimulator) |
-|--------|-------------------|--------------------------|
-| Lines of code | 1143 | ~200 (memory section) |
-| States | 38 | 7 (HandleOpState) + 4 (BcFillState) |
-| Caching | Method cache + Object cache | None |
-| Exception detection | NPE, AIOOBE, IAE | None |
+| Aspect | VHDL (mem_sc.vhd) | SpinalHDL (BmbMemoryController) |
+|--------|-------------------|-------------------------------|
+| Bus | SimpCon | BMB (Bus Master Bridge) |
+| Caching | Method cache + Object cache | Method cache |
+| BC fill | Sequential | Pipelined + configurable burst |
+| Exception detection | NPE, AIOOBE, IAE | None (future) |
 
 ## Currently Implemented in SpinalHDL
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Basic read/write (stmra/stmwd) | ✅ | Direct memory access |
-| Bytecode cache fill (stbcrd) | ✅ | Loads methods to JBC RAM |
+| Basic read/write (stmra/stmwd) | ✅ | BMB single-word access |
+| Bytecode cache fill (stbcrd) | ✅ | Pipelined, with configurable burst reads |
+| Method cache | ✅ | 16-block tag-only, FIFO replacement |
 | getfield/putfield | ✅ | Handle dereference state machine |
 | iaload/iastore | ✅ | Handle dereference state machine |
 | IO address decode | ✅ | Top 2 bits = "11" for IO |
@@ -24,23 +25,7 @@ This document compares the VHDL `mem_sc.vhd` memory controller with the current 
 
 ## Missing Features (from VHDL mem_sc.vhd)
 
-### 1. Method Cache
-
-**VHDL States:** `bc_cc`, `bc_r1`, `bc_w`, `bc_rn`, `bc_wr`, `bc_wl`
-
-**Purpose:** Block-based method cache that avoids reloading methods already in the bytecode cache.
-
-**How it works:**
-- `mcache` component tracks which methods are cached
-- On `stbcrd`, checks if method is already in cache
-- If hit: returns existing `bcstart` address immediately
-- If miss: loads method from main memory
-
-**Current behavior:** Every method invocation reloads bytecodes from main memory.
-
-**Impact:** Performance - repeated method calls are slow.
-
-### 2. Object Cache
+### 1. Object Cache
 
 **VHDL Component:** `ocache`
 
@@ -56,7 +41,7 @@ This document compares the VHDL `mem_sc.vhd` memory controller with the current 
 
 **Impact:** Performance - loops accessing object fields are slow.
 
-### 3. Null Pointer Exception Detection
+### 2. Null Pointer Exception Detection
 
 **VHDL State:** `npexc`
 
@@ -76,7 +61,7 @@ end if;
 
 **Impact:** Correctness - null dereferences go undetected.
 
-### 4. Array Bounds Exception Detection
+### 3. Array Bounds Exception Detection
 
 **VHDL State:** `abexc`
 
@@ -91,7 +76,7 @@ end if;
 
 **Impact:** Correctness - buffer overflows go undetected.
 
-### 5. Static Field Access (getstatic/putstatic)
+### 4. Static Field Access (getstatic/putstatic)
 
 **VHDL States:** `gs1`, `ps1`
 
@@ -106,7 +91,7 @@ end if;
 
 **Impact:** Unclear - needs testing.
 
-### 6. Copy Operation
+### 5. Copy Operation
 
 **VHDL States:** `cp0`, `cp1`, `cp2`, `cp3`, `cp4`, `cpstop`
 
@@ -121,7 +106,7 @@ end if;
 
 **Impact:** Performance - GC and arraycopy are slow.
 
-### 7. SCJ Scope Checking
+### 6. SCJ Scope Checking
 
 **VHDL State:** `iaexc`
 
@@ -136,22 +121,7 @@ end if;
 
 **Impact:** None for standard Java; required for SCJ compliance.
 
-### 8. SimpCon Bus Protocol
-
-**VHDL Signals:** `rdy_cnt`, `sc_mem_out`, `sc_mem_in`
-
-**Purpose:** Proper handshaking with external memory controller.
-
-**How it works:**
-- `rdy_cnt` indicates cycles until data ready
-- Supports variable latency memory (SRAM, SDRAM, etc.)
-- `atomic` signal for synchronized blocks
-
-**Current behavior:** Direct memory access assumes single-cycle latency.
-
-**Impact:** Won't work with real external memory controllers.
-
-### 9. Cache Control
+### 7. Cache Control
 
 **VHDL Signals:** `cinval`, `tm_cache`
 
@@ -240,19 +210,17 @@ Exceptions:
 
 ### Medium Priority (Performance)
 
-3. **Method cache** - Significant speedup for method-heavy code
-4. **Object cache** - Speedup for field-heavy loops
+3. **Object cache** - Speedup for field-heavy loops
 
 ### Low Priority (Special Cases)
 
-5. **Copy operation** - Only matters for GC-heavy workloads
-6. **SimpCon protocol** - Only needed for real hardware
-7. **SCJ scope checking** - Only for Safety-Critical Java
-8. **Atomic operations** - Only for multi-threaded code
+4. **Copy operation** - Only matters for GC-heavy workloads
+5. **SCJ scope checking** - Only for Safety-Critical Java
+6. **Atomic operations** - Only for multi-threaded code
 
 ## File References
 
 - VHDL implementation: `/home/peter/git/jopmin/vhdl/memory/mem_sc.vhd`
-- SpinalHDL implementation: `core/spinalhdl/src/main/scala/jop/JopSimulator.scala`
-- Method cache: `/home/peter/git/jopmin/vhdl/cache/mcache.vhd`
-- Object cache: `/home/peter/git/jopmin/vhdl/cache/ocache.vhd`
+- SpinalHDL implementation: `spinalhdl/src/main/scala/jop/memory/BmbMemoryController.scala`
+- Method cache: `spinalhdl/src/main/scala/jop/memory/MethodCache.scala`
+- Object cache (VHDL reference): `/home/peter/git/jopmin/vhdl/cache/ocache.vhd`
