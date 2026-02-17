@@ -12,6 +12,25 @@ public class String implements CharSequence {
 		value = "".value;
 	}
 	
+	/**
+	 * Creates a new String using the character sequence of the char array.
+	 * Subsequent changes to data do not affect the String.
+	 * 
+	 * @param data
+	 *            char array to copy
+	 * @throws NullPointerException
+	 *             if data is null
+	 */
+	// public String(char[] data) {
+	// this(data, 0, data.length);
+	// }
+	public String(char[] ca) {
+		int count = ca.length;
+		value = new char[count];
+		for (int i = 0; i < count; ++i)
+			value[i] = ca[i];
+	}
+	
 	public String(char[] data, int offset, int count)
 			throws IndexOutOfBoundsException {
 
@@ -41,6 +60,21 @@ public class String implements CharSequence {
 		return value[index];
 	}
 	
+	public byte[] getBytes() {
+		// XXX - Throw an error here?
+		// For now, default to the 'safe' encoding.
+		byte[] bytes = new byte[value.length];
+		for (int i = 0; i < value.length; i++) {
+			if (value[i] <= 0xFF) {
+				bytes[i] = (byte) value[i];
+			} else {
+				bytes[i] = (byte) '?';
+			}
+		}
+		return bytes;
+
+	}
+	
 	public int length() {
 		return value.length;
 	}
@@ -67,5 +101,9 @@ public class String implements CharSequence {
 	
 	public String toString() {
 		return this;
+	}
+	
+	public static String valueOf(long l) {
+		return Long.toString(l);
 	}
 }

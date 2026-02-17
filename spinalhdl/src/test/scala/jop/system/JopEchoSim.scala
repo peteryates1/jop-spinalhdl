@@ -17,7 +17,7 @@ case class JopEchoHarness(
 ) extends Component {
 
   val config = JopCoreConfig(
-    memConfig = JopMemoryConfig(mainMemSize = 32 * 1024)
+    memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)
   )
 
   val io = new Bundle {

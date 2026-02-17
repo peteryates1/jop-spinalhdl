@@ -19,7 +19,7 @@ case class JopCoreTestHarness(
 ) extends Component {
 
   val config = JopCoreConfig(
-    memConfig = JopMemoryConfig(mainMemSize = 32 * 1024)  // 32KB for faster simulation
+    memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)  // 128KB: room for program + GC heap
   )
 
   val io = new Bundle {
@@ -167,7 +167,7 @@ class JopCoreTest extends AnyFunSuite {
     // Load initialization data
     val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
     val ramData = JopFileLoader.loadStackRam(ramFilePath)
-    val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 32 * 1024 / 4)  // 32KB / 4 = 8K words
+    val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 128 * 1024 / 4)  // 128KB / 4 = 32K words
 
     println(s"Loaded ROM: ${romData.length} entries")
     println(s"Loaded RAM: ${ramData.length} entries")

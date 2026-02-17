@@ -22,7 +22,7 @@ object JopCoreBramSim extends App {
   // Load initialization data
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
-  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 32 * 1024 / 4)
+  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 128 * 1024 / 4)
 
   println(s"Loaded ROM: ${romData.length} entries")
   println(s"Loaded RAM: ${ramData.length} entries")
@@ -53,7 +53,7 @@ object JopCoreBramSim extends App {
       dut.clockDomain.waitSampling(5)
 
       // Run simulation
-      val maxCycles = 200000
+      val maxCycles = 2000000
       val reportInterval = 10000
 
       logLine(s"Starting simulation for $maxCycles cycles...")

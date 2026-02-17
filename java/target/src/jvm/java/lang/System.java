@@ -1,10 +1,19 @@
 package java.lang;
 
+import java.io.InputStream;
+import java.io.PrintStream;
+
+import com.jopdesign.io.JOPInputStream;
+import com.jopdesign.io.JOPOutputStream;
 import com.jopdesign.sys.Native;
 import com.jopdesign.sys.Startup;
 
 public class System {
-
+	
+	public static final InputStream in = new JOPInputStream();
+	public static final PrintStream out = new PrintStream(new JOPOutputStream());
+	public static final PrintStream err = out;
+	
 	public static final int OFF_MTAB_ALEN = 1;
 	
 	public static void exit(int i) {

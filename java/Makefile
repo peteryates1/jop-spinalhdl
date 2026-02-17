@@ -11,9 +11,11 @@ target:
 
 apps: tools target
 	$(MAKE) -C apps/Smallest
+	$(MAKE) -C apps/Small
 
 clean:
 	$(MAKE) -C tools/jopa clean
 	$(MAKE) -C tools clean
 	$(MAKE) -C target clean
 	$(MAKE) -C apps/Smallest clean
+	$(MAKE) -C apps/Small clean

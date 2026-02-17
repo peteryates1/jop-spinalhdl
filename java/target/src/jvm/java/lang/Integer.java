@@ -7,7 +7,19 @@ public class Integer {
 		'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
 		'u', 'v', 'w', 'x', 'y', 'z',
 	};
+	
+	/**
+	 * The minimum value an <code>int</code> can represent is -2147483648 (or
+	 * -2<sup>31</sup>).
+	 */
+	public static final int MIN_VALUE = 0x80000000;
 
+	/**
+	 * The maximum value an <code>int</code> can represent is 2147483647 (or
+	 * 2<sup>31</sup> - 1).
+	 */
+	public static final int MAX_VALUE = 0x7fffffff;
+	  
 	public static String toString(int num, int radix) {
 
 		if (radix < Character.MIN_RADIX || radix > Character.MAX_RADIX)

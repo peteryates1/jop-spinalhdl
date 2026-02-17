@@ -90,7 +90,7 @@ object JopCoreWithSdramSim extends App {
       logLine("")
 
       // Run simulation
-      val maxCycles = 200000
+      val maxCycles = 500000
       val reportInterval = 10000
       var startTime = System.currentTimeMillis()
 

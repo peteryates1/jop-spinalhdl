@@ -120,6 +120,8 @@ case class BmbMemoryController(
     val IDLE,
         // Simple memory access - NOT busy (matching VHDL rd1/wr1)
         READ_WAIT, WRITE_WAIT,
+        // Array store wait (matching VHDL iast0) - 1 cycle for stack pop
+        IAST_WAIT,
         // Handle dereference (getfield/putfield/iaload/iastore) - busy
         HANDLE_READ, HANDLE_WAIT, HANDLE_CALC, HANDLE_ACCESS, HANDLE_DATA_WAIT,
         // Bytecode cache check and pipelined fill - busy
@@ -423,13 +425,12 @@ case class BmbMemoryController(
         // (no extra busy needed - matches VHDL)
 
       }.elsewhen(io.memIn.iastore) {
-        // Array store - NOS = array ref, TOS = index
-        addrReg := io.bout(config.addressWidth - 1 downto 0).asUInt
-        handleIndex := aoutAddr.resized
+        // Array store - 3-operand: TOS=value, NOS=index, 3rd=arrayref
+        // Value captured to valueReg above. Wait 1 cycle (VHDL iast0) for
+        // stast's implicit pop to shift the stack so index/arrayref are accessible.
         handleIsWrite := True
         handleIsArray := True
-        state := State.HANDLE_READ
-        // (no extra busy needed - matches VHDL)
+        state := State.IAST_WAIT
       }
     }
 
@@ -510,6 +511,21 @@ case class BmbMemoryController(
       when(io.bmb.rsp.fire) {
         state := State.IDLE
       }
+    }
+
+    // ========================================================================
+    // Array Store Wait (busy, matching VHDL iast0)
+    // ========================================================================
+    // One cycle delay for stast's implicit pop to shift the stack:
+    //   Before pop: TOS=value, NOS=index, 3rd=arrayref
+    //   After pop:  TOS=index, NOS=arrayref
+    // Value was captured to valueReg in IDLE. Now capture index and arrayref.
+
+    is(State.IAST_WAIT) {
+      addrReg := io.bout(config.addressWidth - 1 downto 0).asUInt  // NOS = arrayref
+      handleIndex := aoutAddr.resized                                // TOS = index
+      handleWriteData := valueReg                                    // stored value
+      state := State.HANDLE_READ
     }
 
     // ========================================================================
@@ -676,19 +692,36 @@ case class BmbMemoryController(
     }
 
     is(State.HANDLE_ACCESS) {
-      // Issue read or write to field/element
-      io.bmb.cmd.valid := True
-      io.bmb.cmd.fragment.address := (addrReg << 2).resized
-      when(handleIsWrite) {
-        io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.WRITE
-        if(config.bmbParameter.access.canWrite) {
-          io.bmb.cmd.fragment.data := handleWriteData
+      // Issue read or write to field/element.
+      // Must check for I/O addresses — HardwareObject fields (getfield/putfield)
+      // have data pointers in I/O space, so addrReg may be an I/O address.
+      when(addrIsIo) {
+        // I/O access — route to I/O bus (combinational, one cycle)
+        io.ioAddr := addrReg(7 downto 0)
+        when(handleIsWrite) {
+          io.ioWr := True
+          io.ioWrData := handleWriteData
+        }.otherwise {
+          io.ioRd := True
+          rdDataReg := io.ioRdData
         }
+        wasStidx := False
+        state := State.IDLE
       }.otherwise {
-        io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
-      }
-      when(io.bmb.cmd.fire) {
-        state := State.HANDLE_DATA_WAIT
+        // External memory access — issue BMB command
+        io.bmb.cmd.valid := True
+        io.bmb.cmd.fragment.address := (addrReg << 2).resized
+        when(handleIsWrite) {
+          io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.WRITE
+          if(config.bmbParameter.access.canWrite) {
+            io.bmb.cmd.fragment.data := handleWriteData
+          }
+        }.otherwise {
+          io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
+        }
+        when(io.bmb.cmd.fire) {
+          state := State.HANDLE_DATA_WAIT
+        }
       }
     }
 

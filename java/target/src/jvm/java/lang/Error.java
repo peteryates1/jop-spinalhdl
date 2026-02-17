@@ -1,9 +1,12 @@
 package java.lang;
 
-public class Error {
+public class Error extends Throwable {
 
 	public Error() {
-		// TODO Auto-generated constructor stub
+		super();
 	}
 
+	public Error(java.lang.String message) {
+		super(message);
+	}
 }

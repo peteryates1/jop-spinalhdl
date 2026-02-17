@@ -23,7 +23,7 @@ case class JopCoreLatencyHarness(
 ) extends Component {
 
   val config = JopCoreConfig(
-    memConfig = JopMemoryConfig(mainMemSize = 32 * 1024)  // 32KB
+    memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)  // 128KB
   )
 
   val io = new Bundle {
@@ -164,12 +164,12 @@ object JopCoreLatencySweep extends App {
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
-  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 32 * 1024 / 4)
+  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 128 * 1024 / 4)
 
   println(s"Loaded ROM: ${romData.length}, RAM: ${ramData.length}, Main: ${mainMemData.length}")
 
   val latencies = Seq(0, 1, 2, 3, 5)
-  val maxCycles = 200000
+  val maxCycles = 1000000
   val bmbLogStartCycle = 33000
   val bmbLogMaxEntries = 50
 
@@ -284,7 +284,7 @@ object JopCoreLatencyDebug extends App {
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
-  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 32 * 1024 / 4)
+  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 128 * 1024 / 4)
 
   case class BmbTxn(cycle: Int, isCmd: Boolean, isWrite: Boolean, addr: Long, data: Long,
                     pc: Int, ir: Int, memState: Int, aout: Long)

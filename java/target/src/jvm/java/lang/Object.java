@@ -8,8 +8,8 @@ public class Object {
 		return Native.toInt(this);
 	}
 
-	public boolean equals(Object o) {
-		return this == o;
+	public boolean equals(Object that) {
+		return this == that;
 	}
 
 	public String toString() {
