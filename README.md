@@ -69,7 +69,11 @@ jop/
 ├── fpga/
 │   ├── qmtech-ep4cgx150-bram/ # BRAM FPGA project (Quartus)
 │   └── qmtech-ep4cgx150-sdram/# SDRAM FPGA project (Quartus)
-├── java/jopa/                 # Jopa microcode assembler
+├── java/
+│   ├── tools/jopa/            # Jopa microcode assembler
+│   ├── tools/src/             # JOPizer, PreLinker, common framework
+│   ├── target/src/            # JOP runtime + JDK stubs (JDK 6)
+│   └── apps/                  # Java application builds
 ├── verification/cocotb/         # CocoTB/GHDL verification tests
 ├── docs/                        # Architecture and reference docs
 └── build.sbt                  # Top-level SBT build
@@ -89,8 +93,8 @@ jop/
 
 ```bash
 # 1. Build microcode assembler and generate microcode
-cd java/jopa && make
-cd ../../asm && make
+cd java/tools/jopa && make
+cd ../../../asm && make
 
 # 2. Compile SpinalHDL (from project root)
 sbt compile

@@ -138,7 +138,7 @@ case class JopCoreLargeBramHarness(
  * to test if the BRAM sim works because of wrapping or because of correct execution.
  */
 object JopCoreBramLargeSim extends App {
-  val jopFilePath = "/home/peter/git/jop/java/Smallest/HelloWorld.jop"
+  val jopFilePath = "/home/peter/workspaces/ai/jop/java/apps/Smallest/HelloWorld.jop"
   val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
   val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
 

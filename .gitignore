@@ -15,8 +15,9 @@ dist/
 build/
 
 # Scala/SBT
-target/
-project/target/
+/target/
+/spinalhdl/target/
+/project/target/
 project/project/
 .bsp/
 .metals/
@@ -87,6 +88,13 @@ htmlcov/
 *.tmp
 *.bak
 *.orig
+
+# Java build artifacts
+java/tools/dist/
+java/tools/jopa/dist/
+java/target/classes/
+java/apps/*/build/
+java/apps/*/*.jop
 
 # Microcode assembler generated files
 asm/generated/

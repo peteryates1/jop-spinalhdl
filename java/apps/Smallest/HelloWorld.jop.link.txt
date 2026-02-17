@@ -1,0 +1,804 @@
+static java.lang.System.OFF_MTAB_ALENI 2
+static test.HelloWorld.WD_INTERVALI 3
+static java.lang.StringBuilder.DEFAULT_CAPACITYI 4
+static java.lang.Integer.digits[C 5
+bytecode java.lang.Throwable.<init>()V 6
+bytecode java.lang.Throwable.<init>(Ljava/lang/String;)V 10
+bytecode java.lang.Throwable.getMessage()Ljava/lang/String; 14
+bytecode java.lang.IndexOutOfBoundsException.<init>()V 17
+bytecode java.lang.IndexOutOfBoundsException.<init>(Ljava/lang/String;)V 20
+bytecode java.lang.CharSequence.charAt(I)C 23
+bytecode java.lang.CharSequence.length()I 23
+bytecode java.lang.CharSequence.subSequence(II)Ljava/lang/CharSequence; 23
+bytecode java.lang.CharSequence.toString()Ljava/lang/String; 23
+bytecode java.lang.System.<init>()V 23
+bytecode java.lang.System.exit(I)V 26
+bytecode java.lang.System.arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V 28
+bytecode java.lang.StringIndexOutOfBoundsException.<init>()V 76
+bytecode java.lang.StringIndexOutOfBoundsException.<init>(I)V 79
+bytecode java.lang.RuntimeException.<init>()V 86
+bytecode java.lang.RuntimeException.<init>(Ljava/lang/String;)V 89
+bytecode java.lang.Integer.<init>()V 92
+bytecode java.lang.Integer.toString(II)Ljava/lang/String; 95
+bytecode java.lang.Integer.<clinit>()V 125
+bytecode java.lang.NullPointerException.<init>()V 181
+bytecode test.HelloWorld.<init>()V 184
+bytecode test.HelloWorld.main([Ljava/lang/String;)V 187
+bytecode com.jopdesign.sys.JVMHelp.<init>()V 197
+bytecode com.jopdesign.sys.JVMHelp.makeHWObject(Ljava/lang/Object;III)Ljava/lang/Object; 200
+bytecode com.jopdesign.sys.JVMHelp.noim()V 213
+bytecode com.jopdesign.sys.JVMHelp.trace(I)V 255
+bytecode com.jopdesign.sys.JVMHelp.wr(I)V 284
+bytecode com.jopdesign.sys.JVMHelp.wr(Ljava/lang/String;)V 289
+bytecode com.jopdesign.sys.JVMHelp.wrByte(I)V 297
+bytecode com.jopdesign.sys.JVMHelp.wrSmall(I)V 308
+bytecode com.jopdesign.sys.Startup.<init>()V 330
+bytecode com.jopdesign.sys.Startup.msg()V 333
+bytecode com.jopdesign.sys.Startup.exit()V 336
+bytecode com.jopdesign.sys.Startup.boot()V 339
+bytecode com.jopdesign.sys.Startup.getSpeed()I 351
+bytecode java.lang.Object.<init>()V 366
+bytecode java.lang.Object.hashCode()I 368
+bytecode java.lang.Object.equals(Ljava/lang/Object;)Z 370
+bytecode java.lang.Object.toString()Ljava/lang/String; 374
+bytecode java.lang.StringBuilder.<init>()V 381
+bytecode java.lang.StringBuilder.<init>(I)V 384
+bytecode java.lang.StringBuilder.<init>(Ljava/lang/String;)V 388
+bytecode java.lang.StringBuilder.ensureCapacity(I)V 399
+bytecode java.lang.StringBuilder.append(Ljava/lang/String;)Ljava/lang/StringBuilder; 414
+bytecode java.lang.StringBuilder.append(I)Ljava/lang/StringBuilder; 427
+bytecode java.lang.String.valueOf(I)Ljava/lang/String; 431
+bytecode java.lang.String.<init>()V 434
+bytecode java.lang.String.<init>([CII)V 439
+bytecode java.lang.String.charAt(I)C 461
+bytecode java.lang.String.length()I 470
+bytecode java.lang.String.subSequence(II)Ljava/lang/CharSequence; 473
+bytecode java.lang.String.substring(II)Ljava/lang/String; 476
+bytecode java.lang.String.getChars(II[CI)V 492
+bytecode java.lang.String.toString()Ljava/lang/String; 509
+bytecode com.jopdesign.sys.JVM.<init>()V 511
+bytecode com.jopdesign.sys.JVM.f_aconst_null()V 514
+bytecode com.jopdesign.sys.JVM.f_iconst_m1()V 516
+bytecode com.jopdesign.sys.JVM.f_iconst_0()V 518
+bytecode com.jopdesign.sys.JVM.f_iconst_1()V 520
+bytecode com.jopdesign.sys.JVM.f_iconst_2()V 522
+bytecode com.jopdesign.sys.JVM.f_iconst_3()V 524
+bytecode com.jopdesign.sys.JVM.f_iconst_4()V 526
+bytecode com.jopdesign.sys.JVM.f_iconst_5()V 528
+bytecode com.jopdesign.sys.JVM.f_lconst_0()V 530
+bytecode com.jopdesign.sys.JVM.f_lconst_1()V 532
+bytecode com.jopdesign.sys.JVM.f_fconst_0()V 534
+bytecode com.jopdesign.sys.JVM.f_fconst_1()V 536
+bytecode com.jopdesign.sys.JVM.f_fconst_2()V 538
+bytecode com.jopdesign.sys.JVM.f_dconst_0()V 540
+bytecode com.jopdesign.sys.JVM.f_dconst_1()V 542
+bytecode com.jopdesign.sys.JVM.f_bipush()V 544
+bytecode com.jopdesign.sys.JVM.f_sipush()V 546
+bytecode com.jopdesign.sys.JVM.f_ldc()V 548
+bytecode com.jopdesign.sys.JVM.f_ldc_w()V 550
+bytecode com.jopdesign.sys.JVM.f_ldc2_w()V 552
+bytecode com.jopdesign.sys.JVM.f_iload()V 554
+bytecode com.jopdesign.sys.JVM.f_lload()V 556
+bytecode com.jopdesign.sys.JVM.f_fload()V 558
+bytecode com.jopdesign.sys.JVM.f_dload()V 560
+bytecode com.jopdesign.sys.JVM.f_aload()V 562
+bytecode com.jopdesign.sys.JVM.f_iload_0()V 564
+bytecode com.jopdesign.sys.JVM.f_iload_1()V 566
+bytecode com.jopdesign.sys.JVM.f_iload_2()V 568
+bytecode com.jopdesign.sys.JVM.f_iload_3()V 570
+bytecode com.jopdesign.sys.JVM.f_lload_0()V 572
+bytecode com.jopdesign.sys.JVM.f_lload_1()V 574
+bytecode com.jopdesign.sys.JVM.f_lload_2()V 576
+bytecode com.jopdesign.sys.JVM.f_lload_3()V 578
+bytecode com.jopdesign.sys.JVM.f_fload_0()V 580
+bytecode com.jopdesign.sys.JVM.f_fload_1()V 582
+bytecode com.jopdesign.sys.JVM.f_fload_2()V 584
+bytecode com.jopdesign.sys.JVM.f_fload_3()V 586
+bytecode com.jopdesign.sys.JVM.f_dload_0()V 588
+bytecode com.jopdesign.sys.JVM.f_dload_1()V 590
+bytecode com.jopdesign.sys.JVM.f_dload_2()V 592
+bytecode com.jopdesign.sys.JVM.f_dload_3()V 594
+bytecode com.jopdesign.sys.JVM.f_aload_0()V 596
+bytecode com.jopdesign.sys.JVM.f_aload_1()V 598
+bytecode com.jopdesign.sys.JVM.f_aload_2()V 600
+bytecode com.jopdesign.sys.JVM.f_aload_3()V 602
+bytecode com.jopdesign.sys.JVM.f_iaload()V 604
+bytecode com.jopdesign.sys.JVM.f_laload()V 606
+bytecode com.jopdesign.sys.JVM.f_faload()V 608
+bytecode com.jopdesign.sys.JVM.f_daload()V 610
+bytecode com.jopdesign.sys.JVM.f_aaload()V 612
+bytecode com.jopdesign.sys.JVM.f_baload()V 614
+bytecode com.jopdesign.sys.JVM.f_caload()V 616
+bytecode com.jopdesign.sys.JVM.f_saload()V 618
+bytecode com.jopdesign.sys.JVM.f_istore()V 620
+bytecode com.jopdesign.sys.JVM.f_lstore()V 622
+bytecode com.jopdesign.sys.JVM.f_fstore()V 624
+bytecode com.jopdesign.sys.JVM.f_dstore()V 626
+bytecode com.jopdesign.sys.JVM.f_astore()V 628
+bytecode com.jopdesign.sys.JVM.f_istore_0()V 630
+bytecode com.jopdesign.sys.JVM.f_istore_1()V 632
+bytecode com.jopdesign.sys.JVM.f_istore_2()V 634
+bytecode com.jopdesign.sys.JVM.f_istore_3()V 636
+bytecode com.jopdesign.sys.JVM.f_lstore_0()V 638
+bytecode com.jopdesign.sys.JVM.f_lstore_1()V 640
+bytecode com.jopdesign.sys.JVM.f_lstore_2()V 642
+bytecode com.jopdesign.sys.JVM.f_lstore_3()V 644
+bytecode com.jopdesign.sys.JVM.f_fstore_0()V 646
+bytecode com.jopdesign.sys.JVM.f_fstore_1()V 648
+bytecode com.jopdesign.sys.JVM.f_fstore_2()V 650
+bytecode com.jopdesign.sys.JVM.f_fstore_3()V 652
+bytecode com.jopdesign.sys.JVM.f_dstore_0()V 654
+bytecode com.jopdesign.sys.JVM.f_dstore_1()V 656
+bytecode com.jopdesign.sys.JVM.f_dstore_2()V 658
+bytecode com.jopdesign.sys.JVM.f_dstore_3()V 660
+bytecode com.jopdesign.sys.JVM.f_astore_0()V 662
+bytecode com.jopdesign.sys.JVM.f_astore_1()V 664
+bytecode com.jopdesign.sys.JVM.f_astore_2()V 666
+bytecode com.jopdesign.sys.JVM.f_astore_3()V 668
+bytecode com.jopdesign.sys.JVM.f_iastore()V 670
+bytecode com.jopdesign.sys.JVM.f_lastore()V 672
+bytecode com.jopdesign.sys.JVM.f_fastore()V 674
+bytecode com.jopdesign.sys.JVM.f_dastore()V 676
+bytecode com.jopdesign.sys.JVM.f_aastore()V 678
+bytecode com.jopdesign.sys.JVM.f_bastore()V 680
+bytecode com.jopdesign.sys.JVM.f_castore()V 682
+bytecode com.jopdesign.sys.JVM.f_sastore()V 684
+bytecode com.jopdesign.sys.JVM.f_pop()V 686
+bytecode com.jopdesign.sys.JVM.f_pop2()V 688
+bytecode com.jopdesign.sys.JVM.f_dup()V 690
+bytecode com.jopdesign.sys.JVM.f_dup_x1()V 692
+bytecode com.jopdesign.sys.JVM.f_dup_x2()V 694
+bytecode com.jopdesign.sys.JVM.f_dup2()V 696
+bytecode com.jopdesign.sys.JVM.f_dup2_x1()V 698
+bytecode com.jopdesign.sys.JVM.f_dup2_x2()V 700
+bytecode com.jopdesign.sys.JVM.f_swap()V 702
+bytecode com.jopdesign.sys.JVM.f_iadd()V 704
+bytecode com.jopdesign.sys.JVM.f_ladd()V 706
+bytecode com.jopdesign.sys.JVM.f_fadd()V 708
+bytecode com.jopdesign.sys.JVM.f_dadd()V 710
+bytecode com.jopdesign.sys.JVM.f_isub()V 712
+bytecode com.jopdesign.sys.JVM.f_lsub()V 714
+bytecode com.jopdesign.sys.JVM.f_fsub()V 716
+bytecode com.jopdesign.sys.JVM.f_dsub()V 718
+bytecode com.jopdesign.sys.JVM.f_imul()V 720
+bytecode com.jopdesign.sys.JVM.f_lmul()V 722
+bytecode com.jopdesign.sys.JVM.f_fmul()V 724
+bytecode com.jopdesign.sys.JVM.f_dmul()V 726
+bytecode com.jopdesign.sys.JVM.f_idiv()V 728
+bytecode com.jopdesign.sys.JVM.f_ldiv()V 730
+bytecode com.jopdesign.sys.JVM.f_fdiv()V 732
+bytecode com.jopdesign.sys.JVM.f_ddiv()V 734
+bytecode com.jopdesign.sys.JVM.f_irem()V 736
+bytecode com.jopdesign.sys.JVM.f_lrem()V 738
+bytecode com.jopdesign.sys.JVM.f_frem()V 740
+bytecode com.jopdesign.sys.JVM.f_drem()V 742
+bytecode com.jopdesign.sys.JVM.f_ineg()V 744
+bytecode com.jopdesign.sys.JVM.f_lneg()V 746
+bytecode com.jopdesign.sys.JVM.f_fneg()V 748
+bytecode com.jopdesign.sys.JVM.f_dneg()V 750
+bytecode com.jopdesign.sys.JVM.f_ishl()V 752
+bytecode com.jopdesign.sys.JVM.f_lshl()V 754
+bytecode com.jopdesign.sys.JVM.f_ishr()V 756
+bytecode com.jopdesign.sys.JVM.f_lshr()V 758
+bytecode com.jopdesign.sys.JVM.f_iushr()V 760
+bytecode com.jopdesign.sys.JVM.f_lushr()V 762
+bytecode com.jopdesign.sys.JVM.f_iand()V 764
+bytecode com.jopdesign.sys.JVM.f_land()V 766
+bytecode com.jopdesign.sys.JVM.f_ior()V 768
+bytecode com.jopdesign.sys.JVM.f_lor()V 770
+bytecode com.jopdesign.sys.JVM.f_ixor()V 772
+bytecode com.jopdesign.sys.JVM.f_lxor()V 774
+bytecode com.jopdesign.sys.JVM.f_iinc()V 776
+bytecode com.jopdesign.sys.JVM.f_i2l()V 778
+bytecode com.jopdesign.sys.JVM.f_i2f()V 780
+bytecode com.jopdesign.sys.JVM.f_i2d()V 782
+bytecode com.jopdesign.sys.JVM.f_l2i()V 784
+bytecode com.jopdesign.sys.JVM.f_l2f()V 786
+bytecode com.jopdesign.sys.JVM.f_l2d()V 788
+bytecode com.jopdesign.sys.JVM.f_f2i()V 790
+bytecode com.jopdesign.sys.JVM.f_f2l()V 792
+bytecode com.jopdesign.sys.JVM.f_f2d()V 794
+bytecode com.jopdesign.sys.JVM.f_d2i()V 796
+bytecode com.jopdesign.sys.JVM.f_d2l()V 798
+bytecode com.jopdesign.sys.JVM.f_d2f()V 800
+bytecode com.jopdesign.sys.JVM.f_i2b()V 802
+bytecode com.jopdesign.sys.JVM.f_i2c()V 804
+bytecode com.jopdesign.sys.JVM.f_i2s()V 806
+bytecode com.jopdesign.sys.JVM.f_lcmp()V 808
+bytecode com.jopdesign.sys.JVM.f_fcmpl()V 810
+bytecode com.jopdesign.sys.JVM.f_fcmpg()V 812
+bytecode com.jopdesign.sys.JVM.f_dcmpl()V 814
+bytecode com.jopdesign.sys.JVM.f_dcmpg()V 816
+bytecode com.jopdesign.sys.JVM.f_ifeq()V 818
+bytecode com.jopdesign.sys.JVM.f_ifne()V 820
+bytecode com.jopdesign.sys.JVM.f_iflt()V 822
+bytecode com.jopdesign.sys.JVM.f_ifge()V 824
+bytecode com.jopdesign.sys.JVM.f_ifgt()V 826
+bytecode com.jopdesign.sys.JVM.f_ifle()V 828
+bytecode com.jopdesign.sys.JVM.f_if_icmpeq()V 830
+bytecode com.jopdesign.sys.JVM.f_if_icmpne()V 832
+bytecode com.jopdesign.sys.JVM.f_if_icmplt()V 834
+bytecode com.jopdesign.sys.JVM.f_if_icmpge()V 836
+bytecode com.jopdesign.sys.JVM.f_if_icmpgt()V 838
+bytecode com.jopdesign.sys.JVM.f_if_icmple()V 840
+bytecode com.jopdesign.sys.JVM.f_if_acmpeq()V 842
+bytecode com.jopdesign.sys.JVM.f_if_acmpne()V 844
+bytecode com.jopdesign.sys.JVM.f_goto()V 846
+bytecode com.jopdesign.sys.JVM.f_jsr()V 848
+bytecode com.jopdesign.sys.JVM.f_ret()V 850
+bytecode com.jopdesign.sys.JVM.f_tableswitch()V 852
+bytecode com.jopdesign.sys.JVM.f_lookupswitch()V 854
+bytecode com.jopdesign.sys.JVM.f_ireturn()V 856
+bytecode com.jopdesign.sys.JVM.f_lreturn()V 858
+bytecode com.jopdesign.sys.JVM.f_freturn()V 860
+bytecode com.jopdesign.sys.JVM.f_dreturn()V 862
+bytecode com.jopdesign.sys.JVM.f_areturn()V 864
+bytecode com.jopdesign.sys.JVM.f_return()V 866
+bytecode com.jopdesign.sys.JVM.f_getstatic()V 868
+bytecode com.jopdesign.sys.JVM.f_putstatic()V 870
+bytecode com.jopdesign.sys.JVM.f_getfield()V 872
+bytecode com.jopdesign.sys.JVM.f_putfield()V 874
+bytecode com.jopdesign.sys.JVM.f_invokevirtual()V 876
+bytecode com.jopdesign.sys.JVM.f_invokespecial()V 878
+bytecode com.jopdesign.sys.JVM.f_invokestatic()V 880
+bytecode com.jopdesign.sys.JVM.f_invokeinterface()V 882
+bytecode com.jopdesign.sys.JVM.f_unused_ba()V 884
+bytecode com.jopdesign.sys.JVM.f_new()V 886
+bytecode com.jopdesign.sys.JVM.f_newarray()V 888
+bytecode com.jopdesign.sys.JVM.f_anewarray()V 890
+bytecode com.jopdesign.sys.JVM.f_arraylength()V 892
+bytecode com.jopdesign.sys.JVM.f_athrow()V 894
+bytecode com.jopdesign.sys.JVM.f_checkcast()V 896
+bytecode com.jopdesign.sys.JVM.f_instanceof()V 898
+bytecode com.jopdesign.sys.JVM.f_monitorenter()V 900
+bytecode com.jopdesign.sys.JVM.f_monitorexit()V 902
+bytecode com.jopdesign.sys.JVM.f_wide()V 904
+bytecode com.jopdesign.sys.JVM.f_multianewarray()V 906
+bytecode com.jopdesign.sys.JVM.f_ifnull()V 908
+bytecode com.jopdesign.sys.JVM.f_ifnonnull()V 910
+bytecode com.jopdesign.sys.JVM.f_goto_w()V 912
+bytecode com.jopdesign.sys.JVM.f_jsr_w()V 914
+bytecode com.jopdesign.sys.JVM.f_breakpoint()V 916
+bytecode com.jopdesign.sys.JVM.f_resCB()V 918
+bytecode com.jopdesign.sys.JVM.f_jopsys_inval()V 920
+bytecode com.jopdesign.sys.JVM.f_resCD()V 922
+bytecode com.jopdesign.sys.JVM.f_resCE()V 924
+bytecode com.jopdesign.sys.JVM.f_resCF()V 926
+bytecode com.jopdesign.sys.JVM.f_jopsys_null()V 928
+bytecode com.jopdesign.sys.JVM.f_jopsys_rd()V 930
+bytecode com.jopdesign.sys.JVM.f_jopsys_wr()V 932
+bytecode com.jopdesign.sys.JVM.f_jopsys_rdmem()V 934
+bytecode com.jopdesign.sys.JVM.f_jopsys_wrmem()V 936
+bytecode com.jopdesign.sys.JVM.f_jopsys_rdint()V 938
+bytecode com.jopdesign.sys.JVM.f_jopsys_wrint()V 940
+bytecode com.jopdesign.sys.JVM.f_jopsys_getsp()V 942
+bytecode com.jopdesign.sys.JVM.f_jopsys_setsp()V 944
+bytecode com.jopdesign.sys.JVM.f_jopsys_getvp()V 946
+bytecode com.jopdesign.sys.JVM.f_jopsys_setvp()V 948
+bytecode com.jopdesign.sys.JVM.f_jopsys_int2ext()V 950
+bytecode com.jopdesign.sys.JVM.f_jopsys_ext2int()V 952
+bytecode com.jopdesign.sys.JVM.f_jopsys_nop()V 954
+bytecode com.jopdesign.sys.JVM.f_jopsys_invoke()V 956
+bytecode com.jopdesign.sys.JVM.f_jopsys_cond_move()V 958
+bytecode com.jopdesign.sys.JVM.f_getstatic_ref()V 960
+bytecode com.jopdesign.sys.JVM.f_putstatic_ref()V 962
+bytecode com.jopdesign.sys.JVM.f_getfield_ref()V 964
+bytecode com.jopdesign.sys.JVM.f_putfield_ref()V 966
+bytecode com.jopdesign.sys.JVM.f_getstatic_long()V 968
+bytecode com.jopdesign.sys.JVM.f_putstatic_long()V 970
+bytecode com.jopdesign.sys.JVM.f_getfield_long()V 972
+bytecode com.jopdesign.sys.JVM.f_putfield_long()V 974
+bytecode com.jopdesign.sys.JVM.f_jopsys_memcpy()V 976
+bytecode com.jopdesign.sys.JVM.f_jopsys_getfield()V 978
+bytecode com.jopdesign.sys.JVM.f_jopsys_putfield()V 980
+bytecode com.jopdesign.sys.JVM.f_resEB()V 982
+bytecode com.jopdesign.sys.JVM.f_invokesuper()V 984
+bytecode com.jopdesign.sys.JVM.f_resED()V 986
+bytecode com.jopdesign.sys.JVM.f_jopsys_getstatic()V 988
+bytecode com.jopdesign.sys.JVM.f_jopsys_putstatic()V 990
+bytecode com.jopdesign.sys.JVM.f_sys_int()V 992
+bytecode com.jopdesign.sys.JVM.f_sys_exc()V 994
+bytecode com.jopdesign.sys.JVM.f_resF2()V 996
+bytecode com.jopdesign.sys.JVM.f_resF3()V 998
+bytecode com.jopdesign.sys.JVM.f_resF4()V 1000
+bytecode com.jopdesign.sys.JVM.f_resF5()V 1002
+bytecode com.jopdesign.sys.JVM.f_resF6()V 1004
+bytecode com.jopdesign.sys.JVM.f_resF7()V 1006
+bytecode com.jopdesign.sys.JVM.f_resF8()V 1008
+bytecode com.jopdesign.sys.JVM.f_resF9()V 1010
+bytecode com.jopdesign.sys.JVM.f_resFA()V 1012
+bytecode com.jopdesign.sys.JVM.f_resFB()V 1014
+bytecode com.jopdesign.sys.JVM.f_resFC()V 1016
+bytecode com.jopdesign.sys.JVM.f_resFD()V 1018
+bytecode com.jopdesign.sys.JVM.f_sys_noim()V 1020
+bytecode com.jopdesign.sys.JVM.f_sys_init()V 1022
+class java.lang.Throwable 1223 1236
+ -instSize 1
+ -field messageLjava/lang/String; 0
+ -super 1493
+ -mtab java.lang.Throwable.<init>()V 1223
+ -mtab java.lang.Object.hashCode()I 1225
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1227
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1229
+ -mtab java.lang.Throwable.<init>(Ljava/lang/String;)V 1231
+ -mtab java.lang.Throwable.getMessage()Ljava/lang/String; 1233
+ -constmap 1 0
+class java.lang.IndexOutOfBoundsException 1243 1256
+ -instSize 1
+ -super 1323
+ -mtab java.lang.IndexOutOfBoundsException.<init>()V 1243
+ -mtab java.lang.Object.hashCode()I 1245
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1247
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1249
+ -mtab java.lang.IndexOutOfBoundsException.<init>(Ljava/lang/String;)V 1251
+ -mtab java.lang.Throwable.getMessage()Ljava/lang/String; 1253
+ -constmap 1 0
+ -constmap 2 1
+class java.lang.CharSequence 0 1265
+ -instSize 0
+class java.lang.System 1271 1284
+ -instSize 0
+ -super 1493
+ -mtab java.lang.System.<init>()V 1271
+ -mtab java.lang.Object.hashCode()I 1273
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1275
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1277
+ -mtab java.lang.System.exit(I)V 1279
+ -mtab java.lang.System.arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V 1281
+ -constmap 1 0
+ -constmap 2 1
+ -constmap 3 2
+ -constmap 4 3
+ -constmap 5 4
+ -constmap 6 5
+ -constmap 7 6
+ -constmap 8 7
+ -constmap 9 8
+class java.lang.StringIndexOutOfBoundsException 1299 1314
+ -instSize 1
+ -super 1238
+ -mtab java.lang.StringIndexOutOfBoundsException.<init>()V 1299
+ -mtab java.lang.Object.hashCode()I 1301
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1303
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1305
+ -mtab java.lang.IndexOutOfBoundsException.<init>(Ljava/lang/String;)V 1307
+ -mtab java.lang.Throwable.getMessage()Ljava/lang/String; 1309
+ -mtab java.lang.StringIndexOutOfBoundsException.<init>(I)V 1311
+ -constmap 1 0
+ -constmap 2 1
+ -constmap 3 2
+ -constmap 4 3
+ -constmap 5 4
+ -constmap 6 5
+ -constmap 7 6
+ -constmap 8 7
+class java.lang.RuntimeException 1328 1341
+ -instSize 1
+ -super 1218
+ -mtab java.lang.RuntimeException.<init>()V 1328
+ -mtab java.lang.Object.hashCode()I 1330
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1332
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1334
+ -mtab java.lang.RuntimeException.<init>(Ljava/lang/String;)V 1336
+ -mtab java.lang.Throwable.getMessage()Ljava/lang/String; 1338
+ -constmap 1 0
+ -constmap 2 1
+class java.lang.Integer 1349 1362
+ -instSize 0
+ -super 1493
+ -mtab java.lang.Integer.<init>()V 1349
+ -mtab java.lang.Object.hashCode()I 1351
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1353
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1355
+ -mtab java.lang.Integer.toString(II)Ljava/lang/String; 1357
+ -mtab java.lang.Integer.<clinit>()V 1359
+ -constmap 1 0
+ -constmap 3 1
+ -constmap 4 2
+class java.lang.NullPointerException 1371 1384
+ -instSize 1
+ -super 1323
+ -mtab java.lang.NullPointerException.<init>()V 1371
+ -mtab java.lang.Object.hashCode()I 1373
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1375
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1377
+ -mtab java.lang.RuntimeException.<init>(Ljava/lang/String;)V 1379
+ -mtab java.lang.Throwable.getMessage()Ljava/lang/String; 1381
+ -constmap 1 0
+class test.HelloWorld 1391 1402
+ -instSize 0
+ -super 1493
+ -mtab test.HelloWorld.<init>()V 1391
+ -mtab java.lang.Object.hashCode()I 1393
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1395
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1397
+ -mtab test.HelloWorld.main([Ljava/lang/String;)V 1399
+ -constmap 1 0
+ -constmap 2 1
+ -constmap 3 2
+ -constmap 4 3
+ -constmap 5 4
+ -constmap 6 5
+class com.jopdesign.sys.JVMHelp 1414 1437
+ -instSize 0
+ -super 1493
+ -mtab com.jopdesign.sys.JVMHelp.<init>()V 1414
+ -mtab java.lang.Object.hashCode()I 1416
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1418
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1420
+ -mtab com.jopdesign.sys.JVMHelp.makeHWObject(Ljava/lang/Object;III)Ljava/lang/Object; 1422
+ -mtab com.jopdesign.sys.JVMHelp.noim()V 1424
+ -mtab com.jopdesign.sys.JVMHelp.trace(I)V 1426
+ -mtab com.jopdesign.sys.JVMHelp.wr(I)V 1428
+ -mtab com.jopdesign.sys.JVMHelp.wr(Ljava/lang/String;)V 1430
+ -mtab com.jopdesign.sys.JVMHelp.wrByte(I)V 1432
+ -mtab com.jopdesign.sys.JVMHelp.wrSmall(I)V 1434
+ -constmap 1 0
+ -constmap 2 1
+ -constmap 3 2
+ -constmap 4 3
+ -constmap 5 4
+ -constmap 6 5
+ -constmap 7 6
+ -constmap 8 7
+ -constmap 9 8
+ -constmap 10 9
+ -constmap 11 10
+ -constmap 12 11
+ -constmap 13 12
+ -constmap 14 13
+ -constmap 15 14
+ -constmap 16 15
+ -constmap 17 16
+ -constmap 18 17
+ -constmap 19 18
+ -constmap 20 19
+ -constmap 21 20
+ -constmap 22 21
+class com.jopdesign.sys.Startup 1465 1482
+ -instSize 0
+ -super 1493
+ -mtab com.jopdesign.sys.Startup.<init>()V 1465
+ -mtab java.lang.Object.hashCode()I 1467
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1469
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1471
+ -mtab com.jopdesign.sys.Startup.msg()V 1473
+ -mtab com.jopdesign.sys.Startup.exit()V 1475
+ -mtab com.jopdesign.sys.Startup.boot()V 1477
+ -mtab com.jopdesign.sys.Startup.getSpeed()I 1479
+ -constmap 1 0
+ -constmap 2 1
+ -constmap 3 2
+ -constmap 4 3
+ -constmap 5 4
+ -constmap 6 5
+ -constmap 7 6
+ -constmap 8 7
+ -constmap 9 8
+ -constmap 10 9
+class java.lang.Object 1498 1507
+ -instSize 0
+ -super 0
+ -mtab java.lang.Object.<init>()V 1498
+ -mtab java.lang.Object.hashCode()I 1500
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1502
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1504
+ -constmap 1 0
+ -constmap 2 1
+ -constmap 3 2
+ -constmap 4 3
+ -constmap 5 4
+ -constmap 6 5
+ -constmap 7 6
+ -constmap 8 7
+class java.lang.StringBuilder 1521 1540
+ -instSize 2
+ -field countI 0
+ -field value[C 1
+ -super 1493
+ -mtab java.lang.StringBuilder.<init>()V 1521
+ -mtab java.lang.Object.hashCode()I 1523
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1525
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1527
+ -mtab java.lang.StringBuilder.<init>(I)V 1529
+ -mtab java.lang.StringBuilder.<init>(Ljava/lang/String;)V 1531
+ -mtab java.lang.StringBuilder.ensureCapacity(I)V 1533
+ -mtab java.lang.StringBuilder.append(Ljava/lang/String;)Ljava/lang/StringBuilder; 1535
+ -mtab java.lang.StringBuilder.append(I)Ljava/lang/StringBuilder; 1537
+ -constmap 1 0
+ -constmap 2 1
+ -constmap 4 2
+ -constmap 6 3
+ -constmap 7 4
+ -constmap 8 5
+ -constmap 9 6
+ -constmap 10 7
+ -constmap 11 8
+class java.lang.String 1555 1578
+ -instSize 1
+ -field value[C 0
+ -super 1493
+ -mtab java.lang.String.<init>()V 1555
+ -mtab java.lang.Object.hashCode()I 1557
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1559
+ -mtab java.lang.String.toString()Ljava/lang/String; 1561
+ -mtab java.lang.String.valueOf(I)Ljava/lang/String; 1563
+ -mtab java.lang.String.<init>([CII)V 1565
+ -mtab java.lang.String.charAt(I)C 1567
+ -mtab java.lang.String.length()I 1569
+ -mtab java.lang.String.subSequence(II)Ljava/lang/CharSequence; 1571
+ -mtab java.lang.String.substring(II)Ljava/lang/String; 1573
+ -mtab java.lang.String.getChars(II[CI)V 1575
+ -constmap 1 0
+ -constmap 2 1
+ -constmap 3 2
+ -constmap 5 3
+ -constmap 6 4
+ -constmap 7 5
+ -constmap 8 6
+ -constmap 9 7
+ -constmap 10 8
+class com.jopdesign.sys.JVM 1598 2117
+ -instSize 0
+ -super 1493
+ -mtab com.jopdesign.sys.JVM.<init>()V 1598
+ -mtab java.lang.Object.hashCode()I 1600
+ -mtab java.lang.Object.equals(Ljava/lang/Object;)Z 1602
+ -mtab java.lang.Object.toString()Ljava/lang/String; 1604
+ -mtab com.jopdesign.sys.JVM.f_aconst_null()V 1606
+ -mtab com.jopdesign.sys.JVM.f_iconst_m1()V 1608
+ -mtab com.jopdesign.sys.JVM.f_iconst_0()V 1610
+ -mtab com.jopdesign.sys.JVM.f_iconst_1()V 1612
+ -mtab com.jopdesign.sys.JVM.f_iconst_2()V 1614
+ -mtab com.jopdesign.sys.JVM.f_iconst_3()V 1616
+ -mtab com.jopdesign.sys.JVM.f_iconst_4()V 1618
+ -mtab com.jopdesign.sys.JVM.f_iconst_5()V 1620
+ -mtab com.jopdesign.sys.JVM.f_lconst_0()V 1622
+ -mtab com.jopdesign.sys.JVM.f_lconst_1()V 1624
+ -mtab com.jopdesign.sys.JVM.f_fconst_0()V 1626
+ -mtab com.jopdesign.sys.JVM.f_fconst_1()V 1628
+ -mtab com.jopdesign.sys.JVM.f_fconst_2()V 1630
+ -mtab com.jopdesign.sys.JVM.f_dconst_0()V 1632
+ -mtab com.jopdesign.sys.JVM.f_dconst_1()V 1634
+ -mtab com.jopdesign.sys.JVM.f_bipush()V 1636
+ -mtab com.jopdesign.sys.JVM.f_sipush()V 1638
+ -mtab com.jopdesign.sys.JVM.f_ldc()V 1640
+ -mtab com.jopdesign.sys.JVM.f_ldc_w()V 1642
+ -mtab com.jopdesign.sys.JVM.f_ldc2_w()V 1644
+ -mtab com.jopdesign.sys.JVM.f_iload()V 1646
+ -mtab com.jopdesign.sys.JVM.f_lload()V 1648
+ -mtab com.jopdesign.sys.JVM.f_fload()V 1650
+ -mtab com.jopdesign.sys.JVM.f_dload()V 1652
+ -mtab com.jopdesign.sys.JVM.f_aload()V 1654
+ -mtab com.jopdesign.sys.JVM.f_iload_0()V 1656
+ -mtab com.jopdesign.sys.JVM.f_iload_1()V 1658
+ -mtab com.jopdesign.sys.JVM.f_iload_2()V 1660
+ -mtab com.jopdesign.sys.JVM.f_iload_3()V 1662
+ -mtab com.jopdesign.sys.JVM.f_lload_0()V 1664
+ -mtab com.jopdesign.sys.JVM.f_lload_1()V 1666
+ -mtab com.jopdesign.sys.JVM.f_lload_2()V 1668
+ -mtab com.jopdesign.sys.JVM.f_lload_3()V 1670
+ -mtab com.jopdesign.sys.JVM.f_fload_0()V 1672
+ -mtab com.jopdesign.sys.JVM.f_fload_1()V 1674
+ -mtab com.jopdesign.sys.JVM.f_fload_2()V 1676
+ -mtab com.jopdesign.sys.JVM.f_fload_3()V 1678
+ -mtab com.jopdesign.sys.JVM.f_dload_0()V 1680
+ -mtab com.jopdesign.sys.JVM.f_dload_1()V 1682
+ -mtab com.jopdesign.sys.JVM.f_dload_2()V 1684
+ -mtab com.jopdesign.sys.JVM.f_dload_3()V 1686
+ -mtab com.jopdesign.sys.JVM.f_aload_0()V 1688
+ -mtab com.jopdesign.sys.JVM.f_aload_1()V 1690
+ -mtab com.jopdesign.sys.JVM.f_aload_2()V 1692
+ -mtab com.jopdesign.sys.JVM.f_aload_3()V 1694
+ -mtab com.jopdesign.sys.JVM.f_iaload()V 1696
+ -mtab com.jopdesign.sys.JVM.f_laload()V 1698
+ -mtab com.jopdesign.sys.JVM.f_faload()V 1700
+ -mtab com.jopdesign.sys.JVM.f_daload()V 1702
+ -mtab com.jopdesign.sys.JVM.f_aaload()V 1704
+ -mtab com.jopdesign.sys.JVM.f_baload()V 1706
+ -mtab com.jopdesign.sys.JVM.f_caload()V 1708
+ -mtab com.jopdesign.sys.JVM.f_saload()V 1710
+ -mtab com.jopdesign.sys.JVM.f_istore()V 1712
+ -mtab com.jopdesign.sys.JVM.f_lstore()V 1714
+ -mtab com.jopdesign.sys.JVM.f_fstore()V 1716
+ -mtab com.jopdesign.sys.JVM.f_dstore()V 1718
+ -mtab com.jopdesign.sys.JVM.f_astore()V 1720
+ -mtab com.jopdesign.sys.JVM.f_istore_0()V 1722
+ -mtab com.jopdesign.sys.JVM.f_istore_1()V 1724
+ -mtab com.jopdesign.sys.JVM.f_istore_2()V 1726
+ -mtab com.jopdesign.sys.JVM.f_istore_3()V 1728
+ -mtab com.jopdesign.sys.JVM.f_lstore_0()V 1730
+ -mtab com.jopdesign.sys.JVM.f_lstore_1()V 1732
+ -mtab com.jopdesign.sys.JVM.f_lstore_2()V 1734
+ -mtab com.jopdesign.sys.JVM.f_lstore_3()V 1736
+ -mtab com.jopdesign.sys.JVM.f_fstore_0()V 1738
+ -mtab com.jopdesign.sys.JVM.f_fstore_1()V 1740
+ -mtab com.jopdesign.sys.JVM.f_fstore_2()V 1742
+ -mtab com.jopdesign.sys.JVM.f_fstore_3()V 1744
+ -mtab com.jopdesign.sys.JVM.f_dstore_0()V 1746
+ -mtab com.jopdesign.sys.JVM.f_dstore_1()V 1748
+ -mtab com.jopdesign.sys.JVM.f_dstore_2()V 1750
+ -mtab com.jopdesign.sys.JVM.f_dstore_3()V 1752
+ -mtab com.jopdesign.sys.JVM.f_astore_0()V 1754
+ -mtab com.jopdesign.sys.JVM.f_astore_1()V 1756
+ -mtab com.jopdesign.sys.JVM.f_astore_2()V 1758
+ -mtab com.jopdesign.sys.JVM.f_astore_3()V 1760
+ -mtab com.jopdesign.sys.JVM.f_iastore()V 1762
+ -mtab com.jopdesign.sys.JVM.f_lastore()V 1764
+ -mtab com.jopdesign.sys.JVM.f_fastore()V 1766
+ -mtab com.jopdesign.sys.JVM.f_dastore()V 1768
+ -mtab com.jopdesign.sys.JVM.f_aastore()V 1770
+ -mtab com.jopdesign.sys.JVM.f_bastore()V 1772
+ -mtab com.jopdesign.sys.JVM.f_castore()V 1774
+ -mtab com.jopdesign.sys.JVM.f_sastore()V 1776
+ -mtab com.jopdesign.sys.JVM.f_pop()V 1778
+ -mtab com.jopdesign.sys.JVM.f_pop2()V 1780
+ -mtab com.jopdesign.sys.JVM.f_dup()V 1782
+ -mtab com.jopdesign.sys.JVM.f_dup_x1()V 1784
+ -mtab com.jopdesign.sys.JVM.f_dup_x2()V 1786
+ -mtab com.jopdesign.sys.JVM.f_dup2()V 1788
+ -mtab com.jopdesign.sys.JVM.f_dup2_x1()V 1790
+ -mtab com.jopdesign.sys.JVM.f_dup2_x2()V 1792
+ -mtab com.jopdesign.sys.JVM.f_swap()V 1794
+ -mtab com.jopdesign.sys.JVM.f_iadd()V 1796
+ -mtab com.jopdesign.sys.JVM.f_ladd()V 1798
+ -mtab com.jopdesign.sys.JVM.f_fadd()V 1800
+ -mtab com.jopdesign.sys.JVM.f_dadd()V 1802
+ -mtab com.jopdesign.sys.JVM.f_isub()V 1804
+ -mtab com.jopdesign.sys.JVM.f_lsub()V 1806
+ -mtab com.jopdesign.sys.JVM.f_fsub()V 1808
+ -mtab com.jopdesign.sys.JVM.f_dsub()V 1810
+ -mtab com.jopdesign.sys.JVM.f_imul()V 1812
+ -mtab com.jopdesign.sys.JVM.f_lmul()V 1814
+ -mtab com.jopdesign.sys.JVM.f_fmul()V 1816
+ -mtab com.jopdesign.sys.JVM.f_dmul()V 1818
+ -mtab com.jopdesign.sys.JVM.f_idiv()V 1820
+ -mtab com.jopdesign.sys.JVM.f_ldiv()V 1822
+ -mtab com.jopdesign.sys.JVM.f_fdiv()V 1824
+ -mtab com.jopdesign.sys.JVM.f_ddiv()V 1826
+ -mtab com.jopdesign.sys.JVM.f_irem()V 1828
+ -mtab com.jopdesign.sys.JVM.f_lrem()V 1830
+ -mtab com.jopdesign.sys.JVM.f_frem()V 1832
+ -mtab com.jopdesign.sys.JVM.f_drem()V 1834
+ -mtab com.jopdesign.sys.JVM.f_ineg()V 1836
+ -mtab com.jopdesign.sys.JVM.f_lneg()V 1838
+ -mtab com.jopdesign.sys.JVM.f_fneg()V 1840
+ -mtab com.jopdesign.sys.JVM.f_dneg()V 1842
+ -mtab com.jopdesign.sys.JVM.f_ishl()V 1844
+ -mtab com.jopdesign.sys.JVM.f_lshl()V 1846
+ -mtab com.jopdesign.sys.JVM.f_ishr()V 1848
+ -mtab com.jopdesign.sys.JVM.f_lshr()V 1850
+ -mtab com.jopdesign.sys.JVM.f_iushr()V 1852
+ -mtab com.jopdesign.sys.JVM.f_lushr()V 1854
+ -mtab com.jopdesign.sys.JVM.f_iand()V 1856
+ -mtab com.jopdesign.sys.JVM.f_land()V 1858
+ -mtab com.jopdesign.sys.JVM.f_ior()V 1860
+ -mtab com.jopdesign.sys.JVM.f_lor()V 1862
+ -mtab com.jopdesign.sys.JVM.f_ixor()V 1864
+ -mtab com.jopdesign.sys.JVM.f_lxor()V 1866
+ -mtab com.jopdesign.sys.JVM.f_iinc()V 1868
+ -mtab com.jopdesign.sys.JVM.f_i2l()V 1870
+ -mtab com.jopdesign.sys.JVM.f_i2f()V 1872
+ -mtab com.jopdesign.sys.JVM.f_i2d()V 1874
+ -mtab com.jopdesign.sys.JVM.f_l2i()V 1876
+ -mtab com.jopdesign.sys.JVM.f_l2f()V 1878
+ -mtab com.jopdesign.sys.JVM.f_l2d()V 1880
+ -mtab com.jopdesign.sys.JVM.f_f2i()V 1882
+ -mtab com.jopdesign.sys.JVM.f_f2l()V 1884
+ -mtab com.jopdesign.sys.JVM.f_f2d()V 1886
+ -mtab com.jopdesign.sys.JVM.f_d2i()V 1888
+ -mtab com.jopdesign.sys.JVM.f_d2l()V 1890
+ -mtab com.jopdesign.sys.JVM.f_d2f()V 1892
+ -mtab com.jopdesign.sys.JVM.f_i2b()V 1894
+ -mtab com.jopdesign.sys.JVM.f_i2c()V 1896
+ -mtab com.jopdesign.sys.JVM.f_i2s()V 1898
+ -mtab com.jopdesign.sys.JVM.f_lcmp()V 1900
+ -mtab com.jopdesign.sys.JVM.f_fcmpl()V 1902
+ -mtab com.jopdesign.sys.JVM.f_fcmpg()V 1904
+ -mtab com.jopdesign.sys.JVM.f_dcmpl()V 1906
+ -mtab com.jopdesign.sys.JVM.f_dcmpg()V 1908
+ -mtab com.jopdesign.sys.JVM.f_ifeq()V 1910
+ -mtab com.jopdesign.sys.JVM.f_ifne()V 1912
+ -mtab com.jopdesign.sys.JVM.f_iflt()V 1914
+ -mtab com.jopdesign.sys.JVM.f_ifge()V 1916
+ -mtab com.jopdesign.sys.JVM.f_ifgt()V 1918
+ -mtab com.jopdesign.sys.JVM.f_ifle()V 1920
+ -mtab com.jopdesign.sys.JVM.f_if_icmpeq()V 1922
+ -mtab com.jopdesign.sys.JVM.f_if_icmpne()V 1924
+ -mtab com.jopdesign.sys.JVM.f_if_icmplt()V 1926
+ -mtab com.jopdesign.sys.JVM.f_if_icmpge()V 1928
+ -mtab com.jopdesign.sys.JVM.f_if_icmpgt()V 1930
+ -mtab com.jopdesign.sys.JVM.f_if_icmple()V 1932
+ -mtab com.jopdesign.sys.JVM.f_if_acmpeq()V 1934
+ -mtab com.jopdesign.sys.JVM.f_if_acmpne()V 1936
+ -mtab com.jopdesign.sys.JVM.f_goto()V 1938
+ -mtab com.jopdesign.sys.JVM.f_jsr()V 1940
+ -mtab com.jopdesign.sys.JVM.f_ret()V 1942
+ -mtab com.jopdesign.sys.JVM.f_tableswitch()V 1944
+ -mtab com.jopdesign.sys.JVM.f_lookupswitch()V 1946
+ -mtab com.jopdesign.sys.JVM.f_ireturn()V 1948
+ -mtab com.jopdesign.sys.JVM.f_lreturn()V 1950
+ -mtab com.jopdesign.sys.JVM.f_freturn()V 1952
+ -mtab com.jopdesign.sys.JVM.f_dreturn()V 1954
+ -mtab com.jopdesign.sys.JVM.f_areturn()V 1956
+ -mtab com.jopdesign.sys.JVM.f_return()V 1958
+ -mtab com.jopdesign.sys.JVM.f_getstatic()V 1960
+ -mtab com.jopdesign.sys.JVM.f_putstatic()V 1962
+ -mtab com.jopdesign.sys.JVM.f_getfield()V 1964
+ -mtab com.jopdesign.sys.JVM.f_putfield()V 1966
+ -mtab com.jopdesign.sys.JVM.f_invokevirtual()V 1968
+ -mtab com.jopdesign.sys.JVM.f_invokespecial()V 1970
+ -mtab com.jopdesign.sys.JVM.f_invokestatic()V 1972
+ -mtab com.jopdesign.sys.JVM.f_invokeinterface()V 1974
+ -mtab com.jopdesign.sys.JVM.f_unused_ba()V 1976
+ -mtab com.jopdesign.sys.JVM.f_new()V 1978
+ -mtab com.jopdesign.sys.JVM.f_newarray()V 1980
+ -mtab com.jopdesign.sys.JVM.f_anewarray()V 1982
+ -mtab com.jopdesign.sys.JVM.f_arraylength()V 1984
+ -mtab com.jopdesign.sys.JVM.f_athrow()V 1986
+ -mtab com.jopdesign.sys.JVM.f_checkcast()V 1988
+ -mtab com.jopdesign.sys.JVM.f_instanceof()V 1990
+ -mtab com.jopdesign.sys.JVM.f_monitorenter()V 1992
+ -mtab com.jopdesign.sys.JVM.f_monitorexit()V 1994
+ -mtab com.jopdesign.sys.JVM.f_wide()V 1996
+ -mtab com.jopdesign.sys.JVM.f_multianewarray()V 1998
+ -mtab com.jopdesign.sys.JVM.f_ifnull()V 2000
+ -mtab com.jopdesign.sys.JVM.f_ifnonnull()V 2002
+ -mtab com.jopdesign.sys.JVM.f_goto_w()V 2004
+ -mtab com.jopdesign.sys.JVM.f_jsr_w()V 2006
+ -mtab com.jopdesign.sys.JVM.f_breakpoint()V 2008
+ -mtab com.jopdesign.sys.JVM.f_resCB()V 2010
+ -mtab com.jopdesign.sys.JVM.f_jopsys_inval()V 2012
+ -mtab com.jopdesign.sys.JVM.f_resCD()V 2014
+ -mtab com.jopdesign.sys.JVM.f_resCE()V 2016
+ -mtab com.jopdesign.sys.JVM.f_resCF()V 2018
+ -mtab com.jopdesign.sys.JVM.f_jopsys_null()V 2020
+ -mtab com.jopdesign.sys.JVM.f_jopsys_rd()V 2022
+ -mtab com.jopdesign.sys.JVM.f_jopsys_wr()V 2024
+ -mtab com.jopdesign.sys.JVM.f_jopsys_rdmem()V 2026
+ -mtab com.jopdesign.sys.JVM.f_jopsys_wrmem()V 2028
+ -mtab com.jopdesign.sys.JVM.f_jopsys_rdint()V 2030
+ -mtab com.jopdesign.sys.JVM.f_jopsys_wrint()V 2032
+ -mtab com.jopdesign.sys.JVM.f_jopsys_getsp()V 2034
+ -mtab com.jopdesign.sys.JVM.f_jopsys_setsp()V 2036
+ -mtab com.jopdesign.sys.JVM.f_jopsys_getvp()V 2038
+ -mtab com.jopdesign.sys.JVM.f_jopsys_setvp()V 2040
+ -mtab com.jopdesign.sys.JVM.f_jopsys_int2ext()V 2042
+ -mtab com.jopdesign.sys.JVM.f_jopsys_ext2int()V 2044
+ -mtab com.jopdesign.sys.JVM.f_jopsys_nop()V 2046
+ -mtab com.jopdesign.sys.JVM.f_jopsys_invoke()V 2048
+ -mtab com.jopdesign.sys.JVM.f_jopsys_cond_move()V 2050
+ -mtab com.jopdesign.sys.JVM.f_getstatic_ref()V 2052
+ -mtab com.jopdesign.sys.JVM.f_putstatic_ref()V 2054
+ -mtab com.jopdesign.sys.JVM.f_getfield_ref()V 2056
+ -mtab com.jopdesign.sys.JVM.f_putfield_ref()V 2058
+ -mtab com.jopdesign.sys.JVM.f_getstatic_long()V 2060
+ -mtab com.jopdesign.sys.JVM.f_putstatic_long()V 2062
+ -mtab com.jopdesign.sys.JVM.f_getfield_long()V 2064
+ -mtab com.jopdesign.sys.JVM.f_putfield_long()V 2066
+ -mtab com.jopdesign.sys.JVM.f_jopsys_memcpy()V 2068
+ -mtab com.jopdesign.sys.JVM.f_jopsys_getfield()V 2070
+ -mtab com.jopdesign.sys.JVM.f_jopsys_putfield()V 2072
+ -mtab com.jopdesign.sys.JVM.f_resEB()V 2074
+ -mtab com.jopdesign.sys.JVM.f_invokesuper()V 2076
+ -mtab com.jopdesign.sys.JVM.f_resED()V 2078
+ -mtab com.jopdesign.sys.JVM.f_jopsys_getstatic()V 2080
+ -mtab com.jopdesign.sys.JVM.f_jopsys_putstatic()V 2082
+ -mtab com.jopdesign.sys.JVM.f_sys_int()V 2084
+ -mtab com.jopdesign.sys.JVM.f_sys_exc()V 2086
+ -mtab com.jopdesign.sys.JVM.f_resF2()V 2088
+ -mtab com.jopdesign.sys.JVM.f_resF3()V 2090
+ -mtab com.jopdesign.sys.JVM.f_resF4()V 2092
+ -mtab com.jopdesign.sys.JVM.f_resF5()V 2094
+ -mtab com.jopdesign.sys.JVM.f_resF6()V 2096
+ -mtab com.jopdesign.sys.JVM.f_resF7()V 2098
+ -mtab com.jopdesign.sys.JVM.f_resF8()V 2100
+ -mtab com.jopdesign.sys.JVM.f_resF9()V 2102
+ -mtab com.jopdesign.sys.JVM.f_resFA()V 2104
+ -mtab com.jopdesign.sys.JVM.f_resFB()V 2106
+ -mtab com.jopdesign.sys.JVM.f_resFC()V 2108
+ -mtab com.jopdesign.sys.JVM.f_resFD()V 2110
+ -mtab com.jopdesign.sys.JVM.f_sys_noim()V 2112
+ -mtab com.jopdesign.sys.JVM.f_sys_init()V 2114
+ -constmap 1 0
+ -constmap 2 1
