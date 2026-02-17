@@ -70,7 +70,7 @@ jop/
 │   ├── qmtech-ep4cgx150-bram/ # BRAM FPGA project (Quartus)
 │   └── qmtech-ep4cgx150-sdram/# SDRAM FPGA project (Quartus)
 ├── java/jopa/                 # Jopa microcode assembler
-├── verification/cocotb/         # CocoTB/GHDL reference tests (legacy)
+├── verification/cocotb/         # CocoTB/GHDL verification tests
 ├── docs/                        # Architecture and reference docs
 └── build.sbt                  # Top-level SBT build
 ```
@@ -134,8 +134,13 @@ sbt "Test / runMain jop.system.JopCoreLatencySweep"
 # Reference simulator
 sbt "runMain jop.JopSimulatorSim"
 
-# CocoTB/GHDL reference tests
-cd verification/cocotb && make test_jop_simulator
+# CocoTB/GHDL verification tests (requires JOP_HOME pointing to original JOP repo)
+cd verification/cocotb
+make test_all            # VHDL reference module tests (mul, shift, fetch, decode, stack, bcfetch)
+make test_jop_simulator  # Full system test with HelloWorld.jop (~13 min)
+make test_method_cache   # Method cache tag lookup
+make test_interrupt      # Interrupt/exception handling
+make help                # List all available test targets
 ```
 
 ## Supported FPGA Boards

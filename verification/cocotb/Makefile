@@ -1,12 +1,17 @@
 # CocoTB Makefile for JOP core testing
+#
+# Requires JOP_HOME to point to the original JOP repository
+# (https://github.com/peteryates1/jop)
 
 # Defaults
 SIM ?= ghdl
 TOPLEVEL_LANG ?= vhdl
 WAVES ?= 1
 
-# Directories (avoid VHDL_SOURCES_* prefix as CocoTB treats those as source lists)
-ORIG_VHDL_DIR = ../../original/vhdl/core
+# Original JOP repository (for VHDL reference sources)
+JOP_HOME ?= /home/peter/git/jop
+ORIG_VHDL_DIR = $(JOP_HOME)/vhdl/core
+
 # Local VHDL testbenches (hand-written)
 VHDL_TB_DIR = vhdl
 # Generated VHDL files (copied from SpinalHDL for testing)
@@ -38,7 +43,13 @@ endif
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Phony targets
-.PHONY: clean test_all test_mul test_shift test_fetch test_decode test_stack test_stack_spinal test_bcfetch test_core test_core_alu test_core_shift test_core_loadstore test_core_branch test_core_stack test_core_regstore test_core_regload test_core_store test_core_load test_core_loadopd test_core_mmu test_core_control test_method_cache test_memory_controller test_interrupt test_jop_simulator help
+.PHONY: clean test_all \
+	test_mul test_shift test_fetch test_decode test_stack test_bcfetch test_bcfetch_ref \
+	test_core_alu test_core_shift test_core_loadstore test_core_branch test_core_stack \
+	test_core_regstore test_core_regload test_core_store test_core_load test_core_loadopd \
+	test_core_mmu test_core_control test_core_multiplier test_jvm_sequences \
+	test_method_cache test_main_memory_sim test_interrupt test_jop_simulator \
+	help
 
 # Clean build artifacts
 clean::
@@ -48,7 +59,7 @@ clean::
 	@rm -rf .pytest_cache
 	@rm -f results.xml
 
-# Test all modules
+# Test all VHDL reference modules
 test_all:
 	@echo "Running all module tests..."
 	$(MAKE) test_mul
@@ -57,6 +68,10 @@ test_all:
 	$(MAKE) test_decode
 	$(MAKE) test_stack
 	$(MAKE) test_bcfetch
+
+# ==========================================================================
+# VHDL Reference Tests (from JOP_HOME)
+# ==========================================================================
 
 # Test mul.vhd (multiplier)
 test_mul:
@@ -71,6 +86,10 @@ test_shift:
 	@mkdir -p waveforms $(VHDL_TB_DIR)
 	@cp -f $(ORIG_VHDL_DIR)/shift.vhd $(VHDL_TB_DIR)/shift.vhd
 	$(MAKE) VHDL_SOURCES="$(VHDL_TB_DIR)/shift.vhd" TOPLEVEL=shift MODULE=tests.test_shift
+
+# ==========================================================================
+# Hand-written VHDL Testbench Tests
+# ==========================================================================
 
 # Test fetch.vhd (microcode ROM fetch stage)
 # Uses fetch_tb.vhd wrapper which includes integrated ROM for testing
@@ -126,192 +145,136 @@ test_bcfetch_ref:
 	fi
 	$(MAKE) VHDL_SOURCES="$(JTBL_DIR)/jtbl.vhd $(VHDL_TB_DIR)/bcfetch_ref_tb.vhd" TOPLEVEL=bcfetch_ref_tb MODULE=tests.test_bcfetch
 
-# Test SpinalHDL-generated StackStageTb (legacy - generator no longer exists)
-# Uses SpinalHDL-generated VHDL with same interface as stack_tb.vhd
-# Note: Use lowercase toplevel name for GHDL compatibility (VHDL case insensitive)
-# Note: StackStageTb.vhd must be manually placed in vhdl/ directory if needed
-test_stack_spinal:
-	@echo "Testing SpinalHDL StackStageTb..."
-	@echo "WARNING: This target uses a legacy file. Use test_stack instead."
-	@mkdir -p waveforms $(VHDL_TB_DIR)
-	$(MAKE) VHDL_SOURCES="$(VHDL_TB_DIR)/StackStageTb.vhd" TOPLEVEL=stackstagetb MODULE=tests.test_stack
+# ==========================================================================
+# SpinalHDL Pipeline Tests (generated from JopPipelineTestRom)
+#
+# Generate VHDL: sbt "runMain jop.JopPipeline<Name>TestTbVhdl"
+# ==========================================================================
 
-# Test JopCore (integrated Fetch → Decode → Stack pipeline)
-# Uses SpinalHDL-generated JopCoreTb
-test_core:
-	@echo "Testing JopCore (Fetch → Decode → Stack pipeline)..."
-	@mkdir -p waveforms $(GENERATED_DIR)
-	@echo "Copying JopCoreTb.vhd from SpinalHDL generated directory..."
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreTb.vhd $(GENERATED_DIR)/JopCoreTb.vhd || \
-		(echo "ERROR: JopCoreTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreTb.vhd" TOPLEVEL=jopcoretb MODULE=tests.test_core
-
-# Test JopCore with ALU operations (custom ROM)
-# Uses SpinalHDL-generated JopCoreAluTestTb with ALU instruction ROM
 test_core_alu:
-	@echo "Testing JopCore ALU operations (custom ROM)..."
+	@echo "Testing pipeline ALU operations (custom ROM)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@echo "Copying JopCoreAluTestTb.vhd from SpinalHDL generated directory..."
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreAluTestTb.vhd $(GENERATED_DIR)/JopCoreAluTestTb.vhd || \
-		(echo "ERROR: JopCoreAluTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreAluTestTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreAluTestTb.vhd" TOPLEVEL=jopcorealutesttb MODULE=tests.test_core_alu
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineAluTestTb.vhd $(GENERATED_DIR)/JopPipelineAluTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineAluTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineAluTestTb.vhd" TOPLEVEL=joppipelinealutesttb MODULE=tests.test_core_alu
 
-# Test JopCore with shift operations (custom ROM)
-# Uses SpinalHDL-generated JopCoreShiftTestTb with shift instruction ROM
 test_core_shift:
-	@echo "Testing JopCore shift operations (custom ROM)..."
+	@echo "Testing pipeline shift operations (custom ROM)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@echo "Copying JopCoreShiftTestTb.vhd from SpinalHDL generated directory..."
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreShiftTestTb.vhd $(GENERATED_DIR)/JopCoreShiftTestTb.vhd || \
-		(echo "ERROR: JopCoreShiftTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreShiftTestTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreShiftTestTb.vhd" TOPLEVEL=jopcoreshifttesttb MODULE=tests.test_core_shift
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineShiftTestTb.vhd $(GENERATED_DIR)/JopPipelineShiftTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineShiftTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineShiftTestTb.vhd" TOPLEVEL=joppipelineshifttesttb MODULE=tests.test_core_shift
 
-# Test JopCore with load/store operations (custom ROM)
-# Uses SpinalHDL-generated JopCoreLoadStoreTestTb with load/store instruction ROM
 test_core_loadstore:
-	@echo "Testing JopCore load/store operations (custom ROM)..."
+	@echo "Testing pipeline load/store operations (custom ROM)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@echo "Copying JopCoreLoadStoreTestTb.vhd from SpinalHDL generated directory..."
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreLoadStoreTestTb.vhd $(GENERATED_DIR)/JopCoreLoadStoreTestTb.vhd || \
-		(echo "ERROR: JopCoreLoadStoreTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreLoadStoreTestTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreLoadStoreTestTb.vhd" TOPLEVEL=jopcoreloadstoretesttb MODULE=tests.test_core_loadstore
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineLoadStoreTestTb.vhd $(GENERATED_DIR)/JopPipelineLoadStoreTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineLoadStoreTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineLoadStoreTestTb.vhd" TOPLEVEL=joppipelineloadstoretesttb MODULE=tests.test_core_loadstore
 
-# Test JopCore with branch operations (custom ROM)
-# Uses SpinalHDL-generated JopCoreBranchTestTb with branch instruction ROM
 test_core_branch:
-	@echo "Testing JopCore branch operations (custom ROM)..."
+	@echo "Testing pipeline branch operations (custom ROM)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@echo "Copying JopCoreBranchTestTb.vhd from SpinalHDL generated directory..."
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreBranchTestTb.vhd $(GENERATED_DIR)/JopCoreBranchTestTb.vhd || \
-		(echo "ERROR: JopCoreBranchTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreBranchTestTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreBranchTestTb.vhd" TOPLEVEL=jopcorebranchtesttb MODULE=tests.test_core_branch
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineBranchTestTb.vhd $(GENERATED_DIR)/JopPipelineBranchTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineBranchTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineBranchTestTb.vhd" TOPLEVEL=joppipelinebranchtesttb MODULE=tests.test_core_branch
 
-# Test JopCore with stack operations (custom ROM)
 test_core_stack:
-	@echo "Testing JopCore stack operations (custom ROM)..."
+	@echo "Testing pipeline stack operations (custom ROM)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreStackTestTb.vhd $(GENERATED_DIR)/JopCoreStackTestTb.vhd || \
-		(echo "ERROR: JopCoreStackTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreStackTestTb.vhd" TOPLEVEL=jopcorestacktesttb MODULE=tests.test_core_stack
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineStackTestTb.vhd $(GENERATED_DIR)/JopPipelineStackTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineStackTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineStackTestTb.vhd" TOPLEVEL=joppipelinestacktesttb MODULE=tests.test_core_stack
 
-# Test JopCore with register store operations (custom ROM)
 test_core_regstore:
-	@echo "Testing JopCore register store operations (custom ROM)..."
+	@echo "Testing pipeline register store operations (custom ROM)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreRegStoreTestTb.vhd $(GENERATED_DIR)/JopCoreRegStoreTestTb.vhd || \
-		(echo "ERROR: JopCoreRegStoreTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreRegStoreTestTb.vhd" TOPLEVEL=jopcoreregstoretesttb MODULE=tests.test_core_regstore
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineRegStoreTestTb.vhd $(GENERATED_DIR)/JopPipelineRegStoreTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineRegStoreTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineRegStoreTestTb.vhd" TOPLEVEL=joppipelineregstoretesttb MODULE=tests.test_core_regstore
 
-# Test JopCore with register load operations (custom ROM)
 test_core_regload:
-	@echo "Testing JopCore register load operations (custom ROM)..."
+	@echo "Testing pipeline register load operations (custom ROM)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreRegLoadTestTb.vhd $(GENERATED_DIR)/JopCoreRegLoadTestTb.vhd || \
-		(echo "ERROR: JopCoreRegLoadTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreRegLoadTestTb.vhd" TOPLEVEL=jopcoreregloadtesttb MODULE=tests.test_core_regload
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineRegLoadTestTb.vhd $(GENERATED_DIR)/JopPipelineRegLoadTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineRegLoadTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineRegLoadTestTb.vhd" TOPLEVEL=joppipelineregloadtesttb MODULE=tests.test_core_regload
 
-# Test JopCore with store operations (custom ROM)
 test_core_store:
-	@echo "Testing JopCore store operations (custom ROM)..."
+	@echo "Testing pipeline store operations (custom ROM)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreStoreTestTb.vhd $(GENERATED_DIR)/JopCoreStoreTestTb.vhd || \
-		(echo "ERROR: JopCoreStoreTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreStoreTestTb.vhd" TOPLEVEL=jopcorestoretesttb MODULE=tests.test_core_store
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineStoreTestTb.vhd $(GENERATED_DIR)/JopPipelineStoreTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineStoreTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineStoreTestTb.vhd" TOPLEVEL=joppipelinestoretesttb MODULE=tests.test_core_store
 
-# Test JopCore with load operations (custom ROM)
 test_core_load:
-	@echo "Testing JopCore load operations (custom ROM)..."
+	@echo "Testing pipeline load operations (custom ROM)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreLoadTestTb.vhd $(GENERATED_DIR)/JopCoreLoadTestTb.vhd || \
-		(echo "ERROR: JopCoreLoadTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreLoadTestTb.vhd" TOPLEVEL=jopcoreloadtesttb MODULE=tests.test_core_load
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineLoadTestTb.vhd $(GENERATED_DIR)/JopPipelineLoadTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineLoadTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineLoadTestTb.vhd" TOPLEVEL=joppipelineloadtesttb MODULE=tests.test_core_load
 
-# Test JopCore with load operand operations (custom ROM)
 test_core_loadopd:
-	@echo "Testing JopCore load operand operations (custom ROM)..."
+	@echo "Testing pipeline load operand operations (custom ROM)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreLoadOpdTestTb.vhd $(GENERATED_DIR)/JopCoreLoadOpdTestTb.vhd || \
-		(echo "ERROR: JopCoreLoadOpdTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreLoadOpdTestTb.vhd" TOPLEVEL=jopcoreloadopdtesttb MODULE=tests.test_core_loadopd
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineLoadOpdTestTb.vhd $(GENERATED_DIR)/JopPipelineLoadOpdTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineLoadOpdTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineLoadOpdTestTb.vhd" TOPLEVEL=joppipelineloadopdtesttb MODULE=tests.test_core_loadopd
 
-# Test JopCore with MMU operations (custom ROM)
 test_core_mmu:
-	@echo "Testing JopCore MMU operations (custom ROM)..."
+	@echo "Testing pipeline MMU operations (custom ROM)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreMmuTestTb.vhd $(GENERATED_DIR)/JopCoreMmuTestTb.vhd || \
-		(echo "ERROR: JopCoreMmuTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreMmuTestTb.vhd" TOPLEVEL=jopcoremmutesttb MODULE=tests.test_core_mmu
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineMmuTestTb.vhd $(GENERATED_DIR)/JopPipelineMmuTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineMmuTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineMmuTestTb.vhd" TOPLEVEL=joppipelinemmutesttb MODULE=tests.test_core_mmu
 
-# Test JopCore with control operations (custom ROM)
 test_core_control:
-	@echo "Testing JopCore control operations (custom ROM)..."
+	@echo "Testing pipeline control operations (custom ROM)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreControlTestTb.vhd $(GENERATED_DIR)/JopCoreControlTestTb.vhd || \
-		(echo "ERROR: JopCoreControlTestTb.vhd not found." && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreControlTestTb.vhd" TOPLEVEL=jopcorecontroltesttb MODULE=tests.test_core_control
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineControlTestTb.vhd $(GENERATED_DIR)/JopPipelineControlTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineControlTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineControlTestTb.vhd" TOPLEVEL=joppipelinecontroltesttb MODULE=tests.test_core_control
 
-# Test JopCore with multiplier operations (stmul/ldmul)
 test_core_multiplier:
-	@echo "Testing JopCore multiplier integration (stmul/ldmul)..."
+	@echo "Testing pipeline multiplier integration (stmul/ldmul)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreMultiplierTestTb.vhd $(GENERATED_DIR)/JopCoreMultiplierTestTb.vhd || \
-		(echo "ERROR: JopCoreMultiplierTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreMultiplierTestTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreMultiplierTestTb.vhd" TOPLEVEL=jopcoremultipliertesttb MODULE=tests.test_core_multiplier
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineMultiplierTestTb.vhd $(GENERATED_DIR)/JopPipelineMultiplierTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineMultiplierTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineMultiplierTestTb.vhd" TOPLEVEL=joppipelinemultipliertesttb MODULE=tests.test_core_multiplier
 
-# Test JopCore with JVM instruction sequences (Phase 3.1)
 test_jvm_sequences:
-	@echo "Testing JopCore JVM instruction sequences (Phase 3.1)..."
+	@echo "Testing pipeline JVM instruction sequences..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreJvmSequencesTestTb.vhd $(GENERATED_DIR)/JopCoreJvmSequencesTestTb.vhd || \
-		(echo "ERROR: JopCoreJvmSequencesTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreJvmSequencesTestTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreJvmSequencesTestTb.vhd" TOPLEVEL=jopcorejvmsequencestesttb MODULE=tests.test_jvm_sequences
+	@cp -f $(SPINALHDL_GEN_DIR)/JopPipelineJvmSequencesTestTb.vhd $(GENERATED_DIR)/JopPipelineJvmSequencesTestTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.JopPipelineJvmSequencesTestTbVhdl\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopPipelineJvmSequencesTestTb.vhd" TOPLEVEL=joppipelinejvmsequencestesttb MODULE=tests.test_jvm_sequences
 
-# Test JopCoreWithBytecode integration (BytecodeFetch + Microcode Pipeline)
-test_core_bytecode:
-	@echo "Testing JopCoreWithBytecode integration..."
-	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/JopCoreWithBytecodeTb.vhd $(GENERATED_DIR)/JopCoreWithBytecodeTb.vhd || \
-		(echo "ERROR: JopCoreWithBytecodeTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopCoreWithBytecodeTbVhdl\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopCoreWithBytecodeTb.vhd" TOPLEVEL=jopcorewithbytecodetb MODULE=tests.test_core_with_bytecode
-
-# Test MemorySubsystem (integrated memory subsystem with JOP data)
-test_memory_subsystem:
-	@echo "Testing MemorySubsystem (integrated memory subsystem)..."
-	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/MemorySubsystemTb.vhd $(GENERATED_DIR)/MemorySubsystemTb.vhd || \
-		(echo "ERROR: MemorySubsystemTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.memory.MemorySubsystemTb\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/MemorySubsystemTb.vhd" TOPLEVEL=memorysubsystemtb MODULE=tests.test_memory_subsystem
-
-# Test MainMemorySim (simulated main memory)
-test_main_memory_sim:
-	@echo "Testing MainMemorySim (simulated main memory)..."
-	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/MainMemorySimTb.vhd $(GENERATED_DIR)/MainMemorySimTb.vhd || \
-		(echo "ERROR: MainMemorySimTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.memory.MainMemorySimTb\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/MainMemorySimTb.vhd" TOPLEVEL=mainmemorysimtb MODULE=tests.test_main_memory_sim
+# ==========================================================================
+# SpinalHDL Component Tests
+# ==========================================================================
 
 # Test MethodCache (method cache tag lookup)
 test_method_cache:
 	@echo "Testing MethodCache (method cache tag lookup)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
 	@cp -f $(SPINALHDL_GEN_DIR)/MethodCacheTb.vhd $(GENERATED_DIR)/MethodCacheTb.vhd || \
-		(echo "ERROR: MethodCacheTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.memory.MethodCacheTbVhdl\"' first" && exit 1)
+		(echo "ERROR: Run 'sbt \"runMain jop.memory.MethodCacheTbVhdl\"' first" && exit 1)
 	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/MethodCacheTb.vhd" TOPLEVEL=methodcachetb MODULE=tests.test_method_cache
 
-# Test MemoryController (automatic cache miss handling)
-test_memory_controller:
-	@echo "Testing MemoryController (automatic cache miss handling)..."
+# Test MainMemorySim (simulated main memory)
+test_main_memory_sim:
+	@echo "Testing MainMemorySim (simulated main memory)..."
 	@mkdir -p waveforms $(GENERATED_DIR)
-	@cp -f $(SPINALHDL_GEN_DIR)/MemoryControllerTb.vhd $(GENERATED_DIR)/MemoryControllerTb.vhd || \
-		(echo "ERROR: MemoryControllerTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.memory.MemoryControllerTb\"' first" && exit 1)
-	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/MemoryControllerTb.vhd" TOPLEVEL=memorycontrollertb MODULE=tests.test_memory_controller
+	@cp -f $(SPINALHDL_GEN_DIR)/MainMemorySimTb.vhd $(GENERATED_DIR)/MainMemorySimTb.vhd || \
+		(echo "ERROR: Run 'sbt \"runMain jop.memory.MainMemorySimTb\"' first" && exit 1)
+	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/MainMemorySimTb.vhd" TOPLEVEL=mainmemorysimtb MODULE=tests.test_main_memory_sim
 
-# Test Interrupt/Exception handling (Phase E)
+# Test Interrupt/Exception handling
 test_interrupt:
-	@echo "Testing Interrupt/Exception handling (Phase E)..."
+	@echo "Testing Interrupt/Exception handling..."
 	@mkdir -p waveforms $(GENERATED_DIR)
 	@cp -f $(SPINALHDL_GEN_DIR)/InterruptTestTb.vhd $(GENERATED_DIR)/InterruptTestTb.vhd || \
-		(echo "ERROR: InterruptTestTb.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.pipeline.InterruptTestTb\"' first" && exit 1)
+		(echo "ERROR: Run 'sbt \"runMain jop.pipeline.InterruptTestTb\"' first" && exit 1)
 	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/InterruptTestTb.vhd" TOPLEVEL=interrupttesttb MODULE=tests.test_interrupt
 
 # Test JOP Simulator (full system with HelloWorld.jop)
@@ -323,29 +286,51 @@ test_jop_simulator:
 	@echo "Testing JOP Simulator with HelloWorld.jop..."
 	@mkdir -p waveforms $(GENERATED_DIR)
 	@cp -f $(SPINALHDL_GEN_DIR)/JopSimulator.vhd $(GENERATED_DIR)/JopSimulator.vhd || \
-		(echo "ERROR: JopSimulator.vhd not found. Run 'cd ../../core/spinalhdl && sbt \"runMain jop.JopSimulatorTbVhdl\"' first" && exit 1)
+		(echo "ERROR: Run 'sbt \"runMain jop.JopSimulatorTbVhdl\"' first" && exit 1)
 	$(MAKE) VHDL_SOURCES="$(GENERATED_DIR)/JopSimulator.vhd" TOPLEVEL=jopsimulator MODULE=tests.test_jop_simulator
 
+# ==========================================================================
 # Help
+# ==========================================================================
+
 help:
 	@echo "JOP CocoTB Test Makefile"
 	@echo ""
-	@echo "Targets:"
-	@echo "  make                 - Run default test"
-	@echo "  make test_all        - Run all tests"
-	@echo "  make test_mul        - Test mul.vhd (bit-serial multiplier)"
-	@echo "  make test_shift      - Test shift.vhd (barrel shifter)"
-	@echo "  make test_fetch      - Test fetch.vhd (microcode ROM fetch stage)"
-	@echo "  make test_decode     - Test decode.vhd (microcode instruction decoder)"
-	@echo "  make test_stack      - Test stack.vhd (stack/execute stage)"
-	@echo "  make test_bcfetch    - Test bcfetch.vhd (bytecode fetch stage)"
-	@echo "  make clean           - Clean build artifacts"
+	@echo "VHDL Reference Tests:"
+	@echo "  make test_mul             - Test mul.vhd (bit-serial multiplier)"
+	@echo "  make test_shift           - Test shift.vhd (barrel shifter)"
+	@echo "  make test_fetch           - Test fetch.vhd (microcode ROM fetch stage)"
+	@echo "  make test_decode          - Test decode.vhd (microcode instruction decoder)"
+	@echo "  make test_stack           - Test stack.vhd (stack/execute stage)"
+	@echo "  make test_bcfetch         - Test bcfetch.vhd (bytecode fetch stage)"
+	@echo ""
+	@echo "SpinalHDL Pipeline Tests (generate first: sbt \"runMain jop.JopPipeline<Name>TestTbVhdl\"):"
+	@echo "  make test_core_alu        - ALU operations"
+	@echo "  make test_core_shift      - Shift operations"
+	@echo "  make test_core_loadstore  - Load/store operations"
+	@echo "  make test_core_branch     - Branch operations"
+	@echo "  make test_core_stack      - Stack operations"
+	@echo "  make test_core_regstore   - Register store operations"
+	@echo "  make test_core_regload    - Register load operations"
+	@echo "  make test_core_store      - Store operations"
+	@echo "  make test_core_load       - Load operations"
+	@echo "  make test_core_loadopd    - Load operand operations"
+	@echo "  make test_core_mmu        - MMU operations"
+	@echo "  make test_core_control    - Control operations"
+	@echo "  make test_core_multiplier - Multiplier integration"
+	@echo "  make test_jvm_sequences   - JVM instruction sequences"
+	@echo ""
+	@echo "SpinalHDL Component Tests:"
+	@echo "  make test_method_cache    - MethodCache tag lookup"
+	@echo "  make test_main_memory_sim - MainMemorySim"
+	@echo "  make test_interrupt       - Interrupt/exception handling"
+	@echo "  make test_jop_simulator   - Full system (HelloWorld.jop)"
+	@echo ""
+	@echo "Utilities:"
+	@echo "  make test_all             - Run all VHDL reference tests"
+	@echo "  make clean                - Clean build artifacts"
 	@echo ""
 	@echo "Variables:"
-	@echo "  SIM=ghdl            - Simulator (default: ghdl)"
-	@echo "  WAVES=1             - Enable waveform generation (default: 1)"
-	@echo "  MODULE=tests.test_X - Test module to run"
-	@echo "  TOPLEVEL=X          - Top-level VHDL entity"
-	@echo ""
-	@echo "Example:"
-	@echo "  make TOPLEVEL=bytecode_fetch MODULE=tests.test_fetch"
+	@echo "  JOP_HOME=/path/to/jop    - Original JOP repository (default: /home/peter/git/jop)"
+	@echo "  SIM=ghdl                 - Simulator (default: ghdl)"
+	@echo "  WAVES=1                  - Enable waveform generation (default: 1)"
