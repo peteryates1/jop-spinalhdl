@@ -174,9 +174,11 @@ cd verification/cocotb && make test_jop_simulator
 - Method cache optimization for SDRAM performance
 - Burst transfers for SDRAM
 - original JOP has Object/Array cache - should we look at adding those?
+- sc_sys equivalent
 - Xilinx/AMD Xilinx Artix-7 and DDR3 on Alchitry Au
   - Method cache optimization for DDR3 performance
 - Multicore
+- configuration - core(s)/system/memory/caches
 - Jopa - refactor
 - JOPizer/WCETPreprocess - refactor - updated libraries.
 - Target JDK modernization 8 as minimum
