@@ -158,8 +158,8 @@ cd verification/cocotb && make test_jop_simulator
 ### Complete
 
 - **Pipeline**: All four stages — bytecode fetch/translate, microcode fetch, decode, execute (stack)
-- **Memory controller**: BMB bus with two-layer design (combinational + state machine for BC fill, getfield, iaload)
-- **Method cache**: Bytecode cache with dynamic loading from main memory
+- **Memory controller**: BMB bus with two-layer design (combinational + state machine for BC fill, getfield, iaload), pipelined BC fill overlaps memory reads with JBC writes
+- **Method cache**: 16-block tag-only cache (32 words/block, FIFO replacement) skips redundant bytecode fills; 2-cycle hit, 3-cycle + fill on miss
 - **Stack buffer**: 256-entry on-chip RAM (64 for 32 local variables + 32 constants, 192 for operand stack) with spill/fill, ALU, shifter, 33-bit comparator
 - **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
@@ -171,7 +171,6 @@ cd verification/cocotb && make test_jop_simulator
 
 ### Next Steps
 
-- Method cache optimization for SDRAM performance
 - Burst transfers for SDRAM
 - original JOP has Object/Array cache - should we look at adding those?
 - sc_sys equivalent
@@ -189,7 +188,7 @@ cd verification/cocotb && make test_jop_simulator
 ## Key Technical Details
 
 - **Bus**: SpinalHDL BMB (Bus Master Bridge). BRAM gives single-cycle accept, next-cycle response (matches original SimpCon `rdy_cnt=1`). SDRAM stalls automatically via busy signal.
-- **Memory controller**: Layer 1 is combinational (simple rd/wr). Layer 2 is a state machine for multi-cycle operations (bytecode fill, getfield, array access).
+- **Memory controller**: Layer 1 is combinational (simple rd/wr). Layer 2 is a state machine for multi-cycle operations (bytecode fill, getfield, array access). BC fill is pipelined — issues the next read while writing the previous response to JBC RAM, saving ~1 cycle per word.
 - **Handle format**: `H[0]` = data pointer, `H[1]` = array length. Array elements start at `data_ptr[0]`.
 - **Serial boot**: Microcode polls UART for incoming bytes, assembles 4 bytes into 32-bit words, writes to SDRAM. Download script (`download.py`) sends `.jop` files with byte-by-byte echo verification.
 - **UART RX workaround**: SpinalHDL's `UartCtrl` emits `read.valid` as a one-cycle pulse (`RegNext(False)`). A 16-entry `StreamFifo` buffers received bytes so `pop.valid` stays high until consumed — matching the original VHDL `sc_uart` FIFO behavior.
