@@ -5,6 +5,7 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
+import jop.memory.JopMemoryConfig
 import jop.utils.JopFileLoader
 import jop.pipeline.JumpTableInitData
 
@@ -27,7 +28,10 @@ case class JopSdramSerialHarness(
   downloadBytes: Seq[BigInt]  // .jop file as bytes (MSB-first per word)
 ) extends Component {
 
-  val config = JopCoreConfig(jumpTable = JumpTableInitData.serial)
+  val config = JopCoreConfig(
+    memConfig = JopMemoryConfig(burstLen = 4),
+    jumpTable = JumpTableInitData.serial
+  )
   val sdramLayout = W9825G6JH6.layout
   val sdramTiming = W9825G6JH6.timingGrade7
   val CAS = 3

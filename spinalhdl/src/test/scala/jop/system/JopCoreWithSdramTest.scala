@@ -6,6 +6,7 @@ import spinal.lib._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import org.scalatest.funsuite.AnyFunSuite
+import jop.memory.JopMemoryConfig
 import jop.utils.JopFileLoader
 
 /**
@@ -17,7 +18,7 @@ case class JopCoreWithSdramTestHarness(
   mainMemInit: Seq[BigInt]
 ) extends Component {
 
-  val config = JopCoreConfig()
+  val config = JopCoreConfig(memConfig = JopMemoryConfig(burstLen = 4))
 
   // Use W9825G6JH6 SDRAM parameters
   val sdramLayout = W9825G6JH6.layout

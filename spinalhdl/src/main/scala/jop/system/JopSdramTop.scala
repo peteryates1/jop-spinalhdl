@@ -6,6 +6,7 @@ import spinal.lib.com.uart._
 import spinal.lib.io.InOutWrapper
 import spinal.lib.memory.sdram.sdr._
 import jop.utils.JopFileLoader
+import jop.memory.JopMemoryConfig
 import jop.pipeline.JumpTableInitData
 
 /**
@@ -104,7 +105,10 @@ case class JopSdramTop(
 
   val mainArea = new ClockingArea(mainClockDomain) {
 
-    val config = JopCoreConfig(jumpTable = JumpTableInitData.serial)
+    val config = JopCoreConfig(
+      memConfig = JopMemoryConfig(burstLen = 4),
+      jumpTable = JumpTableInitData.serial
+    )
 
     // JBC init: empty (zeros) — BC_FILL loads bytecodes dynamically from SDRAM
     val jbcInit = Seq.fill(2048)(BigInt(0))

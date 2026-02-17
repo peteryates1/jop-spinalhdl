@@ -18,10 +18,13 @@ case class JopMemoryConfig(
   dataWidth: Int = 32,
   addressWidth: Int = 24,
   mainMemSize: BigInt = 8 * 1024 * 1024,  // 8MB default
-  scratchSize: BigInt = 4 * 1024          // 4KB scratch pad
+  scratchSize: BigInt = 4 * 1024,         // 4KB scratch pad
+  burstLen: Int = 0                       // 0=no burst (pipelined single-word), 4=SDR, 8=DDR3
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(addressWidth >= 16 && addressWidth <= 26, "Address width must be 16-26 bits")
+  require(burstLen == 0 || (burstLen >= 2 && (burstLen & (burstLen - 1)) == 0),
+    "burstLen must be 0 (no burst) or a power of 2 >= 2")
 
   /** Bytes per word */
   def byteCount: Int = dataWidth / 8
@@ -31,6 +34,11 @@ case class JopMemoryConfig(
 
   /** Scratch pad size in words */
   def scratchWords: BigInt = scratchSize / byteCount
+
+  /** lengthWidth: 2 bits for single-word (length=3), wider for burst */
+  private def burstLengthWidth: Int =
+    if (burstLen <= 1) 2
+    else log2Up(burstLen * byteCount)  // e.g. burstLen=4 → log2Up(16) = 4
 
   /**
    * Create BMB parameters for the memory interface
@@ -43,7 +51,7 @@ case class JopMemoryConfig(
       dataWidth = dataWidth
     ).addSources(1, BmbSourceParameter(
       contextWidth = 4,       // Context for tracking pending transactions
-      lengthWidth = 2,        // Single word transfers (length = 3 for 4 bytes)
+      lengthWidth = burstLengthWidth,
       canWrite = true,
       canRead = true,
       alignment = BmbParameter.BurstAlignement.WORD

@@ -533,65 +533,115 @@ case class BmbMemoryController(
     }
 
     // ========================================================================
-    // Bytecode Cache Fill States (pipelined, busy)
+    // Bytecode Cache Fill States (busy)
     //
-    // Matches VHDL mem_sc.vhd "pipeline level 2": issues the next memory
-    // read while writing the previous word to JBC, overlapping memory
-    // latency with the JBC write cycle.
+    // Two generation-time paths selected by config.burstLen:
     //
-    // BC_FILL_R1:   Issue first BMB read command
-    // BC_FILL_LOOP: On response, register JBC write + issue next read
-    // BC_FILL_CMD:  Retry read command if not accepted in BC_FILL_LOOP
+    // burstLen == 0 (BRAM): Pipelined single-word reads matching VHDL
+    //   mem_sc.vhd "pipeline level 2". Issues next read while writing
+    //   previous word to JBC.
+    //
+    // burstLen > 0 (SDRAM/DDR): Burst reads. One BMB command fetches
+    //   multiple consecutive words. After initial CAS latency, data
+    //   streams at 1 word/clock.
     // ========================================================================
 
-    is(State.BC_FILL_R1) {
-      // Issue first BMB read for method bytecode word
-      io.bmb.cmd.valid := True
-      io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
-      io.bmb.cmd.fragment.address := (bcFillAddr << 2).resized
-      when(io.bmb.cmd.fire) {
-        bcFillAddr := bcFillAddr + 1
-        state := State.BC_FILL_LOOP
+    if (config.burstLen == 0) {
+      // Path A: No burst — pipelined single-word reads (unchanged)
+
+      is(State.BC_FILL_R1) {
+        // Issue first BMB read for method bytecode word
+        io.bmb.cmd.valid := True
+        io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
+        io.bmb.cmd.fragment.address := (bcFillAddr << 2).resized
+        when(io.bmb.cmd.fire) {
+          bcFillAddr := bcFillAddr + 1
+          state := State.BC_FILL_LOOP
+        }
       }
-    }
 
-    is(State.BC_FILL_LOOP) {
-      when(io.bmb.rsp.fire) {
-        // Byte-swap for JBC RAM and register write (actual write happens next cycle)
-        val word = io.bmb.rsp.fragment.data
-        jbcWrDataReg := word(7 downto 0) ## word(15 downto 8) ## word(23 downto 16) ## word(31 downto 24)
-        jbcWrEnReg := True
-        jbcWrAddrReg := (bcCacheStartReg + bcFillCount).resized
+      is(State.BC_FILL_LOOP) {
+        when(io.bmb.rsp.fire) {
+          // Byte-swap for JBC RAM and register write (actual write happens next cycle)
+          val word = io.bmb.rsp.fragment.data
+          jbcWrDataReg := word(7 downto 0) ## word(15 downto 8) ## word(23 downto 16) ## word(31 downto 24)
+          jbcWrEnReg := True
+          jbcWrAddrReg := (bcCacheStartReg + bcFillCount).resized
 
-        val wordsWritten = bcFillCount + 1
-        when(wordsWritten >= bcFillLen) {
-          // Last word — JBC write happens next cycle while back in IDLE
-          state := State.IDLE
-        }.otherwise {
-          // More words: try to issue next read in same cycle
-          bcFillCount := wordsWritten
-          io.bmb.cmd.valid := True
-          io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
-          io.bmb.cmd.fragment.address := (bcFillAddr << 2).resized
-          when(io.bmb.cmd.fire) {
-            bcFillAddr := bcFillAddr + 1
-            // Stay in BC_FILL_LOOP — next response will arrive
+          val wordsWritten = bcFillCount + 1
+          when(wordsWritten >= bcFillLen) {
+            // Last word — JBC write happens next cycle while back in IDLE
+            state := State.IDLE
           }.otherwise {
-            state := State.BC_FILL_CMD  // Retry cmd next cycle
+            // More words: try to issue next read in same cycle
+            bcFillCount := wordsWritten
+            io.bmb.cmd.valid := True
+            io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
+            io.bmb.cmd.fragment.address := (bcFillAddr << 2).resized
+            when(io.bmb.cmd.fire) {
+              bcFillAddr := bcFillAddr + 1
+              // Stay in BC_FILL_LOOP — next response will arrive
+            }.otherwise {
+              state := State.BC_FILL_CMD  // Retry cmd next cycle
+            }
           }
         }
       }
-    }
 
-    is(State.BC_FILL_CMD) {
-      // Issue next read command
-      io.bmb.cmd.valid := True
-      io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
-      io.bmb.cmd.fragment.address := (bcFillAddr << 2).resized
-      when(io.bmb.cmd.fire) {
-        bcFillAddr := bcFillAddr + 1
-        state := State.BC_FILL_LOOP
+      is(State.BC_FILL_CMD) {
+        // Issue next read command
+        io.bmb.cmd.valid := True
+        io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
+        io.bmb.cmd.fragment.address := (bcFillAddr << 2).resized
+        when(io.bmb.cmd.fire) {
+          bcFillAddr := bcFillAddr + 1
+          state := State.BC_FILL_LOOP
+        }
       }
+
+    } else {
+      // Path B: Burst reads
+
+      is(State.BC_FILL_R1) {
+        // Issue burst read command
+        val remaining = bcFillLen - bcFillCount
+        val burstWords = remaining.min(U(config.burstLen, 10 bits))
+        io.bmb.cmd.valid := True
+        io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
+        io.bmb.cmd.fragment.address := (bcFillAddr << 2).resized
+        io.bmb.cmd.fragment.length := ((burstWords << 2) - 1).resized
+        when(io.bmb.cmd.fire) {
+          bcFillAddr := bcFillAddr + burstWords
+          state := State.BC_FILL_LOOP
+        }
+      }
+
+      is(State.BC_FILL_LOOP) {
+        // Process burst response beats
+        when(io.bmb.rsp.fire) {
+          // Byte-swap and register JBC write (same as non-burst path)
+          val word = io.bmb.rsp.fragment.data
+          jbcWrDataReg := word(7 downto 0) ## word(15 downto 8) ## word(23 downto 16) ## word(31 downto 24)
+          jbcWrEnReg := True
+          jbcWrAddrReg := (bcCacheStartReg + bcFillCount).resized
+          bcFillCount := bcFillCount + 1
+
+          when(io.bmb.rsp.last) {
+            // End of burst batch
+            when(bcFillCount + 1 >= bcFillLen) {
+              state := State.IDLE  // All words filled
+            }.otherwise {
+              state := State.BC_FILL_R1  // More batches needed
+            }
+          }
+        }
+      }
+
+      is(State.BC_FILL_CMD) {
+        // Not used in burst mode — kept for enum completeness
+        state := State.IDLE
+      }
+
     }
 
     // ========================================================================
