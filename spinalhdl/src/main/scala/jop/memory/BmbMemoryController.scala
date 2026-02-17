@@ -75,7 +75,8 @@ case class JbcWritePort(jpcWidth: Int) extends Bundle {
  */
 case class BmbMemoryController(
   config: JopMemoryConfig = JopMemoryConfig(),
-  jpcWidth: Int = 11
+  jpcWidth: Int = 11,
+  blockBits: Int = 4
 ) extends Component {
 
   val io = new Bundle {
@@ -121,8 +122,8 @@ case class BmbMemoryController(
         READ_WAIT, WRITE_WAIT,
         // Handle dereference (getfield/putfield/iaload/iastore) - busy
         HANDLE_READ, HANDLE_WAIT, HANDLE_CALC, HANDLE_ACCESS, HANDLE_DATA_WAIT,
-        // Bytecode cache fill - busy
-        BC_READ, BC_WAIT, BC_WRITE,
+        // Bytecode cache check and fill - busy
+        BC_CACHE_CHECK, BC_READ, BC_WAIT, BC_WRITE,
         // getstatic/putstatic - busy
         GS_READ, PS_WRITE, LAST
       = newElement()
@@ -164,6 +165,9 @@ case class BmbMemoryController(
   // Index register for stidx
   val indexReg = Reg(UInt(config.addressWidth bits)) init(0)
   val wasStidx = Reg(Bool()) init(False)
+
+  // Method cache: JBC word address base for current method's cache block
+  val bcCacheStartReg = Reg(UInt((jpcWidth - 2) bits)) init(0)
 
   // Command tracking for BMB handshake (hold cmd until accepted)
   // SDRAM controllers may not accept commands immediately (cmd.ready=False).
@@ -269,6 +273,24 @@ case class BmbMemoryController(
   val memReadRequested = io.memIn.rd || io.memIn.rdc || io.memIn.rdf
 
   // ==========================================================================
+  // Method Cache
+  // ==========================================================================
+
+  val methodCache = MethodCache(jpcWidth, blockBits)
+
+  // Wire method cache inputs from registered bcFill state
+  // bcFillAddr is captured from TOS when bcRd fires; bits 17:0 are the method address tag
+  methodCache.io.bcAddr := bcFillAddr(17 downto 0)
+  methodCache.io.bcLen := bcFillLen
+
+  // Combinational find trigger: asserted in IDLE when bcRd fires,
+  // processed on the same clock edge by both state machines (matching VHDL
+  // where find is directly wired to mem_in.bc_rd)
+  val mcacheFind = Bool()
+  mcacheFind := False
+  methodCache.io.find := mcacheFind
+
+  // ==========================================================================
   // Main State Machine
   // ==========================================================================
   //
@@ -367,9 +389,9 @@ case class BmbMemoryController(
         bcFillAddr := (packedVal >> 10).resize(config.addressWidth bits)
         bcFillLen := (packedVal & 0x3FF).resize(10 bits)
         bcFillCount := 0
-        jbcWrAddrReg := 0
-        state := State.BC_READ
-        // (no extra busy needed - matches VHDL)
+        // Trigger method cache lookup (combinational, same clock edge)
+        mcacheFind := True
+        state := State.BC_CACHE_CHECK
 
       }.elsewhen(io.memIn.iaload) {
         // Array load - NOS = array ref, TOS = index
@@ -491,6 +513,26 @@ case class BmbMemoryController(
     }
 
     // ========================================================================
+    // Bytecode Cache Check (busy) - wait for method cache tag lookup
+    // ========================================================================
+
+    is(State.BC_CACHE_CHECK) {
+      when(methodCache.io.rdy) {
+        // Cache lookup complete — capture block address
+        bcCacheStartReg := methodCache.io.bcStart
+        bcStartReg := (methodCache.io.bcStart ## U(0, 2 bits)).asUInt.resized  // byte address for CPU
+
+        when(methodCache.io.inCache) {
+          // HIT: method already in JBC RAM, skip fill entirely
+          state := State.IDLE
+        }.otherwise {
+          // MISS: fill method into the assigned cache block
+          state := State.BC_READ
+        }
+      }
+    }
+
+    // ========================================================================
     // Bytecode Cache Fill States (busy)
     // ========================================================================
 
@@ -514,18 +556,14 @@ case class BmbMemoryController(
     }
 
     is(State.BC_WRITE) {
-      // Write word to JBC RAM
+      // Write word to JBC RAM, offset by cache block start
       jbcWrEnReg := True
-      // Use current fill count as write address (both are Regs, so they
-      // take effect at the same edge - the address must be the CURRENT
-      // count, not incremented, to match the write enable timing)
-      jbcWrAddrReg := bcFillCount.resized
+      jbcWrAddrReg := (bcCacheStartReg + bcFillCount).resized
 
       val wordsWritten = bcFillCount + 1
 
       when(wordsWritten >= bcFillLen) {
-        // Done filling - bytecodes loaded at JBC address 0
-        bcStartReg := 0
+        // Done filling — bcStartReg was already set in BC_CACHE_CHECK
         state := State.IDLE
       }.otherwise {
         // More words to read

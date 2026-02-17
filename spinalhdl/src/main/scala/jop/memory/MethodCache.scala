@@ -3,210 +3,143 @@ package jop.memory
 import spinal.core._
 
 /**
- * Method Cache Configuration
+ * Method Cache Tag Lookup
  *
- * @param jpcWidth   Cache size = 2^jpcWidth bytes (default: 11 = 2KB)
- * @param blockBits  Number of blocks = 2^blockBits (default: 3 = 8 blocks)
- * @param tagWidth   Tag width for address matching (default: 18 = 256KB address space)
+ * Ports the VHDL `mcache` entity from cache.vhd to SpinalHDL.
+ * Manages method cache tags only — JBC RAM IS the data storage.
+ *
+ * The cache divides JBC RAM into blocks and maintains a tag per block.
+ * On a lookup (find pulse), it performs a parallel tag check:
+ *   - Hit (2 cycles):  find → S1(match) → IDLE with rdy=true, inCache=true
+ *   - Miss (3 cycles): find → S1(no match) → S2(update tags) → IDLE with rdy=true, inCache=false
+ *
+ * FIFO replacement: on miss, the next available block(s) are allocated
+ * and displaced tags are cleared.
+ *
+ * @param jpcWidth   Java PC width (11 = 2KB cache)
+ * @param blockBits  log2(number of blocks) (4 = 16 blocks, each 32 words)
+ * @param tagWidth   Tag width for method address comparison (18 bits)
  */
-case class MethodCacheConfig(
+case class MethodCache(
   jpcWidth: Int = 11,
-  blockBits: Int = 3,
+  blockBits: Int = 4,
   tagWidth: Int = 18
-) {
-  require(jpcWidth >= 11, "Min 2KB cache (JOP file format limit)")
-  require(jpcWidth <= 12, "Max 4KB cache (JOP file format limit)")
-  require(blockBits >= 2 && blockBits <= 4, "Block bits must be 2-4 (4-16 blocks)")
-  require(tagWidth >= 16 && tagWidth <= 24, "Tag width must be 16-24 bits")
+) extends Component {
 
-  /** Number of cache blocks */
-  def blocks: Int = 1 << blockBits
+  assert(jpcWidth >= 11, "Minimum method cache size is 2KB")
 
-  /** Block size in bytes */
-  def blockSize: Int = (1 << jpcWidth) / blocks
-
-  /** Block size in words (32-bit) */
-  def blockSizeWords: Int = blockSize / 4
-
-  /** Word address width within cache */
-  def cacheWordAddrWidth: Int = jpcWidth - 2
-}
-
-/**
- * Method Cache States (matching VHDL: idle, s1, s2)
- */
-object MethodCacheState extends SpinalEnum {
-  val IDLE, S1, S2 = newElement()
-}
-
-/**
- * Method Cache Component
- *
- * Implements a direct-mapped method cache for JOP bytecode storage.
- * The cache maps method addresses to JBC RAM locations using a tag array.
- *
- * Matches the original VHDL cache.vhd behavior:
- * - IDLE: Ready for lookup (rdy=1)
- * - S1: Check tags, determine hit/miss (rdy=0)
- * - S2: Update tags on miss, advance next pointer
- *
- * Usage flow:
- * 1. Assert 'find' with method address (bcAddr) and length (bcLen)
- * 2. Wait for state to return to IDLE (rdy=1)
- * 3. Check 'inCache': true = hit, false = miss
- * 4. If hit: use 'bcstart' as JBC address for bytecode fetch
- * 5. If miss: load method data via external interface, then retry
- *
- * @param config Method cache configuration
- */
-case class MethodCache(config: MethodCacheConfig = MethodCacheConfig()) extends Component {
+  val methodSizeBits = 10  // METHOD_SIZE_BITS from VHDL jop_types.vhd
+  val blocks = 1 << blockBits
+  val blockWordBits = jpcWidth - 2 - blockBits  // word offset bits within a block
 
   val io = new Bundle {
-    // Cache lookup interface
-    val find    = in Bool()                               // Start lookup
-    val bcAddr  = in UInt(config.tagWidth bits)           // Method address in main memory
-    val bcLen   = in UInt(10 bits)                        // Method length in words
-
-    // Cache lookup results
-    val rdy     = out Bool()                              // Lookup complete (idle state)
-    val inCache = out Bool()                              // Hit (true) or miss (false)
-    val bcstart = out UInt(config.cacheWordAddrWidth bits) // Cache word address
-
-    // Block allocation for cache miss handling
-    val allocBlock = out UInt(config.blockBits bits)      // Block allocated for miss
-
-    // JBC write interface (directly connected to JBC RAM)
-    val jbcWrAddr = out UInt(config.cacheWordAddrWidth bits)
-    val jbcWrData = out Bits(32 bits)
-    val jbcWrEn   = out Bool()
-
-    // External JBC write input (for method loading from memory)
-    val extWrAddr = in UInt(config.cacheWordAddrWidth bits)
-    val extWrData = in Bits(32 bits)
-    val extWrEn   = in Bool()
-
-    // Loading complete signal (external controller signals when method is loaded)
-    val loadDone = in Bool()
+    val bcLen   = in UInt(methodSizeBits bits)   // method length in words
+    val bcAddr  = in UInt(tagWidth bits)          // method memory address tag
+    val find    = in Bool()                       // trigger lookup (one-cycle pulse)
+    val bcStart = out UInt((jpcWidth - 2) bits)   // word address in JBC RAM
+    val rdy     = out Bool()                      // combinational: true when idle
+    val inCache = out Bool()                      // registered: true if last lookup hit
   }
 
   // ==========================================================================
-  // State Machine (matching VHDL)
+  // State Machine
   // ==========================================================================
 
-  val state = Reg(MethodCacheState()) init(MethodCacheState.IDLE)
-
-  // ==========================================================================
-  // Tag Array (one tag per block) and Valid Bits
-  // ==========================================================================
-
-  val tags = Vec(Reg(UInt(config.tagWidth bits)) init(0), config.blocks)
-  val valid = Vec(Reg(Bool()) init(False), config.blocks)  // Valid bit per block
-
-  // Next block pointer (round-robin replacement)
-  val nxt = Reg(UInt(config.blockBits bits)) init(0)
-
-  // Block address register
-  val blockAddr = Reg(UInt(config.blockBits bits)) init(0)
-
-  // In-cache register
-  val inCacheReg = Reg(Bool()) init(False)
-
-  // ==========================================================================
-  // Tag Comparison (parallel, like VHDL)
-  // ==========================================================================
-
-  // Use address for comparison (may be narrower than full address)
-  val useAddr = io.bcAddr
-
-  // Parallel tag comparison - must match tag AND be valid (like VHDL)
-  val hits = Vec(Bool(), config.blocks)
-  for (i <- 0 until config.blocks) {
-    hits(i) := valid(i) && (tags(i) === useAddr)
+  object State extends SpinalEnum {
+    val IDLE, S1, S2 = newElement()
   }
-
-  // Any hit?
-  val hitAny = hits.reduce(_ || _)
-
-  // Find hit index (priority encoder - first match)
-  val hitIndex = UInt(config.blockBits bits)
-  hitIndex := 0
-  for (i <- config.blocks - 1 downto 0) {
-    when(hits(i)) {
-      hitIndex := U(i, config.blockBits bits)
-    }
-  }
-
-  // Number of blocks needed for this method
-  // (length-1) in blocks, calculated from bc_len
-  val blockSizeBits = log2Up(config.blockSizeWords)
-  val nrOfBlks = (io.bcLen >> blockSizeBits).resize(config.blockBits bits)
+  val state = Reg(State()) init(State.IDLE)
 
   // ==========================================================================
-  // State Machine (matching VHDL idle, s1, s2)
+  // Internal State
   // ==========================================================================
 
-  // Pass through external writes to JBC RAM
-  io.jbcWrAddr := io.extWrAddr
-  io.jbcWrData := io.extWrData
-  io.jbcWrEn := io.extWrEn
+  // Tag array: one tag per block (tag=0 means invalid, matching VHDL)
+  val tag = Vec(Reg(Bits(tagWidth bits)), blocks)
+  tag.foreach(_.init(B(0, tagWidth bits)))
 
-  // rdy is combinational based on state (like VHDL)
-  io.rdy := (state === MethodCacheState.IDLE)
+  // FIFO replacement pointer (next block to allocate on miss)
+  val nxt = Reg(UInt(blockBits bits)) init(0)
 
-  switch(state) {
-    is(MethodCacheState.IDLE) {
-      when(io.find) {
-        state := MethodCacheState.S1
-      }
-    }
+  // Block address: which block was hit (or assigned on miss)
+  val blockAddr = Reg(UInt(blockBits bits)) init(0)
 
-    is(MethodCacheState.S1) {
-      // Check for hit
-      inCacheReg := False
-      blockAddr := nxt  // Default: use next block on miss
+  // In-cache flag (registered result of last lookup)
+  val inCache = Reg(Bool()) init(False)
 
-      // Check all tags in parallel (like VHDL loop)
-      when(hitAny) {
-        blockAddr := hitIndex
-        inCacheReg := True
-        state := MethodCacheState.IDLE  // Hit: return to idle
-      }.otherwise {
-        state := MethodCacheState.S2  // Miss: update tags
-      }
-    }
+  // Number of blocks this method spans minus 1 (0 = one block)
+  // Matches VHDL: resize(bc_len(METHOD_SIZE_BITS-1 downto jpc_width-2-block_bits), block_bits)
+  val nrOfBlks = UInt(blockBits bits)
+  nrOfBlks := io.bcLen(methodSizeBits - 1 downto blockWordBits).resized
 
-    is(MethodCacheState.S2) {
-      // Update tag and valid bit for allocated block
-      tags(nxt) := useAddr
-      valid(nxt) := True
+  // Tag comparison value
+  val useAddr = io.bcAddr.asBits
 
-      // Advance next pointer (round-robin)
-      nxt := nxt + nrOfBlks + 1
-
-      state := MethodCacheState.IDLE
-    }
+  // Pre-computed clear mask (registered, updated every cycle)
+  // For each block position j, set clrVal(j) if j is within [nxt, nxt+nrOfBlks]
+  // (wrapping). Equivalent to the VHDL loop in the separate clocked process:
+  //   for i in 0 to blocks-1: clr_val(to_integer(nxt+i)) = (i <= nr_of_blks)
+  val clrVal = Reg(Bits(blocks bits)) init(0)
+  for (j <- 0 until blocks) {
+    val offset = U(j, blockBits bits) - nxt  // wraps naturally in blockBits width
+    clrVal(j) := (offset <= nrOfBlks)
   }
 
   // ==========================================================================
   // Outputs
   // ==========================================================================
 
-  io.inCache := inCacheReg
-  io.allocBlock := nxt
+  // bcStart: word address of the block in JBC RAM (combinational from blockAddr)
+  io.bcStart := (blockAddr ## U(0, blockWordBits bits)).asUInt
 
-  // bcstart: block address shifted to word address
-  // Block i starts at word address (i * blockSizeWords)
-  io.bcstart := (blockAddr << blockSizeBits).resized
-}
+  // rdy: combinational, true when state is idle
+  io.rdy := (state === State.IDLE)
 
-/**
- * MethodCache Companion Object
- */
-object MethodCache {
-  def main(args: Array[String]): Unit = {
-    SpinalConfig(
-      mode = Verilog,
-      targetDirectory = "core/spinalhdl/generated"
-    ).generate(MethodCache())
+  // inCache: registered result
+  io.inCache := inCache
+
+  // ==========================================================================
+  // State Machine Logic
+  // ==========================================================================
+
+  switch(state) {
+
+    is(State.IDLE) {
+      when(io.find) {
+        state := State.S1
+      }
+    }
+
+    is(State.S1) {
+      // Default: miss — use nxt pointer for new allocation
+      inCache := False
+      state := State.S2
+      blockAddr := nxt
+
+      // Parallel tag check across all blocks (last match wins, like VHDL)
+      for (i <- 0 until blocks) {
+        when(tag(i) === useAddr) {
+          blockAddr := U(i, blockBits bits)
+          inCache := True
+          state := State.IDLE
+        }
+      }
+    }
+
+    is(State.S2) {
+      // Clear displaced tags via pre-computed mask
+      for (i <- 0 until blocks) {
+        when(clrVal(i)) {
+          tag(i) := B(0, tagWidth bits)
+        }
+      }
+      // Write new tag to nxt position (overrides clear for same position)
+      tag(nxt) := useAddr
+
+      // Advance FIFO pointer
+      nxt := nxt + nrOfBlks + 1
+
+      state := State.IDLE
+    }
   }
 }

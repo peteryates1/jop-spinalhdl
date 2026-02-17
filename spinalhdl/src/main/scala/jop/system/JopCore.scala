@@ -17,6 +17,7 @@ import jop.{JopPipeline, JumpTableData}
  * @param instrWidth   Microcode instruction width (10 bits)
  * @param jpcWidth     Java PC width (11 bits = 2KB bytecode cache)
  * @param ramWidth     Stack RAM address width (8 bits = 256 entries)
+ * @param blockBits    Method cache block bits (4 = 16 blocks in JBC RAM)
  * @param memConfig    Memory subsystem configuration
  */
 case class JopCoreConfig(
@@ -25,6 +26,7 @@ case class JopCoreConfig(
   instrWidth: Int              = 10,
   jpcWidth:   Int              = 11,
   ramWidth:   Int              = 8,
+  blockBits:  Int              = 4,
   memConfig:  JopMemoryConfig  = JopMemoryConfig(),
   jumpTable:  JumpTableInitData = JumpTableInitData.simulation
 ) {
@@ -115,7 +117,7 @@ case class JopCore(
   // Memory Controller
   // ==========================================================================
 
-  val memCtrl = BmbMemoryController(config.memConfig, config.jpcWidth)
+  val memCtrl = BmbMemoryController(config.memConfig, config.jpcWidth, config.blockBits)
 
   // Connect BMB master to external interface
   io.bmb <> memCtrl.io.bmb

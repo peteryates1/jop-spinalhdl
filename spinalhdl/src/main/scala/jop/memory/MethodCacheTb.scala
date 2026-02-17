@@ -20,33 +20,19 @@ object MethodCacheTbVhdl extends App {
     val clk = in Bool()
     val reset = in Bool()
 
-    // Cache configuration
-    val cacheConfig = MethodCacheConfig()
+    // Cache parameters
+    val jpcWidth = 11
+    val blockBits = 4
+    val tagWidth = 18
 
     // Flattened I/O for CocoTB
-    // Cache lookup interface
     val find = in Bool()
-    val bc_addr = in UInt(cacheConfig.tagWidth bits)
+    val bc_addr = in UInt(tagWidth bits)
     val bc_len = in UInt(10 bits)
 
-    // Cache results
     val rdy = out Bool()
     val in_cache = out Bool()
-    val bcstart = out UInt(cacheConfig.cacheWordAddrWidth bits)
-    val alloc_block = out UInt(cacheConfig.blockBits bits)
-
-    // External write interface
-    val ext_wr_addr = in UInt(cacheConfig.cacheWordAddrWidth bits)
-    val ext_wr_data = in Bits(32 bits)
-    val ext_wr_en = in Bool()
-
-    // Loading complete signal
-    val load_done = in Bool()
-
-    // JBC write outputs (directly from cache)
-    val jbc_wr_addr = out UInt(cacheConfig.cacheWordAddrWidth bits)
-    val jbc_wr_data = out Bits(32 bits)
-    val jbc_wr_en = out Bool()
+    val bcstart = out UInt((jpcWidth - 2) bits)
 
     // Create explicit clock domain
     val coreClockDomain = ClockDomain(
@@ -60,25 +46,15 @@ object MethodCacheTbVhdl extends App {
     )
 
     val coreArea = new ClockingArea(coreClockDomain) {
-      val cache = MethodCache(cacheConfig)
+      val cache = MethodCache(jpcWidth, blockBits, tagWidth)
 
-      // Connect inputs
       cache.io.find := find
       cache.io.bcAddr := bc_addr
       cache.io.bcLen := bc_len
-      cache.io.extWrAddr := ext_wr_addr
-      cache.io.extWrData := ext_wr_data
-      cache.io.extWrEn := ext_wr_en
-      cache.io.loadDone := load_done
 
-      // Connect outputs
       rdy := cache.io.rdy
       in_cache := cache.io.inCache
-      bcstart := cache.io.bcstart
-      alloc_block := cache.io.allocBlock
-      jbc_wr_addr := cache.io.jbcWrAddr
-      jbc_wr_data := cache.io.jbcWrData
-      jbc_wr_en := cache.io.jbcWrEn
+      bcstart := cache.io.bcStart
     }
   }
 
