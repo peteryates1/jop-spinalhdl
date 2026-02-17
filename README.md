@@ -71,7 +71,6 @@ jop/
 │   └── qmtech-ep4cgx150-sdram/# SDRAM FPGA project (Quartus)
 ├── java/jopa/                 # Jopa microcode assembler
 ├── verification/cocotb/         # CocoTB/GHDL reference tests (legacy)
-├── original/vhdl/               # Reference VHDL implementation
 ├── docs/                        # Architecture and reference docs
 └── build.sbt                  # Top-level SBT build
 ```

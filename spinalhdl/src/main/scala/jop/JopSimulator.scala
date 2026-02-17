@@ -1003,10 +1003,10 @@ object JopSimulatorTbVhdl extends App {
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
-  // Use local SIM-built microcode (not jopmin which loads from UART)
+  // Use local SIM-built microcode (not serial-boot which loads from UART)
   // JOP file from Smallest target, microcode from local SIM build
   config.generateVhdl(JopSimulator(
-    jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop",
+    jopFilePath = "/home/peter/git/jop/java/Smallest/HelloWorld.jop",
     romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat",
     ramFilePath = Some("/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat")
   ))

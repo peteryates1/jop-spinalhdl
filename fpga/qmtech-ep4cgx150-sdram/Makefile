@@ -25,7 +25,7 @@ SERIAL_PORT ?= /dev/ttyUSB0
 BAUD_RATE = 1000000
 
 # JOP application file
-JOP_FILE ?= /home/peter/git/jopmin/java/Smallest/HelloWorld.jop
+JOP_FILE ?= /home/peter/git/jop/java/Smallest/HelloWorld.jop
 
 # Project paths (sbt runs from repo root)
 PROJECT_ROOT = ../..

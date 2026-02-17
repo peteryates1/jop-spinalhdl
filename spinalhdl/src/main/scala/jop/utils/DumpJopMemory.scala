@@ -4,7 +4,7 @@ package jop.utils
  * Utility to dump JOP file memory contents for debugging.
  */
 object DumpJopMemory extends App {
-  val jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop"
+  val jopFilePath = "/home/peter/git/jop/java/Smallest/HelloWorld.jop"
 
   println("Loading JOP file...")
   val jopData = JopFileLoader.loadJopFile(jopFilePath)

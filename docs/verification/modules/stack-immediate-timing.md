@@ -138,10 +138,7 @@ All immediate value extension tests:
 
 ## References
 
-- Original VHDL: `original/vhdl/core/stack.vhd`
-- Test vectors: `verification/test-vectors/modules/stack.json`
-- CocoTB tests: `verification/cocotb/tests/test_stack.py`
-- Manual immediate test: `test_stack_immediate_values()` (lines 446-503)
+- Original VHDL: [stack.vhd](https://github.com/peteryates1/jop/blob/main/vhdl/core/stack.vhd)
 
 ## Date
 

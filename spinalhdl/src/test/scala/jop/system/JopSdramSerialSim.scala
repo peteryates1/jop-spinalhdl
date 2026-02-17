@@ -213,7 +213,7 @@ case class JopSdramSerialHarness(
  * Simulation: SDRAM serial boot with HelloWorld.jop
  */
 object JopSdramSerialSim extends App {
-  val jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop"
+  val jopFilePath = "/home/peter/git/jop/java/Smallest/HelloWorld.jop"
   val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/serial/mem_rom.dat"
   val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/serial/mem_ram.dat"
 

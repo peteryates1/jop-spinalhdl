@@ -6,9 +6,9 @@ Jopa is the microcode assembler for the Java Optimized Processor (JOP). It trans
 
 ## Location
 
-**Source**: `/home/peter/git/jopmin/java/tools/src/com/jopdesign/tools/Jopa.java`
+**Source**: `/home/peter/git/jop/java/tools/src/com/jopdesign/tools/Jopa.java`
 
-**Build System**: `/home/peter/git/jopmin/asm/Makefile`
+**Build System**: `/home/peter/git/jop/asm/Makefile`
 
 ## What Jopa Does
 
@@ -58,7 +58,7 @@ Jopa is the microcode assembler for the Java Optimized Processor (JOP). It trans
 
 ### Primary Input: jvm.asm
 
-**Location**: `/home/peter/git/jopmin/asm/src/jvm.asm`
+**Location**: `/home/peter/git/jop/asm/src/jvm.asm`
 
 **Format**: Microcode assembly language
 
@@ -90,7 +90,7 @@ iconst_0:
 
 ## Output Files
 
-All outputs generated to: `/home/peter/git/jopmin/asm/generated/`
+All outputs generated to: `/home/peter/git/jop/asm/generated/`
 
 ### 1. jtbl.vhd - Jump Table (VHDL)
 
@@ -217,7 +217,7 @@ end rtl;
 
 ```bash
 # Navigate to asm directory
-cd /home/peter/git/jopmin/asm
+cd /home/peter/git/jop/asm
 
 # Run make (builds Jopa if needed, then runs it)
 make
@@ -239,13 +239,13 @@ ls -la generated/
 
 ```bash
 # Build Jopa tool
-cd /home/peter/git/jopmin/java/tools
+cd /home/peter/git/jop/java/tools
 ant jop_tools
 
 # Run Jopa directly
 java -cp build/lib/jop-tools.jar com.jopdesign.tools.Jopa \
-    -o /home/peter/git/jopmin/asm/generated \
-    /home/peter/git/jopmin/asm/src/jvm.asm
+    -o /home/peter/git/jop/asm/generated \
+    /home/peter/git/jop/asm/src/jvm.asm
 ```
 
 ## Jopa Features
@@ -279,7 +279,7 @@ java -cp build/lib/jop-tools.jar com.jopdesign.tools.Jopa \
 ### Don't Need to Run Jopa
 
 The generated files already exist in the reference repository:
-- `/home/peter/git/jopmin/asm/generated/`
+- `/home/peter/git/jop/asm/generated/`
 
 ### Use These Files
 
@@ -309,7 +309,7 @@ def load_microcode_rom(filepath):
     return rom
 
 # Usage
-rom_data = load_microcode_rom('/home/peter/git/jopmin/asm/generated/mem_rom.dat')
+rom_data = load_microcode_rom('/home/peter/git/jop/asm/generated/mem_rom.dat')
 ```
 
 #### Scala: Initialize SpinalHDL ROM
@@ -353,8 +353,8 @@ Ctl: Control flags
 
 ### If You Need to Change Microcode:
 
-1. **Edit**: `/home/peter/git/jopmin/asm/src/jvm.asm`
-2. **Assemble**: `cd /home/peter/git/jopmin/asm && make`
+1. **Edit**: `/home/peter/git/jop/asm/src/jvm.asm`
+2. **Assemble**: `cd /home/peter/git/jop/asm && make`
 3. **Re-extract**: Run extraction scripts for SpinalHDL
 4. **Test**: Verify changes with test vectors
 
@@ -372,21 +372,21 @@ Ctl: Control flags
 
 Study for understanding microcode format:
 ```bash
-less /home/peter/git/jopmin/java/tools/src/com/jopdesign/tools/Jopa.java
+less /home/peter/git/jop/java/tools/src/com/jopdesign/tools/Jopa.java
 ```
 
 ### Microcode Assembly
 
 Study for understanding JVM implementation:
 ```bash
-less /home/peter/git/jopmin/asm/src/jvm.asm
+less /home/peter/git/jop/asm/src/jvm.asm
 ```
 
 ### Generated Outputs
 
 Reference for data extraction:
 ```bash
-ls -la /home/peter/git/jopmin/asm/generated/
+ls -la /home/peter/git/jop/asm/generated/
 ```
 
 ## Key Takeaways
@@ -406,7 +406,7 @@ ls -la /home/peter/git/jopmin/asm/generated/
 
 ## Note on JOP Build System
 
-The main JOP directory (`/home/peter/git/jopmin/`) contains a complex Makefile that builds the entire JOP toolchain, including:
+The main JOP directory (`/home/peter/git/jop/`) contains a complex Makefile that builds the entire JOP toolchain, including:
 - Jopa (microcode assembler)
 - JopSim (simulator)
 - Java tools
@@ -417,6 +417,6 @@ The main JOP directory (`/home/peter/git/jopmin/`) contains a complex Makefile t
 
 **If you need to regenerate** (unlikely):
 ```bash
-cd /home/peter/git/jopmin/asm
+cd /home/peter/git/jop/asm
 make  # Much simpler - just runs Jopa
 ```

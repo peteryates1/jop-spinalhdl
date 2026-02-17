@@ -10,9 +10,9 @@ class JopFileLoaderSpec extends AnyFlatSpec with Matchers {
 
   // Path to test files
   val jopFilePath = "/home/peter/workspaces/jop/Smallest/smallest.jop"
-  val jtblPath = "/home/peter/git/jopmin/asm/generated/jtbl.vhd"
-  val memRomPath = "/home/peter/git/jopmin/asm/generated/mem_rom.dat"
-  val memRamPath = "/home/peter/git/jopmin/asm/generated/mem_ram.dat"
+  val jtblPath = "/home/peter/git/jop/asm/generated/jtbl.vhd"
+  val memRomPath = "/home/peter/git/jop/asm/generated/mem_rom.dat"
+  val memRamPath = "/home/peter/git/jop/asm/generated/mem_ram.dat"
 
   "JopFileLoader" should "load a .jop file" in {
     val data = JopFileLoader.loadJopFile(jopFilePath)

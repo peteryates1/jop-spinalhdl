@@ -159,7 +159,7 @@ case class JopCoreTestHarness(
 class JopCoreTest extends AnyFunSuite {
 
   // Paths to initialization files
-  val jopFilePath = "/home/peter/git/jopmin/java/Smallest/HelloWorld.jop"
+  val jopFilePath = "/home/peter/git/jop/java/Smallest/HelloWorld.jop"
   val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
   val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
 

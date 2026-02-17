@@ -187,7 +187,7 @@ object JopFileLoader {
    *
    * Parses VHDL case statements to extract bytecode -> microcode mappings
    *
-   * Format (jopmin style):
+   * Format (JOP jtbl.vhd style):
    *   when "10111011" => addr <= "00001111110";	--	007e	new
    *   when "01100000" => addr <= "00110010100";	--	0194	iadd
    *

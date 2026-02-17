@@ -220,7 +220,7 @@ Exceptions:
 
 ## File References
 
-- VHDL implementation: `/home/peter/git/jopmin/vhdl/memory/mem_sc.vhd`
+- VHDL implementation: [mem_sc.vhd](https://github.com/peteryates1/jop/blob/main/vhdl/memory/mem_sc.vhd)
 - SpinalHDL implementation: `spinalhdl/src/main/scala/jop/memory/BmbMemoryController.scala`
 - Method cache: `spinalhdl/src/main/scala/jop/memory/MethodCache.scala`
-- Object cache (VHDL reference): `/home/peter/git/jopmin/vhdl/cache/ocache.vhd`
+- Object cache (VHDL reference): [ocache.vhd](https://github.com/peteryates1/jop/blob/main/vhdl/cache/ocache.vhd)
