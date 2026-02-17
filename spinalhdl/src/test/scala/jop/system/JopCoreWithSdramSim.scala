@@ -104,8 +104,11 @@ object JopCoreWithSdramSim extends App {
       var busyStartCycle = 0
       var bmbCmdCount = 0
       var bmbRspCount = 0
+      var done = false
 
-      for (cycle <- 0 until maxCycles) {
+      var cycle = 0
+      while (cycle < maxCycles && !done) {
+        cycle += 1
         dut.clockDomain.waitSampling()
 
         val pc = dut.io.pc.toInt
@@ -195,8 +198,8 @@ object JopCoreWithSdramSim extends App {
               print(if (char >= 32 && char < 127) char.toChar else '.')
             }
           }
-          // Force exit loop
           logLine(s"Captured additional output, total: '${uartOutput.toString}'")
+          done = true
         }
       }
 

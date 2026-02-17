@@ -122,8 +122,8 @@ case class BmbMemoryController(
         READ_WAIT, WRITE_WAIT,
         // Handle dereference (getfield/putfield/iaload/iastore) - busy
         HANDLE_READ, HANDLE_WAIT, HANDLE_CALC, HANDLE_ACCESS, HANDLE_DATA_WAIT,
-        // Bytecode cache check and fill - busy
-        BC_CACHE_CHECK, BC_READ, BC_WAIT, BC_WRITE,
+        // Bytecode cache check and pipelined fill - busy
+        BC_CACHE_CHECK, BC_FILL_R1, BC_FILL_LOOP, BC_FILL_CMD,
         // getstatic/putstatic - busy
         GS_READ, PS_WRITE, LAST
       = newElement()
@@ -527,49 +527,70 @@ case class BmbMemoryController(
           state := State.IDLE
         }.otherwise {
           // MISS: fill method into the assigned cache block
-          state := State.BC_READ
+          state := State.BC_FILL_R1
         }
       }
     }
 
     // ========================================================================
-    // Bytecode Cache Fill States (busy)
+    // Bytecode Cache Fill States (pipelined, busy)
+    //
+    // Matches VHDL mem_sc.vhd "pipeline level 2": issues the next memory
+    // read while writing the previous word to JBC, overlapping memory
+    // latency with the JBC write cycle.
+    //
+    // BC_FILL_R1:   Issue first BMB read command
+    // BC_FILL_LOOP: On response, register JBC write + issue next read
+    // BC_FILL_CMD:  Retry read command if not accepted in BC_FILL_LOOP
     // ========================================================================
 
-    is(State.BC_READ) {
-      // Issue BMB read for method bytecode word
+    is(State.BC_FILL_R1) {
+      // Issue first BMB read for method bytecode word
       io.bmb.cmd.valid := True
       io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
       io.bmb.cmd.fragment.address := (bcFillAddr << 2).resized
       when(io.bmb.cmd.fire) {
-        state := State.BC_WAIT
+        bcFillAddr := bcFillAddr + 1
+        state := State.BC_FILL_LOOP
       }
     }
 
-    is(State.BC_WAIT) {
+    is(State.BC_FILL_LOOP) {
       when(io.bmb.rsp.fire) {
-        // Byte-swap for JBC RAM (big-endian to little-endian byte order)
+        // Byte-swap for JBC RAM and register write (actual write happens next cycle)
         val word = io.bmb.rsp.fragment.data
         jbcWrDataReg := word(7 downto 0) ## word(15 downto 8) ## word(23 downto 16) ## word(31 downto 24)
-        state := State.BC_WRITE
+        jbcWrEnReg := True
+        jbcWrAddrReg := (bcCacheStartReg + bcFillCount).resized
+
+        val wordsWritten = bcFillCount + 1
+        when(wordsWritten >= bcFillLen) {
+          // Last word — JBC write happens next cycle while back in IDLE
+          state := State.IDLE
+        }.otherwise {
+          // More words: try to issue next read in same cycle
+          bcFillCount := wordsWritten
+          io.bmb.cmd.valid := True
+          io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
+          io.bmb.cmd.fragment.address := (bcFillAddr << 2).resized
+          when(io.bmb.cmd.fire) {
+            bcFillAddr := bcFillAddr + 1
+            // Stay in BC_FILL_LOOP — next response will arrive
+          }.otherwise {
+            state := State.BC_FILL_CMD  // Retry cmd next cycle
+          }
+        }
       }
     }
 
-    is(State.BC_WRITE) {
-      // Write word to JBC RAM, offset by cache block start
-      jbcWrEnReg := True
-      jbcWrAddrReg := (bcCacheStartReg + bcFillCount).resized
-
-      val wordsWritten = bcFillCount + 1
-
-      when(wordsWritten >= bcFillLen) {
-        // Done filling — bcStartReg was already set in BC_CACHE_CHECK
-        state := State.IDLE
-      }.otherwise {
-        // More words to read
-        bcFillCount := wordsWritten
+    is(State.BC_FILL_CMD) {
+      // Issue next read command
+      io.bmb.cmd.valid := True
+      io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
+      io.bmb.cmd.fragment.address := (bcFillAddr << 2).resized
+      when(io.bmb.cmd.fire) {
         bcFillAddr := bcFillAddr + 1
-        state := State.BC_READ
+        state := State.BC_FILL_LOOP
       }
     }
 
