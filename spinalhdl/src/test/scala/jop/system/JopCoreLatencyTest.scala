@@ -32,7 +32,7 @@ case class JopCoreLatencyHarness(
     val memBusy   = out Bool()
     val uartTxData  = out Bits(8 bits)
     val uartTxValid = out Bool()
-    val debugState  = out UInt(4 bits)
+    val debugState  = out UInt(5 bits)
     // BMB transaction monitoring
     val bmbCmdFire  = out Bool()
     val bmbCmdAddr  = out UInt(config.memConfig.bmbParameter.access.addressWidth bits)

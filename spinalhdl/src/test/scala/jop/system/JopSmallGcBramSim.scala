@@ -67,10 +67,10 @@ object JopSmallGcBramSim extends App {
           println(f"\n[$cycle%8d] PC=$pc%04x JPC=$jpc%04x UART: '${uartOutput.toString}'")
         }
 
-        // Exit after seeing a few GC rounds
+        // Exit after a full GC cycle (R12 triggers GC, R13+ confirms it completed)
         val output = uartOutput.toString
-        if (output.contains("R2 f=")) {
-          println("\n*** GC allocation rounds detected! ***")
+        if (output.contains("R14 f=")) {
+          println("\n*** GC cycle completed! ***")
           // Capture a bit more
           for (_ <- 0 until 50000) {
             dut.clockDomain.waitSampling()

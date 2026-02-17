@@ -96,7 +96,7 @@ case class JopCore(
     val debugBcRd = out Bool()
 
     // Debug: memory controller state
-    val debugMemState = out UInt(4 bits)
+    val debugMemState = out UInt(5 bits)
     val debugMemHandleActive = out Bool()
     val debugAddrWr = out Bool()  // Decode stage addrWr signal
     val debugRdc = out Bool()     // Memory read combined (stmrac)

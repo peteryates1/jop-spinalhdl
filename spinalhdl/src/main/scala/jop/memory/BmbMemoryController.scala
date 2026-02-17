@@ -106,7 +106,7 @@ case class BmbMemoryController(
 
     // Debug signals
     val debug = new Bundle {
-      val state        = out UInt(4 bits)
+      val state        = out UInt(5 bits)
       val busy         = out Bool()
       val handleActive = out Bool()
     }
@@ -126,6 +126,8 @@ case class BmbMemoryController(
         HANDLE_READ, HANDLE_WAIT, HANDLE_CALC, HANDLE_ACCESS, HANDLE_DATA_WAIT,
         // Bytecode cache check and pipelined fill - busy
         BC_CACHE_CHECK, BC_FILL_R1, BC_FILL_LOOP, BC_FILL_CMD,
+        // GC copy states (matching VHDL cp0-cpstop) - busy
+        CP_SETUP, CP_READ, CP_READ_WAIT, CP_WRITE, CP_STOP,
         // getstatic/putstatic - busy
         GS_READ, PS_WRITE, LAST
       = newElement()
@@ -170,6 +172,12 @@ case class BmbMemoryController(
 
   // Method cache: JBC word address base for current method's cache block
   val bcCacheStartReg = Reg(UInt((jpcWidth - 2) bits)) init(0)
+
+  // GC copy / address translation state (matching VHDL base_reg, pos_reg, offset_reg, cp_stopbit)
+  val baseReg = Reg(UInt(config.addressWidth bits)) init(0)
+  val posReg = Reg(UInt(config.addressWidth bits)) init(0)
+  val offsetReg = Reg(UInt(config.addressWidth bits)) init(0)
+  val cpStopBit = Reg(Bool()) init(False)
 
   // Command tracking for BMB handshake (hold cmd until accepted)
   // SDRAM controllers may not accept commands immediately (cmd.ready=False).
@@ -274,6 +282,15 @@ case class BmbMemoryController(
   // Memory read request (any variant)
   val memReadRequested = io.memIn.rd || io.memIn.rdc || io.memIn.rdf
 
+  // Address translation for GC copy (matching VHDL ram_addr MUX translation).
+  // During copy, accesses to addresses in [baseReg, posReg) are redirected
+  // by adding offsetReg (= dest - src), so partially-copied objects are
+  // accessible at their new location.
+  def translateAddr(addr: UInt): UInt = {
+    val inRange = addr >= baseReg && addr < posReg
+    Mux(inRange, addr + offsetReg, addr)
+  }
+
   // ==========================================================================
   // Method Cache
   // ==========================================================================
@@ -341,6 +358,9 @@ case class BmbMemoryController(
           rdDataReg := io.ioRdData
         }.otherwise {
           // BMB read - drive command combinationally from io.aout
+          // Note: address translation not applied here — for single-core
+          // stop-the-world GC, no IDLE reads hit the copy range.
+          // (Concurrent GC on multi-core would need translation here.)
           io.bmb.cmd.valid := True
           io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
           io.bmb.cmd.fragment.address := (aoutAddr << 2).resized
@@ -358,6 +378,7 @@ case class BmbMemoryController(
           io.ioWr := True
           io.ioWrData := io.aout
         }.otherwise {
+          // TODO: address translation disabled for FPGA debugging
           io.bmb.cmd.valid := True
           io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.WRITE
           io.bmb.cmd.fragment.address := (addrReg << 2).resized
@@ -423,6 +444,15 @@ case class BmbMemoryController(
         handleWriteData := io.aout  // TOS = value (also captured to valueReg above)
         state := State.HANDLE_READ
         // (no extra busy needed - matches VHDL)
+
+      }.elsewhen(io.memIn.copy) {
+        // GC copy (stcp) - matching VHDL mem_in.copy handler
+        // At stcp: TOS = pos, NOS = src
+        // Capture: baseReg = src, posReg = pos + src, cpStopBit = pos[31]
+        baseReg := io.bout(config.addressWidth - 1 downto 0).asUInt
+        posReg := aoutAddr + io.bout(config.addressWidth - 1 downto 0).asUInt
+        cpStopBit := io.aout(31)
+        state := State.CP_SETUP
 
       }.elsewhen(io.memIn.iastore) {
         // Array store - 3-operand: TOS=value, NOS=index, 3rd=arrayref
@@ -769,6 +799,66 @@ case class BmbMemoryController(
         wasStidx := False  // Reset stidx marker
         state := State.IDLE
       }
+    }
+
+    // ========================================================================
+    // GC Copy States (matching VHDL cp0-cpstop) - busy
+    //
+    // Copies one word per Native.memCopy() call (read from source, write to
+    // dest) and maintains address translation so that accesses in
+    // [baseReg, posReg) are transparently redirected by +offsetReg.
+    // ========================================================================
+
+    is(State.CP_SETUP) {
+      // Compute offset = dest - src (matching VHDL cp0)
+      // After microcode pop: TOS = src, NOS = dest
+      // bout = NOS = dest, baseReg = src (captured in IDLE)
+      offsetReg := io.bout(config.addressWidth - 1 downto 0).asUInt - baseReg
+      when(cpStopBit) {
+        state := State.CP_STOP
+      }.otherwise {
+        state := State.CP_READ
+      }
+    }
+
+    is(State.CP_READ) {
+      // Issue read from source address posReg (matching VHDL cp1)
+      io.bmb.cmd.valid := True
+      io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
+      io.bmb.cmd.fragment.address := (posReg << 2).resized
+      when(io.bmb.cmd.fire) {
+        state := State.CP_READ_WAIT
+      }
+    }
+
+    is(State.CP_READ_WAIT) {
+      // Wait for read response, capture data (matching VHDL cp2+cp3)
+      when(io.bmb.rsp.fire) {
+        valueReg := io.bmb.rsp.fragment.data
+        addrReg := posReg + offsetReg  // write address (dest side)
+        posReg := posReg + 1           // advance position (expand translation range)
+        state := State.CP_WRITE
+      }
+    }
+
+    is(State.CP_WRITE) {
+      // Issue write to dest address (matching VHDL cp4)
+      io.bmb.cmd.valid := True
+      io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.WRITE
+      io.bmb.cmd.fragment.address := (addrReg << 2).resized
+      if(config.bmbParameter.access.canWrite) {
+        io.bmb.cmd.fragment.data := valueReg
+      }
+      when(io.bmb.cmd.fire) {
+        state := State.LAST
+      }
+    }
+
+    is(State.CP_STOP) {
+      // Reset translation range (matching VHDL cpstop)
+      // posReg := baseReg makes range [baseReg, baseReg) = empty
+      posReg := baseReg
+      state := State.IDLE
     }
   }
 

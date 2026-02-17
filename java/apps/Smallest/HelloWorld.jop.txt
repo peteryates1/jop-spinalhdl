@@ -2827,7 +2827,7 @@ From	To	Handler	Type
 80	83	80	<Any exception>(0)
 
 Attribute(s) = 
-(Unknown attribute StackMapTable: 00 06 fc 00 10 07 00 72 40 01... (truncated))
+(Unknown attribute StackMapTable: 00 06 fc 00 10 07 00 73 40 01... (truncated))
 LineNumber(0, 263), LineNumber(6, 266), LineNumber(20, 267), LineNumber(26, 268), 
 LineNumber(32, 269), LineNumber(38, 270), LineNumber(47, 272), LineNumber(53, 273), 
 LineNumber(59, 274), LineNumber(65, 276), LineNumber(75, 277), LineNumber(85, 278)
@@ -2949,7 +2949,7 @@ LineNumber(0, 312), LineNumber(7, 313), LineNumber(16, 314), LineNumber(23, 315)
 LineNumber(32, 314), LineNumber(39, 317)
 
 com.jopdesign.sys.GC:markAndCopy()V
-Code(max_stack = 3, max_locals = 8, code_length = 345)
+Code(max_stack = 3, max_locals = 8, code_length = 362)
 0:    getstatic		com.jopdesign.sys.GC.concurrentGc Z (19)
 3:    ifne		#9
 6:    invokestatic	com.jopdesign.sys.GC.getStackRoots ()V (32)
@@ -2965,7 +2965,7 @@ Code(max_stack = 3, max_locals = 8, code_length = 345)
 24:   if_icmpne		#32
 27:   aload_2
 28:   monitorexit
-29:   goto		#344
+29:   goto		#361
 32:   iload_1
 33:   iconst_5
 34:   iadd
@@ -3124,32 +3124,42 @@ Code(max_stack = 3, max_locals = 8, code_length = 345)
 297:  aload		%7
 299:  athrow
 300:  iload		%4
-302:  ifle		#333
+302:  ifle		#327
 305:  iconst_0
 306:  istore_0
 307:  iload_0
 308:  iload		%4
-310:  if_icmpge		#333
-313:  iload_2
-314:  iload_0
-315:  iadd
-316:  invokestatic	com.jopdesign.sys.Native.rdMem (I)I (3)
-319:  iload		%5
-321:  iload_0
+310:  if_icmpge		#327
+313:  iload		%5
+315:  iload_2
+316:  iload_0
+317:  invokestatic	com.jopdesign.sys.Native.memCopy (III)V (34)
+320:  iload_0
+321:  iconst_1
 322:  iadd
-323:  invokestatic	com.jopdesign.sys.Native.wrMem (II)V (18)
-326:  iload_0
-327:  iconst_1
-328:  iadd
-329:  istore_0
-330:  goto		#307
-333:  iload		%5
-335:  iload_1
-336:  iconst_0
-337:  iadd
-338:  invokestatic	com.jopdesign.sys.Native.wrMem (II)V (18)
-341:  goto		#12
-344:  return
+323:  istore_0
+324:  goto		#307
+327:  iload		%5
+329:  iload_1
+330:  iconst_0
+331:  iadd
+332:  invokestatic	com.jopdesign.sys.Native.wrMem (II)V (18)
+335:  iconst_0
+336:  istore_0
+337:  iload_0
+338:  bipush		10
+340:  if_icmpge		#350
+343:  iload_0
+344:  iconst_1
+345:  iadd
+346:  istore_0
+347:  goto		#337
+350:  iload		%5
+352:  iload		%5
+354:  iconst_m1
+355:  invokestatic	com.jopdesign.sys.Native.memCopy (III)V (34)
+358:  goto		#12
+361:  return
 
 Exception handler(s) = 
 From	To	Handler	Type
@@ -3160,7 +3170,7 @@ From	To	Handler	Type
 292	297	292	<Any exception>(0)
 
 Attribute(s) = 
-(Unknown attribute StackMapTable: 00 17 09 02 fe 00 13 00 01 07... (truncated))
+(Unknown attribute StackMapTable: 00 19 09 02 fe 00 13 00 01 07... (truncated))
 LineNumber(0, 323), LineNumber(6, 324), LineNumber(9, 326), LineNumber(12, 330), 
 LineNumber(18, 331), LineNumber(22, 332), LineNumber(27, 333), LineNumber(32, 335), 
 LineNumber(41, 336), LineNumber(48, 337), LineNumber(58, 340), LineNumber(70, 341), 
@@ -3171,9 +3181,9 @@ LineNumber(156, 367), LineNumber(162, 368), LineNumber(168, 369), LineNumber(177
 LineNumber(181, 367), LineNumber(188, 376), LineNumber(200, 377), LineNumber(203, 384), 
 LineNumber(207, 386), LineNumber(223, 387), LineNumber(235, 389), LineNumber(248, 392), 
 LineNumber(256, 395), LineNumber(263, 396), LineNumber(268, 397), LineNumber(277, 400), 
-LineNumber(286, 401), LineNumber(300, 403), LineNumber(305, 406), LineNumber(313, 407), 
-LineNumber(326, 406), LineNumber(333, 412), LineNumber(341, 413), LineNumber(344, 414)
-
+LineNumber(286, 401), LineNumber(300, 403), LineNumber(305, 405), LineNumber(313, 406), 
+LineNumber(320, 405), LineNumber(327, 411), LineNumber(335, 413), LineNumber(350, 415), 
+LineNumber(358, 416), LineNumber(361, 417)
 
 com.jopdesign.sys.GC:sweepHandles()V
 Code(max_stack = 3, max_locals = 4, code_length = 105)
@@ -3252,11 +3262,11 @@ From	To	Handler	Type
 
 Attribute(s) = 
 (Unknown attribute StackMapTable: 00 07 ff 00 13 00 02 00 07 00... (truncated))
-LineNumber(0, 423), LineNumber(6, 424), LineNumber(10, 425), LineNumber(14, 426), 
-LineNumber(24, 428), LineNumber(28, 432), LineNumber(35, 433), LineNumber(41, 435), 
-LineNumber(53, 437), LineNumber(62, 438), LineNumber(69, 442), LineNumber(78, 443), 
-LineNumber(82, 445), LineNumber(89, 447), LineNumber(99, 448), LineNumber(101, 449), 
-LineNumber(104, 451)
+LineNumber(0, 426), LineNumber(6, 427), LineNumber(10, 428), LineNumber(14, 429), 
+LineNumber(24, 431), LineNumber(28, 435), LineNumber(35, 436), LineNumber(41, 438), 
+LineNumber(53, 440), LineNumber(62, 441), LineNumber(69, 445), LineNumber(78, 446), 
+LineNumber(82, 448), LineNumber(89, 450), LineNumber(99, 451), LineNumber(101, 452), 
+LineNumber(104, 454)
 
 com.jopdesign.sys.GC:zapSemi()V
 Code(max_stack = 2, max_locals = 2, code_length = 30)
@@ -3281,8 +3291,8 @@ Code(max_stack = 2, max_locals = 2, code_length = 30)
 
 Attribute(s) = 
 (Unknown attribute StackMapTable: 00 02 fd 00 0c 01 01 fa 00 0f)
-LineNumber(0, 460), LineNumber(8, 461), LineNumber(17, 462), LineNumber(22, 461), 
-LineNumber(29, 470)
+LineNumber(0, 463), LineNumber(8, 464), LineNumber(17, 465), LineNumber(22, 464), 
+LineNumber(29, 473)
 
 com.jopdesign.sys.GC:setConcurrent()V
 Code(max_stack = 1, max_locals = 0, code_length = 5)
@@ -3291,15 +3301,15 @@ Code(max_stack = 1, max_locals = 0, code_length = 5)
 4:    return
 
 Attribute(s) = 
-LineNumber(0, 473), LineNumber(4, 474)
+LineNumber(0, 476), LineNumber(4, 477)
 
 com.jopdesign.sys.GC:gc_alloc()V
 Code(max_stack = 0, max_locals = 0, code_length = 4)
-0:    invokestatic	com.jopdesign.sys.GC.gc ()V (34)
+0:    invokestatic	com.jopdesign.sys.GC.gc ()V (35)
 3:    return
 
 Attribute(s) = 
-LineNumber(0, 482), LineNumber(3, 483)
+LineNumber(0, 485), LineNumber(3, 486)
 
 com.jopdesign.sys.GC:gc()V
 Code(max_stack = 1, max_locals = 0, code_length = 23)
@@ -3307,16 +3317,16 @@ Code(max_stack = 1, max_locals = 0, code_length = 23)
 3:    ifne		#10
 6:    iconst_m1
 7:    putstatic		com.jopdesign.sys.GC.grayList I (17)
-10:   invokestatic	com.jopdesign.sys.GC.flip ()V (35)
-13:   invokestatic	com.jopdesign.sys.GC.markAndCopy ()V (36)
-16:   invokestatic	com.jopdesign.sys.GC.sweepHandles ()V (37)
-19:   invokestatic	com.jopdesign.sys.GC.zapSemi ()V (38)
+10:   invokestatic	com.jopdesign.sys.GC.flip ()V (36)
+13:   invokestatic	com.jopdesign.sys.GC.markAndCopy ()V (37)
+16:   invokestatic	com.jopdesign.sys.GC.sweepHandles ()V (38)
+19:   invokestatic	com.jopdesign.sys.GC.zapSemi ()V (39)
 22:   return
 
 Attribute(s) = 
 (Unknown attribute StackMapTable: 00 01 0a)
-LineNumber(0, 490), LineNumber(6, 491), LineNumber(10, 493), LineNumber(13, 494), 
-LineNumber(16, 495), LineNumber(19, 496), LineNumber(22, 497)
+LineNumber(0, 493), LineNumber(6, 494), LineNumber(10, 496), LineNumber(13, 497), 
+LineNumber(16, 498), LineNumber(19, 499), LineNumber(22, 500)
 
 com.jopdesign.sys.GC:free()I
 Code(max_stack = 2, max_locals = 0, code_length = 8)
@@ -3326,15 +3336,15 @@ Code(max_stack = 2, max_locals = 0, code_length = 8)
 7:    ireturn
 
 Attribute(s) = 
-LineNumber(0, 500)
+LineNumber(0, 503)
 
 com.jopdesign.sys.GC:getScratchpadSize()I
 Code(max_stack = 1, max_locals = 0, code_length = 4)
-0:    getstatic		com.jopdesign.sys.Startup.spm_size I (39)
+0:    getstatic		com.jopdesign.sys.Startup.spm_size I (40)
 3:    ireturn
 
 Attribute(s) = 
-LineNumber(0, 508)
+LineNumber(0, 511)
 
 com.jopdesign.sys.GC:newObject(I)I
 Code(max_stack = 3, max_locals = 5, code_length = 204)
@@ -3352,7 +3362,7 @@ Code(max_stack = 3, max_locals = 5, code_length = 204)
 21:   iadd
 22:   getstatic		com.jopdesign.sys.GC.allocPtr I (12)
 25:   if_icmplt		#46
-28:   invokestatic	com.jopdesign.sys.GC.gc_alloc ()V (40)
+28:   invokestatic	com.jopdesign.sys.GC.gc_alloc ()V (41)
 31:   getstatic		com.jopdesign.sys.GC.copyPtr I (11)
 34:   iload_1
 35:   iadd
@@ -3374,7 +3384,7 @@ Code(max_stack = 3, max_locals = 5, code_length = 204)
 61:   monitorenter
 62:   getstatic		com.jopdesign.sys.GC.freeList I (15)
 65:   ifne		#81
-68:   invokestatic	com.jopdesign.sys.GC.gc_alloc ()V (40)
+68:   invokestatic	com.jopdesign.sys.GC.gc_alloc ()V (41)
 71:   getstatic		com.jopdesign.sys.GC.freeList I (15)
 74:   ifne		#81
 77:   getstatic		com.jopdesign.sys.GC.OOMError Ljava/lang/OutOfMemoryError; (24)
@@ -3393,13 +3403,13 @@ Code(max_stack = 3, max_locals = 5, code_length = 204)
 100:  iadd
 101:  getstatic		com.jopdesign.sys.GC.allocPtr I (12)
 104:  if_icmplt		#115
-107:  ldc		"E1\r\n" (41)
-109:  invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (42)
+107:  ldc		"E1\r\n" (42)
+109:  invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (43)
 112:  goto		#112
 115:  getstatic		com.jopdesign.sys.GC.freeList I (15)
 118:  ifne		#129
-121:  ldc		"E2\r\n" (43)
-123:  invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (42)
+121:  ldc		"E2\r\n" (44)
+123:  invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (43)
 126:  goto		#126
 129:  getstatic		com.jopdesign.sys.GC.allocPtr I (12)
 132:  iload_1
@@ -3455,24 +3465,24 @@ From	To	Handler	Type
 86	90	86	<Any exception>(0)
 
 Attribute(s) = 
-(Unknown attribute StackMapTable: 00 0b fd 00 2e 01 07 00 72 44... (truncated))
+(Unknown attribute StackMapTable: 00 0b fd 00 2e 01 07 00 73 44... (truncated))
 LocalVariable(start_pc = 0, length = 204, index = 0:int arg0)
-LineNumber(0, 517), LineNumber(5, 566), LineNumber(11, 567), LineNumber(17, 568), 
-LineNumber(28, 569), LineNumber(31, 570), LineNumber(42, 571), LineNumber(46, 574), 
-LineNumber(56, 575), LineNumber(62, 576), LineNumber(68, 577), LineNumber(71, 578), 
-LineNumber(77, 579), LineNumber(81, 582), LineNumber(96, 585), LineNumber(107, 586), 
-LineNumber(112, 587), LineNumber(115, 589), LineNumber(121, 590), LineNumber(126, 591), 
-LineNumber(129, 599), LineNumber(137, 601), LineNumber(141, 602), LineNumber(150, 604), 
-LineNumber(159, 605), LineNumber(163, 607), LineNumber(170, 609), LineNumber(179, 610), 
-LineNumber(186, 612), LineNumber(193, 614), LineNumber(202, 616)
+LineNumber(0, 520), LineNumber(5, 569), LineNumber(11, 570), LineNumber(17, 571), 
+LineNumber(28, 572), LineNumber(31, 573), LineNumber(42, 574), LineNumber(46, 577), 
+LineNumber(56, 578), LineNumber(62, 579), LineNumber(68, 580), LineNumber(71, 581), 
+LineNumber(77, 582), LineNumber(81, 585), LineNumber(96, 588), LineNumber(107, 589), 
+LineNumber(112, 590), LineNumber(115, 592), LineNumber(121, 593), LineNumber(126, 594), 
+LineNumber(129, 602), LineNumber(137, 604), LineNumber(141, 605), LineNumber(150, 607), 
+LineNumber(159, 608), LineNumber(163, 610), LineNumber(170, 612), LineNumber(179, 613), 
+LineNumber(186, 615), LineNumber(193, 617), LineNumber(202, 619)
 
 com.jopdesign.sys.GC:newArray(II)I
 Code(max_stack = 3, max_locals = 7, code_length = 208)
 0:    iload_0
 1:    ifge		#12
-4:    new		<java.lang.NegativeArraySizeException> (44)
+4:    new		<java.lang.NegativeArraySizeException> (45)
 7:    dup
-8:    invokespecial	java.lang.NegativeArraySizeException.<init> ()V (45)
+8:    invokespecial	java.lang.NegativeArraySizeException.<init> ()V (46)
 11:   athrow
 12:   iload_0
 13:   istore_2
@@ -3495,7 +3505,7 @@ Code(max_stack = 3, max_locals = 7, code_length = 208)
 40:   iadd
 41:   getstatic		com.jopdesign.sys.GC.allocPtr I (12)
 44:   if_icmplt		#65
-47:   invokestatic	com.jopdesign.sys.GC.gc_alloc ()V (40)
+47:   invokestatic	com.jopdesign.sys.GC.gc_alloc ()V (41)
 50:   getstatic		com.jopdesign.sys.GC.copyPtr I (11)
 53:   iload_0
 54:   iadd
@@ -3517,7 +3527,7 @@ Code(max_stack = 3, max_locals = 7, code_length = 208)
 82:   monitorenter
 83:   getstatic		com.jopdesign.sys.GC.freeList I (15)
 86:   ifne		#102
-89:   invokestatic	com.jopdesign.sys.GC.gc_alloc ()V (40)
+89:   invokestatic	com.jopdesign.sys.GC.gc_alloc ()V (41)
 92:   getstatic		com.jopdesign.sys.GC.freeList I (15)
 95:   ifne		#102
 98:   getstatic		com.jopdesign.sys.GC.OOMError Ljava/lang/OutOfMemoryError; (24)
@@ -3599,24 +3609,24 @@ Attribute(s) =
 (Unknown attribute StackMapTable: 00 0b 0c fc 00 0d 01 03 fc 00... (truncated))
 LocalVariable(start_pc = 0, length = 208, index = 0:int arg0)
 LocalVariable(start_pc = 0, length = 208, index = 1:int arg1)
-LineNumber(0, 620), LineNumber(4, 621), LineNumber(12, 624), LineNumber(14, 627), 
-LineNumber(30, 674), LineNumber(36, 675), LineNumber(47, 679), LineNumber(50, 681), 
-LineNumber(61, 682), LineNumber(65, 685), LineNumber(77, 686), LineNumber(83, 687), 
-LineNumber(89, 691), LineNumber(92, 692), LineNumber(98, 693), LineNumber(102, 697), 
-LineNumber(114, 700), LineNumber(121, 702), LineNumber(129, 704), LineNumber(133, 711), 
-LineNumber(142, 713), LineNumber(151, 714), LineNumber(155, 716), LineNumber(162, 718), 
-LineNumber(171, 720), LineNumber(178, 722), LineNumber(185, 724), LineNumber(192, 725), 
-LineNumber(206, 726)
+LineNumber(0, 623), LineNumber(4, 624), LineNumber(12, 627), LineNumber(14, 630), 
+LineNumber(30, 677), LineNumber(36, 678), LineNumber(47, 682), LineNumber(50, 684), 
+LineNumber(61, 685), LineNumber(65, 688), LineNumber(77, 689), LineNumber(83, 690), 
+LineNumber(89, 694), LineNumber(92, 695), LineNumber(98, 696), LineNumber(102, 700), 
+LineNumber(114, 703), LineNumber(121, 705), LineNumber(129, 707), LineNumber(133, 714), 
+LineNumber(142, 716), LineNumber(151, 717), LineNumber(155, 719), LineNumber(162, 721), 
+LineNumber(171, 723), LineNumber(178, 725), LineNumber(185, 727), LineNumber(192, 728), 
+LineNumber(206, 729)
 
 com.jopdesign.sys.GC:freeMemory()I
 Code(max_stack = 2, max_locals = 0, code_length = 6)
-0:    invokestatic	com.jopdesign.sys.GC.free ()I (46)
+0:    invokestatic	com.jopdesign.sys.GC.free ()I (47)
 3:    iconst_4
 4:    imul
 5:    ireturn
 
 Attribute(s) = 
-LineNumber(0, 735)
+LineNumber(0, 738)
 
 com.jopdesign.sys.GC:totalMemory()I
 Code(max_stack = 2, max_locals = 0, code_length = 6)
@@ -3626,7 +3636,7 @@ Code(max_stack = 2, max_locals = 0, code_length = 6)
 5:    ireturn
 
 Attribute(s) = 
-LineNumber(0, 742)
+LineNumber(0, 745)
 
 com.jopdesign.sys.GC:isValidObjectHandle(I)Z
 Code(max_stack = 2, max_locals = 5, code_length = 50)
@@ -3669,11 +3679,11 @@ From	To	Handler	Type
 41	45	41	<Any exception>(0)
 
 Attribute(s) = 
-(Unknown attribute StackMapTable: 00 05 fe 00 0c 01 01 07 00 72... (truncated))
+(Unknown attribute StackMapTable: 00 05 fe 00 0c 01 01 07 00 73... (truncated))
 LocalVariable(start_pc = 0, length = 50, index = 0:int arg0)
-LineNumber(0, 770), LineNumber(2, 773), LineNumber(8, 775), LineNumber(12, 778), 
-LineNumber(16, 780), LineNumber(21, 783), LineNumber(23, 784), LineNumber(26, 788), 
-LineNumber(36, 790), LineNumber(48, 792)
+LineNumber(0, 773), LineNumber(2, 776), LineNumber(8, 778), LineNumber(12, 781), 
+LineNumber(16, 783), LineNumber(21, 786), LineNumber(23, 787), LineNumber(26, 791), 
+LineNumber(36, 793), LineNumber(48, 795)
 
 com.jopdesign.sys.GC:writeBarrier(II)V
 Code(max_stack = 3, max_locals = 8, code_length = 133)
@@ -3681,9 +3691,9 @@ Code(max_stack = 3, max_locals = 8, code_length = 133)
 1:    istore_2
 2:    iload_0
 3:    ifne		#14
-6:    new		<java.lang.NullPointerException> (47)
+6:    new		<java.lang.NullPointerException> (48)
 9:    dup
-10:   invokespecial	java.lang.NullPointerException.<init> ()V (48)
+10:   invokespecial	java.lang.NullPointerException.<init> ()V (49)
 13:   athrow
 14:   getstatic		com.jopdesign.sys.GC.mutex Ljava/lang/Object; (21)
 17:   dup
@@ -3765,53 +3775,53 @@ Attribute(s) =
 (Unknown attribute StackMapTable: 00 07 fc 00 0e 01 fd 00 11 00... (truncated))
 LocalVariable(start_pc = 0, length = 133, index = 0:int arg0)
 LocalVariable(start_pc = 0, length = 133, index = 1:int arg1)
-LineNumber(0, 804), LineNumber(2, 809), LineNumber(6, 811), LineNumber(14, 814), 
-LineNumber(21, 817), LineNumber(28, 820), LineNumber(32, 824), LineNumber(40, 827), 
-LineNumber(46, 830), LineNumber(48, 833), LineNumber(53, 837), LineNumber(63, 838), 
-LineNumber(68, 844), LineNumber(76, 847), LineNumber(78, 852), LineNumber(82, 855), 
-LineNumber(87, 857), LineNumber(95, 870), LineNumber(113, 872), LineNumber(118, 879), 
-LineNumber(132, 880)
+LineNumber(0, 807), LineNumber(2, 812), LineNumber(6, 814), LineNumber(14, 817), 
+LineNumber(21, 820), LineNumber(28, 823), LineNumber(32, 827), LineNumber(40, 830), 
+LineNumber(46, 833), LineNumber(48, 836), LineNumber(53, 840), LineNumber(63, 841), 
+LineNumber(68, 847), LineNumber(76, 850), LineNumber(78, 855), LineNumber(82, 858), 
+LineNumber(87, 860), LineNumber(95, 873), LineNumber(113, 875), LineNumber(118, 882), 
+LineNumber(132, 883)
 
 com.jopdesign.sys.GC:log(Ljava/lang/String;I)V
 Code(max_stack = 1, max_locals = 2, code_length = 19)
 0:    aload_0
-1:    invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (42)
-4:    ldc		" " (49)
-6:    invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (42)
+1:    invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (43)
+4:    ldc		" " (50)
+6:    invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (43)
 9:    iload_1
-10:   invokestatic	com.jopdesign.sys.JVMHelp.wrSmall (I)V (50)
-13:   ldc		"\n" (51)
-15:   invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (42)
+10:   invokestatic	com.jopdesign.sys.JVMHelp.wrSmall (I)V (51)
+13:   ldc		"\n" (52)
+15:   invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (43)
 18:   return
 
 Attribute(s) = 
 LocalVariable(start_pc = 0, length = 19, index = 0:String arg0)
 LocalVariable(start_pc = 0, length = 19, index = 1:int arg1)
-LineNumber(0, 886), LineNumber(4, 887), LineNumber(9, 888), LineNumber(13, 889), 
-LineNumber(18, 890)
+LineNumber(0, 889), LineNumber(4, 890), LineNumber(9, 891), LineNumber(13, 892), 
+LineNumber(18, 893)
 
 com.jopdesign.sys.GC:log(Ljava/lang/String;)V
 Code(max_stack = 1, max_locals = 1, code_length = 10)
 0:    aload_0
-1:    invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (42)
-4:    ldc		"\n" (51)
-6:    invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (42)
+1:    invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (43)
+4:    ldc		"\n" (52)
+6:    invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (43)
 9:    return
 
 Attribute(s) = 
 LocalVariable(start_pc = 0, length = 10, index = 0:String arg0)
-LineNumber(0, 892), LineNumber(4, 893), LineNumber(9, 894)
+LineNumber(0, 895), LineNumber(4, 896), LineNumber(9, 897)
 
 com.jopdesign.sys.GC:newObj2(I)I
 Code(max_stack = 1, max_locals = 2, code_length = 5)
 0:    iload_1
-1:    invokestatic	com.jopdesign.sys.GC.newObject (I)I (52)
+1:    invokestatic	com.jopdesign.sys.GC.newObject (I)I (53)
 4:    ireturn
 
 Attribute(s) = 
 LocalVariable(start_pc = 0, length = 5, index = 0:com.jopdesign.sys.GC this)
 LocalVariable(start_pc = 0, length = 5, index = 1:int arg0)
-LineNumber(0, 897)
+LineNumber(0, 900)
 
 com.jopdesign.sys.Memory:<init>()V
 Code(max_stack = 1, max_locals = 1, code_length = 5)
@@ -14088,9 +14098,3 @@ Code(max_stack = 2, max_locals = 1, code_length = 15)
 14:   ireturn
 
 Attribute(s) = 
-(Unknown attribute StackMapTable: 00 02 0d 40 01)
-LocalVariable(start_pc = 0, length = 15, index = 0:com.jopdesign.io.SerialPort this)
-LineNumber(0, 64)
-
-com.jopdesign.io.SerialPort:txEmpty()Z
-Code(max_stack = 2, max_l

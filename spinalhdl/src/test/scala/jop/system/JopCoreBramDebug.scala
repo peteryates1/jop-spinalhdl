@@ -51,7 +51,7 @@ case class JopCoreBramDebugHarness(
     val bmbRspData = out Bits(32 bits)
 
     // Memory controller debug
-    val memCtrlState = out UInt(4 bits)
+    val memCtrlState = out UInt(5 bits)
     val bcRd = out Bool()  // stbcrd signal
     val memRd = out Bool()  // stmra signal
     val memRdc = out Bool() // stmrac signal

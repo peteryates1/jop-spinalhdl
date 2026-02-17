@@ -61,7 +61,7 @@ object JopSmallGcSdramSim extends App {
 
       dut.clockDomain.waitSampling(5)
 
-      val maxCycles = 5000000  // 5M cycles
+      val maxCycles = 20000000  // 20M cycles — need enough for GC cycle
       val reportInterval = 100000
       var startTime = System.currentTimeMillis()
       var done = false
@@ -88,9 +88,9 @@ object JopSmallGcSdramSim extends App {
           println(f"\n[$cycle%8d] PC=$pc%04x JPC=$jpc%04x rate=${rate.toInt} cycles/sec UART: '${uartOutput.toString}'")
         }
 
-        // Exit after seeing a few GC rounds or an exception
+        // Exit after a full GC cycle (R12 triggers GC, R14+ confirms it completed)
         val output = uartOutput.toString
-        if (output.contains("R2 f=") || output.contains("Uncaught exception")) {
+        if (output.contains("R14 f=") || output.contains("Uncaught exception")) {
           // Capture more output
           for (_ <- 0 until 100000) {
             dut.clockDomain.waitSampling()

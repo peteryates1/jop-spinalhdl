@@ -401,15 +401,18 @@ public class GC {
 			}
 
 			if (size>0) {
-				// copy it (software copy — hardware memCopy/address
-				// translation not implemented in SpinalHDL port)
+				// copy using hardware memCopy (one word per call)
 				for (i=0; i<size; i++) {
-  					Native.wrMem(Native.rdMem(addr+i), dest+i);
+  					Native.memCopy(dest, addr, i);
 				}
 			}
 
 			// update object pointer to the new location
 			Native.wrMem(dest, ref+OFF_PTR);
+			// wait until in-flight accesses use the new location
+			for (i = 0; i < 10; i++);
+			// turn off copy state (stopbit)
+			Native.memCopy(dest, dest, -1);
 		}
 	}
 	
