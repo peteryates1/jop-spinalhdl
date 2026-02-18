@@ -73,7 +73,6 @@ sealed trait FpgaTarget
 object FpgaTarget {
   case object Altera extends FpgaTarget
   case object Xilinx extends FpgaTarget
-  case object Lattice extends FpgaTarget
 }
 
 /**
