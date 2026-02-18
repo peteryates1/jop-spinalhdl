@@ -12,7 +12,7 @@ ENV/
 .pytest_cache/
 *.egg-info/
 dist/
-build/
+/build/
 
 # Scala/SBT
 /target/
