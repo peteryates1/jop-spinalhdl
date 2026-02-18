@@ -51,9 +51,10 @@ case class JopCoreWithSdram(
     // Memory controller status
     val memBusy   = out Bool()
 
-    // Interrupt interface
+    // Interrupt / Exception interface
     val irq       = in Bool()
     val irqEna    = in Bool()
+    val exc       = in Bool()   // Exception signal from I/O subsystem
 
     // BMB debug
     val bmbCmdValid  = out Bool()
@@ -100,9 +101,10 @@ case class JopCoreWithSdram(
 
   io.memBusy := jopCore.io.memBusy
 
-  // Interrupt
+  // Interrupt / Exception
   jopCore.io.irq := io.irq
   jopCore.io.irqEna := io.irqEna
+  jopCore.io.exc := io.exc
 
   // BMB debug
   io.bmbCmdValid := jopCore.io.bmb.cmd.valid

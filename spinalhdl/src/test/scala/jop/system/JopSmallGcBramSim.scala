@@ -52,6 +52,17 @@ object JopSmallGcBramSim extends App {
         cycle += 1
         dut.clockDomain.waitSampling()
 
+        // Check for exception firing
+        if (dut.io.excFired.toBoolean) {
+          val pc = dut.io.pc.toInt
+          val jpc = dut.io.jpc.toInt
+          val excType = dut.io.excType.toInt
+          val aout = dut.io.aout.toLong & 0xFFFFFFFFL
+          val bout = dut.io.bout.toLong & 0xFFFFFFFFL
+          println(f"\n[$cycle%8d] *** EXCEPTION type=$excType PC=$pc%04x JPC=$jpc%04x aout=0x$aout%08x bout=0x$bout%08x ***")
+          logLine(f"[$cycle%8d] EXCEPTION type=$excType PC=$pc%04x JPC=$jpc%04x aout=0x$aout%08x bout=0x$bout%08x")
+        }
+
         // Check for UART output
         if (dut.io.uartTxValid.toBoolean) {
           val char = dut.io.uartTxData.toInt

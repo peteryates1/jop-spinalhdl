@@ -84,6 +84,11 @@ case class JopEchoHarness(
   val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
   val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
 
+  // Exception handling (matching BmbSys behavior)
+  val excTypeReg = Reg(Bits(8 bits)) init(0)
+  val excPend = Reg(Bool()) init(False)
+  excPend := False
+
   uartRxReadReg := False
 
   switch(ioSlaveId) {
@@ -91,6 +96,7 @@ case class JopEchoHarness(
       switch(ioSubAddr) {
         is(0) { ioRdData := sysCntReg.asBits }
         is(1) { ioRdData := sysCntReg.asBits }
+        is(4) { ioRdData := excTypeReg.resized }
         is(6) { ioRdData := B(0, 32 bits) }  // CPU ID
         is(7) { ioRdData := B(0, 32 bits) }  // Signal
       }
@@ -117,6 +123,11 @@ case class JopEchoHarness(
   uartTxValidReg := False
   when(jopCore.io.ioWr) {
     switch(ioSlaveId) {
+      is(0) {
+        switch(ioSubAddr) {
+          is(4) { excTypeReg := jopCore.io.ioWrData(7 downto 0); excPend := True }
+        }
+      }
       is(1) {
         switch(ioSubAddr) {
           is(1) {
@@ -127,6 +138,10 @@ case class JopEchoHarness(
       }
     }
   }
+
+  // Exception pulse
+  val excDly = RegNext(excPend) init(False)
+  jopCore.io.exc := excPend && !excDly
 
   // Outputs
   io.pc := jopCore.io.pc

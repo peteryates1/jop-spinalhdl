@@ -88,9 +88,10 @@ case class JopCore(
     // Memory controller status
     val memBusy   = out Bool()
 
-    // Interrupt interface
+    // Interrupt / Exception interface
     val irq       = in Bool()
     val irqEna    = in Bool()
+    val exc       = in Bool()   // Exception signal from I/O subsystem
 
     // Debug: bytecode cache fill
     val debugBcRd = out Bool()
@@ -143,9 +144,10 @@ case class JopCore(
   // I/O data input (directly from external)
   memCtrl.io.ioRdData := io.ioRdData
 
-  // Interrupts
+  // Interrupts / Exceptions
   pipeline.io.irq := io.irq
   pipeline.io.irqEna := io.irqEna
+  pipeline.io.exc := io.exc
 
   // Debug RAM
   pipeline.io.debugRamAddr := io.debugRamAddr
@@ -219,9 +221,10 @@ case class JopCoreWithBram(
     // Memory controller status
     val memBusy   = out Bool()
 
-    // Interrupt interface
+    // Interrupt / Exception interface
     val irq       = in Bool()
     val irqEna    = in Bool()
+    val exc       = in Bool()   // Exception signal from I/O subsystem
   }
 
   // JOP System core
@@ -261,9 +264,10 @@ case class JopCoreWithBram(
 
   io.memBusy := jopCore.io.memBusy
 
-  // Interrupt
+  // Interrupt / Exception
   jopCore.io.irq := io.irq
   jopCore.io.irqEna := io.irqEna
+  jopCore.io.exc := io.exc
 }
 
 /**

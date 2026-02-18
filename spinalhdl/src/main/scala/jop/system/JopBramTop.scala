@@ -161,6 +161,9 @@ case class JopBramTop(
     }
     jopCore.io.ioRdData := ioRdData
 
+    // Exception signal from BmbSys
+    jopCore.io.exc := bmbSys.io.exc
+
     // ======================================================================
     // LED Driver
     // ======================================================================

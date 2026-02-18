@@ -124,6 +124,10 @@ case class BmbMemoryController(
         IAST_WAIT,
         // Handle dereference (getfield/putfield/iaload/iastore) - busy
         HANDLE_READ, HANDLE_WAIT, HANDLE_CALC, HANDLE_ACCESS, HANDLE_DATA_WAIT,
+        // Array bounds check (matching VHDL ialrb/iasrb) - busy
+        HANDLE_BOUND_READ, HANDLE_BOUND_WAIT,
+        // Exception states (matching VHDL npexc/abexc) - busy
+        NP_EXC, AB_EXC,
         // Bytecode cache check and pipelined fill - busy
         BC_CACHE_CHECK, BC_FILL_R1, BC_FILL_LOOP, BC_FILL_CMD,
         // GC copy states (matching VHDL cp0-cpstop) - busy
@@ -147,7 +151,7 @@ case class BmbMemoryController(
 
   // Handle operation state
   val handleDataPtr = Reg(UInt(config.addressWidth bits)) init(0)
-  val handleIndex = Reg(UInt(16 bits)) init(0)
+  val handleIndex = Reg(UInt(config.addressWidth bits)) init(0)
   val handleIsWrite = Reg(Bool()) init(False)
   val handleIsArray = Reg(Bool()) init(False)
   val handleWriteData = Reg(Bits(32 bits)) init(0)
@@ -419,7 +423,7 @@ case class BmbMemoryController(
       }.elsewhen(io.memIn.iaload) {
         // Array load - NOS = array ref, TOS = index
         addrReg := io.bout(config.addressWidth - 1 downto 0).asUInt
-        handleIndex := aoutAddr.resized
+        handleIndex := aoutAddr
         indexReg := aoutAddr  // Store index (like stidx)
         handleIsWrite := False
         handleIsArray := True
@@ -429,7 +433,7 @@ case class BmbMemoryController(
       }.elsewhen(io.memIn.getfield) {
         // Get object field - TOS = object ref, bcopd = field index
         addrReg := aoutAddr
-        handleIndex := Mux(wasStidx, indexReg.resize(16), io.bcopd(15 downto 0).asUInt)
+        handleIndex := Mux(wasStidx, indexReg, io.bcopd(15 downto 0).asUInt.resize(config.addressWidth))
         handleIsWrite := False
         handleIsArray := False
         state := State.HANDLE_READ
@@ -438,7 +442,7 @@ case class BmbMemoryController(
       }.elsewhen(io.memIn.putfield) {
         // Put object field - NOS = object ref, bcopd = field index, value in valueReg
         addrReg := io.bout(config.addressWidth - 1 downto 0).asUInt
-        handleIndex := Mux(wasStidx, indexReg.resize(16), io.bcopd(15 downto 0).asUInt)
+        handleIndex := Mux(wasStidx, indexReg, io.bcopd(15 downto 0).asUInt.resize(config.addressWidth))
         handleIsWrite := True
         handleIsArray := False
         handleWriteData := io.aout  // TOS = value (also captured to valueReg above)
@@ -553,7 +557,7 @@ case class BmbMemoryController(
 
     is(State.IAST_WAIT) {
       addrReg := io.bout(config.addressWidth - 1 downto 0).asUInt  // NOS = arrayref
-      handleIndex := aoutAddr.resized                                // TOS = index
+      handleIndex := aoutAddr                                        // TOS = index
       handleWriteData := valueReg                                    // stored value
       state := State.HANDLE_READ
     }
@@ -695,20 +699,48 @@ case class BmbMemoryController(
     // ========================================================================
 
     is(State.HANDLE_READ) {
-      // Issue read to dereference handle
-      io.bmb.cmd.valid := True
-      io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
-      io.bmb.cmd.fragment.address := (addrReg << 2).resized
-      when(io.bmb.cmd.fire) {
-        state := State.HANDLE_WAIT
-      }
+      // Exception checks disabled: the GC runtime accesses null handles during
+      // conservative stack scanning (getfield on handle 0). The VHDL iald0/gf0
+      // has the same checks, but the original JOP may not exercise them with
+      // this GC runtime. Enable when GC is fixed to avoid null handle access.
+      //
+      // when(addrReg === 0) {
+      //   // Null pointer — write exc_type=2 (EXC_NP) to I/O addr 4
+      //   io.ioAddr := U(0x04, 8 bits)
+      //   io.ioWr := True
+      //   io.ioWrData := B(2, 32 bits)
+      //   state := State.NP_EXC
+      // }.elsewhen(handleIsArray && handleIndex(config.addressWidth - 1)) {
+      //   // Negative array index — write exc_type=3 (EXC_AB)
+      //   io.ioAddr := U(0x04, 8 bits)
+      //   io.ioWr := True
+      //   io.ioWrData := B(3, 32 bits)
+      //   state := State.AB_EXC
+      // }.otherwise {
+        // Normal handle dereference — issue read for handle[0] (data pointer)
+        io.bmb.cmd.valid := True
+        io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
+        io.bmb.cmd.fragment.address := (addrReg << 2).resized
+        when(io.bmb.cmd.fire) {
+          state := State.HANDLE_WAIT
+        }
+      // }
     }
 
     is(State.HANDLE_WAIT) {
       when(io.bmb.rsp.fire) {
-        // Got data pointer from handle
+        // Got data pointer from handle[0]
         handleDataPtr := io.bmb.rsp.fragment.data(config.addressWidth - 1 downto 0).asUInt
-        state := State.HANDLE_CALC
+        // Upper bounds check disabled: the VHDL ialrb check is gated by
+        // rdy_cnt/=0 which is always false when data arrives (effectively
+        // dead code). Additionally, the GC runtime's conservative stack
+        // scanning may trigger false positives. Enable when GC is fixed.
+        //
+        // when(handleIsArray) {
+        //   state := State.HANDLE_BOUND_READ  // Arrays need upper bounds check
+        // }.otherwise {
+          state := State.HANDLE_CALC  // Fields skip bounds check
+        // }
       }
     }
 
@@ -763,6 +795,53 @@ case class BmbMemoryController(
         wasStidx := False  // Reset stidx marker after handle operation
         state := State.IDLE
       }
+    }
+
+    // ========================================================================
+    // Array Bounds Check States (matching VHDL ialrb/iasrb) - busy
+    // ========================================================================
+
+    is(State.HANDLE_BOUND_READ) {
+      // Read handle[1] (array length). addrReg still holds handle base address.
+      io.bmb.cmd.valid := True
+      io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
+      io.bmb.cmd.fragment.address := ((addrReg + 1) << 2).resized  // handle[1]
+      when(io.bmb.cmd.fire) {
+        state := State.HANDLE_BOUND_WAIT
+      }
+    }
+
+    is(State.HANDLE_BOUND_WAIT) {
+      when(io.bmb.rsp.fire) {
+        val arrayLength = io.bmb.rsp.fragment.data(config.addressWidth - 1 downto 0).asUInt
+        when(handleIndex >= arrayLength) {
+          // Upper bounds violation — write exc_type=3 (EXC_AB)
+          io.ioAddr := U(0x04, 8 bits)
+          io.ioWr := True
+          io.ioWrData := B(3, 32 bits)  // EXC_AB = 3
+          state := State.AB_EXC
+        }.otherwise {
+          state := State.HANDLE_CALC  // Bounds OK, proceed
+        }
+      }
+    }
+
+    // ========================================================================
+    // Exception States (matching VHDL npexc/abexc) - busy
+    //
+    // One cycle each. The exc_type I/O write happened in the previous
+    // cycle; BmbSys will pulse io.exc on the next cycle. These states
+    // just clean up and return to IDLE.
+    // ========================================================================
+
+    is(State.NP_EXC) {
+      wasStidx := False
+      state := State.IDLE
+    }
+
+    is(State.AB_EXC) {
+      wasStidx := False
+      state := State.IDLE
     }
 
     // ========================================================================
@@ -874,6 +953,10 @@ case class BmbMemoryController(
     State.HANDLE_CALC -> True,
     State.HANDLE_ACCESS -> True,
     State.HANDLE_DATA_WAIT -> True,
+    State.HANDLE_BOUND_READ -> True,
+    State.HANDLE_BOUND_WAIT -> True,
+    State.NP_EXC -> True,
+    State.AB_EXC -> True,
     default -> False
   )
 }

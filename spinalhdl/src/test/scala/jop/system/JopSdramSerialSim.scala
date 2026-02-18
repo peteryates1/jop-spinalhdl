@@ -119,6 +119,11 @@ case class JopSdramSerialHarness(
   val ioRdData = Bits(32 bits)
   ioRdData := 0
 
+  // Exception handling (matching BmbSys behavior)
+  val excTypeReg = Reg(Bits(8 bits)) init(0)
+  val excPend = Reg(Bool()) init(False)
+  excPend := False
+
   // Track if current cycle has a UART data read (for pointer advance)
   val uartDataRead = False
 
@@ -127,6 +132,7 @@ case class JopSdramSerialHarness(
       switch(ioSubAddr) {
         is(0) { ioRdData := sysCntReg.asBits }
         is(1) { ioRdData := sysCntReg.asBits }
+        is(4) { ioRdData := excTypeReg.resized }
         is(6) { ioRdData := B(0, 32 bits) }  // CPU ID = 0
         is(7) { ioRdData := B(0, 32 bits) }  // Signal = 0
       }
@@ -164,6 +170,7 @@ case class JopSdramSerialHarness(
       is(0) {
         switch(ioSubAddr) {
           is(3) { wdReg := jopSystem.io.ioWrData }
+          is(4) { excTypeReg := jopSystem.io.ioWrData(7 downto 0); excPend := True }
         }
       }
       is(1) {
@@ -182,6 +189,10 @@ case class JopSdramSerialHarness(
       }
     }
   }
+
+  // Exception pulse
+  val excDly = RegNext(excPend) init(False)
+  jopSystem.io.exc := excPend && !excDly
 
   // Interrupts disabled
   jopSystem.io.irq := False

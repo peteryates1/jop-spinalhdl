@@ -177,6 +177,11 @@ make help                # List all available test targets
 
 ### Next Steps
 
+- Exception detection — hardware null pointer/array bounds checks are implemented in `BmbMemoryController` (states `NP_EXC`, `AB_EXC`, `HANDLE_BOUND_READ`, `HANDLE_BOUND_WAIT`) with full signal wiring through the hierarchy (`BmbSys` exc register, `JopPipeline`/`JopCore` exc input, all top-levels and test harnesses). **Currently disabled:** the GC runtime accesses null handles during conservative stack scanning, triggering false exceptions. The VHDL `ialrb` upper bounds check is also effectively dead code (gated by `rdy_cnt /= 0`, always false when data arrives). Re-enable after fixing GC `push()` to skip null references.
+- java test cases -> from original jop 
+  - /home/peter/git/jop/java/target/src/test/jvm
+  - /home/peter/git/jop/java/target/src/test/jvmtest
+- Performance measurement
 - Object/Array cache (O$/A$) — original JOP has these, see `docs/cache-analysis.md`
 - Xilinx/AMD Artix-7 and DDR3 on Alchitry Au
   - Method cache optimization for DDR3 burst performance
