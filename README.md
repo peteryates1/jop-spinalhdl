@@ -2,18 +2,18 @@
 
 A complete reimplementation of the [Java Optimized Processor](https://github.com/jop-devel/jop) (JOP) in [SpinalHDL](https://spinalhdl.github.io/SpinalDoc-RTD/). JOP is a hardware implementation of the Java Virtual Machine as a soft-core processor for FPGAs, originally developed by Martin Schoeberl. See [jopdesign.com](https://www.jopdesign.com/) for the original project.
 
-This port runs Java programs on FPGA hardware with BRAM, SDRAM, or DDR3 memory backends.
+This port runs Java programs on FPGA hardware. The primary development platform is the **Alchitry Au V2** (Xilinx Artix-7 + DDR3).
 
 Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 
 ## Status
 
-**Working on hardware.** The processor boots and runs Java programs on multiple FPGA boards at 100 MHz:
+**Working on hardware.** The processor boots and runs Java programs at 100 MHz:
 
-- **BRAM mode**: Self-contained, program embedded in block RAM (Intel Cyclone IV)
-- **SDRAM mode**: Serial boot over UART into W9825G6JH6 SDR SDRAM (Intel Cyclone IV)
-- **DDR3 mode**: Serial boot over UART through write-back cache into DDR3 SDRAM (Xilinx Artix-7)
-- **GC support**: Automatic garbage collection with hardware-accelerated object copying (`memCopy`), tested 100,000+ allocation rounds on both BRAM and DDR3
+- **DDR3 (primary)**: Serial boot over UART through write-back cache into DDR3 SDRAM (Alchitry Au V2, Xilinx Artix-7)
+- **BRAM**: Self-contained, program embedded in block RAM (QMTECH EP4CGX150, Intel Cyclone IV)
+- **SDRAM**: Serial boot over UART into SDR SDRAM on two boards — QMTECH EP4CGX150 (Cyclone IV, W9825G6JH6) and Trenz CYC5000 (Cyclone V, W9864G6JT)
+- **GC support**: Automatic garbage collection with hardware-accelerated object copying (`memCopy`), tested 100,000+ allocation rounds on both DDR3 and BRAM. Known GC hang on SDR SDRAM (both boards) — isolated to `BmbSdramCtrl32` controller bug, not JOP logic.
 
 ## Project Goals
 
@@ -73,10 +73,11 @@ jop/
 │   ├── src/                   # Microcode source (jvm.asm, echo.asm)
 │   └── generated/             # Generated jump tables, ROM/RAM data
 ├── fpga/
-│   ├── qmtech-ep4cgx150-bram/ # BRAM FPGA project (Quartus, Intel Cyclone IV)
-│   ├── qmtech-ep4cgx150-sdram/# SDRAM FPGA project (Quartus, Intel Cyclone IV)
-│   ├── alchitry-au/           # DDR3 FPGA project (Vivado, Xilinx Artix-7)
-│   └── alchitry-au-ddr3-test/ # DDR3 memory exerciser (Vivado)
+│   ├── scripts/               # Shared download.py, monitor.py
+│   ├── alchitry-au/           # DDR3 FPGA project (Vivado, primary)
+│   ├── cyc5000-sdram/         # SDRAM FPGA project (Quartus, Cyclone V)
+│   ├── qmtech-ep4cgx150-bram/ # BRAM FPGA project (Quartus, Cyclone IV)
+│   └── qmtech-ep4cgx150-sdram/# SDRAM FPGA project (Quartus, Cyclone IV)
 ├── java/
 │   ├── tools/jopa/            # Jopa microcode assembler
 │   ├── tools/src/             # JOPizer, PreLinker, common framework
@@ -94,8 +95,8 @@ jop/
 - **Java 11+** and **sbt** (Scala Build Tool)
 - **Verilator** (simulation backend for SpinalSim)
 - **Java 8+**, **gcc**, **make** (for Jopa microcode assembler)
-- **Quartus Prime** (for Intel FPGA synthesis, optional)
-- **Vivado** (for Xilinx FPGA synthesis, optional)
+- **Vivado** (for Alchitry Au V2 / Xilinx FPGA synthesis)
+- **Quartus Prime** (for QMTECH EP4CGX150 / Intel FPGA synthesis, optional)
 - **Python 3.8+**, **GHDL**, **CocoTB** (for VHDL reference tests, optional)
 
 ### Build and Run Simulation
@@ -124,28 +125,37 @@ sbt "Test / runMain jop.system.JopSmallGcBramSim"
 ### Build for FPGA
 
 ```bash
-# BRAM target — Intel Cyclone IV (self-contained, 100 MHz)
+# DDR3 target — Alchitry Au V2, Xilinx Artix-7 (primary, serial boot, 100 MHz)
+cd fpga/alchitry-au
+make generate    # Generate Verilog from SpinalHDL
+make ips         # Generate MIG + ClkWiz Vivado IPs (first time only)
+make bitstream   # Vivado synthesis + implementation + bitstream
+make program     # Program FPGA via JTAG
+make download    # Download HelloWorld.jop over UART
+make monitor     # Watch serial output
+
+# SDRAM target — Trenz CYC5000, Intel Cyclone V (serial boot, 100 MHz)
+cd fpga/cyc5000-sdram
+make microcode   # Assemble serial boot microcode
+make generate    # Generate Verilog
+make build       # Quartus synthesis
+make program     # Program FPGA via JTAG
+make download    # Download HelloWorld.jop over UART
+make monitor     # Watch serial output
+
+# BRAM target — QMTECH EP4CGX150, Intel Cyclone IV (self-contained, 100 MHz)
 cd fpga/qmtech-ep4cgx150-bram
 make generate    # Generate Verilog from SpinalHDL
 make build       # Quartus synthesis
 make program     # Program FPGA via USB-Blaster
 make monitor     # Open serial monitor (1 Mbaud)
 
-# SDRAM target — Intel Cyclone IV (serial boot, 100 MHz)
+# SDRAM target — QMTECH EP4CGX150, Intel Cyclone IV (serial boot, 100 MHz)
 cd fpga/qmtech-ep4cgx150-sdram
 make microcode   # Assemble serial boot microcode
 make generate    # Generate Verilog
 make build       # Quartus synthesis
 make program     # Program FPGA
-make download    # Download HelloWorld.jop over UART
-make monitor     # Watch serial output
-
-# DDR3 target — Xilinx Artix-7 (serial boot, 100 MHz)
-cd fpga/alchitry-au
-make generate    # Generate Verilog from SpinalHDL
-make ips         # Generate MIG + ClkWiz Vivado IPs (first time only)
-make bitstream   # Vivado synthesis + implementation + bitstream
-make program     # Program FPGA via JTAG
 make download    # Download HelloWorld.jop over UART
 make monitor     # Watch serial output
 ```
@@ -175,13 +185,10 @@ make help                # List all available test targets
 
 | Board | FPGA | Memory | Toolchain | Status |
 |-------|------|--------|-----------|--------|
+| **[Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au)** | **Xilinx Artix-7 (XC7A35T)** | **MT41K128M16JT DDR3** | **Vivado** | **Primary — 100 MHz, 47% LUT** |
+| [Trenz CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) | Intel Cyclone V E (5CEBA2U15C8N) | W9864G6JT SDR SDRAM | Quartus Prime | Working at 100 MHz |
 | [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Intel Cyclone IV GX | BRAM (on-chip) | Quartus Prime | Working at 100 MHz |
 | [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Intel Cyclone IV GX | W9825G6JH6 SDR SDRAM | Quartus Prime | Working at 100 MHz |
-| [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au) | Xilinx Artix-7 (XC7A35T) | MT41K128M16JT DDR3 | Vivado | Working at 100 MHz |
-
-### Planned
-
-- [Trenz CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) - Intel Cyclone V E
 
 ## Implementation Status
 
@@ -195,16 +202,21 @@ make help                # List all available test targets
 - **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
 - **I/O subsystem**: `BmbSys` (cycle/microsecond counters, watchdog, CPU ID) and `BmbUart` (TX/RX with 16-entry FIFOs) as reusable `jop.io` components
-- **BRAM system**: `JopBramTop` — complete system with on-chip memory at 100 MHz (Intel Cyclone IV)
-- **SDRAM system**: `JopSdramTop` — serial boot over UART into SDR SDRAM at 100 MHz (Intel Cyclone IV)
-- **DDR3 system**: `JopDdr3Top` — serial boot over UART through write-back cache into DDR3 at 100 MHz (Xilinx Artix-7), with standalone `Ddr3ExerciserTop` memory test
+- **DDR3 system (primary)**: `JopDdr3Top` — serial boot over UART through write-back cache into DDR3 at 100 MHz (Alchitry Au V2, Xilinx Artix-7), with standalone `Ddr3ExerciserTop` memory test
+- **BRAM system**: `JopBramTop` — complete system with on-chip memory at 100 MHz (QMTECH EP4CGX150, Intel Cyclone IV)
+- **SDRAM system**: `JopSdramTop` / `JopCyc5000Top` — serial boot over UART into SDR SDRAM at 100 MHz (QMTECH EP4CGX150 + Trenz CYC5000)
 - **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
-- **GC support**: Hardware `memCopy` for stop-the-world garbage collection, tested with allocation-heavy GC app (100,000+ rounds stable on BRAM and DDR3)
+- **GC support**: Hardware `memCopy` for stop-the-world garbage collection, tested with allocation-heavy GC app (100,000+ rounds stable on BRAM and DDR3). GC hangs on SDR SDRAM (reproduced on two different boards/chips — QMTECH W9825G6JH6 and CYC5000 W9864G6JT), confirming a `BmbSdramCtrl32` controller bug rather than board-specific hardware.
 - **Exception infrastructure**: Null pointer and array bounds detection states wired through pipeline to `BmbSys` exception register (checks currently disabled pending GC null-handle fix)
 - **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, GHDL event-driven sim
 
+### Known Issues
+
+- **SDR SDRAM GC hang** — Garbage collection hangs on both SDR SDRAM boards (QMTECH EP4CGX150 with W9825G6JH6 and Trenz CYC5000 with W9864G6JT) but works perfectly on BRAM and DDR3. The Smallest app (no GC) runs fine on all platforms. This confirms the bug is in `BmbSdramCtrl32` (the SDR SDRAM controller), not in JOP core logic or board-specific hardware. The hang occurs during the GC's complex memory access patterns (handle lookups, array access, memCopy).
+
 ### Next Steps
 
+- **BmbSdramCtrl32 GC bug** — debug and fix the SDR SDRAM controller bug that causes GC to hang (works for simple apps, fails under GC memory patterns)
 - Memory controller — remaining features from VHDL `mem_sc.vhd`:
   - **Exception detection** (MEDIUM) — states and wiring implemented but **currently disabled**: GC accesses null handles during conservative stack scanning. VHDL `ialrb` upper bounds check is also dead code (gated by `rdy_cnt /= 0`). Re-enable after fixing GC `push()` to skip null refs.
   - **Atomic memory operations** (LOW — multicore only) — `atmstart`/`atmend` inputs exist in `MemCtrlInput` but are never processed; VHDL sets an `atomic` output flag for monitorenter/monitorexit

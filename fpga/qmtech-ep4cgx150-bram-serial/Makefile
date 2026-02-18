@@ -11,8 +11,8 @@ BAUD_RATE = 1000000
 
 PROJECT_ROOT = ../..
 GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopBramSerialTop.v
-DOWNLOAD_PY = ../qmtech-ep4cgx150-sdram/download.py
-MONITOR_PY = ../qmtech-ep4cgx150-bram/monitor.py
+DOWNLOAD_PY = ../scripts/download.py
+MONITOR_PY = ../scripts/monitor.py
 
 QP = jop_bram_serial
 OUTPUT_DIR = output_files

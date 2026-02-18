@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UART monitor for JOP BRAM on QMTECH EP4CGX150.
+"""UART monitor for JOP FPGA boards.
 
 Usage: ./monitor.py [PORT [BAUDRATE]]
   Default: /dev/ttyUSB0 at 1000000 baud

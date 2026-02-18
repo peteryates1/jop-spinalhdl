@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serial .jop download tool for JOP DDR3 on Alchitry AU V2.
+"""Serial .jop download tool for JOP FPGA boards.
 
 Implements the JOP serial download protocol (matching down_posix.c):
   1. Parse .jop file (decimal text, skip // comments)
@@ -8,14 +8,13 @@ Implements the JOP serial download protocol (matching down_posix.c):
   4. Optionally monitor UART output after download (-e flag)
 
 Usage: python3 download.py [-e] <jop_file> [serial_port] [baud_rate]
-  Defaults: /dev/ttyUSB1, 1000000
+  Defaults: /dev/ttyUSB0, 1000000
   -e: Continue monitoring UART output after download
 """
 
 import sys
 import struct
 import serial
-import time
 
 
 def parse_jop_file(filepath):
@@ -26,22 +25,18 @@ def parse_jop_file(filepath):
             line = line.strip()
             if not line:
                 continue
-            # Strip // comments
             if "//" in line:
                 line = line[: line.index("//")]
-            # Strip /* */ comments (single-line only)
             while "/*" in line and "*/" in line:
                 start = line.index("/*")
                 end = line.index("*/") + 2
                 line = line[:start] + line[end:]
-            # Split on commas and whitespace
             for token in line.replace(",", " ").split():
                 token = token.strip()
                 if not token:
                     continue
                 try:
                     val = int(token)
-                    # Convert to unsigned 32-bit
                     words.append(val & 0xFFFFFFFF)
                 except ValueError:
                     continue
@@ -88,10 +83,9 @@ def main():
         sys.exit(1)
 
     jop_file = args[0]
-    port = args[1] if len(args) > 1 else "/dev/ttyUSB1"
+    port = args[1] if len(args) > 1 else "/dev/ttyUSB0"
     baud = int(args[2]) if len(args) > 2 else 1000000
 
-    # Parse .jop file
     words = parse_jop_file(jop_file)
     if not words:
         print("Error: no data parsed from .jop file", file=sys.stderr)
@@ -109,14 +103,12 @@ def main():
     print(f"  * {bc_words} words of Java bytecode ({bc_words // 256} KB)")
     print(f"  * {len(words)} words external RAM ({len(words) // 256} KB)")
 
-    # Open serial port
     ser = serial.Serial(port, baud, timeout=2)
     ser.reset_input_buffer()
     ser.reset_output_buffer()
     print(f"Opened {ser.port} at {ser.baudrate} baud")
     print("Transmitting data via serial...")
 
-    # Send all words with echo verification
     total = len(words)
     for i, word in enumerate(words):
         if i % 128 == 0:
@@ -126,7 +118,6 @@ def main():
     sys.stderr.write("\n")
     print("Done.")
 
-    # Monitor UART output
     if echo_mode:
         print("Monitoring UART output (Ctrl+C to exit)...")
         try:

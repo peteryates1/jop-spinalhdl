@@ -110,10 +110,10 @@ program: $(SOF_FILE) $(QP).cdf
 # --------------------------------------------------------------------------
 
 download:
-	python3 download.py -e $(JOP_FILE) $(SERIAL_PORT) $(BAUD_RATE)
+	python3 ../scripts/download.py -e $(JOP_FILE) $(SERIAL_PORT) $(BAUD_RATE)
 
 monitor:
-	python3 monitor.py $(SERIAL_PORT) $(BAUD_RATE)
+	python3 ../scripts/monitor.py $(SERIAL_PORT) $(BAUD_RATE)
 
 # --------------------------------------------------------------------------
 # Cleanup

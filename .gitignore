@@ -75,6 +75,7 @@ simWorkspace/
 *.done
 *.smsg
 *.bin
+c5_pin_model_dump.txt
 
 # Vivado
 *.jou
