@@ -4,14 +4,15 @@ A complete reimplementation of the [Java Optimized Processor](https://github.com
 
 This port runs Java programs on FPGA hardware with BRAM or SDRAM memory backends.
 
-Built with [Claude Code](https://claude.ai/claude-code).
+Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 
 ## Status
 
-**Working on hardware.** The processor boots and runs Java programs ("Hello World!" in a loop) on the QMTECH EP4CGX150 board at 100 MHz:
+**Working on hardware.** The processor boots and runs Java programs on the QMTECH EP4CGX150 board at 100 MHz:
 
 - **BRAM mode**: Self-contained, program embedded in block RAM
 - **SDRAM mode**: Serial boot, downloads `.jop` files over UART into W9825G6JH6 SDRAM
+- **GC support**: Automatic garbage collection with hardware-accelerated object copying (`memCopy`)
 
 ## Project Goals
 
@@ -32,7 +33,9 @@ Built with [Claude Code](https://claude.ai/claude-code).
 ┌───────┼────────┐        │                 │         |                             |          |
 │┌──────┴───────┐│ ┌──────┴───────┐  ┌──────┴───────┐ |  ┌──────────────┐    ┌──────┴───────┐  |
 │| method cache ││ |  jump tbl    │  │microcode rom │ └──│ Address Gen  ├───▶│ stack buffer │  |
-│└──────────────┘│ └──────────────┘  └──────────────┘    └──────────────┘    └──────────────┘  |
+│├──────────────┤│ └──────────────┘  └──────────────┘    └──────────────┘    └──────────────┘  |
+│| object cache ││                                                                             |
+│└──────────────┘│                                                                             |
 |     memory     │                                                                             |
 |   controller   │◀────────────────────────────────────────────────────────────────────────────┘
 └───────┬────────┘
@@ -54,7 +57,7 @@ Memory access uses SpinalHDL's BMB (Bus Master Bridge) interconnect, supporting 
 jop/
 ├── spinalhdl/src/main/scala/jop/
 │   ├── pipeline/              # Pipeline stages (fetch, decode, stack, bytecode)
-│   ├── memory/                # Memory controller, method cache, SDRAM ctrl
+│   ├── memory/                # Memory controller, method cache, object cache, SDRAM ctrl
 │   ├── io/                    # I/O slaves (BmbSys, BmbUart)
 │   ├── system/                # System integration (JopCore, FPGA tops)
 │   ├── types/                 # JOP types and constants
@@ -99,11 +102,17 @@ cd ../../../asm && make
 # 2. Compile SpinalHDL (from project root)
 sbt compile
 
-# 3. Run BRAM simulation (prints "Hello World!" in a loop)
+# 3. Build Java toolchain, runtime, and test apps
+cd java && make all && cd ..
+
+# 4. Run BRAM simulation (prints "Hello World!" in a loop)
 sbt "Test / runMain jop.system.JopCoreBramSim"
 
-# 4. Run SDRAM simulation
+# 5. Run SDRAM simulation
 sbt "Test / runMain jop.system.JopCoreWithSdramSim"
+
+# 6. Run GC stress test (allocates arrays, triggers garbage collection)
+sbt "Test / runMain jop.system.JopSmallGcBramSim"
 ```
 
 ### Build for FPGA
@@ -164,8 +173,9 @@ make help                # List all available test targets
 ### Complete
 
 - **Pipeline**: All four stages — bytecode fetch/translate, microcode fetch, decode, execute (stack)
-- **Memory controller**: BMB bus with two-layer design (combinational + state machine for BC fill, getfield, iaload), pipelined BC fill overlaps memory reads with JBC writes, configurable BMB burst reads for SDRAM
+- **Memory controller**: BMB bus with two-layer design (combinational + state machine for BC fill, getfield, iaload), pipelined BC fill overlaps memory reads with JBC writes, configurable BMB burst reads for SDRAM, hardware `memCopy` for GC object relocation
 - **Method cache**: 16-block tag-only cache (32 words/block, FIFO replacement) skips redundant bytecode fills; 2-cycle hit, 3-cycle + fill on miss
+- **Object cache**: 16-entry fully associative field cache (8 fields/entry, FIFO replacement) shortcuts getfield to 0 busy cycles on hit; write-through on putfield; invalidated on `stidx`/`cinval`
 - **Stack buffer**: 256-entry on-chip RAM (64 for 32 local variables + 32 constants, 192 for operand stack) with spill/fill, ALU, shifter, 33-bit comparator
 - **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
@@ -173,17 +183,18 @@ make help                # List all available test targets
 - **BRAM system**: `JopBramTop` — complete system with on-chip memory at 100 MHz
 - **SDRAM system**: `JopSdramTop` — serial boot over UART into SDR SDRAM at 100 MHz
 - **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
-- **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), echo test
+- **GC support**: Hardware `memCopy` for stop-the-world garbage collection, tested with allocation-heavy GC app (stable cycling on BRAM and SDRAM)
+- **Exception infrastructure**: Null pointer and array bounds detection states wired through pipeline to `BmbSys` exception register (checks currently disabled pending GC null-handle fix)
+- **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, echo test
 
 ### Next Steps
 
-- Memory controller — missing features from VHDL `mem_sc.vhd`:
-  - **Exception detection** (HIGH) — `NP_EXC`, `AB_EXC`, `HANDLE_BOUND_READ/WAIT` states implemented with full signal wiring, but **currently disabled**: GC accesses null handles during conservative stack scanning. VHDL `ialrb` upper bounds check is also dead code (gated by `rdy_cnt /= 0`). Re-enable after fixing GC `push()` to skip null refs. Also needs `excw` wait state (VHDL waits for `rdy_cnt=0` before returning to idle).
+- Memory controller — remaining features from VHDL `mem_sc.vhd`:
+  - **Exception detection** (MEDIUM) — states and wiring implemented but **currently disabled**: GC accesses null handles during conservative stack scanning. VHDL `ialrb` upper bounds check is also dead code (gated by `rdy_cnt /= 0`). Re-enable after fixing GC `push()` to skip null refs.
   - **Atomic memory operations** (LOW — multicore only) — `atmstart`/`atmend` inputs exist in `MemCtrlInput` but are never processed; VHDL sets an `atomic` output flag for monitorenter/monitorexit
   - **Address translation on read paths** (LOW — multicore only) — VHDL applies combinational `translateAddr` (GC copy relocation) to all reads; SpinalHDL only applies within copy states (single-core simplification, causes timing violation at 100 MHz)
   - **Scoped memory / illegal assignment** (LOW — RTSJ only) — VHDL tracks `putref_reg` and `dest_level` for scope checks on putstatic, putfield, iastore; SpinalHDL has no scope tracking
-  - **Object cache (`ocache`)** (LOW — performance) — VHDL integrates a field cache that shortcuts getfield to IDLE on hit; SpinalHDL always takes the full state machine path. See also `docs/cache-analysis.md`
-  - **Data cache control signals** (LOW — performance) — VHDL outputs `state_dcache` (bypass/direct_mapped/full_assoc per operation), `tm_cache` (disable caching during BC fill), `cinval` (cache invalidation); SpinalHDL has none
+  - **Data cache control signals** (LOW — performance) — VHDL outputs `state_dcache` (bypass/direct_mapped/full_assoc per operation), `tm_cache` (disable caching during BC fill); SpinalHDL has none
   - **Fast-path array access (`iald23`)** (LOW — performance) — VHDL shortcut state overlaps address computation with data availability for single-cycle memory; SpinalHDL uses uniform HANDLE_* states
 - Interrupt handling — verify timer interrupts and scheduler preemption work correctly
 - Java test cases from original JOP (`/home/peter/git/jop/java/target/src/test/{jvm,jvmtest}`)
@@ -191,18 +202,20 @@ make help                # List all available test targets
 - Xilinx/AMD Artix-7 and DDR3 on Alchitry Au
   - Method cache optimization for DDR3 burst performance
 - Multicore
-- Configuration — core(s)/system/memory/caches
+- Const.java -> pull out Const and Configuration — core(s)/system/memory/caches
 - Jopa refactor
 - JOPizer/WCETPreprocess — refactor, updated libraries
 - Target JDK modernization (8 as minimum)
 - Port target code — networking, etc.
 - Eclipse tooling — microcode/Java debug via Verilator simulation and FPGA remote debug
 - Additional FPGA board targets
+- Stack cache — extend to external memory with spill/fill for deeper stack support
 
 ## Key Technical Details
 
 - **Bus**: SpinalHDL BMB (Bus Master Bridge). BRAM gives single-cycle accept, next-cycle response (matches original SimpCon `rdy_cnt=1`). SDRAM stalls automatically via busy signal.
-- **Memory controller**: Layer 1 is combinational (simple rd/wr). Layer 2 is a state machine for multi-cycle operations (bytecode fill, getfield, array access). BC fill is pipelined — issues the next read while writing the previous response to JBC RAM, saving ~1 cycle per word. Configurable burst reads (`burstLen=4` for SDR SDRAM).
+- **Memory controller**: Layer 1 is combinational (simple rd/wr). Layer 2 is a state machine for multi-cycle operations (bytecode fill, getfield, array access). BC fill is pipelined — issues the next read while writing the previous response to JBC RAM, saving ~1 cycle per word. Configurable burst reads (`burstLen=4` for SDR SDRAM). Hardware `memCopy` state machine for GC object relocation.
+- **Object cache**: Fully associative field value cache (16 entries, 8 fields each). Getfield hits return data in 0 busy cycles (combinational tag match, registered data output). Putfield does write-through on tag hit. FIFO replacement, invalidated on array stores and explicit `cinval`.
 - **Handle format**: `H[0]` = data pointer, `H[1]` = array length. Array elements start at `data_ptr[0]`.
 - **I/O subsystem**: Reusable `BmbSys` and `BmbUart` components in `jop.io` package. System slave provides clock cycle counter, prescaled microsecond counter, watchdog register, and CPU ID. UART slave provides buffered TX/RX with 16-entry FIFOs.
 - **Serial boot**: Microcode polls UART for incoming bytes, assembles 4 bytes into 32-bit words, writes to SDRAM. Download script (`download.py`) sends `.jop` files with byte-by-byte echo verification.

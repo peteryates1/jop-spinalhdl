@@ -19,7 +19,11 @@ case class JopMemoryConfig(
   addressWidth: Int = 24,
   mainMemSize: BigInt = 8 * 1024 * 1024,  // 8MB default
   scratchSize: BigInt = 4 * 1024,         // 4KB scratch pad
-  burstLen: Int = 0                       // 0=no burst (pipelined single-word), 4=SDR, 8=DDR3
+  burstLen: Int = 0,                      // 0=no burst (pipelined single-word), 4=SDR, 8=DDR3
+  useOcache: Boolean = true,              // Enable object cache
+  ocacheWayBits: Int = 4,                 // log2(entries) — 4 = 16 entries
+  ocacheIndexBits: Int = 3,              // log2(fields per entry) — 3 = 8 fields
+  ocacheMaxIndexBits: Int = 8            // max field index addressable (256)
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(addressWidth >= 16 && addressWidth <= 26, "Address width must be 16-26 bits")

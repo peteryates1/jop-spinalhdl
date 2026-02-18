@@ -191,6 +191,12 @@ case class BmbMemoryController(
   val pendingCmdData = Reg(Bits(32 bits)) init(0)
   val pendingCmdIsWrite = Reg(Bool()) init(False)
 
+  // Object cache state (matching VHDL read_ocache, was_a_hwo signals)
+  val readOcache = if(config.useOcache) Reg(Bool()) init(False) else null
+  val ocWasGetfield = if(config.useOcache) Reg(Bool()) init(False) else null
+  val wasHwo = if(config.useOcache) Reg(Bool()) init(False) else null
+  val handleAddrReg = if(config.useOcache) Reg(UInt(config.addressWidth bits)) init(0) else null
+
   // ==========================================================================
   // Busy Signal
   // ==========================================================================
@@ -226,9 +232,7 @@ case class BmbMemoryController(
       io.bmb.rsp.valid)
   io.memOut.busy := !notBusy
 
-  // Read data: combinational pass-through when BMB response fires in
-  // READ_WAIT. Matches VHDL's combinational mem_out.dout, ensuring
-  // rdData is available in the same cycle the response arrives.
+  // Read data output MUX (base assignment; ocache override added after instantiation)
   io.memOut.rdData := rdDataReg
   when(io.bmb.rsp.fire && state === State.READ_WAIT) {
     io.memOut.rdData := io.bmb.rsp.fragment.data
@@ -312,6 +316,55 @@ case class BmbMemoryController(
   val mcacheFind = Bool()
   mcacheFind := False
   methodCache.io.find := mcacheFind
+
+  // ==========================================================================
+  // Object Cache (matching VHDL ocache in mem_sc.vhd)
+  // ==========================================================================
+
+  val ocache = if(config.useOcache) {
+    val oc = ObjectCache(
+      addrBits = config.addressWidth,
+      wayBits = config.ocacheWayBits,
+      indexBits = config.ocacheIndexBits,
+      maxIndexBits = config.ocacheMaxIndexBits
+    )
+
+    // Default wiring (matching VHDL combinational wiring in mem_sc.vhd)
+    oc.io.handle := aoutAddr
+    oc.io.fieldIdx := io.bcopd(config.ocacheMaxIndexBits - 1 downto 0).asUInt
+    oc.io.chkGf := io.memIn.getfield && !wasStidx
+    oc.io.chkPf := False  // Driven from HANDLE_READ for putfield
+    oc.io.gfVal := io.bmb.rsp.fragment.data  // Memory read data
+    oc.io.pfVal := handleWriteData             // Value being written
+    oc.io.inval := io.memIn.stidx || io.memIn.cinval
+    oc.io.wrGf := False   // Driven from HANDLE_DATA_WAIT
+    oc.io.wrPf := False   // Driven from HANDLE_DATA_WAIT
+
+    Some(oc)
+  } else None
+
+  // Object cache output MUX override (must be after ocache instantiation)
+  // On a cache hit, readOcache selects cached data instead of rdDataReg.
+  // This takes priority over the base rdDataReg assignment but is overridden
+  // by the READ_WAIT combinational pass-through (which comes earlier in code,
+  // but SpinalHDL uses "last when wins" — since readOcache is only True in
+  // IDLE state and READ_WAIT override only fires in READ_WAIT, they don't
+  // conflict in practice).
+  if(config.useOcache) {
+    when(readOcache) {
+      io.memOut.rdData := ocache.get.io.dout
+    }
+  }
+
+  // readOcache: retains value while in IDLE, cleared when state leaves IDLE
+  // (matching VHDL: read_ocache <= '0' when state /= idl)
+  // The pipeline reads cached data 2 cycles after getfield (stgf → wait → ldmrd),
+  // so readOcache must persist across those cycles.
+  if(config.useOcache) {
+    when(state =/= State.IDLE) {
+      readOcache := False
+    }
+  }
 
   // ==========================================================================
   // Main State Machine
@@ -432,11 +485,29 @@ case class BmbMemoryController(
 
       }.elsewhen(io.memIn.getfield) {
         // Get object field - TOS = object ref, bcopd = field index
-        addrReg := aoutAddr
-        handleIndex := Mux(wasStidx, indexReg, io.bcopd(15 downto 0).asUInt.resize(config.addressWidth))
-        handleIsWrite := False
-        handleIsArray := False
-        state := State.HANDLE_READ
+        if(config.useOcache) {
+          // Object cache: chkGf fires combinationally (wired above).
+          // On hit: stay IDLE, set readOcache for next-cycle output MUX.
+          // On miss: normal handle dereference path.
+          when(ocache.get.io.hit && !wasStidx) {
+            // Cache hit — 0 busy cycles (matching VHDL next_state <= idl on hit)
+            readOcache := True
+            wasStidx := False
+          }.otherwise {
+            addrReg := aoutAddr
+            handleIndex := Mux(wasStidx, indexReg, io.bcopd(15 downto 0).asUInt.resize(config.addressWidth))
+            handleIsWrite := False
+            handleIsArray := False
+            ocWasGetfield := True
+            state := State.HANDLE_READ
+          }
+        } else {
+          addrReg := aoutAddr
+          handleIndex := Mux(wasStidx, indexReg, io.bcopd(15 downto 0).asUInt.resize(config.addressWidth))
+          handleIsWrite := False
+          handleIsArray := False
+          state := State.HANDLE_READ
+        }
         // (no extra busy needed - matches VHDL)
 
       }.elsewhen(io.memIn.putfield) {
@@ -446,6 +517,9 @@ case class BmbMemoryController(
         handleIsWrite := True
         handleIsArray := False
         handleWriteData := io.aout  // TOS = value (also captured to valueReg above)
+        if(config.useOcache) {
+          ocWasGetfield := False
+        }
         state := State.HANDLE_READ
         // (no extra busy needed - matches VHDL)
 
@@ -699,6 +773,16 @@ case class BmbMemoryController(
     // ========================================================================
 
     is(State.HANDLE_READ) {
+      // Object cache: check putfield tag (matching VHDL chk_pf in pf0)
+      // For putfield, the handle is in addrReg (captured from bout/NOS in IDLE).
+      if(config.useOcache) {
+        when(!handleIsArray && handleIsWrite && !wasStidx) {
+          ocache.get.io.handle := addrReg  // Override default (aoutAddr)
+          ocache.get.io.chkPf := True
+        }
+        handleAddrReg := addrReg  // Save handle address before HANDLE_CALC overwrites addrReg
+      }
+
       // Exception checks disabled: the GC runtime accesses null handles during
       // conservative stack scanning (getfield on handle 0). The VHDL iald0/gf0
       // has the same checks, but the original JOP may not exercise them with
@@ -731,6 +815,15 @@ case class BmbMemoryController(
       when(io.bmb.rsp.fire) {
         // Got data pointer from handle[0]
         handleDataPtr := io.bmb.rsp.fragment.data(config.addressWidth - 1 downto 0).asUInt
+
+        // Object cache: detect HardwareObject (I/O data pointer)
+        // Matches VHDL was_a_hwo / sc_mem_in.rd_data(31) check
+        if(config.useOcache) {
+          wasHwo := JopAddressSpace.isIoAddress(
+            io.bmb.rsp.fragment.data(config.addressWidth - 1 downto 0).asUInt,
+            config.addressWidth)
+        }
+
         // Upper bounds check disabled: the VHDL ialrb check is gated by
         // rdy_cnt/=0 which is always false when data arrives (effectively
         // dead code). Additionally, the GC runtime's conservative stack
@@ -792,6 +885,23 @@ case class BmbMemoryController(
         when(!handleIsWrite) {
           rdDataReg := io.bmb.rsp.fragment.data
         }
+
+        // Object cache update (matching VHDL wr_gf in idl from gf4, wr_pf in pf4)
+        // Only for non-array, non-stidx, non-HWO operations
+        if(config.useOcache) {
+          when(!handleIsArray && !wasStidx && !wasHwo) {
+            when(ocWasGetfield) {
+              // Getfield miss returning to IDLE → fill cache
+              // gfVal is wired to io.bmb.rsp.fragment.data (the field data just read)
+              ocache.get.io.wrGf := True
+            }.otherwise {
+              // Putfield completing → write-through (cache gates with hitTagReg)
+              // pfVal is wired to handleWriteData (the value just written)
+              ocache.get.io.wrPf := True
+            }
+          }
+        }
+
         wasStidx := False  // Reset stidx marker after handle operation
         state := State.IDLE
       }

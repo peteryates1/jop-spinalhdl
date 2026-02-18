@@ -16,7 +16,7 @@ COMPILE_CP := $(LIB_CP):$(JOPA_SRC):$(TARGET_SRC)
 
 .PHONY: all clean
 
-all: $(DIST_DIR)/jopizer.jar
+all: $(DIST_DIR)/jopizer.jar $(DIST_DIR)/jopsim.jar
 
 $(DIST_DIR)/jopizer.jar: $(shell find $(SRC_DIR) -name '*.java')
 	mkdir -p $(CLASSES_DIR)
@@ -26,6 +26,17 @@ $(DIST_DIR)/jopizer.jar: $(shell find $(SRC_DIR) -name '*.java')
 		$(SRC_DIR)/com/jopdesign/build/JOPizer.java \
 		$(SRC_DIR)/com/jopdesign/build/PreLinker.java
 	$(JAR) cfe $(DIST_DIR)/jopizer.jar com.jopdesign.build.JOPizer -C $(CLASSES_DIR) .
+
+# JopSim needs only JopInstr and Const (no BCEL)
+SIM_CP := $(JOPA_SRC):$(TARGET_SRC)
+
+$(DIST_DIR)/jopsim.jar: $(shell find $(SRC_DIR)/com/jopdesign/tools -name '*.java')
+	mkdir -p $(CLASSES_DIR)
+	$(JAVAC) -encoding Latin1 -d $(CLASSES_DIR) \
+		-classpath $(SIM_CP) \
+		-sourcepath $(SRC_DIR):$(JOPA_SRC):$(TARGET_SRC) \
+		$(SRC_DIR)/com/jopdesign/tools/JopSim.java
+	$(JAR) cfe $(DIST_DIR)/jopsim.jar com.jopdesign.tools.JopSim -C $(CLASSES_DIR) .
 
 clean:
 	rm -rf $(DIST_DIR)
