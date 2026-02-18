@@ -177,12 +177,17 @@ make help                # List all available test targets
 
 ### Next Steps
 
-- Exception detection — hardware null pointer/array bounds checks are implemented in `BmbMemoryController` (states `NP_EXC`, `AB_EXC`, `HANDLE_BOUND_READ`, `HANDLE_BOUND_WAIT`) with full signal wiring through the hierarchy (`BmbSys` exc register, `JopPipeline`/`JopCore` exc input, all top-levels and test harnesses). **Currently disabled:** the GC runtime accesses null handles during conservative stack scanning, triggering false exceptions. The VHDL `ialrb` upper bounds check is also effectively dead code (gated by `rdy_cnt /= 0`, always false when data arrives). Re-enable after fixing GC `push()` to skip null references.
-- java test cases -> from original jop 
-  - /home/peter/git/jop/java/target/src/test/jvm
-  - /home/peter/git/jop/java/target/src/test/jvmtest
+- Memory controller — missing features from VHDL `mem_sc.vhd`:
+  - **Exception detection** (HIGH) — `NP_EXC`, `AB_EXC`, `HANDLE_BOUND_READ/WAIT` states implemented with full signal wiring, but **currently disabled**: GC accesses null handles during conservative stack scanning. VHDL `ialrb` upper bounds check is also dead code (gated by `rdy_cnt /= 0`). Re-enable after fixing GC `push()` to skip null refs. Also needs `excw` wait state (VHDL waits for `rdy_cnt=0` before returning to idle).
+  - **Atomic memory operations** (LOW — multicore only) — `atmstart`/`atmend` inputs exist in `MemCtrlInput` but are never processed; VHDL sets an `atomic` output flag for monitorenter/monitorexit
+  - **Address translation on read paths** (LOW — multicore only) — VHDL applies combinational `translateAddr` (GC copy relocation) to all reads; SpinalHDL only applies within copy states (single-core simplification, causes timing violation at 100 MHz)
+  - **Scoped memory / illegal assignment** (LOW — RTSJ only) — VHDL tracks `putref_reg` and `dest_level` for scope checks on putstatic, putfield, iastore; SpinalHDL has no scope tracking
+  - **Object cache (`ocache`)** (LOW — performance) — VHDL integrates a field cache that shortcuts getfield to IDLE on hit; SpinalHDL always takes the full state machine path. See also `docs/cache-analysis.md`
+  - **Data cache control signals** (LOW — performance) — VHDL outputs `state_dcache` (bypass/direct_mapped/full_assoc per operation), `tm_cache` (disable caching during BC fill), `cinval` (cache invalidation); SpinalHDL has none
+  - **Fast-path array access (`iald23`)** (LOW — performance) — VHDL shortcut state overlaps address computation with data availability for single-cycle memory; SpinalHDL uses uniform HANDLE_* states
+- Interrupt handling — verify timer interrupts and scheduler preemption work correctly
+- Java test cases from original JOP (`/home/peter/git/jop/java/target/src/test/{jvm,jvmtest}`)
 - Performance measurement
-- Object/Array cache (O$/A$) — original JOP has these, see `docs/cache-analysis.md`
 - Xilinx/AMD Artix-7 and DDR3 on Alchitry Au
   - Method cache optimization for DDR3 burst performance
 - Multicore

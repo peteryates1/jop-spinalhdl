@@ -102,3 +102,80 @@ modernize target system jdk: 8 then 11 then 17 ...
 
 
 
+merge jopa into tools 
+const -> separate config from const
+Found the root cause. Native.memCopy() is used in GC.markAndCopy() but the copy signal is never handled in our state machine - it's defined in MemCtrlInput but never referenced. The copy operation silently does nothing, so GC "copies" objects but the destination is garbage.
+Now I understand the issue. Native.memCopy() maps to the copy hardware instruction, which our memory controller never handles — so
+  the GC copies nothing and objects end up as garbage. Since we use stop-the-world GC (not concurrent), we don't need the address
+  translation feature. The fix is to use the simple software copy that's already commented out in the source.
+
+We need to fix the memory controller implementation - are there any other areas that are not implemented.
+
+generate pll component
+
+● Here's the completeness picture:
+
+  Memory Controller Status
+
+  Working (core operations)
+
+  - Simple rd/wr/rdc/rdf/wrf
+  - getfield/putfield (with I/O routing for HardwareObjects)
+  - getstatic/putstatic
+  - iaload/iastore (with IAST_WAIT fix)
+  - Bytecode fill (with method cache, pipelined, burst-capable)
+  - stmwa (address write), stidx (index latch)
+
+  Missing
+
+  Feature: memcopy
+  Severity: CRITICAL
+  Notes: GC object relocation (cp0-cpstop). GC currently works because it's semi-space copy using Native.rdMem/Native.wrMem in Java —
+    but the hardware-accelerated copy path is missing
+  ────────────────────────────────────────
+  Feature: Exception states
+  Severity: HIGH
+  Notes: Null pointer (npexc), array bounds (abexc), illegal assignment (iaexc). Currently no hardware bounds/null checks —
+    out-of-bounds access is undefined behavior
+  ────────────────────────────────────────
+  Feature: Atomic operations
+  Severity: LOW
+  Notes: atmstart/atmend signals exist but are unused. Only matters for multicore
+  ────────────────────────────────────────
+  Feature: putref / GC barriers
+  Severity: LOW
+  Notes: Signal captured but not used. Only needed for incremental/concurrent GC
+  ────────────────────────────────────────
+  Feature: Object/array caches
+  Severity: LOW
+  Notes: Performance optimization, not correctness
+  ────────────────────────────────────────
+  Feature: Cache hints
+  Severity: LOW
+  Notes: bypass, direct_mapped, full_assoc — all treated uniformly
+  ────────────────────────────────────────
+  Feature: Scoped memory checks
+  Severity: LOW
+  Notes: dest_level tracking. Only for RTSJ scoped memory
+
+  Assessment
+
+  For single-core stop-the-world GC (our current config), the memcopy and exception states are the two meaningful gaps:
+
+  1. memcopy: The GC works today because markAndCopy() does object copying in Java via Native.rdMem/Native.wrMem loops. The VHDL copy
+  operation is a hardware-accelerated version. Not broken, just slower.
+  2. Exception states: Array bounds violations and null pointer dereferences silently corrupt memory instead of throwing exceptions.
+  Works fine when code is correct, but dangerous for debugging.
+
+  The other items (atomic, putref, caches, scoped memory) are for features we don't use (multicore, concurrent GC, RTSJ scopes,
+  performance caches).
+
+  Would you like to tackle any of these, or is this good for now?
+
+interrupt handling?
+
+check new object
+java test cases -> from original jop 
+/home/peter/git/jop/java/target/src/test/jvm
+/home/peter/git/jop/java/target/src/test/jvmtest
+
