@@ -50,6 +50,11 @@ generate:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopBramTopVerilog"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
 
+# Generate with Small GC app (128KB BRAM) for GC debugging
+generate-gc:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopBramGcTopVerilog"
+	@echo "=== GC Verilog generated: $(GENERATED_V) ==="
+
 # --------------------------------------------------------------------------
 # Quartus build
 # --------------------------------------------------------------------------

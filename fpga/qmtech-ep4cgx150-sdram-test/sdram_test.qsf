@@ -1,0 +1,109 @@
+# -------------------------------------------------------------------------- #
+# SDRAM Exerciser Test - QMTECH EP4CGX150 Core Board + DB_FPGA
+#
+# Exercises BmbSdramCtrl32 with JOP-like memory patterns, reports via UART
+# -------------------------------------------------------------------------- #
+
+set_global_assignment -name FAMILY "Cyclone IV GX"
+set_global_assignment -name DEVICE EP4CGX150DF27I7
+set_global_assignment -name TOP_LEVEL_ENTITY SdramExerciserTop
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name MIN_CORE_JUNCTION_TEMP "-40"
+set_global_assignment -name MAX_CORE_JUNCTION_TEMP 100
+set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
+set_global_assignment -name NOMINAL_CORE_SUPPLY_VOLTAGE 1.2V
+
+# Source files
+set_global_assignment -name VERILOG_FILE ../../spinalhdl/generated/SdramExerciserTop.v
+set_global_assignment -name VHDL_FILE ../qmtech-ep4cgx150-sdram/dram_pll.vhd
+set_global_assignment -name SDC_FILE sdram_test.sdc
+
+# I/O standard
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVCMOS"
+
+# Configuration
+set_global_assignment -name ENABLE_OCT_DONE OFF
+set_global_assignment -name ENABLE_CONFIGURATION_PINS OFF
+set_global_assignment -name ENABLE_BOOT_SEL_PIN OFF
+set_global_assignment -name USE_CONFIGURATION_DEVICE OFF
+set_global_assignment -name ACTIVE_SERIAL_CLOCK FREQ_40MHZ
+
+# I/O timing
+set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -rise
+set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -fall
+set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -rise
+set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -fall
+
+# -------------------------------------------------------------------------- #
+# Pin Assignments - QMTECH EP4CGX150 Core Board + DB_FPGA
+# -------------------------------------------------------------------------- #
+
+# 50 MHz Clock
+set_location_assignment PIN_B14 -to clk_in
+
+# UART TX (CP2102N on daughter board)
+set_location_assignment PIN_AD20 -to ser_txd
+
+# Core board LEDs
+set_location_assignment PIN_A25 -to led[0]
+set_location_assignment PIN_A24 -to led[1]
+
+# SDRAM clock (PLL c2: 100 MHz, -3ns phase shift)
+set_location_assignment PIN_E22 -to sdram_clk
+
+# SDRAM control
+set_location_assignment PIN_H26 -to sdram_CSn
+set_location_assignment PIN_K24 -to sdram_CKE
+set_location_assignment PIN_G25 -to sdram_WEn
+set_location_assignment PIN_H25 -to sdram_RASn
+set_location_assignment PIN_G26 -to sdram_CASn
+
+# SDRAM bank address
+set_location_assignment PIN_J25 -to sdram_BA[0]
+set_location_assignment PIN_J26 -to sdram_BA[1]
+
+# SDRAM address
+set_location_assignment PIN_L25 -to sdram_ADDR[0]
+set_location_assignment PIN_L26 -to sdram_ADDR[1]
+set_location_assignment PIN_M25 -to sdram_ADDR[2]
+set_location_assignment PIN_M26 -to sdram_ADDR[3]
+set_location_assignment PIN_N22 -to sdram_ADDR[4]
+set_location_assignment PIN_N23 -to sdram_ADDR[5]
+set_location_assignment PIN_N24 -to sdram_ADDR[6]
+set_location_assignment PIN_M22 -to sdram_ADDR[7]
+set_location_assignment PIN_M24 -to sdram_ADDR[8]
+set_location_assignment PIN_L23 -to sdram_ADDR[9]
+set_location_assignment PIN_K26 -to sdram_ADDR[10]
+set_location_assignment PIN_L24 -to sdram_ADDR[11]
+set_location_assignment PIN_K23 -to sdram_ADDR[12]
+
+# SDRAM data mask
+set_location_assignment PIN_F26 -to sdram_DQM[0]
+set_location_assignment PIN_H24 -to sdram_DQM[1]
+
+# SDRAM data bus
+set_location_assignment PIN_B25 -to sdram_DQ[0]
+set_location_assignment PIN_B26 -to sdram_DQ[1]
+set_location_assignment PIN_C25 -to sdram_DQ[2]
+set_location_assignment PIN_C26 -to sdram_DQ[3]
+set_location_assignment PIN_D25 -to sdram_DQ[4]
+set_location_assignment PIN_D26 -to sdram_DQ[5]
+set_location_assignment PIN_E25 -to sdram_DQ[6]
+set_location_assignment PIN_E26 -to sdram_DQ[7]
+set_location_assignment PIN_H23 -to sdram_DQ[8]
+set_location_assignment PIN_G24 -to sdram_DQ[9]
+set_location_assignment PIN_G22 -to sdram_DQ[10]
+set_location_assignment PIN_F24 -to sdram_DQ[11]
+set_location_assignment PIN_F23 -to sdram_DQ[12]
+set_location_assignment PIN_E24 -to sdram_DQ[13]
+set_location_assignment PIN_D24 -to sdram_DQ[14]
+set_location_assignment PIN_C24 -to sdram_DQ[15]
+
+# -------------------------------------------------------------------------- #
+# Partitions
+# -------------------------------------------------------------------------- #
+
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

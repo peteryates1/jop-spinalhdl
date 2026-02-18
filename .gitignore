@@ -61,6 +61,9 @@ spinalhdl/spinal/
 simWorkspace/
 
 # Quartus build artifacts (project source files .qpf/.qsf/.sdc tracked per project)
+**/db/
+**/incremental_db/
+**/output_files/
 *.rpt
 *.summary
 *.sld
@@ -71,6 +74,7 @@ simWorkspace/
 *.cdf
 *.done
 *.smsg
+*.bin
 
 # Vivado
 *.jou
@@ -78,6 +82,12 @@ simWorkspace/
 *.str
 .Xil/
 *.xpr
+**/vivado/build/
+**/vivado/ip/*/
+!**/vivado/ip/mig.prj
+
+# Questa/ModelSim
+verification/questa/
 
 # Test results
 test-results/

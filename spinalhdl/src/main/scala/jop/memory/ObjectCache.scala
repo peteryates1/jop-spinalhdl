@@ -157,7 +157,10 @@ case class ObjectCache(
   // ==========================================================================
 
   val ramRdAddr = (Mux(hitTagVec.orR, lineEnc, nxt) ## idx).asUInt.resize(wayBits + indexBits)
-  val ramDout = dataRam.readSync(ramRdAddr, io.chkGf || io.chkPf)
+  // Always-read (no enable) to avoid Quartus dual-clock RAM inference.
+  // With enable, Quartus infers ADDRESS_REG_B=CLOCK1 causing undefined
+  // read-during-write behavior on FPGA.
+  val ramDout = dataRam.readSync(ramRdAddr)
 
   // Latch RAM output on cycle after chkGf (matching VHDL chk_gf_dly/ram_dout_store)
   val chkGfDly = RegNext(io.chkGf, init = False)

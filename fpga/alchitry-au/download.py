@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serial .jop download tool for JOP SDRAM on QMTECH EP4CGX150.
+"""Serial .jop download tool for JOP DDR3 on Alchitry AU V2.
 
 Implements the JOP serial download protocol (matching down_posix.c):
   1. Parse .jop file (decimal text, skip // comments)
