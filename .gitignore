@@ -112,6 +112,8 @@ java/tools/jopa/dist/
 java/target/classes/
 java/apps/*/build/
 java/apps/*/*.jop
+java/apps/*/*.jop.txt
+java/apps/*/*.jop.link.txt
 
 # Microcode assembler generated files
 asm/generated/
