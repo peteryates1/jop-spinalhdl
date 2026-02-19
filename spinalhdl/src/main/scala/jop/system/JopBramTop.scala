@@ -170,8 +170,20 @@ case class JopBramTop(
     // LED Driver
     // ======================================================================
 
-    // LEDs from watchdog register (active low on QMTECH board)
-    io.led := ~bmbSys.io.wd(1 downto 0)
+    // Heartbeat: ~1 Hz toggle (50M cycles at 100 MHz)
+    val heartbeat = Reg(Bool()) init(False)
+    val heartbeatCnt = Reg(UInt(26 bits)) init(0)
+    heartbeatCnt := heartbeatCnt + 1
+    when(heartbeatCnt === 49999999) {
+      heartbeatCnt := 0
+      heartbeat := ~heartbeat
+    }
+
+    // QMTECH LEDs are active low
+    // LED[1] = heartbeat (proves clock is running)
+    // LED[0] = watchdog bit 0 (proves Java code is running)
+    io.led(1) := ~heartbeat
+    io.led(0) := ~bmbSys.io.wd(0)
   }
 }
 
@@ -346,8 +358,20 @@ case class JopBramSerialTop(
     // Exception signal from BmbSys
     jopCore.io.exc := bmbSys.io.exc
 
-    // LEDs from watchdog register (active low on QMTECH board)
-    io.led := ~bmbSys.io.wd(1 downto 0)
+    // Heartbeat: ~1 Hz toggle (50M cycles at 100 MHz)
+    val heartbeat = Reg(Bool()) init(False)
+    val heartbeatCnt = Reg(UInt(26 bits)) init(0)
+    heartbeatCnt := heartbeatCnt + 1
+    when(heartbeatCnt === 49999999) {
+      heartbeatCnt := 0
+      heartbeat := ~heartbeat
+    }
+
+    // QMTECH LEDs are active low
+    // LED[1] = heartbeat (proves clock is running)
+    // LED[0] = watchdog bit 0 (proves Java code is running)
+    io.led(1) := ~heartbeat
+    io.led(0) := ~bmbSys.io.wd(0)
   }
 }
 

@@ -21,6 +21,8 @@ case class JopCoreWithSdram(
   sdramLayout: SdramLayout = W9825G6JH6.layout,
   sdramTiming: SdramTimings = W9825G6JH6.timingGrade7,
   CAS: Int = 3,
+  useAlteraCtrl: Boolean = false,
+  clockFreqHz: Long = 100000000L,
   romInit: Option[Seq[BigInt]] = None,
   ramInit: Option[Seq[BigInt]] = None,
   jbcInit: Option[Seq[BigInt]] = None
@@ -56,13 +58,30 @@ case class JopCoreWithSdram(
     val irqEna    = in Bool()
     val exc       = in Bool()   // Exception signal from I/O subsystem
 
+    // Memory controller debug
+    val debugMemState = out UInt(5 bits)
+    val debugMemHandleActive = out Bool()
+
     // BMB debug
     val bmbCmdValid  = out Bool()
     val bmbCmdReady  = out Bool()
     val bmbCmdAddr   = out UInt(config.memConfig.bmbParameter.access.addressWidth bits)
     val bmbCmdOpcode = out Bits(1 bits)
     val bmbRspValid  = out Bool()
+    val bmbRspLast   = out Bool()
     val bmbRspData   = out Bits(32 bits)
+
+    // SDRAM controller debug
+    val debugSdramCtrl = out(new Bundle {
+      val sendingHigh   = Bool()
+      val burstActive   = Bool()
+      val ctrlCmdValid  = Bool()
+      val ctrlCmdReady  = Bool()
+      val ctrlCmdWrite  = Bool()
+      val ctrlRspValid  = Bool()
+      val ctrlRspIsHigh = Bool()
+      val lowHalfData   = Bits(16 bits)
+    })
   }
 
   // JOP Core core
@@ -73,7 +92,9 @@ case class JopCoreWithSdram(
     bmbParameter = config.memConfig.bmbParameter,
     layout = sdramLayout,
     timing = sdramTiming,
-    CAS = CAS
+    CAS = CAS,
+    useAlteraCtrl = useAlteraCtrl,
+    clockFreqHz = clockFreqHz
   )
 
   // Connect JOP BMB directly to SDRAM controller
@@ -101,6 +122,10 @@ case class JopCoreWithSdram(
 
   io.memBusy := jopCore.io.memBusy
 
+  // Memory controller debug
+  io.debugMemState := jopCore.io.debugMemState
+  io.debugMemHandleActive := jopCore.io.debugMemHandleActive
+
   // Interrupt / Exception
   jopCore.io.irq := io.irq
   jopCore.io.irqEna := io.irqEna
@@ -112,7 +137,18 @@ case class JopCoreWithSdram(
   io.bmbCmdAddr := jopCore.io.bmb.cmd.fragment.address
   io.bmbCmdOpcode := jopCore.io.bmb.cmd.fragment.opcode.asBits.resized
   io.bmbRspValid := jopCore.io.bmb.rsp.valid
+  io.bmbRspLast := jopCore.io.bmb.rsp.last
   io.bmbRspData := jopCore.io.bmb.rsp.fragment.data
+
+  // SDRAM controller debug (wire individually — SpinalHDL can't assign anonymous Bundles)
+  io.debugSdramCtrl.sendingHigh   := sdramCtrl.io.debug.sendingHigh
+  io.debugSdramCtrl.burstActive   := sdramCtrl.io.debug.burstActive
+  io.debugSdramCtrl.ctrlCmdValid  := sdramCtrl.io.debug.ctrlCmdValid
+  io.debugSdramCtrl.ctrlCmdReady  := sdramCtrl.io.debug.ctrlCmdReady
+  io.debugSdramCtrl.ctrlCmdWrite  := sdramCtrl.io.debug.ctrlCmdWrite
+  io.debugSdramCtrl.ctrlRspValid  := sdramCtrl.io.debug.ctrlRspValid
+  io.debugSdramCtrl.ctrlRspIsHigh := sdramCtrl.io.debug.ctrlRspIsHigh
+  io.debugSdramCtrl.lowHalfData   := sdramCtrl.io.debug.lowHalfData
 }
 
 /**

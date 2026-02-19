@@ -239,20 +239,30 @@ case class JopDdr3Top(
   // Board Clock Domain Area (default CD: heartbeat, calib sync, LED driver)
   // ========================================================================
 
+  // Heartbeat: ~1 Hz toggle
   val hbCounter = Reg(UInt(26 bits)) init(0)
+  val heartbeat = Reg(Bool()) init(False)
   hbCounter := hbCounter + 1
+  when(hbCounter === 49999999) {
+    hbCounter := 0
+    heartbeat := ~heartbeat
+  }
 
   val migCalibSync = BufferCC(mig.io.init_calib_complete, init = False)
 
-  // Debug: memory controller state and busy, cross-domain sync
+  // Debug: memory controller state, busy, and WD — cross-domain sync from MIG ui_clk
   val memStateSync = BufferCC(mainArea.jopCore.io.debugMemState, init = U(0, 5 bits))
   val memBusySync = BufferCC(mainArea.jopCore.io.memBusy, init = False)
+  val wdSync = BufferCC(mainArea.bmbSys.io.wd(0), init = False)
 
-  // LED: bits 7:3 = memState[4:0], bit 2 = memBusy, bit 1 = MIG calib, bit 0 = heartbeat
+  // LED[7:3] = memory controller state (5 bits)
+  // LED[2]   = memBusy
+  // LED[1]   = heartbeat (proves clock is running)
+  // LED[0]   = watchdog bit 0 (proves Java code is running)
   io.led(7 downto 3) := memStateSync.asBits
   io.led(2) := memBusySync
-  io.led(1) := migCalibSync
-  io.led(0) := hbCounter.msb
+  io.led(1) := heartbeat
+  io.led(0) := wdSync
 }
 
 /**

@@ -27,7 +27,9 @@ case class BmbSdramCtrl32(
   bmbParameter: BmbParameter,
   layout: SdramLayout,
   timing: SdramTimings,
-  CAS: Int
+  CAS: Int,
+  useAlteraCtrl: Boolean = false,
+  clockFreqHz: Long = 100000000L
 ) extends Component {
   assert(bmbParameter.access.dataWidth == 32, "BMB data width must be 32")
   assert(layout.dataWidth == 16, "SDRAM data width must be 16")
@@ -35,6 +37,16 @@ case class BmbSdramCtrl32(
   val io = new Bundle {
     val bmb = slave(Bmb(bmbParameter))
     val sdram = master(SdramInterface(layout))
+    val debug = out(new Bundle {
+      val sendingHigh   = Bool()
+      val burstActive   = Bool()
+      val ctrlCmdValid  = Bool()
+      val ctrlCmdReady  = Bool()
+      val ctrlCmdWrite  = Bool()
+      val ctrlRspValid  = Bool()
+      val ctrlRspIsHigh = Bool()
+      val lowHalfData   = Bits(16 bits)
+    })
   }
 
   // Context carries BMB transaction info through SdramCtrl pipeline.
@@ -45,7 +57,36 @@ case class BmbSdramCtrl32(
     val isHigh = Bool()
   }
 
-  val ctrl = SdramCtrl(layout, timing, CAS, SdramContext(), produceRspOnWrite = true)
+  val ctrlBus: SdramCtrlBus[SdramContext] = if (!useAlteraCtrl) {
+    val ctrl = SdramCtrl(layout, timing, CAS, SdramContext(), produceRspOnWrite = true)
+    io.sdram <> ctrl.io.sdram
+    ctrl.io.bus
+  } else {
+    val periodNs = 1e9 / clockFreqHz
+    def toCycles(t: TimeNumber): Int = scala.math.ceil(t.toDouble / (1.0 / clockFreqHz)).toInt.max(1)
+    val refreshPeriod = ((timing.tREF.toDouble * clockFreqHz) / (1 << layout.rowWidth)).toInt
+
+    val alteraCfg = AlteraSdramConfig(
+      numChipSelects = 1,
+      sdramBankWidth = layout.bankWidth,
+      sdramRowWidth  = layout.rowWidth,
+      sdramColWidth  = layout.columnWidth,
+      sdramDataWidth = layout.dataWidth,
+      casLatency     = CAS,
+      initRefresh    = timing.bootRefreshCount,
+      refreshPeriod  = refreshPeriod,
+      powerupDelay   = toCycles(timing.tPOW),
+      tRFC           = toCycles(timing.tRFC),
+      tRP            = toCycles(timing.tRP),
+      tRCD           = toCycles(timing.tRCD),
+      tWR            = scala.math.max(toCycles(timing.tWR), timing.cWR + 1),
+      maxRecTime     = 1
+    )
+
+    val adapter = AlteraSdramAdapter(layout, alteraCfg, SdramContext())
+    io.sdram <> adapter.io.sdram
+    adapter.io.bus
+  }
 
   // ==========================================================================
   // Command side: split 32-bit BMB into two 16-bit SDRAM commands
@@ -77,37 +118,37 @@ case class BmbSdramCtrl32(
   when(burstActive) {
     // Burst mode: issue SDRAM read commands from latched state
     io.bmb.cmd.ready := False
-    ctrl.io.bus.cmd.write := False
-    ctrl.io.bus.cmd.data := 0
-    ctrl.io.bus.cmd.mask := 0
-    ctrl.io.bus.cmd.context.source := burstSource
-    ctrl.io.bus.cmd.context.context := burstContext
+    ctrlBus.cmd.write := False
+    ctrlBus.cmd.data := 0
+    ctrlBus.cmd.mask := 0
+    ctrlBus.cmd.context.source := burstSource
+    ctrlBus.cmd.context.context := burstContext
 
     when(burstCmdIdx < burstCmdTotal) {
-      ctrl.io.bus.cmd.valid := True
-      ctrl.io.bus.cmd.address := burstBaseAddr + burstCmdIdx
-      ctrl.io.bus.cmd.context.isHigh := burstCmdIdx(0)
-      when(ctrl.io.bus.cmd.fire) {
+      ctrlBus.cmd.valid := True
+      ctrlBus.cmd.address := burstBaseAddr + burstCmdIdx
+      ctrlBus.cmd.context.isHigh := burstCmdIdx(0)
+      when(ctrlBus.cmd.fire) {
         burstCmdIdx := burstCmdIdx + 1
       }
     }.otherwise {
       // All SDRAM cmds issued — wait for responses to drain
-      ctrl.io.bus.cmd.valid := False
-      ctrl.io.bus.cmd.address := 0
-      ctrl.io.bus.cmd.context.isHigh := False
+      ctrlBus.cmd.valid := False
+      ctrlBus.cmd.address := 0
+      ctrlBus.cmd.context.isHigh := False
     }
 
   }.elsewhen(isBurstRead) {
     // Accept burst BMB cmd, latch parameters, start burst next cycle
     io.bmb.cmd.ready := True
-    ctrl.io.bus.cmd.valid := False
-    ctrl.io.bus.cmd.write := False
-    ctrl.io.bus.cmd.address := 0
-    ctrl.io.bus.cmd.data := 0
-    ctrl.io.bus.cmd.mask := 0
-    ctrl.io.bus.cmd.context.source := io.bmb.cmd.source
-    ctrl.io.bus.cmd.context.context := io.bmb.cmd.context
-    ctrl.io.bus.cmd.context.isHigh := False
+    ctrlBus.cmd.valid := False
+    ctrlBus.cmd.write := False
+    ctrlBus.cmd.address := 0
+    ctrlBus.cmd.data := 0
+    ctrlBus.cmd.mask := 0
+    ctrlBus.cmd.context.source := io.bmb.cmd.source
+    ctrlBus.cmd.context.context := io.bmb.cmd.context
+    ctrlBus.cmd.context.isHigh := False
 
     burstActive := True
     burstBaseAddr := sdramWordAddr
@@ -121,29 +162,29 @@ case class BmbSdramCtrl32(
 
   }.otherwise {
     // Single-word path (existing logic unchanged)
-    ctrl.io.bus.cmd.valid := io.bmb.cmd.valid
-    ctrl.io.bus.cmd.write := io.bmb.cmd.isWrite
-    ctrl.io.bus.cmd.context.source := io.bmb.cmd.source
-    ctrl.io.bus.cmd.context.context := io.bmb.cmd.context
+    ctrlBus.cmd.valid := io.bmb.cmd.valid
+    ctrlBus.cmd.write := io.bmb.cmd.isWrite
+    ctrlBus.cmd.context.source := io.bmb.cmd.source
+    ctrlBus.cmd.context.context := io.bmb.cmd.context
 
     when(!sendingHigh) {
       // Low half: even SDRAM word
-      ctrl.io.bus.cmd.address := sdramWordAddr
-      ctrl.io.bus.cmd.data := io.bmb.cmd.data(15 downto 0)
-      ctrl.io.bus.cmd.mask := io.bmb.cmd.mask(1 downto 0)
-      ctrl.io.bus.cmd.context.isHigh := False
+      ctrlBus.cmd.address := sdramWordAddr
+      ctrlBus.cmd.data := io.bmb.cmd.data(15 downto 0)
+      ctrlBus.cmd.mask := io.bmb.cmd.mask(1 downto 0)
+      ctrlBus.cmd.context.isHigh := False
     } otherwise {
       // High half: odd SDRAM word (address + 1)
-      ctrl.io.bus.cmd.address := sdramWordAddr + 1
-      ctrl.io.bus.cmd.data := io.bmb.cmd.data(31 downto 16)
-      ctrl.io.bus.cmd.mask := io.bmb.cmd.mask(3 downto 2)
-      ctrl.io.bus.cmd.context.isHigh := True
+      ctrlBus.cmd.address := sdramWordAddr + 1
+      ctrlBus.cmd.data := io.bmb.cmd.data(31 downto 16)
+      ctrlBus.cmd.mask := io.bmb.cmd.mask(3 downto 2)
+      ctrlBus.cmd.context.isHigh := True
     }
 
     // Accept BMB command only after both halves sent
-    io.bmb.cmd.ready := ctrl.io.bus.cmd.ready && sendingHigh
+    io.bmb.cmd.ready := ctrlBus.cmd.ready && sendingHigh
 
-    when(ctrl.io.bus.cmd.fire) {
+    when(ctrlBus.cmd.fire) {
       sendingHigh := !sendingHigh
     }
   }
@@ -154,16 +195,16 @@ case class BmbSdramCtrl32(
 
   val lowHalfData = Reg(Bits(16 bits))
 
-  when(ctrl.io.bus.rsp.fire && !ctrl.io.bus.rsp.context.isHigh) {
-    lowHalfData := ctrl.io.bus.rsp.data
+  when(ctrlBus.rsp.fire && !ctrlBus.rsp.context.isHigh) {
+    lowHalfData := ctrlBus.rsp.data
   }
 
   // Forward to BMB only on high-half response (both halves available)
-  io.bmb.rsp.valid := ctrl.io.bus.rsp.valid && ctrl.io.bus.rsp.context.isHigh
+  io.bmb.rsp.valid := ctrlBus.rsp.valid && ctrlBus.rsp.context.isHigh
   io.bmb.rsp.setSuccess()
-  io.bmb.rsp.source := ctrl.io.bus.rsp.context.source
-  io.bmb.rsp.context := ctrl.io.bus.rsp.context.context
-  io.bmb.rsp.data := ctrl.io.bus.rsp.data ## lowHalfData  // {high16, low16}
+  io.bmb.rsp.source := ctrlBus.rsp.context.source
+  io.bmb.rsp.context := ctrlBus.rsp.context.context
+  io.bmb.rsp.data := ctrlBus.rsp.data ## lowHalfData  // {high16, low16}
 
   // rsp.last: burst-aware
   when(burstActive) {
@@ -180,11 +221,20 @@ case class BmbSdramCtrl32(
 
   // Accept low-half responses immediately (just buffer them);
   // accept high-half responses only when BMB rsp is consumed
-  ctrl.io.bus.rsp.ready := Mux(
-    ctrl.io.bus.rsp.context.isHigh,
+  ctrlBus.rsp.ready := Mux(
+    ctrlBus.rsp.context.isHigh,
     io.bmb.rsp.ready,
     True
   )
 
-  io.sdram <> ctrl.io.sdram
+  // Debug outputs
+  io.debug.sendingHigh   := sendingHigh
+  io.debug.burstActive   := burstActive
+  io.debug.ctrlCmdValid  := ctrlBus.cmd.valid
+  io.debug.ctrlCmdReady  := ctrlBus.cmd.ready
+  io.debug.ctrlCmdWrite  := ctrlBus.cmd.write
+  io.debug.ctrlRspValid  := ctrlBus.rsp.valid
+  io.debug.ctrlRspIsHigh := ctrlBus.rsp.context.isHigh
+  io.debug.lowHalfData   := lowHalfData
+
 }

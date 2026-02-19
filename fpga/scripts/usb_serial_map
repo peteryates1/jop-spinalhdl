@@ -1,0 +1,245 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  ./usb_serial_map [--if01-only] [filter]
+
+Without a filter, lists USB serial ports and their USB identity.
+With a filter, only matching ports are shown.
+
+Accepted filters:
+  - VID:PID (example: 10c4:ea60)
+  - BUS:DEV  (example: 001:010)
+  - Full lsusb line (example: "Bus 001 Device 010: ID 10c4:ea60 ...")
+  - Any text substring (manufacturer/product/serial)
+
+Options:
+  --if01-only   Hide known FT2232 JTAG interface (if00) and keep UART (if01)
+USAGE
+}
+
+detect_filter() {
+  local input="$1"
+
+  if [[ "$input" =~ [Bb]us[[:space:]]+([0-9]{1,3})[[:space:]]+[Dd]evice[[:space:]]+([0-9]{1,3}) ]]; then
+    printf 'bus:%03d:%03d\n' "$((10#${BASH_REMATCH[1]}))" "$((10#${BASH_REMATCH[2]}))"
+    return
+  fi
+
+  if [[ "$input" =~ ^([0-9]{1,3})[:.]([0-9]{1,3})$ ]]; then
+    printf 'bus:%03d:%03d\n' "$((10#${BASH_REMATCH[1]}))" "$((10#${BASH_REMATCH[2]}))"
+    return
+  fi
+
+  if [[ "$input" =~ ([0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}) ]]; then
+    printf 'id:%s\n' "${BASH_REMATCH[1],,}"
+    return
+  fi
+
+  printf 'text:%s\n' "${input,,}"
+}
+
+matches_filter() {
+  local mode="$1"
+  local needle="$2"
+  local vidpid="$3"
+  local busdev="$4"
+  local haystack="$5"
+
+  case "$mode" in
+    none)
+      return 0
+      ;;
+    id)
+      [[ "$vidpid" == "$needle" ]]
+      return
+      ;;
+    bus)
+      [[ "$busdev" == "$needle" ]]
+      return
+      ;;
+    text)
+      [[ "$haystack" == *"$needle"* ]]
+      return
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+filter_mode="none"
+filter_value=""
+if01_only=0
+
+filter_arg=""
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --if01-only)
+      if01_only=1
+      ;;
+    *)
+      if [[ -n "$filter_arg" ]]; then
+        usage >&2
+        exit 1
+      fi
+      filter_arg="$arg"
+      ;;
+  esac
+done
+
+if [[ -n "$filter_arg" ]]; then
+  parsed="$(detect_filter "$filter_arg")"
+  filter_mode="${parsed%%:*}"
+  filter_value="${parsed#*:}"
+fi
+
+declare -A byid_for_tty
+if [[ -d /dev/serial/by-id ]]; then
+  while IFS= read -r link; do
+    target="$(readlink -f "$link" 2>/dev/null || true)"
+    tty_name="$(basename "$target" 2>/dev/null || true)"
+    [[ -n "$tty_name" ]] || continue
+    byid_for_tty["$tty_name"]="${link##*/}"
+  done < <(find /dev/serial/by-id -maxdepth 1 -type l | sort)
+fi
+
+found_any=0
+printed_header=0
+
+for tty_link in /sys/class/tty/ttyUSB* /sys/class/tty/ttyACM*; do
+  [[ -e "$tty_link" ]] || continue
+
+  tty_name="$(basename "$tty_link")"
+  devnode="/dev/$tty_name"
+
+  sys_dev="$(readlink -f "$tty_link/device" 2>/dev/null || true)"
+  [[ -n "$sys_dev" ]] || continue
+
+  usb_dev="$sys_dev"
+  while [[ "$usb_dev" != "/" ]]; do
+    if [[ -r "$usb_dev/idVendor" && -r "$usb_dev/idProduct" ]]; then
+      break
+    fi
+    usb_dev="$(dirname "$usb_dev")"
+  done
+  [[ "$usb_dev" != "/" ]] || continue
+
+  vid="$(tr '[:upper:]' '[:lower:]' < "$usb_dev/idVendor")"
+  pid="$(tr '[:upper:]' '[:lower:]' < "$usb_dev/idProduct")"
+  vidpid="$vid:$pid"
+
+  busnum=""
+  devnum=""
+  [[ -r "$usb_dev/busnum" ]] && busnum="$(printf '%03d' "$(cat "$usb_dev/busnum")")"
+  [[ -r "$usb_dev/devnum" ]] && devnum="$(printf '%03d' "$(cat "$usb_dev/devnum")")"
+
+  if [[ -n "$busnum" && -n "$devnum" ]]; then
+    busdev="$busnum:$devnum"
+  else
+    busdev="-"
+  fi
+
+  manufacturer="$(cat "$usb_dev/manufacturer" 2>/dev/null || true)"
+  product="$(cat "$usb_dev/product" 2>/dev/null || true)"
+  serial="$(cat "$usb_dev/serial" 2>/dev/null || true)"
+  byid="${byid_for_tty[$tty_name]:-}"
+
+  iface_num=""
+  iface_dir="$sys_dev"
+  while [[ "$iface_dir" != "/" ]]; do
+    if [[ -r "$iface_dir/bInterfaceNumber" ]]; then
+      iface_num="$(cat "$iface_dir/bInterfaceNumber" 2>/dev/null || true)"
+      break
+    fi
+    iface_dir="$(dirname "$iface_dir")"
+  done
+  [[ -n "$iface_num" ]] || iface_num="-"
+
+  # For FT2232-style boards used as USB Blaster, interface 00 is JTAG.
+  if [[ "$if01_only" -eq 1 ]]; then
+    if [[ ( "$vidpid" == "0403:6010" || "$vidpid" == "1a28:6010" ) && "$iface_num" == "00" ]]; then
+      continue
+    fi
+  fi
+
+  haystack="${devnode,,} ${vidpid,,} ${busdev,,} ${iface_num,,} ${manufacturer,,} ${product,,} ${serial,,} ${byid,,}"
+
+  if ! matches_filter "$filter_mode" "$filter_value" "$vidpid" "$busdev" "$haystack"; then
+    continue
+  fi
+
+  if [[ "$printed_header" -eq 0 ]]; then
+    printf '%-12s %-9s %-7s %-5s %-22s %-22s %-34s %s\n' \
+      'SerialPort' 'VID:PID' 'BUS:DEV' 'IF' 'Manufacturer' 'Product' 'Serial' 'ById'
+    printed_header=1
+  fi
+
+  printf '%-12s %-9s %-7s %-5s %-22s %-22s %-34s %s\n' \
+    "$devnode" "$vidpid" "$busdev" "$iface_num" "${manufacturer:--}" "${product:--}" "${serial:--}" "${byid:--}"
+
+  found_any=1
+done
+
+if [[ "$found_any" -eq 0 ]]; then
+  usb_match_count=0
+  usb_match_lines=()
+
+  if [[ "$filter_mode" != "none" ]]; then
+    for usb_dev in /sys/bus/usb/devices/*; do
+      [[ -r "$usb_dev/idVendor" && -r "$usb_dev/idProduct" ]] || continue
+
+      vid="$(tr '[:upper:]' '[:lower:]' < "$usb_dev/idVendor")"
+      pid="$(tr '[:upper:]' '[:lower:]' < "$usb_dev/idProduct")"
+      vidpid="$vid:$pid"
+
+      busnum=""
+      devnum=""
+      [[ -r "$usb_dev/busnum" ]] && busnum="$(printf '%03d' "$(cat "$usb_dev/busnum")")"
+      [[ -r "$usb_dev/devnum" ]] && devnum="$(printf '%03d' "$(cat "$usb_dev/devnum")")"
+
+      if [[ -n "$busnum" && -n "$devnum" ]]; then
+        busdev="$busnum:$devnum"
+      else
+        busdev="-"
+      fi
+
+      manufacturer="$(cat "$usb_dev/manufacturer" 2>/dev/null || true)"
+      product="$(cat "$usb_dev/product" 2>/dev/null || true)"
+      serial="$(cat "$usb_dev/serial" 2>/dev/null || true)"
+      haystack="${vidpid,,} ${busdev,,} ${manufacturer,,} ${product,,} ${serial,,}"
+
+      if ! matches_filter "$filter_mode" "$filter_value" "$vidpid" "$busdev" "$haystack"; then
+        continue
+      fi
+
+      usb_match_lines+=("$(printf '%-9s %-7s %-22s %-28s %s' \
+        "$vidpid" "$busdev" "${manufacturer:--}" "${product:--}" "${serial:--}")")
+      usb_match_count=$((usb_match_count + 1))
+    done
+  fi
+
+  if [[ "$usb_match_count" -gt 0 ]]; then
+    echo "Matched USB device(s) found, but no serial node is present (no ttyUSB*/ttyACM*):" >&2
+    printf '%-9s %-7s %-22s %-28s %s\n' \
+      'VID:PID' 'BUS:DEV' 'Manufacturer' 'Product' 'Serial' >&2
+    for line in "${usb_match_lines[@]}"; do
+      printf '%s\n' "$line" >&2
+    done
+    echo "If this should be a UART, check kernel driver binding (often ftdi_sio/cdc_acm)." >&2
+    exit 2
+  fi
+
+  if [[ "$filter_mode" == "none" ]]; then
+    echo "No USB serial ports found (looked for ttyUSB* and ttyACM*)." >&2
+  else
+    echo "No USB serial ports matched filter: $1" >&2
+  fi
+  exit 1
+fi

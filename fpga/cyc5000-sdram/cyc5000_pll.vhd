@@ -1,8 +1,8 @@
 -- CYC5000 PLL for JOP
--- Cyclone V altera_pll: 12 MHz -> 100 MHz (c0) + 100 MHz/-2.5ns (c1)
+-- Cyclone V altera_pll: 12 MHz -> 80 MHz (c0) + 80 MHz/-2.5ns (c1)
 --
 -- Generated parameters for Quartus altera_pll megafunction.
--- 12 MHz * 25 / 3 = 100 MHz
+-- 12 MHz * 20 / 3 = 80 MHz
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -103,11 +103,11 @@ begin
         bandwidth_type          => "AUTO",
         clk0_divide_by          => 3,
         clk0_duty_cycle         => 50,
-        clk0_multiply_by        => 25,
+        clk0_multiply_by        => 20,
         clk0_phase_shift        => "0",
         clk1_divide_by          => 3,
         clk1_duty_cycle         => 50,
-        clk1_multiply_by        => 25,
+        clk1_multiply_by        => 20,
         clk1_phase_shift        => "-2500",
         compensate_clock        => "CLK0",
         inclk0_input_frequency  => 83333,    -- 12 MHz = 83333 ps

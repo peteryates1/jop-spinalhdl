@@ -36,7 +36,7 @@ metals.sbt
 .DS_Store
 
 # Claude Code
-.claude/settings.local.json
+.claude/
 
 # CocoTB
 sim_build/
@@ -76,6 +76,8 @@ simWorkspace/
 *.smsg
 *.bin
 c5_pin_model_dump.txt
+*.stp
+*.sof.old
 
 # Vivado
 *.jou
@@ -89,6 +91,8 @@ c5_pin_model_dump.txt
 
 # Questa/ModelSim
 verification/questa/
+verification/questa-sdram/work/
+verification/questa-sdram/sim_*.log
 
 # Test results
 test-results/
@@ -100,6 +104,7 @@ htmlcov/
 *.tmp
 *.bak
 *.orig
+*_simulation.log
 
 # Java build artifacts
 java/tools/dist/

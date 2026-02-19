@@ -783,24 +783,23 @@ case class BmbMemoryController(
         handleAddrReg := addrReg  // Save handle address before HANDLE_CALC overwrites addrReg
       }
 
-      // Exception checks disabled: the GC runtime accesses null handles during
-      // conservative stack scanning (getfield on handle 0). The VHDL iald0/gf0
-      // has the same checks, but the original JOP may not exercise them with
-      // this GC runtime. Enable when GC is fixed to avoid null handle access.
-      //
-      // when(addrReg === 0) {
-      //   // Null pointer — write exc_type=2 (EXC_NP) to I/O addr 4
-      //   io.ioAddr := U(0x04, 8 bits)
-      //   io.ioWr := True
-      //   io.ioWrData := B(2, 32 bits)
-      //   state := State.NP_EXC
-      // }.elsewhen(handleIsArray && handleIndex(config.addressWidth - 1)) {
-      //   // Negative array index — write exc_type=3 (EXC_AB)
-      //   io.ioAddr := U(0x04, 8 bits)
-      //   io.ioWr := True
-      //   io.ioWrData := B(3, 32 bits)
-      //   state := State.AB_EXC
-      // }.otherwise {
+      // Exception checks (matching VHDL iald0/gf0):
+      // - Null pointer: handle address == 0
+      // - Negative array index: MSB of index is set
+      // DISABLED: GC conservative scanner legitimately dereferences handle 0
+      // (stack slots containing 0, e.g. IO_US_CNT read at boot time).
+      // To re-enable: fix GC.java push()/scan() to skip null handles, rebuild .jop.
+      //when(addrReg === 0) {
+      //  io.ioAddr := U(0x04, 8 bits)
+      //  io.ioWr := True
+      //  io.ioWrData := B(2, 32 bits)
+      //  state := State.NP_EXC
+      //}.elsewhen(handleIsArray && handleIndex(config.addressWidth - 1)) {
+      //  io.ioAddr := U(0x04, 8 bits)
+      //  io.ioWr := True
+      //  io.ioWrData := B(3, 32 bits)
+      //  state := State.AB_EXC
+      //}.otherwise {
         // Normal handle dereference — issue read for handle[0] (data pointer)
         io.bmb.cmd.valid := True
         io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
@@ -808,7 +807,7 @@ case class BmbMemoryController(
         when(io.bmb.cmd.fire) {
           state := State.HANDLE_WAIT
         }
-      // }
+      //}
     }
 
     is(State.HANDLE_WAIT) {

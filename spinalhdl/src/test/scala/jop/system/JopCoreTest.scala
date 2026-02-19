@@ -7,6 +7,7 @@ import spinal.lib.bus.bmb._
 import org.scalatest.funsuite.AnyFunSuite
 import jop.utils.JopFileLoader
 import jop.memory.JopMemoryConfig
+import jop.io.BmbSys
 
 /**
  * Test harness for JopCore with BmbOnChipRam
@@ -91,68 +92,48 @@ case class JopCoreTestHarness(
   // Connect BMB
   ram.io.bus << jopCore.io.bmb
 
-  // I/O simulation
-  val sysCntReg = Reg(UInt(32 bits)) init(1000000)
-  sysCntReg := sysCntReg + 10
-
-  val uartTxDataReg = Reg(Bits(8 bits)) init(0)
-  val uartTxValidReg = Reg(Bool()) init(False)
-
-  // I/O read data - COMBINATIONAL (must be available same cycle as ioRd)
-  val ioRdData = Bits(32 bits)
-  ioRdData := 0  // default
-
   // Decode I/O address
   val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
   val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
 
-  // Exception handling (matching BmbSys behavior)
-  val excTypeReg = Reg(Bits(8 bits)) init(0)
-  val excPend = Reg(Bool()) init(False)
-  excPend := False  // default: cleared each cycle
+  // System I/O (slave 0) — real BmbSys component
+  val bmbSys = BmbSys(clkFreqHz = 100000000L)
+  bmbSys.io.addr   := ioSubAddr
+  bmbSys.io.rd     := jopCore.io.ioRd && ioSlaveId === 0
+  bmbSys.io.wr     := jopCore.io.ioWr && ioSlaveId === 0
+  bmbSys.io.wrData := jopCore.io.ioWrData
 
-  // I/O read handling - combinational response
+  // Exception signal from BmbSys
+  jopCore.io.exc := bmbSys.io.exc
+
+  // Snoop exception writes for simulation debug output
+  val excTypeSnoop = Reg(Bits(8 bits)) init(0)
+  when(jopCore.io.ioWr && ioSlaveId === 0 && ioSubAddr === 4) {
+    excTypeSnoop := jopCore.io.ioWrData(7 downto 0)
+  }
+
+  // UART (slave 1) — simplified for simulation (no bit-serial timing)
+  val uartTxDataReg = Reg(Bits(8 bits)) init(0)
+  val uartTxValidReg = Reg(Bool()) init(False)
+
+  uartTxValidReg := False
+  when(jopCore.io.ioWr && ioSlaveId === 1 && ioSubAddr === 1) {
+    uartTxDataReg := jopCore.io.ioWrData(7 downto 0)
+    uartTxValidReg := True
+  }
+
+  // I/O read mux
+  val ioRdData = Bits(32 bits)
+  ioRdData := 0
   switch(ioSlaveId) {
-    is(0) {  // System
-      switch(ioSubAddr) {
-        is(0) { ioRdData := sysCntReg.asBits }        // Counter
-        is(1) { ioRdData := sysCntReg.asBits }        // Microsecond counter
-        is(4) { ioRdData := excTypeReg.resized }       // IO_EXCEPTION
-        is(6) { ioRdData := B(0, 32 bits) }           // CPU ID
-        is(7) { ioRdData := B(0, 32 bits) }           // Signal
-      }
-    }
-    is(1) {  // UART
+    is(0) { ioRdData := bmbSys.io.rdData }
+    is(1) {
       switch(ioSubAddr) {
         is(0) { ioRdData := B(0x1, 32 bits) }  // Status: TX ready
       }
     }
   }
   jopCore.io.ioRdData := ioRdData
-
-  // I/O write handling
-  uartTxValidReg := False
-  when(jopCore.io.ioWr) {
-    switch(ioSlaveId) {
-      is(0) {  // System
-        switch(ioSubAddr) {
-          is(4) { excTypeReg := jopCore.io.ioWrData(7 downto 0); excPend := True }
-        }
-      }
-      is(1) {  // UART
-        switch(ioSubAddr) {
-          is(1) {  // UART data
-            uartTxDataReg := jopCore.io.ioWrData(7 downto 0)
-            uartTxValidReg := True
-          }
-        }
-      }
-    }
-  }
-
-  // Exception pulse (one cycle after excPend set)
-  val excDly = RegNext(excPend) init(False)
-  jopCore.io.exc := excPend && !excDly
 
   // Interrupt (disabled for now)
   jopCore.io.irq := False
@@ -170,8 +151,8 @@ case class JopCoreTestHarness(
   io.uartTxData := uartTxDataReg
   io.uartTxValid := uartTxValidReg
   io.debugState := 0  // Placeholder - internal signal not accessible
-  io.excFired := excPend && !excDly
-  io.excType := excTypeReg
+  io.excFired := bmbSys.io.exc
+  io.excType := excTypeSnoop
 }
 
 /**

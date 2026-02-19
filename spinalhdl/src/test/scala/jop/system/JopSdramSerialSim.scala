@@ -8,6 +8,7 @@ import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import jop.memory.JopMemoryConfig
 import jop.utils.JopFileLoader
 import jop.pipeline.JumpTableInitData
+import jop.io.BmbSys
 
 /**
  * Test harness for JopCoreWithSdram with serial download simulation.
@@ -98,12 +99,19 @@ case class JopSdramSerialHarness(
   val dlPtr = Reg(UInt(24 bits)) init(0)
   val dlDone = dlPtr >= U(downloadBytes.length, 24 bits)
 
-  // System counter
-  val sysCntReg = Reg(UInt(32 bits)) init(0)
-  sysCntReg := sysCntReg + 1
+  // I/O decode
+  val ioSubAddr = jopSystem.io.ioAddr(3 downto 0)
+  val ioSlaveId = jopSystem.io.ioAddr(5 downto 4)
 
-  // Watchdog register
-  val wdReg = Reg(Bits(32 bits)) init(0)
+  // System I/O (slave 0) — real BmbSys component
+  val bmbSys = BmbSys(clkFreqHz = 100000000L)
+  bmbSys.io.addr   := ioSubAddr
+  bmbSys.io.rd     := jopSystem.io.ioRd && ioSlaveId === 0
+  bmbSys.io.wr     := jopSystem.io.ioWr && ioSlaveId === 0
+  bmbSys.io.wrData := jopSystem.io.ioWrData
+
+  // Exception signal from BmbSys
+  jopSystem.io.exc := bmbSys.io.exc
 
   // UART TX/echo capture
   val uartTxDataReg = Reg(Bits(8 bits)) init(0)
@@ -111,33 +119,29 @@ case class JopSdramSerialHarness(
   val echoDataReg = Reg(Bits(8 bits)) init(0)
   val echoValidReg = Reg(Bool()) init(False)
 
-  // I/O decode
-  val ioSubAddr = jopSystem.io.ioAddr(3 downto 0)
-  val ioSlaveId = jopSystem.io.ioAddr(5 downto 4)
-
-  // I/O read data - COMBINATIONAL
-  val ioRdData = Bits(32 bits)
-  ioRdData := 0
-
-  // Exception handling (matching BmbSys behavior)
-  val excTypeReg = Reg(Bits(8 bits)) init(0)
-  val excPend = Reg(Bool()) init(False)
-  excPend := False
-
   // Track if current cycle has a UART data read (for pointer advance)
   val uartDataRead = False
 
-  switch(ioSlaveId) {
-    is(0) {  // System
-      switch(ioSubAddr) {
-        is(0) { ioRdData := sysCntReg.asBits }
-        is(1) { ioRdData := sysCntReg.asBits }
-        is(4) { ioRdData := excTypeReg.resized }
-        is(6) { ioRdData := B(0, 32 bits) }  // CPU ID = 0
-        is(7) { ioRdData := B(0, 32 bits) }  // Signal = 0
-      }
+  // UART write handling
+  uartTxValidReg := False
+  echoValidReg := False
+  when(jopSystem.io.ioWr && ioSlaveId === 1 && ioSubAddr === 1) {
+    // During download: echoes; after download: program UART output
+    when(!dlDone) {
+      echoDataReg := jopSystem.io.ioWrData(7 downto 0)
+      echoValidReg := True
+    }.otherwise {
+      uartTxDataReg := jopSystem.io.ioWrData(7 downto 0)
+      uartTxValidReg := True
     }
-    is(1) {  // UART
+  }
+
+  // I/O read mux
+  val ioRdData = Bits(32 bits)
+  ioRdData := 0
+  switch(ioSlaveId) {
+    is(0) { ioRdData := bmbSys.io.rdData }
+    is(1) {
       switch(ioSubAddr) {
         is(0) {
           // Status: bit 0 = TDRE (always ready), bit 1 = RDRF (data available)
@@ -160,39 +164,6 @@ case class JopSdramSerialHarness(
   when(uartDataRead && !dlDone) {
     dlPtr := dlPtr + 1
   }
-
-  // I/O write handling
-  uartTxValidReg := False
-  echoValidReg := False
-
-  when(jopSystem.io.ioWr) {
-    switch(ioSlaveId) {
-      is(0) {
-        switch(ioSubAddr) {
-          is(3) { wdReg := jopSystem.io.ioWrData }
-          is(4) { excTypeReg := jopSystem.io.ioWrData(7 downto 0); excPend := True }
-        }
-      }
-      is(1) {
-        switch(ioSubAddr) {
-          is(1) {
-            // During download: echoes; after download: program UART output
-            when(!dlDone) {
-              echoDataReg := jopSystem.io.ioWrData(7 downto 0)
-              echoValidReg := True
-            }.otherwise {
-              uartTxDataReg := jopSystem.io.ioWrData(7 downto 0)
-              uartTxValidReg := True
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // Exception pulse
-  val excDly = RegNext(excPend) init(False)
-  jopSystem.io.exc := excPend && !excDly
 
   // Interrupts disabled
   jopSystem.io.irq := False

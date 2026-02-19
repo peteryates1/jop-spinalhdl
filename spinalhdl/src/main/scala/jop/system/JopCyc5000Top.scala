@@ -13,7 +13,7 @@ import jop.pipeline.JumpTableInitData
  * CYC5000 PLL BlackBox
  *
  * Wraps a Cyclone V altera_pll megafunction.
- * 12 MHz input -> c0=100MHz (JOP system), c1=100MHz/-2.5ns (SDRAM clock pin)
+ * 12 MHz input -> c0=80MHz (JOP system), c1=80MHz/-2.5ns (SDRAM clock pin)
  */
 case class Cyc5000Pll() extends BlackBox {
   setDefinitionName("cyc5000_pll")
@@ -33,9 +33,9 @@ case class Cyc5000Pll() extends BlackBox {
  * JOP SDRAM FPGA Top-Level for Trenz CYC5000
  *
  * Board: Trenz CYC5000 (TEI0050)
- * FPGA: Intel Cyclone V E (5CEBA2U15C8N)
+ * FPGA: Altera Cyclone V E (5CEBA2U15C8N)
  * SDRAM: W9864G6JT-6 (64Mbit, 16-bit, 12-bit addr, 4 banks)
- * Clock: 12 MHz oscillator -> PLL -> 100 MHz system, 100 MHz/-2.5ns SDRAM
+ * Clock: 12 MHz oscillator -> PLL -> 80 MHz system, 80 MHz/-2.5ns SDRAM
  *
  * Architecture matches JopSdramTop (QMTECH) for direct SDRAM comparison.
  * Serial-boot: same download protocol as other SDRAM/DDR3 boards.
@@ -60,18 +60,18 @@ case class JopCyc5000Top(
   noIoPrefix()
 
   // ========================================================================
-  // PLL: 12 MHz -> 100 MHz system, 100 MHz/-2.5ns SDRAM clock
+  // PLL: 12 MHz -> 80 MHz system, 80 MHz/-2.5ns SDRAM clock
   // ========================================================================
 
   val pll = Cyc5000Pll()
   pll.io.refclk := io.clk_in
   pll.io.rst    := False
 
-  // SDRAM clock output (PLL outclk_1: 100 MHz with -2.5ns phase shift)
+  // SDRAM clock output (PLL outclk_1: 80 MHz with -2.5ns phase shift)
   io.sdram_clk := pll.io.outclk_1
 
   // ========================================================================
-  // Reset Generator (on PLL outclk_0 = 100 MHz)
+  // Reset Generator (on PLL outclk_0 = 80 MHz)
   // ========================================================================
 
   val rawClockDomain = ClockDomain(
@@ -90,7 +90,7 @@ case class JopCyc5000Top(
   val mainClockDomain = ClockDomain(
     clock = pll.io.outclk_0,
     reset = resetGen.int_res,
-    frequency = FixedFrequency(100 MHz),
+    frequency = FixedFrequency(80 MHz),
     config = ClockDomainConfig(
       resetKind = SYNC,
       resetActiveLevel = HIGH
@@ -98,13 +98,13 @@ case class JopCyc5000Top(
   )
 
   // ========================================================================
-  // Main Design Area (100 MHz)
+  // Main Design Area (80 MHz)
   // ========================================================================
 
   val mainArea = new ClockingArea(mainClockDomain) {
 
     val config = JopCoreConfig(
-      memConfig = JopMemoryConfig(burstLen = 4),
+      memConfig = JopMemoryConfig(burstLen = 0),
       jumpTable = JumpTableInitData.serial
     )
 
@@ -117,6 +117,8 @@ case class JopCyc5000Top(
       sdramLayout = W9864G6JT.layout,
       sdramTiming = W9864G6JT.timingGrade6,
       CAS = 2,
+      useAlteraCtrl = true,
+      clockFreqHz = 80000000L,
       romInit = Some(romInit),
       ramInit = Some(ramInit),
       jbcInit = Some(jbcInit)
@@ -137,7 +139,7 @@ case class JopCyc5000Top(
     val ioSlaveId = jopCoreWithSdram.io.ioAddr(5 downto 4)
 
     // System I/O (slave 0)
-    val bmbSys = BmbSys(clkFreqHz = 100000000L)
+    val bmbSys = BmbSys(clkFreqHz = 80000000L)
     bmbSys.io.addr := ioSubAddr
     bmbSys.io.rd := jopCoreWithSdram.io.ioRd && ioSlaveId === 0
     bmbSys.io.wr := jopCoreWithSdram.io.ioWr && ioSlaveId === 0
@@ -165,14 +167,27 @@ case class JopCyc5000Top(
     jopCoreWithSdram.io.exc := bmbSys.io.exc
 
     // ======================================================================
-    // LED Driver
+    // LED Driver (Debug Mode)
     // ======================================================================
 
-    // LED[7] = memBusy, LED[6:3] = wd[3:0], LED[2:0] = 0
+    // Heartbeat: ~1 Hz toggle (40M cycles at 80 MHz)
+    val heartbeat = Reg(Bool()) init(False)
+    val heartbeatCnt = Reg(UInt(26 bits)) init(0)
+    heartbeatCnt := heartbeatCnt + 1
+    when(heartbeatCnt === 39999999) {
+      heartbeatCnt := 0
+      heartbeat := ~heartbeat
+    }
+
     // CYC5000 LEDs are active low
-    io.led(7) := ~jopCoreWithSdram.io.memBusy
-    io.led(6 downto 3) := ~bmbSys.io.wd(3 downto 0)
-    io.led(2 downto 0) := B"111"
+    // LED[7:3] = memory controller state (5 bits)
+    // LED[2]   = memBusy
+    // LED[1]   = heartbeat (proves clock is running)
+    // LED[0]   = watchdog bit 0 (proves Java code is running)
+    io.led(7 downto 3) := ~jopCoreWithSdram.io.debugMemState.asBits.resized
+    io.led(2) := ~jopCoreWithSdram.io.memBusy
+    io.led(1) := ~heartbeat
+    io.led(0) := ~bmbSys.io.wd(0)
   }
 }
 
@@ -192,7 +207,7 @@ object JopCyc5000TopVerilog extends App {
   SpinalConfig(
     mode = Verilog,
     targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(100 MHz)
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
   ).generate(InOutWrapper(JopCyc5000Top(romData, ramData)))
 
   println("Generated: spinalhdl/generated/JopCyc5000Top.v")

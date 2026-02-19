@@ -38,8 +38,9 @@ public class HelloWorld {
 			wrInt(GC.freeMemory());
 			JVMHelp.wr("\n");
 
-			// Watchdog
-			Native.wr(++w, Const.IO_WD);
+			// Watchdog — toggle every 512 rounds for visible ~1 Hz LED blink
+			if ((round & 0x1FF) == 0) w = ~w;
+			Native.wr(w, Const.IO_WD);
 		}
 	}
 }

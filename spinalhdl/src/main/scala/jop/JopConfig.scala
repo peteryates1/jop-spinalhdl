@@ -115,7 +115,7 @@ object JopConfig {
 
   /**
    * MAX1000 IoT Maker Board
-   * Intel MAX10 FPGA
+   * Altera MAX10 FPGA
    */
   def max1000: JopConfig = JopConfig(
     fpgaTarget = FpgaTarget.Altera,

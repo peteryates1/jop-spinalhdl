@@ -6,6 +6,7 @@ import spinal.lib._
 import spinal.lib.bus.bmb._
 import jop.utils.JopFileLoader
 import jop.memory.{JopMemoryConfig, BmbLatencyBridge}
+import jop.io.BmbSys
 
 /**
  * Test harness for JopCore with configurable extra BMB response latency.
@@ -79,34 +80,35 @@ case class JopCoreLatencyHarness(
     ram.io.bus << bridge.io.output
   }
 
-  // I/O simulation (same as JopCoreTestHarness)
-  val sysCntReg = Reg(UInt(32 bits)) init(1000000)
-  sysCntReg := sysCntReg + 10
-
-  val uartTxDataReg = Reg(Bits(8 bits)) init(0)
-  val uartTxValidReg = Reg(Bool()) init(False)
-
-  val ioRdData = Bits(32 bits)
-  ioRdData := 0
-
+  // Decode I/O address
   val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
   val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
 
-  // Exception handling (matching BmbSys behavior)
-  val excTypeReg = Reg(Bits(8 bits)) init(0)
-  val excPend = Reg(Bool()) init(False)
-  excPend := False
+  // System I/O (slave 0) — real BmbSys component
+  val bmbSys = BmbSys(clkFreqHz = 100000000L)
+  bmbSys.io.addr   := ioSubAddr
+  bmbSys.io.rd     := jopCore.io.ioRd && ioSlaveId === 0
+  bmbSys.io.wr     := jopCore.io.ioWr && ioSlaveId === 0
+  bmbSys.io.wrData := jopCore.io.ioWrData
 
+  // Exception signal from BmbSys
+  jopCore.io.exc := bmbSys.io.exc
+
+  // UART (slave 1) — simplified for simulation
+  val uartTxDataReg = Reg(Bits(8 bits)) init(0)
+  val uartTxValidReg = Reg(Bool()) init(False)
+
+  uartTxValidReg := False
+  when(jopCore.io.ioWr && ioSlaveId === 1 && ioSubAddr === 1) {
+    uartTxDataReg := jopCore.io.ioWrData(7 downto 0)
+    uartTxValidReg := True
+  }
+
+  // I/O read mux
+  val ioRdData = Bits(32 bits)
+  ioRdData := 0
   switch(ioSlaveId) {
-    is(0) {
-      switch(ioSubAddr) {
-        is(0) { ioRdData := sysCntReg.asBits }
-        is(1) { ioRdData := sysCntReg.asBits }
-        is(4) { ioRdData := excTypeReg.resized }
-        is(6) { ioRdData := B(0, 32 bits) }
-        is(7) { ioRdData := B(0, 32 bits) }
-      }
-    }
+    is(0) { ioRdData := bmbSys.io.rdData }
     is(1) {
       switch(ioSubAddr) {
         is(0) { ioRdData := B(0x1, 32 bits) }  // UART TX ready
@@ -114,28 +116,6 @@ case class JopCoreLatencyHarness(
     }
   }
   jopCore.io.ioRdData := ioRdData
-
-  uartTxValidReg := False
-  when(jopCore.io.ioWr) {
-    switch(ioSlaveId) {
-      is(0) {
-        switch(ioSubAddr) {
-          is(4) { excTypeReg := jopCore.io.ioWrData(7 downto 0); excPend := True }
-        }
-      }
-      is(1) {
-        switch(ioSubAddr) {
-          is(1) {
-            uartTxDataReg := jopCore.io.ioWrData(7 downto 0)
-            uartTxValidReg := True
-          }
-        }
-      }
-    }
-  }
-
-  val excDly = RegNext(excPend) init(False)
-  jopCore.io.exc := excPend && !excDly
 
   jopCore.io.irq := False
   jopCore.io.irqEna := False
