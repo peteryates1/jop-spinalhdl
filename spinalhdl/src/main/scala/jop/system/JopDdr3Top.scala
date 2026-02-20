@@ -217,7 +217,6 @@ case class JopDdr3Top(
     bmbUart.io.rd     := jopCore.io.ioRd && ioSlaveId === 1
     bmbUart.io.wr     := jopCore.io.ioWr && ioSlaveId === 1
     bmbUart.io.wrData := jopCore.io.ioWrData
-    io.usb_tx         := bmbUart.io.txd
     bmbUart.io.rxd    := io.usb_rx
 
     // I/O read mux
@@ -260,8 +259,12 @@ case class JopDdr3Top(
   val cacheStateSync = BufferCC(mainArea.cache.io.debugState, init = U(0, 3 bits))
   val adapterStateSync = BufferCC(mainArea.adapter.io.debugState, init = U(0, 3 bits))
 
+  // Pipeline debug: pc and jpc — cross-domain sync from MIG ui_clk
+  val pcSync = BufferCC(mainArea.jopCore.io.pc, init = U(0, 11 bits))
+  val jpcSync = BufferCC(mainArea.jopCore.io.jpc, init = U(0, 12 bits))
+
   // Hang detector: count cycles while memBusy stays True.
-  // After ~167ms (2^24 @ 100MHz board clock), switch LED display to cache/adapter state.
+  // After ~167ms (2^24 @ 100MHz board clock), switch LED display and trigger UART dump.
   val hangCounter = Reg(UInt(25 bits)) init(0)
   val hangDetected = Reg(Bool()) init(False)
   when(memBusySync) {
@@ -274,17 +277,44 @@ case class JopDdr3Top(
     hangCounter := 0
   }
 
-  // LED display: normal mode vs hang diagnostic mode
+  // Latch memState at hang detection (frozen for LED display and UART dump)
+  val hangMemState = Reg(UInt(5 bits)) init(0)
+  when(!hangDetected) {
+    hangMemState := memStateSync
+  }
+
+  // ========================================================================
+  // Diagnostic UART (board clock domain)
+  // ========================================================================
+  // On hang, takes over UART TX and sends state dump every ~200ms.
+
+  val diagUart = DiagUart(clockFreqHz = 100000000, baudRate = 1000000)
+  diagUart.io.trigger      := hangDetected
+  diagUart.io.memState     := memStateSync
+  diagUart.io.pc           := pcSync
+  diagUart.io.jpc          := jpcSync
+  diagUart.io.cacheState   := cacheStateSync
+  diagUart.io.adapterState := adapterStateSync
+
+  // UART TX MUX: JOP's UART during normal operation, DiagUart when hung.
+  // JOP UART TX is in MIG ui_clk domain — sync to board clock via BufferCC.
+  val jopTxdSync = BufferCC(mainArea.bmbUart.io.txd, init = True)
+  io.usb_tx := Mux(hangDetected, diagUart.io.txd, jopTxdSync)
+
+  // ========================================================================
+  // LED Display
+  // ========================================================================
   // Normal:    LED[7:3]=memState, LED[2]=memBusy, LED[1]=heartbeat, LED[0]=wd
-  // Hang diag: LED[7:5]=cacheState, LED[4:2]=adapterState, LED[1]=heartbeat, LED[0]=~heartbeat (fast blink = hang)
+  // Hang mode: LED[7:3]=latched memState, LED[2]=solid on, LED[1]=heartbeat, LED[0]=~heartbeat
+
   when(!hangDetected) {
     io.led(7 downto 3) := memStateSync.asBits
     io.led(2) := memBusySync
     io.led(1) := heartbeat
     io.led(0) := wdSync
   } otherwise {
-    io.led(7 downto 5) := cacheStateSync.asBits
-    io.led(4 downto 2) := adapterStateSync.asBits
+    io.led(7 downto 3) := hangMemState.asBits
+    io.led(2) := True  // Solid on = hung
     io.led(1) := heartbeat
     io.led(0) := ~heartbeat  // Both blink = hang indicator
   }

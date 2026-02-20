@@ -19,6 +19,12 @@
 #   make project-exerciser   - Create Vivado project
 #   make bitstream-exerciser - Build exerciser bitstream
 #
+# Trace Replayer (DDR3 BMB trace replay from GC sim):
+#   make generate-replayer   - Generate replayer Verilog
+#   make project-replayer    - Create Vivado project
+#   make bitstream-replayer  - Build replayer bitstream
+#   make program-replayer    - Program FPGA
+#
 
 SHELL := /usr/bin/env bash
 
@@ -38,7 +44,7 @@ PROJECT_ROOT = ../..
 ASM_DIR = ../../asm
 GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopDdr3Top.v
 
-.PHONY: all microcode generate ips project bitstream program download monitor run full clean check-board find-serial-port generate-exerciser project-exerciser bitstream-exerciser
+.PHONY: all microcode generate ips project bitstream program download monitor run full clean check-board find-serial-port generate-exerciser project-exerciser bitstream-exerciser generate-replayer project-replayer bitstream-replayer program-replayer
 
 # Default: microcode + generate + ips + project + bitstream
 all: microcode generate ips project bitstream
@@ -129,6 +135,23 @@ project-exerciser:
 
 bitstream-exerciser:
 	$(RUN_VIVADO) vivado/tcl/build_bitstream_exerciser.tcl
+
+# --------------------------------------------------------------------------
+# Trace Replayer (DDR3 BMB trace replay without JOP)
+# --------------------------------------------------------------------------
+
+generate-replayer:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.Ddr3TraceReplayerTopVerilog"
+	@echo "=== Replayer Verilog generated ==="
+
+project-replayer:
+	$(RUN_VIVADO) vivado/tcl/create_project_replayer.tcl
+
+bitstream-replayer:
+	$(RUN_VIVADO) vivado/tcl/build_bitstream_replayer.tcl
+
+program-replayer:
+	$(RUN_VIVADO) vivado/tcl/program_replayer.tcl
 
 # --------------------------------------------------------------------------
 # Cleanup
