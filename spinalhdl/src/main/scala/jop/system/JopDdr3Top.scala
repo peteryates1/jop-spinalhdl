@@ -30,7 +30,8 @@ import jop.pipeline.JumpTableInitData
  */
 case class JopDdr3Top(
   romInit: Seq[BigInt],
-  ramInit: Seq[BigInt]
+  ramInit: Seq[BigInt],
+  jumpTable: JumpTableInitData = JumpTableInitData.serial
 ) extends Component {
 
   val io = new Bundle {
@@ -122,10 +123,10 @@ case class JopDdr3Top(
 
   val mainArea = new ClockingArea(uiCd) {
 
-    // JOP core config: addressWidth=26 (28-bit BMB byte address), no burst (cache handles it)
+    // JOP core config: addressWidth=26 (28-bit BMB byte address), burstLen=8 for BC fill
     val config = JopCoreConfig(
       memConfig = JopMemoryConfig(addressWidth = 26, burstLen = 0),
-      jumpTable = JumpTableInitData.serial
+      jumpTable = jumpTable
     )
 
     // JBC init: empty (zeros) — BC_FILL loads bytecodes dynamically from DDR3
@@ -255,14 +256,38 @@ case class JopDdr3Top(
   val memBusySync = BufferCC(mainArea.jopCore.io.memBusy, init = False)
   val wdSync = BufferCC(mainArea.bmbSys.io.wd(0), init = False)
 
-  // LED[7:3] = memory controller state (5 bits)
-  // LED[2]   = memBusy
-  // LED[1]   = heartbeat (proves clock is running)
-  // LED[0]   = watchdog bit 0 (proves Java code is running)
-  io.led(7 downto 3) := memStateSync.asBits
-  io.led(2) := memBusySync
-  io.led(1) := heartbeat
-  io.led(0) := wdSync
+  // Cache/adapter debug: cross-domain sync from MIG ui_clk
+  val cacheStateSync = BufferCC(mainArea.cache.io.debugState, init = U(0, 3 bits))
+  val adapterStateSync = BufferCC(mainArea.adapter.io.debugState, init = U(0, 3 bits))
+
+  // Hang detector: count cycles while memBusy stays True.
+  // After ~167ms (2^24 @ 100MHz board clock), switch LED display to cache/adapter state.
+  val hangCounter = Reg(UInt(25 bits)) init(0)
+  val hangDetected = Reg(Bool()) init(False)
+  when(memBusySync) {
+    when(!hangCounter.msb) {
+      hangCounter := hangCounter + 1
+    } otherwise {
+      hangDetected := True
+    }
+  } otherwise {
+    hangCounter := 0
+  }
+
+  // LED display: normal mode vs hang diagnostic mode
+  // Normal:    LED[7:3]=memState, LED[2]=memBusy, LED[1]=heartbeat, LED[0]=wd
+  // Hang diag: LED[7:5]=cacheState, LED[4:2]=adapterState, LED[1]=heartbeat, LED[0]=~heartbeat (fast blink = hang)
+  when(!hangDetected) {
+    io.led(7 downto 3) := memStateSync.asBits
+    io.led(2) := memBusySync
+    io.led(1) := heartbeat
+    io.led(0) := wdSync
+  } otherwise {
+    io.led(7 downto 5) := cacheStateSync.asBits
+    io.led(4 downto 2) := adapterStateSync.asBits
+    io.led(1) := heartbeat
+    io.led(0) := ~heartbeat  // Both blink = hang indicator
+  }
 }
 
 /**

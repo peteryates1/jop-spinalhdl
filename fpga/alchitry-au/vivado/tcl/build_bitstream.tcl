@@ -13,6 +13,11 @@ if {![file exists $proj_xpr]} {
 }
 
 open_project $proj_xpr
+
+# Clear incremental synthesis checkpoint (may reference deleted files)
+set_property AUTO_INCREMENTAL_CHECKPOINT 0 [get_runs synth_1]
+catch {set_property INCREMENTAL_CHECKPOINT {} [get_runs synth_1]}
+
 reset_run synth_1
 launch_runs synth_1 -jobs 8
 wait_on_run synth_1

@@ -7,8 +7,13 @@ import spinal.lib.bus.bmb._
 /**
  * BMB-to-Cache bridge for JOP DDR3.
  *
- * Accepts JOP's 32-bit BMB transactions (length=3, i.e. one 4-byte word)
- * and maps them into the 128-bit cache frontend interface.
+ * Accepts JOP's 32-bit BMB transactions and maps them into the 128-bit
+ * cache frontend interface.
+ *
+ * Supported commands:
+ *   - Single-word read/write (length=3, i.e. one 4-byte word)
+ *   - Burst read (length > 3): decomposed into sequential cache lookups,
+ *     returns multi-beat BMB response with last=True on final beat.
  *
  * Mask convention translation:
  *   BMB:          mask bit = 1 means "WRITE this byte"
@@ -24,6 +29,7 @@ class BmbCacheBridge(p: BmbParameter, cacheAddrWidth: Int, cacheDataWidth: Int) 
   private val bmbByteOffsetWidth = log2Up(bmbDataBytes)
   private val laneCount = cacheDataWidth / bmbDataWidth
   private val laneSelWidth = log2Up(laneCount)
+  private val burstCountWidth = log2Up((1 << p.access.lengthWidth) / bmbDataBytes + 1)
 
   require(Set(8, 16, 32, 64, 128).contains(bmbDataWidth), s"unsupported BMB data width $bmbDataWidth")
   require(bmbDataWidth % 8 == 0, "BMB data width must be byte aligned")
@@ -98,16 +104,92 @@ class BmbCacheBridge(p: BmbParameter, cacheAddrWidth: Int, cacheDataWidth: Int) 
   val pendingContext = Reg(io.bmb.cmd.payload.fragment.context.clone)
   val pendingLaneSelect = Reg(cloneOf(cmdLaneSelect)) init (0)
 
+  // Burst read state
+  val burstActive = Reg(Bool()) init(False)
+  val burstAddr = Reg(UInt(cacheAddrWidth bits)) init(0)
+  val burstWordsTotal = Reg(UInt(burstCountWidth bits)) init(0)
+  val burstWordsDone = Reg(UInt(burstCountWidth bits)) init(0)
+  val burstSource = Reg(io.bmb.cmd.payload.fragment.source.clone)
+  val burstContext = Reg(io.bmb.cmd.payload.fragment.context.clone)
+  val burstCacheReqSent = Reg(Bool()) init(False)
+
   val cmdIsReadOrWrite = io.bmb.cmd.payload.fragment.isRead || io.bmb.cmd.payload.fragment.isWrite
   // JOP sends length=3 for a single 32-bit word (bmbDataBytes-1 = 4-1 = 3).
   // Accept any single-beat command whose length matches one BMB data word.
   val cmdIsSingleBeat = io.bmb.cmd.payload.last && (io.bmb.cmd.payload.fragment.length === (bmbDataBytes - 1))
   val cmdSupported = cmdIsReadOrWrite && cmdIsSingleBeat && cmdAlignedOnWord
+  val cmdIsBurstRead = io.bmb.cmd.payload.fragment.isRead &&
+                       io.bmb.cmd.payload.last &&
+                       (io.bmb.cmd.payload.fragment.length > (bmbDataBytes - 1)) &&
+                       cmdAlignedOnWord
 
   io.bmb.cmd.ready := False
 
-  when(!pendingRsp) {
-    when(io.bmb.cmd.valid && !cmdSupported) {
+  when(burstActive) {
+    // ---- Burst read processing ----
+    // Two sub-states: issue cache read (!burstCacheReqSent), await response (burstCacheReqSent)
+    when(!burstCacheReqSent) {
+      io.cache.req.valid := True
+      io.cache.req.payload.addr := burstAddr(cacheAddrWidth - 1 downto 0).asBits
+      io.cache.req.payload.write := False
+      when(io.cache.req.fire) {
+        burstCacheReqSent := True
+      }
+    } otherwise {
+      io.cache.rsp.ready := rspFifo.io.push.ready
+      when(io.cache.rsp.valid && rspFifo.io.push.ready) {
+        // Extract 32-bit lane from 128-bit cache response
+        val burstLaneSelect = if (laneSelWidth == 0) {
+          U(0, 1 bits)
+        } else {
+          burstAddr(cacheByteOffsetWidth - 1 downto bmbByteOffsetWidth)
+        }
+        val rspDataNarrow = Bits(bmbDataWidth bits)
+        rspDataNarrow := io.cache.rsp.payload.data(bmbDataWidth - 1 downto 0)
+        if (laneCount > 1) {
+          for (lane <- 0 until laneCount) {
+            val dataLo = lane * bmbDataWidth
+            val dataHi = dataLo + bmbDataWidth - 1
+            when(burstLaneSelect === U(lane, burstLaneSelect.getWidth bits)) {
+              rspDataNarrow := io.cache.rsp.payload.data(dataHi downto dataLo)
+            }
+          }
+        }
+
+        rspFifo.io.push.valid := True
+        rspFifo.io.push.payload.fragment.source := burstSource
+        rspFifo.io.push.payload.fragment.context := burstContext
+        rspFifo.io.push.payload.fragment.opcode := Bmb.Rsp.Opcode.SUCCESS
+        rspFifo.io.push.payload.fragment.data := rspDataNarrow
+        when(io.cache.rsp.payload.error) {
+          rspFifo.io.push.payload.fragment.opcode := Bmb.Rsp.Opcode.ERROR
+        }
+
+        val nextDone = burstWordsDone + 1
+        val isLastBeat = nextDone >= burstWordsTotal
+        rspFifo.io.push.payload.last := isLastBeat
+
+        burstWordsDone := nextDone
+        burstAddr := burstAddr + bmbDataBytes
+        burstCacheReqSent := False
+
+        when(isLastBeat) {
+          burstActive := False
+        }
+      }
+    }
+  } elsewhen(!pendingRsp) {
+    when(io.bmb.cmd.valid && cmdIsBurstRead) {
+      // Accept burst read command, latch parameters
+      io.bmb.cmd.ready := True
+      burstActive := True
+      burstAddr := io.bmb.cmd.payload.fragment.address
+      burstWordsTotal := ((io.bmb.cmd.payload.fragment.length +^ U(1)) >> 2).resized
+      burstWordsDone := 0
+      burstSource := io.bmb.cmd.payload.fragment.source
+      burstContext := io.bmb.cmd.payload.fragment.context
+      burstCacheReqSent := False
+    } elsewhen(io.bmb.cmd.valid && !cmdSupported && !cmdIsBurstRead) {
       io.bmb.cmd.ready := rspFifo.io.push.ready
       rspFifo.io.push.valid := rspFifo.io.push.ready
       rspFifo.io.push.payload.fragment.source := io.bmb.cmd.payload.fragment.source

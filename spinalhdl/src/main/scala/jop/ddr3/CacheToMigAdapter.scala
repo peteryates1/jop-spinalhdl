@@ -37,6 +37,9 @@ class CacheToMigAdapter extends Component {
     val app_wdf_mask = out Bits(16 bits)
     val app_wdf_wren = out Bool()
     val app_wdf_end = out Bool()
+
+    // Debug
+    val debugState = out UInt(3 bits)
   }
 
   private val addrAlignBits = log2Up(128 / 8)
@@ -57,6 +60,11 @@ class CacheToMigAdapter extends Component {
   val writeCmdSent = Reg(Bool()) init (False)
   val writeDataSent = Reg(Bool()) init (False)
 
+  // Defensive: capture MIG read data when rspFifo is not ready.
+  // MIG app_rd_data_valid is a one-cycle pulse — if missed, data is lost forever.
+  val readDataCaptured = Reg(Bool()) init(False)
+  val readDataReg = Reg(Bits(128 bits)) init(0)
+
   // MIG app_addr is byte-space addressed; low bits must be zero for 128-bit transactions.
   val appAddrAligned = UInt(io.app_addr.getWidth bits)
   appAddrAligned := activeCmd.addr.asUInt.resized
@@ -73,6 +81,7 @@ class CacheToMigAdapter extends Component {
 
   switch(state) {
     is(CacheToMigAdapterState.IDLE) {
+      readDataCaptured := False
       when(cmdFifo.io.pop.valid) {
         activeCmd := cmdFifo.io.pop.payload
         cmdFifo.io.pop.ready := True
@@ -115,12 +124,30 @@ class CacheToMigAdapter extends Component {
     }
 
     is(CacheToMigAdapterState.WAIT_READ) {
-      when(io.app_rd_data_valid && rspFifo.io.push.ready) {
-        rspFifo.io.push.valid := True
-        state := CacheToMigAdapterState.IDLE
+      when(!readDataCaptured) {
+        when(io.app_rd_data_valid) {
+          when(rspFifo.io.push.ready) {
+            // Normal path: push directly
+            rspFifo.io.push.valid := True
+            state := CacheToMigAdapterState.IDLE
+          } otherwise {
+            // rspFifo full: capture data to avoid losing MIG's one-cycle pulse
+            readDataReg := io.app_rd_data
+            readDataCaptured := True
+          }
+        }
+      } otherwise {
+        // Replay captured data when rspFifo becomes ready
+        rspFifo.io.push.payload.rdata := readDataReg
+        when(rspFifo.io.push.ready) {
+          rspFifo.io.push.valid := True
+          readDataCaptured := False
+          state := CacheToMigAdapterState.IDLE
+        }
       }
     }
   }
 
   io.busy := state =/= CacheToMigAdapterState.IDLE
+  io.debugState := state.asBits.asUInt.resized
 }

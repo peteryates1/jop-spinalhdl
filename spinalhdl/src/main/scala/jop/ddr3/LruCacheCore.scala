@@ -17,6 +17,7 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
     val memCmd = master(Stream(CacheReq(addrWidth, dataWidth)))
     val memRsp = slave(Stream(CacheRsp(dataWidth)))
     val busy = out Bool()
+    val debugState = out UInt(3 bits)
   }
 
   val cmdFifo = StreamFifo(CacheReq(addrWidth, dataWidth), 4)
@@ -231,4 +232,5 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   }
 
   io.busy := state =/= LruCacheCoreState.IDLE
+  io.debugState := state.asBits.asUInt.resized
 }

@@ -8,13 +8,65 @@ Implements the JOP serial download protocol (matching down_posix.c):
   4. Optionally monitor UART output after download (-e flag)
 
 Usage: python3 download.py [-e] <jop_file> [serial_port] [baud_rate]
-  Defaults: /dev/ttyUSB0, 1000000
+  Defaults: auto-detect FPGA UART port, 1000000 baud
   -e: Continue monitoring UART output after download
+
+Auto-detection uses usb_serial_map (if available) to find FPGA UART ports,
+filtering out JTAG interfaces. Supports Alchitry Au V2, Arrow USB Blaster,
+and CP2102N UART bridges.
 """
 
+import os
 import sys
 import struct
+import subprocess
 import serial
+
+
+def find_uart_port():
+    """Auto-detect FPGA UART port using usb_serial_map.
+
+    Calls usb_serial_map --if01-only to list UART ports (excluding JTAG
+    interfaces on FT2232 chips). Returns the first matching port, or None.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    map_script = os.path.join(script_dir, "usb_serial_map")
+    if not os.path.isfile(map_script):
+        return None
+
+    try:
+        result = subprocess.run(
+            [map_script, "--if01-only"],
+            capture_output=True, text=True, timeout=5
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    ports = []
+    for line in result.stdout.strip().splitlines():
+        if line.startswith("SerialPort") or line.startswith("-"):
+            continue
+        fields = line.split()
+        if fields and fields[0].startswith("/dev/"):
+            ports.append((fields[0], " ".join(fields[4:6]) if len(fields) > 5 else ""))
+
+    if len(ports) == 1:
+        port, desc = ports[0]
+        print(f"Auto-detected: {port} ({desc})")
+        return port
+
+    if len(ports) > 1:
+        print("Multiple UART ports detected:", file=sys.stderr)
+        for port, desc in ports:
+            print(f"  {port}  {desc}", file=sys.stderr)
+        print("Specify port explicitly, e.g.: download.py <file> /dev/ttyUSB2",
+              file=sys.stderr)
+        return None
+
+    return None
 
 
 def parse_jop_file(filepath):
@@ -77,14 +129,23 @@ def main():
 
     if len(args) < 1:
         print(
-            "Usage: python3 download.py [-e] <jop_file> [serial_port] [baud_rate]",
+            "Usage: python3 download.py [-e] <jop_file> [serial_port] [baud_rate]\n"
+            "  Port auto-detected via usb_serial_map if not specified.",
             file=sys.stderr,
         )
         sys.exit(1)
 
     jop_file = args[0]
-    port = args[1] if len(args) > 1 else "/dev/ttyUSB0"
     baud = int(args[2]) if len(args) > 2 else 1000000
+
+    if len(args) > 1:
+        port = args[1]
+    else:
+        port = find_uart_port()
+        if port is None:
+            print("Error: no UART port detected; specify port explicitly",
+                  file=sys.stderr)
+            sys.exit(1)
 
     words = parse_jop_file(jop_file)
     if not words:
