@@ -191,9 +191,9 @@ case class JopBramTop(
  * Generate Verilog for JopBramTop
  */
 object JopBramTopVerilog extends App {
-  val jopFilePath = "/home/peter/workspaces/ai/jop/java/apps/Smallest/HelloWorld.jop"
-  val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
-  val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
+  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  val romFilePath = "asm/generated/mem_rom.dat"
+  val ramFilePath = "asm/generated/mem_ram.dat"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -217,9 +217,9 @@ object JopBramTopVerilog extends App {
  * Used to isolate SDRAM-specific issues by testing GC on BRAM FPGA.
  */
 object JopBramGcTopVerilog extends App {
-  val jopFilePath = "/home/peter/workspaces/ai/jop/java/apps/Small/HelloWorld.jop"
-  val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
-  val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
+  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  val romFilePath = "asm/generated/mem_rom.dat"
+  val ramFilePath = "asm/generated/mem_ram.dat"
   val memSize = 128 * 1024  // 128KB BRAM for GC heap
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
@@ -379,8 +379,8 @@ case class JopBramSerialTop(
  * Generate Verilog for JopBramSerialTop (serial-boot BRAM, 128KB)
  */
 object JopBramSerialTopVerilog extends App {
-  val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/serial/mem_rom.dat"
-  val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/serial/mem_ram.dat"
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)

@@ -248,7 +248,7 @@ Notes:
   - **Data cache control signals** (LOW — performance) — VHDL outputs `state_dcache` (bypass/direct_mapped/full_assoc per operation), `tm_cache` (disable caching during BC fill); SpinalHDL has none
   - **Fast-path array access (`iald23`)** (LOW — performance) — VHDL shortcut state overlaps address computation with data availability for single-cycle memory; SpinalHDL uses uniform HANDLE_* states
 - Interrupt handling — verify timer interrupts and scheduler preemption work correctly
-- Java test cases from original JOP (`/home/peter/git/jop/java/target/src/test/{jvm,jvmtest}`)
+- Java test cases from original JOP (`/srv/git/jop/java/target/src/test/{jvm,jvmtest}`)
 - Performance measurement
 - DDR3 burst optimization — method cache fills could use burst reads through the cache bridge
 - Multicore

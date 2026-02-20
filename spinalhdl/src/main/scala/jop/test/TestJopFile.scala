@@ -3,7 +3,7 @@ package jop.test
 import jop.utils.JopFileLoader
 
 object TestJopFile extends App {
-  val data = JopFileLoader.loadJopFile("/home/peter/git/jop/java/Smallest/HelloWorld.jop")
+  val data = JopFileLoader.loadJopFile("/srv/git/jop/java/Smallest/HelloWorld.jop")
   println(s"Total words: ${data.words.length}")
   println(s"Word 0 (length): ${data.words(0)}")
   println(s"Word 1 (mp): ${data.words(1)}")

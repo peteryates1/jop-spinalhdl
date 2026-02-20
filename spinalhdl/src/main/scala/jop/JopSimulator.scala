@@ -1006,9 +1006,9 @@ object JopSimulatorTbVhdl extends App {
   // Use local SIM-built microcode (not serial-boot which loads from UART)
   // JOP file from Smallest target, microcode from local SIM build
   config.generateVhdl(JopSimulator(
-    jopFilePath = "/home/peter/git/jop/java/Smallest/HelloWorld.jop",
-    romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat",
-    ramFilePath = Some("/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat")
+    jopFilePath = "/srv/git/jop/java/Smallest/HelloWorld.jop",
+    romFilePath = "asm/generated/mem_rom.dat",
+    ramFilePath = Some("asm/generated/mem_ram.dat")
   ))
 
   println("JopSimulator VHDL generated in generated/JopSimulator.vhd")

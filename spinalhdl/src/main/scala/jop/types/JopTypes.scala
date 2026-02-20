@@ -8,7 +8,7 @@ import jop.JopConfig
  * JOP Type Definitions
  *
  * Translated from: jop_types.vhd
- * Location: /home/peter/git/jop.arch/jop/vhdl/core/jop_types.vhd
+ * Location: /srv/git/jop/vhdl/core/jop_types.vhd
  *
  * This package defines all the record types (Bundles) used for
  * communication between JOP processor modules.

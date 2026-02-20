@@ -774,8 +774,8 @@ case class Ddr3TraceReplayerTop(
  * Generate Verilog for Ddr3TraceReplayerTop
  */
 object Ddr3TraceReplayerTopVerilog extends App {
-  val initHexPath  = "/home/peter/workspaces/ai/jop/spinalhdl/generated/gc_mem_init.hex"
-  val traceHexPath = "/home/peter/workspaces/ai/jop/spinalhdl/generated/gc_bmb_trace.hex"
+  val initHexPath  = "spinalhdl/generated/gc_mem_init.hex"
+  val traceHexPath = "spinalhdl/generated/gc_bmb_trace.hex"
 
   // BRAM budget: XC7A35T has 50 × 36Kbit = 225KB total.
   // Cache + FIFOs + overhead ≈ 30KB, leaving ~195KB for init + trace.

@@ -9,7 +9,7 @@ TOPLEVEL_LANG ?= vhdl
 WAVES ?= 1
 
 # Original JOP repository (for VHDL reference sources)
-JOP_HOME ?= /home/peter/git/jop
+JOP_HOME ?= /srv/git/jop
 ORIG_VHDL_DIR = $(JOP_HOME)/vhdl/core
 
 # Local VHDL testbenches (hand-written)
@@ -331,6 +331,6 @@ help:
 	@echo "  make clean                - Clean build artifacts"
 	@echo ""
 	@echo "Variables:"
-	@echo "  JOP_HOME=/path/to/jop    - Original JOP repository (default: /home/peter/git/jop)"
+	@echo "  JOP_HOME=/path/to/jop    - Original JOP repository (default: /srv/git/jop)"
 	@echo "  SIM=ghdl                 - Simulator (default: ghdl)"
 	@echo "  WAVES=1                  - Enable waveform generation (default: 1)"

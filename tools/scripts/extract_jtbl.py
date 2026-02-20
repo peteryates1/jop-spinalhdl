@@ -186,7 +186,7 @@ def main():
     parser.add_argument(
         '--input',
         type=Path,
-        default=Path('/home/peter/git/jop.arch/jop/asm/generated/jtbl.vhd'),
+        default=Path('/srv/git/jop/asm/generated/jtbl.vhd'),
         help='Path to jtbl.vhd'
     )
     parser.add_argument(

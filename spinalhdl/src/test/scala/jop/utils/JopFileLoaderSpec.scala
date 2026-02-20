@@ -9,10 +9,10 @@ import org.scalatest.matchers.should.Matchers
 class JopFileLoaderSpec extends AnyFlatSpec with Matchers {
 
   // Path to test files
-  val jopFilePath = "/home/peter/workspaces/jop/Smallest/smallest.jop"
-  val jtblPath = "/home/peter/git/jop/asm/generated/jtbl.vhd"
-  val memRomPath = "/home/peter/git/jop/asm/generated/mem_rom.dat"
-  val memRamPath = "/home/peter/git/jop/asm/generated/mem_ram.dat"
+  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  val jtblPath = "/srv/git/jop/asm/generated/jtbl.vhd"
+  val memRomPath = "/srv/git/jop/asm/generated/mem_rom.dat"
+  val memRamPath = "/srv/git/jop/asm/generated/mem_ram.dat"
 
   "JopFileLoader" should "load a .jop file" in {
     val data = JopFileLoader.loadJopFile(jopFilePath)

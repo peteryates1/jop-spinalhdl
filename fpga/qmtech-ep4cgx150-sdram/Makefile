@@ -25,7 +25,7 @@ SERIAL_PORT ?= /dev/ttyUSB0
 BAUD_RATE = 1000000
 
 # Original JOP repository
-JOP_HOME ?= /home/peter/git/jop
+JOP_HOME ?= /srv/git/jop
 
 # JOP application file
 JOP_FILE ?= $(JOP_HOME)/java/Smallest/HelloWorld.jop
@@ -56,12 +56,7 @@ run: program download monitor
 # --------------------------------------------------------------------------
 
 microcode:
-	cd $(ASM_DIR) && make -e JVM_TYPE=SERIAL
-	mkdir -p $(ASM_DIR)/generated/serial
-	cp $(ASM_DIR)/generated/mem_rom.dat $(ASM_DIR)/generated/serial/mem_rom.dat
-	cp $(ASM_DIR)/generated/rom.mif $(ASM_DIR)/generated/serial/rom.mif
-	cp $(ASM_DIR)/generated/mem_ram.dat $(ASM_DIR)/generated/serial/mem_ram.dat
-	cd $(ASM_DIR) && make -e JVM_TYPE=SIMULATION
+	cd $(ASM_DIR) && $(MAKE) serial
 	@echo "=== Serial microcode generated ==="
 
 # --------------------------------------------------------------------------

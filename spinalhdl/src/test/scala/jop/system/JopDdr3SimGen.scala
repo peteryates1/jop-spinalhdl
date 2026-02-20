@@ -19,9 +19,9 @@ import java.io.PrintWriter
  */
 object JopDdr3SimGen extends App {
 
-  val jopFilePath = "/home/peter/workspaces/ai/jop/java/apps/Small/HelloWorld.jop"
-  val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
-  val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
+  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  val romFilePath = "asm/generated/mem_rom.dat"
+  val ramFilePath = "asm/generated/mem_ram.dat"
   val targetDir   = "verification/vivado-ddr3"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

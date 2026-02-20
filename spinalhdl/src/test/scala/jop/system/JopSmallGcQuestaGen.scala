@@ -10,9 +10,9 @@ import jop.memory.JopMemoryConfig
  */
 object JopSmallGcQuestaGen extends App {
 
-  val jopFilePath = "/home/peter/workspaces/ai/jop/java/apps/Small/HelloWorld.jop"
-  val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
-  val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
+  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  val romFilePath = "asm/generated/mem_rom.dat"
+  val ramFilePath = "asm/generated/mem_ram.dat"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)

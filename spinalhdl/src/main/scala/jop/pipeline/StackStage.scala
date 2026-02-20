@@ -56,7 +56,7 @@ case class AluFlags() extends Bundle {
  * - Combinational outputs (0 cycle): zf, nf, eq, lt, aout, bout
  * - Registered outputs (1 cycle): A, B, SP, VP0-3, AR, sp_ov, opddly, immval
  *
- * Translated from: original/vhdl/core/stack.vhd
+ * Translated from: /srv/git/jop/vhdl/core/stack.vhd
  *
  * @param config Stack stage configuration
  */

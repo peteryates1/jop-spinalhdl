@@ -138,8 +138,8 @@ case class JopEchoHarness(
  */
 object JopEchoSim extends App {
 
-  val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
-  val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
+  val romFilePath = "asm/generated/mem_rom.dat"
+  val ramFilePath = "asm/generated/mem_ram.dat"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)

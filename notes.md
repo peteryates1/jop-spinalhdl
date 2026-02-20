@@ -176,6 +176,6 @@ interrupt handling?
 
 check new object
 java test cases -> from original jop 
-/home/peter/git/jop/java/target/src/test/jvm
-/home/peter/git/jop/java/target/src/test/jvmtest
+/srv/git/jop/java/target/src/test/jvm
+/srv/git/jop/java/target/src/test/jvmtest
 

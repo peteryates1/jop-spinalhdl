@@ -13,12 +13,12 @@ import jop.utils.JopFileLoader
 object JopSimulatorSim extends App {
 
   // Configuration
-  val jopFilePath = "/home/peter/workspaces/ai/jop/java/apps/Smallest/HelloWorld.jop"
-  val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
-  val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
+  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  val romFilePath = "asm/generated/mem_rom.dat"
+  val ramFilePath = "asm/generated/mem_ram.dat"
 
   // Load jump table for bytecode decoding
-  val jumpTable = JopFileLoader.loadJumpTable("/home/peter/workspaces/ai/jop/asm/generated/jtbl.vhd")
+  val jumpTable = JopFileLoader.loadJumpTable("asm/generated/jtbl.vhd")
   val bytecodeNames = Map(
     0x00 -> "nop", 0x01 -> "aconst_null", 0x02 -> "iconst_m1",
     0x03 -> "iconst_0", 0x04 -> "iconst_1", 0x05 -> "iconst_2",
@@ -85,7 +85,7 @@ object JopSimulatorSim extends App {
       dut.io.debugRamWrEn #= false
 
       // Load RAM data for explicit initialization
-      val ramInitData = JopFileLoader.loadStackRam("/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat")
+      val ramInitData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
       println(s"Loaded ${ramInitData.length} RAM init values")
       println(f"  RAM[32] = ${ramInitData(32)}%08x")
       println(f"  RAM[38] = ${ramInitData(38)}%08x")

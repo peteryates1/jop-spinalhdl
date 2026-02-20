@@ -216,7 +216,7 @@ object DecodePayloads {
  * - Combinational outputs (0 cycle): jbr, sel_rda, sel_wra, sel_smux, wr_ena, dir, sel_imux
  * - Registered outputs (1 cycle): br, jmp, all ALU control, MMU control
  *
- * Translated from: original/vhdl/core/decode.vhd
+ * Translated from: /srv/git/jop/vhdl/core/decode.vhd
  *
  * @param config Decode stage configuration
  */

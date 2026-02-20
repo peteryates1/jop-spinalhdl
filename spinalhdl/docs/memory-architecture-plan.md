@@ -185,14 +185,14 @@ case class BmbRsp() extends Bundle {
 9. **Create FPGA top-level for QMTECH EP4CGX150**
    - Target: `EP4CGX150DF27I7`
    - SDRAM: W9825G6JH6 (32MB, 16-bit, SDR)
-   - Pin assignments from: `/home/peter/git/jop/quartus/qmtech-ep4cgx150gx/jop.qsf`
+   - Pin assignments from: `/srv/git/jop/quartus/qmtech-ep4cgx150gx/jop.qsf`
    - PLL: 50MHz input → system clock + SDRAM clock (phase shifted)
    - I/O:
      - UART: CP2102N (ser_txd/ser_rxd)
      - LEDs: Core board (2), Daughter board (5), PMOD J10/J11 (16)
      - Switches: Core board (2), Daughter board (5)
      - 7-segment display: 3-digit on daughter board
-   - Reference: `/home/peter/git/jop/quartus/qmtech-ep4cgx150gx/`
+   - Reference: `/srv/git/jop/quartus/qmtech-ep4cgx150gx/`
 
 10. **Verify on hardware**
     - Program FPGA via USB-Blaster
@@ -260,10 +260,10 @@ core/spinalhdl/src/main/scala/jop/
 ## References
 
 ### JOP VHDL Sources
-- Memory controller: `/home/peter/git/jop/vhdl/memory/mem_sc.vhd`
-- SDR SDRAM controller: `/home/peter/git/jop/vhdl/memory/sc_sdram_sdr_16Mx16.vhd`
-- Arbiters: `/home/peter/git/jop/vhdl/simpcon/sc_arbiter_*.vhd`
-- SimpCon package: `/home/peter/git/jop/vhdl/simpcon/sc_pack.vhd`
+- Memory controller: `/srv/git/jop/vhdl/memory/mem_sc.vhd`
+- SDR SDRAM controller: `/srv/git/jop/vhdl/memory/sc_sdram_sdr_16Mx16.vhd`
+- Arbiters: `/srv/git/jop/vhdl/simpcon/sc_arbiter_*.vhd`
+- SimpCon package: `/srv/git/jop/vhdl/simpcon/sc_pack.vhd`
 
 ### SpinalHDL Documentation
 - [BMB Source Code](https://github.com/SpinalHDL/SpinalHDL/blob/dev/lib/src/main/scala/spinal/lib/bus/bmb/Bmb.scala)
@@ -334,6 +334,6 @@ pmod_j11[1:8] → See jop.qsf (watchdog indicators)
 ```
 
 ### Reference Files
-- VHDL Reference: `/home/peter/git/jop/quartus/qmtech-ep4cgx150gx/`
-- Core Board Docs: `/home/peter/git/EP4CGX150DF27_CORE_BOARD/`
-- Daughter Board Docs: `/home/peter/git/DB_FPGA/`
+- VHDL Reference: `/srv/git/jop/quartus/qmtech-ep4cgx150gx/`
+- Core Board Docs: `/srv/git/qmtech/EP4CGX150DF27_CORE_BOARD/`
+- Daughter Board Docs: `/srv/git/qmtech/DB_FPGA/`

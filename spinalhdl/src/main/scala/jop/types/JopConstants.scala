@@ -6,7 +6,7 @@ import spinal.core._
  * JOP Constants
  *
  * Translated from: jop_types.vhd
- * Location: /home/peter/git/jop.arch/jop/vhdl/core/jop_types.vhd
+ * Location: /srv/git/jop/vhdl/core/jop_types.vhd
  *
  * This object contains all constant values defined in the original
  * jop_types.vhd VHDL package.

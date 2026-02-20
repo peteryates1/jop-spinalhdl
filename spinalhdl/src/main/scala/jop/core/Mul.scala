@@ -7,7 +7,7 @@ import spinal.core._
  *
  * Translated from: mul.vhd
  * Original authors: Martin Schoeberl, Wolfgang Puffitsch
- * Original location: /home/peter/workspaces/ai/jop/original/vhdl/core/mul.vhd
+ * Original location: /srv/git/jop/vhdl/core/mul.vhd
  *
  * Algorithm Description:
  * ----------------------

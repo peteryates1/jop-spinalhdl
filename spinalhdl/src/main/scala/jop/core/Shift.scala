@@ -7,7 +7,7 @@ import spinal.core._
  *
  * Translated from: shift.vhd
  * Original author: Martin Schoeberl (martin@jopdesign.com)
- * Original location: /home/peter/workspaces/ai/jop/original/vhdl/core/shift.vhd
+ * Original location: /srv/git/jop/vhdl/core/shift.vhd
  *
  * Algorithm Description:
  * ----------------------

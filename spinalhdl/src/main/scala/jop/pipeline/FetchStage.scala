@@ -69,7 +69,7 @@ object FetchPayloads {
  * - Cycle N+1: ROM output available, IR captures instruction, offsets calculated
  * - dout has 1-cycle latency from PC change
  *
- * Translated from: original/vhdl/core/fetch.vhd
+ * Translated from: /srv/git/jop/vhdl/core/fetch.vhd
  *
  * @param config Fetch stage configuration
  * @param romInit Optional ROM initialization data (for testing)

@@ -13,10 +13,10 @@ import java.io.PrintWriter
  */
 object JopSmallGcBramSim extends App {
 
-  val jopFilePath = "/home/peter/workspaces/ai/jop/java/apps/Small/HelloWorld.jop"
-  val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
-  val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
-  val logFilePath = "/home/peter/workspaces/ai/jop/spinalhdl/small_gc_bram_simulation.log"
+  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  val romFilePath = "asm/generated/mem_rom.dat"
+  val ramFilePath = "asm/generated/mem_ram.dat"
+  val logFilePath = "spinalhdl/small_gc_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)

@@ -136,7 +136,7 @@ class ShiftTest extends AnyFunSuite {
     val candidates = Seq(
       Paths.get("../.."),
       Paths.get("../../.."),
-      Paths.get("/home/peter/workspaces/ai/jop")
+      Paths.get(".")
     )
     candidates.find(_.resolve("verification/test-vectors").toFile.exists())
       .getOrElse(throw new RuntimeException("Could not find project root with test vectors"))

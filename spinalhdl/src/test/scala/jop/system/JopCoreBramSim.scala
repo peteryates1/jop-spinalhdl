@@ -14,10 +14,10 @@ import java.io.PrintWriter
 object JopCoreBramSim extends App {
 
   // Paths to initialization files
-  val jopFilePath = "/home/peter/workspaces/ai/jop/java/apps/Smallest/HelloWorld.jop"
-  val romFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_rom.dat"
-  val ramFilePath = "/home/peter/workspaces/ai/jop/asm/generated/mem_ram.dat"
-  val logFilePath = "/home/peter/workspaces/ai/jop/spinalhdl/bram_simulation.log"
+  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  val romFilePath = "asm/generated/mem_rom.dat"
+  val ramFilePath = "asm/generated/mem_ram.dat"
+  val logFilePath = "spinalhdl/bram_simulation.log"
 
   // Load initialization data
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
