@@ -93,6 +93,9 @@ c5_pin_model_dump.txt
 verification/questa/
 verification/questa-sdram/work/
 verification/questa-sdram/sim_*.log
+verification/questa-sdram/*.bin
+verification/questa-sdram/*.hex
+verification/questa-sdram/JopCoreWithSdramTestHarness.v
 
 # Test results
 test-results/

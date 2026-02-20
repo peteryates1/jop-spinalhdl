@@ -1,0 +1,22 @@
+# xsim build artifacts
+xsim.dir/
+*.pb
+*.wdb
+
+# Simulation logs
+*.log
+*.jou
+*.backup.*
+
+# Generated/copied files (reproduced by make compile)
+JopDdr3Top.v
+*.bin
+*.hex
+
+# Waveform dumps
+*.vcd
+*.fst
+*.ghw
+
+# Trace output (large, reproduced by make sim)
+*.csv
