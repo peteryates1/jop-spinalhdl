@@ -14,6 +14,11 @@
 #   make run       - program + download + monitor
 #   make full      - all + run
 #
+# GC Exerciser (DDR3 stress test without JOP):
+#   make generate-exerciser  - Generate exerciser Verilog
+#   make project-exerciser   - Create Vivado project
+#   make bitstream-exerciser - Build exerciser bitstream
+#
 
 SHELL := /usr/bin/env bash
 
@@ -26,14 +31,14 @@ SERIAL_PORT ?= $(shell ./scripts/find_alchitry_ports.sh --serial 2>/dev/null || 
 BAUD_RATE = 1000000
 
 # JOP application file
-JOP ?= ../../java/apps/Smallest/HelloWorld.jop
+JOP ?= ../../java/apps/Small/HelloWorld.jop
 
 # Project paths (sbt runs from repo root)
 PROJECT_ROOT = ../..
 ASM_DIR = ../../asm
 GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopDdr3Top.v
 
-.PHONY: all microcode generate ips project bitstream program download monitor run full clean check-board find-serial-port
+.PHONY: all microcode generate ips project bitstream program download monitor run full clean check-board find-serial-port generate-exerciser project-exerciser bitstream-exerciser
 
 # Default: microcode + generate + ips + project + bitstream
 all: microcode generate ips project bitstream
@@ -110,6 +115,20 @@ check-board:
 
 find-serial-port:
 	./scripts/find_alchitry_ports.sh --serial
+
+# --------------------------------------------------------------------------
+# GC Exerciser (DDR3 stress test without JOP)
+# --------------------------------------------------------------------------
+
+generate-exerciser:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.Ddr3GcExerciserTopVerilog"
+	@echo "=== Exerciser Verilog generated ==="
+
+project-exerciser:
+	$(RUN_VIVADO) vivado/tcl/create_project_exerciser.tcl
+
+bitstream-exerciser:
+	$(RUN_VIVADO) vivado/tcl/build_bitstream_exerciser.tcl
 
 # --------------------------------------------------------------------------
 # Cleanup
