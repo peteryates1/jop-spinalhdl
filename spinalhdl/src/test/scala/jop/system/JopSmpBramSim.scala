@@ -24,7 +24,7 @@ case class JopSmpTestHarness(
   ramInit: Seq[BigInt],
   mainMemInit: Seq[BigInt]
 ) extends Component {
-  require(cpuCnt >= 2)
+  require(cpuCnt >= 1)
 
   val io = new Bundle {
     // Per-core pipeline outputs
@@ -89,35 +89,30 @@ case class JopSmpTestHarness(
   }
 
   // ====================================================================
-  // BMB Arbiter: N masters -> 1 slave
+  // Memory Bus: direct (single-core) or arbitrated (SMP)
   // ====================================================================
 
   val inputParam = baseConfig.memConfig.bmbParameter
-  val sourceRouteWidth = log2Up(cpuCnt)
-  val outputSourceCount = 1 << sourceRouteWidth
-  val inputSourceParam = inputParam.access.sources.values.head
-  val arbiterOutputParam = BmbParameter(
-    access = BmbAccessParameter(
-      addressWidth = inputParam.access.addressWidth,
-      dataWidth = inputParam.access.dataWidth
-    ).addSources(outputSourceCount, BmbSourceParameter(
-      contextWidth = inputSourceParam.contextWidth,
-      lengthWidth = inputSourceParam.lengthWidth,
-      canWrite = true,
-      canRead = true,
-      alignment = BmbParameter.BurstAlignement.WORD
-    )),
-    invalidation = BmbInvalidationParameter()
-  )
 
-  val arbiter = BmbArbiter(
-    inputsParameter = Seq.fill(cpuCnt)(inputParam),
-    outputParameter = arbiterOutputParam,
-    lowerFirstPriority = false  // Round-robin
-  )
-
-  for (i <- 0 until cpuCnt) {
-    arbiter.io.inputs(i) << cores(i).io.bmb
+  val ramParam = if (cpuCnt == 1) {
+    inputParam
+  } else {
+    val sourceRouteWidth = log2Up(cpuCnt)
+    val outputSourceCount = 1 << sourceRouteWidth
+    val inputSourceParam = inputParam.access.sources.values.head
+    BmbParameter(
+      access = BmbAccessParameter(
+        addressWidth = inputParam.access.addressWidth,
+        dataWidth = inputParam.access.dataWidth
+      ).addSources(outputSourceCount, BmbSourceParameter(
+        contextWidth = inputSourceParam.contextWidth,
+        lengthWidth = inputSourceParam.lengthWidth,
+        canWrite = true,
+        canRead = true,
+        alignment = BmbParameter.BurstAlignement.WORD
+      )),
+      invalidation = BmbInvalidationParameter()
+    )
   }
 
   // ====================================================================
@@ -125,7 +120,7 @@ case class JopSmpTestHarness(
   // ====================================================================
 
   val ram = BmbOnChipRam(
-    p = arbiterOutputParam,
+    p = ramParam,
     size = baseConfig.memConfig.mainMemSize,
     hexInit = null
   )
@@ -134,21 +129,40 @@ case class JopSmpTestHarness(
   val initData = mainMemInit.take(memWords).padTo(memWords, BigInt(0))
   ram.ram.init(initData.map(v => B(v, 32 bits)))
 
-  ram.io.bus << arbiter.io.output
+  if (cpuCnt == 1) {
+    // Single-core: direct BMB to RAM
+    ram.io.bus << cores(0).io.bmb
+    cores(0).io.syncIn.halted := False
+    cores(0).io.syncIn.s_out := False
+  } else {
+    // SMP: arbiter + CmpSync
+    val arbiter = BmbArbiter(
+      inputsParameter = Seq.fill(cpuCnt)(inputParam),
+      outputParameter = ramParam,
+      lowerFirstPriority = false  // Round-robin
+    )
+    for (i <- 0 until cpuCnt) {
+      arbiter.io.inputs(i) << cores(i).io.bmb
+    }
+    ram.io.bus << arbiter.io.output
+
+    val cmpSync = CmpSync(cpuCnt)
+
+    // Expose internal signals for simulation debugging
+    cmpSync.state.simPublic()
+    cmpSync.lockedId.simPublic()
+
+    for (i <- 0 until cpuCnt) {
+      cmpSync.io.syncIn(i) := cores(i).io.syncOut
+      cores(i).io.syncIn := cmpSync.io.syncOut(i)
+    }
+  }
 
   // ====================================================================
-  // CmpSync + Per-core Wiring
+  // Per-core Wiring
   // ====================================================================
-
-  val cmpSync = CmpSync(cpuCnt)
-
-  // Expose internal signals for simulation debugging
-  cmpSync.state.simPublic()
-  cmpSync.lockedId.simPublic()
 
   for (i <- 0 until cpuCnt) {
-    cmpSync.io.syncIn(i) := cores(i).io.syncOut
-    cores(i).io.syncIn := cmpSync.io.syncOut(i)
     cores(i).io.irq := False
     cores(i).io.irqEna := False
     cores(i).io.debugRamAddr := 0

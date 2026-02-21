@@ -190,6 +190,13 @@ make program     # Program FPGA via JTAG
 make download    # Download HelloWorld.jop over UART
 make monitor     # Watch serial output
 
+# SMP (2-core) — Trenz CYC5000, Altera Cyclone V (serial boot, 80 MHz)
+cd fpga/cyc5000-sdram
+make full-smp    # Complete flow: microcode + generate-smp + build-smp
+make program-smp # Program FPGA
+make download    # Download NCoreHelloWorld.jop over UART
+make monitor     # Watch serial output
+
 # DDR3 target — Alchitry Au V2, Xilinx Artix-7 (serial boot, 100 MHz, GC hang unresolved)
 cd fpga/alchitry-au
 make generate    # Generate Verilog from SpinalHDL
@@ -268,8 +275,8 @@ Notes:
 - **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
 - **I/O subsystem**: `BmbSys` (cycle/microsecond counters, watchdog, CPU ID) and `BmbUart` (TX/RX with 16-entry FIFOs) as reusable `jop.io` components
-- **SDRAM system (primary)**: `JopSdramTop` / `JopCyc5000Top` — serial boot over UART into SDR SDRAM using Altera `altera_sdram_tri_controller` (QMTECH EP4CGX150 at 100 MHz + Trenz CYC5000 at 80 MHz)
-- **SMP (2-core)**: `JopSmpSdramTop` — 2-core SMP with round-robin BMB arbiter, `CmpSync` global lock for `monitorenter`/`monitorexit`, per-core `BmbSys` with unique CPU ID, boot synchronization via `IO_SIGNAL`. Verified on QMTECH EP4CGX150 hardware (both cores running independently, per-core LED watchdog)
+- **SDRAM system (primary)**: `JopSdramTop` / `JopCyc5000Top` — serial boot over UART into SDR SDRAM using Altera `altera_sdram_tri_controller` (QMTECH EP4CGX150 at 100 MHz + Trenz CYC5000 at 80 MHz). Both support `cpuCnt` parameter for single-core or SMP
+- **SMP (2-core)**: `JopSdramTop(cpuCnt=2)` — 2-core SMP with round-robin BMB arbiter, `CmpSync` global lock for `monitorenter`/`monitorexit`, per-core `BmbSys` with unique CPU ID, boot synchronization via `IO_SIGNAL`. Verified on QMTECH EP4CGX150 hardware (both cores running independently, per-core LED watchdog)
 - **BRAM system**: `JopBramTop` — complete system with on-chip memory at 100 MHz (QMTECH EP4CGX150, Altera Cyclone IV)
 - **DDR3 system**: `JopDdr3Top` — serial boot over UART through write-back cache into DDR3 at 100 MHz (Alchitry Au V2, Xilinx Artix-7), with standalone `Ddr3ExerciserTop` memory test. GC hangs at first collection on FPGA (passes in simulation)
 - **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
@@ -318,7 +325,7 @@ Notes:
 - **Object cache**: Fully associative field value cache (16 entries, 8 fields each). Getfield hits return data in 0 busy cycles (combinational tag match, registered data output). Putfield does write-through on tag hit. FIFO replacement, invalidated on array stores and explicit `cinval`.
 - **Handle format**: `H[0]` = data pointer, `H[1]` = array length. Array elements start at `data_ptr[0]`.
 - **I/O subsystem**: Reusable `BmbSys` and `BmbUart` components in `jop.io` package. System slave provides clock cycle counter, prescaled microsecond counter, watchdog register, and CPU ID. UART slave provides buffered TX/RX with 16-entry FIFOs.
-- **SMP**: `JopSmpSdramTop` instantiates N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`.
+- **SMP**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` instantiate N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`.
 - **Serial boot**: Microcode polls UART for incoming bytes, assembles 4 bytes into 32-bit words, writes to external memory. Download script (`download.py`) sends `.jop` files with word-level echo verification.
 
 ## References

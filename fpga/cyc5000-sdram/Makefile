@@ -2,15 +2,19 @@
 # JOP SDRAM - Trenz CYC5000 Build & Program
 #
 # Targets:
-#   make microcode - Build serial-boot microcode
-#   make generate  - Generate Verilog from SpinalHDL
-#   make build     - Quartus compile (map, fit, asm, sta)
-#   make program   - Program FPGA via JTAG
-#   make download  - Send HelloWorld.jop via serial
-#   make monitor   - Monitor UART output (1 Mbaud)
-#   make all       - microcode + generate + build
-#   make run       - program + download + monitor
-#   make full      - microcode + generate + build + run
+#   make microcode     - Build serial-boot microcode
+#   make generate      - Generate Verilog from SpinalHDL
+#   make generate-smp  - Generate SMP Verilog (2 cores)
+#   make build         - Quartus compile (map, fit, asm, sta)
+#   make program       - Program FPGA via JTAG
+#   make download      - Send HelloWorld.jop via serial
+#   make monitor       - Monitor UART output (1 Mbaud)
+#   make build-smp     - Quartus compile SMP (2 cores)
+#   make program-smp   - Program SMP FPGA via JTAG
+#   make all           - microcode + generate + build
+#   make run           - program + download + monitor
+#   make full          - microcode + generate + build + run
+#   make full-smp      - microcode + generate-smp + build-smp + run-smp
 #
 
 # Quartus installation
@@ -31,13 +35,16 @@ JOP_FILE ?= ../../java/apps/Smallest/HelloWorld.jop
 PROJECT_ROOT = ../..
 ASM_DIR = ../../asm
 GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopCyc5000Top.v
+GENERATED_SMP_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSmpCyc5000Top.v
 
-# Quartus project
+# Quartus projects
 QP = jop_cyc5000
+QP_SMP = jop_smp_cyc5000
 OUTPUT_DIR = output_files
 SOF_FILE = $(OUTPUT_DIR)/$(QP).sof
+SOF_SMP_FILE = $(OUTPUT_DIR)/$(QP_SMP).sof
 
-.PHONY: all microcode generate build program download monitor run full clean
+.PHONY: all microcode generate generate-smp build build-smp program program-smp download monitor run run-smp full full-smp clean
 
 # Default: microcode + generate + build
 all: microcode generate build
@@ -45,8 +52,12 @@ all: microcode generate build
 # Full flow: microcode, generate, build, program, download, monitor
 full: microcode generate build run
 
+# SMP full flow
+full-smp: microcode generate-smp build-smp run-smp
+
 # Program + download + monitor
 run: program download monitor
+run-smp: program-smp download monitor
 
 # --------------------------------------------------------------------------
 # Serial-boot microcode
@@ -64,6 +75,10 @@ generate:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopCyc5000TopVerilog"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
 
+generate-smp:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopSmpCyc5000TopVerilog"
+	@echo "=== SMP Verilog generated: $(GENERATED_SMP_V) ==="
+
 # --------------------------------------------------------------------------
 # Quartus build
 # --------------------------------------------------------------------------
@@ -76,6 +91,15 @@ $(SOF_FILE): $(GENERATED_V) $(QP).qsf $(QP).sdc cyc5000_pll.vhd
 	$(QUARTUS_BIN)/quartus_asm $(QP)
 	$(QUARTUS_BIN)/quartus_sta $(QP)
 	@echo "=== Build complete: $(SOF_FILE) ==="
+
+build-smp: $(SOF_SMP_FILE)
+
+$(SOF_SMP_FILE): $(GENERATED_SMP_V) $(QP_SMP).qsf $(QP).sdc cyc5000_pll.vhd
+	$(QUARTUS_BIN)/quartus_map $(QP_SMP)
+	$(QUARTUS_BIN)/quartus_fit $(QP_SMP)
+	$(QUARTUS_BIN)/quartus_asm $(QP_SMP)
+	$(QUARTUS_BIN)/quartus_sta $(QP_SMP)
+	@echo "=== SMP Build complete: $(SOF_SMP_FILE) ==="
 
 # --------------------------------------------------------------------------
 # FPGA programming
@@ -97,6 +121,22 @@ program: $(SOF_FILE) $(QP).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP).cdf
 	@echo "=== FPGA programmed ==="
 
+$(QP_SMP).cdf: $(SOF_SMP_FILE)
+	@echo '/* Auto-generated CDF */' > $@
+	@echo 'JedecChain;' >> $@
+	@echo '	FileRevision(JESD32A);' >> $@
+	@echo '	DefaultMfr(6E);' >> $@
+	@echo '	P ActionCode(Cfg)' >> $@
+	@echo '		Device PartName(5CEBA2) Path("$(OUTPUT_DIR)/") File("$(QP_SMP).sof") MfrSpec(OpMask(1));' >> $@
+	@echo 'ChainEnd;' >> $@
+	@echo 'AlteraBegin;' >> $@
+	@echo '	ChainType(JTAG);' >> $@
+	@echo 'AlteraEnd;' >> $@
+
+program-smp: $(SOF_SMP_FILE) $(QP_SMP).cdf
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SMP).cdf
+	@echo "=== SMP FPGA programmed ==="
+
 # --------------------------------------------------------------------------
 # Serial download and UART monitor
 # --------------------------------------------------------------------------
@@ -112,5 +152,5 @@ monitor:
 # --------------------------------------------------------------------------
 
 clean:
-	rm -rf output_files db incremental_db $(QP).cdf
+	rm -rf output_files db incremental_db $(QP).cdf $(QP_SMP).cdf
 	rm -f *.rpt *.done *.jdi *.sld *.smsg *.summary *.pin

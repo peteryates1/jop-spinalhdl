@@ -3,9 +3,11 @@ package jop.system
 import spinal.core._
 import spinal.lib._
 import spinal.lib.io.InOutWrapper
+import spinal.lib.bus.bmb._
 import spinal.lib.memory.sdram.sdr._
+import jop.io.CmpSync
 import jop.utils.JopFileLoader
-import jop.memory.JopMemoryConfig
+import jop.memory.{JopMemoryConfig, BmbSdramCtrl32}
 import jop.pipeline.JumpTableInitData
 
 /**
@@ -32,19 +34,36 @@ case class DramPll() extends BlackBox {
 /**
  * JOP SDRAM FPGA Top-Level for QMTECH EP4CGX150
  *
- * Runs JOP processor with SDRAM-backed memory at 100 MHz.
+ * Runs JOP processor(s) with SDRAM-backed memory at 100 MHz.
  * PLL: 50 MHz input -> 100 MHz system clock, 100 MHz/-3ns SDRAM clock.
- * Full UART TX+RX for serial download protocol.
+ * Full UART TX+RX for serial download protocol (core 0 only).
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * I/O subsystem (BmbSys, BmbUart) is internal to each JopCore.
  *
+ * When cpuCnt = 1 (single-core):
+ *   - One JopCore, BMB goes directly to BmbSdramCtrl32
+ *   - No CmpSync
+ *   - LED[0] = WD bit 0, LED[1] = heartbeat
+ *
+ * When cpuCnt >= 2 (SMP):
+ *   - N JopCore instances with BmbArbiter -> shared BmbSdramCtrl32
+ *   - CmpSync for global lock synchronization
+ *   - LED[0] = core 0 WD, LED[1] = core 1 WD
+ *   - Entity name set to JopSmpSdramTop for Quartus backward compat
+ *
+ * @param cpuCnt  Number of CPU cores (1 = single-core, 2+ = SMP)
  * @param romInit Microcode ROM initialization data (serial-boot)
  * @param ramInit Stack RAM initialization data (serial-boot)
  */
 case class JopSdramTop(
+  cpuCnt: Int = 1,
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt]
 ) extends Component {
+  require(cpuCnt >= 1, "cpuCnt must be at least 1")
+
+  // Preserve existing Quartus entity names
+  if (cpuCnt >= 2) setDefinitionName("JopSmpSdramTop")
 
   val io = new Bundle {
     val clk_in    = in Bool()
@@ -53,26 +72,6 @@ case class JopSdramTop(
     val led       = out Bits(2 bits)
     val sdram_clk = out Bool()
     val sdram     = master(SdramInterface(W9825G6JH6.layout))
-
-    // SignalTap debug ports (directly readable by Quartus SignalTap)
-    val stp_memState     = out UInt(5 bits)
-    val stp_memBusy      = out Bool()
-    val stp_bmbCmdValid  = out Bool()
-    val stp_bmbCmdReady  = out Bool()
-    val stp_bmbCmdOpcode = out Bits(1 bits)
-    val stp_bmbRspValid  = out Bool()
-    val stp_bmbRspLast   = out Bool()
-    val stp_sdramSendingHigh   = out Bool()
-    val stp_sdramBurstActive   = out Bool()
-    val stp_sdramCtrlCmdValid  = out Bool()
-    val stp_sdramCtrlCmdReady  = out Bool()
-    val stp_sdramCtrlCmdWrite  = out Bool()
-    val stp_sdramCtrlRspValid  = out Bool()
-    val stp_sdramCtrlRspIsHigh = out Bool()
-    val stp_sdramLowHalfData   = out Bits(16 bits)
-    val stp_hangDetected = out Bool()
-    val stp_pc           = out UInt(11 bits)
-    val stp_jpc          = out UInt(12 bits)
   }
 
   noIoPrefix()
@@ -124,108 +123,140 @@ case class JopSdramTop(
 
   val mainArea = new ClockingArea(mainClockDomain) {
 
-    val config = JopCoreConfig(
-      memConfig = JopMemoryConfig(burstLen = 4),
-      jumpTable = JumpTableInitData.serial,
-      clkFreqHz = 100000000L
-    )
-
     // JBC init: empty (zeros) — BC_FILL loads bytecodes dynamically from SDRAM
     val jbcInit = Seq.fill(2048)(BigInt(0))
 
-    // JOP System with SDRAM backend
-    val jopCoreWithSdram = JopCoreWithSdram(
-      config = config,
+    // ==================================================================
+    // Instantiate N JOP Cores
+    // ==================================================================
+
+    val cores = (0 until cpuCnt).map { i =>
+      val coreConfig = JopCoreConfig(
+        memConfig = JopMemoryConfig(burstLen = 4),
+        jumpTable = JumpTableInitData.serial,
+        cpuId = i,
+        cpuCnt = cpuCnt,
+        hasUart = (i == 0),
+        clkFreqHz = 100000000L
+      )
+      JopCore(
+        config = coreConfig,
+        romInit = Some(romInit),
+        ramInit = Some(ramInit),
+        jbcInit = Some(jbcInit)
+      )
+    }
+
+    // ==================================================================
+    // Memory Bus: direct (single-core) or arbitrated (SMP)
+    // ==================================================================
+
+    val inputParam = cores(0).config.memConfig.bmbParameter
+
+    val memBusParam = if (cpuCnt == 1) {
+      inputParam
+    } else {
+      val sourceRouteWidth = log2Up(cpuCnt)
+      val outputSourceCount = 1 << sourceRouteWidth
+      val inputSourceParam = inputParam.access.sources.values.head
+      BmbParameter(
+        access = BmbAccessParameter(
+          addressWidth = inputParam.access.addressWidth,
+          dataWidth = inputParam.access.dataWidth
+        ).addSources(outputSourceCount, BmbSourceParameter(
+          contextWidth = inputSourceParam.contextWidth,
+          lengthWidth = inputSourceParam.lengthWidth,
+          canWrite = true,
+          canRead = true,
+          alignment = BmbParameter.BurstAlignement.WORD
+        )),
+        invalidation = BmbInvalidationParameter()
+      )
+    }
+
+    // SDRAM controller (shared)
+    val sdramCtrl = BmbSdramCtrl32(
+      bmbParameter = memBusParam,
+      layout = W9825G6JH6.layout,
+      timing = W9825G6JH6.timingGrade7,
+      CAS = 3,
       useAlteraCtrl = true,
-      clockFreqHz = 100000000L,
-      romInit = Some(romInit),
-      ramInit = Some(ramInit),
-      jbcInit = Some(jbcInit)
+      clockFreqHz = 100000000L
     )
 
-    // Connect SDRAM interface
-    io.sdram <> jopCoreWithSdram.io.sdram
+    io.sdram <> sdramCtrl.io.sdram
 
-    // Interrupts (disabled)
-    jopCoreWithSdram.io.irq := False
-    jopCoreWithSdram.io.irqEna := False
-
-    // Single-core: no CmpSync
-    jopCoreWithSdram.io.syncIn.halted := False
-    jopCoreWithSdram.io.syncIn.s_out := False
-
-    // UART
-    io.ser_txd := jopCoreWithSdram.io.txd
-    jopCoreWithSdram.io.rxd := io.ser_rxd
-
-    // ======================================================================
-    // LED Driver
-    // ======================================================================
-
-    // Heartbeat: ~1 Hz toggle (50M cycles at 100 MHz)
-    val heartbeat = Reg(Bool()) init(False)
-    val heartbeatCnt = Reg(UInt(26 bits)) init(0)
-    heartbeatCnt := heartbeatCnt + 1
-    when(heartbeatCnt === 49999999) {
-      heartbeatCnt := 0
-      heartbeat := ~heartbeat
-    }
-
-    // QMTECH LEDs are active low
-    // LED[1] = heartbeat (proves clock is running)
-    // LED[0] = watchdog bit 0 (proves Java code is running)
-    io.led(1) := ~heartbeat
-    io.led(0) := ~jopCoreWithSdram.io.wd(0)
-
-    // ======================================================================
-    // Hang Detector
-    // ======================================================================
-
-    // Count cycles while memBusy is high; reset when it goes low.
-    // Asserts hangDetected when counter reaches 2^20 (~10ms at 100 MHz).
-    val hangCounter = Reg(UInt(21 bits)) init(0)
-    val hangDetected = RegInit(False)
-
-    when(jopCoreWithSdram.io.memBusy) {
-      when(!hangCounter(20)) {
-        hangCounter := hangCounter + 1
-      } otherwise {
-        hangDetected := True
+    if (cpuCnt == 1) {
+      // Single-core: direct BMB connection
+      sdramCtrl.io.bmb <> cores(0).io.bmb
+      cores(0).io.syncIn.halted := False
+      cores(0).io.syncIn.s_out := False
+      cores(0).io.irq := False
+      cores(0).io.irqEna := False
+      cores(0).io.debugRamAddr := 0
+    } else {
+      // SMP: arbiter + CmpSync
+      val arbiter = BmbArbiter(
+        inputsParameter = Seq.fill(cpuCnt)(inputParam),
+        outputParameter = memBusParam,
+        lowerFirstPriority = false  // Round-robin
+      )
+      for (i <- 0 until cpuCnt) {
+        arbiter.io.inputs(i) << cores(i).io.bmb
       }
-    } otherwise {
-      hangCounter := 0
+      sdramCtrl.io.bmb <> arbiter.io.output
+
+      val cmpSync = CmpSync(cpuCnt)
+      for (i <- 0 until cpuCnt) {
+        cmpSync.io.syncIn(i) := cores(i).io.syncOut
+        cores(i).io.syncIn := cmpSync.io.syncOut(i)
+        cores(i).io.irq := False
+        cores(i).io.irqEna := False
+        cores(i).io.debugRamAddr := 0
+      }
     }
 
-    // ======================================================================
-    // SignalTap Debug Ports
-    // ======================================================================
+    // ==================================================================
+    // UART (core 0 only)
+    // ==================================================================
 
-    io.stp_memState     := jopCoreWithSdram.io.debugMemState
-    io.stp_memBusy      := jopCoreWithSdram.io.memBusy
-    io.stp_bmbCmdValid  := jopCoreWithSdram.io.bmbCmdValid
-    io.stp_bmbCmdReady  := jopCoreWithSdram.io.bmbCmdReady
-    io.stp_bmbCmdOpcode := jopCoreWithSdram.io.bmbCmdOpcode
-    io.stp_bmbRspValid  := jopCoreWithSdram.io.bmbRspValid
-    io.stp_bmbRspLast   := jopCoreWithSdram.io.bmbRspLast
+    io.ser_txd := cores(0).io.txd
+    cores(0).io.rxd := io.ser_rxd
+    for (i <- 1 until cpuCnt) {
+      cores(i).io.rxd := True  // No UART on cores 1+
+    }
 
-    // SDRAM controller debug
-    io.stp_sdramSendingHigh   := jopCoreWithSdram.io.debugSdramCtrl.sendingHigh
-    io.stp_sdramBurstActive   := jopCoreWithSdram.io.debugSdramCtrl.burstActive
-    io.stp_sdramCtrlCmdValid  := jopCoreWithSdram.io.debugSdramCtrl.ctrlCmdValid
-    io.stp_sdramCtrlCmdReady  := jopCoreWithSdram.io.debugSdramCtrl.ctrlCmdReady
-    io.stp_sdramCtrlCmdWrite  := jopCoreWithSdram.io.debugSdramCtrl.ctrlCmdWrite
-    io.stp_sdramCtrlRspValid  := jopCoreWithSdram.io.debugSdramCtrl.ctrlRspValid
-    io.stp_sdramCtrlRspIsHigh := jopCoreWithSdram.io.debugSdramCtrl.ctrlRspIsHigh
-    io.stp_sdramLowHalfData   := jopCoreWithSdram.io.debugSdramCtrl.lowHalfData
+    // ==================================================================
+    // LED Driver
+    // ==================================================================
 
-    io.stp_hangDetected := hangDetected
-    io.stp_pc           := jopCoreWithSdram.io.pc.resized
-    io.stp_jpc          := jopCoreWithSdram.io.jpc.resized
+    if (cpuCnt == 1) {
+      // Heartbeat: ~1 Hz toggle (50M cycles at 100 MHz)
+      val heartbeat = Reg(Bool()) init(False)
+      val heartbeatCnt = Reg(UInt(26 bits)) init(0)
+      heartbeatCnt := heartbeatCnt + 1
+      when(heartbeatCnt === 49999999) {
+        heartbeatCnt := 0
+        heartbeat := ~heartbeat
+      }
+
+      // QMTECH LEDs are active low
+      // LED[1] = heartbeat (proves clock is running)
+      // LED[0] = watchdog bit 0 (proves Java code is running)
+      io.led(1) := ~heartbeat
+      io.led(0) := ~cores(0).io.wd(0)
+    } else {
+      // QMTECH LEDs are active low
+      // LED[0] = core 0 watchdog bit 0 (proves core 0 Java code is running)
+      // LED[1] = core 1 watchdog bit 0 (proves core 1 Java code is running)
+      io.led(0) := ~cores(0).io.wd(0)
+      io.led(1) := ~cores(1).io.wd(0)
+    }
   }
 }
 
 /**
- * Generate Verilog for JopSdramTop
+ * Generate Verilog for JopSdramTop (single-core)
  */
 object JopSdramTopVerilog extends App {
   val romFilePath = "asm/generated/serial/mem_rom.dat"
@@ -241,7 +272,40 @@ object JopSdramTopVerilog extends App {
     mode = Verilog,
     targetDirectory = "spinalhdl/generated",
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
-  ).generate(InOutWrapper(JopSdramTop(romData, ramData)))
+  ).generate(InOutWrapper(JopSdramTop(
+    cpuCnt = 1,
+    romInit = romData,
+    ramInit = ramData
+  )))
 
-  println("Generated: generated/JopSdramTop.v")
+  println("Generated: spinalhdl/generated/JopSdramTop.v")
+}
+
+/**
+ * Generate Verilog for JopSdramTop in SMP mode (entity: JopSmpSdramTop)
+ */
+object JopSmpSdramTopVerilog extends App {
+  val cpuCnt = if (args.length > 0) args(0).toInt else 2
+
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
+
+  val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
+  val ramData = JopFileLoader.loadStackRam(ramFilePath)
+
+  println(s"Loaded ROM: ${romData.length} entries")
+  println(s"Loaded RAM: ${ramData.length} entries")
+  println(s"Generating $cpuCnt-core SMP Verilog...")
+
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = "spinalhdl/generated",
+    defaultClockDomainFrequency = FixedFrequency(100 MHz)
+  ).generate(InOutWrapper(JopSdramTop(
+    cpuCnt = cpuCnt,
+    romInit = romData,
+    ramInit = ramData
+  )))
+
+  println(s"Generated: spinalhdl/generated/JopSmpSdramTop.v ($cpuCnt cores)")
 }
