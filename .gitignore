@@ -78,6 +78,7 @@ simWorkspace/
 c5_pin_model_dump.txt
 *.stp
 *.sof.old
+*_assignment_defaults.qdf
 
 # Vivado
 *.jou
@@ -102,6 +103,9 @@ test-results/
 coverage/
 *.coverage
 htmlcov/
+
+# Debug traces
+mig_trace.csv
 
 # Temporary files
 *.tmp
