@@ -4,10 +4,8 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.io.CmpSync
 import jop.utils.{JopFileLoader, TestHistory}
 import jop.memory.JopMemoryConfig
-import jop.pipeline.JumpTableInitData
 import java.io.PrintWriter
 
 /**
@@ -67,125 +65,66 @@ case class JopSmpTestHarness(
   }.padTo(2048, BigInt(0))
 
   // ====================================================================
-  // N JOP Cores (each with internal BmbSys, core 0 with BmbUart)
+  // JOP Cluster: N cores with arbiter + CmpSync
   // ====================================================================
 
-  val baseConfig = JopCoreConfig(
-    memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)  // 128KB
+  val memSize = 128 * 1024  // 128KB
+
+  val cluster = JopCluster(
+    cpuCnt = cpuCnt,
+    baseConfig = JopCoreConfig(
+      memConfig = JopMemoryConfig(mainMemSize = memSize)
+    ),
+    romInit = Some(romInit),
+    ramInit = Some(ramInit),
+    jbcInit = Some(jbcInit)
   )
 
-  val cores = (0 until cpuCnt).map { i =>
-    val coreConfig = baseConfig.copy(
-      cpuId = i,
-      cpuCnt = cpuCnt,
-      hasUart = (i == 0)  // Only core 0 gets UART
-    )
-    JopCore(
-      config = coreConfig,
-      romInit = Some(romInit),
-      ramInit = Some(ramInit),
-      jbcInit = Some(jbcInit)
-    )
+  // Expose CmpSync internals for simulation debugging
+  cluster.cmpSync.foreach { sync =>
+    sync.state.simPublic()
+    sync.lockedId.simPublic()
   }
 
-  // ====================================================================
-  // Memory Bus: direct (single-core) or arbitrated (SMP)
-  // ====================================================================
-
-  val inputParam = baseConfig.memConfig.bmbParameter
-
-  val ramParam = if (cpuCnt == 1) {
-    inputParam
-  } else {
-    val sourceRouteWidth = log2Up(cpuCnt)
-    val outputSourceCount = 1 << sourceRouteWidth
-    val inputSourceParam = inputParam.access.sources.values.head
-    BmbParameter(
-      access = BmbAccessParameter(
-        addressWidth = inputParam.access.addressWidth,
-        dataWidth = inputParam.access.dataWidth
-      ).addSources(outputSourceCount, BmbSourceParameter(
-        contextWidth = inputSourceParam.contextWidth,
-        lengthWidth = inputSourceParam.lengthWidth,
-        canWrite = true,
-        canRead = true,
-        alignment = BmbParameter.BurstAlignement.WORD
-      )),
-      invalidation = BmbInvalidationParameter()
-    )
-  }
+  // No UART RX in simulation
+  cluster.io.rxd := True
 
   // ====================================================================
   // Shared Block RAM
   // ====================================================================
 
+  val memWords = (memSize / 4)
   val ram = BmbOnChipRam(
-    p = ramParam,
-    size = baseConfig.memConfig.mainMemSize,
+    p = cluster.bmbParameter,
+    size = memSize,
     hexInit = null
   )
 
-  val memWords = baseConfig.memConfig.mainMemWords.toInt
   val initData = mainMemInit.take(memWords).padTo(memWords, BigInt(0))
   ram.ram.init(initData.map(v => B(v, 32 bits)))
 
-  if (cpuCnt == 1) {
-    // Single-core: direct BMB to RAM
-    ram.io.bus << cores(0).io.bmb
-    cores(0).io.syncIn.halted := False
-    cores(0).io.syncIn.s_out := False
-  } else {
-    // SMP: arbiter + CmpSync
-    val arbiter = BmbArbiter(
-      inputsParameter = Seq.fill(cpuCnt)(inputParam),
-      outputParameter = ramParam,
-      lowerFirstPriority = false  // Round-robin
-    )
-    for (i <- 0 until cpuCnt) {
-      arbiter.io.inputs(i) << cores(i).io.bmb
-    }
-    ram.io.bus << arbiter.io.output
-
-    val cmpSync = CmpSync(cpuCnt)
-
-    // Expose internal signals for simulation debugging
-    cmpSync.state.simPublic()
-    cmpSync.lockedId.simPublic()
-
-    for (i <- 0 until cpuCnt) {
-      cmpSync.io.syncIn(i) := cores(i).io.syncOut
-      cores(i).io.syncIn := cmpSync.io.syncOut(i)
-    }
-  }
+  ram.io.bus << cluster.io.bmb
 
   // ====================================================================
-  // Per-core Wiring
+  // Per-core Debug Output Wiring
   // ====================================================================
 
   for (i <- 0 until cpuCnt) {
-    cores(i).io.irq := False
-    cores(i).io.irqEna := False
-    cores(i).io.debugRamAddr := 0
-
-    // No UART RX
-    cores(i).io.rxd := True
-
-    // Output connections
-    io.pc(i)      := cores(i).io.pc
-    io.jpc(i)     := cores(i).io.jpc
-    io.aout(i)    := cores(i).io.aout
-    io.bout(i)    := cores(i).io.bout
-    io.memBusy(i) := cores(i).io.memBusy
-    io.wd(i)      := cores(i).io.wd
-    io.halted(i)  := cores(i).io.debugHalted
+    io.pc(i)      := cluster.io.pc(i)
+    io.jpc(i)     := cluster.io.jpc(i)
+    io.aout(i)    := cluster.io.aout(i)
+    io.bout(i)    := cluster.io.bout(i)
+    io.memBusy(i) := cluster.io.memBusy(i)
+    io.wd(i)      := cluster.io.wd(i)
+    io.halted(i)  := cluster.io.halted(i)
   }
 
   // UART output (core 0 debug snoop)
-  io.uartTxData  := cores(0).io.uartTxData
-  io.uartTxValid := cores(0).io.uartTxValid
+  io.uartTxData  := cluster.io.uartTxData
+  io.uartTxValid := cluster.io.uartTxValid
 
   // Exception debug (core 0)
-  io.excFired := cores(0).io.debugExc
+  io.excFired := cluster.io.debugExc
   io.excType  := 0  // Exception type not easily snooped with internal I/O
 }
 

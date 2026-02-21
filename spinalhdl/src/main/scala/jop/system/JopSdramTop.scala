@@ -3,9 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.lib._
 import spinal.lib.io.InOutWrapper
-import spinal.lib.bus.bmb._
 import spinal.lib.memory.sdram.sdr._
-import jop.io.CmpSync
 import jop.utils.JopFileLoader
 import jop.memory.{JopMemoryConfig, BmbSdramCtrl32}
 import jop.pipeline.JumpTableInitData
@@ -123,60 +121,28 @@ case class JopSdramTop(
 
   val mainArea = new ClockingArea(mainClockDomain) {
 
-    // JBC init: empty (zeros) — BC_FILL loads bytecodes dynamically from SDRAM
-    val jbcInit = Seq.fill(2048)(BigInt(0))
-
     // ==================================================================
-    // Instantiate N JOP Cores
+    // JOP Cluster: N cores with arbiter + CmpSync
     // ==================================================================
 
-    val cores = (0 until cpuCnt).map { i =>
-      val coreConfig = JopCoreConfig(
+    val cluster = JopCluster(
+      cpuCnt = cpuCnt,
+      baseConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(burstLen = 4),
         jumpTable = JumpTableInitData.serial,
-        cpuId = i,
-        cpuCnt = cpuCnt,
-        hasUart = (i == 0),
         clkFreqHz = 100000000L
-      )
-      JopCore(
-        config = coreConfig,
-        romInit = Some(romInit),
-        ramInit = Some(ramInit),
-        jbcInit = Some(jbcInit)
-      )
-    }
+      ),
+      romInit = Some(romInit),
+      ramInit = Some(ramInit),
+      jbcInit = Some(Seq.fill(2048)(BigInt(0)))
+    )
 
     // ==================================================================
-    // Memory Bus: direct (single-core) or arbitrated (SMP)
+    // SDRAM Controller (shared)
     // ==================================================================
 
-    val inputParam = cores(0).config.memConfig.bmbParameter
-
-    val memBusParam = if (cpuCnt == 1) {
-      inputParam
-    } else {
-      val sourceRouteWidth = log2Up(cpuCnt)
-      val outputSourceCount = 1 << sourceRouteWidth
-      val inputSourceParam = inputParam.access.sources.values.head
-      BmbParameter(
-        access = BmbAccessParameter(
-          addressWidth = inputParam.access.addressWidth,
-          dataWidth = inputParam.access.dataWidth
-        ).addSources(outputSourceCount, BmbSourceParameter(
-          contextWidth = inputSourceParam.contextWidth,
-          lengthWidth = inputSourceParam.lengthWidth,
-          canWrite = true,
-          canRead = true,
-          alignment = BmbParameter.BurstAlignement.WORD
-        )),
-        invalidation = BmbInvalidationParameter()
-      )
-    }
-
-    // SDRAM controller (shared)
     val sdramCtrl = BmbSdramCtrl32(
-      bmbParameter = memBusParam,
+      bmbParameter = cluster.bmbParameter,
       layout = W9825G6JH6.layout,
       timing = W9825G6JH6.timingGrade7,
       CAS = 3,
@@ -184,47 +150,15 @@ case class JopSdramTop(
       clockFreqHz = 100000000L
     )
 
+    sdramCtrl.io.bmb <> cluster.io.bmb
     io.sdram <> sdramCtrl.io.sdram
 
-    if (cpuCnt == 1) {
-      // Single-core: direct BMB connection
-      sdramCtrl.io.bmb <> cores(0).io.bmb
-      cores(0).io.syncIn.halted := False
-      cores(0).io.syncIn.s_out := False
-      cores(0).io.irq := False
-      cores(0).io.irqEna := False
-      cores(0).io.debugRamAddr := 0
-    } else {
-      // SMP: arbiter + CmpSync
-      val arbiter = BmbArbiter(
-        inputsParameter = Seq.fill(cpuCnt)(inputParam),
-        outputParameter = memBusParam,
-        lowerFirstPriority = false  // Round-robin
-      )
-      for (i <- 0 until cpuCnt) {
-        arbiter.io.inputs(i) << cores(i).io.bmb
-      }
-      sdramCtrl.io.bmb <> arbiter.io.output
-
-      val cmpSync = CmpSync(cpuCnt)
-      for (i <- 0 until cpuCnt) {
-        cmpSync.io.syncIn(i) := cores(i).io.syncOut
-        cores(i).io.syncIn := cmpSync.io.syncOut(i)
-        cores(i).io.irq := False
-        cores(i).io.irqEna := False
-        cores(i).io.debugRamAddr := 0
-      }
-    }
-
     // ==================================================================
-    // UART (core 0 only)
+    // UART
     // ==================================================================
 
-    io.ser_txd := cores(0).io.txd
-    cores(0).io.rxd := io.ser_rxd
-    for (i <- 1 until cpuCnt) {
-      cores(i).io.rxd := True  // No UART on cores 1+
-    }
+    io.ser_txd := cluster.io.txd
+    cluster.io.rxd := io.ser_rxd
 
     // ==================================================================
     // LED Driver
@@ -244,13 +178,13 @@ case class JopSdramTop(
       // LED[1] = heartbeat (proves clock is running)
       // LED[0] = watchdog bit 0 (proves Java code is running)
       io.led(1) := ~heartbeat
-      io.led(0) := ~cores(0).io.wd(0)
+      io.led(0) := ~cluster.io.wd(0)(0)
     } else {
       // QMTECH LEDs are active low
       // LED[0] = core 0 watchdog bit 0 (proves core 0 Java code is running)
       // LED[1] = core 1 watchdog bit 0 (proves core 1 Java code is running)
-      io.led(0) := ~cores(0).io.wd(0)
-      io.led(1) := ~cores(1).io.wd(0)
+      io.led(0) := ~cluster.io.wd(0)(0)
+      io.led(1) := ~cluster.io.wd(1)(0)
     }
   }
 }
