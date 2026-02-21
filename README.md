@@ -53,26 +53,24 @@ Single-core:
 
 SMP (2-core):
 
- ┌──────────┐    ┌──────────┐
- │ JopCore  │    │ JopCore  │
- │  cpu 0   │    │  cpu 1   │
- └────┬─────┘    └────┬─────┘
-      │  BMB          │  BMB
-      └───────┬───────┘
-        ┌─────┴──────┐
-        │ BMB Arbiter│  (round-robin)
-        └─────┬──────┘
-              │
-     ┌────────┼────────┐
-┌────┴─────┐  │  ┌─────┴──────┐
-│  SDRAM   │  │  │  CmpSync   │  (global lock)
-│  memory  │  │  └────────────┘
-└──────────┘  │
-        ┌─────┴──────┐
-        │    I/O     │
-        │(per-core   │
-        │ sys, uart) │
-        └────────────┘
+ ┌─────────────────┐    ┌─────────────────┐
+ │    JopCore 0    │    │    JopCore 1    │
+ │  pipeline+memctl│    │  pipeline+memctl│
+ │  I/O (sys,uart) │    │  I/O (sys)      │
+ └────┬────────┬───┘    └────┬────────┬───┘
+      │  BMB   │ sync        │  BMB   │ sync
+      │        └──────┬──────┘        │
+      └───────┬───────│───────────────┘
+        ┌─────┴──────┐│
+        │ BMB Arbiter││ (round-robin)
+        └─────┬──────┘│
+              │  ┌────┴──────┐
+              │  │  CmpSync  │  (global lock)
+              │  └───────────┘
+       ┌──────┴───────┐
+       │    SDRAM     │
+       │    memory    │
+       └──────────────┘
 ```
 
 The pipeline fetches Java bytecodes, translates them via a jump table into microcode addresses, fetches and decodes microcode instructions, then executes them on a two-register stack machine with a 256-entry on-chip stack RAM (64 entries reserved for local variables and constants, 192 for the operand stack).
@@ -327,6 +325,22 @@ Notes:
 - **I/O subsystem**: Reusable `BmbSys` and `BmbUart` components in `jop.io` package. System slave provides clock cycle counter, prescaled microsecond counter, watchdog register, and CPU ID. UART slave provides buffered TX/RX with 16-entry FIFOs.
 - **SMP**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` instantiate N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`.
 - **Serial boot**: Microcode polls UART for incoming bytes, assembles 4 bytes into 32-bit words, writes to external memory. Download script (`download.py`) sends `.jop` files with word-level echo verification.
+
+## Documentation
+
+Design notes and investigation logs in `docs/`:
+
+- [Microcode and ROMs](docs/MICROCODE_AND_ROMS.md) — microcode architecture, ROM/RAM layout, Jopa assembler
+- [Microcode Instructions](docs/microcode.md) — table of all microcode instructions and encodings
+- [Stack Architecture](docs/STACK_ARCHITECTURE.md) — stack buffer, spill/fill, local variables
+- [Jopa Tool](docs/JOPA_TOOL.md) — microcode assembler usage and output formats
+- [Implementation Notes](docs/implementation-notes.md) — bugs found, cache details, I/O subsystem, SMP, memCopy
+- [Cache Analysis](docs/cache-analysis.md) — method cache and object cache performance analysis
+- [Memory Controller Comparison](docs/memory-controller-comparison.md) — VHDL vs SpinalHDL memory controller
+- [Memory Architecture Plan](docs/memory-architecture-plan.md) — memory subsystem design decisions
+- [Stack Immediate Timing](docs/stack-immediate-timing.md) — stack stage timing for immediate operations
+- [SDR SDRAM GC Hang](docs/sdr-sdram-gc-hang.md) — resolved: SpinalHDL SdramCtrl DQ timing issue
+- [DDR3 GC Hang](docs/ddr3-gc-hang.md) — unresolved: GC hangs at R12 on Alchitry Au V2
 
 ## References
 
