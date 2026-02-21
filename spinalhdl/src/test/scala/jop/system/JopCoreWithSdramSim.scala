@@ -5,7 +5,7 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, TestHistory}
 import java.io.PrintWriter
 
 /**
@@ -28,6 +28,8 @@ object JopCoreWithSdramSim extends App {
   println(s"Loaded RAM: ${ramData.length} entries")
   println(s"Loaded main memory: ${mainMemData.length} entries")
   println(s"Log file: $logFilePath")
+
+  val run = TestHistory.startRun("JopCoreWithSdramSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
   SimConfig
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
@@ -161,13 +163,6 @@ object JopCoreWithSdramSim extends App {
           lastJpc = jpc
         }
 
-        // Check for I/O writes
-        if (dut.io.ioWr.toBoolean) {
-          val addr = dut.io.ioAddr.toInt
-          val data = dut.io.ioWrData.toLong
-          logLine(f"[$cycle%6d] IO WRITE: addr=0x$addr%02x data=0x$data%08x")
-        }
-
         // Check for UART output from harness
         if (dut.io.uartTxValid.toBoolean) {
           val char = dut.io.uartTxData.toInt
@@ -226,5 +221,7 @@ object JopCoreWithSdramSim extends App {
       println(s"Final JPC: ${dut.io.jpc.toInt}")
       println(s"UART Output: '${uartOutput.toString}'")
       println(s"Log written to: $logFilePath")
+
+      run.finish("PASS", s"$cycle cycles")
     }
 }

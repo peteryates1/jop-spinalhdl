@@ -4,12 +4,13 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, TestHistory}
 import jop.memory.JopMemoryConfig
-import jop.io.BmbSys
 
 /**
  * Test harness with configurable BRAM size to test address wrapping effects.
+ *
+ * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
  */
 case class JopCoreLargeBramHarness(
   romInit: Seq[BigInt],
@@ -55,6 +56,7 @@ case class JopCoreLargeBramHarness(
     )
   }.padTo(2048, BigInt(0))
 
+  // JOP Core (BmbSys + BmbUart internal)
   val jopSystem = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -74,54 +76,25 @@ case class JopCoreLargeBramHarness(
 
   ram.io.bus << jopSystem.io.bmb
 
-  // Decode I/O address
-  val ioSubAddr = jopSystem.io.ioAddr(3 downto 0)
-  val ioSlaveId = jopSystem.io.ioAddr(5 downto 4)
+  // Single-core: no CmpSync
+  jopSystem.io.syncIn.halted := False
+  jopSystem.io.syncIn.s_out := False
 
-  // System I/O (slave 0) — real BmbSys component
-  val bmbSys = BmbSys(clkFreqHz = 100000000L)
-  bmbSys.io.addr   := ioSubAddr
-  bmbSys.io.rd     := jopSystem.io.ioRd && ioSlaveId === 0
-  bmbSys.io.wr     := jopSystem.io.ioWr && ioSlaveId === 0
-  bmbSys.io.wrData := jopSystem.io.ioWrData
-  bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
-  bmbSys.io.syncIn.s_out := False
+  // No UART RX
+  jopSystem.io.rxd := True
 
-  // Exception signal from BmbSys
-  jopSystem.io.exc := bmbSys.io.exc
-
-  // UART (slave 1) — simplified for simulation
-  val uartTxDataReg = Reg(Bits(8 bits)) init(0)
-  val uartTxValidReg = Reg(Bool()) init(False)
-
-  uartTxValidReg := False
-  when(jopSystem.io.ioWr && ioSlaveId === 1 && ioSubAddr === 1) {
-    uartTxDataReg := jopSystem.io.ioWrData(7 downto 0)
-    uartTxValidReg := True
-  }
-
-  // I/O read mux
-  val ioRdData = Bits(32 bits)
-  ioRdData := 0
-  switch(ioSlaveId) {
-    is(0) { ioRdData := bmbSys.io.rdData }
-    is(1) {
-      switch(ioSubAddr) {
-        is(0) { ioRdData := B(0x1, 32 bits) }  // Status: TX ready
-      }
-    }
-  }
-  jopSystem.io.ioRdData := ioRdData
-
+  // Interrupts disabled
   jopSystem.io.irq := False
   jopSystem.io.irqEna := False
-  jopSystem.io.halted := False  // Single-core: never halted
+
+  // Debug RAM (unused)
+  jopSystem.io.debugRamAddr := 0
 
   io.pc := jopSystem.io.pc
   io.jpc := jopSystem.io.jpc
   io.memBusy := jopSystem.io.memBusy
-  io.uartTxData := uartTxDataReg
-  io.uartTxValid := uartTxValidReg
+  io.uartTxData := jopSystem.io.uartTxData
+  io.uartTxValid := jopSystem.io.uartTxValid
   io.bmbCmdValid := jopSystem.io.bmb.cmd.valid
   io.bmbCmdReady := jopSystem.io.bmb.cmd.ready
   io.bmbCmdAddr := jopSystem.io.bmb.cmd.fragment.address
@@ -149,6 +122,8 @@ object JopCoreBramLargeSim extends App {
   println(s"Loaded ROM: ${romData.length} entries")
   println(s"Loaded RAM: ${ramData.length} entries")
   println(s"Loaded main memory: ${mainMemData.length} entries (for ${bramSize/1024}KB BRAM)")
+
+  val run = TestHistory.startRun("JopCoreBramLargeSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
   SimConfig
     .compile(JopCoreLargeBramHarness(romData, ramData, mainMemData, bramSize))
@@ -207,5 +182,7 @@ object JopCoreBramLargeSim extends App {
       println(s"UART Output: '${uartOutput.toString}'")
       println(s"Final PC: ${dut.io.pc.toInt}")
       println(s"Final JPC: ${dut.io.jpc.toInt}")
+
+      run.finish("PASS", s"$cycle cycles")
     }
 }

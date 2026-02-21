@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, TestHistory}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
 
@@ -28,6 +28,8 @@ object JopCoreBramSim extends App {
   println(s"Loaded RAM: ${ramData.length} entries")
   println(s"Loaded main memory: ${mainMemData.length} entries")
   println(s"Log file: $logFilePath")
+
+  val run = TestHistory.startRun("JopCoreBramSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
   SimConfig
     .compile(JopCoreTestHarness(romData, ramData, mainMemData))
@@ -88,7 +90,9 @@ object JopCoreBramSim extends App {
 
         // Progress report
         if (cycle > 0 && cycle % reportInterval == 0) {
-          println(f"\n[$cycle%6d] PC=$pc%04x JPC=$jpc%04x UART so far: '${uartOutput.toString}'")
+          val ioRdCnt = dut.jopCore.io.debugIoRdCount.toInt
+          val ioWrCnt = dut.jopCore.io.debugIoWrCount.toInt
+          println(f"\n[$cycle%6d] PC=$pc%04x JPC=$jpc%04x ioRd=$ioRdCnt ioWr=$ioWrCnt UART so far: '${uartOutput.toString}'")
         }
       }
 
@@ -114,5 +118,7 @@ object JopCoreBramSim extends App {
       println(s"Final JPC: ${dut.io.jpc.toInt}")
       println(s"UART Output: '${uartOutput.toString}'")
       println(s"Log written to: $logFilePath")
+
+      run.finish("PASS", s"$maxCycles cycles")
     }
 }

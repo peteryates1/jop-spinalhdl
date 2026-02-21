@@ -4,8 +4,8 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.io.{BmbSys, BmbUart, CmpSync}
-import jop.utils.JopFileLoader
+import jop.io.CmpSync
+import jop.utils.{JopFileLoader, TestHistory}
 import jop.memory.JopMemoryConfig
 import jop.pipeline.JumpTableInitData
 import java.io.PrintWriter
@@ -13,7 +13,7 @@ import java.io.PrintWriter
 /**
  * SMP Test Harness: N JOP cores sharing BmbOnChipRam via BmbArbiter.
  *
- * Each core has its own BmbSys (with unique cpuId). Only core 0 gets UART.
+ * Each core has internal BmbSys (with unique cpuId). Only core 0 has BmbUart.
  * CmpSync provides global lock synchronization.
  *
  * Uses BRAM (zero-latency) to keep simulation fast while testing multicore logic.
@@ -26,36 +26,27 @@ case class JopSmpTestHarness(
 ) extends Component {
   require(cpuCnt >= 2 && cpuCnt <= 4)
 
-  val config = JopCoreConfig(
-    memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)  // 128KB
-  )
-
   val io = new Bundle {
     // Per-core pipeline outputs
-    val pc  = out Vec(UInt(config.pcWidth bits), cpuCnt)
-    val jpc = out Vec(UInt((config.jpcWidth + 1) bits), cpuCnt)
+    val pc  = out Vec(UInt(11 bits), cpuCnt)
+    val jpc = out Vec(UInt(12 bits), cpuCnt)
 
     // Per-core stack outputs
-    val aout = out Vec(Bits(config.dataWidth bits), cpuCnt)
-    val bout = out Vec(Bits(config.dataWidth bits), cpuCnt)
+    val aout = out Vec(Bits(32 bits), cpuCnt)
+    val bout = out Vec(Bits(32 bits), cpuCnt)
 
     // Per-core memory busy
     val memBusy = out Vec(Bool(), cpuCnt)
 
-    // Per-core halted status (from CmpSync)
+    // Per-core halted status (from CmpSync via internal BmbSys)
     val halted = out Vec(Bool(), cpuCnt)
 
-    // UART output (from core 0)
+    // UART output (from core 0 debug snoop)
     val uartTxData  = out Bits(8 bits)
     val uartTxValid = out Bool()
 
     // Per-core watchdog output
     val wd = out Vec(Bits(32 bits), cpuCnt)
-
-    // Per-core I/O debug
-    val ioWr      = out Vec(Bool(), cpuCnt)
-    val ioSubAddr = out Vec(UInt(4 bits), cpuCnt)
-    val ioSlaveId = out Vec(UInt(2 bits), cpuCnt)
 
     // Exception debug (core 0)
     val excFired = out Bool()
@@ -76,12 +67,21 @@ case class JopSmpTestHarness(
   }.padTo(2048, BigInt(0))
 
   // ====================================================================
-  // N JOP Cores
+  // N JOP Cores (each with internal BmbSys, core 0 with BmbUart)
   // ====================================================================
 
-  val cores = (0 until cpuCnt).map { _ =>
+  val baseConfig = JopCoreConfig(
+    memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)  // 128KB
+  )
+
+  val cores = (0 until cpuCnt).map { i =>
+    val coreConfig = baseConfig.copy(
+      cpuId = i,
+      cpuCnt = cpuCnt,
+      hasUart = (i == 0)  // Only core 0 gets UART
+    )
     JopCore(
-      config = config,
+      config = coreConfig,
       romInit = Some(romInit),
       ramInit = Some(ramInit),
       jbcInit = Some(jbcInit)
@@ -92,7 +92,7 @@ case class JopSmpTestHarness(
   // BMB Arbiter: N masters -> 1 slave
   // ====================================================================
 
-  val inputParam = config.memConfig.bmbParameter
+  val inputParam = baseConfig.memConfig.bmbParameter
   val sourceRouteWidth = log2Up(cpuCnt)
   val outputSourceCount = 1 << sourceRouteWidth
   val inputSourceParam = inputParam.access.sources.values.head
@@ -126,95 +126,35 @@ case class JopSmpTestHarness(
 
   val ram = BmbOnChipRam(
     p = arbiterOutputParam,
-    size = config.memConfig.mainMemSize,
+    size = baseConfig.memConfig.mainMemSize,
     hexInit = null
   )
 
-  val memWords = config.memConfig.mainMemWords.toInt
+  val memWords = baseConfig.memConfig.mainMemWords.toInt
   val initData = mainMemInit.take(memWords).padTo(memWords, BigInt(0))
   ram.ram.init(initData.map(v => B(v, 32 bits)))
 
   ram.io.bus << arbiter.io.output
 
   // ====================================================================
-  // Per-core I/O Subsystem
+  // CmpSync + Per-core Wiring
   // ====================================================================
 
-  val bmbSysDevices = (0 until cpuCnt).map { i =>
-    BmbSys(clkFreqHz = 100000000L, cpuId = i, cpuCnt = cpuCnt)
-  }
-
-  // CmpSync: global lock
   val cmpSync = CmpSync(cpuCnt)
-  for (i <- 0 until cpuCnt) {
-    cmpSync.io.syncIn(i) := bmbSysDevices(i).io.syncOut
-    bmbSysDevices(i).io.syncIn := cmpSync.io.syncOut(i)
-  }
 
   // Expose internal signals for simulation debugging
   cmpSync.state.simPublic()
   cmpSync.lockedId.simPublic()
+
   for (i <- 0 until cpuCnt) {
-    bmbSysDevices(i).lockReqReg.simPublic()
-  }
-
-  // Snoop exception writes from core 0
-  val excTypeSnoop = Reg(Bits(8 bits)) init(0)
-
-  // UART on core 0 (simplified for simulation)
-  val uartTxDataReg = Reg(Bits(8 bits)) init(0)
-  val uartTxValidReg = Reg(Bool()) init(False)
-  uartTxValidReg := False
-
-  // Per-core I/O wiring
-  for (i <- 0 until cpuCnt) {
-    val ioSubAddr = cores(i).io.ioAddr(3 downto 0)
-    val ioSlaveId = cores(i).io.ioAddr(5 downto 4)
-
-    // BmbSys (slave 0)
-    bmbSysDevices(i).io.addr   := ioSubAddr
-    bmbSysDevices(i).io.rd     := cores(i).io.ioRd && ioSlaveId === 0
-    bmbSysDevices(i).io.wr     := cores(i).io.ioWr && ioSlaveId === 0
-    bmbSysDevices(i).io.wrData := cores(i).io.ioWrData
-
-    // UART (slave 1) — core 0 only, simplified for simulation
-    if (i == 0) {
-      when(cores(i).io.ioWr && ioSlaveId === 1 && ioSubAddr === 1) {
-        uartTxDataReg := cores(i).io.ioWrData(7 downto 0)
-        uartTxValidReg := True
-      }
-
-      // Snoop exception writes
-      when(cores(i).io.ioWr && ioSlaveId === 0 && ioSubAddr === 4) {
-        excTypeSnoop := cores(i).io.ioWrData(7 downto 0)
-      }
-    }
-
-    // I/O read mux
-    val ioRdData = Bits(32 bits)
-    ioRdData := 0
-    switch(ioSlaveId) {
-      is(0) { ioRdData := bmbSysDevices(i).io.rdData }
-      is(1) {
-        if (i == 0) {
-          switch(ioSubAddr) {
-            is(0) { ioRdData := B(0x1, 32 bits) }  // Status: TX ready
-          }
-        }
-        // Core 1+ UART: returns 0
-      }
-    }
-    cores(i).io.ioRdData := ioRdData
-
-    // Exception from BmbSys
-    cores(i).io.exc := bmbSysDevices(i).io.exc
-
-    // CMP halt from CmpSync
-    cores(i).io.halted := bmbSysDevices(i).io.halted
-
-    // Interrupts (disabled)
+    cmpSync.io.syncIn(i) := cores(i).io.syncOut
+    cores(i).io.syncIn := cmpSync.io.syncOut(i)
     cores(i).io.irq := False
     cores(i).io.irqEna := False
+    cores(i).io.debugRamAddr := 0
+
+    // No UART RX
+    cores(i).io.rxd := True
 
     // Output connections
     io.pc(i)      := cores(i).io.pc
@@ -222,20 +162,17 @@ case class JopSmpTestHarness(
     io.aout(i)    := cores(i).io.aout
     io.bout(i)    := cores(i).io.bout
     io.memBusy(i) := cores(i).io.memBusy
-    io.halted(i)  := bmbSysDevices(i).io.halted
-    io.wd(i)      := bmbSysDevices(i).io.wd
-    io.ioWr(i)    := cores(i).io.ioWr
-    io.ioSubAddr(i) := cores(i).io.ioAddr(3 downto 0)
-    io.ioSlaveId(i) := cores(i).io.ioAddr(5 downto 4)
+    io.wd(i)      := cores(i).io.wd
+    io.halted(i)  := cores(i).io.debugHalted
   }
 
-  // UART output
-  io.uartTxData  := uartTxDataReg
-  io.uartTxValid := uartTxValidReg
+  // UART output (core 0 debug snoop)
+  io.uartTxData  := cores(0).io.uartTxData
+  io.uartTxValid := cores(0).io.uartTxValid
 
   // Exception debug (core 0)
-  io.excFired := bmbSysDevices(0).io.exc
-  io.excType  := excTypeSnoop
+  io.excFired := cores(0).io.debugExc
+  io.excType  := 0  // Exception type not easily snooped with internal I/O
 }
 
 /**
@@ -259,6 +196,8 @@ object JopSmpBramSim extends App {
   println(s"Loaded main memory: ${mainMemData.length} entries (${mainMemData.count(_ != BigInt(0))} non-zero)")
   println(s"CPU count: $cpuCnt")
   println(s"Log file: $logFilePath")
+
+  val run = TestHistory.startRun("JopSmpBramSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
   SimConfig
     .compile(JopSmpTestHarness(cpuCnt, romData, ramData, mainMemData))
@@ -332,13 +271,16 @@ object JopSmpBramSim extends App {
       println(s"Log written to: $logFilePath")
 
       if (!uartOutput.toString.contains("GC test start")) {
+        run.finish("FAIL", "Did not see 'GC test start'")
         println("FAIL: Did not see 'GC test start'")
         System.exit(1)
       }
       if (!uartOutput.toString.contains("R0 f=")) {
+        run.finish("FAIL", "Did not see allocation rounds")
         println("FAIL: Did not see allocation rounds")
         System.exit(1)
       }
+      run.finish("PASS", s"$cpuCnt cores, $cycle cycles, SMP GC allocation test working")
       println("PASS: SMP GC allocation test working")
     }
 }
@@ -366,6 +308,8 @@ object JopSmpNCoreHelloWorldSim extends App {
   println(s"Loaded main memory: ${mainMemData.length} entries (${mainMemData.count(_ != BigInt(0))} non-zero)")
   println(s"CPU count: $cpuCnt")
   println(s"Log file: $logFilePath")
+
+  val run = TestHistory.startRun("JopSmpNCoreHelloWorldSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
   SimConfig
     .compile(JopSmpTestHarness(cpuCnt, romData, ramData, mainMemData))
@@ -458,15 +402,18 @@ object JopSmpNCoreHelloWorldSim extends App {
       println(s"Log written to: $logFilePath")
 
       if (!uartOutput.toString.contains("Hello World!")) {
+        run.finish("FAIL", "Did not see 'Hello World!' from core 0")
         println("FAIL: Did not see 'Hello World!' from core 0")
         System.exit(1)
       }
       for (i <- 0 until cpuCnt) {
         if (wdToggles(i) < 3) {
+          run.finish("FAIL", s"Core $i only toggled watchdog ${wdToggles(i)} times (expected >= 3)")
           println(s"FAIL: Core $i only toggled watchdog ${wdToggles(i)} times (expected >= 3)")
           System.exit(1)
         }
       }
+      run.finish("PASS", s"$cpuCnt cores, $cycle cycles, both cores toggling watchdog LEDs")
       println("PASS: Both cores running and toggling watchdog LEDs!")
     }
 }

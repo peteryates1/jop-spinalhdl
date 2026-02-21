@@ -5,7 +5,7 @@ JAVA ?= java
 
 ROOT := ../..
 TOOLS_DIR := $(ROOT)/tools
-TARGET_DIR := $(ROOT)/target
+TARGET_DIR := $(ROOT)/runtime
 LIB_DIR := $(ROOT)/lib
 
 APP_PKG := test

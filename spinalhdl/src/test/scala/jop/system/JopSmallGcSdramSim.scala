@@ -5,7 +5,7 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, TestHistory}
 import java.io.PrintWriter
 
 /**
@@ -26,6 +26,8 @@ object JopSmallGcSdramSim extends App {
   println(s"Loaded RAM: ${ramData.length} entries")
   println(s"Loaded main memory: ${mainMemData.length} entries (${mainMemData.count(_ != BigInt(0))} non-zero)")
   println(s"Log file: $logFilePath")
+
+  val run = TestHistory.startRun("JopSmallGcSdramSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
   SimConfig
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
@@ -112,17 +114,21 @@ object JopSmallGcSdramSim extends App {
 
       val output = uartOutput.toString
       if (output.contains("Uncaught exception")) {
+        run.finish("FAIL", "Uncaught exception detected")
         println("FAIL: Uncaught exception detected")
         System.exit(1)
       }
       if (!output.contains("GC test start")) {
+        run.finish("FAIL", "Did not see 'GC test start'")
         println("FAIL: Did not see 'GC test start'")
         System.exit(1)
       }
       if (!output.contains("R0 f=")) {
+        run.finish("FAIL", "Did not see allocation rounds")
         println("FAIL: Did not see allocation rounds")
         System.exit(1)
       }
+      run.finish("PASS", s"$cycle cycles, GC allocation test working on SDRAM")
       println("PASS: GC allocation test working on SDRAM")
     }
 }

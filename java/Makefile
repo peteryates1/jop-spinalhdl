@@ -1,15 +1,15 @@
-.PHONY: all tools target apps clean sim-smallest sim-small
+.PHONY: all tools runtime apps clean sim-smallest sim-small
 
-all: tools target apps
+all: tools runtime apps
 
 tools:
 	$(MAKE) -C tools/jopa
 	$(MAKE) -C tools
 
-target:
-	$(MAKE) -C target
+runtime:
+	$(MAKE) -C runtime
 
-apps: tools target
+apps: tools runtime
 	$(MAKE) -C apps/Smallest
 	$(MAKE) -C apps/Small
 
@@ -24,6 +24,6 @@ sim-small: all
 clean:
 	$(MAKE) -C tools/jopa clean
 	$(MAKE) -C tools clean
-	$(MAKE) -C target clean
+	$(MAKE) -C runtime clean
 	$(MAKE) -C apps/Smallest clean
 	$(MAKE) -C apps/Small clean

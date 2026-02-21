@@ -108,7 +108,7 @@ jop/
 ├── java/
 │   ├── tools/jopa/            # Jopa microcode assembler
 │   ├── tools/src/             # JOPizer, PreLinker, common framework
-│   ├── target/src/            # JOP runtime + JDK stubs (JDK 6)
+│   ├── runtime/src/           # JOP runtime + JDK stubs (JDK 6)
 │   └── apps/                  # Java application builds
 ├── verification/cocotb/         # CocoTB/GHDL verification tests
 ├── docs/                        # Architecture and reference docs
@@ -308,6 +308,7 @@ Notes:
 - object cache is slowing clock - is it worth it?
 - add quartus pll generator
 - Faster serial download — currently limited by per-word USB round-trip latency (~15s for 32KB)
+- Use Exerciser to find boundary performance for SDRAM/DDR3
 
 ## Key Technical Details
 

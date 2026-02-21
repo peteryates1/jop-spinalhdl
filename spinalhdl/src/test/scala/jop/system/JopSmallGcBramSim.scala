@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, TestHistory}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
 
@@ -26,6 +26,8 @@ object JopSmallGcBramSim extends App {
   println(s"Loaded RAM: ${ramData.length} entries")
   println(s"Loaded main memory: ${mainMemData.length} entries (${mainMemData.count(_ != BigInt(0))} non-zero)")
   println(s"Log file: $logFilePath")
+
+  val run = TestHistory.startRun("JopSmallGcBramSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
   SimConfig
     .compile(JopCoreTestHarness(romData, ramData, mainMemData))
@@ -102,13 +104,16 @@ object JopSmallGcBramSim extends App {
       println(s"Log written to: $logFilePath")
 
       if (!uartOutput.toString.contains("GC test start")) {
+        run.finish("FAIL", "Did not see 'GC test start'")
         println("FAIL: Did not see 'GC test start'")
         System.exit(1)
       }
       if (!uartOutput.toString.contains("R0 f=")) {
+        run.finish("FAIL", "Did not see allocation rounds")
         println("FAIL: Did not see allocation rounds")
         System.exit(1)
       }
+      run.finish("PASS", s"$cycle cycles, GC allocation test working")
       println("PASS: GC allocation test working")
     }
 }

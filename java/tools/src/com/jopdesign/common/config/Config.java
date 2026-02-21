@@ -80,7 +80,7 @@ public class Config {
             new StringOption("show-info-only", "Comma-separated list of logger names for which only info or higher will be printed", true);
 
     public static final StringOption CLASSPATH =
-            new StringOption("classpath", "classpath of the classes to load", 'c', "java/target/dist/classes");
+            new StringOption("classpath", "classpath of the classes to load", 'c', "java/runtime/dist/classes");
 
     public static final StringOption MAIN_METHOD_NAME =
             new StringOption("mm", "method name of the entry method (short name or FQN)", "main");
@@ -110,7 +110,7 @@ public class Config {
 	    new IntegerOption("callstring-length", "Length of the callstring", 0);
 
     public static final StringOption WRITE_PATH =
-            new StringOption("outdir", "base path for output directories (classdir,reportdir,..)", 'o', "java/target/dist");
+            new StringOption("outdir", "base path for output directories (classdir,reportdir,..)", 'o', "java/runtime/dist");
 
     public static final StringOption WRITE_CLASSPATH =
             new StringOption("classdir", "output path for generated class files", "${outdir}/classes");

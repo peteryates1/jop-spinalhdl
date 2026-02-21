@@ -6,7 +6,7 @@ JOPA_SRC := jopa/src
 DIST_DIR := dist
 CLASSES_DIR := $(DIST_DIR)/classes
 LIB_DIR := ../lib
-TARGET_SRC := ../target/src/jop
+TARGET_SRC := ../runtime/src/jop
 
 # JARs needed for compilation
 LIB_CP := $(LIB_DIR)/bcel-5.2.jar:$(LIB_DIR)/jakarta-regexp-1.3.jar:$(LIB_DIR)/log4j-1.2.15.jar:$(LIB_DIR)/jgrapht-jdk1.5.jar
