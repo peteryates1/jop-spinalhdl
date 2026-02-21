@@ -1,6 +1,6 @@
 # DDR3 GC Hang — Investigation Notes
 
-**STATUS: OPEN** — Data corruption ruled out. Hang is at pipeline/state machine level.
+**STATUS: OPEN (deprioritized)** — Data corruption ruled out. Hang is at pipeline/state machine level. QMTECH EP4CGX150 SDR SDRAM is now the primary platform (single-core GC stable, SMP 2-core verified on hardware).
 
 ## Symptom
 
