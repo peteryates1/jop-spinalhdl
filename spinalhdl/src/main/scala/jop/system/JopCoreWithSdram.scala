@@ -5,6 +5,7 @@ import spinal.lib._
 import spinal.lib.bus.bmb._
 import spinal.lib.memory.sdram._
 import spinal.lib.memory.sdram.sdr._
+import jop.io.{SyncIn, SyncOut}
 import jop.memory.BmbSdramCtrl32
 
 /**
@@ -13,6 +14,8 @@ import jop.memory.BmbSdramCtrl32
  * Complete JOP system using BmbSdramCtrl32 for external 16-bit SDRAM.
  * The BmbSdramCtrl32 handles 32-bit BMB to 16-bit SDRAM width conversion
  * internally by issuing two SDRAM operations per 32-bit transaction.
+ *
+ * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
  *
  * Target: W9825G6JH6 on QMTECH EP4CGX150 board.
  */
@@ -32,12 +35,16 @@ case class JopCoreWithSdram(
     // SDRAM interface (directly exposed)
     val sdram = master(SdramInterface(sdramLayout))
 
-    // I/O interface
-    val ioAddr    = out UInt(8 bits)
-    val ioRd      = out Bool()
-    val ioWr      = out Bool()
-    val ioWrData  = out Bits(32 bits)
-    val ioRdData  = in Bits(32 bits)
+    // CmpSync interface
+    val syncIn  = in(SyncOut())
+    val syncOut = out(SyncIn())
+
+    // Watchdog from BmbSys
+    val wd = out Bits(32 bits)
+
+    // UART
+    val txd = out Bool()
+    val rxd = in Bool()
 
     // Pipeline status
     val pc        = out UInt(config.pcWidth bits)
@@ -53,10 +60,13 @@ case class JopCoreWithSdram(
     // Memory controller status
     val memBusy   = out Bool()
 
-    // Interrupt / Exception interface
+    // Interrupt interface
     val irq       = in Bool()
     val irqEna    = in Bool()
-    val exc       = in Bool()   // Exception signal from I/O subsystem
+
+    // Debug: UART TX snoop
+    val uartTxData  = out Bits(8 bits)
+    val uartTxValid = out Bool()
 
     // Memory controller debug
     val debugMemState = out UInt(5 bits)
@@ -103,12 +113,16 @@ case class JopCoreWithSdram(
   // SDRAM interface
   io.sdram <> sdramCtrl.io.sdram
 
-  // I/O interface
-  io.ioAddr := jopCore.io.ioAddr
-  io.ioRd := jopCore.io.ioRd
-  io.ioWr := jopCore.io.ioWr
-  io.ioWrData := jopCore.io.ioWrData
-  jopCore.io.ioRdData := io.ioRdData
+  // CmpSync passthrough
+  jopCore.io.syncIn := io.syncIn
+  io.syncOut := jopCore.io.syncOut
+
+  // UART passthrough
+  io.txd := jopCore.io.txd
+  jopCore.io.rxd := io.rxd
+
+  // Watchdog passthrough
+  io.wd := jopCore.io.wd
 
   // Pipeline outputs
   io.pc := jopCore.io.pc
@@ -126,11 +140,16 @@ case class JopCoreWithSdram(
   io.debugMemState := jopCore.io.debugMemState
   io.debugMemHandleActive := jopCore.io.debugMemHandleActive
 
-  // Interrupt / Exception
+  // Interrupt passthrough
   jopCore.io.irq := io.irq
   jopCore.io.irqEna := io.irqEna
-  jopCore.io.exc := io.exc
-  jopCore.io.halted := False  // Single-core: never halted
+
+  // Debug passthrough
+  io.uartTxData := jopCore.io.uartTxData
+  io.uartTxValid := jopCore.io.uartTxValid
+
+  // Tie unused debug inputs
+  jopCore.io.debugRamAddr := 0
 
   // BMB debug
   io.bmbCmdValid := jopCore.io.bmb.cmd.valid

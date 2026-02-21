@@ -3,7 +3,6 @@ package jop.system
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.io.{BmbSys, BmbUart}
 import jop.utils.JopFileLoader
 import jop.memory.JopMemoryConfig
 import jop.pipeline.JumpTableInitData
@@ -130,44 +129,14 @@ case class JopBramTop(
     // Interrupts (disabled)
     jopCore.io.irq := False
     jopCore.io.irqEna := False
-    jopCore.io.halted := False  // Single-core: never halted
 
-    // ======================================================================
-    // I/O Slaves
-    // ======================================================================
+    // Single-core: no CmpSync
+    jopCore.io.syncIn.halted := False
+    jopCore.io.syncIn.s_out := False
 
-    val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
-    val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
-
-    // System I/O (slave 0)
-    val bmbSys = BmbSys(clkFreqHz = 100000000L)
-    bmbSys.io.addr := ioSubAddr
-    bmbSys.io.rd := jopCore.io.ioRd && ioSlaveId === 0
-    bmbSys.io.wr := jopCore.io.ioWr && ioSlaveId === 0
-    bmbSys.io.wrData := jopCore.io.ioWrData
-    bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
-    bmbSys.io.syncIn.s_out := False
-
-    // UART (slave 1)
-    val bmbUart = BmbUart()
-    bmbUart.io.addr := ioSubAddr
-    bmbUart.io.rd := jopCore.io.ioRd && ioSlaveId === 1
-    bmbUart.io.wr := jopCore.io.ioWr && ioSlaveId === 1
-    bmbUart.io.wrData := jopCore.io.ioWrData
-    io.ser_txd := bmbUart.io.txd
-    bmbUart.io.rxd := True  // No RX in BRAM top
-
-    // I/O read mux
-    val ioRdData = Bits(32 bits)
-    ioRdData := 0
-    switch(ioSlaveId) {
-      is(0) { ioRdData := bmbSys.io.rdData }
-      is(1) { ioRdData := bmbUart.io.rdData }
-    }
-    jopCore.io.ioRdData := ioRdData
-
-    // Exception signal from BmbSys
-    jopCore.io.exc := bmbSys.io.exc
+    // UART: TX only (no RX in BRAM top)
+    io.ser_txd := jopCore.io.txd
+    jopCore.io.rxd := True
 
     // ======================================================================
     // LED Driver
@@ -186,7 +155,7 @@ case class JopBramTop(
     // LED[1] = heartbeat (proves clock is running)
     // LED[0] = watchdog bit 0 (proves Java code is running)
     io.led(1) := ~heartbeat
-    io.led(0) := ~bmbSys.io.wd(0)
+    io.led(0) := ~jopCore.io.wd(0)
   }
 }
 
@@ -328,41 +297,14 @@ case class JopBramSerialTop(
     // Interrupts (disabled)
     jopCore.io.irq := False
     jopCore.io.irqEna := False
-    jopCore.io.halted := False  // Single-core: never halted
 
-    // I/O Slaves
-    val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
-    val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
+    // Single-core: no CmpSync
+    jopCore.io.syncIn.halted := False
+    jopCore.io.syncIn.s_out := False
 
-    // System I/O (slave 0)
-    val bmbSys = BmbSys(clkFreqHz = 100000000L)
-    bmbSys.io.addr := ioSubAddr
-    bmbSys.io.rd := jopCore.io.ioRd && ioSlaveId === 0
-    bmbSys.io.wr := jopCore.io.ioWr && ioSlaveId === 0
-    bmbSys.io.wrData := jopCore.io.ioWrData
-    bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
-    bmbSys.io.syncIn.s_out := False
-
-    // UART (slave 1) — TX + RX for serial download
-    val bmbUart = BmbUart()
-    bmbUart.io.addr := ioSubAddr
-    bmbUart.io.rd := jopCore.io.ioRd && ioSlaveId === 1
-    bmbUart.io.wr := jopCore.io.ioWr && ioSlaveId === 1
-    bmbUart.io.wrData := jopCore.io.ioWrData
-    io.ser_txd := bmbUart.io.txd
-    bmbUart.io.rxd := io.ser_rxd
-
-    // I/O read mux
-    val ioRdData = Bits(32 bits)
-    ioRdData := 0
-    switch(ioSlaveId) {
-      is(0) { ioRdData := bmbSys.io.rdData }
-      is(1) { ioRdData := bmbUart.io.rdData }
-    }
-    jopCore.io.ioRdData := ioRdData
-
-    // Exception signal from BmbSys
-    jopCore.io.exc := bmbSys.io.exc
+    // UART: TX + RX for serial download
+    io.ser_txd := jopCore.io.txd
+    jopCore.io.rxd := io.ser_rxd
 
     // Heartbeat: ~1 Hz toggle (50M cycles at 100 MHz)
     val heartbeat = Reg(Bool()) init(False)
@@ -377,7 +319,7 @@ case class JopBramSerialTop(
     // LED[1] = heartbeat (proves clock is running)
     // LED[0] = watchdog bit 0 (proves Java code is running)
     io.led(1) := ~heartbeat
-    io.led(0) := ~bmbSys.io.wd(0)
+    io.led(0) := ~jopCore.io.wd(0)
   }
 }
 

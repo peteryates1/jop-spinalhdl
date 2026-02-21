@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.io.InOutWrapper
 import spinal.lib.bus.bmb._
 import spinal.lib.memory.sdram.sdr._
-import jop.io.{BmbSys, BmbUart, CmpSync}
+import jop.io.CmpSync
 import jop.utils.JopFileLoader
 import jop.memory.{JopMemoryConfig, BmbSdramCtrl32}
 import jop.pipeline.JumpTableInitData
@@ -14,17 +14,16 @@ import jop.pipeline.JumpTableInitData
  * JOP SMP (Symmetric Multi-Processing) SDRAM Top-Level
  *
  * Instantiates N JOP cores sharing a single SDRAM through BmbArbiter.
- * Each core has its own BmbSys (with unique cpuId). Only core 0 gets a BmbUart.
+ * Each core has internal BmbSys (with unique cpuId). Only core 0 has BmbUart.
  * CmpSync provides the global lock for Java synchronized blocks.
  *
  * Target: QMTECH EP4CGX150 (150K LEs, plenty of room for 2-4 cores).
  *
  * Architecture:
- *   JopCore[0] ─ BMB ─┐                 ┌─ BmbSys(cpuId=0) + BmbUart
- *   JopCore[1] ─ BMB ─┤→ BmbArbiter → SDRAM  BmbSys(cpuId=1)
- *   JopCore[N] ─ BMB ─┘                 └─ BmbSys(cpuId=N)
- *                                           ↕
- *                                        CmpSync (global lock)
+ *   JopCore[0] (BmbSys+BmbUart) ─ BMB ─┐
+ *   JopCore[1] (BmbSys)          ─ BMB ─┤→ BmbArbiter → SDRAM
+ *                                        ↕
+ *                                     CmpSync
  *
  * @param cpuCnt    Number of CPU cores (2-4)
  * @param romInit   Microcode ROM initialization data (serial-boot)
@@ -92,21 +91,24 @@ case class JopSmpSdramTop(
 
   val mainArea = new ClockingArea(mainClockDomain) {
 
-    val config = JopCoreConfig(
-      memConfig = JopMemoryConfig(burstLen = 4),
-      jumpTable = JumpTableInitData.serial
-    )
-
     // JBC init: empty (zeros) — BC_FILL loads bytecodes dynamically from SDRAM
     val jbcInit = Seq.fill(2048)(BigInt(0))
 
     // ====================================================================
-    // Instantiate N JOP Cores
+    // Instantiate N JOP Cores (each with internal BmbSys, core 0 with BmbUart)
     // ====================================================================
 
-    val cores = (0 until cpuCnt).map { _ =>
+    val cores = (0 until cpuCnt).map { i =>
+      val coreConfig = JopCoreConfig(
+        memConfig = JopMemoryConfig(burstLen = 4),
+        jumpTable = JumpTableInitData.serial,
+        cpuId = i,
+        cpuCnt = cpuCnt,
+        hasUart = (i == 0),  // Only core 0 gets UART
+        clkFreqHz = 100000000L
+      )
       JopCore(
-        config = config,
+        config = coreConfig,
         romInit = Some(romInit),
         ramInit = Some(ramInit),
         jbcInit = Some(jbcInit)
@@ -117,7 +119,7 @@ case class JopSmpSdramTop(
     // BMB Arbiter: N masters -> 1 slave
     // ====================================================================
 
-    val inputParam = config.memConfig.bmbParameter
+    val inputParam = cores(0).config.memConfig.bmbParameter
     val sourceRouteWidth = log2Up(cpuCnt)
 
     // Arbiter output parameter: wider source to route responses back
@@ -165,84 +167,34 @@ case class JopSmpSdramTop(
     io.sdram <> sdramCtrl.io.sdram
 
     // ====================================================================
-    // Per-core I/O Subsystem
+    // CmpSync + Per-core Wiring
     // ====================================================================
 
-    val bmbSysDevices = (0 until cpuCnt).map { i =>
-      BmbSys(clkFreqHz = 100000000L, cpuId = i, cpuCnt = cpuCnt)
-    }
-
-    // UART on core 0 only
-    val bmbUart = BmbUart()
-    io.ser_txd := bmbUart.io.txd
-    bmbUart.io.rxd := io.ser_rxd
-
-    // CmpSync: global lock
     val cmpSync = CmpSync(cpuCnt)
     for (i <- 0 until cpuCnt) {
-      cmpSync.io.syncIn(i) := bmbSysDevices(i).io.syncOut
-      bmbSysDevices(i).io.syncIn := cmpSync.io.syncOut(i)
-    }
-
-    // Per-core I/O wiring
-    for (i <- 0 until cpuCnt) {
-      val ioSubAddr = cores(i).io.ioAddr(3 downto 0)
-      val ioSlaveId = cores(i).io.ioAddr(5 downto 4)
-
-      // BmbSys (slave 0)
-      bmbSysDevices(i).io.addr   := ioSubAddr
-      bmbSysDevices(i).io.rd     := cores(i).io.ioRd && ioSlaveId === 0
-      bmbSysDevices(i).io.wr     := cores(i).io.ioWr && ioSlaveId === 0
-      bmbSysDevices(i).io.wrData := cores(i).io.ioWrData
-
-      // UART (slave 1) — only core 0 accesses UART
-      if (i == 0) {
-        bmbUart.io.addr   := ioSubAddr
-        bmbUart.io.rd     := cores(i).io.ioRd && ioSlaveId === 1
-        bmbUart.io.wr     := cores(i).io.ioWr && ioSlaveId === 1
-        bmbUart.io.wrData := cores(i).io.ioWrData
-      }
-
-      // I/O read mux
-      val ioRdData = Bits(32 bits)
-      ioRdData := 0
-      switch(ioSlaveId) {
-        is(0) { ioRdData := bmbSysDevices(i).io.rdData }
-        is(1) {
-          if (i == 0) ioRdData := bmbUart.io.rdData
-          // else: returns 0 (cores 1+ have no UART)
-        }
-      }
-      cores(i).io.ioRdData := ioRdData
-
-      // Exception from BmbSys
-      cores(i).io.exc := bmbSysDevices(i).io.exc
-
-      // CMP halt from CmpSync
-      cores(i).io.halted := bmbSysDevices(i).io.halted
-
-      // Interrupts (disabled)
+      cmpSync.io.syncIn(i) := cores(i).io.syncOut
+      cores(i).io.syncIn := cmpSync.io.syncOut(i)
       cores(i).io.irq := False
       cores(i).io.irqEna := False
+      cores(i).io.debugRamAddr := 0
+    }
+
+    // UART (core 0 only)
+    io.ser_txd := cores(0).io.txd
+    cores(0).io.rxd := io.ser_rxd
+    for (i <- 1 until cpuCnt) {
+      cores(i).io.rxd := True  // No UART on cores 1+
     }
 
     // ====================================================================
     // LED Driver
     // ====================================================================
 
-    val heartbeat = Reg(Bool()) init(False)
-    val heartbeatCnt = Reg(UInt(26 bits)) init(0)
-    heartbeatCnt := heartbeatCnt + 1
-    when(heartbeatCnt === 49999999) {
-      heartbeatCnt := 0
-      heartbeat := ~heartbeat
-    }
-
     // QMTECH LEDs are active low
     // LED[0] = watchdog bit 0 from core 0 (proves core 0 Java code is running)
     // LED[1] = watchdog bit 0 from core 1 (proves core 1 Java code is running)
-    io.led(0) := ~bmbSysDevices(0).io.wd(0)
-    io.led(1) := ~bmbSysDevices(1).io.wd(0)
+    io.led(0) := ~cores(0).io.wd(0)
+    io.led(1) := ~cores(1).io.wd(0)
   }
 }
 

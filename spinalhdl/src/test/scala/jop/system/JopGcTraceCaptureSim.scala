@@ -7,7 +7,6 @@ import spinal.lib.bus.bmb.Bmb
 import jop.utils.JopFileLoader
 import jop.memory.JopMemoryConfig
 import jop.ddr3._
-import jop.io.BmbSys
 import java.io.PrintWriter
 
 /**
@@ -17,6 +16,8 @@ import java.io.PrintWriter
  * and exposes BMB cmd/rsp signals for trace recording.
  *
  * Path: JopCore.bmb -> BmbCacheBridge -> LruCacheCore -> CacheToBramAdapter -> BRAM
+ *
+ * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
  */
 case class JopCoreTraceCaptureHarness(
   romInit: Seq[BigInt],
@@ -55,7 +56,7 @@ case class JopCoreTraceCaptureHarness(
     val bmbRspData  = out Bits(32 bits)
   }
 
-  // Extract JBC init from main memory (same as JopCoreWithCacheTestHarness)
+  // Extract JBC init from main memory
   val mpAddr = if (mainMemInit.length > 1) mainMemInit(1).toInt else 0
   val bootMethodStructAddr = if (mainMemInit.length > mpAddr) mainMemInit(mpAddr).toInt else 0
   val bootMethodStartLen = if (mainMemInit.length > bootMethodStructAddr) mainMemInit(bootMethodStructAddr).toLong else 0
@@ -73,7 +74,7 @@ case class JopCoreTraceCaptureHarness(
     )
   }.padTo(2048, BigInt(0))
 
-  // JOP Core
+  // JOP Core (BmbSys + BmbUart internal)
   val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -136,50 +137,21 @@ case class JopCoreTraceCaptureHarness(
   io.bmbRspData  := jopCore.io.bmb.rsp.fragment.data
 
   // ==========================================================================
-  // I/O (same as JopCoreWithCacheTestHarness)
+  // Core I/O (internal to JopCore — just tie off external interfaces)
   // ==========================================================================
 
-  val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
-  val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
+  // Single-core: no CmpSync
+  jopCore.io.syncIn.halted := False
+  jopCore.io.syncIn.s_out := False
 
-  val bmbSys = BmbSys(clkFreqHz = 100000000L)
-  bmbSys.io.addr   := ioSubAddr
-  bmbSys.io.rd     := jopCore.io.ioRd && ioSlaveId === 0
-  bmbSys.io.wr     := jopCore.io.ioWr && ioSlaveId === 0
-  bmbSys.io.wrData := jopCore.io.ioWrData
-  bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
-  bmbSys.io.syncIn.s_out := False
+  // No UART RX in trace capture
+  jopCore.io.rxd := True
 
-  jopCore.io.exc := bmbSys.io.exc
-
-  val excTypeSnoop = Reg(Bits(8 bits)) init(0)
-  when(jopCore.io.ioWr && ioSlaveId === 0 && ioSubAddr === 4) {
-    excTypeSnoop := jopCore.io.ioWrData(7 downto 0)
-  }
-
-  val uartTxDataReg = Reg(Bits(8 bits)) init(0)
-  val uartTxValidReg = Reg(Bool()) init(False)
-  uartTxValidReg := False
-  when(jopCore.io.ioWr && ioSlaveId === 1 && ioSubAddr === 1) {
-    uartTxDataReg := jopCore.io.ioWrData(7 downto 0)
-    uartTxValidReg := True
-  }
-
-  val ioRdData = Bits(32 bits)
-  ioRdData := 0
-  switch(ioSlaveId) {
-    is(0) { ioRdData := bmbSys.io.rdData }
-    is(1) {
-      switch(ioSubAddr) {
-        is(0) { ioRdData := B(0x1, 32 bits) }  // Status: TX ready
-      }
-    }
-  }
-  jopCore.io.ioRdData := ioRdData
-
+  // Interrupts disabled
   jopCore.io.irq := False
   jopCore.io.irqEna := False
-  jopCore.io.halted := False  // Single-core: never halted
+
+  // Debug RAM (unused)
   jopCore.io.debugRamAddr := 0
 
   // Outputs
@@ -191,10 +163,10 @@ case class JopCoreTraceCaptureHarness(
   io.aout := jopCore.io.aout
   io.bout := jopCore.io.bout
   io.memBusy := jopCore.io.memBusy
-  io.uartTxData := uartTxDataReg
-  io.uartTxValid := uartTxValidReg
-  io.excFired := bmbSys.io.exc
-  io.excType := excTypeSnoop
+  io.uartTxData := jopCore.io.uartTxData
+  io.uartTxValid := jopCore.io.uartTxValid
+  io.excFired := jopCore.io.debugExc
+  io.excType := 0  // Exception type not easily snooped with internal I/O
   io.debugMemState := jopCore.io.debugMemState
 }
 

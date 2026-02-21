@@ -6,15 +6,16 @@ import spinal.lib._
 import spinal.lib.bus.bmb._
 import jop.utils.JopFileLoader
 import jop.memory.{JopMemoryConfig, BmbLatencyBridge}
-import jop.io.BmbSys
 
 /**
  * Test harness for JopCore with configurable extra BMB response latency.
  *
  * Inserts a BmbLatencyBridge between the JopCore BMB master and BmbOnChipRam:
- *   JopCore → BmbLatencyBridge(extraLatency) → BmbOnChipRam
+ *   JopCore -> BmbLatencyBridge(extraLatency) -> BmbOnChipRam
  *
  * extraLatency=0 is identical to the standard BRAM test harness.
+ *
+ * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
  */
 case class JopCoreLatencyHarness(
   romInit: Seq[BigInt],
@@ -51,7 +52,7 @@ case class JopCoreLatencyHarness(
   // JBC starts empty - BC_FILL must load bytecodes from memory
   val jbcInit = Seq.fill(2048)(BigInt(0))
 
-  // JOP System core
+  // JOP Core (BmbSys + BmbUart internal)
   val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -80,48 +81,16 @@ case class JopCoreLatencyHarness(
     ram.io.bus << bridge.io.output
   }
 
-  // Decode I/O address
-  val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
-  val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
+  // Single-core: no CmpSync
+  jopCore.io.syncIn.halted := False
+  jopCore.io.syncIn.s_out := False
 
-  // System I/O (slave 0) — real BmbSys component
-  val bmbSys = BmbSys(clkFreqHz = 100000000L)
-  bmbSys.io.addr   := ioSubAddr
-  bmbSys.io.rd     := jopCore.io.ioRd && ioSlaveId === 0
-  bmbSys.io.wr     := jopCore.io.ioWr && ioSlaveId === 0
-  bmbSys.io.wrData := jopCore.io.ioWrData
-  bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
-  bmbSys.io.syncIn.s_out := False
+  // No UART RX
+  jopCore.io.rxd := True
 
-  // Exception signal from BmbSys
-  jopCore.io.exc := bmbSys.io.exc
-
-  // UART (slave 1) — simplified for simulation
-  val uartTxDataReg = Reg(Bits(8 bits)) init(0)
-  val uartTxValidReg = Reg(Bool()) init(False)
-
-  uartTxValidReg := False
-  when(jopCore.io.ioWr && ioSlaveId === 1 && ioSubAddr === 1) {
-    uartTxDataReg := jopCore.io.ioWrData(7 downto 0)
-    uartTxValidReg := True
-  }
-
-  // I/O read mux
-  val ioRdData = Bits(32 bits)
-  ioRdData := 0
-  switch(ioSlaveId) {
-    is(0) { ioRdData := bmbSys.io.rdData }
-    is(1) {
-      switch(ioSubAddr) {
-        is(0) { ioRdData := B(0x1, 32 bits) }  // UART TX ready
-      }
-    }
-  }
-  jopCore.io.ioRdData := ioRdData
-
+  // Interrupts disabled
   jopCore.io.irq := False
   jopCore.io.irqEna := False
-  jopCore.io.halted := False  // Single-core: never halted
 
   // Debug RAM port - tie off
   jopCore.io.debugRamAddr := 0
@@ -130,8 +99,8 @@ case class JopCoreLatencyHarness(
   io.pc := jopCore.io.pc
   io.jpc := jopCore.io.jpc
   io.memBusy := jopCore.io.memBusy
-  io.uartTxData := uartTxDataReg
-  io.uartTxValid := uartTxValidReg
+  io.uartTxData := jopCore.io.uartTxData
+  io.uartTxValid := jopCore.io.uartTxValid
   io.debugState := jopCore.io.debugMemState
 
   // BMB transaction monitoring

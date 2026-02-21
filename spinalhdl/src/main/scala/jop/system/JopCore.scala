@@ -5,6 +5,7 @@ import spinal.lib._
 import spinal.lib.bus.bmb._
 import jop.pipeline._
 import jop.memory._
+import jop.io.{BmbSys, BmbUart, SyncIn, SyncOut}
 import jop.{JopPipeline, JumpTableData}
 
 /**
@@ -19,16 +20,26 @@ import jop.{JopPipeline, JumpTableData}
  * @param ramWidth     Stack RAM address width (8 bits = 256 entries)
  * @param blockBits    Method cache block bits (4 = 16 blocks in JBC RAM)
  * @param memConfig    Memory subsystem configuration
+ * @param cpuId        CPU identifier (for multi-core; 0 for single-core)
+ * @param cpuCnt       Total number of CPUs (1 for single-core)
+ * @param hasUart      Whether to instantiate BmbUart (slave 1)
+ * @param clkFreqHz    System clock frequency in Hz (for BmbSys microsecond prescaler)
+ * @param uartBaudRate UART baud rate in Hz (only used when hasUart = true)
  */
 case class JopCoreConfig(
-  dataWidth:  Int              = 32,
-  pcWidth:    Int              = 11,
-  instrWidth: Int              = 10,
-  jpcWidth:   Int              = 11,
-  ramWidth:   Int              = 8,
-  blockBits:  Int              = 4,
-  memConfig:  JopMemoryConfig  = JopMemoryConfig(),
-  jumpTable:  JumpTableInitData = JumpTableInitData.simulation
+  dataWidth:    Int              = 32,
+  pcWidth:      Int              = 11,
+  instrWidth:   Int              = 10,
+  jpcWidth:     Int              = 11,
+  ramWidth:     Int              = 8,
+  blockBits:    Int              = 4,
+  memConfig:    JopMemoryConfig  = JopMemoryConfig(),
+  jumpTable:    JumpTableInitData = JumpTableInitData.simulation,
+  cpuId:        Int              = 0,
+  cpuCnt:       Int              = 1,
+  hasUart:      Boolean          = true,
+  clkFreqHz:    Long             = 100000000L,
+  uartBaudRate: Int              = 1000000
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(instrWidth == 10, "Instruction width must be 10 bits")
@@ -42,12 +53,13 @@ case class JopCoreConfig(
 }
 
 /**
- * JOP Core - Complete JOP Processor with BMB Memory Interface
+ * JOP Core - Complete JOP Processor with BMB Memory Interface and Internal I/O
  *
  * Integrates:
  * - JopPipeline: All pipeline stages (BytecodeFetch, Fetch, Decode, Stack, Mul)
  * - Memory controller with BMB master interface
- * - I/O handling (directly exposed for external connection)
+ * - BmbSys: System I/O (clock counter, watchdog, CmpSync lock, etc.)
+ * - BmbUart (optional): UART TX/RX with FIFOs
  *
  * The BMB master interface connects to external memory (BmbOnChipRam, BmbSdramCtrl, etc.)
  *
@@ -67,12 +79,16 @@ case class JopCore(
     // BMB master interface to external memory
     val bmb = master(Bmb(config.memConfig.bmbParameter))
 
-    // I/O interface (directly accessible)
-    val ioAddr    = out UInt(8 bits)
-    val ioRd      = out Bool()
-    val ioWr      = out Bool()
-    val ioWrData  = out Bits(32 bits)
-    val ioRdData  = in Bits(32 bits)
+    // CmpSync interface
+    val syncIn  = in(SyncOut())    // From CmpSync: halted + signal
+    val syncOut = out(SyncIn())    // To CmpSync: lock request + signal
+
+    // Watchdog from BmbSys
+    val wd = out Bits(32 bits)
+
+    // UART
+    val txd = out Bool()
+    val rxd = in Bool()
 
     // Pipeline status
     val pc        = out UInt(config.pcWidth bits)
@@ -88,13 +104,16 @@ case class JopCore(
     // Memory controller status
     val memBusy   = out Bool()
 
-    // Interrupt / Exception interface
+    // Interrupt interface
     val irq       = in Bool()
     val irqEna    = in Bool()
-    val exc       = in Bool()   // Exception signal from I/O subsystem
 
-    // CMP halt (from CmpSync via BmbSys — stalls pipeline when locked out)
-    val halted    = in Bool()
+    // Debug: UART TX snoop (captures I/O write to UART data register)
+    val uartTxData  = out Bits(8 bits)
+    val uartTxValid = out Bool()
+
+    // Debug: exception fired (from internal BmbSys)
+    val debugExc = out Bool()
 
     // Debug: bytecode cache fill
     val debugBcRd = out Bool()
@@ -109,6 +128,13 @@ case class JopCore(
     // Debug: RAM slot read
     val debugRamAddr = in UInt(8 bits)
     val debugRamData = out Bits(32 bits)
+
+    // Debug: I/O activity counters
+    val debugIoRdCount = out UInt(16 bits)
+    val debugIoWrCount = out UInt(16 bits)
+
+    // Debug: halted by CmpSync (from internal BmbSys)
+    val debugHalted = out Bool()
   }
 
   // ==========================================================================
@@ -139,31 +165,77 @@ case class JopCore(
   // MemCtrl -> Pipeline
   pipeline.io.memRdData := memCtrl.io.memOut.rdData
   pipeline.io.memBcStart := memCtrl.io.memOut.bcStart
-  pipeline.io.memBusy := memCtrl.io.memOut.busy || io.halted
   pipeline.io.jbcWrAddr := memCtrl.io.jbcWrite.addr
   pipeline.io.jbcWrData := memCtrl.io.jbcWrite.data
   pipeline.io.jbcWrEn := memCtrl.io.jbcWrite.enable
 
-  // I/O data input (directly from external)
-  memCtrl.io.ioRdData := io.ioRdData
+  // ==========================================================================
+  // Internal I/O Subsystem
+  // ==========================================================================
 
-  // Interrupts / Exceptions
+  // I/O address decoding
+  val ioSubAddr = memCtrl.io.ioAddr(3 downto 0)
+  val ioSlaveId = memCtrl.io.ioAddr(5 downto 4)
+
+  // System I/O (slave 0)
+  val bmbSys = BmbSys(clkFreqHz = config.clkFreqHz, cpuId = config.cpuId, cpuCnt = config.cpuCnt)
+  bmbSys.io.addr   := ioSubAddr
+  bmbSys.io.rd     := memCtrl.io.ioRd && ioSlaveId === 0
+  bmbSys.io.wr     := memCtrl.io.ioWr && ioSlaveId === 0
+  bmbSys.io.wrData := memCtrl.io.ioWrData
+
+  // CmpSync interface
+  bmbSys.io.syncIn := io.syncIn
+  io.syncOut := bmbSys.io.syncOut
+
+  // Pipeline busy = memory controller busy OR halted by CmpSync
+  pipeline.io.memBusy := memCtrl.io.memOut.busy || bmbSys.io.halted
+
+  // Exception from BmbSys
+  pipeline.io.exc := bmbSys.io.exc
+
+  // Interrupts
   pipeline.io.irq := io.irq
   pipeline.io.irqEna := io.irqEna
-  pipeline.io.exc := io.exc
+
+  // UART (slave 1, optional)
+  val bmbUart = if (config.hasUart) Some(BmbUart(config.uartBaudRate, config.clkFreqHz)) else None
+
+  bmbUart.foreach { uart =>
+    uart.io.addr   := ioSubAddr
+    uart.io.rd     := memCtrl.io.ioRd && ioSlaveId === 1
+    uart.io.wr     := memCtrl.io.ioWr && ioSlaveId === 1
+    uart.io.wrData := memCtrl.io.ioWrData
+    io.txd := uart.io.txd
+    uart.io.rxd := io.rxd
+  }
+  if (bmbUart.isEmpty) {
+    io.txd := True  // Idle
+  }
+
+  // I/O read mux
+  val ioRdData = Bits(32 bits)
+  ioRdData := 0
+  switch(ioSlaveId) {
+    is(0) { ioRdData := bmbSys.io.rdData }
+    is(1) { if (bmbUart.isDefined) ioRdData := bmbUart.get.io.rdData }
+  }
+  memCtrl.io.ioRdData := ioRdData
+
+  // Watchdog output
+  io.wd := bmbSys.io.wd
+
+  // Debug: UART TX snoop — registered to capture the single-cycle ioWr pulse
+  // (combinational ioWr goes low before simulation can read it after waitSampling)
+  val uartTxFire = memCtrl.io.ioWr && ioSlaveId === 1 && ioSubAddr === 1
+  val uartTxValidReg = RegNext(uartTxFire) init(False)
+  val uartTxDataReg = RegNextWhen(memCtrl.io.ioWrData(7 downto 0), uartTxFire) init(0)
+  io.uartTxValid := uartTxValidReg
+  io.uartTxData := uartTxDataReg
 
   // Debug RAM
   pipeline.io.debugRamAddr := io.debugRamAddr
   io.debugRamData := pipeline.io.debugRamData
-
-  // ==========================================================================
-  // I/O Interface
-  // ==========================================================================
-
-  io.ioAddr := memCtrl.io.ioAddr
-  io.ioRd := memCtrl.io.ioRd
-  io.ioWr := memCtrl.io.ioWr
-  io.ioWrData := memCtrl.io.ioWrData
 
   // ==========================================================================
   // Output Connections
@@ -180,12 +252,23 @@ case class JopCore(
 
   io.memBusy := memCtrl.io.memOut.busy
 
+  io.debugExc := bmbSys.io.exc
   io.debugBcRd := pipeline.io.debugBcRd
   io.debugMemState := memCtrl.io.debug.state
   io.debugMemHandleActive := memCtrl.io.debug.handleActive
   io.debugAddrWr := pipeline.io.debugAddrWr
   io.debugRdc := pipeline.io.debugRdc
   io.debugRd := pipeline.io.debugRd
+
+  // I/O activity counters
+  val ioRdCounter = Reg(UInt(16 bits)) init(0)
+  val ioWrCounter = Reg(UInt(16 bits)) init(0)
+  when(memCtrl.io.ioRd) { ioRdCounter := ioRdCounter + 1 }
+  when(memCtrl.io.ioWr) { ioWrCounter := ioWrCounter + 1 }
+  io.debugIoRdCount := ioRdCounter
+  io.debugIoWrCount := ioWrCounter
+
+  io.debugHalted := bmbSys.io.halted
 }
 
 /**
@@ -203,12 +286,16 @@ case class JopCoreWithBram(
 ) extends Component {
 
   val io = new Bundle {
-    // I/O interface
-    val ioAddr    = out UInt(8 bits)
-    val ioRd      = out Bool()
-    val ioWr      = out Bool()
-    val ioWrData  = out Bits(32 bits)
-    val ioRdData  = in Bits(32 bits)
+    // CmpSync interface
+    val syncIn  = in(SyncOut())
+    val syncOut = out(SyncIn())
+
+    // Watchdog from BmbSys
+    val wd = out Bits(32 bits)
+
+    // UART
+    val txd = out Bool()
+    val rxd = in Bool()
 
     // Pipeline status
     val pc        = out UInt(config.pcWidth bits)
@@ -224,15 +311,17 @@ case class JopCoreWithBram(
     // Memory controller status
     val memBusy   = out Bool()
 
-    // Interrupt / Exception interface
+    // Interrupt interface
     val irq       = in Bool()
     val irqEna    = in Bool()
-    val exc       = in Bool()   // Exception signal from I/O subsystem
+
+    // Debug: UART TX snoop
+    val uartTxData  = out Bits(8 bits)
+    val uartTxValid = out Bool()
   }
 
   // JOP System core
   val jopCore = JopCore(config, romInit, ramInit, jbcInit)
-  jopCore.io.halted := False  // Single-core: never halted
 
   // Block RAM with BMB interface
   val ram = BmbOnChipRam(
@@ -249,12 +338,16 @@ case class JopCoreWithBram(
   // Connect BMB interfaces
   ram.io.bus << jopCore.io.bmb
 
-  // Wire up I/O
-  io.ioAddr := jopCore.io.ioAddr
-  io.ioRd := jopCore.io.ioRd
-  io.ioWr := jopCore.io.ioWr
-  io.ioWrData := jopCore.io.ioWrData
-  jopCore.io.ioRdData := io.ioRdData
+  // CmpSync passthrough
+  jopCore.io.syncIn := io.syncIn
+  io.syncOut := jopCore.io.syncOut
+
+  // UART passthrough
+  io.txd := jopCore.io.txd
+  jopCore.io.rxd := io.rxd
+
+  // Watchdog passthrough
+  io.wd := jopCore.io.wd
 
   // Pipeline outputs
   io.pc := jopCore.io.pc
@@ -268,10 +361,16 @@ case class JopCoreWithBram(
 
   io.memBusy := jopCore.io.memBusy
 
-  // Interrupt / Exception
+  // Interrupt passthrough
   jopCore.io.irq := io.irq
   jopCore.io.irqEna := io.irqEna
-  jopCore.io.exc := io.exc
+
+  // Debug passthrough
+  io.uartTxData := jopCore.io.uartTxData
+  io.uartTxValid := jopCore.io.uartTxValid
+
+  // Tie unused debug inputs
+  jopCore.io.debugRamAddr := 0
 }
 
 /**

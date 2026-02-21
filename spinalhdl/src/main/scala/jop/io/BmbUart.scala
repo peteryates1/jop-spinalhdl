@@ -16,8 +16,9 @@ import spinal.lib.com.uart._
  *   0x1 write — TX data (pushes to TX FIFO)
  *
  * @param baudRate UART baud rate in Hz
+ * @param clkFreqHz Clock frequency in Hz (avoids dependency on ClockDomain frequency)
  */
-case class BmbUart(baudRate: Int = 1000000) extends Component {
+case class BmbUart(baudRate: Int = 1000000, clkFreqHz: Long = 100000000L) extends Component {
   val io = new Bundle {
     val addr   = in UInt(4 bits)
     val rd     = in Bool()
@@ -32,7 +33,7 @@ case class BmbUart(baudRate: Int = 1000000) extends Component {
   val uartCtrl = new UartCtrl(UartCtrlGenerics(
     preSamplingSize = 1, samplingSize = 3, postSamplingSize = 1
   ))
-  uartCtrl.io.config.setClockDivider(baudRate Hz)
+  uartCtrl.io.config.setClockDivider(baudRate Hz, clkFreqHz Hz)
   uartCtrl.io.config.frame.dataLength := 7  // 8 bits (0-indexed)
   uartCtrl.io.config.frame.parity := UartParityType.NONE
   uartCtrl.io.config.frame.stop := UartStopType.ONE

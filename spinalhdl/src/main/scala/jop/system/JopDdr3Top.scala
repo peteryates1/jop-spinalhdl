@@ -4,7 +4,6 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.io.InOutWrapper
 import jop.ddr3._
-import jop.io.{BmbSys, BmbUart}
 import jop.utils.JopFileLoader
 import jop.memory.JopMemoryConfig
 import jop.pipeline.JumpTableInitData
@@ -18,7 +17,7 @@ import jop.pipeline.JumpTableInitData
  *
  *   All JOP logic runs in MIG ui_clk domain (100 MHz):
  *     JopCore.bmb -> BmbCacheBridge -> LruCacheCore -> CacheToMigAdapter -> MIG -> DDR3
- *     JopCore.io  -> BmbSys (slave 0) + BmbUart (slave 1)
+ *     JopCore internal: BmbSys (slave 0) + BmbUart (slave 1)
  *
  * The default clock domain (clk/reset ports) is the board 100 MHz clock.
  * Reset is active-high (active-low button inverted in SpinalConfig).
@@ -126,13 +125,14 @@ case class JopDdr3Top(
     // JOP core config: addressWidth=26 (28-bit BMB byte address), burstLen=8 for BC fill
     val config = JopCoreConfig(
       memConfig = JopMemoryConfig(addressWidth = 26, burstLen = 0),
-      jumpTable = jumpTable
+      jumpTable = jumpTable,
+      clkFreqHz = 100000000L
     )
 
     // JBC init: empty (zeros) — BC_FILL loads bytecodes dynamically from DDR3
     val jbcInit = Seq.fill(2048)(BigInt(0))
 
-    // JOP Core
+    // JOP Core (BmbSys + BmbUart internal)
     val jopCore = JopCore(
       config = config,
       romInit = Some(romInit),
@@ -191,48 +191,16 @@ case class JopDdr3Top(
     mig.io.app_wdf_wren := adapter.io.app_wdf_wren
 
     // ==================================================================
-    // Interrupts / Exceptions
+    // Interrupts / CmpSync
     // ==================================================================
 
     jopCore.io.irq    := False
     jopCore.io.irqEna := False
-    jopCore.io.halted := False  // Single-core: never halted
+    jopCore.io.syncIn.halted := False  // Single-core: never halted
+    jopCore.io.syncIn.s_out := False
 
-    // ==================================================================
-    // I/O Slaves
-    // ==================================================================
-
-    val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
-    val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
-
-    // System I/O (slave 0)
-    val bmbSys = BmbSys(clkFreqHz = 100000000L)
-    bmbSys.io.addr   := ioSubAddr
-    bmbSys.io.rd     := jopCore.io.ioRd && ioSlaveId === 0
-    bmbSys.io.wr     := jopCore.io.ioWr && ioSlaveId === 0
-    bmbSys.io.wrData := jopCore.io.ioWrData
-    bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
-    bmbSys.io.syncIn.s_out := False
-
-    // UART (slave 1)
-    val bmbUart = BmbUart()
-    bmbUart.io.addr   := ioSubAddr
-    bmbUart.io.rd     := jopCore.io.ioRd && ioSlaveId === 1
-    bmbUart.io.wr     := jopCore.io.ioWr && ioSlaveId === 1
-    bmbUart.io.wrData := jopCore.io.ioWrData
-    bmbUart.io.rxd    := io.usb_rx
-
-    // I/O read mux
-    val ioRdData = Bits(32 bits)
-    ioRdData := 0
-    switch(ioSlaveId) {
-      is(0) { ioRdData := bmbSys.io.rdData }
-      is(1) { ioRdData := bmbUart.io.rdData }
-    }
-    jopCore.io.ioRdData := ioRdData
-
-    // Exception signal from BmbSys
-    jopCore.io.exc := bmbSys.io.exc
+    // UART RX from board
+    jopCore.io.rxd := io.usb_rx
 
     // Debug RAM (tie off)
     jopCore.io.debugRamAddr := 0
@@ -256,7 +224,7 @@ case class JopDdr3Top(
   // Debug: memory controller state, busy, and WD — cross-domain sync from MIG ui_clk
   val memStateSync = BufferCC(mainArea.jopCore.io.debugMemState, init = U(0, 5 bits))
   val memBusySync = BufferCC(mainArea.jopCore.io.memBusy, init = False)
-  val wdSync = BufferCC(mainArea.bmbSys.io.wd(0), init = False)
+  val wdSync = BufferCC(mainArea.jopCore.io.wd(0), init = False)
 
   // Cache/adapter debug: cross-domain sync from MIG ui_clk
   val cacheStateSync = BufferCC(mainArea.cache.io.debugState, init = U(0, 3 bits))
@@ -301,7 +269,7 @@ case class JopDdr3Top(
 
   // UART TX MUX: JOP's UART during normal operation, DiagUart when hung.
   // JOP UART TX is in MIG ui_clk domain — sync to board clock via BufferCC.
-  val jopTxdSync = BufferCC(mainArea.bmbUart.io.txd, init = True)
+  val jopTxdSync = BufferCC(mainArea.jopCore.io.txd, init = True)
   io.usb_tx := Mux(hangDetected, diagUart.io.txd, jopTxdSync)
 
   // ========================================================================

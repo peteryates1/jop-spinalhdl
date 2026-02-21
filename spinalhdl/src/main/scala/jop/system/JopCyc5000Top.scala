@@ -4,7 +4,6 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.io.InOutWrapper
 import spinal.lib.memory.sdram.sdr._
-import jop.io.{BmbSys, BmbUart}
 import jop.utils.JopFileLoader
 import jop.memory.{JopMemoryConfig, W9864G6JT}
 import jop.pipeline.JumpTableInitData
@@ -37,8 +36,7 @@ case class Cyc5000Pll() extends BlackBox {
  * SDRAM: W9864G6JT-6 (64Mbit, 16-bit, 12-bit addr, 4 banks)
  * Clock: 12 MHz oscillator -> PLL -> 80 MHz system, 80 MHz/-2.5ns SDRAM
  *
- * Architecture matches JopSdramTop (QMTECH) for direct SDRAM comparison.
- * Serial-boot: same download protocol as other SDRAM/DDR3 boards.
+ * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
  *
  * @param romInit Microcode ROM initialization data (serial-boot)
  * @param ramInit Stack RAM initialization data (serial-boot)
@@ -105,7 +103,8 @@ case class JopCyc5000Top(
 
     val config = JopCoreConfig(
       memConfig = JopMemoryConfig(burstLen = 0),
-      jumpTable = JumpTableInitData.serial
+      jumpTable = JumpTableInitData.serial,
+      clkFreqHz = 80000000L
     )
 
     // JBC init: empty (zeros) — BC_FILL loads bytecodes dynamically from SDRAM
@@ -131,42 +130,13 @@ case class JopCyc5000Top(
     jopCoreWithSdram.io.irq := False
     jopCoreWithSdram.io.irqEna := False
 
-    // ======================================================================
-    // I/O Slaves
-    // ======================================================================
+    // Single-core: no CmpSync
+    jopCoreWithSdram.io.syncIn.halted := False
+    jopCoreWithSdram.io.syncIn.s_out := False
 
-    val ioSubAddr = jopCoreWithSdram.io.ioAddr(3 downto 0)
-    val ioSlaveId = jopCoreWithSdram.io.ioAddr(5 downto 4)
-
-    // System I/O (slave 0)
-    val bmbSys = BmbSys(clkFreqHz = 80000000L)
-    bmbSys.io.addr := ioSubAddr
-    bmbSys.io.rd := jopCoreWithSdram.io.ioRd && ioSlaveId === 0
-    bmbSys.io.wr := jopCoreWithSdram.io.ioWr && ioSlaveId === 0
-    bmbSys.io.wrData := jopCoreWithSdram.io.ioWrData
-    bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
-    bmbSys.io.syncIn.s_out := False
-
-    // UART (slave 1)
-    val bmbUart = BmbUart()
-    bmbUart.io.addr := ioSubAddr
-    bmbUart.io.rd := jopCoreWithSdram.io.ioRd && ioSlaveId === 1
-    bmbUart.io.wr := jopCoreWithSdram.io.ioWr && ioSlaveId === 1
-    bmbUart.io.wrData := jopCoreWithSdram.io.ioWrData
-    io.ser_txd := bmbUart.io.txd
-    bmbUart.io.rxd := io.ser_rxd
-
-    // I/O read mux
-    val ioRdData = Bits(32 bits)
-    ioRdData := 0
-    switch(ioSlaveId) {
-      is(0) { ioRdData := bmbSys.io.rdData }
-      is(1) { ioRdData := bmbUart.io.rdData }
-    }
-    jopCoreWithSdram.io.ioRdData := ioRdData
-
-    // Exception signal from BmbSys
-    jopCoreWithSdram.io.exc := bmbSys.io.exc
+    // UART
+    io.ser_txd := jopCoreWithSdram.io.txd
+    jopCoreWithSdram.io.rxd := io.ser_rxd
 
     // ======================================================================
     // LED Driver (Debug Mode)
@@ -189,7 +159,7 @@ case class JopCyc5000Top(
     io.led(7 downto 3) := ~jopCoreWithSdram.io.debugMemState.asBits.resized
     io.led(2) := ~jopCoreWithSdram.io.memBusy
     io.led(1) := ~heartbeat
-    io.led(0) := ~bmbSys.io.wd(0)
+    io.led(0) := ~jopCoreWithSdram.io.wd(0)
   }
 }
 

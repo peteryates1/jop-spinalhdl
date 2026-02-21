@@ -8,10 +8,12 @@ import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import org.scalatest.funsuite.AnyFunSuite
 import jop.memory.JopMemoryConfig
 import jop.utils.JopFileLoader
-import jop.io.BmbSys
 
 /**
  * Test harness for JopCoreWithSdram with SDRAM simulation model
+ *
+ * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * UART TX is snooped via JopCore's debug outputs.
  */
 case class JopCoreWithSdramTestHarness(
   romInit: Seq[BigInt],
@@ -44,14 +46,9 @@ case class JopCoreWithSdramTestHarness(
     // Memory status
     val memBusy = out Bool()
 
-    // UART output
+    // UART output (from JopCore debug snoop)
     val uartTxData = out Bits(8 bits)
     val uartTxValid = out Bool()
-
-    // I/O debug (directly from JopCore)
-    val ioWr = out Bool()
-    val ioAddr = out UInt(8 bits)
-    val ioWrData = out Bits(32 bits)
 
     // BMB debug signals (32-bit JOP side)
     val bmbCmdValid = out Bool()
@@ -65,7 +62,7 @@ case class JopCoreWithSdramTestHarness(
   // JBC starts empty - BC_FILL must load bytecodes from SDRAM
   val jbcInit = Seq.fill(2048)(BigInt(0))
 
-  // JOP System with SDRAM backend
+  // JOP System with SDRAM backend (BmbSys + BmbUart internal)
   val jopSystem = JopCoreWithSdram(
     config = config,
     sdramLayout = sdramLayout,
@@ -79,46 +76,14 @@ case class JopCoreWithSdramTestHarness(
   // SDRAM interface
   io.sdram <> jopSystem.io.sdram
 
-  // Decode I/O address
-  val ioSubAddr = jopSystem.io.ioAddr(3 downto 0)
-  val ioSlaveId = jopSystem.io.ioAddr(5 downto 4)
+  // Single-core: no CmpSync
+  jopSystem.io.syncIn.halted := False
+  jopSystem.io.syncIn.s_out := False
 
-  // System I/O (slave 0) — real BmbSys component
-  val bmbSys = BmbSys(clkFreqHz = 100000000L)
-  bmbSys.io.addr   := ioSubAddr
-  bmbSys.io.rd     := jopSystem.io.ioRd && ioSlaveId === 0
-  bmbSys.io.wr     := jopSystem.io.ioWr && ioSlaveId === 0
-  bmbSys.io.wrData := jopSystem.io.ioWrData
-  bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
-  bmbSys.io.syncIn.s_out := False
+  // No UART RX in test harness
+  jopSystem.io.rxd := True
 
-  // Exception signal from BmbSys
-  jopSystem.io.exc := bmbSys.io.exc
-
-  // UART (slave 1) — simplified for simulation
-  val uartTxDataReg = Reg(Bits(8 bits)) init(0)
-  val uartTxValidReg = Reg(Bool()) init(False)
-
-  uartTxValidReg := False
-  when(jopSystem.io.ioWr && ioSlaveId === 1 && ioSubAddr === 1) {
-    uartTxDataReg := jopSystem.io.ioWrData(7 downto 0)
-    uartTxValidReg := True
-  }
-
-  // I/O read mux
-  val ioRdData = Bits(32 bits)
-  ioRdData := 0
-  switch(ioSlaveId) {
-    is(0) { ioRdData := bmbSys.io.rdData }
-    is(1) {
-      switch(ioSubAddr) {
-        is(0) { ioRdData := B(0x1, 32 bits) }  // Status: TX ready
-      }
-    }
-  }
-  jopSystem.io.ioRdData := ioRdData
-
-  // Interrupt (disabled)
+  // Interrupts (disabled)
   jopSystem.io.irq := False
   jopSystem.io.irqEna := False
 
@@ -131,11 +96,8 @@ case class JopCoreWithSdramTestHarness(
   io.aout := jopSystem.io.aout
   io.bout := jopSystem.io.bout
   io.memBusy := jopSystem.io.memBusy
-  io.uartTxData := uartTxDataReg
-  io.uartTxValid := uartTxValidReg
-  io.ioWr := jopSystem.io.ioWr
-  io.ioAddr := jopSystem.io.ioAddr
-  io.ioWrData := jopSystem.io.ioWrData
+  io.uartTxData := jopSystem.io.uartTxData
+  io.uartTxValid := jopSystem.io.uartTxValid
 
   // BMB debug (32-bit side)
   io.bmbCmdValid := jopSystem.io.bmbCmdValid

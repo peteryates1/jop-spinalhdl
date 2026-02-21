@@ -7,11 +7,13 @@ import spinal.lib.bus.bmb._
 import org.scalatest.funsuite.AnyFunSuite
 import jop.utils.JopFileLoader
 import jop.memory.JopMemoryConfig
-import jop.io.BmbSys
 
 /**
  * Test harness for JopCore with BmbOnChipRam
  * Uses default SpinalHDL clock domain for simpler simulation.
+ *
+ * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * UART TX is snooped via JopCore's debug outputs.
  */
 case class JopCoreTestHarness(
   romInit: Seq[BigInt],
@@ -38,7 +40,7 @@ case class JopCoreTestHarness(
     // Memory status
     val memBusy = out Bool()
 
-    // UART output
+    // UART output (from JopCore debug snoop)
     val uartTxData = out Bits(8 bits)
     val uartTxValid = out Bool()
 
@@ -69,7 +71,7 @@ case class JopCoreTestHarness(
     )
   }.padTo(2048, BigInt(0))
 
-  // JOP System core
+  // JOP System core (BmbSys + BmbUart internal)
   val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -92,55 +94,28 @@ case class JopCoreTestHarness(
   // Connect BMB
   ram.io.bus << jopCore.io.bmb
 
-  // Decode I/O address
-  val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
-  val ioSlaveId = jopCore.io.ioAddr(5 downto 4)
+  // Single-core: no CmpSync
+  jopCore.io.syncIn.halted := False
+  jopCore.io.syncIn.s_out := False
 
-  // System I/O (slave 0) — real BmbSys component
-  val bmbSys = BmbSys(clkFreqHz = 100000000L)
-  bmbSys.io.addr   := ioSubAddr
-  bmbSys.io.rd     := jopCore.io.ioRd && ioSlaveId === 0
-  bmbSys.io.wr     := jopCore.io.ioWr && ioSlaveId === 0
-  bmbSys.io.wrData := jopCore.io.ioWrData
-  bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
-  bmbSys.io.syncIn.s_out := False
+  // No UART RX in test harness
+  jopCore.io.rxd := True
 
-  // Exception signal from BmbSys
-  jopCore.io.exc := bmbSys.io.exc
-
-  // Snoop exception writes for simulation debug output
-  val excTypeSnoop = Reg(Bits(8 bits)) init(0)
-  when(jopCore.io.ioWr && ioSlaveId === 0 && ioSubAddr === 4) {
-    excTypeSnoop := jopCore.io.ioWrData(7 downto 0)
-  }
-
-  // UART (slave 1) — simplified for simulation (no bit-serial timing)
-  val uartTxDataReg = Reg(Bits(8 bits)) init(0)
-  val uartTxValidReg = Reg(Bool()) init(False)
-
-  uartTxValidReg := False
-  when(jopCore.io.ioWr && ioSlaveId === 1 && ioSubAddr === 1) {
-    uartTxDataReg := jopCore.io.ioWrData(7 downto 0)
-    uartTxValidReg := True
-  }
-
-  // I/O read mux
-  val ioRdData = Bits(32 bits)
-  ioRdData := 0
-  switch(ioSlaveId) {
-    is(0) { ioRdData := bmbSys.io.rdData }
-    is(1) {
-      switch(ioSubAddr) {
-        is(0) { ioRdData := B(0x1, 32 bits) }  // Status: TX ready
-      }
-    }
-  }
-  jopCore.io.ioRdData := ioRdData
-
-  // Interrupt (disabled for now)
+  // Interrupts (disabled)
   jopCore.io.irq := False
   jopCore.io.irqEna := False
-  jopCore.io.halted := False  // Single-core: never halted
+
+  // Tie unused debug inputs
+  jopCore.io.debugRamAddr := 0
+
+  // SimPublic for I/O tracing
+  jopCore.memCtrl.io.ioRd.simPublic()
+  jopCore.memCtrl.io.ioWr.simPublic()
+  jopCore.memCtrl.io.ioAddr.simPublic()
+  jopCore.memCtrl.io.ioWrData.simPublic()
+  jopCore.memCtrl.io.ioRdData.simPublic()
+  jopCore.io.debugIoRdCount.simPublic()
+  jopCore.io.debugIoWrCount.simPublic()
 
   // Outputs
   io.pc := jopCore.io.pc
@@ -151,11 +126,11 @@ case class JopCoreTestHarness(
   io.aout := jopCore.io.aout
   io.bout := jopCore.io.bout
   io.memBusy := jopCore.io.memBusy
-  io.uartTxData := uartTxDataReg
-  io.uartTxValid := uartTxValidReg
+  io.uartTxData := jopCore.io.uartTxData
+  io.uartTxValid := jopCore.io.uartTxValid
   io.debugState := 0  // Placeholder - internal signal not accessible
-  io.excFired := bmbSys.io.exc
-  io.excType := excTypeSnoop
+  io.excFired := jopCore.io.debugExc
+  io.excType := 0  // Exception type not easily snooped with internal I/O
 }
 
 /**

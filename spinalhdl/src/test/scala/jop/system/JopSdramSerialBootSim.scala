@@ -8,13 +8,14 @@ import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import jop.memory.JopMemoryConfig
 import jop.utils.JopFileLoader
 import jop.pipeline.JumpTableInitData
-import jop.io.BmbSys
 
 /**
  * Test harness for serial boot simulation.
  *
  * Uses serial-boot microcode. SDRAM starts empty.
- * UART RX is driven from simulation via io.uartRxData/uartRxValid.
+ * UART RX is driven via io.rxd (bit-serial from simulation).
+ *
+ * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
  */
 case class JopSdramSerialBootHarness(
   romInit: Seq[BigInt],
@@ -37,20 +38,12 @@ case class JopSdramSerialBootHarness(
     val jpc = out UInt((config.jpcWidth + 1) bits)
     val memBusy = out Bool()
 
-    // UART TX output (from JOP)
+    // UART (bit-serial)
+    val rxd = in Bool()
+
+    // UART TX snoop (from JopCore debug outputs)
     val uartTxData = out Bits(8 bits)
     val uartTxValid = out Bool()
-
-    // UART RX input (from simulation)
-    val uartRxData = in Bits(8 bits)
-    val uartRxValid = in Bool()
-    val uartRxRead = out Bool()  // Pulses when microcode reads a byte
-
-    // I/O debug
-    val ioWr = out Bool()
-    val ioRd = out Bool()
-    val ioAddr = out UInt(8 bits)
-    val ioWrData = out Bits(32 bits)
 
     // BMB debug
     val bmbCmdValid  = out Bool()
@@ -75,59 +68,12 @@ case class JopSdramSerialBootHarness(
 
   io.sdram <> jopSystem.io.sdram
 
-  // Decode I/O address
-  val ioSubAddr = jopSystem.io.ioAddr(3 downto 0)
-  val ioSlaveId = jopSystem.io.ioAddr(5 downto 4)
+  // Single-core: no CmpSync
+  jopSystem.io.syncIn.halted := False
+  jopSystem.io.syncIn.s_out := False
 
-  // System I/O (slave 0) — real BmbSys component
-  val bmbSys = BmbSys(clkFreqHz = 100000000L)
-  bmbSys.io.addr   := ioSubAddr
-  bmbSys.io.rd     := jopSystem.io.ioRd && ioSlaveId === 0
-  bmbSys.io.wr     := jopSystem.io.ioWr && ioSlaveId === 0
-  bmbSys.io.wrData := jopSystem.io.ioWrData
-  bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
-  bmbSys.io.syncIn.s_out := False
-
-  // Exception signal from BmbSys
-  jopSystem.io.exc := bmbSys.io.exc
-
-  // UART TX capture
-  val uartTxDataReg = Reg(Bits(8 bits)) init(0)
-  val uartTxValidReg = Reg(Bool()) init(False)
-
-  // UART RX read tracking
-  val uartRxReadReg = Reg(Bool()) init(False)
-  uartRxReadReg := False
-
-  // UART TX write
-  uartTxValidReg := False
-  when(jopSystem.io.ioWr && ioSlaveId === 1 && ioSubAddr === 1) {
-    uartTxDataReg := jopSystem.io.ioWrData(7 downto 0)
-    uartTxValidReg := True
-  }
-
-  // I/O read mux
-  val ioRdData = Bits(32 bits)
-  ioRdData := 0
-  switch(ioSlaveId) {
-    is(0) { ioRdData := bmbSys.io.rdData }
-    is(1) {
-      switch(ioSubAddr) {
-        is(0) {
-          // Status: bit 0 = TDRE (TX ready), bit 1 = RDRF (RX data available)
-          ioRdData := B(0, 30 bits) ## io.uartRxValid.asBits ## B"1"
-        }
-        is(1) {
-          // Data read: return RX byte, signal read to simulation
-          ioRdData := B(0, 24 bits) ## io.uartRxData
-          when(jopSystem.io.ioRd) {
-            uartRxReadReg := True
-          }
-        }
-      }
-    }
-  }
-  jopSystem.io.ioRdData := ioRdData
+  // UART RX from simulation (bit-serial)
+  jopSystem.io.rxd := io.rxd
 
   // Interrupts disabled
   jopSystem.io.irq := False
@@ -137,13 +83,8 @@ case class JopSdramSerialBootHarness(
   io.pc := jopSystem.io.pc
   io.jpc := jopSystem.io.jpc
   io.memBusy := jopSystem.io.memBusy
-  io.uartTxData := uartTxDataReg
-  io.uartTxValid := uartTxValidReg
-  io.uartRxRead := uartRxReadReg
-  io.ioWr := jopSystem.io.ioWr
-  io.ioRd := jopSystem.io.ioRd
-  io.ioAddr := jopSystem.io.ioAddr
-  io.ioWrData := jopSystem.io.ioWrData
+  io.uartTxData := jopSystem.io.uartTxData
+  io.uartTxValid := jopSystem.io.uartTxValid
 
   // BMB debug
   io.bmbCmdValid := jopSystem.io.bmbCmdValid
@@ -157,7 +98,8 @@ case class JopSdramSerialBootHarness(
 /**
  * Serial boot download simulation.
  *
- * Feeds HelloWorld.jop bytes via simulated UART RX, verifies echo,
+ * Feeds HelloWorld.jop bytes via bit-serial UART on io.rxd,
+ * verifies echo via uartTxData/uartTxValid snoop,
  * then waits for "Hello World!" output.
  */
 object JopSdramSerialBootSim extends App {
@@ -187,6 +129,10 @@ object JopSdramSerialBootSim extends App {
   println(s"Loaded serial RAM: ${ramData.length} entries")
   println(s"JOP file: ${jopWords.length} words (${jopBytes.length} bytes)")
 
+  // UART timing: 1 Mbaud at 100 MHz = 100 clock cycles per bit
+  // forkStimulus(10) -> 1 clock = 10 sim time units
+  val bitPeriod = 1000L  // 100 clocks * 10 sim units = 1000
+
   SimConfig
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .compile(JopSdramSerialBootHarness(romData, ramData))
@@ -200,100 +146,78 @@ object JopSdramSerialBootSim extends App {
         clockDomain = dut.clockDomain
       )
 
-      // UART RX state
-      var byteIdx = 0
-      var echoBytes = 0
-      var echoErrors = 0
-      var downloadComplete = false
-      var uartOutput = new StringBuilder
-
-      // Drive UART RX defaults
-      dut.io.uartRxData #= 0
-      dut.io.uartRxValid #= false
+      // UART RX defaults to idle (HIGH)
+      dut.io.rxd #= true
 
       dut.clockDomain.waitSampling(10)
 
       println(s"Starting serial boot simulation...")
-      println(s"Downloading ${jopBytes.length} bytes...")
+      println(s"Downloading ${jopBytes.length} bytes via bit-serial UART (1 Mbaud)...")
 
-      val maxCycles = 600000
-      val startTime = System.currentTimeMillis()
-      var lastReport = 0
-      var done = false
+      // Track echo bytes and UART output
+      var echoBytes = 0
+      var echoErrors = 0
+      var uartOutput = new StringBuilder
+      var downloadComplete = false
 
-      // Post-download debug logging
-      var postDownloadLogCount = 0
-      val maxPostDownloadLogs = 200
-      var downloadCycle = 0
-      var lastJpc = -1
-      var lastPc = -1
-      var ioLogCount = 0
+      // Fork a thread to send bytes bit-by-bit on rxd
+      val txThread = fork {
+        // Small delay before starting download
+        sleep(500)
 
-      var cycle = 0
-      while (cycle < maxCycles && !done) {
-        // Drive UART RX: provide next byte if available
-        if (!downloadComplete && byteIdx < jopBytes.length) {
-          dut.io.uartRxData #= (jopBytes(byteIdx).toInt & 0xFF)
-          dut.io.uartRxValid #= true
-        } else {
-          dut.io.uartRxValid #= false
-        }
+        for (byteIdx <- jopBytes.indices) {
+          val b = jopBytes(byteIdx).toInt & 0xFF
 
-        dut.clockDomain.waitSampling()
+          // Start bit (LOW)
+          dut.io.rxd #= false
+          sleep(bitPeriod)
 
-        // Check if microcode read a UART RX byte
-        if (dut.io.uartRxRead.toBoolean && !downloadComplete) {
-          byteIdx += 1
-          if (byteIdx >= jopBytes.length) {
-            downloadComplete = true
-            downloadCycle = cycle
-            println(s"\nDownload complete at cycle $cycle ($byteIdx bytes sent)")
+          // 8 data bits (LSB first)
+          for (bit <- 0 until 8) {
+            dut.io.rxd #= ((b >> bit) & 1) == 1
+            sleep(bitPeriod)
+          }
 
-            // Verify SDRAM contents by reading SdramModel memory directly
-            println("\n=== SDRAM Content Verification ===")
-            for (i <- 0 until 10) {
-              val b0 = sdramModel.banks(0).data(i * 4 + 0) & 0xFF
-              val b1 = sdramModel.banks(0).data(i * 4 + 1) & 0xFF
-              val b2 = sdramModel.banks(0).data(i * 4 + 2) & 0xFF
-              val b3 = sdramModel.banks(0).data(i * 4 + 3) & 0xFF
-              val word = ((b3 & 0xFF) << 24) | ((b2 & 0xFF) << 16) | ((b1 & 0xFF) << 8) | (b0 & 0xFF)
-              val expected = jopWords(i).toLong & 0xFFFFFFFFL
-              val match_ = if (word.toLong == expected) "OK" else "MISMATCH"
-              println(f"  SDRAM[$i%3d] = 0x${word.toLong & 0xFFFFFFFFL}%08x  expected 0x$expected%08x  $match_")
-            }
-            // Check key addresses
-            val mp = jopWords(1).toInt
-            println(f"\n  mp = $mp (word[1])")
-            for (i <- 0 until 3) {
-              val addr = mp + i
-              val b0 = sdramModel.banks(0).data(addr * 4 + 0) & 0xFF
-              val b1 = sdramModel.banks(0).data(addr * 4 + 1) & 0xFF
-              val b2 = sdramModel.banks(0).data(addr * 4 + 2) & 0xFF
-              val b3 = sdramModel.banks(0).data(addr * 4 + 3) & 0xFF
-              val word = ((b3 & 0xFF) << 24) | ((b2 & 0xFF) << 16) | ((b1 & 0xFF) << 8) | (b0 & 0xFF)
-              val expected = jopWords(addr).toLong & 0xFFFFFFFFL
-              val match_ = if (word.toLong == expected) "OK" else "MISMATCH"
-              println(f"  SDRAM[$addr%4d] = 0x${word.toLong & 0xFFFFFFFFL}%08x  expected 0x$expected%08x  $match_")
-            }
-            println("=== End Verification ===\n")
+          // Stop bit (HIGH)
+          dut.io.rxd #= true
+          sleep(bitPeriod)
+
+          // Progress report every 1000 bytes
+          if ((byteIdx + 1) % 1000 == 0) {
+            val pct = ((byteIdx + 1) * 100) / jopBytes.length
+            println(s"  Download: ${byteIdx + 1}/${jopBytes.length} bytes ($pct%)")
           }
         }
 
-        // Capture UART TX (echo during download, then "Hello World!")
+        downloadComplete = true
+        println(s"Download thread complete (${jopBytes.length} bytes sent)")
+      }
+
+      // Main simulation loop
+      val maxCycles = 6000000  // 6M cycles (download ~3M + execution ~500K + margin)
+      val startTime = System.currentTimeMillis()
+      var lastReport = 0
+      var done = false
+      var cycle = 0
+
+      while (cycle < maxCycles && !done) {
+        dut.clockDomain.waitSampling()
+
+        // Capture UART TX (echoes during download, then program output)
         if (dut.io.uartTxValid.toBoolean) {
           val ch = dut.io.uartTxData.toInt & 0xFF
           if (!downloadComplete) {
-            echoBytes += 1
-            val expectedIdx = echoBytes - 1
-            if (expectedIdx < jopBytes.length) {
-              val expected = jopBytes(expectedIdx).toInt & 0xFF
+            // Echo verification
+            if (echoBytes < jopBytes.length) {
+              val expected = jopBytes(echoBytes).toInt & 0xFF
               if (ch != expected) {
                 echoErrors += 1
                 if (echoErrors <= 5) {
-                  println(f"\n  Echo mismatch at byte $expectedIdx: sent 0x$expected%02x, got 0x$ch%02x")
+                  println(f"\n  Echo mismatch at byte $echoBytes: sent 0x$expected%02x, got 0x$ch%02x")
                 }
               }
             }
+            echoBytes += 1
           } else {
             val c = if (ch >= 32 && ch < 127) ch.toChar else '.'
             uartOutput.append(c)
@@ -301,59 +225,34 @@ object JopSdramSerialBootSim extends App {
           }
         }
 
-        // Post-download detailed logging
-        if (downloadComplete && (cycle - downloadCycle) < 5000) {
-          val pc = dut.io.pc.toInt
-          val jpc = dut.io.jpc.toInt
-          val busy = dut.io.memBusy.toBoolean
-
-          // Log BMB transactions
-          val cmdFire = dut.io.bmbCmdValid.toBoolean && dut.io.bmbCmdReady.toBoolean
-          if (cmdFire && postDownloadLogCount < maxPostDownloadLogs) {
-            val addr = dut.io.bmbCmdAddr.toLong
-            val op = if (dut.io.bmbCmdOpcode.toInt == 0) "RD" else "WR"
-            println(f"  [${cycle - downloadCycle}%5d] BMB CMD $op addr=0x$addr%08x (word=${addr/4}%d)  PC=$pc%04x")
-            postDownloadLogCount += 1
-          }
-          if (dut.io.bmbRspValid.toBoolean && postDownloadLogCount < maxPostDownloadLogs) {
-            val data = dut.io.bmbRspData.toLong & 0xFFFFFFFFL
-            println(f"  [${cycle - downloadCycle}%5d] BMB RSP data=0x$data%08x  PC=$pc%04x")
-            postDownloadLogCount += 1
-          }
-
-          // Log I/O operations
-          if (dut.io.ioRd.toBoolean && ioLogCount < 50) {
-            val addr = dut.io.ioAddr.toInt
-            println(f"  [${cycle - downloadCycle}%5d] IO RD addr=0x$addr%02x  PC=$pc%04x JPC=$jpc%04x")
-            ioLogCount += 1
-          }
-          if (dut.io.ioWr.toBoolean && ioLogCount < 50) {
-            val addr = dut.io.ioAddr.toInt
-            val data = dut.io.ioWrData.toLong & 0xFFFFFFFFL
-            println(f"  [${cycle - downloadCycle}%5d] IO WR addr=0x$addr%02x data=0x$data%08x  PC=$pc%04x JPC=$jpc%04x")
-            ioLogCount += 1
-          }
-
-          // Log JPC changes
-          if (jpc != lastJpc) {
-            if (postDownloadLogCount < maxPostDownloadLogs) {
-              println(f"  [${cycle - downloadCycle}%5d] JPC: $lastJpc%d -> $jpc%d  PC=$pc%04x busy=$busy")
-              postDownloadLogCount += 1
-            }
-            lastJpc = jpc
-          }
-        }
-
         // Progress report
-        if (cycle - lastReport >= 100000) {
+        if (cycle - lastReport >= 500000) {
           lastReport = cycle
           val elapsed = (System.currentTimeMillis() - startTime) / 1000.0
           val rate = if (elapsed > 0) (cycle / elapsed).toInt else 0
           val pc = dut.io.pc.toInt
           val jpc = dut.io.jpc.toInt
           val busy = dut.io.memBusy.toBoolean
-          val status = if (downloadComplete) "running" else s"downloading ${byteIdx}/${jopBytes.length}"
+          val status = if (downloadComplete) "running" else s"downloading (echoes=$echoBytes/${jopBytes.length})"
           println(f"\n[$cycle%7d] PC=$pc%04x JPC=$jpc%04x busy=$busy $status ($rate cycles/sec)")
+        }
+
+        // Verify SDRAM after download
+        if (downloadComplete && echoBytes >= jopBytes.length && echoBytes == jopBytes.length) {
+          println("\n=== SDRAM Content Verification ===")
+          for (i <- 0 until 10) {
+            val b0 = sdramModel.banks(0).data(i * 4 + 0) & 0xFF
+            val b1 = sdramModel.banks(0).data(i * 4 + 1) & 0xFF
+            val b2 = sdramModel.banks(0).data(i * 4 + 2) & 0xFF
+            val b3 = sdramModel.banks(0).data(i * 4 + 3) & 0xFF
+            val word = ((b3 & 0xFF) << 24) | ((b2 & 0xFF) << 16) | ((b1 & 0xFF) << 8) | (b0 & 0xFF)
+            val expected = jopWords(i).toLong & 0xFFFFFFFFL
+            val match_ = if (word.toLong == expected) "OK" else "MISMATCH"
+            println(f"  SDRAM[$i%3d] = 0x${word.toLong & 0xFFFFFFFFL}%08x  expected 0x$expected%08x  $match_")
+          }
+          println("=== End Verification ===\n")
+          // Avoid re-printing
+          echoBytes += 1
         }
 
         // Early exit on Hello World
@@ -380,8 +279,8 @@ object JopSdramSerialBootSim extends App {
 
       if (!done) {
         println(s"\n\n=== Simulation Complete (no Hello World detected) ===")
-        println(s"Bytes sent: $byteIdx / ${jopBytes.length}")
-        println(s"Echo bytes: $echoBytes, errors: $echoErrors")
+        println(s"Echo bytes: $echoBytes / ${jopBytes.length}")
+        println(s"Echo errors: $echoErrors")
         println(s"Download complete: $downloadComplete")
         println(s"UART output: '${uartOutput.toString}'")
       }
