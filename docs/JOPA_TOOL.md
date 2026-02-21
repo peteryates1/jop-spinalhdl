@@ -6,7 +6,7 @@ Jopa is the microcode assembler for the Java Optimized Processor (JOP). It trans
 
 ## Location
 
-**Source**: `java/tools/jopa/src/com/jopdesign/tools/Jopa.java`
+**Source**: `java/tools/src/com/jopdesign/tools/Jopa.java`
 
 **Build System**: `asm/Makefile`
 
@@ -149,10 +149,10 @@ The FPGA Makefiles (`fpga/*/Makefile`) include a `microcode` target that runs `m
 
 ```bash
 # Jopa assembler source
-java/tools/jopa/src/com/jopdesign/tools/Jopa.java
+java/tools/src/com/jopdesign/tools/Jopa.java
 
-# Jopa build (via ant)
-cd java/tools/jopa && ant
+# Jopa build
+cd java/tools && make dist/jopa.jar
 ```
 
 ## Microcode Instruction Format

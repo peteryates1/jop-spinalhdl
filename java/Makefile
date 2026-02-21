@@ -3,7 +3,6 @@
 all: tools runtime apps
 
 tools:
-	$(MAKE) -C tools/jopa
 	$(MAKE) -C tools
 
 runtime:
@@ -22,7 +21,6 @@ sim-small: all
 		-link apps/Small/HelloWorld.jop.link.txt apps/Small/HelloWorld.jop
 
 clean:
-	$(MAKE) -C tools/jopa clean
 	$(MAKE) -C tools clean
 	$(MAKE) -C runtime clean
 	$(MAKE) -C apps/Smallest clean
