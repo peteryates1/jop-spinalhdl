@@ -239,10 +239,10 @@ case class JopSmpSdramTop(
     }
 
     // QMTECH LEDs are active low
-    // LED[1] = heartbeat (proves clock is running)
-    // LED[0] = watchdog bit 0 from core 0 (proves Java code is running)
-    io.led(1) := ~heartbeat
+    // LED[0] = watchdog bit 0 from core 0 (proves core 0 Java code is running)
+    // LED[1] = watchdog bit 0 from core 1 (proves core 1 Java code is running)
     io.led(0) := ~bmbSysDevices(0).io.wd(0)
+    io.led(1) := ~bmbSysDevices(1).io.wd(0)
   }
 }
 
