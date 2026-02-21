@@ -486,6 +486,11 @@ public class GC {
 	}
 
 	public static void gc() {
+		// Stop-the-world: halt all other cores during GC.
+		// This prevents concurrent SDRAM access that could see
+		// partially-moved objects during the copying phase.
+		Native.wr(1, Const.IO_GC_HALT);
+
 		// For stop-the-world GC, discard write barrier entries.
 		// All live objects are found via roots (stack + static refs).
 		// The write barrier gray list may contain non-handle values
@@ -497,6 +502,9 @@ public class GC {
 		markAndCopy();
 		sweepHandles();
 		zapSemi();
+
+		// Resume other cores
+		Native.wr(0, Const.IO_GC_HALT);
 	}
 	
 	static int free() {

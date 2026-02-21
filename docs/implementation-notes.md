@@ -15,6 +15,7 @@ captured during development — see the source code for authoritative details.
 8. **HANDLE_ACCESS missing I/O routing**: HardwareObject fields (getfield/putfield via IOFactory) have data pointers in I/O address space. HANDLE_ACCESS must check `addrIsIo` and route to I/O bus instead of BMB. Without this, I/O reads return 0 (SysDevice fields like nrCpu, cpuId unreadable).
 9. **BmbSys missing registers**: IO_LOCK (addr 5) must return 0 (lock acquired) for monitorenter to work. IO_CPUCNT (addr 11) must return 1 for Scheduler array sizing. Missing these caused GC `synchronized` to hang and Scheduler to create wrong-sized arrays.
 10. **cpuStart NPE on core 1 boot**: Original `Startup.java` initialized `cpuStart = new Runnable[nrCpu]` which requires GC. Non-zero cores called `cpuStart[cpuId]` before GC was ready, causing NPE. Fix: removed cpuStart array — non-zero cores go directly to main loop after `started` flag, no Runnable indirection needed.
+11. **Putfield bcopd pipeline timing**: The `stpf` microcode instruction (putfield) has NO `opd` flag, unlike `stgf` (getfield) which has `opd`. When putfield fires in BmbMemoryController's IDLE state, the pipeline hasn't yet accumulated the bytecode operand bytes into `bcopd` — the `nop opd` instructions that follow `stpf` haven't executed yet. Result: `handleIndex` captured as 0 instead of the field offset, so all putfield writes went to field 0 of the object. Fix: added `PF_WAIT` state (matching VHDL `pf0` "waste cycle to get opd in ok position") that delays index capture by one cycle. Putfield now goes IDLE→PF_WAIT→HANDLE_READ instead of IDLE→HANDLE_READ. Getfield is unaffected (keeps IDLE→HANDLE_READ with immediate index capture). Object cache `chkPf` moved from HANDLE_READ to PF_WAIT for putfield path.
 
 ## Method Cache
 
@@ -46,7 +47,7 @@ captured during development — see the source code for authoritative details.
 - **BmbUart**: UartCtrl + TX FIFO (16) + RX FIFO (16). Status (addr 0): bit0=TDRE, bit1=RDRF. Data (addr 1): read consumes RX FIFO, write pushes TX FIFO.
 - Both use same I/O interface: addr(4 bits), rd, wr, wrData(32), rdData(32)
 - Top-levels wire: `ioSubAddr = ioAddr(3:0)`, `ioSlaveId = ioAddr(5:4)`
-- **SysDevice field->address mapping**: cntInt(0), uscntTimer(1), intNr(2), wd(3), exception(4), lock(5), cpuId(6), signal(7), intMask(8), clearInt(9), deadLine(10), nrCpu(11), perfCounter(12)
+- **SysDevice field->address mapping**: cntInt(0), uscntTimer(1), intNr(2), wd(3), exception(4), lock(5), cpuId(6), signal(7), intMask(8), clearInt(9), deadLine(10), nrCpu(11), perfCounter(12), gcHalt(13)
 - **HANDLE_ACCESS I/O routing**: HardwareObject fields (getfield/putfield) have data pointers in I/O space. BmbMemoryController checks `addrIsIo` in HANDLE_ACCESS and routes to I/O bus instead of BMB.
 - **SMP sync interface**: BmbSys has `io.syncIn`/`io.syncOut` (SyncIn/SyncOut bundles) for CmpSync integration. Write to IO_LOCK (addr 5) sets `lockReqReg`, write to IO_UNLOCK (addr 6) clears it. Read IO_LOCK returns `syncIn.halted` in bit 0. `io.halted` output stalls the pipeline when another core holds the lock.
 
@@ -55,7 +56,7 @@ captured during development — see the source code for authoritative details.
 - **ObjectCache** (`jop.memory`): Fully associative FIFO, 16 entries x 8 fields = 128 values, matching VHDL `ocache.vhd`
 - **Getfield hit**: 0 busy cycles (stays in IDLE, `readOcache` selects cached data)
 - **Getfield miss**: Normal HANDLE_READ path + cache fill via `wrGf`
-- **Putfield**: Always through state machine, write-through on hit via `wrPf`. `chkPf` in HANDLE_READ.
+- **Putfield**: Always through state machine, write-through on hit via `wrPf`. `chkPf` in PF_WAIT (putfield waste cycle).
 - **Invalidation**: `stidx`/`cinval` clears all valid bits. `wasHwo` suppresses I/O caching.
 - **Cacheable**: Only fields 0-7 (upper fieldIdx bits must be 0)
 
@@ -78,10 +79,11 @@ captured during development — see the source code for authoritative details.
 
 - **Unified via `cpuCnt`**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` — N `JopCore`s + round-robin BMB arbiter + shared SDRAM + per-core I/O. cpuCnt=1 uses direct BMB (no arbiter, no CmpSync).
 - **BMB Arbiter**: `BmbArbiter` with `lowerFirstPriority=false` (round-robin), source width expanded by `log2Up(cpuCnt)` bits for response routing
-- **CmpSync** (`jop.io`): Global lock for `monitorenter`/`monitorexit`
+- **CmpSync** (`jop.io`): Global lock for `monitorenter`/`monitorexit` + GC halt
   - States: IDLE / LOCKED. Round-robin fair arbiter (two-pass scan)
   - Core writes IO_LOCK (addr 5) -> `lockReqReg=true`, CmpSync grants one core (`halted=0`), halts others (`halted=1`)
   - Core writes IO_UNLOCK (addr 6) -> `lockReqReg=false`, releases lock
+  - Core writes IO_GC_HALT (addr 13) -> `gcHaltReg`, CmpSync halts all OTHER cores (OR'd with lock halted)
   - Boot signal: core 0's `IO_SIGNAL` broadcast to all cores via `s_in`/`s_out`
 - **Per-core I/O**: Each core has `BmbSys(cpuId=i, cpuCnt=N)` with independent watchdog, unique CPU ID, CmpSync interface. Only core 0 has `BmbUart`.
 - **Pipeline halt**: `io.halted` from CmpSync through BmbSys directly stalls pipeline
@@ -90,6 +92,19 @@ captured during development — see the source code for authoritative details.
 - **Test app**: `NCoreHelloWorld.java` — each core reads `IO_CPU_ID`, core 0 prints + toggles WD, others just toggle WD
 - **FPGA build**: `make full-smp` in QMTECH or CYC5000 dirs (separate Quartus projects: `jop_smp_sdram.qsf`, `jop_smp_cyc5000.qsf`)
 - **Resource usage**: ~12K LEs (8% of EP4CGX150), substantial headroom for more cores
+
+## SMP GC Stop-the-World
+
+- **Problem**: Original JOP SMP has no stop-the-world GC mechanism. GC uses `synchronized(mutex)` which only halts cores entering synchronized blocks — cores running normal code (e.g., reading I/O registers, toggling watchdog) keep executing and can read partially-moved objects from SDRAM during the copying phase, causing corruption.
+- **Symptom**: NCoreHelloWorld on CYC5000 SMP ran ~140 println iterations (~70 seconds), then output corrupted to a flood of 'C' characters before both cores hung. This matched the ~160 allocation limit of the 28KB semi-space heap.
+- **Fix**: Hardware GC halt signal via `IO_GC_HALT` (BmbSys addr 13):
+  - `SyncIn` bundle: added `gcHalt` field (core → CmpSync direction)
+  - `CmpSync`: when any core's `gcHalt` is set, all OTHER cores' pipelines are halted (OR'd into existing `halted` output). The halting core itself is NOT affected.
+  - `BmbSys`: `gcHaltReg` register, write 1 to set, write 0 to clear. Routed to `syncOut.gcHalt`.
+  - `GC.java`: `Native.wr(1, Const.IO_GC_HALT)` before `gc()`, `Native.wr(0, Const.IO_GC_HALT)` after.
+  - Single-core: gcHalt output is unconnected (no CmpSync), no effect.
+- **Future**: Protect the halt flag with CmpSync lock for safe multi-core allocation (currently only core 0 allocates). Any core triggering GC should acquire the lock first, then set gcHalt.
+- **Verified**: CYC5000 SMP hardware — NCoreHelloWorld running 3+ minutes through multiple GC cycles with no corruption. SMP GC BRAM sim shows `halted=.H` during GC rounds.
 
 ## SDR SDRAM GC Hang (Resolved)
 

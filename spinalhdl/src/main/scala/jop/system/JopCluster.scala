@@ -105,10 +105,10 @@ case class JopCluster(
   // ==================================================================
 
   val cmpSync: Option[CmpSync] = if (cpuCnt == 1) {
-    // Single-core: direct BMB connection
+    // Single-core: direct BMB connection, no CmpSync needed
     io.bmb <> cores(0).io.bmb
     cores(0).io.syncIn.halted := False
-    cores(0).io.syncIn.s_out := False
+    cores(0).io.syncIn.s_out  := False
     None
   } else {
     // SMP: arbiter + CmpSync

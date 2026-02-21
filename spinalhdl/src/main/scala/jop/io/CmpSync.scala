@@ -6,8 +6,9 @@ import spinal.core._
  * Sync input from a core to CmpSync (lock request).
  */
 case class SyncIn() extends Bundle {
-  val req  = Bool()    // Lock request (held high while lock needed)
-  val s_in = Bool()    // Boot synchronization signal
+  val req    = Bool()    // Lock request (held high while lock needed)
+  val s_in   = Bool()    // Boot synchronization signal
+  val gcHalt = Bool()    // GC halt request (halts all OTHER cores)
 }
 
 /**
@@ -114,10 +115,14 @@ case class CmpSync(cpuCnt: Int) extends Component {
     // Boot synchronization: broadcast core 0's s_in to all
     io.syncOut(i).s_out := io.syncIn(0).s_in
 
-    // Halted output
-    io.syncOut(i).halted := False  // Default
+    // GC halt: if any OTHER core has gcHalt set, this core is halted
+    val gcHaltFromOthers = (0 until cpuCnt).filter(_ != i)
+      .map(j => io.syncIn(j).gcHalt).reduce(_ || _)
+
+    // Halted output: lock OR gcHalt from another core
+    io.syncOut(i).halted := gcHaltFromOthers
     when(nextState === State.LOCKED) {
-      io.syncOut(i).halted := (U(i, log2Up(cpuCnt) bits) =/= nextLockedId)
+      io.syncOut(i).halted := (U(i, log2Up(cpuCnt) bits) =/= nextLockedId) || gcHaltFromOthers
     }
   }
 }

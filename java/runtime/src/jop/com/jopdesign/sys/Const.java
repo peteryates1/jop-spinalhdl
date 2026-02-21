@@ -200,6 +200,7 @@ public class Const {
 
 	public static final int IO_CPUCNT = IO_BASE+11;
 	public static final int IO_PERFCNT = IO_BASE+12;
+	public static final int IO_GC_HALT = IO_BASE+13;
 
 	/**
 	 * Number of available interrupts depends on the parameter

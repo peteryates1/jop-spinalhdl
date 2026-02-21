@@ -10,7 +10,7 @@ Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 
 **Working on hardware.** The processor boots and runs Java programs at 100 MHz:
 
-- **SDRAM + SMP (primary)**: 2-core SMP on QMTECH EP4CGX150 (Cyclone IV, W9825G6JH6 SDR SDRAM) — both cores verified running independently on hardware, with CmpSync global lock and round-robin BMB arbitration
+- **SDRAM + SMP (primary)**: 2-core SMP on QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V) — both cores running independently with CmpSync global lock, round-robin BMB arbitration, and GC stop-the-world halt (halts all other cores during garbage collection)
 - **SDRAM (single-core)**: Serial boot over UART into SDR SDRAM on two boards — QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V, W9864G6JT)
 - **BRAM**: Self-contained, program embedded in block RAM (QMTECH EP4CGX150)
 - **DDR3**: Serial boot through write-back cache into DDR3 (Alchitry Au V2, Xilinx Artix-7) — basic programs work, GC hangs at first collection (unresolved, see [DDR3 GC hang notes](docs/ddr3-gc-hang.md))
@@ -273,11 +273,11 @@ Notes:
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
 - **I/O subsystem**: `BmbSys` (cycle/microsecond counters, watchdog, CPU ID) and `BmbUart` (TX/RX with 16-entry FIFOs) as reusable `jop.io` components
 - **SDRAM system (primary)**: `JopSdramTop` / `JopCyc5000Top` — serial boot over UART into SDR SDRAM using Altera `altera_sdram_tri_controller` (QMTECH EP4CGX150 at 100 MHz + Trenz CYC5000 at 80 MHz). Both support `cpuCnt` parameter for single-core or SMP
-- **SMP (2-core)**: `JopSdramTop(cpuCnt=2)` — 2-core SMP with round-robin BMB arbiter, `CmpSync` global lock for `monitorenter`/`monitorexit`, per-core `BmbSys` with unique CPU ID, boot synchronization via `IO_SIGNAL`. Verified on QMTECH EP4CGX150 hardware (both cores running independently, per-core LED watchdog)
+- **SMP (2-core)**: `JopSdramTop(cpuCnt=2)` — 2-core SMP with round-robin BMB arbiter, `CmpSync` global lock for `monitorenter`/`monitorexit`, per-core `BmbSys` with unique CPU ID, boot synchronization via `IO_SIGNAL`, and GC stop-the-world halt via `IO_GC_HALT`. Verified on QMTECH EP4CGX150 and CYC5000 hardware (both cores running independently with GC, per-core LED watchdog)
 - **BRAM system**: `JopBramTop` — complete system with on-chip memory at 100 MHz (QMTECH EP4CGX150, Altera Cyclone IV)
 - **DDR3 system**: `JopDdr3Top` — serial boot over UART through write-back cache into DDR3 at 100 MHz (Alchitry Au V2, Xilinx Artix-7), with standalone `Ddr3ExerciserTop` memory test. GC hangs at first collection on FPGA (passes in simulation)
 - **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
-- **GC support**: Hardware `memCopy` for stop-the-world garbage collection, tested with allocation-heavy GC app (98,000+ rounds on BRAM, 9,800+ on CYC5000 SDRAM, 2,000+ on QMTECH SDRAM)
+- **GC support**: Hardware `memCopy` for stop-the-world garbage collection, tested with allocation-heavy GC app (98,000+ rounds on BRAM, 9,800+ on CYC5000 SDRAM, 2,000+ on QMTECH SDRAM). SMP GC uses `IO_GC_HALT` to freeze all other cores during collection, preventing concurrent SDRAM access to partially-moved objects
 - **Exception infrastructure**: Null pointer and array bounds detection states wired through pipeline to `BmbSys` exception register (checks currently disabled pending GC null-handle fix)
 - **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, GHDL event-driven sim
 
@@ -300,7 +300,7 @@ Notes:
 - Performance measurement
 - DDR3 GC hang — resolve the R12 hang on Alchitry Au V2 ([investigation notes](docs/ddr3-gc-hang.md))
 - DDR3 burst optimization — method cache fills could use burst reads through the cache bridge
-- SMP GC — garbage collection across multiple cores (requires address translation on read paths)
+- SMP GC — basic stop-the-world working via `IO_GC_HALT`; future: protect halt flag with CmpSync lock for safe multi-core allocation, address translation on read paths for concurrent GC
 - Const.java -> pull out Const and Configuration — core(s)/system/memory/caches
 - Jopa refactor
 - JOPizer/WCETPreprocess — refactor, updated libraries
@@ -322,7 +322,7 @@ Notes:
 - **Object cache**: Fully associative field value cache (16 entries, 8 fields each). Getfield hits return data in 0 busy cycles (combinational tag match, registered data output). Putfield does write-through on tag hit. FIFO replacement, invalidated on array stores and explicit `cinval`.
 - **Handle format**: `H[0]` = data pointer, `H[1]` = array length. Array elements start at `data_ptr[0]`.
 - **I/O subsystem**: Reusable `BmbSys` and `BmbUart` components in `jop.io` package. System slave provides clock cycle counter, prescaled microsecond counter, watchdog register, and CPU ID. UART slave provides buffered TX/RX with 16-entry FIFOs.
-- **SMP**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` instantiate N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`.
+- **SMP**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` instantiate N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`, plus a GC halt signal (`IO_GC_HALT`) that freezes all other cores during garbage collection. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`.
 - **Serial boot**: Microcode polls UART for incoming bytes, assembles 4 bytes into 32-bit words, writes to external memory. Download script (`download.py`) sends `.jop` files with word-level echo verification.
 
 ## Documentation

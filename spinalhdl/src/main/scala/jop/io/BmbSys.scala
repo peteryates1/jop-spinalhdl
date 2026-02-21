@@ -80,9 +80,15 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1) extends Comp
   // always catch it regardless of timing alignment.
   val signalReg = Reg(Bool()) init(False)
 
+  // GC halt register: when set, CmpSync halts all OTHER cores.
+  // Used for stop-the-world GC: the collecting core sets this before gc(),
+  // clears it after gc(). All other cores' pipelines are frozen.
+  val gcHaltReg = Reg(Bool()) init(False)
+
   // Sync output to CmpSync
-  io.syncOut.req  := lockReqReg
-  io.syncOut.s_in := signalReg
+  io.syncOut.req    := lockReqReg
+  io.syncOut.s_in   := signalReg
+  io.syncOut.gcHalt := gcHaltReg
 
   // Halted output: combinational from CmpSync
   io.halted := io.syncIn.halted
@@ -113,6 +119,7 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1) extends Comp
       is(6)  { lockReqReg := False }                     // IO_UNLOCK: release
       is(7)  { signalReg := io.wrData(0) }                 // IO_SIGNAL: boot sync
       is(8)  { intMaskReg := io.wrData }                 // IO_INTMASK
+      is(13) { gcHaltReg := io.wrData(0) }                // IO_GC_HALT
       // Addresses 0 (INT_ENA), 2 (SWINT),
       // 9 (INTCLEARALL), 12 (PERFCNT): silently accepted
     }

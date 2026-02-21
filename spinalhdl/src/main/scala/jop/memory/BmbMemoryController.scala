@@ -122,6 +122,8 @@ case class BmbMemoryController(
         READ_WAIT, WRITE_WAIT,
         // Array store wait (matching VHDL iast0) - 1 cycle for stack pop
         IAST_WAIT,
+        // Putfield operand wait (matching VHDL pf0 "waste cycle to get opd in ok position")
+        PF_WAIT,
         // Handle dereference (getfield/putfield/iaload/iastore) - busy
         HANDLE_READ, HANDLE_WAIT, HANDLE_CALC, HANDLE_ACCESS, HANDLE_DATA_WAIT,
         // Array bounds check (matching VHDL ialrb/iasrb) - busy
@@ -512,16 +514,18 @@ case class BmbMemoryController(
 
       }.elsewhen(io.memIn.putfield) {
         // Put object field - NOS = object ref, bcopd = field index, value in valueReg
+        // NOTE: handleIndex is NOT captured here. The pipeline hasn't loaded the
+        // operand bytes yet (stpf has no opd flag, unlike stgf which has opd).
+        // We go to PF_WAIT first to let bcopd settle — matching VHDL pf0
+        // "waste cycle to get opd in ok position".
         addrReg := io.bout(config.addressWidth - 1 downto 0).asUInt
-        handleIndex := Mux(wasStidx, indexReg, io.bcopd(15 downto 0).asUInt.resize(config.addressWidth))
         handleIsWrite := True
         handleIsArray := False
         handleWriteData := io.aout  // TOS = value (also captured to valueReg above)
         if(config.useOcache) {
           ocWasGetfield := False
         }
-        state := State.HANDLE_READ
-        // (no extra busy needed - matches VHDL)
+        state := State.PF_WAIT
 
       }.elsewhen(io.memIn.copy) {
         // GC copy (stcp) - matching VHDL mem_in.copy handler
@@ -769,17 +773,35 @@ case class BmbMemoryController(
     }
 
     // ========================================================================
+    // Putfield Operand Wait (matching VHDL pf0) - busy
+    // ========================================================================
+
+    is(State.PF_WAIT) {
+      // "Waste cycle to get opd in ok position" (VHDL mem_sc.vhd pf0 comment).
+      // The pipeline is still running (stpf was in IDLE which is not busy).
+      // By now, the first 'nop opd' after stpf has caused jopdfetch=1,
+      // and bcopd has advanced. Capture the field index here.
+      handleIndex := Mux(wasStidx, indexReg, io.bcopd(15 downto 0).asUInt.resize(config.addressWidth))
+
+      // Object cache: check putfield tag (matching VHDL chk_pf in pf0)
+      if(config.useOcache) {
+        when(!wasStidx) {
+          ocache.get.io.handle := addrReg  // Override default (aoutAddr)
+          ocache.get.io.chkPf := True
+        }
+      }
+
+      state := State.HANDLE_READ
+    }
+
+    // ========================================================================
     // Handle Dereference States (getfield/putfield/iaload/iastore) - busy
     // ========================================================================
 
     is(State.HANDLE_READ) {
-      // Object cache: check putfield tag (matching VHDL chk_pf in pf0)
-      // For putfield, the handle is in addrReg (captured from bout/NOS in IDLE).
+      // Object cache: save handle address for putfield invalidation.
+      // NOTE: chkPf for putfield is now done in PF_WAIT (matching VHDL pf0).
       if(config.useOcache) {
-        when(!handleIsArray && handleIsWrite && !wasStidx) {
-          ocache.get.io.handle := addrReg  // Override default (aoutAddr)
-          ocache.get.io.chkPf := True
-        }
         handleAddrReg := addrReg  // Save handle address before HANDLE_CALC overwrites addrReg
       }
 
@@ -1057,6 +1079,7 @@ case class BmbMemoryController(
   io.debug.state := state.asBits.asUInt.resized
   io.debug.busy := !notBusy
   io.debug.handleActive := state.mux(
+    State.PF_WAIT -> True,
     State.HANDLE_READ -> True,
     State.HANDLE_WAIT -> True,
     State.HANDLE_CALC -> True,
