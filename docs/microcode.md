@@ -1,6 +1,6 @@
 # Microcode Operations
 
-Reference extracted from `microcode.csv` and `java/tools/src/com/jopdesign/tools/Instruction.java`. Opcodes and dataflow use ASCII; arrows are written as `->`.
+Reference originally extracted from [JOP Reference Handbook](https://www.jopdesign.com/doc/handbook.pdf) and [Instruction.java](../java/tools/jopa/src/com/jopdesign/tools/Instruction.java). Opcodes and dataflow use ASCII; arrows are written as `->`.
 
 | Microcode | Operation | Opcode | Dataflow | JVM equivalent | Description |
 | --- | --- | --- | --- | --- | --- |

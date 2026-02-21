@@ -7,39 +7,39 @@ This document compares the VHDL `mem_sc.vhd` memory controller with the SpinalHD
 | Aspect | VHDL (mem_sc.vhd) | SpinalHDL (BmbMemoryController) |
 |--------|-------------------|-------------------------------|
 | Bus | SimpCon | BMB (Bus Master Bridge) |
-| Caching | Method cache + Object cache | Method cache |
+| Caching | Method cache + Object cache | Method cache + Object cache |
 | BC fill | Sequential | Pipelined + configurable burst |
-| Exception detection | NPE, AIOOBE, IAE | None (future) |
+| Exception detection | NPE, AIOOBE, IAE | Infrastructure exists, checks disabled |
+| Copy operation | Sequential | Pipelined (CP_SETUP/READ/WRITE) |
 
-## Currently Implemented in SpinalHDL
+## Feature Status
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Basic read/write (stmra/stmwd) | ✅ | BMB single-word access |
-| Bytecode cache fill (stbcrd) | ✅ | Pipelined, with configurable burst reads |
-| Method cache | ✅ | 16-block tag-only, FIFO replacement |
-| getfield/putfield | ✅ | Handle dereference state machine |
-| iaload/iastore | ✅ | Handle dereference state machine |
-| IO address decode | ✅ | Top 2 bits = "11" for IO |
-| getstatic/putstatic | ⚠️ | Treated as regular memory ops |
+| Basic read/write (stmra/stmwd) | Done | BMB single-word access |
+| Bytecode cache fill (stbcrd) | Done | Pipelined, with configurable burst reads |
+| Method cache | Done | 16-block tag-only, FIFO replacement |
+| Object cache | Done | 16-entry fully-associative, FIFO, 8 fields per entry |
+| getfield/putfield | Done | Handle dereference state machine |
+| iaload/iastore | Done | Handle dereference state machine |
+| IO address decode | Done | Top 2 bits = "11" for IO, HANDLE_ACCESS I/O routing |
+| Hardware memCopy | Done | CP_SETUP/CP_READ/CP_WRITE states for GC |
+| getstatic/putstatic | Done | Treated as regular memory ops (address pre-computed by linker) |
+| Null pointer detection | Disabled | Infrastructure exists, GC null handle scanning causes false positives |
+| Array bounds checking | Not implemented | |
+| SCJ scope checking | Not implemented | Not needed for standard Java |
 
-## Missing Features (from VHDL mem_sc.vhd)
+## Remaining Differences from VHDL
 
-### 1. Object Cache
+### 1. Array Cache
 
-**VHDL Component:** `ocache`
+**VHDL Component:** `acache`
 
-**Purpose:** Caches recently accessed object fields for fast repeated access.
+**Purpose:** Caches array element values for fast repeated access in loops.
 
-**How it works:**
-- Indexed by object handle + field index
-- On getfield: check cache first, return cached value if hit
-- On putfield: update cache and write to memory
-- Invalidated on `stidx` or `cinval`
+**Current behavior:** Every `iaload`/`iastore` goes through the full handle-dereference state machine.
 
-**Current behavior:** Every field access goes to main memory.
-
-**Impact:** Performance - loops accessing object fields are slow.
+**Impact:** Performance -- loops over arrays are slower than with cache.
 
 ### 2. Null Pointer Exception Detection
 
@@ -47,19 +47,7 @@ This document compares the VHDL `mem_sc.vhd` memory controller with the SpinalHD
 
 **Purpose:** Hardware detection of null pointer dereference.
 
-**How it works:**
-```vhdl
-if addr_reg=0 then
-    next_state <= npexc;
-end if;
-```
-- Checked at start of getfield (gf0), putfield, iaload, iastore
-- Sets `np_exc` output signal
-- Triggers exception handling in CPU
-
-**Current behavior:** Null pointer access reads/writes address 0 silently.
-
-**Impact:** Correctness - null dereferences go undetected.
+**Current status:** The exception detection infrastructure exists in the memory controller but checks are disabled. The VHDL bounds check is also dead code in the original. Re-enabling requires fixing GC.java's null handle scanning which triggers false NPE exceptions.
 
 ### 3. Array Bounds Exception Detection
 
@@ -67,73 +55,15 @@ end if;
 
 **Purpose:** Hardware detection of array index out of bounds.
 
-**How it works:**
-- Array length read during iaload/iastore
-- Index compared against length
-- If `index >= length`, triggers `ab_exc`
+**Current behavior:** Out-of-bounds access reads/writes wrong memory silently.
 
-**Current behavior:** Out-of-bounds access reads/writes wrong memory.
-
-**Impact:** Correctness - buffer overflows go undetected.
-
-### 4. Static Field Access (getstatic/putstatic)
-
-**VHDL States:** `gs1`, `ps1`
-
-**Purpose:** Access static fields through constant pool indirection.
-
-**How it works:**
-- `stgs` triggers getstatic sequence
-- `stps` triggers putstatic sequence
-- Address comes from constant pool lookup
-
-**Current behavior:** May work as regular memory ops if address is pre-computed.
-
-**Impact:** Unclear - needs testing.
-
-### 5. Copy Operation
-
-**VHDL States:** `cp0`, `cp1`, `cp2`, `cp3`, `cp4`, `cpstop`
-
-**Purpose:** Hardware-assisted memory copy for GC and `System.arraycopy()`.
-
-**How it works:**
-- `mem_in.copy` triggers copy sequence
-- Reads from source, writes to destination
-- Handles address translation for GC compaction
-
-**Current behavior:** Not implemented - would fall back to software loop.
-
-**Impact:** Performance - GC and arraycopy are slow.
-
-### 6. SCJ Scope Checking
+### 4. SCJ Scope Checking
 
 **VHDL State:** `iaexc`
 
 **Purpose:** Illegal assignment detection for Safety-Critical Java memory scopes.
 
-**How it works:**
-- Tracks memory region "levels"
-- Prevents references from outer scope to inner scope
-- Sets `ia_exc` on violation
-
-**Current behavior:** Not implemented.
-
-**Impact:** None for standard Java; required for SCJ compliance.
-
-### 7. Cache Control
-
-**VHDL Signals:** `cinval`, `tm_cache`
-
-**Purpose:** Cache coherency and transactional memory hints.
-
-**How it works:**
-- `cinval` invalidates object cache entries
-- `tm_cache` hints for transactional memory
-
-**Current behavior:** No caching, so no cache control needed.
-
-**Impact:** None currently.
+**Current status:** Not implemented. Only needed for SCJ compliance, not standard Java.
 
 ## VHDL State Machine Reference
 
@@ -144,83 +74,56 @@ Basic Operations:
   wr1          - Simple memory write
   last         - Operation complete
 
-Static Field Access:
-  ps1          - putstatic
-  gs1          - getstatic
-
 Bytecode/Method Cache:
-  bc_cc        - Check method cache
-  bc_r1        - Read first word
-  bc_w         - Wait for read
-  bc_rn        - Read next word
+  bc_cc        - Check method cache      (SpinalHDL: BC_CACHE_CHECK)
+  bc_r1        - Read first word          (SpinalHDL: BC_FILL_R1)
+  bc_w         - Wait for read            (SpinalHDL: BC_FILL_LOOP)
+  bc_rn        - Read next word           (SpinalHDL: BC_FILL_CMD)
   bc_wr        - Write to JBC
   bc_wl        - Write last word
 
 Array Load (iaload):
-  iald0        - Start array load
-  iald1        - Read array handle
+  iald0        - Start array load         (SpinalHDL: HANDLE_READ)
+  iald1        - Read array handle        (SpinalHDL: HANDLE_WAIT)
   iald2        - Wait for handle
-  iald23       - Fast memory path
-  iald3        - Calculate element address
-  iald4        - Read element
-  iasrd        - Array store read (shared)
-  ialrb        - Load result to B register
+  iald3        - Calculate element addr   (SpinalHDL: HANDLE_CALC)
+  iald4        - Read element             (SpinalHDL: HANDLE_ACCESS)
 
 Array Store (iastore):
-  iast0        - Start array store
-  iaswb        - Write back
-  iasrb        - Read back
-  iasst        - Store complete
+  iast0        - Start array store        (SpinalHDL: IAST_WAIT)
 
 getfield:
-  gf0          - Start getfield (null check)
+  gf0          - Start getfield           (SpinalHDL: HANDLE_READ)
   gf1          - Read handle
   gf2          - Wait for handle
   gf3          - Read field
   gf4          - Field read complete
 
 putfield:
-  pf0          - Start putfield
+  pf0          - Start putfield           (SpinalHDL: HANDLE_READ)
   pf1          - Read handle
   pf2          - Wait for handle
   pf3          - Calculate field address
   pf4          - Write field
 
 Copy Operation:
-  cp0          - Start copy
-  cp1          - Read source
-  cp2          - Wait for read
-  cp3          - Write destination
+  cp0          - Start copy               (SpinalHDL: CP_SETUP)
+  cp1          - Read source              (SpinalHDL: CP_READ)
+  cp2          - Wait for read            (SpinalHDL: CP_READ_WAIT)
+  cp3          - Write destination        (SpinalHDL: CP_WRITE)
   cp4          - Check completion
-  cpstop       - Copy complete
+  cpstop       - Copy complete            (SpinalHDL: CP_STOP)
 
 Exceptions:
-  npexc        - Null pointer exception
-  abexc        - Array bounds exception
-  iaexc        - Illegal assignment (SCJ)
-  excw         - Exception wait
+  npexc        - Null pointer exception   (disabled in SpinalHDL)
+  abexc        - Array bounds exception   (not implemented)
+  iaexc        - Illegal assignment (SCJ) (not implemented)
 ```
-
-## Implementation Priority
-
-### High Priority (Correctness)
-
-1. **Null pointer detection** - Silent failures are dangerous
-2. **Array bounds checking** - Buffer overflows cause corruption
-
-### Medium Priority (Performance)
-
-3. **Object cache** - Speedup for field-heavy loops
-
-### Low Priority (Special Cases)
-
-4. **Copy operation** - Only matters for GC-heavy workloads
-5. **SCJ scope checking** - Only for Safety-Critical Java
-6. **Atomic operations** - Only for multi-threaded code
 
 ## File References
 
-- VHDL implementation: [mem_sc.vhd](https://github.com/peteryates1/jop/blob/main/vhdl/memory/mem_sc.vhd)
-- SpinalHDL implementation: `spinalhdl/src/main/scala/jop/memory/BmbMemoryController.scala`
-- Method cache: `spinalhdl/src/main/scala/jop/memory/MethodCache.scala`
-- Object cache (VHDL reference): [ocache.vhd](https://github.com/peteryates1/jop/blob/main/vhdl/cache/ocache.vhd)
+- SpinalHDL memory controller: `spinalhdl/src/main/scala/jop/memory/BmbMemoryController.scala`
+- SpinalHDL method cache: `spinalhdl/src/main/scala/jop/memory/MethodCache.scala`
+- SpinalHDL object cache: `spinalhdl/src/main/scala/jop/memory/ObjectCache.scala`
+- VHDL reference: `/srv/git/jop/vhdl/memory/mem_sc.vhd`
+- VHDL object cache: `/srv/git/jop/vhdl/cache/ocache.vhd`
