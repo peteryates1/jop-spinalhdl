@@ -97,6 +97,7 @@ verification/questa-sdram/*.hex
 verification/questa-sdram/JopCoreWithSdramTestHarness.v
 
 # Test results
+test-history.tsv
 test-results/
 coverage/
 *.coverage
