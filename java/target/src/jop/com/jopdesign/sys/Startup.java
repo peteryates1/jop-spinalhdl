@@ -109,10 +109,12 @@ public class Startup {
 			Native.invoke(0, val);		// call main (with null pointer on TOS
 			exit();
 		} else {
-			// other CPUs invoke a Runnable
-			if (cpuStart != null && cpuStart[val-1] != null) {
-				cpuStart[val-1].run();
-			}
+			// other CPUs: go straight to main()
+			// Note: cpuStart array is not safe to access before GC init
+			// on non-zero cores, so skip the Runnable check entirely.
+			val = Native.rdMem(1);
+			val = Native.rdMem(val+3);
+			Native.invoke(0, val);
 			for (;;) {
 				;			// busy loop for other CPUs exit
 			}

@@ -144,6 +144,8 @@ case class JopCyc5000Top(
     bmbSys.io.rd := jopCoreWithSdram.io.ioRd && ioSlaveId === 0
     bmbSys.io.wr := jopCoreWithSdram.io.ioWr && ioSlaveId === 0
     bmbSys.io.wrData := jopCoreWithSdram.io.ioWrData
+    bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
+    bmbSys.io.syncIn.s_out := False
 
     // UART (slave 1)
     val bmbUart = BmbUart()

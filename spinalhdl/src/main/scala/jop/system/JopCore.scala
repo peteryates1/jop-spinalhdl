@@ -93,6 +93,9 @@ case class JopCore(
     val irqEna    = in Bool()
     val exc       = in Bool()   // Exception signal from I/O subsystem
 
+    // CMP halt (from CmpSync via BmbSys — stalls pipeline when locked out)
+    val halted    = in Bool()
+
     // Debug: bytecode cache fill
     val debugBcRd = out Bool()
 
@@ -136,7 +139,7 @@ case class JopCore(
   // MemCtrl -> Pipeline
   pipeline.io.memRdData := memCtrl.io.memOut.rdData
   pipeline.io.memBcStart := memCtrl.io.memOut.bcStart
-  pipeline.io.memBusy := memCtrl.io.memOut.busy
+  pipeline.io.memBusy := memCtrl.io.memOut.busy || io.halted
   pipeline.io.jbcWrAddr := memCtrl.io.jbcWrite.addr
   pipeline.io.jbcWrData := memCtrl.io.jbcWrite.data
   pipeline.io.jbcWrEn := memCtrl.io.jbcWrite.enable
@@ -229,6 +232,7 @@ case class JopCoreWithBram(
 
   // JOP System core
   val jopCore = JopCore(config, romInit, ramInit, jbcInit)
+  jopCore.io.halted := False  // Single-core: never halted
 
   // Block RAM with BMB interface
   val ram = BmbOnChipRam(

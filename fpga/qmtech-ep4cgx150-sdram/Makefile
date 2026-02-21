@@ -2,15 +2,16 @@
 # JOP SDRAM - QMTECH EP4CGX150 Build & Program
 #
 # Targets:
-#   make microcode - Build serial-boot microcode
-#   make generate  - Generate Verilog from SpinalHDL
-#   make build     - Quartus compile (map, fit, asm, sta)
-#   make program   - Program FPGA via JTAG
-#   make download  - Send HelloWorld.jop via serial
-#   make monitor   - Monitor UART output (1 Mbaud)
-#   make all       - microcode + generate + build
-#   make run       - program + download + monitor
-#   make full      - microcode + generate + build + run
+#   make microcode     - Build serial-boot microcode
+#   make generate      - Generate Verilog from SpinalHDL
+#   make generate-smp  - Generate SMP Verilog (2 cores)
+#   make build         - Quartus compile (map, fit, asm, sta)
+#   make program       - Program FPGA via JTAG
+#   make download      - Send HelloWorld.jop via serial
+#   make monitor       - Monitor UART output (1 Mbaud)
+#   make all           - microcode + generate + build
+#   make run           - program + download + monitor
+#   make full          - microcode + generate + build + run
 #
 
 # Quartus installation
@@ -34,13 +35,14 @@ JOP_FILE ?= $(JOP_HOME)/java/Smallest/HelloWorld.jop
 PROJECT_ROOT = ../..
 ASM_DIR = ../../asm
 GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSdramTop.v
+GENERATED_SMP_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSmpSdramTop.v
 
 # Quartus project
 QP = jop_sdram
 OUTPUT_DIR = output_files
 SOF_FILE = $(OUTPUT_DIR)/$(QP).sof
 
-.PHONY: all microcode generate build program download monitor run full clean
+.PHONY: all microcode generate generate-smp build program download monitor run full clean
 
 # Default: microcode + generate + build
 all: microcode generate build
@@ -66,6 +68,10 @@ microcode:
 generate:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopSdramTopVerilog"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
+
+generate-smp:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopSmpSdramTopVerilog"
+	@echo "=== SMP Verilog generated: $(GENERATED_SMP_V) ==="
 
 # --------------------------------------------------------------------------
 # Quartus build

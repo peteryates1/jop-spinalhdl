@@ -130,6 +130,7 @@ case class JopCoreWithSdram(
   jopCore.io.irq := io.irq
   jopCore.io.irqEna := io.irqEna
   jopCore.io.exc := io.exc
+  jopCore.io.halted := False  // Single-core: never halted
 
   // BMB debug
   io.bmbCmdValid := jopCore.io.bmb.cmd.valid

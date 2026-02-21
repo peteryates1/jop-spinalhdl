@@ -102,6 +102,8 @@ case class JopCoreTestHarness(
   bmbSys.io.rd     := jopCore.io.ioRd && ioSlaveId === 0
   bmbSys.io.wr     := jopCore.io.ioWr && ioSlaveId === 0
   bmbSys.io.wrData := jopCore.io.ioWrData
+  bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
+  bmbSys.io.syncIn.s_out := False
 
   // Exception signal from BmbSys
   jopCore.io.exc := bmbSys.io.exc
@@ -138,6 +140,7 @@ case class JopCoreTestHarness(
   // Interrupt (disabled for now)
   jopCore.io.irq := False
   jopCore.io.irqEna := False
+  jopCore.io.halted := False  // Single-core: never halted
 
   // Outputs
   io.pc := jopCore.io.pc

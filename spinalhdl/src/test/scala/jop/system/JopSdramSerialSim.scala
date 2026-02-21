@@ -109,6 +109,8 @@ case class JopSdramSerialHarness(
   bmbSys.io.rd     := jopSystem.io.ioRd && ioSlaveId === 0
   bmbSys.io.wr     := jopSystem.io.ioWr && ioSlaveId === 0
   bmbSys.io.wrData := jopSystem.io.ioWrData
+  bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
+  bmbSys.io.syncIn.s_out := False
 
   // Exception signal from BmbSys
   jopSystem.io.exc := bmbSys.io.exc

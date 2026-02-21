@@ -130,6 +130,7 @@ case class JopBramTop(
     // Interrupts (disabled)
     jopCore.io.irq := False
     jopCore.io.irqEna := False
+    jopCore.io.halted := False  // Single-core: never halted
 
     // ======================================================================
     // I/O Slaves
@@ -144,6 +145,8 @@ case class JopBramTop(
     bmbSys.io.rd := jopCore.io.ioRd && ioSlaveId === 0
     bmbSys.io.wr := jopCore.io.ioWr && ioSlaveId === 0
     bmbSys.io.wrData := jopCore.io.ioWrData
+    bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
+    bmbSys.io.syncIn.s_out := False
 
     // UART (slave 1)
     val bmbUart = BmbUart()
@@ -325,6 +328,7 @@ case class JopBramSerialTop(
     // Interrupts (disabled)
     jopCore.io.irq := False
     jopCore.io.irqEna := False
+    jopCore.io.halted := False  // Single-core: never halted
 
     // I/O Slaves
     val ioSubAddr = jopCore.io.ioAddr(3 downto 0)
@@ -336,6 +340,8 @@ case class JopBramSerialTop(
     bmbSys.io.rd := jopCore.io.ioRd && ioSlaveId === 0
     bmbSys.io.wr := jopCore.io.ioWr && ioSlaveId === 0
     bmbSys.io.wrData := jopCore.io.ioWrData
+    bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
+    bmbSys.io.syncIn.s_out := False
 
     // UART (slave 1) — TX + RX for serial download
     val bmbUart = BmbUart()

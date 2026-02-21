@@ -5214,7 +5214,7 @@ LocalVariable(start_pc = 0, length = 5, index = 0:com.jopdesign.sys.Startup this
 LineNumber(0, 35)
 
 com.jopdesign.sys.Startup:boot()V
-Code(max_stack = 3, max_locals = 2, code_length = 157)
+Code(max_stack = 3, max_locals = 2, code_length = 146)
 0:    iconst_0
 1:    bipush		-120
 3:    invokestatic	com.jopdesign.sys.Native.wr (II)V (2)
@@ -5276,48 +5276,46 @@ Code(max_stack = 3, max_locals = 2, code_length = 157)
 115:  iload_0
 116:  invokestatic	com.jopdesign.sys.Native.invoke (II)V (14)
 119:  invokestatic	com.jopdesign.sys.Startup.exit ()V (15)
-122:  goto		#156
-125:  getstatic		com.jopdesign.sys.Startup.cpuStart [Ljava/lang/Runnable; (16)
-128:  ifnull		#153
-131:  getstatic		com.jopdesign.sys.Startup.cpuStart [Ljava/lang/Runnable; (16)
-134:  iload_0
-135:  iconst_1
-136:  isub
-137:  aaload
-138:  ifnull		#153
-141:  getstatic		com.jopdesign.sys.Startup.cpuStart [Ljava/lang/Runnable; (16)
-144:  iload_0
-145:  iconst_1
-146:  isub
-147:  aaload
-148:  invokeinterface	java.lang.Runnable.run ()V (17)	1	0
-153:  goto		#153
-156:  return
+122:  goto		#145
+125:  iconst_1
+126:  invokestatic	com.jopdesign.sys.Native.rdMem (I)I (3)
+129:  istore_0
+130:  iload_0
+131:  iconst_3
+132:  iadd
+133:  invokestatic	com.jopdesign.sys.Native.rdMem (I)I (3)
+136:  istore_0
+137:  iconst_0
+138:  iload_0
+139:  invokestatic	com.jopdesign.sys.Native.invoke (II)V (14)
+142:  goto		#142
+145:  return
 
 Attribute(s) = 
-(Unknown attribute StackMapTable: 00 04 fb 00 4a fc 00 32 01 1b... (truncated))
+(Unknown attribute StackMapTable: 00 04 fb 00 4a fc 00 32 01 10... (truncated))
 LineNumber(0, 72), LineNumber(6, 75), LineNumber(14, 76), LineNumber(18, 78), 
 LineNumber(23, 79), LineNumber(27, 82), LineNumber(32, 83), LineNumber(40, 85), 
 LineNumber(45, 86), LineNumber(50, 87), LineNumber(59, 88), LineNumber(64, 90), 
 LineNumber(68, 91), LineNumber(71, 92), LineNumber(74, 96), LineNumber(80, 98), 
 LineNumber(86, 100), LineNumber(92, 103), LineNumber(98, 105), LineNumber(102, 107), 
-LineNumber(107, 108), LineNumber(114, 109), LineNumber(119, 110), LineNumber(125, 113), 
-LineNumber(141, 114), LineNumber(153, 116), LineNumber(156, 120)
+LineNumber(107, 108), LineNumber(114, 109), LineNumber(119, 110), LineNumber(125, 115), 
+LineNumber(130, 116), LineNumber(137, 117), LineNumber(142, 118), LineNumber(145, 122)
+
 
 com.jopdesign.sys.Startup:msg()V
 Code(max_stack = 1, max_locals = 0, code_length = 11)
 0:    bipush		13
-2:    invokestatic	com.jopdesign.sys.JVMHelp.wr (I)V (18)
+2:    invokestatic	com.jopdesign.sys.JVMHelp.wr (I)V (16)
 5:    bipush		10
-7:    invokestatic	com.jopdesign.sys.JVMHelp.wr (I)V (18)
+7:    invokestatic	com.jopdesign.sys.JVMHelp.wr (I)V (16)
 10:   return
 
 Attribute(s) = 
-LineNumber(0, 125), LineNumber(5, 126), LineNumber(10, 127)
+LineNumber(0, 127), LineNumber(5, 128), LineNumber(10, 129)
 
 com.jopdesign.sys.Startup:setRunnable(Ljava/lang/Runnable;I)V
 Code(max_stack = 3, max_locals = 2, code_length = 7)
-0:    getstatic		com.jopdesign.sys.Startup.cpuStart [Ljava/lang/Runnable; (16)
+0:    getstatic		com.jopdesign.sys.Startup.cpuStart [Ljava/lang/Runnable; (17)
 3:    iload_1
 4:    aload_0
 5:    aastore
@@ -5326,7 +5324,7 @@ Code(max_stack = 3, max_locals = 2, code_length = 7)
 Attribute(s) = 
 LocalVariable(start_pc = 0, length = 7, index = 0:Runnable arg0)
 LocalVariable(start_pc = 0, length = 7, index = 1:int arg1)
-LineNumber(0, 135), LineNumber(6, 136)
+LineNumber(0, 137), LineNumber(6, 138)
 
 com.jopdesign.sys.Startup:getRamSize(I)I
 Code(max_stack = 3, max_locals = 4, code_length = 107)
@@ -5335,16 +5333,16 @@ Code(max_stack = 3, max_locals = 4, code_length = 107)
 2:    iload_0
 3:    iconst_0
 4:    iadd
-5:    invokestatic	com.jopdesign.sys.Native.rd (I)I (19)
+5:    invokestatic	com.jopdesign.sys.Native.rd (I)I (18)
 8:    istore_2
 9:    iconst_0
 10:   istore_1
 11:   iload_0
 12:   iload_1
 13:   iadd
-14:   invokestatic	com.jopdesign.sys.Native.rd (I)I (19)
+14:   invokestatic	com.jopdesign.sys.Native.rd (I)I (18)
 17:   istore_3
-18:   ldc		-1431677611 (20)
+18:   ldc		-1431677611 (19)
 20:   iload_0
 21:   iload_1
 22:   iadd
@@ -5352,11 +5350,11 @@ Code(max_stack = 3, max_locals = 4, code_length = 107)
 26:   iload_0
 27:   iload_1
 28:   iadd
-29:   invokestatic	com.jopdesign.sys.Native.rd (I)I (19)
-32:   ldc		-1431677611 (20)
+29:   invokestatic	com.jopdesign.sys.Native.rd (I)I (18)
+32:   ldc		-1431677611 (19)
 34:   if_icmpeq		#40
 37:   goto		#98
-40:   ldc		305419896 (21)
+40:   ldc		305419896 (20)
 42:   iload_0
 43:   iload_1
 44:   iadd
@@ -5364,17 +5362,17 @@ Code(max_stack = 3, max_locals = 4, code_length = 107)
 48:   iload_0
 49:   iload_1
 50:   iadd
-51:   invokestatic	com.jopdesign.sys.Native.rd (I)I (19)
-54:   ldc		305419896 (21)
+51:   invokestatic	com.jopdesign.sys.Native.rd (I)I (18)
+54:   ldc		305419896 (20)
 56:   if_icmpeq		#62
 59:   goto		#98
 62:   iload_1
 63:   ifeq		#82
-66:   invokestatic	com.jopdesign.sys.Native.invalidate ()V (22)
+66:   invokestatic	com.jopdesign.sys.Native.invalidate ()V (21)
 69:   iload_0
 70:   iconst_0
 71:   iadd
-72:   invokestatic	com.jopdesign.sys.Native.rd (I)I (19)
+72:   invokestatic	com.jopdesign.sys.Native.rd (I)I (18)
 75:   iload_2
 76:   if_icmpeq		#82
 79:   goto		#98
@@ -5399,10 +5397,10 @@ Code(max_stack = 3, max_locals = 4, code_length = 107)
 Attribute(s) = 
 (Unknown attribute StackMapTable: 00 05 fd 00 0b 01 01 fc 00 1c... (truncated))
 LocalVariable(start_pc = 0, length = 107, index = 0:int arg0)
-LineNumber(0, 144), LineNumber(2, 145), LineNumber(9, 148), LineNumber(11, 149), 
-LineNumber(18, 150), LineNumber(26, 151), LineNumber(40, 152), LineNumber(48, 153), 
-LineNumber(62, 154), LineNumber(66, 156), LineNumber(69, 157), LineNumber(82, 160), 
-LineNumber(89, 148), LineNumber(98, 163), LineNumber(105, 165)
+LineNumber(0, 146), LineNumber(2, 147), LineNumber(9, 150), LineNumber(11, 151), 
+LineNumber(18, 152), LineNumber(26, 153), LineNumber(40, 154), LineNumber(48, 155), 
+LineNumber(62, 156), LineNumber(66, 158), LineNumber(69, 159), LineNumber(82, 162), 
+LineNumber(89, 150), LineNumber(98, 165), LineNumber(105, 167)
 
 com.jopdesign.sys.Startup:getSpeed()I
 Code(max_stack = 2, max_locals = 3, code_length = 64)
@@ -5411,31 +5409,31 @@ Code(max_stack = 2, max_locals = 3, code_length = 64)
 2:    iconst_0
 3:    istore_1
 4:    bipush		-127
-6:    invokestatic	com.jopdesign.sys.Native.rd (I)I (19)
+6:    invokestatic	com.jopdesign.sys.Native.rd (I)I (18)
 9:    iconst_5
 10:   iadd
 11:   istore_2
 12:   bipush		-127
-14:   invokestatic	com.jopdesign.sys.Native.rd (I)I (19)
+14:   invokestatic	com.jopdesign.sys.Native.rd (I)I (18)
 17:   iload_2
 18:   isub
 19:   ifge		#25
 22:   goto		#12
 25:   bipush		-128
-27:   invokestatic	com.jopdesign.sys.Native.rd (I)I (19)
+27:   invokestatic	com.jopdesign.sys.Native.rd (I)I (18)
 30:   istore_0
 31:   iload_2
 32:   bipush		32
 34:   iadd
 35:   istore_2
 36:   bipush		-127
-38:   invokestatic	com.jopdesign.sys.Native.rd (I)I (19)
+38:   invokestatic	com.jopdesign.sys.Native.rd (I)I (18)
 41:   iload_2
 42:   isub
 43:   ifge		#49
 46:   goto		#36
 49:   bipush		-128
-51:   invokestatic	com.jopdesign.sys.Native.rd (I)I (19)
+51:   invokestatic	com.jopdesign.sys.Native.rd (I)I (18)
 54:   istore_1
 55:   iload_1
 56:   iload_0
@@ -5448,87 +5446,87 @@ Code(max_stack = 2, max_locals = 3, code_length = 64)
 
 Attribute(s) = 
 (Unknown attribute StackMapTable: 00 04 fe 00 0c 01 01 01 0c 08... (truncated))
-LineNumber(0, 174), LineNumber(4, 175), LineNumber(12, 177), LineNumber(25, 180), 
-LineNumber(31, 181), LineNumber(36, 182), LineNumber(49, 185), LineNumber(55, 188)
+LineNumber(0, 176), LineNumber(4, 177), LineNumber(12, 179), LineNumber(25, 182), 
+LineNumber(31, 183), LineNumber(36, 184), LineNumber(49, 187), LineNumber(55, 190)
 
 
 com.jopdesign.sys.Startup:version()V
 Code(max_stack = 2, max_locals = 2, code_length = 124)
 0:    bipush		62
-2:    invokestatic	com.jopdesign.sys.Native.rdIntMem (I)I (23)
+2:    invokestatic	com.jopdesign.sys.Native.rdIntMem (I)I (22)
 5:    istore_0
 6:    iload_0
-7:    ldc		305419896 (21)
+7:    ldc		305419896 (20)
 9:    if_icmpne		#18
 12:   bipush		64
-14:   invokestatic	com.jopdesign.sys.Native.rdIntMem (I)I (23)
+14:   invokestatic	com.jopdesign.sys.Native.rdIntMem (I)I (22)
 17:   istore_0
-18:   ldc		" V " (24)
+18:   ldc		" V " (23)
 20:   invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
 23:   iload_0
-24:   ldc		305419896 (21)
+24:   ldc		305419896 (20)
 26:   if_icmpne		#37
-29:   ldc		"pre2005" (25)
+29:   ldc		"pre2005" (24)
 31:   invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
 34:   goto		#41
 37:   iload_0
-38:   invokestatic	com.jopdesign.sys.JVMHelp.intVal (I)V (26)
-41:   ldc		"\r\n" (27)
+38:   invokestatic	com.jopdesign.sys.JVMHelp.intVal (I)V (25)
+41:   ldc		"\r\n" (26)
 43:   invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
-46:   invokestatic	com.jopdesign.sys.Startup.getSpeed ()I (28)
+46:   invokestatic	com.jopdesign.sys.Startup.getSpeed ()I (27)
 49:   istore_1
 50:   iload_1
-51:   invokestatic	com.jopdesign.sys.JVMHelp.intVal (I)V (26)
-54:   ldc		"MHz, " (29)
+51:   invokestatic	com.jopdesign.sys.JVMHelp.intVal (I)V (25)
+54:   ldc		"MHz, " (28)
 56:   invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
 59:   getstatic		com.jopdesign.sys.Startup.mem_size I (8)
 62:   sipush		1024
 65:   idiv
 66:   iconst_4
 67:   imul
-68:   invokestatic	com.jopdesign.sys.JVMHelp.intVal (I)V (26)
-71:   ldc		"KB RAM" (30)
+68:   invokestatic	com.jopdesign.sys.JVMHelp.intVal (I)V (25)
+71:   ldc		"KB RAM" (29)
 73:   invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
 76:   getstatic		com.jopdesign.sys.Startup.spm_size I (7)
 79:   ifeq		#100
-82:   ldc		", " (31)
+82:   ldc		", " (30)
 84:   invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
 87:   getstatic		com.jopdesign.sys.Startup.spm_size I (7)
 90:   iconst_4
 91:   imul
-92:   invokestatic	com.jopdesign.sys.JVMHelp.intVal (I)V (26)
-95:   ldc		"Byte on-chip RAM" (32)
+92:   invokestatic	com.jopdesign.sys.JVMHelp.intVal (I)V (25)
+95:   ldc		"Byte on-chip RAM" (31)
 97:   invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
-100:  ldc		", " (31)
+100:  ldc		", " (30)
 102:  invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
 105:  bipush		-117
 107:  invokestatic	com.jopdesign.sys.Native.rdMem (I)I (3)
-110:  invokestatic	com.jopdesign.sys.JVMHelp.intVal (I)V (26)
-113:  ldc		"CPUs" (33)
+110:  invokestatic	com.jopdesign.sys.JVMHelp.intVal (I)V (25)
+113:  ldc		"CPUs" (32)
 115:  invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
-118:  ldc		"\r\n" (27)
+118:  ldc		"\r\n" (26)
 120:  invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
 123:  return
 
 Attribute(s) = 
 (Unknown attribute StackMapTable: 00 04 fc 00 12 01 12 03 fc 00... (truncated))
-LineNumber(0, 194), LineNumber(6, 195), LineNumber(12, 197), LineNumber(18, 199), 
-LineNumber(23, 202), LineNumber(29, 203), LineNumber(37, 205), LineNumber(41, 207), 
-LineNumber(46, 208), LineNumber(50, 209), LineNumber(54, 210), LineNumber(59, 211), 
-LineNumber(71, 212), LineNumber(76, 213), LineNumber(82, 214), LineNumber(87, 215), 
-LineNumber(95, 216), LineNumber(100, 218), LineNumber(105, 219), LineNumber(113, 220), 
-LineNumber(118, 221), LineNumber(123, 222)
+LineNumber(0, 196), LineNumber(6, 197), LineNumber(12, 199), LineNumber(18, 201), 
+LineNumber(23, 204), LineNumber(29, 205), LineNumber(37, 207), LineNumber(41, 209), 
+LineNumber(46, 210), LineNumber(50, 211), LineNumber(54, 212), LineNumber(59, 213), 
+LineNumber(71, 214), LineNumber(76, 215), LineNumber(82, 216), LineNumber(87, 217), 
+LineNumber(95, 218), LineNumber(100, 220), LineNumber(105, 221), LineNumber(113, 222), 
+LineNumber(118, 223), LineNumber(123, 224)
 
 com.jopdesign.sys.Startup:exit()V
 Code(max_stack = 2, max_locals = 2, code_length = 34)
-0:    getstatic		com.jopdesign.sys.RtThreadImpl.mission Z (34)
+0:    getstatic		com.jopdesign.sys.RtThreadImpl.mission Z (33)
 3:    ifeq		#15
 6:    sipush		1000
-9:    invokestatic	com.jopdesign.sys.RtThreadImpl.sleepMs (I)V (35)
+9:    invokestatic	com.jopdesign.sys.RtThreadImpl.sleepMs (I)V (34)
 12:   goto		#0
-15:   ldc		"\r\nJVM exit!\r\n" (36)
+15:   ldc		"\r\nJVM exit!\r\n" (35)
 17:   invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
-20:   getstatic		com.jopdesign.sys.Startup.stack [I (37)
+20:   getstatic		com.jopdesign.sys.Startup.stack [I (36)
 23:   dup
 24:   astore_0
 25:   monitorenter
@@ -5544,9 +5542,9 @@ From	To	Handler	Type
 26	32	29	<Any exception>(0)
 
 Attribute(s) = 
-(Unknown attribute StackMapTable: 00 04 00 0e fc 00 0a 07 00 67... (truncated))
-LineNumber(0, 226), LineNumber(6, 227), LineNumber(15, 229), LineNumber(20, 230), 
-LineNumber(26, 231), LineNumber(29, 232)
+(Unknown attribute StackMapTable: 00 04 00 0e fc 00 0a 07 00 66... (truncated))
+LineNumber(0, 228), LineNumber(6, 229), LineNumber(15, 231), LineNumber(20, 232), 
+LineNumber(26, 233), LineNumber(29, 234)
 
 com.jopdesign.sys.Startup:getSPMSize()I
 Code(max_stack = 2, max_locals = 0, code_length = 6)
@@ -5556,13 +5554,13 @@ Code(max_stack = 2, max_locals = 0, code_length = 6)
 5:    ireturn
 
 Attribute(s) = 
-LineNumber(0, 236)
+LineNumber(0, 238)
 
 com.jopdesign.sys.Startup:clazzinit()V
 Code(max_stack = 2, max_locals = 5, code_length = 112)
 0:    bipush		100
 2:    newarray		<int>
-4:    putstatic		com.jopdesign.sys.Startup.stack [I (37)
+4:    putstatic		com.jopdesign.sys.Startup.stack [I (36)
 7:    iconst_1
 8:    invokestatic	com.jopdesign.sys.Native.rdMem (I)I (3)
 11:   bipush		6
@@ -5587,33 +5585,33 @@ Code(max_stack = 2, max_locals = 5, code_length = 112)
 37:   istore_3
 38:   iload_3
 39:   invokestatic	com.jopdesign.sys.Native.rdMem (I)I (3)
-42:   putstatic		com.jopdesign.sys.Startup.var I (38)
-45:   getstatic		com.jopdesign.sys.Startup.var I (38)
+42:   putstatic		com.jopdesign.sys.Startup.var I (37)
+45:   getstatic		com.jopdesign.sys.Startup.var I (37)
 48:   sipush		1023
 51:   iand
 52:   istore		%4
-54:   getstatic		com.jopdesign.sys.Startup.var I (38)
+54:   getstatic		com.jopdesign.sys.Startup.var I (37)
 57:   bipush		10
 59:   iushr
-60:   putstatic		com.jopdesign.sys.Startup.var I (38)
+60:   putstatic		com.jopdesign.sys.Startup.var I (37)
 63:   iload_3
 64:   iconst_1
 65:   iadd
 66:   invokestatic	com.jopdesign.sys.Native.rdMem (I)I (3)
-69:   putstatic		com.jopdesign.sys.Startup.cp I (39)
-72:   getstatic		com.jopdesign.sys.Startup.cp I (39)
+69:   putstatic		com.jopdesign.sys.Startup.cp I (38)
+72:   getstatic		com.jopdesign.sys.Startup.cp I (38)
 75:   bipush		10
 77:   iushr
-78:   putstatic		com.jopdesign.sys.Startup.cp I (39)
+78:   putstatic		com.jopdesign.sys.Startup.cp I (38)
 81:   iload		%4
 83:   sipush		256
 86:   if_icmpge		#101
 89:   iload		%4
 91:   ifeq		#101
 94:   iload_3
-95:   invokestatic	com.jopdesign.sys.Native.invoke (I)V (40)
+95:   invokestatic	com.jopdesign.sys.Native.invoke (I)V (39)
 98:   goto		#104
-101:  invokestatic	com.jopdesign.sys.Startup.interpret ()V (41)
+101:  invokestatic	com.jopdesign.sys.Startup.interpret ()V (40)
 104:  iload_2
 105:  iconst_1
 106:  iadd
@@ -5623,252 +5621,252 @@ Code(max_stack = 2, max_locals = 5, code_length = 112)
 
 Attribute(s) = 
 (Unknown attribute StackMapTable: 00 04 fe 00 19 01 01 01 fd 00... (truncated))
-LineNumber(0, 240), LineNumber(7, 242), LineNumber(15, 243), LineNumber(20, 244), 
-LineNumber(24, 245), LineNumber(31, 246), LineNumber(38, 248), LineNumber(45, 249), 
-LineNumber(54, 250), LineNumber(63, 251), LineNumber(72, 254), LineNumber(81, 255), 
-LineNumber(94, 256), LineNumber(101, 259), LineNumber(104, 245), LineNumber(111, 262)
+LineNumber(0, 242), LineNumber(7, 244), LineNumber(15, 245), LineNumber(20, 246), 
+LineNumber(24, 247), LineNumber(31, 248), LineNumber(38, 250), LineNumber(45, 251), 
+LineNumber(54, 252), LineNumber(63, 253), LineNumber(72, 256), LineNumber(81, 257), 
+LineNumber(94, 258), LineNumber(101, 261), LineNumber(104, 247), LineNumber(111, 264)
 
 
 com.jopdesign.sys.Startup:interpret()V
 Code(max_stack = 4, max_locals = 3, code_length = 882)
 0:    iconst_0
-1:    putstatic		com.jopdesign.sys.Startup.pc I (42)
+1:    putstatic		com.jopdesign.sys.Startup.pc I (41)
 4:    iconst_0
-5:    putstatic		com.jopdesign.sys.Startup.sp I (43)
-8:    invokestatic	com.jopdesign.sys.Startup.readBC8u ()I (44)
+5:    putstatic		com.jopdesign.sys.Startup.sp I (42)
+8:    invokestatic	com.jopdesign.sys.Startup.readBC8u ()I (43)
 11:   istore_0
 12:   iload_0
 13:   lookupswitch	default = 865, npairs = 39 ((0, 336), (1, 339), (2, 356), (3, 373), (4, 390), (5, 407), (6, 424), (7, 441), (8, 458), (9, 475), (10, 506), (11, 537), (12, 554), (13, 572), (14, 590), (15, 621), (16, 653), (17, 672), (18, 691), (19, 717), (20, 743), (79, 794), (80, 800), (81, 794), (82, 800), (83, 794), (84, 794), (85, 794), (86, 794), (89, 806), (177, 831), (178, 832), (179, 838), (188, 844), (189, 850), (190, 856), (221, 862), (224, 832), (225, 838))
 336:  goto		#8
-339:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-342:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+339:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+342:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 345:  iconst_1
 346:  iadd
 347:  dup
-348:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+348:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 351:  iconst_0
 352:  iastore
 353:  goto		#8
-356:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-359:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+356:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+359:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 362:  iconst_1
 363:  iadd
 364:  dup
-365:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+365:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 368:  iconst_m1
 369:  iastore
 370:  goto		#8
-373:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-376:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+373:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+376:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 379:  iconst_1
 380:  iadd
 381:  dup
-382:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+382:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 385:  iconst_0
 386:  iastore
 387:  goto		#8
-390:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-393:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+390:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+393:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 396:  iconst_1
 397:  iadd
 398:  dup
-399:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+399:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 402:  iconst_1
 403:  iastore
 404:  goto		#8
-407:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-410:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+407:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+410:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 413:  iconst_1
 414:  iadd
 415:  dup
-416:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+416:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 419:  iconst_2
 420:  iastore
 421:  goto		#8
-424:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-427:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+424:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+427:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 430:  iconst_1
 431:  iadd
 432:  dup
-433:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+433:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 436:  iconst_3
 437:  iastore
 438:  goto		#8
-441:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-444:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+441:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+444:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 447:  iconst_1
 448:  iadd
 449:  dup
-450:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+450:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 453:  iconst_4
 454:  iastore
 455:  goto		#8
-458:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-461:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+458:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+461:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 464:  iconst_1
 465:  iadd
 466:  dup
-467:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+467:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 470:  iconst_5
 471:  iastore
 472:  goto		#8
-475:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-478:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+475:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+478:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 481:  iconst_1
 482:  iadd
 483:  dup
-484:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+484:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 487:  iconst_0
 488:  iastore
-489:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-492:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+489:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+492:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 495:  iconst_1
 496:  iadd
 497:  dup
-498:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+498:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 501:  iconst_0
 502:  iastore
 503:  goto		#8
-506:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-509:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+506:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+509:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 512:  iconst_1
 513:  iadd
 514:  dup
-515:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+515:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 518:  iconst_0
 519:  iastore
-520:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-523:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+520:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+523:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 526:  iconst_1
 527:  iadd
 528:  dup
-529:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+529:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 532:  iconst_1
 533:  iastore
 534:  goto		#8
-537:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-540:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+537:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+540:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 543:  iconst_1
 544:  iadd
 545:  dup
-546:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+546:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 549:  iconst_0
 550:  iastore
 551:  goto		#8
-554:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-557:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+554:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+557:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 560:  iconst_1
 561:  iadd
 562:  dup
-563:  putstatic		com.jopdesign.sys.Startup.sp I (43)
-566:  ldc		1065353216 (45)
+563:  putstatic		com.jopdesign.sys.Startup.sp I (42)
+566:  ldc		1065353216 (44)
 568:  iastore
 569:  goto		#8
-572:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-575:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+572:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+575:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 578:  iconst_1
 579:  iadd
 580:  dup
-581:  putstatic		com.jopdesign.sys.Startup.sp I (43)
-584:  ldc		1073741824 (46)
+581:  putstatic		com.jopdesign.sys.Startup.sp I (42)
+584:  ldc		1073741824 (45)
 586:  iastore
 587:  goto		#8
-590:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-593:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+590:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+593:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 596:  iconst_1
 597:  iadd
 598:  dup
-599:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+599:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 602:  iconst_0
 603:  iastore
-604:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-607:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+604:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+607:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 610:  iconst_1
 611:  iadd
 612:  dup
-613:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+613:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 616:  iconst_0
 617:  iastore
 618:  goto		#8
-621:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-624:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+621:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+624:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 627:  iconst_1
 628:  iadd
 629:  dup
-630:  putstatic		com.jopdesign.sys.Startup.sp I (43)
-633:  ldc		1072693248 (47)
+630:  putstatic		com.jopdesign.sys.Startup.sp I (42)
+633:  ldc		1072693248 (46)
 635:  iastore
-636:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-639:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+636:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+639:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 642:  iconst_1
 643:  iadd
 644:  dup
-645:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+645:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 648:  iconst_0
 649:  iastore
 650:  goto		#8
-653:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-656:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+653:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+656:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 659:  iconst_1
 660:  iadd
 661:  dup
-662:  putstatic		com.jopdesign.sys.Startup.sp I (43)
-665:  invokestatic	com.jopdesign.sys.Startup.readBC8s ()B (48)
+662:  putstatic		com.jopdesign.sys.Startup.sp I (42)
+665:  invokestatic	com.jopdesign.sys.Startup.readBC8s ()B (47)
 668:  iastore
 669:  goto		#8
-672:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-675:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+672:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+675:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 678:  iconst_1
 679:  iadd
 680:  dup
-681:  putstatic		com.jopdesign.sys.Startup.sp I (43)
-684:  invokestatic	com.jopdesign.sys.Startup.readBC16s ()S (49)
+681:  putstatic		com.jopdesign.sys.Startup.sp I (42)
+684:  invokestatic	com.jopdesign.sys.Startup.readBC16s ()S (48)
 687:  iastore
 688:  goto		#8
-691:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-694:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+691:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+694:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 697:  iconst_1
 698:  iadd
 699:  dup
-700:  putstatic		com.jopdesign.sys.Startup.sp I (43)
-703:  getstatic		com.jopdesign.sys.Startup.cp I (39)
-706:  invokestatic	com.jopdesign.sys.Startup.readBC8u ()I (44)
+700:  putstatic		com.jopdesign.sys.Startup.sp I (42)
+703:  getstatic		com.jopdesign.sys.Startup.cp I (38)
+706:  invokestatic	com.jopdesign.sys.Startup.readBC8u ()I (43)
 709:  iadd
 710:  invokestatic	com.jopdesign.sys.Native.rdMem (I)I (3)
 713:  iastore
 714:  goto		#8
-717:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-720:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+717:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+720:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 723:  iconst_1
 724:  iadd
 725:  dup
-726:  putstatic		com.jopdesign.sys.Startup.sp I (43)
-729:  getstatic		com.jopdesign.sys.Startup.cp I (39)
-732:  invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (50)
+726:  putstatic		com.jopdesign.sys.Startup.sp I (42)
+729:  getstatic		com.jopdesign.sys.Startup.cp I (38)
+732:  invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (49)
 735:  iadd
 736:  invokestatic	com.jopdesign.sys.Native.rdMem (I)I (3)
 739:  iastore
 740:  goto		#8
-743:  invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (50)
+743:  invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (49)
 746:  istore_2
-747:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-750:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+747:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+750:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 753:  iconst_1
 754:  iadd
 755:  dup
-756:  putstatic		com.jopdesign.sys.Startup.sp I (43)
-759:  getstatic		com.jopdesign.sys.Startup.cp I (39)
+756:  putstatic		com.jopdesign.sys.Startup.sp I (42)
+759:  getstatic		com.jopdesign.sys.Startup.cp I (38)
 762:  iload_2
 763:  iadd
 764:  invokestatic	com.jopdesign.sys.Native.rdMem (I)I (3)
 767:  iastore
-768:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-771:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+768:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+771:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 774:  iconst_1
 775:  iadd
 776:  dup
-777:  putstatic		com.jopdesign.sys.Startup.sp I (43)
-780:  getstatic		com.jopdesign.sys.Startup.cp I (39)
+777:  putstatic		com.jopdesign.sys.Startup.sp I (42)
+780:  getstatic		com.jopdesign.sys.Startup.cp I (38)
 783:  iload_2
 784:  iadd
 785:  iconst_1
@@ -5876,69 +5874,69 @@ Code(max_stack = 4, max_locals = 3, code_length = 882)
 787:  invokestatic	com.jopdesign.sys.Native.rdMem (I)I (3)
 790:  iastore
 791:  goto		#8
-794:  invokestatic	com.jopdesign.sys.Startup.xastore ()V (51)
+794:  invokestatic	com.jopdesign.sys.Startup.xastore ()V (50)
 797:  goto		#8
-800:  invokestatic	com.jopdesign.sys.Startup.x2astore ()V (52)
+800:  invokestatic	com.jopdesign.sys.Startup.x2astore ()V (51)
 803:  goto		#8
-806:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-809:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+806:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+809:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 812:  iaload
 813:  istore_1
-814:  getstatic		com.jopdesign.sys.Startup.stack [I (37)
-817:  getstatic		com.jopdesign.sys.Startup.sp I (43)
+814:  getstatic		com.jopdesign.sys.Startup.stack [I (36)
+817:  getstatic		com.jopdesign.sys.Startup.sp I (42)
 820:  iconst_1
 821:  iadd
 822:  dup
-823:  putstatic		com.jopdesign.sys.Startup.sp I (43)
+823:  putstatic		com.jopdesign.sys.Startup.sp I (42)
 826:  iload_1
 827:  iastore
 828:  goto		#8
 831:  return
-832:  invokestatic	com.jopdesign.sys.Startup.getstatic ()V (53)
+832:  invokestatic	com.jopdesign.sys.Startup.getstatic ()V (52)
 835:  goto		#8
-838:  invokestatic	com.jopdesign.sys.Startup.putstatic ()V (54)
+838:  invokestatic	com.jopdesign.sys.Startup.putstatic ()V (53)
 841:  goto		#8
-844:  invokestatic	com.jopdesign.sys.Startup.newarray ()V (55)
+844:  invokestatic	com.jopdesign.sys.Startup.newarray ()V (54)
 847:  goto		#8
-850:  invokestatic	com.jopdesign.sys.Startup.anewarray ()V (56)
+850:  invokestatic	com.jopdesign.sys.Startup.anewarray ()V (55)
 853:  goto		#8
-856:  invokestatic	com.jopdesign.sys.Startup.arraylength ()V (57)
+856:  invokestatic	com.jopdesign.sys.Startup.arraylength ()V (56)
 859:  goto		#8
 862:  goto		#8
-865:  ldc		"JVM interpreter: bytecode " (58)
+865:  ldc		"JVM interpreter: bytecode " (57)
 867:  invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
 870:  iload_0
-871:  invokestatic	com.jopdesign.sys.JVMHelp.intVal (I)V (26)
-874:  ldc		" not implemented\r\n" (59)
+871:  invokestatic	com.jopdesign.sys.JVMHelp.intVal (I)V (25)
+874:  ldc		" not implemented\r\n" (58)
 876:  invokestatic	com.jopdesign.sys.JVMHelp.wr (Ljava/lang/String;)V (6)
 879:  goto		#879
 
 Attribute(s) = 
 (Unknown attribute StackMapTable: 00 22 08 fc 01 47 01 02 10 10... (truncated))
-LineNumber(0, 268), LineNumber(4, 269), LineNumber(8, 275), LineNumber(12, 279), 
-LineNumber(336, 282), LineNumber(339, 284), LineNumber(353, 285), LineNumber(356, 287), 
-LineNumber(370, 288), LineNumber(373, 290), LineNumber(387, 291), LineNumber(390, 293), 
-LineNumber(404, 294), LineNumber(407, 296), LineNumber(421, 297), LineNumber(424, 299), 
-LineNumber(438, 300), LineNumber(441, 302), LineNumber(455, 303), LineNumber(458, 305), 
-LineNumber(472, 306), LineNumber(475, 308), LineNumber(489, 309), LineNumber(503, 310), 
-LineNumber(506, 312), LineNumber(520, 313), LineNumber(534, 314), LineNumber(537, 316), 
-LineNumber(551, 317), LineNumber(554, 319), LineNumber(569, 320), LineNumber(572, 322), 
-LineNumber(587, 323), LineNumber(590, 325), LineNumber(604, 326), LineNumber(618, 327), 
-LineNumber(621, 329), LineNumber(636, 330), LineNumber(650, 331), LineNumber(653, 333), 
-LineNumber(669, 334), LineNumber(672, 336), LineNumber(688, 337), LineNumber(691, 339), 
-LineNumber(714, 340), LineNumber(717, 342), LineNumber(740, 343), LineNumber(743, 345), 
-LineNumber(747, 346), LineNumber(768, 347), LineNumber(791, 348), LineNumber(794, 355), 
-LineNumber(797, 356), LineNumber(800, 359), LineNumber(803, 360), LineNumber(806, 362), 
-LineNumber(814, 363), LineNumber(828, 364), LineNumber(831, 366), LineNumber(832, 369), 
-LineNumber(835, 370), LineNumber(838, 373), LineNumber(841, 374), LineNumber(844, 388), 
-LineNumber(847, 389), LineNumber(850, 391), LineNumber(853, 392), LineNumber(856, 394), 
-LineNumber(859, 395), LineNumber(862, 397), LineNumber(865, 399), LineNumber(870, 400), 
-LineNumber(874, 401), LineNumber(879, 402)
+LineNumber(0, 270), LineNumber(4, 271), LineNumber(8, 277), LineNumber(12, 281), 
+LineNumber(336, 284), LineNumber(339, 286), LineNumber(353, 287), LineNumber(356, 289), 
+LineNumber(370, 290), LineNumber(373, 292), LineNumber(387, 293), LineNumber(390, 295), 
+LineNumber(404, 296), LineNumber(407, 298), LineNumber(421, 299), LineNumber(424, 301), 
+LineNumber(438, 302), LineNumber(441, 304), LineNumber(455, 305), LineNumber(458, 307), 
+LineNumber(472, 308), LineNumber(475, 310), LineNumber(489, 311), LineNumber(503, 312), 
+LineNumber(506, 314), LineNumber(520, 315), LineNumber(534, 316), LineNumber(537, 318), 
+LineNumber(551, 319), LineNumber(554, 321), LineNumber(569, 322), LineNumber(572, 324), 
+LineNumber(587, 325), LineNumber(590, 327), LineNumber(604, 328), LineNumber(618, 329), 
+LineNumber(621, 331), LineNumber(636, 332), LineNumber(650, 333), LineNumber(653, 335), 
+LineNumber(669, 336), LineNumber(672, 338), LineNumber(688, 339), LineNumber(691, 341), 
+LineNumber(714, 342), LineNumber(717, 344), LineNumber(740, 345), LineNumber(743, 347), 
+LineNumber(747, 348), LineNumber(768, 349), LineNumber(791, 350), LineNumber(794, 357), 
+LineNumber(797, 358), LineNumber(800, 361), LineNumber(803, 362), LineNumber(806, 364), 
+LineNumber(814, 365), LineNumber(828, 366), LineNumber(831, 368), LineNumber(832, 371), 
+LineNumber(835, 372), LineNumber(838, 375), LineNumber(841, 376), LineNumber(844, 390), 
+LineNumber(847, 391), LineNumber(850, 393), LineNumber(853, 394), LineNumber(856, 396), 
+LineNumber(859, 397), LineNumber(862, 399), LineNumber(865, 401), LineNumber(870, 402), 
+LineNumber(874, 403), LineNumber(879, 404)
 
 com.jopdesign.sys.Startup:readBC8u()I
 Code(max_stack = 4, max_locals = 1, code_length = 41)
-0:    getstatic		com.jopdesign.sys.Startup.var I (38)
-3:    getstatic		com.jopdesign.sys.Startup.pc I (42)
+0:    getstatic		com.jopdesign.sys.Startup.var I (37)
+3:    getstatic		com.jopdesign.sys.Startup.pc I (41)
 6:    iconst_2
 7:    ishr
 8:    iadd
@@ -5946,7 +5944,7 @@ Code(max_stack = 4, max_locals = 1, code_length = 41)
 12:   istore_0
 13:   iload_0
 14:   iconst_3
-15:   getstatic		com.jopdesign.sys.Startup.pc I (42)
+15:   getstatic		com.jopdesign.sys.Startup.pc I (41)
 18:   iconst_3
 19:   iand
 20:   isub
@@ -5958,21 +5956,21 @@ Code(max_stack = 4, max_locals = 1, code_length = 41)
 26:   sipush		255
 29:   iand
 30:   istore_0
-31:   getstatic		com.jopdesign.sys.Startup.pc I (42)
+31:   getstatic		com.jopdesign.sys.Startup.pc I (41)
 34:   iconst_1
 35:   iadd
-36:   putstatic		com.jopdesign.sys.Startup.pc I (42)
+36:   putstatic		com.jopdesign.sys.Startup.pc I (41)
 39:   iload_0
 40:   ireturn
 
 Attribute(s) = 
-LineNumber(0, 411), LineNumber(13, 412), LineNumber(25, 413), LineNumber(31, 414), 
-LineNumber(39, 415)
+LineNumber(0, 413), LineNumber(13, 414), LineNumber(25, 415), LineNumber(31, 416), 
+LineNumber(39, 417)
 
 com.jopdesign.sys.Startup:readBC8s()B
 Code(max_stack = 4, max_locals = 1, code_length = 36)
-0:    getstatic		com.jopdesign.sys.Startup.var I (38)
-3:    getstatic		com.jopdesign.sys.Startup.pc I (42)
+0:    getstatic		com.jopdesign.sys.Startup.var I (37)
+3:    getstatic		com.jopdesign.sys.Startup.pc I (41)
 6:    iconst_2
 7:    ishr
 8:    iadd
@@ -5980,7 +5978,7 @@ Code(max_stack = 4, max_locals = 1, code_length = 36)
 12:   istore_0
 13:   iload_0
 14:   iconst_3
-15:   getstatic		com.jopdesign.sys.Startup.pc I (42)
+15:   getstatic		com.jopdesign.sys.Startup.pc I (41)
 18:   iconst_3
 19:   iand
 20:   isub
@@ -5988,21 +5986,21 @@ Code(max_stack = 4, max_locals = 1, code_length = 36)
 22:   ishl
 23:   ishr
 24:   istore_0
-25:   getstatic		com.jopdesign.sys.Startup.pc I (42)
+25:   getstatic		com.jopdesign.sys.Startup.pc I (41)
 28:   iconst_1
 29:   iadd
-30:   putstatic		com.jopdesign.sys.Startup.pc I (42)
+30:   putstatic		com.jopdesign.sys.Startup.pc I (41)
 33:   iload_0
 34:   i2b
 35:   ireturn
 
 Attribute(s) = 
-LineNumber(0, 420), LineNumber(13, 421), LineNumber(25, 422), LineNumber(33, 423)
+LineNumber(0, 422), LineNumber(13, 423), LineNumber(25, 424), LineNumber(33, 425)
 
 
 com.jopdesign.sys.Startup:readBC16s()S
 Code(max_stack = 3, max_locals = 1, code_length = 24)
-0:    invokestatic	com.jopdesign.sys.Startup.readBC8s ()B (48)
+0:    invokestatic	com.jopdesign.sys.Startup.readBC8s ()B (47)
 3:    i2s
 4:    istore_0
 5:    iload_0
@@ -6011,7 +6009,7 @@ Code(max_stack = 3, max_locals = 1, code_length = 24)
 9:    i2s
 10:   istore_0
 11:   iload_0
-12:   invokestatic	com.jopdesign.sys.Startup.readBC8s ()B (48)
+12:   invokestatic	com.jopdesign.sys.Startup.readBC8s ()B (47)
 15:   sipush		255
 18:   iand
 19:   ior
@@ -6021,45 +6019,45 @@ Code(max_stack = 3, max_locals = 1, code_length = 24)
 23:   ireturn
 
 Attribute(s) = 
-LineNumber(0, 428), LineNumber(5, 429), LineNumber(11, 430), LineNumber(22, 431)
+LineNumber(0, 430), LineNumber(5, 431), LineNumber(11, 432), LineNumber(22, 433)
 
 
 com.jopdesign.sys.Startup:readBC16u()I
 Code(max_stack = 2, max_locals = 1, code_length = 9)
-0:    invokestatic	com.jopdesign.sys.Startup.readBC16s ()S (49)
+0:    invokestatic	com.jopdesign.sys.Startup.readBC16s ()S (48)
 3:    istore_0
 4:    iload_0
-5:    ldc		65535 (60)
+5:    ldc		65535 (59)
 7:    iand
 8:    ireturn
 
 Attribute(s) = 
-LineNumber(0, 436), LineNumber(4, 437)
+LineNumber(0, 438), LineNumber(4, 439)
 
 com.jopdesign.sys.Startup:xastore()V
 Code(max_stack = 4, max_locals = 3, code_length = 55)
-0:    getstatic		com.jopdesign.sys.Startup.stack [I (37)
-3:    getstatic		com.jopdesign.sys.Startup.sp I (43)
+0:    getstatic		com.jopdesign.sys.Startup.stack [I (36)
+3:    getstatic		com.jopdesign.sys.Startup.sp I (42)
 6:    dup
 7:    iconst_1
 8:    isub
-9:    putstatic		com.jopdesign.sys.Startup.sp I (43)
+9:    putstatic		com.jopdesign.sys.Startup.sp I (42)
 12:   iaload
 13:   istore_0
-14:   getstatic		com.jopdesign.sys.Startup.stack [I (37)
-17:   getstatic		com.jopdesign.sys.Startup.sp I (43)
+14:   getstatic		com.jopdesign.sys.Startup.stack [I (36)
+17:   getstatic		com.jopdesign.sys.Startup.sp I (42)
 20:   dup
 21:   iconst_1
 22:   isub
-23:   putstatic		com.jopdesign.sys.Startup.sp I (43)
+23:   putstatic		com.jopdesign.sys.Startup.sp I (42)
 26:   iaload
 27:   istore_1
-28:   getstatic		com.jopdesign.sys.Startup.stack [I (37)
-31:   getstatic		com.jopdesign.sys.Startup.sp I (43)
+28:   getstatic		com.jopdesign.sys.Startup.stack [I (36)
+31:   getstatic		com.jopdesign.sys.Startup.sp I (42)
 34:   dup
 35:   iconst_1
 36:   isub
-37:   putstatic		com.jopdesign.sys.Startup.sp I (43)
+37:   putstatic		com.jopdesign.sys.Startup.sp I (42)
 40:   iaload
 41:   istore_2
 42:   iload_2
@@ -6069,47 +6067,47 @@ Code(max_stack = 4, max_locals = 3, code_length = 55)
 48:   iload_2
 49:   iload_1
 50:   iadd
-51:   invokestatic	com.jopdesign.sys.Native.wrMem (II)V (61)
+51:   invokestatic	com.jopdesign.sys.Native.wrMem (II)V (60)
 54:   return
 
 Attribute(s) = 
-LineNumber(0, 441), LineNumber(14, 442), LineNumber(28, 443), LineNumber(42, 445), 
-LineNumber(47, 446), LineNumber(54, 447)
+LineNumber(0, 443), LineNumber(14, 444), LineNumber(28, 445), LineNumber(42, 447), 
+LineNumber(47, 448), LineNumber(54, 449)
 
 com.jopdesign.sys.Startup:x2astore()V
 Code(max_stack = 4, max_locals = 4, code_length = 80)
-0:    getstatic		com.jopdesign.sys.Startup.stack [I (37)
-3:    getstatic		com.jopdesign.sys.Startup.sp I (43)
+0:    getstatic		com.jopdesign.sys.Startup.stack [I (36)
+3:    getstatic		com.jopdesign.sys.Startup.sp I (42)
 6:    dup
 7:    iconst_1
 8:    isub
-9:    putstatic		com.jopdesign.sys.Startup.sp I (43)
+9:    putstatic		com.jopdesign.sys.Startup.sp I (42)
 12:   iaload
 13:   istore_0
-14:   getstatic		com.jopdesign.sys.Startup.stack [I (37)
-17:   getstatic		com.jopdesign.sys.Startup.sp I (43)
+14:   getstatic		com.jopdesign.sys.Startup.stack [I (36)
+17:   getstatic		com.jopdesign.sys.Startup.sp I (42)
 20:   dup
 21:   iconst_1
 22:   isub
-23:   putstatic		com.jopdesign.sys.Startup.sp I (43)
+23:   putstatic		com.jopdesign.sys.Startup.sp I (42)
 26:   iaload
 27:   istore_1
-28:   getstatic		com.jopdesign.sys.Startup.stack [I (37)
-31:   getstatic		com.jopdesign.sys.Startup.sp I (43)
+28:   getstatic		com.jopdesign.sys.Startup.stack [I (36)
+31:   getstatic		com.jopdesign.sys.Startup.sp I (42)
 34:   dup
 35:   iconst_1
 36:   isub
-37:   putstatic		com.jopdesign.sys.Startup.sp I (43)
+37:   putstatic		com.jopdesign.sys.Startup.sp I (42)
 40:   iaload
 41:   iconst_1
 42:   ishl
 43:   istore_2
-44:   getstatic		com.jopdesign.sys.Startup.stack [I (37)
-47:   getstatic		com.jopdesign.sys.Startup.sp I (43)
+44:   getstatic		com.jopdesign.sys.Startup.stack [I (36)
+47:   getstatic		com.jopdesign.sys.Startup.sp I (42)
 50:   dup
 51:   iconst_1
 52:   isub
-53:   putstatic		com.jopdesign.sys.Startup.sp I (43)
+53:   putstatic		com.jopdesign.sys.Startup.sp I (42)
 56:   iaload
 57:   istore_3
 58:   iload_3
@@ -6119,180 +6117,180 @@ Code(max_stack = 4, max_locals = 4, code_length = 80)
 64:   iload_3
 65:   iload_2
 66:   iadd
-67:   invokestatic	com.jopdesign.sys.Native.wrMem (II)V (61)
+67:   invokestatic	com.jopdesign.sys.Native.wrMem (II)V (60)
 70:   iload_0
 71:   iload_3
 72:   iload_2
 73:   iadd
 74:   iconst_1
 75:   iadd
-76:   invokestatic	com.jopdesign.sys.Native.wrMem (II)V (61)
+76:   invokestatic	com.jopdesign.sys.Native.wrMem (II)V (60)
 79:   return
 
 Attribute(s) = 
-LineNumber(0, 450), LineNumber(14, 451), LineNumber(28, 452), LineNumber(44, 453), 
-LineNumber(58, 455), LineNumber(63, 456), LineNumber(70, 457), LineNumber(79, 458)
+LineNumber(0, 452), LineNumber(14, 453), LineNumber(28, 454), LineNumber(44, 455), 
+LineNumber(58, 457), LineNumber(63, 458), LineNumber(70, 459), LineNumber(79, 460)
 
 
 com.jopdesign.sys.Startup:putstatic()V
 Code(max_stack = 4, max_locals = 1, code_length = 22)
-0:    invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (50)
+0:    invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (49)
 3:    istore_0
-4:    getstatic		com.jopdesign.sys.Startup.stack [I (37)
-7:    getstatic		com.jopdesign.sys.Startup.sp I (43)
+4:    getstatic		com.jopdesign.sys.Startup.stack [I (36)
+7:    getstatic		com.jopdesign.sys.Startup.sp I (42)
 10:   dup
 11:   iconst_1
 12:   isub
-13:   putstatic		com.jopdesign.sys.Startup.sp I (43)
+13:   putstatic		com.jopdesign.sys.Startup.sp I (42)
 16:   iaload
 17:   iload_0
-18:   invokestatic	com.jopdesign.sys.Native.putStatic (II)V (62)
+18:   invokestatic	com.jopdesign.sys.Native.putStatic (II)V (61)
 21:   return
 
 Attribute(s) = 
-LineNumber(0, 462), LineNumber(4, 463), LineNumber(21, 464)
+LineNumber(0, 464), LineNumber(4, 465), LineNumber(21, 466)
 
 com.jopdesign.sys.Startup:getstatic()V
 Code(max_stack = 3, max_locals = 1, code_length = 22)
-0:    invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (50)
+0:    invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (49)
 3:    istore_0
-4:    getstatic		com.jopdesign.sys.Startup.stack [I (37)
-7:    getstatic		com.jopdesign.sys.Startup.sp I (43)
+4:    getstatic		com.jopdesign.sys.Startup.stack [I (36)
+7:    getstatic		com.jopdesign.sys.Startup.sp I (42)
 10:   iconst_1
 11:   iadd
 12:   dup
-13:   putstatic		com.jopdesign.sys.Startup.sp I (43)
+13:   putstatic		com.jopdesign.sys.Startup.sp I (42)
 16:   iload_0
-17:   invokestatic	com.jopdesign.sys.Native.getStatic (I)I (63)
+17:   invokestatic	com.jopdesign.sys.Native.getStatic (I)I (62)
 20:   iastore
 21:   return
 
 Attribute(s) = 
-LineNumber(0, 468), LineNumber(4, 469), LineNumber(21, 470)
+LineNumber(0, 470), LineNumber(4, 471), LineNumber(21, 472)
 
 com.jopdesign.sys.Startup:putfield()V
 Code(max_stack = 4, max_locals = 3, code_length = 39)
-0:    invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (50)
+0:    invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (49)
 3:    istore_0
-4:    getstatic		com.jopdesign.sys.Startup.stack [I (37)
-7:    getstatic		com.jopdesign.sys.Startup.sp I (43)
+4:    getstatic		com.jopdesign.sys.Startup.stack [I (36)
+7:    getstatic		com.jopdesign.sys.Startup.sp I (42)
 10:   dup
 11:   iconst_1
 12:   isub
-13:   putstatic		com.jopdesign.sys.Startup.sp I (43)
+13:   putstatic		com.jopdesign.sys.Startup.sp I (42)
 16:   iaload
 17:   istore_1
-18:   getstatic		com.jopdesign.sys.Startup.stack [I (37)
-21:   getstatic		com.jopdesign.sys.Startup.sp I (43)
+18:   getstatic		com.jopdesign.sys.Startup.stack [I (36)
+21:   getstatic		com.jopdesign.sys.Startup.sp I (42)
 24:   dup
 25:   iconst_1
 26:   isub
-27:   putstatic		com.jopdesign.sys.Startup.sp I (43)
+27:   putstatic		com.jopdesign.sys.Startup.sp I (42)
 30:   iaload
 31:   istore_2
 32:   iload_2
 33:   iload_0
 34:   iload_1
-35:   invokestatic	com.jopdesign.sys.Native.putField (III)V (64)
+35:   invokestatic	com.jopdesign.sys.Native.putField (III)V (63)
 38:   return
 
 Attribute(s) = 
-LineNumber(0, 474), LineNumber(4, 475), LineNumber(18, 476), LineNumber(32, 478), 
-LineNumber(38, 479)
+LineNumber(0, 476), LineNumber(4, 477), LineNumber(18, 478), LineNumber(32, 480), 
+LineNumber(38, 481)
 
 com.jopdesign.sys.Startup:getfield()V
 Code(max_stack = 4, max_locals = 2, code_length = 25)
-0:    invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (50)
+0:    invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (49)
 3:    istore_0
-4:    getstatic		com.jopdesign.sys.Startup.stack [I (37)
-7:    getstatic		com.jopdesign.sys.Startup.sp I (43)
+4:    getstatic		com.jopdesign.sys.Startup.stack [I (36)
+7:    getstatic		com.jopdesign.sys.Startup.sp I (42)
 10:   iaload
 11:   istore_1
-12:   getstatic		com.jopdesign.sys.Startup.stack [I (37)
-15:   getstatic		com.jopdesign.sys.Startup.sp I (43)
+12:   getstatic		com.jopdesign.sys.Startup.stack [I (36)
+15:   getstatic		com.jopdesign.sys.Startup.sp I (42)
 18:   iload_1
 19:   iload_0
-20:   invokestatic	com.jopdesign.sys.Native.getField (II)I (65)
+20:   invokestatic	com.jopdesign.sys.Native.getField (II)I (64)
 23:   iastore
 24:   return
 
 Attribute(s) = 
-LineNumber(0, 483), LineNumber(4, 484), LineNumber(12, 486), LineNumber(24, 487)
+LineNumber(0, 485), LineNumber(4, 486), LineNumber(12, 488), LineNumber(24, 489)
 
 
 com.jopdesign.sys.Startup:newobj()V
 Code(max_stack = 3, max_locals = 1, code_length = 22)
-0:    invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (50)
+0:    invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (49)
 3:    istore_0
-4:    getstatic		com.jopdesign.sys.Startup.stack [I (37)
-7:    getstatic		com.jopdesign.sys.Startup.sp I (43)
+4:    getstatic		com.jopdesign.sys.Startup.stack [I (36)
+7:    getstatic		com.jopdesign.sys.Startup.sp I (42)
 10:   iconst_1
 11:   iadd
 12:   dup
-13:   putstatic		com.jopdesign.sys.Startup.sp I (43)
+13:   putstatic		com.jopdesign.sys.Startup.sp I (42)
 16:   iload_0
-17:   invokestatic	com.jopdesign.sys.JVM.f_new (I)I (66)
+17:   invokestatic	com.jopdesign.sys.JVM.f_new (I)I (65)
 20:   iastore
 21:   return
 
 Attribute(s) = 
-LineNumber(0, 491), LineNumber(4, 492), LineNumber(21, 493)
+LineNumber(0, 493), LineNumber(4, 494), LineNumber(21, 495)
 
 com.jopdesign.sys.Startup:newarray()V
 Code(max_stack = 4, max_locals = 2, code_length = 25)
-0:    invokestatic	com.jopdesign.sys.Startup.readBC8u ()I (44)
+0:    invokestatic	com.jopdesign.sys.Startup.readBC8u ()I (43)
 3:    istore_0
-4:    getstatic		com.jopdesign.sys.Startup.stack [I (37)
-7:    getstatic		com.jopdesign.sys.Startup.sp I (43)
+4:    getstatic		com.jopdesign.sys.Startup.stack [I (36)
+7:    getstatic		com.jopdesign.sys.Startup.sp I (42)
 10:   iaload
 11:   istore_1
-12:   getstatic		com.jopdesign.sys.Startup.stack [I (37)
-15:   getstatic		com.jopdesign.sys.Startup.sp I (43)
+12:   getstatic		com.jopdesign.sys.Startup.stack [I (36)
+15:   getstatic		com.jopdesign.sys.Startup.sp I (42)
 18:   iload_1
 19:   iload_0
-20:   invokestatic	com.jopdesign.sys.JVM.f_newarray (II)I (67)
+20:   invokestatic	com.jopdesign.sys.JVM.f_newarray (II)I (66)
 23:   iastore
 24:   return
 
 Attribute(s) = 
-LineNumber(0, 497), LineNumber(4, 498), LineNumber(12, 499), LineNumber(24, 500)
+LineNumber(0, 499), LineNumber(4, 500), LineNumber(12, 501), LineNumber(24, 502)
 
 
 com.jopdesign.sys.Startup:anewarray()V
 Code(max_stack = 4, max_locals = 2, code_length = 25)
-0:    invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (50)
+0:    invokestatic	com.jopdesign.sys.Startup.readBC16u ()I (49)
 3:    istore_0
-4:    getstatic		com.jopdesign.sys.Startup.stack [I (37)
-7:    getstatic		com.jopdesign.sys.Startup.sp I (43)
+4:    getstatic		com.jopdesign.sys.Startup.stack [I (36)
+7:    getstatic		com.jopdesign.sys.Startup.sp I (42)
 10:   iaload
 11:   istore_1
-12:   getstatic		com.jopdesign.sys.Startup.stack [I (37)
-15:   getstatic		com.jopdesign.sys.Startup.sp I (43)
+12:   getstatic		com.jopdesign.sys.Startup.stack [I (36)
+15:   getstatic		com.jopdesign.sys.Startup.sp I (42)
 18:   iload_1
 19:   iload_0
-20:   invokestatic	com.jopdesign.sys.JVM.f_anewarray (II)I (68)
+20:   invokestatic	com.jopdesign.sys.JVM.f_anewarray (II)I (67)
 23:   iastore
 24:   return
 
 Attribute(s) = 
-LineNumber(0, 504), LineNumber(4, 505), LineNumber(12, 506), LineNumber(24, 508)
+LineNumber(0, 506), LineNumber(4, 507), LineNumber(12, 508), LineNumber(24, 510)
 
 
 com.jopdesign.sys.Startup:arraylength()V
 Code(max_stack = 3, max_locals = 1, code_length = 20)
-0:    getstatic		com.jopdesign.sys.Startup.stack [I (37)
-3:    getstatic		com.jopdesign.sys.Startup.sp I (43)
+0:    getstatic		com.jopdesign.sys.Startup.stack [I (36)
+3:    getstatic		com.jopdesign.sys.Startup.sp I (42)
 6:    iaload
 7:    istore_0
-8:    getstatic		com.jopdesign.sys.Startup.stack [I (37)
-11:   getstatic		com.jopdesign.sys.Startup.sp I (43)
+8:    getstatic		com.jopdesign.sys.Startup.stack [I (36)
+11:   getstatic		com.jopdesign.sys.Startup.sp I (42)
 14:   iload_0
-15:   invokestatic	com.jopdesign.sys.Native.arrayLength (I)I (69)
+15:   invokestatic	com.jopdesign.sys.Native.arrayLength (I)I (68)
 18:   iastore
 19:   return
 
 Attribute(s) = 
-LineNumber(0, 512), LineNumber(8, 514), LineNumber(19, 515)
+LineNumber(0, 514), LineNumber(8, 516), LineNumber(19, 517)
 
 com.jopdesign.sys.BitUtils:<init>()V
 Code(max_stack = 1, max_locals = 1, code_length = 5)
@@ -14098,3 +14096,5 @@ Code(max_stack = 2, max_locals = 1, code_length = 15)
 14:   ireturn
 
 Attribute(s) = 
+(Unknown attribute StackMapTable: 00 02 0d 40 01)
+LocalVariable(start_pc = 0, length = 15, index = 0:com.jopdesign.io.Ser

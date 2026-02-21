@@ -300,6 +300,8 @@ case class JopCoreWithMigTestHarness(
   bmbSys.io.rd     := jopCore.io.ioRd && ioSlaveId === 0
   bmbSys.io.wr     := jopCore.io.ioWr && ioSlaveId === 0
   bmbSys.io.wrData := jopCore.io.ioWrData
+  bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
+  bmbSys.io.syncIn.s_out := False
 
   jopCore.io.exc := bmbSys.io.exc
 
@@ -330,6 +332,7 @@ case class JopCoreWithMigTestHarness(
 
   jopCore.io.irq := False
   jopCore.io.irqEna := False
+  jopCore.io.halted := False  // Single-core: never halted
   jopCore.io.debugRamAddr := 0
 
   // Outputs

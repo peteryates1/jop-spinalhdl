@@ -196,6 +196,7 @@ case class JopDdr3Top(
 
     jopCore.io.irq    := False
     jopCore.io.irqEna := False
+    jopCore.io.halted := False  // Single-core: never halted
 
     // ==================================================================
     // I/O Slaves
@@ -210,6 +211,8 @@ case class JopDdr3Top(
     bmbSys.io.rd     := jopCore.io.ioRd && ioSlaveId === 0
     bmbSys.io.wr     := jopCore.io.ioWr && ioSlaveId === 0
     bmbSys.io.wrData := jopCore.io.ioWrData
+    bmbSys.io.syncIn.halted := False  // Single-core: no CmpSync
+    bmbSys.io.syncIn.s_out := False
 
     // UART (slave 1)
     val bmbUart = BmbUart()
