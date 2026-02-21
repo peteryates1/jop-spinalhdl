@@ -25,7 +25,7 @@ import jop.pipeline.JumpTableInitData
  *                                        ↕
  *                                     CmpSync
  *
- * @param cpuCnt    Number of CPU cores (2-4)
+ * @param cpuCnt    Number of CPU cores (2+)
  * @param romInit   Microcode ROM initialization data (serial-boot)
  * @param ramInit   Stack RAM initialization data (serial-boot)
  */
@@ -34,7 +34,7 @@ case class JopSmpSdramTop(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt]
 ) extends Component {
-  require(cpuCnt >= 2 && cpuCnt <= 4, "SMP supports 2-4 cores")
+  require(cpuCnt >= 2, "SMP requires at least 2 cores")
 
   val io = new Bundle {
     val clk_in    = in Bool()

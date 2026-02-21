@@ -24,7 +24,7 @@ case class JopSmpTestHarness(
   ramInit: Seq[BigInt],
   mainMemInit: Seq[BigInt]
 ) extends Component {
-  require(cpuCnt >= 2 && cpuCnt <= 4)
+  require(cpuCnt >= 2)
 
   val io = new Bundle {
     // Per-core pipeline outputs
