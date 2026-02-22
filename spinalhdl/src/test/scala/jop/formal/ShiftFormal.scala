@@ -128,32 +128,4 @@ class ShiftFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("all shift types with anyconst inputs") {
-    formalConfig
-      .withBMC(2)
-      .doVerify(new Component {
-        val dut = FormalDut(Shift(32))
-        assumeInitial(ClockDomain.current.isResetActive)
-
-        anyseq(dut.io.din)
-        anyseq(dut.io.off)
-        anyseq(dut.io.shtyp)
-
-        when(pastValidAfterReset()) {
-          switch(dut.io.shtyp) {
-            is(B"2'b00") { // USHR
-              assert(dut.io.dout === (dut.io.din |>> dut.io.off))
-            }
-            is(B"2'b01") { // SHL
-              assert(dut.io.dout === (dut.io.din |<< dut.io.off))
-            }
-            is(B"2'b10") { // SHR
-              val signed = dut.io.din.asSInt
-              val expected = (signed >> dut.io.off).asUInt
-              assert(dut.io.dout === expected)
-            }
-          }
-        }
-      })
-  }
 }

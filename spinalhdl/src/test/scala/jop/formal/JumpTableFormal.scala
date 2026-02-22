@@ -112,7 +112,7 @@ class JumpTableFormal extends SpinalFormalFunSuite {
 
         when(pastValidAfterReset()) {
           // When neither pending, output should not be handler address
-          assert(dut.io.jpaddr =/= U(JumpTableInitData.simulation.sysExcAddr, dut.config.pcWidth bits) ||
+          assert(dut.io.jpaddr =/= U(JumpTableInitData.simulation.sysExcAddr, dut.config.pcWidth bits) &&
                  dut.io.jpaddr =/= U(JumpTableInitData.simulation.sysIntAddr, dut.config.pcWidth bits))
         }
       })

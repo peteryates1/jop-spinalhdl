@@ -4,12 +4,12 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 
 ## Overview
 
-**96 properties verified** across **16 test suites** covering all major components:
+**98 properties verified** across **16 test suites** covering all major components:
 
 | Category | Suite | Tests | Properties |
 |----------|-------|:-----:|------------|
 | **Core Arithmetic** | MulFormal | 7 | Register init, operand loading, result stability, 8-bit functional correctness, zero/one multiplication, restart behavior |
-| | ShiftFormal | 6 | USHR/SHL/SHR correctness, zero shift identity, full shift (31), all types combined |
+| | ShiftFormal | 5 | USHR/SHL/SHR correctness, zero shift identity, full shift (31) |
 | **Pipeline Stages** | JumpTableFormal | 5 | Exception > interrupt > normal priority chain, mutual override |
 | | FetchStageFormal | 4 | PC priority (jfetch > br > jmp), pipeline freeze on wait+busy, default increment |
 | | BytecodeFetchStageFormal | 4 | No double-ack, exception/interrupt ack preconditions, interrupt latching |
@@ -17,13 +17,13 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 | | DecodeStageFormal | 4 | Memory op mutual exclusion, field op mutual exclusion, br/jmp exclusion, reset safety |
 | **Memory Subsystem** | MethodCacheFormal | 6 | State machine transitions (IDLE/S1/S2), rdy output, find trigger, S2 always returns, inCache stability |
 | | ObjectCacheFormal | 5 | Invalidation clears valid bits and FIFO pointer, uncacheable field rejection, hit implies cacheable, no hit after reset |
-| | BmbMemoryControllerFormal | 10 | Initial state, busy correctness, exception/copy returns to IDLE, READ/WRITE_WAIT completion, IDLE stability |
+| | BmbMemoryControllerFormal | 12 | Initial state, busy correctness, exception/copy returns to IDLE, READ/WRITE_WAIT completion + hold, IDLE stability |
 | **DDR3 Subsystem** | LruCacheCoreFormal | 11 | Initial state, busy correctness, memCmd gating, evict/refill commands, error recovery, no-deadlock, **2 bugs found and fixed** (see below) |
 | | CacheToMigAdapterFormal | 8 | Initial state, busy correctness, IDLE stability, no-deadlock, MIG signal gating, read data capture, write completion |
 | **I/O Subsystem** | CmpSyncFormal | 5 | Lock mutual exclusion, deadlock freedom, signal broadcast, gcHalt isolation, IDLE no-halt |
 | | BmbSysFormal | 6 | Clock counter monotonicity, exception pulse, lock acquire/release/hold, halted passthrough |
 | | BmbUartFormal | 5 | TX push gating, RX pop gating, no spurious TX, status register accuracy (bits 0 and 1) |
-| **BMB Protocol** | BmbProtocolFormal | 4 | rsp.ready always true, cmd.last always true, cmd address/opcode/data stable while not accepted |
+| **BMB Protocol** | BmbProtocolFormal | 5 | rsp.ready always true, cmd.last always true, cmd.valid held until ready, cmd address/opcode/data stable while not accepted |
 
 ## Toolchain
 
@@ -44,7 +44,7 @@ cd /tmp/sby && sudo make install PREFIX=/usr/local
 ## Running
 
 ```bash
-# Run all 96 formal tests (~100 seconds)
+# Run all 98 formal tests (~100 seconds)
 sbt "testOnly jop.formal.*"
 
 # Run a specific suite
@@ -182,7 +182,7 @@ With the current `BmbCacheBridge` frontend, these bugs are **unlikely to trigger
 | JumpTable | 2 | <0.3s | Combinational ROM lookup |
 | StackStage flags | 3 | <0.3s | Unconstrained inputs, simple property |
 | MethodCache | 5-6 | <0.5s | Small state machine, 16-entry tag array |
-| BmbMemoryController | 4 | <0.7s | Large state machine, constrained BMB slave |
+| BmbMemoryController | 4-6 | <1.0s | Large state machine, wait-state tests use anyseq(rsp.valid) |
 | BytecodeFetchStage | 4-6 | 0.5-3s | 256-entry ROM + 2KB RAM make Z3 slow |
 | Mul (8-bit correctness) | 20 | ~1s | 8-bit width; 32-bit is intractable for Z3 |
 | LruCacheCore | 20 | 2-47s | Deep BMC needed to reach cache hit states |

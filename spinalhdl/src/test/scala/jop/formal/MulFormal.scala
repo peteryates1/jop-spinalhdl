@@ -130,14 +130,14 @@ class MulFormal extends SpinalFormalFunSuite {
           }
         }
 
-        // No re-trigger during computation
-        when(computing && counter < 8) {
+        // No re-trigger during computation or at check cycle
+        when(computing && counter >= 1 && counter <= 5) {
           assume(dut.io.wr === False)
         }
 
-        // After 5 non-wr cycles (4 iterations + 1 load), result should match
-        // Actually: wr loads at edge, then 4 compute cycles = counter reaches 5
-        when(computing && counter === 6) {
+        // wr loads at edge, then 4 compute cycles (2 bits/cycle for 8-bit).
+        // counter=1..4 are compute cycles, result stable at counter=5.
+        when(computing && counter === 5) {
           val expected = (shadowA * shadowB).resize(8)
           assert(dut.io.dout === expected)
         }
@@ -166,8 +166,8 @@ class MulFormal extends SpinalFormalFunSuite {
           counter := counter + 1
         }
 
-        // No re-trigger during computation
-        when(computing && counter >= 1 && counter < 18) {
+        // No re-trigger during computation or at check cycle
+        when(computing && counter >= 1 && counter <= 18) {
           assume(dut.io.wr === False)
         }
 
@@ -203,7 +203,8 @@ class MulFormal extends SpinalFormalFunSuite {
           counter := counter + 1
         }
 
-        when(computing && counter >= 1 && counter < 18) {
+        // No re-trigger during computation or at check cycle
+        when(computing && counter >= 1 && counter <= 18) {
           assume(dut.io.wr === False)
         }
 

@@ -67,8 +67,10 @@ class BmbMemoryControllerFormal extends SpinalFormalFunSuite {
     dut.io.bmb.rsp.fragment.opcode := Bmb.Rsp.Opcode.SUCCESS
   }
 
-  /** Helper to drive core inputs with anyseq (unconstrained) */
-  def setupAnyseq(dut: BmbMemoryController): Unit = {
+  /** Helper to drive core inputs with anyseq (unconstrained).
+    * @param rspAlwaysValid when true (default), rsp.valid is tied True;
+    *        when false, caller must assign rsp.valid (e.g. anyseq). */
+  def setupAnyseq(dut: BmbMemoryController, rspAlwaysValid: Boolean = true): Unit = {
     anyseq(dut.io.memIn.rd)
     anyseq(dut.io.memIn.rdc)
     anyseq(dut.io.memIn.rdf)
@@ -93,9 +95,10 @@ class BmbMemoryControllerFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.bout)
     anyseq(dut.io.bcopd)
     anyseq(dut.io.ioRdData)
-    // BMB slave: always accept commands immediately, always respond
+    // BMB slave: always accept commands immediately
     dut.io.bmb.cmd.ready := True
-    dut.io.bmb.rsp.valid := True
+    if (rspAlwaysValid) dut.io.bmb.rsp.valid := True
+    else anyseq(dut.io.bmb.rsp.valid)
     dut.io.bmb.rsp.last := True
     anyseq(dut.io.bmb.rsp.fragment.data)
     dut.io.bmb.rsp.fragment.source := U(0)
@@ -215,11 +218,12 @@ class BmbMemoryControllerFormal extends SpinalFormalFunSuite {
 
   test("READ_WAIT returns to IDLE on rsp") {
     formalConfig
-      .withBMC(4)
+      .withBMC(6)
       .doVerify(new Component {
         val dut = FormalDut(BmbMemoryController(memConfig))
         assumeInitial(ClockDomain.current.isResetActive)
-        setupConstrained(dut)
+        // Slave may delay response (makes READ_WAIT reachable)
+        setupAnyseq(dut, rspAlwaysValid = false)
 
         when(pastValidAfterReset()) {
           when(past(dut.state === dut.State.READ_WAIT) && past(dut.io.bmb.rsp.valid)) {
@@ -231,15 +235,48 @@ class BmbMemoryControllerFormal extends SpinalFormalFunSuite {
 
   test("WRITE_WAIT returns to IDLE on rsp") {
     formalConfig
-      .withBMC(4)
+      .withBMC(6)
       .doVerify(new Component {
         val dut = FormalDut(BmbMemoryController(memConfig))
         assumeInitial(ClockDomain.current.isResetActive)
-        setupConstrained(dut)
+        // Slave may delay response (makes WRITE_WAIT reachable)
+        setupAnyseq(dut, rspAlwaysValid = false)
 
         when(pastValidAfterReset()) {
           when(past(dut.state === dut.State.WRITE_WAIT) && past(dut.io.bmb.rsp.valid)) {
             assert(dut.state === dut.State.IDLE)
+          }
+        }
+      })
+  }
+
+  test("READ_WAIT stays when no rsp") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(BmbMemoryController(memConfig))
+        assumeInitial(ClockDomain.current.isResetActive)
+        setupAnyseq(dut, rspAlwaysValid = false)
+
+        when(pastValidAfterReset()) {
+          when(past(dut.state === dut.State.READ_WAIT) && !past(dut.io.bmb.rsp.valid)) {
+            assert(dut.state === dut.State.READ_WAIT)
+          }
+        }
+      })
+  }
+
+  test("WRITE_WAIT stays when no rsp") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(BmbMemoryController(memConfig))
+        assumeInitial(ClockDomain.current.isResetActive)
+        setupAnyseq(dut, rspAlwaysValid = false)
+
+        when(pastValidAfterReset()) {
+          when(past(dut.state === dut.State.WRITE_WAIT) && !past(dut.io.bmb.rsp.valid)) {
+            assert(dut.state === dut.State.WRITE_WAIT)
           }
         }
       })

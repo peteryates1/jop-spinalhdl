@@ -58,9 +58,10 @@ class MethodCacheFormal extends SpinalFormalFunSuite {
           when(dut.state === dut.State.S1) {
             assert(pastState === dut.State.IDLE || pastState === dut.State.S1)
           }
-          // S2 can only be reached from S1
+          // S2 can only be reached from S1 (S2 is a one-cycle state that
+          // always returns to IDLE, so S2→S2 is impossible)
           when(dut.state === dut.State.S2) {
-            assert(pastState === dut.State.S1 || pastState === dut.State.S2)
+            assert(pastState === dut.State.S1)
           }
           // IDLE can be reached from IDLE (no find), S1 (hit), or S2 (miss complete)
           when(dut.state === dut.State.IDLE) {

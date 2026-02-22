@@ -96,6 +96,26 @@ class BmbProtocolFormal extends SpinalFormalFunSuite {
       })
   }
 
+  test("cmd.valid held until ready") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(BmbMemoryController(memConfig))
+        assumeInitial(ClockDomain.current.isResetActive)
+        // Slow slave: cmd.ready is unconstrained, rsp never fires
+        // so the controller stays in its wait state with cmd asserted.
+        setupWithSlowSlave(dut, setRspValid = false)
+        dut.io.bmb.rsp.valid := False
+
+        when(pastValidAfterReset()) {
+          // BMB protocol: once cmd.valid is asserted, it must not drop until cmd.ready fires
+          when(past(dut.io.bmb.cmd.valid) && !past(dut.io.bmb.cmd.ready)) {
+            assert(dut.io.bmb.cmd.valid)
+          }
+        }
+      })
+  }
+
   test("cmd.payload stable while valid and not ready") {
     formalConfig
       .withBMC(6)
