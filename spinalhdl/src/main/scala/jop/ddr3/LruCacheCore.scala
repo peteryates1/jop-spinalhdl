@@ -130,7 +130,7 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
             rspFifo.io.push.payload.data := dataArray(reqIndex)
             rspFifo.io.push.payload.error := False
             cmdFifo.io.pop.ready := True
-          } otherwise {
+          } elsewhen(!reqHit) {
             // Read miss.
             pendingReq := cmdFifo.io.pop.payload
             pendingNeedRefill := True
@@ -162,15 +162,19 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
     }
 
     is(LruCacheCoreState.WAIT_EVICT_RSP) {
-      io.memRsp.ready := rspFifo.io.push.ready
-      when(io.memRsp.valid && rspFifo.io.push.ready) {
+      when(io.memRsp.valid) {
         when(io.memRsp.payload.error) {
-          rspFifo.io.push.valid := True
-          rspFifo.io.push.payload.data := B(0, dataWidth bits)
-          rspFifo.io.push.payload.error := True
-          state := LruCacheCoreState.IDLE
+          // Error: report to frontend via rspFifo (needs room).
+          io.memRsp.ready := rspFifo.io.push.ready
+          when(rspFifo.io.push.ready) {
+            rspFifo.io.push.valid := True
+            rspFifo.io.push.payload.data := B(0, dataWidth bits)
+            rspFifo.io.push.payload.error := True
+            state := LruCacheCoreState.IDLE
+          }
         } otherwise {
-          // Eviction completed, victim line no longer valid in cache.
+          // Eviction completed — accept unconditionally (no rspFifo push needed).
+          io.memRsp.ready := True
           validArray(pendingIndex) := False
           dirtyArray(pendingIndex) := B(0, dataBytes bits)
           state := LruCacheCoreState.ISSUE_REFILL

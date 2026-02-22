@@ -4,7 +4,7 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 
 ## Overview
 
-**77 properties verified** across **14 test suites** covering all major components:
+**96 properties verified** across **16 test suites** covering all major components:
 
 | Category | Suite | Tests | Properties |
 |----------|-------|:-----:|------------|
@@ -18,6 +18,8 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 | **Memory Subsystem** | MethodCacheFormal | 6 | State machine transitions (IDLE/S1/S2), rdy output, find trigger, S2 always returns, inCache stability |
 | | ObjectCacheFormal | 5 | Invalidation clears valid bits and FIFO pointer, uncacheable field rejection, hit implies cacheable, no hit after reset |
 | | BmbMemoryControllerFormal | 10 | Initial state, busy correctness, exception/copy returns to IDLE, READ/WRITE_WAIT completion, IDLE stability |
+| **DDR3 Subsystem** | LruCacheCoreFormal | 11 | Initial state, busy correctness, memCmd gating, evict/refill commands, error recovery, no-deadlock, **2 bugs found and fixed** (see below) |
+| | CacheToMigAdapterFormal | 8 | Initial state, busy correctness, IDLE stability, no-deadlock, MIG signal gating, read data capture, write completion |
 | **I/O Subsystem** | CmpSyncFormal | 5 | Lock mutual exclusion, deadlock freedom, signal broadcast, gcHalt isolation, IDLE no-halt |
 | | BmbSysFormal | 6 | Clock counter monotonicity, exception pulse, lock acquire/release/hold, halted passthrough |
 | | BmbUartFormal | 5 | TX push gating, RX pop gating, no spurious TX, status register accuracy (bits 0 and 1) |
@@ -42,7 +44,7 @@ cd /tmp/sby && sudo make install PREFIX=/usr/local
 ## Running
 
 ```bash
-# Run all 77 formal tests (~40 seconds)
+# Run all 96 formal tests (~100 seconds)
 sbt "testOnly jop.formal.*"
 
 # Run a specific suite
@@ -67,6 +69,8 @@ spinalhdl/src/test/scala/jop/formal/
 ├── MethodCacheFormal.scala         # Method cache tag lookup
 ├── ObjectCacheFormal.scala         # Object field cache
 ├── BmbMemoryControllerFormal.scala # Memory controller state machine
+├── LruCacheCoreFormal.scala        # DDR3 write-back cache (2 bugs found + fixed)
+├── CacheToMigAdapterFormal.scala   # DDR3 MIG protocol adapter
 ├── CmpSyncFormal.scala             # SMP global lock
 ├── BmbSysFormal.scala              # System I/O slave
 ├── BmbUartFormal.scala             # UART I/O slave
@@ -109,6 +113,67 @@ class ExampleFormal extends SpinalFormalFunSuite {
 
 - **BMC depth selection**: Combinational components use depth 2 (1 reset + 1 check). Sequential components use depth 3-6 depending on pipeline depth. The BytecodeFetchStage uses depth 4-6 with a 120s timeout due to its large internal memories (256-entry ROM + 2KB RAM).
 
+## Bugs Found
+
+Formal verification of the DDR3 write-back cache (`LruCacheCore`) found two bugs confirmed by Z3 counterexamples. Both have been fixed.
+
+### Bug 1: Read Hit Treated as Miss When rspFifo Full
+
+**File**: `LruCacheCore.scala` lines 127-148
+**Severity**: Performance / potential stall
+**Test**: `LruCacheCoreFormal` — "BUG: read hit consumed when rspFifo full"
+
+In the IDLE state read path, the `otherwise` branch catches both `!reqHit` (genuine miss) AND `reqHit && !rspFifo.io.push.ready` (hit but response FIFO full):
+
+```scala
+// READ path in IDLE state
+when(reqHit && rspFifo.io.push.ready) {
+  // Read hit: respond immediately ✓
+} otherwise {
+  // "Read miss" — BUT ALSO fires when reqHit && !rspFifo.push.ready!
+  cmdFifo.io.pop.ready := True  // Consumes request
+  state := ISSUE_EVICT or ISSUE_REFILL  // Unnecessary eviction!
+}
+```
+
+**Impact**: A read hit to a dirty cache line, when the response FIFO is full, triggers an unnecessary eviction (write-back to DDR3) followed by a refill (read from DDR3). The request is consumed from the command FIFO regardless. Data integrity is preserved (eviction writes dirty bytes first, refill reads them back), but the operation takes ~30-50 cycles instead of 0.
+
+**Contrast**: The write path handles this correctly — `when(reqHit && rspFifo.io.push.ready)` / `elsewhen(!reqHit)` — leaving an implicit stall for the `reqHit && !rspFifo.push.ready` case.
+
+**Fix** (applied): Add an explicit `elsewhen(!reqHit)` guard to the read path, matching the write path pattern.
+
+### Bug 2: Eviction Response Blocked by Unrelated FIFO State
+
+**File**: `LruCacheCore.scala` line 165
+**Severity**: Unnecessary stall
+**Test**: `LruCacheCoreFormal` — "BUG: WAIT_EVICT_RSP blocks memRsp on successful eviction"
+
+In `WAIT_EVICT_RSP`, the memory response ready signal is gated on `rspFifo.io.push.ready`:
+
+```scala
+is(LruCacheCoreState.WAIT_EVICT_RSP) {
+  io.memRsp.ready := rspFifo.io.push.ready  // ← BUG: gates on rspFifo
+  when(io.memRsp.valid && rspFifo.io.push.ready) {
+    when(io.memRsp.payload.error) {
+      rspFifo.io.push.valid := True  // Error: push to rspFifo ✓
+      state := IDLE
+    } otherwise {
+      // Success: does NOT push to rspFifo, but still gated!
+      validArray(pendingIndex) := False
+      state := ISSUE_REFILL
+    }
+  }
+}
+```
+
+**Impact**: Successful evictions (the common case) don't push to rspFifo, but the response acceptance is unnecessarily blocked when rspFifo is full. This stalls the entire DDR3 pipeline until the consumer drains the response FIFO.
+
+**Fix** (applied): Accept the response unconditionally, only gate on `rspFifo.io.push.ready` for the error path.
+
+### Triggering Analysis
+
+With the current `BmbCacheBridge` frontend, these bugs are **unlikely to trigger** because the bridge serializes to at most 1 outstanding cache request, so the rspFifo (depth 4) can never fill. However, the bugs are latent correctness issues that would surface with any pipelining of the frontend, and could contribute to the [DDR3 GC hang](ddr3-gc-hang.md) if there is any scenario where backpressure accumulates.
+
 ### Performance Considerations
 
 | Component | BMC Depth | Time per Test | Notes |
@@ -120,6 +185,8 @@ class ExampleFormal extends SpinalFormalFunSuite {
 | BmbMemoryController | 4 | <0.7s | Large state machine, constrained BMB slave |
 | BytecodeFetchStage | 4-6 | 0.5-3s | 256-entry ROM + 2KB RAM make Z3 slow |
 | Mul (8-bit correctness) | 20 | ~1s | 8-bit width; 32-bit is intractable for Z3 |
+| LruCacheCore | 20 | 2-47s | Deep BMC needed to reach cache hit states |
+| CacheToMigAdapter | 8-12 | <1.5s | Small state machine, 128-bit data registers |
 
 ### Known Limitations
 
