@@ -86,6 +86,7 @@ jop/
 │   ├── memory/                # Memory controller, method cache, object cache, SDRAM ctrl
 │   ├── ddr3/                  # DDR3 subsystem (cache, MIG adapter, clock wizard)
 │   ├── io/                    # I/O slaves (BmbSys, BmbUart)
+│   ├── debug/                 # Debug subsystem (protocol, controller, breakpoints, UART)
 │   ├── system/                # System integration (JopCore, FPGA tops, SMP)
 │   ├── types/                 # JOP types and constants
 │   └── utils/                 # File loaders, utilities
@@ -216,6 +217,9 @@ sbt "testOnly jop.formal.*"
 # Latency sweep (verify correct operation at 0-5 extra memory cycles)
 sbt "Test / runMain jop.system.JopCoreLatencySweep"
 
+# Debug protocol test (39 checks: ping, halt, step, registers, memory, breakpoints)
+sbt "Test / runMain jop.system.JopDebugProtocolSim"
+
 # Reference simulator
 sbt "runMain jop.JopSimulatorSim"
 
@@ -283,7 +287,8 @@ Notes:
 - **GC support**: Hardware `memCopy` for stop-the-world garbage collection, tested with allocation-heavy GC app (98,000+ rounds on BRAM, 9,800+ on CYC5000 SDRAM, 2,000+ on QMTECH SDRAM). SMP GC uses `IO_GC_HALT` to freeze all other cores during collection, preventing concurrent SDRAM access to partially-moved objects
 - **Exception infrastructure**: Null pointer and array bounds detection states wired through pipeline to `BmbSys` exception register (checks currently disabled pending GC null-handle fix)
 - **Formal verification**: 98 properties verified across 16 test suites using SymbiYosys + Z3 — covers core arithmetic, all pipeline stages, memory subsystem (method cache, object cache, memory controller), DDR3 cache + MIG adapter, I/O (CmpSync, BmbSys, BmbUart), and BMB protocol compliance. See [formal verification docs](docs/formal-verification.md).
-- **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, GHDL event-driven sim
+- **Debug subsystem** (`jop.debug` package): Optional on-chip debug controller with framed byte-stream protocol over dedicated UART. Supports halt/resume/single-step (microcode and bytecode), register and stack inspection, memory read/write, and up to 4 hardware breakpoints (JPC or microcode PC). Integrated into `JopCluster` via `DebugConfig`. Automated protocol test (`JopDebugProtocolSim`) verifies 39 checks across 14 test sequences.
+- **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, debug protocol test, GHDL event-driven sim
 
 ### Known Issues
 
@@ -310,7 +315,7 @@ Notes:
 - JOPizer/WCETPreprocess — refactor, updated libraries
 - Target JDK modernization (8 as minimum)
 - Port target code — networking, etc.
-- Eclipse tooling — microcode/Java debug via Verilator simulation and FPGA remote debug
+- Debug tooling — host-side debug client (Eclipse or standalone) connecting to the on-chip debug controller over UART for interactive debugging on FPGA hardware
 - Additional FPGA board targets
 - Stack cache — extend to external memory with spill/fill for deeper stack support
 - object cache is slowing clock - is it worth it?
@@ -327,6 +332,7 @@ Notes:
 - **Handle format**: `H[0]` = data pointer, `H[1]` = array length. Array elements start at `data_ptr[0]`.
 - **I/O subsystem**: Reusable `BmbSys` and `BmbUart` components in `jop.io` package. System slave provides clock cycle counter, prescaled microsecond counter, watchdog register, and CPU ID. UART slave provides buffered TX/RX with 16-entry FIFOs.
 - **SMP**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` instantiate N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`, plus a GC halt signal (`IO_GC_HALT`) that freezes all other cores during garbage collection. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`.
+- **Debug subsystem**: Optional on-chip debug controller (`jop.debug` package) enabled via `DebugConfig` in `JopCluster`. Uses a dedicated UART (separate from the application UART) with a CRC-8/MAXIM framed protocol. `DebugProtocol` parses/builds frames, `DebugController` implements the command FSM (halt, resume, single-step, register/stack/memory read/write, breakpoint management), and `DebugBreakpoints` provides per-core hardware PC comparators. Supports multi-core targeting via core ID field in each command.
 - **Serial boot**: Microcode polls UART for incoming bytes, assembles 4 bytes into 32-bit words, writes to external memory. Download script (`download.py`) sends `.jop` files with word-level echo verification.
 
 ## Documentation
