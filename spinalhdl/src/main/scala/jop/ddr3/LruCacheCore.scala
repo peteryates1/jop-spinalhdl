@@ -98,12 +98,10 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
         when(cmdFifo.io.pop.payload.write) {
           when(reqHit && rspFifo.io.push.ready) {
             // Write hit: update line in cache and mark touched bytes dirty.
-            when(reqHit) {
-              dataArray(reqIndex) := reqDataMerged
-              tagArray(reqIndex) := reqTag
-              validArray(reqIndex) := True
-              dirtyArray(reqIndex) := dirtyArray(reqIndex) | reqWriteDirtyMask
-            }
+            dataArray(reqIndex) := reqDataMerged
+            tagArray(reqIndex) := reqTag
+            validArray(reqIndex) := True
+            dirtyArray(reqIndex) := dirtyArray(reqIndex) | reqWriteDirtyMask
             rspFifo.io.push.valid := True
             rspFifo.io.push.payload.data := B(0, dataWidth bits)
             rspFifo.io.push.payload.error := False

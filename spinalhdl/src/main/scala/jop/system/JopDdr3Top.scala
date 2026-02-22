@@ -122,7 +122,7 @@ case class JopDdr3Top(
 
   val mainArea = new ClockingArea(uiCd) {
 
-    // JOP core config: addressWidth=26 (28-bit BMB byte address), burstLen=8 for BC fill
+    // JOP core config: addressWidth=26 (28-bit BMB byte address), burstLen=0 (single-word BC fill)
     val config = JopCoreConfig(
       memConfig = JopMemoryConfig(addressWidth = 26, burstLen = 0),
       jumpTable = jumpTable,

@@ -296,6 +296,13 @@ case class BmbMemoryController(
   // During copy, accesses to addresses in [baseReg, posReg) are redirected
   // by adding offsetReg (= dest - src), so partially-copied objects are
   // accessible at their new location.
+  //
+  // Currently unused: for single-core stop-the-world GC, the copy loop
+  // (GC.java: `for (i=0; i<size; i++) Native.memCopy(...)`) executes only
+  // stcp microcode + stack ops (iinc, iload, if_icmplt) between calls —
+  // no field accesses or memory reads reach IDLE state during copying.
+  // Concurrent or multi-core GC would need translateAddr applied to
+  // IDLE-state reads (memReadRequested) and writes (wr/wrf).
   def translateAddr(addr: UInt): UInt = {
     val inRange = addr >= baseReg && addr < posReg
     Mux(inRange, addr + offsetReg, addr)
@@ -417,9 +424,7 @@ case class BmbMemoryController(
           rdDataReg := io.ioRdData
         }.otherwise {
           // BMB read - drive command combinationally from io.aout
-          // Note: address translation not applied here — for single-core
-          // stop-the-world GC, no IDLE reads hit the copy range.
-          // (Concurrent GC on multi-core would need translation here.)
+          // Note: address translation not applied — see translateAddr comment.
           io.bmb.cmd.valid := True
           io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
           io.bmb.cmd.fragment.address := (aoutAddr << 2).resized
@@ -437,7 +442,7 @@ case class BmbMemoryController(
           io.ioWr := True
           io.ioWrData := io.aout
         }.otherwise {
-          // TODO: address translation disabled for FPGA debugging
+          // Note: address translation not applied — see translateAddr comment.
           io.bmb.cmd.valid := True
           io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.WRITE
           io.bmb.cmd.fragment.address := (addrReg << 2).resized
