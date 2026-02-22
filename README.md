@@ -210,6 +210,9 @@ make monitor     # Watch serial output
 # SpinalSim tests (Verilator)
 sbt test
 
+# Formal verification (SymbiYosys + Z3) — 77 properties across 14 suites
+sbt "testOnly jop.formal.*"
+
 # Latency sweep (verify correct operation at 0-5 extra memory cycles)
 sbt "Test / runMain jop.system.JopCoreLatencySweep"
 
@@ -279,6 +282,7 @@ Notes:
 - **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
 - **GC support**: Hardware `memCopy` for stop-the-world garbage collection, tested with allocation-heavy GC app (98,000+ rounds on BRAM, 9,800+ on CYC5000 SDRAM, 2,000+ on QMTECH SDRAM). SMP GC uses `IO_GC_HALT` to freeze all other cores during collection, preventing concurrent SDRAM access to partially-moved objects
 - **Exception infrastructure**: Null pointer and array bounds detection states wired through pipeline to `BmbSys` exception register (checks currently disabled pending GC null-handle fix)
+- **Formal verification**: 77 properties verified across 14 test suites using SymbiYosys + Z3 — covers core arithmetic, all pipeline stages, memory subsystem (method cache, object cache, memory controller), I/O (CmpSync, BmbSys, BmbUart), and BMB protocol compliance. See [formal verification docs](docs/formal-verification.md).
 - **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, GHDL event-driven sim
 
 ### Known Issues
@@ -336,6 +340,7 @@ Design notes and investigation logs in `docs/`:
 - [Cache Analysis](docs/cache-analysis.md) — cache performance analysis and technology cost model
 - [Memory Controller Comparison](docs/memory-controller-comparison.md) — VHDL vs SpinalHDL memory controller
 - [Stack Immediate Timing](docs/stack-immediate-timing.md) — stack stage timing for immediate operations
+- [Formal Verification](docs/formal-verification.md) — 77 BMC properties across all components (SymbiYosys + Z3)
 - [SDR SDRAM GC Hang](docs/sdr-sdram-gc-hang.md) — resolved: SpinalHDL SdramCtrl DQ timing issue
 - [DDR3 GC Hang](docs/ddr3-gc-hang.md) — unresolved: GC hangs at R12 on Alchitry Au V2
 
