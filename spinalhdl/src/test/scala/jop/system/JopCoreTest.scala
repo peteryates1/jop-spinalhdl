@@ -103,6 +103,7 @@ case class JopCoreTestHarness(
 
   // Tie unused debug inputs
   jopCore.io.debugRamAddr := 0
+  jopCore.io.debugHalt := False
 
   // SimPublic for I/O tracing
   jopCore.memCtrl.io.ioRd.simPublic()

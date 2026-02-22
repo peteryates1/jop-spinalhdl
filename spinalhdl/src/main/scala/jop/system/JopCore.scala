@@ -131,6 +131,18 @@ case class JopCore(
 
     // Debug: halted by CmpSync (from internal BmbSys)
     val debugHalted = out Bool()
+
+    // Debug controller interface
+    val debugHalt = in Bool()             // Freeze pipeline (from debug controller)
+    val debugSp   = out UInt(config.ramWidth bits)
+    val debugVp   = out UInt(config.ramWidth bits)
+    val debugAr   = out UInt(config.ramWidth bits)
+    val debugFlags = out Bits(4 bits)
+    val debugMulResult = out Bits(config.dataWidth bits)
+    val debugAddrReg   = out UInt(config.memConfig.addressWidth bits)
+    val debugRdDataReg = out Bits(config.dataWidth bits)
+    val debugInstr     = out Bits(config.instrWidth bits)
+    val debugBcopd     = out Bits(16 bits)
   }
 
   // ==========================================================================
@@ -184,8 +196,8 @@ case class JopCore(
   bmbSys.io.syncIn := io.syncIn
   io.syncOut := bmbSys.io.syncOut
 
-  // Pipeline busy = memory controller busy OR halted by CmpSync
-  pipeline.io.memBusy := memCtrl.io.memOut.busy || bmbSys.io.halted
+  // Pipeline busy = memory controller busy OR halted by CmpSync OR debug halt
+  pipeline.io.memBusy := memCtrl.io.memOut.busy || bmbSys.io.halted || io.debugHalt
 
   // Exception from BmbSys
   pipeline.io.exc := bmbSys.io.exc
@@ -274,7 +286,18 @@ case class JopCore(
   io.debugIoRdCount := ioRdCounter
   io.debugIoWrCount := ioWrCounter
 
-  io.debugHalted := bmbSys.io.halted
+  io.debugHalted := io.debugHalt
+
+  // Debug controller register passthrough
+  io.debugSp := pipeline.io.debugSp
+  io.debugVp := pipeline.io.debugVp
+  io.debugAr := pipeline.io.debugAr
+  io.debugFlags := pipeline.io.debugFlags
+  io.debugMulResult := pipeline.io.debugMulResult
+  io.debugAddrReg := memCtrl.io.debug.addrReg
+  io.debugRdDataReg := memCtrl.io.debug.rdDataReg
+  io.debugInstr := pipeline.io.instr
+  io.debugBcopd := pipeline.io.bcopd
 }
 
 /**
@@ -369,6 +392,7 @@ case class JopCoreWithBram(
 
   // Tie unused debug inputs
   jopCore.io.debugRamAddr := 0
+  jopCore.io.debugHalt := False
 }
 
 /**

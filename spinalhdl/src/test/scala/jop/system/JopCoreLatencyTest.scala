@@ -90,6 +90,7 @@ case class JopCoreLatencyHarness(
 
   // Debug RAM port - tie off
   jopCore.io.debugRamAddr := 0
+  jopCore.io.debugHalt := False
 
   // Outputs
   io.pc := jopCore.io.pc

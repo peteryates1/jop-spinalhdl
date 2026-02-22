@@ -303,6 +303,7 @@ case class JopCoreWithMigTestHarness(
 
   // Debug RAM (unused)
   jopCore.io.debugRamAddr := 0
+  jopCore.io.debugHalt := False
 
   // Outputs
   io.pc := jopCore.io.pc

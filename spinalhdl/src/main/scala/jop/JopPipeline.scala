@@ -70,6 +70,13 @@ case class JopPipeline(
     // === Debug: RAM slot read ===
     val debugRamAddr = in UInt(config.ramWidth bits)
     val debugRamData = out Bits(config.dataWidth bits)
+
+    // === Debug: register values for debug controller ===
+    val debugSp      = out UInt(config.ramWidth bits)
+    val debugVp      = out UInt(config.ramWidth bits)
+    val debugAr      = out UInt(config.ramWidth bits)
+    val debugFlags   = out Bits(4 bits)   // zf##nf##eq##lt
+    val debugMulResult = out Bits(config.dataWidth bits)
   }
 
   // ==========================================================================
@@ -222,4 +229,11 @@ case class JopPipeline(
   io.debugAddrWr := decode.io.memIn.addrWr
   io.debugRdc := decode.io.memIn.rdc
   io.debugRd := decode.io.memIn.rd
+
+  // Debug registers for debug controller
+  io.debugSp := stack.io.debugSp
+  io.debugVp := stack.io.debugVp
+  io.debugAr := stack.io.debugAr
+  io.debugFlags := stack.io.zf ## stack.io.nf ## stack.io.eq ## stack.io.lt
+  io.debugMulResult := mul.io.dout.asBits
 }

@@ -109,6 +109,8 @@ case class BmbMemoryController(
       val state        = out UInt(5 bits)
       val busy         = out Bool()
       val handleActive = out Bool()
+      val addrReg      = out UInt(config.addressWidth bits)
+      val rdDataReg    = out Bits(32 bits)
     }
   }
 
@@ -1083,6 +1085,8 @@ case class BmbMemoryController(
 
   io.debug.state := state.asBits.asUInt.resized
   io.debug.busy := !notBusy
+  io.debug.addrReg := addrReg
+  io.debug.rdDataReg := rdDataReg
   io.debug.handleActive := state.mux(
     State.PF_WAIT -> True,
     State.HANDLE_READ -> True,

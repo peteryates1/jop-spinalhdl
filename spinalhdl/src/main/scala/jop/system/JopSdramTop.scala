@@ -7,6 +7,7 @@ import spinal.lib.memory.sdram.sdr._
 import jop.utils.JopFileLoader
 import jop.memory.{JopMemoryConfig, BmbSdramCtrl32}
 import jop.pipeline.JumpTableInitData
+import jop.debug.{DebugConfig, DebugUart}
 
 /**
  * DRAM PLL BlackBox
@@ -56,7 +57,8 @@ case class DramPll() extends BlackBox {
 case class JopSdramTop(
   cpuCnt: Int = 1,
   romInit: Seq[BigInt],
-  ramInit: Seq[BigInt]
+  ramInit: Seq[BigInt],
+  debugConfig: Option[DebugConfig] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
 
@@ -70,6 +72,9 @@ case class JopSdramTop(
     val led       = out Bits(Math.max(2, cpuCnt) bits)
     val sdram_clk = out Bool()
     val sdram     = master(SdramInterface(W9825G6JH6.layout))
+    // Debug UART pins (optional)
+    val debug_txd = if (debugConfig.isDefined) Some(out Bool()) else None
+    val debug_rxd = if (debugConfig.isDefined) Some(in Bool()) else None
   }
 
   noIoPrefix()
@@ -132,10 +137,19 @@ case class JopSdramTop(
         jumpTable = JumpTableInitData.serial,
         clkFreqHz = 100000000L
       ),
+      debugConfig = debugConfig,
       romInit = Some(romInit),
       ramInit = Some(ramInit),
       jbcInit = Some(Seq.fill(2048)(BigInt(0)))
     )
+
+    // Debug UART (when debug is enabled)
+    debugConfig.foreach { cfg =>
+      val debugUart = DebugUart(cfg.baudRate, 100000000L)
+      debugUart.io.transport <> cluster.io.debugTransport.get
+      io.debug_txd.get := debugUart.io.txd
+      debugUart.io.rxd := io.debug_rxd.get
+    }
 
     // ==================================================================
     // SDRAM Controller (shared)

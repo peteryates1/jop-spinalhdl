@@ -63,6 +63,7 @@ case class JopEchoHarness(
 
   // Debug RAM port (unused)
   jopCore.io.debugRamAddr := 0
+  jopCore.io.debugHalt := False
 
   // Outputs
   io.pc := jopCore.io.pc

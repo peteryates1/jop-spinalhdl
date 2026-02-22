@@ -104,6 +104,8 @@ case class StackStage(
 
     // Debug: stack pointer and write address for tracking
     val debugSp = out UInt(config.ramWidth bits)
+    val debugVp = out UInt(config.ramWidth bits)
+    val debugAr = out UInt(config.ramWidth bits)
     val debugWrAddr = out UInt(config.ramWidth bits)
     val debugWrEn = out Bool()
     val debugRdAddrReg = out UInt(config.ramWidth bits)
@@ -512,6 +514,8 @@ case class StackStage(
 
   // Debug outputs for simulation
   io.debugSp := sp
+  io.debugVp := vp0
+  io.debugAr := ar
   io.debugWrAddr := ramWraddrReg
   io.debugWrEn := ramWrenReg
   io.debugRdAddrReg := ramRdaddrReg

@@ -142,6 +142,7 @@ case class JopCoreWithSdram(
 
   // Tie unused debug inputs
   jopCore.io.debugRamAddr := 0
+  jopCore.io.debugHalt := False
 
   // BMB debug
   io.bmbCmdValid := jopCore.io.bmb.cmd.valid

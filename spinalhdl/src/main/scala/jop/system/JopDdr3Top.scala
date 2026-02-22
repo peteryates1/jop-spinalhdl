@@ -202,6 +202,7 @@ case class JopDdr3Top(
 
     // Debug RAM (tie off)
     jopCore.io.debugRamAddr := 0
+    jopCore.io.debugHalt := False
   }
 
   // ========================================================================
