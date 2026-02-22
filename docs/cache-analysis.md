@@ -8,11 +8,11 @@ The original JOP VHDL has **five categories** of caching:
 |-------|-------|-------|-----------------|
 | Method Cache (M$) | `core/cache.vhd` | Inside `mem_sc` | **Yes** — 16-block tag-only, FIFO, pipelined fill + burst |
 | Object Cache (O$) | `cache/ocache.vhd` | Inside `mem_sc` | **Yes** — 16-entry fully-associative, FIFO, 8 fields |
-| Array Cache (A$) | `cache/acache.vhd` | Not in `mem_sc` | **No** — not implemented |
+| Array Cache (A$) | `cache/acache.vhd` | Inside `mem_sc` | **Yes** — 16-entry fully-associative, FIFO, 4 elements/line |
 | Data Cache | `cache/datacache.vhd` | Between `mem_sc` and SimpCon | **No** — not implemented |
 | Stack Cache | Stack RAM (256 entries) | `StackStage` | **Yes** — stack buffer |
 
-The method cache, object cache, and stack cache are fully implemented. The array cache and data cache are not implemented.
+The method cache, object cache, array cache, and stack cache are fully implemented. The data cache is not implemented.
 
 ---
 
@@ -82,22 +82,33 @@ The object cache is a fully-associative FIFO cache with 16 entries, each storing
 
 ---
 
-## 3. Array Cache (A$) -- Not Implemented
+## 3. Array Cache (A$) -- Implemented
 
-**Source (VHDL):** `vhdl/cache/acache.vhd` (438 lines)
-
-### What It Does
+**Source:** `spinalhdl/src/main/scala/jop/memory/ArrayCache.scala`
 
 Caches array element values to avoid handle-dereference on repeated `iaload`/`iastore`. Same principle as the object cache but for array access patterns (loops iterating over arrays).
 
-### Architecture (VHDL Original)
+### Architecture
 
-- **Fully-associative**, 16 entries (`ACACHE_WAY_BITS=4`)
+- **Fully-associative**, 16 entries (`acacheWayBits=4`)
 - **FIFO replacement**
-- Each entry caches one array handle with **4 elements** per line (`ACACHE_FIELD_BITS=2`)
+- Each entry caches one aligned group of **4 elements** per line (`acacheFieldBits=2`)
 - Single valid bit per entire line (not per-element like O$)
-- Tags include both handle address AND upper index bits (so different regions of the same array map to different lines)
+- Tags include both handle address AND upper index bits (`index[maxIndexBits-1:fieldBits]`), so different regions of the same array map to different cache lines
 - Total storage: 16 lines x 4 elements x 32 bits = **256 bytes** of data + tags
+
+### Integration with BmbMemoryController
+
+- **iaload hit**: Combinational hit in IDLE (0 busy cycles), `readAcache` selects A$ dout
+- **iaload miss**: IDLE → HANDLE_READ → HANDLE_WAIT → HANDLE_CALC → AC_FILL_CMD → AC_FILL_WAIT (x4) → IDLE. Full 4-element line fill from aligned base address
+- **iastore**: Normal handle dereference path, write-through to A$ in HANDLE_DATA_WAIT if tag hit
+- **Invalidation**: `stidx`/`cinval` clears all valid bits (matching O$ invalidation)
+
+### VHDL Bug Fixes
+
+Two bugs in the original VHDL `acache.vhd` were fixed in the SpinalHDL port:
+1. **idx_upper slice boundary**: VHDL uses `FIELD_CNT` (=4) instead of `FIELD_BITS` (=2) for the `idx_upper` slice, making the tag index coarser than intended
+2. **FIFO nxt advancement**: VHDL advances `nxt` pointer on every `wrIal` during a fill (advancing by `fieldCnt` instead of 1). SpinalHDL clears `incNxtReg` after the first `wrIal` so `nxt` advances by exactly 1
 
 ### Adaptation for Memory Technology
 
@@ -140,7 +151,6 @@ The BC fill uses pipelined states: `BC_FILL_R1` issues burst cmd, `BC_FILL_LOOP`
 
 | What | Effort | Benefit |
 |------|--------|---------|
-| **Array Cache (A$)** | ~250 lines | Faster iaload/iastore in loops |
 | **Null pointer detection** | ~30 lines | Hardware NPE (infrastructure exists, checks disabled) |
 | **Array bounds checking** | ~30 lines | Hardware AIOOBE |
 
@@ -150,6 +160,7 @@ The BC fill uses pipelined states: `BC_FILL_R1` issues burst cmd, `BC_FILL_LOOP`
 |------|------|
 | Method cache tags (16-block FIFO) | Done |
 | Object cache (16x8 fields, FIFO) | Done |
+| Array cache (16x4 elements, FIFO) | Done |
 | Burst BC fill (pipelined, configurable) | Done |
 | Hardware memCopy (GC) | Done |
 

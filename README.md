@@ -39,6 +39,7 @@ Single-core:
 │| method cache ││ |  jump tbl    │  │microcode rom │ └──│ Address Gen  ├───▶│ stack buffer │  |
 │├──────────────┤│ └──────────────┘  └──────────────┘    └──────────────┘    └──────────────┘  |
 │| object cache ││                                                                             |
+│| array cache  ││                                                                             |
 │└──────────────┘│                                                                             |
 |     memory     │                                                                             |
 |   controller   │◀────────────────────────────────────────────────────────────────────────────┘
@@ -83,7 +84,7 @@ Memory access uses SpinalHDL's BMB (Bus Master Bridge) interconnect, supporting 
 jop/
 ├── spinalhdl/src/main/scala/jop/
 │   ├── pipeline/              # Pipeline stages (fetch, decode, stack, bytecode)
-│   ├── memory/                # Memory controller, method cache, object cache, SDRAM ctrl
+│   ├── memory/                # Memory controller, method/object/array cache, SDRAM ctrl
 │   ├── ddr3/                  # DDR3 subsystem (cache, MIG adapter, clock wizard)
 │   ├── io/                    # I/O slaves (BmbSys, BmbUart)
 │   ├── debug/                 # Debug subsystem (protocol, controller, breakpoints, UART)
@@ -278,6 +279,7 @@ Notes:
 - **Memory controller**: BMB bus with two-layer design (combinational + state machine for BC fill, getfield, iaload), pipelined BC fill overlaps memory reads with JBC writes, configurable BMB burst reads for SDRAM, hardware `memCopy` for GC object relocation
 - **Method cache**: 16-block tag-only cache (32 words/block, FIFO replacement) skips redundant bytecode fills; 2-cycle hit, 3-cycle + fill on miss
 - **Object cache**: 16-entry fully associative field cache (8 fields/entry, FIFO replacement) shortcuts getfield to 0 busy cycles on hit; write-through on putfield; invalidated on `stidx`/`cinval`
+- **Array cache**: 16-entry fully associative element cache (4 elements/line, FIFO replacement) shortcuts iaload to 0 busy cycles on hit; 4-element line fill on miss; write-through on iastore; two VHDL bugs fixed (idx_upper slice, FIFO nxt advancement)
 - **Stack buffer**: 256-entry on-chip RAM (64 for 32 local variables + 32 constants, 192 for operand stack) with spill/fill, ALU, shifter, 33-bit comparator
 - **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
@@ -314,14 +316,11 @@ Notes:
 - DDR3 burst optimization — method cache fills could use burst reads through the cache bridge
 - SMP GC — basic stop-the-world working via `IO_GC_HALT`; future: protect halt flag with CmpSync lock for safe multi-core allocation, address translation on read paths for concurrent GC
 - Const.java -> pull out Const and Configuration — core(s)/system/memory/caches
-- Jopa refactor
-- JOPizer/WCETPreprocess — refactor, updated libraries
 - Target JDK modernization (8 as minimum)
 - Port target code — networking, etc.
 - Debug tooling — host-side debug client (Eclipse or standalone) connecting to the on-chip debug controller over UART for interactive debugging on FPGA hardware
 - Additional FPGA board targets
 - Stack cache — extend to external memory with spill/fill for deeper stack support
-- object cache is slowing clock - is it worth it?
 - add quartus pll generator
 - Faster serial download — currently limited by per-word USB round-trip latency (~15s for 32KB)
 - Use Exerciser to find boundary performance for SDRAM/DDR3
@@ -332,6 +331,7 @@ Notes:
 - **Memory controller**: Layer 1 is combinational (simple rd/wr). Layer 2 is a state machine for multi-cycle operations (bytecode fill, getfield, array access). BC fill is pipelined — issues the next read while writing the previous response to JBC RAM, saving ~1 cycle per word. Configurable burst reads (`burstLen=4` for SDR SDRAM). Hardware `memCopy` state machine for GC object relocation.
 - **DDR3 subsystem** (`jop.ddr3` package): Write-back cache bridge (`BmbCacheBridge`) converts 32-bit BMB transactions to 128-bit cache lines. `LruCacheCore` provides a 16-set write-back cache with LRU replacement and dirty byte tracking. `CacheToMigAdapter` interfaces with the Xilinx MIG DDR3 controller. Clock wizard generates 100 MHz system and 200 MHz reference clocks from the board oscillator.
 - **Object cache**: Fully associative field value cache (16 entries, 8 fields each). Getfield hits return data in 0 busy cycles (combinational tag match, registered data output). Putfield does write-through on tag hit. FIFO replacement, invalidated on array stores and explicit `cinval`.
+- **Array cache**: Fully associative element value cache (16 entries, 4 elements per line). iaload hits return in 0 busy cycles; misses fill the entire 4-element aligned line. iastore does write-through on tag hit. Tags include handle address and upper index bits so different array regions map to different lines.
 - **Handle format**: `H[0]` = data pointer, `H[1]` = array length. Array elements start at `data_ptr[0]`.
 - **I/O subsystem**: Reusable `BmbSys` and `BmbUart` components in `jop.io` package. System slave provides clock cycle counter, prescaled microsecond counter, timer interrupt, watchdog register, and CPU ID. UART slave provides buffered TX/RX with 16-entry FIFOs and per-source interrupt outputs (RX data available, TX FIFO empty). UART interrupts are wired to BmbSys interrupt sources (index 0 = timer, 1 = UART RX, 2 = UART TX).
 - **SMP**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` instantiate N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`, plus a GC halt signal (`IO_GC_HALT`) that freezes all other cores during garbage collection. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`.

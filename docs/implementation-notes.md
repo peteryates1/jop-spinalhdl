@@ -3,7 +3,7 @@
 Detailed implementation notes for the SpinalHDL JOP port. These are reference notes
 captured during development — see the source code for authoritative details.
 
-## Bugs Found & Fixed (16 total)
+## Bugs Found & Fixed (17 total)
 
 1. **BC fill write address off-by-one**: Used `bcFillCount.resized` (not increment) for JBC write address
 2. **iaload/caload +1 offset**: VHDL uses `data_ptr + index` (no +1). Both BmbMemoryController and JopSimulator had wrong `+1`
@@ -22,6 +22,7 @@ captured during development — see the source code for authoritative details.
 14. **DebugProtocol GOT_CORE payload length bug**: In `DebugProtocol.scala` RX state machine, `GOT_CORE` state used `(rxLenHi ## byte)` to compute payload length, but `byte` is the CORE byte (just received), not LEN_LO. For core=0, `combinedLen` always evaluated to `rxLenHi << 8` (i.e., 0 for any payload < 256 bytes), causing the parser to skip PAYLOAD and jump directly to CHECK_CRC. The CRC then mismatched (computed over only header, not payload bytes), and the command was silently dropped. All commands with payload sent to core 0 were broken (READ_STACK, READ_MEMORY, WRITE_MEMORY, SET_BREAKPOINT, etc.). Commands without payload (PING, HALT, QUERY_STATUS, READ_REGISTERS) worked because `len=0` was correct for them. Fix: use `rxLen` (from already-updated `rxLenHi`/`rxLenLo` registers). Found by JopDebugProtocolSim automated test.
 15. **DebugController packWord bit extraction on narrow signals**: `packWord()` extracts `value(31 downto 24)` etc. from a `Bits` argument. Callers used `.resized` (a resize-on-assignment tag) which does NOT widen the value before extraction. SpinalHDL crashed at elaboration with "static bits extraction outside range" for signals narrower than 32 bits (PC=11, JPC=12, SP/VP/AR=8, flags=4, instr=10, bcopd=16). Fix: use `.resize(32 bits)` for explicit widening before calling `packWord`.
 16. **JopCore debugHalted wired to wrong signal**: `io.debugHalted` was wired to `bmbSys.io.halted` (CmpSync halt status) instead of `io.debugHalt` (debug controller halt input). The debug halted output visible to test harnesses and FPGA top-levels always read as False in single-core configs (no CmpSync). Fix: wire to `io.debugHalt`. Found by JopDebugProtocolSim automated test.
+17. **readAcache/readOcache persistence across I/O reads**: After an iaload A$ hit (or getfield O$ hit), the `readAcache` (or `readOcache`) register stays True until the state machine leaves IDLE. But I/O reads in IDLE don't change state, so the cache output MUX override persists into the next memory operation. If that operation is an I/O read, the returned data is from the cache instead of the I/O bus — causing data corruption (manifested as 4x UART output expansion matching the A$ line size). Fix: clear `readAcache`/`readOcache` on any new memory operation in IDLE. The iaload/getfield hit handler re-sets the flag via SpinalHDL "last assignment wins" semantics.
 
 ## Method Cache
 
@@ -67,6 +68,16 @@ captured during development — see the source code for authoritative details.
 - **Putfield**: Always through state machine, write-through on hit via `wrPf`. `chkPf` in PF_WAIT (putfield waste cycle).
 - **Invalidation**: `stidx`/`cinval` clears all valid bits. `wasHwo` suppresses I/O caching.
 - **Cacheable**: Only fields 0-7 (upper fieldIdx bits must be 0)
+
+## Array Cache
+
+- **ArrayCache** (`jop.memory`): Fully associative FIFO, 16 entries x 4 elements = 64 values, matching VHDL `acache.vhd`
+- **iaload hit**: 0 busy cycles (stays in IDLE, `readAcache` selects cached data)
+- **iaload miss**: HANDLE_READ → HANDLE_WAIT → HANDLE_CALC → AC_FILL_CMD → AC_FILL_WAIT (x4 elements) → IDLE
+- **iastore**: Normal handle dereference path, write-through on hit via `wrIas` in HANDLE_DATA_WAIT
+- **Invalidation**: `stidx`/`cinval` clears all valid bits
+- **Tags**: Handle address + upper index bits (`index[maxIndexBits-1:fieldBits]`), so different regions of the same array map to different lines
+- **VHDL bug fixes**: (1) idx_upper slice uses `fieldBits` not `fieldCnt`, (2) FIFO nxt advances once per fill, not once per wrIal
 
 ## Hardware memCopy (GC)
 

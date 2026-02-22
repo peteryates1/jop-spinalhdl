@@ -23,7 +23,11 @@ case class JopMemoryConfig(
   useOcache: Boolean = true,              // Enable object cache
   ocacheWayBits: Int = 4,                 // log2(entries) — 4 = 16 entries
   ocacheIndexBits: Int = 3,              // log2(fields per entry) — 3 = 8 fields
-  ocacheMaxIndexBits: Int = 8            // max field index addressable (256)
+  ocacheMaxIndexBits: Int = 8,           // max field index addressable (256)
+  useAcache: Boolean = true,              // Enable array cache
+  acacheWayBits: Int = 4,                 // log2(entries) — 4 = 16 entries
+  acacheFieldBits: Int = 2,              // log2(elements per line) — 2 = 4 elements
+  acacheMaxIndexBits: Int = 24           // max array index width (full address space)
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(addressWidth >= 16 && addressWidth <= 26, "Address width must be 16-26 bits")
