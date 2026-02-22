@@ -11,6 +11,7 @@ runtime:
 apps: tools runtime
 	$(MAKE) -C apps/Smallest
 	$(MAKE) -C apps/Small
+	$(MAKE) -C apps/InterruptTest
 
 sim-smallest: all
 	java -cp tools/dist/jopsim.jar -Dtrace=2 com.jopdesign.tools.JopSim \
@@ -25,3 +26,4 @@ clean:
 	$(MAKE) -C runtime clean
 	$(MAKE) -C apps/Smallest clean
 	$(MAKE) -C apps/Small clean
+	$(MAKE) -C apps/InterruptTest clean

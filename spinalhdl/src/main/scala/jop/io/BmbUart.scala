@@ -11,9 +11,10 @@ import spinal.lib.com.uart._
  * TX and RX each have 16-entry FIFOs.
  *
  * Address map:
- *   0x0 read  — Status: bit 0 = TX ready (TDRE), bit 1 = RX data available (RDRF)
+ *   0x0 read  — Status: bit 0 = TDRE, bit 1 = RDRF, bit 2 = TX int enabled, bit 3 = RX int enabled
  *   0x1 read  — RX data (consumes from RX FIFO)
  *   0x1 write — TX data (pushes to TX FIFO)
+ *   0x2 write — Interrupt control: bit 0 = TX int enable, bit 1 = RX int enable
  *
  * @param baudRate UART baud rate in Hz
  * @param clkFreqHz Clock frequency in Hz (avoids dependency on ClockDomain frequency)
@@ -27,6 +28,8 @@ case class BmbUart(baudRate: Int = 1000000, clkFreqHz: Long = 100000000L) extend
     val rdData = out Bits(32 bits)
     val txd    = out Bool()
     val rxd    = in Bool()
+    val rxInterrupt = out Bool()
+    val txInterrupt = out Bool()
   }
 
   // UART controller with 5x oversampling
@@ -56,13 +59,28 @@ case class BmbUart(baudRate: Int = 1000000, clkFreqHz: Long = 100000000L) extend
   io.txd := uartCtrl.io.uart.txd
   uartCtrl.io.uart.rxd := io.rxd
 
+  // Interrupt enable registers
+  val rxIntEnaReg = Reg(Bool()) init(False)
+  val txIntEnaReg = Reg(Bool()) init(False)
+
+  // Interrupt generation — single-cycle pulses (BmbSys intstate is an SR flip-flop)
+  // RX: pulse on rising edge of "RX FIFO non-empty" when enabled
+  val rxNonEmpty = rxFifo.io.pop.valid
+  val rxNonEmptyDly = RegNext(rxNonEmpty) init(False)
+  io.rxInterrupt := rxIntEnaReg && rxNonEmpty && !rxNonEmptyDly
+
+  // TX: pulse on rising edge of "TX FIFO empty" when enabled
+  val txEmpty = txFifo.io.occupancy === 0
+  val txEmptyDly = RegNext(txEmpty) init(True)
+  io.txInterrupt := txIntEnaReg && txEmpty && !txEmptyDly
+
   // Read mux (combinational)
   io.rdData := 0
   rxFifo.io.pop.ready := False
   switch(io.addr) {
     is(0) {
-      // Status: bit 0 = TX FIFO not full (TDRE), bit 1 = RX data available (RDRF)
-      io.rdData := B(0, 30 bits) ## rxFifo.io.pop.valid.asBits ## txFifo.io.availability.orR.asBits
+      // Status: bit 0 = TDRE, bit 1 = RDRF, bit 2 = TX int enabled, bit 3 = RX int enabled
+      io.rdData := B(0, 28 bits) ## rxIntEnaReg.asBits ## txIntEnaReg.asBits ## rxFifo.io.pop.valid.asBits ## txFifo.io.availability.orR.asBits
     }
     is(1) {
       // Data read: return RX byte and consume from FIFO
@@ -81,6 +99,11 @@ case class BmbUart(baudRate: Int = 1000000, clkFreqHz: Long = 100000000L) extend
       is(1) {
         txFifo.io.push.valid := True
         txFifo.io.push.payload := io.wrData(7 downto 0)
+      }
+      is(2) {
+        // Interrupt control: bit 0 = TX int enable, bit 1 = RX int enable
+        txIntEnaReg := io.wrData(0)
+        rxIntEnaReg := io.wrData(1)
       }
     }
   }

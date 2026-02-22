@@ -208,11 +208,17 @@ case class JopCore(
   bmbSys.io.ackIrq := pipeline.io.ackIrq
   bmbSys.io.ackExc := pipeline.io.ackExc
 
-  // External I/O interrupts: not connected yet (no external interrupt sources)
-  bmbSys.io.ioInt := 0
-
   // UART (slave 1, optional)
   val bmbUart = if (config.hasUart) Some(BmbUart(config.uartBaudRate, config.clkFreqHz)) else None
+
+  // External I/O interrupts: UART RX (index 0) and TX (index 1)
+  bmbUart match {
+    case Some(uart) =>
+      bmbSys.io.ioInt(0) := uart.io.rxInterrupt
+      bmbSys.io.ioInt(1) := uart.io.txInterrupt
+    case None =>
+      bmbSys.io.ioInt := 0
+  }
 
   bmbUart.foreach { uart =>
     uart.io.addr   := ioSubAddr
