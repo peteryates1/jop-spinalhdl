@@ -104,10 +104,6 @@ case class JopCore(
     // Memory controller status
     val memBusy   = out Bool()
 
-    // Interrupt interface
-    val irq       = in Bool()
-    val irqEna    = in Bool()
-
     // Debug: UART TX snoop (captures I/O write to UART data register)
     val uartTxData  = out Bits(8 bits)
     val uartTxValid = out Bool()
@@ -194,9 +190,14 @@ case class JopCore(
   // Exception from BmbSys
   pipeline.io.exc := bmbSys.io.exc
 
-  // Interrupts
-  pipeline.io.irq := io.irq
-  pipeline.io.irqEna := io.irqEna
+  // Interrupts: now generated internally by BmbSys
+  pipeline.io.irq := bmbSys.io.irq
+  pipeline.io.irqEna := bmbSys.io.irqEna
+  bmbSys.io.ackIrq := pipeline.io.ackIrq
+  bmbSys.io.ackExc := pipeline.io.ackExc
+
+  // External I/O interrupts: not connected yet (no external interrupt sources)
+  bmbSys.io.ioInt := 0
 
   // UART (slave 1, optional)
   val bmbUart = if (config.hasUart) Some(BmbUart(config.uartBaudRate, config.clkFreqHz)) else None
@@ -316,10 +317,6 @@ case class JopCoreWithBram(
     // Memory controller status
     val memBusy   = out Bool()
 
-    // Interrupt interface
-    val irq       = in Bool()
-    val irqEna    = in Bool()
-
     // Debug: UART TX snoop
     val uartTxData  = out Bits(8 bits)
     val uartTxValid = out Bool()
@@ -365,10 +362,6 @@ case class JopCoreWithBram(
   io.bout := jopCore.io.bout
 
   io.memBusy := jopCore.io.memBusy
-
-  // Interrupt passthrough
-  jopCore.io.irq := io.irq
-  jopCore.io.irqEna := io.irqEna
 
   // Debug passthrough
   io.uartTxData := jopCore.io.uartTxData

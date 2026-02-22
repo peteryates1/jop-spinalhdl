@@ -113,10 +113,6 @@ case class JopCoreBramDebugHarness(
   // No UART RX in debug harness
   jopSystem.io.rxd := True
 
-  // Interrupts disabled
-  jopSystem.io.irq := False
-  jopSystem.io.irqEna := False
-
   // Pipeline outputs
   io.pc := jopSystem.io.pc
   io.jpc := jopSystem.io.jpc

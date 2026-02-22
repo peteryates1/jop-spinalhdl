@@ -4,7 +4,7 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 
 ## Overview
 
-**98 properties verified** across **16 test suites** covering all major components:
+**99 properties verified** across **16 test suites** covering all major components:
 
 | Category | Suite | Tests | Properties |
 |----------|-------|:-----:|------------|
@@ -20,7 +20,7 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 | | BmbMemoryControllerFormal | 12 | Initial state, busy correctness, exception/copy returns to IDLE, READ/WRITE_WAIT completion + hold, IDLE stability |
 | **DDR3 Subsystem** | LruCacheCoreFormal | 11 | Initial state, busy correctness, memCmd gating, evict/refill commands, error recovery, no-deadlock, **2 bugs found and fixed** (see below) |
 | | CacheToMigAdapterFormal | 8 | Initial state, busy correctness, IDLE stability, no-deadlock, MIG signal gating, read data capture, write completion |
-| **I/O Subsystem** | CmpSyncFormal | 5 | Lock mutual exclusion, deadlock freedom, signal broadcast, gcHalt isolation, IDLE no-halt |
+| **I/O Subsystem** | CmpSyncFormal | 6 | Lock mutual exclusion, deadlock freedom, signal broadcast, gcHalt isolation, IDLE no-halt, **lock owner exempt from gcHalt** |
 | | BmbSysFormal | 6 | Clock counter monotonicity, exception pulse, lock acquire/release/hold, halted passthrough |
 | | BmbUartFormal | 5 | TX push gating, RX pop gating, no spurious TX, status register accuracy (bits 0 and 1) |
 | **BMB Protocol** | BmbProtocolFormal | 5 | rsp.ready always true, cmd.last always true, cmd.valid held until ready, cmd address/opcode/data stable while not accepted |
@@ -44,7 +44,7 @@ cd /tmp/sby && sudo make install PREFIX=/usr/local
 ## Running
 
 ```bash
-# Run all 98 formal tests (~100 seconds)
+# Run all 99 formal tests (~100 seconds)
 sbt "testOnly jop.formal.*"
 
 # Run a specific suite

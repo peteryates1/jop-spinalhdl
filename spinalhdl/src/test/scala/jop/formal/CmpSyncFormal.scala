@@ -119,6 +119,35 @@ class CmpSyncFormal extends SpinalFormalFunSuite {
       })
   }
 
+  test("lock owner not halted by gcHalt from other core") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(CmpSync(cpuCnt))
+        assumeInitial(ClockDomain.current.isResetActive)
+
+        // Core 0 sets gcHalt, core 1 holds lock (req=True)
+        dut.io.syncIn(0).req := False
+        dut.io.syncIn(0).s_in := False
+        dut.io.syncIn(0).gcHalt := True   // GC core
+        dut.io.syncIn(1).req := True       // Lock holder
+        dut.io.syncIn(1).s_in := False
+        dut.io.syncIn(1).gcHalt := False
+
+        when(pastValidAfterReset()) {
+          // When core 1 holds the lock, it must NOT be halted
+          // (even though core 0 has gcHalt set) — otherwise deadlock
+          when(dut.nextState === dut.State.LOCKED && dut.nextLockedId === 1) {
+            assert(!dut.io.syncOut(1).halted)
+          }
+          // Core 0 (non-owner) should be halted when core 1 holds lock
+          when(dut.nextState === dut.State.LOCKED && dut.nextLockedId === 1) {
+            assert(dut.io.syncOut(0).halted)
+          }
+        }
+      })
+  }
+
   test("IDLE with no requests means no core halted (without gcHalt)") {
     formalConfig
       .withBMC(4)

@@ -126,10 +126,6 @@ case class JopBramTop(
     // Drive debug RAM port (unused)
     jopCore.io.debugRamAddr := 0
 
-    // Interrupts (disabled)
-    jopCore.io.irq := False
-    jopCore.io.irqEna := False
-
     // Single-core: no CmpSync
     jopCore.io.syncIn.halted := False
     jopCore.io.syncIn.s_out := False
@@ -293,10 +289,6 @@ case class JopBramSerialTop(
 
     // Drive debug RAM port (unused)
     jopCore.io.debugRamAddr := 0
-
-    // Interrupts (disabled)
-    jopCore.io.irq := False
-    jopCore.io.irqEna := False
 
     // Single-core: no CmpSync
     jopCore.io.syncIn.halted := False

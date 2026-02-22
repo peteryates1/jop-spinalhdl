@@ -30,6 +30,9 @@ class BmbSysFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.wrData)
     dut.io.syncIn.halted := False
     dut.io.syncIn.s_out := False
+    dut.io.ackIrq := False
+    dut.io.ackExc := False
+    dut.io.ioInt := 0
   }
 
   test("clock counter increments every cycle") {
@@ -125,6 +128,9 @@ class BmbSysFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.wrData)
         anyseq(dut.io.syncIn.halted)
         dut.io.syncIn.s_out := False
+        dut.io.ackIrq := False
+        dut.io.ackExc := False
+        dut.io.ioInt := 0
 
         when(pastValidAfterReset()) {
           assert(dut.io.halted === dut.io.syncIn.halted)

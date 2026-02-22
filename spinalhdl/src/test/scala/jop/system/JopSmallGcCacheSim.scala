@@ -201,10 +201,6 @@ case class JopCoreWithCacheTestHarness(
   // No UART RX in test harness
   jopCore.io.rxd := True
 
-  // Interrupts disabled
-  jopCore.io.irq := False
-  jopCore.io.irqEna := False
-
   // Debug RAM (unused)
   jopCore.io.debugRamAddr := 0
 

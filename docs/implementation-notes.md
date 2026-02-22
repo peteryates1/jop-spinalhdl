@@ -41,12 +41,14 @@ captured during development — see the source code for authoritative details.
 
 ## I/O Subsystem (`jop.io` package)
 
-- **BmbSys**: Full SysDevice register set matching VHDL sc_sys
-  - Read: addr 0=IO_CNT, 1=IO_US_CNT, 5=IO_LOCK (always 0), 6=IO_CPU_ID, 7=IO_SIGNAL, 11=IO_CPUCNT
-  - Write: addr 1=IO_TIMER, 3=IO_WD, 8=IO_INTMASK (others silently accepted)
+- **BmbSys**: Full SysDevice register set matching VHDL sc_sys, including timer interrupt generation
+  - Read: addr 0=IO_CNT, 1=IO_US_CNT, 2=IO_INT_SRC (intNr), 5=IO_LOCK, 6=IO_CPU_ID, 7=IO_SIGNAL, 11=IO_CPUCNT
+  - Write: addr 0=IO_INT_ENA, 1=IO_TIMER, 2=IO_SWINT, 3=IO_WD, 8=IO_INTMASK, 9=IO_INTCLEARALL, 13=IO_GC_HALT
   - Prescaler: 8-bit countdown, `divVal = clkFreqHz / 1_000_000 - 1` (99 at 100 MHz)
   - `io.wd` output drives LEDs (active low on QMTECH board)
   - `cpuCnt` parameter (default 1) for multi-core support
+  - **Interrupt chain** (matching VHDL sc_sys.vhd): timer_equ → timer_int → intstate → priority encoder → irq_gate → irq pulse. NUM_INT = numIoInt + 1 (timer + I/O). intstate is an SR flip-flop per source (set on hwreq|swreq, cleared on ack|clearAll). Priority encoder gives highest index priority. int_ena register gates final irq output; automatically cleared on ackIrq or ackExc. SW interrupt via addr 2 write (yield). Interrupt number captured in intNr on ackIrq, readable at addr 2.
+  - **irq/irqEna are internal to JopCore**: BmbSys generates irq/irqEna, wired directly to JopPipeline. No external irq/irqEna ports on JopCore/JopCoreWithBram/JopCoreWithSdram. ackIrq/ackExc flow back from BytecodeFetchStage through JopPipeline to BmbSys.
 - **BmbUart**: UartCtrl + TX FIFO (16) + RX FIFO (16). Status (addr 0): bit0=TDRE, bit1=RDRF. Data (addr 1): read consumes RX FIFO, write pushes TX FIFO.
 - Both use same I/O interface: addr(4 bits), rd, wr, wrData(32), rdData(32)
 - Top-levels wire: `ioSubAddr = ioAddr(3:0)`, `ioSlaveId = ioAddr(5:4)`
@@ -86,7 +88,8 @@ captured during development — see the source code for authoritative details.
   - States: IDLE / LOCKED. Round-robin fair arbiter (two-pass scan)
   - Core writes IO_LOCK (addr 5) -> `lockReqReg=true`, CmpSync grants one core (`halted=0`), halts others (`halted=1`)
   - Core writes IO_UNLOCK (addr 6) -> `lockReqReg=false`, releases lock
-  - Core writes IO_GC_HALT (addr 13) -> `gcHaltReg`, CmpSync halts all OTHER cores (OR'd with lock halted)
+  - Core writes IO_GC_HALT (addr 13) -> `gcHaltReg`, CmpSync halts all OTHER cores
+  - **Lock owner exempt from gcHalt**: When LOCKED, the owner is NEVER halted (even if another core has gcHalt set). This prevents deadlock: if the GC core sets gcHalt while another core holds the lock, the lock owner must complete its critical section and release before being halted. Non-owners are always halted when a lock is held. After the owner releases, it will be caught by gcHalt on the next cycle (IDLE state: `halted := gcHaltFromOthers`). Previous code OR'd gcHaltFromOthers into the owner's halted signal, causing a deadlock when GC and lock overlapped. Found by code review, confirmed by formal verification.
   - Boot signal: core 0's `IO_SIGNAL` broadcast to all cores via `s_in`/`s_out`
 - **Per-core I/O**: Each core has `BmbSys(cpuId=i, cpuCnt=N)` with independent watchdog, unique CPU ID, CmpSync interface. Only core 0 has `BmbUart`.
 - **Pipeline halt**: `io.halted` from CmpSync through BmbSys directly stalls pipeline
@@ -102,12 +105,22 @@ captured during development — see the source code for authoritative details.
 - **Symptom**: NCoreHelloWorld on CYC5000 SMP ran ~140 println iterations (~70 seconds), then output corrupted to a flood of 'C' characters before both cores hung. This matched the ~160 allocation limit of the 28KB semi-space heap.
 - **Fix**: Hardware GC halt signal via `IO_GC_HALT` (BmbSys addr 13):
   - `SyncIn` bundle: added `gcHalt` field (core → CmpSync direction)
-  - `CmpSync`: when any core's `gcHalt` is set, all OTHER cores' pipelines are halted (OR'd into existing `halted` output). The halting core itself is NOT affected.
+  - `CmpSync`: when any core's `gcHalt` is set, all OTHER cores' pipelines are halted. The halting core itself is NOT affected. Lock owner is exempt from gcHalt (see CmpSync deadlock fix above).
   - `BmbSys`: `gcHaltReg` register, write 1 to set, write 0 to clear. Routed to `syncOut.gcHalt`.
   - `GC.java`: `Native.wr(1, Const.IO_GC_HALT)` before `gc()`, `Native.wr(0, Const.IO_GC_HALT)` after.
   - Single-core: gcHalt output is unconnected (no CmpSync), no effect.
 - **Future**: Protect the halt flag with CmpSync lock for safe multi-core allocation (currently only core 0 allocates). Any core triggering GC should acquire the lock first, then set gcHalt.
 - **Verified**: CYC5000 SMP hardware — NCoreHelloWorld running 3+ minutes through multiple GC cycles with no corruption. SMP GC BRAM sim shows `halted=.H` during GC rounds.
+
+## Intentionally Unused VHDL Signals
+
+- **putref**: The `putref` memory operation (from `stprf` microcode) exists in the decode stage and BmbMemoryController but is never used by current JOP bytecodes. In the original VHDL, putref is part of the SCJ (Safety-Critical Java) scope check mechanism — it's a variant of putstatic that would validate reference assignment safety in an SCJ runtime. Our JOP port doesn't implement SCJ scope checks, so putref fires but is handled identically to putstatic (no additional logic).
+- **atmstart/atmend**: The `atmstart`/`atmend` memory operations (from `statm`/`endatm` microcode) are SimpCon atomicity markers. In the original VHDL SimpCon-based memory interface, they bracketed multi-cycle memory operations to prevent bus arbitration between start and end. With BMB (which has native transactions with backpressure), atomicity is handled by the bus protocol itself and CmpSync's global lock. These signals are decoded but have no effect in BmbMemoryController.
+- **IO_LOCK sync_out.status**: The VHDL `sync_out` record has a `status` field (read at IO_LOCK addr 5, bit 1), but it's only driven by `ihlu.vhd` (the IHLU alternative lock implementation for the Jeopard RTSJ framework). Our port uses CmpSync (not IHLU), so `SyncOut` has no `status` field. Old Java code in `ControlChannel.java` that reads IO_LOCK status bit 1 is for Jeopard/IHLU — not applicable.
+
+## DDR3 TODO
+
+- **Calibration gate**: DDR3 top-level (`JopDdr3Top`) should gate JOP reset on MIG calibration complete (`init_calib_complete`). Currently, JOP starts running before DDR3 is ready, which could cause early memory accesses to fail. Deferred — DDR3 platform is deprioritized due to unresolved GC hang (see `ddr3-gc-hang.md`).
 
 ## SDR SDRAM GC Hang (Resolved)
 

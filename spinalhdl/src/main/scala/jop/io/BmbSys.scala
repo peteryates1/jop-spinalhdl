@@ -6,7 +6,13 @@ import spinal.core._
  * System I/O slave (slave 0) — matches VHDL sc_sys.vhd
  *
  * Provides clock cycle counter, prescaled microsecond counter,
- * watchdog register, CPU ID, signal register, and CMP lock interface.
+ * watchdog register, CPU ID, signal register, CMP lock interface,
+ * and interrupt generation (timer + SW interrupts).
+ *
+ * Interrupt chain (matching VHDL sc_sys.vhd):
+ *   timer_equ -> timer_int -> intstate(0) -> priority encoder -> irq_gate -> irq pulse
+ *   SW write addr 2 -> swreq -> intstate -> priority encoder -> irq_gate -> irq pulse
+ *   int_ena register gates the final irq output; cleared on ackIrq or ackExc.
  *
  * For multicore (cpuCnt > 1):
  *   - IO_LOCK (addr 5) read: returns halted/status from CmpSync
@@ -17,8 +23,9 @@ import spinal.core._
  * @param clkFreqHz System clock frequency in Hz (for microsecond prescaler)
  * @param cpuId     CPU identifier (for multi-core; 0 for single-core)
  * @param cpuCnt    Total number of CPUs (1 for single-core)
+ * @param numIoInt  Number of external I/O interrupt sources (default 2, matching VHDL)
  */
-case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1) extends Component {
+case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: Int = 2) extends Component {
   val io = new Bundle {
     val addr   = in UInt(4 bits)
     val rd     = in Bool()
@@ -28,11 +35,26 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1) extends Comp
     val wd     = out Bits(32 bits)
     val exc    = out Bool()  // Exception pulse to bcfetch
 
+    // Interrupt outputs (to pipeline via JopCore)
+    val irq    = out Bool()  // Interrupt request pulse
+    val irqEna = out Bool()  // Interrupt enable (to bcfetch)
+
+    // Interrupt acknowledge inputs (from bcfetch via JopCore)
+    val ackIrq = in Bool()   // Interrupt acknowledged by bcfetch
+    val ackExc = in Bool()   // Exception acknowledged by bcfetch
+
+    // External I/O interrupt inputs
+    val ioInt  = in Bits(numIoInt bits)
+
     // CMP sync interface (active when cpuCnt > 1)
     val syncIn  = in(SyncOut())   // From CmpSync: halted status
     val syncOut = out(SyncIn())   // To CmpSync: lock request
     val halted  = out Bool()      // Pipeline stall signal
   }
+
+  // ==========================================================================
+  // Counters
+  // ==========================================================================
 
   // Clock cycle counter (free-running, every cycle)
   val clockCntReg = Reg(UInt(32 bits)) init(0)
@@ -52,11 +74,113 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1) extends Comp
   // Timer register (write: set timer value, read: us counter)
   val timerReg = Reg(UInt(32 bits)) init(0)
 
+  // ==========================================================================
+  // Timer interrupt generation (matching VHDL sc_sys.vhd)
+  // ==========================================================================
+
+  // Compare timer value and us counter, generate single-shot pulse
+  val timerEqu = (usCntReg === timerReg)
+  val timerDly = RegNext(timerEqu) init(False)
+  val timerInt = timerEqu && !timerDly
+
+  // ==========================================================================
+  // Interrupt state machines (matching VHDL intstate entity)
+  // ==========================================================================
+
+  // NUM_INT = numIoInt + 1 (timer interrupt is source 0)
+  val NUM_INT = numIoInt + 1
+
+  // Hardware request sources: timer (index 0) + I/O interrupts (indices 1..numIoInt)
+  val hwReq = Bits(NUM_INT bits)
+  hwReq(0) := timerInt
+  if (numIoInt > 0) {
+    hwReq(NUM_INT - 1 downto 1) := io.ioInt
+  }
+
+  // Software request (one-cycle pulse from addr 2 write)
+  val swReq = Reg(Bits(NUM_INT bits)) init(0)
+
+  // Interrupt mask (written at addr 8)
+  val mask = Reg(Bits(NUM_INT bits)) init(0)
+
+  // Clear all (one-cycle pulse from addr 9 write)
+  val clearAll = Reg(Bool()) init(False)
+
+  // Per-source acknowledge: decode prioint on ackIrq
+  val prioInt = Bits(5 bits)  // forward declaration, assigned below
+  val ack = Bits(NUM_INT bits)
+  for (i <- 0 until NUM_INT) {
+    ack(i) := io.ackIrq && (prioInt === B(i, 5 bits))
+  }
+
+  // Interrupt request = hardware OR software
+  val intReq = hwReq | swReq
+
+  // Instantiate intstate logic inline for each interrupt source
+  // (VHDL uses a separate entity; we inline the SR flip-flop)
+  val flag = Reg(Bits(NUM_INT bits)) init(0)
+  val pending = Bits(NUM_INT bits)
+  for (i <- 0 until NUM_INT) {
+    when(ack(i) || clearAll) {
+      flag(i) := False
+    } elsewhen (intReq(i)) {
+      flag(i) := True
+    }
+    pending(i) := flag(i) && mask(i)
+  }
+
+  // ==========================================================================
+  // Priority encoder: find highest-priority pending interrupt
+  // Matching VHDL: scan from NUM_INT-1 downto 0, first (highest index) wins
+  // ==========================================================================
+
+  val intPend = Bool()
+  intPend := False
+  prioInt := B(0, 5 bits)
+  for (i <- 0 until NUM_INT) {
+    when(pending(i)) {
+      intPend := True
+      prioInt := B(i, 5 bits)
+    }
+  }
+  // Last assignment wins in SpinalHDL (like VHDL process with loop + exit).
+  // The loop above gives priority to the HIGHEST index. VHDL uses downto with
+  // exit, which gives priority to the highest index too. Both match.
+
+  // ==========================================================================
+  // Interrupt processing (matching VHDL sc_sys.vhd lines 326-349)
+  // ==========================================================================
+
+  val intEna  = Reg(Bool()) init(False)
+  val irqGate = intPend && intEna
+  val irqDly  = RegNext(irqGate) init(False)
+  val intNr   = Reg(Bits(5 bits)) init(0)
+
+  // Save processing interrupt number on acknowledge
+  when(io.ackIrq) {
+    intNr := prioInt
+  }
+
+  // IRQ output: single-cycle pulse on rising edge of irqGate
+  io.irq := irqGate && !irqDly
+
+  // IRQ enable output to pipeline (bcfetch uses this to gate interrupt acceptance)
+  io.irqEna := intEna
+
+  // Disable interrupts on taken interrupt or exception
+  when(io.ackIrq || io.ackExc) {
+    intEna := False
+  }
+
+  // ==========================================================================
   // Watchdog register
+  // ==========================================================================
+
   val wdReg = Reg(Bits(32 bits)) init(0)
 
-  // Interrupt mask register (write-only, addr 8)
-  val intMaskReg = Reg(Bits(32 bits)) init(0)
+  // ==========================================================================
+  // Exception handling
+  // ==========================================================================
 
   // Exception type register (addr 4, matching VHDL sc_sys exc_type)
   // Written by memory controller on null pointer / array bounds violations.
@@ -65,9 +189,13 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1) extends Comp
   val excPend = Reg(Bool()) init(False)
   excPend := False  // default: cleared each cycle (set True on write to addr 4)
 
-  // One-cycle exc pulse: fires the cycle after excPend is set
+  // Exception pulse: single-cycle on rising edge of excPend (matching VHDL)
   val excDly = RegNext(excPend) init(False)
   io.exc := excPend && !excDly
+
+  // ==========================================================================
+  // CMP sync registers
+  // ==========================================================================
 
   // Lock request register: set on write to addr 5 (acquire), cleared on write to addr 6 (release).
   // In VHDL, req is held by pipeline stall (wr stays high while halted). In our design,
@@ -93,11 +221,18 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1) extends Comp
   // Halted output: combinational from CmpSync
   io.halted := io.syncIn.halted
 
-  // Read mux (combinational)
+  // ==========================================================================
+  // Read mux (combinational, matching VHDL sc_sys.vhd)
+  // ==========================================================================
+
   io.rdData := 0
   switch(io.addr) {
     is(0)  { io.rdData := clockCntReg.asBits }          // IO_CNT
     is(1)  { io.rdData := usCntReg.asBits }             // IO_US_CNT
+    is(2)  {                                              // IO_INT_SRC
+      io.rdData(4 downto 0) := intNr
+      io.rdData(31 downto 5) := B(0, 27 bits)
+    }
     is(4)  { io.rdData := excTypeReg.resized }           // IO_EXCEPTION
     is(5)  {                                              // IO_LOCK
       // VHDL: rd_data(0) <= sync_out.halted; rd_data(1) <= sync_out.status
@@ -109,19 +244,34 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1) extends Comp
     is(11) { io.rdData := B(cpuCnt, 32 bits) }          // IO_CPUCNT
   }
 
-  // Write handling
+  // ==========================================================================
+  // Write handling (matching VHDL sc_sys.vhd)
+  // ==========================================================================
+
+  // Default: clear one-cycle pulses
+  swReq := 0
+  clearAll := False
+
   when(io.wr) {
     switch(io.addr) {
+      is(0)  { intEna := io.wrData(0) }                 // IO_INT_ENA
       is(1)  { timerReg := io.wrData.asUInt }            // IO_TIMER
+      is(2)  {                                            // IO_SWINT (yield)
+        // Set swReq bit addressed by wrData (matching VHDL: swreq(to_integer(unsigned(wr_data))) <= '1')
+        for (i <- 0 until NUM_INT) {
+          when(io.wrData(log2Up(NUM_INT) - 1 downto 0).asUInt === i) {
+            swReq(i) := True
+          }
+        }
+      }
       is(3)  { wdReg := io.wrData }                      // IO_WD
       is(4)  { excTypeReg := io.wrData(7 downto 0); excPend := True }  // IO_EXCEPTION
       is(5)  { lockReqReg := True }                      // IO_LOCK: acquire
       is(6)  { lockReqReg := False }                     // IO_UNLOCK: release
       is(7)  { signalReg := io.wrData(0) }                 // IO_SIGNAL: boot sync
-      is(8)  { intMaskReg := io.wrData }                 // IO_INTMASK
+      is(8)  { mask := io.wrData(NUM_INT - 1 downto 0) } // IO_INTMASK
+      is(9)  { clearAll := True }                         // IO_INTCLEARALL
       is(13) { gcHaltReg := io.wrData(0) }                // IO_GC_HALT
-      // Addresses 0 (INT_ENA), 2 (SWINT),
-      // 9 (INTCLEARALL), 12 (PERFCNT): silently accepted
     }
   }
 

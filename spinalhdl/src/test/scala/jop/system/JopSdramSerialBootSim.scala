@@ -75,10 +75,6 @@ case class JopSdramSerialBootHarness(
   // UART RX from simulation (bit-serial)
   jopSystem.io.rxd := io.rxd
 
-  // Interrupts disabled
-  jopSystem.io.irq := False
-  jopSystem.io.irqEna := False
-
   // Outputs
   io.pc := jopSystem.io.pc
   io.jpc := jopSystem.io.jpc

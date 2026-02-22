@@ -60,10 +60,6 @@ case class JopCoreWithSdram(
     // Memory controller status
     val memBusy   = out Bool()
 
-    // Interrupt interface
-    val irq       = in Bool()
-    val irqEna    = in Bool()
-
     // Debug: UART TX snoop
     val uartTxData  = out Bits(8 bits)
     val uartTxValid = out Bool()
@@ -139,10 +135,6 @@ case class JopCoreWithSdram(
   // Memory controller debug
   io.debugMemState := jopCore.io.debugMemState
   io.debugMemHandleActive := jopCore.io.debugMemHandleActive
-
-  // Interrupt passthrough
-  jopCore.io.irq := io.irq
-  jopCore.io.irqEna := io.irqEna
 
   // Debug passthrough
   io.uartTxData := jopCore.io.uartTxData

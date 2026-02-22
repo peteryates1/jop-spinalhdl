@@ -194,8 +194,6 @@ case class JopDdr3Top(
     // Interrupts / CmpSync
     // ==================================================================
 
-    jopCore.io.irq    := False
-    jopCore.io.irqEna := False
     jopCore.io.syncIn.halted := False  // Single-core: never halted
     jopCore.io.syncIn.s_out := False
 

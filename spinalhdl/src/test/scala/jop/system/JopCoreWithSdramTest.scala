@@ -83,10 +83,6 @@ case class JopCoreWithSdramTestHarness(
   // No UART RX in test harness
   jopSystem.io.rxd := True
 
-  // Interrupts (disabled)
-  jopSystem.io.irq := False
-  jopSystem.io.irqEna := False
-
   // Outputs
   io.pc := jopSystem.io.pc
   io.jpc := jopSystem.io.jpc

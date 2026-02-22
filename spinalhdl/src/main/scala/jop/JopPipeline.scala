@@ -48,6 +48,8 @@ case class JopPipeline(
     val irq        = in Bool()
     val irqEna     = in Bool()
     val exc        = in Bool()   // Exception signal from I/O subsystem
+    val ackIrq     = out Bool()  // Interrupt acknowledged (from bcfetch)
+    val ackExc     = out Bool()  // Exception acknowledged (from bcfetch)
 
     // === Pipeline status ===
     val pc         = out UInt(config.pcWidth bits)
@@ -104,6 +106,8 @@ case class JopPipeline(
   bcfetch.io.irq := io.irq
   bcfetch.io.exc := io.exc
   bcfetch.io.ena := io.irqEna
+  io.ackIrq := bcfetch.io.ack_irq
+  io.ackExc := bcfetch.io.ack_exc
 
   // Fetch stage connections
   fetch.io.jpaddr := bcfetch.io.jpaddr

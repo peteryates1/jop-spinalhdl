@@ -83,10 +83,6 @@ case class JopCoreLargeBramHarness(
   // No UART RX
   jopSystem.io.rxd := True
 
-  // Interrupts disabled
-  jopSystem.io.irq := False
-  jopSystem.io.irqEna := False
-
   // Debug RAM (unused)
   jopSystem.io.debugRamAddr := 0
 

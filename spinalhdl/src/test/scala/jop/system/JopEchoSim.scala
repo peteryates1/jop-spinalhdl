@@ -61,10 +61,6 @@ case class JopEchoHarness(
   // UART RX from simulation (bit-serial)
   jopCore.io.rxd := io.rxd
 
-  // Interrupts disabled
-  jopCore.io.irq := False
-  jopCore.io.irqEna := False
-
   // Debug RAM port (unused)
   jopCore.io.debugRamAddr := 0
 

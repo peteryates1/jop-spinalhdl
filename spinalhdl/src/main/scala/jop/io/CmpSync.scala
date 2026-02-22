@@ -119,10 +119,16 @@ case class CmpSync(cpuCnt: Int) extends Component {
     val gcHaltFromOthers = (0 until cpuCnt).filter(_ != i)
       .map(j => io.syncIn(j).gcHalt).reduce(_ || _)
 
-    // Halted output: lock OR gcHalt from another core
+    // Halted output: lock AND/OR gcHalt from another core.
+    // Lock owner is NEVER halted — must complete critical section to avoid deadlock
+    // (e.g., GC core sets gcHalt while another core holds the lock; owner must release first).
     io.syncOut(i).halted := gcHaltFromOthers
     when(nextState === State.LOCKED) {
-      io.syncOut(i).halted := (U(i, log2Up(cpuCnt) bits) =/= nextLockedId) || gcHaltFromOthers
+      when(U(i, log2Up(cpuCnt) bits) === nextLockedId) {
+        io.syncOut(i).halted := False  // Owner: exempt from everything (including gcHalt)
+      } otherwise {
+        io.syncOut(i).halted := True   // Non-owner: always halted while lock held
+      }
     }
   }
 }

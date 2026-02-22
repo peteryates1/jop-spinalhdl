@@ -88,10 +88,6 @@ case class JopCoreLatencyHarness(
   // No UART RX
   jopCore.io.rxd := True
 
-  // Interrupts disabled
-  jopCore.io.irq := False
-  jopCore.io.irqEna := False
-
   // Debug RAM port - tie off
   jopCore.io.debugRamAddr := 0
 

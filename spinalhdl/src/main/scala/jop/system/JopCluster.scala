@@ -135,8 +135,6 @@ case class JopCluster(
   // ==================================================================
 
   for (i <- 0 until cpuCnt) {
-    cores(i).io.irq := False
-    cores(i).io.irqEna := False
     cores(i).io.debugRamAddr := 0
   }
 
