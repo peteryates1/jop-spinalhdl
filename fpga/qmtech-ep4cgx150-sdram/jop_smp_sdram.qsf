@@ -47,9 +47,12 @@ set_location_assignment PIN_B14 -to clk_in
 set_location_assignment PIN_AD20 -to ser_txd
 set_location_assignment PIN_AE21 -to ser_rxd
 
-# Core board LEDs
+# Core board LEDs (active low)
 set_location_assignment PIN_A25 -to led[0]
 set_location_assignment PIN_A24 -to led[1]
+# Daughter board LEDs (active low)
+set_location_assignment PIN_AD14 -to led[2]
+set_location_assignment PIN_AC14 -to led[3]
 
 # SDRAM clock (PLL c2: 100 MHz, -3ns phase shift)
 set_location_assignment PIN_E22 -to sdram_clk

@@ -67,7 +67,7 @@ case class JopSdramTop(
     val clk_in    = in Bool()
     val ser_txd   = out Bool()
     val ser_rxd   = in Bool()
-    val led       = out Bits(2 bits)
+    val led       = out Bits(Math.max(2, cpuCnt) bits)
     val sdram_clk = out Bool()
     val sdram     = master(SdramInterface(W9825G6JH6.layout))
   }
@@ -181,10 +181,10 @@ case class JopSdramTop(
       io.led(0) := ~cluster.io.wd(0)(0)
     } else {
       // QMTECH LEDs are active low
-      // LED[0] = core 0 watchdog bit 0 (proves core 0 Java code is running)
-      // LED[1] = core 1 watchdog bit 0 (proves core 1 Java code is running)
-      io.led(0) := ~cluster.io.wd(0)(0)
-      io.led(1) := ~cluster.io.wd(1)(0)
+      // LED[i] = core i watchdog bit 0 (proves core i Java code is running)
+      for (i <- 0 until cpuCnt) {
+        io.led(i) := ~cluster.io.wd(i)(0)
+      }
     }
   }
 }

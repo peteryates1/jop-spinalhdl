@@ -1,0 +1,51 @@
+# QMTech EP4CGX150DF27_CORE_BOARD 
+
+# 50MHz Clock
+set_location_assignment PIN_B14 -to clk_in
+
+set_location_assignment PIN_AD23 -to switch[0]
+set_location_assignment PIN_AD24 -to switch[1]
+set_location_assignment PIN_A25 -to led[0]
+set_location_assignment PIN_A24 -to led[1]
+
+# W9825G6JH6
+set_location_assignment PIN_H26 -to dram_ctrl.cs_n
+set_location_assignment PIN_K24 -to dram_ctrl.cke
+set_location_assignment PIN_E22 -to dram_ctrl.clk
+set_location_assignment PIN_G25 -to dram_ctrl.we_n
+set_location_assignment PIN_H25 -to dram_ctrl.ras_n
+set_location_assignment PIN_G26 -to dram_ctrl.cas_n
+set_location_assignment PIN_J25 -to dram_ctrl.ba[0]
+set_location_assignment PIN_J26 -to dram_ctrl.ba[1]
+set_location_assignment PIN_L25 -to dram_ctrl.addr[0]
+set_location_assignment PIN_L26 -to dram_ctrl.addr[1]
+set_location_assignment PIN_M25 -to dram_ctrl.addr[2]
+set_location_assignment PIN_M26 -to dram_ctrl.addr[3]
+set_location_assignment PIN_N22 -to dram_ctrl.addr[4]
+set_location_assignment PIN_N23 -to dram_ctrl.addr[5]
+set_location_assignment PIN_N24 -to dram_ctrl.addr[6]
+set_location_assignment PIN_M22 -to dram_ctrl.addr[7]
+set_location_assignment PIN_M24 -to dram_ctrl.addr[8]
+set_location_assignment PIN_L23 -to dram_ctrl.addr[9]
+set_location_assignment PIN_K26 -to dram_ctrl.addr[10]
+set_location_assignment PIN_L24 -to dram_ctrl.addr[11]
+set_location_assignment PIN_K23 -to dram_ctrl.addr[12]
+set_location_assignment PIN_F26 -to dram_ctrl.dqm[0]
+set_location_assignment PIN_H24 -to dram_ctrl.dqm[1]
+set_location_assignment PIN_B25 -to dram_data[0]
+set_location_assignment PIN_B26 -to dram_data[1]
+set_location_assignment PIN_C25 -to dram_data[2]
+set_location_assignment PIN_C26 -to dram_data[3]
+set_location_assignment PIN_D25 -to dram_data[4]
+set_location_assignment PIN_D26 -to dram_data[5]
+set_location_assignment PIN_E25 -to dram_data[6]
+set_location_assignment PIN_E26 -to dram_data[7]
+set_location_assignment PIN_H23 -to dram_data[8]
+set_location_assignment PIN_G24 -to dram_data[9]
+set_location_assignment PIN_G22 -to dram_data[10]
+set_location_assignment PIN_F24 -to dram_data[11]
+set_location_assignment PIN_F23 -to dram_data[12]
+set_location_assignment PIN_E24 -to dram_data[13]
+set_location_assignment PIN_D24 -to dram_data[14]
+set_location_assignment PIN_C24 -to dram_data[15]
+# set_location_assignment PIN_J23 -to  sdram_clk_sample

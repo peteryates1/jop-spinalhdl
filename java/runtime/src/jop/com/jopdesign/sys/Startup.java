@@ -88,7 +88,9 @@ public class Startup {
 			JVMHelp.wr("GC done\n");
 
 			started = true;
+			JVMHelp.wr("CI\n");
 			clazzinit();
+			JVMHelp.wr("OK\n");
 			JVMHelp.init();
 		}
 
@@ -104,14 +106,15 @@ public class Startup {
 
 		if (val == 0) {
 			// only CPU 0 invokes main()
+			JVMHelp.wr("M0\n");
 			val = Native.rdMem(1);		// pointer to 'special' pointers
 			val = Native.rdMem(val+3);	// pointer to main method structure
 			Native.invoke(0, val);		// call main (with null pointer on TOS
 			exit();
 		} else {
-			// other CPUs: go straight to main()
-			// Note: cpuStart array is not safe to access before GC init
-			// on non-zero cores, so skip the Runnable check entirely.
+			// Non-zero cores: invoke main() directly.
+			// The microcode cpux_loop already waited for IO_SIGNAL,
+			// so GC, clazzinit, and JVMHelp are initialized by core 0.
 			val = Native.rdMem(1);
 			val = Native.rdMem(val+3);
 			Native.invoke(0, val);

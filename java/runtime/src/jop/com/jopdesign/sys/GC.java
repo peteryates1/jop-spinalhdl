@@ -574,6 +574,8 @@ public class GC {
 
 		// that's the stop-the-world GC
 		// Note: mutex is null during first allocation, skip sync in that case
+		int ref;
+
 		if (mutex != null) {
 			synchronized (mutex) {
 				if (copyPtr+size >= allocPtr) {
@@ -582,47 +584,51 @@ public class GC {
 						throw OOMError;
 					}
 				}
-			}
-			synchronized (mutex) {
 				if (freeList==0) {
 					gc_alloc();
 					if (freeList==0) {
 						throw OOMError;
 					}
 				}
+				// Allocate from the upper part
+				allocPtr -= size;
+				// get one from free list
+				ref = freeList;
+				freeList = Native.rdMem(ref+OFF_NEXT);
+				// and add it to use list
+				Native.wrMem(useList, ref+OFF_NEXT);
+				useList = ref;
+				// pointer to real object, also marks it as non free
+				Native.wrMem(allocPtr, ref); // +OFF_PTR
+				// mark it as BLACK - means it will be in toSpace
+				Native.wrMem(toSpace, ref+OFF_SPACE);
+				Native.wrMem(0, ref+OFF_GREY);
+				// ref. flags used for array marker
+				Native.wrMem(IS_OBJ, ref+OFF_TYPE);
+				// pointer to method table in the handle
+				Native.wrMem(cons+Const.CLASS_HEADR, ref+OFF_MTAB_ALEN);
 			}
 		} else {
 			// First allocation (creating mutex), no sync needed
 			if (copyPtr+size >= allocPtr) {
-				JVMHelp.wr("E1\r\n");  // Error: no space even for first object
-				for(;;);  // halt
+				JVMHelp.wr("E1\r\n");
+				for(;;);
 			}
 			if (freeList==0) {
-				JVMHelp.wr("E2\r\n");  // Error: no free handles
-				for(;;);  // halt
+				JVMHelp.wr("E2\r\n");
+				for(;;);
 			}
+			allocPtr -= size;
+			ref = freeList;
+			freeList = Native.rdMem(ref+OFF_NEXT);
+			Native.wrMem(useList, ref+OFF_NEXT);
+			useList = ref;
+			Native.wrMem(allocPtr, ref);
+			Native.wrMem(toSpace, ref+OFF_SPACE);
+			Native.wrMem(0, ref+OFF_GREY);
+			Native.wrMem(IS_OBJ, ref+OFF_TYPE);
+			Native.wrMem(cons+Const.CLASS_HEADR, ref+OFF_MTAB_ALEN);
 		}
-		
-		int ref;
-
-		// Allocate - no sync needed if mutex is null (first allocation)
-		// we allocate from the upper part
-		allocPtr -= size;
-		// get one from free list
-		ref = freeList;
-		freeList = Native.rdMem(ref+OFF_NEXT);
-		// and add it to use list
-		Native.wrMem(useList, ref+OFF_NEXT);
-		useList = ref;
-		// pointer to real object, also marks it as non free
-		Native.wrMem(allocPtr, ref); // +OFF_PTR
-		// mark it as BLACK - means it will be in toSpace
-		Native.wrMem(toSpace, ref+OFF_SPACE);
-		Native.wrMem(0, ref+OFF_GREY);
-		// ref. flags used for array marker
-		Native.wrMem(IS_OBJ, ref+OFF_TYPE);
-		// pointer to method table in the handle
-		Native.wrMem(cons+Const.CLASS_HEADR, ref+OFF_MTAB_ALEN);
 
 		return ref;
 	}

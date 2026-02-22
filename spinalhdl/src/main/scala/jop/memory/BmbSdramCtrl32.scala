@@ -51,14 +51,21 @@ case class BmbSdramCtrl32(
 
   // Context carries BMB transaction info through SdramCtrl pipeline.
   // isHigh distinguishes the two SDRAM ops per 32-bit transaction.
+  // isBurst marks burst read responses so they aren't confused with
+  // stale single-word responses still in the CAS pipeline.
   case class SdramContext() extends Bundle {
     val source = UInt(bmbParameter.access.sourceWidth bits)
     val context = Bits(bmbParameter.access.contextWidth bits)
     val isHigh = Bool()
+    val isBurst = Bool()
   }
 
   val ctrlBus: SdramCtrlBus[SdramContext] = if (!useAlteraCtrl) {
-    val ctrl = SdramCtrl(layout, timing, CAS, SdramContext(), produceRspOnWrite = true)
+    // Use local SdramCtrlNoCke to avoid CKE gating bug in SpinalHDL's SdramCtrl.
+    // The library controller gates CKE when rsp.ready is low with reads in-flight,
+    // but the 2-cycle remoteCke delay creates a window where commands are issued
+    // while the SDRAM ignores them (CKE=0), causing data shifts.
+    val ctrl = SdramCtrlNoCke(layout, timing, CAS, SdramContext(), produceRspOnWrite = true)
     io.sdram <> ctrl.io.sdram
     ctrl.io.bus
   } else {
@@ -87,6 +94,8 @@ case class BmbSdramCtrl32(
     io.sdram <> adapter.io.sdram
     adapter.io.bus
   }
+
+  val rsp = ctrlBus.rsp
 
   // ==========================================================================
   // Command side: split 32-bit BMB into two 16-bit SDRAM commands
@@ -124,6 +133,8 @@ case class BmbSdramCtrl32(
     ctrlBus.cmd.context.source := burstSource
     ctrlBus.cmd.context.context := burstContext
 
+    ctrlBus.cmd.context.isBurst := True
+
     when(burstCmdIdx < burstCmdTotal) {
       ctrlBus.cmd.valid := True
       ctrlBus.cmd.address := burstBaseAddr + burstCmdIdx
@@ -149,6 +160,7 @@ case class BmbSdramCtrl32(
     ctrlBus.cmd.context.source := io.bmb.cmd.source
     ctrlBus.cmd.context.context := io.bmb.cmd.context
     ctrlBus.cmd.context.isHigh := False
+    ctrlBus.cmd.context.isBurst := False
 
     burstActive := True
     burstBaseAddr := sdramWordAddr
@@ -166,6 +178,7 @@ case class BmbSdramCtrl32(
     ctrlBus.cmd.write := io.bmb.cmd.isWrite
     ctrlBus.cmd.context.source := io.bmb.cmd.source
     ctrlBus.cmd.context.context := io.bmb.cmd.context
+    ctrlBus.cmd.context.isBurst := False
 
     when(!sendingHigh) {
       // Low half: even SDRAM word
@@ -195,19 +208,20 @@ case class BmbSdramCtrl32(
 
   val lowHalfData = Reg(Bits(16 bits))
 
-  when(ctrlBus.rsp.fire && !ctrlBus.rsp.context.isHigh) {
-    lowHalfData := ctrlBus.rsp.data
+  when(rsp.fire && !rsp.context.isHigh) {
+    lowHalfData := rsp.data
   }
 
   // Forward to BMB only on high-half response (both halves available)
-  io.bmb.rsp.valid := ctrlBus.rsp.valid && ctrlBus.rsp.context.isHigh
+  io.bmb.rsp.valid := rsp.valid && rsp.context.isHigh
   io.bmb.rsp.setSuccess()
-  io.bmb.rsp.source := ctrlBus.rsp.context.source
-  io.bmb.rsp.context := ctrlBus.rsp.context.context
-  io.bmb.rsp.data := ctrlBus.rsp.data ## lowHalfData  // {high16, low16}
+  io.bmb.rsp.source := rsp.context.source
+  io.bmb.rsp.context := rsp.context.context
+  io.bmb.rsp.data := rsp.data ## lowHalfData  // {high16, low16}
 
-  // rsp.last: burst-aware
-  when(burstActive) {
+  // rsp.last: burst-aware, gated by isBurst context to avoid counting
+  // stale single-word responses still in the CAS pipeline when a burst starts.
+  when(burstActive && rsp.context.isBurst) {
     io.bmb.rsp.last := (burstWordsSent + 1 >= burstWordTotal)
     when(io.bmb.rsp.fire) {
       burstWordsSent := burstWordsSent + 1
@@ -216,13 +230,13 @@ case class BmbSdramCtrl32(
       }
     }
   }.otherwise {
-    io.bmb.rsp.last := True  // single-word: always last
+    io.bmb.rsp.last := True  // single-word or stale non-burst: always last
   }
 
   // Accept low-half responses immediately (just buffer them);
   // accept high-half responses only when BMB rsp is consumed
-  ctrlBus.rsp.ready := Mux(
-    ctrlBus.rsp.context.isHigh,
+  rsp.ready := Mux(
+    rsp.context.isHigh,
     io.bmb.rsp.ready,
     True
   )
@@ -233,8 +247,8 @@ case class BmbSdramCtrl32(
   io.debug.ctrlCmdValid  := ctrlBus.cmd.valid
   io.debug.ctrlCmdReady  := ctrlBus.cmd.ready
   io.debug.ctrlCmdWrite  := ctrlBus.cmd.write
-  io.debug.ctrlRspValid  := ctrlBus.rsp.valid
-  io.debug.ctrlRspIsHigh := ctrlBus.rsp.context.isHigh
+  io.debug.ctrlRspValid  := rsp.valid
+  io.debug.ctrlRspIsHigh := rsp.context.isHigh
   io.debug.lowHalfData   := lowHalfData
 
 }

@@ -1,0 +1,125 @@
+# QMTech - DaughterBoard
+
+# CP2102N
+set_location_assignment PIN_AE21 -to ser_rxd
+set_location_assignment PIN_AD20 -to ser_txd
+
+set_location_assignment PIN_AD14 -to led[2]
+set_location_assignment PIN_AC14 -to led[3]
+set_location_assignment PIN_AD15 -to led[4]
+set_location_assignment PIN_AC15 -to led[5]
+set_location_assignment PIN_AE15 -to led[6]
+
+set_location_assignment PIN_C21 -to switch[2]
+set_location_assignment PIN_AD10 -to switch[3]
+set_location_assignment PIN_AC10 -to switch[4]
+set_location_assignment PIN_AF12 -to switch[5]
+set_location_assignment PIN_AF11 -to switch[6]
+
+# 3 Digit Seven Segment Display
+set_location_assignment PIN_AF15 -to SS_Seg[0]
+set_location_assignment PIN_AD18 -to SS_Seg[1]
+set_location_assignment PIN_AF17 -to SS_Seg[2]
+set_location_assignment PIN_AF16 -to SS_Seg[3]
+set_location_assignment PIN_AD16 -to SS_Seg[4]
+set_location_assignment PIN_AC17 -to SS_Seg[5]
+set_location_assignment PIN_AC18 -to SS_Seg[6]
+set_location_assignment PIN_AD17 -to SS_DP
+set_location_assignment PIN_AE14 -to SS_Scan[0]
+set_location_assignment PIN_AE17 -to SS_Scan[1]
+set_location_assignment PIN_AC16 -to SS_Scan[2]
+
+# RTL8211EG
+set_location_assignment PIN_C13 -to e_gtxc
+set_location_assignment PIN_A20 -to e_mdc
+set_location_assignment PIN_A21 -to e_mdio
+set_location_assignment PIN_A15 -to e_reset
+set_location_assignment PIN_B10 -to e_rxc
+set_location_assignment PIN_A9 -to e_rxd[0]
+set_location_assignment PIN_B9 -to e_rxd[1]
+set_location_assignment PIN_C10 -to e_rxd[2]
+set_location_assignment PIN_A10 -to e_rxd[3]
+set_location_assignment PIN_A11 -to e_rxd[4]
+set_location_assignment PIN_B11 -to e_rxd[5]
+set_location_assignment PIN_A12 -to e_rxd[6]
+set_location_assignment PIN_A13 -to e_rxd[7]
+set_location_assignment PIN_A8 -to e_rxdv
+set_location_assignment PIN_C11 -to e_rxer
+set_location_assignment PIN_B17 -to e_txc
+set_location_assignment PIN_C15 -to e_txd[0]
+set_location_assignment PIN_B15 -to e_txd[1]
+set_location_assignment PIN_A16 -to e_txd[2]
+set_location_assignment PIN_A17 -to e_txd[3]
+set_location_assignment PIN_C16 -to e_txd[4]
+set_location_assignment PIN_B18 -to e_txd[5]
+set_location_assignment PIN_C17 -to e_txd[6]
+set_location_assignment PIN_A18 -to e_txd[7]
+set_location_assignment PIN_C14 -to e_txen
+set_location_assignment PIN_A19 -to e_txer
+
+# Open
+set_location_assignment PIN_AD4 -to jp1[3]
+set_location_assignment PIN_AC4 -to jp1[4]
+set_location_assignment PIN_AE3 -to jp1[5]
+set_location_assignment PIN_AD3 -to jp1[6]
+set_location_assignment PIN_AF5 -to jp1[7]
+set_location_assignment PIN_AF4 -to jp1[8]
+set_location_assignment PIN_AD6 -to jp1[9]
+set_location_assignment PIN_AD5 -to jp1[10]
+set_location_assignment PIN_AE6 -to jp1[11]
+set_location_assignment PIN_AE5 -to jp1[12]
+set_location_assignment PIN_AF6 -to jp1[13]
+set_location_assignment PIN_AE7 -to jp1[14]
+set_location_assignment PIN_AF8 -to jp1[15]
+set_location_assignment PIN_AF7 -to jp1[16]
+set_location_assignment PIN_AF9 -to jp1[17]
+set_location_assignment PIN_AE9 -to jp1[18]
+
+# leds board attached
+set_location_assignment PIN_AF20 -to pmod_j10[5]
+set_location_assignment PIN_AF21 -to pmod_j10[1]
+set_location_assignment PIN_AE19 -to pmod_j10[6]
+set_location_assignment PIN_AF19 -to pmod_j10[2]
+set_location_assignment PIN_AC19 -to pmod_j10[7]
+set_location_assignment PIN_AD19 -to pmod_j10[3]
+set_location_assignment PIN_AE18 -to pmod_j10[8]
+set_location_assignment PIN_AF18 -to pmod_j10[4]
+
+# leds board attached
+set_location_assignment PIN_AF24 -to pmod_j11[5]
+set_location_assignment PIN_AF25 -to pmod_j11[1]
+set_location_assignment PIN_AC21 -to pmod_j11[6]
+set_location_assignment PIN_AD21 -to pmod_j11[2]
+set_location_assignment PIN_AE23 -to pmod_j11[7]
+set_location_assignment PIN_AF23 -to pmod_j11[3]
+set_location_assignment PIN_AE22 -to pmod_j11[8]
+set_location_assignment PIN_AF22 -to pmod_j11[4]
+
+# micro sdcard interface
+set_location_assignment PIN_B22 -to sd_cd
+set_location_assignment PIN_B21 -to sd_clk
+set_location_assignment PIN_A22 -to sd_cmd_din
+set_location_assignment PIN_A23 -to sd_d[0]_dout
+set_location_assignment PIN_B23 -to sd_d[1]
+set_location_assignment PIN_B19 -to sd_d[2]
+set_location_assignment PIN_C19 -to sd_d[3]_cs
+
+# vga output
+set_location_assignment PIN_A6 -to vga_hs
+set_location_assignment PIN_A7 -to vga_vs
+set_location_assignment PIN_E1 -to vga_r[0]
+set_location_assignment PIN_C1 -to vga_r[1]
+set_location_assignment PIN_E2 -to vga_r[2]
+set_location_assignment PIN_B1 -to vga_r[3]
+set_location_assignment PIN_D1 -to vga_r[4]
+set_location_assignment PIN_B2 -to vga_g[0]
+set_location_assignment PIN_A2 -to vga_g[1]
+set_location_assignment PIN_C4 -to vga_g[2]
+set_location_assignment PIN_A3 -to vga_g[3]
+set_location_assignment PIN_A4 -to vga_g[4]
+set_location_assignment PIN_C5 -to vga_g[5]
+set_location_assignment PIN_B4 -to vga_b[0]
+set_location_assignment PIN_B5 -to vga_b[1]
+set_location_assignment PIN_A5 -to vga_b[2]
+set_location_assignment PIN_B7 -to vga_b[3]
+set_location_assignment PIN_B6 -to vga_b[4]

@@ -3,7 +3,7 @@
 Detailed implementation notes for the SpinalHDL JOP port. These are reference notes
 captured during development — see the source code for authoritative details.
 
-## Bugs Found & Fixed
+## Bugs Found & Fixed (13 total)
 
 1. **BC fill write address off-by-one**: Used `bcFillCount.resized` (not increment) for JBC write address
 2. **iaload/caload +1 offset**: VHDL uses `data_ptr + index` (no +1). Both BmbMemoryController and JopSimulator had wrong `+1`
@@ -16,6 +16,9 @@ captured during development — see the source code for authoritative details.
 9. **BmbSys missing registers**: IO_LOCK (addr 5) must return 0 (lock acquired) for monitorenter to work. IO_CPUCNT (addr 11) must return 1 for Scheduler array sizing. Missing these caused GC `synchronized` to hang and Scheduler to create wrong-sized arrays.
 10. **cpuStart NPE on core 1 boot**: Original `Startup.java` initialized `cpuStart = new Runnable[nrCpu]` which requires GC. Non-zero cores called `cpuStart[cpuId]` before GC was ready, causing NPE. Fix: removed cpuStart array — non-zero cores go directly to main loop after `started` flag, no Runnable indirection needed.
 11. **Putfield bcopd pipeline timing**: The `stpf` microcode instruction (putfield) has NO `opd` flag, unlike `stgf` (getfield) which has `opd`. When putfield fires in BmbMemoryController's IDLE state, the pipeline hasn't yet accumulated the bytecode operand bytes into `bcopd` — the `nop opd` instructions that follow `stpf` haven't executed yet. Result: `handleIndex` captured as 0 instead of the field offset, so all putfield writes went to field 0 of the object. Fix: added `PF_WAIT` state (matching VHDL `pf0` "waste cycle to get opd in ok position") that delays index capture by one cycle. Putfield now goes IDLE→PF_WAIT→HANDLE_READ instead of IDLE→HANDLE_READ. Getfield is unaffected (keeps IDLE→HANDLE_READ with immediate index capture). Object cache `chkPf` moved from HANDLE_READ to PF_WAIT for putfield path.
+
+12. **BmbSdramCtrl32 burst read data corruption under multi-core traffic**: When the BMB arbiter switches from a single-word read (e.g., Core 0 getfield) to a burst read (e.g., Core 1 BC_FILL), `burstActive` becomes True while the single-word SDRAM responses are still in the SdramCtrl CAS pipeline (~6 cycles latency). Those stale responses arrive with `isHigh` context from the single-word operation, and the high-half response fires `io.bmb.rsp.fire`, which incorrectly increments `burstWordsSent`. This produces a 1-word data shift in the burst response: `got[N] = expected[N+1]` — the first 32-bit word is "consumed" by the stale response, and all subsequent words slide down by one position. Symptom: Core 1+ get corrupted bytecodes during BC_FILL, execute wrong code paths (e.g., entering `JVMHelp.wr()` despite `cpuId != 0`). Fix: added `isBurst` flag to `SdramContext` — burst SDRAM commands carry `isBurst=True`, single-word commands carry `isBurst=False`. Response-side burst counting (`burstWordsSent` increment and `burstActive` termination) is gated by `burstActive && rsp.context.isBurst`, so stale non-burst responses pass through harmlessly with `last=True`. Only manifests with SpinalHDL SdramCtrl simulation path (FPGA uses Altera controller which has separate context FIFOs).
+13. **SpinalHDL SdramCtrl CKE gating bug**: The library `SdramCtrl` has a power-saving CKE gating mechanism: `sdramCkeNext = !(readHistory.orR && !io.bus.rsp.ready)`. When `io.bus.rsp.ready` goes low while reads are in-flight (e.g., BMB arbiter backpressure from another core), CKE gates off. But `remoteCke` (which freezes the command pipeline) is 2 cycles delayed, creating a window where SDRAM commands are issued but the SDRAM ignores them (CKE=0). This misaligns the context pipeline with actual responses, causing data corruption. Fix: created `SdramCtrlNoCke` — local copy with `sdramCkeNext := True` (CKE never gates off). CKE gating is a power-saving feature not needed for JOP. Used by `BmbSdramCtrl32` when `useAlteraCtrl=false` (simulation path).
 
 ## Method Cache
 
@@ -34,7 +37,7 @@ captured during development — see the source code for authoritative details.
 - **States**: BC_FILL_R1 -> BC_FILL_LOOP -> BC_FILL_CMD (pipelined, `bcFillAddr` on cmd.fire, `bcFillCount` on rsp.fire)
 - **Burst**: `JopMemoryConfig(burstLen=N)` — 0=single-word (BRAM), 4=SDR SDRAM, 8=DDR3
 - burstLen>0: BC_FILL_R1 issues burst cmd, BC_FILL_LOOP processes beats via rsp.last
-- BmbSdramCtrl32: burst-aware (2*N SDRAM cmds), BmbCacheBridge: decomposes to sequential cache lookups
+- BmbSdramCtrl32: burst-aware (2*N SDRAM cmds, `isBurst` context for multi-core safety), BmbCacheBridge: decomposes to sequential cache lookups
 
 ## I/O Subsystem (`jop.io` package)
 
@@ -112,5 +115,20 @@ captured during development — see the source code for authoritative details.
 - Replaced with Altera `altera_sdram_tri_controller` BlackBox -> GC works on both boards (QMTECH 2000+, CYC5000 9800+ rounds)
 - Altera controller has `FAST_INPUT_REGISTER=ON` / `FAST_OUTPUT_REGISTER=ON` synthesis attributes
 - Files: `AlteraSdramBlackBox.scala`, `AlteraSdramAdapter.scala`, patched `altera_sdram_tri_controller.v`
-- `BmbSdramCtrl32(useAlteraCtrl=true)` selects Altera path, `false` (default) keeps SpinalHDL SdramCtrl
+- `BmbSdramCtrl32(useAlteraCtrl=true)` selects Altera path, `false` uses `SdramCtrlNoCke` (local copy with CKE gating disabled)
 - See `sdr-sdram-gc-hang.md` for full investigation history
+
+## BmbSdramCtrl32 Multi-Core Simulation Fixes (2026-02-22)
+
+Two bugs prevented multi-core SDRAM simulation (SpinalHDL SdramCtrl path, not Altera FPGA path):
+
+1. **CKE gating bug** (bug #13): SpinalHDL's `SdramCtrl` gates CKE when `rsp.ready` is low with reads in-flight. In multi-core configs, the BMB arbiter briefly lowers `rsp.ready` when servicing another core. The 2-cycle `remoteCke` delay creates a command/response misalignment. Fix: `SdramCtrlNoCke` — local copy with `sdramCkeNext := True`.
+
+2. **Burst read response misattribution** (bug #12): When the arbiter switches from a single-word read to a burst read, `burstActive` becomes True while stale single-word responses are still in the CAS pipeline. Those responses incorrectly increment `burstWordsSent`, producing a 1-word data shift (`got[N] = exp[N+1]`). Fix: `isBurst` flag in `SdramContext` — response-side burst counting gated by `burstActive && rsp.context.isBurst`.
+
+Files:
+- `SdramCtrlNoCke.scala` — local SdramCtrl with CKE disabled
+- `BmbSdramCtrl32.scala` — `isBurst` in SdramContext, burst response gating
+- `JopSmpSdramSim.scala` — SMP SDRAM test harness (N cores, SdramModel)
+
+Verification: 2-core and 4-core SDRAM sims pass with burstLen=4, 0 data mismatches.

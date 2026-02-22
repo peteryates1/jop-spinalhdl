@@ -218,7 +218,12 @@ case class JopCore(
   ioRdData := 0
   switch(ioSlaveId) {
     is(0) { ioRdData := bmbSys.io.rdData }
-    is(1) { if (bmbUart.isDefined) ioRdData := bmbUart.get.io.rdData }
+    is(1) {
+      if (bmbUart.isDefined) ioRdData := bmbUart.get.io.rdData
+      // No UART: ioRdData stays 0 (TDRE=0). Cores without UART must not
+      // access it — reads will return "TX busy" causing a hang, which makes
+      // the bug visible. TODO: consider an exception or debug trap here.
+    }
   }
   memCtrl.io.ioRdData := ioRdData
 

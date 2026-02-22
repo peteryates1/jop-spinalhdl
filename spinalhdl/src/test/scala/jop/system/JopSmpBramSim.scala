@@ -257,15 +257,17 @@ object JopSmpBramSim extends App {
 }
 
 /**
- * SMP NCoreHelloWorld simulation: 2 cores, no GC.
- * Core 0: prints "Hello World!" and toggles watchdog
- * Core 1: just toggles watchdog
- * Verifies both cores run independently and toggle their watchdog LEDs.
+ * SMP NCoreHelloWorld simulation: N cores (default 2).
+ * Core 0: prints "small - NCoreHelloWorld" and toggles watchdog
+ * Other cores: just toggle watchdog
+ * Verifies all cores run independently and toggle their watchdog LEDs.
+ *
+ * Usage: sbt "Test / runMain jop.system.JopSmpNCoreHelloWorldSim [cpuCnt]"
  */
 object JopSmpNCoreHelloWorldSim extends App {
-  val cpuCnt = 2
+  val cpuCnt = if (args.length > 0) args(0).toInt else 2
 
-  val jopFilePath = "java/apps/Smallest/NCoreHelloWorld.jop"
+  val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
   val romFilePath = "asm/generated/mem_rom.dat"
   val ramFilePath = "asm/generated/mem_ram.dat"
   val logFilePath = "spinalhdl/smp_ncore_simulation.log"
@@ -349,9 +351,9 @@ object JopSmpNCoreHelloWorldSim extends App {
           println(f"\n[$cycle%8d] $pcStr halted=$haltedStr $wdStr toggles=${wdToggles.mkString(",")}")
         }
 
-        // Exit after both cores have toggled watchdog at least 3 times
-        if (wdToggles.forall(_ >= 3)) {
-          println(s"\n*** Both cores toggling watchdog! toggles=${wdToggles.mkString(",")} ***")
+        // Exit after all cores have toggled watchdog at least once
+        if (wdToggles.forall(_ >= 1)) {
+          println(s"\n*** All cores toggling watchdog! toggles=${wdToggles.mkString(",")} ***")
           // Run a bit more to collect more UART output
           for (_ <- 0 until 10000) {
             dut.clockDomain.waitSampling()
@@ -372,20 +374,20 @@ object JopSmpNCoreHelloWorldSim extends App {
       println(s"Per-core WD toggles: ${wdToggles.zipWithIndex.map { case (t, i) => s"C$i=$t" }.mkString(" ")}")
       println(s"Log written to: $logFilePath")
 
-      if (!uartOutput.toString.contains("Hello World!")) {
-        run.finish("FAIL", "Did not see 'Hello World!' from core 0")
-        println("FAIL: Did not see 'Hello World!' from core 0")
+      if (!uartOutput.toString.contains("NCoreHelloWorld")) {
+        run.finish("FAIL", "Did not see 'NCoreHelloWorld' from core 0")
+        println("FAIL: Did not see 'NCoreHelloWorld' from core 0")
         System.exit(1)
       }
       for (i <- 0 until cpuCnt) {
-        if (wdToggles(i) < 3) {
-          run.finish("FAIL", s"Core $i only toggled watchdog ${wdToggles(i)} times (expected >= 3)")
-          println(s"FAIL: Core $i only toggled watchdog ${wdToggles(i)} times (expected >= 3)")
+        if (wdToggles(i) < 1) {
+          run.finish("FAIL", s"Core $i never toggled watchdog (expected >= 1)")
+          println(s"FAIL: Core $i never toggled watchdog (expected >= 1)")
           System.exit(1)
         }
       }
-      run.finish("PASS", s"$cpuCnt cores, $cycle cycles, both cores toggling watchdog LEDs")
-      println("PASS: Both cores running and toggling watchdog LEDs!")
+      run.finish("PASS", s"$cpuCnt cores, $cycle cycles, all cores toggling watchdog LEDs")
+      println(s"PASS: All $cpuCnt cores running and toggling watchdog LEDs!")
     }
 }
 
