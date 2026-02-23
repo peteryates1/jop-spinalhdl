@@ -67,6 +67,9 @@ public class System {
 					Native.wrMem(Native.rdMem(srcPtr + srcOffset + i), dstPtr + dstOffset + i);
 				}
 			}
+			// Invalidate array cache (A$): wrMem bypasses A$, so any
+			// cached entries for the destination array are now stale.
+			Native.invalidate();
 //		}
 	}
 }

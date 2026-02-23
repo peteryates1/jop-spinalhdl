@@ -220,8 +220,18 @@ case class BytecodeFetchStage(
     jpc_br := jpc
   }
 
-  // Extract branch type from instruction low 4 bits
-  val tp = jinstr(3 downto 0)
+  // Extract branch type from instruction, with remapping for bytecodes
+  // whose lower 4 bits don't match the standard branch type encoding.
+  // Matches VHDL bcfetch.vhd: if_acmpeq/if_acmpne (0xa5/0xa6) and
+  // ifnull/ifnonnull (0xc6/0xc7) need explicit remapping.
+  val tp = Bits(4 bits)
+  switch(jinstr) {
+    is(0xa5) { tp := 15 }  // if_acmpeq → eq type (same as if_icmpeq)
+    is(0xa6) { tp := 0 }   // if_acmpne → ne type (same as if_icmpne)
+    is(0xc6) { tp := 9 }   // ifnull → ifeq type
+    is(0xc7) { tp := 10 }  // ifnonnull → ifne type
+    default  { tp := jinstr(3 downto 0) }
+  }
 
   // Branch target address calculation (registered)
   // Target = jpc_br + sign_extend(jopd_high & jbc_q)
