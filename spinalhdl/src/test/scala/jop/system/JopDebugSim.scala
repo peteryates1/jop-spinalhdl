@@ -163,7 +163,7 @@ object JopDebugSim extends App {
 
   val simConfig = SimConfig
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
-    .withWave
+    //.withWave
     .allOptimisation
 
   simConfig.compile(JopDebugTestHarness(
