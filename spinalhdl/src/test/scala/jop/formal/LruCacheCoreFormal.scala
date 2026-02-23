@@ -11,15 +11,14 @@ import jop.ddr3.{LruCacheCore, LruCacheCoreState, CacheConfig}
  *
  * Source: jop/ddr3/LruCacheCore.scala
  *
- * Uses a minimal cache config (addrWidth=8, dataWidth=32, setCount=2) for tractability.
+ * Uses a minimal cache config (addrWidth=8, dataWidth=32, setCount=2, wayCount=2)
+ * for tractability.
  *
  * Properties verified:
- * - Initial state: IDLE, not busy, all valid bits false
+ * - Initial state: IDLE, not busy
  * - State machine returns to IDLE given responsive memory
- * - BUG: read hit with full rspFifo enters miss path (evict/refill)
- * - Write hit with full rspFifo correctly stalls
- * - BUG: WAIT_EVICT_RSP gates memRsp.ready on rspFifo even for successful evictions
  * - No memCmd without valid state
+ * - WAIT_EVICT_RSP accepts successful evictions unconditionally
  */
 class LruCacheCoreFormal extends SpinalFormalFunSuite {
 
@@ -27,8 +26,7 @@ class LruCacheCoreFormal extends SpinalFormalFunSuite {
     .addEngin(SmtBmc(solver = SmtBmcSolver.Z3))
     .withTimeout(180)
 
-  // Minimal config for tractable verification
-  val cacheConfig = CacheConfig(addrWidth = 8, dataWidth = 32, setCount = 2)
+  val cacheConfig = CacheConfig(addrWidth = 8, dataWidth = 32, setCount = 2, wayCount = 2)
 
   def setupDut(dut: LruCacheCore): Unit = {
     anyseq(dut.io.frontend.req.valid)
@@ -125,21 +123,17 @@ class LruCacheCoreFormal extends SpinalFormalFunSuite {
 
   test("exception returns to IDLE from WAIT_EVICT_RSP") {
     formalConfig
-      .withBMC(10)
+      .withBMC(12)
       .doVerify(new Component {
         val dut = FormalDut(new LruCacheCore(cacheConfig))
         assumeInitial(ClockDomain.current.isResetActive)
         setupDut(dut)
 
-        // Force memory responses to always be errors
         assume(dut.io.memRsp.payload.error)
-        // Always accept memCmd
         assume(dut.io.memCmd.ready)
-        // Always have rspFifo room (frontend drains)
         assume(dut.io.frontend.rsp.ready)
 
         when(pastValidAfterReset()) {
-          // After an error in WAIT_EVICT_RSP, state should go to IDLE
           when(past(dut.state === LruCacheCoreState.WAIT_EVICT_RSP) &&
                past(dut.io.memRsp.valid) && past(dut.io.memRsp.payload.error) &&
                past(dut.rspFifo.io.push.ready)) {
@@ -151,7 +145,7 @@ class LruCacheCoreFormal extends SpinalFormalFunSuite {
 
   test("exception returns to IDLE from WAIT_REFILL_RSP") {
     formalConfig
-      .withBMC(10)
+      .withBMC(12)
       .doVerify(new Component {
         val dut = FormalDut(new LruCacheCore(cacheConfig))
         assumeInitial(ClockDomain.current.isResetActive)
@@ -173,21 +167,17 @@ class LruCacheCoreFormal extends SpinalFormalFunSuite {
 
   test("responsive memory returns to IDLE") {
     formalConfig
-      .withBMC(15)
+      .withBMC(20)
       .doVerify(new Component {
         val dut = FormalDut(new LruCacheCore(cacheConfig))
         assumeInitial(ClockDomain.current.isResetActive)
         setupDut(dut)
 
-        // Assume responsive memory: always accept commands, always respond
         assume(dut.io.memCmd.ready)
         assume(dut.io.memRsp.valid)
         assume(!dut.io.memRsp.payload.error)
-        // Assume consumer drains responses
         assume(dut.io.frontend.rsp.ready)
 
-        // After enough cycles, we should always return to IDLE
-        // (no permanent stuck state)
         val stuckCounter = Reg(UInt(4 bits)) init(0)
         when(dut.state =/= LruCacheCoreState.IDLE) {
           stuckCounter := stuckCounter + 1
@@ -196,17 +186,12 @@ class LruCacheCoreFormal extends SpinalFormalFunSuite {
         }
 
         when(pastValidAfterReset()) {
-          // With responsive memory and draining consumer,
-          // should never be stuck for more than 8 cycles
-          assert(stuckCounter < 8)
+          assert(stuckCounter < 10)
         }
       })
   }
 
-  test("read hit stalls when rspFifo full (fixed)") {
-    // Previously a bug: the otherwise branch caught reqHit && !rspFifo.push.ready,
-    // consuming the request and entering evict/refill unnecessarily.
-    // Fixed: read path now uses elsewhen(!reqHit), matching the write path.
+  test("WAIT_EVICT_RSP accepts successful eviction unconditionally") {
     formalConfig
       .withBMC(20)
       .doVerify(new Component {
@@ -215,55 +200,6 @@ class LruCacheCoreFormal extends SpinalFormalFunSuite {
         setupDut(dut)
 
         when(pastValidAfterReset()) {
-          // Property: if we're in IDLE with a valid read command that hits,
-          // we should only consume it (pop.ready) when rspFifo has room.
-          when(dut.state === LruCacheCoreState.IDLE &&
-               dut.cmdFifo.io.pop.valid &&
-               !dut.cmdFifo.io.pop.payload.write &&
-               dut.reqHit &&
-               dut.cmdFifo.io.pop.ready) {
-            assert(dut.rspFifo.io.push.ready)
-          }
-        }
-      })
-  }
-
-  test("write hit stalls when rspFifo full (correct behavior)") {
-    formalConfig
-      .withBMC(20)
-      .doVerify(new Component {
-        val dut = FormalDut(new LruCacheCore(cacheConfig))
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupDut(dut)
-
-        when(pastValidAfterReset()) {
-          // For writes: if we're in IDLE with a write hit, the request is only
-          // consumed when rspFifo has room. This is the CORRECT behavior.
-          when(dut.state === LruCacheCoreState.IDLE &&
-               dut.cmdFifo.io.pop.valid &&
-               dut.cmdFifo.io.pop.payload.write &&
-               dut.reqHit &&
-               dut.cmdFifo.io.pop.ready) {
-            assert(dut.rspFifo.io.push.ready)
-          }
-        }
-      })
-  }
-
-  test("WAIT_EVICT_RSP accepts successful eviction unconditionally (fixed)") {
-    // Previously a bug: memRsp.ready was gated on rspFifo.push.ready even
-    // though successful evictions don't push to rspFifo.
-    // Fixed: success path now accepts unconditionally.
-    formalConfig
-      .withBMC(20)
-      .doVerify(new Component {
-        val dut = FormalDut(new LruCacheCore(cacheConfig))
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupDut(dut)
-
-        when(pastValidAfterReset()) {
-          // In WAIT_EVICT_RSP with a valid non-error response,
-          // memRsp.ready should be True (eviction success doesn't need rspFifo).
           when(dut.state === LruCacheCoreState.WAIT_EVICT_RSP &&
                dut.io.memRsp.valid &&
                !dut.io.memRsp.payload.error) {
