@@ -116,7 +116,7 @@ captured during development — see the source code for authoritative details.
 - **LED driver**: LED[i]=core i WD bit 0 (active low). 7 on-board LEDs + PMOD for 8+ cores.
 - **Test app**: `NCoreHelloWorld.java` — each core reads `IO_CPU_ID`, core 0 prints + toggles WD, others just toggle WD. Small variant includes GC.
 - **FPGA build**: `make full-smp` in QMTECH or CYC5000 dirs (separate Quartus projects: `jop_smp_sdram.qsf`, `jop_smp_cyc5000.qsf`)
-- **Verified core counts**: 4-core (21% LE, +3.0 ns slack), 8-core (42% LE, +1.9 ns slack) at 100 MHz on EP4CGX150. 12/16-core fail at 100 MHz (insufficient timing margin).
+- **Verified core counts**: 4-core (21% LE, +3.0 ns slack), 8-core (42% LE, +1.9 ns slack) at 100 MHz; 16-core (86% LE, +1.8 ns slack) at 80 MHz on EP4CGX150. 12/16-core fail at 100 MHz (insufficient timing margin). PLL frequency configurable in `dram_pll.vhd` + `JopSdramTop.scala`.
 
 ## SMP GC Stop-the-World
 

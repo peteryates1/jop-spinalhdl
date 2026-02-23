@@ -13,7 +13,7 @@ import jop.debug.{DebugConfig, DebugUart}
  * DRAM PLL BlackBox
  *
  * Wraps the dram_pll VHDL entity (Altera altpll megafunction).
- * 50 MHz input -> c0=50MHz, c1=100MHz, c2=100MHz/-3ns phase shift
+ * 50 MHz input -> c0=50MHz, c1=80MHz, c2=80MHz/-3ns phase shift
  */
 case class DramPll() extends BlackBox {
   setDefinitionName("dram_pll")
@@ -33,8 +33,8 @@ case class DramPll() extends BlackBox {
 /**
  * JOP SDRAM FPGA Top-Level for QMTECH EP4CGX150
  *
- * Runs JOP processor(s) with SDRAM-backed memory at 100 MHz.
- * PLL: 50 MHz input -> 100 MHz system clock, 100 MHz/-3ns SDRAM clock.
+ * Runs JOP processor(s) with SDRAM-backed memory at 80 MHz.
+ * PLL: 50 MHz input -> 80 MHz system clock, 80 MHz/-3ns SDRAM clock.
  * Full UART TX+RX for serial download protocol (core 0 only).
  *
  * I/O subsystem (BmbSys, BmbUart) is internal to each JopCore.
@@ -80,21 +80,21 @@ case class JopSdramTop(
   noIoPrefix()
 
   // ========================================================================
-  // PLL: 50 MHz -> 100 MHz system, 100 MHz/-3ns SDRAM clock
+  // PLL: 50 MHz -> 80 MHz system, 80 MHz/-3ns SDRAM clock
   // ========================================================================
 
   val pll = DramPll()
   pll.io.inclk0 := io.clk_in
   pll.io.areset := False
 
-  // SDRAM clock output (PLL c2: 100 MHz with -3ns phase shift)
+  // SDRAM clock output (PLL c2: 80 MHz with -3ns phase shift)
   io.sdram_clk := pll.io.c2
 
   // ========================================================================
-  // Reset Generator (on PLL c1 = 100 MHz)
+  // Reset Generator (on PLL c1 = 80 MHz)
   // ========================================================================
 
-  // Raw clock domain from PLL c1 (100 MHz, no reset yet)
+  // Raw clock domain from PLL c1 (80 MHz, no reset yet)
   val rawClockDomain = ClockDomain(
     clock = pll.io.c1,
     config = ClockDomainConfig(resetKind = BOOT)
@@ -109,11 +109,11 @@ case class JopSdramTop(
     val int_res = !pll.io.locked || !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
   }
 
-  // Main clock domain: 100 MHz with generated reset
+  // Main clock domain: 80 MHz with generated reset
   val mainClockDomain = ClockDomain(
     clock = pll.io.c1,
     reset = resetGen.int_res,
-    frequency = FixedFrequency(100 MHz),
+    frequency = FixedFrequency(80 MHz),
     config = ClockDomainConfig(
       resetKind = SYNC,
       resetActiveLevel = HIGH
@@ -121,7 +121,7 @@ case class JopSdramTop(
   )
 
   // ========================================================================
-  // Main Design Area (100 MHz)
+  // Main Design Area (80 MHz)
   // ========================================================================
 
   val mainArea = new ClockingArea(mainClockDomain) {
@@ -135,7 +135,7 @@ case class JopSdramTop(
       baseConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(burstLen = 4),
         jumpTable = JumpTableInitData.serial,
-        clkFreqHz = 100000000L
+        clkFreqHz = 80000000L
       ),
       debugConfig = debugConfig,
       romInit = Some(romInit),
@@ -145,7 +145,7 @@ case class JopSdramTop(
 
     // Debug UART (when debug is enabled)
     debugConfig.foreach { cfg =>
-      val debugUart = DebugUart(cfg.baudRate, 100000000L)
+      val debugUart = DebugUart(cfg.baudRate, 80000000L)
       debugUart.io.transport <> cluster.io.debugTransport.get
       io.debug_txd.get := debugUart.io.txd
       debugUart.io.rxd := io.debug_rxd.get
@@ -161,7 +161,7 @@ case class JopSdramTop(
       timing = W9825G6JH6.timingGrade7,
       CAS = 3,
       useAlteraCtrl = true,
-      clockFreqHz = 100000000L
+      clockFreqHz = 80000000L
     )
 
     sdramCtrl.io.bmb <> cluster.io.bmb
@@ -179,11 +179,11 @@ case class JopSdramTop(
     // ==================================================================
 
     if (cpuCnt == 1) {
-      // Heartbeat: ~1 Hz toggle (50M cycles at 100 MHz)
+      // Heartbeat: ~1 Hz toggle (40M cycles at 80 MHz)
       val heartbeat = Reg(Bool()) init(False)
       val heartbeatCnt = Reg(UInt(26 bits)) init(0)
       heartbeatCnt := heartbeatCnt + 1
-      when(heartbeatCnt === 49999999) {
+      when(heartbeatCnt === 39999999) {
         heartbeatCnt := 0
         heartbeat := ~heartbeat
       }
@@ -219,7 +219,7 @@ object JopSdramTopVerilog extends App {
   SpinalConfig(
     mode = Verilog,
     targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(100 MHz)
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
   ).generate(InOutWrapper(JopSdramTop(
     cpuCnt = 1,
     romInit = romData,
@@ -248,7 +248,7 @@ object JopSmpSdramTopVerilog extends App {
   SpinalConfig(
     mode = Verilog,
     targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(100 MHz)
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
   ).generate(InOutWrapper(JopSdramTop(
     cpuCnt = cpuCnt,
     romInit = romData,
