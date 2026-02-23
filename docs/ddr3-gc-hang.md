@@ -64,12 +64,15 @@ JopCore ──BMB──► BmbCacheBridge ──► LruCacheCore ──► Cache
 
 - **MigBlackBox**: Xilinx MIG 7 Series IP core. Handles DDR3 PHY, calibration, refresh.
 
-### Timing
+### Timing & Utilization (XC7A35T-2)
 
-- WNS = +0.115ns at 100 MHz (tight but met)
-- WHS = +0.025ns (hold margin is tight)
-- Critical path: MIG `ui_clk_sync_rst` reset fanout to 5180 FFs (96% routing delay)
-- BRAM: 12.5/50 tiles (25%), LUTs: 12021/20800 (58%), FFs: 10279/41600 (25%)
+| Config | LUT | FF | BRAM | WNS | WHS |
+|--------|-----|-----|------|-----|-----|
+| 1-core DDR3 | 12,021 (57.8%) | 10,279 (24.7%) | 12.5 (25%) | +0.115 ns | +0.025 ns |
+| 2-core DDR3 SMP | 16,454 (79.1%) | 13,215 (31.8%) | 15 (30%) | +0.228 ns | +0.043 ns |
+
+- Critical path (1-core): MIG `ui_clk_sync_rst` reset fanout to 5180 FFs (96% routing delay)
+- Per additional core: ~4,400 LUT, ~2,900 FF, ~2.5 BRAM
 
 ## Hang Detection Infrastructure
 

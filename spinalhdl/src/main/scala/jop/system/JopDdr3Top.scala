@@ -16,22 +16,39 @@ import jop.pipeline.JumpTableInitData
  *   MIG -> ui_clk (100 MHz) + ui_clk_sync_rst
  *
  *   All JOP logic runs in MIG ui_clk domain (100 MHz):
- *     JopCore.bmb -> BmbCacheBridge -> LruCacheCore -> CacheToMigAdapter -> MIG -> DDR3
+ *     JopCluster.bmb -> BmbCacheBridge -> LruCacheCore -> CacheToMigAdapter -> MIG -> DDR3
  *     JopCore internal: BmbSys (slave 0) + BmbUart (slave 1)
+ *
+ * When cpuCnt = 1 (single-core):
+ *   - One JopCore, BMB goes directly to BmbCacheBridge
+ *   - No CmpSync
+ *   - LED[0] = WD bit 0, LED[1] = heartbeat
+ *
+ * When cpuCnt >= 2 (SMP):
+ *   - N JopCore instances with BmbArbiter -> shared BmbCacheBridge
+ *   - CmpSync for global lock synchronization
+ *   - LED[0] = core 0 WD, LED[1] = core 1 WD
+ *   - Entity name set to JopDdr3SmpTop for Vivado backward compat
  *
  * The default clock domain (clk/reset ports) is the board 100 MHz clock.
  * Reset is active-high (active-low button inverted in SpinalConfig).
  *
  * Serial-boot: same download protocol as SDRAM FPGA.
  *
+ * @param cpuCnt  Number of CPU cores (1 = single-core, 2+ = SMP)
  * @param romInit Microcode ROM initialization data (serial-boot)
  * @param ramInit Stack RAM initialization data (serial-boot)
  */
 case class JopDdr3Top(
+  cpuCnt: Int = 1,
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
   jumpTable: JumpTableInitData = JumpTableInitData.serial
 ) extends Component {
+  require(cpuCnt >= 1, "cpuCnt must be at least 1")
+
+  // Preserve existing Vivado entity names
+  if (cpuCnt >= 2) setDefinitionName("JopDdr3SmpTop")
 
   val io = new Bundle {
     val led      = out Bits(8 bits)
@@ -122,42 +139,39 @@ case class JopDdr3Top(
 
   val mainArea = new ClockingArea(uiCd) {
 
-    // JOP core config: addressWidth=26 (28-bit BMB byte address), burstLen=0 (single-word BC fill)
-    val config = JopCoreConfig(
-      memConfig = JopMemoryConfig(addressWidth = 26, burstLen = 0),
-      jumpTable = jumpTable,
-      clkFreqHz = 100000000L
-    )
+    // ==================================================================
+    // JOP Cluster: N cores with arbiter + CmpSync
+    // ==================================================================
 
-    // JBC init: empty (zeros) — BC_FILL loads bytecodes dynamically from DDR3
-    val jbcInit = Seq.fill(2048)(BigInt(0))
+    // burstLen=0 (pipelined single-word) for single-core; burstLen=4 for SMP
+    // (burstLen=0 + SMP has an arbiter interleaving issue with BC_FILL)
+    val burstLen = if (cpuCnt > 1) 4 else 0
 
-    // JOP Core (BmbSys + BmbUart internal)
-    val jopCore = JopCore(
-      config = config,
+    val cluster = JopCluster(
+      cpuCnt = cpuCnt,
+      baseConfig = JopCoreConfig(
+        memConfig = JopMemoryConfig(addressWidth = 26, burstLen = burstLen),
+        jumpTable = jumpTable,
+        clkFreqHz = 100000000L
+      ),
       romInit = Some(romInit),
       ramInit = Some(ramInit),
-      jbcInit = Some(jbcInit)
+      jbcInit = Some(Seq.fill(2048)(BigInt(0)))
     )
 
     // ==================================================================
-    // DDR3 Memory Path: JopCore.bmb -> BmbCacheBridge -> LruCacheCore -> CacheToMigAdapter -> MIG
+    // DDR3 Memory Path: JopCluster.bmb -> BmbCacheBridge -> LruCacheCore -> CacheToMigAdapter -> MIG
     // ==================================================================
 
-    val cacheAddrWidth = 28  // BMB byte address width (config.memConfig.addressWidth + 2)
+    val cacheAddrWidth = 28  // BMB byte address width (addressWidth + 2)
     val cacheDataWidth = 128 // MIG native data width
 
-    val bmbBridge = new BmbCacheBridge(config.memConfig.bmbParameter, cacheAddrWidth, cacheDataWidth)
+    val bmbBridge = new BmbCacheBridge(cluster.bmbParameter, cacheAddrWidth, cacheDataWidth)
     val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth))
     val adapter = new CacheToMigAdapter
 
-    // JopCore BMB -> BmbCacheBridge
-    bmbBridge.io.bmb.cmd.valid := jopCore.io.bmb.cmd.valid
-    bmbBridge.io.bmb.cmd.payload := jopCore.io.bmb.cmd.payload
-    jopCore.io.bmb.cmd.ready := bmbBridge.io.bmb.cmd.ready
-    jopCore.io.bmb.rsp.valid := bmbBridge.io.bmb.rsp.valid
-    jopCore.io.bmb.rsp.payload := bmbBridge.io.bmb.rsp.payload
-    bmbBridge.io.bmb.rsp.ready := jopCore.io.bmb.rsp.ready
+    // JopCluster BMB -> BmbCacheBridge
+    bmbBridge.io.bmb <> cluster.io.bmb
 
     // BmbCacheBridge -> LruCacheCore
     cache.io.frontend.req << bmbBridge.io.cache.req
@@ -191,26 +205,10 @@ case class JopDdr3Top(
     mig.io.app_wdf_wren := adapter.io.app_wdf_wren
 
     // ==================================================================
-    // Interrupts / CmpSync
+    // UART
     // ==================================================================
 
-    jopCore.io.syncIn.halted := False  // Single-core: never halted
-    jopCore.io.syncIn.s_out := False
-
-    // UART RX from board
-    jopCore.io.rxd := io.usb_rx
-
-    // Debug RAM (tie off)
-    jopCore.io.debugRamAddr := 0
-    jopCore.io.debugHalt := False
-
-    // Tie off snoop (single-core, no other cores to snoop from)
-    jopCore.io.snoopIn.foreach { si =>
-      si.valid   := False
-      si.isArray := False
-      si.handle  := 0
-      si.index   := 0
-    }
+    cluster.io.rxd := io.usb_rx
   }
 
   // ========================================================================
@@ -229,17 +227,17 @@ case class JopDdr3Top(
   val migCalibSync = BufferCC(mig.io.init_calib_complete, init = False)
 
   // Debug: memory controller state, busy, and WD — cross-domain sync from MIG ui_clk
-  val memStateSync = BufferCC(mainArea.jopCore.io.debugMemState, init = U(0, 5 bits))
-  val memBusySync = BufferCC(mainArea.jopCore.io.memBusy, init = False)
-  val wdSync = BufferCC(mainArea.jopCore.io.wd(0), init = False)
+  val memStateSync = BufferCC(mainArea.cluster.io.debugMemState, init = U(0, 5 bits))
+  val memBusySync = BufferCC(mainArea.cluster.io.memBusy(0), init = False)
+  val wdSync = (0 until cpuCnt).map(i => BufferCC(mainArea.cluster.io.wd(i)(0), init = False))
 
   // Cache/adapter debug: cross-domain sync from MIG ui_clk
   val cacheStateSync = BufferCC(mainArea.cache.io.debugState, init = U(0, 3 bits))
   val adapterStateSync = BufferCC(mainArea.adapter.io.debugState, init = U(0, 3 bits))
 
   // Pipeline debug: pc and jpc — cross-domain sync from MIG ui_clk
-  val pcSync = BufferCC(mainArea.jopCore.io.pc, init = U(0, 11 bits))
-  val jpcSync = BufferCC(mainArea.jopCore.io.jpc, init = U(0, 12 bits))
+  val pcSync = BufferCC(mainArea.cluster.io.pc(0), init = U(0, 11 bits))
+  val jpcSync = BufferCC(mainArea.cluster.io.jpc(0), init = U(0, 12 bits))
 
   // Hang detector: count cycles while memBusy stays True.
   // After ~167ms (2^24 @ 100MHz board clock), switch LED display and trigger UART dump.
@@ -276,30 +274,45 @@ case class JopDdr3Top(
 
   // UART TX MUX: JOP's UART during normal operation, DiagUart when hung.
   // JOP UART TX is in MIG ui_clk domain — sync to board clock via BufferCC.
-  val jopTxdSync = BufferCC(mainArea.jopCore.io.txd, init = True)
+  val jopTxdSync = BufferCC(mainArea.cluster.io.txd, init = True)
   io.usb_tx := Mux(hangDetected, diagUart.io.txd, jopTxdSync)
 
   // ========================================================================
   // LED Display
   // ========================================================================
-  // Normal:    LED[7:3]=memState, LED[2]=memBusy, LED[1]=heartbeat, LED[0]=wd
-  // Hang mode: LED[7:3]=latched memState, LED[2]=solid on, LED[1]=heartbeat, LED[0]=~heartbeat
 
-  when(!hangDetected) {
-    io.led(7 downto 3) := memStateSync.asBits
-    io.led(2) := memBusySync
-    io.led(1) := heartbeat
-    io.led(0) := wdSync
-  } otherwise {
-    io.led(7 downto 3) := hangMemState.asBits
-    io.led(2) := True  // Solid on = hung
-    io.led(1) := heartbeat
-    io.led(0) := ~heartbeat  // Both blink = hang indicator
+  if (cpuCnt == 1) {
+    // Normal:    LED[7:3]=memState, LED[2]=memBusy, LED[1]=heartbeat, LED[0]=wd
+    // Hang mode: LED[7:3]=latched memState, LED[2]=solid on, LED[1]=heartbeat, LED[0]=~heartbeat
+    when(!hangDetected) {
+      io.led(7 downto 3) := memStateSync.asBits
+      io.led(2) := memBusySync
+      io.led(1) := heartbeat
+      io.led(0) := wdSync(0)
+    } otherwise {
+      io.led(7 downto 3) := hangMemState.asBits
+      io.led(2) := True  // Solid on = hung
+      io.led(1) := heartbeat
+      io.led(0) := ~heartbeat  // Both blink = hang indicator
+    }
+  } else {
+    // SMP: LED[0]=core 0 WD, LED[1]=core 1 WD, LED[2]=memBusy, LED[7:3]=memState or hang
+    when(!hangDetected) {
+      io.led(7 downto 3) := memStateSync.asBits
+      io.led(2) := memBusySync
+      io.led(1) := wdSync(1)
+      io.led(0) := wdSync(0)
+    } otherwise {
+      io.led(7 downto 3) := hangMemState.asBits
+      io.led(2) := True  // Solid on = hung
+      io.led(1) := heartbeat
+      io.led(0) := ~heartbeat  // Both blink = hang indicator
+    }
   }
 }
 
 /**
- * Generate Verilog for JopDdr3Top
+ * Generate Verilog for JopDdr3Top (single-core)
  */
 object JopDdr3TopVerilog extends App {
   val romFilePath = "asm/generated/serial/mem_rom.dat"
@@ -319,7 +332,44 @@ object JopDdr3TopVerilog extends App {
       resetKind = SYNC,
       resetActiveLevel = LOW
     )
-  ).generate(InOutWrapper(JopDdr3Top(romData, ramData)))
+  ).generate(InOutWrapper(JopDdr3Top(
+    cpuCnt = 1,
+    romInit = romData,
+    ramInit = ramData
+  )))
 
   println("Generated: spinalhdl/generated/JopDdr3Top.v")
+}
+
+/**
+ * Generate Verilog for JopDdr3Top in SMP mode (entity: JopDdr3SmpTop)
+ */
+object JopDdr3SmpTopVerilog extends App {
+  val cpuCnt = if (args.length > 0) args(0).toInt else 2
+
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
+
+  val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
+  val ramData = JopFileLoader.loadStackRam(ramFilePath)
+
+  println(s"Loaded ROM: ${romData.length} entries")
+  println(s"Loaded RAM: ${ramData.length} entries")
+  println(s"Generating $cpuCnt-core SMP DDR3 Verilog...")
+
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = "spinalhdl/generated",
+    defaultClockDomainFrequency = FixedFrequency(100 MHz),
+    defaultConfigForClockDomains = ClockDomainConfig(
+      resetKind = SYNC,
+      resetActiveLevel = LOW
+    )
+  ).generate(InOutWrapper(JopDdr3Top(
+    cpuCnt = cpuCnt,
+    romInit = romData,
+    ramInit = ramData
+  )))
+
+  println(s"Generated: spinalhdl/generated/JopDdr3SmpTop.v ($cpuCnt cores)")
 }

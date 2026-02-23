@@ -41,7 +41,7 @@ object JopDdr3SimGen extends App {
       resetKind = SYNC,
       resetActiveLevel = LOW
     )
-  ).generate(InOutWrapper(JopDdr3Top(romData, ramData, JumpTableInitData.simulation)))
+  ).generate(InOutWrapper(JopDdr3Top(romInit = romData, ramInit = ramData, jumpTable = JumpTableInitData.simulation)))
 
   // Write memory hex file for DDR3 model initialization
   // Format: one 32-bit word per line in hex
