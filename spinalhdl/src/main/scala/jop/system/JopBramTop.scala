@@ -127,6 +127,14 @@ case class JopBramTop(
     jopCore.io.debugRamAddr := 0
     jopCore.io.debugHalt := False
 
+    // Tie off snoop (single-core, no other cores to snoop from)
+    jopCore.io.snoopIn.foreach { si =>
+      si.valid   := False
+      si.isArray := False
+      si.handle  := 0
+      si.index   := 0
+    }
+
     // Single-core: no CmpSync
     jopCore.io.syncIn.halted := False
     jopCore.io.syncIn.s_out := False
@@ -291,6 +299,14 @@ case class JopBramSerialTop(
     // Drive debug RAM port (unused)
     jopCore.io.debugRamAddr := 0
     jopCore.io.debugHalt := False
+
+    // Tie off snoop (single-core, no other cores to snoop from)
+    jopCore.io.snoopIn.foreach { si =>
+      si.valid   := False
+      si.isArray := False
+      si.handle  := 0
+      si.index   := 0
+    }
 
     // Single-core: no CmpSync
     jopCore.io.syncIn.halted := False

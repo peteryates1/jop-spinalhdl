@@ -20,10 +20,9 @@ import java.io.PrintWriter
  * Uses SdramCtrlNoCke (local copy with CKE gating disabled) since the Altera
  * controller is a BlackBox that can't be simulated with Verilator.
  *
- * Note: JopCluster automatically disables Array Cache (A$) for cpuCnt > 1
- * to avoid cross-core cache coherency issues. The A$ has no inter-core
- * invalidation protocol — one core's iastore to SDRAM won't invalidate
- * another core's cached copy, causing stale data reads.
+ * Both Array Cache (A$) and Object Cache (O$) are safe for SMP via
+ * cross-core snoop invalidation: each core's iastore/putfield broadcasts
+ * on the snoop bus, and other cores selectively invalidate matching lines.
  */
 case class JopSmpSdramTestHarness(
   cpuCnt: Int,
@@ -205,7 +204,7 @@ object JopSmpSdramNCoreHelloWorldSim extends App {
 
       dut.clockDomain.waitSampling(5)
 
-      val maxCycles = 2000000  // 2M cycles
+      val maxCycles = 5000000  // 5M cycles (A$ line fill increases SDRAM traffic in SMP)
       val reportInterval = 500000
       var done = false
       var cycle = 0

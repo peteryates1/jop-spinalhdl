@@ -64,6 +64,9 @@ case class JopEchoHarness(
   // Debug RAM port (unused)
   jopCore.io.debugRamAddr := 0
   jopCore.io.debugHalt := False
+  jopCore.io.snoopIn.foreach { si =>
+    si.valid := False; si.isArray := False; si.handle := 0; si.index := 0
+  }
 
   // Outputs
   io.pc := jopCore.io.pc

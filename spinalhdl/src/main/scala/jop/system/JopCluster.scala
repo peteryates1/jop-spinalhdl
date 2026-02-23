@@ -99,24 +99,12 @@ case class JopCluster(
   // Instantiate N JOP Cores
   // ==================================================================
 
-  // Array cache (A$) has no cross-core invalidation — each core's A$ is
-  // private and only invalidated by its own stidx/cinval.  In SMP, Core X
-  // can write to a shared array element (iastore → SDRAM), but Core Y's A$
-  // still holds the stale value and serves it on the next iaload hit.
-  // Disable A$ for multi-core until a coherency mechanism is added.
-  val smpMemConfig = if (cpuCnt > 1 && baseConfig.memConfig.useAcache) {
-    baseConfig.memConfig.copy(useAcache = false)
-  } else {
-    baseConfig.memConfig
-  }
-  val smpBaseConfig = if (smpMemConfig ne baseConfig.memConfig) {
-    baseConfig.copy(memConfig = smpMemConfig)
-  } else {
-    baseConfig
-  }
+  // Caches (A$ and O$) are safe for SMP: cross-core snoop invalidation
+  // is wired below — each core's iastore/putfield broadcasts on the snoop
+  // bus, and all other cores check tags and selectively invalidate.
 
   val cores = (0 until cpuCnt).map { i =>
-    val coreConfig = smpBaseConfig.copy(
+    val coreConfig = baseConfig.copy(
       cpuId = i,
       cpuCnt = cpuCnt,
       hasUart = (i == 0)
@@ -323,6 +311,37 @@ case class JopCluster(
       }
     }
     io.bmb <> arbiter.io.output
+  }
+
+  // ==================================================================
+  // Cross-Core Snoop Invalidation
+  // ==================================================================
+  //
+  // Each core's snoopOut broadcasts store events (iastore/putfield).
+  // Each core's snoopIn receives all OTHER cores' snoop events so it
+  // can invalidate matching cache lines. Only one core writes per cycle
+  // (BMB arbiter serializes), so MuxOH is safe for data fields.
+
+  val hasSnoopBus = baseConfig.memConfig.useAcache || baseConfig.memConfig.useOcache
+
+  if (hasSnoopBus && cpuCnt > 1) {
+    for (i <- 0 until cpuCnt) {
+      cores(i).io.snoopIn.foreach { si =>
+        val otherSnoops = (0 until cpuCnt).filter(_ != i).map(j => cores(j).io.snoopOut.get)
+        si.valid   := otherSnoops.map(_.valid).reduce(_ || _)
+        si.isArray := MuxOH(otherSnoops.map(_.valid), otherSnoops.map(_.isArray))
+        si.handle  := MuxOH(otherSnoops.map(_.valid), otherSnoops.map(_.handle))
+        si.index   := MuxOH(otherSnoops.map(_.valid), otherSnoops.map(_.index))
+      }
+    }
+  } else if (hasSnoopBus) {
+    // Single-core: tie off snoop input (no other cores)
+    cores(0).io.snoopIn.foreach { si =>
+      si.valid   := False
+      si.isArray := False
+      si.handle  := 0
+      si.index   := 0
+    }
   }
 
   // ==================================================================

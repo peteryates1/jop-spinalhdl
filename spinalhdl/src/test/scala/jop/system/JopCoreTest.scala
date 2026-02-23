@@ -104,6 +104,9 @@ case class JopCoreTestHarness(
   // Tie unused debug inputs
   jopCore.io.debugRamAddr := 0
   jopCore.io.debugHalt := False
+  jopCore.io.snoopIn.foreach { si =>
+    si.valid := False; si.isArray := False; si.handle := 0; si.index := 0
+  }
 
   // SimPublic for I/O tracing
   jopCore.memCtrl.io.ioRd.simPublic()

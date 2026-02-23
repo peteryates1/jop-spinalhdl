@@ -144,6 +144,14 @@ case class JopCoreWithSdram(
   jopCore.io.debugRamAddr := 0
   jopCore.io.debugHalt := False
 
+  // Tie off snoop (single-core, no other cores to snoop from)
+  jopCore.io.snoopIn.foreach { si =>
+    si.valid   := False
+    si.isArray := False
+    si.handle  := 0
+    si.index   := 0
+  }
+
   // BMB debug
   io.bmbCmdValid := jopCore.io.bmb.cmd.valid
   io.bmbCmdReady := jopCore.io.bmb.cmd.ready

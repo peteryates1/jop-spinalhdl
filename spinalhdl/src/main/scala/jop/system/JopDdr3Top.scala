@@ -203,6 +203,14 @@ case class JopDdr3Top(
     // Debug RAM (tie off)
     jopCore.io.debugRamAddr := 0
     jopCore.io.debugHalt := False
+
+    // Tie off snoop (single-core, no other cores to snoop from)
+    jopCore.io.snoopIn.foreach { si =>
+      si.valid   := False
+      si.isArray := False
+      si.handle  := 0
+      si.index   := 0
+    }
   }
 
   // ========================================================================

@@ -145,6 +145,9 @@ case class JopCoreBramDebugHarness(
   // Read mp register (RAM slot 0)
   jopSystem.io.debugRamAddr := 0
   jopSystem.io.debugHalt := False
+  jopSystem.io.snoopIn.foreach { si =>
+    si.valid := False; si.isArray := False; si.handle := 0; si.index := 0
+  }
   io.mpRegValue := jopSystem.io.debugRamData
 }
 

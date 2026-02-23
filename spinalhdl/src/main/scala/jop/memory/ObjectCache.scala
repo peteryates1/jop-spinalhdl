@@ -60,6 +60,11 @@ case class ObjectCache(
 
     // Control
     val inval    = in Bool()                     // Invalidate all entries
+
+    // Snoop invalidation (from other cores' stores via snoop bus)
+    val snoopValid    = in Bool()                    // Remote store event
+    val snoopHandle   = in UInt(addrBits bits)       // Handle of written object
+    val snoopFieldIdx = in UInt(maxIndexBits bits)   // Field index of written field
   }
 
   // ==========================================================================
@@ -209,5 +214,19 @@ case class ObjectCache(
   when(io.inval) {
     nxt := 0
     valid.foreach(_ := B(0, fieldCnt bits))
+  }
+
+  // Snoop invalidation: selectively clear matching field valid bits from
+  // a remote core's putfield. Only the specific field bit is cleared,
+  // not the whole line — other cached fields remain valid. Placed after
+  // updateCache and inval so "last assignment wins" ensures snoop priority.
+  val snoopIdx = io.snoopFieldIdx(indexBits - 1 downto 0)
+  for (i <- 0 until lineCnt) {
+    when(io.snoopValid && tag(i) === io.snoopHandle) {
+      val v = Bits(fieldCnt bits)
+      v := valid(i)
+      v(snoopIdx) := False
+      valid(i) := v
+    }
   }
 }

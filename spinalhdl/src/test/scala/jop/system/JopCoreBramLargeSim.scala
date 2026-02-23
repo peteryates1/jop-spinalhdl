@@ -86,6 +86,9 @@ case class JopCoreLargeBramHarness(
   // Debug RAM (unused)
   jopSystem.io.debugRamAddr := 0
   jopSystem.io.debugHalt := False
+  jopSystem.io.snoopIn.foreach { si =>
+    si.valid := False; si.isArray := False; si.handle := 0; si.index := 0
+  }
 
   io.pc := jopSystem.io.pc
   io.jpc := jopSystem.io.jpc

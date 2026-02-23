@@ -77,6 +77,11 @@ case class ArrayCache(
 
     // Control
     val inval    = in Bool()                     // Invalidate all entries
+
+    // Snoop invalidation (from other cores' stores via snoop bus)
+    val snoopValid  = in Bool()                  // Remote store event
+    val snoopHandle = in UInt(addrBits bits)     // Handle of written array
+    val snoopIndex  = in UInt(maxIndexBits bits) // Array index of written element
   }
 
   // ==========================================================================
@@ -137,6 +142,14 @@ case class ArrayCache(
   val hitTagReg = Reg(Bool()) init(False)
   val cacheableReg = Reg(Bool()) init(True)
 
+  // Snoop-during-fill flag: set if a snoop invalidation fires while the
+  // A$ is being filled (between chkIal and the last wrIal). When set,
+  // subsequent wrIal pulses skip tag/valid updates to prevent re-validating
+  // a line that was correctly invalidated by the snoop. The fill reads
+  // still complete (SDRAM data captured in rdDataReg by the controller)
+  // but the cache line stays invalid, forcing a refill on the next iaload.
+  val snoopDuringFill = Reg(Bool()) init(False)
+
   // Registered copy of handle and index for write-back
   val handleReg = Reg(UInt(addrBits bits)) init(0)
   val indexReg = Reg(UInt(maxIndexBits bits)) init(0)
@@ -150,6 +163,7 @@ case class ArrayCache(
     handleReg := io.handle
     indexReg := io.index
     cacheableReg := True  // Arrays are always cacheable (no HWO check)
+    snoopDuringFill := False  // Reset at start of new lookup
   }
 
   // iaload check: decide line and reset fill index
@@ -198,8 +212,12 @@ case class ArrayCache(
   // Cache Update Logic (matching VHDL update_cache)
   // ==========================================================================
 
-  // Update on: iaload fill (wrIal), or iastore write-through with prior tag hit
-  val updateCache = (io.wrIal || (io.wrIas && hitTagReg)) && cacheableReg
+  // Update on: iaload fill (wrIal), or iastore write-through with prior tag hit.
+  // If a snoop fired during this fill (snoopDuringFill), skip wrIal updates
+  // to prevent re-validating a line that was correctly invalidated. The fill
+  // reads still complete (data captured in rdDataReg by the controller) but
+  // the cache line stays invalid. iastore write-through is unaffected.
+  val updateCache = (io.wrIal && !snoopDuringFill || (io.wrIas && hitTagReg)) && cacheableReg
 
   // RAM write data MUX (matching VHDL: wr_ial → ial_val, else ias_val)
   val ramDin = Mux(io.wrIal, io.ialVal, io.iasVal)
@@ -228,5 +246,22 @@ case class ArrayCache(
   when(io.inval) {
     nxt := 0
     valid.foreach(_ := False)
+  }
+
+  // Snoop invalidation: selectively invalidate lines matching a remote
+  // core's iastore. Only the line with matching handle + upper index
+  // (same cache-line region) is invalidated. Placed after updateCache
+  // and inval so "last assignment wins" ensures snoop takes priority.
+  for (i <- 0 until lineCnt) {
+    val snoopTagMatch = tag(i) === io.snoopHandle && valid(i)
+    val snoopIdxMatch = tagIdx(i) === io.snoopIndex(maxIndexBits - 1 downto fieldBits)
+    when(io.snoopValid && snoopTagMatch && snoopIdxMatch) {
+      valid(i) := False
+      // If the invalidated line is the one currently being filled,
+      // prevent subsequent wrIal from re-validating it with stale data.
+      when(lineReg === U(i, wayBits bits)) {
+        snoopDuringFill := True
+      }
+    }
   }
 }

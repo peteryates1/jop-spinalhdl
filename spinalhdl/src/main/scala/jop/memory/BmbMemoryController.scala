@@ -112,6 +112,16 @@ case class BmbMemoryController(
       val addrReg      = out UInt(config.addressWidth bits)
       val rdDataReg    = out Bits(32 bits)
     }
+
+    // Snoop bus for cross-core cache invalidation (only when caches are enabled)
+    val snoopOut = if (config.useAcache || config.useOcache) {
+      val maxIdxBits = config.acacheMaxIndexBits.max(config.ocacheMaxIndexBits)
+      Some(out(CacheSnoopOut(config.addressWidth, maxIdxBits)))
+    } else None
+    val snoopIn = if (config.useAcache || config.useOcache) {
+      val maxIdxBits = config.acacheMaxIndexBits.max(config.ocacheMaxIndexBits)
+      Some(in(CacheSnoopIn(config.addressWidth, maxIdxBits)))
+    } else None
   }
 
   // ==========================================================================
@@ -203,6 +213,12 @@ case class BmbMemoryController(
   val wasHwo = if(config.useOcache) Reg(Bool()) init(False) else null
   val handleAddrReg = if(config.useOcache) Reg(UInt(config.addressWidth bits)) init(0) else null
 
+  // Snoop handle register: captures the original handle address before
+  // HANDLE_CALC overwrites addrReg with (data_ptr + index).
+  val snoopHandleReg = if(config.useAcache || config.useOcache) {
+    Reg(UInt(config.addressWidth bits)) init(0)
+  } else null
+
   // Array cache state
   val readArrayCache = if(config.useAcache) Reg(Bool()) init(False) else null
   val acFillAddr = if(config.useAcache) Reg(UInt(config.addressWidth bits)) init(0) else null
@@ -290,6 +306,14 @@ case class BmbMemoryController(
 
   // Default: no write this cycle
   jbcWrEnReg := False
+
+  // Snoop output defaults
+  io.snoopOut.foreach { s =>
+    s.valid   := False
+    s.isArray := False
+    s.handle  := 0
+    s.index   := 0
+  }
 
   // ==========================================================================
   // Address Decode Helpers
@@ -435,6 +459,23 @@ case class BmbMemoryController(
         io.memIn.getfield || io.memIn.putfield || io.memIn.iaload || io.memIn.iastore ||
         io.memIn.bcRd || io.memIn.getstatic || io.memIn.putstatic || io.memIn.copy)) {
       readObjectCache := False
+    }
+  }
+
+  // ==========================================================================
+  // Snoop Input → Cache Invalidation Wiring
+  // ==========================================================================
+
+  io.snoopIn.foreach { s =>
+    if (config.useAcache) {
+      arrayCache.get.io.snoopValid  := s.valid && s.isArray
+      arrayCache.get.io.snoopHandle := s.handle
+      arrayCache.get.io.snoopIndex  := s.index.resize(config.acacheMaxIndexBits)
+    }
+    if (config.useOcache) {
+      objectCache.get.io.snoopValid    := s.valid && !s.isArray
+      objectCache.get.io.snoopHandle   := s.handle
+      objectCache.get.io.snoopFieldIdx := s.index.resize(config.ocacheMaxIndexBits)
     }
   }
 
@@ -896,6 +937,11 @@ case class BmbMemoryController(
         handleAddrReg := addrReg  // Save handle address before HANDLE_CALC overwrites addrReg
       }
 
+      // Snoop: save handle for broadcast on write completion
+      if(config.useAcache || config.useOcache) {
+        snoopHandleReg := addrReg
+      }
+
       // Exception checks (matching VHDL iald0/gf0):
       // - Null pointer: handle address == 0
       // - Negative array index: MSB of index is set
@@ -1033,6 +1079,16 @@ case class BmbMemoryController(
         if(config.useAcache) {
           when(handleIsArray && handleIsWrite) {
             arrayCache.get.io.wrIas := True
+          }
+        }
+
+        // Snoop output: broadcast store event to other cores
+        io.snoopOut.foreach { s =>
+          when(handleIsWrite) {
+            s.valid   := True
+            s.isArray := handleIsArray
+            s.handle  := snoopHandleReg
+            s.index   := handleIndex.resize(s.index.getWidth)
           }
         }
 

@@ -143,6 +143,16 @@ case class JopCore(
     val debugRdDataReg = out Bits(config.dataWidth bits)
     val debugInstr     = out Bits(config.instrWidth bits)
     val debugBcopd     = out Bits(16 bits)
+
+    // Snoop bus for cross-core cache invalidation
+    val snoopOut = if (config.memConfig.useAcache || config.memConfig.useOcache) {
+      val maxIdxBits = config.memConfig.acacheMaxIndexBits.max(config.memConfig.ocacheMaxIndexBits)
+      Some(out(CacheSnoopOut(config.memConfig.addressWidth, maxIdxBits)))
+    } else None
+    val snoopIn = if (config.memConfig.useAcache || config.memConfig.useOcache) {
+      val maxIdxBits = config.memConfig.acacheMaxIndexBits.max(config.memConfig.ocacheMaxIndexBits)
+      Some(in(CacheSnoopIn(config.memConfig.addressWidth, maxIdxBits)))
+    } else None
   }
 
   // ==========================================================================
@@ -176,6 +186,21 @@ case class JopCore(
   pipeline.io.jbcWrAddr := memCtrl.io.jbcWrite.addr
   pipeline.io.jbcWrData := memCtrl.io.jbcWrite.data
   pipeline.io.jbcWrEn := memCtrl.io.jbcWrite.enable
+
+  // ==========================================================================
+  // Snoop Bus Wiring
+  // ==========================================================================
+
+  io.snoopOut.foreach { so =>
+    memCtrl.io.snoopOut.foreach { mso =>
+      so := mso
+    }
+  }
+  io.snoopIn.foreach { si =>
+    memCtrl.io.snoopIn.foreach { msi =>
+      msi := si
+    }
+  }
 
   // ==========================================================================
   // Internal I/O Subsystem
@@ -399,6 +424,14 @@ case class JopCoreWithBram(
   // Tie unused debug inputs
   jopCore.io.debugRamAddr := 0
   jopCore.io.debugHalt := False
+
+  // Tie off snoop (single-core, no other cores to snoop from)
+  jopCore.io.snoopIn.foreach { si =>
+    si.valid   := False
+    si.isArray := False
+    si.handle  := 0
+    si.index   := 0
+  }
 }
 
 /**
