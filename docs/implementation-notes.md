@@ -145,6 +145,30 @@ captured during development — see the source code for authoritative details.
 - **Integration**: Optional in JopCluster via `debugConfig` parameter. `None` = zero cost. `Some(DebugConfig(...))` adds DebugProtocol + DebugController + per-core DebugBreakpoints. Debug BMB master added to arbiter when `hasMemAccess=true`.
 - **Test**: `JopDebugProtocolSim` — 39 automated tests covering PING, QUERY_INFO, HALT, QUERY_STATUS, READ_REGISTERS, READ_STACK, READ_MEMORY, WRITE_MEMORY, SET/QUERY/CLEAR_BREAKPOINT, STEP_MICRO, RESUME. `JopDebugSim` — TCP bridge for Eclipse debugger (manual).
 
+## JVM Test Suite (`java/apps/JvmTests/`)
+
+49 tests covering JVM bytecode correctness, run via `JopJvmTestsBramSim` (BRAM, 20M cycles). 48 pass, 1 expected failure (PutRef — requires exception detection, currently disabled).
+
+**Test categories**:
+- **Core bytecodes**: Basic/Basic2 (stack/local ops), TypeMix, Static, StackManipulation
+- **Arrays**: ArrayTest2, ArrayTest3, ArrayMulti, MultiArray, SystemCopy (System.arraycopy)
+- **Branches**: BranchTest1/2/3, Switch, Switch2, Logic1/2/3, Ifacmp
+- **Arithmetic**: Imul, IntArithmetic (iadd/isub/imul/idiv/iand/ior/ixor/iinc), LongTest, LongArithmetic (ladd/lsub/lmul/ldiv/land/lor/lxor), LongField
+- **Float**: FloatTest (fadd/fsub/fmul/fdiv/fneg/fcmp/f2i)
+- **Type conversions**: Conversion, TypeConversion (i2b/i2s/i2c/i2l/i2f/i2d/l2i/l2f/l2d/f2i/f2l/f2d/d2i/d2l/d2f)
+- **Constant loading**: ConstLoad (iconst/bipush/sipush/ldc boundary values)
+- **Field access (all types)**: IntField, ShortField, ByteField, CharField, BooleanField, FloatField, DoubleField, ObjectField — each tests putfield/getfield and putstatic/getstatic with boundary values
+- **OOP**: InstanceCheckcast, CheckCast, InvokeSpecial, InvokeSuper, SuperTest, InstanceOfTest, Iface, Clinit/Clinit2
+- **Exceptions**: Except (throw/catch, cast, recursive, finally — throw9 disabled), AthrowTest
+- **Other**: NativeMethods, PutRef (expected fail)
+
+**Ported from**: Original JOP `jvm/` suite (Martin Schoeberl) + `jvmtest/` suite (Guenther Wimpassinger). The `jvmtest/` tests used a hash-based `TestCaseResult` framework; converted to the `jvm.TestCase` boolean pattern.
+
+**Known platform limitations discovered during porting**:
+- **Hardware div-by-zero not catchable**: JOP's `f_idiv` microcode fires a hardware exception that doesn't properly unwind to Java try/catch handlers. `DivZero.java` exists but is disabled. Div-by-zero exception catches also removed from IntArithmetic/LongArithmetic divTest().
+- **No wide iinc**: JOP's PreLinker rejects iinc constants outside -128..127. IntArithmetic uses `x = x + val` (iadd) instead of `x += val` (wide iinc) for large increments.
+- **Float constant folding**: javac evaluates literal float expressions (e.g., `2.0F * 3.0F`) at compile time, so actual fmul/fdiv/fneg/fcmp bytecodes never execute. FloatTest uses variables to prevent this.
+
 ## Intentionally Unused VHDL Signals
 
 - **putref**: The `putref` memory operation (from `stprf` microcode) exists in the decode stage and BmbMemoryController but is never used by current JOP bytecodes. In the original VHDL, putref is part of the SCJ (Safety-Critical Java) scope check mechanism — it's a variant of putstatic that would validate reference assignment safety in an SCJ runtime. Our JOP port doesn't implement SCJ scope checks, so putref fires but is handled identically to putstatic (no additional logic).

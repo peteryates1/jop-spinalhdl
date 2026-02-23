@@ -224,7 +224,7 @@ sbt "Test / runMain jop.system.JopInterruptSim"
 # Debug protocol test (39 checks: ping, halt, step, registers, memory, breakpoints)
 sbt "Test / runMain jop.system.JopDebugProtocolSim"
 
-# JVM test suite (34 tests from original JOP — 33 pass, PutRef expected fail)
+# JVM test suite (49 tests — 48 pass, PutRef expected fail)
 sbt "Test / runMain jop.system.JopJvmTestsBramSim"
 
 # Reference simulator
@@ -296,7 +296,7 @@ Notes:
 - **Exception infrastructure**: Null pointer and array bounds detection states wired through pipeline to `BmbSys` exception register (checks currently disabled pending GC null-handle fix)
 - **Formal verification**: 98 properties verified across 16 test suites using SymbiYosys + Z3 — covers core arithmetic, all pipeline stages, memory subsystem (method cache, object cache, memory controller), DDR3 cache + MIG adapter, I/O (CmpSync, BmbSys, BmbUart), and BMB protocol compliance. See [formal verification docs](docs/formal-verification.md).
 - **Debug subsystem** (`jop.debug` package): Optional on-chip debug controller with framed byte-stream protocol over dedicated UART. Supports halt/resume/single-step (microcode and bytecode), register and stack inspection, memory read/write, and up to 4 hardware breakpoints (JPC or microcode PC). Integrated into `JopCluster` via `DebugConfig`. Automated protocol test (`JopDebugProtocolSim`) verifies 39 checks across 14 test sequences.
-- **JVM test suite**: 34 tests from original JOP project (`java/apps/JvmTests/`) — 33 pass, 1 expected failure (PutRef requires exception detection). Covers arrays, branches, type casting, long arithmetic, object fields, interfaces, static initializers, float ops, stack manipulation, System.arraycopy, and more
+- **JVM test suite**: 49 tests (`java/apps/JvmTests/`) — 48 pass, 1 expected failure (PutRef requires exception detection). Covers arrays, branches, type casting, int/long arithmetic (add/sub/mul/div/and/or/xor), type conversions (i2x/l2x/f2x/d2x), constant loading boundaries, float ops (add/sub/mul/div/neg/cmp), field access for all types (int/short/byte/char/boolean/float/double/object with instance and static), exceptions (throw/catch, finally, nested, athrow), instanceof, super method dispatch, object fields, interfaces, static initializers, stack manipulation, System.arraycopy, and more. Ported from both the original JOP `jvm/` suite and the Wimpassinger `jvmtest/` suite.
 - **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, JVM test suite, timer interrupt test, debug protocol test, GHDL event-driven sim
 
 ### Known Issues
