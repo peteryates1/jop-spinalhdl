@@ -301,6 +301,8 @@ Key design decisions:
 | Serial boot sim | 4-way, 256 sets | R14+ |
 | MIG behavioral model sim | 4-way, 256 sets | R14+ in 917K cycles |
 | **FPGA hardware (DDR3)** | **4-way, 256 sets** | **67K+ rounds, 5 min, zero errors** |
+| SMP DDR3 sim (2 cores) | 4-way, 256 sets, burstLen=4 | PASS at 335K cycles |
+| **SMP FPGA hardware (2-core DDR3)** | **4-way, 256 sets, burstLen=4** | **NCoreHelloWorld running, both cores verified** |
 
 ### Why Simulations Passed With the Old Cache
 
@@ -390,6 +392,7 @@ to hypothesis E) rather than a pipeline bug or CDC issue.
 | `spinalhdl/src/test/scala/jop/system/JopSmallGcHighLatencySim.scala` | High-latency GC sim |
 | `spinalhdl/src/test/scala/jop/system/JopDdr3SerialBootSim.scala` | Serial boot GC sim |
 | `spinalhdl/src/test/scala/jop/system/JopGcTraceCaptureSim.scala` | Trace capture sim |
+| `spinalhdl/src/test/scala/jop/system/JopSmpDdr3Sim.scala` | SMP DDR3 simulation test harness |
 | `spinalhdl/src/test/scala/jop/formal/LruCacheCoreFormal.scala` | Formal verification |
 | `verification/vivado-ddr3/` | xsim with real MIG RTL |
 | `fpga/alchitry-au/vivado/tcl/` | Vivado project/build/program scripts |
@@ -397,8 +400,20 @@ to hypothesis E) rather than a pipeline bug or CDC issue.
 ## Build Commands
 
 ```bash
-# Main JOP DDR3 FPGA
+# Main JOP DDR3 FPGA (single-core)
 cd fpga/alchitry-au && make generate bitstream
+
+# SMP DDR3 FPGA (dual-core)
+cd fpga/alchitry-au && make generate-smp project-smp bitstream-smp
+
+# Program + download + monitor (SMP)
+cd fpga/alchitry-au && make program-smp
+# Wait ~5s for MIG calibration, then:
+python3 ../scripts/download.py -e ../../java/apps/Small/NCoreHelloWorld.jop /dev/ttyUSB1 1000000
+# Or use: make run-smp
+
+# SMP DDR3 simulation
+sbt "Test/runMain jop.system.JopSmpDdr3NCoreHelloWorldSim"
 
 # GC pattern exerciser
 cd fpga/alchitry-au && make generate-exerciser bitstream-exerciser program-exerciser
@@ -412,5 +427,5 @@ sbt "Test / runMain jop.system.JopDdr3SimGen"
 cd verification/vivado-ddr3 && make compile elaborate sim
 
 # Monitor serial output
-make monitor  # 1 Mbaud on /dev/ttyUSB2
+make monitor  # 1 Mbaud on /dev/ttyUSB1
 ```

@@ -1,6 +1,7 @@
 # JOP Core Count Estimates for Artix-7 FPGAs
 
 Based on measured dual-core DDR3 SMP utilization on XC7A35T-2 (2026-02-23).
+Both cores verified running NCoreHelloWorld on real DDR3 hardware (Alchitry Au V2).
 
 ## Measured Data Points
 

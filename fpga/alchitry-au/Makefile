@@ -14,6 +14,13 @@
 #   make run       - program + download + monitor
 #   make full      - all + run
 #
+# SMP (dual-core DDR3):
+#   make generate-smp  - Generate SMP Verilog
+#   make project-smp   - Create SMP Vivado project
+#   make bitstream-smp - Build SMP bitstream
+#   make program-smp   - Program SMP bitstream
+#   make run-smp       - program-smp + download NCoreHelloWorld + monitor
+#
 # GC Exerciser (DDR3 stress test without JOP):
 #   make generate-exerciser  - Generate exerciser Verilog
 #   make project-exerciser   - Create Vivado project
@@ -44,7 +51,7 @@ PROJECT_ROOT = ../..
 ASM_DIR = ../../asm
 GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopDdr3Top.v
 
-.PHONY: all microcode generate ips project bitstream program download monitor run full clean check-board find-serial-port generate-exerciser project-exerciser bitstream-exerciser generate-replayer project-replayer bitstream-replayer program-replayer
+.PHONY: all microcode generate ips project bitstream program download monitor run full clean check-board find-serial-port generate-exerciser project-exerciser bitstream-exerciser generate-replayer project-replayer bitstream-replayer program-replayer generate-smp project-smp bitstream-smp program-smp run-smp
 
 # Default: microcode + generate + ips + project + bitstream
 all: microcode generate ips project bitstream
@@ -116,6 +123,27 @@ check-board:
 
 find-serial-port:
 	./scripts/find_alchitry_ports.sh --serial
+
+# --------------------------------------------------------------------------
+# SMP (dual-core DDR3)
+# --------------------------------------------------------------------------
+
+generate-smp:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopDdr3SmpTopVerilog"
+	@echo "=== SMP Verilog generated ==="
+
+project-smp:
+	$(RUN_VIVADO) vivado/tcl/create_project_smp.tcl
+
+bitstream-smp:
+	$(RUN_VIVADO) vivado/tcl/build_bitstream_smp.tcl
+
+program-smp:
+	$(RUN_VIVADO) vivado/tcl/program_bitstream_smp.tcl
+
+run-smp: program-smp
+	python3 ../scripts/download.py -e ../../java/apps/Small/NCoreHelloWorld.jop $(SERIAL_PORT) $(BAUD_RATE)
+	python3 ../scripts/monitor.py $(SERIAL_PORT) $(BAUD_RATE)
 
 # --------------------------------------------------------------------------
 # GC Exerciser (DDR3 stress test without JOP)
