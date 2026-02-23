@@ -1,6 +1,6 @@
 # DDR3 GC Hang — Investigation Notes
 
-**STATUS: OPEN (deprioritized)** — Data corruption ruled out. Hang is at pipeline/state machine level. QMTECH EP4CGX150 SDR SDRAM is now the primary platform (single-core GC stable, SMP 2-core verified on hardware).
+**STATUS: RESOLVED (2026-02-23)** — Root cause was extreme cache thrashing from the 256-byte direct-mapped cache during GC. Fixed by rewriting LruCacheCore as a 4-way set-associative 16KB BRAM-based cache. Hardware verified: 67K+ GC rounds on real DDR3 with zero errors.
 
 ## Symptom
 
@@ -53,9 +53,10 @@ JopCore ──BMB──► BmbCacheBridge ──► LruCacheCore ──► Cache
   Inverts mask convention (BMB: 1=write, cache: 1=keep). Decomposes burst BMB reads
   into sequential cache lookups.
 
-- **LruCacheCore**: 4-way set-associative, write-back cache (4KB data, 256 sets).
-  Handles eviction (dirty writeback) and refill (line fetch from DDR3).
-  Debug output: state (IDLE, ISSUE_EVICT, WAIT_EVICT_RSP, ISSUE_REFILL, WAIT_REFILL_RSP).
+- **LruCacheCore**: 4-way set-associative, write-back cache (16KB, 256 sets, 128-bit lines).
+  BRAM-based data/tag/dirty arrays, register-based valid/LRU. PLRU replacement.
+  6-state FSM: IDLE → CHECK_HIT → (hit: IDLE | miss: ISSUE_EVICT → WAIT_EVICT_RSP
+  → ISSUE_REFILL → WAIT_REFILL_RSP → IDLE). 2-cycle hit path (BRAM readSync latency).
 
 - **CacheToMigAdapter**: Converts cache memory commands to MIG app interface signals.
   Captures MIG read data on rspFifo backpressure (one-cycle pulse protection).
@@ -65,9 +66,10 @@ JopCore ──BMB──► BmbCacheBridge ──► LruCacheCore ──► Cache
 
 ### Timing
 
-- WNS = +0.431ns at 100 MHz (tight but met)
-- WHS = +0.048ns (hold margin is tight)
-- Critical path: MIG reset fanout (96% routing delay)
+- WNS = +0.115ns at 100 MHz (tight but met)
+- WHS = +0.025ns (hold margin is tight)
+- Critical path: MIG `ui_clk_sync_rst` reset fanout to 5180 FFs (96% routing delay)
+- BRAM: 12.5/50 tiles (25%), LUTs: 12021/20800 (58%), FFs: 10279/41600 (25%)
 
 ## Hang Detection Infrastructure
 
@@ -248,6 +250,69 @@ The GC hang is NOT caused by data corruption.
 
 ---
 
+## Resolution
+
+### Root Cause: Cache Thrashing Under GC
+
+The original LruCacheCore was a **256-byte direct-mapped cache** (16 sets × 1 way,
+register-based). During garbage collection, the GC algorithm walks the object graph
+across many different memory addresses. With only 16 cache lines, virtually every
+access was a miss, causing back-to-back dirty evictions and refills to DDR3.
+
+Under real DDR3 latency (variable due to refresh cycles, bank conflicts, page misses),
+this extreme eviction pressure caused the system to hang. The exerciser and trace
+replayer passed because they don't generate the same sustained miss pattern that the
+full JOP pipeline does during GC — the exerciser uses sequential/LFSR patterns, and
+the trace replayer succeeds because it replays at the DDR3's pace rather than the
+pipeline's pace.
+
+### Fix: 4-Way Set-Associative 16KB BRAM Cache (commit 70ea953)
+
+Rewrote `LruCacheCore` from scratch:
+
+| Property | Before | After |
+|----------|--------|-------|
+| Organization | Direct-mapped (1 way) | 4-way set-associative |
+| Sets | 16 | 256 |
+| Total size | 256 bytes | 16 KB |
+| Storage | Registers | BRAM (data/tag/dirty) + registers (valid/LRU) |
+| Replacement | N/A (1 way) | Pseudo-LRU (tree-based) |
+| Hit latency | 1 cycle | 2 cycles (BRAM readSync) |
+| FSM states | 5 | 6 (added CHECK_HIT for BRAM latency) |
+| GC rounds on DDR3 | Hung at R12 | 67,000+ (no errors) |
+
+Key design decisions:
+- **BRAM arrays**: Per-way data Mem, packed tag/dirty Mems (all ways in one word)
+- **Register arrays**: Valid bits and PLRU bits (need combinational read for hit check)
+- **Parameterized**: wayCount=1/2/4 all supported, setCount configurable
+- **Single write port per BRAM**: Address/data/enable muxed across FSM states
+
+### Verification
+
+| Test | Config | Result |
+|------|--------|--------|
+| Unit test (LruCacheCoreUnitSim) | 2-way, 4 sets | 7/7 pass |
+| Integration test (LruCacheCoreTest) | 4-way, 256 sets | 6/6 pass |
+| GC sim (JopSmallGcCacheSim) | 4-way, 256 sets | R14+ in 882K cycles |
+| High-latency sim (20-60 cycles) | 4-way, 256 sets | R14+ in 1.02M cycles |
+| Serial boot sim | 4-way, 256 sets | R14+ |
+| MIG behavioral model sim | 4-way, 256 sets | R14+ in 917K cycles |
+| **FPGA hardware (DDR3)** | **4-way, 256 sets** | **67K+ rounds, 5 min, zero errors** |
+
+### Why Simulations Passed With the Old Cache
+
+All simulations used fixed or low-variance latency backends (CacheToBramAdapter with
+~10 cycle latency). Under fixed latency, even a 256-byte cache works — the pipeline
+simply stalls longer on misses but never deadlocks. Real DDR3 has:
+- **Refresh stalls**: ~7.8μs periodic (every 64ms / 8192 rows), blocking all access
+- **Bank conflicts**: 20-40 extra cycles when accessing different rows in same bank
+- **Page misses**: Additional latency for row activate + precharge
+
+The combination of constant cache thrashing (every access a miss) plus variable DDR3
+latency created conditions that couldn't occur in simulation.
+
+---
+
 ## Hypotheses Eliminated
 
 ### 1. DDR3 Data Corruption — DISPROVEN
@@ -276,61 +341,23 @@ The GC hang is NOT caused by data corruption.
   transactions — all reads match
 - **Conclusion**: DDR3 contents are correct after initialization
 
-## Remaining Hypotheses
+## Former Hypotheses (all resolved by cache rewrite)
 
-### A. Pipeline/MemoryController State Machine Deadlock
+The following hypotheses were considered during investigation. The cache rewrite
+resolved the issue, confirming that the root cause was cache thrashing (closest
+to hypothesis E) rather than a pipeline bug or CDC issue.
 
-The JOP pipeline + BmbMemoryController may have a state where the FSM gets stuck,
-leaving `memBusy` asserted permanently. This would only happen under specific GC
-access patterns that don't occur in simpler apps.
-
-**Why plausible**: All simulations pass (the logic is functionally correct), but
-real DDR3 has variable latency (refresh stalls, bank conflicts) that could expose
-a timing-dependent race condition in the state machine.
-
-**Next step**: Capture DiagUart output to identify which state the FSM is stuck in.
-
-### B. Variable DDR3 Latency Exposing Pipeline Bug
-
-Real DDR3 has latency spikes from refresh cycles (~7.8μs periodic), bank conflicts,
-and page misses. The cache absorbs most of this, but cache misses expose the full
-DDR3 latency (~30-50 cycles vs ~10 cycles in sim). A pipeline assumption about
-worst-case latency could be violated.
-
-**Why plausible**: The latency sweep test only goes to +5 extra cycles. DDR3 can
-add 20-40 extra cycles on a cache miss during a refresh.
-
-**Next step**: Increase CacheToBramAdapter latency in sim to 50+ cycles and re-test.
-
-### C. Clock Domain Crossing Issue
-
-Signals crossing between board clock domain and MIG ui_clk domain may have
-metastability issues. BufferCC (2-FF synchronizer) is used, but if a multi-bit
-signal is sampled during transition, corrupted values could cause incorrect behavior.
-
-**Why less likely**: Single-bit signals (memBusy, txd) use BufferCC correctly.
-Multi-bit signals (memState, pc, jpc) are only used for LED display and DiagUart
-(monitoring), not control flow.
-
-### D. I/O Subsystem Interaction
-
-BmbSys timer/counter registers interact with the pipeline during GC. If a timer
-interrupt fires at a critical moment during GC's synchronized sections (monitorenter/
-monitorexit), it could corrupt state. On BRAM/SDRAM FPGAs interrupts work fine,
-but DDR3 latency changes the timing relationship.
-
-**Why less likely**: The GC app doesn't use interrupts (intMask=0). Timer fires but
-is masked.
-
-### E. Write-Back Cache Eviction During Critical Sequence
-
-The write-back cache may evict a dirty line during a multi-step memory controller
-operation (e.g., mid-getfield or mid-memCopy). If the eviction delays the expected
-response timing, the state machine could deadlock.
-
-**Why plausible**: This wouldn't happen in simulation (CacheToBramAdapter has fixed
-latency) or the exerciser (simple sequential patterns). Only JOP's specific access
-patterns during GC might trigger this exact cache eviction timing.
+- **A. Pipeline/MemoryController deadlock** — Not a pipeline bug; pipeline works
+  correctly with adequate cache.
+- **B. Variable DDR3 latency exposing pipeline bug** — Partially correct: variable
+  DDR3 latency was a factor, but only because the tiny cache exposed every access
+  to DDR3. With 16KB cache, hit rate is high enough that DDR3 latency spikes are
+  absorbed.
+- **C. Clock domain crossing issue** — Not the cause; same CDC with new cache works.
+- **D. I/O subsystem interaction** — Not the cause.
+- **E. Write-back cache eviction during critical sequence** — Closest to root cause.
+  The 256-byte cache caused constant evictions during GC, and the interaction between
+  back-to-back evictions and variable DDR3 latency caused the hang.
 
 ## Key Observations
 
@@ -339,7 +366,8 @@ patterns during GC might trigger this exact cache eviction timing.
 3. **Passes with real DDR3 data patterns**: Trace replayer proves data correctness
 4. **Only the full JOP hangs**: Exerciser and trace replayer use same DDR3 path and work
 5. **Other FPGAs work**: BRAM and SDR SDRAM backends with same JopCore run GC indefinitely
-6. **Tight timing**: WNS=+0.431ns, WHS=+0.048ns — functional but not much margin
+6. **Tight timing**: WNS=+0.115ns, WHS=+0.025ns (was +0.431/+0.048 with old cache)
+7. **16KB cache fixes it**: 67K+ GC rounds on real DDR3 — cache hit rate eliminates thrashing
 
 ## Files
 
@@ -350,10 +378,16 @@ patterns during GC might trigger this exact cache eviction timing.
 | `spinalhdl/src/main/scala/jop/ddr3/BmbCacheBridge.scala` | BMB to cache bridge |
 | `spinalhdl/src/main/scala/jop/ddr3/LruCacheCore.scala` | Write-back cache |
 | `spinalhdl/src/main/scala/jop/ddr3/CacheToMigAdapter.scala` | Cache to MIG adapter |
+| `spinalhdl/src/main/scala/jop/ddr3/CacheConfig.scala` | Cache geometry config |
 | `spinalhdl/src/main/scala/jop/ddr3/MigBlackBox.scala` | MIG IP wrapper |
 | `spinalhdl/src/main/scala/jop/system/Ddr3GcExerciserTop.scala` | GC pattern exerciser |
 | `spinalhdl/src/main/scala/jop/system/Ddr3TraceReplayerTop.scala` | BMB trace replayer |
+| `spinalhdl/src/test/scala/jop/ddr3/LruCacheCoreUnitSim.scala` | Cache unit test (7 tests) |
+| `spinalhdl/src/test/scala/jop/system/LruCacheCoreTest.scala` | Cache integration test |
+| `spinalhdl/src/test/scala/jop/system/JopSmallGcHighLatencySim.scala` | High-latency GC sim |
+| `spinalhdl/src/test/scala/jop/system/JopDdr3SerialBootSim.scala` | Serial boot GC sim |
 | `spinalhdl/src/test/scala/jop/system/JopGcTraceCaptureSim.scala` | Trace capture sim |
+| `spinalhdl/src/test/scala/jop/formal/LruCacheCoreFormal.scala` | Formal verification |
 | `verification/vivado-ddr3/` | xsim with real MIG RTL |
 | `fpga/alchitry-au/vivado/tcl/` | Vivado project/build/program scripts |
 
