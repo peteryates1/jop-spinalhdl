@@ -37,4 +37,11 @@ public abstract class TestCase {
 	public boolean test() {
 		return true;
 	}
+
+	public static void someDummy() {
+		int a = 0x2345;
+		int b = 0x3425;
+		int c = a ^ b ^ 0x5234;
+		b = c / (a >> 2);
+	}
 }

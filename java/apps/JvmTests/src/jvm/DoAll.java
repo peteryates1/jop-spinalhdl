@@ -56,7 +56,7 @@ public class DoAll {
 				new MultiArray(),
 				new Switch(),
 				new InstanceCheckcast(),
-				// new Except(), // crashes reference JOP sim (throw9 synchronized)
+				new Except(),
 				new SystemCopy(),
 				new CheckCast(),
 				new Ifacmp(),
@@ -71,8 +71,31 @@ public class DoAll {
 				new InvokeSuper(),
 				new PutRef(),
 				// new NullPointer(), // requires exception detection (disabled)
+				new NativeMethods(),
 
-				new NativeMethods()
+				// New arithmetic tests (no exceptions)
+				new IntArithmetic(),
+				new LongArithmetic(),
+				new TypeConversion(),
+				new ConstLoad(),
+
+				// Exception tests
+				// new DivZero(), // hardware div-by-zero exception not catchable on JOP
+				new AthrowTest(),
+
+				// Field type tests
+				new IntField(),
+				new ShortField(),
+				new ByteField(),
+				new CharField(),
+				new BooleanField(),
+				new FloatField(),
+				new DoubleField(),
+				new ObjectField(),
+
+				// Class hierarchy tests
+				new SuperTest(),
+				new InstanceOfTest()
 		};
 		
 		for (int i=0; i<tc.length; ++i) {

@@ -53,12 +53,86 @@ public class FloatTest extends TestCase {
 		
 		i = (int) (f1+f2+f3);
 		ok = ok && (i==3);
-		
 
+		ok = ok && test_fmul();
+		ok = ok && test_fdiv();
+		ok = ok && test_fneg();
+		ok = ok && test_fcmp();
 
 		return ok;
 	}
-	
+
+	boolean test_fmul() {
+		boolean ok = true;
+		float a = 2.0F;
+		float b = 3.0F;
+		ok = ok && ((int)(a * b) == 6);
+		a = 0.0F;
+		b = 100.0F;
+		ok = ok && ((int)(a * b) == 0);
+		a = -2.0F;
+		b = 3.0F;
+		ok = ok && ((int)(a * b) == -6);
+		a = 1.5F;
+		b = 4.0F;
+		ok = ok && ((int)(a * b) == 6);
+		a = 10.0F;
+		b = 10.0F;
+		ok = ok && ((int)(a * b) == 100);
+		return ok;
+	}
+
+	boolean test_fdiv() {
+		boolean ok = true;
+		float a = 6.0F;
+		float b = 2.0F;
+		ok = ok && ((int)(a / b) == 3);
+		a = 0.0F;
+		b = 1.0F;
+		ok = ok && ((int)(a / b) == 0);
+		a = -6.0F;
+		b = 2.0F;
+		ok = ok && ((int)(a / b) == -3);
+		a = 100.0F;
+		b = 10.0F;
+		ok = ok && ((int)(a / b) == 10);
+		a = 7.0F;
+		b = 2.0F;
+		ok = ok && ((int)(a / b) == 3);
+		return ok;
+	}
+
+	boolean test_fneg() {
+		boolean ok = true;
+		float f = 1.0F;
+		ok = ok && ((int)(-f) == -1);
+		f = -5.0F;
+		ok = ok && ((int)(-f) == 5);
+		f = 0.0F;
+		ok = ok && ((int)(-f) == 0);
+		return ok;
+	}
+
+	boolean test_fcmp() {
+		boolean ok = true;
+		float a = 1.0F;
+		float b = 2.0F;
+		float c = 1.0F;
+
+		ok = ok && (a < b);
+		ok = ok && !(a > b);
+		ok = ok && (a == c);
+		ok = ok && !(a != c);
+		ok = ok && (b > a);
+		ok = ok && !(b < a);
+
+		float neg = -1.0F;
+		ok = ok && (neg < a);
+		ok = ok && (a > neg);
+
+		return ok;
+	}
+
 	boolean test_f2i() {
 		
 		boolean ok = true;
