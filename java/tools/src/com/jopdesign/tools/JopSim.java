@@ -94,7 +94,7 @@ public class JopSim {
 	boolean intExcept;
 	int exceptReason;
 
-	static boolean exit = false;
+	static volatile boolean exit = false;
 	static boolean stopped = false;
 
 	static int[] bcTiming = new int[256];
@@ -175,7 +175,7 @@ public class JopSim {
 		this(fn, ioSim, 0);
 	}
 
-	void start() {
+	public void start() {
 
 		rdMemCnt = 0;
 		wrMemCnt = 0;
@@ -1724,6 +1724,41 @@ public class JopSim {
 
 		runSimulation();
 	}
+
+	// --- Debug accessor methods ---
+
+	public int getPC() { return pc; }
+	public int getSP() { return sp; }
+	public int getVP() { return vp; }
+	public int getMP() { return mp; }
+	public int getCP() { return cp; }
+	public int getJJP() { return jjp; }
+
+	public int getStackValue(int index) { return stack[index]; }
+	public int getMemValue(int addr) { return mem[addr]; }
+	public void setMemValue(int addr, int val) { mem[addr] = val; }
+	public static int getHeap() { return heap; }
+
+	public int corrPc(int rawPc) { return cache.corrPc(rawPc); }
+	public int readMemPublic(int addr) { return readMem(addr, Access.INTERN); }
+	public void initCache() { cache.use(0); }
+	public int readBytecode(int pcAddr) { return cache.bc(pcAddr) & 0xff; }
+
+	public boolean interpretOne() {
+		if (exit) return false;
+		interpret();
+		return !exit;
+	}
+
+	public int getLocalCnt() { return localCnt; }
+	public int getInstrCnt() { return instrCnt; }
+
+	public static boolean isExited() { return exit; }
+	public static void setExit(boolean val) { exit = val; }
+
+	public void setPC(int val) { pc = val; }
+	public void setSP(int val) { sp = val; }
+	public void setVP(int val) { vp = val; }
 
 	public long getClkCnt() {
 		return clkCnt;
