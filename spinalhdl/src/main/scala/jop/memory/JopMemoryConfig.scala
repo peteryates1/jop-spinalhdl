@@ -43,10 +43,17 @@ case class JopMemoryConfig(
   /** Scratch pad size in words */
   def scratchWords: BigInt = scratchSize / byteCount
 
-  /** lengthWidth: 2 bits for single-word (length=3), wider for burst */
-  private def burstLengthWidth: Int =
-    if (burstLen <= 1) 2
-    else log2Up(burstLen * byteCount)  // e.g. burstLen=4 → log2Up(16) = 4
+  /** lengthWidth: 2 bits for single-word (length=3), wider for burst.
+   *  When A$ is enabled with burst, must also accommodate A$ line fill
+   *  (acacheFieldBits elements = fieldCnt * byteCount bytes). */
+  private def burstLengthWidth: Int = {
+    val bcLen = if (burstLen <= 1) 2
+                else log2Up(burstLen * byteCount)  // e.g. burstLen=4 → log2Up(16) = 4
+    if (burstLen > 0 && useAcache) {
+      val acLen = log2Up((1 << acacheFieldBits) * byteCount)
+      bcLen.max(acLen)
+    } else bcLen
+  }
 
   /**
    * Create BMB parameters for the memory interface

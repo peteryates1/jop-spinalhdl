@@ -53,6 +53,20 @@ set_location_assignment PIN_A24 -to led[1]
 # Daughter board LEDs (active low)
 set_location_assignment PIN_AD14 -to led[2]
 set_location_assignment PIN_AC14 -to led[3]
+set_location_assignment PIN_AD15 -to led[4]
+set_location_assignment PIN_AC15 -to led[5]
+set_location_assignment PIN_AE15 -to led[6]
+# PMOD J10 LEDs for cores beyond on-board LED count
+set_location_assignment PIN_AF21 -to led[7]
+set_location_assignment PIN_AF19 -to led[8]
+set_location_assignment PIN_AD19 -to led[9]
+set_location_assignment PIN_AF18 -to led[10]
+set_location_assignment PIN_AF20 -to led[11]
+set_location_assignment PIN_AE19 -to led[12]
+set_location_assignment PIN_AC19 -to led[13]
+set_location_assignment PIN_AE18 -to led[14]
+# PMOD J11 LEDs for even more cores
+set_location_assignment PIN_AF25 -to led[15]
 
 # SDRAM clock (PLL c2: 100 MHz, -3ns phase shift)
 set_location_assignment PIN_E22 -to sdram_clk

@@ -1107,10 +1107,18 @@ case class BmbMemoryController(
 
     is(State.AC_FILL_CMD) {
       if(config.useAcache) {
-        // Issue read for current fill element
         io.bmb.cmd.valid := True
         io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.READ
-        io.bmb.cmd.fragment.address := ((acFillAddr + acFillCount.resized) << 2).resized
+        if (config.burstLen > 0) {
+          // Burst path (SDRAM): single burst for entire cache line.
+          // Holds the bus (burstActive in BmbSdramCtrl32) — no interleaving.
+          val fieldCnt = 1 << config.acacheFieldBits
+          io.bmb.cmd.fragment.address := (acFillAddr << 2).resized
+          io.bmb.cmd.fragment.length := (fieldCnt * 4 - 1)  // 15 for 4 words
+        } else {
+          // Non-burst path (BRAM): single-word read per element
+          io.bmb.cmd.fragment.address := ((acFillAddr + acFillCount.resized) << 2).resized
+        }
         when(io.bmb.cmd.fire) {
           state := State.AC_FILL_WAIT
         }
@@ -1131,14 +1139,23 @@ case class BmbMemoryController(
             rdDataReg := io.bmb.rsp.fragment.data
           }
 
-          val fieldCnt = 1 << config.acacheFieldBits
-          when(acFillCount === U(fieldCnt - 1, config.acacheFieldBits bits)) {
-            // Last element — fill complete
-            wasStidx := False
-            state := State.IDLE
-          }.otherwise {
+          if (config.burstLen > 0) {
+            // Burst path: responses stream in, use rsp.last to detect completion
             acFillCount := acFillCount + 1
-            state := State.AC_FILL_CMD
+            when(io.bmb.rsp.last) {
+              wasStidx := False
+              state := State.IDLE
+            }
+          } else {
+            // Non-burst path: count elements manually, loop back for next read
+            val fieldCnt = 1 << config.acacheFieldBits
+            when(acFillCount === U(fieldCnt - 1, config.acacheFieldBits bits)) {
+              wasStidx := False
+              state := State.IDLE
+            }.otherwise {
+              acFillCount := acFillCount + 1
+              state := State.AC_FILL_CMD
+            }
           }
         }
       } else {

@@ -3,7 +3,7 @@
 Detailed implementation notes for the SpinalHDL JOP port. These are reference notes
 captured during development — see the source code for authoritative details.
 
-## Bugs Found & Fixed (18 total)
+## Bugs Found & Fixed (19 total)
 
 1. **BC fill write address off-by-one**: Used `bcFillCount.resized` (not increment) for JBC write address
 2. **iaload/caload +1 offset**: VHDL uses `data_ptr + index` (no +1). Both BmbMemoryController and JopSimulator had wrong `+1`
@@ -23,7 +23,8 @@ captured during development — see the source code for authoritative details.
 15. **DebugController packWord bit extraction on narrow signals**: `packWord()` extracts `value(31 downto 24)` etc. from a `Bits` argument. Callers used `.resized` (a resize-on-assignment tag) which does NOT widen the value before extraction. SpinalHDL crashed at elaboration with "static bits extraction outside range" for signals narrower than 32 bits (PC=11, JPC=12, SP/VP/AR=8, flags=4, instr=10, bcopd=16). Fix: use `.resize(32 bits)` for explicit widening before calling `packWord`.
 16. **JopCore debugHalted wired to wrong signal**: `io.debugHalted` was wired to `bmbSys.io.halted` (CmpSync halt status) instead of `io.debugHalt` (debug controller halt input). The debug halted output visible to test harnesses and FPGA top-levels always read as False in single-core configs (no CmpSync). Fix: wire to `io.debugHalt`. Found by JopDebugProtocolSim automated test.
 17. **readAcache/readOcache persistence across I/O reads**: After an iaload A$ hit (or getfield O$ hit), the `readArrayCache` (or `readObjectCache`) register stays True until the state machine leaves IDLE. But I/O reads in IDLE don't change state, so the cache output MUX override persists into the next memory operation. If that operation is an I/O read, the returned data is from the cache instead of the I/O bus — causing data corruption (manifested as 4x UART output expansion matching the A$ line size). Fix: clear `readArrayCache`/`readObjectCache` on any new memory operation in IDLE. The iaload/getfield hit handler re-sets the flag via SpinalHDL "last assignment wins" semantics.
-18. **Array cache SMP coherency (4-core SDRAM regression)**: Per-core Array Cache (A$) has no cross-core invalidation. `ac.io.inval` is driven only by the local core's `stidx`/`cinval` signals. When Core X does `iastore` to a shared array, Core X's A$ is invalidated and SDRAM is updated, but Core Y's A$ still holds the stale value. On the next `iaload` hit, Core Y reads stale cached data instead of the updated SDRAM value. This caused a 4-core SDRAM regression: stale data led to a wrong method pointer, which read from SDRAM word 4 (SYS_PTRI = 0xFFFFFF80, written by Core 0 during JVM init), interpreted it as a method descriptor, computed a BC_FILL address of 0x3FFFFF with length 896, fetched zeros from uninitialized SDRAM, and got Core 3 stuck executing invalid bytecodes at PC=0x01dd. Symptom: 4-core + A$ = FAIL, 4-core without A$ = PASS, single-core + A$ = PASS. Fix: `JopCluster` automatically disables A$ for `cpuCnt > 1` until a coherency mechanism (e.g., cross-core invalidation bus) is added. The Object Cache (O$) has the same per-core invalidation but hasn't triggered a failure yet — noted as a future concern.
+18. **Array cache SMP coherency (4-core SDRAM regression)**: Per-core Array Cache (A$) has no cross-core invalidation. `ac.io.inval` is driven only by the local core's `stidx`/`cinval` signals. When Core X does `iastore` to a shared array, Core X's A$ is invalidated and SDRAM is updated, but Core Y's A$ still holds the stale value. On the next `iaload` hit, Core Y reads stale cached data instead of the updated SDRAM value. This caused a 4-core SDRAM regression: stale data led to a wrong method pointer, which read from SDRAM word 4 (SYS_PTRI = 0xFFFFFF80, written by Core 0 during JVM init), interpreted it as a method descriptor, computed a BC_FILL address of 0x3FFFFF with length 896, fetched zeros from uninitialized SDRAM, and got Core 3 stuck executing invalid bytecodes at PC=0x01dd. Symptom: 4-core + A$ = FAIL, 4-core without A$ = PASS, single-core + A$ = PASS. Fix: cross-core snoop invalidation via `CacheSnoopBus` (see bug #18 above was later fixed properly with snoops, not by disabling A$).
+19. **A$ fill interleaving corruption (4-core+ SDRAM)**: AC_FILL issued 4 individual single-word BMB reads (one per cache line element). Between each read, the BMB arbiter could switch to another core. With 4+ cores, complex response interleaving through BmbSdramCtrl32's 32-to-16-bit bridge created a corruption window: stale responses from other cores' transactions could misalign the burst word counter (`burstWordsSent`), causing a 1-word data shift. The corrupted A$ data propagated as a bad method pointer, leading to BC_FILL with garbage address (0xffff86) and core hang. Symptom: 4-core SDRAM + A$ hangs (Core 3 stuck in BC_FILL_LOOP), 2/3-core fine, BRAM fine (no BmbSdramCtrl32 bridge). Fix: converted AC_FILL from 4 single-word reads to a single burst read when `burstLen > 0` (SDRAM mode). Burst reads hold the bus via `burstActive=True` in BmbSdramCtrl32 (same mechanism that keeps BC_FILL safe). BRAM mode (`burstLen == 0`) keeps the existing single-word loop since the bug doesn't manifest there. Also widened `burstLengthWidth` in JopMemoryConfig to accommodate A$ fill burst size. Verified: 4-core and 8-core SDRAM pass with A$ enabled on QMTECH EP4CGX150 hardware.
 
 ## Method Cache
 
@@ -68,17 +69,17 @@ captured during development — see the source code for authoritative details.
 - **Getfield miss**: Normal HANDLE_READ path + cache fill via `wrGf`
 - **Putfield**: Always through state machine, write-through on hit via `wrPf`. `chkPf` in PF_WAIT (putfield waste cycle).
 - **Invalidation**: `stidx`/`cinval` clears all valid bits (per-core only). `wasHwo` suppresses I/O caching.
-- **SMP note**: Same per-core invalidation as A$. Not yet disabled for SMP — no failure observed, but theoretically vulnerable to the same coherency issue.
+- **SMP**: Safe via cross-core snoop invalidation (CacheSnoopBus). Each core's putfield broadcasts on snoop bus; other cores selectively invalidate matching field bits.
 - **Cacheable**: Only fields 0-7 (upper fieldIdx bits must be 0)
 
 ## Array Cache
 
 - **ArrayCache** (`jop.memory`): Fully associative FIFO, 16 entries x 4 elements = 64 values, matching VHDL `acache.vhd`
 - **iaload hit**: 0 busy cycles (stays in IDLE, `readArrayCache` selects cached data)
-- **iaload miss**: HANDLE_READ → HANDLE_WAIT → HANDLE_CALC → AC_FILL_CMD → AC_FILL_WAIT (x4 elements) → IDLE
+- **iaload miss**: HANDLE_READ → HANDLE_WAIT → HANDLE_CALC → AC_FILL_CMD → AC_FILL_WAIT → IDLE. SDRAM (burstLen>0): single burst read for all 4 elements (holds bus). BRAM (burstLen==0): 4 individual reads looping AC_FILL_CMD↔AC_FILL_WAIT.
 - **iastore**: Normal handle dereference path, write-through on hit via `wrIas` in HANDLE_DATA_WAIT
 - **Invalidation**: `stidx`/`cinval` clears all valid bits (per-core only — no cross-core invalidation)
-- **SMP**: Automatically disabled for `cpuCnt > 1` by JopCluster (bug #18). No cross-core invalidation protocol — one core's iastore updates SDRAM but other cores' A$ retain stale data.
+- **SMP**: Safe via cross-core snoop invalidation (CacheSnoopBus) + burst AC_FILL (bug #19). Verified 4-core and 8-core SDRAM on QMTECH hardware.
 - **Tags**: Handle address + upper index bits (`index[maxIndexBits-1:fieldBits]`), so different regions of the same array map to different lines
 - **VHDL bug fixes**: (1) idx_upper slice uses `fieldBits` not `fieldCnt`, (2) FIFO nxt advances once per fill, not once per wrIal
 
@@ -111,10 +112,11 @@ captured during development — see the source code for authoritative details.
 - **Per-core I/O**: Each core has `BmbSys(cpuId=i, cpuCnt=N)` with independent watchdog, unique CPU ID, CmpSync interface. Only core 0 has `BmbUart`.
 - **Pipeline halt**: `io.halted` from CmpSync through BmbSys directly stalls pipeline
 - **Boot sequence**: Core 0 runs full init (GC, class init). Other cores wait for `started` flag, then enter main loop.
-- **LED driver**: LED[0]=core 0 WD bit 0, LED[1]=core 1 WD bit 0 (active low)
-- **Test app**: `NCoreHelloWorld.java` — each core reads `IO_CPU_ID`, core 0 prints + toggles WD, others just toggle WD
+- **Cache coherency**: A$ and O$ use cross-core snoop invalidation via `CacheSnoopBus`. A$ fill uses burst reads on SDRAM (bug #19 fix) to prevent interleaving corruption.
+- **LED driver**: LED[i]=core i WD bit 0 (active low). 7 on-board LEDs + PMOD for 8+ cores.
+- **Test app**: `NCoreHelloWorld.java` — each core reads `IO_CPU_ID`, core 0 prints + toggles WD, others just toggle WD. Small variant includes GC.
 - **FPGA build**: `make full-smp` in QMTECH or CYC5000 dirs (separate Quartus projects: `jop_smp_sdram.qsf`, `jop_smp_cyc5000.qsf`)
-- **Resource usage**: ~12K LEs (8% of EP4CGX150), substantial headroom for more cores
+- **Verified core counts**: 4-core (21% LE, +3.0 ns slack), 8-core (42% LE, +1.9 ns slack) at 100 MHz on EP4CGX150. 12/16-core fail at 100 MHz (insufficient timing margin).
 
 ## SMP GC Stop-the-World
 
