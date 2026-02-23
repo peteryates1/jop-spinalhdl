@@ -13,8 +13,8 @@ Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 - **SDRAM + SMP (primary)**: 2-core SMP on QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V) — both cores running independently with CmpSync global lock, round-robin BMB arbitration, and GC stop-the-world halt (halts all other cores during garbage collection)
 - **SDRAM (single-core)**: Serial boot over UART into SDR SDRAM on two boards — QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V, W9864G6JT)
 - **BRAM**: Self-contained, program embedded in block RAM (QMTECH EP4CGX150)
-- **DDR3**: Serial boot through write-back cache into DDR3 (Alchitry Au V2, Xilinx Artix-7) — basic programs work, GC hangs at first collection (unresolved, see [DDR3 GC hang notes](docs/ddr3-gc-hang.md))
-- **GC support**: Automatic garbage collection with hardware-accelerated object copying (`memCopy`), tested 98,000+ rounds (BRAM), 9,800+ rounds (CYC5000 SDRAM), 2,000+ rounds (QMTECH SDRAM)
+- **DDR3**: Serial boot through write-back cache into DDR3 (Alchitry Au V2, Xilinx Artix-7) — single-core and 2-core SMP verified on hardware with GC (67K+ rounds single-core, NCoreHelloWorld SMP). See [DDR3 notes](docs/ddr3-gc-hang.md).
+- **GC support**: Automatic garbage collection with hardware-accelerated object copying (`memCopy`), tested 98,000+ rounds (BRAM), 9,800+ rounds (CYC5000 SDRAM), 2,000+ rounds (QMTECH SDRAM), 67,000+ rounds (DDR3)
 
 ## Project Goals
 
@@ -196,14 +196,23 @@ make program-smp # Program FPGA
 make download    # Download NCoreHelloWorld.jop over UART
 make monitor     # Watch serial output
 
-# DDR3 target — Alchitry Au V2, Xilinx Artix-7 (serial boot, 100 MHz, GC hang unresolved)
+# DDR3 target — Alchitry Au V2, Xilinx Artix-7 (serial boot, 100 MHz)
 cd fpga/alchitry-au
-make generate    # Generate Verilog from SpinalHDL
+make generate    # Generate Verilog from SpinalHDL (single-core)
 make ips         # Generate MIG + ClkWiz Vivado IPs (first time only)
 make bitstream   # Vivado synthesis + implementation + bitstream
 make program     # Program FPGA via JTAG
 make download    # Download HelloWorld.jop over UART
 make monitor     # Watch serial output
+
+# DDR3 SMP (2-core) — Alchitry Au V2, Xilinx Artix-7 (serial boot, 100 MHz)
+make generate-smp  # Generate SMP Verilog (2-core)
+make project-smp   # Create Vivado project
+make bitstream-smp # Build bitstream
+make program-smp   # Program FPGA via JTAG
+# Wait ~5s for MIG calibration, then:
+make JOP=../../java/apps/Small/NCoreHelloWorld.jop download
+make monitor
 ```
 
 ### Running Tests
@@ -246,33 +255,35 @@ make help                # List all available test targets
 | **[QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD)** | **Altera Cyclone IV GX** | **W9825G6JH6 SDR SDRAM** | **Quartus Prime** | **Primary — 100 MHz, single-core + SMP (2-core)** |
 | [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Altera Cyclone IV GX | BRAM (on-chip) | Quartus Prime | Working at 100 MHz |
 | [Trenz CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) | Altera Cyclone V E (5CEBA2U15C8N) | W9864G6JT SDR SDRAM | Quartus Prime | Working at 80 MHz |
-| [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au) | Xilinx Artix-7 (XC7A35T) | MT41K128M16JT DDR3 | Vivado | 100 MHz — GC hangs ([details](docs/ddr3-gc-hang.md)) |
+| [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au) | Xilinx Artix-7 (XC7A35T) | MT41K128M16JT DDR3 | Vivado | 100 MHz — single-core + SMP (2-core), GC working ([details](docs/ddr3-gc-hang.md)) |
 
 ### Resource Usage
 
 All builds at 100 MHz except CYC5000 (80 MHz). Cyclone IV uses Logic Elements (4-input LUT + FF), Cyclone V uses ALMs (8-input fracturable LUT + 2 FFs), Artix-7 uses LUTs (6-input). Numbers are not directly comparable across families.
 
-| Component | EP4CGX150 BRAM | EP4CGX150 SDRAM | EP4CGX150 SMP (2-core) | CYC5000 SDRAM | Artix-7 DDR3 |
-|-----------|:-:|:-:|:-:|:-:|:-:|
-| | LEs | LEs | LEs | ALMs | LUTs |
-| **JOP Core** | **5,426** | **5,447** | **5,447 x2** | **1,821** | |
-| — Pipeline | 2,948 | 2,999 | 2,999 x2 | 928 | |
-| — Memory controller | 985 | 960 | 960 x2 | 357 | |
-| — Method cache | 599 | 600 | 600 x2 | 143 | |
-| — Object cache | 899 | 892 | 892 x2 | 393 | |
-| Memory backend | 103 | 657 | 657 | 231 | |
-| I/O (BmbSys + BmbUart) | 326 | 333 | ~660 | 138 | |
-| BMB Arbiter + CmpSync | — | — | ~200 | — | |
-| **System total** | **5,856** | **6,461** | **~12,400** | **2,231** | **9,879** |
-| % of EP4CGX150 (150K LEs) | 4% | 4% | 8% | — | — |
-| Registers | 2,108 | 2,428 | ~4,900 | 2,698 | 9,603 |
-| Block RAM | 1,054 Kbit | 28 Kbit | 56 Kbit | 28 Kbit | 9 Kbit |
+| Component | EP4CGX150 BRAM | EP4CGX150 SDRAM | EP4CGX150 SMP (2-core) | CYC5000 SDRAM | Artix-7 DDR3 | Artix-7 DDR3 SMP |
+|-----------|:-:|:-:|:-:|:-:|:-:|:-:|
+| | LEs | LEs | LEs | ALMs | LUTs | LUTs |
+| **JOP Core** | **5,426** | **5,447** | **5,447 x2** | **1,821** | | |
+| — Pipeline | 2,948 | 2,999 | 2,999 x2 | 928 | | |
+| — Memory controller | 985 | 960 | 960 x2 | 357 | | |
+| — Method cache | 599 | 600 | 600 x2 | 143 | | |
+| — Object cache | 899 | 892 | 892 x2 | 393 | | |
+| Memory backend | 103 | 657 | 657 | 231 | | |
+| I/O (BmbSys + BmbUart) | 326 | 333 | ~660 | 138 | | |
+| BMB Arbiter + CmpSync | — | — | ~200 | — | | |
+| **System total** | **5,856** | **6,461** | **~12,400** | **2,231** | **12,021** | **16,454** |
+| % of device | 4% | 4% | 8% | — | 57.8% | 79.1% |
+| Registers | 2,108 | 2,428 | ~4,900 | 2,698 | 10,279 | 13,215 |
+| Block RAM | 1,054 Kbit | 28 Kbit | 56 Kbit | 28 Kbit | 450 Kbit | 540 Kbit |
+| Timing (WNS) | | | | | +0.115 ns | +0.228 ns |
 
 Notes:
 - EP4CGX150 BRAM uses 1,054 Kbit block RAM for program memory (128 M9Ks); SDRAM builds store programs in external RAM
 - SMP (2-core) uses ~8% of EP4CGX150's 150K LEs, leaving substantial headroom for additional cores
-- Artix-7 total includes MIG DDR3 controller + write-back cache
+- Artix-7 totals include MIG DDR3 controller + 16KB 4-way write-back cache; per-core cost ~4,400 LUT, ~2,900 FF, ~2.5 BRAM
 - Vivado does not report per-hierarchy utilization; Artix-7 core-only numbers not available from build reports
+- See [Artix-7 core count estimates](docs/artix7-core-estimates.md) for scaling projections across the Artix-7 family
 
 ## Implementation Status
 
@@ -288,9 +299,9 @@ Notes:
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
 - **I/O subsystem**: `BmbSys` (cycle/microsecond counters, timer interrupt, watchdog, CPU ID) and `BmbUart` (TX/RX with 16-entry FIFOs, RX/TX interrupt outputs) as reusable `jop.io` components. Timer interrupts verified end-to-end in simulation (`JopInterruptSim`)
 - **SDRAM system (primary)**: `JopSdramTop` / `JopCyc5000Top` — serial boot over UART into SDR SDRAM using Altera `altera_sdram_tri_controller` (QMTECH EP4CGX150 at 100 MHz + Trenz CYC5000 at 80 MHz). Both support `cpuCnt` parameter for single-core or SMP
-- **SMP (2-core)**: `JopSdramTop(cpuCnt=2)` — 2-core SMP with round-robin BMB arbiter, `CmpSync` global lock for `monitorenter`/`monitorexit`, per-core `BmbSys` with unique CPU ID, boot synchronization via `IO_SIGNAL`, and GC stop-the-world halt via `IO_GC_HALT`. Verified on QMTECH EP4CGX150 and CYC5000 hardware (both cores running independently with GC, per-core LED watchdog)
+- **SMP (2-core)**: `JopSdramTop(cpuCnt=2)` / `JopDdr3Top(cpuCnt=2)` — 2-core SMP with round-robin BMB arbiter, `CmpSync` global lock for `monitorenter`/`monitorexit`, per-core `BmbSys` with unique CPU ID, boot synchronization via `IO_SIGNAL`, and GC stop-the-world halt via `IO_GC_HALT`. Verified on QMTECH EP4CGX150, CYC5000, and Alchitry Au V2 hardware (both cores running independently with per-core LED watchdog)
 - **BRAM system**: `JopBramTop` — complete system with on-chip memory at 100 MHz (QMTECH EP4CGX150, Altera Cyclone IV)
-- **DDR3 system**: `JopDdr3Top` — serial boot over UART through write-back cache into DDR3 at 100 MHz (Alchitry Au V2, Xilinx Artix-7), with standalone `Ddr3ExerciserTop` memory test. GC hangs at first collection on FPGA (passes in simulation)
+- **DDR3 system**: `JopDdr3Top` — serial boot over UART through 16KB 4-way write-back cache into DDR3 at 100 MHz (Alchitry Au V2, Xilinx Artix-7). Single-core and 2-core SMP verified with GC (67K+ rounds single-core). Standalone `Ddr3ExerciserTop` memory test and `Ddr3TraceReplayerTop` BMB trace verification also available.
 - **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
 - **GC support**: Hardware `memCopy` for stop-the-world garbage collection, tested with allocation-heavy GC app (98,000+ rounds on BRAM, 9,800+ on CYC5000 SDRAM, 2,000+ on QMTECH SDRAM). SMP GC uses `IO_GC_HALT` to freeze all other cores during collection, preventing concurrent SDRAM access to partially-moved objects
 - **Exception infrastructure**: Null pointer and array bounds detection states wired through pipeline to `BmbSys` exception register (checks currently disabled pending GC null-handle fix)
@@ -301,7 +312,7 @@ Notes:
 
 ### Known Issues
 
-- **DDR3 GC hang** — GC-enabled apps hang at the first garbage collection (R12) on the Alchitry Au V2. Passes in all simulations including Vivado xsim with real MIG RTL. DDR3 data path verified correct via exerciser (780+ loops) and trace replayer (16K entries). Root cause is likely physical timing at the MIG UI interface under heavy GC traffic. See [investigation notes](docs/ddr3-gc-hang.md).
+- **burstLen=0 + SMP incompatibility** — `burstLen=0` (pipelined single-word BC_FILL) interleaves with the BMB arbiter in SMP mode, causing response-source misalignment. SMP requires `burstLen >= 4`. Single-core is unaffected. See [DDR3 notes](docs/ddr3-gc-hang.md).
 - **Exception detection disabled** — Null pointer and array bounds check states are implemented and wired through the pipeline, but currently disabled in `BmbMemoryController`. GC's conservative stack scanning accesses handle address 0 via getfield/iaload; with checks enabled this correctly throws `EXC_NP` but crashes the GC. Re-enable after fixing GC `push()` to skip null refs.
 
 ### Next Steps
@@ -315,7 +326,7 @@ Notes:
   - **Fast-path array access (`iald23`)** (LOW — performance) — VHDL shortcut state overlaps address computation with data availability for single-cycle memory; SpinalHDL uses uniform HANDLE_* states
 - Interrupt handling — timer interrupts verified end-to-end (`JopInterruptSim`); UART RX/TX interrupts wired but not yet exercised; scheduler preemption not yet tested
 - Performance measurement
-- DDR3 GC hang — resolve the R12 hang on Alchitry Au V2 ([investigation notes](docs/ddr3-gc-hang.md))
+- DDR3 SMP GC — run GC stress test on dual-core DDR3 (NCoreHelloWorld verified, GC stress not yet tested in SMP mode)
 - DDR3 burst optimization — method cache fills could use burst reads through the cache bridge
 - SMP GC — basic stop-the-world working via `IO_GC_HALT`; future: protect halt flag with CmpSync lock for safe multi-core allocation, address translation on read paths for concurrent GC
 - Const.java -> pull out Const and Configuration — core(s)/system/memory/caches
@@ -332,12 +343,12 @@ Notes:
 
 - **Bus**: SpinalHDL BMB (Bus Master Bridge). BRAM gives single-cycle accept, next-cycle response (matches original SimpCon `rdy_cnt=1`). SDRAM and DDR3 stall automatically via busy signal.
 - **Memory controller**: Layer 1 is combinational (simple rd/wr). Layer 2 is a state machine for multi-cycle operations (bytecode fill, getfield, array access). BC fill is pipelined — issues the next read while writing the previous response to JBC RAM, saving ~1 cycle per word. Configurable burst reads (`burstLen=4` for SDR SDRAM). Hardware `memCopy` state machine for GC object relocation.
-- **DDR3 subsystem** (`jop.ddr3` package): Write-back cache bridge (`BmbCacheBridge`) converts 32-bit BMB transactions to 128-bit cache lines. `LruCacheCore` provides a 16-set write-back cache with LRU replacement and dirty byte tracking. `CacheToMigAdapter` interfaces with the Xilinx MIG DDR3 controller. Clock wizard generates 100 MHz system and 200 MHz reference clocks from the board oscillator.
+- **DDR3 subsystem** (`jop.ddr3` package): Write-back cache bridge (`BmbCacheBridge`) converts 32-bit BMB transactions to 128-bit cache lines. `LruCacheCore` provides a 4-way set-associative 16KB write-back cache (256 sets, BRAM-based, PLRU replacement). `CacheToMigAdapter` interfaces with the Xilinx MIG DDR3 controller. Clock wizard generates 100 MHz system and 200 MHz reference clocks from the board oscillator.
 - **Object cache**: Fully associative field value cache (16 entries, 8 fields each). Getfield hits return data in 0 busy cycles (combinational tag match, registered data output). Putfield does write-through on tag hit. FIFO replacement, invalidated on array stores and explicit `cinval`.
 - **Array cache**: Fully associative element value cache (16 entries, 4 elements per line). iaload hits return in 0 busy cycles; misses fill the entire 4-element aligned line (burst read on SDRAM to prevent interleaving). iastore does write-through on tag hit. Tags include handle address and upper index bits so different array regions map to different lines. SMP-safe via cross-core snoop invalidation (`CacheSnoopBus` — each core's iastore broadcasts on snoop bus, other cores selectively invalidate matching lines). Note: raw memory writes (`Native.wrMem`) bypass A$ — `System.arraycopy` calls `Native.invalidate()` after copy loops to ensure coherency.
 - **Handle format**: `H[0]` = data pointer, `H[1]` = array length. Array elements start at `data_ptr[0]`.
 - **I/O subsystem**: Reusable `BmbSys` and `BmbUart` components in `jop.io` package. System slave provides clock cycle counter, prescaled microsecond counter, timer interrupt, watchdog register, and CPU ID. UART slave provides buffered TX/RX with 16-entry FIFOs and per-source interrupt outputs (RX data available, TX FIFO empty). UART interrupts are wired to BmbSys interrupt sources (index 0 = timer, 1 = UART RX, 2 = UART TX).
-- **SMP**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` instantiate N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`, plus a GC halt signal (`IO_GC_HALT`) that freezes all other cores during garbage collection. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`.
+- **SMP**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` / `JopDdr3Top(cpuCnt=N)` instantiate N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`, plus a GC halt signal (`IO_GC_HALT`) that freezes all other cores during garbage collection. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`. DDR3 SMP requires `burstLen >= 4` (pipelined single-word BC_FILL interleaves with arbiter at `burstLen=0`).
 - **Debug subsystem**: Optional on-chip debug controller (`jop.debug` package) enabled via `DebugConfig` in `JopCluster`. Uses a dedicated UART (separate from the application UART) with a CRC-8/MAXIM framed protocol. `DebugProtocol` parses/builds frames, `DebugController` implements the command FSM (halt, resume, single-step, register/stack/memory read/write, breakpoint management), and `DebugBreakpoints` provides per-core hardware PC comparators. Supports multi-core targeting via core ID field in each command.
 - **Serial boot**: Microcode polls UART for incoming bytes, assembles 4 bytes into 32-bit words, writes to external memory. Download script (`download.py`) sends `.jop` files with word-level echo verification.
 
