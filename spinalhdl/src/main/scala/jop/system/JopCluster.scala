@@ -99,8 +99,24 @@ case class JopCluster(
   // Instantiate N JOP Cores
   // ==================================================================
 
+  // Array cache (A$) has no cross-core invalidation — each core's A$ is
+  // private and only invalidated by its own stidx/cinval.  In SMP, Core X
+  // can write to a shared array element (iastore → SDRAM), but Core Y's A$
+  // still holds the stale value and serves it on the next iaload hit.
+  // Disable A$ for multi-core until a coherency mechanism is added.
+  val smpMemConfig = if (cpuCnt > 1 && baseConfig.memConfig.useAcache) {
+    baseConfig.memConfig.copy(useAcache = false)
+  } else {
+    baseConfig.memConfig
+  }
+  val smpBaseConfig = if (smpMemConfig ne baseConfig.memConfig) {
+    baseConfig.copy(memConfig = smpMemConfig)
+  } else {
+    baseConfig
+  }
+
   val cores = (0 until cpuCnt).map { i =>
-    val coreConfig = baseConfig.copy(
+    val coreConfig = smpBaseConfig.copy(
       cpuId = i,
       cpuCnt = cpuCnt,
       hasUart = (i == 0)

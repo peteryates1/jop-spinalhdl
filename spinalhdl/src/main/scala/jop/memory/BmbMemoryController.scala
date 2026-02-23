@@ -198,13 +198,13 @@ case class BmbMemoryController(
   val pendingCmdIsWrite = Reg(Bool()) init(False)
 
   // Object cache state (matching VHDL read_ocache, was_a_hwo signals)
-  val readOcache = if(config.useOcache) Reg(Bool()) init(False) else null
+  val readObjectCache = if(config.useOcache) Reg(Bool()) init(False) else null
   val ocWasGetfield = if(config.useOcache) Reg(Bool()) init(False) else null
   val wasHwo = if(config.useOcache) Reg(Bool()) init(False) else null
   val handleAddrReg = if(config.useOcache) Reg(UInt(config.addressWidth bits)) init(0) else null
 
   // Array cache state
-  val readAcache = if(config.useAcache) Reg(Bool()) init(False) else null
+  val readArrayCache = if(config.useAcache) Reg(Bool()) init(False) else null
   val acFillAddr = if(config.useAcache) Reg(UInt(config.addressWidth bits)) init(0) else null
   val acFillCount = if(config.useAcache) Reg(UInt(config.acacheFieldBits bits)) init(0) else null
   val acFillRequestedIdx = if(config.useAcache) Reg(UInt(config.acacheFieldBits bits)) init(0) else null
@@ -244,7 +244,7 @@ case class BmbMemoryController(
       io.bmb.rsp.valid)
   io.memOut.busy := !notBusy
 
-  // Read data output MUX (base assignment; ocache override added after instantiation)
+  // Read data output MUX (base assignment; objectCache override added after instantiation)
   io.memOut.rdData := rdDataReg
   when(io.bmb.rsp.fire && state === State.READ_WAIT) {
     io.memOut.rdData := io.bmb.rsp.fragment.data
@@ -340,7 +340,7 @@ case class BmbMemoryController(
   // Object Cache (matching VHDL ocache in mem_sc.vhd)
   // ==========================================================================
 
-  val ocache = if(config.useOcache) {
+  val objectCache = if(config.useOcache) {
     val oc = ObjectCache(
       addrBits = config.addressWidth,
       wayBits = config.ocacheWayBits,
@@ -366,7 +366,7 @@ case class BmbMemoryController(
   // Array Cache (matching VHDL acache in cache/acache.vhd)
   // ==========================================================================
 
-  val acache = if(config.useAcache) {
+  val arrayCache = if(config.useAcache) {
     val ac = ArrayCache(
       addrBits = config.addressWidth,
       wayBits = config.acacheWayBits,
@@ -391,50 +391,50 @@ case class BmbMemoryController(
 
   // Array cache output MUX override
   if(config.useAcache) {
-    when(readAcache) {
-      io.memOut.rdData := acache.get.io.dout
+    when(readArrayCache) {
+      io.memOut.rdData := arrayCache.get.io.dout
     }
   }
 
-  // readAcache: Clear on any new memory operation OR when state leaves IDLE.
+  // readArrayCache: Clear on any new memory operation OR when state leaves IDLE.
   // The iaload hit handler re-sets it via "last assignment wins" for hits.
-  // Without this, readAcache persists across I/O reads in IDLE (which don't
+  // Without this, readArrayCache persists across I/O reads in IDLE (which don't
   // change state), causing A$ dout to override the I/O read result.
   if(config.useAcache) {
     when(state =/= State.IDLE) {
-      readAcache := False
+      readArrayCache := False
     }
     when(state === State.IDLE && (memReadRequested || io.memIn.wr || io.memIn.wrf ||
         io.memIn.getfield || io.memIn.putfield || io.memIn.iaload || io.memIn.iastore ||
         io.memIn.bcRd || io.memIn.getstatic || io.memIn.putstatic || io.memIn.copy)) {
-      readAcache := False
+      readArrayCache := False
     }
   }
 
-  // Object cache output MUX override (must be after ocache instantiation)
-  // On a cache hit, readOcache selects cached data instead of rdDataReg.
+  // Object cache output MUX override (must be after objectCache instantiation)
+  // On a cache hit, readObjectCache selects cached data instead of rdDataReg.
   // This takes priority over the base rdDataReg assignment but is overridden
   // by the READ_WAIT combinational pass-through (which comes earlier in code,
-  // but SpinalHDL uses "last when wins" — since readOcache is only True in
+  // but SpinalHDL uses "last when wins" — since readObjectCache is only True in
   // IDLE state and READ_WAIT override only fires in READ_WAIT, they don't
   // conflict in practice).
   if(config.useOcache) {
-    when(readOcache) {
-      io.memOut.rdData := ocache.get.io.dout
+    when(readObjectCache) {
+      io.memOut.rdData := objectCache.get.io.dout
     }
   }
 
-  // readOcache: Clear on any new memory operation OR when state leaves IDLE.
+  // readObjectCache: Clear on any new memory operation OR when state leaves IDLE.
   // The getfield hit handler re-sets it via "last assignment wins" for hits.
-  // Same fix as readAcache: prevents stale cache output from overriding I/O reads.
+  // Same fix as readArrayCache: prevents stale cache output from overriding I/O reads.
   if(config.useOcache) {
     when(state =/= State.IDLE) {
-      readOcache := False
+      readObjectCache := False
     }
     when(state === State.IDLE && (memReadRequested || io.memIn.wr || io.memIn.wrf ||
         io.memIn.getfield || io.memIn.putfield || io.memIn.iaload || io.memIn.iastore ||
         io.memIn.bcRd || io.memIn.getstatic || io.memIn.putstatic || io.memIn.copy)) {
-      readOcache := False
+      readObjectCache := False
     }
   }
 
@@ -547,11 +547,11 @@ case class BmbMemoryController(
         // Array load - NOS = array ref, TOS = index
         if(config.useAcache) {
           // Array cache: chkIal fires combinationally (wired above).
-          // On hit: stay IDLE, set readAcache for next-cycle output MUX.
+          // On hit: stay IDLE, set readArrayCache for next-cycle output MUX.
           // On miss: normal handle dereference path with A$ line fill.
-          when(acache.get.io.hit) {
+          when(arrayCache.get.io.hit) {
             // Cache hit — 0 busy cycles (matching VHDL next_state <= idl on hit)
-            readAcache := True
+            readArrayCache := True
           }.otherwise {
             addrReg := io.bout(config.addressWidth - 1 downto 0).asUInt
             handleIndex := aoutAddr
@@ -574,11 +574,11 @@ case class BmbMemoryController(
         // Get object field - TOS = object ref, bcopd = field index
         if(config.useOcache) {
           // Object cache: chkGf fires combinationally (wired above).
-          // On hit: stay IDLE, set readOcache for next-cycle output MUX.
+          // On hit: stay IDLE, set readObjectCache for next-cycle output MUX.
           // On miss: normal handle dereference path.
-          when(ocache.get.io.hit && !wasStidx) {
+          when(objectCache.get.io.hit && !wasStidx) {
             // Cache hit — 0 busy cycles (matching VHDL next_state <= idl on hit)
-            readOcache := True
+            readObjectCache := True
             wasStidx := False
           }.otherwise {
             addrReg := aoutAddr
@@ -725,7 +725,7 @@ case class BmbMemoryController(
 
       // Array cache: check iastore tag (matching VHDL chk_ias)
       if(config.useAcache) {
-        acache.get.io.chkIas := True
+        arrayCache.get.io.chkIas := True
       }
 
       state := State.HANDLE_READ
@@ -877,8 +877,8 @@ case class BmbMemoryController(
       // Object cache: check putfield tag (matching VHDL chk_pf in pf0)
       if(config.useOcache) {
         when(!wasStidx) {
-          ocache.get.io.handle := addrReg  // Override default (aoutAddr)
-          ocache.get.io.chkPf := True
+          objectCache.get.io.handle := addrReg  // Override default (aoutAddr)
+          objectCache.get.io.chkPf := True
         }
       }
 
@@ -1020,11 +1020,11 @@ case class BmbMemoryController(
             when(ocWasGetfield) {
               // Getfield miss returning to IDLE → fill cache
               // gfVal is wired to io.bmb.rsp.fragment.data (the field data just read)
-              ocache.get.io.wrGf := True
+              objectCache.get.io.wrGf := True
             }.otherwise {
               // Putfield completing → write-through (cache gates with hitTagReg)
               // pfVal is wired to handleWriteData (the value just written)
-              ocache.get.io.wrPf := True
+              objectCache.get.io.wrPf := True
             }
           }
         }
@@ -1032,7 +1032,7 @@ case class BmbMemoryController(
         // Array cache: iastore write-through (only on tag hit, gated inside A$)
         if(config.useAcache) {
           when(handleIsArray && handleIsWrite) {
-            acache.get.io.wrIas := True
+            arrayCache.get.io.wrIas := True
           }
         }
 
@@ -1067,8 +1067,8 @@ case class BmbMemoryController(
       if(config.useAcache) {
         when(io.bmb.rsp.fire) {
           // Write element to array cache
-          acache.get.io.wrIal := True
-          acache.get.io.ialVal := io.bmb.rsp.fragment.data
+          arrayCache.get.io.wrIal := True
+          arrayCache.get.io.ialVal := io.bmb.rsp.fragment.data
 
           // Capture rdDataReg for the requested element
           when(acFillCount === acFillRequestedIdx) {

@@ -28,7 +28,7 @@ class BmbMemoryControllerFormal extends SpinalFormalFunSuite {
     .addEngin(SmtBmc(solver = SmtBmcSolver.Z3))
     .withTimeout(180)
 
-  // Use a minimal config to reduce state space (no ocache)
+  // Use a minimal config to reduce state space (no object cache)
   val memConfig = JopMemoryConfig(useOcache = false, burstLen = 0)
 
   /** Helper to set all core inputs to zero (constrained) */

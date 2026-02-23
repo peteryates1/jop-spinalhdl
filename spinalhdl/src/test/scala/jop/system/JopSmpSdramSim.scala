@@ -19,6 +19,11 @@ import java.io.PrintWriter
  *
  * Uses SdramCtrlNoCke (local copy with CKE gating disabled) since the Altera
  * controller is a BlackBox that can't be simulated with Verilator.
+ *
+ * Note: JopCluster automatically disables Array Cache (A$) for cpuCnt > 1
+ * to avoid cross-core cache coherency issues. The A$ has no inter-core
+ * invalidation protocol — one core's iastore to SDRAM won't invalidate
+ * another core's cached copy, causing stale data reads.
  */
 case class JopSmpSdramTestHarness(
   cpuCnt: Int,
