@@ -121,45 +121,81 @@ object JopAddressSpace {
 }
 
 /**
- * I/O Address Definitions
+ * I/O Address Space — 2-bit Slot Granularity
  *
- * JOP uses negative addresses for I/O in Java, which map to high addresses.
- * I/O space is divided into devices (bits 5:4) and sub-addresses (bits 3:0).
+ * JOP I/O addresses are negative values pushed by `bipush` (-128 to -1),
+ * giving low-byte range 0x80-0xFF (128 addresses). Each "slot" is 4 addresses
+ * (2 bits), and larger devices consume multiple power-of-2-aligned consecutive
+ * slots. This efficiently packs devices into the limited bipush range while
+ * supporting many more devices than a fixed device-ID scheme.
+ *
+ * Address layout (bipush range 0x80-0xFF):
+ *   0x80-0x8F  BmbSys       4 slots (16 addrs)  match a(7:4) === 0x8
+ *   0x90-0x93  BmbUart      1 slot  (4 addrs)   match a(7:2) === 0x24
+ *   0x94-0x97  (free)       1 slot
+ *   0x98-0x9F  BmbEth       2 slots (8 addrs)   match a(7:3) === 0x13
+ *   0xA0-0xA7  BmbMdio      2 slots (8 addrs)   match a(7:3) === 0x14
+ *   0xA8-0xAB  BmbSdSpi     1 slot  (4 addrs)   match a(7:2) === 0x2A
+ *   0xAC-0xAF  BmbVgaDma    1 slot  (4 addrs)   match a(7:2) === 0x2B
+ *   0xB0-0xBF  BmbSdNative  4 slots (16 addrs)  match a(7:4) === 0xB
+ *   0xC0-0xCF  BmbVgaText   4 slots (16 addrs)  match a(7:4) === 0xC
+ *   0xD0-0xFF  (free)       12 slots for future devices
  */
 object JopIoSpace {
-  // Device 0: System (bits 5:4 = 00)
-  def SYS_CNT      = 0x00  // System counter (read), Interrupt enable (write)
-  def SYS_US_CNT   = 0x01  // Microsecond counter
-  def SYS_TIMER    = 0x02  // Timer interrupt
-  def SYS_WD       = 0x03  // Watchdog
-  def SYS_EXC      = 0x04  // Exception
-  def SYS_LOCK     = 0x05  // Lock
-  def SYS_CPU_ID   = 0x06  // CPU ID
-  def SYS_SIGNAL   = 0x07  // Signal
+  // Device base addresses (within 8-bit ioAddr space, bipush range 0x80-0xFF)
+  val SYS_BASE       = 0x80  // 4 slots (16 addrs), 4-bit sub-addr
+  val UART_BASE      = 0x90  // 1 slot  (4 addrs),  2-bit sub-addr
+  val ETH_BASE       = 0x98  // 2 slots (8 addrs),  3-bit sub-addr
+  val MDIO_BASE      = 0xA0  // 2 slots (8 addrs),  3-bit sub-addr
+  val SD_SPI_BASE    = 0xA8  // 1 slot  (4 addrs),  2-bit sub-addr
+  val VGA_DMA_BASE   = 0xAC  // 1 slot  (4 addrs),  2-bit sub-addr
+  val SD_NATIVE_BASE = 0xB0  // 4 slots (16 addrs), 4-bit sub-addr
+  val VGA_TEXT_BASE  = 0xC0  // 4 slots (16 addrs), 4-bit sub-addr
 
-  // Device 1: UART (bits 5:4 = 01)
-  def UART_STATUS  = 0x10  // UART status
-  def UART_DATA    = 0x11  // UART data
+  // Named register addresses (base + offset)
+  def SYS_CNT      = SYS_BASE + 0   // System counter (read), Interrupt enable (write)
+  def SYS_US_CNT   = SYS_BASE + 1   // Microsecond counter
+  def SYS_TIMER    = SYS_BASE + 2   // Timer interrupt
+  def SYS_WD       = SYS_BASE + 3   // Watchdog
+  def SYS_EXC      = SYS_BASE + 4   // Exception
+  def SYS_LOCK     = SYS_BASE + 5   // Lock
+  def SYS_CPU_ID   = SYS_BASE + 6   // CPU ID
+  def SYS_SIGNAL   = SYS_BASE + 7   // Signal
 
-  // Device 2: Ethernet MAC (bits 5:4 = 10)
-  def ETH_STATUS   = 0x20  // Ethernet status/control
-  def ETH_TX_AVAIL = 0x21  // TX buffer availability
-  def ETH_TX_DATA  = 0x22  // TX data push
-  def ETH_RX_DATA  = 0x23  // RX data pop
-  def ETH_RX_STATS = 0x24  // RX error/drop stats
+  def UART_STATUS  = UART_BASE + 0  // UART status
+  def UART_DATA    = UART_BASE + 1  // UART data
 
-  // Device 3: MDIO / PHY Management (bits 5:4 = 11)
-  def MDIO_CMD     = 0x30  // MDIO command (go/write)
-  def MDIO_DATA    = 0x31  // MDIO read/write data
-  def MDIO_ADDR    = 0x32  // MDIO PHY/reg address
-  def PHY_RESET    = 0x33  // PHY hardware reset
-  def ETH_INT_CTRL = 0x34  // Ethernet interrupt enable/pending
+  def ETH_STATUS   = ETH_BASE + 0   // Ethernet status/control
+  def ETH_TX_AVAIL = ETH_BASE + 1   // TX buffer availability
+  def ETH_TX_DATA  = ETH_BASE + 2   // TX data push
+  def ETH_RX_DATA  = ETH_BASE + 3   // RX data pop
+  def ETH_RX_STATS = ETH_BASE + 4   // RX error/drop stats
 
-  /** Get I/O device ID from address (bits 5:4) */
-  def getDeviceId(addr: UInt): UInt = addr(5 downto 4)
+  def MDIO_CMD     = MDIO_BASE + 0  // MDIO command (go/write)
+  def MDIO_DATA    = MDIO_BASE + 1  // MDIO read/write data
+  def MDIO_ADDR    = MDIO_BASE + 2  // MDIO PHY/reg address
+  def PHY_RESET    = MDIO_BASE + 3  // PHY hardware reset
+  def ETH_INT_CTRL = MDIO_BASE + 4  // Ethernet interrupt enable/pending
 
-  /** Get sub-address within device (bits 3:0) */
-  def getSubAddr(addr: UInt): UInt = addr(3 downto 0)
+  // Hardware address-match predicates (operate on 8-bit ioAddr)
+  def isSys(a: UInt): Bool       = a(7 downto 4) === (SYS_BASE >> 4)
+  def isUart(a: UInt): Bool      = a(7 downto 2) === (UART_BASE >> 2)
+  def isEth(a: UInt): Bool       = a(7 downto 3) === (ETH_BASE >> 3)
+  def isMdio(a: UInt): Bool      = a(7 downto 3) === (MDIO_BASE >> 3)
+  def isSdSpi(a: UInt): Bool     = a(7 downto 2) === (SD_SPI_BASE >> 2)
+  def isVgaDma(a: UInt): Bool    = a(7 downto 2) === (VGA_DMA_BASE >> 2)
+  def isSdNative(a: UInt): Bool  = a(7 downto 4) === (SD_NATIVE_BASE >> 4)
+  def isVgaText(a: UInt): Bool   = a(7 downto 4) === (VGA_TEXT_BASE >> 4)
+
+  // Sub-address extraction (all return 4-bit UInt for uniform device interface)
+  def sysAddr(a: UInt): UInt       = a(3 downto 0)
+  def uartAddr(a: UInt): UInt      = a(1 downto 0).resize(4)
+  def ethAddr(a: UInt): UInt       = a(2 downto 0).resize(4)
+  def mdioAddr(a: UInt): UInt      = a(2 downto 0).resize(4)
+  def sdSpiAddr(a: UInt): UInt     = a(1 downto 0).resize(4)
+  def vgaDmaAddr(a: UInt): UInt    = a(1 downto 0).resize(4)
+  def sdNativeAddr(a: UInt): UInt  = a(3 downto 0)
+  def vgaTextAddr(a: UInt): UInt   = a(3 downto 0)
 }
 
 /**

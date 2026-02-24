@@ -48,32 +48,43 @@ case class JopSimulatorConfig(
 }
 
 /**
- * I/O Address Constants
+ * I/O Address Constants (32-bit form for simulation)
  *
- * JOP uses negative addresses for I/O, which map to high positive addresses.
- * Base: 0xFFFFFF80 (bipush -128 gives this as the base)
+ * JOP uses negative addresses for I/O via `bipush` (-128 to -1),
+ * which sign-extend to 0xFFFFFF80-0xFFFFFFFF. Low byte matches
+ * JopIoSpace layout (0x80-0xFF).
  */
 object JopIoAddresses {
-  // Slave 0: System (counter, WD, interrupt control)
-  val IO_CNT      = 0xFFFFFF80L  // -128: System counter
-  val IO_US_CNT   = 0xFFFFFF81L  // -127: Microsecond counter
-  val IO_TIMER    = 0xFFFFFF82L  // -126: Timer interrupt
-  val IO_WD       = 0xFFFFFF83L  // -125: Watchdog
-  val IO_EXC      = 0xFFFFFF84L  // -124: Exception
-  val IO_LOCK     = 0xFFFFFF85L  // -123: Lock
-  val IO_CPU_ID   = 0xFFFFFF86L  // -122: CPU ID
-  val IO_SIGNAL   = 0xFFFFFF87L  // -121: Signal
-  val IO_INT_ENA  = 0xFFFFFF80L  // -128: Interrupt enable (same as CNT)
+  private val IO_BASE = 0xFFFFFF00L
 
-  // Slave 1: UART
-  val IO_STATUS   = 0xFFFFFF90L  // -112: UART status
-  val IO_UART     = 0xFFFFFF91L  // -111: UART data
+  // System registers (0x80-0x8F)
+  val IO_CNT      = IO_BASE | 0x80L  // -128: System counter / Interrupt enable
+  val IO_US_CNT   = IO_BASE | 0x81L  // -127: Microsecond counter
+  val IO_TIMER    = IO_BASE | 0x82L  // -126: Timer interrupt
+  val IO_WD       = IO_BASE | 0x83L  // -125: Watchdog
+  val IO_EXC      = IO_BASE | 0x84L  // -124: Exception
+  val IO_LOCK     = IO_BASE | 0x85L  // -123: Lock
+  val IO_CPU_ID   = IO_BASE | 0x86L  // -122: CPU ID
+  val IO_SIGNAL   = IO_BASE | 0x87L  // -121: Signal
+  val IO_INT_ENA  = IO_BASE | 0x80L  // -128: Interrupt enable (same as CNT)
 
-  /** Get I/O device from address (bits 5:4) */
-  def getDeviceId(addr: Long): Int = ((addr >> 4) & 0x3).toInt
+  // UART registers (0x90-0x93)
+  val IO_STATUS   = IO_BASE | 0x90L  // -112: UART status
+  val IO_UART     = IO_BASE | 0x91L  // -111: UART data
 
-  /** Get sub-address within device (bits 3:0) */
-  def getSubAddr(addr: Long): Int = (addr & 0xF).toInt
+  // Ethernet registers (0x98-0x9F)
+  val IO_ETH_STATUS   = IO_BASE | 0x98L
+  val IO_ETH_TX_AVAIL = IO_BASE | 0x99L
+  val IO_ETH_TX_DATA  = IO_BASE | 0x9AL
+  val IO_ETH_RX_DATA  = IO_BASE | 0x9BL
+  val IO_ETH_RX_STATS = IO_BASE | 0x9CL
+
+  // MDIO registers (0xA0-0xA7)
+  val IO_MDIO_CMD     = IO_BASE | 0xA0L
+  val IO_MDIO_DATA    = IO_BASE | 0xA1L
+  val IO_MDIO_ADDR    = IO_BASE | 0xA2L
+  val IO_PHY_RESET    = IO_BASE | 0xA3L
+  val IO_ETH_INT_CTRL = IO_BASE | 0xA4L
 }
 
 /**
@@ -800,26 +811,17 @@ case class JopSimulator(
         ioWrReg := True
         ioWrDataReg := stack.io.aout
 
-        // Decode I/O address
-        val subAddr = ioAddrReg(3 downto 0)
-        val slaveId = ioAddrReg(5 downto 4)
-
-        switch(slaveId) {
-          is(0) {  // Slave 0: System
-            switch(subAddr) {
-              is(3) {  // WD
-                wdReg := stack.io.aout(0)
-                wdToggleReg := True
-              }
-            }
+        // Decode I/O address using JopIoSpace match predicates
+        when(JopIoSpace.isSys(ioAddrReg)) {
+          when(JopIoSpace.sysAddr(ioAddrReg) === 3) {  // WD
+            wdReg := stack.io.aout(0)
+            wdToggleReg := True
           }
-          is(1) {  // Slave 1: UART
-            switch(subAddr) {
-              is(1) {  // UART data
-                uartTxDataReg := stack.io.aout(7 downto 0)
-                uartTxValidReg := True
-              }
-            }
+        }
+        when(JopIoSpace.isUart(ioAddrReg)) {
+          when(JopIoSpace.uartAddr(ioAddrReg) === 1) {  // UART data
+            uartTxDataReg := stack.io.aout(7 downto 0)
+            uartTxValidReg := True
           }
         }
       }.otherwise {
@@ -845,49 +847,44 @@ case class JopSimulator(
         // I/O read
         ioRdReg := True
 
-        // Decode I/O address
-        val subAddr = stack.io.aout(3 downto 0).asUInt
-        val slaveId = stack.io.aout(5 downto 4).asUInt
+        // Decode I/O address using JopIoSpace match predicates
+        val ioAddr8 = stack.io.aout(7 downto 0).asUInt
 
-        switch(slaveId) {
-          is(0) {  // Slave 0: System
-            switch(subAddr) {
-              is(0) {  // Counter (io_cnt = -128)
-                memRdDataReg := sysCntReg.asBits
-              }
-              is(1) {  // Microsecond counter (io_us_cnt = -127)
-                memRdDataReg := sysCntReg.asBits  // Use same counter for now
-              }
-              is(3) {  // WD (io_wd = -125)
-                memRdDataReg := wdReg.asBits.resized
-              }
-              is(6) {  // CPU_ID (io_cpu_id = -122) - MUST return 0 for CPU0!
-                memRdDataReg := B(0, 32 bits)
-              }
-              is(7) {  // Signal (io_signal = -121)
-                memRdDataReg := B(0, 32 bits)
-              }
-              default {
-                memRdDataReg := B(0, 32 bits)
-              }
+        when(JopIoSpace.isSys(ioAddr8)) {
+          switch(JopIoSpace.sysAddr(ioAddr8)) {
+            is(0) {  // Counter (io_cnt = -128)
+              memRdDataReg := sysCntReg.asBits
+            }
+            is(1) {  // Microsecond counter (io_us_cnt = -127)
+              memRdDataReg := sysCntReg.asBits  // Use same counter for now
+            }
+            is(3) {  // WD (io_wd = -125)
+              memRdDataReg := wdReg.asBits.resized
+            }
+            is(6) {  // CPU_ID (io_cpu_id = -122) - MUST return 0 for CPU0!
+              memRdDataReg := B(0, 32 bits)
+            }
+            is(7) {  // Signal (io_signal = -121)
+              memRdDataReg := B(0, 32 bits)
+            }
+            default {
+              memRdDataReg := B(0, 32 bits)
             }
           }
-          is(1) {  // Slave 1: UART
-            switch(subAddr) {
-              is(0) {  // Status: bit0=TX ready, bit1=RX ready
-                memRdDataReg := B(0x1, 32 bits)  // TX always ready, no RX
-              }
-              is(1) {  // UART data
-                memRdDataReg := io.uartRxData.resized
-              }
-              default {
-                memRdDataReg := 0
-              }
+        }.elsewhen(JopIoSpace.isUart(ioAddr8)) {
+          switch(JopIoSpace.uartAddr(ioAddr8)) {
+            is(0) {  // Status: bit0=TX ready, bit1=RX ready
+              memRdDataReg := B(0x1, 32 bits)  // TX always ready, no RX
+            }
+            is(1) {  // UART data
+              memRdDataReg := io.uartRxData.resized
+            }
+            default {
+              memRdDataReg := 0
             }
           }
-          default {
-            memRdDataReg := 0
-          }
+        }.otherwise {
+          memRdDataReg := 0
         }
       }.otherwise {
         // Normal memory read

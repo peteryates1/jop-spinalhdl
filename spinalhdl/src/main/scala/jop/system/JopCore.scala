@@ -220,18 +220,17 @@ case class JopCore(
   // Internal I/O Subsystem
   // ==========================================================================
 
-  // I/O address decoding
-  val ioSubAddr = memCtrl.io.ioAddr(3 downto 0)
-  val ioDeviceId = memCtrl.io.ioAddr(5 downto 4)
+  // I/O address (8-bit, decoded by JopIoSpace match predicates)
+  val ioAddr = memCtrl.io.ioAddr
 
   // Number of I/O interrupt sources: 2 base (UART RX/TX) + 3 if Ethernet (ETH RX/TX, MDIO)
   val numIoInt = if (config.hasEth) 5 else 2
 
-  // System I/O (device 0)
+  // System I/O (0x80-0x8F)
   val bmbSys = BmbSys(clkFreqHz = config.clkFreqHz, cpuId = config.cpuId, cpuCnt = config.cpuCnt, numIoInt = numIoInt)
-  bmbSys.io.addr   := ioSubAddr
-  bmbSys.io.rd     := memCtrl.io.ioRd && ioDeviceId === 0
-  bmbSys.io.wr     := memCtrl.io.ioWr && ioDeviceId === 0
+  bmbSys.io.addr   := JopIoSpace.sysAddr(ioAddr)
+  bmbSys.io.rd     := memCtrl.io.ioRd && JopIoSpace.isSys(ioAddr)
+  bmbSys.io.wr     := memCtrl.io.ioWr && JopIoSpace.isSys(ioAddr)
   bmbSys.io.wrData := memCtrl.io.ioWrData
 
   // CmpSync interface
@@ -250,13 +249,13 @@ case class JopCore(
   bmbSys.io.ackIrq := pipeline.io.ackIrq
   bmbSys.io.ackExc := pipeline.io.ackExc
 
-  // UART (device 1, optional)
+  // UART (0x90-0x93, optional)
   val bmbUart = if (config.hasUart) Some(BmbUart(config.uartBaudRate, config.clkFreqHz)) else None
 
   bmbUart.foreach { uart =>
-    uart.io.addr   := ioSubAddr
-    uart.io.rd     := memCtrl.io.ioRd && ioDeviceId === 1
-    uart.io.wr     := memCtrl.io.ioWr && ioDeviceId === 1
+    uart.io.addr   := JopIoSpace.uartAddr(ioAddr)
+    uart.io.rd     := memCtrl.io.ioRd && JopIoSpace.isUart(ioAddr)
+    uart.io.wr     := memCtrl.io.ioWr && JopIoSpace.isUart(ioAddr)
     uart.io.wrData := memCtrl.io.ioWrData
     io.txd := uart.io.txd
     uart.io.rxd := io.rxd
@@ -265,26 +264,26 @@ case class JopCore(
     io.txd := True  // Idle
   }
 
-  // Ethernet MAC (device 2, optional)
+  // Ethernet MAC (0x98-0x9F, optional)
   val bmbEth = if (config.hasEth && ethTxCd.isDefined && ethRxCd.isDefined)
     Some(BmbEth(txCd = ethTxCd.get, rxCd = ethRxCd.get))
   else None
 
   bmbEth.foreach { eth =>
-    eth.io.addr   := ioSubAddr
-    eth.io.rd     := memCtrl.io.ioRd && ioDeviceId === 2
-    eth.io.wr     := memCtrl.io.ioWr && ioDeviceId === 2
+    eth.io.addr   := JopIoSpace.ethAddr(ioAddr)
+    eth.io.rd     := memCtrl.io.ioRd && JopIoSpace.isEth(ioAddr)
+    eth.io.wr     := memCtrl.io.ioWr && JopIoSpace.isEth(ioAddr)
     eth.io.wrData := memCtrl.io.ioWrData
     io.phy.get <> eth.io.phy
   }
 
-  // MDIO controller (device 3, optional)
+  // MDIO controller (0xA0-0xA7, optional)
   val bmbMdio = if (config.hasEth) Some(BmbMdio()) else None
 
   bmbMdio.foreach { mdio =>
-    mdio.io.addr   := ioSubAddr
-    mdio.io.rd     := memCtrl.io.ioRd && ioDeviceId === 3
-    mdio.io.wr     := memCtrl.io.ioWr && ioDeviceId === 3
+    mdio.io.addr   := JopIoSpace.mdioAddr(ioAddr)
+    mdio.io.rd     := memCtrl.io.ioRd && JopIoSpace.isMdio(ioAddr)
+    mdio.io.wr     := memCtrl.io.ioWr && JopIoSpace.isMdio(ioAddr)
     mdio.io.wrData := memCtrl.io.ioWrData
     io.mdc.get      := mdio.io.mdc
     io.mdioOut.get  := mdio.io.mdioOut
@@ -312,24 +311,13 @@ case class JopCore(
     }
   }
 
-  // I/O read mux
+  // I/O read mux (last-assignment-wins; ranges are non-overlapping)
   val ioRdData = Bits(32 bits)
   ioRdData := 0
-  switch(ioDeviceId) {
-    is(0) { ioRdData := bmbSys.io.rdData }
-    is(1) {
-      if (bmbUart.isDefined) ioRdData := bmbUart.get.io.rdData
-      // No UART: ioRdData stays 0 (TDRE=0). Cores without UART must not
-      // access it — reads will return "TX busy" causing a hang, which makes
-      // the bug visible. TODO: consider an exception or debug trap here.
-    }
-    is(2) {
-      if (bmbEth.isDefined) ioRdData := bmbEth.get.io.rdData
-    }
-    is(3) {
-      if (bmbMdio.isDefined) ioRdData := bmbMdio.get.io.rdData
-    }
-  }
+  when(JopIoSpace.isSys(ioAddr))  { ioRdData := bmbSys.io.rdData }
+  if (bmbUart.isDefined)  when(JopIoSpace.isUart(ioAddr)) { ioRdData := bmbUart.get.io.rdData }
+  if (bmbEth.isDefined)   when(JopIoSpace.isEth(ioAddr))  { ioRdData := bmbEth.get.io.rdData }
+  if (bmbMdio.isDefined)  when(JopIoSpace.isMdio(ioAddr)) { ioRdData := bmbMdio.get.io.rdData }
   memCtrl.io.ioRdData := ioRdData
 
   // Watchdog output
@@ -337,7 +325,7 @@ case class JopCore(
 
   // Debug: UART TX snoop — registered to capture the single-cycle ioWr pulse
   // (combinational ioWr goes low before simulation can read it after waitSampling)
-  val uartTxFire = memCtrl.io.ioWr && ioDeviceId === 1 && ioSubAddr === 1
+  val uartTxFire = memCtrl.io.ioWr && JopIoSpace.isUart(ioAddr) && JopIoSpace.uartAddr(ioAddr) === 1
   val uartTxValidReg = RegNext(uartTxFire) init(False)
   val uartTxDataReg = RegNextWhen(memCtrl.io.ioWrData(7 downto 0), uartTxFire) init(0)
   io.uartTxValid := uartTxValidReg
