@@ -207,11 +207,10 @@ public class JVM {
 			return 0;
 		}
 	}
-	static int f_idiv(int a, int b) { 
+	static int f_idiv(int a, int b) {
 		if (b == 0) {
 			// division by zero exception
-			Native.wrMem(Const.EXC_DIVZ, Const.IO_EXCPT);
-			return 0;
+			throw JVMHelp.ArithExc;
 		}
 		if (b == 0x80000000) {
 			if (a == 0x80000000)
@@ -250,8 +249,7 @@ public class JVM {
 	static  long f_ldiv(long a, long b) {
 		if (b==0) {
 			// division by zero exception
-			Native.wrMem(Const.EXC_DIVZ, Const.IO_EXCPT);
-			return 0;
+			throw JVMHelp.ArithExc;
 		}
 		if(b==0x8000000000000000L) {
 			if(a==0x8000000000000000L) return 1;
@@ -305,8 +303,7 @@ public class JVM {
 	static int f_irem(int a, int b) {
 		if (b==0) {
 			// division by zero exception
-			Native.wrMem(Const.EXC_DIVZ, Const.IO_EXCPT);
-			return 0;
+			throw JVMHelp.ArithExc;
 		}
 		if(b==0x80000000) {
 			if(a==0x80000000) return 0;
@@ -339,8 +336,7 @@ public class JVM {
 	static long f_lrem(long a, long b) {
 		if (b==0) {
 			// division by zero exception
-			Native.wrMem(Const.EXC_DIVZ, Const.IO_EXCPT);
-			return 0;
+			throw JVMHelp.ArithExc;
 		}
 		if(b==0x8000000000000000L) {
 			if(a==0x8000000000000000L) return 0;

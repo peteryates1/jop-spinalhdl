@@ -79,7 +79,7 @@ public class DoAll {
 				new ConstLoad(),
 
 				// Exception tests
-				// new DivZero(), // hardware div-by-zero exception not catchable on JOP
+				new DivZero(),
 				new AthrowTest(),
 
 				// Field type tests
