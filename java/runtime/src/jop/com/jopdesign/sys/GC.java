@@ -24,20 +24,26 @@ package com.jopdesign.sys;
 
 
 /**
- *     Mark-compact garbage collection for JOP.
+ *     Incremental mark-compact garbage collection for JOP.
  *     Replaces the semi-space copying collector to recover ~2x usable heap.
  *
  *     Key insight: JOP uses handle indirection for all object references.
  *     Compaction only needs to update handle OFF_PTR fields, not scan
  *     the entire heap for pointer updates.
  *
- *     Algorithm:
- *       1. Toggle toSpace mark value (all existing objects become unmarked)
- *       2. Mark phase: tri-color marking from roots (stack + statics)
- *       3. Compact phase: slide live objects down, update handle OFF_PTR
- *       4. Sweep: free unmarked handles
+ *     Algorithm (incremental phases):
+ *       Phase 0: IDLE -- no GC activity
+ *       Phase 1: ROOT_SCAN (STW) -- scan stacks + statics, push to gray list
+ *       Phase 2: MARK (incremental) -- process N gray objects per increment
+ *       Phase 3: COMPACT (incremental) -- slide P objects per increment
+ *       Back to IDLE when complete
  *
- *     Also contains scope support (unchanged from original).
+ *     Mark and compact phases are split into bounded increments,
+ *     interleaved with mutator execution, to reduce worst-case pause times.
+ *     No read barriers needed.
+ *
+ *     Also contains scope support (unchanged from original) and a full
+ *     STW gc() method for fallback / allocation pressure.
  *
  * @author Martin Schoeberl (martin@jopdesign.com)
  *
@@ -166,6 +172,28 @@ public class GC {
 
 	// Memory allocation pointer used before we enter the ImmortalMemory
 	static int allocationPointer;
+
+	// =========================================================================
+	// Incremental GC state machine
+	// =========================================================================
+
+	static final int PHASE_IDLE      = 0;
+	static final int PHASE_ROOT_SCAN = 1;
+	static final int PHASE_MARK      = 2;
+	static final int PHASE_COMPACT   = 3;
+
+	static int gcPhase;
+
+	/** Number of gray objects to process per mark increment. */
+	static final int MARK_STEP = 20;
+
+	/** Number of objects to compact per compact increment. */
+	static final int COMPACT_STEP = 10;
+
+	// --- Compact phase state ---
+	static int compactList;    // sorted snapshot of useList for compaction
+	static int compactDst;     // compaction destination pointer
+	static int newUseList;     // rebuilt use list during compaction
 
 	static void init(int mem_size, int addr) {
 		addrStaticRefs = addr;
@@ -385,6 +413,74 @@ public class GC {
 	}
 
 	/**
+	 * Mark the children of a single gray object.
+	 * Extracted from mark() for reuse by markStep().
+	 * @param ref handle address of gray object (already popped from gray list)
+	 */
+	static void markChildren(int ref) {
+		int i;
+
+		// already marked
+		if (Native.rdMem(ref+OFF_SPACE)==toSpace) {
+			return;
+		}
+
+		// there should be no null pointers on the mark stack
+		if (Native.rdMem(ref+OFF_PTR)==0) {
+			return;
+		}
+
+		// Mark it BLACK
+		Native.wrMem(toSpace, ref+OFF_SPACE);
+
+		// push all children
+		int addr = Native.rdMem(ref);
+		int flags = Native.rdMem(ref+OFF_TYPE);
+		if (flags==IS_REFARR) {
+			// is an array of references
+			int size = Native.rdMem(ref+OFF_MTAB_ALEN);
+			for (i=0; i<size; ++i) {
+				push(Native.rdMem(addr+i));
+			}
+		} else if (flags==IS_OBJ) {
+			// it's a plain object
+			flags = Native.rdMem(ref+OFF_MTAB_ALEN);
+			flags = Native.rdMem(flags+Const.MTAB2GC_INFO);
+			for (i=0; flags!=0; ++i) {
+				if ((flags&1)!=0) {
+					push(Native.rdMem(addr+i));
+				}
+				flags >>>= 1;
+			}
+		}
+	}
+
+	/**
+	 * Incremental mark: process up to MARK_STEP gray objects.
+	 * @return true when marking is complete (gray list empty)
+	 */
+	static boolean markStep() {
+		int ref;
+		int count = 0;
+
+		while (count < MARK_STEP) {
+			synchronized (mutex) {
+				ref = grayList;
+				if (ref==GREY_END) {
+					return true;  // marking complete
+				}
+				grayList = Native.rdMem(ref+OFF_GREY);
+				Native.wrMem(0, ref+OFF_GREY);
+			}
+
+			markChildren(ref);
+			count++;
+		}
+
+		return false;  // more work to do
+	}
+
+	/**
 	 * Get the size of the object/array data for a handle.
 	 * @param ref handle address
 	 * @return size in words
@@ -407,7 +503,7 @@ public class GC {
 	}
 
 	/**
-	 * Sort the use list by ascending OFF_PTR (object data address).
+	 * Sort a handle linked list by ascending OFF_PTR (object data address).
 	 * This is CRITICAL for correct compaction: objects must be processed
 	 * in address order so that sliding compaction never overwrites
 	 * not-yet-copied data.
@@ -415,38 +511,42 @@ public class GC {
 	 * Uses insertion sort on a singly-linked list. O(n^2) worst case,
 	 * which is acceptable for JOP's typical object counts (dozens to hundreds).
 	 *
-	 * Must be called under mutex.
+	 * @param list head of the linked list to sort
+	 * @return head of the sorted list
 	 */
-	static void sortUseListByAddress() {
-		int sorted = 0;		// sorted list head (empty)
-		int curr = useList;
+	static int sortListByAddress(int list) {
+		int sorted = 0;
+		int curr = list;
 
 		while (curr != 0) {
 			int next = Native.rdMem(curr + OFF_NEXT);
 			int currAddr = Native.rdMem(curr + OFF_PTR);
 
-			// Insert into sorted list at the correct position
 			if (sorted == 0 || currAddr <= Native.rdMem(sorted + OFF_PTR)) {
-				// Insert at head
 				Native.wrMem(sorted, curr + OFF_NEXT);
 				sorted = curr;
 			} else {
-				// Find insertion point: scan until we find a node
-				// whose next has a higher address
 				int prev = sorted;
 				int scan = Native.rdMem(sorted + OFF_NEXT);
 				while (scan != 0 && Native.rdMem(scan + OFF_PTR) < currAddr) {
 					prev = scan;
 					scan = Native.rdMem(scan + OFF_NEXT);
 				}
-				// Insert curr between prev and scan
 				Native.wrMem(scan, curr + OFF_NEXT);
 				Native.wrMem(curr, prev + OFF_NEXT);
 			}
 			curr = next;
 		}
 
-		useList = sorted;
+		return sorted;
+	}
+
+	/**
+	 * Sort the useList in place by ascending OFF_PTR.
+	 * Convenience wrapper for STW compactAndSweep().
+	 */
+	static void sortUseListByAddress() {
+		useList = sortListByAddress(useList);
 	}
 
 	/**
@@ -528,6 +628,188 @@ public class GC {
 		}
 	}
 
+	// ================================================================
+	// Incremental GC methods
+	// ================================================================
+
+	/**
+	 * Prepare for incremental compaction.
+	 */
+	static void prepareCompact() {
+		synchronized (mutex) {
+			compactList = sortListByAddress(useList);
+			useList = 0;
+			compactDst = heapStart;
+			newUseList = 0;
+		}
+	}
+
+	/**
+	 * Incremental compact: process up to COMPACT_STEP handles.
+	 * @return true when compaction is complete
+	 */
+	static boolean compactStep() {
+		int count = 0;
+		int ref;
+
+		while (count < COMPACT_STEP) {
+			synchronized (mutex) {
+				ref = compactList;
+				if (ref == 0) {
+					return true;
+				}
+				compactList = Native.rdMem(ref + OFF_NEXT);
+			}
+
+			if (Native.rdMem(ref + OFF_SPACE) == toSpace) {
+				int size = getObjectSize(ref);
+				int oldAddr = Native.rdMem(ref + OFF_PTR);
+
+				if (oldAddr != compactDst && size > 0) {
+					for (int i = 0; i < size; ++i) {
+						Native.wrMem(Native.rdMem(oldAddr + i), compactDst + i);
+					}
+					Native.wrMem(compactDst, ref + OFF_PTR);
+				}
+
+				compactDst += size;
+
+				synchronized (mutex) {
+					Native.wrMem(newUseList, ref + OFF_NEXT);
+					newUseList = ref;
+				}
+			} else {
+				synchronized (mutex) {
+					Native.wrMem(freeList, ref + OFF_NEXT);
+					freeList = ref;
+					Native.wrMem(0, ref + OFF_PTR);
+				}
+			}
+
+			count++;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Finish an incremental GC cycle.
+	 */
+	static void finishCycle() {
+		synchronized (mutex) {
+			if (newUseList == 0) {
+				// Nothing compacted
+			} else if (useList == 0) {
+				useList = newUseList;
+			} else {
+				int tail = newUseList;
+				int tailNext = Native.rdMem(tail + OFF_NEXT);
+				while (tailNext != 0) {
+					tail = tailNext;
+					tailNext = Native.rdMem(tail + OFF_NEXT);
+				}
+				Native.wrMem(useList, tail + OFF_NEXT);
+				useList = newUseList;
+			}
+			newUseList = 0;
+			copyPtr = compactDst;
+		}
+
+		for (int i = copyPtr; i < allocPtr; ++i) {
+			Native.wrMem(0, i);
+		}
+
+		Native.invalidate();
+	}
+
+	/**
+	 * Start a new incremental GC cycle (STW root scan).
+	 */
+	static void startCycle() {
+		Native.wr(1, Const.IO_GC_HALT);
+
+		grayList = GREY_END;
+
+		if (toSpace == 1) {
+			toSpace = 2;
+		} else {
+			toSpace = 1;
+		}
+
+		getStackRoots();
+		getStaticRoots();
+
+		Native.wr(0, Const.IO_GC_HALT);
+
+		gcPhase = PHASE_MARK;
+	}
+
+	/**
+	 * Drain all remaining incremental GC work (STW fallback).
+	 */
+	static void finishCycleNow() {
+		Native.wr(1, Const.IO_GC_HALT);
+
+		if (gcPhase == PHASE_MARK) {
+			while (!markStep()) {
+			}
+			prepareCompact();
+			gcPhase = PHASE_COMPACT;
+		}
+
+		if (gcPhase == PHASE_COMPACT) {
+			while (!compactStep()) {
+			}
+			finishCycle();
+		}
+
+		gcPhase = PHASE_IDLE;
+
+		Native.wr(0, Const.IO_GC_HALT);
+	}
+
+	/**
+	 * Advance incremental GC state machine by one increment.
+	 */
+	static void gcIncrement() {
+		if (gcPhase == PHASE_IDLE) {
+			startCycle();
+			return;
+		}
+
+		if (gcPhase == PHASE_MARK) {
+			if (markStep()) {
+				prepareCompact();
+				gcPhase = PHASE_COMPACT;
+			}
+			return;
+		}
+
+		if (gcPhase == PHASE_COMPACT) {
+			if (compactStep()) {
+				finishCycle();
+				gcPhase = PHASE_IDLE;
+			}
+			return;
+		}
+	}
+
+	/**
+	 * Proactively trigger incremental GC work during allocation.
+	 */
+	static void tryGcIncrement() {
+		if (mutex == null) return;
+
+		int freeSpace = allocPtr - copyPtr;
+		int threshold = heapSize >> 2;  // 25% of heap
+
+		if (gcPhase != PHASE_IDLE) {
+			gcIncrement();
+		} else if (freeSpace < threshold) {
+			gcIncrement();
+		}
+	}
+
 	public static void setConcurrent() {
 		concurrentGc = true;
 	}
@@ -535,10 +817,16 @@ public class GC {
 		if (Config.USE_SCOPES) {
 			throw OOMError;
 		}
-		// Note: concurrentGc check removed. On FPGA, this static field
-		// gets corrupted to true (same class of issue as Scheduler.cnt).
-		// We never use concurrent GC, so just always call gc().
-		gc();
+		if (gcPhase != PHASE_IDLE) {
+			// Incremental GC in progress -- drain it to completion
+			finishCycleNow();
+			// If still not enough space, run a full STW cycle
+			if (freeList == 0 || (allocPtr - copyPtr) < (heapSize >> 3)) {
+				gc();
+			}
+		} else {
+			gc();
+		}
 	}
 
 	public static void gc() {
@@ -705,6 +993,7 @@ public class GC {
 			Native.wrMem(cons+Const.CLASS_HEADR, ref+OFF_MTAB_ALEN);
 		}
 
+		tryGcIncrement();
 		return ref;
 	}
 
@@ -815,6 +1104,7 @@ public class GC {
 			// array length in the handle
 			Native.wrMem(arrayLength, ref+OFF_MTAB_ALEN);
 		}
+		tryGcIncrement();
 		return ref;
 
 	}
