@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.bus.bmb._
 import jop.pipeline._
 import jop.memory._
-import jop.io.{BmbSys, BmbUart, BmbEth, BmbMdio, SyncIn, SyncOut}
+import jop.io.{BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdSpi, BmbSdNative, BmbVgaDma, BmbVgaText, SyncIn, SyncOut}
 import spinal.lib.com.eth._
 import jop.{JopPipeline, JumpTableData}
 
@@ -23,9 +23,8 @@ import jop.{JopPipeline, JumpTableData}
  * @param memConfig    Memory subsystem configuration
  * @param cpuId        CPU identifier (for multi-core; 0 for single-core)
  * @param cpuCnt       Total number of CPUs (1 for single-core)
- * @param hasUart      Whether to instantiate BmbUart
+ * @param ioConfig     I/O device configuration (device presence, parameters, interrupts)
  * @param clkFreqHz    System clock frequency in Hz (for BmbSys microsecond prescaler)
- * @param uartBaudRate UART baud rate in Hz (only used when hasUart = true)
  */
 case class JopCoreConfig(
   dataWidth:    Int              = 32,
@@ -38,11 +37,13 @@ case class JopCoreConfig(
   jumpTable:    JumpTableInitData = JumpTableInitData.simulation,
   cpuId:        Int              = 0,
   cpuCnt:       Int              = 1,
-  hasUart:      Boolean          = true,
-  hasEth:       Boolean          = false,
-  clkFreqHz:    Long             = 100000000L,
-  uartBaudRate: Int              = 1000000
+  ioConfig:     IoConfig         = IoConfig(),
+  clkFreqHz:    Long             = 100000000L
 ) {
+  // Convenience accessors (avoid changing every reference site)
+  def hasUart: Boolean = ioConfig.hasUart
+  def hasEth: Boolean = ioConfig.hasEth
+  def uartBaudRate: Int = ioConfig.uartBaudRate
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(instrWidth == 10, "Instruction width must be 10 bits")
   require(pcWidth == 11, "PC width must be 11 bits (2K ROM)")
@@ -76,7 +77,8 @@ case class JopCore(
   ramInit: Option[Seq[BigInt]] = None,
   jbcInit: Option[Seq[BigInt]] = None,
   ethTxCd: Option[ClockDomain] = None,
-  ethRxCd: Option[ClockDomain] = None
+  ethRxCd: Option[ClockDomain] = None,
+  vgaCd:   Option[ClockDomain] = None
 ) extends Component {
 
   val io = new Bundle {
@@ -103,6 +105,33 @@ case class JopCore(
     val mdioOe   = if (config.hasEth) Some(out Bool()) else None
     val mdioIn   = if (config.hasEth) Some(in Bool()) else None
     val phyReset = if (config.hasEth) Some(out Bool()) else None
+
+    // SD SPI pins (optional)
+    val sdSpiSclk = if (config.ioConfig.hasSdSpi) Some(out Bool()) else None
+    val sdSpiMosi = if (config.ioConfig.hasSdSpi) Some(out Bool()) else None
+    val sdSpiMiso = if (config.ioConfig.hasSdSpi) Some(in Bool()) else None
+    val sdSpiCs   = if (config.ioConfig.hasSdSpi) Some(out Bool()) else None
+    val sdSpiCd   = if (config.ioConfig.hasSdSpi) Some(in Bool()) else None
+
+    // SD Native pins (optional)
+    val sdClk        = if (config.ioConfig.hasSdNative) Some(out Bool()) else None
+    val sdCmdWrite   = if (config.ioConfig.hasSdNative) Some(out Bool()) else None
+    val sdCmdWriteEn = if (config.ioConfig.hasSdNative) Some(out Bool()) else None
+    val sdCmdRead    = if (config.ioConfig.hasSdNative) Some(in Bool()) else None
+    val sdDatWrite   = if (config.ioConfig.hasSdNative) Some(out Bits(4 bits)) else None
+    val sdDatWriteEn = if (config.ioConfig.hasSdNative) Some(out Bits(4 bits)) else None
+    val sdDatRead    = if (config.ioConfig.hasSdNative) Some(in Bits(4 bits)) else None
+    val sdCd         = if (config.ioConfig.hasSdNative) Some(in Bool()) else None
+
+    // VGA pins (optional — shared by VgaDma and VgaText)
+    val vgaHsync = if (config.ioConfig.hasVga) Some(out Bool()) else None
+    val vgaVsync = if (config.ioConfig.hasVga) Some(out Bool()) else None
+    val vgaR     = if (config.ioConfig.hasVga) Some(out Bits(5 bits)) else None
+    val vgaG     = if (config.ioConfig.hasVga) Some(out Bits(6 bits)) else None
+    val vgaB     = if (config.ioConfig.hasVga) Some(out Bits(5 bits)) else None
+
+    // VGA DMA BMB master port (optional — for framebuffer reads)
+    val vgaDmaBmb = if (config.ioConfig.hasVgaDma) Some(master(Bmb(config.memConfig.bmbParameter))) else None
 
     // Pipeline status
     val pc        = out UInt(config.pcWidth bits)
@@ -223,8 +252,8 @@ case class JopCore(
   // I/O address (8-bit, decoded by JopIoSpace match predicates)
   val ioAddr = memCtrl.io.ioAddr
 
-  // Number of I/O interrupt sources: 2 base (UART RX/TX) + 3 if Ethernet (ETH RX/TX, MDIO)
-  val numIoInt = if (config.hasEth) 5 else 2
+  // Number of I/O interrupt sources (computed from IoConfig)
+  val numIoInt = config.ioConfig.numIoInt
 
   // System I/O (0x80-0x8F)
   val bmbSys = BmbSys(clkFreqHz = config.clkFreqHz, cpuId = config.cpuId, cpuCnt = config.cpuCnt, numIoInt = numIoInt)
@@ -295,29 +324,114 @@ case class JopCore(
     mdio.io.ethTxInt := bmbEth.map(_.io.txInterrupt).getOrElse(False)
   }
 
-  // External I/O interrupts to BmbSys
-  // Index 0: UART RX, Index 1: UART TX
-  // Index 2: ETH RX, Index 3: ETH TX, Index 4: MDIO (via BmbMdio combined interrupt)
+  // SD SPI (0xA8-0xAB, optional)
+  val bmbSdSpi = if (config.ioConfig.hasSdSpi) Some(BmbSdSpi(config.ioConfig.sdSpiClkDivInit)) else None
+  bmbSdSpi.foreach { sd =>
+    sd.io.addr   := JopIoSpace.sdSpiAddr(ioAddr)
+    sd.io.rd     := memCtrl.io.ioRd && JopIoSpace.isSdSpi(ioAddr)
+    sd.io.wr     := memCtrl.io.ioWr && JopIoSpace.isSdSpi(ioAddr)
+    sd.io.wrData := memCtrl.io.ioWrData
+    io.sdSpiSclk.get := sd.io.sclk
+    io.sdSpiMosi.get := sd.io.mosi
+    io.sdSpiCs.get   := sd.io.cs
+    sd.io.miso       := io.sdSpiMiso.get
+    sd.io.cd         := io.sdSpiCd.get
+  }
+
+  // VGA DMA (0xAC-0xAF, optional)
+  val bmbVgaDma = if (config.ioConfig.hasVgaDma && vgaCd.isDefined)
+    Some(BmbVgaDma(config.memConfig.bmbParameter, vgaCd.get, config.ioConfig.vgaDmaFifoDepth))
+  else None
+  bmbVgaDma.foreach { vga =>
+    vga.io.addr   := JopIoSpace.vgaDmaAddr(ioAddr)
+    vga.io.rd     := memCtrl.io.ioRd && JopIoSpace.isVgaDma(ioAddr)
+    vga.io.wr     := memCtrl.io.ioWr && JopIoSpace.isVgaDma(ioAddr)
+    vga.io.wrData := memCtrl.io.ioWrData
+    io.vgaDmaBmb.get <> vga.io.bmb
+    io.vgaHsync.get := vga.io.vgaHsync
+    io.vgaVsync.get := vga.io.vgaVsync
+    io.vgaR.get     := vga.io.vgaR
+    io.vgaG.get     := vga.io.vgaG
+    io.vgaB.get     := vga.io.vgaB
+  }
+
+  // SD Native (0xB0-0xBF, optional)
+  val bmbSdNative = if (config.ioConfig.hasSdNative) Some(BmbSdNative(config.ioConfig.sdNativeClkDivInit)) else None
+  bmbSdNative.foreach { sd =>
+    sd.io.addr   := JopIoSpace.sdNativeAddr(ioAddr)
+    sd.io.rd     := memCtrl.io.ioRd && JopIoSpace.isSdNative(ioAddr)
+    sd.io.wr     := memCtrl.io.ioWr && JopIoSpace.isSdNative(ioAddr)
+    sd.io.wrData := memCtrl.io.ioWrData
+    io.sdClk.get        := sd.io.sdClk
+    io.sdCmdWrite.get   := sd.io.sdCmd.write
+    io.sdCmdWriteEn.get := sd.io.sdCmd.writeEnable
+    sd.io.sdCmd.read    := io.sdCmdRead.get
+    io.sdDatWrite.get   := sd.io.sdDat.write
+    io.sdDatWriteEn.get := sd.io.sdDat.writeEnable
+    sd.io.sdDat.read    := io.sdDatRead.get
+    sd.io.sdCd          := io.sdCd.get
+  }
+
+  // VGA Text (0xC0-0xCF, optional)
+  val bmbVgaText = if (config.ioConfig.hasVgaText && vgaCd.isDefined)
+    Some(BmbVgaText(vgaCd.get))
+  else None
+  bmbVgaText.foreach { vga =>
+    vga.io.addr   := JopIoSpace.vgaTextAddr(ioAddr)
+    vga.io.rd     := memCtrl.io.ioRd && JopIoSpace.isVgaText(ioAddr)
+    vga.io.wr     := memCtrl.io.ioWr && JopIoSpace.isVgaText(ioAddr)
+    vga.io.wrData := memCtrl.io.ioWrData
+    io.vgaHsync.get := vga.io.vgaHsync
+    io.vgaVsync.get := vga.io.vgaVsync
+    io.vgaR.get     := vga.io.vgaR
+    io.vgaG.get     := vga.io.vgaG
+    io.vgaB.get     := vga.io.vgaB
+  }
+
+  // External I/O interrupts to BmbSys (dynamic indices based on IoConfig)
   bmbSys.io.ioInt := 0
+  var intIdx = 0
   bmbUart.foreach { uart =>
-    bmbSys.io.ioInt(0) := uart.io.rxInterrupt
-    bmbSys.io.ioInt(1) := uart.io.txInterrupt
+    bmbSys.io.ioInt(intIdx)     := uart.io.rxInterrupt
+    bmbSys.io.ioInt(intIdx + 1) := uart.io.txInterrupt
+    intIdx += 2
   }
   if (config.hasEth) {
     bmbMdio.foreach { mdio =>
-      bmbSys.io.ioInt(2) := bmbEth.map(_.io.rxInterrupt).getOrElse(False)
-      bmbSys.io.ioInt(3) := bmbEth.map(_.io.txInterrupt).getOrElse(False)
-      bmbSys.io.ioInt(4) := mdio.io.interrupt
+      bmbSys.io.ioInt(intIdx)     := bmbEth.map(_.io.rxInterrupt).getOrElse(False)
+      bmbSys.io.ioInt(intIdx + 1) := bmbEth.map(_.io.txInterrupt).getOrElse(False)
+      bmbSys.io.ioInt(intIdx + 2) := mdio.io.interrupt
+      intIdx += 3
     }
+  }
+  bmbSdSpi.foreach { sd =>
+    bmbSys.io.ioInt(intIdx) := sd.io.interrupt
+    intIdx += 1
+  }
+  bmbSdNative.foreach { sd =>
+    bmbSys.io.ioInt(intIdx) := sd.io.interrupt
+    intIdx += 1
+  }
+  bmbVgaDma.foreach { vga =>
+    bmbSys.io.ioInt(intIdx) := vga.io.vsyncInterrupt
+    intIdx += 1
+  }
+  bmbVgaText.foreach { vga =>
+    bmbSys.io.ioInt(intIdx) := vga.io.vsyncInterrupt
+    intIdx += 1
   }
 
   // I/O read mux (last-assignment-wins; ranges are non-overlapping)
   val ioRdData = Bits(32 bits)
   ioRdData := 0
   when(JopIoSpace.isSys(ioAddr))  { ioRdData := bmbSys.io.rdData }
-  if (bmbUart.isDefined)  when(JopIoSpace.isUart(ioAddr)) { ioRdData := bmbUart.get.io.rdData }
-  if (bmbEth.isDefined)   when(JopIoSpace.isEth(ioAddr))  { ioRdData := bmbEth.get.io.rdData }
-  if (bmbMdio.isDefined)  when(JopIoSpace.isMdio(ioAddr)) { ioRdData := bmbMdio.get.io.rdData }
+  if (bmbUart.isDefined)     when(JopIoSpace.isUart(ioAddr))     { ioRdData := bmbUart.get.io.rdData }
+  if (bmbEth.isDefined)      when(JopIoSpace.isEth(ioAddr))      { ioRdData := bmbEth.get.io.rdData }
+  if (bmbMdio.isDefined)     when(JopIoSpace.isMdio(ioAddr))     { ioRdData := bmbMdio.get.io.rdData }
+  if (bmbSdSpi.isDefined)    when(JopIoSpace.isSdSpi(ioAddr))    { ioRdData := bmbSdSpi.get.io.rdData }
+  if (bmbVgaDma.isDefined)   when(JopIoSpace.isVgaDma(ioAddr))   { ioRdData := bmbVgaDma.get.io.rdData }
+  if (bmbSdNative.isDefined) when(JopIoSpace.isSdNative(ioAddr)) { ioRdData := bmbSdNative.get.io.rdData }
+  if (bmbVgaText.isDefined)  when(JopIoSpace.isVgaText(ioAddr))  { ioRdData := bmbVgaText.get.io.rdData }
   memCtrl.io.ioRdData := ioRdData
 
   // Watchdog output

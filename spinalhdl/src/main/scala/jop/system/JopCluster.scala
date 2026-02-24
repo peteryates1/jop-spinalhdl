@@ -40,13 +40,15 @@ case class JopCluster(
   ramInit: Option[Seq[BigInt]] = None,
   jbcInit: Option[Seq[BigInt]] = None,
   ethTxCd: Option[ClockDomain] = None,
-  ethRxCd: Option[ClockDomain] = None
+  ethRxCd: Option[ClockDomain] = None,
+  vgaCd:   Option[ClockDomain] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
 
-  // Number of BMB inputs: cores + optional debug controller
+  // Number of BMB inputs: cores + optional debug controller + optional VGA DMA
   val hasDebugMem = debugConfig.exists(_.hasMemAccess)
-  val totalBmbInputs = cpuCnt + (if (hasDebugMem) 1 else 0)
+  val hasVgaDma = baseConfig.ioConfig.hasVgaDma
+  val totalBmbInputs = cpuCnt + (if (hasDebugMem) 1 else 0) + (if (hasVgaDma) 1 else 0)
 
   // BMB parameter: passthrough for single-core (no debug mem), arbiter output otherwise
   val inputParam = baseConfig.memConfig.bmbParameter
@@ -106,6 +108,30 @@ case class JopCluster(
     val mdioOe   = if (baseConfig.hasEth) Some(out Bool()) else None
     val mdioIn   = if (baseConfig.hasEth) Some(in Bool()) else None
     val phyReset = if (baseConfig.hasEth) Some(out Bool()) else None
+
+    // SD SPI pins (optional, core 0 only)
+    val sdSpiSclk = if (baseConfig.ioConfig.hasSdSpi) Some(out Bool()) else None
+    val sdSpiMosi = if (baseConfig.ioConfig.hasSdSpi) Some(out Bool()) else None
+    val sdSpiMiso = if (baseConfig.ioConfig.hasSdSpi) Some(in Bool()) else None
+    val sdSpiCs   = if (baseConfig.ioConfig.hasSdSpi) Some(out Bool()) else None
+    val sdSpiCd   = if (baseConfig.ioConfig.hasSdSpi) Some(in Bool()) else None
+
+    // SD Native pins (optional, core 0 only)
+    val sdClk        = if (baseConfig.ioConfig.hasSdNative) Some(out Bool()) else None
+    val sdCmdWrite   = if (baseConfig.ioConfig.hasSdNative) Some(out Bool()) else None
+    val sdCmdWriteEn = if (baseConfig.ioConfig.hasSdNative) Some(out Bool()) else None
+    val sdCmdRead    = if (baseConfig.ioConfig.hasSdNative) Some(in Bool()) else None
+    val sdDatWrite   = if (baseConfig.ioConfig.hasSdNative) Some(out Bits(4 bits)) else None
+    val sdDatWriteEn = if (baseConfig.ioConfig.hasSdNative) Some(out Bits(4 bits)) else None
+    val sdDatRead    = if (baseConfig.ioConfig.hasSdNative) Some(in Bits(4 bits)) else None
+    val sdCd         = if (baseConfig.ioConfig.hasSdNative) Some(in Bool()) else None
+
+    // VGA pins (optional, core 0 only — shared by VgaDma and VgaText)
+    val vgaHsync = if (baseConfig.ioConfig.hasVga) Some(out Bool()) else None
+    val vgaVsync = if (baseConfig.ioConfig.hasVga) Some(out Bool()) else None
+    val vgaR     = if (baseConfig.ioConfig.hasVga) Some(out Bits(5 bits)) else None
+    val vgaG     = if (baseConfig.ioConfig.hasVga) Some(out Bits(6 bits)) else None
+    val vgaB     = if (baseConfig.ioConfig.hasVga) Some(out Bits(5 bits)) else None
   }
 
   // ==================================================================
@@ -120,8 +146,14 @@ case class JopCluster(
     val coreConfig = baseConfig.copy(
       cpuId = i,
       cpuCnt = cpuCnt,
-      hasUart = (i == 0),
-      hasEth = (i == 0) && baseConfig.hasEth
+      ioConfig = baseConfig.ioConfig.copy(
+        hasUart     = (i == 0),
+        hasEth      = (i == 0) && baseConfig.ioConfig.hasEth,
+        hasSdSpi    = (i == 0) && baseConfig.ioConfig.hasSdSpi,
+        hasSdNative = (i == 0) && baseConfig.ioConfig.hasSdNative,
+        hasVgaDma   = (i == 0) && baseConfig.ioConfig.hasVgaDma,
+        hasVgaText  = (i == 0) && baseConfig.ioConfig.hasVgaText
+      )
     )
     JopCore(
       config = coreConfig,
@@ -129,7 +161,8 @@ case class JopCluster(
       ramInit = ramInit,
       jbcInit = jbcInit,
       ethTxCd = if (i == 0) ethTxCd else None,
-      ethRxCd = if (i == 0) ethRxCd else None
+      ethRxCd = if (i == 0) ethRxCd else None,
+      vgaCd   = if (i == 0) vgaCd else None
     )
   }
 
@@ -318,12 +351,21 @@ case class JopCluster(
     for (i <- 0 until cpuCnt) {
       arbiter.io.inputs(i) << cores(i).io.bmb
     }
-    // Debug BMB controller as lowest priority input (last port)
+    var nextPort = cpuCnt
+    // Debug BMB controller
     if (hasDebugMem) {
       debugCtrl.foreach { ctrl =>
         ctrl.io.bmb.foreach { debugBmb =>
-          arbiter.io.inputs(cpuCnt) << debugBmb
+          arbiter.io.inputs(nextPort) << debugBmb
+          nextPort += 1
         }
+      }
+    }
+    // VGA DMA BMB master (core 0 only)
+    if (hasVgaDma) {
+      cores(0).io.vgaDmaBmb.foreach { dmaBmb =>
+        arbiter.io.inputs(nextPort) << dmaBmb
+        nextPort += 1
       }
     }
     io.bmb <> arbiter.io.output
@@ -392,6 +434,45 @@ case class JopCluster(
     io.mdioOe.get   := cores(0).io.mdioOe.get
     cores(0).io.mdioIn.get := io.mdioIn.get
     io.phyReset.get := cores(0).io.phyReset.get
+  }
+
+  // ==================================================================
+  // SD SPI (core 0 only)
+  // ==================================================================
+
+  if (baseConfig.ioConfig.hasSdSpi) {
+    io.sdSpiSclk.get := cores(0).io.sdSpiSclk.get
+    io.sdSpiMosi.get := cores(0).io.sdSpiMosi.get
+    io.sdSpiCs.get   := cores(0).io.sdSpiCs.get
+    cores(0).io.sdSpiMiso.get := io.sdSpiMiso.get
+    cores(0).io.sdSpiCd.get   := io.sdSpiCd.get
+  }
+
+  // ==================================================================
+  // SD Native (core 0 only)
+  // ==================================================================
+
+  if (baseConfig.ioConfig.hasSdNative) {
+    io.sdClk.get        := cores(0).io.sdClk.get
+    io.sdCmdWrite.get   := cores(0).io.sdCmdWrite.get
+    io.sdCmdWriteEn.get := cores(0).io.sdCmdWriteEn.get
+    cores(0).io.sdCmdRead.get := io.sdCmdRead.get
+    io.sdDatWrite.get   := cores(0).io.sdDatWrite.get
+    io.sdDatWriteEn.get := cores(0).io.sdDatWriteEn.get
+    cores(0).io.sdDatRead.get := io.sdDatRead.get
+    cores(0).io.sdCd.get      := io.sdCd.get
+  }
+
+  // ==================================================================
+  // VGA (core 0 only — VgaDma or VgaText, mutually exclusive)
+  // ==================================================================
+
+  if (baseConfig.ioConfig.hasVga) {
+    io.vgaHsync.get := cores(0).io.vgaHsync.get
+    io.vgaVsync.get := cores(0).io.vgaVsync.get
+    io.vgaR.get     := cores(0).io.vgaR.get
+    io.vgaG.get     := cores(0).io.vgaG.get
+    io.vgaB.get     := cores(0).io.vgaB.get
   }
 
   // ==================================================================

@@ -60,7 +60,7 @@ case class JopSdramTop(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
   debugConfig: Option[DebugConfig] = None,
-  hasEth: Boolean = false
+  ioConfig: IoConfig = IoConfig()
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
 
@@ -79,18 +79,18 @@ case class JopSdramTop(
     val debug_rxd = if (debugConfig.isDefined) Some(in Bool()) else None
 
     // Ethernet GMII pins (optional, active at 100 Mbps MII subset)
-    val e_txd    = if (hasEth) Some(out Bits(4 bits))          else None
-    val e_txen   = if (hasEth) Some(out Bool())                else None
-    val e_txer   = if (hasEth) Some(out Bool())                else None
-    val e_txc    = if (hasEth) Some(in Bool())                 else None  // 25 MHz from PHY
-    val e_gtxc   = if (hasEth) Some(out Bool())                else None  // Tie low for 100M
-    val e_rxd    = if (hasEth) Some(in Bits(4 bits))           else None
-    val e_rxdv   = if (hasEth) Some(in Bool())                 else None
-    val e_rxer   = if (hasEth) Some(in Bool())                 else None
-    val e_rxc    = if (hasEth) Some(in Bool())                 else None  // 25 MHz from PHY
-    val e_mdc    = if (hasEth) Some(out Bool())                else None
-    val e_mdio   = if (hasEth) Some(master(TriState(Bool())))  else None
-    val e_resetn = if (hasEth) Some(out Bool())                else None  // Active-low
+    val e_txd    = if (ioConfig.hasEth) Some(out Bits(4 bits))          else None
+    val e_txen   = if (ioConfig.hasEth) Some(out Bool())                else None
+    val e_txer   = if (ioConfig.hasEth) Some(out Bool())                else None
+    val e_txc    = if (ioConfig.hasEth) Some(in Bool())                 else None  // 25 MHz from PHY
+    val e_gtxc   = if (ioConfig.hasEth) Some(out Bool())                else None  // Tie low for 100M
+    val e_rxd    = if (ioConfig.hasEth) Some(in Bits(4 bits))           else None
+    val e_rxdv   = if (ioConfig.hasEth) Some(in Bool())                 else None
+    val e_rxer   = if (ioConfig.hasEth) Some(in Bool())                 else None
+    val e_rxc    = if (ioConfig.hasEth) Some(in Bool())                 else None  // 25 MHz from PHY
+    val e_mdc    = if (ioConfig.hasEth) Some(out Bool())                else None
+    val e_mdio   = if (ioConfig.hasEth) Some(master(TriState(Bool())))  else None
+    val e_resetn = if (ioConfig.hasEth) Some(out Bool())                else None  // Active-low
   }
 
   noIoPrefix()
@@ -140,12 +140,12 @@ case class JopSdramTop(
   // Ethernet Clock Domains (25 MHz from PHY, only when hasEth)
   // ========================================================================
 
-  val ethTxCd = if (hasEth) Some(ClockDomain(
+  val ethTxCd = if (ioConfig.hasEth) Some(ClockDomain(
     clock = io.e_txc.get,
     config = ClockDomainConfig(resetKind = BOOT)
   )) else None
 
-  val ethRxCd = if (hasEth) Some(ClockDomain(
+  val ethRxCd = if (ioConfig.hasEth) Some(ClockDomain(
     clock = io.e_rxc.get,
     config = ClockDomainConfig(resetKind = BOOT)
   )) else None
@@ -166,7 +166,7 @@ case class JopSdramTop(
         memConfig = JopMemoryConfig(burstLen = 4),
         jumpTable = JumpTableInitData.serial,
         clkFreqHz = 80000000L,
-        hasEth = hasEth
+        ioConfig = ioConfig
       ),
       debugConfig = debugConfig,
       romInit = Some(romInit),
@@ -238,7 +238,7 @@ case class JopSdramTop(
     // Ethernet (optional)
     // ==================================================================
 
-    if (hasEth) {
+    if (ioConfig.hasEth) {
       // GTX clock not used at 100M (PHY provides TX_CLK)
       io.e_gtxc.get := False
 
