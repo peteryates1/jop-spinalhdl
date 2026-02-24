@@ -42,9 +42,62 @@ args		?
 varcnt		?
 
 
-invokespecial:			// is it really equivalent ????? (not really)
-						// there is an object ref on stack (but arg counts for it)
-						// is called for privat methods AND <init>!!!
+invokespecial:				// separate from invokestatic: has an objectref on stack
+						// called for private methods AND <init>
+						// need null pointer check on the receiver
+
+						// mp = readMem(cp+idx);
+			ldm	cp opd
+			nop	opd
+			ld_opd_16u
+			add
+
+			stmrac				// read method struct pointer from cp
+			wait
+			wait
+			ldmrd				// TOS = method struct pointer
+
+			dup					// duplicate method struct pointer
+			stm	b				// save method struct pointer in b
+			ldi	1
+			add					// TOS = method struct ptr + 1
+			stmrac				// read packed word (cp<<10 | locals<<5 | args)
+			wait
+			wait
+			ldmrd				// TOS = packed word
+
+			ldi	31
+			and					// TOS = margs (including this)
+			stm	a				// a = margs
+
+			ldsp				// sp (one too low)
+			ldi	2				// +1 for real sp, +1 for objectref offset
+			add
+			ldm	a				// margs (including this)
+			sub					// sp + 2 - margs = address of objectref
+
+			star				// ar = address of objectref on stack
+			nop
+			ldmi				// TOS = objectref
+
+			dup					// null pointer check
+			nop
+			bnz	invokespecial_ok
+			ldvp				// save vp in branch delay slot
+			stm	old_vp			// save vp in branch delay slot
+
+			pop					// remove null objectref
+			jmp	null_pointer
+			nop					// delay slot 1
+			nop					// delay slot 2
+
+invokespecial_ok:
+			pop					// discard objectref (not needed after check)
+			ldm	b				// restore method struct pointer to TOS
+			jmp	invoke_vpsave	// vp already saved by bnz delay slots
+			nop					// delay slot 1
+			nop					// delay slot 2
+
 invokestatic:
 
 						// mp = readMem(cp+idx);

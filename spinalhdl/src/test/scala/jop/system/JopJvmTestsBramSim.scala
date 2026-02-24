@@ -20,7 +20,7 @@ object JopJvmTestsBramSim extends App {
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
-  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 128 * 1024 / 4)
+  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 256 * 1024 / 4)
 
   println(s"Loaded ROM: ${romData.length} entries")
   println(s"Loaded RAM: ${ramData.length} entries")

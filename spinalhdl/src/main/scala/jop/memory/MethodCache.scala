@@ -54,9 +54,16 @@ case class MethodCache(
   // Internal State
   // ==========================================================================
 
-  // Tag array: one tag per block (tag=0 means invalid, matching VHDL)
+  // Tag array: one tag per block
+  // NOTE: Unlike the original VHDL which used tag=0 as "invalid", we now use
+  // a separate valid bit per block. This fixes a bug where a method at address 0
+  // would falsely match cleared/evicted blocks (whose tags were zeroed).
   val tag = Vec(Reg(Bits(tagWidth bits)), blocks)
   tag.foreach(_.init(B(0, tagWidth bits)))
+
+  // Valid bit per block: true when the block contains a valid method
+  val tagValid = Vec(Reg(Bool()), blocks)
+  tagValid.foreach(_.init(False))
 
   // FIFO replacement pointer (next block to allocate on miss)
   val nxt = Reg(UInt(blockBits bits)) init(0)
@@ -117,8 +124,9 @@ case class MethodCache(
       blockAddr := nxt
 
       // Parallel tag check across all blocks (last match wins, like VHDL)
+      // Requires both valid bit AND tag match to avoid false hits on cleared blocks
       for (i <- 0 until blocks) {
-        when(tag(i) === useAddr) {
+        when(tagValid(i) && tag(i) === useAddr) {
           blockAddr := U(i, blockBits bits)
           inCache := True
           state := State.IDLE
@@ -131,10 +139,12 @@ case class MethodCache(
       for (i <- 0 until blocks) {
         when(clrVal(i)) {
           tag(i) := B(0, tagWidth bits)
+          tagValid(i) := False
         }
       }
       // Write new tag to nxt position (overrides clear for same position)
       tag(nxt) := useAddr
+      tagValid(nxt) := True
 
       // Advance FIFO pointer
       nxt := nxt + nrOfBlks + 1

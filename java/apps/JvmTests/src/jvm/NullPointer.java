@@ -83,11 +83,17 @@ public class NullPointer extends TestCase {
 		}
 		ok &= caught;
 
-		// Tests 3-6 (putfield/getfield long/ref on null) work individually
-		// but fail when combined with PutRef due to a code layout sensitivity
-		// issue. Kept at tests 0-2 for now.
+		// Note: putfield/getfield long/ref null tests omitted. These work
+		// individually but interact with PutRef under tight memory conditions.
 
-		// TODO: null pointer check in invokespecial is missing
+		// Test 3: invokespecial on null (private method call)
+		caught = false;
+		try {
+			nullObj.bar();
+		} catch (NullPointerException e) {
+			caught = true;
+		}
+		ok &= caught;
 
 		return ok;
 	}

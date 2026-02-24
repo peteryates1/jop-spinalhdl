@@ -22,7 +22,7 @@ case class JopCoreTestHarness(
 ) extends Component {
 
   val config = JopCoreConfig(
-    memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)  // 128KB: room for program + GC heap
+    memConfig = JopMemoryConfig(mainMemSize = 256 * 1024)  // 256KB: room for program + GC heap
   )
 
   val io = new Bundle {
