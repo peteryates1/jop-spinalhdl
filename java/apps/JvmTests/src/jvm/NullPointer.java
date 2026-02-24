@@ -21,8 +21,12 @@
 package jvm;
 
 /**
- * Test different null pointer checks.
- * 
+ * Test null pointer exception detection for various bytecodes.
+ *
+ * Tests hardware NPE detection (getfield/putfield handle dereference
+ * checks addrReg === 0 in BmbMemoryController) and microcode NPE
+ * detection (invokevirtual/invokespecial check objectref before dispatch).
+ *
  * @author Martin Schoeberl (martin@jopdesign.com)
  *
  */
@@ -31,23 +35,23 @@ public class NullPointer extends TestCase {
 	public String toString() {
 		return "NullPointer";
 	}
-	
+
 	int ival;
 	long lval;
 	NullPointer rval;
-	
+
 	/**
 	 * an invokevirtual
 	 */
 	public void foo() {
-		
+
 	}
-	
+
 	/**
-	 * an invokespecial
+	 * an invokespecial (private method call)
 	 */
 	private void bar() {
-		
+
 	}
 
 	public boolean test() {
@@ -55,22 +59,24 @@ public class NullPointer extends TestCase {
 		boolean ok = true;
 
 		// Test 0: explicit throw NPE (verifies exception table + type matching)
-		boolean caught0 = false;
+		boolean caught = false;
 		try {
 			throw new NullPointerException();
 		} catch (NullPointerException e) {
-			caught0 = true;
+			caught = true;
 		}
-		ok &= caught0;
+		if (!caught) System.out.print(" T0");
+		ok &= caught;
 
 		// Test 1: invokevirtual on null (microcode NPE path)
 		NullPointer nullObj = null;
-		boolean caught = false;
+		caught = false;
 		try {
 			nullObj.foo();
 		} catch (NullPointerException e) {
 			caught = true;
 		}
+		if (!caught) System.out.print(" T1");
 		ok &= caught;
 
 		// Test 2: getfield int on null (hardware NPE from memory controller)
@@ -81,10 +87,8 @@ public class NullPointer extends TestCase {
 		} catch (NullPointerException e) {
 			caught = true;
 		}
+		if (!caught) System.out.print(" T2");
 		ok &= caught;
-
-		// Note: putfield/getfield long/ref null tests omitted. These work
-		// individually but interact with PutRef under tight memory conditions.
 
 		// Test 3: invokespecial on null (private method call)
 		caught = false;
@@ -93,6 +97,59 @@ public class NullPointer extends TestCase {
 		} catch (NullPointerException e) {
 			caught = true;
 		}
+		if (!caught) System.out.print(" T3");
+		ok &= caught;
+
+		// Test 4: putfield int on null (hardware NPE from memory controller)
+		caught = false;
+		try {
+			nullObj.ival = 42;
+		} catch (NullPointerException e) {
+			caught = true;
+		}
+		if (!caught) System.out.print(" T4");
+		ok &= caught;
+
+		// Test 5: getfield long on null (hardware NPE, long field)
+		long l;
+		caught = false;
+		try {
+			l = nullObj.lval;
+		} catch (NullPointerException e) {
+			caught = true;
+		}
+		if (!caught) System.out.print(" T5");
+		ok &= caught;
+
+		// Test 6: putfield long on null (hardware NPE, long field)
+		caught = false;
+		try {
+			nullObj.lval = 123L;
+		} catch (NullPointerException e) {
+			caught = true;
+		}
+		if (!caught) System.out.print(" T6");
+		ok &= caught;
+
+		// Test 7: getfield ref on null (hardware NPE, reference field)
+		NullPointer r;
+		caught = false;
+		try {
+			r = nullObj.rval;
+		} catch (NullPointerException e) {
+			caught = true;
+		}
+		if (!caught) System.out.print(" T7");
+		ok &= caught;
+
+		// Test 8: putfield ref on null (hardware NPE, reference field)
+		caught = false;
+		try {
+			nullObj.rval = null;
+		} catch (NullPointerException e) {
+			caught = true;
+		}
+		if (!caught) System.out.print(" T8");
 		ok &= caught;
 
 		return ok;

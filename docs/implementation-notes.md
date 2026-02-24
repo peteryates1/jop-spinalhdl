@@ -164,7 +164,7 @@ captured during development — see the source code for authoritative details.
 - **Constant loading**: ConstLoad (iconst/bipush/sipush/ldc boundary values)
 - **Field access (all types)**: IntField, ShortField, ByteField, CharField, BooleanField, FloatField, DoubleField, ObjectField — each tests putfield/getfield and putstatic/getstatic with boundary values
 - **OOP**: InstanceCheckcast, CheckCast, InvokeSpecial, InvokeSuper, SuperTest, InstanceOfTest, Iface, Clinit/Clinit2
-- **Exceptions**: Except (throw/catch, cast, recursive, finally — throw9 disabled), AthrowTest, NullPointer (NPE tests 0-2), PutRef (NPE + array bounds)
+- **Exceptions**: Except (throw/catch, cast, recursive, finally — throw9 disabled), AthrowTest, NullPointer (9 NPE tests: explicit throw, invokevirtual, invokespecial, getfield/putfield for int/long/ref), PutRef (NPE + array bounds)
 - **Other**: NativeMethods
 
 **Ported from**: Original JOP `jvm/` suite (Martin Schoeberl) + `jvmtest/` suite (Guenther Wimpassinger). The `jvmtest/` tests used a hash-based `TestCaseResult` framework; converted to the `jvm.TestCase` boolean pattern.
@@ -215,8 +215,12 @@ The original VHDL `mem_sc.vhd` has NPE/ABE detection code, but the upper bounds 
 
 ### Known Limitations
 
-- **invokespecial on null**: Not detected. The `invokespecial` microcode doesn't check the receiver for null. Marked as TODO in `NullPointer.java`.
-- **NullPointer test layout sensitivity**: NullPointer tests 0-2 (explicit throw, invokevirtual-on-null, getfield-int-on-null) pass. Tests 3-6 (putfield/getfield long/ref on null) work individually but cause a system reboot when combined with the PutRef test class, suggesting a code layout sensitivity issue in the method cache or bytecode addressing. Needs investigation.
+- **Hardware div-by-zero not catchable**: JOP's `f_idiv` microcode fires a hardware exception asynchronously (after JPC has advanced), so the exception unwinds at the wrong JPC and finds no matching catch handler. The NPE/ABE path works because those fire synchronously during the faulting bytecode (JPC still correct).
+
+### Resolved Issues
+
+- **invokespecial on null**: Now detected. Separated `invokespecial` from `invokestatic` in `asm/src/jvm_call.inc` with explicit null check. Reads `margs` from `methodStruct+1` packed word (bits 4:0), computes objectref stack position as `sp + 2 - margs`, loads via `star`/`ldmi`, checks null with `bnz`. Delay slots (`ldvp`/`stm old_vp`) execute on both paths. Not-null path restores method struct from register `b`, jumps to `invoke_vpsave`.
+- **NullPointer test "layout sensitivity"**: The reported crash when combining NullPointer tests 3-6 with the PutRef test class was NOT a layout issue. Root cause was a combination of: (1) method cache tag=0 false hit (bug #25) — PutRef's method call patterns exposed the false cache hit, corrupting bytecode fetch, and (2) 128KB BRAM was insufficient for the 50-test suite (19751 program words, only 13017 left for heap → GC fails during class init). Both are now fixed: tagValid bit in MethodCache, 256KB BRAM for test harnesses. All 9 NullPointer sub-tests (T0-T8) pass alongside PutRef.
 
 ## DDR3 TODO
 
@@ -245,3 +249,142 @@ Files:
 - `JopSmpSdramSim.scala` — SMP SDRAM test harness (N cores, SdramModel)
 
 Verification: 2-core and 4-core SDRAM sims pass with burstLen=4, 0 data mismatches.
+
+## GC Architecture Analysis
+
+### Current Implementation (jopmin fork)
+
+The current GC (`java/runtime/src/jop/com/jopdesign/sys/GC.java`) is a **semi-space copying collector** with conservative stack scanning:
+
+**Memory Layout** (from `GC.init()`):
+```
+[0..mem_start):                               Application code + class structures
+[mem_start .. mem_start + handle_cnt*8):      Handle pool (8-word handles)
+[heapStartA .. heapStartA + semi_size):       Semi-space A
+[heapStartB .. heapStartB + semi_size):       Semi-space B
+```
+- `handle_cnt = full_heap_size >> 4` (1/16th of heap)
+- `semi_size = (full_heap_size - handle_cnt * 8) / 2`
+- 50% of heap is wasted (only one semi-space usable at a time)
+
+**Handle Structure** (8 words each):
+- OFF_PTR (0): Pointer to actual object data in heap
+- OFF_MTAB_ALEN (1): Method table pointer (objects) or array length (arrays)
+- OFF_SPACE (2): Space marker (toSpace/fromSpace)
+- OFF_TYPE (3): Object type (IS_OBJ=0, IS_REFARR=1, or primitive array types 4-11)
+- OFF_NEXT (4): Free/use list threading
+- OFF_GREY (5): Gray list threading (-1=end, 0=not in list)
+
+**GC Cycle** (`gc()`):
+1. `Native.wr(1, Const.IO_GC_HALT)` — halt all other cores (SMP)
+2. Discard stale gray list entries
+3. `flip()` — swap toSpace/fromSpace
+4. `markAndCopy()` — scan roots (stack + statics), trace gray list, copy live objects
+5. `sweepHandles()` — reclaim handles whose objects are still in fromSpace
+6. `zapSemi()` — zero the old fromSpace (major SDRAM bandwidth cost)
+7. `Native.wr(0, Const.IO_GC_HALT)` — resume other cores
+
+**Write Barriers** (snapshot-at-beginning, in `JVM.java`): `f_aastore`, `f_putfield_ref`, `f_putstatic_ref` check the OLD value being overwritten. If it's white (not in toSpace, not in gray list), push it to the gray list. This ensures concurrent mutations don't lose references the GC hasn't traced yet.
+
+**Conservative Stack Scanning**: `GC.push()` is called for every value on the stack. If the value falls in the handle address range and looks like a valid handle, it's treated as a root. False positives prevent collection but don't cause corruption (handle addresses never change, only OFF_PTR inside the handle changes).
+
+### Original JOP GC (full version, `/srv/git/jop/`)
+
+The full original JOP GC is more sophisticated than our jopmin fork:
+- `concurrentGc` flag exists for switching between stop-the-world and concurrent mode
+- `GCStkWalk.java` / `GCRTMethodInfo.java` provide **exact stack scanning** (stack maps computed at link time, stored as bitmaps per PC value) — currently not used (conservative scanning is the default)
+- GC can run as a periodic real-time thread for concurrent operation
+- Hardware address translation (`translateAddr()` in BmbMemoryController) redirects accesses to partially-copied objects — exists but unused in our STW implementation
+
+### Hardware GC Support Already Present
+
+| Feature | Location | Status |
+|---|---|---|
+| memCopy states | `BmbMemoryController.scala` (CP_SETUP→CP_READ→CP_READ_WAIT→CP_WRITE→CP_STOP) | Working |
+| Address translation | `BmbMemoryController.scala` `translateAddr()` | Implemented, **unused** (causes timing violation at 100MHz) |
+| GC halt (IO_GC_HALT) | BmbSys addr 13 → CmpSync → pipeline stall | Working |
+| Cache snoop invalidation | `CacheSnoopBus.scala` | Working (A$/O$ cross-core invalidation) |
+| Handle dereference | HANDLE_READ/CALC/ACCESS states | Working (inherent hardware read barrier) |
+
+### GC Improvement Options (Ranked)
+
+**1. Mark-Compact (recommended next step)**
+
+Recovers the 50% heap waste from semi-space design. Handle indirection makes compaction uniquely cheap — only `handle[OFF_PTR]` needs updating per live object, NOT every pointer in the heap (O(live_handles) not O(heap_pointers)).
+
+Changes from current code:
+- `GC.init()`: Single heap region instead of heapStartA/heapStartB
+- `GC.flip()`: No longer needed
+- `GC.markAndCopy()`: Split into `mark()` (trace only) and `compact()` (slide objects + update handles)
+- `GC.zapSemi()`: No longer needed (no fromSpace to clear)
+- `GC.newObject()` / `GC.newArray()`: Single bump pointer (simpler)
+- Handle `OFF_SPACE`: Repurpose as mark bit
+
+Estimated effort: Medium. Mark phase is essentially unchanged (same tri-color tracing via gray list). Compact phase replaces copy-to-toSpace with sequential compaction.
+
+**2. Incremental Mark-Compact (medium-term)**
+
+Break the mark phase into bounded increments (scan N gray objects per increment). Compact phase is harder to incrementalize (objects must be moved in address order). Use existing write barriers for mutations during incremental marking. SMP: run GC increments on core 0 during idle time, brief STW pauses only for root snapshot + compact phase.
+
+**3. Hardware-Assisted Concurrent GC (long-term)**
+
+- Move handle table to dual-port BRAM (eliminates SDRAM contention during GC scanning; 1024 handles × 8 words = 32KB fits in BRAM)
+- Hardware read barrier in HANDLE_CALC (check if handle points to fromSpace, redirect to toSpace)
+- Fix address translation timing (pipeline the comparison to meet 100MHz)
+- Hardware bulk copy DMA (burst writes instead of per-word memCopy)
+- Hardware handle sweep accelerator (scan handles at 1/cycle vs ~10/cycle in software)
+
+**Not recommended**:
+- Generational GC: Over-engineered for embedded workloads, doesn't exploit JOP's handle architecture
+- Pure mark-sweep: Fragmentation will crash long-running systems
+- Full concurrent GC immediately: Too complex, SDRAM bandwidth contention with 16 cores
+
+### SDRAM Bandwidth Considerations
+
+The 16-bit SDRAM bus at 80MHz gives ~160MB/s raw, but effective is much lower (CAS latency, row activation, refresh, turnaround). With 16 cores sharing, GC must minimize SDRAM traffic. Mark-compact advantage: one pass over live objects (vs semi-space which copies all live + zeroes all of fromSpace).
+
+### Handle Table Scaling
+
+Current formula: `handle_cnt = full_heap_size >> 4`. For 64KB heap = 1024 handles (32KB). For 32MB heap = 512K handles (16MB!) — handle table itself consumes half the memory. Large heaps need a fixed handle count (e.g., 4096-16384) with explicit handle exhaustion.
+
+## IHLU (Individual Hardware Locking Unit)
+
+### Overview
+
+The original JOP includes `ihlu.vhd` (`/srv/git/jop/vhdl/scio/ihlu.vhd`), a fine-grained per-object hardware locking unit designed for the Jeopard RTSJ framework. It is an alternative to CmpSync's single global lock.
+
+**Architecture**:
+- 32 lock entries (CAM-based matching on 32-bit data value / object handle)
+- Per-lock FIFO queues (RAM-backed) for waiting cores
+- Reentrant counting (same core can acquire same lock multiple times)
+- 4-state machine: idle → ram → ram_delay → operation
+- Allows cores to hold different monitors simultaneously (vs CmpSync which serializes all locks)
+
+**Advantages over CmpSync**:
+- True per-object locking: `synchronized(objA)` on core 0 doesn't block `synchronized(objB)` on core 1
+- Higher SMP throughput for applications with independent critical sections
+- Matches Java semantics more closely (each object has its own monitor)
+
+### GC Interaction Problem
+
+IHLU complicates stop-the-world GC significantly:
+
+**Current (CmpSync)**: At most 1 lock holder at a time. GC sets IO_GC_HALT, lock owner is exempt (must finish critical section), all other cores halt immediately. Once owner releases, it halts too. GC proceeds with all cores stopped.
+
+**With IHLU**: Multiple cores can hold different locks simultaneously. When GC fires:
+- Cannot simply halt all non-owners (there may be multiple owners)
+- Cannot halt owners (they must release their locks first)
+- GC may never get to run if cores continuously acquire new locks
+
+**Solution: Drain approach**:
+1. GC sets a "lock freeze" flag — no new lock acquisitions allowed (IHLU returns "busy" to new requests)
+2. Existing lock holders continue executing until they release
+3. GC waits for all lock holders to release
+4. All cores now halted (no lock holders, new acquisitions blocked)
+5. GC runs, clears freeze flag when done
+
+This adds latency to GC start (bounded by max critical section length) and requires changes to both IHLU hardware and the GC software.
+
+### Implementation Status
+
+IHLU is NOT implemented in the SpinalHDL port. The current CmpSync global lock is sufficient for the current SMP use case. IHLU is a future enhancement for higher SMP throughput, but the GC interaction must be designed carefully before implementation.
