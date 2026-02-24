@@ -1,0 +1,4 @@
+QUARTUS_VERSION = "23.1"
+DATE = "2026-02-24"
+
+PROJECT_REVISION = "jop_dbfpga"

@@ -25,6 +25,7 @@ case class DramPll() extends BlackBox {
     val c0     = out Bool()
     val c1     = out Bool()
     val c2     = out Bool()
+    val c3     = out Bool()   // 25 MHz VGA pixel clock
     val locked = out Bool()
   }
 
@@ -91,6 +92,29 @@ case class JopSdramTop(
     val e_mdc    = if (ioConfig.hasEth) Some(out Bool())                else None
     val e_mdio   = if (ioConfig.hasEth) Some(master(TriState(Bool())))  else None
     val e_resetn = if (ioConfig.hasEth) Some(out Bool())                else None  // Active-low
+
+    // VGA (optional)
+    val vga_hs = if (ioConfig.hasVga) Some(out Bool()) else None
+    val vga_vs = if (ioConfig.hasVga) Some(out Bool()) else None
+    val vga_r  = if (ioConfig.hasVga) Some(out Bits(5 bits)) else None
+    val vga_g  = if (ioConfig.hasVga) Some(out Bits(6 bits)) else None
+    val vga_b  = if (ioConfig.hasVga) Some(out Bits(5 bits)) else None
+
+    // SD Native (optional, bidirectional CMD + per-bit DAT tristate)
+    val sd_clk   = if (ioConfig.hasSdNative) Some(out Bool()) else None
+    val sd_cmd   = if (ioConfig.hasSdNative) Some(master(TriState(Bool()))) else None
+    val sd_dat_0 = if (ioConfig.hasSdNative) Some(master(TriState(Bool()))) else None
+    val sd_dat_1 = if (ioConfig.hasSdNative) Some(master(TriState(Bool()))) else None
+    val sd_dat_2 = if (ioConfig.hasSdNative) Some(master(TriState(Bool()))) else None
+    val sd_dat_3 = if (ioConfig.hasSdNative) Some(master(TriState(Bool()))) else None
+    val sd_cd    = if (ioConfig.hasSdNative) Some(in Bool()) else None
+
+    // SD SPI (optional, unidirectional)
+    val sd_spi_clk  = if (ioConfig.hasSdSpi) Some(out Bool()) else None
+    val sd_spi_mosi = if (ioConfig.hasSdSpi) Some(out Bool()) else None
+    val sd_spi_miso = if (ioConfig.hasSdSpi) Some(in Bool()) else None
+    val sd_spi_cs   = if (ioConfig.hasSdSpi) Some(out Bool()) else None
+    val sd_spi_cd   = if (ioConfig.hasSdSpi) Some(in Bool()) else None
   }
 
   noIoPrefix()
@@ -140,13 +164,46 @@ case class JopSdramTop(
   // Ethernet Clock Domains (25 MHz from PHY, only when hasEth)
   // ========================================================================
 
-  val ethTxCd = if (ioConfig.hasEth) Some(ClockDomain(
-    clock = io.e_txc.get,
-    config = ClockDomainConfig(resetKind = BOOT)
-  )) else None
+  // Ethernet clock domains: ASYNC (not BOOT) with synchronized system reset.
+  // MacEth.copy(reset=...) adds its own reset (system+flush); BOOT would
+  // forbid the added reset wire. The synchronized reset also ensures init()
+  // works correctly in the txArea/rxArea pin-registration code.
+  val ethTxCd = if (ioConfig.hasEth) Some({
+    val txBootCd = ClockDomain(io.e_txc.get, config = ClockDomainConfig(resetKind = BOOT))
+    val txReset = ResetCtrl.asyncAssertSyncDeassert(
+      input = resetGen.int_res,
+      clockDomain = txBootCd,
+      inputPolarity = HIGH,
+      outputPolarity = HIGH
+    )
+    ClockDomain(
+      clock = io.e_txc.get,
+      reset = txReset,
+      config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = HIGH)
+    )
+  }) else None
 
-  val ethRxCd = if (ioConfig.hasEth) Some(ClockDomain(
-    clock = io.e_rxc.get,
+  val ethRxCd = if (ioConfig.hasEth) Some({
+    val rxBootCd = ClockDomain(io.e_rxc.get, config = ClockDomainConfig(resetKind = BOOT))
+    val rxReset = ResetCtrl.asyncAssertSyncDeassert(
+      input = resetGen.int_res,
+      clockDomain = rxBootCd,
+      inputPolarity = HIGH,
+      outputPolarity = HIGH
+    )
+    ClockDomain(
+      clock = io.e_rxc.get,
+      reset = rxReset,
+      config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = HIGH)
+    )
+  }) else None
+
+  // ========================================================================
+  // VGA Clock Domain (25 MHz from PLL c3, only when VGA is present)
+  // ========================================================================
+
+  val vgaCd = if (ioConfig.hasVga) Some(ClockDomain(
+    clock = pll.io.c3,
     config = ClockDomainConfig(resetKind = BOOT)
   )) else None
 
@@ -173,7 +230,8 @@ case class JopSdramTop(
       ramInit = Some(ramInit),
       jbcInit = Some(Seq.fill(2048)(BigInt(0))),
       ethTxCd = ethTxCd,
-      ethRxCd = ethRxCd
+      ethRxCd = ethRxCd,
+      vgaCd = vgaCd
     )
 
     // Debug UART (when debug is enabled)
@@ -292,6 +350,57 @@ case class JopSdramTop(
         cluster.io.phy.get.rx << rxFlow.toStream
       }
     }
+
+    // ==================================================================
+    // VGA (optional)
+    // ==================================================================
+
+    if (ioConfig.hasVga) {
+      io.vga_hs.get := cluster.io.vgaHsync.get
+      io.vga_vs.get := cluster.io.vgaVsync.get
+      io.vga_r.get  := cluster.io.vgaR.get
+      io.vga_g.get  := cluster.io.vgaG.get
+      io.vga_b.get  := cluster.io.vgaB.get
+    }
+
+    // ==================================================================
+    // SD Native (optional)
+    // ==================================================================
+
+    if (ioConfig.hasSdNative) {
+      io.sd_clk.get := cluster.io.sdClk.get
+
+      // CMD line (bidirectional)
+      io.sd_cmd.get.write       := cluster.io.sdCmdWrite.get
+      io.sd_cmd.get.writeEnable := cluster.io.sdCmdWriteEn.get
+      cluster.io.sdCmdRead.get  := io.sd_cmd.get.read
+
+      // DAT[0..3] (per-bit tristate)
+      io.sd_dat_0.get.write       := cluster.io.sdDatWrite.get(0)
+      io.sd_dat_0.get.writeEnable := cluster.io.sdDatWriteEn.get(0)
+      io.sd_dat_1.get.write       := cluster.io.sdDatWrite.get(1)
+      io.sd_dat_1.get.writeEnable := cluster.io.sdDatWriteEn.get(1)
+      io.sd_dat_2.get.write       := cluster.io.sdDatWrite.get(2)
+      io.sd_dat_2.get.writeEnable := cluster.io.sdDatWriteEn.get(2)
+      io.sd_dat_3.get.write       := cluster.io.sdDatWrite.get(3)
+      io.sd_dat_3.get.writeEnable := cluster.io.sdDatWriteEn.get(3)
+      cluster.io.sdDatRead.get    := io.sd_dat_3.get.read ## io.sd_dat_2.get.read ## io.sd_dat_1.get.read ## io.sd_dat_0.get.read
+
+      // Card detect
+      cluster.io.sdCd.get := io.sd_cd.get
+    }
+
+    // ==================================================================
+    // SD SPI (optional)
+    // ==================================================================
+
+    if (ioConfig.hasSdSpi) {
+      io.sd_spi_clk.get  := cluster.io.sdSpiSclk.get
+      io.sd_spi_mosi.get := cluster.io.sdSpiMosi.get
+      io.sd_spi_cs.get   := cluster.io.sdSpiCs.get
+      cluster.io.sdSpiMiso.get := io.sd_spi_miso.get
+      cluster.io.sdSpiCd.get   := io.sd_spi_cd.get
+    }
   }
 }
 
@@ -348,4 +457,61 @@ object JopSmpSdramTopVerilog extends App {
   )))
 
   println(s"Generated: spinalhdl/generated/JopSmpSdramTop.v ($cpuCnt cores)")
+}
+
+/**
+ * Generate Verilog for JopSdramTop with DB_FPGA I/O (single-core)
+ */
+object JopDbFpgaTopVerilog extends App {
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
+
+  val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
+  val ramData = JopFileLoader.loadStackRam(ramFilePath)
+
+  println(s"Loaded ROM: ${romData.length} entries")
+  println(s"Loaded RAM: ${ramData.length} entries")
+
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = "spinalhdl/generated",
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
+  ).generate(InOutWrapper(JopSdramTop(
+    cpuCnt = 1,
+    romInit = romData,
+    ramInit = ramData,
+    ioConfig = IoConfig.qmtechDbFpga
+  )))
+
+  println("Generated: spinalhdl/generated/JopSdramTop.v (DB_FPGA I/O)")
+}
+
+/**
+ * Generate Verilog for JopSdramTop with DB_FPGA I/O in SMP mode
+ */
+object JopSmpDbFpgaTopVerilog extends App {
+  val cpuCnt = if (args.length > 0) args(0).toInt else 2
+
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
+
+  val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
+  val ramData = JopFileLoader.loadStackRam(ramFilePath)
+
+  println(s"Loaded ROM: ${romData.length} entries")
+  println(s"Loaded RAM: ${ramData.length} entries")
+  println(s"Generating $cpuCnt-core SMP DB_FPGA Verilog...")
+
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = "spinalhdl/generated",
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
+  ).generate(InOutWrapper(JopSdramTop(
+    cpuCnt = cpuCnt,
+    romInit = romData,
+    ramInit = ramData,
+    ioConfig = IoConfig.qmtechDbFpga
+  )))
+
+  println(s"Generated: spinalhdl/generated/JopSmpSdramTop.v ($cpuCnt cores, DB_FPGA I/O)")
 }

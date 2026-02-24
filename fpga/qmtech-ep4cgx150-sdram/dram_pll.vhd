@@ -47,7 +47,8 @@ ENTITY dram_pll IS
 		c0		: OUT STD_LOGIC ;
 		c1		: OUT STD_LOGIC ;
 		c2		: OUT STD_LOGIC ;
-		locked		: OUT STD_LOGIC 
+		c3		: OUT STD_LOGIC ;
+		locked		: OUT STD_LOGIC
 	);
 END dram_pll;
 
@@ -63,6 +64,7 @@ ARCHITECTURE SYN OF dram_pll IS
 	SIGNAL sub_wire6	: STD_LOGIC_VECTOR (1 DOWNTO 0);
 	SIGNAL sub_wire7_bv	: BIT_VECTOR (0 DOWNTO 0);
 	SIGNAL sub_wire7	: STD_LOGIC_VECTOR (0 DOWNTO 0);
+	SIGNAL sub_wire8	: STD_LOGIC ;
 
 
 
@@ -80,6 +82,10 @@ ARCHITECTURE SYN OF dram_pll IS
 		clk2_duty_cycle		: NATURAL;
 		clk2_multiply_by		: NATURAL;
 		clk2_phase_shift		: STRING;
+		clk3_divide_by		: NATURAL;
+		clk3_duty_cycle		: NATURAL;
+		clk3_multiply_by		: NATURAL;
+		clk3_phase_shift		: STRING;
 		compensate_clock		: STRING;
 		gate_lock_signal		: STRING;
 		inclk0_input_frequency		: NATURAL;
@@ -145,10 +151,12 @@ BEGIN
 	sub_wire4    <= sub_wire0(2);
 	sub_wire3    <= sub_wire0(0);
 	sub_wire1    <= sub_wire0(1);
+	sub_wire8    <= sub_wire0(3);
 	c1    <= sub_wire1;
 	locked    <= sub_wire2;
 	c0    <= sub_wire3;
 	c2    <= sub_wire4;
+	c3    <= sub_wire8;
 	sub_wire5    <= inclk0;
 	sub_wire6    <= sub_wire7(0 DOWNTO 0) & sub_wire5;
 
@@ -166,6 +174,10 @@ BEGIN
 		clk2_duty_cycle => 50,
 		clk2_multiply_by => 8,
 		clk2_phase_shift => "-3000",
+		clk3_divide_by => 2,
+		clk3_duty_cycle => 50,
+		clk3_multiply_by => 1,
+		clk3_phase_shift => "0",
 		compensate_clock => "CLK0",
 		gate_lock_signal => "NO",
 		inclk0_input_frequency => 20000,
@@ -202,7 +214,7 @@ BEGIN
 		port_clk0 => "PORT_USED",
 		port_clk1 => "PORT_USED",
 		port_clk2 => "PORT_USED",
-		port_clk3 => "PORT_UNUSED",
+		port_clk3 => "PORT_USED",
 		port_clk4 => "PORT_UNUSED",
 		port_clk5 => "PORT_UNUSED",
 		port_clkena0 => "PORT_UNUSED",
