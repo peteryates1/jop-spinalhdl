@@ -3,7 +3,7 @@
 Detailed implementation notes for the SpinalHDL JOP port. These are reference notes
 captured during development — see the source code for authoritative details.
 
-## Bugs Found & Fixed (25 total)
+## Bugs Found & Fixed (26 total)
 
 1. **BC fill write address off-by-one**: Used `bcFillCount.resized` (not increment) for JBC write address
 2. **iaload/caload +1 offset**: VHDL uses `data_ptr + index` (no +1). Both BmbMemoryController and JopSimulator had wrong `+1`
@@ -31,6 +31,7 @@ captured during development — see the source code for authoritative details.
 23. **invokevirtual/invokeinterface null pointer missing delay slots**: In `asm/src/jvm_call.inc`, the null pointer check for `invokevirtual` and `invokeinterface` used `jmp null_pointer` without the required 2 delay slot NOPs. JOP's 3-stage microcode pipeline requires `nop; nop` after any `jmp` to avoid executing instructions from the fall-through path. Without delay slots, the `add` and `stmra` instructions after the branch were executed before the jump took effect, corrupting the stack (wrong values for TOS/NOS). Fix: changed to `pop; jmp null_pointer; nop; nop` — the `pop` discards the null reference from TOS before jumping, and the NOPs fill the delay slots.
 24. **GC conservative stack scanner null handle dereference**: `GC.push()` (`java/runtime/src/jop/com/jopdesign/sys/GC.java`) is called by the conservative scanner for every value on the stack. When the stack contains null (address 0), `push()` proceeds to `Native.rdMem(ref + OFF_PTR)` — a read from address 0 (plus small offset). With hardware NPE detection enabled, this triggers a spurious null pointer exception during GC scanning, crashing the system. The existing code comment says "null pointer check is in the following handle check" — the range check `ref < mem_start` was supposed to catch null, but only if `mem_start > 0`, which isn't guaranteed at all execution points. Fix: added explicit `if (ref == 0) return;` guard at the top of `push()`. This is a no-op for non-zero refs (one comparison, one branch) and prevents any hardware NPE from the scanner.
 25. **Method cache tag=0 false hit (latent original JOP bug)**: MethodCache (`jop.memory.MethodCache`) uses tag=0 as the initial/cleared value for evicted blocks. When a method lookup occurs with addr=0 (which can happen during certain `.jop` file layouts, e.g., when the first method struct is at address 0 in the bytecode space), ALL evicted blocks match the lookup because their cleared tag (0) equals the search address (0). The cache reports a false HIT on a block with no valid bytecodes, causing corrupt instruction fetch. The original VHDL `mcache.vhd` has the same bug — it uses `tag(0 to ...)` with cleared values of all-zeros and no valid bit. Symptom: PutRef JVM test failed (bytecode fetch returned wrong instructions after method call/return sequences that triggered tag=0 lookups). Fix: added `tagValid` bit per block in `MethodCache.scala`. The S1 parallel tag check now requires `tagValid(i) && tag(i) === useAddr` for a hit. The S2 allocation state clears `tagValid` for evicted blocks and sets it for the newly allocated block. This prevents any cleared/evicted block from matching a lookup, regardless of the tag value.
+26. **Hardware exception I/O address mismatch**: BmbMemoryController's NPE/ABE detection wrote to I/O address 0x04 instead of 0x84 (SYS_EXC). After the I/O scheme changed to use SYS_BASE=0x80, the exception writes were silently ignored by BmbSys. Fixed: 0x04→0x84 in all 3 locations (HANDLE_READ null check, HANDLE_READ negative index, HANDLE_BOUND_WAIT upper bounds). Additionally, div-by-zero in f_idiv/f_irem/f_ldiv/f_lrem changed from hardware exception (`Native.wrMem(EXC_DIVZ, IO_EXCPT)`) to direct Java throw (`throw JVMHelp.ArithExc`) — the hardware exception path corrupted the stack frame, making ArithmeticException uncatchable by Java try/catch.
 
 ## Method Cache
 
@@ -116,6 +117,7 @@ captured during development — see the source code for authoritative details.
   - Core writes IO_GC_HALT (addr 13) -> `gcHaltReg`, CmpSync halts all OTHER cores
   - **Lock owner exempt from gcHalt**: When LOCKED, the owner is NEVER halted (even if another core has gcHalt set). This prevents deadlock: if the GC core sets gcHalt while another core holds the lock, the lock owner must complete its critical section and release before being halted. Non-owners are always halted when a lock is held. After the owner releases, it will be caught by gcHalt on the next cycle (IDLE state: `halted := gcHaltFromOthers`). Previous code OR'd gcHaltFromOthers into the owner's halted signal, causing a deadlock when GC and lock overlapped. Found by code review, confirmed by formal verification.
   - Boot signal: core 0's `IO_SIGNAL` broadcast to all cores via `s_in`/`s_out`
+- **IHLU** (optional, replaces CmpSync): 32-slot fully-associative CAM lock table for per-object hardware locking. Reentrant, FIFO wait queues, GC halt drain mechanism. Enabled via `useIhlu` flag in `JopCoreConfig`. See `jop.io.Ihlu`.
 - **Per-core I/O**: Each core has `BmbSys(cpuId=i, cpuCnt=N)` with independent watchdog, unique CPU ID, CmpSync interface. Only core 0 has `BmbUart`.
 - **Pipeline halt**: `io.halted` from CmpSync through BmbSys directly stalls pipeline
 - **Boot sequence**: Core 0 runs full init (GC, class init). Other cores wait for `started` flag, then enter main loop.
@@ -152,7 +154,7 @@ captured during development — see the source code for authoritative details.
 
 ## JVM Test Suite (`java/apps/JvmTests/`)
 
-50 tests covering JVM bytecode correctness, run via `JopJvmTestsBramSim` (BRAM, 20M cycles). All 50 pass.
+56 tests covering JVM bytecode correctness, run via `JopJvmTestsBramSim` (BRAM, 20M cycles). All 56 pass.
 
 **Test categories**:
 - **Core bytecodes**: Basic/Basic2 (stack/local ops), TypeMix, Static, StackManipulation
@@ -170,7 +172,7 @@ captured during development — see the source code for authoritative details.
 **Ported from**: Original JOP `jvm/` suite (Martin Schoeberl) + `jvmtest/` suite (Guenther Wimpassinger). The `jvmtest/` tests used a hash-based `TestCaseResult` framework; converted to the `jvm.TestCase` boolean pattern.
 
 **Known platform limitations discovered during porting**:
-- **Hardware div-by-zero not catchable**: JOP's `f_idiv` microcode fires a hardware exception that doesn't properly unwind to Java try/catch handlers. `DivZero.java` exists but is disabled. Div-by-zero exception catches also removed from IntArithmetic/LongArithmetic divTest().
+- **Div-by-zero fixed**: Changed f_idiv/f_irem/f_ldiv/f_lrem from hardware exception to `throw JVMHelp.ArithExc`. `DivZero.java` test enabled (56/56 pass).
 - **No wide iinc**: JOP's PreLinker rejects iinc constants outside -128..127. IntArithmetic uses `x = x + val` (iadd) instead of `x += val` (wide iinc) for large increments.
 - **Float constant folding**: javac evaluates literal float expressions (e.g., `2.0F * 3.0F`) at compile time, so actual fmul/fdiv/fneg/fcmp bytecodes never execute. FloatTest uses variables to prevent this.
 
@@ -178,7 +180,7 @@ captured during development — see the source code for authoritative details.
 
 - **putref**: The `putref` memory operation (from `stprf` microcode) exists in the decode stage and BmbMemoryController but is never used by current JOP bytecodes. In the original VHDL, putref is part of the SCJ (Safety-Critical Java) scope check mechanism — it's a variant of putstatic that would validate reference assignment safety in an SCJ runtime. Our JOP port doesn't implement SCJ scope checks, so putref fires but is handled identically to putstatic (no additional logic).
 - **atmstart/atmend**: The `atmstart`/`atmend` memory operations (from `statm`/`endatm` microcode) are SimpCon atomicity markers. In the original VHDL SimpCon-based memory interface, they bracketed multi-cycle memory operations to prevent bus arbitration between start and end. With BMB (which has native transactions with backpressure), atomicity is handled by the bus protocol itself and CmpSync's global lock. These signals are decoded but have no effect in BmbMemoryController.
-- **IO_LOCK sync_out.status**: The VHDL `sync_out` record has a `status` field (read at IO_LOCK addr 5, bit 1), but it's only driven by `ihlu.vhd` (the IHLU alternative lock implementation for the Jeopard RTSJ framework). Our port uses CmpSync (not IHLU), so `SyncOut` has no `status` field. Old Java code in `ControlChannel.java` that reads IO_LOCK status bit 1 is for Jeopard/IHLU — not applicable.
+- **IHLU per-object locking** (`jop.io.Ihlu`): 32-slot fully-associative CAM lock table for per-object hardware locking, replacing CmpSync's global lock. Reentrant (8-bit counter, depth 255), FIFO wait queues per lock slot, round-robin CPU servicing, GC halt drain mechanism. Conditional via `useIhlu` flag in `JopCoreConfig` — when enabled, `Ihlu` replaces `CmpSync` in `JopCluster`. Extended `SyncIn`/`SyncOut` with `reqPulse`, `data`, `op`, `status` fields for IHLU protocol. `BmbSys` writes to IO_LOCK set `lockDataReg` (object handle) and `lockOpReg` (lock/unlock), with `reqPulse` handshake.
 
 ## Hardware Exception Detection (NPE + Array Bounds)
 
@@ -252,9 +254,26 @@ Verification: 2-core and 4-core SDRAM sims pass with burstLen=4, 0 data mismatch
 
 ## GC Architecture Analysis
 
-### Current Implementation (jopmin fork)
+### Current Implementation (Mark-Compact + Incremental)
 
-The current GC (`java/runtime/src/jop/com/jopdesign/sys/GC.java`) is a **semi-space copying collector** with conservative stack scanning:
+The GC has been upgraded from semi-space copying to **mark-compact with incremental phases**:
+
+**Mark-Compact** (replaced semi-space): Single contiguous heap, ~2x usable memory vs semi-space. Algorithm: toggle toSpace mark (1↔2) → tri-color mark from roots → sort use list by address → slide live objects down → sweep dead handles → zero free region.
+
+**Incremental Extension**: Mark and compact phases split into bounded increments interleaved with mutator execution:
+- `MARK_STEP = 20` gray objects per mark increment
+- `COMPACT_STEP = 10` handles per compact increment
+- Proactive trigger at 25% free heap threshold (`tryGcIncrement()` in `newObject`/`newArray`)
+- STW fallback (`finishCycleNow()`) drains remaining work when heap exhausted
+- Root scan remains STW (conservative stack scanning requires atomicity)
+
+**GC Phase State Machine**: `IDLE → ROOT_SCAN (STW) → MARK (incremental) → COMPACT (incremental) → IDLE`
+
+Verified: 56/56 JVM tests pass, GC BRAM sim passes (3+ cycles, R80+).
+
+### Previous Implementation (Semi-Space — Replaced)
+
+The previous GC (`java/runtime/src/jop/com/jopdesign/sys/GC.java`) was a **semi-space copying collector** with conservative stack scanning:
 
 **Memory Layout** (from `GC.init()`):
 ```

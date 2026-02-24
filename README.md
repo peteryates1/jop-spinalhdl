@@ -2,7 +2,7 @@
 
 A complete reimplementation of the [Java Optimized Processor](https://github.com/jop-devel/jop) (JOP) in [SpinalHDL](https://spinalhdl.github.io/SpinalDoc-RTD/). JOP is a hardware implementation of the Java Virtual Machine as a soft-core processor for FPGAs, originally developed by Martin Schoeberl. See [jopdesign.com](https://www.jopdesign.com/) for the original project.
 
-This port runs Java programs on FPGA hardware. The primary development platform is the **QMTECH EP4CGX150** (Altera Cyclone IV GX + SDR SDRAM), which supports single-core and SMP (2-core) configurations with stable garbage collection.
+This port runs Java programs on FPGA hardware. The primary development platform is the **QMTECH EP4CGX150** (Altera Cyclone IV GX + SDR SDRAM), which supports single-core and SMP (up to 16-core) configurations with stable garbage collection.
 
 Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 
@@ -10,7 +10,7 @@ Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 
 **Working on hardware.** The processor boots and runs Java programs at 100 MHz:
 
-- **SDRAM + SMP (primary)**: 2-core SMP on QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V) — both cores running independently with CmpSync global lock, round-robin BMB arbitration, and GC stop-the-world halt (halts all other cores during garbage collection)
+- **SDRAM + SMP (primary)**: up to 16-core SMP on QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V) — all cores running independently with CmpSync global lock (or optional IHLU per-object locking), round-robin BMB arbitration, and GC stop-the-world halt (halts all other cores during garbage collection)
 - **SDRAM (single-core)**: Serial boot over UART into SDR SDRAM on two boards — QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V, W9864G6JT)
 - **BRAM**: Self-contained, program embedded in block RAM (QMTECH EP4CGX150)
 - **DDR3**: Serial boot through write-back cache into DDR3 (Alchitry Au V2, Xilinx Artix-7) — single-core and 2-core SMP verified on hardware with GC (67K+ rounds single-core, NCoreHelloWorld SMP). See [DDR3 notes](docs/ddr3-gc-hang.md).
@@ -66,8 +66,8 @@ SMP (2-core):
         │ BMB Arbiter││ (round-robin)
         └─────┬──────┘│
               │  ┌────┴──────┐
-              │  │  CmpSync  │  (global lock)
-              │  └───────────┘
+              │  │CmpSync/IHLU│  (global/per-object lock)
+              │  └────────────┘
        ┌──────┴───────┐
        │    SDRAM     │
        │    memory    │
@@ -76,7 +76,7 @@ SMP (2-core):
 
 The pipeline fetches Java bytecodes, translates them via a jump table into microcode addresses, fetches and decodes microcode instructions, then executes them on a two-register stack machine with a 256-entry on-chip stack RAM (64 entries reserved for local variables and constants, 192 for the operand stack).
 
-Memory access uses SpinalHDL's BMB (Bus Master Bridge) interconnect, supporting on-chip BRAM (single-cycle response), off-chip SDR SDRAM (variable latency with automatic pipeline stalling), and DDR3 SDRAM via a write-back cache and Xilinx MIG controller. The SMP configuration adds a round-robin BMB arbiter and `CmpSync` global lock for multi-core synchronization.
+Memory access uses SpinalHDL's BMB (Bus Master Bridge) interconnect, supporting on-chip BRAM (single-cycle response), off-chip SDR SDRAM (variable latency with automatic pipeline stalling), and DDR3 SDRAM via a write-back cache and Xilinx MIG controller. The SMP configuration adds a round-robin BMB arbiter and `CmpSync` global lock (or optional `Ihlu` per-object hardware locking) for multi-core synchronization.
 
 ## Project Structure
 
@@ -86,7 +86,7 @@ jop/
 │   ├── pipeline/              # Pipeline stages (fetch, decode, stack, bytecode)
 │   ├── memory/                # Memory controller, method/object/array cache, SDRAM ctrl
 │   ├── ddr3/                  # DDR3 subsystem (cache, MIG adapter, clock wizard)
-│   ├── io/                    # I/O slaves (BmbSys, BmbUart)
+│   ├── io/                    # I/O slaves (BmbSys, BmbUart, Ihlu, CmpSync)
 │   ├── debug/                 # Debug subsystem (protocol, controller, breakpoints, UART)
 │   ├── system/                # System integration (JopCore, FPGA tops, SMP)
 │   ├── types/                 # JOP types and constants
@@ -233,7 +233,7 @@ sbt "Test / runMain jop.system.JopInterruptSim"
 # Debug protocol test (39 checks: ping, halt, step, registers, memory, breakpoints)
 sbt "Test / runMain jop.system.JopDebugProtocolSim"
 
-# JVM test suite (49 tests — 48 pass, PutRef expected fail)
+# JVM test suite (56 tests, all pass)
 sbt "Test / runMain jop.system.JopJvmTestsBramSim"
 
 # Reference simulator
@@ -303,32 +303,29 @@ Notes:
 - **BRAM system**: `JopBramTop` — complete system with on-chip memory at 100 MHz (QMTECH EP4CGX150, Altera Cyclone IV)
 - **DDR3 system**: `JopDdr3Top` — serial boot over UART through 16KB 4-way write-back cache into DDR3 at 100 MHz (Alchitry Au V2, Xilinx Artix-7). Single-core and 2-core SMP verified with GC (67K+ rounds single-core). Standalone `Ddr3ExerciserTop` memory test and `Ddr3TraceReplayerTop` BMB trace verification also available.
 - **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
-- **GC support**: Hardware `memCopy` for stop-the-world garbage collection, tested with allocation-heavy GC app (98,000+ rounds on BRAM, 9,800+ on CYC5000 SDRAM, 2,000+ on QMTECH SDRAM). SMP GC uses `IO_GC_HALT` to freeze all other cores during collection, preventing concurrent SDRAM access to partially-moved objects
-- **Exception infrastructure**: Null pointer and array bounds detection states wired through pipeline to `BmbSys` exception register (checks currently disabled pending GC null-handle fix)
+- **GC support**: Mark-compact garbage collection with incremental mark/compact phases (bounded per-allocation increments) and STW fallback. Hardware `memCopy` for GC object relocation, tested with allocation-heavy GC app (98,000+ rounds on BRAM, 9,800+ on CYC5000 SDRAM, 2,000+ on QMTECH SDRAM). SMP GC uses `IO_GC_HALT` to freeze all other cores during collection, preventing concurrent SDRAM access to partially-moved objects
+- **Hardware exception detection**: Null pointer and array bounds checks fully enabled — NPE fires on handle address 0, ABE fires on negative index (MSB) or index >= array length. Wired through BmbSys `exc` pulse to `sys_exc` microcode handler. Div-by-zero handled via Java `throw JVMHelp.ArithExc` in f_idiv/f_irem/f_ldiv/f_lrem.
 - **Formal verification**: 98 properties verified across 16 test suites using SymbiYosys + Z3 — covers core arithmetic, all pipeline stages, memory subsystem (method cache, object cache, memory controller), DDR3 cache + MIG adapter, I/O (CmpSync, BmbSys, BmbUart), and BMB protocol compliance. See [formal verification docs](docs/formal-verification.md).
 - **Debug subsystem** (`jop.debug` package): Optional on-chip debug controller with framed byte-stream protocol over dedicated UART. Supports halt/resume/single-step (microcode and bytecode), register and stack inspection, memory read/write, and up to 4 hardware breakpoints (JPC or microcode PC). Integrated into `JopCluster` via `DebugConfig`. Automated protocol test (`JopDebugProtocolSim`) verifies 39 checks across 14 test sequences.
-- **JVM test suite**: 49 tests (`java/apps/JvmTests/`) — 48 pass, 1 expected failure (PutRef requires exception detection). Covers arrays, branches, type casting, int/long arithmetic (add/sub/mul/div/and/or/xor), type conversions (i2x/l2x/f2x/d2x), constant loading boundaries, float ops (add/sub/mul/div/neg/cmp), field access for all types (int/short/byte/char/boolean/float/double/object with instance and static), exceptions (throw/catch, finally, nested, athrow), instanceof, super method dispatch, object fields, interfaces, static initializers, stack manipulation, System.arraycopy, and more. Ported from both the original JOP `jvm/` suite and the Wimpassinger `jvmtest/` suite.
+- **JVM test suite**: 56 tests (`java/apps/JvmTests/`) — all pass. Covers arrays, branches, type casting, int/long arithmetic, type conversions (i2x/l2x/f2x/d2x), constant loading, float/double ops (add/sub/mul/div/neg/cmp/rem), field access for all types, exceptions (throw/catch, finally, nested, athrow, div-by-zero, null pointer with 13 sub-tests), instanceof, super method dispatch, object fields, interfaces, static initializers, stack manipulation, System.arraycopy, cache persistence regression, long static fields, and more. Ported from original JOP `jvm/` suite and Wimpassinger `jvmtest/` suite.
 - **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, JVM test suite, timer interrupt test, debug protocol test, GHDL event-driven sim
 
 ### Known Issues
 
 - **burstLen=0 + SMP incompatibility** — `burstLen=0` (pipelined single-word BC_FILL) interleaves with the BMB arbiter in SMP mode, causing response-source misalignment. SMP requires `burstLen >= 4`. Single-core is unaffected. See [DDR3 notes](docs/ddr3-gc-hang.md).
-- **Exception detection disabled** — Null pointer and array bounds check states are implemented and wired through the pipeline, but currently disabled in `BmbMemoryController`. GC's conservative stack scanning accesses handle address 0 via getfield/iaload; with checks enabled this correctly throws `EXC_NP` but crashes the GC. Re-enable after fixing GC `push()` to skip null refs.
 
 ### Next Steps
 
 - Memory controller — remaining features from VHDL `mem_sc.vhd`:
-  - **Exception detection** (MEDIUM) — states and wiring implemented but **currently disabled**: GC accesses null handles during conservative stack scanning. VHDL `ialrb` upper bounds check is also dead code (gated by `rdy_cnt /= 0`). Re-enable after fixing GC `push()` to skip null refs.
   - **Atomic memory operations** (LOW — multicore only) — `atmstart`/`atmend` inputs exist in `MemCtrlInput` but are never processed; VHDL sets an `atomic` output flag for monitorenter/monitorexit
   - **Address translation on read paths** (LOW — multicore only) — VHDL applies combinational `translateAddr` (GC copy relocation) to all reads; SpinalHDL only applies within copy states (single-core simplification, causes timing violation at 100 MHz)
-  - **Scoped memory / illegal assignment** (LOW — RTSJ only) — VHDL tracks `putref_reg` and `dest_level` for scope checks on putstatic, putfield, iastore; SpinalHDL has no scope tracking
   - **Data cache control signals** (LOW — performance) — VHDL outputs `state_dcache` (bypass/direct_mapped/full_assoc per operation), `tm_cache` (disable caching during BC fill); SpinalHDL has none
   - **Fast-path array access (`iald23`)** (LOW — performance) — VHDL shortcut state overlaps address computation with data availability for single-cycle memory; SpinalHDL uses uniform HANDLE_* states
 - Interrupt handling — timer interrupts verified end-to-end (`JopInterruptSim`); UART RX/TX interrupts wired but not yet exercised; scheduler preemption not yet tested
 - Performance measurement
 - DDR3 SMP GC — run GC stress test on dual-core DDR3 (NCoreHelloWorld verified, GC stress not yet tested in SMP mode)
 - DDR3 burst optimization — method cache fills could use burst reads through the cache bridge
-- SMP GC — basic stop-the-world working via `IO_GC_HALT`; future: protect halt flag with CmpSync lock for safe multi-core allocation, address translation on read paths for concurrent GC
+- SMP GC — STW GC working via `IO_GC_HALT` with incremental mark/compact; future: address translation on read paths for fully concurrent GC
 - Const.java -> pull out Const and Configuration — core(s)/system/memory/caches
 - Target JDK modernization (8 as minimum)
 - Port target code — networking, etc.
@@ -348,7 +345,7 @@ Notes:
 - **Array cache**: Fully associative element value cache (16 entries, 4 elements per line). iaload hits return in 0 busy cycles; misses fill the entire 4-element aligned line (burst read on SDRAM to prevent interleaving). iastore does write-through on tag hit. Tags include handle address and upper index bits so different array regions map to different lines. SMP-safe via cross-core snoop invalidation (`CacheSnoopBus` — each core's iastore broadcasts on snoop bus, other cores selectively invalidate matching lines). Note: raw memory writes (`Native.wrMem`) bypass A$ — `System.arraycopy` calls `Native.invalidate()` after copy loops to ensure coherency.
 - **Handle format**: `H[0]` = data pointer, `H[1]` = array length. Array elements start at `data_ptr[0]`.
 - **I/O subsystem**: Reusable `BmbSys` and `BmbUart` components in `jop.io` package. System slave provides clock cycle counter, prescaled microsecond counter, timer interrupt, watchdog register, and CPU ID. UART slave provides buffered TX/RX with 16-entry FIFOs and per-source interrupt outputs (RX data available, TX FIFO empty). UART interrupts are wired to BmbSys interrupt sources (index 0 = timer, 1 = UART RX, 2 = UART TX).
-- **SMP**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` / `JopDdr3Top(cpuCnt=N)` instantiate N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`, plus a GC halt signal (`IO_GC_HALT`) that freezes all other cores during garbage collection. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`. DDR3 SMP requires `burstLen >= 4` (pipelined single-word BC_FILL interleaves with arbiter at `burstLen=0`).
+- **SMP**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` / `JopDdr3Top(cpuCnt=N)` instantiate N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`, with optional `Ihlu` per-object hardware locking (32-slot CAM, FIFO wait queues, reentrant) selectable via `useIhlu` config flag, plus a GC halt signal (`IO_GC_HALT`) that freezes all other cores during garbage collection. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`. DDR3 SMP requires `burstLen >= 4` (pipelined single-word BC_FILL interleaves with arbiter at `burstLen=0`).
 - **Debug subsystem**: Optional on-chip debug controller (`jop.debug` package) enabled via `DebugConfig` in `JopCluster`. Uses a dedicated UART (separate from the application UART) with a CRC-8/MAXIM framed protocol. `DebugProtocol` parses/builds frames, `DebugController` implements the command FSM (halt, resume, single-step, register/stack/memory read/write, breakpoint management), and `DebugBreakpoints` provides per-core hardware PC comparators. Supports multi-core targeting via core ID field in each command.
 - **Serial boot**: Microcode polls UART for incoming bytes, assembles 4 bytes into 32-bit words, writes to external memory. Download script (`download.py`) sends `.jop` files with word-level echo verification.
 
@@ -359,13 +356,13 @@ Design notes and investigation logs in `docs/`:
 - [Microcode Instructions](docs/microcode.md) — table of all microcode instructions and encodings
 - [Stack Architecture](docs/STACK_ARCHITECTURE.md) — stack buffer, spill/fill, local variables
 - [Jopa Tool](docs/JOPA_TOOL.md) — microcode assembler usage and output formats
-- [Implementation Notes](docs/implementation-notes.md) — bugs found, cache details, I/O subsystem, SMP, memCopy
+- [Implementation Notes](docs/implementation-notes.md) — bugs found, cache details, I/O subsystem, SMP, GC architecture, memCopy
 - [Cache Analysis](docs/cache-analysis.md) — cache performance analysis and technology cost model
 - [Memory Controller Comparison](docs/memory-controller-comparison.md) — VHDL vs SpinalHDL memory controller
 - [Stack Immediate Timing](docs/stack-immediate-timing.md) — stack stage timing for immediate operations
 - [Formal Verification](docs/formal-verification.md) — 98 BMC properties across all components (SymbiYosys + Z3)
 - [SDR SDRAM GC Hang](docs/sdr-sdram-gc-hang.md) — resolved: SpinalHDL SdramCtrl DQ timing issue
-- [DDR3 GC Hang](docs/ddr3-gc-hang.md) — unresolved: GC hangs at R12 on Alchitry Au V2
+- [DDR3 GC Hang](docs/ddr3-gc-hang.md) — resolved (32KB L2 cache)
 
 ## References
 
