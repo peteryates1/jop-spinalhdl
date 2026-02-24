@@ -94,7 +94,12 @@ public class DoAll {
 
 				// Class hierarchy tests
 				new SuperTest(),
-				new InstanceOfTest()
+				new InstanceOfTest(),
+
+				// Additional coverage tests
+				new LongArrayBounds(),
+				new FloatArray(),
+				new DoubleArithmetic()
 		};
 		
 		for (int i=0; i<tc.length; ++i) {

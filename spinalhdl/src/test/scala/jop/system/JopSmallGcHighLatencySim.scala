@@ -153,7 +153,7 @@ object JopSmallGcHighLatencySim extends App {
 
         // Success: GC cycle completed
         val output = uartOutput.toString
-        if (output.contains("R14 f=")) {
+        if (output.contains("R80 f=")) {
           println("\n*** GC cycle completed! ***")
           for (_ <- 0 until 50000) {
             dut.clockDomain.waitSampling()
@@ -182,7 +182,7 @@ object JopSmallGcHighLatencySim extends App {
         run.finish("FAIL", "Did not see 'GC test start'")
         println("FAIL: Did not see 'GC test start'")
         System.exit(1)
-      } else if (uartOutput.toString.contains("R14 f=")) {
+      } else if (uartOutput.toString.contains("R80 f=")) {
         run.finish("PASS", s"$cycle cycles, latency=$latMin-$latMax, GC works")
         println(s"PASS: GC works at latency $latMin-$latMax")
       } else {

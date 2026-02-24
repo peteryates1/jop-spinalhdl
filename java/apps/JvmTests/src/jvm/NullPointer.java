@@ -30,7 +30,7 @@ package jvm;
  * @author Martin Schoeberl (martin@jopdesign.com)
  *
  */
-public class NullPointer extends TestCase {
+public class NullPointer extends TestCase implements NullTestIface {
 
 	public String toString() {
 		return "NullPointer";
@@ -51,6 +51,13 @@ public class NullPointer extends TestCase {
 	 * an invokespecial (private method call)
 	 */
 	private void bar() {
+
+	}
+
+	/**
+	 * invokeinterface implementation
+	 */
+	public void ifaceCall() {
 
 	}
 
@@ -150,6 +157,49 @@ public class NullPointer extends TestCase {
 			caught = true;
 		}
 		if (!caught) System.out.print(" T8");
+		ok &= caught;
+
+		// Test 9: invokeinterface on null (microcode NPE path)
+		NullTestIface nullIface = null;
+		caught = false;
+		try {
+			nullIface.ifaceCall();
+		} catch (NullPointerException e) {
+			caught = true;
+		}
+		if (!caught) System.out.print(" T9");
+		ok &= caught;
+
+		// Test 10: iaload on null int array (hardware NPE)
+		int[] nullArr = null;
+		caught = false;
+		try {
+			i = nullArr[0];
+		} catch (NullPointerException e) {
+			caught = true;
+		}
+		if (!caught) System.out.print(" T10");
+		ok &= caught;
+
+		// Test 11: iastore on null int array (hardware NPE)
+		caught = false;
+		try {
+			nullArr[0] = 42;
+		} catch (NullPointerException e) {
+			caught = true;
+		}
+		if (!caught) System.out.print(" T11");
+		ok &= caught;
+
+		// Test 12: aaload on null Object array (hardware NPE)
+		Object[] nullObjArr = null;
+		caught = false;
+		try {
+			Object x = nullObjArr[0];
+		} catch (NullPointerException e) {
+			caught = true;
+		}
+		if (!caught) System.out.print(" T12");
 		ok &= caught;
 
 		return ok;

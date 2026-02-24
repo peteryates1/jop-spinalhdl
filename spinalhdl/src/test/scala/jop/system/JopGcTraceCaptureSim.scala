@@ -278,7 +278,7 @@ object JopGcTraceCaptureSim extends App {
 
         // Success: past first GC cycle (R14 = second allocation round after first GC)
         val output = uartOutput.toString
-        if (output.contains("R14 f=")) {
+        if (output.contains("R80 f=")) {
           println("\n*** GC cycle completed — capturing tail ***")
           // Run a few more cycles to capture any trailing transactions
           for (_ <- 0 until 50000) {
@@ -345,7 +345,7 @@ object JopGcTraceCaptureSim extends App {
       println(s"  Trace memory: ${usedTraceBytes / 1024} KB (~${(usedTraceBytes + 2047) / 2048} BRAMs)")
       println(s"  Total: ${(initBytes + usedTraceBytes) / 1024} KB")
 
-      if (!uartOutput.toString.contains("R14 f=")) {
+      if (!uartOutput.toString.contains("R80 f=")) {
         println("\nFAIL: GC did not complete (possible hang)")
         System.exit(1)
       } else {

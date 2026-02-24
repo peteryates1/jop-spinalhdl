@@ -949,13 +949,15 @@ case class BmbMemoryController(
       // Exception checks (matching VHDL iald0/gf0):
       // - Null pointer: handle address == 0
       // - Negative array index: MSB of index is set
+      // NOTE: I/O address 0x84 = JopIoSpace.SYS_EXC (SYS_BASE + 4).
+      // Must match microcode io_exc (-124 = 0x84) and Java Const.IO_EXCPT.
       when(addrReg === 0) {
-        io.ioAddr := U(0x04, 8 bits)
+        io.ioAddr := U(0x84, 8 bits)
         io.ioWr := True
         io.ioWrData := B(2, 32 bits)  // EXC_NP = 2
         state := State.NP_EXC
       }.elsewhen(handleIsArray && handleIndex(config.addressWidth - 1)) {
-        io.ioAddr := U(0x04, 8 bits)
+        io.ioAddr := U(0x84, 8 bits)
         io.ioWr := True
         io.ioWrData := B(3, 32 bits)  // EXC_AB = 3
         state := State.AB_EXC
@@ -1178,7 +1180,7 @@ case class BmbMemoryController(
         val arrayLength = io.bmb.rsp.fragment.data(config.addressWidth - 1 downto 0).asUInt
         when(handleIndex >= arrayLength) {
           // Upper bounds violation — write exc_type=3 (EXC_AB)
-          io.ioAddr := U(0x04, 8 bits)
+          io.ioAddr := U(0x84, 8 bits)
           io.ioWr := True
           io.ioWrData := B(3, 32 bits)  // EXC_AB = 3
           state := State.AB_EXC

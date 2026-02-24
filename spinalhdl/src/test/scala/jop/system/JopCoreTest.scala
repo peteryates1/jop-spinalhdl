@@ -18,11 +18,12 @@ import jop.memory.JopMemoryConfig
 case class JopCoreTestHarness(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
-  mainMemInit: Seq[BigInt]
+  mainMemInit: Seq[BigInt],
+  memSize: Int = 256 * 1024  // default 256KB; increase for large .jop files
 ) extends Component {
 
   val config = JopCoreConfig(
-    memConfig = JopMemoryConfig(mainMemSize = 256 * 1024)  // 256KB: room for program + GC heap
+    memConfig = JopMemoryConfig(mainMemSize = memSize)
   )
 
   val io = new Bundle {

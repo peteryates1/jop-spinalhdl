@@ -45,7 +45,7 @@ object JopSmallGcBramSim extends App {
       dut.clockDomain.forkStimulus(10)  // 10ns = 100MHz
       dut.clockDomain.waitSampling(5)
 
-      val maxCycles = 20000000  // 20M cycles — GC allocation takes many cycles
+      val maxCycles = 100000000  // 100M cycles — need enough for multiple GC cycles (mark-compact heap fills ~R24)
       val reportInterval = 100000
       var done = false
       var cycle = 0
@@ -80,10 +80,10 @@ object JopSmallGcBramSim extends App {
           println(f"\n[$cycle%8d] PC=$pc%04x JPC=$jpc%04x UART: '${uartOutput.toString}'")
         }
 
-        // Exit after a full GC cycle (R12 triggers GC, R13+ confirms it completed)
+        // Exit after multiple GC cycles (mark-compact: heap fills ~R24, so R80 = ~3 GC cycles)
         val output = uartOutput.toString
-        if (output.contains("R14 f=")) {
-          println("\n*** GC cycle completed! ***")
+        if (output.contains("R80 f=")) {
+          println("\n*** Multiple GC cycles completed! ***")
           // Capture a bit more
           for (_ <- 0 until 50000) {
             dut.clockDomain.waitSampling()
@@ -113,7 +113,17 @@ object JopSmallGcBramSim extends App {
         println("FAIL: Did not see allocation rounds")
         System.exit(1)
       }
-      run.finish("PASS", s"$cycle cycles, GC allocation test working")
-      println("PASS: GC allocation test working")
+      // Verify GC actually reclaimed memory (free went up at some point)
+      val freePattern = """R\d+ f=(\d+)""".r
+      val freeVals = freePattern.findAllMatchIn(uartOutput.toString).map(_.group(1).toInt).toList
+      val gcOccurred = freeVals.length >= 2 && freeVals.sliding(2).exists { case List(a, b) => b > a case _ => false }
+      if (!gcOccurred) {
+        run.finish("FAIL", "GC never triggered (free memory never increased)")
+        println("FAIL: GC never triggered (free memory never increased)")
+        System.exit(1)
+      }
+      val gcCycles = freeVals.sliding(2).count { case List(a, b) => b > a case _ => false }
+      run.finish("PASS", s"$cycle cycles, $gcCycles GC cycles observed")
+      println(s"PASS: $gcCycles GC cycles observed in $cycle cycles")
     }
 }

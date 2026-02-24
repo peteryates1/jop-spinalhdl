@@ -301,7 +301,7 @@ object JopSmallGcCacheSim extends App {
 
         // Success: GC cycle completed (R14 = second allocation after first GC)
         val output = uartOutput.toString
-        if (output.contains("R14 f=")) {
+        if (output.contains("R80 f=")) {
           println("\n*** GC cycle completed! ***")
           for (_ <- 0 until 50000) {
             dut.clockDomain.waitSampling()
@@ -331,7 +331,7 @@ object JopSmallGcCacheSim extends App {
         println("FAIL: Did not see allocation rounds")
         System.exit(1)
       }
-      if (uartOutput.toString.contains("R14 f=")) {
+      if (uartOutput.toString.contains("R80 f=")) {
         run.finish("PASS", s"$cycle cycles, GC works through cache path")
         println("PASS: GC works through cache path")
       } else {

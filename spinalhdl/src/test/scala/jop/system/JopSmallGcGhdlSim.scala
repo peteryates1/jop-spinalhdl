@@ -89,7 +89,7 @@ object JopSmallGcGhdlSim extends App {
 
         // Exit after a full GC cycle
         val output = uartOutput.toString
-        if (output.contains("R14 f=") || output.contains("Uncaught exception")) {
+        if (output.contains("R80 f=") || output.contains("Uncaught exception")) {
           // Capture more output
           for (_ <- 0 until 50000) {
             dut.clockDomain.waitSampling()

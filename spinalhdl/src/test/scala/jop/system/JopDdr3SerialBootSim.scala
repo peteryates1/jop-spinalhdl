@@ -505,7 +505,7 @@ object JopDdr3SerialBootSim extends App {
 
         // Success: GC cycle completed (R14 seen)
         val output = uartOutput.toString
-        if (output.contains("R14 f=") && !gcCompleteSeen) {
+        if (output.contains("R80 f=") && !gcCompleteSeen) {
           gcCompleteSeen = true
           val msg = f"[$cycle%8d] *** GC cycle completed! ***"
           println(s"\n$msg")

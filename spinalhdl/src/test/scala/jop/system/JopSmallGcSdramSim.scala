@@ -63,7 +63,7 @@ object JopSmallGcSdramSim extends App {
 
       dut.clockDomain.waitSampling(5)
 
-      val maxCycles = 20000000  // 20M cycles — need enough for GC cycle
+      val maxCycles = 50000000  // 50M cycles — need enough for multiple GC cycles with mark-compact
       val reportInterval = 100000
       var startTime = System.currentTimeMillis()
       var done = false
@@ -90,9 +90,9 @@ object JopSmallGcSdramSim extends App {
           println(f"\n[$cycle%8d] PC=$pc%04x JPC=$jpc%04x rate=${rate.toInt} cycles/sec UART: '${uartOutput.toString}'")
         }
 
-        // Exit after a full GC cycle (R12 triggers GC, R14+ confirms it completed)
+        // Exit after multiple GC cycles (mark-compact: heap fills ~R24, so R80 = ~3 GC cycles)
         val output = uartOutput.toString
-        if (output.contains("R14 f=") || output.contains("Uncaught exception")) {
+        if (output.contains("R80 f=") || output.contains("Uncaught exception")) {
           // Capture more output
           for (_ <- 0 until 100000) {
             dut.clockDomain.waitSampling()
@@ -128,7 +128,17 @@ object JopSmallGcSdramSim extends App {
         println("FAIL: Did not see allocation rounds")
         System.exit(1)
       }
-      run.finish("PASS", s"$cycle cycles, GC allocation test working on SDRAM")
+      // Verify GC actually reclaimed memory (free went up at some point)
+      val freePattern = """R\d+ f=(\d+)""".r
+      val freeVals = freePattern.findAllMatchIn(output).map(_.group(1).toInt).toList
+      val gcOccurred = freeVals.length >= 2 && freeVals.sliding(2).exists { case List(a, b) => b > a case _ => false }
+      if (!gcOccurred) {
+        run.finish("FAIL", "GC never triggered (free memory never increased)")
+        println("FAIL: GC never triggered (free memory never increased)")
+        System.exit(1)
+      }
+      val gcCycles = freeVals.sliding(2).count { case List(a, b) => b > a case _ => false }
+      run.finish("PASS", s"$cycle cycles, $gcCycles GC cycles observed on SDRAM")
       println("PASS: GC allocation test working on SDRAM")
     }
 }

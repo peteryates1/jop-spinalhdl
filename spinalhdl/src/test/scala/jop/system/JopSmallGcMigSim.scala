@@ -436,7 +436,7 @@ object JopSmallGcMigSim extends App {
 
         // Success: GC cycle completed
         val output = uartOutput.toString
-        if (output.contains("R14 f=")) {
+        if (output.contains("R80 f=")) {
           println("\n*** GC cycle completed! ***")
           for (_ <- 0 until 50000) {
             dut.clockDomain.waitSampling()
@@ -467,7 +467,7 @@ object JopSmallGcMigSim extends App {
         println("FAIL: Did not see allocation rounds")
         System.exit(1)
       }
-      if (uartOutput.toString.contains("R14 f=")) {
+      if (uartOutput.toString.contains("R80 f=")) {
         run.finish("PASS", s"$cycle cycles, GC works with MIG behavioral model")
         println("PASS: GC works with MIG behavioral model")
       } else {
