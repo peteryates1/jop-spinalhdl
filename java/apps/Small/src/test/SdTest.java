@@ -54,6 +54,7 @@ public class SdTest {
 	static final int CTL_OPEN_DRAIN = 1 << 2;
 
 	static int wd;
+	static int[] blk; // 128-word (512-byte) block buffer
 
 	static char[] hexChars = {'0','1','2','3','4','5','6','7',
 	                          '8','9','A','B','C','D','E','F'};
@@ -67,6 +68,32 @@ public class SdTest {
 	static void wrHexByte(int val) {
 		JVMHelp.wr(hexChars[(val >>> 4) & 0xF]);
 		JVMHelp.wr(hexChars[val & 0xF]);
+	}
+
+	/** Extract byte at offset from blk[] (big-endian word order from SD FIFO) */
+	static int getByte(int off) {
+		return (blk[off >> 2] >>> (24 - (off & 3) * 8)) & 0xFF;
+	}
+
+	/** Read little-endian 32-bit value at byte offset from blk[] */
+	static int getLE32(int off) {
+		return getByte(off) | (getByte(off+1) << 8)
+			| (getByte(off+2) << 16) | (getByte(off+3) << 24);
+	}
+
+	static void wrInt(int val) {
+		if (val < 0) {
+			JVMHelp.wr('-');
+			val = -val;
+		}
+		boolean started = false;
+		for (int d = 1000000000; d >= 1; d /= 10) {
+			int digit = (val / d) % 10;
+			if (digit != 0 || started || d == 1) {
+				JVMHelp.wr((char)('0' + digit));
+				started = true;
+			}
+		}
 	}
 
 	static void toggleWd() {
@@ -138,6 +165,30 @@ public class SdTest {
 			if ((i & 0xFFFF) == 0) toggleWd();
 		}
 		return -1;
+	}
+
+	/**
+	 * Read a 512-byte block into blk[].
+	 * @param addr block address (for SDHC) or byte address (for SD)
+	 * @return true on success
+	 */
+	static boolean readBlock(int addr) {
+		Native.wr(512, REG_BLKLEN);
+		Native.wr(1, REG_DATCTRL); // startRead
+		int st = sdCmd(17, addr, true, false);
+		if (st == -1 || (st & ST_CMD_TIMEOUT) != 0) {
+			JVMHelp.wr("CMD17: timeout\n");
+			return false;
+		}
+		st = sdWaitData();
+		if (st == -1) { JVMHelp.wr("Data read timeout\n"); return false; }
+		if ((st & ST_DAT_CRC_ERR) != 0) { JVMHelp.wr("Data CRC error\n"); return false; }
+		if ((st & ST_DAT_TIMEOUT) != 0) { JVMHelp.wr("Data timeout\n"); return false; }
+		for (int i = 0; i < 128; i++) {
+			blk[i] = Native.rd(REG_FIFO);
+			if ((i & 0x1F) == 0) toggleWd();
+		}
+		return true;
 	}
 
 	public static void main(String[] args) {
@@ -275,58 +326,75 @@ public class SdTest {
 		JVMHelp.wr("CMD16: ok\n");
 		toggleWd();
 
-		// --- Read block 0 ---
-		JVMHelp.wr("Reading block 0...\n");
-
-		// Set block length register
-		Native.wr(512, REG_BLKLEN);
-
-		// CMD17: READ_SINGLE_BLOCK, arg=block address 0
-		// First, start data read
-		Native.wr(1, REG_DATCTRL); // bit0 = startRead
-
-		st = sdCmd(17, 0, true, false);
-		if (st == -1 || (st & ST_CMD_TIMEOUT) != 0) {
-			JVMHelp.wr("CMD17: timeout\n");
+		// --- Read block 0 (MBR) ---
+		blk = new int[128];
+		JVMHelp.wr("Reading MBR...\n");
+		if (!readBlock(0)) {
 			for (;;) { toggleWd(); delay(500000); }
 		}
 
-		// Wait for data transfer to complete
-		st = sdWaitData();
-		if (st == -1) {
-			JVMHelp.wr("Data read timeout\n");
-			for (;;) { toggleWd(); delay(500000); }
-		}
-		if ((st & ST_DAT_CRC_ERR) != 0) {
-			JVMHelp.wr("Data CRC error\n");
-			for (;;) { toggleWd(); delay(500000); }
-		}
-		if ((st & ST_DAT_TIMEOUT) != 0) {
-			JVMHelp.wr("Data timeout\n");
+		// Check boot signature at bytes 510-511: 0x55 0xAA
+		int sig0 = getByte(510);
+		int sig1 = getByte(511);
+		JVMHelp.wr("Sig: ");
+		wrHexByte(sig0);
+		JVMHelp.wr(' ');
+		wrHexByte(sig1);
+		JVMHelp.wr('\n');
+		if (sig0 != 0x55 || sig1 != 0xAA) {
+			JVMHelp.wr("No valid MBR signature!\n");
 			for (;;) { toggleWd(); delay(500000); }
 		}
 
-		// Read and display first 64 bytes (16 words) from FIFO
-		for (int row = 0; row < 4; row++) {
-			// Print address
-			wrHexByte(row * 16);
-			JVMHelp.wr(':');
-			for (int col = 0; col < 4; col++) {
-				JVMHelp.wr(' ');
-				int word = Native.rd(REG_FIFO);
-				wrHex(word);
+		// Parse 4 partition table entries at offset 446 (0x1BE)
+		JVMHelp.wr("\nPartition table:\n");
+		for (int p = 0; p < 4; p++) {
+			int base = 446 + p * 16;
+			int status = getByte(base);
+			int type = getByte(base + 4);
+			int lbaStart = getLE32(base + 8);
+			int sizeSectors = getLE32(base + 12);
+
+			JVMHelp.wr(' ');
+			JVMHelp.wr((char)('1' + p));
+			JVMHelp.wr(": type=");
+			wrHexByte(type);
+
+			if (type == 0) {
+				JVMHelp.wr(" (empty)\n");
+				continue;
+			}
+
+			JVMHelp.wr(" status=");
+			wrHexByte(status);
+			JVMHelp.wr(" LBA=");
+			wrHex(lbaStart);
+			JVMHelp.wr(" size=");
+			wrInt(sizeSectors);
+			JVMHelp.wr(" sectors (");
+			// Size in MB: sectors * 512 / 1048576 = sectors / 2048
+			wrInt(sizeSectors >>> 11);
+			JVMHelp.wr(" MB)");
+
+			// Identify common types
+			if (type == 0x0B || type == 0x0C) {
+				JVMHelp.wr(" FAT32");
+			} else if (type == 0x0E) {
+				JVMHelp.wr(" FAT16-LBA");
+			} else if (type == 0x06) {
+				JVMHelp.wr(" FAT16");
+			} else if (type == 0x07) {
+				JVMHelp.wr(" NTFS/exFAT");
+			} else if (type == 0x83) {
+				JVMHelp.wr(" Linux");
+			} else if (type == 0xEE) {
+				JVMHelp.wr(" GPT");
 			}
 			JVMHelp.wr('\n');
 			toggleWd();
 		}
 
-		// Drain remaining FIFO (512 bytes = 128 words, we read 16)
-		for (int i = 16; i < 128; i++) {
-			Native.rd(REG_FIFO);
-			if ((i & 0x1F) == 0) toggleWd();
-		}
-
-		JVMHelp.wr("Done\n");
+		JVMHelp.wr("\nDone\n");
 
 		// Idle loop
 		for (;;) {
