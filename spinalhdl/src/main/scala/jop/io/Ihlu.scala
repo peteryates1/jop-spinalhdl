@@ -5,7 +5,7 @@ import spinal.core._
 /**
  * IHLU Configuration.
  *
- * @param cpuCnt        Number of CPU cores (2-16)
+ * @param cpuCnt        Number of CPU cores (>= 2)
  * @param lockSlots     Number of hardware lock slots (CAM entries)
  * @param reentrantBits Bits for reentrant counter (8 = max depth 255)
  */
@@ -14,9 +14,9 @@ case class IhluConfig(
   lockSlots: Int = 32,
   reentrantBits: Int = 8
 ) {
-  require(cpuCnt >= 2 && cpuCnt <= 16, "IHLU requires 2-16 cores")
-  require(lockSlots >= 1 && lockSlots <= 64, "Lock slots must be 1-64")
-  require(reentrantBits >= 1 && reentrantBits <= 8, "Reentrant bits must be 1-8")
+  require(cpuCnt >= 2, "IHLU requires at least 2 cores")
+  require(lockSlots >= 1, "IHLU requires at least 1 lock slot")
+  require(reentrantBits >= 1, "IHLU requires at least 1 reentrant bit")
 
   val cpuIdWidth: Int = log2Up(cpuCnt)
   val slotIdWidth: Int = log2Up(lockSlots)
