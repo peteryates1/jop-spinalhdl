@@ -75,9 +75,9 @@ case class JopMemoryConfig(
   )
 
   /**
-   * Create BMB parameters for memory slave (e.g., BmbOnChipRam)
+   * Create BMB parameters for memory device (e.g., BmbOnChipRam)
    */
-  def bmbSlaveParameter: BmbParameter = bmbParameter
+  def bmbDeviceParameter: BmbParameter = bmbParameter
 }
 
 /**
@@ -124,10 +124,10 @@ object JopAddressSpace {
  * I/O Address Definitions
  *
  * JOP uses negative addresses for I/O in Java, which map to high addresses.
- * I/O space is divided into slaves (bits 5:4) and sub-addresses (bits 3:0).
+ * I/O space is divided into devices (bits 5:4) and sub-addresses (bits 3:0).
  */
 object JopIoSpace {
-  // Slave 0: System (bits 5:4 = 00)
+  // Device 0: System (bits 5:4 = 00)
   def SYS_CNT      = 0x00  // System counter (read), Interrupt enable (write)
   def SYS_US_CNT   = 0x01  // Microsecond counter
   def SYS_TIMER    = 0x02  // Timer interrupt
@@ -137,14 +137,28 @@ object JopIoSpace {
   def SYS_CPU_ID   = 0x06  // CPU ID
   def SYS_SIGNAL   = 0x07  // Signal
 
-  // Slave 1: UART (bits 5:4 = 01)
+  // Device 1: UART (bits 5:4 = 01)
   def UART_STATUS  = 0x10  // UART status
   def UART_DATA    = 0x11  // UART data
 
-  /** Get I/O slave ID from address (bits 5:4) */
-  def getSlaveId(addr: UInt): UInt = addr(5 downto 4)
+  // Device 2: Ethernet MAC (bits 5:4 = 10)
+  def ETH_STATUS   = 0x20  // Ethernet status/control
+  def ETH_TX_AVAIL = 0x21  // TX buffer availability
+  def ETH_TX_DATA  = 0x22  // TX data push
+  def ETH_RX_DATA  = 0x23  // RX data pop
+  def ETH_RX_STATS = 0x24  // RX error/drop stats
 
-  /** Get sub-address within slave (bits 3:0) */
+  // Device 3: MDIO / PHY Management (bits 5:4 = 11)
+  def MDIO_CMD     = 0x30  // MDIO command (go/write)
+  def MDIO_DATA    = 0x31  // MDIO read/write data
+  def MDIO_ADDR    = 0x32  // MDIO PHY/reg address
+  def PHY_RESET    = 0x33  // PHY hardware reset
+  def ETH_INT_CTRL = 0x34  // Ethernet interrupt enable/pending
+
+  /** Get I/O device ID from address (bits 5:4) */
+  def getDeviceId(addr: UInt): UInt = addr(5 downto 4)
+
+  /** Get sub-address within device (bits 3:0) */
   def getSubAddr(addr: UInt): UInt = addr(3 downto 0)
 }
 

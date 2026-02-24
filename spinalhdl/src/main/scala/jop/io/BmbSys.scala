@@ -3,7 +3,7 @@ package jop.io
 import spinal.core._
 
 /**
- * System I/O slave (slave 0) — matches VHDL sc_sys.vhd
+ * System I/O device — matches VHDL sc_sys.vhd
  *
  * Provides clock cycle counter, prescaled microsecond counter,
  * watchdog register, CPU ID, signal register, CMP lock interface,

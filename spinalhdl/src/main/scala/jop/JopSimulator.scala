@@ -69,10 +69,10 @@ object JopIoAddresses {
   val IO_STATUS   = 0xFFFFFF90L  // -112: UART status
   val IO_UART     = 0xFFFFFF91L  // -111: UART data
 
-  /** Get I/O slave from address (bits 5:4) */
-  def getSlaveId(addr: Long): Int = ((addr >> 4) & 0x3).toInt
+  /** Get I/O device from address (bits 5:4) */
+  def getDeviceId(addr: Long): Int = ((addr >> 4) & 0x3).toInt
 
-  /** Get sub-address within slave (bits 3:0) */
+  /** Get sub-address within device (bits 3:0) */
   def getSubAddr(addr: Long): Int = (addr & 0xF).toInt
 }
 

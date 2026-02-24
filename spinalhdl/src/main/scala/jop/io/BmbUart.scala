@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.com.uart._
 
 /**
- * UART I/O slave (slave 1) — matches VHDL sc_uart.vhd
+ * UART I/O device — matches VHDL sc_uart.vhd
  *
  * Provides buffered UART TX and RX with JOP I/O interface.
  * TX and RX each have 16-entry FIFOs.

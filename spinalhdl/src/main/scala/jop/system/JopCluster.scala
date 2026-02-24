@@ -3,6 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.bmb._
+import spinal.lib.com.eth._
 import jop.io.CmpSync
 import jop.debug._
 
@@ -37,11 +38,13 @@ case class JopCluster(
   debugConfig: Option[DebugConfig] = None,
   romInit: Option[Seq[BigInt]] = None,
   ramInit: Option[Seq[BigInt]] = None,
-  jbcInit: Option[Seq[BigInt]] = None
+  jbcInit: Option[Seq[BigInt]] = None,
+  ethTxCd: Option[ClockDomain] = None,
+  ethRxCd: Option[ClockDomain] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
 
-  // Number of BMB inputs: cores + optional debug master
+  // Number of BMB inputs: cores + optional debug controller
   val hasDebugMem = debugConfig.exists(_.hasMemAccess)
   val totalBmbInputs = cpuCnt + (if (hasDebugMem) 1 else 0)
 
@@ -93,6 +96,16 @@ case class JopCluster(
     // Debug transport byte interface (byte-stream abstraction point).
     // FPGA top-levels connect DebugUart to this; sim harnesses connect directly.
     val debugTransport = if (debugConfig.isDefined) Some(slave(DebugTransport())) else None
+
+    // Ethernet PHY (optional, core 0 only)
+    val phy = if (baseConfig.hasEth) Some(master(PhyIo(PhyParameter(txDataWidth = 4, rxDataWidth = 4)))) else None
+
+    // MDIO pins (optional, core 0 only)
+    val mdc      = if (baseConfig.hasEth) Some(out Bool()) else None
+    val mdioOut  = if (baseConfig.hasEth) Some(out Bool()) else None
+    val mdioOe   = if (baseConfig.hasEth) Some(out Bool()) else None
+    val mdioIn   = if (baseConfig.hasEth) Some(in Bool()) else None
+    val phyReset = if (baseConfig.hasEth) Some(out Bool()) else None
   }
 
   // ==================================================================
@@ -107,13 +120,16 @@ case class JopCluster(
     val coreConfig = baseConfig.copy(
       cpuId = i,
       cpuCnt = cpuCnt,
-      hasUart = (i == 0)
+      hasUart = (i == 0),
+      hasEth = (i == 0) && baseConfig.hasEth
     )
     JopCore(
       config = coreConfig,
       romInit = romInit,
       ramInit = ramInit,
-      jbcInit = jbcInit
+      jbcInit = jbcInit,
+      ethTxCd = if (i == 0) ethTxCd else None,
+      ethRxCd = if (i == 0) ethRxCd else None
     )
   }
 
@@ -290,7 +306,7 @@ case class JopCluster(
   }
 
   // ==================================================================
-  // Arbiter (deferred to here so debug BMB master can be included)
+  // Arbiter (deferred to here so debug BMB controller can be included)
   // ==================================================================
 
   if (needsArbiter) {
@@ -302,7 +318,7 @@ case class JopCluster(
     for (i <- 0 until cpuCnt) {
       arbiter.io.inputs(i) << cores(i).io.bmb
     }
-    // Debug BMB master as lowest priority input (last port)
+    // Debug BMB controller as lowest priority input (last port)
     if (hasDebugMem) {
       debugCtrl.foreach { ctrl =>
         ctrl.io.bmb.foreach { debugBmb =>
@@ -363,6 +379,19 @@ case class JopCluster(
   cores(0).io.rxd := io.rxd
   for (i <- 1 until cpuCnt) {
     cores(i).io.rxd := True  // No UART on cores 1+
+  }
+
+  // ==================================================================
+  // Ethernet (core 0 only)
+  // ==================================================================
+
+  if (baseConfig.hasEth) {
+    io.phy.get      <> cores(0).io.phy.get
+    io.mdc.get      := cores(0).io.mdc.get
+    io.mdioOut.get  := cores(0).io.mdioOut.get
+    io.mdioOe.get   := cores(0).io.mdioOe.get
+    cores(0).io.mdioIn.get := io.mdioIn.get
+    io.phyReset.get := cores(0).io.phyReset.get
   }
 
   // ==================================================================
