@@ -265,7 +265,9 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: In
         }
       }
       is(3)  { wdReg := io.wrData }                      // IO_WD
-      is(4)  { excTypeReg := io.wrData(7 downto 0); excPend := True }  // IO_EXCEPTION
+      is(4)  {
+        excTypeReg := io.wrData(7 downto 0); excPend := True   // IO_EXCEPTION
+      }
       is(5)  { lockReqReg := True }                      // IO_LOCK: acquire
       is(6)  { lockReqReg := False }                     // IO_UNLOCK: release
       is(7)  { signalReg := io.wrData(0) }                 // IO_SIGNAL: boot sync

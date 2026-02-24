@@ -212,9 +212,11 @@ public class GC {
 	 * @param ref
 	 */
 	static void push(int ref) {
-		
-		// null pointer check is in the following handle check
-		
+
+		// Explicit null guard — prevents hardware NPE when GC's conservative
+		// stack scanner passes address 0 to Native.rdMem() during handle checks.
+		if (ref == 0) return;
+
 		// Only objects that are referenced by a handle in the
 		// handle area are considered for GC.
 		// Null pointer and references to static strings are not

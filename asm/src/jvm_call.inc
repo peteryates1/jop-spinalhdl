@@ -106,7 +106,10 @@ invokeinterface:
 			ldvp				// save vp in branch slot
 			stm	old_vp
 
+			pop				// remove null objectref from stack
 			jmp	null_pointer
+			nop				// delay slot 1
+			nop				// delay slot 2
 
 interface_pointer_ok:
 			ldi	1				// at address ref+1 (in the handle) is the pointer to method table
@@ -247,7 +250,10 @@ invokevirtual:
 			ldvp				// save vp in branch slot
 			stm	old_vp
 
+			pop				// remove null objectref from stack
 			jmp	null_pointer
+			nop				// delay slot 1
+			nop				// delay slot 2
 
 invoke_pointer_ok:
 			ldi	1				// at address ref+1 (in the handle) is the pointer to method table

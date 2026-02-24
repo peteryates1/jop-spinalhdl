@@ -303,9 +303,15 @@ case class BytecodeFetchStage(
   val doAckIrq = Bool()
   val doAckExc = Bool()
 
+  // Use io.exc combinationally alongside registered excPend so that if the
+  // exc pulse and jfetch arrive in the same cycle, the exception is caught
+  // immediately rather than missing this jfetch and firing at the next one
+  // (which may be in a different bytecode context, outside the try block).
+  val excPendImmediate = excPend || io.exc
+
   // Exception has priority; interrupt requires ena to be acknowledged
-  doAckExc := excPend && io.jfetch
-  doAckIrq := intPend && io.ena && !excPend && io.jfetch
+  doAckExc := excPendImmediate && io.jfetch
+  doAckIrq := intPend && io.ena && !excPendImmediate && io.jfetch
 
   // Update pending latches
   when(doAckExc) {
@@ -333,7 +339,7 @@ case class BytecodeFetchStage(
   // Pass int_req (int_pend AND ena) to JumpTable, matching VHDL behavior
   // This means the interrupt handler address is only output when interrupts are enabled
   jumpTable.io.intPend := intPend && io.ena
-  jumpTable.io.excPend := excPend
+  jumpTable.io.excPend := excPendImmediate
   io.jpaddr := jumpTable.io.jpaddr
 }
 

@@ -45,18 +45,18 @@ All registers are 32 bits wide. Sub-address is bits [3:0] of the I/O address.
 
 | Addr | Java Constant | Read | Write |
 |---|---|---|---|
-| 0 | `IO_CNT` / `IO_INT_ENA` | Clock cycle counter (free-running, 32-bit) | Interrupt enable (accepted, not implemented) |
-| 1 | `IO_US_CNT` / `IO_TIMER` | Microsecond counter (prescaled from clkFreqHz) | Timer register |
-| 2 | `IO_SWINT` / `IO_INTNR` | -- | Software interrupt (accepted, not implemented) |
+| 0 | `IO_CNT` / `IO_INT_ENA` | Clock cycle counter (free-running, 32-bit) | Interrupt enable (bit 0: 1=enable, 0=disable) |
+| 1 | `IO_US_CNT` / `IO_TIMER` | Microsecond counter (prescaled from clkFreqHz) | Timer compare register |
+| 2 | `IO_SWINT` / `IO_INTNR` | Interrupt source number (bits [4:0], captured on ackIrq) | Software interrupt (sets intstate for source N) |
 | 3 | `IO_WD` | -- | Watchdog register (value exposed on `io.wd` output) |
 | 4 | `IO_EXCPT` | Exception type (8-bit, set by memory controller) | Exception trigger (sets type and fires exc pulse) |
 | 5 | `IO_LOCK` | Lock status: bit 0 = halted | Lock acquire (sets lockReq to CmpSync) |
 | 6 | `IO_CPU_ID` / `IO_UNLOCK` | CPU ID (compile-time constant) | Lock release (clears lockReq) |
 | 7 | `IO_SIGNAL` | Boot signal (broadcast from core 0 via CmpSync) | Boot signal (bit 0 written to signalReg) |
-| 8 | `IO_INTMASK` | -- | Interrupt mask (accepted, not implemented) |
-| 9 | `IO_INTCLEARALL` | -- | Clear all interrupts (accepted, not implemented) |
+| 8 | `IO_INTMASK` | -- | Interrupt mask (per-source enable bits) |
+| 9 | `IO_INTCLEARALL` | -- | Clear all interrupt flags |
 | 11 | `IO_CPUCNT` | CPU count (compile-time constant) | -- |
-| 12 | `IO_PERFCNT` | -- | Performance counter (accepted, not implemented) |
+| 13 | `IO_GC_HALT` | -- | GC halt (bit 0: 1=halt other cores, 0=release) |
 
 ### Clock Cycle Counter (addr 0, read)
 
@@ -90,9 +90,15 @@ The full 32-bit value is exposed on `io.wd` but only bit 0 reaches the LED pin. 
 
 ### Exception Register (addr 4)
 
-**Read**: Returns the 8-bit exception type, zero-extended to 32 bits. Set by the memory controller when a null pointer or array bounds violation is detected. Read by `JVMHelp.exception()` to determine which Java exception to throw.
+**Read**: Returns the 8-bit exception type, zero-extended to 32 bits. Read by `JVMHelp.except()` to determine which Java exception to throw.
 
 **Write**: Sets the exception type (bits [7:0]) and fires a one-cycle `exc` pulse to the bcfetch stage, which triggers exception handling on the next bytecode fetch.
+
+**Exception types** (defined in `JVMHelp.java`):
+- `EXC_NP = 2` — Null pointer (handle address == 0)
+- `EXC_AB = 3` — Array bounds (negative index or index >= length)
+
+**Exception flow**: The memory controller (`BmbMemoryController`) detects violations during handle dereference and writes the exception type to addr 4 via the I/O bus. BmbSys latches the type in `excTypeReg`, sets `excPend`, and fires a single-cycle `exc` pulse. BytecodeFetchStage catches the pulse (using combinational `excPendImmediate = excPend || io.exc`) and redirects the next bytecode fetch to the `sys_exc` microcode handler. `sys_exc` calls `JVMHelp.except()`, which reads the exception type from addr 4, selects the pre-allocated exception object (`NPExc` or `ABExc`), and throws it via `f_athrow`. The Java catch handler receives the exception normally.
 
 ### CMP Lock Interface (addrs 5-7)
 

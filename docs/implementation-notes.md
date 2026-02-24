@@ -3,7 +3,7 @@
 Detailed implementation notes for the SpinalHDL JOP port. These are reference notes
 captured during development — see the source code for authoritative details.
 
-## Bugs Found & Fixed (21 total)
+## Bugs Found & Fixed (24 total)
 
 1. **BC fill write address off-by-one**: Used `bcFillCount.resized` (not increment) for JBC write address
 2. **iaload/caload +1 offset**: VHDL uses `data_ptr + index` (no +1). Both BmbMemoryController and JopSimulator had wrong `+1`
@@ -27,6 +27,9 @@ captured during development — see the source code for authoritative details.
 19. **A$ fill interleaving corruption (4-core+ SDRAM)**: AC_FILL issued 4 individual single-word BMB reads (one per cache line element). Between each read, the BMB arbiter could switch to another core. With 4+ cores, complex response interleaving through BmbSdramCtrl32's 32-to-16-bit bridge created a corruption window: stale responses from other cores' transactions could misalign the burst word counter (`burstWordsSent`), causing a 1-word data shift. The corrupted A$ data propagated as a bad method pointer, leading to BC_FILL with garbage address (0xffff86) and core hang. Symptom: 4-core SDRAM + A$ hangs (Core 3 stuck in BC_FILL_LOOP), 2/3-core fine, BRAM fine (no BmbSdramCtrl32 bridge). Fix: converted AC_FILL from 4 single-word reads to a single burst read when `burstLen > 0` (SDRAM mode). Burst reads hold the bus via `burstActive=True` in BmbSdramCtrl32 (same mechanism that keeps BC_FILL safe). BRAM mode (`burstLen == 0`) keeps the existing single-word loop since the bug doesn't manifest there. Also widened `burstLengthWidth` in JopMemoryConfig to accommodate A$ fill burst size. Verified: 4-core and 8-core SDRAM pass with A$ enabled on QMTECH EP4CGX150 hardware.
 20. **BytecodeFetchStage branch type remapping**: The bytecodes `if_acmpeq`(0xa5), `if_acmpne`(0xa6), `ifnull`(0xc6), and `ifnonnull`(0xc7) have lower 4 bits that don't match the standard branch type encoding used by `if_icmp*`/`if*` bytecodes. Without explicit remapping, these bytecodes evaluated wrong branch conditions (e.g., `if_acmpne` tested bit pattern 0x6 instead of the "not equal" condition). Symptom: JVM tests ArrayTest2, Ifacmp, BranchTest1, StackManipulation all failed. Fix: added explicit `switch(jinstr)` remapping in BytecodeFetchStage.scala matching VHDL `bcfetch.vhd` behavior: 0xa5→15 (eq type), 0xa6→0 (ne type), 0xc6→9 (ifeq type), 0xc7→10 (ifne type).
 21. **System.arraycopy A$ stale data**: `System.arraycopy` (`java/runtime/src/jvm/java/lang/System.java`) copies array elements using `Native.wrMem()` — raw memory writes via the `stmwd` microcode instruction. These writes go through BmbMemoryController Layer 1 (IDLE→WRITE_WAIT) which has no A$ invalidation. A$ invalidation only fires on `stidx` (getfield/putfield/getstatic/putstatic microcode) or `cinval` (`Native.invalidate()`). After arraycopy writes new values to the destination array's data area, any A$ entries for that array contain stale pre-copy data. Subsequent `aaload` (which goes through the `iaload` hardware path and checks A$ combinationally) returns the stale cached values. Symptom: SystemCopy JVM test failed — `compare(oSrc, oDest)` returned false because `oDest[i]` via aaload returned null (pre-arraycopy value) while `rdMem` on the same address returned the correct post-arraycopy value. Confirmed by: (1) disabling A$ makes test pass, (2) adding `Native.invalidate()` before oDest aaload makes test pass. Fix: added `Native.invalidate()` after the copy loops in `System.arraycopy`. This clears all A$ entries, ensuring subsequent aaload operations fill from memory. The original VHDL JOP may not have encountered this because A$ was not always enabled in test configurations.
+22. **sys_exc microcode calling wrong exception handler (latent original JOP bug)**: The `sys_exc` microcode handler (`asm/src/jvm.asm`) used `ldi 6` to invoke the method at `jjhp + 6`, which is `JVMHelp.monitorState()` — not `JVMHelp.except()`. All hardware-triggered exceptions (null pointer, array bounds) threw `IllegalMonitorStateException` regardless of the actual exception type written to `IO_EXCPT`. Root cause: `jjhp` (JVMHelp Java Help Pointer) points past the 4 inherited Object methods (`<init>`, `hashCode`, `equals`, `toString`), so `JVMHelp`'s own methods start at `jjhp+0`. The method layout is: `+0`=interrupt, `+2`=nullPoint, `+4`=arrayBound, `+6`=monitorState, `+8`=except. The code used offset 6 (monitorState) instead of 8 (except). This was a latent bug present in the original VHDL JOP that went undetected because hardware exception detection was apparently never exercised end-to-end in the original test suite. Fix: changed `ldi 6` to `ldi 8` in `asm/src/jvm.asm`. The `except()` method reads `IO_EXCPT` to determine the exception type and throws the pre-allocated `NPExc` or `ABExc` object accordingly. Symptom before fix: "Uncaught exception" for all hardware NPE/ABE — the thrown `IllegalMonitorStateException` didn't match any `catch (NullPointerException)` handler.
+23. **invokevirtual/invokeinterface null pointer missing delay slots**: In `asm/src/jvm_call.inc`, the null pointer check for `invokevirtual` and `invokeinterface` used `jmp null_pointer` without the required 2 delay slot NOPs. JOP's 3-stage microcode pipeline requires `nop; nop` after any `jmp` to avoid executing instructions from the fall-through path. Without delay slots, the `add` and `stmra` instructions after the branch were executed before the jump took effect, corrupting the stack (wrong values for TOS/NOS). Fix: changed to `pop; jmp null_pointer; nop; nop` — the `pop` discards the null reference from TOS before jumping, and the NOPs fill the delay slots.
+24. **GC conservative stack scanner null handle dereference**: `GC.push()` (`java/runtime/src/jop/com/jopdesign/sys/GC.java`) is called by the conservative scanner for every value on the stack. When the stack contains null (address 0), `push()` proceeds to `Native.rdMem(ref + OFF_PTR)` — a read from address 0 (plus small offset). With hardware NPE detection enabled, this triggers a spurious null pointer exception during GC scanning, crashing the system. The existing code comment says "null pointer check is in the following handle check" — the range check `ref < mem_start` was supposed to catch null, but only if `mem_start > 0`, which isn't guaranteed at all execution points. Fix: added explicit `if (ref == 0) return;` guard at the top of `push()`. This is a no-op for non-zero refs (one comparison, one branch) and prevents any hardware NPE from the scanner.
 
 ## Method Cache
 
@@ -147,7 +150,7 @@ captured during development — see the source code for authoritative details.
 
 ## JVM Test Suite (`java/apps/JvmTests/`)
 
-49 tests covering JVM bytecode correctness, run via `JopJvmTestsBramSim` (BRAM, 20M cycles). 48 pass, 1 expected failure (PutRef — requires exception detection, currently disabled).
+50 tests covering JVM bytecode correctness, run via `JopJvmTestsBramSim` (BRAM, 20M cycles). All 50 pass.
 
 **Test categories**:
 - **Core bytecodes**: Basic/Basic2 (stack/local ops), TypeMix, Static, StackManipulation
@@ -159,8 +162,8 @@ captured during development — see the source code for authoritative details.
 - **Constant loading**: ConstLoad (iconst/bipush/sipush/ldc boundary values)
 - **Field access (all types)**: IntField, ShortField, ByteField, CharField, BooleanField, FloatField, DoubleField, ObjectField — each tests putfield/getfield and putstatic/getstatic with boundary values
 - **OOP**: InstanceCheckcast, CheckCast, InvokeSpecial, InvokeSuper, SuperTest, InstanceOfTest, Iface, Clinit/Clinit2
-- **Exceptions**: Except (throw/catch, cast, recursive, finally — throw9 disabled), AthrowTest
-- **Other**: NativeMethods, PutRef (expected fail)
+- **Exceptions**: Except (throw/catch, cast, recursive, finally — throw9 disabled), AthrowTest, NullPointer (NPE tests 0-2), PutRef (NPE + array bounds)
+- **Other**: NativeMethods
 
 **Ported from**: Original JOP `jvm/` suite (Martin Schoeberl) + `jvmtest/` suite (Guenther Wimpassinger). The `jvmtest/` tests used a hash-based `TestCaseResult` framework; converted to the `jvm.TestCase` boolean pattern.
 
@@ -174,6 +177,44 @@ captured during development — see the source code for authoritative details.
 - **putref**: The `putref` memory operation (from `stprf` microcode) exists in the decode stage and BmbMemoryController but is never used by current JOP bytecodes. In the original VHDL, putref is part of the SCJ (Safety-Critical Java) scope check mechanism — it's a variant of putstatic that would validate reference assignment safety in an SCJ runtime. Our JOP port doesn't implement SCJ scope checks, so putref fires but is handled identically to putstatic (no additional logic).
 - **atmstart/atmend**: The `atmstart`/`atmend` memory operations (from `statm`/`endatm` microcode) are SimpCon atomicity markers. In the original VHDL SimpCon-based memory interface, they bracketed multi-cycle memory operations to prevent bus arbitration between start and end. With BMB (which has native transactions with backpressure), atomicity is handled by the bus protocol itself and CmpSync's global lock. These signals are decoded but have no effect in BmbMemoryController.
 - **IO_LOCK sync_out.status**: The VHDL `sync_out` record has a `status` field (read at IO_LOCK addr 5, bit 1), but it's only driven by `ihlu.vhd` (the IHLU alternative lock implementation for the Jeopard RTSJ framework). Our port uses CmpSync (not IHLU), so `SyncOut` has no `status` field. Old Java code in `ControlChannel.java` that reads IO_LOCK status bit 1 is for Jeopard/IHLU — not applicable.
+
+## Hardware Exception Detection (NPE + Array Bounds)
+
+Hardware-triggered exceptions for null pointer (NPE) and array bounds (ABE) violations are fully implemented and enabled. The memory controller detects violations during handle dereference and fires a synchronous exception that unwinds to the Java catch handler.
+
+### Exception Types
+
+| Type | EXC code | Trigger | Detection point |
+|---|---|---|---|
+| Null pointer | EXC_NP (2) | Handle address == 0 | HANDLE_READ state |
+| Array bounds (negative) | EXC_AB (3) | Index MSB set (negative signed int) | HANDLE_READ state |
+| Array bounds (upper) | EXC_AB (3) | Index >= array length | HANDLE_BOUND_WAIT state |
+
+### Exception Path
+
+1. **Memory controller** detects violation in HANDLE_READ or HANDLE_BOUND_WAIT
+2. Writes exception type to `IO_EXCPT` (BmbSys addr 4) via I/O bus → `excPend` set + `exc` pulse
+3. **BytecodeFetchStage** receives `exc` pulse → `excPendImmediate` fires (combinational OR with registered `excPend`, ensuring same-cycle `exc` + `jfetch` is caught immediately)
+4. On next `jfetch`, exception has priority over interrupts → JumpTable outputs `sys_exc` microcode address
+5. **sys_exc microcode** (`asm/src/jvm.asm`): decrements JPC by 1 (so exception points at faulting bytecode), loads `jjhp + 8`, calls `JVMHelp.except()` via `invoke`
+6. **`JVMHelp.except()`**: reads `IO_EXCPT` to determine type, throws pre-allocated `NPExc` or `ABExc`
+7. **`f_athrow`** microcode: unwinds stack frames searching exception tables for matching catch handler
+
+### Key Design Details
+
+- **NP_EXC/AB_EXC states are NOT busy**: The memory controller transitions to NP_EXC or AB_EXC and immediately becomes non-busy. This allows the pipeline to continue executing the remaining microcode instructions (nop/pop cleanup) of the faulting bytecode while the exception pulse propagates through BmbSys and BytecodeFetchStage. The exception is caught on the next `jfetch`, matching the VHDL `npexc`/`abexc` behavior.
+- **excPendImmediate**: BytecodeFetchStage uses `excPend || io.exc` combinationally so that if the `exc` pulse and `jfetch` arrive in the same cycle, the exception is caught immediately rather than missing this jfetch and firing at the next one (which may be in a different bytecode context, outside the try block).
+- **GC safety**: `GC.push()` has an explicit `ref == 0` guard to prevent the conservative stack scanner from triggering hardware NPE on null handles (bug #24).
+- **sys_exc offset**: `jjhp + 8` = `except()` method. The `jjhp` pointer skips 4 inherited Object methods, so JVMHelp's own methods start at offsets 0, 2, 4, 6, 8 (each method table entry is 2 words). See bug #22 for the original offset error.
+
+### VHDL Comparison
+
+The original VHDL `mem_sc.vhd` has NPE/ABE detection code, but the upper bounds check is gated by `rdy_cnt /= 0` which makes it effectively dead code in normal operation. Our implementation doesn't have this gating issue — HANDLE_BOUND_READ/WAIT states execute unconditionally for array accesses.
+
+### Known Limitations
+
+- **invokespecial on null**: Not detected. The `invokespecial` microcode doesn't check the receiver for null. Marked as TODO in `NullPointer.java`.
+- **NullPointer test layout sensitivity**: NullPointer tests 0-2 (explicit throw, invokevirtual-on-null, getfield-int-on-null) pass. Tests 3-6 (putfield/getfield long/ref on null) work individually but cause a system reboot when combined with the PutRef test class, suggesting a code layout sensitivity issue in the method cache or bytecode addressing. Needs investigation.
 
 ## DDR3 TODO
 

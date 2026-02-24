@@ -34,7 +34,6 @@ import jvm.obj.*;
 public class DoAll {
 
 	public static void main(String[] args) {
-		
 		TestCase tc[] = {
 				new Basic(),
 				new Basic2(),
@@ -70,7 +69,7 @@ public class DoAll {
 				new InvokeSpecial(),
 				new InvokeSuper(),
 				new PutRef(),
-				// new NullPointer(), // requires exception detection (disabled)
+				new NullPointer(),
 				new NativeMethods(),
 
 				// New arithmetic tests (no exceptions)

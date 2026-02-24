@@ -794,8 +794,9 @@ sys_exc:
 			sub					//    but this is simpler :-)
 			stjpc
 			ldm	jjhp			// interrupt() is at offset 0
-								// jjhp points in method table to first
-			ldi	6				// forth method (index 3 * 2 word);
+								// jjhp points to first method after
+								// Object methods (<init>,hashCode,equals,toString)
+			ldi	8				// except() is the 5th method (index 4 * 2 words)
 			add
 
 
