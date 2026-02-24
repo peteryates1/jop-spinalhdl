@@ -30,6 +30,7 @@ class BmbSysFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.wrData)
     dut.io.syncIn.halted := False
     dut.io.syncIn.s_out := False
+    dut.io.syncIn.status := False
     dut.io.ackIrq := False
     dut.io.ackExc := False
     dut.io.ioInt := 0
@@ -128,6 +129,7 @@ class BmbSysFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.wrData)
         anyseq(dut.io.syncIn.halted)
         dut.io.syncIn.s_out := False
+        dut.io.syncIn.status := False
         dut.io.ackIrq := False
         dut.io.ackExc := False
         dut.io.ioInt := 0

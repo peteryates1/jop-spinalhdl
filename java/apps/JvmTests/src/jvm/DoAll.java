@@ -99,7 +99,11 @@ public class DoAll {
 				// Additional coverage tests
 				new LongArrayBounds(),
 				new FloatArray(),
-				new DoubleArithmetic()
+				new DoubleArithmetic(),
+				new LongStaticField(),
+
+				// Regression tests
+				new CachePersistence()
 		};
 		
 		for (int i=0; i<tc.length; ++i) {

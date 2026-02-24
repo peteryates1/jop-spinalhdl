@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.bmb._
 import spinal.lib.com.eth._
-import jop.io.CmpSync
+import jop.io.{CmpSync, Ihlu, IhluConfig}
 import jop.debug._
 
 /**
@@ -175,6 +175,7 @@ case class JopCluster(
     io.bmb <> cores(0).io.bmb
     cores(0).io.syncIn.halted := False
     cores(0).io.syncIn.s_out  := False
+    cores(0).io.syncIn.status := False
     None
   } else if (cpuCnt == 1) {
     // Single-core but debug needs memory: 2-input arbiter (core + debug)
@@ -182,16 +183,29 @@ case class JopCluster(
     // Sync tie-offs for single-core:
     cores(0).io.syncIn.halted := False
     cores(0).io.syncIn.s_out  := False
+    cores(0).io.syncIn.status := False
     None
-  } else {
-    // SMP: CmpSync needed regardless of debug
+  } else if (!baseConfig.useIhlu) {
+    // SMP with global lock (CmpSync)
     val sync = CmpSync(cpuCnt)
     for (i <- 0 until cpuCnt) {
       sync.io.syncIn(i) := cores(i).io.syncOut
       cores(i).io.syncIn := sync.io.syncOut(i)
     }
     Some(sync)
+  } else {
+    // SMP with per-object lock (IHLU)
+    None
   }
+
+  val ihlu: Option[Ihlu] = if (cpuCnt >= 2 && baseConfig.useIhlu) {
+    val lock = Ihlu(IhluConfig(cpuCnt = cpuCnt))
+    for (i <- 0 until cpuCnt) {
+      lock.io.syncIn(i) := cores(i).io.syncOut
+      cores(i).io.syncIn := lock.io.syncOut(i)
+    }
+    Some(lock)
+  } else None
 
   // ==================================================================
   // Debug Subsystem (optional)

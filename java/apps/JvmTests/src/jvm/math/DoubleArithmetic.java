@@ -46,6 +46,56 @@ public class DoubleArithmetic extends TestCase {
 		double cd = c * d;
 		ok = ok && (cd == 1.0);
 
+		// drem: double remainder via SoftFloat64
+		double r = a / b; // 2.0 / 3.0 -- just for variable setup
+		double dr = 7.0;
+		double dd = 3.0;
+		double drem = dr % dd;
+		// 7.0 % 3.0 = 1.0
+		ok = ok && (drem == 1.0);
+
+		dr = -7.0;
+		dd = 3.0;
+		drem = dr % dd;
+		// -7.0 % 3.0 = -1.0
+		ok = ok && (drem == -1.0);
+
+		// dcmpl / dcmpg: double comparison
+		ok = ok && test_dcmp();
+
+		return ok;
+	}
+
+	/**
+	 * Test dcmpl and dcmpg bytecodes.
+	 * dcmpl: returns -1 for NaN. Used by javac for > and >= comparisons.
+	 * dcmpg: returns 1 for NaN. Used by javac for < and <= comparisons.
+	 */
+	boolean test_dcmp() {
+		boolean ok = true;
+		double a = 1.0;
+		double b = 2.0;
+		double c = 1.0;
+
+		// dcmpg path (a < b uses dcmpg)
+		ok = ok && (a < b);
+		ok = ok && !(a > b);
+		ok = ok && (a == c);
+		ok = ok && !(a != c);
+		// dcmpl path (b > a uses dcmpl)
+		ok = ok && (b > a);
+		ok = ok && !(b < a);
+
+		double neg = -1.0;
+		ok = ok && (neg < a);
+		ok = ok && (a > neg);
+
+		// Edge: zero comparisons
+		double z = 0.0;
+		ok = ok && (z < a);
+		ok = ok && !(z > a);
+		ok = ok && (z == z);
+
 		return ok;
 	}
 }

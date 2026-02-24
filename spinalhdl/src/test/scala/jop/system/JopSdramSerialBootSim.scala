@@ -71,6 +71,7 @@ case class JopSdramSerialBootHarness(
   // Single-core: no CmpSync
   jopSystem.io.syncIn.halted := False
   jopSystem.io.syncIn.s_out := False
+  jopSystem.io.syncIn.status := False
 
   // UART RX from simulation (bit-serial)
   jopSystem.io.rxd := io.rxd

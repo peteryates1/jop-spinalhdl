@@ -79,6 +79,7 @@ case class JopCoreLargeBramHarness(
   // Single-core: no CmpSync
   jopSystem.io.syncIn.halted := False
   jopSystem.io.syncIn.s_out := False
+  jopSystem.io.syncIn.status := False
 
   // No UART RX
   jopSystem.io.rxd := True

@@ -200,7 +200,20 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: In
   // Lock request register: set on write to addr 5 (acquire), cleared on write to addr 6 (release).
   // In VHDL, req is held by pipeline stall (wr stays high while halted). In our design,
   // I/O writes are one-cycle pulses, so we use a held register instead.
+  // Used by CmpSync (held level signal for lock ownership).
   val lockReqReg = Reg(Bool()) init(False)
+
+  // IHLU request pulse: one-cycle pulse on each IO_LOCK or IO_UNLOCK write.
+  // Used by IHLU (pulse-triggered per-object lock operations).
+  val lockReqPulseReg = Reg(Bool()) init(False)
+
+  // Lock data register: the write data from IO_LOCK/IO_UNLOCK write.
+  // For IHLU, this is the object handle address (lock identifier).
+  // For CmpSync, this value is ignored.
+  val lockDataReg = Reg(Bits(32 bits)) init(0)
+
+  // Lock operation register: False = lock (addr 5), True = unlock (addr 6).
+  val lockOpReg = Reg(Bool()) init(False)
 
   // Boot signal register: set on write to addr 7 (IO_SIGNAL).
   // VHDL uses a one-cycle pulse (sync_in.s_in defaults to '0' each cycle).
@@ -208,17 +221,23 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: In
   // always catch it regardless of timing alignment.
   val signalReg = Reg(Bool()) init(False)
 
-  // GC halt register: when set, CmpSync halts all OTHER cores.
+  // GC halt register: when set, CmpSync/IHLU halts all OTHER cores.
   // Used for stop-the-world GC: the collecting core sets this before gc(),
   // clears it after gc(). All other cores' pipelines are frozen.
   val gcHaltReg = Reg(Bool()) init(False)
 
-  // Sync output to CmpSync
-  io.syncOut.req    := lockReqReg
-  io.syncOut.s_in   := signalReg
-  io.syncOut.gcHalt := gcHaltReg
+  // Clear one-cycle pulse by default
+  lockReqPulseReg := False
 
-  // Halted output: combinational from CmpSync
+  // Sync output to CmpSync/IHLU
+  io.syncOut.req      := lockReqReg
+  io.syncOut.reqPulse := lockReqPulseReg
+  io.syncOut.s_in     := signalReg
+  io.syncOut.gcHalt   := gcHaltReg
+  io.syncOut.data     := lockDataReg
+  io.syncOut.op       := lockOpReg
+
+  // Halted output: combinational from CmpSync/IHLU
   io.halted := io.syncIn.halted
 
   // ==========================================================================
@@ -236,8 +255,11 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: In
     is(4)  { io.rdData := excTypeReg.resized }           // IO_EXCEPTION
     is(5)  {                                              // IO_LOCK
       // VHDL: rd_data(0) <= sync_out.halted; rd_data(1) <= sync_out.status
+      // bit 0: halted (CmpSync/IHLU stall status)
+      // bit 1: status (IHLU lock table full error; always 0 for CmpSync)
       io.rdData(0) := io.syncIn.halted
-      io.rdData(31 downto 1) := B(0, 31 bits)
+      io.rdData(1) := io.syncIn.status
+      io.rdData(31 downto 2) := B(0, 30 bits)
     }
     is(6)  { io.rdData := B(cpuId, 32 bits) }           // IO_CPU_ID
     is(7)  { io.rdData := io.syncIn.s_out.asBits.resized } // IO_SIGNAL
@@ -268,8 +290,18 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: In
       is(4)  {
         excTypeReg := io.wrData(7 downto 0); excPend := True   // IO_EXCEPTION
       }
-      is(5)  { lockReqReg := True }                      // IO_LOCK: acquire
-      is(6)  { lockReqReg := False }                     // IO_UNLOCK: release
+      is(5)  {                                              // IO_LOCK: acquire
+        lockReqReg := True
+        lockReqPulseReg := True           // One-cycle pulse for IHLU
+        lockDataReg := io.wrData          // Lock identifier (objectref) for IHLU
+        lockOpReg := False                // op=lock
+      }
+      is(6)  {                                              // IO_UNLOCK: release
+        lockReqReg := False
+        lockReqPulseReg := True           // One-cycle pulse for IHLU
+        lockDataReg := io.wrData          // Lock identifier (objectref) for IHLU
+        lockOpReg := True                 // op=unlock
+      }
       is(7)  { signalReg := io.wrData(0) }                 // IO_SIGNAL: boot sync
       is(8)  { mask := io.wrData(NUM_INT - 1 downto 0) } // IO_INTMASK
       is(9)  { clearAll := True }                         // IO_INTCLEARALL

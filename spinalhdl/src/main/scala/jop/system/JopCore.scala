@@ -38,7 +38,8 @@ case class JopCoreConfig(
   cpuId:        Int              = 0,
   cpuCnt:       Int              = 1,
   ioConfig:     IoConfig         = IoConfig(),
-  clkFreqHz:    Long             = 100000000L
+  clkFreqHz:    Long             = 100000000L,
+  useIhlu:      Boolean          = false  // Use IHLU (per-object lock) instead of CmpSync (global lock)
 ) {
   // Convenience accessors (avoid changing every reference site)
   def hasUart: Boolean = ioConfig.hasUart

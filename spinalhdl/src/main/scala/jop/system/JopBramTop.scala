@@ -138,6 +138,7 @@ case class JopBramTop(
     // Single-core: no CmpSync
     jopCore.io.syncIn.halted := False
     jopCore.io.syncIn.s_out := False
+    jopCore.io.syncIn.status := False
 
     // UART: TX only (no RX in BRAM top)
     io.ser_txd := jopCore.io.txd
@@ -311,6 +312,7 @@ case class JopBramSerialTop(
     // Single-core: no CmpSync
     jopCore.io.syncIn.halted := False
     jopCore.io.syncIn.s_out := False
+    jopCore.io.syncIn.status := False
 
     // UART: TX + RX for serial download
     io.ser_txd := jopCore.io.txd

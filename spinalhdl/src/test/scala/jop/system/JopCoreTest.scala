@@ -98,6 +98,7 @@ case class JopCoreTestHarness(
   // Single-core: no CmpSync
   jopCore.io.syncIn.halted := False
   jopCore.io.syncIn.s_out := False
+  jopCore.io.syncIn.status := False
 
   // No UART RX in test harness
   jopCore.io.rxd := True

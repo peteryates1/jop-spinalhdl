@@ -58,6 +58,7 @@ public class FloatTest extends TestCase {
 		ok = ok && test_fdiv();
 		ok = ok && test_fneg();
 		ok = ok && test_fcmp();
+		ok = ok && test_frem();
 
 		return ok;
 	}
@@ -129,6 +130,42 @@ public class FloatTest extends TestCase {
 		float neg = -1.0F;
 		ok = ok && (neg < a);
 		ok = ok && (a > neg);
+
+		return ok;
+	}
+
+	boolean test_frem() {
+		boolean ok = true;
+		// frem: float remainder via SoftFloat
+		float a = 7.0F;
+		float b = 3.0F;
+		float r = a % b;
+		// 7.0 % 3.0 = 1.0
+		ok = ok && ((int) r == 1);
+
+		a = 10.0F;
+		b = 3.0F;
+		r = a % b;
+		// 10.0 % 3.0 = 1.0
+		ok = ok && ((int) r == 1);
+
+		a = 6.0F;
+		b = 3.0F;
+		r = a % b;
+		// 6.0 % 3.0 = 0.0
+		ok = ok && ((int) r == 0);
+
+		a = -7.0F;
+		b = 3.0F;
+		r = a % b;
+		// -7.0 % 3.0 = -1.0
+		ok = ok && ((int) r == -1);
+
+		a = 7.0F;
+		b = -3.0F;
+		r = a % b;
+		// 7.0 % -3.0 = 1.0 (sign follows dividend)
+		ok = ok && ((int) r == 1);
 
 		return ok;
 	}

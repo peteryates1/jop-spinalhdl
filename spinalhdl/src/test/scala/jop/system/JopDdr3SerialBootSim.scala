@@ -154,6 +154,7 @@ case class JopDdr3SerialBootHarness(
   // Single-core: no CmpSync
   jopCore.io.syncIn.halted := False
   jopCore.io.syncIn.s_out := False
+  jopCore.io.syncIn.status := False
 
   // UART RX from simulation (bit-serial)
   jopCore.io.rxd := io.rxd

@@ -109,6 +109,7 @@ case class JopCoreBramDebugHarness(
   // Single-core: no CmpSync
   jopSystem.io.syncIn.halted := False
   jopSystem.io.syncIn.s_out := False
+  jopSystem.io.syncIn.status := False
 
   // No UART RX in debug harness
   jopSystem.io.rxd := True

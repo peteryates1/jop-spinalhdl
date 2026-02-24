@@ -3,20 +3,32 @@ package jop.io
 import spinal.core._
 
 /**
- * Sync input from a core to CmpSync (lock request).
+ * Sync input from a core to CmpSync/IHLU (lock request).
+ *
+ * For CmpSync: only req, s_in, gcHalt are used. data, op, reqPulse are ignored.
+ * For IHLU: reqPulse is a one-cycle pulse triggering lock/unlock, data is the
+ *           lock identifier (object handle), and op selects lock (False) vs
+ *           unlock (True). req is unused by IHLU.
  */
 case class SyncIn() extends Bundle {
-  val req    = Bool()    // Lock request (held high while lock needed)
-  val s_in   = Bool()    // Boot synchronization signal
-  val gcHalt = Bool()    // GC halt request (halts all OTHER cores)
+  val req      = Bool()    // Lock request held high (CmpSync only)
+  val reqPulse = Bool()    // Lock request one-cycle pulse (IHLU only)
+  val s_in     = Bool()    // Boot synchronization signal
+  val gcHalt   = Bool()    // GC halt request (halts all OTHER cores)
+  val data     = Bits(32 bits)  // Lock identifier (IHLU only: object handle address)
+  val op       = Bool()         // Lock operation (IHLU only: False=lock, True=unlock)
 }
 
 /**
- * Sync output from CmpSync to a core (lock status).
+ * Sync output from CmpSync/IHLU to a core (lock status).
+ *
+ * For CmpSync: only halted and s_out are used. status is always False.
+ * For IHLU: status indicates lock table full error (read via IO_LOCK).
  */
 case class SyncOut() extends Bundle {
-  val halted = Bool()  // Core is halted (waiting for lock)
+  val halted = Bool()  // Core is halted (waiting for lock or GC halt)
   val s_out  = Bool()  // Boot synchronization broadcast
+  val status = Bool()  // Lock table full error (IHLU only)
 }
 
 /**
@@ -114,6 +126,9 @@ case class CmpSync(cpuCnt: Int) extends Component {
   for (i <- 0 until cpuCnt) {
     // Boot synchronization: broadcast core 0's s_in to all
     io.syncOut(i).s_out := io.syncIn(0).s_in
+
+    // Status: CmpSync never has table-full errors (always False)
+    io.syncOut(i).status := False
 
     // GC halt: if any OTHER core has gcHalt set, this core is halted
     val gcHaltFromOthers = (0 until cpuCnt).filter(_ != i)
