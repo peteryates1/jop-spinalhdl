@@ -426,6 +426,7 @@ case class JopCore(
   ioRdData := 0
   when(JopIoSpace.isSys(ioAddr))  { ioRdData := bmbSys.io.rdData }
   if (bmbUart.isDefined)     when(JopIoSpace.isUart(ioAddr))     { ioRdData := bmbUart.get.io.rdData }
+  else                       when(JopIoSpace.isUart(ioAddr))     { ioRdData := B(1, 32 bits) } // Null device: TDRE=1 so writes silently succeed
   if (bmbEth.isDefined)      when(JopIoSpace.isEth(ioAddr))      { ioRdData := bmbEth.get.io.rdData }
   if (bmbMdio.isDefined)     when(JopIoSpace.isMdio(ioAddr))     { ioRdData := bmbMdio.get.io.rdData }
   if (bmbSdSpi.isDefined)    when(JopIoSpace.isSdSpi(ioAddr))    { ioRdData := bmbSdSpi.get.io.rdData }
