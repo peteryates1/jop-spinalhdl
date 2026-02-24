@@ -224,7 +224,10 @@ public class Const {
 	
 	// Expansion header on DE2-70
 	public static final int EH_BASE = IO_BASE+0x30;
-	
+
+	// SD Native interface (BmbSdNative)
+	public static final int IO_SD = IO_BASE+0x30;
+
 	// Ethernet interface on DE2
 	public static final int DM9000 = IO_BASE+0x50;
 	
