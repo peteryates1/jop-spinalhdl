@@ -106,7 +106,7 @@ case class JopSmpDdr3TestHarness(
   // ====================================================================
 
   val bmbBridge = new BmbCacheBridge(cluster.bmbParameter, cacheAddrWidth, cacheDataWidth)
-  val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth))
+  val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth, setCount = 512))
   val adapter = new CacheToMigAdapter
   val migModel = MigBehavioralModel(
     addrWidth = 28,

@@ -167,7 +167,7 @@ case class JopDdr3Top(
     val cacheDataWidth = 128 // MIG native data width
 
     val bmbBridge = new BmbCacheBridge(cluster.bmbParameter, cacheAddrWidth, cacheDataWidth)
-    val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth))
+    val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth, setCount = 512))
     val adapter = new CacheToMigAdapter
 
     // JopCluster BMB -> BmbCacheBridge
