@@ -54,6 +54,13 @@ class BmbProtocolFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.bout)
     anyseq(dut.io.bcopd)
     anyseq(dut.io.ioRdData)
+    // Snoop bus tie-off (useAcache defaults true, creating optional snoopIn)
+    dut.io.snoopIn.foreach { s =>
+      s.valid := False
+      s.isArray := False
+      s.handle := 0
+      s.index := 0
+    }
     // BMB slave: may or may not accept (anyseq on ready)
     anyseq(dut.io.bmb.cmd.ready)
     // BMB slave: response valid

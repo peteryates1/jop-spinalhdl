@@ -57,6 +57,13 @@ class BmbMemoryControllerFormal extends SpinalFormalFunSuite {
     dut.io.bout := B(0)
     dut.io.bcopd := B(0)
     dut.io.ioRdData := B(0)
+    // Snoop bus tie-off (useAcache defaults true, creating optional snoopIn)
+    dut.io.snoopIn.foreach { s =>
+      s.valid := False
+      s.isArray := False
+      s.handle := 0
+      s.index := 0
+    }
     // BMB slave: always accept commands and provide responses
     dut.io.bmb.cmd.ready := True
     dut.io.bmb.rsp.valid := True
@@ -95,6 +102,13 @@ class BmbMemoryControllerFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.bout)
     anyseq(dut.io.bcopd)
     anyseq(dut.io.ioRdData)
+    // Snoop bus tie-off (useAcache defaults true, creating optional snoopIn)
+    dut.io.snoopIn.foreach { s =>
+      s.valid := False
+      s.isArray := False
+      s.handle := 0
+      s.index := 0
+    }
     // BMB slave: always accept commands immediately
     dut.io.bmb.cmd.ready := True
     if (rspAlwaysValid) dut.io.bmb.rsp.valid := True

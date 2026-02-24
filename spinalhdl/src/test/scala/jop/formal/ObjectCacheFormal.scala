@@ -32,6 +32,10 @@ class ObjectCacheFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.gfVal)
     anyseq(dut.io.pfVal)
     anyseq(dut.io.inval)
+    // Snoop bus tie-off
+    dut.io.snoopValid := False
+    dut.io.snoopHandle := 0
+    dut.io.snoopFieldIdx := 0
   }
 
   test("invalidation clears all valid bits") {
@@ -85,6 +89,10 @@ class ObjectCacheFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.gfVal)
         anyseq(dut.io.pfVal)
         anyseq(dut.io.inval)
+        // Snoop bus tie-off
+        dut.io.snoopValid := False
+        dut.io.snoopHandle := 0
+        dut.io.snoopFieldIdx := 0
 
         // Force field index to be uncacheable: upper bits nonzero
         val lowerBits = UInt(dut.indexBits bits)
@@ -135,6 +143,10 @@ class ObjectCacheFormal extends SpinalFormalFunSuite {
         dut.io.gfVal := B(0)
         dut.io.pfVal := B(0)
         dut.io.inval := False
+        // Snoop bus tie-off
+        dut.io.snoopValid := False
+        dut.io.snoopHandle := 0
+        dut.io.snoopFieldIdx := 0
 
         when(pastValidAfterReset()) {
           // All valid bits are zero after reset, so no hit possible
