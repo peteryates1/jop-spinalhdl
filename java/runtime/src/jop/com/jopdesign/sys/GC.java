@@ -24,29 +24,40 @@ package com.jopdesign.sys;
 
 
 /**
- *     Real-time garbage collection for JOP.
- *     Also contains some scope support.
- *     At the moment either GC or scopes.
- *     
+ *     Mark-compact garbage collection for JOP.
+ *     Replaces the semi-space copying collector to recover ~2x usable heap.
+ *
+ *     Key insight: JOP uses handle indirection for all object references.
+ *     Compaction only needs to update handle OFF_PTR fields, not scan
+ *     the entire heap for pointer updates.
+ *
+ *     Algorithm:
+ *       1. Toggle toSpace mark value (all existing objects become unmarked)
+ *       2. Mark phase: tri-color marking from roots (stack + statics)
+ *       3. Compact phase: slide live objects down, update handle OFF_PTR
+ *       4. Sweep: free unmarked handles
+ *
+ *     Also contains scope support (unchanged from original).
+ *
  * @author Martin Schoeberl (martin@jopdesign.com)
  *
  */
 public class GC {
-	
+
 	static int mem_start;		// read from memory
 	// get a effective heap size with fixed handle count
 	// for our RT-GC tests
 	static int full_heap_size;
-	
+
 	/**
 	 * Length of the header when using scopes.
 	 * Can be shorter then the GC supporting handle.
 	 */
 	private static final int HEADER_SIZE = 6;
-	
+
 	/**
 	 * Fields in the handle structure.
-	 * 
+	 *
 	 * WARNING: Don't change the size as long
 	 * as we do conservative stack scanning.
 	 */
@@ -56,12 +67,11 @@ public class GC {
 	 * The handle contains following data:
 	 * 0 pointer to the object in the heap or 0 when the handle is free
 	 * 1 pointer to the method table or length of an array
-	 * 2 denote in which space or scope the object is 
+	 * 2 mark word: equals toSpace when marked (black), else unmarked
 	 * 3 type info: object, primitve array or ref array
 	 * 4 pointer to next handle of same type (used or free)
 	 * 5 gray list
-	 * 6 space marker - either toSpace or fromSpace
-	 * 
+	 *
 	 * !!! be carefule when changing the handle structure, it's
 	 * used in System.arraycopy() and probably in jvm.asm!!!
 	 */
@@ -69,24 +79,24 @@ public class GC {
 	public static final int OFF_MTAB_ALEN = 1;
 	public static final int OFF_SPACE = 2;
 	public static final int OFF_TYPE = 3;
-	
+
 	// Scope level shares the to/from pointer
 	public static final int OFF_SCOPE_LEVEL = OFF_SPACE;
-	
+
 	// Offset with memory reference. Can we use this field?
 	// Does not work for arrays
 	public static final int OFF_MEM = 5;
-	
-	
+
+
 	// size != array length (think about long/double)
-	
+
 	// use array types 4..11 are standard boolean to long
 	// our addition:
 	// 1 reference
 	// 0 a plain object
 	public static final int IS_OBJ = 0;
 	public static final int IS_REFARR = 1;
-	
+
 	/**
 	 * Free and Use list.
 	 */
@@ -100,51 +110,61 @@ public class GC {
 	 * Special end of list marker -1
 	 */
 	static final int GREY_END = -1;
-		
+
 	static final int TYPICAL_OBJ_SIZE = 5;
 	static int handle_cnt;
-	/**
-	 * Size of one semi-space, complete heap is two times
-	 * the semi_size
-	 */
-	static int semi_size;
-	
-	
-	static int heapStartA, heapStartB;
-	static boolean useA;
 
-	static int fromSpace;
-	static int toSpace;
 	/**
-	 * Points to the start of the to-space after
-	 * a flip. Objects are copied to copyPtr and
-	 * copyPtr is incremented.
+	 * Start of the single heap region (after handle area).
+	 * Mark-compact uses one contiguous heap instead of two semi-spaces.
+	 */
+	static int heapStart;
+	/**
+	 * Total heap size in words.
+	 */
+	static int heapSize;
+
+	/**
+	 * Current mark value. Toggled each GC cycle.
+	 * Objects with OFF_SPACE == toSpace are considered marked (black).
+	 * Write barriers in JVM.java compare against this value.
+	 *
+	 * We use non-zero values (1 and 2) to avoid confusion with
+	 * the initial zero state of OFF_SPACE.
+	 */
+	static int toSpace;
+
+	/**
+	 * Points past the end of compacted live data (grows upward from heapStart).
+	 * After compaction, all live data is in [heapStart, copyPtr).
+	 * New allocations happen at the top, from allocPtr downward.
+	 * Free space = [copyPtr, allocPtr).
 	 */
 	static int copyPtr;
 	/**
-	 * Points to the end of the to-space after
-	 * a flip. Objects are allocated from the end
-	 * and allocPtr gets decremented.
+	 * Points to the lowest allocated-but-not-yet-compacted object.
+	 * New objects are allocated by decrementing allocPtr.
+	 * Free space = [copyPtr, allocPtr).
 	 */
 	static int allocPtr;
-	
+
 	static int freeList;
 	// TODO: useList is only used for a faster handle sweep
 	// do we need it?
 	static int useList;
 	static int grayList;
-	
+
 	static int addrStaticRefs;
-	
+
 	static Object mutex;
-	
+
 	static boolean concurrentGc;
-		
+
 	static int roots[];
 
 	static OutOfMemoryError OOMError;
-	
-	// Memory allocation pointer used before we enter the ImmortalMemory 
+
+	// Memory allocation pointer used before we enter the ImmortalMemory
 	static int allocationPointer;
 
 	static void init(int mem_size, int addr) {
@@ -165,19 +185,23 @@ public class GC {
 		} else {
 			full_heap_size = mem_size-mem_start;
 			// Use shift for division (JOP IDIV is broken)
-			handle_cnt = full_heap_size >> 4;  // /16 instead of /18
-			int tmp = handle_cnt << 3;  // *8 using shift
-			int remain = full_heap_size - tmp;
-			semi_size = remain >> 1;  // /2 using shift
+			// Mark-compact: no semi-space split, so more heap available
+			// handle_cnt = full_heap_size / (HANDLE_SIZE + TYPICAL_OBJ_SIZE)
+			// Use /16 approximation (same as before)
+			handle_cnt = full_heap_size >> 4;  // /16
+			int handleArea = handle_cnt << 3;  // handle_cnt * HANDLE_SIZE
 
-			heapStartA = mem_start+(handle_cnt << 3);  // handle_cnt * 8 using shift
-			heapStartB = heapStartA+semi_size;
+			heapStart = mem_start + handleArea;
+			heapSize = mem_size - heapStart;
 
-			useA = true;
-			copyPtr = heapStartA;
-			allocPtr = copyPtr+semi_size;
-			toSpace = heapStartA;
-			fromSpace = heapStartB;
+			// Single contiguous heap: [heapStart, heapStart+heapSize)
+			// Compacted data grows upward from heapStart (copyPtr)
+			// New allocations grow downward from top (allocPtr)
+			copyPtr = heapStart;
+			allocPtr = heapStart + heapSize;
+
+			// Initial mark value - use 1, will toggle to 2, back to 1, etc.
+			toSpace = 1;
 
 			freeList = 0;
 			useList = 0;
@@ -194,7 +218,6 @@ public class GC {
 				Native.wrMem(0, ref+OFF_SPACE);
 				ref += HANDLE_SIZE;  // increment by 8 using addition
 			}
-			// SKIP heap clear for now - may be corrupting memory
 			concurrentGc = false;
 		}
 		// allocate the monitor
@@ -202,18 +225,18 @@ public class GC {
 
 		OOMError = new OutOfMemoryError();
 	}
-	
+
 	public static Object getMutex() {
 		return mutex;
 	}
-	
+
 	/**
 	 * Add object to the gray list/stack
 	 * @param ref
 	 */
 	static void push(int ref) {
 
-		// Explicit null guard — prevents hardware NPE when GC's conservative
+		// Explicit null guard -- prevents hardware NPE when GC's conservative
 		// stack scanner passes address 0 to Native.rdMem() during handle checks.
 		if (ref == 0) return;
 
@@ -239,43 +262,20 @@ public class GC {
 //				log("push of a handle with 0 at OFF_PRT!", ref);
 				return;
 			}
-						
-			// Is it black?
-			// Can happen from a left over from the last GC cycle, can it?
-			// -- it's checked in the write barrier
-			// -- but not in mark....
+
+			// Is it already marked (black)?
 			if (Native.rdMem(ref+OFF_SPACE)==toSpace) {
-//				log("push: already in toSpace");
+//				log("push: already marked");
 				return;
 			}
-			
-			// only objects not allready in the gray list
+
+			// only objects not already in the gray list
 			// are added
 			if (Native.rdMem(ref+OFF_GREY)==0) {
 				// pointer to former gray list head
 				Native.wrMem(grayList, ref+OFF_GREY);
-				grayList = ref;			
-			}			
-		}		
-	}
-	/**
-	 * switch from-space and to-space
-	 */
-	static void flip() {
-		synchronized (mutex) {
-			// grayList should be GREY_END at flip (non-concurrent mode)
-
-			useA = !useA;
-			if (useA) {
-				copyPtr = heapStartA;
-				fromSpace = heapStartB;
-				toSpace = heapStartA;
-			} else {
-				copyPtr = heapStartB;			
-				fromSpace = heapStartA;
-				toSpace = heapStartB;
+				grayList = ref;
 			}
-			allocPtr = copyPtr+semi_size;
 		}
 	}
 
@@ -317,8 +317,13 @@ public class GC {
 			push(Native.rdMem(addr+i));
 		}
 	}
-	
-	static void markAndCopy() {
+
+	/**
+	 * Mark phase: traverse from roots, mark all reachable objects.
+	 * Objects are marked by setting OFF_SPACE = toSpace (black).
+	 * No copying occurs during this phase.
+	 */
+	static void mark() {
 
 		int i, ref;
 
@@ -338,7 +343,7 @@ public class GC {
 				Native.wrMem(0, ref+OFF_GREY);		// mark as not in list
 			}
 
-			// already moved
+			// already marked
 			if (Native.rdMem(ref+OFF_SPACE)==toSpace) {
 				continue;
 			}
@@ -347,6 +352,9 @@ public class GC {
 			if (Native.rdMem(ref+OFF_PTR)==0) {
 				continue;
 			}
+
+			// Mark it BLACK
+			Native.wrMem(toSpace, ref+OFF_SPACE);
 
 			// push all children
 
@@ -373,105 +381,151 @@ public class GC {
 					flags >>>= 1;
 				}
 			}
-
-			// Do not copy objects from somewhere else than fromspace
-			if (Native.rdMem(ref+OFF_SPACE)!=fromSpace) {
-				continue;
-			}
-
-			// now copy it - color it BLACK
-			int size;
-			int dest;
-
-			if (flags==IS_OBJ) {
-				// plain object
-				size = Native.rdMem(Native.rdMem(ref+OFF_MTAB_ALEN)-Const.CLASS_HEADR);
-			} else if (flags==7 || flags==11) {
-				// long or double array
-				size = Native.rdMem(ref+OFF_MTAB_ALEN) << 1;
-			} else {
-				// other array
-				size = Native.rdMem(ref+OFF_MTAB_ALEN);
-			}
-
-			synchronized(mutex) {
-				dest = copyPtr;
-				copyPtr += size;
-
-				// set it BLACK
-				Native.wrMem(toSpace, ref+OFF_SPACE);
-			}
-
-			if (size>0) {
-				// copy using hardware memCopy (one word per call)
-				for (i=0; i<size; i++) {
-  					Native.memCopy(dest, addr, i);
-				}
-			}
-
-			// update object pointer to the new location
-			Native.wrMem(dest, ref+OFF_PTR);
-			// wait until in-flight accesses use the new location
-			for (i = 0; i < 10; i++);
-			// turn off copy state (stopbit)
-			Native.memCopy(dest, dest, -1);
 		}
 	}
-	
+
 	/**
-	 * Sweep through the 'old' use list and move garbage to free list.
+	 * Get the size of the object/array data for a handle.
+	 * @param ref handle address
+	 * @return size in words
 	 */
-	static void sweepHandles() {
+	static int getObjectSize(int ref) {
+		int type = Native.rdMem(ref+OFF_TYPE);
+		if (type==IS_OBJ) {
+			// plain object: size is at offset 0 of class struct
+			// OFF_MTAB_ALEN points to method table
+			// class struct is at mtab - CLASS_HEADR
+			int mtab = Native.rdMem(ref+OFF_MTAB_ALEN);
+			return Native.rdMem(mtab-Const.CLASS_HEADR);
+		} else if (type==7 || type==11) {
+			// long or double array: 2 words per element
+			return Native.rdMem(ref+OFF_MTAB_ALEN) << 1;
+		} else {
+			// other arrays (including reference arrays): 1 word per element
+			return Native.rdMem(ref+OFF_MTAB_ALEN);
+		}
+	}
+
+	/**
+	 * Sort the use list by ascending OFF_PTR (object data address).
+	 * This is CRITICAL for correct compaction: objects must be processed
+	 * in address order so that sliding compaction never overwrites
+	 * not-yet-copied data.
+	 *
+	 * Uses insertion sort on a singly-linked list. O(n^2) worst case,
+	 * which is acceptable for JOP's typical object counts (dozens to hundreds).
+	 *
+	 * Must be called under mutex.
+	 */
+	static void sortUseListByAddress() {
+		int sorted = 0;		// sorted list head (empty)
+		int curr = useList;
+
+		while (curr != 0) {
+			int next = Native.rdMem(curr + OFF_NEXT);
+			int currAddr = Native.rdMem(curr + OFF_PTR);
+
+			// Insert into sorted list at the correct position
+			if (sorted == 0 || currAddr <= Native.rdMem(sorted + OFF_PTR)) {
+				// Insert at head
+				Native.wrMem(sorted, curr + OFF_NEXT);
+				sorted = curr;
+			} else {
+				// Find insertion point: scan until we find a node
+				// whose next has a higher address
+				int prev = sorted;
+				int scan = Native.rdMem(sorted + OFF_NEXT);
+				while (scan != 0 && Native.rdMem(scan + OFF_PTR) < currAddr) {
+					prev = scan;
+					scan = Native.rdMem(scan + OFF_NEXT);
+				}
+				// Insert curr between prev and scan
+				Native.wrMem(scan, curr + OFF_NEXT);
+				Native.wrMem(curr, prev + OFF_NEXT);
+			}
+			curr = next;
+		}
+
+		useList = sorted;
+	}
+
+	/**
+	 * Compact phase: slide all marked (live) objects down to eliminate gaps.
+	 * Walk the use list IN ADDRESS ORDER. For each marked handle:
+	 *   - compute new position at compactPtr (grows from heapStart)
+	 *   - copy object data to new position (forward copy, safe since dest < source)
+	 *   - update handle's OFF_PTR to new position
+	 * Unmarked handles are freed.
+	 *
+	 * After compaction:
+	 *   - copyPtr = end of compacted data (next free word from bottom)
+	 *   - allocPtr = top of heap (new allocations grow down from here)
+	 *   - All live data is contiguous in [heapStart, copyPtr)
+	 */
+	static void compactAndSweep() {
 
 		int ref;
-		
+		int compactPtr = heapStart;
+
 		synchronized (mutex) {
+			// CRITICAL: sort by object address before compaction.
+			// Without this, sliding compaction can overwrite objects
+			// that haven't been copied yet.
+			sortUseListByAddress();
+
 			ref = useList;		// get start of the list
 			useList = 0;		// new uselist starts empty
 		}
-		
+
 		while (ref!=0) {
-			
-			// read next element, as it is destroyed
-			// by addTo*List()
+
+			// read next element, as it is destroyed by list operations
 			int next = Native.rdMem(ref+OFF_NEXT);
-			synchronized (mutex) {
-				// a BLACK one
-				if (Native.rdMem(ref+OFF_SPACE)==toSpace) {
-					// add to used list
+
+			// a BLACK one (marked)
+			if (Native.rdMem(ref+OFF_SPACE)==toSpace) {
+				int size = getObjectSize(ref);
+				int oldAddr = Native.rdMem(ref+OFF_PTR);
+
+				// Only move if the new position is different
+				if (oldAddr != compactPtr && size > 0) {
+					// Copy data to compacted position (forward copy).
+					// Safe because compactPtr <= oldAddr when sorted
+					// by ascending address (proven by induction:
+					// compactPtr advances by sum of sizes of objects
+					// below this one, which <= their address span).
+					for (int i=0; i<size; ++i) {
+						Native.wrMem(Native.rdMem(oldAddr+i), compactPtr+i);
+					}
+					// Update handle's data pointer
+					Native.wrMem(compactPtr, ref+OFF_PTR);
+				}
+
+				compactPtr += size;
+
+				// add to used list
+				synchronized (mutex) {
 					Native.wrMem(useList, ref+OFF_NEXT);
-					useList = ref;					
-				// a WHITE one
-				} else {
+					useList = ref;
+				}
+			// a WHITE one (unmarked = garbage)
+			} else {
+				synchronized (mutex) {
 					// pointer to former freelist head
 					Native.wrMem(freeList, ref+OFF_NEXT);
-					freeList = ref;					
+					freeList = ref;
 					// mark handle as free
 					Native.wrMem(0, ref+OFF_PTR);
-				}		
+				}
 			}
 			ref = next;
 		}
-		
-	}
 
-	/**
-	 * Clean the from-space 
-	 */
-	static void zapSemi() {
-
-		// clean the from-space to prepare for the next
-		// flip
-		int end = fromSpace+semi_size;
-		for (int i=fromSpace; i<end; ++i) {
-			Native.wrMem(0, i);
+		// Update heap pointers
+		synchronized (mutex) {
+			copyPtr = compactPtr;
+			allocPtr = heapStart + heapSize;
 		}
-		// for tests clean also the remainig memory in the to-space
-//		synchronized (mutex) {
-//			for (int i=copyPtr; i<allocPtr; ++i) {
-//				Native.wrMem(0, i);
-//			}			
-//		}
 	}
 
 	public static void setConcurrent() {
@@ -490,7 +544,7 @@ public class GC {
 	public static void gc() {
 		// Stop-the-world: halt all other cores during GC.
 		// This prevents concurrent SDRAM access that could see
-		// partially-moved objects during the copying phase.
+		// partially-moved objects during the compaction phase.
 		Native.wr(1, Const.IO_GC_HALT);
 
 		// For stop-the-world GC, discard write barrier entries.
@@ -500,19 +554,38 @@ public class GC {
 		if (!concurrentGc) {
 			grayList = GREY_END;
 		}
-		flip();
-		markAndCopy();
-		sweepHandles();
-		zapSemi();
+
+		// Toggle mark value: 1 -> 2 -> 1 -> 2 ...
+		// After toggle, all existing objects have the old mark value
+		// in OFF_SPACE, so they appear unmarked (white).
+		if (toSpace == 1) {
+			toSpace = 2;
+		} else {
+			toSpace = 1;
+		}
+
+		mark();
+		compactAndSweep();
+
+		// Zero the free region for fresh allocations.
+		// Replaces zapSemi() from the semi-space collector.
+		// Ensures newly allocated objects have zeroed fields
+		// (JVM spec: all fields default to 0/null).
+		for (int i = copyPtr; i < allocPtr; ++i) {
+			Native.wrMem(0, i);
+		}
+
+		// Invalidate caches after compaction -- object data has moved
+		Native.invalidate();
 
 		// Resume other cores
 		Native.wr(0, Const.IO_GC_HALT);
 	}
-	
+
 	static int free() {
 		return allocPtr-copyPtr;
 	}
-	
+
 	/**
 	 * Size of scratchpad memory in 32-bit words
 	 * @return
@@ -541,7 +614,7 @@ public class GC {
 				Memory sc = null;
 				if (RtThreadImpl.mission) {
 					Scheduler s = Scheduler.sched[RtThreadImpl.sys.cpuId];
-					sc = s.ref[s.active].currentArea;			
+					sc = s.ref[s.active].currentArea;
 				}
 				else
 				{
@@ -553,17 +626,17 @@ public class GC {
 				}
 				ptr = sc.allocPtr;
 				sc.allocPtr += size+HEADER_SIZE;
-				
+
 				//Add scope info to pointer of newly created object
 				if (Config.ADD_REF_INFO){
-					ptr = ptr | (sc.level << 25);	
+					ptr = ptr | (sc.level << 25);
 				}
-				
+
 				//Add scope info to object's handler field
 				Native.wrMem(sc.level, ptr+OFF_SCOPE_LEVEL);
-				
+
 				// Add scoped memory area info into objects handle
-				// TODO: Choose an appropriate field since we also want scope level info in handle 
+				// TODO: Choose an appropriate field since we also want scope level info in handle
 				Native.wrMem( Native.toInt(sc), ptr+OFF_MEM);
 			}
 			Native.wrMem(ptr+HEADER_SIZE, ptr+OFF_PTR);
@@ -571,7 +644,7 @@ public class GC {
 			Native.wrMem(0, ptr+OFF_TYPE);
 			// TODO: memory initialization is needed
 			// either on scope creation+exit or in new
-			return ptr;		
+			return ptr;
 		}
 
 		// that's the stop-the-world GC
@@ -602,7 +675,7 @@ public class GC {
 				useList = ref;
 				// pointer to real object, also marks it as non free
 				Native.wrMem(allocPtr, ref); // +OFF_PTR
-				// mark it as BLACK - means it will be in toSpace
+				// mark it as BLACK - means it is in current toSpace
 				Native.wrMem(toSpace, ref+OFF_SPACE);
 				Native.wrMem(0, ref+OFF_GREY);
 				// ref. flags used for array marker
@@ -634,7 +707,7 @@ public class GC {
 
 		return ref;
 	}
-	
+
 	public static int newArray(int size, int type) {
 		if (size < 0) {
 			throw new NegativeArraySizeException();
@@ -645,7 +718,7 @@ public class GC {
 		// long or double array
 		if((type==11)||(type==7)) size <<= 1;
 		// reference array type is 1 (our convention)
-		
+
 		if (Config.USE_SCOPES) {
 			// allocate in scope
 			int ptr = allocationPointer;
@@ -658,7 +731,7 @@ public class GC {
 				Memory sc = null;
 				if (RtThreadImpl.mission) {
 					Scheduler s = Scheduler.sched[RtThreadImpl.sys.cpuId];
-					sc = s.ref[s.active].currentArea;				
+					sc = s.ref[s.active].currentArea;
 				}
 				else
 				{
@@ -670,15 +743,15 @@ public class GC {
 				}
 				ptr = sc.allocPtr;
 				sc.allocPtr += size+HEADER_SIZE;
-				
+
 				//Add scope info to pointer of newly created array
 				if (Config.ADD_REF_INFO){
-					ptr = ptr | (sc.level << 25);	
+					ptr = ptr | (sc.level << 25);
 				}
-				
+
 				//Add scope info to array's handler field
 				Native.wrMem(sc.level, ptr+OFF_SCOPE_LEVEL);
-				
+
 				// Add scoped memory area info into array handle
 				// TODO: Choose an appropriate field since we also want scope level info in handle
 				// TODO: Does not work in arrays
@@ -733,7 +806,7 @@ public class GC {
 			useList = ref;
 			// pointer to real object, also marks it as non free
 			Native.wrMem(allocPtr, ref); // +OFF_PTR
-			// mark it as BLACK - means it will be in toSpace
+			// mark it as BLACK - means it is in current toSpace
 			Native.wrMem(toSpace, ref+OFF_SPACE);
 			// TODO: should not be necessary - now just for sure
 			Native.wrMem(0, ref+OFF_GREY);
@@ -743,9 +816,9 @@ public class GC {
 			Native.wrMem(arrayLength, ref+OFF_MTAB_ALEN);
 		}
 		return ref;
-		
+
 	}
-	
+
 
 	/**
 	 * @return
@@ -758,25 +831,25 @@ public class GC {
 	 * @return
 	 */
 	public static int totalMemory() {
-		return semi_size*4;
+		return heapSize*4;
 	}
-	
+
 	/**
 	 * Check if a given value is a valid handle.
-	 * 
+	 *
 	 * This method traverse the list of handles (in use) to check
 	 * if the handle provided belong to the list.
-	 * 
+	 *
 	 * It does *not* check the free handle list.
-	 * 
-	 * One detail: the result may state that a handle to a 
-	 * (still unknown garbage) object is valid, in case 
-	 * the object is not reachable but still present 
+	 *
+	 * One detail: the result may state that a handle to a
+	 * (still unknown garbage) object is valid, in case
+	 * the object is not reachable but still present
 	 * on the use list.
 	 * This happens in case the object becomes unreachable
 	 * during execution, but GC has not reclaimed it yet.
 	 * Anyway, it's still a valid object handle.
-	 * 
+	 *
 	 * @param handle the value to be checked.
 	 * @return
 	 */
@@ -784,15 +857,15 @@ public class GC {
 	{
 	  boolean isValid;
 	  int handlePointer;
-	  
-	  // assume it's not valid and try to show otherwise 
+
+	  // assume it's not valid and try to show otherwise
 	  isValid = false;
-	  
+
 	  // synchronize on the GC lock
 	  synchronized (mutex) {
 		// start on the first element of the list
 	    handlePointer = useList;
-	    
+
 	    // traverse the list until the element is found or the list is over
 	    while(handlePointer != 0)
 	    {
@@ -802,19 +875,19 @@ public class GC {
 	    	isValid = true;
 	    	break;
 	      }
-	      
-	      // not found yet. Let's go to the next element and try again. 
+
+	      // not found yet. Let's go to the next element and try again.
 	      handlePointer = Native.rdMem(handlePointer+OFF_NEXT);
 	    }
 	  }
-	  
+
 	  return isValid;
 	}
-  
+
   /**
    * Write barrier for an object field. May be used with regular objects
    * and reference arrays.
-   * 
+   *
    * @param handle the object handle
    * @param index the field index
    */
@@ -822,14 +895,14 @@ public class GC {
   {
     boolean shouldExecuteBarrier = false;
     int gcInfo;
-    
+
 //    log("WriteBarrier: snapshot-at-beginning.");
-    
+
     if (handle == 0)
     {
       throw new NullPointerException();
     }
-    
+
     synchronized (GC.mutex)
     {
       // ignore objects with size zero (is this correct?)
@@ -838,26 +911,26 @@ public class GC {
 //        log("ignore objects with size zero");
         return;
       }
-      
+
       // get information on the object type.
       int type = Native.rdMem(handle + GC.OFF_TYPE);
-      
+
       // if it's an object or reference array, execute the barrier
       if(type == GC.IS_REFARR)
       {
 //        log("Reference array.");
         shouldExecuteBarrier = true;
       }
-      
+
       if(type == GC.IS_OBJ)
       {
 //        log("Regular object.");
-        // get the object GC info from the class structure. 
+        // get the object GC info from the class structure.
         gcInfo = Native.rdMem(handle + GC.OFF_MTAB_ALEN) + Const.MTAB2GC_INFO;
         gcInfo = Native.rdMem(gcInfo);
-        
+
 //        log("GCInfo field: ", gcInfo);
-        
+
         // if the correct bit is set for the field, it may hold a reference.
         // then, execute the write barrier.
         if((gcInfo & (0x01 << index)) != 0)
@@ -866,7 +939,7 @@ public class GC {
           shouldExecuteBarrier = true;
         }
       }
-      
+
       // execute the write barrier, if necessary.
       if(shouldExecuteBarrier)
       {
@@ -874,7 +947,7 @@ public class GC {
         handle = Native.rdMem(handle);
         // snapshot-at-beginning barrier
         int oldVal = Native.rdMem(handle+index);
-        
+
 //        log("Old val:       ", oldVal);
 //        if(oldVal != 0)
 //        {
@@ -885,7 +958,7 @@ public class GC {
 //          log("Current space: NULL object.");
 //        }
 //        log("toSpace:       ", GC.toSpace);
-        
+
         if (oldVal!=0 && Native.rdMem(oldVal+GC.OFF_SPACE)!=GC.toSpace) {
 //          log("Executing write barrier for old handle: ", handle);
           GC.push(oldVal);
@@ -897,9 +970,9 @@ public class GC {
 //      }
     }
   }
-  
+
 /************************************************************************************************/
-	
+
 
 	static void log(String s, int i) {
 		JVMHelp.wr(s);
@@ -911,7 +984,7 @@ public class GC {
 		JVMHelp.wr(s);
 		JVMHelp.wr("\n");
 	}
-	
+
 	public int newObj2(int ref){
 		return newObject(ref);
 	}
