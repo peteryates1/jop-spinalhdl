@@ -7,8 +7,9 @@ Both cores verified running NCoreHelloWorld on real DDR3 hardware (Alchitry Au V
 
 | Config | LUT | FF | BRAM (tiles) | WNS | WHS |
 |--------|-----|-----|------|-----|-----|
-| 1-core DDR3 | 12,021 (57.8%) | 10,279 (24.7%) | 12.5 (25%) | +0.115 ns | +0.025 ns |
-| 2-core DDR3 SMP | 16,454 (79.1%) | 13,215 (31.8%) | 15.0 (30%) | +0.228 ns | +0.043 ns |
+| 1-core DDR3 (16KB cache) | 12,021 (57.8%) | 10,279 (24.7%) | 12.5 (25%) | +0.115 ns | +0.025 ns |
+| 2-core DDR3 SMP (16KB cache) | 16,454 (79.1%) | 13,215 (31.8%) | 15.0 (30%) | +0.228 ns | +0.043 ns |
+| 2-core DDR3 SMP (32KB cache) | 19,069 (91.7%) | 15,049 (36.2%) | 15.0 (30%) | +0.197 ns | +0.047 ns |
 
 ### Per-Core Cost (delta from 1-core to 2-core)
 
@@ -20,8 +21,12 @@ Both cores verified running NCoreHelloWorld on real DDR3 hardware (Alchitry Au V
 
 ### Base Infrastructure (shared, independent of core count)
 
-Includes: MIG IP, ClkWiz, BmbCacheBridge, LruCacheCore (16KB 4-way), CacheToMigAdapter,
-DiagUart, hang detector, LED/heartbeat logic. Approximately 7,600 LUT, 7,400 FF, 10 BRAM.
+Includes: MIG IP, ClkWiz, BmbCacheBridge, LruCacheCore (32KB 4-way), CacheToMigAdapter,
+DiagUart, hang detector, LED/heartbeat logic. Approximately 10,200 LUT, 9,200 FF, 10 BRAM.
+
+Note: 32KB cache (512 sets) adds ~2,600 LUT vs 16KB (256 sets) due to doubled valid/LRU
+register arrays. BRAM tile count is unchanged — Vivado maps the wider tag/dirty arrays as
+distributed RAM (LUT RAM).
 
 ## Artix-7 Family Resources
 
@@ -40,21 +45,24 @@ Source: Xilinx 7 Series FPGAs Data Sheet: Overview (DS180)
 
 ## Estimated Core Counts
 
-Model: `LUT(N) = 7,600 + N * 4,400 + arbiter_overhead(N)`
+Model: `LUT(N) = 10,200 + N * 4,400 + arbiter_overhead(N)` (with 32KB cache)
 
+Base infrastructure is ~10,200 LUT with the 32KB L2 cache (was ~7,600 with 16KB).
 Arbiter overhead is small (round-robin BmbArbiter, CmpSync) — estimated ~200 LUT per
 additional core beyond 2. Target utilization: 85% LUT (leaves room for routing/timing closure).
 
 | Device | LUTs | 85% LUT budget | Est. max cores | Limiting factor | Notes |
 |--------|------|---------------|----------------|-----------------|-------|
-| XC7A12T | 8,000 | 6,800 | 0 | LUT | Base alone needs ~12K LUT |
-| XC7A15T | 10,400 | 8,840 | 0 | LUT | Base alone needs ~12K LUT |
-| XC7A25T | 14,600 | 12,410 | 1 | LUT | Tight; single-core only |
-| **XC7A35T** | **20,800** | **17,680** | **2** | **LUT** | **Measured: 79% at 2 cores** |
-| XC7A50T | 32,600 | 27,710 | 4 | LUT | Comfortable headroom |
-| XC7A75T | 47,200 | 40,120 | 7 | LUT | Good for multi-core |
-| XC7A100T | 63,400 | 53,890 | 10 | LUT | SMP scaling sweet spot |
-| XC7A200T | 134,600 | 114,410 | 23 | LUT | May hit arbiter/bus limits first |
+| XC7A12T | 8,000 | 6,800 | 0 | LUT | Base alone needs ~10K LUT |
+| XC7A15T | 10,400 | 8,840 | 0 | LUT | Base alone needs ~10K LUT |
+| XC7A25T | 14,600 | 12,410 | 1* | LUT | Requires 16KB cache (setCount=256) |
+| **XC7A35T** | **20,800** | **17,680** | **2** | **LUT** | **Measured: 92% at 2 cores (32KB cache)** |
+| XC7A50T | 32,600 | 27,710 | 3 | LUT | Comfortable headroom |
+| XC7A75T | 47,200 | 40,120 | 6 | LUT | Good for multi-core |
+| XC7A100T | 63,400 | 53,890 | 9 | LUT | SMP scaling sweet spot |
+| XC7A200T | 134,600 | 114,410 | 22 | LUT | May hit arbiter/bus limits first |
+
+\* XC7A25T single-core requires 16KB cache to fit; 32KB cache base exceeds 85% budget.
 
 ### Assumptions and Caveats
 

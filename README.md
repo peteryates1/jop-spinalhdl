@@ -272,16 +272,16 @@ All builds at 100 MHz except CYC5000 (80 MHz). Cyclone IV uses Logic Elements (4
 | Memory backend | 103 | 657 | 657 | 231 | | |
 | I/O (BmbSys + BmbUart) | 326 | 333 | ~660 | 138 | | |
 | BMB Arbiter + CmpSync | — | — | ~200 | — | | |
-| **System total** | **5,856** | **6,461** | **~12,400** | **2,231** | **12,021** | **16,454** |
-| % of device | 4% | 4% | 8% | — | 57.8% | 79.1% |
-| Registers | 2,108 | 2,428 | ~4,900 | 2,698 | 10,279 | 13,215 |
+| **System total** | **5,856** | **6,461** | **~12,400** | **2,231** | **12,021** | **19,069** |
+| % of device | 4% | 4% | 8% | — | 57.8% | 91.7% |
+| Registers | 2,108 | 2,428 | ~4,900 | 2,698 | 10,279 | 15,049 |
 | Block RAM | 1,054 Kbit | 28 Kbit | 56 Kbit | 28 Kbit | 450 Kbit | 540 Kbit |
-| Timing (WNS) | | | | | +0.115 ns | +0.228 ns |
+| Timing (WNS) | | | | | +0.115 ns | +0.197 ns |
 
 Notes:
 - EP4CGX150 BRAM uses 1,054 Kbit block RAM for program memory (128 M9Ks); SDRAM builds store programs in external RAM
 - SMP (2-core) uses ~8% of EP4CGX150's 150K LEs, leaving substantial headroom for additional cores
-- Artix-7 totals include MIG DDR3 controller + 16KB 4-way write-back cache; per-core cost ~4,400 LUT, ~2,900 FF, ~2.5 BRAM
+- Artix-7 single-core uses 16KB L2 cache; SMP uses 32KB L2 cache (512 sets × 4 ways). Per-core cost ~4,400 LUT, ~2,900 FF, ~2.5 BRAM
 - Vivado does not report per-hierarchy utilization; Artix-7 core-only numbers not available from build reports
 - See [Artix-7 core count estimates](docs/artix7-core-estimates.md) for scaling projections across the Artix-7 family
 

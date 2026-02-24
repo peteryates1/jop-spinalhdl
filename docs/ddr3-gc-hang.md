@@ -68,11 +68,13 @@ JopCore ──BMB──► BmbCacheBridge ──► LruCacheCore ──► Cache
 
 | Config | LUT | FF | BRAM | WNS | WHS |
 |--------|-----|-----|------|-----|-----|
-| 1-core DDR3 | 12,021 (57.8%) | 10,279 (24.7%) | 12.5 (25%) | +0.115 ns | +0.025 ns |
-| 2-core DDR3 SMP | 16,454 (79.1%) | 13,215 (31.8%) | 15 (30%) | +0.228 ns | +0.043 ns |
+| 1-core DDR3 (16KB cache) | 12,021 (57.8%) | 10,279 (24.7%) | 12.5 (25%) | +0.115 ns | +0.025 ns |
+| 2-core DDR3 SMP (16KB cache) | 16,454 (79.1%) | 13,215 (31.8%) | 15 (30%) | +0.228 ns | +0.043 ns |
+| 2-core DDR3 SMP (32KB cache) | 19,069 (91.7%) | 15,049 (36.2%) | 15 (30%) | +0.197 ns | +0.047 ns |
 
 - Critical path (1-core): MIG `ui_clk_sync_rst` reset fanout to 5180 FFs (96% routing delay)
 - Per additional core: ~4,400 LUT, ~2,900 FF, ~2.5 BRAM
+- 16KB→32KB cache upgrade: +2,615 LUT (valid/LRU register arrays double), BRAM unchanged (Vivado maps wider tag/dirty as distributed RAM)
 
 ## Hang Detection Infrastructure
 
