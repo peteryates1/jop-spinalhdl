@@ -14,11 +14,10 @@ Pin positions within the headers are identical across core boards --
 only the FPGA pin names differ.
 
 ## Sources
-
-- EP4CE15 reference: `/srv/git/qmtech/CYCLONE_IV_EP4CE15/Software/Project09_GMII_Ethernet/ethernet_test.qsf`
-- EP4CE15 core board manual: `QMTECH_CycloneIV_EP4CE15_User_Manual(CoreBoard)-V02.pdf` (U8 header table)
-- EP4CGX150 core board manual: `QMTECH_CycloneIV_EP4CGX150GX_User_Manual(CoreBoard)-V01.pdf` (U4 header table)
-- DB_FPGA schematic: `QMTECH_DB_For_FPGA_V04.pdf`
+- EP4CE15 reference: `ethernet_test.qsf` in [Project09_GMII_Ethernet.zip](https://github.com/ChinaQMTECH/CYCLONE_IV_EP4CE15/blob/master/Software/Project09_GMII_Ethernet.zip)
+- EP4CE15 core board manual: [QMTECH_CycloneIV_EP4CE15_User_Manual(CoreBoard)-V02.pdf](https://github.com/ChinaQMTECH/CYCLONE_IV_EP4CE15/blob/master/QMTECH_CycloneIV_EP4CE15_User_Manual(CoreBoard)-V02.pdf) (U8 header table)
+- EP4CGX150 core board manual: [QMTECH_CycloneIV_EP4CGX150GX_User_Manual(CoreBoard)-V01.pdf](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD/blob/main/QMTECH_CycloneIV_EP4CGX150GX_User_Manual(CoreBoard)-V01.pdf) (U4 header table)
+- DB_FPGA schematic: [QMTECH_DB_For_FPGA_V04.pdf](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD/blob/main/Hardware/QMTECH-EP4CGX150GX-CORE-BOARD-V01-20220207.pdf)
 
 ## Header Mapping
 
