@@ -86,7 +86,7 @@ jop/
 │   ├── pipeline/              # Pipeline stages (fetch, decode, stack, bytecode)
 │   ├── memory/                # Memory controller, method/object/array cache, SDRAM ctrl
 │   ├── ddr3/                  # DDR3 subsystem (cache, MIG adapter, clock wizard)
-│   ├── io/                    # I/O slaves (BmbSys, BmbUart, Ihlu, CmpSync)
+│   ├── io/                    # I/O slaves (BmbSys, BmbUart, BmbEth, BmbMdio, Ihlu, CmpSync)
 │   ├── debug/                 # Debug subsystem (protocol, controller, breakpoints, UART)
 │   ├── system/                # System integration (JopCore, FPGA tops, SMP)
 │   ├── types/                 # JOP types and constants
@@ -104,7 +104,8 @@ jop/
 │   ├── alchitry-au/           # DDR3 FPGA project (Vivado)
 │   ├── cyc5000-sdram/         # SDRAM FPGA project (Quartus, Cyclone V)
 │   ├── qmtech-ep4cgx150-bram/ # BRAM FPGA project (Quartus, Cyclone IV)
-│   └── qmtech-ep4cgx150-sdram/# SDRAM FPGA project (Quartus, Cyclone IV)
+│   ├── qmtech-ep4cgx150-sdram/# SDRAM FPGA project (Quartus, Cyclone IV)
+│   └── qmtech-ep4cgx150-eth-ref/ # Reference Ethernet design (1Gbps GMII UDP echo)
 ├── java/
 │   ├── tools/src/             # JOPizer, PreLinker, Jopa, common framework
 │   ├── runtime/src/           # JOP runtime + JDK stubs (JDK 6)
@@ -165,6 +166,13 @@ make build       # Quartus synthesis
 make program     # Program FPGA
 make download    # Download HelloWorld.jop over UART
 make monitor     # Watch serial output
+
+# DB_FPGA daughter board — QMTECH EP4CGX150 + Ethernet/VGA/SD (serial boot, 80 MHz)
+cd fpga/qmtech-ep4cgx150-sdram
+make full-dbfpga           # Complete flow: microcode + generate-dbfpga + build-dbfpga
+make program-dbfpga        # Program FPGA
+make download JOP_FILE=java/apps/Small/EthTest.jop  # Download Ethernet test
+make monitor               # Watch serial output
 
 # SMP (2-core) — QMTECH EP4CGX150, Altera Cyclone IV (serial boot, 100 MHz)
 cd fpga/qmtech-ep4cgx150-sdram
@@ -253,6 +261,7 @@ make help                # List all available test targets
 | Board | FPGA | Memory | Toolchain | Status |
 |-------|------|--------|-----------|--------|
 | **[QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD)** | **Altera Cyclone IV GX** | **W9825G6JH6 SDR SDRAM** | **Quartus Prime** | **Primary — 100 MHz, single-core + SMP (2-core)** |
+| [QMTECH EP4CGX150 + DB_FPGA](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Altera Cyclone IV GX | W9825G6JH6 SDR SDRAM | Quartus Prime | 80 MHz — Ethernet (RTL8211EG), VGA, SD card ([details](docs/db-fpga-ethernet.md)) |
 | [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Altera Cyclone IV GX | BRAM (on-chip) | Quartus Prime | Working at 100 MHz |
 | [Trenz CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) | Altera Cyclone V E (5CEBA2U15C8N) | W9864G6JT SDR SDRAM | Quartus Prime | Working at 80 MHz |
 | [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au) | Xilinx Artix-7 (XC7A35T) | MT41K128M16JT DDR3 | Vivado | 100 MHz — single-core + SMP (2-core), GC working ([details](docs/ddr3-gc-hang.md)) |
@@ -297,7 +306,7 @@ Notes:
 - **Stack buffer**: 256-entry on-chip RAM (64 for 32 local variables + 32 constants, 192 for operand stack) with spill/fill, ALU, shifter, 33-bit comparator
 - **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
-- **I/O subsystem**: `BmbSys` (cycle/microsecond counters, timer interrupt, watchdog, CPU ID) and `BmbUart` (TX/RX with 16-entry FIFOs, RX/TX interrupt outputs) as reusable `jop.io` components. Timer interrupts verified end-to-end in simulation (`JopInterruptSim`)
+- **I/O subsystem**: `BmbSys` (cycle/microsecond counters, timer interrupt, watchdog, CPU ID), `BmbUart` (TX/RX with 16-entry FIFOs, RX/TX interrupt outputs), `BmbEth` (Ethernet MAC with MII TX/RX using SpinalHDL `MacEth`, dual-clock FIFOs for PHY clock domain crossing), and `BmbMdio` (MDIO PHY management with registered outputs and PHY reset control) as reusable `jop.io` components. Timer interrupts verified end-to-end in simulation (`JopInterruptSim`)
 - **SDRAM system (primary)**: `JopSdramTop` / `JopCyc5000Top` — serial boot over UART into SDR SDRAM using Altera `altera_sdram_tri_controller` (QMTECH EP4CGX150 at 100 MHz + Trenz CYC5000 at 80 MHz). Both support `cpuCnt` parameter for single-core or SMP
 - **SMP (2-core)**: `JopSdramTop(cpuCnt=2)` / `JopDdr3Top(cpuCnt=2)` — 2-core SMP with round-robin BMB arbiter, `CmpSync` global lock for `monitorenter`/`monitorexit`, per-core `BmbSys` with unique CPU ID, boot synchronization via `IO_SIGNAL`, and GC stop-the-world halt via `IO_GC_HALT`. Verified on QMTECH EP4CGX150, CYC5000, and Alchitry Au V2 hardware (both cores running independently with per-core LED watchdog)
 - **BRAM system**: `JopBramTop` — complete system with on-chip memory at 100 MHz (QMTECH EP4CGX150, Altera Cyclone IV)
@@ -361,6 +370,7 @@ Design notes and investigation logs in `docs/`:
 - [Memory Controller Comparison](docs/memory-controller-comparison.md) — VHDL vs SpinalHDL memory controller
 - [Stack Immediate Timing](docs/stack-immediate-timing.md) — stack stage timing for immediate operations
 - [Formal Verification](docs/formal-verification.md) — 98 BMC properties across all components (SymbiYosys + Z3)
+- [DB_FPGA Ethernet](docs/db-fpga-ethernet.md) — pin mapping, PHY config, SDC timing constraints for RTL8211EG
 - [SDR SDRAM GC Hang](docs/sdr-sdram-gc-hang.md) — resolved: SpinalHDL SdramCtrl DQ timing issue
 - [DDR3 GC Hang](docs/ddr3-gc-hang.md) — resolved (32KB L2 cache)
 
