@@ -33,6 +33,24 @@ case class DramPll() extends BlackBox {
 }
 
 /**
+ * Ethernet 125 MHz PLL BlackBox
+ *
+ * Wraps the pll_125 Verilog module (Altera altpll megafunction).
+ * 50 MHz input -> c0=125 MHz for GMII TX clock
+ */
+case class EthPll() extends BlackBox {
+  setDefinitionName("pll_125")
+
+  val io = new Bundle {
+    val inclk0 = in Bool()
+    val c0     = out Bool()
+    val locked = out Bool()
+  }
+
+  noIoPrefix()
+}
+
+/**
  * JOP SDRAM FPGA Top-Level for QMTECH EP4CGX150
  *
  * Runs JOP processor(s) with SDRAM-backed memory at 80 MHz.
@@ -79,18 +97,16 @@ case class JopSdramTop(
     val debug_txd = if (debugConfig.isDefined) Some(out Bool()) else None
     val debug_rxd = if (debugConfig.isDefined) Some(in Bool()) else None
 
-    // Ethernet GMII pins (optional, active at 100 Mbps MII subset)
-    val e_txd    = if (ioConfig.hasEth) Some(out Bits(4 bits))          else None
-    val e_txd_hi = if (ioConfig.hasEth) Some(out Bits(4 bits))          else None  // TXD[7:4] tied low
+    // Ethernet PHY pins (GMII 8-bit @ 1Gbps or MII 4-bit @ 100Mbps)
+    val e_txd    = if (ioConfig.hasEth) Some(out Bits(ioConfig.phyDataWidth bits)) else None
     val e_txen   = if (ioConfig.hasEth) Some(out Bool())                else None
     val e_txer   = if (ioConfig.hasEth) Some(out Bool())                else None
-    val e_txc    = if (ioConfig.hasEth) Some(in Bool())                 else None  // 25 MHz from PHY
-    val e_gtxc   = if (ioConfig.hasEth) Some(out Bool())                else None  // Tie low for 100M
-    val e_rxd    = if (ioConfig.hasEth) Some(in Bits(4 bits))           else None
-    val e_rxd_hi = if (ioConfig.hasEth) Some(in Bits(4 bits))           else None  // RXD[7:4] unused
+    val e_txc    = if (ioConfig.hasEth && !ioConfig.ethGmii) Some(in Bool()) else None  // 25 MHz from PHY (MII only)
+    val e_gtxc   = if (ioConfig.hasEth) Some(out Bool())                else None  // 125 MHz to PHY (GMII) or tied low (MII)
+    val e_rxd    = if (ioConfig.hasEth) Some(in Bits(ioConfig.phyDataWidth bits)) else None
     val e_rxdv   = if (ioConfig.hasEth) Some(in Bool())                 else None
     val e_rxer   = if (ioConfig.hasEth) Some(in Bool())                 else None
-    val e_rxc    = if (ioConfig.hasEth) Some(in Bool())                 else None  // 25 MHz from PHY
+    val e_rxc    = if (ioConfig.hasEth) Some(in Bool())                 else None  // 25 MHz (MII) or 125 MHz (GMII)
     val e_mdc    = if (ioConfig.hasEth) Some(out Bool())                else None
     val e_mdio   = if (ioConfig.hasEth) Some(master(TriState(Bool())))  else None
     val e_resetn = if (ioConfig.hasEth) Some(out Bool())                else None  // Active-low
@@ -163,15 +179,29 @@ case class JopSdramTop(
   )
 
   // ========================================================================
-  // Ethernet Clock Domains (25 MHz from PHY, only when hasEth)
+  // Ethernet PLL (125 MHz for GMII TX, only when ethGmii)
+  // ========================================================================
+
+  val ethPll = if (ioConfig.ethGmii) Some({
+    val p = EthPll()
+    p.io.inclk0 := io.clk_in
+    p
+  }) else None
+
+  // ========================================================================
+  // Ethernet Clock Domains
   // ========================================================================
 
   // Ethernet clock domains: ASYNC (not BOOT) with synchronized system reset.
   // MacEth.copy(reset=...) adds its own reset (system+flush); BOOT would
   // forbid the added reset wire. The synchronized reset also ensures init()
   // works correctly in the txArea/rxArea pin-registration code.
+
+  // TX clock: PLL 125 MHz (GMII) or PHY e_txc 25 MHz (MII)
+  val ethTxClk = if (ioConfig.ethGmii) ethPll.get.io.c0 else if (ioConfig.hasEth) io.e_txc.get else null
+
   val ethTxCd = if (ioConfig.hasEth) Some({
-    val txBootCd = ClockDomain(io.e_txc.get, config = ClockDomainConfig(resetKind = BOOT))
+    val txBootCd = ClockDomain(ethTxClk, config = ClockDomainConfig(resetKind = BOOT))
     val txReset = ResetCtrl.asyncAssertSyncDeassert(
       input = resetGen.int_res,
       clockDomain = txBootCd,
@@ -179,14 +209,21 @@ case class JopSdramTop(
       outputPolarity = HIGH
     )
     ClockDomain(
-      clock = io.e_txc.get,
+      clock = ethTxClk,
       reset = txReset,
       config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = HIGH)
     )
   }) else None
 
+  // RX clock: PHY e_rxc (source-synchronous with RX data)
+  // GMII: PHY drives data ON rising edge of e_rxc; to get setup time we
+  //        sample on the FALLING edge (invert the clock). This gives ~4ns
+  //        of setup margin at 125 MHz (half period).
+  // MII:  e_rxc = 25 MHz, plenty of margin, use rising edge as-is.
+  val ethRxClk = if (ioConfig.ethGmii) !io.e_rxc.get else if (ioConfig.hasEth) io.e_rxc.get else null
+
   val ethRxCd = if (ioConfig.hasEth) Some({
-    val rxBootCd = ClockDomain(io.e_rxc.get, config = ClockDomainConfig(resetKind = BOOT))
+    val rxBootCd = ClockDomain(ethRxClk, config = ClockDomainConfig(resetKind = BOOT))
     val rxReset = ResetCtrl.asyncAssertSyncDeassert(
       input = resetGen.int_res,
       clockDomain = rxBootCd,
@@ -194,7 +231,7 @@ case class JopSdramTop(
       outputPolarity = HIGH
     )
     ClockDomain(
-      clock = io.e_rxc.get,
+      clock = ethRxClk,
       reset = rxReset,
       config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = HIGH)
     )
@@ -299,10 +336,14 @@ case class JopSdramTop(
     // ==================================================================
 
     if (ioConfig.hasEth) {
-      // GTX clock not used at 100M (PHY provides TX_CLK)
-      io.e_gtxc.get := False
-      // GMII TXD[7:4] tied low — prevents floating pins confusing PHY
-      io.e_txd_hi.get := B"4'0000"
+      val dataWidth = ioConfig.phyDataWidth
+
+      // GTX clock: 125 MHz from PLL (GMII) or tied low (MII)
+      if (ioConfig.ethGmii) {
+        io.e_gtxc.get := ethPll.get.io.c0
+      } else {
+        io.e_gtxc.get := False
+      }
 
       // MDIO wiring (combinational passthrough)
       io.e_mdc.get := cluster.io.mdc.get
@@ -322,18 +363,20 @@ case class JopSdramTop(
       // Active-low output: low during HW reset OR when SW reset asserted
       io.e_resetn.get := phyRstDone && cluster.io.phyReset.get
 
-      // TX adapter (in ethTxCd = 25 MHz from PHY TX_CLK)
-      // Adds inter-frame gap (12 byte times) then registers to MII TX pins
+      // TX adapter: adds inter-frame gap then registers to PHY TX pins
+      // GMII: ethTxCd = PLL 125 MHz, dataWidth = 8
+      // MII:  ethTxCd = PHY TX_CLK 25 MHz, dataWidth = 4
       val txArea = new ClockingArea(ethTxCd.get) {
-        val interframe = MacTxInterFrame(4)
+        val interframe = MacTxInterFrame(dataWidth)
         interframe.io.input << cluster.io.phy.get.tx
         io.e_txen.get := RegNext(interframe.io.output.valid) init(False)
         io.e_txd.get  := RegNext(interframe.io.output.fragment.data) init(0)
         io.e_txer.get := False
       }
 
-      // RX adapter (in ethRxCd = 25 MHz from PHY RX_CLK)
-      // Registers MII RX pins, detects frame boundaries, feeds MacEth
+      // RX adapter: registers PHY RX pins, detects frame boundaries, feeds MacEth
+      // GMII: ethRxCd = PHY RX_CLK 125 MHz, dataWidth = 8
+      // MII:  ethRxCd = PHY RX_CLK 25 MHz, dataWidth = 4
       val rxArea = new ClockingArea(ethRxCd.get) {
         // Two-stage pipeline (matches MiiRx.toRxFlow() pattern)
         val s1_dv = RegNext(io.e_rxdv.get) init(False)
@@ -344,8 +387,7 @@ case class JopSdramTop(
         val s2_d  = RegNext(s1_d)  init(0)
         val s2_er = RegNext(s1_er) init(False)
 
-        // Create Flow(Fragment(PhyRx(4))) then convert to Stream
-        val rxFlow = Flow(Fragment(PhyRx(4)))
+        val rxFlow = Flow(Fragment(PhyRx(dataWidth)))
         rxFlow.valid          := s2_dv
         rxFlow.fragment.data  := s2_d
         rxFlow.fragment.error := s2_er

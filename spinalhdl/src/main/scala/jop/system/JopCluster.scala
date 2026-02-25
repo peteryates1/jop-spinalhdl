@@ -100,7 +100,7 @@ case class JopCluster(
     val debugTransport = if (debugConfig.isDefined) Some(slave(DebugTransport())) else None
 
     // Ethernet PHY (optional, core 0 only)
-    val phy = if (baseConfig.hasEth) Some(master(PhyIo(PhyParameter(txDataWidth = 4, rxDataWidth = 4)))) else None
+    val phy = if (baseConfig.hasEth) Some(master(PhyIo(PhyParameter(txDataWidth = baseConfig.ioConfig.phyDataWidth, rxDataWidth = baseConfig.ioConfig.phyDataWidth)))) else None
 
     // MDIO pins (optional, core 0 only)
     val mdc      = if (baseConfig.hasEth) Some(out Bool()) else None

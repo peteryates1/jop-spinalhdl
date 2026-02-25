@@ -98,7 +98,7 @@ case class JopCore(
     val rxd = in Bool()
 
     // Ethernet PHY (optional, only when hasEth)
-    val phy = if (config.hasEth) Some(master(PhyIo(PhyParameter(txDataWidth = 4, rxDataWidth = 4)))) else None
+    val phy = if (config.hasEth) Some(master(PhyIo(PhyParameter(txDataWidth = config.ioConfig.phyDataWidth, rxDataWidth = config.ioConfig.phyDataWidth)))) else None
 
     // MDIO pins (optional, only when hasEth)
     val mdc      = if (config.hasEth) Some(out Bool()) else None
@@ -296,7 +296,7 @@ case class JopCore(
 
   // Ethernet MAC (0x98-0x9F, optional)
   val bmbEth = if (config.hasEth && ethTxCd.isDefined && ethRxCd.isDefined)
-    Some(BmbEth(txCd = ethTxCd.get, rxCd = ethRxCd.get))
+    Some(BmbEth(txCd = ethTxCd.get, rxCd = ethRxCd.get, phyTxDataWidth = config.ioConfig.phyDataWidth, phyRxDataWidth = config.ioConfig.phyDataWidth))
   else None
 
   bmbEth.foreach { eth =>

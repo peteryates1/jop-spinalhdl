@@ -26,6 +26,7 @@ case class IoConfig(
   // Device presence
   hasUart:      Boolean = true,
   hasEth:       Boolean = false,
+  ethGmii:      Boolean = false,
   hasSdSpi:     Boolean = false,
   hasSdNative:  Boolean = false,
   hasVgaDma:    Boolean = false,
@@ -44,6 +45,10 @@ case class IoConfig(
   // VGA DMA
   vgaDmaFifoDepth: Int = 512
 ) {
+  require(!ethGmii || hasEth, "ethGmii requires hasEth")
+
+  /** PHY data width: 8 for GMII (1Gbps), 4 for MII (100Mbps) */
+  def phyDataWidth: Int = if (ethGmii) 8 else 4
   require(!(hasSdSpi && hasSdNative), "SD SPI and SD Native are mutually exclusive (share pins)")
   require(!(hasVgaDma && hasVgaText), "VGA DMA and VGA Text are mutually exclusive (share pins)")
 
@@ -76,6 +81,7 @@ object IoConfig {
   /** QMTECH EP4CGX150 + DB_FPGA: full I/O */
   def qmtechDbFpga: IoConfig = IoConfig(
     hasEth = true,
+    ethGmii = true,
     hasSdNative = true,
     hasVgaText = true
   )

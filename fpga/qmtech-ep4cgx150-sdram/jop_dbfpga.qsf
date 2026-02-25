@@ -16,6 +16,7 @@ set_global_assignment -name NOMINAL_CORE_SUPPLY_VOLTAGE 1.2V
 # Source files
 set_global_assignment -name VERILOG_FILE ../../spinalhdl/generated/JopSdramTop.v
 set_global_assignment -name VHDL_FILE dram_pll.vhd
+set_global_assignment -name VERILOG_FILE pll_125.v
 set_global_assignment -name SDC_FILE jop_sdram.sdc
 set_global_assignment -name VERILOG_FILE ../../fpga/ip/altera_sdram_tri_controller/altera_sdram_tri_controller.v
 set_global_assignment -name VERILOG_FILE ../../fpga/ip/altera_sdram_tri_controller/efifo_module.v
@@ -103,7 +104,7 @@ set_location_assignment PIN_D24 -to sdram_DQ[14]
 set_location_assignment PIN_C24 -to sdram_DQ[15]
 
 # -------------------------------------------------------------------------- #
-# Pin Assignments - DB_FPGA Daughter Board: Ethernet (RTL8211EG, MII subset)
+# Pin Assignments - DB_FPGA Daughter Board: Ethernet (RTL8211EG, GMII 1Gbps)
 # -------------------------------------------------------------------------- #
 
 set_location_assignment PIN_C13 -to e_gtxc
@@ -115,21 +116,20 @@ set_location_assignment PIN_A9  -to e_rxd[0]
 set_location_assignment PIN_B9  -to e_rxd[1]
 set_location_assignment PIN_C10 -to e_rxd[2]
 set_location_assignment PIN_A10 -to e_rxd[3]
-set_location_assignment PIN_A11 -to e_rxd_hi[0]
-set_location_assignment PIN_A12 -to e_rxd_hi[1]
-set_location_assignment PIN_B11 -to e_rxd_hi[2]
-set_location_assignment PIN_A13 -to e_rxd_hi[3]
+set_location_assignment PIN_A11 -to e_rxd[4]
+set_location_assignment PIN_A12 -to e_rxd[6]
+set_location_assignment PIN_B11 -to e_rxd[5]
+set_location_assignment PIN_A13 -to e_rxd[7]
 set_location_assignment PIN_A8  -to e_rxdv
 set_location_assignment PIN_C11 -to e_rxer
-set_location_assignment PIN_B17 -to e_txc
 set_location_assignment PIN_C15 -to e_txd[0]
 set_location_assignment PIN_B15 -to e_txd[1]
 set_location_assignment PIN_A16 -to e_txd[2]
 set_location_assignment PIN_A17 -to e_txd[3]
-set_location_assignment PIN_C16 -to e_txd_hi[0]
-set_location_assignment PIN_B18 -to e_txd_hi[1]
-set_location_assignment PIN_C17 -to e_txd_hi[2]
-set_location_assignment PIN_A18 -to e_txd_hi[3]
+set_location_assignment PIN_C16 -to e_txd[4]
+set_location_assignment PIN_B18 -to e_txd[5]
+set_location_assignment PIN_C17 -to e_txd[6]
+set_location_assignment PIN_A18 -to e_txd[7]
 set_location_assignment PIN_C14 -to e_txen
 set_location_assignment PIN_A19 -to e_txer
 

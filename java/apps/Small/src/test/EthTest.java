@@ -166,7 +166,7 @@ public class EthTest {
 
 	public static void main(String[] args) {
 
-		JVMHelp.wr("Ethernet Test v5\n");
+		JVMHelp.wr("Ethernet Test v6 (GMII 1Gbps)\n");
 
 		// --- 1. PHY reset cycle ---
 		Native.wr(1, Const.IO_MDIO + 3);
@@ -197,10 +197,10 @@ public class EthTest {
 			for (;;) { toggleWd(); delay(500000); }
 		}
 
-		// --- 3. Force 100 Mbps ---
-		mdioWrite(phyAddr, 9, 0x0000);
-		mdioWrite(phyAddr, 4, 0x0181);
-		mdioWrite(phyAddr, 0, 0x1200);
+		// --- 3. Enable 1 Gbps (GMII) ---
+		mdioWrite(phyAddr, 9, 0x0200);    // Advertise 1000BASE-T FD
+		mdioWrite(phyAddr, 4, 0x01E1);    // Advertise 10/100M all modes
+		mdioWrite(phyAddr, 0, 0x1200);    // Auto-negotiate restart
 
 		int status = 0;
 		for (int i = 0; i < 200; i++) {
@@ -214,6 +214,14 @@ public class EthTest {
 		if ((status & (1 << 2)) == 0) {
 			for (;;) { toggleWd(); delay(500000); }
 		}
+		// Read PHY-Specific Status Register (0x11) for resolved speed
+		int phySsr = mdioRead(phyAddr, 0x11);
+		JVMHelp.wr("SSR=");
+		wrHex(phySsr);
+		int speed = (phySsr >>> 14) & 3;
+		JVMHelp.wr(speed == 2 ? " 1G" : speed == 1 ? " 100M" : speed == 0 ? " 10M" : " ??");
+		JVMHelp.wr((phySsr & (1 << 13)) != 0 ? " FD" : " HD");
+		JVMHelp.wr('\n');
 		for (int i = 0; i < 10; i++) { delay(500000); toggleWd(); }
 
 		// --- 4. Flush + unflushed ---
@@ -290,6 +298,8 @@ public class EthTest {
 		JVMHelp.wr(" drop=");
 		wrInt((stats >>> 8) & 0xFF);
 		JVMHelp.wr('\n');
+
+		// err/drop stats summary already printed above
 
 		JVMHelp.wr("Done\n");
 		for (;;) { toggleWd(); delay(500000); }

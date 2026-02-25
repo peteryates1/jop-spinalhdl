@@ -1,4 +1,9 @@
-# DB_FPGA Daughter Board Pin Mapping for EP4CGX150
+# DB_FPGA Daughter Board — Ethernet (1Gbps GMII)
+
+Ethernet support for the QMTECH DB_FPGA daughter board with RTL8211EG PHY,
+running at **1Gbps over GMII** (8-bit, 125 MHz).
+
+## Pin Mapping
 
 Cross-reference between the DB_FPGA daughter board J3 header pins,
 the EP4CE15 core board (reference design), and the EP4CGX150 core board.
@@ -90,57 +95,108 @@ PDF text-extraction error. Corrected to C17 per the U4 header table.*
 
 ## RTL8211EG PHY Configuration (from DB_FPGA schematic)
 
-- PHY Address: 001 (address 1)
+- PHY Address: 0 (detected by MDIO scan; ID `001C C915`)
 - AN[1:0] = 11 (auto-negotiation, advertise all)
 - RXDLY: 2ns, TXDLY: 2ns
 - SELRGV: 1 (3.3V I/O)
 - COL/Mode: 0 (GMII interface)
 
-## SDC Timing Constraints
+## GMII Architecture
 
-The Ethernet MAC uses three clock domains:
+The Ethernet subsystem uses three asynchronous clock domains:
 
 | Clock | Source | Frequency | Domain |
 |-------|--------|-----------|--------|
-| c1 (pll\|clk[1]) | PLL | 80 MHz | System: CPU, memory, I/O read MUX |
-| e_rxc | PHY pin | 25 MHz | RX: MacRxBuffer push side, nibble packing |
-| e_txc | PHY pin | 25 MHz | TX: MacTxBuffer pop side, MII output |
+| c1 (pll\|clk[1]) | DRAM PLL | 80 MHz | System: CPU, memory, I/O read MUX |
+| ethPll clk[0] | Ethernet PLL (pll_125.v) | 125 MHz | TX: MacTxBuffer pop side, GMII output, drives `e_gtxc` |
+| e_rxc | PHY pin | 125 MHz | RX: MacRxBuffer push side, byte packing |
+
+In GMII mode (`IoConfig.ethGmii = true`):
+
+- **TX clock**: FPGA generates 125 MHz via `pll_125.v` (50 MHz × 5/2),
+  output to PHY on `e_gtxc`. The `e_txc` pin is unused.
+- **RX clock**: PHY provides 125 MHz on `e_rxc`. FPGA samples RX data
+  on the **falling edge** (inverted clock domain) for ~4ns setup margin.
+- **Data width**: 8 bits (vs 4 bits in MII mode). `PhyParameter(txDataWidth=8, rxDataWidth=8)`.
+- PHY auto-negotiates 1000BASE-T FD via MDIO registers 0, 4, 9.
 
 The dual-port RAMs in MacRxBuffer and MacTxBuffer cross between PHY
-clock domains (e_rxc/e_txc) and the system clock (c1).
+clock domains (e_rxc / ethPll) and the system clock (c1).
 
-### Bug: missing create_clock (fixed 2026-02-25)
+### SpinalHDL Configuration
 
-The original SDC had `set_false_path` between e_rxc/e_txc and the PLL
-clock, but never declared `create_clock` for e_rxc or e_txc.  Without
-`create_clock`, Quartus did not recognise these signals as clocks at
-all, so:
-
-1. The `set_false_path` constraints were silently ignored (no matching
-   clock objects).
-2. The entire e_rxc and e_txc clock domains were **unconstrained** --
-   Quartus placed and routed them with no timing requirements.
-3. This caused systematic data corruption on Ethernet RX: every other
-   32-bit word read from the MacRxBuffer had its lower 16 bits zeroed.
-
-The same SDC also referenced stale PLL clock names
-(`pll|altpll_component|auto_generated|pll1|clk[N]`) instead of the
-actual names used by Quartus 25.1 (`pll|altpll_component|pll|clk[N]`).
-This affected both the VGA false-path constraints and the Ethernet
-constraints -- all were silently ignored.
-
-### Fix
-
-```sdc
-create_clock -name "e_rxc" -period 40.000 [get_ports {e_rxc}]
-create_clock -name "e_txc" -period 40.000 [get_ports {e_txc}]
-
-set_clock_groups -asynchronous \
-    -group {e_rxc} \
-    -group {e_txc} \
-    -group {pll|altpll_component|pll|clk[1] \
-            pll|altpll_component|pll|clk[2]}
+```scala
+IoConfig.qmtechDbFpga  // sets hasEth=true, ethGmii=true
+// IoConfig.phyDataWidth returns 8 for GMII, 4 for MII
 ```
 
-After the fix, all timing passes with positive slack across all three
-timing models (slow 100C, slow -40C, fast -40C).
+Key files:
+- `IoConfig.scala` — `ethGmii` flag, `phyDataWidth` helper
+- `JopSdramTop.scala` — `EthPll` BlackBox, GMII clock domains, TX/RX adapters
+- `JopCore.scala` / `JopCluster.scala` — parameterized `PhyParameter` from `ioConfig.phyDataWidth`
+- `BmbEth.scala` — already parameterized, no GMII-specific changes needed
+
+## SDC Timing Constraints
+
+```sdc
+# 50 MHz input clock
+create_clock -period 20.000 -name clk_in [get_ports clk_in]
+
+derive_pll_clocks
+derive_clock_uncertainty
+
+# PLL 125 MHz for GMII TX is auto-derived by derive_pll_clocks
+
+# Ethernet PHY RX clock (125 MHz GMII, source-synchronous with RX data)
+create_clock -period 8.000 -name e_rxc [get_ports e_rxc]
+
+# All three clock domains are asynchronous to each other
+set_clock_groups -asynchronous \
+    -group {pll|altpll_component|pll|clk[1] \
+            pll|altpll_component|pll|clk[2]} \
+    -group {ethPll|altpll_component|auto_generated|pll1|clk[0]} \
+    -group {e_rxc}
+
+# PHY RX data: source-synchronous with e_rxc, no FPGA timing constraints
+set_false_path -from [get_ports {e_rxd[*] e_rxdv e_rxer}]
+```
+
+Timing results (worst-case, slow 1200mV 100C model):
+
+| Clock Domain | Setup Slack | Hold Slack |
+|---|---|---|
+| System PLL 80 MHz | +0.243 ns | +0.304 ns |
+| ethPll 125 MHz (TX) | +0.808 ns | +0.381 ns |
+| e_rxc 125 MHz (RX) | +0.934 ns | +0.444 ns |
+
+## Historical Issues
+
+### Missing `create_clock` for PHY clocks (fixed 2026-02-25)
+
+The original 100Mbps MII SDC had `set_false_path` between e_rxc/e_txc and the
+PLL clock, but never declared `create_clock` for e_rxc or e_txc. Without
+`create_clock`, Quartus did not recognise these signals as clocks, so the
+entire PHY clock domains were **unconstrained**. This caused systematic data
+corruption on Ethernet RX: every other 32-bit word had its lower 16 bits zeroed.
+
+The SDC also referenced stale PLL clock names
+(`pll|altpll_component|auto_generated|pll1|clk[N]`) instead of the actual
+names used by Quartus 25.1 (`pll|altpll_component|pll|clk[N]`).
+
+### e_rxd pin swap causing 100% CRC failure (fixed 2026-02-25)
+
+During the MII-to-GMII upgrade, `e_rxd[5]` and `e_rxd[6]` pin assignments
+in `jop_dbfpga.qsf` were **swapped** compared to the reference design:
+
+| Signal | Reference (correct) | JOP (incorrect) |
+|---|---|---|
+| e_rxd[5] | PIN_B11 | PIN_A12 |
+| e_rxd[6] | PIN_A12 | PIN_B11 |
+
+This caused 100% CRC failure on all received frames at 1Gbps. Swapping bits
+5 and 6 in the data stream corrupts every byte, making CRC-32 verification
+impossible. The fix was to match the reference design pin assignments exactly.
+
+**Lesson**: Always cross-verify FPGA pin assignments against the reference
+design pin-by-pin, especially for multi-bit buses where transposition errors
+are easy to introduce and hard to diagnose.
