@@ -87,7 +87,9 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
   } otherwise {
     clkCnt := clkCnt + 1
   }
-  io.mdc := mdcReg
+  // Pipeline MDC by one extra cycle so registered MDIO outputs have
+  // one full system clock (12.5ns at 80MHz) of setup time before MDC rises.
+  io.mdc := RegNext(mdcReg) init(False)
 
   // ========================================================================
   // MDIO State Machine
@@ -102,19 +104,25 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
   val busy    = state =/= MdioState.IDLE
   val shiftReg = Reg(Bits(16 bits)) init(0)
 
-  // Default MDIO output
-  io.mdioOut := True
-  io.mdioOe  := False
+  // Registered MDIO outputs — updated only on mdcRise, hold value otherwise.
+  // This eliminates the off-by-one bug where a combinational hold block
+  // would use updated bitCnt/state registers (next bit's values) at the
+  // actual MDC rising edge.
+  val mdioOutReg = Reg(Bool()) init(True)
+  val mdioOeReg  = Reg(Bool()) init(False)
+  io.mdioOut := mdioOutReg
+  io.mdioOe  := mdioOeReg
 
   when(mdcRise) {
     switch(state) {
       is(MdioState.IDLE) {
-        // Do nothing, waiting for go
+        mdioOutReg := True
+        mdioOeReg  := False
       }
 
       is(MdioState.PREAMBLE) {
-        io.mdioOut := True
-        io.mdioOe  := True
+        mdioOutReg := True
+        mdioOeReg  := True
         bitCnt := bitCnt + 1
         when(bitCnt === 31) {
           state  := MdioState.START
@@ -123,11 +131,11 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
       }
 
       is(MdioState.START) {
-        io.mdioOe := True
+        mdioOeReg := True
         when(bitCnt === 0) {
-          io.mdioOut := False  // ST bit 0 = '0'
+          mdioOutReg := False  // ST bit 0 = '0'
         } otherwise {
-          io.mdioOut := True   // ST bit 1 = '1'
+          mdioOutReg := True   // ST bit 1 = '1'
         }
         bitCnt := bitCnt + 1
         when(bitCnt === 1) {
@@ -137,13 +145,13 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
       }
 
       is(MdioState.OPCODE) {
-        io.mdioOe := True
+        mdioOeReg := True
         when(bitCnt === 0) {
           // OP[1]: read='1', write='0'
-          io.mdioOut := ~isWrite
+          mdioOutReg := ~isWrite
         } otherwise {
           // OP[0]: read='0', write='1'
-          io.mdioOut := isWrite
+          mdioOutReg := isWrite
         }
         bitCnt := bitCnt + 1
         when(bitCnt === 1) {
@@ -153,8 +161,8 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
       }
 
       is(MdioState.PHY_ADDR) {
-        io.mdioOe  := True
-        io.mdioOut := phyAddr(4 - bitCnt.resized)
+        mdioOeReg  := True
+        mdioOutReg := phyAddr(4 - bitCnt.resized)
         bitCnt := bitCnt + 1
         when(bitCnt === 4) {
           state  := MdioState.REG_ADDR
@@ -163,8 +171,8 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
       }
 
       is(MdioState.REG_ADDR) {
-        io.mdioOe  := True
-        io.mdioOut := regAddr(4 - bitCnt.resized)
+        mdioOeReg  := True
+        mdioOutReg := regAddr(4 - bitCnt.resized)
         bitCnt := bitCnt + 1
         when(bitCnt === 4) {
           state  := MdioState.TURNAROUND
@@ -175,15 +183,15 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
       is(MdioState.TURNAROUND) {
         when(isWrite) {
           // Write: drive TA = '10'
-          io.mdioOe := True
+          mdioOeReg := True
           when(bitCnt === 0) {
-            io.mdioOut := True
+            mdioOutReg := True
           } otherwise {
-            io.mdioOut := False
+            mdioOutReg := False
           }
         } otherwise {
           // Read: release bus (tristate), PHY drives TA
-          io.mdioOe := False
+          mdioOeReg := False
         }
         bitCnt := bitCnt + 1
         when(bitCnt === 1) {
@@ -197,11 +205,11 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
 
       is(MdioState.DATA) {
         when(isWrite) {
-          io.mdioOe  := True
-          io.mdioOut := shiftReg(15)
+          mdioOeReg  := True
+          mdioOutReg := shiftReg(15)
           shiftReg   := shiftReg |<< 1
         } otherwise {
-          io.mdioOe := False
+          mdioOeReg := False
           shiftReg  := shiftReg(14 downto 0) ## io.mdioIn
         }
         bitCnt := bitCnt + 1
@@ -214,61 +222,6 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
           mdioDoneReg := True
         }
       }
-    }
-  }
-
-  // When not on MDC edge, hold outputs based on current state
-  when(!mdcRise && busy) {
-    switch(state) {
-      is(MdioState.PREAMBLE) {
-        io.mdioOe  := True
-        io.mdioOut := True
-      }
-      is(MdioState.START) {
-        io.mdioOe := True
-        when(bitCnt === 0) {
-          io.mdioOut := False
-        } otherwise {
-          io.mdioOut := True
-        }
-      }
-      is(MdioState.OPCODE) {
-        io.mdioOe := True
-        when(bitCnt === 0) {
-          io.mdioOut := ~isWrite
-        } otherwise {
-          io.mdioOut := isWrite
-        }
-      }
-      is(MdioState.PHY_ADDR) {
-        io.mdioOe  := True
-        io.mdioOut := phyAddr(4 - bitCnt.resized)
-      }
-      is(MdioState.REG_ADDR) {
-        io.mdioOe  := True
-        io.mdioOut := regAddr(4 - bitCnt.resized)
-      }
-      is(MdioState.TURNAROUND) {
-        when(isWrite) {
-          io.mdioOe := True
-          when(bitCnt === 0) {
-            io.mdioOut := True
-          } otherwise {
-            io.mdioOut := False
-          }
-        } otherwise {
-          io.mdioOe := False
-        }
-      }
-      is(MdioState.DATA) {
-        when(isWrite) {
-          io.mdioOe  := True
-          io.mdioOut := shiftReg(15)
-        } otherwise {
-          io.mdioOe := False
-        }
-      }
-      default {}
     }
   }
 

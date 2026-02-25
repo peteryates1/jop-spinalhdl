@@ -1,0 +1,122 @@
+# -------------------------------------------------------------------------- #
+# QMTech EP4CE15 Ethernet Reference Design ported to EP4CGX150 + DB_FPGA
+# -------------------------------------------------------------------------- #
+
+# Device
+set_global_assignment -name FAMILY "Cyclone IV GX"
+set_global_assignment -name DEVICE EP4CGX150DF27I7
+set_global_assignment -name TOP_LEVEL_ENTITY ethernet_test
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name MIN_CORE_JUNCTION_TEMP "-40"
+set_global_assignment -name MAX_CORE_JUNCTION_TEMP 100
+set_global_assignment -name OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT"
+set_global_assignment -name FITTER_EFFORT "STANDARD FIT"
+set_global_assignment -name PHYSICAL_SYNTHESIS_EFFORT EXTRA
+set_global_assignment -name NUM_PARALLEL_PROCESSORS ALL
+
+# Source files
+set_global_assignment -name VERILOG_FILE ram.v
+set_global_assignment -name VERILOG_FILE pll_125.v
+set_global_assignment -name VERILOG_FILE rtl/udp.v
+set_global_assignment -name VERILOG_FILE rtl/ipsend.v
+set_global_assignment -name VERILOG_FILE rtl/iprecieve.v
+set_global_assignment -name VERILOG_FILE rtl/ethernet_test.v
+set_global_assignment -name VERILOG_FILE rtl/crc.v
+
+# Timing constraints
+set_global_assignment -name SDC_FILE ethernet_test.sdc
+
+# Default IO standard
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVCMOS"
+
+# Configuration
+set_global_assignment -name ENABLE_OCT_DONE OFF
+set_global_assignment -name USE_CONFIGURATION_DEVICE OFF
+set_global_assignment -name CRC_ERROR_OPEN_DRAIN OFF
+set_global_assignment -name CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -rise
+set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -fall
+set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -rise
+set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -fall
+
+# No SignalTap
+set_global_assignment -name ENABLE_SIGNALTAP OFF
+
+# Partition
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
+
+# -------------------------------------------------------------------------- #
+# Pin Assignments — EP4CGX150 U4 header to DB_FPGA J3 (Ethernet)
+# Remapped from EP4CE15 U8 header using core board manuals
+# -------------------------------------------------------------------------- #
+
+# MDIO / MDC
+set_location_assignment PIN_A21 -to e_mdio
+set_location_assignment PIN_A20 -to e_mdc
+
+# TX path
+set_location_assignment PIN_A19 -to e_txer
+set_location_assignment PIN_A18 -to e_txd[7]
+set_location_assignment PIN_C17 -to e_txd[6]
+set_location_assignment PIN_B18 -to e_txd[5]
+set_location_assignment PIN_C16 -to e_txd[4]
+set_location_assignment PIN_B17 -to e_txc
+set_location_assignment PIN_A17 -to e_txd[3]
+set_location_assignment PIN_A16 -to e_txd[2]
+set_location_assignment PIN_B15 -to e_txd[1]
+set_location_assignment PIN_C15 -to e_txd[0]
+set_location_assignment PIN_C14 -to e_txen
+set_location_assignment PIN_C13 -to e_gtxc
+
+# PHY reset
+set_location_assignment PIN_A15 -to e_reset
+
+# Board oscillator (50MHz)
+set_location_assignment PIN_B14 -to fpga_gclk
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to fpga_gclk
+
+# RX path
+set_location_assignment PIN_C11 -to e_rxer
+set_location_assignment PIN_A13 -to e_rxd[7]
+set_location_assignment PIN_A12 -to e_rxd[6]
+set_location_assignment PIN_B11 -to e_rxd[5]
+set_location_assignment PIN_A11 -to e_rxd[4]
+set_location_assignment PIN_B10 -to e_rxc
+set_location_assignment PIN_A10 -to e_rxd[3]
+set_location_assignment PIN_C10 -to e_rxd[2]
+set_location_assignment PIN_B9  -to e_rxd[1]
+set_location_assignment PIN_A9  -to e_rxd[0]
+set_location_assignment PIN_A8  -to e_rxdv
+
+# IO standards — all 3.3V for DB_FPGA daughter board
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_gtxc
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_mdc
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_mdio
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_reset
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_rxc
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_rxd[7]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_rxd[6]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_rxd[5]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_rxd[4]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_rxd[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_rxd[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_rxd[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_rxd[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_rxdv
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_rxer
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_txc
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_txd[7]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_txd[6]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_txd[5]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_txd[4]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_txd[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_txd[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_txd[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_txd[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_txen
+set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to e_txer
+
+set_global_assignment -name LAST_QUARTUS_VERSION "18.1.1 Lite Edition"

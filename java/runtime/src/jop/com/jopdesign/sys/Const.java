@@ -228,6 +228,12 @@ public class Const {
 	// SD Native interface (BmbSdNative)
 	public static final int IO_SD = IO_BASE+0x30;
 
+	// Ethernet MAC (BmbEth)
+	public static final int IO_ETH = IO_BASE+0x18;
+
+	// Ethernet MDIO PHY management (BmbMdio)
+	public static final int IO_MDIO = IO_BASE+0x20;
+
 	// Ethernet interface on DE2
 	public static final int DM9000 = IO_BASE+0x50;
 	

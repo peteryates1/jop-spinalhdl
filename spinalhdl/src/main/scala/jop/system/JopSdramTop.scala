@@ -81,11 +81,13 @@ case class JopSdramTop(
 
     // Ethernet GMII pins (optional, active at 100 Mbps MII subset)
     val e_txd    = if (ioConfig.hasEth) Some(out Bits(4 bits))          else None
+    val e_txd_hi = if (ioConfig.hasEth) Some(out Bits(4 bits))          else None  // TXD[7:4] tied low
     val e_txen   = if (ioConfig.hasEth) Some(out Bool())                else None
     val e_txer   = if (ioConfig.hasEth) Some(out Bool())                else None
     val e_txc    = if (ioConfig.hasEth) Some(in Bool())                 else None  // 25 MHz from PHY
     val e_gtxc   = if (ioConfig.hasEth) Some(out Bool())                else None  // Tie low for 100M
     val e_rxd    = if (ioConfig.hasEth) Some(in Bits(4 bits))           else None
+    val e_rxd_hi = if (ioConfig.hasEth) Some(in Bits(4 bits))           else None  // RXD[7:4] unused
     val e_rxdv   = if (ioConfig.hasEth) Some(in Bool())                 else None
     val e_rxer   = if (ioConfig.hasEth) Some(in Bool())                 else None
     val e_rxc    = if (ioConfig.hasEth) Some(in Bool())                 else None  // 25 MHz from PHY
@@ -299,6 +301,8 @@ case class JopSdramTop(
     if (ioConfig.hasEth) {
       // GTX clock not used at 100M (PHY provides TX_CLK)
       io.e_gtxc.get := False
+      // GMII TXD[7:4] tied low — prevents floating pins confusing PHY
+      io.e_txd_hi.get := B"4'0000"
 
       // MDIO wiring (combinational passthrough)
       io.e_mdc.get := cluster.io.mdc.get

@@ -7,14 +7,13 @@ create_clock -period 20.000 -name clk_in [get_ports clk_in]
 derive_pll_clocks
 derive_clock_uncertainty
 
-# VGA pixel clock (PLL c3, 25 MHz) <-> system clock (PLL c1, 80 MHz)
-set_false_path -from {pll|altpll_component|auto_generated|pll1|clk[1]} \
-               -to   {pll|altpll_component|auto_generated|pll1|clk[3]}
-set_false_path -from {pll|altpll_component|auto_generated|pll1|clk[3]} \
-               -to   {pll|altpll_component|auto_generated|pll1|clk[1]}
+# Ethernet PHY clocks (25 MHz MII at 100 Mbps)
+create_clock -name "e_rxc" -period 40.000 [get_ports {e_rxc}]
+create_clock -name "e_txc" -period 40.000 [get_ports {e_txc}]
 
-# Ethernet PHY clocks (25 MHz from PHY) <-> system clock
-set_false_path -from {e_txc} -to {pll|altpll_component|auto_generated|pll1|clk[1]}
-set_false_path -from {pll|altpll_component|auto_generated|pll1|clk[1]} -to {e_txc}
-set_false_path -from {e_rxc} -to {pll|altpll_component|auto_generated|pll1|clk[1]}
-set_false_path -from {pll|altpll_component|auto_generated|pll1|clk[1]} -to {e_rxc}
+# PHY clocks are asynchronous to all PLL clocks
+set_clock_groups -asynchronous \
+    -group {e_rxc} \
+    -group {e_txc} \
+    -group {pll|altpll_component|pll|clk[1] \
+            pll|altpll_component|pll|clk[2]}
