@@ -189,6 +189,190 @@ class BmbSdSpiTest extends AnyFunSuite {
     }
   }
 
+  test("BmbSdSpi_interrupt") {
+    val fastDut = simConfig.compile(BmbSdSpi(clkDivInit = 1))
+    fastDut.doSim(seed = 42) { dut =>
+      implicit val cd: ClockDomain = dut.clockDomain
+      cd.forkStimulus(10)
+      SimTimeout(500000)
+
+      initIo(dut)
+      cd.waitSampling(10)
+
+      // Set fast clock divider
+      ioWrite(dut, 2, 1)
+      cd.waitSampling()
+
+      // Enable interrupt: write 0x02 to addr 0 (bit1=intEnable, bit0=csAssert=0)
+      ioWrite(dut, 0, 0x02)
+      cd.waitSampling()
+
+      // Monitor interrupt pulses in a fork
+      var intCount = 0
+      val monitorThread = fork {
+        while (true) {
+          cd.waitSampling()
+          if (dut.io.interrupt.toBoolean) intCount += 1
+        }
+      }
+
+      // Drive MISO high (idle) during transfer
+      dut.io.miso #= true
+
+      // Start transfer 1 (with intEnable=1)
+      ioWrite(dut, 1, 0xFF)
+
+      // Wait for busy=0
+      var timeout = 5000
+      var stillBusy = true
+      while (stillBusy && timeout > 0) {
+        val status = ioRead(dut, 0)
+        stillBusy = (status & 0x01) != 0
+        timeout -= 1
+      }
+      assert(!stillBusy, "Transfer 1 should complete")
+
+      // Let interrupt propagate
+      cd.waitSampling(5)
+
+      assert(intCount == 1, s"Expected exactly 1 interrupt pulse with intEnable=1, got $intCount")
+
+      // Now disable interrupt: write 0x00 (intEnable=0, csAssert=0)
+      ioWrite(dut, 0, 0x00)
+      cd.waitSampling()
+
+      val countBefore = intCount
+
+      // Start transfer 2 (with intEnable=0)
+      ioWrite(dut, 1, 0xAA)
+
+      timeout = 5000
+      stillBusy = true
+      while (stillBusy && timeout > 0) {
+        val status = ioRead(dut, 0)
+        stillBusy = (status & 0x01) != 0
+        timeout -= 1
+      }
+      assert(!stillBusy, "Transfer 2 should complete")
+
+      cd.waitSampling(5)
+
+      assert(intCount == countBefore,
+        s"No interrupt should fire with intEnable=0, count went from $countBefore to $intCount")
+    }
+  }
+
+  test("BmbSdSpi_back_to_back_transfers") {
+    val fastDut = simConfig.compile(BmbSdSpi(clkDivInit = 1))
+    fastDut.doSim(seed = 42) { dut =>
+      implicit val cd: ClockDomain = dut.clockDomain
+      cd.forkStimulus(10)
+      SimTimeout(500000)
+
+      initIo(dut)
+      cd.waitSampling(10)
+
+      // Set fast divider, assert CS
+      ioWrite(dut, 2, 1)
+      ioWrite(dut, 0, 0x01)
+      cd.waitSampling()
+
+      // --- Transfer 1: TX=0xA5, MISO drives 0x3C ---
+      val tx1 = 0xA5
+      val miso1 = 0x3C
+      val miso1Bits = (0 until 8).map(i => ((miso1 >> (7 - i)) & 1) == 1)
+      val mosi1Bits = mutable.ArrayBuffer[Boolean]()
+      var miso1BitIdx = 0
+
+      val mon1 = fork {
+        var prevSclk = false
+        var prevMosi = false
+        dut.io.miso #= miso1Bits(0)
+        while (mosi1Bits.size < 8) {
+          prevMosi = dut.io.mosi.toBoolean
+          cd.waitSampling()
+          val curSclk = dut.io.sclk.toBoolean
+          if (curSclk && !prevSclk) {
+            mosi1Bits += prevMosi
+            miso1BitIdx += 1
+            if (miso1BitIdx < 8) dut.io.miso #= miso1Bits(miso1BitIdx)
+          }
+          prevSclk = curSclk
+        }
+      }
+
+      ioWrite(dut, 1, tx1)
+
+      var timeout = 5000
+      var stillBusy = true
+      while (stillBusy && timeout > 0) {
+        val status = ioRead(dut, 0)
+        stillBusy = (status & 0x01) != 0
+        timeout -= 1
+      }
+      assert(!stillBusy, "Transfer 1 should complete")
+      cd.waitSampling(5)
+
+      val rx1 = ioRead(dut, 1) & 0xFF
+      assert(rx1 == miso1, f"Transfer 1 RX: expected 0x$miso1%02X, got 0x$rx1%02X")
+
+      // Verify MOSI for transfer 1
+      assert(mosi1Bits.size == 8, s"Expected 8 MOSI bits for transfer 1, got ${mosi1Bits.size}")
+      for (i <- 0 until 8) {
+        val expected = ((tx1 >> (7 - i)) & 1) == 1
+        assert(mosi1Bits(i) == expected,
+          s"Transfer 1 MOSI bit $i: expected $expected, got ${mosi1Bits(i)}")
+      }
+
+      // --- Transfer 2: TX=0x5A, MISO drives 0xC3 ---
+      val tx2 = 0x5A
+      val miso2 = 0xC3
+      val miso2Bits = (0 until 8).map(i => ((miso2 >> (7 - i)) & 1) == 1)
+      val mosi2Bits = mutable.ArrayBuffer[Boolean]()
+      var miso2BitIdx = 0
+
+      val mon2 = fork {
+        var prevSclk = false
+        var prevMosi = false
+        dut.io.miso #= miso2Bits(0)
+        while (mosi2Bits.size < 8) {
+          prevMosi = dut.io.mosi.toBoolean
+          cd.waitSampling()
+          val curSclk = dut.io.sclk.toBoolean
+          if (curSclk && !prevSclk) {
+            mosi2Bits += prevMosi
+            miso2BitIdx += 1
+            if (miso2BitIdx < 8) dut.io.miso #= miso2Bits(miso2BitIdx)
+          }
+          prevSclk = curSclk
+        }
+      }
+
+      ioWrite(dut, 1, tx2)
+
+      timeout = 5000
+      stillBusy = true
+      while (stillBusy && timeout > 0) {
+        val status = ioRead(dut, 0)
+        stillBusy = (status & 0x01) != 0
+        timeout -= 1
+      }
+      assert(!stillBusy, "Transfer 2 should complete")
+      cd.waitSampling(5)
+
+      val rx2 = ioRead(dut, 1) & 0xFF
+      assert(rx2 == miso2, f"Transfer 2 RX: expected 0x$miso2%02X, got 0x$rx2%02X")
+
+      // Verify MOSI for transfer 2
+      assert(mosi2Bits.size == 8, s"Expected 8 MOSI bits for transfer 2, got ${mosi2Bits.size}")
+      for (i <- 0 until 8) {
+        val expected = ((tx2 >> (7 - i)) & 1) == 1
+        assert(mosi2Bits(i) == expected,
+          s"Transfer 2 MOSI bit $i: expected $expected, got ${mosi2Bits(i)}")
+      }
+    }
+  }
+
   test("BmbSdSpi_clock_divider") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain

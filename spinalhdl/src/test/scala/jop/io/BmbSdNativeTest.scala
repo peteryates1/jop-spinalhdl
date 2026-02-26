@@ -436,7 +436,292 @@ class BmbSdNativeTest extends AnyFunSuite {
   }
 
   // ==========================================================================
-  // Test 4: Card detect
+  // Test 4: Data read (4-bit mode)
+  // ==========================================================================
+
+  test("BmbSdNative_data_read_4bit") {
+    simConfig.compile(BmbSdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
+      implicit val cd: ClockDomain = dut.clockDomain
+      cd.forkStimulus(10)
+      SimTimeout(2000000)
+
+      initIo(dut)
+      cd.waitSampling(10)
+
+      // Set 4-bit mode and block length = 16 bytes
+      ioWrite(dut, 8, 1)
+      ioWrite(dut, 9, 16)
+
+      // Test data: 16 bytes
+      val testData = (0 until 16).map(i => (i * 0x11 + 0xA5) & 0xFF)
+
+      // Build nibble sequence (high nibble first per byte, 32 nibbles total)
+      val nibbles = testData.flatMap { byte =>
+        Seq((byte >> 4) & 0xF, byte & 0xF)
+      }
+
+      // Compute per-line CRC16: for line i, the bit stream is bit i of each nibble
+      val lineCrc = (0 until 4).map { line =>
+        val bits = nibbles.map(n => (n >> line) & 1)
+        computeCrc16(bits)
+      }
+
+      // Start data read
+      ioWrite(dut, 7, 1)
+
+      // Wait a few SD clocks before driving start nibble
+      var lastSdClk = dut.io.sdClk.toBoolean
+      var waitClocks = 0
+      while (waitClocks < 4) {
+        cd.waitSampling()
+        val cur = dut.io.sdClk.toBoolean
+        if (lastSdClk && !cur) waitClocks += 1
+        lastSdClk = cur
+      }
+
+      // Drive start nibble (0000) on falling edge
+      var driven = false
+      while (!driven) {
+        cd.waitSampling()
+        val cur = dut.io.sdClk.toBoolean
+        if (lastSdClk && !cur) {
+          dut.io.sdDat.read #= 0x0
+          driven = true
+        }
+        lastSdClk = cur
+      }
+
+      // Drive 32 data nibbles on falling edges
+      var nibIdx = 0
+      while (nibIdx < nibbles.size) {
+        cd.waitSampling()
+        val cur = dut.io.sdClk.toBoolean
+        if (lastSdClk && !cur) {
+          dut.io.sdDat.read #= nibbles(nibIdx)
+          nibIdx += 1
+        }
+        lastSdClk = cur
+      }
+
+      // Drive 16 CRC clocks: DAT[i] = CRC bit for line i
+      var crcIdx = 0
+      while (crcIdx < 16) {
+        cd.waitSampling()
+        val cur = dut.io.sdClk.toBoolean
+        if (lastSdClk && !cur) {
+          var nibVal = 0
+          for (line <- 0 until 4) {
+            nibVal |= (((lineCrc(line) >> (15 - crcIdx)) & 1) << line)
+          }
+          dut.io.sdDat.read #= nibVal
+          crcIdx += 1
+        }
+        lastSdClk = cur
+      }
+
+      // Drive stop nibble (1111)
+      driven = false
+      while (!driven) {
+        cd.waitSampling()
+        val cur = dut.io.sdClk.toBoolean
+        if (lastSdClk && !cur) {
+          dut.io.sdDat.read #= 0xF
+          driven = true
+        }
+        lastSdClk = cur
+      }
+
+      // Release DAT lines
+      var releaseClocks = 0
+      while (releaseClocks < 2) {
+        cd.waitSampling()
+        val cur = dut.io.sdClk.toBoolean
+        if (lastSdClk && !cur) releaseClocks += 1
+        lastSdClk = cur
+      }
+      dut.io.sdDat.read #= 0xF
+
+      // Wait for dataBusy=0
+      var timeout = 10000
+      var busy = true
+      while (busy && timeout > 0) {
+        val status = ioRead(dut, 0)
+        busy = (status & 0x10) != 0
+        timeout -= 1
+      }
+      assert(!busy, "dataBusy never cleared")
+
+      // Check no CRC error
+      val status = ioRead(dut, 0)
+      assert((status & 0x20) == 0, s"dataCrcError should be clear, status=0x${status.toHexString}")
+
+      // Check FIFO occupancy: 16 bytes = 4 words
+      val occ = ioRead(dut, 6)
+      assert(occ == 4, s"Expected FIFO occupancy 4, got $occ")
+
+      // Expected words: nibbles packed via (acc << 4) | nibble, 8 nibbles per word
+      val expectedWords = (0 until 4).map { w =>
+        var word = 0L
+        for (b <- 0 until 4) {
+          word = (word << 8) | (testData(w * 4 + b) & 0xFF)
+        }
+        word
+      }
+
+      for (i <- expectedWords.indices) {
+        val word = fifoRead(dut)
+        assert(word == expectedWords(i),
+          f"FIFO word $i: expected 0x${expectedWords(i)}%08X, got 0x${word}%08X")
+      }
+    }
+  }
+
+  // ==========================================================================
+  // Test 5: Data write (1-bit mode)
+  // ==========================================================================
+
+  test("BmbSdNative_data_write_1bit") {
+    simConfig.compile(BmbSdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
+      implicit val cd: ClockDomain = dut.clockDomain
+      cd.forkStimulus(10)
+      SimTimeout(2000000)
+
+      initIo(dut)
+      cd.waitSampling(10)
+
+      // Set 1-bit mode, block length = 16 bytes
+      ioWrite(dut, 8, 0)
+      ioWrite(dut, 9, 16)
+
+      // Test data: 16 bytes -> 4 words
+      val testData = (0 until 16).map(i => (i * 0x11 + 0xA5) & 0xFF)
+      val testWords = (0 until 4).map { w =>
+        var word = 0L
+        for (b <- 0 until 4) {
+          word = (word << 8) | (testData(w * 4 + b) & 0xFF)
+        }
+        word
+      }
+
+      // Push 4 words into FIFO via addr 5
+      for (w <- testWords) {
+        ioWrite(dut, 5, w)
+      }
+
+      // Expected serial bit stream (MSB-first per byte)
+      val expectedBits = testData.flatMap { byte =>
+        (7 to 0 by -1).map(i => (byte >> i) & 1)
+      }
+
+      // Compute CRC16 for the serial bit stream
+      val expectedCrc16 = computeCrc16(expectedBits)
+
+      // Start write (bit 1 of addr 7)
+      ioWrite(dut, 7, 2)
+
+      // Capture bits from sdDat.write(0) on falling edges of sdClk
+      // when writeEnable(0) is set.
+      // Expected sequence: start(0), 128 data bits, 16 CRC bits, stop(1)
+      val totalOutputBits = 1 + 128 + 16 + 1 // = 146
+      val capturedBits = mutable.ArrayBuffer[Int]()
+      var lastSdClk = dut.io.sdClk.toBoolean
+
+      while (capturedBits.size < totalOutputBits) {
+        cd.waitSampling()
+        val cur = dut.io.sdClk.toBoolean
+        if (lastSdClk && !cur) {
+          // Falling edge — check if host is driving DAT0
+          if ((dut.io.sdDat.writeEnable.toLong & 1) != 0) {
+            val bit = (dut.io.sdDat.write.toLong & 1).toInt
+            capturedBits += bit
+          }
+        }
+        lastSdClk = cur
+      }
+
+      // Verify start bit
+      assert(capturedBits(0) == 0, s"Start bit should be 0, got ${capturedBits(0)}")
+
+      // Verify 128 data bits
+      for (i <- expectedBits.indices) {
+        assert(capturedBits(1 + i) == expectedBits(i),
+          s"Data bit $i: expected ${expectedBits(i)}, got ${capturedBits(1 + i)}")
+      }
+
+      // Verify CRC16 bits
+      for (i <- 0 until 16) {
+        val expected = (expectedCrc16 >> (15 - i)) & 1
+        assert(capturedBits(129 + i) == expected,
+          s"CRC bit $i: expected $expected, got ${capturedBits(129 + i)}")
+      }
+
+      // Verify stop bit
+      assert(capturedBits(145) == 1, s"Stop bit should be 1, got ${capturedBits(145)}")
+
+      // Drive CRC status response "010" (positive ACK) on DAT0.
+      // HW samples 3 bits on rising edges in WAIT_CRC_STATUS state.
+      // After capture loop, state is WAIT_CRC_STATUS; next rising edge
+      // reads the first CRC status bit. Set DAT0=0 immediately so it's
+      // stable before that rising edge.
+      dut.io.sdDat.read #= 0xE  // DAT0=0, DAT[3:1]=1
+
+      // Drive remaining 2 CRC status bits (1, 0) on falling edges
+      val crcStatusRemaining = Seq(1, 0)
+      var statusIdx = 0
+      lastSdClk = dut.io.sdClk.toBoolean
+      while (statusIdx < crcStatusRemaining.size) {
+        cd.waitSampling()
+        val cur = dut.io.sdClk.toBoolean
+        if (lastSdClk && !cur) {
+          dut.io.sdDat.read #= (if (crcStatusRemaining(statusIdx) == 1) 0xF else 0xE)
+          statusIdx += 1
+        }
+        lastSdClk = cur
+      }
+
+      // After CRC status, HW transitions to WAIT_BUSY (checks DAT0 on rise).
+      // Drive DAT0 low (busy) for a few clocks, then release high.
+      var busyClocks = 0
+      while (busyClocks < 4) {
+        cd.waitSampling()
+        val cur = dut.io.sdClk.toBoolean
+        if (lastSdClk && !cur) {
+          dut.io.sdDat.read #= 0xE // DAT0=0 (busy)
+          busyClocks += 1
+        }
+        lastSdClk = cur
+      }
+
+      // Release DAT0 (not busy)
+      var released = false
+      while (!released) {
+        cd.waitSampling()
+        val cur = dut.io.sdClk.toBoolean
+        if (lastSdClk && !cur) {
+          dut.io.sdDat.read #= 0xF
+          released = true
+        }
+        lastSdClk = cur
+      }
+
+      // Wait for dataBusy=0
+      var timeout = 10000
+      var busy = true
+      while (busy && timeout > 0) {
+        val status = ioRead(dut, 0)
+        busy = (status & 0x10) != 0
+        timeout -= 1
+      }
+      assert(!busy, "dataBusy never cleared")
+
+      // Check no CRC error
+      val finalStatus = ioRead(dut, 0)
+      assert((finalStatus & 0x20) == 0, s"dataCrcError should be clear, status=0x${finalStatus.toHexString}")
+    }
+  }
+
+  // ==========================================================================
+  // Test 6: Card detect
   // ==========================================================================
 
   test("BmbSdNative_card_detect") {

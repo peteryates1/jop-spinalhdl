@@ -14,6 +14,14 @@
 #   make program-smp     - Program SMP FPGA via JTAG
 #   make build-dbfpga    - Quartus compile DB_FPGA
 #   make program-dbfpga  - Program DB_FPGA via JTAG
+#   make generate-sd-native-exerciser - Generate SD Native exerciser Verilog
+#   make generate-sd-spi-exerciser    - Generate SD SPI exerciser Verilog
+#   make build-sd-native-exerciser    - Quartus compile SD Native exerciser
+#   make build-sd-spi-exerciser       - Quartus compile SD SPI exerciser
+#   make program-sd-native-exerciser  - Program SD Native exerciser via JTAG
+#   make program-sd-spi-exerciser     - Program SD SPI exerciser via JTAG
+#   make full-sd-native-exerciser     - generate + build + program + monitor
+#   make full-sd-spi-exerciser        - generate + build + program + monitor
 #   make all             - microcode + generate + build
 #   make run             - program + download + monitor
 #   make full            - microcode + generate + build + run
@@ -44,17 +52,23 @@ ASM_DIR = ../../asm
 GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSdramTop.v
 GENERATED_SMP_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSmpSdramTop.v
 GENERATED_DBFPGA_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSdramTop.v
+GENERATED_SD_NATIVE_V = $(PROJECT_ROOT)/spinalhdl/generated/SdNativeExerciserTop.v
+GENERATED_SD_SPI_V = $(PROJECT_ROOT)/spinalhdl/generated/SdSpiExerciserTop.v
 
 # Quartus projects
 QP = jop_sdram
 QP_SMP = jop_smp_sdram
 QP_DBFPGA = jop_dbfpga
+QP_SD_NATIVE = sd_native_exerciser
+QP_SD_SPI = sd_spi_exerciser
 OUTPUT_DIR = output_files
 SOF_FILE = $(OUTPUT_DIR)/$(QP).sof
 SOF_SMP_FILE = $(OUTPUT_DIR)/$(QP_SMP).sof
 SOF_DBFPGA_FILE = $(OUTPUT_DIR)/$(QP_DBFPGA).sof
+SOF_SD_NATIVE_FILE = $(OUTPUT_DIR)/$(QP_SD_NATIVE).sof
+SOF_SD_SPI_FILE = $(OUTPUT_DIR)/$(QP_SD_SPI).sof
 
-.PHONY: all microcode generate generate-smp generate-dbfpga build build-smp build-dbfpga program program-smp program-dbfpga download monitor run run-smp run-dbfpga full full-smp full-dbfpga clean
+.PHONY: all microcode generate generate-smp generate-dbfpga generate-sd-native-exerciser generate-sd-spi-exerciser build build-smp build-dbfpga build-sd-native-exerciser build-sd-spi-exerciser program program-smp program-dbfpga program-sd-native-exerciser program-sd-spi-exerciser download monitor run run-smp run-dbfpga full full-smp full-dbfpga full-sd-native-exerciser full-sd-spi-exerciser clean
 
 # Default: microcode + generate + build
 all: microcode generate build
@@ -67,6 +81,10 @@ full-smp: microcode generate-smp build-smp run-smp
 
 # DB_FPGA full flow
 full-dbfpga: microcode generate-dbfpga build-dbfpga run-dbfpga
+
+# SD exerciser full flows (no microcode or download needed)
+full-sd-native-exerciser: generate-sd-native-exerciser build-sd-native-exerciser program-sd-native-exerciser monitor
+full-sd-spi-exerciser: generate-sd-spi-exerciser build-sd-spi-exerciser program-sd-spi-exerciser monitor
 
 # Program + download + monitor
 run: program download monitor
@@ -96,6 +114,14 @@ generate-smp:
 generate-dbfpga:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopDbFpgaTopVerilog"
 	@echo "=== DB_FPGA Verilog generated: $(GENERATED_DBFPGA_V) ==="
+
+generate-sd-native-exerciser:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.SdNativeExerciserTopVerilog"
+	@echo "=== SD Native Exerciser Verilog generated: $(GENERATED_SD_NATIVE_V) ==="
+
+generate-sd-spi-exerciser:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.SdSpiExerciserTopVerilog"
+	@echo "=== SD SPI Exerciser Verilog generated: $(GENERATED_SD_SPI_V) ==="
 
 # --------------------------------------------------------------------------
 # Quartus build
@@ -127,6 +153,24 @@ $(SOF_DBFPGA_FILE): $(GENERATED_DBFPGA_V) $(QP_DBFPGA).qsf $(QP).sdc dram_pll.vh
 	$(QUARTUS_BIN)/quartus_asm $(QP_DBFPGA)
 	$(QUARTUS_BIN)/quartus_sta $(QP_DBFPGA)
 	@echo "=== DB_FPGA Build complete: $(SOF_DBFPGA_FILE) ==="
+
+build-sd-native-exerciser: $(SOF_SD_NATIVE_FILE)
+
+$(SOF_SD_NATIVE_FILE): $(GENERATED_SD_NATIVE_V) $(QP_SD_NATIVE).qsf sd_exerciser.sdc dram_pll.vhd
+	$(QUARTUS_BIN)/quartus_map $(QP_SD_NATIVE)
+	$(QUARTUS_BIN)/quartus_fit $(QP_SD_NATIVE)
+	$(QUARTUS_BIN)/quartus_asm $(QP_SD_NATIVE)
+	$(QUARTUS_BIN)/quartus_sta $(QP_SD_NATIVE)
+	@echo "=== SD Native Exerciser Build complete: $(SOF_SD_NATIVE_FILE) ==="
+
+build-sd-spi-exerciser: $(SOF_SD_SPI_FILE)
+
+$(SOF_SD_SPI_FILE): $(GENERATED_SD_SPI_V) $(QP_SD_SPI).qsf sd_exerciser.sdc dram_pll.vhd
+	$(QUARTUS_BIN)/quartus_map $(QP_SD_SPI)
+	$(QUARTUS_BIN)/quartus_fit $(QP_SD_SPI)
+	$(QUARTUS_BIN)/quartus_asm $(QP_SD_SPI)
+	$(QUARTUS_BIN)/quartus_sta $(QP_SD_SPI)
+	@echo "=== SD SPI Exerciser Build complete: $(SOF_SD_SPI_FILE) ==="
 
 # --------------------------------------------------------------------------
 # FPGA programming
@@ -180,6 +224,38 @@ program-dbfpga: $(SOF_DBFPGA_FILE) $(QP_DBFPGA).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_DBFPGA).cdf
 	@echo "=== DB_FPGA FPGA programmed ==="
 
+$(QP_SD_NATIVE).cdf: $(SOF_SD_NATIVE_FILE)
+	@echo '/* Auto-generated CDF */' > $@
+	@echo 'JedecChain;' >> $@
+	@echo '	FileRevision(JESD32A);' >> $@
+	@echo '	DefaultMfr(6E);' >> $@
+	@echo '	P ActionCode(Cfg)' >> $@
+	@echo '		Device PartName(EP4CGX150DF27) Path("$(OUTPUT_DIR)/") File("$(QP_SD_NATIVE).sof") MfrSpec(OpMask(1));' >> $@
+	@echo 'ChainEnd;' >> $@
+	@echo 'AlteraBegin;' >> $@
+	@echo '	ChainType(JTAG);' >> $@
+	@echo 'AlteraEnd;' >> $@
+
+program-sd-native-exerciser: $(SOF_SD_NATIVE_FILE) $(QP_SD_NATIVE).cdf
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SD_NATIVE).cdf
+	@echo "=== SD Native Exerciser FPGA programmed ==="
+
+$(QP_SD_SPI).cdf: $(SOF_SD_SPI_FILE)
+	@echo '/* Auto-generated CDF */' > $@
+	@echo 'JedecChain;' >> $@
+	@echo '	FileRevision(JESD32A);' >> $@
+	@echo '	DefaultMfr(6E);' >> $@
+	@echo '	P ActionCode(Cfg)' >> $@
+	@echo '		Device PartName(EP4CGX150DF27) Path("$(OUTPUT_DIR)/") File("$(QP_SD_SPI).sof") MfrSpec(OpMask(1));' >> $@
+	@echo 'ChainEnd;' >> $@
+	@echo 'AlteraBegin;' >> $@
+	@echo '	ChainType(JTAG);' >> $@
+	@echo 'AlteraEnd;' >> $@
+
+program-sd-spi-exerciser: $(SOF_SD_SPI_FILE) $(QP_SD_SPI).cdf
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SD_SPI).cdf
+	@echo "=== SD SPI Exerciser FPGA programmed ==="
+
 # --------------------------------------------------------------------------
 # Serial download and UART monitor
 # --------------------------------------------------------------------------
@@ -195,5 +271,5 @@ monitor:
 # --------------------------------------------------------------------------
 
 clean:
-	rm -rf output_files db incremental_db $(QP).cdf $(QP_SMP).cdf $(QP_DBFPGA).cdf
+	rm -rf output_files db incremental_db $(QP).cdf $(QP_SMP).cdf $(QP_DBFPGA).cdf $(QP_SD_NATIVE).cdf $(QP_SD_SPI).cdf
 	rm -f *.rpt *.done *.jdi *.sld *.smsg *.summary *.pin

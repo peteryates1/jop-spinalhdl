@@ -1,0 +1,78 @@
+# -------------------------------------------------------------------------- #
+# SD Native Exerciser - QMTECH EP4CGX150 Core Board + DB_FPGA Daughter Board
+#
+# Exercises BmbSdNative with a real SD card and reports via UART.
+# -------------------------------------------------------------------------- #
+
+set_global_assignment -name FAMILY "Cyclone IV GX"
+set_global_assignment -name DEVICE EP4CGX150DF27I7
+set_global_assignment -name TOP_LEVEL_ENTITY SdNativeExerciserTop
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name MIN_CORE_JUNCTION_TEMP "-40"
+set_global_assignment -name MAX_CORE_JUNCTION_TEMP 100
+set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
+set_global_assignment -name NOMINAL_CORE_SUPPLY_VOLTAGE 1.2V
+
+# Source files
+set_global_assignment -name VERILOG_FILE ../../spinalhdl/generated/SdNativeExerciserTop.v
+set_global_assignment -name VHDL_FILE dram_pll.vhd
+set_global_assignment -name SDC_FILE sd_exerciser.sdc
+
+# I/O standard
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVCMOS"
+
+# Configuration
+set_global_assignment -name ENABLE_OCT_DONE OFF
+set_global_assignment -name ENABLE_CONFIGURATION_PINS OFF
+set_global_assignment -name ENABLE_BOOT_SEL_PIN OFF
+set_global_assignment -name USE_CONFIGURATION_DEVICE OFF
+set_global_assignment -name ACTIVE_SERIAL_CLOCK FREQ_40MHZ
+
+# I/O timing
+set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -rise
+set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -fall
+set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -rise
+set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -fall
+
+# -------------------------------------------------------------------------- #
+# Pin Assignments
+# -------------------------------------------------------------------------- #
+
+# 50 MHz Clock
+set_location_assignment PIN_B14 -to clk_in
+
+# UART TX
+set_location_assignment PIN_AD20 -to ser_txd
+
+# Core board LEDs
+set_location_assignment PIN_A25 -to led[0]
+set_location_assignment PIN_A24 -to led[1]
+
+# SD Card (Native interface) - DB_FPGA Daughter Board
+set_location_assignment PIN_B21 -to sd_clk
+set_location_assignment PIN_A22 -to sd_cmd[0]
+set_location_assignment PIN_A23 -to sd_dat_0[0]
+set_location_assignment PIN_B23 -to sd_dat_1[0]
+set_location_assignment PIN_B19 -to sd_dat_2[0]
+set_location_assignment PIN_C19 -to sd_dat_3[0]
+set_location_assignment PIN_B22 -to sd_cd
+
+# Internal weak pull-ups on SD CMD and DAT lines (required for idle-high)
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to sd_cmd[0]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to sd_dat_0[0]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to sd_dat_1[0]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to sd_dat_2[0]
+set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to sd_dat_3[0]
+
+# -------------------------------------------------------------------------- #
+# Misc
+# -------------------------------------------------------------------------- #
+
+set_global_assignment -name ENABLE_SIGNALTAP OFF
+
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
+
+set_global_assignment -name LAST_QUARTUS_VERSION "18.1.1 Lite Edition"

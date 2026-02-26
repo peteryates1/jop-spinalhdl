@@ -457,14 +457,25 @@ case class BmbSdNative(clkDivInit: Int = 99) extends Component {
       }
 
       is(DataState.WAIT_CRC_STATUS) {
-        datCrcStatus := (datCrcStatus |<< 1) | io.sdDat.read(0).asBits.resized
-        datCrcStatusCnt := datCrcStatusCnt + 1
-        when(datCrcStatusCnt === 2) {
-          val status = (datCrcStatus |<< 1) | io.sdDat.read(0).asBits.resized
-          when(status =/= B"010") {
-            dataCrcError := True
+        // Wait for start bit (DAT0 low) before sampling CRC status.
+        // Card needs Ncrc SD clocks after end bit before driving status.
+        when(datCrcStatusCnt === 0 && io.sdDat.read(0)) {
+          // Still waiting for start bit — don't advance counter
+          dataTimeoutCnt := dataTimeoutCnt + 1
+          when(dataTimeoutCnt === U(0xFFFFF, 20 bits)) {
+            dataTimeout := True
+            dataState := DataState.DONE
           }
-          dataState := DataState.WAIT_BUSY
+        } otherwise {
+          datCrcStatus := (datCrcStatus |<< 1) | io.sdDat.read(0).asBits.resized
+          datCrcStatusCnt := datCrcStatusCnt + 1
+          when(datCrcStatusCnt === 2) {
+            val status = (datCrcStatus |<< 1) | io.sdDat.read(0).asBits.resized
+            when(status =/= B"010") {
+              dataCrcError := True
+            }
+            dataState := DataState.WAIT_BUSY
+          }
         }
       }
 
@@ -763,6 +774,7 @@ case class BmbSdNative(clkDivInit: Int = 99) extends Component {
           dataCrcError := False
           dataTimeout := False
           dataCrcFlags := 0
+          dataTimeoutCnt := 0
           dataState := DataState.SEND_START
         }
       }
