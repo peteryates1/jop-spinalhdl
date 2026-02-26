@@ -239,6 +239,9 @@ public class Const {
 	// Ethernet MDIO PHY management (BmbMdio)
 	public static final int IO_MDIO = IO_BASE+0x20;
 
+	// SD SPI interface (BmbSdSpi)
+	public static final int IO_SD_SPI = IO_BASE+0x28;
+
 	// VGA text controller (BmbVgaText) — ioAddr 0xC0
 	public static final int IO_VGA = IO_BASE+0x40;
 
