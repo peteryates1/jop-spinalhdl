@@ -12,13 +12,14 @@ derive_clock_uncertainty
 # Ethernet PHY RX clock (125 MHz GMII, source-synchronous with RX data)
 create_clock -period 8.000 -name e_rxc [get_ports e_rxc]
 
-# All three clock domains are asynchronous to each other:
-#   - DRAM PLL 80 MHz (clk[1], clk[2])
+# All clock domains are asynchronous to each other:
+#   - DRAM PLL 80 MHz (clk[1], clk[2]) and 25 MHz VGA (clk[3])
 #   - Ethernet PLL 125 MHz (TX)
 #   - PHY RX clock 125 MHz (e_rxc)
 set_clock_groups -asynchronous \
-    -group {pll|altpll_component|pll|clk[1] \
-            pll|altpll_component|pll|clk[2]} \
+    -group {pll|altpll_component|auto_generated|pll1|clk[1] \
+            pll|altpll_component|auto_generated|pll1|clk[2] \
+            pll|altpll_component|auto_generated|pll1|clk[3]} \
     -group {ethPll|altpll_component|auto_generated|pll1|clk[0]} \
     -group {e_rxc}
 

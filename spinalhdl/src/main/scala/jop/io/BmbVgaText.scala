@@ -147,7 +147,7 @@ case class BmbVgaText(
     defChar(0x39, Seq(0x00,0x00,0x3C,0x66,0x66,0x66,0x3E,0x06,0x06,0x0C,0x38,0x00,0x00,0x00,0x00,0x00))
 
     // A-Z (0x41-0x5A)
-    defChar(0x41, Seq(0x00,0x00,0x18,0x3C,0x66,0x66,0xC3,0xFF,0xC3,0xC3,0xC3,0xC3,0x00,0x00,0x00,0x00))
+    defChar(0x41, Seq(0x00,0x00,0x18,0x3C,0x66,0xC3,0xC3,0xFF,0xC3,0xC3,0xC3,0x00,0x00,0x00,0x00,0x00))
     defChar(0x42, Seq(0x00,0x00,0xFC,0x66,0x66,0x7C,0x66,0x66,0x66,0x66,0xFC,0x00,0x00,0x00,0x00,0x00))
     defChar(0x43, Seq(0x00,0x00,0x3C,0x66,0xC0,0xC0,0xC0,0xC0,0xC0,0x66,0x3C,0x00,0x00,0x00,0x00,0x00))
     defChar(0x44, Seq(0x00,0x00,0xF8,0x6C,0x66,0x66,0x66,0x66,0x66,0x6C,0xF8,0x00,0x00,0x00,0x00,0x00))
@@ -501,29 +501,39 @@ case class BmbVgaText(
       hCounter := hCounter + 1
     }
 
-    // Sync signals (active low, directly output active-low)
-    val hSync = RegNext(hCounter >= H_SYNC_START && hCounter < H_SYNC_END) init(False)
-    val vSync = RegNext(vCounter >= V_SYNC_START && vCounter < V_SYNC_END) init(False)
-    val activeDisplay = (hCounter < H_ACTIVE && vCounter < V_ACTIVE)
-
-    // VBlank detection (for interrupt)
-    val vBlank = (vCounter >= V_ACTIVE)
-    val vBlankEdge = vBlank && !RegNext(vBlank, False)
-
     // ====================================================================
     // 3-stage pixel pipeline
     // Pipeline compensates for RAM read latency.
     // We use (hCounter + 3) to look ahead, so the data arrives just in time.
+    // hSync, activeDisplay, and bitIndex all use hLookAhead so that after
+    // 3 stages of pipelining they align exactly with the pixel data output.
+    // This produces standard VGA timing at the output pins.
     // ====================================================================
 
     // Stage 0: Compute character address from look-ahead pixel position
+    val nextLineWrap = (hCounter + 3 >= H_TOTAL)
     val hLookAhead = Mux(
-      hCounter + 3 >= H_TOTAL,
+      nextLineWrap,
       hCounter + 3 - H_TOTAL,
       (hCounter + 3).resize(10)
     )
+    // When hLookAhead wraps, we're fetching for the next scan line
+    val vLookAhead = Mux(
+      nextLineWrap,
+      Mux(vCounter === (V_TOTAL - 1), U(0, 10 bits), vCounter + 1),
+      vCounter
+    )
+
+    // Sync and blanking derived from look-ahead to align with pixel data
+    val hSync = RegNext(hLookAhead >= H_SYNC_START && hLookAhead < H_SYNC_END) init(False)
+    val vSync = RegNext(vLookAhead >= V_SYNC_START && vLookAhead < V_SYNC_END) init(False)
+    val activeDisplay = (hLookAhead < H_ACTIVE && vLookAhead < V_ACTIVE)
+
+    // VBlank detection (for interrupt)
+    val vBlank = (vCounter >= V_ACTIVE)
+    val vBlankEdge = vBlank && !RegNext(vBlank, False)
     val charCol_s0 = (hLookAhead >> 3).resize(7)   // hPixel / 8
-    val charRow_s0 = (vCounter >> 4).resize(5)      // vPixel / 16
+    val charRow_s0 = (vLookAhead >> 4).resize(5)    // vPixel / 16
     val charAddr_s0 = (charRow_s0 * COLS + charCol_s0).resize(log2Up(CHAR_COUNT))
 
     // Read character and attribute RAM (port B, pixel clock domain)
@@ -531,15 +541,15 @@ case class BmbVgaText(
     val attrData_s1 = attrRam.readSync(charAddr_s0, clockCrossing = true)
 
     // Stage 1 -> 2: Read font ROM using character code and row
-    val vRow_s1 = RegNext(vCounter(3 downto 0))  // vPixel % 16
+    val vRow_s1 = RegNext(vLookAhead(3 downto 0))  // vPixel % 16
     // charCode * 16 = charCode << 4; + row offset
     val fontAddrCalc = (charData_s1.asUInt << 4).resize(12) + vRow_s1.resize(12)
     val fontByte_s2 = fontRom.readSync(fontAddrCalc, clockCrossing = true)
 
     // Pipeline attribute and hCounter for color lookup
     val attrData_s2 = RegNext(attrData_s1)
-    val hCounter_s1 = RegNext(hCounter)
-    val hCounter_s2 = RegNext(hCounter_s1)
+    val hLookAhead_s1 = RegNext(hLookAhead)
+    val hLookAhead_s2 = RegNext(hLookAhead_s1)
     val activeDisplay_s1 = RegNext(activeDisplay)
     val activeDisplay_s2 = RegNext(activeDisplay_s1)
     val activeDisplay_s3 = RegNext(activeDisplay_s2)
@@ -549,7 +559,7 @@ case class BmbVgaText(
     val vSync_s3 = RegNext(vSync_s2)
 
     // Stage 2 -> 3: Select pixel bit and color
-    val bitIndex_s2 = (7 - hCounter_s2(2 downto 0)).resize(3)  // 7 - (hPixel % 8)
+    val bitIndex_s2 = (7 - hLookAhead_s2(2 downto 0)).resize(3)  // 7 - (hPixel % 8)
     val fgIndex_s2 = attrData_s2(3 downto 0).asUInt
     val bgIndex_s2 = attrData_s2(7 downto 4).asUInt
 

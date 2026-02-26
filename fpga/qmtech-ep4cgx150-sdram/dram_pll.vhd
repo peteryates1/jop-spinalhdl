@@ -181,7 +181,7 @@ BEGIN
 		compensate_clock => "CLK0",
 		gate_lock_signal => "NO",
 		inclk0_input_frequency => 20000,
-		intended_device_family => "Cyclone II",
+		intended_device_family => "Cyclone IV GX",
 		invalid_lock_multiplier => 5,
 		lpm_hint => "CBX_MODULE_PREFIX=dram_pll",
 		lpm_type => "altpll",
