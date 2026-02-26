@@ -25,9 +25,8 @@ Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 
 ## Architecture
 
+### Single-core
 ```
-Single-core:
-
  ┌──────────────┐                    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
  │   bytecode   │                    │  microcode   │    │  microcode   │    │  microcode   │
  │    fetch     ├─────────┬─────────▶│    fetch     ├─┬─▶│   decode     ├───▶│   execute    │◀─┐
@@ -37,8 +36,7 @@ Single-core:
 ┌───────┼────────┐        │                 │         |                             |          |
 │┌──────┴───────┐│ ┌──────┴───────┐  ┌──────┴───────┐ |  ┌──────────────┐    ┌──────┴───────┐  |
 │| method cache ││ |  jump tbl    │  │microcode rom │ └──│ Address Gen  ├───▶│ stack buffer │  |
-│├──────────────┤│ └──────────────┘  └──────────────┘    └──────────────┘    └──────────────┘  |
-│| object cache ││                                                                             |
+││ object cache ││ └──────────────┘  └──────────────┘    └──────────────┘    └──────────────┘  |
 │| array cache  ││                                                                             |
 │└──────────────┘│                                                                             |
 |     memory     │                                                                             |
@@ -51,9 +49,9 @@ Single-core:
  |(BRAM/SDRAM/  │ | (sys, uart)  │
  |    DDR3)     │ └──────────────┘
  └──────────────┘
-
-SMP (2-core):
-
+```
+### SMP (2-core)
+```
  ┌─────────────────┐    ┌─────────────────┐
  │    JopCore 0    │    │    JopCore 1    │
  │  pipeline+memctl│    │  pipeline+memctl│
