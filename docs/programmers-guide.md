@@ -24,6 +24,7 @@ The memory controller extracts an 8-bit `ioAddr` from the full address. Each dev
 | `0x90`--`0x93` | 4 regs | `IO_BASE + 0x10` | BmbUart (serial) | `hasUart` |
 | `0x98`--`0x9F` | 8 regs | `IO_BASE + 0x18` | BmbEth (Ethernet MAC) | `hasEth` |
 | `0xA0`--`0xA7` | 8 regs | `IO_BASE + 0x20` | BmbMdio (PHY management) | `hasEth` |
+| `0xA8`--`0xAB` | 4 regs | `IO_BASE + 0x28` | BmbSdSpi (SD card SPI) | `hasSdSpi` |
 | `0xB0`--`0xBF` | 16 regs | `IO_BASE + 0x30` | BmbSdNative (SD card) | `hasSdNative` |
 | `0xC0`--`0xCF` | 16 regs | `IO_BASE + 0x40` | BmbVgaText (VGA text) | `hasVgaText` |
 
@@ -370,6 +371,82 @@ Native.wr(0, Const.IO_MDIO + 3);   // release reset
 
 ---
 
+## BmbSdSpi -- SD Card (SPI Mode)
+
+**Source**: `spinalhdl/src/main/scala/jop/io/BmbSdSpi.scala`
+
+**Java base**: `IO_BASE + 0x28` (ioAddr `0xA8`)
+
+**Config**: `IoConfig.hasSdSpi = true`
+
+Raw SPI master for SD cards in SPI mode. Hardware handles byte-level SPI shifting (Mode 0: CPOL=0, CPHA=0, MSB first) and chip-select control. Software drives the SD protocol (CMD0, CMD8, ACMD41, etc.).
+
+SPI clock: `SPI_CLK = sys_clk / (2 * (divider + 1))`. Default divider=199 gives ~200 kHz at 80 MHz (safe for SD init, which requires <= 400 kHz).
+
+**Note**: SD SPI and SD Native are mutually exclusive (share pins).
+
+### Register Map
+
+| Addr | Read | Write |
+|---|---|---|
+| 0 | Status | Control |
+| 1 | RX byte [7:0] | TX byte [7:0] (starts transfer) |
+| 2 | Clock divider [15:0] | Set clock divider [15:0] |
+
+### Status (addr 0, read)
+
+| Bit | Meaning |
+|---|---|
+| 0 | Busy (SPI transfer in progress) |
+| 1 | Card present (active-low CD pin, synchronized) |
+| 2 | Interrupt enable |
+
+### Control (addr 0, write)
+
+| Bit | Meaning |
+|---|---|
+| 0 | CS assert (1 = CS driven low / selected) |
+| 1 | Interrupt enable (fires on transfer complete) |
+
+### SPI Transfer
+
+Write a byte to addr 1 to start an 8-bit SPI transfer. The hardware shifts out the TX byte on MOSI while simultaneously shifting in 8 bits on MISO. Poll status bit 0 (busy) for completion, then read the received byte from addr 1.
+
+```java
+// Assert CS
+Native.wr(1, ioBase + 0);           // csAssert=1
+
+// Send/receive one byte
+Native.wr(txByte & 0xFF, ioBase + 1);
+while ((Native.rd(ioBase + 0) & 1) != 0) { }  // wait for busy=0
+int rxByte = Native.rd(ioBase + 1) & 0xFF;
+
+// Deassert CS
+Native.wr(0, ioBase + 0);           // csAssert=0
+```
+
+### Clock Divider (addr 2)
+
+Read or write the 16-bit clock divider. Change to a lower value after SD card initialization to increase SPI clock speed.
+
+```java
+// Set clock to ~20 MHz at 80 MHz system clock: 80/(2*(1+1)) = 20 MHz
+Native.wr(1, ioBase + 2);
+```
+
+### SD Card Init Sequence (typical)
+
+1. Set divider for <= 400 kHz (default 199 at 80 MHz)
+2. Deassert CS, send 10 bytes of 0xFF (80 clock cycles for card power-up)
+3. Assert CS, send CMD0 (GO_IDLE_STATE), expect R1 = 0x01
+4. Send CMD8 (SEND_IF_COND), check voltage acceptance
+5. Loop ACMD41 (SD_SEND_OP_COND) until card ready
+6. Send CMD58 (READ_OCR) to check CCS bit
+7. Increase clock divider for data transfers
+8. Send CMD17 (READ_SINGLE_BLOCK) / CMD24 (WRITE_BLOCK) for data
+
+---
+
 ## BmbSdNative -- SD Card (Native Mode)
 
 **Source**: `spinalhdl/src/main/scala/jop/io/BmbSdNative.scala`
@@ -574,6 +651,7 @@ ioAddr[7:0] from memory controller
     ├── [7:2] = 0x24 → BmbUart    (sub-addr = [1:0])
     ├── [7:3] = 0x13 → BmbEth     (sub-addr = [2:0])
     ├── [7:3] = 0x14 → BmbMdio    (sub-addr = [2:0])
+    ├── [7:2] = 0x2A → BmbSdSpi   (sub-addr = [1:0])
     ├── [7:4] = 0xB  → BmbSdNative (sub-addr = [3:0])
     └── [7:4] = 0xC  → BmbVgaText (sub-addr = [3:0])
 ```
