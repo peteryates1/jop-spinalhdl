@@ -1,6 +1,7 @@
 package jop.pipeline
 
 import spinal.core._
+import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.misc.pipeline._
 
@@ -269,6 +270,10 @@ case class DecodeStage(
     val enaVp   = out Bool()
     val enaJpc  = out Bool()
     val enaAr   = out Bool()
+
+    // Stall: when True, hold all registered decode outputs (prevent advancement
+    // during stack cache rotation stall).  Combinational outputs are unaffected.
+    val stall   = in Bool()
   }
 
   // ==========================================================================
@@ -398,19 +403,22 @@ case class DecodeStage(
     val brReg  = Reg(Bool()) init(False)
     val jmpReg = Reg(Bool()) init(False)
 
-    // Default values each cycle
-    brReg := False
-    jmpReg := False
+    // Gate registered decode during stall (hold previous values)
+    when(!io.stall) {
+      // Default values each cycle
+      brReg := False
+      jmpReg := False
 
-    // Branch decode: BZ (ir[9:6]=0110 and zf=1) or BNZ (ir[9:6]=0111 and zf=0)
-    when((ir(9 downto 6) === B"4'b0110" && io.zf) ||
-         (ir(9 downto 6) === B"4'b0111" && !io.zf)) {
-      brReg := True
-    }
+      // Branch decode: BZ (ir[9:6]=0110 and zf=1) or BNZ (ir[9:6]=0111 and zf=0)
+      when((ir(9 downto 6) === B"4'b0110" && io.zf) ||
+           (ir(9 downto 6) === B"4'b0111" && !io.zf)) {
+        brReg := True
+      }
 
-    // Jump decode: ir[9]=1 means JMP
-    when(ir(9)) {
-      jmpReg := True
+      // Jump decode: ir[9]=1 means JMP
+      when(ir(9)) {
+        jmpReg := True
+      }
     }
 
     io.br := brReg
@@ -425,17 +433,23 @@ case class DecodeStage(
   val aluControlDecode = new Area {
     val selSubReg  = Reg(Bool()) init(False)
     val selAmuxReg = Reg(Bool()) init(False)
+    selAmuxReg.simPublic()
     val enaAReg    = Reg(Bool()) init(False)
+    enaAReg.simPublic()
     val selBmuxReg = Reg(Bool()) init(False)
     val selLogReg  = Reg(Bits(2 bits)) init(B"2'b00")
     val selShfReg  = Reg(Bits(2 bits)) init(B"2'b00")
     val selLmuxReg = Reg(Bits(3 bits)) init(B"3'b000")
+    selLmuxReg.simPublic()
     val selRmuxReg = Reg(Bits(2 bits)) init(B"2'b00")
     val selMmuxReg = Reg(Bool()) init(False)
     val enaBReg    = Reg(Bool()) init(False)
     val enaVpReg   = Reg(Bool()) init(False)
     val enaJpcReg  = Reg(Bool()) init(False)
     val enaArReg   = Reg(Bool()) init(False)
+
+    // Gate all registered decode during stall (hold previous values)
+    when(!io.stall) {
 
     // ========================================================================
     // Logic Operation Select (sel_log)
@@ -633,6 +647,8 @@ case class DecodeStage(
     // ========================================================================
     selRmuxReg := ir(1 downto 0)
 
+    } // end when(!io.stall)
+
     // ========================================================================
     // Output Assignments
     // ========================================================================
@@ -678,6 +694,9 @@ case class DecodeStage(
     val memAtmendReg    = Reg(Bool()) init(False)
     val mulWrReg        = Reg(Bool()) init(False)
     val wrDlyReg        = Reg(Bool()) init(False)
+
+    // Gate all registered MMU decode during stall (hold previous values)
+    when(!io.stall) {
 
     // Default: all inactive
     memRdReg := False
@@ -744,6 +763,8 @@ case class DecodeStage(
         default { /* unknown MMU instruction */ }
       }
     }
+
+    } // end when(!io.stall) for MMU decode
 
     // ========================================================================
     // Output Assignments

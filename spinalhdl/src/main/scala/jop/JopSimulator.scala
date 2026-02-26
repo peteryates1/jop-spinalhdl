@@ -553,6 +553,7 @@ case class JopSimulator(
     decode.io.eq := stack.io.eq
     decode.io.lt := stack.io.lt
     decode.io.bcopd := bcfetch.io.opd
+    decode.io.stall := False
 
     // Stack stage connections
     // din mux: External data input used when selLmux=100

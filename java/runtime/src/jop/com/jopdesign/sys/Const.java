@@ -75,7 +75,7 @@ public class Const {
 	 * Used in @link RtThreadImpl
 	 * 
 	 */
-	public static final int STACK_SIZE = 256;
+	public static final int STACK_SIZE = 65536;
 	
 	/**
 	 * Set to true if support for double bytecodes should be
@@ -201,6 +201,11 @@ public class Const {
 	public static final int IO_CPUCNT = IO_BASE+11;
 	public static final int IO_PERFCNT = IO_BASE+12;
 	public static final int IO_GC_HALT = IO_BASE+13;
+	/**
+	 * Usable memory end in words (excludes per-core stack regions).
+	 * Returns 0 when stack regions are not configured (legacy mode).
+	 */
+	public static final int IO_MEM_SIZE = IO_BASE+14;
 
 	/**
 	 * Number of available interrupts depends on the parameter

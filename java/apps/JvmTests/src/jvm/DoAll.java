@@ -103,7 +103,10 @@ public class DoAll {
 				new LongStaticField(),
 
 				// Regression tests
-				new CachePersistence()
+				new CachePersistence(),
+
+				// Stack cache test (deep recursion)
+				new DeepRecursion()
 		};
 		
 		for (int i=0; i<tc.length; ++i) {

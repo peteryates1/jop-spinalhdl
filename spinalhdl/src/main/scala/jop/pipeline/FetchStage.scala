@@ -1,6 +1,7 @@
 package jop.pipeline
 
 import spinal.core._
+import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.misc.pipeline._
 
@@ -85,6 +86,7 @@ case class FetchStage(
     val jmp    = in Bool()                          // Jump control signal
     val bsy    = in Bool()                          // Memory busy signal
     val jpaddr = in UInt(config.pcWidth bits)       // Jump address for Java bytecode fetch
+    val extStall = in Bool()                        // External stall: unconditionally freeze PC/IR
 
     // Outputs
     val nxt    = out Bool()                         // jfetch signal (fetch Java bytecode)
@@ -130,6 +132,8 @@ case class FetchStage(
   val brdly  = Reg(UInt(config.pcWidth bits)) init(0)  // Branch delay (target address)
   val jpdly  = Reg(UInt(config.pcWidth bits)) init(0)  // Jump delay (target address)
   val ir     = Reg(Bits(config.iWidth bits)) init(0)   // Instruction register
+  pc.simPublic()
+  ir.simPublic()
   val pcwait = Reg(Bool()) init(False)                  // Wait state flag
 
   // ==========================================================================
@@ -211,11 +215,15 @@ case class FetchStage(
   // - 2nd wait: pcwait is now True. If bsy=True, pipeline freezes. IR holds
   //   the 1st wait instruction (NOP for decode), so decode sees NOP.
   //
+  // extStall: unconditional freeze from external source (stack cache rotation).
+  // Unlike wait-based stall, this can freeze on any instruction. On the un-stall
+  // cycle, the frozen instruction replays and the pipeline resumes normally.
+  //
   // Last-assignment-wins in SpinalHDL: this overrides the assignments above.
-  when(pcwait && io.bsy) {
+  when((pcwait && io.bsy) || io.extStall) {
     romAddrReg := romAddrReg  // Hold ROM address
-    ir         := ir          // Hold IR on wait instruction
-    pcwait     := True        // Keep stall active
+    ir         := ir          // Hold IR
+    pcwait     := pcwait      // Hold pcwait state (preserve, not force True)
     pc         := pc          // Hold PC
   }
 

@@ -39,7 +39,9 @@ case class JopCoreConfig(
   cpuCnt:       Int              = 1,
   ioConfig:     IoConfig         = IoConfig(),
   clkFreqHz:    Long             = 100000000L,
-  useIhlu:      Boolean          = false  // Use IHLU (per-object lock) instead of CmpSync (global lock)
+  useIhlu:      Boolean          = false,  // Use IHLU (per-object lock) instead of CmpSync (global lock)
+  useStackCache: Boolean         = false,  // Use 3-bank rotating stack cache with DMA spill/fill
+  spillBaseAddrOverride: Option[Int] = None // Override spillBaseAddr (e.g., 0 for dedicated spill BRAM)
 ) {
   // Convenience accessors (avoid changing every reference site)
   def hasUart: Boolean = ioConfig.hasUart
@@ -52,7 +54,24 @@ case class JopCoreConfig(
 
   def fetchConfig = FetchConfig(pcWidth, instrWidth)
   def decodeConfig = DecodeConfig(instrWidth, ramWidth)
-  def stackConfig = StackConfig(dataWidth, jpcWidth, ramWidth)
+  def stackConfig = StackConfig(dataWidth, jpcWidth, ramWidth,
+    cacheConfig = if (useStackCache) Some(StackCacheConfig(
+      burstLen = memConfig.burstLen,
+      spillBaseAddr = spillBaseAddrOverride.getOrElse {
+        val memWords = (memConfig.mainMemSize / 4).toInt
+        if (memConfig.stackRegionWordsPerCore > 0) {
+          // Per-core stack region at top of memory (core 0 highest)
+          memWords - (cpuId + 1) * memConfig.stackRegionWordsPerCore
+        } else if (memConfig.burstLen == 0) {
+          // Legacy BRAM: spill area in top 25% of memory (word address)
+          (memWords * 3 / 4) + cpuId * 4096
+        } else {
+          // Legacy SDRAM/DDR3: dedicated spill area beyond program/heap
+          0x780000 + cpuId * 0x8000
+        }
+      }
+    )) else None
+  )
   def bcfetchConfig = BytecodeFetchConfig(jpcWidth, pcWidth, jumpTable)
 }
 
@@ -85,6 +104,9 @@ case class JopCore(
   val io = new Bundle {
     // BMB controller interface to external memory
     val bmb = master(Bmb(config.memConfig.bmbParameter))
+
+    // Stack cache DMA BMB master (optional, only when useStackCache)
+    val stackDmaBmb = if (config.useStackCache) Some(master(Bmb(config.memConfig.bmbParameter))) else None
 
     // CmpSync interface
     val syncIn  = in(SyncOut())    // From CmpSync: halted + signal
@@ -161,6 +183,10 @@ case class JopCore(
     // Debug: memory controller state
     val debugMemState = out UInt(5 bits)
     val debugMemHandleActive = out Bool()
+    val debugBcFillAddr = out UInt(config.memConfig.addressWidth bits)
+    val debugBcFillLen = out UInt(10 bits)
+    val debugBcFillCount = out UInt(10 bits)
+    val debugBcRdCapture = out Bits(32 bits)
     val debugAddrWr = out Bool()  // Decode stage addrWr signal
     val debugRdc = out Bool()     // Memory read combined (stmrac)
     val debugRd = out Bool()      // Memory read (stmra)
@@ -178,15 +204,29 @@ case class JopCore(
 
     // Debug controller interface
     val debugHalt = in Bool()             // Freeze pipeline (from debug controller)
-    val debugSp   = out UInt(config.ramWidth bits)
-    val debugVp   = out UInt(config.ramWidth bits)
-    val debugAr   = out UInt(config.ramWidth bits)
+    val debugSp   = out UInt(config.stackConfig.spWidth bits)
+    val debugVp   = out UInt(config.stackConfig.spWidth bits)
+    val debugAr   = out UInt(config.stackConfig.spWidth bits)
     val debugFlags = out Bits(4 bits)
     val debugMulResult = out Bits(config.dataWidth bits)
     val debugAddrReg   = out UInt(config.memConfig.addressWidth bits)
     val debugRdDataReg = out Bits(config.dataWidth bits)
     val debugInstr     = out Bits(config.instrWidth bits)
     val debugBcopd     = out Bits(16 bits)
+
+    // Stack cache debug (optional)
+    val scDebugRotState     = if (config.useStackCache) Some(out UInt(3 bits)) else None
+    val scDebugActiveBankIdx = if (config.useStackCache) Some(out UInt(2 bits)) else None
+    val scDebugBankBase     = if (config.useStackCache) Some(out Vec(UInt(config.stackConfig.spWidth bits), 3)) else None
+    val scDebugBankResident = if (config.useStackCache) Some(out Bits(3 bits)) else None
+    val scDebugBankDirty    = if (config.useStackCache) Some(out Bits(3 bits)) else None
+    val scDebugNeedsRot     = if (config.useStackCache) Some(out Bool()) else None
+
+    // Write-snoop debug (passthrough from StackStage via JopPipeline)
+    val scDebugPipeWrAddr = if (config.useStackCache) Some(out UInt(config.stackConfig.spWidth bits)) else None
+    val scDebugPipeWrData = if (config.useStackCache) Some(out Bits(config.dataWidth bits)) else None
+    val scDebugPipeWrEn   = if (config.useStackCache) Some(out Bool()) else None
+    val scDebugVp0Data    = if (config.useStackCache) Some(out Bits(config.dataWidth bits)) else None
 
     // Snoop bus for cross-core cache invalidation
     val snoopOut = if (config.memConfig.useAcache || config.memConfig.useOcache) {
@@ -247,6 +287,51 @@ case class JopCore(
   }
 
   // ==========================================================================
+  // Stack Cache DMA (optional, only when useStackCache)
+  // ==========================================================================
+
+  if (config.useStackCache) {
+    val cc = config.stackConfig.cacheConfig.get
+    val dma = StackCacheDma(cc, config.memConfig.bmbParameter)
+
+    // BMB master → external port (arbitrated at JopCluster level)
+    io.stackDmaBmb.get <> dma.io.bmb
+
+    // DMA bank RAM access → pipeline stack cache
+    pipeline.io.dmaBankRdAddr.get := dma.io.bankRdAddr
+    dma.io.bankRdData := pipeline.io.dmaBankRdData.get
+    pipeline.io.dmaBankWrAddr.get := dma.io.bankWrAddr
+    pipeline.io.dmaBankWrData.get := dma.io.bankWrData
+    pipeline.io.dmaBankWrEn.get := dma.io.bankWrEn
+    pipeline.io.dmaBankSelect.get := dma.io.bankSelect
+
+    // Control: stack stage rotation controller → DMA
+    dma.io.start := pipeline.io.dmaStart.get
+    dma.io.isSpill := pipeline.io.dmaIsSpill.get
+    dma.io.extAddr := pipeline.io.dmaExtAddr.get.resized
+    dma.io.wordCount := pipeline.io.dmaWordCount.get
+    dma.io.bank := pipeline.io.dmaBank.get
+
+    // Status: DMA → stack stage
+    pipeline.io.dmaBusy.get := dma.io.busy
+    pipeline.io.dmaDone.get := dma.io.done
+
+    // Debug passthrough
+    io.scDebugRotState.get := pipeline.io.scDebugRotState.get
+    io.scDebugActiveBankIdx.get := pipeline.io.scDebugActiveBankIdx.get
+    io.scDebugBankBase.get := pipeline.io.scDebugBankBase.get
+    io.scDebugBankResident.get := pipeline.io.scDebugBankResident.get
+    io.scDebugBankDirty.get := pipeline.io.scDebugBankDirty.get
+    io.scDebugNeedsRot.get := pipeline.io.scDebugNeedsRot.get
+
+    // Write-snoop debug passthrough
+    io.scDebugPipeWrAddr.get := pipeline.io.scDebugPipeWrAddr.get
+    io.scDebugPipeWrData.get := pipeline.io.scDebugPipeWrData.get
+    io.scDebugPipeWrEn.get := pipeline.io.scDebugPipeWrEn.get
+    io.scDebugVp0Data.get := pipeline.io.scDebugVp0Data.get
+  }
+
+  // ==========================================================================
   // Internal I/O Subsystem
   // ==========================================================================
 
@@ -257,7 +342,8 @@ case class JopCore(
   val numIoInt = config.ioConfig.numIoInt
 
   // System I/O (0x80-0x8F)
-  val bmbSys = BmbSys(clkFreqHz = config.clkFreqHz, cpuId = config.cpuId, cpuCnt = config.cpuCnt, numIoInt = numIoInt)
+  val bmbSys = BmbSys(clkFreqHz = config.clkFreqHz, cpuId = config.cpuId, cpuCnt = config.cpuCnt, numIoInt = numIoInt,
+    memEndWords = config.memConfig.usableMemWords(config.cpuCnt))
   bmbSys.io.addr   := JopIoSpace.sysAddr(ioAddr)
   bmbSys.io.rd     := memCtrl.io.ioRd && JopIoSpace.isSys(ioAddr)
   bmbSys.io.wr     := memCtrl.io.ioWr && JopIoSpace.isSys(ioAddr)
@@ -469,6 +555,10 @@ case class JopCore(
   io.debugExc := bmbSys.io.exc
   io.debugBcRd := pipeline.io.debugBcRd
   io.debugMemState := memCtrl.io.debug.state
+  io.debugBcFillAddr := memCtrl.io.debug.bcFillAddr
+  io.debugBcFillLen := memCtrl.io.debug.bcFillLen
+  io.debugBcFillCount := memCtrl.io.debug.bcFillCount
+  io.debugBcRdCapture := memCtrl.io.debug.bcRdCapture
   io.debugMemHandleActive := memCtrl.io.debug.handleActive
   io.debugAddrWr := pipeline.io.debugAddrWr
   io.debugRdc := pipeline.io.debugRdc

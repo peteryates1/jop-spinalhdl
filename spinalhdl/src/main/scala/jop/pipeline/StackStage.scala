@@ -1,7 +1,54 @@
 package jop.pipeline
 
 import spinal.core._
+import spinal.core.sim._
 import jop.core.Shift
+
+/**
+ * Stack Cache Configuration (3-bank rotating stack cache with DMA spill/fill)
+ *
+ * When present, the stack is split into:
+ *   - scratchRam: 64 entries (addresses 0-63), never rotated
+ *   - 3 bank RAMs: each 192 usable entries (256 physical, 192 used)
+ *
+ * SP/VP/AR widen to 16 bits for virtual addressing across multiple banks.
+ * Banks are rotated via DMA spill/fill to external memory when SP crosses
+ * bank boundaries.
+ *
+ * @param numBanks        Number of bank RAMs (3 = active + ready + anti-thrash)
+ * @param bankSize        Usable entries per bank (192 = 256 - 64 scratch)
+ * @param scratchSize     Scratch/constants area size (64 entries, addresses 0-63)
+ * @param virtualSpWidth  Width of virtual SP/VP/AR registers (16 bits)
+ * @param spillBaseAddr   Base word address in external memory for stack spill area
+ * @param burstLen        DMA burst length in words (4 for SDR, 8 for DDR3)
+ */
+case class StackCacheConfig(
+  numBanks: Int = 3,
+  bankSize: Int = 192,
+  scratchSize: Int = 64,
+  virtualSpWidth: Int = 16,
+  spillBaseAddr: Int = 0x780000,
+  burstLen: Int = 4
+) {
+  require(numBanks == 3, "Only 3-bank configuration supported")
+  require(bankSize > 0 && bankSize <= 256, "Bank size must be 1-256")
+  require(scratchSize == 64, "Scratch size must be 64 (fixed by JOP microcode)")
+  require(virtualSpWidth >= 8 && virtualSpWidth <= 16, "Virtual SP width must be 8-16")
+  require(burstLen == 0 || (burstLen >= 2 && (burstLen & (burstLen - 1)) == 0),
+    "burstLen must be 0 or power-of-2 >= 2")
+
+  /** Physical RAM entries per bank (M9K = 256 words) */
+  def bankPhysicalSize: Int = 256
+
+  /** Total virtual stack entries (limited by virtualSpWidth) */
+  def maxVirtualAddr: Int = (1 << virtualSpWidth) - 1
+
+  /** Number of DMA bursts to transfer one full bank */
+  def burstsPerBank: Int = if (burstLen > 0) bankSize / burstLen else bankSize
+
+  /** Pre-fill threshold: when SP enters lower quarter of active bank, pre-fill previous */
+  def prefillThreshold: Int = bankSize / 4
+}
 
 /**
  * Stack Stage Configuration
@@ -11,21 +58,32 @@ import jop.core.Shift
  * @param width     Data word width (default: 32)
  * @param jpcWidth  Java bytecode PC width (default: 10)
  * @param ramWidth  Stack RAM address width (default: 8, giving 256 entries)
+ * @param cacheConfig Optional stack cache configuration (None = original single-RAM)
  */
 case class StackConfig(
   width: Int = 32,
   jpcWidth: Int = 11,
-  ramWidth: Int = 8
+  ramWidth: Int = 8,
+  cacheConfig: Option[StackCacheConfig] = None
 ) {
   require(width == 32, "Data width must be 32 bits")
   require(jpcWidth >= 10 && jpcWidth <= 16, "JPC width must be between 10 and 16 bits")
   require(ramWidth > 0 && ramWidth <= 16, "RAM width must be between 1 and 16")
 
-  /** Stack overflow threshold: max - 16 */
+  /** Stack overflow threshold: max - 16 (only used in single-RAM mode) */
   def stackOverflowThreshold: Int = (1 << ramWidth) - 1 - 16
 
   /** Initial stack pointer value */
   def initialSP: Int = 128
+
+  /** Effective SP width: 16-bit if stack cache enabled, ramWidth otherwise */
+  def spWidth: Int = cacheConfig.map(_.virtualSpWidth).getOrElse(ramWidth)
+
+  /** rmux width: max of (jpcWidth+1, spWidth) to accommodate widened SP/VP */
+  def rmuxWidth: Int = (jpcWidth + 1).max(spWidth)
+
+  /** Whether stack cache is enabled */
+  def useStackCache: Boolean = cacheConfig.isDefined
 }
 
 /**
@@ -45,55 +103,54 @@ case class AluFlags() extends Bundle {
  *
  * Implements the execute stage of the JOP microcode pipeline using SpinalHDL.
  *
- * Architecture:
- * - 32-bit ALU with add/subtract, logic operations, and comparison
- * - Stack RAM for local variables and operand storage
- * - Integration with barrel shifter for shift operations
- * - Multiple register banks (VP0-VP3, AR, SP)
- * - Complex muxing for data paths based on decode stage control signals
+ * When stack cache is disabled (cacheConfig = None):
+ *   Original single-RAM design with ramWidth-bit SP/VP/AR registers.
  *
- * Timing Characteristics:
- * - Combinational outputs (0 cycle): zf, nf, eq, lt, aout, bout
- * - Registered outputs (1 cycle): A, B, SP, VP0-3, AR, sp_ov, opddly, immval
- *
- * Translated from: /srv/git/jop/vhdl/core/stack.vhd
+ * When stack cache is enabled (cacheConfig = Some(...)):
+ *   3-bank rotating stack cache with 16-bit SP/VP/AR registers.
+ *   Scratch RAM (64 entries, addresses 0-63) is separate and never rotated.
+ *   3 bank RAMs (256 entries each, 192 usable) cover the virtual stack space.
+ *   DMA spill/fill to external memory when SP crosses bank boundaries.
  *
  * @param config Stack stage configuration
  */
 case class StackStage(
   config: StackConfig = StackConfig(),
-  ramInit: Option[Seq[BigInt]] = None  // Optional RAM initialization data
+  ramInit: Option[Seq[BigInt]] = None
 ) extends Component {
+
+  val spWidth = config.spWidth
+  val useCache = config.useStackCache
 
   val io = new Bundle {
     // Data Inputs
-    val din    = in Bits(config.width bits)                // External data input (from memory/IO)
-    val dirAddr = in UInt(config.ramWidth bits)           // Direct RAM address from decode
-    val opd = in Bits(16 bits)                            // Java bytecode operand
-    val jpc = in UInt(config.jpcWidth + 1 bits)           // JPC read value (11 bits)
+    val din    = in Bits(config.width bits)
+    val dirAddr = in UInt(config.ramWidth bits)       // Direct RAM address from decode (scratch only)
+    val opd = in Bits(16 bits)
+    val jpc = in UInt(config.jpcWidth + 1 bits)
 
     // ALU Control Inputs (from decode stage)
-    val selSub  = in Bool()                               // 0=add, 1=subtract
-    val selAmux = in Bool()                               // 0=sum, 1=lmux
-    val enaA    = in Bool()                               // Enable A register
-    val selBmux = in Bool()                               // 0=A, 1=RAM
-    val selLog  = in Bits(2 bits)                         // Logic op: 00=pass, 01=AND, 10=OR, 11=XOR
-    val selShf  = in Bits(2 bits)                         // Shift type: 00=USHR, 01=SHL, 10=SHR
-    val selLmux = in Bits(3 bits)                         // Load mux select
-    val selImux = in Bits(2 bits)                         // Immediate mux: 00=8u, 01=8s, 10=16u, 11=16s
-    val selRmux = in Bits(2 bits)                         // Register mux: 00=SP, 01=VP, 10+=JPC
-    val selSmux = in Bits(2 bits)                         // SP update: 00=SP, 01=SP-1, 10=SP+1, 11=A
+    val selSub  = in Bool()
+    val selAmux = in Bool()
+    val enaA    = in Bool()
+    val selBmux = in Bool()
+    val selLog  = in Bits(2 bits)
+    val selShf  = in Bits(2 bits)
+    val selLmux = in Bits(3 bits)
+    val selImux = in Bits(2 bits)
+    val selRmux = in Bits(2 bits)
+    val selSmux = in Bits(2 bits)
 
-    val selMmux = in Bool()                               // Memory data: 0=A, 1=B
-    val selRda  = in Bits(3 bits)                         // Read address mux
-    val selWra  = in Bits(3 bits)                         // Write address mux
+    val selMmux = in Bool()
+    val selRda  = in Bits(3 bits)
+    val selWra  = in Bits(3 bits)
 
-    val wrEna   = in Bool()                               // RAM write enable
-    val enaB    = in Bool()                               // Enable B register
-    val enaVp   = in Bool()                               // Enable VP registers
-    val enaAr   = in Bool()                               // Enable AR register
+    val wrEna   = in Bool()
+    val enaB    = in Bool()
+    val enaVp   = in Bool()
+    val enaAr   = in Bool()
 
-    // Debug: direct RAM read port for verification
+    // Debug: direct RAM read port for verification (scratch only)
     val debugRamAddr = in UInt(config.ramWidth bits)
     val debugRamData = out Bits(config.width bits)
 
@@ -102,56 +159,107 @@ case class StackStage(
     val debugRamWrData = in Bits(config.width bits)
     val debugRamWrEn = in Bool()
 
-    // Debug: stack pointer and write address for tracking
-    val debugSp = out UInt(config.ramWidth bits)
-    val debugVp = out UInt(config.ramWidth bits)
-    val debugAr = out UInt(config.ramWidth bits)
-    val debugWrAddr = out UInt(config.ramWidth bits)
+    // Debug: stack pointer and write address for tracking (spWidth)
+    val debugSp = out UInt(spWidth bits)
+    val debugVp = out UInt(spWidth bits)
+    val debugAr = out UInt(spWidth bits)
+    val debugWrAddr = out UInt(spWidth bits)
     val debugWrEn = out Bool()
-    val debugRdAddrReg = out UInt(config.ramWidth bits)
+    val debugRdAddrReg = out UInt(spWidth bits)
     val debugRamDout = out Bits(config.width bits)
 
     // Outputs
-    val spOv    = out Bool()                              // Stack overflow flag
-    val zf      = out Bool()                              // Zero flag
-    val nf      = out Bool()                              // Negative flag
-    val eq      = out Bool()                              // Equal flag
-    val lt      = out Bool()                              // Less-than flag
-    val aout    = out Bits(config.width bits)             // A register (TOS)
-    val bout    = out Bits(config.width bits)             // B register (NOS)
+    val spOv    = out Bool()
+    val zf      = out Bool()
+    val nf      = out Bool()
+    val eq      = out Bool()
+    val lt      = out Bool()
+    val aout    = out Bits(config.width bits)
+    val bout    = out Bits(config.width bits)
+
+    // === Stack Cache Ports (only when enabled) ===
+    val rotationBusy = if (useCache) Some(out Bool()) else None
+
+    // DMA bank RAM access (from StackCacheDma)
+    val dmaBankRdAddr  = if (useCache) Some(in UInt(8 bits)) else None
+    val dmaBankRdData  = if (useCache) Some(out Bits(config.width bits)) else None
+    val dmaBankWrAddr  = if (useCache) Some(in UInt(8 bits)) else None
+    val dmaBankWrData  = if (useCache) Some(in Bits(config.width bits)) else None
+    val dmaBankWrEn    = if (useCache) Some(in Bool()) else None
+    val dmaBankSelect  = if (useCache) Some(in UInt(2 bits)) else None
+
+    // DMA control (to StackCacheDma)
+    val dmaStart     = if (useCache) Some(out Bool()) else None
+    val dmaIsSpill   = if (useCache) Some(out Bool()) else None
+    val dmaExtAddr   = if (useCache) Some(out UInt(26 bits)) else None
+    val dmaWordCount = if (useCache) Some(out UInt(8 bits)) else None
+    val dmaBank      = if (useCache) Some(out UInt(2 bits)) else None
+
+    // DMA status (from StackCacheDma)
+    val dmaBusy = if (useCache) Some(in Bool()) else None
+    val dmaDone = if (useCache) Some(in Bool()) else None
+
+    // Stack cache debug outputs (for simulation)
+    val scDebugRotState     = if (useCache) Some(out UInt(3 bits)) else None
+    val scDebugActiveBankIdx = if (useCache) Some(out UInt(2 bits)) else None
+    val scDebugBankBase     = if (useCache) Some(out Vec(UInt(spWidth bits), 3)) else None
+    val scDebugBankResident = if (useCache) Some(out Bits(3 bits)) else None
+    val scDebugBankDirty    = if (useCache) Some(out Bits(3 bits)) else None
+    val scDebugNeedsRot     = if (useCache) Some(out Bool()) else None
+
+    // Write-snoop debug: observe every bank write (for debugging stack cache issues)
+    val scDebugPipeWrAddr = if (useCache) Some(out UInt(spWidth bits)) else None
+    val scDebugPipeWrData = if (useCache) Some(out Bits(config.width bits)) else None
+    val scDebugPipeWrEn   = if (useCache) Some(out Bool()) else None
+
+    // VP+0 value readback: reads bank RAM at virtual address vp0 every cycle
+    val scDebugVp0Data = if (useCache) Some(out Bits(config.width bits)) else None
+
+    // Pipeline decode debug (for tracing A/B source during corruption)
+    val debugEnaA     = out Bool()
+    val debugSelLmux  = out Bits(3 bits)
+    val debugEnaB     = out Bool()
+    val debugSelBmux  = out Bool()
+    val debugRamDoutVal = out Bits(config.width bits)
+    val debugLmuxVal    = out Bits(config.width bits)
   }
 
   // ==========================================================================
-  // Internal Registers
+  // Internal Registers (widened to spWidth for stack cache)
   // ==========================================================================
 
-  // A and B registers (TOS and NOS)
   val a = Reg(Bits(config.width bits)) init(0)
   val b = Reg(Bits(config.width bits)) init(0)
 
-  // Stack pointers
-  val sp  = Reg(UInt(config.ramWidth bits)) init(config.initialSP)
-  val spp = Reg(UInt(config.ramWidth bits)) init(config.initialSP + 1)
-  val spm = Reg(UInt(config.ramWidth bits)) init(config.initialSP - 1)
+  val sp  = Reg(UInt(spWidth bits)) init(config.initialSP)
+  val spp = Reg(UInt(spWidth bits)) init(config.initialSP + 1)
+  val spm = Reg(UInt(spWidth bits)) init(config.initialSP - 1)
 
-  // Variable pointers (VP0-VP3)
-  val vp0 = Reg(UInt(config.ramWidth bits)) init(0)
-  val vp1 = Reg(UInt(config.ramWidth bits)) init(0)
-  val vp2 = Reg(UInt(config.ramWidth bits)) init(0)
-  val vp3 = Reg(UInt(config.ramWidth bits)) init(0)
+  val vp0 = Reg(UInt(spWidth bits)) init(0)
+  val vp1 = Reg(UInt(spWidth bits)) init(0)
+  val vp2 = Reg(UInt(spWidth bits)) init(0)
+  val vp3 = Reg(UInt(spWidth bits)) init(0)
 
-  // Address register
-  val ar = Reg(UInt(config.ramWidth bits)) init(0)
+  val ar = Reg(UInt(spWidth bits)) init(0)
 
-  // VP + offset calculation (registered)
-  val vpadd = Reg(UInt(config.ramWidth bits)) init(0)
+  // Mark key signals for waveform visibility (prevent Verilator pruning)
+  Seq(a, b).foreach(_.simPublic())
+  Seq(sp, spp, spm, vp0, vp1, vp2, vp3, ar).foreach(_.simPublic())
+  val vpadd = Reg(UInt(spWidth bits)) init(0)
 
-  // Immediate value pipeline
   val opddly = Reg(Bits(16 bits)) init(0)
   val immval = Reg(Bits(config.width bits)) init(0)
 
-  // Stack overflow flag
   val spOvReg = Reg(Bool()) init(False)
+
+  // Rotation busy signal (False when cache disabled)
+  val rotBusy = if (useCache) Bool() else False
+  // Delayed rotBusy: registered decode effects (A/B/VP/AR/vpadd/pipeWrEn) are from
+  // I_{T-1}, one cycle behind the combinational rotBusy which fires from I_T.
+  // Using rotBusyDly allows I_{T-1}'s registered effects to complete on the first
+  // stall cycle before gating kicks in.
+  val rotBusyDly = RegNext(rotBusy) init(False)
+  rotBusyDly.simPublic()
 
   // ==========================================================================
   // Barrel Shifter Instance
@@ -164,119 +272,480 @@ case class StackStage(
   val sout = shifter.io.dout.asBits
 
   // ==========================================================================
-  // Stack RAM
+  // Stack Pointer Mux (smux) — computed early for rotation controller
   // ==========================================================================
-  // Matches VHDL aram.vhd timing:
-  // - Write address and enable delayed by 1 cycle (wrEnaDly, wrAddrDly)
-  // - Write data (mmux) is combinational from current sel_mmux and A/B
-  // - Read address registered (ramRdaddrReg)
-  // - Read data unregistered (readAsync after registered address)
 
-  val stackRam = Mem(Bits(config.width bits), 1 << config.ramWidth)
-
-  // Initialize RAM if initialization data provided
-  // $readmemb loads: file line N+1 -> array[N] (1-indexed file, 0-indexed array)
-  // SpinalHDL Mem.init: init[N] -> file line N+1
-  // Combined: init[N] -> array[N] - no adjustment needed!
-  ramInit.foreach { initData =>
-    val ramSize = 1 << config.ramWidth
-    val paddedInit = initData.padTo(ramSize, BigInt(0))
-    println(s"Stack RAM init (no shift): want RAM[32]=${initData(32)}, RAM[38]=${initData(38)}, RAM[45]=${initData(45)}")
-    // Convert negative values to unsigned 32-bit representation
-    stackRam.init(paddedInit.map { v =>
-      val unsigned = if (v < 0) v + (BigInt(1) << config.width) else v
-      B(unsigned.toLong, config.width bits)
-    })
+  val smuxSignal = UInt(spWidth bits)
+  switch(io.selSmux) {
+    is(B"2'b00") { smuxSignal := sp }
+    is(B"2'b01") { smuxSignal := spm }
+    is(B"2'b10") { smuxSignal := spp }
+    is(B"2'b11") { smuxSignal := a(spWidth - 1 downto 0).asUInt }
   }
 
-  // Read/write address signals (combinational)
-  val rdaddr = UInt(config.ramWidth bits)
-  val wraddr = UInt(config.ramWidth bits)
+  // ==========================================================================
+  // Read/Write Address Signals (spWidth)
+  // ==========================================================================
+
+  val rdaddr = UInt(spWidth bits)
+  val wraddr = UInt(spWidth bits)
+  rdaddr.simPublic()
+  wraddr.simPublic()
 
   // Memory data mux
   val mmux = Bits(config.width bits)
+  mmux.simPublic()
   when(io.selMmux === False) {
     mmux := a
   } otherwise {
     mmux := b
   }
 
-  // VHDL aram.vhd delays write address and enable by 1 cycle:
-  //   process(clock) begin
-  //     if rising_edge(clock) then
-  //       wraddr_dly <= wraddress;
-  //       wren_dly <= wren;
-  //     end if;
-  //   end process;
-  // This is necessary because wr_ena and wraddr are COMBINATIONAL from the decode,
-  // but sel_mmux (which controls the write data mux) is REGISTERED. Without this
-  // delay, the write data would use the PREVIOUS instruction's sel_mmux instead of
-  // the current instruction's. The 1-cycle delay aligns the write with the updated
-  // sel_mmux and A/B register values.
-  val wrEnaDly = RegNext(io.wrEna, init = False)
-  val wrAddrDly = RegNext(wraddr, init = U(0, config.ramWidth bits))
+  // Write delay (1 cycle, matching VHDL aram.vhd)
+  // Gate during rotation to preserve the in-flight write from the previous
+  // instruction.  Without gating, wrEnaDly advances during the stall,
+  // permanently losing the previous instruction's write (suppressed by
+  // pipeWrEn = wrEnaDly && !rotBusy).  On un-stall the preserved write fires.
+  val wrEnaDly = Reg(Bool()) init(False)
+  val wrAddrDly = Reg(UInt(spWidth bits)) init(0)
+  wrEnaDly.simPublic()
+  wrAddrDly.simPublic()
+  when(!rotBusy) {
+    wrEnaDly := io.wrEna
+    wrAddrDly := wraddr
+  }
 
-  // Debug write port takes priority and bypasses the pipeline delay
-  val effectiveWrAddr = Mux(io.debugRamWrEn, io.debugRamWrAddr, wrAddrDly)
-  val effectiveWrData = Mux(io.debugRamWrEn, io.debugRamWrData, mmux)
-  val effectiveWrEn = io.debugRamWrEn | wrEnaDly
+  // ==========================================================================
+  // Stack RAM Subsystem (conditional: single-RAM or multi-bank)
+  // ==========================================================================
 
-  stackRam.write(
-    address = effectiveWrAddr,
-    data    = effectiveWrData,
-    enable  = effectiveWrEn
-  )
+  val ramDout = Bits(config.width bits)
+  ramDout.simPublic()
+  val ramRdaddrReg = Reg(UInt(spWidth bits)) init(0)
+  ramRdaddrReg.simPublic()
+  // Gate during rotation: keeps registered read address aligned with the gated
+  // registered decode (both from the pre-stall instruction).  Without gating,
+  // ramRdaddrReg advances to the stall-trigger instruction's address while the
+  // registered decode stays at the previous instruction's values — causing A to
+  // load data from the wrong stack address.
+  when(!rotBusy) {
+    ramRdaddrReg := rdaddr
+  }
 
-  // Debug: track the delayed write values (same timing as actual RAM write)
-  val ramWraddrReg = wrAddrDly
-  val ramWrenReg   = wrEnaDly
+  if (!useCache) {
+    // ------------------------------------------------------------------
+    // Original Single-RAM Design
+    // ------------------------------------------------------------------
 
-  // VHDL's LPM_RAM_DP with LPM_RDADDRESS_CONTROL=REGISTERED has:
-  //   - Address registered internally at clock edge
-  //   - Data output combinationally from registered address (same cycle, after edge)
-  //
-  // In VHDL decode:
-  //   - sel_lmux IS registered (in rising_edge(clk) process)
-  //   - sel_rda, dir are COMBINATIONAL from ir
-  //   - But LPM RAM internally registers rdaddr
-  //
-  // Timing at cycle N edge:
-  //   - selLmuxReg samples new value M from decode of instruction I (cycle N-1)
-  //   - LPM RAM registers rdaddr = address A for instruction I
-  //
-  // During cycle N:
-  //   - lmux = M (selLmuxReg) - from instruction I
-  //   - ramDout = RAM[A] - from instruction I's address
-  //   - These are CONSISTENT because both are registered at the same edge
-  //
-  // To match this in SpinalHDL:
-  val ramRdaddrReg = Reg(UInt(config.ramWidth bits)) init(0)
-  ramRdaddrReg := rdaddr
-  val ramDout = stackRam.readAsync(ramRdaddrReg)
+    val stackRam = Mem(Bits(config.width bits), 1 << config.ramWidth)
 
-  // Debug: direct async read for RAM verification
-  io.debugRamData := stackRam.readAsync(io.debugRamAddr)
+    ramInit.foreach { initData =>
+      val ramSize = 1 << config.ramWidth
+      val paddedInit = initData.padTo(ramSize, BigInt(0))
+      println(s"Stack RAM init (no shift): want RAM[32]=${initData(32)}, RAM[38]=${initData(38)}, RAM[45]=${initData(45)}")
+      stackRam.init(paddedInit.map { v =>
+        val unsigned = if (v < 0) v + (BigInt(1) << config.width) else v
+        B(unsigned.toLong, config.width bits)
+      })
+    }
+
+    // Debug write port takes priority
+    val effectiveWrAddr = Mux(io.debugRamWrEn, io.debugRamWrAddr.resize(spWidth), wrAddrDly)
+    val effectiveWrData = Mux(io.debugRamWrEn, io.debugRamWrData, mmux)
+    val effectiveWrEn = io.debugRamWrEn | wrEnaDly
+
+    stackRam.write(
+      address = effectiveWrAddr.resize(config.ramWidth),
+      data    = effectiveWrData,
+      enable  = effectiveWrEn
+    )
+
+    ramDout := stackRam.readAsync(ramRdaddrReg.resize(config.ramWidth))
+
+    io.debugRamData := stackRam.readAsync(io.debugRamAddr)
+
+  } else {
+    // ------------------------------------------------------------------
+    // Multi-Bank Stack Cache Design
+    // ------------------------------------------------------------------
+
+    val cc = config.cacheConfig.get
+
+    // Scratch RAM: 64 entries, addresses 0-63 (never rotated)
+    val scratchRam = Mem(Bits(config.width bits), cc.scratchSize)
+
+    // Initialize scratch from ramInit (entries 0-63)
+    ramInit.foreach { initData =>
+      val scratchInit = initData.take(cc.scratchSize).padTo(cc.scratchSize, BigInt(0))
+      scratchRam.init(scratchInit.map { v =>
+        val unsigned = if (v < 0) v + (BigInt(1) << config.width) else v
+        B(unsigned.toLong, config.width bits)
+      })
+    }
+
+    // 3 Bank RAMs: 256 entries each (192 usable)
+    val bankRams = Seq.fill(cc.numBanks)(Mem(Bits(config.width bits), cc.bankPhysicalSize))
+
+    // Bank descriptor registers
+    val bankBaseVAddr = Vec(Reg(UInt(spWidth bits)), cc.numBanks)
+    val bankResident  = Vec(Reg(Bool()), cc.numBanks)
+    val bankDirty     = Vec(Reg(Bool()), cc.numBanks)
+    val activeBankIdx = Reg(UInt(2 bits)) init(0)
+    bankBaseVAddr.foreach(_.simPublic())
+    bankResident.foreach(_.simPublic())
+    activeBankIdx.simPublic()
+
+    // Initial bank layout: bank[i] covers [64 + i*192, 64 + (i+1)*192)
+    for (i <- 0 until cc.numBanks) {
+      bankBaseVAddr(i).init(cc.scratchSize + i * cc.bankSize)
+      bankResident(i).init(True)
+      bankDirty(i).init(False)
+    }
+
+    // Rotation controller state and registers (declared early for bank write MUX)
+    object RotState extends SpinalEnum {
+      val IDLE, SPILL_START, SPILL_WAIT, FILL_START, FILL_WAIT, ZERO_FILL = newElement()
+    }
+
+    val rotState = Reg(RotState()) init(RotState.IDLE)
+    rotState.simPublic()
+    val rotVictimIdx = Reg(UInt(2 bits)) init(0)
+    val rotTargetBase = Reg(UInt(spWidth bits)) init(0)
+    val rotNeedFill = Reg(Bool()) init(False)
+    val zeroFillCnt = Reg(UInt(8 bits)) init(0)
+
+    // Zero-fill write signal (asserted during ZERO_FILL state, see rotation controller)
+    val zeroFillActive = Bool()
+    zeroFillActive := False
+
+    // ------------------------------------------------------------------
+    // Read Path: parallel read all RAMs, MUX by address translation
+    // ------------------------------------------------------------------
+
+    val rdIsScratch = ramRdaddrReg < cc.scratchSize
+    val scratchDout = scratchRam.readAsync(ramRdaddrReg.resize(log2Up(cc.scratchSize)))
+
+    // Compute physical address for each bank and check if it covers the read address
+    val bankRdPhysAddr = Vec(UInt(8 bits), cc.numBanks)
+    val bankRdHit = Vec(Bool(), cc.numBanks)
+    val bankRdDout = Vec(Bits(config.width bits), cc.numBanks)
+
+    for (i <- 0 until cc.numBanks) {
+      bankRdPhysAddr(i) := (ramRdaddrReg - bankBaseVAddr(i)).resize(8)
+      bankRdHit(i) := ramRdaddrReg >= bankBaseVAddr(i) &&
+                       ramRdaddrReg < (bankBaseVAddr(i) + cc.bankSize) &&
+                       bankResident(i)
+      bankRdDout(i) := bankRams(i).readAsync(bankRdPhysAddr(i))
+    }
+
+    // MUX: scratch takes priority, then banks
+    ramDout := 0
+    when(rdIsScratch) {
+      ramDout := scratchDout
+    }.elsewhen(bankRdHit(0)) {
+      ramDout := bankRdDout(0)
+    }.elsewhen(bankRdHit(1)) {
+      ramDout := bankRdDout(1)
+    }.elsewhen(bankRdHit(2)) {
+      ramDout := bankRdDout(2)
+    }
+
+    // ------------------------------------------------------------------
+    // Write Path: route to correct RAM
+    // ------------------------------------------------------------------
+
+    // Pipeline write (delayed by 1 cycle)
+    val pipeWrAddr = wrAddrDly
+    val pipeWrData = mmux
+    // Gate pipeline writes during rotation (use rotBusyDly: wrEnaDly is from I_{T-1})
+    val pipeWrEn = wrEnaDly && !rotBusyDly
+    pipeWrAddr.simPublic()
+    pipeWrData.simPublic()
+    pipeWrEn.simPublic()
+
+    val pipeWrIsScratch = pipeWrAddr < cc.scratchSize
+
+    val pipeWrBankHit = Vec(Bool(), cc.numBanks)
+    val pipeWrBankPhys = Vec(UInt(8 bits), cc.numBanks)
+    for (i <- 0 until cc.numBanks) {
+      pipeWrBankPhys(i) := (pipeWrAddr - bankBaseVAddr(i)).resize(8)
+      pipeWrBankHit(i) := pipeWrAddr >= bankBaseVAddr(i) &&
+                           pipeWrAddr < (bankBaseVAddr(i) + cc.bankSize) &&
+                           bankResident(i)
+    }
+
+    // Debug write port (scratch only)
+    val debugWrEn = io.debugRamWrEn
+    val debugWrAddr = io.debugRamWrAddr
+    val debugWrData = io.debugRamWrData
+
+    // Scratch RAM write: pipeline or debug
+    scratchRam.write(
+      address = Mux(debugWrEn, debugWrAddr.resize(log2Up(cc.scratchSize)),
+                     pipeWrAddr.resize(log2Up(cc.scratchSize))),
+      data    = Mux(debugWrEn, debugWrData, pipeWrData),
+      enable  = (debugWrEn && debugWrAddr < cc.scratchSize) ||
+                (pipeWrEn && pipeWrIsScratch)
+    )
+
+    // Bank RAM writes: pipeline, DMA, or zero-fill (mutually exclusive per bank)
+    val dmaWrEn = io.dmaBankWrEn.get
+    val dmaWrAddr = io.dmaBankWrAddr.get
+    val dmaWrData = io.dmaBankWrData.get
+    val dmaBankSel = io.dmaBankSelect.get
+
+    for (i <- 0 until cc.numBanks) {
+      val isZeroFillTarget = zeroFillActive && rotVictimIdx === U(i, 2 bits)
+      val isDmaTarget = dmaWrEn && dmaBankSel === i
+      val isPipeTarget = pipeWrEn && !pipeWrIsScratch && pipeWrBankHit(i)
+      bankRams(i).write(
+        address = Mux(isZeroFillTarget, zeroFillCnt,
+                  Mux(isDmaTarget, dmaWrAddr, pipeWrBankPhys(i))),
+        data    = Mux(isZeroFillTarget, B(0, config.width bits),
+                  Mux(isDmaTarget, dmaWrData, pipeWrData)),
+        enable  = isZeroFillTarget || isDmaTarget || isPipeTarget
+      )
+      // Mark bank dirty on pipeline write
+      when(isPipeTarget) {
+        bankDirty(i) := True
+      }
+    }
+
+    // Debug read (scratch only)
+    io.debugRamData := scratchRam.readAsync(io.debugRamAddr.resize(log2Up(cc.scratchSize)))
+
+    // DMA read port: read all banks at DMA address, MUX by selection
+    val dmaRdAddr = io.dmaBankRdAddr.get
+    val dmaBankRdSel = io.dmaBankSelect.get
+    val dmaBankDouts = Vec(Bits(config.width bits), cc.numBanks)
+    for (i <- 0 until cc.numBanks) {
+      dmaBankDouts(i) := bankRams(i).readAsync(dmaRdAddr)
+    }
+    io.dmaBankRdData.get := dmaBankDouts(dmaBankRdSel)
+
+    // ------------------------------------------------------------------
+    // Rotation Controller
+    // ------------------------------------------------------------------
+
+    // Check if smuxSignal is in the active bank
+    val activeBase = bankBaseVAddr(activeBankIdx)
+    val activeEnd = activeBase + cc.bankSize
+    val smuxInScratch = smuxSignal < cc.scratchSize
+    val smuxInActiveBank = smuxSignal >= activeBase && smuxSignal < activeEnd
+
+    // Check all banks for coverage
+    val bankCoversSmux = Vec(Bool(), cc.numBanks)
+    for (i <- 0 until cc.numBanks) {
+      bankCoversSmux(i) := smuxSignal >= bankBaseVAddr(i) &&
+                            smuxSignal < (bankBaseVAddr(i) + cc.bankSize) &&
+                            bankResident(i)
+    }
+    val anyBankCoversSmux = bankCoversSmux.reduce(_ || _)
+    // Priority encoder for covering bank
+    val coveringBankIdx = UInt(2 bits)
+    coveringBankIdx := 0
+    when(bankCoversSmux(2)) { coveringBankIdx := 2 }
+    when(bankCoversSmux(1)) { coveringBankIdx := 1 }
+    when(bankCoversSmux(0)) { coveringBankIdx := 0 }
+
+    // Need rotation when smux is outside active bank and not in scratch
+    val needsRotation = !smuxInScratch && !smuxInActiveBank && rotState === RotState.IDLE
+    val canInstantSwitch = needsRotation && anyBankCoversSmux
+
+    // Victim selection: (activeBankIdx + 2) % 3 — farthest from active
+    val victimChoice = UInt(2 bits)
+    switch(activeBankIdx) {
+      is(0) { victimChoice := 2 }
+      is(1) { victimChoice := 0 }
+      default { victimChoice := 1 }
+    }
+
+    // Is this an underflow (need data from ext mem) or overflow (new range)?
+    val isUnderflow = smuxSignal < activeBase && !smuxInScratch
+
+    // DMA control defaults
+    io.dmaStart.get := False
+    io.dmaIsSpill.get := False
+    io.dmaExtAddr.get := 0
+    io.dmaWordCount.get := cc.bankSize
+    io.dmaBank.get := 0
+
+    // Helper: compute external byte address for a bank's virtual base
+    // spillBaseAddr is a word address (e.g., 0x780000 = 24 bits), wider than spWidth (16 bits)
+    def extByteAddr(bankBase: UInt): UInt = {
+      val spillBase = U(cc.spillBaseAddr, 24 bits)
+      val bankOffset = bankBase.resize(24) - cc.scratchSize
+      ((spillBase + bankOffset) << 2).resize(26)
+    }
+
+    switch(rotState) {
+      is(RotState.IDLE) {
+        when(needsRotation && !canInstantSwitch) {
+          // Need DMA: assign victim
+          val victim = victimChoice
+          rotVictimIdx := victim
+          rotNeedFill := isUnderflow
+
+          // Compute target base for new bank assignment
+          when(smuxSignal >= activeEnd) {
+            rotTargetBase := activeEnd  // Overflow: bank above active
+          }.otherwise {
+            rotTargetBase := activeBase - cc.bankSize  // Underflow: bank below active
+          }
+
+          when(bankDirty(victim)) {
+            // Spill victim first
+            rotState := RotState.SPILL_START
+          }.elsewhen(isUnderflow) {
+            // Clean victim, underflow: reassign and fill
+            bankBaseVAddr(victim) := Mux(smuxSignal >= activeEnd, activeEnd,
+                                         activeBase - cc.bankSize)
+            bankResident(victim) := False
+            rotState := RotState.FILL_START
+          }.otherwise {
+            // Clean victim, overflow: reassign and zero-fill to prevent stale reads
+            bankBaseVAddr(victim) := activeEnd
+            bankResident(victim) := False  // Not resident until zero-filled
+            bankDirty(victim) := False
+            rotVictimIdx := victim
+            zeroFillCnt := 0
+            rotState := RotState.ZERO_FILL
+          }
+        }.elsewhen(canInstantSwitch) {
+          activeBankIdx := coveringBankIdx
+        }
+      }
+
+      is(RotState.SPILL_START) {
+        // Assert DMA start for 1 cycle (DMA is in IDLE)
+        io.dmaStart.get := True
+        io.dmaIsSpill.get := True
+        io.dmaBank.get := rotVictimIdx
+        io.dmaExtAddr.get := extByteAddr(bankBaseVAddr(rotVictimIdx))
+        io.dmaWordCount.get := cc.bankSize
+        rotState := RotState.SPILL_WAIT
+      }
+
+      is(RotState.SPILL_WAIT) {
+        when(io.dmaDone.get) {
+          bankDirty(rotVictimIdx) := False
+          bankResident(rotVictimIdx) := False
+          bankBaseVAddr(rotVictimIdx) := rotTargetBase
+          when(rotNeedFill) {
+            rotState := RotState.FILL_START
+          }.otherwise {
+            // Overflow: bank assigned to new range, zero-fill to prevent stale reads
+            bankResident(rotVictimIdx) := False  // Not resident until zero-filled
+            bankDirty(rotVictimIdx) := False
+            zeroFillCnt := 0
+            rotState := RotState.ZERO_FILL
+          }
+        }
+      }
+
+      is(RotState.FILL_START) {
+        // Assert DMA start for fill (DMA returned to IDLE after spill DONE)
+        io.dmaStart.get := True
+        io.dmaIsSpill.get := False
+        io.dmaBank.get := rotVictimIdx
+        io.dmaExtAddr.get := extByteAddr(rotTargetBase)
+        io.dmaWordCount.get := cc.bankSize
+        rotState := RotState.FILL_WAIT
+      }
+
+      is(RotState.FILL_WAIT) {
+        when(io.dmaDone.get) {
+          bankResident(rotVictimIdx) := True
+          activeBankIdx := rotVictimIdx
+          rotState := RotState.IDLE
+        }
+      }
+
+      is(RotState.ZERO_FILL) {
+        // Write zeros to bank[rotVictimIdx] at physical address zeroFillCnt.
+        // This prevents stale data reads after overflow bank reassignment:
+        // the invoke sequence's pop instructions after stsp read from the
+        // newly-assigned bank before the pipeline has written to it.
+        zeroFillActive := True
+        zeroFillCnt := zeroFillCnt + 1
+        when(zeroFillCnt === (cc.bankSize - 1)) {
+          // Zero-fill complete: bank is now safe to use
+          bankResident(rotVictimIdx) := True
+          bankDirty(rotVictimIdx) := False
+          activeBankIdx := rotVictimIdx
+          rotState := RotState.IDLE
+        }
+      }
+    }
+
+    // Rotation busy: pipeline stalls during any non-IDLE rotation state
+    // Also stall for 1 cycle when rotation is needed but not instant-switchable
+    rotBusy := (rotState =/= RotState.IDLE) ||
+               (needsRotation && !canInstantSwitch)
+
+    io.rotationBusy.get := rotBusy
+
+    // Debug outputs
+    io.scDebugRotState.get := rotState.asBits.asUInt.resize(3)
+    io.scDebugActiveBankIdx.get := activeBankIdx
+    io.scDebugBankBase.get(0) := bankBaseVAddr(0)
+    io.scDebugBankBase.get(1) := bankBaseVAddr(1)
+    io.scDebugBankBase.get(2) := bankBaseVAddr(2)
+    io.scDebugBankResident.get := bankResident(2) ## bankResident(1) ## bankResident(0)
+    io.scDebugBankDirty.get := bankDirty(2) ## bankDirty(1) ## bankDirty(0)
+    io.scDebugNeedsRot.get := needsRotation
+
+    // Write-snoop debug — registered to match actual Mem.write timing.
+    // At clock edge N, Mem.write captures pre-edge pipeWrEn/pipeWrAddr/pipeWrData.
+    // RegNext captures these same pre-edge values, so after edge N the debug
+    // outputs show what was ACTUALLY written at edge N (visible one cycle later).
+    io.scDebugPipeWrAddr.get := RegNext(pipeWrAddr) init 0
+    io.scDebugPipeWrData.get := RegNext(pipeWrData) init 0
+    io.scDebugPipeWrEn.get := RegNext(pipeWrEn) init False
+
+    // VP+0 readback: async read of bank RAM at virtual address vp0
+    val vp0IsScratch = vp0 < cc.scratchSize
+    val vp0BankHit = Vec(Bool(), cc.numBanks)
+    val vp0BankPhys = Vec(UInt(8 bits), cc.numBanks)
+    val vp0BankDout = Vec(Bits(config.width bits), cc.numBanks)
+    for (i <- 0 until cc.numBanks) {
+      vp0BankPhys(i) := (vp0 - bankBaseVAddr(i)).resize(8)
+      vp0BankHit(i) := vp0 >= bankBaseVAddr(i) &&
+                        vp0 < (bankBaseVAddr(i) + cc.bankSize) &&
+                        bankResident(i)
+      vp0BankDout(i) := bankRams(i).readAsync(vp0BankPhys(i))
+    }
+    val vp0Data = Bits(config.width bits)
+    vp0Data := 0
+    when(vp0IsScratch) {
+      vp0Data := scratchRam.readAsync(vp0.resize(log2Up(cc.scratchSize)))
+    }.elsewhen(vp0BankHit(0)) {
+      vp0Data := vp0BankDout(0)
+    }.elsewhen(vp0BankHit(1)) {
+      vp0Data := vp0BankDout(1)
+    }.elsewhen(vp0BankHit(2)) {
+      vp0Data := vp0BankDout(2)
+    }
+    io.scDebugVp0Data.get := vp0Data
+  }
 
   // ==========================================================================
   // 33-bit ALU for Correct Overflow/Comparison
   // ==========================================================================
-  // Uses 33-bit signed arithmetic to get correct less-than comparison
 
   val sum = SInt(33 bits)
-  val aExt = S(B"1'b0" ## a)  // Sign-extend a to 33 bits: sign bit of a concatenated
-  val bExt = S(B"1'b0" ## b)  // Sign-extend b to 33 bits: sign bit of b concatenated
+  val aExt = S(B"1'b0" ## a)
+  val bExt = S(B"1'b0" ## b)
 
-  // Proper sign extension: replicate MSB
   val aSigned = (a(config.width - 1) ## a).asSInt.resize(33 bits)
   val bSigned = (b(config.width - 1) ## b).asSInt.resize(33 bits)
 
   when(io.selSub) {
-    sum := bSigned - aSigned  // Subtract: B - A
+    sum := bSigned - aSigned
   } otherwise {
-    sum := bSigned + aSigned  // Add: B + A
+    sum := bSigned + aSigned
   }
 
-  // Less-than flag from MSB of 33-bit result
   io.lt := sum(32)
 
   // ==========================================================================
@@ -286,93 +755,57 @@ case class StackStage(
   val log = Bits(config.width bits)
 
   switch(io.selLog) {
-    is(B"2'b00") {
-      log := b                 // Pass-through (for POP)
-    }
-    is(B"2'b01") {
-      log := a & b             // Bitwise AND
-    }
-    is(B"2'b10") {
-      log := a | b             // Bitwise OR
-    }
-    is(B"2'b11") {
-      log := a ^ b             // Bitwise XOR
-    }
+    is(B"2'b00") { log := b }
+    is(B"2'b01") { log := a & b }
+    is(B"2'b10") { log := a | b }
+    is(B"2'b11") { log := a ^ b }
   }
 
   // ==========================================================================
-  // Register Mux (rmux)
+  // Register Mux (rmux) — widened for stack cache
   // ==========================================================================
-  // Selects between SP, VP0, and JPC for register read operations
 
-  val rmux = UInt(config.jpcWidth + 1 bits)
+  val rmux = UInt(config.rmuxWidth bits)
 
   switch(io.selRmux) {
     is(B"2'b00") {
-      rmux := sp.resize(config.jpcWidth + 1)
+      rmux := sp.resize(config.rmuxWidth)
     }
     is(B"2'b01") {
-      rmux := vp0.resize(config.jpcWidth + 1)
+      rmux := vp0.resize(config.rmuxWidth)
     }
     default {
-      rmux := io.jpc
+      rmux := io.jpc.resize(config.rmuxWidth)
     }
   }
 
   // ==========================================================================
   // Immediate Mux (imux)
   // ==========================================================================
-  // Converts 16-bit bytecode operand to 32-bit value with extension
 
   val imux = Bits(config.width bits)
 
   switch(io.selImux) {
-    is(B"2'b00") {
-      // 8-bit unsigned extension
-      imux := B(0, 24 bits) ## opddly(7 downto 0)
-    }
-    is(B"2'b01") {
-      // 8-bit signed extension
-      imux := S(opddly(7 downto 0)).resize(config.width).asBits
-    }
-    is(B"2'b10") {
-      // 16-bit unsigned extension
-      imux := B(0, 16 bits) ## opddly
-    }
-    is(B"2'b11") {
-      // 16-bit signed extension
-      imux := S(opddly).resize(config.width).asBits
-    }
+    is(B"2'b00") { imux := B(0, 24 bits) ## opddly(7 downto 0) }
+    is(B"2'b01") { imux := S(opddly(7 downto 0)).resize(config.width).asBits }
+    is(B"2'b10") { imux := B(0, 16 bits) ## opddly }
+    is(B"2'b11") { imux := S(opddly).resize(config.width).asBits }
   }
 
   // ==========================================================================
   // Load Mux (lmux)
   // ==========================================================================
-  // Selects the source for A register updates
 
   val lmux = Bits(config.width bits)
+  lmux.simPublic()
 
   switch(io.selLmux) {
-    is(B"3'b000") {
-      lmux := log                                                  // Logic unit output
-    }
-    is(B"3'b001") {
-      lmux := sout                                                 // Shift unit output
-    }
-    is(B"3'b010") {
-      lmux := ramDout                                              // Stack RAM output
-    }
-    is(B"3'b011") {
-      lmux := immval                                               // Immediate value
-    }
-    is(B"3'b100") {
-      lmux := io.din                                               // External data input
-    }
-    default {
-      // Register output (SP, VP, JPC) - zero-extend to 32 bits
-      // Note: VHDL uses to_integer(unsigned(rmux)) which is unsigned interpretation
-      lmux := rmux.asBits.resized
-    }
+    is(B"3'b000") { lmux := log }
+    is(B"3'b001") { lmux := sout }
+    is(B"3'b010") { lmux := ramDout }
+    is(B"3'b011") { lmux := immval }
+    is(B"3'b100") { lmux := io.din }
+    default       { lmux := rmux.asBits.resized }
   }
 
   // ==========================================================================
@@ -380,36 +813,16 @@ case class StackStage(
   // ==========================================================================
 
   val amux = Bits(config.width bits)
+  amux.simPublic()
 
   when(io.selAmux === False) {
-    amux := sum(31 downto 0).asBits  // ALU sum output
+    amux := sum(31 downto 0).asBits
   } otherwise {
-    amux := lmux                      // Load mux output
+    amux := lmux
   }
 
   // ==========================================================================
-  // Stack Pointer Mux (smux)
-  // ==========================================================================
-
-  val smux = UInt(config.ramWidth bits)
-
-  switch(io.selSmux) {
-    is(B"2'b00") {
-      smux := sp                                          // No change
-    }
-    is(B"2'b01") {
-      smux := spm                                         // Decrement (pop)
-    }
-    is(B"2'b10") {
-      smux := spp                                         // Increment (push)
-    }
-    is(B"2'b11") {
-      smux := a(config.ramWidth - 1 downto 0).asUInt      // Load from A
-    }
-  }
-
-  // ==========================================================================
-  // Read Address Mux (sel_rda)
+  // Read Address Mux (sel_rda) — widened for stack cache
   // ==========================================================================
 
   switch(io.selRda) {
@@ -420,12 +833,11 @@ case class StackStage(
     is(B"3'b100") { rdaddr := vpadd }
     is(B"3'b101") { rdaddr := ar }
     is(B"3'b110") { rdaddr := sp }
-    default       { rdaddr := io.dirAddr }
+    default       { rdaddr := io.dirAddr.resize(spWidth) }
   }
 
   // ==========================================================================
-  // Write Address Mux (sel_wra)
-  // Note: sel_wra=110 uses SPP (not SP) for push operations
+  // Write Address Mux (sel_wra) — widened for stack cache
   // ==========================================================================
 
   switch(io.selWra) {
@@ -435,32 +847,31 @@ case class StackStage(
     is(B"3'b011") { wraddr := vp3 }
     is(B"3'b100") { wraddr := vpadd }
     is(B"3'b101") { wraddr := ar }
-    is(B"3'b110") { wraddr := spp }    // Note: SPP for push, not SP
-    default       { wraddr := io.dirAddr }
+    is(B"3'b110") { wraddr := spp }
+    default       { wraddr := io.dirAddr.resize(spWidth) }
   }
 
   // ==========================================================================
   // Combinational Flag Outputs
   // ==========================================================================
 
-  // Zero flag: A == 0
   io.zf := (a === B(0, config.width bits))
-
-  // Negative flag: A[31] (sign bit)
   io.nf := a(config.width - 1)
-
-  // Equal flag: A == B
   io.eq := (a === b)
 
   // ==========================================================================
   // A and B Register Process
   // ==========================================================================
+  // Gate A/B updates during rotation to prevent corruption from changing bank
+  // layouts. During rotBusy, readAsync returns stale data from reassigned banks;
+  // without gating, enaA/enaB (still asserted from frozen decode) would latch
+  // that wrong data into A/B, corrupting TOS/NOS.
 
-  when(io.enaA) {
+  when(io.enaA && !rotBusyDly) {
     a := amux
   }
 
-  when(io.enaB) {
+  when(io.enaB && !rotBusyDly) {
     when(io.selBmux === False) {
       b := a
     } otherwise {
@@ -472,36 +883,40 @@ case class StackStage(
   // Stack Pointer and VP Register Process
   // ==========================================================================
 
-  // Update SP, SPP, SPM
-  spp := smux + 1
-  spm := smux - 1
-  sp  := smux
-
-  // Stack overflow detection
-  when(sp === U(config.stackOverflowThreshold, config.ramWidth bits)) {
-    spOvReg := True
+  // Gate SP updates during rotation (prevents repeated SP increment during stall)
+  when(!rotBusy) {
+    spp := smuxSignal + 1
+    spm := smuxSignal - 1
+    sp  := smuxSignal
   }
 
-  // VP registers update
-  when(io.enaVp) {
-    vp0 := a(config.ramWidth - 1 downto 0).asUInt
-    vp1 := a(config.ramWidth - 1 downto 0).asUInt + 1
-    vp2 := a(config.ramWidth - 1 downto 0).asUInt + 2
-    vp3 := a(config.ramWidth - 1 downto 0).asUInt + 3
+  // Stack overflow detection (only in single-RAM mode)
+  if (!useCache) {
+    when(sp === U(config.stackOverflowThreshold, spWidth bits)) {
+      spOvReg := True
+    }
   }
 
-  // AR register update
-  when(io.enaAr) {
-    ar := a(config.ramWidth - 1 downto 0).asUInt
+  // VP/AR registers: gate during rotation (use rotBusyDly — enaVp is registered)
+  when(io.enaVp && !rotBusyDly) {
+    vp0 := a(spWidth - 1 downto 0).asUInt
+    vp1 := a(spWidth - 1 downto 0).asUInt + 1
+    vp2 := a(spWidth - 1 downto 0).asUInt + 2
+    vp3 := a(spWidth - 1 downto 0).asUInt + 3
   }
 
-  // VP + offset calculation (registered)
-  vpadd := vp0 + io.opd(6 downto 0).asUInt.resize(config.ramWidth)
+  // AR register update (use rotBusyDly — enaAr is registered)
+  when(io.enaAr && !rotBusyDly) {
+    ar := a(spWidth - 1 downto 0).asUInt
+  }
+
+  // VP + offset calculation (registered) — gate during rotation (rotBusyDly: vp0 is registered)
+  when(!rotBusyDly) {
+    vpadd := vp0 + io.opd(6 downto 0).asUInt.resize(spWidth)
+  }
 
   // Operand delay pipeline
   opddly := io.opd
-
-  // Immediate value registration
   immval := imux
 
   // ==========================================================================
@@ -512,14 +927,21 @@ case class StackStage(
   io.aout := a
   io.bout := b
 
-  // Debug outputs for simulation
   io.debugSp := sp
   io.debugVp := vp0
   io.debugAr := ar
-  io.debugWrAddr := ramWraddrReg
-  io.debugWrEn := ramWrenReg
+  io.debugWrAddr := wrAddrDly
+  io.debugWrEn := wrEnaDly
   io.debugRdAddrReg := ramRdaddrReg
   io.debugRamDout := ramDout
+
+  // Pipeline decode debug
+  io.debugEnaA     := io.enaA
+  io.debugSelLmux  := io.selLmux
+  io.debugEnaB     := io.enaB
+  io.debugSelBmux  := io.selBmux
+  io.debugRamDoutVal := ramDout
+  io.debugLmuxVal    := lmux
 }
 
 

@@ -111,6 +111,10 @@ case class BmbMemoryController(
       val handleActive = out Bool()
       val addrReg      = out UInt(config.addressWidth bits)
       val rdDataReg    = out Bits(32 bits)
+      val bcFillAddr   = out UInt(config.addressWidth bits)
+      val bcFillLen    = out UInt(10 bits)
+      val bcFillCount  = out UInt(10 bits)
+      val bcRdCapture  = out Bits(32 bits)  // io.aout captured when bcRd fires
     }
 
     // Snoop bus for cross-core cache invalidation (only when caches are enabled)
@@ -177,6 +181,7 @@ case class BmbMemoryController(
   val bcFillLen = Reg(UInt(10 bits)) init(0)
   val bcFillCount = Reg(UInt(10 bits)) init(0)
   val bcStartReg = Reg(UInt(12 bits)) init(0)
+  val bcRdCaptureReg = Reg(Bits(32 bits)) init(0)  // Debug: aout when bcRd fires
 
   // JBC write registers
   val jbcWrAddrReg = Reg(UInt((jpcWidth - 2) bits)) init(0)
@@ -584,6 +589,7 @@ case class BmbMemoryController(
         bcFillAddr := (packedVal >> 10).resize(config.addressWidth bits)
         bcFillLen := (packedVal & 0x3FF).resize(10 bits)
         bcFillCount := 0
+        bcRdCaptureReg := io.aout  // Debug: capture exact aout at bcRd time
         // Trigger method cache lookup (combinational, same clock edge)
         mcacheFind := True
         state := State.BC_CACHE_CHECK
@@ -1313,6 +1319,10 @@ case class BmbMemoryController(
   io.debug.busy := !notBusy
   io.debug.addrReg := addrReg
   io.debug.rdDataReg := rdDataReg
+  io.debug.bcFillAddr := bcFillAddr
+  io.debug.bcFillLen := bcFillLen
+  io.debug.bcFillCount := bcFillCount
+  io.debug.bcRdCapture := bcRdCaptureReg
   io.debug.handleActive := state.mux(
     State.PF_WAIT -> True,
     State.HANDLE_READ -> True,

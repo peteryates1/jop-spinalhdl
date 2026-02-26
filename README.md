@@ -241,7 +241,7 @@ sbt "Test / runMain jop.system.JopInterruptSim"
 # Debug protocol test (39 checks: ping, halt, step, registers, memory, breakpoints)
 sbt "Test / runMain jop.system.JopDebugProtocolSim"
 
-# JVM test suite (56 tests, all pass)
+# JVM test suite (57 tests, all pass)
 sbt "Test / runMain jop.system.JopJvmTestsBramSim"
 
 # Reference simulator
@@ -303,7 +303,7 @@ Notes:
 - **Method cache**: 16-block tag-only cache (32 words/block, FIFO replacement) skips redundant bytecode fills; 2-cycle hit, 3-cycle + fill on miss
 - **Object cache**: 16-entry fully associative field cache (8 fields/entry, FIFO replacement) shortcuts getfield to 0 busy cycles on hit; write-through on putfield; invalidated on `stidx`/`cinval`
 - **Array cache**: 16-entry fully associative element cache (4 elements/line, FIFO replacement) shortcuts iaload to 0 busy cycles on hit; 4-element line fill on miss (burst read on SDRAM); write-through on iastore; SMP-safe via cross-core snoop invalidation; two VHDL bugs fixed (idx_upper slice, FIFO nxt advancement)
-- **Stack buffer**: 256-entry on-chip RAM (64 for 32 local variables + 32 constants, 192 for operand stack) with spill/fill, ALU, shifter, 33-bit comparator
+- **Stack buffer**: 256-entry on-chip RAM (64 for 32 local variables + 32 constants, 192 for operand stack) with spill/fill, ALU, shifter, 33-bit comparator. Optional 3-bank rotating stack cache with DMA spill/fill extends the stack to external memory (16-bit virtual SP, 192 entries per bank, per-core stack regions). See [system configuration](docs/system-configuration.md).
 - **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
 - **I/O subsystem**: `BmbSys` (cycle/microsecond counters, timer interrupt, watchdog, CPU ID), `BmbUart` (TX/RX with 16-entry FIFOs, RX/TX interrupt outputs), `BmbEth` (Ethernet MAC with GMII 1Gbps TX/RX using SpinalHDL `MacEth`, 125 MHz PLL for TX, PHY clock for RX, dual-clock FIFOs for PHY clock domain crossing), and `BmbMdio` (MDIO PHY management with registered outputs and PHY reset control) as reusable `jop.io` components. Timer interrupts verified end-to-end in simulation (`JopInterruptSim`)
@@ -316,7 +316,7 @@ Notes:
 - **Hardware exception detection**: Null pointer and array bounds checks fully enabled — NPE fires on handle address 0, ABE fires on negative index (MSB) or index >= array length. Wired through BmbSys `exc` pulse to `sys_exc` microcode handler. Div-by-zero handled via Java `throw JVMHelp.ArithExc` in f_idiv/f_irem/f_ldiv/f_lrem.
 - **Formal verification**: 98 properties verified across 16 test suites using SymbiYosys + Z3 — covers core arithmetic, all pipeline stages, memory subsystem (method cache, object cache, memory controller), DDR3 cache + MIG adapter, I/O (CmpSync, BmbSys, BmbUart), and BMB protocol compliance. See [formal verification docs](docs/formal-verification.md).
 - **Debug subsystem** (`jop.debug` package): Optional on-chip debug controller with framed byte-stream protocol over dedicated UART. Supports halt/resume/single-step (microcode and bytecode), register and stack inspection, memory read/write, and up to 4 hardware breakpoints (JPC or microcode PC). Integrated into `JopCluster` via `DebugConfig`. Automated protocol test (`JopDebugProtocolSim`) verifies 39 checks across 14 test sequences.
-- **JVM test suite**: 56 tests (`java/apps/JvmTests/`) — all pass. Covers arrays, branches, type casting, int/long arithmetic, type conversions (i2x/l2x/f2x/d2x), constant loading, float/double ops (add/sub/mul/div/neg/cmp/rem), field access for all types, exceptions (throw/catch, finally, nested, athrow, div-by-zero, null pointer with 13 sub-tests), instanceof, super method dispatch, object fields, interfaces, static initializers, stack manipulation, System.arraycopy, cache persistence regression, long static fields, and more. Ported from original JOP `jvm/` suite and Wimpassinger `jvmtest/` suite.
+- **JVM test suite**: 57 tests (`java/apps/JvmTests/`) — all pass. Covers arrays, branches, type casting, int/long arithmetic, type conversions (i2x/l2x/f2x/d2x), constant loading, float/double ops (add/sub/mul/div/neg/cmp/rem), field access for all types, exceptions (throw/catch, finally, nested, athrow, div-by-zero, null pointer with 13 sub-tests), instanceof, super method dispatch, object fields, interfaces, static initializers, stack manipulation, System.arraycopy, cache persistence regression, long static fields, deep recursion (200-level, exercises stack cache bank rotation), and more. Ported from original JOP `jvm/` suite and Wimpassinger `jvmtest/` suite.
 - **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, JVM test suite, timer interrupt test, debug protocol test, GHDL event-driven sim
 
 ### Known Issues
@@ -340,7 +340,7 @@ Notes:
 - Port target code — networking, etc.
 - Debug tooling — host-side debug client (Eclipse or standalone) connecting to the on-chip debug controller over UART for interactive debugging on FPGA hardware
 - Additional FPGA board targets
-- Stack cache — extend to external memory with spill/fill for deeper stack support
+- Stack cache — 3-bank rotation working in BRAM simulation (57/57 tests pass including DeepRecursion); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
 - add quartus pll generator
 - Faster serial download — currently limited by per-word USB round-trip latency (~15s for 32KB)
 - Use Exerciser to find boundary performance for SDRAM/DDR3
@@ -365,6 +365,7 @@ Design notes and investigation logs in `docs/`:
 - [Microcode Instructions](docs/microcode.md) — table of all microcode instructions and encodings
 - [Stack Architecture](docs/STACK_ARCHITECTURE.md) — stack buffer, spill/fill, local variables
 - [Jopa Tool](docs/JOPA_TOOL.md) — microcode assembler usage and output formats
+- [System Configuration](docs/system-configuration.md) — configuration reference: memory layout, JopCoreConfig, JopMemoryConfig, IoConfig, board configs, I/O register map
 - [Implementation Notes](docs/implementation-notes.md) — bugs found, cache details, I/O subsystem, SMP, GC architecture, memCopy
 - [Cache Analysis](docs/cache-analysis.md) — cache performance analysis and technology cost model
 - [Memory Controller Comparison](docs/memory-controller-comparison.md) — VHDL vs SpinalHDL memory controller

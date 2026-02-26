@@ -41,14 +41,18 @@ case class JopCluster(
   jbcInit: Option[Seq[BigInt]] = None,
   ethTxCd: Option[ClockDomain] = None,
   ethRxCd: Option[ClockDomain] = None,
-  vgaCd:   Option[ClockDomain] = None
+  vgaCd:   Option[ClockDomain] = None,
+  separateStackDmaBus: Boolean = false
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
 
-  // Number of BMB inputs: cores + optional debug controller + optional VGA DMA
+  // Number of BMB inputs: cores + optional debug controller + optional VGA DMA + optional stack DMA (per-core)
+  // When separateStackDmaBus=true, DMA uses its own bus (not the main arbiter)
   val hasDebugMem = debugConfig.exists(_.hasMemAccess)
   val hasVgaDma = baseConfig.ioConfig.hasVgaDma
-  val totalBmbInputs = cpuCnt + (if (hasDebugMem) 1 else 0) + (if (hasVgaDma) 1 else 0)
+  val hasStackDma = baseConfig.useStackCache
+  val stackDmaInArbiter = hasStackDma && !separateStackDmaBus
+  val totalBmbInputs = cpuCnt + (if (hasDebugMem) 1 else 0) + (if (hasVgaDma) 1 else 0) + (if (stackDmaInArbiter) cpuCnt else 0)
 
   // BMB parameter: passthrough for single-core (no debug mem), arbiter output otherwise
   val inputParam = baseConfig.memConfig.bmbParameter
@@ -91,9 +95,32 @@ case class JopCluster(
 
     // Core 0 debug signals
     val debugMemState = out UInt(5 bits)
+    val debugBcFillAddr = out UInt(baseConfig.memConfig.addressWidth bits)
+    val debugBcFillLen = out UInt(10 bits)
+    val debugBcFillCount = out UInt(10 bits)
+    val debugBcRdCapture = out Bits(32 bits)
     val uartTxData    = out Bits(8 bits)
     val uartTxValid   = out Bool()
     val debugExc      = out Bool()
+
+    // Stack cache debug (core 0, optional)
+    val scDebugRotState     = if (baseConfig.useStackCache) Some(out UInt(3 bits)) else None
+    val scDebugActiveBankIdx = if (baseConfig.useStackCache) Some(out UInt(2 bits)) else None
+    val scDebugBankBase     = if (baseConfig.useStackCache) Some(out Vec(UInt(baseConfig.stackConfig.spWidth bits), 3)) else None
+    val scDebugBankResident = if (baseConfig.useStackCache) Some(out Bits(3 bits)) else None
+    val scDebugBankDirty    = if (baseConfig.useStackCache) Some(out Bits(3 bits)) else None
+    val scDebugNeedsRot     = if (baseConfig.useStackCache) Some(out Bool()) else None
+    val scDebugSp           = if (baseConfig.useStackCache) Some(out UInt(baseConfig.stackConfig.spWidth bits)) else None
+    val scDebugVp           = if (baseConfig.useStackCache) Some(out UInt(baseConfig.stackConfig.spWidth bits)) else None
+
+    // Write-snoop debug (core 0)
+    val scDebugPipeWrAddr = if (baseConfig.useStackCache) Some(out UInt(baseConfig.stackConfig.spWidth bits)) else None
+    val scDebugPipeWrData = if (baseConfig.useStackCache) Some(out Bits(baseConfig.dataWidth bits)) else None
+    val scDebugPipeWrEn   = if (baseConfig.useStackCache) Some(out Bool()) else None
+    val scDebugVp0Data    = if (baseConfig.useStackCache) Some(out Bits(baseConfig.dataWidth bits)) else None
+
+    // Separate DMA BMB (when separateStackDmaBus=true, DMA uses its own bus)
+    val stackDmaBmb = if (separateStackDmaBus && hasStackDma) Some(master(Bmb(inputParam))) else None
 
     // Debug transport byte interface (byte-stream abstraction point).
     // FPGA top-levels connect DebugUart to this; sim harnesses connect directly.
@@ -382,7 +409,26 @@ case class JopCluster(
         nextPort += 1
       }
     }
+    // Stack cache DMA BMB masters (one per core) — only in arbiter when not separated
+    if (stackDmaInArbiter) {
+      for (i <- 0 until cpuCnt) {
+        cores(i).io.stackDmaBmb.foreach { dmaBmb =>
+          arbiter.io.inputs(nextPort) << dmaBmb
+          nextPort += 1
+        }
+      }
+    }
     io.bmb <> arbiter.io.output
+  }
+
+  // Separate DMA bus: wire core(s)' DMA BMB to the dedicated IO port
+  if (separateStackDmaBus && hasStackDma) {
+    // For cpuCnt=1: direct wire. For cpuCnt>1: would need a DMA-only arbiter.
+    require(cpuCnt == 1 || !separateStackDmaBus,
+      "separateStackDmaBus with cpuCnt > 1 not yet supported")
+    cores(0).io.stackDmaBmb.foreach { dmaBmb =>
+      io.stackDmaBmb.get <> dmaBmb
+    }
   }
 
   // ==================================================================
@@ -508,7 +554,28 @@ case class JopCluster(
   // ==================================================================
 
   io.debugMemState := cores(0).io.debugMemState
+  io.debugBcFillAddr := cores(0).io.debugBcFillAddr
+  io.debugBcFillLen := cores(0).io.debugBcFillLen
+  io.debugBcFillCount := cores(0).io.debugBcFillCount
+  io.debugBcRdCapture := cores(0).io.debugBcRdCapture
   io.uartTxData    := cores(0).io.uartTxData
   io.uartTxValid   := cores(0).io.uartTxValid
   io.debugExc      := cores(0).io.debugExc
+
+  if (baseConfig.useStackCache) {
+    io.scDebugRotState.get := cores(0).io.scDebugRotState.get
+    io.scDebugActiveBankIdx.get := cores(0).io.scDebugActiveBankIdx.get
+    io.scDebugBankBase.get := cores(0).io.scDebugBankBase.get
+    io.scDebugBankResident.get := cores(0).io.scDebugBankResident.get
+    io.scDebugBankDirty.get := cores(0).io.scDebugBankDirty.get
+    io.scDebugNeedsRot.get := cores(0).io.scDebugNeedsRot.get
+    io.scDebugSp.get := cores(0).io.debugSp
+    io.scDebugVp.get := cores(0).io.debugVp
+
+    // Write-snoop debug passthrough
+    io.scDebugPipeWrAddr.get := cores(0).io.scDebugPipeWrAddr.get
+    io.scDebugPipeWrData.get := cores(0).io.scDebugPipeWrData.get
+    io.scDebugPipeWrEn.get := cores(0).io.scDebugPipeWrEn.get
+    io.scDebugVp0Data.get := cores(0).io.scDebugVp0Data.get
+  }
 }

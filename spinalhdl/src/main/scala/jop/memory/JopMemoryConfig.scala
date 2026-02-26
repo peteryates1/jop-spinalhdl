@@ -27,7 +27,8 @@ case class JopMemoryConfig(
   useAcache: Boolean = true,              // Enable array cache
   acacheWayBits: Int = 4,                 // log2(entries) — 4 = 16 entries
   acacheFieldBits: Int = 2,              // log2(elements per line) — 2 = 4 elements
-  acacheMaxIndexBits: Int = 24           // max array index width (full address space)
+  acacheMaxIndexBits: Int = 24,          // max array index width (full address space)
+  stackRegionWordsPerCore: Int = 0      // per-core stack spill region size (0 = legacy)
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(addressWidth >= 16 && addressWidth <= 26, "Address width must be 16-26 bits")
@@ -42,6 +43,15 @@ case class JopMemoryConfig(
 
   /** Scratch pad size in words */
   def scratchWords: BigInt = scratchSize / byteCount
+
+  /** Usable memory end (words) — total minus per-core stack regions.
+   *  Returns 0 when stackRegionWordsPerCore is disabled (legacy mode). */
+  def usableMemWords(cpuCnt: Int): Int = {
+    if (stackRegionWordsPerCore > 0)
+      (mainMemSize / byteCount).toInt - cpuCnt * stackRegionWordsPerCore
+    else
+      0  // legacy: Java runtime computes its own mem_size
+  }
 
   /** lengthWidth: 2 bits for single-word (length=3), wider for burst.
    *  When A$ is enabled with burst, must also accommodate A$ line fill

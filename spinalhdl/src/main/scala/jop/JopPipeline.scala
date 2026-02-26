@@ -1,6 +1,7 @@
 package jop
 
 import spinal.core._
+import spinal.core.sim._
 import spinal.lib._
 import jop.pipeline._
 import jop.core.Mul
@@ -72,11 +73,45 @@ case class JopPipeline(
     val debugRamData = out Bits(config.dataWidth bits)
 
     // === Debug: register values for debug controller ===
-    val debugSp      = out UInt(config.ramWidth bits)
-    val debugVp      = out UInt(config.ramWidth bits)
-    val debugAr      = out UInt(config.ramWidth bits)
+    val debugSp      = out UInt(config.stackConfig.spWidth bits)
+    val debugVp      = out UInt(config.stackConfig.spWidth bits)
+    val debugAr      = out UInt(config.stackConfig.spWidth bits)
     val debugFlags   = out Bits(4 bits)   // zf##nf##eq##lt
     val debugMulResult = out Bits(config.dataWidth bits)
+
+    // === Stack Cache DMA Passthrough (only when stack cache enabled) ===
+    // Bank RAM access (from StackCacheDma via JopCore)
+    val dmaBankRdAddr  = if (config.stackConfig.useStackCache) Some(in UInt(8 bits)) else None
+    val dmaBankRdData  = if (config.stackConfig.useStackCache) Some(out Bits(config.dataWidth bits)) else None
+    val dmaBankWrAddr  = if (config.stackConfig.useStackCache) Some(in UInt(8 bits)) else None
+    val dmaBankWrData  = if (config.stackConfig.useStackCache) Some(in Bits(config.dataWidth bits)) else None
+    val dmaBankWrEn    = if (config.stackConfig.useStackCache) Some(in Bool()) else None
+    val dmaBankSelect  = if (config.stackConfig.useStackCache) Some(in UInt(2 bits)) else None
+    // DMA control (from stack stage rotation controller)
+    val dmaStart     = if (config.stackConfig.useStackCache) Some(out Bool()) else None
+    val dmaIsSpill   = if (config.stackConfig.useStackCache) Some(out Bool()) else None
+    val dmaExtAddr   = if (config.stackConfig.useStackCache) Some(out UInt(26 bits)) else None
+    val dmaWordCount = if (config.stackConfig.useStackCache) Some(out UInt(8 bits)) else None
+    val dmaBank      = if (config.stackConfig.useStackCache) Some(out UInt(2 bits)) else None
+    // DMA status (from StackCacheDma via JopCore)
+    val dmaBusy = if (config.stackConfig.useStackCache) Some(in Bool()) else None
+    val dmaDone = if (config.stackConfig.useStackCache) Some(in Bool()) else None
+
+    // Stack cache debug (passthrough from StackStage)
+    val scDebugRotState     = if (config.stackConfig.useStackCache) Some(out UInt(3 bits)) else None
+    val scDebugActiveBankIdx = if (config.stackConfig.useStackCache) Some(out UInt(2 bits)) else None
+    val scDebugBankBase     = if (config.stackConfig.useStackCache) Some(out Vec(UInt(config.stackConfig.spWidth bits), 3)) else None
+    val scDebugBankResident = if (config.stackConfig.useStackCache) Some(out Bits(3 bits)) else None
+    val scDebugBankDirty    = if (config.stackConfig.useStackCache) Some(out Bits(3 bits)) else None
+    val scDebugNeedsRot     = if (config.stackConfig.useStackCache) Some(out Bool()) else None
+
+    // Write-snoop debug (passthrough from StackStage)
+    val scDebugPipeWrAddr = if (config.stackConfig.useStackCache) Some(out UInt(config.stackConfig.spWidth bits)) else None
+    val scDebugPipeWrData = if (config.stackConfig.useStackCache) Some(out Bits(config.dataWidth bits)) else None
+    val scDebugPipeWrEn   = if (config.stackConfig.useStackCache) Some(out Bool()) else None
+
+    // VP+0 value readback (passthrough from StackStage)
+    val scDebugVp0Data = if (config.stackConfig.useStackCache) Some(out Bits(config.dataWidth bits)) else None
   }
 
   // ==========================================================================
@@ -86,7 +121,7 @@ case class JopPipeline(
   val bcfetch = BytecodeFetchStage(config.bcfetchConfig, jbcInit)
   val fetch   = FetchStage(config.fetchConfig, romInit)
   val decode  = new DecodeStage(config.decodeConfig)
-  val stack   = new StackStage(config.stackConfig, ramInit = ramInit)
+  val stack   = new StackStage(config.stackConfig, ramInit = ramInit).setName("stackStg")
   val mul     = Mul(config.dataWidth)
 
   // ==========================================================================
@@ -120,7 +155,13 @@ case class JopPipeline(
   fetch.io.jpaddr := bcfetch.io.jpaddr
   fetch.io.br := decode.io.br
   fetch.io.jmp := decode.io.jmp
-  fetch.io.bsy := decode.io.wrDly || io.memBusy
+  // rotationBusy stalls the pipeline during stack cache bank rotation (DMA).
+  // extStall unconditionally freezes the fetch stage PC/IR — needed because
+  // rotation can trigger on any instruction, not just 'wait' instructions.
+  val stackRotBusy = stack.io.rotationBusy.getOrElse(False)
+  fetch.io.bsy := decode.io.wrDly || io.memBusy || stackRotBusy
+  fetch.io.extStall := stackRotBusy
+  decode.io.stall := stackRotBusy
 
   // Decode stage connections
   decode.io.instr := fetch.io.dout
@@ -136,6 +177,7 @@ case class JopPipeline(
 
   // din mux: ir(1:0) selects between ldmrd, ldmul, ldbcstart
   val dinMuxSel = RegNext(fetch.io.ir_out(1 downto 0)) init(0)
+  dinMuxSel.simPublic()
   stack.io.din := dinMuxSel.mux(
     0 -> io.memRdData,
     1 -> mul.io.dout.asBits,
@@ -236,4 +278,45 @@ case class JopPipeline(
   io.debugAr := stack.io.debugAr
   io.debugFlags := stack.io.zf ## stack.io.nf ## stack.io.eq ## stack.io.lt
   io.debugMulResult := mul.io.dout.asBits
+
+  // ==========================================================================
+  // Stack Cache DMA Passthrough
+  // ==========================================================================
+
+  if (config.stackConfig.useStackCache) {
+    // Bank RAM access: DMA → stack stage
+    stack.io.dmaBankRdAddr.get := io.dmaBankRdAddr.get
+    io.dmaBankRdData.get := stack.io.dmaBankRdData.get
+    stack.io.dmaBankWrAddr.get := io.dmaBankWrAddr.get
+    stack.io.dmaBankWrData.get := io.dmaBankWrData.get
+    stack.io.dmaBankWrEn.get := io.dmaBankWrEn.get
+    stack.io.dmaBankSelect.get := io.dmaBankSelect.get
+
+    // DMA control: stack stage rotation controller → JopCore
+    io.dmaStart.get := stack.io.dmaStart.get
+    io.dmaIsSpill.get := stack.io.dmaIsSpill.get
+    io.dmaExtAddr.get := stack.io.dmaExtAddr.get
+    io.dmaWordCount.get := stack.io.dmaWordCount.get
+    io.dmaBank.get := stack.io.dmaBank.get
+
+    // DMA status: JopCore → stack stage
+    stack.io.dmaBusy.get := io.dmaBusy.get
+    stack.io.dmaDone.get := io.dmaDone.get
+
+    // Debug passthrough
+    io.scDebugRotState.get := stack.io.scDebugRotState.get
+    io.scDebugActiveBankIdx.get := stack.io.scDebugActiveBankIdx.get
+    io.scDebugBankBase.get := stack.io.scDebugBankBase.get
+    io.scDebugBankResident.get := stack.io.scDebugBankResident.get
+    io.scDebugBankDirty.get := stack.io.scDebugBankDirty.get
+    io.scDebugNeedsRot.get := stack.io.scDebugNeedsRot.get
+
+    // Write-snoop debug passthrough
+    io.scDebugPipeWrAddr.get := stack.io.scDebugPipeWrAddr.get
+    io.scDebugPipeWrData.get := stack.io.scDebugPipeWrData.get
+    io.scDebugPipeWrEn.get := stack.io.scDebugPipeWrEn.get
+
+    // VP+0 readback passthrough
+    io.scDebugVp0Data.get := stack.io.scDebugVp0Data.get
+  }
 }

@@ -766,6 +766,7 @@ class JopPipelineTestRom(
   decodeStage.io.eq := stackStage.io.eq
   decodeStage.io.lt := stackStage.io.lt
   decodeStage.io.bcopd := io.operand
+  decodeStage.io.stall := False
 
   stackStage.io.din := io.memDataIn
   stackStage.io.dirAddr := decodeStage.io.dirAddr.asUInt
