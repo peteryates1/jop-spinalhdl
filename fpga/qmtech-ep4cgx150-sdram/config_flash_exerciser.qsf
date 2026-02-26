@@ -1,0 +1,72 @@
+# -------------------------------------------------------------------------- #
+# Config Flash Exerciser - QMTECH EP4CGX150 Core Board
+#
+# Reads the W25Q128 SPI config flash via the cycloneiv_asmiblock hard atom
+# and streams contents via UART.
+# -------------------------------------------------------------------------- #
+
+set_global_assignment -name FAMILY "Cyclone IV GX"
+set_global_assignment -name DEVICE EP4CGX150DF27I7
+set_global_assignment -name TOP_LEVEL_ENTITY ConfigFlashExerciserTop
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name MIN_CORE_JUNCTION_TEMP "-40"
+set_global_assignment -name MAX_CORE_JUNCTION_TEMP 100
+set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
+set_global_assignment -name NOMINAL_CORE_SUPPLY_VOLTAGE 1.2V
+
+# Source files
+set_global_assignment -name VERILOG_FILE ../../spinalhdl/generated/ConfigFlashExerciserTop.v
+set_global_assignment -name VHDL_FILE dram_pll.vhd
+set_global_assignment -name SDC_FILE sd_exerciser.sdc
+
+# I/O standard
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVCMOS"
+
+# Configuration — release config pins as user I/O for direct SPI access
+set_global_assignment -name ENABLE_OCT_DONE OFF
+set_global_assignment -name ENABLE_CONFIGURATION_PINS ON
+set_global_assignment -name ENABLE_BOOT_SEL_PIN OFF
+set_global_assignment -name USE_CONFIGURATION_DEVICE OFF
+set_global_assignment -name RESERVE_DATA0_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name RESERVE_DCLK_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name RESERVE_DATA1_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_global_assignment -name RESERVE_FLASH_NCE_AFTER_CONFIGURATION "USE AS REGULAR IO"
+
+# I/O timing
+set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -rise
+set_global_assignment -name OUTPUT_IO_TIMING_NEAR_END_VMEAS "HALF VCCIO" -fall
+set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -rise
+set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -fall
+
+# -------------------------------------------------------------------------- #
+# Pin Assignments
+# -------------------------------------------------------------------------- #
+
+# 50 MHz Clock
+set_location_assignment PIN_B14 -to clk_in
+
+# UART TX
+set_location_assignment PIN_AD20 -to ser_txd
+
+# Core board LEDs
+set_location_assignment PIN_A25 -to led[0]
+set_location_assignment PIN_A24 -to led[1]
+
+# Config flash SPI pins (active serial configuration pins used as user I/O)
+set_location_assignment PIN_F6 -to flash_dclk
+set_location_assignment PIN_D5 -to flash_ncs
+set_location_assignment PIN_E6 -to flash_asdo
+set_location_assignment PIN_D6 -to flash_data0
+
+# -------------------------------------------------------------------------- #
+# Misc
+# -------------------------------------------------------------------------- #
+
+set_global_assignment -name ENABLE_SIGNALTAP OFF
+
+set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
+
+set_global_assignment -name LAST_QUARTUS_VERSION "18.1.1 Lite Edition"

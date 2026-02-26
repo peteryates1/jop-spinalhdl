@@ -26,6 +26,10 @@
 #   make program-sd-spi-exerciser     - Program SD SPI exerciser via JTAG
 #   make full-sd-native-exerciser     - generate + build + program + monitor
 #   make full-sd-spi-exerciser        - generate + build + program + monitor
+#   make generate-config-flash-exerciser - Generate config flash exerciser Verilog
+#   make build-config-flash-exerciser    - Quartus compile config flash exerciser
+#   make program-config-flash-exerciser  - Program config flash exerciser via JTAG
+#   make full-config-flash-exerciser     - generate + build + program + monitor
 #   make all             - microcode + generate + build
 #   make run             - program + download + monitor
 #   make full            - microcode + generate + build + run
@@ -58,6 +62,7 @@ GENERATED_SMP_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSmpSdramTop.v
 GENERATED_DBFPGA_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSdramTop.v
 GENERATED_SD_NATIVE_V = $(PROJECT_ROOT)/spinalhdl/generated/SdNativeExerciserTop.v
 GENERATED_SD_SPI_V = $(PROJECT_ROOT)/spinalhdl/generated/SdSpiExerciserTop.v
+GENERATED_CFG_FLASH_V = $(PROJECT_ROOT)/spinalhdl/generated/ConfigFlashExerciserTop.v
 
 # Quartus projects
 QP = jop_sdram
@@ -65,14 +70,16 @@ QP_SMP = jop_smp_sdram
 QP_DBFPGA = jop_dbfpga
 QP_SD_NATIVE = sd_native_exerciser
 QP_SD_SPI = sd_spi_exerciser
+QP_CFG_FLASH = config_flash_exerciser
 OUTPUT_DIR = output_files
 SOF_FILE = $(OUTPUT_DIR)/$(QP).sof
 SOF_SMP_FILE = $(OUTPUT_DIR)/$(QP_SMP).sof
 SOF_DBFPGA_FILE = $(OUTPUT_DIR)/$(QP_DBFPGA).sof
 SOF_SD_NATIVE_FILE = $(OUTPUT_DIR)/$(QP_SD_NATIVE).sof
 SOF_SD_SPI_FILE = $(OUTPUT_DIR)/$(QP_SD_SPI).sof
+SOF_CFG_FLASH_FILE = $(OUTPUT_DIR)/$(QP_CFG_FLASH).sof
 
-.PHONY: all microcode generate generate-smp generate-dbfpga generate-dbfpga-vgadma generate-sd-native-exerciser generate-sd-spi-exerciser build build-smp build-dbfpga build-dbfpga-vgadma build-sd-native-exerciser build-sd-spi-exerciser program program-smp program-dbfpga program-dbfpga-vgadma program-sd-native-exerciser program-sd-spi-exerciser download monitor run run-smp run-dbfpga run-dbfpga-vgadma full full-smp full-dbfpga full-dbfpga-vgadma full-sd-native-exerciser full-sd-spi-exerciser clean
+.PHONY: all microcode generate generate-smp generate-dbfpga generate-dbfpga-vgadma generate-sd-native-exerciser generate-sd-spi-exerciser generate-config-flash-exerciser build build-smp build-dbfpga build-dbfpga-vgadma build-sd-native-exerciser build-sd-spi-exerciser build-config-flash-exerciser program program-smp program-dbfpga program-dbfpga-vgadma program-sd-native-exerciser program-sd-spi-exerciser program-config-flash-exerciser download monitor run run-smp run-dbfpga run-dbfpga-vgadma full full-smp full-dbfpga full-dbfpga-vgadma full-sd-native-exerciser full-sd-spi-exerciser full-config-flash-exerciser clean
 
 # Default: microcode + generate + build
 all: microcode generate build
@@ -92,6 +99,7 @@ full-dbfpga-vgadma: microcode generate-dbfpga-vgadma build-dbfpga-vgadma run-dbf
 # SD exerciser full flows (no microcode or download needed)
 full-sd-native-exerciser: generate-sd-native-exerciser build-sd-native-exerciser program-sd-native-exerciser monitor
 full-sd-spi-exerciser: generate-sd-spi-exerciser build-sd-spi-exerciser program-sd-spi-exerciser monitor
+full-config-flash-exerciser: generate-config-flash-exerciser build-config-flash-exerciser program-config-flash-exerciser monitor
 
 # Program + download + monitor
 run: program download monitor
@@ -134,6 +142,10 @@ generate-sd-native-exerciser:
 generate-sd-spi-exerciser:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.SdSpiExerciserTopVerilog"
 	@echo "=== SD SPI Exerciser Verilog generated: $(GENERATED_SD_SPI_V) ==="
+
+generate-config-flash-exerciser:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.ConfigFlashExerciserTopVerilog"
+	@echo "=== Config Flash Exerciser Verilog generated: $(GENERATED_CFG_FLASH_V) ==="
 
 # --------------------------------------------------------------------------
 # Quartus build
@@ -185,6 +197,15 @@ $(SOF_SD_SPI_FILE): $(GENERATED_SD_SPI_V) $(QP_SD_SPI).qsf sd_exerciser.sdc dram
 	$(QUARTUS_BIN)/quartus_asm $(QP_SD_SPI)
 	$(QUARTUS_BIN)/quartus_sta $(QP_SD_SPI)
 	@echo "=== SD SPI Exerciser Build complete: $(SOF_SD_SPI_FILE) ==="
+
+build-config-flash-exerciser: $(SOF_CFG_FLASH_FILE)
+
+$(SOF_CFG_FLASH_FILE): $(GENERATED_CFG_FLASH_V) $(QP_CFG_FLASH).qsf sd_exerciser.sdc dram_pll.vhd
+	$(QUARTUS_BIN)/quartus_map $(QP_CFG_FLASH)
+	$(QUARTUS_BIN)/quartus_fit $(QP_CFG_FLASH)
+	$(QUARTUS_BIN)/quartus_asm $(QP_CFG_FLASH)
+	$(QUARTUS_BIN)/quartus_sta $(QP_CFG_FLASH)
+	@echo "=== Config Flash Exerciser Build complete: $(SOF_CFG_FLASH_FILE) ==="
 
 # --------------------------------------------------------------------------
 # FPGA programming
@@ -274,6 +295,22 @@ program-sd-spi-exerciser: $(SOF_SD_SPI_FILE) $(QP_SD_SPI).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SD_SPI).cdf
 	@echo "=== SD SPI Exerciser FPGA programmed ==="
 
+$(QP_CFG_FLASH).cdf: $(SOF_CFG_FLASH_FILE)
+	@echo '/* Auto-generated CDF */' > $@
+	@echo 'JedecChain;' >> $@
+	@echo '	FileRevision(JESD32A);' >> $@
+	@echo '	DefaultMfr(6E);' >> $@
+	@echo '	P ActionCode(Cfg)' >> $@
+	@echo '		Device PartName(EP4CGX150DF27) Path("$(OUTPUT_DIR)/") File("$(QP_CFG_FLASH).sof") MfrSpec(OpMask(1));' >> $@
+	@echo 'ChainEnd;' >> $@
+	@echo 'AlteraBegin;' >> $@
+	@echo '	ChainType(JTAG);' >> $@
+	@echo 'AlteraEnd;' >> $@
+
+program-config-flash-exerciser: $(SOF_CFG_FLASH_FILE) $(QP_CFG_FLASH).cdf
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_CFG_FLASH).cdf
+	@echo "=== Config Flash Exerciser FPGA programmed ==="
+
 # --------------------------------------------------------------------------
 # Serial download and UART monitor
 # --------------------------------------------------------------------------
@@ -289,5 +326,5 @@ monitor:
 # --------------------------------------------------------------------------
 
 clean:
-	rm -rf output_files db incremental_db $(QP).cdf $(QP_SMP).cdf $(QP_DBFPGA).cdf $(QP_SD_NATIVE).cdf $(QP_SD_SPI).cdf
+	rm -rf output_files db incremental_db $(QP).cdf $(QP_SMP).cdf $(QP_DBFPGA).cdf $(QP_SD_NATIVE).cdf $(QP_SD_SPI).cdf $(QP_CFG_FLASH).cdf
 	rm -f *.rpt *.done *.jdi *.sld *.smsg *.summary *.pin
