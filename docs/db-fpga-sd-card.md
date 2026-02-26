@@ -1,10 +1,44 @@
-# DB_FPGA Daughter Board -- SD Card (Native 4-bit Mode)
+# DB_FPGA Daughter Board -- SD Card
 
-SD card support for the QMTECH DB_FPGA daughter board, using the
-**BmbSdNative** controller in native 4-bit SD mode. Verified on hardware
-with a 32 GB SanDisk SDHC card at 10 MHz SD clock.
+SD card support for the QMTECH DB_FPGA daughter board. Two mutually
+exclusive controllers are available:
 
-## Architecture
+| Controller | Mode | Data Bus | Config Flag | Java Class |
+|---|---|---|---|---|
+| **BmbSdNative** | Native SD | 4-bit parallel (DAT0-3) | `hasSdNative` | `SdNative` |
+| **BmbSdSpi** | SPI | 1-bit serial (MISO/MOSI) | `hasSdSpi` | `SdSpi` |
+
+Both share the same physical SD card slot on the DB_FPGA board. SD Native
+offers higher throughput (4-bit data bus, hardware CRC). SD SPI is simpler
+(byte-at-a-time transfers, no hardware CRC on data).
+
+See the [Programmer's Guide](programmers-guide.md) for the Java API
+(register maps, status bits, code examples).
+
+---
+
+## Pin Mapping
+
+SD card slot on the DB_FPGA daughter board (active-low card detect):
+
+| SD Signal | FPGA Pin | SPI Signal | Notes |
+|-----------|----------|------------|-------|
+| SD_CLK | PIN_B21 | SCLK | Clock output |
+| SD_CMD | PIN_A22 | MOSI | Host → card data (bidirectional in native mode) |
+| SD_DAT0 | PIN_A23 | MISO | Card → host data (bidirectional in native mode) |
+| SD_DAT1 | PIN_B23 | — | Native mode only (TriState, weak pull-up) |
+| SD_DAT2 | PIN_B19 | — | Native mode only (TriState, weak pull-up) |
+| SD_DAT3 | PIN_C19 | CS | Chip select in SPI mode (active low) |
+| SD_CD | PIN_B22 | SD_CD | Card detect (active low) |
+
+Internal weak pull-ups are enabled in the QSF for CMD and all DAT lines.
+These are required because the SD card tri-states these lines when idle.
+
+---
+
+## SD Native Mode (BmbSdNative)
+
+### Architecture
 
 BmbSdNative implements the SD card physical layer in hardware:
 
@@ -18,27 +52,9 @@ BmbSdNative implements the SD card physical layer in hardware:
   Default divider=99 gives ~400 kHz at 80 MHz (SD initialization speed)
 
 Software drives the SD protocol (CMD0, CMD8, ACMD41, etc.) by writing
-command arguments and indices to the register interface. See the
-[Programmer's Guide](programmers-guide.md) for the Java API.
+command arguments and indices to the register interface.
 
-## Pin Mapping
-
-SD card slot on the DB_FPGA daughter board (active-low card detect):
-
-| Signal | FPGA Pin | DB_FPGA | Notes |
-|--------|----------|---------|-------|
-| `sd_clk` | PIN_B21 | SD_CLK | Clock output |
-| `sd_cmd` | PIN_A22 | SD_CMD | Bidirectional (TriState), weak pull-up |
-| `sd_dat_0` | PIN_A23 | SD_DAT0 | Bidirectional (TriState), weak pull-up |
-| `sd_dat_1` | PIN_B23 | SD_DAT1 | Bidirectional (TriState), weak pull-up |
-| `sd_dat_2` | PIN_B19 | SD_DAT2 | Bidirectional (TriState), weak pull-up |
-| `sd_dat_3` | PIN_C19 | SD_DAT3 | Bidirectional (TriState), weak pull-up |
-| `sd_cd` | PIN_B22 | SD_CD | Card detect (active low) |
-
-Internal weak pull-ups are enabled in the QSF for CMD and all DAT lines.
-These are required because the SD card tri-states these lines when idle.
-
-## Clock Speed Constraints
+### Clock Speed Constraints
 
 On the QMTECH EP4CGX150 + DB_FPGA board:
 
@@ -60,13 +76,13 @@ clock rates.
 Use the default divider=99 (~400 kHz) during card initialization (required
 by the SD specification).
 
-## Bugs Found and Fixed
+### Bugs Found and Fixed
 
 Two bugs were found in BmbSdNative during hardware verification with the
 SD Native Exerciser (`SdNativeExerciserTop`). Both passed in simulation
 because the testbench does not model real card timing.
 
-### 1. WAIT_CRC_STATUS Missing Start Bit Wait
+#### 1. WAIT_CRC_STATUS Missing Start Bit Wait
 
 **Bug**: After the host sends a data block, the SD card responds with a
 3-bit CRC status on DAT0 (start bit `0`, then 2 status bits: `01` =
@@ -90,7 +106,7 @@ when the preceding CMD24 timed out at high clock speeds).
 This is analogous to the existing `WAIT_RSP` state for CMD responses,
 which correctly waits for CMD line low before sampling response bits.
 
-### 2. dataTimeoutCnt Not Reset on startWrite
+#### 2. dataTimeoutCnt Not Reset on startWrite
 
 **Bug**: The `dataTimeoutCnt` counter was reset to 0 on `startRead` but
 not on `startWrite`. After fixing bug #1 to use this counter for the CRC
@@ -99,7 +115,7 @@ non-zero timeout value.
 
 **Fix**: Added `dataTimeoutCnt := 0` to the `startWrite` handler.
 
-## Hardware Verification
+### Hardware Verification
 
 The SD Native Exerciser (`SdNativeExerciserTop`) runs continuously on the
 FPGA, performing this test sequence in a loop:
@@ -121,21 +137,120 @@ T3:READ   PASS
 LOOP 00000001
 ```
 
-### Build and Run
+#### Build and Run
 
 ```bash
-cd /home/peter/jop-spinalhdl
-sbt "runMain jop.system.SdNativeExerciserTopVerilog"
 cd fpga/qmtech-ep4cgx150-sdram
+make full-sd-native-exerciser
+# Or step by step:
+make generate-sd-native-exerciser
 make build-sd-native-exerciser
 make program-sd-native-exerciser
-sudo timeout 45 python3 ../scripts/monitor.py /dev/ttyUSB0 1000000
+make monitor SERIAL_PORT=/dev/ttyUSB0
 ```
+
+---
+
+## SPI Mode (BmbSdSpi)
+
+### Architecture
+
+BmbSdSpi is a raw SPI master. Hardware handles byte-level SPI shifting
+and chip-select control. Software handles the full SD protocol.
+
+- **SPI Mode 0**: CPOL=0, CPHA=0. SCLK idles low. Data sampled on rising
+  edge, shifted out on falling edge. MSB first.
+- **Byte-at-a-time**: Write a TX byte to register +1, poll busy (register +0
+  bit 0), read RX byte from register +1.
+- **CS control**: Write 1 to register +0 to assert CS (drive low), write 0
+  to deassert.
+- **Clock**: Programmable divider, `SPI_CLK = sys_clk / (2 * (div + 1))`.
+  Default divider=199 gives ~200 kHz at 80 MHz (safe for SD init <= 400 kHz).
+- **No hardware CRC**: SPI mode CRC is optional (disabled by default after
+  CMD0). The exerciser sends dummy CRC bytes (0xFF).
+
+### SPI Pin Mapping
+
+In SPI mode, the SD card pins are used as follows:
+
+| SD Pin | SPI Function | Direction |
+|--------|-------------|-----------|
+| SD_CLK | SCLK | Output |
+| SD_CMD | MOSI | Output |
+| SD_DAT0 | MISO | Input |
+| SD_DAT3 | CS (active low) | Output |
+| SD_CD | Card detect | Input |
+
+DAT1 and DAT2 are unused in SPI mode.
+
+### Hardware Verification
+
+The SD SPI Exerciser (`SdSpiExerciserTop`) runs continuously on the FPGA,
+performing this test sequence in a loop:
+
+| Test | Description | Result |
+|------|-------------|--------|
+| T1: DETECT | Card presence check | PASS |
+| INIT | 80 clocks, CMD0, CMD8, CMD55+ACMD41, set fast clock | PASS |
+| T2: WRITE | CMD24, data token (0xFE), 512 bytes, data response check | PASS |
+| T3: READ | CMD17, wait for data token (0xFE), 512 bytes, compare | PASS |
+
+The SPI exerciser uses divider=1 (~20 MHz) for data transfers after
+initialization. Unlike native mode, SPI write succeeds at 20 MHz because
+the data response is received on MISO (a dedicated input), not on a
+bidirectional data line.
+
+Output via UART at 1 Mbaud:
+```
+SD SPI TEST
+T1:DETECT PASS
+INIT      PASS
+T2:WRITE  PASS
+T3:READ   PASS
+LOOP 00000001
+```
+
+#### Build and Run
+
+```bash
+cd fpga/qmtech-ep4cgx150-sdram
+make full-sd-spi-exerciser
+# Or step by step:
+make generate-sd-spi-exerciser
+make build-sd-spi-exerciser
+make program-sd-spi-exerciser
+make monitor SERIAL_PORT=/dev/ttyUSB0
+```
+
+---
+
+## Choosing Between Native and SPI Mode
+
+| | SD Native | SD SPI |
+|---|---|---|
+| Data bus | 4-bit parallel | 1-bit serial |
+| Hardware CRC | Yes (CRC7 + CRC16) | No |
+| Max tested clock | 10 MHz | 20 MHz |
+| Throughput | ~4 MB/s (10 MHz x 4 bits) | ~2.5 MB/s (20 MHz x 1 bit) |
+| Protocol complexity | Hardware handles CMD/DATA framing | Software handles everything |
+| Config flag | `hasSdNative` | `hasSdSpi` |
+
+SD Native is the default for `IoConfig.qmtechDbFpga` (the standard DB_FPGA
+build). SD SPI requires a custom IoConfig with `hasSdSpi = true`.
+
+---
 
 ## Sources
 
-- BmbSdNative controller: `spinalhdl/src/main/scala/jop/io/BmbSdNative.scala`
-- SD Native exerciser: `spinalhdl/src/main/scala/jop/system/SdNativeExerciserTop.scala`
-- SdNative Java API: `java/runtime/src/jop/com/jopdesign/hw/SdNative.java`
-- Quartus project: `fpga/qmtech-ep4cgx150-sdram/sd_native_exerciser.qsf`
-- SD Physical Layer Simplified Specification: [sdcard.org](https://www.sdcard.org/downloads/pls/)
+| File | Description |
+|------|-------------|
+| `spinalhdl/src/main/scala/jop/io/BmbSdNative.scala` | SD Native controller |
+| `spinalhdl/src/main/scala/jop/io/BmbSdSpi.scala` | SD SPI controller |
+| `spinalhdl/src/main/scala/jop/system/SdNativeExerciserTop.scala` | SD Native exerciser |
+| `spinalhdl/src/main/scala/jop/system/SdSpiExerciserTop.scala` | SD SPI exerciser |
+| `java/runtime/src/jop/com/jopdesign/hw/SdNative.java` | SD Native Java API |
+| `java/runtime/src/jop/com/jopdesign/hw/SdSpi.java` | SD SPI Java API |
+| `fpga/qmtech-ep4cgx150-sdram/sd_native_exerciser.qsf` | SD Native Quartus project |
+| `fpga/qmtech-ep4cgx150-sdram/sd_spi_exerciser.qsf` | SD SPI Quartus project |
+
+SD Physical Layer Simplified Specification: [sdcard.org](https://www.sdcard.org/downloads/pls/)

@@ -629,6 +629,7 @@ Source files: `JopMemoryConfig.scala` (`JopIoSpace`), `JopCore.scala`.
 ## See Also
 
 - [DB_FPGA Ethernet](db-fpga-ethernet.md) -- GMII architecture, pin mapping, PHY config
+- [DB_FPGA SD Card](db-fpga-sd-card.md) -- SD Native and SPI mode, pin mapping, clock constraints
 - [DB_FPGA VGA Text](db-fpga-vga-text.md) -- VGA text setup guide and troubleshooting
 - [DB_FPGA VGA DMA](db-fpga-vga-dma.md) -- VGA DMA framebuffer setup guide
 - [System Configuration](system-configuration.md) -- IoConfig, board configs
