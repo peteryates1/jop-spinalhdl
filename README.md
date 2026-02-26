@@ -365,6 +365,7 @@ Design notes and investigation logs in `docs/`:
 - [Microcode Instructions](docs/microcode.md) — table of all microcode instructions and encodings
 - [Stack Architecture](docs/STACK_ARCHITECTURE.md) — stack buffer, spill/fill, local variables
 - [Jopa Tool](docs/JOPA_TOOL.md) — microcode assembler usage and output formats
+- [Programmer's Guide](docs/programmers-guide.md) — I/O register maps and Java API for all devices (BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdNative, BmbVgaText)
 - [System Configuration](docs/system-configuration.md) — configuration reference: memory layout, JopCoreConfig, JopMemoryConfig, IoConfig, board configs, I/O register map
 - [Implementation Notes](docs/implementation-notes.md) — bugs found, cache details, I/O subsystem, SMP, GC architecture, memCopy
 - [Cache Analysis](docs/cache-analysis.md) — cache performance analysis and technology cost model
