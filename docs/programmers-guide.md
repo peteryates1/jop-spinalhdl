@@ -338,12 +338,51 @@ for (int i = 0; i < 128; i++) {   // 512 bytes = 128 words
 }
 ```
 
+### Data Write
+
+```java
+sd.setBlockLength(512);
+// Fill FIFO before sending CMD24
+for (int i = 0; i < 128; i++) {
+    sd.dataFifo = data[i];
+}
+sd.sendCmd(24, blockAddr, true, false);
+sd.waitCmd();
+sd.startWrite();
+int st = sd.waitData();
+if ((st & SdNative.STATUS_DATA_CRC_ERR) != 0) {
+    // card rejected the write (CRC error)
+}
+```
+
+`startRead()` and `startWrite()` both clear `dataCrcError`, `dataTimeout`,
+and `dataCrcFlags`. The FIFO is only reset on `startRead()` or abort, so
+write data must be pushed to the FIFO before calling `startWrite()`.
+
 ### Configuration
 
 ```java
-sd.setClockDivider(0);      // fastest clock: sys_clk / 2
+sd.setClockDivider(3);      // 10 MHz at 80 MHz sys clock
 sd.setBusWidth4(true);       // enable 4-bit data bus
 ```
+
+Clock formula: `SD_CLK = sys_clk / (2 * (div + 1))`. Common divider
+values at 80 MHz: 0 = 40 MHz, 1 = 20 MHz, 3 = 10 MHz, 99 = 400 kHz
+(init speed). Default divider is 99 (~400 kHz for SD card initialization).
+
+### Hardware Notes
+
+- **Control register caveat**: Writing the control register (addr +0)
+  always updates `openDrain` from bit 2. Use `CTRL_OPEN_DRAIN` during
+  card init (CMD0 through CMD2), clear it after CMD3.
+- **Response register persistence**: The CMD response register is NOT
+  cleared on `sendCmd`. If a command times out, the response register
+  retains the stale value from the previous successful command.
+- **Clock speed constraints**: On the QMTECH EP4CGX150 + DB_FPGA board,
+  CMD24 (WRITE_BLOCK) times out at 20 MHz (divider=1) and 13.3 MHz
+  (divider=2) due to signal integrity on the SD card traces. CMD17
+  (READ_SINGLE_BLOCK) works at 20 MHz. Use divider=3 (10 MHz) or
+  slower for reliable operation. Other boards may differ.
 
 ---
 
