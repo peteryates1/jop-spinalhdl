@@ -245,6 +245,9 @@ public class Const {
 	// VGA text controller (BmbVgaText) — ioAddr 0xC0
 	public static final int IO_VGA = IO_BASE+0x40;
 
+	// VGA DMA framebuffer controller (BmbVgaDma) — ioAddr 0xAC
+	public static final int IO_VGA_DMA = IO_BASE+0x2C;
+
 	// Ethernet interface on DE2
 	public static final int DM9000 = IO_BASE+0x50;
 	

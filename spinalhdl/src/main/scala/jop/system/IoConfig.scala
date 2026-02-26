@@ -85,4 +85,12 @@ object IoConfig {
     hasSdNative = true,
     hasVgaText = true
   )
+
+  /** QMTECH EP4CGX150 + DB_FPGA: VGA DMA instead of VGA Text */
+  def qmtechDbFpgaVgaDma: IoConfig = IoConfig(
+    hasEth = true,
+    ethGmii = true,
+    hasSdNative = true,
+    hasVgaDma = true
+  )
 }

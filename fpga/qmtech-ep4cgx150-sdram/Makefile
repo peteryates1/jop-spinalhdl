@@ -14,6 +14,10 @@
 #   make program-smp     - Program SMP FPGA via JTAG
 #   make build-dbfpga    - Quartus compile DB_FPGA
 #   make program-dbfpga  - Program DB_FPGA via JTAG
+#   make generate-dbfpga-vgadma - Generate DB_FPGA VGA DMA Verilog
+#   make build-dbfpga-vgadma    - Quartus compile DB_FPGA VGA DMA
+#   make program-dbfpga-vgadma  - Program DB_FPGA VGA DMA via JTAG
+#   make full-dbfpga-vgadma     - Full flow for DB_FPGA VGA DMA
 #   make generate-sd-native-exerciser - Generate SD Native exerciser Verilog
 #   make generate-sd-spi-exerciser    - Generate SD SPI exerciser Verilog
 #   make build-sd-native-exerciser    - Quartus compile SD Native exerciser
@@ -68,7 +72,7 @@ SOF_DBFPGA_FILE = $(OUTPUT_DIR)/$(QP_DBFPGA).sof
 SOF_SD_NATIVE_FILE = $(OUTPUT_DIR)/$(QP_SD_NATIVE).sof
 SOF_SD_SPI_FILE = $(OUTPUT_DIR)/$(QP_SD_SPI).sof
 
-.PHONY: all microcode generate generate-smp generate-dbfpga generate-sd-native-exerciser generate-sd-spi-exerciser build build-smp build-dbfpga build-sd-native-exerciser build-sd-spi-exerciser program program-smp program-dbfpga program-sd-native-exerciser program-sd-spi-exerciser download monitor run run-smp run-dbfpga full full-smp full-dbfpga full-sd-native-exerciser full-sd-spi-exerciser clean
+.PHONY: all microcode generate generate-smp generate-dbfpga generate-dbfpga-vgadma generate-sd-native-exerciser generate-sd-spi-exerciser build build-smp build-dbfpga build-dbfpga-vgadma build-sd-native-exerciser build-sd-spi-exerciser program program-smp program-dbfpga program-dbfpga-vgadma program-sd-native-exerciser program-sd-spi-exerciser download monitor run run-smp run-dbfpga run-dbfpga-vgadma full full-smp full-dbfpga full-dbfpga-vgadma full-sd-native-exerciser full-sd-spi-exerciser clean
 
 # Default: microcode + generate + build
 all: microcode generate build
@@ -82,6 +86,9 @@ full-smp: microcode generate-smp build-smp run-smp
 # DB_FPGA full flow
 full-dbfpga: microcode generate-dbfpga build-dbfpga run-dbfpga
 
+# DB_FPGA VGA DMA full flow
+full-dbfpga-vgadma: microcode generate-dbfpga-vgadma build-dbfpga-vgadma run-dbfpga-vgadma
+
 # SD exerciser full flows (no microcode or download needed)
 full-sd-native-exerciser: generate-sd-native-exerciser build-sd-native-exerciser program-sd-native-exerciser monitor
 full-sd-spi-exerciser: generate-sd-spi-exerciser build-sd-spi-exerciser program-sd-spi-exerciser monitor
@@ -90,6 +97,7 @@ full-sd-spi-exerciser: generate-sd-spi-exerciser build-sd-spi-exerciser program-
 run: program download monitor
 run-smp: program-smp download monitor
 run-dbfpga: program-dbfpga download monitor
+run-dbfpga-vgadma: program-dbfpga-vgadma download monitor
 
 # --------------------------------------------------------------------------
 # Serial-boot microcode
@@ -114,6 +122,10 @@ generate-smp:
 generate-dbfpga:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopDbFpgaTopVerilog"
 	@echo "=== DB_FPGA Verilog generated: $(GENERATED_DBFPGA_V) ==="
+
+generate-dbfpga-vgadma:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopDbFpgaVgaDmaTopVerilog"
+	@echo "=== DB_FPGA VGA DMA Verilog generated: $(GENERATED_DBFPGA_V) ==="
 
 generate-sd-native-exerciser:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.SdNativeExerciserTopVerilog"
@@ -153,6 +165,8 @@ $(SOF_DBFPGA_FILE): $(GENERATED_DBFPGA_V) $(QP_DBFPGA).qsf $(QP).sdc dram_pll.vh
 	$(QUARTUS_BIN)/quartus_asm $(QP_DBFPGA)
 	$(QUARTUS_BIN)/quartus_sta $(QP_DBFPGA)
 	@echo "=== DB_FPGA Build complete: $(SOF_DBFPGA_FILE) ==="
+
+build-dbfpga-vgadma: $(SOF_DBFPGA_FILE)
 
 build-sd-native-exerciser: $(SOF_SD_NATIVE_FILE)
 
@@ -223,6 +237,10 @@ $(QP_DBFPGA).cdf: $(SOF_DBFPGA_FILE)
 program-dbfpga: $(SOF_DBFPGA_FILE) $(QP_DBFPGA).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_DBFPGA).cdf
 	@echo "=== DB_FPGA FPGA programmed ==="
+
+program-dbfpga-vgadma: $(SOF_DBFPGA_FILE) $(QP_DBFPGA).cdf
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_DBFPGA).cdf
+	@echo "=== DB_FPGA VGA DMA FPGA programmed ==="
 
 $(QP_SD_NATIVE).cdf: $(SOF_SD_NATIVE_FILE)
 	@echo '/* Auto-generated CDF */' > $@

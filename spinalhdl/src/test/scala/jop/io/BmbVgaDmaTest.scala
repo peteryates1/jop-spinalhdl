@@ -28,7 +28,7 @@ class BmbVgaDmaTest extends AnyFunSuite {
     BmbVgaDma(
       bmbParam = testBmbParam,
       vgaCd = ClockDomain.external("vgaCd"),
-      fifoDepth = 64
+      fifoDepth = 256
     )
   )
 
@@ -216,9 +216,10 @@ class BmbVgaDmaTest extends AnyFunSuite {
       assert(cmdAddresses.size >= targetCmdCount,
         s"Expected at least $targetCmdCount commands, got ${cmdAddresses.size}")
 
-      // Verify addresses: should start at 0x1000 and increment by 32
+      // Verify addresses: should start at 0x1000 and increment by burstBytes
+      val burstBytes = 1 << testBmbParam.access.lengthWidth
       for (i <- cmdAddresses.indices) {
-        val expected = 0x1000L + (i * 32L) % 4096L
+        val expected = 0x1000L + (i.toLong * burstBytes) % 4096L
         assert(cmdAddresses(i) == expected,
           f"Command $i: expected address 0x$expected%X, got 0x${cmdAddresses(i)}%X")
       }

@@ -76,9 +76,8 @@ case class BmbVgaDma(
 
   // Burst length in bytes: determined by lengthWidth from BMB parameters.
   // lengthWidth encodes (length - 1), so max burst = (1 << lengthWidth) bytes.
-  // We use a burst of 8 words = 32 bytes as a reasonable default,
-  // clamped to what the BMB parameters support.
-  val burstBytes = 32
+  // JOP with burstLen=4 has lengthWidth=4, so max burst = 16 bytes = 4 words.
+  val burstBytes = 1 << bmbParam.access.lengthWidth
   val burstWords = burstBytes / (bmbParam.access.dataWidth / 8)
   val maxPending = 4
 
@@ -109,14 +108,15 @@ case class BmbVgaDma(
 
   val offset       = Reg(UInt(bmbParam.access.addressWidth bits)) init(0)
   val pendingCount = Reg(UInt(log2Up(maxPending + 1) bits)) init(0)
+  val frameDone    = Reg(Bool()) init(False)
 
   // Backpressure: stop issuing when FIFO is nearly full.
   // Reserve space for all in-flight bursts plus current burst.
   val fifoSpaceOk = fifo.io.pushOccupancy < (fifoDepth - (maxPending + 1) * burstWords)
   val pendingOk   = pendingCount < maxPending
 
-  // BMB command generation
-  io.bmb.cmd.valid   := enabled && pendingOk && fifoSpaceOk
+  // BMB command generation — stop after reading one full frame
+  io.bmb.cmd.valid   := enabled && pendingOk && fifoSpaceOk && !frameDone
   io.bmb.cmd.opcode  := B(Bmb.Cmd.Opcode.READ, 1 bits)
   io.bmb.cmd.address := baseAddr + offset
   io.bmb.cmd.length  := U(burstBytes - 1, bmbParam.access.lengthWidth bits)
@@ -133,7 +133,7 @@ case class BmbVgaDma(
   when(io.bmb.cmd.fire) {
     val nextOffset = offset + burstBytes
     when(nextOffset >= fbSize) {
-      offset := 0
+      frameDone := True
     } otherwise {
       offset := nextOffset
     }
@@ -182,6 +182,7 @@ case class BmbVgaDma(
     val active = hCounter < hActive && vCounter < vActive
 
     // Pixel unpacking: 2 RGB565 pixels per 32-bit word
+    // halfSel=False: pop cycle (first pixel), halfSel=True: second pixel
     val halfSel = Reg(Bool()) init(False)
     val wordReg = Reg(Bits(32 bits)) init(0)
     val underrun = Reg(Bool()) init(False)
@@ -189,14 +190,13 @@ case class BmbVgaDma(
     fifo.io.pop.ready := False
     when(active) {
       when(!halfSel) {
-        // First pixel: pop new word from FIFO, use low 16 bits
+        // First pixel: pop new word from FIFO
         fifo.io.pop.ready := True
         when(fifo.io.pop.valid) {
           wordReg := fifo.io.pop.payload
           halfSel := True
           underrun := False
         } otherwise {
-          // Underrun: FIFO empty during active display
           underrun := True
         }
       } otherwise {
@@ -205,11 +205,20 @@ case class BmbVgaDma(
       }
     } otherwise {
       halfSel := False
+      // Drain stale data from FIFO during early vertical blanking
+      // (between end of active and DMA restart point)
+      when(vCounter >= vActive && vCounter < vSyncEnd) {
+        fifo.io.pop.ready := fifo.io.pop.valid
+      }
     }
 
-    // Select pixel: when halfSel is True we just loaded the word, show low half.
-    // When halfSel is False (second pixel cycle), show high half.
-    val pixel = Mux(halfSel, wordReg(15 downto 0), wordReg(31 downto 16))
+    // Pixel selection: use combinational FIFO payload for the first pixel
+    // (pop cycle) to avoid 1-cycle register latency. For the second pixel,
+    // use the registered word.
+    val popFiring = active && !halfSel && fifo.io.pop.valid
+    val pixel = Mux(popFiring, fifo.io.pop.payload(15 downto 0),
+                Mux(halfSel, wordReg(31 downto 16),
+                    B(0, 16 bits)))
 
     val displayActive = active && !underrun
     io.vgaR     := Mux(displayActive, pixel(15 downto 11), B"5'd0")
@@ -218,18 +227,23 @@ case class BmbVgaDma(
     io.vgaHsync := hSync
     io.vgaVsync := vSync
 
-    // Frame start detection: first pixel of first line
-    val frameStart = (vCounter === 0) && (hCounter === 0)
+    // DMA restart signal: at end of vsync (start of back porch).
+    // This gives 33 lines (26,400 pixel clocks) for DMA to pre-fill FIFO
+    // before active display begins.
+    val dmaRestart = (vCounter === vSyncEnd) && (hCounter === 0)
   }
 
   // ========================================================================
-  // Frame Restart (pixel clock -> system clock)
+  // DMA Restart (pixel clock -> system clock)
   // ========================================================================
+  // Restart DMA at end of vsync (start of back porch), giving 33 lines
+  // (~8000 system clocks) to pre-fill FIFO before active display begins.
 
-  val frameStartSync = BufferCC(vgaArea.frameStart, False)
-  val frameStartRise = frameStartSync.rise(False)
-  when(frameStartRise) {
+  val dmaRestartSync = BufferCC(vgaArea.dmaRestart, False)
+  val dmaRestartRise = dmaRestartSync.rise(False)
+  when(dmaRestartRise) {
     offset := 0
+    frameDone := False
   }
 
   // ========================================================================

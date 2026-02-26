@@ -33,9 +33,11 @@ All hardware object classes are in `java/runtime/src/jop/com/jopdesign/hw/`.
 | `SdSpi` | SD card (SPI mode) | `IO_SD_SPI` | `hasSdSpi` |
 | `SdNative` | SD card (native 4-bit) | `IO_SD` | `hasSdNative` |
 | `VgaText` | VGA text controller | `IO_VGA` | `hasVgaText` |
+| `VgaDma` | VGA DMA framebuffer | `IO_VGA_DMA` | `hasVgaDma` |
 
 Device presence is controlled by `IoConfig` flags. Devices not present in the
-build return 0 on read. SD SPI and SD Native are mutually exclusive.
+build return 0 on read. SD SPI and SD Native are mutually exclusive. VGA Text
+and VGA DMA are mutually exclusive (same output pins).
 
 ---
 
@@ -459,6 +461,128 @@ See `java/apps/Small/src/test/VgaTest.java` for a complete hardware test.
 
 ---
 
+## VgaDma -- VGA DMA Framebuffer Controller
+
+```java
+VgaDma vga = VgaDma.getInstance();
+```
+
+| Field | Register | Read | Write |
+|---|:---:|---|---|
+| `statusControl` | +0 | Status (enabled/vsync/underrun) | Control (enable/clearVsync) |
+| `baseAddr` | +1 | Framebuffer base address | Set base address (byte addr) |
+| `fbSize` | +2 | Framebuffer size in bytes | Set size |
+
+Reads an RGB565 framebuffer from SDRAM via DMA and outputs 640x480@60Hz VGA.
+Two RGB565 pixels per 32-bit word: low 16 bits = first pixel, high 16 bits =
+second pixel. Default framebuffer size: 640x480x2 = 614,400 bytes.
+
+**Mutually exclusive** with VGA Text (same output pins). Controlled by
+`IoConfig.hasVgaDma`. Build with `make build-dbfpga-vgadma`.
+
+### Status Bits (read)
+
+| Constant | Bit | Meaning |
+|---|---|---|
+| `STATUS_ENABLED` | 0 | DMA output active |
+| `STATUS_VSYNC_PENDING` | 1 | Vsync event occurred (cleared by write) |
+| `STATUS_UNDERRUN` | 2 | FIFO underrun (pixels lost) |
+
+### Control Bits (write)
+
+| Constant | Bit | Meaning |
+|---|---|---|
+| `CTRL_ENABLE` | 0 | Enable DMA display |
+| `CTRL_CLEAR_VSYNC` | 1 | Clear vsync pending flag |
+
+### Quick Start
+
+```java
+VgaDma vga = VgaDma.getInstance();
+
+// Allocate framebuffer in SDRAM (word address → byte address)
+int[] fb = new int[153600];   // 640*480/2 words
+int ref = Native.toInt(fb);
+int dataWordAddr = Native.rdMem(ref);
+int byteAddr = dataWordAddr << 2;
+
+vga.setFramebuffer(byteAddr, 640 * 480 * 2);
+vga.enable();
+```
+
+### Framebuffer Format
+
+RGB565: `R[15:11] G[10:5] B[4:0]`. Each 32-bit word contains two pixels:
+
+```
+Word:  [pixel1(31:16)][pixel0(15:0)]
+        ─────────────  ─────────────
+        second pixel    first pixel
+```
+
+Common RGB565 colors:
+
+| Color | Value |
+|---|---|
+| Red | `0xF800` |
+| Green | `0x07E0` |
+| Blue | `0x001F` |
+| White | `0xFFFF` |
+| Black | `0x0000` |
+| Cyan | `0x07FF` |
+| Magenta | `0xF81F` |
+| Yellow | `0xFFE0` |
+
+### Writing Pixels
+
+Pack two RGB565 pixels into a word and write to the framebuffer array:
+
+```java
+// Pack two pixels: pixel0 in low half, pixel1 in high half
+int word = (pixel0 & 0xFFFF) | ((pixel1 & 0xFFFF) << 16);
+fb[y * 320 + x/2] = word;    // 320 words per line (640 pixels / 2)
+```
+
+For direct SDRAM writes (bypassing Java arrays), use `Native.wrMem()`:
+
+```java
+int fbWordAddr = fbByteAddr >> 2;
+Native.wrMem(word, fbWordAddr + y * 320 + x/2);
+```
+
+### Vsync Synchronization
+
+The controller generates a vsync interrupt at the start of each vertical
+blanking period (~60 Hz). Use this to synchronize framebuffer updates:
+
+```java
+vga.clearVsync();
+while (!vga.isVsyncPending()) { }  // wait for next vsync
+// Safe to update framebuffer here
+```
+
+### Underrun Detection
+
+A FIFO underrun means the DMA couldn't keep up with pixel output, causing
+black pixels. Check after enabling:
+
+```java
+if (vga.isUnderrun()) {
+    // DMA bandwidth insufficient — reduce SDRAM contention
+}
+```
+
+### DMA Timing
+
+The DMA engine reads one full frame per refresh cycle. It restarts at the end
+of vsync (start of back porch), giving 33 lines (~26,400 pixel clocks) to
+pre-fill the CDC FIFO before active display begins. The FIFO is drained during
+vertical blanking to prevent stale data at frame boundaries.
+
+See `java/apps/Small/src/test/VgaDmaTest.java` for a complete hardware test.
+
+---
+
 ## Low-Level I/O Access
 
 All I/O can also be accessed directly via `Native.rd(addr)` and
@@ -478,6 +602,7 @@ Base address: `Const.IO_BASE` (`0xFFFFFF80`). The low 7 bits form an 8-bit
 | `0xA0`--`0xA7` | 8 regs | `IO_BASE + 0x20` | BmbMdio |
 | `0xA8`--`0xAB` | 4 regs | `IO_BASE + 0x28` | BmbSdSpi |
 | `0xB0`--`0xBF` | 16 regs | `IO_BASE + 0x30` | BmbSdNative |
+| `0xAC`--`0xAF` | 4 regs | `IO_BASE + 0x2C` | BmbVgaDma |
 | `0xC0`--`0xCF` | 16 regs | `IO_BASE + 0x40` | BmbVgaText |
 
 ### Low-Level Example
@@ -505,5 +630,6 @@ Source files: `JopMemoryConfig.scala` (`JopIoSpace`), `JopCore.scala`.
 
 - [DB_FPGA Ethernet](db-fpga-ethernet.md) -- GMII architecture, pin mapping, PHY config
 - [DB_FPGA VGA Text](db-fpga-vga-text.md) -- VGA text setup guide and troubleshooting
+- [DB_FPGA VGA DMA](db-fpga-vga-dma.md) -- VGA DMA framebuffer setup guide
 - [System Configuration](system-configuration.md) -- IoConfig, board configs
 - [Implementation Notes](implementation-notes.md) -- Architecture details

@@ -241,10 +241,20 @@ case class JopSdramTop(
   // VGA Clock Domain (25 MHz from PLL c3, only when VGA is present)
   // ========================================================================
 
-  val vgaCd = if (ioConfig.hasVga) Some(ClockDomain(
-    clock = pll.io.c3,
-    config = ClockDomainConfig(resetKind = BOOT)
-  )) else None
+  val vgaCd = if (ioConfig.hasVga) Some({
+    val vgaBootCd = ClockDomain(pll.io.c3, config = ClockDomainConfig(resetKind = BOOT))
+    val vgaReset = ResetCtrl.asyncAssertSyncDeassert(
+      input = resetGen.int_res,
+      clockDomain = vgaBootCd,
+      inputPolarity = HIGH,
+      outputPolarity = HIGH
+    )
+    ClockDomain(
+      clock = pll.io.c3,
+      reset = vgaReset,
+      config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = HIGH)
+    )
+  }) else None
 
   // ========================================================================
   // Main Design Area (80 MHz)
@@ -530,6 +540,33 @@ object JopDbFpgaTopVerilog extends App {
   )))
 
   println("Generated: spinalhdl/generated/JopSdramTop.v (DB_FPGA I/O)")
+}
+
+/**
+ * Generate Verilog for JopSdramTop with DB_FPGA VGA DMA I/O (single-core)
+ */
+object JopDbFpgaVgaDmaTopVerilog extends App {
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
+
+  val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
+  val ramData = JopFileLoader.loadStackRam(ramFilePath)
+
+  println(s"Loaded ROM: ${romData.length} entries")
+  println(s"Loaded RAM: ${ramData.length} entries")
+
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = "spinalhdl/generated",
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
+  ).generate(InOutWrapper(JopSdramTop(
+    cpuCnt = 1,
+    romInit = romData,
+    ramInit = ramData,
+    ioConfig = IoConfig.qmtechDbFpgaVgaDma
+  )))
+
+  println("Generated: spinalhdl/generated/JopSdramTop.v (DB_FPGA VGA DMA)")
 }
 
 /**
