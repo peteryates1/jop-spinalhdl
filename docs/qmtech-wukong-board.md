@@ -174,14 +174,13 @@ From `Test10_SDRAM` project XDC:
 
 ## System Pins
 
-| Signal | Pin | I/O Standard | Function |
-|--------|-----|-------------|----------|
-| `SYS_CLK` | M21 | LVCMOS33 | 50 MHz oscillator (Y1) |
-| `SYS_RST_N` | H7 | LVCMOS33 | Reset button (active low) |
-| `LED0` | G20 | LVCMOS33 | User LED 0 |
-| `LED1` | G21 | LVCMOS33 | User LED 1 |
-| `KEY1` | K23 | LVCMOS33 | Push button |
-| `SW3` | K25 | LVCMOS33 | Push button |
+| Signal | Pin | I/O Standard | Bank | Function |
+|--------|-----|-------------|------|----------|
+| `SYS_CLK` | M21 | LVCMOS33 | 15 | 50 MHz oscillator (Y1) |
+| `SYS_RST_N` | H7 | LVCMOS33 | 35 | Reset button KEY0/SW2 (active low) |
+| `LED0` | G21 | LVCMOS33 | 15 | User LED 0 (D5) |
+| `LED1` | G20 | LVCMOS33 | 15 | User LED 1 (D6) |
+| `KEY1` | M6 | LVCMOS33 | 34 | Push button (SW3) |
 
 ## UART (CH340N USB-to-UART)
 
@@ -228,14 +227,17 @@ From `Test08_GMII_Ethernet` XDC. Same PHY as DB_FPGA.
 | `ETH_RXD[6]` | T4 |
 | `ETH_RXD[7]` | T5 |
 
-**Management:**
+**Management and status:**
 
 | Signal | Pin |
 |--------|-----|
 | `ETH_MDC` | H2 |
 | `ETH_MDIO` | H1 |
 | `ETH_RESET_N` | R1 |
+| `ETH_COL` | U4 |
+| `ETH_CRS` | U2 |
 
+All Ethernet signals are Bank 34, LVCMOS33.
 25 MHz PHY reference crystal (Y2) is on-board, independent of 50 MHz system clock.
 
 ## HDMI Output (DVI-D via TPD12S016)
@@ -255,104 +257,140 @@ From `Test06_HDMI_OUT` XDC.
 | `HDMI_CLK_P` | D4 | TMDS_33 |
 | `HDMI_CLK_N` | C4 | TMDS_33 |
 
-**Control signals:**
+**Control signals (via TPD12S016 level shifter):**
 
 | Signal | Pin | I/O Standard | Function |
 |--------|-----|-------------|----------|
 | `HDMI_SCL` | B2 | LVCMOS33 | I2C clock (DDC, 4.7K pullup) |
-| `HDMI_SDA` | A3 | LVCMOS33 | I2C data (DDC, 4.7K pullup) |
-| `HDMI_CEC` | A2 | LVCMOS33 | Consumer Electronics Control |
-| `HDMI_HPD` | B1 | LVCMOS33 | Hot Plug Detect |
+| `HDMI_SDA` | A2 | LVCMOS33 | I2C data (DDC, 4.7K pullup) |
+| `HDMI_HPD` | A3 | LVCMOS33 | Hot Plug Detect |
+| `HDMI_CEC` | B1 | LVCMOS33 | Consumer Electronics Control |
 
-## SD Card
+## SD Card (microSD, J9)
 
-| Signal | Pin | Function |
-|--------|-----|----------|
-| `SD_CLK` | B2 | Clock |
-| `SD_CMD` | B3 | Command / MOSI |
-| `SD_DAT0` | B4 | Data 0 / MISO |
-| `SD_DAT1` | A5 | Data 1 |
-| `SD_DAT2` | B5 | Data 2 |
-| `SD_DAT3` | C5 | Data 3 / CS |
-| `SD_CD` | C6 | Card detect |
+| Signal | Pin | Bank | Function |
+|--------|-----|------|----------|
+| `SD_CLK` | L4 | 34 | Clock |
+| `SD_CMD` | J8 | 35 | Command / MOSI |
+| `SD_DAT0` | M5 | 34 | Data 0 / MISO |
+| `SD_DAT1` | M7 | 34 | Data 1 |
+| `SD_DAT2` | H6 | 35 | Data 2 |
+| `SD_DAT3` | J6 | 35 | Data 3 / CS |
+| `SD_CD` | N6 | 34 | Card detect |
 
 ## Configuration Flash (N25Q064A, Quad-SPI)
 
-| Signal | Pin | Function |
-|--------|-----|----------|
-| `FLASH_CS_N` | D3 | Chip select (active low) |
-| `FLASH_IO0` | D4 | Serial input / Quad IO[0] |
-| `FLASH_IO1` | E4 | Serial output / Quad IO[1] |
-| `FLASH_IO2` | E5 | Quad IO[2] |
-| `FLASH_IO3` | D5 | Quad IO[3] |
-| `FLASH_CLK` | E6 | Clock |
+Uses dedicated FPGA configuration pins in Bank 14.
+
+| Signal | Pin | Bank | Function |
+|--------|-----|------|----------|
+| `FLASH_CS_N` | P18 | 14 | Chip select (FCS_B, active low) |
+| `FLASH_DQ0` | R14 | 14 | IO[0] / SO |
+| `FLASH_DQ1` | R15 | 14 | IO[1] / SI (MOSI) |
+| `FLASH_DQ2` | P14 | 14 | IO[2] / WP |
+| `FLASH_DQ3` | N14 | 14 | IO[3] / HOLD |
+| `FLASH_CLK` | H13 | — | CCLK (dedicated, use STARTUPE2) |
 
 Bitstream config: SPIx4, 50 MHz, CFGBVS=VCCO, CONFIG_VOLTAGE=3.3V.
+Post-configuration flash access requires STARTUPE2 primitive for CCLK.
 
 ## PMOD Connectors
 
-All PMOD pins are Bank 35, LVCMOS33.
+Standard 12-pin PMOD (8 I/O + 2 GND + 2 VCC). Pins 5, 6 = GND, VCC.
+Pins 11, 12 = GND, VCC.
 
-**J10:**
+**J10 (Bank 35, LVCMOS33):**
 
 | Pin | FPGA Pin |
 |:---:|----------|
-| 1 | D3 |
-| 2 | A4 |
-| 3 | D4 |
+| 1 | D5 |
+| 2 | G5 |
+| 3 | G7 |
+| 4 | G8 |
+| 7 | E5 |
+| 8 | E6 |
+| 9 | D6 |
+| 10 | G6 |
+
+**J11 (Bank 35, LVCMOS33):**
+
+| Pin | FPGA Pin |
+|:---:|----------|
+| 1 | H4 |
+| 2 | F4 |
+| 3 | A4 |
 | 4 | A5 |
-| 7 | B4 |
-| 8 | D5 |
-| 9 | B5 |
-| 10 | C5 |
+| 7 | J4 |
+| 8 | G4 |
+| 9 | B4 |
+| 10 | B5 |
 
-Pins 5, 6 = GND, 3V3. Pins 11, 12 = GND, 3V3.
-
-**J11:**
+**J13 (Bank 14, LVCMOS33):**
 
 | Pin | FPGA Pin |
 |:---:|----------|
-| 1 | E3 |
-| 2 | B3 |
-| 3 | B2 |
-| 4 | C2 |
-| 7 | F3 |
-| 8 | B1 |
-| 9 | C1 |
-| 10 | A2 |
+| 1 | N22 |
+| 2 | N21 |
+| 3 | R20 |
+| 4 | T22 |
+| 7 | P20 |
+| 8 | N23 |
+| 9 | P21 |
+| 10 | R21 |
 
-**J13:**
+**J14 (Bank 14, LVCMOS33):**
 
 | Pin | FPGA Pin |
 |:---:|----------|
-| 1 | F2 |
-| 2 | E2 |
-| 3 | E1 |
-| 4 | D1 |
-| 7 | G2 |
-| 8 | G1 |
-| 9 | F4 |
-| 10 | G4 |
+| 1 | P23 |
+| 2 | R23 |
+| 3 | T24 |
+| 4 | T25 |
+| 7 | N24 |
+| 8 | P24 |
+| 9 | R22 |
+| 10 | T23 |
 
-**J12/J14 (40-pin breakout, Bank 13):**
+All PMOD pins are on dedicated I/O — no sharing conflicts with other
+on-board peripherals.
 
-Full Bank 13 I/O breakout header. All pins LVCMOS33. Pin mapping requires
-schematic reference (bank 13 signals routed to 20x2 header).
+## J12 Breakout Header (Bank 13, LVCMOS33)
 
-**Note**: PMOD J10/J11/J13 pins are shared with SD card, UART, HDMI, and
-config flash. Not all PMOD pins are simultaneously available — check for
-conflicts with active peripherals.
+40-pin (20x2) header. Full Bank 13 I/O breakout.
+
+| Pin | FPGA Pin | Pin | FPGA Pin |
+|:---:|----------|:---:|----------|
+| 1 | VIN | 2 | VIN |
+| 3 | U15 | 4 | U16 |
+| 5 | V16 | 6 | V17 |
+| 7 | V18 | 8 | W18 |
+| 9 | V19 | 10 | W19 |
+| 11 | T20 | 12 | U20 |
+| 13 | W21 | 14 | Y21 |
+| 15 | U22 | 16 | V22 |
+| 17 | V23 | 18 | W23 |
+| 19 | AB24 | 20 | AC24 |
+| 21 | AA24 | 22 | AB25 |
+| 23 | V24 | 24 | W24 |
+| 25 | AB26 | 26 | AC26 |
+| 27 | Y25 | 28 | AA25 |
+| 29 | W25 | 30 | Y26 |
+| 31 | V26 | 32 | W26 |
+| 33 | U25 | 34 | U26 |
+| 35 | NC | 36 | NC |
+| 37 | NC | 38 | NC |
+| 39 | VCCO_13 | 40 | VCCO_13 |
 
 ## FPGA I/O Banks
 
 | Bank | Voltage | Primary Function |
 |------|---------|------------------|
-| 13 | 3.3V | J12/J14 breakout header (40 pins) |
-| 14 | 3.3V | SDR SDRAM |
-| 15 | 3.3V | DDR3 + HDMI + LEDs + UART |
+| 13 | 3.3V | J12 breakout header (16 I/O pairs) |
+| 14 | 3.3V | SDR SDRAM + config flash + PMOD J13/J14 |
+| 15 | 3.3V | DDR3 data + LEDs + SDR SDRAM (partial) |
 | 16 | 3.3V | DDR3 address/control |
-| 34 | 3.3V | Ethernet TX/RX/control |
-| 35 | 3.3V | PMOD (J10, J11, J13) + config flash |
+| 34 | 3.3V | Ethernet + SD card (CLK/DAT0/DAT1/CD) + KEY1 |
+| 35 | 3.3V | HDMI + UART + PMOD J10/J11 + SD card (CMD/DAT2/DAT3) |
 
 ## JOP Porting Considerations
 
