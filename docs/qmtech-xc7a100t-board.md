@@ -137,14 +137,34 @@ From `/srv/git/qmtech/QMTECH_XC7A75T-100T-200T_Core_Board/XC7A100T/Software_XC7A
 | `ddr3_dqs_p[1]` | A23 |
 | `ddr3_dqs_n[1]` | A24 |
 
-### Other Core Board Pins
+### System Pins
 
-| Signal | Pin | Function |
-|--------|-----|----------|
-| `sys_clk` | U22 | 50 MHz oscillator (LVCMOS33) |
-| `sys_rst_n` | P4 | Reset button (active low, LVCMOS33) |
-| `led[0]` | T23 | Core board LED 0 (LVCMOS33) |
-| `led[1]` | R23 | Core board LED 1 (LVCMOS33) |
+| Signal | Pin | I/O Standard | Function |
+|--------|-----|-------------|----------|
+| `sys_clk` | U22 | LVCMOS33 | 50 MHz oscillator |
+| `sys_rst_n` | P4 | LVCMOS33 | Reset button (active low) |
+| `led[0]` | T23 | LVCMOS33 | Core board LED 0 |
+| `led[1]` | R23 | LVCMOS33 | Core board LED 1 |
+
+### On-Board UART (CH340N)
+
+| Signal | Pin | Direction |
+|--------|-----|-----------|
+| `uart_rx` | F3 | CH340N → FPGA |
+| `uart_tx` | E3 | FPGA → CH340N |
+
+The core board has a CH340N USB-to-UART bridge connected to a Mini USB
+connector. When used with the DB_FPGA daughter board, the UART on the
+daughter board (CP2102N) is on different FPGA pins via the J2/J3 connector.
+
+### J2/J3 Connector Mapping
+
+The J2 and J3 headers are 32x2 pin (64 pins each). The connector-to-FPGA
+pin mapping is in the core board schematic:
+`Hardware/QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf`
+
+All three variants (XC7A75T, XC7A100T, XC7A200T) use the same FGG676 package
+and identical pin assignments.
 
 ## JOP DDR3 Compatibility
 
