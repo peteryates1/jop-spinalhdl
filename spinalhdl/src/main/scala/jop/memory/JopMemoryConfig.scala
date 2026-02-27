@@ -149,7 +149,8 @@ object JopAddressSpace {
  *   0xAC-0xAF  BmbVgaDma    1 slot  (4 addrs)   match a(7:2) === 0x2B
  *   0xB0-0xBF  BmbSdNative  4 slots (16 addrs)  match a(7:4) === 0xB
  *   0xC0-0xCF  BmbVgaText   4 slots (16 addrs)  match a(7:4) === 0xC
- *   0xD0-0xFF  (free)       12 slots for future devices
+ *   0xD0-0xD3  BmbCfgFlash  1 slot  (4 addrs)   match a(7:2) === 0x34
+ *   0xD4-0xFF  (free)       11 slots for future devices
  */
 object JopIoSpace {
   // Device base addresses (within 8-bit ioAddr space, bipush range 0x80-0xFF)
@@ -161,6 +162,7 @@ object JopIoSpace {
   val VGA_DMA_BASE   = 0xAC  // 1 slot  (4 addrs),  2-bit sub-addr
   val SD_NATIVE_BASE = 0xB0  // 4 slots (16 addrs), 4-bit sub-addr
   val VGA_TEXT_BASE  = 0xC0  // 4 slots (16 addrs), 4-bit sub-addr
+  val CFG_FLASH_BASE = 0xD0  // 1 slot  (4 addrs),  2-bit sub-addr
 
   // Named register addresses (base + offset)
   def SYS_CNT      = SYS_BASE + 0   // System counter (read), Interrupt enable (write)
@@ -196,6 +198,7 @@ object JopIoSpace {
   def isVgaDma(a: UInt): Bool    = a(7 downto 2) === (VGA_DMA_BASE >> 2)
   def isSdNative(a: UInt): Bool  = a(7 downto 4) === (SD_NATIVE_BASE >> 4)
   def isVgaText(a: UInt): Bool   = a(7 downto 4) === (VGA_TEXT_BASE >> 4)
+  def isCfgFlash(a: UInt): Bool  = a(7 downto 2) === (CFG_FLASH_BASE >> 2)
 
   // Sub-address extraction (all return 4-bit UInt for uniform device interface)
   def sysAddr(a: UInt): UInt       = a(3 downto 0)
@@ -206,6 +209,7 @@ object JopIoSpace {
   def vgaDmaAddr(a: UInt): UInt    = a(1 downto 0).resize(4)
   def sdNativeAddr(a: UInt): UInt  = a(3 downto 0)
   def vgaTextAddr(a: UInt): UInt   = a(3 downto 0)
+  def cfgFlashAddr(a: UInt): UInt  = a(1 downto 0).resize(4)
 }
 
 /**

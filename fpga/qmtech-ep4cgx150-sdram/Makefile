@@ -30,6 +30,14 @@
 #   make build-config-flash-exerciser    - Quartus compile config flash exerciser
 #   make program-config-flash-exerciser  - Program config flash exerciser via JTAG
 #   make full-config-flash-exerciser     - generate + build + program + monitor
+#   make generate-flash-programmer       - Generate flash programmer Verilog
+#   make build-flash-programmer          - Quartus compile flash programmer
+#   make program-flash-programmer        - Program flash programmer via JTAG
+#   make full-flash-programmer           - generate + build + program + monitor
+#   make flash-program                   - Run Python flash programmer script
+#   make flash-image     - Create combined flash image (.rbf + .jop)
+#   make flash-jic       - Create .jic for JTAG flash programming
+#   make program-flash   - Program flash via JTAG (SFL + .jic)
 #   make all             - microcode + generate + build
 #   make run             - program + download + monitor
 #   make full            - microcode + generate + build + run
@@ -63,23 +71,35 @@ GENERATED_DBFPGA_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSdramTop.v
 GENERATED_SD_NATIVE_V = $(PROJECT_ROOT)/spinalhdl/generated/SdNativeExerciserTop.v
 GENERATED_SD_SPI_V = $(PROJECT_ROOT)/spinalhdl/generated/SdSpiExerciserTop.v
 GENERATED_CFG_FLASH_V = $(PROJECT_ROOT)/spinalhdl/generated/ConfigFlashExerciserTop.v
+GENERATED_FLASH_PROG_V = $(PROJECT_ROOT)/spinalhdl/generated/FlashProgrammerTop.v
+GENERATED_FLASH_BOOT_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSdramTop.v
+
+# Flash image settings
+JOP_OFFSET ?= 0x800000
 
 # Quartus projects
 QP = jop_sdram
 QP_SMP = jop_smp_sdram
 QP_DBFPGA = jop_dbfpga
+QP_FLASH_BOOT = jop_flash_boot
 QP_SD_NATIVE = sd_native_exerciser
 QP_SD_SPI = sd_spi_exerciser
 QP_CFG_FLASH = config_flash_exerciser
+QP_FLASH_PROG = flash_programmer
 OUTPUT_DIR = output_files
+JOP_APP_BIN = $(OUTPUT_DIR)/jop_app.bin
+FLASH_COF = $(OUTPUT_DIR)/flash_boot.cof
+FLASH_JIC = $(OUTPUT_DIR)/flash_image.jic
 SOF_FILE = $(OUTPUT_DIR)/$(QP).sof
 SOF_SMP_FILE = $(OUTPUT_DIR)/$(QP_SMP).sof
 SOF_DBFPGA_FILE = $(OUTPUT_DIR)/$(QP_DBFPGA).sof
+SOF_FLASH_BOOT_FILE = $(OUTPUT_DIR)/$(QP_FLASH_BOOT).sof
 SOF_SD_NATIVE_FILE = $(OUTPUT_DIR)/$(QP_SD_NATIVE).sof
 SOF_SD_SPI_FILE = $(OUTPUT_DIR)/$(QP_SD_SPI).sof
 SOF_CFG_FLASH_FILE = $(OUTPUT_DIR)/$(QP_CFG_FLASH).sof
+SOF_FLASH_PROG_FILE = $(OUTPUT_DIR)/$(QP_FLASH_PROG).sof
 
-.PHONY: all microcode generate generate-smp generate-dbfpga generate-dbfpga-vgadma generate-sd-native-exerciser generate-sd-spi-exerciser generate-config-flash-exerciser build build-smp build-dbfpga build-dbfpga-vgadma build-sd-native-exerciser build-sd-spi-exerciser build-config-flash-exerciser program program-smp program-dbfpga program-dbfpga-vgadma program-sd-native-exerciser program-sd-spi-exerciser program-config-flash-exerciser download monitor run run-smp run-dbfpga run-dbfpga-vgadma full full-smp full-dbfpga full-dbfpga-vgadma full-sd-native-exerciser full-sd-spi-exerciser full-config-flash-exerciser clean
+.PHONY: all microcode microcode-flash generate generate-smp generate-dbfpga generate-dbfpga-vgadma generate-flash-boot generate-sd-native-exerciser generate-sd-spi-exerciser generate-config-flash-exerciser generate-flash-programmer build build-smp build-dbfpga build-dbfpga-vgadma build-flash-boot build-sd-native-exerciser build-sd-spi-exerciser build-config-flash-exerciser build-flash-programmer program program-smp program-dbfpga program-dbfpga-vgadma program-flash-boot program-sd-native-exerciser program-sd-spi-exerciser program-config-flash-exerciser program-flash-programmer download monitor run run-smp run-dbfpga run-dbfpga-vgadma flash-image flash-jic program-flash flash-program full full-smp full-dbfpga full-dbfpga-vgadma full-flash-boot full-sd-native-exerciser full-sd-spi-exerciser full-config-flash-exerciser full-flash-programmer clean
 
 # Default: microcode + generate + build
 all: microcode generate build
@@ -96,10 +116,14 @@ full-dbfpga: microcode generate-dbfpga build-dbfpga run-dbfpga
 # DB_FPGA VGA DMA full flow
 full-dbfpga-vgadma: microcode generate-dbfpga-vgadma build-dbfpga-vgadma run-dbfpga-vgadma
 
+# Flash boot full flow
+full-flash-boot: microcode-flash generate-flash-boot build-flash-boot
+
 # SD exerciser full flows (no microcode or download needed)
 full-sd-native-exerciser: generate-sd-native-exerciser build-sd-native-exerciser program-sd-native-exerciser monitor
 full-sd-spi-exerciser: generate-sd-spi-exerciser build-sd-spi-exerciser program-sd-spi-exerciser monitor
 full-config-flash-exerciser: generate-config-flash-exerciser build-config-flash-exerciser program-config-flash-exerciser monitor
+full-flash-programmer: generate-flash-programmer build-flash-programmer program-flash-programmer monitor
 
 # Program + download + monitor
 run: program download monitor
@@ -114,6 +138,10 @@ run-dbfpga-vgadma: program-dbfpga-vgadma download monitor
 microcode:
 	cd $(ASM_DIR) && $(MAKE) serial
 	@echo "=== Serial microcode generated ==="
+
+microcode-flash:
+	cd $(ASM_DIR) && $(MAKE) flash
+	@echo "=== Flash microcode generated ==="
 
 # --------------------------------------------------------------------------
 # SpinalHDL Verilog generation
@@ -135,6 +163,10 @@ generate-dbfpga-vgadma:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopDbFpgaVgaDmaTopVerilog"
 	@echo "=== DB_FPGA VGA DMA Verilog generated: $(GENERATED_DBFPGA_V) ==="
 
+generate-flash-boot:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopCfgFlashTopVerilog"
+	@echo "=== Flash boot Verilog generated: $(GENERATED_FLASH_BOOT_V) ==="
+
 generate-sd-native-exerciser:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.SdNativeExerciserTopVerilog"
 	@echo "=== SD Native Exerciser Verilog generated: $(GENERATED_SD_NATIVE_V) ==="
@@ -146,6 +178,10 @@ generate-sd-spi-exerciser:
 generate-config-flash-exerciser:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.ConfigFlashExerciserTopVerilog"
 	@echo "=== Config Flash Exerciser Verilog generated: $(GENERATED_CFG_FLASH_V) ==="
+
+generate-flash-programmer:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.FlashProgrammerTopVerilog"
+	@echo "=== Flash Programmer Verilog generated: $(GENERATED_FLASH_PROG_V) ==="
 
 # --------------------------------------------------------------------------
 # Quartus build
@@ -180,6 +216,15 @@ $(SOF_DBFPGA_FILE): $(GENERATED_DBFPGA_V) $(QP_DBFPGA).qsf $(QP).sdc dram_pll.vh
 
 build-dbfpga-vgadma: $(SOF_DBFPGA_FILE)
 
+build-flash-boot: $(SOF_FLASH_BOOT_FILE)
+
+$(SOF_FLASH_BOOT_FILE): $(GENERATED_FLASH_BOOT_V) $(QP_FLASH_BOOT).qsf $(QP).sdc dram_pll.vhd
+	$(QUARTUS_BIN)/quartus_map $(QP_FLASH_BOOT)
+	$(QUARTUS_BIN)/quartus_fit $(QP_FLASH_BOOT)
+	$(QUARTUS_BIN)/quartus_asm $(QP_FLASH_BOOT)
+	$(QUARTUS_BIN)/quartus_sta $(QP_FLASH_BOOT)
+	@echo "=== Flash Boot Build complete: $(SOF_FLASH_BOOT_FILE) ==="
+
 build-sd-native-exerciser: $(SOF_SD_NATIVE_FILE)
 
 $(SOF_SD_NATIVE_FILE): $(GENERATED_SD_NATIVE_V) $(QP_SD_NATIVE).qsf sd_exerciser.sdc dram_pll.vhd
@@ -206,6 +251,15 @@ $(SOF_CFG_FLASH_FILE): $(GENERATED_CFG_FLASH_V) $(QP_CFG_FLASH).qsf sd_exerciser
 	$(QUARTUS_BIN)/quartus_asm $(QP_CFG_FLASH)
 	$(QUARTUS_BIN)/quartus_sta $(QP_CFG_FLASH)
 	@echo "=== Config Flash Exerciser Build complete: $(SOF_CFG_FLASH_FILE) ==="
+
+build-flash-programmer: $(SOF_FLASH_PROG_FILE)
+
+$(SOF_FLASH_PROG_FILE): $(GENERATED_FLASH_PROG_V) $(QP_FLASH_PROG).qsf sd_exerciser.sdc dram_pll.vhd
+	$(QUARTUS_BIN)/quartus_map $(QP_FLASH_PROG)
+	$(QUARTUS_BIN)/quartus_fit $(QP_FLASH_PROG)
+	$(QUARTUS_BIN)/quartus_asm $(QP_FLASH_PROG)
+	$(QUARTUS_BIN)/quartus_sta $(QP_FLASH_PROG)
+	@echo "=== Flash Programmer Build complete: $(SOF_FLASH_PROG_FILE) ==="
 
 # --------------------------------------------------------------------------
 # FPGA programming
@@ -311,6 +365,103 @@ program-config-flash-exerciser: $(SOF_CFG_FLASH_FILE) $(QP_CFG_FLASH).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_CFG_FLASH).cdf
 	@echo "=== Config Flash Exerciser FPGA programmed ==="
 
+$(QP_FLASH_PROG).cdf: $(SOF_FLASH_PROG_FILE)
+	@echo '/* Auto-generated CDF */' > $@
+	@echo 'JedecChain;' >> $@
+	@echo '	FileRevision(JESD32A);' >> $@
+	@echo '	DefaultMfr(6E);' >> $@
+	@echo '	P ActionCode(Cfg)' >> $@
+	@echo '		Device PartName(EP4CGX150DF27) Path("$(OUTPUT_DIR)/") File("$(QP_FLASH_PROG).sof") MfrSpec(OpMask(1));' >> $@
+	@echo 'ChainEnd;' >> $@
+	@echo 'AlteraBegin;' >> $@
+	@echo '	ChainType(JTAG);' >> $@
+	@echo 'AlteraEnd;' >> $@
+
+program-flash-programmer: $(SOF_FLASH_PROG_FILE) $(QP_FLASH_PROG).cdf
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_FLASH_PROG).cdf
+	@echo "=== Flash Programmer FPGA programmed ==="
+
+$(QP_FLASH_BOOT).cdf: $(SOF_FLASH_BOOT_FILE)
+	@echo '/* Auto-generated CDF */' > $@
+	@echo 'JedecChain;' >> $@
+	@echo '	FileRevision(JESD32A);' >> $@
+	@echo '	DefaultMfr(6E);' >> $@
+	@echo '	P ActionCode(Cfg)' >> $@
+	@echo '		Device PartName(EP4CGX150DF27) Path("$(OUTPUT_DIR)/") File("$(QP_FLASH_BOOT).sof") MfrSpec(OpMask(1));' >> $@
+	@echo 'ChainEnd;' >> $@
+	@echo 'AlteraBegin;' >> $@
+	@echo '	ChainType(JTAG);' >> $@
+	@echo 'AlteraEnd;' >> $@
+
+program-flash-boot: $(SOF_FLASH_BOOT_FILE) $(QP_FLASH_BOOT).cdf
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_FLASH_BOOT).cdf
+	@echo "=== Flash Boot FPGA programmed ==="
+
+# --------------------------------------------------------------------------
+# Flash image creation and programming
+# --------------------------------------------------------------------------
+
+# Convert .sof to .rpd (via .pof) and create combined flash image
+# RPD has correct AS option bits; RBF does not.
+flash-image: $(SOF_FLASH_BOOT_FILE)
+	$(QUARTUS_BIN)/quartus_cpf -c -d EPCS128 $(SOF_FLASH_BOOT_FILE) $(OUTPUT_DIR)/$(QP_FLASH_BOOT).pof
+	$(QUARTUS_BIN)/quartus_cpf -c $(OUTPUT_DIR)/$(QP_FLASH_BOOT).pof $(OUTPUT_DIR)/$(QP_FLASH_BOOT).rpd
+	python3 ../scripts/make_flash_image.py \
+		$(OUTPUT_DIR)/$(QP_FLASH_BOOT).rpd $(JOP_FILE) \
+		$(OUTPUT_DIR)/flash_image.bin --jop-offset $(JOP_OFFSET) \
+		--jop-binary $(JOP_APP_BIN)
+	@echo "=== Flash image created: $(OUTPUT_DIR)/flash_image.bin ==="
+
+# Create .jic from .sof + .jop for flash programming via .cof
+flash-jic: flash-image
+	@JOP_SIZE=$$(stat -c%s $(JOP_APP_BIN)) && \
+	JOP_START=$$(printf '%08X' $$(($(JOP_OFFSET)))) && \
+	JOP_END=$$(printf '%08X' $$(($(JOP_OFFSET) + $$JOP_SIZE - 1))) && \
+	{ echo '<?xml version="1.0" encoding="US-ASCII" standalone="yes"?>'; \
+	  echo '<cof>'; \
+	  echo '  <output_filename>$(FLASH_JIC)</output_filename>'; \
+	  echo '  <n_pages>1</n_pages>'; \
+	  echo '  <width>1</width>'; \
+	  echo '  <mode>7</mode>'; \
+	  echo '  <sof_data>'; \
+	  echo '    <user_name>Page_0</user_name>'; \
+	  echo '    <page_flags>1</page_flags>'; \
+	  echo '    <bit0>'; \
+	  echo '      <sof_filename>$(SOF_FLASH_BOOT_FILE)</sof_filename>'; \
+	  echo '    </bit0>'; \
+	  echo '  </sof_data>'; \
+	  echo '  <raw_binary_data>'; \
+	  echo '    <raw_binary_filename>$(JOP_APP_BIN)</raw_binary_filename>'; \
+	  echo "    <start_address>$$JOP_START</start_address>"; \
+	  echo "    <end_address>$$JOP_END</end_address>"; \
+	  echo '  </raw_binary_data>'; \
+	  echo '  <eprom_name>EPCS128</eprom_name>'; \
+	  echo '  <flash_loader_device>EP4CGX150</flash_loader_device>'; \
+	  echo '</cof>'; } > $(FLASH_COF)
+	$(QUARTUS_BIN)/quartus_cpf -c $(FLASH_COF)
+	@echo "=== JIC created: $(FLASH_JIC) ==="
+
+# Program flash via JTAG (indirect, using Quartus SFL)
+# Two-step process: pre-load SFL bridge, then program .jic
+# The SFL must be loaded first on Cyclone IV GX boards.
+SFL_SOF := $(QUARTUS_BIN)/../common/devinfo/programmer/sfl_ep4cgx150.sof
+program-flash: flash-jic
+	@echo "Loading Serial Flash Loader into FPGA..."
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" --mode=JTAG \
+		-o "P;$(SFL_SOF)@1"
+	@echo "Programming flash with bitstream + application..."
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" --mode=JTAG \
+		-o "P;$(FLASH_JIC)@1"
+	@echo "=== Flash programmed. Power-cycle board for autonomous boot. ==="
+
+# --------------------------------------------------------------------------
+# UART-based flash programming (via FlashProgrammerTop)
+# --------------------------------------------------------------------------
+
+flash-program:
+	python3 ../scripts/flash_program.py $(OUTPUT_DIR)/flash_image.bin \
+		--port $(SERIAL_PORT) --baud $(BAUD_RATE) -v
+
 # --------------------------------------------------------------------------
 # Serial download and UART monitor
 # --------------------------------------------------------------------------
@@ -326,5 +477,5 @@ monitor:
 # --------------------------------------------------------------------------
 
 clean:
-	rm -rf output_files db incremental_db $(QP).cdf $(QP_SMP).cdf $(QP_DBFPGA).cdf $(QP_SD_NATIVE).cdf $(QP_SD_SPI).cdf $(QP_CFG_FLASH).cdf
+	rm -rf output_files db incremental_db $(QP).cdf $(QP_SMP).cdf $(QP_DBFPGA).cdf $(QP_FLASH_BOOT).cdf $(QP_SD_NATIVE).cdf $(QP_SD_SPI).cdf $(QP_CFG_FLASH).cdf $(QP_FLASH_PROG).cdf
 	rm -f *.rpt *.done *.jdi *.sld *.smsg *.summary *.pin

@@ -207,6 +207,14 @@ fpu_const_op  = -14
 fpu_const_res = -13
 #endif
 
+#ifdef FLASH
+// Config flash SPI I/O registers (BmbConfigFlash at 0xD0-0xD3)
+// bipush: 0xD0=208 unsigned = -48 signed, etc.
+io_cf_status	= -48
+io_cf_data		= -47
+io_cf_div		= -46
+#endif
+
 
 //
 //	first vars for start
@@ -368,10 +376,107 @@ cpu0_load:
 
 #ifdef FLASH
 //
-//	start address of Java program in flash: 0x80000
+//	SPI flash setup: assert CS, send READ_DATA (0x03) + 3 address bytes
+//	Flash offset 0x800000 (8 MB) for .jop application
 //
-			ldi	524288		// only for jvmflash usefull
-			stm	addr
+
+// Set clock divider = 3 (10 MHz at 80 MHz sys_clk)
+			ldi	3
+			ldi	io_cf_div
+			stmwa
+			stmwd
+			wait
+			wait
+
+// Assert CS (write 1 to control register, bit0 = csAssert)
+			ldi	1
+			ldi	io_cf_status
+			stmwa
+			stmwd
+			wait
+			wait
+
+// Send READ_DATA command (0x03)
+			ldi	3
+			ldi	io_cf_data
+			stmwa
+			stmwd
+			wait
+			wait
+cf_poll_cmd:
+			ldi	io_cf_status
+			stmra
+			ldi	1
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bnz	cf_poll_cmd
+			nop
+			nop
+
+// Send address byte 2 (MSB of 0x800000 = 0x80 = 128 decimal)
+			ldi	128
+			ldi	io_cf_data
+			stmwa
+			stmwd
+			wait
+			wait
+cf_poll_a2:
+			ldi	io_cf_status
+			stmra
+			ldi	1
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bnz	cf_poll_a2
+			nop
+			nop
+
+// Send address byte 1 (0x00)
+			ldi	0
+			ldi	io_cf_data
+			stmwa
+			stmwd
+			wait
+			wait
+cf_poll_a1:
+			ldi	io_cf_status
+			stmra
+			ldi	1
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bnz	cf_poll_a1
+			nop
+			nop
+
+// Send address byte 0 (LSB = 0x00)
+			ldi	0
+			ldi	io_cf_data
+			stmwa
+			stmwd
+			wait
+			wait
+cf_poll_a0:
+			ldi	io_cf_status
+			stmra
+			ldi	1
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bnz	cf_poll_a0
+			nop
+			nop
+
+// SPI flash now streams sequential data bytes on each dummy read
 #endif
 
 //
@@ -384,17 +489,33 @@ xram_loop:
 			ldi	4			// byte counter
 ser4:
 #ifdef FLASH
-// ************** change for load from flash *********************
-			ldm addr
-			stmra				// read ext. mem, mem_bsy comes one cycle later
-			ldm	addr
+// ************** SPI flash byte read via BmbConfigFlash *********************
+// Send dummy 0xFF to clock in one data byte
+			ldi	-1
+			ldi	io_cf_data
+			stmwa
+			stmwd
+			wait
+			wait
+cf_poll_byte:
+			ldi	io_cf_status
+			stmra
 			ldi	1
-			add
-			stm	addr
 			wait
 			wait
-			ldmrd		 		// read ext. mem
-// ************** end change for load from flash *********************
+			ldmrd
+			and
+			nop
+			bnz	cf_poll_byte
+			nop
+			nop
+// Read received byte
+			ldi	io_cf_data
+			stmra
+			wait
+			wait
+			ldmrd
+// ************** end SPI flash byte read *********************
 #else
 #ifdef USB
 // ************** change for load from USB interface *********************
@@ -516,13 +637,29 @@ not_first:
 			ldm	a
 			xor
 			nop
+#ifdef FLASH
+			bz	cf_done
+#else
 			bz	cpux_boot
+#endif
 			nop
 			nop
 
 			jmp	xram_loop
 			nop
 			nop
+
+#ifdef FLASH
+cf_done:
+// Deassert CS (write 0 to control register)
+			ldi	0
+			ldi	io_cf_status
+			stmwa
+			stmwd
+			wait
+			wait
+// Fall through to cpux_boot
+#endif
 
 #endif // SIMULATION
 

@@ -1,0 +1,4 @@
+QUARTUS_VERSION = "25.1"
+DATE = "2026-02-26"
+
+PROJECT_REVISION = "jop_flash_boot"

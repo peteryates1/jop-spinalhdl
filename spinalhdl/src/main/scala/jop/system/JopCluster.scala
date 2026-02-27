@@ -136,6 +136,12 @@ case class JopCluster(
     val mdioIn   = if (baseConfig.hasEth) Some(in Bool()) else None
     val phyReset = if (baseConfig.hasEth) Some(out Bool()) else None
 
+    // Config flash SPI pins (optional, core 0 only)
+    val cfDclk  = if (baseConfig.ioConfig.hasConfigFlash) Some(out Bool()) else None
+    val cfNcs   = if (baseConfig.ioConfig.hasConfigFlash) Some(out Bool()) else None
+    val cfAsdo  = if (baseConfig.ioConfig.hasConfigFlash) Some(out Bool()) else None
+    val cfData0 = if (baseConfig.ioConfig.hasConfigFlash) Some(in Bool()) else None
+
     // SD SPI pins (optional, core 0 only)
     val sdSpiSclk = if (baseConfig.ioConfig.hasSdSpi) Some(out Bool()) else None
     val sdSpiMosi = if (baseConfig.ioConfig.hasSdSpi) Some(out Bool()) else None
@@ -174,12 +180,13 @@ case class JopCluster(
       cpuId = i,
       cpuCnt = cpuCnt,
       ioConfig = baseConfig.ioConfig.copy(
-        hasUart     = (i == 0),
-        hasEth      = (i == 0) && baseConfig.ioConfig.hasEth,
-        hasSdSpi    = (i == 0) && baseConfig.ioConfig.hasSdSpi,
-        hasSdNative = (i == 0) && baseConfig.ioConfig.hasSdNative,
-        hasVgaDma   = (i == 0) && baseConfig.ioConfig.hasVgaDma,
-        hasVgaText  = (i == 0) && baseConfig.ioConfig.hasVgaText
+        hasUart        = (i == 0),
+        hasEth         = (i == 0) && baseConfig.ioConfig.hasEth,
+        hasSdSpi       = (i == 0) && baseConfig.ioConfig.hasSdSpi,
+        hasSdNative    = (i == 0) && baseConfig.ioConfig.hasSdNative,
+        hasVgaDma      = (i == 0) && baseConfig.ioConfig.hasVgaDma,
+        hasVgaText     = (i == 0) && baseConfig.ioConfig.hasVgaText,
+        hasConfigFlash = (i == 0) && baseConfig.ioConfig.hasConfigFlash
       )
     )
     JopCore(
@@ -506,6 +513,17 @@ case class JopCluster(
     io.sdSpiCs.get   := cores(0).io.sdSpiCs.get
     cores(0).io.sdSpiMiso.get := io.sdSpiMiso.get
     cores(0).io.sdSpiCd.get   := io.sdSpiCd.get
+  }
+
+  // ==================================================================
+  // Config Flash (core 0 only)
+  // ==================================================================
+
+  if (baseConfig.ioConfig.hasConfigFlash) {
+    io.cfDclk.get  := cores(0).io.cfDclk.get
+    io.cfNcs.get   := cores(0).io.cfNcs.get
+    io.cfAsdo.get  := cores(0).io.cfAsdo.get
+    cores(0).io.cfData0.get := io.cfData0.get
   }
 
   // ==================================================================

@@ -79,7 +79,8 @@ case class JopSdramTop(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
   debugConfig: Option[DebugConfig] = None,
-  ioConfig: IoConfig = IoConfig()
+  ioConfig: IoConfig = IoConfig(),
+  jumpTable: JumpTableInitData = JumpTableInitData.serial
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
 
@@ -126,6 +127,12 @@ case class JopSdramTop(
     val sd_dat_2 = if (ioConfig.hasSdNative) Some(master(TriState(Bool()))) else None
     val sd_dat_3 = if (ioConfig.hasSdNative) Some(master(TriState(Bool()))) else None
     val sd_cd    = if (ioConfig.hasSdNative) Some(in Bool()) else None
+
+    // Config flash SPI (optional, direct I/O to config flash pins)
+    val cf_dclk  = if (ioConfig.hasConfigFlash) Some(out Bool()) else None
+    val cf_ncs   = if (ioConfig.hasConfigFlash) Some(out Bool()) else None
+    val cf_asdo  = if (ioConfig.hasConfigFlash) Some(out Bool()) else None
+    val cf_data0 = if (ioConfig.hasConfigFlash) Some(in Bool()) else None
 
     // SD SPI (optional, unidirectional)
     val sd_spi_clk  = if (ioConfig.hasSdSpi) Some(out Bool()) else None
@@ -270,7 +277,7 @@ case class JopSdramTop(
       cpuCnt = cpuCnt,
       baseConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(burstLen = 4),
-        jumpTable = JumpTableInitData.serial,
+        jumpTable = jumpTable,
         clkFreqHz = 80000000L,
         ioConfig = ioConfig
       ),
@@ -457,6 +464,17 @@ case class JopSdramTop(
       cluster.io.sdSpiMiso.get := io.sd_spi_miso.get
       cluster.io.sdSpiCd.get   := io.sd_spi_cd.get
     }
+
+    // ==================================================================
+    // Config Flash (optional)
+    // ==================================================================
+
+    if (ioConfig.hasConfigFlash) {
+      io.cf_dclk.get := cluster.io.cfDclk.get
+      io.cf_ncs.get  := cluster.io.cfNcs.get
+      io.cf_asdo.get := cluster.io.cfAsdo.get
+      cluster.io.cfData0.get := io.cf_data0.get
+    }
   }
 }
 
@@ -597,4 +615,32 @@ object JopSmpDbFpgaTopVerilog extends App {
   )))
 
   println(s"Generated: spinalhdl/generated/JopSmpSdramTop.v ($cpuCnt cores, DB_FPGA I/O)")
+}
+
+/**
+ * Generate Verilog for JopSdramTop with config flash (for flash boot)
+ */
+object JopCfgFlashTopVerilog extends App {
+  val romFilePath = "asm/generated/flash/mem_rom.dat"
+  val ramFilePath = "asm/generated/flash/mem_ram.dat"
+
+  val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
+  val ramData = JopFileLoader.loadStackRam(ramFilePath)
+
+  println(s"Loaded ROM: ${romData.length} entries")
+  println(s"Loaded RAM: ${ramData.length} entries")
+
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = "spinalhdl/generated",
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
+  ).generate(InOutWrapper(JopSdramTop(
+    cpuCnt = 1,
+    romInit = romData,
+    ramInit = ramData,
+    ioConfig = IoConfig.qmtechSdram,
+    jumpTable = JumpTableInitData.flash
+  )))
+
+  println("Generated: spinalhdl/generated/JopSdramTop.v (config flash boot)")
 }

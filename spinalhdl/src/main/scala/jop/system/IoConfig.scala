@@ -29,8 +29,9 @@ case class IoConfig(
   ethGmii:      Boolean = false,
   hasSdSpi:     Boolean = false,
   hasSdNative:  Boolean = false,
-  hasVgaDma:    Boolean = false,
-  hasVgaText:   Boolean = false,
+  hasVgaDma:       Boolean = false,
+  hasVgaText:      Boolean = false,
+  hasConfigFlash:  Boolean = false,
 
   // UART
   uartBaudRate: Int = 1000000,
@@ -43,7 +44,10 @@ case class IoConfig(
   sdNativeClkDivInit: Int = 99,    // ~400 kHz at 80 MHz
 
   // VGA DMA
-  vgaDmaFifoDepth: Int = 512
+  vgaDmaFifoDepth: Int = 512,
+
+  // Config flash
+  cfgFlashClkDivInit: Int = 3   // ~10 MHz at 80 MHz
 ) {
   require(!ethGmii || hasEth, "ethGmii requires hasEth")
 
@@ -75,8 +79,8 @@ object IoConfig {
   /** Minimal: UART only (simulation, basic boards) */
   def minimal: IoConfig = IoConfig()
 
-  /** QMTECH EP4CGX150 + SDRAM: UART + Ethernet */
-  def qmtechSdram: IoConfig = IoConfig(hasEth = true)
+  /** QMTECH EP4CGX150 + SDRAM: UART + Ethernet + Config Flash */
+  def qmtechSdram: IoConfig = IoConfig(hasEth = true, hasConfigFlash = true)
 
   /** QMTECH EP4CGX150 + DB_FPGA: full I/O */
   def qmtechDbFpga: IoConfig = IoConfig(

@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.bus.bmb._
 import jop.pipeline._
 import jop.memory._
-import jop.io.{BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdSpi, BmbSdNative, BmbVgaDma, BmbVgaText, SyncIn, SyncOut}
+import jop.io.{BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdSpi, BmbSdNative, BmbVgaDma, BmbVgaText, BmbConfigFlash, SyncIn, SyncOut}
 import spinal.lib.com.eth._
 import jop.{JopPipeline, JumpTableData}
 
@@ -135,6 +135,12 @@ case class JopCore(
     val sdSpiMiso = if (config.ioConfig.hasSdSpi) Some(in Bool()) else None
     val sdSpiCs   = if (config.ioConfig.hasSdSpi) Some(out Bool()) else None
     val sdSpiCd   = if (config.ioConfig.hasSdSpi) Some(in Bool()) else None
+
+    // Config flash SPI pins (optional)
+    val cfDclk  = if (config.ioConfig.hasConfigFlash) Some(out Bool()) else None
+    val cfNcs   = if (config.ioConfig.hasConfigFlash) Some(out Bool()) else None
+    val cfAsdo  = if (config.ioConfig.hasConfigFlash) Some(out Bool()) else None
+    val cfData0 = if (config.ioConfig.hasConfigFlash) Some(in Bool()) else None
 
     // SD Native pins (optional)
     val sdClk        = if (config.ioConfig.hasSdNative) Some(out Bool()) else None
@@ -425,6 +431,19 @@ case class JopCore(
     sd.io.cd         := io.sdSpiCd.get
   }
 
+  // Config Flash (0xD0-0xD3, optional)
+  val bmbCfgFlash = if (config.ioConfig.hasConfigFlash) Some(BmbConfigFlash(config.ioConfig.cfgFlashClkDivInit)) else None
+  bmbCfgFlash.foreach { cf =>
+    cf.io.addr   := JopIoSpace.cfgFlashAddr(ioAddr)
+    cf.io.rd     := memCtrl.io.ioRd && JopIoSpace.isCfgFlash(ioAddr)
+    cf.io.wr     := memCtrl.io.ioWr && JopIoSpace.isCfgFlash(ioAddr)
+    cf.io.wrData := memCtrl.io.ioWrData
+    io.cfDclk.get  := cf.io.dclk
+    io.cfNcs.get   := cf.io.ncs
+    io.cfAsdo.get  := cf.io.asdo
+    cf.io.data0    := io.cfData0.get
+  }
+
   // VGA DMA (0xAC-0xAF, optional)
   val bmbVgaDma = if (config.ioConfig.hasVgaDma && vgaCd.isDefined)
     Some(BmbVgaDma(config.memConfig.bmbParameter, vgaCd.get, config.ioConfig.vgaDmaFifoDepth))
@@ -520,6 +539,7 @@ case class JopCore(
   if (bmbVgaDma.isDefined)   when(JopIoSpace.isVgaDma(ioAddr))   { ioRdData := bmbVgaDma.get.io.rdData }
   if (bmbSdNative.isDefined) when(JopIoSpace.isSdNative(ioAddr)) { ioRdData := bmbSdNative.get.io.rdData }
   if (bmbVgaText.isDefined)  when(JopIoSpace.isVgaText(ioAddr))  { ioRdData := bmbVgaText.get.io.rdData }
+  if (bmbCfgFlash.isDefined) when(JopIoSpace.isCfgFlash(ioAddr)) { ioRdData := bmbCfgFlash.get.io.rdData }
   memCtrl.io.ioRdData := ioRdData
 
   // Watchdog output

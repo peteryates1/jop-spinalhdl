@@ -33,6 +33,14 @@ object JumpTableInitData {
     sysIntAddr  = jop.SerialJumpTableData.sysIntAddr,
     sysExcAddr  = jop.SerialJumpTableData.sysExcAddr
   )
+
+  /** FLASH-boot microcode jump table */
+  def flash: JumpTableInitData = JumpTableInitData(
+    entries     = jop.FlashJumpTableData.entries,
+    sysNoimAddr = jop.FlashJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.FlashJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.FlashJumpTableData.sysExcAddr
+  )
 }
 
 /**
