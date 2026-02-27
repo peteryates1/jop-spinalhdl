@@ -90,7 +90,7 @@ case class JopPipeline(
     // DMA control (from stack stage rotation controller)
     val dmaStart     = if (config.stackConfig.useStackCache) Some(out Bool()) else None
     val dmaIsSpill   = if (config.stackConfig.useStackCache) Some(out Bool()) else None
-    val dmaExtAddr   = if (config.stackConfig.useStackCache) Some(out UInt(26 bits)) else None
+    val dmaExtAddr   = if (config.stackConfig.useStackCache) Some(out UInt((config.stackConfig.cacheConfig.get.wordAddrWidth + 2) bits)) else None
     val dmaWordCount = if (config.stackConfig.useStackCache) Some(out UInt(8 bits)) else None
     val dmaBank      = if (config.stackConfig.useStackCache) Some(out UInt(2 bits)) else None
     // DMA status (from StackCacheDma via JopCore)

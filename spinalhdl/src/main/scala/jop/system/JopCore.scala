@@ -57,6 +57,7 @@ case class JopCoreConfig(
   def stackConfig = StackConfig(dataWidth, jpcWidth, ramWidth,
     cacheConfig = if (useStackCache) Some(StackCacheConfig(
       burstLen = memConfig.burstLen,
+      wordAddrWidth = memConfig.addressWidth - 2,
       spillBaseAddr = spillBaseAddrOverride.getOrElse {
         val memWords = (memConfig.mainMemSize / 4).toInt
         if (memConfig.stackRegionWordsPerCore > 0) {

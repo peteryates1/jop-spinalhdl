@@ -151,7 +151,8 @@ case class JopDdr3Top(
       cpuCnt = cpuCnt,
       baseConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(
-          addressWidth = 26,
+          addressWidth = 28,
+          mainMemSize = 256L * 1024 * 1024,  // 256MB DDR3 (MT41K128M16JT)
           burstLen = burstLen,
           stackRegionWordsPerCore = 8192   // 32KB per core for stack spill
         ),

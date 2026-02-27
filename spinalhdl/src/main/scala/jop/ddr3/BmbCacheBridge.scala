@@ -183,7 +183,7 @@ class BmbCacheBridge(p: BmbParameter, cacheAddrWidth: Int, cacheDataWidth: Int) 
       // Accept burst read command, latch parameters
       io.bmb.cmd.ready := True
       burstActive := True
-      burstAddr := io.bmb.cmd.payload.fragment.address
+      burstAddr := io.bmb.cmd.payload.fragment.address(cacheAddrWidth - 1 downto 0)
       burstWordsTotal := ((io.bmb.cmd.payload.fragment.length +^ U(1)) >> 2).resized
       burstWordsDone := 0
       burstSource := io.bmb.cmd.payload.fragment.source

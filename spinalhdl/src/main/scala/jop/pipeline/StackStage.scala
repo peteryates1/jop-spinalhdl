@@ -21,6 +21,7 @@ import jop.core.Shift
  * @param virtualSpWidth  Width of virtual SP/VP/AR registers (16 bits)
  * @param spillBaseAddr   Base word address in external memory for stack spill area
  * @param burstLen        DMA burst length in words (4 for SDR, 8 for DDR3)
+ * @param wordAddrWidth   Word address width (addressWidth - 2 type bits)
  */
 case class StackCacheConfig(
   numBanks: Int = 3,
@@ -28,7 +29,8 @@ case class StackCacheConfig(
   scratchSize: Int = 64,
   virtualSpWidth: Int = 16,
   spillBaseAddr: Int = 0x780000,
-  burstLen: Int = 4
+  burstLen: Int = 4,
+  wordAddrWidth: Int = 24
 ) {
   require(numBanks == 3, "Only 3-bank configuration supported")
   require(bankSize > 0 && bankSize <= 256, "Bank size must be 1-256")
@@ -191,7 +193,7 @@ case class StackStage(
     // DMA control (to StackCacheDma)
     val dmaStart     = if (useCache) Some(out Bool()) else None
     val dmaIsSpill   = if (useCache) Some(out Bool()) else None
-    val dmaExtAddr   = if (useCache) Some(out UInt(26 bits)) else None
+    val dmaExtAddr   = if (useCache) Some(out UInt((config.cacheConfig.get.wordAddrWidth + 2) bits)) else None
     val dmaWordCount = if (useCache) Some(out UInt(8 bits)) else None
     val dmaBank      = if (useCache) Some(out UInt(2 bits)) else None
 
@@ -571,11 +573,13 @@ case class StackStage(
     io.dmaBank.get := 0
 
     // Helper: compute external byte address for a bank's virtual base
-    // spillBaseAddr is a word address (e.g., 0x780000 = 24 bits), wider than spWidth (16 bits)
+    // spillBaseAddr is a word address, wider than spWidth (16 bits)
+    val wordW = cc.wordAddrWidth  // word address width (addressWidth - 2 type bits)
+    val byteW = wordW + 2        // byte address width
     def extByteAddr(bankBase: UInt): UInt = {
-      val spillBase = U(cc.spillBaseAddr, 24 bits)
-      val bankOffset = bankBase.resize(24) - cc.scratchSize
-      ((spillBase + bankOffset) << 2).resize(26)
+      val spillBase = U(cc.spillBaseAddr, wordW bits)
+      val bankOffset = bankBase.resize(wordW) - cc.scratchSize
+      ((spillBase + bankOffset) << 2).resize(byteW)
     }
 
     switch(rotState) {
