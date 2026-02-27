@@ -97,7 +97,7 @@ jop/
 │   ├── src/                   # Microcode source (jvm.asm, echo.asm)
 │   └── generated/             # Generated jump tables, ROM/RAM data
 ├── fpga/
-│   ├── scripts/               # download.py, monitor.py, usb_serial_map
+│   ├── scripts/               # download.py, monitor.py, make_flash_image.py, flash_program.py
 │   ├── ip/                    # Third-party IP (Altera SDRAM controller)
 │   ├── alchitry-au/           # DDR3 FPGA project (Vivado)
 │   ├── cyc5000-sdram/         # SDRAM FPGA project (Quartus, Cyclone V)
@@ -164,6 +164,16 @@ make build       # Quartus synthesis
 make program     # Program FPGA
 make download    # Download HelloWorld.jop over UART
 make monitor     # Watch serial output
+
+# Flash boot — autonomous boot from SPI flash, no JTAG needed after programming
+cd fpga/qmtech-ep4cgx150-sdram
+make full-flash-boot              # Microcode + generate + build flash boot design
+make flash-image                  # Create combined flash image (bitstream + .jop)
+make generate-flash-programmer    # Generate UART-SPI bridge
+make build-flash-programmer       # Build UART-SPI bridge
+make program-flash-programmer     # Load UART-SPI bridge via JTAG
+sudo python3 ../scripts/flash_program.py output_files/flash_image.bin --port /dev/ttyUSB0 -v
+# Power-cycle board — boots automatically from flash
 
 # DB_FPGA daughter board — QMTECH EP4CGX150 + Ethernet/VGA/SD (serial boot, 80 MHz)
 cd fpga/qmtech-ep4cgx150-sdram
@@ -376,6 +386,7 @@ Design notes and investigation logs in `docs/`:
 - [DB_FPGA Ethernet](docs/db-fpga-ethernet.md) — 1Gbps GMII architecture, pin mapping, PHY config, SDC timing for RTL8211EG
 - [DB_FPGA VGA Text](docs/db-fpga-vga-text.md) — 80x30 text-mode VGA output, register map, Java API, setup guide
 - [DB_FPGA SD Card](docs/db-fpga-sd-card.md) — SD card native 4-bit mode, hardware verification, bugs found, clock speed constraints
+- [Flash Boot](docs/flash-boot.md) — autonomous Active Serial boot from W25Q128, UART flash programmer, flash image format
 - [SDR SDRAM GC Hang](docs/sdr-sdram-gc-hang.md) — resolved: SpinalHDL SdramCtrl DQ timing issue
 - [DDR3 GC Hang](docs/ddr3-gc-hang.md) — resolved (32KB L2 cache)
 
