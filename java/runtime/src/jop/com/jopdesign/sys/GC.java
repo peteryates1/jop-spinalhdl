@@ -68,6 +68,12 @@ public class GC {
 	 * as we do conservative stack scanning.
 	 */
 	static final int HANDLE_SIZE = 8;
+	/**
+	 * Maximum handle count.  Caps the handle table to avoid O(N) GC sweep
+	 * time explosion on large memories (256 MB+).  65536 handles = 512 K
+	 * words of handle area; sweep takes ~6 ms at 100 MHz.
+	 */
+	static final int MAX_HANDLES = 65536;
 
 	/**
 	 * The handle contains following data:
@@ -217,6 +223,7 @@ public class GC {
 			// handle_cnt = full_heap_size / (HANDLE_SIZE + TYPICAL_OBJ_SIZE)
 			// Use /16 approximation (same as before)
 			handle_cnt = full_heap_size >> 4;  // /16
+			if (handle_cnt > MAX_HANDLES) handle_cnt = MAX_HANDLES;
 			int handleArea = handle_cnt << 3;  // handle_cnt * HANDLE_SIZE
 
 			heapStart = mem_start + handleArea;
