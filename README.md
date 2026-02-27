@@ -290,6 +290,7 @@ Notes:
 - SMP (2-core) uses ~8% of EP4CGX150's 150K LEs, leaving substantial headroom for additional cores
 - Artix-7 single-core uses 16KB L2 cache; SMP uses 32KB L2 cache (512 sets × 4 ways). Per-core cost ~4,400 LUT, ~2,900 FF, ~2.5 BRAM
 - Vivado does not report per-hierarchy utilization; Artix-7 core-only numbers not available from build reports
+- Artix-7 single-core LUT includes ~1,584 LUT of distributed RAM from stack cache bank RAMs (`readAsync` not supported by Xilinx BRAM). Converting to `readSync` would save ~1,584 LUT/core. See [distributed RAM optimization](docs/artix7-distram-optimization.md)
 - See [Artix-7 core count estimates](docs/artix7-core-estimates.md) for scaling projections across the Artix-7 family
 
 ## Implementation Status
@@ -338,7 +339,8 @@ Notes:
 - Port target code — networking, etc.
 - Debug tooling — host-side debug client (Eclipse or standalone) connecting to the on-chip debug controller over UART for interactive debugging on FPGA hardware
 - Additional FPGA board targets
-- Stack cache — 3-bank rotation working in BRAM simulation (56/57 tests pass; DeepRecursion runs but needs >30M cycles); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
+- Stack cache — 3-bank rotation working in BRAM simulation (57/57 tests pass); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
+- Stack cache bank RAM optimization — convert `readAsync` to `readSync` on bank RAMs to enable Xilinx BRAM inference, saving ~1,584 LUTs on Artix-7 (81% → ~73% utilization). Currently forced to distributed RAM because Xilinx BRAM doesn't support async reads. Altera is unaffected (M9K/M10K supports async reads natively). See [distributed RAM optimization](docs/artix7-distram-optimization.md)
 - add quartus pll generator
 - Faster serial download — currently limited by per-word USB round-trip latency (~15s for 32KB)
 - Use Exerciser to find boundary performance for SDRAM/DDR3
@@ -366,6 +368,7 @@ Design notes and investigation logs in `docs/`:
 - [Programmer's Guide](docs/programmers-guide.md) — I/O register maps and Java API for all devices (BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdNative, BmbSdSpi, BmbVgaText)
 - [System Configuration](docs/system-configuration.md) — configuration reference: memory layout, JopCoreConfig, JopMemoryConfig, IoConfig, board configs, I/O register map
 - [Implementation Notes](docs/implementation-notes.md) — bugs found, cache details, I/O subsystem, SMP, GC architecture, memCopy
+- [Artix-7 Distributed RAM Optimization](docs/artix7-distram-optimization.md) — stack cache bank RAM `readAsync` → `readSync` for BRAM inference on Xilinx
 - [Cache Analysis](docs/cache-analysis.md) — cache performance analysis and technology cost model
 - [Memory Controller Comparison](docs/memory-controller-comparison.md) — VHDL vs SpinalHDL memory controller
 - [Stack Immediate Timing](docs/stack-immediate-timing.md) — stack stage timing for immediate operations
