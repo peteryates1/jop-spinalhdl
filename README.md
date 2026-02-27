@@ -338,7 +338,7 @@ Notes:
 - Port target code — networking, etc.
 - Debug tooling — host-side debug client (Eclipse or standalone) connecting to the on-chip debug controller over UART for interactive debugging on FPGA hardware
 - Additional FPGA board targets
-- Stack cache — 3-bank rotation working in BRAM simulation (57/57 tests pass including DeepRecursion); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
+- Stack cache — 3-bank rotation working in BRAM simulation (56/57 tests pass; DeepRecursion runs but needs >30M cycles); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
 - add quartus pll generator
 - Faster serial download — currently limited by per-word USB round-trip latency (~15s for 32KB)
 - Use Exerciser to find boundary performance for SDRAM/DDR3

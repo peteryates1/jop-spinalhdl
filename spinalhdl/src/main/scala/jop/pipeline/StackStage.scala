@@ -879,6 +879,19 @@ case class StackStage(
     }
   }
 
+  // Debug: capture the values that ACTUALLY drove B at each edge
+  // (RegNext captures pre-edge inputs, visible 1 cycle later in sim)
+  val bDbgEnaB = RegNext(io.enaB && !rotBusyDly) init(False)
+  val bDbgSelBmux = RegNext(io.selBmux) init(False)
+  val bDbgRamDout = RegNext(ramDout) init(0)
+  val bDbgA = RegNext(a) init(0)
+  val bDbgRdAddr = RegNext(ramRdaddrReg) init(0)
+  bDbgEnaB.simPublic()
+  bDbgSelBmux.simPublic()
+  bDbgRamDout.simPublic()
+  bDbgA.simPublic()
+  bDbgRdAddr.simPublic()
+
   // ==========================================================================
   // Stack Pointer and VP Register Process
   // ==========================================================================

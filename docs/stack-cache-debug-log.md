@@ -1,6 +1,14 @@
 # Stack Cache Debug Log
 
-## Bug Summary
+## Resolution (Bug #27)
+
+**Root cause**: `BytecodeFetchStage` had no stall input. During stack cache bank rotation (770+ cycle stall), `jopd(7 downto 0) := jbcData` was unconditionally updated every cycle, overwriting the correctly-accumulated `invokestatic` operand (`0x0003`) with the next bytecode (`0x3E` = istore_3). This caused `invokestatic` to read the wrong constant pool index (62 instead of 3), fetching a bogus method struct address from a different class's data area, which corrupted VP+0 and hung the processor.
+
+**Fix**: Added `stall` input to `BytecodeFetchStage`, gated `jopd`/`jpc`/`jinstr`/`jpc_br` updates with `when(!io.stall)`, wired `stackRotBusy` in `JopPipeline.scala`. See `implementation-notes.md` bug #27 for full details.
+
+---
+
+## Original Bug Summary (Pre-Fix Investigation)
 **Symptom**: Non-deterministic stack data corruption after 3rd bank rotation (overflow case) in the DeepRecursion test. A register gets garbage value 0x1FA21706 (varies across runs) at cycle ~5242140, corrupting the BC fill address. All other 56 JVM tests pass.
 
 **Failing test**: `DeepRecursion` (200-level recursion crossing 3+ bank boundaries) within `JopJvmTestsStackCacheBramSim`.

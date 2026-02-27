@@ -392,6 +392,7 @@ case class JopSimulator(
     // BytecodeFetch connections
     bcfetch.io.jfetch := fetch.io.nxt
     bcfetch.io.jopdfetch := fetch.io.opd
+    bcfetch.io.stall := False  // No stack cache in simulator
     bcfetch.io.jbr := decode.io.jbr
     bcfetch.io.zf := stack.io.zf
     bcfetch.io.nf := stack.io.nf

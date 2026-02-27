@@ -39,6 +39,7 @@ class BytecodeFetchStageFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.jbcWrAddr)
     anyseq(dut.io.jbcWrData)
     anyseq(dut.io.jbcWrEn)
+    anyseq(dut.io.stall)
     anyseq(dut.io.irq)
     anyseq(dut.io.exc)
     anyseq(dut.io.ena)
@@ -110,6 +111,7 @@ class BytecodeFetchStageFormal extends SpinalFormalFunSuite {
         dut.io.jbcWrAddr := U(0)
         dut.io.jbcWrData := B(0)
         dut.io.jbcWrEn := False
+        dut.io.stall := False
 
         // Scenario: IRQ arrives while ena=0, then ena goes high with jfetch
         dut.io.ena := False

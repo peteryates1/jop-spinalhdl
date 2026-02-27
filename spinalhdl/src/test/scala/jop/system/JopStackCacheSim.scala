@@ -262,7 +262,8 @@ object JopJvmTestsStackCacheBramSim extends App {
       val decodeStg = dut.cluster.cores(0).pipeline.decode
       val pipeStg = dut.cluster.cores(0).pipeline
 
-      val maxCycles = 20000000  // Extended to see if DeepRecursion completes
+      val maxCycles = 30000000  // 30M: enough for full JVM test suite including DeepRecursion
+      var zeroWriteCount = 0  // Count of zero-data writes to bank RAM (addr >= 64)
       val reportInterval = 100000
       var lastRotState = 0
       var spillCount = 0
@@ -271,6 +272,9 @@ object JopJvmTestsStackCacheBramSim extends App {
       var lastSp = 0
       var spDecreaseCount = 0
       var firstDecreaseCycle = 0
+      var mismatchCount = 0
+      var ramDoutMismatchPrev = 0
+      val mismatchLimit = 50  // Log first N mismatches
 
       // Stuck detection: track SP min/max over a sliding window
       var stuckWindowStart = -1   // -1 = not started
@@ -313,11 +317,28 @@ object JopJvmTestsStackCacheBramSim extends App {
       var vp0TraceCount = 0
       val vp0TraceLimit = 200  // Per-cycle trace around first corruption (reduced)
 
+      // Targeted per-cycle trace: triggered by first zero-write to bank addr >= 1024
+      var targetedTraceTriggered = false
+      var targetedTraceStart = 0
+      val targetedBacklog = new scala.collection.mutable.ArrayBuffer[String]()
+
       // VP oscillation detector: count repeated transitions at same levels
       var vpOscVpA = -1
       var vpOscVpB = -1
       var vpOscCount = 0
       var vpOscLoggedCount = 0  // How many we've actually logged (limit output)
+
+      // VP0-corruption-triggered CYC backlog: detailed per-cycle trace dumped when VP0=0 detected
+      val vp0CycBacklogSize = 300
+      val vp0CycBacklog = new Array[String](vp0CycBacklogSize)
+      var vp0CycBacklogIdx = 0
+      var vp0CycBacklogActive = false  // Active after 3rd spill
+      var vp0CycBacklogDumped = false
+
+      // B-zero transition detector: log exact moment B goes from non-zero to 0
+      var prevBForZeroDetect = 0L
+      var bZeroDetectCount = 0
+      val bZeroDetectLimit = 5  // Log first N transitions
 
       // Compute which bank (if any) a virtual address maps to
       def bankHitAnalysis(addr: Int): String = {
@@ -338,6 +359,8 @@ object JopJvmTestsStackCacheBramSim extends App {
 
       for (cycle <- 0 until maxCycles) {
         dut.clockDomain.waitSampling()
+
+        // (mismatch detection removed — debug signals not present in committed StackStage)
 
         if (dut.io.uartTxValid.toBoolean) {
           val char = dut.io.uartTxData.toInt
@@ -373,18 +396,78 @@ object JopJvmTestsStackCacheBramSim extends App {
           val bVal = dut.io.bout.toLong & 0xFFFFFFFFL
           val pcVal = dut.io.pc.toInt
 
-          // Write-snoop: log bank writes (only after 3rd spill)
-          if (dut.io.scPipeWrEn.toBoolean && wrSnoopActive && wrSnoopCount < wrSnoopLimit) {
-            val wrAddr = dut.io.scPipeWrAddr.toInt
-            val wrData = dut.io.scPipeWrData.toLong & 0xFFFFFFFFL
-            val instrName = disasmAt(prevPc)
-            val bankInfo = bankHitAnalysis(wrAddr)
-            val msg = f"  WR[$cycle%8d] addr=$wrAddr%5d data=0x${wrData}%08X $bankInfo%-14s SP=$spVal%5d VP=$vpVal%5d irPC=$prevPc%4d ${instrName}%-12s A=0x${aVal}%08X B=0x${bVal}%08X"
+          // Write-snoop: use DIRECT class-level signals (NO RegNext) for precise timing.
+          // wrEnaDly, wrAddrDly, mmux, a, b, selMmux are all class-level with simPublic().
+          // After waitSampling(), these are the combinational values that drive the NEXT
+          // clock edge's RAM write. A, B, selMmux are from the same moment (synchronized).
+          val directWrEn = stackStg.wrEnaDly.toBoolean && !stackStg.rotBusyDly.toBoolean
+          val directWrAddr = stackStg.wrAddrDly.toInt
+          val directWrData = stackStg.mmux.toLong & 0xFFFFFFFFL
+          val directA = stackStg.a.toLong & 0xFFFFFFFFL
+          val directB = stackStg.b.toLong & 0xFFFFFFFFL
+          // Infer selMmux by comparing mmux against A and B
+          val selStr = if (directWrData == directA && directWrData != directB) "=A"
+                       else if (directWrData == directB && directWrData != directA) "=B"
+                       else if (directWrData == directA && directWrData == directB) "=AB"
+                       else "=?"
+          // Targeted per-cycle trace: triggered by first zero-write to a bank address >= 1024.
+          // Logs ALL signals every cycle (whether or not a write fires).
+          // Traces 50 cycles before (from backlog) + 120 cycles after the trigger.
+          // Build backlog entry for every cycle when wrSnoopActive and not yet triggered
+          // Uses only simPublic signals: wraddr (current decode), wrEnaDly/wrAddrDly (delayed),
+          // spp/spm, rdaddr, ramDout, a, b, mmux
+          if (wrSnoopActive && !targetedTraceTriggered) {
+            val curWrAddr = stackStg.wraddr.toInt   // current decode's wraddr (NOT delayed)
+            val curSpp = stackStg.spp.toInt
+            val curSpm = stackStg.spm.toInt
+            val curRdAddr = stackStg.rdaddr.toInt
+            val ramDoutVal = stackStg.ramDout.toLong & 0xFFFFFFFFL
+            val instrName = disasmAt(pcVal)
+            val wrDlyStr = if (directWrEn) f"WR[$directWrAddr%5d]=0x${directWrData}%08X" else "                          "
+            val entry = f"  CYC[$cycle%8d] PC=$pcVal%4d ${instrName}%-12s SP=$spVal%5d spp=$curSpp%5d spm=$curSpm%5d VP=$vpVal%5d A=0x${directA}%08X B=0x${directB}%08X | nxtWrA=$curWrAddr%5d rdAddr=$curRdAddr%5d ramDout=0x${ramDoutVal}%08X | $wrDlyStr"
+            targetedBacklog.append(entry)
+            if (targetedBacklog.length > 100) targetedBacklog.remove(0) // Keep last 100
+          }
+          if (directWrEn && directWrData == 0L && directWrAddr >= 1024 && !targetedTraceTriggered && wrSnoopActive) {
+            targetedTraceTriggered = true
+            targetedTraceStart = cycle
+            // Dump the last 50 entries from the per-cycle backlog
+            val dumpMsg = f"  >>> TARGETED TRACE TRIGGER at cycle $cycle: zero write to addr $directWrAddr <<<"
+            println(dumpMsg)
+            logLine(dumpMsg)
+            for (tbl <- targetedBacklog.takeRight(50)) {
+              logLine(tbl)
+              println(tbl)
+            }
+          }
+          if (wrSnoopActive && targetedTraceTriggered && cycle <= targetedTraceStart + 120) {
+            val curWrAddr = stackStg.wraddr.toInt
+            val curSpp = stackStg.spp.toInt
+            val curSpm = stackStg.spm.toInt
+            val curRdAddr = stackStg.rdaddr.toInt
+            val ramDoutVal = stackStg.ramDout.toLong & 0xFFFFFFFFL
+            val instrName = disasmAt(pcVal)
+            val wrDlyStr = if (directWrEn) f"WR[$directWrAddr%5d]=0x${directWrData}%08X" else "                          "
+            val msg = f"  CYC[$cycle%8d] PC=$pcVal%4d ${instrName}%-12s SP=$spVal%5d spp=$curSpp%5d spm=$curSpm%5d VP=$vpVal%5d A=0x${directA}%08X B=0x${directB}%08X | nxtWrA=$curWrAddr%5d rdAddr=$curRdAddr%5d ramDout=0x${ramDoutVal}%08X | $wrDlyStr"
             logLine(msg)
             println(msg)
+          }
+
+          if (directWrEn && wrSnoopActive && wrSnoopCount < wrSnoopLimit) {
+            val bankInfo = bankHitAnalysis(directWrAddr)
+            val instrName = disasmAt(pcVal)  // Current PC (same timing as signals)
+            val msg = f"  WR[$cycle%8d] addr=$directWrAddr%5d data=0x${directWrData}%08X $bankInfo%-14s SP=$spVal%5d VP=$vpVal%5d PC=$pcVal%4d ${instrName}%-12s sel=$selStr A=0x${directA}%08X B=0x${directB}%08X"
+            logLine(msg)
+            // Log zero-data bank writes specially
+            if (directWrData == 0L && directWrAddr >= 64) {
+              zeroWriteCount += 1
+              val alertMsg = f"  !!! ZERO_WR #$zeroWriteCount addr=$directWrAddr%5d $selStr A=0x${directA}%08X B=0x${directB}%08X PC=$pcVal%4d ${instrName}%-12s !!!"
+              println(alertMsg)
+              logLine(alertMsg)
+            }
             // Alert on writes that miss all banks
-            if (wrAddr >= 64 && bankInfo.contains("NO_BANK")) {
-              val alertMsg = f"  !!! WRITE MISS addr=$wrAddr%5d $bankInfo - B0=${dut.io.scBankBase(0).toInt}%5d B1=${dut.io.scBankBase(1).toInt}%5d B2=${dut.io.scBankBase(2).toInt}%5d res=${dut.io.scBankResident.toInt} !!!"
+            if (directWrAddr >= 64 && bankInfo.contains("NO_BANK")) {
+              val alertMsg = f"  !!! WRITE MISS addr=$directWrAddr%5d $bankInfo - B0=${dut.io.scBankBase(0).toInt}%5d B1=${dut.io.scBankBase(1).toInt}%5d B2=${dut.io.scBankBase(2).toInt}%5d res=${dut.io.scBankResident.toInt} !!!"
               println(alertMsg)
               logLine(alertMsg)
             }
@@ -399,6 +482,62 @@ object JopJvmTestsStackCacheBramSim extends App {
           // VP+0 value monitor: read bank RAM at vp0 every cycle
           val vp0Val = dut.io.scVp0Data.toLong & 0xFFFFFFFFL
           val vp0Bank = bankHitAnalysis(vpVal)
+
+          // VP0-corruption CYC backlog: record every cycle with full data-path detail
+          if (vp0CycBacklogActive && !vp0CycBacklogDumped) {
+            val curRdAddr = stackStg.ramRdaddrReg.toInt
+            val ramDoutVal = stackStg.ramDout.toLong & 0xFFFFFFFFL
+            val instrName = disasmAt(pcVal)
+            val enaB = decodeStg.aluControlDecode.enaBReg.toBoolean
+            val selBmux = decodeStg.aluControlDecode.selBmuxReg.toBoolean
+            val rBusy = stackStg.rotBusyDly.toBoolean
+            val bSrc = if (!enaB) "hold" else if (selBmux) "ram " else "A   "
+            val memBusy = dut.io.memBusy.toBoolean
+            val mbStr = if (memBusy) "MB" else "  "
+            val rdBankInfo = bankHitAnalysis(curRdAddr)
+            val wrDlyStr = if (directWrEn) f"WR[$directWrAddr%5d]=0x${directWrData}%08X" else "                          "
+            // AT-EDGE: what actually drove B at this edge (RegNext captures)
+            val dbgEnaB = stackStg.bDbgEnaB.toBoolean
+            val dbgSelBmux = stackStg.bDbgSelBmux.toBoolean
+            val dbgRamDout = stackStg.bDbgRamDout.toLong & 0xFFFFFFFFL
+            val dbgA = stackStg.bDbgA.toLong & 0xFFFFFFFFL
+            val dbgRdAddr = stackStg.bDbgRdAddr.toInt
+            val atEdge = if (dbgEnaB) {
+              if (dbgSelBmux) f"Bedge=ram@$dbgRdAddr%d=0x${dbgRamDout}%08X"
+              else f"Bedge=A=0x${dbgA}%08X"
+            } else "Bedge=hold"
+            val entry = f"  CC[$cycle%8d] PC=$pcVal%4d ${instrName}%-12s SP=$spVal%5d VP=$vpVal%5d $mbStr A=0x${directA}%08X B=0x${directB}%08X bSrc=$bSrc rdA=$curRdAddr%5d($rdBankInfo) ramD=0x${ramDoutVal}%08X $atEdge $wrDlyStr"
+            vp0CycBacklog(vp0CycBacklogIdx % vp0CycBacklogSize) = entry
+            vp0CycBacklogIdx += 1
+          }
+
+          // B-zero transition detector: catch exact moment B goes non-zero → 0
+          // Uses bDbg* signals (RegNext captures) which show the ACTUAL values that
+          // drove B at the edge, not the post-edge combinational values.
+          if (vp0CycBacklogActive && directB == 0L && prevBForZeroDetect != 0L && bZeroDetectCount < bZeroDetectLimit) {
+            bZeroDetectCount += 1
+            // Current-cycle decode (what the post-edge trace would show — WRONG timing for B)
+            val enaB = decodeStg.aluControlDecode.enaBReg.toBoolean
+            val selBmux = decodeStg.aluControlDecode.selBmuxReg.toBoolean
+            val curRdAddr = stackStg.ramRdaddrReg.toInt
+            val ramDoutVal = stackStg.ramDout.toLong & 0xFFFFFFFFL
+            val rdBankInfo = bankHitAnalysis(curRdAddr)
+            val instrName = disasmAt(pcVal)
+            // Actual values that drove B at THIS edge (RegNext captures from previous cycle)
+            val dbgEnaB = stackStg.bDbgEnaB.toBoolean
+            val dbgSelBmux = stackStg.bDbgSelBmux.toBoolean
+            val dbgRamDout = stackStg.bDbgRamDout.toLong & 0xFFFFFFFFL
+            val dbgA = stackStg.bDbgA.toLong & 0xFFFFFFFFL
+            val dbgRdAddr = stackStg.bDbgRdAddr.toInt
+            val dbgRdBankInfo = bankHitAnalysis(dbgRdAddr)
+            val alertMsg = f"  !!! B_ZERO #$bZeroDetectCount at cycle $cycle: prevB=0x${prevBForZeroDetect}%08X" +
+              f" | POST-EDGE: enaB=$enaB%-5s selBmux=$selBmux%-5s rdAddr=$curRdAddr%5d($rdBankInfo) ramDout=0x${ramDoutVal}%08X A=0x${directA}%08X" +
+              f" | AT-EDGE: enaB=$dbgEnaB%-5s selBmux=$dbgSelBmux%-5s rdAddr=$dbgRdAddr%5d($dbgRdBankInfo) ramDout=0x${dbgRamDout}%08X A=0x${dbgA}%08X" +
+              f" | PC=$pcVal%4d ${instrName}%-12s !!!"
+            println(alertMsg)
+            logLine(alertMsg)
+          }
+          prevBForZeroDetect = directB
 
           // Detect VP changes (invoke/return transitions)
           val jpcVal = dut.io.jpc.toInt
@@ -439,6 +578,26 @@ object JopJvmTestsStackCacheBramSim extends App {
               println(alertMsg)
               logLine(alertMsg)
               printStackCacheState(cycle, "VP0_CORRUPT")
+
+              // Dump VP0 CYC backlog — the last N cycles of detailed trace
+              if (!vp0CycBacklogDumped) {
+                vp0CycBacklogDumped = true
+                val dumpMsg = "  --- VP0 CORRUPTION CYC BACKLOG (last ~300 cycles) ---"
+                println(dumpMsg)
+                logLine(dumpMsg)
+                val total = if (vp0CycBacklogIdx < vp0CycBacklogSize) vp0CycBacklogIdx else vp0CycBacklogSize
+                val start = if (vp0CycBacklogIdx > vp0CycBacklogSize) vp0CycBacklogIdx - vp0CycBacklogSize else 0
+                for (i <- 0 until total) {
+                  val entry = vp0CycBacklog((start + i) % vp0CycBacklogSize)
+                  if (entry != null) {
+                    println(entry)
+                    logLine(entry)
+                  }
+                }
+                val endMsg = "  --- END VP0 CYC BACKLOG ---"
+                println(endMsg)
+                logLine(endMsg)
+              }
             }
           }
           lastVp = vpVal
@@ -543,13 +702,14 @@ object JopJvmTestsStackCacheBramSim extends App {
             printStackCacheState(cycle, s"ROT_$rotName")
             lastRotState = rotState
 
-            // Activate write snoop and post-rotation trace after 3rd spill completes
+            // Activate write snoop, post-rotation trace, and VP0 CYC backlog after 3rd spill completes
             if (spillCount >= 3 && rotState == 0 && !wrSnoopActive) {  // IDLE after 3rd spill
               wrSnoopActive = true
               wrSnoopCount = 0
               postRotTraceActive = true
               postRotTraceCnt = 0
-              val activateMsg = f"  >>> WRITE SNOOP + POST-ROT TRACE ACTIVE at cycle $cycle (spill #$spillCount complete) <<<"
+              vp0CycBacklogActive = true
+              val activateMsg = f"  >>> WRITE SNOOP + POST-ROT TRACE + VP0 CYC BACKLOG ACTIVE at cycle $cycle (spill #$spillCount complete) <<<"
               println(activateMsg)
               logLine(activateMsg)
             }
@@ -695,7 +855,7 @@ object JopJvmTestsStackCacheBramSim extends App {
       }
 
       // Summary
-      println(s"\n  Stack cache summary: spills=$spillCount fills=$fillCount maxSp=$maxSp spDecreases=$spDecreaseCount wrSnooped=$wrSnoopCount")
+      println(s"\n  Stack cache summary: spills=$spillCount fills=$fillCount maxSp=$maxSp spDecreases=$spDecreaseCount wrSnooped=$wrSnoopCount bankMismatches=$mismatchCount ramDoutMismatches=$ramDoutMismatchPrev zeroWrites=$zeroWriteCount")
 
       if (lineBuffer.nonEmpty) {
         println(lineBuffer.toString)

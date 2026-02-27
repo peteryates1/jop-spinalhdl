@@ -162,6 +162,7 @@ case class JopPipeline(
   fetch.io.bsy := decode.io.wrDly || io.memBusy || stackRotBusy
   fetch.io.extStall := stackRotBusy
   decode.io.stall := stackRotBusy
+  bcfetch.io.stall := stackRotBusy  // Freeze jopd/jpc during rotation
 
   // Decode stage connections
   decode.io.instr := fetch.io.dout

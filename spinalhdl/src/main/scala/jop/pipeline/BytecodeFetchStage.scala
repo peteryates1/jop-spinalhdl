@@ -68,6 +68,9 @@ case class BytecodeFetchStage(
     val jbcWrData = in Bits(32 bits)                     // 32-bit word (4 bytes)
     val jbcWrEn   = in Bool()                            // Write enable
 
+    // Pipeline stall (freeze jopd/jpc during stack cache rotation)
+    val stall = in Bool()
+
     // Interrupt/Exception interface (Phase E)
     val irq = in Bool()                               // Interrupt request
     val exc = in Bool()                               // Exception request
@@ -178,18 +181,21 @@ case class BytecodeFetchStage(
   // JPC Update Logic
   // ==========================================================================
 
-  // Priority: jpc_wr > jmp > jfetch/jopdfetch > hold (register holds by default)
-  when(io.jpc_wr) {
-    // Method call: load from stack
-    jpc := io.din(config.jpcWidth downto 0).asUInt
-  }.elsewhen(jmp) {
-    // Branch taken: load branch target
-    jpc := jmp_addr
-  }.elsewhen(io.jfetch || io.jopdfetch) {
-    // Increment
-    jpc := jpc + 1
+  // Priority: stall > jpc_wr > jmp > jfetch/jopdfetch > hold
+  // During pipeline stall (stack cache rotation), freeze JPC to prevent
+  // advancing past the current operand bytes.
+  when(!io.stall) {
+    when(io.jpc_wr) {
+      // Method call: load from stack
+      jpc := io.din(config.jpcWidth downto 0).asUInt
+    }.elsewhen(jmp) {
+      // Branch taken: load branch target
+      jpc := jmp_addr
+    }.elsewhen(io.jfetch || io.jopdfetch) {
+      // Increment
+      jpc := jpc + 1
+    }
   }
-  // No .otherwise needed - register holds its value by default
 
   io.jpc_out := jpc
 
@@ -197,15 +203,21 @@ case class BytecodeFetchStage(
   // Operand Accumulation Logic
   // ==========================================================================
 
-  // Low byte always gets updated with current JBC RAM output
-  jopd(7 downto 0) := jbcData
+  // During pipeline stall (stack cache rotation), freeze jopd to prevent
+  // the unconditional low-byte update from overwriting the accumulated
+  // operand with the next bytecode (jbcData reads from jpc, which points
+  // past the operand bytes after accumulation completes).
+  when(!io.stall) {
+    // Low byte always gets updated with current JBC RAM output
+    jopd(7 downto 0) := jbcData
 
-  // When jopdfetch is asserted, shift low byte to high byte
-  // This allows accumulating multi-byte operands:
-  //   Cycle 1: jfetch=1, bytecode 0x12 → jopd = 0x00_12
-  //   Cycle 2: jopdfetch=1, operand 0x34 → jopd = 0x12_34 (shift + load)
-  when(io.jopdfetch) {
-    jopd(15 downto 8) := jopd(7 downto 0)
+    // When jopdfetch is asserted, shift low byte to high byte
+    // This allows accumulating multi-byte operands:
+    //   Cycle 1: jfetch=1, bytecode 0x12 → jopd = 0x00_12
+    //   Cycle 2: jopdfetch=1, operand 0x34 → jopd = 0x12_34 (shift + load)
+    when(io.jopdfetch) {
+      jopd(15 downto 8) := jopd(7 downto 0)
+    }
   }
 
   io.opd := jopd
@@ -215,7 +227,8 @@ case class BytecodeFetchStage(
   // ==========================================================================
 
   // Capture instruction bytecode and branch start address on jfetch
-  when(io.jfetch) {
+  // (also frozen during stall for consistency)
+  when(!io.stall && io.jfetch) {
     jinstr := jbcData
     jpc_br := jpc
   }

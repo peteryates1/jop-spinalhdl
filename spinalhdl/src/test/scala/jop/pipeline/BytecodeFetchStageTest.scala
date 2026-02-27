@@ -28,6 +28,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jfetch #= false
       dut.io.jopdfetch #= false
       dut.io.jbr #= false
+      dut.io.stall #= false
       dut.io.zf #= false
       dut.io.nf #= false
       dut.io.eq #= false
@@ -55,6 +56,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jfetch #= false
       dut.io.jopdfetch #= false
       dut.io.jbr #= false
+      dut.io.stall #= false
       dut.io.zf #= false
       dut.io.nf #= false
       dut.io.eq #= false
@@ -105,6 +107,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jfetch #= false
       dut.io.jopdfetch #= false
       dut.io.jbr #= false
+      dut.io.stall #= false
       dut.io.zf #= false
       dut.io.nf #= false
       dut.io.eq #= false
@@ -147,6 +150,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jfetch #= false
       dut.io.jopdfetch #= false
       dut.io.jbr #= false
+      dut.io.stall #= false
       dut.io.zf #= false
       dut.io.nf #= false
       dut.io.eq #= false
@@ -198,6 +202,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jfetch #= false
       dut.io.jopdfetch #= false
       dut.io.jbr #= false
+      dut.io.stall #= false
       dut.io.zf #= false
       dut.io.nf #= false
       dut.io.eq #= false
@@ -229,6 +234,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jfetch #= false
       dut.io.jopdfetch #= false
       dut.io.jbr #= false
+      dut.io.stall #= false
       dut.io.zf #= false
       dut.io.nf #= false
       dut.io.eq #= false
@@ -277,6 +283,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jfetch #= false
       dut.io.jopdfetch #= false
       dut.io.jbr #= false
+      dut.io.stall #= false
       dut.io.zf #= false
       dut.io.nf #= false
       dut.io.eq #= false
@@ -344,6 +351,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jfetch #= false
       dut.io.jopdfetch #= false
       dut.io.jbr #= false
+      dut.io.stall #= false
       dut.io.zf #= false
       dut.io.nf #= false
       dut.io.eq #= false
@@ -385,6 +393,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jfetch #= false
       dut.io.jopdfetch #= false
       dut.io.jbr #= false
+      dut.io.stall #= false
       dut.io.zf #= false
       dut.io.nf #= false
       dut.io.eq #= false
@@ -503,6 +512,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jfetch #= false
       dut.io.jopdfetch #= false
       dut.io.jbr #= false
+      dut.io.stall #= false
       dut.io.zf #= false
       dut.io.nf #= false
       dut.io.eq #= false
@@ -562,6 +572,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jfetch #= false
       dut.io.jopdfetch #= false
       dut.io.jbr #= false
+      dut.io.stall #= false
       dut.io.zf #= false
       dut.io.nf #= false
       dut.io.eq #= false

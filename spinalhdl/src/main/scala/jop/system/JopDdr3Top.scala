@@ -150,9 +150,14 @@ case class JopDdr3Top(
     val cluster = JopCluster(
       cpuCnt = cpuCnt,
       baseConfig = JopCoreConfig(
-        memConfig = JopMemoryConfig(addressWidth = 26, burstLen = burstLen),
+        memConfig = JopMemoryConfig(
+          addressWidth = 26,
+          burstLen = burstLen,
+          stackRegionWordsPerCore = 8192   // 32KB per core for stack spill
+        ),
         jumpTable = jumpTable,
-        clkFreqHz = 100000000L
+        clkFreqHz = 100000000L,
+        useStackCache = true               // Enable 3-bank rotating stack cache
       ),
       romInit = Some(romInit),
       ramInit = Some(ramInit),

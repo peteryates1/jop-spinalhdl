@@ -98,6 +98,7 @@ case class InterruptTestTb(
     bcf.io.jbcWrAddr := 0
     bcf.io.jbcWrData := 0
     bcf.io.jbcWrEn := False
+    bcf.io.stall := False
 
     // Connect interrupt/exception inputs
     bcf.io.irq := io.irq
