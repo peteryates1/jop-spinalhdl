@@ -272,6 +272,7 @@ make help                # List all available test targets
 | [QMTECH EP4CGX150 + DB_FPGA](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Altera Cyclone IV GX | W9825G6JH6 SDR SDRAM | Quartus Prime | 80 MHz — Ethernet 1Gbps GMII ([details](docs/db-fpga-ethernet.md)), VGA text 80x30 ([details](docs/db-fpga-vga-text.md)), SD card native 4-bit ([details](docs/db-fpga-sd-card.md)) |
 | [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Altera Cyclone IV GX | BRAM (on-chip) | Quartus Prime | Working at 100 MHz |
 | [Trenz CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) | Altera Cyclone V E (5CEBA2U15C8N) | W9864G6JT SDR SDRAM | Quartus Prime | Working at 80 MHz |
+| A-E115FB | Altera Cyclone IV E (EP4CE115F23I7) | BRAM (on-chip) | Quartus Prime | BRAM only, programmed via [pico-dirtyJtag](docs/pico-dirtyjtag-setup.md) |
 | [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au) | Xilinx Artix-7 (XC7A35T) | MT41K128M16JT DDR3 (256MB) | Vivado | 100 MHz — single-core + SMP (2-core), full 256MB addressed, GC working ([details](docs/ddr3-gc-hang.md)) |
 
 ### Resource Usage
@@ -387,6 +388,7 @@ Design notes and investigation logs in `docs/`:
 - [DB_FPGA VGA Text](docs/db-fpga-vga-text.md) — 80x30 text-mode VGA output, register map, Java API, setup guide
 - [DB_FPGA SD Card](docs/db-fpga-sd-card.md) — SD card native 4-bit mode, hardware verification, bugs found, clock speed constraints
 - [Flash Boot](docs/flash-boot.md) — autonomous Active Serial boot from W25Q128, UART flash programmer, flash image format
+- [pico-dirtyJtag Setup](docs/pico-dirtyjtag-setup.md) — program FPGAs via Raspberry Pi Pico + openFPGALoader (alternative to USB-Blaster)
 - [SDR SDRAM GC Hang](docs/sdr-sdram-gc-hang.md) — resolved: SpinalHDL SdramCtrl DQ timing issue
 - [DDR3 GC Hang](docs/ddr3-gc-hang.md) — resolved (32KB L2 cache)
 
