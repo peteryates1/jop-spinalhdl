@@ -9,6 +9,8 @@ headers (J2, J3) at 0.1" pitch. Confirmed compatible with:
 - **QMTECH EP4CE15** (Cyclone IV E) — has example projects for all peripherals
 - **QMTECH XC7A75T/100T/200T** (Artix-7) — potential JOP DDR3 + DB_FPGA platform
 
+GitHub: <https://github.com/ChinaQMTECH/DB_FPGA>
+
 Reference files: `/srv/git/qmtech/DB_FPGA/`
 
 Schematic: `QMTECH_DB_For_FPGA_V04.pdf` (V04, without RP2040)

@@ -6,6 +6,8 @@ Primary JOP development platform. QMTECH EP4CGX150DF27 core board with onboard
 SDR SDRAM. Connects to the [DB_FPGA daughter board](qmtech-db-fpga.md) via dual
 32x2 pin headers (J2, J3) for Ethernet, UART, VGA, and SD card.
 
+GitHub: <https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD>
+
 Reference files: `/srv/git/qmtech/EP4CGX150DF27_CORE_BOARD/`
 
 Schematic: `QMTECH_EP4CGX150DF27_V2.pdf` (core board V2)

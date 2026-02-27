@@ -8,6 +8,8 @@ board** — all peripherals are on the main PCB.
 
 Available with XC7A100T or XC7A200T FPGA variants on the same PCB.
 
+GitHub: <https://github.com/ChinaQMTECH/QM_XC7A100T_WUKONG_BOARD>
+
 Reference files: `/srv/git/qmtech/QM_XC7A100T_WUKONG_BOARD/V3/`
 
 Schematic: `V3/Hardware/QMTECH-XC7A100T_200T-Wukong-Board-V03-20240121.pdf`
