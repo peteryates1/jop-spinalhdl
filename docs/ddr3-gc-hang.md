@@ -431,3 +431,51 @@ cd verification/vivado-ddr3 && make compile elaborate sim
 # Monitor serial output
 make monitor  # 1 Mbaud on /dev/ttyUSB1
 ```
+
+---
+
+## Full 256MB DDR3 Addressing (2026-02-27)
+
+The MT41K128M16JT is 256MB, but JOP initially only addressed 64MB due to
+`addressWidth = 26` (24-bit physical word address = 64MB). The MIG interface
+already supports 28-bit byte addresses — the limitation was purely in JOP's
+configuration.
+
+### Changes
+
+| File | Change |
+|------|--------|
+| `JopMemoryConfig.scala` | Relaxed `addressWidth` constraint from `<= 26` to `<= 28` |
+| `JopDdr3Top.scala` | `addressWidth = 28`, `mainMemSize = 256MB` |
+| `BmbCacheBridge.scala` | Truncate BMB address to `cacheAddrWidth` bits (top 2 type bits always 00 for memory) |
+| `StackStage.scala` | Added `wordAddrWidth` parameter to `StackCacheConfig`, made `extByteAddr` and `dmaExtAddr` port widths parametric |
+| `JopPipeline.scala` | Parametric `dmaExtAddr` port width |
+| `JopCore.scala` | Pass `wordAddrWidth = addressWidth - 2` to StackCacheConfig |
+| `GC.java` | `MAX_HANDLES = 65536` cap (prevents O(N) sweep explosion on large memories) |
+
+### Address Flow
+
+```
+JOP pipeline → BmbMemoryController → BMB bus → BmbCacheBridge → LruCacheCore → CacheToMigAdapter → MIG
+  28-bit word     (aoutAddr<<2).resized   30-bit byte    addr(27:0)→28-bit   28-bit cache    28-bit MIG
+  [27:26]=type                            [29:28]=00     strips type bits     matches MIG     app_addr
+```
+
+### GC MAX_HANDLES
+
+With 256MB, the uncapped formula `handle_cnt = full_heap_size >> 4` creates 4.2M
+handles (128MB of handle table, ~335ms sweep per GC cycle at 100MHz). This caused
+the GC to hang after ~104 rounds on FPGA — the mutator couldn't make progress between
+GC increments. Adding `MAX_HANDLES = 65536` caps the handle table at 2MB with ~6ms
+sweep time, leaving 254MB for heap.
+
+### Verification
+
+| Test | Result |
+|------|--------|
+| `sbt compile` | PASS |
+| `sbt "runMain jop.system.JopDdr3TopVerilog"` | PASS |
+| `JopSmallGcBramSim` | PASS (81+ rounds, 3 full GC cycles) |
+| `JopSmallGcCacheSim` | PASS (uses addressWidth=26, unchanged) |
+| FPGA build (Vivado) | PASS |
+| FPGA 256MB DDR3 GC | PASS — 1,870+ GC rounds, stable |

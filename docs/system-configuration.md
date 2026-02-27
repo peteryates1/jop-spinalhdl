@@ -121,7 +121,7 @@ Memory system parameters. Defined in `jop/memory/JopMemoryConfig.scala`.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `dataWidth` | Int | 32 | Data path width (fixed) |
-| `addressWidth` | Int | 24 | Word address width (24 = 64MB addressable) |
+| `addressWidth` | Int | 24 | Word address width including 2 type bits (24 = 64MB, 28 max = 256MB) |
 | `mainMemSize` | BigInt | 8MB | Main memory size in bytes |
 | `scratchSize` | BigInt | 4KB | Scratchpad RAM size in bytes |
 | `burstLen` | Int | 0 | DMA burst length: 0=BRAM, 4=SDR, 8=DDR3 |
@@ -258,13 +258,19 @@ JopCoreConfig(
 ```scala
 // In JopDdr3Top.scala
 JopCoreConfig(
-  memConfig = JopMemoryConfig(addressWidth = 26, burstLen = burstLen),
+  memConfig = JopMemoryConfig(
+    addressWidth = 28,                           // 26-bit physical + 2 type bits = 256MB
+    mainMemSize = 256L * 1024 * 1024,            // 256MB DDR3 (MT41K128M16JT)
+    burstLen = burstLen,
+    stackRegionWordsPerCore = 8192               // 32KB per core for stack spill
+  ),
   jumpTable = JumpTableInitData.serial,
-  clkFreqHz = 100000000L                      // 100 MHz
+  clkFreqHz = 100000000L                         // 100 MHz
 )
-// DDR3: MT41K128M16JT, 2Gbit
+// DDR3: MT41K128M16JT, 2Gbit (256MB)
 // Write-back cache: 32KB L2 (4-way, 512 sets)
 // SMP: cpuCnt up to 2 (resource-limited on XC7A35T)
+// GC: MAX_HANDLES=65536 caps handle table for large memory (sweep ~6ms at 100MHz)
 ```
 
 ### Simulation Harnesses

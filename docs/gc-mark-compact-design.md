@@ -671,6 +671,7 @@ static void init(int mem_size, int addr) {
         // Divide by (TYPICAL_OBJ_SIZE + HANDLE_SIZE) = 13
         // Use shift approximation: /16 (conservative, fewer handles)
         handle_cnt = full_heap_size >> 4;
+        if (handle_cnt > MAX_HANDLES) handle_cnt = MAX_HANDLES;
         int handleWords = handle_cnt << 3;    // handle_cnt * HANDLE_SIZE
         heapSize = full_heap_size - handleWords;
         heapStart = mem_start + handleWords;
@@ -894,9 +895,34 @@ is not a concern since concurrent GC is never used.
 
 JOP's hardware integer division is broken (see MEMORY.md). The current GC uses shift
 operations instead of division. The mark-compact GC uses the same approach:
-- `handle_cnt = full_heap_size >> 4` (divide by 16)
+- `handle_cnt = full_heap_size >> 4` (divide by 16), capped at `MAX_HANDLES = 65536`
 - No division in `computeSize()`, `compact()`, or `mark()`.
 - The sort uses only comparisons and pointer manipulations.
+
+### 6.9 MAX_HANDLES Cap (Large Memory)
+
+For memories >= 64MB, the uncapped formula `handle_cnt = full_heap_size >> 4` creates
+an impractically large handle table:
+
+| Memory Size | Uncapped handle_cnt | Handle Area | Sweep Time (100MHz) |
+|-------------|--------------------:|------------:|--------------------:|
+| 8MB         | 131,072             | 4MB (50%)   | ~10ms               |
+| 64MB        | 1,048,576           | 32MB (50%)  | ~84ms               |
+| 256MB       | 4,194,304           | 128MB (50%) | ~335ms              |
+| 1GB         | 16,777,216          | 512MB (50%) | ~1.3s               |
+
+With `MAX_HANDLES = 65536`, the handle area is capped at 512K words (2MB), and sweep
+takes ~6ms regardless of memory size. The heap gets the rest of the memory:
+
+| Memory Size | handle_cnt | Handle Area | Heap Available |
+|-------------|----------:|------------:|---------------:|
+| 8MB         | 65,536    | 2MB (25%)   | 6MB            |
+| 256MB       | 65,536    | 2MB (0.8%)  | 254MB          |
+| 1GB         | 65,536    | 2MB (0.2%)  | 1022MB         |
+
+65536 handles is sufficient for typical JOP workloads. Handle exhaustion causes
+`OutOfMemoryError` even with free heap space — the application would need to allocate
+65536+ simultaneous live objects to exhaust the pool.
 
 ### 6.7 First Allocation (Before mutex)
 

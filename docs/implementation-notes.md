@@ -370,7 +370,7 @@ The 16-bit SDRAM bus at 80MHz gives ~160MB/s raw, but effective is much lower (C
 
 ### Handle Table Scaling
 
-Current formula: `handle_cnt = full_heap_size >> 4`. For 64KB heap = 1024 handles (32KB). For 32MB heap = 512K handles (16MB!) — handle table itself consumes half the memory. Large heaps need a fixed handle count (e.g., 4096-16384) with explicit handle exhaustion.
+Current formula: `handle_cnt = full_heap_size >> 4`, capped at `MAX_HANDLES = 65536`. For 64KB heap = 1024 handles (32KB). For 256MB heap = 65536 handles (512K words = 2MB, ~0.8% of heap). Without the cap, a 256MB heap would create 4.2M handles (33MB!), and GC sweep would scan all handles every cycle (~42ms at 100MHz), causing GC to hang after ~104 rounds. The MAX_HANDLES cap limits sweep to ~6ms at 100MHz. Verified: 1870+ GC rounds stable on 256MB DDR3 FPGA hardware.
 
 ## IHLU (Individual Hardware Locking Unit)
 
