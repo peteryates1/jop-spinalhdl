@@ -962,6 +962,10 @@ public class GC {
 				}
 				// Allocate from the upper part
 				allocPtr -= size;
+				// Zero object data (JVM spec: fields default to 0/null)
+				for (int i = 0; i < size; i++) {
+					Native.wrMem(0, allocPtr + i);
+				}
 				// get one from free list
 				ref = freeList;
 				freeList = Native.rdMem(ref+OFF_NEXT);
@@ -989,6 +993,10 @@ public class GC {
 				for(;;);
 			}
 			allocPtr -= size;
+			// Zero object data (JVM spec: fields default to 0/null)
+			for (int i = 0; i < size; i++) {
+				Native.wrMem(0, allocPtr + i);
+			}
 			ref = freeList;
 			freeList = Native.rdMem(ref+OFF_NEXT);
 			Native.wrMem(useList, ref+OFF_NEXT);
@@ -1088,6 +1096,10 @@ public class GC {
 		synchronized (mutex) {
 			// we allocate from the upper part
 			allocPtr -= size;
+			// Zero array data (JVM spec: elements default to 0/null)
+			for (int i = 0; i < size; i++) {
+				Native.wrMem(0, allocPtr + i);
+			}
 			// get one from free list
 			ref = freeList;
 	//		if ((ref&0x07)!=0) {

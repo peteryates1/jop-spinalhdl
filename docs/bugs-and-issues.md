@@ -57,41 +57,23 @@ wrInt(n);  // custom helper that outputs digits one at a time
 **Affected code**: All hardware test programs (`Fat32Test.java`, `VgaTest.java`,
 `EthTest.java`, etc.)
 
-### 3. Object Memory Not Zeroed on Allocation
+### 3. Object Memory Not Zeroed on Allocation (FIXED)
 
-JOP does not zero object memory when `new` is called. All fields — especially
-reference types — contain garbage from whatever previously occupied that
-memory. A `field == null` check will fail on an uninitialized reference field
-because the field contains a non-null garbage value.
+JOP's `GC.newObject()` and `GC.newArray()` did not zero the allocated data
+area. All fields — especially references — contained garbage from whatever
+previously occupied that memory. A `field == null` check would fail on an
+uninitialized reference field because it contained a non-null garbage value.
 
-**Workaround**: Every class must have an explicit constructor that initializes
-ALL fields to safe defaults (references to `null`, ints to `0`, booleans to
-`false`).
+The original code had a TODO comment acknowledging this: `// TODO: memory
+initialization is needed // either on scope creation+exit or in new`.
 
-```java
-// WRONG — fields contain garbage on JOP:
-public class MyClass {
-    String name;     // garbage, not null
-    int count;       // garbage, not 0
-    Object ref;      // garbage, not null
-}
+**Fix**: Added zeroing loops in `GC.newObject()` and `GC.newArray()` that
+write 0 to each word of the newly allocated data area (inside the
+synchronized block, after `allocPtr -= size`). This is eager zeroing —
+cost is proportional to object size, bounded and predictable for real-time.
 
-// CORRECT — explicit initialization:
-public class MyClass {
-    String name;
-    int count;
-    Object ref;
-
-    public MyClass() {
-        name = null;
-        count = 0;
-        ref = null;
-    }
-}
-```
-
-**Affected code**: All FAT32 classes (`DirEntry`, `Sector`, `FsInfo`,
-`SdNativeBlockDevice`, `SdSpiBlockDevice`)
+Explicit constructors in existing code (FAT32 classes, etc.) are now
+redundant but harmless — they serve as documentation of the expected defaults.
 
 ### 4. Hardware Division-by-Zero Exception Not Catchable
 
