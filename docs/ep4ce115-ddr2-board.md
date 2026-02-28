@@ -82,118 +82,227 @@ Each side of the core board has two connectors:
 - **80-pin** dual-row header facing **down** — mates with the bottom board
 - **60-pin** dual-row header facing **up** — user-accessible for external wiring
 
-The 60-pin header exposes a subset of the same FPGA pins as the 80-pin.
-Pin 1 is at the power end of the board on both sides.
+The 60-pin UP header is a subset of the 80-pin DOWN connector. Same FPGA pins,
+different pin numbering, 10 signal pairs absent from the UP header per side.
+Pin 1 is at the power end of the board on both connectors.
 All connector signals pass through 22R series resistor packs (RP21-RP51).
 
 Core board schematic: `EP4CE115_sch_pdf原理图/PDF/E115-IO-V2.pdf`
 Bottom board schematic: `bottom-V2底板图.pdf` (labeled A-E40FB — older board,
-same topology but FPGA pin names are for EP4CE40, not EP4CE115)
+same connector topology but FPGA pin names are for EP4CE40, not EP4CE115)
 
-#### JTAG-Side Connector (C-D) — 80-pin down, 60-pin up
+#### JTAG-Side DOWN Connector (80 pins)
 
-Pin 1 at power end. Bottom board routes to: VGA (ADV7123), Audio (WM8731),
-UART (CH340).
+Mates with bottom board. Pin 1 at power end. Signal names from bottom board
+schematic, confirmed against EP4CE115 test project QSFs. Every signal pin is
+assigned to a bottom board peripheral — no free pins.
 
-| Pin# | Col C | Col D | Bottom Board Device |
-|-----:|-------|-------|---------------------|
-| 1-2 | V3 | AA1 | — / Audio XCK |
-| 3-4 | Y2 | Y1 | — / — |
-| 5-8 | GND | GND | |
-| 9-10 | W2 | W1 | — / — |
-| 11-12 | V2 | V1 | — / — |
-| 13-14 | U2 | U1 | — / — |
-| 15-16 | R2 | R1 | — / — |
-| 17-18 | P2 | P1 | Audio DACLRCK / Audio DACDAT |
-| 19-20 | N2 | N1 | Audio BCLK / UART RX (CH340) |
-| 21-22 | M2 | M1 | VGA B9 / VGA B8 |
-| 23-24 | J1 | J2 | VGA B7 / VGA B6 |
-| 25-26 | H1 | H2 | VGA SYNC / VGA BLANK |
-| 27-28 | F1 | F2 | VGA G9 / VGA G8 |
-| 29-30 | C1 | C2 | VGA G3 / VGA G2 |
-| 31-32 | B1 | B2 | VGA R9 / VGA R8 |
-| 33-34 | B3 | A3 | VGA R3 / VGA R2 |
-| 35-36 | B4 | A4 | VGA HS / VGA VS |
-| 37-38 | **V4** | **T3** | **— / —** |
-| 39-40 | **T4** | **T5** | **— / —** |
-| 41-42 | **R4** | **R3** | **— / —** |
-| 43-44 | **P4** | **P3** | **— / —** |
-| 45-46 | **P5** | **N6** | **— / —** |
-| 47-48 | **N5** | **M5** | **— / —** |
-| 49-50 | **R5** | **D6** | **— / —** |
-| 51-52 | M6 | L6 | Audio ADCLRCK / Audio ADCDAT |
-| 53-54 | H5 | G5 | UART TX (CH340) / Audio I2C SDA |
-| 55-56 | M3 | M4 | Audio I2C SCL / VGA CLK |
-| 57-58 | E1 | D2 | VGA B5 / VGA B4 |
-| 59-60 | J4 | J3 | VGA B3 / VGA B2 |
-| 61-62 | J6 | H6 | VGA G7 / VGA G6 |
-| 63-64 | H3 | H4 | VGA G5 / VGA G4 |
-| 65-66 | G3 | H7 | VGA R7 / VGA R6 |
-| 67-68 | E3 | E4 | VGA R5 / VGA R4 |
-| 69-76 | GND | GND | |
-| 77-78 | A19 | B19 | — / — |
-| 79-80 | A20 | B20 | — / — |
+| Pin | FPGA | Signal | Pin | FPGA | Signal |
+|----:|------|--------|----:|------|--------|
+| 1 | V3 | — | 2 | AA1 | AUD_XCK |
+| 3 | Y2 | PHY_RST_N | 4 | Y1 | MDC |
+| 5 | V4 | MDIO | 6 | T3 | TXD[7] |
+| 7 | T4 | TXD[6] | 8 | T5 | TXD[5] |
+| 9 | GND | | 10 | GND | |
+| 11 | R4 | TXD[4] | 12 | R3 | TXD[3] |
+| 13 | P4 | TXD[2] | 14 | P3 | TXD[1] |
+| 15 | W2 | TXD[0] | 16 | W1 | TX_EN |
+| 17 | V2 | GTX_CLK | 18 | V1 | TX_CLK |
+| 19 | GND | | 20 | GND | |
+| 21 | P5 | RX_CLK | 22 | N6 | RX_DV |
+| 23 | N5 | RXD[0] | 24 | M5 | RXD[1] |
+| 25 | U2 | RXD[2] | 26 | U1 | RXD[3] |
+| 27 | R2 | RXD[4] | 28 | R1 | RXD[5] |
+| 29 | GND | | 30 | GND | |
+| 31 | R5 | RXD[6] | 32 | D6 | RXD[7] |
+| 33 | M6 | AUD_ADCLRCK | 34 | L6 | AUD_ADCDAT |
+| 35 | P2 | AUD_DACLRCK | 36 | P1 | AUD_DACDAT |
+| 37 | N2 | AUD_BCLK | 38 | N1 | CH340 TX→FPGA |
+| 39 | GND | | 40 | GND | |
+| 41 | H5 | FPGA TX→CH340 | 42 | G5 | I2C_SDAT |
+| 43 | M3 | I2C_SCLK | 44 | M4 | VGA_CLK |
+| 45 | M2 | VGA_B[9] | 46 | M1 | VGA_B[8] |
+| 47 | J1 | VGA_B[7] | 48 | J2 | VGA_B[6] |
+| 49 | GND | | 50 | GND | |
+| 51 | E1 | VGA_B[5] | 52 | D2 | VGA_B[4] |
+| 53 | J4 | VGA_B[3] | 54 | J3 | VGA_B[2] |
+| 55 | H1 | VGA_SYNC | 56 | H2 | VGA_BLANK |
+| 57 | F1 | VGA_G[9] | 58 | F2 | VGA_G[8] |
+| 59 | GND | | 60 | GND | |
+| 61 | J6 | VGA_G[7] | 62 | H6 | VGA_G[6] |
+| 63 | H3 | VGA_G[5] | 64 | H4 | VGA_G[4] |
+| 65 | C1 | VGA_G[3] | 66 | C2 | VGA_G[2] |
+| 67 | B1 | VGA_R[9] | 68 | B2 | VGA_R[8] |
+| 69 | GND | | 70 | GND | |
+| 71 | G3 | VGA_R[7] | 72 | H7 | VGA_R[6] |
+| 73 | E3 | VGA_R[5] | 74 | E4 | VGA_R[4] |
+| 75 | B3 | VGA_R[3] | 76 | A3 | VGA_R[2] |
+| 77 | B4 | VGA_HS | 78 | A4 | VGA_VS |
+| 79 | GND | | 80 | GND | |
 
-**Unconnected pins** (no bottom board device): V3, Y2, Y1, W2, W1, V2, V1,
-U2, U1, R2, R1 (rows 1-16), **V4, T3, T4, T5, R4, R3, P4, P3, P5, N6, N5,
-M5, R5, D6** (rows 37-50), A19, B19, A20, B20 (rows 77-80).
+Devices: Ethernet 88E1111 GMII (pins 3-32, 22 signals), Audio WM8731
+(pins 2, 33-37, 42-43, 8 signals), UART CH340 (pins 38, 41), VGA ADV7123
+(pins 44-78, 30 signals). V3 (pin 1) is the only unassigned signal pin.
 
-#### Power-Side Connector (A-B) — 80-pin down, 60-pin up
+#### JTAG-Side UP Header (60 pins)
 
-Pin 1 at power end. Bottom board routes to: Ethernet (88E1111 via 28-pin
-PC+PD headers), SD card, keys, IR receiver, buzzer, DIP switches.
+User-accessible. Subset of the DOWN connector — same FPGA pins, different
+pin numbering. Pin 1 at power end.
 
-| Pin# | Col B | Col A | Bottom Board Device |
-|-----:|-------|-------|---------------------|
-| 1-2 | B6 | A6 | ? |
-| 3-4 | B7 | A7 | ? |
-| 5-8 | GND | GND | |
-| 9-10 | B8 | A8 | ? |
-| 11-12 | B9 | A9 | ? |
-| 13-14 | A10 | B10 | ? |
-| 15-16 | B13 | A13 | ? |
-| 17-18 | A14 | — | ? |
-| 19-20 | C15 | E13 | ? |
-| 21-22 | B14 | — | ? |
-| 23-24 | E8 | D10 | ? |
-| 25-26 | E9 | D8 | ? |
-| 27-28 | A15 | — | ? |
-| 29-30 | B16 | A16 | SD / Keys (via PE) |
-| 31-32 | B15 | — | SD / Keys (via PE) |
-| 33-34 | B17 | — | SD / Keys (via PE) |
-| 35-36 | B18 | A18 | SD / Keys (via PE) |
-| 37-38 | A17 | — | SD / Keys (via PE) |
-| 39-40 | C8 | C7 | ? |
-| 41-42 | D7 | C6 | ? |
-| 43-44 | F10 | F9 | ? |
-| 45-46 | F8 | F7 | ? |
-| 47-48 | F14 | E12 | ? |
-| 49-50 | F11 | E11 | ? |
-| 51-52 | E7 | C10 | ? |
-| 53-54 | D13 | C13 | ? |
-| 55-56 | F15 | E16 | ? |
-| 57-58 | F13 | E14 | ? |
-| 59-60 | D17 | C17 | ? |
-| 61-62 | E15 | D15 | ? |
-| 63-64 | D19 | C19 | ? |
-| 65-66 | D18 | C18 | ? |
-| 67-76 | GND | GND | |
-| 77-78 | A19 | B19 | — / — |
-| 79-80 | A20 | B20 | — / — |
+| Pin | FPGA | Signal | Pin | FPGA | Signal |
+|----:|------|--------|----:|------|--------|
+| 1 | AA1 | AUD_XCK | 2 | V3 | — |
+| 3 | Y1 | MDC | 4 | Y2 | PHY_RST_N |
+| 5 | V4 | MDIO | 6 | T3 | TXD[7] |
+| 7 | T4 | TXD[6] | 8 | T5 | TXD[5] |
+| 9 | R4 | TXD[4] | 10 | R3 | TXD[3] |
+| 11 | P4 | TXD[2] | 12 | P3 | TXD[1] |
+| 13 | V2 | GTX_CLK | 14 | V1 | TX_CLK |
+| 15 | GND | | 16 | GND | |
+| 17 | P5 | RX_CLK | 18 | N6 | RX_DV |
+| 19 | N5 | RXD[0] | 20 | M5 | RXD[1] |
+| 21 | U2 | RXD[2] | 22 | U1 | RXD[3] |
+| 23 | R5 | RXD[6] | 24 | D6 | RXD[7] |
+| 25 | M6 | AUD_ADCLRCK | 26 | L6 | AUD_ADCDAT |
+| 27 | P2 | AUD_DACLRCK | 28 | P1 | AUD_DACDAT |
+| 29 | N2 | AUD_BCLK | 30 | N1 | CH340 TX→FPGA |
+| 31 | GND | | 32 | GND | |
+| 33 | M3 | I2C_SCLK | 34 | M4 | VGA_CLK |
+| 35 | M2 | VGA_B[9] | 36 | M1 | VGA_B[8] |
+| 37 | J1 | VGA_B[7] | 38 | J2 | VGA_B[6] |
+| 39 | E1 | VGA_B[5] | 40 | D2 | VGA_B[4] |
+| 41 | J4 | VGA_B[3] | 42 | J3 | VGA_B[2] |
+| 43 | H1 | VGA_SYNC | 44 | H2 | VGA_BLANK |
+| 45 | F1 | VGA_G[9] | 46 | F2 | VGA_G[8] |
+| 47 | GND | | 48 | GND | |
+| 49 | H4 | VGA_G[4] | 50 | H3 | VGA_G[5] |
+| 51 | C1 | VGA_G[3] | 52 | C2 | VGA_G[2] |
+| 53 | B1 | VGA_R[9] | 54 | B2 | VGA_R[8] |
+| 55 | G3 | VGA_R[7] | 56 | H7 | VGA_R[6] |
+| 57 | E3 | VGA_R[5] | 58 | E4 | VGA_R[4] |
+| 59 | B3 | VGA_R[3] | 60 | A3 | VGA_R[2] |
 
-Note: The bottom board schematic (`bottom-V2底板图.pdf`) is for the older
-A-E40FB board with a different FPGA. The Ethernet (88E1111 GMII, ~22 pins),
-SD card (6 pins), keys (4 pins), and other peripheral assignments shown there
-use EP4CE40 pin names, not EP4CE115. No EP4CE115-specific QSF exists for the
-Ethernet test (`tcp_udp_tse_test` targets Arria V). Pins marked "?" need
-tracing on the physical board or a corrected bottom board schematic.
+**Pins on DOWN only** (not accessible from UP header):
 
-The bottom board's PE connector (16-pin) carries SD card signals (SD0-3,
-SCMD, SCLK), keys (K1-K4), IR, and buzzer. These are routed through pins
-in the A-B connector rows 29-38 region (B16, A16, B18, A18, B17, A17 confirmed
-from PE schematic labels, corresponding EP4CE115 pins).
+| DOWN Pin | FPGA | Signal | Device |
+|---------:|------|--------|--------|
+| 15 | W2 | TXD[0] | Ethernet |
+| 16 | W1 | TX_EN | Ethernet |
+| 27 | R2 | RXD[4] | Ethernet |
+| 28 | R1 | RXD[5] | Ethernet |
+| 41 | H5 | FPGA TX→CH340 | UART |
+| 42 | G5 | I2C_SDAT | Audio |
+| 61 | J6 | VGA_G[7] | VGA |
+| 62 | H6 | VGA_G[6] | VGA |
+| 77 | B4 | VGA_HS | VGA |
+| 78 | A4 | VGA_VS | VGA |
+
+Consequence: the UP header cannot support complete Ethernet (missing TXD[0],
+TX_EN, RXD[4:5]), VGA (missing G[6:7], HS, VS), UART TX (H5), or Audio I2C
+SDA (G5).
+
+#### Power-Side DOWN Connector (80 pins)
+
+Mates with bottom board. Pin 1 at power end (VCC5V). Bottom board carries
+SD card, keys, IR, buzzer, and other peripherals. No EP4CE115 test project
+assigns signals to these pins — the bottom board schematic labels them with
+EP4CE40 pin names (same physical package, different FPGA). Signal mapping
+requires metering the physical board.
+
+| Pin | EP4CE115 | EP4CE40 | Pin | EP4CE115 | EP4CE40 |
+|----:|----------|---------|----:|----------|---------|
+| 1 | VCC5V | VCC | 2 | VCC5V | VCC |
+| 3 | VCC5V | VCC | 4 | VCC5V | VCC |
+| 5 | A20 | GND | 6 | B20 | GND |
+| 7 | A19 | GND | 8 | B19 | GND |
+| 9 | GND | GND | 10 | GND | GND |
+| 11 | C19 | R19 | 12 | D19 | R20 |
+| 13 | C18 | P15 | 14 | D18 | P16 |
+| 15 | A18 | R21 | 16 | B18 | R22 |
+| 17 | A17 | P21 | 18 | B17 | P22 |
+| 19 | GND | GND | 20 | GND | GND |
+| 21 | C17 | N17 | 22 | D17 | N18 |
+| 23 | D15 | N19 | 24 | E15 | N20 |
+| 25 | A16 | M21 | 26 | B16 | M22 |
+| 27 | A15 | L21 | 28 | B15 | L22 |
+| 29 | GND | GND | 30 | GND | GND |
+| 31 | E16 | M19 | 32 | F15 | M20 |
+| 33 | E14 | K21 | 34 | F13 | N22 |
+| 35 | E9 | J21 | 36 | D10 | J22 |
+| 37 | D8 | H21 | 38 | E8 | H22 |
+| 39 | GND | GND | 40 | GND | GND |
+| 41 | C10 | N16 | 42 | E7 | P17 |
+| 43 | C13 | H19 | 44 | D13 | H20 |
+| 45 | E13 | F21 | 46 | C15 | F22 |
+| 47 | A14 | E21 | 48 | B14 | E22 |
+| 49 | GND | GND | 50 | GND | GND |
+| 51 | E12 | K17 | 52 | F14 | K18 |
+| 53 | E11 | H16 | 54 | F11 | J17 |
+| 55 | A13 | D21 | 56 | B13 | D22 |
+| 57 | A10 | C21 | 58 | B10 | C22 |
+| 59 | GND | GND | 60 | GND | GND |
+| 61 | F9 | F19 | 62 | F10 | F20 |
+| 63 | F7 | G18 | 64 | F8 | H17 |
+| 65 | A9 | B21 | 66 | B9 | B22 |
+| 67 | A8 | B19 | 68 | B8 | A19 |
+| 69 | GND | GND | 70 | GND | GND |
+| 71 | C7 | F17 | 72 | C8 | G17 |
+| 73 | C6 | B16 | 74 | D7 | A16 |
+| 75 | A7 | B18 | 76 | B7 | A18 |
+| 77 | A6 | B17 | 78 | B6 | A17 |
+| 79 | GND | GND | 80 | GND | GND |
+
+Notes:
+- Pins 5-8: EP4CE115 has FPGA I/O (A20, B20, A19, B19) but bottom board has
+  GND at these positions. These pins are grounded through 22R when bottom
+  board is attached — do not use as FPGA outputs with bottom board connected.
+- Pins 73-78: bottom board EP4CE40 pins B16/A16/B18/A18/B17/A17 are in the
+  PE connector region (SD card, keys, IR, buzzer) — SD card likely here.
+
+#### Power-Side UP Header (60 pins)
+
+User-accessible. Pin 1 at power end (VCC5V). Subset of DOWN connector.
+
+| Pin | EP4CE115 | Pin | EP4CE115 | Pin | EP4CE115 |
+|----:|----------|----:|----------|----:|----------|
+| 1 | VCC5V | 21 | A15 | 41 | E11 |
+| 2 | VCC5V | 22 | B15 | 42 | F11 |
+| 3 | A20 | 23 | E16 | 43 | A13 |
+| 4 | B20 | 24 | F15 | 44 | B13 |
+| 5 | A19 | 25 | E14 | 45 | A10 |
+| 6 | B19 | 26 | F13 | 46 | B10 |
+| 7 | C19 | 27 | E9 | 47 | GND |
+| 8 | D19 | 28 | D10 | 48 | GND |
+| 9 | C18 | 29 | D8 | 49 | F7 |
+| 10 | D18 | 30 | E8 | 50 | F8 |
+| 11 | A18 | 31 | GND | 51 | A9 |
+| 12 | B18 | 32 | GND | 52 | B9 |
+| 13 | A17 | 33 | C13 | 53 | A8 |
+| 14 | B17 | 34 | D13 | 54 | B8 |
+| 15 | GND | 35 | E13 | 55 | C7 |
+| 16 | GND | 36 | C15 | 56 | C8 |
+| 17 | D15 | 37 | A14 | 57 | C6 |
+| 18 | E15 | 38 | B14 | 58 | D7 |
+| 19 | A16 | 39 | E12 | 59 | A7 |
+| 20 | B16 | 40 | F14 | 60 | B7 |
+
+**Pins on DOWN only** (not on UP header): A20/B20 (GND'd by bottom board),
+A19/B19 (GND'd by bottom board), C10/E7, F9/F10, A6/B6.
+
+Signal assignments unknown — need to meter the physical board.
+Pins 3-14 (A20 through B17) likely include SD card and key connections
+based on bottom board PE connector topology.
 
 ### Bottom Board Peripheral Pin Summary
+
+**Ethernet (88E1111 GMII)** — 22 pins on JTAG-side connector (confirmed from
+`tcpip_hw.pin` fitter output, which targets EP4CE115 despite QSF saying Arria V):
+- MDC: Y1, MDIO: V4, PHY_RST_N: Y2
+- TXD[7:0]: T3, T4, T5, R4, R3, P4, P3, W2
+- TX_EN: W1, GTX_CLK: V2, TX_CLK: V1
+- RXD[7:0]: D6, R5, R1, R2, U1, U2, M5, N5
+- RX_DV: N6, RX_CLK: P5
+- Link LED: C3 (core board LED D6, directly wired, not on connector)
 
 **VGA (ADV7123)** — 30 pins on JTAG-side connector (confirmed from QSF):
 - Red R[2:9]: A3, B3, E4, E3, H7, G3, B2, B1
@@ -208,31 +317,34 @@ from PE schematic labels, corresponding EP4CE115 pins).
 - AUD_ADCDAT: L6, AUD_ADCLRCK: M6
 
 **UART (CH340)** — 2 pins on JTAG-side connector (confirmed from QSF):
-- FPGA TX → CH340 RX: PIN_H5 (row 53, **broken** — signal doesn't reach CH340)
-- CH340 TX → FPGA RX: PIN_N1 (row 20, working)
+- FPGA TX → CH340 RX: H5 (DOWN pin 41 only, **broken** — signal doesn't reach CH340)
+- CH340 TX → FPGA RX: N1 (DOWN pin 38 = UP pin 30, working)
 
-**Keys** — confirmed from KEY_TEST QSF (active low, accent key caps on bottom board):
-- KEY[0]: PIN_N21, KEY[1]: PIN_T1, KEY[2]: PIN_N22
+**Keys** — on core board, active low, accent key caps:
+- KEY[0]: N21, KEY[1]: T1, KEY[2]: N22 (not on connectors)
 
-**Ethernet (88E1111)** — ~22 pins on power-side connector (unconfirmed for EP4CE115):
-- GMII interface: TXD[7:0], RXD[7:0], TX_EN, RX_DV, GTX_CLK, TX_CLK, RX_CLK
-- MDIO management: MDC, MDIO, PHY_RST_N
-
-**SD Card** — 6 pins on power-side connector (unconfirmed for EP4CE115):
-- SPI mode: SD0-SD3, SCMD, SCLK
+**SD Card, IR, Buzzer, DIP switches** — on power-side connector (EP4CE115
+pin assignments unconfirmed, need metering). SD card likely near pins 73-78
+of the power-side DOWN connector (EP4CE115 pins C6, D7, A7, B7, A6, B6).
 
 ### Recommended UART Pins (Pico Serial Bridge)
 
-The CH340 TX path (PIN_H5) is broken. Use a Pico 2W as USB-serial bridge on
-the JTAG-side 60-pin header, rows 37-50 (14 unconnected pins):
+The JTAG-side connector has NO free pins — all are assigned to Ethernet,
+VGA, Audio, or UART. The previous recommendation of V4/T3 was incorrect
+(those are Ethernet MDIO/TXD[7]).
 
-| Signal | FPGA Pin | Connector | Pico 2W Pin |
-|--------|----------|-----------|-------------|
-| FPGA TX | PIN_V4 | C-D row 37 (pin 37) | GP1 (UART0 RX) |
-| FPGA RX | PIN_T3 | C-D row 38 (pin 38) | GP0 (UART0 TX) |
+Use **power-side UP header** pins for a Pico 2W serial bridge. Since signal
+assignments are unconfirmed, pick pins away from the SD card region (pins
+3-14) and verify with a multimeter that they are not loaded by the bottom
+board. Suggested starting point:
 
-These pins are adjacent, at the start of a 14-pin unconnected block, and
-confirmed not connected to any bottom board peripheral.
+| Signal | FPGA Pin | UP Header Pin | Pico 2W |
+|--------|----------|---------------|---------|
+| FPGA TX | E8 | 30 | GP1 (UART0 RX) |
+| FPGA RX | D8 | 29 | GP0 (UART0 TX) |
+
+Verify these pins are unloaded before connecting. Alternative: any pair of
+adjacent signal pins on the power-side UP header (pins 17-60 region).
 
 ## Address Mapping for JOP
 
