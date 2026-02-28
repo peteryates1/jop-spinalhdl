@@ -54,17 +54,147 @@ Reference files: `/srv/git/cycloneEthernet/`
 
 ## Key Pin Assignments
 
-From `ddr2_sodimm.qsf`:
+### Clocks
 
 | Signal | Pin | Notes |
 |--------|-----|-------|
-| `clk` (27 MHz) | PIN_AB11 | DDR2 PLL reference |
-| `rst_n` | — | Active low reset |
-| UART TX | PIN_H5 | CH340 on bottom board |
-| UART RX | PIN_N1 | CH340 on bottom board |
+| CLK25M (25 MHz) | PIN_AB11 | Main user clock (core board oscillator) |
+| CLK100M (100 MHz) | PIN_A11 | Secondary clock |
+| CLK27M (27 MHz) | — | DDR2 PLL reference (on core board, not on connector) |
+
+### Core Board Peripherals
+
+| Signal | Pin | Notes |
+|--------|-----|-------|
+| LED D3 | PIN_A5 | Active low |
+| LED D4 | PIN_B5 | Active low |
+| LED D5 | PIN_C4 | Active low |
+| LED D6 | PIN_C3 | Active low |
+| KEY1 | PIN_N21 | Active low, active on bottom board |
+| KEY2 | PIN_N22 | Active low, active on bottom board |
 
 DDR2 pins use FPGA I/O banks 3-6 at 1.8V SSTL-18. Full pin assignment
 TCL script: `ddr2_64bit_pin_assignments.tcl`
+
+### 2.54mm Header Connectors
+
+Two 80-pin dual-row headers connect the core board to the bottom board.
+All connector signals pass through 22R series resistor packs (RP21-RP51).
+Schematic: `EP4CE115_sch_pdf原理图/PDF/E115-IO-V2.pdf`
+
+#### JTAG-Side Connector (C-D) — 80 pins
+
+| Pin# | Col C | Col D | Bottom Board Device |
+|-----:|-------|-------|---------------------|
+| 1-2 | V3 | AA1 | — / Audio XCK |
+| 3-4 | Y2 | Y1 | free / free |
+| 5-8 | GND | GND | |
+| 9-10 | W2 | W1 | free / free |
+| 11-12 | V2 | V1 | free / free |
+| 13-14 | U2 | U1 | free / free |
+| 15-16 | R2 | R1 | free / free |
+| 17-18 | P2 | P1 | Audio DACLRCK / Audio DACDAT |
+| 19-20 | N2 | N1 | Audio BCLK / **UART RX (CH340)** |
+| 21-22 | M2 | M1 | VGA B9 / VGA B8 |
+| 23-24 | J1 | J2 | VGA B7 / VGA B6 |
+| 25-26 | H1 | H2 | VGA SYNC / VGA BLANK |
+| 27-28 | F1 | F2 | VGA G9 / VGA G8 |
+| 29-30 | C1 | C2 | VGA G3 / VGA G2 |
+| 31-32 | B1 | B2 | VGA R9 / VGA R8 |
+| 33-34 | B3 | A3 | VGA R3 / VGA R2 |
+| 35-36 | B4 | A4 | VGA HS / VGA VS |
+| 37-38 | **V4** | **T3** | **free / free** |
+| 39-40 | **T4** | **T5** | **free / free** |
+| 41-42 | **R4** | **R3** | **free / free** |
+| 43-44 | **P4** | **P3** | **free / free** |
+| 45-46 | **P5** | **N6** | **free / free** |
+| 47-48 | **N5** | **M5** | **free / free** |
+| 49-50 | **R5** | **D6** | **free / free** |
+| 51-52 | M6 | L6 | Audio ADCLRCK / Audio ADCDAT |
+| 53-54 | H5 | G5 | **UART TX (CH340)** / Audio I2C SDA |
+| 55-56 | M3 | M4 | Audio I2C SCL / VGA CLK |
+| 57-58 | E1 | D2 | VGA B5 / VGA B4 |
+| 59-60 | J4 | J3 | VGA B3 / VGA B2 |
+| 61-62 | J6 | H6 | VGA G7 / VGA G6 |
+| 63-64 | H3 | H4 | VGA G5 / VGA G4 |
+| 65-66 | G3 | H7 | VGA R7 / VGA R6 |
+| 67-68 | E3 | E4 | VGA R5 / VGA R4 |
+| 69-76 | GND | GND | |
+| 77-78 | A19 | B19 | free / free |
+| 79-80 | A20 | B20 | free / free |
+
+**Free pins (no bottom board device)**: V3, Y2, Y1, W2, W1, V2, V1, U2, U1, R2, R1
+(rows 1-16) and V4, T3, T4, T5, R4, R3, P4, P3, P5, N6, N5, M5, R5, D6
+(rows 37-50) and A19, B19, A20, B20 (rows 77-80).
+
+#### Power-Side Connector (A-B) — 60 pins
+
+| Pin# | Col B | Col A | Bottom Board Device |
+|-----:|-------|-------|---------------------|
+| 1-2 | B6 | A6 | free / free |
+| 3-4 | B7 | A7 | free / free |
+| 5-8 | GND | GND | |
+| 9-10 | B8 | A8 | free / free |
+| 11-12 | B9 | A9 | free / free |
+| 13-14 | A10 | B10 | free / free |
+| 15-16 | B13 | A13 | free / free |
+| 17-18 | A14 | — | free |
+| 19-20 | C15 | E13 | Ethernet? / Ethernet? |
+| 21-22 | B14 | — | free |
+| 23-24 | E8 | D10 | Ethernet? / Ethernet? |
+| 25-26 | E9 | D8 | Ethernet? / Ethernet? |
+| 27-28 | A15 | — | free |
+| 29-30 | B16 | A16 | free / free |
+| 31-32 | B15 | — | free |
+| 33-34 | B17 | — | free |
+| 35-36 | B18 | A18 | free / free |
+| 37-38 | A17 | — | free |
+| 39-40 | C8 | C7 | free / free |
+| 41-42 | D7 | C6 | free / free |
+| 43-44 | F10 | F9 | free / free |
+| 45-46 | F8 | F7 | free / free |
+| 47-48 | F14 | E12 | free / free |
+| 49-50 | F11 | E11 | free / free |
+| 51-52 | E7 | C10 | free / free |
+| 53-54 | D13 | C13 | free / free |
+| 55-56 | F15 | E16 | free / free |
+| 57-58 | F13 | E14 | free / free |
+| 59-60 | D17 | C17 | free / free |
+
+Note: Ethernet (88E1111) and SD card pin assignments are not confirmed in the
+reference QSFs (the `tcp_udp_tse_test` QSF targets Arria V, not EP4CE115).
+Pins marked "Ethernet?" are tentative based on position.
+
+### Bottom Board Peripheral Pin Summary
+
+**VGA (ADV7123)** — 30 pins on JTAG-side connector:
+- Red R[2:9]: A3, B3, E4, E3, H7, G3, B2, B1
+- Green G[2:9]: C2, C1, H4, H3, H6, J6, F2, F1
+- Blue B[2:9]: J3, J4, D2, E1, J2, J1, M1, M2
+- VGA_CLK: M4, VGA_BLANK: H2, VGA_SYNC: H1, VGA_HS: B4, VGA_VS: A4
+
+**Audio (WM8731)** — 8 pins on JTAG-side connector:
+- I2C_SCLK: M3, I2C_SDAT: G5
+- AUD_BCLK: N2, AUD_XCK: AA1
+- AUD_DACDAT: P1, AUD_DACLRCK: P2
+- AUD_ADCDAT: L6, AUD_ADCLRCK: M6
+
+**UART (CH340)** — 2 pins on JTAG-side connector:
+- FPGA TX → CH340 RX: PIN_H5 (row 53, **broken** — signal doesn't reach CH340)
+- CH340 TX → FPGA RX: PIN_N1 (row 20, working)
+
+### Recommended UART Pins (Pico Serial Bridge)
+
+The CH340 TX path (PIN_H5) is broken. Use a Pico 2W as USB-serial bridge on
+free pins in the JTAG-side connector rows 37-50:
+
+| Signal | FPGA Pin | Connector | Pico 2W Pin |
+|--------|----------|-----------|-------------|
+| FPGA TX | PIN_V4 | C-D row 37 (pin 37) | GP1 (UART0 RX) |
+| FPGA RX | PIN_T3 | C-D row 38 (pin 38) | GP0 (UART0 TX) |
+
+These pins are adjacent, in the middle of a 14-pin free block, and not
+connected to any bottom board peripheral.
 
 ## Address Mapping for JOP
 
