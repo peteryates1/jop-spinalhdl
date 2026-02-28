@@ -42,6 +42,24 @@ public class StringConcat extends TestCase {
 		result = "a" + 1 + "b" + 2;
 		if (result.length() != 4) return false;  // "a1b2"
 
+		// T7: StringBuilder resize (triggers System.arraycopy)
+		// Default capacity = 16, so appending >16 chars forces ensureCapacity
+		sb = new StringBuilder();
+		sb.append("abcdefghij");      // 10 chars
+		sb.append("klmnopqrst");      // 20 total — exceeds 16, triggers resize
+		s = sb.toString();
+		if (s.length() != 20) return false;
+		if (s.charAt(0) != 'a') return false;
+		if (s.charAt(19) != 't') return false;
+
+		// T8: resize with int append (resize + valueOf)
+		sb = new StringBuilder();
+		sb.append("value=");           // 6 chars
+		sb.append(1234567890);         // 10 digit number — 16 total, exactly at capacity
+		sb.append("!");                // 17 total — triggers resize
+		s = sb.toString();
+		if (s.length() != 17) return false;
+
 		return true;
 	}
 }

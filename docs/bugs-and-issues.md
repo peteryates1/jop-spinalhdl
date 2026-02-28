@@ -6,36 +6,25 @@ each bug, see [Implementation Notes](implementation-notes.md).
 
 ---
 
-## Open JVM Issues (Workarounds Required)
+## JVM Runtime Issues (All Fixed)
 
-These are limitations in the JOP JVM that cannot be fixed without modifying
-the processor core or runtime. All have workarounds in use.
+These were limitations in the JOP JVM runtime. All have been fixed.
 
-### 1. System.arraycopy Causes Stack Overflow
+### 1. System.arraycopy (FIXED — was misdiagnosed)
 
-JOP's `System.arraycopy()` crashes with a stack overflow. Any `StringBuilder`
-operation that triggers `ensureCapacity()` (internal resize) will call
-`System.arraycopy()` and crash.
+Originally reported as "`System.arraycopy()` crashes with a stack overflow".
+The actual root cause was bug #2: `StringBuilder` had no `toString()` method,
+so any `StringBuilder` operation ending in `.toString()` triggered infinite
+recursion via `Object.toString()` → `"Object " + hashCode()` → new
+`StringBuilder` → `.toString()` → ... → stack overflow.
 
-**Workaround**: Use two-pass `char[]` construction instead of `StringBuilder`:
-count characters first, allocate exact size, then fill.
+With `StringBuilder.toString()` fixed (bug #2), `System.arraycopy` works
+correctly. `StringConcat` test T7 verifies this: appends 20 chars to a
+default-capacity (16) `StringBuilder`, forcing `ensureCapacity()` →
+`System.arraycopy()` resize. Passes in simulation.
 
-```java
-// WRONG — crashes on JOP:
-StringBuilder sb = new StringBuilder();
-sb.append("hello");
-String result = sb.toString();
-
-// CORRECT — two-pass char[] approach:
-int len = 0;
-for (...) { if (valid(ch)) len++; }
-char[] result = new char[len];
-int pos = 0;
-for (...) { if (valid(ch)) result[pos++] = ch; }
-return new String(result);
-```
-
-**Affected code**: `DirEntry.formatShortName()`, `Fat32FileSystem.stripIllegalChars()`
+The two-pass `char[]` workarounds in `DirEntry.formatShortName()` and
+`Fat32FileSystem.stripIllegalChars()` are no longer necessary but harmless.
 
 ### 2. String Concatenation with int (FIXED)
 
