@@ -108,7 +108,7 @@ captured during development — see the source code for authoritative details.
 
 - **Runtime**: Small runtime from jopmin (56 files) — GC, Scheduler, IOFactory, more JDK stubs
 - **App**: `java/apps/Small/src/test/HelloWorld.java` — allocates int[32] arrays in a loop, reports free memory
-- **GC behavior**: Automatic GC triggered by `gc_alloc()` when free list empty. ~12 allocation rounds between GC cycles.
+- **GC behavior**: Incremental GC triggered proactively at 25% free heap. STW fallback (`finishCycleNow()`) drains remaining work when heap exhausted. Full STW `gc()` as last resort.
 - **FPGA static field corruption (SDR SDRAM only)**: Root cause was BmbSdramCtrl32 bug, fixed by Altera controller
 - **InstructionFinder.java**: Patched BCEL class needed by PreLinker's ReplaceIinc transform
 
@@ -136,7 +136,7 @@ captured during development — see the source code for authoritative details.
 ## SMP GC Stop-the-World
 
 - **Problem**: Original JOP SMP has no stop-the-world GC mechanism. GC uses `synchronized(mutex)` which only halts cores entering synchronized blocks — cores running normal code (e.g., reading I/O registers, toggling watchdog) keep executing and can read partially-moved objects from SDRAM during the copying phase, causing corruption.
-- **Symptom**: NCoreHelloWorld on CYC5000 SMP ran ~140 println iterations (~70 seconds), then output corrupted to a flood of 'C' characters before both cores hung. This matched the ~160 allocation limit of the 28KB semi-space heap.
+- **Symptom**: NCoreHelloWorld on CYC5000 SMP ran ~140 println iterations (~70 seconds), then output corrupted to a flood of 'C' characters before both cores hung. This matched the ~160 allocation limit of the 28KB heap (semi-space at the time, now mark-compact).
 - **Fix**: Hardware GC halt signal via `IO_GC_HALT` (BmbSys addr 13):
   - `SyncIn` bundle: added `gcHalt` field (core → CmpSync direction)
   - `CmpSync`: when any core's `gcHalt` is set, all OTHER cores' pipelines are halted. The halting core itself is NOT affected. Lock owner is exempt from gcHalt (see CmpSync deadlock fix above).
@@ -160,7 +160,7 @@ captured during development — see the source code for authoritative details.
 
 ## JVM Test Suite (`java/apps/JvmTests/`)
 
-56 tests covering JVM bytecode correctness, run via `JopJvmTestsBramSim` (BRAM, 20M cycles). All 56 pass.
+58 tests covering JVM bytecode correctness, run via `JopJvmTestsBramSim` (BRAM, 25M cycles). All 58 pass.
 
 **Test categories**:
 - **Core bytecodes**: Basic/Basic2 (stack/local ops), TypeMix, Static, StackManipulation
@@ -172,13 +172,14 @@ captured during development — see the source code for authoritative details.
 - **Constant loading**: ConstLoad (iconst/bipush/sipush/ldc boundary values)
 - **Field access (all types)**: IntField, ShortField, ByteField, CharField, BooleanField, FloatField, DoubleField, ObjectField — each tests putfield/getfield and putstatic/getstatic with boundary values
 - **OOP**: InstanceCheckcast, CheckCast, InvokeSpecial, InvokeSuper, SuperTest, InstanceOfTest, Iface, Clinit/Clinit2
-- **Exceptions**: Except (throw/catch, cast, recursive, finally — throw9 disabled), AthrowTest, NullPointer (9 NPE tests: explicit throw, invokevirtual, invokespecial, getfield/putfield for int/long/ref), PutRef (NPE + array bounds)
-- **Other**: NativeMethods
+- **Exceptions**: Except (throw/catch, cast, recursive, finally — throw9 disabled), AthrowTest, NullPointer (13 sub-tests: explicit throw, invokevirtual, getfield/putfield int/long/ref, invokespecial, invokeinterface, iaload, iastore, aaload), PutRef (NPE + array bounds), DivZero
+- **String operations**: StringConcat (toString, "x="+42, negative/zero ints, String.valueOf, multiple appends, StringBuilder resize via System.arraycopy)
+- **Other**: NativeMethods, CachePersistence, DeepRecursion (200-level recursion, exercises stack cache bank rotation)
 
 **Ported from**: Original JOP `jvm/` suite (Martin Schoeberl) + `jvmtest/` suite (Guenther Wimpassinger). The `jvmtest/` tests used a hash-based `TestCaseResult` framework; converted to the `jvm.TestCase` boolean pattern.
 
 **Known platform limitations discovered during porting**:
-- **Div-by-zero fixed**: Changed f_idiv/f_irem/f_ldiv/f_lrem from hardware exception to `throw JVMHelp.ArithExc`. `DivZero.java` test enabled (56/56 pass).
+- **Div-by-zero fixed**: Changed f_idiv/f_irem/f_ldiv/f_lrem from hardware exception to `throw JVMHelp.ArithExc`. `DivZero.java` test enabled (58/58 pass).
 - **No wide iinc**: JOP's PreLinker rejects iinc constants outside -128..127. IntArithmetic uses `x = x + val` (iadd) instead of `x += val` (wide iinc) for large increments.
 - **Float constant folding**: javac evaluates literal float expressions (e.g., `2.0F * 3.0F`) at compile time, so actual fmul/fdiv/fneg/fcmp bytecodes never execute. FloatTest uses variables to prevent this.
 
@@ -232,7 +233,7 @@ The original VHDL `mem_sc.vhd` has NPE/ABE detection code, but the upper bounds 
 
 ## DDR3 TODO
 
-- **Calibration gate**: DDR3 top-level (`JopDdr3Top`) should gate JOP reset on MIG calibration complete (`init_calib_complete`). Currently, JOP starts running before DDR3 is ready, which could cause early memory accesses to fail. Deferred — DDR3 platform is deprioritized due to unresolved GC hang (see `ddr3-gc-hang.md`).
+- **Calibration gate**: DDR3 top-level (`JopDdr3Top`) should gate JOP reset on MIG calibration complete (`init_calib_complete`). Currently, JOP starts running before DDR3 is ready, which could cause early memory accesses to fail. In practice, MIG calibration completes well before JOP's boot sequence reaches first SDRAM access, so this hasn't been an issue.
 
 ## SDR SDRAM GC Hang (Resolved)
 
@@ -275,7 +276,7 @@ The GC has been upgraded from semi-space copying to **mark-compact with incremen
 
 **GC Phase State Machine**: `IDLE → ROOT_SCAN (STW) → MARK (incremental) → COMPACT (incremental) → IDLE`
 
-Verified: 56/56 JVM tests pass, GC BRAM sim passes (3+ cycles, R80+).
+Verified: 58/58 JVM tests pass, BRAM GC (3+ cycles), SDRAM GC (100+ rounds), QMTECH FPGA (2000+ rounds), CYC5000 FPGA (9800+ rounds), DDR3 FPGA (1870+ rounds at 256MB), SMP 2-core BRAM GC.
 
 ### Previous Implementation (Semi-Space — Replaced)
 
@@ -331,38 +332,24 @@ The full original JOP GC is more sophisticated than our jopmin fork:
 | Cache snoop invalidation | `CacheSnoopBus.scala` | Working (A$/O$ cross-core invalidation) |
 | Handle dereference | HANDLE_READ/CALC/ACCESS states | Working (inherent hardware read barrier) |
 
-### GC Improvement Options (Ranked)
+### Optional Future GC Enhancements
 
-**1. Mark-Compact (recommended next step)**
+Mark-compact and incremental mark-compact are both implemented (see "Current
+Implementation" above). The remaining enhancements are hardware-assisted
+optimizations:
 
-Recovers the 50% heap waste from semi-space design. Handle indirection makes compaction uniquely cheap — only `handle[OFF_PTR]` needs updating per live object, NOT every pointer in the heap (O(live_handles) not O(heap_pointers)).
-
-Changes from current code:
-- `GC.init()`: Single heap region instead of heapStartA/heapStartB
-- `GC.flip()`: No longer needed
-- `GC.markAndCopy()`: Split into `mark()` (trace only) and `compact()` (slide objects + update handles)
-- `GC.zapSemi()`: No longer needed (no fromSpace to clear)
-- `GC.newObject()` / `GC.newArray()`: Single bump pointer (simpler)
-- Handle `OFF_SPACE`: Repurpose as mark bit
-
-Estimated effort: Medium. Mark phase is essentially unchanged (same tri-color tracing via gray list). Compact phase replaces copy-to-toSpace with sequential compaction.
-
-**2. Incremental Mark-Compact (medium-term)**
-
-Break the mark phase into bounded increments (scan N gray objects per increment). Compact phase is harder to incrementalize (objects must be moved in address order). Use existing write barriers for mutations during incremental marking. SMP: run GC increments on core 0 during idle time, brief STW pauses only for root snapshot + compact phase.
-
-**3. Hardware-Assisted Concurrent GC (long-term)**
+**Hardware-Assisted Concurrent GC**
 
 - Move handle table to dual-port BRAM (eliminates SDRAM contention during GC scanning; 1024 handles × 8 words = 32KB fits in BRAM)
 - Hardware read barrier in HANDLE_CALC (check if handle points to fromSpace, redirect to toSpace)
 - Fix address translation timing (pipeline the comparison to meet 100MHz)
 - Hardware bulk copy DMA (burst writes instead of per-word memCopy)
 - Hardware handle sweep accelerator (scan handles at 1/cycle vs ~10/cycle in software)
+- Concurrent mark on dedicated core (8+ core SMP only)
 
 **Not recommended**:
 - Generational GC: Over-engineered for embedded workloads, doesn't exploit JOP's handle architecture
 - Pure mark-sweep: Fragmentation will crash long-running systems
-- Full concurrent GC immediately: Too complex, SDRAM bandwidth contention with 16 cores
 
 ### SDRAM Bandwidth Considerations
 
