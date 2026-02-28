@@ -33,6 +33,13 @@ Reference files: `/srv/git/cycloneEthernet/`
 **Altera DDR2 controller IP** (`ddr2_64bit`):
 - Altera ALTMEMPHY DDR2 High Performance Controller v13.1
 - PLL reference: 27 MHz → generates PHY clock
+- **Quartus version**: Must use **Quartus 18.1 or earlier**. Intel dropped
+  DDR2 ALTMEMPHY support for Cyclone IV starting with Quartus 19.x. The IP
+  may appear in newer Platform Designer catalogs (`alt_mem_if_civ_ddr2_emif`)
+  but has known generation/compilation issues in 22.1+. The existing test
+  projects (`DDR667_read_write`, `read_write_1G`) were built with Quartus 13.1.
+  Use Quartus 18.1 for new DDR2 IP generation; the generated RTL is plain
+  Verilog and can be instantiated from SpinalHDL via `BlackBox`.
 - Local interface (user-facing):
 
 | Signal | Width | Description |
@@ -333,18 +340,19 @@ The JTAG-side connector has NO free pins — all are assigned to Ethernet,
 VGA, Audio, or UART. The previous recommendation of V4/T3 was incorrect
 (those are Ethernet MDIO/TXD[7]).
 
-Use **power-side UP header** pins for a Pico 2W serial bridge. Since signal
-assignments are unconfirmed, pick pins away from the SD card region (pins
-3-14) and verify with a multimeter that they are not loaded by the bottom
-board. Suggested starting point:
+Use **power-side UP header** pins for a Pico 2W serial bridge. Pick pins
+with dashes in the connector listing (confirmed regular I/O — pins without
+dashes like E8, B8, D10, F13, F15 are likely VREF or dedicated clock inputs).
+Avoid the SD card region (pins 3-14). Verify chosen pins are not loaded by
+the bottom board with a multimeter before connecting.
 
 | Signal | FPGA Pin | UP Header Pin | Pico 2W |
 |--------|----------|---------------|---------|
-| FPGA TX | E8 | 30 | GP1 (UART0 RX) |
-| FPGA RX | D8 | 29 | GP0 (UART0 TX) |
+| FPGA TX | A14 | 37 | GP1 (UART0 RX) |
+| FPGA RX | B14 | 38 | GP0 (UART0 TX) |
 
-Verify these pins are unloaded before connecting. Alternative: any pair of
-adjacent signal pins on the power-side UP header (pins 17-60 region).
+Alternative: any adjacent pair of dashed pins on the power-side UP header
+(e.g., C13/D13 at 33-34, A10/B10 at 45-46).
 
 ## Address Mapping for JOP
 
@@ -506,6 +514,27 @@ Bottom board (`/srv/git/cycloneEthernet/A-E115FB_bottom_2019/.../E115_core_test/
 - `Audio_Bypass/` — Audio loopback (WM8731)
 - `SD_card/` — SD card test
 - `WM8731_input_FFT_VGA/` — Audio FFT with VGA display
+
+## Quartus Toolchain
+
+**Quartus 18.1** (last version with full Cyclone IV DDR2 IP support):
+- Required for generating DDR2 ALTMEMPHY controller IP
+- `/opt/altera/18.1/quartus/bin/quartus_sh --flow compile <project>`
+- SOF→RBF: `/opt/altera/18.1/quartus/bin/quartus_cpf -c input.sof output.rbf`
+- All existing EP4CE115 test projects target this or earlier versions
+
+**Quartus 25.1** (current):
+- Supports EP4CE115 device (Quartus Prime Lite edition, free)
+- Can compile designs, run fitter, generate bitstreams
+- **Cannot generate new DDR2 controller IP** — ALTMEMPHY dropped for Cyclone IV
+- Can instantiate pre-generated DDR2 controller RTL (Verilog from 18.1)
+- All other IP (PLLs, on-chip RAM, ALTDDIO, etc.) works normally
+
+**Recommended workflow for JOP on EP4CE115:**
+1. Generate DDR2 controller IP once in Quartus 18.1 (or reuse from test projects)
+2. Wrap the generated Verilog as a SpinalHDL `BlackBox`
+3. Build and compile the full design in either Quartus version
+4. Program via pico-usb-blaster (`program_fpga.c`) or `quartus_pgm`
 
 ## Architectural Considerations
 
