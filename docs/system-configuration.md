@@ -37,13 +37,13 @@ Without stack cache (`useStackCache = false`):
 ```
 Word Address
 0x000000  ┌──────────────────┐
-          │    .jop program   │  Code, class data, constants
-          │                   │
+          │   .jop program   │  Code, class data, constants
+          │                  │
 appEnd    ├──────────────────┤
-          │   Handle area     │  handle_cnt * 8 words
+          │  Handle area     │  handle_cnt * 8 words
           ├──────────────────┤
-          │      Heap         │  Object/array data (GC managed)
-          │   (grows up →)    │
+          │     Heap         │  Object/array data (GC managed)
+          │  (grows up →)    │
 mem_size  └──────────────────┘
 ```
 
@@ -52,21 +52,21 @@ With stack cache and per-core stack regions (`stackRegionWordsPerCore > 0`):
 ```
 Word Address
 0x000000  ┌──────────────────┐
-          │    .jop program   │  Code, class data, constants
-          │                   │
+          │   .jop program   │  Code, class data, constants
+          │                  │
 appEnd    ├──────────────────┤
-          │   Handle area     │  handle_cnt * 8 words
+          │   Handle area    │  handle_cnt * 8 words
           ├──────────────────┤
-          │      Heap         │  Object/array data (GC managed)
-          │   (grows up →)    │
+          │       Heap       │  Object/array data (GC managed)
+          │   (grows up →)   │
 memEnd    ├──────────────────┤  memEnd = memWords - cpuCnt * stackRegion
-          │  Core N-1 stack   │  Highest-numbered core (lowest address)
+          │  Core N-1 stack  │  Highest-numbered core (lowest address)
           ├──────────────────┤
-          │       ...         │
+          │       ...        │
           ├──────────────────┤
-          │  Core 1 stack     │
+          │  Core 1 stack    │
           ├──────────────────┤
-          │  Core 0 stack     │  Core 0 at highest address
+          │  Core 0 stack    │  Core 0 at highest address
 memWords  └──────────────────┘  Top of physical memory
 ```
 
