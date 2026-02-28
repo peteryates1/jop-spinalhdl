@@ -457,31 +457,63 @@ case class BmbSdNative(clkDivInit: Int = 99) extends Component {
       }
 
       is(DataState.WAIT_CRC_STATUS) {
-        // Wait for start bit (DAT0 low) before sampling CRC status.
-        // Card needs Ncrc SD clocks after end bit before driving status.
-        when(datCrcStatusCnt === 0 && io.sdDat.read(0)) {
-          // Still waiting for start bit — don't advance counter
+        // CRC status response from card: start(0) + 3 status bits + end(1)
+        // Status "010" = accepted, "101" = CRC error, "110" = write error
+        // Counter: 0 = waiting for start bit, 1-3 = sampling status bits
+        when(datCrcStatusCnt === 0) {
+          when(io.sdDat.read(0)) {
+            // Still waiting for start bit (DAT0 high = idle)
+            dataTimeoutCnt := dataTimeoutCnt + 1
+            when(dataTimeoutCnt === U(0xFFFFF, 20 bits)) {
+              dataTimeout := True
+              dataState := DataState.DONE
+            }
+          } otherwise {
+            // Start bit detected (DAT0 low) — advance counter, don't sample
+            datCrcStatusCnt := 1
+          }
+        } otherwise {
+          // Sample status bits (cnt 1, 2, 3)
+          datCrcStatus := (datCrcStatus |<< 1) | io.sdDat.read(0).asBits.resized
+          datCrcStatusCnt := datCrcStatusCnt + 1
+          when(datCrcStatusCnt === 3) {
+            // All 3 status bits received: datCrcStatus has bits [2:1],
+            // current DAT0 is bit [0]. Combine for final check.
+            val status = (datCrcStatus |<< 1) | io.sdDat.read(0).asBits.resized
+            when(status =/= B"010") {
+              dataCrcError := True
+            }
+            dataState := DataState.WAIT_BUSY
+            datCrcStatusCnt := 0 // Reuse as busy-phase indicator
+            dataTimeoutCnt := 0
+          }
+        }
+      }
+
+      is(DataState.WAIT_BUSY) {
+        // Phase 0: wait for DAT0 to go low (card starts busy/programming)
+        // Phase 1: wait for DAT0 to go high (card done, idle)
+        // This prevents false exit on the CRC status end bit (DAT0=1).
+        when(datCrcStatusCnt === 0) {
+          when(!io.sdDat.read(0)) {
+            datCrcStatusCnt := 1 // Busy detected
+          }
+          // Timeout if busy never starts
           dataTimeoutCnt := dataTimeoutCnt + 1
           when(dataTimeoutCnt === U(0xFFFFF, 20 bits)) {
             dataTimeout := True
             dataState := DataState.DONE
           }
         } otherwise {
-          datCrcStatus := (datCrcStatus |<< 1) | io.sdDat.read(0).asBits.resized
-          datCrcStatusCnt := datCrcStatusCnt + 1
-          when(datCrcStatusCnt === 2) {
-            val status = (datCrcStatus |<< 1) | io.sdDat.read(0).asBits.resized
-            when(status =/= B"010") {
-              dataCrcError := True
-            }
-            dataState := DataState.WAIT_BUSY
+          when(io.sdDat.read(0)) {
+            dataState := DataState.DONE
           }
-        }
-      }
-
-      is(DataState.WAIT_BUSY) {
-        when(io.sdDat.read(0)) {
-          dataState := DataState.DONE
+          // Timeout if busy never ends
+          dataTimeoutCnt := dataTimeoutCnt + 1
+          when(dataTimeoutCnt === U(0xFFFFF, 20 bits)) {
+            dataTimeout := True
+            dataState := DataState.DONE
+          }
         }
       }
 

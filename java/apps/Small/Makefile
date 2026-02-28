@@ -28,7 +28,7 @@ all: jop
 
 classes:
 	mkdir -p $(CLASSES_DIR) $(BUILD_DIR)
-	find $(APP_SRC) $(TARGET_DIR)/src/jop $(TARGET_DIR)/src/jvm -name '*.java' > $(BUILD_DIR)/sources.txt
+	find $(APP_SRC) $(TARGET_DIR)/src/jop $(TARGET_DIR)/src/jvm $(EXTRA_SRC) -name '*.java' > $(BUILD_DIR)/sources.txt
 	$(JAVAC6) -source 1.6 -target 1.6 -d $(CLASSES_DIR) @$(BUILD_DIR)/sources.txt
 
 preprocess: classes

@@ -19,4 +19,22 @@ public class Character {
 	public char charValue() {
 		return value;
 	}
+
+	public static char toUpperCase(char ch) {
+		if (ch >= 'a' && ch <= 'z') return (char)(ch - 32);
+		return ch;
+	}
+
+	public static char toLowerCase(char ch) {
+		if (ch >= 'A' && ch <= 'Z') return (char)(ch + 32);
+		return ch;
+	}
+
+	public static boolean isLetter(char ch) {
+		return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
+	}
+
+	public static boolean isDigit(char ch) {
+		return ch >= '0' && ch <= '9';
+	}
 }
