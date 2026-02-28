@@ -51,6 +51,10 @@ case class JopCoreTestHarness(
     // Exception debug
     val excFired = out Bool()
     val excType = out Bits(8 bits)
+
+    // Stack pointer debug
+    val debugSp = out UInt(config.stackConfig.spWidth bits)
+    val debugVp = out UInt(config.stackConfig.spWidth bits)
   }
 
   // Extract JBC init from main memory
@@ -133,6 +137,8 @@ case class JopCoreTestHarness(
   io.debugState := 0  // Placeholder - internal signal not accessible
   io.excFired := jopCore.io.debugExc
   io.excType := 0  // Exception type not easily snooped with internal I/O
+  io.debugSp := jopCore.io.debugSp
+  io.debugVp := jopCore.io.debugVp
 }
 
 /**

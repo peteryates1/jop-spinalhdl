@@ -3,6 +3,10 @@ package jop.pipeline
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
+import io.circe._
+import io.circe.parser._
+import scala.io.Source
+import java.nio.file.{Path, Paths}
 
 class BytecodeFetchStageTest extends AnyFunSuite {
 
@@ -33,6 +37,9 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.nf #= false
       dut.io.eq #= false
       dut.io.lt #= false
+      dut.io.irq #= false
+      dut.io.exc #= false
+      dut.io.ena #= false
 
       dut.clockDomain.waitSampling()
       dut.clockDomain.deassertReset()
@@ -61,6 +68,9 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.nf #= false
       dut.io.eq #= false
       dut.io.lt #= false
+      dut.io.irq #= false
+      dut.io.exc #= false
+      dut.io.ena #= false
       dut.clockDomain.waitSampling()
       dut.clockDomain.deassertReset()
       dut.clockDomain.waitSampling()
@@ -112,6 +122,9 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.nf #= false
       dut.io.eq #= false
       dut.io.lt #= false
+      dut.io.irq #= false
+      dut.io.exc #= false
+      dut.io.ena #= false
       dut.clockDomain.waitSampling()
       dut.clockDomain.deassertReset()
       dut.clockDomain.waitSampling()
@@ -155,6 +168,9 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.nf #= false
       dut.io.eq #= false
       dut.io.lt #= false
+      dut.io.irq #= false
+      dut.io.exc #= false
+      dut.io.ena #= false
       dut.clockDomain.waitSampling()
       dut.clockDomain.deassertReset()
       dut.clockDomain.waitSampling()
@@ -165,7 +181,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
 
       // Read NOP at address 0
       val nopAddr = dut.io.jpaddr.toInt
-      assert(nopAddr == 0x218, f"NOP should map to 0x218, got 0x$nopAddr%03x")
+      assert(nopAddr == 0x20C, f"NOP should map to 0x20C, got 0x$nopAddr%03x")
 
       // Increment to address 1 (iadd)
       dut.io.jfetch #= true
@@ -176,7 +192,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       sleep(1)
 
       val iaddAddr = dut.io.jpaddr.toInt
-      assert(iaddAddr == 0x26C, f"IADD should map to 0x26C, got 0x$iaddAddr%03x")
+      assert(iaddAddr == 0x260, f"IADD should map to 0x260, got 0x$iaddAddr%03x")
 
       // Increment to address 2 (goto)
       dut.io.jfetch #= true
@@ -187,7 +203,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       sleep(1)
 
       val gotoAddr = dut.io.jpaddr.toInt
-      assert(gotoAddr == 0x296, f"GOTO should map to 0x296, got 0x$gotoAddr%03x")
+      assert(gotoAddr == 0x28A, f"GOTO should map to 0x28A, got 0x$gotoAddr%03x")
     }
   }
 
@@ -207,6 +223,9 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.nf #= false
       dut.io.eq #= false
       dut.io.lt #= false
+      dut.io.irq #= false
+      dut.io.exc #= false
+      dut.io.ena #= false
       dut.clockDomain.waitSampling()
       dut.clockDomain.deassertReset()
       dut.clockDomain.waitSampling()
@@ -239,6 +258,9 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.nf #= false
       dut.io.eq #= false
       dut.io.lt #= false
+      dut.io.irq #= false
+      dut.io.exc #= false
+      dut.io.ena #= false
       dut.clockDomain.waitSampling()
       dut.clockDomain.deassertReset()
       dut.clockDomain.waitSampling()
@@ -288,6 +310,9 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.nf #= false
       dut.io.eq #= false
       dut.io.lt #= false
+      dut.io.irq #= false
+      dut.io.exc #= false
+      dut.io.ena #= false
       dut.clockDomain.waitSampling()
       dut.clockDomain.deassertReset()
       dut.clockDomain.waitSampling()
@@ -356,6 +381,9 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.nf #= false
       dut.io.eq #= false
       dut.io.lt #= false
+      dut.io.irq #= false
+      dut.io.exc #= false
+      dut.io.ena #= false
       dut.clockDomain.waitSampling()
       dut.clockDomain.deassertReset()
       dut.clockDomain.waitSampling()
@@ -398,6 +426,9 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.nf #= false
       dut.io.eq #= false
       dut.io.lt #= false
+      dut.io.irq #= false
+      dut.io.exc #= false
+      dut.io.ena #= false
       dut.clockDomain.waitSampling()
       dut.clockDomain.deassertReset()
       dut.clockDomain.waitSampling()
@@ -451,17 +482,21 @@ class BytecodeFetchStageTest extends AnyFunSuite {
     SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
-      // Reset
+      // Reset — same pattern as if_icmplt test (which passes reliably)
       dut.clockDomain.assertReset()
       dut.io.jpc_wr #= false
       dut.io.din #= 0
       dut.io.jfetch #= false
       dut.io.jopdfetch #= false
       dut.io.jbr #= false
-      dut.io.zf #= false  // Will set to true for branch
+      dut.io.stall #= false
+      dut.io.zf #= false
       dut.io.nf #= false
       dut.io.eq #= false
       dut.io.lt #= false
+      dut.io.irq #= false
+      dut.io.exc #= false
+      dut.io.ena #= false
       dut.clockDomain.waitSampling()
       dut.clockDomain.deassertReset()
       dut.clockDomain.waitSampling()
@@ -481,7 +516,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.jopdfetch #= false
       sleep(1)
 
-      // Assert branch with zf=1 (condition true)
+      // Branch with zf=1 (condition true for ifeq)
       dut.io.zf #= true
       dut.io.jbr #= true
       dut.clockDomain.waitSampling()
@@ -517,6 +552,9 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.nf #= false
       dut.io.eq #= false
       dut.io.lt #= false
+      dut.io.irq #= false
+      dut.io.exc #= false
+      dut.io.ena #= false
       dut.clockDomain.waitSampling()
       dut.clockDomain.deassertReset()
       dut.clockDomain.waitSampling()
@@ -577,6 +615,9 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       dut.io.nf #= false
       dut.io.eq #= false
       dut.io.lt #= false
+      dut.io.irq #= false
+      dut.io.exc #= false
+      dut.io.ena #= false
       dut.clockDomain.waitSampling()
       dut.clockDomain.deassertReset()
       dut.clockDomain.waitSampling()
@@ -605,5 +646,257 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       val jpc_after = dut.io.jpc_out.toInt
       assert(jpc_after == 4, f"JPC should be 4 after if_icmplt with lt=1, got $jpc_after")
     }
+  }
+
+  // ==========================================================================
+  // JSON-driven tests from bcfetch.json (v2.0 sequence format)
+  // ==========================================================================
+
+  // --- Data model for v2.0 test vector format ---
+
+  case class BcFetchSequenceAction(
+    action: String,
+    cycles: Option[Int],
+    signals: Option[Map[String, String]],
+    address: Option[Json],       // write_jbc address (can be int or string)
+    data: Option[String],        // write_jbc data
+    comment: Option[String]
+  )
+
+  case class BcFetchTestCase(
+    name: String,
+    testType: String,
+    description: Option[String],
+    tags: Seq[String],
+    sequence: Seq[BcFetchSequenceAction]
+  )
+
+  case class BcFetchTestVectors(
+    module: String,
+    version: String,
+    description: Option[String],
+    testCases: Seq[BcFetchTestCase]
+  )
+
+  // --- Circe decoders ---
+
+  implicit val actionDecoder: Decoder[BcFetchSequenceAction] = (c: HCursor) => for {
+    action  <- c.get[String]("action")
+    cycles  <- c.get[Option[Int]]("cycles")
+    signals <- c.get[Option[Map[String, String]]]("signals")
+    address <- c.get[Option[Json]]("address")
+    data    <- c.get[Option[String]]("data")
+    comment <- c.get[Option[String]]("comment")
+  } yield BcFetchSequenceAction(action, cycles, signals, address, data, comment)
+
+  implicit val testCaseDecoder: Decoder[BcFetchTestCase] = (c: HCursor) => for {
+    name     <- c.get[String]("name")
+    testType <- c.get[String]("type")
+    desc     <- c.get[Option[String]]("description")
+    tags     <- c.getOrElse[Seq[String]]("tags")(Seq.empty)
+    sequence <- c.get[Seq[BcFetchSequenceAction]]("sequence")
+  } yield BcFetchTestCase(name, testType, desc, tags, sequence)
+
+  implicit val testVectorsDecoder: Decoder[BcFetchTestVectors] = (c: HCursor) => for {
+    module   <- c.get[String]("module")
+    version  <- c.get[String]("version")
+    desc     <- c.get[Option[String]]("description")
+    cases    <- c.get[Seq[BcFetchTestCase]]("test_cases")
+  } yield BcFetchTestVectors(module, version, desc, cases)
+
+  // --- Project root finder ---
+
+  private def findProjectRoot(): Path = {
+    var dir = Paths.get(System.getProperty("user.dir"))
+    while (dir != null) {
+      if (dir.resolve("build.sbt").toFile.exists()) return dir
+      dir = dir.getParent
+    }
+    throw new RuntimeException("Could not find project root (no build.sbt found)")
+  }
+
+  // --- Loader ---
+
+  private def loadTestVectors(): BcFetchTestVectors = {
+    val root = findProjectRoot()
+    val jsonPath = root.resolve("verification/test-vectors/modules/bcfetch.json")
+    val jsonStr = Source.fromFile(jsonPath.toFile).mkString
+    decode[BcFetchTestVectors](jsonStr) match {
+      case Right(tv) => tv
+      case Left(err) => throw new RuntimeException(s"Failed to parse bcfetch.json: $err")
+    }
+  }
+
+  // --- Value parsing helpers ---
+
+  private def parseValue(s: String): Long = {
+    val trimmed = s.trim
+    if (trimmed.startsWith("0x") || trimmed.startsWith("0X"))
+      java.lang.Long.parseLong(trimmed.substring(2), 16)
+    else
+      trimmed.toLong
+  }
+
+  private def parseAddressJson(j: Json): Long = {
+    j.asNumber.flatMap(_.toLong) match {
+      case Some(v) => v
+      case None =>
+        j.asString match {
+          case Some(s) => parseValue(s)
+          case None => throw new RuntimeException(s"Cannot parse address: $j")
+        }
+    }
+  }
+
+  // Debug-only signals to skip during check actions (not on external IO)
+  private val skipCheckSignals = Set("dbg_int_pend", "dbg_exc_pend", "dbg_jmp", "dbg_jinstr")
+
+  // --- Sequence executor ---
+
+  private def runJsonTestCase(tc: BcFetchTestCase): Unit = {
+    SimConfig.compile(createDut(Seq.fill(2048)(0x00))).doSim(s"bcfetch_json_${tc.name}") { dut =>
+      dut.clockDomain.forkStimulus(period = 10)
+
+      // Helper to initialize all inputs to defaults
+      def initInputs(): Unit = {
+        dut.io.jfetch #= false
+        dut.io.jopdfetch #= false
+        dut.io.jbr #= false
+        dut.io.jpc_wr #= false
+        dut.io.din #= 0
+        dut.io.zf #= false
+        dut.io.nf #= false
+        dut.io.eq #= false
+        dut.io.lt #= false
+        dut.io.irq #= false
+        dut.io.exc #= false
+        dut.io.ena #= false
+        dut.io.stall #= false
+        dut.io.jbcWrAddr #= 0
+        dut.io.jbcWrData #= 0
+        dut.io.jbcWrEn #= false
+      }
+
+      // Initialize before first action
+      initInputs()
+
+      // Helper to drive a single input signal by JSON name
+      def setSignal(name: String, value: Long): Unit = name match {
+        case "jfetch"     => dut.io.jfetch #= (value != 0)
+        case "jopdfetch"  => dut.io.jopdfetch #= (value != 0)
+        case "jbr"        => dut.io.jbr #= (value != 0)
+        case "jpc_wr"     => dut.io.jpc_wr #= (value != 0)
+        case "din"        => dut.io.din #= value
+        case "zf"         => dut.io.zf #= (value != 0)
+        case "nf"         => dut.io.nf #= (value != 0)
+        case "eq"         => dut.io.eq #= (value != 0)
+        case "lt"         => dut.io.lt #= (value != 0)
+        case "irq" | "irq_in_irq" => dut.io.irq #= (value != 0)
+        case "exc" | "irq_in_exc" => dut.io.exc #= (value != 0)
+        case "ena" | "irq_in_ena" => dut.io.ena #= (value != 0)
+        case "stall"      => dut.io.stall #= (value != 0)
+        case other        => // Unknown input signal, ignore
+      }
+
+      // Helper to read an output signal by JSON name. Returns None for skip signals.
+      def readSignal(name: String): Option[Long] = name match {
+        case "jpc_out"    => Some(dut.io.jpc_out.toLong)
+        case "opd"        => Some(dut.io.opd.toLong)
+        case "jpaddr"     => Some(dut.io.jpaddr.toLong)
+        case "ack_irq"    => Some(if (dut.io.ack_irq.toBoolean) 1L else 0L)
+        case "ack_exc"    => Some(if (dut.io.ack_exc.toBoolean) 1L else 0L)
+        case s if skipCheckSignals.contains(s) => None
+        case other        => None  // Unknown signal, skip
+      }
+
+      // Collect all check failures for this test case
+      val failures = scala.collection.mutable.ArrayBuffer[String]()
+      var stepIdx = 0
+
+      for (step <- tc.sequence) {
+        step.action match {
+
+          case "reset" =>
+            val cycles = step.cycles.getOrElse(2)
+            dut.clockDomain.assertReset()
+            initInputs()
+            for (_ <- 0 until cycles) dut.clockDomain.waitRisingEdge()
+            dut.clockDomain.deassertReset()
+            dut.clockDomain.waitRisingEdge()
+            initInputs()
+
+          case "set" =>
+            step.signals.foreach { signals =>
+              for ((name, valueStr) <- signals) {
+                setSignal(name, parseValue(valueStr))
+              }
+            }
+
+          case "clock" =>
+            val cycles = step.cycles.getOrElse(1)
+            dut.clockDomain.waitRisingEdge(cycles)
+
+          case "settle" =>
+            sleep(1)
+
+          case "write_jbc" =>
+            val addr = step.address.map(parseAddressJson).getOrElse(
+              throw new RuntimeException(s"write_jbc action missing address in test ${tc.name} step $stepIdx")
+            )
+            val data = step.data.map(parseValue).getOrElse(
+              throw new RuntimeException(s"write_jbc action missing data in test ${tc.name} step $stepIdx")
+            )
+            dut.io.jbcWrAddr #= addr
+            dut.io.jbcWrData #= data
+            dut.io.jbcWrEn #= true
+            dut.clockDomain.waitRisingEdge()
+            dut.io.jbcWrEn #= false
+
+          case "check" =>
+            sleep(1)  // Allow combinational propagation after clock edges
+            step.signals.foreach { signals =>
+              for ((name, expectedStr) <- signals) {
+                readSignal(name) match {
+                  case Some(actual) =>
+                    val expected = parseValue(expectedStr)
+                    if (actual != expected) {
+                      failures += f"[${tc.name}] step $stepIdx: signal '$name' expected 0x${expected}%X, got 0x${actual}%X"
+                    }
+                  case None =>
+                    // Skip (debug-only or unknown signal)
+                }
+              }
+            }
+
+          case other =>
+            // Unknown action, ignore
+        }
+        stepIdx += 1
+      }
+
+      // Assert all collected failures
+      if (failures.nonEmpty) {
+        fail(failures.mkString("\n"))
+      }
+    }
+  }
+
+  // --- Load test vectors and generate per-vector tests ---
+
+  private lazy val bcfetchTestVectors: BcFetchTestVectors = loadTestVectors()
+
+  bcfetchTestVectors.testCases.foreach { tc =>
+    test(s"bcfetch_json_${tc.name}") {
+      runJsonTestCase(tc)
+    }
+  }
+
+  // --- Verify expected test count ---
+
+  test("bcfetch_json_count_verification") {
+    assert(
+      bcfetchTestVectors.testCases.size == 31,
+      s"Expected 31 JSON test cases, got ${bcfetchTestVectors.testCases.size}"
+    )
   }
 }

@@ -93,7 +93,7 @@ case class FetchStage(
     val opd    = out Bool()                         // jopdfetch signal (fetch Java operand)
     val dout   = out Bits(config.iWidth bits)       // Instruction output
 
-    // Debug outputs (for CocoTB test compatibility)
+    // Debug outputs (for test observation)
     val pc_out = out UInt(config.pcWidth bits)      // Current PC for test observation
     val ir_out = out Bits(config.iWidth bits)       // Instruction register for test
   }
@@ -257,7 +257,7 @@ case class FetchStage(
    *
    * Note: The outputNode must be connected to a downstream stage and built
    * via Builder() when used in a pipeline. For standalone testing, use
-   * FetchStageTb which does not include the Pipeline API node.
+   * FetchStage standalone which does not include the Pipeline API node.
    */
   val outputNode = Node()
 
@@ -285,7 +285,7 @@ case class FetchStage(
 
   /**
    * Initialize ROM with default test pattern
-   * Matches the test pattern in verification/cocotb/vhdl/fetch_tb.vhd
+   * Matches the original VHDL test pattern
    */
   private def initDefaultRom(): Seq[Bits] = {
     val rom = Array.fill(config.romDepth)(B(0, config.romWidth bits))
@@ -363,196 +363,6 @@ case class FetchStage(
 
     rom.toSeq
   }
-}
-
-/**
- * Test Bench Wrapper for FetchStage (CocoTB Compatible)
- *
- * This wrapper provides the same interface as fetch_tb.vhd for CocoTB testing.
- * Uses noIoPrefix() to remove the io_ prefix from port names.
- *
- * Interface matches fetch_tb.vhd exactly:
- * - clk, reset (std_logic)
- * - br, jmp, bsy (std_logic inputs)
- * - jpaddr (std_logic_vector input)
- * - nxt, opd (std_logic outputs)
- * - dout (std_logic_vector output)
- * - pc_out, ir_out (std_logic_vector debug outputs)
- */
-case class FetchStageTb(
-  pcWidth: Int = 10,
-  iWidth: Int = 10
-) extends Component {
-
-  // Use noIoPrefix to match VHDL interface naming
-  noIoPrefix()
-
-  val clk = in Bool()      // Note: SpinalHDL uses its own clock domain
-  val reset = in Bool()
-
-  val br     = in Bool()
-  val jmp    = in Bool()
-  val bsy    = in Bool()
-  val jpaddr = in Bits(pcWidth bits)    // std_logic_vector for VHDL compatibility
-
-  val nxt    = out Bool()
-  val opd    = out Bool()
-  val dout   = out Bits(iWidth bits)
-
-  val pc_out = out Bits(pcWidth bits)   // std_logic_vector for VHDL compatibility
-  val ir_out = out Bits(iWidth bits)
-
-  // Create a new clock domain using the explicit clk and reset signals
-  val fetchClockDomain = ClockDomain(
-    clock = clk,
-    reset = reset,
-    config = ClockDomainConfig(
-      clockEdge = RISING,
-      resetKind = ASYNC,          // Async reset like original VHDL
-      resetActiveLevel = HIGH
-    )
-  )
-
-  // Instantiate the fetch stage with the explicit clock domain
-  val fetchArea = new ClockingArea(fetchClockDomain) {
-    val config = FetchConfig(pcWidth, iWidth)
-
-    // ==========================================================================
-    // Microcode ROM
-    // ==========================================================================
-    val rom = Mem(Bits(config.romWidth bits), config.romDepth)
-    rom.init(initDefaultRom(config))
-
-    val romAddrReg = Reg(UInt(config.pcWidth bits)) init(0)
-    val romData = rom.readAsync(romAddrReg)
-
-    val jfetch    = romData(config.iWidth + 1)
-    val jopdfetch = romData(config.iWidth)
-    val romInstr  = romData(config.iWidth - 1 downto 0)
-
-    // ==========================================================================
-    // PC and Control Registers
-    // ==========================================================================
-    val pc     = Reg(UInt(config.pcWidth bits)) init(0)
-    val brdly  = Reg(UInt(config.pcWidth bits)) init(0)
-    val jpdly  = Reg(UInt(config.pcWidth bits)) init(0)
-    val ir     = Reg(Bits(config.iWidth bits)) init(0)
-    val pcwait = Reg(Bool()) init(False)
-
-    val pcInc = pc + 1
-
-    // ==========================================================================
-    // PC MUX with Priority Logic
-    // ==========================================================================
-    val pcMux = UInt(config.pcWidth bits)
-
-    when(jfetch) {
-      pcMux := jpaddr.asUInt
-    }.elsewhen(br) {
-      pcMux := brdly
-    }.elsewhen(jmp) {
-      pcMux := jpdly
-    }.elsewhen(pcwait && bsy) {
-      pcMux := pc
-    }.otherwise {
-      pcMux := pcInc
-    }
-
-    // ==========================================================================
-    // Clocked Logic
-    // ==========================================================================
-    romAddrReg := pcMux
-    ir := romInstr
-
-    pcwait := False
-    when(romInstr === B(config.waitOpcode, config.iWidth bits)) {
-      pcwait := True
-    }
-
-    // PC and offset register update
-    // 6-bit signed branch offset from ir[5:0]
-    val branchOffset = ir(5 downto 0).asSInt.resize(config.pcWidth bits)
-    brdly := (pc.asSInt + branchOffset).asUInt
-
-    // 9-bit signed jump offset from ir[iWidth-2:0] (bits 8:0)
-    val jumpOffset = ir(config.iWidth - 2 downto 0).asSInt.resize(config.pcWidth bits)
-    jpdly := (pc.asSInt + jumpOffset).asUInt
-
-    pc := pcMux
-
-    // Pipeline freeze during memory stall (see FetchStage for explanation)
-    when(pcwait && bsy) {
-      romAddrReg := romAddrReg
-      ir         := ir
-      pcwait     := True
-      pc         := pc
-    }
-
-    // ==========================================================================
-    // Output Assignments
-    // ==========================================================================
-    nxt    := jfetch
-    opd    := jopdfetch
-    dout   := ir
-    pc_out := pc.asBits
-    ir_out := ir
-  }
-
-  /**
-   * Initialize ROM with default test pattern
-   */
-  private def initDefaultRom(config: FetchConfig): Seq[Bits] = {
-    val rom = Array.fill(config.romDepth)(B(0, config.romWidth bits))
-
-    def setRom(addr: Int, jf: Int, jod: Int, instr: Int): Unit = {
-      val value = (jf << (config.iWidth + 1)) | (jod << config.iWidth) | instr
-      rom(addr) = B(value, config.romWidth bits)
-    }
-
-    setRom(0, 0, 0, 0x000)
-    setRom(1, 0, 0, 0x000)
-    setRom(2, 0, 0, 0x101)
-    setRom(3, 0, 0, 0x005)
-    setRom(4, 0, 0, 0x03D)
-    setRom(5, 0, 0, 0x00A)
-    setRom(6, 0, 0, 0x006)
-    setRom(7, 0, 0, 0x007)
-    setRom(8, 0, 0, 0x008)
-    setRom(9, 0, 0, 0x1FB)
-    setRom(10, 0, 0, 0x2AA)
-    setRom(11, 0, 0, 0x101)
-
-    for (i <- 12 to 15) { setRom(i, 0, 0, i) }
-    for (i <- 16 to 31) { setRom(i, 0, 0, i) }
-
-    setRom(32, 0, 0, 0x01F)
-    setRom(50, 1, 0, 0x000)
-    setRom(51, 0, 1, 0x000)
-    setRom(52, 1, 1, 0x000)
-    setRom(64, 0, 0, 0x020)
-    setRom(100, 0, 0, 0x0FF)
-    setRom(300, 0, 0, 0x100)
-    setRom(1023, 0, 0, 0x3FF)
-
-    rom.toSeq
-  }
-}
-
-/**
- * Generate VHDL for CocoTB verification
- */
-object FetchStageVhdl extends App {
-  val config = SpinalConfig(
-    targetDirectory = "generated/vhdl",
-    defaultClockDomainFrequency = FixedFrequency(100 MHz),
-    device = Device.ALTERA
-  )
-
-  // Generate the testbench wrapper (matches fetch_tb interface)
-  config.generateVhdl(FetchStageTb(pcWidth = 10, iWidth = 10))
-    .printPruned()
-
-  println("FetchStageTb VHDL generated at: generated/vhdl/FetchStageTb.vhd")
 }
 
 /**

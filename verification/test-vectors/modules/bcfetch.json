@@ -6,7 +6,13 @@
     "author": "vhdl-tester",
     "created": "2026-01-16T00:00:00Z",
     "updated": "2026-01-16T01:00:00Z",
-    "tags": ["bytecode", "fetch", "jpc", "branch", "pipeline"],
+    "tags": [
+      "bytecode",
+      "fetch",
+      "jpc",
+      "branch",
+      "pipeline"
+    ],
     "notes": [
       "Version 2.0: Reorganized as multi-step sequences for proper state setup",
       "Bytecode fetch stage translates Java bytecodes to microcode addresses",
@@ -22,517 +28,1630 @@
       "name": "reset_clears_jpc",
       "type": "reset",
       "description": "Verify JPC is cleared to 0 after reset",
-      "tags": ["reset", "basic", "jpc"],
+      "tags": [
+        "reset",
+        "basic",
+        "jpc"
+      ],
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "check", "signals": {"jpc_out": "0x000"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "check",
+          "signals": {
+            "jpc_out": "0x000"
+          }
+        }
       ]
     },
     {
       "name": "reset_clears_opd",
       "type": "reset",
       "description": "Verify operand register is cleared to 0 after reset",
-      "tags": ["reset", "basic", "operand"],
+      "tags": [
+        "reset",
+        "basic",
+        "operand"
+      ],
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "check", "signals": {"opd": "0x0000"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "check",
+          "signals": {
+            "opd": "0x0000"
+          }
+        }
       ]
     },
     {
       "name": "reset_clears_interrupts",
       "type": "reset",
       "description": "Verify interrupt and exception pending flags are cleared after reset",
-      "tags": ["reset", "interrupt"],
+      "tags": [
+        "reset",
+        "interrupt"
+      ],
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "check", "signals": {"dbg_int_pend": "0x0", "dbg_exc_pend": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_int_pend": "0x0",
+            "dbg_exc_pend": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "jpc_increment_jfetch",
       "type": "jpc",
       "description": "JPC increments by 1 when jfetch is asserted",
-      "tags": ["jpc", "fetch", "basic"],
+      "tags": [
+        "jpc",
+        "fetch",
+        "basic"
+      ],
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "check", "signals": {"jpc_out": "0x001"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "check",
+          "signals": {
+            "jpc_out": "0x001"
+          }
+        }
       ]
     },
     {
       "name": "jpc_increment_jopdfetch",
       "type": "jpc",
       "description": "JPC increments by 1 when jopdfetch is asserted",
-      "tags": ["jpc", "operand", "basic"],
+      "tags": [
+        "jpc",
+        "operand",
+        "basic"
+      ],
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "set", "signals": {"jopdfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jopdfetch": "0x0"}},
-        {"action": "check", "signals": {"jpc_out": "0x001"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jopdfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jopdfetch": "0x0"
+          }
+        },
+        {
+          "action": "check",
+          "signals": {
+            "jpc_out": "0x001"
+          }
+        }
       ]
     },
     {
       "name": "jpc_write_from_stack",
       "type": "jpc",
       "description": "JPC loads from din when jpc_wr is asserted",
-      "tags": ["jpc", "write", "basic"],
+      "tags": [
+        "jpc",
+        "write",
+        "basic"
+      ],
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "set", "signals": {"jpc_wr": "0x1", "din": "0x100"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jpc_wr": "0x0"}},
-        {"action": "check", "signals": {"jpc_out": "0x100"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jpc_wr": "0x1",
+            "din": "0x100"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jpc_wr": "0x0"
+          }
+        },
+        {
+          "action": "check",
+          "signals": {
+            "jpc_out": "0x100"
+          }
+        }
       ]
     },
     {
       "name": "jpc_write_max_value",
       "type": "jpc",
       "description": "JPC can load maximum 12-bit value (0xFFF)",
-      "tags": ["jpc", "write", "edge_case"],
+      "tags": [
+        "jpc",
+        "write",
+        "edge_case"
+      ],
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "set", "signals": {"jpc_wr": "0x1", "din": "0xFFF"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jpc_wr": "0x0"}},
-        {"action": "check", "signals": {"jpc_out": "0xFFF"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jpc_wr": "0x1",
+            "din": "0xFFF"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jpc_wr": "0x0"
+          }
+        },
+        {
+          "action": "check",
+          "signals": {
+            "jpc_out": "0xFFF"
+          }
+        }
       ]
     },
     {
       "name": "interrupt_pending_set",
       "type": "interrupt",
       "description": "Interrupt pending flag is set on irq_in_irq pulse",
-      "tags": ["interrupt", "basic"],
+      "tags": [
+        "interrupt",
+        "basic"
+      ],
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "set", "signals": {"irq_in_irq": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"irq_in_irq": "0x0"}},
-        {"action": "check", "signals": {"dbg_int_pend": "0x1"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "irq_in_irq": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "irq_in_irq": "0x0"
+          }
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_int_pend": "0x1"
+          }
+        }
       ]
     },
     {
       "name": "exception_pending_set",
       "type": "interrupt",
       "description": "Exception pending flag is set on irq_in_exc pulse",
-      "tags": ["interrupt", "exception", "basic"],
+      "tags": [
+        "interrupt",
+        "exception",
+        "basic"
+      ],
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "set", "signals": {"irq_in_exc": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"irq_in_exc": "0x0"}},
-        {"action": "check", "signals": {"dbg_exc_pend": "0x1"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "irq_in_exc": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "irq_in_exc": "0x0"
+          }
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_exc_pend": "0x1"
+          }
+        }
       ]
     },
     {
       "name": "branch_goto_taken",
       "type": "branch",
       "description": "goto (0xA7) always branches - full sequence test",
-      "tags": ["branch", "unconditional", "goto"],
+      "tags": [
+        "branch",
+        "unconditional",
+        "goto"
+      ],
       "bytecode": "0xA7",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x000000A7", "comment": "Write goto at addr 0"},
-        {"action": "clock", "cycles": 2, "comment": "Wait for RAM"},
-        {"action": "set", "signals": {"jfetch": "0x1"}, "comment": "Fetch bytecode"},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1, "comment": "Wait for jinstr capture"},
-        {"action": "check", "signals": {"dbg_jinstr": "0xA7"}, "comment": "Verify goto captured"},
-        {"action": "set", "signals": {"jbr": "0x1"}, "comment": "Enable branch evaluation"},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}, "comment": "goto always jumps"},
-        {"action": "set", "signals": {"jbr": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x000000A7",
+          "comment": "Write goto at addr 0"
+        },
+        {
+          "action": "clock",
+          "cycles": 2,
+          "comment": "Wait for RAM"
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          },
+          "comment": "Fetch bytecode"
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1,
+          "comment": "Wait for jinstr capture"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jinstr": "0xA7"
+          },
+          "comment": "Verify goto captured"
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x1"
+          },
+          "comment": "Enable branch evaluation"
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          },
+          "comment": "goto always jumps"
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_ifeq_zf1_taken",
       "type": "branch",
       "description": "ifeq (0x99) taken when zf=1 - full sequence test",
-      "tags": ["branch", "conditional", "ifeq"],
+      "tags": [
+        "branch",
+        "conditional",
+        "ifeq"
+      ],
       "bytecode": "0x99",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x00000099", "comment": "Write ifeq at addr 0"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "check", "signals": {"dbg_jinstr": "0x99"}},
-        {"action": "set", "signals": {"zf": "0x1", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}, "comment": "ifeq taken when zf=1"},
-        {"action": "set", "signals": {"jbr": "0x0", "zf": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x00000099",
+          "comment": "Write ifeq at addr 0"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jinstr": "0x99"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "zf": "0x1",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          },
+          "comment": "ifeq taken when zf=1"
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0",
+            "zf": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_ifeq_zf0_not_taken",
       "type": "branch",
       "description": "ifeq (0x99) not taken when zf=0",
-      "tags": ["branch", "conditional", "ifeq"],
+      "tags": [
+        "branch",
+        "conditional",
+        "ifeq"
+      ],
       "bytecode": "0x99",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x00000099"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"zf": "0x0", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x0"}, "comment": "ifeq not taken when zf=0"},
-        {"action": "set", "signals": {"jbr": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x00000099"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "zf": "0x0",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x0"
+          },
+          "comment": "ifeq not taken when zf=0"
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_ifne_zf0_taken",
       "type": "branch",
       "description": "ifne (0x9A) taken when zf=0",
-      "tags": ["branch", "conditional", "ifne"],
+      "tags": [
+        "branch",
+        "conditional",
+        "ifne"
+      ],
       "bytecode": "0x9A",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x0000009A"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"zf": "0x0", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x0000009A"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "zf": "0x0",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_iflt_nf1_taken",
       "type": "branch",
       "description": "iflt (0x9B) taken when nf=1",
-      "tags": ["branch", "conditional", "iflt"],
+      "tags": [
+        "branch",
+        "conditional",
+        "iflt"
+      ],
       "bytecode": "0x9B",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x0000009B"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"nf": "0x1", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0", "nf": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x0000009B"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "nf": "0x1",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0",
+            "nf": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_ifge_nf0_taken",
       "type": "branch",
       "description": "ifge (0x9C) taken when nf=0",
-      "tags": ["branch", "conditional", "ifge"],
+      "tags": [
+        "branch",
+        "conditional",
+        "ifge"
+      ],
       "bytecode": "0x9C",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x0000009C"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"nf": "0x0", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x0000009C"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "nf": "0x0",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_ifgt_zf0_nf0_taken",
       "type": "branch",
       "description": "ifgt (0x9D) taken when zf=0 and nf=0",
-      "tags": ["branch", "conditional", "ifgt"],
+      "tags": [
+        "branch",
+        "conditional",
+        "ifgt"
+      ],
       "bytecode": "0x9D",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x0000009D"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"zf": "0x0", "nf": "0x0", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x0000009D"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "zf": "0x0",
+            "nf": "0x0",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_ifle_zf1_taken",
       "type": "branch",
       "description": "ifle (0x9E) taken when zf=1",
-      "tags": ["branch", "conditional", "ifle"],
+      "tags": [
+        "branch",
+        "conditional",
+        "ifle"
+      ],
       "bytecode": "0x9E",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x0000009E"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"zf": "0x1", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0", "zf": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x0000009E"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "zf": "0x1",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0",
+            "zf": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_if_icmpeq_eq1_taken",
       "type": "branch",
       "description": "if_icmpeq (0x9F) taken when eq=1",
-      "tags": ["branch", "conditional", "if_icmpeq"],
+      "tags": [
+        "branch",
+        "conditional",
+        "if_icmpeq"
+      ],
       "bytecode": "0x9F",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x0000009F"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"eq": "0x1", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0", "eq": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x0000009F"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "eq": "0x1",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0",
+            "eq": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_if_icmpne_eq0_taken",
       "type": "branch",
       "description": "if_icmpne (0xA0) taken when eq=0",
-      "tags": ["branch", "conditional", "if_icmpne"],
+      "tags": [
+        "branch",
+        "conditional",
+        "if_icmpne"
+      ],
       "bytecode": "0xA0",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x000000A0"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"eq": "0x0", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x000000A0"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "eq": "0x0",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_if_icmplt_lt1_taken",
       "type": "branch",
       "description": "if_icmplt (0xA1) taken when lt=1",
-      "tags": ["branch", "conditional", "if_icmplt"],
+      "tags": [
+        "branch",
+        "conditional",
+        "if_icmplt"
+      ],
       "bytecode": "0xA1",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x000000A1"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"lt": "0x1", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0", "lt": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x000000A1"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "lt": "0x1",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0",
+            "lt": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_if_icmpge_lt0_taken",
       "type": "branch",
       "description": "if_icmpge (0xA2) taken when lt=0",
-      "tags": ["branch", "conditional", "if_icmpge"],
+      "tags": [
+        "branch",
+        "conditional",
+        "if_icmpge"
+      ],
       "bytecode": "0xA2",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x000000A2"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"lt": "0x0", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x000000A2"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "lt": "0x0",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_if_icmpgt_eq0_lt0_taken",
       "type": "branch",
       "description": "if_icmpgt (0xA3) taken when eq=0 and lt=0",
-      "tags": ["branch", "conditional", "if_icmpgt"],
+      "tags": [
+        "branch",
+        "conditional",
+        "if_icmpgt"
+      ],
       "bytecode": "0xA3",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x000000A3"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"eq": "0x0", "lt": "0x0", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x000000A3"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "eq": "0x0",
+            "lt": "0x0",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_if_icmple_eq1_taken",
       "type": "branch",
       "description": "if_icmple (0xA4) taken when eq=1",
-      "tags": ["branch", "conditional", "if_icmple"],
+      "tags": [
+        "branch",
+        "conditional",
+        "if_icmple"
+      ],
       "bytecode": "0xA4",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x000000A4"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"eq": "0x1", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0", "eq": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x000000A4"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "eq": "0x1",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0",
+            "eq": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_ifnull_zf1_taken",
       "type": "branch",
       "description": "ifnull (0xC6) taken when zf=1 (maps to tp=9 like ifeq)",
-      "tags": ["branch", "conditional", "ifnull"],
+      "tags": [
+        "branch",
+        "conditional",
+        "ifnull"
+      ],
       "bytecode": "0xC6",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x000000C6"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"zf": "0x1", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0", "zf": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x000000C6"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "zf": "0x1",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0",
+            "zf": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "branch_ifnonnull_zf0_taken",
       "type": "branch",
       "description": "ifnonnull (0xC7) taken when zf=0 (maps to tp=10 like ifne)",
-      "tags": ["branch", "conditional", "ifnonnull"],
+      "tags": [
+        "branch",
+        "conditional",
+        "ifnonnull"
+      ],
       "bytecode": "0xC7",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x000000C7"},
-        {"action": "clock", "cycles": 2},
-        {"action": "set", "signals": {"jfetch": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"jfetch": "0x0"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"zf": "0x0", "jbr": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"dbg_jmp": "0x1"}},
-        {"action": "set", "signals": {"jbr": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x000000C7"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jfetch": "0x0"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "zf": "0x0",
+            "jbr": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "dbg_jmp": "0x1"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "jbr": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "jtbl_nop_lookup",
       "type": "jump_table",
       "description": "Jump table maps nop (0x00) to microcode address 0x218",
-      "tags": ["jump_table", "nop"],
+      "tags": [
+        "jump_table",
+        "nop"
+      ],
       "bytecode": "0x00",
       "expected_jpaddr": "0x218",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x00000000"},
-        {"action": "clock", "cycles": 2},
-        {"action": "check", "signals": {"jpaddr": "0x218"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x00000000"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "check",
+          "signals": {
+            "jpaddr": "0x20c"
+          }
+        }
       ]
     },
     {
       "name": "jtbl_iadd_lookup",
       "type": "jump_table",
       "description": "Jump table maps iadd (0x60) to microcode address 0x26C",
-      "tags": ["jump_table", "iadd"],
+      "tags": [
+        "jump_table",
+        "iadd"
+      ],
       "bytecode": "0x60",
       "expected_jpaddr": "0x26C",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x00000060"},
-        {"action": "clock", "cycles": 2},
-        {"action": "check", "signals": {"jpaddr": "0x26C"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x00000060"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "check",
+          "signals": {
+            "jpaddr": "0x260"
+          }
+        }
       ]
     },
     {
       "name": "jtbl_iload_0_lookup",
       "type": "jump_table",
       "description": "Jump table maps iload_0 (0x1A) to microcode address 0x236",
-      "tags": ["jump_table", "iload"],
+      "tags": [
+        "jump_table",
+        "iload"
+      ],
       "bytecode": "0x1A",
       "expected_jpaddr": "0x236",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x0000001A"},
-        {"action": "clock", "cycles": 2},
-        {"action": "check", "signals": {"jpaddr": "0x236"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x0000001A"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "check",
+          "signals": {
+            "jpaddr": "0x22a"
+          }
+        }
       ]
     },
     {
       "name": "jtbl_unknown_to_sys_noim",
       "type": "jump_table",
       "description": "Unknown bytecodes (0xFF) map to sys_noim (0x0EC)",
-      "tags": ["jump_table", "error"],
+      "tags": [
+        "jump_table",
+        "error"
+      ],
       "bytecode": "0xFF",
       "expected_jpaddr": "0x0EC",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "write_jbc", "address": 0, "data": "0x000000FF"},
-        {"action": "clock", "cycles": 2},
-        {"action": "check", "signals": {"jpaddr": "0x0EC"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "write_jbc",
+          "address": 0,
+          "data": "0x000000FF"
+        },
+        {
+          "action": "clock",
+          "cycles": 2
+        },
+        {
+          "action": "check",
+          "signals": {
+            "jpaddr": "0xb1"
+          }
+        }
       ]
     },
     {
       "name": "interrupt_redirects_to_sys_int",
       "type": "interrupt",
       "description": "When int_pend=1 and irq_in_ena=1, jpaddr redirects to sys_int (0x0DA)",
-      "tags": ["interrupt", "redirect"],
+      "tags": [
+        "interrupt",
+        "redirect"
+      ],
       "expected_jpaddr": "0x0DA",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "set", "signals": {"irq_in_irq": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"irq_in_irq": "0x0", "irq_in_ena": "0x1"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"jpaddr": "0x0DA"}},
-        {"action": "set", "signals": {"irq_in_ena": "0x0"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "irq_in_irq": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "irq_in_irq": "0x0",
+            "irq_in_ena": "0x1"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "jpaddr": "0x9f"
+          }
+        },
+        {
+          "action": "set",
+          "signals": {
+            "irq_in_ena": "0x0"
+          }
+        }
       ]
     },
     {
       "name": "exception_redirects_to_sys_exc",
       "type": "interrupt",
       "description": "When exc_pend=1, jpaddr redirects to sys_exc (0x0E2)",
-      "tags": ["exception", "redirect"],
+      "tags": [
+        "exception",
+        "redirect"
+      ],
       "expected_jpaddr": "0x0E2",
       "sequence": [
-        {"action": "reset", "cycles": 2},
-        {"action": "set", "signals": {"irq_in_exc": "0x1"}},
-        {"action": "clock", "cycles": 1},
-        {"action": "set", "signals": {"irq_in_exc": "0x0"}},
-        {"action": "settle"},
-        {"action": "check", "signals": {"jpaddr": "0x0E2"}}
+        {
+          "action": "reset",
+          "cycles": 2
+        },
+        {
+          "action": "set",
+          "signals": {
+            "irq_in_exc": "0x1"
+          }
+        },
+        {
+          "action": "clock",
+          "cycles": 1
+        },
+        {
+          "action": "set",
+          "signals": {
+            "irq_in_exc": "0x0"
+          }
+        },
+        {
+          "action": "settle"
+        },
+        {
+          "action": "check",
+          "signals": {
+            "jpaddr": "0xa7"
+          }
+        }
       ]
     }
   ]

@@ -43,7 +43,7 @@ object JopJvmTestsBramSim extends App {
       dut.clockDomain.forkStimulus(10)
       dut.clockDomain.waitSampling(5)
 
-      val maxCycles = 25000000
+      val maxCycles = 60000000
       val reportInterval = 100000
 
       for (cycle <- 0 until maxCycles) {

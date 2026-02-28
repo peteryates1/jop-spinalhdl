@@ -108,7 +108,7 @@ object ShiftTestVectorLoader {
  * SpinalSim tests for the Shift (barrel shifter) component
  *
  * These tests use the SHARED test vectors from verification/test-vectors/modules/shift.json
- * to ensure parity with CocoTB tests.
+ * using shared JSON test vectors.
  *
  * IMPORTANT: The Shift module is PURELY COMBINATIONAL
  * - No clock input required by the module
@@ -250,40 +250,4 @@ class ShiftTest extends AnyFunSuite {
     }
   }
 
-  // Additional parity check with CocoTB expectations
-  test("shift_cocotb_parity_check") {
-    println("Verifying test parity with CocoTB tests...")
-
-    // All shift types should be covered
-    val allTags = testVectors.testCases.flatMap(_.tags).toSet
-    assert(allTags.contains("ushr"), "Missing ushr tests")
-    assert(allTags.contains("shl"), "Missing shl tests")
-    assert(allTags.contains("shr"), "Missing shr tests")
-
-    // Count by shift type
-    val ushrTests = testVectors.testCases.filter(_.tags.contains("ushr"))
-    val shlTests = testVectors.testCases.filter(_.tags.contains("shl"))
-    val shrTests = testVectors.testCases.filter(_.tags.contains("shr"))
-
-    println(s"  ushr (unsigned shift right): ${ushrTests.length} tests")
-    println(s"  shl (shift left): ${shlTests.length} tests")
-    println(s"  shr (arithmetic shift right): ${shrTests.length} tests")
-
-    // Verify edge cases are covered
-    val edgeCases = testVectors.testCases.filter(_.testType == "edge_case")
-    println(s"  Edge cases: ${edgeCases.length} tests")
-    assert(edgeCases.nonEmpty, "Expected edge case tests")
-
-    // Verify zero shift tests exist
-    val zeroShiftTests = testVectors.testCases.filter(_.tags.contains("zero"))
-    println(s"  Zero shift tests: ${zeroShiftTests.length} tests")
-    assert(zeroShiftTests.nonEmpty, "Expected zero shift tests")
-
-    // Verify max shift (31 bits) tests exist
-    val maxShiftTests = testVectors.testCases.filter(_.tags.contains("max"))
-    println(s"  Max shift (31-bit) tests: ${maxShiftTests.length} tests")
-    assert(maxShiftTests.nonEmpty, "Expected max shift tests")
-
-    println("  CocoTB parity check: PASSED")
-  }
 }

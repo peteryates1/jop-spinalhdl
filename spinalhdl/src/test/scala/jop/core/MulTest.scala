@@ -106,7 +106,7 @@ object MulTestVectorLoader {
  * SpinalSim tests for the Mul (bit-serial multiplier) component
  *
  * These tests use the SHARED test vectors from verification/test-vectors/modules/mul.json
- * to ensure parity with CocoTB tests.
+ * using shared JSON test vectors.
  *
  * Timing specification from test vectors:
  * - Cycle 0: wr=1, operands latched

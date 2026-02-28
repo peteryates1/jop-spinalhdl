@@ -1,6 +1,7 @@
 package jop.pipeline
 
 import spinal.core._
+import spinal.core.sim._
 
 /**
  * Bytecode Fetch Stage Configuration
@@ -121,6 +122,7 @@ case class BytecodeFetchStage(
   val jopd = Reg(Bits(config.opdWidth bits)) init(0)          // Operand accumulator
   val jpc_br = Reg(UInt(config.jpcWidth + 1 bits)) init(0)    // Branch start address
   val jinstr = Reg(Bits(8 bits)) init(0)                      // Instruction bytecode
+  jinstr.simPublic()
   val jmp_addr = Reg(UInt(config.jpcWidth + 1 bits)) init(0)  // Branch target address
 
   // ==========================================================================

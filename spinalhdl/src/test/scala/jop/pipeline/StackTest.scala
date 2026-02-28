@@ -16,7 +16,8 @@ case class StackCycleInputs(cycle: Int, signals: Map[String, String])
 case class StackCycleOutputs(cycle: Int, signals: Map[String, String])
 case class StackInitialState(
   a_reg: Option[String],
-  b_reg: Option[String]
+  b_reg: Option[String],
+  vp_reg: Option[String]
 )
 
 case class StackTestCase(
@@ -49,7 +50,8 @@ object StackTestVectorLoader {
     for {
       a_reg <- cursor.get[Option[String]]("a_reg")
       b_reg <- cursor.get[Option[String]]("b_reg")
-    } yield StackInitialState(a_reg, b_reg)
+      vp_reg <- cursor.getOrElse[Option[String]]("vp_reg")(None)
+    } yield StackInitialState(a_reg, b_reg, vp_reg)
   }
 
   implicit val testCaseDecoder: Decoder[StackTestCase] = Decoder.instance { cursor =>
@@ -115,7 +117,7 @@ object StackTestVectorLoader {
  * SpinalSim tests for the StackStage (Stack/Execute stage) component
  *
  * These tests use the SHARED test vectors from verification/test-vectors/modules/stack.json
- * to ensure parity with CocoTB tests.
+ * to run all 69 JSON-driven per-vector tests via SpinalSim.
  *
  * Stack Stage Characteristics:
  * - 32-bit data path with 33-bit ALU for comparison
@@ -177,65 +179,88 @@ class StackTest extends AnyFunSuite {
    *
    * Test vectors with initial_state require pre-loading registers.
    */
+  /** Reset all DUT inputs to their default values */
+  private def resetInputsToDefaults(dut: StackStage): Unit = {
+    dut.io.din #= 0
+    dut.io.dirAddr #= 0
+    dut.io.opd #= 0
+    dut.io.jpc #= 0
+    dut.io.selSub #= false
+    dut.io.selAmux #= false
+    dut.io.enaA #= false
+    dut.io.selBmux #= false
+    dut.io.selLog #= 0
+    dut.io.selShf #= 0
+    dut.io.selLmux #= 0
+    dut.io.selImux #= 0
+    dut.io.selRmux #= 0
+    dut.io.selSmux #= 0
+    dut.io.selMmux #= false
+    dut.io.selRda #= 0
+    dut.io.selWra #= 0
+    dut.io.wrEna #= false
+    dut.io.enaB #= false
+    dut.io.enaVp #= false
+    dut.io.enaAr #= false
+  }
+
   def runTestCase(tc: StackTestCase): Unit = {
     simConfig.compile(StackStage()).doSim(tc.name) { dut =>
       // Initialize clock domain
       dut.clockDomain.forkStimulus(10)
 
       // Initialize all inputs to default values
-      dut.io.din #= 0
-      dut.io.dirAddr #= 0
-      dut.io.opd #= 0
-      dut.io.jpc #= 0
-      dut.io.selSub #= false
-      dut.io.selAmux #= false
-      dut.io.enaA #= false
-      dut.io.selBmux #= false
-      dut.io.selLog #= 0
-      dut.io.selShf #= 0
-      dut.io.selLmux #= 0
-      dut.io.selImux #= 0
-      dut.io.selRmux #= 0
-      dut.io.selSmux #= 0
-      dut.io.selMmux #= false
-      dut.io.selRda #= 0
-      dut.io.selWra #= 0
-      dut.io.wrEna #= false
-      dut.io.enaB #= false
-      dut.io.enaVp #= false
-      dut.io.enaAr #= false
+      resetInputsToDefaults(dut)
 
-      // Wait for simulation to stabilize
+      // Deassert reset and wait for simulation to stabilize.
+      // Need 3 edges: forkStimulus holds reset for ~2 edges, then we need
+      // one more for registers to exit reset cleanly.
+      dut.clockDomain.waitRisingEdge(3)
+      dut.clockDomain.deassertReset()
       dut.clockDomain.waitRisingEdge()
 
-      // Handle initial state by loading A and B registers if specified
+      // Handle initial state by loading registers if specified.
+      // Order: VP first (uses A as intermediate), then B, then A.
       tc.initialState.foreach { state =>
-        state.a_reg.foreach { aVal =>
-          // Load A: use sel_amux=1, sel_lmux=4 (din), ena_a=1
-          dut.io.din #= parseValue(aVal)
+        state.vp_reg.foreach { vpVal =>
+          // Load vpVal into A, then transfer to VP via enaVp
+          dut.io.din #= parseValue(vpVal)
           dut.io.selAmux #= true
           dut.io.selLmux #= 4  // din path
           dut.io.enaA #= true
+          dut.io.enaVp #= false
           dut.clockDomain.waitRisingEdge()
+          // Now A has vpVal, transfer to VP
+          dut.io.enaA #= false
+          dut.io.enaVp #= true
+          dut.clockDomain.waitRisingEdge()
+          dut.io.enaVp #= false
         }
         state.b_reg.foreach { bVal =>
-          // First put value in A, then transfer to B
+          // Load bVal into A via din path
           dut.io.din #= parseValue(bVal)
           dut.io.selAmux #= true
           dut.io.selLmux #= 4  // din path
           dut.io.enaA #= true
           dut.io.enaB #= false
-          dut.io.selBmux #= false  // B from A
           dut.clockDomain.waitRisingEdge()
-          // Now A has the value, transfer to B
+          // Transfer A to B
           dut.io.enaA #= false
           dut.io.enaB #= true
           dut.io.selBmux #= false  // B from A
           dut.clockDomain.waitRisingEdge()
         }
-        // Reset enables after loading
-        dut.io.enaA #= false
-        dut.io.enaB #= false
+        state.a_reg.foreach { aVal =>
+          // Load aVal into A via din path
+          dut.io.din #= parseValue(aVal)
+          dut.io.selAmux #= true
+          dut.io.selLmux #= 4  // din path
+          dut.io.enaA #= true
+          dut.io.enaB #= false
+          dut.clockDomain.waitRisingEdge()
+        }
+        // Reset all enables and muxes after loading
+        resetInputsToDefaults(dut)
       }
 
       // Build input schedule
@@ -252,17 +277,17 @@ class StackTest extends AnyFunSuite {
 
       // Track results
       var passed = true
-      var failureMsg = ""
+      val failureMsgs = scala.collection.mutable.ArrayBuffer[String]()
 
       // Run simulation for the specified number of cycles
       for (cycle <- 0 until tc.cycles) {
         // Apply inputs for this cycle
         inputSchedule.get(cycle).foreach { signals =>
           signals.get("reset").foreach { v =>
-            // Note: SpinalSim uses assertReset/deassertReset for reset control
             if (parseValue(v) != 0) {
-              // We can't directly control reset in SpinalSim the same way
-              // Just skip reset tests for now
+              dut.clockDomain.assertReset()
+            } else {
+              dut.clockDomain.deassertReset()
             }
           }
           signals.get("din").foreach { v => dut.io.din #= parseValue(v) }
@@ -298,7 +323,7 @@ class StackTest extends AnyFunSuite {
               val actual = getter.toLong & ((1L << bits) - 1)  // Mask to expected bits
               if (actual != expected) {
                 passed = false
-                failureMsg = s"Cycle $cycle: $name mismatch - expected 0x${expected.toHexString}, got 0x${actual.toHexString}"
+                failureMsgs += s"Cycle $cycle: $name mismatch - expected 0x${expected.toHexString}, got 0x${actual.toHexString}"
               }
             }
           }
@@ -313,7 +338,17 @@ class StackTest extends AnyFunSuite {
         }
       }
 
-      assert(passed, failureMsg)
+      assert(passed, failureMsgs.mkString("\n"))
+    }
+  }
+
+  // Generate individual test cases from JSON
+  testVectors.testCases.foreach { tc =>
+    test(s"stack_${tc.name}") {
+      println(s"Running test: ${tc.name}")
+      tc.description.foreach(d => println(s"  Description: $d"))
+      runTestCase(tc)
+      println(s"  PASSED")
     }
   }
 
@@ -391,9 +426,6 @@ class StackTest extends AnyFunSuite {
     dut.clockDomain.waitRisingEdge()
   }
 
-  // Basic functionality is verified by CocoTB tests (15/15 passing)
-  // The following tests verify component elaboration
-
   // Test component elaborates with no errors
   test("stack_elaboration") {
     println("  Testing StackStage elaboration...")
@@ -405,25 +437,14 @@ class StackTest extends AnyFunSuite {
     }
   }
 
-  // Test StackStageTb wrapper elaborates (this is what CocoTB tests)
-  test("stack_tb_elaboration") {
-    println("  Testing StackStageTb elaboration...")
-    val config = SpinalConfig(
-      defaultClockDomainFrequency = FixedFrequency(100 MHz)
-    )
-    config.generateVhdl(StackStageTb())
-    println("  StackStageTb VHDL generation PASSED")
-  }
-
   // Summary test to verify all test cases loaded
   test("stack_verify_test_vector_count") {
     println(s"Module: ${testVectors.module}")
     println(s"Version: ${testVectors.version}")
     println(s"Total test cases in JSON: ${testVectors.testCases.length}")
 
-    // JSON has 64 tests, CocoTB runs 58 (skips some reset tests)
-    assert(testVectors.testCases.length >= 58,
-      s"Expected at least 58 test cases, got ${testVectors.testCases.length}")
+    assert(testVectors.testCases.length == 69,
+      s"Expected 69 test cases, got ${testVectors.testCases.length}")
 
     // Print test case categories
     val byType = testVectors.testCases.groupBy(_.testType)
@@ -431,43 +452,7 @@ class StackTest extends AnyFunSuite {
     byType.foreach { case (typ, cases) =>
       println(s"  $typ: ${cases.length} tests")
     }
-
-    // Count non-reset tests (these are what CocoTB runs)
-    val nonResetTests = testVectors.testCases.filterNot(_.testType == "reset")
-    println(s"Non-reset tests: ${nonResetTests.length} (CocoTB runs these)")
   }
-
-  // Additional parity check
-  test("stack_cocotb_parity_check") {
-    println("Verifying test parity with CocoTB tests...")
-
-    // Check test types exist
-    val allTypes = testVectors.testCases.map(_.testType).toSet
-    assert(allTypes.contains("reset"), "Missing reset tests")
-    assert(allTypes.contains("alu"), "Missing alu tests")
-    assert(allTypes.contains("logic"), "Missing logic tests")
-    assert(allTypes.contains("shift"), "Missing shift tests")
-    assert(allTypes.contains("sp"), "Missing sp tests")
-
-    // Count by type
-    val resetTests = testVectors.testCases.filter(_.testType == "reset")
-    val aluTests = testVectors.testCases.filter(_.testType == "alu")
-    val logicTests = testVectors.testCases.filter(_.testType == "logic")
-    val shiftTests = testVectors.testCases.filter(_.testType == "shift")
-    val spTests = testVectors.testCases.filter(_.testType == "sp")
-
-    println(s"  reset: ${resetTests.length} tests")
-    println(s"  alu: ${aluTests.length} tests")
-    println(s"  logic: ${logicTests.length} tests")
-    println(s"  shift: ${shiftTests.length} tests")
-    println(s"  sp: ${spTests.length} tests")
-
-    println("  CocoTB parity check: PASSED")
-  }
-
-  // NOTE: Full functional testing (64 JSON test vectors) is done via CocoTB
-  // These ScalaTest tests verify elaboration and basic structure
-  // SpinalSim has issues with initial_state timing in implicit clock domains
 
   // Verify JSON test vectors can be loaded and parsed
   test("stack_json_test_vector_structure") {
@@ -488,22 +473,4 @@ class StackTest extends AnyFunSuite {
     println("  JSON test vector structure: VALID")
   }
 
-  // Summary of testing approach
-  test("stack_testing_strategy") {
-    println("\n=== Stack Stage Testing Strategy ===")
-    println(s"JSON test vectors: ${testVectors.testCases.length} total")
-    println("  - CocoTB tests: 58/58 passing (100%) ✓")
-    println("  - Uses StackStageTb.vhd with explicit clock/reset")
-    println("  - Full functional verification at VHDL level")
-    println("")
-    println("ScalaTest tests (this suite):")
-    println("  - Elaboration verification ✓")
-    println("  - VHDL generation ✓")
-    println("  - JSON structure validation ✓")
-    println("  - Test vector loading ✓")
-    println("")
-    println("Coverage: 98% microcode operations")
-    println("Status: Production-ready ✅")
-    println("==========================================\n")
-  }
 }
