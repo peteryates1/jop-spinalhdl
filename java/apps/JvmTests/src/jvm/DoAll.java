@@ -81,6 +81,7 @@ public class DoAll {
 				// Exception tests
 				new DivZero(),
 				new AthrowTest(),
+				new HwExceptionTest(),
 
 				// Field type tests
 				new IntField(),
