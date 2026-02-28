@@ -434,6 +434,8 @@ d2i, d2l, d2f, f2d, i2d, l2d conversions, but not double arithmetic operations d
 | JopJvmTestsBramSim | BRAM | JvmTests | 25M | 58 JVM bytecode tests |
 | JopJvmTestsSmpBramSim | BRAM | JvmTests | 40M | 57/58 JVM tests on 2-core SMP |
 | JopSmpCacheStressSim | BRAM | SmpCacheTest | 20M | Cross-core A$/O$ snoop (20 rounds) |
+| JopIhluNCoreHelloWorldSim | BRAM | NCoreHelloWorld | 40M | IHLU per-object locking (2-core) |
+| JopIhluGcBramSim | BRAM | HelloWorld (GC) | 100M | IHLU + GC drain mechanism (2-core) |
 
 ### 6.2 Missing Harness Combinations
 

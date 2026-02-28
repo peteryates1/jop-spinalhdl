@@ -258,6 +258,12 @@ sbt "Test / runMain jop.system.JopJvmTestsSmpBramSim"
 # SMP cache coherency stress test (cross-core A$/O$ snoop invalidation)
 sbt "Test / runMain jop.system.JopSmpCacheStressSim"
 
+# IHLU (per-object locking) SMP test (2-core, NCoreHelloWorld)
+sbt "Test / runMain jop.system.JopIhluNCoreHelloWorldSim"
+
+# IHLU GC test (2-core, GC with per-object locking)
+sbt "Test / runMain jop.system.JopIhluGcBramSim"
+
 # Reference simulator
 sbt "runMain jop.JopSimulatorSim"
 
@@ -333,7 +339,7 @@ Notes:
 - **Formal verification**: 98 properties verified across 16 test suites using SymbiYosys + Z3 — covers core arithmetic, all pipeline stages, memory subsystem (method cache, object cache, memory controller), DDR3 cache + MIG adapter, I/O (CmpSync, BmbSys, BmbUart), and BMB protocol compliance. See [formal verification docs](docs/formal-verification.md).
 - **Debug subsystem** (`jop.debug` package): Optional on-chip debug controller with framed byte-stream protocol over dedicated UART. Supports halt/resume/single-step (microcode and bytecode), register and stack inspection, memory read/write, and up to 4 hardware breakpoints (JPC or microcode PC). Integrated into `JopCluster` via `DebugConfig`. Automated protocol test (`JopDebugProtocolSim`) verifies 39 checks across 14 test sequences.
 - **JVM test suite**: 58 tests (`java/apps/JvmTests/`) — all pass. Covers arrays, branches, type casting, int/long arithmetic, type conversions (i2x/l2x/f2x/d2x), constant loading, float/double ops (add/sub/mul/div/neg/cmp/rem), field access for all types, exceptions (throw/catch, finally, nested, athrow, div-by-zero, null pointer with 13 sub-tests), instanceof, super method dispatch, object fields, interfaces, static initializers, stack manipulation, System.arraycopy (including StringBuilder resize), string concatenation with int, cache persistence regression, long static fields, deep recursion (200-level, exercises stack cache bank rotation), and more. Ported from original JOP `jvm/` suite and Wimpassinger `jvmtest/` suite.
-- **SMP test coverage**: JVM test suite on 2-core SMP (57/58 pass, DeepRecursion excluded — needs stack cache), SMP cache coherency stress test (cross-core A$/O$ snoop invalidation with 20 rounds verified), SMP GC stress (2-core BRAM)
+- **SMP test coverage**: JVM test suite on 2-core SMP (57/58 pass, DeepRecursion excluded — needs stack cache), SMP cache coherency stress test (cross-core A$/O$ snoop invalidation with 20 rounds verified), SMP GC stress (2-core BRAM), IHLU per-object locking verified (NCoreHelloWorld + GC with 84 lock/unlock ops balanced, 3 GC cycles)
 - **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, JVM test suite (single-core + SMP), SMP cache coherency test, timer interrupt test, debug protocol test, GHDL event-driven sim
 
 ### Known Issues
