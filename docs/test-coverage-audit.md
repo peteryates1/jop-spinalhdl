@@ -329,18 +329,20 @@ d2i, d2l, d2f, f2d, i2d, l2d conversions, but not double arithmetic operations d
 | JopSmpNCoreHelloWorldSim | 2 (default) | NCoreHelloWorld | All cores boot, print, toggle watchdog |
 | JopSmpSdramNCoreHelloWorldSim | 4 (default) | NCoreHelloWorld | Multi-core over SDRAM path |
 | JopSmpBramSim | 2 | Small (GC) | SMP GC allocation + collection |
+| JopSmpCacheStressSim | 2 | SmpCacheTest | Cross-core A$/O$ snoop invalidation (20 rounds) |
+| JopJvmTestsSmpBramSim | 2 | JvmTests (DoAll) | 57/58 JVM tests under arbitration pressure |
 
 ### 3.2 Missing SMP Tests
 
 | Gap | Risk | Description |
 |---|---|---|
 | Lock contention stress test | HIGH | No test with >2 cores hammering `synchronized` blocks concurrently. Current SMP tests use simple watchdog toggles. |
-| Cache snoop invalidation under load | HIGH | Snoop invalidation logic exists but no test deliberately writes array/field data on one core and reads on another to verify coherency. |
+| ~~Cache snoop invalidation under load~~ | ~~HIGH~~ | DONE — `JopSmpCacheStressSim` tests cross-core A$/O$ snoop invalidation with 20 rounds of array + field writes/reads. |
 | GC halt during active computation | MEDIUM | `JopSmpBramSim` runs GC but doesn't verify that halted cores resume correctly with consistent state after GC completes. |
 | SMP exception handling | MEDIUM | No test throws exceptions across multiple cores simultaneously. Shared pre-allocated exception objects (NPExc, ABExc) could have race conditions. |
 | 4+ core BRAM GC | MEDIUM | `JopSmpBramSim` is 2-core only. 4-core BRAM GC sim exists for SDRAM but not BRAM. |
 | Core-to-core signal boot race | LOW | Boot protocol tested implicitly but no adversarial timing test. |
-| JVM tests on SMP | MEDIUM | The 58-test JVM suite (`JopJvmTestsBramSim`) runs single-core only. Running it on 2+ cores would test correctness under arbitration pressure. |
+| ~~JVM tests on SMP~~ | ~~MEDIUM~~ | DONE — `JopJvmTestsSmpBramSim` runs 57/58 tests on 2-core SMP (DeepRecursion excluded — needs stack cache in SMP). |
 
 ---
 
@@ -430,13 +432,15 @@ d2i, d2l, d2f, f2d, i2d, l2d conversions, but not double arithmetic operations d
 | JopDebugProtocolSim | BRAM | Smallest | 250k | Debug protocol commands |
 | JopInterruptSim | BRAM | InterruptTest | 4M | Timer interrupt chain |
 | JopJvmTestsBramSim | BRAM | JvmTests | 25M | 58 JVM bytecode tests |
+| JopJvmTestsSmpBramSim | BRAM | JvmTests | 40M | 57/58 JVM tests on 2-core SMP |
+| JopSmpCacheStressSim | BRAM | SmpCacheTest | 20M | Cross-core A$/O$ snoop (20 rounds) |
 
 ### 6.2 Missing Harness Combinations
 
 | Gap | Priority | Description |
 |---|---|---|
 | JVM tests on SDRAM | MEDIUM | `JopJvmTestsBramSim` only runs on BRAM. SDRAM latency could expose timing bugs. |
-| JVM tests on SMP | HIGH | No multi-core JVM test run. Could expose cache coherency issues. |
+| ~~JVM tests on SMP~~ | ~~HIGH~~ | DONE — `JopJvmTestsSmpBramSim` (57/58 pass on 2-core SMP). |
 | SMP GC on SDRAM | MEDIUM | `JopSmpBramSim` runs GC on BRAM. SDRAM SMP GC sim would test BmbSdramCtrl32 under GC pressure. |
 | Interrupt + GC combined | LOW | No test combining timer interrupts with GC activity. |
 | Long-running SDRAM stability | LOW | `JopSmallGcSdramSim` runs 5M cycles. FPGA hardware runs hours. Simulation gap is large. |
@@ -488,10 +492,10 @@ d2i, d2l, d2f, f2d, i2d, l2d conversions, but not double arithmetic operations d
 
 | Rank | Missing Test | Risk | Rationale |
 |---|---|---|---|
-| 1 | **SMP cache coherency stress test** (A$ + O$ snoop invalidation) | CRITICAL | Bugs #13, #14 were found in production. No test deliberately writes data on one core and reads on another. A regression would cause silent data corruption. |
+| ~~1~~ | ~~**SMP cache coherency stress test**~~ | ~~CRITICAL~~ | DONE — `JopSmpCacheStressSim` tests cross-core A$/O$ snoop invalidation (T1: array, T2: fields, T3: 20 rounds). |
 | 2 | **invokespecial null pointer test** | HIGH | Bug #21 fix has no regression test. `NullPointer.java` explicitly documents "invokespecial is NOT tested." A regression means NPE silently succeeds on null. |
 | 3 | **invokeinterface/invokesuper null pointer test** | HIGH | Both have microcode null checks (jvm_call.inc) but no test exercises them. |
-| 4 | **JVM test suite on SMP** | HIGH | 58 tests run single-core only. Running under arbitration would stress method cache, object cache, and memory controller timing in ways single-core cannot. |
+| ~~4~~ | ~~**JVM test suite on SMP**~~ | ~~HIGH~~ | DONE — `JopJvmTestsSmpBramSim` runs 57/58 on 2-core SMP (DeepRecursion excluded — needs stack cache). |
 | 5 | **Array NPE tests** (iaload/iastore on null array) | HIGH | Commented out in ArrayTest3. Hardware NPE detection for arrays is enabled but untested for null arrays. |
 | 6 | **Long array bounds exception test** | MEDIUM | `laload`/`lastore` have microcode bounds checking (jvm_long.inc `array_bound`) but no test exercises AIOOBE on long arrays. |
 | 7 | **Static long field test** (getstatic_long/putstatic_long) | MEDIUM | These microcode paths exist in jvm_long.inc but have zero test coverage. |
@@ -660,6 +664,7 @@ ok = ok && (fa[2] == 0.0F);
 
 - **SMP boot**: Tested (2-core BRAM, 4-core SDRAM)
 - **SMP GC**: Tested (2-core BRAM)
-- **SMP cache coherency**: NOT directly tested
+- **SMP cache coherency**: Tested (`JopSmpCacheStressSim` — cross-core A$/O$ snoop, 20 rounds)
+- **SMP JVM tests**: Tested (`JopJvmTestsSmpBramSim` — 57/58 pass on 2-core)
 - **SMP lock contention**: NOT stress-tested
 - **SMP exception handling**: NOT tested

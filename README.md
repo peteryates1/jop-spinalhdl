@@ -252,6 +252,12 @@ sbt "Test / runMain jop.system.JopDebugProtocolSim"
 # JVM test suite (58 tests, all pass)
 sbt "Test / runMain jop.system.JopJvmTestsBramSim"
 
+# JVM test suite on 2-core SMP (57/58 pass — DeepRecursion needs stack cache)
+sbt "Test / runMain jop.system.JopJvmTestsSmpBramSim"
+
+# SMP cache coherency stress test (cross-core A$/O$ snoop invalidation)
+sbt "Test / runMain jop.system.JopSmpCacheStressSim"
+
 # Reference simulator
 sbt "runMain jop.JopSimulatorSim"
 
@@ -327,7 +333,8 @@ Notes:
 - **Formal verification**: 98 properties verified across 16 test suites using SymbiYosys + Z3 — covers core arithmetic, all pipeline stages, memory subsystem (method cache, object cache, memory controller), DDR3 cache + MIG adapter, I/O (CmpSync, BmbSys, BmbUart), and BMB protocol compliance. See [formal verification docs](docs/formal-verification.md).
 - **Debug subsystem** (`jop.debug` package): Optional on-chip debug controller with framed byte-stream protocol over dedicated UART. Supports halt/resume/single-step (microcode and bytecode), register and stack inspection, memory read/write, and up to 4 hardware breakpoints (JPC or microcode PC). Integrated into `JopCluster` via `DebugConfig`. Automated protocol test (`JopDebugProtocolSim`) verifies 39 checks across 14 test sequences.
 - **JVM test suite**: 58 tests (`java/apps/JvmTests/`) — all pass. Covers arrays, branches, type casting, int/long arithmetic, type conversions (i2x/l2x/f2x/d2x), constant loading, float/double ops (add/sub/mul/div/neg/cmp/rem), field access for all types, exceptions (throw/catch, finally, nested, athrow, div-by-zero, null pointer with 13 sub-tests), instanceof, super method dispatch, object fields, interfaces, static initializers, stack manipulation, System.arraycopy (including StringBuilder resize), string concatenation with int, cache persistence regression, long static fields, deep recursion (200-level, exercises stack cache bank rotation), and more. Ported from original JOP `jvm/` suite and Wimpassinger `jvmtest/` suite.
-- **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, JVM test suite, timer interrupt test, debug protocol test, GHDL event-driven sim
+- **SMP test coverage**: JVM test suite on 2-core SMP (57/58 pass, DeepRecursion excluded — needs stack cache), SMP cache coherency stress test (cross-core A$/O$ snoop invalidation with 20 rounds verified), SMP GC stress (2-core BRAM)
+- **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, JVM test suite (single-core + SMP), SMP cache coherency test, timer interrupt test, debug protocol test, GHDL event-driven sim
 
 ### Known Issues
 
@@ -339,7 +346,7 @@ Active work items:
 
 - **Stack cache SDRAM integration** — 3-bank rotation working in BRAM simulation (58/58 tests pass); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
 - **Stack cache bank RAM optimization** — convert `readAsync` to `readSync` on bank RAMs to enable Xilinx BRAM inference, saving ~1,584 LUTs on Artix-7 (81% → ~73% utilization). Altera is unaffected (M9K/M10K supports async reads natively). See [distributed RAM optimization](docs/artix7-distram-optimization.md)
-- **SMP test expansion** — add lock contention stress test, cache snoop invalidation test, multi-core JVM test runner. See [test coverage audit](docs/test-coverage-audit.md)
+- **SMP test expansion** — lock contention stress test (>2 cores hammering `synchronized`), SMP exception handling test. Cache snoop and JVM-on-SMP tests done. See [test coverage audit](docs/test-coverage-audit.md)
 - **DDR3 SMP GC** — run GC stress test on dual-core DDR3 (NCoreHelloWorld verified, GC stress not yet tested in SMP mode)
 
 ### Future
