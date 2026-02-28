@@ -115,6 +115,21 @@ non-zero timeout value.
 
 **Fix**: Added `dataTimeoutCnt := 0` to the `startWrite` handler.
 
+#### 3. WAIT_BUSY Incomplete Busy Wait
+
+**Bug**: After CRC status reception, the card holds DAT0 low during internal
+write programming. The `WAIT_BUSY` state only checked for DAT0 high, but
+didn't first confirm DAT0 was low. If the state machine entered `WAIT_BUSY`
+before the card pulled DAT0 low (due to propagation delay), it would
+immediately see DAT0 high and proceed — potentially issuing the next command
+while the card was still programming.
+
+**Fix**: Two-phase wait: first wait for DAT0 low (card is busy), then wait
+for DAT0 high (card done). Added a timeout for the first phase using the
+existing `dataTimeoutCnt` counter.
+
+Found during FAT32 filesystem testing (sequential write-then-read patterns).
+
 ### Hardware Verification
 
 The SD Native Exerciser (`SdNativeExerciserTop`) runs continuously on the
@@ -240,6 +255,11 @@ build). SD SPI requires a custom IoConfig with `hasSdSpi = true`.
 
 ---
 
+See [FAT32 Filesystem](fat32-filesystem.md) for the filesystem layer built on
+these SD controllers.
+
+---
+
 ## Sources
 
 | File | Description |
@@ -250,6 +270,9 @@ build). SD SPI requires a custom IoConfig with `hasSdSpi = true`.
 | `spinalhdl/src/main/scala/jop/system/SdSpiExerciserTop.scala` | SD SPI exerciser |
 | `java/runtime/src/jop/com/jopdesign/hw/SdNative.java` | SD Native Java API |
 | `java/runtime/src/jop/com/jopdesign/hw/SdSpi.java` | SD SPI Java API |
+| `java/fat32/src/com/jopdesign/fat32/SdNativeBlockDevice.java` | SD Native block device (FAT32 layer) |
+| `java/fat32/src/com/jopdesign/fat32/Fat32FileSystem.java` | FAT32 filesystem |
+| `java/fat32/src/test/Fat32Test.java` | FAT32 hardware test |
 | `fpga/qmtech-ep4cgx150-sdram/sd_native_exerciser.qsf` | SD Native Quartus project |
 | `fpga/qmtech-ep4cgx150-sdram/sd_spi_exerciser.qsf` | SD SPI Quartus project |
 

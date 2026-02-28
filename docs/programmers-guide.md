@@ -583,6 +583,75 @@ See `java/apps/Small/src/test/VgaDmaTest.java` for a complete hardware test.
 
 ---
 
+## Fat32FileSystem -- FAT32 Filesystem
+
+`Fat32FileSystem` is a pure-Java FAT32 filesystem layer — not a hardware
+object. It runs on top of the `SdNative` or `SdSpi` block device interface.
+Source: `java/fat32/src/com/jopdesign/fat32/`.
+
+### Key Classes
+
+| Class | Description |
+|-------|-------------|
+| `BlockDevice` | Interface: `init()`, `readBlock(sector, buf)`, `writeBlock(sector, buf)` |
+| `SdNativeBlockDevice` | `BlockDevice` using SD Native mode (4-bit bus) |
+| `SdSpiBlockDevice` | `BlockDevice` using SD SPI mode (1-bit bus) |
+| `Sector` | `int[128]` sector buffer with byte/LE16/LE32 accessors and dirty tracking |
+| `Fat32FileSystem` | Mount, FAT access, directory listing, file create/delete/open |
+| `Fat32InputStream` | `InputStream` for reading files (follows FAT chain) |
+| `Fat32OutputStream` | `OutputStream` for writing files (extends chain, updates dir on close) |
+| `DirEntry` | Directory entry: short name, long name (LFN), attributes, cluster, size |
+
+### Quick Start
+
+```java
+import com.jopdesign.fat32.*;
+
+// Init block device and mount
+SdNativeBlockDevice sd = new SdNativeBlockDevice();
+sd.init();
+Fat32FileSystem fs = new Fat32FileSystem(sd);
+fs.mount(0);  // partition 0
+
+// List root directory
+DirEntry[] entries = fs.listDir(fs.getRootCluster());
+for (int i = 0; i < entries.length; i++) {
+    JVMHelp.wr(entries[i].getName());
+    JVMHelp.wr('\n');
+}
+
+// Create and write a file (LFN names supported)
+DirEntry file = fs.createFile(fs.getRootCluster(), "Hello from JOP.txt");
+Fat32OutputStream out = fs.openFileForWrite(file);
+String msg = "Hello, World!\r\n";
+for (int i = 0; i < msg.length(); i++) out.write(msg.charAt(i));
+out.close();  // mandatory
+
+// Read a file
+DirEntry found = fs.findFile(fs.getRootCluster(), "Hello from JOP.txt");
+Fat32InputStream in = fs.openFile(found);
+int ch;
+while ((ch = in.read()) != -1) JVMHelp.wr((char) ch);
+in.close();
+
+// Delete a file
+fs.deleteFile(found);
+```
+
+### Build
+
+The FAT32 module lives outside the standard JOP source tree. Add it with
+`EXTRA_SRC`:
+
+```bash
+cd java/apps/Small
+make clean && make all APP_NAME=Fat32Test EXTRA_SRC=../../fat32/src
+```
+
+For full documentation see [FAT32 Filesystem](fat32-filesystem.md).
+
+---
+
 ## Low-Level I/O Access
 
 All I/O can also be accessed directly via `Native.rd(addr)` and

@@ -378,6 +378,7 @@ Design notes and investigation logs in `docs/`:
 - [Jopa Tool](docs/JOPA_TOOL.md) — microcode assembler usage and output formats
 - [Programmer's Guide](docs/programmers-guide.md) — I/O register maps and Java API for all devices (BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdNative, BmbSdSpi, BmbVgaText)
 - [System Configuration](docs/system-configuration.md) — configuration reference: memory layout, JopCoreConfig, JopMemoryConfig, IoConfig, board configs, I/O register map
+- [Bugs and Issues](docs/bugs-and-issues.md) — master bug index: open JVM workarounds, fixed RTL/pipeline/microcode bugs
 - [Implementation Notes](docs/implementation-notes.md) — bugs found, cache details, I/O subsystem, SMP, GC architecture, memCopy
 - [Artix-7 Distributed RAM Optimization](docs/artix7-distram-optimization.md) — stack cache bank RAM `readAsync` → `readSync` for BRAM inference on Xilinx
 - [Cache Analysis](docs/cache-analysis.md) — cache performance analysis and technology cost model
@@ -387,6 +388,7 @@ Design notes and investigation logs in `docs/`:
 - [DB_FPGA Ethernet](docs/db-fpga-ethernet.md) — 1Gbps GMII architecture, pin mapping, PHY config, SDC timing for RTL8211EG
 - [DB_FPGA VGA Text](docs/db-fpga-vga-text.md) — 80x30 text-mode VGA output, register map, Java API, setup guide
 - [DB_FPGA SD Card](docs/db-fpga-sd-card.md) — SD card native 4-bit mode, hardware verification, bugs found, clock speed constraints
+- [FAT32 Filesystem](docs/fat32-filesystem.md) — read-write FAT32 with LFN support, API reference, JOP workarounds, simulation and hardware testing
 - [Flash Boot](docs/flash-boot.md) — autonomous Active Serial boot from W25Q128, UART flash programmer, flash image format
 - [pico-dirtyJtag Setup](docs/pico-dirtyjtag-setup.md) — program FPGAs via Raspberry Pi Pico + openFPGALoader (alternative to USB-Blaster)
 - [SDR SDRAM GC Hang](docs/sdr-sdram-gc-hang.md) — resolved: SpinalHDL SdramCtrl DQ timing issue
