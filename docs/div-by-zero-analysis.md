@@ -482,4 +482,4 @@ This test is enabled in `DoAll.java` and passes (all 58 JVM tests pass).
 | `spinalhdl/src/main/scala/jop/io/BmbSys.scala` | IO_EXCPT register, exc pulse generation |
 | `spinalhdl/src/main/scala/jop/pipeline/BytecodeFetchStage.scala` | excPend latch, sys_exc dispatch |
 | `java/apps/JvmTests/src/jvm/math/DivZero.java` | Disabled test case |
-| `java/apps/JvmTests/src/jvm/DoAll.java` | Test registration (DivZero commented out) |
+| `java/apps/JvmTests/src/jvm/DoAll.java` | Test registration (DivZero enabled) |

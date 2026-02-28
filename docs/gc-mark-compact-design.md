@@ -989,7 +989,7 @@ after compaction. This is the key benefit of handle indirection.
 1. Modify `GC.java` with the mark-compact changes.
 2. Test with `JopCoreBramSim` (Smallest HelloWorld -- no GC triggered).
 3. Test with `JopSmallGcBramSim` (Small HelloWorld -- GC triggered every ~12 rounds).
-4. Run `JopJvmTestsBramSim` (49 JVM tests).
+4. Run `JopJvmTestsBramSim` (58 JVM tests).
 
 BRAM simulation is the fastest feedback loop (~10 seconds per run).
 

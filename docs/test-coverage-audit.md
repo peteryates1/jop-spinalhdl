@@ -340,7 +340,7 @@ d2i, d2l, d2f, f2d, i2d, l2d conversions, but not double arithmetic operations d
 | SMP exception handling | MEDIUM | No test throws exceptions across multiple cores simultaneously. Shared pre-allocated exception objects (NPExc, ABExc) could have race conditions. |
 | 4+ core BRAM GC | MEDIUM | `JopSmpBramSim` is 2-core only. 4-core BRAM GC sim exists for SDRAM but not BRAM. |
 | Core-to-core signal boot race | LOW | Boot protocol tested implicitly but no adversarial timing test. |
-| JVM tests on SMP | MEDIUM | The 50-test JVM suite (`JopJvmTestsBramSim`) runs single-core only. Running it on 2+ cores would test correctness under arbitration pressure. |
+| JVM tests on SMP | MEDIUM | The 58-test JVM suite (`JopJvmTestsBramSim`) runs single-core only. Running it on 2+ cores would test correctness under arbitration pressure. |
 
 ---
 
