@@ -37,25 +37,23 @@ return new String(result);
 
 **Affected code**: `DirEntry.formatShortName()`, `Fat32FileSystem.stripIllegalChars()`
 
-### 2. String Concatenation with int Crashes
+### 2. String Concatenation with int (FIXED)
 
 `"text" + intValue` compiles to `StringBuilder.append(int)` which calls
-`Integer.toString()` — this crashes on JOP. Any string concatenation
-involving an integer value will fail.
+`Integer.toString()`. `StringBuilder` had no `toString()` method, so it
+fell back to `Object.toString()` which does `"Object " + hashCode()` —
+another string concatenation with int, creating infinite recursion and
+stack overflow.
 
-**Workaround**: Use explicit character-by-character output helpers.
+**Fix**: Added `StringBuilder.toString()` returning `new String(value, 0, count)`.
 
-```java
-// WRONG — crashes on JOP:
-JVMHelp.wr("count=" + n);
+**Test**: `StringConcat` in JvmTests (58/58 pass). Tests `"x=" + 42`,
+negative ints, zero, `String.valueOf(int)`, and multiple appends.
 
-// CORRECT — manual output:
-JVMHelp.wr("count=");
-wrInt(n);  // custom helper that outputs digits one at a time
-```
-
-**Affected code**: All hardware test programs (`Fat32Test.java`, `VgaTest.java`,
-`EthTest.java`, etc.)
+**Affected code**: Any Java source using `"text" + intValue` or
+`String.valueOf(int)`. The existing hardware test programs already used
+character-by-character workarounds which remain valid but are no longer
+strictly necessary.
 
 ### 3. Object Memory Not Zeroed on Allocation (FIXED)
 

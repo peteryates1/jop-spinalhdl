@@ -105,7 +105,10 @@ public class DoAll {
 				// Regression tests
 				new CachePersistence(),
 
-				// Stack cache test (deep recursion)
+				// String operations
+				new StringConcat(),
+
+				// Stack cache test (deep recursion) — must be last (most cycle-intensive)
 				new DeepRecursion()
 		};
 		
