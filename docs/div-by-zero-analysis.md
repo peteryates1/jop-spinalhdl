@@ -1,15 +1,20 @@
 # Division by Zero ArithmeticException Analysis
 
+> **STATUS: RESOLVED.** Option A (recommended below) has been implemented:
+> `f_idiv`, `f_irem`, `f_ldiv`, and `f_lrem` in `JVM.java` now use
+> `throw JVMHelp.ArithExc` instead of the hardware exception path.
+> The `DivZero` test (3 sub-tests) is enabled and passes. See
+> [Bugs and Issues](bugs-and-issues.md) for the summary.
+
 ## Summary
 
 JOP's `idiv`, `irem`, `ldiv`, and `lrem` bytecodes are implemented in Java
-(not microcode), and their division-by-zero handling triggers a software
-exception via the hardware exception mechanism. This exception is
-architecturally intended to be catchable, and the code path appears
-correct in theory, but the mechanism is fragile due to an asynchronous
-exception firing mid-method that creates a non-standard stack state. This
-document traces the exact code path, identifies the root cause of failure,
-and proposes fixes.
+(not microcode), and their division-by-zero handling originally triggered a
+software exception via the hardware exception mechanism. This exception was
+architecturally intended to be catchable, but the mechanism was fragile due
+to an asynchronous exception firing mid-method that created a non-standard
+stack state. This document traces the exact code path, identifies the root
+cause of failure, and documents the fix.
 
 ## 1. How `idiv` Is Currently Dispatched
 
@@ -462,8 +467,7 @@ documentation.
 2. `testIremZero()` -- catch ArithmeticException from `int a % 0`
 3. `testNormalAfterException()` -- verify normal division works after catch
 
-This test is currently commented out in `DoAll.java` (line 82). After
-implementing the fix, it should be enabled.
+This test is enabled in `DoAll.java` and passes (all 58 JVM tests pass).
 
 ## 6. Key Files
 

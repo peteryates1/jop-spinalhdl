@@ -1,6 +1,14 @@
 # Mark-Compact GC Design for JOP
 
-## 1. Current GC Analysis (Semi-Space Copying Collector)
+> **STATUS: IMPLEMENTED.** This design has been fully implemented in
+> `java/runtime/src/jop/com/jopdesign/sys/GC.java` as an incremental
+> mark-compact collector with bounded per-allocation increments
+> (MARK_STEP=20, COMPACT_STEP=10). The semi-space collector described
+> in Section 1 below is historical context only. See
+> [Incremental GC Analysis](incremental-gc-analysis.md) for the
+> incremental design details.
+
+## 1. Previous GC Analysis (Semi-Space Copying Collector — Replaced)
 
 ### 1.1 Memory Layout
 

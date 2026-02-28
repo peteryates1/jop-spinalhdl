@@ -145,24 +145,21 @@ The BC fill uses pipelined states: `BC_FILL_R1` issues burst cmd, `BC_FILL_LOOP`
 
 ---
 
-## Summary: What Remains
+## Summary
 
-### Not Yet Implemented
+All caches and hardware exception detection are implemented:
 
-| What | Effort | Benefit |
-|------|--------|---------|
-| **Null pointer detection** | ~30 lines | Hardware NPE (infrastructure exists, checks disabled) |
-| **Array bounds checking** | ~30 lines | Hardware AIOOBE |
-
-### Completed
-
-| What | When |
-|------|------|
+| What | Status |
+|------|--------|
 | Method cache tags (16-block FIFO) | Done |
 | Object cache (16x8 fields, FIFO) | Done |
-| Array cache (16x4 elements, FIFO) | Done |
+| Array cache (16x4 elements, FIFO, SMP snoop invalidation) | Done |
 | Burst BC fill (pipelined, configurable) | Done |
 | Hardware memCopy (GC) | Done |
+| Null pointer detection (hardware NPE) | Done |
+| Array bounds checking (hardware AIOOBE) | Done |
+| GC halt for SMP (IO_GC_HALT) | Done |
+| Cache snoop invalidation (A$ + O$ cross-core) | Done |
 
 ## Resource Estimates (Cyclone IV GX)
 

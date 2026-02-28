@@ -1,8 +1,15 @@
 # Incremental and Concurrent GC Analysis for JOP
 
+> **STATUS: IMPLEMENTED.** The incremental mark-compact collector described
+> in this document has been fully implemented in `GC.java`. The GC uses
+> 4-phase incremental collection (IDLE → ROOT_SCAN(STW) → MARK(incremental)
+> → COMPACT(incremental) → IDLE) with proactive trigger at 25% free heap
+> and STW fallback. Verified across all platforms (BRAM, SDRAM, DDR3, SMP).
+
 Analysis of approaches to reduce stop-the-world (STW) pause times for the JOP
-Java Optimized Processor. This builds on the existing semi-space copying
-collector and the planned mark-compact replacement.
+Java Optimized Processor. This was written when JOP used a semi-space copying
+collector; it has since been replaced with the incremental mark-compact
+collector described here.
 
 ## 1. Current Pause Time Analysis
 

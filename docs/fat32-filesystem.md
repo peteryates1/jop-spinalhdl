@@ -221,10 +221,13 @@ public DirEntry() {
 }
 ```
 
-### 2. char[] Instead of StringBuilder for String Building
+### 2. char[] Instead of StringBuilder for String Building (Historical)
 
-JOP's `System.arraycopy` is broken — it causes stack overflow/crash.
-`StringBuilder` operations that trigger resize (`ensureCapacity`) will crash.
+> **Note**: `System.arraycopy` and `StringBuilder` resize both work correctly
+> now (see [Bugs and Issues](bugs-and-issues.md) — issue #1 was misdiagnosed,
+> issue #2 fixed with `StringBuilder.toString()`). The two-pass `char[]`
+> approach used here is no longer necessary but remains harmless.
+
 String building uses a two-pass approach: count characters first, then
 allocate a `char[]` of exact size and fill it.
 
@@ -239,23 +242,17 @@ char[] result = new char[validCount];
 return new String(result);
 ```
 
-**Exception**: `fillDirEntries()` uses `StringBuilder` for LFN accumulation
-because the simulation test runs on a standard JVM (where it works fine).
-The hardware test (`Fat32Test.java`) avoids triggering this code path in
-performance-critical loops.
+### 3. String Concatenation with int (Historical)
 
-### 3. No String Concatenation with int
-
-`"text" + intValue` generates `StringBuilder.append(int)` which calls
-`Integer.toString()` — this crashes on JOP. Use manual `wrInt()` or
-`wrHex()` helper methods for UART output.
+> **Note**: `"text" + intValue` now works correctly on JOP. The original crash
+> was caused by a missing `StringBuilder.toString()` method (see
+> [Bugs and Issues](bugs-and-issues.md) issue #2). The `wrInt()`/`wrHex()`
+> helpers used in the FAT32 code are no longer necessary but remain harmless.
 
 ```java
-// WRONG on JOP:
-JVMHelp.wr("count=" + n);
-
-// CORRECT on JOP:
-JVMHelp.wr("count=");
+// Both work on JOP now:
+JVMHelp.wr("count=" + n);    // StringBuilder path — fixed
+JVMHelp.wr("count=");        // Manual path — still valid
 wrInt(n);
 ```
 

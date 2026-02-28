@@ -9,7 +9,7 @@ This document compares the VHDL `mem_sc.vhd` memory controller with the SpinalHD
 | Bus | SimpCon | BMB (Bus Master Bridge) |
 | Caching | Method cache + Object cache | Method cache + Object cache |
 | BC fill | Sequential | Pipelined + configurable burst |
-| Exception detection | NPE, AIOOBE, IAE | Infrastructure exists, checks disabled |
+| Exception detection | NPE, AIOOBE, IAE | NPE + AIOOBE enabled, IAE not needed |
 | Copy operation | Sequential | Pipelined (CP_SETUP/READ/WRITE) |
 
 ## Feature Status
@@ -25,39 +25,13 @@ This document compares the VHDL `mem_sc.vhd` memory controller with the SpinalHD
 | IO address decode | Done | Top 2 bits = "11" for IO, HANDLE_ACCESS I/O routing |
 | Hardware memCopy | Done | CP_SETUP/CP_READ/CP_WRITE states for GC |
 | getstatic/putstatic | Done | Treated as regular memory ops (address pre-computed by linker) |
-| Null pointer detection | Disabled | Infrastructure exists, GC null handle scanning causes false positives |
-| Array bounds checking | Not implemented | |
+| Null pointer detection | Done | Hardware NPE on handle address 0 (GC.push null guard fixes false positives) |
+| Array bounds checking | Done | Negative index (MSB check) + upper bounds (compare index >= array length) |
 | SCJ scope checking | Not implemented | Not needed for standard Java |
 
 ## Remaining Differences from VHDL
 
-### 1. Array Cache
-
-**VHDL Component:** `acache`
-
-**Purpose:** Caches array element values for fast repeated access in loops.
-
-**Current behavior:** Every `iaload`/`iastore` goes through the full handle-dereference state machine.
-
-**Impact:** Performance -- loops over arrays are slower than with cache.
-
-### 2. Null Pointer Exception Detection
-
-**VHDL State:** `npexc`
-
-**Purpose:** Hardware detection of null pointer dereference.
-
-**Current status:** The exception detection infrastructure exists in the memory controller but checks are disabled. The VHDL bounds check is also dead code in the original. Re-enabling requires fixing GC.java's null handle scanning which triggers false NPE exceptions.
-
-### 3. Array Bounds Exception Detection
-
-**VHDL State:** `abexc`
-
-**Purpose:** Hardware detection of array index out of bounds.
-
-**Current behavior:** Out-of-bounds access reads/writes wrong memory silently.
-
-### 4. SCJ Scope Checking
+### 1. SCJ Scope Checking
 
 **VHDL State:** `iaexc`
 
@@ -115,8 +89,8 @@ Copy Operation:
   cpstop       - Copy complete            (SpinalHDL: CP_STOP)
 
 Exceptions:
-  npexc        - Null pointer exception   (disabled in SpinalHDL)
-  abexc        - Array bounds exception   (not implemented)
+  npexc        - Null pointer exception   (SpinalHDL: NP_EXC)
+  abexc        - Array bounds exception   (SpinalHDL: AB_EXC via HANDLE_BOUND states)
   iaexc        - Illegal assignment (SCJ) (not implemented)
 ```
 

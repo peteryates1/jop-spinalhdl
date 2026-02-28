@@ -230,8 +230,8 @@ d2i, d2l, d2f, f2d, i2d, l2d conversions, but not double arithmetic operations d
 | putfield_ref | 0xE3 | JV | T | PutRef (ref field), ObjectField |
 | getfield_long | - | MC | T | LongField, DoubleField |
 | putfield_long | - | MC | T | LongField, DoubleField |
-| getstatic_long | - | MC | (none) | **GAP: no test for static long fields** |
-| putstatic_long | - | MC | (none) | **GAP: no test for static long fields** |
+| getstatic_long | - | MC | T | LongStaticField |
+| putstatic_long | - | MC | T | LongStaticField |
 
 ### 1.14 Method Invocation
 
@@ -296,27 +296,27 @@ d2i, d2l, d2f, f2d, i2d, l2d conversions, but not double arithmetic operations d
 | NullPointerException (putfield long) | MC (long_null_pointer) | T | NullPointer T5 | Microcode null check |
 | NullPointerException (getfield ref) | HW (HANDLE_READ) | T | NullPointer T6 | Hardware handle=0 check |
 | NullPointerException (putfield ref) | JV (putfield_ref) | T | NullPointer T7, PutRef | Java-level via getField |
-| NullPointerException (invokeinterface) | MC (null_pointer) | (none) | **GAP** | Has microcode null check |
-| NullPointerException (invokespecial) | MC (null_pointer) | (none) | **GAP** | Null check added recently |
+| NullPointerException (invokeinterface) | MC (null_pointer) | T | NullPointer T9 | Microcode null check |
+| NullPointerException (invokespecial) | MC (null_pointer) | T | NullPointer T3 | Separated from invokestatic |
 | NullPointerException (invokesuper) | MC (null_pointer) | (none) | **GAP** | Has microcode null check |
-| NullPointerException (aaload on null) | HW (HANDLE_READ) | (none) | **GAP** | Commented out in ArrayTest3 |
+| NullPointerException (aaload on null) | HW (HANDLE_READ) | T | NullPointer T12 | Hardware handle=0 check |
 | NullPointerException (aastore on null) | JV (aastore) | T | PutRef (refa[0] on null) | |
-| NullPointerException (iaload on null) | HW (HANDLE_READ) | (none) | **GAP** | |
-| NullPointerException (iastore on null) | HW | (none) | **GAP** | |
+| NullPointerException (iaload on null) | HW (HANDLE_READ) | T | NullPointer T10 | Hardware handle=0 check |
+| NullPointerException (iastore on null) | HW | T | NullPointer T11 | Hardware handle=0 check |
 | ArrayIndexOutOfBoundsException (negative) | HW (HANDLE_READ) | T | PutRef (refa[-1]) | Hardware MSB check |
 | ArrayIndexOutOfBoundsException (upper) | HW (HANDLE_BOUND) | T | PutRef (refa[2] on size=1) | Hardware bounds check |
 | ArrayIndexOutOfBoundsException (laload) | MC (array_bound) | (none) | **GAP** | Microcode bound check |
 | ArrayIndexOutOfBoundsException (lastore) | MC (array_bound_store) | (none) | **GAP** | Microcode bound check |
-| ArithmeticException (idiv by zero) | JV (f_idiv) | (disabled) | DivZero exists but disabled | Hardware exception not catchable |
-| ArithmeticException (irem by zero) | JV (f_irem) | (disabled) | DivZero exists but disabled | Hardware exception not catchable |
+| ArithmeticException (idiv by zero) | JV (f_idiv) | T | DivZero | Direct Java throw (hardware exception replaced) |
+| ArithmeticException (irem by zero) | JV (f_irem) | T | DivZero | Direct Java throw (hardware exception replaced) |
 | ClassCastException | JV (f_checkcast) | T | CheckCast (4 CCE catches) | Both class and interface |
 | StackOverflowError | JV (handleException) | (none) | **GAP** | Pre-allocated in JVMHelp.init() |
 | IllegalMonitorStateException | MC (monitorenter) | (none) | **GAP** | CmpSync lock timeout |
 
 ### 2.2 Summary
 
-- **Well tested**: NPE (8 sub-tests across 3 bytecodes), AIOOBE (negative + upper bounds for aastore), CCE (4 catches), athrow (8 tests)
-- **Major gaps**: NPE on invokeinterface/invokespecial/invokesuper (have null checks but untested), NPE on array load/store of null arrays, AIOOBE for long arrays, StackOverflowError, div-by-zero (disabled)
+- **Well tested**: NPE (13 sub-tests: explicit throw, invokevirtual, getfield/putfield int/long/ref, invokespecial, invokeinterface, iaload, iastore, aaload), AIOOBE (negative + upper bounds), CCE (4 catches), athrow (8 tests), ArithmeticException (div-by-zero, idiv + irem + ldiv + lrem)
+- **Remaining gaps**: NPE on invokesuper (has null check but untested), AIOOBE for long arrays, StackOverflowError
 
 ---
 
@@ -429,7 +429,7 @@ d2i, d2l, d2f, f2d, i2d, l2d conversions, but not double arithmetic operations d
 | JopCoreLatencySweep | BRAM | Smallest | - | 0-5 extra latency cycles |
 | JopDebugProtocolSim | BRAM | Smallest | 250k | Debug protocol commands |
 | JopInterruptSim | BRAM | InterruptTest | 4M | Timer interrupt chain |
-| JopJvmTestsBramSim | BRAM | JvmTests | 20M | 50 JVM bytecode tests |
+| JopJvmTestsBramSim | BRAM | JvmTests | 25M | 58 JVM bytecode tests |
 
 ### 6.2 Missing Harness Combinations
 
@@ -491,7 +491,7 @@ d2i, d2l, d2f, f2d, i2d, l2d conversions, but not double arithmetic operations d
 | 1 | **SMP cache coherency stress test** (A$ + O$ snoop invalidation) | CRITICAL | Bugs #13, #14 were found in production. No test deliberately writes data on one core and reads on another. A regression would cause silent data corruption. |
 | 2 | **invokespecial null pointer test** | HIGH | Bug #21 fix has no regression test. `NullPointer.java` explicitly documents "invokespecial is NOT tested." A regression means NPE silently succeeds on null. |
 | 3 | **invokeinterface/invokesuper null pointer test** | HIGH | Both have microcode null checks (jvm_call.inc) but no test exercises them. |
-| 4 | **JVM test suite on SMP** | HIGH | 50 tests run single-core only. Running under arbitration would stress method cache, object cache, and memory controller timing in ways single-core cannot. |
+| 4 | **JVM test suite on SMP** | HIGH | 58 tests run single-core only. Running under arbitration would stress method cache, object cache, and memory controller timing in ways single-core cannot. |
 | 5 | **Array NPE tests** (iaload/iastore on null array) | HIGH | Commented out in ArrayTest3. Hardware NPE detection for arrays is enabled but untested for null arrays. |
 | 6 | **Long array bounds exception test** | MEDIUM | `laload`/`lastore` have microcode bounds checking (jvm_long.inc `array_bound`) but no test exercises AIOOBE on long arrays. |
 | 7 | **Static long field test** (getstatic_long/putstatic_long) | MEDIUM | These microcode paths exist in jvm_long.inc but have zero test coverage. |
@@ -646,7 +646,7 @@ ok = ok && (fa[2] == 0.0F);
 
 - **Exception types defined**: 6 (NPE, AIOOBE, ArithmeticException, CCE, SOError, IMSE)
 - **Tested exception types**: 3 (NPE, AIOOBE, CCE)
-- **Partially tested**: 1 (ArithmeticException - test exists but disabled)
+- **Partially tested**: 0
 - **Untested**: 2 (StackOverflowError, IllegalMonitorStateException)
 
 ### Bug Regression Coverage

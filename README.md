@@ -249,7 +249,7 @@ sbt "Test / runMain jop.system.JopInterruptSim"
 # Debug protocol test (39 checks: ping, halt, step, registers, memory, breakpoints)
 sbt "Test / runMain jop.system.JopDebugProtocolSim"
 
-# JVM test suite (57 tests, all pass)
+# JVM test suite (58 tests, all pass)
 sbt "Test / runMain jop.system.JopJvmTestsBramSim"
 
 # Reference simulator
@@ -268,7 +268,7 @@ make help                # List all available test targets
 
 | Board | FPGA | Memory | Toolchain | Status |
 |-------|------|--------|-----------|--------|
-| **[QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD)** | **Altera Cyclone IV GX** | **W9825G6JH6 SDR SDRAM** | **Quartus Prime** | **Primary — 100 MHz, single-core + SMP (2-core)** |
+| **[QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD)** | **Altera Cyclone IV GX** | **W9825G6JH6 SDR SDRAM** | **Quartus Prime** | **Primary — 100 MHz (1-8 core), 80 MHz (16-core)** |
 | [QMTECH EP4CGX150 + DB_FPGA](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Altera Cyclone IV GX | W9825G6JH6 SDR SDRAM | Quartus Prime | 80 MHz — Ethernet 1Gbps GMII ([details](docs/db-fpga-ethernet.md)), VGA text 80x30 ([details](docs/db-fpga-vga-text.md)), SD card native 4-bit ([details](docs/db-fpga-sd-card.md)) |
 | [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Altera Cyclone IV GX | BRAM (on-chip) | Quartus Prime | Working at 100 MHz |
 | [Trenz CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) | Altera Cyclone V E (5CEBA2U15C8N) | W9864G6JT SDR SDRAM | Quartus Prime | Working at 80 MHz |
@@ -326,35 +326,35 @@ Notes:
 - **Hardware exception detection**: Null pointer and array bounds checks fully enabled — NPE fires on handle address 0, ABE fires on negative index (MSB) or index >= array length. Wired through BmbSys `exc` pulse to `sys_exc` microcode handler. Div-by-zero handled via Java `throw JVMHelp.ArithExc` in f_idiv/f_irem/f_ldiv/f_lrem.
 - **Formal verification**: 98 properties verified across 16 test suites using SymbiYosys + Z3 — covers core arithmetic, all pipeline stages, memory subsystem (method cache, object cache, memory controller), DDR3 cache + MIG adapter, I/O (CmpSync, BmbSys, BmbUart), and BMB protocol compliance. See [formal verification docs](docs/formal-verification.md).
 - **Debug subsystem** (`jop.debug` package): Optional on-chip debug controller with framed byte-stream protocol over dedicated UART. Supports halt/resume/single-step (microcode and bytecode), register and stack inspection, memory read/write, and up to 4 hardware breakpoints (JPC or microcode PC). Integrated into `JopCluster` via `DebugConfig`. Automated protocol test (`JopDebugProtocolSim`) verifies 39 checks across 14 test sequences.
-- **JVM test suite**: 57 tests (`java/apps/JvmTests/`) — all pass. Covers arrays, branches, type casting, int/long arithmetic, type conversions (i2x/l2x/f2x/d2x), constant loading, float/double ops (add/sub/mul/div/neg/cmp/rem), field access for all types, exceptions (throw/catch, finally, nested, athrow, div-by-zero, null pointer with 13 sub-tests), instanceof, super method dispatch, object fields, interfaces, static initializers, stack manipulation, System.arraycopy, cache persistence regression, long static fields, deep recursion (200-level, exercises stack cache bank rotation), and more. Ported from original JOP `jvm/` suite and Wimpassinger `jvmtest/` suite.
+- **JVM test suite**: 58 tests (`java/apps/JvmTests/`) — all pass. Covers arrays, branches, type casting, int/long arithmetic, type conversions (i2x/l2x/f2x/d2x), constant loading, float/double ops (add/sub/mul/div/neg/cmp/rem), field access for all types, exceptions (throw/catch, finally, nested, athrow, div-by-zero, null pointer with 13 sub-tests), instanceof, super method dispatch, object fields, interfaces, static initializers, stack manipulation, System.arraycopy (including StringBuilder resize), string concatenation with int, cache persistence regression, long static fields, deep recursion (200-level, exercises stack cache bank rotation), and more. Ported from original JOP `jvm/` suite and Wimpassinger `jvmtest/` suite.
 - **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, JVM test suite, timer interrupt test, debug protocol test, GHDL event-driven sim
 
 ### Known Issues
 
 - **burstLen=0 + SMP incompatibility** — `burstLen=0` (pipelined single-word BC_FILL) interleaves with the BMB arbiter in SMP mode, causing response-source misalignment. SMP requires `burstLen >= 4`. Single-core is unaffected. See [DDR3 notes](docs/ddr3-gc-hang.md).
 
-### Next Steps
+### TODO
 
-- Memory controller — remaining features from VHDL `mem_sc.vhd`:
-  - **Atomic memory operations** (LOW — multicore only) — `atmstart`/`atmend` inputs exist in `MemCtrlInput` but are never processed; VHDL sets an `atomic` output flag for monitorenter/monitorexit
-  - **Address translation on read paths** (LOW — multicore only) — VHDL applies combinational `translateAddr` (GC copy relocation) to all reads; SpinalHDL only applies within copy states (single-core simplification, causes timing violation at 100 MHz)
-  - **Data cache control signals** (LOW — performance) — VHDL outputs `state_dcache` (bypass/direct_mapped/full_assoc per operation), `tm_cache` (disable caching during BC fill); SpinalHDL has none
-  - **Fast-path array access (`iald23`)** (LOW — performance) — VHDL shortcut state overlaps address computation with data availability for single-cycle memory; SpinalHDL uses uniform HANDLE_* states
-- Interrupt handling — timer interrupts verified end-to-end (`JopInterruptSim`); UART RX/TX interrupts wired but not yet exercised; scheduler preemption not yet tested
-- Performance measurement
-- DDR3 SMP GC — run GC stress test on dual-core DDR3 (NCoreHelloWorld verified, GC stress not yet tested in SMP mode)
+Active work items:
+
+- **Stack cache SDRAM integration** — 3-bank rotation working in BRAM simulation (58/58 tests pass); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
+- **Stack cache bank RAM optimization** — convert `readAsync` to `readSync` on bank RAMs to enable Xilinx BRAM inference, saving ~1,584 LUTs on Artix-7 (81% → ~73% utilization). Altera is unaffected (M9K/M10K supports async reads natively). See [distributed RAM optimization](docs/artix7-distram-optimization.md)
+- **SMP test expansion** — add lock contention stress test, cache snoop invalidation test, multi-core JVM test runner. See [test coverage audit](docs/test-coverage-audit.md)
+- **DDR3 SMP GC** — run GC stress test on dual-core DDR3 (NCoreHelloWorld verified, GC stress not yet tested in SMP mode)
+
+### Future
+
+Lower-priority or longer-term items:
+
+- Memory controller — remaining VHDL features: atomic memory operations (`atmstart`/`atmend`), address translation on read paths (for concurrent GC), data cache control signals, fast-path array access (`iald23`)
+- Interrupt handling — timer interrupts verified; UART RX/TX interrupts wired but not exercised; scheduler preemption not tested
 - DDR3 burst optimization — method cache fills could use burst reads through the cache bridge
-- SMP GC — STW GC working via `IO_GC_HALT` with incremental mark/compact; future: address translation on read paths for fully concurrent GC
-- Const.java -> pull out Const and Configuration — core(s)/system/memory/caches
+- Debug tooling — host-side debug client connecting to on-chip debug controller over UART
 - Target JDK modernization (8 as minimum)
 - Port target code — networking, etc.
-- Debug tooling — host-side debug client (Eclipse or standalone) connecting to the on-chip debug controller over UART for interactive debugging on FPGA hardware
-- Additional FPGA board targets
-- Stack cache — 3-bank rotation working in BRAM simulation (57/57 tests pass); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
-- Stack cache bank RAM optimization — convert `readAsync` to `readSync` on bank RAMs to enable Xilinx BRAM inference, saving ~1,584 LUTs on Artix-7 (81% → ~73% utilization). Currently forced to distributed RAM because Xilinx BRAM doesn't support async reads. Altera is unaffected (M9K/M10K supports async reads natively). See [distributed RAM optimization](docs/artix7-distram-optimization.md)
-- add quartus pll generator
+- Quartus PLL generator
 - Faster serial download — currently limited by per-word USB round-trip latency (~15s for 32KB)
-- Use Exerciser to find boundary performance for SDRAM/DDR3
+- Performance measurement / benchmarking
 
 ## Key Technical Details
 

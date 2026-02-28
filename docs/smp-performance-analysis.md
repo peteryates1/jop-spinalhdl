@@ -588,44 +588,39 @@ This gives more realistic estimates:
 
 Ordered by expected impact and implementation effort:
 
-### 10.1 Per-Object Locking (IHLU) -- High Impact, Moderate Effort
+### 10.1 Per-Object Locking (IHLU) -- IMPLEMENTED
 
-**Current**: Every `synchronized` block acquires the global CmpSync lock, halting
-all non-owner cores regardless of which monitor object is being locked.
-
-**Proposed**: Port `ihlu.vhd` (Individual Hardware Lock Unit) to SpinalHDL.
-IHLU provides 32 hardware lock slots with per-object granularity, FIFO wait
-queues, and reentrant locking. Only cores contending for the SAME object are
-halted; cores locking different objects proceed in parallel.
+**Current**: `CmpSync` global lock is the default. `Ihlu` (Individual Hardware
+Lock Unit) is available as an optional alternative via `useIhlu` in
+`JopCoreConfig`. IHLU provides 32 hardware lock slots with per-object
+granularity, FIFO wait queues, and reentrant locking. Only cores contending
+for the SAME object are halted; cores locking different objects proceed in
+parallel. Includes GC drain mechanism for STW interaction.
 
 **Expected impact**: For workloads with independent synchronization (different
 objects), this eliminates most lock serialization. For GC (which uses a single
 `GC.mutex`), no improvement. Estimated 20-40% throughput improvement at 4+ cores
 for allocation-light workloads.
 
-**Complexity**: Moderate. Requires drain mechanism for GC interaction (IHLU must
-release all held locks before STW GC can proceed safely).
+See [IHLU Design Analysis](ihlu-design-analysis.md) for full details.
 
-### 10.2 Mark-Compact GC -- High Impact, High Effort
+### 10.2 Mark-Compact GC -- IMPLEMENTED
 
-**Current**: Semi-space copying GC wastes 50% of heap and has O(heap) pause time
-for zapSemi.
+Incremental mark-compact collector replaces the semi-space copying GC.
+Doubles effective heap size, eliminates zapSemi, and uses bounded
+per-allocation increments (MARK_STEP=20, COMPACT_STEP=10) with proactive
+trigger at 25% free heap. Verified across all platforms.
 
-**Proposed**: Mark-compact collector. JOP's handle indirection makes compaction
-efficient: only handle pointers need updating (O(live_handles)), not all heap
-references.
-
-**Expected impact**: Doubles effective heap size. Eliminates zapSemi (3ms of GC
-pause). Reduces GC frequency (more heap = fewer collections). Estimated 30-50%
-reduction in GC duty cycle.
+See [GC Mark-Compact Design](gc-mark-compact-design.md) and
+[Incremental GC Analysis](incremental-gc-analysis.md).
 
 ### 10.3 Wider SDRAM Data Bus -- High Impact, Hardware Change
 
 **Current**: 16-bit SDR SDRAM at 80-100 MHz = 160-200 MB/s.
 
 **Possible**: If the FPGA board supported 32-bit SDRAM or DDR SDRAM, bandwidth
-would double or quadruple. The Alchitry Au V2 board has DDR3, but GC hangs remain
-unresolved on that platform.
+would double or quadruple. The Alchitry Au V2 board has DDR3 (256MB, resolved —
+GC working with 32KB L2 cache).
 
 **Expected impact**: Directly doubles memory bandwidth, pushing the saturation
 point from ~8 cores to ~16 cores. Would make 16-core scaling viable at 100 MHz.
@@ -688,9 +683,9 @@ SDR SDRAM. The primary bottlenecks are:
 2. **Global lock serialization** (exacerbated by memory latency)
 3. **GC stop-the-world pauses** (proportional to heap size, not core count)
 
-The most impactful optimizations are:
-- **IHLU (per-object locking)**: Eliminates global lock serialization for 20-40% improvement
-- **Mark-compact GC**: Doubles effective heap, reduces pause time
+The most impactful optimizations (IHLU and mark-compact GC are now implemented):
+- **IHLU (per-object locking)**: Implemented — eliminates global lock serialization (optional via `useIhlu`)
+- **Mark-compact GC**: Implemented — incremental mark-compact with bounded pauses
 - **Lock elimination in STW GC**: Easy win, 10-20% GC pause reduction
 
 The system achieves approximately 2.7x speedup at 4 cores and 3.5x at 8 cores
