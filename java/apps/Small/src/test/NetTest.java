@@ -134,6 +134,9 @@ public class NetTest {
 			}
 
 			// --- TCP echo ---
+			if (tcpListen == null && tcpClient == null) {
+				tcpListen = TCP.listen(7);
+			}
 			if (tcpListen != null && tcpClient == null) {
 				if (tcpListen.state == TCPConnection.STATE_ESTABLISHED
 						|| tcpListen.state == TCPConnection.STATE_CLOSE_WAIT) {

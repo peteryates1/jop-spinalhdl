@@ -501,6 +501,36 @@ acceptable for TCP retransmission.
 - `jop_dbfpga.qsf` — Added FAST_INPUT_REGISTER for all 10 Ethernet RX pins
 - `MacEthNoCrc.scala` — Created for debugging (not used in production)
 
+### 2026-03-01: TCP hardening — Phase 2
+
+Four reliability fixes to prevent failures under stress (rapid connection cycling,
+lost FIN packets, zero-window stalls):
+
+**Fix 1 — FIN re-send guard** (critical): Same class of bug as the SYN re-send fix.
+`sendSegment()` set `FLAG_FIN` unconditionally when `flushAndClose` is true, and
+advanced `sndNext` on every `poll()` call. Added guard in `poll()`: in FIN_WAIT_1,
+CLOSING, or LAST_ACK, return early if `sndNext != sndUnack` (FIN already sent,
+waiting for ACK). Only re-send when retransmission resets `sndNext`.
+
+**Fix 2 — LAST_ACK retransmission**: `poll()` returned early for LAST_ACK before
+reaching the retransmission check. If the final FIN was lost, it was never
+retransmitted — the connection just waited 60s then deleted. Moved LAST_ACK
+timeout to after `checkAndPrepareRetransmission()` so FIN can be retransmitted.
+
+**Fix 3 — TIME_WAIT recycling**: With 4 TCP connection slots and 2-second TIME_WAIT,
+rapid connection cycling (>4 connections in 2s) exhausted the pool. Added recycling
+of oldest TIME_WAIT connection in `newConnection()` when no free slots. Also added
+listener recovery in `NetTest.java` — if `TCP.listen()` fails, retry on next loop.
+
+**Fix 4 — Zero-window probe**: When remote advertises window=0, `sendSegment()`
+set `maxData=0`, stalling forever. Now sends a 1-byte probe when window is 0 and
+there's data to send, allowing the remote to respond with an updated window.
+
+**Files changed**:
+- `TCPConnection.java` — FIN guard, LAST_ACK restructure, TIME_WAIT recycling
+- `TCP.java` — Zero-window probe
+- `NetTest.java` — Listener recovery
+
 ### 2026-03-01: TCP echo verified — two bugs fixed
 
 **Problem**: TCP connections established (3-way handshake OK) but data was never

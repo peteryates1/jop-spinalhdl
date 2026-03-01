@@ -131,6 +131,9 @@ See [DB_FPGA Ethernet](db-fpga-ethernet.md) for full details.
 |---|-----|-----|
 | — | `TCPConnection.poll()` called `sendSegment()` on every round-robin poll in SYN_RCVD/SYN_SENT — each call advanced `sndNext`, corrupting all subsequent sequence numbers | Guard in `poll()`: return early if `sndNext != sndUnack` in SYN_RCVD/SYN_SENT (SYN already sent, waiting for ACK) |
 | — | `TCP.sendSegment()` only attached data in STATE_ESTABLISHED — echo data in CLOSE_WAIT was never sent | Extended data attachment condition to include STATE_CLOSE_WAIT (RFC 793 permits sending in CLOSE_WAIT) |
+| — | Same SYN re-send bug class for FIN: `sendSegment()` set `flags |= FLAG_FIN` unconditionally when `flushAndClose` true, advancing `sndNext` on every poll in FIN_WAIT_1/CLOSING/LAST_ACK | Guard in `poll()`: return early if `sndNext != sndUnack` in FIN states (FIN already sent, waiting for ACK) |
+| — | LAST_ACK returned early in `poll()` before retransmission check — lost final FIN never retransmitted | Moved LAST_ACK timeout to after retransmission check so FIN can be retransmitted |
+| — | Pool exhaustion on rapid TCP connection cycling: 4 slots with 2s TIME_WAIT exhausted by >4 connections in 2 seconds | Recycle oldest TIME_WAIT connection when no free slots; recover listener in NetTest.java |
 
 See [Networking](networking.md) for full details.
 

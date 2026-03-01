@@ -581,6 +581,10 @@ public class TCP {
 			int remainingWindow = conn.sndWindow - (conn.sndNext - conn.sndUnack);
 			if (remainingWindow < 0) remainingWindow = 0;
 			if (maxData > remainingWindow) maxData = remainingWindow;
+			// Zero-window probe: send 1 byte even with window=0
+			if (maxData == 0 && !conn.oStream.isNoMoreDataToRead()) {
+				maxData = 1;
+			}
 			if (maxData > Packet.MAX_BYTES - dataStart) {
 				maxData = Packet.MAX_BYTES - dataStart;
 			}

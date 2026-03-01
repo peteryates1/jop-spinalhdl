@@ -144,6 +144,24 @@ public class TCPConnection {
 				return pool[i];
 			}
 		}
+		// No free slot — recycle oldest TIME_WAIT connection
+		int oldestIdx = -1;
+		int oldestAge = 0;
+		for (int i = 0; i < NetConfig.MAX_TCP_CONN; i++) {
+			if (pool[i].state == STATE_TIME_WAIT) {
+				int age = NumFunctions.now() - pool[i].timeLastRemoteActivity;
+				if (age > oldestAge) {
+					oldestAge = age;
+					oldestIdx = i;
+				}
+			}
+		}
+		if (oldestIdx >= 0) {
+			cleanUp(pool[oldestIdx]);
+			pool[oldestIdx].inUse = true;
+			pool[oldestIdx].localPort = port;
+			return pool[oldestIdx];
+		}
 		return null;
 	}
 
@@ -296,14 +314,6 @@ public class TCPConnection {
 		// Handle timeout-based state cleanup
 		int now = NumFunctions.now();
 
-		if (state == STATE_LAST_ACK) {
-			if (!NumFunctions.isBetweenOrEqualBigger(timeLastRemoteActivity,
-					timeLastRemoteActivity + 60000, now)) {
-				deleteConnection(this);
-			}
-			return true;
-		}
-
 		if (state == STATE_TIME_WAIT) {
 			if (!NumFunctions.isBetweenOrEqualBigger(timeLastRemoteActivity,
 					timeLastRemoteActivity + 2000, now)) {
@@ -334,11 +344,30 @@ public class TCPConnection {
 			return true;
 		}
 
+		// LAST_ACK: allow retransmission (handled above), but timeout after 60s
+		if (state == STATE_LAST_ACK) {
+			if (!NumFunctions.isBetweenOrEqualBigger(timeLastRemoteActivity,
+					timeLastRemoteActivity + 60000, now)) {
+				deleteConnection(this);
+				return true;
+			}
+			// Fall through to FIN guard and send logic for retransmission
+		}
+
 		// SYN_RCVD / SYN_SENT: the initial SYN (or SYN-ACK) was already sent.
 		// Don't re-send unless retransmission was triggered (sndNext reset to
 		// sndUnack). Without this guard, every poll() call re-sends the SYN and
 		// advances sndNext, corrupting all subsequent sequence numbers.
 		if ((state == STATE_SYN_RCVD || state == STATE_SYN_SENT)
+				&& sndNext != sndUnack) {
+			return true;
+		}
+
+		// FIN_WAIT_1 / CLOSING / LAST_ACK: the FIN was already sent.
+		// Don't re-send unless retransmission was triggered (sndNext reset
+		// to sndUnack). Same logic as the SYN guard above.
+		if ((state == STATE_FIN_WAIT_1 || state == STATE_CLOSING
+				|| state == STATE_LAST_ACK)
 				&& sndNext != sndUnack) {
 			return true;
 		}
