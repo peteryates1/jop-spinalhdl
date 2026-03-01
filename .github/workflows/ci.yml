@@ -135,9 +135,9 @@ jobs:
       - name: Install yosys and z3
         run: sudo apt-get update && sudo apt-get install -y yosys z3
 
-      - name: Install SymbiYosys
+      - name: Install SymbiYosys (v0.62)
         run: |
-          git clone https://github.com/YosysHQ/sby.git /tmp/sby
+          git clone --branch v0.62 --depth 1 https://github.com/YosysHQ/sby.git /tmp/sby
           cd /tmp/sby && sudo make install PREFIX=/usr/local
 
       - name: Run formal verification
