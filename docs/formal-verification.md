@@ -4,7 +4,7 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 
 ## Overview
 
-**99 properties verified** across **16 test suites** covering all major components:
+**97 properties verified** across **16 test suites** covering all major components:
 
 | Category | Suite | Tests | Properties |
 |----------|-------|:-----:|------------|
@@ -18,7 +18,7 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 | **Memory Subsystem** | MethodCacheFormal | 6 | State machine transitions (IDLE/S1/S2), rdy output, find trigger, S2 always returns, inCache stability |
 | | ObjectCacheFormal | 5 | Invalidation clears valid bits and FIFO pointer, uncacheable field rejection, hit implies cacheable, no hit after reset |
 | | BmbMemoryControllerFormal | 12 | Initial state, busy correctness, exception/copy returns to IDLE, READ/WRITE_WAIT completion + hold, IDLE stability |
-| **DDR3 Subsystem** | LruCacheCoreFormal | 11 | Initial state, busy correctness, memCmd gating, evict/refill commands, error recovery, no-deadlock, **2 bugs found and fixed** (see below) |
+| **DDR3 Subsystem** | LruCacheCoreFormal | 9 | Initial state, busy correctness, memCmd gating, evict/refill commands, error recovery, no-deadlock, **2 bugs found and fixed** (see below) |
 | | CacheToMigAdapterFormal | 8 | Initial state, busy correctness, IDLE stability, no-deadlock, MIG signal gating, read data capture, write completion |
 | **I/O Subsystem** | CmpSyncFormal | 6 | Lock mutual exclusion, deadlock freedom, signal broadcast, gcHalt isolation, IDLE no-halt, **lock owner exempt from gcHalt** |
 | | BmbSysFormal | 6 | Clock counter monotonicity, exception pulse, lock acquire/release/hold, halted passthrough |
@@ -44,7 +44,7 @@ cd /tmp/sby && sudo make install PREFIX=/usr/local
 ## Running
 
 ```bash
-# Run all 99 formal tests (~100 seconds)
+# Run all 97 formal tests (~100 seconds)
 sbt "testOnly jop.formal.*"
 
 # Run a specific suite

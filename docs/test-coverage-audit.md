@@ -577,8 +577,8 @@ Implemented as `FloatArray.java` (faload/fastore with float arrays, 4 elements +
 
 ### Formal Verification
 
-- **Suites**: 15 (SymbiYosys + Z3)
-- **Total properties**: 117
+- **Suites**: 16 (SymbiYosys + Z3)
+- **Total properties**: 97
 
 ### Bug Regression Coverage
 
