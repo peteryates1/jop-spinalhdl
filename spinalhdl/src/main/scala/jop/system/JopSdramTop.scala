@@ -80,7 +80,8 @@ case class JopSdramTop(
   ramInit: Seq[BigInt],
   debugConfig: Option[DebugConfig] = None,
   ioConfig: IoConfig = IoConfig(),
-  jumpTable: JumpTableInitData = JumpTableInitData.serial
+  jumpTable: JumpTableInitData = JumpTableInitData.serial,
+  perCoreUart: Boolean = false
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
 
@@ -133,6 +134,9 @@ case class JopSdramTop(
     val cf_ncs   = if (ioConfig.hasConfigFlash) Some(out Bool()) else None
     val cf_asdo  = if (ioConfig.hasConfigFlash) Some(out Bool()) else None
     val cf_data0 = if (ioConfig.hasConfigFlash) Some(in Bool()) else None
+
+    // Per-core UART TX via JP1 header (optional, for SMP debug)
+    val jp1_txd = if (perCoreUart) Some(out Bits(cpuCnt bits)) else None
 
     // SD SPI (optional, unidirectional)
     val sd_spi_clk  = if (ioConfig.hasSdSpi) Some(out Bool()) else None
@@ -289,7 +293,8 @@ case class JopSdramTop(
       jbcInit = Some(Seq.fill(2048)(BigInt(0))),
       ethTxCd = ethTxCd,
       ethRxCd = ethRxCd,
-      vgaCd = vgaCd
+      vgaCd = vgaCd,
+      perCoreUart = perCoreUart
     )
 
     // Debug UART (when debug is enabled)
@@ -322,6 +327,13 @@ case class JopSdramTop(
 
     io.ser_txd := cluster.io.txd
     cluster.io.rxd := io.ser_rxd
+
+    // Per-core UART TX via JP1 (when perCoreUart enabled)
+    if (perCoreUart) {
+      for (i <- 0 until cpuCnt) {
+        io.jp1_txd.get(i) := cluster.io.perCoreTxd.get(i)
+      }
+    }
 
     // ==================================================================
     // LED Driver
@@ -645,4 +657,37 @@ object JopCfgFlashTopVerilog extends App {
   )))
 
   println("Generated: spinalhdl/generated/JopSdramTop.v (config flash boot)")
+}
+
+/**
+ * Generate Verilog for 8-core SMP test with per-core UART on JP1
+ *
+ * Minimal config (no Eth/SD/VGA) to save logic. Each core gets a UART TX
+ * routed to a JP1 header pin for Pico debug probe verification.
+ * Entity name: JopSmpSdramTop (reused from standard SMP).
+ */
+object JopSmp8TestVerilog extends App {
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
+
+  val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
+  val ramData = JopFileLoader.loadStackRam(ramFilePath)
+
+  println(s"Loaded ROM: ${romData.length} entries")
+  println(s"Loaded RAM: ${ramData.length} entries")
+  println("Generating 8-core SMP test Verilog (per-core UART on JP1)...")
+
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = "spinalhdl/generated",
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
+  ).generate(InOutWrapper(JopSdramTop(
+    cpuCnt = 8,
+    romInit = romData,
+    ramInit = ramData,
+    ioConfig = IoConfig(hasUart = true),
+    perCoreUart = true
+  )))
+
+  println("Generated: spinalhdl/generated/JopSmpSdramTop.v (8-core SMP test, per-core UART)")
 }

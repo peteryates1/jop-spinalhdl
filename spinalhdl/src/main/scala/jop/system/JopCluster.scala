@@ -42,7 +42,8 @@ case class JopCluster(
   ethTxCd: Option[ClockDomain] = None,
   ethRxCd: Option[ClockDomain] = None,
   vgaCd:   Option[ClockDomain] = None,
-  separateStackDmaBus: Boolean = false
+  separateStackDmaBus: Boolean = false,
+  perCoreUart: Boolean = false
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
 
@@ -126,6 +127,9 @@ case class JopCluster(
     // FPGA top-levels connect DebugUart to this; sim harnesses connect directly.
     val debugTransport = if (debugConfig.isDefined) Some(slave(DebugTransport())) else None
 
+    // Per-core UART TX (optional, for SMP debug via JP1 header)
+    val perCoreTxd = if (perCoreUart) Some(out Vec(Bool(), cpuCnt)) else None
+
     // Ethernet PHY (optional, core 0 only)
     val phy = if (baseConfig.hasEth) Some(master(PhyIo(PhyParameter(txDataWidth = baseConfig.ioConfig.phyDataWidth, rxDataWidth = baseConfig.ioConfig.phyDataWidth)))) else None
 
@@ -180,7 +184,7 @@ case class JopCluster(
       cpuId = i,
       cpuCnt = cpuCnt,
       ioConfig = baseConfig.ioConfig.copy(
-        hasUart        = (i == 0),
+        hasUart        = if (perCoreUart) baseConfig.ioConfig.hasUart else (i == 0),
         hasEth         = (i == 0) && baseConfig.ioConfig.hasEth,
         hasSdSpi       = (i == 0) && baseConfig.ioConfig.hasSdSpi,
         hasSdNative    = (i == 0) && baseConfig.ioConfig.hasSdNative,
@@ -481,13 +485,20 @@ case class JopCluster(
   }
 
   // ==================================================================
-  // UART (core 0 only)
+  // UART
   // ==================================================================
 
   io.txd := cores(0).io.txd
   cores(0).io.rxd := io.rxd
   for (i <- 1 until cpuCnt) {
-    cores(i).io.rxd := True  // No UART on cores 1+
+    cores(i).io.rxd := True  // No RXD on cores 1+ (TX-only for per-core debug)
+  }
+
+  // Per-core UART TX routing (for SMP debug via JP1)
+  if (perCoreUart) {
+    for (i <- 0 until cpuCnt) {
+      io.perCoreTxd.get(i) := cores(i).io.txd
+    }
   }
 
   // ==================================================================

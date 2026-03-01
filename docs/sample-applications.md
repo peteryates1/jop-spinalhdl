@@ -17,6 +17,7 @@ are built with the Small runtime and downloaded via serial UART.
 | NetTest | `src/test/NetTest.java` | `net/src` | Ethernet | UDP+TCP echo on port 7, ICMP ping |
 | DhcpTest | `src/test/DhcpTest.java` | `net/src` | Ethernet | DHCP+DNS, then UDP+TCP echo |
 | HttpServer | `src/test/HttpServer.java` | `net/src fat32/src` | Ethernet+SD | HTTP/1.0 file server on port 80 |
+| SmpUartTest | `src/test/SmpUartTest.java` | — | UART (per-core) | 8-core SMP test, each core prints C&lt;id&gt; on JP1 |
 
 All source paths are relative to `java/apps/Small/`.
 
@@ -70,6 +71,7 @@ Some apps require specific FPGA builds due to mutually exclusive peripherals:
 |--------|-------------|-------------|
 | `IoConfig.qmtechDbFpga` | `make build-dbfpga` | VGA text, SD, Ethernet |
 | `IoConfig.qmtechDbFpgaVgaDma` | `make full-dbfpga-vgadma` | VGA DMA, SD, Ethernet |
+| 8-core SMP test | `make build-smp8` | UART only (8 cores, per-core TX on JP1) |
 
 VGA text and VGA DMA share the same pins and cannot be used simultaneously.
 
@@ -139,6 +141,36 @@ positioning, character writing, scrolling, attributes. Requires DB_FPGA build.
 VGA DMA framebuffer test — 640x480@60Hz RGB565 from SDRAM. Draws test patterns
 using `Native.wrMem()` direct memory writes. Requires the VGA DMA FPGA build
 (`make full-dbfpga-vgadma`).
+
+### SmpUartTest
+
+8-core SMP verification test. Each core reads its hardware CPU ID and prints
+`C<id>\r\n` to its dedicated UART every ~500ms. Core 0 also drives the main
+serial port (CP2102N). All 8 TXD lines are routed to JP1 header pins for
+readout by a Pico debug probe.
+
+Requires the 8-core SMP test FPGA build (`make build-smp8`).
+
+```bash
+# Build FPGA (generate + compile)
+cd fpga/qmtech-ep4cgx150-sdram
+make generate-smp8 && make build-smp8
+
+# Build Java app (only SmpUartTest, not all test/*.java)
+cd java/apps/Small
+make clean && make all APP_NAME=SmpUartTest
+
+# Program + download
+cd fpga/qmtech-ep4cgx150-sdram
+make program-smp8
+sleep 3 && make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/SmpUartTest.jop
+
+# Verify all 8 cores via Pico debug probe
+python3 fpga/scripts/test_smp8_uart.py --port /dev/ttyACM1
+```
+
+The Pico test reads cores in two rounds (0-3 then 4-7) using 4 PIO UARTs
+per round at 1 Mbaud.
 
 ## Detailed Documentation
 

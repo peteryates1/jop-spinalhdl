@@ -10,6 +10,10 @@
 #   make program         - Program FPGA via JTAG
 #   make download        - Send HelloWorld.jop via serial
 #   make monitor         - Monitor UART output (1 Mbaud)
+#   make generate-smp8   - Generate 8-core SMP test Verilog (per-core UART)
+#   make build-smp8      - Quartus compile 8-core SMP test
+#   make program-smp8    - Program 8-core SMP test via JTAG
+#   make full-smp8       - microcode + generate-smp8 + build-smp8 + run-smp8
 #   make build-smp       - Quartus compile SMP (2 cores)
 #   make program-smp     - Program SMP FPGA via JTAG
 #   make build-dbfpga    - Quartus compile DB_FPGA
@@ -80,6 +84,7 @@ JOP_OFFSET ?= 0x800000
 # Quartus projects
 QP = jop_sdram
 QP_SMP = jop_smp_sdram
+QP_SMP8 = jop_smp8_test
 QP_DBFPGA = jop_dbfpga
 QP_FLASH_BOOT = jop_flash_boot
 QP_SD_NATIVE = sd_native_exerciser
@@ -92,6 +97,7 @@ FLASH_COF = $(OUTPUT_DIR)/flash_boot.cof
 FLASH_JIC = $(OUTPUT_DIR)/flash_image.jic
 SOF_FILE = $(OUTPUT_DIR)/$(QP).sof
 SOF_SMP_FILE = $(OUTPUT_DIR)/$(QP_SMP).sof
+SOF_SMP8_FILE = $(OUTPUT_DIR)/$(QP_SMP8).sof
 SOF_DBFPGA_FILE = $(OUTPUT_DIR)/$(QP_DBFPGA).sof
 SOF_FLASH_BOOT_FILE = $(OUTPUT_DIR)/$(QP_FLASH_BOOT).sof
 SOF_SD_NATIVE_FILE = $(OUTPUT_DIR)/$(QP_SD_NATIVE).sof
@@ -99,7 +105,7 @@ SOF_SD_SPI_FILE = $(OUTPUT_DIR)/$(QP_SD_SPI).sof
 SOF_CFG_FLASH_FILE = $(OUTPUT_DIR)/$(QP_CFG_FLASH).sof
 SOF_FLASH_PROG_FILE = $(OUTPUT_DIR)/$(QP_FLASH_PROG).sof
 
-.PHONY: all microcode microcode-flash generate generate-smp generate-dbfpga generate-dbfpga-vgadma generate-flash-boot generate-sd-native-exerciser generate-sd-spi-exerciser generate-config-flash-exerciser generate-flash-programmer build build-smp build-dbfpga build-dbfpga-vgadma build-flash-boot build-sd-native-exerciser build-sd-spi-exerciser build-config-flash-exerciser build-flash-programmer program program-smp program-dbfpga program-dbfpga-vgadma program-flash-boot program-sd-native-exerciser program-sd-spi-exerciser program-config-flash-exerciser program-flash-programmer download monitor run run-smp run-dbfpga run-dbfpga-vgadma flash-image flash-jic program-flash flash-program full full-smp full-dbfpga full-dbfpga-vgadma full-flash-boot full-sd-native-exerciser full-sd-spi-exerciser full-config-flash-exerciser full-flash-programmer clean
+.PHONY: all microcode microcode-flash generate generate-smp generate-smp8 generate-dbfpga generate-dbfpga-vgadma generate-flash-boot generate-sd-native-exerciser generate-sd-spi-exerciser generate-config-flash-exerciser generate-flash-programmer build build-smp build-smp8 build-dbfpga build-dbfpga-vgadma build-flash-boot build-sd-native-exerciser build-sd-spi-exerciser build-config-flash-exerciser build-flash-programmer program program-smp program-smp8 program-dbfpga program-dbfpga-vgadma program-flash-boot program-sd-native-exerciser program-sd-spi-exerciser program-config-flash-exerciser program-flash-programmer download monitor run run-smp run-smp8 run-dbfpga run-dbfpga-vgadma flash-image flash-jic program-flash flash-program full full-smp full-smp8 full-dbfpga full-dbfpga-vgadma full-flash-boot full-sd-native-exerciser full-sd-spi-exerciser full-config-flash-exerciser full-flash-programmer clean
 
 # Default: microcode + generate + build
 all: microcode generate build
@@ -109,6 +115,9 @@ full: microcode generate build run
 
 # SMP full flow
 full-smp: microcode generate-smp build-smp run-smp
+
+# 8-core SMP test full flow
+full-smp8: microcode generate-smp8 build-smp8 run-smp8
 
 # DB_FPGA full flow
 full-dbfpga: microcode generate-dbfpga build-dbfpga run-dbfpga
@@ -128,6 +137,7 @@ full-flash-programmer: generate-flash-programmer build-flash-programmer program-
 # Program + download + monitor
 run: program download monitor
 run-smp: program-smp download monitor
+run-smp8: program-smp8 download monitor
 run-dbfpga: program-dbfpga download monitor
 run-dbfpga-vgadma: program-dbfpga-vgadma download monitor
 
@@ -154,6 +164,10 @@ generate:
 generate-smp:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopSmpSdramTopVerilog"
 	@echo "=== SMP Verilog generated: $(GENERATED_SMP_V) ==="
+
+generate-smp8:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopSmp8TestVerilog"
+	@echo "=== 8-core SMP test Verilog generated: $(GENERATED_SMP_V) ==="
 
 generate-dbfpga:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopDbFpgaTopVerilog"
@@ -204,6 +218,15 @@ $(SOF_SMP_FILE): $(GENERATED_SMP_V) $(QP_SMP).qsf $(QP).sdc dram_pll.vhd
 	$(QUARTUS_BIN)/quartus_asm $(QP_SMP)
 	$(QUARTUS_BIN)/quartus_sta $(QP_SMP)
 	@echo "=== SMP Build complete: $(SOF_SMP_FILE) ==="
+
+build-smp8: $(SOF_SMP8_FILE)
+
+$(SOF_SMP8_FILE): $(GENERATED_SMP_V) $(QP_SMP8).qsf $(QP).sdc dram_pll.vhd
+	$(QUARTUS_BIN)/quartus_map $(QP_SMP8)
+	$(QUARTUS_BIN)/quartus_fit $(QP_SMP8)
+	$(QUARTUS_BIN)/quartus_asm $(QP_SMP8)
+	$(QUARTUS_BIN)/quartus_sta $(QP_SMP8)
+	@echo "=== 8-core SMP test Build complete: $(SOF_SMP8_FILE) ==="
 
 build-dbfpga: $(SOF_DBFPGA_FILE)
 
@@ -296,6 +319,22 @@ $(QP_SMP).cdf: $(SOF_SMP_FILE)
 program-smp: $(SOF_SMP_FILE) $(QP_SMP).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SMP).cdf
 	@echo "=== SMP FPGA programmed ==="
+
+$(QP_SMP8).cdf: $(SOF_SMP8_FILE)
+	@echo '/* Auto-generated CDF */' > $@
+	@echo 'JedecChain;' >> $@
+	@echo '	FileRevision(JESD32A);' >> $@
+	@echo '	DefaultMfr(6E);' >> $@
+	@echo '	P ActionCode(Cfg)' >> $@
+	@echo '		Device PartName(EP4CGX150DF27) Path("$(OUTPUT_DIR)/") File("$(QP_SMP8).sof") MfrSpec(OpMask(1));' >> $@
+	@echo 'ChainEnd;' >> $@
+	@echo 'AlteraBegin;' >> $@
+	@echo '	ChainType(JTAG);' >> $@
+	@echo 'AlteraEnd;' >> $@
+
+program-smp8: $(SOF_SMP8_FILE) $(QP_SMP8).cdf
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SMP8).cdf
+	@echo "=== 8-core SMP test FPGA programmed ==="
 
 $(QP_DBFPGA).cdf: $(SOF_DBFPGA_FILE)
 	@echo '/* Auto-generated CDF */' > $@
@@ -477,5 +516,5 @@ monitor:
 # --------------------------------------------------------------------------
 
 clean:
-	rm -rf output_files db incremental_db $(QP).cdf $(QP_SMP).cdf $(QP_DBFPGA).cdf $(QP_FLASH_BOOT).cdf $(QP_SD_NATIVE).cdf $(QP_SD_SPI).cdf $(QP_CFG_FLASH).cdf $(QP_FLASH_PROG).cdf
+	rm -rf output_files db incremental_db $(QP).cdf $(QP_SMP).cdf $(QP_SMP8).cdf $(QP_DBFPGA).cdf $(QP_FLASH_BOOT).cdf $(QP_SD_NATIVE).cdf $(QP_SD_SPI).cdf $(QP_CFG_FLASH).cdf $(QP_FLASH_PROG).cdf
 	rm -f *.rpt *.done *.jdi *.sld *.smsg *.summary *.pin
