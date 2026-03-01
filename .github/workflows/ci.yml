@@ -141,7 +141,15 @@ jobs:
           cd /tmp/sby && sudo make install PREFIX=/usr/local
 
       - name: Run formal verification
-        run: sbt -J-Xmx4g "testOnly jop.formal.*"
+        run: sbt -J-Xmx4g "testOnly jop.formal.* -- -u target/test-reports"
+
+      - name: Publish formal test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Formal Verification Results
+          path: target/test-reports/**/*.xml
+          reporter: java-junit
 
   # ----------------------------------------------------------------
   # Simulation tests (Verilator)
@@ -184,4 +192,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y verilator
 
       - name: Run simulation tests
-        run: sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.*"
+        run: sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* -- -u target/test-reports"
+
+      - name: Publish simulation test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Simulation Test Results
+          path: target/test-reports/**/*.xml
+          reporter: java-junit
