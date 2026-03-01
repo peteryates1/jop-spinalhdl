@@ -327,11 +327,16 @@ public class TCPConnection {
 			return true;
 		}
 
-		// Check window opening
+		// Keep rcvWindow fresh so outgoing segments carry current window
+		rcvWindow = iStream.getFreeBufferSpace();
+		if (rcvWindow > 0xFFFF) rcvWindow = 0xFFFF;
+
+		// Reopen window when enough space for at least one full segment (SWS avoidance)
 		boolean sendSomething = false;
 		if (rcvWindow == 0) {
-			if (iStream.getFreeBufferSpace() >= NetConfig.TCP_WINDOW) {
-				rcvWindow = NetConfig.TCP_WINDOW;
+			if (iStream.getFreeBufferSpace() >= NetConfig.TCP_MSS) {
+				rcvWindow = iStream.getFreeBufferSpace();
+				if (rcvWindow > 0xFFFF) rcvWindow = 0xFFFF;
 				sndUnackTime = now;
 				sendSomething = true;
 			}

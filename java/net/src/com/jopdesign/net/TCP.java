@@ -312,9 +312,14 @@ public class TCP {
 		processData(conn, pkt, off, len);
 
 		if (isFIN(pkt, off)) {
-			processFin(conn);
-			conn.setState(TCPConnection.STATE_CLOSE_WAIT);
-			sendAck(conn);
+			// Only process FIN when all data in the segment was consumed
+			int finSeq = getSeqNr(pkt, off) + getDataLength(pkt, off, len);
+			if (conn.rcvNext == finSeq) {
+				processFin(conn);
+				conn.setState(TCPConnection.STATE_CLOSE_WAIT);
+				sendAck(conn);
+			}
+			// else: data not fully consumed, FIN handled on retransmit
 		}
 	}
 
@@ -335,14 +340,19 @@ public class TCP {
 			|| getAckNr(pkt, off) == conn.finToSendSeq;
 
 		if (isFIN(pkt, off)) {
-			processFin(conn);
-			if (finAcked) {
-				conn.setState(TCPConnection.STATE_TIME_WAIT);
-				conn.timeLastRemoteActivity = NumFunctions.now();
-			} else {
-				conn.setState(TCPConnection.STATE_CLOSING);
+			// Only process FIN when all data in the segment was consumed
+			int finSeq = getSeqNr(pkt, off) + getDataLength(pkt, off, len);
+			if (conn.rcvNext == finSeq) {
+				processFin(conn);
+				if (finAcked) {
+					conn.setState(TCPConnection.STATE_TIME_WAIT);
+					conn.timeLastRemoteActivity = NumFunctions.now();
+				} else {
+					conn.setState(TCPConnection.STATE_CLOSING);
+				}
+				sendAck(conn);
 			}
-			sendAck(conn);
+			// else: data not fully consumed, FIN handled on retransmit
 		} else if (finAcked) {
 			conn.finToSend = false;
 			conn.setState(TCPConnection.STATE_FIN_WAIT_2);
@@ -363,10 +373,15 @@ public class TCP {
 		processData(conn, pkt, off, len);
 
 		if (isFIN(pkt, off)) {
-			processFin(conn);
-			conn.setState(TCPConnection.STATE_TIME_WAIT);
-			conn.timeLastRemoteActivity = NumFunctions.now();
-			sendAck(conn);
+			// Only process FIN when all data in the segment was consumed
+			int finSeq = getSeqNr(pkt, off) + getDataLength(pkt, off, len);
+			if (conn.rcvNext == finSeq) {
+				processFin(conn);
+				conn.setState(TCPConnection.STATE_TIME_WAIT);
+				conn.timeLastRemoteActivity = NumFunctions.now();
+				sendAck(conn);
+			}
+			// else: data not fully consumed, FIN handled on retransmit
 		}
 	}
 

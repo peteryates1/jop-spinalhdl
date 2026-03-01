@@ -13,7 +13,7 @@ Gigabit Ethernet PHY.
 | IPv4 | Working | No fragmentation (MTU 1500 sufficient) |
 | ICMP echo (ping) | Working | ~2.5% loss at 1Gbps (timing margin) |
 | UDP | Working | Echo tested on port 7 |
-| TCP | Working | Echo verified on port 7 (5/5 connections, 1KB payload) |
+| TCP | Working | Echo verified on port 7; large payload (10KB+) with backpressure |
 | java.net API | Written | Socket, ServerSocket, DatagramSocket stubs |
 
 ## Architecture Overview
@@ -530,6 +530,39 @@ there's data to send, allowing the remote to respond with an updated window.
 - `TCPConnection.java` — FIN guard, LAST_ACK restructure, TIME_WAIT recycling
 - `TCP.java` — Zero-window probe
 - `NetTest.java` — Listener recovery
+
+### 2026-03-01: TCP multi-window data loss fix — Phase 3
+
+**Problem**: 10000-byte TCP echo returned only ~9700 bytes. 4000-byte payloads
+(within a single window) worked perfectly.
+
+**Root cause**: The echo app wrote bytes to `oStream` without checking the return
+value. When `oStream` was full (`bufferFull` or `bufferBlocked`), `write()`
+returned -1 and the byte was silently lost. Contributing factors: stale receive
+window slowed the remote sender, and strict stop-and-wait window reopening
+(entire 4KB buffer must drain) prevented pipelining.
+
+**Fix 1 — Echo app backpressure** (critical): Track a `pendingByte`. If
+`oStream.write()` fails, save the byte and retry on next loop iteration before
+reading more from `iStream`. Defer `close()` until all data is echoed.
+
+**Fix 2 — Continuous rcvWindow update**: Update `rcvWindow` from
+`iStream.getFreeBufferSpace()` at start of every `poll()` cycle. Previously only
+updated on data receive or zero-window check — ACKs carried stale window values.
+
+**Fix 3 — Lower window reopening threshold**: Changed from `TCP_WINDOW` (4096)
+to `TCP_MSS` (1460). Standard SWS avoidance per RFC 813: reopen when free space
+>= min(MSS, buffer/2). Allows pipelining instead of stop-and-wait.
+
+**Fix 4 — FIN guard against partial data**: Only process FIN when all data in the
+segment was consumed (`rcvNext == seqNr + dataLength`). Prevents premature
+CLOSE_WAIT transition when iStream is nearly full. Applied in handleEstablished,
+handleFinWait1, and handleFinWait2.
+
+**Files changed**:
+- `NetTest.java` — pendingByte backpressure
+- `TCPConnection.java` — rcvWindow update, window threshold
+- `TCP.java` — FIN guard in three state handlers
 
 ### 2026-03-01: TCP echo verified — two bugs fixed
 

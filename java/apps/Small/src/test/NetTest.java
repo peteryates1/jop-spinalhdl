@@ -101,6 +101,7 @@ public class NetTest {
 
 		byte[] udpBuf = new byte[1472];
 		TCPConnection tcpClient = null;
+		int pendingByte = -1;
 		int rxErrors = 0;
 		int rxDrops = 0;
 
@@ -149,17 +150,32 @@ public class NetTest {
 			if (tcpClient != null) {
 				if (tcpClient.state == TCPConnection.STATE_ESTABLISHED
 						|| tcpClient.state == TCPConnection.STATE_CLOSE_WAIT) {
-					int b = tcpClient.iStream.read();
-					while (b != -1) {
-						tcpClient.oStream.write(b);
-						b = tcpClient.iStream.read();
+					// Retry pending byte first
+					if (pendingByte >= 0) {
+						if (tcpClient.oStream.write(pendingByte) == 0) {
+							pendingByte = -1;
+						}
 					}
-					if (tcpClient.state == TCPConnection.STATE_CLOSE_WAIT) {
+					// Echo: read from iStream, write to oStream
+					if (pendingByte < 0) {
+						int b = tcpClient.iStream.read();
+						while (b != -1) {
+							if (tcpClient.oStream.write(b) != 0) {
+								pendingByte = b;
+								break;
+							}
+							b = tcpClient.iStream.read();
+						}
+					}
+					// Only close when all data has been echoed
+					if (pendingByte < 0
+							&& tcpClient.state == TCPConnection.STATE_CLOSE_WAIT) {
 						tcpClient.close();
 						JVMHelp.wr("TX\n");
 						tcpClient = null;
 					}
 				} else if (tcpClient.state == TCPConnection.STATE_CLOSED) {
+					pendingByte = -1;
 					tcpClient = null;
 				}
 			}

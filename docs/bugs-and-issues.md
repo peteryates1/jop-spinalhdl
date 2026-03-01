@@ -134,6 +134,10 @@ See [DB_FPGA Ethernet](db-fpga-ethernet.md) for full details.
 | — | Same SYN re-send bug class for FIN: `sendSegment()` set `flags |= FLAG_FIN` unconditionally when `flushAndClose` true, advancing `sndNext` on every poll in FIN_WAIT_1/CLOSING/LAST_ACK | Guard in `poll()`: return early if `sndNext != sndUnack` in FIN states (FIN already sent, waiting for ACK) |
 | — | LAST_ACK returned early in `poll()` before retransmission check — lost final FIN never retransmitted | Moved LAST_ACK timeout to after retransmission check so FIN can be retransmitted |
 | — | Pool exhaustion on rapid TCP connection cycling: 4 slots with 2s TIME_WAIT exhausted by >4 connections in 2 seconds | Recycle oldest TIME_WAIT connection when no free slots; recover listener in NetTest.java |
+| — | Echo app `oStream.write()` return value ignored — bytes silently lost when output buffer full, causing ~300 byte loss on 10KB transfers | Added `pendingByte` tracking: save failed byte, retry before reading more from `iStream`; defer `close()` until all data echoed |
+| — | `rcvWindow` only updated on data receive or zero-window check — ACKs carried stale (too small) window, slowing remote sender | Update `rcvWindow` from `iStream.getFreeBufferSpace()` at start of every `poll()` cycle |
+| — | Window reopening required entire 4KB buffer empty (`getFreeBufferSpace() >= TCP_WINDOW`) — strict stop-and-wait at window level | Lower threshold to MSS (1460 bytes) for SWS avoidance per RFC 813 |
+| — | FIN processed even when segment data only partially consumed (iStream nearly full) — remaining bytes lost, connection closed prematurely | Guard FIN: only process when `rcvNext == seqNr + dataLength` (all data consumed); retransmit delivers remaining data |
 
 See [Networking](networking.md) for full details.
 
