@@ -103,6 +103,9 @@ public class DoAll {
 				new DoubleArithmetic(),
 				new LongStaticField(),
 
+				// Bytecode injection tests
+				new SwapTest(),
+
 				// Regression tests
 				new CachePersistence(),
 

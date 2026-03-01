@@ -44,6 +44,7 @@ public class PreLinker {
     public static void preprocess(AppInfo ai) {
         ai.iterate(new ReplaceIinc());
         ai.iterate(new InsertSynchronized());
+        ai.iterate(new InjectSwap());
     }
 
     public static void main(String[] args) {
