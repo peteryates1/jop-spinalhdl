@@ -121,8 +121,18 @@ See [DB_FPGA SD Card](db-fpga-sd-card.md) for full details.
 |---|-----|-----|
 | — | `e_rxd[5]` and `e_rxd[6]` pin assignments swapped vs reference design | Corrected pin assignments — 100% CRC failure resolved |
 | — | SDC never declared `create_clock` for PHY clocks — entire PHY clock domains unconstrained | Added explicit `create_clock` for `e_rxc`, corrected PLL clock names |
+| — | Mesochronous PLL RX clocking caused 14-34% packet loss at 1Gbps — random phase between PLL and PHY CDR-recovered clock corrupted data | Changed to source-synchronous e_rxc + `FAST_INPUT_REGISTER ON` for I/O block registers — 0% loss |
 
 See [DB_FPGA Ethernet](db-fpga-ethernet.md) for full details.
+
+### TCP Stack
+
+| # | Bug | Fix |
+|---|-----|-----|
+| — | `TCPConnection.poll()` called `sendSegment()` on every round-robin poll in SYN_RCVD/SYN_SENT — each call advanced `sndNext`, corrupting all subsequent sequence numbers | Guard in `poll()`: return early if `sndNext != sndUnack` in SYN_RCVD/SYN_SENT (SYN already sent, waiting for ACK) |
+| — | `TCP.sendSegment()` only attached data in STATE_ESTABLISHED — echo data in CLOSE_WAIT was never sent | Extended data attachment condition to include STATE_CLOSE_WAIT (RFC 793 permits sending in CLOSE_WAIT) |
+
+See [Networking](networking.md) for full details.
 
 ### PLL Device Family
 

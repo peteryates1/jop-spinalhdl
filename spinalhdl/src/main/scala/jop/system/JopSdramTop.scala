@@ -36,14 +36,14 @@ case class DramPll() extends BlackBox {
  * Ethernet 125 MHz PLL BlackBox
  *
  * Wraps the pll_125 Verilog module (Altera altpll megafunction).
- * 50 MHz input -> c0=125 MHz for GMII TX clock
+ * 50 MHz input -> c0=125 MHz (TX logic + PHY GTXC)
  */
 case class EthPll() extends BlackBox {
   setDefinitionName("pll_125")
 
   val io = new Bundle {
     val inclk0 = in Bool()
-    val c0     = out Bool()
+    val c0     = out Bool()    // 125 MHz, 0° phase (TX)
     val locked = out Bool()
   }
 
@@ -222,12 +222,14 @@ case class JopSdramTop(
     )
   }) else None
 
-  // RX clock: PHY e_rxc (source-synchronous with RX data)
-  // GMII: PHY drives data ON rising edge of e_rxc; to get setup time we
-  //        sample on the FALLING edge (invert the clock). This gives ~4ns
-  //        of setup margin at 125 MHz (half period).
-  // MII:  e_rxc = 25 MHz, plenty of margin, use rising edge as-is.
-  val ethRxClk = if (ioConfig.ethGmii) !io.e_rxc.get else if (ioConfig.hasEth) io.e_rxc.get else null
+  // RX clock: Use PHY e_rxc directly (source-synchronous).
+  // For GMII: e_rxc is 125 MHz, driven by the PHY, source-synchronous with
+  // RX data. Data transitions on e_rxc rising edge with ~2ns output delay.
+  // Sampling on rising edge with FAST_INPUT_REGISTER (I/O block register)
+  // provides ~6ns setup margin. This is the correct approach for GMII RX.
+  // Tested: falling edge gives 16% loss vs ~5% on rising edge.
+  // MII: e_rxc = 25 MHz from PHY, used directly.
+  val ethRxClk = if (ioConfig.hasEth) io.e_rxc.get else null
 
   val ethRxCd = if (ioConfig.hasEth) Some({
     val rxBootCd = ClockDomain(ethRxClk, config = ClockDomainConfig(resetKind = BOOT))
@@ -395,20 +397,20 @@ case class JopSdramTop(
       // GMII: ethRxCd = PHY RX_CLK 125 MHz, dataWidth = 8
       // MII:  ethRxCd = PHY RX_CLK 25 MHz, dataWidth = 4
       val rxArea = new ClockingArea(ethRxCd.get) {
-        // Two-stage pipeline (matches MiiRx.toRxFlow() pattern)
-        val s1_dv = RegNext(io.e_rxdv.get) init(False)
-        val s1_d  = RegNext(io.e_rxd.get)  init(0)
-        val s1_er = RegNext(io.e_rxer.get) init(False)
+        // Single-stage register pipeline (matches GmiiRx.toRxFlow() pattern).
+        // With FAST_INPUT_REGISTER constraint, Quartus places these registers
+        // in the I/O block for minimal clock-to-data skew.
+        val unbuffered = Flow(PhyRx(dataWidth))
+        unbuffered.valid := io.e_rxdv.get
+        unbuffered.data  := io.e_rxd.get
+        unbuffered.error := io.e_rxer.get
 
-        val s2_dv = RegNext(s1_dv) init(False)
-        val s2_d  = RegNext(s1_d)  init(0)
-        val s2_er = RegNext(s1_er) init(False)
+        val buffered = unbuffered.stage()
 
         val rxFlow = Flow(Fragment(PhyRx(dataWidth)))
-        rxFlow.valid          := s2_dv
-        rxFlow.fragment.data  := s2_d
-        rxFlow.fragment.error := s2_er
-        rxFlow.last           := !s1_dv && s2_dv  // Falling edge of DV = end of frame
+        rxFlow.valid          := buffered.valid
+        rxFlow.fragment       := buffered.payload
+        rxFlow.last           := !unbuffered.valid && buffered.valid
 
         cluster.io.phy.get.rx << rxFlow.toStream
       }

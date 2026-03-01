@@ -94,12 +94,18 @@ case class BmbEth(
   // TX Path: CPU writes -> MacEth TX stream
   // ========================================================================
 
-  // Flow-based push: valid for one cycle on write to addr 2
-  val txPushFlow = Flow(Bits(32 bits))
-  txPushFlow.valid   := False
-  txPushFlow.payload := io.wrData
+  // Registered TX push: hold valid/payload until MAC stream accepts (fire).
+  // This prevents data loss when the MAC TX stream is temporarily not ready.
+  val txPushValid = RegInit(False)
+  val txPushPayload = Reg(Bits(32 bits)) init(0)
 
-  mac.io.ctrl.tx.stream << txPushFlow.toStream
+  mac.io.ctrl.tx.stream.valid := txPushValid
+  mac.io.ctrl.tx.stream.payload := txPushPayload
+
+  // Clear valid when MAC accepts the data
+  when(mac.io.ctrl.tx.stream.fire) {
+    txPushValid := False
+  }
 
   // ========================================================================
   // RX Path: MacEth RX stream -> CPU reads
@@ -120,8 +126,8 @@ case class BmbEth(
   val rxValidDly = RegNext(rxValid) init(False)
   io.rxInterrupt := rxValid && !rxValidDly
 
-  // TX: pulse on rising edge of "TX stream ready" (space available)
-  val txReady = mac.io.ctrl.tx.stream.ready
+  // TX: pulse on rising edge of "TX ready" (holding register free)
+  val txReady = !txPushValid
   val txReadyDly = RegNext(txReady) init(False)
   io.txInterrupt := txReady && !txReadyDly
 
@@ -134,7 +140,7 @@ case class BmbEth(
     is(0) {
       // Status register
       io.rdData(0) := txFlush
-      io.rdData(1) := mac.io.ctrl.tx.stream.ready
+      io.rdData(1) := !txPushValid  // TX ready: holding register free
       io.rdData(4) := rxFlush
       io.rdData(5) := mac.io.ctrl.rx.stream.valid
     }
@@ -171,8 +177,9 @@ case class BmbEth(
         rxFlush := io.wrData(4)
       }
       is(2) {
-        // TX data push
-        txPushFlow.valid := True
+        // TX data push — register valid and payload
+        txPushValid := True
+        txPushPayload := io.wrData
       }
     }
   }

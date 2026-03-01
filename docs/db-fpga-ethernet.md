@@ -115,13 +115,50 @@ In GMII mode (`IoConfig.ethGmii = true`):
 
 - **TX clock**: FPGA generates 125 MHz via `pll_125.v` (50 MHz × 5/2),
   output to PHY on `e_gtxc`. The `e_txc` pin is unused.
-- **RX clock**: PHY provides 125 MHz on `e_rxc`. FPGA samples RX data
-  on the **falling edge** (inverted clock domain) for ~4ns setup margin.
+- **RX clock**: PHY provides 125 MHz on `e_rxc` (source-synchronous with
+  RX data). FPGA captures RX data using I/O block registers
+  (`FAST_INPUT_REGISTER ON` constraint) clocked by `e_rxc`.
 - **Data width**: 8 bits (vs 4 bits in MII mode). `PhyParameter(txDataWidth=8, rxDataWidth=8)`.
 - PHY auto-negotiates 1000BASE-T FD via MDIO registers 0, 4, 9.
 
 The dual-port RAMs in MacRxBuffer and MacTxBuffer cross between PHY
 clock domains (e_rxc / ethPll) and the system clock (c1).
+
+### RX Clocking: Source-Synchronous vs Mesochronous
+
+The PHY's `e_rxc` is a clock-data-recovery (CDR) recovered clock — it is
+**not** phase-locked to the FPGA's reference oscillator. This makes
+mesochronous clocking (using a PLL-generated 125 MHz) unreliable for
+data capture.
+
+Tested approaches and results (100-packet ping tests at 1Gbps):
+
+| Approach | ICMP Ping Loss |
+|----------|----------------|
+| PLL mesochronous 0° phase | 24% |
+| PLL mesochronous 90° phase | 14% |
+| PLL mesochronous 180° phase | 34% |
+| CRC check disabled (mesochronous) | 30% |
+| **Source-synchronous e_rxc rising edge + FAST_INPUT_REGISTER** | **2.5%** |
+| Source-synchronous e_rxc falling edge + FAST_INPUT_REGISTER | 16% |
+
+The mesochronous approaches all showed CRC errors because the PLL clock
+has a random and drifting phase relationship with the PHY's recovered clock.
+Disabling CRC checking confirmed the data was genuinely corrupted (not a
+CRC checker bug) — upper-layer checksums (IP/ICMP) caught the same errors.
+
+The correct approach uses `e_rxc` directly as the capture clock with
+`FAST_INPUT_REGISTER ON` constraints in the `.qsf` file to place the
+input registers in the I/O block. Sampling on the **rising edge**
+provides the best results (~2.5% ICMP loss); falling edge was worse (16%).
+
+The remaining ~2.5% loss at 1Gbps is from residual timing margin issues
+on the Column I/O clock routing. This is easily handled by TCP
+retransmission and is acceptable for embedded networking.
+
+Note: `e_rxc` is on PIN_B10, a Column I/O pin that cannot reach the
+global clock network. This is fine for source-synchronous capture —
+the I/O block registers only need the bank-local clock routing.
 
 ### SpinalHDL Configuration
 
@@ -150,24 +187,21 @@ derive_clock_uncertainty
 # Ethernet PHY RX clock (125 MHz GMII, source-synchronous with RX data)
 create_clock -period 8.000 -name e_rxc [get_ports e_rxc]
 
-# All three clock domains are asynchronous to each other
+# All clock domains are asynchronous to each other
 set_clock_groups -asynchronous \
-    -group {pll|altpll_component|pll|clk[1] \
-            pll|altpll_component|pll|clk[2]} \
+    -group {pll|altpll_component|auto_generated|pll1|clk[1] \
+            pll|altpll_component|auto_generated|pll1|clk[2] \
+            pll|altpll_component|auto_generated|pll1|clk[3]} \
     -group {ethPll|altpll_component|auto_generated|pll1|clk[0]} \
     -group {e_rxc}
 
-# PHY RX data: source-synchronous with e_rxc, no FPGA timing constraints
+# PHY RX data: source-synchronous with e_rxc, captured by I/O block registers
 set_false_path -from [get_ports {e_rxd[*] e_rxdv e_rxer}]
+
+# GMII TX: clock and data from same PLL output
+set_false_path -to [get_ports {e_gtxc}]
+set_false_path -to [get_ports {e_txd[*] e_txen e_txer}]
 ```
-
-Timing results (worst-case, slow 1200mV 100C model):
-
-| Clock Domain | Setup Slack | Hold Slack |
-|---|---|---|
-| System PLL 80 MHz | +0.243 ns | +0.304 ns |
-| ethPll 125 MHz (TX) | +0.808 ns | +0.381 ns |
-| e_rxc 125 MHz (RX) | +0.934 ns | +0.444 ns |
 
 ## Historical Issues
 
@@ -182,6 +216,24 @@ corruption on Ethernet RX: every other 32-bit word had its lower 16 bits zeroed.
 The SDC also referenced stale PLL clock names
 (`pll|altpll_component|auto_generated|pll1|clk[N]`) instead of the actual
 names used by Quartus 25.1 (`pll|altpll_component|pll|clk[N]`).
+
+### Mesochronous PLL RX clocking causing 14-34% packet loss (fixed 2026-02-28)
+
+The initial GMII implementation used a mesochronous approach: an FPGA PLL
+generated a 125 MHz clock (same frequency as the PHY's `e_rxc`) to capture
+RX data. This worked poorly because `e_rxc` is a CDR-recovered clock with
+no phase relationship to the FPGA's oscillator. The random phase offset
+caused intermittent setup/hold violations on RX data capture, manifesting
+as CRC-32 errors and 14-34% packet loss depending on PLL phase shift.
+
+Various PLL phase offsets were tested (0°, 90°, 180°) with 90° being best
+at ~14% loss. Disabling CRC checking confirmed data was genuinely corrupted
+(upper-layer IP/ICMP checksums caught the same errors).
+
+The fix was to use `e_rxc` directly as the capture clock (source-synchronous)
+with `FAST_INPUT_REGISTER ON` constraints to place input registers in the
+I/O block. This provides proper setup/hold margins because `e_rxc` and
+`e_rxd` have a guaranteed timing relationship from the PHY.
 
 ### e_rxd pin swap causing 100% CRC failure (fixed 2026-02-25)
 

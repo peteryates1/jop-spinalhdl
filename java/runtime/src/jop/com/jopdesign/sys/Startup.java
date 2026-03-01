@@ -79,13 +79,13 @@ public class Startup {
 			spm_size = 0;
 
 			// Memory size: use hardware-configured value if available,
-			// otherwise fall back to legacy fixed heap (appEnd + 64KB).
+			// otherwise fall back to legacy fixed heap.
 			int appEnd = Native.rdMem(0);
 			int hwMemEnd = Native.rdMem(Const.IO_MEM_SIZE);
 			if (hwMemEnd > appEnd) {
 				mem_size = hwMemEnd;
 			} else {
-				mem_size = appEnd + 16384;  // 64KB heap (16K words)
+				mem_size = appEnd + 262144;  // 1MB heap (256K words)
 			}
 
 			JVMHelp.wr("GC init...\n");

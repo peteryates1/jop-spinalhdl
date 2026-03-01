@@ -1,9 +1,12 @@
-// PLL: 50MHz input -> 125MHz output for Ethernet GMII
-// Generated parameters for Cyclone IV GX altpll
+// PLL: 50MHz input -> 125MHz output for Ethernet GMII TX
+// c0: 125 MHz, 0° phase — TX logic clock and e_gtxc to PHY
+//
+// RX uses source-synchronous e_rxc from PHY with FAST_INPUT_REGISTER
+// constraints for I/O block register placement.
 
 module pll_125 (
 	input  inclk0,    // 50MHz board oscillator
-	output c0,        // 125MHz output
+	output c0,        // 125MHz, 0° phase
 	output locked
 );
 
