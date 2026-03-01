@@ -36,7 +36,7 @@ stack overflow.
 
 **Fix**: Added `StringBuilder.toString()` returning `new String(value, 0, count)`.
 
-**Test**: `StringConcat` in JvmTests (58/58 pass). Tests `"x=" + 42`,
+**Test**: `StringConcat` in JvmTests (60/60 pass). Tests `"x=" + 42`,
 negative ints, zero, `String.valueOf(int)`, and multiple appends.
 
 **Affected code**: Any Java source using `"text" + intValue` or

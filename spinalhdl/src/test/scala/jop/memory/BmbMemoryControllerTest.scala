@@ -26,7 +26,7 @@ case class BmbMemoryTestHarness(
 
     // Debug
     val debug = new Bundle {
-      val state = out UInt(4 bits)
+      val state = out UInt(5 bits)
       val busy  = out Bool()
     }
   }
@@ -52,6 +52,14 @@ case class BmbMemoryTestHarness(
   memCtrl.io.bcopd := io.bcopd
   memCtrl.io.ioRdData := io.ioRdData
 
+  // Snoop input defaults (no cross-core invalidation in single-core tests)
+  memCtrl.io.snoopIn.foreach { snoop =>
+    snoop.valid := False
+    snoop.isArray := False
+    snoop.handle := 0
+    snoop.index := 0
+  }
+
   io.debug.state := memCtrl.io.debug.state
   io.debug.busy := memCtrl.io.debug.busy
 }
@@ -71,7 +79,10 @@ class BmbMemoryControllerTest extends AnyFunSuite {
 
       // Initialize inputs
       dut.io.memIn.rd #= false
+      dut.io.memIn.rdc #= false
+      dut.io.memIn.rdf #= false
       dut.io.memIn.wr #= false
+      dut.io.memIn.wrf #= false
       dut.io.memIn.addrWr #= false
       dut.io.memIn.bcRd #= false
       dut.io.memIn.stidx #= false
@@ -79,10 +90,14 @@ class BmbMemoryControllerTest extends AnyFunSuite {
       dut.io.memIn.iastore #= false
       dut.io.memIn.getfield #= false
       dut.io.memIn.putfield #= false
+      dut.io.memIn.putref #= false
       dut.io.memIn.getstatic #= false
       dut.io.memIn.putstatic #= false
       dut.io.memIn.copy #= false
       dut.io.memIn.cinval #= false
+      dut.io.memIn.atmstart #= false
+      dut.io.memIn.atmend #= false
+      dut.io.memIn.bcopd #= 0
       dut.io.aout #= 0
       dut.io.bout #= 0
       dut.io.bcopd #= 0
@@ -122,6 +137,7 @@ class BmbMemoryControllerTest extends AnyFunSuite {
 
       // Read back
       println("=== Read address 0x10 ===")
+      dut.io.aout #= 0x10
       dut.io.memIn.rd #= true
       dut.clockDomain.waitSampling()
       println(s"After rd pulse: state=${dut.io.debug.state.toInt}, busy=${dut.io.debug.busy.toBoolean}")
@@ -156,7 +172,10 @@ class BmbMemoryControllerTest extends AnyFunSuite {
 
       // Initialize inputs
       dut.io.memIn.rd #= false
+      dut.io.memIn.rdc #= false
+      dut.io.memIn.rdf #= false
       dut.io.memIn.wr #= false
+      dut.io.memIn.wrf #= false
       dut.io.memIn.addrWr #= false
       dut.io.memIn.bcRd #= false
       dut.io.memIn.stidx #= false
@@ -164,10 +183,14 @@ class BmbMemoryControllerTest extends AnyFunSuite {
       dut.io.memIn.iastore #= false
       dut.io.memIn.getfield #= false
       dut.io.memIn.putfield #= false
+      dut.io.memIn.putref #= false
       dut.io.memIn.getstatic #= false
       dut.io.memIn.putstatic #= false
       dut.io.memIn.copy #= false
       dut.io.memIn.cinval #= false
+      dut.io.memIn.atmstart #= false
+      dut.io.memIn.atmend #= false
+      dut.io.memIn.bcopd #= 0
       dut.io.aout #= 0
       dut.io.bout #= 0
       dut.io.bcopd #= 0

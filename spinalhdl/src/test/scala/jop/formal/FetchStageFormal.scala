@@ -31,6 +31,7 @@ class FetchStageFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.jmp)
         anyseq(dut.io.bsy)
         anyseq(dut.io.jpaddr)
+        anyseq(dut.io.extStall)
 
         // When jfetch=1, PC should follow jpaddr
         // Note: jfetch comes from ROM output, which depends on romAddrReg.
@@ -53,6 +54,7 @@ class FetchStageFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.jmp)
         anyseq(dut.io.jpaddr)
         anyseq(dut.io.bsy)
+        anyseq(dut.io.extStall)
 
         // Track previous PC and IR values
         val prevPc = past(dut.io.pc_out)
@@ -85,6 +87,7 @@ class FetchStageFormal extends SpinalFormalFunSuite {
         dut.io.jmp := False
         dut.io.bsy := False
         dut.io.jpaddr := U(0, dut.config.pcWidth bits)
+        dut.io.extStall := False
 
         // Track previous PC
         val prevPc = past(dut.io.pc_out)
@@ -114,6 +117,7 @@ class FetchStageFormal extends SpinalFormalFunSuite {
         dut.io.jmp := False
         dut.io.bsy := False
         dut.io.jpaddr := U(0, dut.config.pcWidth bits)
+        dut.io.extStall := False
 
         // nxt and opd are combinational from ROM[romAddrReg].
         // When nxt (jfetch) fires, it redirects the PC. Verify that

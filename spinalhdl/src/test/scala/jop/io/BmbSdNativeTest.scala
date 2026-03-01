@@ -659,21 +659,25 @@ class BmbSdNativeTest extends AnyFunSuite {
       assert(capturedBits(145) == 1, s"Stop bit should be 1, got ${capturedBits(145)}")
 
       // Drive CRC status response "010" (positive ACK) on DAT0.
-      // HW samples 3 bits on rising edges in WAIT_CRC_STATUS state.
-      // After capture loop, state is WAIT_CRC_STATUS; next rising edge
-      // reads the first CRC status bit. Set DAT0=0 immediately so it's
-      // stable before that rising edge.
-      dut.io.sdDat.read #= 0xE  // DAT0=0, DAT[3:1]=1
+      // HW samples DAT0 on rising edges in WAIT_CRC_STATUS state:
+      //   cnt=0: detects start bit (DAT0=0), advances to cnt=1
+      //   cnt=1,2,3: shifts DAT0 into datCrcStatus (3 status bits)
+      // After the capture loop (which ends on a falling edge), the HW
+      // has just entered WAIT_CRC_STATUS.  Set DAT0=0 immediately so
+      // it is stable before the next rising edge (start bit).
+      dut.io.sdDat.read #= 0xE  // DAT0=0, DAT[3:1]=1  (start bit)
 
-      // Drive remaining 2 CRC status bits (1, 0) on falling edges
-      val crcStatusRemaining = Seq(1, 0)
+      // Drive the 3 status bits on successive falling edges so they
+      // are stable when sampled on the following rising edges.
+      // Status "010": bit2=0, bit1=1, bit0=0.
+      val crcStatusBits = Seq(0, 1, 0)
       var statusIdx = 0
       lastSdClk = dut.io.sdClk.toBoolean
-      while (statusIdx < crcStatusRemaining.size) {
+      while (statusIdx < crcStatusBits.size) {
         cd.waitSampling()
         val cur = dut.io.sdClk.toBoolean
         if (lastSdClk && !cur) {
-          dut.io.sdDat.read #= (if (crcStatusRemaining(statusIdx) == 1) 0xF else 0xE)
+          dut.io.sdDat.read #= (if (crcStatusBits(statusIdx) == 1) 0xF else 0xE)
           statusIdx += 1
         }
         lastSdClk = cur

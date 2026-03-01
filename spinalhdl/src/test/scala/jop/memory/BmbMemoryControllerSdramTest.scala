@@ -39,7 +39,7 @@ case class BmbMemCtrlSdramTestHarness(
     val sdram = master(SdramInterface(layout))
 
     // Debug
-    val debugState = out UInt(4 bits)
+    val debugState = out UInt(5 bits)
     val debugBusy  = out Bool()
   }
 
@@ -65,6 +65,14 @@ case class BmbMemCtrlSdramTestHarness(
   memCtrl.io.bout := io.bout
   memCtrl.io.bcopd := io.bcopd
   memCtrl.io.ioRdData := io.ioRdData
+
+  // Snoop input defaults (no cross-core invalidation in single-core tests)
+  memCtrl.io.snoopIn.foreach { snoop =>
+    snoop.valid := False
+    snoop.isArray := False
+    snoop.handle := 0
+    snoop.index := 0
+  }
 
   // Expose JBC write port
   io.jbcWrAddr := memCtrl.io.jbcWrite.addr
@@ -112,8 +120,12 @@ class BmbMemoryControllerSdramTest extends AnyFunSuite {
     dut.io.ioRdData #= 0
   }
 
-  /** Wait for busy to clear */
+  /** Wait for busy to clear.
+    * Includes an initial waitSampling so the state machine has time to transition
+    * from IDLE to the busy state (e.g. WRITE_WAIT / READ_WAIT) before we check.
+    */
   def waitNotBusy(dut: BmbMemCtrlSdramTestHarness, maxCycles: Int = 2000): Int = {
+    dut.clockDomain.waitSampling()  // let state machine transition
     var cycles = 0
     while (dut.io.debugBusy.toBoolean && cycles < maxCycles) {
       dut.clockDomain.waitSampling()
@@ -216,6 +228,9 @@ class BmbMemoryControllerSdramTest extends AnyFunSuite {
 
         // Capture JBC writes during the fill
         val jbcWrites = scala.collection.mutable.ArrayBuffer[(Int, Long)]()
+
+        // Wait one cycle for state machine to transition from IDLE
+        dut.clockDomain.waitSampling()
 
         var cycles = 0
         val maxCycles = 2000

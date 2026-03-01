@@ -162,7 +162,7 @@ captured during development — see the source code for authoritative details.
 
 ## JVM Test Suite (`java/apps/JvmTests/`)
 
-58 tests covering JVM bytecode correctness, run via `JopJvmTestsBramSim` (BRAM, 25M cycles). All 58 pass.
+60 tests covering JVM bytecode correctness, run via `JopJvmTestsBramSim` (BRAM, 27M cycles). All 60 pass.
 
 **Test categories**:
 - **Core bytecodes**: Basic/Basic2 (stack/local ops), TypeMix, Static, StackManipulation
@@ -181,7 +181,7 @@ captured during development — see the source code for authoritative details.
 **Ported from**: Original JOP `jvm/` suite (Martin Schoeberl) + `jvmtest/` suite (Guenther Wimpassinger). The `jvmtest/` tests used a hash-based `TestCaseResult` framework; converted to the `jvm.TestCase` boolean pattern.
 
 **Known platform limitations discovered during porting**:
-- **Div-by-zero fixed**: Changed f_idiv/f_irem/f_ldiv/f_lrem from hardware exception to `throw JVMHelp.ArithExc`. `DivZero.java` test enabled (58/58 pass).
+- **Div-by-zero fixed**: Changed f_idiv/f_irem/f_ldiv/f_lrem from hardware exception to `throw JVMHelp.ArithExc`. `DivZero.java` test enabled (60/60 pass).
 - **No wide iinc**: JOP's PreLinker rejects iinc constants outside -128..127. IntArithmetic uses `x = x + val` (iadd) instead of `x += val` (wide iinc) for large increments.
 - **Float constant folding**: javac evaluates literal float expressions (e.g., `2.0F * 3.0F`) at compile time, so actual fmul/fdiv/fneg/fcmp bytecodes never execute. FloatTest uses variables to prevent this.
 
@@ -278,7 +278,7 @@ The GC has been upgraded from semi-space copying to **mark-compact with incremen
 
 **GC Phase State Machine**: `IDLE → ROOT_SCAN (STW) → MARK (incremental) → COMPACT (incremental) → IDLE`
 
-Verified: 58/58 JVM tests pass, BRAM GC (3+ cycles), SDRAM GC (100+ rounds), QMTECH FPGA (2000+ rounds), CYC5000 FPGA (9800+ rounds), DDR3 FPGA (1870+ rounds at 256MB), SMP 2-core BRAM GC.
+Verified: 60/60 JVM tests pass, BRAM GC (3+ cycles), SDRAM GC (100+ rounds), QMTECH FPGA (2000+ rounds), CYC5000 FPGA (9800+ rounds), DDR3 FPGA (1870+ rounds at 256MB), SMP 2-core BRAM GC.
 
 ### Previous Implementation (Semi-Space — Replaced)
 

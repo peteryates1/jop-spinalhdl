@@ -79,9 +79,9 @@ case class JumpTableConfig(
  * 3. jpaddr (pcWidth bits) → microcode fetch stage
  *
  * Special Addresses (from JumpTableData):
- * - sys_noim (0x0EC): Not implemented instruction handler
- * - sys_int  (0x0DA): Interrupt handler
- * - sys_exc  (0x0E2): Exception handler
+ * - sys_noim (0x0B1): Not implemented instruction handler
+ * - sys_int  (0x09F): Interrupt handler
+ * - sys_exc  (0x0A7): Exception handler
  *
  * Timing:
  * - Combinational output (0 cycle latency)
@@ -169,9 +169,9 @@ object JumpTable {
    * Special microcode addresses (from JumpTableData)
    */
   object SpecialAddr {
-    val SYS_NOIM = JumpTableData.sysNoimAddr  // 0x0EC - Not implemented
-    val SYS_INT  = JumpTableData.sysIntAddr   // 0x0DA - Interrupt
-    val SYS_EXC  = JumpTableData.sysExcAddr   // 0x0E2 - Exception
+    val SYS_NOIM = JumpTableData.sysNoimAddr  // 0x0B1 - Not implemented
+    val SYS_INT  = JumpTableData.sysIntAddr   // 0x09F - Interrupt
+    val SYS_EXC  = JumpTableData.sysExcAddr   // 0x0A7 - Exception
   }
 
   /**

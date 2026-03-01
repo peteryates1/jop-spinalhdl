@@ -31,6 +31,7 @@ class DecodeStageFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.eq)
         anyseq(dut.io.lt)
         anyseq(dut.io.bcopd)
+        anyseq(dut.io.stall)
 
         when(pastValidAfterReset()) {
           // At most one of {rd, wr, addrWr} should be active per cycle
@@ -53,6 +54,7 @@ class DecodeStageFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.eq)
         anyseq(dut.io.lt)
         anyseq(dut.io.bcopd)
+        anyseq(dut.io.stall)
 
         when(pastValidAfterReset()) {
           // At most one of {getfield, putfield, getstatic, putstatic} active
@@ -78,6 +80,7 @@ class DecodeStageFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.eq)
         anyseq(dut.io.lt)
         anyseq(dut.io.bcopd)
+        anyseq(dut.io.stall)
 
         when(pastValidAfterReset()) {
           // br and jmp should never both be active
@@ -100,6 +103,7 @@ class DecodeStageFormal extends SpinalFormalFunSuite {
         dut.io.eq := False
         dut.io.lt := False
         dut.io.bcopd := B(0, 16 bits)
+        dut.io.stall := False
 
         when(pastValidAfterReset()) {
           // With NOP instruction, br and jmp should not be active

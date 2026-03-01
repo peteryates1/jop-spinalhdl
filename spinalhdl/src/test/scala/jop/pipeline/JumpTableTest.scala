@@ -10,17 +10,20 @@ class JumpTableTest extends AnyFunSuite {
   test("JumpTable: known bytecode mappings") {
     SimConfig.withWave.compile(JumpTable()).doSim { dut =>
 
+      dut.io.intPend #= false
+      dut.io.excPend #= false
+
       // Test known bytecode → microcode address mappings
       // (addresses from generated JumpTableData.scala)
       val testCases = Seq(
-        (0x00, 0x218),  // nop
-        (0x01, 0x21A),  // aconst_null
-        (0x02, 0x219),  // iconst_m1
-        (0x03, 0x21A),  // iconst_0
-        (0x60, 0x26C),  // iadd
-        (0x64, 0x26D),  // isub
-        (0x68, 0x278),  // imul
-        (0xA7, 0x296)   // goto
+        (0x00, 0x20C),  // nop
+        (0x01, 0x20E),  // aconst_null
+        (0x02, 0x20D),  // iconst_m1
+        (0x03, 0x20E),  // iconst_0
+        (0x60, 0x260),  // iadd
+        (0x64, 0x261),  // isub
+        (0x68, 0x26C),  // imul
+        (0xA7, 0x28A)   // goto
       )
 
       testCases.foreach { case (bytecode, expectedAddr) =>
@@ -37,6 +40,9 @@ class JumpTableTest extends AnyFunSuite {
 
   test("JumpTable: all 256 entries present") {
     SimConfig.withWave.compile(JumpTable()).doSim { dut =>
+
+      dut.io.intPend #= false
+      dut.io.excPend #= false
 
       // Verify all 256 bytecodes produce valid addresses
       for (bytecode <- 0 until 256) {
@@ -56,6 +62,9 @@ class JumpTableTest extends AnyFunSuite {
 
   test("JumpTable: unmapped bytecodes route to sys_noim") {
     SimConfig.withWave.compile(JumpTable()).doSim { dut =>
+
+      dut.io.intPend #= false
+      dut.io.excPend #= false
 
       // Test some known unmapped bytecodes
       val unmappedBytecodes = Seq(
@@ -80,15 +89,15 @@ class JumpTableTest extends AnyFunSuite {
 
   test("JumpTable: special addresses match JumpTableData") {
     // Verify special addresses are correct
-    assert(JumpTable.SpecialAddr.SYS_NOIM == 0x0EC, "sys_noim address")
-    assert(JumpTable.SpecialAddr.SYS_INT == 0x0DA, "sys_int address")
-    assert(JumpTable.SpecialAddr.SYS_EXC == 0x0E2, "sys_exc address")
+    assert(JumpTable.SpecialAddr.SYS_NOIM == 0x0B1, "sys_noim address")
+    assert(JumpTable.SpecialAddr.SYS_INT == 0x09F, "sys_int address")
+    assert(JumpTable.SpecialAddr.SYS_EXC == 0x0A7, "sys_exc address")
   }
 
   test("JumpTable: getAddress helper function") {
     // Test the helper function (addresses from generated JumpTableData.scala)
-    assert(JumpTable.getAddress(0x00) == 0x218, "nop address")
-    assert(JumpTable.getAddress(0x60) == 0x26C, "iadd address")
-    assert(JumpTable.getAddress(0xA7) == 0x296, "goto address")
+    assert(JumpTable.getAddress(0x00) == 0x20C, "nop address")
+    assert(JumpTable.getAddress(0x60) == 0x260, "iadd address")
+    assert(JumpTable.getAddress(0xA7) == 0x28A, "goto address")
   }
 }

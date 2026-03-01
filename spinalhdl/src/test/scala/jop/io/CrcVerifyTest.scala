@@ -61,9 +61,10 @@ class CrcVerifyTest extends AnyFunSuite {
         state = (state >>> 1) ^ (if (b == 1) 0xEDB88320L else 0L)
       }
     }
-    println(f"Residue after full frame = 0x${state}%08X (expect 0xC704DD7B)")
-    // Note: 0xC704DD7B is the well-known "good CRC" residue for the reflected algorithm
-    assert(state == 0xC704DD7BL, f"Expected 0xC704DD7B, got 0x${state}%08X")
+    println(f"Residue after full frame = 0x${state}%08X (expect 0xDEBB20E3)")
+    // Note: 0xDEBB20E3 is the raw CRC state residue for the reflected (LSB-first) algorithm
+    // (0xC704DD7B is the non-reflected residue, not applicable here)
+    assert(state == 0xDEBB20E3L, f"Expected 0xDEBB20E3, got 0x${state}%08X")
   }
 
   test("SpinalHDL CRC-32 at 8-bit: matches software reference") {

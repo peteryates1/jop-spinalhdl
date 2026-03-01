@@ -202,6 +202,12 @@ class StackTest extends AnyFunSuite {
     dut.io.enaB #= false
     dut.io.enaVp #= false
     dut.io.enaAr #= false
+    // Debug RAM ports must be initialized to prevent Verilator's --x-assign unique
+    // from randomly asserting debugRamWrEn, which hijacks the stack RAM write port
+    dut.io.debugRamAddr #= 0
+    dut.io.debugRamWrAddr #= 0
+    dut.io.debugRamWrData #= 0
+    dut.io.debugRamWrEn #= false
   }
 
   def runTestCase(tc: StackTestCase): Unit = {
@@ -379,6 +385,10 @@ class StackTest extends AnyFunSuite {
       dut.io.enaB #= false
       dut.io.enaVp #= false
       dut.io.enaAr #= false
+      dut.io.debugRamAddr #= 0
+      dut.io.debugRamWrAddr #= 0
+      dut.io.debugRamWrData #= 0
+      dut.io.debugRamWrEn #= false
 
       // Assert reset for a few cycles
       dut.clockDomain.assertReset()
@@ -418,6 +428,10 @@ class StackTest extends AnyFunSuite {
     dut.io.enaB #= false
     dut.io.enaVp #= false
     dut.io.enaAr #= false
+    dut.io.debugRamAddr #= 0
+    dut.io.debugRamWrAddr #= 0
+    dut.io.debugRamWrData #= 0
+    dut.io.debugRamWrEn #= false
 
     // Assert reset for a few cycles
     dut.clockDomain.assertReset()
