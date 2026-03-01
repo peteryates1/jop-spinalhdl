@@ -408,9 +408,10 @@ cpu0_load:
 #ifndef SKIP_FLASH_RESET
 
 // RSTQIO (0xFF) — exit QPI mode if flash was left in it.
-// On SST26, factory firmware or FPGA config controller startup may leave
-// flash in QPI mode.  In SPI mode 0xFF is ignored (not a valid command).
-// In QPI mode, with pull-ups on DQ1-DQ3, the flash sees 0xFF = RSTQIO.
+// Only needed for QPI-capable flash (e.g. SST26VF032B) that might be stuck
+// in QPI mode.  W25Q128 on Cyclone IV has no QPI mode, so this is skipped
+// by default.  Define FLASH_RSTQIO to enable if needed.
+#ifdef FLASH_RSTQIO
 
 // Assert CS for RSTQIO
 			ldi	1
@@ -447,6 +448,7 @@ cf_poll_rstqio:
 			stmwd
 			wait
 			wait
+#endif // FLASH_RSTQIO
 
 // Software reset: RSTEN (0x66) + RST (0x99)
 // Required on Artix-7: JTAG reprogramming can leave flash in undefined state.

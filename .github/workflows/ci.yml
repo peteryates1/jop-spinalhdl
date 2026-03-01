@@ -34,19 +34,7 @@ jobs:
         run: cd asm && make && make serial
 
       - name: Build microcode (flash variant)
-        run: |
-          cd asm
-          # Flash assembler has a pre-existing branch-too-far error, but the
-          # Scala jump table file is generated before the error.  Run the
-          # assembler (allowing failure), then create FlashJumpTableData.scala.
-          mkdir -p generated/flash
-          gcc -x c -E -C -P -DFLASH src/jvm.asm > generated/jvm.asm
-          sed -i '1,35d' generated/jvm.asm
-          java -jar ../java/tools/dist/jopa.jar -s generated -d generated jvm.asm || true
-          sed 's/object JumpTableData/object FlashJumpTableData/' generated/JumpTableData.scala \
-            > generated/flash/FlashJumpTableData.scala
-          # Restore simulation variant as the default
-          make JVM_TYPE=SIMULATION
+        run: cd asm && make flash
 
       - name: Upload microcode artifacts
         uses: actions/upload-artifact@v4
