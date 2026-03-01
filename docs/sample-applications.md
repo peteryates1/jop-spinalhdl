@@ -170,7 +170,8 @@ python3 fpga/scripts/test_smp8_uart.py --port /dev/ttyACM1
 ```
 
 The Pico test reads cores in two rounds (0-3 then 4-7) using 4 PIO UARTs
-per round at 1 Mbaud.
+per round at 1 Mbaud. It also monitors per-core watchdog signals on the
+adjacent odd JP1 pins (GP1,3,5,...,15) to verify each core is alive.
 
 ## Detailed Documentation
 

@@ -38,8 +38,8 @@ CORE_GP_RX = {
     4: 8,   5: 10,  6: 12,  7: 14,
 }
 
-# Dummy TX pins (odd GP, next to each RX pin)
-CORE_GP_TX = {
+# Odd GP pins: dummy TX during UART rounds, then WD monitoring
+CORE_GP_WD = {
     0: 1,   1: 3,   2: 5,   3: 7,
     4: 9,   5: 11,  6: 13,  7: 15,
 }
@@ -80,7 +80,7 @@ def setup_round(ser, cores):
     for i, core in enumerate(cores):
         pio_id = f"pio{i}"
         rx_pin = CORE_GP_RX[core]
-        tx_pin = CORE_GP_TX[core]
+        tx_pin = CORE_GP_WD[core]
 
         # Assign pins
         if not send_cmd_check(ser, f"PIN {tx_pin} FUNC UART_TX {pio_id}"):
@@ -215,20 +215,59 @@ def main():
         print(f"    Core {core} (GP{CORE_GP_RX[core]}): {display}  -> IDs: {sorted(ids)}")
         all_seen |= ids
 
-    # Cleanup
+    # --- Watchdog monitoring: odd GP pins read FPGA jp1_wd[0..7] ---
+    print("\n=== Watchdog Monitor ===")
     teardown_uarts(ser)
+    time.sleep(0.2)
+
+    # Configure all odd GP pins as inputs
+    for core in range(8):
+        gp = CORE_GP_WD[core]
+        send_cmd_check(ser, f"PIN {gp} FUNC INPUT")
+
+    # Sample each pin multiple times over ~3s to detect toggling (~500ms WD)
+    NUM_SAMPLES = 8
+    SAMPLE_GAP = 0.35  # seconds between full rounds
+    print(f"  Sampling watchdog pins ({NUM_SAMPLES} rounds, {SAMPLE_GAP}s apart)...")
+    time.sleep(0.2)
+
+    # Collect samples: core -> set of observed values
+    wd_values = {core: set() for core in range(8)}
+    for _ in range(NUM_SAMPLES):
+        for core in range(8):
+            resp = send_cmd(ser, f"GPIO READ {CORE_GP_WD[core]}")
+            if resp and resp.startswith("OK"):
+                wd_values[core].add(resp.split()[-1])
+        time.sleep(SAMPLE_GAP)
+
+    wd_toggling = set()
+    for core in range(8):
+        vals = wd_values[core]
+        toggled = "0" in vals and "1" in vals
+        status = "TOGGLE" if toggled else f"STUCK({','.join(sorted(vals)) or '?'})"
+        print(f"    Core {core} (GP{CORE_GP_WD[core]}): seen {sorted(vals)}  {status}")
+        if toggled:
+            wd_toggling.add(core)
+
+    # Cleanup
+    send_cmd_check(ser, "RESET")
     ser.close()
 
     # --- Summary ---
     print("\n" + "=" * 50)
-    print(f"Cores verified: {sorted(all_seen)}")
+    print(f"UART verified: {sorted(all_seen)}")
+    print(f"WD toggling:   {sorted(wd_toggling)}")
     expected = set(range(8))
-    missing = expected - all_seen
-    if not missing:
-        print("PASS: All 8 cores responding!")
+    uart_missing = expected - all_seen
+    wd_missing = expected - wd_toggling
+    if not uart_missing and not wd_missing:
+        print("PASS: All 8 cores responding (UART + WD)!")
         sys.exit(0)
     else:
-        print(f"FAIL: Missing cores: {sorted(missing)}")
+        if uart_missing:
+            print(f"FAIL: UART missing cores: {sorted(uart_missing)}")
+        if wd_missing:
+            print(f"FAIL: WD stuck cores: {sorted(wd_missing)}")
         sys.exit(1)
 
 

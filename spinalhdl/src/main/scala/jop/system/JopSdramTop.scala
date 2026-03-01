@@ -138,6 +138,9 @@ case class JopSdramTop(
     // Per-core UART TX via JP1 header (optional, for SMP debug)
     val jp1_txd = if (perCoreUart) Some(out Bits(cpuCnt bits)) else None
 
+    // Per-core watchdog via JP1 header (optional, odd pins adjacent to TXD)
+    val jp1_wd = if (perCoreUart) Some(out Bits(cpuCnt bits)) else None
+
     // SD SPI (optional, unidirectional)
     val sd_spi_clk  = if (ioConfig.hasSdSpi) Some(out Bool()) else None
     val sd_spi_mosi = if (ioConfig.hasSdSpi) Some(out Bool()) else None
@@ -332,6 +335,7 @@ case class JopSdramTop(
     if (perCoreUart) {
       for (i <- 0 until cpuCnt) {
         io.jp1_txd.get(i) := cluster.io.perCoreTxd.get(i)
+        io.jp1_wd.get(i)  := cluster.io.wd(i)(0)
       }
     }
 

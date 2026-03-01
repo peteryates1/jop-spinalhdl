@@ -135,6 +135,28 @@ set_location_assignment PIN_AF5 -to jp1_txd[5]
 set_location_assignment PIN_AE3 -to jp1_txd[6]
 set_location_assignment PIN_AD4 -to jp1_txd[7]
 
+# Per-core watchdog output (odd JP1 pins, adjacent to TXD)
+#
+# Core | jp1 idx | FPGA Pin | Pico GP
+# -----|---------|----------|--------
+#   0  |   15    | PIN_AE9  | GP1
+#   1  |   13    | PIN_AF7  | GP3
+#   2  |   11    | PIN_AE7  | GP5
+#   3  |    9    | PIN_AE5  | GP7
+#   4  |    7    | PIN_AD5  | GP9
+#   5  |    5    | PIN_AF4  | GP11
+#   6  |    3    | PIN_AD3  | GP13
+#   7  |    1    | PIN_AC4  | GP15
+
+set_location_assignment PIN_AE9 -to jp1_wd[0]
+set_location_assignment PIN_AF7 -to jp1_wd[1]
+set_location_assignment PIN_AE7 -to jp1_wd[2]
+set_location_assignment PIN_AE5 -to jp1_wd[3]
+set_location_assignment PIN_AD5 -to jp1_wd[4]
+set_location_assignment PIN_AF4 -to jp1_wd[5]
+set_location_assignment PIN_AD3 -to jp1_wd[6]
+set_location_assignment PIN_AC4 -to jp1_wd[7]
+
 # -------------------------------------------------------------------------- #
 # SignalTap II Logic Analyzer
 # -------------------------------------------------------------------------- #
