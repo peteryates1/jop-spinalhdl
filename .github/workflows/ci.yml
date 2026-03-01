@@ -127,11 +127,28 @@ jobs:
           name: microcode
           path: asm/generated/
 
-      - name: Install yosys and z3
-        run: sudo apt-get update && sudo apt-get install -y yosys z3
-
-      - name: Install SymbiYosys (v0.62)
+      - name: Install formal tool dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang bison flex libreadline-dev \
+            gawk tcl-dev libffi-dev pkg-config python3 zlib1g-dev z3
+
+      - name: Cache yosys build
+        id: cache-yosys
+        uses: actions/cache@v4
+        with:
+          path: /tmp/yosys
+          key: yosys-0.52
+
+      - name: Build yosys 0.52 from source
+        if: steps.cache-yosys.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch yosys-0.52 --depth 1 https://github.com/YosysHQ/yosys.git /tmp/yosys
+          cd /tmp/yosys && make config-clang && make -j$(nproc)
+
+      - name: Install yosys and SymbiYosys
+        run: |
+          cd /tmp/yosys && sudo make install
           git clone --branch v0.62 --depth 1 https://github.com/YosysHQ/sby.git /tmp/sby
           cd /tmp/sby && sudo make install PREFIX=/usr/local
 
