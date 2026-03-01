@@ -1,6 +1,6 @@
 # JOP Test Coverage Audit
 
-Date: 2026-02-24
+Date: 2026-03-01 (updated from 2026-02-24)
 
 ## 1. Bytecode Coverage Matrix
 
@@ -329,10 +329,14 @@ The TypeConversion test exercises d2i, d2l, d2f, f2d, i2d, l2d conversions separ
 | Test | Cores | App | What it Verifies |
 |---|---|---|---|
 | JopSmpNCoreHelloWorldSim | 2 (default) | NCoreHelloWorld | All cores boot, print, toggle watchdog |
+| JopSmpSmallNCoreDebugSim | 2 | Small debug | SMP lock debugging |
 | JopSmpSdramNCoreHelloWorldSim | 4 (default) | NCoreHelloWorld | Multi-core over SDRAM path |
+| JopSmpDdr3NCoreHelloWorldSim | N | NCoreHelloWorld | SMP with DDR3 controller |
 | JopSmpBramSim | 2 | Small (GC) | SMP GC allocation + collection |
 | JopSmpCacheStressSim | 2 | SmpCacheTest | Cross-core A$/O$ snoop invalidation (20 rounds) |
-| JopJvmTestsSmpBramSim | 2 | JvmTests (DoAll) | 57/58 JVM tests under arbitration pressure |
+| JopJvmTestsSmpBramSim | 2 | JvmTests (DoAll) | 52/53 JVM tests under arbitration pressure |
+| JopIhluNCoreHelloWorldSim | 2 | NCoreHelloWorld | IHLU per-object locking |
+| JopIhluGcBramSim | 2 | HelloWorld (GC) | IHLU + GC drain mechanism |
 
 ### 3.2 Missing SMP Tests
 
@@ -344,7 +348,7 @@ The TypeConversion test exercises d2i, d2l, d2f, f2d, i2d, l2d conversions separ
 | SMP exception handling | MEDIUM | No test throws exceptions across multiple cores simultaneously. Shared pre-allocated exception objects (NPExc, ABExc) could have race conditions. |
 | 4+ core BRAM GC | MEDIUM | `JopSmpBramSim` is 2-core only. 4-core BRAM GC sim exists for SDRAM but not BRAM. |
 | Core-to-core signal boot race | LOW | Boot protocol tested implicitly but no adversarial timing test. |
-| ~~JVM tests on SMP~~ | ~~MEDIUM~~ | DONE — `JopJvmTestsSmpBramSim` runs 57/58 tests on 2-core SMP (DeepRecursion excluded — needs stack cache in SMP). |
+| ~~JVM tests on SMP~~ | ~~MEDIUM~~ | DONE — `JopJvmTestsSmpBramSim` runs 52/53 tests on 2-core SMP (DeepRecursion excluded — needs stack cache in SMP). |
 
 ---
 
@@ -419,32 +423,68 @@ The TypeConversion test exercises d2i, d2l, d2f, f2d, i2d, l2d conversions separ
 
 ### 6.1 Current Simulation Harnesses
 
+#### Core Single-Core Simulations
+
 | Harness | Memory | App | Cycles | What it Tests |
 |---|---|---|---|---|
 | JopCoreBramSim | BRAM | Smallest | 2M | Basic single-core boot + Hello World |
+| JopCoreBramLargeSim | BRAM (2MB) | Smallest | - | Address wrapping effects |
 | JopCoreWithSdramSim | SDRAM | Smallest | 500k | SDRAM path |
 | JopSmallGcBramSim | BRAM | Small (GC) | 20M | GC allocation + collection |
 | JopSmallGcSdramSim | SDRAM | Small (GC) | 5M | GC over SDRAM |
-| JopSmallGcCacheSim | DDR3/Cache | Small (GC) | - | DDR3 cache path |
+| JopSmallGcCacheSim | DDR3/Cache | Small (GC) | - | DDR3 cache path (LruCacheCore) |
 | JopSmallGcMigSim | DDR3/MIG | Small (GC) | - | DDR3 MIG stub path |
-| JopSmpNCoreHelloWorldSim | BRAM | NCoreHelloWorld | 40M | SMP boot + watchdog |
-| JopSmpSdramNCoreHelloWorldSim | SDRAM | NCoreHelloWorld | 5M | SMP over SDRAM |
-| JopSmpBramSim | BRAM | Small (GC) | 20M | SMP GC |
+| JopSmallGcHighLatencySim | DDR3 model | Small (GC) | - | GC under high DDR3 latency (20-60 cycles) |
+| JopSmallGcGhdlSim | BRAM | Small (GC) | - | GHDL-compatible sim (non-Verilator) |
+| JopEchoSim | BRAM | echo.asm | - | UART echo microcode, bit-serial RX/TX |
 | JopCoreLatencySweep | BRAM | Smallest | - | 0-5 extra latency cycles |
-| JopDebugProtocolSim | BRAM | Smallest | 250k | Debug protocol commands |
-| JopInterruptSim | BRAM | InterruptTest | 4M | Timer interrupt chain |
-| JopJvmTestsBramSim | BRAM | JvmTests | 25M | 60 JVM bytecode tests |
-| JopJvmTestsSmpBramSim | BRAM | JvmTests | 40M | 57/58 JVM tests on 2-core SMP |
-| JopSmpCacheStressSim | BRAM | SmpCacheTest | 20M | Cross-core A$/O$ snoop (20 rounds) |
+| JopCoreLatencyDebug | BRAM | Smallest | - | Detailed latency debugging with BMB trace |
+
+#### Serial Boot Simulations
+
+| Harness | Memory | App | Cycles | What it Tests |
+|---|---|---|---|---|
+| JopSdramSerialSim | SDRAM | serial protocol | - | Serial program download to SDRAM |
+| JopSdramSerialBootSim | SDRAM | serial boot + app | - | Full serial boot sequence |
+| JopDdr3SerialBootSim | DDR3 model | serial boot + app | - | Serial boot with DDR3 controller |
+
+#### JVM Test Simulations
+
+| Harness | Memory | App | Cycles | What it Tests |
+|---|---|---|---|---|
+| JopJvmTestsBramSim | BRAM | JvmTests (DoAll) | 25M | 53 JVM bytecode tests |
+| JopJvmTestsSmpBramSim | BRAM (2-core) | JvmTests (DoAll) | 40M | 52/53 JVM tests on 2-core SMP |
+| JopJvmTestsStackCacheBramSim | BRAM (512KB) | JvmTests (DoAll) | - | JVM tests with stack cache + DMA spill |
+
+#### SMP Simulations
+
+| Harness | Memory | App | Cycles | What it Tests |
+|---|---|---|---|---|
+| JopSmpNCoreHelloWorldSim | BRAM | NCoreHelloWorld | 40M | SMP boot + watchdog |
+| JopSmpSmallNCoreDebugSim | BRAM (2-core) | Small debug | - | SMP lock debugging |
+| JopSmpSdramNCoreHelloWorldSim | SDRAM | NCoreHelloWorld | 5M | SMP over SDRAM |
+| JopSmpDdr3NCoreHelloWorldSim | DDR3 model | NCoreHelloWorld | - | SMP with DDR3 controller |
+| JopSmpBramSim | BRAM | Small (GC) | 20M | SMP GC |
+| JopSmpCacheStressSim | BRAM (2-core) | SmpCacheTest | 20M | Cross-core A$/O$ snoop (20 rounds) |
 | JopIhluNCoreHelloWorldSim | BRAM | NCoreHelloWorld | 40M | IHLU per-object locking (2-core) |
-| JopIhluGcBramSim | BRAM | HelloWorld (GC) | 100M | IHLU + GC drain mechanism (2-core) |
+| JopIhluGcBramSim | BRAM (2-core) | HelloWorld (GC) | 100M | IHLU + GC drain mechanism |
+
+#### Debug & Special
+
+| Harness | Memory | App | Cycles | What it Tests |
+|---|---|---|---|---|
+| JopDebugProtocolSim | BRAM | Smallest | 250k | Debug protocol commands (39 checks) |
+| JopDebugSim | BRAM | Smallest | - | TCP debug server (port 4567, Eclipse) |
+| JopInterruptSim | BRAM (2MB) | InterruptTest | 4M | Timer interrupt chain |
+| JopGcTraceCaptureSim | BRAM + cache | Small (GC) | - | BMB trace capture to gc_bmb_trace.hex |
+| JopStackCacheWaveSim | BRAM (512KB) | JvmTests | - | Stack cache with waveform (.vcd) |
 
 ### 6.2 Missing Harness Combinations
 
 | Gap | Priority | Description |
 |---|---|---|
 | JVM tests on SDRAM | MEDIUM | `JopJvmTestsBramSim` only runs on BRAM. SDRAM latency could expose timing bugs. |
-| ~~JVM tests on SMP~~ | ~~HIGH~~ | DONE — `JopJvmTestsSmpBramSim` (57/58 pass on 2-core SMP). |
+| ~~JVM tests on SMP~~ | ~~HIGH~~ | DONE — `JopJvmTestsSmpBramSim` (52/53 pass on 2-core SMP). |
 | SMP GC on SDRAM | MEDIUM | `JopSmpBramSim` runs GC on BRAM. SDRAM SMP GC sim would test BmbSdramCtrl32 under GC pressure. |
 | Interrupt + GC combined | LOW | No test combining timer interrupts with GC activity. |
 | Long-running SDRAM stability | LOW | `JopSmallGcSdramSim` runs 5M cycles. FPGA hardware runs hours. Simulation gap is large. |
@@ -458,7 +498,7 @@ The TypeConversion test exercises d2i, d2l, d2f, f2d, i2d, l2d conversions separ
 | ~~1~~ | ~~**SMP cache coherency stress test**~~ | ~~CRITICAL~~ | DONE — `JopSmpCacheStressSim` tests cross-core A$/O$ snoop invalidation (T1: array, T2: fields, T3: 20 rounds). |
 | ~~2~~ | ~~**invokespecial null pointer test**~~ | ~~HIGH~~ | DONE — `NullPointer.java` T3 tests invokespecial on null (catches NPE). |
 | ~~3~~ | ~~**invokeinterface/invokesuper null pointer test**~~ | ~~HIGH~~ | DONE — `NullPointer.java` T9 tests invokeinterface on null (catches NPE). |
-| ~~4~~ | ~~**JVM test suite on SMP**~~ | ~~HIGH~~ | DONE — `JopJvmTestsSmpBramSim` runs 57/58 on 2-core SMP (DeepRecursion excluded — needs stack cache). |
+| ~~4~~ | ~~**JVM test suite on SMP**~~ | ~~HIGH~~ | DONE — `JopJvmTestsSmpBramSim` runs 52/53 on 2-core SMP (DeepRecursion excluded — needs stack cache). |
 | ~~5~~ | ~~**Array NPE tests** (iaload/iastore on null array)~~ | ~~HIGH~~ | DONE — `NullPointer.java` T10 (iaload), T11 (iastore), T12 (aaload) test null array accesses. |
 | ~~6~~ | ~~**Long array bounds exception test**~~ | ~~MEDIUM~~ | DONE — `LongArrayBounds.java` T1-T4 test AIOOBE on laload/lastore (negative index + upper bounds). |
 | ~~7~~ | ~~**Static long field test**~~ | ~~MEDIUM~~ | DONE — `LongStaticField.java` tests getstatic_long/putstatic_long with multiple values. |
@@ -484,7 +524,7 @@ Implemented as `NullPointer.java` T9 (invokeinterface on null reference, catches
 
 ### 8.4 ~~JVM Test Suite on SMP~~ — DONE
 
-Implemented as `JopJvmTestsSmpBramSim` (2-core, 57/58 pass — DeepRecursion needs stack cache).
+Implemented as `JopJvmTestsSmpBramSim` (2-core, 52/53 pass — DeepRecursion needs stack cache).
 
 ### 8.5 ~~Array Null Pointer Tests~~ — DONE
 
@@ -521,12 +561,24 @@ Implemented as `FloatArray.java` (faload/fastore with float arrays, 4 elements +
 - **Implicitly tested** (via test infrastructure): ~15 (9%)
 - **Untested**: ~4 (2%) — a few edge cases (swap now tested via BCEL injection)
 
+### JVM Test Suite
+
+- **Total test classes**: 61 (in `java/apps/JvmTests/src/jvm/`)
+- **Tests run by DoAll**: 53
+- **Infrastructure**: 2 (TestCase base class, NullTestIface interface), 1 coordinator (DoAll)
+- **SMP**: 52/53 pass on 2-core (DeepRecursion excluded — needs stack cache)
+
 ### Exception Coverage
 
 - **Exception types defined**: 6 (NPE, AIOOBE, ArithmeticException, CCE, SOError, IMSE)
 - **Tested exception types**: 6 (NPE, AIOOBE, ArithmeticException, CCE, StackOverflowError, IllegalMonitorStateException)
 - **Partially tested**: 0
 - **Untested**: 0
+
+### Formal Verification
+
+- **Suites**: 15 (SymbiYosys + Z3)
+- **Total properties**: 117
 
 ### Bug Regression Coverage
 
@@ -535,13 +587,24 @@ Implemented as `FloatArray.java` (faload/fastore with float arrays, 4 elements +
 - **With partial regression test** (sim coverage): 7 (24%)
 - **With NO regression test**: 6 (21%)
 
+### Simulation Harnesses
+
+- **Total runnable harnesses**: 34
+- **Core single-core**: 12
+- **Serial boot**: 3
+- **JVM test**: 3 (BRAM, SMP, stack cache)
+- **SMP**: 8 (CmpSync, IHLU, cache stress, DDR3)
+- **Debug & special**: 5
+- **Verilog generation**: 3 (Questa, SDRAM Questa, Vivado xsim)
+
 ### SMP Coverage
 
-- **SMP boot**: Tested (2-core BRAM, 4-core SDRAM)
+- **SMP boot**: Tested (2-core BRAM, 4-core SDRAM, DDR3)
 - **SMP GC**: Tested (2-core BRAM)
 - **SMP cache coherency**: Tested (`JopSmpCacheStressSim` — cross-core A$/O$ snoop, 20 rounds)
-- **SMP JVM tests**: Tested (`JopJvmTestsSmpBramSim` — 57/58 pass on 2-core)
+- **SMP JVM tests**: Tested (`JopJvmTestsSmpBramSim` — 52/53 pass on 2-core)
 - **SMP IHLU**: Tested (`JopIhluNCoreHelloWorldSim` — 2-core with per-object locking, `JopIhluGcBramSim` — GC with IHLU)
+- **SMP DDR3**: Tested (`JopSmpDdr3NCoreHelloWorldSim`)
 - **SMP lock contention**: NOT stress-tested
 - **SMP exception handling**: NOT tested
 
