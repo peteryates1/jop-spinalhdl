@@ -224,7 +224,7 @@ public DirEntry() {
 ### 2. char[] Instead of StringBuilder for String Building (Historical)
 
 > **Note**: `System.arraycopy` and `StringBuilder` resize both work correctly
-> now (see [Bugs and Issues](bugs-and-issues.md) — issue #1 was misdiagnosed,
+> now (see [Bugs and Issues](../bugs-and-issues.md) — issue #1 was misdiagnosed,
 > issue #2 fixed with `StringBuilder.toString()`). The two-pass `char[]`
 > approach used here is no longer necessary but remains harmless.
 
@@ -246,7 +246,7 @@ return new String(result);
 
 > **Note**: `"text" + intValue` now works correctly on JOP. The original crash
 > was caused by a missing `StringBuilder.toString()` method (see
-> [Bugs and Issues](bugs-and-issues.md) issue #2). The `wrInt()`/`wrHex()`
+> [Bugs and Issues](../bugs-and-issues.md) issue #2). The `wrInt()`/`wrHex()`
 > helpers used in the FAT32 code are no longer necessary but remain harmless.
 
 ```java
@@ -355,4 +355,4 @@ with both files, and delete with verification. 30 checks total.
 
 See also:
 - [DB_FPGA SD Card](db-fpga-sd-card.md) — SD controller hardware, pin mapping, bugs found
-- [Programmer's Guide](programmers-guide.md) — SD Native/SPI register maps and Java API
+- [Programmer's Guide](../programmers-guide.md) — SD Native/SPI register maps and Java API

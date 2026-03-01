@@ -13,7 +13,7 @@ Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 - **SDRAM + SMP (primary)**: up to 16-core SMP on QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V) — all cores running independently with CmpSync global lock (or optional IHLU per-object locking), round-robin BMB arbitration, and GC stop-the-world halt (halts all other cores during garbage collection)
 - **SDRAM (single-core)**: Serial boot over UART into SDR SDRAM on two boards — QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V, W9864G6JT)
 - **BRAM**: Self-contained, program embedded in block RAM (QMTECH EP4CGX150)
-- **DDR3**: Serial boot through write-back cache into DDR3 (Alchitry Au V2, Xilinx Artix-7, full 256MB addressed) — single-core and 2-core SMP verified on hardware with GC (67K+ rounds single-core, NCoreHelloWorld SMP). See [DDR3 notes](docs/ddr3-gc-hang.md).
+- **DDR3**: Serial boot through write-back cache into DDR3 (Alchitry Au V2, Xilinx Artix-7, full 256MB addressed) — single-core and 2-core SMP verified on hardware with GC (67K+ rounds single-core, NCoreHelloWorld SMP). See [DDR3 notes](docs/gc/ddr3-gc-hang.md).
 - **GC support**: Automatic garbage collection with hardware-accelerated object copying (`memCopy`), MAX_HANDLES cap (65536) for large memories. Tested 98,000+ rounds (BRAM), 9,800+ rounds (CYC5000 SDRAM), 2,000+ rounds (QMTECH SDRAM), 67,000+ rounds (DDR3 8MB), 1,870+ rounds (DDR3 256MB)
 
 ## Project Goals
@@ -271,11 +271,11 @@ sbt "runMain jop.JopSimulatorSim"
 | Board | FPGA | Memory | Toolchain | Status |
 |-------|------|--------|-----------|--------|
 | **[QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD)** | **Altera Cyclone IV GX** | **W9825G6JH6 SDR SDRAM** | **Quartus Prime** | **Primary — 100 MHz (1-8 core), 80 MHz (16-core)** |
-| [QMTECH EP4CGX150 + DB_FPGA](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Altera Cyclone IV GX | W9825G6JH6 SDR SDRAM | Quartus Prime | 80 MHz — Ethernet 1Gbps GMII ([details](docs/db-fpga-ethernet.md)), VGA text 80x30 ([details](docs/db-fpga-vga-text.md)), SD card native 4-bit ([details](docs/db-fpga-sd-card.md)) |
+| [QMTECH EP4CGX150 + DB_FPGA](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Altera Cyclone IV GX | W9825G6JH6 SDR SDRAM | Quartus Prime | 80 MHz — Ethernet 1Gbps GMII ([details](docs/peripherals/db-fpga-ethernet.md)), VGA text 80x30 ([details](docs/peripherals/db-fpga-vga-text.md)), SD card native 4-bit ([details](docs/peripherals/db-fpga-sd-card.md)) |
 | [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Altera Cyclone IV GX | BRAM (on-chip) | Quartus Prime | Working at 100 MHz |
 | [Trenz CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) | Altera Cyclone V E (5CEBA2U15C8N) | W9864G6JT SDR SDRAM | Quartus Prime | Working at 80 MHz |
 | A-E115FB | Altera Cyclone IV E (EP4CE115F23I7) | BRAM (on-chip) | Quartus Prime | BRAM only, programmed via [pico-dirtyJtag](docs/pico-dirtyjtag-setup.md) |
-| [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au) | Xilinx Artix-7 (XC7A35T) | MT41K128M16JT DDR3 (256MB) | Vivado | 100 MHz — single-core + SMP (2-core), full 256MB addressed, GC working ([details](docs/ddr3-gc-hang.md)) |
+| [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au) | Xilinx Artix-7 (XC7A35T) | MT41K128M16JT DDR3 (256MB) | Vivado | 100 MHz — single-core + SMP (2-core), full 256MB addressed, GC working ([details](docs/gc/ddr3-gc-hang.md)) |
 
 ### Resource Usage
 
@@ -303,8 +303,8 @@ Notes:
 - SMP (2-core) uses ~8% of EP4CGX150's 150K LEs, leaving substantial headroom for additional cores
 - Artix-7 single-core uses 16KB L2 cache; SMP uses 32KB L2 cache (512 sets × 4 ways). Per-core cost ~4,400 LUT, ~2,900 FF, ~2.5 BRAM
 - Vivado does not report per-hierarchy utilization; Artix-7 core-only numbers not available from build reports
-- Artix-7 single-core LUT includes ~1,584 LUT of distributed RAM from stack cache bank RAMs (`readAsync` not supported by Xilinx BRAM). Converting to `readSync` would save ~1,584 LUT/core. See [distributed RAM optimization](docs/artix7-distram-optimization.md)
-- See [Artix-7 core count estimates](docs/artix7-core-estimates.md) for scaling projections across the Artix-7 family
+- Artix-7 single-core LUT includes ~1,584 LUT of distributed RAM from stack cache bank RAMs (`readAsync` not supported by Xilinx BRAM). Converting to `readSync` would save ~1,584 LUT/core. See [distributed RAM optimization](docs/analysis/artix7-distram-optimization.md)
+- See [Artix-7 core count estimates](docs/analysis/artix7-core-estimates.md) for scaling projections across the Artix-7 family
 
 ## Implementation Status
 
@@ -315,10 +315,10 @@ Notes:
 - **Method cache**: 16-block tag-only cache (32 words/block, FIFO replacement) skips redundant bytecode fills; 2-cycle hit, 3-cycle + fill on miss
 - **Object cache**: 16-entry fully associative field cache (8 fields/entry, FIFO replacement) shortcuts getfield to 0 busy cycles on hit; write-through on putfield; invalidated on `stidx`/`cinval`
 - **Array cache**: 16-entry fully associative element cache (4 elements/line, FIFO replacement) shortcuts iaload to 0 busy cycles on hit; 4-element line fill on miss (burst read on SDRAM); write-through on iastore; SMP-safe via cross-core snoop invalidation; two VHDL bugs fixed (idx_upper slice, FIFO nxt advancement)
-- **Stack buffer**: 256-entry on-chip RAM (64 for 32 local variables + 32 constants, 192 for operand stack) with spill/fill, ALU, shifter, 33-bit comparator. Optional 3-bank rotating stack cache with DMA spill/fill extends the stack to external memory (16-bit virtual SP, 192 entries per bank, per-core stack regions). See [system configuration](docs/system-configuration.md).
+- **Stack buffer**: 256-entry on-chip RAM (64 for 32 local variables + 32 constants, 192 for operand stack) with spill/fill, ALU, shifter, 33-bit comparator. Optional 3-bank rotating stack cache with DMA spill/fill extends the stack to external memory (16-bit virtual SP, 192 entries per bank, per-core stack regions). See [system configuration](docs/architecture/system-configuration.md).
 - **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
-- **I/O subsystem**: `BmbSys` (cycle/microsecond counters, timer interrupt, watchdog, CPU ID), `BmbUart` (TX/RX with 16-entry FIFOs, RX/TX interrupt outputs), `BmbEth` (Ethernet MAC with GMII 1Gbps TX/RX using SpinalHDL `MacEth`, 125 MHz PLL for TX, PHY clock for RX, dual-clock FIFOs for PHY clock domain crossing), `BmbMdio` (MDIO PHY management with registered outputs and PHY reset control), `BmbSdNative` (SD card native 4-bit mode, hardware CRC7/CRC16, 512-byte block FIFO, verified on hardware at 10 MHz — [details](docs/db-fpga-sd-card.md)), `BmbSdSpi` (SD card SPI mode, byte-at-a-time transfer with hardware clock generation), and `BmbVgaText` (80x30 text-mode VGA, 640x480@60Hz, 8x16 font, CGA palette, RGB565 output, 25 MHz pixel clock from PLL c3) as reusable `jop.io` components. Timer interrupts verified end-to-end in simulation (`JopInterruptSim`). VGA text verified on hardware ([details](docs/db-fpga-vga-text.md))
+- **I/O subsystem**: `BmbSys` (cycle/microsecond counters, timer interrupt, watchdog, CPU ID), `BmbUart` (TX/RX with 16-entry FIFOs, RX/TX interrupt outputs), `BmbEth` (Ethernet MAC with GMII 1Gbps TX/RX using SpinalHDL `MacEth`, 125 MHz PLL for TX, PHY clock for RX, dual-clock FIFOs for PHY clock domain crossing), `BmbMdio` (MDIO PHY management with registered outputs and PHY reset control), `BmbSdNative` (SD card native 4-bit mode, hardware CRC7/CRC16, 512-byte block FIFO, verified on hardware at 10 MHz — [details](docs/peripherals/db-fpga-sd-card.md)), `BmbSdSpi` (SD card SPI mode, byte-at-a-time transfer with hardware clock generation), and `BmbVgaText` (80x30 text-mode VGA, 640x480@60Hz, 8x16 font, CGA palette, RGB565 output, 25 MHz pixel clock from PLL c3) as reusable `jop.io` components. Timer interrupts verified end-to-end in simulation (`JopInterruptSim`). VGA text verified on hardware ([details](docs/peripherals/db-fpga-vga-text.md))
 - **SDRAM system (primary)**: `JopSdramTop` / `JopCyc5000Top` — serial boot over UART into SDR SDRAM using Altera `altera_sdram_tri_controller` (QMTECH EP4CGX150 at 100 MHz + Trenz CYC5000 at 80 MHz). Both support `cpuCnt` parameter for single-core or SMP
 - **SMP (2-core)**: `JopSdramTop(cpuCnt=2)` / `JopDdr3Top(cpuCnt=2)` — 2-core SMP with round-robin BMB arbiter, `CmpSync` global lock for `monitorenter`/`monitorexit`, per-core `BmbSys` with unique CPU ID, boot synchronization via `IO_SIGNAL`, and GC stop-the-world halt via `IO_GC_HALT`. Verified on QMTECH EP4CGX150, CYC5000, and Alchitry Au V2 hardware (both cores running independently with per-core LED watchdog)
 - **BRAM system**: `JopBramTop` — complete system with on-chip memory at 100 MHz (QMTECH EP4CGX150, Altera Cyclone IV)
@@ -333,14 +333,14 @@ Notes:
 - **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, JVM test suite (single-core + SMP), SMP cache coherency test, timer interrupt test, debug protocol test
 ### Known Issues
 
-- **burstLen=0 + SMP incompatibility** — `burstLen=0` (pipelined single-word BC_FILL) interleaves with the BMB arbiter in SMP mode, causing response-source misalignment. SMP requires `burstLen >= 4`. Single-core is unaffected. See [DDR3 notes](docs/ddr3-gc-hang.md).
+- **burstLen=0 + SMP incompatibility** — `burstLen=0` (pipelined single-word BC_FILL) interleaves with the BMB arbiter in SMP mode, causing response-source misalignment. SMP requires `burstLen >= 4`. Single-core is unaffected. See [DDR3 notes](docs/gc/ddr3-gc-hang.md).
 
 ### TODO
 
 Active work items:
 
 - **Stack cache SDRAM integration** — 3-bank rotation working in BRAM simulation (53/53 tests pass); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
-- **Stack cache bank RAM optimization** — convert `readAsync` to `readSync` on bank RAMs to enable Xilinx BRAM inference, saving ~1,584 LUTs on Artix-7 (81% → ~73% utilization). Altera is unaffected (M9K/M10K supports async reads natively). See [distributed RAM optimization](docs/artix7-distram-optimization.md)
+- **Stack cache bank RAM optimization** — convert `readAsync` to `readSync` on bank RAMs to enable Xilinx BRAM inference, saving ~1,584 LUTs on Artix-7 (81% → ~73% utilization). Altera is unaffected (M9K/M10K supports async reads natively). See [distributed RAM optimization](docs/analysis/artix7-distram-optimization.md)
 - **SMP test expansion** — lock contention stress test (>2 cores hammering `synchronized`), SMP exception handling test. Cache snoop and JVM-on-SMP tests done. See [test coverage audit](docs/test-coverage-audit.md)
 - **DDR3 SMP GC** — run GC stress test on dual-core DDR3 (NCoreHelloWorld verified, GC stress not yet tested in SMP mode)
 
@@ -366,7 +366,7 @@ Lower-priority or longer-term items:
 - **Object cache**: Fully associative field value cache (16 entries, 8 fields each). Getfield hits return data in 0 busy cycles (combinational tag match, registered data output). Putfield does write-through on tag hit. FIFO replacement, invalidated on array stores and explicit `cinval`.
 - **Array cache**: Fully associative element value cache (16 entries, 4 elements per line). iaload hits return in 0 busy cycles; misses fill the entire 4-element aligned line (burst read on SDRAM to prevent interleaving). iastore does write-through on tag hit. Tags include handle address and upper index bits so different array regions map to different lines. SMP-safe via cross-core snoop invalidation (`CacheSnoopBus` — each core's iastore broadcasts on snoop bus, other cores selectively invalidate matching lines). Note: raw memory writes (`Native.wrMem`) bypass A$ — `System.arraycopy` calls `Native.invalidate()` after copy loops to ensure coherency.
 - **Handle format**: `H[0]` = data pointer, `H[1]` = array length. Array elements start at `data_ptr[0]`.
-- **I/O subsystem**: Reusable `BmbSys` and `BmbUart` components in `jop.io` package. System slave provides clock cycle counter, prescaled microsecond counter, timer interrupt, watchdog register, and CPU ID. UART slave provides buffered TX/RX with 16-entry FIFOs and per-source interrupt outputs (RX data available, TX FIFO empty). UART interrupts are wired to BmbSys interrupt sources (index 0 = timer, 1 = UART RX, 2 = UART TX). Ethernet subsystem (`BmbEth` + `BmbMdio`) supports MII (100Mbps, 4-bit) and GMII (1Gbps, 8-bit) modes via `IoConfig.ethGmii`, with a dedicated 125 MHz PLL for GMII TX and source-synchronous PHY clock for RX. SD card controllers: `BmbSdNative` (native 4-bit mode, hardware CRC7/CRC16, 512-byte block FIFO) and `BmbSdSpi` (SPI mode, byte-at-a-time), mutually exclusive (share card slot pins). Native mode verified on FPGA hardware at 10 MHz ([details](docs/db-fpga-sd-card.md)). VGA text controller (`BmbVgaText`) provides 80x30 character display at 640x480@60Hz with CGA palette, cursor-based and direct-write modes, hardware clear/scroll, and RGB565 output via 25 MHz pixel clock from PLL c3.
+- **I/O subsystem**: Reusable `BmbSys` and `BmbUart` components in `jop.io` package. System slave provides clock cycle counter, prescaled microsecond counter, timer interrupt, watchdog register, and CPU ID. UART slave provides buffered TX/RX with 16-entry FIFOs and per-source interrupt outputs (RX data available, TX FIFO empty). UART interrupts are wired to BmbSys interrupt sources (index 0 = timer, 1 = UART RX, 2 = UART TX). Ethernet subsystem (`BmbEth` + `BmbMdio`) supports MII (100Mbps, 4-bit) and GMII (1Gbps, 8-bit) modes via `IoConfig.ethGmii`, with a dedicated 125 MHz PLL for GMII TX and source-synchronous PHY clock for RX. SD card controllers: `BmbSdNative` (native 4-bit mode, hardware CRC7/CRC16, 512-byte block FIFO) and `BmbSdSpi` (SPI mode, byte-at-a-time), mutually exclusive (share card slot pins). Native mode verified on FPGA hardware at 10 MHz ([details](docs/peripherals/db-fpga-sd-card.md)). VGA text controller (`BmbVgaText`) provides 80x30 character display at 640x480@60Hz with CGA palette, cursor-based and direct-write modes, hardware clear/scroll, and RGB565 output via 25 MHz pixel clock from PLL c3.
 - **SMP**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` / `JopDdr3Top(cpuCnt=N)` instantiate N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`, with optional `Ihlu` per-object hardware locking (32-slot CAM, FIFO wait queues, reentrant) selectable via `useIhlu` config flag, plus a GC halt signal (`IO_GC_HALT`) that freezes all other cores during garbage collection. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`. DDR3 SMP requires `burstLen >= 4` (pipelined single-word BC_FILL interleaves with arbiter at `burstLen=0`).
 - **Debug subsystem**: Optional on-chip debug controller (`jop.debug` package) enabled via `DebugConfig` in `JopCluster`. Uses a dedicated UART (separate from the application UART) with a CRC-8/MAXIM framed protocol. `DebugProtocol` parses/builds frames, `DebugController` implements the command FSM (halt, resume, single-step, register/stack/memory read/write, breakpoint management), and `DebugBreakpoints` provides per-core hardware PC comparators. Supports multi-core targeting via core ID field in each command.
 - **Serial boot**: Microcode polls UART for incoming bytes, assembles 4 bytes into 32-bit words, writes to external memory. Download script (`download.py`) sends `.jop` files with word-level echo verification.
@@ -375,26 +375,26 @@ Lower-priority or longer-term items:
 
 Design notes and investigation logs in `docs/`:
 
-- [Microcode Instructions](docs/microcode.md) — table of all microcode instructions and encodings
-- [Stack Architecture](docs/STACK_ARCHITECTURE.md) — stack buffer, spill/fill, local variables
-- [Jopa Tool](docs/JOPA_TOOL.md) — microcode assembler usage and output formats
+- [Microcode Instructions](docs/architecture/microcode.md) — table of all microcode instructions and encodings
+- [Stack Architecture](docs/architecture/STACK_ARCHITECTURE.md) — stack buffer, spill/fill, local variables
+- [Jopa Tool](docs/architecture/JOPA_TOOL.md) — microcode assembler usage and output formats
 - [Programmer's Guide](docs/programmers-guide.md) — I/O register maps and Java API for all devices (BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdNative, BmbSdSpi, BmbVgaText)
-- [System Configuration](docs/system-configuration.md) — configuration reference: memory layout, JopCoreConfig, JopMemoryConfig, IoConfig, board configs, I/O register map
+- [System Configuration](docs/architecture/system-configuration.md) — configuration reference: memory layout, JopCoreConfig, JopMemoryConfig, IoConfig, board configs, I/O register map
 - [Bugs and Issues](docs/bugs-and-issues.md) — master bug index: open JVM workarounds, fixed RTL/pipeline/microcode bugs
-- [Implementation Notes](docs/implementation-notes.md) — bugs found, cache details, I/O subsystem, SMP, GC architecture, memCopy
-- [Artix-7 Distributed RAM Optimization](docs/artix7-distram-optimization.md) — stack cache bank RAM `readAsync` → `readSync` for BRAM inference on Xilinx
-- [Cache Analysis](docs/cache-analysis.md) — cache performance analysis and technology cost model
-- [Memory Controller Comparison](docs/memory-controller-comparison.md) — VHDL vs SpinalHDL memory controller
-- [Stack Immediate Timing](docs/stack-immediate-timing.md) — stack stage timing for immediate operations
+- [Implementation Notes](docs/architecture/implementation-notes.md) — bugs found, cache details, I/O subsystem, SMP, GC architecture, memCopy
+- [Artix-7 Distributed RAM Optimization](docs/analysis/artix7-distram-optimization.md) — stack cache bank RAM `readAsync` → `readSync` for BRAM inference on Xilinx
+- [Cache Analysis](docs/architecture/cache-analysis.md) — cache performance analysis and technology cost model
+- [Memory Controller Comparison](docs/architecture/memory-controller-comparison.md) — VHDL vs SpinalHDL memory controller
+- [Stack Immediate Timing](docs/analysis/stack-immediate-timing.md) — stack stage timing for immediate operations
 - [Formal Verification](docs/formal-verification.md) — 98 BMC properties across all components (SymbiYosys + Z3)
-- [DB_FPGA Ethernet](docs/db-fpga-ethernet.md) — 1Gbps GMII architecture, pin mapping, PHY config, SDC timing for RTL8211EG
-- [DB_FPGA VGA Text](docs/db-fpga-vga-text.md) — 80x30 text-mode VGA output, register map, Java API, setup guide
-- [DB_FPGA SD Card](docs/db-fpga-sd-card.md) — SD card native 4-bit mode, hardware verification, bugs found, clock speed constraints
-- [FAT32 Filesystem](docs/fat32-filesystem.md) — read-write FAT32 with LFN support, API reference, JOP workarounds, simulation and hardware testing
-- [Flash Boot](docs/flash-boot.md) — autonomous Active Serial boot from W25Q128, UART flash programmer, flash image format
+- [DB_FPGA Ethernet](docs/peripherals/db-fpga-ethernet.md) — 1Gbps GMII architecture, pin mapping, PHY config, SDC timing for RTL8211EG
+- [DB_FPGA VGA Text](docs/peripherals/db-fpga-vga-text.md) — 80x30 text-mode VGA output, register map, Java API, setup guide
+- [DB_FPGA SD Card](docs/peripherals/db-fpga-sd-card.md) — SD card native 4-bit mode, hardware verification, bugs found, clock speed constraints
+- [FAT32 Filesystem](docs/peripherals/fat32-filesystem.md) — read-write FAT32 with LFN support, API reference, JOP workarounds, simulation and hardware testing
+- [Flash Boot](docs/boards/flash-boot.md) — autonomous Active Serial boot from W25Q128, UART flash programmer, flash image format
 - [pico-dirtyJtag Setup](docs/pico-dirtyjtag-setup.md) — program FPGAs via Raspberry Pi Pico + openFPGALoader (alternative to USB-Blaster)
-- [SDR SDRAM GC Hang](docs/sdr-sdram-gc-hang.md) — resolved: SpinalHDL SdramCtrl DQ timing issue
-- [DDR3 GC Hang](docs/ddr3-gc-hang.md) — resolved (32KB L2 cache)
+- [SDR SDRAM GC Hang](docs/gc/sdr-sdram-gc-hang.md) — resolved: SpinalHDL SdramCtrl DQ timing issue
+- [DDR3 GC Hang](docs/gc/ddr3-gc-hang.md) — resolved (32KB L2 cache)
 
 ## References
 

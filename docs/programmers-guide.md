@@ -134,7 +134,7 @@ EthMac eth = EthMac.getInstance();
 | `rxData` | +3 | RX data pop | -- |
 | `rxStats` | +4 | Errors/drops (auto-clear) | -- |
 
-Supports MII (100Mbps) and GMII (1Gbps). See [db-fpga-ethernet.md](db-fpga-ethernet.md).
+Supports MII (100Mbps) and GMII (1Gbps). See [db-fpga-ethernet.md](peripherals/db-fpga-ethernet.md).
 
 ### Status Bits
 
@@ -408,7 +408,7 @@ VgaText vga = VgaText.getInstance();
 | `scrollUp` | +9 | -- | Scroll up 1 row |
 
 80x30 characters, 8x16 font, 640x480@60Hz, RGB565 output.
-See [db-fpga-vga-text.md](db-fpga-vga-text.md) for hardware setup.
+See [db-fpga-vga-text.md](peripherals/db-fpga-vga-text.md) for hardware setup.
 
 ### Status Bits
 
@@ -648,7 +648,7 @@ cd java/apps/Small
 make clean && make all APP_NAME=Fat32Test EXTRA_SRC=../../fat32/src
 ```
 
-For full documentation see [FAT32 Filesystem](fat32-filesystem.md).
+For full documentation see [FAT32 Filesystem](peripherals/fat32-filesystem.md).
 
 ---
 
@@ -697,9 +697,9 @@ Source files: `JopMemoryConfig.scala` (`JopIoSpace`), `JopCore.scala`.
 
 ## See Also
 
-- [DB_FPGA Ethernet](db-fpga-ethernet.md) -- GMII architecture, pin mapping, PHY config
-- [DB_FPGA SD Card](db-fpga-sd-card.md) -- SD Native and SPI mode, pin mapping, clock constraints
-- [DB_FPGA VGA Text](db-fpga-vga-text.md) -- VGA text setup guide and troubleshooting
-- [DB_FPGA VGA DMA](db-fpga-vga-dma.md) -- VGA DMA framebuffer setup guide
-- [System Configuration](system-configuration.md) -- IoConfig, board configs
-- [Implementation Notes](implementation-notes.md) -- Architecture details
+- [DB_FPGA Ethernet](peripherals/db-fpga-ethernet.md) -- GMII architecture, pin mapping, PHY config
+- [DB_FPGA SD Card](peripherals/db-fpga-sd-card.md) -- SD Native and SPI mode, pin mapping, clock constraints
+- [DB_FPGA VGA Text](peripherals/db-fpga-vga-text.md) -- VGA text setup guide and troubleshooting
+- [DB_FPGA VGA DMA](peripherals/db-fpga-vga-dma.md) -- VGA DMA framebuffer setup guide
+- [System Configuration](architecture/system-configuration.md) -- IoConfig, board configs
+- [Implementation Notes](architecture/implementation-notes.md) -- Architecture details

@@ -2,7 +2,7 @@
 
 Master index of all bugs found and fixed during the SpinalHDL JOP port, plus
 open JVM issues requiring workarounds. For detailed investigation notes on
-each bug, see [Implementation Notes](implementation-notes.md).
+each bug, see [Implementation Notes](architecture/implementation-notes.md).
 
 ---
 
@@ -89,7 +89,7 @@ if (b == 0) {
 }
 ```
 
-See [Division by Zero Analysis](div-by-zero-analysis.md) for the full
+See [Division by Zero Analysis](analysis/div-by-zero-analysis.md) for the full
 investigation.
 
 ---
@@ -107,7 +107,7 @@ because the testbench does not model real card timing.
 | 28 | `dataTimeoutCnt` not reset on `startWrite` (only on `startRead`) — stale timeout values on writes after reads | Added `dataTimeoutCnt := 0` to `startWrite` handler | Code review after #27 |
 | 29 | WAIT_BUSY checked for DAT0 high without first confirming DAT0 went low — false exit on CRC status end bit, next command issued during card programming | Two-phase wait: first DAT0 low (busy start), then DAT0 high (busy end) | FAT32 filesystem testing |
 
-See [DB_FPGA SD Card](db-fpga-sd-card.md) for full details.
+See [DB_FPGA SD Card](peripherals/db-fpga-sd-card.md) for full details.
 
 ### VGA Text Controller (BmbVgaText)
 
@@ -123,7 +123,7 @@ See [DB_FPGA SD Card](db-fpga-sd-card.md) for full details.
 | — | SDC never declared `create_clock` for PHY clocks — entire PHY clock domains unconstrained | Added explicit `create_clock` for `e_rxc`, corrected PLL clock names |
 | — | Mesochronous PLL RX clocking caused 14-34% packet loss at 1Gbps — random phase between PLL and PHY CDR-recovered clock corrupted data | Changed to source-synchronous e_rxc + `FAST_INPUT_REGISTER ON` for I/O block registers — 0% loss |
 
-See [DB_FPGA Ethernet](db-fpga-ethernet.md) for full details.
+See [DB_FPGA Ethernet](peripherals/db-fpga-ethernet.md) for full details.
 
 ### TCP Stack
 
@@ -139,7 +139,7 @@ See [DB_FPGA Ethernet](db-fpga-ethernet.md) for full details.
 | — | Window reopening required entire 4KB buffer empty (`getFreeBufferSpace() >= TCP_WINDOW`) — strict stop-and-wait at window level | Lower threshold to MSS (1460 bytes) for SWS avoidance per RFC 813 |
 | — | FIN processed even when segment data only partially consumed (iStream nearly full) — remaining bytes lost, connection closed prematurely | Guard FIN: only process when `rcvNext == seqNr + dataLength` (all data consumed); retransmit delivers remaining data |
 
-See [Networking](networking.md) for full details.
+See [Networking](peripherals/networking.md) for full details.
 
 ### PLL Device Family
 
@@ -153,14 +153,14 @@ See [Networking](networking.md) for full details.
 |---|-----|-----|
 | — | SpinalHDL `SdramCtrl` placed DQ flip-flops in fabric instead of dedicated I/O cells — setup/hold violations invisible to STA | Replaced with Altera `altera_sdram_tri_controller` BlackBox |
 
-See [SDR SDRAM GC Hang](sdr-sdram-gc-hang.md) for the full investigation.
+See [SDR SDRAM GC Hang](gc/sdr-sdram-gc-hang.md) for the full investigation.
 
 ---
 
 ## Fixed Bugs — Pipeline and Microcode
 
 29 bugs found during the SpinalHDL port. These are numbered in the
-[Implementation Notes](implementation-notes.md). Key categories:
+[Implementation Notes](architecture/implementation-notes.md). Key categories:
 
 ### Microcode Bugs (Latent in Original VHDL JOP)
 
@@ -238,11 +238,11 @@ instead of expanding, which can be very hard to debug.
 CMD24 (WRITE_BLOCK) fails at 20 MHz and 13.3 MHz on the QMTECH DB_FPGA
 board due to signal integrity on SD card traces. Reads work at all speeds.
 Use divider=3 (~10 MHz) for data transfers. See
-[DB_FPGA SD Card](db-fpga-sd-card.md).
+[DB_FPGA SD Card](peripherals/db-fpga-sd-card.md).
 
 ### Hardware Division-by-Zero
 
 The `idiv`/`irem` microcode implementation has a known bug with `0x80000000`
 operands (noted in comments from 2004). Division is now implemented in Java
 (`JVM.java`) which handles this case correctly. The microcode is commented
-out in `asm/src/jvm.asm`. See [Division by Zero Analysis](div-by-zero-analysis.md).
+out in `asm/src/jvm.asm`. See [Division by Zero Analysis](analysis/div-by-zero-analysis.md).

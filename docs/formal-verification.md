@@ -172,7 +172,7 @@ is(LruCacheCoreState.WAIT_EVICT_RSP) {
 
 ### Triggering Analysis
 
-With the current `BmbCacheBridge` frontend, these bugs are **unlikely to trigger** because the bridge serializes to at most 1 outstanding cache request, so the rspFifo (depth 4) can never fill. However, the bugs are latent correctness issues that would surface with any pipelining of the frontend, and could contribute to the [DDR3 GC hang](ddr3-gc-hang.md) if there is any scenario where backpressure accumulates.
+With the current `BmbCacheBridge` frontend, these bugs are **unlikely to trigger** because the bridge serializes to at most 1 outstanding cache request, so the rspFifo (depth 4) can never fill. However, the bugs are latent correctness issues that would surface with any pipelining of the frontend, and could contribute to the [DDR3 GC hang](gc/ddr3-gc-hang.md) if there is any scenario where backpressure accumulates.
 
 ### Performance Considerations
 

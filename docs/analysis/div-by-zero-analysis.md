@@ -4,7 +4,7 @@
 > `f_idiv`, `f_irem`, `f_ldiv`, and `f_lrem` in `JVM.java` now use
 > `throw JVMHelp.ArithExc` instead of the hardware exception path.
 > The `DivZero` test (3 sub-tests) is enabled and passes. See
-> [Bugs and Issues](bugs-and-issues.md) for the summary.
+> [Bugs and Issues](../bugs-and-issues.md) for the summary.
 
 ## Summary
 

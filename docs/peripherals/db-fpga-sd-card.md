@@ -12,7 +12,7 @@ Both share the same physical SD card slot on the DB_FPGA board. SD Native
 offers higher throughput (4-bit data bus, hardware CRC). SD SPI is simpler
 (byte-at-a-time transfers, no hardware CRC on data).
 
-See the [Programmer's Guide](programmers-guide.md) for the Java API
+See the [Programmer's Guide](../programmers-guide.md) for the Java API
 (register maps, status bits, code examples).
 
 ---

@@ -611,8 +611,8 @@ Doubles effective heap size, eliminates zapSemi, and uses bounded
 per-allocation increments (MARK_STEP=20, COMPACT_STEP=10) with proactive
 trigger at 25% free heap. Verified across all platforms.
 
-See [GC Mark-Compact Design](gc-mark-compact-design.md) and
-[Incremental GC Analysis](incremental-gc-analysis.md).
+See [GC Mark-Compact Design](../gc/gc-mark-compact-design.md) and
+[Incremental GC Analysis](../gc/incremental-gc-analysis.md).
 
 ### 10.3 Wider SDRAM Data Bus -- High Impact, Hardware Change
 
