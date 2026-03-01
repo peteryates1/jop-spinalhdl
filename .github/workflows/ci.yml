@@ -138,12 +138,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/yosys
-          key: yosys-0.52
+          key: yosys-v0.52
 
       - name: Build yosys 0.52 from source
         if: steps.cache-yosys.outputs.cache-hit != 'true'
         run: |
-          git clone --branch yosys-0.52 --depth 1 https://github.com/YosysHQ/yosys.git /tmp/yosys
+          git clone --branch v0.52 --depth 1 https://github.com/YosysHQ/yosys.git /tmp/yosys
           cd /tmp/yosys && make config-clang && make -j$(nproc)
 
       - name: Install yosys and SymbiYosys
