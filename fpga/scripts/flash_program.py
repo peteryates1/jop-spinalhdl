@@ -21,6 +21,7 @@ Usage:
 """
 
 import argparse
+import os
 import sys
 import time
 
@@ -52,6 +53,30 @@ class FlashProgrammer:
         self.ser = serial.Serial(port, baud, timeout=2)
         self.ser.reset_input_buffer()
         self.ser.reset_output_buffer()
+        self._set_low_latency()
+
+    def _set_low_latency(self):
+        """Set FT2232H latency timer to 1ms (default is 16ms).
+
+        This dramatically improves throughput by reducing USB round-trip
+        latency from ~17ms to ~2ms per exchange.
+        """
+        port_name = os.path.basename(self.ser.port)
+        sysfs_path = f"/sys/bus/usb-serial/devices/{port_name}/latency_timer"
+        try:
+            with open(sysfs_path, 'w') as f:
+                f.write('1')
+            print(f"Set latency timer to 1ms via {sysfs_path}")
+            return
+        except (PermissionError, FileNotFoundError, OSError):
+            pass
+        try:
+            self.ser.set_low_latency_mode(True)
+            print("Set low latency mode via pyserial")
+            return
+        except (AttributeError, OSError, serial.SerialException):
+            pass
+        print("Warning: Could not set low latency mode (needs root or udev rule)")
 
     def close(self):
         self.ser.close()
@@ -59,6 +84,24 @@ class FlashProgrammer:
     # ------------------------------------------------------------------
     # Low-level protocol helpers
     # ------------------------------------------------------------------
+
+    def _build_tx(self, spi_data):
+        """Encode a CS-framed SPI transaction into protocol bytes.
+
+        Returns (tx_buf, echo_count) where echo_count is the number of
+        bytes expected back (one per SPI byte plus CS_LOW and CS_HIGH).
+        """
+        tx = bytearray([CS_LOW])
+        for b in spi_data:
+            b &= 0xFF
+            if b in SPECIAL:
+                tx.append(ESCAPE)
+                tx.append(b)
+            else:
+                tx.append(b)
+        tx.append(CS_HIGH)
+        echo_count = 1 + len(spi_data) + 1  # CS_LOW + data + CS_HIGH
+        return bytes(tx), echo_count
 
     def spi_cs_low(self):
         """Assert CS (active low)."""
@@ -117,37 +160,39 @@ class FlashProgrammer:
         is a NOP.  Follow with Reset Enable + Reset Device for good measure.
         """
         # RSTQIO: 0xFF in QPI mode = reset to SPI
-        self.spi_cs_low()
-        self.spi_byte(0xFF)
-        self.spi_cs_high()
+        tx, ec = self._build_tx(bytes([0xFF]))
+        self.ser.write(tx)
+        self.ser.read(ec)
         time.sleep(0.001)
-        # Also try Reset Enable (0x66) + Reset Device (0x99) in SPI mode
-        self.spi_cs_low()
-        self.spi_byte(CMD_RSTEN)
-        self.spi_cs_high()
+        # Reset Enable (0x66) + Reset Device (0x99) — need separate CS frames
+        tx, ec = self._build_tx(bytes([CMD_RSTEN]))
+        self.ser.write(tx)
+        self.ser.read(ec)
         time.sleep(0.001)
-        self.spi_cs_low()
-        self.spi_byte(CMD_RST)
-        self.spi_cs_high()
+        tx, ec = self._build_tx(bytes([CMD_RST]))
+        self.ser.write(tx)
+        self.ser.read(ec)
         time.sleep(0.1)  # tRST recovery time (typ 30us, use 100ms for safety)
 
     def jedec_id(self):
         """Read JEDEC ID (manufacturer, device_hi, device_lo)."""
-        self.spi_cs_low()
-        self.spi_byte(CMD_JEDEC_ID)
-        mfr = self.spi_byte(0x00)
-        dev_hi = self.spi_byte(0x00)
-        dev_lo = self.spi_byte(0x00)
-        self.spi_cs_high()
-        return (mfr, dev_hi, dev_lo)
+        tx, ec = self._build_tx(bytes([CMD_JEDEC_ID, 0x00, 0x00, 0x00]))
+        self.ser.write(tx)
+        rx = self.ser.read(ec)
+        if len(rx) != ec:
+            raise IOError(f"jedec_id: expected {ec} bytes, got {len(rx)}")
+        # rx: [CS_LOW_echo, cmd_echo, mfr, dev_hi, dev_lo, CS_HIGH_echo]
+        return (rx[2], rx[3], rx[4])
 
     def read_status(self):
         """Read Status Register 1."""
-        self.spi_cs_low()
-        self.spi_byte(CMD_READ_STATUS1)
-        sr1 = self.spi_byte(0x00)
-        self.spi_cs_high()
-        return sr1
+        tx, ec = self._build_tx(bytes([CMD_READ_STATUS1, 0x00]))
+        self.ser.write(tx)
+        rx = self.ser.read(ec)
+        if len(rx) != ec:
+            raise IOError(f"read_status: expected {ec} bytes, got {len(rx)}")
+        # rx: [CS_LOW_echo, cmd_echo, sr1, CS_HIGH_echo]
+        return rx[2]
 
     def wait_ready(self, timeout=200):
         """Poll SR1 bit 0 (BUSY) until clear."""
@@ -162,60 +207,69 @@ class FlashProgrammer:
 
     def write_enable(self):
         """Send Write Enable (WREN) command."""
-        self.spi_cs_low()
-        self.spi_byte(CMD_WRITE_ENABLE)
-        self.spi_cs_high()
+        tx, ec = self._build_tx(bytes([CMD_WRITE_ENABLE]))
+        self.ser.write(tx)
+        self.ser.read(ec)
 
     def ulbpr(self):
         """Global Block Protection Unlock (SST26VF032B).
         Must be preceded by WREN.  Clears all block protection bits."""
-        self.write_enable()
-        self.spi_cs_low()
-        self.spi_byte(CMD_ULBPR)
-        self.spi_cs_high()
+        wren_tx, wren_ec = self._build_tx(bytes([CMD_WRITE_ENABLE]))
+        ulbpr_tx, ulbpr_ec = self._build_tx(bytes([CMD_ULBPR]))
+        self.ser.write(wren_tx + ulbpr_tx)
+        self.ser.read(wren_ec + ulbpr_ec)
 
     def chip_erase(self):
         """Chip Erase (blocking, waits for completion)."""
-        self.write_enable()
-        self.spi_cs_low()
-        self.spi_byte(CMD_CHIP_ERASE)
-        self.spi_cs_high()
+        wren_tx, wren_ec = self._build_tx(bytes([CMD_WRITE_ENABLE]))
+        erase_tx, erase_ec = self._build_tx(bytes([CMD_CHIP_ERASE]))
+        self.ser.write(wren_tx + erase_tx)
+        self.ser.read(wren_ec + erase_ec)
         self.wait_ready(timeout=200)
 
     def sector_erase_4k(self, addr):
         """4KB Sector Erase at given address."""
-        self.write_enable()
-        self.spi_cs_low()
-        self.spi_byte(0x20)
-        self.spi_byte((addr >> 16) & 0xFF)
-        self.spi_byte((addr >> 8) & 0xFF)
-        self.spi_byte(addr & 0xFF)
-        self.spi_cs_high()
+        wren_tx, wren_ec = self._build_tx(bytes([CMD_WRITE_ENABLE]))
+        erase_tx, erase_ec = self._build_tx(bytes([
+            0x20, (addr >> 16) & 0xFF, (addr >> 8) & 0xFF, addr & 0xFF
+        ]))
+        self.ser.write(wren_tx + erase_tx)
+        self.ser.read(wren_ec + erase_ec)
         self.wait_ready(timeout=10)
 
     def page_program(self, addr, data):
-        """Page Program (up to 256 bytes)."""
+        """Page Program (up to 256 bytes).
+
+        Batches WREN + PP into a single USB write to minimize round-trips.
+        """
         assert len(data) <= 256
-        self.write_enable()
-        self.spi_cs_low()
-        self.spi_byte(CMD_PAGE_PROGRAM)
-        self.spi_byte((addr >> 16) & 0xFF)
-        self.spi_byte((addr >> 8) & 0xFF)
-        self.spi_byte(addr & 0xFF)
-        self.spi_bytes(data)
-        self.spi_cs_high()
+        wren_tx, wren_ec = self._build_tx(bytes([CMD_WRITE_ENABLE]))
+        pp_payload = bytes([CMD_PAGE_PROGRAM,
+                            (addr >> 16) & 0xFF,
+                            (addr >> 8) & 0xFF,
+                            addr & 0xFF]) + bytes(data)
+        pp_tx, pp_ec = self._build_tx(pp_payload)
+        self.ser.write(wren_tx + pp_tx)
+        self.ser.read(wren_ec + pp_ec)
         self.wait_ready(timeout=5)
 
     def read_data(self, addr, length):
-        """Read data from flash."""
-        self.spi_cs_low()
-        self.spi_byte(CMD_READ_DATA)
-        self.spi_byte((addr >> 16) & 0xFF)
-        self.spi_byte((addr >> 8) & 0xFF)
-        self.spi_byte(addr & 0xFF)
-        data = self.spi_bytes([0x00] * length)
-        self.spi_cs_high()
-        return bytes(data)
+        """Read data from flash.
+
+        Sends entire CS-framed read in one USB write and reads all
+        echoes in one USB read, regardless of length.
+        """
+        payload = bytes([CMD_READ_DATA,
+                         (addr >> 16) & 0xFF,
+                         (addr >> 8) & 0xFF,
+                         addr & 0xFF]) + bytes(length)
+        tx, ec = self._build_tx(payload)
+        self.ser.write(tx)
+        rx = self.ser.read(ec)
+        if len(rx) != ec:
+            raise IOError(f"read_data: expected {ec} bytes, got {len(rx)}")
+        # rx: [CS_LOW, cmd_echo, addr2, addr1, addr0, data..., CS_HIGH]
+        return bytes(rx[5:-1])
 
     # ------------------------------------------------------------------
     # High-level operations
@@ -270,10 +324,10 @@ class FlashProgrammer:
         # 5. Chip erase
         print("Erasing flash (chip erase)...", end="", flush=True)
         t0 = time.time()
-        self.write_enable()
-        self.spi_cs_low()
-        self.spi_byte(CMD_CHIP_ERASE)
-        self.spi_cs_high()
+        wren_tx, wren_ec = self._build_tx(bytes([CMD_WRITE_ENABLE]))
+        erase_tx, erase_ec = self._build_tx(bytes([CMD_CHIP_ERASE]))
+        self.ser.write(wren_tx + erase_tx)
+        self.ser.read(wren_ec + erase_ec)
         # Poll with progress
         while True:
             sr1 = self.read_status()
@@ -316,10 +370,12 @@ class FlashProgrammer:
             print("Verifying...", end="", flush=True)
             t0 = time.time()
             errors = 0
-            # Read back in 256-byte chunks
-            for i in range(total_pages):
-                addr = i * 256
-                expected = data[addr:addr + 256]
+            verify_chunk = 4096
+            total_chunks = (file_size + verify_chunk - 1) // verify_chunk
+            for i in range(total_chunks):
+                addr = i * verify_chunk
+                end = min(addr + verify_chunk, file_size)
+                expected = data[addr:end]
                 actual = self.read_data(addr, len(expected))
                 if actual != expected:
                     # Find first mismatch
@@ -333,7 +389,7 @@ class FlashProgrammer:
                                 break
                     if errors >= 10:
                         break
-                pct = (i + 1) * 100 // total_pages
+                pct = (i + 1) * 100 // total_chunks
                 print(f"\rVerifying... [{pct:3d}%]", end="", flush=True)
             verify_time = time.time() - t0
             if errors == 0:
