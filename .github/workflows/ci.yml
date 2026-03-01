@@ -71,6 +71,9 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Set up SBT
+        uses: sbt/setup-sbt@v1
+
       - name: Cache SBT
         uses: actions/cache@v4
         with:
@@ -110,6 +113,9 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Set up SBT
+        uses: sbt/setup-sbt@v1
+
       - name: Cache SBT
         uses: actions/cache@v4
         with:
@@ -132,7 +138,7 @@ jobs:
       - name: Install SymbiYosys
         run: |
           git clone https://github.com/YosysHQ/sby.git /tmp/sby
-          cd /tmp/sby && sudo pip3 install --break-system-packages .
+          cd /tmp/sby && sudo make install PREFIX=/usr/local
 
       - name: Run formal verification
         run: sbt -J-Xmx4g "testOnly jop.formal.*"
@@ -154,6 +160,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+
+      - name: Set up SBT
+        uses: sbt/setup-sbt@v1
 
       - name: Cache SBT
         uses: actions/cache@v4
