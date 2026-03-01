@@ -4,6 +4,9 @@ The QMTECH EP4CGX150 board boots autonomously from the on-board W25Q128 SPI
 flash. After the flash is programmed, the board runs Java programs on
 power-up with no JTAG connection needed.
 
+See also: [Artix-7 Flash Boot](flash-boot-artix7.md) for the Alchitry Au V2
+(XC7A35T + DDR3) version, which is also fully working.
+
 ## How It Works
 
 ```
