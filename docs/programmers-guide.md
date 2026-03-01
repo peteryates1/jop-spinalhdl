@@ -673,6 +673,8 @@ Base address: `Const.IO_BASE` (`0xFFFFFF80`). The low 7 bits form an 8-bit
 | `0xB0`--`0xBF` | 16 regs | `IO_BASE + 0x30` | BmbSdNative |
 | `0xAC`--`0xAF` | 4 regs | `IO_BASE + 0x2C` | BmbVgaDma |
 | `0xC0`--`0xCF` | 16 regs | `IO_BASE + 0x40` | BmbVgaText |
+| `0xD0`--`0xD3` | 4 regs | `IO_BASE + 0x50` | BmbConfigFlash |
+| `0xF0`--`0xF3` | 4 regs | `IO_BASE + 0x70` | BmbFpu (optional HW FPU) |
 
 ### Low-Level Example
 

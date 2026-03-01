@@ -46,6 +46,34 @@ flash-au: ../java/tools/dist/jopa.jar
 	cp generated/rom.mif generated/flash/rom.mif
 	sed 's/object JumpTableData/object FlashJumpTableData/' generated/JumpTableData.scala \
 		> generated/flash/FlashJumpTableData.scala
+
+# Build FPU microcode variants (simulation + serial, with FPU_ATTACHED)
+# The FPU ROM is a superset: contains all base microcode + FPU handlers at end.
+# Non-FPU cores use JumpTableData (fadd→sys_noim); FPU cores use FpuJumpTableData.
+# Both variants share the same JVM_TYPE so non-FPU addresses are identical.
+fpu: ../java/tools/dist/jopa.jar
+	mkdir -p generated/fpu
+	gcc -x c -E -C -P $(GCC_PARAMS) -D$(JVM_TYPE) -DFPU_ATTACHED src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/fpu/mem_rom.dat
+	cp generated/mem_ram.dat generated/fpu/mem_ram.dat
+	cp generated/rom.mif generated/fpu/rom.mif
+	sed 's/object JumpTableData/object FpuJumpTableData/' generated/JumpTableData.scala \
+		> generated/fpu/FpuJumpTableData.scala
+	$(MAKE) JVM_TYPE=$(JVM_TYPE)
+
+# Build serial+FPU microcode and save to generated/serial-fpu/
+serial-fpu: ../java/tools/dist/jopa.jar
+	mkdir -p generated/serial-fpu
+	gcc -x c -E -C -P $(GCC_PARAMS) -DSERIAL -DFPU_ATTACHED src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/serial-fpu/mem_rom.dat
+	cp generated/mem_ram.dat generated/serial-fpu/mem_ram.dat
+	cp generated/rom.mif generated/serial-fpu/rom.mif
+	sed 's/object JumpTableData/object SerialFpuJumpTableData/' generated/JumpTableData.scala \
+		> generated/serial-fpu/SerialFpuJumpTableData.scala
 	$(MAKE) JVM_TYPE=SIMULATION
 
 ../java/tools/dist/jopa.jar:

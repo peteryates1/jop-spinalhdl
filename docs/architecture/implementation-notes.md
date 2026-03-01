@@ -3,7 +3,7 @@
 Detailed implementation notes for the SpinalHDL JOP port. These are reference notes
 captured during development — see the source code for authoritative details.
 
-## Bugs Found & Fixed (30 total)
+## Bugs Found & Fixed (31 total)
 
 1. **BC fill write address off-by-one**: Used `bcFillCount.resized` (not increment) for JBC write address
 2. **iaload/caload +1 offset**: VHDL uses `data_ptr + index` (no +1). Both BmbMemoryController and JopSimulator had wrong `+1`
@@ -38,6 +38,8 @@ captured during development — see the source code for authoritative details.
 29. **BytecodeFetchStage jopd corruption during stack cache rotation stall**: `BytecodeFetchStage` had no stall input — during stack cache bank rotation (770+ cycle stall), `jopd(7 downto 0) := jbcData` was unconditionally updated every cycle. After operand accumulation for `invokestatic` completed (e.g., `jopd = 0x0003`), the JBC RAM continued reading at `jpc` (which pointed past the operand bytes to the next bytecode, `istore_3 = 0x3E`). One cycle into the stall, `jopd(7:0)` was overwritten: `0x0003 → 0x003E`. When the stall ended and `ld_opd_16u` executed, it read the corrupted operand `0x003E` (constant pool index 62) instead of `0x0003` (index 3). This fetched a bogus method struct address (`0x010D8001` from a different class's data area), causing `invoke_vpsave` to compute invalid VP/method pointers, zeroing VP+0 and hanging the processor. Only manifested with deep recursion (200+ levels) because 3 bank rotations were needed before the stall coincided with an in-flight `invokestatic` operand. Fix: added `stall` input to `BytecodeFetchStage`, gated `jopd`/`jpc`/`jinstr`/`jpc_br` updates with `when(!io.stall)`, wired `stackRotBusy` → `bcfetch.io.stall` in `JopPipeline`. Files changed: `BytecodeFetchStage.scala`, `JopPipeline.scala`, `InterruptTestTb.scala`, `JopSimulator.scala`, `BytecodeFetchStageTest.scala`, `BytecodeFetchStageFormal.scala`.
 
 30. **BCEL-injected SWAP test operand stack imbalance**: The `InjectSwap` BCEL visitor replaced `doSwap()` with `iload_1, iload_0, SWAP, ireturn` — leaving **two** values on the operand stack at `ireturn`. JOP's `ireturn` microcode pops the return value (`stm a`), then expects the method pointer at TOS (`dup; stmrac; stm mp`), followed by the constant pool pointer and old VP. The extra integer operand (42) was misinterpreted as a method pointer address, causing the memory controller to issue a read to address 42 and hang permanently (BSY forever at the `wait` instruction). The SWAP microcode itself (`stm a; stm b; ldm a; ldm b nxt`) works correctly — pipeline analysis confirmed scratch RAM writes and reads are properly timed. **Lesson: when injecting bytecodes via BCEL, the operand stack depth at `ireturn`/`areturn`/`freturn` must be exactly 1 (the return value). JOP's microcode-based return sequence pops fixed positions from the stack — it does not discard the current frame like a standard JVM. Any extra values corrupt the frame unwinding.** Fix: changed injected sequence to `iload_0, iload_1, SWAP, POP, ireturn` — the POP removes the swapped-down value, leaving exactly 1 return value on the stack.
+
+31. **I/O read stale data for delayed-result devices (FPU)**: BmbMemoryController latches `rdDataReg := io.ioRdData` combinationally at `stmra` time (I/O read in IDLE state). For instant-response devices (BmbSys, BmbUart), this works correctly. But for the FPU, which takes ~27 cycles to compute, the result register still holds the previous value at `stmra` time. The FPU microcode sequence is: `stmwd` (start FPU, pipeline stalls via fpuBusy) → `pop` → `ldi fpu_res` → `stmra` (I/O read latches stale result) → `wait; wait` (pipeline stalls for I/O latency) → `ldmrd` (reads stale `rdDataReg`). The pipeline advances through `pop`, `ldi`, `stmra` without stalling (no `wait` instructions yet), so `rdDataReg` is latched before the FPU finishes. Fix: added `ioRdPending` register and `ioRdSavedAddr` in BmbMemoryController. When an I/O read fires, sets `ioRdPending := True` and saves the address. While `ioRdPending` is True and no new memory operation is in progress, continuously re-latches `rdDataReg := io.ioRdData` with the saved address on every cycle. This ensures that when the FPU result updates (and `computing` clears), `rdDataReg` captures the correct value before `ldmrd` reads it. `ioRdPending` is cleared when the state machine leaves IDLE. Zero overhead for instant-response devices (they return stable data, re-latching is harmless). Found during FPU integration testing (FloatTest/FloatField failed with stale FPU results).
 
 ## Method Cache
 
@@ -77,6 +79,59 @@ captured during development — see the source code for authoritative details.
 - **SysDevice field->address mapping**: cntInt(0), uscntTimer(1), intNr(2), wd(3), exception(4), lock(5), cpuId(6), signal(7), intMask(8), clearInt(9), deadLine(10), nrCpu(11), perfCounter(12), gcHalt(13)
 - **HANDLE_ACCESS I/O routing**: HardwareObject fields (getfield/putfield) have data pointers in I/O space. BmbMemoryController checks `addrIsIo` in HANDLE_ACCESS and routes to I/O bus instead of BMB.
 - **SMP sync interface**: BmbSys has `io.syncIn`/`io.syncOut` (SyncIn/SyncOut bundles) for CmpSync integration. Write to IO_LOCK (addr 5) sets `lockReqReg`, write to IO_UNLOCK (addr 6) clears it. Read IO_LOCK returns `syncIn.halted` in bit 0. `io.halted` output stalls the pipeline when another core holds the lock.
+
+## Hardware Floating-Point Unit (FPU)
+
+Optional per-core IEEE 754 single-precision FPU. Enabled via `fpuMode = FpuMode.Hardware` in `JopCoreConfig`. Default is `FpuMode.Software` (SoftFloat32 in Java).
+
+### Architecture
+
+- **BmbFpu** (`jop.io`): I/O peripheral wrapper at addresses `0xF0`-`0xF3`. Write address encodes operation (0=ADD, 1=SUB, 2=MUL, 3=DIV). Auto-captures both operands on a single I/O write: `bout` (NOS = value1) → opA, `wrData` (TOS = value2) → opB. Read address 0 returns result, address 1 returns status (bit 0 = ready).
+- **JopFpuAdapter** (`jop.io`): FSM adapter bridging JOP's simple I/O model to VexRiscv's FpuCore cmd/commit/rsp protocol. 11-state FSM: IDLE → LOAD_A → WAIT_LOAD_A → LOAD_B → WAIT_LOAD_B → COMPUTE → WAIT_COMPUTE → STORE → WAIT_STORE → LATCH_RESULT → DONE. Each state issues cmd+commit handshakes to FpuCore.
+- **FpuCore** (`jop.ip.fpu`): VexRiscv-derived IEEE 754 FPU. Copied from VexRiscv (`/srv/git/VexRiscv/src/main/scala/vexriscv/ip/fpu/`), re-packaged to `jop.ip.fpu`. Pure SpinalHDL — compatible with Verilator simulation and FPGA synthesis. Configured for single-precision only (`withDouble=false`, `withSqrt=false`).
+
+### Pipeline Stall
+
+`BmbFpu.io.busy` (high while computing) is added to the pipeline `memBusy` chain in JopCore. The pipeline stalls automatically after the `stmwd` instruction (which starts the FPU) until the computation completes. No explicit wait instructions needed for FPU latency — the 2 `wait` instructions in the microcode are for I/O read latency (SimpCon rdy_cnt), not FPU latency.
+
+### I/O Read Re-sampling
+
+I/O reads in BmbMemoryController latch `rdDataReg` combinationally in IDLE state. For the FPU, `stmra` fires ~4 cycles after `stmwd`, while the FPU is still computing (~27 cycles). The I/O read re-sampling mechanism (bug #31) continuously re-latches `rdDataReg` while `ioRdPending` is set, ensuring the correct result is captured when `ldmrd` reads it.
+
+### Microcode
+
+FPU handlers in `asm/src/jvm.asm` (fadd/fsub/fmul/fdiv):
+```
+fadd:   ldi fpu_add ; stmwa ; stmwd ; pop ; ldi fpu_res ; stmra ; wait ; wait ; ldmrd nxt
+```
+- `stmwa`: sets I/O write address (FPU_ADD = 0xF0)
+- `stmwd`: writes TOS to I/O, auto-captures NOS via bout wire, starts FPU computation, pipeline stalls
+- `pop`: drops value1 from stack (pipeline unstalls after FPU completes)
+- `stmra`: starts I/O read at FPU_RES (0xF0)
+- `wait; wait`: I/O read latency (rdy_cnt=1)
+- `ldmrd`: pushes FPU result onto stack
+
+### Jump Table Variants
+
+FPU-enabled microcode uses separate jump tables that redirect float bytecodes (0x62=fadd, 0x66=fsub, 0x6A=fmul, 0x6E=fdiv) to FPU microcode handlers instead of SoftFloat32 Java dispatch. Variants: `simulationFpu`, `serialFpu`. Non-FPU float bytecodes (fneg, fcmp, f2i, frem) and all double bytecodes still use Java software path.
+
+### Configuration
+
+- `fpuMode = FpuMode.Hardware` in `JopCoreConfig` → instantiates BmbFpu
+- `jumpTable = JumpTableInitData.simulationFpu` (or `serialFpu`) → routes float ops to FPU microcode
+- `withFpuJumpTable` convenience method on JopCoreConfig auto-selects correct FPU jump table variant
+- `perCoreConfigs` in JopCluster enables heterogeneous SMP (e.g., core 0 with FPU, core 1 without)
+- BmbSys register 15 reports FPU capability (1 if FPU present, 0 otherwise)
+
+### FPU Microcode Build
+
+FPU microcode is built separately: `cd asm && make fpu` produces `asm/generated/fpu/mem_rom.dat` and `asm/generated/fpu/mem_ram.dat` (built with `SIMULATION + FPU_ATTACHED` flags). Serial boot FPU variant: `make serial-fpu` → `asm/generated/serial-fpu/`.
+
+### Verification
+
+- **JopFpuAdapterSim**: 22 standalone adapter tests (all 4 ops with various operands) — all pass
+- **BmbFpuSim**: BmbFpu I/O peripheral unit test (9 operations: ADD, SUB, MUL, DIV) — all pass
+- **JopFpuBramSim**: Full system integration test with HW FPU. Runs 60/60 JVM tests (27M cycles) including FloatTest, FloatField, FloatArray, DoubleArithmetic. 16 FPU operations traced with correct IEEE 754 results.
 
 ## Object Cache
 

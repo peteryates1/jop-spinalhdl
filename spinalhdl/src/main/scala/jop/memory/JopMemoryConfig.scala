@@ -150,7 +150,9 @@ object JopAddressSpace {
  *   0xB0-0xBF  BmbSdNative  4 slots (16 addrs)  match a(7:4) === 0xB
  *   0xC0-0xCF  BmbVgaText   4 slots (16 addrs)  match a(7:4) === 0xC
  *   0xD0-0xD3  BmbCfgFlash  1 slot  (4 addrs)   match a(7:2) === 0x34
- *   0xD4-0xFF  (free)       11 slots for future devices
+ *   0xD4-0xEF  (free)       7 slots for future devices
+ *   0xF0-0xF3  BmbFpu       1 slot  (4 addrs)   match a(7:2) === 0x3C
+ *   0xF4-0xFF  (free)       3 slots for future devices
  */
 object JopIoSpace {
   // Device base addresses (within 8-bit ioAddr space, bipush range 0x80-0xFF)
@@ -163,6 +165,7 @@ object JopIoSpace {
   val SD_NATIVE_BASE = 0xB0  // 4 slots (16 addrs), 4-bit sub-addr
   val VGA_TEXT_BASE  = 0xC0  // 4 slots (16 addrs), 4-bit sub-addr
   val CFG_FLASH_BASE = 0xD0  // 1 slot  (4 addrs),  2-bit sub-addr
+  val FPU_BASE       = 0xF0  // 1 slot  (4 addrs),  2-bit sub-addr
 
   // Named register addresses (base + offset)
   def SYS_CNT      = SYS_BASE + 0   // System counter (read), Interrupt enable (write)
@@ -189,6 +192,17 @@ object JopIoSpace {
   def PHY_RESET    = MDIO_BASE + 3  // PHY hardware reset
   def ETH_INT_CTRL = MDIO_BASE + 4  // Ethernet interrupt enable/pending
 
+  // FPU registers (write address encodes operation, read returns result/status)
+  def FPU_ADD    = FPU_BASE + 0  // Write: start float ADD (auto-captures TOS+NOS)
+  def FPU_SUB    = FPU_BASE + 1  // Write: start float SUB
+  def FPU_MUL    = FPU_BASE + 2  // Write: start float MUL
+  def FPU_DIV    = FPU_BASE + 3  // Write: start float DIV
+  def FPU_RES    = FPU_BASE + 0  // Read: result (32-bit IEEE 754)
+  def FPU_STATUS = FPU_BASE + 1  // Read: ready status (bit 0)
+
+  // BmbSys extended registers
+  def SYS_FPU_CAP = SYS_BASE + 15  // FPU capability (bit 0 = HW float)
+
   // Hardware address-match predicates (operate on 8-bit ioAddr)
   def isSys(a: UInt): Bool       = a(7 downto 4) === (SYS_BASE >> 4)
   def isUart(a: UInt): Bool      = a(7 downto 2) === (UART_BASE >> 2)
@@ -199,6 +213,7 @@ object JopIoSpace {
   def isSdNative(a: UInt): Bool  = a(7 downto 4) === (SD_NATIVE_BASE >> 4)
   def isVgaText(a: UInt): Bool   = a(7 downto 4) === (VGA_TEXT_BASE >> 4)
   def isCfgFlash(a: UInt): Bool  = a(7 downto 2) === (CFG_FLASH_BASE >> 2)
+  def isFpu(a: UInt): Bool       = a(7 downto 2) === (FPU_BASE >> 2)
 
   // Sub-address extraction (all return 4-bit UInt for uniform device interface)
   def sysAddr(a: UInt): UInt       = a(3 downto 0)
@@ -210,6 +225,7 @@ object JopIoSpace {
   def sdNativeAddr(a: UInt): UInt  = a(3 downto 0)
   def vgaTextAddr(a: UInt): UInt   = a(3 downto 0)
   def cfgFlashAddr(a: UInt): UInt  = a(1 downto 0).resize(4)
+  def fpuAddr(a: UInt): UInt       = a(1 downto 0).resize(4)
 }
 
 /**

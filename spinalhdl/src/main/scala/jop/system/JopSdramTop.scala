@@ -81,7 +81,9 @@ case class JopSdramTop(
   debugConfig: Option[DebugConfig] = None,
   ioConfig: IoConfig = IoConfig(),
   jumpTable: JumpTableInitData = JumpTableInitData.serial,
-  perCoreUart: Boolean = false
+  perCoreUart: Boolean = false,
+  fpuMode: FpuMode.FpuMode = FpuMode.Software,
+  perCoreConfigs: Option[Seq[JopCoreConfig]] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
 
@@ -288,7 +290,8 @@ case class JopSdramTop(
         memConfig = JopMemoryConfig(burstLen = 4),
         jumpTable = jumpTable,
         clkFreqHz = 80000000L,
-        ioConfig = ioConfig
+        ioConfig = ioConfig,
+        fpuMode = fpuMode
       ),
       debugConfig = debugConfig,
       romInit = Some(romInit),
@@ -297,7 +300,8 @@ case class JopSdramTop(
       ethTxCd = ethTxCd,
       ethRxCd = ethRxCd,
       vgaCd = vgaCd,
-      perCoreUart = perCoreUart
+      perCoreUart = perCoreUart,
+      perCoreConfigs = perCoreConfigs
     )
 
     // Debug UART (when debug is enabled)
@@ -695,4 +699,83 @@ object JopSmp8TestVerilog extends App {
   )))
 
   println("Generated: spinalhdl/generated/JopSmpSdramTop.v (8-core SMP test, per-core UART)")
+}
+
+/**
+ * Generate Verilog for JopSdramTop with HW FPU (single-core, serial boot)
+ *
+ * Uses FPU microcode ROM (fadd/fsub/fmul/fdiv → HW FPU) and pure SpinalHDL FPU.
+ */
+object JopFpuSdramTopVerilog extends App {
+  val romFilePath = "asm/generated/serial-fpu/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial-fpu/mem_ram.dat"
+
+  val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
+  val ramData = JopFileLoader.loadStackRam(ramFilePath)
+
+  println(s"Loaded ROM: ${romData.length} entries (serial+FPU)")
+  println(s"Loaded RAM: ${ramData.length} entries")
+
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = "spinalhdl/generated",
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
+  ).generate(InOutWrapper(JopSdramTop(
+    cpuCnt = 1,
+    romInit = romData,
+    ramInit = ramData,
+    jumpTable = JumpTableInitData.serialFpu,
+    fpuMode = FpuMode.Hardware
+  )))
+
+  println("Generated: spinalhdl/generated/JopSdramTop.v (HW FPU)")
+}
+
+/**
+ * Generate Verilog for heterogeneous SMP: core 0 = HW FPU, cores 1+ = Software FP
+ *
+ * Example of per-core heterogeneous configuration using perCoreConfigs.
+ */
+object JopSmpFpuSdramTopVerilog extends App {
+  val cpuCnt = if (args.length > 0) args(0).toInt else 2
+
+  // FPU core uses serial+FPU microcode ROM
+  val fpuRomFilePath = "asm/generated/serial-fpu/mem_rom.dat"
+  val fpuRamFilePath = "asm/generated/serial-fpu/mem_ram.dat"
+
+  val romData = JopFileLoader.loadMicrocodeRom(fpuRomFilePath)
+  val ramData = JopFileLoader.loadStackRam(fpuRamFilePath)
+
+  println(s"Loaded ROM: ${romData.length} entries (serial+FPU)")
+  println(s"Loaded RAM: ${ramData.length} entries")
+  println(s"Generating $cpuCnt-core heterogeneous SMP (core 0 = HW FPU)...")
+
+  // Base config: shared parameters (all cores must agree on memory, bus widths)
+  val base = JopCoreConfig(
+    memConfig = JopMemoryConfig(burstLen = 4),
+    jumpTable = JumpTableInitData.serialFpu,
+    clkFreqHz = 80000000L,
+    fpuMode = FpuMode.Hardware
+  )
+
+  // Per-core configs: core 0 gets HW FPU, others get Software FP
+  val perCore = (0 until cpuCnt).map { i =>
+    if (i == 0) base.copy(fpuMode = FpuMode.Hardware, jumpTable = JumpTableInitData.serialFpu)
+    else base.copy(fpuMode = FpuMode.Software, jumpTable = JumpTableInitData.serial)
+  }
+
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = "spinalhdl/generated",
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
+  ).generate(InOutWrapper(JopSdramTop(
+    cpuCnt = cpuCnt,
+    romInit = romData,
+    ramInit = ramData,
+    jumpTable = JumpTableInitData.serialFpu,
+    fpuMode = FpuMode.Hardware,
+    perCoreConfigs = Some(perCore)
+  )))
+
+  println(s"Generated: spinalhdl/generated/JopSmpSdramTop.v ($cpuCnt cores, heterogeneous FPU)")
 }

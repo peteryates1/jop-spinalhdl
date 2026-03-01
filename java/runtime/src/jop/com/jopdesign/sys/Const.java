@@ -208,6 +208,13 @@ public class Const {
 	public static final int IO_MEM_SIZE = IO_BASE+14;
 
 	/**
+	 * FPU capability register (read-only).
+	 * Bit 0: HW single-precision FPU present (1=hardware, 0=software).
+	 * Use for SMP task dispatch: check per-core FPU availability.
+	 */
+	public static final int IO_FPU_CAP = IO_BASE+15;
+
+	/**
 	 * Number of available interrupts depends on the parameter
 	 * in sc_sys.vhd. 3 is the default: one timer interrupt
 	 * and 2 software interrupts.

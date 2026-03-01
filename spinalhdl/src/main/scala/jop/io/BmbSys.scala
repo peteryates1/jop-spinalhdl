@@ -25,7 +25,8 @@ import spinal.core._
  * @param cpuCnt    Total number of CPUs (1 for single-core)
  * @param numIoInt  Number of external I/O interrupt sources (default 2, matching VHDL)
  */
-case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: Int = 2, memEndWords: Int = 0) extends Component {
+case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: Int = 2, memEndWords: Int = 0,
+                  fpuCapability: Int = 0) extends Component {
   val io = new Bundle {
     val addr   = in UInt(4 bits)
     val rd     = in Bool()
@@ -265,6 +266,7 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: In
     is(7)  { io.rdData := io.syncIn.s_out.asBits.resized } // IO_SIGNAL
     is(11) { io.rdData := B(cpuCnt, 32 bits) }          // IO_CPUCNT
     is(14) { io.rdData := B(memEndWords, 32 bits) }    // IO_MEM_SIZE: usable memory end (words)
+    is(15) { io.rdData := B(fpuCapability, 32 bits) }  // IO_FPU_CAP: bit 0 = HW float present
   }
 
   // ==========================================================================

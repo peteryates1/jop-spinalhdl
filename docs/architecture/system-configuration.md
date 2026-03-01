@@ -103,9 +103,20 @@ Unified configuration for a single JOP core. Defined in `jop/system/JopCore.scal
 | `cpuCnt` | Int | 1 | Total CPU count (set by JopCluster) |
 | `ioConfig` | IoConfig | default | I/O device configuration |
 | `clkFreqHz` | Long | 100000000 | Clock frequency in Hz |
+| `fpuMode` | FpuMode | Software | Floating-point mode: `Software` (SoftFloat) or `Hardware` (HW FPU) |
 | `useIhlu` | Boolean | false | Use IHLU per-object lock (vs CmpSync global lock) |
 | `useStackCache` | Boolean | false | Enable 3-bank rotating stack cache with DMA |
 | `spillBaseAddrOverride` | Option[Int] | None | Override spill address (e.g., `Some(0)` for dedicated spill BRAM) |
+
+### FpuMode
+
+| Value | Description |
+|-------|-------------|
+| `FpuMode.Software` | All float operations handled by SoftFloat32 in Java (default) |
+| `FpuMode.Hardware` | fadd/fsub/fmul/fdiv use HW FPU via microcode I/O; fneg/fcmp/frem/f2i stay in Java. Double operations always use SoftFloat64. |
+
+The convenience method `config.hasFpu` returns `true` when `fpuMode == Hardware`.
+Use `config.withFpuJumpTable` to auto-select the matching FPU jump table variant.
 
 ### Jump Table Variants
 
@@ -113,6 +124,8 @@ Unified configuration for a single JOP core. Defined in `jop/system/JopCore.scal
 |---------|-----|
 | `JumpTableInitData.simulation` | Simulation with embedded program (microcode + JBC pre-loaded) |
 | `JumpTableInitData.serial` | FPGA serial boot (microcode starts with UART download loop) |
+| `JumpTableInitData.simulationFpu` | Simulation with FPU-enabled microcode (float ops → HW FPU handlers) |
+| `JumpTableInitData.serialFpu` | FPGA serial boot with FPU-enabled microcode |
 
 ## JopMemoryConfig
 
@@ -212,7 +225,7 @@ System I/O device at base address `0xFFFFFF80` (`Const.IO_BASE`).
 | 12 | — | Performance counter reset | `IO_PERFCNT` |
 | 13 | — | GC halt (freeze other cores) | `IO_GC_HALT` |
 | 14 | Usable memory end (words) | — | `IO_MEM_SIZE` |
-| 15 | — | — | (free) |
+| 15 | FPU capability (1=present) | — | `IO_FPU_CAP` |
 
 ## Board Configurations
 

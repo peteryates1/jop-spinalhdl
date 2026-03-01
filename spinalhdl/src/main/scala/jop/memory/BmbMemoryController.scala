@@ -169,6 +169,17 @@ case class BmbMemoryController(
   // Read data register (captured from BMB response or I/O read)
   val rdDataReg = Reg(Bits(32 bits)) init(0)
 
+  // I/O read re-sampling for delayed-result devices (e.g., FPU).
+  // Problem: I/O reads latch rdDataReg combinationally at stmra time, but
+  // the FPU result isn't ready until many cycles later. The pipeline stalls
+  // (via fpuBusy -> memBusy -> wait instructions), but rdDataReg already
+  // holds a stale value.
+  // Solution: After an I/O read, keep re-latching rdDataReg from ioRdData
+  // each cycle using the saved read address. When the FPU result register
+  // updates, rdDataReg automatically captures the correct value.
+  val ioRdPending = Reg(Bool()) init(False)
+  val ioRdSavedAddr = Reg(UInt(8 bits)) init(0)
+
   // Handle operation state
   val handleDataPtr = Reg(UInt(config.addressWidth bits)) init(0)
   val handleIndex = Reg(UInt(config.addressWidth bits)) init(0)
@@ -535,6 +546,9 @@ case class BmbMemoryController(
           io.ioAddr := io.aout(7 downto 0).asUInt
           io.ioRd := True
           rdDataReg := io.ioRdData
+          // Enable re-sampling for delayed-result devices (e.g., FPU)
+          ioRdPending := True
+          ioRdSavedAddr := io.aout(7 downto 0).asUInt
         }.otherwise {
           // BMB read - drive command combinationally from io.aout
           // Note: address translation not applied — see translateAddr comment.
@@ -546,6 +560,7 @@ case class BmbMemoryController(
           pendingCmdIsWrite := False
           cmdAccepted := io.bmb.cmd.ready
           state := State.READ_WAIT
+          ioRdPending := False
         }
 
       }.elsewhen(io.memIn.wr || io.memIn.wrf) {
@@ -1309,6 +1324,33 @@ case class BmbMemoryController(
       posReg := baseReg
       state := State.IDLE
     }
+  }
+
+  // ==========================================================================
+  // I/O Read Re-sampling (for delayed-result devices like FPU)
+  // ==========================================================================
+  //
+  // While an I/O read is pending, continuously drive the saved read address
+  // and re-latch rdDataReg from ioRdData. This ensures that when a device
+  // (e.g., FPU) updates its result register during a pipeline stall, the
+  // correct value is captured in rdDataReg before ldmrd reads it.
+  //
+  // Only active when no new memory operation is firing this cycle (to avoid
+  // conflicting with the normal I/O read path's ioAddr/rdDataReg assignments).
+  // Uses "last assignment wins" to override the default ioAddr.
+  //
+  // Safe for all I/O devices: devices with immediate results return the same
+  // value on re-read; devices with delayed results (FPU) return the updated
+  // value once ready.
+
+  when(ioRdPending && !memReadRequested && !(io.memIn.wr || io.memIn.wrf)) {
+    io.ioAddr := ioRdSavedAddr
+    rdDataReg := io.ioRdData
+  }
+
+  // Clear pending when state leaves IDLE (BMB read/write, complex operations)
+  when(state =/= State.IDLE) {
+    ioRdPending := False
   }
 
   // ==========================================================================

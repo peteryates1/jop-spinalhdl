@@ -134,14 +134,19 @@ in Java (`JVM.java`). The jump table in the assembler maps each JVM bytecode to 
 
 ### 1.7 Float Arithmetic
 
-| Bytecode | Opcode | Impl | Tested | Test(s) |
-|---|---|---|---|---|
-| fadd | 0x62 | JV (SoftFloat) | T | FloatTest |
-| fsub | 0x66 | JV (SoftFloat) | T | FloatTest |
-| fmul | 0x6A | JV (SoftFloat) | T | FloatTest (test_fmul, 5 cases) |
-| fdiv | 0x6E | JV (SoftFloat) | T | FloatTest (test_fdiv, 5 cases) |
-| frem | 0x72 | JV (SoftFloat) | T | FloatTest (test_frem) |
-| fneg | 0x76 | JV | T | FloatTest (test_fneg) |
+| Bytecode | Opcode | Impl (Software) | Impl (HW FPU) | Tested | Test(s) |
+|---|---|---|---|---|---|
+| fadd | 0x62 | JV (SoftFloat) | MC → HW FPU | T | FloatTest |
+| fsub | 0x66 | JV (SoftFloat) | MC → HW FPU | T | FloatTest |
+| fmul | 0x6A | JV (SoftFloat) | MC → HW FPU | T | FloatTest (test_fmul, 5 cases) |
+| fdiv | 0x6E | JV (SoftFloat) | MC → HW FPU | T | FloatTest (test_fdiv, 5 cases) |
+| frem | 0x72 | JV (SoftFloat) | JV (SoftFloat) | T | FloatTest (test_frem) |
+| fneg | 0x76 | JV | JV | T | FloatTest (test_fneg) |
+
+Note: With `fpuMode = Hardware`, fadd/fsub/fmul/fdiv are dispatched via FPU jump table
+to microcode handlers that use the HW FPU (BmbFpu I/O peripheral wrapping VexRiscv FpuCore).
+Other float operations (frem, fneg, fcmp, f2i) remain in Java software.
+Both paths verified: `JopJvmTestsBramSim` (Software) and `JopFpuBramSim` (Hardware) — 60/60 pass.
 
 ### 1.8 Double Arithmetic
 
@@ -469,6 +474,14 @@ The TypeConversion test exercises d2i, d2l, d2f, f2d, i2d, l2d conversions separ
 | JopIhluNCoreHelloWorldSim | BRAM | NCoreHelloWorld | 40M | IHLU per-object locking (2-core) |
 | JopIhluGcBramSim | BRAM (2-core) | HelloWorld (GC) | 100M | IHLU + GC drain mechanism |
 
+#### FPU Simulations
+
+| Harness | Memory | App | Cycles | What it Tests |
+|---|---|---|---|---|
+| JopFpuBramSim | BRAM | JvmTests (DoAll) | 27M | 60 JVM tests with HW FPU (float ops via BmbFpu) |
+| BmbFpuSim | Unit test | — | — | BmbFpu I/O peripheral (9 operations: ADD, SUB, MUL, DIV) |
+| JopFpuAdapterSim | Unit test | — | — | JopFpuAdapter FSM (22 operations with IEEE 754 verification) |
+
 #### Debug & Special
 
 | Harness | Memory | App | Cycles | What it Tests |
@@ -582,17 +595,18 @@ Implemented as `FloatArray.java` (faload/fastore with float arrays, 4 elements +
 
 ### Bug Regression Coverage
 
-- **Total bugs fixed**: 29
-- **With direct regression test**: 16 (55%)
-- **With partial regression test** (sim coverage): 7 (24%)
-- **With NO regression test**: 6 (21%)
+- **Total bugs fixed**: 31
+- **With direct regression test**: 17 (55%)
+- **With partial regression test** (sim coverage): 8 (26%)
+- **With NO regression test**: 6 (19%)
 
 ### Simulation Harnesses
 
-- **Total runnable harnesses**: 34
+- **Total runnable harnesses**: 37
 - **Core single-core**: 12
 - **Serial boot**: 3
 - **JVM test**: 3 (BRAM, SMP, stack cache)
+- **FPU**: 3 (system integration, I/O peripheral, adapter)
 - **SMP**: 8 (CmpSync, IHLU, cache stress, DDR3)
 - **Debug & special**: 5
 - **Verilog generation**: 3 (Questa, SDRAM Questa, Vivado xsim)

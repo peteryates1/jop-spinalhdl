@@ -43,9 +43,23 @@ case class JopCluster(
   ethRxCd: Option[ClockDomain] = None,
   vgaCd:   Option[ClockDomain] = None,
   separateStackDmaBus: Boolean = false,
-  perCoreUart: Boolean = false
+  perCoreUart: Boolean = false,
+  perCoreConfigs: Option[Seq[JopCoreConfig]] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
+
+  // Validate per-core configs if provided
+  perCoreConfigs.foreach { configs =>
+    require(configs.length == cpuCnt, s"perCoreConfigs length (${configs.length}) must match cpuCnt ($cpuCnt)")
+    configs.foreach { c =>
+      require(c.memConfig == baseConfig.memConfig, "All cores must share memConfig")
+      require(c.pcWidth == baseConfig.pcWidth, "All cores must share pcWidth")
+      require(c.jpcWidth == baseConfig.jpcWidth, "All cores must share jpcWidth")
+      require(c.ramWidth == baseConfig.ramWidth, "All cores must share ramWidth")
+      require(c.dataWidth == baseConfig.dataWidth, "All cores must share dataWidth")
+      require(c.blockBits == baseConfig.blockBits, "All cores must share blockBits")
+    }
+  }
 
   // Number of BMB inputs: cores + optional debug controller + optional VGA DMA + optional stack DMA (per-core)
   // When separateStackDmaBus=true, DMA uses its own bus (not the main arbiter)
@@ -184,17 +198,23 @@ case class JopCluster(
   // bus, and all other cores check tags and selectively invalidate.
 
   val cores = (0 until cpuCnt).map { i =>
-    val coreConfig = baseConfig.copy(
+    // Use per-core config if provided, otherwise fall back to baseConfig.
+    // Apply FPU jump table automatically based on per-core fpuMode.
+    val base = perCoreConfigs.map(_(i)).getOrElse(baseConfig)
+    val coreConfig = base.withFpuJumpTable.copy(
       cpuId = i,
       cpuCnt = cpuCnt,
-      ioConfig = baseConfig.ioConfig.copy(
-        hasUart        = if (perCoreUart) baseConfig.ioConfig.hasUart else (i == 0),
-        hasEth         = (i == 0) && baseConfig.ioConfig.hasEth,
-        hasSdSpi       = (i == 0) && baseConfig.ioConfig.hasSdSpi,
-        hasSdNative    = (i == 0) && baseConfig.ioConfig.hasSdNative,
-        hasVgaDma      = (i == 0) && baseConfig.ioConfig.hasVgaDma,
-        hasVgaText     = (i == 0) && baseConfig.ioConfig.hasVgaText,
-        hasConfigFlash = (i == 0) && baseConfig.ioConfig.hasConfigFlash
+      ioConfig = base.ioConfig.copy(
+        // UART: per-core when perCoreUart enabled, core 0 only otherwise
+        hasUart        = if (perCoreUart) base.ioConfig.hasUart else (i == 0),
+        // External-pin peripherals: core 0 only
+        hasEth         = (i == 0) && base.ioConfig.hasEth,
+        hasSdSpi       = (i == 0) && base.ioConfig.hasSdSpi,
+        hasSdNative    = (i == 0) && base.ioConfig.hasSdNative,
+        hasVgaDma      = (i == 0) && base.ioConfig.hasVgaDma,
+        hasVgaText     = (i == 0) && base.ioConfig.hasVgaText,
+        hasConfigFlash = (i == 0) && base.ioConfig.hasConfigFlash
+        // FPU stays per-core (no external pins)
       )
     )
     JopCore(

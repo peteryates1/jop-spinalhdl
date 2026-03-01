@@ -200,11 +200,14 @@ ua_rdrf		= 	2
 ua_tdre		= 	1
 
 #ifdef FPU_ATTACHED
-// assuming we've attached the FPU as IO_FPU=IO_BASE+0x70=-16
-fpu_const_a   = -16
-fpu_const_b   = -15
-fpu_const_op  = -14
-fpu_const_res = -13
+// FPU auto-capture: write address encodes operation (0xF0-0xF3),
+// BmbFpu latches bout(NOS=value1)->opA, wrData(TOS=value2)->opB on write.
+// Read address 0xF0 returns result. Busy stall handles FPU latency.
+fpu_add  = -16    // 0xF0: write starts float ADD
+fpu_sub  = -15    // 0xF1: write starts float SUB
+fpu_mul  = -14    // 0xF2: write starts float MUL
+fpu_div  = -13    // 0xF3: write starts float DIV
+fpu_res  = -16    // 0xF0: read returns result
 #endif
 
 #ifdef FLASH
@@ -1514,103 +1517,6 @@ imul_loop:
 // 
 
 
-// Floating point operations in HW with FPU
-#ifdef FPU_ATTACHED
-fadd:
-		ldi fpu_const_b   // load address: FPU_B
-		stmwa             // store memory address
-		stmwd             // store memory data - b already on stack
-		wait
-		wait              // execute 1+nws
-		ldi fpu_const_a   // load address: FPU_A
-		stmwa             // store memory data
-		stmwd             // store memory data - a already on stack
-		wait
-		wait              // execute 1+nws
-		ldi 0             // load FPU_OP_ADD (data)
-		ldi fpu_const_op  // load FPU_OP (address)
-		stmwa             // store FPU_OP
-		stmwd             // store FPU_OP_ADD
-		wait
-		wait              // execute 1+nws
-		ldi fpu_const_res // load address of FPU_RES
-		stmra             // read memory
-		wait
-		wait              // execute 1+nws
-		ldmrd nxt         // read ext. mem
-
-fsub:
-		ldi fpu_const_b   // load address: FPU_B
-		stmwa             // store memory address
-		stmwd             // store memory data - b already on stack
-		wait
-		wait              // execute 1+nws
-		ldi fpu_const_a   // load address: FPU_A
-		stmwa             // store memory data
-		stmwd             // store memory data - a already on stack
-		wait
-		wait              // execute 1+nws
-		ldi 1             // load FPU_OP_ADD (data)
-		ldi fpu_const_op  // load FPU_OP (address)
-		stmwa             // store FPU_OP
-		stmwd             // store FPU_OP_ADD
-		wait
-		wait              // execute 1+nws
-		ldi fpu_const_res // load address of FPU_RES
-		stmra             // read memory
-		wait
-		wait              // execute 1+nws
-		ldmrd nxt         // read ext. mem
-
-fmul:
-		ldi fpu_const_b   // load address: FPU_B
-		stmwa             // store memory address
-		stmwd             // store memory data - b already on stack
-		wait
-		wait              // execute 1+nws
-		ldi fpu_const_a   // load address: FPU_A
-		stmwa             // store memory data
-		stmwd             // store memory data - a already on stack
-		wait
-		wait              // execute 1+nws
-		ldi 2             // load FPU_OP_ADD (data)
-		ldi fpu_const_op  // load FPU_OP (address)
-		stmwa             // store FPU_OP
-		stmwd             // store FPU_OP_ADD
-		wait
-		wait              // execute 1+nws
-		ldi fpu_const_res // load address of FPU_RES
-		stmra             // read memory
-		wait
-		wait              // execute 1+nws
-		ldmrd nxt         // read ext. mem
-
-fdiv:
-		ldi fpu_const_b   // load address: FPU_B
-		stmwa             // store memory address
-		stmwd             // store memory data - b already on stack
-		wait
-		wait              // execute 1+nws
-		ldi fpu_const_a   // load address: FPU_A
-		stmwa             // store memory data
-		stmwd             // store memory data - a already on stack
-		wait
-		wait              // execute 1+nws
-		ldi 3             // load FPU_OP_ADD (data)
-		ldi fpu_const_op  // load FPU_OP (address)
-		stmwa             // store FPU_OP
-		stmwd             // store FPU_OP_ADD
-		wait
-		wait              // execute 1+nws
-		ldi fpu_const_res // load address of FPU_RES
-		stmra             // read memory
-		wait
-		wait              // execute 1+nws
-		ldmrd nxt         // read ext. mem
-#endif
-
-
-
 iinc:
 			ldvp opd
 			ld_opd_8u
@@ -2064,3 +1970,60 @@ jopsys_inval:
 			nop
 			nop
 			nop nxt
+
+// ==========================================================================
+// Floating point operations in HW with FPU (auto-capture version)
+// Placed at end of ROM so FPU_ATTACHED doesn't shift any existing addresses.
+//
+// BmbFpu latches bout(NOS=value1)->opA, wrData(TOS=value2)->opB on write.
+// Write address encodes operation: 0=ADD, 1=SUB, 2=MUL, 3=DIV.
+// BmbFpu busy signal stalls pipeline during computation (6-34 cycles).
+// Read address 0 returns the latched result.
+// Each handler: 10 microcode instructions, ~10 cycles + FPU latency.
+// ==========================================================================
+#ifdef FPU_ATTACHED
+fadd:                          // stack: [value1, value2], TOS=value2
+		ldi fpu_add            // push FPU ADD address (0xF0 = -16)
+		stmwa                  // addr_reg = FPU_ADD, pop
+		stmwd                  // I/O write: auto-capture + start ADD, pop value2
+		                       // FPU busy stalls pipeline until result ready
+		pop                    // drop value1
+		ldi fpu_res            // push FPU result read address
+		stmra                  // start I/O read
+		wait                   // I/O read latency (rdy_cnt=1)
+		wait
+		ldmrd nxt              // push result
+
+fsub:                          // stack: [value1, value2]
+		ldi fpu_sub            // push FPU SUB address (0xF1)
+		stmwa
+		stmwd                  // auto-capture + start SUB
+		pop
+		ldi fpu_res
+		stmra
+		wait
+		wait
+		ldmrd nxt
+
+fmul:                          // stack: [value1, value2]
+		ldi fpu_mul            // push FPU MUL address (0xF2)
+		stmwa
+		stmwd                  // auto-capture + start MUL
+		pop
+		ldi fpu_res
+		stmra
+		wait
+		wait
+		ldmrd nxt
+
+fdiv:                          // stack: [value1, value2]
+		ldi fpu_div            // push FPU DIV address (0xF3)
+		stmwa
+		stmwd                  // auto-capture + start DIV
+		pop
+		ldi fpu_res
+		stmra
+		wait
+		wait
+		ldmrd nxt
+#endif

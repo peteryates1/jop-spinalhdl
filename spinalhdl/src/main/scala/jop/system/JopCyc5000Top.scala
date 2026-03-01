@@ -58,7 +58,9 @@ case class JopCyc5000Top(
   cpuCnt: Int = 1,
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
-  debugConfig: Option[DebugConfig] = None
+  debugConfig: Option[DebugConfig] = None,
+  fpuMode: FpuMode.FpuMode = FpuMode.Software,
+  perCoreConfigs: Option[Seq[JopCoreConfig]] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
 
@@ -132,12 +134,14 @@ case class JopCyc5000Top(
       baseConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(burstLen = 0),
         jumpTable = JumpTableInitData.serial,
-        clkFreqHz = 80000000L
+        clkFreqHz = 80000000L,
+        fpuMode = fpuMode
       ),
       debugConfig = debugConfig,
       romInit = Some(romInit),
       ramInit = Some(ramInit),
-      jbcInit = Some(Seq.fill(2048)(BigInt(0)))
+      jbcInit = Some(Seq.fill(2048)(BigInt(0))),
+      perCoreConfigs = perCoreConfigs
     )
 
     // Debug UART (when debug is enabled)

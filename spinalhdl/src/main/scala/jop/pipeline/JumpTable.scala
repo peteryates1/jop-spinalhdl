@@ -41,6 +41,22 @@ object JumpTableInitData {
     sysIntAddr  = jop.FlashJumpTableData.sysIntAddr,
     sysExcAddr  = jop.FlashJumpTableData.sysExcAddr
   )
+
+  /** SIMULATION microcode with HW FPU handlers (fadd/fsub/fmul/fdiv → microcode FPU) */
+  def simulationFpu: JumpTableInitData = JumpTableInitData(
+    entries     = jop.FpuJumpTableData.entries,
+    sysNoimAddr = jop.FpuJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.FpuJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.FpuJumpTableData.sysExcAddr
+  )
+
+  /** SERIAL-boot microcode with HW FPU handlers */
+  def serialFpu: JumpTableInitData = JumpTableInitData(
+    entries     = jop.SerialFpuJumpTableData.entries,
+    sysNoimAddr = jop.SerialFpuJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.SerialFpuJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.SerialFpuJumpTableData.sysExcAddr
+  )
 }
 
 /**

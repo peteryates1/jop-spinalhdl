@@ -47,3 +47,9 @@ Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated
 
 // Include flash microcode Scala files (FlashJumpTableData.scala)
 Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "flash"
+
+// Include FPU microcode Scala files (FpuJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "fpu"
+
+// Include serial+FPU microcode Scala files (SerialFpuJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-fpu"

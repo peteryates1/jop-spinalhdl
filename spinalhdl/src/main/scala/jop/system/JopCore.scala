@@ -5,9 +5,21 @@ import spinal.lib._
 import spinal.lib.bus.bmb._
 import jop.pipeline._
 import jop.memory._
-import jop.io.{BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdSpi, BmbSdNative, BmbVgaDma, BmbVgaText, BmbConfigFlash, SyncIn, SyncOut}
+import jop.io.{BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdSpi, BmbSdNative, BmbVgaDma, BmbVgaText, BmbConfigFlash, BmbFpu, SyncIn, SyncOut}
 import spinal.lib.com.eth._
 import jop.{JopPipeline, JumpTableData}
+
+/**
+ * FPU mode selection for per-core floating-point configuration.
+ *
+ * - Software: All FP bytecodes handled by SoftFloat32/SoftFloat64 in Java (default)
+ * - Hardware: Single-precision float operations (fadd/fsub/fmul/fdiv) use HW FPU
+ *             via microcode I/O; double stays SoftFloat64
+ */
+object FpuMode extends Enumeration {
+  type FpuMode = Value
+  val Software, Hardware = Value
+}
 
 /**
  * JOP Core Configuration
@@ -25,6 +37,7 @@ import jop.{JopPipeline, JumpTableData}
  * @param cpuCnt       Total number of CPUs (1 for single-core)
  * @param ioConfig     I/O device configuration (device presence, parameters, interrupts)
  * @param clkFreqHz    System clock frequency in Hz (for BmbSys microsecond prescaler)
+ * @param fpuMode      Floating-point mode: Software (SoftFloat) or Hardware (HW FPU)
  */
 case class JopCoreConfig(
   dataWidth:    Int              = 32,
@@ -39,6 +52,7 @@ case class JopCoreConfig(
   cpuCnt:       Int              = 1,
   ioConfig:     IoConfig         = IoConfig(),
   clkFreqHz:    Long             = 100000000L,
+  fpuMode:      FpuMode.FpuMode   = FpuMode.Software,  // FP mode: Software (SoftFloat) or Hardware (HW FPU)
   useIhlu:      Boolean          = false,  // Use IHLU (per-object lock) instead of CmpSync (global lock)
   useStackCache: Boolean         = false,  // Use 3-bank rotating stack cache with DMA spill/fill
   spillBaseAddrOverride: Option[Int] = None // Override spillBaseAddr (e.g., 0 for dedicated spill BRAM)
@@ -46,6 +60,7 @@ case class JopCoreConfig(
   // Convenience accessors (avoid changing every reference site)
   def hasUart: Boolean = ioConfig.hasUart
   def hasEth: Boolean = ioConfig.hasEth
+  def hasFpu: Boolean = fpuMode == FpuMode.Hardware
   def uartBaudRate: Int = ioConfig.uartBaudRate
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(instrWidth == 10, "Instruction width must be 10 bits")
@@ -74,6 +89,19 @@ case class JopCoreConfig(
     )) else None
   )
   def bcfetchConfig = BytecodeFetchConfig(jpcWidth, pcWidth, jumpTable)
+
+  /** Return a copy with the jump table matching the fpuMode.
+   *  Replaces the non-FPU jump table variant with the FPU variant if hasFpu is true.
+   *  Call this after setting fpuMode to ensure the jump table matches. */
+  def withFpuJumpTable: JopCoreConfig = {
+    if (!hasFpu) this
+    else {
+      val fpuTable =
+        if (jumpTable == JumpTableInitData.serial) JumpTableInitData.serialFpu
+        else JumpTableInitData.simulationFpu  // Default: simulation FPU
+      copy(jumpTable = fpuTable)
+    }
+  }
 }
 
 /**
@@ -212,6 +240,13 @@ case class JopCore(
 
     // Debug: halted by CmpSync (from internal BmbSys)
     val debugHalted = out Bool()
+
+    // FPU debug (only when hasFpu)
+    val fpuDbgOpA    = if (config.hasFpu) Some(out Bits(32 bits)) else None
+    val fpuDbgOpB    = if (config.hasFpu) Some(out Bits(32 bits)) else None
+    val fpuDbgOpCode = if (config.hasFpu) Some(out UInt(2 bits)) else None
+    val fpuDbgStart  = if (config.hasFpu) Some(out Bool()) else None
+    val fpuDbgResult = if (config.hasFpu) Some(out Bits(32 bits)) else None
 
     // Debug controller interface
     val debugHalt = in Bool()             // Freeze pipeline (from debug controller)
@@ -354,7 +389,8 @@ case class JopCore(
 
   // System I/O (0x80-0x8F)
   val bmbSys = BmbSys(clkFreqHz = config.clkFreqHz, cpuId = config.cpuId, cpuCnt = config.cpuCnt, numIoInt = numIoInt,
-    memEndWords = config.memConfig.usableMemWords(config.cpuCnt))
+    memEndWords = config.memConfig.usableMemWords(config.cpuCnt),
+    fpuCapability = if (config.hasFpu) 1 else 0)
   bmbSys.io.addr   := JopIoSpace.sysAddr(ioAddr)
   bmbSys.io.rd     := memCtrl.io.ioRd && JopIoSpace.isSys(ioAddr)
   bmbSys.io.wr     := memCtrl.io.ioWr && JopIoSpace.isSys(ioAddr)
@@ -364,8 +400,11 @@ case class JopCore(
   bmbSys.io.syncIn := io.syncIn
   io.syncOut := bmbSys.io.syncOut
 
-  // Pipeline busy = memory controller busy OR halted by CmpSync OR debug halt
-  pipeline.io.memBusy := memCtrl.io.memOut.busy || bmbSys.io.halted || io.debugHalt
+  // Pipeline busy = memory controller busy OR halted by CmpSync OR debug halt OR FPU computing
+  // Note: fpuBusy assigned later inside bmbFpu.foreach if FPU present
+  val fpuBusy = Bool()
+  if (!config.hasFpu) fpuBusy := False
+  pipeline.io.memBusy := memCtrl.io.memOut.busy || bmbSys.io.halted || io.debugHalt || fpuBusy
 
   // Exception from BmbSys
   pipeline.io.exc := bmbSys.io.exc
@@ -451,6 +490,23 @@ case class JopCore(
     io.cfDebugRxByte.get  := cf.io.debugRxByte
     io.cfDebugTxCount.get := cf.io.debugTxCount
     io.cfDebugFirstWord.get := cf.io.debugFirstWord
+  }
+
+  // FPU (0xF0-0xF3, optional — per-core HW float)
+  val bmbFpu = if (config.hasFpu) Some(BmbFpu()) else None
+  bmbFpu.foreach { fpu =>
+    fpu.io.addr   := JopIoSpace.fpuAddr(ioAddr)
+    fpu.io.rd     := memCtrl.io.ioRd && JopIoSpace.isFpu(ioAddr)
+    fpu.io.wr     := memCtrl.io.ioWr && JopIoSpace.isFpu(ioAddr)
+    fpu.io.wrData := memCtrl.io.ioWrData  // = aout (TOS)
+    fpu.io.bout   := pipeline.io.bout     // Direct NOS wire for auto-capture
+    fpuBusy       := fpu.io.busy          // Stall pipeline during FPU computation
+    // FPU debug ports
+    io.fpuDbgOpA.get    := fpu.io.dbgOpA
+    io.fpuDbgOpB.get    := fpu.io.dbgOpB
+    io.fpuDbgOpCode.get := fpu.io.dbgOpCode
+    io.fpuDbgStart.get  := fpu.io.dbgStart
+    io.fpuDbgResult.get := fpu.io.dbgResult
   }
 
   // VGA DMA (0xAC-0xAF, optional)
@@ -549,6 +605,7 @@ case class JopCore(
   if (bmbSdNative.isDefined) when(JopIoSpace.isSdNative(ioAddr)) { ioRdData := bmbSdNative.get.io.rdData }
   if (bmbVgaText.isDefined)  when(JopIoSpace.isVgaText(ioAddr))  { ioRdData := bmbVgaText.get.io.rdData }
   if (bmbCfgFlash.isDefined) when(JopIoSpace.isCfgFlash(ioAddr)) { ioRdData := bmbCfgFlash.get.io.rdData }
+  if (bmbFpu.isDefined)      when(JopIoSpace.isFpu(ioAddr))      { ioRdData := bmbFpu.get.io.rdData }
   memCtrl.io.ioRdData := ioRdData
 
   // Watchdog output
