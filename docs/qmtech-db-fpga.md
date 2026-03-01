@@ -154,52 +154,41 @@ See [DB_FPGA SD Card](db-fpga-sd-card.md) for native mode details.
 | `switch[5]` | PIN_AF12 |
 | `switch[6]` | PIN_AF11 |
 
-### PMOD J10 (8-pin)
+### PMOD J10 (12-pin, 2×6)
 
-| Pin | FPGA Pin |
-|:---:|----------|
-| 1 | PIN_AF21 |
-| 2 | PIN_AF19 |
-| 3 | PIN_AD19 |
-| 4 | PIN_AF18 |
-| 5 | PIN_AF20 |
-| 6 | PIN_AE19 |
-| 7 | PIN_AC19 |
-| 8 | PIN_AE18 |
+| Pin | FPGA Pin | | Pin | FPGA Pin |
+|:---:|----------|--|:---:|----------|
+| 1 | PIN_AF21 | | 7 | PIN_AF20 |
+| 2 | PIN_AF19 | | 8 | PIN_AE19 |
+| 3 | PIN_AD19 | | 9 | PIN_AC19 |
+| 4 | PIN_AF18 | | 10 | PIN_AE18 |
+| 5 | GND | | 11 | GND |
+| 6 | 3.3V | | 12 | 3.3V |
 
-### PMOD J11 (8-pin)
+### PMOD J11 (12-pin, 2×6)
 
-| Pin | FPGA Pin |
-|:---:|----------|
-| 1 | PIN_AF25 |
-| 2 | PIN_AD21 |
-| 3 | PIN_AF23 |
-| 4 | PIN_AF22 |
-| 5 | PIN_AF24 |
-| 6 | PIN_AC21 |
-| 7 | PIN_AE23 |
-| 8 | PIN_AE22 |
+| Pin | FPGA Pin | | Pin | FPGA Pin |
+|:---:|----------|--|:---:|----------|
+| 1 | PIN_AF25 | | 7 | PIN_AF24 |
+| 2 | PIN_AD21 | | 8 | PIN_AC21 |
+| 3 | PIN_AF23 | | 9 | PIN_AE23 |
+| 4 | PIN_AF22 | | 10 | PIN_AE22 |
+| 5 | GND | | 11 | GND |
+| 6 | 3.3V | | 12 | 3.3V |
 
-### JP1 GPIO Header (16-pin)
+### JP1 GPIO Header (18-pin, 2×9)
 
-| Pin | FPGA Pin |
-|:---:|----------|
-| 3 | PIN_AD4 |
-| 4 | PIN_AC4 |
-| 5 | PIN_AE3 |
-| 6 | PIN_AD3 |
-| 7 | PIN_AF5 |
-| 8 | PIN_AF4 |
-| 9 | PIN_AD6 |
-| 10 | PIN_AD5 |
-| 11 | PIN_AE6 |
-| 12 | PIN_AE5 |
-| 13 | PIN_AF6 |
-| 14 | PIN_AE7 |
-| 15 | PIN_AF8 |
-| 16 | PIN_AF7 |
-| 17 | PIN_AF9 |
-| 18 | PIN_AE9 |
+| Pin | FPGA Pin | | Pin | FPGA Pin |
+|:---:|----------|--|:---:|----------|
+| 1 | 3.3V | | 2 | GND |
+| 3 | PIN_AD4 (4.7K pull-up) | | 4 | PIN_AC4 (4.7K pull-up) |
+| 5 | PIN_AE3 | | 6 | PIN_AD3 |
+| 7 | PIN_AF5 | | 8 | PIN_AF4 |
+| 9 | PIN_AD6 | | 10 | PIN_AD5 |
+| 11 | PIN_AE6 | | 12 | PIN_AE5 |
+| 13 | PIN_AF6 | | 14 | PIN_AE7 |
+| 15 | PIN_AF8 | | 16 | PIN_AF7 |
+| 17 | PIN_AF9 | | 18 | PIN_AE9 |
 
 ## Pin Assignments (EP4CE15)
 
