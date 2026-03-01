@@ -145,6 +145,10 @@ case class JopCluster(
     val cfNcs   = if (baseConfig.ioConfig.hasConfigFlash) Some(out Bool()) else None
     val cfAsdo  = if (baseConfig.ioConfig.hasConfigFlash) Some(out Bool()) else None
     val cfData0 = if (baseConfig.ioConfig.hasConfigFlash) Some(in Bool()) else None
+    val cfFlashReady = if (baseConfig.ioConfig.hasConfigFlash) Some(in Bool()) else None
+    val cfDebugRxByte = if (baseConfig.ioConfig.hasConfigFlash) Some(out Bits(8 bits)) else None
+    val cfDebugTxCount = if (baseConfig.ioConfig.hasConfigFlash) Some(out UInt(8 bits)) else None
+    val cfDebugFirstWord = if (baseConfig.ioConfig.hasConfigFlash) Some(out Bits(32 bits)) else None
 
     // SD SPI pins (optional, core 0 only)
     val sdSpiSclk = if (baseConfig.ioConfig.hasSdSpi) Some(out Bool()) else None
@@ -535,6 +539,10 @@ case class JopCluster(
     io.cfNcs.get   := cores(0).io.cfNcs.get
     io.cfAsdo.get  := cores(0).io.cfAsdo.get
     cores(0).io.cfData0.get := io.cfData0.get
+    cores(0).io.cfFlashReady.get := io.cfFlashReady.get
+    io.cfDebugRxByte.get  := cores(0).io.cfDebugRxByte.get
+    io.cfDebugTxCount.get := cores(0).io.cfDebugTxCount.get
+    io.cfDebugFirstWord.get := cores(0).io.cfDebugFirstWord.get
   }
 
   // ==================================================================

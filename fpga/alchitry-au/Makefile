@@ -32,6 +32,22 @@
 #   make bitstream-replayer  - Build replayer bitstream
 #   make program-replayer    - Program FPGA
 #
+# Flash Boot (autonomous boot from SPI config flash):
+#   make microcode-flash  - Build flash-boot microcode
+#   make generate-flash   - Generate Verilog with config flash support
+#   make project-flash    - Create Vivado project (with flash constraints)
+#   make bitstream-flash  - Build bitstream + SPI .bin via write_cfgmem
+#   make flash-image      - Combine bitstream .bin + .jop into flash image
+#   make program-flash    - Program SPI flash via Vivado indirect programming
+#   make full-flash-boot  - Full flash boot flow (all of the above)
+#
+# UART Flash Programmer (for SST26VF032B, since Vivado doesn't support it):
+#   make generate-flash-programmer  - Generate flash programmer Verilog
+#   make project-flash-programmer   - Create Vivado project
+#   make bitstream-flash-programmer - Build flash programmer bitstream
+#   make program-flash-programmer   - Load programmer onto FPGA via JTAG
+#   make program-flash              - Program flash via UART (with --sst26)
+#
 
 SHELL := /usr/bin/env bash
 
@@ -44,14 +60,18 @@ SERIAL_PORT ?= $(shell ./scripts/find_alchitry_ports.sh --serial 2>/dev/null || 
 BAUD_RATE = 1000000
 
 # JOP application file
-JOP ?= ../../java/apps/Small/HelloWorld.jop
+JOP ?= ../../java/apps/Smallest/HelloWorld.jop
 
 # Project paths (sbt runs from repo root)
 PROJECT_ROOT = ../..
 ASM_DIR = ../../asm
 GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopDdr3Top.v
 
-.PHONY: all microcode generate ips project bitstream program download monitor run full clean check-board find-serial-port generate-exerciser project-exerciser bitstream-exerciser generate-replayer project-replayer bitstream-replayer program-replayer generate-smp project-smp bitstream-smp program-smp run-smp
+# Flash boot: JOP application offset in flash
+# SST26VF032B = 4 MB total; XC7A35T bitstream ~2.1 MB; offset at 2.25 MB
+JOP_OFFSET ?= 0x240000
+
+.PHONY: all microcode generate ips project bitstream program download monitor run full clean check-board find-serial-port generate-exerciser project-exerciser bitstream-exerciser generate-replayer project-replayer bitstream-replayer program-replayer generate-smp project-smp bitstream-smp program-smp run-smp microcode-flash generate-flash project-flash bitstream-flash flash-image program-flash full-flash-boot generate-flash-programmer project-flash-programmer bitstream-flash-programmer program-flash-programmer
 
 # Default: microcode + generate + ips + project + bitstream
 all: microcode generate ips project bitstream
@@ -175,6 +195,50 @@ bitstream-replayer:
 
 program-replayer:
 	$(RUN_VIVADO) vivado/tcl/program_replayer.tcl
+
+# --------------------------------------------------------------------------
+# Flash Boot (autonomous boot from SPI config flash)
+# --------------------------------------------------------------------------
+
+microcode-flash:
+	cd $(ASM_DIR) && $(MAKE) flash-au
+	@echo "=== Flash microcode generated (Artix-7, offset $(JOP_OFFSET)) ==="
+
+generate-flash:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopDdr3FlashTopVerilog"
+	@echo "=== Flash-boot Verilog generated ==="
+
+project-flash:
+	$(RUN_VIVADO) vivado/tcl/create_project_flash.tcl
+
+bitstream-flash:
+	$(RUN_VIVADO) vivado/tcl/build_bitstream_flash.tcl
+
+flash-image:
+	python3 ../scripts/make_flash_image.py --no-bitrev \
+		vivado/build/jop_flash.bin $(JOP) \
+		vivado/build/flash_image.bin --jop-offset $(JOP_OFFSET)
+
+# UART flash programmer (for SST26VF032B — Vivado doesn't support this part)
+generate-flash-programmer:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.FlashProgrammerDdr3TopVerilog"
+	@echo "=== Flash programmer Verilog generated ==="
+
+project-flash-programmer:
+	$(RUN_VIVADO) vivado/tcl/create_project_flash_programmer.tcl
+
+bitstream-flash-programmer:
+	$(RUN_VIVADO) vivado/tcl/build_bitstream_flash_programmer.tcl
+
+program-flash-programmer:
+	$(RUN_VIVADO) vivado/tcl/program_flash_programmer.tcl
+
+# Program flash via UART (requires flash programmer bitstream loaded on FPGA)
+program-flash:
+	sudo python3 ../scripts/flash_program.py --sst26 \
+		vivado/build/flash_image.bin --port $(SERIAL_PORT) -v
+
+full-flash-boot: microcode-flash generate-flash project-flash bitstream-flash flash-image program-flash
 
 # --------------------------------------------------------------------------
 # Cleanup

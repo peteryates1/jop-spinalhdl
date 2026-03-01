@@ -377,16 +377,183 @@ cpu0_load:
 #ifdef FLASH
 //
 //	SPI flash setup: assert CS, send READ_DATA (0x03) + 3 address bytes
-//	Flash offset 0x800000 (8 MB) for .jop application
+//	Flash offset is set via FLASH_ADDR_B2 preprocessor define:
+//	  0x80 = 0x800000 (8 MB, Cyclone IV W25Q128 16 MB flash)
+//	  0x24 = 0x240000 (2.25 MB, Artix-7 SST26VF032B 4 MB flash)
+//
+#ifndef FLASH_ADDR_B2
+#define FLASH_ADDR_B2 128
+#endif
+#ifndef FLASH_CLK_DIV
+#define FLASH_CLK_DIV 3
+#endif
 //
 
-// Set clock divider = 3 (10 MHz at 80 MHz sys_clk)
-			ldi	3
+// Set clock divider (SPI_CLK = sys_clk / (2 * (div + 1)))
+// Cyclone IV: div=3 -> 10 MHz at 80 MHz
+// Artix-7:    div=15 -> 3.125 MHz at 100 MHz (STARTUPE2 path)
+			ldi	FLASH_CLK_DIV
 			ldi	io_cf_div
 			stmwa
 			stmwd
 			wait
 			wait
+
+// Flash reset sequence: RSTQIO + RSTEN + RST + wait
+// On Artix-7 with diagnostic FSM, this is already handled in board-clock domain.
+// Skip with SKIP_FLASH_RESET to test BmbConfigFlash READ_DATA in isolation.
+#ifndef SKIP_FLASH_RESET
+
+// RSTQIO (0xFF) — exit QPI mode if flash was left in it.
+// On SST26, factory firmware or FPGA config controller startup may leave
+// flash in QPI mode.  In SPI mode 0xFF is ignored (not a valid command).
+// In QPI mode, with pull-ups on DQ1-DQ3, the flash sees 0xFF = RSTQIO.
+
+// Assert CS for RSTQIO
+			ldi	1
+			ldi	io_cf_status
+			stmwa
+			stmwd
+			wait
+			wait
+
+// Send 0xFF (RSTQIO in QPI mode, NOP in SPI mode)
+			ldi	-1
+			ldi	io_cf_data
+			stmwa
+			stmwd
+			wait
+			wait
+cf_poll_rstqio:
+			ldi	io_cf_status
+			stmra
+			ldi	1
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bnz	cf_poll_rstqio
+			nop
+			nop
+
+// Deassert CS after RSTQIO
+			ldi	0
+			ldi	io_cf_status
+			stmwa
+			stmwd
+			wait
+			wait
+
+// Software reset: RSTEN (0x66) + RST (0x99)
+// Required on Artix-7: JTAG reprogramming can leave flash in undefined state.
+// Harmless on all JEDEC-compliant SPI flash (W25Q128, SST26, etc.)
+
+// Assert CS for RSTEN
+			ldi	1
+			ldi	io_cf_status
+			stmwa
+			stmwd
+			wait
+			wait
+
+// Send RSTEN (0x66 = 102)
+			ldi	102
+			ldi	io_cf_data
+			stmwa
+			stmwd
+			wait
+			wait
+cf_poll_rsten:
+			ldi	io_cf_status
+			stmra
+			ldi	1
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bnz	cf_poll_rsten
+			nop
+			nop
+
+// Deassert CS after RSTEN
+			ldi	0
+			ldi	io_cf_status
+			stmwa
+			stmwd
+			wait
+			wait
+
+// Assert CS for RST
+			ldi	1
+			ldi	io_cf_status
+			stmwa
+			stmwd
+			wait
+			wait
+
+// Send RST (0x99 = 153)
+			ldi	153
+			ldi	io_cf_data
+			stmwa
+			stmwd
+			wait
+			wait
+cf_poll_rst:
+			ldi	io_cf_status
+			stmra
+			ldi	1
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bnz	cf_poll_rst
+			nop
+			nop
+
+// Deassert CS after RST
+			ldi	0
+			ldi	io_cf_status
+			stmwa
+			stmwd
+			wait
+			wait
+
+// Wait for flash reset to complete (SST26 tRST max = 100 us)
+// 1536 iterations, 7 cycles each = 10752 cycles = ~108 us at 100 MHz
+			ldi	6
+			ldi	8
+			shl
+cf_rst_wait:
+			ldi	1
+			sub
+			dup
+			nop
+			bnz	cf_rst_wait
+			nop
+			nop
+			pop
+
+#endif // SKIP_FLASH_RESET
+
+// Wait for flash ready (status bit 1 = SPI mux switched to BmbConfigFlash).
+// On Artix-7, the board-clock diagnostic FSM resets the flash and reads
+// JEDEC ID + data before handing SPI pins to BmbConfigFlash.  The microcode
+// must not start flash I/O until the mux has switched.
+cf_poll_ready:
+			ldi	io_cf_status
+			stmra
+			ldi	2
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bz	cf_poll_ready
+			nop
+			nop
 
 // Assert CS (write 1 to control register, bit0 = csAssert)
 			ldi	1
@@ -416,8 +583,8 @@ cf_poll_cmd:
 			nop
 			nop
 
-// Send address byte 2 (MSB of 0x800000 = 0x80 = 128 decimal)
-			ldi	128
+// Send address byte 2 (MSB of flash offset)
+			ldi	FLASH_ADDR_B2
 			ldi	io_cf_data
 			stmwa
 			stmwd

@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-UART-based flash programmer for W25Q128 via FlashProgrammerTop FPGA design.
+UART-based flash programmer via FlashProgrammerTop/FlashProgrammerDdr3Top.
+
+Supports:
+  - W25Q128 (Winbond, 128Mbit/16MB) on Cyclone IV (default)
+  - SST26VF032B (Microchip, 32Mbit/4MB) on Artix-7 (--sst26 flag)
 
 All flash command sequencing is done here; the FPGA only provides
 CS assert/deassert and single-byte SPI transfers.
@@ -13,6 +17,7 @@ Protocol:
 
 Usage:
   flash_program.py <flash_image.bin> [--port /dev/ttyUSB0] [--baud 1000000] [-v]
+  flash_program.py <flash_image.bin> --sst26 [--port /dev/ttyUSB1] [-v]
 """
 
 import argparse
@@ -27,13 +32,19 @@ CS_HIGH = 0xCC
 ESCAPE  = 0xDD
 SPECIAL = {CS_LOW, CS_HIGH, ESCAPE}
 
-# W25Q128 commands
+# SPI flash commands (common to W25Q128 and SST26VF032B)
 CMD_WRITE_ENABLE  = 0x06
 CMD_READ_STATUS1  = 0x05
 CMD_READ_DATA     = 0x03
 CMD_PAGE_PROGRAM  = 0x02
 CMD_CHIP_ERASE    = 0xC7
 CMD_JEDEC_ID      = 0x9F
+
+# SST26VF032B-specific commands
+CMD_ULBPR         = 0x98  # Global Block Protection Unlock
+CMD_RSTQIO        = 0xFF  # Reset QPI/QIO mode to SPI
+CMD_RSTEN         = 0x66  # Reset Enable
+CMD_RST           = 0x99  # Reset Device
 
 
 class FlashProgrammer:
@@ -96,6 +107,30 @@ class FlashProgrammer:
     # Flash command helpers
     # ------------------------------------------------------------------
 
+    def reset_flash(self):
+        """Reset flash from QPI/QIO mode back to standard SPI.
+
+        If the flash was left in QPI mode (e.g., by factory firmware),
+        standard SPI commands are interpreted as QPI nibbles and fail.
+        Sending 0xFF with CS asserted acts as RSTQIO (FFh) in QPI mode
+        (where D3-D0 are all 1s with our pull-ups). In SPI mode, 0xFF
+        is a NOP.  Follow with Reset Enable + Reset Device for good measure.
+        """
+        # RSTQIO: 0xFF in QPI mode = reset to SPI
+        self.spi_cs_low()
+        self.spi_byte(0xFF)
+        self.spi_cs_high()
+        time.sleep(0.001)
+        # Also try Reset Enable (0x66) + Reset Device (0x99) in SPI mode
+        self.spi_cs_low()
+        self.spi_byte(CMD_RSTEN)
+        self.spi_cs_high()
+        time.sleep(0.001)
+        self.spi_cs_low()
+        self.spi_byte(CMD_RST)
+        self.spi_cs_high()
+        time.sleep(0.1)  # tRST recovery time (typ 30us, use 100ms for safety)
+
     def jedec_id(self):
         """Read JEDEC ID (manufacturer, device_hi, device_lo)."""
         self.spi_cs_low()
@@ -129,6 +164,14 @@ class FlashProgrammer:
         """Send Write Enable (WREN) command."""
         self.spi_cs_low()
         self.spi_byte(CMD_WRITE_ENABLE)
+        self.spi_cs_high()
+
+    def ulbpr(self):
+        """Global Block Protection Unlock (SST26VF032B).
+        Must be preceded by WREN.  Clears all block protection bits."""
+        self.write_enable()
+        self.spi_cs_low()
+        self.spi_byte(CMD_ULBPR)
         self.spi_cs_high()
 
     def chip_erase(self):
@@ -178,8 +221,18 @@ class FlashProgrammer:
     # High-level operations
     # ------------------------------------------------------------------
 
-    def program_file(self, filepath, verify=False):
+    def program_file(self, filepath, verify=False, sst26=False):
         """Full flow: identify, erase, program, optionally verify."""
+
+        # Flash parameters
+        if sst26:
+            expected_jedec = "bf2642"
+            expected_name = "SST26VF032B"
+            flash_size = 4 * 1024 * 1024   # 4 MB
+        else:
+            expected_jedec = "ef4018"
+            expected_name = "W25Q128"
+            flash_size = 16 * 1024 * 1024  # 16 MB
 
         # 1. Drain any banner / stale data
         time.sleep(0.5)
@@ -187,25 +240,34 @@ class FlashProgrammer:
         if stale:
             print(f"Drained {len(stale)} stale bytes: {stale!r}")
 
+        # 1b. Reset flash from possible QPI mode
+        print("Resetting flash (RSTQIO + soft reset)...")
+        self.reset_flash()
+
         # 2. JEDEC ID check
         mfr, dh, dl = self.jedec_id()
         jedec = f"{mfr:02x}{dh:02x}{dl:02x}"
         print(f"JEDEC ID: {jedec}")
-        if jedec != "ef4018":
-            print(f"ERROR: Expected W25Q128 (ef4018), got {jedec}")
+        if jedec != expected_jedec:
+            print(f"ERROR: Expected {expected_name} ({expected_jedec}), got {jedec}")
             return False
 
-        # 3. Read file
+        # 3. SST26: unlock block protection (required before any erase/write)
+        if sst26:
+            print("Unlocking block protection (ULBPR)...")
+            self.ulbpr()
+
+        # 4. Read file
         with open(filepath, "rb") as f:
             data = f.read()
         file_size = len(data)
         print(f"File: {filepath} ({file_size} bytes, {file_size / 1024 / 1024:.2f} MB)")
 
-        if file_size > 16 * 1024 * 1024:
-            print("ERROR: File exceeds 16 MB flash capacity")
+        if file_size > flash_size:
+            print(f"ERROR: File exceeds {flash_size // (1024 * 1024)} MB flash capacity")
             return False
 
-        # 4. Chip erase
+        # 5. Chip erase
         print("Erasing flash (chip erase)...", end="", flush=True)
         t0 = time.time()
         self.write_enable()
@@ -223,7 +285,7 @@ class FlashProgrammer:
         erase_time = time.time() - t0
         print(f"\rErase complete in {erase_time:.1f}s" + " " * 20)
 
-        # 5. Page program
+        # 6. Page program
         total_pages = (file_size + 255) // 256
         print(f"Programming {total_pages} pages...")
         t0 = time.time()
@@ -249,7 +311,7 @@ class FlashProgrammer:
         prog_time = time.time() - t0
         print(f"\rProgram complete in {prog_time:.1f}s" + " " * 40)
 
-        # 6. Verify (optional)
+        # 7. Verify (optional)
         if verify:
             print("Verifying...", end="", flush=True)
             t0 = time.time()
@@ -280,23 +342,25 @@ class FlashProgrammer:
                 print(f"\rVerify FAILED: {errors} errors in {verify_time:.1f}s")
                 return False
 
-        # 7. Summary
+        # 8. Summary
         total = erase_time + prog_time
         print(f"\nDone! Total: {total:.1f}s (erase {erase_time:.1f}s + program {prog_time:.1f}s)")
         return True
 
 
 def main():
-    parser = argparse.ArgumentParser(description="UART-based W25Q128 flash programmer")
+    parser = argparse.ArgumentParser(description="UART-based SPI flash programmer")
     parser.add_argument("image", help="Flash image file (.bin)")
     parser.add_argument("--port", default="/dev/ttyUSB0", help="Serial port (default: /dev/ttyUSB0)")
     parser.add_argument("--baud", type=int, default=1000000, help="Baud rate (default: 1000000)")
     parser.add_argument("-v", "--verify", action="store_true", help="Verify after programming")
+    parser.add_argument("--sst26", action="store_true",
+                        help="SST26VF032B flash (Artix-7): ULBPR unlock, 4MB size, JEDEC bf2642")
     args = parser.parse_args()
 
     prog = FlashProgrammer(args.port, args.baud)
     try:
-        ok = prog.program_file(args.image, verify=args.verify)
+        ok = prog.program_file(args.image, verify=args.verify, sst26=args.sst26)
     finally:
         prog.close()
 

@@ -35,6 +35,19 @@ flash: ../java/tools/dist/jopa.jar
 		> generated/flash/FlashJumpTableData.scala
 	$(MAKE) JVM_TYPE=SIMULATION
 
+# Build flash-boot microcode for Artix-7 (4 MB flash, offset 0x240000)
+flash-au: ../java/tools/dist/jopa.jar
+	mkdir -p generated/flash
+	gcc -x c -E -C -P $(GCC_PARAMS) -DFLASH -DFLASH_ADDR_B2=36 -DFLASH_CLK_DIV=15 -DSKIP_FLASH_RESET src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/flash/mem_rom.dat
+	cp generated/mem_ram.dat generated/flash/mem_ram.dat
+	cp generated/rom.mif generated/flash/rom.mif
+	sed 's/object JumpTableData/object FlashJumpTableData/' generated/JumpTableData.scala \
+		> generated/flash/FlashJumpTableData.scala
+	$(MAKE) JVM_TYPE=SIMULATION
+
 ../java/tools/dist/jopa.jar:
 	cd ../java/tools && $(MAKE) dist/jopa.jar
 

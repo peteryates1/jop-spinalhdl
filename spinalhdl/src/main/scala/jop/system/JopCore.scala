@@ -142,6 +142,10 @@ case class JopCore(
     val cfNcs   = if (config.ioConfig.hasConfigFlash) Some(out Bool()) else None
     val cfAsdo  = if (config.ioConfig.hasConfigFlash) Some(out Bool()) else None
     val cfData0 = if (config.ioConfig.hasConfigFlash) Some(in Bool()) else None
+    val cfFlashReady = if (config.ioConfig.hasConfigFlash) Some(in Bool()) else None
+    val cfDebugRxByte = if (config.ioConfig.hasConfigFlash) Some(out Bits(8 bits)) else None
+    val cfDebugTxCount = if (config.ioConfig.hasConfigFlash) Some(out UInt(8 bits)) else None
+    val cfDebugFirstWord = if (config.ioConfig.hasConfigFlash) Some(out Bits(32 bits)) else None
 
     // SD Native pins (optional)
     val sdClk        = if (config.ioConfig.hasSdNative) Some(out Bool()) else None
@@ -443,6 +447,10 @@ case class JopCore(
     io.cfNcs.get   := cf.io.ncs
     io.cfAsdo.get  := cf.io.asdo
     cf.io.data0    := io.cfData0.get
+    cf.io.flashReady := io.cfFlashReady.get
+    io.cfDebugRxByte.get  := cf.io.debugRxByte
+    io.cfDebugTxCount.get := cf.io.debugTxCount
+    io.cfDebugFirstWord.get := cf.io.debugFirstWord
   }
 
   // VGA DMA (0xAC-0xAF, optional)

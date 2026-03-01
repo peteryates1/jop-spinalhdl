@@ -52,6 +52,11 @@ def main():
         help="Flash offset for .jop data (default: 0x800000 = 8 MB)",
     )
     parser.add_argument(
+        "--no-bitrev",
+        action="store_true",
+        help="Skip bit-reversal (Xilinx .bin files are already in correct bit order)",
+    )
+    parser.add_argument(
         "--jop-binary",
         metavar="FILE",
         help="Also write raw .jop binary data to FILE (for Quartus .cof)",
@@ -78,9 +83,13 @@ def main():
     else:
         print(f"Bitstream: {args.bitstream} ({bs_size} bytes, {bs_size / 1024 / 1024:.2f} MB)")
 
-    # Bit-reverse each byte for Active Serial configuration
-    bs_data = bytes(_BITREV[b] for b in bs_data)
-    print(f"  Bit-reversed for Active Serial mode")
+    # Bit-reverse each byte for Active Serial configuration (Cyclone IV).
+    # Xilinx .bin files from write_cfgmem are already in the correct bit order.
+    if not args.no_bitrev:
+        bs_data = bytes(_BITREV[b] for b in bs_data)
+        print(f"  Bit-reversed for Active Serial mode")
+    else:
+        print(f"  Bit-reversal skipped (Xilinx mode)")
 
     if bs_size > jop_offset:
         print(

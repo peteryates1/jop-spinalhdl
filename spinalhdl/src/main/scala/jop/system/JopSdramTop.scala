@@ -488,6 +488,7 @@ case class JopSdramTop(
       io.cf_ncs.get  := cluster.io.cfNcs.get
       io.cf_asdo.get := cluster.io.cfAsdo.get
       cluster.io.cfData0.get := io.cf_data0.get
+      cluster.io.cfFlashReady.get := True  // No diagnostic FSM on Cyclone IV; always ready
     }
   }
 }
