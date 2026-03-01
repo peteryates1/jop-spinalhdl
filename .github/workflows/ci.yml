@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ----------------------------------------------------------------
+  # Build Java tools + microcode assembly
+  # Produces asm/generated/ (Scala sources + ROM/RAM data files)
+  # ----------------------------------------------------------------
+  build-microcode:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build Java tools (jopa.jar)
+        run: make -C java/tools dist/jopa.jar
+
+      - name: Build microcode (all variants)
+        run: cd asm && make && make serial && make flash
+
+      - name: Upload microcode artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: microcode
+          path: asm/generated/
+          retention-days: 1
+
+  # ----------------------------------------------------------------
+  # SBT compile + Verilog generation
+  # ----------------------------------------------------------------
+  compile-and-generate:
+    needs: build-microcode
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Cache SBT
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.sbt
+            ~/.cache/coursier
+            ~/.ivy2/cache
+          key: sbt-${{ hashFiles('build.sbt', 'project/build.properties', 'project/plugins.sbt') }}
+          restore-keys: sbt-
+
+      - name: Download microcode
+        uses: actions/download-artifact@v4
+        with:
+          name: microcode
+          path: asm/generated/
+
+      - name: SBT compile (main + test)
+        run: sbt -J-Xmx4g compile Test/compile
+
+      - name: Generate Verilog
+        run: sbt -J-Xmx4g "runMain jop.system.JopCoreVerilog"
+
+  # ----------------------------------------------------------------
+  # Formal verification (yosys + SymbiYosys + Z3)
+  # 14 suites, 77+ properties
+  # ----------------------------------------------------------------
+  formal-verification:
+    needs: build-microcode
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Cache SBT
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.sbt
+            ~/.cache/coursier
+            ~/.ivy2/cache
+          key: sbt-${{ hashFiles('build.sbt', 'project/build.properties', 'project/plugins.sbt') }}
+          restore-keys: sbt-
+
+      - name: Download microcode
+        uses: actions/download-artifact@v4
+        with:
+          name: microcode
+          path: asm/generated/
+
+      - name: Install yosys and z3
+        run: sudo apt-get update && sudo apt-get install -y yosys z3
+
+      - name: Install SymbiYosys
+        run: |
+          git clone https://github.com/YosysHQ/sby.git /tmp/sby
+          cd /tmp/sby && sudo pip3 install --break-system-packages .
+
+      - name: Run formal verification
+        run: sbt -J-Xmx4g "testOnly jop.formal.*"
+
+  # ----------------------------------------------------------------
+  # Simulation tests (Verilator)
+  # Component-level tests: core, IO, pipeline, memory, DDR3
+  # Skips jop.system.* (needs .jop files built with JDK 1.6)
+  # ----------------------------------------------------------------
+  simulation-tests:
+    needs: build-microcode
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Cache SBT
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.sbt
+            ~/.cache/coursier
+            ~/.ivy2/cache
+          key: sbt-${{ hashFiles('build.sbt', 'project/build.properties', 'project/plugins.sbt') }}
+          restore-keys: sbt-
+
+      - name: Download microcode
+        uses: actions/download-artifact@v4
+        with:
+          name: microcode
+          path: asm/generated/
+
+      - name: Install Verilator
+        run: sudo apt-get update && sudo apt-get install -y verilator
+
+      - name: Run simulation tests
+        run: sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.*"
