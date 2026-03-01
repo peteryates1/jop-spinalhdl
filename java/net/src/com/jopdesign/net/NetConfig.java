@@ -54,6 +54,18 @@ public class NetConfig {
 	/** ARP request timeout in poll cycles */
 	public static final int ARP_TIMEOUT = 2000;
 
+	/** Enable DHCP client (default: static IP) */
+	public static boolean useDhcp = false;
+
+	/** True while DHCP discovery is in progress */
+	public static boolean dhcpActive = false;
+
+	/** DNS server IP address (set by DHCP option 6, or manually) */
+	public static int dnsServer = 0;
+
+	/** IP offered by DHCP server (for receive filter during discovery) */
+	public static int dhcpOfferedIp = 0;
+
 	/** Check if an IP is on our local subnet. */
 	public static boolean isLocal(int destIp) {
 		return (destIp & mask) == (ip & mask);

@@ -59,7 +59,14 @@ public class NetLoop {
 		TCPConnection.init();
 
 		// Initialize PHY and MAC
-		return EthDriver.init();
+		boolean linkUp = EthDriver.init();
+
+		// Start DHCP discovery if enabled
+		if (NetConfig.useDhcp && linkUp) {
+			DHCP.start();
+		}
+
+		return linkUp;
 	}
 
 	/**
@@ -87,6 +94,11 @@ public class NetLoop {
 				conn.poll();
 			}
 			tcpPollIdx = (tcpPollIdx + 1) % NetConfig.MAX_TCP_CONN;
+		}
+
+		// --- DHCP poll ---
+		if (NetConfig.useDhcp) {
+			DHCP.poll();
 		}
 
 		// --- ARP tick ---

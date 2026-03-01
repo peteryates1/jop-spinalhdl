@@ -14,13 +14,15 @@ Gigabit Ethernet PHY.
 | ICMP echo (ping) | Working | ~2.5% loss at 1Gbps (timing margin) |
 | UDP | Working | Echo tested on port 7 |
 | TCP | Working | Echo verified on port 7; large payload (10KB+) with backpressure |
+| DHCP | Working | Client state machine, lease renewal, optional (NetConfig.useDhcp) |
+| DNS | Working | Blocking A record resolver, 4-entry cache, 5-min TTL cap |
 | java.net API | Written | Socket, ServerSocket, DatagramSocket stubs |
 
 ## Architecture Overview
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  Application (NetTest.java)                                      │
+│  Application (NetTest.java / DhcpTest.java)                      │
 │    ├── UDP echo server (port 7)                                  │
 │    ├── TCP echo server (port 7)                                  │
 │    └── Main loop: toggleWd() → NetLoop.poll() → process I/O     │
@@ -31,8 +33,10 @@ Gigabit Ethernet PHY.
 ├──────────────────────────────────────────────────────────────────┤
 │  Transport Layer                                                 │
 │    ├── TCP  (772 lines, RFC 793 state machine, all 11 states)   │
-│    ├── UDP  (119 lines, stateless send/receive)                 │
-│    └── ICMP (140 lines, echo reply)                             │
+│    ├── UDP  (190 lines, send/receive + broadcast/direct)        │
+│    ├── ICMP (140 lines, echo reply)                             │
+│    ├── DHCP (350 lines, client state machine, lease renewal)    │
+│    └── DNS  (260 lines, blocking A resolver, 4-entry cache)    │
 ├──────────────────────────────────────────────────────────────────┤
 │  Network Layer                                                   │
 │    ├── IP   (182 lines, header/checksum/dispatch)               │
@@ -67,8 +71,10 @@ Gigabit Ethernet PHY.
 | `Arp.java` | 265 | ARP cache (8 entries), request/reply, snooping, gratuitous ARP |
 | `IP.java` | 182 | IPv4 send/receive, header checksum, protocol dispatch |
 | `ICMP.java` | 140 | Echo reply (ping), destination unreachable, diagnostic counters |
-| `UDP.java` | 119 | UDP send/receive with pseudo-header checksum |
+| `UDP.java` | 190 | UDP send/receive/broadcast/direct with pseudo-header checksum |
 | `UDPConnection.java` | 167 | UDP connection pool (4 slots), single-datagram receive buffer |
+| `DHCP.java` | 350 | DHCP client: DISCOVER/OFFER/REQUEST/ACK, lease renewal |
+| `DNS.java` | 260 | DNS resolver: blocking A record lookup, 4-entry cache |
 | `TCP.java` | 772 | TCP state machine (all 11 RFC 793 states), segment send/receive |
 | `TCPConnection.java` | 374 | TCP connection pool (4 slots), retransmit tracking, state management |
 | `TCPInputStream.java` | 105 | Circular byte buffer for TCP receive (4 KB) |
@@ -108,6 +114,7 @@ Gigabit Ethernet PHY.
 | File | Purpose |
 |------|---------|
 | `java/apps/Small/src/test/NetTest.java` | UDP+TCP echo on port 7, ICMP ping, diagnostics |
+| `java/apps/Small/src/test/DhcpTest.java` | DHCP+DNS test, then UDP+TCP echo on port 7 |
 
 ## Default Configuration
 
@@ -317,6 +324,49 @@ Network byte order (big-endian) conversion for multi-byte fields:
 - Delivery: find `UDPConnection` by destination port; if no match, send ICMP
   port unreachable
 - `UDPConnection`: single-datagram receive buffer (latest-wins, no queuing)
+- `sendBroadcast()`: send from caller-specified source IP to broadcast
+  (used by DHCP)
+- `sendDirect()`: send from pre-loaded packet buffer to unicast destination
+  (used by DNS, DHCP renewal)
+- Receive intercepts: port 68 → DHCP, DNS.pendingPort → DNS (before
+  UDPConnection lookup, zero connection slots used)
+
+### DHCP
+
+DHCP client (RFC 2131). Optional — `NetConfig.useDhcp = false` (default).
+
+**States**: `INIT → SELECTING → REQUESTING → BOUND → RENEWING → REBINDING`
+
+**4-message exchange**:
+1. Client broadcasts DISCOVER (from 0.0.0.0:68 to 255.255.255.255:67)
+2. Server responds with OFFER (unicast or broadcast to client)
+3. Client broadcasts REQUEST (includes server ID + requested IP)
+4. Server responds with ACK → client applies IP/mask/gateway/DNS
+
+**Lease renewal**:
+- T1 (default 50% of lease) → unicast REQUEST to server (RENEWING)
+- T2 (default 87.5%) → broadcast REQUEST (REBINDING)
+- Lease expiry → restart from INIT
+
+**Options parsed**: subnet mask (1), router (3), DNS (6), lease time (51),
+message type (53), server ID (54), T1 (58), T2 (59)
+
+**Retry**: 4-second timeout, max 4 retries per state, then restart from INIT.
+
+**IP receive filter**: When `dhcpActive`, `IP.receive()` accepts packets
+to `dhcpOfferedIp` or any destination when `NetConfig.ip == 0`.
+
+### DNS
+
+DNS resolver (RFC 1035). Blocking A record lookup via UDP.
+
+- `DNS.resolve(char[] hostname, int len)` → returns IPv4 address or 0
+- Sends query to `NetConfig.dnsServer` (set by DHCP option 6 or manually)
+- Polls `NetLoop.poll()` until response or 5-second timeout, up to 3 retries
+- 4-entry cache with TTL from response (capped at 5 minutes)
+- QNAME encoding: `"example.com"` → `\x07example\x03com\x00`
+- Handles DNS name compression pointers in responses
+- Port matching via `DNS.pendingPort` (ephemeral port per query)
 
 ### TCP
 
@@ -366,10 +416,13 @@ NetLoop.poll()
   │   ├── If ARP: Arp.process()
   │   └── If IP:  IP.receive()
   │               ├── ICMP: echo reply
-  │               ├── UDP:  UDPConnection dispatch
+  │               ├── UDP:  port 68 → DHCP.receive()
+  │               │         DNS.pendingPort → DNS.receive()
+  │               │         else → UDPConnection dispatch
   │               └── TCP:  state machine
   ├── Poll one TCP connection (round-robin)
   │   └── Check retransmit, send data, handle timeouts
+  ├── DHCP.poll() (if useDhcp — retransmit, lease renewal)
   └── Arp.tick() (pending request timeout)
 ```
 
@@ -398,17 +451,37 @@ make program-dbfpga
 make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/NetTest.jop
 ```
 
+### Build DHCP Test App
+
+```bash
+cd java/apps/Small
+make clean && make all APP_NAME=DhcpTest EXTRA_SRC=../../net/src
+make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/DhcpTest.jop
+```
+
+### DHCP Server Setup (on test host)
+
+```bash
+sudo dnsmasq --no-daemon --no-resolv \
+  --dhcp-range=192.168.0.200,192.168.0.210,60s \
+  --interface=enp2s0 --bind-interfaces \
+  --server=8.8.8.8
+```
+
 ### Test from Host
 
 ```bash
-# Ping (ICMP echo)
-ping 192.168.0.123
+# Ping (ICMP echo) — use DHCP-assigned IP
+ping 192.168.0.123  # or DHCP-assigned IP
 
 # UDP echo (port 7)
 echo "hello" | nc -u -w1 192.168.0.123 7
 
 # TCP echo (port 7)
 echo "hello" | nc -w1 192.168.0.123 7
+
+# Monitor DHCP traffic
+tcpdump -i enp2s0 -n port 67 or port 68
 ```
 
 ### UART Diagnostics
@@ -466,6 +539,37 @@ The port:
 - Reduced from ~31 files to 20 files (merged some, removed unused)
 
 ## Progress Log
+
+### 2026-03-01: DHCP client + DNS resolver
+
+Added DHCP and DNS to complete the networking stack. Both protocols are UDP-based,
+intercept packets by port number in `UDP.receive()`, and use zero UDP connection
+slots.
+
+**DHCP** (`DHCP.java`, ~495 lines): Full RFC 2131 client state machine
+(INIT → SELECTING → REQUESTING → BOUND → RENEWING → REBINDING). Parses options:
+subnet mask, router, DNS, lease time, T1, T2, server ID. Lease renewal at T1
+(unicast) → T2 (broadcast) → expiry (restart). Optional — `NetConfig.useDhcp = false`
+by default.
+
+**DNS** (`DNS.java`, ~320 lines): Blocking A record resolver via
+`DNS.resolve(char[] hostname, int len)`. QNAME encoding, name compression pointer
+handling, 4-entry cache with TTL (capped at 5 minutes). 5-second timeout, 3 retries.
+
+**Infrastructure changes**:
+- `NetConfig.java` — 4 new fields: `useDhcp`, `dhcpActive`, `dnsServer`, `dhcpOfferedIp`
+- `IP.java` — `sendBroadcast()` for DHCP (src IP 0.0.0.0, broadcast MAC);
+  `receive()` filter accepts packets during DHCP discovery
+- `UDP.java` — `sendBroadcast()`, `sendDirect()` for pre-loaded packets;
+  port 68/DNS intercepts before UDPConnection lookup; `checksum()` package-private
+- `NetLoop.java` — `DHCP.start()` in init, `DHCP.poll()` in poll loop
+
+**Hardware verified**: DHCP obtained IP 192.168.0.215 from router (DISCOVER → OFFER
+→ REQUEST → ACK). DNS resolved `example.com` → `104.18.26.120`. ICMP ping, UDP
+echo, TCP echo all working with DHCP-assigned IP.
+
+**Files changed**: `NetConfig.java`, `IP.java`, `UDP.java`, `NetLoop.java`
+**Files created**: `DHCP.java`, `DNS.java`, `DhcpTest.java`
 
 ### 2026-02-28: Ethernet RX clocking fix
 

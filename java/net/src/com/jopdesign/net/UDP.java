@@ -40,6 +40,17 @@ public class UDP {
 
 		int dataLen = udpLen - UDP_HEADER;
 
+		// Intercept DHCP (port 68) and DNS responses before UDPConnection lookup.
+		// Use useDhcp (not dhcpActive) so renewal ACKs are also intercepted.
+		if (dstPort == 68 && NetConfig.useDhcp) {
+			DHCP.receive(pkt, off + UDP_HEADER, dataLen);
+			return;
+		}
+		if (DNS.pendingPort != 0 && dstPort == DNS.pendingPort) {
+			DNS.receive(pkt, off + UDP_HEADER, dataLen);
+			return;
+		}
+
 		// Find matching UDP connection
 		UDPConnection conn = UDPConnection.findByPort(dstPort);
 		if (conn != null) {
@@ -92,10 +103,76 @@ public class UDP {
 	}
 
 	/**
+	 * Send a UDP broadcast packet from a caller-specified source IP.
+	 * The caller must have already filled the UDP payload in pkt starting
+	 * at IP_OFF + IP_HEADER_LEN + UDP_HEADER. Used by DHCP.
+	 *
+	 * @param srcIp source IP address (e.g. 0 for DHCP DISCOVER)
+	 * @param srcPort source port
+	 * @param dstPort destination port
+	 * @param pkt packet with payload already loaded
+	 * @param payloadLen length of UDP payload (bytes after UDP header)
+	 */
+	public static void sendBroadcast(int srcIp, int srcPort, int dstPort,
+			Packet pkt, int payloadLen) {
+		int off = IP.IP_OFF + IP.IP_HEADER_LEN;
+		int udpLen = UDP_HEADER + payloadLen;
+
+		// UDP header
+		pkt.setShort(off, srcPort);
+		pkt.setShort(off + 2, dstPort);
+		pkt.setShort(off + 4, udpLen);
+		pkt.setShort(off + 6, 0);  // checksum placeholder
+
+		// Set IP addresses for pseudo-header checksum
+		pkt.setInt(IP.IP_OFF + 12, srcIp);
+		pkt.setInt(IP.IP_OFF + 16, 0xFFFFFFFF);
+		int cksum = checksum(pkt, off, udpLen);
+		if (cksum == 0) cksum = 0xFFFF;
+		pkt.setShort(off + 6, cksum);
+
+		IP.sendBroadcast(pkt, srcIp, IP.PROTO_UDP, udpLen);
+	}
+
+	/**
+	 * Send a UDP unicast packet from a pre-loaded packet buffer.
+	 * The caller must have already filled the UDP payload in pkt starting
+	 * at IP_OFF + IP_HEADER_LEN + UDP_HEADER. Used by DNS and DHCP renewal.
+	 *
+	 * @param destIp destination IP address
+	 * @param srcPort source port
+	 * @param dstPort destination port
+	 * @param pkt packet with payload already loaded
+	 * @param payloadLen length of UDP payload (bytes after UDP header)
+	 * @return true if sent, false if ARP not resolved
+	 */
+	public static boolean sendDirect(int destIp, int srcPort, int dstPort,
+			Packet pkt, int payloadLen) {
+		int off = IP.IP_OFF + IP.IP_HEADER_LEN;
+		int udpLen = UDP_HEADER + payloadLen;
+
+		// UDP header
+		pkt.setShort(off, srcPort);
+		pkt.setShort(off + 2, dstPort);
+		pkt.setShort(off + 4, udpLen);
+		pkt.setShort(off + 6, 0);  // checksum placeholder
+
+		// Set IP addresses for pseudo-header checksum
+		pkt.setInt(IP.IP_OFF + 12, NetConfig.ip);
+		pkt.setInt(IP.IP_OFF + 16, destIp);
+		int cksum = checksum(pkt, off, udpLen);
+		if (cksum == 0) cksum = 0xFFFF;
+		pkt.setShort(off + 6, cksum);
+
+		boolean sent = IP.send(pkt, destIp, IP.PROTO_UDP, udpLen);
+		return sent;
+	}
+
+	/**
 	 * Calculate UDP checksum including pseudo-header.
 	 * Returns 0 if existing checksum is valid.
 	 */
-	private static int checksum(Packet pkt, int off, int udpLen) {
+	static int checksum(Packet pkt, int off, int udpLen) {
 		// Start with pseudo-header
 		int sum = IP.pseudoHeaderChecksum(pkt, IP.PROTO_UDP, udpLen);
 

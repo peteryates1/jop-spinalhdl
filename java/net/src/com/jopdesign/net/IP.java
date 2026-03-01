@@ -78,6 +78,44 @@ public class IP {
 	}
 
 	/**
+	 * Send an IP packet to broadcast (255.255.255.255) with a caller-specified
+	 * source IP address and broadcast Ethernet MAC. Used by DHCP which must
+	 * send from 0.0.0.0 before we have an IP address.
+	 *
+	 * @param pkt the packet (payload must already be in place)
+	 * @param srcIp source IP address (e.g. 0 for DHCP DISCOVER)
+	 * @param protocol IP protocol number
+	 * @param dataLen length of IP payload
+	 */
+	public static void sendBroadcast(Packet pkt, int srcIp, int protocol, int dataLen) {
+		int totalLen = IP_HEADER_LEN + dataLen;
+
+		// Fill IP header
+		pkt.setByte(IP_OFF + 0, 0x45);
+		pkt.setByte(IP_OFF + 1, 0x00);
+		pkt.setShort(IP_OFF + 2, totalLen);
+		pkt.setShort(IP_OFF + 4, packetId++);
+		pkt.setShort(IP_OFF + 6, 0x4000);      // Don't Fragment
+		pkt.setByte(IP_OFF + 8, NetConfig.IP_TTL);
+		pkt.setByte(IP_OFF + 9, protocol);
+		pkt.setShort(IP_OFF + 10, 0);           // Checksum placeholder
+		pkt.setInt(IP_OFF + 12, srcIp);
+		pkt.setInt(IP_OFF + 16, 0xFFFFFFFF);    // Broadcast destination
+
+		int cksum = checksumIpHeader(pkt);
+		pkt.setShort(IP_OFF + 10, cksum);
+
+		// Broadcast Ethernet header
+		EthDriver.setDstMac(pkt, EthDriver.BCAST_MAC_HI, EthDriver.BCAST_MAC_LO);
+		EthDriver.setSrcMac(pkt);
+		EthDriver.setEtherType(pkt, EthDriver.ETHERTYPE_IP);
+
+		pkt.len = EthDriver.ETH_HEADER + totalLen;
+		if (pkt.len < 60) pkt.len = 60;
+		EthDriver.send(pkt);
+	}
+
+	/**
 	 * Process a received IP packet. Validates header, dispatches to
 	 * ICMP/TCP/UDP handlers.
 	 *
@@ -98,8 +136,14 @@ public class IP {
 		// Verify destination is us or broadcast
 		int destIp = pkt.getInt(IP_OFF + 16);
 		if (destIp != NetConfig.ip && destIp != 0xFFFFFFFF) {
-			// Check subnet broadcast
-			if (destIp != (NetConfig.ip | ~NetConfig.mask)) return;
+			if (NetConfig.ip != 0 && destIp == (NetConfig.ip | ~NetConfig.mask)) {
+				// Subnet broadcast — accept
+			} else if (NetConfig.dhcpActive
+					&& (destIp == NetConfig.dhcpOfferedIp || NetConfig.ip == 0)) {
+				// DHCP: accept unicast to offered IP, or anything when no IP
+			} else {
+				return;
+			}
 		}
 
 		// Verify header checksum
