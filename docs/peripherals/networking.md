@@ -109,12 +109,13 @@ Gigabit Ethernet PHY.
 | `jop_sdram.sdc` | Timing constraints: clock groups, false paths for Ethernet |
 | `jop_dbfpga.qsf` | Pin assignments + FAST_INPUT_REGISTER for RX pins |
 
-### Test Application
+### Test Applications
 
 | File | Purpose |
 |------|---------|
 | `java/apps/Small/src/test/NetTest.java` | UDP+TCP echo on port 7, ICMP ping, diagnostics |
 | `java/apps/Small/src/test/DhcpTest.java` | DHCP+DNS test, then UDP+TCP echo on port 7 |
+| `java/apps/Small/src/test/HttpServer.java` | HTTP/1.0 file server on port 80, serves files from FAT32 SD card |
 
 ## Default Configuration
 
@@ -459,6 +460,14 @@ make clean && make all APP_NAME=DhcpTest EXTRA_SRC=../../net/src
 make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/DhcpTest.jop
 ```
 
+### Build HTTP Server
+
+```bash
+cd java/apps/Small
+make clean && make all APP_NAME=HttpServer "EXTRA_SRC=../../net/src ../../fat32/src"
+make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/HttpServer.jop
+```
+
 ### DHCP Server Setup (on test host)
 
 ```bash
@@ -479,6 +488,10 @@ echo "hello" | nc -u -w1 192.168.0.123 7
 
 # TCP echo (port 7)
 echo "hello" | nc -w1 192.168.0.123 7
+
+# HTTP server (serves files from SD card)
+curl http://192.168.0.123/
+curl http://192.168.0.123/index.htm
 
 # Monitor DHCP traffic
 tcpdump -i enp2s0 -n port 67 or port 68
@@ -538,7 +551,57 @@ The port:
 - Adapted to JOP workarounds (no StringBuilder, static allocation)
 - Reduced from ~31 files to 20 files (merged some, removed unused)
 
+## HTTP Server
+
+`HttpServer.java` is a single-connection HTTP/1.0 file server that serves static
+files from the FAT32 SD card over TCP port 80. It combines the networking stack
+with the FAT32 filesystem module.
+
+### Features
+
+- **GET** requests only (returns 400 for other methods)
+- Path-based file lookup with subdirectory traversal
+- Content-Type detection by file extension (`.htm`, `.css`, `.js`, `.png`, `.jpg`, `.gif`, `.ico`)
+- Default document: `GET /` serves `index.htm`
+- **Auto-creates `index.htm`** on SD card if missing (default "Hello from JOP!" page)
+- Pre-built error responses (400, 404, 500)
+- State machine: IDLE → READING_REQUEST → SENDING_HEADER → SENDING_BODY → CLOSING
+- Backpressure-aware: pending byte retry on TCP window full
+
+### Architecture
+
+```
+curl GET /index.htm
+    → TCP accept (port 80)
+    → Read HTTP headers (detect \r\n\r\n)
+    → Parse "GET /path HTTP/1.x"
+    → fs.findFile() on FAT32
+    → Build "HTTP/1.0 200 OK" header
+    → Stream file bytes to TCP
+    → Close connection
+    → Re-listen on port 80
+```
+
+### Auto-created Default Page
+
+On startup, `ensureIndexFile()` checks for `INDEX.HTM` in the SD card root
+directory. If missing, it creates the file with a default HTML page. This makes
+the server self-contained for testing without needing to pre-populate the SD card.
+
+UART output shows either "index.htm exists" (file found) or "Creating index.htm..."
+followed by "index.htm created" (file created).
+
 ## Progress Log
+
+### 2026-03-01: HTTP server — auto-create index.htm
+
+Added `ensureIndexFile()` to HttpServer.java. On startup after FAT32 mount,
+checks if `INDEX.HTM` exists on the SD card root. If missing, creates it with
+a default HTML page using `Fat32OutputStream.write()`. Uses string literal
+(no StringBuilder) and char-by-char write pattern matching Fat32Test.java.
+
+Verified on hardware: first boot creates the file, second boot detects it exists.
+`curl http://192.168.0.123/` returns the default page.
 
 ### 2026-03-01: DHCP client + DNS resolver
 
