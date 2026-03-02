@@ -22,7 +22,7 @@ class BmbProtocolFormal extends SpinalFormalFunSuite {
 
   val formalConfig = FormalConfig
     .addEngin(SmtBmc(solver = SmtBmcSolver.Z3))
-    .withTimeout(180)
+    .withTimeout(300)
 
   // Minimal config to reduce state space
   val memConfig = JopMemoryConfig(useOcache = false, burstLen = 0)

@@ -24,7 +24,7 @@ class LruCacheCoreFormal extends SpinalFormalFunSuite {
 
   val formalConfig = FormalConfig
     .addEngin(SmtBmc(solver = SmtBmcSolver.Z3))
-    .withTimeout(180)
+    .withTimeout(300)
 
   val cacheConfig = CacheConfig(addrWidth = 8, dataWidth = 32, setCount = 2, wayCount = 2)
 

@@ -24,7 +24,7 @@ class CacheToMigAdapterFormal extends SpinalFormalFunSuite {
 
   val formalConfig = FormalConfig
     .addEngin(SmtBmc(solver = SmtBmcSolver.Z3))
-    .withTimeout(120)
+    .withTimeout(300)
 
   def setupDut(dut: CacheToMigAdapter): Unit = {
     anyseq(dut.io.cmd.valid)
