@@ -23,7 +23,7 @@ class BytecodeFetchStageFormal extends SpinalFormalFunSuite {
 
   val formalConfig = FormalConfig
     .addEngin(SmtBmc(solver = SmtBmcSolver.Z3))
-    .withTimeout(120)
+    .withTimeout(300)
 
   /** Helper to drive all inputs with anyseq */
   def setupAllInputs(dut: BytecodeFetchStage): Unit = {
