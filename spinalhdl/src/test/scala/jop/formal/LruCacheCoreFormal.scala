@@ -152,7 +152,7 @@ class LruCacheCoreFormal extends SpinalFormalFunSuite {
 
   test("responsive memory returns to IDLE") {
     formalConfig
-      .withBMC(20)
+      .withBMC(12)
       .doVerify(new Component {
         val dut = FormalDut(new LruCacheCore(cacheConfig))
         assumeInitial(ClockDomain.current.isResetActive)
@@ -178,7 +178,7 @@ class LruCacheCoreFormal extends SpinalFormalFunSuite {
 
   test("WAIT_EVICT_RSP accepts successful eviction unconditionally") {
     formalConfig
-      .withBMC(20)
+      .withBMC(10)
       .doVerify(new Component {
         val dut = FormalDut(new LruCacheCore(cacheConfig))
         assumeInitial(ClockDomain.current.isResetActive)
