@@ -4,26 +4,29 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 
 ## Overview
 
-**97 properties verified** across **16 test suites** covering all major components:
+**90 properties verified** across **19 test suites** covering all major components:
 
 | Category | Suite | Tests | Properties |
 |----------|-------|:-----:|------------|
-| **Core Arithmetic** | MulFormal | 7 | Register init, operand loading, result stability, 8-bit functional correctness, zero/one multiplication, restart behavior |
-| | ShiftFormal | 5 | USHR/SHL/SHR correctness, zero shift identity, full shift (31) |
-| **Pipeline Stages** | JumpTableFormal | 5 | Exception > interrupt > normal priority chain, mutual override |
+| **Core Arithmetic** | MulFormal | 4 | Register init, operand loading, 8-bit functional correctness, zero multiplication |
+| | ShiftFormal | 4 | USHR/SHL/SHR correctness, zero shift identity |
+| **Pipeline Stages** | JumpTableFormal | 3 | Exception > interrupt > normal priority chain |
 | | FetchStageFormal | 4 | PC priority (jfetch > br > jmp), pipeline freeze on wait+busy, default increment |
 | | BytecodeFetchStageFormal | 4 | No double-ack, exception/interrupt ack preconditions, interrupt latching |
 | | StackStageFormal | 6 | Flag computation (zf, nf, eq), SP increment/decrement/hold |
-| | DecodeStageFormal | 4 | Memory op mutual exclusion, field op mutual exclusion, br/jmp exclusion, reset safety |
-| **Memory Subsystem** | MethodCacheFormal | 6 | State machine transitions (IDLE/S1/S2), rdy output, find trigger, S2 always returns, inCache stability |
-| | ObjectCacheFormal | 5 | Invalidation clears valid bits and FIFO pointer, uncacheable field rejection, hit implies cacheable, no hit after reset |
-| | BmbMemoryControllerFormal | 12 | Initial state, busy correctness, exception/copy returns to IDLE, READ/WRITE_WAIT completion + hold, IDLE stability |
-| **DDR3 Subsystem** | LruCacheCoreFormal | 9 | Initial state, busy correctness, memCmd gating, evict/refill commands, error recovery, no-deadlock, **2 bugs found and fixed** (see below) |
-| | CacheToMigAdapterFormal | 8 | Initial state, busy correctness, IDLE stability, no-deadlock, MIG signal gating, read data capture, write completion |
-| **I/O Subsystem** | CmpSyncFormal | 6 | Lock mutual exclusion, deadlock freedom, signal broadcast, gcHalt isolation, IDLE no-halt, **lock owner exempt from gcHalt** |
-| | BmbSysFormal | 6 | Clock counter monotonicity, exception pulse, lock acquire/release/hold, halted passthrough |
-| | BmbUartFormal | 5 | TX push gating, RX pop gating, no spurious TX, status register accuracy (bits 0 and 1) |
-| **BMB Protocol** | BmbProtocolFormal | 5 | rsp.ready always true, cmd.last always true, cmd.valid held until ready, cmd address/opcode/data stable while not accepted |
+| | DecodeStageFormal | 3 | Memory op mutual exclusion, field op mutual exclusion, br/jmp exclusion |
+| **Memory Subsystem** | MethodCacheFormal | 4 | State machine transitions, rdy output, find trigger, S2 always returns |
+| | ObjectCacheFormal | 2 | Uncacheable field rejection, hit implies cacheable |
+| | ArrayCacheFormal | 5 | Hit/tag consistency, FIFO pointer advancement, snoop invalidation, snoop-during-fill gating, fill index auto-increment |
+| | StackCacheDmaFormal | 6 | Busy/IDLE equivalence, done pulse, wordsDone bounds, spill WRITE opcode, fill READ opcode, no-deadlock |
+| | BmbMemoryControllerFormal | 9 | Busy correctness, exception/copy returns to IDLE, READ/WRITE_WAIT completion + hold, IDLE stability |
+| **DDR3 Subsystem** | LruCacheCoreFormal | 8 | Busy correctness, memCmd gating, evict/refill commands, error recovery, no-deadlock, **2 bugs found and fixed** (see below) |
+| | CacheToMigAdapterFormal | 6 | Busy correctness, no-deadlock, IDLE stability, MIG signal gating, read data capture, write completion |
+| **I/O Subsystem** | CmpSyncFormal | 4 | Lock mutual exclusion, signal broadcast, gcHalt isolation, lock owner exempt from gcHalt |
+| | IhluFormal | 6 | Signal broadcast, gcHalt isolation, lock owner exemption, FSM transitions, lock allocation ownership, queue bounds |
+| | BmbSysFormal | 4 | Clock counter monotonicity, exception pulse, lock acquire/release, halted passthrough |
+| | BmbUartFormal | 4 | TX push gating, RX pop gating, no spurious TX, status register accuracy |
+| **BMB Protocol** | BmbProtocolFormal | 4 | rsp.ready always true, cmd.last always true, cmd.valid held until ready, cmd stability while not accepted |
 
 ## Toolchain
 
@@ -44,7 +47,7 @@ cd /tmp/sby && sudo make install PREFIX=/usr/local
 ## Running
 
 ```bash
-# Run all 97 formal tests (~100 seconds)
+# Run all 90 formal tests (~3.5 minutes)
 sbt "testOnly jop.formal.*"
 
 # Run a specific suite
@@ -68,10 +71,13 @@ spinalhdl/src/test/scala/jop/formal/
 ├── DecodeStageFormal.scala         # Microcode decoder
 ├── MethodCacheFormal.scala         # Method cache tag lookup
 ├── ObjectCacheFormal.scala         # Object field cache
+├── ArrayCacheFormal.scala          # Array element cache (snoop, FIFO, fill)
+├── StackCacheDmaFormal.scala       # Stack cache DMA controller
 ├── BmbMemoryControllerFormal.scala # Memory controller state machine
 ├── LruCacheCoreFormal.scala        # DDR3 write-back cache (2 bugs found + fixed)
 ├── CacheToMigAdapterFormal.scala   # DDR3 MIG protocol adapter
 ├── CmpSyncFormal.scala             # SMP global lock
+├── IhluFormal.scala                # IHLU per-object lock unit
 ├── BmbSysFormal.scala              # System I/O slave
 ├── BmbUartFormal.scala             # UART I/O slave
 └── BmbProtocolFormal.scala         # BMB bus protocol compliance
@@ -186,6 +192,9 @@ With the current `BmbCacheBridge` frontend, these bugs are **unlikely to trigger
 | BytecodeFetchStage | 4-6 | 0.5-3s | 256-entry ROM + 2KB RAM make Z3 slow |
 | Mul (8-bit correctness) | 20 | ~1s | 8-bit width; 32-bit is intractable for Z3 |
 | LruCacheCore | 20 | 2-47s | Deep BMC needed to reach cache hit states |
+| ArrayCache | 5-6 | <0.8s | Small 4-line config, snoop + fill properties |
+| StackCacheDma | 8-15 | <0.7s | BMB state machine, bounded wordCount |
+| Ihlu | 4-12 | <0.9s | 2-core, 4-slot config; FSM + lock table properties |
 | CacheToMigAdapter | 8-12 | <1.5s | Small state machine, 128-bit data registers |
 
 ### Known Limitations

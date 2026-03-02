@@ -1,6 +1,6 @@
 # JOP Test Coverage Audit
 
-Date: 2026-03-01 (updated from 2026-02-24)
+Date: 2026-03-02 (updated from 2026-03-01)
 
 ## 1. Bytecode Coverage Matrix
 
@@ -590,8 +590,9 @@ Implemented as `FloatArray.java` (faload/fastore with float arrays, 4 elements +
 
 ### Formal Verification
 
-- **Suites**: 16 (SymbiYosys + Z3)
-- **Total properties**: 97
+- **Suites**: 19 (SymbiYosys + Z3)
+- **Total properties**: 90
+- **Components covered**: ArrayCache, BmbMemoryController, BmbProtocol, BmbSys, BmbUart, BytecodeFetchStage, CacheToMigAdapter, CmpSync, DecodeStage, FetchStage, Ihlu, JumpTable, LruCacheCore, MethodCache, Mul, ObjectCache, Shift, StackCacheDma, StackStage
 
 ### Bug Regression Coverage
 
