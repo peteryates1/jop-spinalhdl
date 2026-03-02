@@ -1,14 +1,16 @@
 package jop.pipeline
 
 import org.scalatest.funsuite.AnyFunSuite
-import spinal.core._
 import spinal.core.sim._
 import jop.JumpTableData
+import jop.TestVectorUtils
 
 class JumpTableTest extends AnyFunSuite {
 
+  lazy val compiled = TestVectorUtils.simWave(SimConfig).compile(JumpTable())
+
   test("JumpTable: known bytecode mappings") {
-    SimConfig.withWave.compile(JumpTable()).doSim { dut =>
+    compiled.doSim { dut =>
 
       dut.io.intPend #= false
       dut.io.excPend #= false
@@ -39,7 +41,7 @@ class JumpTableTest extends AnyFunSuite {
   }
 
   test("JumpTable: all 256 entries present") {
-    SimConfig.withWave.compile(JumpTable()).doSim { dut =>
+    compiled.doSim { dut =>
 
       dut.io.intPend #= false
       dut.io.excPend #= false
@@ -61,7 +63,7 @@ class JumpTableTest extends AnyFunSuite {
   }
 
   test("JumpTable: unmapped bytecodes route to sys_noim") {
-    SimConfig.withWave.compile(JumpTable()).doSim { dut =>
+    compiled.doSim { dut =>
 
       dut.io.intPend #= false
       dut.io.excPend #= false

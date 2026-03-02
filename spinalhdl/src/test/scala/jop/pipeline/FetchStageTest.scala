@@ -8,7 +8,8 @@ import spinal.core._
 import spinal.core.sim._
 
 import scala.io.Source
-import java.nio.file.{Path, Paths}
+import java.nio.file.Path
+import jop.TestVectorUtils
 
 /**
  * Test case data loaded from JSON
@@ -61,27 +62,8 @@ object FetchTestVectorLoader {
     } yield FetchTestVectors(module, version, description, testCases)
   }
 
-  /**
-   * Parse value string to Long (handles 32-bit unsigned values).
-   * Supports formats: 0x (hex), 0b (binary), decimal.
-   */
-  def parseValue(valueStr: String): Long = {
-    val trimmed = valueStr.trim
-    if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
-      java.lang.Long.parseUnsignedLong(trimmed.substring(2), 16)
-    } else if (trimmed.startsWith("0b") || trimmed.startsWith("0B")) {
-      java.lang.Long.parseUnsignedLong(trimmed.substring(2), 2)
-    } else {
-      trimmed.toLong
-    }
-  }
-
-  /**
-   * Check if a value string is a don't-care marker (contains 'X').
-   */
-  def isDontCare(valueStr: String): Boolean = {
-    valueStr.trim.toUpperCase.contains("X")
-  }
+  def parseValue(valueStr: String): Long = TestVectorUtils.parseValue(valueStr)
+  def isDontCare(valueStr: String): Boolean = TestVectorUtils.isDontCare(valueStr)
 
   /**
    * Load test vectors from the shared JSON file
@@ -119,44 +101,27 @@ object FetchTestVectorLoader {
 class FetchStageTest extends AnyFunSuite {
   import FetchTestVectorLoader._
 
-  // Find project root by looking for verification directory
-  def findProjectRoot(): Path = {
-    var current = Paths.get(System.getProperty("user.dir"))
-    while (current != null) {
-      if (current.resolve("verification/test-vectors").toFile.exists()) {
-        return current
-      }
-      current = current.getParent
-    }
-    // Fallback: try relative paths from likely locations
-    val candidates = Seq(
-      Paths.get("../.."),
-      Paths.get("../../.."),
-      Paths.get(".")
-    )
-    candidates.find(_.resolve("verification/test-vectors").toFile.exists())
-      .getOrElse(throw new RuntimeException("Could not find project root with test vectors"))
-  }
-
   // Load test vectors once
-  lazy val testVectors: FetchTestVectors = load(findProjectRoot())
+  lazy val testVectors: FetchTestVectors = load(TestVectorUtils.findProjectRoot())
 
   // SpinalSim configuration with BOOT reset (no explicit reset signal)
-  val simConfig = SimConfig
+  val simConfig = TestVectorUtils.simWave(SimConfig
     .withConfig(SpinalConfig(
       defaultConfigForClockDomains = ClockDomainConfig(
         resetKind = BOOT
       ),
       defaultClockDomainFrequency = FixedFrequency(100 MHz)
     ))
-    .withWave
-    .workspacePath("simWorkspace")
+    .workspacePath("simWorkspace"))
+
+  // Compile DUT once, reuse for all test cases
+  lazy val compiled = simConfig.compile(FetchStage())
 
   /**
    * Run a single test case from the JSON test vectors
    */
   def runTestCase(tc: FetchTestCase): Unit = {
-    simConfig.compile(FetchStage()).doSim(tc.name) { dut =>
+    compiled.doSim(tc.name) { dut =>
       // Initialize clock domain
       dut.clockDomain.forkStimulus(10)
 
@@ -185,8 +150,7 @@ class FetchStageTest extends AnyFunSuite {
       }
 
       // Track results
-      var passed = true
-      var failureMsg = ""
+      val failureMsgs = scala.collection.mutable.ArrayBuffer[String]()
 
       // Run simulation for the specified number of cycles
       for (cycle <- 0 until tc.cycles) {
@@ -215,34 +179,29 @@ class FetchStageTest extends AnyFunSuite {
                 case "pc_out" =>
                   val actual = dut.io.pc_out.toLong
                   if (actual != expected) {
-                    passed = false
-                    failureMsg = s"Cycle $cycle: pc_out mismatch - expected 0x${expected.toHexString}, got 0x${actual.toHexString}"
+                    failureMsgs += s"Cycle $cycle: pc_out mismatch - expected 0x${expected.toHexString}, got 0x${actual.toHexString}"
                   }
                 case "ir_out" =>
                   val actual = dut.io.ir_out.toLong
                   if (actual != expected) {
-                    passed = false
-                    failureMsg = s"Cycle $cycle: ir_out mismatch - expected 0x${expected.toHexString}, got 0x${actual.toHexString}"
+                    failureMsgs += s"Cycle $cycle: ir_out mismatch - expected 0x${expected.toHexString}, got 0x${actual.toHexString}"
                   }
                 case "nxt" =>
                   val actual = dut.io.nxt.toBoolean
                   val expectedBool = expected != 0
                   if (actual != expectedBool) {
-                    passed = false
-                    failureMsg = s"Cycle $cycle: nxt mismatch - expected $expectedBool, got $actual"
+                    failureMsgs += s"Cycle $cycle: nxt mismatch - expected $expectedBool, got $actual"
                   }
                 case "opd" =>
                   val actual = dut.io.opd.toBoolean
                   val expectedBool = expected != 0
                   if (actual != expectedBool) {
-                    passed = false
-                    failureMsg = s"Cycle $cycle: opd mismatch - expected $expectedBool, got $actual"
+                    failureMsgs += s"Cycle $cycle: opd mismatch - expected $expectedBool, got $actual"
                   }
                 case "dout" =>
                   val actual = dut.io.dout.toLong
                   if (actual != expected) {
-                    passed = false
-                    failureMsg = s"Cycle $cycle: dout mismatch - expected 0x${expected.toHexString}, got 0x${actual.toHexString}"
+                    failureMsgs += s"Cycle $cycle: dout mismatch - expected 0x${expected.toHexString}, got 0x${actual.toHexString}"
                   }
                 case other =>
                   // Unknown signal - skip
@@ -252,7 +211,7 @@ class FetchStageTest extends AnyFunSuite {
         }
       }
 
-      assert(passed, failureMsg)
+      assert(failureMsgs.isEmpty, failureMsgs.mkString("\n"))
     }
   }
 

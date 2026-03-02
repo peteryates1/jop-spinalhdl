@@ -4,6 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib.com.eth._
+import jop.TestVectorUtils
 
 /**
  * Verify SpinalHDL CRC-32 at 8-bit width against known Ethernet CRC values.
@@ -85,7 +86,7 @@ class CrcVerifyTest extends AnyFunSuite {
     println(f"Software CRC = 0x${swCrc}%08X")
 
     // Simulate the SpinalHDL CRC module
-    SimConfig.withFstWave.compile(Crc(CrcKind.Crc32, 8)).doSim { dut =>
+    TestVectorUtils.simWave(SimConfig).compile(Crc(CrcKind.Crc32, 8)).doSim { dut =>
       dut.clockDomain.forkStimulus(10)
 
       // Flush
@@ -146,7 +147,7 @@ class CrcVerifyTest extends AnyFunSuite {
     val swCrc = ethCrc32(testData)
 
     // Simulate the SpinalHDL CRC module at 4-bit width (MII nibbles)
-    SimConfig.withFstWave.compile(Crc(CrcKind.Crc32, 4)).doSim { dut =>
+    TestVectorUtils.simWave(SimConfig).compile(Crc(CrcKind.Crc32, 4)).doSim { dut =>
       dut.clockDomain.forkStimulus(10)
 
       // Flush

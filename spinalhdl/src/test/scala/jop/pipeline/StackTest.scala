@@ -7,7 +7,8 @@ import spinal.core._
 import spinal.core.sim._
 
 import scala.io.Source
-import java.nio.file.{Path, Paths}
+import java.nio.file.Path
+import jop.TestVectorUtils
 
 /**
  * Test case data structures for Stack module JSON test vectors
@@ -76,20 +77,7 @@ object StackTestVectorLoader {
     } yield StackTestVectors(module, version, description, testCases)
   }
 
-  /**
-   * Parse value string to Long (handles 32-bit unsigned values)
-   * Supports formats: 0x (hex), 0b (binary), decimal
-   */
-  def parseValue(valueStr: String): Long = {
-    val trimmed = valueStr.trim
-    if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
-      java.lang.Long.parseUnsignedLong(trimmed.substring(2), 16)
-    } else if (trimmed.startsWith("0b") || trimmed.startsWith("0B")) {
-      java.lang.Long.parseUnsignedLong(trimmed.substring(2), 2)
-    } else {
-      trimmed.toLong
-    }
-  }
+  def parseValue(valueStr: String): Long = TestVectorUtils.parseValue(valueStr)
 
   /**
    * Load test vectors from the shared JSON file
@@ -137,38 +125,21 @@ object StackTestVectorLoader {
 class StackTest extends AnyFunSuite {
   import StackTestVectorLoader._
 
-  // Find project root by looking for verification directory
-  def findProjectRoot(): Path = {
-    var current = Paths.get(System.getProperty("user.dir"))
-    while (current != null) {
-      if (current.resolve("verification/test-vectors").toFile.exists()) {
-        return current
-      }
-      current = current.getParent
-    }
-    // Fallback: try relative paths from likely locations
-    val candidates = Seq(
-      Paths.get("../.."),
-      Paths.get("../../.."),
-      Paths.get(".")
-    )
-    candidates.find(_.resolve("verification/test-vectors").toFile.exists())
-      .getOrElse(throw new RuntimeException("Could not find project root with test vectors"))
-  }
-
   // Load test vectors once
-  lazy val testVectors: StackTestVectors = load(findProjectRoot())
+  lazy val testVectors: StackTestVectors = load(TestVectorUtils.findProjectRoot())
 
   // SpinalSim configuration
-  val simConfig = SimConfig
+  val simConfig = TestVectorUtils.simWave(SimConfig
     .withConfig(SpinalConfig(
       defaultConfigForClockDomains = ClockDomainConfig(
         resetKind = SYNC,
         resetActiveLevel = HIGH
       )
     ))
-    .withWave
-    .workspacePath("simWorkspace")
+    .workspacePath("simWorkspace"))
+
+  // Compile DUT once, reuse for all test cases
+  lazy val compiled = simConfig.compile(StackStage())
 
   /**
    * Run a single test case from the JSON test vectors
@@ -211,7 +182,7 @@ class StackTest extends AnyFunSuite {
   }
 
   def runTestCase(tc: StackTestCase): Unit = {
-    simConfig.compile(StackStage()).doSim(tc.name) { dut =>
+    compiled.doSim(tc.name) { dut =>
       // Initialize clock domain
       dut.clockDomain.forkStimulus(10)
 
@@ -360,7 +331,7 @@ class StackTest extends AnyFunSuite {
 
   // Test basic reset behavior
   test("stack_reset_behavior") {
-    simConfig.compile(StackStage()).doSim("reset_behavior") { dut =>
+    compiled.doSim("reset_behavior") { dut =>
       dut.clockDomain.forkStimulus(10)
 
       // Initialize all inputs to zero/false
@@ -443,7 +414,7 @@ class StackTest extends AnyFunSuite {
   // Test component elaborates with no errors
   test("stack_elaboration") {
     println("  Testing StackStage elaboration...")
-    simConfig.compile(StackStage()).doSim("elaboration") { dut =>
+    compiled.doSim("elaboration") { dut =>
       dut.clockDomain.forkStimulus(10)
       initializeDut(dut)
       dut.clockDomain.waitRisingEdge(5)

@@ -8,7 +8,8 @@ import spinal.core._
 import spinal.core.sim._
 
 import scala.io.Source
-import java.nio.file.{Path, Paths}
+import java.nio.file.Path
+import jop.TestVectorUtils
 
 /**
  * Test case data loaded from JSON
@@ -66,19 +67,7 @@ object MulTestVectorLoader {
     } yield MulTestVectors(module, version, description, testCases)
   }
 
-  /**
-   * Parse value string to Long (handles 32-bit unsigned values)
-   */
-  def parseValue(valueStr: String): Long = {
-    val trimmed = valueStr.trim
-    if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
-      java.lang.Long.parseUnsignedLong(trimmed.substring(2), 16)
-    } else if (trimmed.startsWith("0b") || trimmed.startsWith("0B")) {
-      java.lang.Long.parseUnsignedLong(trimmed.substring(2), 2)
-    } else {
-      trimmed.toLong
-    }
-  }
+  def parseValue(valueStr: String): Long = TestVectorUtils.parseValue(valueStr)
 
   /**
    * Load test vectors from the shared JSON file
@@ -116,43 +105,26 @@ object MulTestVectorLoader {
 class MulTest extends AnyFunSuite {
   import MulTestVectorLoader._
 
-  // Find project root by looking for verification directory
-  def findProjectRoot(): Path = {
-    var current = Paths.get(System.getProperty("user.dir"))
-    while (current != null) {
-      if (current.resolve("verification/test-vectors").toFile.exists()) {
-        return current
-      }
-      current = current.getParent
-    }
-    // Fallback: try relative paths from likely locations
-    val candidates = Seq(
-      Paths.get("../.."),
-      Paths.get("../../.."),
-      Paths.get(".")
-    )
-    candidates.find(_.resolve("verification/test-vectors").toFile.exists())
-      .getOrElse(throw new RuntimeException("Could not find project root with test vectors"))
-  }
-
   // Load test vectors once
-  lazy val testVectors: MulTestVectors = load(findProjectRoot())
+  lazy val testVectors: MulTestVectors = load(TestVectorUtils.findProjectRoot())
 
   // SpinalSim configuration with BOOT reset (no explicit reset signal)
-  val simConfig = SimConfig
+  val simConfig = TestVectorUtils.simWave(SimConfig
     .withConfig(SpinalConfig(
       defaultConfigForClockDomains = ClockDomainConfig(
         resetKind = BOOT
       )
     ))
-    .withWave
-    .workspacePath("simWorkspace")
+    .workspacePath("simWorkspace"))
+
+  // Compile DUT once, reuse for all test cases
+  lazy val compiled = simConfig.compile(Mul(32))
 
   /**
    * Run a single test case from the JSON test vectors
    */
   def runTestCase(tc: MulTestCase): Unit = {
-    simConfig.compile(Mul(32)).doSim(tc.name) { dut =>
+    compiled.doSim(tc.name) { dut =>
       // Initialize clock domain
       dut.clockDomain.forkStimulus(10)
 
@@ -178,8 +150,7 @@ class MulTest extends AnyFunSuite {
       }
 
       // Track results
-      var passed = true
-      var failureMsg = ""
+      val failureMsgs = scala.collection.mutable.ArrayBuffer[String]()
 
       // Run simulation for the specified number of cycles
       for (cycle <- 0 until tc.cycles) {
@@ -199,14 +170,13 @@ class MulTest extends AnyFunSuite {
             val expected = parseValue(expectedStr)
             val actual = dut.io.dout.toLong
             if (actual != expected) {
-              passed = false
-              failureMsg = s"Cycle $cycle: dout mismatch - expected 0x${expected.toHexString}, got 0x${actual.toHexString}"
+              failureMsgs += s"Cycle $cycle: dout mismatch - expected 0x${expected.toHexString}, got 0x${actual.toHexString}"
             }
           }
         }
       }
 
-      assert(passed, failureMsg)
+      assert(failureMsgs.isEmpty, failureMsgs.mkString("\n"))
     }
   }
 

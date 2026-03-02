@@ -8,7 +8,8 @@ import spinal.core._
 import spinal.core.sim._
 
 import scala.io.Source
-import java.nio.file.{Path, Paths}
+import java.nio.file.Path
+import jop.TestVectorUtils
 
 /**
  * Test case data loaded from JSON
@@ -61,27 +62,8 @@ object DecodeTestVectorLoader {
     } yield DecodeTestVectors(module, version, description, testCases)
   }
 
-  /**
-   * Parse value string to Long (handles 32-bit unsigned values).
-   * Supports formats: 0x (hex), 0b (binary), decimal.
-   */
-  def parseValue(valueStr: String): Long = {
-    val trimmed = valueStr.trim
-    if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
-      java.lang.Long.parseUnsignedLong(trimmed.substring(2), 16)
-    } else if (trimmed.startsWith("0b") || trimmed.startsWith("0B")) {
-      java.lang.Long.parseUnsignedLong(trimmed.substring(2), 2)
-    } else {
-      trimmed.toLong
-    }
-  }
-
-  /**
-   * Check if a value string is a don't-care marker (contains 'X').
-   */
-  def isDontCare(valueStr: String): Boolean = {
-    valueStr.trim.toUpperCase.contains("X")
-  }
+  def parseValue(valueStr: String): Long = TestVectorUtils.parseValue(valueStr)
+  def isDontCare(valueStr: String): Boolean = TestVectorUtils.isDontCare(valueStr)
 
   /**
    * Load test vectors from the shared JSON file
@@ -119,38 +101,21 @@ object DecodeTestVectorLoader {
 class DecodeStageTest extends AnyFunSuite {
   import DecodeTestVectorLoader._
 
-  // Find project root by looking for verification directory
-  def findProjectRoot(): Path = {
-    var current = Paths.get(System.getProperty("user.dir"))
-    while (current != null) {
-      if (current.resolve("verification/test-vectors").toFile.exists()) {
-        return current
-      }
-      current = current.getParent
-    }
-    // Fallback: try relative paths from likely locations
-    val candidates = Seq(
-      Paths.get("../.."),
-      Paths.get("../../.."),
-      Paths.get(".")
-    )
-    candidates.find(_.resolve("verification/test-vectors").toFile.exists())
-      .getOrElse(throw new RuntimeException("Could not find project root with test vectors"))
-  }
-
   // Load test vectors once
-  lazy val testVectors: DecodeTestVectors = load(findProjectRoot())
+  lazy val testVectors: DecodeTestVectors = load(TestVectorUtils.findProjectRoot())
 
   // SpinalSim configuration with SYNC reset, HIGH active level
-  val simConfig = SimConfig
+  val simConfig = TestVectorUtils.simWave(SimConfig
     .withConfig(SpinalConfig(
       defaultConfigForClockDomains = ClockDomainConfig(
         resetKind = SYNC,
         resetActiveLevel = HIGH
       )
     ))
-    .withWave
-    .workspacePath("simWorkspace")
+    .workspacePath("simWorkspace"))
+
+  // Compile DUT once, reuse for all test cases
+  lazy val compiled = simConfig.compile(DecodeStage())
 
   /**
    * Check a Bool output signal against an expected value.
@@ -181,7 +146,7 @@ class DecodeStageTest extends AnyFunSuite {
    * Run a single test case from the JSON test vectors
    */
   def runTestCase(tc: DecodeTestCase): Unit = {
-    simConfig.compile(DecodeStage()).doSim(tc.name) { dut =>
+    compiled.doSim(tc.name) { dut =>
       // Initialize clock domain
       dut.clockDomain.forkStimulus(10)
 
@@ -207,8 +172,7 @@ class DecodeStageTest extends AnyFunSuite {
       }
 
       // Track results
-      var passed = true
-      var failureMsg = ""
+      val failureMsgs = scala.collection.mutable.ArrayBuffer[String]()
 
       // Run simulation for the specified number of cycles
       for (cycle <- 0 until tc.cycles) {
@@ -296,15 +260,14 @@ class DecodeStageTest extends AnyFunSuite {
               }
 
               error.foreach { msg =>
-                passed = false
-                failureMsg = msg
+                failureMsgs += msg
               }
             }
           }
         }
       }
 
-      assert(passed, failureMsg)
+      assert(failureMsgs.isEmpty, failureMsgs.mkString("\n"))
     }
   }
 

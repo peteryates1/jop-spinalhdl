@@ -5,6 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.com.eth._
+import jop.TestVectorUtils
 
 /**
  * End-to-end test of MacEth RX path at 8-bit (GMII) width.
@@ -125,7 +126,7 @@ class MacEthRxTest extends AnyFunSuite {
     println(s"Frame size: ${frame.size} bytes (${arpPayload.size} payload + 8 preamble+SFD + 4 FCS)")
     println(f"Expected CRC: 0x${ethCrc32(arpPayload)}%08X")
 
-    SimConfig.withFstWave.compile(MacEthTestHarness(8)).doSim { dut =>
+    TestVectorUtils.simWave(SimConfig).compile(MacEthTestHarness(8)).doSim { dut =>
       // Fork all three clock domains
       dut.clockDomain.forkStimulus(10)  // system: 100 MHz
       dut.txCd.forkStimulus(8)          // tx: 125 MHz
@@ -212,7 +213,7 @@ class MacEthRxTest extends AnyFunSuite {
   test("MacEth 4-bit RX: ARP frame passes CRC (MII nibbles)") {
     val frame = buildFrame(arpPayload)
 
-    SimConfig.withFstWave.compile(MacEthTestHarness(4)).doSim { dut =>
+    TestVectorUtils.simWave(SimConfig).compile(MacEthTestHarness(4)).doSim { dut =>
       dut.clockDomain.forkStimulus(10)
       dut.txCd.forkStimulus(40)  // tx: 25 MHz
       dut.rxCd.forkStimulus(40)  // rx: 25 MHz

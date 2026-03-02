@@ -5,6 +5,7 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
 import org.scalatest.funsuite.AnyFunSuite
+import jop.TestVectorUtils
 
 /**
  * Test harness that connects BmbMemoryController to BmbOnChipRam
@@ -69,12 +70,14 @@ case class BmbMemoryTestHarness(
  */
 class BmbMemoryControllerTest extends AnyFunSuite {
 
+  lazy val compiled = TestVectorUtils.simWave(SimConfig).compile(BmbMemoryTestHarness())
+
   def defaultMemIn(): Unit = {
     // All signals default to false
   }
 
   test("BmbMemoryController: simple write and read") {
-    SimConfig.withWave.compile(BmbMemoryTestHarness()).doSim { dut =>
+    compiled.doSim { dut =>
       dut.clockDomain.forkStimulus(10)
 
       // Initialize inputs
@@ -167,7 +170,7 @@ class BmbMemoryControllerTest extends AnyFunSuite {
   }
 
   test("BmbMemoryController: multiple writes and reads") {
-    SimConfig.withWave.compile(BmbMemoryTestHarness()).doSim { dut =>
+    compiled.doSim { dut =>
       dut.clockDomain.forkStimulus(10)
 
       // Initialize inputs

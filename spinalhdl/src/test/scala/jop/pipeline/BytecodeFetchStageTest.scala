@@ -6,9 +6,11 @@ import spinal.core.sim._
 import io.circe._
 import io.circe.parser._
 import scala.io.Source
-import java.nio.file.{Path, Paths}
+import jop.TestVectorUtils
 
 class BytecodeFetchStageTest extends AnyFunSuite {
+
+  val bcfSimConfig = TestVectorUtils.simWave(SimConfig)
 
   // Helper to create DUT with test bytecode ROM
   def createDut(jbcData: Seq[Int]): BytecodeFetchStage = {
@@ -21,8 +23,11 @@ class BytecodeFetchStageTest extends AnyFunSuite {
     )
   }
 
+  // Compile zero-fill DUT once for tests that don't need specific ROM content
+  lazy val compiledZero = bcfSimConfig.compile(createDut(Seq.fill(2048)(0x00)))
+
   test("BytecodeFetchStage: reset clears state") {
-    SimConfig.withWave.compile(createDut(Seq.fill(16)(0x00))).doSim { dut =>
+    compiledZero.doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Apply reset
@@ -53,7 +58,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
 
   test("BytecodeFetchStage: jpc increments on jfetch") {
     // Simple ROM: all NOP (0x00)
-    SimConfig.withWave.compile(createDut(Seq.fill(16)(0x00))).doSim { dut =>
+    compiledZero.doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Reset
@@ -107,7 +112,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
   }
 
   test("BytecodeFetchStage: jpc_wr loads from stack") {
-    SimConfig.withWave.compile(createDut(Seq.fill(16)(0x00))).doSim { dut =>
+    compiledZero.doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Reset
@@ -153,7 +158,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       0xA7   // goto at address 2
     )
 
-    SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
+    bcfSimConfig.compile(createDut(jbcData)).doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Reset
@@ -208,7 +213,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
   }
 
   test("BytecodeFetchStage: jpc_wr has priority over jfetch") {
-    SimConfig.withWave.compile(createDut(Seq.fill(16)(0x00))).doSim { dut =>
+    compiledZero.doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Reset
@@ -243,7 +248,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
   }
 
   test("BytecodeFetchStage: jpc overflow behavior") {
-    SimConfig.withWave.compile(createDut(Seq.fill(2048)(0x00))).doSim { dut =>
+    compiledZero.doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Reset
@@ -295,7 +300,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       0xBC   // Fifth operand byte
     )
 
-    SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
+    bcfSimConfig.compile(createDut(jbcData)).doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Reset
@@ -366,7 +371,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
     // Test that low byte gets updated every cycle, even without jopdfetch
     val jbcData = Seq(0xAA, 0xBB, 0xCC, 0xDD)
 
-    SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
+    bcfSimConfig.compile(createDut(jbcData)).doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Reset
@@ -411,7 +416,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       0xAA   // Should jump here
     )
 
-    SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
+    bcfSimConfig.compile(createDut(jbcData)).doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Reset
@@ -479,7 +484,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       0x33   // Should jump here (address 0 + 3 = 3)
     )
 
-    SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
+    bcfSimConfig.compile(createDut(jbcData)).doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Reset — same pattern as if_icmplt test (which passes reliably)
@@ -537,7 +542,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       0x22
     )
 
-    SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
+    bcfSimConfig.compile(createDut(jbcData)).doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Reset
@@ -600,7 +605,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       0x22   // Target at address 4
     )
 
-    SimConfig.withWave.compile(createDut(jbcData)).doSim { dut =>
+    bcfSimConfig.compile(createDut(jbcData)).doSim { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Reset
@@ -704,21 +709,10 @@ class BytecodeFetchStageTest extends AnyFunSuite {
     cases    <- c.get[Seq[BcFetchTestCase]]("test_cases")
   } yield BcFetchTestVectors(module, version, desc, cases)
 
-  // --- Project root finder ---
-
-  private def findProjectRoot(): Path = {
-    var dir = Paths.get(System.getProperty("user.dir"))
-    while (dir != null) {
-      if (dir.resolve("build.sbt").toFile.exists()) return dir
-      dir = dir.getParent
-    }
-    throw new RuntimeException("Could not find project root (no build.sbt found)")
-  }
-
   // --- Loader ---
 
   private def loadTestVectors(): BcFetchTestVectors = {
-    val root = findProjectRoot()
+    val root = TestVectorUtils.findProjectRoot()
     val jsonPath = root.resolve("verification/test-vectors/modules/bcfetch.json")
     val jsonStr = Source.fromFile(jsonPath.toFile).mkString
     decode[BcFetchTestVectors](jsonStr) match {
@@ -729,13 +723,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
 
   // --- Value parsing helpers ---
 
-  private def parseValue(s: String): Long = {
-    val trimmed = s.trim
-    if (trimmed.startsWith("0x") || trimmed.startsWith("0X"))
-      java.lang.Long.parseLong(trimmed.substring(2), 16)
-    else
-      trimmed.toLong
-  }
+  private def parseValue(s: String): Long = TestVectorUtils.parseValue(s)
 
   private def parseAddressJson(j: Json): Long = {
     j.asNumber.flatMap(_.toLong) match {
@@ -754,7 +742,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
   // --- Sequence executor ---
 
   private def runJsonTestCase(tc: BcFetchTestCase): Unit = {
-    SimConfig.compile(createDut(Seq.fill(2048)(0x00))).doSim(s"bcfetch_json_${tc.name}") { dut =>
+    compiledZero.doSim(s"bcfetch_json_${tc.name}") { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Helper to initialize all inputs to defaults

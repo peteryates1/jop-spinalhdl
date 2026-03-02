@@ -7,7 +7,8 @@ import spinal.core._
 import spinal.core.sim._
 
 import scala.io.Source
-import java.nio.file.{Path, Paths}
+import java.nio.file.Path
+import jop.TestVectorUtils
 
 /**
  * Test case data loaded from JSON for Shift module
@@ -67,20 +68,7 @@ object ShiftTestVectorLoader {
     } yield ShiftTestVectors(module, version, description, testCases)
   }
 
-  /**
-   * Parse value string to Long (handles 32-bit unsigned values)
-   * Supports formats: 0x (hex), 0b (binary), decimal
-   */
-  def parseValue(valueStr: String): Long = {
-    val trimmed = valueStr.trim
-    if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
-      java.lang.Long.parseUnsignedLong(trimmed.substring(2), 16)
-    } else if (trimmed.startsWith("0b") || trimmed.startsWith("0B")) {
-      java.lang.Long.parseUnsignedLong(trimmed.substring(2), 2)
-    } else {
-      trimmed.toLong
-    }
-  }
+  def parseValue(valueStr: String): Long = TestVectorUtils.parseValue(valueStr)
 
   /**
    * Load test vectors from the shared JSON file
@@ -123,38 +111,21 @@ object ShiftTestVectorLoader {
 class ShiftTest extends AnyFunSuite {
   import ShiftTestVectorLoader._
 
-  // Find project root by looking for verification directory
-  def findProjectRoot(): Path = {
-    var current = Paths.get(System.getProperty("user.dir"))
-    while (current != null) {
-      if (current.resolve("verification/test-vectors").toFile.exists()) {
-        return current
-      }
-      current = current.getParent
-    }
-    // Fallback: try relative paths from likely locations
-    val candidates = Seq(
-      Paths.get("../.."),
-      Paths.get("../../.."),
-      Paths.get(".")
-    )
-    candidates.find(_.resolve("verification/test-vectors").toFile.exists())
-      .getOrElse(throw new RuntimeException("Could not find project root with test vectors"))
-  }
-
   // Load test vectors once
-  lazy val testVectors: ShiftTestVectors = load(findProjectRoot())
+  lazy val testVectors: ShiftTestVectors = load(TestVectorUtils.findProjectRoot())
 
   // SpinalSim configuration - note: Shift is combinational but SpinalSim
   // requires a clock domain for simulation infrastructure
-  val simConfig = SimConfig
+  val simConfig = TestVectorUtils.simWave(SimConfig
     .withConfig(SpinalConfig(
       defaultConfigForClockDomains = ClockDomainConfig(
         resetKind = BOOT
       )
     ))
-    .withWave
-    .workspacePath("simWorkspace")
+    .workspacePath("simWorkspace"))
+
+  // Compile DUT once, reuse for all test cases
+  lazy val compiled = simConfig.compile(Shift(32))
 
   /**
    * Run a single test case from the JSON test vectors
@@ -165,7 +136,7 @@ class ShiftTest extends AnyFunSuite {
    * - Use sleep(1) to allow combinational logic to settle in simulation
    */
   def runTestCase(tc: ShiftTestCase): Unit = {
-    simConfig.compile(Shift(32)).doSim(tc.name) { dut =>
+    compiled.doSim(tc.name) { dut =>
       // Initialize clock domain for simulation infrastructure
       // (Shift itself is combinational, but SpinalSim needs this)
       dut.clockDomain.forkStimulus(10)
@@ -179,8 +150,7 @@ class ShiftTest extends AnyFunSuite {
       sleep(1)
 
       // Track results
-      var passed = true
-      var failureMsg = ""
+      val failureMsgs = scala.collection.mutable.ArrayBuffer[String]()
 
       // Process each input cycle (for combinational, typically just cycle 0)
       tc.inputs.foreach { input =>
@@ -198,7 +168,6 @@ class ShiftTest extends AnyFunSuite {
             val expected = parseValue(expectedStr)
             val actual = dut.io.dout.toLong
             if (actual != expected) {
-              passed = false
               // Capture input context for better debugging
               val dinVal = input.signals.getOrElse("din", "?")
               val offVal = input.signals.getOrElse("off", "?")
@@ -209,7 +178,7 @@ class ShiftTest extends AnyFunSuite {
                 case 2 => "shr"
                 case _ => "unknown"
               }
-              failureMsg = s"Test '${tc.name}': dout mismatch\n" +
+              failureMsgs += s"Test '${tc.name}': dout mismatch\n" +
                 s"  Input:    din=$dinVal, off=$offVal, shtyp=$shtypVal ($shtypName)\n" +
                 s"  Expected: 0x${expected.toHexString.toUpperCase}\n" +
                 s"  Actual:   0x${actual.toHexString.toUpperCase}"
@@ -218,7 +187,7 @@ class ShiftTest extends AnyFunSuite {
         }
       }
 
-      assert(passed, failureMsg)
+      assert(failureMsgs.isEmpty, failureMsgs.mkString("\n"))
     }
   }
 
