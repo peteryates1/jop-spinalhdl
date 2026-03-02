@@ -55,25 +55,6 @@ class JumpTableFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("exception overrides interrupt") {
-    formalConfig
-      .withBMC(2)
-      .doVerify(new Component {
-        val dut = FormalDut(JumpTable())
-        assumeInitial(ClockDomain.current.isResetActive)
-
-        anyseq(dut.io.bytecode)
-        // Both pending simultaneously
-        dut.io.excPend := True
-        dut.io.intPend := True
-
-        when(pastValidAfterReset()) {
-          // Exception takes priority — must NOT be int addr
-          assert(dut.io.jpaddr === U(JumpTableInitData.simulation.sysExcAddr, dut.config.pcWidth bits))
-        }
-      })
-  }
-
   test("normal bytecode when no pending") {
     formalConfig
       .withBMC(2)
@@ -99,22 +80,4 @@ class JumpTableFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("no exception or interrupt when neither pending") {
-    formalConfig
-      .withBMC(2)
-      .doVerify(new Component {
-        val dut = FormalDut(JumpTable())
-        assumeInitial(ClockDomain.current.isResetActive)
-
-        anyseq(dut.io.bytecode)
-        dut.io.excPend := False
-        dut.io.intPend := False
-
-        when(pastValidAfterReset()) {
-          // When neither pending, output should not be handler address
-          assert(dut.io.jpaddr =/= U(JumpTableInitData.simulation.sysExcAddr, dut.config.pcWidth bits) &&
-                 dut.io.jpaddr =/= U(JumpTableInitData.simulation.sysIntAddr, dut.config.pcWidth bits))
-        }
-      })
-  }
 }

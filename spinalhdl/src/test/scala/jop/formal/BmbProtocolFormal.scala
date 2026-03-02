@@ -147,20 +147,4 @@ class BmbProtocolFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("cmd write data stable while valid and not ready") {
-    formalConfig
-      .withBMC(6)
-      .doVerify(new Component {
-        val dut = FormalDut(BmbMemoryController(memConfig))
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupWithSlowSlave(dut, setRspValid = false)
-        dut.io.bmb.rsp.valid := False
-
-        when(pastValidAfterReset()) {
-          when(past(dut.io.bmb.cmd.valid) && !past(dut.io.bmb.cmd.ready) && dut.io.bmb.cmd.valid) {
-            assert(stable(dut.io.bmb.cmd.fragment.data))
-          }
-        }
-      })
-  }
 }

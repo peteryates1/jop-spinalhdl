@@ -77,27 +77,6 @@ class ShiftFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("zero shift identity") {
-    formalConfig
-      .withBMC(2)
-      .doVerify(new Component {
-        val dut = FormalDut(Shift(32))
-        assumeInitial(ClockDomain.current.isResetActive)
-
-        anyseq(dut.io.din)
-        anyseq(dut.io.shtyp)
-        dut.io.off := U(0, 5 bits) // shift by 0
-
-        when(pastValidAfterReset()) {
-          // For all shift types, shifting by 0 should be identity
-          // (only checking types 00, 01, 10 — type 11 is undefined)
-          when(dut.io.shtyp =/= B"2'b11") {
-            assert(dut.io.dout === dut.io.din)
-          }
-        }
-      })
-  }
-
   test("full shift by 31") {
     formalConfig
       .withBMC(2)

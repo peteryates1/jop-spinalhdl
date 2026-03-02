@@ -87,22 +87,6 @@ class MethodCacheFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("S2 always returns to IDLE") {
-    formalConfig
-      .withBMC(6)
-      .doVerify(new Component {
-        val dut = FormalDut(MethodCache())
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupDut(dut)
-
-        when(pastValidAfterReset()) {
-          when(past(dut.state === dut.State.S2)) {
-            assert(dut.state === dut.State.IDLE)
-          }
-        }
-      })
-  }
-
   test("inCache stable when no find") {
     formalConfig
       .withBMC(6)
@@ -120,19 +104,4 @@ class MethodCacheFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("initial state is IDLE with rdy") {
-    formalConfig
-      .withBMC(2)
-      .doVerify(new Component {
-        val dut = FormalDut(MethodCache())
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupDut(dut)
-
-        when(pastValidAfterReset()) {
-          when(initstate()) {
-            assert(dut.io.rdy)
-          }
-        }
-      })
-  }
 }

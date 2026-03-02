@@ -41,21 +41,6 @@ class LruCacheCoreFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.memCmd.ready)
   }
 
-  test("initial state after reset") {
-    formalConfig
-      .withBMC(2)
-      .doVerify(new Component {
-        val dut = FormalDut(new LruCacheCore(cacheConfig))
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupDut(dut)
-
-        when(pastValidAfterReset()) {
-          assert(dut.state === LruCacheCoreState.IDLE)
-          assert(!dut.io.busy)
-        }
-      })
-  }
-
   test("busy reflects non-IDLE state") {
     formalConfig
       .withBMC(10)

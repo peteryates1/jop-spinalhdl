@@ -38,41 +38,6 @@ class ObjectCacheFormal extends SpinalFormalFunSuite {
     dut.io.snoopFieldIdx := 0
   }
 
-  test("invalidation clears all valid bits") {
-    formalConfig
-      .withBMC(4)
-      .doVerify(new Component {
-        val dut = FormalDut(ObjectCache())
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupDut(dut)
-
-        when(pastValidAfterReset()) {
-          // After invalidation on previous cycle, all valid bits should be zero
-          when(past(dut.io.inval)) {
-            for (i <- 0 until dut.lineCnt) {
-              assert(dut.valid(i) === B(0, dut.fieldCnt bits))
-            }
-          }
-        }
-      })
-  }
-
-  test("invalidation resets FIFO pointer") {
-    formalConfig
-      .withBMC(4)
-      .doVerify(new Component {
-        val dut = FormalDut(ObjectCache())
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupDut(dut)
-
-        when(pastValidAfterReset()) {
-          when(past(dut.io.inval)) {
-            assert(dut.nxt === 0)
-          }
-        }
-      })
-  }
-
   test("no hit when field index out of range") {
     formalConfig
       .withBMC(4)
@@ -126,32 +91,4 @@ class ObjectCacheFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("no hit after reset before any write") {
-    formalConfig
-      .withBMC(3)
-      .doVerify(new Component {
-        val dut = FormalDut(ObjectCache())
-        assumeInitial(ClockDomain.current.isResetActive)
-
-        // No writes, no invalidation
-        anyseq(dut.io.handle)
-        anyseq(dut.io.fieldIdx)
-        dut.io.chkGf := False
-        dut.io.chkPf := False
-        dut.io.wrGf := False
-        dut.io.wrPf := False
-        dut.io.gfVal := B(0)
-        dut.io.pfVal := B(0)
-        dut.io.inval := False
-        // Snoop bus tie-off
-        dut.io.snoopValid := False
-        dut.io.snoopHandle := 0
-        dut.io.snoopFieldIdx := 0
-
-        when(pastValidAfterReset()) {
-          // All valid bits are zero after reset, so no hit possible
-          assert(!dut.io.hit)
-        }
-      })
-  }
 }

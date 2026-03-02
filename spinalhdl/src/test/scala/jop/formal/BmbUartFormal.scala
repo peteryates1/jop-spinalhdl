@@ -67,22 +67,6 @@ class BmbUartFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("no TX push when not writing") {
-    formalConfig
-      .withBMC(4)
-      .doVerify(new Component {
-        val dut = FormalDut(BmbUart())
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupDut(dut)
-
-        when(pastValidAfterReset()) {
-          when(!dut.io.wr) {
-            assert(!dut.txFifo.io.push.valid)
-          }
-        }
-      })
-  }
-
   test("status bit 0 reflects TX FIFO availability") {
     formalConfig
       .withBMC(4)

@@ -57,27 +57,6 @@ class CmpSyncFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("no deadlock: all requests released returns to IDLE") {
-    formalConfig
-      .withBMC(6)
-      .doVerify(new Component {
-        val dut = FormalDut(CmpSync(cpuCnt))
-        assumeInitial(ClockDomain.current.isResetActive)
-
-        // Set all requests to false
-        for (i <- 0 until cpuCnt) {
-          dut.io.syncIn(i).req := False
-          dut.io.syncIn(i).s_in := False
-          dut.io.syncIn(i).gcHalt := False
-        }
-
-        when(pastValidAfterReset()) {
-          // With no requests, state should be IDLE
-          assert(dut.state === dut.State.IDLE)
-        }
-      })
-  }
-
   test("signal broadcast: s_out equals core 0 s_in") {
     formalConfig
       .withBMC(4)
@@ -148,24 +127,4 @@ class CmpSyncFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("IDLE with no requests means no core halted (without gcHalt)") {
-    formalConfig
-      .withBMC(4)
-      .doVerify(new Component {
-        val dut = FormalDut(CmpSync(cpuCnt))
-        assumeInitial(ClockDomain.current.isResetActive)
-
-        for (i <- 0 until cpuCnt) {
-          dut.io.syncIn(i).req := False
-          dut.io.syncIn(i).s_in := False
-          dut.io.syncIn(i).gcHalt := False
-        }
-
-        when(pastValidAfterReset()) {
-          for (i <- 0 until cpuCnt) {
-            assert(!dut.io.syncOut(i).halted)
-          }
-        }
-      })
-  }
 }

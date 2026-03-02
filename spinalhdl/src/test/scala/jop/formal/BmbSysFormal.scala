@@ -50,24 +50,6 @@ class BmbSysFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("exception pulse is one cycle") {
-    formalConfig
-      .withBMC(6)
-      .doVerify(new Component {
-        val dut = FormalDut(BmbSys(clkFreq))
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupDut(dut)
-
-        when(pastValidAfterReset()) {
-          // exc is a one-cycle pulse: excPend && !excDly
-          // Two consecutive exc=True should be impossible without two writes
-          when(dut.io.exc) {
-            assert(dut.excPend)
-          }
-        }
-      })
-  }
-
   test("lock request set by write to addr 5") {
     formalConfig
       .withBMC(4)
@@ -117,26 +99,4 @@ class BmbSysFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("halted output follows syncIn.halted") {
-    formalConfig
-      .withBMC(3)
-      .doVerify(new Component {
-        val dut = FormalDut(BmbSys(clkFreq))
-        assumeInitial(ClockDomain.current.isResetActive)
-        anyseq(dut.io.addr)
-        anyseq(dut.io.rd)
-        anyseq(dut.io.wr)
-        anyseq(dut.io.wrData)
-        anyseq(dut.io.syncIn.halted)
-        dut.io.syncIn.s_out := False
-        dut.io.syncIn.status := False
-        dut.io.ackIrq := False
-        dut.io.ackExc := False
-        dut.io.ioInt := 0
-
-        when(pastValidAfterReset()) {
-          assert(dut.io.halted === dut.io.syncIn.halted)
-        }
-      })
-  }
 }

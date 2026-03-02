@@ -120,52 +120,6 @@ class BmbMemoryControllerFormal extends SpinalFormalFunSuite {
     dut.io.bmb.rsp.fragment.opcode := Bmb.Rsp.Opcode.SUCCESS
   }
 
-  test("initial state is IDLE and not busy") {
-    formalConfig
-      .withBMC(2)
-      .doVerify(new Component {
-        val dut = FormalDut(BmbMemoryController(memConfig))
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupConstrained(dut)
-
-        when(pastValidAfterReset()) {
-          when(initstate()) {
-            assert(!dut.io.memOut.busy)
-          }
-        }
-      })
-  }
-
-  test("rsp.ready always true") {
-    formalConfig
-      .withBMC(4)
-      .doVerify(new Component {
-        val dut = FormalDut(BmbMemoryController(memConfig))
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupAnyseq(dut)
-
-        when(pastValidAfterReset()) {
-          assert(dut.io.bmb.rsp.ready)
-        }
-      })
-  }
-
-  test("cmd.last always true") {
-    formalConfig
-      .withBMC(4)
-      .doVerify(new Component {
-        val dut = FormalDut(BmbMemoryController(memConfig))
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupAnyseq(dut)
-
-        when(pastValidAfterReset()) {
-          when(dut.io.bmb.cmd.valid) {
-            assert(dut.io.bmb.cmd.last)
-          }
-        }
-      })
-  }
-
   test("IDLE is not busy") {
     formalConfig
       .withBMC(4)

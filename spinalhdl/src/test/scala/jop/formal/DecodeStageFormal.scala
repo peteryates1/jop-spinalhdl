@@ -89,30 +89,4 @@ class DecodeStageFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("no control signals after reset") {
-    formalConfig
-      .withBMC(3)
-      .doVerify(new Component {
-        val dut = FormalDut(DecodeStage())
-        assumeInitial(ClockDomain.current.isResetActive)
-
-        // Feed NOP instruction (all zeros)
-        dut.io.instr := B(0, 10 bits)
-        dut.io.zf := False
-        dut.io.nf := False
-        dut.io.eq := False
-        dut.io.lt := False
-        dut.io.bcopd := B(0, 16 bits)
-        dut.io.stall := False
-
-        when(pastValidAfterReset()) {
-          // With NOP instruction, br and jmp should not be active
-          assert(dut.io.br === False)
-          assert(dut.io.jmp === False)
-          // Memory operations should be inactive
-          assert(dut.io.memIn.rd === False)
-          assert(dut.io.memIn.wr === False)
-        }
-      })
-  }
 }

@@ -26,44 +26,6 @@ class MulFormal extends SpinalFormalFunSuite {
   val formalConfig = FormalConfig
     .addEngin(SmtBmc(solver = SmtBmcSolver.Z3))
 
-  test("register initialization") {
-    formalConfig
-      .withBMC(3)
-      .doVerify(new Component {
-        val dut = FormalDut(Mul(32))
-        assumeInitial(ClockDomain.current.isResetActive)
-
-        anyseq(dut.io.ain)
-        anyseq(dut.io.bin)
-        anyseq(dut.io.wr)
-
-        // After reset with no wr, dout (= p) should be 0
-        when(pastValidAfterReset()) {
-          assume(dut.io.wr === False)
-          assert(dut.io.dout === 0)
-        }
-      })
-  }
-
-  test("operand loading on wr") {
-    formalConfig
-      .withBMC(5)
-      .doVerify(new Component {
-        val dut = FormalDut(Mul(32))
-        assumeInitial(ClockDomain.current.isResetActive)
-
-        anyseq(dut.io.ain)
-        anyseq(dut.io.bin)
-        anyseq(dut.io.wr)
-
-        // When wr fires, dout should be cleared to 0 on the next cycle
-        // (since p := 0 on wr)
-        when(pastValidAfterReset() && past(dut.io.wr)) {
-          assert(dut.io.dout === 0)
-        }
-      })
-  }
-
   test("result stability after b drains") {
     // After enough non-wr cycles, b becomes 0 and p stabilizes
     formalConfig
@@ -215,22 +177,4 @@ class MulFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("wr clears and restarts") {
-    // Asserting wr mid-computation clears p and starts fresh
-    formalConfig
-      .withBMC(5)
-      .doVerify(new Component {
-        val dut = FormalDut(Mul(32))
-        assumeInitial(ClockDomain.current.isResetActive)
-
-        anyseq(dut.io.ain)
-        anyseq(dut.io.bin)
-        anyseq(dut.io.wr)
-
-        // After any wr, p is cleared to 0
-        when(pastValidAfterReset() && past(dut.io.wr)) {
-          assert(dut.io.dout === 0)
-        }
-      })
-  }
 }

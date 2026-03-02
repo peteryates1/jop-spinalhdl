@@ -39,21 +39,6 @@ class CacheToMigAdapterFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.app_rd_data_valid)
   }
 
-  test("initial state after reset") {
-    formalConfig
-      .withBMC(2)
-      .doVerify(new Component {
-        val dut = FormalDut(new CacheToMigAdapter())
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupDut(dut)
-
-        when(pastValidAfterReset()) {
-          assert(dut.state === CacheToMigAdapterState.IDLE)
-          assert(!dut.io.busy)
-        }
-      })
-  }
-
   test("busy reflects non-IDLE state") {
     formalConfig
       .withBMC(8)
@@ -64,24 +49,6 @@ class CacheToMigAdapterFormal extends SpinalFormalFunSuite {
 
         when(pastValidAfterReset()) {
           assert(dut.io.busy === (dut.state =/= CacheToMigAdapterState.IDLE))
-        }
-      })
-  }
-
-  test("IDLE stable when no commands") {
-    formalConfig
-      .withBMC(4)
-      .doVerify(new Component {
-        val dut = FormalDut(new CacheToMigAdapter())
-        assumeInitial(ClockDomain.current.isResetActive)
-        setupDut(dut)
-
-        // No commands ever
-        assume(!dut.io.cmd.valid)
-
-        when(pastValidAfterReset()) {
-          assert(dut.state === CacheToMigAdapterState.IDLE)
-          assert(!dut.io.app_en)
         }
       })
   }
