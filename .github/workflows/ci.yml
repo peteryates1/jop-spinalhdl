@@ -127,11 +127,11 @@ jobs:
           name: microcode
           path: asm/generated/
 
-      - name: Install formal tool dependencies
+      - name: Install yosys build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang bison flex libreadline-dev \
-            gawk tcl-dev libffi-dev pkg-config python3 zlib1g-dev z3
+            gawk tcl-dev libffi-dev pkg-config python3 zlib1g-dev
 
       - name: Cache yosys build
         id: cache-yosys
@@ -146,9 +146,13 @@ jobs:
           git clone --branch v0.52 --depth 1 --recursive https://github.com/YosysHQ/yosys.git /tmp/yosys
           cd /tmp/yosys && make config-clang && make -j$(nproc)
 
-      - name: Install yosys and SymbiYosys
+      - name: Install yosys, z3, and SymbiYosys
         run: |
           cd /tmp/yosys && sudo make install
+          # z3 from apt is 4.8.12 (too old for yosys 0.52 SMT2 output)
+          # Install z3 4.16.0 from GitHub (apt z3 4.8.12 is too old for yosys 0.52 SMT2)
+          curl -L -o /tmp/z3.zip https://github.com/Z3Prover/z3/releases/download/z3-4.16.0/z3-4.16.0-x64-glibc-2.39.zip
+          unzip -q /tmp/z3.zip -d /tmp && sudo cp /tmp/z3-4.16.0-x64-glibc-2.39/bin/z3 /usr/local/bin/
           git clone --branch v0.62 --depth 1 https://github.com/YosysHQ/sby.git /tmp/sby
           cd /tmp/sby && sudo make install PREFIX=/usr/local
 
