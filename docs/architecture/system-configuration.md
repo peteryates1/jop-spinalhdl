@@ -104,6 +104,8 @@ Unified configuration for a single JOP core. Defined in `jop/system/JopCore.scal
 | `ioConfig` | IoConfig | default | I/O device configuration |
 | `clkFreqHz` | Long | 100000000 | Clock frequency in Hz |
 | `fpuMode` | FpuMode | Software | Floating-point mode: `Software` (SoftFloat) or `Hardware` (HW FPU) |
+| `useDspMul` | Boolean | false | DSP multiply (1-cycle 32×32→64) |
+| `useHwDiv` | Boolean | false | Hardware integer divider (BmbDiv) |
 | `useIhlu` | Boolean | false | Use IHLU per-object lock (vs CmpSync global lock) |
 | `useStackCache` | Boolean | false | Enable 3-bank rotating stack cache with DMA |
 | `spillBaseAddrOverride` | Option[Int] | None | Override spill address (e.g., `Some(0)` for dedicated spill BRAM) |
@@ -117,6 +119,8 @@ Unified configuration for a single JOP core. Defined in `jop/system/JopCore.scal
 
 The convenience method `config.hasFpu` returns `true` when `fpuMode == Hardware`.
 Use `config.withFpuJumpTable` to auto-select the matching FPU jump table variant.
+Use `config.withMathJumpTable` to auto-select the matching DSP/DIV jump table variant.
+When composing, call `.withFpuJumpTable` first, then `.withMathJumpTable`.
 
 ### Jump Table Variants
 
@@ -124,8 +128,15 @@ Use `config.withFpuJumpTable` to auto-select the matching FPU jump table variant
 |---------|-----|
 | `JumpTableInitData.simulation` | Simulation with embedded program (microcode + JBC pre-loaded) |
 | `JumpTableInitData.serial` | FPGA serial boot (microcode starts with UART download loop) |
+| `JumpTableInitData.flash` | FPGA flash boot (microcode starts with SPI flash download loop) |
 | `JumpTableInitData.simulationFpu` | Simulation with FPU-enabled microcode (float ops → HW FPU handlers) |
 | `JumpTableInitData.serialFpu` | FPGA serial boot with FPU-enabled microcode |
+| `JumpTableInitData.simulationDsp` | Simulation with DSP multiply microcode |
+| `JumpTableInitData.serialDsp` | FPGA serial boot with DSP multiply microcode |
+| `JumpTableInitData.simulationDiv` | Simulation with HW divider microcode |
+| `JumpTableInitData.serialDiv` | FPGA serial boot with HW divider microcode |
+| `JumpTableInitData.simulationHwMath` | Simulation with DSP multiply + HW divider microcode |
+| `JumpTableInitData.serialHwMath` | FPGA serial boot with DSP multiply + HW divider microcode |
 
 ## JopMemoryConfig
 
@@ -141,9 +152,11 @@ Memory system parameters. Defined in `jop/memory/JopMemoryConfig.scala`.
 | `useOcache` | Boolean | true | Enable object cache (16-entry, 8 fields) |
 | `ocacheWayBits` | Int | 4 | Object cache entries (log2) |
 | `ocacheIndexBits` | Int | 3 | Fields per cache entry (log2) |
+| `ocacheMaxIndexBits` | Int | 8 | Max field index (256 fields/object) |
 | `useAcache` | Boolean | true | Enable array cache (16-entry, 4 elements/line) |
 | `acacheWayBits` | Int | 4 | Array cache entries (log2) |
 | `acacheFieldBits` | Int | 2 | Elements per cache line (log2) |
+| `acacheMaxIndexBits` | Int | 24 | Max array index width |
 | `stackRegionWordsPerCore` | Int | 0 | Per-core stack region size in words (0 = legacy) |
 
 ### burstLen Values
@@ -180,6 +193,7 @@ Defined in `jop/pipeline/StackStage.scala`.
 | `virtualSpWidth` | Int | 16 | Virtual SP/VP/AR register width |
 | `spillBaseAddr` | Int | 0x780000 | Spill area base word address (auto-computed) |
 | `burstLen` | Int | 4 | DMA burst length (inherited from JopMemoryConfig) |
+| `wordAddrWidth` | Int | 24 | Word address width |
 
 The `spillBaseAddr` is normally computed automatically by `JopCoreConfig`:
 - **stackRegionWordsPerCore > 0**: `memWords - (cpuId + 1) * stackRegionWordsPerCore`
@@ -194,14 +208,71 @@ I/O device presence and parameters. Defined in `jop/system/IoConfig.scala`.
 |-----------|------|---------|-------------|
 | `hasUart` | Boolean | true | Instantiate BmbUart (TX/RX with 16-entry FIFOs) |
 | `hasEth` | Boolean | false | Instantiate BmbEth + BmbMdio (Ethernet MAC) |
+| `ethGmii` | Boolean | false | 8-bit GMII (1Gbps) vs 4-bit MII (100Mbps) |
 | `hasSdSpi` | Boolean | false | Instantiate BmbSdSpi (SD card via SPI) |
 | `hasSdNative` | Boolean | false | Instantiate BmbSdNative (SD card native mode) |
 | `hasVgaDma` | Boolean | false | Instantiate BmbVgaDma (VGA framebuffer DMA) |
 | `hasVgaText` | Boolean | false | Instantiate BmbVgaText (VGA text mode) |
+| `hasConfigFlash` | Boolean | false | Instantiate BmbCfgFlash (W25Q128 SPI flash boot) |
 | `uartBaudRate` | Int | 1000000 | UART baud rate in Hz (1 Mbaud default) |
+| `mdioClkDivider` | Int | 40 | MDIO clock divider |
+| `sdSpiClkDivInit` | Int | 199 | SD SPI init clock divider (~200 kHz @ 80MHz) |
+| `sdNativeClkDivInit` | Int | 99 | SD Native init clock divider (~400 kHz @ 80MHz) |
+| `vgaDmaFifoDepth` | Int | 512 | VGA DMA CDC FIFO depth in 32-bit words |
+| `cfgFlashClkDivInit` | Int | 3 | Config flash SPI clock divider (~10 MHz @ 80MHz) |
 
-**Constraints:** SD SPI and SD Native are mutually exclusive. VGA DMA and VGA Text
-are mutually exclusive.
+**Constraints:**
+- `!(hasSdSpi && hasSdNative)` — SD SPI and SD Native are mutually exclusive (share pins)
+- `!(hasVgaDma && hasVgaText)` — VGA DMA and VGA Text are mutually exclusive (share pins)
+- `!ethGmii || hasEth` — GMII requires Ethernet enabled
+
+### IoConfig Presets
+
+| Preset | Devices |
+|--------|---------|
+| `IoConfig.minimal` | UART only |
+| `IoConfig.qmtechSdram` | UART + Ethernet (MII) + Config Flash |
+| `IoConfig.qmtechDbFpga` | UART + Ethernet (GMII 1Gbps) + SD Native + VGA Text |
+| `IoConfig.qmtechDbFpgaVgaDma` | UART + Ethernet (GMII 1Gbps) + SD Native + VGA DMA |
+
+## I/O Address Map
+
+8-bit `ioAddr` derived from bipush range `0x80`–`0xFF`:
+
+| ioAddr Range | Peripheral | Slots |
+|:---:|---|:---:|
+| `0x80–0x8F` | BmbSys (system registers) | 4 |
+| `0x90–0x93` | BmbUart | 1 |
+| `0x98–0x9F` | BmbEth | 2 |
+| `0xA0–0xA7` | BmbMdio | 2 |
+| `0xA8–0xAB` | BmbSdSpi | 1 |
+| `0xAC–0xAF` | BmbVgaDma | 1 |
+| `0xB0–0xBF` | BmbSdNative | 4 |
+| `0xC0–0xCF` | BmbVgaText | 4 |
+| `0xD0–0xD3` | BmbCfgFlash | 1 |
+| `0xE0–0xE3` | BmbDiv | 1 |
+| `0xF0–0xF3` | BmbFpu | 1 |
+
+## DebugConfig
+
+On-chip debug subsystem. Defined in `jop/debug/DebugConfig.scala`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `numBreakpoints` | Int | 4 | Hardware breakpoint slots per core (0-8) |
+| `baudRate` | Int | 1000000 | Debug UART baud rate in Hz |
+| `hasMemAccess` | Boolean | true | Enable BMB master for memory access |
+
+## CacheConfig (DDR3 L2)
+
+L2 write-back cache for DDR3 memory path. Defined in `jop/ddr3/CacheConfig.scala`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `addrWidth` | Int | 28 | Address width in bits |
+| `dataWidth` | Int | 128 | Cache line width in bits (must be byte-aligned) |
+| `setCount` | Int | 256 | Cache sets (must be power-of-2) |
+| `wayCount` | Int | 4 | Associativity (1, 2, or 4 way only) |
 
 ## BmbSys I/O Register Map
 
@@ -326,6 +397,8 @@ System-level integration. Defined in `jop/system/JopCluster.scala`.
 | `ramInit` | Option[Seq[BigInt]] | None | Stack RAM initialization |
 | `jbcInit` | Option[Seq[BigInt]] | None | JBC RAM initialization |
 | `separateStackDmaBus` | Boolean | false | Route stack DMA to separate BMB port |
+| `perCoreUart` | Boolean | false | Per-core UART TX pins (SMP debug) |
+| `perCoreConfigs` | Option[Seq[JopCoreConfig]] | None | Per-core config overrides |
 
 ### SMP Behaviour
 
