@@ -9,7 +9,7 @@ original that are missing or incomplete in jop-spinalhdl.
 | Category | Original | SpinalHDL | Gap |
 |----------|----------|-----------|-----|
 | CPU/Microcode | Complete | Complete | Minimal |
-| I/O Peripherals | ~15 types | 10 types | Medium |
+| I/O Peripherals | ~15 types | 10 types + FPU | Low-Medium |
 | Memory Controllers | SRAM/SDRAM/scratchpad | BRAM/SDR SDRAM/DDR3 | Low |
 | CMP | 5 arbiters + RTTM + NoC | RR arbiter + CmpSync + IHLU | Medium |
 | Java Runtime | RTSJ + SCJ + JDK11/16 | Core + JDK base | Large |
@@ -23,6 +23,10 @@ original that are missing or incomplete in jop-spinalhdl.
 
 These exist in jop-spinalhdl but NOT in the original:
 
+- **Hardware FPU** — pure SpinalHDL FPU (VexRiscv-derived) with
+  auto-capture optimization: 1 I/O write + 1 I/O read per operation
+  (original needed 3 writes + 1 read, 22 microcode instructions vs 9).
+  Core also has CMP/I2F/F2I/SQRT hardware not yet exposed to JOP.
 - **Hardware debug subsystem** — halt/resume, single-step, 8 HW
   breakpoints per core, register/memory read, UART debug transport
   (`DebugController.scala`, `DebugBreakpoints.scala`)
@@ -48,12 +52,12 @@ These exist in jop-spinalhdl but NOT in the original:
 
 | Peripheral | Original | SpinalHDL | Priority |
 |------------|----------|-----------|----------|
-| SPI master (general purpose) | `sc_spi.vhd` | Missing | High |
-| I2C controller | `sc_i2c.vhd` | Missing | High |
-| Hardware FPU | `fpu/` (OpenCores FPU100) | Software only | Medium |
+| SPI master (general purpose) | `sc_spi.vhd` | SpinalHDL lib has `SpiMasterCtrl`, needs BMB wrapper + JOP I/O mapping | Medium |
+| I2C controller | `sc_i2c.vhd` | SpinalHDL lib has `BmbI2cCtrl` (BMB native!), needs JOP I/O mapping | Medium |
+| Hardware FPU | `fpu/` (OpenCores FPU100) | **Implemented** — `jop/ip/fpu/FpuCore`, needs `make fpu` + FPGA test | Not a gap |
 | PS/2 keyboard | `kbd_cntrl/` | Missing | Low |
 | PS/2 mouse | `mouse_cntrl/` | Missing | Low |
-| USB (FTDI parallel) | `sc_usb.vhd` | Missing | Low |
+| USB | `sc_usb.vhd` (FTDI parallel) | SpinalHDL lib has `spinal.lib.com.usb` (PHY, UDC, OHCI) | Low |
 | Sigma-delta ADC/DAC | `sc_sigdel.vhd` | Missing | Low |
 | AC97 audio | `ext/ac97/` | Missing | Low |
 | MAC (DSP multiply-accumulate) | `sc_mac.vhd` | Missing | Low |
@@ -62,11 +66,18 @@ These exist in jop-spinalhdl but NOT in the original:
 | LEGO Mindstorms | `sc_lego.vhd` + drivers | Missing | N/A |
 
 **Notes:**
-- General-purpose SPI and I2C are the most impactful gaps — they enable
-  a wide range of sensors, displays, and expansion devices.
-- Hardware FPU would eliminate the SoftFloat overhead (~100x speedup for
-  float ops). The microcode already has `#ifdef FPU_ATTACHED` hooks.
-- PS/2, USB, sigma-delta, AC97, LEGO are board-specific and only needed
+- **Hardware FPU is NOT a gap.** jop-spinalhdl has a complete FPU
+  (`jop/ip/fpu/FpuCore.scala`, derived from VexRiscv) with auto-capture
+  of both operands in a single I/O write (9 microcode instructions vs 22
+  in the original). Supports ADD/SUB/MUL/DIV. The core also has CMP,
+  I2F, F2I, and SQRT hardware that could be exposed. Needs `cd asm &&
+  make fpu` to build the FPU microcode, then FPGA testing.
+- **SPI and I2C** are available in SpinalHDL lib (`spinal.lib.com.spi`,
+  `spinal.lib.com.i2c`). I2C already has a BMB wrapper (`BmbI2cCtrl`).
+  SPI would need a thin BMB wrapper around `SpiMasterCtrl`. Both need
+  JOP I/O address mapping and Java hardware object classes.
+- **USB** is also in SpinalHDL lib (full PHY + host controller).
+- PS/2, sigma-delta, AC97, LEGO are board-specific and only needed
   for those particular hardware configurations.
 
 ### 2. CMP / Multi-Processor
@@ -204,31 +215,38 @@ These exist in jop-spinalhdl but NOT in the original:
 
 ## Recommended Priority Order
 
+### Ready to Integrate (SpinalHDL lib or already implemented)
+
+1. **Hardware FPU** — already implemented, needs `make fpu` + FPGA test
+2. **I2C controller** — `BmbI2cCtrl` in SpinalHDL lib (BMB native),
+   needs JOP I/O mapping + Java hardware object
+3. **SPI master** — `SpiMasterCtrl` in SpinalHDL lib, needs BMB wrapper
+   + JOP I/O mapping + Java hardware object
+4. **USB** — `spinal.lib.com.usb` (PHY, UDC, OHCI) available
+
 ### High Priority (enables key use cases)
 
-1. **TDMA memory arbiter** — required for WCET-analyzable CMP systems
-2. **WCET analysis tool** — required for hard real-time certification
-3. **RTSJ / SCJ runtime** — required for real-time Java applications
-4. **General-purpose SPI master** — enables sensors, displays, expansion
-5. **I2C controller** — enables sensors, EEPROMs, PMICs
+5. **TDMA memory arbiter** — required for WCET-analyzable CMP systems
+6. **WCET analysis tool** — required for hard real-time certification
+7. **RTSJ / SCJ runtime** — required for real-time Java applications
 
 ### Medium Priority (significant value)
 
-6. **Hardware FPU** — eliminates SoftFloat overhead for float-heavy apps
-7. **JDK 1.1 extensions** — java.util collections, expanded java.io
-8. **Scratchpad RAM** — predictable-latency memory for RT code
-9. **JBE/JemBench** port — performance regression testing
-10. **Fixed-priority arbiter** — alternative CMP scheduling policy
+8. **JDK 1.1 extensions** — java.util collections, expanded java.io
+9. **Scratchpad RAM** — predictable-latency memory for RT code
+10. **JBE/JemBench** port — performance regression testing
+11. **Fixed-priority arbiter** — alternative CMP scheduling policy
 
 ### Low Priority (niche or legacy)
 
-11. SRAM controllers (legacy boards)
-12. PS/2 keyboard/mouse (specific boards)
-13. SLIP/PPP (legacy serial networking)
-14. NFS client/server (SD card boot loader is better)
-15. RTTM (research-grade, IHLU covers practical cases)
-16. NoC (only needed for large core counts)
-17. LEGO Mindstorms (specific hardware)
-18. AC97 audio, sigma-delta ADC/DAC (specific boards)
-19. CLDC 1.1, JOP UI framework (niche)
+12. SRAM controllers (legacy boards)
+13. PS/2 keyboard/mouse (specific boards)
+14. SLIP/PPP (legacy serial networking)
+15. NFS client/server (SD card boot loader is better)
+16. RTTM (research-grade, IHLU covers practical cases)
+17. NoC (only needed for large core counts)
+18. LEGO Mindstorms (specific hardware)
+19. AC97 audio, sigma-delta ADC/DAC (specific boards)
+20. CLDC 1.1, JOP UI framework (niche)
+21. YAFFS2 (FAT32 on SD card is more practical)
 20. YAFFS2 (FAT32 on SD card is more practical)
