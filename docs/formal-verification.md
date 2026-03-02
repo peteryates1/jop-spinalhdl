@@ -4,7 +4,7 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 
 ## Overview
 
-**90 properties verified** across **19 test suites** covering all major components:
+**117 properties verified** across **25 test suites** covering all major components:
 
 | Category | Suite | Tests | Properties |
 |----------|-------|:-----:|------------|
@@ -22,10 +22,16 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 | | BmbMemoryControllerFormal | 9 | Busy correctness, exception/copy returns to IDLE, READ/WRITE_WAIT completion + hold, IDLE stability |
 | **DDR3 Subsystem** | LruCacheCoreFormal | 8 | Busy correctness, memCmd gating, evict/refill commands, error recovery, no-deadlock, **2 bugs found and fixed** (see below) |
 | | CacheToMigAdapterFormal | 6 | Busy correctness, no-deadlock, IDLE stability, MIG signal gating, read data capture, write completion |
+| | BmbCacheBridgeFormal | 5 | pendingRsp blocks commands, burst wordsDone bounded, unsupported cmd returns ERROR, no-deadlock, write rsp zero data |
 | **I/O Subsystem** | CmpSyncFormal | 4 | Lock mutual exclusion, signal broadcast, gcHalt isolation, lock owner exempt from gcHalt |
 | | IhluFormal | 6 | Signal broadcast, gcHalt isolation, lock owner exemption, FSM transitions, lock allocation ownership, queue bounds |
 | | BmbSysFormal | 4 | Clock counter monotonicity, exception pulse, lock acquire/release, halted passthrough |
 | | BmbUartFormal | 4 | TX push gating, RX pop gating, no spurious TX, status register accuracy |
+| | BmbFpuFormal | 4 | Write captures operands, opCode from address, startPulse gating, busy/computing equivalence |
+| | JopFpuAdapterFormal | 4 | Valid state transitions (11 states), ready only in DONE, IDLE stability, start latches operands |
+| | BmbSdNativeFormal | 6 | FIFO occupancy coherence, clock divider toggle, CMD state transitions, DATA state transitions, cmdBusy correctness, FIFO bounded |
+| **Debug** | Crc8MaximFormal | 3 | Clear resets CRC, CRC stable when disabled, non-zero byte from zero CRC produces non-zero CRC |
+| | DebugBreakpointsFormal | 5 | queryCount matches enabled sum, halted suppresses hit, hit implies matching slot, set allocates slot, clear disables slot |
 | **BMB Protocol** | BmbProtocolFormal | 4 | rsp.ready always true, cmd.last always true, cmd.valid held until ready, cmd stability while not accepted |
 
 ## Toolchain
@@ -47,7 +53,7 @@ cd /tmp/sby && sudo make install PREFIX=/usr/local
 ## Running
 
 ```bash
-# Run all 90 formal tests (~3.5 minutes)
+# Run all 117 formal tests (~3.5 minutes)
 sbt "testOnly jop.formal.*"
 
 # Run a specific suite
@@ -76,10 +82,16 @@ spinalhdl/src/test/scala/jop/formal/
 ├── BmbMemoryControllerFormal.scala # Memory controller state machine
 ├── LruCacheCoreFormal.scala        # DDR3 write-back cache (2 bugs found + fixed)
 ├── CacheToMigAdapterFormal.scala   # DDR3 MIG protocol adapter
+├── BmbCacheBridgeFormal.scala      # DDR3 BMB-to-cache bridge
 ├── CmpSyncFormal.scala             # SMP global lock
 ├── IhluFormal.scala                # IHLU per-object lock unit
 ├── BmbSysFormal.scala              # System I/O slave
 ├── BmbUartFormal.scala             # UART I/O slave
+├── BmbFpuFormal.scala              # FPU I/O peripheral register logic
+├── JopFpuAdapterFormal.scala       # FPU adapter FSM envelope
+├── BmbSdNativeFormal.scala         # SD Native controller (FIFO, clk, CMD/DATA FSM)
+├── Crc8MaximFormal.scala           # CRC-8/MAXIM calculator
+├── DebugBreakpointsFormal.scala    # Hardware breakpoint comparators
 └── BmbProtocolFormal.scala         # BMB bus protocol compliance
 ```
 
@@ -196,11 +208,19 @@ With the current `BmbCacheBridge` frontend, these bugs are **unlikely to trigger
 | StackCacheDma | 8-15 | <0.7s | BMB state machine, bounded wordCount |
 | Ihlu | 4-12 | <0.9s | 2-core, 4-slot config; FSM + lock table properties |
 | CacheToMigAdapter | 8-12 | <1.5s | Small state machine, 128-bit data registers |
+| BmbCacheBridge | 6-8 | <0.5s | BMB-to-cache bridge, rspFifo depth 4 |
+| BmbFpu (shell) | 4 | <0.3s | Register logic shell, FpuCore mocked (see note) |
+| JopFpuAdapter (shell) | 4-10 | <0.3s | FSM shell, FpuCore handshakes mocked |
+| BmbSdNative | 4 | <1.2s | 128-entry FIFO, shallow BMC for tractability |
+| Crc8Maxim | 3-4 | <0.3s | Purely combinational CRC polynomial |
+| DebugBreakpoints | 4-6 | <0.5s | 4-slot breakpoint comparators |
 
 ### Known Limitations
 
 - **32-bit multiplication correctness**: Direct comparison of `dut.dout === (a * b)[31:0]` is intractable for Z3 at 32-bit width (stuck at BMC step 20 for >10 min). Verified using structural properties (register init, operand loading, result stability, zero/one multiplication) and functional correctness at 8-bit width.
 
 - **BMB payload stability**: The cmd payload stability check (held while `valid && !ready`) constrains `rsp.valid := False` to prevent responses from triggering state transitions mid-handshake. In practice this is correct because the controller has at most one outstanding command.
+
+- **FpuCore incompatibility**: The VexRiscv-derived FpuCore has internal async constructs (`TRG_WIDTH > 1`) that are incompatible with SymbiYosys `async2sync` mode, and `clk2fflogic` mode breaks `past()` semantics. BmbFpuFormal and JopFpuAdapterFormal use inline "shell" components that replicate the register/FSM logic with mocked FPU handshakes, verifying the I/O peripheral envelope without FpuCore.
 
 - **BMC vs induction**: All properties use bounded model checking, not unbounded induction proofs. BMC at depth N guarantees the property holds for the first N clock cycles after reset, but does not prove it holds forever. For the components verified here, the BMC depths are sufficient to exercise all reachable states.
