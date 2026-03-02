@@ -122,7 +122,7 @@ case class JopPipeline(
   val fetch   = FetchStage(config.fetchConfig, romInit)
   val decode  = new DecodeStage(config.decodeConfig)
   val stack   = new StackStage(config.stackConfig, ramInit = ramInit).setName("stackStg")
-  val mul     = Mul(config.dataWidth)
+  val mul     = Mul(config.dataWidth, useDsp = config.useDspMul)
 
   // ==========================================================================
   // Pipeline Connections
@@ -176,14 +176,14 @@ case class JopPipeline(
   // Stack Stage Connections
   // ==========================================================================
 
-  // din mux: ir(1:0) selects between ldmrd, ldmul, ldbcstart
+  // din mux: ir(1:0) selects between ldmrd, ldmul, ldbcstart, ldmulh
   val dinMuxSel = RegNext(fetch.io.ir_out(1 downto 0)) init(0)
   dinMuxSel.simPublic()
   stack.io.din := dinMuxSel.mux(
     0 -> io.memRdData,
     1 -> mul.io.dout.asBits,
     2 -> io.memBcStart.asBits.resized,
-    3 -> B(0, 32 bits)
+    3 -> mul.io.doutH.asBits
   )
 
   stack.io.dirAddr := decode.io.dirAddr.asUInt

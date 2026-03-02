@@ -76,6 +76,84 @@ serial-fpu: ../java/tools/dist/jopa.jar
 		> generated/serial-fpu/SerialFpuJumpTableData.scala
 	$(MAKE) JVM_TYPE=SIMULATION
 
+# Build DSP multiply microcode (simulation variant)
+dsp: ../java/tools/dist/jopa.jar
+	mkdir -p generated/dsp
+	gcc -x c -E -C -P $(GCC_PARAMS) -D$(JVM_TYPE) -DDSP_MUL src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/dsp/mem_rom.dat
+	cp generated/mem_ram.dat generated/dsp/mem_ram.dat
+	cp generated/rom.mif generated/dsp/rom.mif
+	sed 's/object JumpTableData/object DspJumpTableData/' generated/JumpTableData.scala \
+		> generated/dsp/DspJumpTableData.scala
+	$(MAKE) JVM_TYPE=$(JVM_TYPE)
+
+# Build serial+DSP microcode
+serial-dsp: ../java/tools/dist/jopa.jar
+	mkdir -p generated/serial-dsp
+	gcc -x c -E -C -P $(GCC_PARAMS) -DSERIAL -DDSP_MUL src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/serial-dsp/mem_rom.dat
+	cp generated/mem_ram.dat generated/serial-dsp/mem_ram.dat
+	cp generated/rom.mif generated/serial-dsp/rom.mif
+	sed 's/object JumpTableData/object SerialDspJumpTableData/' generated/JumpTableData.scala \
+		> generated/serial-dsp/SerialDspJumpTableData.scala
+	$(MAKE) JVM_TYPE=SIMULATION
+
+# Build HW divide microcode (simulation variant)
+div: ../java/tools/dist/jopa.jar
+	mkdir -p generated/div
+	gcc -x c -E -C -P $(GCC_PARAMS) -D$(JVM_TYPE) -DHW_DIV src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/div/mem_rom.dat
+	cp generated/mem_ram.dat generated/div/mem_ram.dat
+	cp generated/rom.mif generated/div/rom.mif
+	sed 's/object JumpTableData/object DivJumpTableData/' generated/JumpTableData.scala \
+		> generated/div/DivJumpTableData.scala
+	$(MAKE) JVM_TYPE=$(JVM_TYPE)
+
+# Build serial+DIV microcode
+serial-div: ../java/tools/dist/jopa.jar
+	mkdir -p generated/serial-div
+	gcc -x c -E -C -P $(GCC_PARAMS) -DSERIAL -DHW_DIV src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/serial-div/mem_rom.dat
+	cp generated/mem_ram.dat generated/serial-div/mem_ram.dat
+	cp generated/rom.mif generated/serial-div/rom.mif
+	sed 's/object JumpTableData/object SerialDivJumpTableData/' generated/JumpTableData.scala \
+		> generated/serial-div/SerialDivJumpTableData.scala
+	$(MAKE) JVM_TYPE=SIMULATION
+
+# Build combined DSP+DIV microcode (simulation variant)
+hwmath: ../java/tools/dist/jopa.jar
+	mkdir -p generated/hwmath
+	gcc -x c -E -C -P $(GCC_PARAMS) -D$(JVM_TYPE) -DDSP_MUL -DHW_DIV src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/hwmath/mem_rom.dat
+	cp generated/mem_ram.dat generated/hwmath/mem_ram.dat
+	cp generated/rom.mif generated/hwmath/rom.mif
+	sed 's/object JumpTableData/object HwMathJumpTableData/' generated/JumpTableData.scala \
+		> generated/hwmath/HwMathJumpTableData.scala
+	$(MAKE) JVM_TYPE=$(JVM_TYPE)
+
+# Build serial+DSP+DIV microcode
+serial-hwmath: ../java/tools/dist/jopa.jar
+	mkdir -p generated/serial-hwmath
+	gcc -x c -E -C -P $(GCC_PARAMS) -DSERIAL -DDSP_MUL -DHW_DIV src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/serial-hwmath/mem_rom.dat
+	cp generated/mem_ram.dat generated/serial-hwmath/mem_ram.dat
+	cp generated/rom.mif generated/serial-hwmath/rom.mif
+	sed 's/object JumpTableData/object SerialHwMathJumpTableData/' generated/JumpTableData.scala \
+		> generated/serial-hwmath/SerialHwMathJumpTableData.scala
+	$(MAKE) JVM_TYPE=SIMULATION
+
 ../java/tools/dist/jopa.jar:
 	cd ../java/tools && $(MAKE) dist/jopa.jar
 

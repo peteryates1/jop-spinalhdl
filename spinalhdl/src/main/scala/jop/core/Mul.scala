@@ -44,83 +44,96 @@ import spinal.core._
  * - 244 LCs (logic cells)
  *
  * @param width Data width (default 32 bits)
+ * @param useDsp When true, use DSP-inferred 1-cycle 32x32→64 multiply instead of bit-serial
  */
-case class Mul(width: Int = 32) extends Component {
+case class Mul(width: Int = 32, useDsp: Boolean = false) extends Component {
   require(width > 0 && width % 2 == 0, "Width must be positive and even for radix-4 operation")
 
   val io = new Bundle {
-    val ain  = in  UInt(width bits)
-    val bin  = in  UInt(width bits)
-    val wr   = in  Bool()
-    val dout = out UInt(width bits)
+    val ain   = in  UInt(width bits)
+    val bin   = in  UInt(width bits)
+    val wr    = in  Bool()
+    val dout  = out UInt(width bits)
+    val doutH = out UInt(width bits)   // Upper 32 bits (DSP mode only; 0 in bit-serial mode)
   }
 
-  //--------------------------------------------------------------------------
-  // Internal Registers
-  //--------------------------------------------------------------------------
+  if (useDsp) {
+    //--------------------------------------------------------------------------
+    // DSP-Inferred Mode: 1-cycle registered 32x32→64 multiply
+    //--------------------------------------------------------------------------
+    // FPGA synthesizers infer DSP blocks for registered multiplications:
+    //   Cyclone IV: ~4 DSP18x18 per core, 0 LCs
+    //   Artix-7:    ~2 DSP48E1 per core, 0 LCs
 
-  // Product accumulator - holds the running sum of partial products
-  val p = Reg(UInt(width bits)) init(0)
+    val result = Reg(UInt(2 * width bits)) init(0)
+    when(io.wr) {
+      result := io.ain * io.bin
+    }
+    io.dout  := result(width - 1 downto 0)
+    io.doutH := result(2 * width - 1 downto width)
+  } else {
+    //--------------------------------------------------------------------------
+    // Bit-Serial Radix-4 Mode: 18-cycle, lower 32-bit result only
+    //--------------------------------------------------------------------------
 
-  // Operand A - shifts left by 2 each cycle (radix-4)
-  val a = Reg(UInt(width bits)) init(0)
+    // Product accumulator - holds the running sum of partial products
+    val p = Reg(UInt(width bits)) init(0)
 
-  // Operand B - shifts right by 2 each cycle (radix-4)
-  val b = Reg(UInt(width bits)) init(0)
+    // Operand A - shifts left by 2 each cycle (radix-4)
+    val a = Reg(UInt(width bits)) init(0)
 
-  //--------------------------------------------------------------------------
-  // Bit-Serial Multiplication Logic
-  //--------------------------------------------------------------------------
-  // Note: The VHDL uses a variable 'prod' for intermediate calculation.
-  // In SpinalHDL, we model this with combinatorial logic feeding the register.
+    // Operand B - shifts right by 2 each cycle (radix-4)
+    val b = Reg(UInt(width bits)) init(0)
 
-  when(io.wr) {
-    // Write phase: Load operands and clear accumulator
-    p := U(0, width bits)
-    a := io.ain
-    b := io.bin
-  } otherwise {
-    // Compute phase: Radix-4 bit-serial multiplication
+    // Note: The VHDL uses a variable 'prod' for intermediate calculation.
+    // In SpinalHDL, we model this with combinatorial logic feeding the register.
 
-    // Start with current product value
-    val prod = UInt(width bits)
-    prod := p
-
-    // Add partial product based on b(0)
-    // If b(0)=1: prod = prod + a
-    val prod_after_b0 = UInt(width bits)
-    when(b(0)) {
-      prod_after_b0 := prod + a
+    when(io.wr) {
+      // Write phase: Load operands and clear accumulator
+      p := U(0, width bits)
+      a := io.ain
+      b := io.bin
     } otherwise {
-      prod_after_b0 := prod
+      // Compute phase: Radix-4 bit-serial multiplication
+
+      // Start with current product value
+      val prod = UInt(width bits)
+      prod := p
+
+      // Add partial product based on b(0)
+      // If b(0)=1: prod = prod + a
+      val prod_after_b0 = UInt(width bits)
+      when(b(0)) {
+        prod_after_b0 := prod + a
+      } otherwise {
+        prod_after_b0 := prod
+      }
+
+      // Add partial product based on b(1)
+      // If b(1)=1: prod = (prod(width-1 downto 1) + a(width-2 downto 0)) & prod(0)
+      // This is equivalent to adding (a << 1) but preserving LSB
+      val prod_final = UInt(width bits)
+      when(b(1)) {
+        // Upper (width-1) bits: prod_after_b0[width-1:1] + a[width-2:0]
+        // LSB: prod_after_b0[0] (preserved)
+        prod_final := (prod_after_b0(width - 1 downto 1) +^ a(width - 2 downto 0)).resize(width - 1) @@ prod_after_b0(0)
+      } otherwise {
+        prod_final := prod_after_b0
+      }
+
+      // Update product register
+      p := prod_final
+
+      // Shift a left by 2 (multiply by 4 for next radix-4 iteration)
+      a := a(width - 3 downto 0) @@ U"2'b00"
+
+      // Shift b right by 2 (expose next 2 bits of multiplier)
+      b := U"2'b00" @@ b(width - 1 downto 2)
     }
 
-    // Add partial product based on b(1)
-    // If b(1)=1: prod = (prod(width-1 downto 1) + a(width-2 downto 0)) & prod(0)
-    // This is equivalent to adding (a << 1) but preserving LSB
-    val prod_final = UInt(width bits)
-    when(b(1)) {
-      // Upper (width-1) bits: prod_after_b0[width-1:1] + a[width-2:0]
-      // LSB: prod_after_b0[0] (preserved)
-      prod_final := (prod_after_b0(width - 1 downto 1) +^ a(width - 2 downto 0)).resize(width - 1) @@ prod_after_b0(0)
-    } otherwise {
-      prod_final := prod_after_b0
-    }
-
-    // Update product register
-    p := prod_final
-
-    // Shift a left by 2 (multiply by 4 for next radix-4 iteration)
-    a := a(width - 3 downto 0) @@ U"2'b00"
-
-    // Shift b right by 2 (expose next 2 bits of multiplier)
-    b := U"2'b00" @@ b(width - 1 downto 2)
+    io.dout := p
+    io.doutH := U(0, width bits)  // No upper bits in bit-serial mode
   }
-
-  //--------------------------------------------------------------------------
-  // Output Assignment
-  //--------------------------------------------------------------------------
-  io.dout := p
 }
 
 /**

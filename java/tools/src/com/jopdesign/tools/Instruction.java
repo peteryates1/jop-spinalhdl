@@ -145,6 +145,7 @@ public class Instruction implements Serializable {
 			new Instruction("ldmrd", 0x0e0 + 0, 0, JmpType.NOP, StackType.PUSH),
 			new Instruction("ldmul", 0x0e0 + 1, 0, JmpType.NOP, StackType.PUSH),
 			new Instruction("ldbcstart", 0x0e0 + 2, 0, JmpType.NOP, StackType.PUSH),
+			new Instruction("ldmulh", 0x0e0 + 3, 0, JmpType.NOP, StackType.PUSH),
 
 			// ld (vp) 3 bits
 			new Instruction("ld0", 0x0e8 + 0, 0, JmpType.NOP, StackType.PUSH),

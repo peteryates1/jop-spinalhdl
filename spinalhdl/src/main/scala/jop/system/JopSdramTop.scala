@@ -83,6 +83,8 @@ case class JopSdramTop(
   jumpTable: JumpTableInitData = JumpTableInitData.serial,
   perCoreUart: Boolean = false,
   fpuMode: FpuMode.FpuMode = FpuMode.Software,
+  useDspMul: Boolean = false,
+  useHwDiv: Boolean = false,
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
@@ -291,7 +293,9 @@ case class JopSdramTop(
         jumpTable = jumpTable,
         clkFreqHz = 80000000L,
         ioConfig = ioConfig,
-        fpuMode = fpuMode
+        fpuMode = fpuMode,
+        useDspMul = useDspMul,
+        useHwDiv = useHwDiv
       ),
       debugConfig = debugConfig,
       romInit = Some(romInit),
@@ -729,6 +733,37 @@ object JopFpuSdramTopVerilog extends App {
   )))
 
   println("Generated: spinalhdl/generated/JopSdramTop.v (HW FPU)")
+}
+
+/**
+ * Generate Verilog for JopSdramTop with HW Math acceleration.
+ *
+ * Uses HwMath microcode ROM (DSP imul/lmul + HW idiv/irem).
+ */
+object JopHwMathSdramTopVerilog extends App {
+  val romFilePath = "asm/generated/serial-hwmath/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial-hwmath/mem_ram.dat"
+
+  val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
+  val ramData = JopFileLoader.loadStackRam(ramFilePath)
+
+  println(s"Loaded ROM: ${romData.length} entries (serial+HwMath)")
+  println(s"Loaded RAM: ${ramData.length} entries")
+
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = "spinalhdl/generated",
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
+  ).generate(InOutWrapper(JopSdramTop(
+    cpuCnt = 1,
+    romInit = romData,
+    ramInit = ramData,
+    jumpTable = JumpTableInitData.serialHwMath,
+    useDspMul = true,
+    useHwDiv = true
+  )))
+
+  println("Generated: spinalhdl/generated/JopSdramTop.v (HW Math)")
 }
 
 /**

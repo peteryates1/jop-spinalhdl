@@ -5,7 +5,7 @@ import spinal.lib._
 import spinal.lib.bus.bmb._
 import jop.pipeline._
 import jop.memory._
-import jop.io.{BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdSpi, BmbSdNative, BmbVgaDma, BmbVgaText, BmbConfigFlash, BmbFpu, SyncIn, SyncOut}
+import jop.io.{BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdSpi, BmbSdNative, BmbVgaDma, BmbVgaText, BmbConfigFlash, BmbFpu, BmbDiv, SyncIn, SyncOut}
 import spinal.lib.com.eth._
 import jop.{JopPipeline, JumpTableData}
 
@@ -53,6 +53,8 @@ case class JopCoreConfig(
   ioConfig:     IoConfig         = IoConfig(),
   clkFreqHz:    Long             = 100000000L,
   fpuMode:      FpuMode.FpuMode   = FpuMode.Software,  // FP mode: Software (SoftFloat) or Hardware (HW FPU)
+  useDspMul:    Boolean          = false,  // DSP-inferred 1-cycle 32×32→64 multiply (replaces bit-serial)
+  useHwDiv:     Boolean          = false,  // Hardware integer divider I/O peripheral (BmbDiv)
   useIhlu:      Boolean          = false,  // Use IHLU (per-object lock) instead of CmpSync (global lock)
   useStackCache: Boolean         = false,  // Use 3-bank rotating stack cache with DMA spill/fill
   spillBaseAddrOverride: Option[Int] = None // Override spillBaseAddr (e.g., 0 for dedicated spill BRAM)
@@ -90,16 +92,44 @@ case class JopCoreConfig(
   )
   def bcfetchConfig = BytecodeFetchConfig(jpcWidth, pcWidth, jumpTable)
 
+  /** True if this config uses a serial-boot jump table variant. */
+  private def isSerialJumpTable: Boolean = {
+    val jt = jumpTable
+    jt == JumpTableInitData.serial ||
+    jt == JumpTableInitData.serialFpu ||
+    jt == JumpTableInitData.serialDsp ||
+    jt == JumpTableInitData.serialDiv ||
+    jt == JumpTableInitData.serialHwMath
+  }
+
   /** Return a copy with the jump table matching the fpuMode.
    *  Replaces the non-FPU jump table variant with the FPU variant if hasFpu is true.
-   *  Call this after setting fpuMode to ensure the jump table matches. */
+   *  Call this after setting fpuMode to ensure the jump table matches.
+   *  Note: withMathJumpTable composes with this — call withFpuJumpTable first. */
   def withFpuJumpTable: JopCoreConfig = {
     if (!hasFpu) this
     else {
       val fpuTable =
-        if (jumpTable == JumpTableInitData.serial) JumpTableInitData.serialFpu
-        else JumpTableInitData.simulationFpu  // Default: simulation FPU
+        if (isSerialJumpTable) JumpTableInitData.serialFpu
+        else JumpTableInitData.simulationFpu
       copy(jumpTable = fpuTable)
+    }
+  }
+
+  /** Return a copy with the jump table matching useDspMul/useHwDiv config.
+   *  Selects the appropriate DSP/DIV/HwMath microcode variant.
+   *  Composes with FPU: call withFpuJumpTable first, then withMathJumpTable. */
+  def withMathJumpTable: JopCoreConfig = {
+    if (!useDspMul && !useHwDiv) this
+    else {
+      val serial = isSerialJumpTable
+      val mathTable = (useDspMul, useHwDiv) match {
+        case (true, true)   => if (serial) JumpTableInitData.serialHwMath else JumpTableInitData.simulationHwMath
+        case (true, false)  => if (serial) JumpTableInitData.serialDsp else JumpTableInitData.simulationDsp
+        case (false, true)  => if (serial) JumpTableInitData.serialDiv else JumpTableInitData.simulationDiv
+        case _              => jumpTable  // unreachable
+      }
+      copy(jumpTable = mathTable)
     }
   }
 }
@@ -400,11 +430,13 @@ case class JopCore(
   bmbSys.io.syncIn := io.syncIn
   io.syncOut := bmbSys.io.syncOut
 
-  // Pipeline busy = memory controller busy OR halted by CmpSync OR debug halt OR FPU computing
-  // Note: fpuBusy assigned later inside bmbFpu.foreach if FPU present
+  // Pipeline busy = memory controller busy OR halted by CmpSync OR debug halt OR FPU/DIV computing
+  // Note: fpuBusy/divBusy assigned later inside conditional blocks if present
   val fpuBusy = Bool()
+  val divBusy = Bool()
   if (!config.hasFpu) fpuBusy := False
-  pipeline.io.memBusy := memCtrl.io.memOut.busy || bmbSys.io.halted || io.debugHalt || fpuBusy
+  if (!config.useHwDiv) divBusy := False
+  pipeline.io.memBusy := memCtrl.io.memOut.busy || bmbSys.io.halted || io.debugHalt || fpuBusy || divBusy
 
   // Exception from BmbSys
   pipeline.io.exc := bmbSys.io.exc
@@ -509,6 +541,17 @@ case class JopCore(
     io.fpuDbgResult.get := fpu.io.dbgResult
   }
 
+  // Hardware Divider (0xE0-0xE3, optional — per-core HW integer divide)
+  val bmbDiv = if (config.useHwDiv) Some(BmbDiv()) else None
+  bmbDiv.foreach { div =>
+    div.io.addr   := JopIoSpace.divAddr(ioAddr)
+    div.io.rd     := memCtrl.io.ioRd && JopIoSpace.isDiv(ioAddr)
+    div.io.wr     := memCtrl.io.ioWr && JopIoSpace.isDiv(ioAddr)
+    div.io.wrData := memCtrl.io.ioWrData  // = aout (TOS) = divisor
+    div.io.bout   := pipeline.io.bout     // Direct NOS wire = dividend
+    divBusy       := div.io.busy          // Stall pipeline during division
+  }
+
   // VGA DMA (0xAC-0xAF, optional)
   val bmbVgaDma = if (config.ioConfig.hasVgaDma && vgaCd.isDefined)
     Some(BmbVgaDma(config.memConfig.bmbParameter, vgaCd.get, config.ioConfig.vgaDmaFifoDepth))
@@ -606,6 +649,7 @@ case class JopCore(
   if (bmbVgaText.isDefined)  when(JopIoSpace.isVgaText(ioAddr))  { ioRdData := bmbVgaText.get.io.rdData }
   if (bmbCfgFlash.isDefined) when(JopIoSpace.isCfgFlash(ioAddr)) { ioRdData := bmbCfgFlash.get.io.rdData }
   if (bmbFpu.isDefined)      when(JopIoSpace.isFpu(ioAddr))      { ioRdData := bmbFpu.get.io.rdData }
+  if (bmbDiv.isDefined)      when(JopIoSpace.isDiv(ioAddr))      { ioRdData := bmbDiv.get.io.rdData }
   memCtrl.io.ioRdData := ioRdData
 
   // Watchdog output

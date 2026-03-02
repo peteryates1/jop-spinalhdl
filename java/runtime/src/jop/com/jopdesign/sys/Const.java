@@ -285,6 +285,11 @@ public class Const {
 	public static final int MSK_X_OVFLOW	= 0x10;
 	public static final int MSK_Y_OVFLOW	= 0x20;
 
+	// Hardware integer divider (BmbDiv)
+	public static final int IO_DIV     = IO_BASE+0x60;  // ioAddr 0xE0: write starts division, read returns quotient
+	public static final int IO_REM     = IO_BASE+0x61;  // ioAddr 0xE1: read returns remainder
+	public static final int IO_DIV_STS = IO_BASE+0x62;  // ioAddr 0xE2: read returns ready status (bit 0)
+
 	// FPU
 	public static final int IO_FPU = IO_BASE+0x70;
 	public static final int FPU_A = IO_FPU+0;

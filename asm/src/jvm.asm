@@ -199,6 +199,16 @@ usb_data		=	-111
 ua_rdrf		= 	2
 ua_tdre		= 	1
 
+#ifdef HW_DIV
+// Hardware divider auto-capture: write starts division,
+// BmbDiv latches bout(NOS=dividend), wrData(TOS=divisor) on write.
+// Busy stall handles divider latency (~34 cycles).
+div_idiv = -32    // 0xE0: write starts signed division
+div_irem = -31    // 0xE1: write starts signed remainder mode
+div_quot = -32    // 0xE0: read returns quotient
+div_rem  = -31    // 0xE1: read returns remainder
+#endif
+
 #ifdef FPU_ATTACHED
 // FPU auto-capture: write address encodes operation (0xF0-0xF3),
 // BmbFpu latches bout(NOS=value1)->opA, wrData(TOS=value2)->opB on write.
@@ -1117,6 +1127,7 @@ sys_exc:
 //	call com.jopdesign.sys.JMV.fxxx() for not implemented  byte codes.
 //		... JVM in Java!
 //
+sys_noim_entry:
 sys_noim:
 			ldjpc
 			ldi	1
@@ -1136,6 +1147,67 @@ sys_noim:
 			jmp	invoke			// simulate invokestatic with ptr to meth. str. on stack
 			nop
 			nop
+
+// ==========================================================================
+// Hardware integer divider: idiv/irem in microcode
+// Must be near sys_noim (within jmp range of ±256) for div-by-zero fallback.
+//
+// BmbDiv auto-captures bout(NOS=dividend), wrData(TOS=divisor) on write.
+// Busy stall handles divider latency (~34 cycles).
+// Division by zero: falls through to Java for ArithmeticException.
+// ==========================================================================
+#ifdef HW_DIV
+idiv:
+			// Stack: ..., dividend, divisor (TOS=divisor)
+			dup					// Stack: ..., dividend, divisor, divisor
+			bnz idiv_nonzero	// bnz pops condition
+			nop					// delay slot
+			nop					// delay slot
+			// divisor == 0: bnz popped dup, stack = ..., dividend, divisor
+			// sys_noim expects original operands on stack
+			jmp sys_noim_entry	// dispatch to Java f_idiv (handles ArithmeticException)
+			nop
+			nop
+idiv_nonzero:
+			// bnz already popped the dup copy
+			// Stack: ..., dividend, divisor
+			ldi div_idiv		// Stack: ..., dividend, divisor, ioAddr
+			stmwa				// addr_reg = ioAddr, pops. Stack: ..., dividend, divisor
+			stmwd				// I/O write: bout=dividend(NOS), wrData=divisor(TOS). Pops.
+								// BmbDiv busy stalls pipeline ~34 cycles
+								// Stack: ..., dividend
+			pop					// drop dividend (already captured by BmbDiv). Stack: ...
+			ldi div_quot		// Stack: ..., ioReadAddr
+			stmra				// start I/O read, pops. Stack: ...
+			wait				// I/O read latency (rdy_cnt=1)
+			wait
+			ldmrd nxt			// push quotient. Stack: ..., quotient
+
+irem:
+			// Stack: ..., dividend, divisor (TOS=divisor)
+			dup					// Stack: ..., dividend, divisor, divisor
+			bnz irem_nonzero	// bnz pops condition
+			nop					// delay slot
+			nop					// delay slot
+			// divisor == 0: bnz popped dup, stack = ..., dividend, divisor
+			jmp sys_noim_entry	// dispatch to Java f_irem (handles ArithmeticException)
+			nop
+			nop
+irem_nonzero:
+			// bnz already popped the dup copy
+			// Stack: ..., dividend, divisor
+			ldi div_idiv		// Stack: ..., dividend, divisor, ioAddr
+			stmwa				// addr_reg = ioAddr, pops. Stack: ..., dividend, divisor
+			stmwd				// I/O write: bout=dividend(NOS), wrData=divisor(TOS). Pops.
+								// BmbDiv busy stalls pipeline ~34 cycles
+								// Stack: ..., dividend
+			pop					// drop dividend. Stack: ...
+			ldi div_rem			// Stack: ..., ioReadAddr
+			stmra				// start I/O read, pops. Stack: ...
+			wait				// I/O read latency
+			wait
+			ldmrd nxt			// push remainder. Stack: ..., remainder
+#endif
 
 //
 //	invoke and return functions
@@ -1286,6 +1358,13 @@ ishr:		shr nxt
 iushr:		ushr nxt
 
 
+#ifdef DSP_MUL
+imul:
+			stmul			// latch inputs, DSP result ready next cycle
+			pop				// pop second operand
+			nop				// wait 1 cycle for registered result
+			ldmul nxt		// read low 32 bits
+#else
 imul:
 			stmul		// store both operands and start
 			pop			// pop second operand
@@ -1299,14 +1378,15 @@ imul_loop:
 			bnz	imul_loop
 			nop
 			nop
-	
+
 			pop			// remove counter
 
 			ldmul	nxt
+#endif
 
 
 // 	moved to JVM.java
-// 
+//
 // idiv:
 // 			stm	b
 // 			stm	a
@@ -1972,6 +2052,67 @@ jopsys_inval:
 			nop
 			nop
 			nop nxt
+
+// ==========================================================================
+// DSP multiply: lmul in microcode using 3 partial products
+// Placed at end of ROM so DSP_MUL doesn't shift any existing addresses.
+//
+// lmul(a1:a0 × b1:b0) → result_high:result_low
+//   Stack entry: ..., a1, a0, b1, b0  (TOS=b0, long = high:low)
+//   P0 = a0 × b0  → P0_low = result[31:0], P0_high contributes to result[63:32]
+//   P1 = a1 × b0  → P1_low contributes to result[63:32]
+//   P2 = a0 × b1  → P2_low contributes to result[63:32]
+//   result_low  = P0_low
+//   result_high = P0_high + P1_low + P2_low
+// ==========================================================================
+#ifdef DSP_MUL
+lmul:
+			// Stack: ..., a1, a0, b1, b0 (TOS=b0)
+			// lmul(a1:a0 × b1:b0) = P0_low, (P0_high + P1_low + P2_low)
+			// stm = POP (saves TOS to scratch, pops it)
+			// ldm = PUSH (pushes scratch value)
+
+			stm a				// a = b0, pop. Stack: ..., a1, a0, b1
+			stm b				// b = b1, pop. Stack: ..., a1, a0
+
+			// ---- P0 = a0 * b0 ----
+			dup					// Stack: ..., a1, a0, a0
+			stm c				// c = a0, pop. Stack: ..., a1, a0
+			ldm a				// push b0. Stack: ..., a1, a0, b0
+			stmul				// mul(TOS=b0, NOS=a0), pop. Stack: ..., a1, a0
+			pop					// pop a0. Stack: ..., a1
+			nop					// wait for DSP result
+			ldmul				// push P0_low. Stack: ..., a1, P0_low
+			stm d				// d = P0_low, pop. Stack: ..., a1
+			ldmulh				// push P0_high. Stack: ..., a1, P0_high
+			stm e				// e = P0_high, pop. Stack: ..., a1
+
+			// ---- P1 = a1 * b0 ----
+			ldm a				// push b0. Stack: ..., a1, b0
+			stmul				// mul(TOS=b0, NOS=a1), pop. Stack: ..., a1
+			pop					// pop a1. Stack: ...
+			nop
+			ldmul				// push P1_low. Stack: ..., P1_low
+			ldm e				// push P0_high. Stack: ..., P1_low, P0_high
+			add					// Stack: ..., (P1_low + P0_high)
+			stm e				// e = accum, pop. Stack: ...
+
+			// ---- P2 = a0 * b1 ----
+			ldm c				// push a0. Stack: ..., a0
+			ldm b				// push b1. Stack: ..., a0, b1
+			stmul				// mul(TOS=b1, NOS=a0), pop. Stack: ..., a0
+			pop					// pop a0. Stack: ...
+			nop
+			ldmul				// push P2_low. Stack: ..., P2_low
+			ldm e				// push accum. Stack: ..., P2_low, accum
+			add					// Stack: ..., result_high
+			stm e				// e = result_high, pop. Stack: ...
+
+			// Push result: high, low (long = high:low on JOP stack)
+			ldm e				// push result_high. Stack: ..., result_high
+			ldm d nxt			// push result_low. Stack: ..., result_high, result_low
+#endif
+
 
 // ==========================================================================
 // Floating point operations in HW with FPU (auto-capture version)

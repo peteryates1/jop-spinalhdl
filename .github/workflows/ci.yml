@@ -40,6 +40,9 @@ jobs:
       - name: Build microcode (FPU variants)
         run: cd asm && make fpu && make serial-fpu
 
+      - name: Build microcode (HW math variants)
+        run: cd asm && make dsp && make serial-dsp && make hwmath && make serial-hwmath
+
       - name: Build microcode (flash variant)
         run: cd asm && make flash
 

@@ -57,6 +57,54 @@ object JumpTableInitData {
     sysIntAddr  = jop.SerialFpuJumpTableData.sysIntAddr,
     sysExcAddr  = jop.SerialFpuJumpTableData.sysExcAddr
   )
+
+  /** SIMULATION microcode with DSP multiply (imul/lmul → microcode DSP) */
+  def simulationDsp: JumpTableInitData = JumpTableInitData(
+    entries     = jop.DspJumpTableData.entries,
+    sysNoimAddr = jop.DspJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.DspJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.DspJumpTableData.sysExcAddr
+  )
+
+  /** SERIAL-boot microcode with DSP multiply */
+  def serialDsp: JumpTableInitData = JumpTableInitData(
+    entries     = jop.SerialDspJumpTableData.entries,
+    sysNoimAddr = jop.SerialDspJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.SerialDspJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.SerialDspJumpTableData.sysExcAddr
+  )
+
+  /** SIMULATION microcode with HW integer divider (idiv/irem → microcode HW) */
+  def simulationDiv: JumpTableInitData = JumpTableInitData(
+    entries     = jop.DivJumpTableData.entries,
+    sysNoimAddr = jop.DivJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.DivJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.DivJumpTableData.sysExcAddr
+  )
+
+  /** SERIAL-boot microcode with HW integer divider */
+  def serialDiv: JumpTableInitData = JumpTableInitData(
+    entries     = jop.SerialDivJumpTableData.entries,
+    sysNoimAddr = jop.SerialDivJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.SerialDivJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.SerialDivJumpTableData.sysExcAddr
+  )
+
+  /** SIMULATION microcode with DSP multiply + HW integer divider */
+  def simulationHwMath: JumpTableInitData = JumpTableInitData(
+    entries     = jop.HwMathJumpTableData.entries,
+    sysNoimAddr = jop.HwMathJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.HwMathJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.HwMathJumpTableData.sysExcAddr
+  )
+
+  /** SERIAL-boot microcode with DSP multiply + HW integer divider */
+  def serialHwMath: JumpTableInitData = JumpTableInitData(
+    entries     = jop.SerialHwMathJumpTableData.entries,
+    sysNoimAddr = jop.SerialHwMathJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.SerialHwMathJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.SerialHwMathJumpTableData.sysExcAddr
+  )
 }
 
 /**

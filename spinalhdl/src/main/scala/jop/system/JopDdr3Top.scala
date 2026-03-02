@@ -47,6 +47,8 @@ case class JopDdr3Top(
   jumpTable: JumpTableInitData = JumpTableInitData.serial,
   ioConfig: IoConfig = IoConfig(),
   fpuMode: FpuMode.FpuMode = FpuMode.Software,
+  useDspMul: Boolean = false,
+  useHwDiv: Boolean = false,
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
@@ -175,7 +177,9 @@ case class JopDdr3Top(
         clkFreqHz = 100000000L,
         ioConfig = ioConfig,
         useStackCache = true,              // Enable 3-bank rotating stack cache
-        fpuMode = fpuMode
+        fpuMode = fpuMode,
+        useDspMul = useDspMul,
+        useHwDiv = useHwDiv
       ),
       romInit = Some(romInit),
       ramInit = Some(ramInit),
