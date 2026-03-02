@@ -53,3 +53,21 @@ Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated
 
 // Include serial+FPU microcode Scala files (SerialFpuJumpTableData.scala)
 Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-fpu"
+
+// Include DSP multiply microcode Scala files (DspJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "dsp"
+
+// Include serial+DSP microcode Scala files (SerialDspJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-dsp"
+
+// Include HW divider microcode Scala files (DivJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "div"
+
+// Include serial+HW divider microcode Scala files (SerialDivJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-div"
+
+// Include HW math (DSP+div) microcode Scala files (HwMathJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "hwmath"
+
+// Include serial+HW math microcode Scala files (SerialHwMathJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-hwmath"
