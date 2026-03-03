@@ -79,7 +79,22 @@ From `DDR3.ucf`:
 | `ddr3_odt` | G19 |
 | `ddr3_reset_n` | H17 |
 | `ddr3_ck_p / ck_n` | F18 / F19 |
-| `ddr3_dq[15:0]` | D21..D20, C23..B26 |
+| `ddr3_dq[0]` | D21 |
+| `ddr3_dq[1]` | C21 |
+| `ddr3_dq[2]` | B22 |
+| `ddr3_dq[3]` | B21 |
+| `ddr3_dq[4]` | D19 |
+| `ddr3_dq[5]` | E20 |
+| `ddr3_dq[6]` | C19 |
+| `ddr3_dq[7]` | D20 |
+| `ddr3_dq[8]` | C23 |
+| `ddr3_dq[9]` | D23 |
+| `ddr3_dq[10]` | B24 |
+| `ddr3_dq[11]` | B25 |
+| `ddr3_dq[12]` | C24 |
+| `ddr3_dq[13]` | C26 |
+| `ddr3_dq[14]` | A25 |
+| `ddr3_dq[15]` | B26 |
 | `ddr3_dqs_p[1:0]` | B20, A23 |
 | `ddr3_dqs_n[1:0]` | A20, A24 |
 | `ddr3_dm[1:0]` | A22, C22 |
@@ -301,55 +316,47 @@ Pins 11, 12 = GND, VCC.
 
 **J10 (Bank 35, LVCMOS33):**
 
-| Pin | FPGA Pin |
-|:---:|----------|
-| 1 | D5 |
-| 2 | G5 |
-| 3 | G7 |
-| 4 | G8 |
-| 7 | E5 |
-| 8 | E6 |
-| 9 | D6 |
-| 10 | G6 |
+| Pin | FPGA Pin | Pin | FPGA Pin |
+|:---:|----------|:---:|----------|
+| 1 | D5 | 7 | E5 |
+| 2 | G5 | 8 | E6 |
+| 3 | G7 | 9 | D6 |
+| 4 | G8 | 10 | G6 |
+| 5 | GND | 11 | GND |
+| 6 | VCC 3.3V | 12 | VCC 3.3V |
 
 **J11 (Bank 35, LVCMOS33):**
 
-| Pin | FPGA Pin |
-|:---:|----------|
-| 1 | H4 |
-| 2 | F4 |
-| 3 | A4 |
-| 4 | A5 |
-| 7 | J4 |
-| 8 | G4 |
-| 9 | B4 |
-| 10 | B5 |
+| Pin | FPGA Pin | Pin | FPGA Pin |
+|:---:|----------|:---:|----------|
+| 1 | H4 | 7 | J4 |
+| 2 | F4 | 8 | G4 |
+| 3 | A4 | 9 | B4 |
+| 4 | A5 | 10 | B5 |
+| 5 | GND | 11 | GND |
+| 6 | VCC 3.3V | 12 | VCC 3.3V |
 
 **J13 (Bank 14, LVCMOS33):**
 
-| Pin | FPGA Pin |
-|:---:|----------|
-| 1 | N22 |
-| 2 | N21 |
-| 3 | R20 |
-| 4 | T22 |
-| 7 | P20 |
-| 8 | N23 |
-| 9 | P21 |
-| 10 | R21 |
+| Pin | FPGA Pin | Pin | FPGA Pin |
+|:---:|----------|:---:|----------|
+| 1 | N22 | 7 | P20 |
+| 2 | N21 | 8 | N23 |
+| 3 | R20 | 9 | P21 |
+| 4 | T22 | 10 | R21 |
+| 5 | GND | 11 | GND |
+| 6 | VCC 3.3V | 12 | VCC 3.3V |
 
 **J14 (Bank 14, LVCMOS33):**
 
-| Pin | FPGA Pin |
-|:---:|----------|
-| 1 | P23 |
-| 2 | R23 |
-| 3 | T24 |
-| 4 | T25 |
-| 7 | N24 |
-| 8 | P24 |
-| 9 | R22 |
-| 10 | T23 |
+| Pin | FPGA Pin | Pin | FPGA Pin |
+|:---:|----------|:---:|----------|
+| 1 | P23 | 7 | N24 |
+| 2 | R23 | 8 | P24 |
+| 3 | T24 | 9 | R22 |
+| 4 | T25 | 10 | T23 |
+| 5 | GND | 11 | GND |
+| 6 | VCC 3.3V | 12 | VCC 3.3V |
 
 All PMOD pins are on dedicated I/O — no sharing conflicts with other
 on-board peripherals.
@@ -360,7 +367,7 @@ on-board peripherals.
 
 | Pin | FPGA Pin | Pin | FPGA Pin |
 |:---:|----------|:---:|----------|
-| 1 | VIN | 2 | VIN |
+| 1 | VIN (5V) | 2 | VIN (5V) |
 | 3 | U15 | 4 | U16 |
 | 5 | V16 | 6 | V17 |
 | 7 | V18 | 8 | W18 |
@@ -379,7 +386,7 @@ on-board peripherals.
 | 33 | U25 | 34 | U26 |
 | 35 | NC | 36 | NC |
 | 37 | NC | 38 | NC |
-| 39 | VCCO_13 | 40 | VCCO_13 |
+| 39 | VCCO_13 (3.3V) | 40 | VCCO_13 (3.3V) |
 
 ## FPGA I/O Banks
 
