@@ -1,9 +1,8 @@
 /**
-  * SimpleFpu — Configurable IEEE 754 Single-Precision FPU for JOP
+  * FloatComputeUnit — Configurable IEEE 754 Single-Precision FPU for JOP
   *
-  * FPU with JOP stack-integration-ready interface, configurable operations
-  * for area-constrained FPGAs. Each operation can be included/excluded via
-  * SimpleFpuConfig flags.
+  * Extends ComputeUnit with single-precision float operations.
+  * Each operation can be included/excluded via FloatComputeUnitConfig flags.
   *
   * Operations (selected by JVM bytecode):
   *   0x62: fadd    0x66: fsub    0x6A: fmul    0x6E: fdiv
@@ -27,11 +26,11 @@
   *   bit 1      = guard bit
   *   bit 0      = round bit
   */
-package jop.io
+package jop.core
 
 import spinal.core._
 
-case class SimpleFpuConfig(
+case class FloatComputeUnitConfig(
     withAdd:  Boolean = true,
     withMul:  Boolean = true,
     withDiv:  Boolean = true,
@@ -40,16 +39,7 @@ case class SimpleFpuConfig(
     withFcmp: Boolean = false
 )
 
-case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Component {
-  val io = new Bundle {
-    val operand0 = in UInt (64 bits)   // For 32-bit ops: A (lower 32). For 64-bit: {B, A}
-    val operand1 = in UInt (64 bits)   // For 32-bit ops: B (lower 32). For 64-bit: {D, C}
-    val wr       = in Bool ()          // sthw asserted — capture operands + start op
-    val opcode   = in Bits (8 bits)    // JVM bytecode selects operation
-    val result   = out UInt (64 bits)  // 32-bit ops use lower half, zero-extended
-    val is64     = out Bool ()         // true -> write both TOS and NOS (future use)
-    val busy     = out Bool ()         // stalls pipeline until done
-  }
+case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitConfig()) extends ComputeUnit {
 
   // ========================================================================
   // Constants

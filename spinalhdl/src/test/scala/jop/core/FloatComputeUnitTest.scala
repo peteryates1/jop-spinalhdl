@@ -1,10 +1,10 @@
-package jop.io
+package jop.core
 
 import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
 
-class SimpleFpuTest extends AnyFunSuite {
+class FloatComputeUnitTest extends AnyFunSuite {
 
   // ========================================================================
   // Helpers
@@ -27,7 +27,7 @@ class SimpleFpuTest extends AnyFunSuite {
   val FCMPL = 0x95
   val FCMPG = 0x96
 
-  val fullConfig = SimpleFpuConfig(
+  val fullConfig = FloatComputeUnitConfig(
     withAdd = true, withMul = true, withDiv = true,
     withI2F = true, withF2I = true, withFcmp = true
   )
@@ -35,10 +35,10 @@ class SimpleFpuTest extends AnyFunSuite {
   val simConfig = SimConfig
     .workspacePath("simWorkspace")
 
-  def compileFull() = simConfig.compile(SimpleFpu(fullConfig))
+  def compileFull() = simConfig.compile(FloatComputeUnit(fullConfig))
 
   /** Run one FPU operation, return lower-32-bit result. */
-  def runOp(dut: SimpleFpu, opa: Long, opb: Long, bytecode: Int)
+  def runOp(dut: FloatComputeUnit, opa: Long, opb: Long, bytecode: Int)
            (implicit cd: ClockDomain): Long = {
     dut.io.operand0 #= (opa & 0xFFFFFFFFL)
     dut.io.operand1 #= (opb & 0xFFFFFFFFL)
@@ -57,11 +57,11 @@ class SimpleFpuTest extends AnyFunSuite {
     (dut.io.result.toBigInt & BigInt("FFFFFFFF", 16)).toLong
   }
 
-  def runFloat(dut: SimpleFpu, a: Float, b: Float, bytecode: Int)
+  def runFloat(dut: FloatComputeUnit, a: Float, b: Float, bytecode: Int)
               (implicit cd: ClockDomain): Long =
     runOp(dut, floatBits(a), floatBits(b), bytecode)
 
-  def initIo(dut: SimpleFpu): Unit = {
+  def initIo(dut: FloatComputeUnit): Unit = {
     dut.io.operand0 #= 0
     dut.io.operand1 #= 0
     dut.io.opcode   #= 0
@@ -362,12 +362,12 @@ class SimpleFpuTest extends AnyFunSuite {
   // Config test: disabled ops don't block FSM
   // ========================================================================
   test("minimal_config_compiles") {
-    val minConfig = SimpleFpuConfig(
+    val minConfig = FloatComputeUnitConfig(
       withAdd = false, withMul = false, withDiv = false,
       withI2F = false, withF2I = false, withFcmp = false
     )
     // Just verify it compiles and simulates without crashing
-    simConfig.compile(SimpleFpu(minConfig)).doSim(seed = 42) { dut =>
+    simConfig.compile(FloatComputeUnit(minConfig)).doSim(seed = 42) { dut =>
       dut.clockDomain.forkStimulus(10)
       SimTimeout(1000)
       dut.io.operand0 #= 0

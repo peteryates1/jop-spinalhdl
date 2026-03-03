@@ -1,15 +1,15 @@
-package jop.io
+package jop.core
 
 import spinal.core._
 import spinal.core.sim._
 
 /**
-  * Interactive simulation for SimpleFpu with trace output.
-  * Run: sbt "Test / runMain jop.io.SimpleFpuSim"
+  * Interactive simulation for FloatComputeUnit with trace output.
+  * Run: sbt "Test / runMain jop.io.FloatComputeUnitSim"
   */
-object SimpleFpuSim extends App {
+object FloatComputeUnitSim extends App {
 
-  val fullConfig = SimpleFpuConfig(
+  val fullConfig = FloatComputeUnitConfig(
     withAdd  = true,
     withMul  = true,
     withDiv  = true,
@@ -31,7 +31,7 @@ object SimpleFpuSim extends App {
   SimConfig
     .withWave
     .workspacePath("simWorkspace")
-    .compile(SimpleFpu(fullConfig))
+    .compile(FloatComputeUnit(fullConfig))
     .doSim { dut =>
 
     dut.clockDomain.forkStimulus(10)
@@ -82,7 +82,7 @@ object SimpleFpuSim extends App {
     dut.clockDomain.waitSampling(5)
 
     println("=" * 72)
-    println("SimpleFpu Interactive Simulation")
+    println("FloatComputeUnit Interactive Simulation")
     println("=" * 72)
 
     // ADD tests
@@ -130,7 +130,7 @@ object SimpleFpuSim extends App {
     runFloat(Float.NaN, 1.0f, FCMPG, "FCMPG: NaN -> +1")
 
     println("=" * 72)
-    println("SimpleFpu simulation complete")
+    println("FloatComputeUnit simulation complete")
     println("=" * 72)
   }
 }
