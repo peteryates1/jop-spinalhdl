@@ -1403,7 +1403,12 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 | 11 | 6 | Runtime module system, Const.java generation, board-specific build | `java/runtime/`, build scripts |
 | 12 | 6+ | JDK class library from OpenJDK 6 (separate ongoing effort) | `java/runtime/src/jdk/` |
 | 13 | 6+ | Application libraries: FAT32, networking, etc. | `java/runtime/src/lib/` |
-| 14 | — | Full verification | all sims + FPGA |
+| 14 | 8 | Build orchestrator (`jop` CLI), config hash, incremental builds | top-level scripts |
+| 15 | 9 | Eclipse project generation, .classpath/.project from config | IDE tooling |
+| 16 | 9 | Eclipse build integration (PreLinker + JOPizer as builder) | IDE tooling |
+| 17 | 9 | Download integration, debug adapter | IDE tooling, debug protocol |
+| 18 | 10 | Config validation, resource estimation, WCET timing model | cross-cutting |
+| 19 | — | Full verification | all sims + FPGA + IDE workflow |
 
 ## Files to Modify
 
@@ -1441,3 +1446,295 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 7. `sbt "Test / runMain jop.system.JopHwMathBramSim"` — 59/60 pass (hwMath config)
 8. `sbt "runMain jop.system.JopSdramTopVerilog"` — Verilog generates
 9. FPGA build + HelloWorld.jop download — works on hardware
+
+---
+
+## Phase 8: Build Orchestration
+
+### Problem
+
+Today the build is spread across 4 directories with independent Makefiles:
+- `asm/Makefile` — microcode assembly (gcc + jopa → ROM/RAM)
+- `java/Makefile` — tools + runtime + apps (javac + PreLinker + JOPizer → .jop)
+- `spinalhdl/` via sbt — SpinalHDL elaboration (→ Verilog)
+- `fpga/*/Makefile` — FPGA synthesis (Quartus/Vivado → bitstream)
+
+A developer must run these in the right order, with the right parameters, and keep them in sync manually. Change a config? Rebuild microcode, regenerate Const.java, recompile runtime, re-elaborate Verilog, re-synthesize, relink the .jop. Miss a step and you get silent corruption.
+
+### Full dependency chain
+
+```
+JopSystemConfig (single source of truth)
+  |
+  |  [1] Microcode assembly (once per boot mode, rarely changes)
+  |      Config → gcc -D flags → jopa → mem_rom.dat, mem_ram.dat, JumpTable.scala
+  |
+  |  [2] Runtime generation (once per system config)
+  |      Config → Const.java + module selection → javac → runtime classes
+  |
+  |  [3] SpinalHDL elaboration (once per system config)
+  |      Config + ROM/RAM .dat → sbt runMain → Verilog (.v files)
+  |
+  |  [4] FPGA synthesis (once per Verilog change, slow ~5-30 min)
+  |      Verilog + .qsf/.xdc → Quartus/Vivado → bitstream (.sof/.bit)
+  |
+  |  [5] Application build (per app, fast ~5 sec)
+  |      App .java + runtime classes → javac → PreLinker → JOPizer → .jop
+  |
+  |  [6] Download + run
+  |      bitstream + .jop → download.py → FPGA running
+```
+
+Steps [1]-[4] are **infrastructure** — done once per config change, cached. Step [5] is the **inner development loop** — fast, done on every app change. Step [6] is **deploy**.
+
+### Orchestrator
+
+A single entry point that understands the dependency chain and only rebuilds what changed:
+
+```bash
+# Full build from config (first time, or after config change)
+jop build qmtech-serial
+
+# App-only rebuild (inner loop — fast, skips [1]-[4])
+jop build --app Smallest
+
+# Just regenerate Verilog (after config change, before synthesis)
+jop build --verilog qmtech-serial
+
+# FPGA synthesis (after Verilog change)
+jop build --fpga qmtech-serial
+
+# Download and run
+jop download HelloWorld.jop
+jop download -e HelloWorld.jop   # with UART monitor
+```
+
+Implementation: could be a top-level `Makefile`, a shell script, or an sbt task. The key is that it reads `JopSystemConfig` and derives all build parameters from it — no manual flag passing.
+
+### Incremental build awareness
+
+Each step produces artifacts with a **config hash**. If the config hasn't changed, the step is skipped:
+
+```
+asm/generated/serial/mem_rom.dat     # hash of (boot_mode + feature flags)
+java/runtime/build/qmtech-serial/    # hash of (core config + board devices)
+generated/verilog/JopSdramTop.v      # hash of (full system config)
+fpga/qmtech-ep4cgx150-sdram/jop.sof # hash of (Verilog files)
+```
+
+The inner app development loop (step [5]) only needs the runtime classes — which are already built and cached for this board config.
+
+## Phase 9: IDE Integration (Eclipse)
+
+### Vision
+
+A developer opens Eclipse, creates a JOP application project targeting a specific board. Eclipse knows the board's runtime (code completion, API docs), builds the .jop, downloads to hardware, and supports source-level debugging — all without leaving the IDE.
+
+### Project structure
+
+```
+my-jop-app/
+  .project                    # Eclipse project file (generated)
+  .classpath                  # Points to board-specific runtime JAR
+  .settings/
+    jop.json                  # Board + system config reference
+  src/
+    com/example/MyApp.java    # Application source
+  build/
+    classes/                  # javac output
+    pp/                       # PreLinker output
+    MyApp.jop                 # JOPizer output
+```
+
+### Eclipse integration layers
+
+**Layer 1: Project setup (config-driven)**
+
+```bash
+# Generate Eclipse project files from system config
+jop create-project --system qmtech-serial --name my-jop-app
+```
+
+This generates:
+- `.project` with JOP nature (or standard Java nature + custom builder)
+- `.classpath` referencing the board-specific runtime JAR
+- `.settings/jop.json` recording which `JopSystemConfig` this project targets
+- Build configuration: javac6 flags, PreLinker, JOPizer pipeline
+
+**Layer 2: Build integration (Eclipse builder or external tool)**
+
+Eclipse's build chain for a JOP project:
+
+```
+Save .java file
+  → Eclipse incremental javac (using board runtime on classpath)
+  → PreLinker (external tool, triggered by builder)
+  → JOPizer (external tool) → .jop in build/
+```
+
+This can be:
+- **Custom Eclipse builder** (plugin) — tightest integration, auto-triggers on save
+- **External tool configuration** — simpler, manual trigger via toolbar button
+- **Ant/Maven builder** — Eclipse-native, wraps the Makefile chain
+
+**Layer 3: Download (external tool or plugin)**
+
+```
+Toolbar button: "Download to JOP"
+  → Runs: download.py build/MyApp.jop [auto-detected port]
+  → Console shows: progress bar, then UART output
+```
+
+Auto-detection of serial port from `SystemAssembly` (knows which USB-serial chip is on the carrier board).
+
+**Layer 4: Debug (debug adapter)**
+
+Source-level debugging over UART debug protocol:
+
+```
+Eclipse Debug Configuration: "JOP Debug"
+  → Serial port: auto-detected (or manual)
+  → .jop file: build/MyApp.jop
+  → Source path: src/
+  → Capabilities: breakpoint, step, inspect locals, stack trace
+```
+
+Implementation options:
+- **Eclipse Debug Adapter Protocol (DAP)** — modern, IDE-agnostic, works with VS Code too
+- **Custom Eclipse debug plugin** — tightest Eclipse integration
+- **GDB remote stub** — map JOP debug protocol to GDB remote protocol, reuse Eclipse CDT debugger
+
+The existing `DebugProtocol` / `DebugController` in SpinalHDL provides: halt/resume, read/write memory, read stack, read method cache. Needs: mapping to source locations (via .jop metadata + PreLinker symbol tables).
+
+### Configuration UI
+
+Board and system configuration can be:
+
+**Option A: Config files (JSON/YAML) with IDE editor**
+
+```json
+{
+  "system": "qmtech-serial",
+  "coreConfig": {
+    "imul": "Hardware",
+    "fadd": "Hardware",
+    "fsub": "Hardware",
+    "fmul": "Hardware",
+    "fdiv": "Hardware"
+  },
+  "modules": ["collections", "fat32"]
+}
+```
+
+Eclipse JSON editor with schema validation. Simple, no plugin needed. The `jop` CLI reads this file.
+
+**Option B: Eclipse plugin with custom UI**
+
+Wizard-style: Select board → Configure cores → Select modules → Generate project. Richer experience, more development effort.
+
+**Recommended**: Start with Option A (config files). Migrate to Option B when the core workflow is stable.
+
+### Simulation from IDE
+
+Run SpinalHDL simulation with the application's .jop loaded, UART output in Eclipse console:
+
+```
+Run Configuration: "JOP Simulation"
+  → sbt "Test / runMain jop.system.JopCoreBramSim" --jop build/MyApp.jop
+  → Console shows: simulated UART output
+  → Optional: waveform viewer (GTKWave) for hardware debugging
+```
+
+This uses the same `JopSystemConfig` as the FPGA build but targets the BRAM simulation backend. Useful for testing before hardware is available.
+
+## Phase 10: Cross-Cutting Concerns
+
+### Config-to-artifact version binding
+
+**Problem:** If you rebuild the FPGA with a new config but forget to rebuild the .jop (or vice versa), the runtime assumptions don't match the hardware. Silent corruption.
+
+**Solution:** Config hash embedded in both bitstream and .jop:
+
+```scala
+// JopSystemConfig produces a deterministic hash
+def configHash: String = sha256(
+  coreConfigs.map(_.toString) ++
+  Seq(bootMode.toString, cpuCnt.toString, ioConfig.toString)
+).take(8)  // 8-char hex
+```
+
+- **Verilog**: Config hash baked into a readable register (e.g., I/O address `IO_CONFIG_HASH`)
+- **.jop**: Config hash stored in .jop file header (JOPizer stamps it)
+- **Boot check**: `Startup.java` reads `IO_CONFIG_HASH`, compares with embedded hash, warns on mismatch
+
+This doesn't prevent running mismatched builds (that would brick development), but it provides a clear diagnostic: "Warning: .jop built for config a3f2b1c0, hardware is config 7e91d4a2".
+
+### PreLinker / JOPizer config awareness
+
+Currently these tools read class structure offsets from `Const.java` (which gets compiled into the runtime). With config-driven generation, this interface stays the same — `Const.java` is the contract between SpinalHDL config and Java toolchain.
+
+Additional config the tools may need:
+- **Memory layout** — heap start, stack size, method cache size → already in `Const.java` via `JopMemoryConfig`
+- **Available bytecodes** — which bytecodes have HW/microcode vs Java → JOPizer doesn't need this (bytecode is bytecode; the jump table handles dispatch at runtime)
+- **Config hash** — JOPizer stamps .jop header with hash from generated `Const.java`
+
+No changes to PreLinker/JOPizer needed beyond reading the generated `Const.java`.
+
+### Configuration validation
+
+Errors at elaboration time (SpinalHDL `require()` checks):
+
+```scala
+// In JopCoreConfig
+require(!(fadd == Implementation.Hardware && fdiv == Implementation.Hardware &&
+          fsub != Implementation.Hardware),
+  "FPU sub-unit is shared: if fadd and fdiv are Hardware, fsub must be too")
+
+// In JopSystemConfig
+require(cpuCnt >= 1 && cpuCnt <= 16)
+perCoreConfigs.foreach(pcc =>
+  require(pcc.length == cpuCnt))
+
+// Resource estimation warnings (non-fatal)
+if (coreConfig.needsLongAlu && system.fpgaBoard.fpga.family == FpgaFamily.CycloneV)
+  println(s"Warning: 64-bit ALU on ${system.fpgaBoard.name} — verify LUT budget")
+```
+
+Future: resource estimation from config (LEs, DSPs, BRAMs) — compare against FPGA capacity before running synthesis. Saves 5-30 minutes of failed synthesis.
+
+### WCET analysis
+
+Original JOP had WCET analysis tooling (in `jopmin/tools/`). With per-instruction `Implementation` choices, cycle counts change:
+
+- `imul: Microcode` → 18 cycles; `imul: Hardware` → ~4 cycles (sthw/wait)
+- `ladd: Microcode` → 26 cycles; `ladd: Hardware` → 1 cycle (ALU)
+
+WCET analysis needs a **timing model** derived from `JopCoreConfig`:
+
+```scala
+def bytecodeTimingModel(config: JopCoreConfig): Map[Int, CycleCount] = {
+  // For each bytecode, return (best-case, worst-case) cycles
+  // based on config's Implementation choice
+  Map(
+    0x68 -> (if (config.imul == Hardware) CycleCount(4, 4) else CycleCount(18, 18)),
+    0x61 -> (if (config.ladd == Hardware) CycleCount(1, 1) else CycleCount(26, 26)),
+    // ...
+  )
+}
+```
+
+This is a **future enhancement** — the existing WCET tools work with fixed timing tables. Config-driven timing tables are an incremental improvement.
+
+### Migration path
+
+Existing setups transition incrementally:
+
+1. **Phase 1-4** (core config): Existing code keeps working. Old `JopCoreConfig` fields (`fpuMode`, `useDspMul`, `useHwDiv`) become deprecated aliases that set the new per-instruction fields. Old Verilog generation entry points become thin wrappers. Old sim harnesses updated to use new config.
+
+2. **Phase 5** (hardware description): Existing `.qsf` files kept as-is. New `SystemAssembly` data can generate `.qsf` files, but hand-maintained originals are the reference during migration. No breaking changes.
+
+3. **Phase 6** (runtime): Existing `Const.java` kept as-is until runtime generation is stable. New generated `Const.java` validated against the hand-maintained one before switching over.
+
+4. **Phase 8-9** (build/IDE): Existing `make` workflow continues to work. New `jop` CLI is additive. Eclipse project generation is opt-in.
+
+At each phase, existing workflows are not broken — new capabilities are added alongside, validated, then old paths deprecated.
