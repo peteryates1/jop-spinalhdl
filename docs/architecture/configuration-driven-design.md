@@ -1403,12 +1403,12 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 | 11 | 6 | Runtime module system, Const.java generation, board-specific build | `java/runtime/`, build scripts |
 | 12 | 6+ | JDK class library from OpenJDK 6 (separate ongoing effort) | `java/runtime/src/jdk/` |
 | 13 | 6+ | Application libraries: FAT32, networking, etc. | `java/runtime/src/lib/` |
-| 14 | 8 | Build orchestrator (`jop` CLI), config hash, incremental builds | top-level scripts |
-| 15 | 9 | Eclipse project generation, .classpath/.project from config | IDE tooling |
-| 16 | 9 | Eclipse build integration (PreLinker + JOPizer as builder) | IDE tooling |
-| 17 | 9 | Download integration, debug adapter | IDE tooling, debug protocol |
+| 14 | 8 | Build library (`jop-build`): orchestrator, builders, config hash | `java/tools/src/.../build/` |
+| 15 | 8 | CLI front-end (`jop` command) wrapping build library | `java/tools/src/.../build/cli/` |
+| 16 | 9 | Eclipse plugin: project wizard, builder, download action | Eclipse plugin project |
+| 17 | 9 | DAP debug adapter (IDE-agnostic, shared by Eclipse/VS Code) | `java/tools/src/.../build/dap/` |
 | 18 | 10 | Config validation, resource estimation, WCET timing model | cross-cutting |
-| 19 | — | Full verification | all sims + FPGA + IDE workflow |
+| 19 | — | Full verification | all sims + FPGA + CLI + IDE workflow |
 
 ## Files to Modify
 
@@ -1431,6 +1431,9 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 | `java/runtime/src/jdk/` | **New**: JDK classes from OpenJDK 6, adapted for JOP |
 | `java/runtime/src/lib/` | **New**: Application libraries (FAT32, networking, etc.) |
 | `java/Makefile` | Board-specific runtime build with module selection |
+| `java/tools/src/com/jopdesign/build/` | **New**: shared build library (orchestrator, builders, config, listeners) |
+| `java/tools/src/com/jopdesign/build/cli/` | **New**: `jop` CLI front-end (thin wrapper over build library) |
+| `java/tools/src/com/jopdesign/build/dap/` | **New**: DAP debug adapter (IDE-agnostic debug server) |
 | `spinalhdl/src/main/scala/jop/system/IoConfig.scala` | No changes needed |
 | `asm/generated/{fpu,serial-fpu,dsp,...}/` | **Delete**: old variant subdirs |
 | `asm/generated/{Fpu,SerialFpu,Dsp,...}JumpTableData.scala` | **Delete**: old variant objects |
@@ -1446,10 +1449,13 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 7. `sbt "Test / runMain jop.system.JopHwMathBramSim"` — 59/60 pass (hwMath config)
 8. `sbt "runMain jop.system.JopSdramTopVerilog"` — Verilog generates
 9. FPGA build + HelloWorld.jop download — works on hardware
+10. `jop build qmtech-serial` — CLI full build produces identical artifacts to manual make
+11. `jop build --app Smallest` — inner loop app build matches manual javac + JOPizer
+12. Eclipse project import → save .java → auto-build → .jop matches CLI output
 
 ---
 
-## Phase 8: Build Orchestration
+## Phase 8: Build System
 
 ### Problem
 
@@ -1461,6 +1467,39 @@ Today the build is spread across 4 directories with independent Makefiles:
 
 A developer must run these in the right order, with the right parameters, and keep them in sync manually. Change a config? Rebuild microcode, regenerate Const.java, recompile runtime, re-elaborate Verilog, re-synthesize, relink the .jop. Miss a step and you get silent corruption.
 
+### Architecture: Shared Build Library + Multiple Front-Ends
+
+The build system is a **Java library** (`jop-build`) that encodes the full dependency chain and build logic. Both the CLI and Eclipse call the same library — no duplicated build logic.
+
+```
+                    +-----------+      +------------------+
+                    |  jop CLI  |      | Eclipse plugin   |
+                    | (thin)    |      | (thin)           |
+                    +-----+-----+      +--------+---------+
+                          |                     |
+                          v                     v
+                 +----------------------------------+
+                 |       jop-build library           |
+                 |  (Java, all build logic lives here)|
+                 +----------------------------------+
+                 |  BuildConfig     — parse JSON     |
+                 |  MicrocodeBuilder — [1] asm       |
+                 |  RuntimeBuilder  — [2] javac      |
+                 |  VerilogBuilder  — [3] sbt        |
+                 |  FpgaBuilder     — [4] synth      |
+                 |  AppBuilder      — [5] .jop       |
+                 |  Downloader      — [6] serial     |
+                 |  BuildOrchestrator — dependency    |
+                 |                     graph + cache  |
+                 +----------------------------------+
+                          |
+                          v
+                  Makefile / sbt / Quartus / Vivado
+                  (actual tool invocations)
+```
+
+**Key principle:** The library is the authority. The CLI and Eclipse plugin are just ways to invoke it. A build triggered from Eclipse produces identical artifacts to the same build from CLI.
+
 ### Full dependency chain
 
 ```
@@ -1470,7 +1509,7 @@ JopSystemConfig (single source of truth)
   |      Config → gcc -D flags → jopa → mem_rom.dat, mem_ram.dat, JumpTable.scala
   |
   |  [2] Runtime generation (once per system config)
-  |      Config → Const.java + module selection → javac → runtime classes
+  |      Config → Const.java + module selection → javac → runtime classes + JAR
   |
   |  [3] SpinalHDL elaboration (once per system config)
   |      Config + ROM/RAM .dat → sbt runMain → Verilog (.v files)
@@ -1479,17 +1518,76 @@ JopSystemConfig (single source of truth)
   |      Verilog + .qsf/.xdc → Quartus/Vivado → bitstream (.sof/.bit)
   |
   |  [5] Application build (per app, fast ~5 sec)
-  |      App .java + runtime classes → javac → PreLinker → JOPizer → .jop
+  |      App .java + runtime JAR → javac → PreLinker → JOPizer → .jop
   |
   |  [6] Download + run
-  |      bitstream + .jop → download.py → FPGA running
+  |      bitstream + .jop → serial download → FPGA running
 ```
 
 Steps [1]-[4] are **infrastructure** — done once per config change, cached. Step [5] is the **inner development loop** — fast, done on every app change. Step [6] is **deploy**.
 
-### Orchestrator
+### Build library API
 
-A single entry point that understands the dependency chain and only rebuilds what changed:
+```java
+package com.jopdesign.build;
+
+/**
+ * Core build library — same API called by CLI and Eclipse.
+ * All methods are synchronous, report progress via BuildListener.
+ */
+public class BuildOrchestrator {
+    private final BuildConfig config;
+    private final BuildListener listener;
+    private final Path projectRoot;
+
+    public BuildOrchestrator(Path projectRoot, BuildConfig config, BuildListener listener) { ... }
+
+    /** Full build — only rebuilds steps whose inputs changed */
+    public BuildResult buildAll() { ... }
+
+    /** App-only build — inner loop, skips [1]-[4] */
+    public BuildResult buildApp(String appName) { ... }
+
+    /** Verilog generation only */
+    public BuildResult buildVerilog() { ... }
+
+    /** FPGA synthesis only */
+    public BuildResult buildFpga() { ... }
+
+    /** Download .jop to hardware */
+    public void download(Path jopFile, DownloadOptions options) { ... }
+
+    /** Run SpinalHDL simulation with given .jop */
+    public void simulate(Path jopFile, SimOptions options) { ... }
+
+    /** Check what's stale and would be rebuilt */
+    public BuildPlan dryRun() { ... }
+}
+
+/** Progress reporting — CLI prints to stdout, Eclipse updates progress bar */
+public interface BuildListener {
+    void onStepStart(BuildStep step, String description);
+    void onStepProgress(BuildStep step, int percent);
+    void onStepComplete(BuildStep step, BuildStepResult result);
+    void onOutput(BuildStep step, String line);  // stdout/stderr from tools
+}
+
+/** Build configuration loaded from JSON or constructed programmatically */
+public class BuildConfig {
+    public static BuildConfig fromJson(Path jsonFile) { ... }
+    public static BuildConfig fromPreset(String presetName) { ... }
+
+    public String systemName;
+    public String bootMode;
+    public Map<String, String> coreConfig;   // bytecode → Implementation
+    public List<String> modules;             // runtime modules
+    public String fpgaTarget;                // board preset
+}
+```
+
+### CLI front-end
+
+The `jop` CLI is a thin wrapper around `BuildOrchestrator`:
 
 ```bash
 # Full build from config (first time, or after config change)
@@ -1507,9 +1605,49 @@ jop build --fpga qmtech-serial
 # Download and run
 jop download HelloWorld.jop
 jop download -e HelloWorld.jop   # with UART monitor
+
+# Dry run — show what would be rebuilt
+jop build --dry-run qmtech-serial
+
+# Create new application project
+jop create-project --system qmtech-serial --name my-jop-app
+
+# Run simulation
+jop simulate --system qmtech-serial HelloWorld.jop
 ```
 
-Implementation: could be a top-level `Makefile`, a shell script, or an sbt task. The key is that it reads `JopSystemConfig` and derives all build parameters from it — no manual flag passing.
+The CLI implements `BuildListener` to print progress bars and tool output to the terminal.
+
+### Eclipse front-end
+
+Eclipse calls the **same `BuildOrchestrator` API** — no separate build logic. The Eclipse plugin adds IDE-specific behavior on top:
+
+```java
+// Eclipse builder calls the shared library
+public class JopEclipseBuilder extends IncrementalProjectBuilder {
+    @Override
+    protected IProject[] build(int kind, Map<String, String> args, IProgressMonitor monitor) {
+        Path projectRoot = getProject().getLocation().toFile().toPath();
+        BuildConfig config = BuildConfig.fromJson(projectRoot.resolve(".settings/jop.json"));
+
+        // Eclipse BuildListener bridges to IProgressMonitor
+        BuildListener listener = new EclipseProgressListener(monitor, getConsole());
+
+        BuildOrchestrator orchestrator = new BuildOrchestrator(projectRoot, config, listener);
+        orchestrator.buildApp(getAppName());
+        return null;
+    }
+}
+```
+
+Eclipse adds:
+- **Auto-build on save** — triggers `buildApp()` via the builder mechanism
+- **Progress bar** — `BuildListener.onStepProgress()` → Eclipse progress monitor
+- **Console output** — `BuildListener.onOutput()` → Eclipse console view
+- **Error markers** — parse compiler errors from `BuildStepResult`, mark source lines
+- **Classpath management** — `.classpath` points to runtime JAR from `buildAll()` step [2]
+
+But the actual build logic, dependency tracking, and tool invocations are all in `jop-build`.
 
 ### Incremental build awareness
 
@@ -1522,13 +1660,58 @@ generated/verilog/JopSdramTop.v      # hash of (full system config)
 fpga/qmtech-ep4cgx150-sdram/jop.sof # hash of (Verilog files)
 ```
 
-The inner app development loop (step [5]) only needs the runtime classes — which are already built and cached for this board config.
+The inner app development loop (step [5]) only needs the runtime classes — which are already built and cached for this board config. Both CLI and Eclipse benefit from the same cache.
+
+### Configuration format
+
+A single JSON file drives both CLI and Eclipse:
+
+```json
+{
+  "system": "qmtech-serial",
+  "coreConfig": {
+    "imul": "Hardware",
+    "fadd": "Hardware",
+    "fsub": "Hardware",
+    "fmul": "Hardware",
+    "fdiv": "Hardware"
+  },
+  "modules": ["collections", "fat32"],
+  "clkFreqHz": 80000000
+}
+```
+
+- **CLI**: `jop build --config my-board.json`
+- **Eclipse**: `.settings/jop.json` in project root, read by builder
+- **Programmatic**: `BuildConfig.fromJson(path)` or construct in Scala/Java code
+
+JSON schema provided for IDE validation (Eclipse, VS Code, IntelliJ all support JSON schema).
+
+### Where the library lives
+
+```
+java/tools/src/com/jopdesign/build/
+  BuildOrchestrator.java    # dependency graph + incremental cache
+  BuildConfig.java          # JSON config parsing
+  BuildListener.java        # progress reporting interface
+  BuildStep.java            # enum: MICROCODE, RUNTIME, VERILOG, FPGA, APP, DOWNLOAD
+  BuildResult.java          # per-step results (success/fail, artifacts, timing)
+  MicrocodeBuilder.java     # step [1]: gcc + jopa invocation
+  RuntimeBuilder.java       # step [2]: Const.java gen + javac + JAR
+  VerilogBuilder.java       # step [3]: sbt runMain invocation
+  FpgaBuilder.java          # step [4]: Quartus/Vivado invocation
+  AppBuilder.java           # step [5]: javac + PreLinker + JOPizer
+  Downloader.java           # step [6]: serial download
+  Simulator.java            # sbt sim invocation
+```
+
+This lives alongside the existing JOP tools (`Jopa.java`, `PreLinker.java`, etc.) and builds into the same `jopa.jar` (or a separate `jop-build.jar`). Both CLI and Eclipse depend on this JAR.
 
 ## Phase 9: IDE Integration (Eclipse)
 
 ### Vision
 
-A developer opens Eclipse, creates a JOP application project targeting a specific board. Eclipse knows the board's runtime (code completion, API docs), builds the .jop, downloads to hardware, and supports source-level debugging — all without leaving the IDE.
+A developer opens Eclipse, creates a JOP application project targeting a specific board. Eclipse knows the board's runtime (code completion, API docs), builds the .jop on save, downloads to hardware, and supports source-level debugging — all without leaving the IDE. **All build logic comes from the shared `jop-build` library** (Phase 8) — the Eclipse plugin is a thin UI layer.
 
 ### Project structure
 
@@ -1537,7 +1720,7 @@ my-jop-app/
   .project                    # Eclipse project file (generated)
   .classpath                  # Points to board-specific runtime JAR
   .settings/
-    jop.json                  # Board + system config reference
+    jop.json                  # Board + system config (shared with CLI)
   src/
     com/example/MyApp.java    # Application source
   build/
@@ -1546,42 +1729,42 @@ my-jop-app/
     MyApp.jop                 # JOPizer output
 ```
 
-### Eclipse integration layers
+### Eclipse plugin layers
 
 **Layer 1: Project setup (config-driven)**
 
 ```bash
-# Generate Eclipse project files from system config
+# CLI creates Eclipse-compatible project structure
 jop create-project --system qmtech-serial --name my-jop-app
+
+# Or from Eclipse: File → New → JOP Application Project (wizard)
 ```
 
-This generates:
+Both paths use `BuildOrchestrator` to generate the same files:
 - `.project` with JOP nature (or standard Java nature + custom builder)
 - `.classpath` referencing the board-specific runtime JAR
-- `.settings/jop.json` recording which `JopSystemConfig` this project targets
+- `.settings/jop.json` recording which system config this project targets
 - Build configuration: javac6 flags, PreLinker, JOPizer pipeline
 
-**Layer 2: Build integration (Eclipse builder or external tool)**
-
-Eclipse's build chain for a JOP project:
+**Layer 2: Build integration (Eclipse builder)**
 
 ```
 Save .java file
   → Eclipse incremental javac (using board runtime on classpath)
-  → PreLinker (external tool, triggered by builder)
-  → JOPizer (external tool) → .jop in build/
+  → JopEclipseBuilder calls BuildOrchestrator.buildApp()
+      → PreLinker
+      → JOPizer → .jop in build/
 ```
 
-This can be:
-- **Custom Eclipse builder** (plugin) — tightest integration, auto-triggers on save
-- **External tool configuration** — simpler, manual trigger via toolbar button
-- **Ant/Maven builder** — Eclipse-native, wraps the Makefile chain
+The builder wraps the shared library. Compiler errors from `BuildStepResult` are mapped to Eclipse problem markers on source lines.
 
-**Layer 3: Download (external tool or plugin)**
+For infrastructure rebuilds (config change, Verilog, FPGA synthesis), the developer uses the same CLI commands or a toolbar action that calls `BuildOrchestrator.buildAll()`.
+
+**Layer 3: Download (toolbar action)**
 
 ```
 Toolbar button: "Download to JOP"
-  → Runs: download.py build/MyApp.jop [auto-detected port]
+  → Calls BuildOrchestrator.download(jopFile, options)
   → Console shows: progress bar, then UART output
 ```
 
@@ -1599,47 +1782,25 @@ Eclipse Debug Configuration: "JOP Debug"
   → Capabilities: breakpoint, step, inspect locals, stack trace
 ```
 
-Implementation options:
-- **Eclipse Debug Adapter Protocol (DAP)** — modern, IDE-agnostic, works with VS Code too
-- **Custom Eclipse debug plugin** — tightest Eclipse integration
-- **GDB remote stub** — map JOP debug protocol to GDB remote protocol, reuse Eclipse CDT debugger
+Implementation: **Debug Adapter Protocol (DAP)** — modern, IDE-agnostic. The DAP server is a Java process (part of `jop-build`) that maps UART debug protocol to DAP. Works with Eclipse, VS Code, and IntelliJ.
 
-The existing `DebugProtocol` / `DebugController` in SpinalHDL provides: halt/resume, read/write memory, read stack, read method cache. Needs: mapping to source locations (via .jop metadata + PreLinker symbol tables).
+The existing `DebugProtocol` / `DebugController` in SpinalHDL provides: halt/resume, read/write memory, read stack, read method cache. The DAP adapter adds: mapping to source locations (via .jop metadata + PreLinker symbol tables).
 
 ### Configuration UI
 
-Board and system configuration can be:
+**Phase 1: JSON config with schema validation**
 
-**Option A: Config files (JSON/YAML) with IDE editor**
+The `.settings/jop.json` file (shared with CLI) is the config source. Eclipse JSON editor with schema validation provides auto-complete and error highlighting — no custom plugin UI needed.
 
-```json
-{
-  "system": "qmtech-serial",
-  "coreConfig": {
-    "imul": "Hardware",
-    "fadd": "Hardware",
-    "fsub": "Hardware",
-    "fmul": "Hardware",
-    "fdiv": "Hardware"
-  },
-  "modules": ["collections", "fat32"]
-}
-```
+**Phase 2: Custom wizard (optional, future)**
 
-Eclipse JSON editor with schema validation. Simple, no plugin needed. The `jop` CLI reads this file.
-
-**Option B: Eclipse plugin with custom UI**
-
-Wizard-style: Select board → Configure cores → Select modules → Generate project. Richer experience, more development effort.
-
-**Recommended**: Start with Option A (config files). Migrate to Option B when the core workflow is stable.
+Wizard-style: Select board → Configure cores → Select modules → Generate project. Writes the same `jop.json`. Richer experience, more development effort. Only justified once the core workflow is stable.
 
 ### Simulation from IDE
 
-Run SpinalHDL simulation with the application's .jop loaded, UART output in Eclipse console:
+Run Configuration: "JOP Simulation" — calls `BuildOrchestrator.simulate()`:
 
 ```
-Run Configuration: "JOP Simulation"
   → sbt "Test / runMain jop.system.JopCoreBramSim" --jop build/MyApp.jop
   → Console shows: simulated UART output
   → Optional: waveform viewer (GTKWave) for hardware debugging
@@ -1735,6 +1896,6 @@ Existing setups transition incrementally:
 
 3. **Phase 6** (runtime): Existing `Const.java` kept as-is until runtime generation is stable. New generated `Const.java` validated against the hand-maintained one before switching over.
 
-4. **Phase 8-9** (build/IDE): Existing `make` workflow continues to work. New `jop` CLI is additive. Eclipse project generation is opt-in.
+4. **Phase 8-9** (build/IDE): Existing `make` workflow continues to work. The `jop-build` library wraps the same Makefiles and sbt commands. `jop` CLI and Eclipse plugin are additive — they call `jop-build` which calls the same tools. Eclipse project generation is opt-in.
 
 At each phase, existing workflows are not broken — new capabilities are added alongside, validated, then old paths deprecated.
