@@ -126,11 +126,165 @@ Optional HW handlers (FPU, DSP lmul, HW div) are **appended at the end** of the 
 
 Result: **12 Makefile targets → 3.** Future features add `#ifdef` blocks to jvm.asm and `-D` flags — no new Makefile targets needed. The superset ROM grows but never splits.
 
-Note: `imul` (0x68) has both bit-serial and DSP microcode handlers in the superset ROM (via `#ifdef DSP_MUL`). Both use the pipeline Mul unit (`stmul`/`ldmul`); the DSP handler is shorter (4 cycles vs 18). The jump table selects between them based on `imul: Microcode` (bit-serial) vs `imul: Hardware` (DSP), just like any other configurable bytecode.
+Note: With the unified compute unit, `imul: Hardware` (DSP) uses the same `sthw`/`ldhw` pattern as all other HW bytecodes — the Mul sub-unit inside ComputeUnit handles the dispatch. `imul: Microcode` (bit-serial) retains its own microcode handler with the explicit wait loop, since the bit-serial Mul unit doesn't use the busy stall mechanism.
 
 ### ROM Size Budget
 
 Current base ROM: ~700-900 instructions (includes long microcode handlers). FPU handlers: ~50. DSP lmul: ~60. HW div: ~30. **Total superset: ~1040 of 2048 slots (51%).** Future long ALU HW handlers (~200) + double FPU (~100) + expanded float conversions (~50) would reach ~1390 (68%). Plenty of headroom.
+
+With the unified compute unit (see below), HW handler microcode shrinks dramatically — all HW bytecodes share the same ~4 instruction pattern instead of 9-10 instructions each. ROM budget improves further.
+
+## Unified Compute Unit — `sthw` (start hardware) / `ldhw` (load hardware result)
+
+### Problem with current I/O-based peripherals
+
+Today, FPU and DIV are BMB I/O peripherals accessed via generic memory-mapped I/O. The Mul unit is a pipeline component with dedicated `stmul`/`ldmul` instructions. This creates two problems:
+
+1. **I/O overhead**: fadd microcode is 9 instructions (load I/O address, set write address, do I/O write, pop, load read address, start I/O read, wait, wait, read result). imul DSP microcode is 4 instructions. The 5 extra instructions are pure plumbing.
+
+2. **Inconsistency**: Mul is a pipeline component, FPU/DIV are I/O peripherals. Same concept (hardware-accelerated bytecode), different mechanisms.
+
+Current microcode comparison:
+
+```asm
+// imul (DSP) — 4 instructions, pipeline Mul unit
+imul:
+    stmul           // capture TOS+NOS, start multiply
+    pop             // pop second operand
+    nop             // wait 1 cycle for registered result
+    ldmul nxt       // read result
+
+// fadd — 9 instructions, BMB I/O peripheral
+fadd:
+    ldi fpu_add     // push I/O address
+    stmwa           // set address register
+    stmwd           // I/O write (auto-capture + start)
+    pop             // drop value1
+    ldi fpu_res     // push result read address
+    stmra           // start I/O read
+    wait            // I/O read latency
+    wait
+    ldmrd nxt       // read result
+```
+
+### Solution: unified compute dispatch
+
+Replace `stmul`/`ldmul` and the I/O-based FPU/DIV with two generic microcode instructions:
+
+- **`sthw`** (start compute) — captures TOS and NOS (and C, D with future 4-register TOS), dispatches to the appropriate compute unit based on the **bytecode** that triggered this handler. The bytecode is already available in a pipeline register. The selected compute unit asserts busy until the result is ready.
+
+- **`ldhw`** (load compute result) — reads the result from whatever compute unit was started. The pipeline stall (via busy) has already absorbed the compute latency, so the result is ready when `ldhw` executes.
+
+**Instruction naming**: `sthw` (start hardware), `ldhw` (load hardware result). Follows JOP's `st`/`ld` prefix convention (`stmul`/`ldmul`, `stmwa`/`ldmrd`).
+
+### All HW bytecodes become identical
+
+```asm
+// Every 32-bit→32-bit HW bytecode (imul, fadd, fsub, fmul, fdiv, idiv, irem):
+<bytecode>:
+    sthw           // capture TOS+NOS, bytecode selects unit + operation
+    pop             // pop second operand
+    ldhw nxt       // read result (busy stall already absorbed latency)
+```
+
+3 instructions. One microcode handler shared by ALL hardware-accelerated 32-bit bytecodes. The bytecode determines what happens — no I/O addresses, no operation encoding in microcode.
+
+For idiv/irem, the div-by-zero check still happens before `sthw`:
+
+```asm
+idiv:
+    dup             // copy divisor
+    bnz idiv_ok     // check non-zero
+    nop nop         // delay slots
+    jmp sys_noim    // zero → Java ArithmeticException
+    nop nop
+idiv_ok:
+    sthw           // capture + dispatch (bytecode 0x6C → div unit)
+    pop
+    ldhw nxt       // read quotient
+```
+
+### Hardware compute dispatch unit
+
+Lives in the pipeline (like Mul today). Contains all optional compute sub-units, selected by configuration:
+
+```scala
+case class ComputeUnit(config: JopCoreConfig) extends Component {
+  val io = new Bundle {
+    val ain    = in UInt(32 bits)     // TOS
+    val bin    = in UInt(32 bits)     // NOS (bout)
+    val wr     = in Bool()            // sthw asserted
+    val opcode = in Bits(8 bits)      // bytecode that triggered this handler
+    val dout   = out UInt(32 bits)    // result for ldhw
+    val doutH  = out UInt(32 bits)    // high result (64-bit ops, future)
+    val busy   = out Bool()           // stalls pipeline until done
+  }
+
+  // --- Mul sub-unit (always present, bit-serial or DSP) ---
+  val mul = Mul(useDsp = config.needsDspMul)
+
+  // --- FPU sub-unit (conditional) ---
+  val fpu = config.needsFpu generate FpuCore()
+
+  // --- DIV sub-unit (conditional) ---
+  val div = config.needsHwDiv generate DivUnit()
+
+  // --- Future: LongAlu, DoubleFpu ---
+
+  // Dispatch: bytecode → sub-unit
+  switch(io.opcode) {
+    is(0x68) { /* imul → mul */ }
+    is(0x62) { /* fadd → fpu, op=ADD */ }
+    is(0x66) { /* fsub → fpu, op=SUB */ }
+    is(0x6A) { /* fmul → fpu, op=MUL */ }
+    is(0x6E) { /* fdiv → fpu, op=DIV */ }
+    is(0x6C) { /* idiv → div, mode=QUOT */ }
+    is(0x70) { /* irem → div, mode=REM */ }
+    // ... future bytecodes ...
+  }
+
+  // Busy = OR of all active sub-units
+  io.busy := mul.io.busy || fpu.map(_.io.busy).getOrElse(False) || ...
+
+  // Result MUX based on which sub-unit was started
+  // (latched active unit on sthw, read on ldhw)
+}
+```
+
+### What this eliminates
+
+- **BmbFpu** I/O peripheral → replaced by FPU sub-unit in ComputeUnit
+- **BmbDiv** I/O peripheral → replaced by DIV sub-unit in ComputeUnit
+- **I/O address space**: 0xE0-0xE3 (DIV) and 0xF0-0xF3 (FPU) freed up
+- **`stmul`/`ldmul`** microcode instructions → replaced by `sthw`/`ldhw`
+- **Per-bytecode microcode handlers**: fadd/fsub/fmul/fdiv/idiv/irem each had ~9-10 unique instructions → all share one ~3 instruction pattern
+- **I/O wiring in JopCore**: no more `fpuBusy`, `divBusy` I/O bus plumbing
+
+### What stays the same
+
+- **FpuCore** (VexRiscv-derived IEEE 754) — the actual compute logic is unchanged, just wired differently
+- **DivUnit** (binary restoring) — same algorithm, just no BMB wrapper
+- **Pipeline stall mechanism** — busy signal still stalls the pipeline, just comes from ComputeUnit instead of I/O bus
+
+### Future: 64-bit operations with 4-register TOS
+
+With 4-register TOS (A/B/C/D), `sthw` captures all 4 registers. 64-bit bytecodes (ladd, dadd, lmul, etc.) get both operands in one instruction:
+
+```
+value1 = D:C   (64-bit, D=high, C=low)
+value2 = B:A   (64-bit, B=high, A=low)
+```
+
+`ldhw` returns low 32 bits; a second read (`ldhwH` or just another `ldhw`) returns high 32 bits. Microcode for 64-bit ops:
+
+```asm
+// Every 64-bit→64-bit HW bytecode (ladd, dadd, lmul, etc.):
+<bytecode>:
+    sthw           // capture A+B+C+D, bytecode selects unit
+    pop pop pop     // pop 4 operands (net -4)
+    ldhw           // push result_high (+1)
+    ldhw nxt       // push result_low (+1), net = -4+2 = -2 ✓
+```
 
 ---
 
