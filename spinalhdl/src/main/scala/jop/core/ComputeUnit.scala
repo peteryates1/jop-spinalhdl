@@ -13,7 +13,7 @@
   *   FloatComputeUnit   — IEEE 754 single-precision (fadd, fsub, fmul, fdiv, i2f, f2i, fcmpl, fcmpg)
   *   DoubleComputeUnit  — IEEE 754 double-precision (dadd, dsub, dmul, ddiv, i2d, d2i, l2d, d2l, f2d, d2f, dcmpl, dcmpg)
   *   LongComputeUnit    — multi-cycle long ops (lmul, ldiv, lrem, lshl, lshr, lushr)
-  *   IntegerComputeUnit — imul, idiv, irem (future)
+  *   IntegerComputeUnit — imul, idiv, irem
   */
 package jop.core
 
