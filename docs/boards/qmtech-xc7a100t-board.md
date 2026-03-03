@@ -1,19 +1,21 @@
-# QMTECH XC7A75T/100T/200T Core Board
+# QMTECH XC7A100T Core Board
 
 ## Overview
 
-QMTECH Artix-7 core board with onboard DDR3 SDRAM. Available with three FPGA
-variants (XC7A75T, XC7A100T, XC7A200T) sharing identical PCB and pin assignments.
-Connects to the [DB_FPGA daughter board](qmtech-db-fpga.md) via dual 32x2 pin
-headers (J2, J3) for Ethernet, UART, VGA, and SD card.
+QMTECH Artix-7 core board with onboard DDR3 SDRAM. Connects to the
+[DB_FPGA daughter board](qmtech-db-fpga.md) via dual 32x2 pin headers
+(J2, J3) for Ethernet, UART, VGA, and SD card.
+
+GitHub: <https://github.com/ChinaQMTECH/QMTECH_XC7A75T-100T-200T_Core_Board>
 
 Reference files: `/srv/git/qmtech/QMTECH_XC7A75T-100T-200T_Core_Board/XC7A100T/`
 
+Schematic: [QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf](https://github.com/ChinaQMTECH/QMTECH_XC7A75T-100T-200T_Core_Board/blob/main/XC7A100T/Hardware/QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf)
+(local: `XC7A100T/Hardware/QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf`)
+
 ## FPGA
 
-The XC7A100T variant (primary target):
-
-- **Device**: Xilinx Artix-7 — XC7A100T-FGG676-2
+- **Device**: Xilinx Artix-7 — XC7A100T-FGG676
 - **Logic Cells**: 101,440
 - **LUTs**: 63,400
 - **Flip-flops**: 126,800
@@ -21,15 +23,7 @@ The XC7A100T variant (primary target):
 - **DSP slices**: 240
 - **Package**: FGG676 (676-pin BGA)
 - **Speed grade**: -2
-- **Transceivers**: 8 GTP (6.6 Gbps)
-
-Other variants (same PCB, different FPGA):
-
-| Variant | Logic Cells | BRAM | DSP |
-|---------|:-----------:|:----:|:---:|
-| XC7A75T | 75,520 | 3,780 Kbit | 180 |
-| XC7A100T | 101,440 | 4,860 Kbit | 240 |
-| XC7A200T | 215,360 | 13,140 Kbit | 740 |
+- **GTP Transceivers**: 8 (6.6 Gbps)
 
 ## Clock
 
@@ -39,7 +33,7 @@ Other variants (same PCB, different FPGA):
 
 ## DDR3 SDRAM
 
-**Component**: Micron MT41K128M16XX-15E — DDR3L, 2 Gbit (256 MB), 16-bit data bus.
+**Component**: Micron MT41K128M16JT-125 — DDR3L, 2 Gbit (256 MB), 16-bit data bus.
 
 | Parameter | Value |
 |-----------|-------|
@@ -139,12 +133,12 @@ From `/srv/git/qmtech/QMTECH_XC7A75T-100T-200T_Core_Board/XC7A100T/Software_XC7A
 
 ### System Pins
 
-| Signal | Pin | I/O Standard | Function |
-|--------|-----|-------------|----------|
-| `sys_clk` | U22 | LVCMOS33 | 50 MHz oscillator |
-| `sys_rst_n` | P4 | LVCMOS33 | Reset button (active low) |
-| `led[0]` | T23 | LVCMOS33 | Core board LED 0 |
-| `led[1]` | R23 | LVCMOS33 | Core board LED 1 |
+| Signal | Pin | I/O Standard | Bank | Function |
+|--------|-----|-------------|------|----------|
+| `sys_clk` | U22 | LVCMOS33 | 13 | 50 MHz oscillator (MRCC capable) |
+| `sys_rst_n` | P4 | LVCMOS33 | 34 | User button SW2 (active low) |
+| `led[0]` | T23 | LVCMOS33 | 14 | Core board LED 0 (D5, active low) |
+| `led[1]` | R23 | LVCMOS33 | 14 | Core board LED 1 (D6, active low) |
 
 ### On-Board UART (CH340N)
 
@@ -159,9 +153,7 @@ daughter board (CP2102N) is on different FPGA pins via the J2/J3 connector.
 
 ### J2/J3 Connector Mapping
 
-The J2 and J3 headers are 32x2 pin (64 pins each). All three variants
-(XC7A75T, XC7A100T, XC7A200T) use the same FGG676 package and identical
-pin assignments.
+The J2 and J3 headers are 32x2 pin (64 pins each).
 
 From schematic `QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf`:
 
@@ -320,7 +312,7 @@ JopCoreConfig(
     stackRegionWordsPerCore = 8192        // 32 KB per core
   ),
   clkFreqHz = 100000000L,
-  ioConfig = IoConfig(hasEth = true, ethGmii = true, hasVga = true, hasSdNative = true)
+  ioConfig = IoConfig(hasEth = true, ethGmii = true, hasVgaText = true, hasSdNative = true)
 )
 ```
 
@@ -354,8 +346,33 @@ Estimated JOP capacity on XC7A100T:
 | 12-core SMP | ~54,000 | 85% |
 
 The XC7A100T has 3x the logic of the Alchitry Au V2's XC7A35T, making 8-core
-SMP feasible. With the XC7A200T variant (215K logic cells), 16+ cores would be
-possible with DDR3 bandwidth.
+SMP feasible.
+
+## FPGA I/O Banks
+
+| Bank | Voltage | Primary Function |
+|------|---------|------------------|
+| 13 | 3.3V | SYS_CLK (U22) + J2 connector (Bank 13 GPIO) |
+| 14 | 3.3V | LEDs (T23, R23) + J2 connector (Bank 14 GPIO) |
+| 15 | 3.3V | J2 connector (Bank 15 GPIO) |
+| 16 | 1.35V | DDR3 (all: address, data, control, DQS, DM, clock) |
+| 34 | 3.3V | J3 connector (Bank 34 GPIO) + user button (P4) |
+| 35 | 3.3V | J3 connector (Bank 35 GPIO) |
+
+Bank 34/35 VCCO is configurable: remove R14/R15 (0-ohm) and inject custom
+voltage (e.g., 2.5V or 1.8V) via J3 pins 3-4.
+
+## Power
+
+- **Input**: 5V DC via DC-050 jack (5.5mm x 2.1mm) or J2/J3 VIN pins
+- **Current**: 2A recommended
+- **1.0V** (VCCINT): MP8712 DC/DC
+- **1.8V** (VCCAUX): TPS563201
+- **1.5V** (mixed): TPS563201
+- **3.3V** (I/O + config): TPS563201
+- **VCCO_34_35**: TPS563201, default 3.3V, disconnectable via R14/R15
+- **D4**: Green LED, 3.3V power indicator
+- **D1**: Red LED, FPGA_DONE indicator
 
 ## Example Projects
 
