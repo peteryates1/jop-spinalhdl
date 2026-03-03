@@ -452,12 +452,19 @@ case class JopCoreConfig(
   spillBaseAddrOverride: Option[Int] = None,
 
   // --- Per-instruction implementation selection ---
-  // Integer multiply (Microcode=bit-serial 18cyc, Hardware=DSP 4cyc)
-  imul:  Implementation = Implementation.Microcode,
+  // Order: add, sub, mul, div, rem, neg, shl, shr, ushr, and, or, xor, cmp/cmpl/cmpg
 
-  // Long arithmetic (today: Microcode or Java; future: Hardware via long ALU)
+  // Integer
+  imul:  Implementation = Implementation.Microcode,  // Microcode=bit-serial 18cyc, Hardware=DSP 4cyc
+  idiv:  Implementation = Implementation.Java,
+  irem:  Implementation = Implementation.Java,
+
+  // Long
   ladd:  Implementation = Implementation.Microcode,
   lsub:  Implementation = Implementation.Microcode,
+  lmul:  Implementation = Implementation.Java,        // Hardware=DSP lmul handler
+  ldiv:  Implementation = Implementation.Java,
+  lrem:  Implementation = Implementation.Java,
   lneg:  Implementation = Implementation.Microcode,
   lshl:  Implementation = Implementation.Microcode,
   lshr:  Implementation = Implementation.Microcode,
@@ -467,36 +474,27 @@ case class JopCoreConfig(
   lxor:  Implementation = Implementation.Microcode,
   lcmp:  Implementation = Implementation.Microcode,
 
-  // Long multiply (today: Java or Hardware/DSP)
-  lmul:  Implementation = Implementation.Java,
-
-  // Integer/long divide (today: Java or Hardware/BmbDiv for idiv/irem)
-  idiv:  Implementation = Implementation.Java,
-  irem:  Implementation = Implementation.Java,
-  ldiv:  Implementation = Implementation.Java,
-  lrem:  Implementation = Implementation.Java,
-
-  // Float (today: Java or Hardware/BmbFpu for fadd/fsub/fmul/fdiv)
+  // Float
   fadd:  Implementation = Implementation.Java,
   fsub:  Implementation = Implementation.Java,
   fmul:  Implementation = Implementation.Java,
   fdiv:  Implementation = Implementation.Java,
-  fneg:  Implementation = Implementation.Java,
   frem:  Implementation = Implementation.Java,
+  fneg:  Implementation = Implementation.Java,
   fcmpl: Implementation = Implementation.Java,
   fcmpg: Implementation = Implementation.Java,
 
-  // Double (today: Java only; future: Hardware via double FPU)
+  // Double
   dadd:  Implementation = Implementation.Java,
   dsub:  Implementation = Implementation.Java,
   dmul:  Implementation = Implementation.Java,
   ddiv:  Implementation = Implementation.Java,
-  dneg:  Implementation = Implementation.Java,
   drem:  Implementation = Implementation.Java,
+  dneg:  Implementation = Implementation.Java,
   dcmpl: Implementation = Implementation.Java,
   dcmpg: Implementation = Implementation.Java,
 
-  // Type conversions (today: mostly Java; i2l/l2i/i2c have Microcode)
+  // Type conversions
   i2f:   Implementation = Implementation.Java,
   i2d:   Implementation = Implementation.Java,
   f2i:   Implementation = Implementation.Java,
@@ -620,144 +618,237 @@ System (physical assembly — the complete hardware on the desk)
         +-- core(1) → imul: BitSerial, fadd: Java, ...
 ```
 
-### Physical layer — boards and assemblies
+### Parts — reusable hardware facts
+
+Parts are concrete components with fixed parameters. A W9825G6JH6 is always the same chip — its datasheet doesn't change. Parts declare their signals but not how they're wired — that's the board's job.
 
 ```scala
-sealed trait FpgaFamily
-object FpgaFamily {
-  case object CycloneIV extends FpgaFamily    // Altera/Intel
-  case object CycloneV extends FpgaFamily
-  case object Artix7 extends FpgaFamily       // Xilinx/AMD
-}
+// ==========================================================================
+// Memory
+// ==========================================================================
 
+/** Memory interface type — determines which controller to instantiate */
 sealed trait MemoryType
 object MemoryType {
-  case class SdrSdram(
-    device: SdramDevice,    // W9825G6JH6 (QMTECH), W9864G6JT (CYC5000)
-    dataWidth: Int = 16,
-    bankWidth: Int = 2,
-    columnWidth: Int = 9,
-    rowWidth: Int = 13,
-  ) extends MemoryType
-
-  case class Ddr3(
-    sizeBytes: Long,          // 256 * 1024 * 1024 for Au V2
-    cacheKB: Int = 32,        // L2 write-back cache size
-  ) extends MemoryType
-
-  case object BramOnly extends MemoryType
+  case object BRAM extends MemoryType
+  case object SDRAM_SDR extends MemoryType
+  case object SDRAM_DDR2 extends MemoryType
+  case object SDRAM_DDR3 extends MemoryType
 }
 
-/** FPGA module board — the board with the FPGA chip + on-board memory */
-case class FpgaBoard(
-  name: String,                     // "qmtech-ep4cgx150"
-  fpga: FpgaFamily,
-  device: String,                   // "EP4CGX150DF27I7"
-  memories: Seq[MemoryType],        // on-board memory (SDRAM, DDR3, etc.)
-  clkFreqHz: Long,                  // on-board oscillator frequency
-  onBoardDevices: Seq[String] = Seq.empty,  // "2× LED", "2× switch"
+/** Burst length capabilities */
+sealed trait BurstLen
+object BurstLen {
+  case object B1 extends BurstLen
+  case object B2 extends BurstLen
+  case object B4 extends BurstLen
+  case object B8 extends BurstLen
+  case object Page extends BurstLen
+}
+
+/** A concrete memory device (datasheet parameters) */
+case class MemoryDevice(
+  name: String,
+  memType: MemoryType,
+  sizeBytes: Long,
+  dataWidth: Int,
+  bankWidth: Int,
+  columnWidth: Int,
+  rowWidth: Int,
+  burstLengths: Seq[BurstLen] = Seq.empty,
+  signals: Seq[String] = Seq.empty,   // signal names from datasheet
 )
 
-/** Carrier/daughter board — provides peripherals and connectors */
+object MemoryDevice {
+  def W9825G6JH6 = MemoryDevice(
+    name = "W9825G6JH6",
+    memType = MemoryType.SDRAM_SDR,
+    sizeBytes = 256L * 1024 * 1024 / 8,  // 256 Mbit = 32 MB
+    dataWidth = 16, bankWidth = 2, columnWidth = 9, rowWidth = 13,
+    burstLengths = Seq(BurstLen.B1, BurstLen.B2, BurstLen.B4, BurstLen.B8, BurstLen.Page),
+    signals = Seq("CLK", "CKE", "CS_n", "RAS_n", "CAS_n", "WE_n",
+                  "BA0", "BA1", "A0", "A1", "A2", "A3", "A4", "A5", "A6",
+                  "A7", "A8", "A9", "A10", "A11", "A12",
+                  "DQ0", "DQ1", "DQ2", "DQ3", "DQ4", "DQ5", "DQ6", "DQ7",
+                  "DQ8", "DQ9", "DQ10", "DQ11", "DQ12", "DQ13", "DQ14", "DQ15",
+                  "DQM0", "DQM1"))
+
+  def W9864G6JT = MemoryDevice(
+    name = "W9864G6JT",
+    memType = MemoryType.SDRAM_SDR,
+    sizeBytes = 64L * 1024 * 1024 / 8,   // 64 Mbit = 8 MB
+    dataWidth = 16, bankWidth = 2, columnWidth = 8, rowWidth = 12,
+    burstLengths = Seq(BurstLen.B1, BurstLen.B2, BurstLen.B4, BurstLen.B8, BurstLen.Page),
+    signals = Seq(/* same pattern as above */))
+
+  def MT41K128M16JT = MemoryDevice(
+    name = "MT41K128M16JT-125:K",
+    memType = MemoryType.SDRAM_DDR3,
+    sizeBytes = 2L * 1024 * 1024 * 1024 / 8,  // 2 Gbit = 256 MB
+    dataWidth = 16, bankWidth = 3, columnWidth = 10, rowWidth = 14,
+    burstLengths = Seq(BurstLen.B8),
+    signals = Seq(/* DDR3 signal set */))
+}
+
+// ==========================================================================
+// FPGA
+// ==========================================================================
+
+sealed trait Manufacturer
+object Manufacturer {
+  case object Altera extends Manufacturer    // Intel
+  case object Xilinx extends Manufacturer    // AMD
+}
+
+/** FPGA family (determines synthesis tool, DSP type, memory primitives) */
+sealed trait FpgaFamily { def manufacturer: Manufacturer }
+object FpgaFamily {
+  case object CycloneIV extends FpgaFamily  { val manufacturer = Manufacturer.Altera }
+  case object CycloneV extends FpgaFamily   { val manufacturer = Manufacturer.Altera }
+  case object Artix7 extends FpgaFamily     { val manufacturer = Manufacturer.Xilinx }
+}
+
+/** A concrete FPGA device */
+case class FpgaDevice(
+  name: String,               // "EP4CGX150DF27I7"
+  family: FpgaFamily,
+  pins: Seq[String] = Seq.empty,  // available I/O pins
+)
+
+object FpgaDevice {
+  def EP4CGX150DF27I7 = FpgaDevice("EP4CGX150DF27I7", FpgaFamily.CycloneIV)
+  def `5CEBA2F17A7`   = FpgaDevice("5CEBA2F17A7",     FpgaFamily.CycloneV)
+  def XC7A35T         = FpgaDevice("XC7A35T",          FpgaFamily.Artix7)
+  def XC7A100T        = FpgaDevice("XC7A100T-1FGG676C", FpgaFamily.Artix7)
+}
+```
+
+### Boards — assemblies with pin mappings
+
+A board wires device signals to FPGA pins. The mapping is a board-level fact — it comes from the PCB schematic.
+
+```scala
+/** A device mounted on a board with its signal-to-FPGA-pin mapping */
+case class BoardDevice(
+  device: String,                             // device name or part number
+  mapping: Map[String, String] = Map.empty,   // device signal → FPGA pin
+)
+
+/** FPGA board — the module with FPGA + on-board devices */
+case class FpgaBoard(
+  name: String,                   // "qmtech-ep4cgx150"
+  fpga: FpgaDevice,
+  devices: Seq[BoardDevice],     // on-board devices with pin mappings
+) {
+  /** All memory devices on this board */
+  def memories: Seq[MemoryDevice] = ???  // looked up from device registry
+}
+
+/** Carrier/daughter board — plugs into FPGA board headers */
 case class CarrierBoard(
-  name: String,                     // "qmtech-fpga-db-v4"
-  devices: Seq[String] = Seq.empty, // "CP2102N UART", "RTL8211EG Ethernet", etc.
-  connectors: Seq[String] = Seq("J2", "J3"),
+  name: String,                   // "qmtech-fpga-db-v4"
+  connectors: Seq[String],       // "J2", "J3"
+  devices: Seq[BoardDevice],     // devices with pin mappings (through connectors)
 )
 
 /** Complete physical system — FPGA board + optional carrier board(s) */
 case class SystemAssembly(
-  name: String,                     // "qmtech-ep4cgx150-db-v4"
+  name: String,
   fpgaBoard: FpgaBoard,
   carrierBoards: Seq[CarrierBoard] = Seq.empty,
-) {
-  // Convenience accessors
-  def fpga: FpgaFamily = fpgaBoard.fpga
-  def device: String = fpgaBoard.device
-  def memories: Seq[MemoryType] = fpgaBoard.memories
-  def clkFreqHz: Long = fpgaBoard.clkFreqHz
-}
+)
 ```
 
 ### Board presets
 
 ```scala
-// --- FPGA Boards (modules) ---
 object FpgaBoard {
   def qmtechEp4cgx150 = FpgaBoard(
     name = "qmtech-ep4cgx150",
-    fpga = FpgaFamily.CycloneIV,
-    device = "EP4CGX150DF27I7",
-    memories = Seq(MemoryType.SdrSdram(
-      device = SdramDevices.W9825G6JH6,
-      dataWidth = 16, bankWidth = 2, columnWidth = 9, rowWidth = 13)),
-    clkFreqHz = 50000000L,     // 50 MHz oscillator
-    onBoardDevices = Seq("2× LED", "2× switch"))
+    fpga = FpgaDevice.EP4CGX150DF27I7,
+    devices = Seq(
+      BoardDevice("W9825G6JH6", mapping = Map(
+        "CLK" -> "PIN_E22", "CKE" -> "PIN_K24",
+        "CS_n" -> "PIN_H26", "RAS_n" -> "PIN_H25",
+        "CAS_n" -> "PIN_G26", "WE_n" -> "PIN_G25",
+        "BA0" -> "PIN_J25", "BA1" -> "PIN_J26",
+        "A0" -> "PIN_L25", "A1" -> "PIN_L26", /* ... */
+        "DQ0" -> "PIN_B25", "DQ1" -> "PIN_B26", /* ... */
+        "DQM0" -> "PIN_F26", "DQM1" -> "PIN_H24")),
+      BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "PIN_B14")),
+      BoardDevice("LED", mapping = Map("led0" -> "PIN_A25", "led1" -> "PIN_A24")),
+      BoardDevice("SWITCH", mapping = Map("sw0" -> "PIN_AD23", "sw1" -> "PIN_AD24"))))
 
   def cyc5000 = FpgaBoard(
     name = "cyc5000",
-    fpga = FpgaFamily.CycloneV,
-    device = "5CEBA2F17A7",
-    memories = Seq(MemoryType.SdrSdram(
-      device = SdramDevices.W9864G6JT,
-      dataWidth = 16, bankWidth = 2, columnWidth = 8, rowWidth = 12)),
-    clkFreqHz = 12000000L,     // 12 MHz oscillator
-    onBoardDevices = Seq("5× LED", "2× button", "FT2232H JTAG+UART"))
+    fpga = FpgaDevice.`5CEBA2F17A7`,
+    devices = Seq(
+      BoardDevice("W9864G6JT", mapping = Map(/* ... */)),
+      BoardDevice("CLOCK_12MHz", mapping = Map(/* ... */)),
+      BoardDevice("FT2232H", mapping = Map(/* JTAG + UART */)),
+      BoardDevice("LED", mapping = Map(/* 5 LEDs */))))
 
   def alchitryAuV2 = FpgaBoard(
     name = "alchitry-au-v2",
-    fpga = FpgaFamily.Artix7,
-    device = "XC7A35T",
-    memories = Seq(MemoryType.Ddr3(sizeBytes = 256L * 1024 * 1024)),
-    clkFreqHz = 100000000L,    // 100 MHz oscillator
-    onBoardDevices = Seq("1× LED", "1× button", "FT2232H JTAG+UART"))
+    fpga = FpgaDevice.XC7A35T,
+    devices = Seq(
+      BoardDevice("MT41K128M16JT-125:K", mapping = Map(/* DDR3 pins */)),
+      BoardDevice("CLOCK_100MHz", mapping = Map(/* ... */)),
+      BoardDevice("FT2232H", mapping = Map(/* JTAG + UART */))))
+
+  // Wukong board — two memory devices on one board
+  def wukongXc7a100t = FpgaBoard(
+    name = "qmtech-wukong-xc7a100t",
+    fpga = FpgaDevice.XC7A100T,
+    devices = Seq(
+      BoardDevice("MT41K128M16JT-125:K", mapping = Map(/* DDR3 pins */)),
+      BoardDevice("W9825G6JH6", mapping = Map(/* SDR SDRAM pins */)),
+      BoardDevice("CLOCK_50MHz", mapping = Map(/* ... */))))
 }
 
-// --- Carrier Boards ---
 object CarrierBoard {
   def qmtechDbV4 = CarrierBoard(
     name = "qmtech-fpga-db-v4",
+    connectors = Seq("J2", "J3"),
     devices = Seq(
-      "CP2102N UART",         // ser_rxd, ser_txd
-      "RTL8211EG Ethernet",   // RGMII
-      "VGA (5-6-5 RGB)",
-      "Micro SD card",
-      "3-digit 7-segment display",
-      "5× LED", "5× switch",
-      "2× PMOD (J10, J11)"),
-    connectors = Seq("J2", "J3"))
-
-  /** Alchitry Au V2 has no separate carrier — peripherals are on FPGA board */
-  def none = CarrierBoard(name = "none")
+      BoardDevice("CP2102N", mapping = Map(
+        "RXD" -> "PIN_AE21", "TXD" -> "PIN_AD20")),
+      BoardDevice("RTL8211EG", mapping = Map(
+        "MDC" -> "PIN_A20", "MDIO" -> "PIN_A21",
+        "RESET" -> "PIN_A15", /* ... */)),
+      BoardDevice("VGA", mapping = Map(
+        "HS" -> "PIN_A6", "VS" -> "PIN_A7",
+        "R0" -> "PIN_E1", /* ... */)),
+      BoardDevice("SD_CARD", mapping = Map(
+        "CLK" -> "PIN_B21", "CMD" -> "PIN_A22", /* ... */)),
+      BoardDevice("SEVEN_SEG", mapping = Map(/* ... */)),
+      BoardDevice("LED", mapping = Map(
+        "led2" -> "PIN_AD14", "led3" -> "PIN_AC14", /* ... */)),
+      BoardDevice("PMOD_J10", mapping = Map(/* ... */)),
+      BoardDevice("PMOD_J11", mapping = Map(/* ... */))))
 }
 
-// --- System Assemblies ---
 object SystemAssembly {
-  /** QMTECH EP4CGX150 core board + DB_FPGA daughter board (primary platform) */
-  def qmtechWithDb = SystemAssembly(
-    name = "qmtech-ep4cgx150-db-v4",
-    fpgaBoard = FpgaBoard.qmtechEp4cgx150,
-    carrierBoards = Seq(CarrierBoard.qmtechDbV4))
+  def qmtechWithDb = SystemAssembly("qmtech-ep4cgx150-db-v4",
+    FpgaBoard.qmtechEp4cgx150, Seq(CarrierBoard.qmtechDbV4))
 
-  /** CYC5000 standalone (all peripherals on FPGA board) */
-  def cyc5000 = SystemAssembly(
-    name = "cyc5000",
-    fpgaBoard = FpgaBoard.cyc5000)
+  def cyc5000 = SystemAssembly("cyc5000", FpgaBoard.cyc5000)
 
-  /** Alchitry Au V2 standalone */
-  def alchitryAuV2 = SystemAssembly(
-    name = "alchitry-au-v2",
-    fpgaBoard = FpgaBoard.alchitryAuV2)
+  def alchitryAuV2 = SystemAssembly("alchitry-au-v2", FpgaBoard.alchitryAuV2)
+
+  def wukong = SystemAssembly("wukong-xc7a100t", FpgaBoard.wukongXc7a100t)
 }
 ```
 
-### Pin assignments — board-level facts
+### Pin assignments — generated from board data
 
-Pin assignments are constants of the physical board assembly. Currently stored in `.qsf` files, already factored into reusable includes:
+Pin assignments are derived from `BoardDevice.mapping`. The board data is the single source of truth — no more manually maintained `.qsf`/`.xdc` files.
+
+Currently stored in reusable `.qsf` includes:
 - `fpga/qmtech-ep4cgx150-core.qsf` — FPGA board: clock, LEDs, switches, SDRAM
 - `fpga/qmtech-ep4cgx150-db.qsf` — Carrier board: UART, Ethernet, VGA, SD, 7-seg, PMODs
 
-Each project `.qsf` copies the relevant pins. Future: pin maps could be generated from `SystemAssembly` + `CarrierBoard` data, or the existing `.qsf` includes could be referenced directly.
+Migration: existing `.qsf` files can be generated from `SystemAssembly` data, or kept as hand-maintained references until generation is implemented.
 
 ### JOP System layer — processor system organization
 
