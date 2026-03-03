@@ -206,43 +206,101 @@ idiv_ok:
     wait nxt        // quotient written to TOS
 ```
 
+### ALU vs Compute Module — the 1-cycle rule
+
+**Principle:** Operations that complete in 1 cycle go in the **ALU/Stack pipeline**. Operations that take 2+ cycles go in the **Compute Module** with `sthw`/`wait` microcode.
+
+The ALU is combinational — result available same cycle, no stall. The Compute Module is registered — `sthw` captures operands, `busy` stalls the pipeline, result writes back when done.
+
+**1-cycle ALU/Stack (no microcode, no stall):**
+
+| Category | Operations | Notes |
+|----------|-----------|-------|
+| Integer (existing) | iadd, isub, iand, ior, ixor, ineg, ishl, ishr, iushr | Already in 32-bit pipeline |
+| Long bitwise | land, lor, lxor, lneg | 64-bit bitwise — trivial with 64-bit datapath |
+| Long arithmetic | ladd, lsub | 64-bit adder (currently 26-38 microcode cycles!) |
+| Long compare | lcmp | 64-bit comparator → {-1, 0, 1} (currently 80 cycles!) |
+| Long shift | lshl, lshr, lushr | 64-bit barrel shifter (optional — LUT-expensive) |
+| Float simple | fneg | Sign bit flip |
+| Float compare | fcmpl, fcmpg | Exponent/mantissa comparison → {-1, 0, 1} |
+
+**2+ cycle Compute Module (sthw/wait pattern):**
+
+| Category | Operations | Cycles | Sub-unit |
+|----------|-----------|--------|----------|
+| Integer multiply | imul (bit-serial) | ~18 | Mul (radix-4) |
+| Integer multiply | imul (DSP) | 1 (registered) | Mul (DSP inferred) |
+| Integer divide | idiv, irem | ~34 | DivUnit |
+| Long multiply | lmul | varies | Mul (DSP cascade) |
+| Long divide | ldiv, lrem | ~66 | DivUnit (64-bit) |
+| Float arithmetic | fadd, fsub, fmul, fdiv, frem | varies | FpuCore |
+| Float conversion | i2f, f2i, f2l, l2f | varies | FpuCore |
+| Double arithmetic | dadd, dsub, dmul, ddiv, drem | varies | DoubleFpuCore |
+| Double conversion | i2d, d2i, d2f, f2d, l2d, d2l | varies | DoubleFpuCore |
+
+Note: DSP imul is 1 registered cycle but uses DSP blocks, not ALU LUTs. It lives in the Compute Module alongside bit-serial imul — the `sthw`/`wait` pattern handles both uniformly (DSP just finishes in 1 cycle so `wait` doesn't actually stall).
+
 ### Hardware compute dispatch unit
 
-Lives in the pipeline (like Mul today). Contains all optional compute sub-units, selected by configuration:
+Lives in the pipeline (like Mul today). Contains all optional compute sub-units, selected by configuration. Interface uses 2×64-bit operands — ready for long and double operations.
 
 ```scala
 case class ComputeUnit(config: JopCoreConfig) extends Component {
   val io = new Bundle {
-    val ain    = in UInt(32 bits)     // TOS
-    val bin    = in UInt(32 bits)     // NOS (bout)
-    val wr     = in Bool()            // sthw asserted
-    val opcode = in Bits(8 bits)      // bytecode that triggered this handler
-    val dout   = out UInt(32 bits)    // result → writeback to TOS
-    val doutH  = out UInt(32 bits)    // high result → writeback to NOS (64-bit ops)
-    val busy   = out Bool()           // stalls pipeline until done
+    // 2×64-bit operands (from 4 stack registers: A, B, C, D)
+    //   32-bit ops: operand0 = A (lower 32 used), operand1 = B (lower 32 used)
+    //   64-bit ops: operand0 = {B, A} (hi:lo),     operand1 = {D, C} (hi:lo)
+    val operand0 = in UInt(64 bits)   // value2 (top of stack)
+    val operand1 = in UInt(64 bits)   // value1 (below value2)
+    val wr       = in Bool()          // sthw asserted — capture operands, start
+    val opcode   = in Bits(8 bits)    // bytecode selects operation + sub-unit
+    val result   = out UInt(64 bits)  // result (32-bit ops use lower half)
+    val is64     = out Bool()         // true → write both TOS and NOS
+    val busy     = out Bool()         // stalls pipeline until done
   }
 
   // --- Mul sub-unit (always present, bit-serial or DSP) ---
-  val mul = Mul(useDsp = config.needsDspMul)
+  // Accepts 32-bit operands from operand0/1 lower halves (imul)
+  // or 64-bit operands for lmul (DSP cascade)
+  val mul = Mul(useDsp = config.needsMul)
 
   // --- FPU sub-unit (conditional) ---
+  // Accepts 32-bit IEEE 754 from operand0/1 lower halves
   val fpu = config.needsFpu generate FpuCore()
 
   // --- DIV sub-unit (conditional) ---
+  // Accepts 32-bit (idiv/irem) or 64-bit (ldiv/lrem) operands
   val div = config.needsHwDiv generate DivUnit()
 
-  // --- Future: LongAlu, DoubleFpu ---
+  // --- Future: DoubleFpuCore (64-bit IEEE 754) ---
 
   // Dispatch: bytecode → sub-unit
   switch(io.opcode) {
-    is(0x68) { /* imul → mul */ }
+    // Integer
+    is(0x68) { /* imul → mul, 32-bit */ }
+    // Long
+    is(0x69) { /* lmul → mul, 64-bit */ }
+    is(0x6D) { /* ldiv → div, 64-bit, mode=QUOT */ }
+    is(0x71) { /* lrem → div, 64-bit, mode=REM */ }
+    // Float
     is(0x62) { /* fadd → fpu, op=ADD */ }
     is(0x66) { /* fsub → fpu, op=SUB */ }
     is(0x6A) { /* fmul → fpu, op=MUL */ }
     is(0x6E) { /* fdiv → fpu, op=DIV */ }
-    is(0x6C) { /* idiv → div, mode=QUOT */ }
-    is(0x70) { /* irem → div, mode=REM */ }
-    // ... future bytecodes ...
+    is(0x72) { /* frem → fpu, op=REM */ }
+    // Integer divide
+    is(0x6C) { /* idiv → div, 32-bit, mode=QUOT */ }
+    is(0x70) { /* irem → div, 32-bit, mode=REM */ }
+    // Double (future)
+    is(0x63) { /* dadd → doubleFpu, op=ADD */ }
+    is(0x67) { /* dsub → doubleFpu, op=SUB */ }
+    is(0x6B) { /* dmul → doubleFpu, op=MUL */ }
+    is(0x6F) { /* ddiv → doubleFpu, op=DIV */ }
+    is(0x73) { /* drem → doubleFpu, op=REM */ }
+    // Type conversions (future)
+    is(0x86) { /* i2f → fpu, op=I2F */ }
+    is(0x8B) { /* f2i → fpu, op=F2I */ }
+    // ...
   }
 
   // Busy = OR of all active sub-units
@@ -253,13 +311,30 @@ case class ComputeUnit(config: JopCoreConfig) extends Component {
 }
 ```
 
+### Operand mapping
+
+With 4-register TOS (A=TOS, B=NOS, C=TOS-2, D=TOS-3):
+
+```
+JVM stack:    ..., value1_hi(D), value1_lo(C), value2_hi(B), value2_lo(A)
+
+ComputeUnit:  operand0 = {B, A} = value2 (64-bit, top of stack)
+              operand1 = {D, C} = value1 (64-bit, below)
+
+32-bit ops:   operand0(31:0) = A = TOS
+              operand1(31:0) = B = NOS
+              upper 32 bits unused
+```
+
+This is the same mapping for all operations — the compute unit's operand ports are always wired the same way. The bytecode tells the sub-unit whether to use 32 or 64 bits of each operand.
+
 ### What this eliminates
 
 - **BmbFpu** I/O peripheral → replaced by FPU sub-unit in ComputeUnit
 - **BmbDiv** I/O peripheral → replaced by DIV sub-unit in ComputeUnit
 - **I/O address space**: 0xE0-0xE3 (DIV) and 0xF0-0xF3 (FPU) freed up
 - **`stmul`/`ldmul`** microcode instructions → replaced by `sthw` + implicit writeback
-- **Per-bytecode microcode handlers**: fadd/fsub/fmul/fdiv/idiv/irem each had ~9-10 unique instructions → all share one ~3 instruction pattern
+- **Per-bytecode microcode handlers**: fadd/fsub/fmul/fdiv/idiv/irem each had ~9-10 unique instructions → all share one ~4 instruction pattern
 - **I/O wiring in JopCore**: no more `fpuBusy`, `divBusy` I/O bus plumbing
 
 ### What stays the same
@@ -268,23 +343,23 @@ case class ComputeUnit(config: JopCoreConfig) extends Component {
 - **DivUnit** (binary restoring) — same algorithm, just no BMB wrapper
 - **Pipeline stall mechanism** — busy signal still stalls the pipeline, just comes from ComputeUnit instead of I/O bus
 
-### 64-bit operations with 4-register TOS
+### 64-bit operations (sthw/wait with 4-register TOS)
 
-With 4-register TOS (A/B/C/D), `sthw` captures all 4 registers. 64-bit bytecodes (ladd, dadd, lmul, etc.) get both operands in one instruction:
+With 4-register TOS (A/B/C/D), `sthw` captures all 4 registers. The compute unit sees 2×64-bit operands:
 
 ```
-value1 = D:C   (64-bit, D=high, C=low)
-value2 = B:A   (64-bit, B=high, A=low)
+operand0 = {B, A}  →  value2 (64-bit, B=high, A=low)
+operand1 = {D, C}  →  value1 (64-bit, D=high, C=low)
 ```
 
-The hardware writes the 64-bit result directly back into TOS and NOS, overwriting the remaining operand slots. No explicit `ldhw` needed — the `wait nxt` completes when the result is written back.
+The hardware writes the 64-bit result directly back into TOS and NOS. No explicit load instruction needed — the `wait nxt` completes when the result is written back.
 
 ```asm
-// Every 64-bit→64-bit HW bytecode (ladd, dadd, lmul, etc.):
+// Every 64-bit→64-bit HW bytecode (lmul, ldiv, lrem, dadd, dsub, dmul, ddiv, drem):
 <bytecode>:
-    sthw            // capture A+B+C+D, bytecode selects unit
-    pop             // remove second operand low
-    pop             // remove second operand high
+    sthw            // capture {B,A} + {D,C}, bytecode selects unit
+    pop             // remove value2 low (A)
+    pop             // remove value2 high (B)
     wait            // stall pipeline while computing
     wait nxt        // result written to TOS(=result_low) and NOS(=result_high)
 ```
@@ -299,9 +374,9 @@ wait:     ..., v1_hi,    v1_lo                             stall, computing...
 wait nxt: ..., res_hi,   res_lo                            HW overwrites TOS+NOS
 ```
 
-Net stack effect: 4 → 2 = -2. Correct for all 64-bit→64-bit bytecodes (ladd, lsub, dadd, lmul, etc.).
+Net stack effect: 4 → 2 = -2. Correct for all 64-bit→64-bit bytecodes.
 
-This pattern also works for 32-bit→32-bit bytecodes:
+32-bit→32-bit bytecodes use the same interface (upper 32 bits unused):
 
 ```asm
 // Every 32-bit→32-bit HW bytecode (imul, fadd, fsub, fmul, fdiv, idiv, irem):
@@ -312,16 +387,29 @@ This pattern also works for 32-bit→32-bit bytecodes:
     wait nxt        // result written to TOS (overwrites first operand)
 ```
 
-Stack evolution:
+Net stack effect: 2 → 1 = -1. Correct for imul, fadd, idiv, etc.
+
+### 1-cycle ALU path (long bitwise/arithmetic)
+
+For long operations that are 1-cycle with a 64-bit ALU (ladd, lsub, land, lor, lxor, lneg, lcmp), the pipeline handles them directly — no `sthw`, no Compute Module, no microcode at all. The 4-register TOS provides both 64-bit operands to the ALU combinationally:
+
 ```
-Before:   ..., operand1(B), operand2(A)     [2 items]
-sthw:     ..., operand1,    operand2        captures A+B, no pop
-pop:      ..., operand1                      remove A
-wait:     ..., operand1                      stall, computing...
-wait nxt: ..., result                        HW overwrites TOS
+Pipeline ALU input:   {D, C} op {B, A}
+Pipeline ALU output:  result_hi → NOS, result_lo → TOS
+Stack management:     pop 2 (same as 32-bit binary ops pop 1)
 ```
 
-Net stack effect: 2 → 1 = -1. Correct for imul, fadd, idiv, etc.
+These bytecodes execute like `iadd` does today — the ALU result is available in the same cycle, the pipeline pops the consumed operands, and `nxt` fetches the next bytecode. Zero microcode overhead.
+
+Current microcode cost of these operations (all eliminated by 64-bit ALU):
+- ladd: 26 cycles (half-add algorithm to avoid 32-bit overflow)
+- lsub: 38 cycles (negate + half-add)
+- lneg: 34 cycles (negate + fall-through to ladd)
+- land/lor/lxor: 8 cycles each (save/restore 4 regs, apply op to each half)
+- lcmp: 80 cycles (sign overflow detection + conditional subtraction + three-way branch)
+- lshl/lshr/lushr: 28 cycles each (conditional branch on shift count, cross-carry)
+
+With a 64-bit ALU, all of these become 1 cycle. The long shift operations (lshl/lshr/lushr) require a 64-bit barrel shifter which is LUT-expensive; these could alternatively remain in the Compute Module if area is constrained.
 
 This eliminates `ldhw` entirely — the compute unit writes results directly back into the stack registers via the same writeback path. Only `sthw` is a new microcode instruction.
 
@@ -432,7 +520,7 @@ object Implementation {
 }
 ```
 
-Every configurable bytecode uses the same `Implementation` enum. The physical realization differs (imul uses a pipeline `Mul` unit with `stmul`/`ldmul`; fadd uses a BMB I/O peripheral `BmbFpu`), but the config model is uniform.
+Every configurable bytecode uses the same `Implementation` enum. The physical realization splits into two paths based on cycle count: 1-cycle operations go into the ALU pipeline (e.g., ladd with 64-bit adder), 2+ cycle operations go into the Compute Module with `sthw`/`wait` (e.g., imul, fadd, idiv). The config model is uniform — `Implementation.Hardware` means "use hardware", and the system decides whether that's ALU or Compute Module based on the operation.
 
 ### JopCoreConfig — per-instruction fields
 
@@ -454,70 +542,78 @@ case class JopCoreConfig(
   // --- Per-instruction implementation selection ---
   // Order: add, sub, mul, div, rem, neg, shl, shr, ushr, and, or, xor, cmp/cmpl/cmpg
 
-  // Integer
-  imul:  Implementation = Implementation.Microcode,  // Microcode=bit-serial 18cyc, Hardware=DSP 4cyc
-  idiv:  Implementation = Implementation.Java,
-  irem:  Implementation = Implementation.Java,
+  // Integer — 2+ cycle ops go to Compute Module
+  imul:  Implementation = Implementation.Microcode,  // Microcode=bit-serial 18cyc, Hardware=Compute(DSP)
+  idiv:  Implementation = Implementation.Java,       // Hardware=Compute(DivUnit ~34cyc)
+  irem:  Implementation = Implementation.Java,       // Hardware=Compute(DivUnit ~34cyc)
 
-  // Long
-  ladd:  Implementation = Implementation.Microcode,
-  lsub:  Implementation = Implementation.Microcode,
-  lmul:  Implementation = Implementation.Java,        // Hardware=DSP lmul handler
-  ldiv:  Implementation = Implementation.Java,
-  lrem:  Implementation = Implementation.Java,
-  lneg:  Implementation = Implementation.Microcode,
-  lshl:  Implementation = Implementation.Microcode,
-  lshr:  Implementation = Implementation.Microcode,
-  lushr: Implementation = Implementation.Microcode,
-  land:  Implementation = Implementation.Microcode,
-  lor:   Implementation = Implementation.Microcode,
-  lxor:  Implementation = Implementation.Microcode,
-  lcmp:  Implementation = Implementation.Microcode,
+  // Long — 1-cycle ops go to ALU (with 64-bit datapath), 2+ cycle to Compute Module
+  ladd:  Implementation = Implementation.Microcode,  // Hardware=ALU(64-bit add, 1 cycle)
+  lsub:  Implementation = Implementation.Microcode,  // Hardware=ALU(64-bit sub, 1 cycle)
+  lmul:  Implementation = Implementation.Java,       // Hardware=Compute(DSP cascade)
+  ldiv:  Implementation = Implementation.Java,       // Hardware=Compute(DivUnit 64-bit ~66cyc)
+  lrem:  Implementation = Implementation.Java,       // Hardware=Compute(DivUnit 64-bit ~66cyc)
+  lneg:  Implementation = Implementation.Microcode,  // Hardware=ALU(64-bit negate, 1 cycle)
+  lshl:  Implementation = Implementation.Microcode,  // Hardware=ALU(barrel shifter) or Compute
+  lshr:  Implementation = Implementation.Microcode,  // Hardware=ALU(barrel shifter) or Compute
+  lushr: Implementation = Implementation.Microcode,  // Hardware=ALU(barrel shifter) or Compute
+  land:  Implementation = Implementation.Microcode,  // Hardware=ALU(64-bit AND, 1 cycle)
+  lor:   Implementation = Implementation.Microcode,  // Hardware=ALU(64-bit OR, 1 cycle)
+  lxor:  Implementation = Implementation.Microcode,  // Hardware=ALU(64-bit XOR, 1 cycle)
+  lcmp:  Implementation = Implementation.Microcode,  // Hardware=ALU(64-bit compare, 1 cycle)
 
-  // Float
-  fadd:  Implementation = Implementation.Java,
-  fsub:  Implementation = Implementation.Java,
-  fmul:  Implementation = Implementation.Java,
-  fdiv:  Implementation = Implementation.Java,
-  frem:  Implementation = Implementation.Java,
-  fneg:  Implementation = Implementation.Java,
-  fcmpl: Implementation = Implementation.Java,
-  fcmpg: Implementation = Implementation.Java,
+  // Float — 2+ cycle ops go to Compute Module, simple ops could go to ALU
+  fadd:  Implementation = Implementation.Java,  // Hardware=Compute(FpuCore)
+  fsub:  Implementation = Implementation.Java,  // Hardware=Compute(FpuCore)
+  fmul:  Implementation = Implementation.Java,  // Hardware=Compute(FpuCore)
+  fdiv:  Implementation = Implementation.Java,  // Hardware=Compute(FpuCore)
+  frem:  Implementation = Implementation.Java,  // Hardware=Compute(FpuCore)
+  fneg:  Implementation = Implementation.Java,  // Hardware=ALU(sign bit flip, 1 cycle)
+  fcmpl: Implementation = Implementation.Java,  // Hardware=ALU(float compare, 1 cycle)
+  fcmpg: Implementation = Implementation.Java,  // Hardware=ALU(float compare, 1 cycle)
 
-  // Double
-  dadd:  Implementation = Implementation.Java,
-  dsub:  Implementation = Implementation.Java,
-  dmul:  Implementation = Implementation.Java,
-  ddiv:  Implementation = Implementation.Java,
-  drem:  Implementation = Implementation.Java,
-  dneg:  Implementation = Implementation.Java,
-  dcmpl: Implementation = Implementation.Java,
-  dcmpg: Implementation = Implementation.Java,
+  // Double — same split: arithmetic to Compute Module, simple to ALU
+  dadd:  Implementation = Implementation.Java,  // Hardware=Compute(DoubleFpuCore)
+  dsub:  Implementation = Implementation.Java,  // Hardware=Compute(DoubleFpuCore)
+  dmul:  Implementation = Implementation.Java,  // Hardware=Compute(DoubleFpuCore)
+  ddiv:  Implementation = Implementation.Java,  // Hardware=Compute(DoubleFpuCore)
+  drem:  Implementation = Implementation.Java,  // Hardware=Compute(DoubleFpuCore)
+  dneg:  Implementation = Implementation.Java,  // Hardware=ALU(sign bit flip, 1 cycle)
+  dcmpl: Implementation = Implementation.Java,  // Hardware=ALU(double compare, 1 cycle)
+  dcmpg: Implementation = Implementation.Java,  // Hardware=ALU(double compare, 1 cycle)
 
-  // Type conversions
-  i2f:   Implementation = Implementation.Java,
-  i2d:   Implementation = Implementation.Java,
-  f2i:   Implementation = Implementation.Java,
-  f2l:   Implementation = Implementation.Java,
-  f2d:   Implementation = Implementation.Java,
-  d2i:   Implementation = Implementation.Java,
-  d2l:   Implementation = Implementation.Java,
-  d2f:   Implementation = Implementation.Java,
-  l2f:   Implementation = Implementation.Java,
-  l2d:   Implementation = Implementation.Java,
-  i2b:   Implementation = Implementation.Java,
-  i2s:   Implementation = Implementation.Java,
+  // Type conversions — all 2+ cycle, go to Compute Module
+  i2f:   Implementation = Implementation.Java,  // Hardware=Compute(FpuCore)
+  i2d:   Implementation = Implementation.Java,  // Hardware=Compute(DoubleFpuCore)
+  f2i:   Implementation = Implementation.Java,  // Hardware=Compute(FpuCore)
+  f2l:   Implementation = Implementation.Java,  // Hardware=Compute(FpuCore)
+  f2d:   Implementation = Implementation.Java,  // Hardware=Compute(DoubleFpuCore)
+  d2i:   Implementation = Implementation.Java,  // Hardware=Compute(DoubleFpuCore)
+  d2l:   Implementation = Implementation.Java,  // Hardware=Compute(DoubleFpuCore)
+  d2f:   Implementation = Implementation.Java,  // Hardware=Compute(DoubleFpuCore)
+  l2f:   Implementation = Implementation.Java,  // Hardware=Compute(FpuCore)
+  l2d:   Implementation = Implementation.Java,  // Hardware=Compute(DoubleFpuCore)
+  i2b:   Implementation = Implementation.Java,  // Microcode candidate (mask + sign extend)
+  i2s:   Implementation = Implementation.Java,  // Microcode candidate (mask + sign extend)
 ) {
-  // --- Derived: which HW peripherals to instantiate ---
-  private val allFloat  = Seq(fadd, fsub, fmul, fdiv, fneg, frem, fcmpl, fcmpg)
-  private val allDouble = Seq(dadd, dsub, dmul, ddiv, dneg, drem, dcmpl, dcmpg)
-  private val allLong   = Seq(ladd, lsub, lneg, lshl, lshr, lushr, land, lor, lxor, lcmp)
+  // --- Derived: what hardware to instantiate ---
 
-  def needsFpu: Boolean       = allFloat.exists(_ == Implementation.Hardware)
-  def needsDoubleFpu: Boolean = allDouble.exists(_ == Implementation.Hardware)
-  def needsLongAlu: Boolean   = allLong.exists(_ == Implementation.Hardware)
-  def needsDspMul: Boolean    = imul == Implementation.Hardware || lmul == Implementation.Hardware
+  // ALU extensions (1-cycle, combinational, in pipeline)
+  private val longAluOps  = Seq(ladd, lsub, lneg, land, lor, lxor, lcmp)
+  private val longShifts  = Seq(lshl, lshr, lushr)
+
+  def needsLongAlu: Boolean       = longAluOps.exists(_ == Implementation.Hardware)
+  def needsBarrelShifter: Boolean = longShifts.exists(_ == Implementation.Hardware)
+  def needs4RegTos: Boolean       = needsLongAlu || needsBarrelShifter ||
+    Seq(lmul, ldiv, lrem).exists(_ == Implementation.Hardware) ||
+    Seq(dadd, dsub, dmul, ddiv, drem, dneg, dcmpl, dcmpg).exists(_ == Implementation.Hardware)
+
+  // Compute Module sub-units (2+ cycle, sthw/wait pattern)
+  def needsMul: Boolean       = imul == Implementation.Hardware || lmul == Implementation.Hardware
+  def needsFpu: Boolean       = Seq(fadd, fsub, fmul, fdiv, frem).exists(_ == Implementation.Hardware)
   def needsHwDiv: Boolean     = Seq(idiv, irem, ldiv, lrem).exists(_ == Implementation.Hardware)
+  def needsDoubleFpu: Boolean = Seq(dadd, dsub, dmul, ddiv, drem).exists(_ == Implementation.Hardware)
+  def needsComputeUnit: Boolean = needsMul || needsFpu || needsHwDiv || needsDoubleFpu
 
   // --- Derived: jump table resolution ---
   // Maps bytecode opcode → configured Implementation
@@ -535,7 +631,7 @@ case class JopCoreConfig(
 }
 ```
 
-**Note on Microcode vs Hardware resolution:** The superset ROM contains both microcode-only handlers (e.g., existing `ladd` at 0x436) and HW peripheral handlers (e.g., `fadd` HW at 0x5BF). For bytecodes that have both options (future), the Jopa-generated jump table data will include addresses for each. The `resolveJumpTable` method selects the appropriate address based on the configured Implementation. Details TBD when the first bytecode gains all three options.
+**Note on Microcode vs Hardware resolution:** The superset ROM contains both microcode-only handlers (e.g., existing `ladd` at 0x436) and HW handlers (e.g., `fadd` HW at 0x5BF). For bytecodes that have both options, the Jopa-generated jump table data includes addresses for each. The `resolveJumpTable` method selects the appropriate address based on the configured Implementation. For ALU operations (1-cycle, like ladd with 64-bit ALU), `Implementation.Hardware` means the pipeline handles it directly — the jump table entry is irrelevant because the bytecode never reaches microcode.
 
 ### Convenience presets
 
@@ -544,26 +640,44 @@ object JopCoreConfig {
   /** All defaults: imul=microcode (bit-serial), long=microcode, float/double/div=java */
   def software = JopCoreConfig()
 
-  /** DSP multiply (imul + lmul → DSP Mul unit) */
+  /** DSP multiply (imul + lmul → Compute Module Mul) */
   def dspMul = JopCoreConfig(imul = Implementation.Hardware, lmul = Implementation.Hardware)
 
-  /** HW integer divide */
+  /** HW integer divide (idiv/irem → Compute Module DivUnit) */
   def hwDiv = JopCoreConfig(idiv = Implementation.Hardware, irem = Implementation.Hardware)
 
-  /** Full HW math (DSP mul + HW div) */
+  /** Full HW integer math (DSP mul + HW div) */
   def hwMath = JopCoreConfig(
     imul = Implementation.Hardware, lmul = Implementation.Hardware,
     idiv = Implementation.Hardware, irem = Implementation.Hardware)
 
-  /** HW single-precision float (fadd/fsub/fmul/fdiv) */
+  /** HW single-precision float (fadd/fsub/fmul/fdiv → Compute Module FpuCore) */
   def hwFloat = JopCoreConfig(
     fadd = Implementation.Hardware, fsub = Implementation.Hardware,
     fmul = Implementation.Hardware, fdiv = Implementation.Hardware)
 
-  /** Everything that has HW today */
+  /** 64-bit ALU (1-cycle long arithmetic/bitwise/compare in pipeline) */
+  def longAlu = JopCoreConfig(
+    ladd = Implementation.Hardware, lsub = Implementation.Hardware,
+    lneg = Implementation.Hardware,
+    land = Implementation.Hardware, lor  = Implementation.Hardware,
+    lxor = Implementation.Hardware, lcmp = Implementation.Hardware,
+    lshl = Implementation.Hardware, lshr = Implementation.Hardware,
+    lushr = Implementation.Hardware)
+
+  /** Everything: 64-bit ALU + DSP mul + HW div + HW float */
   def hwAll = JopCoreConfig(
+    // ALU (1-cycle)
+    ladd = Implementation.Hardware, lsub = Implementation.Hardware,
+    lneg = Implementation.Hardware,
+    land = Implementation.Hardware, lor  = Implementation.Hardware,
+    lxor = Implementation.Hardware, lcmp = Implementation.Hardware,
+    lshl = Implementation.Hardware, lshr = Implementation.Hardware,
+    lushr = Implementation.Hardware,
+    // Compute Module (2+ cycle)
     imul = Implementation.Hardware, lmul = Implementation.Hardware,
     idiv = Implementation.Hardware, irem = Implementation.Hardware,
+    ldiv = Implementation.Hardware, lrem = Implementation.Hardware,
     fadd = Implementation.Hardware, fsub = Implementation.Hardware,
     fmul = Implementation.Hardware, fdiv = Implementation.Hardware)
 }
@@ -572,20 +686,24 @@ object JopCoreConfig {
 ### Deleted
 
 - `fpuMode: FpuMode.FpuMode` → replaced by `needsFpu` (derived from per-bytecode config)
-- `useDspMul: Boolean` → replaced by `needsDspMul` (derived: `imul == Hardware || lmul == Hardware`)
+- `useDspMul: Boolean` → replaced by `needsMul` (derived: `imul == Hardware || lmul == Hardware`)
 - `useHwDiv: Boolean` → replaced by `needsHwDiv` (derived from per-bytecode config)
 - `jumpTable: JumpTableInitData` → replaced by `resolveJumpTable(base)`
 - `withFpuJumpTable` / `withMathJumpTable` / `isSerialJumpTable` → deleted
 - `FpuMode` enum → deleted
 - `MulImpl` enum → deleted (imul uses Implementation like everything else)
+- `BmbFpu` / `BmbDiv` I/O peripherals → replaced by Compute Module sub-units
 
 ### Update consumers
 
 `JopCluster`, `JopSdramTop`, `JopCyc5000Top`, `JopDdr3Top`, all sim harnesses — replace:
 - `fpuMode = FpuMode.Hardware` → `coreConfig.needsFpu`
-- `useDspMul = true` → `coreConfig.needsDspMul`
+- `useDspMul = true` → `coreConfig.needsMul`
 - `useHwDiv = true` → `coreConfig.needsHwDiv`
 - `jumpTable = JumpTableInitData.serialHwMath` → `coreConfig.resolveJumpTable(base)`
+- Mul/FpuCore/DivUnit instantiation → `coreConfig.needsComputeUnit` → single ComputeUnit
+- Long ALU width → `coreConfig.needsLongAlu` → 64-bit ALU datapath in pipeline
+- TOS register count → `coreConfig.needs4RegTos` → 4-register TOS (A/B/C/D)
 
 The JopSdramTop constructor simplifies — no more `jumpTable`, `fpuMode`, `useDspMul`, `useHwDiv` parameters. These are all derived from `coreConfig`.
 
@@ -614,8 +732,8 @@ System (physical assembly — the complete hardware on the desk)
   |     +-- Debug config
   |
   +-- JOP Core(s) (per-core configuration)
-        +-- core(0) → imul: Dsp, fadd: Hardware, methodCache: 4K ...
-        +-- core(1) → imul: BitSerial, fadd: Java, ...
+        +-- core(0) → imul: Hardware(Compute/DSP), ladd: Hardware(ALU), fadd: Hardware(Compute/FPU)
+        +-- core(1) → imul: Microcode(bit-serial), ladd: Microcode, fadd: Java
 ```
 
 ### Parts — reusable hardware facts
