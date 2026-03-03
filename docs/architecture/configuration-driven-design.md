@@ -71,6 +71,7 @@
   - [Configuration validation](#configuration-validation)
   - [WCET analysis](#wcet-analysis)
   - [Migration path](#migration-path)
+- [Open Items](#open-items)
 
 ---
 
@@ -128,8 +129,8 @@ JopSystemConfig
 
 From the config, the system derives:
 - Which jump table entries route to Java / microcode / HW handler
-- Which HW peripherals get instantiated (BmbFpu, BmbDiv, future long ALU, double FPU)
-- Which pipeline parameters change (Mul useDsp)
+- Which compute units get instantiated (IntegerComputeUnit, LongComputeUnit, FloatComputeUnit, DoubleComputeUnit)
+- Which internal hardware each compute unit includes (e.g., IntegerComputeUnit with Mul but not DivUnit)
 - Which ROM/RAM files to load (based on boot mode)
 - Which Java runtime classes are needed (SoftFloat32, SoftFloat64, HW device drivers)
 - Which I/O addresses are active (generated into Const.java)
@@ -162,13 +163,13 @@ Not all three options exist for every bytecode today. The framework supports all
 - Always available: **Java** (sys_noim)
 
 **Long multiply** (1) — `lmul`
-- Today: **Java** or **Hardware** (DSP microcode using Mul unit `doutH` for upper 32 bits)
+- Today: **Java** or **Hardware** (LongComputeUnit, DSP cascade via `sthw`/`wait`)
 
 **Integer/long divide** (4) — `idiv` `irem` `ldiv` `lrem`
-- Today: **Java** or **Hardware** (BmbDiv for idiv/irem; ldiv/lrem Java only, future HW)
+- Today: **Java** or **Hardware** (IntegerComputeUnit for idiv/irem; ldiv/lrem via LongComputeUnit, future HW)
 
 **Float arithmetic** (8) — `fadd` `fsub` `fmul` `fdiv` `fneg` `frem` `fcmpl` `fcmpg`
-- Today: **Java** or **Hardware** (BmbFpu for fadd/fsub/fmul/fdiv; rest Java only, future HW)
+- Today: **Java** or **Hardware** (FloatComputeUnit for fadd/fsub/fmul/fdiv; fneg/fcmpl/fcmpg→ALU, frem→FloatComputeUnit, future HW)
 
 **Double arithmetic** (8) — `dadd` `dsub` `dmul` `ddiv` `dneg` `drem` `dcmpl` `dcmpg`
 - Today: **Java** only
@@ -417,7 +418,7 @@ case class FloatComputeUnit(config: JopCoreConfig) extends Component {
   // VexRiscv-derived FpuCore (IEEE 754 single-precision)
   val fpu = FpuCore()
 
-  io.is64 := False  // single-precision → 32-bit result (except f2l → 64-bit)
+  io.is64 := False  // default: 32-bit result
 
   switch(io.opcode) {
     is(0x62) { /* fadd → fpu, op=ADD */ }
@@ -427,8 +428,8 @@ case class FloatComputeUnit(config: JopCoreConfig) extends Component {
     is(0x72) { /* frem → fpu, op=REM */ }
     is(0x86) { /* i2f → fpu, op=I2F */ }
     is(0x8B) { /* f2i → fpu, op=F2I */ }
-    is(0x8C) { /* f2l → fpu, op=F2L, is64=true */ }
-    is(0x89) { /* l2f → fpu, op=L2F */ }
+    is(0x8C) { io.is64 := True /* f2l → fpu, op=F2L, 64-bit result */ }
+    is(0x89) { /* l2f → fpu, op=L2F (64-bit input, 32-bit result) */ }
   }
 }
 ```
@@ -442,7 +443,7 @@ case class DoubleComputeUnit(config: JopCoreConfig) extends Component {
   // Double-precision FPU (future)
   val fpu = DoubleFpuCore()
 
-  io.is64 := True  // double-precision → 64-bit result (except d2i/d2f → 32-bit)
+  io.is64 := True  // default: 64-bit result
 
   switch(io.opcode) {
     is(0x63) { /* dadd → fpu, op=ADD */ }
@@ -450,10 +451,10 @@ case class DoubleComputeUnit(config: JopCoreConfig) extends Component {
     is(0x6B) { /* dmul → fpu, op=MUL */ }
     is(0x6F) { /* ddiv → fpu, op=DIV */ }
     is(0x73) { /* drem → fpu, op=REM */ }
-    is(0x85) { /* i2d → fpu, op=I2D, is64=true */ }
-    is(0x87) { /* d2i → fpu, op=D2I, is64=false */ }
-    is(0x90) { /* d2f → fpu, op=D2F, is64=false */ }
-    is(0x8D) { /* f2d → fpu, op=F2D */ }
+    is(0x85) { /* i2d → fpu, op=I2D (32-bit input, 64-bit result) */ }
+    is(0x87) { io.is64 := False /* d2i → fpu, op=D2I, 32-bit result */ }
+    is(0x90) { io.is64 := False /* d2f → fpu, op=D2F, 32-bit result */ }
+    is(0x8D) { /* f2d → fpu, op=F2D (32-bit input, 64-bit result) */ }
     is(0x8A) { /* l2d → fpu, op=L2D */ }
     is(0x8F) { /* d2l → fpu, op=D2L */ }
   }
@@ -495,7 +496,7 @@ ComputeUnit:  operand0 = {B, A} = value2 (64-bit, top of stack)
               upper 32 bits unused
 ```
 
-This is the same mapping for all operations — the compute unit's operand ports are always wired the same way. The bytecode tells the sub-unit whether to use 32 or 64 bits of each operand.
+This is the same mapping for all operations — every compute unit's operand ports are wired the same way. The bytecode tells the active unit whether to use 32 or 64 bits of each operand.
 
 ### What this eliminates
 
@@ -1487,8 +1488,8 @@ This is a **separate ongoing effort** — not blocking the configuration-driven 
 public class Const {
   // From IoConfig
   public static final int IO_BASE  = -128;
-  public static final int IO_FPU   = IO_BASE + 0x70;  // present: core config has needsFpu
-  public static final int IO_DIV   = IO_BASE + 0x60;  // present: core config has needsHwDiv
+  // Note: IO_FPU and IO_DIV no longer needed — compute units are pipeline
+  // components accessed via sthw, not memory-mapped I/O peripherals.
 
   // From JopCoreConfig (union of all cores' capabilities)
   public static final boolean SUPPORT_FLOAT  = true;   // any core has fadd/fsub/... != Java
@@ -2015,7 +2016,7 @@ Errors at elaboration time (SpinalHDL `require()` checks):
 // In JopCoreConfig
 require(!(fadd == Implementation.Hardware && fdiv == Implementation.Hardware &&
           fsub != Implementation.Hardware),
-  "FPU sub-unit is shared: if fadd and fdiv are Hardware, fsub must be too")
+  "FloatComputeUnit: if fadd and fdiv are Hardware, fsub must be too (shared FpuCore)")
 
 // In JopSystemConfig
 require(cpuCnt >= 1 && cpuCnt <= 16)
@@ -2065,3 +2066,17 @@ Existing setups transition incrementally:
 4. **Phase 8-9** (build/IDE): Existing `make` workflow continues to work. The `jop-build` library wraps the same Makefiles and sbt commands. `jop` CLI and Eclipse plugin are additive — they call `jop-build` which calls the same tools. Eclipse project generation is opt-in.
 
 At each phase, existing workflows are not broken — new capabilities are added alongside, validated, then old paths deprecated.
+
+---
+
+## Open Items
+
+Areas referenced in the document that need further detail:
+
+1. **Device registry for MemoryDevice lookup** (Phase 5) — `BoardDevice.memories` references a device registry to resolve device names to `MemoryDevice` objects. The registry mechanism (global map, companion object lookup, or config file) is not yet defined.
+
+2. **RuntimeModule dependency resolution** (Phase 6) — `closeDependencies()` is referenced for transitive module dependency resolution but the algorithm (topological sort, cycle detection) is not specified.
+
+3. **OpenJDK 6 source setup** (Phase 6) — The document references `/srv/git/java/jdk6/` which is machine-specific. Needs setup instructions: where to obtain the source, how to configure the path, and whether it should be version-controlled or referenced externally.
+
+4. **Build config JSON schema** (Phase 8) — Example JSON snippets exist but no formal JSON Schema definition. Needed for IDE validation (Eclipse/VS Code auto-complete and error highlighting in `.settings/jop.json`).
