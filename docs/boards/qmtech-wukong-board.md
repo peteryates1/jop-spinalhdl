@@ -6,21 +6,20 @@ Self-contained Artix-7 development board with DDR3, SDR SDRAM, Gigabit Ethernet,
 HDMI, USB UART, and SD card all built-in. **Does not require the DB_FPGA daughter
 board** — all peripherals are on the main PCB.
 
-Available with XC7A100T or XC7A200T FPGA variants on the same PCB.
-
 GitHub: <https://github.com/ChinaQMTECH/QM_XC7A100T_WUKONG_BOARD>
 
 Reference files: `/srv/git/qmtech/QM_XC7A100T_WUKONG_BOARD/V3/`
 
-Schematic: `V3/Hardware/QMTECH-XC7A100T_200T-Wukong-Board-V03-20240121.pdf`
+Schematic: [QMTECH-XC7A100T_200T-Wukong-Board-V03-20240121.pdf](https://github.com/ChinaQMTECH/QM_XC7A100T_WUKONG_BOARD/blob/main/V3/Hardware/QMTECH-XC7A100T_200T-Wukong-Board-V03-20240121.pdf)
+(local: `V3/Hardware/QMTECH-XC7A100T_200T-Wukong-Board-V03-20240121.pdf`)
 
 ## FPGA
 
-- **Device**: Xilinx Artix-7 — XC7A100T-FGG676 (or XC7A200T variant)
-- **Logic Cells**: 101,440 (XC7A100T) / 215,360 (XC7A200T)
-- **LUTs**: 63,400 / 134,600
-- **Block RAM**: 4,860 Kbit / 13,140 Kbit
-- **DSP slices**: 240 / 740
+- **Device**: Xilinx Artix-7 — XC7A100T-FGG676
+- **Logic Cells**: 101,440
+- **LUTs**: 63,400
+- **Block RAM**: 4,860 Kbit
+- **DSP slices**: 240
 - **Package**: FGG676 (676-pin BGA)
 - **Speed grade**: -2
 - **GTP Transceivers**: 8 (6.6 Gbps)
@@ -191,7 +190,7 @@ From `Test10_SDRAM` project XDC:
 
 | Signal | Pin | I/O Standard | Bank | Function |
 |--------|-----|-------------|------|----------|
-| `SYS_CLK` | M21 | LVCMOS33 | 15 | 50 MHz oscillator (Y1) |
+| `SYS_CLK` | M21 | LVCMOS33 | 14 | 50 MHz oscillator (Y1) |
 | `SYS_RST_N` | H7 | LVCMOS33 | 35 | Reset button KEY0/SW2 (active low) |
 | `LED0` | G21 | LVCMOS33 | 15 | User LED 0 (D5) |
 | `LED1` | G20 | LVCMOS33 | 15 | User LED 1 (D6) |
@@ -311,8 +310,7 @@ Post-configuration flash access requires STARTUPE2 primitive for CCLK.
 
 ## PMOD Connectors
 
-Standard 12-pin PMOD (8 I/O + 2 GND + 2 VCC). Pins 5, 6 = GND, VCC.
-Pins 11, 12 = GND, VCC.
+Standard 12-pin PMOD (8 I/O + 2 GND + 2 VCC).
 
 **J10 (Bank 35, LVCMOS33):**
 
@@ -393,11 +391,11 @@ on-board peripherals.
 | Bank | Voltage | Primary Function |
 |------|---------|------------------|
 | 13 | 3.3V | J12 breakout header (16 I/O pairs) |
-| 14 | 3.3V | SDR SDRAM + config flash + PMOD J13/J14 |
-| 15 | 3.3V | DDR3 data + LEDs + SDR SDRAM (partial) |
-| 16 | 3.3V | DDR3 address/control |
+| 14 | 3.3V | SYS_CLK + SDR SDRAM (address, partial control) + config flash + PMOD J13/J14 |
+| 15 | 3.3V | LEDs + SDR SDRAM (data, partial control) |
+| 16 | 1.35V | DDR3 (all: address, data, control, DQS, DM, clock) |
 | 34 | 3.3V | Ethernet + SD card (CLK/DAT0/DAT1/CD) + KEY1 |
-| 35 | 3.3V | HDMI + UART + PMOD J10/J11 + SD card (CMD/DAT2/DAT3) |
+| 35 | 3.3V | HDMI + UART + PMOD J10/J11 + SD card (CMD/DAT2/DAT3) + reset |
 
 ## JOP Porting Considerations
 
@@ -436,16 +434,12 @@ need an RGB-to-DVI serializer (available as Xilinx IP or open-source VHDL).
 
 ### Estimated JOP Capacity
 
-| Config | LUTs (est.) | % of XC7A100T | % of XC7A200T |
-|--------|:-----------:|:-------------:|:-------------:|
-| 1-core + DDR3 | ~4,000 | 6% | 3% |
-| 4-core SMP | ~18,000 | 28% | 13% |
-| 8-core SMP | ~36,000 | 57% | 27% |
-| 12-core SMP | ~54,000 | 85% | 40% |
-| 16-core SMP | ~72,000 | >100% | 53% |
-
-The XC7A200T variant would comfortably support 16-core SMP with DDR3 — a
-compelling alternative to the EP4CGX150 with significantly more memory bandwidth.
+| Config | LUTs (est.) | % of XC7A100T |
+|--------|:-----------:|:-------------:|
+| 1-core + DDR3 | ~4,000 | 6% |
+| 4-core SMP | ~18,000 | 28% |
+| 8-core SMP | ~36,000 | 57% |
+| 12-core SMP | ~54,000 | 85% |
 
 ## Example Projects
 
