@@ -78,10 +78,9 @@ Not all three options exist for every bytecode today. The framework supports all
 ### Configurable Bytecodes (~48 total)
 
 **Integer multiply** (1) — `imul`
-- **Microcode** → bit-serial Mul unit (`stmul`/`ldmul`, 18 cycles, ~244 LCs)
-- **Hardware** → DSP-inferred Mul unit (`stmul`/`ldmul`, 4 cycles, ~4 DSP18x18)
+- **Microcode** → bit-serial Mul unit (18 cycles, ~244 LCs)
+- **Hardware** → DSP-inferred Mul unit (1 registered cycle, ~4 DSP18x18) via Compute Module `sthw`/`wait`
 - **Java** → sys_noim → JVM.f_imul()
-- Note: the Mul unit is a pipeline component with dedicated `stmul`/`ldmul` instructions rather than a generic I/O peripheral, but the config model is the same as everything else.
 
 **Long arithmetic** (10) — `ladd` `lsub` `lneg` `lshl` `lshr` `lushr` `land` `lor` `lxor` `lcmp`
 - Today: **Microcode** (existing handlers in base ROM)
@@ -108,12 +107,14 @@ Not all three options exist for every bytecode today. The framework supports all
 **Constants** (3) — `fconst_1` `fconst_2` `dconst_1`
 - Today: **Java**; trivially implementable as **Microcode**
 
-**Derived peripheral instantiation:**
-- `needsFpu` = any of fadd/fsub/fmul/fdiv/fneg/frem/fcmpl/fcmpg is Hardware → instantiate BmbFpu
-- `needsHwDiv` = any of idiv/irem is Hardware → instantiate BmbDiv
-- `needsDspMul` = imul is Hardware OR lmul is Hardware → `Mul(useDsp=true)`
-- `needsLongAlu` = any of ladd/.../lcmp is Hardware → instantiate BmbLongAlu (future)
-- `needsDoubleFpu` = any of dadd/.../dcmpg is Hardware → instantiate BmbDoubleFpu (future)
+**Derived hardware instantiation:**
+- `needsLongAlu` = any of ladd/lsub/lneg/land/lor/lxor/lcmp is Hardware → 64-bit ALU in pipeline (optional)
+- `needsBarrelShifter` = any of lshl/lshr/lushr is Hardware → 64-bit barrel shifter in pipeline (optional)
+- `needsMul` = imul or lmul is Hardware → Mul sub-unit in Compute Module
+- `needsFpu` = any of fadd/fsub/fmul/fdiv/frem is Hardware → FPU sub-unit in Compute Module
+- `needsHwDiv` = any of idiv/irem/ldiv/lrem is Hardware → DivUnit sub-unit in Compute Module
+- `needsDoubleFpu` = any of dadd/.../drem is Hardware → DoubleFpu sub-unit in Compute Module (future)
+- `needs4RegTos` = any 64-bit Hardware operation → extend TOS from 2 to 4 registers
 
 ## Key Insight: Superset ROM + Jump Table Patching
 
@@ -212,15 +213,25 @@ idiv_ok:
 
 The ALU is combinational — result available same cycle, no stall. The Compute Module is registered — `sthw` captures operands, `busy` stalls the pipeline, result writes back when done.
 
-**1-cycle ALU/Stack (no microcode, no stall):**
+**The 64-bit ALU is optional.** On small FPGAs (CYC5000 with ~25K LEs, or area-constrained multi-core), a 64-bit adder + comparator + barrel shifter may be too expensive. The three Implementation levels handle this naturally:
+
+| Implementation | ladd example | Cycles | Resources |
+|---------------|-------------|--------|-----------|
+| Java | sys_noim → Java runtime | ~thousands | Zero hardware |
+| Microcode | 26-cycle half-add algorithm | 26 | Zero (uses existing 32-bit ALU) |
+| Hardware | 64-bit ALU in pipeline | 1 | ~64-bit adder, comparator, barrel shifter |
+
+`Microcode` is the default for all long ops — JOP fits in small FPGAs with no extra hardware, and long operations run 10-100× faster than Java fallback. `Hardware` is opt-in for FPGAs with headroom.
+
+**1-cycle ALU/Stack (requires `Implementation.Hardware`, optional 64-bit datapath):**
 
 | Category | Operations | Notes |
 |----------|-----------|-------|
 | Integer (existing) | iadd, isub, iand, ior, ixor, ineg, ishl, ishr, iushr | Already in 32-bit pipeline |
 | Long bitwise | land, lor, lxor, lneg | 64-bit bitwise — trivial with 64-bit datapath |
-| Long arithmetic | ladd, lsub | 64-bit adder (currently 26-38 microcode cycles!) |
-| Long compare | lcmp | 64-bit comparator → {-1, 0, 1} (currently 80 cycles!) |
-| Long shift | lshl, lshr, lushr | 64-bit barrel shifter (optional — LUT-expensive) |
+| Long arithmetic | ladd, lsub | 64-bit adder (vs 26-38 microcode cycles) |
+| Long compare | lcmp | 64-bit comparator → {-1, 0, 1} (vs 80 microcode cycles) |
+| Long shift | lshl, lshr, lushr | 64-bit barrel shifter (most LUT-expensive) |
 | Float simple | fneg | Sign bit flip |
 | Float compare | fcmpl, fcmpg | Exponent/mantissa comparison → {-1, 0, 1} |
 
@@ -389,9 +400,9 @@ Net stack effect: 4 → 2 = -2. Correct for all 64-bit→64-bit bytecodes.
 
 Net stack effect: 2 → 1 = -1. Correct for imul, fadd, idiv, etc.
 
-### 1-cycle ALU path (long bitwise/arithmetic)
+### 1-cycle ALU path (optional 64-bit datapath)
 
-For long operations that are 1-cycle with a 64-bit ALU (ladd, lsub, land, lor, lxor, lneg, lcmp), the pipeline handles them directly — no `sthw`, no Compute Module, no microcode at all. The 4-register TOS provides both 64-bit operands to the ALU combinationally:
+When `Implementation.Hardware` is selected for long ALU operations, the pipeline handles them directly — no `sthw`, no Compute Module, no microcode. The 4-register TOS provides both 64-bit operands to the ALU combinationally:
 
 ```
 Pipeline ALU input:   {D, C} op {B, A}
@@ -401,7 +412,15 @@ Stack management:     pop 2 (same as 32-bit binary ops pop 1)
 
 These bytecodes execute like `iadd` does today — the ALU result is available in the same cycle, the pipeline pops the consumed operands, and `nxt` fetches the next bytecode. Zero microcode overhead.
 
-Current microcode cost of these operations (all eliminated by 64-bit ALU):
+**This is entirely optional.** When left at `Implementation.Microcode` (the default), the existing microcode handlers run on the 32-bit pipeline with no extra hardware. The three options for each long operation:
+
+| | ladd (example) | Cycles | Extra HW |
+|-|---------------|--------|----------|
+| **Java** | sys_noim → Java runtime | ~thousands | None |
+| **Microcode** (default) | 26-cycle half-add on 32-bit ALU | 26 | None |
+| **Hardware** | 64-bit adder in pipeline | 1 | ~64-bit adder |
+
+Current microcode costs (what `Implementation.Hardware` eliminates):
 - ladd: 26 cycles (half-add algorithm to avoid 32-bit overflow)
 - lsub: 38 cycles (negate + half-add)
 - lneg: 34 cycles (negate + fall-through to ladd)
@@ -409,7 +428,7 @@ Current microcode cost of these operations (all eliminated by 64-bit ALU):
 - lcmp: 80 cycles (sign overflow detection + conditional subtraction + three-way branch)
 - lshl/lshr/lushr: 28 cycles each (conditional branch on shift count, cross-carry)
 
-With a 64-bit ALU, all of these become 1 cycle. The long shift operations (lshl/lshr/lushr) require a 64-bit barrel shifter which is LUT-expensive; these could alternatively remain in the Compute Module if area is constrained.
+The barrel shifter (lshl/lshr/lushr) can be configured independently via `needsBarrelShifter` — on area-constrained FPGAs, enable long arithmetic ALU but leave shifts in microcode.
 
 This eliminates `ldhw` entirely — the compute unit writes results directly back into the stack registers via the same writeback path. Only `sthw` is a new microcode instruction.
 
@@ -1014,8 +1033,9 @@ case class JopSystemConfig(
   )
 
   // --- Derived from physical assembly ---
-  def fpga: FpgaFamily = system.fpga
-  def memoryType: MemoryType = system.memories.head
+  def fpgaFamily: FpgaFamily = system.fpgaBoard.fpga.family
+  def memoryDevices: Seq[BoardDevice] = system.fpgaBoard.devices.filter(
+    d => MemoryDevice.isMemory(d.device))  // lookup by part number
 
   // --- Validation ---
   require(cpuCnt >= 1)
@@ -1069,7 +1089,7 @@ object JopSystemConfig {
 ### What the system assembly drives
 
 The physical assembly determines:
-- **Memory controller instantiation**: `SdrSdram` → `BmbSdramCtrl32` (or Altera BlackBox), `Ddr3` → `BmbCacheBridge` + MIG, `BramOnly` → `BmbOnChipRam`
+- **Memory controller instantiation**: `SDRAM_SDR` → `BmbSdramCtrl32` (or Altera BlackBox), `SDRAM_DDR3` → `BmbCacheBridge` + MIG, `BRAM` → `BmbOnChipRam`
 - **Top-level I/O ports**: SDRAM pins vs DDR3 pins vs none
 - **PLL configuration**: FPGA board oscillator freq → system clock
 - **FPGA family**: Affects synthesis tool (Quartus vs Vivado), DSP block type, memory primitives
@@ -1084,19 +1104,215 @@ Currently this mapping is implicit in separate top-level files (`JopSdramTop`, `
 
 Single `sbt runMain jop.system.JopGenerate <preset>` replaces 20 separate entry points. Old `object JopSdramTopVerilog extends App` etc. become thin wrappers for backward compat.
 
-## Phase 6: Java Runtime Generation
+## Phase 6: Board-Specific Modular Java Runtime
 
-The Java runtime currently has manual configuration scattered across several files:
+### Current state
 
-**Current state:**
+The runtime is 61 hand-curated files — minimal JDK stubs (25 `java.lang`, 4 `java.io`, 0 `java.util`), 10 HW drivers, 15 system classes. Everything is compiled together regardless of target hardware. Configuration is scattered:
+
 - `Const.java`: `SUPPORT_FLOAT = true`, `SUPPORT_DOUBLE = true` — manual boolean flags
 - `Const.java`: `IO_FPU = IO_BASE+0x70`, `IO_DIV = IO_BASE+0x60` — hardcoded I/O addresses
 - `JVM.java`: `f_fadd()` → `if (Const.SUPPORT_FLOAT) SoftFloat32.float_add(a,b)` — compile-time branching
-- `com/jopdesign/hw/`: Device drivers (EthMac, SdNative, VgaDma, etc.) — always compiled, even if carrier board lacks the device
+- `com/jopdesign/hw/`: All drivers always compiled, even if carrier board lacks the device
+- No `java.util` (no collections, no HashMap/ArrayList) — severely limits application development
+- JDK stubs are minimal reimplementations, not sourced from an actual JDK
 
-**Config-driven approach:**
+### Vision: board-specific runtime JAR from modular components
 
-The runtime is generated/configured from `JopSystemConfig`:
+The runtime is assembled from **modules** selected by `JopSystemConfig`. Each board gets a tailored runtime JAR containing exactly the JDK classes, software fallbacks, and device drivers it needs.
+
+```
+JopSystemConfig
+  |
+  +--→ Core modules (always included)
+  |      jop.sys: Startup, Native, GC, JVM, JVMHelp, Memory, Scheduler
+  |      java.lang: Object, String, Throwable, Integer, Long, ...
+  |      java.io: InputStream, OutputStream, PrintStream, IOException
+  |
+  +--→ JDK library modules (optional, from OpenJDK 6)
+  |      java.util: Collections, HashMap, ArrayList, LinkedList, ...
+  |      java.util.regex: Pattern, Matcher
+  |      java.text: NumberFormat, DateFormat, ...
+  |      java.math: BigInteger, BigDecimal
+  |      java.net: URL, Socket, InetAddress (requires networking HW)
+  |
+  +--→ Software math modules (from core config)
+  |      SoftFloat32: included if any core has float bytecodes = Java
+  |      SoftFloat64: included if any core has double bytecodes = Java
+  |
+  +--→ Device driver modules (from board devices)
+  |      SerialPort: always (boot requires UART)
+  |      EthMac + Mdio: board has RTL8211EG
+  |      SdNative: board has native SD interface
+  |      SdSpi: board has SPI SD interface
+  |      VgaDma: board has DMA VGA controller
+  |      VgaText: board has text-mode VGA
+  |
+  +--→ Application library modules (optional)
+         fat32: FAT32 filesystem (requires SD driver)
+         networking: TCP/IP stack (requires Ethernet driver)
+         ... future modules as needed
+```
+
+### Module structure
+
+```scala
+sealed trait RuntimeModule {
+  def name: String
+  def sourcePaths: Seq[String]          // .java source dirs/files
+  def dependencies: Seq[RuntimeModule]   // required modules
+}
+
+object RuntimeModule {
+  // --- Core (always included) ---
+  case object Core extends RuntimeModule {
+    val name = "core"
+    val sourcePaths = Seq("src/jop/com/jopdesign/sys/", "src/jvm/java/lang/", "src/jvm/java/io/")
+    val dependencies = Seq.empty
+  }
+
+  // --- JDK library modules ---
+  case object Collections extends RuntimeModule {
+    val name = "collections"
+    val sourcePaths = Seq("src/jdk/java/util/")
+    val dependencies = Seq(Core)
+  }
+
+  case object Regex extends RuntimeModule {
+    val name = "regex"
+    val sourcePaths = Seq("src/jdk/java/util/regex/")
+    val dependencies = Seq(Core, Collections)
+  }
+
+  case object BigMath extends RuntimeModule {
+    val name = "bigmath"
+    val sourcePaths = Seq("src/jdk/java/math/")
+    val dependencies = Seq(Core)
+  }
+
+  // --- Software math fallbacks ---
+  case object SoftFloat32 extends RuntimeModule {
+    val name = "softfloat32"
+    val sourcePaths = Seq("src/jop/com/jopdesign/sys/SoftFloat32.java")
+    val dependencies = Seq(Core)
+  }
+
+  case object SoftFloat64 extends RuntimeModule {
+    val name = "softfloat64"
+    val sourcePaths = Seq("src/jop/com/jopdesign/sys/SoftFloat64.java")
+    val dependencies = Seq(Core)
+  }
+
+  // --- Device drivers (one per concrete device) ---
+  case object EthernetMac extends RuntimeModule {
+    val name = "ethernet"
+    val sourcePaths = Seq("src/jop/com/jopdesign/hw/EthMac.java",
+                          "src/jop/com/jopdesign/hw/Mdio.java")
+    val dependencies = Seq(Core)
+  }
+
+  case object SdNative extends RuntimeModule {
+    val name = "sd-native"
+    val sourcePaths = Seq("src/jop/com/jopdesign/hw/SdNative.java")
+    val dependencies = Seq(Core)
+  }
+
+  // --- Application libraries ---
+  case object Fat32 extends RuntimeModule {
+    val name = "fat32"
+    val sourcePaths = Seq("src/lib/fat32/")
+    val dependencies = Seq(Core)  // requires an SD driver at runtime
+  }
+
+  case object Networking extends RuntimeModule {
+    val name = "networking"
+    val sourcePaths = Seq("src/lib/networking/", "src/jdk/java/net/")
+    val dependencies = Seq(Core, EthernetMac)
+  }
+}
+```
+
+### Module selection from config
+
+```scala
+def resolveModules(config: JopSystemConfig): Set[RuntimeModule] = {
+  val modules = mutable.Set[RuntimeModule](RuntimeModule.Core)
+
+  // Software math — from union of all cores' configs
+  val allCores = config.coreConfigs
+  if (allCores.exists(c => Seq(c.fadd, c.fsub, c.fmul, c.fdiv).contains(Implementation.Java)))
+    modules += RuntimeModule.SoftFloat32
+  if (allCores.exists(c => Seq(c.dadd, c.dsub, c.dmul, c.ddiv).contains(Implementation.Java)))
+    modules += RuntimeModule.SoftFloat64
+
+  // Device drivers — from board devices (exact match, not category)
+  val allDevices = config.system.fpgaBoard.devices ++
+    config.system.carrierBoards.flatMap(_.devices)
+  for (device <- allDevices) device.device match {
+    case "RTL8211EG"  => modules += RuntimeModule.EthernetMac
+    case "SD_NATIVE"  => modules += RuntimeModule.SdNative
+    case "SD_SPI"     => modules += RuntimeModule.SdSpi
+    case "VGA_DMA"    => modules += RuntimeModule.VgaDma
+    case "VGA_TEXT"    => modules += RuntimeModule.VgaText
+    case _ =>  // no driver needed (LED, switch, clock, memory, etc.)
+  }
+
+  // Application libraries — explicitly requested
+  config.requestedModules.foreach(modules += _)
+
+  // Resolve transitive dependencies
+  closeDependencies(modules)
+}
+```
+
+### JDK class library — sourced from OpenJDK 6
+
+**Current**: JDK stubs are minimal reimplementations (e.g., `String.java` in 300 lines). Missing entire packages (`java.util`, `java.text`, `java.math`, `java.net`).
+
+**Source**: OpenJDK 6 at `/srv/git/java/jdk6/jdk/src/share/classes/` — 12,555 files, complete JDK 1.6 class library. Unmodified official source.
+
+**Approach**: Create a JOP-specific JDK module tree sourced from OpenJDK 6, adapted for JOP's constraints:
+
+```
+java/runtime/src/jdk/           # JDK classes adapted for JOP
+  java/util/                     # From OpenJDK 6 + JOP adaptations
+    ArrayList.java
+    HashMap.java
+    LinkedList.java
+    Collections.java
+    Iterator.java
+    ...
+  java/math/
+    BigInteger.java
+    BigDecimal.java
+    ...
+  java/text/
+    NumberFormat.java
+    ...
+  java/net/                      # Only when networking module selected
+    URL.java
+    Socket.java
+    InetAddress.java
+    ...
+```
+
+**Adaptations needed** (separate project/effort):
+- Remove native method calls that assume HotSpot (replace with JOP `Native` equivalents or pure Java)
+- Remove `sun.*` internal dependencies where possible
+- Remove threading assumptions that don't match JOP's cooperative scheduling
+- Remove `SecurityManager` checks (JOP has no security manager)
+- Ensure all classes pass through JOPizer without `invokedynamic` or other unsupported bytecodes
+- Class file version: must compile with `-source 1.6 -target 1.6`
+- Test incrementally: add one package at a time, verify with JVM test suite
+
+**Priority order** for JDK packages:
+1. `java.util` (Collections) — highest impact, most applications need this
+2. `java.math` (BigInteger/BigDecimal) — useful for crypto, financial
+3. `java.text` (formatting) — useful for string processing
+4. `java.net` (networking) — requires Ethernet HW driver + TCP/IP stack
+5. `java.util.regex` — pattern matching, depends on collections
+
+This is a **separate ongoing effort** — not blocking the configuration-driven design. Each JDK module is added independently and tested.
 
 ### 1. Const.java generation
 
@@ -1112,7 +1328,7 @@ public class Const {
   public static final boolean SUPPORT_FLOAT  = true;   // any core has fadd/fsub/... != Java
   public static final boolean SUPPORT_DOUBLE = true;    // any core has dadd/dsub/... != Java
 
-  // From SystemAssembly
+  // From SystemAssembly (board devices)
   public static final boolean HAS_ETHERNET = true;      // carrier board has RTL8211EG
   public static final boolean HAS_SD_CARD  = true;      // carrier board has SD slot
   public static final boolean HAS_VGA      = true;      // carrier board has VGA output
@@ -1128,29 +1344,32 @@ Today each `f_fadd()` etc. checks `Const.SUPPORT_FLOAT` at compile time. With co
 - **Implementation.Hardware** → `f_fadd()` is **never called** (jump table routes to HW microcode, JVM.java handler is dead code)
 - **Implementation.Microcode** → `f_fadd()` is **never called** (jump table routes to microcode handler)
 
-For heterogeneous configs (core 0 = HW float, core 1 = SW float), the runtime must include SoftFloat32 since core 1 needs it. The union of all cores' configs determines what software fallbacks are compiled in.
-
 ### 3. Device driver inclusion
 
-Carrier board peripherals determine which HW driver classes are included:
+Driver inclusion matches the **exact hardware** on the board. A device with multiple driver implementations (e.g., SD card: native vs SPI) only includes the driver that matches the actual hardware interface. The board definition specifies the concrete device, and each device maps to exactly one driver.
 
-| Carrier Board Device | Java Driver Class | Included When |
-|---------------------|-------------------|---------------|
-| CP2102N UART | `SerialPort.java` | Always (boot requires UART) |
-| RTL8211EG Ethernet | `EthMac.java`, `Mdio.java` | `CarrierBoard.devices` contains Ethernet |
-| SD card slot | `SdNative.java`, `SdSpi.java` | `CarrierBoard.devices` contains SD |
-| VGA output | `VgaDma.java`, `VgaText.java` | `CarrierBoard.devices` contains VGA |
+| Board Device | Java Driver | Included When |
+|-------------|-------------|---------------|
+| CP2102N | `SerialPort.java` | Always (boot requires UART) |
+| RTL8211EG | `EthMac.java`, `Mdio.java` | Board has RTL8211EG |
+| SD_NATIVE | `SdNative.java` | Board has native SD interface |
+| SD_SPI | `SdSpi.java` | Board has SPI SD interface |
+| VGA_DMA | `VgaDma.java` | Board has DMA VGA controller |
+| VGA_TEXT | `VgaText.java` | Board has text-mode VGA |
+
+Each `BoardDevice` entry in the system assembly maps to a specific driver — not a category of drivers. If the carrier board has a native SD interface, only `SdNative.java` is included. If a different board uses SPI for SD, only `SdSpi.java` is included. Both are never included unless the system physically has both interfaces.
 
 ### 4. Build integration
 
 ```makefile
-# Generate Const.java from system config, then build runtime
+# Build board-specific runtime JAR from system config
 generate-runtime:
     sbt "runMain jop.system.GenerateRuntime qmtech-serial"
-    cd java && make all
+    # Outputs: resolved module list, generated Const.java, javac source paths
+    cd java && make runtime SYSTEM=qmtech-serial
 ```
 
-Or as an sbt task that generates `Const.java` before the Java toolchain runs.
+The build collects source paths from all resolved modules, compiles with `javac6 -source 1.6 -target 1.6`, and produces a board-specific runtime. Different board configs produce different JARs — a CYC5000 without Ethernet gets no `EthMac.java`, no `Networking` module, smaller .jop file.
 
 ### Heterogeneous core considerations
 
@@ -1175,21 +1394,22 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 | 2 | 2 | Makefile: 3 superset targets | `asm/Makefile` |
 | 3 | 2 | Build + verify superset ROMs produce correct outputs | `asm/generated/` |
 | 4 | 3 | Add `JumpTableSource` trait, `disable()`, 3 factory methods | `JumpTable.scala` |
-| 5 | 4 | Add Implementation/MulImpl enums, per-instruction config, derived methods | `JopCore.scala` |
+| 5 | 4 | Add Implementation enum, per-instruction config, derived methods | `JopCore.scala` |
 | 6 | 4 | Update JopCluster/JopSdramTop/JopCyc5000Top to use derived flags | top-level files |
 | 7 | 4 | Update all sim harnesses | `src/test/scala/jop/system/*.scala` |
 | 8 | 4 | Delete old FpuMode, old JumpTableData variants, old variant dirs | cleanup |
 | 9 | 5 | Add SystemAssembly/FpgaBoard/CarrierBoard + JopSystemConfig + JopGenerate | new files |
 | 10 | 5 | Convert old entry points to thin wrappers | top-level files |
-| 11 | 6 | Const.java generation from config, runtime build integration | `Const.java`, build scripts |
-| 12 | 6 | Device driver conditional inclusion | `java/runtime/` build |
-| 13 | — | Full verification | all sims + FPGA |
+| 11 | 6 | Runtime module system, Const.java generation, board-specific build | `java/runtime/`, build scripts |
+| 12 | 6+ | JDK class library from OpenJDK 6 (separate ongoing effort) | `java/runtime/src/jdk/` |
+| 13 | 6+ | Application libraries: FAT32, networking, etc. | `java/runtime/src/lib/` |
+| 14 | — | Full verification | all sims + FPGA |
 
 ## Files to Modify
 
 | File | Action |
 |------|--------|
-| `java/tools/src/com/jopdesign/tools/Jopa.java` | Remove 4 outputs, add `-n`, generate `extends JumpTableSource` |
+| `java/tools/src/com/jopdesign/tools/Jopa.java` | Remove 2 outputs, add `-n`, generate `extends JumpTableSource` |
 | `asm/Makefile` | 3 superset targets (was 12 variant targets) |
 | `spinalhdl/src/main/scala/jop/pipeline/JumpTable.scala` | `disable()`, simplified factory methods |
 | `spinalhdl/src/main/scala/jop/pipeline/JumpTableSource.scala` | **New**: trait for generated objects |
@@ -1203,7 +1423,9 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 | `spinalhdl/src/main/scala/jop/system/JopGenerate.scala` | **New**: unified Verilog entry point |
 | `spinalhdl/src/main/scala/jop/system/GenerateRuntime.scala` | **New**: generates Const.java from config |
 | `java/runtime/src/jop/com/jopdesign/sys/Const.java` | Generated from config (was manual) |
-| `java/Makefile` | Add `generate-runtime` target |
+| `java/runtime/src/jdk/` | **New**: JDK classes from OpenJDK 6, adapted for JOP |
+| `java/runtime/src/lib/` | **New**: Application libraries (FAT32, networking, etc.) |
+| `java/Makefile` | Board-specific runtime build with module selection |
 | `spinalhdl/src/main/scala/jop/system/IoConfig.scala` | No changes needed |
 | `asm/generated/{fpu,serial-fpu,dsp,...}/` | **Delete**: old variant subdirs |
 | `asm/generated/{Fpu,SerialFpu,Dsp,...}JumpTableData.scala` | **Delete**: old variant objects |
