@@ -1,22 +1,23 @@
 /**
-  * SimpleFpu — Standalone Configurable IEEE 754 Single-Precision FPU
+  * SimpleFpu — Configurable IEEE 754 Single-Precision FPU for JOP
   *
-  * Minimal FPU with configurable operations for area-constrained FPGAs.
-  * Each operation can be included/excluded via SimpleFpuConfig flags.
+  * FPU with JOP stack-integration-ready interface, configurable operations
+  * for area-constrained FPGAs. Each operation can be included/excluded via
+  * SimpleFpuConfig flags.
   *
-  * Operations:
-  *   0: ADD    1: SUB    2: MUL    3: DIV
-  *   4: I2F    5: F2I    6: FCMPL  7: FCMPG
+  * Operations (selected by JVM bytecode):
+  *   0x62: fadd    0x66: fsub    0x6A: fmul    0x6E: fdiv
+  *   0x86: i2f     0x8B: f2i     0x95: fcmpl   0x96: fcmpg
   *
-  * Interface: load opa/opb/opcode, pulse start, wait for ready pulse.
-  * Result appears on io.result when ready pulses.
+  * Interface: load operand0/operand1/opcode, pulse wr, wait for busy to deassert.
+  * Result appears on io.result (lower 32 bits, zero-extended to 64).
   *
   * Special value handling follows Java semantics:
   *   - NaN propagation, canonical NaN = 0x7FC00000
   *   - Inf arithmetic per JLS
   *   - Subnormals flushed to zero (FTZ)
   *   - F2I: truncate toward zero, clamp on overflow, 0 on NaN
-  *   - FCMPL: NaN → −1;  FCMPG: NaN → +1
+  *   - FCMPL: NaN -> -1;  FCMPG: NaN -> +1
   *
   * Rounding: Round-to-Nearest-Even (RNE)
   *
@@ -41,12 +42,13 @@ case class SimpleFpuConfig(
 
 case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Component {
   val io = new Bundle {
-    val opa    = in Bits (32 bits)
-    val opb    = in Bits (32 bits)
-    val opcode = in UInt (4 bits)
-    val start  = in Bool ()
-    val result = out Bits (32 bits)
-    val ready  = out Bool ()
+    val operand0 = in UInt (64 bits)   // For 32-bit ops: A (lower 32). For 64-bit: {B, A}
+    val operand1 = in UInt (64 bits)   // For 32-bit ops: B (lower 32). For 64-bit: {D, C}
+    val wr       = in Bool ()          // sthw asserted — capture operands + start op
+    val opcode   = in Bits (8 bits)    // JVM bytecode selects operation
+    val result   = out UInt (64 bits)  // 32-bit ops use lower half, zero-extended
+    val is64     = out Bool ()         // true -> write both TOS and NOS (future use)
+    val busy     = out Bool ()         // stalls pipeline until done
   }
 
   // ========================================================================
@@ -95,16 +97,17 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
   val resMant = Reg(UInt(26 bits)) init (0)
   val sticky  = Reg(Bool()) init (False)
 
-  val resultReg = Reg(Bits(32 bits)) init (0)
-  val readyReg  = Reg(Bool()) init (False)
+  val resultReg = Reg(UInt(64 bits)) init (0)
   val opcodeReg = Reg(UInt(4 bits)) init (0)
   val opaReg    = Reg(Bits(32 bits)) init (0)
+  val opbReg    = Reg(Bits(32 bits)) init (0)
 
   io.result := resultReg
-  io.ready  := readyReg
+  io.busy   := (state =/= State.IDLE)
+  io.is64   := False
 
   // ========================================================================
-  // Unpack: IEEE 754 → internal
+  // Unpack: IEEE 754 -> internal
   //   mant layout: bit25=hidden, bits24..2=frac, bit1=guard, bit0=round
   // ========================================================================
   def unpackFloat(bits: Bits, sign: Bool, exp: SInt, mant: UInt,
@@ -113,7 +116,7 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
     val rawFrac = bits(22 downto 0).asUInt
     sign := bits(31)
     when(rawExp === 0) {
-      // Zero or subnormal → flush to zero
+      // Zero or subnormal -> flush to zero
       exp := S(0, 10 bits); mant := U(0, 26 bits)
       isZero := True; isInf := False; isNaN := False
     } elsewhen (rawExp === 0xFF) {
@@ -128,7 +131,7 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
   }
 
   // ========================================================================
-  // Pack: internal → IEEE 754 (for returning unpacked values directly)
+  // Pack: internal -> IEEE 754 (for returning unpacked values directly)
   //   Expects mant with hidden at bit 25, frac at bits 24..2
   // ========================================================================
   def packFloat(sign: Bool, exp: SInt, mant: UInt): Bits = {
@@ -143,6 +146,9 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
     }
     packed
   }
+
+  // Helper: convert 32-bit Bits result to 64-bit UInt (zero-extended)
+  def toResult(bits: Bits): UInt = bits.asUInt.resize(64)
 
   // ========================================================================
   // Operation-specific registers (always declared; unused ones optimized away)
@@ -164,7 +170,7 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
   def clz28(v: UInt): UInt = {
     val count = UInt(5 bits)
     count := 28
-    // Ascending order: last-assignment-wins → highest set bit takes priority
+    // Ascending order: last-assignment-wins -> highest set bit takes priority
     for (i <- 0 to 27) {
       when(v(i)) { count := U(27 - i, 5 bits) }
     }
@@ -183,18 +189,29 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
   // ========================================================================
   // FSM
   // ========================================================================
-  readyReg := False
-
   switch(state) {
 
     // ----------------------------------------------------------------------
     is(State.IDLE) {
-      when(io.start) {
-        opcodeReg := io.opcode
-        opaReg    := io.opa
-        sticky    := False
+      when(io.wr) {
+        opaReg := io.operand0(31 downto 0).asBits
+        opbReg := io.operand1(31 downto 0).asBits
+        sticky := False
+
+        // Decode JVM bytecode to internal opcode
+        switch(io.opcode) {
+          is(B"8'x62") { opcodeReg := 0 }  // fadd
+          is(B"8'x66") { opcodeReg := 1 }  // fsub
+          is(B"8'x6A") { opcodeReg := 2 }  // fmul
+          is(B"8'x6E") { opcodeReg := 3 }  // fdiv
+          is(B"8'x86") { opcodeReg := 4 }  // i2f
+          is(B"8'x8B") { opcodeReg := 5 }  // f2i
+          is(B"8'x95") { opcodeReg := 6 }  // fcmpl
+          is(B"8'x96") { opcodeReg := 7 }  // fcmpg
+        }
+
         if (config.withI2F) {
-          when(io.opcode === 4) {
+          when(io.opcode === B"8'x86") {
             state := State.I2F_EXEC
           } otherwise {
             state := State.UNPACK
@@ -208,13 +225,13 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
     // ----------------------------------------------------------------------
     is(State.UNPACK) {
       unpackFloat(opaReg, aSign, aExp, aMant, aZero, aInf, aNaN)
-      unpackFloat(io.opb, bSign, bExp, bMant, bZero, bInf, bNaN)
+      unpackFloat(opbReg, bSign, bExp, bMant, bZero, bInf, bNaN)
       state := State.DONE
-      resultReg := B(0, 32 bits)
+      resultReg := U(0, 64 bits)
 
       if (config.withAdd) {
         when(opcodeReg === 0 || opcodeReg === 1) {
-          when(opcodeReg === 1) { bSign := !io.opb(31) }
+          when(opcodeReg === 1) { bSign := !opbReg(31) }
           state := State.ADD_ALIGN
         }
       }
@@ -238,24 +255,24 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
     if (config.withAdd) {
       is(State.ADD_ALIGN) {
         when(aNaN || bNaN) {
-          resultReg := CANONICAL_NAN; state := State.DONE
+          resultReg := toResult(CANONICAL_NAN); state := State.DONE
         } elsewhen (aInf && bInf) {
           when(aSign === bSign) {
-            resultReg := aSign ## POS_INF(30 downto 0)
+            resultReg := toResult(aSign ## POS_INF(30 downto 0))
           } otherwise {
-            resultReg := CANONICAL_NAN
+            resultReg := toResult(CANONICAL_NAN)
           }
           state := State.DONE
         } elsewhen (aInf) {
-          resultReg := aSign ## POS_INF(30 downto 0); state := State.DONE
+          resultReg := toResult(aSign ## POS_INF(30 downto 0)); state := State.DONE
         } elsewhen (bInf) {
-          resultReg := bSign ## POS_INF(30 downto 0); state := State.DONE
+          resultReg := toResult(bSign ## POS_INF(30 downto 0)); state := State.DONE
         } elsewhen (aZero && bZero) {
-          resultReg := (aSign & bSign) ## B"31'x0"; state := State.DONE
+          resultReg := toResult((aSign & bSign) ## B"31'x0"); state := State.DONE
         } elsewhen (aZero) {
-          resultReg := packFloat(bSign, bExp, bMant); state := State.DONE
+          resultReg := toResult(packFloat(bSign, bExp, bMant)); state := State.DONE
         } elsewhen (bZero) {
-          resultReg := packFloat(aSign, aExp, aMant); state := State.DONE
+          resultReg := toResult(packFloat(aSign, aExp, aMant)); state := State.DONE
         } otherwise {
           val expDiff = (aExp - bExp).resize(10 bits)
           addIsSubOp := (aSign =/= bSign)
@@ -305,7 +322,7 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
         }
 
         when(sumWide === 0 && !sticky) {
-          resultReg := POS_ZERO; state := State.DONE
+          resultReg := toResult(POS_ZERO); state := State.DONE
         } otherwise {
           addMantA := sumWide
           state := State.ADD_NORM
@@ -319,14 +336,14 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
         val sum = addMantA
 
         when(sum(27)) {
-          // Shift right by 2: leading 1 at bit 27 → move to bit 25
+          // Shift right by 2: leading 1 at bit 27 -> move to bit 25
           resMant(25 downto 2) := sum(27 downto 4)
           resMant(1) := sum(3)   // guard
           resMant(0) := sum(2)   // round
           sticky := sticky | sum(1) | sum(0)
           resExp := resExp + 2; state := State.ROUND
         } elsewhen (sum(26)) {
-          // Shift right by 1: leading 1 at bit 26 → move to bit 25
+          // Shift right by 1: leading 1 at bit 26 -> move to bit 25
           resMant(25 downto 2) := sum(26 downto 3)
           resMant(1) := sum(2)   // guard
           resMant(0) := sum(1)   // round
@@ -340,7 +357,7 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
           // Leading 1 is below bit 25: shift left to normalize
           val lz = clz28(sum)
           when(sum === 0) {
-            resultReg := resSign ## B"31'x0"; state := State.DONE
+            resultReg := toResult(resSign ## B"31'x0"); state := State.DONE
           } otherwise {
             // Leading 1 at bit (27 - lz); we want it at bit 25
             // shAmt = (27 - lz) needs to go to 25, so shift left by (lz - 2)
@@ -362,13 +379,13 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
     if (config.withMul) {
       is(State.MUL_STEP1) {
         when(aNaN || bNaN) {
-          resultReg := CANONICAL_NAN; state := State.DONE
+          resultReg := toResult(CANONICAL_NAN); state := State.DONE
         } elsewhen ((aInf && bZero) || (aZero && bInf)) {
-          resultReg := CANONICAL_NAN; state := State.DONE
+          resultReg := toResult(CANONICAL_NAN); state := State.DONE
         } elsewhen (aInf || bInf) {
-          resultReg := (aSign ^ bSign) ## POS_INF(30 downto 0); state := State.DONE
+          resultReg := toResult((aSign ^ bSign) ## POS_INF(30 downto 0)); state := State.DONE
         } elsewhen (aZero || bZero) {
-          resultReg := (aSign ^ bSign) ## B"31'x0"; state := State.DONE
+          resultReg := toResult((aSign ^ bSign) ## B"31'x0"); state := State.DONE
         } otherwise {
           resSign := aSign ^ bSign
           resExp := aExp + bExp
@@ -377,7 +394,7 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
       }
 
       is(State.MUL_STEP2) {
-        // 24x24 → 48-bit multiply; aMant(25:2) = {hidden, 23 frac} = 24 bits
+        // 24x24 -> 48-bit multiply; aMant(25:2) = {hidden, 23 frac} = 24 bits
         val mantA24 = aMant(25 downto 2)
         val mantB24 = bMant(25 downto 2)
         val product = mantA24 * mantB24  // 48-bit result
@@ -385,15 +402,15 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
         mulProdHi := product
 
         // Product of two 1.xxx values: result in [1.0, 4.0)
-        // Product bit 47 set → result >= 2.0, shift right 1
-        // Product bit 46 set → result in [1.0, 2.0), already positioned
+        // Product bit 47 set -> result >= 2.0, shift right 1
+        // Product bit 46 set -> result in [1.0, 2.0), already positioned
         when(product(47)) {
-          // Map: product(47)→resMant(25)=hidden, product(46:24)→frac, product(23)→guard, product(22)→round
+          // Map: product(47)->resMant(25)=hidden, product(46:24)->frac, product(23)->guard, product(22)->round
           resMant := product(47 downto 22).resized
           sticky := product(21 downto 0) =/= 0
           resExp := resExp + 1
         } otherwise {
-          // Map: product(46)→resMant(25)=hidden, product(45:23)→frac, product(22)→guard, product(21)→round
+          // Map: product(46)->resMant(25)=hidden, product(45:23)->frac, product(22)->guard, product(21)->round
           resMant := product(46 downto 21).resized
           sticky := product(20 downto 0) =/= 0
         }
@@ -407,19 +424,19 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
     if (config.withDiv) {
       is(State.DIV_INIT) {
         when(aNaN || bNaN) {
-          resultReg := CANONICAL_NAN; state := State.DONE
+          resultReg := toResult(CANONICAL_NAN); state := State.DONE
         } elsewhen (aInf && bInf) {
-          resultReg := CANONICAL_NAN; state := State.DONE
+          resultReg := toResult(CANONICAL_NAN); state := State.DONE
         } elsewhen (aInf) {
-          resultReg := (aSign ^ bSign) ## POS_INF(30 downto 0); state := State.DONE
+          resultReg := toResult((aSign ^ bSign) ## POS_INF(30 downto 0)); state := State.DONE
         } elsewhen (bZero && aZero) {
-          resultReg := CANONICAL_NAN; state := State.DONE
+          resultReg := toResult(CANONICAL_NAN); state := State.DONE
         } elsewhen (bZero) {
-          resultReg := (aSign ^ bSign) ## POS_INF(30 downto 0); state := State.DONE
+          resultReg := toResult((aSign ^ bSign) ## POS_INF(30 downto 0)); state := State.DONE
         } elsewhen (aZero) {
-          resultReg := (aSign ^ bSign) ## B"31'x0"; state := State.DONE
+          resultReg := toResult((aSign ^ bSign) ## B"31'x0"); state := State.DONE
         } elsewhen (bInf) {
-          resultReg := (aSign ^ bSign) ## B"31'x0"; state := State.DONE
+          resultReg := toResult((aSign ^ bSign) ## B"31'x0"); state := State.DONE
         } otherwise {
           resSign := aSign ^ bSign
 
@@ -480,7 +497,7 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
       is(State.I2F_EXEC) {
         val intVal = opaReg.asSInt
         when(intVal === 0) {
-          resultReg := POS_ZERO; state := State.DONE
+          resultReg := toResult(POS_ZERO); state := State.DONE
         } otherwise {
           val negative = intVal(31)
           val absVal = UInt(32 bits)
@@ -517,11 +534,11 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
     if (config.withF2I) {
       is(State.F2I_EXEC) {
         when(aNaN) {
-          resultReg := B(0, 32 bits); state := State.DONE
+          resultReg := U(0, 64 bits); state := State.DONE
         } elsewhen (aZero) {
-          resultReg := B(0, 32 bits); state := State.DONE
+          resultReg := U(0, 64 bits); state := State.DONE
         } elsewhen (aInf) {
-          resultReg := Mux(aSign, B"32'x80000000", B"32'x7FFFFFFF")
+          resultReg := Mux(aSign, B"32'x80000000", B"32'x7FFFFFFF").asUInt.resize(64)
           state := State.DONE
         } otherwise {
           // aMant(25:2) = {hidden, 23 frac} = 24-bit significand
@@ -529,22 +546,22 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
           val mant24 = aMant(25 downto 2)
           when(aExp >= 31) {
             when(aSign) {
-              resultReg := B"32'x80000000"
+              resultReg := B"32'x80000000".asUInt.resize(64)
             } otherwise {
-              resultReg := B"32'x7FFFFFFF"
+              resultReg := B"32'x7FFFFFFF".asUInt.resize(64)
             }
             state := State.DONE
           } elsewhen (aExp < 0) {
-            // |value| < 1 → truncate to 0
-            resultReg := B(0, 32 bits); state := State.DONE
+            // |value| < 1 -> truncate to 0
+            resultReg := U(0, 64 bits); state := State.DONE
           } otherwise {
             // 0 <= exp <= 30: integer = mant24 >> (23 - exp)
             val shR = (S(23, 10 bits) - aExp).asUInt.resize(5 bits)
             val intVal = (mant24 |>> shR).resize(32 bits)
             when(aSign) {
-              resultReg := (-intVal.asSInt).asBits
+              resultReg := (-intVal.asSInt).asBits.asUInt.resize(64)
             } otherwise {
-              resultReg := intVal.asBits
+              resultReg := intVal.resize(64)
             }
             state := State.DONE
           }
@@ -558,11 +575,11 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
     if (config.withFcmp) {
       is(State.FCMP_EXEC) {
         when(aNaN || bNaN) {
-          resultReg := Mux(opcodeReg === 6, B"32'xFFFFFFFF", B"32'x00000001")
+          resultReg := Mux(opcodeReg === 6, B"32'xFFFFFFFF", B"32'x00000001").asUInt.resize(64)
           state := State.DONE
         } otherwise {
           when(aZero && bZero) {
-            resultReg := B(0, 32 bits)
+            resultReg := U(0, 64 bits)
           } otherwise {
             val aLess = Bool()
             val bLess = Bool()
@@ -585,9 +602,9 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
               .elsewhen(aMant < bMant) { aLess := False; bLess := True }
               .otherwise               { aLess := False; bLess := False }
             }
-            when(aLess)        { resultReg := B"32'xFFFFFFFF" }
-            .elsewhen(bLess)   { resultReg := B"32'x00000001" }
-            .otherwise         { resultReg := B(0, 32 bits) }
+            when(aLess)        { resultReg := B"32'xFFFFFFFF".asUInt.resize(64) }
+            .elsewhen(bLess)   { resultReg := B"32'x00000001".asUInt.resize(64) }
+            .otherwise         { resultReg := U(0, 64 bits) }
           }
           state := State.DONE
         }
@@ -629,11 +646,11 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
       // Pack IEEE 754 result
       val biasedExp = (finalExp + 127).resize(10 bits)
       when(biasedExp >= 255) {
-        resultReg := resSign ## B"8'xFF" ## B"23'x0"  // overflow → Inf
+        resultReg := toResult(resSign ## B"8'xFF" ## B"23'x0")  // overflow -> Inf
       } elsewhen (biasedExp <= 0) {
-        resultReg := resSign ## B"31'x0"  // underflow → zero (FTZ)
+        resultReg := toResult(resSign ## B"31'x0")  // underflow -> zero (FTZ)
       } otherwise {
-        resultReg := resSign ## biasedExp(7 downto 0).asBits ## frac
+        resultReg := toResult(resSign ## biasedExp(7 downto 0).asBits ## frac)
       }
       state := State.DONE
     }
@@ -642,7 +659,6 @@ case class SimpleFpu(config: SimpleFpuConfig = SimpleFpuConfig()) extends Compon
     // DONE
     // ======================================================================
     is(State.DONE) {
-      readyReg := True
       state := State.IDLE
     }
   }
