@@ -126,7 +126,7 @@ Optional HW handlers (FPU, DSP lmul, HW div) are **appended at the end** of the 
 
 Result: **12 Makefile targets → 3.** Future features add `#ifdef` blocks to jvm.asm and `-D` flags — no new Makefile targets needed. The superset ROM grows but never splits.
 
-Note: With the unified compute unit, `imul: Hardware` (DSP) uses the same `sthw`/`ldhw` pattern as all other HW bytecodes — the Mul sub-unit inside ComputeUnit handles the dispatch. `imul: Microcode` (bit-serial) retains its own microcode handler with the explicit wait loop, since the bit-serial Mul unit doesn't use the busy stall mechanism.
+Note: With the unified compute unit, `imul: Hardware` (DSP) uses the same `sthw` pattern as all other HW bytecodes — the Mul sub-unit inside ComputeUnit handles the dispatch. `imul: Microcode` (bit-serial) retains its own microcode handler with the explicit wait loop, since the bit-serial Mul unit doesn't use the busy stall mechanism.
 
 ### ROM Size Budget
 
@@ -134,7 +134,7 @@ Current base ROM: ~700-900 instructions (includes long microcode handlers). FPU 
 
 With the unified compute unit (see below), HW handler microcode shrinks dramatically — all HW bytecodes share the same ~4 instruction pattern instead of 9-10 instructions each. ROM budget improves further.
 
-## Unified Compute Unit — `sthw` (start hardware) / `ldhw` (load hardware result)
+## Unified Compute Unit — `sthw` (start hardware)
 
 ### Problem with current I/O-based peripherals
 
@@ -173,21 +173,22 @@ Replace `stmul`/`ldmul` and the I/O-based FPU/DIV with two generic microcode ins
 
 - **`sthw`** (start compute) — captures TOS and NOS (and C, D with future 4-register TOS), dispatches to the appropriate compute unit based on the **bytecode** that triggered this handler. The bytecode is already available in a pipeline register. The selected compute unit asserts busy until the result is ready.
 
-- **`ldhw`** (load compute result) — reads the result from whatever compute unit was started. The pipeline stall (via busy) has already absorbed the compute latency, so the result is ready when `ldhw` executes.
+The compute unit writes results directly back into the stack registers (TOS, and NOS for 64-bit results) — no explicit load instruction needed. The pipeline stalls via busy until the result is written back, then `wait nxt` completes the bytecode.
 
-**Instruction naming**: `sthw` (start hardware), `ldhw` (load hardware result). Follows JOP's `st`/`ld` prefix convention (`stmul`/`ldmul`, `stmwa`/`ldmrd`).
+**Instruction naming**: `sthw` (start hardware). Follows JOP's `st` prefix convention (`stmul`, `stmwa`). No `ldhw` needed — result writeback is implicit.
 
 ### All HW bytecodes become identical
 
 ```asm
 // Every 32-bit→32-bit HW bytecode (imul, fadd, fsub, fmul, fdiv, idiv, irem):
 <bytecode>:
-    sthw           // capture TOS+NOS, bytecode selects unit + operation
-    pop             // pop second operand
-    ldhw nxt       // read result (busy stall already absorbed latency)
+    sthw            // capture TOS+NOS, bytecode selects unit + operation
+    pop             // remove second operand
+    wait            // stall while computing
+    wait nxt        // result written to TOS (overwrites first operand)
 ```
 
-3 instructions. One microcode handler shared by ALL hardware-accelerated 32-bit bytecodes. The bytecode determines what happens — no I/O addresses, no operation encoding in microcode.
+4 instructions. One microcode handler shared by ALL hardware-accelerated 32-bit bytecodes. The bytecode determines what happens — no I/O addresses, no operation encoding in microcode.
 
 For idiv/irem, the div-by-zero check still happens before `sthw`:
 
@@ -199,9 +200,10 @@ idiv:
     jmp sys_noim    // zero → Java ArithmeticException
     nop nop
 idiv_ok:
-    sthw           // capture + dispatch (bytecode 0x6C → div unit)
+    sthw            // capture + dispatch (bytecode 0x6C → div unit)
     pop
-    ldhw nxt       // read quotient
+    wait
+    wait nxt        // quotient written to TOS
 ```
 
 ### Hardware compute dispatch unit
@@ -215,8 +217,8 @@ case class ComputeUnit(config: JopCoreConfig) extends Component {
     val bin    = in UInt(32 bits)     // NOS (bout)
     val wr     = in Bool()            // sthw asserted
     val opcode = in Bits(8 bits)      // bytecode that triggered this handler
-    val dout   = out UInt(32 bits)    // result for ldhw
-    val doutH  = out UInt(32 bits)    // high result (64-bit ops, future)
+    val dout   = out UInt(32 bits)    // result → writeback to TOS
+    val doutH  = out UInt(32 bits)    // high result → writeback to NOS (64-bit ops)
     val busy   = out Bool()           // stalls pipeline until done
   }
 
@@ -247,7 +249,7 @@ case class ComputeUnit(config: JopCoreConfig) extends Component {
   io.busy := mul.io.busy || fpu.map(_.io.busy).getOrElse(False) || ...
 
   // Result MUX based on which sub-unit was started
-  // (latched active unit on sthw, read on ldhw)
+  // (latched active unit on sthw, writeback to TOS/NOS when done)
 }
 ```
 
@@ -256,7 +258,7 @@ case class ComputeUnit(config: JopCoreConfig) extends Component {
 - **BmbFpu** I/O peripheral → replaced by FPU sub-unit in ComputeUnit
 - **BmbDiv** I/O peripheral → replaced by DIV sub-unit in ComputeUnit
 - **I/O address space**: 0xE0-0xE3 (DIV) and 0xF0-0xF3 (FPU) freed up
-- **`stmul`/`ldmul`** microcode instructions → replaced by `sthw`/`ldhw`
+- **`stmul`/`ldmul`** microcode instructions → replaced by `sthw` + implicit writeback
 - **Per-bytecode microcode handlers**: fadd/fsub/fmul/fdiv/idiv/irem each had ~9-10 unique instructions → all share one ~3 instruction pattern
 - **I/O wiring in JopCore**: no more `fpuBusy`, `divBusy` I/O bus plumbing
 
@@ -266,7 +268,7 @@ case class ComputeUnit(config: JopCoreConfig) extends Component {
 - **DivUnit** (binary restoring) — same algorithm, just no BMB wrapper
 - **Pipeline stall mechanism** — busy signal still stalls the pipeline, just comes from ComputeUnit instead of I/O bus
 
-### Future: 64-bit operations with 4-register TOS
+### 64-bit operations with 4-register TOS
 
 With 4-register TOS (A/B/C/D), `sthw` captures all 4 registers. 64-bit bytecodes (ladd, dadd, lmul, etc.) get both operands in one instruction:
 
@@ -275,16 +277,53 @@ value1 = D:C   (64-bit, D=high, C=low)
 value2 = B:A   (64-bit, B=high, A=low)
 ```
 
-`ldhw` returns low 32 bits; a second read (`ldhwH` or just another `ldhw`) returns high 32 bits. Microcode for 64-bit ops:
+The hardware writes the 64-bit result directly back into TOS and NOS, overwriting the remaining operand slots. No explicit `ldhw` needed — the `wait nxt` completes when the result is written back.
 
 ```asm
 // Every 64-bit→64-bit HW bytecode (ladd, dadd, lmul, etc.):
 <bytecode>:
-    sthw           // capture A+B+C+D, bytecode selects unit
-    pop pop pop     // pop 4 operands (net -4)
-    ldhw           // push result_high (+1)
-    ldhw nxt       // push result_low (+1), net = -4+2 = -2 ✓
+    sthw            // capture A+B+C+D, bytecode selects unit
+    pop             // remove second operand low
+    pop             // remove second operand high
+    wait            // stall pipeline while computing
+    wait nxt        // result written to TOS(=result_low) and NOS(=result_high)
 ```
+
+Stack evolution:
+```
+Before:   ..., v1_hi(D), v1_lo(C), v2_hi(B), v2_lo(A)   [4 items]
+sthw:     ..., v1_hi,    v1_lo,    v2_hi,    v2_lo       captures all 4, no pop
+pop:      ..., v1_hi,    v1_lo,    v2_hi                  remove A
+pop:      ..., v1_hi,    v1_lo                             remove B
+wait:     ..., v1_hi,    v1_lo                             stall, computing...
+wait nxt: ..., res_hi,   res_lo                            HW overwrites TOS+NOS
+```
+
+Net stack effect: 4 → 2 = -2. Correct for all 64-bit→64-bit bytecodes (ladd, lsub, dadd, lmul, etc.).
+
+This pattern also works for 32-bit→32-bit bytecodes:
+
+```asm
+// Every 32-bit→32-bit HW bytecode (imul, fadd, fsub, fmul, fdiv, idiv, irem):
+<bytecode>:
+    sthw            // capture A+B, bytecode selects unit
+    pop             // remove second operand
+    wait            // stall pipeline while computing
+    wait nxt        // result written to TOS (overwrites first operand)
+```
+
+Stack evolution:
+```
+Before:   ..., operand1(B), operand2(A)     [2 items]
+sthw:     ..., operand1,    operand2        captures A+B, no pop
+pop:      ..., operand1                      remove A
+wait:     ..., operand1                      stall, computing...
+wait nxt: ..., result                        HW overwrites TOS
+```
+
+Net stack effect: 2 → 1 = -1. Correct for imul, fadd, idiv, etc.
+
+This eliminates `ldhw` entirely — the compute unit writes results directly back into the stack registers via the same writeback path. Only `sthw` is a new microcode instruction.
 
 ---
 
