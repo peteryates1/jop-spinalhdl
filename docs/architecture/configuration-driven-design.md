@@ -24,14 +24,14 @@ JOP has a combinatorial explosion of microcode variants, boilerplate-heavy Veril
 JopSystemConfig
   |
   +--→ Microcode assembly
-  |      gcc -D flags derived from per-core AccelMode
+  |      gcc -D flags derived from per-core Implementation
   |      Boot mode → SERIAL/FLASH/SIMULATION preprocessor define
   |      Output: superset ROM + RAM per boot mode
   |
   +--→ Java runtime generation
   |      Const.java: I/O addresses (FPU=0xF0, DIV=0xE0) from IoConfig
   |      Const.java: SUPPORT_FLOAT/SUPPORT_DOUBLE flags from core config
-  |      JVM.java: f_fadd() → SoftFloat32 vs HW I/O stub (per AccelMode)
+  |      JVM.java: f_fadd() → SoftFloat32 vs HW I/O stub (per Implementation)
   |      HW device drivers: only included when carrier board has the device
   |      Output: runtime .class files tailored to this system
   |
@@ -138,10 +138,10 @@ Current base ROM: ~700-900 instructions (includes long microcode handlers). FPU 
 
 **File:** `java/tools/src/com/jopdesign/tools/Jopa.java`
 
-1. **Remove 4 unused outputs:** `rom.mif`, `rom.vhd`, `jtbl.vhd`, `ram.mif` — all legacy VHDL formats
+1. **Remove 2 unused outputs:** `rom.vhd`, `jtbl.vhd` — legacy VHDL formats. **Keep** `rom.mif`, `ram.mif` — useful for reference and debug
 2. **Add `-n <ObjectName>` flag:** Controls the generated Scala object name. Eliminates the fragile `sed` rename hack.
 3. **Generate `extends JumpTableSource`:** Each generated object implements a common trait (see Phase 3)
-4. **Keep:** `mem_rom.dat`, `mem_ram.dat`, `<ObjectName>.scala`
+4. **Keep:** `mem_rom.dat`, `mem_ram.dat`, `rom.mif`, `ram.mif`, `<ObjectName>.scala`
 
 ## Phase 2: Superset Microcode Build
 
@@ -231,15 +231,15 @@ object JumpTableInitData {
 
 ```scala
 /** Per-bytecode implementation selection — uniform for all configurable bytecodes */
-sealed trait AccelMode
-object AccelMode {
-  case object Java extends AccelMode       // sys_noim → Java runtime fallback
-  case object Microcode extends AccelMode  // Pure microcode handler (no HW peripheral)
-  case object Hardware extends AccelMode   // Microcode → HW I/O peripheral
+sealed trait Implementation
+object Implementation {
+  case object Java extends Implementation       // sys_noim → Java runtime fallback
+  case object Microcode extends Implementation  // Pure microcode handler (no HW peripheral)
+  case object Hardware extends Implementation   // Microcode → HW I/O peripheral
 }
 ```
 
-Every configurable bytecode uses the same `AccelMode` enum. The physical realization differs (imul uses a pipeline `Mul` unit with `stmul`/`ldmul`; fadd uses a BMB I/O peripheral `BmbFpu`), but the config model is uniform.
+Every configurable bytecode uses the same `Implementation` enum. The physical realization differs (imul uses a pipeline `Mul` unit with `stmul`/`ldmul`; fadd uses a BMB I/O peripheral `BmbFpu`), but the config model is uniform.
 
 ### JopCoreConfig — per-instruction fields
 
@@ -260,81 +260,81 @@ case class JopCoreConfig(
 
   // --- Per-instruction implementation selection ---
   // Integer multiply (Microcode=bit-serial 18cyc, Hardware=DSP 4cyc)
-  imul:  AccelMode = AccelMode.Microcode,
+  imul:  Implementation = Implementation.Microcode,
 
   // Long arithmetic (today: Microcode or Java; future: Hardware via long ALU)
-  ladd:  AccelMode = AccelMode.Microcode,
-  lsub:  AccelMode = AccelMode.Microcode,
-  lneg:  AccelMode = AccelMode.Microcode,
-  lshl:  AccelMode = AccelMode.Microcode,
-  lshr:  AccelMode = AccelMode.Microcode,
-  lushr: AccelMode = AccelMode.Microcode,
-  land:  AccelMode = AccelMode.Microcode,
-  lor:   AccelMode = AccelMode.Microcode,
-  lxor:  AccelMode = AccelMode.Microcode,
-  lcmp:  AccelMode = AccelMode.Microcode,
+  ladd:  Implementation = Implementation.Microcode,
+  lsub:  Implementation = Implementation.Microcode,
+  lneg:  Implementation = Implementation.Microcode,
+  lshl:  Implementation = Implementation.Microcode,
+  lshr:  Implementation = Implementation.Microcode,
+  lushr: Implementation = Implementation.Microcode,
+  land:  Implementation = Implementation.Microcode,
+  lor:   Implementation = Implementation.Microcode,
+  lxor:  Implementation = Implementation.Microcode,
+  lcmp:  Implementation = Implementation.Microcode,
 
   // Long multiply (today: Java or Hardware/DSP)
-  lmul:  AccelMode = AccelMode.Java,
+  lmul:  Implementation = Implementation.Java,
 
   // Integer/long divide (today: Java or Hardware/BmbDiv for idiv/irem)
-  idiv:  AccelMode = AccelMode.Java,
-  irem:  AccelMode = AccelMode.Java,
-  ldiv:  AccelMode = AccelMode.Java,
-  lrem:  AccelMode = AccelMode.Java,
+  idiv:  Implementation = Implementation.Java,
+  irem:  Implementation = Implementation.Java,
+  ldiv:  Implementation = Implementation.Java,
+  lrem:  Implementation = Implementation.Java,
 
   // Float (today: Java or Hardware/BmbFpu for fadd/fsub/fmul/fdiv)
-  fadd:  AccelMode = AccelMode.Java,
-  fsub:  AccelMode = AccelMode.Java,
-  fmul:  AccelMode = AccelMode.Java,
-  fdiv:  AccelMode = AccelMode.Java,
-  fneg:  AccelMode = AccelMode.Java,
-  frem:  AccelMode = AccelMode.Java,
-  fcmpl: AccelMode = AccelMode.Java,
-  fcmpg: AccelMode = AccelMode.Java,
+  fadd:  Implementation = Implementation.Java,
+  fsub:  Implementation = Implementation.Java,
+  fmul:  Implementation = Implementation.Java,
+  fdiv:  Implementation = Implementation.Java,
+  fneg:  Implementation = Implementation.Java,
+  frem:  Implementation = Implementation.Java,
+  fcmpl: Implementation = Implementation.Java,
+  fcmpg: Implementation = Implementation.Java,
 
   // Double (today: Java only; future: Hardware via double FPU)
-  dadd:  AccelMode = AccelMode.Java,
-  dsub:  AccelMode = AccelMode.Java,
-  dmul:  AccelMode = AccelMode.Java,
-  ddiv:  AccelMode = AccelMode.Java,
-  dneg:  AccelMode = AccelMode.Java,
-  drem:  AccelMode = AccelMode.Java,
-  dcmpl: AccelMode = AccelMode.Java,
-  dcmpg: AccelMode = AccelMode.Java,
+  dadd:  Implementation = Implementation.Java,
+  dsub:  Implementation = Implementation.Java,
+  dmul:  Implementation = Implementation.Java,
+  ddiv:  Implementation = Implementation.Java,
+  dneg:  Implementation = Implementation.Java,
+  drem:  Implementation = Implementation.Java,
+  dcmpl: Implementation = Implementation.Java,
+  dcmpg: Implementation = Implementation.Java,
 
   // Type conversions (today: mostly Java; i2l/l2i/i2c have Microcode)
-  i2f:   AccelMode = AccelMode.Java,
-  i2d:   AccelMode = AccelMode.Java,
-  f2i:   AccelMode = AccelMode.Java,
-  f2l:   AccelMode = AccelMode.Java,
-  f2d:   AccelMode = AccelMode.Java,
-  d2i:   AccelMode = AccelMode.Java,
-  d2l:   AccelMode = AccelMode.Java,
-  d2f:   AccelMode = AccelMode.Java,
-  l2f:   AccelMode = AccelMode.Java,
-  l2d:   AccelMode = AccelMode.Java,
-  i2b:   AccelMode = AccelMode.Java,
-  i2s:   AccelMode = AccelMode.Java,
+  i2f:   Implementation = Implementation.Java,
+  i2d:   Implementation = Implementation.Java,
+  f2i:   Implementation = Implementation.Java,
+  f2l:   Implementation = Implementation.Java,
+  f2d:   Implementation = Implementation.Java,
+  d2i:   Implementation = Implementation.Java,
+  d2l:   Implementation = Implementation.Java,
+  d2f:   Implementation = Implementation.Java,
+  l2f:   Implementation = Implementation.Java,
+  l2d:   Implementation = Implementation.Java,
+  i2b:   Implementation = Implementation.Java,
+  i2s:   Implementation = Implementation.Java,
 ) {
   // --- Derived: which HW peripherals to instantiate ---
   private val allFloat  = Seq(fadd, fsub, fmul, fdiv, fneg, frem, fcmpl, fcmpg)
   private val allDouble = Seq(dadd, dsub, dmul, ddiv, dneg, drem, dcmpl, dcmpg)
   private val allLong   = Seq(ladd, lsub, lneg, lshl, lshr, lushr, land, lor, lxor, lcmp)
 
-  def needsFpu: Boolean       = allFloat.exists(_ == AccelMode.Hardware)
-  def needsDoubleFpu: Boolean = allDouble.exists(_ == AccelMode.Hardware)
-  def needsLongAlu: Boolean   = allLong.exists(_ == AccelMode.Hardware)
-  def needsDspMul: Boolean    = imul == AccelMode.Hardware || lmul == AccelMode.Hardware
-  def needsHwDiv: Boolean     = Seq(idiv, irem, ldiv, lrem).exists(_ == AccelMode.Hardware)
+  def needsFpu: Boolean       = allFloat.exists(_ == Implementation.Hardware)
+  def needsDoubleFpu: Boolean = allDouble.exists(_ == Implementation.Hardware)
+  def needsLongAlu: Boolean   = allLong.exists(_ == Implementation.Hardware)
+  def needsDspMul: Boolean    = imul == Implementation.Hardware || lmul == Implementation.Hardware
+  def needsHwDiv: Boolean     = Seq(idiv, irem, ldiv, lrem).exists(_ == Implementation.Hardware)
 
   // --- Derived: jump table resolution ---
-  // Maps bytecode opcode → configured AccelMode
+  // Maps bytecode opcode → configured Implementation
   // resolveJumpTable() selects the right address per bytecode from the superset ROM
   def resolveJumpTable(base: JumpTableInitData): JumpTableInitData = {
     // Bytecodes to patch to sys_noim (Java fallback)
     val javaPatches: Seq[Int] = configurableBytecodes.collect {
-      case (bc, AccelMode.Java) => bc
+      case (bc, Implementation.Java) => bc
     }
     // Bytecodes to patch to microcode handler (when superset ROM has HW handler
     // but config wants Microcode — uses alternate address from ROM metadata)
@@ -344,7 +344,7 @@ case class JopCoreConfig(
 }
 ```
 
-**Note on Microcode vs Hardware resolution:** The superset ROM contains both microcode-only handlers (e.g., existing `ladd` at 0x436) and HW peripheral handlers (e.g., `fadd` HW at 0x5BF). For bytecodes that have both options (future), the Jopa-generated jump table data will include addresses for each. The `resolveJumpTable` method selects the appropriate address based on the configured AccelMode. Details TBD when the first bytecode gains all three options.
+**Note on Microcode vs Hardware resolution:** The superset ROM contains both microcode-only handlers (e.g., existing `ladd` at 0x436) and HW peripheral handlers (e.g., `fadd` HW at 0x5BF). For bytecodes that have both options (future), the Jopa-generated jump table data will include addresses for each. The `resolveJumpTable` method selects the appropriate address based on the configured Implementation. Details TBD when the first bytecode gains all three options.
 
 ### Convenience presets
 
@@ -354,27 +354,27 @@ object JopCoreConfig {
   def software = JopCoreConfig()
 
   /** DSP multiply (imul + lmul → DSP Mul unit) */
-  def dspMul = JopCoreConfig(imul = AccelMode.Hardware, lmul = AccelMode.Hardware)
+  def dspMul = JopCoreConfig(imul = Implementation.Hardware, lmul = Implementation.Hardware)
 
   /** HW integer divide */
-  def hwDiv = JopCoreConfig(idiv = AccelMode.Hardware, irem = AccelMode.Hardware)
+  def hwDiv = JopCoreConfig(idiv = Implementation.Hardware, irem = Implementation.Hardware)
 
   /** Full HW math (DSP mul + HW div) */
   def hwMath = JopCoreConfig(
-    imul = AccelMode.Hardware, lmul = AccelMode.Hardware,
-    idiv = AccelMode.Hardware, irem = AccelMode.Hardware)
+    imul = Implementation.Hardware, lmul = Implementation.Hardware,
+    idiv = Implementation.Hardware, irem = Implementation.Hardware)
 
   /** HW single-precision float (fadd/fsub/fmul/fdiv) */
   def hwFloat = JopCoreConfig(
-    fadd = AccelMode.Hardware, fsub = AccelMode.Hardware,
-    fmul = AccelMode.Hardware, fdiv = AccelMode.Hardware)
+    fadd = Implementation.Hardware, fsub = Implementation.Hardware,
+    fmul = Implementation.Hardware, fdiv = Implementation.Hardware)
 
   /** Everything that has HW today */
   def hwAll = JopCoreConfig(
-    imul = AccelMode.Hardware, lmul = AccelMode.Hardware,
-    idiv = AccelMode.Hardware, irem = AccelMode.Hardware,
-    fadd = AccelMode.Hardware, fsub = AccelMode.Hardware,
-    fmul = AccelMode.Hardware, fdiv = AccelMode.Hardware)
+    imul = Implementation.Hardware, lmul = Implementation.Hardware,
+    idiv = Implementation.Hardware, irem = Implementation.Hardware,
+    fadd = Implementation.Hardware, fsub = Implementation.Hardware,
+    fmul = Implementation.Hardware, fdiv = Implementation.Hardware)
 }
 ```
 
@@ -386,7 +386,7 @@ object JopCoreConfig {
 - `jumpTable: JumpTableInitData` → replaced by `resolveJumpTable(base)`
 - `withFpuJumpTable` / `withMathJumpTable` / `isSerialJumpTable` → deleted
 - `FpuMode` enum → deleted
-- `MulImpl` enum → deleted (imul uses AccelMode like everything else)
+- `MulImpl` enum → deleted (imul uses Implementation like everything else)
 
 ### Update consumers
 
@@ -722,9 +722,9 @@ public class Const {
 
 Today each `f_fadd()` etc. checks `Const.SUPPORT_FLOAT` at compile time. With config-driven generation, these become:
 
-- **AccelMode.Java** → `f_fadd()` calls `SoftFloat32.float_add()` (software fallback)
-- **AccelMode.Hardware** → `f_fadd()` is **never called** (jump table routes to HW microcode, JVM.java handler is dead code)
-- **AccelMode.Microcode** → `f_fadd()` is **never called** (jump table routes to microcode handler)
+- **Implementation.Java** → `f_fadd()` calls `SoftFloat32.float_add()` (software fallback)
+- **Implementation.Hardware** → `f_fadd()` is **never called** (jump table routes to HW microcode, JVM.java handler is dead code)
+- **Implementation.Microcode** → `f_fadd()` is **never called** (jump table routes to microcode handler)
 
 For heterogeneous configs (core 0 = HW float, core 1 = SW float), the runtime must include SoftFloat32 since core 1 needs it. The union of all cores' configs determines what software fallbacks are compiled in.
 
@@ -773,7 +773,7 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 | 2 | 2 | Makefile: 3 superset targets | `asm/Makefile` |
 | 3 | 2 | Build + verify superset ROMs produce correct outputs | `asm/generated/` |
 | 4 | 3 | Add `JumpTableSource` trait, `disable()`, 3 factory methods | `JumpTable.scala` |
-| 5 | 4 | Add AccelMode/MulImpl enums, per-instruction config, derived methods | `JopCore.scala` |
+| 5 | 4 | Add Implementation/MulImpl enums, per-instruction config, derived methods | `JopCore.scala` |
 | 6 | 4 | Update JopCluster/JopSdramTop/JopCyc5000Top to use derived flags | top-level files |
 | 7 | 4 | Update all sim harnesses | `src/test/scala/jop/system/*.scala` |
 | 8 | 4 | Delete old FpuMode, old JumpTableData variants, old variant dirs | cleanup |
