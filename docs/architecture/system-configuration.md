@@ -357,6 +357,54 @@ JopCoreConfig(
 // GC: MAX_HANDLES=65536 caps handle table for large memory (sweep ~6ms at 100MHz)
 ```
 
+### QMTECH XC7A100T Wukong V3 — DDR3
+
+```scala
+// In JopDdr3WukongTop.scala
+JopCoreConfig(
+  memConfig = JopMemoryConfig(
+    addressWidth = 28,
+    mainMemSize = 256L * 1024 * 1024,  // 256MB DDR3 (MT41K128M16JT)
+    burstLen = burstLen,
+    stackRegionWordsPerCore = 8192     // 32KB per core for stack spill
+  ),
+  jumpTable = JumpTableInitData.serial,
+  clkFreqHz = 100000000L               // 100 MHz (MIG ui_clk)
+)
+// DDR3: MT41K128M16JT, 2Gbit (256MB) — same chip as Au V2
+// Write-back cache: LruCacheCore + CacheToMigAdapter -> WukongMigBlackBox (no CS pin)
+// Board 50 MHz -> ClkWiz -> 100 MHz (MIG sys) + 200 MHz (MIG ref)
+```
+
+### QMTECH XC7A100T Wukong V3 — SDR SDRAM
+
+```scala
+// In JopSdramWukongTop.scala
+JopCoreConfig(
+  memConfig = JopMemoryConfig(burstLen = burstLen),
+  jumpTable = JumpTableInitData.serial,
+  clkFreqHz = 100000000L,              // 100 MHz
+  useStackCache = true
+)
+// SDRAM: W9825G6KH-6, 256Mbit (32MB), CAS=3
+// BmbSdramCtrl32 (SdramCtrlNoCke, no Altera ctrl)
+// Board 50 MHz -> ClkWiz -> 100 MHz system + 100 MHz -108° SDRAM clock
+// Hang detector + DiagUart mux in board clock domain (50 MHz)
+```
+
+### QMTECH XC7A100T Wukong V3 — BRAM
+
+```scala
+// In JopBramWukongTop.scala
+JopCoreConfig(
+  memConfig = JopMemoryConfig(mainMemSize = 128 * 1024),  // 128KB on-chip
+  jumpTable = JumpTableInitData.serial,
+  clkFreqHz = 100000000L               // 100 MHz
+)
+// Board 50 MHz -> ClkWiz -> 100 MHz
+// Board bring-up / UART verification only
+```
+
 ### Simulation Harnesses
 
 ```scala

@@ -397,22 +397,65 @@ on-board peripherals.
 | 34 | 3.3V | Ethernet + SD card (CLK/DAT0/DAT1/CD) + KEY1 |
 | 35 | 3.3V | HDMI + UART + PMOD J10/J11 + SD card (CMD/DAT2/DAT3) + reset |
 
-## JOP Porting Considerations
+## JOP Implementation Status
 
-The Wukong board is interesting for JOP because it offers **two memory paths**:
+The Wukong board has **four working FPGA tops**, all proven on hardware:
 
-1. **DDR3 path** (256 MB): Use the existing MIG-based DDR3 subsystem from the
-   Alchitry Au V2. Same chip, same interface width. Requires MIG regeneration
-   for XC7A100T pin assignments. Full 256 MB addressable with `addressWidth=28`.
+### JopSdramWukongTop — SDR SDRAM (Primary)
 
-2. **SDR SDRAM path** (32 MB): Use the existing BmbSdramCtrl32 SDRAM subsystem.
-   Same W9825G6 chip as the EP4CGX150. Requires replacing the Altera controller
-   BlackBox with SpinalHDL's `SdramCtrl` (or `SdramCtrlNoCke`). This is the
-   simpler path — no MIG IP needed, pure SpinalHDL.
+JOP running on the on-board W9825G6KH-6 at **100 MHz**. Serial-boot "Hello World!"
+verified working. Uses `BmbSdramCtrl32` with `SdramCtrlNoCke` (pure SpinalHDL,
+no vendor IP besides ClkWiz).
 
-The SDR SDRAM path would be a useful first step: get JOP running with familiar
-SDRAM infrastructure, verify Ethernet/UART work, then upgrade to DDR3 for the
-larger memory and bandwidth.
+- **Source**: `spinalhdl/src/main/scala/jop/system/JopSdramWukongTop.scala`
+- **Clock**: Board 50 MHz → ClkWiz → 100 MHz system + 100 MHz -108° SDRAM clock
+- **Memory**: 32 MB SDR SDRAM, CAS=3, direct BMB (no cache)
+- **Features**: Hang detector, DiagUart mux, heartbeat LED (board clock domain)
+- **Timing**: WNS = -0.141 ns (6 failing paths) — marginal at 100 MHz
+- **Build**: `make jop-sdram-generate && make jop-sdram-build`
+
+### JopDdr3WukongTop — DDR3
+
+JOP running on DDR3 via MIG at **100 MHz** (MIG ui_clk). Same DDR3 subsystem as
+Alchitry Au V2 (LruCacheCore + CacheToMigAdapter) with `WukongMigBlackBox`
+(no `ddr3_cs_n` pin — Wukong MIG disables CS).
+
+- **Source**: `spinalhdl/src/main/scala/jop/system/JopDdr3WukongTop.scala`
+- **Clock**: Board 50 MHz → ClkWiz → 100 MHz (MIG sys) + 200 MHz (MIG ref)
+- **Memory**: 256 MB DDR3 (MT41K128M16JT), 32KB write-back L2 cache
+- **Features**: Same hang detector / DiagUart mux as SDRAM top
+- **Build**: `make ddr3-generate && make ddr3-build`
+
+### SdramExerciserWukongTop — SDRAM Test
+
+Standalone SDRAM exerciser (no JOP). Three tests loop continuously, reporting
+pass/fail via UART at 1 Mbaud. Used to validate SDRAM hardware and timing
+before bringing up JOP.
+
+- **Source**: `spinalhdl/src/main/scala/jop/system/SdramExerciserWukongTop.scala`
+- **Tests**: Sequential fill+readback, memCopy, write-then-read (thousands of loops PASS)
+- **Build**: `make sdram-generate && make sdram-build`
+
+### JopBramWukongTop — BRAM
+
+JOP with on-chip BRAM (128 KB). Board bring-up and UART verification only.
+
+- **Source**: `spinalhdl/src/main/scala/jop/system/JopBramWukongTop.scala`
+- **Build**: `make generate && make build`
+
+### FPGA Build Flow
+
+All builds use Vivado non-project (in-process) flow. ClkWiz IP is shared between
+the SDRAM exerciser and JOP SDRAM top (`make sdram-create-ip`).
+
+```bash
+cd fpga/qmtech-xc7a100t-wukong
+make jop-sdram-generate   # SpinalHDL -> Verilog
+make sdram-create-ip      # ClkWiz IP (once)
+make jop-sdram-build      # Vivado synth + impl + bitstream
+make jop-sdram-program    # openFPGALoader via dirtyJtag
+make jop-sdram-monitor    # UART monitor (after serial download)
+```
 
 ### Built-In Peripherals vs DB_FPGA
 
