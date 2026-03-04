@@ -44,13 +44,12 @@ case class JopMemoryConfig(
   /** Scratch pad size in words */
   def scratchWords: BigInt = scratchSize / byteCount
 
-  /** Usable memory end (words) — total minus per-core stack regions.
-   *  Returns 0 when stackRegionWordsPerCore is disabled (legacy mode). */
+  /** Usable memory end (words) — total minus per-core stack regions. */
   def usableMemWords(cpuCnt: Int): Int = {
     if (stackRegionWordsPerCore > 0)
       (mainMemSize / byteCount).toInt - cpuCnt * stackRegionWordsPerCore
     else
-      0  // legacy: Java runtime computes its own mem_size
+      (mainMemSize / byteCount).toInt
   }
 
   /** lengthWidth: 2 bits for single-word (length=3), wider for burst.
