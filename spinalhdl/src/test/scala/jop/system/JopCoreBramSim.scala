@@ -14,7 +14,7 @@ import java.io.PrintWriter
 object JopCoreBramSim extends App {
 
   // Paths to initialization files
-  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  val jopFilePath = "java/apps/Small/HelloWorld.jop"
   val romFilePath = "asm/generated/mem_rom.dat"
   val ramFilePath = "asm/generated/mem_ram.dat"
   val logFilePath = "spinalhdl/bram_simulation.log"

@@ -2,6 +2,7 @@ package jop.utils
 
 import scala.io.Source
 import scala.util.{Try, Using}
+import java.io.File
 
 /**
  * JOP File Data Structure
@@ -69,6 +70,7 @@ object JopFileLoader {
    * @return JopFileData with parsed words and comments
    */
   def loadJopFile(filepath: String): JopFileData = {
+    require(new File(filepath).exists(), s"JOP file not found: $filepath")
     val lines = Using(Source.fromFile(filepath))(_.getLines().toSeq).getOrElse(Seq.empty)
 
     val parsed = lines.flatMap { line =>
@@ -142,6 +144,7 @@ object JopFileLoader {
    * @return Sequence of BigInt values
    */
   def loadDecimalFile(filepath: String): Seq[BigInt] = {
+    require(new File(filepath).exists(), s"Data file not found: $filepath")
     Using(Source.fromFile(filepath)) { source =>
       source.getLines()
         .flatMap(_.trim.split("\\s+"))
@@ -165,6 +168,7 @@ object JopFileLoader {
    * @return Sequence of BigInt values
    */
   def loadHexFile(filepath: String): Seq[BigInt] = {
+    require(new File(filepath).exists(), s"Hex file not found: $filepath")
     Using(Source.fromFile(filepath)) { source =>
       source.getLines()
         .flatMap { line =>
@@ -195,6 +199,7 @@ object JopFileLoader {
    * @return Map of bytecode (0-255) to microcode address
    */
   def loadJumpTable(filepath: String): Map[Int, Int] = {
+    require(new File(filepath).exists(), s"Jump table file not found: $filepath")
     Using(Source.fromFile(filepath)) { source =>
       source.getLines()
         .flatMap { line =>
