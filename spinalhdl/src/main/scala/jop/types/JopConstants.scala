@@ -24,8 +24,8 @@ object JopConstants {
    * - Array field operations
    */
 
-  /** Load/store multiple words */
-  val STMUL = B"3'b000"
+  /** Start hardware compute unit */
+  val STHW = B"3'b000"
 
   /** Write allocate - allocate cache line on write */
   val STMWA = B"3'b001"
@@ -63,7 +63,7 @@ object JopConstants {
    */
   def mmuInstrToString(instr: Int): String = {
     instr match {
-      case 0 => "STMUL (load/store multiple)"
+      case 0 => "STHW (hardware compute unit)"
       case 1 => "STMWA (write allocate)"
       case 2 => "STMRA (read allocate)"
       case 3 => "STGF (get field)"

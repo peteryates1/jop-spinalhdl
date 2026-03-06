@@ -3,7 +3,7 @@ package jop
 import spinal.core._
 import spinal.lib._
 import jop.pipeline._
-import jop.core.Mul
+import jop.core.{IntegerComputeUnit, IntegerComputeUnitConfig}
 import jop.memory._
 import jop.utils.JopFileLoader
 
@@ -342,11 +342,16 @@ case class JopSimulator(
     // Stack Stage (with RAM initialization if provided)
     val stack = new StackStage(config.stackConfig, ramInit = Some(ramData))
 
-    // Multiplier - connected to stack A and B outputs
-    val mul = Mul(config.dataWidth)
-    mul.io.ain := stack.io.aout.asUInt
-    mul.io.bin := stack.io.bout.asUInt
-    mul.io.wr := decode.io.mulWr
+    // Hardware Compute Unit - connected to stack A and B outputs
+    val intCu = IntegerComputeUnit(IntegerComputeUnitConfig(
+      withMul = true, withDiv = true, withRem = true
+    ))
+    intCu.io.a := stack.io.aout.asUInt
+    intCu.io.b := stack.io.bout.asUInt
+    intCu.io.c := U(0, 32 bits)
+    intCu.io.d := U(0, 32 bits)
+    intCu.io.wr := decode.io.hwWr
+    intCu.io.opcode := bcfetch.io.jinstr_out
 
     // ========================================================================
     // I/O Simulation
@@ -545,7 +550,7 @@ case class JopSimulator(
     // 1. BC fill is active (memory bus is being used for bytecode loading)
     // 2. Handle operation is active (getfield/putfield/iaload/iastore)
     // This ensures the pipeline waits during `wait` instructions until memory is ready
-    fetch.io.bsy := bcFillActive || handleOpActive
+    fetch.io.bsy := bcFillActive || handleOpActive || intCu.io.busy
 
     // Decode stage connections
     decode.io.instr := fetch.io.dout
@@ -578,9 +583,9 @@ case class JopSimulator(
     val dinMuxSel = RegNext(fetch.io.ir_out(1 downto 0)) init(0)
     stack.io.din := dinMuxSel.mux(
       0 -> memRdDataReg,                    // ldmrd
-      1 -> mul.io.dout.asBits,              // ldmul
+      1 -> intCu.io.resultLo.asBits,        // ldmul (compute unit resultLo)
       2 -> bcStartReg.asBits.resized,       // ldbcstart
-      3 -> B(0, 32 bits)                    // reserved
+      3 -> intCu.io.resultHi.asBits         // ldmulh (compute unit resultHi)
     )
     stack.io.dirAddr := decode.io.dirAddr.asUInt
     stack.io.opd := bcfetch.io.opd

@@ -199,15 +199,7 @@ usb_data		=	-111
 ua_rdrf		= 	2
 ua_tdre		= 	1
 
-#ifdef HW_DIV
-// Hardware divider auto-capture: write starts division,
-// BmbDiv latches bout(NOS=dividend), wrData(TOS=divisor) on write.
-// Busy stall handles divider latency (~34 cycles).
-div_idiv = -32    // 0xE0: write starts signed division
-div_irem = -31    // 0xE1: write starts signed remainder mode
-div_quot = -32    // 0xE0: read returns quotient
-div_rem  = -31    // 0xE1: read returns remainder
-#endif
+// BmbDiv I/O constants removed — idiv/irem now handled by IntegerComputeUnit via sthw
 
 #ifdef FPU_ATTACHED
 // FPU auto-capture: write address encodes operation (0xF0-0xF3),
@@ -1149,14 +1141,13 @@ sys_noim:
 			nop
 
 // ==========================================================================
-// Hardware integer divider: idiv/irem in microcode
+// Hardware integer divider: idiv/irem via IntegerComputeUnit
 // Must be near sys_noim (within jmp range of ±256) for div-by-zero fallback.
 //
-// BmbDiv auto-captures bout(NOS=dividend), wrData(TOS=divisor) on write.
-// Busy stall handles divider latency (~34 cycles).
+// IntegerComputeUnit captures TOS(divisor)+NOS(dividend) on sthw.
+// jinstr selects idiv(0x6C) or irem(0x70). Busy stall handles latency (~36 cycles).
 // Division by zero: falls through to Java for ArithmeticException.
 // ==========================================================================
-#ifdef HW_DIV
 idiv:
 			// Stack: ..., dividend, divisor (TOS=divisor)
 			dup					// Stack: ..., dividend, divisor, divisor
@@ -1171,17 +1162,11 @@ idiv:
 idiv_nonzero:
 			// bnz already popped the dup copy
 			// Stack: ..., dividend, divisor
-			ldi div_idiv		// Stack: ..., dividend, divisor, ioAddr
-			stmwa				// addr_reg = ioAddr, pops. Stack: ..., dividend, divisor
-			stmwd				// I/O write: bout=dividend(NOS), wrData=divisor(TOS). Pops.
-								// BmbDiv busy stalls pipeline ~34 cycles
-								// Stack: ..., dividend
-			pop					// drop dividend (already captured by BmbDiv). Stack: ...
-			ldi div_quot		// Stack: ..., ioReadAddr
-			stmra				// start I/O read, pops. Stack: ...
-			wait				// I/O read latency (rdy_cnt=1)
-			wait
-			ldmrd nxt			// push quotient. Stack: ..., quotient
+			sthw				// start compute unit (idiv), pops TOS. Stack: ..., dividend
+			pop					// pop second operand. Stack: ...
+			wait				// stall while compute unit busy
+			wait				// rdy_cnt=1 extra cycle
+			ldmul nxt			// push quotient. Stack: ..., quotient
 
 irem:
 			// Stack: ..., dividend, divisor (TOS=divisor)
@@ -1196,18 +1181,11 @@ irem:
 irem_nonzero:
 			// bnz already popped the dup copy
 			// Stack: ..., dividend, divisor
-			ldi div_idiv		// Stack: ..., dividend, divisor, ioAddr
-			stmwa				// addr_reg = ioAddr, pops. Stack: ..., dividend, divisor
-			stmwd				// I/O write: bout=dividend(NOS), wrData=divisor(TOS). Pops.
-								// BmbDiv busy stalls pipeline ~34 cycles
-								// Stack: ..., dividend
-			pop					// drop dividend. Stack: ...
-			ldi div_rem			// Stack: ..., ioReadAddr
-			stmra				// start I/O read, pops. Stack: ...
-			wait				// I/O read latency
-			wait
-			ldmrd nxt			// push remainder. Stack: ..., remainder
-#endif
+			sthw				// start compute unit (irem), pops TOS. Stack: ..., dividend
+			pop					// pop second operand. Stack: ...
+			wait				// stall while compute unit busy
+			wait				// rdy_cnt=1 extra cycle
+			ldmul nxt			// push remainder. Stack: ..., remainder
 
 //
 //	invoke and return functions
@@ -1358,31 +1336,13 @@ ishr:		shr nxt
 iushr:		ushr nxt
 
 
-#ifdef DSP_MUL
 imul:
-			stmul			// latch inputs, DSP result ready next cycle
-			pop				// pop second operand
-			nop				// wait 1 cycle for registered result
-			ldmul nxt		// read low 32 bits
-#else
-imul:
-			stmul		// store both operands and start
-			pop			// pop second operand
-
-			ldi	2		// 2*7+2 wait ok!
-imul_loop:
-			ldi	-1
-			add
-			dup
-			nop
-			bnz	imul_loop
-			nop
-			nop
-
-			pop			// remove counter
-
-			ldmul	nxt
-#endif
+			// IntegerComputeUnit: sthw captures TOS(b)+NOS(a), jinstr selects imul
+			sthw			// start compute unit, pops TOS. Stack: ..., a
+			pop				// pop second operand. Stack: ...
+			wait			// stall while compute unit busy
+			wait			// rdy_cnt=1 extra cycle
+			ldmul nxt		// push result. Stack: ..., result
 
 
 // 	moved to JVM.java
@@ -2079,7 +2039,7 @@ lmul:
 			dup					// Stack: ..., a1, a0, a0
 			stm c				// c = a0, pop. Stack: ..., a1, a0
 			ldm a				// push b0. Stack: ..., a1, a0, b0
-			stmul				// mul(TOS=b0, NOS=a0), pop. Stack: ..., a1, a0
+			sthw				// mul(TOS=b0, NOS=a0), pop. Stack: ..., a1, a0
 			pop					// pop a0. Stack: ..., a1
 			nop					// wait for DSP result
 			ldmul				// push P0_low. Stack: ..., a1, P0_low
@@ -2089,7 +2049,7 @@ lmul:
 
 			// ---- P1 = a1 * b0 ----
 			ldm a				// push b0. Stack: ..., a1, b0
-			stmul				// mul(TOS=b0, NOS=a1), pop. Stack: ..., a1
+			sthw				// mul(TOS=b0, NOS=a1), pop. Stack: ..., a1
 			pop					// pop a1. Stack: ...
 			nop
 			ldmul				// push P1_low. Stack: ..., P1_low
@@ -2100,7 +2060,7 @@ lmul:
 			// ---- P2 = a0 * b1 ----
 			ldm c				// push a0. Stack: ..., a0
 			ldm b				// push b1. Stack: ..., a0, b1
-			stmul				// mul(TOS=b1, NOS=a0), pop. Stack: ..., a0
+			sthw				// mul(TOS=b1, NOS=a0), pop. Stack: ..., a0
 			pop					// pop a0. Stack: ...
 			nop
 			ldmul				// push P2_low. Stack: ..., P2_low

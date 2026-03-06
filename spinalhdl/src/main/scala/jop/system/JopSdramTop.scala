@@ -83,8 +83,6 @@ case class JopSdramTop(
   jumpTable: JumpTableInitData = JumpTableInitData.serial,
   perCoreUart: Boolean = false,
   fpuMode: FpuMode.FpuMode = FpuMode.Software,
-  useDspMul: Boolean = false,
-  useHwDiv: Boolean = false,
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
@@ -293,9 +291,7 @@ case class JopSdramTop(
         jumpTable = jumpTable,
         clkFreqHz = 80000000L,
         ioConfig = ioConfig,
-        fpuMode = fpuMode,
-        useDspMul = useDspMul,
-        useHwDiv = useHwDiv
+        fpuMode = fpuMode
       ),
       debugConfig = debugConfig,
       romInit = Some(romInit),
@@ -758,9 +754,7 @@ object JopHwMathSdramTopVerilog extends App {
     cpuCnt = 1,
     romInit = romData,
     ramInit = ramData,
-    jumpTable = JumpTableInitData.serialHwMath,
-    useDspMul = true,
-    useHwDiv = true
+    jumpTable = JumpTableInitData.serial
   )))
 
   println("Generated: spinalhdl/generated/JopSdramTop.v (HW Math)")

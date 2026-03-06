@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import jop.pipeline._
-import jop.core.Mul
+import jop.core.{IntegerComputeUnit, IntegerComputeUnitConfig}
 import jop.memory.MemCtrlInput
 
 /**
@@ -51,6 +51,9 @@ case class JopPipeline(
     val exc        = in Bool()   // Exception signal from I/O subsystem
     val ackIrq     = out Bool()  // Interrupt acknowledged (from bcfetch)
     val ackExc     = out Bool()  // Exception acknowledged (from bcfetch)
+
+    // === Hardware compute unit busy (feeds into memBusy in JopCore) ===
+    val hwBusy     = out Bool()
 
     // === Pipeline status ===
     val pc         = out UInt(config.pcWidth bits)
@@ -122,7 +125,9 @@ case class JopPipeline(
   val fetch   = FetchStage(config.fetchConfig, romInit)
   val decode  = new DecodeStage(config.decodeConfig)
   val stack   = new StackStage(config.stackConfig, ramInit = ramInit).setName("stackStg")
-  val mul     = Mul(config.dataWidth, useDsp = config.useDspMul)
+  val intCu   = IntegerComputeUnit(IntegerComputeUnitConfig(
+    withMul = true, withDiv = true, withRem = true
+  ))
 
   // ==========================================================================
   // Pipeline Connections
@@ -176,14 +181,14 @@ case class JopPipeline(
   // Stack Stage Connections
   // ==========================================================================
 
-  // din mux: ir(1:0) selects between ldmrd, ldmul, ldbcstart, ldmulh
+  // din mux: ir(1:0) selects between ldmrd, ldmul (resultLo), ldbcstart, ldmulh (resultHi)
   val dinMuxSel = RegNext(fetch.io.ir_out(1 downto 0)) init(0)
   dinMuxSel.simPublic()
   stack.io.din := dinMuxSel.mux(
     0 -> io.memRdData,
-    1 -> mul.io.dout.asBits,
+    1 -> intCu.io.resultLo.asBits,
     2 -> io.memBcStart.asBits.resized,
-    3 -> mul.io.doutH.asBits
+    3 -> intCu.io.resultHi.asBits
   )
 
   stack.io.dirAddr := decode.io.dirAddr.asUInt
@@ -217,12 +222,16 @@ case class JopPipeline(
   io.debugRamData := stack.io.debugRamData
 
   // ==========================================================================
-  // Multiplier
+  // Hardware Compute Unit (IntegerComputeUnit)
   // ==========================================================================
 
-  mul.io.ain := stack.io.aout.asUInt
-  mul.io.bin := stack.io.bout.asUInt
-  mul.io.wr := decode.io.mulWr
+  intCu.io.a := stack.io.aout.asUInt       // TOS
+  intCu.io.b := stack.io.bout.asUInt       // NOS
+  intCu.io.c := U(0, 32 bits)             // unused for 32-bit integer ops
+  intCu.io.d := U(0, 32 bits)             // unused for 32-bit integer ops
+  intCu.io.wr := decode.io.hwWr
+  intCu.io.opcode := bcfetch.io.jinstr_out
+  io.hwBusy := intCu.io.busy
 
   // ==========================================================================
   // Output Connections
@@ -278,7 +287,7 @@ case class JopPipeline(
   io.debugVp := stack.io.debugVp
   io.debugAr := stack.io.debugAr
   io.debugFlags := stack.io.zf ## stack.io.nf ## stack.io.eq ## stack.io.lt
-  io.debugMulResult := mul.io.dout.asBits
+  io.debugMulResult := intCu.io.resultLo.asBits
 
   // ==========================================================================
   // Stack Cache DMA Passthrough

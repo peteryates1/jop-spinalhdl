@@ -28,7 +28,7 @@ case class MemIn() extends Bundle {
   val bcWr      = Bool()        // Bytecode write request
   val bcAddrWr  = Bool()        // Bytecode address write
   val cinval    = Bool()        // Cache invalidate
-  val instr     = Bits(3 bits)  // MMU instruction (STMUL, STMWA, etc.)
+  val instr     = Bits(3 bits)  // MMU instruction (STHW, STMWA, etc.)
 }
 
 /**
@@ -152,7 +152,7 @@ object JopTypes {
     m.bcWr      := False
     m.bcAddrWr  := False
     m.cinval    := False
-    m.instr     := B"3'b000" // STMUL
+    m.instr     := B"3'b000" // STHW
     m
   }
 

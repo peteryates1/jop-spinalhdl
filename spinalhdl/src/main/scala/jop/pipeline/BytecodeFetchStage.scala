@@ -83,6 +83,7 @@ case class BytecodeFetchStage(
     val jpaddr   = out UInt(config.pcWidth bits)      // Microcode address from jump table
     val opd      = out Bits(config.opdWidth bits)     // Operand (16-bit, accumulated via jopdfetch)
     val jpc_out  = out UInt(config.jpcWidth + 1 bits) // Current jpc
+    val jinstr_out = out Bits(8 bits)                 // Current JVM bytecode (stable during microcode sequence)
   }
 
   // ==========================================================================
@@ -200,6 +201,7 @@ case class BytecodeFetchStage(
   }
 
   io.jpc_out := jpc
+  io.jinstr_out := jinstr
 
   // ==========================================================================
   // Operand Accumulation Logic

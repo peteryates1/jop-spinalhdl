@@ -153,20 +153,21 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeU
     // ======================================================================
     if (config.withDiv || config.withRem) {
       is(State.DIV_SETUP) {
-        val aSigned = opaReg.asSInt
-        val bSigned = opbReg.asSInt
+        // JVM idiv/irem: value1 / value2 where value2=TOS=io.a, value1=NOS=io.b
+        val dividend = opbReg.asSInt   // NOS = value1 (dividend)
+        val divisor  = opaReg.asSInt   // TOS = value2 (divisor)
 
         // Special case: divide by zero -> result = 0
-        when(opbReg === 0) {
+        when(opaReg === 0) {
           resultReg := 0
           state := State.DONE
         }
         // Special case: MIN_VALUE / -1 -> quotient = MIN_VALUE, remainder = 0
-        .elsewhen(aSigned === S(32 bits, (31) -> true, default -> false) &&
-                  bSigned === S(-1, 32 bits)) {
+        .elsewhen(dividend === S(32 bits, (31) -> true, default -> false) &&
+                  divisor === S(-1, 32 bits)) {
           when(opcodeReg === 1) {
             // idiv: MIN_VALUE
-            resultReg := opaReg.resize(64)
+            resultReg := opbReg.resize(64)
           } otherwise {
             // irem: 0
             resultReg := 0
@@ -174,19 +175,19 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeU
           state := State.DONE
         } otherwise {
           // Convert to magnitudes, record signs
-          divQuotSign := aSigned(31) ^ bSigned(31)
-          divRemSign  := aSigned(31)
+          divQuotSign := dividend(31) ^ divisor(31)
+          divRemSign  := dividend(31)
 
-          when(aSigned(31)) {
-            divDividend := (-aSigned).asUInt
+          when(dividend(31)) {
+            divDividend := (-dividend).asUInt
           } otherwise {
-            divDividend := opaReg
+            divDividend := opbReg
           }
 
-          when(bSigned(31)) {
-            divDivisor := (-bSigned).asUInt
+          when(divisor(31)) {
+            divDivisor := (-divisor).asUInt
           } otherwise {
-            divDivisor := opbReg
+            divDivisor := opaReg
           }
 
           divRemainder := 0

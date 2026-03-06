@@ -386,11 +386,11 @@ object TestRomPatterns {
   /**
    * MMU Operations Test ROM
    *
-   * Tests MMU/memory management operations: stmul, stmwa, stmra, stmwd
+   * Tests MMU/memory management operations: sthw, stmwa, stmra, stmwd
    *
    * Instructions:
    * - Addr 0-1: NOP
-   * - Addr 2: 0x040 - stmul (store multiplier)
+   * - Addr 2: 0x040 - sthw (store multiplier)
    * - Addr 3: 0x041 - stmwa (store memory write address)
    * - Addr 4: 0x042 - stmra (store memory read address)
    * - Addr 5: 0x043 - stmwd (store memory write data)
@@ -405,7 +405,7 @@ object TestRomPatterns {
 
     setRom(0, 0, 0, 0x000)
     setRom(1, 0, 0, 0x000)
-    setRom(2, 0, 0, 0x040)  // stmul
+    setRom(2, 0, 0, 0x040)  // sthw
     setRom(3, 0, 0, 0x041)  // stmwa
     setRom(4, 0, 0, 0x042)  // stmra
     setRom(5, 0, 0, 0x043)  // stmwd
@@ -420,12 +420,12 @@ object TestRomPatterns {
   /**
    * Multiplier Operations Test ROM
    *
-   * Tests the multiplier integration through stmul/ldmul operations.
+   * Tests the multiplier integration through sthw/ldmul operations.
    *
    * Multiplication sequence:
    * 1. Load operand 1 (16-bit unsigned immediate)
    * 2. Load operand 2 (16-bit unsigned immediate)
-   * 3. Execute stmul - starts multiplication (ain=TOS, bin=NOS)
+   * 3. Execute sthw - starts multiplication (ain=TOS, bin=NOS)
    * 4. Wait 17 cycles for bit-serial multiplier
    * 5. Execute ldmul - reads result
    *
@@ -438,7 +438,7 @@ object TestRomPatterns {
    * - Addr 0-1: NOP
    * - Addr 2-4: Load operand 1 (ld_opd_16u takes 3 ROM addresses)
    * - Addr 5-7: Load operand 2
-   * - Addr 8: stmul - Start multiplication
+   * - Addr 8: sthw - Start multiplication
    * - Addr 9-25: NOP (wait 17 cycles for multiplier)
    * - Addr 26: ldmul - Read result
    */
@@ -465,7 +465,7 @@ object TestRomPatterns {
     setRom(7, 0, 0, 0x007)  // low byte = 7
 
     // Start multiplication
-    setRom(8, 0, 0, 0x040)  // stmul
+    setRom(8, 0, 0, 0x040)  // sthw
 
     // Wait 17 cycles for multiplier (addr 9-25)
     for (i <- 9 to 25) {
@@ -588,7 +588,7 @@ object TestRomPatterns {
     // ========================================================================
     setRom(40, 0, 0, 0x3A0)  // ld0 (load var[0] = 10)
     setRom(41, 0, 0, 0x3A1)  // ld1 (load var[1] = 3)
-    setRom(42, 0, 0, 0x040)  // stmul (start multiplication)
+    setRom(42, 0, 0, 0x040)  // sthw (start multiplication)
 
     // Wait 17 cycles for multiplier (addrs 43-59)
     for (i <- 43 to 59) {
@@ -596,7 +596,7 @@ object TestRomPatterns {
     }
 
     setRom(60, 0, 0, 0x3C1)  // ldmul (read result = 30)
-    setRom(61, 0, 0, 0x000)  // pop (remove NOS from stmul)
+    setRom(61, 0, 0, 0x000)  // pop (remove NOS from sthw)
     setRom(62, 0, 0, 0x012)  // st2 (store to var[2])
 
     // ========================================================================
@@ -749,7 +749,9 @@ class JopPipelineTestRom(
 
   val decodeStage = new DecodeStage(config.decodeConfig)
   val stackStage = new StackStage(config.stackConfig)
-  val multiplier = jop.core.Mul(config.dataWidth)
+  val intCu = jop.core.IntegerComputeUnit(jop.core.IntegerComputeUnitConfig(
+    withMul = true, withDiv = true, withRem = true
+  ))
 
   // Same connections as JopPipeline
   fetchStage.io.br := decodeStage.io.br
@@ -795,11 +797,14 @@ class JopPipelineTestRom(
   io.bout := stackStage.io.bout
   io.spOv := stackStage.io.spOv
 
-  // Multiplier connections
-  multiplier.io.ain := stackStage.io.aout.asUInt
-  multiplier.io.bin := stackStage.io.bout.asUInt
-  multiplier.io.wr := decodeStage.io.mulWr
-  io.mulDout := multiplier.io.dout
+  // Hardware compute unit connections
+  intCu.io.a := stackStage.io.aout.asUInt
+  intCu.io.b := stackStage.io.bout.asUInt
+  intCu.io.c := U(0, 32 bits)
+  intCu.io.d := U(0, 32 bits)
+  intCu.io.wr := decodeStage.io.hwWr
+  intCu.io.opcode := B(0x68, 8 bits)  // Default to imul for test ROM compatibility
+  io.mulDout := intCu.io.resultLo
 
   // Debug outputs: Read stack RAM at fixed addresses 0, 1, 2 (Phase 3.2)
   // These expose local variables for test assertions
@@ -819,7 +824,7 @@ class JopPipelineTestRom(
   fetchStage.setName("fetch")
   decodeStage.setName("decode")
   stackStage.setName("stack")
-  multiplier.setName("mul")
+  intCu.setName("intCu")
 }
 
 /**
@@ -1510,11 +1515,11 @@ object JopPipelineControlTestTbVhdl extends App {
  * JopPipeline Multiplier Test Testbench VHDL Generator
  *
  * Generates a VHDL testbench for testing multiplier integration through
- * stmul/ldmul microcode operations.
+ * sthw/ldmul microcode operations.
  *
  * Test sequence:
  * 1. Load two 16-bit operands using ld_opd_16u
- * 2. Execute stmul to start multiplication
+ * 2. Execute sthw to start multiplication
  * 3. Wait 17 cycles for bit-serial multiplier
  * 4. Execute ldmul to read result
  *

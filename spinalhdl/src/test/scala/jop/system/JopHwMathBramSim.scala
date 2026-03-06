@@ -10,13 +10,10 @@ import jop.pipeline.JumpTableInitData
 import java.io.PrintWriter
 
 /**
- * Test harness for JopCore with DSP multiply + HW divider + BmbOnChipRam.
+ * Test harness for JopCore with IntegerComputeUnit (imul/idiv/irem) + BmbOnChipRam.
  *
- * Same as JopCoreTestHarness but with:
- *   - useDspMul = true (DSP-inferred 1-cycle 32×32→64 multiply)
- *   - useHwDiv = true (BmbDiv hardware integer divider)
- *   - HwMath jump table (simulationHwMath — imul/lmul/idiv/irem → microcode HW handlers)
- *   - HwMath microcode ROM/RAM (built with DSP_MUL + HW_DIV)
+ * IntegerComputeUnit handles all integer math natively (radix-4 multiply,
+ * binary restoring division). No special jump table variant needed.
  */
 case class JopHwMathTestHarness(
   romInit: Seq[BigInt],
@@ -27,9 +24,7 @@ case class JopHwMathTestHarness(
 
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = memSize),
-    jumpTable = JumpTableInitData.simulationHwMath,  // HwMath jump table
-    useDspMul = true,
-    useHwDiv = true
+    jumpTable = JumpTableInitData.simulation
   )
 
   val io = new Bundle {

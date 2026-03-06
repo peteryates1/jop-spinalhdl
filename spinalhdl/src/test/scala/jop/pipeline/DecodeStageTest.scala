@@ -223,7 +223,7 @@ class DecodeStageTest extends AnyFunSuite {
                 case "ena_vp"   => checkBool(dut.io.enaVp.toBoolean, expected, cycle, "ena_vp")
                 case "ena_jpc"  => checkBool(dut.io.enaJpc.toBoolean, expected, cycle, "ena_jpc")
                 case "ena_ar"   => checkBool(dut.io.enaAr.toBoolean, expected, cycle, "ena_ar")
-                case "mul_wr"   => checkBool(dut.io.mulWr.toBoolean, expected, cycle, "mul_wr")
+                case "mul_wr"   => checkBool(dut.io.hwWr.toBoolean, expected, cycle, "mul_wr")
                 case "wr_dly"   => checkBool(dut.io.wrDly.toBoolean, expected, cycle, "wr_dly")
 
                 // Bits outputs

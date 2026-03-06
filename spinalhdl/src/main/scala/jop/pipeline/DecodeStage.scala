@@ -39,7 +39,7 @@ case class DecodeConfig(
 object MmuInstructions {
   // MMU instructions with stack pop (prefix 0x04x)
   // Note: Using 'def' instead of 'val' to avoid netlist reuse across multiple generators
-  def STMUL  = B"4'b0000"  // Start multiplier
+  def STHW   = B"4'b0000"  // Start hardware compute unit
   def STMWA  = B"4'b0001"  // Store memory write address
   def STMRA  = B"4'b0010"  // Start memory read
   def STMWD  = B"4'b0011"  // Start memory write
@@ -197,7 +197,7 @@ object DecodePayloads {
   val MMU_INSTR = Payload(Bits(4 bits))
 
   /** Multiplier write */
-  val MUL_WR = Payload(Bool())
+  val HW_WR = Payload(Bool())
 
   /** Write delay */
   val WR_DLY = Payload(Bool())
@@ -248,7 +248,7 @@ case class DecodeStage(
     val memIn    = out(MemoryControl())
     val mmuInstr = out Bits(mmuWidth bits)
     val dirAddr  = out Bits(ramWidth bits)  // Direct RAM Address
-    val mulWr    = out Bool()
+    val hwWr     = out Bool()
     val wrDly    = out Bool()
 
     // ALU Control Outputs
@@ -519,7 +519,7 @@ case class DecodeStage(
       is(B"10'b0000011110") { /* shr */ }
 
       // MMU Operations (0x040-0x04F)
-      is(B"10'b0001000000") { /* stmul */ }
+      is(B"10'b0001000000") { /* sthw */ }
       is(B"10'b0001000001") { /* stmwa */ }
       is(B"10'b0001000010") { /* stmra */ }
       is(B"10'b0001000011") { /* stmwd */ }
@@ -694,7 +694,7 @@ case class DecodeStage(
     val memCinvalReg    = Reg(Bool()) init(False)
     val memAtmstartReg  = Reg(Bool()) init(False)
     val memAtmendReg    = Reg(Bool()) init(False)
-    val mulWrReg        = Reg(Bool()) init(False)
+    val hwWrReg        = Reg(Bool()) init(False)
     val wrDlyReg        = Reg(Bool()) init(False)
 
     // Gate all registered MMU decode during stall (hold previous values)
@@ -720,7 +720,7 @@ case class DecodeStage(
     memCinvalReg := False
     memAtmstartReg := False
     memAtmendReg := False
-    mulWrReg := False
+    hwWrReg := False
     wrDlyReg := False
 
     // ========================================================================
@@ -729,7 +729,7 @@ case class DecodeStage(
     when(ir(9 downto 4) === B"6'b000100") {
       wrDlyReg := True
       switch(ir(config.mmuWidth - 1 downto 0)) {
-        is(MmuInstructions.STMUL) { mulWrReg := True }
+        is(MmuInstructions.STHW) { hwWrReg := True }
         is(MmuInstructions.STMWA) { memAddrWrReg := True }
         is(MmuInstructions.STMRA) { memRdReg := True }
         is(MmuInstructions.STMWD) { memWrReg := True }
@@ -790,7 +790,7 @@ case class DecodeStage(
     io.memIn.cinval := memCinvalReg
     io.memIn.atmstart := memAtmstartReg
     io.memIn.atmend := memAtmendReg
-    io.mulWr := mulWrReg
+    io.hwWr := hwWrReg
     io.wrDly := wrDlyReg
   }
 
@@ -831,7 +831,7 @@ case class DecodeStage(
   outputNode(DecodePayloads.ENA_VP) := io.enaVp
   outputNode(DecodePayloads.ENA_JPC) := io.enaJpc
   outputNode(DecodePayloads.ENA_AR) := io.enaAr
-  outputNode(DecodePayloads.MUL_WR) := io.mulWr
+  outputNode(DecodePayloads.HW_WR) := io.hwWr
   outputNode(DecodePayloads.WR_DLY) := io.wrDly
   outputNode(DecodePayloads.MMU_INSTR) := io.mmuInstr
 

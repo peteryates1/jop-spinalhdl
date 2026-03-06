@@ -60,8 +60,6 @@ case class JopCyc5000Top(
   ramInit: Seq[BigInt],
   debugConfig: Option[DebugConfig] = None,
   fpuMode: FpuMode.FpuMode = FpuMode.Software,
-  useDspMul: Boolean = false,
-  useHwDiv: Boolean = false,
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
@@ -137,9 +135,7 @@ case class JopCyc5000Top(
         memConfig = JopMemoryConfig(burstLen = 0),
         jumpTable = JumpTableInitData.serial,
         clkFreqHz = 80000000L,
-        fpuMode = fpuMode,
-        useDspMul = useDspMul,
-        useHwDiv = useHwDiv
+        fpuMode = fpuMode
       ),
       debugConfig = debugConfig,
       romInit = Some(romInit),

@@ -212,8 +212,10 @@ With the compute units (see below), HW handler microcode shrinks dramatically �
 
 ## Compute Units — `sthw` (start hardware)
 
+> **Implementation status (2026-03-06):** IntegerComputeUnit is fully integrated into the pipeline. `sthw` replaces `stmul`, `BmbDiv` I/O peripheral removed. The JVM bytecode (`jinstr`) is routed from BytecodeFetchStage through to the compute unit — no I/O address encoding needed. `ComputeUnitBundle` interface implemented in `jop.core`. imul/idiv/irem all verified (59/60 JVM tests pass). LongComputeUnit, FloatComputeUnit, DoubleComputeUnit remain future work.
+
 Four named compute units handle multi-cycle hardware-accelerated bytecodes:
-- **IntegerComputeUnit** — imul, idiv, irem (32-bit integer multiply + divide)
+- **IntegerComputeUnit** — imul, idiv, irem (32-bit integer multiply + divide) ✓ **IMPLEMENTED**
 - **LongComputeUnit** — lmul, ldiv, lrem (64-bit long multiply + divide)
 - **FloatComputeUnit** — fadd, fsub, fmul, fdiv, frem, i2f, f2i, f2l, l2f (single-precision float)
 - **DoubleComputeUnit** — dadd, dsub, dmul, ddiv, drem, i2d, d2i, d2f, f2d, l2d, d2l (double-precision float)
@@ -222,7 +224,9 @@ Each is independently conditional — only instantiated when needed. All share t
 
 ### Problem with current I/O-based peripherals
 
-Today, FPU and DIV are BMB I/O peripherals accessed via generic memory-mapped I/O. The Mul unit is a pipeline component with dedicated `stmul`/`ldmul` instructions. This creates two problems:
+> **Note (2026-03-06):** The integer math path (imul/idiv/irem) has been migrated to the unified `sthw` pattern via IntegerComputeUnit. BmbDiv I/O peripheral removed, `stmul` renamed to `sthw`. FPU still uses the I/O-based approach described below.
+
+Today, FPU ~~and DIV are~~ is a BMB I/O peripheral accessed via generic memory-mapped I/O. ~~The Mul unit is a pipeline component with dedicated `stmul`/`ldmul` instructions.~~ This creates two problems:
 
 1. **I/O overhead**: fadd microcode is 9 instructions (load I/O address, set write address, do I/O write, pop, load read address, start I/O read, wait, wait, read result). imul DSP microcode is 4 instructions. The 5 extra instructions are pure plumbing.
 

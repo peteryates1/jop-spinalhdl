@@ -46,7 +46,7 @@ object MicrocodeNames {
     add(0x01D, "shl")
     add(0x01E, "shr")
 
-    add(0x040, "stmul")
+    add(0x040, "sthw")
     add(0x041, "stmwa")
     add(0x042, "stmra")
     add(0x043, "stmwd")

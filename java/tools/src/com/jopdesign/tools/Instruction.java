@@ -103,7 +103,7 @@ public class Instruction implements Serializable {
 			new Instruction("stm", 0x020, 5, JmpType.NOP, StackType.POP),
 
 			// MMU 4 bit subfield selects function (pop type)
-			new Instruction("stmul", 0x040 + 0, 0, JmpType.NOP, StackType.POP),
+			new Instruction("sthw", 0x040 + 0, 0, JmpType.NOP, StackType.POP),
 			new Instruction("stmwa", 0x040 + 1, 0, JmpType.NOP, StackType.POP),
 			new Instruction("stmra", 0x040 + 2, 0, JmpType.NOP, StackType.POP),
 			new Instruction("stmwd", 0x040 + 3, 0, JmpType.NOP, StackType.POP),
