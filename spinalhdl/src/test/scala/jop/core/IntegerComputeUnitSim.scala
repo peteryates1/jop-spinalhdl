@@ -38,8 +38,8 @@ object IntegerComputeUnitSim extends App {
       val name = opNames.getOrElse(bytecode, f"0x${bytecode}%02X")
       println(f"--- $desc%-55s  opcode=$name  opa=0x${opa}%08X  opb=0x${opb}%08X ---")
 
-      dut.io.operand0 #= opa
-      dut.io.operand1 #= opb
+      dut.io.a #= opa
+      dut.io.b #= opb
       dut.io.opcode   #= bytecode
       dut.io.wr       #= true
       dut.clockDomain.waitSampling()
@@ -52,7 +52,7 @@ object IntegerComputeUnitSim extends App {
         cycles += 1
       }
 
-      val result = dut.io.result.toBigInt & BigInt("FFFFFFFFFFFFFFFF", 16)
+      val result = (dut.io.resultHi.toBigInt << 32) | dut.io.resultLo.toBigInt
       val result32 = result & BigInt("FFFFFFFF", 16)
       val resultSigned = if (result32 > BigInt("7FFFFFFF", 16))
         result32 - BigInt("100000000", 16) else result32
@@ -62,8 +62,8 @@ object IntegerComputeUnitSim extends App {
     }
 
     // Initialize
-    dut.io.operand0 #= 0
-    dut.io.operand1 #= 0
+    dut.io.a #= 0
+    dut.io.b #= 0
     dut.io.opcode   #= 0
     dut.io.wr       #= false
     dut.clockDomain.waitSampling(5)

@@ -8,8 +8,8 @@
   *   0x62: fadd    0x66: fsub    0x6A: fmul    0x6E: fdiv
   *   0x86: i2f     0x8B: f2i     0x95: fcmpl   0x96: fcmpg
   *
-  * Interface: load operand0/operand1/opcode, pulse wr, wait for busy to deassert.
-  * Result appears on io.result (lower 32 bits, zero-extended to 64).
+  * Interface: load a/b/opcode, pulse wr, wait for busy to deassert.
+  * Result appears on io.resultLo (32 bits). io.is64 is always false.
   *
   * Special value handling follows Java semantics:
   *   - NaN propagation, canonical NaN = 0x7FC00000
@@ -92,7 +92,8 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
   val opaReg    = Reg(Bits(32 bits)) init (0)
   val opbReg    = Reg(Bits(32 bits)) init (0)
 
-  io.result := resultReg
+  io.resultLo := resultReg(31 downto 0)
+  io.resultHi := resultReg(63 downto 32)
   io.busy   := (state =/= State.IDLE)
   io.is64   := False
 
@@ -184,8 +185,8 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
     // ----------------------------------------------------------------------
     is(State.IDLE) {
       when(io.wr) {
-        opaReg := io.operand0(31 downto 0).asBits
-        opbReg := io.operand1(31 downto 0).asBits
+        opaReg := io.a.asBits
+        opbReg := io.b.asBits
         sticky := False
 
         // Decode JVM bytecode to internal opcode

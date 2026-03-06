@@ -8,8 +8,8 @@
   *   0x69: lmul    0x6D: ldiv    0x71: lrem
   *   0x79: lshl    0x7B: lshr    0x7D: lushr
   *
-  * Interface: load operand0/operand1/opcode, pulse wr, wait for busy to deassert.
-  * Result appears on io.result (64 bits). io.is64 is always true.
+  * Interface: load a/b/c/d/opcode, pulse wr, wait for busy to deassert.
+  * Result appears on io.resultHi:io.resultLo (64 bits). io.is64 is always true.
   *
   * Algorithms:
   *   lmul  — Radix-4 sequential multiply (32 iterations, ~34 cycles)
@@ -75,7 +75,8 @@ case class LongComputeUnit(config: LongComputeUnitConfig = LongComputeUnitConfig
   // ========================================================================
   // IO wiring
   // ========================================================================
-  io.result := resultReg
+  io.resultLo := resultReg(31 downto 0)
+  io.resultHi := resultReg(63 downto 32)
   io.busy   := (state =/= State.IDLE)
   io.is64   := True
 
@@ -87,8 +88,8 @@ case class LongComputeUnit(config: LongComputeUnitConfig = LongComputeUnitConfig
     // ----------------------------------------------------------------------
     is(State.IDLE) {
       when(io.wr) {
-        opaReg := io.operand0
-        opbReg := io.operand1
+        opaReg := (io.d ## io.c).asUInt
+        opbReg := (io.b ## io.a).asUInt
 
         // Decode JVM bytecode to internal opcode
         switch(io.opcode) {
@@ -104,8 +105,8 @@ case class LongComputeUnit(config: LongComputeUnitConfig = LongComputeUnitConfig
         state := State.DONE  // default fallback
         if (config.withMul) {
           when(io.opcode === B"8'x69") {
-            mulA := io.operand0
-            mulB := io.operand1
+            mulA := (io.d ## io.c).asUInt
+            mulB := (io.b ## io.a).asUInt
             mulP := 0
             mulCount := 0
             state := State.MUL_EXEC

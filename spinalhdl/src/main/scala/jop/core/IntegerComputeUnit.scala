@@ -7,8 +7,8 @@
   * Operations (selected by JVM bytecode):
   *   0x68: imul    0x6C: idiv    0x70: irem
   *
-  * Interface: load operand0/operand1/opcode, pulse wr, wait for busy to deassert.
-  * Result appears on io.result (lower 32 bits, zero-extended). io.is64 is always false.
+  * Interface: load a/b/opcode, pulse wr, wait for busy to deassert.
+  * Result appears on io.resultLo (32 bits). io.is64 is always false.
   *
   * Algorithms:
   *   imul — Radix-4 sequential multiply (16 iterations, ~18 cycles)
@@ -69,7 +69,8 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeU
   // ========================================================================
   // IO wiring
   // ========================================================================
-  io.result := resultReg
+  io.resultLo := resultReg(31 downto 0)
+  io.resultHi := resultReg(63 downto 32)
   io.busy   := (state =/= State.IDLE)
   io.is64   := False
 
@@ -81,8 +82,8 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeU
     // ----------------------------------------------------------------------
     is(State.IDLE) {
       when(io.wr) {
-        opaReg := io.operand0(31 downto 0)
-        opbReg := io.operand1(31 downto 0)
+        opaReg := io.a
+        opbReg := io.b
 
         // Decode JVM bytecode to internal opcode
         switch(io.opcode) {
@@ -95,8 +96,8 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeU
         state := State.DONE  // default fallback
         if (config.withMul) {
           when(io.opcode === B"8'x68") {
-            mulA := io.operand0(31 downto 0)
-            mulB := io.operand1(31 downto 0)
+            mulA := io.a
+            mulB := io.b
             mulP := 0
             mulCount := 0
             state := State.MUL_EXEC

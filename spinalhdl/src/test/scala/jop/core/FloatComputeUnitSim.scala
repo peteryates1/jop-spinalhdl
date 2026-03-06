@@ -50,8 +50,8 @@ object FloatComputeUnitSim extends App {
       val name = opNames.getOrElse(bytecode, f"0x${bytecode}%02X")
       println(f"--- $desc%-40s  opcode=$name  opa=0x${opa}%08X  opb=0x${opb}%08X ---")
 
-      dut.io.operand0 #= (opa & 0xFFFFFFFFL)
-      dut.io.operand1 #= (opb & 0xFFFFFFFFL)
+      dut.io.a #= (opa & 0xFFFFFFFFL)
+      dut.io.b #= (opb & 0xFFFFFFFFL)
       dut.io.opcode   #= bytecode
       dut.io.wr       #= true
       dut.clockDomain.waitSampling()
@@ -64,7 +64,7 @@ object FloatComputeUnitSim extends App {
         cycles += 1
       }
 
-      val result = (dut.io.result.toBigInt & BigInt("FFFFFFFF", 16)).toLong
+      val result = dut.io.resultLo.toBigInt.toLong
       val resultFloat = bitsFloat(result)
       println(f"  result=0x${result}%08X ($resultFloat%.7g)  cycles=$cycles")
       dut.clockDomain.waitSampling(2)
@@ -75,8 +75,8 @@ object FloatComputeUnitSim extends App {
       runOp(floatBits(a), floatBits(b), bytecode, desc)
 
     // Initialize
-    dut.io.operand0 #= 0
-    dut.io.operand1 #= 0
+    dut.io.a #= 0
+    dut.io.b #= 0
     dut.io.opcode   #= 0
     dut.io.wr       #= false
     dut.clockDomain.waitSampling(5)

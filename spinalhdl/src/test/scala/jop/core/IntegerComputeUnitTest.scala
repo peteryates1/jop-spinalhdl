@@ -29,8 +29,8 @@ class IntegerComputeUnitTest extends AnyFunSuite {
 
   def runOp(dut: IntegerComputeUnit, opa: BigInt, opb: BigInt, bytecode: Int)
            (implicit cd: ClockDomain): BigInt = {
-    dut.io.operand0 #= opa
-    dut.io.operand1 #= opb
+    dut.io.a #= opa
+    dut.io.b #= opb
     dut.io.opcode   #= bytecode
     dut.io.wr       #= true
     cd.waitSampling()
@@ -43,12 +43,12 @@ class IntegerComputeUnitTest extends AnyFunSuite {
       cycles += 1
     }
     assert(cycles < 500, s"ICU timed out after 500 cycles (bytecode=0x${bytecode.toHexString})")
-    dut.io.result.toBigInt & BigInt("FFFFFFFFFFFFFFFF", 16)
+    (dut.io.resultHi.toBigInt << 32) | dut.io.resultLo.toBigInt
   }
 
   def initIo(dut: IntegerComputeUnit): Unit = {
-    dut.io.operand0 #= 0
-    dut.io.operand1 #= 0
+    dut.io.a #= 0
+    dut.io.b #= 0
     dut.io.opcode   #= 0
     dut.io.wr       #= false
   }
@@ -168,8 +168,8 @@ class IntegerComputeUnitTest extends AnyFunSuite {
     simConfig.compile(IntegerComputeUnit(minConfig)).doSim(seed = 42) { dut =>
       dut.clockDomain.forkStimulus(10)
       SimTimeout(1000)
-      dut.io.operand0 #= 0
-      dut.io.operand1 #= 0
+      dut.io.a #= 0
+      dut.io.b #= 0
       dut.io.opcode   #= 0
       dut.io.wr       #= false
       dut.clockDomain.waitSampling(10)

@@ -56,8 +56,10 @@ class DoubleComputeUnitTest extends AnyFunSuite {
 
   def runOp(dut: DoubleComputeUnit, opa: BigInt, opb: BigInt, bytecode: Int)
            (implicit cd: ClockDomain): BigInt = {
-    dut.io.operand0 #= opa
-    dut.io.operand1 #= opb
+    dut.io.c #= opa & BigInt("FFFFFFFF", 16)
+    dut.io.d #= (opa >> 32) & BigInt("FFFFFFFF", 16)
+    dut.io.a #= opb & BigInt("FFFFFFFF", 16)
+    dut.io.b #= (opb >> 32) & BigInt("FFFFFFFF", 16)
     dut.io.opcode   #= bytecode
     dut.io.wr       #= true
     cd.waitSampling()
@@ -70,7 +72,7 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       cycles += 1
     }
     assert(cycles < 200, s"DPU timed out after 200 cycles (bytecode=0x${bytecode.toHexString})")
-    dut.io.result.toBigInt & BigInt("FFFFFFFFFFFFFFFF", 16)
+    (dut.io.resultHi.toBigInt << 32) | dut.io.resultLo.toBigInt
   }
 
   def runDouble(dut: DoubleComputeUnit, a: Double, b: Double, bytecode: Int)
@@ -78,8 +80,10 @@ class DoubleComputeUnitTest extends AnyFunSuite {
     runOp(dut, doubleBits(a), doubleBits(b), bytecode)
 
   def initIo(dut: DoubleComputeUnit): Unit = {
-    dut.io.operand0 #= 0
-    dut.io.operand1 #= 0
+    dut.io.a #= 0
+    dut.io.b #= 0
+    dut.io.c #= 0
+    dut.io.d #= 0
     dut.io.opcode   #= 0
     dut.io.wr       #= false
   }
@@ -520,8 +524,10 @@ class DoubleComputeUnitTest extends AnyFunSuite {
     simConfig.compile(DoubleComputeUnit(minConfig)).doSim(seed = 42) { dut =>
       dut.clockDomain.forkStimulus(10)
       SimTimeout(1000)
-      dut.io.operand0 #= 0
-      dut.io.operand1 #= 0
+      dut.io.a #= 0
+      dut.io.b #= 0
+      dut.io.c #= 0
+      dut.io.d #= 0
       dut.io.opcode   #= 0
       dut.io.wr       #= false
       dut.clockDomain.waitSampling(10)

@@ -34,8 +34,10 @@ class LongComputeUnitTest extends AnyFunSuite {
 
   def runOp(dut: LongComputeUnit, opa: BigInt, opb: BigInt, bytecode: Int)
            (implicit cd: ClockDomain): BigInt = {
-    dut.io.operand0 #= opa
-    dut.io.operand1 #= opb
+    dut.io.c #= opa & BigInt("FFFFFFFF", 16)
+    dut.io.d #= (opa >> 32) & BigInt("FFFFFFFF", 16)
+    dut.io.a #= opb & BigInt("FFFFFFFF", 16)
+    dut.io.b #= (opb >> 32) & BigInt("FFFFFFFF", 16)
     dut.io.opcode   #= bytecode
     dut.io.wr       #= true
     cd.waitSampling()
@@ -48,12 +50,14 @@ class LongComputeUnitTest extends AnyFunSuite {
       cycles += 1
     }
     assert(cycles < 500, s"LCU timed out after 500 cycles (bytecode=0x${bytecode.toHexString})")
-    dut.io.result.toBigInt & BigInt("FFFFFFFFFFFFFFFF", 16)
+    (dut.io.resultHi.toBigInt << 32) | dut.io.resultLo.toBigInt
   }
 
   def initIo(dut: LongComputeUnit): Unit = {
-    dut.io.operand0 #= 0
-    dut.io.operand1 #= 0
+    dut.io.a #= 0
+    dut.io.b #= 0
+    dut.io.c #= 0
+    dut.io.d #= 0
     dut.io.opcode   #= 0
     dut.io.wr       #= false
   }
@@ -238,8 +242,10 @@ class LongComputeUnitTest extends AnyFunSuite {
     simConfig.compile(LongComputeUnit(minConfig)).doSim(seed = 42) { dut =>
       dut.clockDomain.forkStimulus(10)
       SimTimeout(1000)
-      dut.io.operand0 #= 0
-      dut.io.operand1 #= 0
+      dut.io.a #= 0
+      dut.io.b #= 0
+      dut.io.c #= 0
+      dut.io.d #= 0
       dut.io.opcode   #= 0
       dut.io.wr       #= false
       dut.clockDomain.waitSampling(10)

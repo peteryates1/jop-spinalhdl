@@ -9,8 +9,8 @@
   *   0x87: i2d     0x8E: d2i     0x8A: l2d     0x8F: d2l
   *   0x8D: f2d     0x90: d2f     0x97: dcmpl   0x98: dcmpg
   *
-  * Interface: load operand0/operand1/opcode, pulse wr, wait for busy to deassert.
-  * Result appears on io.result (64 bits). is64 indicates result width.
+  * Interface: load a/b/c/d/opcode, pulse wr, wait for busy to deassert.
+  * Result appears on io.resultHi:io.resultLo (64 bits). is64 indicates result width.
   *
   * Special value handling follows Java semantics:
   *   - NaN propagation, canonical NaN = 0x7FF8000000000000
@@ -108,7 +108,8 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
   // D2F mode flag — when true, ROUND packs as single-precision
   val d2fMode = Reg(Bool()) init (False)
 
-  io.result := resultReg
+  io.resultLo := resultReg(31 downto 0)
+  io.resultHi := resultReg(63 downto 32)
   io.busy   := (state =/= State.IDLE)
   // is64: false for d2i(5), d2f(9), dcmpl(10), dcmpg(11)
   io.is64   := (opcodeReg =/= 5) && (opcodeReg =/= 9) &&
@@ -194,8 +195,8 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
     // ----------------------------------------------------------------------
     is(State.IDLE) {
       when(io.wr) {
-        opaReg := io.operand0.asBits
-        opbReg := io.operand1.asBits
+        opaReg := (io.d ## io.c).asBits
+        opbReg := (io.b ## io.a).asBits
         sticky := False
 
         // Decode JVM bytecode to internal opcode

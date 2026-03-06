@@ -61,8 +61,10 @@ object DoubleComputeUnitSim extends App {
       val name = opNames.getOrElse(bytecode, f"0x${bytecode}%02X")
       println(f"--- $desc%-50s  opcode=$name  opa=0x${opa}%016X  opb=0x${opb}%016X ---")
 
-      dut.io.operand0 #= opa
-      dut.io.operand1 #= opb
+      dut.io.c #= opa & BigInt("FFFFFFFF", 16)
+      dut.io.d #= (opa >> 32) & BigInt("FFFFFFFF", 16)
+      dut.io.a #= opb & BigInt("FFFFFFFF", 16)
+      dut.io.b #= (opb >> 32) & BigInt("FFFFFFFF", 16)
       dut.io.opcode   #= bytecode
       dut.io.wr       #= true
       dut.clockDomain.waitSampling()
@@ -75,7 +77,7 @@ object DoubleComputeUnitSim extends App {
         cycles += 1
       }
 
-      val result = dut.io.result.toBigInt & BigInt("FFFFFFFFFFFFFFFF", 16)
+      val result = (dut.io.resultHi.toBigInt << 32) | dut.io.resultLo.toBigInt
       val is64 = dut.io.is64.toBoolean
       if (is64) {
         val resultDouble = bitsDouble(result)
@@ -92,8 +94,10 @@ object DoubleComputeUnitSim extends App {
       runOp(doubleBits(a), doubleBits(b), bytecode, desc)
 
     // Initialize
-    dut.io.operand0 #= 0
-    dut.io.operand1 #= 0
+    dut.io.a #= 0
+    dut.io.b #= 0
+    dut.io.c #= 0
+    dut.io.d #= 0
     dut.io.opcode   #= 0
     dut.io.wr       #= false
     dut.clockDomain.waitSampling(5)

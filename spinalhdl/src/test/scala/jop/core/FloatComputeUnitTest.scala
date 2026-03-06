@@ -40,8 +40,8 @@ class FloatComputeUnitTest extends AnyFunSuite {
   /** Run one FPU operation, return lower-32-bit result. */
   def runOp(dut: FloatComputeUnit, opa: Long, opb: Long, bytecode: Int)
            (implicit cd: ClockDomain): Long = {
-    dut.io.operand0 #= (opa & 0xFFFFFFFFL)
-    dut.io.operand1 #= (opb & 0xFFFFFFFFL)
+    dut.io.a #= (opa & 0xFFFFFFFFL)
+    dut.io.b #= (opb & 0xFFFFFFFFL)
     dut.io.opcode   #= bytecode
     dut.io.wr       #= true
     cd.waitSampling()
@@ -54,7 +54,7 @@ class FloatComputeUnitTest extends AnyFunSuite {
       cycles += 1
     }
     assert(cycles < 100, s"FPU timed out after 100 cycles (bytecode=0x${bytecode.toHexString})")
-    (dut.io.result.toBigInt & BigInt("FFFFFFFF", 16)).toLong
+    dut.io.resultLo.toBigInt.toLong
   }
 
   def runFloat(dut: FloatComputeUnit, a: Float, b: Float, bytecode: Int)
@@ -62,8 +62,8 @@ class FloatComputeUnitTest extends AnyFunSuite {
     runOp(dut, floatBits(a), floatBits(b), bytecode)
 
   def initIo(dut: FloatComputeUnit): Unit = {
-    dut.io.operand0 #= 0
-    dut.io.operand1 #= 0
+    dut.io.a #= 0
+    dut.io.b #= 0
     dut.io.opcode   #= 0
     dut.io.wr       #= false
   }
@@ -370,8 +370,8 @@ class FloatComputeUnitTest extends AnyFunSuite {
     simConfig.compile(FloatComputeUnit(minConfig)).doSim(seed = 42) { dut =>
       dut.clockDomain.forkStimulus(10)
       SimTimeout(1000)
-      dut.io.operand0 #= 0
-      dut.io.operand1 #= 0
+      dut.io.a #= 0
+      dut.io.b #= 0
       dut.io.opcode   #= 0
       dut.io.wr       #= false
       dut.clockDomain.waitSampling(10)
