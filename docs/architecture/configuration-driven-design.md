@@ -342,16 +342,19 @@ Note: DSP imul is 1 registered cycle but uses DSP blocks, not ALU LUTs. It lives
 
 ### Compute unit components
 
-Each compute unit lives in the pipeline (like Mul today). All share a common interface — 2×64-bit operands, 64-bit result, busy signal. Each is independently conditional — only instantiated when the config requires it.
+Each compute unit lives in the pipeline (like Mul today). All share a common interface — four 32-bit operands (a/b/c/d matching JVM stack), split 32-bit result, busy signal. Each is independently conditional — only instantiated when the config requires it.
 
 ```scala
 /** Common interface for all compute units */
-trait ComputeUnitIo {
-  val operand0 = in UInt(64 bits)   // value2 (top of stack): 32-bit uses lower half
-  val operand1 = in UInt(64 bits)   // value1 (below value2): 32-bit uses lower half
+case class ComputeUnitBundle() extends Bundle {
+  val a        = in UInt(32 bits)   // TOS
+  val b        = in UInt(32 bits)   // NOS
+  val c        = in UInt(32 bits)   // TOS-2
+  val d        = in UInt(32 bits)   // TOS-3
   val wr       = in Bool()          // sthw asserted — capture operands, start
   val opcode   = in Bits(8 bits)    // bytecode selects operation within unit
-  val result   = out UInt(64 bits)  // result (32-bit ops use lower half)
+  val resultLo = out UInt(32 bits)  // TOS for 32-bit ops, lo word for 64-bit
+  val resultHi = out UInt(32 bits)  // unused for 32-bit ops, hi word for 64-bit
   val is64     = out Bool()         // true → write both TOS and NOS
   val busy     = out Bool()         // stalls pipeline until done
 }
@@ -361,8 +364,7 @@ trait ComputeUnitIo {
 Internal hardware is per-bytecode conditional: `imul: Hardware, idiv: Software` → Mul instantiated, DivUnit not.
 
 ```scala
-case class IntegerComputeUnit(config: JopCoreConfig) extends Component {
-  val io = new Bundle with ComputeUnitIo
+case class IntegerComputeUnit(config: IntegerComputeUnitConfig) extends ComputeUnit {
 
   // Mul: only if imul=Hardware. Bit-serial (radix-4, ~18 cycles) or DSP (1 cycle)
   val mul = config.needsIntMul generate Mul(useDsp = true)
@@ -387,8 +389,7 @@ case class IntegerComputeUnit(config: JopCoreConfig) extends Component {
 Same per-bytecode optionality: `lmul: Hardware, ldiv: Software` → DSP cascade instantiated, 64-bit DivUnit not.
 
 ```scala
-case class LongComputeUnit(config: JopCoreConfig) extends Component {
-  val io = new Bundle with ComputeUnitIo
+case class LongComputeUnit(config: LongComputeUnitConfig) extends ComputeUnit {
 
   // DSP cascade multiply for 64×64→64 — only if lmul=Hardware
   val mul = config.needsLongMul generate Mul(width = 64, useDsp = true)
@@ -412,8 +413,7 @@ case class LongComputeUnit(config: JopCoreConfig) extends Component {
 **FloatComputeUnit** — fadd, fsub, fmul, fdiv, frem, i2f, f2i, f2l, l2f (IEEE 754 single):
 
 ```scala
-case class FloatComputeUnit(config: JopCoreConfig) extends Component {
-  val io = new Bundle with ComputeUnitIo
+case class FloatComputeUnit(config: FloatComputeUnitConfig) extends ComputeUnit {
 
   // VexRiscv-derived FpuCore (IEEE 754 single-precision)
   val fpu = FpuCore()
@@ -437,8 +437,7 @@ case class FloatComputeUnit(config: JopCoreConfig) extends Component {
 **DoubleComputeUnit** — dadd, dsub, dmul, ddiv, drem, conversions (IEEE 754 double):
 
 ```scala
-case class DoubleComputeUnit(config: JopCoreConfig) extends Component {
-  val io = new Bundle with ComputeUnitIo
+case class DoubleComputeUnit(config: DoubleComputeUnitConfig) extends ComputeUnit {
 
   // Double-precision FPU (future)
   val fpu = DoubleFpuCore()
@@ -483,20 +482,21 @@ val computeBusy =
 
 ### Operand mapping
 
-With 4-register TOS (A=TOS, B=NOS, C=TOS-2, D=TOS-3):
+With 4-register TOS (a=TOS, b=NOS, c=TOS-2, d=TOS-3):
 
 ```
-JVM stack:    ..., value1_hi(D), value1_lo(C), value2_hi(B), value2_lo(A)
+JVM stack:    ..., value1_hi(d), value1_lo(c), value2_hi(b), value2_lo(a)
 
-ComputeUnit:  operand0 = {B, A} = value2 (64-bit, top of stack)
-              operand1 = {D, C} = value1 (64-bit, below)
+ComputeUnit:  a = TOS,   b = NOS,   c = TOS-2, d = TOS-3
 
-32-bit ops:   operand0(31:0) = A = TOS
-              operand1(31:0) = B = NOS
-              upper 32 bits unused
+32-bit ops:   a = first operand (TOS), b = second operand (NOS)
+              c, d unused
+
+64-bit ops:   value1 = d:c (hi:lo) — deeper on stack (left operand for divide)
+              value2 = b:a (hi:lo) — top of stack (right operand for divide)
 ```
 
-This is the same mapping for all operations — every compute unit's operand ports are wired the same way. The bytecode tells the active unit whether to use 32 or 64 bits of each operand.
+This is the same mapping for all operations — every compute unit's operand ports are wired the same way. The bytecode tells the active unit whether to use 2 or 4 of the operands.
 
 ### What this eliminates
 
@@ -515,33 +515,33 @@ This is the same mapping for all operations — every compute unit's operand por
 
 ### 64-bit operations (sthw/wait with 4-register TOS)
 
-With 4-register TOS (A/B/C/D), `sthw` captures all 4 registers. The compute unit sees 2×64-bit operands:
+With 4-register TOS (a/b/c/d), `sthw` captures all 4 registers. The compute unit sees four 32-bit operands:
 
 ```
-operand0 = {B, A}  →  value2 (64-bit, B=high, A=low)
-operand1 = {D, C}  →  value1 (64-bit, D=high, C=low)
+a = TOS     (value2_lo)     b = NOS     (value2_hi)
+c = TOS-2   (value1_lo)     d = TOS-3   (value1_hi)
 ```
 
-The hardware writes the 64-bit result directly back into TOS and NOS. No explicit load instruction needed — the `wait nxt` completes when the result is written back.
+The hardware writes resultLo back to TOS (and resultHi to NOS for 64-bit results). No explicit load instruction needed — the `wait nxt` completes when the result is written back.
 
 ```asm
 // Every 64-bit→64-bit HW bytecode (lmul, ldiv, lrem, dadd, dsub, dmul, ddiv, drem):
 <bytecode>:
-    sthw            // capture {B,A} + {D,C}, bytecode selects unit
-    pop             // remove value2 low (A)
-    pop             // remove value2 high (B)
+    sthw            // capture a,b,c,d — bytecode selects unit
+    pop             // remove value2 low (a)
+    pop             // remove value2 high (b)
     wait            // stall pipeline while computing
-    wait nxt        // result written to TOS(=result_low) and NOS(=result_high)
+    wait nxt        // resultLo→TOS, resultHi→NOS
 ```
 
 Stack evolution:
 ```
-Before:   ..., v1_hi(D), v1_lo(C), v2_hi(B), v2_lo(A)   [4 items]
+Before:   ..., v1_hi(d), v1_lo(c), v2_hi(b), v2_lo(a)   [4 items]
 sthw:     ..., v1_hi,    v1_lo,    v2_hi,    v2_lo       captures all 4, no pop
-pop:      ..., v1_hi,    v1_lo,    v2_hi                  remove A
-pop:      ..., v1_hi,    v1_lo                             remove B
+pop:      ..., v1_hi,    v1_lo,    v2_hi                  remove a
+pop:      ..., v1_hi,    v1_lo                             remove b
 wait:     ..., v1_hi,    v1_lo                             stall, computing...
-wait nxt: ..., res_hi,   res_lo                            HW overwrites TOS+NOS
+wait nxt: ..., res_hi,   res_lo                            HW writes resultHi→NOS, resultLo→TOS
 ```
 
 Net stack effect: 4 → 2 = -2. Correct for all 64-bit→64-bit bytecodes.
@@ -564,8 +564,8 @@ Net stack effect: 2 → 1 = -1. Correct for imul, fadd, idiv, etc.
 When `Implementation.Hardware` is selected for long ALU operations, the pipeline handles them directly — no `sthw`, no Compute Module, no microcode. The 4-register TOS provides both 64-bit operands to the ALU combinationally:
 
 ```
-Pipeline ALU input:   {D, C} op {B, A}
-Pipeline ALU output:  result_hi → NOS, result_lo → TOS
+Pipeline ALU input:   d:c op b:a   (value1 op value2)
+Pipeline ALU output:  resultHi → NOS, resultLo → TOS
 Stack management:     pop 2 (same as 32-bit binary ops pop 1)
 ```
 
