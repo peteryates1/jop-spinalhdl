@@ -3,6 +3,7 @@ package jop
 import spinal.core._
 import spinal.lib._
 import jop.pipeline._
+import jop.core.{FloatComputeUnit, FloatComputeUnitConfig}
 
 /**
  * Configuration for microcode-only pipeline tests (no bytecode fetch).
@@ -804,6 +805,19 @@ class JopPipelineTestRom(
   intCu.io.d := U(0, 32 bits)
   intCu.io.wr := decodeStage.io.hwWr
   intCu.io.opcode := B(0x68, 8 bits)  // Default to imul for test ROM compatibility
+
+  // Float Compute Unit (always present; stays idle since opcode=0x68 is not a float op)
+  val floatCu = FloatComputeUnit(FloatComputeUnitConfig(
+    withAdd = true, withMul = true, withDiv = true,
+    withI2F = true, withF2I = true, withFcmp = true
+  ))
+  floatCu.io.a := stackStage.io.aout.asUInt
+  floatCu.io.b := stackStage.io.bout.asUInt
+  floatCu.io.c := U(0, 32 bits)
+  floatCu.io.d := U(0, 32 bits)
+  floatCu.io.wr := decodeStage.io.hwWr
+  floatCu.io.opcode := B(0x68, 8 bits)
+
   io.mulDout := intCu.io.resultLo
 
   // Debug outputs: Read stack RAM at fixed addresses 0, 1, 2 (Phase 3.2)

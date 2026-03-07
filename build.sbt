@@ -71,3 +71,9 @@ Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated
 
 // Include serial+HW math microcode Scala files (SerialHwMathJumpTableData.scala)
 Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-hwmath"
+
+// Include FloatCU microcode Scala files (FloatCuJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "floatcu"
+
+// Include serial+FloatCU microcode Scala files (SerialFloatCuJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-floatcu"

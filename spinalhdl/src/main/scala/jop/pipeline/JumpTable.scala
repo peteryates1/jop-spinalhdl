@@ -105,6 +105,22 @@ object JumpTableInitData {
     sysIntAddr  = jop.SerialHwMathJumpTableData.sysIntAddr,
     sysExcAddr  = jop.SerialHwMathJumpTableData.sysExcAddr
   )
+
+  /** SIMULATION microcode with FloatComputeUnit (pipeline-integrated FPU) */
+  def simulationFloatCu: JumpTableInitData = JumpTableInitData(
+    entries     = jop.FloatCuJumpTableData.entries,
+    sysNoimAddr = jop.FloatCuJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.FloatCuJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.FloatCuJumpTableData.sysExcAddr
+  )
+
+  /** SERIAL-boot microcode with FloatComputeUnit */
+  def serialFloatCu: JumpTableInitData = JumpTableInitData(
+    entries     = jop.SerialFloatCuJumpTableData.entries,
+    sysNoimAddr = jop.SerialFloatCuJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.SerialFloatCuJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.SerialFloatCuJumpTableData.sysExcAddr
+  )
 }
 
 /**

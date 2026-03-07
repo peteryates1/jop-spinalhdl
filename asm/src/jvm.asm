@@ -2130,3 +2130,40 @@ fdiv:                          // stack: [value1, value2]
 		wait
 		ldmrd nxt
 #endif
+
+// ==========================================================================
+// Floating point operations via FloatComputeUnit (pipeline-integrated)
+// sthw captures TOS+NOS, jinstr selects operation. FloatCU handles all
+// IEEE 754 single-precision ops. Much faster than BmbFpu I/O path:
+// 5 microcode instructions vs 10 for I/O pattern.
+// ==========================================================================
+#ifdef FLOAT_CU
+fadd:
+fsub:
+fmul:
+fdiv:
+			sthw			// start FloatCU, pops TOS. Stack: ..., value1
+			pop				// pop second operand. Stack: ...
+			wait			// stall while CU busy
+			wait			// rdy_cnt=1 extra cycle
+			ldmul nxt		// push result
+
+i2f:
+f2i:
+			sthw			// start FloatCU (a=TOS, b=NOS ignored). Pop TOS.
+			wait			// stall while CU busy
+			wait			// rdy_cnt=1 extra cycle
+			ldmul nxt		// push result
+
+fcmpl:
+fcmpg:
+			sthw			// start FloatCU, pops TOS. Stack: ..., value1
+			pop				// pop second operand. Stack: ...
+			wait			// stall while CU busy
+			wait			// rdy_cnt=1 extra cycle
+			ldmul nxt		// push int result (-1, 0, or 1)
+
+fneg:
+			ldi -2147483648	// 0x80000000
+			xor nxt			// XOR sign bit, done (pure microcode, no CU)
+#endif

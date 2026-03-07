@@ -154,6 +154,35 @@ serial-hwmath: ../java/tools/dist/jopa.jar
 		> generated/serial-hwmath/SerialHwMathJumpTableData.scala
 	$(MAKE) JVM_TYPE=SIMULATION
 
+# Build FloatCU microcode (simulation variant)
+# Note: DSP_MUL omitted — lmul handler assumes fast DSP multiply (1-2 cycles),
+# incompatible with IntegerComputeUnit's iterative multiply (~18 cycles).
+# lmul falls through to Java software via sys_noim.
+floatcu: ../java/tools/dist/jopa.jar
+	mkdir -p generated/floatcu
+	gcc -x c -E -C -P $(GCC_PARAMS) -D$(JVM_TYPE) -DFLOAT_CU src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/floatcu/mem_rom.dat
+	cp generated/mem_ram.dat generated/floatcu/mem_ram.dat
+	cp generated/rom.mif generated/floatcu/rom.mif
+	sed 's/object JumpTableData/object FloatCuJumpTableData/' generated/JumpTableData.scala \
+		> generated/floatcu/FloatCuJumpTableData.scala
+	$(MAKE) JVM_TYPE=$(JVM_TYPE)
+
+# Build serial+FloatCU microcode
+serial-floatcu: ../java/tools/dist/jopa.jar
+	mkdir -p generated/serial-floatcu
+	gcc -x c -E -C -P $(GCC_PARAMS) -DSERIAL -DFLOAT_CU src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/serial-floatcu/mem_rom.dat
+	cp generated/mem_ram.dat generated/serial-floatcu/mem_ram.dat
+	cp generated/rom.mif generated/serial-floatcu/rom.mif
+	sed 's/object JumpTableData/object SerialFloatCuJumpTableData/' generated/JumpTableData.scala \
+		> generated/serial-floatcu/SerialFloatCuJumpTableData.scala
+	$(MAKE) JVM_TYPE=SIMULATION
+
 ../java/tools/dist/jopa.jar:
 	cd ../java/tools && $(MAKE) dist/jopa.jar
 

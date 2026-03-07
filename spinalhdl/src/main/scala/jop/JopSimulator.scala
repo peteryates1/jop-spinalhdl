@@ -3,7 +3,7 @@ package jop
 import spinal.core._
 import spinal.lib._
 import jop.pipeline._
-import jop.core.{IntegerComputeUnit, IntegerComputeUnitConfig}
+import jop.core.{IntegerComputeUnit, IntegerComputeUnitConfig, FloatComputeUnit, FloatComputeUnitConfig}
 import jop.memory._
 import jop.utils.JopFileLoader
 
@@ -353,6 +353,33 @@ case class JopSimulator(
     intCu.io.wr := decode.io.hwWr
     intCu.io.opcode := bcfetch.io.jinstr_out
 
+    // Float Compute Unit (always present; stays idle for non-float opcodes)
+    val floatCu = FloatComputeUnit(FloatComputeUnitConfig(
+      withAdd = true, withMul = true, withDiv = true,
+      withI2F = true, withF2I = true, withFcmp = true
+    ))
+    floatCu.io.a := stack.io.aout.asUInt
+    floatCu.io.b := stack.io.bout.asUInt
+    floatCu.io.c := U(0, 32 bits)
+    floatCu.io.d := U(0, 32 bits)
+    floatCu.io.wr := decode.io.hwWr
+    floatCu.io.opcode := bcfetch.io.jinstr_out
+
+    // Result MUX: select between IntCU and FloatCU
+    val lastWasFloat = RegInit(False)
+    when(decode.io.hwWr) {
+      lastWasFloat := (bcfetch.io.jinstr_out === B"8'x62" ||
+                       bcfetch.io.jinstr_out === B"8'x66" ||
+                       bcfetch.io.jinstr_out === B"8'x6A" ||
+                       bcfetch.io.jinstr_out === B"8'x6E" ||
+                       bcfetch.io.jinstr_out === B"8'x86" ||
+                       bcfetch.io.jinstr_out === B"8'x8B" ||
+                       bcfetch.io.jinstr_out === B"8'x95" ||
+                       bcfetch.io.jinstr_out === B"8'x96")
+    }
+    val cuResultLo = Mux(lastWasFloat, floatCu.io.resultLo.asBits, intCu.io.resultLo.asBits)
+    val cuResultHi = Mux(lastWasFloat, floatCu.io.resultHi.asBits, intCu.io.resultHi.asBits)
+
     // ========================================================================
     // I/O Simulation
     // ========================================================================
@@ -550,7 +577,7 @@ case class JopSimulator(
     // 1. BC fill is active (memory bus is being used for bytecode loading)
     // 2. Handle operation is active (getfield/putfield/iaload/iastore)
     // This ensures the pipeline waits during `wait` instructions until memory is ready
-    fetch.io.bsy := bcFillActive || handleOpActive || intCu.io.busy
+    fetch.io.bsy := bcFillActive || handleOpActive || intCu.io.busy || floatCu.io.busy
 
     // Decode stage connections
     decode.io.instr := fetch.io.dout
@@ -583,9 +610,9 @@ case class JopSimulator(
     val dinMuxSel = RegNext(fetch.io.ir_out(1 downto 0)) init(0)
     stack.io.din := dinMuxSel.mux(
       0 -> memRdDataReg,                    // ldmrd
-      1 -> intCu.io.resultLo.asBits,        // ldmul (compute unit resultLo)
+      1 -> cuResultLo,                      // ldmul (compute unit resultLo)
       2 -> bcStartReg.asBits.resized,       // ldbcstart
-      3 -> intCu.io.resultHi.asBits         // ldmulh (compute unit resultHi)
+      3 -> cuResultHi                       // ldmulh (compute unit resultHi)
     )
     stack.io.dirAddr := decode.io.dirAddr.asUInt
     stack.io.opd := bcfetch.io.opd

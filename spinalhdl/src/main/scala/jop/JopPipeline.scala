@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import jop.pipeline._
-import jop.core.{IntegerComputeUnit, IntegerComputeUnitConfig}
+import jop.core.{IntegerComputeUnit, IntegerComputeUnitConfig, FloatComputeUnit, FloatComputeUnitConfig}
 import jop.memory.MemCtrlInput
 
 /**
@@ -182,13 +182,16 @@ case class JopPipeline(
   // ==========================================================================
 
   // din mux: ir(1:0) selects between ldmrd, ldmul (resultLo), ldbcstart, ldmulh (resultHi)
+  // cuResultLo/cuResultHi are forward-declared here, driven after FloatCU definition below
+  val cuResultLo = Bits(32 bits)
+  val cuResultHi = Bits(32 bits)
   val dinMuxSel = RegNext(fetch.io.ir_out(1 downto 0)) init(0)
   dinMuxSel.simPublic()
   stack.io.din := dinMuxSel.mux(
     0 -> io.memRdData,
-    1 -> intCu.io.resultLo.asBits,
+    1 -> cuResultLo,
     2 -> io.memBcStart.asBits.resized,
-    3 -> intCu.io.resultHi.asBits
+    3 -> cuResultHi
   )
 
   stack.io.dirAddr := decode.io.dirAddr.asUInt
@@ -231,7 +234,46 @@ case class JopPipeline(
   intCu.io.d := U(0, 32 bits)             // unused for 32-bit integer ops
   intCu.io.wr := decode.io.hwWr
   intCu.io.opcode := bcfetch.io.jinstr_out
-  io.hwBusy := intCu.io.busy
+
+  // ==========================================================================
+  // Float Compute Unit (optional, replaces BmbFpu I/O peripheral)
+  // ==========================================================================
+
+  val floatCu = if (config.useFloatCu) Some(FloatComputeUnit(FloatComputeUnitConfig(
+    withAdd = true, withMul = true, withDiv = true,
+    withI2F = true, withF2I = true, withFcmp = true
+  ))) else None
+  floatCu.foreach { cu =>
+    cu.io.a := stack.io.aout.asUInt
+    cu.io.b := stack.io.bout.asUInt
+    cu.io.c := U(0, 32 bits)
+    cu.io.d := U(0, 32 bits)
+    cu.io.wr := decode.io.hwWr
+    cu.io.opcode := bcfetch.io.jinstr_out
+  }
+
+  // Result MUX: select between IntCU and FloatCU based on last sthw opcode
+  if (config.useFloatCu) {
+    val fcu = floatCu.get
+    val lastWasFloat = RegInit(False)
+    when(decode.io.hwWr) {
+      lastWasFloat := (bcfetch.io.jinstr_out === B"8'x62" ||
+                       bcfetch.io.jinstr_out === B"8'x66" ||
+                       bcfetch.io.jinstr_out === B"8'x6A" ||
+                       bcfetch.io.jinstr_out === B"8'x6E" ||
+                       bcfetch.io.jinstr_out === B"8'x86" ||
+                       bcfetch.io.jinstr_out === B"8'x8B" ||
+                       bcfetch.io.jinstr_out === B"8'x95" ||
+                       bcfetch.io.jinstr_out === B"8'x96")
+    }
+    cuResultLo := Mux(lastWasFloat, fcu.io.resultLo.asBits, intCu.io.resultLo.asBits)
+    cuResultHi := Mux(lastWasFloat, fcu.io.resultHi.asBits, intCu.io.resultHi.asBits)
+  } else {
+    cuResultLo := intCu.io.resultLo.asBits
+    cuResultHi := intCu.io.resultHi.asBits
+  }
+
+  io.hwBusy := intCu.io.busy || floatCu.map(_.io.busy).getOrElse(False)
 
   // ==========================================================================
   // Output Connections
@@ -287,7 +329,7 @@ case class JopPipeline(
   io.debugVp := stack.io.debugVp
   io.debugAr := stack.io.debugAr
   io.debugFlags := stack.io.zf ## stack.io.nf ## stack.io.eq ## stack.io.lt
-  io.debugMulResult := intCu.io.resultLo.asBits
+  io.debugMulResult := cuResultLo
 
   // ==========================================================================
   // Stack Cache DMA Passthrough

@@ -189,6 +189,15 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
         opbReg := io.b.asBits
         sticky := False
 
+        // For non-commutative binary ops: swap so opaReg=value1(NOS), opbReg=value2(TOS)
+        // JVM: fsub=value1-value2, fdiv=value1/value2, fcmp compares value1 vs value2
+        // Stack: [value1=NOS, value2=TOS], io.a=TOS=value2, io.b=NOS=value1
+        when(io.opcode === B"8'x66" || io.opcode === B"8'x6E" ||
+             io.opcode === B"8'x95" || io.opcode === B"8'x96") {
+          opaReg := io.b.asBits  // NOS = value1
+          opbReg := io.a.asBits  // TOS = value2
+        }
+
         // Decode JVM bytecode to internal opcode
         switch(io.opcode) {
           is(B"8'x62") { opcodeReg := 0 }  // fadd
@@ -201,14 +210,24 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
           is(B"8'x96") { opcodeReg := 7 }  // fcmpg
         }
 
+        // Route only on recognized float opcodes (unrecognized stay IDLE)
+        if (config.withAdd) {
+          when(io.opcode === B"8'x62" || io.opcode === B"8'x66") { state := State.UNPACK }
+        }
+        if (config.withMul) {
+          when(io.opcode === B"8'x6A") { state := State.UNPACK }
+        }
+        if (config.withDiv) {
+          when(io.opcode === B"8'x6E") { state := State.UNPACK }
+        }
         if (config.withI2F) {
-          when(io.opcode === B"8'x86") {
-            state := State.I2F_EXEC
-          } otherwise {
-            state := State.UNPACK
-          }
-        } else {
-          state := State.UNPACK
+          when(io.opcode === B"8'x86") { state := State.I2F_EXEC }
+        }
+        if (config.withF2I) {
+          when(io.opcode === B"8'x8B") { state := State.UNPACK }
+        }
+        if (config.withFcmp) {
+          when(io.opcode === B"8'x95" || io.opcode === B"8'x96") { state := State.UNPACK }
         }
       }
     }

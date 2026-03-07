@@ -57,6 +57,10 @@ class FloatComputeUnitTest extends AnyFunSuite {
     dut.io.resultLo.toBigInt.toLong
   }
 
+  /** Run float op. For pipeline-order consistency:
+    * a=io.a (TOS in pipeline), b=io.b (NOS in pipeline).
+    * Non-commutative ops (fsub/fdiv/fcmp) swap internally so
+    * opaReg=value1(NOS), opbReg=value2(TOS). */
   def runFloat(dut: FloatComputeUnit, a: Float, b: Float, bytecode: Int)
               (implicit cd: ClockDomain): Long =
     runOp(dut, floatBits(a), floatBits(b), bytecode)
@@ -148,8 +152,9 @@ class FloatComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertFloat(runFloat(dut, 5.0f, 3.0f, FSUB), 2.0f, "5.0 - 3.0")
-      assertFloat(runFloat(dut, 3.0f, 5.0f, FSUB), -2.0f, "3.0 - 5.0")
+      // Pipeline order: a=TOS=value2, b=NOS=value1. CU computes value1-value2.
+      assertFloat(runFloat(dut, 3.0f, 5.0f, FSUB), 2.0f, "5.0 - 3.0")
+      assertFloat(runFloat(dut, 5.0f, 3.0f, FSUB), -2.0f, "3.0 - 5.0")
     }
   }
 
@@ -208,8 +213,9 @@ class FloatComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertFloat(runFloat(dut, 7.0f, 2.0f, FDIV), 3.5f, "7.0 / 2.0")
-      assertFloat(runFloat(dut, 12.0f, 4.0f, FDIV), 3.0f, "12.0 / 4.0")
+      // Pipeline order: a=TOS=value2, b=NOS=value1. CU computes value1/value2.
+      assertFloat(runFloat(dut, 2.0f, 7.0f, FDIV), 3.5f, "7.0 / 2.0")
+      assertFloat(runFloat(dut, 4.0f, 12.0f, FDIV), 3.0f, "12.0 / 4.0")
     }
   }
 
@@ -218,11 +224,12 @@ class FloatComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertBits(runFloat(dut, 1.0f, 0.0f, FDIV), POS_INF, "1 / 0 = +Inf")
-      assertBits(runFloat(dut, -1.0f, 0.0f, FDIV), NEG_INF, "-1 / 0 = -Inf")
+      // Pipeline order: a=TOS=value2(divisor), b=NOS=value1(dividend)
+      assertBits(runFloat(dut, 0.0f, 1.0f, FDIV), POS_INF, "1 / 0 = +Inf")
+      assertBits(runFloat(dut, 0.0f, -1.0f, FDIV), NEG_INF, "-1 / 0 = -Inf")
       assertNaN(runFloat(dut, 0.0f, 0.0f, FDIV), "0 / 0 = NaN")
       assertNaN(runFloat(dut, Float.PositiveInfinity, Float.PositiveInfinity, FDIV), "Inf / Inf = NaN")
-      assertBits(runFloat(dut, 1.0f, Float.PositiveInfinity, FDIV), 0x00000000L, "1 / Inf = +0")
+      assertBits(runFloat(dut, Float.PositiveInfinity, 1.0f, FDIV), 0x00000000L, "1 / Inf = +0")
     }
   }
 
@@ -289,11 +296,12 @@ class FloatComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertBits(runFloat(dut, 1.0f, 2.0f, FCMPL), int32Bits(-1), "fcmpl: 1 < 2 -> -1")
-      assertBits(runFloat(dut, 2.0f, 1.0f, FCMPL), int32Bits(1), "fcmpl: 2 > 1 -> +1")
+      // Pipeline order: a=TOS=value2, b=NOS=value1. CU compares value1 vs value2.
+      assertBits(runFloat(dut, 2.0f, 1.0f, FCMPL), int32Bits(-1), "fcmpl: 1 < 2 -> -1")
+      assertBits(runFloat(dut, 1.0f, 2.0f, FCMPL), int32Bits(1), "fcmpl: 2 > 1 -> +1")
       assertBits(runFloat(dut, 1.0f, 1.0f, FCMPL), int32Bits(0), "fcmpl: 1 == 1 -> 0")
-      assertBits(runFloat(dut, -1.0f, 1.0f, FCMPL), int32Bits(-1), "fcmpl: -1 < 1 -> -1")
-      assertBits(runFloat(dut, -2.0f, -1.0f, FCMPL), int32Bits(-1), "fcmpl: -2 < -1 -> -1")
+      assertBits(runFloat(dut, 1.0f, -1.0f, FCMPL), int32Bits(-1), "fcmpl: -1 < 1 -> -1")
+      assertBits(runFloat(dut, -1.0f, -2.0f, FCMPL), int32Bits(-1), "fcmpl: -2 < -1 -> -1")
     }
   }
 

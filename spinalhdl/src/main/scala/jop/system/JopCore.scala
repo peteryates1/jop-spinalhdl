@@ -54,6 +54,7 @@ case class JopCoreConfig(
   clkFreqHz:    Long             = 100000000L,
   fpuMode:      FpuMode.FpuMode   = FpuMode.Software,  // FP mode: Software (SoftFloat) or Hardware (HW FPU)
   useIhlu:      Boolean          = false,  // Use IHLU (per-object lock) instead of CmpSync (global lock)
+  useFloatCu:   Boolean          = false,  // Use FloatComputeUnit (pipeline-integrated FPU) instead of BmbFpu
   useStackCache: Boolean         = false,  // Use 3-bank rotating stack cache with DMA spill/fill
   spillBaseAddrOverride: Option[Int] = None // Override spillBaseAddr (e.g., 0 for dedicated spill BRAM)
 ) {
@@ -66,6 +67,7 @@ case class JopCoreConfig(
   require(instrWidth == 10, "Instruction width must be 10 bits")
   require(pcWidth == 11, "PC width must be 11 bits (2K ROM)")
   require(jpcWidth == 11, "JPC width must be 11 bits (2KB cache)")
+  require(!(useFloatCu && fpuMode == FpuMode.Hardware), "useFloatCu and fpuMode=Hardware are mutually exclusive")
 
   def fetchConfig = FetchConfig(pcWidth, instrWidth)
   def decodeConfig = DecodeConfig(instrWidth, ramWidth)
@@ -97,7 +99,8 @@ case class JopCoreConfig(
     jt == JumpTableInitData.serialFpu ||
     jt == JumpTableInitData.serialDsp ||
     jt == JumpTableInitData.serialDiv ||
-    jt == JumpTableInitData.serialHwMath
+    jt == JumpTableInitData.serialHwMath ||
+    jt == JumpTableInitData.serialFloatCu
   }
 
   /** Return a copy with the jump table matching the fpuMode.
@@ -110,6 +113,17 @@ case class JopCoreConfig(
         if (isSerialJumpTable) JumpTableInitData.serialFpu
         else JumpTableInitData.simulationFpu
       copy(jumpTable = fpuTable)
+    }
+  }
+
+  /** Return a copy with the jump table matching the FloatCU config. */
+  def withFloatCuJumpTable: JopCoreConfig = {
+    if (!useFloatCu) this
+    else {
+      val fcuTable =
+        if (isSerialJumpTable) JumpTableInitData.serialFloatCu
+        else JumpTableInitData.simulationFloatCu
+      copy(jumpTable = fcuTable)
     }
   }
 }
@@ -413,7 +427,7 @@ case class JopCore(
   // Pipeline busy = memory controller busy OR halted by CmpSync OR debug halt OR FPU/HW compute unit
   // Note: fpuBusy assigned later inside conditional block if present
   val fpuBusy = Bool()
-  if (!config.hasFpu) fpuBusy := False
+  if (!config.hasFpu || config.useFloatCu) fpuBusy := False
   pipeline.io.memBusy := memCtrl.io.memOut.busy || bmbSys.io.halted || io.debugHalt || fpuBusy || pipeline.io.hwBusy
 
   // Exception from BmbSys
@@ -503,7 +517,7 @@ case class JopCore(
   }
 
   // FPU (0xF0-0xF3, optional — per-core HW float)
-  val bmbFpu = if (config.hasFpu) Some(BmbFpu()) else None
+  val bmbFpu = if (config.hasFpu && !config.useFloatCu) Some(BmbFpu()) else None
   bmbFpu.foreach { fpu =>
     fpu.io.addr   := JopIoSpace.fpuAddr(ioAddr)
     fpu.io.rd     := memCtrl.io.ioRd && JopIoSpace.isFpu(ioAddr)

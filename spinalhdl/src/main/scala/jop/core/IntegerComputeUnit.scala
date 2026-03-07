@@ -92,8 +92,7 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeU
           is(B"8'x70") { opcodeReg := 2 }  // irem
         }
 
-        // Route to appropriate state
-        state := State.DONE  // default fallback
+        // Route to appropriate state (unrecognized opcodes stay IDLE)
         if (config.withMul) {
           when(io.opcode === B"8'x68") {
             mulA := io.a
