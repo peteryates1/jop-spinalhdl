@@ -103,8 +103,9 @@ class IntegerComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(50000); initIo(dut); cd.waitSampling(5)
 
-      assertBits32(runOp(dut, int32Bits(7), int32Bits(2), IDIV), int32Bits(3), "7 / 2 = 3")
-      assertBits32(runOp(dut, int32Bits(-7), int32Bits(2), IDIV), int32Bits(-3), "-7 / 2 = -3")
+      // runOp(a=TOS=divisor, b=NOS=dividend): JVM idiv = NOS / TOS = b / a
+      assertBits32(runOp(dut, int32Bits(2), int32Bits(7), IDIV), int32Bits(3), "7 / 2 = 3")
+      assertBits32(runOp(dut, int32Bits(2), int32Bits(-7), IDIV), int32Bits(-3), "-7 / 2 = -3")
       assertBits32(runOp(dut, int32Bits(1), int32Bits(1), IDIV), int32Bits(1), "1 / 1 = 1")
     }
   }
@@ -114,7 +115,8 @@ class IntegerComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(50000); initIo(dut); cd.waitSampling(5)
 
-      assertBits32(runOp(dut, INT_MIN, int32Bits(-1), IDIV), INT_MIN, "MIN_VALUE / -1 = MIN_VALUE")
+      // a=TOS=divisor=-1, b=NOS=dividend=MIN_VALUE
+      assertBits32(runOp(dut, int32Bits(-1), INT_MIN, IDIV), INT_MIN, "MIN_VALUE / -1 = MIN_VALUE")
     }
   }
 
@@ -123,7 +125,8 @@ class IntegerComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(50000); initIo(dut); cd.waitSampling(5)
 
-      assertBits32(runOp(dut, int32Bits(42), int32Bits(0), IDIV), int32Bits(0), "42 / 0 = 0")
+      // a=TOS=divisor=0, b=NOS=dividend=42
+      assertBits32(runOp(dut, int32Bits(0), int32Bits(42), IDIV), int32Bits(0), "42 / 0 = 0")
     }
   }
 
@@ -135,8 +138,9 @@ class IntegerComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(50000); initIo(dut); cd.waitSampling(5)
 
-      assertBits32(runOp(dut, int32Bits(7), int32Bits(2), IREM), int32Bits(1), "7 % 2 = 1")
-      assertBits32(runOp(dut, int32Bits(-7), int32Bits(2), IREM), int32Bits(-1), "-7 % 2 = -1")
+      // runOp(a=TOS=divisor, b=NOS=dividend): JVM irem = NOS % TOS = b % a
+      assertBits32(runOp(dut, int32Bits(2), int32Bits(7), IREM), int32Bits(1), "7 % 2 = 1")
+      assertBits32(runOp(dut, int32Bits(2), int32Bits(-7), IREM), int32Bits(-1), "-7 % 2 = -1")
     }
   }
 
@@ -145,7 +149,8 @@ class IntegerComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(50000); initIo(dut); cd.waitSampling(5)
 
-      assertBits32(runOp(dut, INT_MIN, int32Bits(-1), IREM), int32Bits(0), "MIN_VALUE % -1 = 0")
+      // a=TOS=divisor=-1, b=NOS=dividend=MIN_VALUE
+      assertBits32(runOp(dut, int32Bits(-1), INT_MIN, IREM), int32Bits(0), "MIN_VALUE % -1 = 0")
     }
   }
 
@@ -154,7 +159,8 @@ class IntegerComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(50000); initIo(dut); cd.waitSampling(5)
 
-      assertBits32(runOp(dut, int32Bits(42), int32Bits(0), IREM), int32Bits(0), "42 % 0 = 0")
+      // a=TOS=divisor=0, b=NOS=dividend=42
+      assertBits32(runOp(dut, int32Bits(0), int32Bits(42), IREM), int32Bits(0), "42 % 0 = 0")
     }
   }
 

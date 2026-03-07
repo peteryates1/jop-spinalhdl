@@ -186,7 +186,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
 
       // Read NOP at address 0
       val nopAddr = dut.io.jpaddr.toInt
-      assert(nopAddr == 0x20C, f"NOP should map to 0x20C, got 0x$nopAddr%03x")
+      assert(nopAddr == 0x224, f"NOP should map to 0x224, got 0x$nopAddr%03x")
 
       // Increment to address 1 (iadd)
       dut.io.jfetch #= true
@@ -197,7 +197,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       sleep(1)
 
       val iaddAddr = dut.io.jpaddr.toInt
-      assert(iaddAddr == 0x260, f"IADD should map to 0x260, got 0x$iaddAddr%03x")
+      assert(iaddAddr == 0x278, f"IADD should map to 0x278, got 0x$iaddAddr%03x")
 
       // Increment to address 2 (goto)
       dut.io.jfetch #= true
@@ -208,7 +208,7 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       sleep(1)
 
       val gotoAddr = dut.io.jpaddr.toInt
-      assert(gotoAddr == 0x28A, f"GOTO should map to 0x28A, got 0x$gotoAddr%03x")
+      assert(gotoAddr == 0x29B, f"GOTO should map to 0x29B, got 0x$gotoAddr%03x")
     }
   }
 
