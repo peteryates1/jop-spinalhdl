@@ -53,10 +53,10 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
   // ========================================================================
   object State extends SpinalEnum {
     val IDLE, UNPACK                    = newElement()
-    val ADD_ALIGN, ADD_EXEC, ADD_NORM   = newElement()
-    val MUL_STEP1, MUL_STEP2           = newElement()
-    val DIV_INIT, DIV_ITER              = newElement()
-    val I2F_EXEC                        = newElement()
+    val ADD_ALIGN, ADD_SHIFT, ADD_EXEC, ADD_NORM = newElement()
+    val MUL_STEP1, MUL_STEP2                    = newElement()
+    val DIV_INIT, DIV_ITER                      = newElement()
+    val I2F_EXEC, I2F_SHIFT                     = newElement()
     val F2I_EXEC                        = newElement()
     val FCMP_EXEC                       = newElement()
     val ROUND, DONE                     = newElement()
@@ -144,9 +144,13 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
   // ========================================================================
   // Operation-specific registers (always declared; unused ones optimized away)
   // ========================================================================
-  val addMantA   = Reg(UInt(28 bits)) init (0)
-  val addMantB   = Reg(UInt(28 bits)) init (0)
-  val addIsSubOp = Reg(Bool()) init (False)
+  val addMantA      = Reg(UInt(28 bits)) init (0)
+  val addMantB      = Reg(UInt(28 bits)) init (0)
+  val addIsSubOp    = Reg(Bool()) init (False)
+  val addShiftInput = Reg(UInt(28 bits)) init (0)  // extended mantissa to barrel-shift
+  val addShAmt      = Reg(UInt(5 bits)) init (0)   // shift amount (registered expDiff)
+  val addFlushShift = Reg(Bool()) init (False)      // true when expDiff >= 27
+  val addFlushSticky = Reg(Bool()) init (False)     // pre-computed sticky for flush case
 
   val mulProdHi  = Reg(UInt(48 bits)) init (0)
 
@@ -154,6 +158,9 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
   val divDivisor   = Reg(UInt(28 bits)) init (0)
   val divQuotient  = Reg(UInt(26 bits)) init (0)
   val divCount     = Reg(UInt(5 bits)) init (0)
+
+  val i2fAbsVal = Reg(UInt(32 bits)) init (0)  // registered absolute value
+  val i2fLz     = Reg(UInt(6 bits)) init (0)   // registered leading zero count
 
   // ========================================================================
   // CLZ helpers
@@ -284,38 +291,50 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
         } elsewhen (bZero) {
           resultReg := toResult(packFloat(aSign, aExp, aMant)); state := State.DONE
         } otherwise {
+          // Pipeline stage 1: compute expDiff, register shift params → ADD_SHIFT
           val expDiff = (aExp - bExp).resize(10 bits)
           addIsSubOp := (aSign =/= bSign)
 
           when(expDiff >= 0) {
-            // A has larger or equal exponent — shift B right
+            // A has larger or equal exponent — will shift B right
             addMantA := (U"2'b00" @@ aMant).resized
-            val bExt = (U"2'b00" @@ bMant).resize(28 bits)
+            addShiftInput := (U"2'b00" @@ bMant).resize(28 bits)
+            addFlushSticky := (bMant =/= 0)
             when(expDiff >= 27) {
-              addMantB := U(0, 28 bits); sticky := (bMant =/= 0)
+              addFlushShift := True
             } otherwise {
-              val shAmt = expDiff.asUInt.resize(5 bits)
-              addMantB := (bExt |>> shAmt).resize(28 bits)
-              sticky := ((bExt & ((U(1, 28 bits) |<< shAmt) - 1)) =/= 0)
+              addFlushShift := False
+              addShAmt := expDiff.asUInt.resize(5 bits)
             }
             resExp := aExp; resSign := aSign
           } otherwise {
-            // B has larger exponent — B goes in addMantA (unshifted), A in addMantB (shifted)
-            // This ensures addMantA >= addMantB for subtraction, keeping sign logic correct
+            // B has larger exponent — B goes in addMantA (unshifted), A shifted
             addMantA := (U"2'b00" @@ bMant).resized
             val negDiff = (-expDiff).resize(10 bits)
-            val aExt = (U"2'b00" @@ aMant).resize(28 bits)
+            addShiftInput := (U"2'b00" @@ aMant).resize(28 bits)
+            addFlushSticky := (aMant =/= 0)
             when(negDiff >= 27) {
-              addMantB := U(0, 28 bits); sticky := (aMant =/= 0)
+              addFlushShift := True
             } otherwise {
-              val shAmt = negDiff.asUInt.resize(5 bits)
-              addMantB := (aExt |>> shAmt).resize(28 bits)
-              sticky := ((aExt & ((U(1, 28 bits) |<< shAmt) - 1)) =/= 0)
+              addFlushShift := False
+              addShAmt := negDiff.asUInt.resize(5 bits)
             }
             resExp := bExp; resSign := bSign
           }
-          state := State.ADD_EXEC
+          state := State.ADD_SHIFT
         }
+      }
+
+      // Pipeline stage 2: barrel shift + sticky from registered inputs
+      is(State.ADD_SHIFT) {
+        when(addFlushShift) {
+          addMantB := U(0, 28 bits)
+          sticky := addFlushSticky
+        } otherwise {
+          addMantB := (addShiftInput |>> addShAmt).resize(28 bits)
+          sticky := ((addShiftInput & ((U(1, 28 bits) |<< addShAmt) - 1)) =/= 0)
+        }
+        state := State.ADD_EXEC
       }
 
       is(State.ADD_EXEC) {
@@ -504,6 +523,7 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
     // I2F
     // ======================================================================
     if (config.withI2F) {
+      // Pipeline stage 1: negate + CLZ, register absVal and lz
       is(State.I2F_EXEC) {
         val intVal = opaReg.asSInt
         when(intVal === 0) {
@@ -514,27 +534,32 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
           when(negative) { absVal := (-intVal).asUInt }
             .otherwise   { absVal := intVal.asUInt }
 
-          val lz = clz32(absVal)
+          i2fAbsVal := absVal
+          i2fLz := clz32(absVal)
           resSign := negative
-          // Exponent: leading 1 at bit (31 - lz), value = 2^(31-lz) * 1.xxx
-          resExp := (S(31, 10 bits) - lz.resize(10 bits).asSInt)
-
-          // Place into resMant: hidden at bit 25, frac at 24:2, guard at 1, round at 0
-          // absVal leading 1 at bit (31-lz); we want it at bit 25 of 26-bit resMant
-          // If (31-lz) > 25: shift right by (31-lz-25) = (6-lz)
-          // If (31-lz) <= 25: shift left by (25-(31-lz)) = (lz-6)
-          when(lz < 6) {
-            val shR = (U(6, 6 bits) - lz).resize(5 bits)
-            val mask = (U(1, 32 bits) |<< shR) - 1
-            sticky := (absVal & mask) =/= 0
-            resMant := (absVal |>> shR).resize(26 bits)
-          } otherwise {
-            val shL = (lz - 6).resize(5 bits)
-            sticky := False
-            resMant := (absVal |<< shL).resize(26 bits)
-          }
-          state := State.ROUND
+          state := State.I2F_SHIFT
         }
+      }
+
+      // Pipeline stage 2: barrel shift + sticky from registered absVal/lz
+      is(State.I2F_SHIFT) {
+        resExp := (S(31, 10 bits) - i2fLz.resize(10 bits).asSInt)
+
+        // Place into resMant: hidden at bit 25, frac at 24:2, guard at 1, round at 0
+        // absVal leading 1 at bit (31-lz); we want it at bit 25 of 26-bit resMant
+        // If (31-lz) > 25: shift right by (6-lz)
+        // If (31-lz) <= 25: shift left by (lz-6)
+        when(i2fLz < 6) {
+          val shR = (U(6, 6 bits) - i2fLz).resize(5 bits)
+          val mask = (U(1, 32 bits) |<< shR) - 1
+          sticky := (i2fAbsVal & mask) =/= 0
+          resMant := (i2fAbsVal |>> shR).resize(26 bits)
+        } otherwise {
+          val shL = (i2fLz - 6).resize(5 bits)
+          sticky := False
+          resMant := (i2fAbsVal |<< shL).resize(26 bits)
+        }
+        state := State.ROUND
       }
     }
 
