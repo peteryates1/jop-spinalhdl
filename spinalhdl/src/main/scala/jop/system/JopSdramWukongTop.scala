@@ -93,7 +93,7 @@ case class JopSdramWukongTop(
       cpuCnt = cpuCnt,
       baseConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(burstLen = burstLen),
-        jumpTable = jumpTable,
+        supersetJumpTable = jumpTable,
         clkFreqHz = 100000000L,
         useStackCache = true
       ),

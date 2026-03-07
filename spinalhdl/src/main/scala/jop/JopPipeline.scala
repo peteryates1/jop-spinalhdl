@@ -239,7 +239,7 @@ case class JopPipeline(
   // Float Compute Unit (optional, replaces BmbFpu I/O peripheral)
   // ==========================================================================
 
-  val floatCu = if (config.useFloatCu) Some(FloatComputeUnit(FloatComputeUnitConfig(
+  val floatCu = if (config.needsFloatCompute) Some(FloatComputeUnit(FloatComputeUnitConfig(
     withAdd = true, withMul = true, withDiv = true,
     withI2F = true, withF2I = true, withFcmp = true
   ))) else None
@@ -253,7 +253,7 @@ case class JopPipeline(
   }
 
   // Result MUX: select between IntCU and FloatCU based on last sthw opcode
-  if (config.useFloatCu) {
+  if (config.needsFloatCompute) {
     val fcu = floatCu.get
     val lastWasFloat = RegInit(False)
     when(decode.io.hwWr) {

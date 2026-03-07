@@ -199,9 +199,8 @@ case class JopCluster(
 
   val cores = (0 until cpuCnt).map { i =>
     // Use per-core config if provided, otherwise fall back to baseConfig.
-    // Apply FPU jump table automatically based on per-core config.
     val base = perCoreConfigs.map(_(i)).getOrElse(baseConfig)
-    val coreConfig = base.withFpuJumpTable.copy(
+    val coreConfig = base.copy(
       cpuId = i,
       cpuCnt = cpuCnt,
       ioConfig = base.ioConfig.copy(

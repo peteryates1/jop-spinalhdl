@@ -9,16 +9,12 @@ import jop.io.{BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdSpi, BmbSdNative, BmbVgaDm
 import spinal.lib.com.eth._
 import jop.{JopPipeline, JumpTableData}
 
-/**
- * FPU mode selection for per-core floating-point configuration.
- *
- * - Software: All FP bytecodes handled by SoftFloat32/SoftFloat64 in Java (default)
- * - Hardware: Single-precision float operations (fadd/fsub/fmul/fdiv) use HW FPU
- *             via microcode I/O; double stays SoftFloat64
- */
-object FpuMode extends Enumeration {
-  type FpuMode = Value
-  val Software, Hardware = Value
+/** Per-bytecode implementation selection — uniform for all configurable bytecodes */
+sealed trait Implementation
+object Implementation {
+  case object Java extends Implementation       // sys_noim → Java runtime fallback
+  case object Microcode extends Implementation  // Pure microcode handler (no HW peripheral)
+  case object Hardware extends Implementation   // Microcode → HW compute unit / ALU
 }
 
 /**
@@ -33,11 +29,11 @@ object FpuMode extends Enumeration {
  * @param ramWidth     Stack RAM address width (8 bits = 256 entries)
  * @param blockBits    Method cache block bits (4 = 16 blocks in JBC RAM)
  * @param memConfig    Memory subsystem configuration
+ * @param supersetJumpTable  Superset jump table (all HW handlers present). Patched by resolveJumpTable().
  * @param cpuId        CPU identifier (for multi-core; 0 for single-core)
  * @param cpuCnt       Total number of CPUs (1 for single-core)
  * @param ioConfig     I/O device configuration (device presence, parameters, interrupts)
  * @param clkFreqHz    System clock frequency in Hz (for BmbSys microsecond prescaler)
- * @param fpuMode      Floating-point mode: Software (SoftFloat) or Hardware (HW FPU)
  */
 case class JopCoreConfig(
   dataWidth:    Int              = 32,
@@ -47,27 +43,67 @@ case class JopCoreConfig(
   ramWidth:     Int              = 8,
   blockBits:    Int              = 4,
   memConfig:    JopMemoryConfig  = JopMemoryConfig(),
-  jumpTable:    JumpTableInitData = JumpTableInitData.simulation,
+  supersetJumpTable: JumpTableInitData = JumpTableInitData.simulation,
   cpuId:        Int              = 0,
   cpuCnt:       Int              = 1,
   ioConfig:     IoConfig         = IoConfig(),
   clkFreqHz:    Long             = 100000000L,
-  fpuMode:      FpuMode.FpuMode   = FpuMode.Software,  // FP mode: Software (SoftFloat) or Hardware (HW FPU)
   useIhlu:      Boolean          = false,  // Use IHLU (per-object lock) instead of CmpSync (global lock)
-  useFloatCu:   Boolean          = false,  // Use FloatComputeUnit (pipeline-integrated FPU) instead of BmbFpu
   useStackCache: Boolean         = false,  // Use 3-bank rotating stack cache with DMA spill/fill
-  spillBaseAddrOverride: Option[Int] = None // Override spillBaseAddr (e.g., 0 for dedicated spill BRAM)
+  spillBaseAddrOverride: Option[Int] = None, // Override spillBaseAddr (e.g., 0 for dedicated spill BRAM)
+  useBmbFpu:    Boolean          = false,  // Legacy: use BmbFpu I/O peripheral instead of FloatComputeUnit
+
+  // --- Per-bytecode implementation selection ---
+  // Integer — always Hardware (IntegerComputeUnit). Microcode = iterative, future: Hardware = DSP.
+  imul:  Implementation = Implementation.Microcode,  // Microcode=radix-4 ~18cyc, future Hardware=DSP 1cyc
+  idiv:  Implementation = Implementation.Hardware,   // Hardware→IntegerComputeUnit DivUnit ~36cyc
+  irem:  Implementation = Implementation.Hardware,   // Hardware→IntegerComputeUnit DivUnit ~36cyc
+
+  // Float — Java (software) or Hardware (FloatComputeUnit / microcode)
+  fadd:  Implementation = Implementation.Java,
+  fsub:  Implementation = Implementation.Java,
+  fmul:  Implementation = Implementation.Java,
+  fdiv:  Implementation = Implementation.Java,
+  fneg:  Implementation = Implementation.Java,  // Hardware → microcode XOR sign bit (no CU needed)
+  i2f:   Implementation = Implementation.Java,
+  f2i:   Implementation = Implementation.Java,
+  fcmpl: Implementation = Implementation.Java,
+  fcmpg: Implementation = Implementation.Java
 ) {
-  // Convenience accessors (avoid changing every reference site)
+  import Implementation._
+
+  // Convenience accessors
   def hasUart: Boolean = ioConfig.hasUart
   def hasEth: Boolean = ioConfig.hasEth
-  def hasFpu: Boolean = fpuMode == FpuMode.Hardware
   def uartBaudRate: Int = ioConfig.uartBaudRate
+
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(instrWidth == 10, "Instruction width must be 10 bits")
   require(pcWidth == 11, "PC width must be 11 bits (2K ROM)")
   require(jpcWidth == 11, "JPC width must be 11 bits (2KB cache)")
-  require(!(useFloatCu && fpuMode == FpuMode.Hardware), "useFloatCu and fpuMode=Hardware are mutually exclusive")
+
+  // --- Derived: what hardware to instantiate ---
+  def needsIntegerCompute: Boolean = Seq(imul, idiv, irem).exists(_ != Java)
+  def needsFloatCompute: Boolean   = Seq(fadd, fsub, fmul, fdiv, i2f, f2i, fcmpl, fcmpg).exists(_ != Java)
+
+  // Internal hardware within IntegerComputeUnit
+  def needsIntMul: Boolean = imul != Java
+  def needsIntDiv: Boolean = Seq(idiv, irem).exists(_ != Java)
+
+  // BmbFpu I/O peripheral (legacy VexRiscv FPU path — only used when useBmbFpu=true)
+  def needsBmbFpu: Boolean = useBmbFpu
+
+  /** Resolve the jump table: patch bytecodes configured as Java to sys_noim. */
+  def resolveJumpTable: JumpTableInitData = {
+    val bytecodeMap: Seq[(Int, Implementation)] = Seq(
+      0x68 -> imul,  0x6C -> idiv,  0x70 -> irem,
+      0x62 -> fadd,  0x66 -> fsub,  0x6A -> fmul,  0x6E -> fdiv,
+      0x76 -> fneg,  0x86 -> i2f,   0x8B -> f2i,
+      0x95 -> fcmpl, 0x96 -> fcmpg
+    )
+    val javaBytecodes = bytecodeMap.collect { case (bc, Java) => bc }
+    supersetJumpTable.disable(javaBytecodes: _*)
+  }
 
   def fetchConfig = FetchConfig(pcWidth, instrWidth)
   def decodeConfig = DecodeConfig(instrWidth, ramWidth)
@@ -78,54 +114,16 @@ case class JopCoreConfig(
       spillBaseAddr = spillBaseAddrOverride.getOrElse {
         val memWords = (memConfig.mainMemSize / 4).toInt
         if (memConfig.stackRegionWordsPerCore > 0) {
-          // Per-core stack region at top of memory (core 0 highest)
           memWords - (cpuId + 1) * memConfig.stackRegionWordsPerCore
         } else if (memConfig.burstLen == 0) {
-          // Legacy BRAM: spill area in top 25% of memory (word address)
           (memWords * 3 / 4) + cpuId * 4096
         } else {
-          // Legacy SDRAM/DDR3: dedicated spill area beyond program/heap
           0x780000 + cpuId * 0x8000
         }
       }
     )) else None
   )
-  def bcfetchConfig = BytecodeFetchConfig(jpcWidth, pcWidth, jumpTable)
-
-  /** True if this config uses a serial-boot jump table variant. */
-  private def isSerialJumpTable: Boolean = {
-    val jt = jumpTable
-    jt == JumpTableInitData.serial ||
-    jt == JumpTableInitData.serialFpu ||
-    jt == JumpTableInitData.serialDsp ||
-    jt == JumpTableInitData.serialDiv ||
-    jt == JumpTableInitData.serialHwMath ||
-    jt == JumpTableInitData.serialFloatCu
-  }
-
-  /** Return a copy with the jump table matching the fpuMode.
-   *  Replaces the non-FPU jump table variant with the FPU variant if hasFpu is true.
-   *  Call this after setting fpuMode to ensure the jump table matches. */
-  def withFpuJumpTable: JopCoreConfig = {
-    if (!hasFpu) this
-    else {
-      val fpuTable =
-        if (isSerialJumpTable) JumpTableInitData.serialFpu
-        else JumpTableInitData.simulationFpu
-      copy(jumpTable = fpuTable)
-    }
-  }
-
-  /** Return a copy with the jump table matching the FloatCU config. */
-  def withFloatCuJumpTable: JopCoreConfig = {
-    if (!useFloatCu) this
-    else {
-      val fcuTable =
-        if (isSerialJumpTable) JumpTableInitData.serialFloatCu
-        else JumpTableInitData.simulationFloatCu
-      copy(jumpTable = fcuTable)
-    }
-  }
+  def bcfetchConfig = BytecodeFetchConfig(jpcWidth, pcWidth, resolveJumpTable)
 }
 
 /**
@@ -265,12 +263,13 @@ case class JopCore(
     // Debug: halted by CmpSync (from internal BmbSys)
     val debugHalted = out Bool()
 
-    // FPU debug (only when hasFpu)
-    val fpuDbgOpA    = if (config.hasFpu) Some(out Bits(32 bits)) else None
-    val fpuDbgOpB    = if (config.hasFpu) Some(out Bits(32 bits)) else None
-    val fpuDbgOpCode = if (config.hasFpu) Some(out UInt(2 bits)) else None
-    val fpuDbgStart  = if (config.hasFpu) Some(out Bool()) else None
-    val fpuDbgResult = if (config.hasFpu) Some(out Bits(32 bits)) else None
+    // FPU debug (only when BmbFpu I/O peripheral is used — i.e., never with config-driven design)
+    // Retained for backward compatibility with JopFpuBramSim; will be removed when BmbFpu is removed.
+    val fpuDbgOpA    = if (config.needsBmbFpu) Some(out Bits(32 bits)) else None
+    val fpuDbgOpB    = if (config.needsBmbFpu) Some(out Bits(32 bits)) else None
+    val fpuDbgOpCode = if (config.needsBmbFpu) Some(out UInt(2 bits)) else None
+    val fpuDbgStart  = if (config.needsBmbFpu) Some(out Bool()) else None
+    val fpuDbgResult = if (config.needsBmbFpu) Some(out Bits(32 bits)) else None
 
     // Debug controller interface
     val debugHalt = in Bool()             // Freeze pipeline (from debug controller)
@@ -414,7 +413,7 @@ case class JopCore(
   // System I/O (0x80-0x8F)
   val bmbSys = BmbSys(clkFreqHz = config.clkFreqHz, cpuId = config.cpuId, cpuCnt = config.cpuCnt, numIoInt = numIoInt,
     memEndWords = config.memConfig.usableMemWords(config.cpuCnt),
-    fpuCapability = if (config.hasFpu) 1 else 0)
+    fpuCapability = if (config.needsFloatCompute || config.needsBmbFpu) 1 else 0)
   bmbSys.io.addr   := JopIoSpace.sysAddr(ioAddr)
   bmbSys.io.rd     := memCtrl.io.ioRd && JopIoSpace.isSys(ioAddr)
   bmbSys.io.wr     := memCtrl.io.ioWr && JopIoSpace.isSys(ioAddr)
@@ -427,7 +426,7 @@ case class JopCore(
   // Pipeline busy = memory controller busy OR halted by CmpSync OR debug halt OR FPU/HW compute unit
   // Note: fpuBusy assigned later inside conditional block if present
   val fpuBusy = Bool()
-  if (!config.hasFpu || config.useFloatCu) fpuBusy := False
+  if (!config.needsBmbFpu) fpuBusy := False
   pipeline.io.memBusy := memCtrl.io.memOut.busy || bmbSys.io.halted || io.debugHalt || fpuBusy || pipeline.io.hwBusy
 
   // Exception from BmbSys
@@ -516,8 +515,8 @@ case class JopCore(
     io.cfDebugFirstWord.get := cf.io.debugFirstWord
   }
 
-  // FPU (0xF0-0xF3, optional — per-core HW float)
-  val bmbFpu = if (config.hasFpu && !config.useFloatCu) Some(BmbFpu()) else None
+  // FPU (0xF0-0xF3, optional — legacy BmbFpu I/O peripheral)
+  val bmbFpu = if (config.needsBmbFpu) Some(BmbFpu()) else None
   bmbFpu.foreach { fpu =>
     fpu.io.addr   := JopIoSpace.fpuAddr(ioAddr)
     fpu.io.rd     := memCtrl.io.ioRd && JopIoSpace.isFpu(ioAddr)

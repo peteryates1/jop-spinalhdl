@@ -195,7 +195,7 @@ case class JopDdr3WukongTop(
           burstLen = burstLen,
           stackRegionWordsPerCore = 8192   // 32KB per core for stack spill
         ),
-        jumpTable = jumpTable,
+        supersetJumpTable = jumpTable,
         clkFreqHz = 100000000L,
         useStackCache = true
       ),

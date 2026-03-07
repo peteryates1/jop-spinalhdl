@@ -44,9 +44,8 @@ case class JopDdr3Top(
   cpuCnt: Int = 1,
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
-  jumpTable: JumpTableInitData = JumpTableInitData.serial,
+  supersetJumpTable: JumpTableInitData = JumpTableInitData.serial,
   ioConfig: IoConfig = IoConfig(),
-  fpuMode: FpuMode.FpuMode = FpuMode.Software,
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
@@ -171,11 +170,10 @@ case class JopDdr3Top(
           burstLen = burstLen,
           stackRegionWordsPerCore = 8192   // 32KB per core for stack spill
         ),
-        jumpTable = jumpTable,
+        supersetJumpTable = supersetJumpTable,
         clkFreqHz = 100000000L,
         ioConfig = ioConfig,
-        useStackCache = true,              // Enable 3-bank rotating stack cache
-        fpuMode = fpuMode
+        useStackCache = true
       ),
       romInit = Some(romInit),
       ramInit = Some(ramInit),
@@ -919,7 +917,7 @@ object JopDdr3FlashTopVerilog extends App {
     romInit = romData,
     ramInit = ramData,
     ioConfig = IoConfig(hasConfigFlash = true),
-    jumpTable = JumpTableInitData.flash
+    supersetJumpTable = JumpTableInitData.flash
   )))
 
   println("Generated: spinalhdl/generated/JopDdr3Top.v (config flash boot)")

@@ -26,8 +26,8 @@ case class JopFpuTestHarness(
 
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = memSize),
-    jumpTable = JumpTableInitData.simulationFpu,
-    fpuMode = FpuMode.Hardware
+    supersetJumpTable = JumpTableInitData.simulationFpu,
+    useBmbFpu = true
   )
 
   val io = new Bundle {

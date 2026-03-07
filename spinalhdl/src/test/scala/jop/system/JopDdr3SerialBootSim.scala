@@ -26,7 +26,7 @@ import java.io.PrintWriter
  * Architecture matches JopDdr3Top.scala FPGA configuration exactly:
  *   - addressWidth = 26 (28-bit BMB byte address)
  *   - burstLen = 0 (single-word BC fill, matching FPGA)
- *   - jumpTable = JumpTableInitData.serial
+ *   - supersetJumpTable = JumpTableInitData.serial
  *   - clkFreqHz = 100 MHz
  *   - 1 Mbaud UART
  *
@@ -42,7 +42,7 @@ case class JopDdr3SerialBootHarness(
   // Match FPGA config exactly: addressWidth=26, burstLen=0, serial jump table
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = 128 * 1024, burstLen = 0),
-    jumpTable = JumpTableInitData.serial,
+    supersetJumpTable = JumpTableInitData.serial,
     clkFreqHz = 100000000L,
     ioConfig = IoConfig(uartBaudRate = 1000000)
   )

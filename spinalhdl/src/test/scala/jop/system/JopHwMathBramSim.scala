@@ -24,7 +24,7 @@ case class JopHwMathTestHarness(
 
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = memSize),
-    jumpTable = JumpTableInitData.simulation
+    supersetJumpTable = JumpTableInitData.simulation
   )
 
   val io = new Bundle {

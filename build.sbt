@@ -77,3 +77,9 @@ Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated
 
 // Include serial+FloatCU microcode Scala files (SerialFloatCuJumpTableData.scala)
 Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-floatcu"
+
+// Include superset ROM Scala files (SupersetJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "superset"
+
+// Include serial superset ROM Scala files (SerialSupersetJumpTableData.scala)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-superset"

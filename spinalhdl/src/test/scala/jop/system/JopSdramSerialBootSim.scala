@@ -24,7 +24,7 @@ case class JopSdramSerialBootHarness(
 
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(burstLen = 4),
-    jumpTable = JumpTableInitData.serial
+    supersetJumpTable = JumpTableInitData.serial
   )
   val sdramLayout = W9825G6JH6.layout
   val sdramTiming = W9825G6JH6.timingGrade7

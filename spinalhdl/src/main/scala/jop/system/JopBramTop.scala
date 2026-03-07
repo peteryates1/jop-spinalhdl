@@ -273,7 +273,7 @@ case class JopBramSerialTop(
     // Serial-boot config: serial jump table, no burst (BRAM)
     val config = JopCoreConfig(
       memConfig = JopMemoryConfig(mainMemSize = mainMemSize),
-      jumpTable = JumpTableInitData.serial
+      supersetJumpTable = JumpTableInitData.serial
     )
 
     // JBC init: empty — BC_FILL loads bytecodes from BRAM after download

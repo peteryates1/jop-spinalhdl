@@ -15,7 +15,13 @@ case class JumpTableInitData(
   sysNoimAddr: Int,
   sysIntAddr:  Int,
   sysExcAddr:  Int
-)
+) {
+  /** Patch specific bytecodes to sys_noim, making their HW handlers unreachable (dead code in ROM). */
+  def disable(bytecodes: Int*): JumpTableInitData =
+    copy(entries = entries.zipWithIndex.map { case (addr, i) =>
+      if (bytecodes.contains(i)) BigInt(sysNoimAddr) else addr
+    })
+}
 
 object JumpTableInitData {
   /** Default: SIMULATION microcode jump table */
@@ -120,6 +126,22 @@ object JumpTableInitData {
     sysNoimAddr = jop.SerialFloatCuJumpTableData.sysNoimAddr,
     sysIntAddr  = jop.SerialFloatCuJumpTableData.sysIntAddr,
     sysExcAddr  = jop.SerialFloatCuJumpTableData.sysExcAddr
+  )
+
+  /** SIMULATION superset ROM (all HW handlers: IntegerCU + FloatCU) */
+  def superset: JumpTableInitData = JumpTableInitData(
+    entries     = jop.SupersetJumpTableData.entries,
+    sysNoimAddr = jop.SupersetJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.SupersetJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.SupersetJumpTableData.sysExcAddr
+  )
+
+  /** SERIAL-boot superset ROM (all HW handlers: IntegerCU + FloatCU) */
+  def serialSuperset: JumpTableInitData = JumpTableInitData(
+    entries     = jop.SerialSupersetJumpTableData.entries,
+    sysNoimAddr = jop.SerialSupersetJumpTableData.sysNoimAddr,
+    sysIntAddr  = jop.SerialSupersetJumpTableData.sysIntAddr,
+    sysExcAddr  = jop.SerialSupersetJumpTableData.sysExcAddr
   )
 }
 

@@ -183,6 +183,37 @@ serial-floatcu: ../java/tools/dist/jopa.jar
 		> generated/serial-floatcu/SerialFloatCuJumpTableData.scala
 	$(MAKE) JVM_TYPE=SIMULATION
 
+# =========================================================================
+# Superset ROM — ALL current hardware handlers in one ROM.
+# Per-bytecode config is done via jump table patching at SpinalHDL elaboration.
+# Includes: IntegerComputeUnit (imul/idiv/irem), FloatComputeUnit (fadd-fdiv, i2f, f2i, fcmp, fneg).
+# Excludes: DSP_MUL (lmul needs LongComputeUnit, not yet implemented).
+# =========================================================================
+
+superset: ../java/tools/dist/jopa.jar
+	mkdir -p generated/superset
+	gcc -x c -E -C -P $(GCC_PARAMS) -D$(JVM_TYPE) -DFLOAT_CU src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/superset/mem_rom.dat
+	cp generated/mem_ram.dat generated/superset/mem_ram.dat
+	cp generated/rom.mif generated/superset/rom.mif
+	sed 's/object JumpTableData/object SupersetJumpTableData/' generated/JumpTableData.scala \
+		> generated/superset/SupersetJumpTableData.scala
+	$(MAKE) JVM_TYPE=$(JVM_TYPE)
+
+serial-superset: ../java/tools/dist/jopa.jar
+	mkdir -p generated/serial-superset
+	gcc -x c -E -C -P $(GCC_PARAMS) -DSERIAL -DFLOAT_CU src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	sed -i '1,35d' generated/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	cp generated/mem_rom.dat generated/serial-superset/mem_rom.dat
+	cp generated/mem_ram.dat generated/serial-superset/mem_ram.dat
+	cp generated/rom.mif generated/serial-superset/rom.mif
+	sed 's/object JumpTableData/object SerialSupersetJumpTableData/' generated/JumpTableData.scala \
+		> generated/serial-superset/SerialSupersetJumpTableData.scala
+	$(MAKE) JVM_TYPE=SIMULATION
+
 ../java/tools/dist/jopa.jar:
 	cd ../java/tools && $(MAKE) dist/jopa.jar
 
