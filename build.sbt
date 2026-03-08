@@ -39,47 +39,7 @@ Test / testOptions += Tests.Argument("-oD")  // Show test durations
 Compile / scalaSource := baseDirectory.value / "spinalhdl" / "src" / "main" / "scala"
 Test / scalaSource := baseDirectory.value / "spinalhdl" / "src" / "test" / "scala"
 
-// Include microcode-generated Scala files (JumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated"
-
-// Include serial microcode Scala files (SerialJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial"
-
-// Include flash microcode Scala files (FlashJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "flash"
-
-// Include FPU microcode Scala files (FpuJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "fpu"
-
-// Include serial+FPU microcode Scala files (SerialFpuJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-fpu"
-
-// Include DSP multiply microcode Scala files (DspJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "dsp"
-
-// Include serial+DSP microcode Scala files (SerialDspJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-dsp"
-
-// Include HW divider microcode Scala files (DivJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "div"
-
-// Include serial+HW divider microcode Scala files (SerialDivJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-div"
-
-// Include HW math (DSP+div) microcode Scala files (HwMathJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "hwmath"
-
-// Include serial+HW math microcode Scala files (SerialHwMathJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-hwmath"
-
-// Include FloatCU microcode Scala files (FloatCuJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "floatcu"
-
-// Include serial+FloatCU microcode Scala files (SerialFloatCuJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-floatcu"
-
-// Include superset ROM Scala files (SupersetJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "superset"
-
-// Include serial superset ROM Scala files (SerialSupersetJumpTableData.scala)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-superset"
+// Microcode-generated Scala files (superset ROMs — 3 boot modes)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated"           // JumpTableData (simulation)
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial" // SerialJumpTableData
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "flash"  // FlashJumpTableData

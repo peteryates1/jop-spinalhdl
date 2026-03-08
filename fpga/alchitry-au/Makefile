@@ -201,7 +201,7 @@ program-replayer:
 # --------------------------------------------------------------------------
 
 microcode-flash:
-	cd $(ASM_DIR) && $(MAKE) flash-au
+	cd $(ASM_DIR) && $(MAKE) flash-alchitry
 	@echo "=== Flash microcode generated (Artix-7, offset $(JOP_OFFSET)) ==="
 
 generate-flash:

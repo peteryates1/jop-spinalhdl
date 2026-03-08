@@ -7,7 +7,7 @@ import jop.pipeline._
 import jop.memory._
 import jop.io.{BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdSpi, BmbSdNative, BmbVgaDma, BmbVgaText, BmbConfigFlash, BmbFpu, SyncIn, SyncOut}
 import spinal.lib.com.eth._
-import jop.{JopPipeline, JumpTableData}
+import jop.JopPipeline
 
 /** Per-bytecode implementation selection — uniform for all configurable bytecodes */
 sealed trait Implementation
@@ -93,10 +93,16 @@ case class JopCoreConfig(
   // BmbFpu I/O peripheral (legacy VexRiscv FPU path — only used when useBmbFpu=true)
   def needsBmbFpu: Boolean = useBmbFpu
 
-  /** Resolve the jump table: patch bytecodes configured as Java to sys_noim. */
+  /** Resolve the jump table: patch IMP_JAVA bytecodes configured as Java to sys_noim.
+    * Note: imul (0x68) is IMP_ASM in JopInstr.java — JOPizer does NOT replace it,
+    * so the jump table entry must ALWAYS point to a working handler (sthw or software).
+    * The microcode ROM controls which handler is used (HW_MUL flag).
+    */
   def resolveJumpTable: JumpTableInitData = {
+    // Only IMP_JAVA bytecodes are safe to patch — JOPizer replaces them with invokestatic.
+    // imul (0x68) is IMP_ASM and must NOT be patched.
     val bytecodeMap: Seq[(Int, Implementation)] = Seq(
-      0x68 -> imul,  0x6C -> idiv,  0x70 -> irem,
+      0x6C -> idiv,  0x70 -> irem,
       0x62 -> fadd,  0x66 -> fsub,  0x6A -> fmul,  0x6E -> fdiv,
       0x76 -> fneg,  0x86 -> i2f,   0x8B -> f2i,
       0x95 -> fcmpl, 0x96 -> fcmpg

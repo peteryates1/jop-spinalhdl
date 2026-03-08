@@ -93,10 +93,10 @@ JOP has a combinatorial explosion of microcode variants, boilerplate-heavy Veril
 
 ## Design Principle
 
-**Configuration drives everything.** `JopSystemConfig` is the single source of truth. Every downstream artifact is derived from it — no manual synchronization between layers.
+**Configuration drives everything.** `JopConfig` is the single source of truth. Every downstream artifact is derived from it — no manual synchronization between layers.
 
 ```
-JopSystemConfig
+JopConfig
   |
   +--→ Microcode assembly
   |      gcc -D flags derived from per-core Implementation
@@ -202,11 +202,37 @@ Optional HW handlers (FPU, DSP lmul, HW div) are **appended at the end** of the 
 
 Result: **12 Makefile targets → 3.** Future features add `#ifdef` blocks to jvm.asm and `-D` flags — no new Makefile targets needed. The superset ROM grows but never splits.
 
-Note: With the compute units, `imul: Hardware` (DSP) uses the same `sthw` pattern as all other HW bytecodes — IntegerComputeUnit handles the dispatch. `imul: Microcode` (bit-serial) retains its own microcode handler with the explicit wait loop, since the bit-serial Mul unit doesn't use the busy stall mechanism.
+Note: With the compute units, `imul: Hardware` uses the same `sthw` pattern as all other HW bytecodes — IntegerComputeUnit handles the dispatch. `imul: Microcode` uses a pure microcode shift-and-add handler (~32 iterations, ~640 cycles). **Both handlers exist in the superset ROM** — the jump table entry selects which one is active.
+
+**Critical: imul is IMP_ASM.** Unlike float/div bytecodes (which are IMP_JAVA — JOPizer replaces them with `invokestatic`), `imul` (0x68) stays as a raw bytecode in the .jop file. The jump table **must always** point to a working handler. When `imul: Microcode`, the jump table points to the software shift-and-add handler. When `imul: Hardware`, it points to the `sthw` handler. Setting `imul: Java` would require changing JOPizer's IMP_ASM→IMP_JAVA classification for 0x68 (see Phase 10: JOPizer config awareness).
+
+This means the superset ROM **must** contain the microcode software multiply handler even when HW_MUL is set. The `#ifdef HW_MUL` in jvm.asm should become two labeled handlers that both exist unconditionally:
+
+```asm
+// Both handlers always present in superset ROM
+imul_hw:                    // jump table points here when imul: Hardware
+    sthw
+    pop
+    wait
+    wait
+    ldmul nxt
+
+imul_sw:                    // jump table points here when imul: Microcode
+    stm  b                  // pure microcode shift-and-add (~640 cycles)
+    stm  a
+    ldi  0
+    stm  c
+    ldi  32
+imul_loop:
+    // ... (32-iteration loop)
+    ldm  c nxt
+```
+
+The Jopa assembler generates both addresses in the jump table data. `resolveJumpTable` picks the right one based on `imul: Microcode` vs `imul: Hardware`. **No separate bare builds needed** — one superset ROM serves all configurations.
 
 ### ROM Size Budget
 
-Current base ROM: ~700-900 instructions (includes long microcode handlers). FPU handlers: ~50. DSP lmul: ~60. HW div: ~30. **Total superset: ~1040 of 2048 slots (51%).** Future long ALU HW handlers (~200) + double FPU (~100) + expanded float conversions (~50) would reach ~1390 (68%). Plenty of headroom.
+Current base ROM: ~700-900 instructions (includes long microcode handlers). FPU handlers: ~50. DSP lmul: ~60. HW div: ~30. Software imul: ~35. **Total superset: ~1075 of 2048 slots (53%).** Future long ALU HW handlers (~200) + double FPU (~100) + expanded float conversions (~50) would reach ~1425 (70%). Plenty of headroom.
 
 With the compute units (see below), HW handler microcode shrinks dramatically — all HW bytecodes share the same ~4 instruction pattern instead of 9-10 instructions each. ROM budget improves further.
 
@@ -899,31 +925,71 @@ The JopSdramTop constructor simplifies — no more `jumpTable`, `fpuMode`, `useD
 
 ## Phase 5: Hardware Description — System / Board / FPGA / Memory / Devices
 
-The physical hardware forms an assembly of boards connected together. An FPGA module plugs into a carrier/daughter board. The carrier board provides peripherals (UART, ethernet, SD card, LEDs) via its own connectors. Pin assignments flow through the chain: FPGA pin → FPGA board header → carrier board connector → peripheral.
+The physical hardware is modeled as a layered hierarchy:
+
+- **Parts** — concrete components with fixed datasheet parameters (FPGA, memory, peripherals)
+- **Boards** — PCBs that wire device signals to FPGA pins
+- **System Assembly** — a collection of boards (no artificial limit on count or type)
+- **JOP System** — a processor system targeting a specific FPGA on the assembly. Multiple JOP systems can coexist on one assembly (e.g., Wukong dual-subsystem: SDR + DDR3).
 
 ```
-System (physical assembly — the complete hardware on the desk)
+SystemAssembly: "wukong-dev" (the physical hardware on the desk)
   |
-  +-- FPGA Board: qmtech-ep4cgx150 (module)
-  |     +-- FPGA: EP4CGX150DF27I7 (Cyclone IV GX)
-  |     +-- On-board memory: W9825G6JH6 (SDR SDRAM)
-  |     +-- On-board devices: 2 LEDs, 2 switches, 50 MHz oscillator
-  |     +-- Headers: J2 (60-pin), J3 (60-pin) → expose FPGA pins
+  +-- Board: qmtech-wukong-xc7a100t (single board with FPGA + two memories)
+  |     +-- FPGA: XC7A100T-1FGG676C (Artix-7)
+  |     +-- Memory: MT41K128M16JT-125:K (DDR3, 256 MB)
+  |     +-- Memory: W9825G6JH6 (SDR SDRAM, 32 MB)
+  |     +-- Devices: RTL8211EG (Ethernet), SD_CARD, HDMI, LED, SWITCH
+  |     +-- Clock: 50 MHz oscillator
   |
-  +-- Carrier Board: qmtech-fpga-db-v4 (daughter board)
-  |     +-- Connectors: J2, J3 → mate with FPGA board headers
-  |     +-- Devices: CP2102N (UART), RTL8211EG (Ethernet), VGA, SD card,
-  |     |            7-segment display, 5 LEDs, 5 switches, 2× PMOD
-  |     +-- Pin mapping: carrier connector pin → FPGA board header pin → FPGA pin
+  +-- JopSystem: "compute" (targets XC7A100T, uses DDR3)
+  |     +-- Memory: MT41K128M16JT-125:K
+  |     +-- Boot: Serial
+  |     +-- Cores: 4
+  |     +-- Per-core: imul=Hardware, fadd=Hardware, ...
+  |     +-- Devices: RTL8211EG → BmbEthRgmii, SD_CARD → BmbSdNative
   |
-  +-- JOP System (logical — what runs on the FPGA)
-  |     +-- Boot: Serial | Flash | Simulation
-  |     +-- Arbiter: RoundRobin | TDMA | ...
-  |     +-- Debug config
+  +-- JopSystem: "io" (targets same XC7A100T, uses SDR SDRAM)
+  |     +-- Memory: W9825G6JH6
+  |     +-- Boot: Serial
+  |     +-- Cores: 2
+  |     +-- Per-core: imul=Microcode, fadd=Java (minimal)
+  |     +-- Devices: HDMI → BmbHdmiOut
   |
-  +-- JOP Core(s) (per-core configuration)
-        +-- core(0) → imul: Hardware(Compute/DSP), ladd: Hardware(ALU), fadd: Hardware(Compute/FPU)
-        +-- core(1) → imul: Microcode(bit-serial), ladd: Microcode, fadd: Java
+  +-- Interconnect: FIFO message queues between "compute" and "io"
+  +-- Monitor: watchdog FSM (independent of both JOP systems)
+```
+
+**Simple case** (QMTECH EP4CGX150 + daughter board):
+
+```
+SystemAssembly: "qmtech-dev"
+  |
+  +-- Board: qmtech-ep4cgx150 (FPGA module)
+  |     +-- FPGA: EP4CGX150DF27I7
+  |     +-- Memory: W9825G6JH6 (SDR SDRAM)
+  |     +-- Devices: 2 LEDs, 2 switches, 50 MHz oscillator
+  |
+  +-- Board: qmtech-fpga-db-v4 (daughter board)
+  |     +-- Devices: CP2102N (UART), RTL8211EG (Ethernet), VGA, SD_CARD,
+  |     |            7-segment, 5 LEDs, 5 switches, 2× PMOD
+  |     +-- Connects via: J2, J3 headers
+  |
+  +-- JopSystem: "main"
+        +-- Memory: W9825G6JH6
+        +-- Boot: Serial
+        +-- Cores: 1
+        +-- Devices: CP2102N → BmbUart, RTL8211EG → BmbEthRgmii
+```
+
+Predefined composite boards (convenience aliases):
+
+```scala
+// A "board" can be a composite of physical boards that always go together
+object Board {
+  def QmtechEP4CGX150_FPGA_DB_V4 = CompositeBoard(
+    Seq(Board.QmtechEP4CGX150, Board.QmtechFpgaDbV4))
+}
 ```
 
 ### Parts — reusable hardware facts
@@ -1031,49 +1097,106 @@ object FpgaDevice {
 }
 ```
 
-### Boards — assemblies with pin mappings
+### Boards — unified type with pin mappings
 
-A board wires device signals to FPGA pins. The mapping is a board-level fact — it comes from the PCB schematic.
+A board is a PCB with devices wired to an FPGA. No distinction between "FPGA board" and "carrier board" at the type level — they're all boards with devices. The FPGA lives on one board; other boards connect via headers/connectors. The assembly resolves the full pin chain.
 
 ```scala
 /** A device mounted on a board with its signal-to-FPGA-pin mapping */
 case class BoardDevice(
-  device: String,                             // device name or part number
-  mapping: Map[String, String] = Map.empty,   // device signal → FPGA pin
+  part: String,                               // part number or device name
+  role: Option[String] = None,                // optional role disambiguation ("sdram_main", "sdram_stack")
+  mapping: Map[String, String] = Map.empty,   // device signal → FPGA pin (resolved through connectors)
 )
 
-/** FPGA board — the module with FPGA + on-board devices */
-case class FpgaBoard(
-  name: String,                   // "qmtech-ep4cgx150"
-  fpga: FpgaDevice,
-  devices: Seq[BoardDevice],     // on-board devices with pin mappings
+/** A physical PCB — any board in the system */
+case class Board(
+  name: String,                    // "qmtech-ep4cgx150"
+  fpga: Option[FpgaDevice] = None, // present if this board carries the FPGA
+  devices: Seq[BoardDevice] = Seq.empty,
+  connectors: Seq[String] = Seq.empty,  // headers/connectors for inter-board wiring
 ) {
-  /** All memory devices on this board */
-  def memories: Seq[MemoryDevice] = ???  // looked up from device registry
+  def hasFpga: Boolean = fpga.isDefined
+  def allDevices: Seq[BoardDevice] = devices
 }
 
-/** Carrier/daughter board — plugs into FPGA board headers */
-case class CarrierBoard(
-  name: String,                   // "qmtech-fpga-db-v4"
-  connectors: Seq[String],       // "J2", "J3"
-  devices: Seq[BoardDevice],     // devices with pin mappings (through connectors)
-)
+/** Convenience: composite board = multiple physical boards treated as one */
+case class CompositeBoard(boards: Seq[Board]) {
+  require(boards.count(_.hasFpga) == 1, "Exactly one board must carry the FPGA")
+  def fpga: FpgaDevice = boards.find(_.hasFpga).get.fpga.get
+  def allDevices: Seq[BoardDevice] = boards.flatMap(_.devices)
+  def name: String = boards.map(_.name).mkString("+")
+}
 
-/** Complete physical system — FPGA board + optional carrier board(s) */
+/** System assembly — a collection of boards */
 case class SystemAssembly(
   name: String,
-  fpgaBoard: FpgaBoard,
-  carrierBoards: Seq[CarrierBoard] = Seq.empty,
-)
+  boards: Seq[Board],
+) {
+  require(boards.count(_.hasFpga) >= 1, "At least one board must carry an FPGA")
+  def fpgaDevices: Seq[FpgaDevice] = boards.flatMap(_.fpga)
+  def allDevices: Seq[BoardDevice] = boards.flatMap(_.devices)
+  def findDevice(part: String): Option[BoardDevice] = allDevices.find(_.part == part)
+  def findDeviceByRole(role: String): Option[BoardDevice] = allDevices.find(_.role.contains(role))
+}
 ```
+
+### Device-to-component mapping — SpinalHDL variant selection
+
+Each physical device on a board can be driven by one or more SpinalHDL components. Some devices have multiple driver variants (e.g., SD card via SPI vs native interface). The JOP system config selects which variant to use.
+
+```scala
+/** Maps a physical device to a SpinalHDL component variant */
+sealed trait DeviceDriver {
+  def devicePart: String           // which physical device this drives
+  def componentName: String        // SpinalHDL component class name
+}
+
+object DeviceDriver {
+  // UART
+  case object Uart extends DeviceDriver {
+    val devicePart = "CP2102N"
+    val componentName = "BmbUart"
+  }
+
+  // Ethernet — single variant (RGMII)
+  case object EthRgmii extends DeviceDriver {
+    val devicePart = "RTL8211EG"
+    val componentName = "BmbEthRgmii"
+  }
+
+  // SD card — two variants
+  case object SdSpi extends DeviceDriver {
+    val devicePart = "SD_CARD"
+    val componentName = "BmbSdSpi"
+  }
+  case object SdNative extends DeviceDriver {
+    val devicePart = "SD_CARD"
+    val componentName = "BmbSdNative"
+  }
+
+  // VGA — two variants
+  case object VgaDma extends DeviceDriver {
+    val devicePart = "VGA"
+    val componentName = "BmbVgaDma"
+  }
+  case object VgaText extends DeviceDriver {
+    val devicePart = "VGA"
+    val componentName = "BmbVgaText"
+  }
+}
+```
+
+The `JopSystem` config references drivers by type. `JopConfig` validates that each driver's physical device exists on the assembly (see JOP System layer section below).
 
 ### Board presets
 
 ```scala
-object FpgaBoard {
-  def qmtechEp4cgx150 = FpgaBoard(
+object Board {
+  // --- FPGA modules ---
+  def QmtechEP4CGX150 = Board(
     name = "qmtech-ep4cgx150",
-    fpga = FpgaDevice.EP4CGX150DF27I7,
+    fpga = Some(FpgaDevice.EP4CGX150DF27I7),
     devices = Seq(
       BoardDevice("W9825G6JH6", mapping = Map(
         "CLK" -> "PIN_E22", "CKE" -> "PIN_K24",
@@ -1085,39 +1208,43 @@ object FpgaBoard {
         "DQM0" -> "PIN_F26", "DQM1" -> "PIN_H24")),
       BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "PIN_B14")),
       BoardDevice("LED", mapping = Map("led0" -> "PIN_A25", "led1" -> "PIN_A24")),
-      BoardDevice("SWITCH", mapping = Map("sw0" -> "PIN_AD23", "sw1" -> "PIN_AD24"))))
+      BoardDevice("SWITCH", mapping = Map("sw0" -> "PIN_AD23", "sw1" -> "PIN_AD24"))),
+    connectors = Seq("J2", "J3"))
 
-  def cyc5000 = FpgaBoard(
+  def CYC5000 = Board(
     name = "cyc5000",
-    fpga = FpgaDevice.`5CEBA2F17A7`,
+    fpga = Some(FpgaDevice.`5CEBA2F17A7`),
     devices = Seq(
       BoardDevice("W9864G6JT", mapping = Map(/* ... */)),
       BoardDevice("CLOCK_12MHz", mapping = Map(/* ... */)),
       BoardDevice("FT2232H", mapping = Map(/* JTAG + UART */)),
       BoardDevice("LED", mapping = Map(/* 5 LEDs */))))
 
-  def alchitryAuV2 = FpgaBoard(
+  def AlchitryAuV2 = Board(
     name = "alchitry-au-v2",
-    fpga = FpgaDevice.XC7A35T,
+    fpga = Some(FpgaDevice.XC7A35T),
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K", mapping = Map(/* DDR3 pins */)),
       BoardDevice("CLOCK_100MHz", mapping = Map(/* ... */)),
       BoardDevice("FT2232H", mapping = Map(/* JTAG + UART */))))
 
-  // Wukong board — two memory devices on one board
-  def wukongXc7a100t = FpgaBoard(
+  // Wukong — single board with FPGA + two memory devices + peripherals
+  def WukongXC7A100T = Board(
     name = "qmtech-wukong-xc7a100t",
-    fpga = FpgaDevice.XC7A100T,
+    fpga = Some(FpgaDevice.XC7A100T),
     devices = Seq(
-      BoardDevice("MT41K128M16JT-125:K", mapping = Map(/* DDR3 pins */)),
-      BoardDevice("W9825G6JH6", mapping = Map(/* SDR SDRAM pins */)),
-      BoardDevice("CLOCK_50MHz", mapping = Map(/* ... */))))
-}
+      BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3"), mapping = Map(/* DDR3 pins */)),
+      BoardDevice("W9825G6JH6", role = Some("sdr"), mapping = Map(/* SDR SDRAM pins */)),
+      BoardDevice("RTL8211EG", mapping = Map(/* Ethernet pins */)),
+      BoardDevice("SD_CARD", mapping = Map(/* SD pins */)),
+      BoardDevice("HDMI", mapping = Map(/* HDMI pins */)),
+      BoardDevice("CLOCK_50MHz", mapping = Map(/* ... */)),
+      BoardDevice("LED", mapping = Map(/* ... */)),
+      BoardDevice("SWITCH", mapping = Map(/* ... */))))
 
-object CarrierBoard {
-  def qmtechDbV4 = CarrierBoard(
+  // --- Carrier/daughter boards (no FPGA) ---
+  def QmtechFpgaDbV4 = Board(
     name = "qmtech-fpga-db-v4",
-    connectors = Seq("J2", "J3"),
     devices = Seq(
       BoardDevice("CP2102N", mapping = Map(
         "RXD" -> "PIN_AE21", "TXD" -> "PIN_AD20")),
@@ -1133,18 +1260,28 @@ object CarrierBoard {
       BoardDevice("LED", mapping = Map(
         "led2" -> "PIN_AD14", "led3" -> "PIN_AC14", /* ... */)),
       BoardDevice("PMOD_J10", mapping = Map(/* ... */)),
-      BoardDevice("PMOD_J11", mapping = Map(/* ... */))))
+      BoardDevice("PMOD_J11", mapping = Map(/* ... */))),
+    connectors = Seq("J2", "J3"))
+
+  // --- Composite board aliases ---
+  /** QMTECH EP4CGX150 module + DB_FPGA_V4 daughter board — the standard dev setup */
+  def QmtechEP4CGX150_FPGA_DB_V4: Seq[Board] =
+    Seq(QmtechEP4CGX150, QmtechFpgaDbV4)
 }
 
 object SystemAssembly {
+  /** QMTECH EP4CGX150 + daughter board — primary dev platform */
   def qmtechWithDb = SystemAssembly("qmtech-ep4cgx150-db-v4",
-    FpgaBoard.qmtechEp4cgx150, Seq(CarrierBoard.qmtechDbV4))
+    Board.QmtechEP4CGX150_FPGA_DB_V4)
 
-  def cyc5000 = SystemAssembly("cyc5000", FpgaBoard.cyc5000)
+  /** CYC5000 standalone */
+  def cyc5000 = SystemAssembly("cyc5000", Seq(Board.CYC5000))
 
-  def alchitryAuV2 = SystemAssembly("alchitry-au-v2", FpgaBoard.alchitryAuV2)
+  /** Alchitry Au V2 standalone */
+  def alchitryAuV2 = SystemAssembly("alchitry-au-v2", Seq(Board.AlchitryAuV2))
 
-  def wukong = SystemAssembly("wukong-xc7a100t", FpgaBoard.wukongXc7a100t)
+  /** Wukong standalone (two memories, dual-subsystem capable) */
+  def wukong = SystemAssembly("wukong-xc7a100t", Seq(Board.WukongXC7A100T))
 }
 ```
 
@@ -1160,6 +1297,8 @@ Migration: existing `.qsf` files can be generated from `SystemAssembly` data, or
 
 ### JOP System layer — processor system organization
 
+A **JopSystem** is a processor cluster targeting a specific FPGA and memory on the assembly. Most assemblies have one JopSystem. The Wukong dual-subsystem has two, each using a different memory.
+
 ```scala
 sealed trait BootMode { def dirName: String }
 object BootMode {
@@ -1172,12 +1311,12 @@ sealed trait ArbiterType
 object ArbiterType {
   case object RoundRobin extends ArbiterType     // current default
   case object Tdma extends ArbiterType           // time-division multiple access
-  // future: Priority, WeightedRR, ...
 }
 
-case class JopSystemConfig(
+/** A single JOP processor system (cluster of cores + memory + I/O) */
+case class JopSystem(
   name: String,
-  system: SystemAssembly,                            // physical hardware
+  memory: String,                                    // which memory device (by part or role)
   bootMode: BootMode,
   arbiterType: ArbiterType = ArbiterType.RoundRobin,
   clkFreqHz: Long,                   // system clock (after PLL)
@@ -1185,6 +1324,7 @@ case class JopSystemConfig(
   coreConfig: JopCoreConfig = JopCoreConfig(),       // default for all cores
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None,  // heterogeneous override
   ioConfig: IoConfig = IoConfig(),
+  drivers: Seq[DeviceDriver] = Seq.empty,            // which device drivers to instantiate
   debugConfig: Option[DebugConfig] = None,
   perCoreUart: Boolean = false,
 ) {
@@ -1203,71 +1343,176 @@ case class JopSystemConfig(
     Seq.fill(cpuCnt)(coreConfig)
   )
 
-  // --- Derived from physical assembly ---
-  def fpgaFamily: FpgaFamily = system.fpgaBoard.fpga.family
-  def memoryDevices: Seq[BoardDevice] = system.fpgaBoard.devices.filter(
-    d => MemoryDevice.isMemory(d.device))  // lookup by part number
-
   // --- Validation ---
   require(cpuCnt >= 1)
   perCoreConfigs.foreach(pcc =>
     require(pcc.length == cpuCnt,
       s"perCoreConfigs length (${pcc.length}) must match cpuCnt ($cpuCnt)"))
 }
+
+/** Top-level configuration — assembly + one or more JOP systems */
+case class JopConfig(
+  assembly: SystemAssembly,
+  systems: Seq[JopSystem],
+  interconnect: Option[InterconnectConfig] = None,  // cross-system FIFOs (dual-subsystem)
+  monitors: Seq[MonitorConfig] = Seq.empty,         // watchdog, health monitors
+) {
+  require(systems.nonEmpty, "At least one JopSystem required")
+
+  // Single-system convenience
+  def system: JopSystem = {
+    require(systems.length == 1, "Use .systems for multi-system configs")
+    systems.head
+  }
+
+  // Validate: each system's memory must exist on the assembly
+  systems.foreach { sys =>
+    require(
+      assembly.findDevice(sys.memory).isDefined ||
+      assembly.findDeviceByRole(sys.memory).isDefined,
+      s"System '${sys.name}' references memory '${sys.memory}' " +
+      s"but assembly '${assembly.name}' has no such device")
+  }
+
+  // Validate: each driver's device must exist on the assembly
+  systems.foreach { sys =>
+    sys.drivers.foreach { d =>
+      require(assembly.findDevice(d.devicePart).isDefined,
+        s"System '${sys.name}' driver ${d.componentName} requires device " +
+        s"${d.devicePart} but assembly '${assembly.name}' has none")
+    }
+  }
+
+  // --- Derived from physical assembly ---
+  def fpgaFamily: FpgaFamily = assembly.fpgaDevices.head.family
+}
+
+/** Cross-system interconnect (for dual-subsystem Wukong etc.) */
+case class InterconnectConfig(
+  fifoDepth: Int = 16,
+  dataWidth: Int = 32,
+)
+
+/** Hardware monitor (watchdog, etc.) */
+sealed trait MonitorConfig
+case class WatchdogConfig(timeoutMs: Int = 1000) extends MonitorConfig
 ```
 
-### System presets
+### System presets — builder pattern with `copy()`
 
 ```scala
-object JopSystemConfig {
-  // QMTECH EP4CGX150 + DB_FPGA daughter board — primary platform
-  def qmtechSerial = JopSystemConfig("qmtech-serial",
-    system = SystemAssembly.qmtechWithDb,
-    bootMode = BootMode.Serial,
-    clkFreqHz = 80000000L)
+object JopConfig {
+  // --- Single-system presets (common case) ---
 
-  def qmtechSmp(n: Int) = qmtechSerial.copy(
-    name = s"qmtech-smp$n", cpuCnt = n)
+  /** QMTECH EP4CGX150 + daughter board — primary dev platform */
+  def qmtechSerial = JopConfig(
+    assembly = SystemAssembly.qmtechWithDb,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "W9825G6JH6",
+      bootMode = BootMode.Serial,
+      clkFreqHz = 80000000L,
+      drivers = Seq(DeviceDriver.Uart, DeviceDriver.EthRgmii, DeviceDriver.SdSpi))))
 
-  def qmtechHwMath = qmtechSerial.copy(
-    name = "qmtech-hwmath", coreConfig = JopCoreConfig.hwMath)
+  def qmtechSmp(n: Int) = {
+    val base = qmtechSerial
+    base.copy(systems = Seq(base.system.copy(name = s"smp$n", cpuCnt = n)))
+  }
 
-  // Heterogeneous: core 0 = fast math, core 1 = minimal
-  def qmtechHetero = qmtechSerial.copy(
-    name = "qmtech-hetero", cpuCnt = 2,
-    perCoreConfigs = Some(Seq(JopCoreConfig.hwMath, JopCoreConfig.software)))
+  def qmtechHwAll = {
+    val base = qmtechSerial
+    base.copy(systems = Seq(base.system.copy(
+      name = "hwmath",
+      coreConfig = JopCoreConfig.hwMath)))
+  }
 
-  // CYC5000
-  def cyc5000Serial = JopSystemConfig("cyc5000-serial",
-    system = SystemAssembly.cyc5000,
-    bootMode = BootMode.Serial,
-    clkFreqHz = 100000000L)
+  /** CYC5000 standalone */
+  def cyc5000Serial = JopConfig(
+    assembly = SystemAssembly.cyc5000,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "W9864G6JT",
+      bootMode = BootMode.Serial,
+      clkFreqHz = 100000000L)))
 
-  // Alchitry Au V2
-  def auSerial = JopSystemConfig("au-serial",
-    system = SystemAssembly.alchitryAuV2,
-    bootMode = BootMode.Serial,
-    clkFreqHz = 83333333L)
+  /** Alchitry Au V2 */
+  def auSerial = JopConfig(
+    assembly = SystemAssembly.alchitryAuV2,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "MT41K128M16JT-125:K",
+      bootMode = BootMode.Serial,
+      clkFreqHz = 83333333L)))
 
-  // Simulation (no physical board — assembly is just a placeholder)
-  def simulation = JopSystemConfig("simulation",
-    system = SystemAssembly.qmtechWithDb,
-    bootMode = BootMode.Simulation,
-    clkFreqHz = 100000000L)
+  /** Simulation (no physical board) */
+  def simulation = JopConfig(
+    assembly = SystemAssembly.qmtechWithDb,
+    systems = Seq(JopSystem(
+      name = "sim",
+      memory = "W9825G6JH6",
+      bootMode = BootMode.Simulation,
+      clkFreqHz = 100000000L)))
+
+  // --- Multi-system preset (Wukong dual-subsystem) ---
+
+  /** Wukong: heavy compute on DDR3 + light I/O on SDR SDRAM */
+  def wukongDual = JopConfig(
+    assembly = SystemAssembly.wukong,
+    systems = Seq(
+      JopSystem(
+        name = "compute",
+        memory = "ddr3",               // by role
+        bootMode = BootMode.Serial,
+        clkFreqHz = 100000000L,
+        cpuCnt = 4,
+        coreConfig = JopCoreConfig.hwMath,
+        drivers = Seq(DeviceDriver.EthRgmii, DeviceDriver.SdNative)),
+      JopSystem(
+        name = "io",
+        memory = "sdr",                // by role
+        bootMode = BootMode.Serial,
+        clkFreqHz = 50000000L,
+        cpuCnt = 2)),
+    interconnect = Some(InterconnectConfig(fifoDepth = 64)),
+    monitors = Seq(WatchdogConfig(timeoutMs = 2000)))
+
+  // --- Minimum resource preset (fits MAX1000, small Lattice, etc.) ---
+
+  /** Absolute minimum: no compute units, pure microcode, no peripherals */
+  def minimum = JopConfig(
+    assembly = SystemAssembly.qmtechWithDb,
+    systems = Seq(JopSystem(
+      name = "min",
+      memory = "W9825G6JH6",
+      bootMode = BootMode.Serial,
+      clkFreqHz = 80000000L,
+      coreConfig = JopCoreConfig(
+        supersetJumpTable = JumpTableInitData.bareSerial,
+        imul = Implementation.Microcode,  // pure microcode shift-and-add
+        idiv = Implementation.Java,
+        irem = Implementation.Java),
+      drivers = Seq(DeviceDriver.Uart))))
 }
 ```
 
-### What the system assembly drives
+### What the config drives
 
-The physical assembly determines:
-- **Memory controller instantiation**: `SDRAM_SDR` → `BmbSdramCtrl32` (or Altera BlackBox), `SDRAM_DDR3` → `BmbCacheBridge` + MIG, `BRAM` → `BmbOnChipRam`
-- **Top-level I/O ports**: SDRAM pins vs DDR3 pins vs none
-- **PLL configuration**: FPGA board oscillator freq → system clock
-- **FPGA family**: Affects synthesis tool (Quartus vs Vivado), DSP block type, memory primitives
-- **Available peripherals**: Carrier board determines which I/O devices exist (UART, Ethernet, SD, etc.)
-- Future: pin assignment / constraint file generation from board data
+The `JopConfig` determines everything downstream:
 
-Currently this mapping is implicit in separate top-level files (`JopSdramTop`, `JopDdr3Top`, `JopCyc5000Top`). With `SystemAssembly`, a single generic top-level could dispatch based on memory type. Migration path: keep existing top-level files but have them read from `JopSystemConfig` instead of manual params.
+| Layer | Derived from | Output |
+|-------|-------------|--------|
+| **Memory controller** | `JopSystem.memory` part → MemoryDevice.memType | SDR→BmbSdramCtrl32, DDR3→BmbCacheBridge+MIG, BRAM→BmbOnChipRam |
+| **Top-level I/O ports** | Assembly board devices + system drivers | Only ports for devices with active drivers |
+| **PLL configuration** | Board clock device + JopSystem.clkFreqHz | Input freq → output freq |
+| **FPGA family** | Board FPGA device → FpgaFamily | Synthesis tool, DSP type, memory primitives |
+| **Device drivers** | JopSystem.drivers | SpinalHDL component instantiation + pin wiring |
+| **Pin assignments** | BoardDevice.mapping for each active driver | .qsf/.xdc constraint files |
+| **Microcode ROM** | JopSystem.bootMode + coreConfig | ROM path, jump table, gcc -D flags |
+| **JOPizer config** | coreConfig bytecodes | IMP_ASM/IMP_JAVA per bytecode |
+| **Runtime modules** | coreConfig (SoftFloat needs) + assembly devices | Which .java files to compile |
+| **Interconnect** | JopConfig.interconnect (multi-system only) | FIFO instantiation + arbitration |
+
+Currently this mapping is implicit in separate top-level files (`JopSdramTop`, `JopDdr3Top`, `JopCyc5000Top`). With `JopConfig`, a single generic top-level dispatches based on config. Migration path: keep existing top-level files but have them read from `JopConfig` instead of manual params.
 
 ### Unified generation entry point
 
@@ -1290,10 +1535,10 @@ The runtime is 61 hand-curated files — minimal JDK stubs (25 `java.lang`, 4 `j
 
 ### Vision: board-specific runtime JAR from modular components
 
-The runtime is assembled from **modules** selected by `JopSystemConfig`. Each board gets a tailored runtime JAR containing exactly the JDK classes, software fallbacks, and device drivers it needs.
+The runtime is assembled from **modules** selected by `JopConfig`. Each board gets a tailored runtime JAR containing exactly the JDK classes, software fallbacks, and device drivers it needs.
 
 ```
-JopSystemConfig
+JopConfig
   |
   +--→ Core modules (always included)
   |      jop.sys: Startup, Native, GC, JVM, JVMHelp, Memory, Scheduler
@@ -1406,26 +1651,25 @@ object RuntimeModule {
 ### Module selection from config
 
 ```scala
-def resolveModules(config: JopSystemConfig): Set[RuntimeModule] = {
+def resolveModules(config: JopConfig): Set[RuntimeModule] = {
   val modules = mutable.Set[RuntimeModule](RuntimeModule.Core)
 
-  // Software math — from union of all cores' configs
-  val allCores = config.coreConfigs
+  // Software math — from union of all systems' cores' configs
+  val allCores = config.systems.flatMap(_.coreConfigs)
   if (allCores.exists(c => Seq(c.fadd, c.fsub, c.fmul, c.fdiv).contains(Implementation.Java)))
     modules += RuntimeModule.SoftFloat32
   if (allCores.exists(c => Seq(c.dadd, c.dsub, c.dmul, c.ddiv).contains(Implementation.Java)))
     modules += RuntimeModule.SoftFloat64
 
-  // Device drivers — from board devices (exact match, not category)
-  val allDevices = config.system.fpgaBoard.devices ++
-    config.system.carrierBoards.flatMap(_.devices)
-  for (device <- allDevices) device.device match {
-    case "RTL8211EG"  => modules += RuntimeModule.EthernetMac
-    case "SD_NATIVE"  => modules += RuntimeModule.SdNative
-    case "SD_SPI"     => modules += RuntimeModule.SdSpi
-    case "VGA_DMA"    => modules += RuntimeModule.VgaDma
-    case "VGA_TEXT"    => modules += RuntimeModule.VgaText
-    case _ =>  // no driver needed (LED, switch, clock, memory, etc.)
+  // Device drivers — from active drivers across all systems (not all board devices)
+  val allDrivers = config.systems.flatMap(_.drivers)
+  allDrivers.foreach {
+    case DeviceDriver.EthRgmii => modules += RuntimeModule.EthernetMac
+    case DeviceDriver.SdNative => modules += RuntimeModule.SdNative
+    case DeviceDriver.SdSpi    => modules += RuntimeModule.SdSpi
+    case DeviceDriver.VgaDma   => modules += RuntimeModule.VgaDma
+    case DeviceDriver.VgaText  => modules += RuntimeModule.VgaText
+    case _ =>  // Uart is always included via Core
   }
 
   // Application libraries — explicitly requested
@@ -1488,7 +1732,7 @@ This is a **separate ongoing effort** — not blocking the configuration-driven 
 ### 1. Const.java generation
 
 ```java
-// Generated from JopSystemConfig — do not edit manually
+// Generated from JopConfig — do not edit manually
 public class Const {
   // From IoConfig
   public static final int IO_BASE  = -128;
@@ -1569,8 +1813,9 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 | 6 | 4 | Update JopCluster/JopSdramTop/JopCyc5000Top to use derived flags | top-level files |
 | 7 | 4 | Update all sim harnesses | `src/test/scala/jop/system/*.scala` |
 | 8 | 4 | Delete old FpuMode, old JumpTableData variants, old variant dirs | cleanup |
-| 9 | 5 | Add SystemAssembly/FpgaBoard/CarrierBoard + JopSystemConfig + JopGenerate | new files |
+| 9 | 5 | Add Board, SystemAssembly, DeviceDriver, JopSystem, JopConfig, JopGenerate | new files |
 | 10 | 5 | Convert old entry points to thin wrappers | top-level files |
+| 10a | 5 | Restructure jvm.asm: both imul handlers unconditional, eliminate bare builds | `asm/src/jvm.asm` |
 | 11 | 6 | Runtime module system, Const.java generation, board-specific build | `java/runtime/`, build scripts |
 | 12 | 6+ | JDK class library from OpenJDK 6 (separate ongoing effort) | `java/runtime/src/jdk/` |
 | 13 | 6+ | Application libraries: FAT32, networking, etc. | `java/runtime/src/lib/` |
@@ -1590,9 +1835,10 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 | `spinalhdl/src/main/scala/jop/pipeline/JumpTable.scala` | `disable()`, simplified factory methods |
 | `spinalhdl/src/main/scala/jop/pipeline/JumpTableSource.scala` | **New**: trait for generated objects |
 | `spinalhdl/src/main/scala/jop/system/JopCore.scala` | Per-instruction config, derived flags, delete old |
-| `spinalhdl/src/main/scala/jop/system/JopSystemConfig.scala` | **New**: unified system config |
-| `spinalhdl/src/main/scala/jop/system/SystemAssembly.scala` | **New**: FpgaBoard, CarrierBoard, SystemAssembly |
-| `spinalhdl/src/main/scala/jop/system/JopSdramTop.scala` | Use derived flags, read from JopSystemConfig |
+| `spinalhdl/src/main/scala/jop/system/JopConfig.scala` | **New**: JopSystem, JopConfig, InterconnectConfig |
+| `spinalhdl/src/main/scala/jop/system/Board.scala` | **New**: Board, BoardDevice, SystemAssembly, DeviceDriver |
+| `spinalhdl/src/main/scala/jop/system/Parts.scala` | **New**: FpgaDevice, MemoryDevice, FpgaFamily |
+| `spinalhdl/src/main/scala/jop/system/JopSdramTop.scala` | Use derived flags, read from JopConfig |
 | `spinalhdl/src/main/scala/jop/system/JopCluster.scala` | Accept resolved jumpTable, per-core configs |
 | `spinalhdl/src/main/scala/jop/system/JopCyc5000Top.scala` | Same updates as JopSdramTop |
 | `spinalhdl/src/main/scala/jop/system/JopDdr3Top.scala` | Same updates as JopSdramTop |
@@ -1602,9 +1848,10 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 | `java/runtime/src/jdk/` | **New**: JDK classes from OpenJDK 6, adapted for JOP |
 | `java/runtime/src/lib/` | **New**: Application libraries (FAT32, networking, etc.) |
 | `java/Makefile` | Board-specific runtime build with module selection |
-| `java/tools/src/com/jopdesign/build/` | **New**: shared build library (orchestrator, builders, config, listeners) |
+| `java/tools/src/com/jopdesign/build/` | **New**: shared build library (orchestrator, builders, config, listeners, test runner) |
 | `java/tools/src/com/jopdesign/build/cli/` | **New**: `jop` CLI front-end (thin wrapper over build library) |
 | `java/tools/src/com/jopdesign/build/dap/` | **New**: DAP debug adapter (IDE-agnostic debug server) |
+| `java/tools/src/com/jopdesign/build/FpgaTestRunner.java` | **New**: FPGA hardware test (upload, UART capture, result parsing) |
 | `spinalhdl/src/main/scala/jop/system/IoConfig.scala` | No changes needed |
 | `asm/generated/{fpu,serial-fpu,dsp,...}/` | **Delete**: old variant subdirs |
 | `asm/generated/{Fpu,SerialFpu,Dsp,...}JumpTableData.scala` | **Delete**: old variant objects |
@@ -1622,7 +1869,10 @@ Factor common sim patterns into a `SimRunner` utility. New sims use it; old sims
 9. FPGA build + HelloWorld.jop download — works on hardware
 10. `jop build qmtech-serial` — CLI full build produces identical artifacts to manual make
 11. `jop build --app Smallest` — inner loop app build matches manual javac + JOPizer
-12. Eclipse project import → save .java → auto-build → .jop matches CLI output
+12. `jop test --suite` — FPGA hardware test: 59/60 pass, matches simulation results
+13. `jop test HelloWorld.jop --expect "Hello World!"` — single-app FPGA test passes
+14. Eclipse project import → save .java → auto-build → .jop matches CLI output
+15. Eclipse "Test on FPGA" button → JUnit-style results match CLI output
 
 ---
 
@@ -1674,7 +1924,7 @@ The build system is a **Java library** (`jop-build`) that encodes the full depen
 ### Full dependency chain
 
 ```
-JopSystemConfig (single source of truth)
+JopConfig (single source of truth)
   |
   |  [1] Microcode assembly (once per boot mode, rarely changes)
   |      Config → gcc -D flags → jopa → mem_rom.dat, mem_ram.dat, JumpTable.scala
@@ -1693,9 +1943,12 @@ JopSystemConfig (single source of truth)
   |
   |  [6] Download + run
   |      bitstream + .jop → serial download → FPGA running
+  |
+  |  [7] FPGA test (optional, after [6])
+  |      Upload test .jop → capture UART output → parse results → pass/fail report
 ```
 
-Steps [1]-[4] are **infrastructure** — done once per config change, cached. Step [5] is the **inner development loop** — fast, done on every app change. Step [6] is **deploy**.
+Steps [1]-[4] are **infrastructure** — done once per config change, cached. Step [5] is the **inner development loop** — fast, done on every app change. Step [6] is **deploy**. Step [7] is **verification** — automated hardware testing.
 
 ### Build library API
 
@@ -1730,6 +1983,12 @@ public class BuildOrchestrator {
 
     /** Run SpinalHDL simulation with given .jop */
     public void simulate(Path jopFile, SimOptions options) { ... }
+
+    /** Run FPGA hardware test — upload .jop, capture UART, parse results */
+    public TestResult testFpga(Path jopFile, FpgaTestOptions options) { ... }
+
+    /** Run full test suite on FPGA — build DoAll.jop, upload, verify pass/fail */
+    public TestResult testSuite(FpgaTestOptions options) { ... }
 
     /** Check what's stale and would be rebuilt */
     public BuildPlan dryRun() { ... }
@@ -1785,9 +2044,186 @@ jop create-project --system qmtech-serial --name my-jop-app
 
 # Run simulation
 jop simulate --system qmtech-serial HelloWorld.jop
+
+# FPGA hardware test — upload .jop, capture UART, check output
+jop test HelloWorld.jop                 # single app test
+jop test --suite                        # full JVM test suite (DoAll.jop)
+jop test --suite --timeout 120          # with custom timeout (seconds)
+jop test --expect "Hello World!"        # check for specific output string
+jop test --cycles                       # report per-test cycle counts
 ```
 
 The CLI implements `BuildListener` to print progress bars and tool output to the terminal.
+
+### FPGA hardware test (step [7])
+
+Automated hardware verification: upload a .jop to the FPGA, capture UART output in real time, parse test results, report pass/fail. Reuses the same serial protocol as `Downloader` and the same UART output parsing as the SpinalHDL simulation harnesses.
+
+**Protocol:**
+
+1. Program FPGA (if bitstream newer than last programmed, or `--force-program`)
+2. Upload .jop via serial boot protocol (same as `jop download`)
+3. Open UART listener on same serial port
+4. Capture lines until: (a) all expected tests complete, (b) timeout, or (c) end marker detected
+5. Parse each line for test result pattern: `T<name> Ok` or `T<name> FAIL`
+6. Report summary: passed/failed/total, per-test cycle counts (optional), wall-clock time
+
+**Test result parsing:**
+
+The UART output format from DoAll.jop (and individual tests) follows a consistent pattern already used by the simulation harnesses:
+
+```
+GC info                    → ignored (preamble)
+CI0                        → class init, reset cycle counter
+T01 IntArithmetic Ok       → test passed
+T02 Logic2 Ok              → test passed
+T15 FloatTest FAIL         → test failed
+...
+M0: 59/60 Ok               → summary line
+```
+
+`FpgaTestRunner` parses this same format. The simulation harnesses (`JopMinMaxSim`, `JopJvmTestsBramSim`) already implement this parsing — the FPGA test runner shares the parsing logic.
+
+```java
+public class FpgaTestRunner {
+    private final Downloader downloader;
+    private final SerialPort uart;
+    private final BuildListener listener;
+
+    /**
+     * Upload .jop and run, capturing UART output.
+     * Returns structured test results.
+     */
+    public TestResult run(Path jopFile, FpgaTestOptions options) {
+        // 1. Upload .jop
+        downloader.download(jopFile, options.downloadOptions());
+
+        // 2. Switch serial port to UART listener mode
+        List<TestCase> results = new ArrayList<>();
+        long startTime = System.currentTimeMillis();
+        StringBuilder fullOutput = new StringBuilder();
+
+        // 3. Read lines until timeout or completion
+        while (!timedOut(startTime, options.timeoutMs)) {
+            String line = uart.readLine(1000);  // 1 sec read timeout
+            if (line == null) continue;
+
+            fullOutput.append(line).append("\n");
+            listener.onOutput(BuildStep.TEST, line);
+
+            // Parse test result lines
+            TestCase tc = parseTestLine(line);
+            if (tc != null) results.add(tc);
+
+            // Check for summary/completion marker
+            if (isSummaryLine(line)) break;
+        }
+
+        // 4. Build result
+        long elapsed = System.currentTimeMillis() - startTime;
+        int passed = (int) results.stream().filter(t -> t.passed).count();
+        int failed = results.size() - passed;
+
+        return new TestResult(results, passed, failed, elapsed, fullOutput.toString());
+    }
+
+    /** Parse "T01 IntArithmetic Ok" or "T01 IntArithmetic FAIL" */
+    private TestCase parseTestLine(String line) {
+        if (!line.startsWith("T")) return null;
+        if (line.endsWith("Ok")) return new TestCase(line.trim(), true);
+        if (line.endsWith("FAIL")) return new TestCase(line.trim(), false);
+        return null;
+    }
+}
+
+public class TestResult {
+    public final List<TestCase> tests;
+    public final int passed, failed;
+    public final long elapsedMs;
+    public final String rawOutput;
+
+    public boolean allPassed() { return failed == 0; }
+
+    /** Print summary to stdout */
+    public void printSummary() {
+        for (TestCase tc : tests) {
+            System.out.printf("  %-40s %s%n", tc.name, tc.passed ? "OK" : "FAIL");
+        }
+        System.out.printf("%n%d/%d passed (%.1f sec)%n", passed, passed + failed, elapsedMs / 1000.0);
+    }
+}
+
+public class FpgaTestOptions {
+    public int timeoutMs = 120_000;           // 2 min default (DoAll.jop takes ~60 sec at 80 MHz)
+    public String serialPort = null;          // auto-detect from board config
+    public boolean reportCycles = false;      // parse per-test cycle counts
+    public String expectOutput = null;        // check for specific string in output
+    public boolean programFpga = true;        // program bitstream before upload
+}
+```
+
+**Test suite mode** (`jop test --suite`):
+
+Builds `DoAll.jop` (step [5] if stale), uploads, and expects the standard 60-test output. Reports pass/fail per test and overall score:
+
+```
+$ jop test --suite
+Building DoAll.jop...
+Programming FPGA...
+Uploading DoAll.jop (51 KB)...
+Running tests...
+  T01 IntArithmetic                        OK
+  T02 Logic2                               OK
+  ...
+  T59 HwExceptionTest                      OK
+  T60 DeepRecursion                        TIMEOUT
+
+59/60 passed (47.3 sec)
+```
+
+**Single-app test** (`jop test HelloWorld.jop --expect "Hello World!"`):
+
+Uploads the app, captures output, checks for expected string:
+
+```
+$ jop test HelloWorld.jop --expect "Hello World!"
+Programming FPGA...
+Uploading HelloWorld.jop...
+Output:
+  Hello World!
+PASS: found expected output
+```
+
+**Cycle count reporting** (`jop test --suite --cycles`):
+
+Measures wall-clock time between test result lines. Not cycle-accurate (depends on UART baud rate and OS scheduling), but gives relative performance comparison between configs:
+
+```
+$ jop test --suite --cycles
+  T01 IntArithmetic                        OK      0.8 sec
+  T02 Logic2                               OK      0.3 sec
+  ...
+  T15 FloatTest                            OK      2.1 sec   ← slow on min config
+  ...
+59/60 passed (47.3 sec)
+```
+
+For true cycle counts, use SpinalHDL simulation (`jop simulate --cycles`) which has access to the cycle counter.
+
+**Serial port auto-detection:**
+
+The board config knows which USB-serial chip is present (`CP2102N`, `FT2232H`). `FpgaTestRunner` scans `/dev/ttyUSB*` or `/dev/ttyACM*` and matches by USB VID/PID:
+
+| Chip | VID:PID | Boards |
+|------|---------|--------|
+| CP2102N | 10C4:EA60 | QMTECH DB V4 |
+| FT2232H | 0403:6010 | CYC5000, Alchitry Au V2 |
+
+Override with `--port /dev/ttyUSB0` if auto-detection fails.
+
+**Eclipse integration:**
+
+Eclipse toolbar: "Test on FPGA" button calls `orchestrator.testSuite(options)`. Results displayed in a JUnit-style test view — green/red bars per test, click to see UART output. Same `FpgaTestRunner` underneath.
 
 ### Eclipse front-end
 
@@ -1865,7 +2301,7 @@ java/tools/src/com/jopdesign/build/
   BuildOrchestrator.java    # dependency graph + incremental cache
   BuildConfig.java          # JSON config parsing
   BuildListener.java        # progress reporting interface
-  BuildStep.java            # enum: MICROCODE, RUNTIME, VERILOG, FPGA, APP, DOWNLOAD
+  BuildStep.java            # enum: MICROCODE, RUNTIME, VERILOG, FPGA, APP, DOWNLOAD, TEST
   BuildResult.java          # per-step results (success/fail, artifacts, timing)
   MicrocodeBuilder.java     # step [1]: gcc + jopa invocation
   RuntimeBuilder.java       # step [2]: Const.java gen + javac + JAR
@@ -1873,7 +2309,10 @@ java/tools/src/com/jopdesign/build/
   FpgaBuilder.java          # step [4]: Quartus/Vivado invocation
   AppBuilder.java           # step [5]: javac + PreLinker + JOPizer
   Downloader.java           # step [6]: serial download
+  FpgaTestRunner.java       # step [7]: FPGA hardware test (upload + UART capture + parse)
   Simulator.java            # sbt sim invocation
+  TestResult.java           # per-test results (name, pass/fail, cycles, output)
+  FpgaTestOptions.java      # timeout, expected output, cycle reporting, serial port
 ```
 
 This lives alongside the existing JOP tools (`Jopa.java`, `PreLinker.java`, etc.) and builds into the same `jopa.jar` (or a separate `jop-build.jar`). Both CLI and Eclipse depend on this JAR.
@@ -1977,7 +2416,7 @@ Run Configuration: "JOP Simulation" — calls `BuildOrchestrator.simulate()`:
   → Optional: waveform viewer (GTKWave) for hardware debugging
 ```
 
-This uses the same `JopSystemConfig` as the FPGA build but targets the BRAM simulation backend. Useful for testing before hardware is available.
+This uses the same `JopConfig` as the FPGA build but targets the BRAM simulation backend. Useful for testing before hardware is available.
 
 ## Phase 10: Cross-Cutting Concerns
 
@@ -1988,7 +2427,7 @@ This uses the same `JopSystemConfig` as the FPGA build but targets the BRAM simu
 **Solution:** Config hash embedded in both bitstream and .jop:
 
 ```scala
-// JopSystemConfig produces a deterministic hash
+// JopConfig produces a deterministic hash
 def configHash: String = sha256(
   coreConfigs.map(_.toString) ++
   Seq(bootMode.toString, cpuCnt.toString, ioConfig.toString)
@@ -2003,14 +2442,31 @@ This doesn't prevent running mismatched builds (that would brick development), b
 
 ### PreLinker / JOPizer config awareness
 
-Currently these tools read class structure offsets from `Const.java` (which gets compiled into the runtime). With config-driven generation, this interface stays the same — `Const.java` is the contract between SpinalHDL config and Java toolchain.
+**CRITICAL:** JOPizer needs to know which bytecodes are handled by hardware/microcode vs Java software. This is NOT optional — it determines whether JOPizer replaces a bytecode with `invokestatic` (IMP_JAVA) or leaves it as a raw bytecode for the jump table (IMP_ASM).
+
+Currently `JopInstr.java` hardcodes IMP_ASM vs IMP_JAVA per bytecode. Most math/float bytecodes are IMP_JAVA (JOPizer replaces them with calls to SoftFloat etc.). But `imul` (0x68) is IMP_ASM — JOPizer leaves it in the bytecode stream, and the jump table dispatches it to the microcode handler at runtime.
+
+**The problem:** If a bytecode is IMP_ASM but the config says `Java`, the jump table patches it to `sys_noim` — but JOPizer didn't replace it with `invokestatic`, so the raw bytecode hits `sys_noim` and the Java fallback handler runs (which may be a stub). If a bytecode is IMP_JAVA but the config says `Hardware`, JOPizer already replaced it with `invokestatic` — the hardware handler in the jump table is dead code (never reached).
+
+**Solution:** JOPizer's IMP_ASM/IMP_JAVA classification must be driven by the same config:
+
+| Config | JOPizer | Jump Table |
+|--------|---------|------------|
+| **Java** | IMP_JAVA (replace with invokestatic → SoftFloat etc.) | sys_noim (unreachable) |
+| **Microcode** | IMP_ASM (leave raw bytecode) | microcode handler addr |
+| **Hardware** | IMP_ASM (leave raw bytecode) | HW microcode handler addr |
+
+Implementation: generate `JopInstr.java` (or a config file read by JOPizer) from `JopCoreConfig`. For each configurable bytecode, `Implementation.Java` → IMP_JAVA, otherwise → IMP_ASM.
 
 Additional config the tools may need:
 - **Memory layout** — heap start, stack size, method cache size → already in `Const.java` via `JopMemoryConfig`
-- **Available bytecodes** — which bytecodes have HW/microcode vs Java → JOPizer doesn't need this (bytecode is bytecode; the jump table handles dispatch at runtime)
+- **Bytecode implementation** — which bytecodes are Java vs microcode/hardware → drives IMP_ASM/IMP_JAVA in JOPizer
 - **Config hash** — JOPizer stamps .jop header with hash from generated `Const.java`
 
-No changes to PreLinker/JOPizer needed beyond reading the generated `Const.java`.
+Changes needed:
+1. `JopInstr.java`: Make IMP_ASM/IMP_JAVA configurable per bytecode (read from config or generated source)
+2. `JOPizer.java`: Read bytecode config to determine replacement behavior
+3. Build chain: config generates `JopInstr` classification before JOPizer runs
 
 ### Configuration validation
 
@@ -2022,14 +2478,14 @@ require(!(fadd == Implementation.Hardware && fdiv == Implementation.Hardware &&
           fsub != Implementation.Hardware),
   "FloatComputeUnit: if fadd and fdiv are Hardware, fsub must be too (shared FpuCore)")
 
-// In JopSystemConfig
+// In JopConfig / JopSystem
 require(cpuCnt >= 1 && cpuCnt <= 16)
 perCoreConfigs.foreach(pcc =>
   require(pcc.length == cpuCnt))
 
 // Resource estimation warnings (non-fatal)
-if (coreConfig.needsLongAlu && system.fpgaBoard.fpga.family == FpgaFamily.CycloneV)
-  println(s"Warning: 64-bit ALU on ${system.fpgaBoard.name} — verify LUT budget")
+if (coreConfig.needsLongAlu && config.fpgaFamily == FpgaFamily.CycloneV)
+  println(s"Warning: 64-bit ALU on ${config.assembly.name} — verify LUT budget")
 ```
 
 Future: resource estimation from config (LEs, DSPs, BRAMs) — compare against FPGA capacity before running synthesis. Saves 5-30 minutes of failed synthesis.
@@ -2077,10 +2533,18 @@ At each phase, existing workflows are not broken — new capabilities are added 
 
 Areas referenced in the document that need further detail:
 
-1. **Device registry for MemoryDevice lookup** (Phase 5) — `BoardDevice.memories` references a device registry to resolve device names to `MemoryDevice` objects. The registry mechanism (global map, companion object lookup, or config file) is not yet defined.
+1. **Device registry for MemoryDevice lookup** (Phase 5) — `BoardDevice.part` references part numbers that need to resolve to `MemoryDevice` objects for controller instantiation. The registry mechanism (global map, companion object lookup) is not yet defined. Simplest approach: `MemoryDevice` companion object with lookup by part number.
 
 2. **RuntimeModule dependency resolution** (Phase 6) — `closeDependencies()` is referenced for transitive module dependency resolution but the algorithm (topological sort, cycle detection) is not specified.
 
 3. **OpenJDK 6 source setup** (Phase 6) — The document references `/srv/git/java/jdk6/` which is machine-specific. Needs setup instructions: where to obtain the source, how to configure the path, and whether it should be version-controlled or referenced externally.
 
 4. **Build config JSON schema** (Phase 8) — Example JSON snippets exist but no formal JSON Schema definition. Needed for IDE validation (Eclipse/VS Code auto-complete and error highlighting in `.settings/jop.json`).
+
+5. **Superset ROM with both imul handlers** — Currently `#ifdef HW_MUL` selects one or the other. Need to restructure jvm.asm to have both `imul_hw:` and `imul_sw:` labels always present. Jopa must export both addresses so `resolveJumpTable` can pick the right one. This is the key step to eliminate separate bare builds.
+
+6. **JOPizer config awareness** (Phase 10) — JOPizer must know per-bytecode IMP_ASM vs IMP_JAVA. Options: (a) generate `JopInstr.java` from config, (b) pass a config file to JOPizer at runtime, (c) generate a `BytecodeConfig.java` that JOPizer reads. Option (a) is cleanest — one generated file replaces the hardcoded table.
+
+7. **Dual-subsystem interconnect** — FIFO message queues between two JOP systems on the same FPGA. Interface: BMB slave on each system, shared FIFO memory. Need to define the protocol (push/pop semantics, flow control, interrupt-on-data).
+
+8. **Jopa alternate-handler addresses** — To support `imul: Microcode` vs `imul: Hardware` from the same superset ROM, Jopa's `JumpTableData` needs to export both handler addresses per bytecode. Current format only has one entry per bytecode. Need either: (a) a second parallel address array for alternate handlers, or (b) named labels that Jopa exports (e.g., `imul_hw_addr`, `imul_sw_addr`) alongside the jump table.

@@ -80,7 +80,7 @@ case class JopSdramTop(
   ramInit: Seq[BigInt],
   debugConfig: Option[DebugConfig] = None,
   ioConfig: IoConfig = IoConfig(),
-  supersetJumpTable: JumpTableInitData = JumpTableInitData.serialSuperset,
+  supersetJumpTable: JumpTableInitData = JumpTableInitData.serial,
   perCoreUart: Boolean = false,
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None
 ) extends Component {
@@ -503,8 +503,8 @@ case class JopSdramTop(
  * Generate Verilog for JopSdramTop (single-core)
  */
 object JopSdramTopVerilog extends App {
-  val romFilePath = "asm/generated/serial-superset/mem_rom.dat"
-  val ramFilePath = "asm/generated/serial-superset/mem_ram.dat"
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -529,18 +529,18 @@ object JopSdramTopVerilog extends App {
  * Generate Verilog for JopSdramTop with FloatComputeUnit (single-core)
  *
  * All float ops routed to hardware FloatComputeUnit via sthw microcode.
- * Uses serial-superset ROM (all HW handlers present, resolveJumpTable patches unused to sys_noim).
+ * Uses serial ROM (all HW handlers present, resolveJumpTable patches unused to sys_noim).
  */
 object JopFloatCuSdramTopVerilog extends App {
   import Implementation._
 
-  val romFilePath = "asm/generated/serial-superset/mem_rom.dat"
-  val ramFilePath = "asm/generated/serial-superset/mem_ram.dat"
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
 
-  println(s"Loaded ROM: ${romData.length} entries (serial-superset)")
+  println(s"Loaded ROM: ${romData.length} entries (serial)")
   println(s"Loaded RAM: ${ramData.length} entries")
 
   SpinalConfig(
@@ -553,7 +553,7 @@ object JopFloatCuSdramTopVerilog extends App {
     ramInit = ramData,
     perCoreConfigs = Some(Seq(JopCoreConfig(
       memConfig = JopMemoryConfig(burstLen = 4),
-      supersetJumpTable = JumpTableInitData.serialSuperset,
+      supersetJumpTable = JumpTableInitData.serial,
       clkFreqHz = 80000000L,
       fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
       fneg = Hardware, i2f = Hardware, f2i = Hardware,
@@ -565,13 +565,71 @@ object JopFloatCuSdramTopVerilog extends App {
 }
 
 /**
+ * Generate MINIMUM Verilog (no IntegerCU, no FloatCU — pure microcode imul)
+ * Uses bare-serial microcode ROM (no HW_MUL, no FLOAT_CU).
+ */
+object JopMinSdramTopVerilog extends App {
+  import Implementation._
+  val romFilePath = "asm/generated/bare-serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/bare-serial/mem_ram.dat"
+  val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
+  val ramData = JopFileLoader.loadStackRam(ramFilePath)
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = "spinalhdl/generated",
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
+  ).generate(InOutWrapper(JopSdramTop(
+    cpuCnt = 1,
+    romInit = romData,
+    ramInit = ramData,
+    perCoreConfigs = Some(Seq(JopCoreConfig(
+      memConfig = JopMemoryConfig(burstLen = 4),
+      supersetJumpTable = JumpTableInitData.bareSerial,
+      clkFreqHz = 80000000L,
+      imul = Java, idiv = Java, irem = Java
+    )))
+  )))
+  println("Generated: spinalhdl/generated/JopSdramTop.v (MINIMUM)")
+}
+
+/**
+ * Generate MAXIMUM Verilog (IntegerCU + FloatCU — full hardware acceleration)
+ */
+object JopMaxSdramTopVerilog extends App {
+  import Implementation._
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
+  val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
+  val ramData = JopFileLoader.loadStackRam(ramFilePath)
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = "spinalhdl/generated",
+    defaultClockDomainFrequency = FixedFrequency(80 MHz)
+  ).generate(InOutWrapper(JopSdramTop(
+    cpuCnt = 1,
+    romInit = romData,
+    ramInit = ramData,
+    perCoreConfigs = Some(Seq(JopCoreConfig(
+      memConfig = JopMemoryConfig(burstLen = 4),
+      supersetJumpTable = JumpTableInitData.serial,
+      clkFreqHz = 80000000L,
+      imul = Microcode, idiv = Hardware, irem = Hardware,
+      fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
+      fneg = Hardware, i2f = Hardware, f2i = Hardware,
+      fcmpl = Hardware, fcmpg = Hardware
+    )))
+  )))
+  println("Generated: spinalhdl/generated/JopSdramTop.v (MAXIMUM)")
+}
+
+/**
  * Generate Verilog for JopSdramTop in SMP mode (entity: JopSmpSdramTop)
  */
 object JopSmpSdramTopVerilog extends App {
   val cpuCnt = if (args.length > 0) args(0).toInt else 2
 
-  val romFilePath = "asm/generated/serial-superset/mem_rom.dat"
-  val ramFilePath = "asm/generated/serial-superset/mem_ram.dat"
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -749,20 +807,20 @@ object JopSmpFloatCuSdramTopVerilog extends App {
 
   val cpuCnt = if (args.length > 0) args(0).toInt else 2
 
-  val romFilePath = "asm/generated/serial-superset/mem_rom.dat"
-  val ramFilePath = "asm/generated/serial-superset/mem_ram.dat"
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
 
-  println(s"Loaded ROM: ${romData.length} entries (serial-superset)")
+  println(s"Loaded ROM: ${romData.length} entries (serial)")
   println(s"Loaded RAM: ${ramData.length} entries")
   println(s"Generating $cpuCnt-core heterogeneous SMP (core 0 = FloatCU)...")
 
   // Base config: shared parameters
   val base = JopCoreConfig(
     memConfig = JopMemoryConfig(burstLen = 4),
-    supersetJumpTable = JumpTableInitData.serialSuperset,
+    supersetJumpTable = JumpTableInitData.serial,
     clkFreqHz = 80000000L
   )
 

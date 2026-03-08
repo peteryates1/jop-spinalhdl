@@ -70,9 +70,9 @@ class JumpTableTest extends AnyFunSuite {
 
       // Test some known unmapped bytecodes
       val unmappedBytecodes = Seq(
-        0x0C,  // fconst_1 (floating point, not implemented)
-        0x53,  // aastore (array store, not implemented)
-        0x62   // fadd (floating point, not implemented)
+        0x0C,  // fconst_1 (floating point constant, not implemented)
+        0x0D,  // fconst_2 (floating point constant, not implemented)
+        0x53   // aastore (array store, not implemented)
       )
 
       val sysNoimAddr = JumpTableData.sysNoimAddr

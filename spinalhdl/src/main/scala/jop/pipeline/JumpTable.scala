@@ -1,14 +1,14 @@
 package jop.pipeline
 
 import spinal.core._
-import jop.JumpTableData
+import jop.{JumpTableData, JumpTableSource}
 
 /**
  * Jump Table Init Data - microcode-layout-specific addresses and entries.
  *
  * Holds the 256-entry jump table plus special handler addresses.
- * Use JumpTableInitData.simulation for SIMULATION microcode (default),
- * and JumpTableInitData.serial for SERIAL-boot microcode.
+ * All ROMs are supersets containing ALL hardware handlers.
+ * Use resolveJumpTable() in JopCoreConfig to patch unwanted bytecodes to sys_noim.
  */
 case class JumpTableInitData(
   entries:     Seq[BigInt],
@@ -24,125 +24,24 @@ case class JumpTableInitData(
 }
 
 object JumpTableInitData {
-  /** Default: SIMULATION microcode jump table */
-  def simulation: JumpTableInitData = JumpTableInitData(
-    entries     = JumpTableData.entries,
-    sysNoimAddr = JumpTableData.sysNoimAddr,
-    sysIntAddr  = JumpTableData.sysIntAddr,
-    sysExcAddr  = JumpTableData.sysExcAddr
-  )
-
-  /** SERIAL-boot microcode jump table */
-  def serial: JumpTableInitData = JumpTableInitData(
-    entries     = jop.SerialJumpTableData.entries,
-    sysNoimAddr = jop.SerialJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.SerialJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.SerialJumpTableData.sysExcAddr
-  )
-
-  /** FLASH-boot microcode jump table */
-  def flash: JumpTableInitData = JumpTableInitData(
-    entries     = jop.FlashJumpTableData.entries,
-    sysNoimAddr = jop.FlashJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.FlashJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.FlashJumpTableData.sysExcAddr
-  )
-
-  /** SIMULATION microcode with HW FPU handlers (fadd/fsub/fmul/fdiv → microcode FPU) */
-  def simulationFpu: JumpTableInitData = JumpTableInitData(
-    entries     = jop.FpuJumpTableData.entries,
-    sysNoimAddr = jop.FpuJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.FpuJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.FpuJumpTableData.sysExcAddr
-  )
-
-  /** SERIAL-boot microcode with HW FPU handlers */
-  def serialFpu: JumpTableInitData = JumpTableInitData(
-    entries     = jop.SerialFpuJumpTableData.entries,
-    sysNoimAddr = jop.SerialFpuJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.SerialFpuJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.SerialFpuJumpTableData.sysExcAddr
-  )
-
-  /** SIMULATION microcode with DSP multiply (imul/lmul → microcode DSP) */
-  def simulationDsp: JumpTableInitData = JumpTableInitData(
-    entries     = jop.DspJumpTableData.entries,
-    sysNoimAddr = jop.DspJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.DspJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.DspJumpTableData.sysExcAddr
-  )
-
-  /** SERIAL-boot microcode with DSP multiply */
-  def serialDsp: JumpTableInitData = JumpTableInitData(
-    entries     = jop.SerialDspJumpTableData.entries,
-    sysNoimAddr = jop.SerialDspJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.SerialDspJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.SerialDspJumpTableData.sysExcAddr
-  )
-
-  /** SIMULATION microcode with HW integer divider (idiv/irem → microcode HW) */
-  def simulationDiv: JumpTableInitData = JumpTableInitData(
-    entries     = jop.DivJumpTableData.entries,
-    sysNoimAddr = jop.DivJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.DivJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.DivJumpTableData.sysExcAddr
-  )
-
-  /** SERIAL-boot microcode with HW integer divider */
-  def serialDiv: JumpTableInitData = JumpTableInitData(
-    entries     = jop.SerialDivJumpTableData.entries,
-    sysNoimAddr = jop.SerialDivJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.SerialDivJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.SerialDivJumpTableData.sysExcAddr
-  )
-
-  /** SIMULATION microcode with DSP multiply + HW integer divider */
-  def simulationHwMath: JumpTableInitData = JumpTableInitData(
-    entries     = jop.HwMathJumpTableData.entries,
-    sysNoimAddr = jop.HwMathJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.HwMathJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.HwMathJumpTableData.sysExcAddr
-  )
-
-  /** SERIAL-boot microcode with DSP multiply + HW integer divider */
-  def serialHwMath: JumpTableInitData = JumpTableInitData(
-    entries     = jop.SerialHwMathJumpTableData.entries,
-    sysNoimAddr = jop.SerialHwMathJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.SerialHwMathJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.SerialHwMathJumpTableData.sysExcAddr
-  )
-
-  /** SIMULATION microcode with FloatComputeUnit (pipeline-integrated FPU) */
-  def simulationFloatCu: JumpTableInitData = JumpTableInitData(
-    entries     = jop.FloatCuJumpTableData.entries,
-    sysNoimAddr = jop.FloatCuJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.FloatCuJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.FloatCuJumpTableData.sysExcAddr
-  )
-
-  /** SERIAL-boot microcode with FloatComputeUnit */
-  def serialFloatCu: JumpTableInitData = JumpTableInitData(
-    entries     = jop.SerialFloatCuJumpTableData.entries,
-    sysNoimAddr = jop.SerialFloatCuJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.SerialFloatCuJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.SerialFloatCuJumpTableData.sysExcAddr
-  )
+  /** Create from any Jopa-generated jump table object */
+  private def from(src: JumpTableSource): JumpTableInitData =
+    JumpTableInitData(src.entries, src.sysNoimAddr, src.sysIntAddr, src.sysExcAddr)
 
   /** SIMULATION superset ROM (all HW handlers: IntegerCU + FloatCU) */
-  def superset: JumpTableInitData = JumpTableInitData(
-    entries     = jop.SupersetJumpTableData.entries,
-    sysNoimAddr = jop.SupersetJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.SupersetJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.SupersetJumpTableData.sysExcAddr
-  )
+  def simulation: JumpTableInitData = from(JumpTableData)
 
   /** SERIAL-boot superset ROM (all HW handlers: IntegerCU + FloatCU) */
-  def serialSuperset: JumpTableInitData = JumpTableInitData(
-    entries     = jop.SerialSupersetJumpTableData.entries,
-    sysNoimAddr = jop.SerialSupersetJumpTableData.sysNoimAddr,
-    sysIntAddr  = jop.SerialSupersetJumpTableData.sysIntAddr,
-    sysExcAddr  = jop.SerialSupersetJumpTableData.sysExcAddr
-  )
+  def serial: JumpTableInitData = from(jop.SerialJumpTableData)
+
+  /** FLASH-boot superset ROM */
+  def flash: JumpTableInitData = from(jop.FlashJumpTableData)
+
+  /** BARE SIMULATION ROM (no HW_MUL, no FLOAT_CU — pure microcode imul) */
+  def bareSimulation: JumpTableInitData = from(jop.BareJumpTableData)
+
+  /** BARE SERIAL ROM (no HW_MUL, no FLOAT_CU — pure microcode imul) */
+  def bareSerial: JumpTableInitData = from(jop.BareSerialJumpTableData)
 }
 
 /**
@@ -170,29 +69,6 @@ case class JumpTableConfig(
  * Translates 8-bit Java bytecode opcodes to microcode ROM addresses.
  * Uses ROM-based lookup with data generated by Jopa assembler.
  *
- * Architecture:
- * - ROM with 256 entries (one per bytecode 0x00-0xFF)
- * - Asynchronous/combinational read
- * - Initialized from JumpTableData.scala (generated by Jopa)
- *
- * Data Flow:
- * 1. bytecode (8 bits) → ROM address
- * 2. ROM lookup (combinational)
- * 3. jpaddr (pcWidth bits) → microcode fetch stage
- *
- * Special Addresses (from JumpTableData):
- * - sys_noim (0x0B1): Not implemented instruction handler
- * - sys_int  (0x09F): Interrupt handler
- * - sys_exc  (0x0A7): Exception handler
- *
- * Timing:
- * - Combinational output (0 cycle latency)
- * - Used as address input to microcode ROM
- *
- * Generated From:
- * - asm/generated/JumpTableData.scala (auto-generated by Jopa)
- * - Original: /srv/git/jop/vhdl/core/jtbl.vhd
- *
  * @param config Jump table configuration
  */
 case class JumpTable(
@@ -208,28 +84,16 @@ case class JumpTable(
     val excPend = in Bool()                     // Exception pending
   }
 
-  // ==========================================================================
-  // Jump Table ROM
-  // ==========================================================================
-
   // ROM stores microcode addresses (256 entries, one per bytecode)
   val rom = Mem(UInt(config.pcWidth bits), config.entries)
 
   // Initialize from provided jump table data
   rom.init(config.initData.entries.map(addr => U(addr.toInt, config.pcWidth bits)))
 
-  // ==========================================================================
-  // Lookup Logic
-  // ==========================================================================
-
   // Asynchronous ROM read (combinational, 0-cycle latency)
-  // bytecode → ROM address → microcode address
-  // Note: readAsync generates a Verilog warning "can only be write first"
-  //       This is safe here since ROM has no writes (read-only data)
   val normalAddr = rom.readAsync(io.bytecode.asUInt)
 
   // Priority muxing: Exception > Interrupt > Normal bytecode
-  // This matches VHDL jtbl.vhd behavior
   when(io.excPend) {
     io.jpaddr := U(config.initData.sysExcAddr, config.pcWidth bits)
   }.elsewhen(io.intPend) {
@@ -238,20 +102,13 @@ case class JumpTable(
     io.jpaddr := normalAddr
   }
 
-  // ==========================================================================
-  // Verification Helpers
-  // ==========================================================================
-
-  // Add assertions for debugging (disabled in synthesis)
+  // Verification helpers (disabled in synthesis)
   if (GenerationFlags.simulation) {
-    // Verify bytecode is in valid range
     assert(
       assertion = io.bytecode.asUInt < config.entries,
       message = "Invalid bytecode out of range",
       severity = WARNING
     )
-
-    // Verify output address is in valid microcode ROM range
     assert(
       assertion = io.jpaddr < (1 << config.pcWidth),
       message = "Jump address out of microcode ROM range",
@@ -260,33 +117,19 @@ case class JumpTable(
   }
 }
 
-/**
- * JumpTable Companion Object
- *
- * Provides utility functions and constants.
- */
 object JumpTable {
 
-  /**
-   * Special microcode addresses (from JumpTableData)
-   */
   object SpecialAddr {
-    val SYS_NOIM = JumpTableData.sysNoimAddr  // 0x0B1 - Not implemented
-    val SYS_INT  = JumpTableData.sysIntAddr   // 0x09F - Interrupt
-    val SYS_EXC  = JumpTableData.sysExcAddr   // 0x0A7 - Exception
+    val SYS_NOIM = JumpTableData.sysNoimAddr
+    val SYS_INT  = JumpTableData.sysIntAddr
+    val SYS_EXC  = JumpTableData.sysExcAddr
   }
 
-  /**
-   * Get microcode address for a specific bytecode (for testing)
-   */
   def getAddress(bytecode: Int): Int = {
     require(bytecode >= 0 && bytecode < 256, "Bytecode out of range")
     JumpTableData.entries(bytecode).toInt
   }
 
-  /**
-   * Generate Verilog for standalone testing
-   */
   def main(args: Array[String]): Unit = {
     SpinalConfig(
       mode = Verilog,
