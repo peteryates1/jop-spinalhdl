@@ -1,4 +1,5 @@
 package jop.system
+import jop.config._
 
 import spinal.core._
 import spinal.lib._
@@ -288,7 +289,7 @@ case class JopSdramTop(
       baseConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(burstLen = 4),
         supersetJumpTable = supersetJumpTable,
-        clkFreqHz = 80000000L,
+        clkFreq = 80 MHz,
         ioConfig = ioConfig
       ),
       debugConfig = debugConfig,
@@ -304,7 +305,7 @@ case class JopSdramTop(
 
     // Debug UART (when debug is enabled)
     debugConfig.foreach { cfg =>
-      val debugUart = DebugUart(cfg.baudRate, 80000000L)
+      val debugUart = DebugUart(cfg.baudRate, 80 MHz)
       debugUart.io.transport <> cluster.io.debugTransport.get
       io.debug_txd.get := debugUart.io.txd
       debugUart.io.rxd := io.debug_rxd.get
@@ -554,7 +555,7 @@ object JopFloatCuSdramTopVerilog extends App {
     perCoreConfigs = Some(Seq(JopCoreConfig(
       memConfig = JopMemoryConfig(burstLen = 4),
       supersetJumpTable = JumpTableInitData.serial,
-      clkFreqHz = 80000000L,
+      clkFreq = 80 MHz,
       fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
       fneg = Hardware, i2f = Hardware, f2i = Hardware,
       fcmpl = Hardware, fcmpg = Hardware
@@ -585,7 +586,7 @@ object JopMinSdramTopVerilog extends App {
     perCoreConfigs = Some(Seq(JopCoreConfig(
       memConfig = JopMemoryConfig(burstLen = 4),
       supersetJumpTable = JumpTableInitData.bareSerial,
-      clkFreqHz = 80000000L,
+      clkFreq = 80 MHz,
       imul = Java, idiv = Java, irem = Java
     )))
   )))
@@ -612,7 +613,7 @@ object JopMaxSdramTopVerilog extends App {
     perCoreConfigs = Some(Seq(JopCoreConfig(
       memConfig = JopMemoryConfig(burstLen = 4),
       supersetJumpTable = JumpTableInitData.serial,
-      clkFreqHz = 80000000L,
+      clkFreq = 80 MHz,
       imul = Microcode, idiv = Hardware, irem = Hardware,
       fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
       fneg = Hardware, i2f = Hardware, f2i = Hardware,
@@ -821,7 +822,7 @@ object JopSmpFloatCuSdramTopVerilog extends App {
   val base = JopCoreConfig(
     memConfig = JopMemoryConfig(burstLen = 4),
     supersetJumpTable = JumpTableInitData.serial,
-    clkFreqHz = 80000000L
+    clkFreq = 80 MHz
   )
 
   // Per-core: core 0 gets float HW, others get Java software

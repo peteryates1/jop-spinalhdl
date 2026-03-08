@@ -1,4 +1,4 @@
-package jop.system
+package jop.config
 
 /**
  * Hardware Parts — Concrete Components with Datasheet Parameters

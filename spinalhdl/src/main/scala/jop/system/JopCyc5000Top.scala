@@ -1,4 +1,5 @@
 package jop.system
+import jop.config._
 
 import spinal.core._
 import spinal.lib._
@@ -133,7 +134,7 @@ case class JopCyc5000Top(
       baseConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(burstLen = 0),
         supersetJumpTable = JumpTableInitData.serial,
-        clkFreqHz = 80000000L
+        clkFreq = 80 MHz
       ),
       debugConfig = debugConfig,
       romInit = Some(romInit),
@@ -144,7 +145,7 @@ case class JopCyc5000Top(
 
     // Debug UART (when debug is enabled)
     debugConfig.foreach { cfg =>
-      val debugUart = DebugUart(cfg.baudRate, 80000000L)
+      val debugUart = DebugUart(cfg.baudRate, 80 MHz)
       debugUart.io.transport <> cluster.io.debugTransport.get
       io.debug_txd.get := debugUart.io.txd
       debugUart.io.rxd := io.debug_rxd.get

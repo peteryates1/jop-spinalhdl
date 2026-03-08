@@ -1,5 +1,6 @@
-package jop.system
+package jop.config
 
+import spinal.core._
 import jop.pipeline.JumpTableInitData
 
 /**
@@ -58,7 +59,7 @@ object ArbiterType {
  * @param memory         Which memory device to use (by part name or role)
  * @param bootMode       Boot source (Serial, Flash, Simulation)
  * @param arbiterType    Bus arbiter type for multi-core
- * @param clkFreqHz      System clock frequency in Hz (after PLL)
+ * @param clkFreq        System clock frequency (after PLL)
  * @param cpuCnt         Number of CPU cores
  * @param coreConfig     Default configuration for all cores
  * @param perCoreConfigs Optional per-core override (heterogeneous cores)
@@ -71,7 +72,7 @@ case class JopSystem(
   memory: String,
   bootMode: BootMode,
   arbiterType: ArbiterType = ArbiterType.RoundRobin,
-  clkFreqHz: Long,
+  clkFreq: HertzNumber,
   cpuCnt: Int = 1,
   coreConfig: JopCoreConfig = JopCoreConfig(),
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None,
@@ -201,7 +202,7 @@ object JopConfig {
       name = "main",
       memory = "W9825G6JH6",
       bootMode = BootMode.Serial,
-      clkFreqHz = 80000000L,
+      clkFreq = 80 MHz,
       drivers = Seq(DeviceDriver.Uart, DeviceDriver.EthGmii, DeviceDriver.SdNative))))
 
   /** QMTECH SMP — N cores */
@@ -242,7 +243,7 @@ object JopConfig {
       name = "main",
       memory = "W9864G6JT",
       bootMode = BootMode.Serial,
-      clkFreqHz = 100000000L,
+      clkFreq = 100 MHz,
       drivers = Seq(DeviceDriver.UartFt2232))))
 
   /** Alchitry Au V2 */
@@ -252,7 +253,7 @@ object JopConfig {
       name = "main",
       memory = "MT41K128M16JT-125:K",
       bootMode = BootMode.Serial,
-      clkFreqHz = 83333333L,
+      clkFreq = HertzNumber(BigDecimal(250000000) / 3),
       drivers = Seq(DeviceDriver.UartFt2232))))
 
   /** Simulation (no physical board — uses QMTECH assembly as placeholder) */
@@ -262,7 +263,7 @@ object JopConfig {
       name = "sim",
       memory = "W9825G6JH6",
       bootMode = BootMode.Simulation,
-      clkFreqHz = 100000000L)))
+      clkFreq = 100 MHz)))
 
   // ========================================================================
   // Multi-system preset (Wukong dual-subsystem)
@@ -276,7 +277,7 @@ object JopConfig {
         name = "compute",
         memory = "ddr3",                 // by role
         bootMode = BootMode.Serial,
-        clkFreqHz = 100000000L,
+        clkFreq = 100 MHz,
         cpuCnt = 4,
         coreConfig = JopCoreConfig(
           imul = Microcode, idiv = Hardware, irem = Hardware,
@@ -288,7 +289,7 @@ object JopConfig {
         name = "io",
         memory = "sdr",                  // by role
         bootMode = BootMode.Serial,
-        clkFreqHz = 50000000L,
+        clkFreq = 50 MHz,
         cpuCnt = 2)),
     interconnect = Some(InterconnectConfig(fifoDepth = 64)),
     monitors = Seq(WatchdogConfig(timeoutMs = 2000)))
@@ -304,7 +305,7 @@ object JopConfig {
       name = "min",
       memory = "W9825G6JH6",
       bootMode = BootMode.Serial,
-      clkFreqHz = 80000000L,
+      clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(
         supersetJumpTable = JumpTableInitData.bareSerial,
         imul = Microcode,

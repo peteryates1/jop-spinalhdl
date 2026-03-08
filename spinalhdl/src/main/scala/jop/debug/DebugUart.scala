@@ -12,11 +12,11 @@ import spinal.lib.com.uart._
  * boot protocol.
  *
  * @param baudRate  Baud rate in Hz
- * @param clkFreqHz System clock frequency in Hz
+ * @param clkFreq   System clock frequency
  */
 case class DebugUart(
   baudRate: Int = 1000000,
-  clkFreqHz: Long = 100000000L
+  clkFreq: HertzNumber = HertzNumber(100000000)
 ) extends Component {
 
   val io = new Bundle {
@@ -29,7 +29,7 @@ case class DebugUart(
   val uartCtrl = new UartCtrl(UartCtrlGenerics(
     preSamplingSize = 1, samplingSize = 3, postSamplingSize = 1
   ))
-  uartCtrl.io.config.setClockDivider(baudRate Hz, clkFreqHz Hz)
+  uartCtrl.io.config.setClockDivider(baudRate Hz, clkFreq)
   uartCtrl.io.config.frame.dataLength := 7  // 8 bits (0-indexed)
   uartCtrl.io.config.frame.parity := UartParityType.NONE
   uartCtrl.io.config.frame.stop := UartStopType.ONE

@@ -1,4 +1,5 @@
 package jop.system
+import jop.config._
 
 import spinal.core._
 import spinal.lib._
@@ -94,7 +95,7 @@ case class JopSdramWukongTop(
       baseConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(burstLen = burstLen),
         supersetJumpTable = jumpTable,
-        clkFreqHz = 100000000L,
+        clkFreq = 100 MHz,
         useStackCache = true
       ),
       romInit = Some(romInit),

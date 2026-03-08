@@ -20,12 +20,12 @@ import spinal.core._
  *   - IO_UNLOCK (addr 6) write: releases lock (clears lockReq)
  *   - io.halted output: pipeline stall when this core is halted by CmpSync
  *
- * @param clkFreqHz System clock frequency in Hz (for microsecond prescaler)
+ * @param clkFreq   System clock frequency (for microsecond prescaler)
  * @param cpuId     CPU identifier (for multi-core; 0 for single-core)
  * @param cpuCnt    Total number of CPUs (1 for single-core)
  * @param numIoInt  Number of external I/O interrupt sources (default 2, matching VHDL)
  */
-case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: Int = 2, memEndWords: Int = 0,
+case class BmbSys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: Int = 2, memEndWords: Int = 0,
                   fpuCapability: Int = 0) extends Component {
   val io = new Bundle {
     val addr   = in UInt(4 bits)
@@ -63,7 +63,7 @@ case class BmbSys(clkFreqHz: Long, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: In
 
   // Microsecond counter (prescaled from system clock)
   // Matches VHDL: div_val = clk_freq / 1_000_000 - 1
-  val divVal = (clkFreqHz / 1000000 - 1).toInt
+  val divVal = (clkFreq.toLong / 1000000 - 1).toInt
   val preScale = Reg(UInt(8 bits)) init(divVal)
   val usCntReg = Reg(UInt(32 bits)) init(0)
   preScale := preScale - 1

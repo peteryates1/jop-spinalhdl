@@ -1,6 +1,7 @@
-package jop.system
+package jop.config
 
 import org.scalatest.funsuite.AnyFunSuite
+import spinal.core._
 
 class JopConfigTest extends AnyFunSuite {
 
@@ -10,7 +11,7 @@ class JopConfigTest extends AnyFunSuite {
     assert(config.system.name == "main")
     assert(config.system.memory == "W9825G6JH6")
     assert(config.system.bootMode == BootMode.Serial)
-    assert(config.system.clkFreqHz == 80000000L)
+    assert(config.system.clkFreq == (80 MHz))
     assert(config.system.cpuCnt == 1)
     assert(config.fpgaFamily == FpgaFamily.CycloneIV)
     assert(config.resolveMemory(config.system).isDefined)
@@ -94,7 +95,7 @@ class JopConfigTest extends AnyFunSuite {
   test("simulation preset is valid") {
     val config = JopConfig.simulation
     assert(config.system.bootMode == BootMode.Simulation)
-    assert(config.system.clkFreqHz == 100000000L)
+    assert(config.system.clkFreq == (100 MHz))
   }
 
   test("invalid memory reference fails") {
@@ -105,7 +106,7 @@ class JopConfigTest extends AnyFunSuite {
           name = "bad",
           memory = "NONEXISTENT_RAM",
           bootMode = BootMode.Serial,
-          clkFreqHz = 100000000L)))
+          clkFreq = 100 MHz)))
     }
   }
 
@@ -117,7 +118,7 @@ class JopConfigTest extends AnyFunSuite {
           name = "bad",
           memory = "W9864G6JT",
           bootMode = BootMode.Serial,
-          clkFreqHz = 100000000L,
+          clkFreq = 100 MHz,
           drivers = Seq(DeviceDriver.Uart)))) // CP2102N driver, but board has FT2232H
     }
   }
@@ -160,7 +161,7 @@ class JopConfigTest extends AnyFunSuite {
         name = "bad",
         memory = "W9825G6JH6",
         bootMode = BootMode.Serial,
-        clkFreqHz = 100000000L,
+        clkFreq = 100 MHz,
         cpuCnt = 2,
         perCoreConfigs = Some(Seq(JopCoreConfig())))  // length 1 != cpuCnt 2
     }
@@ -173,7 +174,7 @@ class JopConfigTest extends AnyFunSuite {
         name = "hetero",
         memory = "W9825G6JH6",
         bootMode = BootMode.Serial,
-        clkFreqHz = 80000000L,
+        clkFreq = 80 MHz,
         cpuCnt = 2,
         perCoreConfigs = Some(Seq(
           JopCoreConfig(imul = Implementation.Microcode, idiv = Implementation.Hardware, irem = Implementation.Hardware),
@@ -199,9 +200,72 @@ class JopConfigTest extends AnyFunSuite {
     val custom = base.copy(
       systems = Seq(base.system.copy(
         cpuCnt = 8,
-        clkFreqHz = 100000000L)))
+        clkFreq = 100 MHz)))
     assert(custom.system.cpuCnt == 8)
-    assert(custom.system.clkFreqHz == 100000000L)
+    assert(custom.system.clkFreq == (100 MHz))
     assert(custom.assembly.name == "qmtech-ep4cgx150-db-v4")  // unchanged
+  }
+
+  // ==========================================================================
+  // Connector pin resolution tests
+  // ==========================================================================
+
+  test("QMTECH connector pin resolution (EP4CGX150 + DB)") {
+    val asm = SystemAssembly.qmtechWithDb
+    // CP2102N UART on daughter board, via J3 connector
+    val uart = asm.pinMapping("CP2102N")
+    assert(uart("TXD") == "PIN_AD20")   // J3:13 → PIN_AD20
+    assert(uart("RXD") == "PIN_AE21")   // J3:14 → PIN_AE21
+    // Ethernet PHY via J2 connector
+    val eth = asm.pinMapping("RTL8211EG")
+    assert(eth("MDC") == "PIN_A20")     // J2:14 → PIN_A20
+    assert(eth("RX_CLK") == "PIN_B10")  // J2:35 → PIN_B10
+  }
+
+  test("QMTECH connector pin resolution (XC7A100T + DB)") {
+    val asm = SystemAssembly.xc7a100tWithDb
+    val uart = asm.pinMapping("CP2102N")
+    // J3:13 → C2, J3:14 → B2 on XC7A100T core board
+    assert(uart("TXD") == "C2")
+    assert(uart("RXD") == "B2")
+  }
+
+  test("direct FPGA pin passes through unchanged") {
+    val asm = SystemAssembly.qmtechWithDb
+    // SDRAM is on the FPGA board with direct pin references
+    val sdram = asm.pinMapping("W9825G6JH6")
+    assert(sdram("CLK") == "PIN_E22")  // direct, not via connector
+    assert(sdram("DQ0") == "PIN_B25")
+  }
+
+  test("Alchitry Au V2 connector pin resolution") {
+    val asm = SystemAssembly.alchitryAuV2WithIo
+    // Io V2 seven segment via J4 connector
+    val seg = asm.pinMapping("SEVEN_SEG_X4")
+    assert(seg("A") == "J1")     // J4:9 → J1 (FPGA pin)
+    assert(seg("B") == "N6")     // J4:3 → N6
+    assert(seg("SEL0") == "P9")  // J4:4 → P9
+    // Io V2 button via J4
+    val btn = asm.pinMapping("BUTTON")
+    assert(btn("btn0") == "J3")  // J4:24 → J3 (FPGA pin)
+    // Io V2 DIP switch crossing to J5
+    val dip = asm.pinMapping("DIP_SWITCH")
+    assert(dip("dip11") == "R13")  // J5:18 → R13
+    assert(dip("dip16") == "T10")  // J5:4 → T10
+  }
+
+  test("Au V2 LED pin values match XDC") {
+    val au = Board.AlchitryAuV2
+    val leds = au.findDevice("LED").get.mapping
+    assert(leds("led0") == "K13")
+    assert(leds("led4") == "M15")  // was wrong (M16), fixed
+    assert(leds("led7") == "P14")  // was wrong (N16), fixed
+  }
+
+  test("unresolvable connector reference returns None") {
+    val asm = SystemAssembly.alchitryAuV2  // standalone, no Io
+    assert(asm.resolvePin("J4:3").contains("N6"))   // valid connector pin
+    assert(asm.resolvePin("J4:1").isEmpty)           // GND pin, not in map
+    assert(asm.resolvePin("J6:1").isEmpty)            // nonexistent connector
   }
 }

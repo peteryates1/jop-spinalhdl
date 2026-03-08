@@ -1,4 +1,4 @@
-package jop.system
+package jop.config
 
 /**
  * I/O device configuration for JOP.

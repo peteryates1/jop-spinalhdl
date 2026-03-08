@@ -1,0 +1,18 @@
+# RTL8211EG GMII Placement Constraints
+#
+# Place RX input registers in I/O block for source-synchronous capture.
+# Include this in any Quartus project using RTL8211EG in GMII mode.
+#
+# Usage: source ../../fpga/constraints/rtl8211eg_gmii.qsf
+#   (or adjust path to match your project location)
+
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to e_rxd[0]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to e_rxd[1]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to e_rxd[2]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to e_rxd[3]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to e_rxd[4]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to e_rxd[5]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to e_rxd[6]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to e_rxd[7]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to e_rxdv
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to e_rxer

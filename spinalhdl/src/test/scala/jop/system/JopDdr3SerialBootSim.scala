@@ -1,4 +1,5 @@
 package jop.system
+import jop.config._
 
 import spinal.core._
 import spinal.core.sim._
@@ -27,7 +28,7 @@ import java.io.PrintWriter
  *   - addressWidth = 26 (28-bit BMB byte address)
  *   - burstLen = 0 (single-word BC fill, matching FPGA)
  *   - supersetJumpTable = JumpTableInitData.serial
- *   - clkFreqHz = 100 MHz
+ *   - clkFreq = 100 MHz
  *   - 1 Mbaud UART
  *
  * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
@@ -43,7 +44,7 @@ case class JopDdr3SerialBootHarness(
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = 128 * 1024, burstLen = 0),
     supersetJumpTable = JumpTableInitData.serial,
-    clkFreqHz = 100000000L,
+    clkFreq = 100 MHz,
     ioConfig = IoConfig(uartBaudRate = 1000000)
   )
 

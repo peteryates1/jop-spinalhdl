@@ -21,7 +21,7 @@ class BmbSysFormal extends SpinalFormalFunSuite {
   val formalConfig = FormalConfig
     .addEngin(SmtBmc(solver = SmtBmcSolver.Z3))
 
-  val clkFreq = 100000000L  // 100 MHz
+  val clkFreq = 100 MHz
 
   def setupDut(dut: BmbSys): Unit = {
     anyseq(dut.io.addr)

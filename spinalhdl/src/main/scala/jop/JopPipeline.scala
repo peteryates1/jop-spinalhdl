@@ -22,7 +22,7 @@ import jop.memory.MemCtrlInput
  * @param jbcInit   Optional JBC RAM initialization
  */
 case class JopPipeline(
-  config: jop.system.JopCoreConfig,
+  config: jop.config.JopCoreConfig,
   romInit: Option[Seq[BigInt]] = None,
   ramInit: Option[Seq[BigInt]] = None,
   jbcInit: Option[Seq[BigInt]] = None

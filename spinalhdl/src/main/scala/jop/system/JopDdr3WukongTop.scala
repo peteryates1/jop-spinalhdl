@@ -1,4 +1,5 @@
 package jop.system
+import jop.config._
 
 import spinal.core._
 import spinal.lib._
@@ -196,7 +197,7 @@ case class JopDdr3WukongTop(
           stackRegionWordsPerCore = 8192   // 32KB per core for stack spill
         ),
         supersetJumpTable = jumpTable,
-        clkFreqHz = 100000000L,
+        clkFreq = 100 MHz,
         useStackCache = true
       ),
       romInit = Some(romInit),

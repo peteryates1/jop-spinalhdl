@@ -118,9 +118,8 @@ set_property IOSTANDARD LVCMOS33 [get_ports {sdram_DQ[14]}]
 set_property PACKAGE_PIN E23 [get_ports {sdram_DQ[15]}]
 set_property IOSTANDARD LVCMOS33 [get_ports {sdram_DQ[15]}]
 
-# IOB packing for deterministic SDRAM timing on data and DQM pins
-set_property IOB TRUE [get_ports {sdram_DQ[*]}]
-set_property IOB TRUE [get_ports {sdram_DQM[*]}]
+# SDR SDRAM IOB packing (shared)
+source ../../../../fpga/constraints/sdram_sdr.xdc
 
 # ============================================================================
 # Configuration
