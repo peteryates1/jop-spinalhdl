@@ -34,17 +34,8 @@ jobs:
       - name: Build Java tools (jopa.jar)
         run: make -C java/tools dist/jopa.jar
 
-      - name: Build microcode (simulation + serial)
-        run: cd asm && make && make serial
-
-      - name: Build microcode (FPU variants)
-        run: cd asm && make fpu && make serial-fpu
-
-      - name: Build microcode (HW math variants)
-        run: cd asm && make dsp && make serial-dsp && make div && make serial-div && make hwmath && make serial-hwmath
-
-      - name: Build microcode (flash variant)
-        run: cd asm && make flash
+      - name: Build microcode (superset ROM: simulation + serial + flash)
+        run: cd asm && make && make serial && make flash-altera
 
       - name: Upload microcode artifacts
         uses: actions/upload-artifact@v4
