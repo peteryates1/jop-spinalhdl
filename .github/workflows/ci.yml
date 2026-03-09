@@ -34,7 +34,7 @@ jobs:
       - name: Build Java tools (jopa.jar)
         run: make -C java/tools dist/jopa.jar
 
-      - name: Build microcode (superset ROM: simulation + serial + flash)
+      - name: Build microcode (superset ROM)
         run: cd asm && make && make serial && make flash-altera
 
       - name: Upload microcode artifacts
