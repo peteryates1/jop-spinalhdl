@@ -427,7 +427,7 @@ object Board {
       BoardDevice("CH340N", mapping = Map(
         "TXD" -> "E3", "RXD" -> "F3")),
       BoardDevice("LED", mapping = Map("led0" -> "J26", "led1" -> "H26")),
-      BoardDevice("SWITCH", mapping = Map("sw0" -> "H22", "sw1" -> "J22"))))
+      BoardDevice("SWITCH", mapping = Map("sw0" -> "H22", "sw1" -> "J22", "reset" -> "H7"))))
 
   /**
    * QMTECH XC7A100T FPGA core board (Artix-7 XC7A100T + MT41K128M16JT DDR3).
