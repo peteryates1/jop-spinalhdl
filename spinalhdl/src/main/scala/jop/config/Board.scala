@@ -69,6 +69,11 @@ object DeviceDriver {
     val componentName = "BmbUart"
     val pins = Map("ser_txd" -> "TXD", "ser_rxd" -> "RXD")
   }
+  case object UartCh340 extends DeviceDriver {
+    val devicePart = "CH340N"
+    val componentName = "BmbUart"
+    val pins = Map("ser_txd" -> "TXD", "ser_rxd" -> "RXD")
+  }
 
   // Ethernet (MII: 4-bit data, PHY-sourced TX clock)
   case object EthMii extends DeviceDriver {
@@ -197,6 +202,24 @@ case class Board(
   /** All memory devices on this board (resolved via MemoryDevice registry) */
   def memoryDevices: Seq[(BoardDevice, MemoryDevice)] =
     devices.flatMap(bd => MemoryDevice.byName(bd.part).map(md => (bd, md)))
+
+  /** Board oscillator frequency (derived from CLOCK_* device, hardware fact) */
+  def clockFreq: spinal.core.HertzNumber = {
+    import spinal.core._
+    devices.find(_.part.startsWith("CLOCK_")).map { d =>
+      val mhz = d.part.stripPrefix("CLOCK_").stripSuffix("MHz").toInt
+      HertzNumber(BigDecimal(mhz) * 1000000)
+    }.getOrElse(HertzNumber(BigDecimal(50000000)))
+  }
+
+  /** LED active-high vs active-low (board-level hardware fact) */
+  def ledActiveHigh: Boolean = name match {
+    case n if n.contains("wukong") => true
+    case _ => false  // QMTECH EP4CGX150, CYC5000, Alchitry Au all active-low
+  }
+
+  /** Number of on-board LEDs */
+  def ledCount: Int = devices.filter(_.part == "LED").flatMap(_.mapping.keys).size
 }
 
 object Board {
@@ -401,6 +424,8 @@ object Board {
         "D1_P" -> "F2", "D1_N" -> "E2",
         "D2_P" -> "G4", "D2_N" -> "F4")),
       BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "F22")),
+      BoardDevice("CH340N", mapping = Map(
+        "TXD" -> "E3", "RXD" -> "F3")),
       BoardDevice("LED", mapping = Map("led0" -> "J26", "led1" -> "H26")),
       BoardDevice("SWITCH", mapping = Map("sw0" -> "H22", "sw1" -> "J22"))))
 
@@ -656,6 +681,15 @@ case class SystemAssembly(
     allDevices.filter(_.part == part).flatMap(_.mapping.flatMap { case (signal, ref) =>
       resolvePin(ref).map(signal -> _)
     }).toMap
+
+  /** Board oscillator frequency */
+  def boardClockFreq: spinal.core.HertzNumber = fpgaBoard.clockFreq
+
+  /** LED active-high vs active-low */
+  def ledActiveHigh: Boolean = fpgaBoard.ledActiveHigh
+
+  /** Total LED count across all boards in assembly */
+  def totalLedCount: Int = allDevices.filter(_.part == "LED").flatMap(_.mapping.keys).size
 }
 
 object SystemAssembly {

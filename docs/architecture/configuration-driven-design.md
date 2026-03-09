@@ -1,5 +1,41 @@
 # Configuration-Driven JOP System
 
+## Implementation Status
+
+| Phase | Description | Status |
+|:---:|---|---|
+| 1 | Jopa Assembler Cleanup | **Done** — superset ROM targets, dead target removal |
+| 2 | Superset Microcode Build | **Done** — 3 targets (serial, flash, simulation) |
+| 3 | Jump Table Patching in Scala | **Done** — `resolveJumpTable` with per-bytecode patching |
+| 4 | Per-Instruction Core Configuration | **Done** — `Implementation` enum, `JopCoreConfig` per-bytecode fields |
+| 5 | Hardware Description (Parts, Board, Assembly) | **Done** — `jop.config` package with full board/FPGA/memory metadata |
+| 5b | Unified FPGA Top-Level (`JopTop`) | **Done** — replaces 7 board-specific tops, verified on hardware (QMTECH EP4CGX150) and simulation |
+| 5c | PLL / Reset / Memory Controller Factories | **Done** — `Pll.create()`, `ResetGenerator`, `MemoryControllerFactory` |
+| 5d | `JopTopVerilog` Entry Point | **Done** — 10 presets, backward-compatible entity names |
+| 5e | Simulation Mode | **Done** — `JopTop(simulation=true)` bypasses PLL/MIG for Verilator |
+| 6 | Board-Specific Modular Java Runtime | Not started |
+| 7 | Simulation Harness Dedup | Not started |
+| 8 | Build System | Not started |
+| 9 | IDE Integration (Eclipse) | Not started |
+| 10 | Cross-Cutting Concerns | Not started |
+
+### Key Files (Phases 1-5)
+
+| File | Description |
+|------|-------------|
+| `jop/config/JopConfig.scala` | Top-level config: presets, validation, entity naming |
+| `jop/config/Board.scala` | Board/FPGA/device metadata with pin mappings |
+| `jop/config/Parts.scala` | FPGA and memory device catalog |
+| `jop/config/IoConfig.scala` | I/O device configuration |
+| `jop/config/JopCoreConfig.scala` | Per-core bytecode implementation choices |
+| `jop/system/JopTop.scala` | Unified FPGA top-level Component |
+| `jop/system/JopTopVerilog.scala` | Single Verilog generation entry point |
+| `jop/system/JopSpinalConfig.scala` | SpinalConfig factory (Altera vs Xilinx) |
+| `jop/system/pll/Pll.scala` | PLL factory (per-board BlackBox dispatch) |
+| `jop/system/ResetGenerator.scala` | Extracted reset generation |
+| `jop/system/HangDetector.scala` | Diagnostic UART mux |
+| `jop/system/memory/MemoryControllerFactory.scala` | BRAM/SDR/DDR3 dispatch |
+
 ## Contents
 
 - [Problem](#problem)

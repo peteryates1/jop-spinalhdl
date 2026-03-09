@@ -6,16 +6,61 @@ All configuration is via Scala case classes — no external config files are nee
 ## Configuration Hierarchy
 
 ```
-JopCluster                          # Top-level: N cores + arbiter + sync
-├── cpuCnt: Int                     # Number of CPU cores
-├── baseConfig: JopCoreConfig       # Shared core configuration (per-core overrides applied)
-│   ├── memConfig: JopMemoryConfig  # Memory layout and bus parameters
-│   ├── ioConfig: IoConfig          # I/O device presence and parameters
-│   ├── useStackCache: Boolean      # 3-bank rotating stack cache with DMA spill/fill
-│   └── useIhlu: Boolean            # Per-object hardware locking (vs global lock)
-├── debugConfig: DebugConfig        # Optional on-chip debug subsystem
-└── separateStackDmaBus: Boolean    # Separate BMB bus for stack DMA (test harness only)
+JopConfig                               # Top-level: assembly + systems
+├── assembly: SystemAssembly            # Physical hardware (board, FPGA, devices)
+│   ├── fpgaBoard: Board                # Board with devices, pin mappings, LEDs
+│   └── fpga: FpgaDevice                # FPGA chip (family, package, speed grade)
+├── systems: Seq[JopSystem]             # Processor cluster(s)
+│   └── JopSystem                       # A single processor system
+│       ├── memory: String              # Memory device name or role ("bram" for on-chip)
+│       ├── bootMode: BootMode          # Serial, Flash, or Simulation
+│       ├── clkFreq: HertzNumber        # System clock frequency (after PLL)
+│       ├── cpuCnt: Int                 # Number of CPU cores
+│       ├── coreConfig: JopCoreConfig   # Default core configuration
+│       └── drivers: Seq[DeviceDriver]  # Device drivers to instantiate
+├── interconnect: Option[InterconnectConfig]  # Cross-system (multi-system only)
+└── monitors: Seq[MonitorConfig]        # Hardware monitors (watchdog, etc.)
+
+JopTop(config: JopConfig)              # Unified FPGA top-level Component
+├── PLL factory                        # Board-specific PLL BlackBox
+├── ResetGenerator                     # 3-bit counter gated by PLL locked
+├── JopCluster                         # N cores + arbiter + CmpSync
+├── MemoryControllerFactory            # BRAM / SDR / DDR3 dispatch
+└── HangDetector                       # Optional diagnostic UART mux
+
+JopCluster                             # Instantiated by JopTop
+├── cpuCnt: Int                        # Number of CPU cores
+├── baseConfig: JopCoreConfig          # Shared core configuration
+│   ├── memConfig: JopMemoryConfig     # Memory layout and bus parameters
+│   ├── ioConfig: IoConfig             # I/O device presence and parameters
+│   ├── useStackCache: Boolean         # 3-bank rotating stack cache with DMA spill/fill
+│   └── useIhlu: Boolean               # Per-object hardware locking (vs global lock)
+├── debugConfig: DebugConfig           # Optional on-chip debug subsystem
+└── separateStackDmaBus: Boolean       # Separate BMB bus for stack DMA (test harness only)
 ```
+
+### Verilog Generation
+
+All Verilog is generated through `JopTopVerilog` with named presets:
+
+```bash
+sbt "runMain jop.system.JopTopVerilog <preset> [args]"
+```
+
+| Preset | Board | Memory | Entity Name |
+|--------|-------|--------|-------------|
+| `ep4cgx150Serial` | QMTECH EP4CGX150 | SDR SDRAM | `JopSdramTop` |
+| `ep4cgx150Smp N` | QMTECH EP4CGX150 | SDR SDRAM | `JopSmpSdramTop` |
+| `ep4cgx150HwMath` | QMTECH EP4CGX150 | SDR SDRAM | `JopSdramTop` |
+| `ep4cgx150HwFloat` | QMTECH EP4CGX150 | SDR SDRAM | `JopSdramTop` |
+| `cyc5000Serial` | Trenz CYC5000 | SDR SDRAM | `JopCyc5000Top` |
+| `auSerial` | Alchitry Au V2 | DDR3 | `JopDdr3Top` |
+| `wukongSdram` | Wukong XC7A100T | SDR SDRAM | `JopSdramWukongTop` |
+| `wukongDdr3` | Wukong XC7A100T | DDR3 | `JopDdr3WukongTop` |
+| `wukongBram` | Wukong XC7A100T | BRAM | `JopBramWukongTop` |
+| `minimum` | QMTECH EP4CGX150 | SDR SDRAM | `JopSdramTop` |
+
+Entity names are backward-compatible with existing Quartus/Vivado projects.
 
 ## Memory Layout
 
@@ -298,117 +343,85 @@ System I/O device at base address `0xFFFFFF80` (`Const.IO_BASE`).
 | 14 | Usable memory end (words) | — | `IO_MEM_SIZE` |
 | 15 | FPU capability (1=present) | — | `IO_FPU_CAP` |
 
-## Board Configurations
+## Board Configurations (JopConfig Presets)
+
+All board configurations are defined as `JopConfig` presets in `jop/config/JopConfig.scala`.
+The unified `JopTop(config)` component handles all boards — no per-board top files needed.
 
 ### QMTECH EP4CGX150 — SDR SDRAM (Primary)
 
 ```scala
-// In JopSdramTop.scala
-JopCoreConfig(
-  memConfig = JopMemoryConfig(burstLen = 4),  // SDR burst
-  jumpTable = JumpTableInitData.serial,
-  clkFreqHz = 80000000L,                      // 80 MHz (16-core) or 100 MHz (≤8-core)
-  ioConfig = IoConfig(hasEth = ..., ...)
-)
+JopConfig.ep4cgx150Serial
+// JopConfig(
+//   assembly = SystemAssembly.qmtechWithDb,
+//   systems = Seq(JopSystem(
+//     name = "main", memory = "W9825G6JH6", bootMode = BootMode.Serial,
+//     clkFreq = 80 MHz,
+//     drivers = Seq(DeviceDriver.Uart, DeviceDriver.EthGmii, DeviceDriver.SdNative))))
 // SDRAM: W9825G6JH6, 256Mbit, CAS=3
-// SMP: cpuCnt up to 16
-```
-
-### QMTECH EP4CGX150 — BRAM
-
-```scala
-// In JopBramTop.scala
-JopCoreConfig(
-  memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)  // 128KB on-chip
-  // burstLen=0 (default), simulation jump table
-)
+// SMP: JopConfig.ep4cgx150Smp(n) for 2-16 cores
 ```
 
 ### Trenz CYC5000 — SDR SDRAM
 
 ```scala
-// In JopCyc5000Top.scala
-JopCoreConfig(
-  memConfig = JopMemoryConfig(burstLen = 0),  // No burst (pipelined single-word)
-  jumpTable = JumpTableInitData.serial,
-  clkFreqHz = 80000000L                       // 80 MHz
-)
+JopConfig.cyc5000Serial
+// JopConfig(
+//   assembly = SystemAssembly.cyc5000,
+//   systems = Seq(JopSystem(
+//     name = "main", memory = "W9864G6JT", bootMode = BootMode.Serial,
+//     clkFreq = 100 MHz, drivers = Seq(DeviceDriver.UartFt2232))))
 // SDRAM: W9864G6JT, 64Mbit, CAS=2
-// SMP: cpuCnt up to 2 (resource-limited)
 ```
 
 ### Alchitry Au V2 — DDR3
 
 ```scala
-// In JopDdr3Top.scala
-JopCoreConfig(
-  memConfig = JopMemoryConfig(
-    addressWidth = 28,                           // 26-bit physical + 2 type bits = 256MB
-    mainMemSize = 256L * 1024 * 1024,            // 256MB DDR3 (MT41K128M16JT)
-    burstLen = burstLen,
-    stackRegionWordsPerCore = 8192               // 32KB per core for stack spill
-  ),
-  jumpTable = JumpTableInitData.serial,
-  clkFreqHz = 100000000L                         // 100 MHz
-)
+JopConfig.auSerial
+// JopConfig(
+//   assembly = SystemAssembly.alchitryAuV2,
+//   systems = Seq(JopSystem(
+//     name = "main", memory = "MT41K128M16JT-125:K", bootMode = BootMode.Serial,
+//     clkFreq = 250/3 MHz, drivers = Seq(DeviceDriver.UartFt2232))))
 // DDR3: MT41K128M16JT, 2Gbit (256MB)
 // Write-back cache: 32KB L2 (4-way, 512 sets)
-// SMP: cpuCnt up to 2 (resource-limited on XC7A35T)
-// GC: MAX_HANDLES=65536 caps handle table for large memory (sweep ~6ms at 100MHz)
+// GC: MAX_HANDLES=65536 caps handle table for large memory
 ```
 
-### QMTECH XC7A100T Wukong V3 — DDR3
+### QMTECH XC7A100T Wukong V3 — DDR3 / SDR / BRAM
 
 ```scala
-// In JopDdr3WukongTop.scala
-JopCoreConfig(
-  memConfig = JopMemoryConfig(
-    addressWidth = 28,
-    mainMemSize = 256L * 1024 * 1024,  // 256MB DDR3 (MT41K128M16JT)
-    burstLen = burstLen,
-    stackRegionWordsPerCore = 8192     // 32KB per core for stack spill
-  ),
-  jumpTable = JumpTableInitData.serial,
-  clkFreqHz = 100000000L               // 100 MHz (MIG ui_clk)
-)
-// DDR3: MT41K128M16JT, 2Gbit (256MB) — same chip as Au V2
-// Write-back cache: LruCacheCore + CacheToMigAdapter -> WukongMigBlackBox (no CS pin)
-// Board 50 MHz -> ClkWiz -> 100 MHz (MIG sys) + 200 MHz (MIG ref)
+JopConfig.wukongDdr3     // DDR3 via MIG, WukongMigBlackBox (no CS pin)
+JopConfig.wukongSdram    // SDR SDRAM via SdramCtrlNoCke
+JopConfig.wukongBram     // On-chip BRAM (simulation boot mode)
+// All use SystemAssembly.wukong with DeviceDriver.UartCh340
 ```
 
-### QMTECH XC7A100T Wukong V3 — SDR SDRAM
+### Hardware Math Variants
 
 ```scala
-// In JopSdramWukongTop.scala
-JopCoreConfig(
-  memConfig = JopMemoryConfig(burstLen = burstLen),
-  jumpTable = JumpTableInitData.serial,
-  clkFreqHz = 100000000L,              // 100 MHz
-  useStackCache = true
-)
-// SDRAM: W9825G6KH-6, 256Mbit (32MB), CAS=3
-// BmbSdramCtrl32 (SdramCtrlNoCke, no Altera ctrl)
-// Board 50 MHz -> ClkWiz -> 100 MHz system + 100 MHz -108° SDRAM clock
-// Hang detector + DiagUart mux in board clock domain (50 MHz)
+JopConfig.ep4cgx150HwMath   // IntegerComputeUnit: idiv + irem in hardware
+JopConfig.ep4cgx150HwFloat  // FloatComputeUnit: fadd/fsub/fmul/fdiv/i2f/f2i/fcmpl/fcmpg
 ```
 
-### QMTECH XC7A100T Wukong V3 — BRAM
+### Minimum Resources
 
 ```scala
-// In JopBramWukongTop.scala
-JopCoreConfig(
-  memConfig = JopMemoryConfig(mainMemSize = 128 * 1024),  // 128KB on-chip
-  jumpTable = JumpTableInitData.serial,
-  clkFreqHz = 100000000L               // 100 MHz
-)
-// Board 50 MHz -> ClkWiz -> 100 MHz
-// Board bring-up / UART verification only
+JopConfig.minimum  // Pure microcode imul, Java idiv/irem, UART only
 ```
 
 ### Simulation Harnesses
 
 ```scala
-// BRAM simulation (JopCoreTestHarness)
+// Unified JopTop BRAM simulation (JopTopBramSim)
+JopTop(
+  config = JopConfig.wukongBram,
+  romInit = romData, ramInit = ramData,
+  mainMemInit = Some(mainMemData), mainMemSize = 256 * 1024,
+  simulation = true  // Bypasses PLL/reset/MIG for Verilator
+)
+
+// Legacy BRAM simulation (JopCoreTestHarness — still works)
 JopCoreConfig(
   memConfig = JopMemoryConfig(mainMemSize = 256 * 1024)  // 256KB
 )
@@ -420,16 +433,6 @@ JopCoreConfig(
   spillBaseAddrOverride = Some(0)  // Dedicated spill BRAM at address 0
 )
 // Uses separateStackDmaBus=true with 64KB dedicated spill BRAM
-
-// SDRAM with stack cache (future)
-JopCoreConfig(
-  memConfig = JopMemoryConfig(
-    mainMemSize = 32 * 1024 * 1024,        // 32MB
-    burstLen = 4,
-    stackRegionWordsPerCore = 8192          // 32KB per core
-  ),
-  useStackCache = true
-)
 ```
 
 ## JopCluster

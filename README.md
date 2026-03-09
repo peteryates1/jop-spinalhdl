@@ -86,7 +86,8 @@ jop/
 │   ├── ddr3/                  # DDR3 subsystem (cache, MIG adapter, clock wizard)
 │   ├── io/                    # I/O slaves (BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdNative, BmbSdSpi, BmbVgaText, Ihlu, CmpSync)
 │   ├── debug/                 # Debug subsystem (protocol, controller, breakpoints, UART)
-│   ├── system/                # System integration (JopCore, FPGA tops, SMP)
+│   ├── config/                # Configuration hierarchy (JopConfig, Board, Parts, IoConfig)
+│   ├── system/                # System integration (JopCore, JopTop, JopCluster, SMP)
 │   ├── types/                 # JOP types and constants
 │   └── utils/                 # File loaders, utilities
 ├── spinalhdl/src/test/scala/jop/
@@ -138,6 +139,9 @@ cd java && make all && cd ..
 # 4. Run BRAM simulation (prints "Hello World!" in a loop)
 sbt "Test / runMain jop.system.JopCoreBramSim"
 
+# 4b. Run unified JopTop BRAM simulation (same output, uses config-driven JopTop)
+sbt "Test / runMain jop.system.JopTopBramSim"
+
 # 5. Run SDRAM simulation
 sbt "Test / runMain jop.system.JopCoreWithSdramSim"
 
@@ -154,14 +158,24 @@ sbt "Test / runMain jop.system.JopSmpBramSim"
 ### Build for FPGA
 
 ```bash
-# SDRAM target — QMTECH EP4CGX150, Altera Cyclone IV (primary, serial boot, 100 MHz)
+# SDRAM target — QMTECH EP4CGX150, Altera Cyclone IV (primary, serial boot, 80 MHz)
 cd fpga/qmtech-ep4cgx150-sdram
 make microcode   # Assemble serial boot microcode
-make generate    # Generate Verilog
+make generate    # Generate Verilog (uses JopTopVerilog ep4cgx150Serial)
 make build       # Quartus synthesis
 make program     # Program FPGA
 make download    # Download HelloWorld.jop over UART
 make monitor     # Watch serial output
+
+# Or generate Verilog directly for any preset:
+sbt "runMain jop.system.JopTopVerilog ep4cgx150Serial"   # QMTECH SDRAM
+sbt "runMain jop.system.JopTopVerilog ep4cgx150Smp 8"    # QMTECH 8-core SMP
+sbt "runMain jop.system.JopTopVerilog cyc5000Serial"     # CYC5000 SDRAM
+sbt "runMain jop.system.JopTopVerilog auSerial"          # Alchitry Au V2 DDR3
+sbt "runMain jop.system.JopTopVerilog wukongSdram"       # Wukong SDR SDRAM
+sbt "runMain jop.system.JopTopVerilog wukongDdr3"        # Wukong DDR3
+sbt "runMain jop.system.JopTopVerilog wukongBram"        # Wukong BRAM
+sbt "runMain jop.system.JopTopVerilog minimum"           # Minimum resources
 
 # Flash boot — autonomous boot from SPI flash, no JTAG needed after programming
 cd fpga/qmtech-ep4cgx150-sdram
@@ -180,7 +194,7 @@ make program-dbfpga        # Program FPGA
 make download JOP_FILE=java/apps/Small/EthTest.jop  # Download Ethernet test
 make monitor               # Watch serial output
 
-# SMP (2-core) — QMTECH EP4CGX150, Altera Cyclone IV (serial boot, 100 MHz)
+# SMP (2-core) — QMTECH EP4CGX150, Altera Cyclone IV (serial boot, 80 MHz)
 cd fpga/qmtech-ep4cgx150-sdram
 make full-smp    # Complete flow: microcode + generate-smp + build-smp
 make program-smp # Program FPGA
@@ -319,10 +333,11 @@ Notes:
 - **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
 - **Multiplier**: 17-cycle radix-4 Booth multiplier
 - **I/O subsystem**: `BmbSys` (cycle/microsecond counters, timer interrupt, watchdog, CPU ID), `BmbUart` (TX/RX with 16-entry FIFOs, RX/TX interrupt outputs), `BmbEth` (Ethernet MAC with GMII 1Gbps TX/RX using SpinalHDL `MacEth`, 125 MHz PLL for TX, PHY clock for RX, dual-clock FIFOs for PHY clock domain crossing), `BmbMdio` (MDIO PHY management with registered outputs and PHY reset control), `BmbSdNative` (SD card native 4-bit mode, hardware CRC7/CRC16, 512-byte block FIFO, verified on hardware at 10 MHz — [details](docs/peripherals/db-fpga-sd-card.md)), `BmbSdSpi` (SD card SPI mode, byte-at-a-time transfer with hardware clock generation), and `BmbVgaText` (80x30 text-mode VGA, 640x480@60Hz, 8x16 font, CGA palette, RGB565 output, 25 MHz pixel clock from PLL c3) as reusable `jop.io` components. Timer interrupts verified end-to-end in simulation (`JopInterruptSim`). VGA text verified on hardware ([details](docs/peripherals/db-fpga-vga-text.md))
-- **SDRAM system (primary)**: `JopSdramTop` / `JopCyc5000Top` — serial boot over UART into SDR SDRAM using Altera `altera_sdram_tri_controller` (QMTECH EP4CGX150 at 100 MHz + Trenz CYC5000 at 80 MHz). Both support `cpuCnt` parameter for single-core or SMP
-- **SMP (2-core)**: `JopSdramTop(cpuCnt=2)` / `JopDdr3Top(cpuCnt=2)` — 2-core SMP with round-robin BMB arbiter, `CmpSync` global lock for `monitorenter`/`monitorexit`, per-core `BmbSys` with unique CPU ID, boot synchronization via `IO_SIGNAL`, and GC stop-the-world halt via `IO_GC_HALT`. Verified on QMTECH EP4CGX150, CYC5000, and Alchitry Au V2 hardware (both cores running independently with per-core LED watchdog)
-- **BRAM system**: `JopBramTop` — complete system with on-chip memory at 100 MHz (QMTECH EP4CGX150, Altera Cyclone IV)
-- **DDR3 system**: `JopDdr3Top` — serial boot over UART through 16KB 4-way write-back cache into DDR3 at 100 MHz (Alchitry Au V2, Xilinx Artix-7). Full 256MB DDR3 addressed (`addressWidth=28`). Single-core and 2-core SMP verified with GC (67K+ rounds single-core at 8MB, 1870+ rounds at 256MB). Standalone `Ddr3ExerciserTop` memory test and `Ddr3TraceReplayerTop` BMB trace verification also available.
+- **Unified top-level**: `JopTop(config)` — single config-driven Component replaces all board-specific top files. Supports BRAM, SDR SDRAM, and DDR3 across Altera (Cyclone IV/V) and Xilinx (Artix-7) FPGAs. `simulation` flag enables Verilator-compatible mode (bypasses PLL/reset/MIG BlackBoxes). Verilog generation via `JopTopVerilog` with named presets.
+- **SDRAM system (primary)**: Serial boot over UART into SDR SDRAM using Altera `altera_sdram_tri_controller` (QMTECH EP4CGX150 at 100 MHz + Trenz CYC5000 at 80 MHz). Single-core and SMP via `JopConfig` presets.
+- **SMP (2-core)**: 2-core SMP with round-robin BMB arbiter, `CmpSync` global lock for `monitorenter`/`monitorexit`, per-core `BmbSys` with unique CPU ID, boot synchronization via `IO_SIGNAL`, and GC stop-the-world halt via `IO_GC_HALT`. Verified on QMTECH EP4CGX150, CYC5000, and Alchitry Au V2 hardware (both cores running independently with per-core LED watchdog)
+- **BRAM system**: Complete system with on-chip memory at 100 MHz (QMTECH EP4CGX150, Altera Cyclone IV; Wukong XC7A100T, Xilinx Artix-7)
+- **DDR3 system**: Serial boot over UART through 32KB 4-way write-back cache into DDR3 at 100 MHz (Alchitry Au V2, Xilinx Artix-7, full 256MB addressed). Single-core and 2-core SMP verified with GC (67K+ rounds single-core at 8MB, 1870+ rounds at 256MB). Standalone `Ddr3ExerciserTop` memory test and `Ddr3TraceReplayerTop` BMB trace verification also available.
 - **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
 - **GC support**: Mark-compact garbage collection with incremental mark/compact phases (bounded per-allocation increments) and STW fallback. Hardware `memCopy` for GC object relocation, MAX_HANDLES cap (65536) prevents O(N) sweep explosion on large memories (256MB+). Tested with allocation-heavy GC app (98,000+ rounds on BRAM, 9,800+ on CYC5000 SDRAM, 2,000+ on QMTECH SDRAM, 1,870+ on 256MB DDR3). SMP GC uses `IO_GC_HALT` to freeze all other cores during collection, preventing concurrent SDRAM access to partially-moved objects
 - **Hardware exception detection**: Null pointer and array bounds checks fully enabled — NPE fires on handle address 0, ABE fires on negative index (MSB) or index >= array length. Wired through BmbSys `exc` pulse to `sys_exc` microcode handler. Div-by-zero handled via Java `throw JVMHelp.ArithExc` in f_idiv/f_irem/f_ldiv/f_lrem.
@@ -354,7 +369,7 @@ Lower-priority or longer-term items:
 - Debug tooling — host-side debug client connecting to on-chip debug controller over UART
 - Target JDK modernization (8 as minimum)
 - Port target code — networking, etc.
-- Quartus PLL generator
+- XDC constraint generation — Xilinx pin constraints from board data (QSF generator exists for Altera)
 - Faster serial download — currently limited by per-word USB round-trip latency (~15s for 32KB)
 - Performance measurement / benchmarking
 
@@ -367,7 +382,7 @@ Lower-priority or longer-term items:
 - **Array cache**: Fully associative element value cache (16 entries, 4 elements per line). iaload hits return in 0 busy cycles; misses fill the entire 4-element aligned line (burst read on SDRAM to prevent interleaving). iastore does write-through on tag hit. Tags include handle address and upper index bits so different array regions map to different lines. SMP-safe via cross-core snoop invalidation (`CacheSnoopBus` — each core's iastore broadcasts on snoop bus, other cores selectively invalidate matching lines). Note: raw memory writes (`Native.wrMem`) bypass A$ — `System.arraycopy` calls `Native.invalidate()` after copy loops to ensure coherency.
 - **Handle format**: `H[0]` = data pointer, `H[1]` = array length. Array elements start at `data_ptr[0]`.
 - **I/O subsystem**: Reusable `BmbSys` and `BmbUart` components in `jop.io` package. System slave provides clock cycle counter, prescaled microsecond counter, timer interrupt, watchdog register, and CPU ID. UART slave provides buffered TX/RX with 16-entry FIFOs and per-source interrupt outputs (RX data available, TX FIFO empty). UART interrupts are wired to BmbSys interrupt sources (index 0 = timer, 1 = UART RX, 2 = UART TX). Ethernet subsystem (`BmbEth` + `BmbMdio`) supports MII (100Mbps, 4-bit) and GMII (1Gbps, 8-bit) modes via `IoConfig.ethGmii`, with a dedicated 125 MHz PLL for GMII TX and source-synchronous PHY clock for RX. SD card controllers: `BmbSdNative` (native 4-bit mode, hardware CRC7/CRC16, 512-byte block FIFO) and `BmbSdSpi` (SPI mode, byte-at-a-time), mutually exclusive (share card slot pins). Native mode verified on FPGA hardware at 10 MHz ([details](docs/peripherals/db-fpga-sd-card.md)). VGA text controller (`BmbVgaText`) provides 80x30 character display at 640x480@60Hz with CGA palette, cursor-based and direct-write modes, hardware clear/scroll, and RGB565 output via 25 MHz pixel clock from PLL c3.
-- **SMP**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` / `JopDdr3Top(cpuCnt=N)` instantiate N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`, with optional `Ihlu` per-object hardware locking (32-slot CAM, FIFO wait queues, reentrant) selectable via `useIhlu` config flag, plus a GC halt signal (`IO_GC_HALT`) that freezes all other cores during garbage collection. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`. DDR3 SMP requires `burstLen >= 4` (pipelined single-word BC_FILL interleaves with arbiter at `burstLen=0`).
+- **SMP**: `JopTop(config)` with `cpuCnt >= 2` in the `JopSystem` instantiates N `JopCore`s with a round-robin BMB arbiter for shared memory access. `CmpSync` provides a global lock (round-robin fair arbitration) for `monitorenter`/`monitorexit`, with optional `Ihlu` per-object hardware locking (32-slot CAM, FIFO wait queues, reentrant) selectable via `useIhlu` config flag, plus a GC halt signal (`IO_GC_HALT`) that freezes all other cores during garbage collection. Each core has its own `BmbSys` (unique CPU ID, independent watchdog). Core 0 initializes the system; other cores wait for a boot signal via `IO_SIGNAL`. DDR3 SMP requires `burstLen >= 4` (pipelined single-word BC_FILL interleaves with arbiter at `burstLen=0`).
 - **Debug subsystem**: Optional on-chip debug controller (`jop.debug` package) enabled via `DebugConfig` in `JopCluster`. Uses a dedicated UART (separate from the application UART) with a CRC-8/MAXIM framed protocol. `DebugProtocol` parses/builds frames, `DebugController` implements the command FSM (halt, resume, single-step, register/stack/memory read/write, breakpoint management), and `DebugBreakpoints` provides per-core hardware PC comparators. Supports multi-core targeting via core ID field in each command.
 - **Serial boot**: Microcode polls UART for incoming bytes, assembles 4 bytes into 32-bit words, writes to external memory. Download script (`download.py`) sends `.jop` files with word-level echo verification.
 
@@ -380,6 +395,7 @@ Design notes and investigation logs in `docs/`:
 - [Jopa Tool](docs/architecture/JOPA_TOOL.md) — microcode assembler usage and output formats
 - [Programmer's Guide](docs/programmers-guide.md) — I/O register maps and Java API for all devices (BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdNative, BmbSdSpi, BmbVgaText)
 - [System Configuration](docs/architecture/system-configuration.md) — configuration reference: memory layout, JopCoreConfig, JopMemoryConfig, IoConfig, board configs, I/O register map
+- [Configuration-Driven Design](docs/architecture/configuration-driven-design.md) — unified `JopTop(config)` design: JopConfig hierarchy, board/FPGA/memory metadata, PLL/reset/memory controller factories, preset system
 - [Bugs and Issues](docs/bugs-and-issues.md) — master bug index: open JVM workarounds, fixed RTL/pipeline/microcode bugs
 - [Implementation Notes](docs/architecture/implementation-notes.md) — bugs found, cache details, I/O subsystem, SMP, GC architecture, memCopy
 - [Artix-7 Distributed RAM Optimization](docs/analysis/artix7-distram-optimization.md) — stack cache bank RAM `readAsync` → `readSync` for BRAM inference on Xilinx

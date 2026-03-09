@@ -155,11 +155,11 @@ microcode-flash:
 # --------------------------------------------------------------------------
 
 generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopSdramTopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Serial"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
 
 generate-smp:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopSmpSdramTopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Smp 2"
 	@echo "=== SMP Verilog generated: $(GENERATED_SMP_V) ==="
 
 generate-smp8:

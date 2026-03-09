@@ -155,9 +155,10 @@ case class JopConfig(
 
   // --- Validation ---
 
-  // Each system's memory must exist on the assembly (by part name or role)
+  // Each system's memory must exist on the assembly (by part name or role), or be "bram"
   systems.foreach { sys =>
     require(
+      sys.memory == "bram" ||
       assembly.findDevice(sys.memory).isDefined ||
       assembly.findDeviceByRole(sys.memory).isDefined,
       s"System '${sys.name}' references memory '${sys.memory}' " +
@@ -187,6 +188,25 @@ case class JopConfig(
   /** All memory types used across all systems */
   def memoryTypes: Seq[MemoryType] =
     systems.flatMap(sys => resolveMemory(sys).map(_.memType)).distinct
+
+  /** Entity name for backward-compatible Verilog generation */
+  def entityName: String = {
+    val sys = systems.head
+    val smp = if (sys.cpuCnt >= 2) "Smp" else ""
+    val platform = assembly.fpgaBoard.name match {
+      case "qmtech-ep4cgx150" =>
+        if (memoryTypes.contains(MemoryType.BRAM)) "Bram" else "Sdram"
+      case "cyc5000" => "Cyc5000"
+      case "alchitry-au-v2" => "Ddr3"
+      case "qmtech-wukong-xc7a100t" =>
+        if (memoryTypes.contains(MemoryType.SDRAM_DDR3)) "Ddr3Wukong"
+        else if (memoryTypes.contains(MemoryType.SDRAM_SDR)) "SdramWukong"
+        else "BramWukong"
+      case "qmtech-xc7a100t" => "Ddr3"  // same as AU for now
+      case other => other.split("-").map(_.capitalize).mkString
+    }
+    s"Jop${smp}${platform}Top"
+  }
 }
 
 // ==========================================================================
@@ -317,4 +337,38 @@ object JopConfig {
         idiv = Java,
         irem = Java),
       drivers = Seq(DeviceDriver.Uart))))
+
+  // ========================================================================
+  // Wukong single-system presets
+  // ========================================================================
+
+  /** Wukong SDR SDRAM (single-system, 100 MHz) */
+  def wukongSdram = JopConfig(
+    assembly = SystemAssembly.wukong,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "sdr",
+      bootMode = BootMode.Serial,
+      clkFreq = 100 MHz,
+      drivers = Seq(DeviceDriver.UartCh340))))
+
+  /** Wukong DDR3 (single-system, 100 MHz) */
+  def wukongDdr3 = JopConfig(
+    assembly = SystemAssembly.wukong,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "ddr3",
+      bootMode = BootMode.Serial,
+      clkFreq = 100 MHz,
+      drivers = Seq(DeviceDriver.UartCh340))))
+
+  /** Wukong BRAM (single-system, simulation-mode) */
+  def wukongBram = JopConfig(
+    assembly = SystemAssembly.wukong,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "bram",  // no physical memory — uses on-chip BRAM
+      bootMode = BootMode.Simulation,
+      clkFreq = 100 MHz,
+      drivers = Seq(DeviceDriver.UartCh340))))
 }
