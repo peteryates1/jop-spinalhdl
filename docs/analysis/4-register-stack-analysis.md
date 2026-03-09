@@ -194,21 +194,166 @@ the hardest case:
 No special handling beyond the general bypass logic, but AR's unpredictability
 means the bypass comparators cannot be optimized away.
 
-## Alternative: Keep 2 Registers, Add a Small Cache
+## Motivation: Single-Cycle 64-bit Operand Delivery via `sthw`
 
-Instead of expanding the register file, a small direct-mapped cache (4-8
-entries) for recently-accessed local variables could capture most of the
-performance benefit without the bypass complexity. Local variable access
-patterns are predictable (small indices, repeated access), making them
-cache-friendly. The cache would sit beside the stack RAM and only need
-coherence with the RAM write path, not with the TOS registers.
+The purpose of 4 TOS registers is to feed two 64-bit operands to a hardware
+compute unit (replacing `stmul`) in a single `sthw` instruction. The compute
+unit interface (`ComputeUnitBundle`) already has 64-bit `operand0` and
+`operand1` ports. With 4 registers, `sthw` can wire them directly:
+
+```
+operand0 = {B, A}    = {hi0, lo0}   (first 64-bit value)
+operand1 = {D, C}    = {hi1, lo1}   (second 64-bit value)
+```
+
+### What This Replaces
+
+**Current long addition (`ladd`) — 26 microcode cycles:**
+
+```asm
+ladd:   stm a       // bl
+        stm b       // bh
+        stm c       // al
+        stm d       // ah
+        // ... 22 more instructions doing manual carry propagation
+        // using shifts, adds, and scratch variables
+        add nxt
+```
+
+The current approach pops all 4 values into scratch RAM (addresses 0-31),
+performs 32-bit carry arithmetic in microcode, then pushes the 2-word result.
+`lsub` is 38 cycles, `lcmp` is up to 80 cycles, `lmul` requires 3 separate
+`stmul` calls with scratch accumulation.
+
+**With 4 registers + hardware long ALU:**
+
+```asm
+ladd:   sthw        // captures A,B,C,D → compute unit, 1 cycle
+        wait        // (if multi-cycle)
+        ldhw nxt    // pushes 64-bit result back to A,B (or A,B,C,D)
+```
+
+### Cycle Count Comparison
+
+| Operation | Current (microcode) | With 4-reg + HW unit |
+|-----------|--------------------:|---------------------:|
+| ladd      |          26 cycles  |       ~3 cycles      |
+| lsub      |          38 cycles  |       ~3 cycles      |
+| lcmp      |      ~60-80 cycles  |       ~3 cycles      |
+| lmul      |     ~50+ cycles     |    ~3-5 cycles (DSP) |
+| lshl/lshr |          28 cycles  |       ~3 cycles      |
+| land/lor  |           8 cycles  |       ~3 cycles      |
+| dadd      |    software trap    |   ~10 cycles (FPU)   |
+| dmul      |    software trap    |   ~10 cycles (FPU)   |
+
+The biggest wins are `lcmp` (up to ~27x faster) and `lsub` (~13x). Even
+`land`/`lor`/`lxor` at 8 cycles would drop to ~3 — a modest 2.7x improvement.
+
+## Cost-Benefit Analysis
+
+### Pros
+
+1. **Massive speedup on long/double operations** — 10-27x for arithmetic,
+   eliminating the most expensive microcode sequences in the entire ISA.
+
+2. **Simpler microcode** — long bytecodes drop from 8-80 instructions to
+   2-3 instructions each. Less microcode ROM, easier to verify.
+
+3. **Enables double-precision FPU** — currently doubles trap to software.
+   With 4 registers, a hardware double FPU becomes practical since operands
+   can be delivered in one shot.
+
+4. **Cleaner compute unit interface** — `ComputeUnitBundle` already has
+   64-bit ports. Currently the microcode must manually decompose and
+   recompose 64-bit values through scratch RAM.
+
+5. **`stmul`/`ldmul` already work this way for 32 bits** — extending from
+   {A,B} to {A,B,C,D} is a natural generalization of the existing pattern.
+
+### Cons
+
+1. **Significant bypass complexity** — 9 address comparators, priority muxing,
+   and write forwarding added to the stack stage. Currently zero hazard logic.
+
+2. **Critical path risk** — the read data path gains ~2 LUT levels
+   (comparators + 5:1 mux). The stack stage is already on or near the
+   critical path at 80 MHz on Cyclone IV.
+
+3. **Register management overhead** — every push/pop now shifts 4 registers
+   instead of 2. C and D need fill/spill logic from/to RAM on every stack
+   depth change.
+
+4. **Verification burden** — the current design is hazard-free by construction.
+   4 registers require proving that the bypass logic is correct for all
+   combinations of `ld`/`st`/`ldmi`/`stmi`/`push`/`pop`/`dup`/`swap` and
+   the 4-register window. This is a large formal verification surface.
+
+5. **Area cost** — 4×32-bit registers + bypass muxes + comparators. Modest
+   in absolute terms but non-trivial on smaller FPGAs (Cyclone IV).
+
+6. **Limited applicability** — the speedup only matters for code that uses
+   `long` or `double` types. JOP's primary use case (real-time embedded Java)
+   tends to use `int` and `float`. The current `stmul`/`ldmul` mechanism
+   handles `imul`/`fmul` fine with 2 registers.
+
+## Alternative: Keep 2 Registers, Stage Through Scratch
+
+Instead of expanding to 4 TOS registers, the compute unit could accumulate
+operands over multiple cycles using the existing 2-register interface:
+
+```asm
+ladd:   sthw_lo     // compute unit latches A (lo0) and B (lo1) internally
+        pop
+        pop         // drop the two low words
+        sthw_hi     // compute unit latches A (hi0) and B (hi1), starts op
+        pop
+        pop
+        ldhw_hi     // push result high
+        ldhw_lo nxt // push result low
+```
+
+This takes ~8 cycles instead of ~3, but avoids all bypass complexity. Compared
+to the current 26-80 cycle microcode, 8 cycles is still a 3-10x speedup.
+The compute unit would need a small 2-word input register file (2 cycles to
+load instead of 1), but the stack stage remains untouched.
+
+A second variant uses scratch RAM, similar to the FPU auto-capture pattern
+already used for `fadd`/`fmul`:
+
+```asm
+ladd:   stm a       // save lo0 to scratch
+        stm b       // save hi0 to scratch
+        stm c       // save lo1 to scratch
+        // hi1 is now TOS (A register)
+        // write to compute unit I/O address, auto-captures TOS (hi1)
+        ldi hw_ladd
+        stmwa
+        stmwd       // captures A=hi1, triggers compute unit
+        // now feed remaining operands from scratch via I/O writes
+        ldm c
+        stmwd       // feeds lo1
+        ldm b
+        stmwd       // feeds hi0
+        ldm a
+        stmwd       // feeds lo0, starts computation
+        // ... wait + read result
+```
+
+This is ~14 cycles — still 2-6x faster than pure microcode, zero hardware
+changes to the stack stage, and uses the existing I/O write mechanism.
 
 ## Conclusion
 
-Expanding to 4 TOS registers is **feasible** but requires significant bypass
-logic (9 comparators, priority muxing, write forwarding) that complicates what
-is currently a clean, hazard-free pipeline stage. The 1-cycle delayed write is
-not a fundamental blocker — it just means the forwarding path must be
-included alongside the register bypass. The main costs are silicon area,
-routing, and potential Fmax reduction from the added combinational depth on
-the read data path.
+The 4-register design gives the best raw performance (~3 cycles for 64-bit
+ops) but at substantial hardware complexity cost. The bypass logic adds area,
+verification burden, and critical path risk to a pipeline stage that currently
+has none.
+
+The staged 2-register alternative (8 cycles) captures most of the speedup
+(3-10x vs 10-27x) with zero stack stage modifications. For a processor
+targeting real-time embedded Java where `long`/`double` usage is secondary,
+the 2-register staged approach is likely the better engineering trade-off.
+
+The 4-register design becomes more compelling if double-precision floating
+point is a primary requirement, where the additional 2-3x speedup per
+operation compounds across FP-intensive workloads.
