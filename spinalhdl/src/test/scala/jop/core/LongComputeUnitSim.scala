@@ -16,13 +16,13 @@ object LongComputeUnitSim extends App {
     withShift = true
   )
 
-  // JVM bytecodes
-  val LMUL  = 0x69
-  val LDIV  = 0x6D
-  val LREM  = 0x71
-  val LSHL  = 0x79
-  val LSHR  = 0x7B
-  val LUSHR = 0x7D
+  // 4-bit op codes
+  val LMUL  = 2
+  val LDIV  = 3
+  val LREM  = 4
+  val LSHL  = 6
+  val LSHR  = 7
+  val LUSHR = 8
 
   SimConfig
     .withWave
@@ -35,22 +35,22 @@ object LongComputeUnitSim extends App {
     def long64Bits(l: Long): BigInt = BigInt(l) & BigInt("FFFFFFFFFFFFFFFF", 16)
 
     val opNames = Map(
-      0x69 -> "lmul",  0x6D -> "ldiv",  0x71 -> "lrem",
-      0x79 -> "lshl",  0x7B -> "lshr",  0x7D -> "lushr"
+      2 -> "lmul",  3 -> "ldiv",  4 -> "lrem",
+      6 -> "lshl",  7 -> "lshr",  8 -> "lushr"
     )
 
-    def runOp(opa: BigInt, opb: BigInt, bytecode: Int, desc: String): BigInt = {
-      val name = opNames.getOrElse(bytecode, f"0x${bytecode}%02X")
-      println(f"--- $desc%-55s  opcode=$name  opa=0x${opa}%016X  opb=0x${opb}%016X ---")
+    def runOp(opa: BigInt, opb: BigInt, op: Int, desc: String): BigInt = {
+      val name = opNames.getOrElse(op, s"op=$op")
+      println(f"--- $desc%-55s  op=$name  opa=0x${opa}%016X  opb=0x${opb}%016X ---")
 
-      dut.io.c #= opa & BigInt("FFFFFFFF", 16)
-      dut.io.d #= (opa >> 32) & BigInt("FFFFFFFF", 16)
-      dut.io.a #= opb & BigInt("FFFFFFFF", 16)
-      dut.io.b #= (opb >> 32) & BigInt("FFFFFFFF", 16)
-      dut.io.opcode   #= bytecode
-      dut.io.wr       #= true
+      dut.io.operands(2) #= opa & BigInt("FFFFFFFF", 16)         // opa_lo (was c)
+      dut.io.operands(3) #= (opa >> 32) & BigInt("FFFFFFFF", 16) // opa_hi (was d)
+      dut.io.operands(0) #= opb & BigInt("FFFFFFFF", 16)         // opb_lo (was a)
+      dut.io.operands(1) #= (opb >> 32) & BigInt("FFFFFFFF", 16) // opb_hi (was b)
+      dut.io.op      #= op
+      dut.io.start   #= true
       dut.clockDomain.waitSampling()
-      dut.io.wr       #= false
+      dut.io.start   #= false
       dut.clockDomain.waitSampling()
 
       var cycles = 0
@@ -68,12 +68,12 @@ object LongComputeUnitSim extends App {
     }
 
     // Initialize
-    dut.io.a #= 0
-    dut.io.b #= 0
-    dut.io.c #= 0
-    dut.io.d #= 0
-    dut.io.opcode   #= 0
-    dut.io.wr       #= false
+    dut.io.operands(0) #= 0
+    dut.io.operands(1) #= 0
+    dut.io.operands(2) #= 0
+    dut.io.operands(3) #= 0
+    dut.io.op      #= 0
+    dut.io.start   #= false
     dut.clockDomain.waitSampling(5)
 
     println("=" * 80)

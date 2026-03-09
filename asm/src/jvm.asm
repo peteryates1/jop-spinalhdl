@@ -201,16 +201,15 @@ ua_tdre		= 	1
 
 // BmbDiv I/O constants removed — idiv/irem now handled by IntegerComputeUnit via sthw
 
-#ifdef FPU_ATTACHED
-// FPU auto-capture: write address encodes operation (0xF0-0xF3),
+// FPU auto-capture I/O constants: write address encodes operation (0xF0-0xF3),
 // BmbFpu latches bout(NOS=value1)->opA, wrData(TOS=value2)->opB on write.
 // Read address 0xF0 returns result. Busy stall handles FPU latency.
+// Always defined (needed by unconditional _io float handlers in superset ROM).
 fpu_add  = -16    // 0xF0: write starts float ADD
 fpu_sub  = -15    // 0xF1: write starts float SUB
 fpu_mul  = -14    // 0xF2: write starts float MUL
 fpu_div  = -13    // 0xF3: write starts float DIV
 fpu_res  = -16    // 0xF0: read returns result
-#endif
 
 #ifdef FLASH
 // Config flash SPI I/O registers (BmbConfigFlash at 0xD0-0xD3)
@@ -1141,11 +1140,8 @@ sys_noim:
 			nop
 
 // ==========================================================================
-// Hardware integer divider: idiv/irem via IntegerComputeUnit
-// Must be near sys_noim (within jmp range of ±256) for div-by-zero fallback.
-//
-// IntegerComputeUnit captures TOS(divisor)+NOS(dividend) on sthw.
-// jinstr selects idiv(0x6C) or irem(0x70). Busy stall handles latency (~36 cycles).
+// Hardware integer operations via ComputeUnitTop (ICU)
+// Uses new decoupled interface: stop (push operand), sthw N (start), ldop (get result)
 // Division by zero: falls through to Java for ArithmeticException.
 // ==========================================================================
 idiv:
@@ -1162,11 +1158,12 @@ idiv:
 idiv_nonzero:
 			// bnz already popped the dup copy
 			// Stack: ..., dividend, divisor
-			sthw				// start compute unit (idiv), pops TOS. Stack: ..., dividend
-			pop					// pop second operand. Stack: ...
-			wait				// stall while compute unit busy
-			wait				// rdy_cnt=1 extra cycle
-			ldmul nxt			// push quotient. Stack: ..., quotient
+			stop				// pop divisor -> CU opStack[0]
+			stop				// pop dividend -> CU opStack[1]
+			sthw 1				// start ICU idiv (unit=00, op=1)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop nxt			// push quotient
 
 irem:
 			// Stack: ..., dividend, divisor (TOS=divisor)
@@ -1181,11 +1178,12 @@ irem:
 irem_nonzero:
 			// bnz already popped the dup copy
 			// Stack: ..., dividend, divisor
-			sthw				// start compute unit (irem), pops TOS. Stack: ..., dividend
-			pop					// pop second operand. Stack: ...
-			wait				// stall while compute unit busy
-			wait				// rdy_cnt=1 extra cycle
-			ldmul nxt			// push remainder. Stack: ..., remainder
+			stop				// pop divisor -> CU opStack[0]
+			stop				// pop dividend -> CU opStack[1]
+			sthw 2				// start ICU irem (unit=00, op=2)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop nxt			// push remainder
 
 //
 //	invoke and return functions
@@ -1337,12 +1335,13 @@ iushr:		ushr nxt
 
 
 imul:
-			// IntegerComputeUnit: sthw captures TOS(b)+NOS(a), jinstr selects imul
-			sthw			// start compute unit, pops TOS. Stack: ..., a
-			pop				// pop second operand. Stack: ...
-			wait			// stall while compute unit busy
-			wait			// rdy_cnt=1 extra cycle
-			ldmul nxt		// push result. Stack: ..., result
+imul_hw:
+			stop				// pop value2 -> CU opStack[0]
+			stop				// pop value1 -> CU opStack[1]
+			sthw 0				// start ICU imul (unit=00, op=0)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop nxt			// push result
 
 			// Pure microcode shift-and-add multiply (alternate handler for imul: Microcode)
 			// Used when IntegerComputeUnit is not instantiated.
@@ -2055,78 +2054,97 @@ jopsys_inval:
 			nop nxt
 
 // ==========================================================================
-// DSP multiply: lmul in microcode using 3 partial products
-// Placed at end of ROM so DSP_MUL doesn't shift any existing addresses.
-//
+// Long multiply via LongComputeUnit (LCU)
+// ==========================================================================
+lmul:
+lmul_hw:
+			// Stack: ..., a_hi, a_lo, b_hi, b_lo (TOS=b_lo)
+			stop				// pop b_lo -> CU opStack[0]
+			stop				// pop b_hi -> CU opStack[1]
+			stop				// pop a_lo -> CU opStack[2]
+			stop				// pop a_hi -> CU opStack[3]
+			sthw 34				// start LCU lmul (unit=10, op=2)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop				// push result_hi
+			ldop nxt			// push result_lo
+
+// ==========================================================================
+// lmul using ICU imul_wide (3 partial products via CU interface)
 // lmul(a1:a0 × b1:b0) → result_high:result_low
-//   Stack entry: ..., a1, a0, b1, b0  (TOS=b0, long = high:low)
-//   P0 = a0 × b0  → P0_low = result[31:0], P0_high contributes to result[63:32]
-//   P1 = a1 × b0  → P1_low contributes to result[63:32]
-//   P2 = a0 × b1  → P2_low contributes to result[63:32]
+//   P0 = a0 × b0 (imul_wide: need both hi and lo)
+//   P1 = a1 × b0 (imul: need only lo)
+//   P2 = a0 × b1 (imul: need only lo)
 //   result_low  = P0_low
 //   result_high = P0_high + P1_low + P2_low
+// Uses ICU op 3 (imul_wide) for P0, ICU op 0 (imul) for P1/P2
 // ==========================================================================
-#ifdef DSP_MUL
-lmul:
+lmul_sw:
 			// Stack: ..., a1, a0, b1, b0 (TOS=b0)
-			// lmul(a1:a0 × b1:b0) = P0_low, (P0_high + P1_low + P2_low)
-			// stm = POP (saves TOS to scratch, pops it)
-			// ldm = PUSH (pushes scratch value)
-
 			stm a				// a = b0, pop. Stack: ..., a1, a0, b1
 			stm b				// b = b1, pop. Stack: ..., a1, a0
-
-			// ---- P0 = a0 * b0 ----
 			dup					// Stack: ..., a1, a0, a0
 			stm c				// c = a0, pop. Stack: ..., a1, a0
+
+			// ---- P0 = a0 * b0 (imul_wide → 64-bit result) ----
 			ldm a				// push b0. Stack: ..., a1, a0, b0
-			sthw				// mul(TOS=b0, NOS=a0), pop. Stack: ..., a1, a0
-			pop					// pop a0. Stack: ..., a1
-			nop					// wait for DSP result
-			ldmul				// push P0_low. Stack: ..., a1, P0_low
-			stm d				// d = P0_low, pop. Stack: ..., a1
-			ldmulh				// push P0_high. Stack: ..., a1, P0_high
-			stm e				// e = P0_high, pop. Stack: ..., a1
+			stop				// opStack[0] = b0, pop. Stack: ..., a1, a0
+			stop				// opStack[1] = a0, pop. Stack: ..., a1
+			sthw 3				// ICU imul_wide (unit=00, op=0011)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until done
+			ldop				// push P0_hi. Stack: ..., a1, P0_hi
+			stm d				// d = P0_hi, pop. Stack: ..., a1
+			ldop				// push P0_lo. Stack: ..., a1, P0_lo
+			stm e				// e = P0_lo, pop. Stack: ..., a1
 
-			// ---- P1 = a1 * b0 ----
+			// ---- P1 = a1 * b0 (imul → 32-bit low result) ----
 			ldm a				// push b0. Stack: ..., a1, b0
-			sthw				// mul(TOS=b0, NOS=a1), pop. Stack: ..., a1
-			pop					// pop a1. Stack: ...
-			nop
-			ldmul				// push P1_low. Stack: ..., P1_low
-			ldm e				// push P0_high. Stack: ..., P1_low, P0_high
-			add					// Stack: ..., (P1_low + P0_high)
-			stm e				// e = accum, pop. Stack: ...
+			stop				// opStack[0] = b0, pop. Stack: ..., a1
+			stop				// opStack[1] = a1, pop. Stack: ...
+			sthw 0				// ICU imul (unit=00, op=0000)
+			wait
+			wait
+			ldop				// push P1_lo. Stack: ..., P1_lo
+			ldm d				// push P0_hi. Stack: ..., P1_lo, P0_hi
+			add					// Stack: ..., (P1_lo + P0_hi)
+			stm d				// d = accum, pop. Stack: ...
 
-			// ---- P2 = a0 * b1 ----
+			// ---- P2 = a0 * b1 (imul → 32-bit low result) ----
 			ldm c				// push a0. Stack: ..., a0
 			ldm b				// push b1. Stack: ..., a0, b1
-			sthw				// mul(TOS=b1, NOS=a0), pop. Stack: ..., a0
-			pop					// pop a0. Stack: ...
-			nop
-			ldmul				// push P2_low. Stack: ..., P2_low
-			ldm e				// push accum. Stack: ..., P2_low, accum
+			stop				// opStack[0] = b1, pop. Stack: ..., a0
+			stop				// opStack[1] = a0, pop. Stack: ...
+			sthw 0				// ICU imul (unit=00, op=0000)
+			wait
+			wait
+			ldop				// push P2_lo. Stack: ..., P2_lo
+			ldm d				// push accum. Stack: ..., P2_lo, accum
 			add					// Stack: ..., result_high
-			stm e				// e = result_high, pop. Stack: ...
 
 			// Push result: high, low (long = high:low on JOP stack)
-			ldm e				// push result_high. Stack: ..., result_high
-			ldm d nxt			// push result_low. Stack: ..., result_high, result_low
-#endif
+			ldm e nxt			// push result_low. Stack: ..., result_high, result_low
 
 
 // ==========================================================================
-// Floating point operations in HW with FPU (auto-capture version)
-// Placed at end of ROM so FPU_ATTACHED doesn't shift any existing addresses.
+// Floating point operations: HW (CU, default) and I/O (FPU) implementations
+// Both are unconditionally present. Default labels point to HW (CU) versions.
 //
-// BmbFpu latches bout(NOS=value1)->opA, wrData(TOS=value2)->opB on write.
-// Write address encodes operation: 0=ADD, 1=SUB, 2=MUL, 3=DIV.
-// BmbFpu busy signal stalls pipeline during computation (6-34 cycles).
-// Read address 0 returns the latched result.
-// Each handler: 10 microcode instructions, ~10 cycles + FPU latency.
+// CU handlers (_hw): uses ComputeUnitTop via stop/sthw/wait/ldop
+// I/O handlers (_sw): uses BmbFpu via I/O read/write (non-CU alternative)
 // ==========================================================================
-#ifdef FPU_ATTACHED
-fadd:                          // stack: [value1, value2], TOS=value2
+
+// ---------- fadd ----------
+fadd:
+fadd_hw:
+			stop				// pop value2 -> CU opStack[0]
+			stop				// pop value1 -> CU opStack[1]
+			sthw 16				// start FCU fadd (unit=01, op=0)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop nxt			// push result
+
+fadd_sw:                       // stack: [value1, value2], TOS=value2
 		ldi fpu_add            // push FPU ADD address (0xF0 = -16)
 		stmwa                  // addr_reg = FPU_ADD, pop
 		stmwd                  // I/O write: auto-capture + start ADD, pop value2
@@ -2138,7 +2156,17 @@ fadd:                          // stack: [value1, value2], TOS=value2
 		wait
 		ldmrd nxt              // push result
 
-fsub:                          // stack: [value1, value2]
+// ---------- fsub ----------
+fsub:
+fsub_hw:
+			stop				// pop value2 -> CU opStack[0]
+			stop				// pop value1 -> CU opStack[1]
+			sthw 17				// start FCU fsub (unit=01, op=1)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop nxt			// push result
+
+fsub_sw:                       // stack: [value1, value2]
 		ldi fpu_sub            // push FPU SUB address (0xF1)
 		stmwa
 		stmwd                  // auto-capture + start SUB
@@ -2149,7 +2177,17 @@ fsub:                          // stack: [value1, value2]
 		wait
 		ldmrd nxt
 
-fmul:                          // stack: [value1, value2]
+// ---------- fmul ----------
+fmul:
+fmul_hw:
+			stop				// pop value2 -> CU opStack[0]
+			stop				// pop value1 -> CU opStack[1]
+			sthw 18				// start FCU fmul (unit=01, op=2)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop nxt			// push result
+
+fmul_sw:                       // stack: [value1, value2]
 		ldi fpu_mul            // push FPU MUL address (0xF2)
 		stmwa
 		stmwd                  // auto-capture + start MUL
@@ -2160,7 +2198,17 @@ fmul:                          // stack: [value1, value2]
 		wait
 		ldmrd nxt
 
-fdiv:                          // stack: [value1, value2]
+// ---------- fdiv ----------
+fdiv:
+fdiv_hw:
+			stop				// pop value2 -> CU opStack[0]
+			stop				// pop value1 -> CU opStack[1]
+			sthw 19				// start FCU fdiv (unit=01, op=3)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop nxt			// push result
+
+fdiv_sw:                       // stack: [value1, value2]
 		ldi fpu_div            // push FPU DIV address (0xF3)
 		stmwa
 		stmwd                  // auto-capture + start DIV
@@ -2170,41 +2218,46 @@ fdiv:                          // stack: [value1, value2]
 		wait
 		wait
 		ldmrd nxt
-#endif
 
-// ==========================================================================
-// Floating point operations via FloatComputeUnit (pipeline-integrated)
-// sthw captures TOS+NOS, jinstr selects operation. FloatCU handles all
-// IEEE 754 single-precision ops. Much faster than BmbFpu I/O path:
-// 5 microcode instructions vs 10 for I/O pattern.
-// ==========================================================================
-#ifdef FLOAT_CU
-fadd:
-fsub:
-fmul:
-fdiv:
-			sthw			// start FloatCU, pops TOS. Stack: ..., value1
-			pop				// pop second operand. Stack: ...
-			wait			// stall while CU busy
-			wait			// rdy_cnt=1 extra cycle
-			ldmul nxt		// push result
-
-i2f:
-f2i:
-			sthw			// start FloatCU (a=TOS, b=NOS ignored). Pop TOS.
-			wait			// stall while CU busy
-			wait			// rdy_cnt=1 extra cycle
-			ldmul nxt		// push result
-
+// ---------- fcmpl ----------
 fcmpl:
-fcmpg:
-			sthw			// start FloatCU, pops TOS. Stack: ..., value1
-			pop				// pop second operand. Stack: ...
-			wait			// stall while CU busy
-			wait			// rdy_cnt=1 extra cycle
-			ldmul nxt		// push int result (-1, 0, or 1)
+fcmpl_hw:
+			stop				// pop value2 -> CU opStack[0]
+			stop				// pop value1 -> CU opStack[1]
+			sthw 20				// start FCU fcmpl (unit=01, op=4)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop nxt			// push int result (-1, 0, or 1)
 
+// ---------- fcmpg ----------
+fcmpg:
+fcmpg_hw:
+			stop				// pop value2 -> CU opStack[0]
+			stop				// pop value1 -> CU opStack[1]
+			sthw 21				// start FCU fcmpg (unit=01, op=5)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop nxt			// push int result (-1, 0, or 1)
+
+// ---------- i2f ----------
+i2f:
+i2f_hw:
+			stop				// pop int value -> CU opStack[0]
+			sthw 22				// start FCU i2f (unit=01, op=6)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop nxt			// push float result
+
+// ---------- f2i ----------
+f2i:
+f2i_hw:
+			stop				// pop float value -> CU opStack[0]
+			sthw 23				// start FCU f2i (unit=01, op=7)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop nxt			// push int result
+
+// ---------- fneg (pure microcode, no HW/IO variants needed) ----------
 fneg:
 			ldi -2147483648	// 0x80000000
 			xor nxt			// XOR sign bit, done (pure microcode, no CU)
-#endif

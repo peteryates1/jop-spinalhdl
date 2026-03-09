@@ -10,7 +10,6 @@ class JopFileLoaderSpec extends AnyFlatSpec with Matchers {
 
   // Path to test files
   val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
-  val jtblPath = "asm/generated/jtbl.vhd"
   val memRomPath = "asm/generated/mem_rom.dat"
   val memRamPath = "asm/generated/mem_ram.dat"
 
@@ -50,29 +49,8 @@ class JopFileLoaderSpec extends AnyFlatSpec with Matchers {
     ram.length should be > 0
   }
 
-  it should "parse jump table from jtbl.vhd" in {
-    val table = JopFileLoader.loadJumpTable(jtblPath)
-
-    // Should have some entries
-    table.size should be > 0
-
-    // NOP (0x00) should map to some address
-    table.contains(0x00) shouldBe true
-
-    // Common bytecodes should be present
-    table.contains(0x60) shouldBe true // iadd
-    table.contains(0x64) shouldBe true // isub
-  }
-
-  it should "convert jump table to sequence" in {
-    val seq = JopFileLoader.loadJumpTableAsSeq(jtblPath)
-
-    // Should have exactly 256 entries
-    seq.length shouldEqual 256
-
-    // Default should be 0 for unmapped
-    seq.forall(_ >= 0) shouldBe true
-  }
+  // NOTE: "parse jump table from jtbl.vhd" and "convert jump table to sequence"
+  // tests removed — assembler now generates Scala jump tables, not VHDL.
 
   it should "create test bytecode ROM" in {
     val bytecodes = Seq(0x1A, 0x1B, 0x60, 0x3D)  // iload_0, iload_1, iadd, istore_2

@@ -64,7 +64,7 @@ public class Jopa {
 	/** length of microcode instruction including nxt and opd */	
 	static final int DATABITS = Instruction.INSTLEN+2;
 	static final int CONST_ADDR = 32;
-	static final int VER_ADDR = 64-2;
+	static final int VER_ADDR = 96-2;
 	static final int RAM_LEN = 256;
 	static final int ROM_LEN = 1<<ADDRBITS;
 	private String srcDir;
@@ -686,17 +686,18 @@ public class Jopa {
 		sb.append("  /** Alternate handler addresses for bytecodes with both HW and SW handlers */\n");
 		sb.append("  val altEntries: Map[Int, Int] = Map(\n");
 		int altCount = 0;
+		int altTotal = altBcToAddr.size();
 		for (Map.Entry<Integer, Integer> entry : altBcToAddr.entrySet()) {
 			int bc = entry.getKey();
 			int addr = entry.getValue();
 			String mnemonic = JopInstr.name(bc);
 			if (mnemonic == null) mnemonic = "???";
-			if (altCount > 0) sb.append(",\n");
 			sb.append(String.format("    0x%02X -> 0x%03X", bc, addr));
-			sb.append("  // " + mnemonic + "_sw");
 			altCount++;
+			if (altCount < altTotal) sb.append(",");
+			sb.append("  // " + mnemonic + "_sw");
+			sb.append("\n");
 		}
-		if (altCount > 0) sb.append("\n");
 		sb.append("  )\n");
 		sb.append("}\n");
 

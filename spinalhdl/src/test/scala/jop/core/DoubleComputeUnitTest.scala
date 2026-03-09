@@ -29,19 +29,19 @@ class DoubleComputeUnitTest extends AnyFunSuite {
   val SP_CANONICAL_NAN = BigInt("7FC00000", 16)
   val SP_POS_INF       = BigInt("7F800000", 16)
 
-  // JVM bytecodes
-  val DADD  = 0x63
-  val DSUB  = 0x67
-  val DMUL  = 0x6B
-  val DDIV  = 0x6F
-  val I2D   = 0x87
-  val D2I   = 0x8E
-  val L2D   = 0x8A
-  val D2L   = 0x8F
-  val F2D   = 0x8D
-  val D2F   = 0x90
-  val DCMPL = 0x97
-  val DCMPG = 0x98
+  // 4-bit op codes (must match DoubleComputeUnit RTL)
+  val DADD  = 0
+  val DSUB  = 1
+  val DMUL  = 2
+  val DDIV  = 3
+  val DCMPL = 4
+  val DCMPG = 5
+  val F2D   = 6
+  val D2F   = 7
+  val I2D   = 8
+  val D2I   = 9
+  val L2D   = 10
+  val D2L   = 11
 
   val fullConfig = DoubleComputeUnitConfig(
     withAdd = true, withMul = true, withDiv = true,
@@ -54,16 +54,13 @@ class DoubleComputeUnitTest extends AnyFunSuite {
 
   def compileFull() = simConfig.compile(DoubleComputeUnit(fullConfig))
 
-  def runOp(dut: DoubleComputeUnit, opa: BigInt, opb: BigInt, bytecode: Int)
-           (implicit cd: ClockDomain): BigInt = {
-    dut.io.c #= opa & BigInt("FFFFFFFF", 16)
-    dut.io.d #= (opa >> 32) & BigInt("FFFFFFFF", 16)
-    dut.io.a #= opb & BigInt("FFFFFFFF", 16)
-    dut.io.b #= (opb >> 32) & BigInt("FFFFFFFF", 16)
-    dut.io.opcode   #= bytecode
-    dut.io.wr       #= true
+  /** Start a DCU op and wait for completion. Returns 64-bit result. */
+  private def startAndWait(dut: DoubleComputeUnit, op: Int)
+                          (implicit cd: ClockDomain): BigInt = {
+    dut.io.op      #= op
+    dut.io.start   #= true
     cd.waitSampling()
-    dut.io.wr       #= false
+    dut.io.start   #= false
     cd.waitSampling()
 
     var cycles = 0
@@ -71,21 +68,52 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       cd.waitSampling()
       cycles += 1
     }
-    assert(cycles < 200, s"DPU timed out after 200 cycles (bytecode=0x${bytecode.toHexString})")
+    assert(cycles < 200, s"DPU timed out after 200 cycles (op=$op)")
     (dut.io.resultHi.toBigInt << 32) | dut.io.resultLo.toBigInt
   }
 
-  def runDouble(dut: DoubleComputeUnit, a: Double, b: Double, bytecode: Int)
+  /** Binary double op: value1 (opa) op value2 (opb), both 64-bit doubles.
+    * operands(3:2)=value1, operands(1:0)=value2 */
+  def runOp(dut: DoubleComputeUnit, opa: BigInt, opb: BigInt, op: Int)
+           (implicit cd: ClockDomain): BigInt = {
+    dut.io.operands(0) #= opb & BigInt("FFFFFFFF", 16)
+    dut.io.operands(1) #= (opb >> 32) & BigInt("FFFFFFFF", 16)
+    dut.io.operands(2) #= opa & BigInt("FFFFFFFF", 16)
+    dut.io.operands(3) #= (opa >> 32) & BigInt("FFFFFFFF", 16)
+    startAndWait(dut, op)
+  }
+
+  /** Single 32-bit input op (i2d, f2d): value in operands(0) */
+  def runSingle32(dut: DoubleComputeUnit, value: BigInt, op: Int)
+                 (implicit cd: ClockDomain): BigInt = {
+    dut.io.operands(0) #= value & BigInt("FFFFFFFF", 16)
+    dut.io.operands(1) #= 0
+    dut.io.operands(2) #= 0
+    dut.io.operands(3) #= 0
+    startAndWait(dut, op)
+  }
+
+  /** Single 64-bit input op (d2i, d2f, d2l): double in operands(1):operands(0) */
+  def runSingle64(dut: DoubleComputeUnit, value: BigInt, op: Int)
+                 (implicit cd: ClockDomain): BigInt = {
+    dut.io.operands(0) #= value & BigInt("FFFFFFFF", 16)
+    dut.io.operands(1) #= (value >> 32) & BigInt("FFFFFFFF", 16)
+    dut.io.operands(2) #= 0
+    dut.io.operands(3) #= 0
+    startAndWait(dut, op)
+  }
+
+  def runDouble(dut: DoubleComputeUnit, a: Double, b: Double, op: Int)
                (implicit cd: ClockDomain): BigInt =
-    runOp(dut, doubleBits(a), doubleBits(b), bytecode)
+    runOp(dut, doubleBits(a), doubleBits(b), op)
 
   def initIo(dut: DoubleComputeUnit): Unit = {
-    dut.io.a #= 0
-    dut.io.b #= 0
-    dut.io.c #= 0
-    dut.io.d #= 0
-    dut.io.opcode   #= 0
-    dut.io.wr       #= false
+    dut.io.operands(0) #= 0
+    dut.io.operands(1) #= 0
+    dut.io.operands(2) #= 0
+    dut.io.operands(3) #= 0
+    dut.io.op      #= 0
+    dut.io.start   #= false
   }
 
   def assertDouble(actual: BigInt, expected: Double, msg: String): Unit = {
@@ -286,11 +314,11 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertDouble(runOp(dut, int32Bits(1), BigInt(0), I2D), 1.0, "i2d(1)")
-      assertDouble(runOp(dut, int32Bits(0), BigInt(0), I2D), 0.0, "i2d(0)")
-      assertDouble(runOp(dut, int32Bits(-1), BigInt(0), I2D), -1.0, "i2d(-1)")
-      assertDouble(runOp(dut, int32Bits(42), BigInt(0), I2D), 42.0, "i2d(42)")
-      assertDouble(runOp(dut, int32Bits(256), BigInt(0), I2D), 256.0, "i2d(256)")
+      assertDouble(runSingle32(dut, int32Bits(1), I2D), 1.0, "i2d(1)")
+      assertDouble(runSingle32(dut, int32Bits(0), I2D), 0.0, "i2d(0)")
+      assertDouble(runSingle32(dut, int32Bits(-1), I2D), -1.0, "i2d(-1)")
+      assertDouble(runSingle32(dut, int32Bits(42), I2D), 42.0, "i2d(42)")
+      assertDouble(runSingle32(dut, int32Bits(256), I2D), 256.0, "i2d(256)")
     }
   }
 
@@ -300,7 +328,7 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
       // INT_MAX: 2147483647 -> exact in double
-      assertDouble(runOp(dut, int32Bits(0x7FFFFFFF), BigInt(0), I2D), 2147483647.0, "i2d(INT_MAX)")
+      assertDouble(runSingle32(dut, int32Bits(0x7FFFFFFF), I2D), 2147483647.0, "i2d(INT_MAX)")
     }
   }
 
@@ -312,11 +340,11 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertBits32(runDouble(dut, 3.7, 0, D2I), int32Bits(3), "d2i(3.7)")
-      assertBits32(runDouble(dut, -2.3, 0, D2I), int32Bits(-2), "d2i(-2.3)")
-      assertBits32(runDouble(dut, 0.5, 0, D2I), int32Bits(0), "d2i(0.5)")
-      assertBits32(runDouble(dut, -0.9, 0, D2I), int32Bits(0), "d2i(-0.9)")
-      assertBits32(runDouble(dut, 100.0, 0, D2I), int32Bits(100), "d2i(100.0)")
+      assertBits32(runSingle64(dut, doubleBits(3.7), D2I), int32Bits(3), "d2i(3.7)")
+      assertBits32(runSingle64(dut, doubleBits(-2.3), D2I), int32Bits(-2), "d2i(-2.3)")
+      assertBits32(runSingle64(dut, doubleBits(0.5), D2I), int32Bits(0), "d2i(0.5)")
+      assertBits32(runSingle64(dut, doubleBits(-0.9), D2I), int32Bits(0), "d2i(-0.9)")
+      assertBits32(runSingle64(dut, doubleBits(100.0), D2I), int32Bits(100), "d2i(100.0)")
     }
   }
 
@@ -325,10 +353,10 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertBits32(runDouble(dut, Double.NaN, 0, D2I), BigInt(0), "d2i(NaN) = 0")
-      assertBits32(runDouble(dut, Double.PositiveInfinity, 0, D2I), int32Bits(0x7FFFFFFF), "d2i(+Inf) = INT_MAX")
-      assertBits32(runDouble(dut, Double.NegativeInfinity, 0, D2I), int32Bits(0x80000000.toInt), "d2i(-Inf) = INT_MIN")
-      assertBits32(runDouble(dut, 0.0, 0, D2I), BigInt(0), "d2i(0.0) = 0")
+      assertBits32(runSingle64(dut, doubleBits(Double.NaN), D2I), BigInt(0), "d2i(NaN) = 0")
+      assertBits32(runSingle64(dut, doubleBits(Double.PositiveInfinity), D2I), int32Bits(0x7FFFFFFF), "d2i(+Inf) = INT_MAX")
+      assertBits32(runSingle64(dut, doubleBits(Double.NegativeInfinity), D2I), int32Bits(0x80000000.toInt), "d2i(-Inf) = INT_MIN")
+      assertBits32(runSingle64(dut, doubleBits(0.0), D2I), BigInt(0), "d2i(0.0) = 0")
     }
   }
 
@@ -340,10 +368,10 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertDouble(runOp(dut, long64Bits(1L), BigInt(0), L2D), 1.0, "l2d(1)")
-      assertDouble(runOp(dut, long64Bits(0L), BigInt(0), L2D), 0.0, "l2d(0)")
-      assertDouble(runOp(dut, long64Bits(-1L), BigInt(0), L2D), -1.0, "l2d(-1)")
-      assertDouble(runOp(dut, long64Bits(1000000L), BigInt(0), L2D), 1000000.0, "l2d(1000000)")
+      assertDouble(runSingle64(dut, long64Bits(1L), L2D), 1.0, "l2d(1)")
+      assertDouble(runSingle64(dut, long64Bits(0L), L2D), 0.0, "l2d(0)")
+      assertDouble(runSingle64(dut, long64Bits(-1L), L2D), -1.0, "l2d(-1)")
+      assertDouble(runSingle64(dut, long64Bits(1000000L), L2D), 1000000.0, "l2d(1000000)")
     }
   }
 
@@ -353,7 +381,7 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
       // LONG_MAX: 9223372036854775807 -> rounds in double
-      val r = runOp(dut, long64Bits(Long.MaxValue), BigInt(0), L2D)
+      val r = runSingle64(dut, long64Bits(Long.MaxValue), L2D)
       assertDouble(r, Long.MaxValue.toDouble, "l2d(LONG_MAX)")
     }
   }
@@ -366,9 +394,9 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertBits64(runDouble(dut, 3.7, 0, D2L), long64Bits(3L), "d2l(3.7)")
-      assertBits64(runDouble(dut, -2.3, 0, D2L), long64Bits(-2L), "d2l(-2.3)")
-      assertBits64(runDouble(dut, 0.5, 0, D2L), long64Bits(0L), "d2l(0.5)")
+      assertBits64(runSingle64(dut, doubleBits(3.7), D2L), long64Bits(3L), "d2l(3.7)")
+      assertBits64(runSingle64(dut, doubleBits(-2.3), D2L), long64Bits(-2L), "d2l(-2.3)")
+      assertBits64(runSingle64(dut, doubleBits(0.5), D2L), long64Bits(0L), "d2l(0.5)")
     }
   }
 
@@ -377,9 +405,9 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertBits64(runDouble(dut, Double.NaN, 0, D2L), BigInt(0), "d2l(NaN) = 0")
-      assertBits64(runDouble(dut, Double.PositiveInfinity, 0, D2L), long64Bits(Long.MaxValue), "d2l(+Inf) = LONG_MAX")
-      assertBits64(runDouble(dut, Double.NegativeInfinity, 0, D2L), long64Bits(Long.MinValue), "d2l(-Inf) = LONG_MIN")
+      assertBits64(runSingle64(dut, doubleBits(Double.NaN), D2L), BigInt(0), "d2l(NaN) = 0")
+      assertBits64(runSingle64(dut, doubleBits(Double.PositiveInfinity), D2L), long64Bits(Long.MaxValue), "d2l(+Inf) = LONG_MAX")
+      assertBits64(runSingle64(dut, doubleBits(Double.NegativeInfinity), D2L), long64Bits(Long.MinValue), "d2l(-Inf) = LONG_MIN")
     }
   }
 
@@ -391,9 +419,9 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertDouble(runOp(dut, floatBits(1.5f), BigInt(0), F2D), 1.5, "f2d(1.5f)")
-      assertDouble(runOp(dut, floatBits(-3.25f), BigInt(0), F2D), -3.25, "f2d(-3.25f)")
-      assertDouble(runOp(dut, floatBits(42.0f), BigInt(0), F2D), 42.0, "f2d(42.0f)")
+      assertDouble(runSingle32(dut, floatBits(1.5f), F2D), 1.5, "f2d(1.5f)")
+      assertDouble(runSingle32(dut, floatBits(-3.25f), F2D), -3.25, "f2d(-3.25f)")
+      assertDouble(runSingle32(dut, floatBits(42.0f), F2D), 42.0, "f2d(42.0f)")
     }
   }
 
@@ -402,10 +430,10 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertBits64(runOp(dut, floatBits(0.0f), BigInt(0), F2D), POS_ZERO, "f2d(0) = 0")
-      assertBits64(runOp(dut, floatBits(Float.PositiveInfinity), BigInt(0), F2D), POS_INF, "f2d(+Inf)")
-      assertBits64(runOp(dut, floatBits(Float.NegativeInfinity), BigInt(0), F2D), NEG_INF, "f2d(-Inf)")
-      assertNaN64(runOp(dut, floatBits(Float.NaN), BigInt(0), F2D), "f2d(NaN)")
+      assertBits64(runSingle32(dut, floatBits(0.0f), F2D), POS_ZERO, "f2d(0) = 0")
+      assertBits64(runSingle32(dut, floatBits(Float.PositiveInfinity), F2D), POS_INF, "f2d(+Inf)")
+      assertBits64(runSingle32(dut, floatBits(Float.NegativeInfinity), F2D), NEG_INF, "f2d(-Inf)")
+      assertNaN64(runSingle32(dut, floatBits(Float.NaN), F2D), "f2d(NaN)")
     }
   }
 
@@ -417,9 +445,9 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertBits32(runDouble(dut, 1.5, 0, D2F), floatBits(1.5f), "d2f(1.5)")
-      assertBits32(runDouble(dut, -3.25, 0, D2F), floatBits(-3.25f), "d2f(-3.25)")
-      assertBits32(runDouble(dut, 42.0, 0, D2F), floatBits(42.0f), "d2f(42.0)")
+      assertBits32(runSingle64(dut, doubleBits(1.5), D2F), floatBits(1.5f), "d2f(1.5)")
+      assertBits32(runSingle64(dut, doubleBits(-3.25), D2F), floatBits(-3.25f), "d2f(-3.25)")
+      assertBits32(runSingle64(dut, doubleBits(42.0), D2F), floatBits(42.0f), "d2f(42.0)")
     }
   }
 
@@ -428,9 +456,9 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertBits32(runDouble(dut, Double.PositiveInfinity, 0, D2F), SP_POS_INF, "d2f(+Inf)")
-      assertNaN32(runDouble(dut, Double.NaN, 0, D2F), "d2f(NaN)")
-      assertBits32(runDouble(dut, 0.0, 0, D2F), BigInt(0), "d2f(0)")
+      assertBits32(runSingle64(dut, doubleBits(Double.PositiveInfinity), D2F), SP_POS_INF, "d2f(+Inf)")
+      assertNaN32(runSingle64(dut, doubleBits(Double.NaN), D2F), "d2f(NaN)")
+      assertBits32(runSingle64(dut, doubleBits(0.0), D2F), BigInt(0), "d2f(0)")
     }
   }
 
@@ -440,7 +468,7 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
       // Double value too large for float -> Inf
-      assertBits32(runDouble(dut, 1e308, 0, D2F), SP_POS_INF, "d2f(1e308) = +Inf_f")
+      assertBits32(runSingle64(dut, doubleBits(1e308), D2F), SP_POS_INF, "d2f(1e308) = +Inf_f")
     }
   }
 
@@ -450,7 +478,7 @@ class DoubleComputeUnitTest extends AnyFunSuite {
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
       // Double value too small for float -> zero
-      assertBits32(runDouble(dut, 1e-200, 0, D2F), BigInt(0), "d2f(1e-200) = 0")
+      assertBits32(runSingle64(dut, doubleBits(1e-200), D2F), BigInt(0), "d2f(1e-200) = 0")
     }
   }
 
@@ -524,12 +552,12 @@ class DoubleComputeUnitTest extends AnyFunSuite {
     simConfig.compile(DoubleComputeUnit(minConfig)).doSim(seed = 42) { dut =>
       dut.clockDomain.forkStimulus(10)
       SimTimeout(1000)
-      dut.io.a #= 0
-      dut.io.b #= 0
-      dut.io.c #= 0
-      dut.io.d #= 0
-      dut.io.opcode   #= 0
-      dut.io.wr       #= false
+      dut.io.operands(0) #= 0
+      dut.io.operands(1) #= 0
+      dut.io.operands(2) #= 0
+      dut.io.operands(3) #= 0
+      dut.io.op      #= 0
+      dut.io.start   #= false
       dut.clockDomain.waitSampling(10)
     }
   }

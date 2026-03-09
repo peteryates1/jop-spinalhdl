@@ -3,22 +3,26 @@ ASM_SRC=jvm
 JVM_TYPE=SIMULATION
 
 # =========================================================================
-# Superset ROM targets — ALL hardware handlers in one ROM per boot mode.
+# Superset ROM — ALL hardware AND software handlers in one ROM.
 # Per-bytecode config is done via jump table patching at SpinalHDL elaboration.
 #
 # Both HW and SW handlers exist unconditionally in the ROM:
-#   imul: → sthw handler (IntegerComputeUnit)
-#   imul_sw: → pure microcode shift-and-add multiply
+#   <op>: / <op>_hw: → CU handler (sthw/ldop)
+#   <op>_sw:         → pure microcode or I/O-based handler
 # resolveJumpTable() selects the right one based on JopCoreConfig.
 #
-# FLOAT_CU: FloatComputeUnit handlers (fadd-fdiv, i2f, f2i, fcmp, fneg).
+# Covered operations:
+#   imul, lmul (integer/long multiply)
+#   lneg, ladd, lsub, lcmp, lushr, lshr, lshl (long arithmetic/shifts)
+#   fadd, fsub, fmul, fdiv (float via CU or BmbFpu I/O)
+#   fcmpl, fcmpg, i2f, f2i (float CU only, no _sw variant)
 # =========================================================================
 
 all: simulation serial
 
-# Superset flags: FLOAT_CU=float ops via FloatCU
-# Note: HW_MUL removed — both imul handlers are unconditional in jvm.asm
-SUPERSET_FLAGS = -DFLOAT_CU
+# All handlers are unconditional — no preprocessor flags needed.
+# SUPERSET_FLAGS kept empty for future use.
+SUPERSET_FLAGS =
 
 simulation: ../java/tools/dist/jopa.jar
 	mkdir -p generated

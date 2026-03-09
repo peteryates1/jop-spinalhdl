@@ -451,7 +451,32 @@ laload:
 			wait
 			ldmrd 	nxt	// read ext. mem
 
-lneg: // WCET=8+26=34
+// ==========================================================================
+// lneg: HW (default) and SW implementations
+// ==========================================================================
+lneg:
+lneg_hw:
+			// Stack: ..., hi, lo (TOS=lo). Negate = lsub(0 - value)
+			// LCU lsub: opaReg([3]:[2]) - opbReg([1]:[0])
+			// Push value first (→ opbReg), then 0L (→ opaReg) = 0 - value
+			stm a				// a = lo
+			stm b				// b = hi
+			ldm a
+			stop				// CU opStack[0] = lo (value lo → opbReg lo)
+			ldm b
+			stop				// CU opStack[1] = hi (value hi → opbReg hi)
+			ldi 0
+			stop				// CU opStack[2] = 0  (zero lo → opaReg lo)
+			ldi 0
+			stop				// CU opStack[3] = 0  (zero hi → opaReg hi)
+			sthw 33				// start LCU lsub (unit=10, op=1): 0L - value
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop				// push result_hi
+			ldop nxt			// push result_lo
+
+			// Pure microcode lneg (falls through to ladd_sw)
+lneg_sw:
 			ldi -1
 			xor
 			stm a
@@ -460,13 +485,31 @@ lneg: // WCET=8+26=34
 			ldm a
 			ldi 0
 			ldi 1
-			// fall through to addition
-ladd: // WCET=26
+			// fall through to ladd_sw
+
+// ==========================================================================
+// ladd: HW (default) and SW implementations
+// ==========================================================================
+ladd:
+ladd_hw:
+			// Stack: ..., a_hi, a_lo, b_hi, b_lo (TOS=b_lo)
+			stop				// pop b_lo -> CU opStack[0]
+			stop				// pop b_hi -> CU opStack[1]
+			stop				// pop a_lo -> CU opStack[2]
+			stop				// pop a_hi -> CU opStack[3]
+			sthw 32				// start LCU ladd (unit=10, op=0)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop				// push result_hi
+			ldop nxt			// push result_lo
+
+			// Pure microcode ladd
+ladd_sw:
 			stm a // bl
 			stm b // bh
 			stm c // al
 			stm d // hh
-			
+
 			ldm c // al>>>1
 			ldi 1
 			ushr
@@ -497,16 +540,33 @@ ladd: // WCET=26
 			ldm c
 			add nxt
 
-lsub: // WCET=38
+// ==========================================================================
+// lsub: HW (default) and SW implementations
+// ==========================================================================
+lsub:
+lsub_hw:
+			// Stack: ..., a_hi, a_lo, b_hi, b_lo (TOS=b_lo)
+			stop				// pop b_lo -> CU opStack[0]
+			stop				// pop b_hi -> CU opStack[1]
+			stop				// pop a_lo -> CU opStack[2]
+			stop				// pop a_hi -> CU opStack[3]
+			sthw 33				// start LCU lsub (unit=10, op=1)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop				// push result_hi
+			ldop nxt			// push result_lo
+
+			// Pure microcode lsub
+lsub_sw:
 			ldi -1 // bl = ~bl
 			xor
 			stm a // bl
 			ldi -1 // bh = ~bh
-			xor			
+			xor
 			stm b // bh
 			stm c // al
 			stm d // ah
-			
+
 			ldm c // al>>>1
 			ldi 1
 			ushr
@@ -544,14 +604,30 @@ lsub: // WCET=38
 			add
 			ldi 1
 			add nxt
-			
-lcmp: // WCET=80 (?)
+
+// ==========================================================================
+// lcmp: HW (default) and SW implementations
+// ==========================================================================
+lcmp:
+lcmp_hw:
+			// Stack: ..., a_hi, a_lo, b_hi, b_lo (TOS=b_lo)
+			stop				// pop b_lo -> CU opStack[0]
+			stop				// pop b_hi -> CU opStack[1]
+			stop				// pop a_lo -> CU opStack[2]
+			stop				// pop a_hi -> CU opStack[3]
+			sthw 37				// start LCU lcmp (unit=10, op=5)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop nxt			// push single result (-1, 0, or 1)
+
+			// Pure microcode lcmp
+lcmp_sw:
 			stm a // bl
 			stm b // bh
 			stm c // al
 			stm d // ah
 
-lcmp_chk_overflow1:
+lcmp_sw_chk_overflow1:
 			ldm d // ah < 0
 			ldi 31
 			shr
@@ -562,12 +638,12 @@ lcmp_chk_overflow1:
 			xor
 			or // !(ah < 0 || bh >= 0)
 			nop
-			bnz lcmp_chk_overflow2
+			bnz lcmp_sw_chk_overflow2
 			nop
 			nop
 			ldi 1 nxt
 
-lcmp_chk_overflow2:
+lcmp_sw_chk_overflow2:
 			ldm d // ah >= 0
 			ldi 31
 			shr
@@ -578,20 +654,20 @@ lcmp_chk_overflow2:
 			shr
 			or // !(ah >= 0 || bh < 0)
 			nop
-			bnz lcmp_sub
+			bnz lcmp_sw_sub
 			nop
 			nop
 			ldi -1 nxt
-lcmp_sub:
+lcmp_sw_sub:
 			ldm a
 			ldi -1 // bl = ~bl
 			xor
 			stm a // bl
 			ldm b
 			ldi -1 // bh = ~bh
-			xor			
+			xor
 			stm b // bh
-			
+
 			ldm c // al>>>1
 			ldi 1
 			ushr
@@ -636,48 +712,63 @@ lcmp_sub:
 			ldm d
 			or
 			nop
-			bnz lcmp_notequal
+			bnz lcmp_sw_notequal
 			nop
 			nop
 			ldi 0 nxt
 
-lcmp_notequal:
+lcmp_sw_notequal:
 			ldm d
 			ldi 31
 			shr
 			nop
-			bnz lcmp_less
+			bnz lcmp_sw_less
 			nop
 			nop
 			ldi 1 nxt
-lcmp_less:
+lcmp_sw_less:
 			ldi -1 nxt
 
+// ==========================================================================
+// lushr: HW (default) and SW implementations
+// ==========================================================================
+lushr:
+lushr_hw:
+			// Stack: ..., val_hi, val_lo, amount (TOS=amount)
+			stop				// pop amount -> CU opStack[0]
+			stop				// pop val_lo -> CU opStack[1]
+			stop				// pop val_hi -> CU opStack[2]
+			sthw 40				// start LCU lushr (unit=10, op=8)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop				// push result_hi
+			ldop nxt			// push result_lo
 
-lushr: // WCET=28
+			// Pure microcode lushr
+lushr_sw:
 			ldi 63 // cnt &= 0x3f
 			and
-			
+
 			dup
-			bnz lushr_not0
+			bnz lushr_sw_not0
 			nop
 			nop
 			pop nxt
 
 			nop // dummy nop to keep offtbl.vhd happy
 
-lushr_not0:
+lushr_sw_not0:
 			dup // cnt > 31?
 			ldi 32
 			sub
 			ldi 31
 			ushr
 			nop
-			bnz lushr_le31
+			bnz lushr_sw_le31
 			stm c // cnt
 			stm a // al
 
-lushr_gt31:
+lushr_sw_gt31:
 			stm b // ah
 
 			ldi 0 // ah = 0
@@ -692,7 +783,7 @@ lushr_gt31:
 			nop // dummy nop to keep offtbl.vhd happy
 			nop // dummy nop to keep offtbl.vhd happy
 
-lushr_le31:
+lushr_sw_le31:
 			stm b // ah
 
 			ldm b // ah = ah >>> cnt
@@ -709,30 +800,46 @@ lushr_le31:
 			shl
 			add nxt
 
-lshr: // WCET=28
+// ==========================================================================
+// lshr: HW (default) and SW implementations
+// ==========================================================================
+lshr:
+lshr_hw:
+			// Stack: ..., val_hi, val_lo, amount (TOS=amount)
+			stop				// pop amount -> CU opStack[0]
+			stop				// pop val_lo -> CU opStack[1]
+			stop				// pop val_hi -> CU opStack[2]
+			sthw 39				// start LCU lshr (unit=10, op=7)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop				// push result_hi
+			ldop nxt			// push result_lo
+
+			// Pure microcode lshr
+lshr_sw:
 			ldi 63 // cnt &= 0x3f
 			and
-			
+
 			dup
-			bnz lshr_not0
+			bnz lshr_sw_not0
 			nop
 			nop
 			pop nxt
 
 			nop // dummy nop to keep offtbl.vhd happy
 
-lshr_not0:
+lshr_sw_not0:
 			dup // cnt > 31?
 			ldi 32
 			sub
 			ldi 31
 			ushr
 			nop
-			bnz lshr_le31
+			bnz lshr_sw_le31
 			stm c // cnt
 			stm a // al
 
-lshr_gt31:
+lshr_sw_gt31:
 			stm b // ah
 
 			ldm b // ah = ah >> 31
@@ -747,7 +854,7 @@ lshr_gt31:
 
 			nop // dummy nop to keep offtbl.vhd happy
 
-lshr_le31:
+lshr_sw_le31:
 			stm b // ah
 
 			ldm b // ah = ah >> cnt
@@ -764,30 +871,46 @@ lshr_le31:
 			shl
 			add nxt
 
-lshl: // WCET=28
+// ==========================================================================
+// lshl: HW (default) and SW implementations
+// ==========================================================================
+lshl:
+lshl_hw:
+			// Stack: ..., val_hi, val_lo, amount (TOS=amount)
+			stop				// pop amount -> CU opStack[0]
+			stop				// pop val_lo -> CU opStack[1]
+			stop				// pop val_hi -> CU opStack[2]
+			sthw 38				// start LCU lshl (unit=10, op=6)
+			wait				// 1st wait: sets pcwait
+			wait				// 2nd wait: pcwait+bsy → stall until CU done
+			ldop				// push result_hi
+			ldop nxt			// push result_lo
+
+			// Pure microcode lshl
+lshl_sw:
 			ldi 63 // cnt &= 0x3f
 			and
-			
+
 			dup
-			bnz lshl_not0
+			bnz lshl_sw_not0
 			nop
 			nop
 			pop nxt
 
 			nop // dummy nop to keep offtbl.vhd happy
 
-lshl_not0:
+lshl_sw_not0:
 			dup // cnt > 31?
 			ldi 32
 			sub
 			ldi 31
 			ushr
 			nop
-			bnz lshl_le31
+			bnz lshl_sw_le31
 			stm c // cnt
 			stm a // al
 
-lshl_gt31:
+lshl_sw_gt31:
 			stm b // ah
 
 			ldm a // ah = al << (cnt-32)
@@ -802,7 +925,7 @@ lshl_gt31:
 			nop // dummy nop to keep offtbl.vhd happy
 			nop // dummy nop to keep offtbl.vhd happy
 
-lshl_le31:
+lshl_sw_le31:
 			stm b // ah
 
 			ldm b // ah = (ah << cnt) + (al >>> (32-cnt))

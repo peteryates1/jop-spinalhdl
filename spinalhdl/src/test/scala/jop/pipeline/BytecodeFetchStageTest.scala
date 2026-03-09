@@ -186,7 +186,8 @@ class BytecodeFetchStageTest extends AnyFunSuite {
 
       // Read NOP at address 0
       val nopAddr = dut.io.jpaddr.toInt
-      assert(nopAddr == 0x224, f"NOP should map to 0x224, got 0x$nopAddr%03x")
+      val expectedNop = JumpTableData.entries(0x00).toInt
+      assert(nopAddr == expectedNop, f"NOP should map to 0x$expectedNop%03X, got 0x$nopAddr%03X")
 
       // Increment to address 1 (iadd)
       dut.io.jfetch #= true

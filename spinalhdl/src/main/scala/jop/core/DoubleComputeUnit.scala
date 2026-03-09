@@ -1,31 +1,25 @@
 /**
   * DoubleComputeUnit — Configurable IEEE 754 Double-Precision FPU for JOP
   *
-  * Extends ComputeUnit with double-precision float operations.
-  * Each operation can be included/excluded via DoubleComputeUnitConfig flags.
+  * Uses ComputeUnitCoreBundle interface with 4-bit operation codes:
+  *   op 0: dadd    op 1: dsub    op 2: dmul    op 3: ddiv
+  *   op 4: dcmpl   op 5: dcmpg   op 6: f2d     op 7: d2f
+  *   op 8: i2d     op 9: d2i     op 10: l2d    op 11: d2l
   *
-  * Operations (selected by JVM bytecode):
-  *   0x63: dadd    0x67: dsub    0x6B: dmul    0x6F: ddiv
-  *   0x87: i2d     0x8E: d2i     0x8A: l2d     0x8F: d2l
-  *   0x8D: f2d     0x90: d2f     0x97: dcmpl   0x98: dcmpg
+  * Operand mapping (from CU operand stack):
+  *   4-operand binary ops (dadd/dsub/dmul/ddiv):
+  *     value1 = operands(3):operands(2) (hi:lo)
+  *     value2 = operands(1):operands(0) (hi:lo)
+  *   2-operand double-input ops (d2i, d2f, d2l, dcmpl, dcmpg):
+  *     double = operands(1):operands(0) (hi:lo)  [for d2i/d2f/d2l]
+  *     For dcmpl/dcmpg: same as binary ops (4 operands)
+  *   1-operand conversion ops (i2d, f2d):
+  *     operands(0) = input value
+  *   2-operand long-input ops (l2d):
+  *     long = operands(1):operands(0) (hi:lo)
   *
-  * Interface: load a/b/c/d/opcode, pulse wr, wait for busy to deassert.
-  * Result appears on io.resultHi:io.resultLo (64 bits). is64 indicates result width.
-  *
-  * Special value handling follows Java semantics:
-  *   - NaN propagation, canonical NaN = 0x7FF8000000000000
-  *   - Inf arithmetic per JLS
-  *   - Subnormals flushed to zero (FTZ)
-  *   - D2I/D2L: truncate toward zero, clamp on overflow, 0 on NaN
-  *   - DCMPL: NaN -> -1;  DCMPG: NaN -> +1
-  *
+  * Special value handling follows Java semantics.
   * Rounding: Round-to-Nearest-Even (RNE)
-  *
-  * Internal mantissa format (55 bits):
-  *   bit 54     = hidden bit (1 for normalized)
-  *   bits 53..2 = 52 fraction bits
-  *   bit 1      = guard bit
-  *   bit 0      = round bit
   */
 package jop.core
 
@@ -44,7 +38,9 @@ case class DoubleComputeUnitConfig(
     withDcmp: Boolean = false   // dcmpl/dcmpg
 )
 
-case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnitConfig()) extends ComputeUnit {
+case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnitConfig()) extends Component {
+
+  val io = ComputeUnitCoreBundle()
 
   // ========================================================================
   // Constants
@@ -111,9 +107,10 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
   io.resultLo := resultReg(31 downto 0)
   io.resultHi := resultReg(63 downto 32)
   io.busy   := (state =/= State.IDLE)
-  // is64: false for d2i(5), d2f(9), dcmpl(10), dcmpg(11)
-  io.is64   := (opcodeReg =/= 5) && (opcodeReg =/= 9) &&
-               (opcodeReg =/= 10) && (opcodeReg =/= 11)
+  // resultCount: 1 for d2i(9), d2f(7), dcmpl(4), dcmpg(5); 2 for everything else
+  io.resultCount := Mux(opcodeReg === 9 || opcodeReg === 7 ||
+                        opcodeReg === 4 || opcodeReg === 5,
+                        U(1, 2 bits), U(2, 2 bits))
 
   // ========================================================================
   // Unpack: IEEE 754 binary64 -> internal
@@ -194,37 +191,56 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
 
     // ----------------------------------------------------------------------
     is(State.IDLE) {
-      when(io.wr) {
-        opaReg := (io.d ## io.c).asBits
-        opbReg := (io.b ## io.a).asBits
+      when(io.start) {
         sticky := False
+        opcodeReg := io.op
 
-        // Decode JVM bytecode to internal opcode
-        switch(io.opcode) {
-          is(B"8'x63") { opcodeReg := 0 }   // dadd
-          is(B"8'x67") { opcodeReg := 1 }   // dsub
-          is(B"8'x6B") { opcodeReg := 2 }   // dmul
-          is(B"8'x6F") { opcodeReg := 3 }   // ddiv
-          is(B"8'x87") { opcodeReg := 4 }   // i2d
-          is(B"8'x8E") { opcodeReg := 5 }   // d2i
-          is(B"8'x8A") { opcodeReg := 6 }   // l2d
-          is(B"8'x8F") { opcodeReg := 7 }   // d2l
-          is(B"8'x8D") { opcodeReg := 8 }   // f2d
-          is(B"8'x90") { opcodeReg := 9 }   // d2f
-          is(B"8'x97") { opcodeReg := 10 }  // dcmpl
-          is(B"8'x98") { opcodeReg := 11 }  // dcmpg
-        }
+        // Default: 4-operand binary ops
+        // value1 = operands(3):operands(2), value2 = operands(1):operands(0)
+        opaReg := (io.operands(3) ## io.operands(2)).asBits
+        opbReg := (io.operands(1) ## io.operands(0)).asBits
 
-        // Bypass UNPACK for conversions from non-double formats
+        // Default route: UNPACK (for binary double ops)
         state := State.UNPACK
+
+        // Single-operand conversions: i2d, f2d
         if (config.withI2D) {
-          when(io.opcode === B"8'x87") { state := State.I2D_EXEC }
-        }
-        if (config.withL2D) {
-          when(io.opcode === B"8'x8A") { state := State.L2D_EXEC }
+          when(io.op === 8) {  // i2d
+            opaReg := io.operands(0).asBits.resize(64)
+            state := State.I2D_EXEC
+          }
         }
         if (config.withF2D) {
-          when(io.opcode === B"8'x8D") { state := State.F2D_EXEC }
+          when(io.op === 6) {  // f2d
+            opaReg := io.operands(0).asBits.resize(64)
+            state := State.F2D_EXEC
+          }
+        }
+
+        // 2-operand double/long-input conversions: d2i, d2f, d2l, l2d
+        if (config.withD2I) {
+          when(io.op === 9) {  // d2i
+            opaReg := (io.operands(1) ## io.operands(0)).asBits
+            state := State.UNPACK
+          }
+        }
+        if (config.withD2F) {
+          when(io.op === 7) {  // d2f
+            opaReg := (io.operands(1) ## io.operands(0)).asBits
+            state := State.UNPACK
+          }
+        }
+        if (config.withD2L) {
+          when(io.op === 11) {  // d2l
+            opaReg := (io.operands(1) ## io.operands(0)).asBits
+            state := State.UNPACK
+          }
+        }
+        if (config.withL2D) {
+          when(io.op === 10) {  // l2d
+            opaReg := (io.operands(1) ## io.operands(0)).asBits
+            state := State.L2D_EXEC
+          }
         }
       }
     }
@@ -249,16 +265,16 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
         when(opcodeReg === 3) { state := State.DIV_INIT }
       }
       if (config.withD2I) {
-        when(opcodeReg === 5) { state := State.D2I_EXEC }
-      }
-      if (config.withD2L) {
-        when(opcodeReg === 7) { state := State.D2L_EXEC }
+        when(opcodeReg === 9) { state := State.D2I_EXEC }
       }
       if (config.withD2F) {
-        when(opcodeReg === 9) { state := State.D2F_EXEC }
+        when(opcodeReg === 7) { state := State.D2F_EXEC }
+      }
+      if (config.withD2L) {
+        when(opcodeReg === 11) { state := State.D2L_EXEC }
       }
       if (config.withDcmp) {
-        when(opcodeReg === 10 || opcodeReg === 11) { state := State.DCMP_EXEC }
+        when(opcodeReg === 4 || opcodeReg === 5) { state := State.DCMP_EXEC }
       }
     }
 
@@ -724,7 +740,8 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
     if (config.withDcmp) {
       is(State.DCMP_EXEC) {
         when(aNaN || bNaN) {
-          resultReg := Mux(opcodeReg === 10, B"32'xFFFFFFFF", B"32'x00000001").asUInt.resize(64)
+          // opcodeReg 4=dcmpl (NaN->-1), 5=dcmpg (NaN->+1)
+          resultReg := Mux(opcodeReg === 4, B"32'xFFFFFFFF", B"32'x00000001").asUInt.resize(64)
           state := State.DONE
         } otherwise {
           when(aZero && bZero) {

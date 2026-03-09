@@ -1,15 +1,16 @@
 /**
   * FloatComputeUnit — Configurable IEEE 754 Single-Precision FPU for JOP
   *
-  * Extends ComputeUnit with single-precision float operations.
-  * Each operation can be included/excluded via FloatComputeUnitConfig flags.
+  * Uses ComputeUnitCoreBundle interface with 4-bit operation codes:
+  *   op 0: fadd    op 1: fsub    op 2: fmul    op 3: fdiv
+  *   op 4: fcmpl   op 5: fcmpg   op 6: i2f     op 7: f2i
   *
-  * Operations (selected by JVM bytecode):
-  *   0x62: fadd    0x66: fsub    0x6A: fmul    0x6E: fdiv
-  *   0x86: i2f     0x8B: f2i     0x95: fcmpl   0x96: fcmpg
+  * Operand mapping (from CU operand stack):
+  *   operands(0) = value2 (TOS at time of first stop)
+  *   operands(1) = value1 (NOS at time of first stop)
   *
-  * Interface: load a/b/opcode, pulse wr, wait for busy to deassert.
-  * Result appears on io.resultLo (32 bits). io.is64 is always false.
+  * For non-commutative ops (fsub, fdiv, fcmpl, fcmpg), operands are swapped
+  * so opaReg=value1(NOS), opbReg=value2(TOS).
   *
   * Special value handling follows Java semantics:
   *   - NaN propagation, canonical NaN = 0x7FC00000
@@ -39,7 +40,9 @@ case class FloatComputeUnitConfig(
     withFcmp: Boolean = false
 )
 
-case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitConfig()) extends ComputeUnit {
+case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitConfig()) extends Component {
+
+  val io = ComputeUnitCoreBundle()
 
   // ========================================================================
   // Constants
@@ -95,7 +98,7 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
   io.resultLo := resultReg(31 downto 0)
   io.resultHi := resultReg(63 downto 32)
   io.busy   := (state =/= State.IDLE)
-  io.is64   := False
+  io.resultCount := U(1, 2 bits)  // always 1 result word for float ops
 
   // ========================================================================
   // Unpack: IEEE 754 -> internal
@@ -191,50 +194,40 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
 
     // ----------------------------------------------------------------------
     is(State.IDLE) {
-      when(io.wr) {
-        opaReg := io.a.asBits
-        opbReg := io.b.asBits
+      when(io.start) {
+        opaReg := io.operands(0).asBits
+        opbReg := io.operands(1).asBits
         sticky := False
 
         // For non-commutative binary ops: swap so opaReg=value1(NOS), opbReg=value2(TOS)
-        // JVM: fsub=value1-value2, fdiv=value1/value2, fcmp compares value1 vs value2
-        // Stack: [value1=NOS, value2=TOS], io.a=TOS=value2, io.b=NOS=value1
-        when(io.opcode === B"8'x66" || io.opcode === B"8'x6E" ||
-             io.opcode === B"8'x95" || io.opcode === B"8'x96") {
-          opaReg := io.b.asBits  // NOS = value1
-          opbReg := io.a.asBits  // TOS = value2
+        // Stack: [value1=NOS, value2=TOS], operands(0)=value2, operands(1)=value1
+        // fsub(1), fdiv(3), fcmpl(4), fcmpg(5): need opaReg=value1, opbReg=value2
+        when(io.op === 1 || io.op === 3 || io.op === 4 || io.op === 5) {
+          opaReg := io.operands(1).asBits  // value1
+          opbReg := io.operands(0).asBits  // value2
         }
 
-        // Decode JVM bytecode to internal opcode
-        switch(io.opcode) {
-          is(B"8'x62") { opcodeReg := 0 }  // fadd
-          is(B"8'x66") { opcodeReg := 1 }  // fsub
-          is(B"8'x6A") { opcodeReg := 2 }  // fmul
-          is(B"8'x6E") { opcodeReg := 3 }  // fdiv
-          is(B"8'x86") { opcodeReg := 4 }  // i2f
-          is(B"8'x8B") { opcodeReg := 5 }  // f2i
-          is(B"8'x95") { opcodeReg := 6 }  // fcmpl
-          is(B"8'x96") { opcodeReg := 7 }  // fcmpg
-        }
+        // Store internal opcode
+        opcodeReg := io.op
 
-        // Route only on recognized float opcodes (unrecognized stay IDLE)
+        // Route to appropriate state (unrecognized ops stay IDLE)
         if (config.withAdd) {
-          when(io.opcode === B"8'x62" || io.opcode === B"8'x66") { state := State.UNPACK }
+          when(io.op === 0 || io.op === 1) { state := State.UNPACK }  // fadd/fsub
         }
         if (config.withMul) {
-          when(io.opcode === B"8'x6A") { state := State.UNPACK }
+          when(io.op === 2) { state := State.UNPACK }  // fmul
         }
         if (config.withDiv) {
-          when(io.opcode === B"8'x6E") { state := State.UNPACK }
-        }
-        if (config.withI2F) {
-          when(io.opcode === B"8'x86") { state := State.I2F_EXEC }
-        }
-        if (config.withF2I) {
-          when(io.opcode === B"8'x8B") { state := State.UNPACK }
+          when(io.op === 3) { state := State.UNPACK }  // fdiv
         }
         if (config.withFcmp) {
-          when(io.opcode === B"8'x95" || io.opcode === B"8'x96") { state := State.UNPACK }
+          when(io.op === 4 || io.op === 5) { state := State.UNPACK }  // fcmpl/fcmpg
+        }
+        if (config.withI2F) {
+          when(io.op === 6) { state := State.I2F_EXEC }  // i2f
+        }
+        if (config.withF2I) {
+          when(io.op === 7) { state := State.UNPACK }  // f2i
         }
       }
     }
@@ -259,10 +252,10 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
         when(opcodeReg === 3) { state := State.DIV_INIT }
       }
       if (config.withF2I) {
-        when(opcodeReg === 5) { state := State.F2I_EXEC }
+        when(opcodeReg === 7) { state := State.F2I_EXEC }
       }
       if (config.withFcmp) {
-        when(opcodeReg === 6 || opcodeReg === 7) { state := State.FCMP_EXEC }
+        when(opcodeReg === 4 || opcodeReg === 5) { state := State.FCMP_EXEC }
       }
     }
 
@@ -610,7 +603,8 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
     if (config.withFcmp) {
       is(State.FCMP_EXEC) {
         when(aNaN || bNaN) {
-          resultReg := Mux(opcodeReg === 6, B"32'xFFFFFFFF", B"32'x00000001").asUInt.resize(64)
+          // opcodeReg 4=fcmpl (NaN->-1), 5=fcmpg (NaN->+1)
+          resultReg := Mux(opcodeReg === 4, B"32'xFFFFFFFF", B"32'x00000001").asUInt.resize(64)
           state := State.DONE
         } otherwise {
           when(aZero && bZero) {

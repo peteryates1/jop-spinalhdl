@@ -97,13 +97,14 @@ public class Instruction implements Serializable {
 			new Instruction("ushr", 0x01c, 0, JmpType.NOP, StackType.POP),
 			new Instruction("shl", 0x01d, 0, JmpType.NOP, StackType.POP),
 			new Instruction("shr", 0x01e, 0, JmpType.NOP, StackType.POP),
-			// new Instruction("shift reserved", 0x1f, 0, JmpType.NOP, StackType.POP),
+			// CU operand stack push (pops TOS into CU)
+			new Instruction("stop", 0x01f, 0, JmpType.NOP, StackType.POP),
 
 			// 5 bits: 0x20-0x3f
 			new Instruction("stm", 0x020, 5, JmpType.NOP, StackType.POP),
 
 			// MMU 4 bit subfield selects function (pop type)
-			new Instruction("sthw", 0x040 + 0, 0, JmpType.NOP, StackType.POP),
+			// sthw moved to 0x140 (NOP class, 6-bit operand for CU unit+op select)
 			new Instruction("stmwa", 0x040 + 1, 0, JmpType.NOP, StackType.POP),
 			new Instruction("stmra", 0x040 + 2, 0, JmpType.NOP, StackType.POP),
 			new Instruction("stmwd", 0x040 + 3, 0, JmpType.NOP, StackType.POP),
@@ -143,9 +144,9 @@ public class Instruction implements Serializable {
 
 			// MMU 4 bit subfield selects function (push type)
 			new Instruction("ldmrd", 0x0e0 + 0, 0, JmpType.NOP, StackType.PUSH),
-			new Instruction("ldmul", 0x0e0 + 1, 0, JmpType.NOP, StackType.PUSH),
+			new Instruction("ldop", 0x0e0 + 1, 0, JmpType.NOP, StackType.PUSH),
 			new Instruction("ldbcstart", 0x0e0 + 2, 0, JmpType.NOP, StackType.PUSH),
-			new Instruction("ldmulh", 0x0e0 + 3, 0, JmpType.NOP, StackType.PUSH),
+			// ldmulh removed (was 0x0e0 + 3, now freed)
 
 			// ld (vp) 3 bits
 			new Instruction("ld0", 0x0e8 + 0, 0, JmpType.NOP, StackType.PUSH),
@@ -175,6 +176,9 @@ public class Instruction implements Serializable {
 			new Instruction("wait", 0x101, 0, JmpType.NOP, StackType.NOP),
 			new Instruction("jbr", 0x102, 0, JmpType.NOP, StackType.NOP),
 			
+			// CU start operation (NOP class, 6-bit operand: unit[5:4] + op[3:0])
+			new Instruction("sthw", 0x140, 6, JmpType.NOP, StackType.NOP),
+
 			// no SP change instructions for MMU
 			// 4 bit subfield selects function (pop type)
 

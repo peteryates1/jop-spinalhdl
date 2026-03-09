@@ -5,7 +5,7 @@ import spinal.core.sim._
 
 /**
   * Interactive simulation for DoubleComputeUnit with trace output.
-  * Run: sbt "Test / runMain jop.io.DoubleComputeUnitSim"
+  * Run: sbt "Test / runMain jop.core.DoubleComputeUnitSim"
   */
 object DoubleComputeUnitSim extends App {
 
@@ -22,19 +22,19 @@ object DoubleComputeUnitSim extends App {
     withDcmp = true
   )
 
-  // JVM bytecodes
-  val DADD  = 0x63
-  val DSUB  = 0x67
-  val DMUL  = 0x6B
-  val DDIV  = 0x6F
-  val I2D   = 0x87
-  val D2I   = 0x8E
-  val L2D   = 0x8A
-  val D2L   = 0x8F
-  val F2D   = 0x8D
-  val D2F   = 0x90
-  val DCMPL = 0x97
-  val DCMPG = 0x98
+  // 4-bit op codes (must match DoubleComputeUnit RTL)
+  val DADD  = 0
+  val DSUB  = 1
+  val DMUL  = 2
+  val DDIV  = 3
+  val DCMPL = 4
+  val DCMPG = 5
+  val F2D   = 6
+  val D2F   = 7
+  val I2D   = 8
+  val D2I   = 9
+  val L2D   = 10
+  val D2L   = 11
 
   SimConfig
     .withWave
@@ -52,23 +52,23 @@ object DoubleComputeUnitSim extends App {
     def long64Bits(l: Long): BigInt   = BigInt(l) & BigInt("FFFFFFFFFFFFFFFF", 16)
 
     val opNames = Map(
-      0x63 -> "dadd",  0x67 -> "dsub",  0x6B -> "dmul",  0x6F -> "ddiv",
-      0x87 -> "i2d",   0x8E -> "d2i",   0x8A -> "l2d",   0x8F -> "d2l",
-      0x8D -> "f2d",   0x90 -> "d2f",   0x97 -> "dcmpl", 0x98 -> "dcmpg"
+      0 -> "dadd",  1 -> "dsub",  2 -> "dmul",  3 -> "ddiv",
+      4 -> "i2d",   5 -> "d2i",   6 -> "l2d",   7 -> "d2l",
+      8 -> "f2d",   9 -> "d2f",  10 -> "dcmpl", 11 -> "dcmpg"
     )
 
-    def runOp(opa: BigInt, opb: BigInt, bytecode: Int, desc: String): BigInt = {
-      val name = opNames.getOrElse(bytecode, f"0x${bytecode}%02X")
-      println(f"--- $desc%-50s  opcode=$name  opa=0x${opa}%016X  opb=0x${opb}%016X ---")
+    def runOp(opa: BigInt, opb: BigInt, op: Int, desc: String): BigInt = {
+      val name = opNames.getOrElse(op, s"op=$op")
+      println(f"--- $desc%-50s  op=$name  opa=0x${opa}%016X  opb=0x${opb}%016X ---")
 
-      dut.io.c #= opa & BigInt("FFFFFFFF", 16)
-      dut.io.d #= (opa >> 32) & BigInt("FFFFFFFF", 16)
-      dut.io.a #= opb & BigInt("FFFFFFFF", 16)
-      dut.io.b #= (opb >> 32) & BigInt("FFFFFFFF", 16)
-      dut.io.opcode   #= bytecode
-      dut.io.wr       #= true
+      dut.io.operands(2) #= opa & BigInt("FFFFFFFF", 16)         // opa_lo (was c)
+      dut.io.operands(3) #= (opa >> 32) & BigInt("FFFFFFFF", 16) // opa_hi (was d)
+      dut.io.operands(0) #= opb & BigInt("FFFFFFFF", 16)         // opb_lo (was a)
+      dut.io.operands(1) #= (opb >> 32) & BigInt("FFFFFFFF", 16) // opb_hi (was b)
+      dut.io.op      #= op
+      dut.io.start   #= true
       dut.clockDomain.waitSampling()
-      dut.io.wr       #= false
+      dut.io.start   #= false
       dut.clockDomain.waitSampling()
 
       var cycles = 0
@@ -78,7 +78,7 @@ object DoubleComputeUnitSim extends App {
       }
 
       val result = (dut.io.resultHi.toBigInt << 32) | dut.io.resultLo.toBigInt
-      val is64 = dut.io.is64.toBoolean
+      val is64 = dut.io.resultCount.toInt > 1
       if (is64) {
         val resultDouble = bitsDouble(result)
         println(f"  result=0x${result}%016X ($resultDouble%.15g)  is64=$is64  cycles=$cycles")
@@ -90,16 +90,16 @@ object DoubleComputeUnitSim extends App {
       result
     }
 
-    def runDouble(a: Double, b: Double, bytecode: Int, desc: String): BigInt =
-      runOp(doubleBits(a), doubleBits(b), bytecode, desc)
+    def runDouble(a: Double, b: Double, op: Int, desc: String): BigInt =
+      runOp(doubleBits(a), doubleBits(b), op, desc)
 
     // Initialize
-    dut.io.a #= 0
-    dut.io.b #= 0
-    dut.io.c #= 0
-    dut.io.d #= 0
-    dut.io.opcode   #= 0
-    dut.io.wr       #= false
+    dut.io.operands(0) #= 0
+    dut.io.operands(1) #= 0
+    dut.io.operands(2) #= 0
+    dut.io.operands(3) #= 0
+    dut.io.op      #= 0
+    dut.io.start   #= false
     dut.clockDomain.waitSampling(5)
 
     println("=" * 80)

@@ -274,6 +274,12 @@ case class DecodeStage(
     // Stall: when True, hold all registered decode outputs (prevent advancement
     // during stack cache rotation stall).  Combinational outputs are unaffected.
     val stall   = in Bool()
+
+    // Compute Unit control outputs (new decoupled CU interface)
+    val cuPush   = out Bool()   // stop instruction: push TOS into CU operand stack
+    val cuStart  = out Bool()   // sthw instruction: start CU operation
+    val cuOpcode = out UInt(6 bits)  // sthw operand: unit[5:4] + op[3:0]
+    val cuPop    = out Bool()   // ldop instruction: pop CU result
   }
 
   // ==========================================================================
@@ -450,6 +456,12 @@ case class DecodeStage(
     val enaJpcReg  = Reg(Bool()) init(False)
     val enaArReg   = Reg(Bool()) init(False)
 
+    // Compute Unit control registers
+    val cuPushReg   = Reg(Bool()) init(False)
+    val cuStartReg  = Reg(Bool()) init(False)
+    val cuOpcodeReg = Reg(UInt(6 bits)) init(0)
+    val cuPopReg    = Reg(Bool()) init(False)
+
     // Gate all registered decode during stall (hold previous values)
     when(!io.stall) {
 
@@ -475,6 +487,11 @@ case class DecodeStage(
     enaVpReg := False
     enaJpcReg := False
     enaArReg := False
+
+    // CU defaults (cleared each cycle unless overridden)
+    cuPushReg := False
+    cuStartReg := False
+    cuPopReg := False
 
     // ========================================================================
     // Instruction-Specific ALU Control
@@ -517,6 +534,12 @@ case class DecodeStage(
       is(B"10'b0000011100") { /* ushr */ }
       is(B"10'b0000011101") { /* shl */ }
       is(B"10'b0000011110") { /* shr */ }
+
+      // stop (0x01F) — CU operand stack push
+      is(B"10'b0000011111") {
+        selLogReg := B"2'b00"    // log = B (passthrough, so A gets old B after pop)
+        cuPushReg := True
+      }
 
       // MMU Operations (0x040-0x04F)
       is(B"10'b0001000000") { /* sthw */ }
@@ -624,6 +647,25 @@ case class DecodeStage(
       selLmuxReg := B"3'b101"  // Register output
     }
 
+    // Override shift detection for stop instruction (0x01F)
+    // ir(9:2) = 00000111 matches the shift range, but stop needs logic unit path
+    when(ir === B"10'b0000011111") {
+      selLmuxReg := B"3'b000"  // logic unit (not shifter)
+    }
+
+    // sthw range 0x140-0x17F (ir[9:6]=0101): start CU operation
+    // NOP class (no push/pop), so enaB already False via !isPush && !isPop check below
+    when(ir(9 downto 6) === B"4'b0101") {
+      cuStartReg := True
+      cuOpcodeReg := ir(5 downto 0).asUInt
+      enaAReg := False
+    }
+
+    // ldop at 0x0E1 (same slot as ldmul): pop CU result
+    when(ir === B"10'b0011100001") {
+      cuPopReg := True
+    }
+
     // ========================================================================
     // B Mux and M Mux Select
     // ========================================================================
@@ -667,6 +709,12 @@ case class DecodeStage(
     io.enaVp := enaVpReg
     io.enaJpc := enaJpcReg
     io.enaAr := enaArReg
+
+    // CU control outputs
+    io.cuPush := cuPushReg
+    io.cuStart := cuStartReg
+    io.cuOpcode := cuOpcodeReg
+    io.cuPop := cuPopReg
   }
 
   // ==========================================================================

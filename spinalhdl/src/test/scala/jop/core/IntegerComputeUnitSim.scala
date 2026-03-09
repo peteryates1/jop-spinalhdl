@@ -15,10 +15,10 @@ object IntegerComputeUnitSim extends App {
     withRem = true
   )
 
-  // JVM bytecodes
-  val IMUL = 0x68
-  val IDIV = 0x6C
-  val IREM = 0x70
+  // 4-bit op codes
+  val IMUL = 0
+  val IDIV = 1
+  val IREM = 2
 
   SimConfig
     .withWave
@@ -31,19 +31,19 @@ object IntegerComputeUnitSim extends App {
     def int32Bits(i: Int): BigInt = BigInt(i.toLong & 0xFFFFFFFFL)
 
     val opNames = Map(
-      0x68 -> "imul", 0x6C -> "idiv", 0x70 -> "irem"
+      0 -> "imul", 1 -> "idiv", 2 -> "irem"
     )
 
-    def runOp(opa: BigInt, opb: BigInt, bytecode: Int, desc: String): BigInt = {
-      val name = opNames.getOrElse(bytecode, f"0x${bytecode}%02X")
-      println(f"--- $desc%-55s  opcode=$name  opa=0x${opa}%08X  opb=0x${opb}%08X ---")
+    def runOp(opa: BigInt, opb: BigInt, op: Int, desc: String): BigInt = {
+      val name = opNames.getOrElse(op, s"op=$op")
+      println(f"--- $desc%-55s  op=$name  opa=0x${opa}%08X  opb=0x${opb}%08X ---")
 
-      dut.io.a #= opa
-      dut.io.b #= opb
-      dut.io.opcode   #= bytecode
-      dut.io.wr       #= true
+      dut.io.operands(0) #= opa
+      dut.io.operands(1) #= opb
+      dut.io.op          #= op
+      dut.io.start       #= true
       dut.clockDomain.waitSampling()
-      dut.io.wr       #= false
+      dut.io.start       #= false
       dut.clockDomain.waitSampling()
 
       var cycles = 0
@@ -62,10 +62,10 @@ object IntegerComputeUnitSim extends App {
     }
 
     // Initialize
-    dut.io.a #= 0
-    dut.io.b #= 0
-    dut.io.opcode   #= 0
-    dut.io.wr       #= false
+    dut.io.operands(0) #= 0
+    dut.io.operands(1) #= 0
+    dut.io.op          #= 0
+    dut.io.start       #= false
     dut.clockDomain.waitSampling(5)
 
     println("=" * 80)

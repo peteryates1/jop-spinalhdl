@@ -2,14 +2,44 @@
 
 ## Overview
 
-Replace the current `stmul`/`ldmul`/`ldmulh` mechanism with a general-purpose
-compute unit interface using three microcode instructions: `stop`, `sthw`,
-and `ldop`. The compute unit has an internal operand stack, eliminating the
-need to expand the TOS register file beyond the current 2 registers (A, B).
+Refactor the compute unit interface from the current JVM-bytecode-driven
+approach to a decoupled architecture using three microcode instructions:
+`stop`, `sthw`, and `ldop`. The compute unit has an internal operand stack,
+eliminating the need to expand the TOS register file beyond 2 registers (A, B).
 
 Four compute units share the interface: ICU (integer), FCU (float), LCU
 (long), and DCU (double). The `sthw` instruction encodes a 6-bit operation
 code that selects the unit and operation in hardware.
+
+### Why Change the Current Implementation?
+
+The current implementation (merged in commits 832cee8–ec9d339) uses the JVM
+bytecode from `bcfetch.io.jinstr_out` as the CU opcode. This ties the CU
+operation to whichever JVM bytecode triggered the microcode. If `fdiv`'s
+microcode needs to use an integer multiply (e.g., for a Newton-Raphson step),
+it cannot — the bytecode says `fdiv`, so the CU sees `fdiv`.
+
+The 6-bit operand in `sthw` decouples CU operation selection from the JVM
+bytecode entirely. Microcode for any bytecode can invoke any CU operation.
+The internal operand stack (`stop`) also lets microcode build up operands
+incrementally rather than requiring all values in specific stack positions.
+
+### Implementation Status (2026-03-09)
+
+The decoupled CU interface is fully implemented and verified:
+
+- **All four CU cores** (ICU, FCU, LCU, DCU) implemented and tested
+- **`ComputeUnitTop`** wraps all four units with shared 4-deep operand stack and result sequencing
+- **Three microcode instructions**: `stop` (0x01F, POP), `sthw` (0x140+6bit, NOP), `ldop` (0x0E1, PUSH)
+- **`ComputeUnitCoreBundle`** per-unit interface: `operands(4)`, `op(4-bit)`, `start`, `busy`, `resultLo/Hi`, `resultCount`
+- **Pipeline wiring** in `JopPipeline.scala`: CU busy wired to `fetch.io.bsy` (wait-based stall)
+- **Superset ROM**: Both `_hw` and `_sw` handlers coexist unconditionally; 13 `altEntries` for elaboration-time selection
+- **52/52 BRAM JVM tests pass**, 568/570 unit tests pass
+
+Bugs found and fixed during implementation:
+- **LCU shift operand swap**: `operands(1)##operands(2)` gave val_lo as MSB; fixed to `operands(2)##operands(1)`
+- **lneg operand order**: Push order swapped (value first into opbReg, 0L into opaReg) — was computing `value - 0` instead of `0 - value`
+- **CU busy 1-cycle gap**: Added `io.start` to busy signal for immediate stall on dispatch cycle
 
 ## Instructions
 
@@ -28,7 +58,7 @@ as pairs of 32-bit words.
 
 ### `sthw` — Start Hardware
 
-- **Encoding**: `0x120` with 6-bit operand (NOP class, covers `0x120-0x15F`)
+- **Encoding**: `0x140` with 6-bit operand (NOP class, covers `0x140-0x17F`)
 - **Stack effect**: NOP (no stack change)
 - **Action**: The 6-bit operand encodes the compute unit and operation.
   Bits [5:4] select the unit (ICU/FCU/LCU/DCU), bits [3:0] select the
@@ -125,17 +155,20 @@ Cross-width conversions (i2d, d2i, l2d, d2l, f2d, d2f) are placed in the
 DCU because they require double-precision hardware. The operand and result
 counts vary per operation; the CU knows from the opcode how many to expect.
 
-### Operations that stay in microcode
+### Operations that stay in microcode (no CU variant)
 
 These operations have no hardware benefit or are trivial:
 
 | Operation      | Microcode cycles | Rationale                          |
 |----------------|:----------------:|------------------------------------|
-| land, lor, lxor|        8         | Same as CU path (4 stop+sthw+2 ldop+1 nxt) |
-| lneg           |        8         | Invert + add 1                     |
+| land, lor, lxor|        8         | Same as CU path (4 stop+sthw+2 wait+2 ldop) |
 | i2l            |        4         | Sign-extend (dup, shr 31)          |
 | l2i            |        3         | Truncate (stm, pop, ldm)           |
 | fneg, dneg     |      3-5         | Flip sign bit                      |
+
+Note: `lneg` has both HW and SW variants. The HW variant pushes 0L then the
+value, uses `sthw CU_LSUB` (0 - value). The SW variant uses the original
+microcode invert + add 1 approach. Selected via `altEntries` like other ops.
 
 ## Microcode Sequences
 
@@ -147,13 +180,17 @@ These operations have no hardware benefit or are trivial:
 imul:
         stop                ;  ..., value1            value2
         stop                ;  ...                    value2, value1
-        sthw 0              ;  start ICU multiply, busy stalls
+        sthw 0              ;  start ICU multiply, busy stalls via bsy
+        wait                ;  re-fetches while CU busy
+        wait                ;  second wait for result stability
         ldop nxt            ;  ..., result            (empty)
 
 fadd:
         stop                ;  ..., value1            value2
         stop                ;  ...                    value2, value1
-        sthw 16             ;  start FCU add, busy stalls
+        sthw 16             ;  start FCU add, busy stalls via bsy
+        wait
+        wait
         ldop nxt            ;  ..., result            (empty)
 ```
 
@@ -191,7 +228,9 @@ ladd:
         stop                ;  ..., a_hi, a_lo              b_lo, b_hi
         stop                ;  ..., a_hi                    b_lo, b_hi, a_lo
         stop                ;  ...                          b_lo, b_hi, a_lo, a_hi
-        sthw 32             ;  start LCU add, busy stalls
+        sthw 32             ;  start LCU add, busy stalls via bsy
+        wait                ;  re-fetches while CU busy
+        wait                ;  second wait for result stability
         ldop                ;  ..., result_hi
         ldop nxt            ;  ..., result_hi, result_lo
 
@@ -201,6 +240,8 @@ dadd:
         stop
         stop
         sthw 48             ;  start DCU add
+        wait
+        wait
         ldop
         ldop nxt
 ```
@@ -214,6 +255,8 @@ lcmp:
         stop
         stop
         sthw 37             ;  start LCU compare
+        wait
+        wait
         ldop nxt            ;  ..., result (-1, 0, or 1)
 ```
 
@@ -227,6 +270,8 @@ lshl:
         stop                ;  ..., val_hi                  amount, val_lo
         stop                ;  ...                          amount, val_lo, val_hi
         sthw 38             ;  start LCU shift left
+        wait
+        wait
         ldop                ;  ..., result_hi
         ldop nxt            ;  ..., result_hi, result_lo
 
@@ -235,6 +280,8 @@ lushr:
         stop
         stop
         sthw 40             ;  start LCU logical shift right
+        wait
+        wait
         ldop
         ldop nxt
 ```
@@ -246,12 +293,16 @@ lushr:
 i2d:
         stop                ;  pop int → CU
         sthw 56             ;  start DCU i2d (lossless: 32-bit int fits in 53-bit mantissa)
+        wait
+        wait
         ldop                ;  push double_hi
         ldop nxt            ;  push double_lo
 
 f2d:
         stop                ;  pop float → CU
         sthw 54             ;  start DCU f2d
+        wait
+        wait
         ldop                ;  push double_hi
         ldop nxt            ;  push double_lo
 
@@ -260,12 +311,16 @@ d2i:
         stop                ;  pop double_lo → CU
         stop                ;  pop double_hi → CU
         sthw 57             ;  start DCU d2i
+        wait
+        wait
         ldop nxt            ;  push int result
 
 d2f:
         stop                ;  pop double_lo → CU
         stop                ;  pop double_hi → CU
         sthw 55             ;  start DCU d2f
+        wait
+        wait
         ldop nxt            ;  push float result
 
 ; 2 operands (64-bit) → 2 results (64-bit)
@@ -273,6 +328,8 @@ l2d:
         stop                ;  pop long_lo → CU
         stop                ;  pop long_hi → CU
         sthw 58             ;  start DCU l2d
+        wait
+        wait
         ldop                ;  push double_hi
         ldop nxt            ;  push double_lo
 
@@ -280,11 +337,15 @@ d2l:
         stop                ;  pop double_lo → CU
         stop                ;  pop double_hi → CU
         sthw 59             ;  start DCU d2l
+        wait
+        wait
         ldop                ;  push long_hi
         ldop nxt            ;  push long_lo
 ```
 
 ## Compute Unit Bundle
+
+### New Interface
 
 ```scala
 case class ComputeUnitBundle() extends Bundle {
@@ -297,6 +358,36 @@ case class ComputeUnitBundle() extends Bundle {
   val busy   = out Bool()           // stall pipeline until operation complete
 }
 ```
+
+### Old Interface (replaced)
+
+The old interface sampled 4 registers simultaneously on `wr` and used the 8-bit JVM bytecode for operation selection. This has been fully replaced by the new decoupled interface above.
+
+```scala
+// REMOVED — replaced by ComputeUnitBundle (din/push/pop) + ComputeUnitCoreBundle (per-unit)
+case class OldComputeUnitBundle() extends Bundle {
+  val a        = in UInt (32 bits)   // TOS
+  val b        = in UInt (32 bits)   // NOS
+  val c        = in UInt (32 bits)   // TOS-2
+  val d        = in UInt (32 bits)   // TOS-3
+  val wr       = in Bool ()          // sthw asserted
+  val opcode   = in Bits (8 bits)    // JVM bytecode
+  val resultLo = out UInt (32 bits)
+  val resultHi = out UInt (32 bits)
+  val is64     = out Bool ()
+  val busy     = out Bool ()
+}
+```
+
+### Key Differences
+
+| Aspect             | Current (a/b/c/d)              | New (din/push/pop)              |
+|--------------------|--------------------------------|---------------------------------|
+| Operand delivery   | 4 registers sampled on `wr`    | Sequential via `stop` + internal stack |
+| Operation select   | 8-bit JVM bytecode             | 6-bit sthw operand (unit + op)  |
+| Result retrieval   | `resultLo`/`resultHi` + `is64` | Sequential `ldop` pops from result stack |
+| Unit routing       | `lastWasFloat` register mux    | `opcode[5:4]` hardware mux      |
+| Decoupling         | Tied to JVM bytecode           | Any microcode can invoke any CU op |
 
 ### Top-Level Dispatch
 
@@ -347,7 +438,8 @@ class ComputeUnitTop extends Component {
     3 -> dcu.io.dout
   )
 
-  io.busy := icu.io.busy || fcu.io.busy || lcu.io.busy || dcu.io.busy
+  // Include io.start in busy for immediate stall on dispatch cycle
+  io.busy := icu.io.busy || fcu.io.busy || lcu.io.busy || dcu.io.busy || io.start
 }
 ```
 
@@ -401,28 +493,36 @@ Changes to `DecodeStage.scala`:
    case `is(B"10'b0000011111")`. Generates `cuPush` signal (1 bit). No ALU
    or shifter operation — just pops TOS into the CU.
 
-2. **`sthw`** at `0x120-0x15F`: New NOP instruction with 6-bit operand.
-   Decoded by `ir(9 downto 6) === B"4'b0100"` (NOP class) and
-   `ir(5) === False || ir(5) === True` within the `0x120-0x15F` range.
+2. **`sthw`** at `0x140-0x17F`: New NOP instruction with 6-bit operand.
+   Decoded by `ir(9 downto 6) === B"4'b0101"` (NOP class, currently unused).
    Generates `cuStart` signal (1 bit). The 6-bit operand `ir(5 downto 0)`
    is passed to the CU as the operation code. `enaA := False` (no A
    register update).
 
 3. **`ldop`** at `0x0E1`: Already decoded as `ldmul` with PUSH behavior.
    The `din` mux selects `ir(1:0) == 1` for this slot. Change the mux
-   input from `mul.io.dout` to `cu.io.dout`. Add `cuPop` signal (1 bit).
+   input from `cuResultLo` to `cu.io.dout`. Add `cuPop` signal (1 bit).
 
-4. **`stmul`** at `0x040`: Retained for backward compatibility during
-   migration. Eventually removed.
+4. **Remove `hwWr`**: The current `hwWr` signal (asserted for `sthw` at
+   `0x040`) is replaced by `cuStart` (for `sthw` at `0x140`). The `0x040`
+   MMU slot becomes available for reuse.
 
-5. **`ldmulh`** at `0x0E3`: Retained for backward compatibility during
-   migration. Eventually removed when `lmul` moves to the LCU.
+5. **`ldmulh`** at `0x0E3`: Currently wires to `cuResultHi`. With the new
+   interface, multi-word results are retrieved by multiple `ldop` calls, so
+   this slot is freed. Can be repurposed or left as a duplicate `ldop`.
 
 ### Pipeline Wiring (JopPipeline.scala)
 
 ```scala
-// New compute unit (alongside old Mul during migration)
-val cu = new ComputeUnitTop()
+// Compute unit with all four cores (ICU, FCU, LCU, DCU)
+val cu = ComputeUnitTop(
+  icuConfig = IntegerComputeUnitConfig(withMul = true, withDiv = true, withRem = true),
+  fcuConfig = FloatComputeUnitConfig(withAdd = true, withMul = true, withDiv = true,
+    withI2F = true, withF2I = true, withFcmp = true),
+  lcuConfig = LongComputeUnitConfig(withMul = true, withDiv = true, withRem = true, withShift = true),
+  dcuConfig = DoubleComputeUnitConfig(withAdd = true, withMul = true, withDiv = true,
+    withI2D = true, withD2I = true, withL2D = true, withD2L = true, withF2D = true, withD2F = true, withDcmp = true)
+)
 
 // Operand feed: TOS (A register) → CU
 cu.io.din := stack.io.aout.asUInt
@@ -430,88 +530,207 @@ cu.io.din := stack.io.aout.asUInt
 // stop at 0x01F
 cu.io.push := decode.io.cuPush
 
-// sthw at 0x120-0x15F — 6-bit operand from instruction
+// sthw at 0x140-0x17F — 6-bit operand from instruction
 cu.io.opcode := decode.io.cuOpcode   // ir(5 downto 0), registered
 cu.io.start  := decode.io.cuStart
 
 // ldop at 0x0E1
 cu.io.pop := decode.io.cuPop
 
-// During migration: cuActive flag selects between old Mul and new CU
-// on din mux slot 1. Set on sthw, cleared on ldop.
-val cuActive = Reg(Bool()) init(False)
-when(decode.io.cuStart) { cuActive := True }
-when(decode.io.cuPop)   { cuActive := False }
-
+// din mux — slot 1 reads from CU result stack
 stack.io.din := dinMuxSel.mux(
   0 -> io.memRdData,
-  1 -> Mux(cuActive, cu.io.dout.asBits, mul.io.dout.asBits),
+  1 -> cu.io.dout.asBits,
   2 -> io.memBcStart.asBits.resized,
-  3 -> mul.io.doutH.asBits      // kept for old lmul during migration
+  3 -> B(0, 32 bits)
 )
 
-// CU busy → pipeline stall (unconditional freeze via extStall)
-fetch.io.extStall  := stackRotBusy || cu.io.busy
-decode.io.stall    := stackRotBusy || cu.io.busy
-bcfetch.io.stall   := stackRotBusy || cu.io.busy
+// CU busy → wait-based stall (via bsy, not extStall)
+fetch.io.bsy := decode.io.wrDly || io.memBusy || stackRotBusy || cu.io.busy
+fetch.io.extStall := stackRotBusy
+decode.io.stall   := stackRotBusy
+bcfetch.io.stall  := stackRotBusy
 ```
+
+### What Gets Removed
+
+- **`lastWasFloat` register** and associated JVM bytecode comparison chain
+- **`bcfetch.io.jinstr_out`** connection to CU opcode
+- **`intCu`/`floatCu` separate instantiations** — replaced by single `ComputeUnitTop`
+- **`cuResultLo`/`cuResultHi` forward declarations** — replaced by `cu.io.dout`
+- **`config.needsFloatCompute` conditional** — `ComputeUnitTop` always contains all units
 
 ### Stall Strategy
 
-The CU asserts `busy` after `sthw`, and the pipeline freezes via `extStall`
-(unconditional — no `wait` instructions needed). When `busy` deasserts, the
-pipeline resumes and `ldop` executes immediately:
+The CU asserts `busy` after `sthw` (including on the dispatch cycle itself via
+`io.start || anyUnitBusy`). The pipeline freezes via `fetch.io.bsy` (wait-based
+stall — the `wait` instruction checks `bsy` and re-fetches itself until clear).
+Microcode uses a double-wait pattern:
 
 ```asm
 ladd:   stop
         stop
         stop
         stop
-        sthw 32     ;  CU starts, asserts busy, pipeline freezes
-        ldop        ;  stalled until busy deasserts, then pushes result
-        ldop nxt
+        sthw 32     ;  CU starts, asserts busy
+        wait        ;  stall: re-fetches while busy
+        wait        ;  second wait ensures result is stable
+        ldop        ;  push result_hi
+        ldop nxt    ;  push result_lo
 ```
 
-This handles variable-latency operations (division, FP ops) without
-worst-case padding in the microcode.
+The double-wait is needed because `bsy` deasserts one cycle before the result
+registers are stable. This handles variable-latency operations (division, FP ops)
+without worst-case padding in the microcode.
+
+Note: `extStall` is NOT used for CU busy — only for stack rotation. CU busy
+goes through `fetch.io.bsy` alongside `wrDly` and `memBusy`.
 
 ## Cycle Count Summary
 
-| Operation    | Current       | New (CU)         | Speedup |
-|--------------|:-------------:|-----------------:|--------:|
-| imul (DSP)   |    4 cycles   |     4 + 1 busy   |   1.0×  |
-| idiv/irem    |   34 cycles   |     4 + latency   |   ~2×  |
-| fadd/fsub    |   10 cycles   |     4 + latency   |   ~2×  |
-| fmul         |   10 cycles   |     4 + latency   |   ~2×  |
-| fdiv         |   10 cycles   |     4 + latency   |   ~2×  |
-| i2f/f2i      |   10 cycles   |     3 + latency   |   ~3×  |
-| ladd         |   26 cycles   |     7 + 1 busy    |   3.3×  |
-| lsub         |   38 cycles   |     7 + 1 busy    |   4.8×  |
-| lcmp         |  ~80 cycles   |     6 + 1 busy    |  10.0×  |
-| lmul (DSP)   |  ~44 cycles   |     7 + latency   |   ~5×  |
-| lshl/lshr    |   28 cycles   |     6 + latency   |   ~4×  |
-| lushr        |   28 cycles   |     6 + latency   |   ~4×  |
-| dadd/dmul    |  SW trap      |     7 + latency   |   N/A  |
-| i2d          |  SW trap      |     4 + latency   |   N/A  |
-| d2i          |  SW trap      |     4 + latency   |   N/A  |
+Cycle counts for all CU-supported operations across three implementation tiers.
 
-Note: "7 cycles" for 64-bit binary ops = 4 `stop` + 1 `sthw` + 2 `ldop`.
-"6 cycles" for long shifts = 3 `stop` + 1 `sthw` + 2 `ldop`. Busy stall
-absorbs compute latency without additional microcode instructions.
+**Java trap cost model** (for WCET): sys_noim dispatch = ~16 cycles,
+invokestatic overhead = ~52 cycles, ireturn = ~23 cycles. Total per method
+call: **~75 cycles** (invoke + return), plus the method body. SoftFloat
+methods make multiple nested calls (isNaN, unpackMantissa, pack, etc.), each
+adding ~75 cycles of call overhead. Java trap estimates below count the full
+call chain on the normal path (no NaN/infinity/zero special cases).
+
+**CU cost model**: microcode overhead (stop/sthw/wait/ldop) + hardware busy
+cycles. The `wait`/`wait` pair adds 2 fixed cycles; busy stall is absorbed
+by `wait` re-fetch (not additional cycles beyond the busy count).
+
+### Microcode overhead patterns
+
+| Pattern | Microcode | Total overhead |
+|---------|-----------|:--------------:|
+| 32-bit, 2 op, 1 result | stop stop sthw wait wait ldop | 6 |
+| 32-bit, 1 op, 1 result | stop sthw wait wait ldop | 5 |
+| 64-bit, 4 op, 2 result | stop stop stop stop sthw wait wait ldop ldop | 9 |
+| 64-bit, 4 op, 1 result | stop stop stop stop sthw wait wait ldop | 8 |
+| 64-bit shift, 3 op, 2 result | stop stop stop sthw wait wait ldop ldop | 8 |
+| 64-bit, 2 op, 2 result | stop stop sthw wait wait ldop ldop | 7 |
+| 64-bit, 2 op, 1 result | stop stop sthw wait wait ldop | 6 |
+| 32-bit, 1 op, 2 result | stop sthw wait wait ldop ldop | 6 |
+
+### ICU — Integer Compute Unit
+
+| Operation | Java trap | Microcode (SW) | CU total | HW busy | Notes |
+|-----------|:---------:|:--------------:|:--------:|:-------:|-------|
+| imul | -- (IMP_ASM) | ~775 (shift-add loop, 32 iter) | 6 + 18 = **24** | 18 | Radix-4, 16 iterations |
+| idiv | ~100+ dispatch | -- | 10 + 36 = **46** | 36 | Binary restoring, 32 iter. Microcode adds 4 cycles for div-by-zero check (dup/bnz/nop/nop) |
+| irem | ~100+ dispatch | -- | 10 + 36 = **46** | 36 | Same divider as idiv |
+
+imul is IMP_ASM (always microcode, never Java trap) — no Java fallback exists.
+imul_sw is a naive 32-iteration shift-and-add: each iteration costs 22 cycles
+(bit=0) or 26 cycles (bit=1) due to branch delay slot overhead (bnz/bz each
+require 2 nop delay slots = 9 wasted cycles per iteration on branching alone).
+This makes imul the single biggest CU win: **24 vs ~775 cycles (32x speedup)**.
+
+idiv/irem have no pure microcode (SW) implementation — div-by-zero falls
+through to Java trap, non-zero goes to CU. Total CU path: 4 (zero check) +
+6 (stop/sthw/wait/ldop) + 36 (busy) = 46 cycles.
+
+### FCU — Float Compute Unit
+
+| Operation | Java trap | Microcode (SW) | CU total | HW busy | Notes |
+|-----------|:---------:|:--------------:|:--------:|:-------:|-------|
+| fadd | ~1500 (SoftFloat32) | -- | 6 + 6 = **12** | 5-6 | ADD pipeline: unpack/align/shift/exec/norm/round |
+| fsub | ~1500 (SoftFloat32) | -- | 6 + 6 = **12** | 5-6 | Same pipeline as fadd |
+| fmul | ~1400 (SoftFloat32) | -- | 6 + 4 = **10** | 4 | MUL: unpack/step1/step2/round |
+| fdiv | ~1600 (SoftFloat32) | -- | 6 + 30 = **36** | 30 | 25 division iterations + overhead |
+| fcmpl | ~600 (SoftFloat32) | -- | 6 + 2 = **8** | 2 | Unpack + compare |
+| fcmpg | ~600 (SoftFloat32) | -- | 6 + 2 = **8** | 2 | Unpack + compare |
+| i2f | ~800 (SoftFloat32) | -- | 5 + 3 = **8** | 3 | 1 operand. I2F_EXEC/shift/round |
+| f2i | ~700 (SoftFloat32) | -- | 5 + 2 = **7** | 2 | 1 operand. Unpack + F2I_EXEC |
+
+Java trap costs for SoftFloat32 (normal path, no NaN/Inf/zero): sys_noim
+dispatch (~75) + method body + nested calls. Each SoftFloat method calls
+isNaN (×2), isInfinite (×2), unpackMantissa (×2), unpackExponent (×2),
+pack → countLeadingZeros → roundingRightShift. Each nested call adds ~75
+cycles overhead. fmul additionally calls lmul for mantissa multiplication.
+
+No microcode (SW) path exists for float ops — it's either CU hardware or
+Java trap (SoftFloat32). The old I/O-based BmbFpu peripheral has been removed.
+
+### LCU — Long Compute Unit
+
+| Operation | Java trap | Microcode (SW) | CU total | HW busy | Notes |
+|-----------|:---------:|:--------------:|:--------:|:-------:|-------|
+| ladd | -- | 26 (half-add with carry) | 9 + 2 = **11** | 2 | Combinational add, 1-cycle exec |
+| lsub | -- | 37 (negate + half-add) | 9 + 2 = **11** | 2 | Combinational sub, 1-cycle exec |
+| lneg | -- | 34 (xor + fall-through to ladd_sw) | 13 + 2 = **15** | 2 | HW uses lsub(0 - value): stm(2)+ldm(2)+stop(4)+sthw+wait(2)+ldop(2) |
+| lcmp | -- | ~25 (branch-heavy, sign checks) | 8 + 2 = **10** | 2 | Combinational compare, 1-cycle exec |
+| lmul | ~1200 (Java f_lmul) | **BROKEN** (see note) | 9 + 34 = **43** | 34 | Radix-4, 32 iterations |
+| ldiv | ~1500 (Java f_ldiv) | -- | 9 + 68 = **77** | 68 | Binary restoring, 64 iterations |
+| lrem | ~1500 (Java f_lrem) | -- | 9 + 68 = **77** | 68 | Same divider as ldiv |
+| lshl | -- | 6-23 (path-dependent) | 8 + 2 = **10** | 2 | Combinational barrel shift |
+| lshr | -- | 6-23 (path-dependent) | 8 + 2 = **10** | 2 | Combinational barrel shift |
+| lushr | -- | 6-23 (path-dependent) | 8 + 2 = **10** | 2 | Combinational barrel shift |
+
+**lmul_sw is currently broken.** It uses the old `sthw`/`ldmul`/`ldmulh`
+interface to perform 3 partial-product 32×32→64 multiplies (P0=a0*b0,
+P1=a1*b0, P2=a0*b1), relying on `ldmulh` to get the upper 32 bits. The
+new ICU only produces the lower 32 bits (`resultCount=1`) and the old
+`sthw`(0x040)/`ldmul`/`ldmulh` instructions are no longer wired. Options:
+(a) extend ICU imul to output 64 bits (resultCount=2) and rewrite lmul_sw
+to use `stop`/`stop`/`sthw 0`/`wait`/`wait`/`ldop`/`ldop`, (b) rewrite as
+pure shift-and-add (~1500+ cycles), or (c) remove lmul_sw entirely (lmul
+always requires LCU or falls to Java trap). ldiv/lrem have no pure
+microcode — Java trap only when CU disabled. Shift SW costs: cnt=0
+early exit (6), cnt 1-31 (23), cnt 32-63 (12).
+
+### DCU — Double Compute Unit
+
+| Operation | Java trap | Microcode (SW) | CU total | HW busy | Notes |
+|-----------|:---------:|:--------------:|:--------:|:-------:|-------|
+| dadd | ~3000-5000 (SoftFloat64) | -- | 9 + 5 = **14** | 4-5 | ADD pipeline: unpack/align/exec/norm/round |
+| dsub | ~3000-5000 (SoftFloat64) | -- | 9 + 5 = **14** | 4-5 | Same pipeline as dadd |
+| dmul | ~3000-5000 (SoftFloat64) | -- | 9 + 4 = **13** | 4 | MUL: unpack/step1/step2/round |
+| ddiv | ~4000-6000 (SoftFloat64) | -- | 9 + 56 = **65** | 56 | 54 division iterations + overhead |
+| dcmpl | ~1500 (SoftFloat64) | -- | 8 + 2 = **10** | 2 | Unpack + compare |
+| dcmpg | ~1500 (SoftFloat64) | -- | 8 + 2 = **10** | 2 | Unpack + compare |
+| i2d | ~800 (SoftFloat64) | -- | 6 + 2 = **8** | 2 | 1 op in, 2 results out. Combinational |
+| d2i | ~1000 (SoftFloat64) | -- | 6 + 2 = **8** | 2 | 2 ops in, 1 result out. Unpack + exec |
+| l2d | ~1200 (SoftFloat64) | -- | 7 + 3 = **10** | 2-3 | 2 ops in, 2 results out. May need rounding |
+| d2l | ~1000 (SoftFloat64) | -- | 7 + 2 = **9** | 2 | 2 ops in, 2 results out. Unpack + exec |
+| f2d | ~600 (SoftFloat64) | -- | 6 + 2 = **8** | 2 | 1 op in, 2 results out. Combinational |
+| d2f | ~1000 (SoftFloat32) | -- | 6 + 3 = **9** | 3 | 2 ops in, 1 result out. Unpack + exec + round |
+
+All double operations are Java traps (SoftFloat64) when DCU is disabled —
+there are no microcode-only implementations. Java trap costs are extremely
+high because SoftFloat64 internally uses 64-bit long arithmetic (ladd, lsub,
+lmul, lshl, lshr, lushr, lcmp) at every step. Each long operation is itself
+either a microcode handler (26-37 cycles for add/sub, ~775 for lmul) or
+another Java trap if LCU is disabled. The estimates above assume LCU is
+enabled (microcode long ops); without LCU, costs roughly double.
+
+### Operations with no CU support (microcode only)
+
+| Operation | Microcode cycles | Notes |
+|-----------|:----------------:|-------|
+| land | 8 | Save/restore 4 regs, AND each half |
+| lor | 8 | Save/restore 4 regs, OR each half |
+| lxor | 8 | Save/restore 4 regs, XOR each half |
+| i2l | 4 | Sign-extend: dup, shr 31 |
+| l2i | 3 | Truncate: stm, pop, ldm |
+| fneg | 3 | XOR sign bit |
+| dneg | 5 | XOR sign bit of high word |
 
 ## Encoding Summary
 
 | Instruction | Encoding      | Type | Stack  | Signals                  |
 |-------------|---------------|------|--------|--------------------------|
 | `stop`      | `0x01F`       | POP  | −1     | `cuPush` (new)           |
-| `sthw`      | `0x120` +6bit | NOP  |  0     | `cuStart`, `cuOpcode[5:0]` (new) |
+| `sthw`      | `0x140` +6bit | NOP  |  0     | `cuStart`, `cuOpcode[5:0]` (new) |
 | `ldop`      | `0x0E1`       | PUSH | +1     | `cuPop` (new)            |
 
 Encoding map within the 10-bit instruction word:
 
 ```
 stop:  00_0001_1111  (0x01F) — POP class (ir[9:6]=0000)
-sthw:  01_00xx_xxxx  (0x120-0x15F) — NOP class (ir[9:6]=0100,0101)
+sthw:  01_01xx_xxxx  (0x140-0x17F) — NOP class (ir[9:6]=0101)
 ldop:  00_1110_0001  (0x0E1) — PUSH class (ir[9:6]=0011)
 ```
 
@@ -523,15 +742,15 @@ and passed directly to the CU. No constant RAM slots are used.
 In `Instruction.java`:
 
 ```java
-// New instructions:
+// New/changed instructions:
 new Instruction("stop", 0x01F, 0, JmpType.NOP, StackType.POP),
-new Instruction("sthw", 0x120, 6, JmpType.NOP, StackType.NOP),
+new Instruction("sthw", 0x140, 6, JmpType.NOP, StackType.NOP),
 new Instruction("ldop", 0x0E1, 0, JmpType.NOP, StackType.PUSH),
 
-// Keep during migration (remove when fully migrated):
-new Instruction("stmul", 0x040, 0, JmpType.NOP, StackType.POP),
-new Instruction("ldmul", 0x0E1, 0, JmpType.NOP, StackType.PUSH),
-new Instruction("ldmulh", 0x0E3, 0, JmpType.NOP, StackType.PUSH),
+// Removed (old interface):
+// new Instruction("sthw", 0x040 + 0, 0, JmpType.NOP, StackType.POP),
+// new Instruction("ldmul", 0x0e0 + 1, 0, JmpType.NOP, StackType.PUSH),
+// new Instruction("ldmulh", 0x0e0 + 3, 0, JmpType.NOP, StackType.PUSH),
 ```
 
 Define named constants for readability in microcode:
@@ -578,39 +797,33 @@ CU_D2L      = 59
 
 ## Migration Path
 
-### Phase 1: Infrastructure (no behavioral change)
+All phases are complete as of 2026-03-09.
 
-1. Add `stop`, `sthw`, `ldop` to assembler alongside old names.
-2. Add `cuPush`, `cuStart`, `cuOpcode`, `cuPop` decode signals.
-3. Create `ComputeUnitTop` with shared operand/result stacks, initially
-   containing only an ICU that wraps the existing `Mul` component.
-4. Wire CU in `JopPipeline` alongside old `Mul` with `cuActive` mux.
+### Phase 1: New Interface Wrapper (ComputeUnitTop) — DONE
 
-### Phase 2: ICU (imul first)
+- `ComputeUnitTop` wraps ICU/FCU/LCU/DCU with shared 4-deep operand stack
+- Unit selection via `opcode[5:4]` (00=ICU, 01=FCU, 10=LCU, 11=DCU)
+- Result sequencing: hi word pushed first, lo word second (matching JOP stack convention)
+- `io.start` included in busy signal for immediate stall on dispatch cycle
 
-5. Rewrite `imul` microcode to `stop`/`stop`/`sthw 0`/`ldop nxt`.
-6. Verify with existing tests and JVM test suite.
-7. Add `idiv`/`irem` to ICU.
+### Phase 2: Decode + Pipeline Wiring — DONE
 
-### Phase 3: Migrate lmul
+- `stop` (0x01F) → `cuPush`, `sthw` (0x140-0x17F) → `cuStart`+`cuOpcode`, `ldop` (0x0E1) → `cuPop`
+- CU busy wired to `fetch.io.bsy` (wait-based stall, not extStall)
+- Old `lastWasFloat` mux, `hwWr` decode, `bcfetch.io.jinstr_out` opcode path all removed
+- `ldmulh` (0x0E3) freed — multi-word results use sequential `ldop` calls
 
-8. Add `lmul` support to LCU (handles 3 DSP partial products internally).
-9. Rewrite `lmul` microcode to `stop`×4/`sthw 34`/`ldop`×2.
-10. Remove old `Mul` component, `cuActive` mux, `stmul`/`ldmul`/`ldmulh`.
+### Phase 3: Assembler + Microcode — DONE
 
-### Phase 4: Long operations (LCU)
+- `Instruction.java` updated: `stop`/`sthw`(6-bit)/`ldop` added, old `stmul`/`ldmul`/`ldmulh` removed
+- CU operation constants (CU_IMUL=0, CU_FADD=16, CU_LADD=32, CU_DADD=48, etc.) in microcode include
+- All HW handlers use `stop`/`sthw`/`wait`/`wait`/`ldop` pattern
+- Superset ROM: both `_hw` and `_sw` handlers coexist unconditionally
+- 13 `altEntries` in generated JumpTableData.scala for elaboration-time HW/SW selection
 
-11. Add `ladd`/`lsub`/`lcmp`/`lshl`/`lshr`/`lushr` to LCU.
-12. Rewrite long microcode sequences. Each becomes 6-7 instructions.
-13. Add `ldiv`/`lrem` to LCU.
+### Phase 4: Verification — DONE
 
-### Phase 5: Float operations (FCU)
-
-14. Implement FCU (replacing I/O-mapped BmbFpu approach).
-15. Rewrite float microcode to use `stop`/`sthw`/`ldop`.
-
-### Phase 6: Double operations (DCU)
-
-16. Implement DCU with double-precision FPU.
-17. Add cross-width conversions (i2d, d2i, l2d, d2l, f2d, d2f).
-18. Remove software trap handlers for double bytecodes.
+- All CU unit tests updated for new `ComputeUnitCoreBundle` interface
+- 52/52 BRAM JVM tests pass (LongArithmetic, TypeConversion, FloatField, DoubleField, DoubleArith all fixed)
+- 568/570 unit tests pass (2 pre-existing JopFileLoaderSpec failures)
+- FPGA build pending

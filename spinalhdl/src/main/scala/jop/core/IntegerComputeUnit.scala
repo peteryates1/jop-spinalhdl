@@ -1,19 +1,18 @@
 /**
   * IntegerComputeUnit — Multi-cycle 32-bit Integer Operations for JOP
   *
-  * Extends ComputeUnit with integer multiply/divide/remainder operations.
-  * Each operation can be included/excluded via IntegerComputeUnitConfig flags.
+  * Uses ComputeUnitCoreBundle interface with 4-bit operation codes:
+  *   op 0: imul      op 1: idiv    op 2: irem    op 3: imul_wide
   *
-  * Operations (selected by JVM bytecode):
-  *   0x68: imul    0x6C: idiv    0x70: irem
-  *
-  * Interface: load a/b/opcode, pulse wr, wait for busy to deassert.
-  * Result appears on io.resultLo (32 bits). io.is64 is always false.
+  * Operand mapping (from CU operand stack):
+  *   operands(0) = value2 (TOS at time of first stop)
+  *   operands(1) = value1 (NOS at time of first stop)
   *
   * Algorithms:
-  *   imul — Radix-4 sequential multiply (16 iterations, ~18 cycles)
-  *   idiv — Binary restoring division (32 iterations, ~36 cycles)
-  *   irem — Same divider as idiv, returns remainder
+  *   imul      — Radix-4 sequential multiply, 32x32->32 (16 iterations, ~18 cycles)
+  *   imul_wide — Same multiply, 32x32->64 (returns both hi and lo words)
+  *   idiv      — Binary restoring division (32 iterations, ~36 cycles)
+  *   irem      — Same divider as idiv, returns remainder
   *
   * Special cases:
   *   idiv/irem by zero: result = 0
@@ -24,12 +23,14 @@ package jop.core
 import spinal.core._
 
 case class IntegerComputeUnitConfig(
-    withMul: Boolean = true,    // imul (0x68)
-    withDiv: Boolean = false,   // idiv (0x6C)
-    withRem: Boolean = false    // irem (0x70)
+    withMul: Boolean = true,    // imul (op 0)
+    withDiv: Boolean = false,   // idiv (op 1)
+    withRem: Boolean = false    // irem (op 2)
 )
 
-case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeUnitConfig()) extends ComputeUnit {
+case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeUnitConfig()) extends Component {
+
+  val io = ComputeUnitCoreBundle()
 
   // ========================================================================
   // FSM States — all declared unconditionally; unused ones optimized away
@@ -51,11 +52,12 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeU
   val opaReg    = Reg(UInt(32 bits)) init (0)
   val opbReg    = Reg(UInt(32 bits)) init (0)
 
-  // Multiply registers (radix-4)
-  val mulA     = Reg(UInt(32 bits)) init (0)
+  // Multiply registers (radix-4, 64-bit accumulator for wide result)
+  val mulA     = Reg(UInt(64 bits)) init (0)
   val mulB     = Reg(UInt(32 bits)) init (0)
-  val mulP     = Reg(UInt(32 bits)) init (0)
+  val mulP     = Reg(UInt(64 bits)) init (0)
   val mulCount = Reg(UInt(5 bits)) init (0)
+  val mulWide  = Reg(Bool()) init (False)  // true for imul_wide (op 3)
 
   // Divide registers (binary restoring)
   val divDividend  = Reg(UInt(32 bits)) init (0)
@@ -72,7 +74,8 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeU
   io.resultLo := resultReg(31 downto 0)
   io.resultHi := resultReg(63 downto 32)
   io.busy   := (state =/= State.IDLE)
-  io.is64   := False
+  // imul_wide (op 3) returns 2 words (hi:lo), all others return 1 word
+  io.resultCount := Mux(mulWide, U(2, 2 bits), U(1, 2 bits))
 
   // ========================================================================
   // FSM
@@ -81,29 +84,31 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeU
 
     // ----------------------------------------------------------------------
     is(State.IDLE) {
-      when(io.wr) {
-        opaReg := io.a
-        opbReg := io.b
+      when(io.start) {
+        // operands(0) = value2 (divisor/multiplier), operands(1) = value1 (dividend/multiplicand)
+        opaReg := io.operands(0)
+        opbReg := io.operands(1)
 
-        // Decode JVM bytecode to internal opcode
-        switch(io.opcode) {
-          is(B"8'x68") { opcodeReg := 0 }  // imul
-          is(B"8'x6C") { opcodeReg := 1 }  // idiv
-          is(B"8'x70") { opcodeReg := 2 }  // irem
+        // Decode 4-bit op to internal opcode
+        switch(io.op) {
+          is(U(0, 4 bits)) { opcodeReg := 0 }  // imul
+          is(U(1, 4 bits)) { opcodeReg := 1 }  // idiv
+          is(U(2, 4 bits)) { opcodeReg := 2 }  // irem
         }
 
-        // Route to appropriate state (unrecognized opcodes stay IDLE)
+        // Route to appropriate state (unrecognized ops stay IDLE)
         if (config.withMul) {
-          when(io.opcode === B"8'x68") {
-            mulA := io.a
-            mulB := io.b
+          when(io.op === 0 || io.op === 3) {
+            mulA := io.operands(0).resize(64)  // multiplicand, zero-extended to 64 bits
+            mulB := io.operands(1)              // multiplier (shift through 2 bits/cycle)
             mulP := 0
             mulCount := 0
+            mulWide := (io.op === 3)            // op 3 = imul_wide → 2-word result
             state := State.MUL_EXEC
           }
         }
         if (config.withDiv || config.withRem) {
-          when(io.opcode === B"8'x6C" || io.opcode === B"8'x70") {
+          when(io.op === 1 || io.op === 2) {
             state := State.DIV_SETUP
           }
         }
@@ -115,33 +120,34 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeU
     // ======================================================================
     if (config.withMul) {
       is(State.MUL_EXEC) {
-        // Two's complement wrapping: lower 32 bits are the same for
+        // Two's complement wrapping: lower 32/64 bits are the same for
         // signed and unsigned multiply, so no magnitude conversion needed.
-        val prod = UInt(32 bits)
+        // Operands are zero-extended to 64 bits for unsigned 32×32→64.
+        val prod = UInt(64 bits)
         prod := mulP
 
         // Radix-4: process 2 bits of multiplier per cycle
-        val prodAfterB0 = UInt(32 bits)
+        val prodAfterB0 = UInt(64 bits)
         when(mulB(0)) {
           prodAfterB0 := prod + mulA
         } otherwise {
           prodAfterB0 := prod
         }
 
-        val prodFinal = UInt(32 bits)
+        val prodFinal = UInt(64 bits)
         when(mulB(1)) {
-          prodFinal := (prodAfterB0(31 downto 1) +^ mulA(30 downto 0)).resize(31) @@ prodAfterB0(0)
+          prodFinal := prodAfterB0 + (mulA |<< 1)
         } otherwise {
           prodFinal := prodAfterB0
         }
 
         mulP := prodFinal
-        mulA := mulA(29 downto 0) @@ U"2'b00"
+        mulA := mulA(61 downto 0) @@ U"2'b00"
         mulB := U"2'b00" @@ mulB(31 downto 2)
         mulCount := mulCount + 1
 
         when(mulCount === 15) {
-          resultReg := prodFinal.resize(64)
+          resultReg := prodFinal
           state := State.DONE
         }
       }
@@ -152,9 +158,9 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeU
     // ======================================================================
     if (config.withDiv || config.withRem) {
       is(State.DIV_SETUP) {
-        // JVM idiv/irem: value1 / value2 where value2=TOS=io.a, value1=NOS=io.b
-        val dividend = opbReg.asSInt   // NOS = value1 (dividend)
-        val divisor  = opaReg.asSInt   // TOS = value2 (divisor)
+        // value1 / value2: value2=operands(0)=divisor, value1=operands(1)=dividend
+        val dividend = opbReg.asSInt   // operands(1) = value1 (dividend)
+        val divisor  = opaReg.asSInt   // operands(0) = value2 (divisor)
 
         // Special case: divide by zero -> result = 0
         when(opaReg === 0) {

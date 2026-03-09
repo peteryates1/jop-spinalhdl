@@ -1440,13 +1440,13 @@
     {
       "name": "jtbl_nop_lookup",
       "type": "jump_table",
-      "description": "Jump table maps nop (0x00) to microcode address 0x224",
+      "description": "Jump table maps nop (0x00) to microcode address 0x226",
       "tags": [
         "jump_table",
         "nop"
       ],
       "bytecode": "0x00",
-      "expected_jpaddr": "0x224",
+      "expected_jpaddr": "0x226",
       "sequence": [
         {
           "action": "reset",
@@ -1464,7 +1464,7 @@
         {
           "action": "check",
           "signals": {
-            "jpaddr": "0x224"
+            "jpaddr": "0x226"
           }
         }
       ]
@@ -1472,13 +1472,13 @@
     {
       "name": "jtbl_iadd_lookup",
       "type": "jump_table",
-      "description": "Jump table maps iadd (0x60) to microcode address 0x278",
+      "description": "Jump table maps iadd (0x60) to microcode address 0x27A",
       "tags": [
         "jump_table",
         "iadd"
       ],
       "bytecode": "0x60",
-      "expected_jpaddr": "0x278",
+      "expected_jpaddr": "0x27A",
       "sequence": [
         {
           "action": "reset",
@@ -1496,7 +1496,7 @@
         {
           "action": "check",
           "signals": {
-            "jpaddr": "0x278"
+            "jpaddr": "0x27A"
           }
         }
       ]
@@ -1504,13 +1504,13 @@
     {
       "name": "jtbl_iload_0_lookup",
       "type": "jump_table",
-      "description": "Jump table maps iload_0 (0x1A) to microcode address 0x242",
+      "description": "Jump table maps iload_0 (0x1A) to microcode address 0x244",
       "tags": [
         "jump_table",
         "iload"
       ],
       "bytecode": "0x1A",
-      "expected_jpaddr": "0x242",
+      "expected_jpaddr": "0x244",
       "sequence": [
         {
           "action": "reset",
@@ -1528,7 +1528,7 @@
         {
           "action": "check",
           "signals": {
-            "jpaddr": "0x242"
+            "jpaddr": "0x244"
           }
         }
       ]

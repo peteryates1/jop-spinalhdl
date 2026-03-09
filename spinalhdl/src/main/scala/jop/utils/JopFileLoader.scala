@@ -187,49 +187,6 @@ object JopFileLoader {
   }
 
   /**
-   * Load jump table from jtbl.vhd
-   *
-   * Parses VHDL case statements to extract bytecode -> microcode mappings
-   *
-   * Format (JOP jtbl.vhd style):
-   *   when "10111011" => addr <= "00001111110";	--	007e	new
-   *   when "01100000" => addr <= "00110010100";	--	0194	iadd
-   *
-   * @param filepath Path to jtbl.vhd
-   * @return Map of bytecode (0-255) to microcode address
-   */
-  def loadJumpTable(filepath: String): Map[Int, Int] = {
-    require(new File(filepath).exists(), s"Jump table file not found: $filepath")
-    Using(Source.fromFile(filepath)) { source =>
-      source.getLines()
-        .flatMap { line =>
-          // Match pattern: when "XXXXXXXX" => addr <= "XXXXXXXXXXX";
-          val pattern = """when\s+"([01]+)"\s*=>\s*addr\s*<=\s*"([01]+)"""".r
-          pattern.findFirstMatchIn(line).map { m =>
-            val bytecode = Integer.parseInt(m.group(1), 2)
-            val address = Integer.parseInt(m.group(2), 2)
-            (bytecode, address)
-          }
-        }
-        .toMap
-    }.getOrElse(Map.empty)
-  }
-
-  /**
-   * Load jump table and convert to a 256-entry sequence
-   *
-   * @param filepath Path to jtbl.vhd
-   * @param defaultAddr Default address for unmapped bytecodes (usually 0)
-   * @return Sequence of 256 BigInt values (one per bytecode)
-   */
-  def loadJumpTableAsSeq(filepath: String, defaultAddr: Int = 0): Seq[BigInt] = {
-    val table = loadJumpTable(filepath)
-    (0 until 256).map { bc =>
-      BigInt(table.getOrElse(bc, defaultAddr))
-    }
-  }
-
-  /**
    * Create a simple test ROM with a few bytecodes
    *
    * @param bytecodes Bytecode sequence to load

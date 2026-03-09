@@ -275,9 +275,6 @@ sbt "Test / runMain jop.system.JopIhluNCoreHelloWorldSim"
 
 # IHLU GC test (2-core, GC with per-object locking)
 sbt "Test / runMain jop.system.JopIhluGcBramSim"
-
-# Reference simulator
-sbt "runMain jop.JopSimulatorSim"
 ```
 
 ## Supported FPGA Boards

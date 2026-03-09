@@ -57,6 +57,10 @@ case class JopCoreTestHarness(
     // Stack pointer debug
     val debugSp = out UInt(config.stackConfig.spWidth bits)
     val debugVp = out UInt(config.stackConfig.spWidth bits)
+
+    // Stack RAM debug probe
+    val debugRamAddr = in UInt(8 bits)
+    val debugRamData = out Bits(config.dataWidth bits)
   }
 
   // Extract JBC init from main memory
@@ -109,8 +113,9 @@ case class JopCoreTestHarness(
   // No UART RX in test harness
   jopCore.io.rxd := True
 
-  // Tie unused debug inputs
-  jopCore.io.debugRamAddr := 0
+  // Wire debug RAM probe
+  jopCore.io.debugRamAddr := io.debugRamAddr
+  io.debugRamData := jopCore.io.debugRamData
   jopCore.io.debugHalt := False
   jopCore.io.snoopIn.foreach { si =>
     si.valid := False; si.isArray := False; si.handle := 0; si.index := 0

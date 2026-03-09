@@ -5,7 +5,7 @@ import spinal.core.sim._
 
 /**
   * Interactive simulation for FloatComputeUnit with trace output.
-  * Run: sbt "Test / runMain jop.io.FloatComputeUnitSim"
+  * Run: sbt "Test / runMain jop.core.FloatComputeUnitSim"
   */
 object FloatComputeUnitSim extends App {
 
@@ -18,15 +18,15 @@ object FloatComputeUnitSim extends App {
     withFcmp = true
   )
 
-  // JVM bytecodes
-  val FADD  = 0x62
-  val FSUB  = 0x66
-  val FMUL  = 0x6A
-  val FDIV  = 0x6E
-  val I2F   = 0x86
-  val F2I   = 0x8B
-  val FCMPL = 0x95
-  val FCMPG = 0x96
+  // 4-bit op codes
+  val FADD  = 0
+  val FSUB  = 1
+  val FMUL  = 2
+  val FDIV  = 3
+  val FCMPL = 4
+  val FCMPG = 5
+  val I2F   = 6
+  val F2I   = 7
 
   SimConfig
     .withWave
@@ -42,20 +42,20 @@ object FloatComputeUnitSim extends App {
     def bitsInt32(b: Long): Int   = (b & 0xFFFFFFFFL).toInt
 
     val opNames = Map(
-      0x62 -> "fadd",  0x66 -> "fsub",  0x6A -> "fmul",  0x6E -> "fdiv",
-      0x86 -> "i2f",   0x8B -> "f2i",   0x95 -> "fcmpl", 0x96 -> "fcmpg"
+      0 -> "fadd",  1 -> "fsub",  2 -> "fmul",  3 -> "fdiv",
+      4 -> "fcmpl", 5 -> "fcmpg", 6 -> "i2f",   7 -> "f2i"
     )
 
-    def runOp(opa: Long, opb: Long, bytecode: Int, desc: String): Long = {
-      val name = opNames.getOrElse(bytecode, f"0x${bytecode}%02X")
-      println(f"--- $desc%-40s  opcode=$name  opa=0x${opa}%08X  opb=0x${opb}%08X ---")
+    def runOp(opa: Long, opb: Long, op: Int, desc: String): Long = {
+      val name = opNames.getOrElse(op, s"op=$op")
+      println(f"--- $desc%-40s  op=$name  opa=0x${opa}%08X  opb=0x${opb}%08X ---")
 
-      dut.io.a #= (opa & 0xFFFFFFFFL)
-      dut.io.b #= (opb & 0xFFFFFFFFL)
-      dut.io.opcode   #= bytecode
-      dut.io.wr       #= true
+      dut.io.operands(0) #= (opa & 0xFFFFFFFFL)
+      dut.io.operands(1) #= (opb & 0xFFFFFFFFL)
+      dut.io.op          #= op
+      dut.io.start       #= true
       dut.clockDomain.waitSampling()
-      dut.io.wr       #= false
+      dut.io.start       #= false
       dut.clockDomain.waitSampling()
 
       var cycles = 0
@@ -71,14 +71,14 @@ object FloatComputeUnitSim extends App {
       result
     }
 
-    def runFloat(a: Float, b: Float, bytecode: Int, desc: String): Long =
-      runOp(floatBits(a), floatBits(b), bytecode, desc)
+    def runFloat(a: Float, b: Float, op: Int, desc: String): Long =
+      runOp(floatBits(a), floatBits(b), op, desc)
 
     // Initialize
-    dut.io.a #= 0
-    dut.io.b #= 0
-    dut.io.opcode   #= 0
-    dut.io.wr       #= false
+    dut.io.operands(0) #= 0
+    dut.io.operands(1) #= 0
+    dut.io.op          #= 0
+    dut.io.start       #= false
     dut.clockDomain.waitSampling(5)
 
     println("=" * 72)

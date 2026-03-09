@@ -3,7 +3,7 @@ package jop
 import spinal.core._
 import spinal.lib._
 import jop.pipeline._
-import jop.core.{IntegerComputeUnit, IntegerComputeUnitConfig, FloatComputeUnit, FloatComputeUnitConfig}
+import jop.core.{ComputeUnitTop, IntegerComputeUnitConfig, FloatComputeUnitConfig, LongComputeUnitConfig, DoubleComputeUnitConfig}
 import jop.memory._
 import jop.utils.JopFileLoader
 
@@ -342,43 +342,17 @@ case class JopSimulator(
     // Stack Stage (with RAM initialization if provided)
     val stack = new StackStage(config.stackConfig, ramInit = Some(ramData))
 
-    // Hardware Compute Unit - connected to stack A and B outputs
-    val intCu = IntegerComputeUnit(IntegerComputeUnitConfig(
-      withMul = true, withDiv = true, withRem = true
-    ))
-    intCu.io.a := stack.io.aout.asUInt
-    intCu.io.b := stack.io.bout.asUInt
-    intCu.io.c := U(0, 32 bits)
-    intCu.io.d := U(0, 32 bits)
-    intCu.io.wr := decode.io.hwWr
-    intCu.io.opcode := bcfetch.io.jinstr_out
-
-    // Float Compute Unit (always present; stays idle for non-float opcodes)
-    val floatCu = FloatComputeUnit(FloatComputeUnitConfig(
-      withAdd = true, withMul = true, withDiv = true,
-      withI2F = true, withF2I = true, withFcmp = true
-    ))
-    floatCu.io.a := stack.io.aout.asUInt
-    floatCu.io.b := stack.io.bout.asUInt
-    floatCu.io.c := U(0, 32 bits)
-    floatCu.io.d := U(0, 32 bits)
-    floatCu.io.wr := decode.io.hwWr
-    floatCu.io.opcode := bcfetch.io.jinstr_out
-
-    // Result MUX: select between IntCU and FloatCU
-    val lastWasFloat = RegInit(False)
-    when(decode.io.hwWr) {
-      lastWasFloat := (bcfetch.io.jinstr_out === B"8'x62" ||
-                       bcfetch.io.jinstr_out === B"8'x66" ||
-                       bcfetch.io.jinstr_out === B"8'x6A" ||
-                       bcfetch.io.jinstr_out === B"8'x6E" ||
-                       bcfetch.io.jinstr_out === B"8'x86" ||
-                       bcfetch.io.jinstr_out === B"8'x8B" ||
-                       bcfetch.io.jinstr_out === B"8'x95" ||
-                       bcfetch.io.jinstr_out === B"8'x96")
-    }
-    val cuResultLo = Mux(lastWasFloat, floatCu.io.resultLo.asBits, intCu.io.resultLo.asBits)
-    val cuResultHi = Mux(lastWasFloat, floatCu.io.resultHi.asBits, intCu.io.resultHi.asBits)
+    // Compute Unit Top (new decoupled interface)
+    val cu = ComputeUnitTop(
+      icuConfig = IntegerComputeUnitConfig(withMul = true, withDiv = true, withRem = true),
+      fcuConfig = FloatComputeUnitConfig(withAdd = true, withMul = true, withDiv = true,
+        withI2F = true, withF2I = true, withFcmp = true)
+    )
+    cu.io.din := stack.io.aout.asUInt
+    cu.io.push := decode.io.cuPush
+    cu.io.opcode := decode.io.cuOpcode
+    cu.io.start := decode.io.cuStart
+    cu.io.pop := decode.io.cuPop
 
     // ========================================================================
     // I/O Simulation
@@ -577,7 +551,7 @@ case class JopSimulator(
     // 1. BC fill is active (memory bus is being used for bytecode loading)
     // 2. Handle operation is active (getfield/putfield/iaload/iastore)
     // This ensures the pipeline waits during `wait` instructions until memory is ready
-    fetch.io.bsy := bcFillActive || handleOpActive || intCu.io.busy || floatCu.io.busy
+    fetch.io.bsy := bcFillActive || handleOpActive || cu.io.busy
 
     // Decode stage connections
     decode.io.instr := fetch.io.dout
@@ -610,9 +584,9 @@ case class JopSimulator(
     val dinMuxSel = RegNext(fetch.io.ir_out(1 downto 0)) init(0)
     stack.io.din := dinMuxSel.mux(
       0 -> memRdDataReg,                    // ldmrd
-      1 -> cuResultLo,                      // ldmul (compute unit resultLo)
+      1 -> cu.io.dout.asBits,              // ldop (CU result)
       2 -> bcStartReg.asBits.resized,       // ldbcstart
-      3 -> cuResultHi                       // ldmulh (compute unit resultHi)
+      3 -> B(0, 32 bits)                    // freed slot (was ldmulh)
     )
     stack.io.dirAddr := decode.io.dirAddr.asUInt
     stack.io.opd := bcfetch.io.opd

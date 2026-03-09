@@ -242,16 +242,15 @@ Note: With the compute units, `imul: Hardware` uses the same `sthw` pattern as a
 
 **Critical: imul is IMP_ASM.** Unlike float/div bytecodes (which are IMP_JAVA — JOPizer replaces them with `invokestatic`), `imul` (0x68) stays as a raw bytecode in the .jop file. The jump table **must always** point to a working handler. When `imul: Microcode`, the jump table points to the software shift-and-add handler. When `imul: Hardware`, it points to the `sthw` handler. Setting `imul: Java` would require changing JOPizer's IMP_ASM→IMP_JAVA classification for 0x68 (see Phase 10: JOPizer config awareness).
 
-This means the superset ROM **must** contain the microcode software multiply handler even when HW_MUL is set. The `#ifdef HW_MUL` in jvm.asm should become two labeled handlers that both exist unconditionally:
+This means the superset ROM **must** contain the microcode software handler even when HW is enabled. All `#ifdef` guards have been removed — both `_hw` and `_sw` labeled handlers exist unconditionally:
 
 ```asm
 // Both handlers always present in superset ROM
 imul_hw:                    // jump table points here when imul: Hardware
-    sthw
-    pop
-    wait
-    wait
-    ldmul nxt
+    stop                    // push value2 (TOS) → CU operand stack
+    stop                    // push value1 (NOS) → CU operand stack
+    sthw 0                  // start ICU multiply, busy stalls pipeline
+    ldop nxt                // pop result from CU → TOS
 
 imul_sw:                    // jump table points here when imul: Microcode
     stm  b                  // pure microcode shift-and-add (~640 cycles)
@@ -264,7 +263,7 @@ imul_loop:
     ldm  c nxt
 ```
 
-The Jopa assembler generates both addresses in the jump table data. `resolveJumpTable` picks the right one based on `imul: Microcode` vs `imul: Hardware`. **No separate bare builds needed** — one superset ROM serves all configurations.
+The Jopa assembler generates both addresses as `altEntries` in `JumpTableData.scala`. Currently 13 bytecodes have HW/SW alternatives: ladd, lsub, lneg, lcmp, lshl, lshr, lushr, imul, lmul, fadd, fsub, fmul, fdiv. `resolveJumpTable` picks the right address based on `imul: Microcode` vs `imul: Hardware`. **No separate bare builds needed** — one superset ROM serves all configurations.
 
 ### ROM Size Budget
 
@@ -274,21 +273,21 @@ With the compute units (see below), HW handler microcode shrinks dramatically �
 
 ## Compute Units — `sthw` (start hardware)
 
-> **Implementation status (2026-03-06):** IntegerComputeUnit is fully integrated into the pipeline. `sthw` replaces `stmul`, `BmbDiv` I/O peripheral removed. The JVM bytecode (`jinstr`) is routed from BytecodeFetchStage through to the compute unit — no I/O address encoding needed. `ComputeUnitBundle` interface implemented in `jop.core`. imul/idiv/irem all verified (59/60 JVM tests pass). LongComputeUnit, FloatComputeUnit, DoubleComputeUnit remain future work.
+> **Implementation status (2026-03-09):** All four compute units (ICU, FCU, LCU, DCU) are fully implemented and integrated via `ComputeUnitTop`. The CU interface has been refactored from the old `a/b/c/d/wr/opcode(8-bit)` bundle to a decoupled architecture using three microcode instructions: `stop` (push operand), `sthw` (start with 6-bit opcode), and `ldop` (pop result). See `docs/architecture/compute-unit-design.md` for the full specification. The superset ROM contains both HW (`_hw`) and SW (`_sw`) handlers for all configurable bytecodes — 13 `altEntries` in `JumpTableData.scala` enable per-bytecode HW/SW selection at elaboration time. 52/52 BRAM JVM tests pass, 568/570 unit tests pass (2 pre-existing JopFileLoaderSpec failures).
 
 Four named compute units handle multi-cycle hardware-accelerated bytecodes:
 - **IntegerComputeUnit** — imul, idiv, irem (32-bit integer multiply + divide) ✓ **IMPLEMENTED**
-- **LongComputeUnit** — lmul, ldiv, lrem (64-bit long multiply + divide)
-- **FloatComputeUnit** — fadd, fsub, fmul, fdiv, frem, i2f, f2i, f2l, l2f (single-precision float)
-- **DoubleComputeUnit** — dadd, dsub, dmul, ddiv, drem, i2d, d2i, d2f, f2d, l2d, d2l (double-precision float)
+- **FloatComputeUnit** — fadd, fsub, fmul, fdiv, i2f, f2i, fcmpl, fcmpg (single-precision float) ✓ **IMPLEMENTED**
+- **LongComputeUnit** — ladd, lsub, lmul, ldiv, lrem, lcmp, lshl, lshr, lushr (64-bit long) ✓ **IMPLEMENTED**
+- **DoubleComputeUnit** — dadd, dsub, dmul, ddiv, dcmpl, dcmpg, i2d, d2i, l2d, d2l, f2d, d2f (double-precision float) ✓ **IMPLEMENTED**
 
-Each is independently conditional — only instantiated when needed. All share the same `sthw`/`wait` microcode pattern and pipeline stall interface.
+Each is independently conditional — only instantiated when needed. All share the `stop`/`sthw`/`ldop` microcode pattern with an internal 4-deep operand stack and result sequencing via `ComputeUnitTop`.
 
 ### Problem with current I/O-based peripherals
 
-> **Note (2026-03-06):** The integer math path (imul/idiv/irem) has been migrated to the unified `sthw` pattern via IntegerComputeUnit. BmbDiv I/O peripheral removed, `stmul` renamed to `sthw`. FPU still uses the I/O-based approach described below.
+> **Note (2026-03-09):** All compute units (ICU, FCU, LCU, DCU) have been migrated to the decoupled `stop`/`sthw`/`ldop` pattern via `ComputeUnitTop`. BmbDiv and BmbFpu I/O peripherals removed. The old `stmul`/`ldmul` instructions replaced by `stop`/`sthw`/`ldop`. See `docs/architecture/compute-unit-design.md`.
 
-Today, FPU ~~and DIV are~~ is a BMB I/O peripheral accessed via generic memory-mapped I/O. ~~The Mul unit is a pipeline component with dedicated `stmul`/`ldmul` instructions.~~ This creates two problems:
+~~Today, FPU and DIV are BMB I/O peripherals accessed via generic memory-mapped I/O. The Mul unit is a pipeline component with dedicated `stmul`/`ldmul` instructions.~~ This created two problems (now solved):
 
 1. **I/O overhead**: fadd microcode is 9 instructions (load I/O address, set write address, do I/O write, pop, load read address, start I/O read, wait, wait, read result). imul DSP microcode is 4 instructions. The 5 extra instructions are pure plumbing.
 

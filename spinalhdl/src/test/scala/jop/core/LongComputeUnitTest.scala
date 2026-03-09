@@ -15,13 +15,13 @@ class LongComputeUnitTest extends AnyFunSuite {
   val LONG_MIN = long64Bits(Long.MinValue)
   val LONG_MAX = long64Bits(Long.MaxValue)
 
-  // JVM bytecodes
-  val LMUL  = 0x69
-  val LDIV  = 0x6D
-  val LREM  = 0x71
-  val LSHL  = 0x79
-  val LSHR  = 0x7B
-  val LUSHR = 0x7D
+  // 4-bit op codes
+  val LMUL  = 2
+  val LDIV  = 3
+  val LREM  = 4
+  val LSHL  = 6
+  val LSHR  = 7
+  val LUSHR = 8
 
   val fullConfig = LongComputeUnitConfig(
     withMul = true, withDiv = true, withRem = true, withShift = true
@@ -32,16 +32,16 @@ class LongComputeUnitTest extends AnyFunSuite {
 
   def compileFull() = simConfig.compile(LongComputeUnit(fullConfig))
 
-  def runOp(dut: LongComputeUnit, opa: BigInt, opb: BigInt, bytecode: Int)
+  def runOp(dut: LongComputeUnit, opa: BigInt, opb: BigInt, op: Int)
            (implicit cd: ClockDomain): BigInt = {
-    dut.io.c #= opa & BigInt("FFFFFFFF", 16)
-    dut.io.d #= (opa >> 32) & BigInt("FFFFFFFF", 16)
-    dut.io.a #= opb & BigInt("FFFFFFFF", 16)
-    dut.io.b #= (opb >> 32) & BigInt("FFFFFFFF", 16)
-    dut.io.opcode   #= bytecode
-    dut.io.wr       #= true
+    dut.io.operands(2) #= opa & BigInt("FFFFFFFF", 16)         // opa_lo (was c)
+    dut.io.operands(3) #= (opa >> 32) & BigInt("FFFFFFFF", 16) // opa_hi (was d)
+    dut.io.operands(0) #= opb & BigInt("FFFFFFFF", 16)         // opb_lo (was a)
+    dut.io.operands(1) #= (opb >> 32) & BigInt("FFFFFFFF", 16) // opb_hi (was b)
+    dut.io.op      #= op
+    dut.io.start   #= true
     cd.waitSampling()
-    dut.io.wr       #= false
+    dut.io.start   #= false
     cd.waitSampling()
 
     var cycles = 0
@@ -49,17 +49,41 @@ class LongComputeUnitTest extends AnyFunSuite {
       cd.waitSampling()
       cycles += 1
     }
-    assert(cycles < 500, s"LCU timed out after 500 cycles (bytecode=0x${bytecode.toHexString})")
+    assert(cycles < 500, s"LCU timed out after 500 cycles (op=$op)")
+    (dut.io.resultHi.toBigInt << 32) | dut.io.resultLo.toBigInt
+  }
+
+  /** Run shift op: value (64-bit) shifted by amount (int).
+    * Shift operand layout matches microcode pop order:
+    * operands(0)=amount, operands(1)=val_lo, operands(2)=val_hi */
+  def runShift(dut: LongComputeUnit, value: BigInt, amount: BigInt, op: Int)
+              (implicit cd: ClockDomain): BigInt = {
+    dut.io.operands(0) #= amount & BigInt("FFFFFFFF", 16)          // shift amount
+    dut.io.operands(1) #= value & BigInt("FFFFFFFF", 16)           // val_lo
+    dut.io.operands(2) #= (value >> 32) & BigInt("FFFFFFFF", 16)   // val_hi
+    dut.io.operands(3) #= 0
+    dut.io.op      #= op
+    dut.io.start   #= true
+    cd.waitSampling()
+    dut.io.start   #= false
+    cd.waitSampling()
+
+    var cycles = 0
+    while (dut.io.busy.toBoolean && cycles < 500) {
+      cd.waitSampling()
+      cycles += 1
+    }
+    assert(cycles < 500, s"LCU timed out after 500 cycles (op=$op)")
     (dut.io.resultHi.toBigInt << 32) | dut.io.resultLo.toBigInt
   }
 
   def initIo(dut: LongComputeUnit): Unit = {
-    dut.io.a #= 0
-    dut.io.b #= 0
-    dut.io.c #= 0
-    dut.io.d #= 0
-    dut.io.opcode   #= 0
-    dut.io.wr       #= false
+    dut.io.operands(0) #= 0
+    dut.io.operands(1) #= 0
+    dut.io.operands(2) #= 0
+    dut.io.operands(3) #= 0
+    dut.io.op      #= 0
+    dut.io.start   #= false
   }
 
   def assertBits64(actual: BigInt, expected: BigInt, msg: String): Unit = {
@@ -177,9 +201,9 @@ class LongComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertBits64(runOp(dut, long64Bits(1L), long64Bits(0L), LSHL), long64Bits(1L), "1 << 0 = 1")
-      assertBits64(runOp(dut, long64Bits(1L), long64Bits(1L), LSHL), long64Bits(2L), "1 << 1 = 2")
-      assertBits64(runOp(dut, long64Bits(1L), long64Bits(63L), LSHL), LONG_MIN, "1 << 63 = MIN_VALUE")
+      assertBits64(runShift(dut, long64Bits(1L), long64Bits(0L), LSHL), long64Bits(1L), "1 << 0 = 1")
+      assertBits64(runShift(dut, long64Bits(1L), long64Bits(1L), LSHL), long64Bits(2L), "1 << 1 = 2")
+      assertBits64(runShift(dut, long64Bits(1L), long64Bits(63L), LSHL), LONG_MIN, "1 << 63 = MIN_VALUE")
     }
   }
 
@@ -189,7 +213,7 @@ class LongComputeUnitTest extends AnyFunSuite {
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
       // JVM masks shift amount to 6 bits: 64 & 0x3F = 0
-      assertBits64(runOp(dut, long64Bits(1L), long64Bits(64L), LSHL), long64Bits(1L), "1 << 64 = 1 (masked to 0)")
+      assertBits64(runShift(dut, long64Bits(1L), long64Bits(64L), LSHL), long64Bits(1L), "1 << 64 = 1 (masked to 0)")
     }
   }
 
@@ -201,10 +225,10 @@ class LongComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertBits64(runOp(dut, long64Bits(-1L), long64Bits(0L), LSHR), long64Bits(-1L), "-1 >> 0 = -1")
-      assertBits64(runOp(dut, long64Bits(4L), long64Bits(1L), LSHR), long64Bits(2L), "4 >> 1 = 2")
+      assertBits64(runShift(dut, long64Bits(-1L), long64Bits(0L), LSHR), long64Bits(-1L), "-1 >> 0 = -1")
+      assertBits64(runShift(dut, long64Bits(4L), long64Bits(1L), LSHR), long64Bits(2L), "4 >> 1 = 2")
       // Sign extension: -1 >> 32 = -1
-      assertBits64(runOp(dut, long64Bits(-1L), long64Bits(32L), LSHR), long64Bits(-1L), "-1 >> 32 = -1 (sign-extends)")
+      assertBits64(runShift(dut, long64Bits(-1L), long64Bits(32L), LSHR), long64Bits(-1L), "-1 >> 32 = -1 (sign-extends)")
     }
   }
 
@@ -216,7 +240,7 @@ class LongComputeUnitTest extends AnyFunSuite {
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
-      assertBits64(runOp(dut, long64Bits(-1L), long64Bits(32L), LUSHR),
+      assertBits64(runShift(dut, long64Bits(-1L), long64Bits(32L), LUSHR),
         long64Bits(0x00000000FFFFFFFFL), "-1 >>> 32 = 0x00000000FFFFFFFF")
     }
   }
@@ -227,7 +251,7 @@ class LongComputeUnitTest extends AnyFunSuite {
       cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
 
       // 64 & 0x3F = 0
-      assertBits64(runOp(dut, long64Bits(-1L), long64Bits(64L), LUSHR),
+      assertBits64(runShift(dut, long64Bits(-1L), long64Bits(64L), LUSHR),
         long64Bits(-1L), "-1 >>> 64 = -1 (masked to 0)")
     }
   }
@@ -242,12 +266,12 @@ class LongComputeUnitTest extends AnyFunSuite {
     simConfig.compile(LongComputeUnit(minConfig)).doSim(seed = 42) { dut =>
       dut.clockDomain.forkStimulus(10)
       SimTimeout(1000)
-      dut.io.a #= 0
-      dut.io.b #= 0
-      dut.io.c #= 0
-      dut.io.d #= 0
-      dut.io.opcode   #= 0
-      dut.io.wr       #= false
+      dut.io.operands(0) #= 0
+      dut.io.operands(1) #= 0
+      dut.io.operands(2) #= 0
+      dut.io.operands(3) #= 0
+      dut.io.op      #= 0
+      dut.io.start   #= false
       dut.clockDomain.waitSampling(10)
     }
   }

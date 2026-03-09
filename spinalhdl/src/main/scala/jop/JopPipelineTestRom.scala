@@ -3,7 +3,7 @@ package jop
 import spinal.core._
 import spinal.lib._
 import jop.pipeline._
-import jop.core.{FloatComputeUnit, FloatComputeUnitConfig}
+import jop.core.{ComputeUnitTop, IntegerComputeUnitConfig, FloatComputeUnitConfig, LongComputeUnitConfig, DoubleComputeUnitConfig}
 
 /**
  * Configuration for microcode-only pipeline tests (no bytecode fetch).
@@ -750,9 +750,11 @@ class JopPipelineTestRom(
 
   val decodeStage = new DecodeStage(config.decodeConfig)
   val stackStage = new StackStage(config.stackConfig)
-  val intCu = jop.core.IntegerComputeUnit(jop.core.IntegerComputeUnitConfig(
-    withMul = true, withDiv = true, withRem = true
-  ))
+  val cu = ComputeUnitTop(
+    icuConfig = IntegerComputeUnitConfig(withMul = true, withDiv = true, withRem = true),
+    fcuConfig = FloatComputeUnitConfig(withAdd = true, withMul = true, withDiv = true,
+      withI2F = true, withF2I = true, withFcmp = true)
+  )
 
   // Same connections as JopPipeline
   fetchStage.io.br := decodeStage.io.br
@@ -771,7 +773,14 @@ class JopPipelineTestRom(
   decodeStage.io.bcopd := io.operand
   decodeStage.io.stall := False
 
-  stackStage.io.din := io.memDataIn
+  // din mux: ir(1:0) selects between ldmrd, ldop (CU result), ldbcstart, (freed slot)
+  val dinMuxSel = RegNext(fetchStage.io.ir_out(1 downto 0)) init(0)
+  stackStage.io.din := dinMuxSel.mux(
+    0 -> io.memDataIn,
+    1 -> cu.io.dout.asBits,
+    2 -> B(0, config.dataWidth bits),   // ldbcstart not used in test ROM
+    3 -> B(0, config.dataWidth bits)    // freed slot
+  )
   stackStage.io.dirAddr := decodeStage.io.dirAddr.asUInt
   stackStage.io.opd := io.operand
   stackStage.io.jpc := io.jpc
@@ -798,27 +807,14 @@ class JopPipelineTestRom(
   io.bout := stackStage.io.bout
   io.spOv := stackStage.io.spOv
 
-  // Hardware compute unit connections
-  intCu.io.a := stackStage.io.aout.asUInt
-  intCu.io.b := stackStage.io.bout.asUInt
-  intCu.io.c := U(0, 32 bits)
-  intCu.io.d := U(0, 32 bits)
-  intCu.io.wr := decodeStage.io.hwWr
-  intCu.io.opcode := B(0x68, 8 bits)  // Default to imul for test ROM compatibility
+  // Compute Unit Top connections (new decoupled interface)
+  cu.io.din := stackStage.io.aout.asUInt
+  cu.io.push := decodeStage.io.cuPush
+  cu.io.opcode := decodeStage.io.cuOpcode
+  cu.io.start := decodeStage.io.cuStart
+  cu.io.pop := decodeStage.io.cuPop
 
-  // Float Compute Unit (always present; stays idle since opcode=0x68 is not a float op)
-  val floatCu = FloatComputeUnit(FloatComputeUnitConfig(
-    withAdd = true, withMul = true, withDiv = true,
-    withI2F = true, withF2I = true, withFcmp = true
-  ))
-  floatCu.io.a := stackStage.io.aout.asUInt
-  floatCu.io.b := stackStage.io.bout.asUInt
-  floatCu.io.c := U(0, 32 bits)
-  floatCu.io.d := U(0, 32 bits)
-  floatCu.io.wr := decodeStage.io.hwWr
-  floatCu.io.opcode := B(0x68, 8 bits)
-
-  io.mulDout := intCu.io.resultLo
+  io.mulDout := cu.io.dout
 
   // Debug outputs: Read stack RAM at fixed addresses 0, 1, 2 (Phase 3.2)
   // These expose local variables for test assertions
@@ -838,7 +834,7 @@ class JopPipelineTestRom(
   fetchStage.setName("fetch")
   decodeStage.setName("decode")
   stackStage.setName("stack")
-  intCu.setName("intCu")
+  cu.setName("cu")
 }
 
 /**

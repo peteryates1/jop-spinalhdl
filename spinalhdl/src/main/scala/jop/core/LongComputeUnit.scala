@@ -1,23 +1,26 @@
 /**
   * LongComputeUnit — Multi-cycle 64-bit Integer Operations for JOP
   *
-  * Extends ComputeUnit with long integer operations.
-  * Each operation can be included/excluded via LongComputeUnitConfig flags.
+  * Uses ComputeUnitCoreBundle interface with 4-bit operation codes:
+  *   op 0: ladd    op 1: lsub    op 2: lmul    op 3: ldiv    op 4: lrem
+  *   op 5: lcmp    op 6: lshl    op 7: lshr    op 8: lushr
   *
-  * Operations (selected by JVM bytecode):
-  *   0x69: lmul    0x6D: ldiv    0x71: lrem
-  *   0x79: lshl    0x7B: lshr    0x7D: lushr
-  *
-  * Interface: load a/b/c/d/opcode, pulse wr, wait for busy to deassert.
-  * Result appears on io.resultHi:io.resultLo (64 bits). io.is64 is always true.
+  * Operand mapping (from CU operand stack):
+  *   Binary ops (4 operands): value1 = operands(3):operands(2) (hi:lo)
+  *                            value2 = operands(1):operands(0) (hi:lo)
+  *   Shift ops (3 operands):  value = operands(1):operands(2) (hi:lo)
+  *                            shift amount = operands(0)
   *
   * Algorithms:
+  *   ladd  — Combinational 64-bit add (1 cycle)
+  *   lsub  — Combinational 64-bit subtract (1 cycle)
   *   lmul  — Radix-4 sequential multiply (32 iterations, ~34 cycles)
   *   ldiv  — Binary restoring division (64 iterations, ~68 cycles)
   *   lrem  — Same divider as ldiv, returns remainder
-  *   lshl  — Combinatorial left shift (3 cycles)
-  *   lshr  — Combinatorial arithmetic right shift (3 cycles)
-  *   lushr — Combinatorial logical right shift (3 cycles)
+  *   lcmp  — Combinational signed 64-bit compare (1 cycle)
+  *   lshl  — Combinatorial left shift (1 cycle)
+  *   lshr  — Combinatorial arithmetic right shift (1 cycle)
+  *   lushr — Combinatorial logical right shift (1 cycle)
   *
   * Special cases:
   *   ldiv/lrem by zero: result = 0
@@ -28,19 +31,23 @@ package jop.core
 import spinal.core._
 
 case class LongComputeUnitConfig(
-    withMul:   Boolean = true,   // lmul  (0x69)
-    withDiv:   Boolean = true,   // ldiv  (0x6D)
-    withRem:   Boolean = true,   // lrem  (0x71)
-    withShift: Boolean = true    // lshl (0x79), lshr (0x7B), lushr (0x7D)
+    withMul:   Boolean = true,   // lmul  (op 2)
+    withDiv:   Boolean = true,   // ldiv  (op 3)
+    withRem:   Boolean = true,   // lrem  (op 4)
+    withShift: Boolean = true    // lshl (op 6), lshr (op 7), lushr (op 8)
 )
 
-case class LongComputeUnit(config: LongComputeUnitConfig = LongComputeUnitConfig()) extends ComputeUnit {
+case class LongComputeUnit(config: LongComputeUnitConfig = LongComputeUnitConfig()) extends Component {
+
+  val io = ComputeUnitCoreBundle()
 
   // ========================================================================
   // FSM States — all declared unconditionally; unused ones optimized away
   // ========================================================================
   object State extends SpinalEnum {
     val IDLE                              = newElement()
+    val LADD_EXEC                         = newElement()
+    val LCMP_EXEC                         = newElement()
     val MUL_EXEC                          = newElement()
     val DIV_SETUP, DIV_EXEC, DIV_DONE     = newElement()
     val SHIFT_EXEC                        = newElement()
@@ -53,7 +60,7 @@ case class LongComputeUnit(config: LongComputeUnitConfig = LongComputeUnitConfig
   // Registers — all declared unconditionally; unused ones optimized away
   // ========================================================================
   val resultReg = Reg(UInt(64 bits)) init (0)
-  val opcodeReg = Reg(UInt(3 bits)) init (0)
+  val opcodeReg = Reg(UInt(4 bits)) init (0)
   val opaReg    = Reg(UInt(64 bits)) init (0)
   val opbReg    = Reg(UInt(64 bits)) init (0)
 
@@ -78,7 +85,8 @@ case class LongComputeUnit(config: LongComputeUnitConfig = LongComputeUnitConfig
   io.resultLo := resultReg(31 downto 0)
   io.resultHi := resultReg(63 downto 32)
   io.busy   := (state =/= State.IDLE)
-  io.is64   := True
+  // lcmp (op 5) returns 1 word, everything else returns 2
+  io.resultCount := Mux(opcodeReg === 5, U(1, 2 bits), U(2, 2 bits))
 
   // ========================================================================
   // FSM
@@ -87,42 +95,81 @@ case class LongComputeUnit(config: LongComputeUnitConfig = LongComputeUnitConfig
 
     // ----------------------------------------------------------------------
     is(State.IDLE) {
-      when(io.wr) {
-        opaReg := (io.d ## io.c).asUInt
-        opbReg := (io.b ## io.a).asUInt
+      when(io.start) {
+        opcodeReg := io.op
 
-        // Decode JVM bytecode to internal opcode
-        switch(io.opcode) {
-          is(B"8'x69") { opcodeReg := 0 }  // lmul
-          is(B"8'x6D") { opcodeReg := 1 }  // ldiv
-          is(B"8'x71") { opcodeReg := 2 }  // lrem
-          is(B"8'x79") { opcodeReg := 3 }  // lshl
-          is(B"8'x7B") { opcodeReg := 4 }  // lshr
-          is(B"8'x7D") { opcodeReg := 5 }  // lushr
-        }
+        // Default operand capture for binary 4-operand ops
+        // value1 = operands(3):operands(2) (deeper pair), value2 = operands(1):operands(0) (TOS pair)
+        opaReg := (io.operands(3) ## io.operands(2)).asUInt
+        opbReg := (io.operands(1) ## io.operands(0)).asUInt
 
         // Route to appropriate state
-        state := State.DONE  // default fallback
+        // ladd (op 0) / lsub (op 1)
+        when(io.op === 0 || io.op === 1) {
+          state := State.LADD_EXEC
+        }
+
+        // lmul (op 2)
         if (config.withMul) {
-          when(io.opcode === B"8'x69") {
-            mulA := (io.d ## io.c).asUInt
-            mulB := (io.b ## io.a).asUInt
+          when(io.op === 2) {
+            mulA := (io.operands(3) ## io.operands(2)).asUInt
+            mulB := (io.operands(1) ## io.operands(0)).asUInt
             mulP := 0
             mulCount := 0
             state := State.MUL_EXEC
           }
         }
+
+        // ldiv (op 3) / lrem (op 4)
         if (config.withDiv || config.withRem) {
-          when(io.opcode === B"8'x6D" || io.opcode === B"8'x71") {
+          when(io.op === 3 || io.op === 4) {
             state := State.DIV_SETUP
           }
         }
+
+        // lcmp (op 5)
+        when(io.op === 5) {
+          state := State.LCMP_EXEC
+        }
+
+        // Shift ops (op 6/7/8): 3 operands
+        // Microcode pops: amount→[0], val_lo→[1], val_hi→[2]
         if (config.withShift) {
-          when(io.opcode === B"8'x79" || io.opcode === B"8'x7B" || io.opcode === B"8'x7D") {
+          when(io.op >= 6 && io.op <= 8) {
+            opaReg := (io.operands(2) ## io.operands(1)).asUInt  // value (hi:lo)
+            opbReg := io.operands(0).resize(64)                  // shift amount
             state := State.SHIFT_EXEC
           }
         }
       }
+    }
+
+    // ======================================================================
+    // LADD / LSUB — Single-cycle Combinational
+    // ======================================================================
+    is(State.LADD_EXEC) {
+      when(opcodeReg === 0) {
+        resultReg := (opaReg + opbReg).resize(64)
+      } otherwise {
+        resultReg := (opaReg - opbReg).resize(64)
+      }
+      state := State.DONE
+    }
+
+    // ======================================================================
+    // LCMP — Single-cycle Signed Compare
+    // ======================================================================
+    is(State.LCMP_EXEC) {
+      val sa = opaReg.asSInt
+      val sb = opbReg.asSInt
+      when(sa > sb) {
+        resultReg := 1
+      } .elsewhen(sa < sb) {
+        resultReg := U(64 bits, default -> true)  // -1 as unsigned 64-bit
+      } .otherwise {
+        resultReg := 0
+      }
+      state := State.DONE
     }
 
     // ======================================================================
@@ -178,7 +225,7 @@ case class LongComputeUnit(config: LongComputeUnitConfig = LongComputeUnitConfig
         // Special case: MIN_VALUE / -1 -> quotient = MIN_VALUE, remainder = 0
         .elsewhen(aSigned === S(64 bits, (63) -> true, default -> false) &&
                   bSigned === S(-1, 64 bits)) {
-          when(opcodeReg === 1) {
+          when(opcodeReg === 3) {
             // ldiv: MIN_VALUE
             resultReg := opaReg
           } otherwise {
@@ -250,7 +297,7 @@ case class LongComputeUnit(config: LongComputeUnitConfig = LongComputeUnitConfig
           signedRem := divRemainder.resize(64)
         }
 
-        when(opcodeReg === 1) {
+        when(opcodeReg === 3) {
           resultReg := signedQuot
         } otherwise {
           resultReg := signedRem
@@ -266,10 +313,10 @@ case class LongComputeUnit(config: LongComputeUnitConfig = LongComputeUnitConfig
       is(State.SHIFT_EXEC) {
         val shamt = opbReg(5 downto 0)  // JVM masks shift amount to 6 bits
 
-        when(opcodeReg === 3) {
+        when(opcodeReg === 6) {
           // lshl: logical left shift
           resultReg := (opaReg |<< shamt).resize(64)
-        } elsewhen (opcodeReg === 4) {
+        } elsewhen (opcodeReg === 7) {
           // lshr: arithmetic right shift (sign-extending)
           resultReg := (opaReg.asSInt >> shamt).asUInt
         } otherwise {
