@@ -5,13 +5,20 @@ JVM_TYPE=SIMULATION
 # =========================================================================
 # Superset ROM targets — ALL hardware handlers in one ROM per boot mode.
 # Per-bytecode config is done via jump table patching at SpinalHDL elaboration.
-# Includes: IntegerComputeUnit (imul/idiv/irem), FloatComputeUnit (fadd-fdiv, i2f, f2i, fcmp, fneg).
+#
+# Both HW and SW handlers exist unconditionally in the ROM:
+#   imul: → sthw handler (IntegerComputeUnit)
+#   imul_sw: → pure microcode shift-and-add multiply
+# resolveJumpTable() selects the right one based on JopCoreConfig.
+#
+# FLOAT_CU: FloatComputeUnit handlers (fadd-fdiv, i2f, f2i, fcmp, fneg).
 # =========================================================================
 
 all: simulation serial
 
-# Superset flags: HW_MUL=imul via IntCU, FLOAT_CU=float ops via FloatCU
-SUPERSET_FLAGS = -DHW_MUL -DFLOAT_CU
+# Superset flags: FLOAT_CU=float ops via FloatCU
+# Note: HW_MUL removed — both imul handlers are unconditional in jvm.asm
+SUPERSET_FLAGS = -DFLOAT_CU
 
 simulation: ../java/tools/dist/jopa.jar
 	mkdir -p generated
@@ -29,30 +36,6 @@ serial: ../java/tools/dist/jopa.jar
 	cp generated/rom.mif generated/serial/rom.mif
 	mv generated/SerialJumpTableData.scala generated/serial/SerialJumpTableData.scala
 	$(MAKE) simulation
-
-# Bare targets: no hardware acceleration (pure microcode imul, no FloatCU)
-# For minimum-resource JOP config.
-bare-simulation: ../java/tools/dist/jopa.jar
-	mkdir -p generated/bare
-	gcc -x c -E -C -P $(GCC_PARAMS) -D$(JVM_TYPE) src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
-	sed -i '1,35d' generated/$(ASM_SRC).asm
-	java -jar ../java/tools/dist/jopa.jar -s generated -d generated -n BareJumpTableData $(ASM_SRC).asm
-	cp generated/mem_rom.dat generated/bare/mem_rom.dat
-	cp generated/mem_ram.dat generated/bare/mem_ram.dat
-	cp generated/rom.mif generated/bare/rom.mif
-	mv generated/BareJumpTableData.scala generated/bare/BareJumpTableData.scala
-	$(MAKE) simulation
-
-bare-serial: ../java/tools/dist/jopa.jar
-	mkdir -p generated/bare-serial
-	gcc -x c -E -C -P $(GCC_PARAMS) -DSERIAL src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
-	sed -i '1,35d' generated/$(ASM_SRC).asm
-	java -jar ../java/tools/dist/jopa.jar -s generated -d generated -n BareSerialJumpTableData $(ASM_SRC).asm
-	cp generated/mem_rom.dat generated/bare-serial/mem_rom.dat
-	cp generated/mem_ram.dat generated/bare-serial/mem_ram.dat
-	cp generated/rom.mif generated/bare-serial/rom.mif
-	mv generated/BareSerialJumpTableData.scala generated/bare-serial/BareSerialJumpTableData.scala
-	$(MAKE) bare-simulation
 
 # Flash-boot for Altera (Cyclone IV GX, EPCS64 serial flash)
 # FLASH_ADDR_B2=128 (default), FLASH_CLK_DIV=3 (default)

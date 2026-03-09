@@ -60,11 +60,8 @@ BLASTER_TYPE ?= USB-Blaster
 SERIAL_PORT ?= /dev/ttyUSB0
 BAUD_RATE = 1000000
 
-# Original JOP repository
-JOP_HOME ?= /srv/git/jop
-
 # JOP application file
-JOP_FILE ?= $(JOP_HOME)/java/Smallest/HelloWorld.jop
+JOP_FILE ?= $(PROJECT_ROOT)/java/apps/Smallest/HelloWorld.jop
 
 # Project paths (sbt runs from repo root)
 PROJECT_ROOT = ../..

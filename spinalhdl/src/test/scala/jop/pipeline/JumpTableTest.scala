@@ -15,20 +15,20 @@ class JumpTableTest extends AnyFunSuite {
       dut.io.intPend #= false
       dut.io.excPend #= false
 
-      // Test known bytecode → microcode address mappings
-      // (addresses from generated JumpTableData.scala)
-      val testCases = Seq(
-        (0x00, 0x224),  // nop
-        (0x01, 0x226),  // aconst_null
-        (0x02, 0x225),  // iconst_m1
-        (0x03, 0x226),  // iconst_0
-        (0x60, 0x278),  // iadd
-        (0x64, 0x279),  // isub
-        (0x68, 0x284),  // imul
-        (0xA7, 0x29B)   // goto
+      // Test known bytecodes match generated JumpTableData
+      val testBytecodes = Seq(
+        0x00,  // nop
+        0x01,  // aconst_null
+        0x02,  // iconst_m1
+        0x03,  // iconst_0
+        0x60,  // iadd
+        0x64,  // isub
+        0x68,  // imul
+        0xA7   // goto
       )
 
-      testCases.foreach { case (bytecode, expectedAddr) =>
+      testBytecodes.foreach { bytecode =>
+        val expectedAddr = JumpTableData.entries(bytecode).toInt
         dut.io.bytecode #= bytecode
         sleep(1)
         val actualAddr = dut.io.jpaddr.toInt
@@ -97,9 +97,9 @@ class JumpTableTest extends AnyFunSuite {
   }
 
   test("JumpTable: getAddress helper function") {
-    // Test the helper function (addresses from generated JumpTableData.scala)
-    assert(JumpTable.getAddress(0x00) == 0x224, "nop address")
-    assert(JumpTable.getAddress(0x60) == 0x278, "iadd address")
-    assert(JumpTable.getAddress(0xA7) == 0x29B, "goto address")
+    // Test the helper function matches generated JumpTableData
+    assert(JumpTable.getAddress(0x00) == JumpTableData.entries(0x00).toInt, "nop address")
+    assert(JumpTable.getAddress(0x60) == JumpTableData.entries(0x60).toInt, "iadd address")
+    assert(JumpTable.getAddress(0xA7) == JumpTableData.entries(0xA7).toInt, "goto address")
   }
 }

@@ -6,7 +6,7 @@ import spinal.core.sim._
 import io.circe._
 import io.circe.parser._
 import scala.io.Source
-import jop.TestVectorUtils
+import jop.{JumpTableData, TestVectorUtils}
 
 class BytecodeFetchStageTest extends AnyFunSuite {
 
@@ -197,7 +197,8 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       sleep(1)
 
       val iaddAddr = dut.io.jpaddr.toInt
-      assert(iaddAddr == 0x278, f"IADD should map to 0x278, got 0x$iaddAddr%03x")
+      val expectedIadd = JumpTableData.entries(0x60).toInt
+      assert(iaddAddr == expectedIadd, f"IADD should map to 0x$expectedIadd%03x, got 0x$iaddAddr%03x")
 
       // Increment to address 2 (goto)
       dut.io.jfetch #= true
@@ -208,7 +209,8 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       sleep(1)
 
       val gotoAddr = dut.io.jpaddr.toInt
-      assert(gotoAddr == 0x29B, f"GOTO should map to 0x29B, got 0x$gotoAddr%03x")
+      val expectedGoto = JumpTableData.entries(0xA7).toInt
+      assert(gotoAddr == expectedGoto, f"GOTO should map to 0x$expectedGoto%03x, got 0x$gotoAddr%03x")
     }
   }
 

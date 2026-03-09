@@ -186,13 +186,13 @@ object JopMinMaxSim {
  * No IntegerComputeUnit, no FloatComputeUnit.
  */
 object JopMinBramSim extends App {
-  // TRUE minimum: no IntCU, no FloatCU. Uses bare microcode ROM with
-  // pure-microcode shift-and-add imul (no HW_MUL flag).
+  // TRUE minimum: no IntCU, no FloatCU. Uses superset ROM with jump table
+  // patching to select software multiply (imul_sw) and Java for all others.
   // All float/div/rem ops handled via JOPizer→SoftFloat (IMP_JAVA).
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = 256 * 1024),
-    supersetJumpTable = JumpTableInitData.bareSimulation,
-    imul  = Implementation.Java,
+    supersetJumpTable = JumpTableInitData.simulation,
+    imul  = Implementation.Microcode,
     idiv  = Implementation.Java,
     irem  = Implementation.Java,
     fadd  = Implementation.Java,

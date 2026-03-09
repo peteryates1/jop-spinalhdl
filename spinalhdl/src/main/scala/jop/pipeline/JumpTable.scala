@@ -14,19 +14,27 @@ case class JumpTableInitData(
   entries:     Seq[BigInt],
   sysNoimAddr: Int,
   sysIntAddr:  Int,
-  sysExcAddr:  Int
+  sysExcAddr:  Int,
+  altEntries:  Map[Int, Int] = Map.empty
 ) {
   /** Patch specific bytecodes to sys_noim, making their HW handlers unreachable (dead code in ROM). */
   def disable(bytecodes: Int*): JumpTableInitData =
     copy(entries = entries.zipWithIndex.map { case (addr, i) =>
       if (bytecodes.contains(i)) BigInt(sysNoimAddr) else addr
     })
+
+  /** Patch a bytecode to its alternate (software) handler address. */
+  def useAlt(bytecode: Int): JumpTableInitData =
+    altEntries.get(bytecode) match {
+      case Some(altAddr) => copy(entries = entries.updated(bytecode, BigInt(altAddr)))
+      case None => this  // no alternate available, keep default
+    }
 }
 
 object JumpTableInitData {
   /** Create from any Jopa-generated jump table object */
   private def from(src: JumpTableSource): JumpTableInitData =
-    JumpTableInitData(src.entries, src.sysNoimAddr, src.sysIntAddr, src.sysExcAddr)
+    JumpTableInitData(src.entries, src.sysNoimAddr, src.sysIntAddr, src.sysExcAddr, src.altEntries)
 
   /** SIMULATION superset ROM (all HW handlers: IntegerCU + FloatCU) */
   def simulation: JumpTableInitData = from(JumpTableData)
@@ -37,11 +45,8 @@ object JumpTableInitData {
   /** FLASH-boot superset ROM */
   def flash: JumpTableInitData = from(jop.FlashJumpTableData)
 
-  /** BARE SIMULATION ROM (no HW_MUL, no FLOAT_CU — pure microcode imul) */
-  def bareSimulation: JumpTableInitData = from(jop.BareJumpTableData)
-
-  /** BARE SERIAL ROM (no HW_MUL, no FLOAT_CU — pure microcode imul) */
-  def bareSerial: JumpTableInitData = from(jop.BareSerialJumpTableData)
+  // Bare variants removed — superset ROM contains both HW and SW handlers.
+  // Use resolveJumpTable() with imul: Microcode to select software multiply.
 }
 
 /**

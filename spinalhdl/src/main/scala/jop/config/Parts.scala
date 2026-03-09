@@ -43,7 +43,7 @@ object FpgaDevice {
   def EP4CGX150DF27I7 = FpgaDevice("EP4CGX150DF27I7", FpgaFamily.CycloneIV,
     les = 149760, dspBlocks = 360, bramKbits = 6480)
 
-  def `5CEBA2F17A7` = FpgaDevice("5CEBA2F17A7", FpgaFamily.CycloneV,
+  def `5CEBA2U15C8` = FpgaDevice("5CEBA2U15C8", FpgaFamily.CycloneV,
     les = 25000, dspBlocks = 50, bramKbits = 1760)
 
   def `10M08SAE144C8G` = FpgaDevice("10M08SAE144C8G", FpgaFamily.MAX10,

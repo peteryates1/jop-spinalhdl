@@ -20,12 +20,13 @@ case class JopCoreTestHarness(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
   mainMemInit: Seq[BigInt],
-  memSize: Int = 256 * 1024  // default 256KB; increase for large .jop files
+  memSize: Int = 256 * 1024,  // default 256KB; increase for large .jop files
+  coreConfig: Option[JopCoreConfig] = None  // override core config (default: JopCoreConfig())
 ) extends Component {
 
-  val config = JopCoreConfig(
+  val config = coreConfig.getOrElse(JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = memSize)
-  )
+  ))
 
   val io = new Bundle {
     // Pipeline outputs

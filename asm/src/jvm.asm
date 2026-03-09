@@ -1337,17 +1337,18 @@ iushr:		ushr nxt
 
 
 imul:
-#ifdef HW_MUL
 			// IntegerComputeUnit: sthw captures TOS(b)+NOS(a), jinstr selects imul
 			sthw			// start compute unit, pops TOS. Stack: ..., a
 			pop				// pop second operand. Stack: ...
 			wait			// stall while compute unit busy
 			wait			// rdy_cnt=1 extra cycle
 			ldmul nxt		// push result. Stack: ..., result
-#else
-			// Pure microcode shift-and-add multiply (no hardware unit)
+
+			// Pure microcode shift-and-add multiply (alternate handler for imul: Microcode)
+			// Used when IntegerComputeUnit is not instantiated.
 			// Entry: TOS=b (multiplier), NOS=a (multiplicand)
 			// Exit: push a*b (low 32 bits, signed-correct via two's complement)
+imul_sw:
 			stm	b			// b = TOS, pop. Stack: ..., a
 			stm	a			// a = NOS, pop. Stack: ...
 			ldi	0
@@ -1383,7 +1384,6 @@ imul_noadd:
 			nop
 			pop				// remove counter. Stack: ...
 			ldm	c nxt		// push result
-#endif
 
 
 // 	moved to JVM.java

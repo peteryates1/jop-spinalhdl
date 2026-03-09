@@ -238,6 +238,7 @@ public class Jopa {
 	private List<String> varList = new LinkedList<String>();
 	private int version = -1;
 	private Map<Integer, Integer> jinstrMap = new HashMap<Integer, Integer>();
+	private Map<Integer, Integer> altJinstrMap = new HashMap<Integer, Integer>();
 	private List<Line> instructions = new LinkedList<Line>();
 
 	/**
@@ -261,6 +262,14 @@ public class Jopa {
 							error(in, "symbol "+l.label+" already defined");
 						} else {
 							symMap.put(l.label, Integer.valueOf(pc));
+						}
+						// Detect alternate handlers: <bytecode>_sw labels
+						if (l.label.endsWith("_sw")) {
+							String base = l.label.substring(0, l.label.length() - 3);
+							int bc = JopInstr.get(base);
+							if (bc != -1) {
+								altJinstrMap.put(bc, pc);
+							}
 						}
 					}
 
@@ -484,7 +493,7 @@ public class Jopa {
 //
 //	Write Scala jump table using data collected in pass1()
 //
-			writeScalaJumpTable(jinstrMap, noim_address, int_address, exc_address);
+			writeScalaJumpTable(jinstrMap, altJinstrMap, noim_address, int_address, exc_address);
 
 			PrintStream rom_mem = new PrintStream(new FileOutputStream(dstDir + "mem_rom.dat"));
 			for (int i=0; i<ROM_LEN; ++i) {
@@ -600,6 +609,7 @@ public class Jopa {
 	 * Object name controlled by -n flag (default: JumpTableData).
 	 */
 	private void writeScalaJumpTable(Map<Integer, Integer> bcToAddr,
+									  Map<Integer, Integer> altBcToAddr,
 									  int noim_addr,
 									  int int_addr,
 									  int exc_addr) throws IOException {
@@ -670,6 +680,24 @@ public class Jopa {
 				  "  // sys_int (interrupt handler)\n");
 		sb.append("  val sysExcAddr  = 0x" + String.format("%03X", exc_addr) +
 				  "  // sys_exc (exception handler)\n");
+		sb.append("\n");
+
+		// Alternate handler addresses (e.g., imul_sw for software multiply)
+		sb.append("  /** Alternate handler addresses for bytecodes with both HW and SW handlers */\n");
+		sb.append("  val altEntries: Map[Int, Int] = Map(\n");
+		int altCount = 0;
+		for (Map.Entry<Integer, Integer> entry : altBcToAddr.entrySet()) {
+			int bc = entry.getKey();
+			int addr = entry.getValue();
+			String mnemonic = JopInstr.name(bc);
+			if (mnemonic == null) mnemonic = "???";
+			if (altCount > 0) sb.append(",\n");
+			sb.append(String.format("    0x%02X -> 0x%03X", bc, addr));
+			sb.append("  // " + mnemonic + "_sw");
+			altCount++;
+		}
+		if (altCount > 0) sb.append("\n");
+		sb.append("  )\n");
 		sb.append("}\n");
 
 		scala.write(sb.toString());

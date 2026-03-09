@@ -76,34 +76,51 @@ case class JopCoreConfig(
   require(instrWidth == 10, "Instruction width must be 10 bits")
   require(pcWidth == 11, "PC width must be 11 bits (2K ROM)")
   require(jpcWidth == 11, "JPC width must be 11 bits (2KB cache)")
+  // imul (0x68) is IMP_ASM — JOPizer does NOT replace it with invokestatic.
+  // The jump table must always point to a working handler (sthw or software).
+  // Java is not a valid option because sys_noim expects invokestatic operands.
+  require(imul != Java, "imul: Java is invalid — imul is IMP_ASM. Use Microcode or Hardware.")
 
   // --- Derived: what hardware to instantiate ---
-  def needsIntegerCompute: Boolean = Seq(imul, idiv, irem).exists(_ != Java)
-  def needsFloatCompute: Boolean   = Seq(fadd, fsub, fmul, fdiv, i2f, f2i, fcmpl, fcmpg).exists(_ != Java)
+  // Only Hardware needs actual compute unit instantiation.
+  // Microcode uses pure-microcode handlers (e.g., imul_sw), Java uses sys_noim → JVM.f_xxx().
+  def needsIntegerCompute: Boolean = Seq(imul, idiv, irem).exists(_ == Hardware)
+  def needsFloatCompute: Boolean   = Seq(fadd, fsub, fmul, fdiv, i2f, f2i, fcmpl, fcmpg).exists(_ == Hardware)
 
   // Internal hardware within IntegerComputeUnit
-  def needsIntMul: Boolean = imul != Java
-  def needsIntDiv: Boolean = Seq(idiv, irem).exists(_ != Java)
+  def needsIntMul: Boolean = imul == Hardware
+  def needsIntDiv: Boolean = Seq(idiv, irem).exists(_ == Hardware)
 
   // BmbFpu I/O peripheral (legacy VexRiscv FPU path — only used when useBmbFpu=true)
   def needsBmbFpu: Boolean = useBmbFpu
 
-  /** Resolve the jump table: patch IMP_JAVA bytecodes configured as Java to sys_noim.
+  /** Resolve the jump table: patch bytecodes based on their configured Implementation.
+    *
+    * - Java → patch to sys_noim (JOPizer replaces these with invokestatic)
+    * - Microcode → use alternate handler from ROM if available (e.g., imul_sw)
+    * - Hardware → keep default (HW handler from superset ROM)
+    *
     * Note: imul (0x68) is IMP_ASM in JopInstr.java — JOPizer does NOT replace it,
-    * so the jump table entry must ALWAYS point to a working handler (sthw or software).
-    * The microcode ROM controls which handler is used (HW_MUL flag).
+    * so the jump table entry must ALWAYS point to a working handler.
+    * When imul: Microcode, we use the imul_sw alternate handler.
+    * When imul: Hardware, we use the default sthw handler.
     */
   def resolveJumpTable: JumpTableInitData = {
-    // Only IMP_JAVA bytecodes are safe to patch — JOPizer replaces them with invokestatic.
-    // imul (0x68) is IMP_ASM and must NOT be patched.
     val bytecodeMap: Seq[(Int, Implementation)] = Seq(
-      0x6C -> idiv,  0x70 -> irem,
+      0x68 -> imul,  0x6C -> idiv,  0x70 -> irem,
       0x62 -> fadd,  0x66 -> fsub,  0x6A -> fmul,  0x6E -> fdiv,
       0x76 -> fneg,  0x86 -> i2f,   0x8B -> f2i,
       0x95 -> fcmpl, 0x96 -> fcmpg
     )
-    val javaBytecodes = bytecodeMap.collect { case (bc, Java) => bc }
-    supersetJumpTable.disable(javaBytecodes: _*)
+    var result = supersetJumpTable
+    for ((bc, impl) <- bytecodeMap) {
+      impl match {
+        case Java     => result = result.disable(bc)
+        case Microcode => result = result.useAlt(bc)
+        case Hardware => // keep default HW handler
+      }
+    }
+    result
   }
 
   def fetchConfig = FetchConfig(pcWidth, instrWidth)

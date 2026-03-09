@@ -86,8 +86,13 @@ case class JopSystem(
       s"System '$name': perCoreConfigs length (${pcc.length}) must match cpuCnt ($cpuCnt)"))
 
   // --- Derived paths from boot mode ---
-  def romPath: String = s"asm/generated/${bootMode.dirName}/mem_rom.dat"
-  def ramPath: String = s"asm/generated/${bootMode.dirName}/mem_ram.dat"
+  // Simulation outputs directly to asm/generated/; serial/flash use subdirectories.
+  private def generatedDir: String = bootMode match {
+    case BootMode.Simulation => "asm/generated"
+    case other               => s"asm/generated/${other.dirName}"
+  }
+  def romPath: String = s"$generatedDir/mem_rom.dat"
+  def ramPath: String = s"$generatedDir/mem_ram.dat"
 
   def baseJumpTable: JumpTableInitData = bootMode match {
     case BootMode.Serial     => JumpTableInitData.serial
@@ -195,8 +200,8 @@ object JopConfig {
   // Single-system presets (common case)
   // ========================================================================
 
-  /** QMTECH EP4CGX150 + daughter board — primary dev platform */
-  def qmtechSerial = JopConfig(
+  /** EP4CGX150 + daughter board — full drivers (UART + Ethernet + SD) */
+  def ep4cgx150Serial = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
     systems = Seq(JopSystem(
       name = "main",
@@ -205,15 +210,15 @@ object JopConfig {
       clkFreq = 80 MHz,
       drivers = Seq(DeviceDriver.Uart, DeviceDriver.EthGmii, DeviceDriver.SdNative))))
 
-  /** QMTECH SMP — N cores */
-  def qmtechSmp(n: Int) = {
-    val base = qmtechSerial
+  /** EP4CGX150 + daughter board — SMP, N cores */
+  def ep4cgx150Smp(n: Int) = {
+    val base = ep4cgx150Serial
     base.copy(systems = Seq(base.system.copy(name = s"smp$n", cpuCnt = n)))
   }
 
-  /** QMTECH with hardware integer math (IntegerComputeUnit) */
-  def qmtechHwMath = {
-    val base = qmtechSerial
+  /** EP4CGX150 + daughter board — hardware integer math (IntegerComputeUnit) */
+  def ep4cgx150HwMath = {
+    val base = ep4cgx150Serial
     base.copy(systems = Seq(base.system.copy(
       name = "hwmath",
       coreConfig = JopCoreConfig(
@@ -222,9 +227,9 @@ object JopConfig {
         imul = Microcode, idiv = Hardware, irem = Hardware))))
   }
 
-  /** QMTECH with hardware float (FloatComputeUnit) */
-  def qmtechHwFloat = {
-    val base = qmtechSerial
+  /** EP4CGX150 + daughter board — hardware float (FloatComputeUnit) */
+  def ep4cgx150HwFloat = {
+    val base = ep4cgx150Serial
     base.copy(systems = Seq(base.system.copy(
       name = "hwfloat",
       coreConfig = JopCoreConfig(
@@ -307,7 +312,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(
-        supersetJumpTable = JumpTableInitData.bareSerial,
+        supersetJumpTable = JumpTableInitData.serial,
         imul = Microcode,
         idiv = Java,
         irem = Java),

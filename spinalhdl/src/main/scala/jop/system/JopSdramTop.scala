@@ -567,12 +567,12 @@ object JopFloatCuSdramTopVerilog extends App {
 
 /**
  * Generate MINIMUM Verilog (no IntegerCU, no FloatCU — pure microcode imul)
- * Uses bare-serial microcode ROM (no HW_MUL, no FLOAT_CU).
+ * Uses superset serial ROM (both HW and SW handlers present, resolveJumpTable patches).
  */
 object JopMinSdramTopVerilog extends App {
   import Implementation._
-  val romFilePath = "asm/generated/bare-serial/mem_rom.dat"
-  val ramFilePath = "asm/generated/bare-serial/mem_ram.dat"
+  val romFilePath = "asm/generated/serial/mem_rom.dat"
+  val ramFilePath = "asm/generated/serial/mem_ram.dat"
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
   SpinalConfig(
@@ -585,12 +585,63 @@ object JopMinSdramTopVerilog extends App {
     ramInit = ramData,
     perCoreConfigs = Some(Seq(JopCoreConfig(
       memConfig = JopMemoryConfig(burstLen = 4),
-      supersetJumpTable = JumpTableInitData.bareSerial,
+      supersetJumpTable = JumpTableInitData.serial,
       clkFreq = 80 MHz,
-      imul = Java, idiv = Java, irem = Java
+      imul = Microcode, idiv = Java, irem = Java
     )))
   )))
   println("Generated: spinalhdl/generated/JopSdramTop.v (MINIMUM)")
+}
+
+/**
+ * Config-driven Verilog generator for QMTECH SDRAM.
+ *
+ * Takes a JopConfig, loads ROM/RAM from derived paths,
+ * and generates Verilog via JopSdramTop.
+ */
+object JopConfigSdramVerilog {
+  def generate(jopConfig: JopConfig): Unit = {
+    val sys = jopConfig.system
+
+    val romData = JopFileLoader.loadMicrocodeRom(sys.romPath)
+    val ramData = JopFileLoader.loadStackRam(sys.ramPath)
+
+    println(s"=== ${sys.name} Verilog Generation ===")
+    println(s"  ROM: ${sys.romPath} (${romData.length} entries)")
+    println(s"  RAM: ${sys.ramPath} (${ramData.length} entries)")
+    println(s"  Cores: ${sys.cpuCnt}, Clock: ${sys.clkFreq}")
+    println(s"  imul=${sys.coreConfig.imul}, idiv=${sys.coreConfig.idiv}, irem=${sys.coreConfig.irem}")
+    println(s"  needsIntegerCompute=${sys.coreConfig.needsIntegerCompute}, needsFloatCompute=${sys.coreConfig.needsFloatCompute}")
+
+    // Build per-core configs with SDRAM-specific overrides
+    val coreConfigs = sys.coreConfigs.map(_.copy(
+      memConfig = JopMemoryConfig(burstLen = 4),
+      supersetJumpTable = sys.baseJumpTable,
+      clkFreq = sys.clkFreq,
+      ioConfig = sys.ioConfig
+    ))
+
+    SpinalConfig(
+      mode = Verilog,
+      targetDirectory = "spinalhdl/generated",
+      defaultClockDomainFrequency = FixedFrequency(sys.clkFreq)
+    ).generate(InOutWrapper(JopSdramTop(
+      cpuCnt = sys.cpuCnt,
+      romInit = romData,
+      ramInit = ramData,
+      ioConfig = sys.ioConfig,
+      supersetJumpTable = sys.baseJumpTable,
+      perCoreConfigs = Some(coreConfigs)
+    )))
+
+    val entityName = if (sys.cpuCnt >= 2) "JopSmpSdramTop" else "JopSdramTop"
+    println(s"Generated: spinalhdl/generated/$entityName.v")
+  }
+}
+
+/** Generate Verilog from JopConfig.ep4cgx150HwMath preset */
+object JopConfigHwMathVerilog extends App {
+  JopConfigSdramVerilog.generate(JopConfig.ep4cgx150HwMath)
 }
 
 /**

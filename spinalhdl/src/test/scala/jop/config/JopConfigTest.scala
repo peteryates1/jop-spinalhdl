@@ -5,8 +5,8 @@ import spinal.core._
 
 class JopConfigTest extends AnyFunSuite {
 
-  test("qmtechSerial preset is valid") {
-    val config = JopConfig.qmtechSerial
+  test("ep4cgx150Serial preset is valid") {
+    val config = JopConfig.ep4cgx150Serial
     assert(config.systems.length == 1)
     assert(config.system.name == "main")
     assert(config.system.memory == "W9825G6JH6")
@@ -18,21 +18,21 @@ class JopConfigTest extends AnyFunSuite {
     assert(config.resolveMemory(config.system).get.memType == MemoryType.SDRAM_SDR)
   }
 
-  test("qmtechSmp preset is valid") {
-    val config = JopConfig.qmtechSmp(4)
+  test("ep4cgx150Smp preset is valid") {
+    val config = JopConfig.ep4cgx150Smp(4)
     assert(config.system.cpuCnt == 4)
     assert(config.system.name == "smp4")
   }
 
-  test("qmtechHwMath preset has IntegerComputeUnit") {
-    val config = JopConfig.qmtechHwMath
+  test("ep4cgx150HwMath preset has IntegerComputeUnit") {
+    val config = JopConfig.ep4cgx150HwMath
     assert(config.system.coreConfig.needsIntegerCompute)
     assert(config.system.coreConfig.needsIntDiv)
     assert(!config.system.coreConfig.needsFloatCompute)
   }
 
-  test("qmtechHwFloat preset has both compute units") {
-    val config = JopConfig.qmtechHwFloat
+  test("ep4cgx150HwFloat preset has both compute units") {
+    val config = JopConfig.ep4cgx150HwFloat
     assert(config.system.coreConfig.needsIntegerCompute)
     assert(config.system.coreConfig.needsFloatCompute)
   }
@@ -43,6 +43,29 @@ class JopConfigTest extends AnyFunSuite {
     assert(mem.isDefined)
     assert(mem.get.name == "W9864G6JT")
     assert(mem.get.sizeBytes == 8L * 1024 * 1024)
+  }
+
+  test("CYC5000 pin mappings match QSF (5CEBA2U15C8)") {
+    val config = JopConfig.cyc5000Serial
+    assert(config.fpga.name == "5CEBA2U15C8")
+    assert(config.fpgaFamily == FpgaFamily.CycloneV)
+    val asm = config.assembly
+    // Clock (12 MHz on-board oscillator)
+    assert(asm.pinMapping("CLOCK_12MHz")("clock") == "PIN_F14")
+    // UART (FT2232H on-board USB)
+    assert(asm.pinMapping("FT2232H")("TXD") == "PIN_F16")
+    assert(asm.pinMapping("FT2232H")("RXD") == "PIN_E18")
+    // SDRAM — spot-check key signals
+    val sdram = asm.pinMapping("W9864G6JT")
+    assert(sdram("CLK") == "PIN_P16")
+    assert(sdram("CS_n") == "PIN_L13")
+    assert(sdram("A0") == "PIN_R13")
+    assert(sdram("DQ0") == "PIN_U4")
+    // 8 LEDs
+    val leds = asm.allPinMappings("LED")
+    assert(leds.size == 8)
+    assert(leds("led0") == "PIN_P4")
+    assert(leds("led7") == "PIN_K1")
   }
 
   test("auSerial preset resolves DDR3 memory") {
@@ -80,15 +103,15 @@ class JopConfigTest extends AnyFunSuite {
     assert(sdr.get.memType == MemoryType.SDRAM_SDR)
   }
 
-  test("minimum preset has no float compute, minimal integer") {
+  test("minimum preset has no compute units") {
     val config = JopConfig.minimum
-    // imul: Microcode currently means IntCU radix-4 multiply (needsIntegerCompute = true)
-    // When superset ROM has both imul handlers, Microcode will mean pure software
-    // and needsIntegerCompute will check for Hardware only.
+    // imul: Microcode uses pure-microcode shift-and-add (imul_sw), no IntegerComputeUnit.
     assert(config.system.coreConfig.imul == Implementation.Microcode)
     assert(config.system.coreConfig.idiv == Implementation.Java)
     assert(config.system.coreConfig.irem == Implementation.Java)
+    assert(!config.system.coreConfig.needsIntegerCompute)
     assert(!config.system.coreConfig.needsFloatCompute)
+    assert(!config.system.coreConfig.needsIntMul)
     assert(!config.system.coreConfig.needsIntDiv)
   }
 
@@ -178,11 +201,11 @@ class JopConfigTest extends AnyFunSuite {
         cpuCnt = 2,
         perCoreConfigs = Some(Seq(
           JopCoreConfig(imul = Implementation.Microcode, idiv = Implementation.Hardware, irem = Implementation.Hardware),
-          JopCoreConfig(imul = Implementation.Java, idiv = Implementation.Java, irem = Implementation.Java))),
+          JopCoreConfig(imul = Implementation.Microcode, idiv = Implementation.Java, irem = Implementation.Java))),
         drivers = Seq(DeviceDriver.Uart))))
     assert(config.system.coreConfigs.length == 2)
-    assert(config.system.coreConfigs(0).needsIntegerCompute)  // imul=Microcode + idiv=Hardware
-    assert(!config.system.coreConfigs(1).needsIntegerCompute) // all Java
+    assert(config.system.coreConfigs(0).needsIntegerCompute)  // idiv=Hardware
+    assert(!config.system.coreConfigs(1).needsIntegerCompute) // all Microcode/Java, no Hardware
     // System-level: needs ICU because core 0 needs it
     assert(config.system.needsIntegerCompute)
   }
@@ -196,7 +219,7 @@ class JopConfigTest extends AnyFunSuite {
   }
 
   test("builder pattern with copy") {
-    val base = JopConfig.qmtechSerial
+    val base = JopConfig.ep4cgx150Serial
     val custom = base.copy(
       systems = Seq(base.system.copy(
         cpuCnt = 8,
