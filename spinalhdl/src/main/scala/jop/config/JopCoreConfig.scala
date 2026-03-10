@@ -47,10 +47,11 @@ case class JopCoreConfig(
   useStackCache: Boolean         = false,  // Use 3-bank rotating stack cache with DMA spill/fill
   spillBaseAddrOverride: Option[Int] = None, // Override spillBaseAddr (e.g., 0 for dedicated spill BRAM)
   useBmbFpu:    Boolean          = false,  // Legacy: use BmbFpu I/O peripheral instead of FloatComputeUnit
+  useDspMul:    Boolean          = false,  // Use 1-cycle DSP multiplier in ALU (bypasses CU for imul)
 
   // --- Per-bytecode implementation selection ---
-  // Integer — always Hardware (IntegerComputeUnit). Microcode = iterative, future: Hardware = DSP.
-  imul:  Implementation = Implementation.Microcode,  // Microcode=radix-4 ~18cyc, future Hardware=DSP 1cyc
+  // Integer — always Hardware (IntegerComputeUnit). Microcode = iterative, Hardware = CU or DSP.
+  imul:  Implementation = Implementation.Microcode,  // Microcode=shift-add ~35cyc, Hardware=CU ~22cyc or DSP 2cyc
   idiv:  Implementation = Implementation.Hardware,   // Hardware→IntegerComputeUnit DivUnit ~36cyc
   irem:  Implementation = Implementation.Hardware,   // Hardware→IntegerComputeUnit DivUnit ~36cyc
 
@@ -117,7 +118,12 @@ case class JopCoreConfig(
       impl match {
         case Java     => result = result.disable(bc)
         case Microcode => result = result.useAlt(bc)
-        case Hardware => // keep default HW handler
+        case Hardware =>
+          // When useDspMul, patch imul to DSP handler instead of CU handler
+          if (bc == 0x68 && useDspMul) {
+            result = result.useDspAlt(bc)
+          }
+          // else keep default HW handler
       }
     }
     result
@@ -126,6 +132,7 @@ case class JopCoreConfig(
   def fetchConfig = FetchConfig(pcWidth, instrWidth)
   def decodeConfig = DecodeConfig(instrWidth, ramWidth)
   def stackConfig = StackConfig(dataWidth, jpcWidth, ramWidth,
+    useDspMul = useDspMul,
     cacheConfig = if (useStackCache) Some(StackCacheConfig(
       burstLen = memConfig.burstLen,
       wordAddrWidth = memConfig.addressWidth - 2,

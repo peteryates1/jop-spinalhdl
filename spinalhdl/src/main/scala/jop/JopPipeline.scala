@@ -123,7 +123,7 @@ case class JopPipeline(
 
   val bcfetch = BytecodeFetchStage(config.bcfetchConfig, jbcInit)
   val fetch   = FetchStage(config.fetchConfig, romInit)
-  val decode  = new DecodeStage(config.decodeConfig)
+  val decode  = new DecodeStage(config.decodeConfig, useDspMul = config.useDspMul)
   val stack   = new StackStage(config.stackConfig, ramInit = ramInit).setName("stackStg")
 
   // ==========================================================================
@@ -225,6 +225,11 @@ case class JopPipeline(
   stack.io.enaB := decode.io.enaB
   stack.io.enaVp := decode.io.enaVp
   stack.io.enaAr := decode.io.enaAr
+
+  // DSP multiply trigger wiring
+  if (config.useDspMul) {
+    stack.io.dspMulTrigger.get := decode.io.dspMulTrigger.get
+  }
 
   // Debug ports
   stack.io.debugRamAddr := io.debugRamAddr

@@ -66,7 +66,8 @@ case class StackConfig(
   width: Int = 32,
   jpcWidth: Int = 11,
   ramWidth: Int = 8,
-  cacheConfig: Option[StackCacheConfig] = None
+  cacheConfig: Option[StackCacheConfig] = None,
+  useDspMul: Boolean = false
 ) {
   require(width == 32, "Data width must be 32 bits")
   require(jpcWidth >= 10 && jpcWidth <= 16, "JPC width must be between 10 and 16 bits")
@@ -224,6 +225,9 @@ case class StackStage(
     val debugSelBmux  = out Bool()
     val debugRamDoutVal = out Bits(config.width bits)
     val debugLmuxVal    = out Bits(config.width bits)
+
+    // DSP multiply trigger (only when useDspMul enabled)
+    val dspMulTrigger = if (config.useDspMul) Some(in Bool()) else None
   }
 
   // ==========================================================================
@@ -272,6 +276,20 @@ case class StackStage(
   shifter.io.off := a(4 downto 0).asUInt
   shifter.io.shtyp := io.selShf
   val sout = shifter.io.dout.asBits
+
+  // ==========================================================================
+  // DSP Multiplier (only when useDspMul enabled)
+  // ==========================================================================
+  // Registered 32x32→64 multiply. On dspMulTrigger, latches a*b into result
+  // register using pre-edge operand values. Result is stable next cycle for
+  // lddsp/lddsph to read via lmux slots 110/111.
+  val dspMulResult = if (config.useDspMul) {
+    val result = Reg(UInt(64 bits)) init(0)
+    when(io.dspMulTrigger.get) {
+      result := (a.asSInt * b.asSInt).resize(64).asUInt
+    }
+    Some(result)
+  } else None
 
   // ==========================================================================
   // Stack Pointer Mux (smux) — computed early for rotation controller
@@ -809,7 +827,9 @@ case class StackStage(
     is(B"3'b010") { lmux := ramDout }
     is(B"3'b011") { lmux := immval }
     is(B"3'b100") { lmux := io.din }
-    default       { lmux := rmux.asBits.resized }
+    is(B"3'b101") { lmux := rmux.asBits.resized }
+    is(B"3'b110") { lmux := dspMulResult.map(r => r(31 downto 0).asBits).getOrElse(B(0, config.width bits)) }
+    is(B"3'b111") { lmux := dspMulResult.map(r => r(63 downto 32).asBits).getOrElse(B(0, config.width bits)) }
   }
 
   // ==========================================================================

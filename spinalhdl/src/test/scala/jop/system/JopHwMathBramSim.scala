@@ -25,7 +25,9 @@ case class JopHwMathTestHarness(
 
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = memSize),
-    supersetJumpTable = JumpTableInitData.simulation
+    supersetJumpTable = JumpTableInitData.simulation,
+    imul = Implementation.Hardware,
+    useDspMul = true
   )
 
   val io = new Bundle {
@@ -57,7 +59,7 @@ case class JopHwMathTestHarness(
     )
   }.padTo(2048, BigInt(0))
 
-  // JOP core with DSP multiply + HW divider enabled
+  // JOP core with DSP multiply (1-cycle ALU) + HW divider enabled
   val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -116,8 +118,8 @@ case class JopHwMathTestHarness(
 object JopHwMathBramSim extends App {
 
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
-  val romFilePath = "asm/generated/hwmath/mem_rom.dat"
-  val ramFilePath = "asm/generated/hwmath/mem_ram.dat"
+  val romFilePath = "asm/generated/mem_rom.dat"
+  val ramFilePath = "asm/generated/mem_ram.dat"
   val logFilePath = "spinalhdl/hwmath_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

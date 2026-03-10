@@ -15,7 +15,8 @@ case class JumpTableInitData(
   sysNoimAddr: Int,
   sysIntAddr:  Int,
   sysExcAddr:  Int,
-  altEntries:  Map[Int, Int] = Map.empty
+  altEntries:  Map[Int, Int] = Map.empty,
+  dspAltEntries: Map[Int, Int] = Map.empty
 ) {
   /** Patch specific bytecodes to sys_noim, making their HW handlers unreachable (dead code in ROM). */
   def disable(bytecodes: Int*): JumpTableInitData =
@@ -29,12 +30,19 @@ case class JumpTableInitData(
       case Some(altAddr) => copy(entries = entries.updated(bytecode, BigInt(altAddr)))
       case None => this  // no alternate available, keep default
     }
+
+  /** Patch a bytecode to its DSP-accelerated handler address. */
+  def useDspAlt(bytecode: Int): JumpTableInitData =
+    dspAltEntries.get(bytecode) match {
+      case Some(dspAddr) => copy(entries = entries.updated(bytecode, BigInt(dspAddr)))
+      case None => this  // no DSP alternate available, keep default
+    }
 }
 
 object JumpTableInitData {
   /** Create from any Jopa-generated jump table object */
   private def from(src: JumpTableSource): JumpTableInitData =
-    JumpTableInitData(src.entries, src.sysNoimAddr, src.sysIntAddr, src.sysExcAddr, src.altEntries)
+    JumpTableInitData(src.entries, src.sysNoimAddr, src.sysIntAddr, src.sysExcAddr, src.altEntries, src.dspAltEntries)
 
   /** SIMULATION superset ROM (all HW handlers: IntegerCU + FloatCU) */
   def simulation: JumpTableInitData = from(JumpTableData)

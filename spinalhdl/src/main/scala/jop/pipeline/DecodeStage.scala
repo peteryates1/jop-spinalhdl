@@ -222,7 +222,8 @@ object DecodePayloads {
  * @param config Decode stage configuration
  */
 case class DecodeStage(
-  config: DecodeConfig = DecodeConfig()
+  config: DecodeConfig = DecodeConfig(),
+  useDspMul: Boolean = false
 ) extends Component {
 
   // Pre-compute widths for use in Bundle
@@ -280,6 +281,9 @@ case class DecodeStage(
     val cuStart  = out Bool()   // sthw instruction: start CU operation
     val cuOpcode = out UInt(6 bits)  // sthw operand: unit[5:4] + op[3:0]
     val cuPop    = out Bool()   // ldop instruction: pop CU result
+
+    // DSP multiply trigger (only when useDspMul enabled)
+    val dspMulTrigger = if (useDspMul) Some(out Bool()) else None
   }
 
   // ==========================================================================
@@ -462,6 +466,9 @@ case class DecodeStage(
     val cuOpcodeReg = Reg(UInt(6 bits)) init(0)
     val cuPopReg    = Reg(Bool()) init(False)
 
+    // DSP multiply trigger register
+    val dspMulTriggerReg = if (useDspMul) Some(Reg(Bool()) init(False)) else None
+
     // Gate all registered decode during stall (hold previous values)
     when(!io.stall) {
 
@@ -492,6 +499,7 @@ case class DecodeStage(
     cuPushReg := False
     cuStartReg := False
     cuPopReg := False
+    dspMulTriggerReg.foreach(_ := False)
 
     // ========================================================================
     // Instruction-Specific ALU Control
@@ -508,6 +516,12 @@ case class DecodeStage(
       }
       is(B"10'b0000000101") {  // sub
         selAmuxReg := False
+      }
+
+      // DSP multiply POP-class instructions (lddsp/lddsph: selLmux set in priority section below)
+      is(B"10'b0000001000") {  // lddsp (0x008): a <- dspResult[31:0]
+      }
+      is(B"10'b0000001001") {  // lddsph (0x009): a <- dspResult[63:32]
       }
 
       // Store Operations
@@ -592,6 +606,10 @@ case class DecodeStage(
       is(B"10'b0100000010") {  // jbr
         enaAReg := False
       }
+      is(B"10'b0100000011") {  // dspmul (0x103): latch a*b in DSP reg, NOP class
+        enaAReg := False
+        dspMulTriggerReg.foreach(_ := True)
+      }
 
       // MMU Operations without stack change (0x110-0x11F)
       is(B"10'b0100010000") {  // stgs
@@ -651,6 +669,14 @@ case class DecodeStage(
     // ir(9:2) = 00000111 matches the shift range, but stop needs logic unit path
     when(ir === B"10'b0000011111") {
       selLmuxReg := B"3'b000"  // logic unit (not shifter)
+    }
+
+    // DSP result load: lddsp (0x008) → slot 110, lddsph (0x009) → slot 111
+    when(ir === B"10'b0000001000") {
+      selLmuxReg := B"3'b110"  // DSP result low
+    }
+    when(ir === B"10'b0000001001") {
+      selLmuxReg := B"3'b111"  // DSP result high
     }
 
     // sthw range 0x140-0x17F (ir[9:6]=0101): start CU operation
@@ -715,6 +741,9 @@ case class DecodeStage(
     io.cuStart := cuStartReg
     io.cuOpcode := cuOpcodeReg
     io.cuPop := cuPopReg
+
+    // DSP multiply trigger output
+    io.dspMulTrigger.foreach(_ := dspMulTriggerReg.get)
   }
 
   // ==========================================================================

@@ -724,10 +724,18 @@ object JopDbFpgaTopVerilog extends App {
     cpuCnt = 1,
     romInit = romData,
     ramInit = ramData,
-    ioConfig = IoConfig.qmtechDbFpga
+    ioConfig = IoConfig.qmtechDbFpga,
+    perCoreConfigs = Some(Seq(JopCoreConfig(
+      memConfig = JopMemoryConfig(burstLen = 4),
+      supersetJumpTable = JumpTableInitData.serial,
+      clkFreq = 80 MHz,
+      ioConfig = IoConfig.qmtechDbFpga,
+      imul = Implementation.Hardware,
+      useDspMul = true
+    )))
   )))
 
-  println("Generated: spinalhdl/generated/JopSdramTop.v (DB_FPGA I/O)")
+  println("Generated: spinalhdl/generated/JopSdramTop.v (DB_FPGA I/O, DSP multiply)")
 }
 
 /**

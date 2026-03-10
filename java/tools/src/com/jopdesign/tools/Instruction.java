@@ -79,6 +79,9 @@ public class Instruction implements Serializable {
 			new Instruction("xor", 0x003, 0, JmpType.NOP, StackType.POP),
 			new Instruction("add", 0x004, 0, JmpType.NOP, StackType.POP),
 			new Instruction("sub", 0x005, 0, JmpType.NOP, StackType.POP),
+			// DSP multiply result load (POP class)
+			new Instruction("lddsp", 0x008, 0, JmpType.NOP, StackType.POP),
+			new Instruction("lddsph", 0x009, 0, JmpType.NOP, StackType.POP),
 
 			// st (vp) 3 bits
 			new Instruction("st0", 0x010 + 0, 0, JmpType.NOP, StackType.POP),
@@ -175,6 +178,8 @@ public class Instruction implements Serializable {
 			new Instruction("nop", 0x100, 0, JmpType.NOP, StackType.NOP),
 			new Instruction("wait", 0x101, 0, JmpType.NOP, StackType.NOP),
 			new Instruction("jbr", 0x102, 0, JmpType.NOP, StackType.NOP),
+			// DSP multiply trigger (NOP class: latch a*b, no stack change)
+			new Instruction("dspmul", 0x103, 0, JmpType.NOP, StackType.NOP),
 			
 			// CU start operation (NOP class, 6-bit operand: unit[5:4] + op[3:0])
 			new Instruction("sthw", 0x140, 6, JmpType.NOP, StackType.NOP),

@@ -22,14 +22,23 @@ JOP_OUT := $(APP_NAME).jop
 LIB_CP := $(LIB_DIR)/bcel-5.2.jar:$(LIB_DIR)/jakarta-regexp-1.3.jar:$(LIB_DIR)/log4j-1.2.15.jar:$(LIB_DIR)/jgrapht-jdk1.5.jar
 TOOLS_CP := $(TOOLS_DIR)/dist/jopizer.jar:$(LIB_CP)
 
+# Build the sourcepath: app src + runtime sources + any EXTRA_SRC directories
+# EXTRA_SRC can contain space-separated paths (e.g., EXTRA_SRC="../../net/src ../../fat32/src")
+SRCPATH := $(APP_SRC):$(TARGET_DIR)/src/jop:$(TARGET_DIR)/src/jvm
+ifdef EXTRA_SRC
+SRCPATH := $(SRCPATH):$(subst $() $(),:,$(EXTRA_SRC))
+endif
+
 .PHONY: all classes preprocess jop clean
 
 all: jop
 
 classes:
 	mkdir -p $(CLASSES_DIR) $(BUILD_DIR)
-	find $(APP_SRC) $(TARGET_DIR)/src/jop $(TARGET_DIR)/src/jvm $(EXTRA_SRC) -name '*.java' > $(BUILD_DIR)/sources.txt
-	$(JAVAC6) -source 1.6 -target 1.6 -d $(CLASSES_DIR) @$(BUILD_DIR)/sources.txt
+	$(JAVAC6) -source 1.6 -target 1.6 \
+		-sourcepath $(SRCPATH) \
+		-d $(CLASSES_DIR) \
+		$(APP_SRC)/$(APP_PKG)/$(APP_NAME).java
 
 preprocess: classes
 	mkdir -p $(PP_DIR)

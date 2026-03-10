@@ -1343,6 +1343,13 @@ imul_hw:
 			wait				// 2nd wait: pcwait+bsy → stall until CU done
 			ldop nxt			// push result
 
+			// DSP multiply (2-cycle, 1-cycle registered DSP in ALU)
+			// Entry: TOS=value2, NOS=value1 (A=value2, B=value1)
+			// Exit: push value1*value2 (low 32 bits)
+imul_dsp:
+			dspmul				// NOP: latch A*B in DSP result register
+			lddsp nxt			// POP: sp--, A <- dspResult[31:0], return
+
 			// Pure microcode shift-and-add multiply (alternate handler for imul: Microcode)
 			// Used when IntegerComputeUnit is not instantiated.
 			// Entry: TOS=b (multiplier), NOS=a (multiplicand)
