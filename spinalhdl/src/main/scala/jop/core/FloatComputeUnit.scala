@@ -57,7 +57,7 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
   object State extends SpinalEnum {
     val IDLE, UNPACK                    = newElement()
     val ADD_ALIGN, ADD_SHIFT, ADD_EXEC, ADD_NORM = newElement()
-    val MUL_STEP1, MUL_STEP2                    = newElement()
+    val MUL_STEP1, MUL_STEP2, MUL_NORM           = newElement()
     val DIV_INIT, DIV_ITER                      = newElement()
     val I2F_EXEC, I2F_SHIFT                     = newElement()
     val F2I_EXEC                        = newElement()
@@ -417,24 +417,26 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
 
       is(State.MUL_STEP2) {
         // 24x24 -> 48-bit multiply; aMant(25:2) = {hidden, 23 frac} = 24 bits
+        // Register the product — normalize in MUL_NORM to break the critical path
         val mantA24 = aMant(25 downto 2)
         val mantB24 = bMant(25 downto 2)
-        val product = mantA24 * mantB24  // 48-bit result
+        mulProdHi := mantA24 * mantB24  // 48-bit result -> register
+        state := State.MUL_NORM
+      }
 
-        mulProdHi := product
-
+      is(State.MUL_NORM) {
         // Product of two 1.xxx values: result in [1.0, 4.0)
         // Product bit 47 set -> result >= 2.0, shift right 1
         // Product bit 46 set -> result in [1.0, 2.0), already positioned
-        when(product(47)) {
+        when(mulProdHi(47)) {
           // Map: product(47)->resMant(25)=hidden, product(46:24)->frac, product(23)->guard, product(22)->round
-          resMant := product(47 downto 22).resized
-          sticky := product(21 downto 0) =/= 0
+          resMant := mulProdHi(47 downto 22).resized
+          sticky := mulProdHi(21 downto 0) =/= 0
           resExp := resExp + 1
         } otherwise {
           // Map: product(46)->resMant(25)=hidden, product(45:23)->frac, product(22)->guard, product(21)->round
-          resMant := product(46 downto 21).resized
-          sticky := product(20 downto 0) =/= 0
+          resMant := mulProdHi(46 downto 21).resized
+          sticky := mulProdHi(20 downto 0) =/= 0
         }
         state := State.ROUND
       }

@@ -58,12 +58,12 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
   // ========================================================================
   object State extends SpinalEnum {
     val IDLE, UNPACK                    = newElement()
-    val ADD_ALIGN, ADD_EXEC, ADD_NORM   = newElement()
-    val MUL_STEP1, MUL_STEP2           = newElement()
+    val ADD_ALIGN, ADD_EXEC, ADD_SELECT, ADD_NORM = newElement()
+    val MUL_STEP1, MUL_STEP2, MUL_NORM = newElement()
     val DIV_INIT, DIV_ITER              = newElement()
     val I2D_EXEC                        = newElement()
     val D2I_EXEC                        = newElement()
-    val L2D_EXEC                        = newElement()
+    val L2D_EXEC, L2D_SHIFT             = newElement()
     val D2L_EXEC                        = newElement()
     val F2D_EXEC                        = newElement()
     val D2F_EXEC                        = newElement()
@@ -146,6 +146,10 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
   val addMantA   = Reg(UInt(57 bits)) init (0)
   val addMantB   = Reg(UInt(57 bits)) init (0)
   val addIsSubOp = Reg(Bool()) init (False)
+  val addDiffAB  = Reg(UInt(57 bits)) init (0)   // speculative A - B
+  val addDiffBA  = Reg(UInt(57 bits)) init (0)   // speculative B - A
+  val addSumAB   = Reg(UInt(57 bits)) init (0)   // A + B (for addition)
+  val addAgeB    = Reg(Bool()) init (False)       // A >= B
 
   val mulProdHi  = Reg(UInt(106 bits)) init (0)
 
@@ -153,6 +157,9 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
   val divDivisor   = Reg(UInt(57 bits)) init (0)
   val divQuotient  = Reg(UInt(55 bits)) init (0)
   val divCount     = Reg(UInt(6 bits)) init (0)
+
+  val l2dAbsVal    = Reg(UInt(64 bits)) init (0)
+  val l2dLz        = Reg(UInt(7 bits)) init (0)
 
   // ========================================================================
   // CLZ helpers
@@ -340,16 +347,27 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
       }
 
       is(State.ADD_EXEC) {
+        // Speculatively compute all results in parallel, register them.
+        // This breaks the 57-bit compare -> 57-bit subtract critical path.
+        addDiffAB := addMantA - addMantB
+        addDiffBA := addMantB - addMantA
+        addSumAB  := (addMantA + addMantB).resize(57 bits)
+        addAgeB   := addMantA >= addMantB
+        state := State.ADD_SELECT
+      }
+
+      is(State.ADD_SELECT) {
+        // Select result from registered speculative computations (MUX only)
         val sumWide = UInt(57 bits)
         when(addIsSubOp) {
-          when(addMantA >= addMantB) {
-            sumWide := addMantA - addMantB
+          when(addAgeB) {
+            sumWide := addDiffAB
           } otherwise {
-            sumWide := addMantB - addMantA
+            sumWide := addDiffBA
             resSign := !resSign
           }
         } otherwise {
-          sumWide := (addMantA + addMantB).resize(57 bits)
+          sumWide := addSumAB
         }
 
         when(sumWide === 0 && !sticky) {
@@ -419,17 +437,21 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
 
       is(State.MUL_STEP2) {
         // 53x53 -> 106-bit multiply; aMant(54:2) = {hidden, 52 frac} = 53 bits
+        // Register the product — normalize in MUL_NORM to break the critical path
         val mantA53 = aMant(54 downto 2)
         val mantB53 = bMant(54 downto 2)
-        val product = mantA53 * mantB53  // 106-bit result
+        mulProdHi := mantA53 * mantB53  // 106-bit result -> register
+        state := State.MUL_NORM
+      }
 
-        when(product(105)) {
-          resMant := product(105 downto 51).resized
-          sticky := product(50 downto 0) =/= 0
+      is(State.MUL_NORM) {
+        when(mulProdHi(105)) {
+          resMant := mulProdHi(105 downto 51).resized
+          sticky := mulProdHi(50 downto 0) =/= 0
           resExp := resExp + 1
         } otherwise {
-          resMant := product(104 downto 50).resized
-          sticky := product(49 downto 0) =/= 0
+          resMant := mulProdHi(104 downto 50).resized
+          sticky := mulProdHi(49 downto 0) =/= 0
         }
         state := State.ROUND
       }
@@ -579,6 +601,7 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
     // L2D (long -> double)
     // ======================================================================
     if (config.withL2D) {
+      // Pipeline stage 1: negate + CLZ, register absVal and lz
       is(State.L2D_EXEC) {
         val longVal = opaReg.asSInt
         when(longVal === 0) {
@@ -589,29 +612,34 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
           when(negative) { absVal := (-longVal).asUInt }
             .otherwise   { absVal := longVal.asUInt }
 
-          val lz = clz64(absVal)
+          l2dAbsVal := absVal
+          l2dLz := clz64(absVal)
           resSign := negative
-
-          // Exponent: leading 1 at bit (63 - lz)
-          resExp := (S(63, 13 bits) - lz.resize(13 bits).asSInt)
-
-          // 64-bit integer may not fit exactly in 53-bit mantissa
-          // Place into resMant: hidden at bit 54, frac at 53:2, guard at 1, round at 0
-          // Leading 1 at bit (63-lz); want at bit 54 -> shift = lz - 9
-          // If lz < 9: right shift by (9-lz), losing bits -> needs rounding
-          // If lz >= 9: left shift by (lz-9), exact or near-exact
-          when(lz < 9) {
-            val shR = (U(9, 7 bits) - lz).resize(6 bits)
-            val mask = (U(1, 64 bits) |<< shR) - 1
-            sticky := (absVal & mask) =/= 0
-            resMant := (absVal |>> shR).resize(55 bits)
-          } otherwise {
-            val shL = (lz - 9).resize(6 bits)
-            sticky := False
-            resMant := (absVal.resize(55 bits) |<< shL).resize(55 bits)
-          }
-          state := State.ROUND
+          state := State.L2D_SHIFT
         }
+      }
+
+      // Pipeline stage 2: barrel shift + sticky from registered absVal/lz
+      is(State.L2D_SHIFT) {
+        // Exponent: leading 1 at bit (63 - lz)
+        resExp := (S(63, 13 bits) - l2dLz.resize(13 bits).asSInt)
+
+        // 64-bit integer may not fit exactly in 53-bit mantissa
+        // Place into resMant: hidden at bit 54, frac at 53:2, guard at 1, round at 0
+        // Leading 1 at bit (63-lz); want at bit 54 -> shift = lz - 9
+        // If lz < 9: right shift by (9-lz), losing bits -> needs rounding
+        // If lz >= 9: left shift by (lz-9), exact or near-exact
+        when(l2dLz < 9) {
+          val shR = (U(9, 7 bits) - l2dLz).resize(6 bits)
+          val mask = (U(1, 64 bits) |<< shR) - 1
+          sticky := (l2dAbsVal & mask) =/= 0
+          resMant := (l2dAbsVal |>> shR).resize(55 bits)
+        } otherwise {
+          val shL = (l2dLz - 9).resize(6 bits)
+          sticky := False
+          resMant := (l2dAbsVal.resize(55 bits) |<< shL).resize(55 bits)
+        }
+        state := State.ROUND
       }
     }
 
