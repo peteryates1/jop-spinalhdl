@@ -29,6 +29,18 @@ public class StringBuilder {
 		}
 	}
 
+	public StringBuilder append(Object obj) {
+		return append(String.valueOf(obj));
+	}
+
+	public StringBuilder append(boolean b) {
+		return append(b ? "true" : "false");
+	}
+
+	public StringBuilder append(long lng) {
+		return append(String.valueOf(lng));
+	}
+
 	public StringBuilder append(String str) {
 		if (str == null)
 			str = "null";

@@ -24,7 +24,7 @@ TOOLS_CP := $(TOOLS_DIR)/dist/jopizer.jar:$(LIB_CP)
 
 # Build the sourcepath: app src + runtime sources + any EXTRA_SRC directories
 # EXTRA_SRC can contain space-separated paths (e.g., EXTRA_SRC="../../net/src ../../fat32/src")
-SRCPATH := $(APP_SRC):$(TARGET_DIR)/src/jop:$(TARGET_DIR)/src/jvm
+SRCPATH := $(APP_SRC):$(TARGET_DIR)/src/jop:$(TARGET_DIR)/src/jvm:$(TARGET_DIR)/src/jdk
 ifdef EXTRA_SRC
 SRCPATH := $(SRCPATH):$(subst $() $(),:,$(EXTRA_SRC))
 endif

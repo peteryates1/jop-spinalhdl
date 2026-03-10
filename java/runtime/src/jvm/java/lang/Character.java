@@ -37,4 +37,27 @@ public class Character {
 	public static boolean isDigit(char ch) {
 		return ch >= '0' && ch <= '9';
 	}
+
+	public static int digit(char ch, int radix) {
+		if (radix < MIN_RADIX || radix > MAX_RADIX) return -1;
+		int value;
+		if (ch >= '0' && ch <= '9') {
+			value = ch - '0';
+		} else if (ch >= 'a' && ch <= 'z') {
+			value = ch - 'a' + 10;
+		} else if (ch >= 'A' && ch <= 'Z') {
+			value = ch - 'A' + 10;
+		} else {
+			return -1;
+		}
+		return (value < radix) ? value : -1;
+	}
+
+	public static char forDigit(int digit, int radix) {
+		if (radix < MIN_RADIX || radix > MAX_RADIX || digit < 0 || digit >= radix) {
+			return '\0';
+		}
+		if (digit < 10) return (char)('0' + digit);
+		return (char)('a' + digit - 10);
+	}
 }

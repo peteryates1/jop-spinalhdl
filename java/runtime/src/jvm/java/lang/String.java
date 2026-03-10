@@ -2,6 +2,18 @@ package java.lang;
 
 public class String implements CharSequence {
 	
+	public static String valueOf(Object obj) {
+		return (obj == null) ? "null" : obj.toString();
+	}
+
+	public static String valueOf(boolean b) {
+		return b ? "true" : "false";
+	}
+
+	public static String valueOf(char c) {
+		return new String(new char[]{c});
+	}
+
 	public static String valueOf(int i) {
 		return Integer.toString(i, 10);
 	}
@@ -31,6 +43,10 @@ public class String implements CharSequence {
 			value[i] = ca[i];
 	}
 	
+	public String(StringBuffer sb) {
+		this(sb.toString().toCharArray());
+	}
+
 	public String(char[] data, int offset, int count)
 			throws IndexOutOfBoundsException {
 

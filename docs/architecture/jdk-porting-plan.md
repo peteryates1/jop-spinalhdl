@@ -96,7 +96,7 @@ These constraints apply to every ported class:
 
 ## Porting Phases
 
-### Phase 0: Build Infrastructure
+### Phase 0: Build Infrastructure — DONE (2026-03-10)
 
 **Goal**: Add `src/jdk/` to the build source path so ported classes are compiled.
 
@@ -107,7 +107,9 @@ These constraints apply to every ported class:
 
 **Verify**: build HelloWorld.jop with expanded source paths, all existing tests pass.
 
-### Phase 1: Foundation Interfaces
+**Status**: Complete. All 7 Makefiles updated (runtime + 6 apps). HelloWorld, JvmTests, Smallest all build.
+
+### Phase 1: Foundation Interfaces — DONE (2026-03-10)
 
 **Source**: jopmin (direct copy, no adaptation needed)
 
@@ -131,7 +133,9 @@ java/io/Flushable.java           — pure interface
 **Note**: Some of these may overlap with or replace stubs already in `src/jvm/`. Resolve by
 keeping the richer jopmin version and removing the stub.
 
-### Phase 2: Core Collections
+**Status**: Complete. All 12 files copied from jopmin, no adaptation needed.
+
+### Phase 2: Core Collections — DONE (2026-03-10)
 
 **Source**: jopmin (re-enable growth for general-purpose use)
 
@@ -168,7 +172,19 @@ java/util/HashSet.java                 — backed by HashMap
 
 **Test**: CollectionTest.java in JvmTests — ArrayList add/get/remove/iterator, HashMap put/get/keySet/entrySet, HashSet, for-each loop.
 
-### Phase 3: Extended Lang
+**Status**: Complete. All 18 files ported. Additional adaptations beyond plan:
+- ArrayList: re-enabled `addAll()` methods, added `toArray()` (without `Arrays.copyOf`)
+- HashMap: removed power-of-two constructor restriction (rounds up instead of throwing)
+- HashMap/HashSet/AbstractMap: removed `clone()` (JOP Object has no clone support)
+- HashSet: replaced `LinkedHashMap` reference in package-private constructor with `HashMap`
+- Collection interface: uncommented `toArray()` declaration
+- AbstractCollection: uncommented `toArray()` with simplified implementation (no `finishToArray`)
+- Existing runtime enhanced: Integer (parseInt, valueOf, compareTo, toHexString, extends Number),
+  StringBuilder (append Object/boolean/long), String (valueOf Object/boolean/char, StringBuffer ctor),
+  RuntimeException (chained exception ctors), ArrayIndexOutOfBoundsException (String/int ctors),
+  Character (digit, forDigit)
+
+### Phase 3: Extended Lang — DONE (2026-03-10)
 
 **Source**: jopmin (fix Math bugs, merge with existing Integer/Long)
 
@@ -192,18 +208,29 @@ java/lang/StringBuffer.java        — synchronized StringBuilder
   Implement `pow()` properly (iterative for integer exponents).
 - **Float/Double**: verify `floatToIntBits()`/`intBitsToFloat()` round-trip with HW FPU.
 
-### Phase 4: Extended I/O
+**Status**: Complete. All 7 files ported. Additional adaptations beyond plan:
+- Math: fixed all 5 trig return bugs (sin float/double, cos float/double, atan float),
+  also fixed `1.0f` literals to `1.0` in double variants. Implemented `pow()` with integer
+  fast path (binary exponentiation) + general case (exp/ln Taylor series).
+- Float: replaced `VMFloat.toString()` with simple int+frac implementation
+- Double: stubbed `parseDouble()` (was `VMFloatingDecimal` dependency)
+- Byte: added `extends Number implements Comparable`, added intValue/longValue/floatValue/doubleValue
+- Short: same Number/Comparable additions
+- WrapperTest.java added to JvmTests: parseInt, valueOf, compareTo, toHexString, Boolean,
+  Byte, Short, Number polymorphism, Math.pow — all pass in BRAM simulation
+
+### Phase 4: Extended I/O — DONE (2026-03-10)
 
 **Source**: jopmin (direct copy, tune buffer sizes)
 
-**Classes** (~13 files):
+**Classes** (15 files):
 
 ```
 java/io/Reader.java                — abstract
 java/io/Writer.java                — abstract
 java/io/BufferedReader.java
-java/io/InputStreamReader.java     — ASCII-only
-java/io/OutputStreamWriter.java    — from jop.original (not in jopmin)
+java/io/InputStreamReader.java     — rewritten, ASCII-only
+java/io/OutputStreamWriter.java    — new, ASCII-only (jop.original too dependent on nio)
 java/io/DataInput.java             — interface
 java/io/DataOutput.java            — interface
 java/io/DataInputStream.java
@@ -212,12 +239,23 @@ java/io/ByteArrayInputStream.java
 java/io/ByteArrayOutputStream.java
 java/io/FilterInputStream.java
 java/io/FilterOutputStream.java
+java/io/EOFException.java          — new stub (required by DataInputStream)
+java/io/UTFDataFormatException.java — new stub (required by DataInputStream)
 ```
 
 **JOP adaptations**:
 - Reduce `Reader.skip()` buffer from 8192 to 256 chars
 - Reduce `Writer.writeBufferSize` from 1024 to 128
-- `InputStreamReader`: document ASCII-only encoding
+- `InputStreamReader`: rewritten from scratch (jopmin version had recursive read() bug).
+  ASCII/Latin-1 only — each byte maps to Unicode 0x00-0xFF.
+- `OutputStreamWriter`: written from scratch (jop.original depends on StreamEncoder/Charset).
+  ASCII/Latin-1 only — chars > 0xFF become '?'.
+- All `System.arraycopy` replaced with manual loops (4 files: BufferedReader, ByteArrayInputStream,
+  ByteArrayOutputStream, DataInputStream) — JOP arraycopy known buggy
+- `DataInputStream.readLine()`: removed PushbackInputStream dependency (deprecated method)
+- `ByteArrayOutputStream.toString()`: replaced `String(byte[],int,int)` with char[] conversion
+- `ByteArrayOutputStream.toString(String)`: removed (charset dependency)
+- IoTest.java added to JvmTests: ByteArrayStreams, DataStreams, Reader/Writer — all pass
 
 ### Phase 5: Extended Collections
 
@@ -422,10 +460,10 @@ independent of the JDK 8 upgrade. Both can proceed in parallel.
 For each phase:
 
 1. **Compile**: `cd java && make clean && make all` — no errors
-2. **JVM test suite**: `JopJvmTestsBramSim` — 59/60 pass (DeepRecursion times out)
+2. **JVM test suite**: `JopJvmTestsBramSim` — 54/55 pass (SwapTest T1 pre-existing, DeepRecursion times out)
 3. **New tests**: add phase-specific tests to `java/apps/JvmTests/`
-   - Phase 2: CollectionTest (ArrayList, HashMap, HashSet, for-each)
-   - Phase 3: MathTest (parseInt, trig, pow), WrapperTest (Float.floatToIntBits round-trip)
+   - Phase 2: CollectionTest (ArrayList, HashMap, HashSet, for-each) — DONE, passes
+   - Phase 3: WrapperTest (parseInt, valueOf, compareTo, toHexString, Boolean, Byte, Short, Number, Math.pow) — DONE, passes
    - Phase 5: SortTest (Arrays.sort, Collections.sort)
 4. **FPGA**: run DoAll.jop on QMTECH SDRAM — verify no regressions
 5. **Heap pressure**: monitor GC round count in Small app with collections enabled

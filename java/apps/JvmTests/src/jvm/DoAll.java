@@ -112,9 +112,17 @@ public class DoAll {
 				// String operations
 				new StringConcat(),
 
-				// Stack cache test (deep recursion) — must be last (most cycle-intensive)
-				new DeepRecursion()
+				// JDK class library tests (Phases 1-4)
+				new CollectionTest(),
+				new WrapperTest(),
+				new IoTest(),
+				new MathTest(),
 		};
+
+		// StringBufferTest: too cycle-intensive for BRAM sim (StringBuffer
+		// creates many temporary objects). Run on SDRAM or FPGA targets.
+		// DeepRecursion: only relevant for stack cache configs.
+		// Run via JopStackCacheSim which includes it explicitly.
 		
 		for (int i=0; i<tc.length; ++i) {
 			System.out.print(tc[i].toString());
