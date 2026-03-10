@@ -126,6 +126,14 @@ case class JopCoreConfig(
           // else keep default HW handler
       }
     }
+    // Long operations have hardware handlers (sthw → LCU) in the superset ROM.
+    // Until LCU is config-driven, always use the software handlers.
+    // lmul (0x69), ladd (0x61), lsub (0x65), lneg (0x75),
+    // lcmp (0x94), lushr (0x7D), lshr (0x7B), lshl (0x79)
+    val longOpsToSw = Seq(0x69, 0x61, 0x65, 0x75, 0x94, 0x7D, 0x7B, 0x79)
+    for (bc <- longOpsToSw) {
+      result = result.useAlt(bc)
+    }
     result
   }
 
