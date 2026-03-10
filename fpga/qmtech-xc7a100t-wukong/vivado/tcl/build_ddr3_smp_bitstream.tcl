@@ -16,8 +16,8 @@ read_ip [file join $ip_root mig_7series_0/mig_7series_0.xci]
 # Read RTL
 read_verilog [file join $rtl_dir JopSmpDdr3WukongTop.v]
 
-# Read constraints
-read_xdc [file join $repo_root vivado/constraints/wukong_ddr3.xdc]
+# Read constraints (base only — no Ethernet/SD in SMP build)
+read_xdc [file join $repo_root vivado/constraints/wukong_ddr3_base.xdc]
 
 # Synthesize
 synth_design -top JopSmpDdr3WukongTop -part xc7a100tfgg676-2
@@ -31,10 +31,6 @@ route_design
 write_checkpoint -force [file join $build_dir post_route.dcp]
 report_utilization -file [file join $build_dir utilization_impl.rpt]
 report_timing_summary -file [file join $build_dir timing_summary.rpt]
-
-# Waive combinatorial loop DRC from SpinalHDL StreamFifoLowLatency (SD native controller)
-# These transparent-latch loops are functionally correct but flagged by Xilinx DRC.
-set_property IS_ENABLED FALSE [get_drc_checks LUTLP-1]
 
 # Write bitstream
 write_bitstream -force [file join $build_dir JopSmpDdr3WukongTop.bit]

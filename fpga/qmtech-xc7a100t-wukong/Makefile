@@ -66,7 +66,7 @@ ddr3-monitor:
 # === JOP DDR3 SMP targets ===
 
 ddr3-smp-generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongFullSmp 2"
+	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongSmp 2"
 
 ddr3-smp-build:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_ddr3_smp_bitstream.tcl

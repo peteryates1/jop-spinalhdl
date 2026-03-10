@@ -398,10 +398,20 @@ object JopConfig {
         f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware),
       drivers = Seq(DeviceDriver.UartCh340, DeviceDriver.EthGmii, DeviceDriver.SdNative))))
 
-  /** Wukong DDR3 — full featured SMP */
+  /** Wukong DDR3 — full featured SMP (with Ethernet + SD) */
   def wukongFullSmp(n: Int) = {
     val base = wukongFull
     base.copy(systems = Seq(base.system.copy(name = s"smp$n", cpuCnt = n)))
+  }
+
+  /** Wukong DDR3 — SMP with all compute units, no Ethernet/SD (saves LUTs) */
+  def wukongSmp(n: Int) = {
+    val base = wukongFull
+    base.copy(systems = Seq(base.system.copy(
+      name = s"smp$n",
+      cpuCnt = n,
+      ioConfig = IoConfig(),
+      drivers = Seq(DeviceDriver.UartCh340))))
   }
 
   /** Wukong SDR — full featured: HW integer + float + long + double compute, Ethernet, SD */
