@@ -287,7 +287,7 @@ Each is independently conditional — only instantiated when needed. All share t
 
 ### Problem with current I/O-based peripherals
 
-> **Note (2026-03-09):** All compute units (ICU, FCU, LCU, DCU) have been migrated to the decoupled `stop`/`sthw`/`ldop` pattern via `ComputeUnitTop`. BmbDiv and BmbFpu I/O peripherals removed. The old `stmul`/`ldmul` instructions replaced by `stop`/`sthw`/`ldop`. See `docs/architecture/compute-unit-design.md`.
+> **Note (2026-03-09):** All compute units (ICU, FCU, LCU, DCU) have been migrated to the decoupled `stop`/`sthw`/`ldop` pattern via `ComputeUnitTop`. BmbDiv and BmbFpu I/O peripherals have been removed. The old `stmul`/`ldmul` instructions replaced by `stop`/`sthw`/`ldop`. See `docs/architecture/compute-unit-design.md`.
 
 ~~Today, FPU and DIV are BMB I/O peripherals accessed via generic memory-mapped I/O. The Mul unit is a pipeline component with dedicated `stmul`/`ldmul` instructions.~~ This created two problems (now solved):
 
@@ -400,16 +400,16 @@ The ALU is combinational — result available same cycle, no stall. The Compute 
 | IntegerComputeUnit | idiv, irem | ~34 | DivUnit (32-bit) |
 | LongComputeUnit | lmul | varies | Mul (DSP cascade) |
 | LongComputeUnit | ldiv, lrem | ~66 | DivUnit (64-bit) |
-| FloatComputeUnit | fadd, fsub, fmul, fdiv, frem | varies | FpuCore |
-| FloatComputeUnit | i2f, f2i, f2l, l2f | varies | FpuCore |
-| DoubleComputeUnit | dadd, dsub, dmul, ddiv, drem | varies | DoubleFpuCore |
-| DoubleComputeUnit | i2d, d2i, d2f, f2d, l2d, d2l | varies | DoubleFpuCore |
+| FloatComputeUnit | fadd, fsub, fmul, fdiv, frem | varies | IEEE 754 single |
+| FloatComputeUnit | i2f, f2i, f2l, l2f | varies | IEEE 754 single |
+| DoubleComputeUnit | dadd, dsub, dmul, ddiv, drem | varies | IEEE 754 double |
+| DoubleComputeUnit | i2d, d2i, d2f, f2d, l2d, d2l | varies | IEEE 754 double |
 
 Note: DSP imul is 1 registered cycle but uses DSP blocks, not ALU LUTs. It lives in IntegerComputeUnit — the `sthw`/`wait` pattern handles both bit-serial and DSP uniformly (DSP just finishes in 1 cycle so `wait` doesn't actually stall).
 
 ### Compute unit components
 
-Each compute unit lives in the pipeline (like Mul today). All share a common interface — four 32-bit operands (a/b/c/d matching JVM stack), split 32-bit result, busy signal. Each is independently conditional — only instantiated when the config requires it.
+Each compute unit lives in the pipeline. All share a common interface — four 32-bit operands (a/b/c/d matching JVM stack), split 32-bit result, busy signal. Each is independently conditional — only instantiated when the config requires it.
 
 ```scala
 /** Common interface for all compute units */
@@ -482,8 +482,7 @@ case class LongComputeUnit(config: LongComputeUnitConfig) extends ComputeUnit {
 ```scala
 case class FloatComputeUnit(config: FloatComputeUnitConfig) extends ComputeUnit {
 
-  // VexRiscv-derived FpuCore (IEEE 754 single-precision)
-  val fpu = FpuCore()
+  // IEEE 754 single-precision FPU
 
   io.is64 := False  // default: 32-bit result
 
@@ -508,7 +507,6 @@ Handles double arithmetic (dadd/dsub/dmul/ddiv), double comparison (dcmpl/dcmpg)
 case class DoubleComputeUnit(config: DoubleComputeUnitConfig) extends ComputeUnit {
 
   // IEEE 754 double-precision FPU
-  val fpu = DoubleFpuCore()
 
   io.is64 := True  // default: 64-bit result
 
@@ -569,8 +567,8 @@ This is the same mapping for all operations — every compute unit's operand por
 
 ### What this eliminates
 
-- **BmbFpu** I/O peripheral → replaced by FloatComputeUnit
-- **BmbDiv** I/O peripheral → replaced by IntegerComputeUnit / LongComputeUnit
+- **BmbFpu** I/O peripheral → removed (replaced by FloatComputeUnit)
+- **BmbDiv** I/O peripheral → removed (replaced by IntegerComputeUnit / LongComputeUnit)
 - **I/O address space**: 0xE0-0xE3 (DIV) and 0xF0-0xF3 (FPU) freed up
 - **`stmul`/`ldmul`** microcode instructions → replaced by `sthw` + implicit writeback
 - **Per-bytecode microcode handlers**: fadd/fsub/fmul/fdiv/idiv/irem each had ~9-10 unique instructions → all share one ~4 instruction pattern
@@ -578,7 +576,6 @@ This is the same mapping for all operations — every compute unit's operand por
 
 ### What stays the same
 
-- **FpuCore** (VexRiscv-derived IEEE 754) — the actual compute logic is unchanged, just wired differently
 - **DivUnit** (binary restoring) — same algorithm, just no BMB wrapper
 - **Pipeline stall mechanism** — busy signal still stalls the pipeline, just comes from the active compute unit instead of I/O bus
 
@@ -947,7 +944,7 @@ object JopCoreConfig {
 - `withFpuJumpTable` / `withMathJumpTable` / `isSerialJumpTable` → deleted
 - `FpuMode` enum → deleted
 - `MulImpl` enum → deleted (imul uses Implementation like everything else)
-- `BmbFpu` / `BmbDiv` I/O peripherals → replaced by named compute units
+- `BmbFpu` / `BmbDiv` I/O peripherals → removed (replaced by named compute units)
 
 ### Update consumers
 
@@ -956,7 +953,7 @@ object JopCoreConfig {
 - `useDspMul = true` → `coreConfig.needsIntMul`
 - `useHwDiv = true` → `coreConfig.needsIntDiv`
 - `jumpTable = JumpTableInitData.serialHwMath` → `coreConfig.resolveJumpTable(base)`
-- Mul/FpuCore/DivUnit instantiation → per-unit: `IntegerComputeUnit`, `FloatComputeUnit`, etc.
+- DivUnit instantiation → per-unit: `IntegerComputeUnit`, `FloatComputeUnit`, etc.
 - Long ALU width → `coreConfig.needsLongAlu` → 64-bit ALU datapath in pipeline
 - TOS register count → `coreConfig.needs4RegTos` → 4-register TOS (A/B/C/D)
 
@@ -2515,7 +2512,7 @@ Errors at elaboration time (SpinalHDL `require()` checks):
 // In JopCoreConfig
 require(!(fadd == Implementation.Hardware && fdiv == Implementation.Hardware &&
           fsub != Implementation.Hardware),
-  "FloatComputeUnit: if fadd and fdiv are Hardware, fsub must be too (shared FpuCore)")
+  "FloatComputeUnit: if fadd and fdiv are Hardware, fsub must be too (shared FPU)")
 
 // In JopConfig / JopSystem
 require(cpuCnt >= 1 && cpuCnt <= 16)

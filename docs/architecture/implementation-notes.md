@@ -84,56 +84,17 @@ captured during development — see the source code for authoritative details.
 
 ## Hardware Floating-Point Unit (FPU)
 
-Optional per-core IEEE 754 single-precision FPU. Enabled via `fpuMode = FpuMode.Hardware` in `JopCoreConfig`. Default is `FpuMode.Software` (SoftFloat32 in Java).
-
-### Architecture
-
-- **BmbFpu** (`jop.io`): I/O peripheral wrapper at addresses `0xF0`-`0xF3`. Write address encodes operation (0=ADD, 1=SUB, 2=MUL, 3=DIV). Auto-captures both operands on a single I/O write: `bout` (NOS = value1) → opA, `wrData` (TOS = value2) → opB. Read address 0 returns result, address 1 returns status (bit 0 = ready).
-- **JopFpuAdapter** (`jop.io`): FSM adapter bridging JOP's simple I/O model to VexRiscv's FpuCore cmd/commit/rsp protocol. 11-state FSM: IDLE → LOAD_A → WAIT_LOAD_A → LOAD_B → WAIT_LOAD_B → COMPUTE → WAIT_COMPUTE → STORE → WAIT_STORE → LATCH_RESULT → DONE. Each state issues cmd+commit handshakes to FpuCore.
-- **FpuCore** (`jop.ip.fpu`): VexRiscv-derived IEEE 754 FPU. Copied from VexRiscv (`/srv/git/VexRiscv/src/main/scala/vexriscv/ip/fpu/`), re-packaged to `jop.ip.fpu`. Pure SpinalHDL — compatible with Verilator simulation and FPGA synthesis. Configured for single-precision only (`withDouble=false`, `withSqrt=false`).
-
-### Pipeline Stall
-
-`BmbFpu.io.busy` (high while computing) is added to the pipeline `memBusy` chain in JopCore. The pipeline stalls automatically after the `stmwd` instruction (which starts the FPU) until the computation completes. No explicit wait instructions needed for FPU latency — the 2 `wait` instructions in the microcode are for I/O read latency (SimpCon rdy_cnt), not FPU latency.
-
-### I/O Read Re-sampling
-
-I/O reads in BmbMemoryController latch `rdDataReg` combinationally in IDLE state. For the FPU, `stmra` fires ~4 cycles after `stmwd`, while the FPU is still computing (~27 cycles). The I/O read re-sampling mechanism (bug #31) continuously re-latches `rdDataReg` while `ioRdPending` is set, ensuring the correct result is captured when `ldmrd` reads it.
-
-### Microcode
-
-FPU handlers in `asm/src/jvm.asm` (fadd/fsub/fmul/fdiv):
-```
-fadd:   ldi fpu_add ; stmwa ; stmwd ; pop ; ldi fpu_res ; stmra ; wait ; wait ; ldmrd nxt
-```
-- `stmwa`: sets I/O write address (FPU_ADD = 0xF0)
-- `stmwd`: writes TOS to I/O, auto-captures NOS via bout wire, starts FPU computation, pipeline stalls
-- `pop`: drops value1 from stack (pipeline unstalls after FPU completes)
-- `stmra`: starts I/O read at FPU_RES (0xF0)
-- `wait; wait`: I/O read latency (rdy_cnt=1)
-- `ldmrd`: pushes FPU result onto stack
-
-### Jump Table Variants
-
-FPU-enabled microcode uses separate jump tables that redirect float bytecodes (0x62=fadd, 0x66=fsub, 0x6A=fmul, 0x6E=fdiv) to FPU microcode handlers instead of SoftFloat32 Java dispatch. Variants: `simulationFpu`, `serialFpu`. Non-FPU float bytecodes (fneg, fcmp, f2i, frem) and all double bytecodes still use Java software path.
+Optional per-core IEEE 754 single-precision FPU via **FloatComputeUnit** (pipeline-integrated). Handles 8 float ops (fadd/fsub/fmul/fdiv/i2f/f2i/fcmpl/fcmpg) via `sthw`/`wait`/`ldop` microcode pattern. Enabled by setting float bytecodes to `Implementation.Hardware` in `JopCoreConfig`. See `docs/architecture/compute-unit-design.md`.
 
 ### Configuration
 
-- `fpuMode = FpuMode.Hardware` in `JopCoreConfig` → instantiates BmbFpu
-- `jumpTable = JumpTableInitData.simulationFpu` (or `serialFpu`) → routes float ops to FPU microcode
-- `withFpuJumpTable` convenience method on JopCoreConfig auto-selects correct FPU jump table variant
-- `perCoreConfigs` in JopCluster enables heterogeneous SMP (e.g., core 0 with FPU, core 1 without)
-- BmbSys register 15 reports FPU capability (1 if FPU present, 0 otherwise)
-
-### FPU Microcode Build
-
-FPU microcode is built separately: `cd asm && make fpu` produces `asm/generated/fpu/mem_rom.dat` and `asm/generated/fpu/mem_ram.dat` (built with `SIMULATION + FPU_ATTACHED` flags). Serial boot FPU variant: `make serial-fpu` → `asm/generated/serial-fpu/`.
+- Per-bytecode `Implementation.Hardware` in `JopCoreConfig` for fadd/fsub/fmul/fdiv/i2f/f2i/fcmpl/fcmpg
+- `resolveJumpTable` patches jump table entries to route to CU microcode handlers
+- BmbSys register 15 reports FPU capability (1 if `needsFloatCompute`, 0 otherwise)
 
 ### Verification
 
-- **JopFpuAdapterSim**: 22 standalone adapter tests (all 4 ops with various operands) — all pass
-- **BmbFpuSim**: BmbFpu I/O peripheral unit test (9 operations: ADD, SUB, MUL, DIV) — all pass
-- **JopFpuBramSim**: Full system integration test with HW FPU. Runs 60/60 JVM tests (27M cycles) including FloatTest, FloatField, FloatArray, DoubleArithmetic. 16 FPU operations traced with correct IEEE 754 results.
+- **JopFloatCuBramSim**: Full system integration test with FloatComputeUnit. Runs 60/60 JVM tests including FloatTest, FloatField, FloatArray, DoubleArithmetic.
 
 ## Object Cache
 

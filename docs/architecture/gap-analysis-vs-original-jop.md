@@ -54,7 +54,7 @@ These exist in jop-spinalhdl but NOT in the original:
 |------------|----------|-----------|----------|
 | SPI master (general purpose) | `sc_spi.vhd` | SpinalHDL lib has `SpiMasterCtrl`, needs BMB wrapper + JOP I/O mapping | Medium |
 | I2C controller | `sc_i2c.vhd` | SpinalHDL lib has `BmbI2cCtrl` (BMB native!), needs JOP I/O mapping | Medium |
-| Hardware FPU | `fpu/` (OpenCores FPU100) | **Implemented** — `jop/ip/fpu/FpuCore`, needs `make fpu` + FPGA test | Not a gap |
+| Hardware FPU | `fpu/` (OpenCores FPU100) | **Implemented** — FloatComputeUnit (pipeline-integrated IEEE 754) | Not a gap |
 | PS/2 keyboard | `kbd_cntrl/` | Missing | Low |
 | PS/2 mouse | `mouse_cntrl/` | Missing | Low |
 | USB | `sc_usb.vhd` (FTDI parallel) | SpinalHDL lib has `spinal.lib.com.usb` (PHY, UDC, OHCI) | Low |
@@ -67,11 +67,9 @@ These exist in jop-spinalhdl but NOT in the original:
 
 **Notes:**
 - **Hardware FPU is NOT a gap.** jop-spinalhdl has a complete FPU
-  (`jop/ip/fpu/FpuCore.scala`, derived from VexRiscv) with auto-capture
-  of both operands in a single I/O write (9 microcode instructions vs 22
-  in the original). Supports ADD/SUB/MUL/DIV. The core also has CMP,
-  I2F, F2I, and SQRT hardware that could be exposed. Needs `cd asm &&
-  make fpu` to build the FPU microcode, then FPGA testing.
+  via FloatComputeUnit (pipeline-integrated IEEE 754 single-precision).
+  Supports fadd/fsub/fmul/fdiv/i2f/f2i/fcmpl/fcmpg via `sthw`/`wait`/`ldop`
+  microcode pattern (~5 instructions). 60/60 JVM tests pass.
 - **SPI and I2C** are available in SpinalHDL lib (`spinal.lib.com.spi`,
   `spinal.lib.com.i2c`). I2C already has a BMB wrapper (`BmbI2cCtrl`).
   SPI would need a thin BMB wrapper around `SpiMasterCtrl`. Both need

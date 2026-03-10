@@ -46,7 +46,6 @@ case class JopCoreConfig(
   useIhlu:      Boolean          = false,  // Use IHLU (per-object lock) instead of CmpSync (global lock)
   useStackCache: Boolean         = false,  // Use 3-bank rotating stack cache with DMA spill/fill
   spillBaseAddrOverride: Option[Int] = None, // Override spillBaseAddr (e.g., 0 for dedicated spill BRAM)
-  useBmbFpu:    Boolean          = false,  // Legacy: use BmbFpu I/O peripheral instead of FloatComputeUnit
   useDspMul:    Boolean          = false,  // Use 1-cycle DSP multiplier in ALU (bypasses CU for imul)
 
   // --- Per-bytecode implementation selection ---
@@ -138,9 +137,6 @@ case class JopCoreConfig(
   def needsDoubleDiv: Boolean     = ddiv == Hardware
   def needsDoubleConvert: Boolean = Seq(i2d, d2i, l2d, d2l, f2d, d2f).exists(_ == Hardware)
   def needsDoubleCmp: Boolean     = Seq(dcmpl, dcmpg).exists(_ == Hardware)
-
-  // BmbFpu I/O peripheral (legacy VexRiscv FPU path — only used when useBmbFpu=true)
-  def needsBmbFpu: Boolean = useBmbFpu
 
   /** Resolve the jump table: patch bytecodes based on their configured Implementation.
     *

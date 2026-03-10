@@ -152,8 +152,7 @@ object JopAddressSpace {
  *   0xD4-0xDF  (free)       3 slots for future devices
  *   0xE0-0xE3  BmbDiv       1 slot  (4 addrs)   match a(7:2) === 0x38
  *   0xE4-0xEF  (free)       3 slots for future devices
- *   0xF0-0xF3  BmbFpu       1 slot  (4 addrs)   match a(7:2) === 0x3C
- *   0xF4-0xFF  (free)       3 slots for future devices
+ *   0xF0-0xFF  (free)       4 slots for future devices
  */
 object JopIoSpace {
   // Device base addresses (within 8-bit ioAddr space, bipush range 0x80-0xFF)

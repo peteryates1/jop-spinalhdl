@@ -14,7 +14,7 @@ JVM_TYPE=SIMULATION
 # Covered operations:
 #   imul, lmul (integer/long multiply)
 #   lneg, ladd, lsub, lcmp, lushr, lshr, lshl (long arithmetic/shifts)
-#   fadd, fsub, fmul, fdiv (float via CU or BmbFpu I/O)
+#   fadd, fsub, fmul, fdiv (float via CU)
 #   fcmpl, fcmpg, i2f, f2i (float CU only, no _sw variant)
 # =========================================================================
 

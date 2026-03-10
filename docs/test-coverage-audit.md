@@ -143,10 +143,9 @@ in Java (`JVM.java`). The jump table in the assembler maps each JVM bytecode to 
 | frem | 0x72 | JV (SoftFloat) | JV (SoftFloat) | T | FloatTest (test_frem) |
 | fneg | 0x76 | JV | JV | T | FloatTest (test_fneg) |
 
-Note: With `fpuMode = Hardware`, fadd/fsub/fmul/fdiv are dispatched via FPU jump table
-to microcode handlers that use the HW FPU (BmbFpu I/O peripheral wrapping VexRiscv FpuCore).
-Other float operations (frem, fneg, fcmp, f2i) remain in Java software.
-Both paths verified: `JopJvmTestsBramSim` (Software) and `JopFpuBramSim` (Hardware) — 60/60 pass.
+Note: With float bytecodes set to `Implementation.Hardware`, fadd/fsub/fmul/fdiv/i2f/f2i/fcmpl/fcmpg are dispatched via jump table to microcode handlers that use FloatComputeUnit (pipeline-integrated FPU).
+Other float operations (frem) remain in Java software; fneg uses microcode XOR sign bit.
+Both paths verified: `JopJvmTestsBramSim` (Software) and `JopFloatCuBramSim` (Hardware) — 60/60 pass.
 
 ### 1.8 Double Arithmetic
 
@@ -478,9 +477,7 @@ The TypeConversion test exercises d2i, d2l, d2f, f2d, i2d, l2d conversions separ
 
 | Harness | Memory | App | Cycles | What it Tests |
 |---|---|---|---|---|
-| JopFpuBramSim | BRAM | JvmTests (DoAll) | 27M | 60 JVM tests with HW FPU (float ops via BmbFpu) |
-| BmbFpuSim | Unit test | — | — | BmbFpu I/O peripheral (9 operations: ADD, SUB, MUL, DIV) |
-| JopFpuAdapterSim | Unit test | — | — | JopFpuAdapter FSM (22 operations with IEEE 754 verification) |
+| JopFpuBramSim | BRAM | JvmTests (DoAll) | 27M | 60 JVM tests with HW FPU (float ops via FloatComputeUnit) |
 
 #### Debug & Special
 
@@ -590,9 +587,9 @@ Implemented as `FloatArray.java` (faload/fastore with float arrays, 4 elements +
 
 ### Formal Verification
 
-- **Suites**: 25 (SymbiYosys + Z3)
-- **Total properties**: 117
-- **Components covered**: ArrayCache, BmbCacheBridge, BmbFpu, BmbMemoryController, BmbProtocol, BmbSdNative, BmbSys, BmbUart, BytecodeFetchStage, CacheToMigAdapter, CmpSync, Crc8Maxim, DebugBreakpoints, DecodeStage, FetchStage, Ihlu, JopFpuAdapter, JumpTable, LruCacheCore, MethodCache, Mul, ObjectCache, Shift, StackCacheDma, StackStage
+- **Suites**: 22 (SymbiYosys + Z3)
+- **Total properties**: 105
+- **Components covered**: ArrayCache, BmbCacheBridge, BmbMemoryController, BmbProtocol, BmbSdNative, BmbSys, BmbUart, BytecodeFetchStage, CacheToMigAdapter, CmpSync, Crc8Maxim, DebugBreakpoints, DecodeStage, FetchStage, Ihlu, JumpTable, LruCacheCore, MethodCache, ObjectCache, Shift, StackCacheDma, StackStage
 
 ### Bug Regression Coverage
 
@@ -603,11 +600,11 @@ Implemented as `FloatArray.java` (faload/fastore with float arrays, 4 elements +
 
 ### Simulation Harnesses
 
-- **Total runnable harnesses**: 37
+- **Total runnable harnesses**: 36
 - **Core single-core**: 12
 - **Serial boot**: 3
 - **JVM test**: 3 (BRAM, SMP, stack cache)
-- **FPU**: 3 (system integration, I/O peripheral, adapter)
+- **FPU**: 2 (system integration, HW math)
 - **SMP**: 8 (CmpSync, IHLU, cache stress, DDR3)
 - **Debug & special**: 5
 - **Verilog generation**: 3 (Questa, SDRAM Questa, Vivado xsim)

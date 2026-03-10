@@ -168,7 +168,6 @@ Unified configuration for a single JOP core. Defined in `jop/config/JopCoreConfi
 | `useIhlu` | Boolean | false | Use IHLU per-object lock (vs CmpSync global lock) |
 | `useStackCache` | Boolean | false | Enable 3-bank rotating stack cache with DMA |
 | `spillBaseAddrOverride` | Option[Int] | None | Override spill address (e.g., `Some(0)` for dedicated spill BRAM) |
-| `useBmbFpu` | Boolean | false | Legacy: use BmbFpu I/O peripheral instead of FloatComputeUnit |
 | `useDspMul` | Boolean | false | Use 1-cycle DSP multiplier in ALU (bypasses CU for imul) |
 
 ### Per-Bytecode Implementation Fields
@@ -380,7 +379,7 @@ I/O device presence and parameters. Defined in `jop/system/IoConfig.scala`.
 | `0xC0–0xCF` | BmbVgaText | 4 |
 | `0xD0–0xD3` | BmbCfgFlash | 1 |
 | `0xE0–0xE3` | ~~BmbDiv~~ (removed -- replaced by IntegerComputeUnit) | 1 |
-| `0xF0–0xF3` | BmbFpu (legacy: only when `useBmbFpu=true`) | 1 |
+| `0xF0–0xF3` | ~~BmbFpu~~ (removed -- replaced by FloatComputeUnit) | 1 |
 
 ## DebugConfig
 

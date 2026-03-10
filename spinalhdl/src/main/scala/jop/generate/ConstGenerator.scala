@@ -37,7 +37,6 @@ object ConstGenerator {
     val hasVgaDma = allIo.exists(_.hasVgaDma)
     val hasVgaText = allIo.exists(_.hasVgaText)
     val hasCfgFlash = allIo.exists(_.hasConfigFlash)
-    val hasBmbFpu = allCores.exists(_.needsBmbFpu)
 
     // Feature flags: true if ANY core uses Java (software) for that category
     val supportFloat = allCores.exists { c =>

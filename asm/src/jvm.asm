@@ -201,10 +201,9 @@ ua_tdre		= 	1
 
 // BmbDiv I/O constants removed — idiv/irem now handled by IntegerComputeUnit via sthw
 
-// FPU auto-capture I/O constants: write address encodes operation (0xF0-0xF3),
-// BmbFpu latches bout(NOS=value1)->opA, wrData(TOS=value2)->opB on write.
-// Read address 0xF0 returns result. Busy stall handles FPU latency.
-// Always defined (needed by unconditional _io float handlers in superset ROM).
+// Legacy FPU I/O constants (BmbFpu has been removed — FloatComputeUnit replaces it).
+// These constants are retained for the _sw float handlers below, which remain in the
+// superset ROM but are never selected by resolveJumpTable (no code path reaches them).
 fpu_add  = -16    // 0xF0: write starts float ADD
 fpu_sub  = -15    // 0xF1: write starts float SUB
 fpu_mul  = -14    // 0xF2: write starts float MUL
@@ -2142,7 +2141,7 @@ lmul_sw:
 // Both are unconditionally present. Default labels point to HW (CU) versions.
 //
 // CU handlers (_hw): uses ComputeUnitTop via stop/sthw/wait/ldop
-// I/O handlers (_sw): uses BmbFpu via I/O read/write (non-CU alternative)
+// I/O handlers (_sw): legacy BmbFpu I/O handlers (dead code — BmbFpu removed)
 // ==========================================================================
 
 // ---------- fadd ----------
