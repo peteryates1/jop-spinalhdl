@@ -2,7 +2,7 @@
 
 A complete reimplementation of the [Java Optimized Processor](https://github.com/jop-devel/jop) (JOP) in [SpinalHDL](https://spinalhdl.github.io/SpinalDoc-RTD/). JOP is a hardware implementation of the Java Virtual Machine as a soft-core processor for FPGAs, originally developed by Martin Schoeberl. See [jopdesign.com](https://www.jopdesign.com/) for the original project.
 
-This port runs Java programs on FPGA hardware. The primary development platform is the **QMTECH EP4CGX150** (Altera Cyclone IV GX + SDR SDRAM), which supports single-core and SMP (up to 16-core) configurations with stable garbage collection.
+This port runs Java programs on FPGA hardware. The primary development platform is the **QMTECH EP4CGX150** (Altera Cyclone IV GX + SDR SDRAM), which supports single-core and SMP (up to 16-core) configurations with stable garbage collection. The **QMTECH Wukong V3** (Xilinx Artix-7 XC7A100T + DDR3) provides the full-featured configuration with all four hardware compute units.
 
 Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 
@@ -14,6 +14,7 @@ Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 - **SDRAM (single-core)**: Serial boot over UART into SDR SDRAM on two boards — QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V, W9864G6JT)
 - **BRAM**: Self-contained, program embedded in block RAM (QMTECH EP4CGX150)
 - **DDR3**: Serial boot through write-back cache into DDR3 (Alchitry Au V2, Xilinx Artix-7, full 256MB addressed) — single-core and 2-core SMP verified on hardware with GC (67K+ rounds single-core, NCoreHelloWorld SMP). See [DDR3 notes](docs/gc/ddr3-gc-hang.md).
+- **Wukong DDR3 (full-featured)**: All four compute units (IntegerComputeUnit + FloatComputeUnit + LongComputeUnit + DoubleComputeUnit) with DSP imul, Ethernet (GMII 1Gbps), and SD Native. JVM test suite: 59/59 on hardware.
 - **GC support**: Automatic garbage collection with hardware-accelerated object copying (`memCopy`), MAX_HANDLES cap (65536) for large memories. Tested 98,000+ rounds (BRAM), 9,800+ rounds (CYC5000 SDRAM), 2,000+ rounds (QMTECH SDRAM), 67,000+ rounds (DDR3 8MB), 1,870+ rounds (DDR3 256MB)
 
 ## Project Goals
@@ -30,7 +31,7 @@ Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
  ┌──────────────┐                    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
  │   bytecode   │                    │  microcode   │    │  microcode   │    │  microcode   │
  │    fetch     ├─────────┬─────────▶│    fetch     ├─┬─▶│   decode     ├───▶│   execute    │◀─┐
- │  translate   │         │          │              │ |  │              │    │  (tos/nos)   │  |
+ │  translate   │         │          │              │ |  │              │    │ (tos/nos/cu) │  |
  └──────┬───────┘         │          └──────┬───────┘ |  └──────────────┘    └──────┬───────┘  |
         │                 │                 │         |                       spill & fill     |
 ┌───────┼────────┐        │                 │         |                             |          |
@@ -82,6 +83,7 @@ Memory access uses SpinalHDL's BMB (Bus Master Bridge) interconnect, supporting 
 jop/
 ├── spinalhdl/src/main/scala/jop/
 │   ├── pipeline/              # Pipeline stages (fetch, decode, stack, bytecode)
+│   ├── core/                 # Compute units (IntegerCU, FloatCU, LongCU, DoubleCU, ComputeUnitTop)
 │   ├── memory/                # Memory controller, method/object/array cache, SDRAM ctrl
 │   ├── ddr3/                  # DDR3 subsystem (cache, MIG adapter, clock wizard)
 │   ├── io/                    # I/O slaves (BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdNative, BmbSdSpi, BmbVgaText, Ihlu, CmpSync)
@@ -175,6 +177,8 @@ sbt "runMain jop.system.JopTopVerilog auSerial"          # Alchitry Au V2 DDR3
 sbt "runMain jop.system.JopTopVerilog wukongSdram"       # Wukong SDR SDRAM
 sbt "runMain jop.system.JopTopVerilog wukongDdr3"        # Wukong DDR3
 sbt "runMain jop.system.JopTopVerilog wukongBram"        # Wukong BRAM
+sbt "runMain jop.system.JopTopVerilog wukongFull"        # Wukong DDR3 full (all CUs + DSP)
+sbt "runMain jop.system.JopTopVerilog wukongSdrFull"     # Wukong SDR full (all CUs + DSP)
 sbt "runMain jop.system.JopTopVerilog minimum"           # Minimum resources
 
 # Flash boot — autonomous boot from SPI flash, no JTAG needed after programming
@@ -249,7 +253,7 @@ make monitor
 # SpinalSim tests (Verilator)
 sbt test
 
-# Formal verification (SymbiYosys + Z3) — 97 properties across 16 suites
+# Formal verification (SymbiYosys + Z3) — 105 properties across 22 suites
 sbt "testOnly jop.formal.*"
 
 # Latency sweep (verify correct operation at 0-5 extra memory cycles)
@@ -261,10 +265,10 @@ sbt "Test / runMain jop.system.JopInterruptSim"
 # Debug protocol test (39 checks: ping, halt, step, registers, memory, breakpoints)
 sbt "Test / runMain jop.system.JopDebugProtocolSim"
 
-# JVM test suite (53 tests, all pass)
+# JVM test suite (59 tests, all pass)
 sbt "Test / runMain jop.system.JopJvmTestsBramSim"
 
-# JVM test suite on 2-core SMP (52/53 pass — DeepRecursion needs stack cache)
+# JVM test suite on 2-core SMP (57/59 pass)
 sbt "Test / runMain jop.system.JopJvmTestsSmpBramSim"
 
 # SMP cache coherency stress test (cross-core A$/O$ snoop invalidation)
@@ -287,6 +291,7 @@ sbt "Test / runMain jop.system.JopIhluGcBramSim"
 | [Trenz CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) | Altera Cyclone V E (5CEBA2U15C8N) | W9864G6JT SDR SDRAM | Quartus Prime | Working at 80 MHz |
 | A-E115FB | Altera Cyclone IV E (EP4CE115F23I7) | BRAM (on-chip) | Quartus Prime | BRAM only, programmed via [pico-dirtyJtag](docs/pico-dirtyjtag-setup.md) |
 | [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au) | Xilinx Artix-7 (XC7A35T) | MT41K128M16JT DDR3 (256MB) | Vivado | 100 MHz — single-core + SMP (2-core), full 256MB addressed, GC working ([details](docs/gc/ddr3-gc-hang.md)) |
+| [QMTECH Wukong V3](docs/boards/qmtech-wukong-board.md) | Xilinx Artix-7 (XC7A100T) | MT41K128M16JT DDR3 (256MB) + W9825G6KH SDR SDRAM (32MB) | Vivado | 100 MHz — full featured (all 4 CUs + DSP imul), 59/59 JVM tests on hardware |
 
 ### Resource Usage
 
@@ -328,7 +333,7 @@ Notes:
 - **Array cache**: 16-entry fully associative element cache (4 elements/line, FIFO replacement) shortcuts iaload to 0 busy cycles on hit; 4-element line fill on miss (burst read on SDRAM); write-through on iastore; SMP-safe via cross-core snoop invalidation; two VHDL bugs fixed (idx_upper slice, FIFO nxt advancement)
 - **Stack buffer**: 256-entry on-chip RAM (64 for 32 local variables + 32 constants, 192 for operand stack) with spill/fill, ALU, shifter, 33-bit comparator. Optional 3-bank rotating stack cache with DMA spill/fill extends the stack to external memory (16-bit virtual SP, 192 entries per bank, per-core stack regions). See [system configuration](docs/architecture/system-configuration.md).
 - **Jump table**: Bytecode-to-microcode translation (generated from `jvm.asm` by Jopa)
-- **Multiplier**: 17-cycle radix-4 Booth multiplier
+- **Compute units**: Four pipeline-integrated hardware compute units via `ComputeUnitTop` — **IntegerComputeUnit** (imul radix-4 ~18 cycles or DSP 1-cycle, idiv/irem binary restoring ~36 cycles), **FloatComputeUnit** (IEEE 754 single-precision: fadd/fsub/fmul/fdiv/i2f/f2i/fcmpl/fcmpg, fneg via microcode), **LongComputeUnit** (64-bit: ladd/lsub/lneg/lcmp ALU, lshl/lshr/lushr barrel shifter, lmul DSP cascade), **DoubleComputeUnit** (IEEE 754 double-precision: dadd/dsub/dmul/ddiv/dcmpl/dcmpg + i2d/d2i/l2d/d2l/f2d/d2f conversions). All use unified `stop`/`sthw`/`ldop` microcode pattern. Per-bytecode `Implementation` selection (Java/Microcode/Hardware) in `JopCoreConfig`. Conditional instantiation — only CUs needed by the config are generated.
 - **I/O subsystem**: `BmbSys` (cycle/microsecond counters, timer interrupt, watchdog, CPU ID), `BmbUart` (TX/RX with 16-entry FIFOs, RX/TX interrupt outputs), `BmbEth` (Ethernet MAC with GMII 1Gbps TX/RX using SpinalHDL `MacEth`, 125 MHz PLL for TX, PHY clock for RX, dual-clock FIFOs for PHY clock domain crossing), `BmbMdio` (MDIO PHY management with registered outputs and PHY reset control), `BmbSdNative` (SD card native 4-bit mode, hardware CRC7/CRC16, 512-byte block FIFO, verified on hardware at 10 MHz — [details](docs/peripherals/db-fpga-sd-card.md)), `BmbSdSpi` (SD card SPI mode, byte-at-a-time transfer with hardware clock generation), and `BmbVgaText` (80x30 text-mode VGA, 640x480@60Hz, 8x16 font, CGA palette, RGB565 output, 25 MHz pixel clock from PLL c3) as reusable `jop.io` components. Timer interrupts verified end-to-end in simulation (`JopInterruptSim`). VGA text verified on hardware ([details](docs/peripherals/db-fpga-vga-text.md))
 - **Unified top-level**: `JopTop(config)` — single config-driven Component replaces all board-specific top files. Supports BRAM, SDR SDRAM, and DDR3 across Altera (Cyclone IV/V) and Xilinx (Artix-7) FPGAs. `simulation` flag enables Verilator-compatible mode (bypasses PLL/reset/MIG BlackBoxes). Verilog generation via `JopTopVerilog` with named presets.
 - **SDRAM system (primary)**: Serial boot over UART into SDR SDRAM using Altera `altera_sdram_tri_controller` (QMTECH EP4CGX150 at 100 MHz + Trenz CYC5000 at 80 MHz). Single-core and SMP via `JopConfig` presets.
@@ -338,10 +343,10 @@ Notes:
 - **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
 - **GC support**: Mark-compact garbage collection with incremental mark/compact phases (bounded per-allocation increments) and STW fallback. Hardware `memCopy` for GC object relocation, MAX_HANDLES cap (65536) prevents O(N) sweep explosion on large memories (256MB+). Tested with allocation-heavy GC app (98,000+ rounds on BRAM, 9,800+ on CYC5000 SDRAM, 2,000+ on QMTECH SDRAM, 1,870+ on 256MB DDR3). SMP GC uses `IO_GC_HALT` to freeze all other cores during collection, preventing concurrent SDRAM access to partially-moved objects
 - **Hardware exception detection**: Null pointer and array bounds checks fully enabled — NPE fires on handle address 0, ABE fires on negative index (MSB) or index >= array length. Wired through BmbSys `exc` pulse to `sys_exc` microcode handler. Div-by-zero handled via Java `throw JVMHelp.ArithExc` in f_idiv/f_irem/f_ldiv/f_lrem.
-- **Formal verification**: 97 properties verified across 16 test suites using SymbiYosys + Z3 — covers core arithmetic, all pipeline stages, memory subsystem (method cache, object cache, memory controller), DDR3 cache + MIG adapter, I/O (CmpSync, BmbSys, BmbUart), and BMB protocol compliance. See [formal verification docs](docs/formal-verification.md).
+- **Formal verification**: 105 properties verified across 22 test suites using SymbiYosys + Z3 — covers core arithmetic, all pipeline stages, memory subsystem (method cache, object cache, memory controller), DDR3 cache + MIG adapter, I/O (CmpSync, BmbSys, BmbUart), and BMB protocol compliance. See [formal verification docs](docs/formal-verification.md).
 - **Debug subsystem** (`jop.debug` package): Optional on-chip debug controller with framed byte-stream protocol over dedicated UART. Supports halt/resume/single-step (microcode and bytecode), register and stack inspection, memory read/write, and up to 4 hardware breakpoints (JPC or microcode PC). Integrated into `JopCluster` via `DebugConfig`. Automated protocol test (`JopDebugProtocolSim`) verifies 39 checks across 14 test sequences.
-- **JVM test suite**: 53 tests (`java/apps/JvmTests/`) — all pass. Covers arrays, branches, type casting, int/long arithmetic, type conversions (i2x/l2x/f2x/d2x), constant loading, float/double ops (add/sub/mul/div/neg/cmp/rem), field access for all types, exceptions (throw/catch, finally, nested, athrow, div-by-zero, null pointer with 13 sub-tests), instanceof, super method dispatch, object fields, interfaces, static initializers, stack manipulation, System.arraycopy (including StringBuilder resize), string concatenation with int, cache persistence regression, long static fields, deep recursion (200-level, exercises stack cache bank rotation), and more. Ported from original JOP `jvm/` suite and Wimpassinger `jvmtest/` suite.
-- **SMP test coverage**: JVM test suite on 2-core SMP (52/53 pass, DeepRecursion excluded — needs stack cache), SMP cache coherency stress test (cross-core A$/O$ snoop invalidation with 20 rounds verified), SMP GC stress (2-core BRAM), IHLU per-object locking verified (NCoreHelloWorld + GC with 84 lock/unlock ops balanced, 3 GC cycles)
+- **JVM test suite**: 59 tests (`java/apps/JvmTests/`) — all pass. Covers arrays, branches, type casting, int/long arithmetic, long ops (add/sub/neg/cmp/shift/mul), type conversions (i2x/l2x/f2x/d2x), constant loading, float ops (add/sub/mul/div/neg/cmp/rem/i2f/f2i), double ops (add/sub/mul/div/neg/cmp/rem/conversions), field access for all types, exceptions (throw/catch, finally, nested, athrow, div-by-zero, null pointer with 13 sub-tests), instanceof, super method dispatch, object fields, interfaces, static initializers, stack manipulation, System.arraycopy (including StringBuilder resize), string concatenation with int, cache persistence regression, long static fields, deep recursion (200-level, exercises stack cache bank rotation), and more. Ported from original JOP `jvm/` suite and Wimpassinger `jvmtest/` suite.
+- **SMP test coverage**: JVM test suite on 2-core SMP (57/59 pass), SMP cache coherency stress test (cross-core A$/O$ snoop invalidation with 20 rounds verified), SMP GC stress (2-core BRAM), IHLU per-object locking verified (NCoreHelloWorld + GC with 84 lock/unlock ops balanced, 3 GC cycles)
 - **Simulation**: BRAM sim, SDRAM sim, serial boot sim, latency sweep (0-5 extra cycles), GC stress test, JVM test suite (single-core + SMP), SMP cache coherency test, timer interrupt test, debug protocol test
 ### Known Issues
 
@@ -351,7 +356,7 @@ Notes:
 
 Active work items:
 
-- **Stack cache SDRAM integration** — 3-bank rotation working in BRAM simulation (53/53 tests pass); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
+- **Stack cache SDRAM integration** — 3-bank rotation working in BRAM simulation (59/59 tests pass); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
 - **Stack cache bank RAM optimization** — convert `readAsync` to `readSync` on bank RAMs to enable Xilinx BRAM inference, saving ~1,584 LUTs on Artix-7 (81% → ~73% utilization). Altera is unaffected (M9K/M10K supports async reads natively). See [distributed RAM optimization](docs/analysis/artix7-distram-optimization.md)
 - **SMP test expansion** — lock contention stress test (>2 cores hammering `synchronized`), SMP exception handling test. Cache snoop and JVM-on-SMP tests done. See [test coverage audit](docs/test-coverage-audit.md)
 - **DDR3 SMP GC** — run GC stress test on dual-core DDR3 (NCoreHelloWorld verified, GC stress not yet tested in SMP mode)
@@ -393,13 +398,14 @@ Design notes and investigation logs in `docs/`:
 - [Programmer's Guide](docs/programmers-guide.md) — I/O register maps and Java API for all devices (BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdNative, BmbSdSpi, BmbVgaText)
 - [System Configuration](docs/architecture/system-configuration.md) — configuration reference: memory layout, JopCoreConfig, JopMemoryConfig, IoConfig, board configs, I/O register map
 - [Configuration-Driven Design](docs/architecture/configuration-driven-design.md) — unified `JopTop(config)` design: JopConfig hierarchy, board/FPGA/memory metadata, PLL/reset/memory controller factories, preset system
+- [Compute Unit Design](docs/architecture/compute-unit-design.md) — IntegerCU, FloatCU, LongCU, DoubleCU: stop/sthw/ldop pattern, operand stack, per-bytecode configuration
 - [Bugs and Issues](docs/bugs-and-issues.md) — master bug index: open JVM workarounds, fixed RTL/pipeline/microcode bugs
 - [Implementation Notes](docs/architecture/implementation-notes.md) — bugs found, cache details, I/O subsystem, SMP, GC architecture, memCopy
 - [Artix-7 Distributed RAM Optimization](docs/analysis/artix7-distram-optimization.md) — stack cache bank RAM `readAsync` → `readSync` for BRAM inference on Xilinx
 - [Cache Analysis](docs/architecture/cache-analysis.md) — cache performance analysis and technology cost model
 - [Memory Controller Comparison](docs/architecture/memory-controller-comparison.md) — VHDL vs SpinalHDL memory controller
 - [Stack Immediate Timing](docs/analysis/stack-immediate-timing.md) — stack stage timing for immediate operations
-- [Formal Verification](docs/formal-verification.md) — 98 BMC properties across all components (SymbiYosys + Z3)
+- [Formal Verification](docs/formal-verification.md) — 105 BMC properties across 22 suites (SymbiYosys + Z3)
 - [DB_FPGA Ethernet](docs/peripherals/db-fpga-ethernet.md) — 1Gbps GMII architecture, pin mapping, PHY config, SDC timing for RTL8211EG
 - [DB_FPGA VGA Text](docs/peripherals/db-fpga-vga-text.md) — 80x30 text-mode VGA output, register map, Java API, setup guide
 - [DB_FPGA SD Card](docs/peripherals/db-fpga-sd-card.md) — SD card native 4-bit mode, hardware verification, bugs found, clock speed constraints
