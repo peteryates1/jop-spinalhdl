@@ -216,8 +216,14 @@ java/lang/StringBuffer.java        — synchronized StringBuilder
 - Double: stubbed `parseDouble()` (was `VMFloatingDecimal` dependency)
 - Byte: added `extends Number implements Comparable`, added intValue/longValue/floatValue/doubleValue
 - Short: same Number/Comparable additions
-- WrapperTest.java added to JvmTests: parseInt, valueOf, compareTo, toHexString, Boolean,
-  Byte, Short, Number polymorphism, Math.pow — all pass in BRAM simulation
+- WrapperTest.java added to JvmTests (11 tests): parseInt, valueOf, compareTo, toHexString,
+  Boolean, Byte, Short, Number polymorphism, Math.pow, Float wrapper (floatToIntBits/intBitsToFloat
+  roundtrip, isNaN, isInfinite, equals, compare), Double wrapper (doubleToLongBits/longBitsToDouble
+  roundtrip, isNaN, isInfinite, equals, compare) — all pass in BRAM simulation
+- MathTest.java added to JvmTests (6 tests): abs (int/long/float/double), min/max, sqrt,
+  sin (float/double), cos (float/double), atan — validates bug-fixed trig functions
+- StringBufferTest.java added to JvmTests (3 tests): append, delete, reverse — excluded from
+  BRAM sim (too cycle-intensive), available for SDRAM/FPGA targets
 
 ### Phase 4: Extended I/O — DONE (2026-03-10)
 
@@ -255,7 +261,10 @@ java/io/UTFDataFormatException.java — new stub (required by DataInputStream)
 - `DataInputStream.readLine()`: removed PushbackInputStream dependency (deprecated method)
 - `ByteArrayOutputStream.toString()`: replaced `String(byte[],int,int)` with char[] conversion
 - `ByteArrayOutputStream.toString(String)`: removed (charset dependency)
-- IoTest.java added to JvmTests: ByteArrayStreams, DataStreams, Reader/Writer — all pass
+- IoTest.java added to JvmTests (6 tests): ByteArrayStreams, DataStreams (int/short/byte/boolean),
+  DataStreamsExtended (long/char/unsignedByte), DataStreamsUTF (writeUTF/readUTF),
+  ReaderWriter (string write/read), WriterCharArray (char array write/read) — all pass
+- BufferedReader test exists but disabled (readLine() too cycle-intensive for BRAM sim)
 
 ### Phase 5: Extended Collections
 
@@ -460,10 +469,15 @@ independent of the JDK 8 upgrade. Both can proceed in parallel.
 For each phase:
 
 1. **Compile**: `cd java && make clean && make all` — no errors
-2. **JVM test suite**: `JopJvmTestsBramSim` — 54/55 pass (SwapTest T1 pre-existing, DeepRecursion times out)
-3. **New tests**: add phase-specific tests to `java/apps/JvmTests/`
-   - Phase 2: CollectionTest (ArrayList, HashMap, HashSet, for-each) — DONE, passes
-   - Phase 3: WrapperTest (parseInt, valueOf, compareTo, toHexString, Boolean, Byte, Short, Number, Math.pow) — DONE, passes
-   - Phase 5: SortTest (Arrays.sort, Collections.sort)
+2. **JVM test suite**: `JopJvmTestsBramSim` — 55 tests, all pass except SwapTest T1 (pre-existing)
+3. **New tests**: phase-specific tests in `java/apps/JvmTests/`
+   - Phase 2: **CollectionTest** (12 tests) — ArrayList add/get/remove/grow/iterator/addAll, HashMap basic/overwrite/grow/remove/iterate, HashSet, for-each loop
+   - Phase 3: **WrapperTest** (11 tests) — Integer parseInt/valueOf/compare/hex, Boolean, Byte, Short, Number polymorphism, Math.pow, Float wrapper (floatToIntBits/intBitsToFloat/isNaN/isInfinite/equals/compare), Double wrapper (doubleToLongBits/longBitsToDouble/isNaN/isInfinite/equals/compare)
+   - Phase 3: **MathTest** (6 tests) — abs (int/long/float/double), min/max, sqrt, sin (float/double), cos (float/double), atan
+   - Phase 3: **StringBufferTest** (3 tests) — append, delete, reverse. Excluded from BRAM sim (too cycle-intensive), runs on SDRAM/FPGA targets
+   - Phase 4: **IoTest** (6 tests) — ByteArrayStreams, DataStreams (int/short/byte/boolean), DataStreamsExtended (long/char/unsignedByte), DataStreamsUTF (writeUTF/readUTF), ReaderWriter (OutputStreamWriter/InputStreamReader string), WriterCharArray (char array write/read)
+   - Phase 5: SortTest (Arrays.sort, Collections.sort) — planned
+   - **DeepRecursion** (3 tests) — excluded from DoAll, stack cache configs only (run via JopStackCacheSim)
 4. **FPGA**: run DoAll.jop on QMTECH SDRAM — verify no regressions
 5. **Heap pressure**: monitor GC round count in Small app with collections enabled
+6. **DSP multiply**: all tests verified in both standard and `useDspMul=true` BRAM sims
