@@ -182,7 +182,7 @@ public class ArrayList<E> extends AbstractList<E>
             if (newCapacity < minCapacity)
                 newCapacity = minCapacity;
             elementData = new Object[newCapacity];
-            System.arraycopy(oldData, 0, elementData, 0, oldCapacity);
+            for (int ii = 0; ii < oldCapacity; ii++) elementData[ii] = oldData[ii];
         }
     }
 

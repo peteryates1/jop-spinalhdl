@@ -117,6 +117,10 @@ public class DoAll {
 				new WrapperTest(),
 				new IoTest(),
 				new MathTest(),
+
+				// Phase 5 tests
+				new ExtCollMinimal(),
+				new ExtCollectionTest(),
 		};
 
 		// StringBufferTest: too cycle-intensive for BRAM sim (StringBuffer

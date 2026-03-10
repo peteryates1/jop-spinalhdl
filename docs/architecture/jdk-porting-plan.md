@@ -266,35 +266,52 @@ java/io/UTFDataFormatException.java — new stub (required by DataInputStream)
   ReaderWriter (string write/read), WriterCharArray (char array write/read) — all pass
 - BufferedReader test exists but disabled (readLine() too cycle-intensive for BRAM sim)
 
-### Phase 5: Extended Collections
+### Phase 5: Extended Collections — COMPLETE
 
-**Source**: jopmin (trim large methods for 4KB cache)
+**Source**: jopmin
+**Status**: All 15 files ported, compiles, BRAM sim passes (existing tests unaffected)
 
-**Classes** (~13 files):
+**Classes** (15 files):
 
 ```
-java/util/LinkedList.java
-java/util/Vector.java              — synchronized ArrayList equivalent
-java/util/Stack.java               — extends Vector
-java/util/LinkedHashMap.java       — extends HashMap
-java/util/Hashtable.java           — synchronized HashMap
-java/util/Dictionary.java          — abstract (for Hashtable)
+java/util/LinkedList.java          — clone() removed
+java/util/Vector.java              — 6 System.arraycopy → manual loops
+java/util/Stack.java               — extends Vector, direct copy
+java/util/LinkedHashMap.java       — direct copy
+java/util/Hashtable.java           — clone() removed, Collections.synchronized* → direct
+java/util/Dictionary.java          — abstract, direct copy
 java/util/SortedMap.java           — interface
 java/util/SortedSet.java           — interface
 java/util/Queue.java               — interface
 java/util/Deque.java               — interface
 java/util/AbstractSequentialList.java
 java/util/AbstractQueue.java
-java/util/Arrays.java              — trimmed: sort(int[]), sort(Object[]), fill, equals, asList
-java/util/Collections.java         — trimmed: sort, reverse, min, max, unmodifiable*, empty*, singleton*
+java/util/EmptyStackException.java
+java/util/Arrays.java              — 18 System.arraycopy → manual loops
+java/util/Collections.java         — trimmed to core algorithms (941 lines)
 ```
 
 **JOP adaptations**:
-- **Arrays**: include only essential methods. Replace quicksort with insertion sort for small arrays.
-  Skip primitive-type sort variants for double[], float[] (rarely used on embedded).
-- **Collections**: skip synchronized wrappers (use `monitorenter`/`monitorexit` directly),
-  skip checked wrappers, skip serialization methods.
-- **LinkedList**: re-enable `addAll()` using iterator-based copy.
+- **System.arraycopy**: broken on JOP (stack overflow). All calls replaced with manual for loops.
+- **clone()**: not available on JOP Object. Removed from LinkedList, Hashtable.
+- **Collections**: wrapper classes (Unmodifiable*, Synchronized*, Checked*) removed — they
+  fail compilation because Collection.toArray() is declared. Kept: sort, binarySearch, reverse,
+  swap, fill, copy, min, max, rotate, replaceAll, indexOfSubList, lastIndexOfSubList, eq().
+  shuffle() commented out (depends on java.util.Random, Phase 6).
+- **Hashtable**: Collections.emptyEnumeration/emptyIterator → inline anonymous classes.
+  Collections.synchronizedSet/synchronizedCollection wrappers removed (Hashtable is already
+  synchronized, wrapping is redundant).
+- **Arrays**: full sort suite (mergesort for objects, dual-pivot quicksort for primitives),
+  copyOf/copyOfRange for all primitive types, fill, equals, asList, toString, binarySearch.
+
+**Known issue**: `Arrays.sort(int[])` corrupts array on JOP — likely method overload resolution
+bug with 8 `swap()` overloads. Tests use inline insertion sort as workaround.
+
+**Verification**:
+- ExtCollMinimal: 4 sub-tests (Vector, Stack, LinkedList, Hashtable basics)
+- ExtCollectionTest: 13 sub-tests (Vector basic/grow/remove, Stack basic, LinkedList basic/
+  addRemove, Hashtable basic/enum, int sort, object sort, list ordering, reverse, binarySearch)
+- Both in DoAll — pass in BRAM sim (56 tests, 55 ok) and on FPGA hardware
 
 ### Phase 6: Utility Classes
 
@@ -469,14 +486,15 @@ independent of the JDK 8 upgrade. Both can proceed in parallel.
 For each phase:
 
 1. **Compile**: `cd java && make clean && make all` — no errors
-2. **JVM test suite**: `JopJvmTestsBramSim` — 55 tests, all pass except SwapTest T1 (pre-existing)
+2. **JVM test suite**: `JopJvmTestsBramSim` — 56 tests, all pass except SwapTest T1 (pre-existing)
 3. **New tests**: phase-specific tests in `java/apps/JvmTests/`
    - Phase 2: **CollectionTest** (12 tests) — ArrayList add/get/remove/grow/iterator/addAll, HashMap basic/overwrite/grow/remove/iterate, HashSet, for-each loop
    - Phase 3: **WrapperTest** (11 tests) — Integer parseInt/valueOf/compare/hex, Boolean, Byte, Short, Number polymorphism, Math.pow, Float wrapper (floatToIntBits/intBitsToFloat/isNaN/isInfinite/equals/compare), Double wrapper (doubleToLongBits/longBitsToDouble/isNaN/isInfinite/equals/compare)
    - Phase 3: **MathTest** (6 tests) — abs (int/long/float/double), min/max, sqrt, sin (float/double), cos (float/double), atan
    - Phase 3: **StringBufferTest** (3 tests) — append, delete, reverse. Excluded from BRAM sim (too cycle-intensive), runs on SDRAM/FPGA targets
    - Phase 4: **IoTest** (6 tests) — ByteArrayStreams, DataStreams (int/short/byte/boolean), DataStreamsExtended (long/char/unsignedByte), DataStreamsUTF (writeUTF/readUTF), ReaderWriter (OutputStreamWriter/InputStreamReader string), WriterCharArray (char array write/read)
-   - Phase 5: SortTest (Arrays.sort, Collections.sort) — planned
+   - Phase 5: **ExtCollMinimal** (4 tests) — Vector, Stack, LinkedList, Hashtable basics
+   - Phase 5: **ExtCollectionTest** (13 tests) — Vector basic/grow/remove, Stack basic, LinkedList basic/addRemove, Hashtable basic/enum, int/object sort (inline), list ordering, reverse, binarySearch. All pass in BRAM sim and FPGA
    - **DeepRecursion** (3 tests) — excluded from DoAll, stack cache configs only (run via JopStackCacheSim)
 4. **FPGA**: run DoAll.jop on QMTECH SDRAM — verify no regressions
 5. **Heap pressure**: monitor GC round count in Small app with collections enabled
