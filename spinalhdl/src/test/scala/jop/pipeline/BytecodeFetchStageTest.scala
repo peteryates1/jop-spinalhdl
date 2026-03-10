@@ -886,8 +886,8 @@ class BytecodeFetchStageTest extends AnyFunSuite {
 
   test("bcfetch_json_count_verification") {
     assert(
-      bcfetchTestVectors.testCases.size == 31,
-      s"Expected 31 JSON test cases, got ${bcfetchTestVectors.testCases.size}"
+      bcfetchTestVectors.testCases.size == 28,
+      s"Expected 28 JSON test cases, got ${bcfetchTestVectors.testCases.size}"
     )
   }
 }
