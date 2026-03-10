@@ -209,6 +209,7 @@ case class JopCluster(
         hasUart        = if (perCoreUart) base.ioConfig.hasUart else (i == 0),
         // External-pin peripherals: core 0 only
         hasEth         = (i == 0) && base.ioConfig.hasEth,
+        ethGmii        = (i == 0) && base.ioConfig.ethGmii,
         hasSdSpi       = (i == 0) && base.ioConfig.hasSdSpi,
         hasSdNative    = (i == 0) && base.ioConfig.hasSdNative,
         hasVgaDma      = (i == 0) && base.ioConfig.hasVgaDma,

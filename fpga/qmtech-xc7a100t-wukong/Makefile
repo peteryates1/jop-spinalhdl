@@ -4,6 +4,7 @@ VIVADO_ENV := export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 OPENFPGALOADER := openFPGALoader
 BITSTREAM := vivado/build/wukong_jop_bram/wukong_jop_bram.runs/impl_1/JopBramWukongTop.bit
 DDR3_BITSTREAM := vivado/build/wukong_jop_ddr3_np/JopDdr3WukongTop.bit
+DDR3_SMP_BITSTREAM := vivado/build/wukong_jop_ddr3_smp_np/JopSmpDdr3WukongTop.bit
 SDRAM_BITSTREAM := vivado/build/wukong_sdram_exerciser/SdramExerciserWukongTop.bit
 JOP_SDRAM_BITSTREAM := vivado/build/wukong_jop_sdram/JopSdramWukongTop.bit
 UART_DEV := /dev/ttyUSB0
@@ -11,6 +12,7 @@ UART_BAUD := 1000000
 
 .PHONY: generate create-ip create-project build program program-flash monitor all clean
 .PHONY: ddr3-generate ddr3-create-ip ddr3-create-project ddr3-build ddr3-program ddr3-monitor
+.PHONY: ddr3-smp-generate ddr3-smp-build ddr3-smp-program ddr3-smp-monitor
 .PHONY: sdram-generate sdram-create-ip sdram-build sdram-program sdram-monitor
 .PHONY: jop-sdram-generate jop-sdram-build jop-sdram-program jop-sdram-monitor
 .PHONY: blink-create-project blink-build blink-program
@@ -59,6 +61,20 @@ ddr3-program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(DDR3_BITSTREAM)
 
 ddr3-monitor:
+	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
+
+# === JOP DDR3 SMP targets ===
+
+ddr3-smp-generate:
+	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongFullSmp 2"
+
+ddr3-smp-build:
+	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_ddr3_smp_bitstream.tcl
+
+ddr3-smp-program:
+	sudo $(OPENFPGALOADER) -c dirtyJtag $(DDR3_SMP_BITSTREAM)
+
+ddr3-smp-monitor:
 	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
 
 # === SDRAM Exerciser targets ===
