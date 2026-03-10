@@ -1,5 +1,6 @@
 # Clock wizard generation script for JOP DDR3 on QMTECH XC7A100T Wukong.
-# 50 MHz input -> 100 MHz (MIG sys_clk) + 200 MHz (MIG ref_clk).
+# 50 MHz input -> 100 MHz (MIG sys_clk) + 200 MHz (MIG ref_clk) + 125 MHz (ETH GMII).
+# The 125 MHz output is optimized away by Vivado if unused (non-GMII builds).
 # Run with: vivado -mode batch -source vivado/tcl/create_ddr3_clk_wiz.tcl
 
 set script_dir [file dirname [file normalize [info script]]]
@@ -30,18 +31,22 @@ set clk_xci [get_property IP_FILE $clk_ip]
 set_property -dict [list \
   CONFIG.PRIM_IN_FREQ {50.000} \
   CONFIG.PRIMARY_PORT {clk_in} \
-  CONFIG.CLKOUT2_USED {true} \
-  CONFIG.NUM_OUT_CLKS {2} \
+  CONFIG.NUM_OUT_CLKS {3} \
   CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {100.000} \
-  CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {200.000} \
   CONFIG.CLK_OUT1_PORT {clk_100} \
+  CONFIG.CLKOUT1_DRIVES {BUFG} \
+  CONFIG.CLKOUT2_USED {true} \
+  CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {200.000} \
   CONFIG.CLK_OUT2_PORT {clk_200} \
+  CONFIG.CLKOUT2_DRIVES {BUFG} \
+  CONFIG.CLKOUT3_USED {true} \
+  CONFIG.CLKOUT3_REQUESTED_OUT_FREQ {125.000} \
+  CONFIG.CLK_OUT3_PORT {clk_125} \
+  CONFIG.CLKOUT3_DRIVES {BUFG} \
   CONFIG.USE_RESET {true} \
   CONFIG.RESET_PORT {resetn} \
   CONFIG.USE_LOCKED {true} \
   CONFIG.LOCKED_PORT {locked} \
-  CONFIG.CLKOUT1_DRIVES {BUFG} \
-  CONFIG.CLKOUT2_DRIVES {BUFG} \
 ] $clk_ip
 
 generate_target all $clk_ip

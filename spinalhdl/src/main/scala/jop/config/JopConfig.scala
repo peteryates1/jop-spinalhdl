@@ -371,4 +371,46 @@ object JopConfig {
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
       drivers = Seq(DeviceDriver.UartCh340))))
+
+  // ========================================================================
+  // Wukong full-featured presets
+  // ========================================================================
+
+  /** Wukong DDR3 — full featured: HW integer + float compute, Ethernet (GMII 1Gbps), SD Native */
+  def wukongFull = JopConfig(
+    assembly = SystemAssembly.wukong,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "ddr3",
+      bootMode = BootMode.Serial,
+      clkFreq = 100 MHz,
+      ioConfig = IoConfig.wukongFull,
+      coreConfig = JopCoreConfig(
+        imul = Microcode, idiv = Hardware, irem = Hardware,
+        fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
+        fneg = Hardware, i2f = Hardware, f2i = Hardware,
+        fcmpl = Hardware, fcmpg = Hardware),
+      drivers = Seq(DeviceDriver.UartCh340, DeviceDriver.EthGmii, DeviceDriver.SdNative))))
+
+  /** Wukong DDR3 — full featured SMP */
+  def wukongFullSmp(n: Int) = {
+    val base = wukongFull
+    base.copy(systems = Seq(base.system.copy(name = s"smp$n", cpuCnt = n)))
+  }
+
+  /** Wukong SDR — full featured: HW integer + float compute, Ethernet (GMII 1Gbps), SD Native */
+  def wukongSdrFull = JopConfig(
+    assembly = SystemAssembly.wukong,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "sdr",
+      bootMode = BootMode.Serial,
+      clkFreq = 100 MHz,
+      ioConfig = IoConfig.wukongFull,
+      coreConfig = JopCoreConfig(
+        imul = Microcode, idiv = Hardware, irem = Hardware,
+        fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
+        fneg = Hardware, i2f = Hardware, f2i = Hardware,
+        fcmpl = Hardware, fcmpg = Hardware),
+      drivers = Seq(DeviceDriver.UartCh340, DeviceDriver.EthGmii, DeviceDriver.SdNative))))
 }

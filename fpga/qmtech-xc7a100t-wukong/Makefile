@@ -1,7 +1,7 @@
 REPO_ROOT := $(shell cd ../.. && pwd)
 VIVADO := /opt/xilinx/2025.2/Vivado/bin/vivado
 VIVADO_ENV := export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
-OPENFPGALOADER := $(HOME)/openFPGALoader/build/openFPGALoader
+OPENFPGALOADER := openFPGALoader
 BITSTREAM := vivado/build/wukong_jop_bram/wukong_jop_bram.runs/impl_1/JopBramWukongTop.bit
 DDR3_BITSTREAM := vivado/build/wukong_jop_ddr3_np/JopDdr3WukongTop.bit
 SDRAM_BITSTREAM := vivado/build/wukong_sdram_exerciser/SdramExerciserWukongTop.bit

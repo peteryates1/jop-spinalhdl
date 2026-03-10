@@ -101,7 +101,8 @@ object Pll {
         PllResult(
           systemClk = Some(clkWiz.io.clk_100),
           locked = clkWiz.io.locked,
-          sdramClk = Some(clkWiz.io.clk_100_shift)
+          sdramClk = Some(clkWiz.io.clk_100_shift),
+          ethClk = Some(clkWiz.io.clk_125)
         )
 
       // ================================================================
@@ -117,7 +118,8 @@ object Pll {
         PllResult(
           locked = clkWiz.io.locked,
           migSysClk = Some(clkWiz.io.clk_100),
-          migRefClk = Some(clkWiz.io.clk_200)
+          migRefClk = Some(clkWiz.io.clk_200),
+          ethClk = Some(clkWiz.io.clk_125)
         )
 
       // ================================================================
@@ -144,7 +146,8 @@ object Pll {
         PllResult(
           locked = clkWiz.io.locked,
           migSysClk = Some(clkWiz.io.clk_100),
-          migRefClk = Some(clkWiz.io.clk_200)
+          migRefClk = Some(clkWiz.io.clk_200),
+          ethClk = Some(clkWiz.io.clk_125)
         )
 
       case _ =>

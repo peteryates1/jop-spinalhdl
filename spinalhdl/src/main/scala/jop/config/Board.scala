@@ -384,50 +384,66 @@ object Board {
        69 -> "M4",  70 -> "T3",  71 -> "L4",  72 -> "T4",
        75 -> "L5",  76 -> "N4",  77 -> "P5",  78 -> "M5")))
 
-  /** QMTECH Wukong V3 (Artix-7 XC7A100T) — single board, direct FPGA pins */
+  /**
+   * QMTECH Wukong V3 (Artix-7 XC7A100T) — single board, direct FPGA pins.
+   *
+   * Pin assignments from qmtech-wukong-board.md (verified against QMTECH
+   * Test10_SDRAM, Test08_GMII_Ethernet, and working JOP XDC constraints).
+   * All peripherals on-board — no expansion connectors needed.
+   */
   def WukongXC7A100T = Board(
     name = "qmtech-wukong-xc7a100t",
     fpga = Some(FpgaDevice.XC7A100T),
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3")),  // DDR3 pins managed by MIG IP
+      // SDR SDRAM — Bank 14 (address/control) + Bank 15 (data)
       BoardDevice("W9825G6JH6", role = Some("sdr"), mapping = Map(
-        "CLK" -> "H4", "CKE" -> "J6",
-        "CS_n" -> "G3", "RAS_n" -> "J3",
-        "CAS_n" -> "H3", "WE_n" -> "K3",
-        "BA0" -> "G6", "BA1" -> "H6",
-        "A0" -> "K5", "A1" -> "K6", "A2" -> "M2",
-        "A3" -> "M3", "A4" -> "L4", "A5" -> "L5",
-        "A6" -> "L6", "A7" -> "N5", "A8" -> "P6",
-        "A9" -> "J4", "A10" -> "K4", "A11" -> "P5",
-        "A12" -> "N6",
-        "DQ0" -> "G1", "DQ1" -> "G2", "DQ2" -> "H1",
-        "DQ3" -> "H2", "DQ4" -> "J1", "DQ5" -> "J2",
-        "DQ6" -> "K1", "DQ7" -> "K2",
-        "DQ8" -> "L1", "DQ9" -> "L2", "DQ10" -> "L3",
-        "DQ11" -> "M1", "DQ12" -> "N2", "DQ13" -> "N3",
-        "DQ14" -> "N1", "DQ15" -> "P1",
-        "DQM0" -> "F3", "DQM1" -> "G4")),
+        "CLK" -> "G22", "CKE" -> "H22",
+        "CS_n" -> "L25", "RAS_n" -> "K26",
+        "CAS_n" -> "K25", "WE_n" -> "J26",
+        "BA0" -> "M25", "BA1" -> "M26",
+        "A0" -> "R26", "A1" -> "P25", "A2" -> "P26",
+        "A3" -> "N26", "A4" -> "M24", "A5" -> "M22",
+        "A6" -> "L24", "A7" -> "L23", "A8" -> "L22",
+        "A9" -> "K21", "A10" -> "R25", "A11" -> "K22",
+        "A12" -> "J21",
+        "DQ0" -> "D25", "DQ1" -> "D26", "DQ2" -> "E25",
+        "DQ3" -> "E26", "DQ4" -> "F25", "DQ5" -> "G25",
+        "DQ6" -> "G26", "DQ7" -> "H26",
+        "DQ8" -> "J24", "DQ9" -> "J23", "DQ10" -> "H24",
+        "DQ11" -> "H23", "DQ12" -> "G24", "DQ13" -> "F24",
+        "DQ14" -> "F23", "DQ15" -> "E23",
+        "DQM0" -> "J25", "DQM1" -> "K23")),
+      // Ethernet PHY — Bank 34, GMII (8-bit, 1 Gbps)
       BoardDevice("RTL8211EG", mapping = Map(
-        "MDC" -> "R1", "MDIO" -> "U2",
-        "RESET" -> "U1",
-        "TX_CLK" -> "T2", "TX_EN" -> "T3",
-        "TXD0" -> "R2", "TXD1" -> "P2", "TXD2" -> "P3", "TXD3" -> "N4",
-        "RX_CLK" -> "V4", "RX_DV" -> "T5",
-        "RXD0" -> "V5", "RXD1" -> "U5", "RXD2" -> "V2", "RXD3" -> "V3")),
+        "MDC" -> "H2", "MDIO" -> "H1",
+        "RESET" -> "R1",
+        "GTX_CLK" -> "U1", "TX_EN" -> "T2", "TX_ER" -> "J1",
+        "TXD0" -> "R2", "TXD1" -> "P1", "TXD2" -> "N2", "TXD3" -> "N1",
+        "TXD4" -> "M1", "TXD5" -> "L2", "TXD6" -> "K2", "TXD7" -> "K1",
+        "RX_CLK" -> "P4", "RX_DV" -> "L3", "RX_ER" -> "U5",
+        "RXD0" -> "M4", "RXD1" -> "N3", "RXD2" -> "N4", "RXD3" -> "P3",
+        "RXD4" -> "R3", "RXD5" -> "T3", "RXD6" -> "T4", "RXD7" -> "T5",
+        "COL" -> "U4", "CRS" -> "U2")),
+      // SD card (microSD J9) — Bank 34 + Bank 35
       BoardDevice("SD_CARD", mapping = Map(
-        "CLK" -> "AB22", "CMD" -> "Y22",
-        "DAT0" -> "AA22", "DAT1" -> "Y21",
-        "DAT2" -> "W21", "DAT3" -> "V22")),
+        "CLK" -> "L4", "CMD" -> "J8",
+        "DAT0" -> "M5", "DAT1" -> "M7",
+        "DAT2" -> "H6", "DAT3" -> "J6",
+        "CD" -> "N6")),
+      // HDMI — Bank 35, TMDS_33 + LVCMOS33 control
       BoardDevice("HDMI", mapping = Map(
         "CLK_P" -> "D4", "CLK_N" -> "C4",
         "D0_P" -> "E1", "D0_N" -> "D1",
         "D1_P" -> "F2", "D1_N" -> "E2",
-        "D2_P" -> "G4", "D2_N" -> "F4")),
-      BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "F22")),
+        "D2_P" -> "G2", "D2_N" -> "G1",
+        "SCL" -> "B2", "SDA" -> "A2",
+        "HPD" -> "A3", "CEC" -> "B1")),
+      BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "M21")),
       BoardDevice("CH340N", mapping = Map(
         "TXD" -> "E3", "RXD" -> "F3")),
-      BoardDevice("LED", mapping = Map("led0" -> "J26", "led1" -> "H26")),
-      BoardDevice("SWITCH", mapping = Map("sw0" -> "H22", "sw1" -> "J22", "reset" -> "H7"))))
+      BoardDevice("LED", mapping = Map("led0" -> "G21", "led1" -> "G20")),
+      BoardDevice("SWITCH", mapping = Map("key1" -> "M6", "reset" -> "H7"))))
 
   /**
    * QMTECH XC7A100T FPGA core board (Artix-7 XC7A100T + MT41K128M16JT DDR3).

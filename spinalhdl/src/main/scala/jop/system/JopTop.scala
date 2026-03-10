@@ -210,7 +210,8 @@ case class JopTop(
 
     // 4. Reset Generation + Main Clock Domain
     val systemClk = if (!isDdr3) pllResult.systemClk.get else null
-    systemReset = if (!isDdr3) ResetGenerator(pllResult.locked, systemClk) else null
+    systemReset = if (!isDdr3) ResetGenerator(pllResult.locked, systemClk)
+                  else !pllResult.locked  // DDR3: reset when PLL not locked (for Eth/peripheral CDs)
 
     val mainClockDomain: ClockDomain = if (!isDdr3) {
       ClockDomain(
@@ -290,7 +291,8 @@ case class JopTop(
 
   // 6. Ethernet/VGA Clock Domains (FPGA only, not in sim)
 
-  val ethTxClk = if (!simulation && sys.ioConfig.ethGmii) ethPll.io.c0
+  val ethTxClk = if (!simulation && sys.ioConfig.ethGmii && ethPll != null) ethPll.io.c0
+                 else if (!simulation && sys.ioConfig.ethGmii && pllResult != null && pllResult.ethClk.isDefined) pllResult.ethClk.get
                  else if (!simulation && sys.ioConfig.hasEth) io.e_txc
                  else null
 
@@ -438,15 +440,15 @@ case class JopTop(
     }
 
     // ==================================================================
-    // Ethernet (optional, EP4CGX150 only)
+    // Ethernet (optional)
     // ==================================================================
 
     if (sys.ioConfig.hasEth) {
       val dataWidth = sys.ioConfig.phyDataWidth
 
-      // GTX clock
+      // GTX clock (125 MHz from EthPll on Altera, PLL ethClk on Xilinx)
       if (sys.ioConfig.ethGmii) {
-        io.e_gtxc := ethPll.io.c0
+        io.e_gtxc := ethTxClk
       } else {
         io.e_gtxc := False
       }

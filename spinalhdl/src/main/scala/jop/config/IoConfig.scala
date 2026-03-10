@@ -97,4 +97,11 @@ object IoConfig {
     hasSdNative = true,
     hasVgaDma = true
   )
+
+  /** Wukong full: UART + Ethernet (GMII 1Gbps) + SD Native 4-bit */
+  def wukongFull: IoConfig = IoConfig(
+    hasEth = true,
+    ethGmii = true,
+    hasSdNative = true
+  )
 }

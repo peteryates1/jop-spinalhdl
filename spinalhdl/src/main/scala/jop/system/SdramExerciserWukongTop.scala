@@ -17,6 +17,7 @@ class SdramExerciserClkWiz extends BlackBox {
     val clk_in        = in Bool()
     val clk_100       = out Bool()
     val clk_100_shift = out Bool()
+    val clk_125       = out Bool()
     val locked        = out Bool()
   }
 

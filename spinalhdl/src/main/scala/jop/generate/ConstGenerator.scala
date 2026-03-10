@@ -29,7 +29,8 @@ object ConstGenerator {
     val allCores = config.systems.flatMap(_.coreConfigs)
 
     // Union of all systems' IoConfigs (superset of device presence)
-    val allIo = config.systems.map(_.coreConfig.ioConfig)
+    // Use system-level ioConfig (authoritative), not coreConfig.ioConfig (default)
+    val allIo = config.systems.map(_.ioConfig)
     val hasEth = allIo.exists(_.hasEth)
     val hasSdSpi = allIo.exists(_.hasSdSpi)
     val hasSdNative = allIo.exists(_.hasSdNative)

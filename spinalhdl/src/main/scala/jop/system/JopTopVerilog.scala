@@ -34,11 +34,17 @@ object JopTopVerilog {
     case "wukongSdram"      => JopConfig.wukongSdram
     case "wukongDdr3"       => JopConfig.wukongDdr3
     case "wukongBram"       => JopConfig.wukongBram
+    case "wukongFull"       => JopConfig.wukongFull
+    case "wukongSdrFull"    => JopConfig.wukongSdrFull
+    case "wukongFullSmp" =>
+      val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
+      JopConfig.wukongFullSmp(n)
     case "minimum"          => JopConfig.minimum
     case other =>
       throw new RuntimeException(s"Unknown preset: '$other'. Available: " +
         "ep4cgx150Serial, ep4cgx150HwMath, ep4cgx150HwFloat, ep4cgx150Smp, " +
-        "cyc5000Serial, auSerial, wukongSdram, wukongDdr3, wukongBram, minimum")
+        "cyc5000Serial, auSerial, wukongSdram, wukongDdr3, wukongBram, " +
+        "wukongFull, wukongSdrFull, wukongFullSmp, minimum")
   }
 
   /** Generate Verilog from a JopConfig */
