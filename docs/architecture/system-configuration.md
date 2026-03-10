@@ -132,7 +132,9 @@ banks via DMA as the virtual stack pointer crosses bank boundaries.
 
 ## JopCoreConfig
 
-Unified configuration for a single JOP core. Defined in `jop/system/JopCore.scala`.
+Unified configuration for a single JOP core. Defined in `jop/config/JopCoreConfig.scala`.
+
+### Core Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -142,46 +144,128 @@ Unified configuration for a single JOP core. Defined in `jop/system/JopCore.scal
 | `jpcWidth` | Int | 11 | Java PC width (2KB method cache) |
 | `ramWidth` | Int | 8 | Stack RAM address width (256 entries) |
 | `blockBits` | Int | 4 | Method cache block bits (16 blocks) |
+
+### Memory and I/O
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
 | `memConfig` | JopMemoryConfig | default | Memory system configuration |
-| `jumpTable` | JumpTableInitData | simulation | Bytecode-to-microcode jump table |
+| `ioConfig` | IoConfig | default | I/O device configuration |
+| `clkFreq` | HertzNumber | 100 MHz | System clock frequency (for BmbSys microsecond prescaler) |
+| `supersetJumpTable` | JumpTableInitData | simulation | Superset jump table (all HW handlers present). Patched by `resolveJumpTable()`. |
+
+### CPU
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
 | `cpuId` | Int | 0 | CPU identifier (set per-core by JopCluster) |
 | `cpuCnt` | Int | 1 | Total CPU count (set by JopCluster) |
-| `ioConfig` | IoConfig | default | I/O device configuration |
-| `clkFreqHz` | Long | 100000000 | Clock frequency in Hz |
-| `fpuMode` | FpuMode | Software | Floating-point mode: `Software` (SoftFloat) or `Hardware` (HW FPU) |
-| `useDspMul` | Boolean | false | DSP multiply (1-cycle 32×32→64) |
-| `useHwDiv` | Boolean | false | Hardware integer divider (BmbDiv) |
+
+### Feature Flags
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
 | `useIhlu` | Boolean | false | Use IHLU per-object lock (vs CmpSync global lock) |
 | `useStackCache` | Boolean | false | Enable 3-bank rotating stack cache with DMA |
 | `spillBaseAddrOverride` | Option[Int] | None | Override spill address (e.g., `Some(0)` for dedicated spill BRAM) |
+| `useBmbFpu` | Boolean | false | Legacy: use BmbFpu I/O peripheral instead of FloatComputeUnit |
+| `useDspMul` | Boolean | false | Use 1-cycle DSP multiplier in ALU (bypasses CU for imul) |
 
-### FpuMode
+### Per-Bytecode Implementation Fields
 
-| Value | Description |
-|-------|-------------|
-| `FpuMode.Software` | All float operations handled by SoftFloat32 in Java (default) |
-| `FpuMode.Hardware` | fadd/fsub/fmul/fdiv use HW FPU via microcode I/O; fneg/fcmp/frem/f2i stay in Java. Double operations always use SoftFloat64. |
+Each field selects the `Implementation` for one bytecode (see below).
 
-The convenience method `config.hasFpu` returns `true` when `fpuMode == Hardware`.
-Use `config.withFpuJumpTable` to auto-select the matching FPU jump table variant.
-Use `config.withMathJumpTable` to auto-select the matching DSP/DIV jump table variant.
-When composing, call `.withFpuJumpTable` first, then `.withMathJumpTable`.
+**Integer** (IntegerComputeUnit):
 
-### Jump Table Variants
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `imul` | Microcode | Microcode=shift-add ~35cyc, Hardware=CU ~22cyc or DSP 2cyc |
+| `idiv` | Hardware | Hardware=IntegerComputeUnit DivUnit ~36cyc |
+| `irem` | Hardware | Hardware=IntegerComputeUnit DivUnit ~36cyc |
 
-| Variant | Use |
-|---------|-----|
-| `JumpTableInitData.simulation` | Simulation with embedded program (microcode + JBC pre-loaded) |
-| `JumpTableInitData.serial` | FPGA serial boot (microcode starts with UART download loop) |
-| `JumpTableInitData.flash` | FPGA flash boot (microcode starts with SPI flash download loop) |
-| `JumpTableInitData.simulationFpu` | Simulation with FPU-enabled microcode (float ops → HW FPU handlers) |
-| `JumpTableInitData.serialFpu` | FPGA serial boot with FPU-enabled microcode |
-| `JumpTableInitData.simulationDsp` | Simulation with DSP multiply microcode |
-| `JumpTableInitData.serialDsp` | FPGA serial boot with DSP multiply microcode |
-| `JumpTableInitData.simulationDiv` | Simulation with HW divider microcode |
-| `JumpTableInitData.serialDiv` | FPGA serial boot with HW divider microcode |
-| `JumpTableInitData.simulationHwMath` | Simulation with DSP multiply + HW divider microcode |
-| `JumpTableInitData.serialHwMath` | FPGA serial boot with DSP multiply + HW divider microcode |
+**Float** (FloatComputeUnit):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `fadd` | Java | IEEE 754 single-precision add |
+| `fsub` | Java | IEEE 754 single-precision subtract |
+| `fmul` | Java | IEEE 754 single-precision multiply |
+| `fdiv` | Java | IEEE 754 single-precision divide |
+| `fneg` | Java | Hardware = microcode XOR sign bit (no CU needed) |
+| `i2f` | Java | int-to-float conversion |
+| `f2i` | Java | float-to-int conversion |
+| `fcmpl` | Java | float compare (NaN → -1) |
+| `fcmpg` | Java | float compare (NaN → 1) |
+
+**Long** (LongComputeUnit):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `ladd` | Microcode | 64-bit add |
+| `lsub` | Microcode | 64-bit subtract |
+| `lmul` | Microcode | 64-bit multiply |
+| `lneg` | Microcode | 64-bit negate (implemented as lsub(0L - value)) |
+| `lshl` | Microcode | 64-bit shift left |
+| `lshr` | Microcode | 64-bit arithmetic shift right |
+| `lushr` | Microcode | 64-bit logical shift right |
+| `lcmp` | Microcode | 64-bit compare |
+
+**Double** (DoubleComputeUnit):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `dadd` | Java | IEEE 754 double-precision add |
+| `dsub` | Java | IEEE 754 double-precision subtract |
+| `dmul` | Java | IEEE 754 double-precision multiply |
+| `ddiv` | Java | IEEE 754 double-precision divide |
+| `i2d` | Java | int-to-double conversion |
+| `d2i` | Java | double-to-int conversion |
+| `l2d` | Java | long-to-double conversion |
+| `d2l` | Java | double-to-long conversion |
+| `f2d` | Java | float-to-double conversion |
+| `d2f` | Java | double-to-float conversion |
+| `dcmpl` | Java | double compare (NaN → -1) |
+| `dcmpg` | Java | double compare (NaN → 1) |
+
+### Per-Bytecode Implementation
+
+Every configurable bytecode has three implementation options:
+
+| Option | Jump Table | Meaning |
+|--------|-----------|---------|
+| `Implementation.Java` | sys_noim | JOPizer replaces with invokestatic -> Java runtime |
+| `Implementation.Microcode` | alt handler | Pure microcode handler (no HW compute unit) |
+| `Implementation.Hardware` | HW handler | Microcode triggers `sthw` -> compute unit |
+
+Not all options are valid for every bytecode:
+- **IMP_ASM bytecodes** (imul, long ops): Java is invalid -- JOPizer doesn't replace them
+- **IMP_JAVA bytecodes** (double ops): Microcode is invalid -- no SW handler exists
+
+Derived hardware instantiation:
+- `needsIntegerCompute` = any of imul/idiv/irem is Hardware -> IntegerComputeUnit
+- `needsFloatCompute` = any float op is Hardware -> FloatComputeUnit
+- `needsLongCompute` = any long op is Hardware -> LongComputeUnit
+- `needsDoubleCompute` = any double op is Hardware -> DoubleComputeUnit
+
+When `useDspMul = true` and `imul = Hardware`, the jump table is patched to a DSP-specific
+handler (`imul_dsp`) that uses a 1-cycle DSP multiply instead of the radix-4 iterative path.
+
+### Superset ROM + Jump Table Patching
+
+The old model of per-variant ROMs (simulationFpu, serialDsp, etc.) has been replaced.
+Three superset ROMs exist -- one per boot mode (serial, flash, simulation). Each contains
+ALL microcode handlers (HW and SW). At elaboration, `resolveJumpTable` patches entries:
+
+| Boot Mode | Superset ROM | Jump Table |
+|-----------|-------------|-----------|
+| Serial | `JumpTableInitData.serial` | Patched by `resolveJumpTable` |
+| Flash | `JumpTableInitData.flash` | Patched by `resolveJumpTable` |
+| Simulation | `JumpTableInitData.simulation` | Patched by `resolveJumpTable` |
+
+`resolveJumpTable` reads the per-bytecode `Implementation` from `JopCoreConfig` and patches:
+- **Java** -> `disable(bc)` (redirect to sys_noim)
+- **Microcode** -> `useAlt(bc)` (use alternate SW handler)
+- **Hardware** -> keep default HW handler (or `useDspAlt(bc)` for DSP imul)
 
 ## JopMemoryConfig
 
@@ -295,8 +379,8 @@ I/O device presence and parameters. Defined in `jop/system/IoConfig.scala`.
 | `0xB0–0xBF` | BmbSdNative | 4 |
 | `0xC0–0xCF` | BmbVgaText | 4 |
 | `0xD0–0xD3` | BmbCfgFlash | 1 |
-| `0xE0–0xE3` | BmbDiv | 1 |
-| `0xF0–0xF3` | BmbFpu | 1 |
+| `0xE0–0xE3` | ~~BmbDiv~~ (removed -- replaced by IntegerComputeUnit) | 1 |
+| `0xF0–0xF3` | BmbFpu (legacy: only when `useBmbFpu=true`) | 1 |
 
 ## DebugConfig
 
@@ -394,15 +478,20 @@ JopConfig.auSerial
 JopConfig.wukongDdr3     // DDR3 via MIG, WukongMigBlackBox (no CS pin)
 JopConfig.wukongSdram    // SDR SDRAM via SdramCtrlNoCke
 JopConfig.wukongBram     // On-chip BRAM (simulation boot mode)
+JopConfig.wukongFull     // DDR3 + full HW: ICU+FCU+LCU+DCU+DSP imul, Ethernet, SD
+JopConfig.wukongSdrFull  // SDR + full HW: ICU+FCU+LCU+DCU+DSP imul, Ethernet, SD
 // All use SystemAssembly.wukong with DeviceDriver.UartCh340
 ```
 
-### Hardware Math Variants
+### Compute Unit Presets
 
-```scala
-JopConfig.ep4cgx150HwMath   // IntegerComputeUnit: idiv + irem in hardware
-JopConfig.ep4cgx150HwFloat  // FloatComputeUnit: fadd/fsub/fmul/fdiv/i2f/f2i/fcmpl/fcmpg
-```
+| Preset | Compute Units | Notes |
+|--------|--------------|-------|
+| `ep4cgx150HwMath` | ICU (idiv+irem) | IntegerComputeUnit only |
+| `ep4cgx150HwFloat` | ICU + FCU | Integer + Float compute |
+| `wukongFull` | ICU + FCU + LCU + DCU + DSP imul | All 4 CUs + DSP multiply |
+| `wukongSdrFull` | ICU + FCU + LCU + DCU + DSP imul | SDR variant of wukongFull |
+| `minimum` | None | Pure microcode imul, Java idiv/irem |
 
 ### Minimum Resources
 

@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import jop.pipeline._
+import jop.config.Implementation
 import jop.core.{ComputeUnitTop, IntegerComputeUnitConfig, FloatComputeUnitConfig, LongComputeUnitConfig, DoubleComputeUnitConfig}
 import jop.memory.MemCtrlInput
 
@@ -130,12 +131,27 @@ case class JopPipeline(
   // Compute Unit Top (replaces separate IntCU + FloatCU)
   // ==========================================================================
   val cu = ComputeUnitTop(
-    icuConfig = IntegerComputeUnitConfig(withMul = true, withDiv = true, withRem = true),
-    fcuConfig = FloatComputeUnitConfig(withAdd = true, withMul = true, withDiv = true,
-      withI2F = true, withF2I = true, withFcmp = true),
-    lcuConfig = LongComputeUnitConfig(withMul = true, withDiv = true, withRem = true, withShift = true),
-    dcuConfig = DoubleComputeUnitConfig(withAdd = true, withMul = true, withDiv = true,
-      withI2D = true, withD2I = true, withL2D = true, withD2L = true, withF2D = true, withD2F = true, withDcmp = true)
+    icuConfig = IntegerComputeUnitConfig(
+      withMul = config.needsIntMul, withDiv = config.needsIntDiv, withRem = config.needsIntDiv),
+    fcuConfig = FloatComputeUnitConfig(
+      withAdd = config.needsFloatCompute, withMul = config.needsFloatCompute,
+      withDiv = config.needsFloatCompute,
+      withI2F = config.i2f == Implementation.Hardware,
+      withF2I = config.f2i == Implementation.Hardware,
+      withFcmp = Seq(config.fcmpl, config.fcmpg).exists(_ == Implementation.Hardware)),
+    lcuConfig = LongComputeUnitConfig(
+      withMul = config.needsLongMul, withDiv = false, withRem = false,
+      withShift = config.needsLongShift),
+    dcuConfig = DoubleComputeUnitConfig(
+      withAdd = config.needsDoubleAdd, withMul = config.needsDoubleMul,
+      withDiv = config.needsDoubleDiv,
+      withI2D = config.i2d == Implementation.Hardware,
+      withD2I = config.d2i == Implementation.Hardware,
+      withL2D = config.l2d == Implementation.Hardware,
+      withD2L = config.d2l == Implementation.Hardware,
+      withF2D = config.f2d == Implementation.Hardware,
+      withD2F = config.d2f == Implementation.Hardware,
+      withDcmp = config.needsDoubleCmp)
   )
 
   // ==========================================================================

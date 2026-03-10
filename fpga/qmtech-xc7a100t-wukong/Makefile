@@ -43,7 +43,7 @@ monitor:
 # === JOP DDR3 targets ===
 
 ddr3-generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopDdr3WukongTopVerilog"
+	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongFull"
 
 ddr3-create-ip:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_ddr3_clk_wiz.tcl

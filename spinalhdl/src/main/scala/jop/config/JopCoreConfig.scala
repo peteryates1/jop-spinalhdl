@@ -64,7 +64,31 @@ case class JopCoreConfig(
   i2f:   Implementation = Implementation.Java,
   f2i:   Implementation = Implementation.Java,
   fcmpl: Implementation = Implementation.Java,
-  fcmpg: Implementation = Implementation.Java
+  fcmpg: Implementation = Implementation.Java,
+
+  // Long — IMP_ASM (Microcode=SW handler, Hardware=LCU). Java is invalid.
+  ladd:  Implementation = Implementation.Microcode,
+  lsub:  Implementation = Implementation.Microcode,
+  lmul:  Implementation = Implementation.Microcode,
+  lneg:  Implementation = Implementation.Microcode,  // Implemented as lsub(0L - value)
+  lshl:  Implementation = Implementation.Microcode,
+  lshr:  Implementation = Implementation.Microcode,
+  lushr: Implementation = Implementation.Microcode,
+  lcmp:  Implementation = Implementation.Microcode,
+
+  // Double — IMP_JAVA (Java=sys_noim→invokestatic, Hardware=DCU). Microcode not available.
+  dadd:  Implementation = Implementation.Java,
+  dsub:  Implementation = Implementation.Java,
+  dmul:  Implementation = Implementation.Java,
+  ddiv:  Implementation = Implementation.Java,
+  i2d:   Implementation = Implementation.Java,
+  d2i:   Implementation = Implementation.Java,
+  l2d:   Implementation = Implementation.Java,
+  d2l:   Implementation = Implementation.Java,
+  f2d:   Implementation = Implementation.Java,
+  d2f:   Implementation = Implementation.Java,
+  dcmpl: Implementation = Implementation.Java,
+  dcmpg: Implementation = Implementation.Java
 ) {
   import Implementation._
 
@@ -77,20 +101,43 @@ case class JopCoreConfig(
   require(instrWidth == 10, "Instruction width must be 10 bits")
   require(pcWidth == 11, "PC width must be 11 bits (2K ROM)")
   require(jpcWidth == 11, "JPC width must be 11 bits (2KB cache)")
-  // imul (0x68) is IMP_ASM — JOPizer does NOT replace it with invokestatic.
+  // IMP_ASM bytecodes: JOPizer does NOT replace them with invokestatic.
   // The jump table must always point to a working handler (sthw or software).
   // Java is not a valid option because sys_noim expects invokestatic operands.
   require(imul != Java, "imul: Java is invalid — imul is IMP_ASM. Use Microcode or Hardware.")
+  for ((name, impl) <- Seq("ladd"->ladd, "lsub"->lsub, "lmul"->lmul, "lneg"->lneg,
+                            "lshl"->lshl, "lshr"->lshr, "lushr"->lushr, "lcmp"->lcmp))
+    require(impl != Java, s"$name: Java is invalid — $name is IMP_ASM. Use Microcode or Hardware.")
+
+  // IMP_JAVA double bytecodes: no SW microcode handlers exist.
+  // Only Java (sys_noim → invokestatic) or Hardware (sthw → DCU) are valid.
+  for ((name, impl) <- Seq("dadd"->dadd, "dsub"->dsub, "dmul"->dmul, "ddiv"->ddiv,
+                            "i2d"->i2d, "d2i"->d2i, "l2d"->l2d, "d2l"->d2l,
+                            "f2d"->f2d, "d2f"->d2f, "dcmpl"->dcmpl, "dcmpg"->dcmpg))
+    require(impl != Microcode, s"$name: Microcode is invalid — no SW handler exists. Use Java or Hardware.")
 
   // --- Derived: what hardware to instantiate ---
   // Only Hardware needs actual compute unit instantiation.
   // Microcode uses pure-microcode handlers (e.g., imul_sw), Java uses sys_noim → JVM.f_xxx().
   def needsIntegerCompute: Boolean = Seq(imul, idiv, irem).exists(_ == Hardware)
   def needsFloatCompute: Boolean   = Seq(fadd, fsub, fmul, fdiv, i2f, f2i, fcmpl, fcmpg).exists(_ == Hardware)
+  def needsLongCompute: Boolean    = Seq(ladd, lsub, lmul, lneg, lshl, lshr, lushr, lcmp).exists(_ == Hardware)
+  def needsDoubleCompute: Boolean  = Seq(dadd, dsub, dmul, ddiv, i2d, d2i, l2d, d2l, f2d, d2f, dcmpl, dcmpg).exists(_ == Hardware)
 
   // Internal hardware within IntegerComputeUnit
   def needsIntMul: Boolean = imul == Hardware
   def needsIntDiv: Boolean = Seq(idiv, irem).exists(_ == Hardware)
+
+  // Internal hardware within LongComputeUnit
+  def needsLongMul: Boolean   = lmul == Hardware
+  def needsLongShift: Boolean = Seq(lshl, lshr, lushr).exists(_ == Hardware)
+
+  // Internal hardware within DoubleComputeUnit
+  def needsDoubleAdd: Boolean     = Seq(dadd, dsub).exists(_ == Hardware)
+  def needsDoubleMul: Boolean     = dmul == Hardware
+  def needsDoubleDiv: Boolean     = ddiv == Hardware
+  def needsDoubleConvert: Boolean = Seq(i2d, d2i, l2d, d2l, f2d, d2f).exists(_ == Hardware)
+  def needsDoubleCmp: Boolean     = Seq(dcmpl, dcmpg).exists(_ == Hardware)
 
   // BmbFpu I/O peripheral (legacy VexRiscv FPU path — only used when useBmbFpu=true)
   def needsBmbFpu: Boolean = useBmbFpu
@@ -126,13 +173,23 @@ case class JopCoreConfig(
           // else keep default HW handler
       }
     }
-    // Long operations have hardware handlers (sthw → LCU) in the superset ROM.
-    // Until LCU is config-driven, always use the software handlers.
-    // lmul (0x69), ladd (0x61), lsub (0x65), lneg (0x75),
-    // lcmp (0x94), lushr (0x7D), lshr (0x7B), lshl (0x79)
-    val longOpsToSw = Seq(0x69, 0x61, 0x65, 0x75, 0x94, 0x7D, 0x7B, 0x79)
-    for (bc <- longOpsToSw) {
-      result = result.useAlt(bc)
+    // Long operations (IMP_ASM): Microcode→useAlt (SW handler), Hardware→keep HW handler
+    val longOps: Seq[(Int, Implementation)] = Seq(
+      0x61 -> ladd,  0x65 -> lsub,  0x69 -> lmul,  0x75 -> lneg,
+      0x79 -> lshl,  0x7B -> lshr,  0x7D -> lushr, 0x94 -> lcmp
+    )
+    // Double operations (IMP_JAVA): Java→disable (sys_noim), Hardware→keep HW handler
+    val doubleOps: Seq[(Int, Implementation)] = Seq(
+      0x63 -> dadd,  0x67 -> dsub,  0x6B -> dmul,  0x6F -> ddiv,
+      0x87 -> i2d,   0x8E -> d2i,   0x8A -> l2d,   0x8F -> d2l,
+      0x8D -> f2d,   0x90 -> d2f,   0x97 -> dcmpl, 0x98 -> dcmpg
+    )
+    for ((bc, impl) <- longOps ++ doubleOps) {
+      impl match {
+        case Java     => result = result.disable(bc)
+        case Microcode => result = result.useAlt(bc)
+        case Hardware => // keep default HW handler (sthw → LCU/DCU)
+      }
     }
     result
   }

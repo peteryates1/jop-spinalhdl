@@ -194,26 +194,28 @@ Not all three options exist for every bytecode today. The framework supports all
 - **Java** → sys_noim → JVM.f_imul()
 
 **Long arithmetic** (10) — `ladd` `lsub` `lneg` `lshl` `lshr` `lushr` `land` `lor` `lxor` `lcmp`
-- Today: **Microcode** (existing handlers in base ROM)
-- Future: **Hardware** (long ALU peripheral)
+- **Microcode** (existing handlers in base ROM) — default
+- **Hardware** → LongComputeUnit (64-bit add/sub/neg/cmp + barrel shifter + DSP multiply) ✓ **IMPLEMENTED**
 - Always available: **Java** (sys_noim)
 
 **Long multiply** (1) — `lmul`
-- Today: **Java** or **Hardware** (LongComputeUnit, DSP cascade via `sthw`/`wait`)
+- **Java** or **Hardware** → LongComputeUnit (DSP cascade via `sthw`/`wait`) ✓ **IMPLEMENTED**
 
 **Integer/long divide** (4) — `idiv` `irem` `ldiv` `lrem`
-- Today: **Java** or **Hardware** (IntegerComputeUnit for idiv/irem; ldiv/lrem via LongComputeUnit, future HW)
+- **Java** or **Hardware** (IntegerComputeUnit for idiv/irem; ldiv/lrem stay Java — no hardware divider in LongComputeUnit)
 
 **Float arithmetic** (8) — `fadd` `fsub` `fmul` `fdiv` `fneg` `frem` `fcmpl` `fcmpg`
 - Today: **Java** or **Hardware** (FloatComputeUnit for fadd/fsub/fmul/fdiv; fneg/fcmpl/fcmpg→ALU, frem→FloatComputeUnit, future HW)
 
 **Double arithmetic** (8) — `dadd` `dsub` `dmul` `ddiv` `dneg` `drem` `dcmpl` `dcmpg`
-- Today: **Java** only
-- Future: **Hardware** (double FPU peripheral)
+- **Java** → sys_noim (SoftFloat64) — default
+- **Hardware** → DoubleComputeUnit (IEEE 754 double-precision: dadd/dsub/dmul/ddiv/dcmpl/dcmpg) ✓ **IMPLEMENTED**
+- dneg/drem stay Java (no hardware support)
 
 **Type conversions** (12) — `i2f` `i2d` `f2i` `f2l` `f2d` `d2i` `d2l` `d2f` `l2f` `l2d` `i2b` `i2s`
-- Today: **Java** (most), **Microcode** (i2l, l2i, i2c already exist)
-- Future: **Hardware** (FPU/double FPU can handle some conversions)
+- **Microcode** (i2l, l2i, i2c already exist)
+- **Hardware** → FloatComputeUnit handles i2f/f2i; DoubleComputeUnit handles i2d/d2i/l2d/d2l/f2d/d2f ✓ **IMPLEMENTED**
+- Remaining (f2l, l2f, i2b, i2s): Java or microcode
 
 **Constants** (3) — `fconst_1` `fconst_2` `dconst_1`
 - Today: **Java**; trivially implementable as **Microcode**
@@ -224,7 +226,7 @@ Not all three options exist for every bytecode today. The framework supports all
 - `needsIntegerCompute` = any of imul/idiv/irem is Hardware → IntegerComputeUnit (internal HW per-bytecode)
 - `needsFloatCompute` = any of fadd/fsub/fmul/fdiv/frem is Hardware → FloatComputeUnit
 - `needsLongCompute` = any of lmul/ldiv/lrem is Hardware → LongComputeUnit (internal HW per-bytecode)
-- `needsDoubleCompute` = any of dadd/.../drem is Hardware → DoubleComputeUnit (future)
+- `needsDoubleCompute` = any of dadd/.../drem is Hardware → DoubleComputeUnit
 - `needs4RegTos` = any 64-bit Hardware operation → extend TOS from 2 to 4 registers
 
 ## Key Insight: Superset ROM + Jump Table Patching
@@ -450,27 +452,27 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig) extends ComputeU
 }
 ```
 
-**LongComputeUnit** — lmul, ldiv, lrem (64-bit operands, 64-bit result).
-Same per-bytecode optionality: `lmul: Hardware, ldiv: Software` → DSP cascade instantiated, 64-bit DivUnit not.
+**LongComputeUnit** — ladd, lsub, lneg, lcmp, lshl, lshr, lushr, lmul (64-bit operands, 64-bit result). ✓ **IMPLEMENTED**
+Handles three categories: trivial ALU ops (ladd/lsub/lneg/lcmp — single-cycle 64-bit), barrel shifter ops (lshl/lshr/lushr — single-cycle), and DSP multiply (lmul — DSP cascade). No ldiv/lrem in hardware (those stay Java).
 
 ```scala
 case class LongComputeUnit(config: LongComputeUnitConfig) extends ComputeUnit {
 
-  // DSP cascade multiply for 64×64→64 — only if lmul=Hardware
-  val mul = config.needsLongMul generate Mul(width = 64, useDsp = true)
-
-  // 64-bit binary restoring divider, ~66 cycles — only if ldiv=Hardware or lrem=Hardware
-  val div = config.needsLongDiv generate DivUnit(width = 64)
+  // 64-bit ALU for ladd/lsub/lneg/lcmp
+  // 64-bit barrel shifter for lshl/lshr/lushr
+  // DSP cascade multiply for 64×64→64 (lmul)
 
   io.is64 := True  // always 64-bit result
 
   switch(io.opcode) {
-    if (config.needsLongMul)
-      is(0x69) { /* lmul → mul */ }
-    if (config.needsLongDiv) {
-      is(0x6D) { /* ldiv → div, mode=QUOT */ }
-      is(0x71) { /* lrem → div, mode=REM */ }
-    }
+    is(0x61) { /* ladd → 64-bit add */ }
+    is(0x65) { /* lsub → 64-bit sub */ }
+    is(0x75) { /* lneg → 64-bit negate */ }
+    is(0x94) { /* lcmp → 64-bit compare */ }
+    is(0x78) { /* lshl → barrel shift left */ }
+    is(0x7A) { /* lshr → barrel shift right (arithmetic) */ }
+    is(0x7C) { /* lushr → barrel shift right (logical) */ }
+    is(0x69) { /* lmul → DSP cascade multiply */ }
   }
 }
 ```
@@ -499,12 +501,13 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig) extends ComputeUnit 
 }
 ```
 
-**DoubleComputeUnit** — dadd, dsub, dmul, ddiv, drem, conversions (IEEE 754 double):
+**DoubleComputeUnit** — dadd, dsub, dmul, ddiv, dcmpl, dcmpg, i2d, d2i, l2d, d2l, f2d, d2f (IEEE 754 double). ✓ **IMPLEMENTED**
+Handles double arithmetic (dadd/dsub/dmul/ddiv), double comparison (dcmpl/dcmpg), and type conversions (i2d/d2i/l2d/d2l/f2d/d2f). No drem/dneg in hardware (those stay Java).
 
 ```scala
 case class DoubleComputeUnit(config: DoubleComputeUnitConfig) extends ComputeUnit {
 
-  // Double-precision FPU (future)
+  // IEEE 754 double-precision FPU
   val fpu = DoubleFpuCore()
 
   io.is64 := True  // default: 64-bit result
@@ -514,13 +517,14 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig) extends ComputeUni
     is(0x67) { /* dsub → fpu, op=SUB */ }
     is(0x6B) { /* dmul → fpu, op=MUL */ }
     is(0x6F) { /* ddiv → fpu, op=DIV */ }
-    is(0x73) { /* drem → fpu, op=REM */ }
+    is(0x97) { io.is64 := False /* dcmpl → fpu, op=CMPL, 32-bit result */ }
+    is(0x98) { io.is64 := False /* dcmpg → fpu, op=CMPG, 32-bit result */ }
     is(0x85) { /* i2d → fpu, op=I2D (32-bit input, 64-bit result) */ }
     is(0x87) { io.is64 := False /* d2i → fpu, op=D2I, 32-bit result */ }
     is(0x90) { io.is64 := False /* d2f → fpu, op=D2F, 32-bit result */ }
     is(0x8D) { /* f2d → fpu, op=F2D (32-bit input, 64-bit result) */ }
-    is(0x8A) { /* l2d → fpu, op=L2D */ }
-    is(0x8F) { /* d2l → fpu, op=D2L */ }
+    is(0x8A) { /* l2d → fpu, op=L2D (64-bit input, 64-bit result) */ }
+    is(0x8F) { /* d2l → fpu, op=D2L (64-bit input, 64-bit result) */ }
   }
 }
 ```

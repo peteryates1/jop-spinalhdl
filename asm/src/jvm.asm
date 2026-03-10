@@ -1847,6 +1847,10 @@ monitorexit_no_ena:	nop nxt
 //
 #include "jvm_long.inc"
 
+//
+// double bytecodes
+//
+#include "jvm_double.inc"
 
 
 

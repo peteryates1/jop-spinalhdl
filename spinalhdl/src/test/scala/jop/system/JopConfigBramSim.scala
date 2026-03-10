@@ -134,3 +134,38 @@ object JopConfigHwFloatHelloWorldSim extends App {
     jopFilePath = "java/apps/Smallest/HelloWorld.jop"
   )
 }
+
+/**
+ * JVM test suite runner for any JopConfig preset.
+ *
+ * Takes a preset name, overrides boot mode to Simulation (so ROM/RAM
+ * load from asm/generated/ and jump table uses simulation variant),
+ * and runs the full DoAll.jop test suite.
+ *
+ * Usage:
+ *   sbt "Test / runMain jop.system.JopConfigJvmTestsSim wukongFull"
+ *   sbt "Test / runMain jop.system.JopConfigJvmTestsSim ep4cgx150HwFloat"
+ */
+object JopConfigJvmTestsSim {
+  def main(args: Array[String]): Unit = {
+    val presetName = args.headOption.getOrElse("simulation")
+    val preset = JopTopVerilog.resolvePreset(presetName, args)
+
+    // Override to simulation boot mode (loads ROM/RAM from asm/generated/)
+    val simConfig = preset.copy(systems = Seq(preset.system.copy(
+      bootMode = BootMode.Simulation)))
+
+    println(s"=== JVM Tests with preset: $presetName ===")
+    val cc = simConfig.system.coreConfig
+    println(s"  imul=${cc.imul}, idiv=${cc.idiv}, irem=${cc.irem}")
+    println(s"  fadd=${cc.fadd}, fmul=${cc.fmul}, fdiv=${cc.fdiv}")
+    println(s"  fneg=${cc.fneg}, i2f=${cc.i2f}, f2i=${cc.f2i}, fcmpl=${cc.fcmpl}")
+
+    JopConfigBramSim.runSim(
+      jopConfig = simConfig,
+      jopFilePath = "java/apps/JvmTests/DoAll.jop",
+      maxCycles = 60000000,
+      logFilePath = s"spinalhdl/jvmtests_${presetName}_simulation.log"
+    )
+  }
+}

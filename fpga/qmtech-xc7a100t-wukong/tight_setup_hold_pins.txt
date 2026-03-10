@@ -1,25 +1,19 @@
-+====================+===================+=========================+
-| Launch Setup Clock | Launch Hold Clock | Pin                     |
-+====================+===================+=========================+
-| clk                | clk               | dcu/sticky_reg/D        |
-| clk                | clk               | dcu/resultReg_reg[28]/D |
-| clk                | clk               | dcu/resultReg_reg[1]/D  |
-| clk                | clk               | dcu/resultReg_reg[60]/D |
-| clk                | clk               | dcu/resultReg_reg[59]/D |
-| clk                | clk               | dcu/resultReg_reg[25]/D |
-| clk                | clk               | dcu/resultReg_reg[61]/D |
-| clk                | clk               | dcu/resultReg_reg[7]/D  |
-| clk                | clk               | dcu/resultReg_reg[58]/D |
-| clk                | clk               | dcu/resultReg_reg[8]/D  |
-| clk                | clk               | dcu/resultReg_reg[15]/D |
-| clk                | clk               | dcu/resultReg_reg[3]/D  |
-| clk                | clk               | dcu/resultReg_reg[63]/D |
-| clk                | clk               | dcu/resultReg_reg[9]/D  |
-| clk                | clk               | dcu/resultReg_reg[11]/D |
-| clk                | clk               | dcu/resultReg_reg[13]/D |
-| clk                | clk               | dcu/resultReg_reg[14]/D |
-| clk                | clk               | dcu/resultReg_reg[5]/D  |
-| clk                | clk               | dcu/resultReg_reg[57]/D |
-| clk                | clk               | dcu/resultReg_reg[21]/D |
-| clk                | clk               | dcu/resultReg_reg[6]/D  |
-+--------------------+-------------------+-------------------------+
++====================+===================+=================================================================================================================+
+| Launch Setup Clock | Launch Hold Clock | Pin                                                                                                             |
++====================+===================+=================================================================================================================+
+| clk_125_clk_wiz_0  | clk_125_clk_wiz_0 | mainArea_cluster/cores_0/bmbEth_1/mac/txFrontend_buffer/fifo/pushToPop/outHitSignal_buffercc/buffers_0_reg/D    |
+| clk_125_clk_wiz_0  | clk_125_clk_wiz_0 | mainArea_cluster/cores_0/bmbEth_1/mac/txFrontend_buffer/fifo/push_popPtr_reg[6]/D                               |
+| clk_125_clk_wiz_0  | clk_125_clk_wiz_0 | mainArea_cluster/cores_0/bmbEth_1/mac/txFrontend_buffer/fifo/popToPush/pushArea_target_buffercc/buffers_0_reg/D |
+| clk_125_clk_wiz_0  | clk_125_clk_wiz_0 | mainArea_cluster/cores_0/bmbEth_1/mac/txFrontend_buffer/fifo/push_popPtr_reg[8]/D                               |
+| clk_125_clk_wiz_0  | clk_125_clk_wiz_0 | mainArea_cluster/cores_0/bmbEth_1/mac/txFrontend_buffer/fifo/push_popPtr_reg[0]/D                               |
+| clk_125_clk_wiz_0  | clk_125_clk_wiz_0 | mainArea_cluster/cores_0/bmbEth_1/mac/txFrontend_buffer/fifo/push_popPtr_reg[7]/D                               |
+| clk_125_clk_wiz_0  | clk_125_clk_wiz_0 | mainArea_cluster/cores_0/bmbEth_1/mac/txFrontend_buffer/fifo/push_popPtr_reg[3]/D                               |
+| clk_125_clk_wiz_0  | clk_125_clk_wiz_0 | mainArea_cluster/cores_0/bmbEth_1/mac/txFrontend_buffer/fifo/push_popPtr_reg[4]/D                               |
+| clk_125_clk_wiz_0  | clk_125_clk_wiz_0 | mainArea_cluster/cores_0/bmbEth_1/mac/txFrontend_buffer/fifo/push_popPtr_reg[1]/D                               |
+| clk_125_clk_wiz_0  | clk_125_clk_wiz_0 | mainArea_cluster/cores_0/bmbEth_1/mac/txFrontend_buffer/fifo/push_popPtr_reg[2]/D                               |
+| clk_125_clk_wiz_0  | clk_125_clk_wiz_0 | mainArea_cluster/cores_0/bmbEth_1/mac/txFrontend_buffer/fifo/push_popPtr_reg[9]/D                               |
+| clk_125_clk_wiz_0  | clk_125_clk_wiz_0 | mainArea_cluster/cores_0/bmbEth_1/mac/txFrontend_buffer/fifo/push_popPtr_reg[5]/D                               |
+| clk_pll_i          | clk_pll_i         | mainArea_cluster/cores_0/pipeline/cu/dcu/sticky_reg/D                                                           |
+| clk_pll_i          | clk_pll_i         | lruCacheCore_1/lruArray_256_reg[1]/D                                                                            |
+| clk_pll_i          | clk_pll_i         | lruCacheCore_1/lruArray_321_reg[1]/D                                                                            |
++--------------------+-------------------+-----------------------------------------------------------------------------------------------------------------+
