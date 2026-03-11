@@ -135,34 +135,46 @@ Estimated max core counts at 85% LE budget (127,296 LEs), SDR SDRAM + all CUs:
 
 The original VHDL JOP (from jopmin) was compiled for the same EP4CGX150 device
 using Quartus 25.1 quartus_map. The VHDL 1-core build includes: SDRAM
-controller, UART, SPI SD card, VGA, 7-segment display, LED/switch mux, IHLU,
-and CmpSync. Ethernet pins are declared at the top level but were never
-implemented (no working Ethernet MAC/PHY driver in jopmin).
+controller, UART, SPI SD card, 7-segment display, LED/switch mux, and IHLU.
+Ethernet pins are declared at the top level but were never implemented (no
+working Ethernet MAC/PHY driver in jopmin).
+
+The VHDL default uses larger caches than SpinalHDL: jpc_width=14 (16KB method
+cache, 32 blocks) and OCACHE_WAY_BITS=5 (32-entry object cache). SpinalHDL
+defaults to jpc_width=11 (2KB, 16 blocks) and wayBits=4 (16-entry). The
+"matched caches" rows below use the same cache sizes as SpinalHDL. The VHDL JOP
+has no array cache (never wired into mem_sc); SpinalHDL's array cache adds only
+11 LEs on Altera so the difference is negligible.
 
 | Design | LEs | Comb | Regs | Mem bits |
 |--------|----:|-----:|-----:|---------:|
-| VHDL JOP (1-core, full I/O) | 9,608 | 6,767 | 4,734 | 173,056 |
-| VHDL JOP (3-core SMP, full I/O) | 22,844 | 17,087 | 10,498 | 519,360 |
+| VHDL JOP (1-core, original caches) | 9,608 | 6,767 | 4,734 | 173,056 |
+| VHDL JOP (1-core, matched caches) | 7,950 | 5,648 | 3,869 | 54,272 |
+| VHDL JOP (3-core, original caches) | 22,844 | 17,087 | 10,498 | 519,360 |
+| VHDL JOP (3-core, matched caches) | 17,901 | 13,761 | 7,903 | 163,008 |
 | SpinalHDL (1-core, UART only) | 9,969 | 8,311 | 3,841 | 30,976 |
-| SpinalHDL (1-core, comparable I/O) | ~11,272 | ~9,362 | ~4,514 | ~63,744 |
+| SpinalHDL (1-core, comparable I/O) | 10,111 | 8,439 | 3,904 | 30,976 |
 
 Notes:
-- "Comparable I/O" = SpinalHDL eth_sd_spi (Ethernet GMII + SD SPI + UART) — the
-  closest match to the VHDL build's I/O (which uses SPI-mode SD, not native).
-- SpinalHDL uses ~17% more LEs for comparable I/O (11,272 vs 9,608). The VHDL
-  JOP uses a lighter-weight SDRAM controller (no array cache, no BMB bus
-  infrastructure) and the SPI SD + Ethernet are simpler VHDL implementations.
-- SpinalHDL trades LEs for fewer memory bits: 63K vs 173K. The VHDL SDRAM
-  controller uses block RAM buffers that SpinalHDL's Altera controller avoids.
-- **Per-core cost**: VHDL = (22,844 - 9,608) / 2 = **6,618 LEs/core**. In the
-  VHDL design, only core 0 has the full `scio` entity (UART, SPI SD, VGA,
+- "Comparable I/O" = SpinalHDL sd_spi (SD SPI + UART) — the closest match to
+  the VHDL build's I/O (which uses SPI-mode SD). The VHDL build also has 7-seg
+  and LED/switch mux not present in SpinalHDL.
+- With matched caches, SpinalHDL uses ~27% more LEs (10,111 vs 7,950). The
+  extra LEs come from the BMB bus infrastructure, array cache, and more
+  combinational logic in the SpinalHDL memory controller.
+- SpinalHDL uses far fewer memory bits: 31K vs 54K (matched) or 173K
+  (original). The VHDL SDRAM controller uses block RAM buffers that SpinalHDL's
+  Altera controller avoids.
+- **Per-core cost (original caches)**: (22,844 - 9,608) / 2 = **6,618
+  LEs/core**.
+- **Per-core cost (matched caches)**: (17,901 - 7,950) / 2 = **4,976
+  LEs/core** — much closer to SpinalHDL's estimated ~4,600 LEs/core. The gap
+  was largely cache overhead.
+- In the VHDL design, only core 0 has the full `scio` entity (UART, SPI SD,
   7-seg, LED/switch mux). Additional cores get only `sc_sys` (timer, interrupt,
   watchdog, sync). The arbiter, memory controller, and IHLU are shared. So the
-  6,618 LE figure is pure CPU cost: `jopcpu` pipeline + method cache + object
-  cache + stack cache + mul + shift + `sc_sys`. This is genuinely higher than
-  the SpinalHDL estimated ~4,600 LEs/core (with all CUs), likely due to the
-  VHDL's per-core block RAM buffers in the SDRAM controller and heavier method
-  cache implementation (173K memory bits per core vs SpinalHDL's leaner design).
+  per-core figure is pure CPU cost: `jopcpu` pipeline + method cache + object
+  cache + stack + mul + shift + `sc_sys`.
 
 ## Presets and Build Commands
 

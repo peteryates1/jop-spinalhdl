@@ -9,7 +9,7 @@ import jop.config.Implementation._
  * All variants use the same entity name (JopSdramTop) — copy/rename between runs.
  *
  * Usage: sbt "runMain jop.system.AlteraUtilSweep <label>"
- *   Labels: baseline, no_icu, icu_full, icu_dsp, fcu, lcu, dcu, all_cu,
+ *   Labels: baseline, no_icu, no_acache, icu_full, icu_dsp, fcu, lcu, dcu, all_cu,
  *           eth, sd_native, sd_spi, vga_text, vga_dma, eth_sd_native, eth_sd_spi, full
  */
 object AlteraUtilSweep extends App {
@@ -50,6 +50,9 @@ object AlteraUtilSweep extends App {
     "baseline" -> base,
 
     "no_icu" -> withCc(baseCc.copy(idiv = Microcode, irem = Microcode)),
+
+    "no_acache" -> withCc(baseCc.copy(
+      memConfig = baseCc.memConfig.copy(useAcache = false))),
 
     "icu_full" -> withCc(baseCc.copy(imul = Hardware)),
 
