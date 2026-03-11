@@ -162,19 +162,9 @@ public class ExtCollectionTest extends TestCase {
 	// --- Arrays.sort tests ---
 
 	private boolean arraysSortInt() {
-		// Manual insertion sort to avoid Arrays.sort overload issues
 		int[] arr = new int[5];
 		arr[0] = 5; arr[1] = 3; arr[2] = 1; arr[3] = 4; arr[4] = 2;
-		// Simple insertion sort inline
-		for (int i = 1; i < arr.length; i++) {
-			int key = arr[i];
-			int j = i - 1;
-			while (j >= 0 && arr[j] > key) {
-				arr[j + 1] = arr[j];
-				j--;
-			}
-			arr[j + 1] = key;
-		}
+		Arrays.sort(arr);
 		if (arr[0] != 1) return false;
 		if (arr[1] != 2) return false;
 		if (arr[2] != 3) return false;
@@ -184,21 +174,11 @@ public class ExtCollectionTest extends TestCase {
 	}
 
 	private boolean arraysSortObject() {
-		// Sort Integer objects using manual insertion sort
-		// (Arrays.sort has overload resolution issues on JOP)
 		Integer[] arr = new Integer[3];
 		arr[0] = new Integer(30);
 		arr[1] = new Integer(10);
 		arr[2] = new Integer(20);
-		for (int i = 1; i < arr.length; i++) {
-			Integer key = (Integer) arr[i];
-			int j = i - 1;
-			while (j >= 0 && ((Integer) arr[j]).intValue() > key.intValue()) {
-				arr[j + 1] = arr[j];
-				j--;
-			}
-			arr[j + 1] = key;
-		}
+		Arrays.sort(arr);
 		if (arr[0].intValue() != 10) return false;
 		if (arr[1].intValue() != 20) return false;
 		if (arr[2].intValue() != 30) return false;
@@ -208,13 +188,13 @@ public class ExtCollectionTest extends TestCase {
 	// --- Collections algorithm tests ---
 
 	private boolean collectionsSortList() {
-		// Test Collections.reverse (sort has Arrays dependency issues on JOP)
 		ArrayList list = new ArrayList(4);
+		list.add(new Integer(30));
 		list.add(new Integer(10));
 		list.add(new Integer(20));
-		list.add(new Integer(30));
-		// Verify list ordering
+		Collections.sort(list);
 		if (((Integer) list.get(0)).intValue() != 10) return false;
+		if (((Integer) list.get(1)).intValue() != 20) return false;
 		if (((Integer) list.get(2)).intValue() != 30) return false;
 		return true;
 	}

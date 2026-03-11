@@ -120,13 +120,17 @@ case class ArrayCache(
 
   io.hit := hitVec.orR
 
-  // Line encoder: priority-free OR-based encoder (matching VHDL ac_tag)
+  // Line encoder: priority-free OR-based encoder
+  // Bug fix: uses hitVec (full handle + index match) instead of hitTagVec
+  // (handle-only match). With hitTagVec, if two lines cache different regions
+  // of the same array (same handle, different tagIdx), lineEnc ORs their line
+  // numbers together, producing a corrupted RAM address on hit.
   val lineEnc = UInt(wayBits bits)
   for (i <- 0 until wayBits) {
     var bitOr = False
     for (j <- 0 until lineCnt) {
       val jVal = U(j, wayBits bits)
-      when(jVal(i) && hitTagVec(j)) {
+      when(jVal(i) && hitVec(j)) {
         bitOr \= True
       }
     }
@@ -158,8 +162,11 @@ case class ArrayCache(
   val idxReg = Reg(UInt(fieldBits bits)) init(0)
 
   // Latch lookup results on chkIal or chkIas
+  // Bug fix: use hitVec.orR (full match) for hitTagReg, which gates iastore
+  // write-through. hitTagVec.orR would allow write-through on a handle-only
+  // match even if the index region differs, corrupting cached data.
   when(io.chkIal || io.chkIas) {
-    hitTagReg := hitTagVec.orR
+    hitTagReg := hitVec.orR
     handleReg := io.handle
     indexReg := io.index
     cacheableReg := True  // Arrays are always cacheable (no HWO check)
@@ -167,8 +174,11 @@ case class ArrayCache(
   }
 
   // iaload check: decide line and reset fill index
+  // Bug fix: use hitVec.orR (full match) to decide hit/miss line selection.
+  // hitTagVec.orR (handle-only) could match a line with different index region,
+  // causing fill to overwrite the wrong line.
   when(io.chkIal) {
-    when(hitTagVec.orR) {
+    when(hitVec.orR) {
       lineReg := lineEnc
       incNxtReg := False
     }.otherwise {
