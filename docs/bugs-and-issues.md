@@ -227,19 +227,36 @@ See [SDR SDRAM GC Hang](gc/sdr-sdram-gc-hang.md) for the full investigation.
 
 ## Known Timing Issues
 
-### Stack Cache 3-Bank Async Read Path
+### Stack Cache Timing — Three Fixes Applied, One Systemic Issue Remaining
 
-The 3-bank rotating stack cache (`useStackCache = true`) has a critical timing
-path: `ramRdaddrReg → bank address subtract (×3) → readAsync (3 banks) →
-priority MUX → a register`. On the EP4CGX150 at 80 MHz, this path has
-**-5.5 ns setup violation** (data delay ~18 ns vs 12.5 ns period).
+The 3-bank rotating stack cache (`useStackCache = true`) had three timing
+violations on the EP4CGX150 at 80 MHz. All three have been addressed:
 
-**Workaround**: Stack cache disabled in `JopDbFpgaTopVerilog`. Works in BRAM
-simulation (118/124 tests pass).
+**1. Read path (FIXED)**: `ramRdaddrReg → bank address subtract (×3) →
+readAsync (3 banks) → priority MUX → a register` had **-5.5 ns violation**.
+Fixed by pipelining address translation: subtract + range check computed from
+`rdaddr` (pre-register), registered, then only `readAsync + MUX` after.
 
-**Fix needed**: Pipeline the bank RAM read — register the async read output
-before the priority MUX. This requires a 1-cycle read latency change in
-`StackStage`, affecting the `a`/`b` register update timing.
+**2. Write path (FIXED)**: `wrAddrDly → bank RAM write address` had **-1.7 ns
+violation**. Same fix pattern: write address translation pre-computed from
+`wraddr` and registered before bank RAM write port.
+
+**3. DMA fill path (FIXED)**: `SDRAM za_valid → bankWrData` had **-2.2 ns
+violation**. Added pipeline stage in StackCacheDma: BMB response data captured
+into register one cycle, written to bank RAM the next cycle (3 new states:
+FILL_WRITE, FILL_WRITE_BURST, FILL_WRITE_LAST).
+
+**Remaining issue**: After all three fixes, the worst path is still
+`za_valid → spillData` at **-2.7 ns**. This is the SDRAM controller response
+assembly path (BmbSdramCtrl32 assembles two 16-bit SDRAM reads into one 32-bit
+word combinationally). This is a systemic issue affecting any register capturing
+SDRAM response data — also visible in Ethernet (`za_data → MacRxBuffer` at
+-1.8 ns). Not stack-cache-specific; needs a pipeline register in
+BmbSdramCtrl32's response path.
+
+**Status**: Stack cache disabled in `JopDbFpgaTopVerilog` pending BmbSdramCtrl32
+response pipeline. Works in BRAM simulation (52/58 JVM tests pass; 6
+pre-existing float/long/double failures without HW compute units).
 
 ---
 

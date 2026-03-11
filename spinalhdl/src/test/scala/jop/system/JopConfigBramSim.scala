@@ -177,7 +177,8 @@ object JopConfigSyncCacheHelloWorldSim extends App {
   val syncCache = base.copy(systems = Seq(base.system.copy(
     name = "synccache-sim",
     coreConfig = base.system.coreConfig.copy(
-      useSyncRam = Some(true), useStackCache = true))))
+      useSyncRam = Some(true), useStackCache = true,
+      spillBaseAddrOverride = Some(0)))))
   JopConfigBramSim.runSim(
     jopConfig = syncCache,
     jopFilePath = "java/apps/Smallest/HelloWorld.jop"
@@ -190,7 +191,8 @@ object JopConfigCacheOnlyHelloWorldSim extends App {
   val cacheOnly = base.copy(systems = Seq(base.system.copy(
     name = "cache-sim",
     coreConfig = base.system.coreConfig.copy(
-      useStackCache = true))))
+      useStackCache = true,
+      spillBaseAddrOverride = Some(0)))))
   JopConfigBramSim.runSim(
     jopConfig = cacheOnly,
     jopFilePath = "java/apps/Smallest/HelloWorld.jop"

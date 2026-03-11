@@ -205,6 +205,13 @@ case class BmbSdramCtrl32(
   // ==========================================================================
   // Response side: collect two 16-bit responses into one 32-bit response
   // ==========================================================================
+  //
+  // Pipeline register between SDRAM response and BMB response bus.
+  // The Altera SDRAM controller's output (za_valid/avs_readdata) has a long
+  // combinational path through the response assembly.  Without pipelining,
+  // any register capturing BMB response data sees -2.7ns setup violation at
+  // 80 MHz.  The pipeline register adds 1 cycle latency to all reads.
+  // ==========================================================================
 
   val lowHalfData = Reg(Bits(16 bits))
 
@@ -212,16 +219,37 @@ case class BmbSdramCtrl32(
     lowHalfData := rsp.data
   }
 
-  // Forward to BMB only on high-half response (both halves available)
-  io.bmb.rsp.valid := rsp.valid && rsp.context.isHigh
+  // --- Pipeline stage: register assembled 32-bit response ---
+  val pipeValid = RegInit(False)
+  val pipeData  = Reg(Bits(32 bits))
+  val pipeSource = Reg(UInt(bmbParameter.access.sourceWidth bits))
+  val pipeContext = Reg(Bits(bmbParameter.access.contextWidth bits))
+  val pipeIsBurst = Reg(Bool()) init(False)
+
+  // Capture into pipeline on high-half response from SDRAM controller
+  val highHalfFire = rsp.valid && rsp.context.isHigh
+  when(highHalfFire && (!pipeValid || io.bmb.rsp.fire)) {
+    // Capture when pipe is empty OR pipe is being consumed this cycle
+    pipeValid := True
+    pipeData := rsp.data ## lowHalfData
+    pipeSource := rsp.context.source
+    pipeContext := rsp.context.context
+    pipeIsBurst := rsp.context.isBurst
+  }.elsewhen(io.bmb.rsp.fire && !highHalfFire) {
+    // Pipe consumed but no new data — clear valid
+    pipeValid := False
+  }
+
+  // Forward pipelined response to BMB
+  io.bmb.rsp.valid := pipeValid
   io.bmb.rsp.setSuccess()
-  io.bmb.rsp.source := rsp.context.source
-  io.bmb.rsp.context := rsp.context.context
-  io.bmb.rsp.data := rsp.data ## lowHalfData  // {high16, low16}
+  io.bmb.rsp.source := pipeSource
+  io.bmb.rsp.context := pipeContext
+  io.bmb.rsp.data := pipeData
 
   // rsp.last: burst-aware, gated by isBurst context to avoid counting
   // stale single-word responses still in the CAS pipeline when a burst starts.
-  when(burstActive && rsp.context.isBurst) {
+  when(burstActive && pipeIsBurst) {
     io.bmb.rsp.last := (burstWordsSent + 1 >= burstWordTotal)
     when(io.bmb.rsp.fire) {
       burstWordsSent := burstWordsSent + 1
@@ -234,10 +262,10 @@ case class BmbSdramCtrl32(
   }
 
   // Accept low-half responses immediately (just buffer them);
-  // accept high-half responses only when BMB rsp is consumed
+  // accept high-half responses when pipe is empty or being consumed
   rsp.ready := Mux(
     rsp.context.isHigh,
-    io.bmb.rsp.ready,
+    !pipeValid || io.bmb.rsp.ready,
     True
   )
 

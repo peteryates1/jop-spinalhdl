@@ -64,8 +64,9 @@ case class StackCacheDma(
     val IDLE,
         // Spill: read bank RAM, issue BMB write
         SPILL_READ, SPILL_CMD, SPILL_WAIT,
-        // Fill: issue BMB read, write to bank RAM
+        // Fill: issue BMB read, write to bank RAM (pipelined: capture then write)
         FILL_CMD, FILL_WAIT,
+        FILL_WRITE, FILL_WRITE_BURST, FILL_WRITE_LAST,
         DONE
       = newElement()
   }
@@ -215,36 +216,58 @@ case class StackCacheDma(
     }
 
     is(State.FILL_WAIT) {
+      // Pipeline register: capture BMB response data this cycle, write to
+      // bank RAM next cycle.  Breaks the long combinational path from
+      // SDRAM controller output (za_valid/readdata) through BmbSdramCtrl32
+      // response assembly to bank RAM write, fixing -2.2ns setup violation.
       when(io.bmb.rsp.fire) {
-        // Write response data to bank RAM
-        io.bankWrAddr := wordsDone.resized
-        io.bankWrData := io.bmb.rsp.fragment.data
-        io.bankWrEn := True
-        io.bankSelect := bankIdx
+        spillData := io.bmb.rsp.fragment.data  // Reuse spillData reg as pipeline buffer
+        wordsDone := wordsDone + 1
 
         if (burstLen > 0) {
-          // Burst path: count words in current burst
           val nextBurstWord = burstWordsSent + 1
           burstWordsSent := nextBurstWord
-          wordsDone := wordsDone + 1
 
           when(wordsDone === totalWords - 1) {
-            state := State.DONE
+            state := State.FILL_WRITE_LAST
           }.elsewhen(nextBurstWord === U(burstLen)) {
-            // Burst complete, issue next burst
-            state := State.FILL_CMD
-          }
-          // Otherwise stay in FILL_WAIT for next word of current burst
-        } else {
-          // Single-word path
-          wordsDone := wordsDone + 1
-          when(wordsDone === totalWords - 1) {
-            state := State.DONE
+            state := State.FILL_WRITE_BURST
           }.otherwise {
-            state := State.FILL_CMD
+            state := State.FILL_WRITE
+          }
+        } else {
+          when(wordsDone === totalWords - 1) {
+            state := State.FILL_WRITE_LAST
+          }.otherwise {
+            state := State.FILL_WRITE_BURST
           }
         }
       }
+    }
+
+    // Write pipelined response data to bank RAM (1 cycle after capture)
+    is(State.FILL_WRITE) {
+      io.bankWrAddr := (wordsDone - 1).resized
+      io.bankWrData := spillData
+      io.bankWrEn := True
+      io.bankSelect := bankIdx
+      state := State.FILL_WAIT  // Continue waiting for next burst word
+    }
+
+    is(State.FILL_WRITE_BURST) {
+      io.bankWrAddr := (wordsDone - 1).resized
+      io.bankWrData := spillData
+      io.bankWrEn := True
+      io.bankSelect := bankIdx
+      state := State.FILL_CMD   // Issue next burst read
+    }
+
+    is(State.FILL_WRITE_LAST) {
+      io.bankWrAddr := (wordsDone - 1).resized
+      io.bankWrData := spillData
+      io.bankWrEn := True
+      io.bankSelect := bankIdx
+      state := State.DONE
     }
 
     is(State.DONE) {

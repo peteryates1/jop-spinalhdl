@@ -240,7 +240,9 @@ case class JopCore(
     val dma = StackCacheDma(cc, config.memConfig.bmbParameter)
 
     // BMB master → external port (arbitrated at JopCluster level)
-    io.stackDmaBmb.get <> dma.io.bmb
+    // Pipeline the response path to break timing from BmbSdramCtrl32 through
+    // the BMB arbiter response routing to the DMA's spillData capture register.
+    io.stackDmaBmb.get <> dma.io.bmb.pipelined(rspValid = true)
 
     // DMA bank RAM access → pipeline stack cache
     pipeline.io.dmaBankRdAddr.get := dma.io.bankRdAddr

@@ -731,14 +731,13 @@ object JopDbFpgaTopVerilog extends App {
     ramInit = ramData,
     ioConfig = IoConfig.qmtechDbFpga,
     perCoreConfigs = Some(Seq(JopCoreConfig(
-      memConfig = JopMemoryConfig(burstLen = 4),
+      memConfig = JopMemoryConfig(burstLen = 4, stackRegionWordsPerCore = 1024),
       supersetJumpTable = JumpTableInitData.serial,
       clkFreq = 80 MHz,
       ioConfig = IoConfig.qmtechDbFpga,
       imul = Implementation.Hardware,
-      useDspMul = true
-      // Stack cache disabled: 3-bank async RAM read path adds ~6ns,
-      // causing -5.5ns setup violation at 80 MHz. Needs pipelined read.
+      useDspMul = true,
+      useStackCache = true
     )))
   )))
 
