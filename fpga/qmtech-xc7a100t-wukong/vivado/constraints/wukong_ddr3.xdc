@@ -67,6 +67,16 @@ set_property IOSTANDARD LVCMOS33 [get_ports {e_resetn}]
 # GMII timing constraints
 source ../../../../fpga/constraints/rtl8211eg_gmii.xdc
 
+# CDC false paths: Ethernet 125 MHz ↔ MIG ui_clk (clk_pll_i)
+# All crossings use SpinalHDL BufferCC/StreamFifoCC (safe gray-code CDC).
+set_clock_groups -asynchronous \
+    -group [get_clocks clk_125_clk_wiz_0] \
+    -group [get_clocks clk_pll_i]
+set_clock_groups -asynchronous \
+    -group [get_clocks e_rxc] \
+    -group [get_clocks clk_pll_i] \
+    -group [get_clocks clk_125_clk_wiz_0]
+
 # ============================================================================
 # SD Card (microSD J9, 4-bit native mode) — all LVCMOS33
 # ============================================================================

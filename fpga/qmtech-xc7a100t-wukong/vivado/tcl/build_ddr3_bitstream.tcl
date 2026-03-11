@@ -16,7 +16,8 @@ read_ip [file join $ip_root mig_7series_0/mig_7series_0.xci]
 # Read RTL
 read_verilog [file join $rtl_dir JopDdr3WukongTop.v]
 
-# Read constraints
+# Read constraints (read base + full separately; XDC source doesn't resolve in non-project mode)
+read_xdc [file join $repo_root vivado/constraints/wukong_ddr3_base.xdc]
 read_xdc [file join $repo_root vivado/constraints/wukong_ddr3.xdc]
 
 # Synthesize
