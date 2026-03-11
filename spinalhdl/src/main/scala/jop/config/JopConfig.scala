@@ -379,13 +379,13 @@ object JopConfig {
   // Small FPGA presets (fit-check targets)
   // ========================================================================
 
-  /** Small-FPGA memory config: no object/array caches to save ~1900 LEs */
-  private def smallFpgaMemConfig = JopMemoryConfig(
+  /** Smallest-FPGA memory config: no object/array caches to save ~1900 LEs */
+  private def noCacheMemConfig = JopMemoryConfig(
     useOcache = false,
     useAcache = false
   )
 
-  /** Arrow MAX1000 — minimal SDR SDRAM (no caches, zero compute units) */
+  /** Arrow MAX1000 — SDR SDRAM with O$/A$ caches (fits at 85%) */
   def max1000Sdram = JopConfig(
     assembly = SystemAssembly.max1000,
     systems = Seq(JopSystem(
@@ -393,10 +393,9 @@ object JopConfig {
       memory = "W9864G6JT",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      coreConfig = JopCoreConfig(memConfig = smallFpgaMemConfig),
       drivers = Seq(DeviceDriver.UartFt2232))))
 
-  /** Generic EP4CE6 — minimal SDR SDRAM (no caches, zero compute units) */
+  /** Generic EP4CE6 — SDR SDRAM, no caches (6K LEs too small for O$/A$) */
   def ep4ce6Sdram = JopConfig(
     assembly = SystemAssembly.genericEp4ce6,
     systems = Seq(JopSystem(
@@ -404,7 +403,7 @@ object JopConfig {
       memory = "W9864G6JT",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      coreConfig = JopCoreConfig(memConfig = smallFpgaMemConfig),
+      coreConfig = JopCoreConfig(memConfig = noCacheMemConfig),
       drivers = Seq(DeviceDriver.Uart))))
 
   // ========================================================================

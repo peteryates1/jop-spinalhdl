@@ -12,27 +12,31 @@ Tool: Quartus Prime 25.1std Lite Edition (full compile: map + fit)
 
 ## Configuration
 
-Both use `smallFpgaMemConfig` (defined in `JopConfig.scala`):
+Both use `MemoryStyle.AlteraLpm` (auto-derived from Altera manufacturer). Cache
+configuration differs per target based on available LEs.
 
-| Parameter | Value | Notes |
-|-----------|-------|-------|
-| `useOcache` | false | No object cache (saves ~850 LEs) |
-| `useAcache` | false | No array cache (saves ~1,050 LEs) |
-| `memoryStyle` | AlteraLpm (auto) | LPM megafunction BlackBoxes for BRAM inference |
-| `useSyncRam` | true (auto) | Synchronous RAM reads |
-| Compute units | idiv/irem HW, LCU, DCU | Default (no FCU, no DSP imul) |
-| Boot mode | Serial | UART boot |
+| Parameter | MAX1000 | EP4CE6 | Notes |
+|-----------|---------|--------|-------|
+| `useOcache` | true | false | O$ adds ~850 LEs |
+| `useAcache` | true | false | A$ adds ~1,050 LEs |
+| `memoryStyle` | AlteraLpm | AlteraLpm | LPM megafunction BlackBoxes for BRAM inference |
+| `useSyncRam` | true (auto) | true (auto) | Synchronous RAM reads |
+| Compute units | idiv/irem HW, LCU, DCU | same | Default (no FCU, no DSP imul) |
+| Boot mode | Serial | Serial | UART boot |
+
+EP4CE6 uses `noCacheMemConfig` (no O$/A$) because 6K LEs is too small for caches.
+MAX1000 uses default `JopMemoryConfig` (O$/A$ enabled) — fits at 87%.
 
 ## Results Summary
 
 | Target | LEs | LE% | Memory bits | M9Ks | Status |
 |--------|----:|----:|------------:|-----:|--------|
-| MAX1000 | 4,765 | 59% | 49,408 | 8 | **Fits** (41% headroom) |
-| EP4CE6 | 4,688 | 75% | 49,408 | 8 | **Fits** (25% headroom) |
+| MAX1000 (caches on) | 7,054 | 87% | 59,648 | 10 | **Fits** (13% headroom) |
+| EP4CE6 (no caches) | 4,688 | 75% | 49,408 | 8 | **Fits** (25% headroom) |
 | jopmin MAX1000 (reference) | 7,613 | 94% | 328,704 | — | Fits (6% headroom) |
 
-SpinalHDL JOP is 37% smaller than jopmin in LEs, using far less memory bits (49K vs 329K)
-because jopmin has a 256KB method cache vs our 16KB bytecode RAM.
+SpinalHDL JOP on MAX1000 is 7% smaller than jopmin with O$/A$ caches that jopmin lacks.
+EP4CE6 without caches uses far fewer LEs (75%) with room for additional features.
 
 ## Per-Module Breakdown (MAX1000)
 
