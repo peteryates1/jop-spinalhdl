@@ -59,6 +59,12 @@ sbt "runMain jop.system.JopTopVerilog <preset> [args]"
 | `wukongDdr3` | Wukong XC7A100T | DDR3 | `JopDdr3WukongTop` |
 | `wukongBram` | Wukong XC7A100T | BRAM | `JopBramWukongTop` |
 | `minimum` | QMTECH EP4CGX150 | SDR SDRAM | `JopSdramTop` |
+| `max1000Sdram` | Arrow MAX1000 | SDR SDRAM | `JopMax1000SdramTop` |
+| `ep4ce6Sdram` | Generic EP4CE6 | SDR SDRAM | `JopEp4ce6SdramTop` |
+
+The `max1000Sdram` and `ep4ce6Sdram` presets use `smallFpgaMemConfig` which disables
+object and array caches (`useOcache = false`, `useAcache = false`) to save ~1,900 LEs.
+They also auto-select `MemoryStyle.AlteraLpm` for BRAM inference via LPM megafunctions.
 
 Entity names are backward-compatible with existing Quartus/Vivado projects.
 
@@ -169,7 +175,8 @@ Unified configuration for a single JOP core. Defined in `jop/config/JopCoreConfi
 | `useStackCache` | Boolean | false | Enable 3-bank rotating stack cache with DMA |
 | `spillBaseAddrOverride` | Option[Int] | None | Override spill address (e.g., `Some(0)` for dedicated spill BRAM) |
 | `useDspMul` | Boolean | false | Use 1-cycle DSP multiplier in ALU (bypasses CU for imul) |
-| `useSyncRam` | Option[Boolean] | None | Stack RAM read mode: `None` = auto (Xilinx→sync, Altera→async), `Some(true)` = force readSync, `Some(false)` = force readAsync. Auto-resolved by `JopConfig.resolvedSystems` from FPGA family. |
+| `useSyncRam` | Option[Boolean] | None | Stack RAM read mode: `None` = auto (always sync), `Some(true)` = force readSync, `Some(false)` = force readAsync. Auto-resolved by `JopConfig.resolvedSystems`. |
+| `memoryStyle` | Option[MemoryStyle] | None | Memory primitive style: `None` = auto (AlteraLpm for Altera, Generic for others). `AlteraLpm` instantiates `lpm_rom`/`lpm_ram_dp` BlackBoxes with .mif initialization (required for MAX10 BRAM inference). `Generic` uses SpinalHDL `Mem` with init. Auto-resolved by `JopConfig.resolvedSystems` from FPGA manufacturer. |
 
 ### Per-Bytecode Implementation Fields
 

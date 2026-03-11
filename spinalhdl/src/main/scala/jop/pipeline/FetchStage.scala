@@ -4,6 +4,8 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.misc.pipeline._
+import jop.config.MemoryStyle
+import jop.memory.AlteraLpmRom
 
 /**
  * Fetch Stage Configuration
@@ -12,10 +14,12 @@ import spinal.lib.misc.pipeline._
  *
  * @param pcWidth  Address bits of internal instruction ROM (default: 10)
  * @param iWidth   Instruction width (default: 10)
+ * @param memoryStyle  Generic = SpinalHDL Mem, AlteraLpm = lpm_rom BlackBox with .mif
  */
 case class FetchConfig(
   pcWidth: Int = 10,
-  iWidth: Int = 10
+  iWidth: Int = 10,
+  memoryStyle: MemoryStyle = MemoryStyle.Generic
 ) {
   require(pcWidth > 0, "PC width must be positive")
   require(iWidth > 0, "Instruction width must be positive")
@@ -103,21 +107,35 @@ case class FetchStage(
   // ==========================================================================
 
   // ROM stores: [jfetch(1)][jopdfetch(1)][instruction(iWidth)]
-  val rom = Mem(Bits(config.romWidth bits), config.romDepth)
-
-  // Initialize ROM with provided data or default test pattern
-  romInit match {
-    case Some(data) =>
-      rom.init(data.map(v => B(v, config.romWidth bits)))
-    case None =>
-      rom.init(initDefaultRom())
-  }
-
-  // ROM address register (registered address, unregistered output)
+  // ROM address register (registered address, unregistered output for Generic path)
   val romAddrReg = Reg(UInt(config.pcWidth bits)) init(0)
 
-  // Combinational ROM output (from registered address)
-  val romData = rom.readAsync(romAddrReg)
+  // pcMux declared early so AlteraLpm ROM can connect to it directly.
+  // Assignments (when/elsewhen/otherwise) are below — SpinalHDL builds a
+  // concurrent hardware graph, so declaration order doesn't affect semantics.
+  val pcMux = UInt(config.pcWidth bits)
+
+  val romData = config.memoryStyle match {
+    case MemoryStyle.AlteraLpm =>
+      // Altera lpm_rom BlackBox: LPM_ADDRESS_CONTROL=REGISTERED means the
+      // megafunction registers the address internally on the clock edge.
+      // Feed combinational pcMux directly — the LPM does the registration.
+      // This gives the same timing as Generic path (romAddrReg + readAsync).
+      val lpmRom = AlteraLpmRom(config.romWidth, config.pcWidth, "../../asm/generated/rom.mif")
+      lpmRom.io.address := pcMux
+      lpmRom.io.q
+
+    case MemoryStyle.Generic =>
+      // SpinalHDL Mem with explicit romAddrReg + async read.
+      val rom = Mem(Bits(config.romWidth bits), config.romDepth)
+      romInit match {
+        case Some(data) =>
+          rom.init(data.map(v => B(v, config.romWidth bits)))
+        case None =>
+          rom.init(initDefaultRom())
+      }
+      rom.readAsync(romAddrReg)
+  }
 
   // Extract fields from ROM data
   val jfetch    = romData(config.iWidth + 1)
@@ -151,8 +169,6 @@ case class FetchStage(
   // 3. jmp='1': Load from jpdly (jump target)
   // 4. pcwait='1' AND bsy='1': Hold current PC (wait instruction stall)
   // 5. Default: Increment PC (pc + 1)
-
-  val pcMux = UInt(config.pcWidth bits)
 
   when(jfetch) {
     pcMux := io.jpaddr
@@ -221,7 +237,8 @@ case class FetchStage(
   //
   // Last-assignment-wins in SpinalHDL: this overrides the assignments above.
   when((pcwait && io.bsy) || io.extStall) {
-    romAddrReg := romAddrReg  // Hold ROM address
+    pcMux      := pc          // Hold ROM input (AlteraLpm feeds pcMux to ROM)
+    romAddrReg := romAddrReg  // Hold ROM address (Generic feeds romAddrReg to ROM)
     ir         := ir          // Hold IR
     pcwait     := pcwait      // Hold pcwait state (preserve, not force True)
     pc         := pc          // Hold PC

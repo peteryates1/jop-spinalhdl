@@ -118,6 +118,21 @@ Two bugs in the original VHDL `acache.vhd` were fixed in the SpinalHDL port:
 | **8-elem line fill** | 8 x ~10 = 80 cyc | 4 bursts = ~22 cyc | 4 bursts = ~26 cyc | 2 bursts = ~17 cyc |
 | **Spatial locality benefit** | Low (high fill cost) | Medium | Medium | **High** (cheap fill) |
 
+### Disabling O$ and A$ for Small FPGAs
+
+Both caches can be disabled via `JopMemoryConfig(useOcache = false, useAcache = false)`.
+The `max1000Sdram` and `ep4ce6Sdram` presets use this `smallFpgaMemConfig`.
+
+**Resource savings:** ~1,900 LEs (O$ ~850 + A$ ~1,050 including tags, FIFO, and
+BmbMemoryController state logic).
+
+**Performance impact:** Every getfield/putfield/iaload/iastore goes through the full
+handle dereference + SDRAM read/write path (~3 SDRAM accesses, ~20-30 cycles) instead of
+a 1-cycle cache hit. Method calls, stack operations, and ALU are unaffected. This matches
+jopmin behavior (which never had these caches).
+
+See `docs/analysis/small-fpga-utilization.md` for detailed resource numbers.
+
 ---
 
 ## 4. Data Cache -- Not Implemented (Not Planned)

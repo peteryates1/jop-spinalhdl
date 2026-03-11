@@ -15,6 +15,13 @@ supports synchronous reads. When SpinalHDL sees `readAsync`, it emits
 support asynchronous reads on block RAM (`OUTDATA_REG: UNREGISTERED`), so `readAsync` on
 Altera infers block RAM with zero LUT cost.
 
+**Note (Mar 2026):** While Altera M9K supports async reads in principle, MAX10 (10M08)
+does NOT support ROM or RAM initialization via the Quartus inference engine (`$readmemb` /
+MIF). The solution is `MemoryStyle.AlteraLpm` which uses direct `lpm_rom`/`lpm_ram_dp`
+megafunction instantiation with .mif files, bypassing inference entirely. MAX10 also
+requires `LPM_ADDRESS_CONTROL = "REGISTERED"` (synchronous ROM only). See
+`fpga/ip/altera_lpm/arom.vhd` and `aram.vhd`.
+
 ## Current Utilization (XC7A35T, stack cache enabled)
 
 From Vivado placed utilization report (2026-02-26):

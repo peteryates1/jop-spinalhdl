@@ -692,8 +692,9 @@ case class JopTop(
   private def sdrTiming: SdramTimings = {
     memDevice.map { md =>
       md.name match {
-        case "W9825G6JH6" => W9825G6JH6.timingGrade7
-        case "W9864G6JT"  => W9864G6JT.timingGrade6
+        case "W9825G6JH6"  => W9825G6JH6.timingGrade7
+        case "IS42S16160G" => W9825G6JH6.timingGrade7  // Same geometry/timing as W9825G6JH6
+        case "W9864G6JT"   => W9864G6JT.timingGrade6
         case other => throw new RuntimeException(s"No SDRAM timing for device '$other'")
       }
     }.getOrElse(W9825G6JH6.timingGrade7)

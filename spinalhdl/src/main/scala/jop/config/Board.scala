@@ -619,6 +619,44 @@ object Board {
   /** Alchitry Au V2 + Io V2 daughter board */
   def AlchitryAuV2_IoV2: Seq[Board] =
     Seq(AlchitryAuV2, AlchitryIoV2)
+
+  // ========================================================================
+  // Small FPGA boards (fit-check targets, placeholder pins)
+  // ========================================================================
+
+  /**
+   * Arrow MAX1000 (MAX10 10M08SAE144C8G + IS42S16160G SDR SDRAM).
+   *
+   * 12 MHz on-board oscillator, FT2232H USB-UART.
+   * Pin assignments are placeholders for fit-check — not verified against schematic.
+   */
+  def MAX1000 = Board(
+    name = "max1000",
+    fpga = Some(FpgaDevice.`10M08SAE144C8G`),
+    devices = Seq(
+      BoardDevice("IS42S16160G"),
+      BoardDevice("CLOCK_12MHz", mapping = Map("clock" -> "PIN_H6")),
+      BoardDevice("FT2232H", mapping = Map(
+        "TXD" -> "PIN_A4", "RXD" -> "PIN_B4")),
+      BoardDevice("LED", mapping = Map(
+        "led0" -> "PIN_A8", "led1" -> "PIN_A9"))))
+
+  /**
+   * Generic EP4CE6 board (Cyclone IV E EP4CE6E22C8 + W9864G6JT SDR SDRAM).
+   *
+   * 50 MHz on-board oscillator. Minimal config.
+   * Pin assignments are placeholders for fit-check — not verified against schematic.
+   */
+  def GenericEP4CE6 = Board(
+    name = "generic-ep4ce6",
+    fpga = Some(FpgaDevice.EP4CE6E22C8),
+    devices = Seq(
+      BoardDevice("W9864G6JT"),
+      BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "PIN_23")),
+      BoardDevice("CP2102N", mapping = Map(
+        "TXD" -> "PIN_114", "RXD" -> "PIN_115")),
+      BoardDevice("LED", mapping = Map(
+        "led0" -> "PIN_87", "led1" -> "PIN_86"))))
 }
 
 // ==========================================================================
@@ -729,4 +767,10 @@ object SystemAssembly {
   /** Alchitry Au V2 + Io V2 daughter board */
   def alchitryAuV2WithIo = SystemAssembly("alchitry-au-v2-io-v2",
     Board.AlchitryAuV2_IoV2)
+
+  /** Arrow MAX1000 standalone */
+  def max1000 = SystemAssembly("max1000", Seq(Board.MAX1000))
+
+  /** Generic EP4CE6 standalone */
+  def genericEp4ce6 = SystemAssembly("generic-ep4ce6", Seq(Board.GenericEP4CE6))
 }

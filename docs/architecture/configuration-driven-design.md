@@ -11,7 +11,8 @@
 | 5 | Hardware Description (Parts, Board, Assembly) | **Done** — `jop.config` package with full board/FPGA/memory metadata |
 | 5b | Unified FPGA Top-Level (`JopTop`) | **Done** — replaces 7 board-specific tops, verified on hardware (QMTECH EP4CGX150) and simulation |
 | 5c | PLL / Reset / Memory Controller Factories | **Done** — `Pll.create()`, `ResetGenerator`, `MemoryControllerFactory` |
-| 5d | `JopTopVerilog` Entry Point | **Done** — 10 presets, backward-compatible entity names |
+| 5d | `JopTopVerilog` Entry Point | **Done** — 12 presets (incl. `max1000Sdram`, `ep4ce6Sdram`), backward-compatible entity names |
+| 5f | Vendor-Specific Memory Primitives | **Done** — `MemoryStyle` config: `AlteraLpm` (lpm_rom/lpm_ram_dp BlackBox with .mif) vs `Generic` (SpinalHDL Mem). Auto-derived from FPGA manufacturer. Small FPGA presets disable caches. |
 | 5e | Simulation Mode | **Done** — `JopTop(simulation=true)` bypasses PLL/MIG for Verilator |
 | 6 | Board-Specific Modular Java Runtime | Not started |
 | 7 | Simulation Harness Dedup | Not started |

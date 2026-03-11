@@ -1,0 +1,28 @@
+# Arrow MAX1000 — JOP minimal fit-check
+# FPGA: 10M08SAE144C8G (MAX10, 8K LEs)
+# Pinout: placeholder — not verified against schematic
+
+set_global_assignment -name FAMILY "MAX 10"
+set_global_assignment -name DEVICE 10M08SAE144C8G
+set_global_assignment -name TOP_LEVEL_ENTITY JopMax1000SdramTop
+set_global_assignment -name ORIGINAL_QUARTUS_VERSION 23.1
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+
+# Source files
+set_global_assignment -name VERILOG_FILE ../../spinalhdl/generated/JopMax1000SdramTop.v
+set_global_assignment -name VERILOG_FILE max1000_pll.v
+set_global_assignment -name VERILOG_FILE ../ip/altera_sdram_tri_controller/altera_sdram_tri_controller.v
+set_global_assignment -name VERILOG_FILE ../ip/altera_sdram_tri_controller/efifo_module.v
+set_global_assignment -name VHDL_FILE ../ip/altera_lpm/arom.vhd
+set_global_assignment -name VHDL_FILE ../ip/altera_lpm/aram.vhd
+
+# Timing constraints
+set_global_assignment -name SDC_FILE jop_max1000.sdc
+
+# MAX10 internal flash: ERAM mode required for M9K initialization via .mif
+set_global_assignment -name INTERNAL_FLASH_UPDATE_MODE "SINGLE IMAGE WITH ERAM"
+
+# Don't require pin assignments for fit-check
+set_global_assignment -name RESERVE_ALL_UNUSED_PINS_WEAK_PULLUP "AS INPUT TRI-STATED"
+
+set_global_assignment -name LAST_QUARTUS_VERSION "25.1std.0 Lite Edition"

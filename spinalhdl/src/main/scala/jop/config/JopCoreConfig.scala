@@ -12,6 +12,15 @@ object Implementation {
   case object Hardware extends Implementation   // Microcode → HW compute unit / ALU
 }
 
+/** Memory primitive style — controls ROM/RAM instantiation in pipeline stages.
+  * Generic:   SpinalHDL Mem with init() → $readmemb inference (works on Cyclone IV, Xilinx)
+  * AlteraLpm: lpm_rom / lpm_ram_dp BlackBox with .mif → works on all Altera incl. MAX10 */
+sealed trait MemoryStyle
+object MemoryStyle {
+  case object Generic extends MemoryStyle
+  case object AlteraLpm extends MemoryStyle
+}
+
 /**
  * JOP Core Configuration
  *
@@ -47,13 +56,16 @@ case class JopCoreConfig(
   useStackCache: Boolean         = false,  // Use 3-bank rotating stack cache with DMA spill/fill
   spillBaseAddrOverride: Option[Int] = None, // Override spillBaseAddr (e.g., 0 for dedicated spill BRAM)
   useDspMul:    Boolean          = false,  // Use 1-cycle DSP multiplier in ALU (bypasses CU for imul)
-  useSyncRam:   Option[Boolean]  = None,   // None = auto (Xilinx→true, Altera→false); Some(x) = explicit override
+  useSyncRam:   Option[Boolean]  = None,   // None = auto (true for all — readAsync emits ram_style=distributed); Some(x) = explicit override
+  memoryStyle:  Option[MemoryStyle] = None, // None = auto from FPGA family; Some(x) = explicit override
 
   // --- Per-bytecode implementation selection ---
-  // Integer — always Hardware (IntegerComputeUnit). Microcode = iterative, Hardware = CU or DSP.
+  // Integer — Microcode = iterative SW, Hardware = IntegerComputeUnit, Java = JOPizer invokestatic.
+  // imul is IMP_ASM (JOPizer leaves bytecode as-is) → must be Microcode or Hardware.
+  // idiv/irem are IMP_JAVA (JOPizer replaces with invokestatic) → Java fallback works.
   imul:  Implementation = Implementation.Microcode,  // Microcode=shift-add ~35cyc, Hardware=CU ~22cyc or DSP 2cyc
-  idiv:  Implementation = Implementation.Hardware,   // Hardware→IntegerComputeUnit DivUnit ~36cyc
-  irem:  Implementation = Implementation.Hardware,   // Hardware→IntegerComputeUnit DivUnit ~36cyc
+  idiv:  Implementation = Implementation.Java,       // Java=invokestatic ~1300cyc, Hardware=ICU DivUnit ~36cyc
+  irem:  Implementation = Implementation.Java,       // Java=invokestatic ~1300cyc, Hardware=ICU DivUnit ~36cyc
 
   // Float — Java (software) or Hardware (FloatComputeUnit / microcode)
   fadd:  Implementation = Implementation.Java,
@@ -66,10 +78,12 @@ case class JopCoreConfig(
   fcmpl: Implementation = Implementation.Java,
   fcmpg: Implementation = Implementation.Java,
 
-  // Long — IMP_ASM (Microcode=SW handler, Hardware=LCU). Java is invalid.
+  // Long — IMP_ASM ops have pure microcode handlers; IMP_JAVA ops use JOPizer invokestatic.
+  // ladd/lsub/lneg/lshl/lshr/lushr/lcmp are IMP_ASM → must be Microcode or Hardware.
+  // lmul is IMP_JAVA → Java fallback works. Microcode (lmul_sw) requires ICU for partial products.
   ladd:  Implementation = Implementation.Microcode,
   lsub:  Implementation = Implementation.Microcode,
-  lmul:  Implementation = Implementation.Microcode,
+  lmul:  Implementation = Implementation.Java,       // Java=invokestatic, Microcode=lmul_sw (needs ICU), Hardware=LCU
   lneg:  Implementation = Implementation.Microcode,  // Implemented as lsub(0L - value)
   lshl:  Implementation = Implementation.Microcode,
   lshr:  Implementation = Implementation.Microcode,
@@ -107,9 +121,14 @@ case class JopCoreConfig(
   // The jump table must always point to a working handler (sthw or software).
   // Java is not a valid option because sys_noim expects invokestatic operands.
   require(imul != Java, "imul: Java is invalid — imul is IMP_ASM. Use Microcode or Hardware.")
-  for ((name, impl) <- Seq("ladd"->ladd, "lsub"->lsub, "lmul"->lmul, "lneg"->lneg,
+  for ((name, impl) <- Seq("ladd"->ladd, "lsub"->lsub, "lneg"->lneg,
                             "lshl"->lshl, "lshr"->lshr, "lushr"->lushr, "lcmp"->lcmp))
     require(impl != Java, s"$name: Java is invalid — $name is IMP_ASM. Use Microcode or Hardware.")
+
+  // lmul_sw uses ICU (sthw 0/3 for partial products) — requires IntegerComputeUnit.
+  require(lmul != Microcode || needsIntegerCompute,
+    "lmul: Microcode requires IntegerComputeUnit (lmul_sw uses sthw for partial products). " +
+    "Set imul/idiv/irem to Hardware, or use lmul=Java or lmul=Hardware.")
 
   // IMP_JAVA double bytecodes: no SW microcode handlers exist.
   // Only Java (sys_noim → invokestatic) or Hardware (sthw → DCU) are valid.
@@ -193,11 +212,14 @@ case class JopCoreConfig(
     result
   }
 
-  def fetchConfig = FetchConfig(pcWidth, instrWidth)
+  def resolvedMemoryStyle: MemoryStyle = memoryStyle.getOrElse(MemoryStyle.Generic)
+
+  def fetchConfig = FetchConfig(pcWidth, instrWidth, memoryStyle = resolvedMemoryStyle)
   def decodeConfig = DecodeConfig(instrWidth, ramWidth)
   def stackConfig = StackConfig(dataWidth, jpcWidth, ramWidth,
     useDspMul = useDspMul,
-    useSyncRam = useSyncRam.getOrElse(false),
+    useSyncRam = useSyncRam.getOrElse(true),
+    memoryStyle = resolvedMemoryStyle,
     cacheConfig = if (useStackCache) Some(StackCacheConfig(
       burstLen = memConfig.burstLen,
       wordAddrWidth = memConfig.addressWidth - 2,

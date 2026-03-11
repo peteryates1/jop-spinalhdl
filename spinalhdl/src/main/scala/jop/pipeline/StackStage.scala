@@ -3,6 +3,8 @@ package jop.pipeline
 import spinal.core._
 import spinal.core.sim._
 import jop.core.Shift
+import jop.config.MemoryStyle
+import jop.memory.AlteraLpmRam
 
 /**
  * Stack Cache Configuration (3-bank rotating stack cache with DMA spill/fill)
@@ -68,7 +70,8 @@ case class StackConfig(
   ramWidth: Int = 8,
   cacheConfig: Option[StackCacheConfig] = None,
   useDspMul: Boolean = false,
-  useSyncRam: Boolean = false   // true = readSync (Xilinx BRAM inference), false = readAsync (Altera native)
+  useSyncRam: Boolean = false,  // true = readSync (BRAM inference), false = readAsync
+  memoryStyle: MemoryStyle = MemoryStyle.Generic  // AlteraLpm = lpm_ram_dp BlackBox with .mif
 ) {
   require(width == 32, "Data width must be 32 bits")
   require(jpcWidth >= 10 && jpcWidth <= 16, "JPC width must be between 10 and 16 bits")
@@ -358,43 +361,69 @@ case class StackStage(
     // Original Single-RAM Design
     // ------------------------------------------------------------------
 
-    val stackRam = Mem(Bits(config.width bits), 1 << config.ramWidth)
-
-    ramInit.foreach { initData =>
-      val ramSize = 1 << config.ramWidth
-      val paddedInit = initData.padTo(ramSize, BigInt(0))
-      println(s"Stack RAM init (no shift): want RAM[32]=${initData(32)}, RAM[38]=${initData(38)}, RAM[45]=${initData(45)}")
-      stackRam.init(paddedInit.map { v =>
-        val unsigned = if (v < 0) v + (BigInt(1) << config.width) else v
-        B(unsigned.toLong, config.width bits)
-      })
-    }
-
     // Debug write port takes priority
     val effectiveWrAddr = Mux(io.debugRamWrEn, io.debugRamWrAddr.resize(spWidth), wrAddrDly)
     val effectiveWrData = Mux(io.debugRamWrEn, io.debugRamWrData, mmux)
     val effectiveWrEn = io.debugRamWrEn | wrEnaDly
 
-    stackRam.write(
-      address = effectiveWrAddr.resize(config.ramWidth),
-      data    = effectiveWrData,
-      enable  = effectiveWrEn
-    )
+    config.memoryStyle match {
+      case MemoryStyle.AlteraLpm =>
+        // Altera lpm_ram_dp BlackBox with REGISTERED controls + internal delays
+        // (matching jopmin aram.vhd).  Feed UNREGISTERED signals — the LPM and
+        // aram.vhd wrapper handle all registration and write-delay internally.
+        // Debug write mux uses undelayed signals since aram.vhd delays internally.
+        val lpmWrAddr = Mux(io.debugRamWrEn, io.debugRamWrAddr.resize(spWidth), wraddr)
+        val lpmWrEn   = io.debugRamWrEn | io.wrEna
+        val lpmWrData = Mux(io.debugRamWrEn, io.debugRamWrData, mmux)
+        val lpmRam = AlteraLpmRam(config.width, config.ramWidth, "../../asm/generated/ram.mif")
+        lpmRam.io.data      := lpmWrData
+        lpmRam.io.wraddress := lpmWrAddr.resize(config.ramWidth)
+        lpmRam.io.wren      := lpmWrEn
+        lpmRam.io.rdaddress := rdaddr.resize(config.ramWidth)
+        ramDout := lpmRam.io.q
+        io.debugRamData := lpmRam.io.q  // debug shares the single read port
 
-    if (config.useSyncRam) {
-      // readSync(rdaddr): BRAM internal register replaces ramRdaddrReg — same total latency.
-      // Write-through bypass: readSync at same edge as write returns pre-write value
-      // (READ_FIRST), but the original readAsync saw post-write values (combinational).
-      val syncDout = stackRam.readSync(rdaddr.resize(config.ramWidth))
-      val wrBypass = RegNext(
-        effectiveWrEn && effectiveWrAddr.resize(config.ramWidth) === rdaddr.resize(config.ramWidth)
-      ) init(False)
-      val wrBypassData = RegNext(effectiveWrData) init(0)
-      ramDout := Mux(wrBypass, wrBypassData, syncDout)
-      io.debugRamData := stackRam.readSync(io.debugRamAddr)
-    } else {
-      ramDout := stackRam.readAsync(ramRdaddrReg.resize(config.ramWidth))
-      io.debugRamData := stackRam.readAsync(io.debugRamAddr)
+      case MemoryStyle.Generic =>
+        val stackRam = Mem(Bits(config.width bits), 1 << config.ramWidth)
+
+        ramInit.foreach { initData =>
+          val ramSize = 1 << config.ramWidth
+          val paddedInit = initData.padTo(ramSize, BigInt(0))
+          println(s"Stack RAM init (no shift): want RAM[32]=${initData(32)}, RAM[38]=${initData(38)}, RAM[45]=${initData(45)}")
+          stackRam.init(paddedInit.map { v =>
+            val unsigned = if (v < 0) v + (BigInt(1) << config.width) else v
+            B(unsigned.toLong, config.width bits)
+          })
+        }
+
+        stackRam.write(
+          address = effectiveWrAddr.resize(config.ramWidth),
+          data    = effectiveWrData,
+          enable  = effectiveWrEn
+        )
+
+        if (config.useSyncRam) {
+          // readSync: single shared read port (1W+1R) for BRAM inference on all targets.
+          // A second readSync would create 3 ports, exceeding dual-port M9K/M10K limits
+          // and causing MAX10 (and possibly others) to fall back to logic registers.
+          // Debug reads share the pipeline read port via address mux.  The debug controller
+          // only reads while the CPU is halted (pipeline frozen), so there is no conflict.
+          // In production (debugRamAddr=0, debugRamWrEn=0), the mux is optimized away.
+          val debugReading = (io.debugRamAddr =/= 0) || io.debugRamWrEn
+          val effectiveRdAddr = Mux(debugReading, io.debugRamAddr, rdaddr.resize(config.ramWidth))
+          val syncDout = stackRam.readSync(effectiveRdAddr)
+          // Write-through bypass
+          val wrBypass = RegNext(
+            effectiveWrEn && effectiveWrAddr.resize(config.ramWidth) === effectiveRdAddr
+          ) init(False)
+          val wrBypassData = RegNext(effectiveWrData) init(0)
+          val readResult = Mux(wrBypass, wrBypassData, syncDout)
+          ramDout := readResult
+          io.debugRamData := readResult
+        } else {
+          ramDout := stackRam.readAsync(ramRdaddrReg.resize(config.ramWidth))
+          io.debugRamData := stackRam.readAsync(io.debugRamAddr)
+        }
     }
 
   } else {

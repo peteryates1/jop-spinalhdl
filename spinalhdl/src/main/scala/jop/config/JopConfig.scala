@@ -1,6 +1,7 @@
 package jop.config
 
 import spinal.core._
+import jop.memory.JopMemoryConfig
 import jop.pipeline.JumpTableInitData
 
 /**
@@ -153,22 +154,34 @@ case class JopConfig(
     resolvedSystems.head
   }
 
-  /** Systems with useSyncRam auto-resolved from FPGA family.
-    * None → true for Xilinx (readSync required for BRAM inference),
-    *         false for Altera/Lattice (readAsync maps to BRAM natively). */
+  /** Systems with useSyncRam and memoryStyle auto-resolved from FPGA family.
+    *
+    * useSyncRam: always true — readAsync emits ram_style=distributed, preventing
+    * BRAM inference.  readSync with write-bypass works on all targets.
+    *
+    * memoryStyle: AlteraLpm for Altera (lpm_rom/lpm_ram_dp BlackBox with .mif),
+    * Generic for others.  MAX10 requires AlteraLpm because its inference engine
+    * does not support MIF initialization from $readmemb.  Cyclone IV inference
+    * works but AlteraLpm is more robust and matches proven jopmin approach. */
   lazy val resolvedSystems: Seq[JopSystem] = {
-    val needsSync = fpgaFamily.manufacturer == Manufacturer.Xilinx
-    systems.map { sys =>
-      val resolved = sys.coreConfig.useSyncRam match {
-        case Some(_) => sys.coreConfig  // explicit override — keep as-is
-        case None    => sys.coreConfig.copy(useSyncRam = Some(needsSync))
+    val needsSync = true
+    val autoMemStyle = fpgaFamily.manufacturer match {
+      case Manufacturer.Altera => MemoryStyle.AlteraLpm
+      case _                   => MemoryStyle.Generic
+    }
+    def resolveCore(cc: JopCoreConfig): JopCoreConfig = {
+      val r1 = cc.useSyncRam match {
+        case Some(_) => cc
+        case None    => cc.copy(useSyncRam = Some(needsSync))
       }
-      val resolvedPerCore = sys.perCoreConfigs.map(_.map { cc =>
-        cc.useSyncRam match {
-          case Some(_) => cc
-          case None    => cc.copy(useSyncRam = Some(needsSync))
-        }
-      })
+      r1.memoryStyle match {
+        case Some(_) => r1
+        case None    => r1.copy(memoryStyle = Some(autoMemStyle))
+      }
+    }
+    systems.map { sys =>
+      val resolved = resolveCore(sys.coreConfig)
+      val resolvedPerCore = sys.perCoreConfigs.map(_.map(resolveCore))
       sys.copy(coreConfig = resolved, perCoreConfigs = resolvedPerCore)
     }
   }
@@ -223,6 +236,8 @@ case class JopConfig(
         else if (memoryTypes.contains(MemoryType.SDRAM_SDR)) "SdramWukong"
         else "BramWukong"
       case "qmtech-xc7a100t" => "Ddr3"  // same as AU for now
+      case "max1000" => "Max1000Sdram"
+      case "generic-ep4ce6" => "Ep4ce6Sdram"
       case other => other.split("-").map(_.capitalize).mkString
     }
     s"Jop${smp}${platform}Top"
@@ -248,6 +263,7 @@ object JopConfig {
       memory = "W9825G6JH6",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
+      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
       drivers = Seq(DeviceDriver.Uart, DeviceDriver.EthGmii, DeviceDriver.SdNative))))
 
   /** EP4CGX150 + daughter board — SMP, N cores */
@@ -289,6 +305,7 @@ object JopConfig {
       memory = "W9864G6JT",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
+      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
       drivers = Seq(DeviceDriver.UartFt2232))))
 
   /** Alchitry Au V2 */
@@ -299,6 +316,7 @@ object JopConfig {
       memory = "MT41K128M16JT-125:K",
       bootMode = BootMode.Serial,
       clkFreq = HertzNumber(BigDecimal(250000000) / 3),
+      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
       drivers = Seq(DeviceDriver.UartFt2232))))
 
   /** Simulation (no physical board — uses QMTECH assembly as placeholder) */
@@ -308,7 +326,8 @@ object JopConfig {
       name = "sim",
       memory = "W9825G6JH6",
       bootMode = BootMode.Simulation,
-      clkFreq = 100 MHz)))
+      clkFreq = 100 MHz,
+      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware))))
 
   // ========================================================================
   // Multi-system preset (Wukong dual-subsystem)
@@ -335,7 +354,8 @@ object JopConfig {
         memory = "sdr",                  // by role
         bootMode = BootMode.Serial,
         clkFreq = 50 MHz,
-        cpuCnt = 2)),
+        cpuCnt = 2,
+        coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware))),
     interconnect = Some(InterconnectConfig(fifoDepth = 64)),
     monitors = Seq(WatchdogConfig(timeoutMs = 2000)))
 
@@ -343,7 +363,7 @@ object JopConfig {
   // Minimum resource preset
   // ========================================================================
 
-  /** Absolute minimum: no compute units, pure microcode imul, no peripherals */
+  /** Absolute minimum: no compute units, all defaults (imul=Microcode, rest=Java) */
   def minimum = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
     systems = Seq(JopSystem(
@@ -352,10 +372,39 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(
-        supersetJumpTable = JumpTableInitData.serial,
-        imul = Microcode,
-        idiv = Java,
-        irem = Java),
+        supersetJumpTable = JumpTableInitData.serial),
+      drivers = Seq(DeviceDriver.Uart))))
+
+  // ========================================================================
+  // Small FPGA presets (fit-check targets)
+  // ========================================================================
+
+  /** Small-FPGA memory config: no object/array caches to save ~1900 LEs */
+  private def smallFpgaMemConfig = JopMemoryConfig(
+    useOcache = false,
+    useAcache = false
+  )
+
+  /** Arrow MAX1000 — minimal SDR SDRAM (no caches, zero compute units) */
+  def max1000Sdram = JopConfig(
+    assembly = SystemAssembly.max1000,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "IS42S16160G",
+      bootMode = BootMode.Serial,
+      clkFreq = 80 MHz,
+      coreConfig = JopCoreConfig(memConfig = smallFpgaMemConfig),
+      drivers = Seq(DeviceDriver.UartFt2232))))
+
+  /** Generic EP4CE6 — minimal SDR SDRAM (no caches, zero compute units) */
+  def ep4ce6Sdram = JopConfig(
+    assembly = SystemAssembly.genericEp4ce6,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "W9864G6JT",
+      bootMode = BootMode.Serial,
+      clkFreq = 80 MHz,
+      coreConfig = JopCoreConfig(memConfig = smallFpgaMemConfig),
       drivers = Seq(DeviceDriver.Uart))))
 
   // ========================================================================
@@ -370,6 +419,7 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
+      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
       drivers = Seq(DeviceDriver.UartCh340))))
 
   /** Wukong DDR3 (single-system, 100 MHz) */
@@ -380,6 +430,7 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
+      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
       drivers = Seq(DeviceDriver.UartCh340))))
 
   /** Wukong BRAM (single-system, simulation-mode) */
@@ -390,6 +441,7 @@ object JopConfig {
       memory = "bram",  // no physical memory — uses on-chip BRAM
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
+      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
       drivers = Seq(DeviceDriver.UartCh340))))
 
   // ========================================================================

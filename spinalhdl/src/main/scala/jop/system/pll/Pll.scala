@@ -2,7 +2,7 @@ package jop.system.pll
 
 import spinal.core._
 import jop.config._
-import jop.system.{DramPll, Cyc5000Pll, SdramExerciserClkWiz, WukongClkWizBlackBox}
+import jop.system.{DramPll, Cyc5000Pll, Max1000Pll, Ep4ce6Pll, SdramExerciserClkWiz, WukongClkWizBlackBox}
 import jop.ddr3.ClkWizBlackBox
 
 /**
@@ -148,6 +148,34 @@ object Pll {
           migSysClk = Some(clkWiz.io.clk_100),
           migRefClk = Some(clkWiz.io.clk_200),
           ethClk = Some(clkWiz.io.clk_125)
+        )
+
+      // ================================================================
+      // Arrow MAX1000 (MAX10) -- Max1000Pll
+      // c0=80MHz system, c1=80MHz/-3ns SDRAM
+      // ================================================================
+      case ("max1000", MemoryType.SDRAM_SDR) =>
+        val pll = Max1000Pll()
+        pll.io.inclk0 := inputClock
+        pll.io.areset := False
+        PllResult(
+          systemClk = Some(pll.io.c0),
+          locked = pll.io.locked,
+          sdramClk = Some(pll.io.c1)
+        )
+
+      // ================================================================
+      // Generic EP4CE6 (Cyclone IV E) -- Ep4ce6Pll
+      // c0=80MHz system, c1=80MHz/-3ns SDRAM
+      // ================================================================
+      case ("generic-ep4ce6", MemoryType.SDRAM_SDR) =>
+        val pll = Ep4ce6Pll()
+        pll.io.inclk0 := inputClock
+        pll.io.areset := False
+        PllResult(
+          systemClk = Some(pll.io.c0),
+          locked = pll.io.locked,
+          sdramClk = Some(pll.io.c1)
         )
 
       case _ =>

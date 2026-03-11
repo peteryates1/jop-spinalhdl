@@ -1,0 +1,25 @@
+# Generic EP4CE6 — JOP minimal fit-check
+# FPGA: EP4CE6E22C8 (Cyclone IV E, 6272 LEs)
+# Pinout: placeholder — not verified against schematic
+
+set_global_assignment -name FAMILY "Cyclone IV E"
+set_global_assignment -name DEVICE EP4CE6E22C8
+set_global_assignment -name TOP_LEVEL_ENTITY JopEp4ce6SdramTop
+set_global_assignment -name ORIGINAL_QUARTUS_VERSION 23.1
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+
+# Source files
+set_global_assignment -name VERILOG_FILE ../../spinalhdl/generated/JopEp4ce6SdramTop.v
+set_global_assignment -name VERILOG_FILE ep4ce6_pll.v
+set_global_assignment -name VERILOG_FILE ../ip/altera_sdram_tri_controller/altera_sdram_tri_controller.v
+set_global_assignment -name VERILOG_FILE ../ip/altera_sdram_tri_controller/efifo_module.v
+set_global_assignment -name VHDL_FILE ../ip/altera_lpm/arom.vhd
+set_global_assignment -name VHDL_FILE ../ip/altera_lpm/aram.vhd
+
+# Timing constraints
+set_global_assignment -name SDC_FILE jop_ep4ce6.sdc
+
+# Don't require pin assignments for fit-check
+set_global_assignment -name RESERVE_ALL_UNUSED_PINS_WEAK_PULLUP "AS INPUT TRI-STATED"
+
+set_global_assignment -name LAST_QUARTUS_VERSION "25.1std.0 Lite Edition"
