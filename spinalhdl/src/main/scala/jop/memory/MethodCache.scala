@@ -76,10 +76,13 @@ case class MethodCache(
 
   // Number of blocks this method spans minus 1 (0 = one block)
   // Matches VHDL: resize(bc_len(METHOD_SIZE_BITS-1 downto jpc_width-2-block_bits), block_bits)
+  // Contract: the memory controller must hold bcLen and bcAddr steady from the
+  // find pulse through S2 completion. BmbMemoryController satisfies this via
+  // its bcFillLen/bcFillAddr registers which are captured before find fires.
   val nrOfBlks = UInt(blockBits bits)
   nrOfBlks := io.bcLen(methodSizeBits - 1 downto blockWordBits).resized
 
-  // Tag comparison value
+  // Tag comparison value (combinational from bcAddr)
   val useAddr = io.bcAddr.asBits
 
   // Pre-computed clear mask (registered, updated every cycle)
