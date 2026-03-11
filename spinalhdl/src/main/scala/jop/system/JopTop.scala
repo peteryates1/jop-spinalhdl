@@ -353,16 +353,16 @@ case class JopTop(
     val burstLen = if (sys.cpuCnt > 1 && (isSdr || isDdr3)) 4
                    else 0
 
-    val coreConfigs = sys.coreConfigs.map(_.copy(
-      memConfig = if (isDdr3) JopMemoryConfig(
+    val coreConfigs = sys.coreConfigs.map(cc => cc.copy(
+      memConfig = if (isDdr3) cc.memConfig.copy(
         addressWidth = 28,
         mainMemSize = 256L * 1024 * 1024,
         burstLen = burstLen,
         stackRegionWordsPerCore = 8192
-      ) else if (isBram) JopMemoryConfig(
+      ) else if (isBram) cc.memConfig.copy(
         mainMemSize = mainMemSize,
         burstLen = 0
-      ) else JopMemoryConfig(burstLen = burstLen),
+      ) else cc.memConfig.copy(burstLen = burstLen),
       supersetJumpTable = sys.baseJumpTable,
       clkFreq = sys.clkFreq,
       ioConfig = sys.ioConfig,

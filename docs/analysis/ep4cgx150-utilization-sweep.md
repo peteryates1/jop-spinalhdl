@@ -23,6 +23,7 @@ Reports: `fpga/qmtech-ep4cgx150-sdram/output_files/util_sweep/*/output_files/uti
 | Config | LEs | Comb | Regs | Mem bits | Mult9 | LE% |
 |--------|----:|-----:|-----:|---------:|------:|----:|
 | No ICU (no HW integer) | 9,369 | 7,775 | 3,603 | 30,976 | 0 | 6.3% |
+| No A$ (idiv/irem HW, no array cache) | 8,400 | 7,478 | 2,968 | 28,928 | 0 | 5.6% |
 | Baseline (idiv/irem HW) | 9,969 | 8,311 | 3,841 | 30,976 | 0 | 6.7% |
 | + imul iterative | 10,361 | 8,703 | 4,040 | 30,976 | 0 | 6.9% |
 | + imul DSP | 10,504 | 8,828 | 4,105 | 30,976 | 8 | 7.0% |
@@ -57,6 +58,7 @@ Delta measured from the "No ICU" baseline (9,369 LEs).
 | **SD SPI** | +742 | +664 | +301 | 0 | Simple SPI shift register + clock divider |
 | **VGA Text** | +2,173 | +1,323 | +1,188 | 0 | Text-mode VGA (character ROM in block RAM) |
 | **VGA DMA** | +1,197 | +1,023 | +471 | 0 | DMA-driven VGA (framebuffer in main memory) |
+| **Array cache** | +1,569 | +833 | +873 | 0 | 16-entry FA, 4 elements/line (delta: baseline - no_acache) |
 
 ### Observations
 
@@ -109,6 +111,7 @@ not directly comparable, but ratios reveal architectural differences.
 | Ethernet GMII | +1,167 | +969 | 1.20 |
 | SD Native | +8,867 | +12,220 | 0.73 |
 | SD SPI | +742 | +423 | 1.75 |
+| Array cache | +1,569 | +506 | 3.10 |
 
 Average LE/LUT ratio for compute units: ~1.5x (expected — Cyclone IV 4-input
 LUTs vs Artix-7 6-input LUTs). SD Native is the notable exception at 0.73x,
@@ -142,11 +145,10 @@ working Ethernet MAC/PHY driver in jopmin).
 The VHDL default uses larger caches than SpinalHDL: jpc_width=14 (16KB method
 cache, 32 blocks) and OCACHE_WAY_BITS=5 (32-entry object cache). SpinalHDL
 defaults to jpc_width=11 (2KB, 16 blocks) and wayBits=4 (16-entry). The
-"matched caches" rows below use the same cache sizes as SpinalHDL. The VHDL JOP has no array cache wired into mem_sc in the current source. SpinalHDL's array
-cache is instantiated but both Quartus and Vivado optimize it to near-zero in
-single-core builds (0 LUTs on Xilinx, 11 LEs on Altera) — the synthesizer
-recognizes the cache produces no observable benefit without SMP snoop
-invalidation. The array cache would only add meaningful area in SMP builds.
+"matched caches" rows below use the same cache sizes as SpinalHDL. The VHDL JOP
+has no array cache wired into mem_sc in the current source. SpinalHDL's array
+cache costs 1,569 LEs on Altera (506 LUTs on Xilinx) — see the "No A$" row
+above for the baseline without it.
 
 | Design | LEs | Comb | Regs | Mem bits |
 |--------|----:|-----:|-----:|---------:|
@@ -155,15 +157,16 @@ invalidation. The array cache would only add meaningful area in SMP builds.
 | VHDL JOP (3-core, original caches) | 22,844 | 17,087 | 10,498 | 519,360 |
 | VHDL JOP (3-core, matched caches) | 17,901 | 13,761 | 7,903 | 163,008 |
 | SpinalHDL (1-core, UART only) | 9,969 | 8,311 | 3,841 | 30,976 |
+| SpinalHDL (1-core, no A$) | 8,400 | 7,478 | 2,968 | 28,928 |
 | SpinalHDL (1-core, comparable I/O) | 10,111 | 8,439 | 3,904 | 30,976 |
 
 Notes:
 - "Comparable I/O" = SpinalHDL sd_spi (SD SPI + UART) — the closest match to
   the VHDL build's I/O (which uses SPI-mode SD). The VHDL build also has 7-seg
   and LED/switch mux not present in SpinalHDL.
-- With matched caches, SpinalHDL uses ~27% more LEs (10,111 vs 7,950). The
-  extra LEs come from the BMB bus infrastructure, array cache, and more
-  combinational logic in the SpinalHDL memory controller.
+- With matched caches and no array cache (apples-to-apples), SpinalHDL uses
+  ~6% more LEs (8,400 vs 7,950). The remaining gap is BMB bus infrastructure
+  and the SpinalHDL memory controller's more combinational style.
 - SpinalHDL uses far fewer memory bits: 31K vs 54K (matched) or 173K
   (original). The VHDL SDRAM controller uses block RAM buffers that SpinalHDL's
   Altera controller avoids.

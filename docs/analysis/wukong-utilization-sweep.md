@@ -22,6 +22,7 @@ Reports: `fpga/qmtech-xc7a100t-wukong/vivado/build/util_sweep/*/util.rpt`
 | Config | LUTs | Regs | BRAM | DSP | LUT% |
 |--------|------:|------:|-----:|----:|-----:|
 | No ICU (no HW integer) | 17,336 | 12,861 | 12.5 | 0 | 27.3% |
+| No A$ (idiv/irem HW, no array cache) | 17,235 | 12,150 | 12 | 0 | 27.2% |
 | Baseline (idiv/irem HW) | 17,741 | 13,075 | 12.5 | 0 | 28.0% |
 | + imul iterative | 18,041 | 13,274 | 12.5 | 0 | 28.5% |
 | + imul DSP | 18,133 | 13,309 | 12.5 | 4 | 28.6% |
@@ -51,6 +52,7 @@ Delta measured from the "No ICU" baseline (17,336 LUTs).
 | **Ethernet GMII** | +969 | +787 | 0 | RTL8211EG PHY interface + MDIO + CDC |
 | **SD Native** | +12,220 | +5,011 | 0 | SpinalHDL SdcardCtrl (4-bit, cmd/data FSMs) |
 | **SD SPI** | +423 | +270 | 0 | Simple SPI shift register + clock divider |
+| **Array cache** | +506 | +925 | 0 | 16-entry FA, 4 elements/line (delta: baseline - no_acache) |
 
 ### Observations
 
