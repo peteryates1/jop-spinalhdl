@@ -27,8 +27,6 @@ case class MemCtrlInput() extends Bundle {
   val putstatic = Bool()    // Put static field
   val copy      = Bool()    // Copy operation (GC)
   val cinval    = Bool()    // Cache invalidate
-  val atmstart  = Bool()    // Atomic start
-  val atmend    = Bool()    // Atomic end
   val bcopd     = Bits(16 bits)  // Bytecode operand
 }
 

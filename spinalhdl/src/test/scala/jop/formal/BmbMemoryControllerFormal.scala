@@ -50,8 +50,6 @@ class BmbMemoryControllerFormal extends SpinalFormalFunSuite {
     dut.io.memIn.putstatic := False
     dut.io.memIn.copy := False
     dut.io.memIn.cinval := False
-    dut.io.memIn.atmstart := False
-    dut.io.memIn.atmend := False
     dut.io.memIn.bcopd := B(0)
     dut.io.aout := B(0)
     dut.io.bout := B(0)
@@ -95,8 +93,6 @@ class BmbMemoryControllerFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.memIn.putstatic)
     anyseq(dut.io.memIn.copy)
     anyseq(dut.io.memIn.cinval)
-    anyseq(dut.io.memIn.atmstart)
-    anyseq(dut.io.memIn.atmend)
     anyseq(dut.io.memIn.bcopd)
     anyseq(dut.io.aout)
     anyseq(dut.io.bout)

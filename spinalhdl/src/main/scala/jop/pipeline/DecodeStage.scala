@@ -59,8 +59,6 @@ object MmuInstructions {
   // MMU instructions without stack change (prefix 0x11x)
   def STGS     = B"4'b0000"  // Get static
   def CINVAL   = B"4'b0001"  // Cache invalidate
-  def ATMSTART = B"4'b0010"  // Atomic start
-  def ATMEND   = B"4'b0011"  // Atomic end
 }
 
 /**
@@ -87,8 +85,6 @@ case class MemoryControl() extends Bundle {
   val wrf       = Bool()    // Write through full assoc cache
   val copy      = Bool()    // Copy operation
   val cinval    = Bool()    // Cache invalidate
-  val atmstart  = Bool()    // Atomic start
-  val atmend    = Bool()    // Atomic end
   val bcopd     = Bits(16 bits)  // Bytecode operand (passthrough)
 
   /** Initialize all control signals to inactive */
@@ -110,8 +106,6 @@ case class MemoryControl() extends Bundle {
     wrf       := False
     copy      := False
     cinval    := False
-    atmstart  := False
-    atmend    := False
     bcopd     := B(0, 16 bits)
     this
   }
@@ -618,12 +612,6 @@ case class DecodeStage(
       is(B"10'b0100010001") {  // cinval
         enaAReg := False
       }
-      is(B"10'b0100010010") {  // atmstart
-        enaAReg := False
-      }
-      is(B"10'b0100010011") {  // atmend
-        enaAReg := False
-      }
 
       default { /* use defaults */ }
     }
@@ -769,8 +757,6 @@ case class DecodeStage(
     val memWrfReg       = Reg(Bool()) init(False)
     val memCopyReg      = Reg(Bool()) init(False)
     val memCinvalReg    = Reg(Bool()) init(False)
-    val memAtmstartReg  = Reg(Bool()) init(False)
-    val memAtmendReg    = Reg(Bool()) init(False)
     val hwWrReg        = Reg(Bool()) init(False)
     val wrDlyReg        = Reg(Bool()) init(False)
 
@@ -795,8 +781,6 @@ case class DecodeStage(
     memWrfReg := False
     memCopyReg := False
     memCinvalReg := False
-    memAtmstartReg := False
-    memAtmendReg := False
     hwWrReg := False
     wrDlyReg := False
 
@@ -837,8 +821,6 @@ case class DecodeStage(
       switch(ir(config.mmuWidth - 1 downto 0)) {
         is(MmuInstructions.STGS)     { memGetstaticReg := True }
         is(MmuInstructions.CINVAL)   { memCinvalReg := True }
-        is(MmuInstructions.ATMSTART) { memAtmstartReg := True }
-        is(MmuInstructions.ATMEND)   { memAtmendReg := True }
         default { /* unknown MMU instruction */ }
       }
     }
@@ -865,8 +847,6 @@ case class DecodeStage(
     io.memIn.wrf := memWrfReg
     io.memIn.copy := memCopyReg
     io.memIn.cinval := memCinvalReg
-    io.memIn.atmstart := memAtmstartReg
-    io.memIn.atmend := memAtmendReg
     io.hwWr := hwWrReg
     io.wrDly := wrDlyReg
   }

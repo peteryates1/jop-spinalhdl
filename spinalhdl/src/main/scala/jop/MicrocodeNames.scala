@@ -84,8 +84,6 @@ object MicrocodeNames {
 
     add(0x110, "stgs")
     add(0x111, "cinval")
-    add(0x112, "atmstart")
-    add(0x113, "atmend")
 
     // ---- Patterned families ----
     // st[n] : 00000100nn  (n = 0..3) => 0x10..0x13

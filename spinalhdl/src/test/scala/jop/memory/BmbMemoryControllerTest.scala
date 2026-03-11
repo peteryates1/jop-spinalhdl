@@ -98,8 +98,6 @@ class BmbMemoryControllerTest extends AnyFunSuite {
       dut.io.memIn.putstatic #= false
       dut.io.memIn.copy #= false
       dut.io.memIn.cinval #= false
-      dut.io.memIn.atmstart #= false
-      dut.io.memIn.atmend #= false
       dut.io.memIn.bcopd #= 0
       dut.io.aout #= 0
       dut.io.bout #= 0
@@ -191,8 +189,6 @@ class BmbMemoryControllerTest extends AnyFunSuite {
       dut.io.memIn.putstatic #= false
       dut.io.memIn.copy #= false
       dut.io.memIn.cinval #= false
-      dut.io.memIn.atmstart #= false
-      dut.io.memIn.atmend #= false
       dut.io.memIn.bcopd #= 0
       dut.io.aout #= 0
       dut.io.bout #= 0

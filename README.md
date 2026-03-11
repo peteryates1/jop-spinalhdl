@@ -358,7 +358,6 @@ Active work items:
 
 - **Stack cache SDRAM integration** — 3-bank rotation working in BRAM simulation (59/59 tests pass); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
 - **SMP test expansion** — lock contention stress test (>2 cores hammering `synchronized`), SMP exception handling test. Cache snoop and JVM-on-SMP tests done. See [test coverage audit](docs/test-coverage-audit.md)
-- **Remove atmstart/atmend** — legacy SimpCon bus atomicity markers, fully superseded by CmpSync/IHLU hardware locking and BMB transaction semantics. Remove from microcode instruction set, DecodeStage, MemCtrlInput, and BmbMemoryController
 
 ### Future
 

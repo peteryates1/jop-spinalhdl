@@ -47,8 +47,6 @@ class BmbProtocolFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.memIn.putstatic)
     anyseq(dut.io.memIn.copy)
     anyseq(dut.io.memIn.cinval)
-    anyseq(dut.io.memIn.atmstart)
-    anyseq(dut.io.memIn.atmend)
     anyseq(dut.io.memIn.bcopd)
     anyseq(dut.io.aout)
     anyseq(dut.io.bout)

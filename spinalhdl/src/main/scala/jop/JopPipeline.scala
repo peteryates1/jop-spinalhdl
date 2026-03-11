@@ -288,8 +288,6 @@ case class JopPipeline(
   io.memCtrl.putstatic := decode.io.memIn.putstatic
   io.memCtrl.copy := decode.io.memIn.copy
   io.memCtrl.cinval := decode.io.memIn.cinval
-  io.memCtrl.atmstart := decode.io.memIn.atmstart
-  io.memCtrl.atmend := decode.io.memIn.atmend
   io.memCtrl.bcopd := decode.io.memIn.bcopd
 
   // Stack outputs
