@@ -357,22 +357,18 @@ Notes:
 Active work items:
 
 - **Stack cache SDRAM integration** — 3-bank rotation working in BRAM simulation (59/59 tests pass); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
-
 - **SMP test expansion** — lock contention stress test (>2 cores hammering `synchronized`), SMP exception handling test. Cache snoop and JVM-on-SMP tests done. See [test coverage audit](docs/test-coverage-audit.md)
-- **DDR3 SMP GC** — run GC stress test on dual-core DDR3 (NCoreHelloWorld verified, GC stress not yet tested in SMP mode)
+- **Remove atmstart/atmend** — legacy SimpCon bus atomicity markers, fully superseded by CmpSync/IHLU hardware locking and BMB transaction semantics. Remove from microcode instruction set, DecodeStage, MemCtrlInput, and BmbMemoryController
 
 ### Future
 
 Lower-priority or longer-term items:
 
-- Memory controller — remaining VHDL features: atomic memory operations (`atmstart`/`atmend`), address translation on read paths (for concurrent GC), data cache control signals, fast-path array access (`iald23`)
-- Interrupt handling — timer interrupts verified; UART RX/TX interrupts wired but not exercised; scheduler preemption not tested
+- Memory controller — remaining VHDL features: address translation on read paths (for concurrent GC), data cache control signals, fast-path array access (`iald23`)
+- Interrupt handling — timer interrupts verified; UART RX/TX interrupts exercised in simulation; scheduler preemption not tested
 - DDR3 burst optimization — method cache fills could use burst reads through the cache bridge
 - Debug tooling — host-side debug client connecting to on-chip debug controller over UART
-- Target JDK modernization (8 as minimum)
-- Port target code — networking, etc.
-- XDC constraint generation — Xilinx pin constraints from board data (QSF generator exists for Altera)
-- Faster serial download — currently limited by per-word USB round-trip latency (~15s for 32KB)
+- Target JDK modernization (JDK 8 — requires `invokedynamic` support; JDK 6 class library Phases 0-5 ported)
 - Performance measurement / benchmarking
 
 ## Key Technical Details
