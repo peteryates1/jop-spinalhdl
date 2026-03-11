@@ -326,6 +326,16 @@ public final class Math
 	  }
   }
   
+  public static double ceil(double a) {
+	  return -floorDouble(-a);
+  }
+
+  public static double floorDouble(double a) {
+	  int i = (int) a;
+	  if (a < 0 && a != i) return i - 1;
+	  return i;
+  }
+
   public static int floor(double d) {
 	  if (Const.SUPPORT_DOUBLE) {
 		  return (int) d;

@@ -190,4 +190,68 @@ public class Integer extends Number implements Comparable<Integer> {
 		// Package constructor avoids an array copy.
 		return new String(buffer, i, 33 - i);
 	}
+
+	public static int numberOfLeadingZeros(int i) {
+		if (i == 0) return 32;
+		int n = 1;
+		if (i >>> 16 == 0) { n += 16; i <<= 16; }
+		if (i >>> 24 == 0) { n +=  8; i <<=  8; }
+		if (i >>> 28 == 0) { n +=  4; i <<=  4; }
+		if (i >>> 30 == 0) { n +=  2; i <<=  2; }
+		n -= i >>> 31;
+		return n;
+	}
+
+	public static int numberOfTrailingZeros(int i) {
+		if (i == 0) return 32;
+		int n = 31;
+		int y;
+		y = i << 16; if (y != 0) { n -= 16; i = y; }
+		y = i <<  8; if (y != 0) { n -=  8; i = y; }
+		y = i <<  4; if (y != 0) { n -=  4; i = y; }
+		y = i <<  2; if (y != 0) { n -=  2; i = y; }
+		return n - ((i << 1) >>> 31);
+	}
+
+	public static int bitCount(int i) {
+		i = i - ((i >>> 1) & 0x55555555);
+		i = (i & 0x33333333) + ((i >>> 2) & 0x33333333);
+		i = (i + (i >>> 4)) & 0x0f0f0f0f;
+		i = i + (i >>> 8);
+		i = i + (i >>> 16);
+		return i & 0x3f;
+	}
+
+	public static int highestOneBit(int i) {
+		i |= (i >>  1);
+		i |= (i >>  2);
+		i |= (i >>  4);
+		i |= (i >>  8);
+		i |= (i >> 16);
+		return i - (i >>> 1);
+	}
+
+	public static int lowestOneBit(int i) {
+		return i & -i;
+	}
+
+	public static int reverse(int i) {
+		i = (i & 0x55555555) << 1 | (i >>> 1) & 0x55555555;
+		i = (i & 0x33333333) << 2 | (i >>> 2) & 0x33333333;
+		i = (i & 0x0f0f0f0f) << 4 | (i >>> 4) & 0x0f0f0f0f;
+		i = (i << 24) | ((i & 0xff00) << 8) |
+		    ((i >>> 8) & 0xff00) | (i >>> 24);
+		return i;
+	}
+
+	public static int reverseBytes(int i) {
+		return ((i >>> 24)           ) |
+		       ((i >>   8) & 0xFF00  ) |
+		       ((i <<   8) & 0xFF0000) |
+		       ((i << 24));
+	}
+
+	public static int signum(int i) {
+		return (i >> 31) | (-i >>> 31);
+	}
 }

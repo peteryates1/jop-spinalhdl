@@ -105,6 +105,30 @@ public class StringBuilder {
 		count = newLength;
 	}
 
+	public StringBuilder insert(int offset, char c) {
+		if (offset < 0 || offset > count)
+			throw new StringIndexOutOfBoundsException();
+		ensureCapacity(count + 1);
+		for (int i = count; i > offset; i--)
+			value[i] = value[i - 1];
+		value[offset] = c;
+		count++;
+		return this;
+	}
+
+	public StringBuilder insert(int offset, String str) {
+		if (offset < 0 || offset > count)
+			throw new StringIndexOutOfBoundsException();
+		if (str == null) str = "null";
+		int len = str.length();
+		ensureCapacity(count + len);
+		for (int i = count - 1; i >= offset; i--)
+			value[i + len] = value[i];
+		str.getChars(0, len, value, offset);
+		count += len;
+		return this;
+	}
+
 	public StringBuilder delete(int start, int end) {
 		if (start < 0 || start > count || start > end)
 			throw new StringIndexOutOfBoundsException();

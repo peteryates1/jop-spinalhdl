@@ -2758,9 +2758,14 @@ public class Arrays {
      * @throws NullPointerException if <tt>original</tt> is null
      * @since 1.6
      */
-//     public static <T> T[] copyOf(T[] original, int newLength) {
-//         return (T[]) copyOf(original, newLength, original.getClass());
-//     }
+    @SuppressWarnings("unchecked")
+    public static <T> T[] copyOf(T[] original, int newLength) {
+        Object[] copy = new Object[newLength];
+        int len = Math.min(original.length, newLength);
+        for (int i = 0; i < len; i++)
+            copy[i] = original[i];
+        return (T[]) copy;
+    }
 
     /**
      * Copies the specified array, truncating or padding with nulls (if necessary)

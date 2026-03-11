@@ -76,4 +76,57 @@ public class Long {
 		// Package constructor avoids an array copy.
 		return new String(buffer, i, 65 - i);
 	}
+
+	public static int signum(long i) {
+		return (int) ((i >> 63) | (-i >>> 63));
+	}
+
+	public static long parseLong(String s) {
+		return parseLong(s, 10);
+	}
+
+	public static long parseLong(String s, int radix) {
+		if (s == null) throw new NumberFormatException("null");
+		int len = s.length();
+		if (len == 0) throw new NumberFormatException(s);
+		boolean negative = false;
+		int i = 0;
+		if (s.charAt(0) == '-') {
+			negative = true;
+			i++;
+		} else if (s.charAt(0) == '+') {
+			i++;
+		}
+		if (i >= len) throw new NumberFormatException(s);
+		long result = 0;
+		while (i < len) {
+			int digit = Character.digit(s.charAt(i++), radix);
+			if (digit < 0) throw new NumberFormatException(s);
+			result = result * radix + digit;
+		}
+		return negative ? -result : result;
+	}
+
+	public static int numberOfLeadingZeros(long i) {
+		if (i == 0) return 64;
+		int n = 1;
+		int x = (int)(i >>> 32);
+		if (x == 0) { n += 32; x = (int)i; }
+		if (x >>> 16 == 0) { n += 16; x <<= 16; }
+		if (x >>> 24 == 0) { n +=  8; x <<=  8; }
+		if (x >>> 28 == 0) { n +=  4; x <<=  4; }
+		if (x >>> 30 == 0) { n +=  2; x <<=  2; }
+		n -= x >>> 31;
+		return n;
+	}
+
+	public static int bitCount(long i) {
+		i = i - ((i >>> 1) & 0x5555555555555555L);
+		i = (i & 0x3333333333333333L) + ((i >>> 2) & 0x3333333333333333L);
+		i = (i + (i >>> 4)) & 0x0f0f0f0f0f0f0f0fL;
+		i = i + (i >>> 8);
+		i = i + (i >>> 16);
+		i = i + (i >>> 32);
+		return (int)i & 0x7f;
+	}
 }

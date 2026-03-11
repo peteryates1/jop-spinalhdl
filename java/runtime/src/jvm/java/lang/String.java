@@ -175,9 +175,13 @@ public class String implements CharSequence {
 	}
 
 	public boolean startsWith(String prefix) {
-		if (prefix.value.length > value.length) return false;
+		return startsWith(prefix, 0);
+	}
+
+	public boolean startsWith(String prefix, int toffset) {
+		if (toffset < 0 || toffset + prefix.value.length > value.length) return false;
 		for (int i = 0; i < prefix.value.length; i++) {
-			if (value[i] != prefix.value[i]) return false;
+			if (value[toffset + i] != prefix.value[i]) return false;
 		}
 		return true;
 	}

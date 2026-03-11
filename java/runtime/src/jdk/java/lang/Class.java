@@ -31,4 +31,11 @@ public class Class<T> implements Serializable {
     public boolean isInstance(Object obj) {
         throw new UnsupportedOperationException("Class.isInstance requires reflection");
     }
+
+    /**
+     * Returns false — JOP has no assertion support.
+     */
+    public boolean desiredAssertionStatus() {
+        return false;
+    }
 }
