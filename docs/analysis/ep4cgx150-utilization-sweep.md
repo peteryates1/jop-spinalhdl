@@ -44,21 +44,21 @@ Reports: `fpga/qmtech-ep4cgx150-sdram/output_files/util_sweep/*/output_files/uti
 
 Delta measured from the "No ICU" baseline (9,369 LEs).
 
-| Feature | LEs | Comb | Regs | Mult9 | Notes |
-|---------|----:|-----:|-----:|------:|-------|
-| **ICU** (idiv/irem) | +600 | +536 | +238 | 0 | Binary restoring divider |
-| **ICU** (+ imul iterative) | +992 | +928 | +437 | 0 | Radix-4 Booth multiplier (~18 cycles) |
-| **ICU** (+ imul DSP) | +1,135 | +1,053 | +502 | +8 | DSP multiply, 2-cycle latency |
-| **FCU** (9 float ops) | +3,113 | +3,027 | +722 | +7 | IEEE 754 single: add/sub/mul/div/cmp/cvt |
-| **LCU** (8 long ops) | +1,986 | +1,954 | +437 | 0 | 64-bit ALU + barrel shifter + lmul |
-| **DCU** (12 double ops) | +7,411 | +7,265 | +1,291 | +18 | IEEE 754 double: add/sub/mul/div/cmp/cvt |
-| **All 4 CUs + DSP** | +11,910 | +11,756 | +2,240 | +33 | Combined (less than sum — shared operand stack) |
-| **Ethernet GMII** | +1,167 | +930 | +610 | 0 | RTL8211EG PHY + MDIO + CDC + 32 KB TX/RX buffers |
-| **SD Native** | +8,867 | +4,680 | +4,968 | 0 | SpinalHDL SdcardCtrl (4-bit, cmd/data FSMs) |
-| **SD SPI** | +742 | +664 | +301 | 0 | Simple SPI shift register + clock divider |
-| **VGA Text** | +2,173 | +1,323 | +1,188 | 0 | Text-mode VGA (character ROM in block RAM) |
-| **VGA DMA** | +1,197 | +1,023 | +471 | 0 | DMA-driven VGA (framebuffer in main memory) |
-| **Array cache** | +1,569 | +833 | +873 | 0 | 16-entry FA, 4 elements/line (delta: baseline - no_acache) |
+| Feature | LEs | Comb | Regs | Mem bits | Mult9 | Notes |
+|---------|----:|-----:|-----:|---------:|------:|-------|
+| **ICU** (idiv/irem) | +600 | +536 | +238 | 0 | 0 | Binary restoring divider |
+| **ICU** (+ imul iterative) | +992 | +928 | +437 | 0 | 0 | Radix-4 Booth multiplier (~18 cycles) |
+| **ICU** (+ imul DSP) | +1,135 | +1,053 | +502 | 0 | +8 | DSP multiply, 2-cycle latency |
+| **FCU** (9 float ops) | +3,113 | +3,027 | +722 | 0 | +7 | IEEE 754 single: add/sub/mul/div/cmp/cvt |
+| **LCU** (8 long ops) | +1,986 | +1,954 | +437 | 0 | 0 | 64-bit ALU + barrel shifter + lmul |
+| **DCU** (12 double ops) | +7,411 | +7,265 | +1,291 | 0 | +18 | IEEE 754 double: add/sub/mul/div/cmp/cvt |
+| **All 4 CUs + DSP** | +11,910 | +11,756 | +2,240 | 0 | +33 | Combined (less than sum — shared operand stack) |
+| **Ethernet GMII** | +1,167 | +930 | +610 | +32,768 | 0 | RTL8211EG PHY + MDIO + CDC + 32 KB TX/RX buffers |
+| **SD Native** | +8,867 | +4,680 | +4,968 | 0 | 0 | SpinalHDL SdcardCtrl (4-bit, cmd/data FSMs) |
+| **SD SPI** | +742 | +664 | +301 | 0 | 0 | Simple SPI shift register + clock divider |
+| **VGA Text** | +2,173 | +1,323 | +1,188 | +109,568 | 0 | Text-mode VGA (character + font ROM in block RAM) |
+| **VGA DMA** | +1,197 | +1,023 | +471 | +16,384 | 0 | DMA-driven VGA (CDC FIFO in block RAM) |
+| **Array cache** | +1,569 | +833 | +873 | +2,048 | 0 | 16-entry FA, 4 elements/line (delta: baseline - no_acache) |
 
 ### Observations
 

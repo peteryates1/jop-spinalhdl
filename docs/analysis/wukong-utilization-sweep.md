@@ -40,19 +40,19 @@ Reports: `fpga/qmtech-xc7a100t-wukong/vivado/build/util_sweep/*/util.rpt`
 
 Delta measured from the "No ICU" baseline (17,336 LUTs).
 
-| Feature | LUTs | Regs | DSP | Notes |
-|---------|------:|------:|----:|-------|
-| **ICU** (idiv/irem) | +405 | +214 | 0 | Binary restoring divider, shared with irem |
-| **ICU** (+ imul iterative) | +705 | +413 | 0 | Adds radix-4 Booth multiplier (~18 cycles) |
-| **ICU** (+ imul DSP) | +797 | +448 | +4 | DSP48E1 multiply, 2-cycle latency |
-| **FCU** (9 float ops) | +1,788 | +650 | +2 | IEEE 754 single: add/sub/mul/div/cmp/cvt |
-| **LCU** (8 long ops) | +1,452 | +424 | 0 | 64-bit ALU + barrel shifter + lmul |
-| **DCU** (12 double ops) | +4,961 | +1,217 | +9 | IEEE 754 double: add/sub/mul/div/cmp/cvt |
-| **All 4 CUs + DSP** | +7,586 | +2,085 | +15 | Combined (less than sum — shared operand stack) |
-| **Ethernet GMII** | +969 | +787 | 0 | RTL8211EG PHY interface + MDIO + CDC |
-| **SD Native** | +12,220 | +5,011 | 0 | SpinalHDL SdcardCtrl (4-bit, cmd/data FSMs) |
-| **SD SPI** | +423 | +270 | 0 | Simple SPI shift register + clock divider |
-| **Array cache** | +506 | +925 | 0 | 16-entry FA, 4 elements/line (delta: baseline - no_acache) |
+| Feature | LUTs | Regs | BRAM | DSP | Notes |
+|---------|------:|------:|-----:|----:|-------|
+| **ICU** (idiv/irem) | +405 | +214 | 0 | 0 | Binary restoring divider, shared with irem |
+| **ICU** (+ imul iterative) | +705 | +413 | 0 | 0 | Adds radix-4 Booth multiplier (~18 cycles) |
+| **ICU** (+ imul DSP) | +797 | +448 | 0 | +4 | DSP48E1 multiply, 2-cycle latency |
+| **FCU** (9 float ops) | +1,788 | +650 | 0 | +2 | IEEE 754 single: add/sub/mul/div/cmp/cvt |
+| **LCU** (8 long ops) | +1,452 | +424 | 0 | 0 | 64-bit ALU + barrel shifter + lmul |
+| **DCU** (12 double ops) | +4,961 | +1,217 | 0 | +9 | IEEE 754 double: add/sub/mul/div/cmp/cvt |
+| **All 4 CUs + DSP** | +7,586 | +2,085 | 0 | +15 | Combined (less than sum — shared operand stack) |
+| **Ethernet GMII** | +969 | +787 | +1 | 0 | RTL8211EG PHY interface + MDIO + CDC |
+| **SD Native** | +12,220 | +5,011 | 0 | 0 | SpinalHDL SdcardCtrl (4-bit, cmd/data FSMs) |
+| **SD SPI** | +423 | +270 | 0 | 0 | Simple SPI shift register + clock divider |
+| **Array cache** | +506 | +925 | 0.5 | 0 | 16-entry FA, 4 elements/line (delta: baseline - no_acache) |
 
 ### Observations
 
