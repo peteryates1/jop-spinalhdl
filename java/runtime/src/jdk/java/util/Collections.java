@@ -428,9 +428,34 @@ public class Collections {
      * @throws UnsupportedOperationException if the specified list or
      *         its list-iterator does not support the <tt>set</tt> operation.
      */
-    // shuffle() commented out — depends on java.util.Random (Phase 6)
-    // public static void shuffle(List<?> list) { ... }
-    // public static void shuffle(List<?> list, Random rnd) { ... }
+    public static void shuffle(List<?> list) {
+        if (r == null) {
+            r = new Random();
+        }
+        shuffle(list, r);
+    }
+    private static Random r;
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static void shuffle(List<?> list, Random rnd) {
+        int size = list.size();
+        if (size < SHUFFLE_THRESHOLD || list instanceof RandomAccess) {
+            for (int i = size; i > 1; i--)
+                swap(list, i - 1, rnd.nextInt(i));
+        } else {
+            Object[] arr = new Object[size];
+            for (int i = 0; i < size; i++) {
+                arr[i] = list.get(i);
+            }
+            for (int i = size; i > 1; i--)
+                swap(arr, i - 1, rnd.nextInt(i));
+            ListIterator it = list.listIterator();
+            for (int i = 0; i < arr.length; i++) {
+                it.next();
+                it.set(arr[i]);
+            }
+        }
+    }
 
     /**
      * Swaps the elements at the specified positions in the specified list.
