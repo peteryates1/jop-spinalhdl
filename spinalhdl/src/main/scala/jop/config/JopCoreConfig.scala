@@ -47,6 +47,7 @@ case class JopCoreConfig(
   useStackCache: Boolean         = false,  // Use 3-bank rotating stack cache with DMA spill/fill
   spillBaseAddrOverride: Option[Int] = None, // Override spillBaseAddr (e.g., 0 for dedicated spill BRAM)
   useDspMul:    Boolean          = false,  // Use 1-cycle DSP multiplier in ALU (bypasses CU for imul)
+  useSyncRam:   Option[Boolean]  = None,   // None = auto (Xilinx→true, Altera→false); Some(x) = explicit override
 
   // --- Per-bytecode implementation selection ---
   // Integer — always Hardware (IntegerComputeUnit). Microcode = iterative, Hardware = CU or DSP.
@@ -194,6 +195,7 @@ case class JopCoreConfig(
   def decodeConfig = DecodeConfig(instrWidth, ramWidth)
   def stackConfig = StackConfig(dataWidth, jpcWidth, ramWidth,
     useDspMul = useDspMul,
+    useSyncRam = useSyncRam.getOrElse(false),
     cacheConfig = if (useStackCache) Some(StackCacheConfig(
       burstLen = memConfig.burstLen,
       wordAddrWidth = memConfig.addressWidth - 2,

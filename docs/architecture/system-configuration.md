@@ -169,6 +169,7 @@ Unified configuration for a single JOP core. Defined in `jop/config/JopCoreConfi
 | `useStackCache` | Boolean | false | Enable 3-bank rotating stack cache with DMA |
 | `spillBaseAddrOverride` | Option[Int] | None | Override spill address (e.g., `Some(0)` for dedicated spill BRAM) |
 | `useDspMul` | Boolean | false | Use 1-cycle DSP multiplier in ALU (bypasses CU for imul) |
+| `useSyncRam` | Option[Boolean] | None | Stack RAM read mode: `None` = auto (Xilinx→sync, Altera→async), `Some(true)` = force readSync, `Some(false)` = force readAsync. Auto-resolved by `JopConfig.resolvedSystems` from FPGA family. |
 
 ### Per-Bytecode Implementation Fields
 

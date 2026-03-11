@@ -150,7 +150,27 @@ case class JopConfig(
   def system: JopSystem = {
     require(systems.length == 1,
       s"Use .systems for multi-system configs (have ${systems.length} systems)")
-    systems.head
+    resolvedSystems.head
+  }
+
+  /** Systems with useSyncRam auto-resolved from FPGA family.
+    * None → true for Xilinx (readSync required for BRAM inference),
+    *         false for Altera/Lattice (readAsync maps to BRAM natively). */
+  lazy val resolvedSystems: Seq[JopSystem] = {
+    val needsSync = fpgaFamily.manufacturer == Manufacturer.Xilinx
+    systems.map { sys =>
+      val resolved = sys.coreConfig.useSyncRam match {
+        case Some(_) => sys.coreConfig  // explicit override — keep as-is
+        case None    => sys.coreConfig.copy(useSyncRam = Some(needsSync))
+      }
+      val resolvedPerCore = sys.perCoreConfigs.map(_.map { cc =>
+        cc.useSyncRam match {
+          case Some(_) => cc
+          case None    => cc.copy(useSyncRam = Some(needsSync))
+        }
+      })
+      sys.copy(coreConfig = resolved, perCoreConfigs = resolvedPerCore)
+    }
   }
 
   // --- Validation ---

@@ -148,13 +148,32 @@ Recommendation: **Option A** (universal `readSync`). The 1-cycle latency cost on
 negligible for the stack cache path (bank reads are not in the critical inner loop — they're
 dominated by DMA spill/fill latency). The code simplicity benefit outweighs the micro-optimization.
 
+**Implemented (2026-03-10)**: Option B — conditional `useSyncRam` flag. When `Some(true)`, all
+bank and scratch RAMs use `readSync`; when `Some(false)` or `None` (default), the original
+`readAsync` path is preserved unchanged. This keeps Altera optimal while enabling Xilinx BRAM
+inference.
+
+**Auto-derivation (2026-03-11)**: `useSyncRam` is now `Option[Boolean] = None` in
+`JopCoreConfig`. `JopConfig.resolvedSystems` auto-resolves `None` based on `FpgaFamily`:
+Xilinx → `Some(true)`, Altera/Lattice → `Some(false)`. Presets no longer need to explicitly
+set `useSyncRam`. Explicit `Some(true/false)` overrides are still honored.
+
+### Key design insight: Zero retiming needed
+
+The current pipeline has: `rdaddr → RegNext(ramRdaddrReg) → readAsync(ramRdaddrReg)`.
+With `readSync(rdaddr)`, the BRAM's internal address register replaces `ramRdaddrReg`.
+Total latency from address computation to data output is identical — no consumer retiming
+required. Bank hit signals are registered with `RegNext` to match the readSync output timing.
+
 ## Implementation Checklist
 
-- [ ] Remove VP+0 debug `readAsync` port (or convert to shared port)
-- [ ] MUX pipeline and DMA read addresses into single port per bank
-- [ ] Convert `bankRams(i).readAsync(...)` → `bankRams(i).readSync(...)`
-- [ ] Convert `scratchRam.readAsync(...)` → `scratchRam.readSync(...)` (saves ~88 LUTs)
-- [ ] Retime `ramDout` consumers in stack stage (1-cycle shift on bank/scratch data path)
-- [ ] Verify all 57 JVM tests pass (BRAM sim)
-- [ ] Verify DDR3 build utilization improvement
+- [x] VP+0 debug `readAsync` port: disabled in sync mode (outputs `0`)
+- [x] MUX pipeline and DMA read addresses into single readSync port per bank
+- [x] Convert `bankRams(i).readAsync(...)` → `bankRams(i).readSync(...)` (conditional)
+- [x] Convert `scratchRam.readAsync(...)` → `scratchRam.readSync(...)` (conditional, saves ~88 LUTs)
+- [x] Single-RAM mode: `readSync(rdaddr)` replaces `readAsync(ramRdaddrReg)` (conditional)
+- [x] Debug read ports: `readSync` in sync mode (1-cycle latency, acceptable)
+- [x] `useSyncRam` auto-derived from FPGA family (Xilinx→true, Altera→false via `JopConfig.resolvedSystems`)
+- [x] All pipeline simulation tests pass (async path)
+- [ ] Verify DDR3 build utilization improvement (Vivado synthesis)
 - [ ] Update `artix7-core-estimates.md` with revised per-core LUT cost

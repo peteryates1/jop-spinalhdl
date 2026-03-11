@@ -90,20 +90,42 @@ case class JopCoreTestHarness(
     jbcInit = Some(jbcInit)
   )
 
-  // Block RAM with BMB interface
-  val ram = BmbOnChipRam(
-    p = config.memConfig.bmbParameter,
-    size = config.memConfig.mainMemSize,
-    hexInit = null
-  )
-
-  // Initialize RAM (limit to actual memory size)
+  // Connect BMB (arbiter if stack DMA present)
   val memWords = config.memConfig.mainMemWords.toInt
   val initData = mainMemInit.take(memWords).padTo(memWords, BigInt(0))
-  ram.ram.init(initData.map(v => B(v, 32 bits)))
 
-  // Connect BMB
-  ram.io.bus << jopCore.io.bmb
+  jopCore.io.stackDmaBmb match {
+    case Some(dmaBmb) =>
+      val inputParam = config.memConfig.bmbParameter
+      val inputSourceParam = inputParam.access.sources.values.head
+      val outputParam = BmbParameter(
+        access = BmbAccessParameter(
+          addressWidth = inputParam.access.addressWidth,
+          dataWidth = inputParam.access.dataWidth
+        ).addSources(2, BmbSourceParameter(
+          contextWidth = inputSourceParam.contextWidth,
+          lengthWidth = inputSourceParam.lengthWidth,
+          canWrite = true,
+          canRead = true,
+          alignment = BmbParameter.BurstAlignement.WORD
+        )),
+        invalidation = BmbInvalidationParameter()
+      )
+      val arbiter = BmbArbiter(
+        inputsParameter = Seq.fill(2)(inputParam),
+        outputParameter = outputParam,
+        lowerFirstPriority = false
+      )
+      arbiter.io.inputs(0) << jopCore.io.bmb
+      arbiter.io.inputs(1) << dmaBmb
+      val ram = BmbOnChipRam(p = outputParam, size = config.memConfig.mainMemSize, hexInit = null)
+      ram.ram.init(initData.map(v => B(v, 32 bits)))
+      ram.io.bus << arbiter.io.output
+    case None =>
+      val ram = BmbOnChipRam(p = config.memConfig.bmbParameter, size = config.memConfig.mainMemSize, hexInit = null)
+      ram.ram.init(initData.map(v => B(v, 32 bits)))
+      ram.io.bus << jopCore.io.bmb
+  }
 
   // Single-core: no CmpSync
   jopCore.io.syncIn.halted := False

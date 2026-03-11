@@ -15,6 +15,59 @@ import java.io.PrintWriter
  */
 object JopConfigBramSim {
 
+  def runSimDebug(
+    jopConfig: JopConfig,
+    jopFilePath: String,
+    maxCycles: Int = 5000,
+    logFilePath: String = "spinalhdl/config_bram_debug.log"
+  ): Unit = {
+    val sys = jopConfig.system
+    val coreConfig = sys.coreConfig.copy(
+      memConfig = JopMemoryConfig(mainMemSize = 256 * 1024),
+      supersetJumpTable = sys.baseJumpTable
+    )
+    val romData = JopFileLoader.loadMicrocodeRom(sys.romPath)
+    val ramData = JopFileLoader.loadStackRam(sys.ramPath)
+    val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 256 * 1024 / 4)
+    println(s"=== DEBUG: ${sys.name} useSyncRam=${coreConfig.useSyncRam.getOrElse(false)} useStackCache=${coreConfig.useStackCache} ===")
+
+    SimConfig
+      .compile(JopCoreTestHarness(romData, ramData, mainMemData, coreConfig = Some(coreConfig)))
+      .doSim { dut =>
+        val log = new PrintWriter(logFilePath)
+        dut.clockDomain.forkStimulus(10)
+        dut.clockDomain.waitSampling(5)
+        var lastPc = -1
+        var stuckCount = 0
+        for (cycle <- 0 until maxCycles) {
+          dut.clockDomain.waitSampling()
+          val pc = dut.io.pc.toInt
+          val sp = dut.io.debugSp.toInt
+          val vp = dut.io.debugVp.toInt
+          val a = dut.io.aout.toLong & 0xFFFFFFFFL
+          val b = dut.io.bout.toLong & 0xFFFFFFFFL
+          val jfetch = dut.io.jfetch.toBoolean
+          val jpc = dut.io.jpc.toInt
+          val line = f"[$cycle%5d] PC=$pc%04x JPC=$jpc%04x SP=$sp%04x VP=$vp%04x A=$a%08x B=$b%08x jf=${if(jfetch) 1 else 0}"
+          log.println(line)
+          if (cycle < 200 || cycle % 100 == 0 || pc != lastPc) {
+            // print sparse output
+          }
+          if (pc == lastPc) stuckCount += 1 else stuckCount = 0
+          if (stuckCount == 50) {
+            println(f"STUCK at cycle $cycle: PC=$pc%04x SP=$sp%04x VP=$vp%04x A=$a%08x B=$b%08x")
+          }
+          lastPc = pc
+          if (dut.io.uartTxValid.toBoolean) {
+            val ch = dut.io.uartTxData.toInt
+            println(f"[$cycle%5d] UART: '${if (ch >= 32 && ch < 127) ch.toChar else '?'}' (0x$ch%02x)")
+          }
+        }
+        log.close()
+        println(s"Debug log: $logFilePath")
+      }
+  }
+
   def runSim(
     jopConfig: JopConfig,
     jopFilePath: String,
@@ -114,6 +167,32 @@ object JopConfigHwMathHelloWorldSim extends App {
       imul = Microcode, idiv = Hardware, irem = Hardware))))
   JopConfigBramSim.runSim(
     jopConfig = hwMath,
+    jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  )
+}
+
+/** HelloWorld with useSyncRam + useStackCache (matches DDR3 FPGA config) */
+object JopConfigSyncCacheHelloWorldSim extends App {
+  val base = JopConfig.simulation
+  val syncCache = base.copy(systems = Seq(base.system.copy(
+    name = "synccache-sim",
+    coreConfig = base.system.coreConfig.copy(
+      useSyncRam = Some(true), useStackCache = true))))
+  JopConfigBramSim.runSim(
+    jopConfig = syncCache,
+    jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  )
+}
+
+/** HelloWorld with useStackCache only (async reads, verify cache works) */
+object JopConfigCacheOnlyHelloWorldSim extends App {
+  val base = JopConfig.simulation
+  val cacheOnly = base.copy(systems = Seq(base.system.copy(
+    name = "cache-sim",
+    coreConfig = base.system.coreConfig.copy(
+      useStackCache = true))))
+  JopConfigBramSim.runSim(
+    jopConfig = cacheOnly,
     jopFilePath = "java/apps/Smallest/HelloWorld.jop"
   )
 }

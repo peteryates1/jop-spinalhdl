@@ -67,7 +67,8 @@ case class StackConfig(
   jpcWidth: Int = 11,
   ramWidth: Int = 8,
   cacheConfig: Option[StackCacheConfig] = None,
-  useDspMul: Boolean = false
+  useDspMul: Boolean = false,
+  useSyncRam: Boolean = false   // true = readSync (Xilinx BRAM inference), false = readAsync (Altera native)
 ) {
   require(width == 32, "Data width must be 32 bits")
   require(jpcWidth >= 10 && jpcWidth <= 16, "JPC width must be between 10 and 16 bits")
@@ -380,9 +381,21 @@ case class StackStage(
       enable  = effectiveWrEn
     )
 
-    ramDout := stackRam.readAsync(ramRdaddrReg.resize(config.ramWidth))
-
-    io.debugRamData := stackRam.readAsync(io.debugRamAddr)
+    if (config.useSyncRam) {
+      // readSync(rdaddr): BRAM internal register replaces ramRdaddrReg — same total latency.
+      // Write-through bypass: readSync at same edge as write returns pre-write value
+      // (READ_FIRST), but the original readAsync saw post-write values (combinational).
+      val syncDout = stackRam.readSync(rdaddr.resize(config.ramWidth))
+      val wrBypass = RegNext(
+        effectiveWrEn && effectiveWrAddr.resize(config.ramWidth) === rdaddr.resize(config.ramWidth)
+      ) init(False)
+      val wrBypassData = RegNext(effectiveWrData) init(0)
+      ramDout := Mux(wrBypass, wrBypassData, syncDout)
+      io.debugRamData := stackRam.readSync(io.debugRamAddr)
+    } else {
+      ramDout := stackRam.readAsync(ramRdaddrReg.resize(config.ramWidth))
+      io.debugRamData := stackRam.readAsync(io.debugRamAddr)
+    }
 
   } else {
     // ------------------------------------------------------------------
@@ -442,32 +455,82 @@ case class StackStage(
     // Read Path: parallel read all RAMs, MUX by address translation
     // ------------------------------------------------------------------
 
-    val rdIsScratch = ramRdaddrReg < cc.scratchSize
-    val scratchDout = scratchRam.readAsync(ramRdaddrReg.resize(log2Up(cc.scratchSize)))
-
-    // Compute physical address for each bank and check if it covers the read address
-    val bankRdPhysAddr = Vec(UInt(8 bits), cc.numBanks)
-    val bankRdHit = Vec(Bool(), cc.numBanks)
     val bankRdDout = Vec(Bits(config.width bits), cc.numBanks)
 
-    for (i <- 0 until cc.numBanks) {
-      bankRdPhysAddr(i) := (ramRdaddrReg - bankBaseVAddr(i)).resize(8)
-      bankRdHit(i) := ramRdaddrReg >= bankBaseVAddr(i) &&
-                       ramRdaddrReg < (bankBaseVAddr(i) + cc.bankSize) &&
-                       bankResident(i)
-      bankRdDout(i) := bankRams(i).readAsync(bankRdPhysAddr(i))
-    }
+    if (config.useSyncRam) {
+      // ---- SYNC READ PATH ----
+      // Compute addresses from rdaddr (pre-register). readSync internal register
+      // replaces ramRdaddrReg for the read path — same total latency.
+      // Pipeline and DMA reads share one readSync port per bank (mutually exclusive).
 
-    // MUX: scratch takes priority, then banks
-    ramDout := 0
-    when(rdIsScratch) {
-      ramDout := scratchDout
-    }.elsewhen(bankRdHit(0)) {
-      ramDout := bankRdDout(0)
-    }.elsewhen(bankRdHit(1)) {
-      ramDout := bankRdDout(1)
-    }.elsewhen(bankRdHit(2)) {
-      ramDout := bankRdDout(2)
+      val dmaRdAddr = io.dmaBankRdAddr.get
+
+      val rdIsScratchComb = rdaddr < cc.scratchSize
+      val bankRdPhysAddrComb = Vec(UInt(8 bits), cc.numBanks)
+      val bankRdHitComb = Vec(Bool(), cc.numBanks)
+      for (i <- 0 until cc.numBanks) {
+        bankRdPhysAddrComb(i) := (rdaddr - bankBaseVAddr(i)).resize(8)
+        bankRdHitComb(i) := rdaddr >= bankBaseVAddr(i) &&
+                             rdaddr < (bankBaseVAddr(i) + cc.bankSize) &&
+                             bankResident(i)
+      }
+
+      // Shared readSync port: MUX pipeline vs DMA address (mutually exclusive)
+      for (i <- 0 until cc.numBanks) {
+        val bankAddr = Mux(rotBusy, dmaRdAddr, bankRdPhysAddrComb(i))
+        bankRdDout(i) := bankRams(i).readSync(bankAddr)
+      }
+      val scratchDout = scratchRam.readSync(rdaddr.resize(log2Up(cc.scratchSize)))
+
+      // Register hit signals to align with 1-cycle readSync output latency.
+      // During rotBusy, rdaddr is driven from frozen registers (decode gated),
+      // so bankRdHitComb stays stable — RegNext naturally holds correct values.
+      val rdIsScratch = RegNext(rdIsScratchComb) init(True)
+      val bankRdHit = Vec(Bool(), cc.numBanks)
+      for (i <- 0 until cc.numBanks) {
+        bankRdHit(i) := RegNext(bankRdHitComb(i)) init(False)
+      }
+
+      // MUX: scratch takes priority, then banks.
+      // Write-through bypass is applied later (after pipeWr* variables are defined).
+      ramDout := 0
+      when(rdIsScratch) {
+        ramDout := scratchDout
+      }.elsewhen(bankRdHit(0)) {
+        ramDout := bankRdDout(0)
+      }.elsewhen(bankRdHit(1)) {
+        ramDout := bankRdDout(1)
+      }.elsewhen(bankRdHit(2)) {
+        ramDout := bankRdDout(2)
+      }
+
+    } else {
+      // ---- ASYNC READ PATH (original) ----
+      val rdIsScratch = ramRdaddrReg < cc.scratchSize
+      val scratchDout = scratchRam.readAsync(ramRdaddrReg.resize(log2Up(cc.scratchSize)))
+
+      val bankRdPhysAddr = Vec(UInt(8 bits), cc.numBanks)
+      val bankRdHit = Vec(Bool(), cc.numBanks)
+
+      for (i <- 0 until cc.numBanks) {
+        bankRdPhysAddr(i) := (ramRdaddrReg - bankBaseVAddr(i)).resize(8)
+        bankRdHit(i) := ramRdaddrReg >= bankBaseVAddr(i) &&
+                         ramRdaddrReg < (bankBaseVAddr(i) + cc.bankSize) &&
+                         bankResident(i)
+        bankRdDout(i) := bankRams(i).readAsync(bankRdPhysAddr(i))
+      }
+
+      // MUX: scratch takes priority, then banks
+      ramDout := 0
+      when(rdIsScratch) {
+        ramDout := scratchDout
+      }.elsewhen(bankRdHit(0)) {
+        ramDout := bankRdDout(0)
+      }.elsewhen(bankRdHit(1)) {
+        ramDout := bankRdDout(1)
+      }.elsewhen(bankRdHit(2)) {
+        ramDout := bankRdDout(2)
+      }
     }
 
     // ------------------------------------------------------------------
@@ -531,17 +594,73 @@ case class StackStage(
       }
     }
 
-    // Debug read (scratch only)
-    io.debugRamData := scratchRam.readAsync(io.debugRamAddr.resize(log2Up(cc.scratchSize)))
+    // Write-through bypass for readSync path.
+    //
+    // readSync captures address at the clock edge and outputs data next cycle.
+    // A write at the same edge to the same address produces stale output (READ_FIRST).
+    // The original readAsync path evaluated combinationally AFTER the edge, seeing
+    // post-write values. We restore that behavior by detecting same-edge address
+    // collisions and forwarding the write data (RegNext'd to align with readSync
+    // output latency).
+    //
+    // Only pipeline writes need bypass — DMA/zero-fill writes happen during
+    // rotation when A/B updates are gated by rotBusyDly.
+    if (config.useSyncRam) {
+      val rdIsScratchComb = rdaddr < cc.scratchSize
+      val bankRdPhysAddrComb = Vec(UInt(8 bits), cc.numBanks)
+      val bankRdHitComb = Vec(Bool(), cc.numBanks)
+      for (i <- 0 until cc.numBanks) {
+        bankRdPhysAddrComb(i) := (rdaddr - bankBaseVAddr(i)).resize(8)
+        bankRdHitComb(i) := rdaddr >= bankBaseVAddr(i) &&
+                             rdaddr < (bankBaseVAddr(i) + cc.bankSize) &&
+                             bankResident(i)
+      }
 
-    // DMA read port: read all banks at DMA address, MUX by selection
-    val dmaRdAddr = io.dmaBankRdAddr.get
-    val dmaBankRdSel = io.dmaBankSelect.get
-    val dmaBankDouts = Vec(Bits(config.width bits), cc.numBanks)
-    for (i <- 0 until cc.numBanks) {
-      dmaBankDouts(i) := bankRams(i).readAsync(dmaRdAddr)
+      // Scratch bypass
+      val scratchBypass = RegNext(
+        pipeWrEn && pipeWrIsScratch && rdIsScratchComb &&
+        pipeWrAddr.resize(log2Up(cc.scratchSize)) === rdaddr.resize(log2Up(cc.scratchSize))
+      ) init(False)
+
+      // Bank bypass
+      val bankBypass = Vec(Bool(), cc.numBanks)
+      for (i <- 0 until cc.numBanks) {
+        bankBypass(i) := RegNext(
+          pipeWrEn && !pipeWrIsScratch && pipeWrBankHit(i) &&
+          bankRdHitComb(i) && !rotBusy &&
+          pipeWrBankPhys(i) === bankRdPhysAddrComb(i)
+        ) init(False)
+      }
+      val bypassData = RegNext(pipeWrData) init(0)
+
+      // Override ramDout when bypass is active
+      when(scratchBypass || bankBypass.reduce(_ || _)) {
+        ramDout := bypassData
+      }
     }
-    io.dmaBankRdData.get := dmaBankDouts(dmaBankRdSel)
+
+    // Debug read (scratch only)
+    if (config.useSyncRam) {
+      io.debugRamData := scratchRam.readSync(io.debugRamAddr.resize(log2Up(cc.scratchSize)))
+    } else {
+      io.debugRamData := scratchRam.readAsync(io.debugRamAddr.resize(log2Up(cc.scratchSize)))
+    }
+
+    // DMA read port
+    if (config.useSyncRam) {
+      // DMA reads share the bank readSync port (MUXed in read path above)
+      val dmaBankRdSel = io.dmaBankSelect.get
+      io.dmaBankRdData.get := bankRdDout(dmaBankRdSel)
+    } else {
+      // Separate readAsync ports for DMA
+      val dmaRdAddr = io.dmaBankRdAddr.get
+      val dmaBankRdSel = io.dmaBankSelect.get
+      val dmaBankDouts = Vec(Bits(config.width bits), cc.numBanks)
+      for (i <- 0 until cc.numBanks) {
+        dmaBankDouts(i) := bankRams(i).readAsync(dmaRdAddr)
+      }
+      io.dmaBankRdData.get := dmaBankDouts(dmaBankRdSel)
+    }
 
     // ------------------------------------------------------------------
     // Rotation Controller
@@ -725,30 +844,36 @@ case class StackStage(
     io.scDebugPipeWrData.get := RegNext(pipeWrData) init 0
     io.scDebugPipeWrEn.get := RegNext(pipeWrEn) init False
 
-    // VP+0 readback: async read of bank RAM at virtual address vp0
-    val vp0IsScratch = vp0 < cc.scratchSize
-    val vp0BankHit = Vec(Bool(), cc.numBanks)
-    val vp0BankPhys = Vec(UInt(8 bits), cc.numBanks)
-    val vp0BankDout = Vec(Bits(config.width bits), cc.numBanks)
-    for (i <- 0 until cc.numBanks) {
-      vp0BankPhys(i) := (vp0 - bankBaseVAddr(i)).resize(8)
-      vp0BankHit(i) := vp0 >= bankBaseVAddr(i) &&
-                        vp0 < (bankBaseVAddr(i) + cc.bankSize) &&
-                        bankResident(i)
-      vp0BankDout(i) := bankRams(i).readAsync(vp0BankPhys(i))
+    // VP+0 readback
+    if (config.useSyncRam) {
+      // VP+0 debug not available in sync RAM mode (would require extra BRAM read port)
+      io.scDebugVp0Data.get := B(0, config.width bits)
+    } else {
+      // Async read of bank RAM at virtual address vp0
+      val vp0IsScratch = vp0 < cc.scratchSize
+      val vp0BankHit = Vec(Bool(), cc.numBanks)
+      val vp0BankPhys = Vec(UInt(8 bits), cc.numBanks)
+      val vp0BankDout = Vec(Bits(config.width bits), cc.numBanks)
+      for (i <- 0 until cc.numBanks) {
+        vp0BankPhys(i) := (vp0 - bankBaseVAddr(i)).resize(8)
+        vp0BankHit(i) := vp0 >= bankBaseVAddr(i) &&
+                          vp0 < (bankBaseVAddr(i) + cc.bankSize) &&
+                          bankResident(i)
+        vp0BankDout(i) := bankRams(i).readAsync(vp0BankPhys(i))
+      }
+      val vp0Data = Bits(config.width bits)
+      vp0Data := 0
+      when(vp0IsScratch) {
+        vp0Data := scratchRam.readAsync(vp0.resize(log2Up(cc.scratchSize)))
+      }.elsewhen(vp0BankHit(0)) {
+        vp0Data := vp0BankDout(0)
+      }.elsewhen(vp0BankHit(1)) {
+        vp0Data := vp0BankDout(1)
+      }.elsewhen(vp0BankHit(2)) {
+        vp0Data := vp0BankDout(2)
+      }
+      io.scDebugVp0Data.get := vp0Data
     }
-    val vp0Data = Bits(config.width bits)
-    vp0Data := 0
-    when(vp0IsScratch) {
-      vp0Data := scratchRam.readAsync(vp0.resize(log2Up(cc.scratchSize)))
-    }.elsewhen(vp0BankHit(0)) {
-      vp0Data := vp0BankDout(0)
-    }.elsewhen(vp0BankHit(1)) {
-      vp0Data := vp0BankDout(1)
-    }.elsewhen(vp0BankHit(2)) {
-      vp0Data := vp0BankDout(2)
-    }
-    io.scDebugVp0Data.get := vp0Data
   }
 
   // ==========================================================================

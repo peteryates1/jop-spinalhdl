@@ -174,7 +174,8 @@ case class JopDdr3Top(
         supersetJumpTable = supersetJumpTable,
         clkFreq = 100 MHz,
         ioConfig = ioConfig,
-        useStackCache = true
+        useStackCache = true,
+        useSyncRam = Some(true)
       ),
       romInit = Some(romInit),
       ramInit = Some(ramInit),
