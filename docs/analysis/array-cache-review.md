@@ -149,7 +149,12 @@ Ten BMC properties verified with Z3:
 
 ## Potential Issues
 
-### 1. lineEnc Uses hitTagVec Instead of hitVec
+### 1. ~~lineEnc Uses hitTagVec Instead of hitVec~~ — FIXED
+
+**Status**: RESOLVED (commit ab8ec64). Three-point fix changing `hitTagVec` → `hitVec`:
+- `lineEnc` encoder (line 129): uses `hitVec(j)` for full handle+index match
+- `hitTagReg` latch (line 166): uses `hitVec.orR` to gate iastore write-through
+- `chkIal` line selection (line 178): uses `hitVec.orR` for hit/miss decision
 
 `ArrayCache.scala:123-134` — The line encoder originally computed the selected
 line from `hitTagVec` (handle-only match, ignoring upper index bits) rather than
@@ -157,14 +162,12 @@ line from `hitTagVec` (handle-only match, ignoring upper index bits) rather than
 regions of the same array (same handle, different `tagIdx`), `lineEnc` would OR
 their line numbers together, producing a corrupted line index.
 
-The `lineEnc` result is used for the **data RAM read address** on a hit, so a
-corrupted line index would return wrong data.
-
-**Status**: RESOLVED — `lineEnc` now uses `hitVec` (full handle + index match)
-instead of `hitTagVec`. Additionally, `hitTagReg` (which gates iastore
-write-through) now uses `hitVec.orR` instead of `hitTagVec.orR`. Formal
-property added: "tag+index uniqueness" verifies at most one entry per
-(handle, tagIdx) pair under protocol constraints (BMC 10 steps).
+This was the root cause of `Arrays.sort()` failures — sort accesses multiple
+regions of the same array simultaneously (partitioning), triggering the
+corrupted `lineEnc` path. Formal property added: "tag+index uniqueness" verifies
+at most one entry per (handle, tagIdx) pair under protocol constraints (BMC 10
+steps). All 10 formal properties pass, 544/544 sim tests pass, 64/64 FPGA
+JvmTests pass after the fix.
 
 ### 2. chkIal Not Gated by Controller State
 
@@ -258,14 +261,16 @@ implementation:
 
 All four identified issues have been addressed:
 
-1. **lineEnc / hitTagVec** — `lineEnc` now uses `hitVec` (full match). Formal
-   tag+index uniqueness property added and verified (BMC 10 steps).
-2. **chkIal gated by state** — now gated by `state === State.IDLE`
-3. **stidx invalidation** — now configurable via `acacheInvalOnStidx` (default
-   true for WCET safety)
-4. **Formal verification** — expanded from 5 to 10 tests covering tag+index
-   uniqueness, fill correctness, snoop preservation, no write-allocate, and
-   invalidation completeness
+1. **lineEnc / hitTagVec** — RESOLVED (commit ab8ec64). `hitTagVec` → `hitVec`
+   in lineEnc, hitTagReg, and chkIal line selection. Root cause of
+   `Arrays.sort()` failure. Formal tag+index uniqueness property verified
+   (BMC 10 steps).
+2. **chkIal gated by state** — RESOLVED. Now gated by `state === State.IDLE`.
+3. **stidx invalidation** — RESOLVED. Configurable via `acacheInvalOnStidx`
+   (default true for WCET safety).
+4. **Formal verification** — RESOLVED. Expanded from 5 to 10 tests covering
+   tag+index uniqueness, fill correctness, snoop preservation, no
+   write-allocate, and invalidation completeness.
 
 Remaining concern:
 

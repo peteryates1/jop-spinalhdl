@@ -93,7 +93,7 @@ case class JopSdramWukongTop(
     val cluster = JopCluster(
       cpuCnt = cpuCnt,
       baseConfig = JopCoreConfig(
-        memConfig = JopMemoryConfig(burstLen = burstLen),
+        memConfig = JopMemoryConfig(burstLen = burstLen, stackRegionWordsPerCore = 8192),
         supersetJumpTable = jumpTable,
         clkFreq = 100 MHz,
         useStackCache = true

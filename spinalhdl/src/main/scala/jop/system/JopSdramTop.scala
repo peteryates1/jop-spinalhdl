@@ -284,14 +284,19 @@ case class JopSdramTop(
     // JOP Cluster: N cores with arbiter + CmpSync
     // ==================================================================
 
+    // When perCoreConfigs is provided, use first config as baseConfig
+    // so cluster structural decisions (stack DMA, DSP, etc.) match
+    val defaultBaseConfig = JopCoreConfig(
+      memConfig = JopMemoryConfig(burstLen = 4),
+      supersetJumpTable = supersetJumpTable,
+      clkFreq = 80 MHz,
+      ioConfig = ioConfig
+    )
+    val effectiveBaseConfig = perCoreConfigs.map(_.head).getOrElse(defaultBaseConfig)
+
     val cluster = JopCluster(
       cpuCnt = cpuCnt,
-      baseConfig = JopCoreConfig(
-        memConfig = JopMemoryConfig(burstLen = 4),
-        supersetJumpTable = supersetJumpTable,
-        clkFreq = 80 MHz,
-        ioConfig = ioConfig
-      ),
+      baseConfig = effectiveBaseConfig,
       debugConfig = debugConfig,
       romInit = Some(romInit),
       ramInit = Some(ramInit),
@@ -732,6 +737,8 @@ object JopDbFpgaTopVerilog extends App {
       ioConfig = IoConfig.qmtechDbFpga,
       imul = Implementation.Hardware,
       useDspMul = true
+      // Stack cache disabled: 3-bank async RAM read path adds ~6ns,
+      // causing -5.5ns setup violation at 80 MHz. Needs pipelined read.
     )))
   )))
 

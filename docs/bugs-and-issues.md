@@ -189,6 +189,7 @@ See [SDR SDRAM GC Hang](gc/sdr-sdram-gc-hang.md) for the full investigation.
 | 19 | A$ fill interleaving — 4 single-word reads could be interleaved by arbiter | Core hang in 4+ core SDRAM |
 | 21 | `System.arraycopy` doesn't invalidate A$ — `wrMem()` bypasses cache invalidation | Stale array data after copy |
 | 26 | Hardware exception wrote to I/O 0x04 instead of 0x84 after I/O base change | Exceptions silently ignored |
+| 30 | A$ `lineEnc` uses `hitTagVec` (handle-only) instead of `hitVec` (full match) — corrupted RAM address when multiple regions of same array cached | `Arrays.sort()` failure, data corruption on multi-region array access |
 
 ### Other Pipeline/I/O Bugs
 
@@ -221,6 +222,24 @@ See [SDR SDRAM GC Hang](gc/sdr-sdram-gc-hang.md) for the full investigation.
 | 24 | `GC.push()` dereferences null handle (address 0) during conservative stack scanning — triggers hardware NPE during GC | Added `if (ref == 0) return;` guard |
 | 10 | `Startup.java` cpuStart array requires GC before GC is ready — NPE on multi-core boot | Removed array; direct main loop entry |
 | 21 | `System.arraycopy` raw writes (`wrMem`) don't invalidate array cache — stale data | Added `Native.invalidate()` after copy |
+
+---
+
+## Known Timing Issues
+
+### Stack Cache 3-Bank Async Read Path
+
+The 3-bank rotating stack cache (`useStackCache = true`) has a critical timing
+path: `ramRdaddrReg → bank address subtract (×3) → readAsync (3 banks) →
+priority MUX → a register`. On the EP4CGX150 at 80 MHz, this path has
+**-5.5 ns setup violation** (data delay ~18 ns vs 12.5 ns period).
+
+**Workaround**: Stack cache disabled in `JopDbFpgaTopVerilog`. Works in BRAM
+simulation (118/124 tests pass).
+
+**Fix needed**: Pipeline the bank RAM read — register the async read output
+before the priority MUX. This requires a 1-cycle read latency change in
+`StackStage`, affecting the `a`/`b` register update timing.
 
 ---
 

@@ -101,6 +101,8 @@ case class JopCoreConfig(
   require(instrWidth == 10, "Instruction width must be 10 bits")
   require(pcWidth == 11, "PC width must be 11 bits (2K ROM)")
   require(jpcWidth == 11, "JPC width must be 11 bits (2KB cache)")
+  require(!useStackCache || spillBaseAddrOverride.isDefined || memConfig.stackRegionWordsPerCore > 0,
+    "useStackCache requires stackRegionWordsPerCore > 0 (or spillBaseAddrOverride) to prevent GC heap/stack overlap")
   // IMP_ASM bytecodes: JOPizer does NOT replace them with invokestatic.
   // The jump table must always point to a working handler (sthw or software).
   // Java is not a valid option because sys_noim expects invokestatic operands.

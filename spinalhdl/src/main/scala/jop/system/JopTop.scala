@@ -362,7 +362,10 @@ case class JopTop(
       ) else if (isBram) cc.memConfig.copy(
         mainMemSize = mainMemSize,
         burstLen = 0
-      ) else cc.memConfig.copy(burstLen = burstLen),
+      ) else cc.memConfig.copy(
+        burstLen = burstLen,
+        stackRegionWordsPerCore = if (board.name == "qmtech-wukong-xc7a100t") 8192 else 0
+      ),
       supersetJumpTable = sys.baseJumpTable,
       clkFreq = sys.clkFreq,
       ioConfig = sys.ioConfig,

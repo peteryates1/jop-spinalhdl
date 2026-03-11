@@ -14,7 +14,7 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 | | BytecodeFetchStageFormal | 4 | No double-ack, exception/interrupt ack preconditions, interrupt latching |
 | | StackStageFormal | 6 | Flag computation (zf, nf, eq), SP increment/decrement/hold |
 | | DecodeStageFormal | 3 | Memory op mutual exclusion, field op mutual exclusion, br/jmp exclusion |
-| **Memory Subsystem** | MethodCacheFormal | 4 | State machine transitions, rdy output, find trigger, S2 always returns |
+| **Memory Subsystem** | MethodCacheFormal | 9 | State machine, rdy, find trigger, tag uniqueness, FIFO advance, tag write, hit-after-miss, clear mask |
 | | ObjectCacheFormal | 2 | Uncacheable field rejection, hit implies cacheable |
 | | ArrayCacheFormal | 5 | Hit/tag consistency, FIFO pointer advancement, snoop invalidation, snoop-during-fill gating, fill index auto-increment |
 | | StackCacheDmaFormal | 6 | Busy/IDLE equivalence, done pulse, wordsDone bounds, spill WRITE opcode, fill READ opcode, no-deadlock |
@@ -193,7 +193,7 @@ With the current `BmbCacheBridge` frontend, these bugs are **unlikely to trigger
 | Shift (combinational) | 2 | <0.3s | Purely combinational, trivial for Z3 |
 | JumpTable | 2 | <0.3s | Combinational ROM lookup |
 | StackStage flags | 3 | <0.3s | Unconstrained inputs, simple property |
-| MethodCache | 5-6 | <0.5s | Small state machine, 16-entry tag array |
+| MethodCache | 5-10 | <2s | Small state machine, 16-entry tag array (4-block for tractable properties) |
 | BmbMemoryController | 4-6 | <1.0s | Large state machine, wait-state tests use anyseq(rsp.valid) |
 | BytecodeFetchStage | 4-6 | 0.5-3s | 256-entry ROM + 2KB RAM make Z3 slow |
 | LruCacheCore | 20 | 2-47s | Deep BMC needed to reach cache hit states |
