@@ -319,7 +319,7 @@ Notes:
 - SMP (2-core) uses ~8% of EP4CGX150's 150K LEs, leaving substantial headroom for additional cores
 - Artix-7 single-core uses 16KB L2 cache; SMP uses 32KB L2 cache (512 sets × 4 ways). Per-core cost ~4,400 LUT, ~2,900 FF, ~2.5 BRAM
 - Vivado does not report per-hierarchy utilization; Artix-7 core-only numbers not available from build reports
-- Artix-7 single-core LUT includes ~1,584 LUT of distributed RAM from stack cache bank RAMs (`readAsync` not supported by Xilinx BRAM). Converting to `readSync` would save ~1,584 LUT/core. See [distributed RAM optimization](docs/analysis/artix7-distram-optimization.md)
+- Artix-7 uses `readSync` for stack cache bank RAMs (auto-derived from FPGA family), enabling Xilinx BRAM inference. Altera uses `readAsync` (M9K/M10K supports async reads natively). See [distributed RAM optimization](docs/analysis/artix7-distram-optimization.md)
 - See [Artix-7 core count estimates](docs/analysis/artix7-core-estimates.md) for scaling projections across the Artix-7 family
 
 ## Implementation Status
@@ -357,7 +357,7 @@ Notes:
 Active work items:
 
 - **Stack cache SDRAM integration** — 3-bank rotation working in BRAM simulation (59/59 tests pass); needs SDRAM integration with per-core stack regions (memory layout configured, GC bounds checking pending)
-- **Stack cache bank RAM optimization** — convert `readAsync` to `readSync` on bank RAMs to enable Xilinx BRAM inference, saving ~1,584 LUTs on Artix-7 (81% → ~73% utilization). Altera is unaffected (M9K/M10K supports async reads natively). See [distributed RAM optimization](docs/analysis/artix7-distram-optimization.md)
+
 - **SMP test expansion** — lock contention stress test (>2 cores hammering `synchronized`), SMP exception handling test. Cache snoop and JVM-on-SMP tests done. See [test coverage audit](docs/test-coverage-audit.md)
 - **DDR3 SMP GC** — run GC stress test on dual-core DDR3 (NCoreHelloWorld verified, GC stress not yet tested in SMP mode)
 
@@ -401,7 +401,7 @@ Design notes and investigation logs in `docs/`:
 - [Compute Unit Design](docs/architecture/compute-unit-design.md) — IntegerCU, FloatCU, LongCU, DoubleCU: stop/sthw/ldop pattern, operand stack, per-bytecode configuration
 - [Bugs and Issues](docs/bugs-and-issues.md) — master bug index: open JVM workarounds, fixed RTL/pipeline/microcode bugs
 - [Implementation Notes](docs/architecture/implementation-notes.md) — bugs found, cache details, I/O subsystem, SMP, GC architecture, memCopy
-- [Artix-7 Distributed RAM Optimization](docs/analysis/artix7-distram-optimization.md) — stack cache bank RAM `readAsync` → `readSync` for BRAM inference on Xilinx
+- [Artix-7 Distributed RAM Optimization](docs/analysis/artix7-distram-optimization.md) — stack cache bank RAM `readSync` for BRAM inference on Xilinx (auto-derived from FPGA family)
 - [Cache Analysis](docs/architecture/cache-analysis.md) — cache performance analysis and technology cost model
 - [Memory Controller Comparison](docs/architecture/memory-controller-comparison.md) — VHDL vs SpinalHDL memory controller
 - [Stack Immediate Timing](docs/analysis/stack-immediate-timing.md) — stack stage timing for immediate operations
