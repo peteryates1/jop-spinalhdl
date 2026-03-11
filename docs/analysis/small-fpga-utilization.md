@@ -7,7 +7,7 @@ Tool: Quartus Prime 25.1std Lite Edition (full compile: map + fit)
 
 | Board | FPGA | LEs | M9K | Memory bits | SDRAM |
 |-------|------|----:|----:|------------:|-------|
-| Arrow MAX1000 | 10M08SAE144C8G (MAX10) | 8,064 | 42 | 387,072 | IS42S16160G (32 MB) |
+| Arrow MAX1000 | 10M08SAE144C8G (MAX10) | 8,064 | 42 | 387,072 | W9864G6JT-6 (8 MB) |
 | Generic EP4CE6 | EP4CE6E22C8 (Cyclone IV E) | 6,272 | 30 | 276,480 | W9864G6JT (8 MB) |
 
 ## Configuration
@@ -78,6 +78,55 @@ because jopmin has a 256KB method cache vs our 16KB bytecode RAM.
 4. **Object/array caches**: ~1,900 LEs for O$ (16-entry, 8 fields) + A$ (16-entry, 4 elements).
    Disabled for small FPGAs. Performance impact: getfield/iaload/iastore go through full
    SDRAM handle dereference on every access (~3 SDRAM cycles) instead of 1-cycle cache hit.
+
+## Performance Impact of Disabled Caches
+
+Disabling the object cache (O$) and array cache (A$) affects only heap object and array
+access patterns. Stack operations, method calls, ALU, and control flow are unaffected.
+
+### Object Cache (O$) — getfield / putfield
+
+| | With O$ (16-entry, 8 fields) | Without O$ |
+|---|---|---|
+| **getfield (hit)** | 1 cycle (combinational hit, stays in IDLE) | N/A |
+| **getfield (miss or no cache)** | HANDLE_READ → HANDLE_WAIT → HANDLE_CALC → HANDLE_DATA_CMD → HANDLE_DATA_WAIT → IDLE = ~20-30 cycles | Always full path: ~20-30 cycles |
+| **putfield** | Always full path (write-through on hit) | Same |
+
+The O$ eliminates the SDRAM handle dereference on repeated reads of the same object's
+fields. Typical hit rates depend on the access pattern — tight loops over object fields
+benefit most. First access to any object is always a miss.
+
+### Array Cache (A$) — iaload / iastore
+
+| | With A$ (16-entry, 4 elements/line) | Without A$ |
+|---|---|---|
+| **iaload (hit)** | 1 cycle (combinational hit, stays in IDLE) | N/A |
+| **iaload (miss or no cache)** | Full handle deref + 4-element line fill (~30-50 cycles) | Full handle deref per access (~20-30 cycles) |
+| **iastore** | Full handle deref (write-through on hit) | Same |
+
+The A$ is most valuable for sequential array iteration — after one miss fills a 4-element
+cache line, the next 3 accesses are 1-cycle hits. Without A$, every `iaload` pays the
+full SDRAM cost.
+
+### Unaffected Operations
+
+These operations have identical performance with or without O$/A$:
+
+- **Stack operations** (push, pop, dup, swap) — register + on-chip RAM, no SDRAM
+- **Local variable access** (load, store) — on-chip stack RAM
+- **ALU / shifts / comparisons** — combinational or compute unit, no memory
+- **Method calls / returns** (invoke, return) — method cache (M$) is always present
+- **Bytecode fetch** — bytecode RAM is always present
+- **getstatic / putstatic** — no caching (always SDRAM), same with or without O$/A$
+- **I/O operations** — direct I/O bus, never cached
+
+### Practical Impact
+
+For jopmin-class workloads (HelloWorld, simple control applications), the impact is
+negligible — jopmin never had these caches. For object-heavy or array-heavy Java code
+(e.g., iterating over arrays, frequent field access in inner loops), expect ~2-3x slowdown
+on those specific operations. Overall application impact depends on the fraction of time
+spent in getfield/iaload vs other operations.
 
 ## Remaining Optimization Opportunities
 

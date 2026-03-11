@@ -625,7 +625,7 @@ object Board {
   // ========================================================================
 
   /**
-   * Arrow MAX1000 (MAX10 10M08SAE144C8G + IS42S16160G SDR SDRAM).
+   * Arrow MAX1000 (MAX10 10M08SAE144C8G + W9864G6JT-6 SDR SDRAM).
    *
    * 12 MHz on-board oscillator, FT2232H USB-UART.
    * Pin assignments are placeholders for fit-check — not verified against schematic.
@@ -634,7 +634,7 @@ object Board {
     name = "max1000",
     fpga = Some(FpgaDevice.`10M08SAE144C8G`),
     devices = Seq(
-      BoardDevice("IS42S16160G"),
+      BoardDevice("W9864G6JT"),
       BoardDevice("CLOCK_12MHz", mapping = Map("clock" -> "PIN_H6")),
       BoardDevice("FT2232H", mapping = Map(
         "TXD" -> "PIN_A4", "RXD" -> "PIN_B4")),

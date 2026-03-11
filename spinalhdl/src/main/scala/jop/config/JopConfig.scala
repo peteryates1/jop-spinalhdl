@@ -390,7 +390,7 @@ object JopConfig {
     assembly = SystemAssembly.max1000,
     systems = Seq(JopSystem(
       name = "main",
-      memory = "IS42S16160G",
+      memory = "W9864G6JT",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(memConfig = smallFpgaMemConfig),
