@@ -31,6 +31,7 @@ Reports: `fpga/qmtech-xc7a100t-wukong/vivado/build/util_sweep/*/util.rpt`
 | All 4 CUs + DSP imul | 24,922 | 14,946 | 12.5 | 15 | 39.3% |
 | + Ethernet GMII | 18,305 | 13,648 | 13.5 | 0 | 28.9% |
 | + SD Native | 29,556 | 17,872 | 12.5 | 0 | 46.6% |
+| + SD SPI | 17,759 | 13,131 | 12.5 | 0 | 28.0% |
 | + Ethernet + SD | 30,117 | 18,457 | 13.5 | 0 | 47.5% |
 | **Full** (all CUs + Eth + SD) | **37,275** | **19,988** | **13.5** | **15** | **58.8%** |
 
@@ -49,13 +50,15 @@ Delta measured from the "No ICU" baseline (17,336 LUTs).
 | **All 4 CUs + DSP** | +7,586 | +2,085 | +15 | Combined (less than sum — shared operand stack) |
 | **Ethernet GMII** | +969 | +787 | 0 | RTL8211EG PHY interface + MDIO + CDC |
 | **SD Native** | +12,220 | +5,011 | 0 | SpinalHDL SdcardCtrl (4-bit, cmd/data FSMs) |
+| **SD SPI** | +423 | +270 | 0 | Simple SPI shift register + clock divider |
 
 ### Observations
 
 1. **SD Native dominates**: At 12,220 LUTs, SpinalHDL's SD native controller
    costs more than all four compute units combined (7,586 LUTs). This is the
    primary obstacle for SMP builds on XC7A100T — it alone consumes 19% of the
-   device.
+   device. SD SPI (423 LUTs) is **29x cheaper** — a viable alternative when
+   throughput is not critical.
 
 2. **DCU is the most expensive CU**: Double-precision IEEE 754 at 4,961 LUTs
    is ~3.5x the cost of FCU (single-precision). The 52-bit mantissa multiplier

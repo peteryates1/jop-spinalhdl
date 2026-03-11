@@ -13,7 +13,7 @@ IP_ROOT="$REPO_ROOT/fpga/qmtech-xc7a100t-wukong/vivado/ip"
 XDC="$REPO_ROOT/fpga/qmtech-xc7a100t-wukong/vivado/constraints/wukong_ddr3_base.xdc"
 export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 
-LABELS="baseline icu_full icu_dsp fcu lcu dcu all_cu eth sd eth_sd full"
+LABELS="baseline icu_full icu_dsp fcu lcu dcu all_cu eth sd sd_spi eth_sd full"
 
 mkdir -p "$BUILD_DIR"
 

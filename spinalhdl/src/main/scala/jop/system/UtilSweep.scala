@@ -8,7 +8,7 @@ import jop.config.Implementation._
  * All variants use the same entity name (JopDdr3WukongTop) — copy/rename between runs.
  *
  * Usage: sbt "runMain jop.system.UtilSweep <label>"
- *   Labels: baseline, icu_full, icu_dsp, fcu, lcu, dcu, all_cu, eth, sd, eth_sd, full
+ *   Labels: baseline, icu_full, icu_dsp, fcu, lcu, dcu, all_cu, eth, sd, sd_spi, eth_sd, full
  */
 object UtilSweep extends App {
 
@@ -59,6 +59,9 @@ object UtilSweep extends App {
 
     "sd" -> withIo(IoConfig(hasSdNative = true),
       Seq(DeviceDriver.UartCh340, DeviceDriver.SdNative)),
+
+    "sd_spi" -> withIo(IoConfig(hasSdSpi = true),
+      Seq(DeviceDriver.UartCh340, DeviceDriver.SdSpi)),
 
     "eth_sd" -> withIo(IoConfig.wukongFull,
       Seq(DeviceDriver.UartCh340, DeviceDriver.EthGmii, DeviceDriver.SdNative)),
