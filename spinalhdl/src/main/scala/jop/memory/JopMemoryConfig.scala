@@ -30,6 +30,9 @@ case class JopMemoryConfig(
   acacheMaxIndexBits: Int = 24,          // max array index width (full address space)
   ocacheInvalOnStidx: Boolean = true,   // Invalidate O$ on stidx (method scope change).
                                          // True = WCET-safe (conservative). False = better hit rate.
+  acacheInvalOnStidx: Boolean = true,   // Invalidate A$ on stidx (method scope change).
+                                         // True = WCET-safe (conservative). False = better hit rate.
+                                         // Array data is heap-allocated; stidx doesn't affect it.
   stackRegionWordsPerCore: Int = 0      // per-core stack spill region size (0 = legacy)
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")

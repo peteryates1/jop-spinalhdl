@@ -134,96 +134,104 @@ cache's `getfield`/`putfield` path.
 
 ### 5. Formal Verification
 
-Five BMC properties verified with Z3:
+Ten BMC properties verified with Z3:
 
 1. Hit implies valid + tag match for some line
 2. FIFO pointer advances by exactly 1 per miss
 3. Snoop invalidates matching line
-4. `wrIal` with `snoopDuringFill` does not update cache
-5. Fill index auto-increments on `wrIal`
+4. Snoop preserves non-matching lines
+5. `wrIal` with `snoopDuringFill` does not update cache
+6. Fill index auto-increments on `wrIal`
+7. Tag+index uniqueness: at most one entry per (handle, tagIdx) pair
+8. Fill sets valid bit for filled line
+9. No write-allocate: `chkIas` does not set `incNxtReg`
+10. Invalidation clears all valid bits and resets nxt
 
 ## Potential Issues
 
 ### 1. lineEnc Uses hitTagVec Instead of hitVec
 
-`ArrayCache.scala:123-134` — The line encoder computes the selected line from
-`hitTagVec` (handle-only match, ignoring upper index bits) rather than `hitVec`
-(full match including upper index). If two cache lines hold different regions of
-the same array (same handle, different `tagIdx`), `lineEnc` will OR their line
-numbers together, producing a corrupted line index.
+`ArrayCache.scala:123-134` — The line encoder originally computed the selected
+line from `hitTagVec` (handle-only match, ignoring upper index bits) rather than
+`hitVec` (full match including upper index). If two cache lines held different
+regions of the same array (same handle, different `tagIdx`), `lineEnc` would OR
+their line numbers together, producing a corrupted line index.
 
-This is ported from the VHDL behavior and may be safe if at most one line per
-handle is ever valid, but the two-part tag design explicitly intends to support
-multiple regions per array. With 16 entries and sequential array traversal, it's
-plausible that `array[0..3]` and `array[4..7]` both reside in the cache with
-the same handle.
+The `lineEnc` result is used for the **data RAM read address** on a hit, so a
+corrupted line index would return wrong data.
 
-The `lineEnc` result is used for the **data RAM read address** on a hit
-(`ArrayCache.scala:198`), so a corrupted line index would return wrong data.
-
-**Recommendation**: Either use `hitVec` for the line encoder, or add a formal
-property verifying that at most one line per handle is valid at any time.
+**Status**: RESOLVED — `lineEnc` now uses `hitVec` (full handle + index match)
+instead of `hitTagVec`. Additionally, `hitTagReg` (which gates iastore
+write-through) now uses `hitVec.orR` instead of `hitTagVec.orR`. Formal
+property added: "tag+index uniqueness" verifies at most one entry per
+(handle, tagIdx) pair under protocol constraints (BMC 10 steps).
 
 ### 2. chkIal Not Gated by Controller State
 
-`BmbMemoryController.scala:425` wires `chkIal` as:
+`BmbMemoryController.scala` originally wired `chkIal` as:
 
 ```scala
 ac.io.chkIal := io.memIn.iaload  // Combinational check in IDLE
 ```
 
-This fires every cycle that `iaload` is asserted on the memory interface,
+This fired every cycle that `iaload` was asserted on the memory interface,
 regardless of the controller's state. The `chkIal` path resets `idxReg` to 0
-and latches `lineReg`/`incNxtReg` (`ArrayCache.scala:170-178`). If `iaload`
-could pulse while the controller is in `AC_FILL_WAIT` (e.g., the pipeline
-re-issues), it would corrupt the in-flight fill state.
+and latches `lineReg`/`incNxtReg`. If `iaload` could pulse while the controller
+is in `AC_FILL_WAIT` (e.g., the pipeline re-issues), it would corrupt the
+in-flight fill state.
 
-**Recommendation**: Gate with `state === State.IDLE`:
+**Status**: RESOLVED — `chkIal` now gated by `state === State.IDLE`:
 
 ```scala
-ac.io.chkIal := io.memIn.iaload && state === State.IDLE
+ac.io.chkIal := io.memIn.iaload && (state === State.IDLE)
 ```
 
 ### 3. stidx Invalidates the Entire Array Cache
 
-`BmbMemoryController.scala:429`:
+`BmbMemoryController.scala` originally wired:
 
 ```scala
 ac.io.inval := io.memIn.stidx || io.memIn.cinval
 ```
 
-Every `stidx` (stack index change, i.e., method call/return) flushes the entire
+Every `stidx` (stack index change, i.e., method call/return) flushed the entire
 array cache. Stack index changes don't affect heap-allocated array data — this
-is likely inherited from VHDL behavior where `stidx` conservatively invalidates
-all caches.
+was inherited from VHDL behavior where `stidx` conservatively invalidates all
+caches.
 
 This could significantly reduce hit rates in code with frequent method calls,
 especially in the benchmarks the papers identified as array-dominated (Matrix,
 crypto, jPapaBench, UdpIp).
 
-**Recommendation**: Remove `stidx` from the array cache invalidation trigger.
-The object cache may legitimately need `stidx` invalidation (scope-based
-analysis resets on method boundaries), but the array cache's handle+index tags
-remain valid across method calls. Keep `cinval` for explicit cache control.
+**Status**: RESOLVED — stidx invalidation is now configurable via
+`JopMemoryConfig.acacheInvalOnStidx` (default `true` for backward compat /
+WCET safety). Setting `false` disables A$ flush on method invoke/return,
+improving hit rates for array-heavy code. Array data is heap-allocated and
+handle+index tags remain valid across method calls. `cinval` still provides
+explicit cache control.
 
 ### 4. Formal Verification Gaps
 
-The 5 existing tests cover core invariants but do not verify:
+**Status**: RESOLVED — expanded from 5 tests to 10 tests:
 
-- **Multi-line same-handle correctness**: What happens when two lines cache
-  different regions of the same array (the `lineEnc` concern from issue 1)
-- **Data integrity**: That a filled element reads back correctly on a subsequent
-  hit (end-to-end data path)
-- **iastore write-through correctness**: That a write-through updates the
-  correct RAM location and is readable on the next iaload hit
+1. Hit implies valid + tag match for some line — *existing*
+2. FIFO pointer advances by exactly 1 per miss — *existing*
+3. Snoop invalidates matching line — *existing*
+4. **Snoop preserves non-matching lines** — non-matching entries unchanged
+5. `wrIal` with `snoopDuringFill` does not update cache — *existing*
+6. Fill index auto-increments on `wrIal` — *existing*
+7. **Tag+index uniqueness**: at most one entry per (handle, tagIdx) pair
+   (protocol-constrained BMC, 10 steps)
+8. **Fill sets valid bit** for filled line
+9. **No write-allocate**: `chkIas` does not set `incNxtReg`
+10. **Invalidation completeness**: after `inval`, all valid bits cleared and
+    nxt reset
 
-**Recommendation**: Add formal properties for:
-- `hitVec` has at most one bit set (or `lineEnc` is only used when exactly one
-  `hitTagVec` bit is set)
-- After a fill completes and a subsequent `chkIal` hits, `dout` matches the
-  filled data
-- After `wrIas`, a subsequent `chkIal` to the same address returns the written
-  value
+Remaining unverified (future work):
+- **Data integrity**: That a filled element reads back correctly on hit
+  (requires multi-cycle protocol tracking with data path)
+- **iastore write-through**: That `wrIas` data is readable on next `chkIal`
+  (requires data path verification)
 
 ### 5. No WCET Tool Integration
 
@@ -248,11 +256,18 @@ implementation:
 - Two VHDL bug fixes
 - Formal verification of core invariants
 
-The main concerns are:
+All four identified issues have been addressed:
 
-1. **`lineEnc` using `hitTagVec`** — potential data corruption with multiple
-   regions of the same array cached simultaneously
-2. **`chkIal` not gated by state** — potential fill corruption on re-issue
-3. **`stidx` flushing the array cache** — unnecessary performance loss
-4. **Formal verification gaps** — multi-line same-handle and data integrity
-   not yet covered
+1. **lineEnc / hitTagVec** — `lineEnc` now uses `hitVec` (full match). Formal
+   tag+index uniqueness property added and verified (BMC 10 steps).
+2. **chkIal gated by state** — now gated by `state === State.IDLE`
+3. **stidx invalidation** — now configurable via `acacheInvalOnStidx` (default
+   true for WCET safety)
+4. **Formal verification** — expanded from 5 to 10 tests covering tag+index
+   uniqueness, fill correctness, snoop preservation, no write-allocate, and
+   invalidation completeness
+
+Remaining concern:
+
+- **putfield chkIas timing** — uses `lineEnc` from combinational hit in
+  IAST_WAIT. Correct but depends on handle override being the last assignment.

@@ -422,11 +422,11 @@ case class BmbMemoryController(
     // This is correct for both IDLE iaload and IAST_WAIT iastore
     ac.io.handle := io.bout(config.addressWidth - 1 downto 0).asUInt
     ac.io.index := aoutAddr.resize(config.acacheMaxIndexBits)
-    ac.io.chkIal := io.memIn.iaload  // Combinational check in IDLE
+    ac.io.chkIal := io.memIn.iaload && (state === State.IDLE)  // Gated by IDLE for defense in depth
     ac.io.chkIas := False            // Driven from IAST_WAIT
     ac.io.ialVal := io.bmb.rsp.fragment.data  // Memory read data for fill
     ac.io.iasVal := handleWriteData            // Value being written for iastore
-    ac.io.inval := io.memIn.stidx || io.memIn.cinval
+    ac.io.inval := (if (config.acacheInvalOnStidx) io.memIn.stidx else False) || io.memIn.cinval
     ac.io.wrIal := False   // Driven from AC_FILL_WAIT
     ac.io.wrIas := False   // Driven from HANDLE_DATA_WAIT
 
