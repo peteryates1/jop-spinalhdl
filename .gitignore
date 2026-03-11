@@ -87,6 +87,8 @@ c5_pin_model_dump.txt
 **/vivado/build/
 **/vivado/ip/*/
 !**/vivado/ip/mig.prj
+clockInfo.txt
+tight_setup_hold_pins.txt
 
 # Questa/ModelSim
 verification/questa/
