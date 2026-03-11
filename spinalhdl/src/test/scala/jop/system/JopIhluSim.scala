@@ -12,8 +12,8 @@ import java.io.PrintWriter
 /**
  * IHLU SMP Test Harness: N JOP cores sharing BmbOnChipRam via BmbArbiter.
  *
- * Same as JopSmpTestHarness but with useIhlu=true, so the IHLU replaces
- * CmpSync for per-object locking.
+ * Same as JopSmpTestHarness but with useCmpSync=false (default), so the
+ * IHLU replaces CmpSync for per-object locking.
  */
 case class JopIhluTestHarness(
   cpuCnt: Int,
@@ -59,7 +59,7 @@ case class JopIhluTestHarness(
     cpuCnt = cpuCnt,
     baseConfig = JopCoreConfig(
       memConfig = JopMemoryConfig(mainMemSize = memSize),
-      useIhlu = true
+      useCmpSync = false
     ),
     romInit = Some(romInit),
     ramInit = Some(ramInit),

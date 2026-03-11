@@ -248,7 +248,7 @@ case class JopCluster(
     cores(0).io.syncIn.s_out  := False
     cores(0).io.syncIn.status := False
     None
-  } else if (!baseConfig.useIhlu) {
+  } else if (baseConfig.useCmpSync) {
     // SMP with global lock (CmpSync)
     val sync = CmpSync(cpuCnt)
     for (i <- 0 until cpuCnt) {
@@ -261,7 +261,7 @@ case class JopCluster(
     None
   }
 
-  val ihlu: Option[Ihlu] = if (cpuCnt >= 2 && baseConfig.useIhlu) {
+  val ihlu: Option[Ihlu] = if (cpuCnt >= 2 && !baseConfig.useCmpSync) {
     val lock = Ihlu(IhluConfig(cpuCnt = cpuCnt))
     for (i <- 0 until cpuCnt) {
       lock.io.syncIn(i) := cores(i).io.syncOut

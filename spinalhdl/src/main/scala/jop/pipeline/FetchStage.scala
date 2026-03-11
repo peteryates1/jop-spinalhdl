@@ -130,7 +130,11 @@ case class FetchStage(
       val rom = Mem(Bits(config.romWidth bits), config.romDepth)
       romInit match {
         case Some(data) =>
-          rom.init(data.map(v => B(v, config.romWidth bits)))
+          // Pad to romDepth if data is shorter (e.g., 2K assembler output into 4K ROM)
+          val padded = if (data.length < config.romDepth)
+            data ++ Seq.fill(config.romDepth - data.length)(BigInt(0))
+          else data
+          rom.init(padded.map(v => B(v, config.romWidth bits)))
         case None =>
           rom.init(initDefaultRom())
       }

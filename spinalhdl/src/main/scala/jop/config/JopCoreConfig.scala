@@ -52,7 +52,7 @@ case class JopCoreConfig(
   cpuCnt:       Int              = 1,
   ioConfig:     IoConfig         = IoConfig(),
   clkFreq:      HertzNumber      = HertzNumber(100000000),
-  useIhlu:      Boolean          = false,  // Use IHLU (per-object lock) instead of CmpSync (global lock)
+  useCmpSync:   Boolean          = false,  // Use CmpSync (global lock) instead of IHLU (per-object lock)
   useStackCache: Boolean         = false,  // Use 3-bank rotating stack cache with DMA spill/fill
   spillBaseAddrOverride: Option[Int] = None, // Override spillBaseAddr (e.g., 0 for dedicated spill BRAM)
   useDspMul:    Boolean          = false,  // Use 1-cycle DSP multiplier in ALU (bypasses CU for imul)
