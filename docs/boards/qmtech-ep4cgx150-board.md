@@ -224,7 +224,17 @@ FPGA bitstream and the JOP application binary:
 - See `fpga/scripts/make_flash_image.py` for image creation
 
 **Serial boot**: Default mode. FPGA loads via JTAG, then JOP application is
-downloaded over UART at 1 Mbaud using `fpga/scripts/download.py`.
+downloaded over UART at 2 Mbaud using `fpga/scripts/download.py`.
+
+The download protocol streams all 32-bit words (MSB-first) without per-byte
+echo, then verifies an XOR checksum:
+
+1. Host streams all words as raw bytes in 4 KB chunks (~190 KB/s at 2 Mbaud)
+2. FPGA computes running XOR checksum as each word is stored to SDRAM
+3. FPGA sends 4-byte XOR checksum back (MSB-first)
+4. Host verifies checksum — sends ACK (0x00) on match, NACK (0xFF) on mismatch
+5. On NACK, FPGA resets and host retries (up to 3 attempts)
+6. On ACK, FPGA boots the downloaded application
 
 ## FPGA Build
 

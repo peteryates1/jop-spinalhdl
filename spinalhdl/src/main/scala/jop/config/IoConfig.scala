@@ -34,7 +34,7 @@ case class IoConfig(
   hasConfigFlash:  Boolean = false,
 
   // UART
-  uartBaudRate: Int = 1000000,
+  uartBaudRate: Int = 2000000,
 
   // MDIO
   mdioClkDivider: Int = 40,

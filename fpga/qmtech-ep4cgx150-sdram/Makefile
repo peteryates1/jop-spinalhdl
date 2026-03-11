@@ -58,7 +58,7 @@ BLASTER_TYPE ?= USB-Blaster
 
 # Serial port for UART
 SERIAL_PORT ?= /dev/ttyUSB0
-BAUD_RATE = 1000000
+BAUD_RATE = 2000000
 
 # JOP application file
 JOP_FILE ?= $(PROJECT_ROOT)/java/apps/Smallest/HelloWorld.jop

@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Serial .jop download tool for JOP FPGA boards.
 
-Implements the JOP serial download protocol (matching down_posix.c):
+Streaming protocol with XOR checksum + retry:
   1. Parse .jop file (decimal text, skip // comments)
   2. First word = total length; verify against parsed count
-  3. Send each 32-bit word as 4 bytes MSB-first, read 4-byte echo, verify
-  4. Optionally monitor UART output after download (-e flag)
+  3. Stream all 32-bit words as 4 bytes MSB-first (no per-byte echo)
+  4. Read 4-byte XOR checksum from FPGA, verify against host-computed
+  5. Send ACK (0x00) on match, NACK (0xFF) on mismatch; NACK triggers retry
+  6. Optionally monitor UART output after download (-e flag)
 
 Usage: python3 download.py [-e] <jop_file> [serial_port] [baud_rate]
-  Defaults: auto-detect FPGA UART port, 1000000 baud
+  Defaults: auto-detect FPGA UART port, 2000000 baud
   -e: Continue monitoring UART output after download
 
 Auto-detection uses usb_serial_map (if available) to find FPGA UART ports,
@@ -19,16 +21,17 @@ and CP2102N UART bridges.
 import os
 import sys
 import struct
+import time
 import subprocess
 import serial
 
 
-def find_uart_port():
-    """Auto-detect FPGA UART port using usb_serial_map.
+MAX_RETRIES = 3
+CHUNK_SIZE = 4096  # bytes per write() call for efficient buffering
 
-    Calls usb_serial_map --if01-only to list UART ports (excluding JTAG
-    interfaces on FT2232 chips). Returns the first matching port, or None.
-    """
+
+def find_uart_port():
+    """Auto-detect FPGA UART port using usb_serial_map."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     map_script = os.path.join(script_dir, "usb_serial_map")
     if not os.path.isfile(map_script):
@@ -95,21 +98,14 @@ def parse_jop_file(filepath):
     return words
 
 
-def write32_check(ser, word):
-    """Send a 32-bit word as 4 bytes MSB-first, read 4-byte echo, verify."""
-    data = struct.pack(">I", word & 0xFFFFFFFF)
-    ser.write(data)
-    echo = ser.read(4)
-    if len(echo) != 4:
-        raise TimeoutError(
-            f"Timeout: sent word 0x{word:08x}, got {len(echo)} echo bytes"
-        )
-    if echo != data:
-        for i in range(4):
-            if i < len(echo) and echo[i] != data[i]:
-                raise ValueError(
-                    f"Echo mismatch byte {i}: sent 0x{data[i]:02x}, got 0x{echo[i]:02x}"
-                )
+def pack_words(words):
+    """Pack word list into bytes (MSB-first) and compute XOR checksum."""
+    checksum = 0
+    data = bytearray(len(words) * 4)
+    for i, word in enumerate(words):
+        struct.pack_into(">I", data, i * 4, word)
+        checksum ^= word
+    return bytes(data), checksum & 0xFFFFFFFF
 
 
 def print_progress(done, total, width=50):
@@ -119,6 +115,45 @@ def print_progress(done, total, width=50):
     bar = "#" * filled + " " * (width - filled)
     sys.stderr.write(f"\r [{bar}] {done}/{total}")
     sys.stderr.flush()
+
+
+def stream_download(ser, data, total_words):
+    """Stream packed data to serial port in chunks with progress."""
+    total_bytes = len(data)
+    sent = 0
+    while sent < total_bytes:
+        chunk_end = min(sent + CHUNK_SIZE, total_bytes)
+        ser.write(data[sent:chunk_end])
+        sent = chunk_end
+        words_sent = sent // 4
+        if words_sent % 128 == 0 or sent == total_bytes:
+            print_progress(words_sent, total_words)
+    print_progress(total_words, total_words)
+    sys.stderr.write("\n")
+    # Wait for all data to be transmitted
+    ser.flush()
+
+
+def verify_checksum(ser, expected_checksum):
+    """Read 4-byte XOR checksum from FPGA, compare, send ACK/NACK."""
+    # Give FPGA time to process the last bytes and compute checksum
+    ser.timeout = 10  # generous timeout for checksum response
+    cksum_bytes = ser.read(4)
+    if len(cksum_bytes) != 4:
+        print(f"  Checksum timeout: got {len(cksum_bytes)} bytes", file=sys.stderr)
+        return False
+
+    fpga_checksum = struct.unpack(">I", cksum_bytes)[0]
+    if fpga_checksum == expected_checksum:
+        ser.write(b'\x00')  # ACK
+        ser.flush()
+        return True
+    else:
+        print(f"  Checksum mismatch: expected 0x{expected_checksum:08x}, "
+              f"got 0x{fpga_checksum:08x}", file=sys.stderr)
+        ser.write(b'\xff')  # NACK
+        ser.flush()
+        return False
 
 
 def main():
@@ -136,7 +171,7 @@ def main():
         sys.exit(1)
 
     jop_file = args[0]
-    baud = int(args[2]) if len(args) > 2 else 1000000
+    baud = int(args[2]) if len(args) > 2 else 2000000
 
     if len(args) > 1:
         port = args[1]
@@ -160,26 +195,45 @@ def main():
         )
 
     bc_words = words[1] - 1 if len(words) > 1 else 0
-    print(f"Parsed {jop_file}: {len(words)} words ({len(words) * 4 // 1024} KB)")
-    print(f"  * {bc_words} words of Java bytecode ({bc_words // 256} KB)")
-    print(f"  * {len(words)} words external RAM ({len(words) // 256} KB)")
+    total_bytes = len(words) * 4
+    print(f"Parsed {jop_file}: {len(words)} words ({total_bytes // 1024} KB)")
+    print(f"  * {bc_words} words of Java bytecode ({bc_words * 4 // 1024} KB)")
+    print(f"  * {len(words)} words external RAM ({total_bytes // 1024} KB)")
+
+    data, checksum = pack_words(words)
 
     ser = serial.Serial(port, baud, timeout=2)
     ser.reset_input_buffer()
     ser.reset_output_buffer()
     print(f"Opened {ser.port} at {ser.baudrate} baud")
-    print("Transmitting data via serial...")
 
-    total = len(words)
-    for i, word in enumerate(words):
-        if i % 128 == 0:
-            print_progress(i, total)
-        write32_check(ser, word)
-    print_progress(total, total)
-    sys.stderr.write("\n")
-    print("Done.")
+    for attempt in range(1, MAX_RETRIES + 1):
+        if attempt > 1:
+            print(f"Retry {attempt}/{MAX_RETRIES}...")
+            ser.reset_input_buffer()
+            time.sleep(0.1)
+
+        t0 = time.monotonic()
+        print(f"Streaming {total_bytes} bytes...")
+        stream_download(ser, data, len(words))
+        elapsed = time.monotonic() - t0
+        rate = total_bytes / elapsed / 1024
+        print(f"Sent in {elapsed:.1f}s ({rate:.0f} KB/s). Verifying checksum...")
+
+        if verify_checksum(ser, checksum):
+            print(f"Download OK (checksum 0x{checksum:08x})")
+            break
+        else:
+            if attempt == MAX_RETRIES:
+                print(f"Download failed after {MAX_RETRIES} attempts", file=sys.stderr)
+                ser.close()
+                sys.exit(1)
+    else:
+        ser.close()
+        sys.exit(1)
 
     if echo_mode:
+        ser.timeout = None  # blocking reads for UART monitoring
         print("Monitoring UART output (Ctrl+C to exit)...")
         try:
             while True:

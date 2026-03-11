@@ -342,7 +342,7 @@ I/O device presence and parameters. Defined in `jop/system/IoConfig.scala`.
 | `hasVgaDma` | Boolean | false | Instantiate BmbVgaDma (VGA framebuffer DMA) |
 | `hasVgaText` | Boolean | false | Instantiate BmbVgaText (VGA text mode) |
 | `hasConfigFlash` | Boolean | false | Instantiate BmbCfgFlash (W25Q128 SPI flash boot) |
-| `uartBaudRate` | Int | 1000000 | UART baud rate in Hz (1 Mbaud default) |
+| `uartBaudRate` | Int | 2000000 | UART baud rate in Hz (2 Mbaud default) |
 | `mdioClkDivider` | Int | 40 | MDIO clock divider |
 | `sdSpiClkDivInit` | Int | 199 | SD SPI init clock divider (~200 kHz @ 80MHz) |
 | `sdNativeClkDivInit` | Int | 99 | SD Native init clock divider (~400 kHz @ 80MHz) |

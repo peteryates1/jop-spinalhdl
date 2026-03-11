@@ -373,9 +373,13 @@ cpu0_load:
 //
 //
 //	download n words in extern ram (high byte first!)
+//	Variable b accumulates XOR checksum of all words.
+//	After download, checksum is sent back (4 bytes MSB-first).
 //
 			ldi	0
 			stm	heap		// word counter (ram address)
+			ldi	0
+			stm	b			// XOR checksum = 0
 
 #ifdef FLASH
 //
@@ -752,13 +756,7 @@ cf_poll_byte:
 			wait
 			wait
 			ldmrd
-
-			ldi	io_uart			// write byte to uart
-			stmwa
-			dup					// echo for down.c, 'handshake'
-			stmwd		
-			wait
-			wait
+// No echo — host streams without waiting. Checksum sent after all words.
 // ************** end change for load from serial line *********************
 #endif
 #endif
@@ -786,6 +784,14 @@ cf_poll_byte:
 			wait
 			wait
 
+#ifndef FLASH
+// Accumulate XOR checksum: b = b ^ c (serial download only)
+			ldm	b
+			ldm	c
+			xor
+			stm	b
+#endif
+
 //****
 // could be changed to load mp from ram and not from the first word!!!
 //	cleaner
@@ -812,7 +818,7 @@ not_first:
 #ifdef FLASH
 			bz	cf_done
 #else
-			bz	cpux_boot
+			bz	ser_checksum
 #endif
 			nop
 			nop
@@ -820,6 +826,162 @@ not_first:
 			jmp	xram_loop
 			nop
 			nop
+
+#ifndef FLASH
+//
+// Serial download complete — send XOR checksum (4 bytes MSB-first),
+// then wait for ACK (0x00) or NACK (0xFF) from host.
+// On NACK, reset and retry the entire download.
+//
+ser_checksum:
+// Send checksum byte 3 (MSB)
+			ldm	b
+			ldi	24
+			shr				// b >> 24
+			ldi	255
+			and				// mask to byte
+ser_ck_tx3:
+			ldi	io_status
+			stmra
+			ldi	ua_tdre
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bz	ser_ck_tx3
+			nop
+			nop
+			ldi	io_uart
+			stmwa
+			ldm	b
+			ldi	24
+			shr
+			ldi	255
+			and
+			stmwd
+			wait
+			wait
+
+// Send checksum byte 2
+			ldm	b
+			ldi	16
+			shr
+			ldi	255
+			and
+ser_ck_tx2:
+			ldi	io_status
+			stmra
+			ldi	ua_tdre
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bz	ser_ck_tx2
+			nop
+			nop
+			ldi	io_uart
+			stmwa
+			ldm	b
+			ldi	16
+			shr
+			ldi	255
+			and
+			stmwd
+			wait
+			wait
+
+// Send checksum byte 1
+			ldm	b
+			ldi	8
+			shr
+			ldi	255
+			and
+ser_ck_tx1:
+			ldi	io_status
+			stmra
+			ldi	ua_tdre
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bz	ser_ck_tx1
+			nop
+			nop
+			ldi	io_uart
+			stmwa
+			ldm	b
+			ldi	8
+			shr
+			ldi	255
+			and
+			stmwd
+			wait
+			wait
+
+// Send checksum byte 0 (LSB)
+ser_ck_tx0:
+			ldi	io_status
+			stmra
+			ldi	ua_tdre
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bz	ser_ck_tx0
+			nop
+			nop
+			ldi	io_uart
+			stmwa
+			ldm	b
+			ldi	255
+			and
+			stmwd
+			wait
+			wait
+
+// Wait for ACK/NACK byte from host
+ser_wait_ack:
+			ldi	io_status
+			stmra
+			ldi	ua_rdrf
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bz	ser_wait_ack
+			nop
+			nop
+
+			ldi	io_uart
+			stmra
+			wait
+			wait
+			ldmrd			// ACK byte on stack
+
+			nop
+			bnz	ser_retry	// non-zero = NACK, retry
+			nop
+			nop
+			pop
+			jmp	cpux_boot	// ACK (0x00) = success, boot
+			nop
+			nop
+
+ser_retry:
+			pop
+			ldi	0
+			stm	heap		// reset word counter
+			ldi	0
+			stm	b			// reset checksum
+			jmp	xram_loop	// retry download
+			nop
+			nop
+#endif
 
 #ifdef FLASH
 cf_done:
