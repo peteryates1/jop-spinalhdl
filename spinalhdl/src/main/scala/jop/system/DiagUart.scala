@@ -33,13 +33,13 @@ import spinal.core._
  * State decode for as (CacheToMigAdapter):
  *   0=IDLE, 1=ISSUE_WRITE, 2=ISSUE_READ, 3=WAIT_READ
  */
-case class DiagUart(clockFreqHz: Int = 100000000, baudRate: Int = 1000000) extends Component {
+case class DiagUart(clockFreqHz: Int = 100000000, baudRate: Int = 1000000, pcWidth: Int = 12, jpcWidth: Int = 12) extends Component {
 
   val io = new Bundle {
     val trigger      = in Bool()
     val memState     = in UInt(5 bits)
-    val pc           = in UInt(11 bits)
-    val jpc          = in UInt(12 bits)
+    val pc           = in UInt(pcWidth bits)
+    val jpc          = in UInt(jpcWidth bits)
     val cacheState   = in UInt(3 bits)
     val adapterState = in UInt(3 bits)
     val txd          = out Bool()
@@ -64,7 +64,7 @@ case class DiagUart(clockFreqHz: Int = 100000000, baudRate: Int = 1000000) exten
   // ========================================================================
 
   val latchMs  = Reg(UInt(5 bits)) init(0)
-  val latchPc  = Reg(UInt(11 bits)) init(0)
+  val latchPc  = Reg(UInt(pcWidth bits)) init(0)
   val latchJpc = Reg(UInt(12 bits)) init(0)
   val latchCs  = Reg(UInt(3 bits)) init(0)
   val latchAs  = Reg(UInt(3 bits)) init(0)

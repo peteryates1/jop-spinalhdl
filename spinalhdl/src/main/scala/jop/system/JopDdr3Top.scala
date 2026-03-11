@@ -572,7 +572,7 @@ case class JopDdr3Top(
   val adapterStateSync = BufferCC(mainArea.adapter.io.debugState, init = U(0, 3 bits))
 
   // Pipeline debug: pc and jpc — cross-domain sync from MIG ui_clk
-  val pcSync = BufferCC(mainArea.cluster.io.pc(0), init = U(0, 11 bits))
+  val pcSync = BufferCC(mainArea.cluster.io.pc(0), init = U(0, 12 bits))
   val jpcSync = BufferCC(mainArea.cluster.io.jpc(0), init = U(0, 12 bits))
 
   // Hang detector: count cycles while memBusy stays True.
@@ -645,7 +645,7 @@ case class JopDdr3Top(
   // Snapshot debug signals when wait period ends (before sending debug chars)
   val bbTxSnap    = Reg(Bits(8 bits)) init(0)
   val bbRxSnap    = Reg(Bits(8 bits)) init(0)
-  val bbPcSnap    = Reg(UInt(11 bits)) init(0)
+  val bbPcSnap    = Reg(UInt(12 bits)) init(0)
   val jedecSnap   = Reg(Bits(24 bits)) init(0)
   val firstWordSnap = Reg(Bits(32 bits)) init(0)
 

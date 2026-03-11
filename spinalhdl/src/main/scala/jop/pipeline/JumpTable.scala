@@ -62,11 +62,11 @@ object JumpTableInitData {
  *
  * Configures the jump table parameters for bytecode-to-microcode address translation.
  *
- * @param pcWidth  Address bits of microcode ROM (default: 11 bits = 2K instructions)
+ * @param pcWidth  Address bits of microcode ROM (default: 12 bits = 4K instructions)
  * @param initData Jump table init data (default: simulation microcode)
  */
 case class JumpTableConfig(
-  pcWidth:  Int              = 11,
+  pcWidth:  Int              = 12,
   initData: JumpTableInitData = JumpTableInitData.simulation
 ) {
   require(pcWidth > 0, "PC width must be positive")

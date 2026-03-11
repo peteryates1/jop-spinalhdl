@@ -641,7 +641,7 @@ case class JopTop(
     if (!isBram) {
       val memStateSync = BufferCC(mainArea.cluster.io.debugMemState, init = U(0, 5 bits))
       val memBusySync = BufferCC(mainArea.cluster.io.memBusy(0), init = False)
-      val pcSync = BufferCC(mainArea.cluster.io.pc(0), init = U(0, 11 bits))
+      val pcSync = BufferCC(mainArea.cluster.io.pc(0), init = U(0, sys.coreConfigs.head.pcWidth bits))
       val jpcSync = BufferCC(mainArea.cluster.io.jpc(0), init = U(0, 12 bits))
 
       val hangDet = HangDetector(

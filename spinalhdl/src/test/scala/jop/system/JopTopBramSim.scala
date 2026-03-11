@@ -11,7 +11,7 @@ import java.io.PrintWriter
  *
  * Uses JopTop(simulation=true) with BRAM memory, verifying that the unified
  * top-level works end-to-end. UART output is decoded from the bit-level
- * io.ser_txd signal (1 Mbaud at 100 MHz = 100 cycles/bit).
+ * io.ser_txd signal (2 Mbaud at 100 MHz = 50 cycles/bit).
  *
  * Usage:
  *   sbt "Test / runMain jop.system.JopTopBramSim"
@@ -68,8 +68,8 @@ object JopTopBramSim extends App {
 
       dut.clockDomain.waitSampling(5)
 
-      // UART bit decoder: 1 Mbaud at 100 MHz = 100 cycles/bit
-      val cyclesPerBit = 100
+      // UART bit decoder: 2 Mbaud at 100 MHz = 50 cycles/bit
+      val cyclesPerBit = 50
 
       fork {
         while (true) {

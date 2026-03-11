@@ -186,6 +186,7 @@ exc_np		=	2
 exc_ab		=	3
 exc_mon     =   5
         
+io_us_cnt	=	-127
 io_lock = -123
 io_cpu_id = -122
 io_signal = -121
@@ -198,6 +199,12 @@ usb_data		=	-111
 
 ua_rdrf		= 	2
 ua_tdre		= 	1
+
+// Serial download handshake bytes
+rdy_byte	=	170		// 0xAA: FPGA sends "memory ready"
+rdy_ack		=	85		// 0x55: Host acknowledges, start download
+// Handshake timeout: ~500 ms between ready byte resends
+rdy_timeout_us	=	500000
 
 // BmbDiv I/O constants removed — idiv/irem now handled by IntegerComputeUnit via sthw
 
@@ -380,6 +387,84 @@ cpu0_load:
 			stm	heap		// word counter (ram address)
 			ldi	0
 			stm	b			// XOR checksum = 0
+
+#ifdef SERIAL
+//
+// Ready handshake (serial download only).
+//
+// After FPGA programming, DDR3 MIG calibration holds JOP in reset
+// for several seconds. The host can't know when JOP is ready.
+// Handshake: FPGA sends 0xAA periodically, host waits for 0xAA
+// then sends 0x55. Both sides retry with timeouts.
+//
+// TX FIFO is guaranteed empty at boot, so no TX-ready check needed.
+// Timeout counter on stack: ~78 poll iterations before resend.
+// Stack discipline: rdy_send enters/exits with empty stack.
+//
+
+rdy_send:
+			// Send ready byte (0xAA) — TX FIFO empty at boot/retry
+			ldi	rdy_byte
+			ldi	io_uart
+			stmwa
+			stmwd
+			wait
+			wait
+
+			// Timeout counter on stack (~78 poll iterations before resend)
+			ldi	78
+
+			// Poll UART RX for host ACK (0x55)
+rdy_poll:
+			ldi	io_status
+			stmra
+			ldi	ua_rdrf
+			wait
+			wait
+			ldmrd
+			and
+			nop
+			bnz	rdy_got_byte	// got a byte — check if ACK
+			nop
+			nop
+
+			// No byte — decrement timeout counter (on stack)
+			ldi	1
+			sub
+			dup
+			nop
+			bnz	rdy_poll
+			nop
+			nop
+			pop					// counter expired
+			jmp	rdy_send		// timeout → resend 0xAA
+			nop
+			nop
+
+rdy_got_byte:
+			pop					// discard timeout counter
+			ldi	io_uart
+			stmra
+			wait
+			wait
+			ldmrd
+
+			// Is it 0x55 (ACK)?
+			ldi	rdy_ack
+			xor
+			nop
+			bz	rdy_done
+			nop
+			nop
+			pop					// not ACK, discard and resend
+			jmp	rdy_send
+			nop
+			nop
+
+rdy_done:
+			pop					// discard XOR result (0)
+
+#endif // SERIAL
 
 #ifdef FLASH
 //
@@ -978,7 +1063,7 @@ ser_retry:
 			stm	heap		// reset word counter
 			ldi	0
 			stm	b			// reset checksum
-			jmp	xram_loop	// retry download
+			jmp	rdy_send	// re-handshake before retry
 			nop
 			nop
 #endif

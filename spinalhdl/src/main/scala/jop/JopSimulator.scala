@@ -21,7 +21,7 @@ import jop.utils.JopFileLoader
  */
 case class JopSimulatorConfig(
   dataWidth: Int = 32,
-  pcWidth: Int = 11,
+  pcWidth: Int = 12,
   instrWidth: Int = 10,
   jpcWidth: Int = 11,
   ramWidth: Int = 8,
@@ -29,7 +29,7 @@ case class JopSimulatorConfig(
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(instrWidth == 10, "Instruction width must be 10 bits")
-  require(pcWidth == 11, "PC width must be 11 bits (2K ROM)")
+  require(pcWidth == 12, "PC width must be 12 bits (4K ROM)")
   require(jpcWidth == 11, "JPC width must be 11 bits (2KB cache)")
 
   def fetchConfig = FetchConfig(pcWidth, instrWidth)

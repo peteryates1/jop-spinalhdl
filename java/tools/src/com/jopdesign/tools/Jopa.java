@@ -60,7 +60,7 @@ import com.jopdesign.tools.Instruction.JmpType;
 public class Jopa {
 
 	private String fname;
-	static final int ADDRBITS = 11;
+	static final int ADDRBITS = 12;
 	/** length of microcode instruction including nxt and opd */	
 	static final int DATABITS = Instruction.INSTLEN+2;
 	static final int CONST_ADDR = 32;

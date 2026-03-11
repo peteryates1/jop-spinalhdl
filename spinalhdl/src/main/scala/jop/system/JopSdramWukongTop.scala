@@ -142,7 +142,7 @@ case class JopSdramWukongTop(
   val memStateSync = BufferCC(mainArea.cluster.io.debugMemState, init = U(0, 5 bits))
   val memBusySync = BufferCC(mainArea.cluster.io.memBusy(0), init = False)
   val wdSync = (0 until cpuCnt).map(i => BufferCC(mainArea.cluster.io.wd(i)(0), init = False))
-  val pcSync = BufferCC(mainArea.cluster.io.pc(0), init = U(0, 11 bits))
+  val pcSync = BufferCC(mainArea.cluster.io.pc(0), init = U(0, 12 bits))
   val jpcSync = BufferCC(mainArea.cluster.io.jpc(0), init = U(0, 12 bits))
 
   // Hang detector: count cycles while memBusy stays True.

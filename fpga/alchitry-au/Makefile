@@ -57,7 +57,7 @@ RUN_VIVADO := VIVADO_HOME=$(VIVADO_HOME) ./scripts/run_vivado.sh
 
 # Serial port for UART
 SERIAL_PORT ?= $(shell ./scripts/find_alchitry_ports.sh --serial 2>/dev/null || echo /dev/ttyUSB1)
-BAUD_RATE = 1000000
+BAUD_RATE = 2000000
 
 # JOP application file
 JOP ?= ../../java/apps/Smallest/HelloWorld.jop

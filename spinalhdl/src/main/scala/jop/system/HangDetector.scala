@@ -21,15 +21,17 @@ case class HangDetector(
   boardClkFreqHz: Long,
   baudRate: Int = 1000000,
   hasCacheState: Boolean = false,
-  hasAdapterState: Boolean = false
+  hasAdapterState: Boolean = false,
+  pcWidth: Int = 12,
+  jpcWidth: Int = 12
 ) extends Component {
 
   val io = new Bundle {
     // Inputs — already synchronized to board clock domain by caller
     val memBusy      = in Bool()
     val memState     = in UInt(5 bits)
-    val pc           = in UInt(11 bits)
-    val jpc          = in UInt(12 bits)
+    val pc           = in UInt(pcWidth bits)
+    val jpc          = in UInt(jpcWidth bits)
     val cacheState   = hasCacheState generate (in UInt(3 bits))
     val adapterState = hasAdapterState generate (in UInt(3 bits))
 

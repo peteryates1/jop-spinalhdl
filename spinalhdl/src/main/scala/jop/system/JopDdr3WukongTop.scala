@@ -282,7 +282,7 @@ case class JopDdr3WukongTop(
   val adapterStateSync = BufferCC(mainArea.adapter.io.debugState, init = U(0, 3 bits))
 
   // Pipeline debug: pc and jpc — cross-domain sync from MIG ui_clk
-  val pcSync = BufferCC(mainArea.cluster.io.pc(0), init = U(0, 11 bits))
+  val pcSync = BufferCC(mainArea.cluster.io.pc(0), init = U(0, 12 bits))
   val jpcSync = BufferCC(mainArea.cluster.io.jpc(0), init = U(0, 12 bits))
 
   // Hang detector: count cycles while memBusy stays True.

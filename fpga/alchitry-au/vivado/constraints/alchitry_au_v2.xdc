@@ -24,7 +24,12 @@ set_property IOSTANDARD LVCMOS33 [get_ports {led[6]}]
 set_property PACKAGE_PIN P14 [get_ports {led[7]}]
 set_property IOSTANDARD LVCMOS33 [get_ports {led[7]}]
 
+# UART — usb_rx/usb_tx for old JopDdr3Top, ser_rxd/ser_txd for unified JopTop
 set_property PACKAGE_PIN P15 [get_ports {usb_rx}]
 set_property IOSTANDARD LVCMOS33 [get_ports {usb_rx}]
 set_property PACKAGE_PIN P16 [get_ports {usb_tx}]
 set_property IOSTANDARD LVCMOS33 [get_ports {usb_tx}]
+set_property PACKAGE_PIN P15 [get_ports {ser_rxd}]
+set_property IOSTANDARD LVCMOS33 [get_ports {ser_rxd}]
+set_property PACKAGE_PIN P16 [get_ports {ser_txd}]
+set_property IOSTANDARD LVCMOS33 [get_ports {ser_txd}]

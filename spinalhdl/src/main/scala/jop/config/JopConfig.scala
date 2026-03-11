@@ -315,7 +315,7 @@ object JopConfig {
       name = "main",
       memory = "MT41K128M16JT-125:K",
       bootMode = BootMode.Serial,
-      clkFreq = HertzNumber(BigDecimal(250000000) / 3),
+      clkFreq = 100 MHz,  // MIG ui_clk = 100 MHz (4:1, DDR3-800)
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
       drivers = Seq(DeviceDriver.UartFt2232))))
 

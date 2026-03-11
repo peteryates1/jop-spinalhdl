@@ -50,7 +50,10 @@ case class BmbUart(baudRate: Int = 1000000, clkFreq: HertzNumber = HertzNumber(1
 
   // RX FIFO: UartCtrl.read.valid is a ONE-CYCLE PULSE (RegNext(False)),
   // so we must buffer it. Matches VHDL sc_uart which uses a FIFO for RX.
-  val rxFifo = StreamFifo(Bits(8 bits), 16)
+  // 512 entries: at 2 Mbaud, provides ~2.5 ms of buffering. This prevents
+  // overflow during DDR3 write stalls where the microcode blocks on 'wait'
+  // while the host continues streaming.
+  val rxFifo = StreamFifo(Bits(8 bits), 512)
   rxFifo.io.push.valid := uartCtrl.io.read.valid
   rxFifo.io.push.payload := uartCtrl.io.read.payload
   uartCtrl.io.read.ready := rxFifo.io.push.ready

@@ -41,7 +41,7 @@ object MemoryStyle {
  */
 case class JopCoreConfig(
   dataWidth:    Int              = 32,
-  pcWidth:      Int              = 11,
+  pcWidth:      Int              = 12,
   instrWidth:   Int              = 10,
   jpcWidth:     Int              = 11,
   ramWidth:     Int              = 8,
@@ -113,7 +113,7 @@ case class JopCoreConfig(
 
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(instrWidth == 10, "Instruction width must be 10 bits")
-  require(pcWidth == 11, "PC width must be 11 bits (2K ROM)")
+  require(pcWidth == 12, "PC width must be 12 bits (4K ROM)")
   require(jpcWidth == 11, "JPC width must be 11 bits (2KB cache)")
   require(!useStackCache || spillBaseAddrOverride.isDefined || memConfig.stackRegionWordsPerCore > 0,
     "useStackCache requires stackRegionWordsPerCore > 0 (or spillBaseAddrOverride) to prevent GC heap/stack overlap")

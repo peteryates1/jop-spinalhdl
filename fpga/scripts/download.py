@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """Serial .jop download tool for JOP FPGA boards.
 
-Streaming protocol with XOR checksum + retry:
+Streaming protocol with ready handshake, XOR checksum + retry:
   1. Parse .jop file (decimal text, skip // comments)
   2. First word = total length; verify against parsed count
-  3. Stream all 32-bit words as 4 bytes MSB-first (no per-byte echo)
-  4. Read 4-byte XOR checksum from FPGA, verify against host-computed
-  5. Send ACK (0x00) on match, NACK (0xFF) on mismatch; NACK triggers retry
-  6. Optionally monitor UART output after download (-e flag)
+  3. Wait for FPGA ready byte (0xAA), send ACK (0x55)
+  4. Stream all 32-bit words as 4 bytes MSB-first (no per-byte echo)
+  5. Read 4-byte XOR checksum from FPGA, verify against host-computed
+  6. Send ACK (0x00) on match, NACK (0xFF) on mismatch; NACK triggers retry
+  7. Optionally monitor UART output after download (-e flag)
+
+The ready handshake solves DDR3 timing: MIG calibration holds the JOP
+processor in reset for several seconds after FPGA programming. The FPGA
+sends 0xAA periodically once ready; the host waits for it before streaming.
 
 Usage: python3 download.py [-e] <jop_file> [serial_port] [baud_rate]
   Defaults: auto-detect FPGA UART port, 2000000 baud
@@ -28,6 +33,9 @@ import serial
 
 MAX_RETRIES = 3
 CHUNK_SIZE = 4096  # bytes per write() call for efficient buffering
+READY_BYTE = 0xAA  # FPGA sends this when ready
+READY_ACK = 0x55   # Host sends this to acknowledge
+READY_TIMEOUT = 30  # seconds to wait for FPGA ready
 
 
 def find_uart_port():
@@ -115,6 +123,56 @@ def print_progress(done, total, width=50):
     bar = "#" * filled + " " * (width - filled)
     sys.stderr.write(f"\r [{bar}] {done}/{total}")
     sys.stderr.flush()
+
+
+def wait_for_ready(ser):
+    """Wait for FPGA ready byte (0xAA), then send ACK (0x55).
+
+    The FPGA sends 0xAA every ~500 ms once it has booted and memory is
+    ready. We wait up to READY_TIMEOUT seconds, consuming and discarding
+    any non-0xAA bytes (noise, stale data from prior runs).
+
+    Returns True if handshake succeeded, False on timeout.
+    """
+    ser.reset_input_buffer()
+    ser.timeout = 0.1  # 100 ms poll intervals
+    t0 = time.monotonic()
+    dots = 0
+
+    sys.stderr.write("Waiting for FPGA ready ")
+    sys.stderr.flush()
+
+    while time.monotonic() - t0 < READY_TIMEOUT:
+        b = ser.read(1)
+        if b and b[0] == READY_BYTE:
+            # Got 0xAA — send ACK
+            ser.write(bytes([READY_ACK]))
+            ser.flush()
+            sys.stderr.write(" ready!\n")
+            sys.stderr.flush()
+            # Drain any remaining 0xAA bytes from the USB serial pipeline.
+            # The FPGA may have sent multiple 0xAA bytes before seeing
+            # our 0x55 ACK; those bytes can be in-flight in the FTDI
+            # chip's buffer or the USB transfer pipeline.
+            time.sleep(0.05)
+            ser.reset_input_buffer()
+            # Active drain: keep reading until 20ms of silence
+            ser.timeout = 0.02
+            while ser.read(64):
+                pass
+            ser.timeout = 0.1
+            return True
+
+        # Print a dot every ~1 second
+        elapsed = time.monotonic() - t0
+        if int(elapsed) > dots:
+            dots = int(elapsed)
+            sys.stderr.write(".")
+            sys.stderr.flush()
+
+    sys.stderr.write(f" timeout ({READY_TIMEOUT}s)\n")
+    sys.stderr.flush()
+    return False
 
 
 def stream_download(ser, data, total_words):
@@ -210,8 +268,13 @@ def main():
     for attempt in range(1, MAX_RETRIES + 1):
         if attempt > 1:
             print(f"Retry {attempt}/{MAX_RETRIES}...")
-            ser.reset_input_buffer()
-            time.sleep(0.1)
+
+        # Wait for FPGA ready handshake
+        if not wait_for_ready(ser):
+            print("Error: FPGA not responding (no ready signal)",
+                  file=sys.stderr)
+            ser.close()
+            sys.exit(1)
 
         t0 = time.monotonic()
         print(f"Streaming {total_bytes} bytes...")
