@@ -319,6 +319,17 @@ object JopConfig {
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
       drivers = Seq(DeviceDriver.UartFt2232))))
 
+  /** Alchitry Au V2 — minimum: no caches, no HW math */
+  def auMinimal = JopConfig(
+    assembly = SystemAssembly.alchitryAuV2,
+    systems = Seq(JopSystem(
+      name = "min",
+      memory = "MT41K128M16JT-125:K",
+      bootMode = BootMode.Serial,
+      clkFreq = HertzNumber(BigDecimal(250000000) / 3),
+      coreConfig = JopCoreConfig(memConfig = noCacheMemConfig),
+      drivers = Seq(DeviceDriver.UartFt2232))))
+
   /** Simulation (no physical board — uses QMTECH assembly as placeholder) */
   def simulation = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,

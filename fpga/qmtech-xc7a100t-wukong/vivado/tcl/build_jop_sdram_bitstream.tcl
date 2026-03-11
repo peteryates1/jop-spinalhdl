@@ -15,6 +15,11 @@ read_ip [file join $ip_root clk_wiz_0/clk_wiz_0.xci]
 # Read RTL
 read_verilog [file join $rtl_dir JopSdramWukongTop.v]
 
+# Copy $readmemb data files to build dir (Vivado resolves relative to working dir)
+foreach f [glob -nocomplain [file join $rtl_dir JopSdramWukongTop.v_*.bin]] {
+    file copy -force $f $build_dir
+}
+
 # Read constraints
 read_xdc [file join $repo_root vivado/constraints/wukong_jop_sdram.xdc]
 
