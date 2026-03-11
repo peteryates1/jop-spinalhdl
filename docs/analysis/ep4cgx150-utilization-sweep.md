@@ -118,6 +118,42 @@ LUTs vs Artix-7 6-input LUTs). SD Native is the notable exception at 0.73x,
 suggesting the SpinalHDL SdcardCtrl maps more efficiently to Altera architecture
 (likely the register-heavy FSMs benefit from Cyclone IV's LE structure).
 
+## Cache Size Sweep
+
+All variants start from the baseline (idiv/irem HW, 16-entry O$/8 fields, 16-entry
+A$/4 elements, 16-block method cache). Delta measured from baseline (9,969 LEs).
+
+| Config | LEs | Comb | Regs | Mem bits | Delta LEs | Description |
+|--------|----:|-----:|-----:|---------:|----------:|-------------|
+| Baseline | 9,969 | 8,311 | 3,841 | 30,976 | — | Default caches |
+| O$ 32 entries | 11,013 | 8,843 | 4,355 | 35,072 | +1,044 | ocacheWayBits=5 |
+| O$ 64 entries | 13,072 | 9,878 | 5,381 | 43,264 | +3,103 | ocacheWayBits=6 |
+| O$ 16 fields | 10,284 | 8,505 | 3,970 | 35,072 | +315 | ocacheIndexBits=4 |
+| A$ 32 entries | 11,223 | 8,829 | 4,595 | 33,024 | +1,254 | acacheWayBits=5 |
+| A$ 8 elem/line | 9,928 | 8,286 | 3,827 | 33,024 | -41 | acacheFieldBits=3 |
+| M$ 32 blocks | 10,670 | 9,012 | 4,164 | 30,976 | +701 | blockBits=5 |
+
+### Cache Observations
+
+1. **Object cache scales poorly**: Doubling O$ entries from 16→32 costs 1,044 LEs,
+   doubling again to 64 costs 3,103 LEs total. The fully-associative tag comparators
+   are expensive on Cyclone IV's 4-input LEs. Widening fields (8→16) is much cheaper
+   at +315 LEs — the extra storage is mostly in registers, not comparators.
+
+2. **Array cache entries are expensive**: Doubling A$ entries (16→32) costs 1,254 LEs,
+   similar to O$ — same FA comparator scaling. But widening A$ lines (4→8 elements)
+   is essentially free (-41 LEs). The wider lines increase spatial locality with no
+   logic cost because the line fill already uses burst reads.
+
+3. **Method cache blocks are moderate**: Doubling M$ blocks (16→32) costs 701 LEs.
+   This is the tag RAM and hit-detection logic for 32 vs 16 blocks. The actual
+   bytecode storage (JBC RAM) is shared and doesn't change size — only the number
+   of independently-cached methods increases.
+
+4. **For DDR3 tuning**: The cheapest way to reduce miss penalty is wider A$ lines
+   (+0 LEs) and more O$ fields (+315 LEs). More entries (O$ or A$) are expensive
+   (~1,000+ LEs each) and only help if the working set exceeds current capacity.
+
 ## SMP Implications
 
 Per additional core (with all CUs, no Ethernet/SD): approximately **4,600 LEs**
@@ -187,7 +223,7 @@ Notes:
 # Generate Verilog for a single sweep variant
 sbt "runMain jop.system.AlteraUtilSweep <label>"
 
-# Run full sweep (all 16 variants)
+# Run full sweep (all variants)
 cd fpga/qmtech-ep4cgx150-sdram && ./util_sweep.sh
 
 # Run specific variants

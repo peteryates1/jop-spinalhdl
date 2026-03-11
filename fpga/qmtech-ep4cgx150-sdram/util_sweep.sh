@@ -15,7 +15,7 @@ PLL_VHDL="$PWD/dram_pll.vhd"
 ETH_PLL="$PWD/pll_125.v"
 SDC_FILE="$PWD/jop_sdram.sdc"
 
-ALL_LABELS="no_icu baseline no_acache icu_full icu_dsp fcu lcu dcu all_cu eth sd_native sd_spi vga_text vga_dma eth_sd_native eth_sd_spi full"
+ALL_LABELS="no_icu baseline no_acache icu_full icu_dsp fcu lcu dcu all_cu eth sd_native sd_spi vga_text vga_dma eth_sd_native eth_sd_spi full ocache_32 ocache_64 ocache_16f acache_32 acache_8e mcache_32b"
 
 # Allow subset of labels on command line
 if [ $# -gt 0 ]; then
