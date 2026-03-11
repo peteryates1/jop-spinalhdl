@@ -22,12 +22,14 @@ case class JopMemoryConfig(
   burstLen: Int = 0,                      // 0=no burst (pipelined single-word), 4=SDR, 8=DDR3
   useOcache: Boolean = true,              // Enable object cache
   ocacheWayBits: Int = 4,                 // log2(entries) — 4 = 16 entries
-  ocacheIndexBits: Int = 3,              // log2(fields per entry) — 3 = 8 fields
+  ocacheIndexBits: Int = 4,              // log2(fields per entry) — 4 = 16 fields
   ocacheMaxIndexBits: Int = 8,           // max field index addressable (256)
   useAcache: Boolean = true,              // Enable array cache
   acacheWayBits: Int = 4,                 // log2(entries) — 4 = 16 entries
   acacheFieldBits: Int = 2,              // log2(elements per line) — 2 = 4 elements
   acacheMaxIndexBits: Int = 24,          // max array index width (full address space)
+  ocacheInvalOnStidx: Boolean = true,   // Invalidate O$ on stidx (method scope change).
+                                         // True = WCET-safe (conservative). False = better hit rate.
   stackRegionWordsPerCore: Int = 0      // per-core stack spill region size (0 = legacy)
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")

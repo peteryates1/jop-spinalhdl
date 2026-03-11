@@ -395,11 +395,11 @@ case class BmbMemoryController(
     // Default wiring (matching VHDL combinational wiring in mem_sc.vhd)
     oc.io.handle := aoutAddr
     oc.io.fieldIdx := io.bcopd(config.ocacheMaxIndexBits - 1 downto 0).asUInt
-    oc.io.chkGf := io.memIn.getfield && !wasStidx
+    oc.io.chkGf := io.memIn.getfield && !wasStidx && (state === State.IDLE)
     oc.io.chkPf := False  // Driven from HANDLE_READ for putfield
     oc.io.gfVal := io.bmb.rsp.fragment.data  // Memory read data
     oc.io.pfVal := handleWriteData             // Value being written
-    oc.io.inval := io.memIn.stidx || io.memIn.cinval
+    oc.io.inval := (if (config.ocacheInvalOnStidx) io.memIn.stidx else False) || io.memIn.cinval
     oc.io.wrGf := False   // Driven from HANDLE_DATA_WAIT
     oc.io.wrPf := False   // Driven from HANDLE_DATA_WAIT
 

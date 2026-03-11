@@ -128,7 +128,7 @@ A$/4 elements, 16-block method cache). Delta measured from baseline (9,969 LEs).
 | Baseline | 9,969 | 8,311 | 3,841 | 30,976 | — | Default caches |
 | O$ 32 entries | 11,013 | 8,843 | 4,355 | 35,072 | +1,044 | ocacheWayBits=5 |
 | O$ 64 entries | 13,072 | 9,878 | 5,381 | 43,264 | +3,103 | ocacheWayBits=6 |
-| O$ 16 fields | 10,284 | 8,505 | 3,970 | 35,072 | +315 | ocacheIndexBits=4 |
+| O$ 16 fields | 10,284 | 8,505 | 3,970 | 35,072 | +315 | ocacheIndexBits=4 **(now default)** |
 | A$ 32 entries | 11,223 | 8,829 | 4,595 | 33,024 | +1,254 | acacheWayBits=5 |
 | A$ 8 elem/line | 9,928 | 8,286 | 3,827 | 33,024 | -41 | acacheFieldBits=3 |
 | M$ 32 blocks | 10,670 | 9,012 | 4,164 | 30,976 | +701 | blockBits=5 |

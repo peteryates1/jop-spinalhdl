@@ -110,11 +110,11 @@ The SpinalHDL object cache consists of:
 ### Hardware Structure
 
 - **16 entries** (`wayBits=4`), fully associative with FIFO replacement
-- **8 fields per entry** (`indexBits=3`)
-- **128 words** data RAM (16 entries x 8 fields)
+- **16 fields per entry** (`indexBits=4`, changed from 8 to match paper recommendation)
+- **256 words** data RAM (16 entries x 16 fields)
 - **24-bit handle tags** in registers, parallel comparison
-- **8-bit valid vector** per entry (one bit per field)
-- **Cacheable check**: fields 0-7 only (`fieldIdx[7:3]` must be zero)
+- **16-bit valid vector** per entry (one bit per field)
+- **Cacheable check**: fields 0-15 only (`fieldIdx[7:4]` must be zero)
 
 ### Access Paths
 
@@ -138,19 +138,17 @@ The SpinalHDL object cache consists of:
 | No write-allocate | `chkPf` uses `lineEnc` (hit line), `incNxtReg` always False for putfield | Exact match |
 | Objects only, not arrays | Controller routes getfield/putfield to OC, iaload/iastore to AC | Exact match |
 | Fields > line size uncached | `cacheable` check: `fieldIdx[7:3] === 0` | Exact match |
-| 4 ways, 16 fields recommended | 16 ways, 8 fields | Different — see note |
+| 4 ways, 16 fields recommended | 16 ways, 16 fields | More ways, same fields |
 | 14% speedup (4-way, 16-field) | Not evaluated | N/A |
 
 ### Note on Configuration
 
 The papers recommend 4 ways / 16 fields. The SpinalHDL default is 16 ways /
-8 fields (same total data: 128 words). This trades field coverage for higher
-associativity. The `dcache_wcet` resource table shows that 16 ways / 8 fields
-costs 745 LCs vs. 273 LCs for 4 ways / 16 fields. The higher associativity
-benefits the persistence analysis (more distinct objects fit before eviction),
-while 8 fields covers most embedded Java objects (the papers report median
-object sizes of 3-5 fields for typical benchmarks). Both parameters are
-configurable.
+16 fields (256 words total). This provides both higher associativity and full
+field coverage matching the paper's recommendation. The `dcache_wcet` resource
+table shows 16 ways / 16 fields costs 960 LCs. The higher associativity
+benefits the persistence analysis (more distinct objects fit before eviction).
+Both parameters are configurable.
 
 ## What the Implementation Does Well
 
@@ -232,56 +230,35 @@ However, the `lineEnc` result is used for the RAM read address
 entry. If a handle somehow appeared in two entries (e.g., due to a race), the
 OR-encoding would silently produce a wrong line index.
 
-**Recommendation**: Add a formal property asserting at most one entry is valid
-(has any valid bit set) per handle value.
+**Status**: RESOLVED — formal property added (`ObjectCacheFormal`: "tag uniqueness:
+at most one entry per handle"). Verified with protocol-constrained BMC (10 steps).
 
 ### 2. chkGf Not Gated by State (Same Pattern as Array Cache)
 
 `BmbMemoryController.scala` wires:
 
 ```scala
-oc.io.chkGf := io.memIn.getfield && !wasStidx
+oc.io.chkGf := io.memIn.getfield && !wasStidx && (state === State.IDLE)
 ```
 
-This fires combinationally whenever `getfield` appears on the memory interface,
-regardless of the controller's state. The `chkGf` path resets `lineReg`,
-`incNxtReg`, and `hitTagReg`. If `getfield` could pulse while the controller
-is in HANDLE_DATA_WAIT (completing a prior miss), it would corrupt the
-registered state needed for the fill.
-
-In practice, the pipeline only issues `getfield` when the memory controller is
-idle (the busy signal gates new operations). But the cache itself has no
-protection.
-
-**Recommendation**: Gate with `state === State.IDLE` for defense in depth.
+**Status**: RESOLVED — `chkGf` now gated by `state === State.IDLE` for
+defense in depth. Previously fired combinationally whenever `getfield` appeared,
+relying on the pipeline's busy signal to prevent spurious triggers.
 
 ### 3. stidx Invalidates the Entire Object Cache
 
 `BmbMemoryController.scala`:
 
 ```scala
-oc.io.inval := io.memIn.stidx || io.memIn.cinval
+oc.io.inval := (if (config.ocacheInvalOnStidx) io.memIn.stidx else False) || io.memIn.cinval
 ```
 
-Every `stidx` (stack index change on method invoke/return) flushes the entire
-object cache. The publications discuss scope-based invalidation in the context
-of the JMM (Java Memory Model):
-
-> "The cache can be held consistent by flushing the cache on monitorenter and
-> access to volatile fields." (`troceval`)
-
-`stidx` invalidation is more conservative than JMM requires. The scope-based
-WCET analysis may legitimately need invalidation at method boundaries (to bound
-the persistence region), but this makes the cache less effective for code with
-frequent method calls to small helper methods that operate on the same objects.
-
-The papers report that 15% tighter WCET estimates were achieved with improved
-cache analysis on 8-core CMP, suggesting that unnecessary invalidation has a
-measurable impact.
-
-**Recommendation**: Consider whether `stidx` invalidation is required for
-correctness or only for WCET analysis simplification. If only for analysis,
-it could be made optional or restricted to specific scope boundaries.
+**Status**: RESOLVED — stidx invalidation is now configurable via
+`JopMemoryConfig.ocacheInvalOnStidx` (default `true` for backward compat /
+WCET safety). Setting `false` disables O$ flush on method invoke/return,
+improving hit rates for code with frequent small method calls. Correctness
+is maintained because `!wasStidx` already gates `chkGf` and `wrGf/wrPf`
+during stidx operations — stale data cannot be served.
 
 ### 4. putfield chkPf Timing
 
@@ -301,40 +278,29 @@ fragile — it depends on the PF_WAIT override being the last assignment.
 
 ### 5. Formal Verification Gaps
 
-The 2 existing tests verify cacheable bounds only:
+**Status**: RESOLVED — expanded from 2 tests to 8 tests:
 
-1. No hit when field index out of range (uncacheable)
-2. Hit implies cacheable field index
+1. No hit when field index out of range (uncacheable) — *existing*
+2. Hit implies cacheable field index — *existing*
+3. **Tag uniqueness**: at most one entry per handle (protocol-constrained BMC)
+4. **Fill correctness**: wrGf sets the filled field's valid bit
+5. **FIFO pointer**: advances by exactly 1 per getfield miss
+6. **Snoop selective invalidation**: only the targeted field is cleared, others unchanged
+7. **No write-allocate**: wrPf with tag miss does not change nxt pointer
+8. **Invalidation completeness**: after inval, all valid bits zero and nxt reset
 
-Not verified:
-
-- **Tag uniqueness**: At most one entry per handle (prevents lineEnc corruption)
-- **Valid bit integrity**: After `wrGf`, the specific field's valid bit is set
-- **Hit correctness**: After a getfield fill, a subsequent `chkGf` to the same
-  handle + field produces `hit=True`
-- **Putfield write-through**: After `wrPf`, a subsequent `chkGf` to the same
-  handle + field returns the written value
-- **Snoop correctness**: After snoop invalidation, the specific field's valid
-  bit is cleared while others remain
-- **No write-allocate**: `wrPf` with tag miss does not allocate a new entry
-- **FIFO pointer**: Advances by exactly 1 per getfield miss, not on putfield
-- **Invalidation**: After `inval`, all valid bits are zero (mentioned in the
-  test list but not present in the 2 actual tests)
-
-**Recommendation**: Add formal properties covering at least tag uniqueness,
-fill correctness (hit-after-fill), and snoop selective invalidation.
+Remaining unverified (future work):
+- **Hit correctness**: After getfield fill, subsequent chkGf produces hit=True
+  (requires multi-cycle protocol tracking)
+- **Putfield write-through**: After wrPf, subsequent chkGf returns written value
+  (requires data path verification)
 
 ### 6. 8 Fields May Be Tight for Some Objects
 
-With `indexBits=3`, only fields 0-7 are cacheable. Objects with more than 8
-fields will have their higher-indexed fields bypass the cache entirely. The
-papers recommend 16 fields and note:
-
-> "The object layout may be optimized such that heavily accessed fields are
-> located at lower indices." (`ocwcet_ccpe`)
-
-This is a compiler/linker optimization that the hardware relies on. Without
-it, frequently-accessed fields at index 8+ will always miss.
+**Status**: RESOLVED — default `ocacheIndexBits` changed from 3 (8 fields) to
+4 (16 fields), matching the paper's recommended configuration. Cost: +315 LEs
+on EP4CGX150, +0.5 BRAM on XC7A100T (see cache size sweep in
+`ep4cgx150-utilization-sweep.md`). Fields 0-15 are now cacheable.
 
 ## Comparison with dcache_wcet Hardware Evaluation
 
@@ -347,10 +313,10 @@ configurations on a Cyclone FPGA:
 | 16 | 8 | 745 | 4096 |
 | 16 | 16 | 960 | 8192 |
 
-The SpinalHDL default (16 ways, 8 fields) uses roughly 3x the logic of the
-recommended configuration (4 ways, 16 fields) for the same total data capacity.
-The tradeoff is higher associativity for the persistence analysis, which
-benefits applications with many distinct objects accessed in a scope.
+The SpinalHDL default (16 ways, 16 fields) matches the paper's recommended
+field count while providing 4x the associativity. The `dcache_wcet` cost data
+shows 960 LCs for this configuration. The higher associativity benefits
+applications with many distinct objects accessed in a scope.
 
 The paper also compares LRU vs FIFO hardware costs:
 
@@ -391,16 +357,18 @@ HWO bypass). The architecture matches every design decision from the papers:
 fully associative, handle-as-tag, per-field valid bits, word fill, FIFO
 replacement, write-through, no write-allocate.
 
-The main concerns are:
+All five identified issues have been addressed:
 
-1. **lineEnc using hitTagVec** — same OR-encoder pattern as array cache, safe
-   only if tag uniqueness holds (not formally verified)
-2. **chkGf not gated by state** — relies on controller never issuing getfield
-   outside IDLE
-3. **stidx invalidation** — more conservative than JMM requires, reduces hit
-   rates on method-call-heavy code
-4. **Formal verification** — only 2 tests covering cacheable bounds; tag
-   uniqueness, fill correctness, snoop correctness, and FIFO behavior not
-   verified
-5. **8 fields default** — half the paper's recommended 16, relies on compiler
-   placing hot fields at low indices
+1. **lineEnc / tag uniqueness** — formal property added and verified (BMC 10 steps)
+2. **chkGf gated by state** — now gated by `state === State.IDLE`
+3. **stidx invalidation** — now configurable via `ocacheInvalOnStidx` (default true)
+4. **Formal verification** — expanded from 2 to 8 tests covering tag uniqueness,
+   fill correctness, FIFO pointer, snoop invalidation, no write-allocate, and
+   invalidation completeness
+5. **16 fields default** — `ocacheIndexBits` changed from 3 to 4, matching paper
+   recommendation (+315 LEs on Altera)
+
+Remaining concern:
+
+- **putfield chkPf timing** (issue 4 above) — fragile override-based wiring.
+  Correct but depends on SpinalHDL last-assignment-wins ordering.
