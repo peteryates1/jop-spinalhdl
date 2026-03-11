@@ -26,6 +26,9 @@ object UtilSweep extends App {
 
     "no_icu" -> withCc(baseCc.copy(idiv = Microcode, irem = Microcode)),
 
+    "no_acache" -> withCc(baseCc.copy(
+      memConfig = baseCc.memConfig.copy(useAcache = false))),
+
     "icu_full" -> withCc(baseCc.copy(imul = Hardware)),
 
     "icu_dsp" -> withCc(baseCc.copy(useDspMul = true, imul = Hardware)),

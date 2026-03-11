@@ -142,9 +142,11 @@ working Ethernet MAC/PHY driver in jopmin).
 The VHDL default uses larger caches than SpinalHDL: jpc_width=14 (16KB method
 cache, 32 blocks) and OCACHE_WAY_BITS=5 (32-entry object cache). SpinalHDL
 defaults to jpc_width=11 (2KB, 16 blocks) and wayBits=4 (16-entry). The
-"matched caches" rows below use the same cache sizes as SpinalHDL. The VHDL JOP
-has no array cache (never wired into mem_sc); SpinalHDL's array cache adds only
-11 LEs on Altera so the difference is negligible.
+"matched caches" rows below use the same cache sizes as SpinalHDL. The VHDL JOP has no array cache (never wired into mem_sc). SpinalHDL's array
+cache is instantiated but both Quartus and Vivado optimize it to near-zero in
+single-core builds (0 LUTs on Xilinx, 11 LEs on Altera) — the synthesizer
+recognizes the cache produces no observable benefit without SMP snoop
+invalidation. The array cache would only add meaningful area in SMP builds.
 
 | Design | LEs | Comb | Regs | Mem bits |
 |--------|----:|-----:|-----:|---------:|
