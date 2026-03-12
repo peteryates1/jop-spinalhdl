@@ -36,7 +36,7 @@ case class VgaBmbDma(
 ) extends Component with HasBusIo {
 
   val bus = new Bundle {
-    val addr   = in UInt(4 bits)
+    val addr   = in UInt(2 bits)
     val rd     = in Bool()
     val wr     = in Bool()
     val wrData = in Bits(32 bits)

@@ -35,7 +35,7 @@ import spinal.lib._
  */
 case class ConfigFlash(clkDivInit: Int = 3) extends Component with HasBusIo {
   val bus = new Bundle {
-    val addr   = in UInt(4 bits)
+    val addr   = in UInt(1 bits)
     val rd     = in Bool()
     val wr     = in Bool()
     val wrData = in Bits(32 bits)
@@ -122,17 +122,14 @@ case class ConfigFlash(clkDivInit: Int = 3) extends Component with HasBusIo {
   bus.rdData := 0
   switch(bus.addr) {
     is(0) {
-      // Status: bit0=busy, bit1=flashReady
+      // Status: bit0=busy, bit1=flashReady, bits[31:16]=clkDiv
       bus.rdData(0) := busy
       bus.rdData(1) := io.flashReady
+      bus.rdData(31 downto 16) := clkDivReg.asBits
     }
     is(1) {
       // RX byte
       bus.rdData(7 downto 0) := rxData
-    }
-    is(2) {
-      // Clock divider
-      bus.rdData(15 downto 0) := clkDivReg.asBits
     }
   }
 
@@ -143,8 +140,11 @@ case class ConfigFlash(clkDivInit: Int = 3) extends Component with HasBusIo {
   when(bus.wr) {
     switch(bus.addr) {
       is(0) {
-        // Control: bit0=csAssert
+        // Control: bit0=csAssert, bits[31:16]=clkDiv (if non-zero)
         csAssertReg := bus.wrData(0)
+        when(bus.wrData(31 downto 16) =/= 0) {
+          clkDivReg := bus.wrData(31 downto 16).asUInt
+        }
       }
       is(1) {
         // TX byte: load TX shift register, start transfer
@@ -153,10 +153,6 @@ case class ConfigFlash(clkDivInit: Int = 3) extends Component with HasBusIo {
         bitCounter := 0
         divCounter := 0
         sclkReg := False
-      }
-      is(2) {
-        // Clock divider
-        clkDivReg := bus.wrData(15 downto 0).asUInt
       }
     }
   }

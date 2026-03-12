@@ -336,8 +336,13 @@ case class JopCore(
   /** Typed accessor for individual device pin signals.
    *  Usage: jopCore.devicePin[Bool]("uart", "txd")
    */
-  def devicePin[T <: Data](deviceName: String, pinName: String): T =
-    devicePins(deviceName).elements.find(_._1 == pinName).get._2.asInstanceOf[T]
+  def devicePin[T <: Data](deviceName: String, pinName: String): T = {
+    val bundle = devicePins.getOrElse(deviceName,
+      throw new NoSuchElementException(s"No device pins for '$deviceName'. Available: ${devicePins.keys.mkString(", ")}"))
+    bundle.elements.find(_._1 == pinName).getOrElse(
+      throw new NoSuchElementException(s"No pin '$pinName' on device '$deviceName'. Available: ${bundle.elements.map(_._1).mkString(", ")}"))
+      ._2.asInstanceOf[T]
+  }
 
   // ---------- Special device wiring (not covered by passthrough) ----------
 

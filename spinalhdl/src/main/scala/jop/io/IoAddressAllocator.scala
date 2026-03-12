@@ -16,10 +16,9 @@ case class AllocatedDevice(
   def isSelected(ioAddr: UInt): Bool =
     ioAddr(7 downto descriptor.addrBits) === (baseAddr >> descriptor.addrBits)
 
-  /** Extract sub-address for this device (always 4-bit output) */
+  /** Extract sub-address for this device (width = addrBits) */
   def subAddr(ioAddr: UInt): UInt =
-    if (descriptor.addrBits >= 4) ioAddr(3 downto 0)
-    else ioAddr(descriptor.addrBits - 1 downto 0).resize(4)
+    ioAddr(descriptor.addrBits - 1 downto 0)
 }
 
 /**
@@ -70,10 +69,11 @@ object IoAddressAllocator {
     // Allocate auto devices packing downward from 0xDF
     val autoAllocated = sortedAuto.map { d =>
       val alignment = d.size  // 2^addrBits alignment
-      // Scan downward from 0xDF to find first aligned slot that fits
-      val candidates = (0xDF to 0x80 by -1).filter(addr =>
+      // Scan downward from 0xED to find first aligned slot that fits
+      // (0xEE-0xEF = boot device, 0xF0-0xFF = Sys)
+      val candidates = (0xED to 0x80 by -1).filter(addr =>
         (addr & (alignment - 1)) == 0 &&  // aligned
-        addr + d.size - 1 <= 0xDF &&       // fits below fixed region
+        addr + d.size - 1 <= 0xED &&       // fits below boot region
         (0 until d.size).forall(i => !occupied(addr - 0x80 + i))  // not occupied
       )
       require(candidates.nonEmpty,

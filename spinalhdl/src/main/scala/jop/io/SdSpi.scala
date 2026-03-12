@@ -35,7 +35,7 @@ import spinal.lib._
  */
 case class SdSpi(clkDivInit: Int = 199) extends Component with HasBusIo {
   val bus = new Bundle {
-    val addr   = in UInt(4 bits)
+    val addr   = in UInt(2 bits)
     val rd     = in Bool()
     val wr     = in Bool()
     val wrData = in Bits(32 bits)

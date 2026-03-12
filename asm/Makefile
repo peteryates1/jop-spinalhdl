@@ -44,7 +44,7 @@ serial: ../java/tools/dist/jopa.jar
 	$(MAKE) simulation
 
 # Flash-boot for Altera (Cyclone IV GX, EPCS64 serial flash)
-# FLASH_ADDR_B2=128 (default), FLASH_CLK_DIV=3 (default)
+# FLASH_ADDR_B2=128 (default); clock divider set by hardware init
 flash-altera: ../java/tools/dist/jopa.jar
 	mkdir -p generated/flash
 	gcc -x c -E -C -P $(GCC_PARAMS) -DFLASH $(SUPERSET_FLAGS) src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
@@ -59,7 +59,7 @@ flash-altera: ../java/tools/dist/jopa.jar
 # Flash-boot for Xilinx (Artix-7, 4 MB SPI flash, offset 0x240000)
 flash-alchitry: ../java/tools/dist/jopa.jar
 	mkdir -p generated/flash
-	gcc -x c -E -C -P $(GCC_PARAMS) -DFLASH $(SUPERSET_FLAGS) -DFLASH_ADDR_B2=36 -DFLASH_CLK_DIV=15 -DSKIP_FLASH_RESET src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
+	gcc -x c -E -C -P $(GCC_PARAMS) -DFLASH $(SUPERSET_FLAGS) -DFLASH_ADDR_B2=36 -DSKIP_FLASH_RESET src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
 	sed -i '1,35d' generated/$(ASM_SRC).asm
 	java -jar ../java/tools/dist/jopa.jar -s generated -d generated -n FlashJumpTableData $(ASM_SRC).asm
 	cp generated/mem_rom.dat generated/flash/mem_rom.dat

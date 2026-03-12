@@ -67,28 +67,28 @@ case class IoConfig(
   /** Build the complete list of device descriptors for this configuration.
    *
    *  Sys is always added by JopCore itself (not listed here).
-   *  Uart is fixed at 0xE0. All others are auto-allocated.
+   *  Boot device (Uart or cfgFlash) is fixed at 0xEE (bipush -18/-17).
+   *  All others are auto-allocated downward from 0xED.
    *
    *  @param cfg     Core configuration
    *  @param vgaCd   VGA pixel clock domain (needed for VgaText/VgaDma)
    *  @param ethTxCd Ethernet TX clock domain (needed for Eth)
    *  @param ethRxCd Ethernet RX clock domain (needed for Eth)
    */
-  def allDevices(cfg: JopCoreConfig,
+  def allDevices(cfg: JopCoreConfig = null,
                  vgaCd: Option[ClockDomain] = None,
                  ethTxCd: Option[ClockDomain] = None,
                  ethRxCd: Option[ClockDomain] = None): Seq[IoDeviceDescriptor] = {
     val builtIn = Seq.empty[IoDeviceDescriptor] ++
       (if (hasUart) Seq(IoDeviceDescriptor(
-        name = "uart", addrBits = 4, interruptCount = 2,
-        fixedBase = Some(0xE0),
-        registerNames = Seq((0, "STATUS"), (1, "DATA"), (2, "INTCTRL")),
+        name = "uart", addrBits = 1, interruptCount = 2,
+        fixedBase = if (!hasConfigFlash) Some(0xEE) else None,
+        registerNames = Seq((0, "STATUS"), (1, "DATA")),
         factory = c => Uart(c.uartBaudRate, c.clkFreq)
       )) else Seq.empty) ++
-      (if (hasEth && ethTxCd.isDefined && ethRxCd.isDefined) Seq(
+      (if (hasEth) Seq(
         IoDeviceDescriptor(
           name = "eth", addrBits = 4, interruptCount = 1,
-          coreZeroOnly = true,
           factory = c => Eth(ethTxCd.get, ethRxCd.get,
             phyTxDataWidth = c.ioConfig.phyDataWidth,
             phyRxDataWidth = c.ioConfig.phyDataWidth,
@@ -97,29 +97,25 @@ case class IoConfig(
       ) else Seq.empty) ++
       (if (hasSdSpi) Seq(IoDeviceDescriptor(
         name = "sdSpi", addrBits = 2, interruptCount = 1,
-        coreZeroOnly = true,
         registerNames = Seq((0, "STATUS"), (1, "DATA"), (2, "CLK_DIV")),
         factory = c => SdSpi(c.ioConfig.sdSpiClkDivInit)
       )) else Seq.empty) ++
       (if (hasSdNative) Seq(IoDeviceDescriptor(
         name = "sdNative", addrBits = 4, interruptCount = 1,
-        coreZeroOnly = true,
         factory = c => SdNative(c.ioConfig.sdNativeClkDivInit)
       )) else Seq.empty) ++
-      (if (hasVgaDma && vgaCd.isDefined) Seq(IoDeviceDescriptor(
+      (if (hasVgaDma) Seq(IoDeviceDescriptor(
         name = "vgaDma", addrBits = 2, interruptCount = 1,
-        coreZeroOnly = true,
         factory = c => VgaBmbDma(c.memConfig.bmbParameter, vgaCd.get, c.ioConfig.vgaDmaFifoDepth)
       )) else Seq.empty) ++
-      (if (hasVgaText && vgaCd.isDefined) Seq(IoDeviceDescriptor(
+      (if (hasVgaText) Seq(IoDeviceDescriptor(
         name = "vgaText", addrBits = 4, interruptCount = 1,
-        coreZeroOnly = true,
         factory = _ => VgaText(vgaCd.get)
       )) else Seq.empty) ++
       (if (hasConfigFlash) Seq(IoDeviceDescriptor(
-        name = "cfgFlash", addrBits = 2,
-        coreZeroOnly = true,
-        registerNames = Seq((0, "STATUS"), (1, "DATA"), (2, "CLK_DIV")),
+        name = "cfgFlash", addrBits = 1,
+        fixedBase = Some(0xEE),
+        registerNames = Seq((0, "STATUS"), (1, "DATA")),
         factory = c => ConfigFlash(c.ioConfig.cfgFlashClkDivInit)
       )) else Seq.empty)
 
@@ -146,30 +142,7 @@ case class IoConfig(
    *  Used by ConstGenerator to compute I/O addresses without hardware context. */
   def allDescriptorsForAllocation(): Seq[IoDeviceDescriptor] = {
     val noop: JopCoreConfig => Component with HasBusIo = _ => ???
-    Seq.empty[IoDeviceDescriptor] ++
-      (if (hasUart) Seq(IoDeviceDescriptor(
-        name = "uart", addrBits = 4, interruptCount = 2,
-        fixedBase = Some(0xE0), factory = noop
-      )) else Seq.empty) ++
-      (if (hasEth) Seq(
-        IoDeviceDescriptor(name = "eth", addrBits = 4, interruptCount = 1, coreZeroOnly = true, factory = noop)
-      ) else Seq.empty) ++
-      (if (hasSdSpi) Seq(IoDeviceDescriptor(
-        name = "sdSpi", addrBits = 2, interruptCount = 1, coreZeroOnly = true, factory = noop
-      )) else Seq.empty) ++
-      (if (hasSdNative) Seq(IoDeviceDescriptor(
-        name = "sdNative", addrBits = 4, interruptCount = 1, coreZeroOnly = true, factory = noop
-      )) else Seq.empty) ++
-      (if (hasVgaDma) Seq(IoDeviceDescriptor(
-        name = "vgaDma", addrBits = 2, interruptCount = 1, coreZeroOnly = true, factory = noop
-      )) else Seq.empty) ++
-      (if (hasVgaText) Seq(IoDeviceDescriptor(
-        name = "vgaText", addrBits = 4, interruptCount = 1, coreZeroOnly = true, factory = noop
-      )) else Seq.empty) ++
-      (if (hasConfigFlash) Seq(IoDeviceDescriptor(
-        name = "cfgFlash", addrBits = 2, coreZeroOnly = true, factory = noop
-      )) else Seq.empty) ++
-      extensionDevices.map(d => d.copy(factory = noop))
+    allDevices().map(_.copy(factory = noop))
   }
 
   /** True if any VGA device is present (for pin exposure) */

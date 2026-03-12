@@ -152,7 +152,7 @@ object JopAddressSpace {
 object JopIoSpace {
   // Fixed base addresses (referenced by jvm.asm)
   val SYS_BASE  = 0xF0  // 16 addrs, 4-bit sub-addr
-  val UART_BASE = 0xE0  // 16 addrs, 4-bit sub-addr (only 3 used)
+  val UART_BASE = 0xEE  // Boot device: 2 addrs (UART or cfgFlash), 1-bit sub-addr
 
   // Sys named register addresses (for ConstGenerator and Sys wiring)
   def SYS_CNT      = SYS_BASE + 0   // System counter (read), Interrupt enable (write)
@@ -165,17 +165,17 @@ object JopIoSpace {
   def SYS_SIGNAL   = SYS_BASE + 7   // Signal
   def SYS_FPU_CAP  = SYS_BASE + 15  // FPU capability (bit 0 = HW float)
 
-  // Uart named register addresses
-  def UART_STATUS  = UART_BASE + 0  // UART status
-  def UART_DATA    = UART_BASE + 1  // UART data
+  // Boot device named register addresses (UART or cfgFlash at 0xEE-0xEF)
+  def UART_STATUS  = UART_BASE + 0  // Status register
+  def UART_DATA    = UART_BASE + 1  // Data register
 
   // Hardware address-match predicates for fixed devices (operate on 8-bit ioAddr)
-  def isSys(a: UInt): Bool  = a(7 downto 4) === (SYS_BASE >> 4)
-  def isUart(a: UInt): Bool = a(7 downto 4) === (UART_BASE >> 4)
+  def isSys(a: UInt): Bool   = a(7 downto 4) === (SYS_BASE >> 4)
+  def isUart(a: UInt): Bool  = a(7 downto 1) === (UART_BASE >> 1)
 
   // Sub-address extraction for fixed devices
   def sysAddr(a: UInt): UInt  = a(3 downto 0)
-  def uartAddr(a: UInt): UInt = a(3 downto 0)
+  def uartAddr(a: UInt): UInt = a(0 downto 0)
 }
 
 /**

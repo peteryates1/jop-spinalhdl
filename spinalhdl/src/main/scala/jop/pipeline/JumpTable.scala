@@ -102,7 +102,7 @@ case class JumpTable(
   rom.init(config.initData.entries.map(addr => U(addr.toInt, config.pcWidth bits)))
 
   // Asynchronous ROM read (combinational, 0-cycle latency)
-  val normalAddr = rom.readAsync(io.bytecode.asUInt)
+  val normalAddr = rom.readAsync(io.bytecode.asUInt, writeFirst)
 
   // Priority muxing: Exception > Interrupt > Normal bytecode
   when(io.excPend) {

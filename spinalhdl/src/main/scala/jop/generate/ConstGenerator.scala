@@ -226,7 +226,7 @@ object ConstGenerator {
          |	public static final int IO_FPU_CAP = IO_BASE + ${ioOffset(JopIoSpace.SYS_BASE + 15)};
          |
          |	// ====================================================================
-         |	// UART registers (Uart, always present, fixed at 0xE0)
+         |	// Boot device registers (UART or cfgFlash, fixed at 0xEE)
          |	// ====================================================================
          |
          |	/** UART status register */

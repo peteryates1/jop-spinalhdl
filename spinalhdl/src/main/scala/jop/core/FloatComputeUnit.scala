@@ -85,9 +85,9 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
   val bNaN  = Reg(Bool()) init (False)
 
   // Result registers
-  val resSign = Reg(Bool()) init (False)
-  val resExp  = Reg(SInt(10 bits)) init (0)
-  val resMant = Reg(UInt(26 bits)) init (0)
+  val resSign = Reg(Bool()).init(False).allowUnsetRegToAvoidLatch()
+  val resExp  = Reg(SInt(10 bits)).init(0).allowUnsetRegToAvoidLatch()
+  val resMant = Reg(UInt(26 bits)).init(0).allowUnsetRegToAvoidLatch()
   val sticky  = Reg(Bool()) init (False)
 
   val resultReg = Reg(UInt(64 bits)) init (0)

@@ -15,7 +15,6 @@ import jop.config.JopCoreConfig
  * @param fixedBase      Fixed base address in I/O space (e.g. Some(0x80) for Sys),
  *                       or None for auto-allocation
  * @param perCore        True = each core gets its own instance (default)
- * @param coreZeroOnly   True = only instantiated in core 0
  * @param shared         Reserved for future shared-bus devices
  * @param registerNames  (subAddr, name) pairs for Const.java generation
  * @param factory        Creates a device instance given the core config
@@ -26,7 +25,6 @@ case class IoDeviceDescriptor(
   interruptCount: Int = 0,
   fixedBase:      Option[Int] = None,
   perCore:        Boolean = true,
-  coreZeroOnly:   Boolean = false,
   shared:         Boolean = false,
   registerNames:  Seq[(Int, String)] = Seq.empty,
   factory:        JopCoreConfig => Component with HasBusIo

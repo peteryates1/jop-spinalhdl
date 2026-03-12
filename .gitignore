@@ -117,6 +117,7 @@ mig_trace.csv
 # Java build artifacts
 java/tools/dist/
 java/runtime/classes/
+java/runtime/src/jop/com/jopdesign/sys/Const.java
 java/apps/*/build/
 java/apps/*/*.jop
 java/apps/*/*.jop.txt

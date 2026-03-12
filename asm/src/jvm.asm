@@ -175,8 +175,8 @@ io_cnt		=	-16
 io_wd		=	-13
 io_exc		=	-12
 io_int_ena	=	-16
-io_status	=	-32
-io_uart		=	-31
+io_status	=	-18
+io_uart		=	-17
 
 exc_np		=	2
 exc_ab		=	3
@@ -187,8 +187,9 @@ io_lock = -11
 io_cpu_id = -10
 io_signal = -9
 
-usb_status		=	-32
-usb_data		=	-31
+// USB boot aliases — same boot device address (0xEE-0xEF)
+usb_status		=	-18
+usb_data		=	-17
 
 ua_rdrf		= 	2
 ua_tdre		= 	1
@@ -211,11 +212,10 @@ fpu_div  = -13    // 0xF3: write starts float DIV
 fpu_res  = -16    // 0xF0: read returns result
 
 #ifdef FLASH
-// Config flash SPI I/O registers (BmbConfigFlash at 0xD0-0xD3)
-// bipush: 0xD0=208 unsigned = -48 signed, etc.
-io_cf_status	= -48
-io_cf_data		= -47
-io_cf_div		= -46
+// Config flash SPI I/O registers — boot device at 0xEE-0xEF
+// Same address as UART (mutually exclusive: serial boot OR flash boot)
+io_cf_status	= -18
+io_cf_data		= -17
 #endif
 
 
@@ -469,20 +469,7 @@ rdy_done:
 #ifndef FLASH_ADDR_B2
 #define FLASH_ADDR_B2 128
 #endif
-#ifndef FLASH_CLK_DIV
-#define FLASH_CLK_DIV 3
-#endif
-//
-
-// Set clock divider (SPI_CLK = sys_clk / (2 * (div + 1)))
-// Cyclone IV: div=3 -> 10 MHz at 80 MHz
-// Artix-7:    div=15 -> 3.125 MHz at 100 MHz (STARTUPE2 path)
-			ldi	FLASH_CLK_DIV
-			ldi	io_cf_div
-			stmwa
-			stmwd
-			wait
-			wait
+// Clock divider is set by hardware init (cfgFlashClkDivInit per target).
 
 // Flash reset sequence: RSTQIO + RSTEN + RST + wait
 // On Artix-7 with diagnostic FSM, this is already handled in board-clock domain.

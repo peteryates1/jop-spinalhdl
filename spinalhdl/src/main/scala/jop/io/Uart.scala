@@ -10,18 +10,18 @@ import spinal.lib.com.uart._
  * Provides buffered UART TX and RX with register bus interface.
  * TX and RX each have FIFOs.
  *
- * Register map (bus.addr):
+ * Register map (bus.addr, 2 registers):
  *   0x0 read  — Status: bit 0 = TDRE, bit 1 = RDRF, bit 2 = TX int enabled, bit 3 = RX int enabled
+ *   0x0 write — Interrupt control: bit 0 = TX int enable, bit 1 = RX int enable
  *   0x1 read  — RX data (consumes from RX FIFO)
  *   0x1 write — TX data (pushes to TX FIFO)
- *   0x2 write — Interrupt control: bit 0 = TX int enable, bit 1 = RX int enable
  *
  * @param baudRate UART baud rate in Hz
  * @param clkFreq Clock frequency (avoids dependency on ClockDomain frequency)
  */
 case class Uart(baudRate: Int = 1000000, clkFreq: HertzNumber = HertzNumber(100000000)) extends Component with HasBusIo {
   val bus = new Bundle {
-    val addr   = in UInt(4 bits)
+    val addr   = in UInt(1 bits)
     val rd     = in Bool()
     val wr     = in Bool()
     val wrData = in Bits(32 bits)
@@ -102,14 +102,14 @@ case class Uart(baudRate: Int = 1000000, clkFreq: HertzNumber = HertzNumber(1000
   txFifo.io.push.payload := 0
   when(bus.wr) {
     switch(bus.addr) {
-      is(1) {
-        txFifo.io.push.valid := True
-        txFifo.io.push.payload := bus.wrData(7 downto 0)
-      }
-      is(2) {
+      is(0) {
         // Interrupt control: bit 0 = TX int enable, bit 1 = RX int enable
         txIntEnaReg := bus.wrData(0)
         rxIntEnaReg := bus.wrData(1)
+      }
+      is(1) {
+        txFifo.io.push.valid := True
+        txFifo.io.push.payload := bus.wrData(7 downto 0)
       }
     }
   }

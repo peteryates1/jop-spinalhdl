@@ -57,7 +57,7 @@ case class IntegerComputeUnit(config: IntegerComputeUnitConfig = IntegerComputeU
   val mulB     = Reg(UInt(32 bits)) init (0)
   val mulP     = Reg(UInt(64 bits)) init (0)
   val mulCount = Reg(UInt(5 bits)) init (0)
-  val mulWide  = Reg(Bool()) init (False)  // true for imul_wide (op 3)
+  val mulWide  = Reg(Bool()).init(False).allowUnsetRegToAvoidLatch()  // true for imul_wide (op 3)
 
   // Divide registers (binary restoring)
   val divDividend  = Reg(UInt(32 bits)) init (0)
