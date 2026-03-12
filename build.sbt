@@ -43,3 +43,5 @@ Test / scalaSource := baseDirectory.value / "spinalhdl" / "src" / "test" / "scal
 Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated"           // JumpTableData (simulation)
 Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial" // SerialJumpTableData
 Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "flash"  // FlashJumpTableData
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "dsp"    // DspJumpTableData, SerialDspJumpTableData
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "hwmath" // HwMathJumpTableData

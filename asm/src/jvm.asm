@@ -168,34 +168,27 @@ stack_init	= 64
 //
 //	io address are negativ memory addresses
 //
-//	CNT=-128
-//	IO_INT_ENA=-128
-//	UART status=-112
-//	UART=-111
-//	USB status=-96
-//	USB date=-95
+//	BmbSys at 0xF0 (bipush -16..-1)
+//	BmbUart at 0xE0 (bipush -32..-17)
 //
-io_cnt		=	-128
-io_wd		=	-125
-io_exc		=	-124
-io_int_ena	=	-128
-io_status	=	-112
-io_uart		=	-111
+io_cnt		=	-16
+io_wd		=	-13
+io_exc		=	-12
+io_int_ena	=	-16
+io_status	=	-32
+io_uart		=	-31
 
 exc_np		=	2
 exc_ab		=	3
 exc_mon     =   5
-        
-io_us_cnt	=	-127
-io_lock = -123
-io_cpu_id = -122
-io_signal = -121
 
-//usb_status	=	-96
-//usb_data	    =	-95
+io_us_cnt	=	-15
+io_lock = -11
+io_cpu_id = -10
+io_signal = -9
 
-usb_status		=	-112
-usb_data		=	-111
+usb_status		=	-32
+usb_data		=	-31
 
 ua_rdrf		= 	2
 ua_tdre		= 	1
