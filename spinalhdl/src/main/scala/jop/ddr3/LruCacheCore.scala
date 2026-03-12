@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 
 object LruCacheCoreState extends SpinalEnum {
-  val IDLE, CHECK_HIT, ISSUE_EVICT, WAIT_EVICT_RSP, ISSUE_REFILL, WAIT_REFILL_RSP = newElement()
+  val IDLE, TAG_COMPARE, CHECK_HIT, WRITE_HIT, ISSUE_EVICT, WAIT_EVICT_RSP, ISSUE_REFILL, WAIT_REFILL_RSP = newElement()
 }
 
 class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
@@ -34,11 +34,15 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   val cmdFifo = StreamFifo(CacheReq(addrWidth, dataWidth), 4)
   cmdFifo.io.push << io.frontend.req
 
-  val rspFifo = StreamFifo(CacheRsp(dataWidth), 4)
-  io.frontend.rsp << rspFifo.io.pop
-  rspFifo.io.push.valid := False
-  rspFifo.io.push.payload.data := B(0, dataWidth bits)
-  rspFifo.io.push.payload.error := False
+  // Single-entry output register (cache processes one request at a time)
+  val rspValid = RegInit(False)
+  val rspData = Reg(Bits(dataWidth bits))
+  val rspError = RegInit(False)
+  io.frontend.rsp.valid := rspValid
+  io.frontend.rsp.payload.data := rspData
+  io.frontend.rsp.payload.error := rspError
+  val rspReady = !rspValid || io.frontend.rsp.ready
+  when(io.frontend.rsp.fire) { rspValid := False }
 
   // --- BRAM Arrays ---
   val dataMems = (0 until wayCount).map(_ => Mem(Bits(dataWidth bits), setCount))
@@ -81,6 +85,25 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   val pendingVictimDirty = Reg(Bits(dataBytes bits)) init (0)
   val pendingTagWord = Reg(Bits(wayCount * tagWidth bits)) init (0)
   val pendingDirtyWord = Reg(Bits(wayCount * dataBytes bits)) init (0)
+
+  // Tag comparison pipeline registers (break readSync → state decision path)
+  val compAnyHit = Reg(Bool()) init (False)
+  val compHitWay = Reg(UInt(wayBits bits)) init (0)
+  val compHitData = Reg(Bits(dataWidth bits)) init (0)
+  val compVictimWay = Reg(UInt(wayBits bits)) init (0)
+  val compVictimData = Reg(Bits(dataWidth bits)) init (0)
+  val compVictimTag = Reg(Bits(tagWidth bits)) init (0)
+  val compVictimDirty = Reg(Bits(dataBytes bits)) init (0)
+  val compVictimIsDirty = Reg(Bool()) init (False)
+  val compReqIsFullLineWrite = Reg(Bool()) init (False)
+  val compReqWriteDirtyMask = Reg(Bits(dataBytes bits)) init (0)
+  val compWayHits = Vec(Reg(Bool()) init (False), wayCount)
+  val compWayDirtys = Vec(Reg(Bits(dataBytes bits)) init (0), wayCount)
+
+  // Write-hit pipeline registers (break tag comparison → data-write path)
+  val pendingHitWay = Reg(UInt(wayBits bits)) init (0)
+  val pendingMergedData = Reg(Bits(dataWidth bits)) init (0)
+  val pendingNewDirtyWord = Reg(Bits(wayCount * dataBytes bits)) init (0)
 
   // --- Default Outputs ---
   io.memCmd.valid := False
@@ -208,11 +231,13 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
         pendingIndex := reqIndex
         pendingTag := reqAddr(addrWidth - 1 downto byteOffsetWidth + indexWidth)
         cmdFifo.io.pop.ready := True
-        state := LruCacheCoreState.CHECK_HIT
+        state := LruCacheCoreState.TAG_COMPARE
       }
     }
 
-    is(LruCacheCoreState.CHECK_HIT) {
+    // TAG_COMPARE: readSync outputs available. Compute and register all
+    // comparison results. This breaks the BRAM-read → state-decision path.
+    is(LruCacheCoreState.TAG_COMPARE) {
       val wayTags = (0 until wayCount).map(w => tagReadVal(w * tagWidth + tagWidth - 1 downto w * tagWidth))
       val wayDirtys = (0 until wayCount).map(w => dirtyReadVal(w * dataBytes + dataBytes - 1 downto w * dataBytes))
       val wayValids = (0 until wayCount).map(w => getValid(pendingIndex, w))
@@ -266,65 +291,91 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
       for (w <- 0 until wayCount) {
         when(victimWay === U(w, wayBits bits)) { victimValid := wayValids(w) }
       }
-      val victimIsDirty = victimValid && (victimDirtyVal =/= 0)
 
-      val reqIsFullLineWrite = pendingReq.mask === 0
-      val reqWriteDirtyMask = (~pendingReq.mask).asBits
+      // Register all comparison results
+      compAnyHit := anyHit
+      compHitWay := hitWay
+      compHitData := hitData
+      for (w <- 0 until wayCount) {
+        compWayHits(w) := wayHits(w)
+        compWayDirtys(w) := wayDirtys(w)
+      }
+      compVictimWay := victimWay
+      compVictimData := victimData
+      compVictimTag := victimTagVal
+      compVictimDirty := victimDirtyVal
+      compVictimIsDirty := victimValid && (victimDirtyVal =/= 0)
+      compReqIsFullLineWrite := pendingReq.mask === 0
+      compReqWriteDirtyMask := (~pendingReq.mask).asBits
+      pendingTagWord := tagReadVal
+      pendingDirtyWord := dirtyReadVal
 
-      when(anyHit) {
+      state := LruCacheCoreState.CHECK_HIT
+    }
+
+    // CHECK_HIT: use registered comparison results to make hit/miss decisions.
+    is(LruCacheCoreState.CHECK_HIT) {
+      when(compAnyHit) {
         when(pendingReq.write) {
-          when(rspFifo.io.push.ready) {
-            val merged = mergeData(hitData, pendingReq.data, pendingReq.mask)
-            // Write data BRAM for hit way
-            dataWriteData := merged
-            for (w <- 0 until wayCount) {
-              when(wayHits(w)) { dataWriteEnable(w) := True }
-            }
+          // Hit-write: register merged data, apply in WRITE_HIT state.
+          val merged = mergeData(compHitData, pendingReq.data, pendingReq.mask)
+          pendingHitWay := compHitWay
+          pendingMergedData := merged
 
-            // Update dirty BRAM
-            val newDirtyWord = Bits(wayCount * dataBytes bits)
-            newDirtyWord := dirtyReadVal
-            for (w <- 0 until wayCount) {
-              when(wayHits(w)) {
-                newDirtyWord(w * dataBytes + dataBytes - 1 downto w * dataBytes) := wayDirtys(w) | reqWriteDirtyMask
-              }
+          val newDirtyWord = Bits(wayCount * dataBytes bits)
+          newDirtyWord := pendingDirtyWord
+          for (w <- 0 until wayCount) {
+            when(compWayHits(w)) {
+              newDirtyWord(w * dataBytes + dataBytes - 1 downto w * dataBytes) := compWayDirtys(w) | compReqWriteDirtyMask
             }
-            dirtyWriteEnable := True
-            dirtyWriteData := newDirtyWord
-
-            if (plruBits > 0) {
-              lruArray(pendingIndex) := plruUpdate(lruArray(pendingIndex), hitWay)
-            }
-
-            rspFifo.io.push.valid := True
-            rspFifo.io.push.payload.data := B(0, dataWidth bits)
-            rspFifo.io.push.payload.error := False
-            state := LruCacheCoreState.IDLE
           }
+          pendingNewDirtyWord := newDirtyWord
+
+          state := LruCacheCoreState.WRITE_HIT
         } otherwise {
-          when(rspFifo.io.push.ready) {
-            rspFifo.io.push.valid := True
-            rspFifo.io.push.payload.data := hitData
-            rspFifo.io.push.payload.error := False
+          when(rspReady) {
+            rspValid := True
+            rspData := compHitData
+            rspError := False
             if (plruBits > 0) {
-              lruArray(pendingIndex) := plruUpdate(lruArray(pendingIndex), hitWay)
+              lruArray(pendingIndex) := plruUpdate(lruArray(pendingIndex), compHitWay)
             }
             state := LruCacheCoreState.IDLE
           }
         }
       } otherwise {
-        pendingVictimWay := victimWay
-        pendingVictimData := victimData
-        pendingVictimTag := victimTagVal
-        pendingVictimDirty := victimDirtyVal
-        pendingTagWord := tagReadVal
-        pendingDirtyWord := dirtyReadVal
-        pendingNeedRefill := !(pendingReq.write && reqIsFullLineWrite)
-        when(victimIsDirty) {
+        pendingVictimWay := compVictimWay
+        pendingVictimData := compVictimData
+        pendingVictimTag := compVictimTag
+        pendingVictimDirty := compVictimDirty
+        pendingNeedRefill := !(pendingReq.write && compReqIsFullLineWrite)
+        when(compVictimIsDirty) {
           state := LruCacheCoreState.ISSUE_EVICT
         } otherwise {
           state := LruCacheCoreState.ISSUE_REFILL
         }
+      }
+    }
+
+    is(LruCacheCoreState.WRITE_HIT) {
+      // Apply registered hit-write results to BRAMs (pipelined from CHECK_HIT)
+      when(rspReady) {
+        dataWriteData := pendingMergedData
+        for (w <- 0 until wayCount) {
+          when(pendingHitWay === U(w, wayBits bits)) { dataWriteEnable(w) := True }
+        }
+
+        dirtyWriteEnable := True
+        dirtyWriteData := pendingNewDirtyWord
+
+        if (plruBits > 0) {
+          lruArray(pendingIndex) := plruUpdate(lruArray(pendingIndex), pendingHitWay)
+        }
+
+        rspValid := True
+        rspData := B(0, dataWidth bits)
+        rspError := False
+        state := LruCacheCoreState.IDLE
       }
     }
 
@@ -342,11 +393,11 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
     is(LruCacheCoreState.WAIT_EVICT_RSP) {
       when(io.memRsp.valid) {
         when(io.memRsp.payload.error) {
-          io.memRsp.ready := rspFifo.io.push.ready
-          when(rspFifo.io.push.ready) {
-            rspFifo.io.push.valid := True
-            rspFifo.io.push.payload.data := B(0, dataWidth bits)
-            rspFifo.io.push.payload.error := True
+          io.memRsp.ready := rspReady
+          when(rspReady) {
+            rspValid := True
+            rspData := B(0, dataWidth bits)
+            rspError := True
             state := LruCacheCoreState.IDLE
           }
         } otherwise {
@@ -374,7 +425,7 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
           state := LruCacheCoreState.WAIT_REFILL_RSP
         }
       } otherwise {
-        when(rspFifo.io.push.ready) {
+        when(rspReady) {
           val reqWriteDirtyMask = (~pendingReq.mask).asBits
 
           // Write data/tag/dirty BRAMs for victim way
@@ -408,21 +459,21 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
             lruArray(pendingIndex) := plruUpdate(lruArray(pendingIndex), pendingVictimWay)
           }
 
-          rspFifo.io.push.valid := True
-          rspFifo.io.push.payload.data := B(0, dataWidth bits)
-          rspFifo.io.push.payload.error := False
+          rspValid := True
+          rspData := B(0, dataWidth bits)
+          rspError := False
           state := LruCacheCoreState.IDLE
         }
       }
     }
 
     is(LruCacheCoreState.WAIT_REFILL_RSP) {
-      io.memRsp.ready := rspFifo.io.push.ready
-      when(io.memRsp.valid && rspFifo.io.push.ready) {
+      io.memRsp.ready := rspReady
+      when(io.memRsp.valid && rspReady) {
         when(io.memRsp.payload.error) {
-          rspFifo.io.push.valid := True
-          rspFifo.io.push.payload.data := B(0, dataWidth bits)
-          rspFifo.io.push.payload.error := True
+          rspValid := True
+          rspData := B(0, dataWidth bits)
+          rspError := True
           state := LruCacheCoreState.IDLE
         } otherwise {
           val refillData = io.memRsp.payload.data
@@ -432,15 +483,15 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
           when(pendingReq.write) {
             finalData := mergeData(refillData, pendingReq.data, pendingReq.mask)
             finalDirty := (~pendingReq.mask).asBits
-            rspFifo.io.push.valid := True
-            rspFifo.io.push.payload.data := B(0, dataWidth bits)
-            rspFifo.io.push.payload.error := False
+            rspValid := True
+            rspData := B(0, dataWidth bits)
+            rspError := False
           } otherwise {
             finalData := refillData
             finalDirty := B(0, dataBytes bits)
-            rspFifo.io.push.valid := True
-            rspFifo.io.push.payload.data := refillData
-            rspFifo.io.push.payload.error := False
+            rspValid := True
+            rspData := refillData
+            rspError := False
           }
 
           // Write data/tag/dirty BRAMs for victim way

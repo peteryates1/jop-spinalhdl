@@ -121,7 +121,7 @@ class LruCacheCoreFormal extends SpinalFormalFunSuite {
         when(pastValidAfterReset()) {
           when(past(dut.state === LruCacheCoreState.WAIT_EVICT_RSP) &&
                past(dut.io.memRsp.valid) && past(dut.io.memRsp.payload.error) &&
-               past(dut.rspFifo.io.push.ready)) {
+               past(dut.rspReady)) {
             assert(dut.state === LruCacheCoreState.IDLE)
           }
         }
@@ -143,7 +143,7 @@ class LruCacheCoreFormal extends SpinalFormalFunSuite {
         when(pastValidAfterReset()) {
           when(past(dut.state === LruCacheCoreState.WAIT_REFILL_RSP) &&
                past(dut.io.memRsp.valid) && past(dut.io.memRsp.payload.error) &&
-               past(dut.rspFifo.io.push.ready)) {
+               past(dut.rspReady)) {
             assert(dut.state === LruCacheCoreState.IDLE)
           }
         }

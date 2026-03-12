@@ -432,6 +432,23 @@ object JopConfig {
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
       drivers = Seq(DeviceDriver.UartCh340))))
 
+  /** Wukong SDR — all compute units, UART only (no Ethernet/SD) */
+  def wukongSdrAllCu = {
+    val base = wukongSdram
+    base.copy(systems = Seq(base.system.copy(
+      coreConfig = JopCoreConfig(
+        useDspMul = true,
+        imul = Hardware, idiv = Hardware, irem = Hardware,
+        fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
+        fneg = Hardware, i2f = Hardware, f2i = Hardware,
+        fcmpl = Hardware, fcmpg = Hardware,
+        ladd = Hardware, lsub = Hardware, lmul = Hardware, lneg = Hardware,
+        lshl = Hardware, lshr = Hardware, lushr = Hardware, lcmp = Hardware,
+        dadd = Hardware, dsub = Hardware, dmul = Hardware, ddiv = Hardware,
+        i2d = Hardware, d2i = Hardware, l2d = Hardware, d2l = Hardware,
+        f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware))))
+  }
+
   /** Wukong DDR3 (single-system, 100 MHz) */
   def wukongDdr3 = JopConfig(
     assembly = SystemAssembly.wukong,
@@ -453,6 +470,18 @@ object JopConfig {
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
       drivers = Seq(DeviceDriver.UartCh340))))
+
+  /** Wukong BRAM with all compute units (DCU debug — simulation only) */
+  def wukongBramFull = {
+    val base = wukongFull
+    base.copy(systems = Seq(base.system.copy(
+      name = "main",
+      memory = "bram",
+      bootMode = BootMode.Simulation,
+      cpuCnt = 1,
+      ioConfig = IoConfig(),
+      drivers = Seq(DeviceDriver.UartCh340))))
+  }
 
   // ========================================================================
   // Wukong full-featured presets
@@ -480,6 +509,14 @@ object JopConfig {
         f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware),
       drivers = Seq(DeviceDriver.UartCh340, DeviceDriver.EthGmii, DeviceDriver.SdNative))))
 
+  /** Wukong DDR3 — all compute units, UART only (no Ethernet/SD) */
+  def wukongDdr3AllCu = {
+    val base = wukongFull
+    base.copy(systems = Seq(base.system.copy(
+      ioConfig = IoConfig(),
+      drivers = Seq(DeviceDriver.UartCh340))))
+  }
+
   /** Wukong DDR3 — full featured SMP (with Ethernet + SD) */
   def wukongFullSmp(n: Int) = {
     val base = wukongFull
@@ -494,6 +531,45 @@ object JopConfig {
       cpuCnt = n,
       ioConfig = IoConfig(),
       drivers = Seq(DeviceDriver.UartCh340))))
+  }
+
+  /** Wukong DDR3 — all CUs except DCU (debug: isolate DCU hang).
+    * Derived from wukongSmp(1) with all double ops set to Java. */
+  def wukongNoDcu = {
+    val base = wukongSmp(1)
+    base.copy(systems = Seq(base.system.copy(
+      coreConfig = base.system.coreConfig.copy(
+        dadd = Java, dsub = Java, dmul = Java, ddiv = Java,
+        i2d = Java, d2i = Java, l2d = Java, d2l = Java,
+        f2d = Java, d2f = Java, dcmpl = Java, dcmpg = Java))))
+  }
+
+  // === Debug configs: isolate which CU causes DoubleField hang on DDR3 ===
+
+  /** Wukong DDR3 — ICU + DSP mul only (test useDspMul in isolation) */
+  def wukongDdr3DspMul = {
+    val base = wukongDdr3
+    base.copy(systems = Seq(base.system.copy(
+      coreConfig = base.system.coreConfig.copy(useDspMul = true, imul = Hardware))))
+  }
+
+  /** Wukong DDR3 — ICU + FCU only (test FCU in isolation) */
+  def wukongDdr3Fcu = {
+    val base = wukongDdr3
+    base.copy(systems = Seq(base.system.copy(
+      coreConfig = base.system.coreConfig.copy(
+        fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
+        fneg = Hardware, i2f = Hardware, f2i = Hardware,
+        fcmpl = Hardware, fcmpg = Hardware))))
+  }
+
+  /** Wukong DDR3 — ICU + LCU only (test LCU in isolation) */
+  def wukongDdr3Lcu = {
+    val base = wukongDdr3
+    base.copy(systems = Seq(base.system.copy(
+      coreConfig = base.system.coreConfig.copy(
+        ladd = Hardware, lsub = Hardware, lmul = Hardware, lneg = Hardware,
+        lshl = Hardware, lshr = Hardware, lushr = Hardware, lcmp = Hardware))))
   }
 
   /** Wukong SDR — full featured: HW integer + float + long + double compute, Ethernet, SD */

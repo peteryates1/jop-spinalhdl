@@ -32,7 +32,9 @@ object JopTopVerilog {
     case "cyc5000Serial"    => JopConfig.cyc5000Serial
     case "auSerial"         => JopConfig.auSerial
     case "wukongSdram"      => JopConfig.wukongSdram
+    case "wukongSdrAllCu"   => JopConfig.wukongSdrAllCu
     case "wukongDdr3"       => JopConfig.wukongDdr3
+    case "wukongDdr3AllCu"  => JopConfig.wukongDdr3AllCu
     case "wukongBram"       => JopConfig.wukongBram
     case "wukongFull"       => JopConfig.wukongFull
     case "wukongSdrFull"    => JopConfig.wukongSdrFull
@@ -42,6 +44,10 @@ object JopTopVerilog {
     case "wukongSmp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.wukongSmp(n)
+    case "wukongNoDcu"      => JopConfig.wukongNoDcu
+    case "wukongDdr3DspMul" => JopConfig.wukongDdr3DspMul
+    case "wukongDdr3Fcu"    => JopConfig.wukongDdr3Fcu
+    case "wukongDdr3Lcu"    => JopConfig.wukongDdr3Lcu
     case "minimum"          => JopConfig.minimum
     case "max1000Sdram"     => JopConfig.max1000Sdram
     case "ep4ce6Sdram"      => JopConfig.ep4ce6Sdram

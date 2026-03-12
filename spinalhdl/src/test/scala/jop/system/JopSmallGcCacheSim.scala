@@ -94,13 +94,20 @@ case class CacheToBramAdapter(
 case class JopCoreWithCacheTestHarness(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
-  mainMemInit: Seq[BigInt]
+  mainMemInit: Seq[BigInt],
+  readLatency: Int = 10,
+  writeLatency: Int = 3,
+  coreConfigOverride: Option[JopCoreConfig] = None
 ) extends Component {
 
   // Match DDR3 config: addressWidth=26 (28-bit BMB byte addr), burstLen=8
-  val config = JopCoreConfig(
-    memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = 128 * 1024, burstLen = 8)
+  val mainMemSizeBytes = (mainMemInit.length * 4) max (128 * 1024)  // At least 128KB, or fit .jop
+  val defaultConfig = JopCoreConfig(
+    memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = mainMemSizeBytes, burstLen = 8)
   )
+  val config = coreConfigOverride.map(_.copy(
+    memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = mainMemSizeBytes, burstLen = 8)
+  )).getOrElse(defaultConfig)
 
   val cacheAddrWidth = 28   // BMB byte address width
   val cacheDataWidth = 128  // Cache line width (matching DDR3 MIG)
@@ -154,12 +161,13 @@ case class JopCoreWithCacheTestHarness(
   val bmbBridge = new BmbCacheBridge(config.memConfig.bmbParameter, cacheAddrWidth, cacheDataWidth)
   val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth))
   // DDR3-like latency: ~10 cycles for read, ~3 cycles for write (matching MIG behavior)
-  val backend = CacheToBramAdapter(cacheAddrWidth, cacheDataWidth, 128 * 1024,
-    readLatency = 10, writeLatency = 3)
+  val backendSizeBytes = mainMemSizeBytes max (256 * 1024)  // At least 256KB backing store
+  val backend = CacheToBramAdapter(cacheAddrWidth, cacheDataWidth, backendSizeBytes,
+    readLatency = readLatency, writeLatency = writeLatency)
 
   // Initialize 128-bit BRAM from 32-bit word data
   // Pack 4 consecutive 32-bit words into each 128-bit word (little-endian lanes)
-  val memWords32 = mainMemInit.take(128 * 1024 / 4).padTo(128 * 1024 / 4, BigInt(0))
+  val memWords32 = mainMemInit.take(backendSizeBytes / 4).padTo(backendSizeBytes / 4, BigInt(0))
   val memWords128 = memWords32.grouped(4).toSeq.map { group =>
     val g = group.padTo(4, BigInt(0))
     (g(3) << 96) | (g(2) << 64) | (g(1) << 32) | g(0)
