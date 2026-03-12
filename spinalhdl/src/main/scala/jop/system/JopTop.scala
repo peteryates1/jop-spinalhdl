@@ -328,19 +328,24 @@ case class JopTop(
     )
   }
 
-  val vgaCd = (!simulation && sys.ioConfig.hasVga) generate {
-    val vgaBootCd = ClockDomain(pllResult.vgaClk.get, config = ClockDomainConfig(resetKind = BOOT))
-    val vgaReset = ResetCtrl.asyncAssertSyncDeassert(
-      input = systemReset,
-      clockDomain = vgaBootCd,
-      inputPolarity = HIGH,
-      outputPolarity = HIGH
-    )
-    ClockDomain(
-      clock = pllResult.vgaClk.get,
-      reset = vgaReset,
-      config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = HIGH)
-    )
+  val vgaCd = sys.ioConfig.hasVga generate {
+    if (simulation) {
+      ClockDomain.external("vgaCd", withReset = false,
+        config = ClockDomainConfig(resetKind = BOOT))
+    } else {
+      val vgaBootCd = ClockDomain(pllResult.vgaClk.get, config = ClockDomainConfig(resetKind = BOOT))
+      val vgaReset = ResetCtrl.asyncAssertSyncDeassert(
+        input = systemReset,
+        clockDomain = vgaBootCd,
+        inputPolarity = HIGH,
+        outputPolarity = HIGH
+      )
+      ClockDomain(
+        clock = pllResult.vgaClk.get,
+        reset = vgaReset,
+        config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = HIGH)
+      )
+    }
   }
 
   // ========================================================================
@@ -384,7 +389,7 @@ case class JopTop(
       jbcInit = Some(Seq.fill(2048)(BigInt(0))),
       ethTxCd = if (!simulation && sys.ioConfig.hasEth) Some(ethTxCd) else None,
       ethRxCd = if (!simulation && sys.ioConfig.hasEth) Some(ethRxCd) else None,
-      vgaCd = if (!simulation && sys.ioConfig.hasVga) Some(vgaCd) else None,
+      vgaCd = if (sys.ioConfig.hasVga) Some(vgaCd) else None,
       perCoreUart = sys.perCoreUart,
       perCoreConfigs = if (coreConfigs.length > 1 || coreConfigs.head != JopCoreConfig())
         Some(coreConfigs) else None

@@ -31,6 +31,10 @@ scalacOptions ++= Seq(
 // Fork JVM for run
 fork := true
 
+// Pass DISPLAY for AWT-based simulation (SimDisplay)
+run / envVars ++= sys.env.get("DISPLAY").map("DISPLAY" -> _).toMap
+Test / envVars ++= sys.env.get("DISPLAY").map("DISPLAY" -> _).toMap
+
 // Test configuration
 Test / parallelExecution := false
 Test / testOptions += Tests.Argument("-oD")  // Show test durations
@@ -43,5 +47,7 @@ Test / scalaSource := baseDirectory.value / "spinalhdl" / "src" / "test" / "scal
 Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated"           // JumpTableData (simulation)
 Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial" // SerialJumpTableData
 Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "flash"  // FlashJumpTableData
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "dsp"    // DspJumpTableData, SerialDspJumpTableData
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "hwmath" // HwMathJumpTableData
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "dsp"          // DspJumpTableData
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-dsp"   // SerialDspJumpTableData
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "hwmath"       // HwMathJumpTableData
+Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-hwmath" // SerialHwMathJumpTableData
