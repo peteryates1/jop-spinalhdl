@@ -2,13 +2,14 @@ package jop.generate
 
 import jop.config._
 import jop.memory.JopIoSpace
+import jop.io.IoAddressAllocator
 
 /**
  * Generates Const.java from JopConfig.
  *
  * Replaces the manually-maintained Const.java with a config-derived version.
- * I/O addresses are derived from JopIoSpace, feature flags from core configs,
- * hardware availability from IoConfig.
+ * I/O addresses for Sys and Uart are fixed (from JopIoSpace).
+ * All other device addresses are computed by IoAddressAllocator.
  *
  * Usage:
  *   sbt "runMain jop.generate.ConstGeneratorMain ep4cgx150Serial"
@@ -16,7 +17,7 @@ import jop.memory.JopIoSpace
  */
 object ConstGenerator {
 
-  /** Convert JopIoSpace 8-bit address to Java I/O offset from IO_BASE */
+  /** Convert 8-bit I/O address to Java I/O offset from IO_BASE */
   private def ioOffset(addr8: Int): Int = addr8 - 0x80
 
   /** Format an I/O offset as hex string for readability */
@@ -37,6 +38,25 @@ object ConstGenerator {
     val hasVgaDma = allIo.exists(_.hasVgaDma)
     val hasVgaText = allIo.exists(_.hasVgaText)
     val hasCfgFlash = allIo.exists(_.hasConfigFlash)
+
+    // Create superset IoConfig for address allocation
+    val supersetIo = IoConfig(
+      hasEth = hasEth,
+      ethGmii = allIo.exists(_.ethGmii),
+      hasSdSpi = hasSdSpi,
+      hasSdNative = hasSdNative,
+      hasVgaDma = hasVgaDma,
+      hasVgaText = hasVgaText,
+      hasConfigFlash = hasCfgFlash
+    )
+    val allocatedDevices = IoAddressAllocator.allocate(supersetIo.allDescriptorsForAllocation())
+    val addrMap: Map[String, Int] = allocatedDevices.map(ad => ad.descriptor.name -> ad.baseAddr).toMap
+
+    // Helper: get allocated base address for a device, or 0x80 (IO_BASE) as fallback
+    def devAddr(name: String): String = addrMap.get(name) match {
+      case Some(addr) => hexOffset(ioOffset(addr))
+      case None => "0"
+    }
 
     // Feature flags: true if ANY core uses Java (software) for that category
     val supportFloat = allCores.exists { c =>
@@ -161,8 +181,7 @@ object ConstGenerator {
          |	public static final int IO_BASE = -128; // 0xFFFFFF80
          |
          |	// ====================================================================
-         |	// System registers (BmbSys, always present)
-         |	// Derived from JopIoSpace.SYS_BASE = 0x${f"${JopIoSpace.SYS_BASE}%02X"}
+         |	// System registers (Sys, always present, fixed at 0xF0)
          |	// ====================================================================
          |
          |	/** System counter (read) / Global interrupt enable (write) */
@@ -207,8 +226,7 @@ object ConstGenerator {
          |	public static final int IO_FPU_CAP = IO_BASE + ${ioOffset(JopIoSpace.SYS_BASE + 15)};
          |
          |	// ====================================================================
-         |	// UART registers (BmbUart, always present)
-         |	// Derived from JopIoSpace.UART_BASE = 0x${f"${JopIoSpace.UART_BASE}%02X"}
+         |	// UART registers (Uart, always present, fixed at 0xE0)
          |	// ====================================================================
          |
          |	/** UART status register */
@@ -225,53 +243,35 @@ object ConstGenerator {
          |	public static final int MSK_UA_RDRF = 2;
          |""".stripMargin)
 
-    // All I/O device addresses are always defined (Java code uses HAS_* flags
-    // at runtime for conditional access, but constants must compile).
+    // Peripheral I/O addresses (from IoAddressAllocator)
     sb.append(
       s"""
          |	// ====================================================================
-         |	// Peripheral I/O addresses (derived from JopIoSpace)
+         |	// Peripheral I/O addresses (dynamically allocated by IoAddressAllocator)
          |	// All addresses always defined; use HAS_* flags for runtime checks.
          |	// ====================================================================
          |
-         |	/** System device base (alias for IO_BASE) */
-         |	public static final int IO_SYS_DEVICE = IO_BASE + 0;
-         |	/** USB port (alias for IO_BASE + 0x20, legacy) */
-         |	public static final int IO_USB = IO_BASE + ${hexOffset(ioOffset(JopIoSpace.MDIO_BASE))};
+         |	/** System device base (alias for IO_BASE + SYS offset) */
+         |	public static final int IO_SYS_DEVICE = IO_BASE + ${hexOffset(ioOffset(JopIoSpace.SYS_BASE))};
+         |	/** Ethernet controller base address (MAC at +0, MDIO at +8) */
+         |	public static final int IO_ETH = IO_BASE + ${devAddr("eth")};
+         |	/** MDIO PHY management base address (ETH base + 8) */
+         |	public static final int IO_MDIO = IO_ETH + 8;
+         |	/** USB port (legacy alias — shares MDIO address slot) */
+         |	public static final int IO_USB = IO_MDIO;
          |	public static final int IO_USB_STATUS = IO_USB;
          |	public static final int IO_USB_DATA = IO_USB + 1;
          |
-         |	/** Ethernet MAC base address */
-         |	public static final int IO_ETH = IO_BASE + ${hexOffset(ioOffset(JopIoSpace.ETH_BASE))};
-         |	/** MDIO PHY management base address */
-         |	public static final int IO_MDIO = IO_BASE + ${hexOffset(ioOffset(JopIoSpace.MDIO_BASE))};
-         |
          |	/** SD SPI base address */
-         |	public static final int IO_SD_SPI = IO_BASE + ${hexOffset(ioOffset(JopIoSpace.SD_SPI_BASE))};
+         |	public static final int IO_SD_SPI = IO_BASE + ${devAddr("sdSpi")};
          |	/** VGA DMA framebuffer controller base address */
-         |	public static final int IO_VGA_DMA = IO_BASE + ${hexOffset(ioOffset(JopIoSpace.VGA_DMA_BASE))};
+         |	public static final int IO_VGA_DMA = IO_BASE + ${devAddr("vgaDma")};
          |	/** SD Native base address */
-         |	public static final int IO_SD = IO_BASE + ${hexOffset(ioOffset(JopIoSpace.SD_NATIVE_BASE))};
+         |	public static final int IO_SD = IO_BASE + ${devAddr("sdNative")};
          |	/** VGA text controller base address */
-         |	public static final int IO_VGA = IO_BASE + ${hexOffset(ioOffset(JopIoSpace.VGA_TEXT_BASE))};
+         |	public static final int IO_VGA = IO_BASE + ${devAddr("vgaText")};
          |	/** Config flash base address */
-         |	public static final int IO_CFG_FLASH = IO_BASE + ${hexOffset(ioOffset(JopIoSpace.CFG_FLASH_BASE))};
-         |
-         |	/** Hardware divider base address */
-         |	public static final int IO_DIV = IO_BASE + ${hexOffset(ioOffset(JopIoSpace.DIV_BASE))};
-         |	public static final int IO_REM = IO_DIV + 1;
-         |	public static final int IO_DIV_STS = IO_DIV + 2;
-         |
-         |	/** FPU base address */
-         |	public static final int IO_FPU = IO_BASE + ${hexOffset(ioOffset(JopIoSpace.FPU_BASE))};
-         |	public static final int FPU_A = IO_FPU + 0;
-         |	public static final int FPU_B = IO_FPU + 1;
-         |	public static final int FPU_OP = IO_FPU + 2;
-         |	public static final int FPU_RES = IO_FPU + 3;
-         |	public static final int FPU_OP_ADD = 0;
-         |	public static final int FPU_OP_SUB = 1;
-         |	public static final int FPU_OP_MUL = 2;
-         |	public static final int FPU_OP_DIV = 3;
+         |	public static final int IO_CFG_FLASH = IO_BASE + ${devAddr("cfgFlash")};
          |
          |	// Legacy aliases (referenced by toolchain and older apps)
          |	public static final int IO_STATUS2 = IO_BASE + 0x30;

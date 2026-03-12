@@ -432,7 +432,7 @@ case class JopTop(
     // UART
     // ==================================================================
 
-    cluster.io.rxd := io.ser_rxd
+    cluster.devicePin[Bool]("uart", "rxd") := io.ser_rxd
 
     // Per-core UART TX (when enabled)
     if (sys.perCoreUart) {
@@ -446,7 +446,7 @@ case class JopTop(
     // Ethernet (optional)
     // ==================================================================
 
-    if (sys.ioConfig.hasEth) {
+    if (cluster.devicePins.contains("eth")) {
       val dataWidth = sys.ioConfig.phyDataWidth
 
       // GTX clock (125 MHz from EthPll on Altera, PLL ethClk on Xilinx)
@@ -457,24 +457,27 @@ case class JopTop(
       }
 
       // MDIO
-      io.e_mdc := cluster.io.mdc.get
-      io.e_mdio.write := cluster.io.mdioOut.get
-      io.e_mdio.writeEnable := cluster.io.mdioOe.get
-      cluster.io.mdioIn.get := io.e_mdio.read
+      io.e_mdc := cluster.devicePin[Bool]("eth", "mdc")
+      io.e_mdio.write := cluster.devicePin[Bool]("eth", "mdioOut")
+      io.e_mdio.writeEnable := cluster.devicePin[Bool]("eth", "mdioOe")
+      cluster.devicePin[Bool]("eth", "mdioIn") := io.e_mdio.read
 
-      cluster.io.phy.get.colision := False
-      cluster.io.phy.get.busy := False
+      // PHY interface from cluster's devicePins (Eth.io contains PhyIo as "phy")
+      val ethPhyIo = cluster.devicePins("eth").elements.find(_._1 == "phy").get._2.asInstanceOf[PhyIo]
+
+      ethPhyIo.colision := False
+      ethPhyIo.busy := False
 
       // PHY hardware reset
       val phyRstCnt = Reg(UInt(20 bits)) init(0)
       val phyRstDone = phyRstCnt.andR
       when(!phyRstDone) { phyRstCnt := phyRstCnt + 1 }
-      io.e_resetn := phyRstDone && cluster.io.phyReset.get
+      io.e_resetn := phyRstDone && cluster.devicePin[Bool]("eth", "phyReset")
 
       // TX adapter
       val txArea = new ClockingArea(ethTxCd) {
         val interframe = MacTxInterFrame(dataWidth)
-        interframe.io.input << cluster.io.phy.get.tx
+        interframe.io.input << ethPhyIo.tx
         io.e_txen := RegNext(interframe.io.output.valid) init(False)
         io.e_txd  := RegNext(interframe.io.output.fragment.data) init(0)
         io.e_txer := False
@@ -494,7 +497,7 @@ case class JopTop(
         rxFlow.fragment       := buffered.payload
         rxFlow.last           := !unbuffered.valid && buffered.valid
 
-        cluster.io.phy.get.rx << rxFlow.toStream
+        ethPhyIo.rx << rxFlow.toStream
       }
     }
 
@@ -502,57 +505,68 @@ case class JopTop(
     // VGA (optional)
     // ==================================================================
 
-    if (sys.ioConfig.hasVga) {
-      io.vga_hs := cluster.io.vgaHsync.get
-      io.vga_vs := cluster.io.vgaVsync.get
-      io.vga_r  := cluster.io.vgaR.get
-      io.vga_g  := cluster.io.vgaG.get
-      io.vga_b  := cluster.io.vgaB.get
+    // VGA: check both vgaText and vgaDma device names
+    val vgaDeviceName = if (cluster.devicePins.contains("vgaDma")) "vgaDma"
+                        else if (cluster.devicePins.contains("vgaText")) "vgaText"
+                        else ""
+    if (vgaDeviceName.nonEmpty) {
+      io.vga_hs := cluster.devicePin[Bool](vgaDeviceName, "vgaHsync")
+      io.vga_vs := cluster.devicePin[Bool](vgaDeviceName, "vgaVsync")
+      io.vga_r  := cluster.devicePin[Bits](vgaDeviceName, "vgaR")
+      io.vga_g  := cluster.devicePin[Bits](vgaDeviceName, "vgaG")
+      io.vga_b  := cluster.devicePin[Bits](vgaDeviceName, "vgaB")
     }
 
     // ==================================================================
     // SD Native (optional)
     // ==================================================================
 
-    if (sys.ioConfig.hasSdNative) {
-      io.sd_clk := cluster.io.sdClk.get
-      io.sd_cmd.write       := cluster.io.sdCmdWrite.get
-      io.sd_cmd.writeEnable := cluster.io.sdCmdWriteEn.get
-      cluster.io.sdCmdRead.get  := io.sd_cmd.read
-      io.sd_dat_0.write       := cluster.io.sdDatWrite.get(0)
-      io.sd_dat_0.writeEnable := cluster.io.sdDatWriteEn.get(0)
-      io.sd_dat_1.write       := cluster.io.sdDatWrite.get(1)
-      io.sd_dat_1.writeEnable := cluster.io.sdDatWriteEn.get(1)
-      io.sd_dat_2.write       := cluster.io.sdDatWrite.get(2)
-      io.sd_dat_2.writeEnable := cluster.io.sdDatWriteEn.get(2)
-      io.sd_dat_3.write       := cluster.io.sdDatWrite.get(3)
-      io.sd_dat_3.writeEnable := cluster.io.sdDatWriteEn.get(3)
-      cluster.io.sdDatRead.get := io.sd_dat_3.read ## io.sd_dat_2.read ## io.sd_dat_1.read ## io.sd_dat_0.read
-      cluster.io.sdCd.get := io.sd_cd
+    if (cluster.devicePins.contains("sdNative")) {
+      val sdPins = cluster.devicePins("sdNative")
+      val sdCmd = sdPins.elements.find(_._1 == "sdCmd").get._2.asInstanceOf[Bundle]
+      val sdDat = sdPins.elements.find(_._1 == "sdDat").get._2.asInstanceOf[Bundle]
+
+      io.sd_clk := cluster.devicePin[Bool]("sdNative", "sdClk")
+      io.sd_cmd.write       := sdCmd.elements.find(_._1 == "write").get._2.asInstanceOf[Bool]
+      io.sd_cmd.writeEnable := sdCmd.elements.find(_._1 == "writeEnable").get._2.asInstanceOf[Bool]
+      sdCmd.elements.find(_._1 == "read").get._2.asInstanceOf[Bool]  := io.sd_cmd.read
+      val sdDatWrite   = sdDat.elements.find(_._1 == "write").get._2.asInstanceOf[Bits]
+      val sdDatWriteEn = sdDat.elements.find(_._1 == "writeEnable").get._2.asInstanceOf[Bits]
+      val sdDatRead    = sdDat.elements.find(_._1 == "read").get._2.asInstanceOf[Bits]
+      io.sd_dat_0.write       := sdDatWrite(0)
+      io.sd_dat_0.writeEnable := sdDatWriteEn(0)
+      io.sd_dat_1.write       := sdDatWrite(1)
+      io.sd_dat_1.writeEnable := sdDatWriteEn(1)
+      io.sd_dat_2.write       := sdDatWrite(2)
+      io.sd_dat_2.writeEnable := sdDatWriteEn(2)
+      io.sd_dat_3.write       := sdDatWrite(3)
+      io.sd_dat_3.writeEnable := sdDatWriteEn(3)
+      sdDatRead := io.sd_dat_3.read ## io.sd_dat_2.read ## io.sd_dat_1.read ## io.sd_dat_0.read
+      cluster.devicePin[Bool]("sdNative", "sdCd") := io.sd_cd
     }
 
     // ==================================================================
     // SD SPI (optional)
     // ==================================================================
 
-    if (sys.ioConfig.hasSdSpi) {
-      io.sd_spi_clk  := cluster.io.sdSpiSclk.get
-      io.sd_spi_mosi := cluster.io.sdSpiMosi.get
-      io.sd_spi_cs   := cluster.io.sdSpiCs.get
-      cluster.io.sdSpiMiso.get := io.sd_spi_miso
-      cluster.io.sdSpiCd.get   := io.sd_spi_cd
+    if (cluster.devicePins.contains("sdSpi")) {
+      io.sd_spi_clk  := cluster.devicePin[Bool]("sdSpi", "sclk")
+      io.sd_spi_mosi := cluster.devicePin[Bool]("sdSpi", "mosi")
+      io.sd_spi_cs   := cluster.devicePin[Bool]("sdSpi", "cs")
+      cluster.devicePin[Bool]("sdSpi", "miso") := io.sd_spi_miso
+      cluster.devicePin[Bool]("sdSpi", "cd")   := io.sd_spi_cd
     }
 
     // ==================================================================
     // Config Flash — Altera (optional)
     // ==================================================================
 
-    if (sys.ioConfig.hasConfigFlash && isAltera) {
-      io.cf_dclk := cluster.io.cfDclk.get
-      io.cf_ncs  := cluster.io.cfNcs.get
-      io.cf_asdo := cluster.io.cfAsdo.get
-      cluster.io.cfData0.get := io.cf_data0
-      cluster.io.cfFlashReady.get := True
+    if (sys.ioConfig.hasConfigFlash && isAltera && cluster.devicePins.contains("cfgFlash")) {
+      io.cf_dclk := cluster.devicePin[Bool]("cfgFlash", "dclk")
+      io.cf_ncs  := cluster.devicePin[Bool]("cfgFlash", "ncs")
+      io.cf_asdo := cluster.devicePin[Bool]("cfgFlash", "asdo")
+      cluster.devicePin[Bool]("cfgFlash", "data0") := io.cf_data0
+      cluster.devicePin[Bool]("cfgFlash", "flashReady") := True
     }
 
     // ==================================================================
@@ -561,14 +575,14 @@ case class JopTop(
     //       For now, just expose the cluster's SPI signals directly.
     // ==================================================================
 
-    if (sys.ioConfig.hasConfigFlash && isXilinx) {
-      cluster.io.cfData0.get := io.cf_miso
-      cluster.io.cfFlashReady.get := True
+    if (sys.ioConfig.hasConfigFlash && isXilinx && cluster.devicePins.contains("cfgFlash")) {
+      cluster.devicePin[Bool]("cfgFlash", "data0") := io.cf_miso
+      cluster.devicePin[Bool]("cfgFlash", "flashReady") := True
 
       // Expose cluster SPI for top-level mux wiring
-      val cfClusterDclk = cluster.io.cfDclk.get
-      val cfClusterNcs  = cluster.io.cfNcs.get
-      val cfClusterAsdo = cluster.io.cfAsdo.get
+      val cfClusterDclk = cluster.devicePin[Bool]("cfgFlash", "dclk")
+      val cfClusterNcs  = cluster.devicePin[Bool]("cfgFlash", "ncs")
+      val cfClusterAsdo = cluster.devicePin[Bool]("cfgFlash", "asdo")
     }
   }
 
@@ -586,7 +600,7 @@ case class JopTop(
 
   if (simulation) {
     // --- Simulation: direct wiring, no PLL/CDC/hang-detector ---
-    io.ser_txd := mainArea.cluster.io.txd
+    io.ser_txd := mainArea.cluster.devicePin[Bool]("uart", "txd")
     io.led := 0
     io.led(0) := mainArea.cluster.io.wd(0)(0)
 
@@ -605,7 +619,7 @@ case class JopTop(
     }
 
     // UART TX: direct from cluster (same clock domain, no CDC)
-    io.ser_txd := mainArea.cluster.io.txd
+    io.ser_txd := mainArea.cluster.devicePin[Bool]("uart", "txd")
 
     // LED driver (active-low for QMTECH/CYC5000)
     if (sys.cpuCnt == 1) {
@@ -636,7 +650,7 @@ case class JopTop(
     }
 
     val wdSync = (0 until sys.cpuCnt).map(i => BufferCC(mainArea.cluster.io.wd(i)(0), init = False))
-    val jopTxdSync = BufferCC(mainArea.cluster.io.txd, init = True)
+    val jopTxdSync = BufferCC(mainArea.cluster.devicePin[Bool]("uart", "txd"), init = True)
 
     if (!isBram) {
       val memStateSync = BufferCC(mainArea.cluster.io.debugMemState, init = U(0, 5 bits))

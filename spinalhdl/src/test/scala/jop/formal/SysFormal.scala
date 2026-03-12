@@ -3,12 +3,12 @@ package jop.formal
 import spinal.core._
 import spinal.core.formal._
 
-import jop.io.{BmbSys, SyncOut}
+import jop.io.{Sys, SyncOut}
 
 /**
- * Formal verification for the BmbSys component.
+ * Formal verification for the Sys component.
  *
- * Source: jop/io/BmbSys.scala
+ * Source: jop/io/Sys.scala
  *
  * Properties verified:
  * - Clock counter monotonicity: increments by 1 every cycle
@@ -16,14 +16,14 @@ import jop.io.{BmbSys, SyncOut}
  * - Lock request held: lockReqReg stable until explicit unlock
  * - CPU ID read returns correct value
  */
-class BmbSysFormal extends SpinalFormalFunSuite {
+class SysFormal extends SpinalFormalFunSuite {
 
   val formalConfig = FormalConfig
     .addEngin(SmtBmc(solver = SmtBmcSolver.Z3))
 
   val clkFreq = 100 MHz
 
-  def setupDut(dut: BmbSys): Unit = {
+  def setupDut(dut: Sys): Unit = {
     anyseq(dut.io.addr)
     anyseq(dut.io.rd)
     anyseq(dut.io.wr)
@@ -40,7 +40,7 @@ class BmbSysFormal extends SpinalFormalFunSuite {
     formalConfig
       .withBMC(5)
       .doVerify(new Component {
-        val dut = FormalDut(BmbSys(clkFreq))
+        val dut = FormalDut(Sys(clkFreq))
         assumeInitial(ClockDomain.current.isResetActive)
         setupDut(dut)
 
@@ -54,7 +54,7 @@ class BmbSysFormal extends SpinalFormalFunSuite {
     formalConfig
       .withBMC(4)
       .doVerify(new Component {
-        val dut = FormalDut(BmbSys(clkFreq))
+        val dut = FormalDut(Sys(clkFreq))
         assumeInitial(ClockDomain.current.isResetActive)
         setupDut(dut)
 
@@ -70,7 +70,7 @@ class BmbSysFormal extends SpinalFormalFunSuite {
     formalConfig
       .withBMC(4)
       .doVerify(new Component {
-        val dut = FormalDut(BmbSys(clkFreq))
+        val dut = FormalDut(Sys(clkFreq))
         assumeInitial(ClockDomain.current.isResetActive)
         setupDut(dut)
 
@@ -86,7 +86,7 @@ class BmbSysFormal extends SpinalFormalFunSuite {
     formalConfig
       .withBMC(5)
       .doVerify(new Component {
-        val dut = FormalDut(BmbSys(clkFreq))
+        val dut = FormalDut(Sys(clkFreq))
         assumeInitial(ClockDomain.current.isResetActive)
         setupDut(dut)
 

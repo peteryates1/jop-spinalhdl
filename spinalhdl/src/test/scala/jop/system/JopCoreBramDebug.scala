@@ -13,7 +13,7 @@ import java.io.PrintWriter
  * Debug harness for JopCore BRAM simulation
  * Exposes additional debug signals for tracing BMB transactions
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * I/O subsystem (Sys, Uart) is internal to JopCore.
  */
 case class JopCoreBramDebugHarness(
   romInit: Seq[BigInt],
@@ -84,7 +84,7 @@ case class JopCoreBramDebugHarness(
     )
   }.padTo(2048, BigInt(0))
 
-  // JOP Core (BmbSys + BmbUart internal)
+  // JOP Core (Sys + Uart internal)
   val jopSystem = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -113,7 +113,7 @@ case class JopCoreBramDebugHarness(
   jopSystem.io.syncIn.status := False
 
   // No UART RX in debug harness
-  jopSystem.io.rxd := True
+  if (jopSystem.devicePins.contains("uart")) jopSystem.devicePin[Bool]("uart", "rxd") := True
 
   // Pipeline outputs
   io.pc := jopSystem.io.pc

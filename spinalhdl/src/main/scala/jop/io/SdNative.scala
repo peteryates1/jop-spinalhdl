@@ -24,14 +24,17 @@ import spinal.lib._
  *
  * @param clkDivInit Initial clock divider (default 99 -> 400kHz at 80MHz)
  */
-case class BmbSdNative(clkDivInit: Int = 99) extends Component {
-  val io = new Bundle {
+case class SdNative(clkDivInit: Int = 99) extends Component with HasBusIo {
+  val bus = new Bundle {
     val addr   = in UInt(4 bits)
     val rd     = in Bool()
     val wr     = in Bool()
     val wrData = in Bits(32 bits)
     val rdData = out Bits(32 bits)
+    val interrupt = out Bool()
+  }
 
+  val io = new Bundle {
     // SD card pins
     val sdClk = out Bool()
     val sdCmd = new Bundle {
@@ -45,8 +48,6 @@ case class BmbSdNative(clkDivInit: Int = 99) extends Component {
       val read        = in Bits(4 bits)
     }
     val sdCd = in Bool() // Card detect (active low)
-
-    val interrupt = out Bool()
   }
 
   // ========================================================================
@@ -673,59 +674,59 @@ case class BmbSdNative(clkDivInit: Int = 99) extends Component {
 
   val cmdBusyDly  = RegNext(cmdBusy) init(False)
   val dataBusyDly = RegNext(dataBusy) init(False)
-  io.interrupt := (!cmdBusy && cmdBusyDly) || (!dataBusy && dataBusyDly)
+  bus.interrupt := (!cmdBusy && cmdBusyDly) || (!dataBusy && dataBusyDly)
 
   // ========================================================================
   // Register Read Mux
   // ========================================================================
 
-  io.rdData := 0
-  switch(io.addr) {
+  bus.rdData := 0
+  switch(bus.addr) {
     is(0) {
       // Status register
-      io.rdData(0) := cmdBusy
-      io.rdData(1) := cmdResponseValid
-      io.rdData(2) := cmdCrcError
-      io.rdData(3) := cmdTimeout
-      io.rdData(4) := dataBusy
-      io.rdData(5) := dataCrcError
-      io.rdData(6) := dataTimeout
-      io.rdData(7) := cardPresent
-      io.rdData(8) := fifoEmpty   // txFifoEmpty
-      io.rdData(9) := fifoFull    // txFifoFull
-      io.rdData(10) := fifoEmpty  // rxFifoEmpty
-      io.rdData(11) := !fifoEmpty // rxFifoHasData
+      bus.rdData(0) := cmdBusy
+      bus.rdData(1) := cmdResponseValid
+      bus.rdData(2) := cmdCrcError
+      bus.rdData(3) := cmdTimeout
+      bus.rdData(4) := dataBusy
+      bus.rdData(5) := dataCrcError
+      bus.rdData(6) := dataTimeout
+      bus.rdData(7) := cardPresent
+      bus.rdData(8) := fifoEmpty   // txFifoEmpty
+      bus.rdData(9) := fifoFull    // txFifoFull
+      bus.rdData(10) := fifoEmpty  // rxFifoEmpty
+      bus.rdData(11) := !fifoEmpty // rxFifoHasData
     }
     is(1) {
-      io.rdData := cmdResponse(0)
+      bus.rdData := cmdResponse(0)
     }
     is(2) {
-      io.rdData := cmdResponse(1)
+      bus.rdData := cmdResponse(1)
     }
     is(3) {
-      io.rdData := cmdResponse(2)
+      bus.rdData := cmdResponse(2)
     }
     is(4) {
-      io.rdData := cmdResponse(3)
+      bus.rdData := cmdResponse(3)
     }
     is(5) {
       // Data FIFO read (pop on read)
-      io.rdData := fifoRdData
-      when(io.rd) {
+      bus.rdData := fifoRdData
+      when(bus.rd) {
         fifoPopValid := True
       }
     }
     is(6) {
       // RX FIFO occupancy
-      io.rdData(15 downto 0) := fifoOccupancy.asBits.resized
+      bus.rdData(15 downto 0) := fifoOccupancy.asBits.resized
     }
     is(7) {
       // CRC error flags
-      io.rdData(3 downto 0) := dataCrcFlags
+      bus.rdData(3 downto 0) := dataCrcFlags
     }
     is(8) {
-      io.rdData(0) := cardPresent
-      io.rdData(1) := busWidth4
+      bus.rdData(0) := cardPresent
+      bus.rdData(1) := busWidth4
     }
   }
 
@@ -733,11 +734,11 @@ case class BmbSdNative(clkDivInit: Int = 99) extends Component {
   // Register Write Handling
   // ========================================================================
 
-  when(io.wr) {
-    switch(io.addr) {
+  when(bus.wr) {
+    switch(bus.addr) {
       is(0) {
         // Control register
-        when(io.wrData(0)) {
+        when(bus.wrData(0)) {
           // sendCmd
           cmdBusy := True
           cmdResponseValid := False
@@ -755,7 +756,7 @@ case class BmbSdNative(clkDivInit: Int = 99) extends Component {
 
           cmdState := CmdState.SENDING
         }
-        when(io.wrData(1)) {
+        when(bus.wrData(1)) {
           // abort
           cmdState := CmdState.IDLE
           cmdBusy := False
@@ -765,32 +766,32 @@ case class BmbSdNative(clkDivInit: Int = 99) extends Component {
           datOutEn := B"0000"
           cmdOutEn := False
         }
-        when(io.wrData(2)) {
+        when(bus.wrData(2)) {
           openDrain := True
         } otherwise {
           openDrain := False
         }
       }
       is(1) {
-        cmdArgument := io.wrData
+        cmdArgument := bus.wrData
       }
       is(2) {
-        cmdIndex := io.wrData(5 downto 0).asUInt
-        cmdExpectResp := io.wrData(6)
-        cmdLongResp := io.wrData(7)
+        cmdIndex := bus.wrData(5 downto 0).asUInt
+        cmdExpectResp := bus.wrData(6)
+        cmdLongResp := bus.wrData(7)
       }
       is(5) {
         // Data FIFO write (push)
         when(!fifoFull) {
           fifoPushValid := True
-          fifoPushData := io.wrData
+          fifoPushData := bus.wrData
         }
       }
       is(6) {
-        clkDivider := io.wrData(9 downto 0).asUInt
+        clkDivider := bus.wrData(9 downto 0).asUInt
       }
       is(7) {
-        when(io.wrData(0)) {
+        when(bus.wrData(0)) {
           // startRead
           dataBusy := True
           dataCrcError := False
@@ -800,7 +801,7 @@ case class BmbSdNative(clkDivInit: Int = 99) extends Component {
           dataState := DataState.WAIT_START
           fifoReset := True
         }
-        when(io.wrData(1)) {
+        when(bus.wrData(1)) {
           // startWrite
           dataBusy := True
           dataCrcError := False
@@ -811,11 +812,20 @@ case class BmbSdNative(clkDivInit: Int = 99) extends Component {
         }
       }
       is(8) {
-        busWidth4 := io.wrData(0)
+        busWidth4 := bus.wrData(0)
       }
       is(9) {
-        blockLength := io.wrData(15 downto 0).asUInt
+        blockLength := bus.wrData(15 downto 0).asUInt
       }
     }
   }
+
+  // HasBusIo implementation
+  override def busAddr: UInt   = bus.addr
+  override def busRd: Bool     = bus.rd
+  override def busWr: Bool     = bus.wr
+  override def busWrData: Bits = bus.wrData
+  override def busRdData: Bits = bus.rdData
+  override def busInterrupts: Seq[Bool] = Seq(bus.interrupt)
+  override def busExternalIo: Option[Bundle] = Some(io)
 }

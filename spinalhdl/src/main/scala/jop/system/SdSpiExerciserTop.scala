@@ -3,12 +3,12 @@ package jop.system
 import spinal.core._
 import spinal.lib._
 import spinal.lib.com.uart._
-import jop.io.BmbSdSpi
+import jop.io.SdSpi
 
 /**
  * SD SPI Mode Exerciser FPGA Top
  *
- * Exercises BmbSdSpi with a real SD card in SPI mode on the
+ * Exercises SdSpi with a real SD card in SPI mode on the
  * QMTECH EP4CGX150 + DB_FPGA board. Performs card initialization, writes
  * a data block, reads it back, and reports results via UART at 1 Mbaud.
  *
@@ -67,7 +67,7 @@ case class SdSpiExerciserTop() extends Component {
   val mainArea = new ClockingArea(mainClockDomain) {
 
     // SD SPI controller (clkDiv=199 -> ~200kHz at 80MHz for init)
-    val sd = BmbSdSpi(clkDivInit = 199)
+    val sd = SdSpi(clkDivInit = 199)
 
     // SPI pin wiring
     io.sd_spi_clk  := sd.io.sclk
@@ -77,10 +77,10 @@ case class SdSpiExerciserTop() extends Component {
     sd.io.cd       := io.sd_spi_cd
 
     // Default register interface — each state overrides exactly one access
-    sd.io.addr   := 0
-    sd.io.rd     := False
-    sd.io.wr     := False
-    sd.io.wrData := 0
+    sd.bus.addr   := 0
+    sd.bus.rd     := False
+    sd.bus.wr     := False
+    sd.bus.wrData := 0
 
     // UART TX (1 Mbaud at 80 MHz)
     val uartCtrl = new UartCtrl(UartCtrlGenerics(
@@ -310,20 +310,20 @@ case class SdSpiExerciserTop() extends Component {
       // ================================================================
       is(S.SPI_XFER_SEND) {
         // Send 0xFF byte
-        sd.io.addr := 1; sd.io.wr := True; sd.io.wrData := 0xFF
+        sd.bus.addr := 1; sd.bus.wr := True; sd.bus.wrData := 0xFF
         state := S.SPI_XFER_POLL
       }
       is(S.SPI_XFER_POLL) {
         // Poll status for busy=0 (addr=0 only)
-        sd.io.addr := 0; sd.io.rd := True
-        when(!sd.io.rdData(0)) {
+        sd.bus.addr := 0; sd.bus.rd := True
+        when(!sd.bus.rdData(0)) {
           state := S.SPI_XFER_READRX
         }
       }
       is(S.SPI_XFER_READRX) {
         // Read RX byte (addr=1 only)
-        sd.io.addr := 1; sd.io.rd := True
-        respByte := sd.io.rdData(7 downto 0)
+        sd.bus.addr := 1; sd.bus.rd := True
+        respByte := sd.bus.rdData(7 downto 0)
         state := xferRetState
       }
 
@@ -334,14 +334,14 @@ case class SdSpiExerciserTop() extends Component {
       // ================================================================
       is(S.CMD_SEND_BYTE) {
         // Send one byte
-        sd.io.addr := 1; sd.io.wr := True
-        sd.io.wrData := cmdFrame(cmdByteIdx.resized).resized
+        sd.bus.addr := 1; sd.bus.wr := True
+        sd.bus.wrData := cmdFrame(cmdByteIdx.resized).resized
         state := S.CMD_SEND_POLL
       }
       is(S.CMD_SEND_POLL) {
         // Poll busy
-        sd.io.addr := 0; sd.io.rd := True
-        when(!sd.io.rdData(0)) {
+        sd.bus.addr := 0; sd.bus.rd := True
+        when(!sd.bus.rdData(0)) {
           cmdByteIdx := cmdByteIdx + 1
           when(cmdByteIdx >= 5) {
             state := cmdRetState
@@ -359,8 +359,8 @@ case class SdSpiExerciserTop() extends Component {
         retState := S.T1_READ_STATUS; state := S.PRINT_MSG
       }
       is(S.T1_READ_STATUS) {
-        sd.io.addr := 0; sd.io.rd := True
-        testPass := sd.io.rdData(1) // bit 1 = cardPresent
+        sd.bus.addr := 0; sd.bus.rd := True
+        testPass := sd.bus.rdData(1) // bit 1 = cardPresent
         state := S.T1_RESULT
       }
       is(S.T1_RESULT) {
@@ -385,17 +385,17 @@ case class SdSpiExerciserTop() extends Component {
 
       // --- 80 init clocks: deassert CS, send 10 x 0xFF ---
       is(S.INIT_DEASSERT_CS) {
-        sd.io.addr := 0; sd.io.wr := True; sd.io.wrData := 0 // CS high
+        sd.bus.addr := 0; sd.bus.wr := True; sd.bus.wrData := 0 // CS high
         cmdByteIdx := 0
         state := S.INIT_CLOCKS_SEND
       }
       is(S.INIT_CLOCKS_SEND) {
-        sd.io.addr := 1; sd.io.wr := True; sd.io.wrData := 0xFF
+        sd.bus.addr := 1; sd.bus.wr := True; sd.bus.wrData := 0xFF
         state := S.INIT_CLOCKS_POLL
       }
       is(S.INIT_CLOCKS_POLL) {
-        sd.io.addr := 0; sd.io.rd := True
-        when(!sd.io.rdData(0)) {
+        sd.bus.addr := 0; sd.bus.rd := True
+        when(!sd.bus.rdData(0)) {
           cmdByteIdx := cmdByteIdx + 1
           when(cmdByteIdx === 9) {
             state := S.INIT_ASSERT_CS
@@ -406,7 +406,7 @@ case class SdSpiExerciserTop() extends Component {
       }
 
       is(S.INIT_ASSERT_CS) {
-        sd.io.addr := 0; sd.io.wr := True; sd.io.wrData := 1 // CS low
+        sd.bus.addr := 0; sd.bus.wr := True; sd.bus.wrData := 1 // CS low
         state := S.INIT_CMD0_PREP
       }
 
@@ -565,7 +565,7 @@ case class SdSpiExerciserTop() extends Component {
 
       // Set fast SPI clock
       is(S.INIT_SETDIV) {
-        sd.io.addr := 2; sd.io.wr := True; sd.io.wrData := 1
+        sd.bus.addr := 2; sd.bus.wr := True; sd.bus.wrData := 1
         state := S.INIT_RESULT
       }
 
@@ -618,24 +618,24 @@ case class SdSpiExerciserTop() extends Component {
       }
 
       is(S.T2_TOKEN_SEND) {
-        sd.io.addr := 1; sd.io.wr := True; sd.io.wrData := 0xFE
+        sd.bus.addr := 1; sd.bus.wr := True; sd.bus.wrData := 0xFE
         dataIdx := 0
         state := S.T2_TOKEN_POLL
       }
       is(S.T2_TOKEN_POLL) {
-        sd.io.addr := 0; sd.io.rd := True
-        when(!sd.io.rdData(0)) { state := S.T2_DATA_SEND }
+        sd.bus.addr := 0; sd.bus.rd := True
+        when(!sd.bus.rdData(0)) { state := S.T2_DATA_SEND }
       }
 
       // Send 512 data bytes
       is(S.T2_DATA_SEND) {
-        sd.io.addr := 1; sd.io.wr := True
-        sd.io.wrData := ((dataIdx + 0xA5) & 0xFF).asBits.resized
+        sd.bus.addr := 1; sd.bus.wr := True
+        sd.bus.wrData := ((dataIdx + 0xA5) & 0xFF).asBits.resized
         state := S.T2_DATA_POLL
       }
       is(S.T2_DATA_POLL) {
-        sd.io.addr := 0; sd.io.rd := True
-        when(!sd.io.rdData(0)) {
+        sd.bus.addr := 0; sd.bus.rd := True
+        when(!sd.bus.rdData(0)) {
           dataIdx := dataIdx + 1
           when(dataIdx >= 511) {
             state := S.T2_CRC1_SEND
@@ -647,20 +647,20 @@ case class SdSpiExerciserTop() extends Component {
 
       // Send 2 dummy CRC bytes
       is(S.T2_CRC1_SEND) {
-        sd.io.addr := 1; sd.io.wr := True; sd.io.wrData := 0xFF
+        sd.bus.addr := 1; sd.bus.wr := True; sd.bus.wrData := 0xFF
         state := S.T2_CRC1_POLL
       }
       is(S.T2_CRC1_POLL) {
-        sd.io.addr := 0; sd.io.rd := True
-        when(!sd.io.rdData(0)) { state := S.T2_CRC2_SEND }
+        sd.bus.addr := 0; sd.bus.rd := True
+        when(!sd.bus.rdData(0)) { state := S.T2_CRC2_SEND }
       }
       is(S.T2_CRC2_SEND) {
-        sd.io.addr := 1; sd.io.wr := True; sd.io.wrData := 0xFF
+        sd.bus.addr := 1; sd.bus.wr := True; sd.bus.wrData := 0xFF
         state := S.T2_CRC2_POLL
       }
       is(S.T2_CRC2_POLL) {
-        sd.io.addr := 0; sd.io.rd := True
-        when(!sd.io.rdData(0)) {
+        sd.bus.addr := 0; sd.bus.rd := True
+        when(!sd.bus.rdData(0)) {
           // Read data response token
           xferRetState := S.T2_DRESP_CHECK
           state := S.SPI_XFER_SEND
@@ -772,20 +772,20 @@ case class SdSpiExerciserTop() extends Component {
 
       // Discard 2 CRC bytes
       is(S.T3_CRC1_SEND) {
-        sd.io.addr := 1; sd.io.wr := True; sd.io.wrData := 0xFF
+        sd.bus.addr := 1; sd.bus.wr := True; sd.bus.wrData := 0xFF
         state := S.T3_CRC1_POLL
       }
       is(S.T3_CRC1_POLL) {
-        sd.io.addr := 0; sd.io.rd := True
-        when(!sd.io.rdData(0)) { state := S.T3_CRC2_SEND }
+        sd.bus.addr := 0; sd.bus.rd := True
+        when(!sd.bus.rdData(0)) { state := S.T3_CRC2_SEND }
       }
       is(S.T3_CRC2_SEND) {
-        sd.io.addr := 1; sd.io.wr := True; sd.io.wrData := 0xFF
+        sd.bus.addr := 1; sd.bus.wr := True; sd.bus.wrData := 0xFF
         state := S.T3_CRC2_POLL
       }
       is(S.T3_CRC2_POLL) {
-        sd.io.addr := 0; sd.io.rd := True
-        when(!sd.io.rdData(0)) { state := S.T3_RESULT }
+        sd.bus.addr := 0; sd.bus.rd := True
+        when(!sd.bus.rdData(0)) { state := S.T3_RESULT }
       }
 
       is(S.T3_RESULT) {

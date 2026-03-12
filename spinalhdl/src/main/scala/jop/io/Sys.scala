@@ -25,7 +25,7 @@ import spinal.core._
  * @param cpuCnt    Total number of CPUs (1 for single-core)
  * @param numIoInt  Number of external I/O interrupt sources (default 2, matching VHDL)
  */
-case class BmbSys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: Int = 2, memEndWords: Int = 0,
+case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: Int = 2, memEndWords: Int = 0,
                   fpuCapability: Int = 0) extends Component {
   val io = new Bundle {
     val addr   = in UInt(4 bits)

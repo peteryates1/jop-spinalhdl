@@ -37,7 +37,7 @@ object MemoryStyle {
  * @param cpuId        CPU identifier (for multi-core; 0 for single-core)
  * @param cpuCnt       Total number of CPUs (1 for single-core)
  * @param ioConfig     I/O device configuration (device presence, parameters, interrupts)
- * @param clkFreq      System clock frequency (for BmbSys microsecond prescaler)
+ * @param clkFreq      System clock frequency (for Sys microsecond prescaler)
  */
 case class JopCoreConfig(
   dataWidth:    Int              = 32,

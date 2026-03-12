@@ -96,10 +96,10 @@ case class JopSmpDdr3TestHarness(
   }
 
   // Expose core 0's signal register for SMP boot debugging
-  cluster.cores(0).bmbSys.signalReg.simPublic()
+  cluster.cores(0).sys.signalReg.simPublic()
 
   // No UART RX in simulation
-  cluster.io.rxd := True
+  if (cluster.devicePins.contains("uart")) cluster.devicePin[Bool]("uart", "rxd") := True
 
   // ====================================================================
   // DDR3 Memory Path: JopCluster.bmb -> BmbCacheBridge -> LruCacheCore

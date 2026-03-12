@@ -25,14 +25,23 @@ import spinal.lib._
  *
  * @param clkDivider MDC clock divider (MDC = sysClk / (2 * clkDivider))
  */
-case class BmbMdio(clkDivider: Int = 40) extends Component {
-  val io = new Bundle {
+case class Mdio(clkDivider: Int = 40) extends Component with HasBusIo {
+  val bus = new Bundle {
     val addr   = in UInt(4 bits)
     val rd     = in Bool()
     val wr     = in Bool()
     val wrData = in Bits(32 bits)
     val rdData = out Bits(32 bits)
 
+    // Interrupt inputs from Eth (active-high pulses)
+    val ethRxInt = in Bool()
+    val ethTxInt = in Bool()
+
+    // Combined interrupt output to Sys
+    val interrupt = out Bool()
+  }
+
+  val io = new Bundle {
     // MDIO pins
     val mdc      = out Bool()
     val mdioOut  = out Bool()
@@ -41,13 +50,6 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
 
     // PHY reset (directly active-low output)
     val phyReset = out Bool()
-
-    // Interrupt inputs from BmbEth (active-high pulses)
-    val ethRxInt = in Bool()
-    val ethTxInt = in Bool()
-
-    // Combined interrupt output to BmbSys
-    val interrupt = out Bool()
   }
 
   // ========================================================================
@@ -235,8 +237,8 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
   val mdioIntPending  = Reg(Bool()) init(False)
 
   // Set on source pulse, clear on interrupt pending register read
-  when(io.ethRxInt) { ethRxIntPending := True }
-  when(io.ethTxInt) { ethTxIntPending := True }
+  when(bus.ethRxInt) { ethRxIntPending := True }
+  when(bus.ethTxInt) { ethTxIntPending := True }
   when(mdioDoneReg) { mdioIntPending := True; mdioDoneReg := False }
 
   val intPending = B(0, 29 bits) ## mdioIntPending ## ethTxIntPending ## ethRxIntPending
@@ -246,24 +248,24 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
 
   // Generate single-cycle interrupt pulse on rising edge of intEnabled
   val intEnabledDly = RegNext(intEnabled) init(False)
-  io.interrupt := intEnabled && !intEnabledDly
+  bus.interrupt := intEnabled && !intEnabledDly
 
   // ========================================================================
   // Register Read/Write
   // ========================================================================
 
-  io.rdData := 0
-  switch(io.addr) {
+  bus.rdData := 0
+  switch(bus.addr) {
     is(0) {
-      io.rdData(0) := busy
+      bus.rdData(0) := busy
     }
     is(1) {
-      io.rdData(15 downto 0) := rdData
+      bus.rdData(15 downto 0) := rdData
     }
     is(4) {
-      io.rdData := intPending
+      bus.rdData := intPending
       // Clear pending on read
-      when(io.rd) {
+      when(bus.rd) {
         ethRxIntPending := False
         ethTxIntPending := False
         mdioIntPending  := False
@@ -271,31 +273,40 @@ case class BmbMdio(clkDivider: Int = 40) extends Component {
     }
   }
 
-  when(io.wr) {
-    switch(io.addr) {
+  when(bus.wr) {
+    switch(bus.addr) {
       is(0) {
         // Command: bit 0 = go, bit 1 = write(1)/read(0)
-        when(io.wrData(0) && !busy) {
-          isWrite := io.wrData(1)
+        when(bus.wrData(0) && !busy) {
+          isWrite := bus.wrData(1)
           state   := MdioState.PREAMBLE
           bitCnt  := 0
         }
       }
       is(1) {
-        wrData := io.wrData(15 downto 0)
+        wrData := bus.wrData(15 downto 0)
       }
       is(2) {
-        regAddr := io.wrData(4 downto 0).asUInt
-        phyAddr := io.wrData(9 downto 5).asUInt
+        regAddr := bus.wrData(4 downto 0).asUInt
+        phyAddr := bus.wrData(9 downto 5).asUInt
       }
       is(3) {
-        phyRstReg := io.wrData(0)
+        phyRstReg := bus.wrData(0)
       }
       is(4) {
-        intEnableRx   := io.wrData(0)
-        intEnableTx   := io.wrData(1)
-        intEnableMdio := io.wrData(2)
+        intEnableRx   := bus.wrData(0)
+        intEnableTx   := bus.wrData(1)
+        intEnableMdio := bus.wrData(2)
       }
     }
   }
+
+  // HasBusIo implementation
+  override def busAddr: UInt   = bus.addr
+  override def busRd: Bool     = bus.rd
+  override def busWr: Bool     = bus.wr
+  override def busWrData: Bits = bus.wrData
+  override def busRdData: Bits = bus.rdData
+  override def busInterrupts: Seq[Bool] = Seq(bus.interrupt)
+  override def busExternalIo: Option[Bundle] = Some(io)
 }

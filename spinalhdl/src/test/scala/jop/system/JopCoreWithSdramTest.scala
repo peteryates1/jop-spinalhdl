@@ -13,7 +13,7 @@ import jop.utils.JopFileLoader
 /**
  * Test harness for JopCoreWithSdram with SDRAM simulation model
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * I/O subsystem (Sys, Uart) is internal to JopCore.
  * UART TX is snooped via JopCore's debug outputs.
  */
 case class JopCoreWithSdramTestHarness(
@@ -63,7 +63,7 @@ case class JopCoreWithSdramTestHarness(
   // JBC starts empty - BC_FILL must load bytecodes from SDRAM
   val jbcInit = Seq.fill(2048)(BigInt(0))
 
-  // JOP System with SDRAM backend (BmbSys + BmbUart internal)
+  // JOP System with SDRAM backend (Sys + Uart internal)
   val jopSystem = JopCoreWithSdram(
     config = config,
     sdramLayout = sdramLayout,

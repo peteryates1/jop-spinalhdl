@@ -4,7 +4,6 @@ import jop.config._
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import spinal.lib.com.eth._
 import jop.io.{CmpSync, Ihlu, IhluConfig}
 import jop.debug._
 
@@ -17,7 +16,8 @@ import jop.debug._
  *   - Single-core path: direct BMB, sync tie-offs
  *   - SMP path: BmbArbiter + CmpSync
  *   - Common tie-offs: debugRamAddr, debugHalt
- *   - UART routing: core 0 TXD/RXD to io; cores 1+ RXD tied to True
+ *   - Dynamic device pin passthrough from core 0 (UART, Ethernet, SD, VGA, etc.)
+ *   - Cores 1+: UART RXD tied to True (idle)
  *   - Optional debug subsystem (DebugController + DebugProtocol + DebugUart)
  *
  * All per-core signals are routed through io as Vecs to avoid hierarchy
@@ -97,8 +97,6 @@ case class JopCluster(
 
   val io = new Bundle {
     val bmb = master(Bmb(bmbParameter))
-    val txd = out Bool()
-    val rxd = in Bool()
     val wd  = out Vec(Bits(32 bits), cpuCnt)
 
     // Per-core debug outputs (routed through to avoid hierarchy violations)
@@ -145,49 +143,6 @@ case class JopCluster(
     // Per-core UART TX (optional, for SMP debug via JP1 header)
     val perCoreTxd = if (perCoreUart) Some(out Vec(Bool(), cpuCnt)) else None
 
-    // Ethernet PHY (optional, core 0 only)
-    val phy = if (baseConfig.hasEth) Some(master(PhyIo(PhyParameter(txDataWidth = baseConfig.ioConfig.phyDataWidth, rxDataWidth = baseConfig.ioConfig.phyDataWidth)))) else None
-
-    // MDIO pins (optional, core 0 only)
-    val mdc      = if (baseConfig.hasEth) Some(out Bool()) else None
-    val mdioOut  = if (baseConfig.hasEth) Some(out Bool()) else None
-    val mdioOe   = if (baseConfig.hasEth) Some(out Bool()) else None
-    val mdioIn   = if (baseConfig.hasEth) Some(in Bool()) else None
-    val phyReset = if (baseConfig.hasEth) Some(out Bool()) else None
-
-    // Config flash SPI pins (optional, core 0 only)
-    val cfDclk  = if (baseConfig.ioConfig.hasConfigFlash) Some(out Bool()) else None
-    val cfNcs   = if (baseConfig.ioConfig.hasConfigFlash) Some(out Bool()) else None
-    val cfAsdo  = if (baseConfig.ioConfig.hasConfigFlash) Some(out Bool()) else None
-    val cfData0 = if (baseConfig.ioConfig.hasConfigFlash) Some(in Bool()) else None
-    val cfFlashReady = if (baseConfig.ioConfig.hasConfigFlash) Some(in Bool()) else None
-    val cfDebugRxByte = if (baseConfig.ioConfig.hasConfigFlash) Some(out Bits(8 bits)) else None
-    val cfDebugTxCount = if (baseConfig.ioConfig.hasConfigFlash) Some(out UInt(8 bits)) else None
-    val cfDebugFirstWord = if (baseConfig.ioConfig.hasConfigFlash) Some(out Bits(32 bits)) else None
-
-    // SD SPI pins (optional, core 0 only)
-    val sdSpiSclk = if (baseConfig.ioConfig.hasSdSpi) Some(out Bool()) else None
-    val sdSpiMosi = if (baseConfig.ioConfig.hasSdSpi) Some(out Bool()) else None
-    val sdSpiMiso = if (baseConfig.ioConfig.hasSdSpi) Some(in Bool()) else None
-    val sdSpiCs   = if (baseConfig.ioConfig.hasSdSpi) Some(out Bool()) else None
-    val sdSpiCd   = if (baseConfig.ioConfig.hasSdSpi) Some(in Bool()) else None
-
-    // SD Native pins (optional, core 0 only)
-    val sdClk        = if (baseConfig.ioConfig.hasSdNative) Some(out Bool()) else None
-    val sdCmdWrite   = if (baseConfig.ioConfig.hasSdNative) Some(out Bool()) else None
-    val sdCmdWriteEn = if (baseConfig.ioConfig.hasSdNative) Some(out Bool()) else None
-    val sdCmdRead    = if (baseConfig.ioConfig.hasSdNative) Some(in Bool()) else None
-    val sdDatWrite   = if (baseConfig.ioConfig.hasSdNative) Some(out Bits(4 bits)) else None
-    val sdDatWriteEn = if (baseConfig.ioConfig.hasSdNative) Some(out Bits(4 bits)) else None
-    val sdDatRead    = if (baseConfig.ioConfig.hasSdNative) Some(in Bits(4 bits)) else None
-    val sdCd         = if (baseConfig.ioConfig.hasSdNative) Some(in Bool()) else None
-
-    // VGA pins (optional, core 0 only — shared by VgaDma and VgaText)
-    val vgaHsync = if (baseConfig.ioConfig.hasVga) Some(out Bool()) else None
-    val vgaVsync = if (baseConfig.ioConfig.hasVga) Some(out Bool()) else None
-    val vgaR     = if (baseConfig.ioConfig.hasVga) Some(out Bits(5 bits)) else None
-    val vgaG     = if (baseConfig.ioConfig.hasVga) Some(out Bits(6 bits)) else None
-    val vgaB     = if (baseConfig.ioConfig.hasVga) Some(out Bits(5 bits)) else None
   }
 
   // ==================================================================
@@ -510,87 +465,46 @@ case class JopCluster(
   }
 
   // ==================================================================
-  // UART
+  // Dynamic Pin Passthrough from Core 0
   // ==================================================================
+  // All device-specific external pins (UART, Ethernet, SD, VGA, etc.)
+  // are passed through from core 0's devicePins map.
 
-  io.txd := cores(0).io.txd
-  cores(0).io.rxd := io.rxd
+  val devicePins: Map[String, Bundle] =
+    cores(0).devicePins.map { case (name, corePins) =>
+      val clusterPins = cloneOf(corePins).setName(s"io_${name}")
+      for ((cpSig, ccSig) <- clusterPins.flatten.zip(corePins.flatten)) {
+        if (ccSig.isOutput) {
+          out(cpSig)
+          cpSig := ccSig
+        } else {
+          in(cpSig)
+          ccSig := cpSig
+        }
+      }
+      name -> clusterPins
+    }
+
+  /** Typed accessor for individual device pin signals */
+  def devicePin[T <: Data](deviceName: String, pinName: String): T =
+    devicePins(deviceName).elements.find(_._1 == pinName).get._2.asInstanceOf[T]
+
+  // Cores 1+: tie UART RXD input to idle (True) since only core 0 gets external RX
   for (i <- 1 until cpuCnt) {
-    cores(i).io.rxd := True  // No RXD on cores 1+ (TX-only for per-core debug)
+    if (cores(i).devicePins.contains("uart")) {
+      cores(i).devicePin[Bool]("uart", "rxd") := True
+    }
   }
 
   // Per-core UART TX routing (for SMP debug via JP1)
   if (perCoreUart) {
     for (i <- 0 until cpuCnt) {
-      io.perCoreTxd.get(i) := cores(i).io.txd
+      if (cores(i).devicePins.contains("uart")) {
+        io.perCoreTxd.get(i) := cores(i).devicePin[Bool]("uart", "txd")
+      } else {
+        io.perCoreTxd.get(i) := True
+      }
     }
-  }
-
-  // ==================================================================
-  // Ethernet (core 0 only)
-  // ==================================================================
-
-  if (baseConfig.hasEth) {
-    io.phy.get      <> cores(0).io.phy.get
-    io.mdc.get      := cores(0).io.mdc.get
-    io.mdioOut.get  := cores(0).io.mdioOut.get
-    io.mdioOe.get   := cores(0).io.mdioOe.get
-    cores(0).io.mdioIn.get := io.mdioIn.get
-    io.phyReset.get := cores(0).io.phyReset.get
-  }
-
-  // ==================================================================
-  // SD SPI (core 0 only)
-  // ==================================================================
-
-  if (baseConfig.ioConfig.hasSdSpi) {
-    io.sdSpiSclk.get := cores(0).io.sdSpiSclk.get
-    io.sdSpiMosi.get := cores(0).io.sdSpiMosi.get
-    io.sdSpiCs.get   := cores(0).io.sdSpiCs.get
-    cores(0).io.sdSpiMiso.get := io.sdSpiMiso.get
-    cores(0).io.sdSpiCd.get   := io.sdSpiCd.get
-  }
-
-  // ==================================================================
-  // Config Flash (core 0 only)
-  // ==================================================================
-
-  if (baseConfig.ioConfig.hasConfigFlash) {
-    io.cfDclk.get  := cores(0).io.cfDclk.get
-    io.cfNcs.get   := cores(0).io.cfNcs.get
-    io.cfAsdo.get  := cores(0).io.cfAsdo.get
-    cores(0).io.cfData0.get := io.cfData0.get
-    cores(0).io.cfFlashReady.get := io.cfFlashReady.get
-    io.cfDebugRxByte.get  := cores(0).io.cfDebugRxByte.get
-    io.cfDebugTxCount.get := cores(0).io.cfDebugTxCount.get
-    io.cfDebugFirstWord.get := cores(0).io.cfDebugFirstWord.get
-  }
-
-  // ==================================================================
-  // SD Native (core 0 only)
-  // ==================================================================
-
-  if (baseConfig.ioConfig.hasSdNative) {
-    io.sdClk.get        := cores(0).io.sdClk.get
-    io.sdCmdWrite.get   := cores(0).io.sdCmdWrite.get
-    io.sdCmdWriteEn.get := cores(0).io.sdCmdWriteEn.get
-    cores(0).io.sdCmdRead.get := io.sdCmdRead.get
-    io.sdDatWrite.get   := cores(0).io.sdDatWrite.get
-    io.sdDatWriteEn.get := cores(0).io.sdDatWriteEn.get
-    cores(0).io.sdDatRead.get := io.sdDatRead.get
-    cores(0).io.sdCd.get      := io.sdCd.get
-  }
-
-  // ==================================================================
-  // VGA (core 0 only — VgaDma or VgaText, mutually exclusive)
-  // ==================================================================
-
-  if (baseConfig.ioConfig.hasVga) {
-    io.vgaHsync.get := cores(0).io.vgaHsync.get
-    io.vgaVsync.get := cores(0).io.vgaVsync.get
-    io.vgaR.get     := cores(0).io.vgaR.get
-    io.vgaG.get     := cores(0).io.vgaG.get
-    io.vgaB.get     := cores(0).io.vgaB.get
   }
 
   // ==================================================================

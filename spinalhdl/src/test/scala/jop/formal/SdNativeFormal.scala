@@ -3,16 +3,16 @@ package jop.formal
 import spinal.core._
 import spinal.core.formal._
 
-import jop.io.BmbSdNative
+import jop.io.SdNative
 
 /**
- * Formal verification for the BmbSdNative SD card controller.
+ * Formal verification for the SdNative SD card controller.
  *
- * Source: jop/io/BmbSdNative.scala (822 lines)
+ * Source: jop/io/SdNative.scala (822 lines)
  *
  * Large component with 128-entry FIFO memory; use shallow BMC depths.
  * Focus on key invariants rather than deep protocol verification
- * (protocol already covered by BmbSdNativeTest simulation).
+ * (protocol already covered by SdNativeTest simulation).
  *
  * Properties verified:
  * - FIFO occupancy coherence with pointer difference
@@ -22,17 +22,17 @@ import jop.io.BmbSdNative
  * - cmdBusy true while CMD state machine active
  * - FIFO occupancy bounded at 128
  */
-class BmbSdNativeFormal extends SpinalFormalFunSuite {
+class SdNativeFormal extends SpinalFormalFunSuite {
 
   val formalConfig = FormalConfig
     .addEngin(SmtBmc(solver = SmtBmcSolver.Z3))
     .withTimeout(300)
 
-  def setupDut(dut: BmbSdNative): Unit = {
-    anyseq(dut.io.addr)
-    anyseq(dut.io.rd)
-    anyseq(dut.io.wr)
-    anyseq(dut.io.wrData)
+  def setupDut(dut: SdNative): Unit = {
+    anyseq(dut.bus.addr)
+    anyseq(dut.bus.rd)
+    anyseq(dut.bus.wr)
+    anyseq(dut.bus.wrData)
     anyseq(dut.io.sdCmd.read)
     anyseq(dut.io.sdDat.read)
     anyseq(dut.io.sdCd)
@@ -42,17 +42,17 @@ class BmbSdNativeFormal extends SpinalFormalFunSuite {
     formalConfig
       .withBMC(4)
       .doVerify(new Component {
-        val dut = FormalDut(BmbSdNative())
+        val dut = FormalDut(SdNative())
         assumeInitial(ClockDomain.current.isResetActive)
         setupDut(dut)
 
         // Prevent FIFO underflow/overflow: no data FSM operations, no abort
-        assume(!(dut.io.wr && dut.io.addr === 7))
-        assume(!(dut.io.wr && dut.io.addr === 0 && dut.io.wrData(1)))
+        assume(!(dut.bus.wr && dut.bus.addr === 7))
+        assume(!(dut.bus.wr && dut.bus.addr === 0 && dut.bus.wrData(1)))
         // Prevent pop when empty (CPU read at addr 5)
-        assume(!(dut.io.rd && dut.io.addr === 5 && dut.fifoEmpty))
+        assume(!(dut.bus.rd && dut.bus.addr === 5 && dut.fifoEmpty))
         // Prevent push when full (CPU write at addr 5)
-        assume(!(dut.io.wr && dut.io.addr === 5 && dut.fifoFull))
+        assume(!(dut.bus.wr && dut.bus.addr === 5 && dut.fifoFull))
 
         when(pastValidAfterReset()) {
           // When FIFO is not full, occupancy equals pointer difference
@@ -71,7 +71,7 @@ class BmbSdNativeFormal extends SpinalFormalFunSuite {
     formalConfig
       .withBMC(4)
       .doVerify(new Component {
-        val dut = FormalDut(BmbSdNative())
+        val dut = FormalDut(SdNative())
         assumeInitial(ClockDomain.current.isResetActive)
         setupDut(dut)
 
@@ -90,12 +90,12 @@ class BmbSdNativeFormal extends SpinalFormalFunSuite {
     formalConfig
       .withBMC(4)
       .doVerify(new Component {
-        val dut = FormalDut(BmbSdNative())
+        val dut = FormalDut(SdNative())
         assumeInitial(ClockDomain.current.isResetActive)
         setupDut(dut)
 
         // Assume no abort to isolate normal CMD state machine flow
-        assume(!(dut.io.wr && dut.io.addr === 0 && dut.io.wrData(1)))
+        assume(!(dut.bus.wr && dut.bus.addr === 0 && dut.bus.wrData(1)))
 
         val CS = dut.CmdState
 
@@ -113,13 +113,13 @@ class BmbSdNativeFormal extends SpinalFormalFunSuite {
     formalConfig
       .withBMC(4)
       .doVerify(new Component {
-        val dut = FormalDut(BmbSdNative())
+        val dut = FormalDut(SdNative())
         assumeInitial(ClockDomain.current.isResetActive)
         setupDut(dut)
 
         // Assume no abort and no mid-stream startRead/startWrite
-        assume(!(dut.io.wr && dut.io.addr === 0 && dut.io.wrData(1)))
-        assume(!(dut.io.wr && dut.io.addr === 7) || dut.dataState === dut.DataState.IDLE)
+        assume(!(dut.bus.wr && dut.bus.addr === 0 && dut.bus.wrData(1)))
+        assume(!(dut.bus.wr && dut.bus.addr === 7) || dut.dataState === dut.DataState.IDLE)
 
         val DS = dut.DataState
 
@@ -143,12 +143,12 @@ class BmbSdNativeFormal extends SpinalFormalFunSuite {
     formalConfig
       .withBMC(4)
       .doVerify(new Component {
-        val dut = FormalDut(BmbSdNative())
+        val dut = FormalDut(SdNative())
         assumeInitial(ClockDomain.current.isResetActive)
         setupDut(dut)
 
         // Assume no abort
-        assume(!(dut.io.wr && dut.io.addr === 0 && dut.io.wrData(1)))
+        assume(!(dut.bus.wr && dut.bus.addr === 0 && dut.bus.wrData(1)))
 
         val CS = dut.CmdState
 
@@ -164,16 +164,16 @@ class BmbSdNativeFormal extends SpinalFormalFunSuite {
     formalConfig
       .withBMC(4)
       .doVerify(new Component {
-        val dut = FormalDut(BmbSdNative())
+        val dut = FormalDut(SdNative())
         assumeInitial(ClockDomain.current.isResetActive)
         setupDut(dut)
 
         // Prevent FIFO underflow/overflow: no data FSM operations, no abort
-        assume(!(dut.io.wr && dut.io.addr === 7))
-        assume(!(dut.io.wr && dut.io.addr === 0 && dut.io.wrData(1)))
+        assume(!(dut.bus.wr && dut.bus.addr === 7))
+        assume(!(dut.bus.wr && dut.bus.addr === 0 && dut.bus.wrData(1)))
         // Prevent pop when empty, push when full
-        assume(!(dut.io.rd && dut.io.addr === 5 && dut.fifoEmpty))
-        assume(!(dut.io.wr && dut.io.addr === 5 && dut.fifoFull))
+        assume(!(dut.bus.rd && dut.bus.addr === 5 && dut.fifoEmpty))
+        assume(!(dut.bus.wr && dut.bus.addr === 5 && dut.fifoFull))
 
         when(pastValidAfterReset()) {
           assert(dut.fifoOccupancy <= 128)

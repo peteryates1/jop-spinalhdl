@@ -31,7 +31,7 @@ import java.io.PrintWriter
  *   - clkFreq = 100 MHz
  *   - 1 Mbaud UART
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * I/O subsystem (Sys, Uart) is internal to JopCore.
  */
 case class JopDdr3SerialBootHarness(
   romInit: Seq[BigInt],
@@ -81,7 +81,7 @@ case class JopDdr3SerialBootHarness(
   // JBC init: empty (zeros) -- serial boot loads bytecodes from DDR3 via BC_FILL
   val jbcInit = Seq.fill(2048)(BigInt(0))
 
-  // JOP Core with serial-boot microcode (BmbSys + BmbUart internal)
+  // JOP Core with serial-boot microcode (Sys + Uart internal)
   val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -158,7 +158,7 @@ case class JopDdr3SerialBootHarness(
   jopCore.io.syncIn.status := False
 
   // UART RX from simulation (bit-serial)
-  jopCore.io.rxd := io.rxd
+  if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := io.rxd
 
   // Debug RAM (unused)
   jopCore.io.debugRamAddr := 0

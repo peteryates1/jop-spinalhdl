@@ -103,7 +103,7 @@ case class JopStackCacheTestHarness(
     separateStackDmaBus = true
   )
 
-  cluster.io.rxd := True
+  if (cluster.devicePins.contains("uart")) cluster.devicePin[Bool]("uart", "rxd") := True
 
   // Main Block RAM (program data, heap, handles — accessed by MC only)
   val memWords = memSize / 4

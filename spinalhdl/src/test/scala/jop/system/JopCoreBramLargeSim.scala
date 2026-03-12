@@ -11,7 +11,7 @@ import jop.memory.JopMemoryConfig
 /**
  * Test harness with configurable BRAM size to test address wrapping effects.
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * I/O subsystem (Sys, Uart) is internal to JopCore.
  */
 case class JopCoreLargeBramHarness(
   romInit: Seq[BigInt],
@@ -57,7 +57,7 @@ case class JopCoreLargeBramHarness(
     )
   }.padTo(2048, BigInt(0))
 
-  // JOP Core (BmbSys + BmbUart internal)
+  // JOP Core (Sys + Uart internal)
   val jopSystem = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -83,7 +83,7 @@ case class JopCoreLargeBramHarness(
   jopSystem.io.syncIn.status := False
 
   // No UART RX
-  jopSystem.io.rxd := True
+  if (jopSystem.devicePins.contains("uart")) jopSystem.devicePin[Bool]("uart", "rxd") := True
 
   // Debug RAM (unused)
   jopSystem.io.debugRamAddr := 0

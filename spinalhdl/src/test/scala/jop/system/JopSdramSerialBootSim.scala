@@ -16,7 +16,7 @@ import jop.pipeline.JumpTableInitData
  * Uses serial-boot microcode. SDRAM starts empty.
  * UART RX is driven via io.rxd (bit-serial from simulation).
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * I/O subsystem (Sys, Uart) is internal to JopCore.
  */
 case class JopSdramSerialBootHarness(
   romInit: Seq[BigInt],

@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib.bus.bmb._
 
-class BmbVgaDmaTest extends AnyFunSuite {
+class VgaBmbDmaTest extends AnyFunSuite {
 
   val testBmbParam = BmbParameter(
     access = BmbAccessParameter(
@@ -25,7 +25,7 @@ class BmbVgaDmaTest extends AnyFunSuite {
     .workspacePath("simWorkspace")
 
   def compileDut() = simConfig.compile(
-    BmbVgaDma(
+    VgaBmbDma(
       bmbParam = testBmbParam,
       vgaCd = ClockDomain.external("vgaCd"),
       fifoDepth = 256
@@ -33,39 +33,39 @@ class BmbVgaDmaTest extends AnyFunSuite {
   )
 
   /** Write a value to the DUT's I/O register interface */
-  def ioWrite(dut: BmbVgaDma, addr: Int, data: Long)(implicit cd: ClockDomain): Unit = {
-    dut.io.addr #= addr
-    dut.io.wrData #= data
-    dut.io.wr #= true
-    dut.io.rd #= false
+  def ioWrite(dut: VgaBmbDma, addr: Int, data: Long)(implicit cd: ClockDomain): Unit = {
+    dut.bus.addr #= addr
+    dut.bus.wrData #= data
+    dut.bus.wr #= true
+    dut.bus.rd #= false
     cd.waitSampling()
-    dut.io.wr #= false
+    dut.bus.wr #= false
   }
 
   /** Read a value from the DUT's I/O register interface */
-  def ioRead(dut: BmbVgaDma, addr: Int)(implicit cd: ClockDomain): Long = {
-    dut.io.addr #= addr
-    dut.io.rd #= true
-    dut.io.wr #= false
+  def ioRead(dut: VgaBmbDma, addr: Int)(implicit cd: ClockDomain): Long = {
+    dut.bus.addr #= addr
+    dut.bus.rd #= true
+    dut.bus.wr #= false
     cd.waitSampling()
-    val result = dut.io.rdData.toLong
-    dut.io.rd #= false
+    val result = dut.bus.rdData.toLong
+    dut.bus.rd #= false
     result
   }
 
   /** Initialize DUT I/O signals to idle state */
-  def initIo(dut: BmbVgaDma): Unit = {
-    dut.io.addr #= 0
-    dut.io.rd #= false
-    dut.io.wr #= false
-    dut.io.wrData #= 0
-    dut.io.bmb.cmd.ready #= false
-    dut.io.bmb.rsp.valid #= false
-    dut.io.bmb.rsp.last #= false
-    dut.io.bmb.rsp.data #= 0
-    dut.io.bmb.rsp.source #= 0
-    dut.io.bmb.rsp.context #= 0
-    dut.io.bmb.rsp.opcode #= 0
+  def initIo(dut: VgaBmbDma): Unit = {
+    dut.bus.addr #= 0
+    dut.bus.rd #= false
+    dut.bus.wr #= false
+    dut.bus.wrData #= 0
+    dut.bus.bmb.cmd.ready #= false
+    dut.bus.bmb.rsp.valid #= false
+    dut.bus.bmb.rsp.last #= false
+    dut.bus.bmb.rsp.data #= 0
+    dut.bus.bmb.rsp.source #= 0
+    dut.bus.bmb.rsp.context #= 0
+    dut.bus.bmb.rsp.opcode #= 0
   }
 
   /**
@@ -74,34 +74,34 @@ class BmbVgaDmaTest extends AnyFunSuite {
    * response beats.
    */
   def forkBmbResponder(
-    dut: BmbVgaDma,
+    dut: VgaBmbDma,
     dataPattern: Long = 0x001F001FL
   )(implicit cd: ClockDomain): Unit = {
     fork {
-      dut.io.bmb.cmd.ready #= false
-      dut.io.bmb.rsp.valid #= false
+      dut.bus.bmb.cmd.ready #= false
+      dut.bus.bmb.rsp.valid #= false
 
       while (true) {
         // Wait for a valid command
-        dut.io.bmb.cmd.ready #= true
-        cd.waitSamplingWhere(dut.io.bmb.cmd.valid.toBoolean)
+        dut.bus.bmb.cmd.ready #= true
+        cd.waitSamplingWhere(dut.bus.bmb.cmd.valid.toBoolean)
 
         // Capture burst length
-        val lengthVal = dut.io.bmb.cmd.length.toInt
+        val lengthVal = dut.bus.bmb.cmd.length.toInt
         val burstWords = (lengthVal + 1) / 4
-        dut.io.bmb.cmd.ready #= false
+        dut.bus.bmb.cmd.ready #= false
 
         // Respond with data beats
         for (i <- 0 until burstWords) {
-          dut.io.bmb.rsp.valid #= true
-          dut.io.bmb.rsp.data #= dataPattern
-          dut.io.bmb.rsp.last #= (i == burstWords - 1)
-          dut.io.bmb.rsp.source #= 0
-          dut.io.bmb.rsp.context #= 0
-          dut.io.bmb.rsp.opcode #= 0 // SUCCESS
-          cd.waitSamplingWhere(dut.io.bmb.rsp.ready.toBoolean)
+          dut.bus.bmb.rsp.valid #= true
+          dut.bus.bmb.rsp.data #= dataPattern
+          dut.bus.bmb.rsp.last #= (i == burstWords - 1)
+          dut.bus.bmb.rsp.source #= 0
+          dut.bus.bmb.rsp.context #= 0
+          dut.bus.bmb.rsp.opcode #= 0 // SUCCESS
+          cd.waitSamplingWhere(dut.bus.bmb.rsp.ready.toBoolean)
         }
-        dut.io.bmb.rsp.valid #= false
+        dut.bus.bmb.rsp.valid #= false
       }
     }
   }
@@ -110,7 +110,7 @@ class BmbVgaDmaTest extends AnyFunSuite {
   // Test: Control Registers
   // ========================================================================
 
-  test("BmbVgaDma_control_registers") {
+  test("VgaBmbDma_control_registers") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -157,7 +157,7 @@ class BmbVgaDmaTest extends AnyFunSuite {
   // Test: DMA Read Requests
   // ========================================================================
 
-  test("BmbVgaDma_dma_read_requests") {
+  test("VgaBmbDma_dma_read_requests") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -177,30 +177,30 @@ class BmbVgaDmaTest extends AnyFunSuite {
 
       // Fork a BMB responder that also records addresses
       fork {
-        dut.io.bmb.cmd.ready #= false
-        dut.io.bmb.rsp.valid #= false
+        dut.bus.bmb.cmd.ready #= false
+        dut.bus.bmb.rsp.valid #= false
 
         while (cmdAddresses.size < targetCmdCount) {
-          dut.io.bmb.cmd.ready #= true
-          cd.waitSamplingWhere(dut.io.bmb.cmd.valid.toBoolean)
+          dut.bus.bmb.cmd.ready #= true
+          cd.waitSamplingWhere(dut.bus.bmb.cmd.valid.toBoolean)
 
-          val addr = dut.io.bmb.cmd.address.toLong
-          val lengthVal = dut.io.bmb.cmd.length.toInt
+          val addr = dut.bus.bmb.cmd.address.toLong
+          val lengthVal = dut.bus.bmb.cmd.length.toInt
           val burstWords = (lengthVal + 1) / 4
           cmdAddresses = cmdAddresses :+ addr
-          dut.io.bmb.cmd.ready #= false
+          dut.bus.bmb.cmd.ready #= false
 
           // Respond
           for (i <- 0 until burstWords) {
-            dut.io.bmb.rsp.valid #= true
-            dut.io.bmb.rsp.data #= 0xDEADBEEFL
-            dut.io.bmb.rsp.last #= (i == burstWords - 1)
-            dut.io.bmb.rsp.source #= 0
-            dut.io.bmb.rsp.context #= 0
-            dut.io.bmb.rsp.opcode #= 0
-            cd.waitSamplingWhere(dut.io.bmb.rsp.ready.toBoolean)
+            dut.bus.bmb.rsp.valid #= true
+            dut.bus.bmb.rsp.data #= 0xDEADBEEFL
+            dut.bus.bmb.rsp.last #= (i == burstWords - 1)
+            dut.bus.bmb.rsp.source #= 0
+            dut.bus.bmb.rsp.context #= 0
+            dut.bus.bmb.rsp.opcode #= 0
+            cd.waitSamplingWhere(dut.bus.bmb.rsp.ready.toBoolean)
           }
-          dut.io.bmb.rsp.valid #= false
+          dut.bus.bmb.rsp.valid #= false
         }
       }
 
@@ -230,7 +230,7 @@ class BmbVgaDmaTest extends AnyFunSuite {
   // Test: VGA Timing
   // ========================================================================
 
-  test("BmbVgaDma_vga_timing") {
+  test("VgaBmbDma_vga_timing") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)    // 100 MHz system clock
@@ -285,7 +285,7 @@ class BmbVgaDmaTest extends AnyFunSuite {
   // Test: Pixel Output
   // ========================================================================
 
-  test("BmbVgaDma_pixel_output") {
+  test("VgaBmbDma_pixel_output") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)

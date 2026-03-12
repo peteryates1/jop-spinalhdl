@@ -16,7 +16,7 @@ import jop.memory.BmbSdramCtrl32
  * The BmbSdramCtrl32 handles 32-bit BMB to 16-bit SDRAM width conversion
  * internally by issuing two SDRAM operations per 32-bit transaction.
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * I/O subsystem (Sys, Uart) is internal to JopCore.
  *
  * Target: W9825G6JH6 on QMTECH EP4CGX150 board.
  */
@@ -40,7 +40,7 @@ case class JopCoreWithSdram(
     val syncIn  = in(SyncOut())
     val syncOut = out(SyncIn())
 
-    // Watchdog from BmbSys
+    // Watchdog from Sys
     val wd = out Bits(32 bits)
 
     // UART
@@ -114,9 +114,13 @@ case class JopCoreWithSdram(
   jopCore.io.syncIn := io.syncIn
   io.syncOut := jopCore.io.syncOut
 
-  // UART passthrough
-  io.txd := jopCore.io.txd
-  jopCore.io.rxd := io.rxd
+  // UART passthrough (via dynamic devicePins)
+  if (jopCore.devicePins.contains("uart")) {
+    io.txd := jopCore.devicePin[Bool]("uart", "txd")
+    jopCore.devicePin[Bool]("uart", "rxd") := io.rxd
+  } else {
+    io.txd := True  // Idle when no UART
+  }
 
   // Watchdog passthrough
   io.wd := jopCore.io.wd

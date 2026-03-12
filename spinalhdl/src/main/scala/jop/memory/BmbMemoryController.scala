@@ -1213,7 +1213,7 @@ case class BmbMemoryController(
     // Exception States (matching VHDL npexc/abexc) - busy
     //
     // One cycle each. The exc_type I/O write happened in the previous
-    // cycle; BmbSys will pulse io.exc on the next cycle. These states
+    // cycle; Sys will pulse io.exc on the next cycle. These states
     // just clean up and return to IDLE.
     // ========================================================================
 

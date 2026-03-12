@@ -7,10 +7,10 @@ import spinal.lib.com.uart._
 /**
  * UART I/O device — matches VHDL sc_uart.vhd
  *
- * Provides buffered UART TX and RX with JOP I/O interface.
- * TX and RX each have 16-entry FIFOs.
+ * Provides buffered UART TX and RX with register bus interface.
+ * TX and RX each have FIFOs.
  *
- * Address map:
+ * Register map (bus.addr):
  *   0x0 read  — Status: bit 0 = TDRE, bit 1 = RDRF, bit 2 = TX int enabled, bit 3 = RX int enabled
  *   0x1 read  — RX data (consumes from RX FIFO)
  *   0x1 write — TX data (pushes to TX FIFO)
@@ -19,17 +19,20 @@ import spinal.lib.com.uart._
  * @param baudRate UART baud rate in Hz
  * @param clkFreq Clock frequency (avoids dependency on ClockDomain frequency)
  */
-case class BmbUart(baudRate: Int = 1000000, clkFreq: HertzNumber = HertzNumber(100000000)) extends Component {
-  val io = new Bundle {
+case class Uart(baudRate: Int = 1000000, clkFreq: HertzNumber = HertzNumber(100000000)) extends Component with HasBusIo {
+  val bus = new Bundle {
     val addr   = in UInt(4 bits)
     val rd     = in Bool()
     val wr     = in Bool()
     val wrData = in Bits(32 bits)
     val rdData = out Bits(32 bits)
-    val txd    = out Bool()
-    val rxd    = in Bool()
     val rxInterrupt = out Bool()
     val txInterrupt = out Bool()
+  }
+
+  val io = new Bundle {
+    val txd = out Bool()
+    val rxd = in  Bool()
   }
 
   // UART controller with 5x oversampling
@@ -66,29 +69,29 @@ case class BmbUart(baudRate: Int = 1000000, clkFreq: HertzNumber = HertzNumber(1
   val rxIntEnaReg = Reg(Bool()) init(False)
   val txIntEnaReg = Reg(Bool()) init(False)
 
-  // Interrupt generation — single-cycle pulses (BmbSys intstate is an SR flip-flop)
+  // Interrupt generation — single-cycle pulses (Sys intstate is an SR flip-flop)
   // RX: pulse on rising edge of "RX FIFO non-empty" when enabled
   val rxNonEmpty = rxFifo.io.pop.valid
   val rxNonEmptyDly = RegNext(rxNonEmpty) init(False)
-  io.rxInterrupt := rxIntEnaReg && rxNonEmpty && !rxNonEmptyDly
+  bus.rxInterrupt := rxIntEnaReg && rxNonEmpty && !rxNonEmptyDly
 
   // TX: pulse on rising edge of "TX FIFO empty" when enabled
   val txEmpty = txFifo.io.occupancy === 0
   val txEmptyDly = RegNext(txEmpty) init(True)
-  io.txInterrupt := txIntEnaReg && txEmpty && !txEmptyDly
+  bus.txInterrupt := txIntEnaReg && txEmpty && !txEmptyDly
 
   // Read mux (combinational)
-  io.rdData := 0
+  bus.rdData := 0
   rxFifo.io.pop.ready := False
-  switch(io.addr) {
+  switch(bus.addr) {
     is(0) {
       // Status: bit 0 = TDRE, bit 1 = RDRF, bit 2 = TX int enabled, bit 3 = RX int enabled
-      io.rdData := B(0, 28 bits) ## rxIntEnaReg.asBits ## txIntEnaReg.asBits ## rxFifo.io.pop.valid.asBits ## txFifo.io.availability.orR.asBits
+      bus.rdData := B(0, 28 bits) ## rxIntEnaReg.asBits ## txIntEnaReg.asBits ## rxFifo.io.pop.valid.asBits ## txFifo.io.availability.orR.asBits
     }
     is(1) {
       // Data read: return RX byte and consume from FIFO
-      io.rdData := B(0, 24 bits) ## rxFifo.io.pop.payload
-      when(io.rd) {
+      bus.rdData := B(0, 24 bits) ## rxFifo.io.pop.payload
+      when(bus.rd) {
         rxFifo.io.pop.ready := True
       }
     }
@@ -97,17 +100,26 @@ case class BmbUart(baudRate: Int = 1000000, clkFreq: HertzNumber = HertzNumber(1
   // Write handling
   txFifo.io.push.valid := False
   txFifo.io.push.payload := 0
-  when(io.wr) {
-    switch(io.addr) {
+  when(bus.wr) {
+    switch(bus.addr) {
       is(1) {
         txFifo.io.push.valid := True
-        txFifo.io.push.payload := io.wrData(7 downto 0)
+        txFifo.io.push.payload := bus.wrData(7 downto 0)
       }
       is(2) {
         // Interrupt control: bit 0 = TX int enable, bit 1 = RX int enable
-        txIntEnaReg := io.wrData(0)
-        rxIntEnaReg := io.wrData(1)
+        txIntEnaReg := bus.wrData(0)
+        rxIntEnaReg := bus.wrData(1)
       }
     }
   }
+
+  // HasBusIo implementation
+  override def busAddr: UInt   = bus.addr
+  override def busRd: Bool     = bus.rd
+  override def busWr: Bool     = bus.wr
+  override def busWrData: Bits = bus.wrData
+  override def busRdData: Bits = bus.rdData
+  override def busInterrupts: Seq[Bool] = Seq(bus.rxInterrupt, bus.txInterrupt)
+  override def busExternalIo: Option[Bundle] = Some(io)
 }

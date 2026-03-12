@@ -32,14 +32,14 @@ import spinal.lib.com.eth._
  * @param rxBufferByteSize RX buffer size in bytes
  * @param txBufferByteSize TX buffer size in bytes
  */
-case class BmbEth(
+case class Mac(
   txCd: ClockDomain,
   rxCd: ClockDomain,
   phyTxDataWidth: Int = 4,
   phyRxDataWidth: Int = 4,
   rxBufferByteSize: Int = 2048,
   txBufferByteSize: Int = 2048
-) extends Component {
+) extends Component with HasBusIo {
 
   val macParam = MacEthParameter(
     phy = PhyParameter(
@@ -52,19 +52,21 @@ case class BmbEth(
     txBufferByteSize = txBufferByteSize
   )
 
-  val io = new Bundle {
+  val bus = new Bundle {
     val addr   = in UInt(4 bits)
     val rd     = in Bool()
     val wr     = in Bool()
     val wrData = in Bits(32 bits)
     val rdData = out Bits(32 bits)
 
-    // PHY interface (directly from MacEth)
-    val phy = master(PhyIo(macParam.phy))
-
     // Interrupt outputs (active-high pulses)
     val rxInterrupt = out Bool()
     val txInterrupt = out Bool()
+  }
+
+  val io = new Bundle {
+    // PHY interface (directly from MacEth)
+    val phy = master(PhyIo(macParam.phy))
   }
 
   // ========================================================================
@@ -124,42 +126,42 @@ case class BmbEth(
   // RX: pulse on rising edge of "RX stream valid" (frame available)
   val rxValid = mac.io.ctrl.rx.stream.valid
   val rxValidDly = RegNext(rxValid) init(False)
-  io.rxInterrupt := rxValid && !rxValidDly
+  bus.rxInterrupt := rxValid && !rxValidDly
 
   // TX: pulse on rising edge of "TX ready" (holding register free)
   val txReady = !txPushValid
   val txReadyDly = RegNext(txReady) init(False)
-  io.txInterrupt := txReady && !txReadyDly
+  bus.txInterrupt := txReady && !txReadyDly
 
   // ========================================================================
   // Register Read Mux
   // ========================================================================
 
-  io.rdData := 0
-  switch(io.addr) {
+  bus.rdData := 0
+  switch(bus.addr) {
     is(0) {
       // Status register
-      io.rdData(0) := txFlush
-      io.rdData(1) := !txPushValid  // TX ready: holding register free
-      io.rdData(4) := rxFlush
-      io.rdData(5) := mac.io.ctrl.rx.stream.valid
+      bus.rdData(0) := txFlush
+      bus.rdData(1) := !txPushValid  // TX ready: holding register free
+      bus.rdData(4) := rxFlush
+      bus.rdData(5) := mac.io.ctrl.rx.stream.valid
     }
     is(1) {
       // TX availability (free words)
-      io.rdData := mac.io.ctrl.tx.availability.asBits.resized
+      bus.rdData := mac.io.ctrl.tx.availability.asBits.resized
     }
     is(3) {
       // RX data pop (auto-pop on read)
-      io.rdData := mac.io.ctrl.rx.stream.payload
-      when(io.rd) {
+      bus.rdData := mac.io.ctrl.rx.stream.payload
+      when(bus.rd) {
         mac.io.ctrl.rx.stream.ready := True
       }
     }
     is(4) {
       // RX stats (auto-clear on read)
-      io.rdData(7 downto 0)  := mac.io.ctrl.rx.stats.errors.asBits
-      io.rdData(15 downto 8) := mac.io.ctrl.rx.stats.drops.asBits
-      when(io.rd) {
+      bus.rdData(7 downto 0)  := mac.io.ctrl.rx.stats.errors.asBits
+      bus.rdData(15 downto 8) := mac.io.ctrl.rx.stats.drops.asBits
+      when(bus.rd) {
         mac.io.ctrl.rx.stats.clear := True
       }
     }
@@ -169,18 +171,27 @@ case class BmbEth(
   // Register Write Handling
   // ========================================================================
 
-  when(io.wr) {
-    switch(io.addr) {
+  when(bus.wr) {
+    switch(bus.addr) {
       is(0) {
         // Control register
-        txFlush := io.wrData(0)
-        rxFlush := io.wrData(4)
+        txFlush := bus.wrData(0)
+        rxFlush := bus.wrData(4)
       }
       is(2) {
         // TX data push — register valid and payload
         txPushValid := True
-        txPushPayload := io.wrData
+        txPushPayload := bus.wrData
       }
     }
   }
+
+  // HasBusIo implementation
+  override def busAddr: UInt   = bus.addr
+  override def busRd: Bool     = bus.rd
+  override def busWr: Bool     = bus.wr
+  override def busWrData: Bits = bus.wrData
+  override def busRdData: Bits = bus.rdData
+  override def busInterrupts: Seq[Bool] = Seq(bus.rxInterrupt, bus.txInterrupt)
+  override def busExternalIo: Option[Bundle] = Some(io)
 }

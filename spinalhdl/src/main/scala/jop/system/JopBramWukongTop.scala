@@ -152,8 +152,12 @@ case class JopBramWukongTop(
     jopCore.io.syncIn.status := False
 
     // UART: TX + RX via CH340N
-    io.ser_txd := jopCore.io.txd
-    jopCore.io.rxd := io.ser_rxd
+    if (jopCore.devicePins.contains("uart")) {
+      io.ser_txd := jopCore.devicePin[Bool]("uart", "txd")
+      jopCore.devicePin[Bool]("uart", "rxd") := io.ser_rxd
+    } else {
+      io.ser_txd := True
+    }
 
     // ======================================================================
     // LED Driver (active HIGH on Wukong)

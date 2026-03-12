@@ -12,7 +12,7 @@ import java.io.PrintWriter
 /**
  * SMP Test Harness: N JOP cores sharing BmbOnChipRam via BmbArbiter.
  *
- * Each core has internal BmbSys (with unique cpuId). Only core 0 has BmbUart.
+ * Each core has internal Sys (with unique cpuId). Only core 0 has Uart.
  * CmpSync provides global lock synchronization.
  *
  * Uses BRAM (zero-latency) to keep simulation fast while testing multicore logic.
@@ -38,7 +38,7 @@ case class JopSmpTestHarness(
     // Per-core memory busy
     val memBusy = out Vec(Bool(), cpuCnt)
 
-    // Per-core halted status (from CmpSync via internal BmbSys)
+    // Per-core halted status (from CmpSync via internal Sys)
     val halted = out Vec(Bool(), cpuCnt)
 
     // UART output (from core 0 debug snoop)
@@ -87,7 +87,7 @@ case class JopSmpTestHarness(
   }
 
   // Expose core 0's signal register for SMP boot debugging
-  cluster.cores(0).bmbSys.signalReg.simPublic()
+  cluster.cores(0).sys.signalReg.simPublic()
 
   // Expose I/O write signals from core 0 memory controller for debugging
   cluster.cores(0).memCtrl.io.ioWr.simPublic()
@@ -106,7 +106,7 @@ case class JopSmpTestHarness(
   cluster.cores(0).memCtrl.io.memIn.getfield.simPublic()
 
   // No UART RX in simulation
-  cluster.io.rxd := True
+  if (cluster.devicePins.contains("uart")) cluster.devicePin[Bool]("uart", "rxd") := True
 
   // ====================================================================
   // Shared Block RAM
@@ -438,7 +438,7 @@ object JopSmpSmallNCoreDebugSim extends App {
       var signalSetCycle = -1
       var core1BootCycle = -1
       var lastPc1 = -1
-      var ioWrToSys0Count = 0  // Writes to BmbSys (slave 0)
+      var ioWrToSys0Count = 0  // Writes to Sys (slave 0)
 
       val lastWd = Array.fill(cpuCnt)(0)
       val wdToggles = Array.fill(cpuCnt)(0)
@@ -477,14 +477,14 @@ object JopSmpSmallNCoreDebugSim extends App {
           val subAddr = addr & 0xF
           if (slaveId == 0 && ioWrToSys0Count < 20) {
             ioWrToSys0Count += 1
-            println(f"\n[$cycle%8d] IO_WR slave=$slaveId addr=$subAddr data=0x$data%08x (BmbSys write #$ioWrToSys0Count)")
+            println(f"\n[$cycle%8d] IO_WR slave=$slaveId addr=$subAddr data=0x$data%08x (Sys write #$ioWrToSys0Count)")
           } else if (slaveId == 0) {
             ioWrToSys0Count += 1
           }
         }
 
-        // Monitor signal register (core 0's BmbSys)
-        val signalSet = dut.cluster.cores(0).bmbSys.signalReg.toBoolean
+        // Monitor signal register (core 0's Sys)
+        val signalSet = dut.cluster.cores(0).sys.signalReg.toBoolean
         if (signalSet && signalSetCycle < 0) {
           signalSetCycle = cycle
           println(f"\n[$cycle%8d] *** SIGNAL SET by core 0 ***")
@@ -532,7 +532,7 @@ object JopSmpSmallNCoreDebugSim extends App {
       println(s"Signal set at cycle: $signalSetCycle")
       println(s"Core 1 boot at cycle: $core1BootCycle")
       println(s"Total IO writes from core 0: ${dut.cluster.cores(0).ioWrCounter.toInt}")
-      println(s"BmbSys writes: $ioWrToSys0Count")
+      println(s"Sys writes: $ioWrToSys0Count")
       println(s"UART: '${uartOutput.toString}'")
       println(s"WD toggles: ${wdToggles.zipWithIndex.map { case (t, i) => s"C$i=$t" }.mkString(" ")}")
     }

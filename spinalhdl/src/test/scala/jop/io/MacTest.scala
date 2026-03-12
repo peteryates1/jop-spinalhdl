@@ -7,7 +7,7 @@ import spinal.lib.sim.{StreamDriver, StreamMonitor, StreamReadyRandomizer}
 
 import scala.collection.mutable
 
-class BmbEthTest extends AnyFunSuite {
+class EthTest extends AnyFunSuite {
 
   /** CRC-32 (IEEE 802.3) — same algorithm as SpinalSimMacTester.calcCrc32 */
   def calcCrc32(data: Seq[Int]): Int = {
@@ -30,39 +30,39 @@ class BmbEthTest extends AnyFunSuite {
   }
 
   /** Write a value to the DUT's I/O register interface */
-  def ioWrite(dut: BmbEth, addr: Int, data: Long)(implicit cd: ClockDomain): Unit = {
-    dut.io.addr #= addr
-    dut.io.wrData #= data
-    dut.io.wr #= true
-    dut.io.rd #= false
+  def ioWrite(dut: Mac, addr: Int, data: Long)(implicit cd: ClockDomain): Unit = {
+    dut.bus.addr #= addr
+    dut.bus.wrData #= data
+    dut.bus.wr #= true
+    dut.bus.rd #= false
     cd.waitSampling()
-    dut.io.wr #= false
+    dut.bus.wr #= false
   }
 
   /** Read a value from the DUT's I/O register interface */
-  def ioRead(dut: BmbEth, addr: Int)(implicit cd: ClockDomain): Long = {
-    dut.io.addr #= addr
-    dut.io.rd #= true
-    dut.io.wr #= false
+  def ioRead(dut: Mac, addr: Int)(implicit cd: ClockDomain): Long = {
+    dut.bus.addr #= addr
+    dut.bus.rd #= true
+    dut.bus.wr #= false
     cd.waitSampling()
-    val result = dut.io.rdData.toLong
-    dut.io.rd #= false
+    val result = dut.bus.rdData.toLong
+    dut.bus.rd #= false
     result
   }
 
   /** Initialize DUT I/O signals to idle state */
-  def initIo(dut: BmbEth): Unit = {
-    dut.io.addr #= 0
-    dut.io.rd #= false
-    dut.io.wr #= false
-    dut.io.wrData #= 0
+  def initIo(dut: Mac): Unit = {
+    dut.bus.addr #= 0
+    dut.bus.rd #= false
+    dut.bus.wr #= false
+    dut.bus.wrData #= 0
     dut.io.phy.colision #= false
     dut.io.phy.busy #= false
   }
 
   /** Enqueue a frame of bytes as low-nibble-first 4-bit PHY RX transfers */
   def enqueuePhyRx(
-    dut: BmbEth,
+    dut: Mac,
     phyRxQueue: mutable.Queue[() => Unit],
     frame: Seq[Int]
   ): Unit = {
@@ -84,7 +84,7 @@ class BmbEthTest extends AnyFunSuite {
     .workspacePath("simWorkspace")
 
   def compileDut() = simConfig.compile(
-    BmbEth(
+    Mac(
       txCd = ClockDomain.external("txCd", withReset = false),
       rxCd = ClockDomain.external("rxCd", withReset = false),
       rxBufferByteSize = 512,
@@ -92,7 +92,7 @@ class BmbEthTest extends AnyFunSuite {
     )
   )
 
-  test("BmbEth_status_and_flush") {
+  test("Eth_status_and_flush") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -126,7 +126,7 @@ class BmbEthTest extends AnyFunSuite {
     }
   }
 
-  test("BmbEth_rx_path") {
+  test("Eth_rx_path") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -194,7 +194,7 @@ class BmbEthTest extends AnyFunSuite {
     }
   }
 
-  test("BmbEth_tx_path") {
+  test("Eth_tx_path") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -239,7 +239,7 @@ class BmbEthTest extends AnyFunSuite {
       }
 
       // Write frame via CPU: first word = bit count, then data words
-      // BmbEth does NOT use aligner, so no alignment prefix
+      // Eth does NOT use aligner, so no alignment prefix
       val bitCount = payload.size * 8
       ioWrite(dut, 2, bitCount)
 
@@ -272,7 +272,7 @@ class BmbEthTest extends AnyFunSuite {
     }
   }
 
-  test("BmbEth_rx_stats") {
+  test("Eth_rx_stats") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -326,7 +326,7 @@ class BmbEthTest extends AnyFunSuite {
     }
   }
 
-  test("BmbEth_interrupts") {
+  test("Eth_interrupts") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -343,8 +343,8 @@ class BmbEthTest extends AnyFunSuite {
       fork {
         while (true) {
           cd.waitSampling()
-          if (dut.io.rxInterrupt.toBoolean) rxInterruptSeen = true
-          if (dut.io.txInterrupt.toBoolean) txInterruptSeen = true
+          if (dut.bus.rxInterrupt.toBoolean) rxInterruptSeen = true
+          if (dut.bus.txInterrupt.toBoolean) txInterruptSeen = true
         }
       }
 

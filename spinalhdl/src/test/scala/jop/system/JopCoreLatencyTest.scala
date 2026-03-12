@@ -16,7 +16,7 @@ import jop.memory.{JopMemoryConfig, BmbLatencyBridge}
  *
  * extraLatency=0 is identical to the standard BRAM test harness.
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * I/O subsystem (Sys, Uart) is internal to JopCore.
  */
 case class JopCoreLatencyHarness(
   romInit: Seq[BigInt],
@@ -53,7 +53,7 @@ case class JopCoreLatencyHarness(
   // JBC starts empty - BC_FILL must load bytecodes from memory
   val jbcInit = Seq.fill(2048)(BigInt(0))
 
-  // JOP Core (BmbSys + BmbUart internal)
+  // JOP Core (Sys + Uart internal)
   val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -88,7 +88,7 @@ case class JopCoreLatencyHarness(
   jopCore.io.syncIn.status := False
 
   // No UART RX
-  jopCore.io.rxd := True
+  if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := True
 
   // Debug RAM port - tie off
   jopCore.io.debugRamAddr := 0

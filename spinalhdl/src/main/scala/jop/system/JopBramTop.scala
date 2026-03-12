@@ -142,8 +142,12 @@ case class JopBramTop(
     jopCore.io.syncIn.status := False
 
     // UART: TX only (no RX in BRAM top)
-    io.ser_txd := jopCore.io.txd
-    jopCore.io.rxd := True
+    if (jopCore.devicePins.contains("uart")) {
+      io.ser_txd := jopCore.devicePin[Bool]("uart", "txd")
+      jopCore.devicePin[Bool]("uart", "rxd") := True
+    } else {
+      io.ser_txd := True
+    }
 
     // ======================================================================
     // LED Driver
@@ -316,8 +320,12 @@ case class JopBramSerialTop(
     jopCore.io.syncIn.status := False
 
     // UART: TX + RX for serial download
-    io.ser_txd := jopCore.io.txd
-    jopCore.io.rxd := io.ser_rxd
+    if (jopCore.devicePins.contains("uart")) {
+      io.ser_txd := jopCore.devicePin[Bool]("uart", "txd")
+      jopCore.devicePin[Bool]("uart", "rxd") := io.ser_rxd
+    } else {
+      io.ser_txd := True
+    }
 
     // Heartbeat: ~1 Hz toggle (50M cycles at 100 MHz)
     val heartbeat = Reg(Bool()) init(False)

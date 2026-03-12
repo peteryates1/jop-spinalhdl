@@ -33,25 +33,28 @@ import spinal.lib._
  *
  * @param clkDivInit Initial value for the clock divider register
  */
-case class BmbConfigFlash(clkDivInit: Int = 3) extends Component {
-  val io = new Bundle {
+case class ConfigFlash(clkDivInit: Int = 3) extends Component with HasBusIo {
+  val bus = new Bundle {
     val addr   = in UInt(4 bits)
     val rd     = in Bool()
     val wr     = in Bool()
     val wrData = in Bits(32 bits)
     val rdData = out Bits(32 bits)
+  }
 
+  val io = new Bundle {
     // SPI pins (directly to config flash)
     val dclk  = out Bool()
     val ncs   = out Bool()
     val asdo  = out Bool()
     val data0 = in Bool()
 
-    // Flash ready: driven by top-level when SPI mux has switched to BmbConfigFlash.
+    // Flash ready: driven by top-level when SPI mux has switched to ConfigFlash.
     // Microcode polls status bit 1 before starting any flash I/O.
     val flashReady = in Bool()
 
     // Debug: last received byte + transfer count + first word
+    // Exposed via io (not bus) so they're available through devicePins passthrough.
     val debugRxByte = out Bits(8 bits)
     val debugTxCount = out UInt(8 bits)
     val debugFirstWord = out Bits(32 bits)
@@ -116,20 +119,20 @@ case class BmbConfigFlash(clkDivInit: Int = 3) extends Component {
   // Register Read Mux
   // ========================================================================
 
-  io.rdData := 0
-  switch(io.addr) {
+  bus.rdData := 0
+  switch(bus.addr) {
     is(0) {
       // Status: bit0=busy, bit1=flashReady
-      io.rdData(0) := busy
-      io.rdData(1) := io.flashReady
+      bus.rdData(0) := busy
+      bus.rdData(1) := io.flashReady
     }
     is(1) {
       // RX byte
-      io.rdData(7 downto 0) := rxData
+      bus.rdData(7 downto 0) := rxData
     }
     is(2) {
       // Clock divider
-      io.rdData(15 downto 0) := clkDivReg.asBits
+      bus.rdData(15 downto 0) := clkDivReg.asBits
     }
   }
 
@@ -137,15 +140,15 @@ case class BmbConfigFlash(clkDivInit: Int = 3) extends Component {
   // Register Write Handling
   // ========================================================================
 
-  when(io.wr) {
-    switch(io.addr) {
+  when(bus.wr) {
+    switch(bus.addr) {
       is(0) {
         // Control: bit0=csAssert
-        csAssertReg := io.wrData(0)
+        csAssertReg := bus.wrData(0)
       }
       is(1) {
         // TX byte: load TX shift register, start transfer
-        txShiftReg := io.wrData(7 downto 0)
+        txShiftReg := bus.wrData(7 downto 0)
         busy := True
         bitCounter := 0
         divCounter := 0
@@ -153,14 +156,14 @@ case class BmbConfigFlash(clkDivInit: Int = 3) extends Component {
       }
       is(2) {
         // Clock divider
-        clkDivReg := io.wrData(15 downto 0).asUInt
+        clkDivReg := bus.wrData(15 downto 0).asUInt
       }
     }
   }
 
   // Debug: count TX bytes and expose last RX byte
   val debugTxCountReg = Reg(UInt(8 bits)) init(0)
-  when(io.wr && io.addr === 1) {
+  when(bus.wr && bus.addr === 1) {
     debugTxCountReg := debugTxCountReg + 1
   }
   io.debugRxByte := rxData
@@ -180,4 +183,12 @@ case class BmbConfigFlash(clkDivInit: Int = 3) extends Component {
     }
   }
   io.debugFirstWord := debugFirstWordReg
+
+  // HasBusIo implementation
+  override def busAddr: UInt   = bus.addr
+  override def busRd: Bool     = bus.rd
+  override def busWr: Bool     = bus.wr
+  override def busWrData: Bits = bus.wrData
+  override def busRdData: Bits = bus.rdData
+  override def busExternalIo: Option[Bundle] = Some(io)
 }

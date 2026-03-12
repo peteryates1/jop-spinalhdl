@@ -25,7 +25,7 @@ case class DebugUart(
     val rxd = in Bool()
   }
 
-  // UART controller with 5x oversampling (matching BmbUart)
+  // UART controller with 5x oversampling (matching Uart)
   val uartCtrl = new UartCtrl(UartCtrlGenerics(
     preSamplingSize = 1, samplingSize = 3, postSamplingSize = 1
   ))

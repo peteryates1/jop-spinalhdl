@@ -4,47 +4,47 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
 
-class BmbVgaTextTest extends AnyFunSuite {
+class VgaTextTest extends AnyFunSuite {
 
   val simConfig = SimConfig
     .workspacePath("simWorkspace")
 
   def compileDut() = simConfig.compile(
-    BmbVgaText(
+    VgaText(
       vgaCd = ClockDomain.external("vgaCd", withReset = false, config = ClockDomainConfig(resetKind = BOOT))
     )
   )
 
   /** Write a value to the DUT's I/O register interface */
-  def ioWrite(dut: BmbVgaText, addr: Int, data: Long)(implicit cd: ClockDomain): Unit = {
-    dut.io.addr #= addr
-    dut.io.wrData #= data
-    dut.io.wr #= true
-    dut.io.rd #= false
+  def ioWrite(dut: VgaText, addr: Int, data: Long)(implicit cd: ClockDomain): Unit = {
+    dut.bus.addr #= addr
+    dut.bus.wrData #= data
+    dut.bus.wr #= true
+    dut.bus.rd #= false
     cd.waitSampling()
-    dut.io.wr #= false
+    dut.bus.wr #= false
   }
 
   /** Read a value from the DUT's I/O register interface */
-  def ioRead(dut: BmbVgaText, addr: Int)(implicit cd: ClockDomain): Long = {
-    dut.io.addr #= addr
-    dut.io.rd #= true
-    dut.io.wr #= false
+  def ioRead(dut: VgaText, addr: Int)(implicit cd: ClockDomain): Long = {
+    dut.bus.addr #= addr
+    dut.bus.rd #= true
+    dut.bus.wr #= false
     cd.waitSampling()
-    val result = dut.io.rdData.toLong
-    dut.io.rd #= false
+    val result = dut.bus.rdData.toLong
+    dut.bus.rd #= false
     result
   }
 
   /** Initialize DUT I/O signals to idle state */
-  def initIo(dut: BmbVgaText): Unit = {
-    dut.io.addr #= 0
-    dut.io.rd #= false
-    dut.io.wr #= false
-    dut.io.wrData #= 0
+  def initIo(dut: VgaText): Unit = {
+    dut.bus.addr #= 0
+    dut.bus.rd #= false
+    dut.bus.wr #= false
+    dut.bus.wrData #= 0
   }
 
-  test("BmbVgaText_control_and_status") {
+  test("VgaText_control_and_status") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)   // 100 MHz system
@@ -74,7 +74,7 @@ class BmbVgaTextTest extends AnyFunSuite {
     }
   }
 
-  test("BmbVgaText_cursor_and_write") {
+  test("VgaText_cursor_and_write") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -119,7 +119,7 @@ class BmbVgaTextTest extends AnyFunSuite {
     }
   }
 
-  test("BmbVgaText_cursor_wrap") {
+  test("VgaText_cursor_wrap") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -146,7 +146,7 @@ class BmbVgaTextTest extends AnyFunSuite {
     }
   }
 
-  test("BmbVgaText_direct_write") {
+  test("VgaText_direct_write") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -176,7 +176,7 @@ class BmbVgaTextTest extends AnyFunSuite {
     }
   }
 
-  test("BmbVgaText_palette_write") {
+  test("VgaText_palette_write") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -204,7 +204,7 @@ class BmbVgaTextTest extends AnyFunSuite {
     }
   }
 
-  test("BmbVgaText_default_attribute") {
+  test("VgaText_default_attribute") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -227,7 +227,7 @@ class BmbVgaTextTest extends AnyFunSuite {
     }
   }
 
-  test("BmbVgaText_dimensions_readback") {
+  test("VgaText_dimensions_readback") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -247,7 +247,7 @@ class BmbVgaTextTest extends AnyFunSuite {
     }
   }
 
-  test("BmbVgaText_vga_timing") {
+  test("VgaText_vga_timing") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)   // 100 MHz system
@@ -331,7 +331,7 @@ class BmbVgaTextTest extends AnyFunSuite {
     }
   }
 
-  test("BmbVgaText_clear_screen") {
+  test("VgaText_clear_screen") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -360,19 +360,19 @@ class BmbVgaTextTest extends AnyFunSuite {
       var busy = true
       while (busy && timeout > 0) {
         cd.waitSampling()
-        val s = dut.io.rdData.toLong
-        dut.io.addr #= 0
-        dut.io.rd #= true
+        val s = dut.bus.rdData.toLong
+        dut.bus.addr #= 0
+        dut.bus.rd #= true
         cd.waitSampling()
-        busy = (dut.io.rdData.toLong & 0x04) != 0
-        dut.io.rd #= false
+        busy = (dut.bus.rdData.toLong & 0x04) != 0
+        dut.bus.rd #= false
         timeout -= 1
       }
       assert(!busy, "Clear operation did not complete within expected time")
     }
   }
 
-  test("BmbVgaText_scroll_up") {
+  test("VgaText_scroll_up") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -396,11 +396,11 @@ class BmbVgaTextTest extends AnyFunSuite {
       var timeout = 10000
       var busy = true
       while (busy && timeout > 0) {
-        dut.io.addr #= 0
-        dut.io.rd #= true
+        dut.bus.addr #= 0
+        dut.bus.rd #= true
         cd.waitSampling()
-        busy = (dut.io.rdData.toLong & 0x04) != 0
-        dut.io.rd #= false
+        busy = (dut.bus.rdData.toLong & 0x04) != 0
+        dut.bus.rd #= false
         timeout -= 1
       }
       assert(!busy, "Scroll operation did not complete within expected time")

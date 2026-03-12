@@ -9,7 +9,7 @@ import jop.ddr3.StartupE2
  * Minimal standalone SPI diagnostic for Artix-7.
  *
  * Tests the STARTUPE2 + SPI flash path using ONLY the board clock domain.
- * No MIG, no JOP, no BmbConfigFlash — just a simple FSM that reads the
+ * No MIG, no JOP, no ConfigFlash — just a simple FSM that reads the
  * JEDEC ID (0x9F) from the SPI flash and displays it on LEDs.
  *
  * LED display after test:

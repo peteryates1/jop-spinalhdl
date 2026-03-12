@@ -26,25 +26,26 @@ import spinal.lib._
  *
  * @param vgaCd 25 MHz pixel clock domain
  */
-case class BmbVgaText(
+case class VgaText(
   vgaCd: ClockDomain
-) extends Component {
+) extends Component with HasBusIo {
 
-  val io = new Bundle {
+  val bus = new Bundle {
     val addr   = in UInt(4 bits)
     val rd     = in Bool()
     val wr     = in Bool()
     val wrData = in Bits(32 bits)
     val rdData = out Bits(32 bits)
+    val vsyncInterrupt = out Bool()
+  }
 
+  val io = new Bundle {
     // VGA output pins
     val vgaHsync = out Bool()
     val vgaVsync = out Bool()
     val vgaR     = out Bits(5 bits)
     val vgaG     = out Bits(6 bits)
     val vgaB     = out Bits(5 bits)
-
-    val vsyncInterrupt = out Bool()
   }
 
   // ========================================================================
@@ -381,30 +382,30 @@ case class BmbVgaText(
   // Register Read Mux
   // ========================================================================
 
-  io.rdData := 0
-  switch(io.addr) {
+  bus.rdData := 0
+  switch(bus.addr) {
     is(0) {
       // Status: bit0=enabled, bit1=vblank, bit2=scrollBusy
-      io.rdData(0) := enabled
-      io.rdData(1) := vblankSync
-      io.rdData(2) := scrollBusy || clearBusy
+      bus.rdData(0) := enabled
+      bus.rdData(1) := vblankSync
+      bus.rdData(2) := scrollBusy || clearBusy
     }
     is(1) {
       // Cursor position: col[6:0], row[12:8]
-      io.rdData(6 downto 0)  := cursorCol.asBits
-      io.rdData(12 downto 8) := cursorRow.asBits
+      bus.rdData(6 downto 0)  := cursorCol.asBits
+      bus.rdData(12 downto 8) := cursorRow.asBits
     }
     is(3) {
       // Default attribute
-      io.rdData(7 downto 0) := defaultAttr
+      bus.rdData(7 downto 0) := defaultAttr
     }
     is(5) {
       // Columns
-      io.rdData := B(COLS, 32 bits)
+      bus.rdData := B(COLS, 32 bits)
     }
     is(6) {
       // Rows
-      io.rdData := B(ROWS, 32 bits)
+      bus.rdData := B(ROWS, 32 bits)
     }
   }
 
@@ -412,21 +413,21 @@ case class BmbVgaText(
   // Register Write Handling
   // ========================================================================
 
-  when(io.wr && !scrollBusy && !clearBusy) {
-    switch(io.addr) {
+  when(bus.wr && !scrollBusy && !clearBusy) {
+    switch(bus.addr) {
       is(0) {
         // Control: bit0=enable
-        enabled := io.wrData(0)
+        enabled := bus.wrData(0)
       }
       is(1) {
         // Set cursor position
-        cursorCol := io.wrData(6 downto 0).asUInt
-        cursorRow := io.wrData(12 downto 8).asUInt
+        cursorCol := bus.wrData(6 downto 0).asUInt
+        cursorRow := bus.wrData(12 downto 8).asUInt
       }
       is(2) {
         // Write char+attr at cursor, auto-advance
-        val charCode = io.wrData(7 downto 0)
-        val attr     = io.wrData(15 downto 8)
+        val charCode = bus.wrData(7 downto 0)
+        val attr     = bus.wrData(15 downto 8)
         val addr     = (cursorRow * COLS + cursorCol).resize(log2Up(CHAR_COUNT))
 
         sysCharWrEn   := True
@@ -440,20 +441,20 @@ case class BmbVgaText(
       }
       is(3) {
         // Set default attribute
-        defaultAttr := io.wrData(7 downto 0)
+        defaultAttr := bus.wrData(7 downto 0)
       }
       is(4) {
         // Palette write: index[19:16], rgb565[15:0]
-        val index  = io.wrData(19 downto 16).asUInt
-        val rgb565 = io.wrData(15 downto 0)
+        val index  = bus.wrData(19 downto 16).asUInt
+        val rgb565 = bus.wrData(15 downto 0)
         palette(index) := rgb565
       }
       is(7) {
         // Direct write: char[7:0], attr[15:8], col[22:16], row[28:24]
-        val charCode = io.wrData(7 downto 0)
-        val attr     = io.wrData(15 downto 8)
-        val col      = io.wrData(22 downto 16).asUInt
-        val row      = io.wrData(28 downto 24).asUInt
+        val charCode = bus.wrData(7 downto 0)
+        val attr     = bus.wrData(15 downto 8)
+        val col      = bus.wrData(22 downto 16).asUInt
+        val row      = bus.wrData(28 downto 24).asUInt
         val addr     = (row * COLS + col).resize(log2Up(CHAR_COUNT))
 
         sysCharWrEn   := True
@@ -611,5 +612,14 @@ case class BmbVgaText(
   }
   val vsyncToggleSys = BufferCC(vgaVsyncToggle.toggle)
   val vsyncToggleSysPrev = RegNext(vsyncToggleSys) init(False)
-  io.vsyncInterrupt := vsyncToggleSys ^ vsyncToggleSysPrev
+  bus.vsyncInterrupt := vsyncToggleSys ^ vsyncToggleSysPrev
+
+  // HasBusIo implementation
+  override def busAddr: UInt   = bus.addr
+  override def busRd: Bool     = bus.rd
+  override def busWr: Bool     = bus.wr
+  override def busWrData: Bits = bus.wrData
+  override def busRdData: Bits = bus.rdData
+  override def busInterrupts: Seq[Bool] = Seq(bus.vsyncInterrupt)
+  override def busExternalIo: Option[Bundle] = Some(io)
 }

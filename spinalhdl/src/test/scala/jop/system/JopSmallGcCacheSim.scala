@@ -89,7 +89,7 @@ case class CacheToBramAdapter(
  * This tests the same cache path used by DDR3 FPGA but with BRAM backing,
  * allowing simulation debugging of cache-related issues.
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * I/O subsystem (Sys, Uart) is internal to JopCore.
  */
 case class JopCoreWithCacheTestHarness(
   romInit: Seq[BigInt],
@@ -139,7 +139,7 @@ case class JopCoreWithCacheTestHarness(
     )
   }.padTo(2048, BigInt(0))
 
-  // JOP Core (BmbSys + BmbUart internal)
+  // JOP Core (Sys + Uart internal)
   val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -201,7 +201,7 @@ case class JopCoreWithCacheTestHarness(
   jopCore.io.syncIn.status := False
 
   // No UART RX in test harness
-  jopCore.io.rxd := True
+  if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := True
 
   // Debug RAM (unused)
   jopCore.io.debugRamAddr := 0

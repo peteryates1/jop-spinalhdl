@@ -39,9 +39,9 @@ case class SyncOut() extends Bundle {
  * cores are halted. Uses round-robin fairness for lock arbitration.
  *
  * Protocol:
- *   - Core sets req=1 to request lock (via BmbSys IO_LOCK write)
+ *   - Core sets req=1 to request lock (via Sys IO_LOCK write)
  *   - CmpSync grants to one core (halted=0), halts all others (halted=1)
- *   - Owner clears req=0 to release (via BmbSys IO_UNLOCK write)
+ *   - Owner clears req=0 to release (via Sys IO_UNLOCK write)
  *   - Next requester gets lock immediately (no idle gap)
  *
  * @param cpuCnt Number of CPU cores

@@ -4,12 +4,12 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.com.uart._
 import spinal.lib.io.{InOutWrapper, TriState}
-import jop.io.BmbSdNative
+import jop.io.SdNative
 
 /**
  * SD Native Mode Exerciser FPGA Top
  *
- * Exercises BmbSdNative with a real SD card in native 1-bit mode on the
+ * Exercises SdNative with a real SD card in native 1-bit mode on the
  * QMTECH EP4CGX150 + DB_FPGA board. Performs card initialization, writes
  * a data block, reads it back, and reports results via UART at 1 Mbaud.
  *
@@ -67,7 +67,7 @@ case class SdNativeExerciserTop() extends Component {
   val mainArea = new ClockingArea(mainClockDomain) {
 
     // SD Native controller (clkDiv=99 -> 400kHz at 80MHz for init)
-    val sd = BmbSdNative(clkDivInit = 99)
+    val sd = SdNative(clkDivInit = 99)
 
     // SD pin wiring
     io.sd_clk := sd.io.sdClk
@@ -89,10 +89,10 @@ case class SdNativeExerciserTop() extends Component {
     sd.io.sdCd := io.sd_cd
 
     // Default register interface
-    sd.io.addr   := 0
-    sd.io.rd     := False
-    sd.io.wr     := False
-    sd.io.wrData := 0
+    sd.bus.addr   := 0
+    sd.bus.rd     := False
+    sd.bus.wr     := False
+    sd.bus.wrData := 0
 
     // UART TX (1 Mbaud at 80 MHz)
     val uartCtrl = new UartCtrl(UartCtrlGenerics(
@@ -223,14 +223,14 @@ case class SdNativeExerciserTop() extends Component {
     // Helper: write a register
     // ====================================================================
     def sdWrite(address: UInt, data: Bits): Unit = {
-      sd.io.addr   := address
-      sd.io.wr     := True
-      sd.io.wrData := data
+      sd.bus.addr   := address
+      sd.bus.wr     := True
+      sd.bus.wrData := data
     }
 
     def sdRead(address: UInt): Unit = {
-      sd.io.addr := address
-      sd.io.rd   := True
+      sd.bus.addr := address
+      sd.bus.rd   := True
     }
 
     // ====================================================================
@@ -295,7 +295,7 @@ case class SdNativeExerciserTop() extends Component {
       is(S.T1_READ_STATUS) {
         // Read status register (addr 0), check bit 7 (cardPresent)
         sdRead(U(0, 4 bits))
-        testPass := sd.io.rdData(7)
+        testPass := sd.bus.rdData(7)
         state := S.T1_RESULT
       }
       is(S.T1_RESULT) {
@@ -361,7 +361,7 @@ case class SdNativeExerciserTop() extends Component {
       }
       is(S.INIT_CMD0_WAIT) {
         sdRead(U(0, 4 bits))
-        when(!sd.io.rdData(0)) { // cmdBusy cleared
+        when(!sd.bus.rdData(0)) { // cmdBusy cleared
           cmd0Cnt := cmd0Cnt + 1
           when(cmd0Cnt < 2) {
             // Send CMD0 again (3 times total)
@@ -392,17 +392,17 @@ case class SdNativeExerciserTop() extends Component {
       }
       is(S.INIT_CMD8_WAIT) {
         sdRead(U(0, 4 bits))
-        when(!sd.io.rdData(0)) { // cmdBusy cleared
+        when(!sd.bus.rdData(0)) { // cmdBusy cleared
           state := S.INIT_CMD8_STATUS
         }
       }
       is(S.INIT_CMD8_STATUS) {
         // Check status for cmdTimeout (bit 3) — if CMD8 timed out, skip check
         sdRead(U(0, 4 bits))
-        when(sd.io.rdData(3)) {
+        when(sd.bus.rdData(3)) {
           // CMD8 timed out — old MMC card or issue; set debug and continue
           dbgStep := 0x08
-          dbgStatus := sd.io.rdData
+          dbgStatus := sd.bus.rdData
           delayCnt := 0; retState := S.INIT_CMD55_ARG; state := S.INIT_CMD_DELAY
         } otherwise {
           state := S.INIT_CMD8_CHECK
@@ -411,10 +411,10 @@ case class SdNativeExerciserTop() extends Component {
       is(S.INIT_CMD8_CHECK) {
         // Read response register 1 (addr 1), check lower 12 bits = 0x1AA
         sdRead(U(1, 4 bits))
-        when((sd.io.rdData(11 downto 0)) =/= B(0x1AA, 12 bits)) {
+        when((sd.bus.rdData(11 downto 0)) =/= B(0x1AA, 12 bits)) {
           testPass := False
           dbgStep := 0x18 // CMD8 response mismatch
-          dbgStatus := sd.io.rdData
+          dbgStatus := sd.bus.rdData
         }
         delayCnt := 0; retState := S.INIT_CMD55_ARG; state := S.INIT_CMD_DELAY
       }
@@ -435,7 +435,7 @@ case class SdNativeExerciserTop() extends Component {
       }
       is(S.INIT_CMD55_WAIT) {
         sdRead(U(0, 4 bits))
-        when(!sd.io.rdData(0)) {
+        when(!sd.bus.rdData(0)) {
           delayCnt := 0; retState := S.INIT_ACMD41_ARG; state := S.INIT_CMD_DELAY
         }
       }
@@ -456,20 +456,20 @@ case class SdNativeExerciserTop() extends Component {
       }
       is(S.INIT_ACMD41_WAIT) {
         sdRead(U(0, 4 bits))
-        when(!sd.io.rdData(0)) {
+        when(!sd.bus.rdData(0)) {
           state := S.INIT_ACMD41_STATUS
         }
       }
       // First check status register for cmdTimeout
       is(S.INIT_ACMD41_STATUS) {
         sdRead(U(0, 4 bits))
-        when(sd.io.rdData(3)) {
+        when(sd.bus.rdData(3)) {
           // cmdTimeout: card didn't respond to ACMD41
           acmd41Cnt := acmd41Cnt + 1
           when(acmd41Cnt >= 500) {
             testPass := False
             dbgStep := 0x41 // ACMD41 timeout (no response)
-            dbgStatus := sd.io.rdData // status register
+            dbgStatus := sd.bus.rdData // status register
             state := S.INIT_RESULT
           } otherwise {
             delayCnt := 0; retState := S.INIT_CMD55_ARG; state := S.INIT_CMD_DELAY
@@ -481,16 +481,16 @@ case class SdNativeExerciserTop() extends Component {
       // Then read OCR from response register
       is(S.INIT_ACMD41_READOCR) {
         sdRead(U(1, 4 bits))
-        when(sd.io.rdData(31)) {
+        when(sd.bus.rdData(31)) {
           // Card ready (busy bit set) — save CCS (bit 30) for addressing mode
-          sdhcMode := sd.io.rdData(30) // CCS=1: SDHC (block addr), CCS=0: SDSC (byte addr)
+          sdhcMode := sd.bus.rdData(30) // CCS=1: SDHC (block addr), CCS=0: SDSC (byte addr)
           delayCnt := 0; retState := S.INIT_CMD2_ARG; state := S.INIT_CMD_DELAY
         } otherwise {
           acmd41Cnt := acmd41Cnt + 1
           when(acmd41Cnt >= 500) {
             testPass := False
             dbgStep := 0x42 // ACMD41 OCR not ready
-            dbgStatus := sd.io.rdData // OCR value
+            dbgStatus := sd.bus.rdData // OCR value
             state := S.INIT_RESULT
           } otherwise {
             delayCnt := 0; retState := S.INIT_CMD55_ARG; state := S.INIT_CMD_DELAY
@@ -514,7 +514,7 @@ case class SdNativeExerciserTop() extends Component {
       }
       is(S.INIT_CMD2_WAIT) {
         sdRead(U(0, 4 bits))
-        when(!sd.io.rdData(0)) {
+        when(!sd.bus.rdData(0)) {
           delayCnt := 0; retState := S.INIT_CMD3_ARG; state := S.INIT_CMD_DELAY
         }
       }
@@ -535,14 +535,14 @@ case class SdNativeExerciserTop() extends Component {
       }
       is(S.INIT_CMD3_WAIT) {
         sdRead(U(0, 4 bits))
-        when(!sd.io.rdData(0)) {
+        when(!sd.bus.rdData(0)) {
           state := S.INIT_CMD3_GETRCA
         }
       }
       is(S.INIT_CMD3_GETRCA) {
         // Response contains RCA in bits [31:16]
         sdRead(U(1, 4 bits))
-        rca := sd.io.rdData(31 downto 16)
+        rca := sd.bus.rdData(31 downto 16)
         delayCnt := 0; retState := S.INIT_CMD7_ARG; state := S.INIT_CMD_DELAY
       }
 
@@ -562,7 +562,7 @@ case class SdNativeExerciserTop() extends Component {
       }
       is(S.INIT_CMD7_WAIT) {
         sdRead(U(0, 4 bits))
-        when(!sd.io.rdData(0)) {
+        when(!sd.bus.rdData(0)) {
           state := S.INIT_SETDIV
         }
       }
@@ -638,7 +638,7 @@ case class SdNativeExerciserTop() extends Component {
       }
       is(S.T2_CMD24_WAIT) {
         sdRead(U(0, 4 bits))
-        when(!sd.io.rdData(0)) { // cmdBusy cleared
+        when(!sd.bus.rdData(0)) { // cmdBusy cleared
           state := S.T2_START_WRITE
         }
       }
@@ -652,9 +652,9 @@ case class SdNativeExerciserTop() extends Component {
       is(S.T2_WRITE_WAIT) {
         // Poll status for dataBusy (bit 4) to clear
         sdRead(U(0, 4 bits))
-        when(!sd.io.rdData(4)) {
+        when(!sd.bus.rdData(4)) {
           // Check for data CRC error (bit 5) when dataBusy clears
-          when(sd.io.rdData(5)) { testPass := False }
+          when(sd.bus.rdData(5)) { testPass := False }
           state := S.T2_RESULT
         }
       }
@@ -693,7 +693,7 @@ case class SdNativeExerciserTop() extends Component {
       }
       is(S.T3_CMD17_WAIT) {
         sdRead(U(0, 4 bits))
-        when(!sd.io.rdData(0)) { // cmdBusy cleared
+        when(!sd.bus.rdData(0)) { // cmdBusy cleared
           state := S.T3_START_READ
         }
       }
@@ -707,9 +707,9 @@ case class SdNativeExerciserTop() extends Component {
       is(S.T3_READ_WAIT) {
         // Poll status for dataBusy (bit 4) to clear
         sdRead(U(0, 4 bits))
-        when(!sd.io.rdData(4)) {
+        when(!sd.bus.rdData(4)) {
           // Check for data CRC error (bit 5)
-          when(sd.io.rdData(5)) {
+          when(sd.bus.rdData(5)) {
             testPass := False
           }
           fifoIdx := 0
@@ -722,7 +722,7 @@ case class SdNativeExerciserTop() extends Component {
       is(S.T3_VERIFY) {
         sdRead(U(5, 4 bits)) // Read from data FIFO (addr 5) — pops FIFO
         val expected = (fifoIdx.resize(32) * U(0x01010101L, 32 bits)).resize(32).asBits ^ B(0xDEADBEEFL, 32 bits)
-        when(sd.io.rdData =/= expected) {
+        when(sd.bus.rdData =/= expected) {
           testPass := False
         }
         fifoIdx := fifoIdx + 1
@@ -735,7 +735,7 @@ case class SdNativeExerciserTop() extends Component {
       // Settle cycle: let readSync latch new fifoRdPtr before next read
       is(S.T3_VERIFY_SETTLE) {
         // Present addr 5 without rd (no pop), just let readSync update
-        sd.io.addr := U(5, 4 bits)
+        sd.bus.addr := U(5, 4 bits)
         state := S.T3_VERIFY
       }
 

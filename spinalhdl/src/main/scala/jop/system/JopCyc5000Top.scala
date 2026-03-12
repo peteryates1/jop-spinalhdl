@@ -38,7 +38,7 @@ case class Cyc5000Pll() extends BlackBox {
  * SDRAM: W9864G6JT-6 (64Mbit, 16-bit, 12-bit addr, 4 banks)
  * Clock: 12 MHz oscillator -> PLL -> 80 MHz system, 80 MHz/-2.5ns SDRAM
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to each JopCore.
+ * I/O subsystem (Sys, Uart) is internal to each JopCore.
  *
  * When cpuCnt = 1 (single-core):
  *   - One JopCore, BMB goes directly to BmbSdramCtrl32
@@ -171,8 +171,8 @@ case class JopCyc5000Top(
     // UART
     // ==================================================================
 
-    io.ser_txd := cluster.io.txd
-    cluster.io.rxd := io.ser_rxd
+    io.ser_txd := cluster.devicePin[Bool]("uart", "txd")
+    cluster.devicePin[Bool]("uart", "rxd") := io.ser_rxd
 
     // ==================================================================
     // LED Driver

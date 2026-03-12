@@ -13,7 +13,7 @@ import jop.memory.JopMemoryConfig
  * Test harness for JopCore with BmbOnChipRam
  * Uses default SpinalHDL clock domain for simpler simulation.
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * I/O subsystem (Sys, Uart) is internal to JopCore.
  * UART TX is snooped via JopCore's debug outputs.
  */
 case class JopCoreTestHarness(
@@ -82,7 +82,7 @@ case class JopCoreTestHarness(
     )
   }.padTo(2048, BigInt(0))
 
-  // JOP System core (BmbSys + BmbUart internal)
+  // JOP System core (Sys + Uart internal)
   val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -133,7 +133,7 @@ case class JopCoreTestHarness(
   jopCore.io.syncIn.status := False
 
   // No UART RX in test harness
-  jopCore.io.rxd := True
+  if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := True
 
   // Wire debug RAM probe
   jopCore.io.debugRamAddr := io.debugRamAddr

@@ -29,31 +29,28 @@ import spinal.lib.bus.bmb._
  * @param vgaCd     Pixel clock domain (25 MHz for 640x480@60Hz)
  * @param fifoDepth CDC FIFO depth in 32-bit words (must be power of 2, >= 2)
  */
-case class BmbVgaDma(
+case class VgaBmbDma(
   bmbParam: BmbParameter,
   vgaCd: ClockDomain,
   fifoDepth: Int = 512
-) extends Component {
+) extends Component with HasBusIo {
 
-  val io = new Bundle {
-    // JOP I/O register interface (system clock domain)
+  val bus = new Bundle {
     val addr   = in UInt(4 bits)
     val rd     = in Bool()
     val wr     = in Bool()
     val wrData = in Bits(32 bits)
     val rdData = out Bits(32 bits)
-
-    // BMB master port for DMA reads (system clock domain)
     val bmb = master(Bmb(bmbParam))
+    val vsyncInterrupt = out Bool()
+  }
 
-    // VGA output pins (pixel clock domain)
+  val io = new Bundle {
     val vgaHsync = out Bool()
     val vgaVsync = out Bool()
     val vgaR     = out Bits(5 bits)
     val vgaG     = out Bits(6 bits)
     val vgaB     = out Bits(5 bits)
-
-    val vsyncInterrupt = out Bool()
   }
 
   // ========================================================================
@@ -116,21 +113,21 @@ case class BmbVgaDma(
   val pendingOk   = pendingCount < maxPending
 
   // BMB command generation — stop after reading one full frame
-  io.bmb.cmd.valid   := enabled && pendingOk && fifoSpaceOk && !frameDone
-  io.bmb.cmd.opcode  := B(Bmb.Cmd.Opcode.READ, 1 bits)
-  io.bmb.cmd.address := baseAddr + offset
-  io.bmb.cmd.length  := U(burstBytes - 1, bmbParam.access.lengthWidth bits)
-  io.bmb.cmd.last    := True
-  io.bmb.cmd.source  := U(0, bmbParam.access.sourceWidth bits)
-  io.bmb.cmd.context := B(0, bmbParam.access.contextWidth bits)
+  bus.bmb.cmd.valid   := enabled && pendingOk && fifoSpaceOk && !frameDone
+  bus.bmb.cmd.opcode  := B(Bmb.Cmd.Opcode.READ, 1 bits)
+  bus.bmb.cmd.address := baseAddr + offset
+  bus.bmb.cmd.length  := U(burstBytes - 1, bmbParam.access.lengthWidth bits)
+  bus.bmb.cmd.last    := True
+  bus.bmb.cmd.source  := U(0, bmbParam.access.sourceWidth bits)
+  bus.bmb.cmd.context := B(0, bmbParam.access.contextWidth bits)
   if (bmbParam.access.canWrite) {
-    io.bmb.cmd.data := B(0, bmbParam.access.dataWidth bits)
+    bus.bmb.cmd.data := B(0, bmbParam.access.dataWidth bits)
     if (bmbParam.access.canMask) {
-      io.bmb.cmd.mask := B(0, bmbParam.access.maskWidth bits)
+      bus.bmb.cmd.mask := B(0, bmbParam.access.maskWidth bits)
     }
   }
 
-  when(io.bmb.cmd.fire) {
+  when(bus.bmb.cmd.fire) {
     val nextOffset = offset + burstBytes
     when(nextOffset >= fbSize) {
       frameDone := True
@@ -140,8 +137,8 @@ case class BmbVgaDma(
   }
 
   // Pending transaction tracking
-  val cmdFire = io.bmb.cmd.fire
-  val rspLast = io.bmb.rsp.fire && io.bmb.rsp.last
+  val cmdFire = bus.bmb.cmd.fire
+  val rspLast = bus.bmb.rsp.fire && bus.bmb.rsp.last
   when(cmdFire && !rspLast) {
     pendingCount := pendingCount + 1
   } elsewhen (!cmdFire && rspLast) {
@@ -152,9 +149,9 @@ case class BmbVgaDma(
   // The FIFO push stream mirrors the BMB response handshake directly:
   // push.valid = rsp.valid, rsp.ready = push.ready. The FIFO accepts
   // data when both valid and ready are asserted (same as Stream protocol).
-  fifo.io.push.valid   := io.bmb.rsp.valid
-  fifo.io.push.payload := io.bmb.rsp.data
-  io.bmb.rsp.ready     := fifo.io.push.ready
+  fifo.io.push.valid   := bus.bmb.rsp.valid
+  fifo.io.push.payload := bus.bmb.rsp.data
+  bus.bmb.rsp.ready     := fifo.io.push.ready
 
   // ========================================================================
   // Pixel Clock Domain (25 MHz VGA output)
@@ -255,7 +252,7 @@ case class BmbVgaDma(
   when(vsyncFall) {
     vsyncPending := True
   }
-  io.vsyncInterrupt := vsyncFall
+  bus.vsyncInterrupt := vsyncFall
 
   // ========================================================================
   // Underrun Detection (pixel clock -> system clock)
@@ -270,21 +267,21 @@ case class BmbVgaDma(
   // Register Read Mux
   // ========================================================================
 
-  io.rdData := 0
-  switch(io.addr) {
+  bus.rdData := 0
+  switch(bus.addr) {
     is(0) {
       // Status register
-      io.rdData(0) := enabled
-      io.rdData(1) := vsyncPending
-      io.rdData(2) := underrunFlag
+      bus.rdData(0) := enabled
+      bus.rdData(1) := vsyncPending
+      bus.rdData(2) := underrunFlag
     }
     is(1) {
       // Framebuffer base address
-      io.rdData := baseAddr.asBits.resized
+      bus.rdData := baseAddr.asBits.resized
     }
     is(2) {
       // Framebuffer size
-      io.rdData := fbSize.asBits.resized
+      bus.rdData := fbSize.asBits.resized
     }
   }
 
@@ -292,23 +289,32 @@ case class BmbVgaDma(
   // Register Write Handling
   // ========================================================================
 
-  when(io.wr) {
-    switch(io.addr) {
+  when(bus.wr) {
+    switch(bus.addr) {
       is(0) {
         // Control register: bit0=enable, bit1=clearVsync
-        enabled := io.wrData(0)
-        when(io.wrData(1)) {
+        enabled := bus.wrData(0)
+        when(bus.wrData(1)) {
           vsyncPending := False
         }
       }
       is(1) {
         // Set framebuffer base address
-        baseAddr := U(io.wrData).resized
+        baseAddr := U(bus.wrData).resized
       }
       is(2) {
         // Set framebuffer size
-        fbSize := U(io.wrData).resized
+        fbSize := U(bus.wrData).resized
       }
     }
   }
+
+  // HasBusIo implementation
+  override def busAddr: UInt   = bus.addr
+  override def busRd: Bool     = bus.rd
+  override def busWr: Bool     = bus.wr
+  override def busWrData: Bits = bus.wrData
+  override def busRdData: Bits = bus.rdData
+  override def busInterrupts: Seq[Bool] = Seq(bus.vsyncInterrupt)
+  override def busExternalIo: Option[Bundle] = Some(io)
 }

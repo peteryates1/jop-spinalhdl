@@ -29,6 +29,8 @@ simulation: ../java/tools/dist/jopa.jar
 	gcc -x c -E -C -P $(GCC_PARAMS) -D$(JVM_TYPE) $(SUPERSET_FLAGS) src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
 	sed -i '1,35d' generated/$(ASM_SRC).asm
 	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
+	sed -i 's/object JumpTableData {/object JumpTableData extends JumpTableSource {/' generated/JumpTableData.scala
+	@grep -q 'altEntries' generated/JumpTableData.scala || sed -i '/^}/i\  def altEntries: Map[Int, Int] = Map.empty\n  override def dspAltEntries: Map[Int, Int] = Map.empty' generated/JumpTableData.scala
 
 serial: ../java/tools/dist/jopa.jar
 	mkdir -p generated/serial

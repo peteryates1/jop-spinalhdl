@@ -168,7 +168,7 @@ case class MigBehavioralModel(
  * This matches the FPGA architecture exactly, using the real CacheToMigAdapter
  * instead of the simplified CacheToBramAdapter.
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * I/O subsystem (Sys, Uart) is internal to JopCore.
  */
 case class JopCoreWithMigTestHarness(
   romInit: Seq[BigInt],
@@ -219,7 +219,7 @@ case class JopCoreWithMigTestHarness(
     )
   }.padTo(2048, BigInt(0))
 
-  // JOP Core (BmbSys + BmbUart internal)
+  // JOP Core (Sys + Uart internal)
   val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -301,7 +301,7 @@ case class JopCoreWithMigTestHarness(
   jopCore.io.syncIn.status := False
 
   // No UART RX in test harness
-  jopCore.io.rxd := True
+  if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := True
 
   // Debug RAM (unused)
   jopCore.io.debugRamAddr := 0

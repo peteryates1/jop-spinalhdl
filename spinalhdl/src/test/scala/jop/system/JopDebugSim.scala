@@ -104,7 +104,7 @@ case class JopDebugTestHarness(
   // UART (core 0 only)
   // ====================================================================
 
-  cluster.io.rxd := True  // No serial RX in debug sim
+  if (cluster.devicePins.contains("uart")) cluster.devicePin[Bool]("uart", "rxd") := True  // No serial RX in debug sim
 
   // ====================================================================
   // Debug transport wiring: io pins <-> cluster.debugTransport

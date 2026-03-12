@@ -84,13 +84,13 @@ case class JopIhluTestHarness(
   }
 
   // Expose core 0's signal register for SMP boot debugging
-  cluster.cores(0).bmbSys.signalReg.simPublic()
-  cluster.cores(0).bmbSys.lockReqPulseReg.simPublic()
-  cluster.cores(0).bmbSys.lockDataReg.simPublic()
-  cluster.cores(0).bmbSys.lockOpReg.simPublic()
+  cluster.cores(0).sys.signalReg.simPublic()
+  cluster.cores(0).sys.lockReqPulseReg.simPublic()
+  cluster.cores(0).sys.lockDataReg.simPublic()
+  cluster.cores(0).sys.lockOpReg.simPublic()
 
   // No UART RX in simulation
-  cluster.io.rxd := True
+  if (cluster.devicePins.contains("uart")) cluster.devicePin[Bool]("uart", "rxd") := True
 
   // ====================================================================
   // Shared Block RAM
@@ -197,9 +197,9 @@ object JopIhluNCoreHelloWorldSim extends App {
         }
 
         // Monitor IHLU lock pulses from core 0
-        if (dut.cluster.cores(0).bmbSys.lockReqPulseReg.toBoolean) {
-          val op = dut.cluster.cores(0).bmbSys.lockOpReg.toBoolean
-          val data = dut.cluster.cores(0).bmbSys.lockDataReg.toLong & 0xFFFFFFFFL
+        if (dut.cluster.cores(0).sys.lockReqPulseReg.toBoolean) {
+          val op = dut.cluster.cores(0).sys.lockOpReg.toBoolean
+          val data = dut.cluster.cores(0).sys.lockDataReg.toLong & 0xFFFFFFFFL
           if (op) unlockOps += 1 else lockOps += 1
           if (lockOps + unlockOps <= 20) {
             val opStr = if (op) "UNLOCK" else "LOCK"

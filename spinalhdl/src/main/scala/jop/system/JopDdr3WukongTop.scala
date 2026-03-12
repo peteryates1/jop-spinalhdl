@@ -254,7 +254,7 @@ case class JopDdr3WukongTop(
     // UART
     // ==================================================================
 
-    cluster.io.rxd := io.ser_rxd
+    cluster.devicePin[Bool]("uart", "rxd") := io.ser_rxd
   }
 
   // ========================================================================
@@ -318,7 +318,7 @@ case class JopDdr3WukongTop(
   diagUart.io.adapterState := adapterStateSync
 
   // UART TX MUX: JOP's UART during normal operation, DiagUart when hung.
-  val jopTxdSync = BufferCC(mainArea.cluster.io.txd, init = True)
+  val jopTxdSync = BufferCC(mainArea.cluster.devicePin[Bool]("uart", "txd"), init = True)
   io.ser_txd := Mux(hangDetected, diagUart.io.txd, jopTxdSync)
 
   // ========================================================================

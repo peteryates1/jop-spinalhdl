@@ -6,45 +6,45 @@ import spinal.core.sim._
 
 import scala.collection.mutable
 
-class BmbSdSpiTest extends AnyFunSuite {
+class SdSpiTest extends AnyFunSuite {
 
   val simConfig = SimConfig
     .workspacePath("simWorkspace")
 
-  def compileDut() = simConfig.compile(BmbSdSpi(clkDivInit = 199))
+  def compileDut() = simConfig.compile(SdSpi(clkDivInit = 199))
 
   /** Write a value to the DUT's I/O register interface */
-  def ioWrite(dut: BmbSdSpi, addr: Int, data: Long)(implicit cd: ClockDomain): Unit = {
-    dut.io.addr #= addr
-    dut.io.wrData #= data
-    dut.io.wr #= true
-    dut.io.rd #= false
+  def ioWrite(dut: SdSpi, addr: Int, data: Long)(implicit cd: ClockDomain): Unit = {
+    dut.bus.addr #= addr
+    dut.bus.wrData #= data
+    dut.bus.wr #= true
+    dut.bus.rd #= false
     cd.waitSampling()
-    dut.io.wr #= false
+    dut.bus.wr #= false
   }
 
   /** Read a value from the DUT's I/O register interface */
-  def ioRead(dut: BmbSdSpi, addr: Int)(implicit cd: ClockDomain): Long = {
-    dut.io.addr #= addr
-    dut.io.rd #= true
-    dut.io.wr #= false
+  def ioRead(dut: SdSpi, addr: Int)(implicit cd: ClockDomain): Long = {
+    dut.bus.addr #= addr
+    dut.bus.rd #= true
+    dut.bus.wr #= false
     cd.waitSampling()
-    val result = dut.io.rdData.toLong
-    dut.io.rd #= false
+    val result = dut.bus.rdData.toLong
+    dut.bus.rd #= false
     result
   }
 
   /** Initialize DUT I/O signals to idle state */
-  def initIo(dut: BmbSdSpi): Unit = {
-    dut.io.addr #= 0
-    dut.io.rd #= false
-    dut.io.wr #= false
-    dut.io.wrData #= 0
+  def initIo(dut: SdSpi): Unit = {
+    dut.bus.addr #= 0
+    dut.bus.rd #= false
+    dut.bus.wr #= false
+    dut.bus.wrData #= 0
     dut.io.miso #= true   // MISO idles high (SD card default)
     dut.io.cd #= true      // No card present (active low)
   }
 
-  test("BmbSdSpi_cs_control") {
+  test("SdSpi_cs_control") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -68,9 +68,9 @@ class BmbSdSpiTest extends AnyFunSuite {
     }
   }
 
-  test("BmbSdSpi_spi_transfer") {
+  test("SdSpi_spi_transfer") {
     // Use a separate compile with divider=1 for fast simulation
-    val fastDut = simConfig.compile(BmbSdSpi(clkDivInit = 1))
+    val fastDut = simConfig.compile(SdSpi(clkDivInit = 1))
     fastDut.doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -161,7 +161,7 @@ class BmbSdSpiTest extends AnyFunSuite {
     }
   }
 
-  test("BmbSdSpi_card_detect") {
+  test("SdSpi_card_detect") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -189,8 +189,8 @@ class BmbSdSpiTest extends AnyFunSuite {
     }
   }
 
-  test("BmbSdSpi_interrupt") {
-    val fastDut = simConfig.compile(BmbSdSpi(clkDivInit = 1))
+  test("SdSpi_interrupt") {
+    val fastDut = simConfig.compile(SdSpi(clkDivInit = 1))
     fastDut.doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -212,7 +212,7 @@ class BmbSdSpiTest extends AnyFunSuite {
       val monitorThread = fork {
         while (true) {
           cd.waitSampling()
-          if (dut.io.interrupt.toBoolean) intCount += 1
+          if (dut.bus.interrupt.toBoolean) intCount += 1
         }
       }
 
@@ -262,8 +262,8 @@ class BmbSdSpiTest extends AnyFunSuite {
     }
   }
 
-  test("BmbSdSpi_back_to_back_transfers") {
-    val fastDut = simConfig.compile(BmbSdSpi(clkDivInit = 1))
+  test("SdSpi_back_to_back_transfers") {
+    val fastDut = simConfig.compile(SdSpi(clkDivInit = 1))
     fastDut.doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
@@ -373,7 +373,7 @@ class BmbSdSpiTest extends AnyFunSuite {
     }
   }
 
-  test("BmbSdSpi_clock_divider") {
+  test("SdSpi_clock_divider") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)

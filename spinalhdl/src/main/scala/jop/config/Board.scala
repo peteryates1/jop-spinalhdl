@@ -61,24 +61,24 @@ object DeviceDriver {
   // UART
   case object Uart extends DeviceDriver {
     val devicePart = "CP2102N"
-    val componentName = "BmbUart"
+    val componentName = "Uart"
     val pins = Map("ser_txd" -> "TXD", "ser_rxd" -> "RXD")
   }
   case object UartFt2232 extends DeviceDriver {
     val devicePart = "FT2232H"
-    val componentName = "BmbUart"
+    val componentName = "Uart"
     val pins = Map("ser_txd" -> "TXD", "ser_rxd" -> "RXD")
   }
   case object UartCh340 extends DeviceDriver {
     val devicePart = "CH340N"
-    val componentName = "BmbUart"
+    val componentName = "Uart"
     val pins = Map("ser_txd" -> "TXD", "ser_rxd" -> "RXD")
   }
 
   // Ethernet (MII: 4-bit data, PHY-sourced TX clock)
   case object EthMii extends DeviceDriver {
     val devicePart = "RTL8211EG"
-    val componentName = "BmbEth"
+    val componentName = "Eth"
     val pins = Map(
       "e_mdc" -> "MDC", "e_mdio" -> "MDIO", "e_resetn" -> "RESET",
       "e_txc" -> "TX_CLK", "e_txen" -> "TX_EN", "e_txer" -> "TX_ER",
@@ -91,7 +91,7 @@ object DeviceDriver {
   // Ethernet (GMII: 8-bit data, FPGA-sourced GTX clock)
   case object EthGmii extends DeviceDriver {
     val devicePart = "RTL8211EG"
-    val componentName = "BmbEth"
+    val componentName = "Eth"
     val pins = Map(
       "e_mdc" -> "MDC", "e_mdio" -> "MDIO", "e_resetn" -> "RESET",
       "e_gtxc" -> "GTX_CLK", "e_txen" -> "TX_EN", "e_txer" -> "TX_ER",
@@ -109,7 +109,7 @@ object DeviceDriver {
   // SD card — SPI variant
   case object SdSpi extends DeviceDriver {
     val devicePart = "SD_CARD"
-    val componentName = "BmbSdSpi"
+    val componentName = "SdSpi"
     val pins = Map(
       "sd_spi_clk" -> "CLK", "sd_spi_mosi" -> "CMD",
       "sd_spi_miso" -> "DAT0", "sd_spi_cs" -> "DAT3",
@@ -118,7 +118,7 @@ object DeviceDriver {
   // SD card — native 4-bit variant
   case object SdNative extends DeviceDriver {
     val devicePart = "SD_CARD"
-    val componentName = "BmbSdNative"
+    val componentName = "SdNative"
     val pins = Map(
       "sd_clk" -> "CLK", "sd_cmd" -> "CMD",
       "sd_dat_0" -> "DAT0", "sd_dat_1" -> "DAT1",
@@ -129,20 +129,20 @@ object DeviceDriver {
   // VGA — DMA variant
   case object VgaDma extends DeviceDriver {
     val devicePart = "VGA"
-    val componentName = "BmbVgaDma"
+    val componentName = "VgaBmbDma"
     val pins = vgaPins
   }
   // VGA — text variant
   case object VgaText extends DeviceDriver {
     val devicePart = "VGA"
-    val componentName = "BmbVgaText"
+    val componentName = "VgaText"
     val pins = vgaPins
   }
 
   // Config flash (EPCS/EPCQ)
   case object ConfigFlash extends DeviceDriver {
     val devicePart = "CONFIG_FLASH"
-    val componentName = "BmbConfigFlash"
+    val componentName = "ConfigFlash"
     val pins = Map(
       "cf_dclk" -> "DCLK", "cf_ncs" -> "NCS",
       "cf_asdo" -> "ASDO", "cf_data0" -> "DATA0")

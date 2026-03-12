@@ -6,7 +6,7 @@ import spinal.core.sim._
 
 import scala.collection.mutable
 
-class BmbSdNativeTest extends AnyFunSuite {
+class SdNativeTest extends AnyFunSuite {
 
   // ==========================================================================
   // CRC helpers (matching hardware polynomial implementations)
@@ -65,47 +65,47 @@ class BmbSdNativeTest extends AnyFunSuite {
   // I/O helpers
   // ==========================================================================
 
-  def ioWrite(dut: BmbSdNative, addr: Int, data: Long)(implicit cd: ClockDomain): Unit = {
-    dut.io.addr #= addr
-    dut.io.wrData #= data
-    dut.io.wr #= true
-    dut.io.rd #= false
+  def ioWrite(dut: SdNative, addr: Int, data: Long)(implicit cd: ClockDomain): Unit = {
+    dut.bus.addr #= addr
+    dut.bus.wrData #= data
+    dut.bus.wr #= true
+    dut.bus.rd #= false
     cd.waitSampling()
-    dut.io.wr #= false
+    dut.bus.wr #= false
   }
 
-  def ioRead(dut: BmbSdNative, addr: Int)(implicit cd: ClockDomain): Long = {
-    dut.io.addr #= addr
-    dut.io.rd #= true
-    dut.io.wr #= false
+  def ioRead(dut: SdNative, addr: Int)(implicit cd: ClockDomain): Long = {
+    dut.bus.addr #= addr
+    dut.bus.rd #= true
+    dut.bus.wr #= false
     cd.waitSampling()
-    val result = dut.io.rdData.toLong
-    dut.io.rd #= false
+    val result = dut.bus.rdData.toLong
+    dut.bus.rd #= false
     result
   }
 
   /** Read from FIFO addr 5 with an extra settling cycle for readSync pipeline */
-  def fifoRead(dut: BmbSdNative)(implicit cd: ClockDomain): Long = {
+  def fifoRead(dut: SdNative)(implicit cd: ClockDomain): Long = {
     // Present addr 5 for a cycle so readSync latches the address
-    dut.io.addr #= 5
-    dut.io.rd #= false
-    dut.io.wr #= false
+    dut.bus.addr #= 5
+    dut.bus.rd #= false
+    dut.bus.wr #= false
     cd.waitSampling()
     // Now do the actual read — fifoRdData has the correct value
-    dut.io.rd #= true
+    dut.bus.rd #= true
     cd.waitSampling()
-    val result = dut.io.rdData.toLong
-    dut.io.rd #= false
+    val result = dut.bus.rdData.toLong
+    dut.bus.rd #= false
     // Wait one cycle for the pop to take effect and readSync to latch next addr
     cd.waitSampling()
     result
   }
 
-  def initIo(dut: BmbSdNative): Unit = {
-    dut.io.addr #= 0
-    dut.io.rd #= false
-    dut.io.wr #= false
-    dut.io.wrData #= 0
+  def initIo(dut: SdNative): Unit = {
+    dut.bus.addr #= 0
+    dut.bus.rd #= false
+    dut.bus.wr #= false
+    dut.bus.wrData #= 0
     dut.io.sdCmd.read #= true  // idle high
     dut.io.sdDat.read #= 0xF  // idle high
     dut.io.sdCd #= true        // no card (active low)
@@ -114,14 +114,14 @@ class BmbSdNativeTest extends AnyFunSuite {
   val simConfig = SimConfig
     .workspacePath("simWorkspace")
 
-  def compileDut() = simConfig.compile(BmbSdNative(clkDivInit = 99))
+  def compileDut() = simConfig.compile(SdNative(clkDivInit = 99))
 
   // ==========================================================================
   // Test 1: Clock divider
   // ==========================================================================
 
-  test("BmbSdNative_clock_divider") {
-    simConfig.compile(BmbSdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
+  test("SdNative_clock_divider") {
+    simConfig.compile(SdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
       SimTimeout(100000)
@@ -198,8 +198,8 @@ class BmbSdNativeTest extends AnyFunSuite {
   // Test 2: CMD send and response
   // ==========================================================================
 
-  test("BmbSdNative_cmd_send_and_response") {
-    simConfig.compile(BmbSdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
+  test("SdNative_cmd_send_and_response") {
+    simConfig.compile(SdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
       SimTimeout(500000)
@@ -331,8 +331,8 @@ class BmbSdNativeTest extends AnyFunSuite {
   // Test 3: Data read (1-bit mode)
   // ==========================================================================
 
-  test("BmbSdNative_data_read_1bit") {
-    simConfig.compile(BmbSdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
+  test("SdNative_data_read_1bit") {
+    simConfig.compile(SdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
       SimTimeout(2000000)
@@ -439,8 +439,8 @@ class BmbSdNativeTest extends AnyFunSuite {
   // Test 4: Data read (4-bit mode)
   // ==========================================================================
 
-  test("BmbSdNative_data_read_4bit") {
-    simConfig.compile(BmbSdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
+  test("SdNative_data_read_4bit") {
+    simConfig.compile(SdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
       SimTimeout(2000000)
@@ -580,8 +580,8 @@ class BmbSdNativeTest extends AnyFunSuite {
   // Test 5: Data write (1-bit mode)
   // ==========================================================================
 
-  test("BmbSdNative_data_write_1bit") {
-    simConfig.compile(BmbSdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
+  test("SdNative_data_write_1bit") {
+    simConfig.compile(SdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)
       SimTimeout(2000000)
@@ -728,7 +728,7 @@ class BmbSdNativeTest extends AnyFunSuite {
   // Test 6: Card detect
   // ==========================================================================
 
-  test("BmbSdNative_card_detect") {
+  test("SdNative_card_detect") {
     compileDut().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
       cd.forkStimulus(10)

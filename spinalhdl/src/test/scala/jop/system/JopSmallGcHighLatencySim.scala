@@ -249,7 +249,7 @@ case class JopCoreWithHighLatencyMigHarness(
     )
   }.padTo(2048, BigInt(0))
 
-  // JOP Core (BmbSys + BmbUart internal)
+  // JOP Core (Sys + Uart internal)
   val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -328,7 +328,7 @@ case class JopCoreWithHighLatencyMigHarness(
   jopCore.io.syncIn.halted := False
   jopCore.io.syncIn.s_out := False
   jopCore.io.syncIn.status := False
-  jopCore.io.rxd := True
+  if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := True
   jopCore.io.debugRamAddr := 0
   jopCore.io.debugHalt := False
 

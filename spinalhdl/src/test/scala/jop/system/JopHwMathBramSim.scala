@@ -84,7 +84,7 @@ case class JopHwMathTestHarness(
   jopCore.io.syncIn.halted := False
   jopCore.io.syncIn.s_out := False
   jopCore.io.syncIn.status := False
-  jopCore.io.rxd := True
+  if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := True
   jopCore.io.debugRamAddr := 0
   jopCore.io.debugHalt := False
   jopCore.io.snoopIn.foreach { si =>

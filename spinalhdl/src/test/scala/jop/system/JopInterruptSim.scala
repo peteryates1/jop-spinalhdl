@@ -8,7 +8,7 @@ import jop.utils.{JopFileLoader, TestHistory}
  * End-to-end timer interrupt simulation test.
  *
  * Boots the InterruptTest.jop app and verifies the full interrupt chain:
- *   timer compare → BmbSys intstate → priority encoder → irq pulse →
+ *   timer compare → Sys intstate → priority encoder → irq pulse →
  *   BytecodeFetch pending latch → JumpTable dispatch → Java handler
  *
  * Expected UART output: "I:TTTTTOK"

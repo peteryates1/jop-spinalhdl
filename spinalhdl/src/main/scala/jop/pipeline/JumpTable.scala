@@ -1,7 +1,7 @@
 package jop.pipeline
 
 import spinal.core._
-import jop.{JumpTableData, JumpTableSource}
+import jop._
 
 /**
  * Jump Table Init Data - microcode-layout-specific addresses and entries.
@@ -51,10 +51,19 @@ object JumpTableInitData {
   def serial: JumpTableInitData = from(jop.SerialJumpTableData)
 
   /** FLASH-boot superset ROM */
-  def flash: JumpTableInitData = from(jop.FlashJumpTableData)
+  def flash: JumpTableInitData = from(FlashJumpTableData)
 
-  // Bare variants removed — superset ROM contains both HW and SW handlers.
-  // Use resolveJumpTable() with imul: Microcode to select software multiply.
+  /** SERIAL-boot DSP-accelerated superset ROM */
+  def serialDsp: JumpTableInitData = from(SerialDspJumpTableData)
+
+  /** SIMULATION DSP-accelerated superset ROM */
+  def dsp: JumpTableInitData = from(DspJumpTableData)
+
+  /** SERIAL-boot HW-math superset ROM */
+  def serialHwMath: JumpTableInitData = from(SerialHwMathJumpTableData)
+
+  /** SIMULATION HW-math superset ROM */
+  def hwMath: JumpTableInitData = from(HwMathJumpTableData)
 }
 
 /**

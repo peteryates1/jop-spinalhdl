@@ -19,7 +19,7 @@ import jop.pipeline.JumpTableInitData
  *
  *   All JOP logic runs in MIG ui_clk domain (100 MHz):
  *     JopCluster.bmb -> BmbCacheBridge -> LruCacheCore -> CacheToMigAdapter -> MIG -> DDR3
- *     JopCore internal: BmbSys (slave 0) + BmbUart (slave 1)
+ *     JopCore internal: Sys (slave 0) + Uart (slave 1)
  *
  * When cpuCnt = 1 (single-core):
  *   - One JopCore, BMB goes directly to BmbCacheBridge
@@ -144,7 +144,7 @@ case class JopDdr3Top(
   )
 
   // Board-clock register: set True by diagnostic FSM when SPI mux switches
-  // to BmbConfigFlash. Defined here (before mainArea) so it can be
+  // to ConfigFlash. Defined here (before mainArea) so it can be
   // BufferCC'd inside the ui_clk domain.
   val spiDiagDone = Reg(Bool()) init(False)
 
@@ -231,27 +231,27 @@ case class JopDdr3Top(
     // UART
     // ==================================================================
 
-    cluster.io.rxd := io.usb_rx
+    cluster.devicePin[Bool]("uart", "rxd") := io.usb_rx
 
     // ==================================================================
     // Config Flash (optional, for flash boot)
     // ==================================================================
 
     // Expose cluster SPI signals for top-level mux (board-clock diagnostic
-    // takes priority until done, then cluster's BmbConfigFlash takes over).
+    // takes priority until done, then cluster's ConfigFlash takes over).
     // STARTUPE2 is instantiated in board clock domain outside mainArea.
-    val cfClusterDclk = if (ioConfig.hasConfigFlash) Some(cluster.io.cfDclk.get)  else None
-    val cfClusterNcs  = if (ioConfig.hasConfigFlash) Some(cluster.io.cfNcs.get)   else None
-    val cfClusterAsdo = if (ioConfig.hasConfigFlash) Some(cluster.io.cfAsdo.get)  else None
+    val cfClusterDclk = if (cluster.devicePins.contains("cfgFlash")) Some(cluster.devicePin[Bool]("cfgFlash", "dclk"))  else None
+    val cfClusterNcs  = if (cluster.devicePins.contains("cfgFlash")) Some(cluster.devicePin[Bool]("cfgFlash", "ncs"))   else None
+    val cfClusterAsdo = if (cluster.devicePins.contains("cfgFlash")) Some(cluster.devicePin[Bool]("cfgFlash", "asdo"))  else None
 
-    if (ioConfig.hasConfigFlash) {
-      cluster.io.cfData0.get := io.cf_miso.get
+    if (cluster.devicePins.contains("cfgFlash")) {
+      cluster.devicePin[Bool]("cfgFlash", "data0") := io.cf_miso.get
 
       // Synchronize spiDiagDone (board clock) → ui_clk domain.
       // Microcode polls this via status bit 1 before starting flash I/O,
-      // ensuring the SPI mux has switched to BmbConfigFlash outputs.
+      // ensuring the SPI mux has switched to ConfigFlash outputs.
       val spiDiagDoneSync = BufferCC(spiDiagDone, init = False)
-      cluster.io.cfFlashReady.get := spiDiagDoneSync
+      cluster.devicePin[Bool]("cfgFlash", "flashReady") := spiDiagDoneSync
     }
   }
 
@@ -277,9 +277,9 @@ case class JopDdr3Top(
   // On Xilinx 7 Series, CCLK is driven via STARTUPE2 USRCCLKO.
   //
   // CRITICAL: After JTAG reprogramming, the flash is in QPI mode and
-  // BmbConfigFlash (ui_clk domain) cannot reset it via STARTUPE2 alone.
+  // ConfigFlash (ui_clk domain) cannot reset it via STARTUPE2 alone.
   // A board-clock-domain SPI reset must run first to bring the flash
-  // back to SPI mode. Then the mux hands CCLK/CS/MOSI to BmbConfigFlash.
+  // back to SPI mode. Then the mux hands CCLK/CS/MOSI to ConfigFlash.
 
   var spiDiagEos: Option[Bool] = None  // EOS from STARTUPE2
   var diagJedec: Option[Bits] = None   // JEDEC response from diagnostic FSM
@@ -305,7 +305,7 @@ case class JopDdr3Top(
     startup.io.USRDONEO  := True
     startup.io.USRDONETS := True
 
-    // Mux: board-clock reset FSM drives SPI until done, then BmbConfigFlash takes over
+    // Mux: board-clock reset FSM drives SPI until done, then ConfigFlash takes over
     startup.io.USRCCLKO := Mux(spiDiagDone,
       mainArea.cfClusterDclk.get,
       spiClk)
@@ -556,7 +556,7 @@ case class JopDdr3Top(
       }
 
       is(SpiDiagState.DONE) {
-        // SPI pins now controlled by BmbConfigFlash via mux
+        // SPI pins now controlled by ConfigFlash via mux
       }
     }
   }
@@ -608,14 +608,14 @@ case class JopDdr3Top(
   diagUart.io.adapterState := adapterStateSync
 
   // Sync config flash debug signals to board clock domain (before bitbang UART)
-  val cfDebugRxByteSync = if (ioConfig.hasConfigFlash)
-    Some(BufferCC(mainArea.cluster.io.cfDebugRxByte.get, init = B(0, 8 bits)))
+  val cfDebugRxByteSync = if (ioConfig.hasConfigFlash && mainArea.cluster.devicePins.contains("cfgFlash"))
+    Some(BufferCC(mainArea.cluster.devicePin[Bits]("cfgFlash", "debugRxByte"), init = B(0, 8 bits)))
   else None
-  val cfDebugTxCountSync = if (ioConfig.hasConfigFlash)
-    Some(BufferCC(mainArea.cluster.io.cfDebugTxCount.get, init = U(0, 8 bits)))
+  val cfDebugTxCountSync = if (ioConfig.hasConfigFlash && mainArea.cluster.devicePins.contains("cfgFlash"))
+    Some(BufferCC(mainArea.cluster.devicePin[UInt]("cfgFlash", "debugTxCount"), init = U(0, 8 bits)))
   else None
-  val cfDebugFirstWordSync = if (ioConfig.hasConfigFlash)
-    Some(BufferCC(mainArea.cluster.io.cfDebugFirstWord.get, init = B(0, 32 bits)))
+  val cfDebugFirstWordSync = if (ioConfig.hasConfigFlash && mainArea.cluster.devicePins.contains("cfgFlash"))
+    Some(BufferCC(mainArea.cluster.devicePin[Bits]("cfgFlash", "debugFirstWord"), init = B(0, 32 bits)))
   else None
 
   // ========================================================================
@@ -672,9 +672,9 @@ case class JopDdr3Top(
 
   // Debug message: "Jxxxxxx/Wxxxxxxxx/Txx/Ryy/Pxxx\r\n" (32 chars, index 0-31)
   // J = JEDEC ID from board-clock diagnostic (3 bytes = 6 hex chars)
-  // W = First word from BmbConfigFlash RX (4 bytes = 8 hex chars)
-  // T = BmbConfigFlash TX count (microcode SPI transfers, 8-bit wraps)
-  // R = BmbConfigFlash last RX byte
+  // W = First word from ConfigFlash RX (4 bytes = 8 hex chars)
+  // T = ConfigFlash TX count (microcode SPI transfers, 8-bit wraps)
+  // R = ConfigFlash last RX byte
   // P = Program counter (11-bit, 3 hex chars)
   val bbDebugChar = bbDebugIdx.muxListDc(List(
     0  -> B"x4A",                                  // 'J'
@@ -775,7 +775,7 @@ case class JopDdr3Top(
   }
 
   // UART TX MUX: bitbang during startup, then JOP/DiagUart.
-  val jopTxdSync = BufferCC(mainArea.cluster.io.txd, init = True)
+  val jopTxdSync = BufferCC(mainArea.cluster.devicePin[Bool]("uart", "txd"), init = True)
   when(!bbDone) {
     io.usb_tx := bbTxReg
   } elsewhen(hangDetected) {

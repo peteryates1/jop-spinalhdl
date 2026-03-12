@@ -12,7 +12,7 @@ import jop.memory.JopMemoryConfig
  * Echo test harness: JopCore with BRAM.
  * UART RX driven via io.rxd (bit-serial from simulation).
  *
- * I/O subsystem (BmbSys, BmbUart) is internal to JopCore.
+ * I/O subsystem (Sys, Uart) is internal to JopCore.
  */
 case class JopEchoHarness(
   romInit: Seq[BigInt],
@@ -39,7 +39,7 @@ case class JopEchoHarness(
   // Empty JBC (echo.asm doesn't use it)
   val jbcInit = Seq.fill(2048)(BigInt(0))
 
-  // JOP Core (BmbSys + BmbUart internal)
+  // JOP Core (Sys + Uart internal)
   val jopCore = JopCore(
     config = config,
     romInit = Some(romInit),
@@ -61,7 +61,7 @@ case class JopEchoHarness(
   jopCore.io.syncIn.status := False
 
   // UART RX from simulation (bit-serial)
-  jopCore.io.rxd := io.rxd
+  if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := io.rxd
 
   // Debug RAM port (unused)
   jopCore.io.debugRamAddr := 0
