@@ -53,17 +53,6 @@ object JumpTableInitData {
   /** FLASH-boot superset ROM */
   def flash: JumpTableInitData = from(FlashJumpTableData)
 
-  /** SERIAL-boot DSP-accelerated superset ROM */
-  def serialDsp: JumpTableInitData = from(SerialDspJumpTableData)
-
-  /** SIMULATION DSP-accelerated superset ROM */
-  def dsp: JumpTableInitData = from(DspJumpTableData)
-
-  /** SERIAL-boot HW-math superset ROM */
-  def serialHwMath: JumpTableInitData = from(SerialHwMathJumpTableData)
-
-  /** SIMULATION HW-math superset ROM */
-  def hwMath: JumpTableInitData = from(HwMathJumpTableData)
 }
 
 /**
