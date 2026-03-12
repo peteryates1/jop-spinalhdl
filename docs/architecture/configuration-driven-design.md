@@ -1336,6 +1336,98 @@ Migration: existing `.qsf` files can be generated from `SystemAssembly` data, or
 
 A **JopSystem** is a processor cluster targeting a specific FPGA and memory on the assembly. Most assemblies have one JopSystem. The Wukong dual-subsystem has two, each using a different memory.
 
+#### Device scopes
+
+I/O devices exist at three levels:
+
+| Scope | Instantiation | Example |
+|-------|--------------|---------|
+| **Per-core** | Each core gets its own instance | UART, SPI, I2C |
+| **Per-cluster** | Shared across cores in a cluster, BMB-arbitrated | Watchdog FSM, shared timer |
+| **System-level** | Shared across clusters | Inter-cluster FIFO, global watchdog |
+
+Per-core devices are declared in the core config and get their own I/O address space per core. Per-cluster and system-level devices require BMB bus arbitration for concurrent access from multiple cores.
+
+#### Named device instances
+
+Devices are declared as named instances with a type and connector mapping, not boolean flags. This supports multiples of the same type (e.g., two UARTs, three SPIs):
+
+```scala
+/** A named device instance within a core or cluster */
+case class DeviceInstance(
+  deviceType: String,                            // "uart", "sdspi", "sdnative", "i2c", "spi", "ethernet"
+  mapping: Map[String, String] = Map.empty,      // signal → board connector pin (e.g., "txd" -> "j10.1")
+  params: Map[String, Any] = Map.empty,          // device-specific parameters
+)
+```
+
+The `mapping` connects FPGA device signals to board connectors/headers. `"txd" -> "j10.1"` means "route uart0's txd to PMOD header J10 pin 1". The board definition separately maps `j10.1` to a physical FPGA pin — the device config doesn't know or care about FPGA pin numbers.
+
+The `params` map holds device-specific configuration: baud rate for UART, clock divider for SPI, etc. The device factory reads these at elaboration time.
+
+#### Device type registry
+
+Device types map to `HasBusIo` factories. New device types are registered once; instances are created by name:
+
+```scala
+/** Registry of device types → factories */
+object DeviceTypes {
+  val registry: Map[String, DeviceTypeInfo] = Map(
+    "uart"     -> DeviceTypeInfo(addrBits = 1, interruptCount = 2,
+                    factory = (c, p) => Uart(p.getOrElse("baudRate", c.uartBaudRate).asInstanceOf[Int], c.clkFreq)),
+    "sdspi"    -> DeviceTypeInfo(addrBits = 2, interruptCount = 1,
+                    factory = (c, p) => SdSpi(p.getOrElse("clkDivInit", 199).asInstanceOf[Int])),
+    "sdnative" -> DeviceTypeInfo(addrBits = 4, interruptCount = 1,
+                    factory = (c, p) => SdNative(p.getOrElse("clkDivInit", 99).asInstanceOf[Int])),
+    "ethernet" -> DeviceTypeInfo(addrBits = 4, interruptCount = 1,
+                    factory = (c, p) => Eth(/* clock domains from context */)),
+    "spi"      -> DeviceTypeInfo(addrBits = 2, interruptCount = 1,
+                    factory = (c, p) => GenericSpi(/* params */)),
+    "i2c"      -> DeviceTypeInfo(addrBits = 2, interruptCount = 1,
+                    factory = (c, p) => GenericI2c(/* params */)),
+    "cfgflash" -> DeviceTypeInfo(addrBits = 1, interruptCount = 0,
+                    factory = (c, p) => ConfigFlash(p.getOrElse("clkDivInit", 3).asInstanceOf[Int])),
+  )
+}
+```
+
+#### Per-core configuration
+
+Each core declares its own devices and bytecode implementations:
+
+```scala
+/** Per-core configuration: bytecodes + I/O devices */
+case class CoreConfig(
+  bytecodes: BytecodeConfig = BytecodeConfig(),
+  devices: Map[String, DeviceInstance] = Map.empty,  // name → instance
+)
+
+/** Bytecode implementation choices (compact form) */
+case class BytecodeConfig(
+  imul: Implementation = Implementation.Microcode,
+  idiv: Implementation = Implementation.Java,
+  irem: Implementation = Implementation.Java,
+  // Long arithmetic
+  ladd: Implementation = Implementation.Microcode,
+  lsub: Implementation = Implementation.Microcode,
+  // ... etc for all configurable bytecodes
+  // Float
+  fadd: Implementation = Implementation.Java,
+  // ... etc
+) {
+  // Wildcard convenience: "i*:hw" sets all integer ops to Hardware
+  def withIntegerHw: BytecodeConfig = copy(imul = Implementation.Hardware, idiv = Implementation.Hardware, irem = Implementation.Hardware)
+  def withFloatHw: BytecodeConfig = copy(fadd = Implementation.Hardware, /* ... */)
+  def withLongHw: BytecodeConfig = copy(ladd = Implementation.Hardware, lsub = Implementation.Hardware, /* ... */)
+  def withDoubleHw: BytecodeConfig = copy(/* ... */)
+  def withDspMul: BytecodeConfig = copy(imul = Implementation.HardwareDsp)
+}
+```
+
+#### Cluster configuration
+
+A cluster is a group of cores sharing a memory controller. Each cluster has its own memory type, arbiter, and optional cluster-level devices:
+
 ```scala
 sealed trait BootMode { def dirName: String }
 object BootMode {
@@ -1346,191 +1438,231 @@ object BootMode {
 
 sealed trait ArbiterType
 object ArbiterType {
-  case object RoundRobin extends ArbiterType     // current default
-  case object Tdma extends ArbiterType           // time-division multiple access
+  case object RoundRobin extends ArbiterType
+  case object Tdma extends ArbiterType
 }
 
-/** A single JOP processor system (cluster of cores + memory + I/O) */
-case class JopSystem(
+/** A cluster of cores sharing a memory controller */
+case class ClusterConfig(
   name: String,
-  memory: String,                                    // which memory device (by part or role)
+  memory: String,                                    // memory device (by part or role)
   bootMode: BootMode,
   arbiterType: ArbiterType = ArbiterType.RoundRobin,
-  clkFreqHz: Long,                   // system clock (after PLL)
-  cpuCnt: Int = 1,
-  coreConfig: JopCoreConfig = JopCoreConfig(),       // default for all cores
-  perCoreConfigs: Option[Seq[JopCoreConfig]] = None,  // heterogeneous override
-  ioConfig: IoConfig = IoConfig(),
-  drivers: Seq[DeviceDriver] = Seq.empty,            // which device drivers to instantiate
-  debugConfig: Option[DebugConfig] = None,
-  perCoreUart: Boolean = false,
+  clkFreqHz: Long,
+  cores: Seq[CoreConfig],                            // per-core config (length = core count)
+  clusterDevices: Map[String, DeviceInstance] = Map.empty,  // cluster-level shared devices
 ) {
+  def cpuCnt: Int = cores.length
+
   // --- Derived paths from boot mode ---
   def romPath: String = s"asm/generated/${bootMode.dirName}/mem_rom.dat"
   def ramPath: String = s"asm/generated/${bootMode.dirName}/mem_ram.dat"
-
-  def baseJumpTable: JumpTableInitData = bootMode match {
-    case BootMode.Serial     => JumpTableInitData.serial
-    case BootMode.Flash      => JumpTableInitData.flash
-    case BootMode.Simulation => JumpTableInitData.simulation
-  }
-
-  // --- Derived: per-core configs (heterogeneous or uniform) ---
-  def coreConfigs: Seq[JopCoreConfig] = perCoreConfigs.getOrElse(
-    Seq.fill(cpuCnt)(coreConfig)
-  )
-
-  // --- Validation ---
-  require(cpuCnt >= 1)
-  perCoreConfigs.foreach(pcc =>
-    require(pcc.length == cpuCnt,
-      s"perCoreConfigs length (${pcc.length}) must match cpuCnt ($cpuCnt)"))
 }
+```
 
-/** Top-level configuration — assembly + one or more JOP systems */
+#### Top-level system configuration
+
+```scala
+/** Top-level configuration — assembly + clusters + system-level devices */
 case class JopConfig(
   assembly: SystemAssembly,
-  systems: Seq[JopSystem],
-  interconnect: Option[InterconnectConfig] = None,  // cross-system FIFOs (dual-subsystem)
-  monitors: Seq[MonitorConfig] = Seq.empty,         // watchdog, health monitors
+  loader: BootMode,                                          // how the system boots
+  clusters: Seq[ClusterConfig],
+  systemDevices: Map[String, DeviceInstance] = Map.empty,    // system-level shared devices
+  interconnect: Option[InterconnectConfig] = None,           // cross-cluster FIFOs
+  monitors: Seq[MonitorConfig] = Seq.empty,                  // watchdog FSMs
 ) {
-  require(systems.nonEmpty, "At least one JopSystem required")
+  require(clusters.nonEmpty, "At least one cluster required")
 
-  // Single-system convenience
-  def system: JopSystem = {
-    require(systems.length == 1, "Use .systems for multi-system configs")
-    systems.head
+  // Single-cluster convenience
+  def cluster: ClusterConfig = {
+    require(clusters.length == 1, "Use .clusters for multi-cluster configs")
+    clusters.head
   }
 
-  // Validate: each system's memory must exist on the assembly
-  systems.foreach { sys =>
+  // --- Derived ---
+  def fpgaFamily: FpgaFamily = assembly.fpgaDevices.head.family
+
+  // Validate: each cluster's memory must exist on the assembly
+  clusters.foreach { cl =>
     require(
-      assembly.findDevice(sys.memory).isDefined ||
-      assembly.findDeviceByRole(sys.memory).isDefined,
-      s"System '${sys.name}' references memory '${sys.memory}' " +
+      assembly.findDevice(cl.memory).isDefined ||
+      assembly.findDeviceByRole(cl.memory).isDefined,
+      s"Cluster '${cl.name}' references memory '${cl.memory}' " +
       s"but assembly '${assembly.name}' has no such device")
   }
 
-  // Validate: each driver's device must exist on the assembly
-  systems.foreach { sys =>
-    sys.drivers.foreach { d =>
-      require(assembly.findDevice(d.devicePart).isDefined,
-        s"System '${sys.name}' driver ${d.componentName} requires device " +
-        s"${d.devicePart} but assembly '${assembly.name}' has none")
-    }
-  }
-
-  // --- Derived from physical assembly ---
-  def fpgaFamily: FpgaFamily = assembly.fpgaDevices.head.family
+  // Collect all device instances across all scopes for pin mapping validation
+  def allDeviceInstances: Seq[(String, DeviceInstance)] =
+    clusters.flatMap(cl =>
+      cl.cores.flatMap(_.devices.toSeq) ++
+      cl.clusterDevices.toSeq
+    ) ++ systemDevices.toSeq
 }
 
-/** Cross-system interconnect (for dual-subsystem Wukong etc.) */
+/** Cross-cluster interconnect */
 case class InterconnectConfig(
   fifoDepth: Int = 16,
   dataWidth: Int = 32,
 )
 
-/** Hardware monitor (watchdog, etc.) */
+/** Hardware monitor */
 sealed trait MonitorConfig
 case class WatchdogConfig(timeoutMs: Int = 1000) extends MonitorConfig
+```
+
+#### Address allocation
+
+The `IoAddressAllocator` operates per-core, allocating addresses for that core's devices. Fixed addresses (boot device at 0xEE) are reserved system-wide. Cluster-level and system-level devices get their own address ranges visible to all cores in scope, allocated from a separate pool.
+
+```
+Per-core I/O address space (0x80-0xFF):
+  0xF0-0xFF  Sys (always present, 16 addrs)
+  0xEE-0xEF  Boot device (UART or cfgFlash, fixed)
+  0xED down  Per-core devices (auto-allocated, largest first)
+
+Cluster-level devices: separate BMB address range (memory-mapped, not I/O space)
+System-level devices: separate BMB address range
 ```
 
 ### System presets — builder pattern with `copy()`
 
 ```scala
 object JopConfig {
-  // --- Single-system presets (common case) ---
+  // Common core configs
+  val minimalCore = CoreConfig(
+    bytecodes = BytecodeConfig(),  // all defaults (microcode/Java)
+    devices = Map("uart0" -> DeviceInstance("uart")))
+
+  val hwMathCore = CoreConfig(
+    bytecodes = BytecodeConfig()
+      .withDspMul.withIntegerHw.withFloatHw.withLongHw.withDoubleHw,
+    devices = Map("uart0" -> DeviceInstance("uart")))
+
+  // --- Single-cluster presets (common case) ---
 
   /** QMTECH EP4CGX150 + daughter board — primary dev platform */
   def qmtechSerial = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
-    systems = Seq(JopSystem(
+    loader = BootMode.Serial,
+    clusters = Seq(ClusterConfig(
       name = "main",
       memory = "W9825G6JH6",
       bootMode = BootMode.Serial,
       clkFreqHz = 80000000L,
-      drivers = Seq(DeviceDriver.Uart, DeviceDriver.EthRgmii, DeviceDriver.SdSpi))))
+      cores = Seq(CoreConfig(
+        devices = Map(
+          "uart0" -> DeviceInstance("uart", Map("txd" -> "db.uart_txd", "rxd" -> "db.uart_rxd")),
+          "eth0"  -> DeviceInstance("ethernet", Map("mdc" -> "db.eth_mdc", "mdio" -> "db.eth_mdio" /*, ... */)),
+          "sd0"   -> DeviceInstance("sdspi", Map("sclk" -> "db.sd_clk", "mosi" -> "db.sd_cmd" /*, ... */))))))))
 
+  /** SMP: N cores, each with its own UART */
   def qmtechSmp(n: Int) = {
     val base = qmtechSerial
-    base.copy(systems = Seq(base.system.copy(name = s"smp$n", cpuCnt = n)))
-  }
-
-  def qmtechHwAll = {
-    val base = qmtechSerial
-    base.copy(systems = Seq(base.system.copy(
-      name = "hwmath",
-      coreConfig = JopCoreConfig.hwMath)))
+    val cores = (0 until n).map { i =>
+      CoreConfig(devices = Map(
+        s"uart$i" -> DeviceInstance("uart", Map("txd" -> s"j11.${i*2+1}", "rxd" -> s"j11.${i*2+2}"))))
+    }
+    base.copy(clusters = Seq(base.cluster.copy(name = s"smp$n", cores = cores)))
   }
 
   /** CYC5000 standalone */
   def cyc5000Serial = JopConfig(
     assembly = SystemAssembly.cyc5000,
-    systems = Seq(JopSystem(
+    loader = BootMode.Serial,
+    clusters = Seq(ClusterConfig(
       name = "main",
       memory = "W9864G6JT",
       bootMode = BootMode.Serial,
-      clkFreqHz = 100000000L)))
+      clkFreqHz = 100000000L,
+      cores = Seq(minimalCore))))
 
-  /** Alchitry Au V2 */
-  def auSerial = JopConfig(
+  /** Alchitry Au V2 with flash boot */
+  def auFlash = JopConfig(
     assembly = SystemAssembly.alchitryAuV2,
-    systems = Seq(JopSystem(
+    loader = BootMode.Flash,
+    clusters = Seq(ClusterConfig(
       name = "main",
       memory = "MT41K128M16JT-125:K",
-      bootMode = BootMode.Serial,
-      clkFreqHz = 83333333L)))
+      bootMode = BootMode.Flash,
+      clkFreqHz = 83333333L,
+      cores = Seq(CoreConfig(
+        devices = Map(
+          "uart0"    -> DeviceInstance("uart"),
+          "cfgflash" -> DeviceInstance("cfgflash", params = Map("clkDivInit" -> 15))))))))
 
   /** Simulation (no physical board) */
   def simulation = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
-    systems = Seq(JopSystem(
+    loader = BootMode.Simulation,
+    clusters = Seq(ClusterConfig(
       name = "sim",
       memory = "W9825G6JH6",
       bootMode = BootMode.Simulation,
-      clkFreqHz = 100000000L)))
+      clkFreqHz = 100000000L,
+      cores = Seq(minimalCore))))
 
-  // --- Multi-system preset (Wukong dual-subsystem) ---
+  // --- Multi-cluster preset (Wukong dual-subsystem) ---
 
   /** Wukong: heavy compute on DDR3 + light I/O on SDR SDRAM */
   def wukongDual = JopConfig(
     assembly = SystemAssembly.wukong,
-    systems = Seq(
-      JopSystem(
+    loader = BootMode.Serial,
+    clusters = Seq(
+      ClusterConfig(
         name = "compute",
-        memory = "ddr3",               // by role
+        memory = "ddr3",
         bootMode = BootMode.Serial,
         clkFreqHz = 100000000L,
-        cpuCnt = 4,
-        coreConfig = JopCoreConfig.hwMath,
-        drivers = Seq(DeviceDriver.EthRgmii, DeviceDriver.SdNative)),
-      JopSystem(
+        cores = Seq.fill(4)(hwMathCore.copy(
+          devices = hwMathCore.devices ++ Map(
+            "eth0" -> DeviceInstance("ethernet"),
+            "sd0"  -> DeviceInstance("sdnative"))))),
+      ClusterConfig(
         name = "io",
-        memory = "sdr",                // by role
+        memory = "sdr",
         bootMode = BootMode.Serial,
         clkFreqHz = 50000000L,
-        cpuCnt = 2)),
+        cores = Seq.fill(2)(minimalCore))),
     interconnect = Some(InterconnectConfig(fifoDepth = 64)),
     monitors = Seq(WatchdogConfig(timeoutMs = 2000)))
 
   // --- Minimum resource preset (fits MAX1000, small Lattice, etc.) ---
 
-  /** Absolute minimum: no compute units, pure microcode, no peripherals */
   def minimum = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
-    systems = Seq(JopSystem(
+    loader = BootMode.Serial,
+    clusters = Seq(ClusterConfig(
       name = "min",
       memory = "W9825G6JH6",
       bootMode = BootMode.Serial,
       clkFreqHz = 80000000L,
-      coreConfig = JopCoreConfig(
-        supersetJumpTable = JumpTableInitData.bareSerial,
-        imul = Implementation.Microcode,  // pure microcode shift-and-add
-        idiv = Implementation.Java,
-        irem = Implementation.Java),
-      drivers = Seq(DeviceDriver.Uart))))
+      cores = Seq(CoreConfig(
+        bytecodes = BytecodeConfig(imul = Implementation.Microcode),
+        devices = Map("uart0" -> DeviceInstance("uart")))))))
 }
 ```
+
+### Migration from current IoConfig
+
+The current `IoConfig` with boolean flags (`hasUart`, `hasEth`, etc.) maps to the new model as follows:
+
+| Current (IoConfig) | New (per-core DeviceInstance) |
+|---|---|
+| `hasUart = true` | `"uart0" -> DeviceInstance("uart")` |
+| `hasEth = true, ethGmii = true` | `"eth0" -> DeviceInstance("ethernet", params = Map("gmii" -> true))` |
+| `hasSdSpi = true` | `"sd0" -> DeviceInstance("sdspi")` |
+| `hasSdNative = true` | `"sd0" -> DeviceInstance("sdnative")` |
+| `hasVgaText = true` | `"vga0" -> DeviceInstance("vgatext")` |
+| `hasConfigFlash = true` | `"cfgflash" -> DeviceInstance("cfgflash")` |
+
+The `IoAddressAllocator` and `HasBusIo` infrastructure remain unchanged — they already work with named devices and dynamic allocation. The change is in how device lists are built: from boolean flags on a global `IoConfig` to named instances on each `CoreConfig`.
+
+**Incremental migration path:**
+1. Add `DeviceInstance` and `CoreConfig` types alongside existing `IoConfig`
+2. Add `CoreConfig.toIoConfig()` bridge that converts named instances to boolean flags
+3. Migrate presets one at a time from `IoConfig` to `CoreConfig`
+4. Remove `IoConfig` boolean flags once all consumers use `CoreConfig`
 
 ### What the config drives
 
