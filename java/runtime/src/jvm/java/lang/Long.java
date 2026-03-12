@@ -1,6 +1,52 @@
 package java.lang;
 
-public class Long {
+public class Long extends Number {
+
+	private final long value;
+
+	public Long(long value) {
+		this.value = value;
+	}
+
+	public Long(String s) {
+		this.value = parseLong(s, 10);
+	}
+
+	public long longValue() {
+		return value;
+	}
+
+	public int intValue() {
+		return (int) value;
+	}
+
+	public float floatValue() {
+		return (float) value;
+	}
+
+	public double doubleValue() {
+		return (double) value;
+	}
+
+	public static Long valueOf(long l) {
+		return new Long(l);
+	}
+
+	public static Long valueOf(String s) {
+		return valueOf(parseLong(s, 10));
+	}
+
+	public boolean equals(Object obj) {
+		if (obj instanceof Long) {
+			return value == ((Long) obj).value;
+		}
+		return false;
+	}
+
+	public int hashCode() {
+		return (int)(value ^ (value >>> 32));
+	}
+
 	/**
 	 * Table for calculating digits, used in Character, Long, and Integer.
 	 */
