@@ -158,9 +158,8 @@ case class JopDdr3Top(
     // JOP Cluster: N cores with arbiter + CmpSync
     // ==================================================================
 
-    // burstLen=0 (pipelined single-word) for single-core; burstLen=4 for SMP
-    // (burstLen=0 + SMP has an arbiter interleaving issue with BC_FILL)
-    val burstLen = if (cpuCnt > 1) 4 else 0
+    // burstLen=8 for DDR3 native burst; SMP uses 4 (arbiter interleaving issue with BC_FILL)
+    val burstLen = if (cpuCnt > 1) 4 else 8
 
     val cluster = JopCluster(
       cpuCnt = cpuCnt,
