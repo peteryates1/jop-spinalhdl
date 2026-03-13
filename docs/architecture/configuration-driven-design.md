@@ -12,8 +12,10 @@
 | 5b | Unified FPGA Top-Level (`JopTop`) | **Done** — replaces 7 board-specific tops, verified on hardware (QMTECH EP4CGX150) and simulation |
 | 5c | PLL / Reset / Memory Controller Factories | **Done** — `Pll.create()`, `ResetGenerator`, `MemoryControllerFactory` |
 | 5d | `JopTopVerilog` Entry Point | **Done** — 12 presets (incl. `max1000Sdram`, `ep4ce6Sdram`), backward-compatible entity names |
-| 5f | Vendor-Specific Memory Primitives | **Done** — `MemoryStyle` config: `AlteraLpm` (lpm_rom/lpm_ram_dp BlackBox with .mif) vs `Generic` (SpinalHDL Mem). Auto-derived from FPGA manufacturer. Small FPGA presets disable caches. |
 | 5e | Simulation Mode | **Done** — `JopTop(simulation=true)` bypasses PLL/MIG for Verilator |
+| 5f | Vendor-Specific Memory Primitives | **Done** — `MemoryStyle` config: `AlteraLpm` (lpm_rom/lpm_ram_dp BlackBox with .mif) vs `Generic` (SpinalHDL Mem). Auto-derived from FPGA manufacturer. Small FPGA presets disable caches. |
+| 5g | Pluggable I/O (HasBusIo / IoAddressAllocator) | **Done** — `IoDeviceDescriptor`, `HasBusIo` trait, `IoAddressAllocator`, compact I/O address layout (Sys 0xF0-0xFF, boot 0xEE-0xEF, auto-alloc 0xED down) |
+| 5h | Declarative Assembly Config | Not started — `DeviceInstance`, `DeviceTypes` registry, per-core devices, per-cluster `Const.java`, 11-step migration from `IoConfig` boolean flags |
 | 6 | Board-Specific Modular Java Runtime | Not started |
 | 7 | Simulation Harness Dedup | Not started |
 | 8 | Build System | Not started |
@@ -27,15 +29,21 @@
 | `jop/config/JopConfig.scala` | Top-level config: presets, validation, entity naming |
 | `jop/config/Board.scala` | Board/FPGA/device metadata with pin mappings |
 | `jop/config/Parts.scala` | FPGA and memory device catalog |
-| `jop/config/IoConfig.scala` | I/O device configuration |
+| `jop/config/IoConfig.scala` | I/O device configuration (boolean flags — to be replaced by DeviceInstance) |
 | `jop/config/JopCoreConfig.scala` | Per-core bytecode implementation choices |
+| `jop/io/IoDeviceDescriptor.scala` | Device descriptor: name, addrBits, interruptCount, factory |
+| `jop/io/IoAddressAllocator.scala` | Per-core I/O address allocation (fixed + auto, largest-first) |
+| `jop/io/HasBusIo.scala` | Trait for bus-connected I/O devices with generic BMB wiring |
 | `jop/system/JopTop.scala` | Unified FPGA top-level Component |
 | `jop/system/JopTopVerilog.scala` | Single Verilog generation entry point |
 | `jop/system/JopSpinalConfig.scala` | SpinalConfig factory (Altera vs Xilinx) |
+| `jop/system/JopCore.scala` | Per-core device instantiation and address allocation |
+| `jop/system/JopCluster.scala` | Multi-core cluster: per-core device restriction, pin passthrough |
 | `jop/system/pll/Pll.scala` | PLL factory (per-board BlackBox dispatch) |
 | `jop/system/ResetGenerator.scala` | Extracted reset generation |
 | `jop/system/HangDetector.scala` | Diagnostic UART mux |
 | `jop/system/memory/MemoryControllerFactory.scala` | BRAM/SDR/DDR3 dispatch |
+| `jop/generate/ConstGenerator.scala` | Generates Const.java from I/O address allocation |
 
 ## Contents
 
@@ -1354,8 +1362,8 @@ I/O devices exist at three levels:
 | Scope | Instantiation | Example |
 |-------|--------------|---------|
 | **Per-core** | Each core has its own instance in its private I/O space | UART, SPI, I2C |
-| **Per-cluster** | Shared across cores in a cluster, BMB-arbitrated | Boot device, watchdog FSM, shared timer |
-| **System-level** | Shared across clusters | Inter-cluster FIFO, global watchdog |
+| **Per-cluster** | Shared across cores in a cluster, BMB-arbitrated | Shared timer |
+| **System-level** | Shared across the whole device | Boot device (cluster 0/core 0), watchdog FSM, inter-cluster FIFO |
 
 Per-core devices are instantiated per-core with independent address allocation. Per-cluster and system-level devices require BMB bus arbitration for concurrent access from multiple cores.
 
@@ -1363,14 +1371,14 @@ Per-core devices are instantiated per-core with independent address allocation. 
 
 #### Boot model
 
-Boot is a **per-cluster** concern. Each cluster has a boot device — either a UART (serial download, development) or config flash (autonomous boot, production).
+The boot device (UART or config flash) exists only on **cluster 0, core 0**. It is a system-level resource, not per-cluster.
 
-- **Core 0** of each cluster performs the boot: serial download or flash read
-- Other cores in the cluster wait until boot completes
-- In multi-cluster systems, **cluster 0 is the boot master** — it loads other clusters' `.jop` images over a FIFO channel from its config flash (different flash offsets per cluster)
+- **Cluster 0, core 0** owns the boot device: serial download (development) or config flash read (production)
+- Other cores in cluster 0 wait until boot completes
+- In multi-cluster systems, cluster 0/core 0 loads other clusters' `.jop` images over a FIFO channel from config flash (different flash offsets per cluster). Cluster 1/core 0 receives via FIFO and loads its cluster's memory.
 - Config flash is the presumed boot device for production JOP systems
 
-The boot device occupies the fixed address 0xEE–0xEF in core 0's I/O space. UART and config flash are mutually exclusive boot devices sharing this address.
+The boot device occupies the fixed address 0xEE–0xEF in cluster 0/core 0's I/O space. UART and config flash are mutually exclusive boot devices sharing this address.
 
 #### Named device instances
 
@@ -1466,11 +1474,12 @@ object ArbiterType {
   case object Tdma extends ArbiterType
 }
 
-/** A cluster of cores sharing a memory controller and a single .jop binary */
+/** A cluster of cores sharing a memory controller and a single .jop binary.
+  * Boot device is system-level (cluster 0/core 0 only). Other clusters receive
+  * their .jop via FIFO from cluster 0. */
 case class ClusterConfig(
   name: String,
   memory: String,                                    // memory device (by part or role)
-  bootMode: BootMode,                                // how this cluster boots (Serial/Flash/Simulation)
   arbiterType: ArbiterType = ArbiterType.RoundRobin,
   clkFreqHz: Long,
   cores: Seq[CoreConfig],                            // per-core config (length = core count)
@@ -1478,10 +1487,6 @@ case class ClusterConfig(
   flashOffset: Long = 0L,                            // .jop offset in config flash (multi-cluster)
 ) {
   def cpuCnt: Int = cores.length
-
-  // --- Derived paths from boot mode ---
-  def romPath: String = s"asm/generated/${bootMode.dirName}/mem_rom.dat"
-  def ramPath: String = s"asm/generated/${bootMode.dirName}/mem_ram.dat"
 
   // Superset of all cores' device descriptors (for address allocation + Const.java)
   def allDeviceTypes: Set[String] =
@@ -1492,14 +1497,15 @@ case class ClusterConfig(
 #### Top-level system configuration
 
 ```scala
-/** Top-level configuration — assembly + clusters + system-level devices */
+/** Top-level configuration — assembly + boot + clusters + system-level devices.
+  * Boot device (UART or cfgFlash) is system-level, owned by cluster 0/core 0.
+  * Watchdog FSM monitors the whole device (system-level). */
 case class JopConfig(
   assembly: SystemAssembly,
-  loader: BootMode,                                          // how the system boots
+  bootMode: BootMode,                                        // Serial/Flash/Simulation (system-level)
   clusters: Seq[ClusterConfig],
-  systemDevices: Map[String, DeviceInstance] = Map.empty,    // system-level shared devices
+  systemDevices: Map[String, DeviceInstance] = Map.empty,    // boot device, watchdog FSM
   interconnect: Option[InterconnectConfig] = None,           // cross-cluster FIFOs
-  monitors: Seq[MonitorConfig] = Seq.empty,                  // watchdog FSMs
 ) {
   require(clusters.nonEmpty, "At least one cluster required")
 
@@ -1511,6 +1517,8 @@ case class JopConfig(
 
   // --- Derived ---
   def fpgaFamily: FpgaFamily = assembly.fpgaDevices.head.family
+  def romPath: String = s"asm/generated/${bootMode.dirName}/mem_rom.dat"
+  def ramPath: String = s"asm/generated/${bootMode.dirName}/mem_ram.dat"
 
   // Validate: each cluster's memory must exist on the assembly
   clusters.foreach { cl =>
@@ -1561,15 +1569,15 @@ System-level devices: separate BMB address range
 One `Const.java` is generated **per cluster** with flat `static final int` constants. Device names include instance numbers:
 
 ```java
-// Generated: Cluster 0 Const.java — superset of all cores' devices
+// Generated: Cluster 0 Const.java — system devices + superset of cluster's per-core devices
 public interface Const {
     int IO_BASE = -128;
 
-    // Boot device (core 0 only, fixed at 0xEE)
+    // System-level boot device (cluster 0/core 0 only, fixed at 0xEE)
     int BOOT_STATUS = IO_BASE + 0x6E;  // -18
     int BOOT_DATA   = IO_BASE + 0x6F;  // -17
 
-    // Allocated devices (superset — not all exist on every core)
+    // Per-core devices (superset allocation — not all exist on every core)
     int ETH0_STATUS  = IO_BASE + 0x68;
     int ETH0_CMD     = IO_BASE + 0x69;
     // ...
@@ -1580,56 +1588,51 @@ public interface Const {
     // Per-core existence flags
     boolean CORE0_HAS_ETH0 = true;
     boolean CORE1_HAS_ETH0 = false;
-    boolean CORE0_HAS_UART0 = true;   // boot UART
-    boolean CORE1_HAS_UART0 = false;  // no UART — communicates through core 0
 }
 ```
 
-All constants are compile-time (`bipush` operands for `Native.rd`/`Native.wr`). No runtime indexing — the flat constants are zero-cost on the JOP stack architecture. Most boards have a single UART; other cores communicate through core 0 via shared memory.
+All constants are compile-time (`bipush` operands for `Native.rd`/`Native.wr`). No runtime indexing — the flat constants are zero-cost on the JOP stack architecture. Most boards have a single UART (the boot device on core 0); other cores communicate through core 0 via shared memory.
 
-Each cluster gets its own `Const.java` and `.jop` binary compiled against it. In multi-cluster systems, cluster 0 loads other clusters' `.jop` from config flash at different offsets.
+Each cluster gets its own `Const.java` and `.jop` binary compiled against it. In multi-cluster systems, cluster 0 loads other clusters' `.jop` from config flash at different offsets. Cluster 1's `Const.java` would not include boot device constants (it receives its `.jop` via FIFO, not directly from flash).
 
 ### System presets — builder pattern with `copy()`
 
 ```scala
 object JopConfig {
-  // Common core configs
-  val minimalCore = CoreConfig(
-    bytecodes = BytecodeConfig(),  // all defaults (microcode/Java)
-    devices = Map("uart0" -> DeviceInstance("uart")))
+  // Common core configs (no boot device — that's system-level)
+  val bareCore = CoreConfig()  // no devices — communicates through core 0 via shared memory
 
   val hwMathCore = CoreConfig(
     bytecodes = BytecodeConfig()
-      .withDspMul.withIntegerHw.withFloatHw.withLongHw.withDoubleHw,
-    devices = Map("uart0" -> DeviceInstance("uart")))
+      .withDspMul.withIntegerHw.withFloatHw.withLongHw.withDoubleHw)
 
   // --- Single-cluster presets (common case) ---
 
   /** QMTECH EP4CGX150 + daughter board — primary dev platform */
   def qmtechSerial = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
-    loader = BootMode.Serial,
+    bootMode = BootMode.Serial,
+    systemDevices = Map(
+      "uart0" -> DeviceInstance("uart", Map("txd" -> "db.uart_txd", "rxd" -> "db.uart_rxd"))),
     clusters = Seq(ClusterConfig(
       name = "main",
       memory = "W9825G6JH6",
-      bootMode = BootMode.Serial,
       clkFreqHz = 80000000L,
       cores = Seq(CoreConfig(
         devices = Map(
-          "uart0" -> DeviceInstance("uart", Map("txd" -> "db.uart_txd", "rxd" -> "db.uart_rxd")),
-          "eth0"  -> DeviceInstance("ethernet", Map("mdc" -> "db.eth_mdc", "mdio" -> "db.eth_mdio" /*, ... */)),
-          "sd0"   -> DeviceInstance("sdspi", Map("sclk" -> "db.sd_clk", "mosi" -> "db.sd_cmd" /*, ... */))))))))
+          "eth0" -> DeviceInstance("ethernet", Map("mdc" -> "db.eth_mdc", "mdio" -> "db.eth_mdio" /*, ... */)),
+          "sd0"  -> DeviceInstance("sdspi", Map("sclk" -> "db.sd_clk", "mosi" -> "db.sd_cmd" /*, ... */))))))))
 
-  /** SMP: N cores — core 0 has boot UART + eth + sd, others have no UART
-    * (most boards have 1 UART; other cores communicate through core 0 via shared memory)
-    * Optional: extra UARTs on PMOD headers for cores that need them */
+  /** SMP: N cores — core 0 has eth + sd, others bare.
+    * Boot UART is system-level (cluster 0/core 0). Most boards have 1 UART;
+    * other cores communicate through core 0 via shared memory.
+    * Optional: extra UARTs on PMOD headers for cores that need them. */
   def qmtechSmp(n: Int) = {
     val base = qmtechSerial
-    val core0 = base.cluster.cores.head  // has uart0, eth0, sd0
-    val coreN = CoreConfig()             // no devices — communicates through core 0
+    val core0 = base.cluster.cores.head  // has eth0, sd0
     base.copy(clusters = Seq(base.cluster.copy(
       name = s"smp$n",
-      cores = core0 +: Seq.fill(n - 1)(coreN))))
+      cores = core0 +: Seq.fill(n - 1)(bareCore))))
   }
 
   /** SMP with per-core UARTs on PMOD headers (optional, for debugging) */
@@ -1638,7 +1641,7 @@ object JopConfig {
     val core0 = base.cluster.cores.head
     val extras = (1 until n).map { i =>
       CoreConfig(devices = Map(
-        s"uart0" -> DeviceInstance("uart", Map("txd" -> s"j11.${i*2+1}", "rxd" -> s"j11.${i*2+2}"))))
+        "uart0" -> DeviceInstance("uart", Map("txd" -> s"j11.${i*2+1}", "rxd" -> s"j11.${i*2+2}"))))
     }
     base.copy(clusters = Seq(base.cluster.copy(name = s"smp$n", cores = core0 +: extras)))
   }
@@ -1646,86 +1649,83 @@ object JopConfig {
   /** CYC5000 standalone */
   def cyc5000Serial = JopConfig(
     assembly = SystemAssembly.cyc5000,
-    loader = BootMode.Serial,
+    bootMode = BootMode.Serial,
+    systemDevices = Map("uart0" -> DeviceInstance("uart")),
     clusters = Seq(ClusterConfig(
       name = "main",
       memory = "W9864G6JT",
-      bootMode = BootMode.Serial,
       clkFreqHz = 100000000L,
-      cores = Seq(minimalCore))))
+      cores = Seq(bareCore))))
 
   /** Alchitry Au V2 with flash boot */
   def auFlash = JopConfig(
     assembly = SystemAssembly.alchitryAuV2,
-    loader = BootMode.Flash,
+    bootMode = BootMode.Flash,
+    systemDevices = Map(
+      "uart0"    -> DeviceInstance("uart"),
+      "cfgflash" -> DeviceInstance("cfgflash", params = Map("clkDivInit" -> 15))),
     clusters = Seq(ClusterConfig(
       name = "main",
       memory = "MT41K128M16JT-125:K",
-      bootMode = BootMode.Flash,
       clkFreqHz = 83333333L,
-      cores = Seq(CoreConfig(
-        devices = Map(
-          "uart0"    -> DeviceInstance("uart"),
-          "cfgflash" -> DeviceInstance("cfgflash", params = Map("clkDivInit" -> 15))))))))
+      cores = Seq(bareCore))))
 
   /** Simulation (no physical board) */
   def simulation = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
-    loader = BootMode.Simulation,
+    bootMode = BootMode.Simulation,
+    systemDevices = Map("uart0" -> DeviceInstance("uart")),
     clusters = Seq(ClusterConfig(
       name = "sim",
       memory = "W9825G6JH6",
-      bootMode = BootMode.Simulation,
       clkFreqHz = 100000000L,
-      cores = Seq(minimalCore))))
+      cores = Seq(bareCore))))
 
   // --- Multi-cluster preset (Wukong dual-subsystem) ---
-  // Cluster 0 is boot master — loads cluster 1's .jop over FIFO channel from config flash.
+  // Boot device (cfgFlash) is system-level, owned by cluster 0/core 0.
+  // Cluster 0 loads cluster 1's .jop over FIFO channel from config flash.
   // Each cluster has its own flash offset and its own Const.java / .jop binary.
+  // Watchdog FSM monitors the whole device (system-level).
   // NOTE: multi-cluster not yet implemented, modeled here for future support.
 
   /** Wukong: heavy compute on DDR3 + light I/O on SDR SDRAM */
   def wukongDual = JopConfig(
     assembly = SystemAssembly.wukong,
-    loader = BootMode.Flash,
+    bootMode = BootMode.Flash,
+    systemDevices = Map(
+      "uart0"    -> DeviceInstance("uart"),
+      "cfgflash" -> DeviceInstance("cfgflash"),
+      "watchdog" -> DeviceInstance("watchdog", params = Map("timeoutMs" -> 2000))),
     clusters = Seq(
       ClusterConfig(
         name = "compute",
         memory = "ddr3",
-        bootMode = BootMode.Flash,
         clkFreqHz = 100000000L,
         flashOffset = 0x800000L,          // cluster 0 .jop at 8 MB
-        cores = CoreConfig(devices = Map(  // core 0: boot device + peripherals
-          "uart0" -> DeviceInstance("uart"),
-          "cfgflash" -> DeviceInstance("cfgflash"),
+        cores = CoreConfig(devices = Map( // core 0: peripherals
           "eth0" -> DeviceInstance("ethernet"),
           "sd0"  -> DeviceInstance("sdnative")))
-          +: Seq.fill(3)(hwMathCore)),    // cores 1-3: compute only, no devices
+          +: Seq.fill(3)(hwMathCore)),    // cores 1-3: compute only
       ClusterConfig(
         name = "io",
         memory = "sdr",
-        bootMode = BootMode.Flash,        // loaded by cluster 0 over FIFO
         clkFreqHz = 50000000L,
         flashOffset = 0xC00000L,          // cluster 1 .jop at 12 MB
-        cores = Seq(
-          CoreConfig(devices = Map("uart0" -> DeviceInstance("uart"))),  // core 0: boot receiver
-          CoreConfig()))),                // core 1: no devices
-    interconnect = Some(InterconnectConfig(fifoDepth = 64)),
-    monitors = Seq(WatchdogConfig(timeoutMs = 2000)))
+        cores = Seq.fill(2)(bareCore))),  // receives .jop via FIFO from cluster 0
+    interconnect = Some(InterconnectConfig(fifoDepth = 64)))
 
   // --- Minimum resource preset (fits MAX1000, small Lattice, etc.) ---
 
   def minimum = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
-    loader = BootMode.Serial,
+    bootMode = BootMode.Serial,
+    systemDevices = Map("uart0" -> DeviceInstance("uart")),
     clusters = Seq(ClusterConfig(
       name = "min",
       memory = "W9825G6JH6",
-      bootMode = BootMode.Serial,
       clkFreqHz = 80000000L,
       cores = Seq(CoreConfig(
-        bytecodes = BytecodeConfig(imul = Implementation.Microcode),
-        devices = Map("uart0" -> DeviceInstance("uart")))))))
+        bytecodes = BytecodeConfig(imul = Implementation.Microcode))))))
 }
 ```
 
