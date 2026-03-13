@@ -22,7 +22,7 @@ object JopCoreBramSim extends App {
   // Load initialization data
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
-  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 128 * 1024 / 4)
+  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 256 * 1024 / 4)
 
   println(s"Loaded ROM: ${romData.length} entries")
   println(s"Loaded RAM: ${ramData.length} entries")
@@ -63,12 +63,46 @@ object JopCoreBramSim extends App {
       logLine("Format: [cycle] PC=hex JPC=hex event...")
       logLine("-" * 80)
 
+      var wrCount = 0
+      var addrWrCount = 0
+      var rdCount = 0
+
       for (cycle <- 0 until maxCycles) {
         dut.clockDomain.waitSampling()
 
         val pc = dut.io.pc.toInt
         val jpc = dut.io.jpc.toInt
         val memBusy = dut.io.memBusy.toBoolean
+
+        // Trace memory controller internals (first 500 events)
+        val memRd = dut.jopCore.memCtrl.io.memIn.rd.toBoolean
+        val memWr = dut.jopCore.memCtrl.io.memIn.wr.toBoolean
+        val memWrf = dut.jopCore.memCtrl.io.memIn.wrf.toBoolean
+        val memAddrWr = dut.jopCore.memCtrl.io.memIn.addrWr.toBoolean
+        val addrIsIo = dut.jopCore.memCtrl.addrIsIo.toBoolean
+        val aoutIsIo = dut.jopCore.memCtrl.aoutIsIo.toBoolean
+        val addrRegVal = dut.jopCore.memCtrl.addrReg.toLong
+        val aoutVal = dut.io.aout.toLong
+        val memReadReq = dut.jopCore.memCtrl.memReadRequested.toBoolean
+
+        if (memAddrWr) {
+          addrWrCount += 1
+          if (addrWrCount <= 20) {
+            println(f"[$cycle%6d] ADDRWR aout=0x$aoutVal%06x aoutIsIo=$aoutIsIo addrReg=0x$addrRegVal%06x addrIsIo=$addrIsIo PC=$pc%04x")
+          }
+        }
+        if (memWr || memWrf) {
+          wrCount += 1
+          if (wrCount <= 20) {
+            println(f"[$cycle%6d] WRITE  aout=0x$aoutVal%06x addrReg=0x$addrRegVal%06x addrIsIo=$addrIsIo PC=$pc%04x wrCnt=$wrCount")
+          }
+        }
+        if (memRd) {
+          rdCount += 1
+          if (rdCount <= 20) {
+            println(f"[$cycle%6d] READ   aout=0x$aoutVal%06x aoutIsIo=$aoutIsIo PC=$pc%04x rdCnt=$rdCount")
+          }
+        }
 
         // Log PC/JPC changes (first 100 cycles, then every 100 cycles)
         val shouldLogState = (cycle < 100) || (cycle % 100 == 0)

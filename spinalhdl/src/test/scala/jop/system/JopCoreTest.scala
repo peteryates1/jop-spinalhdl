@@ -58,29 +58,13 @@ case class JopCoreTestHarness(
     val debugSp = out UInt(config.stackConfig.spWidth bits)
     val debugVp = out UInt(config.stackConfig.spWidth bits)
 
-    // Stack RAM debug probe
-    val debugRamAddr = in UInt(8 bits)
+    // Stack RAM debug probe (read-only; address hardwired to 0 internally)
     val debugRamData = out Bits(config.dataWidth bits)
   }
 
-  // Extract JBC init from main memory
-  val mpAddr = if (mainMemInit.length > 1) mainMemInit(1).toInt else 0
-  val bootMethodStructAddr = if (mainMemInit.length > mpAddr) mainMemInit(mpAddr).toInt else 0
-  val bootMethodStartLen = if (mainMemInit.length > bootMethodStructAddr) mainMemInit(bootMethodStructAddr).toLong else 0
-  val bootCodeStart = (bootMethodStartLen >> 10).toInt
-  val bytecodeStartWord = if (bootCodeStart > 0) bootCodeStart else 35
-  val bytecodeWords = mainMemInit.slice(bytecodeStartWord, bytecodeStartWord + 512)
-
-  // Convert words to bytes (big-endian)
-  val jbcInit = bytecodeWords.flatMap { word =>
-    val w = word.toLong & 0xFFFFFFFFL
-    Seq(
-      BigInt((w >> 24) & 0xFF),
-      BigInt((w >> 16) & 0xFF),
-      BigInt((w >> 8) & 0xFF),
-      BigInt((w >> 0) & 0xFF)
-    )
-  }.padTo(2048, BigInt(0))
+  // JBC RAM starts empty — microcode fills it from main memory on demand
+  // (Pre-loading extracted bytecodes causes BC fill state machine conflicts)
+  val jbcInit = Seq.fill(2048)(BigInt(0))
 
   // JOP System core (Sys + Uart internal)
   val jopCore = JopCore(
@@ -135,8 +119,10 @@ case class JopCoreTestHarness(
   // No UART RX in test harness
   if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := True
 
-  // Wire debug RAM probe
-  jopCore.io.debugRamAddr := io.debugRamAddr
+  // Debug RAM probe: hardwire to 0 to avoid readSync MUX corruption in simulation.
+  // When debugRamAddr is an external IO port, Verilator leaves it uninitialized (X),
+  // which causes the StackStage readSync address MUX to corrupt pipeline reads.
+  jopCore.io.debugRamAddr := 0
   io.debugRamData := jopCore.io.debugRamData
   jopCore.io.debugHalt := False
   jopCore.io.snoopIn.foreach { si =>
@@ -151,6 +137,19 @@ case class JopCoreTestHarness(
   jopCore.memCtrl.io.ioRdData.simPublic()
   jopCore.io.debugIoRdCount.simPublic()
   jopCore.io.debugIoWrCount.simPublic()
+
+  // SimPublic for memory controller internals
+  jopCore.memCtrl.io.memIn.rd.simPublic()
+  jopCore.memCtrl.io.memIn.wr.simPublic()
+  jopCore.memCtrl.io.memIn.wrf.simPublic()
+  jopCore.memCtrl.io.memIn.addrWr.simPublic()
+  jopCore.memCtrl.addrIsIo.simPublic()
+  jopCore.memCtrl.aoutIsIo.simPublic()
+  jopCore.memCtrl.addrReg.simPublic()
+  jopCore.memCtrl.memReadRequested.simPublic()
+  jopCore.memCtrl.rdDataReg.simPublic()
+  jopCore.io.debugRdDataReg.simPublic()
+  jopCore.memCtrl.ioRdPending.simPublic()
 
   // Outputs
   io.pc := jopCore.io.pc
