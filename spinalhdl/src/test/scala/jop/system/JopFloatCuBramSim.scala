@@ -26,11 +26,7 @@ case class JopFloatCuTestHarness(
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = memSize),
     supersetJumpTable = JumpTableInitData.simulation,
-    fadd = Implementation.Hardware, fsub = Implementation.Hardware,
-    fmul = Implementation.Hardware, fdiv = Implementation.Hardware,
-    fneg = Implementation.Hardware, i2f = Implementation.Hardware,
-    f2i = Implementation.Hardware, fcmpl = Implementation.Hardware,
-    fcmpg = Implementation.Hardware
+    bytecodes = Map("float" -> "hw")
   )
 
   val io = new Bundle {

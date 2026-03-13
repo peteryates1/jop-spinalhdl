@@ -266,7 +266,6 @@ case class JopConfig(
 // ==========================================================================
 
 object JopConfig {
-  import Implementation._
 
   // ========================================================================
   // Single-system presets (common case)
@@ -280,7 +279,7 @@ object JopConfig {
       memory = "W9825G6JH6",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
 
   /** EP4CGX150 + daughter board — SMP, N cores */
@@ -297,7 +296,7 @@ object JopConfig {
       coreConfig = JopCoreConfig(
         memConfig = base.system.coreConfig.memConfig,
         supersetJumpTable = base.system.coreConfig.supersetJumpTable,
-        imul = Microcode, idiv = Hardware, irem = Hardware))))
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")))))
   }
 
   /** EP4CGX150 + daughter board — hardware float (FloatComputeUnit) */
@@ -308,10 +307,7 @@ object JopConfig {
       coreConfig = JopCoreConfig(
         memConfig = base.system.coreConfig.memConfig,
         supersetJumpTable = base.system.coreConfig.supersetJumpTable,
-        imul = Microcode, idiv = Hardware, irem = Hardware,
-        fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
-        fneg = Hardware, i2f = Hardware, f2i = Hardware,
-        fcmpl = Hardware, fcmpg = Hardware))))
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw", "float" -> "hw")))))
   }
 
   /** CYC5000 standalone */
@@ -322,7 +318,7 @@ object JopConfig {
       memory = "W9864G6JT",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
-      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))))))
 
   /** Alchitry Au V2 */
@@ -333,7 +329,7 @@ object JopConfig {
       memory = "MT41K128M16JT-125:K",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,  // MIG ui_clk = 100 MHz (4:1, DDR3-800)
-      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))))))
 
   /** Alchitry Au V2 — minimum: no caches, no HW math */
@@ -356,7 +352,7 @@ object JopConfig {
       memory = "W9825G6JH6",
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
-      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
 
   // ========================================================================
@@ -374,10 +370,7 @@ object JopConfig {
         clkFreq = 100 MHz,
         cpuCnt = 4,
         coreConfig = JopCoreConfig(
-          imul = Microcode, idiv = Hardware, irem = Hardware,
-          fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
-          fneg = Hardware, i2f = Hardware, f2i = Hardware,
-          fcmpl = Hardware, fcmpg = Hardware),
+          bytecodes = Map("idiv" -> "hw", "irem" -> "hw", "float" -> "hw")),
         devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N")))),
       JopSystem(
         name = "io",
@@ -385,7 +378,7 @@ object JopConfig {
         bootMode = BootMode.Serial,
         clkFreq = 50 MHz,
         cpuCnt = 2,
-        coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+        coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
         devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))),
     interconnect = Some(InterconnectConfig(fifoDepth = 64)),
     monitors = Seq(WatchdogConfig(timeoutMs = 2000)))
@@ -450,24 +443,14 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
-      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
 
   /** Wukong SDR — all compute units, UART only (no Ethernet/SD) */
   def wukongSdrAllCu = {
     val base = wukongSdram
     base.copy(systems = Seq(base.system.copy(
-      coreConfig = JopCoreConfig(
-        useDspMul = true,
-        imul = Hardware, idiv = Hardware, irem = Hardware,
-        fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
-        fneg = Hardware, i2f = Hardware, f2i = Hardware,
-        fcmpl = Hardware, fcmpg = Hardware,
-        ladd = Hardware, lsub = Hardware, lmul = Hardware, lneg = Hardware,
-        lshl = Hardware, lshr = Hardware, lushr = Hardware, lcmp = Hardware,
-        dadd = Hardware, dsub = Hardware, dmul = Hardware, ddiv = Hardware,
-        i2d = Hardware, d2i = Hardware, l2d = Hardware, d2l = Hardware,
-        f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware))))
+      coreConfig = JopCoreConfig(useDspMul = true, bytecodes = Map("*" -> "hw")))))
   }
 
   /** Wukong DDR3 (single-system, 100 MHz) */
@@ -478,7 +461,7 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
-      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
 
   /** Wukong BRAM (single-system, simulation-mode) */
@@ -489,7 +472,7 @@ object JopConfig {
       memory = "bram",  // no physical memory — uses on-chip BRAM
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
-      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
 
   /** Wukong BRAM with all compute units (DCU debug — simulation only) */
@@ -520,17 +503,7 @@ object JopConfig {
         "eth" -> DeviceInstance("ethernet", params = Map("gmii" -> true, "phyDataWidth" -> 8),
           devicePart = Some("RTL8211EG")),
         "sdNative" -> DeviceInstance("sdnative", devicePart = Some("SD_CARD"))),
-      coreConfig = JopCoreConfig(
-        useDspMul = true,
-        imul = Hardware, idiv = Hardware, irem = Hardware,
-        fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
-        fneg = Hardware, i2f = Hardware, f2i = Hardware,
-        fcmpl = Hardware, fcmpg = Hardware,
-        ladd = Hardware, lsub = Hardware, lmul = Hardware, lneg = Hardware,
-        lshl = Hardware, lshr = Hardware, lushr = Hardware, lcmp = Hardware,
-        dadd = Hardware, dsub = Hardware, dmul = Hardware, ddiv = Hardware,
-        i2d = Hardware, d2i = Hardware, l2d = Hardware, d2l = Hardware,
-        f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware))))
+      coreConfig = JopCoreConfig(useDspMul = true, bytecodes = Map("*" -> "hw")))))
 
   /** Wukong DDR3 — all compute units, UART only (no Ethernet/SD) */
   def wukongDdr3AllCu = {
@@ -560,9 +533,7 @@ object JopConfig {
     val base = wukongSmp(1)
     base.copy(systems = Seq(base.system.copy(
       coreConfig = base.system.coreConfig.copy(
-        dadd = Java, dsub = Java, dmul = Java, ddiv = Java,
-        i2d = Java, d2i = Java, l2d = Java, d2l = Java,
-        f2d = Java, d2f = Java, dcmpl = Java, dcmpg = Java))))
+        bytecodes = base.system.coreConfig.bytecodes + ("double" -> "java")))))
   }
 
   // === Debug configs: isolate which CU causes DoubleField hang on DDR3 ===
@@ -571,7 +542,9 @@ object JopConfig {
   def wukongDdr3DspMul = {
     val base = wukongDdr3
     base.copy(systems = Seq(base.system.copy(
-      coreConfig = base.system.coreConfig.copy(useDspMul = true, imul = Hardware))))
+      coreConfig = base.system.coreConfig.copy(
+        useDspMul = true,
+        bytecodes = base.system.coreConfig.bytecodes + ("imul" -> "hw")))))
   }
 
   /** Wukong DDR3 — ICU + FCU only (test FCU in isolation) */
@@ -579,9 +552,7 @@ object JopConfig {
     val base = wukongDdr3
     base.copy(systems = Seq(base.system.copy(
       coreConfig = base.system.coreConfig.copy(
-        fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
-        fneg = Hardware, i2f = Hardware, f2i = Hardware,
-        fcmpl = Hardware, fcmpg = Hardware))))
+        bytecodes = base.system.coreConfig.bytecodes + ("float" -> "hw")))))
   }
 
   /** Wukong DDR3 — ICU + LCU only (test LCU in isolation) */
@@ -589,8 +560,7 @@ object JopConfig {
     val base = wukongDdr3
     base.copy(systems = Seq(base.system.copy(
       coreConfig = base.system.coreConfig.copy(
-        ladd = Hardware, lsub = Hardware, lmul = Hardware, lneg = Hardware,
-        lshl = Hardware, lshr = Hardware, lushr = Hardware, lcmp = Hardware))))
+        bytecodes = base.system.coreConfig.bytecodes + ("long" -> "hw")))))
   }
 
   /** Wukong SDR — full featured: HW integer + float + long + double compute, Ethernet, SD */
@@ -606,15 +576,5 @@ object JopConfig {
         "eth" -> DeviceInstance("ethernet", params = Map("gmii" -> true, "phyDataWidth" -> 8),
           devicePart = Some("RTL8211EG")),
         "sdNative" -> DeviceInstance("sdnative", devicePart = Some("SD_CARD"))),
-      coreConfig = JopCoreConfig(
-        useDspMul = true,
-        imul = Hardware, idiv = Hardware, irem = Hardware,
-        fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
-        fneg = Hardware, i2f = Hardware, f2i = Hardware,
-        fcmpl = Hardware, fcmpg = Hardware,
-        ladd = Hardware, lsub = Hardware, lmul = Hardware, lneg = Hardware,
-        lshl = Hardware, lshr = Hardware, lushr = Hardware, lcmp = Hardware,
-        dadd = Hardware, dsub = Hardware, dmul = Hardware, ddiv = Hardware,
-        i2d = Hardware, d2i = Hardware, l2d = Hardware, d2l = Hardware,
-        f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware))))
+      coreConfig = JopCoreConfig(useDspMul = true, bytecodes = Map("*" -> "hw")))))
 }

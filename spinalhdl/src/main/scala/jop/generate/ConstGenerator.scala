@@ -51,11 +51,7 @@ object ConstGenerator {
     }
 
     // Feature flags: true if ANY core uses Java (software) for that category
-    val supportFloat = allCores.exists { c =>
-      import Implementation.Java
-      Seq(c.fadd, c.fsub, c.fmul, c.fdiv, c.fneg, c.i2f, c.f2i, c.fcmpl, c.fcmpg)
-        .contains(Java)
-    }
+    val supportFloat = allCores.exists(_.needsJavaFloat)
 
     // Number of interrupts: timer + max numIoInt across systems
     val maxNumIoInt = config.systems.map(sys => DeviceTypes.interruptCount(sys.effectiveDevices)).max

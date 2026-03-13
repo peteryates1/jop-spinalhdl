@@ -88,7 +88,7 @@ object JopConfigBramSim {
     println(s"  ROM: ${sys.romPath} (${romData.length} entries)")
     println(s"  RAM: ${sys.ramPath} (${ramData.length} entries)")
     println(s"  App: $jopFilePath (${mainMemData.length} words)")
-    println(s"  imul=${coreConfig.imul}, idiv=${coreConfig.idiv}, irem=${coreConfig.irem}")
+    println(s"  imul=${coreConfig.impl("imul")}, idiv=${coreConfig.impl("idiv")}, irem=${coreConfig.impl("irem")}")
     println(s"  needsIntegerCompute=${coreConfig.needsIntegerCompute}, needsFloatCompute=${coreConfig.needsFloatCompute}")
 
     SimConfig
@@ -104,7 +104,7 @@ object JopConfigBramSim {
         }
 
         logLine(s"=== ${sys.name} BRAM Simulation ===")
-        logLine(s"Config: imul=${coreConfig.imul}, idiv=${coreConfig.idiv}, irem=${coreConfig.irem}")
+        logLine(s"Config: imul=${coreConfig.impl("imul")}, idiv=${coreConfig.impl("idiv")}, irem=${coreConfig.impl("irem")}")
 
         dut.clockDomain.forkStimulus(10)
         dut.clockDomain.waitSampling(5)
@@ -159,12 +159,11 @@ object JopConfigHelloWorldSim extends App {
 
 /** HelloWorld with hardware integer math (IntegerComputeUnit: idiv/irem) */
 object JopConfigHwMathHelloWorldSim extends App {
-  import Implementation._
   val base = JopConfig.simulation
   val hwMath = base.copy(systems = Seq(base.system.copy(
     name = "hwmath-sim",
     coreConfig = base.system.coreConfig.copy(
-      imul = Microcode, idiv = Hardware, irem = Hardware))))
+      bytecodes = Map("idiv" -> "hw", "irem" -> "hw")))))
   JopConfigBramSim.runSim(
     jopConfig = hwMath,
     jopFilePath = "java/apps/Smallest/HelloWorld.jop"
@@ -201,15 +200,11 @@ object JopConfigCacheOnlyHelloWorldSim extends App {
 
 /** HelloWorld with full hardware float + integer (FloatComputeUnit + IntegerComputeUnit) */
 object JopConfigHwFloatHelloWorldSim extends App {
-  import Implementation._
   val base = JopConfig.simulation
   val hwFloat = base.copy(systems = Seq(base.system.copy(
     name = "hwfloat-sim",
     coreConfig = base.system.coreConfig.copy(
-      imul = Microcode, idiv = Hardware, irem = Hardware,
-      fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
-      fneg = Hardware, i2f = Hardware, f2i = Hardware,
-      fcmpl = Hardware, fcmpg = Hardware))))
+      bytecodes = Map("idiv" -> "hw", "irem" -> "hw", "float" -> "hw")))))
   JopConfigBramSim.runSim(
     jopConfig = hwFloat,
     jopFilePath = "java/apps/Smallest/HelloWorld.jop"
@@ -238,9 +233,9 @@ object JopConfigJvmTestsSim {
 
     println(s"=== JVM Tests with preset: $presetName ===")
     val cc = simConfig.system.coreConfig
-    println(s"  imul=${cc.imul}, idiv=${cc.idiv}, irem=${cc.irem}")
-    println(s"  fadd=${cc.fadd}, fmul=${cc.fmul}, fdiv=${cc.fdiv}")
-    println(s"  fneg=${cc.fneg}, i2f=${cc.i2f}, f2i=${cc.f2i}, fcmpl=${cc.fcmpl}")
+    println(s"  imul=${cc.impl("imul")}, idiv=${cc.impl("idiv")}, irem=${cc.impl("irem")}")
+    println(s"  fadd=${cc.impl("fadd")}, fmul=${cc.impl("fmul")}, fdiv=${cc.impl("fdiv")}")
+    println(s"  fneg=${cc.impl("fneg")}, i2f=${cc.impl("i2f")}, f2i=${cc.impl("f2i")}, fcmpl=${cc.impl("fcmpl")}")
 
     JopConfigBramSim.runSim(
       jopConfig = simConfig,

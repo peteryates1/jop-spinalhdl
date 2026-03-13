@@ -35,10 +35,10 @@ object JopTopDcuBramSim extends App {
   val config = JopConfig.wukongBramFull
 
   println(s"Config: ${config.entityName}")
-  println(s"Core config: imul=${config.system.coreConfig.imul}, " +
-    s"fadd=${config.system.coreConfig.fadd}, " +
-    s"ladd=${config.system.coreConfig.ladd}, " +
-    s"dadd=${config.system.coreConfig.dadd}")
+  println(s"Core config: imul=${config.system.coreConfig.impl("imul")}, " +
+    s"fadd=${config.system.coreConfig.impl("fadd")}, " +
+    s"ladd=${config.system.coreConfig.impl("ladd")}, " +
+    s"dadd=${config.system.coreConfig.impl("dadd")}")
 
   SimConfig
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))

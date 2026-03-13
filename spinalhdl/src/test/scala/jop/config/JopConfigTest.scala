@@ -106,9 +106,9 @@ class JopConfigTest extends AnyFunSuite {
   test("minimum preset has no compute units") {
     val config = JopConfig.minimum
     // imul: Microcode uses pure-microcode shift-and-add (imul_sw), no IntegerComputeUnit.
-    assert(config.system.coreConfig.imul == Implementation.Microcode)
-    assert(config.system.coreConfig.idiv == Implementation.Java)
-    assert(config.system.coreConfig.irem == Implementation.Java)
+    assert(config.system.coreConfig.impl("imul") == Implementation.Microcode)
+    assert(config.system.coreConfig.impl("idiv") == Implementation.Java)
+    assert(config.system.coreConfig.impl("irem") == Implementation.Java)
     assert(!config.system.coreConfig.needsIntegerCompute)
     assert(!config.system.coreConfig.needsFloatCompute)
     assert(!config.system.coreConfig.needsIntMul)
@@ -200,8 +200,8 @@ class JopConfigTest extends AnyFunSuite {
         clkFreq = 80 MHz,
         cpuCnt = 2,
         perCoreConfigs = Some(Seq(
-          JopCoreConfig(imul = Implementation.Microcode, idiv = Implementation.Hardware, irem = Implementation.Hardware),
-          JopCoreConfig(imul = Implementation.Microcode, idiv = Implementation.Java, irem = Implementation.Java))),
+          JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+          JopCoreConfig())),
         devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
     assert(config.system.coreConfigs.length == 2)
     assert(config.system.coreConfigs(0).needsIntegerCompute)  // idiv=Hardware

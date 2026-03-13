@@ -20,7 +20,7 @@ object JopDcuDebugSim extends App {
     "java/apps/Smallest/HelloWorld.jop", 256 * 1024 / 4)
 
   println(s"ROM: ${romData.length}, RAM: ${ramData.length}, Mem: ${mainMemData.length}")
-  println(s"Config: imul=${coreConfig.imul}, dadd=${coreConfig.dadd}, dcmpl=${coreConfig.dcmpl}")
+  println(s"Config: imul=${coreConfig.impl("imul")}, dadd=${coreConfig.impl("dadd")}, dcmpl=${coreConfig.impl("dcmpl")}")
   println(s"needsDoubleCompute=${coreConfig.needsDoubleCompute}")
 
   SimConfig

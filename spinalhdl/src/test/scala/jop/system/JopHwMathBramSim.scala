@@ -26,7 +26,7 @@ case class JopHwMathTestHarness(
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = memSize),
     supersetJumpTable = JumpTableInitData.simulation,
-    imul = Implementation.Hardware,
+    bytecodes = Map("imul" -> "hw"),
     useDspMul = true
   )
 

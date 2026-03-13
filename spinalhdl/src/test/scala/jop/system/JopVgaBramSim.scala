@@ -3,7 +3,6 @@ package jop.system
 import spinal.core._
 import spinal.core.sim._
 import jop.config._
-import jop.config.Implementation.Hardware
 import jop.sim.SimDisplay
 import jop.utils.JopFileLoader
 import java.io.PrintWriter
@@ -42,7 +41,7 @@ object JopVgaBramSim extends App {
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
       devices = Map("uart" -> DeviceInstance("uart"), "vga" -> DeviceInstance("vgatext")),
-      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware))))
+      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")))))
 
   SimConfig
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))

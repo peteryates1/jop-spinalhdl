@@ -188,22 +188,10 @@ object JopMinMaxSim {
 object JopMinBramSim extends App {
   // TRUE minimum: no IntCU, no FloatCU. Uses superset ROM with jump table
   // patching to select software multiply (imul_sw) and Java for all others.
-  // All float/div/rem ops handled via JOPizer→SoftFloat (IMP_JAVA).
+  // All float/div/rem ops handled via JOPizer->SoftFloat (IMP_JAVA).
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = 256 * 1024),
-    supersetJumpTable = JumpTableInitData.simulation,
-    imul  = Implementation.Microcode,
-    idiv  = Implementation.Java,
-    irem  = Implementation.Java,
-    fadd  = Implementation.Java,
-    fsub  = Implementation.Java,
-    fmul  = Implementation.Java,
-    fdiv  = Implementation.Java,
-    fneg  = Implementation.Java,
-    i2f   = Implementation.Java,
-    f2i   = Implementation.Java,
-    fcmpl = Implementation.Java,
-    fcmpg = Implementation.Java
+    supersetJumpTable = JumpTableInitData.simulation
   )
   JopMinMaxSim.runSim("MINIMUM", config)
 }
@@ -216,18 +204,7 @@ object JopMaxBramSim extends App {
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = 256 * 1024),
     supersetJumpTable = JumpTableInitData.simulation,
-    imul  = Implementation.Microcode,  // sthw → IntegerComputeUnit radix-4 multiply
-    idiv  = Implementation.Hardware,   // sthw → IntegerComputeUnit binary restoring div
-    irem  = Implementation.Hardware,   // sthw → IntegerComputeUnit binary restoring rem
-    fadd  = Implementation.Hardware,
-    fsub  = Implementation.Hardware,
-    fmul  = Implementation.Hardware,
-    fdiv  = Implementation.Hardware,
-    fneg  = Implementation.Hardware,   // microcode XOR sign bit
-    i2f   = Implementation.Hardware,
-    f2i   = Implementation.Hardware,
-    fcmpl = Implementation.Hardware,
-    fcmpg = Implementation.Hardware
+    bytecodes = Map("idiv" -> "hw", "irem" -> "hw", "float" -> "hw")
   )
   JopMinMaxSim.runSim("MAXIMUM", config)
 }

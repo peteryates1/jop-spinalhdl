@@ -2,7 +2,6 @@ package jop.system
 
 import spinal.core._
 import jop.config._
-import jop.config.Implementation._
 
 /**
  * Generate Verilog for multiple EP4CGX150 SDR SDRAM configs to measure per-feature LUT cost.
@@ -30,6 +29,9 @@ object AlteraUtilSweep extends App {
   def withCc(cc: JopCoreConfig): JopConfig =
     base.copy(systems = Seq(base.system.copy(coreConfig = cc)))
 
+  def withCcAndBc(bc: Map[String, String], extra: JopCoreConfig => JopCoreConfig = identity): JopConfig =
+    withCc(extra(baseCc.copy(bytecodes = baseCc.bytecodes ++ bc)))
+
   def withDevices(devs: Map[String, DeviceInstance]): JopConfig =
     base.copy(systems = Seq(base.system.copy(devices = devs)))
 
@@ -48,41 +50,25 @@ object AlteraUtilSweep extends App {
   private val vgaTextDev = "vga" -> DeviceInstance("vgatext", devicePart = Some("VGA"))
   private val vgaDmaDev = "vga" -> DeviceInstance("vgadma", devicePart = Some("VGA"))
 
-  val allCuCc = baseCc.copy(
-    useDspMul = true, imul = Hardware,
-    fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
-    fneg = Hardware, i2f = Hardware, f2i = Hardware, fcmpl = Hardware, fcmpg = Hardware,
-    ladd = Hardware, lsub = Hardware, lmul = Hardware, lneg = Hardware,
-    lshl = Hardware, lshr = Hardware, lushr = Hardware, lcmp = Hardware,
-    dadd = Hardware, dsub = Hardware, dmul = Hardware, ddiv = Hardware,
-    i2d = Hardware, d2i = Hardware, l2d = Hardware, d2l = Hardware,
-    f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware)
+  val allCuCc = baseCc.copy(useDspMul = true, bytecodes = Map("*" -> "hw"))
 
   val configs: Map[String, JopConfig] = Map(
     "baseline" -> base,
 
-    "no_icu" -> withCc(baseCc.copy(idiv = Microcode, irem = Microcode)),
+    "no_icu" -> withCcAndBc(Map("idiv" -> "mc", "irem" -> "mc")),
 
     "no_acache" -> withCc(baseCc.copy(
       memConfig = baseCc.memConfig.copy(useAcache = false))),
 
-    "icu_full" -> withCc(baseCc.copy(imul = Hardware)),
+    "icu_full" -> withCcAndBc(Map("imul" -> "hw")),
 
-    "icu_dsp" -> withCc(baseCc.copy(useDspMul = true, imul = Hardware)),
+    "icu_dsp" -> withCcAndBc(Map("imul" -> "hw"), _.copy(useDspMul = true)),
 
-    "fcu" -> withCc(baseCc.copy(
-      fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
-      fneg = Hardware, i2f = Hardware, f2i = Hardware,
-      fcmpl = Hardware, fcmpg = Hardware)),
+    "fcu" -> withCcAndBc(Map("float" -> "hw")),
 
-    "lcu" -> withCc(baseCc.copy(
-      ladd = Hardware, lsub = Hardware, lmul = Hardware, lneg = Hardware,
-      lshl = Hardware, lshr = Hardware, lushr = Hardware, lcmp = Hardware)),
+    "lcu" -> withCcAndBc(Map("long" -> "hw")),
 
-    "dcu" -> withCc(baseCc.copy(
-      dadd = Hardware, dsub = Hardware, dmul = Hardware, ddiv = Hardware,
-      i2d = Hardware, d2i = Hardware, l2d = Hardware, d2l = Hardware,
-      f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware)),
+    "dcu" -> withCcAndBc(Map("double" -> "hw")),
 
     "all_cu" -> withCc(allCuCc),
 
@@ -104,27 +90,21 @@ object AlteraUtilSweep extends App {
       Map(uartDev, ethDev, sdNativeDev, vgaTextDev)),
 
     // --- Cache size sweep variants ---
-    // Object cache: 32 entries (up from 16)
     "ocache_32" -> withCc(baseCc.copy(
       memConfig = baseCc.memConfig.copy(ocacheWayBits = 5))),
 
-    // Object cache: 64 entries
     "ocache_64" -> withCc(baseCc.copy(
       memConfig = baseCc.memConfig.copy(ocacheWayBits = 6))),
 
-    // Object cache: 16 fields per entry (up from 8)
     "ocache_16f" -> withCc(baseCc.copy(
       memConfig = baseCc.memConfig.copy(ocacheIndexBits = 4))),
 
-    // Array cache: 32 entries (up from 16)
     "acache_32" -> withCc(baseCc.copy(
       memConfig = baseCc.memConfig.copy(acacheWayBits = 5))),
 
-    // Array cache: 8 elements per line (up from 4)
     "acache_8e" -> withCc(baseCc.copy(
       memConfig = baseCc.memConfig.copy(acacheFieldBits = 3))),
 
-    // Method cache: 32 blocks (up from 16)
     "mcache_32b" -> withCc(baseCc.copy(blockBits = 5))
   )
 

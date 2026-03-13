@@ -29,18 +29,9 @@ object JopDcuCacheSim extends App {
   println(s"Log file: $logFilePath")
 
   // Match wukongFull core config (all CUs enabled)
-  import Implementation.Hardware
   val fullCuConfig = JopCoreConfig(
     useDspMul = true,
-    imul = Hardware, idiv = Hardware, irem = Hardware,
-    fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
-    fneg = Hardware, i2f = Hardware, f2i = Hardware,
-    fcmpl = Hardware, fcmpg = Hardware,
-    ladd = Hardware, lsub = Hardware, lmul = Hardware, lneg = Hardware,
-    lshl = Hardware, lshr = Hardware, lushr = Hardware, lcmp = Hardware,
-    dadd = Hardware, dsub = Hardware, dmul = Hardware, ddiv = Hardware,
-    i2d = Hardware, d2i = Hardware, l2d = Hardware, d2l = Hardware,
-    f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware)
+    bytecodes = Map("*" -> "hw"))
 
   // Zero latency: tests pure cache logic (hit/miss/evict/writeback) without DDR3 timing overhead
   SimConfig
