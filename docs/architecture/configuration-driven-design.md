@@ -84,6 +84,7 @@
     - [Device scopes](#device-scopes)
     - [Boot model](#boot-model)
     - [Named device instances](#named-device-instances)
+    - [Device bus capabilities](#device-bus-capabilities)
     - [Device type registry](#device-type-registry)
     - [Per-core configuration](#per-core-configuration)
     - [Cluster configuration](#cluster-configuration)
@@ -1413,28 +1414,76 @@ The `mapping` connects FPGA device signals to board connectors/headers. `"txd" -
 
 The `params` map holds device-specific configuration: baud rate for UART, clock divider for SPI, etc. The device factory reads these at elaboration time.
 
-#### Device type registry
+#### Device bus capabilities
 
-Device types map to `HasBusIo` factories. New device types are registered once; instances are created by name:
+A device can have one or more bus interfaces:
+
+| Interface | Direction | Description | Example |
+|-----------|-----------|-------------|---------|
+| **I/O registers** | Slave | Addressed in per-core I/O space (HasBusIo) | UART, SPI, ConfigFlash |
+| **DMA channel** | Master | BMB master accessing shared memory | VGA framebuffer read |
+| **I/O + DMA** | Both | Control registers + memory DMA | VgaBmbDma |
+
+Currently VgaBmbDma's BMB master port is special-cased in JopCore (line 350-352) and JopCluster (lines 396-401, BMB arbiter input count at line 71). The new model makes DMA generic:
 
 ```scala
-/** Registry of device types → factories */
+/** Device bus interface capabilities */
+case class DeviceTypeInfo(
+  addrBits: Int,                  // I/O register address bits
+  interruptCount: Int,            // interrupt lines to Sys
+  hasDma: Boolean = false,        // has BMB master port for memory access
+  factory: (JopCoreConfig, Map[String, Any], DeviceContext) => Component with HasBusIo
+)
+
+/** External clock domains needed by some devices (not config-derivable) */
+case class DeviceContext(
+  vgaCd: Option[ClockDomain] = None,
+  ethTxCd: Option[ClockDomain] = None,
+  ethRxCd: Option[ClockDomain] = None
+)
+```
+
+With `hasDma`, JopCore's device loop generically handles DMA ports:
+- Wire slave BMB for every device (existing HasBusIo pattern)
+- If `hasDma`, also expose a BMB master port and wire it
+- JopCluster counts DMA ports from the device list, not from hardcoded `hasVgaDma`
+
+The `HasBusIo` trait gains an optional DMA accessor:
+
+```scala
+trait HasBusIo { self: Component =>
+  // ... existing: busAddr, busRd, busWr, busWrData, busRdData, busInterrupts, busBusy ...
+  /** Optional BMB master port for DMA (default: none) */
+  def busDmaBmb: Option[Bmb] = None
+}
+```
+
+VgaBmbDma overrides `busDmaBmb` to return `Some(bus.bmb)`. JopCore's device loop checks `busDmaBmb` instead of casting to `VgaBmbDma`. Stack cache DMA is separate (it's a pipeline component, not an I/O device).
+
+#### Device type registry
+
+Device types map to factories via `DeviceTypeInfo`. New device types are registered once; instances are created by name:
+
+```scala
 object DeviceTypes {
   val registry: Map[String, DeviceTypeInfo] = Map(
     "uart"     -> DeviceTypeInfo(addrBits = 1, interruptCount = 2,
-                    factory = (c, p) => Uart(p.getOrElse("baudRate", c.uartBaudRate).asInstanceOf[Int], c.clkFreq)),
+                    factory = (c, p, _) => Uart(p.getOrElse("baudRate", c.uartBaudRate).asInstanceOf[Int], c.clkFreq)),
     "sdspi"    -> DeviceTypeInfo(addrBits = 2, interruptCount = 1,
-                    factory = (c, p) => SdSpi(p.getOrElse("clkDivInit", 199).asInstanceOf[Int])),
+                    factory = (c, p, _) => SdSpi(p.getOrElse("clkDivInit", 199).asInstanceOf[Int])),
     "sdnative" -> DeviceTypeInfo(addrBits = 4, interruptCount = 1,
-                    factory = (c, p) => SdNative(p.getOrElse("clkDivInit", 99).asInstanceOf[Int])),
+                    factory = (c, p, _) => SdNative(p.getOrElse("clkDivInit", 99).asInstanceOf[Int])),
     "ethernet" -> DeviceTypeInfo(addrBits = 4, interruptCount = 1,
-                    factory = (c, p) => Eth(/* clock domains from context */)),
-    "spi"      -> DeviceTypeInfo(addrBits = 2, interruptCount = 1,
-                    factory = (c, p) => GenericSpi(/* params */)),
-    "i2c"      -> DeviceTypeInfo(addrBits = 2, interruptCount = 1,
-                    factory = (c, p) => GenericI2c(/* params */)),
+                    factory = (c, p, ctx) => Eth(ctx.ethTxCd.get, ctx.ethRxCd.get,
+                      p.getOrElse("phyDataWidth", 4).asInstanceOf[Int],
+                      p.getOrElse("mdioClkDivider", 40).asInstanceOf[Int])),
+    "vgadma"   -> DeviceTypeInfo(addrBits = 2, interruptCount = 1, hasDma = true,
+                    factory = (c, p, ctx) => VgaBmbDma(c.memConfig.bmbParameter, ctx.vgaCd.get,
+                      p.getOrElse("fifoDepth", 512).asInstanceOf[Int])),
+    "vgatext"  -> DeviceTypeInfo(addrBits = 4, interruptCount = 1,
+                    factory = (_, _, ctx) => VgaText(ctx.vgaCd.get)),
     "cfgflash" -> DeviceTypeInfo(addrBits = 1, interruptCount = 0,
-                    factory = (c, p) => ConfigFlash(p.getOrElse("clkDivInit", 3).asInstanceOf[Int])),
+                    factory = (c, p, _) => ConfigFlash(p.getOrElse("clkDivInit", 3).asInstanceOf[Int])),
   )
 }
 ```
