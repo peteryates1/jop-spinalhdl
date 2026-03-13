@@ -1584,14 +1584,10 @@ public interface Const {
     int SD0_STATUS   = IO_BASE + 0x64;
     int SD0_DATA     = IO_BASE + 0x65;
     // ...
-
-    // Per-core existence flags
-    boolean CORE0_HAS_ETH0 = true;
-    boolean CORE1_HAS_ETH0 = false;
 }
 ```
 
-All constants are compile-time (`bipush` operands for `Native.rd`/`Native.wr`). No runtime indexing — the flat constants are zero-cost on the JOP stack architecture. Most boards have a single UART (the boot device on core 0); other cores communicate through core 0 via shared memory.
+All constants are compile-time (`bipush` operands for `Native.rd`/`Native.wr`). No runtime indexing — the flat constants are zero-cost on the JOP stack architecture. Code that targets a specific core knows from the config which devices it has; accessing a non-existent device address is harmless (dead space). Most boards have a single UART (the boot device on core 0); other cores communicate through core 0 via shared memory.
 
 Each cluster gets its own `Const.java` and `.jop` binary compiled against it. In multi-cluster systems, cluster 0 loads other clusters' `.jop` from config flash at different offsets. Cluster 1's `Const.java` would not include boot device constants (it receives its `.jop` via FIFO, not directly from flash).
 
