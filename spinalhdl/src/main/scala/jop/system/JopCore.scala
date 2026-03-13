@@ -51,8 +51,7 @@ case class JopCore(
     val wd = out Bits(32 bits)
 
     // DMA BMB master ports (for devices with hasDma, e.g. VGA framebuffer reads)
-    val dmaBmbCount = DeviceTypes.dmaCount(config.devices) +
-      (if (config.devices.isEmpty && config.ioConfig.hasVgaDma) 1 else 0) // fallback for legacy path
+    val dmaBmbCount = DeviceTypes.dmaCount(config.effectiveDevices)
     val dmaBmb = Vec(master(Bmb(config.memConfig.bmbParameter)), dmaBmbCount)
     // Legacy alias for backward compat during migration
     val vgaDmaBmb: Option[Bmb] = if (dmaBmbCount > 0) Some(dmaBmb(0)) else None

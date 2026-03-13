@@ -150,6 +150,27 @@ case class IoConfig(
 
   /** True if any SD device is present (for pin exposure) */
   def hasSd: Boolean = hasSdSpi || hasSdNative
+
+  /** Convert boolean flags to declarative device map.
+   *  Instance names match what JopTop/JopCluster expect for pin lookups. */
+  def toDevices(): Map[String, DeviceInstance] = {
+    var m = Map.empty[String, DeviceInstance]
+    if (hasUart) m += "uart" -> DeviceInstance("uart",
+      params = Map("baudRate" -> uartBaudRate))
+    if (hasEth) m += "eth" -> DeviceInstance("ethernet",
+      params = Map("gmii" -> ethGmii, "phyDataWidth" -> phyDataWidth,
+                   "mdioClkDivider" -> mdioClkDivider))
+    if (hasSdSpi) m += "sdSpi" -> DeviceInstance("sdspi",
+      params = Map("clkDivInit" -> sdSpiClkDivInit))
+    if (hasSdNative) m += "sdNative" -> DeviceInstance("sdnative",
+      params = Map("clkDivInit" -> sdNativeClkDivInit))
+    if (hasVgaDma) m += "vgaDma" -> DeviceInstance("vgadma",
+      params = Map("fifoDepth" -> vgaDmaFifoDepth))
+    if (hasVgaText) m += "vgaText" -> DeviceInstance("vgatext")
+    if (hasConfigFlash) m += "cfgFlash" -> DeviceInstance("cfgflash",
+      params = Map("clkDivInit" -> cfgFlashClkDivInit))
+    m
+  }
 }
 
 object IoConfig {

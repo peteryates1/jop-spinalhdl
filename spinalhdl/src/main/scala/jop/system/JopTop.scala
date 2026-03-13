@@ -374,7 +374,7 @@ case class JopTop(
       supersetJumpTable = sys.baseJumpTable,
       clkFreq = sys.clkFreq,
       ioConfig = sys.ioConfig,
-      devices = sys.devices,
+      devices = sys.effectiveDevices,
       useStackCache = isDdr3 || (isSdr && board.name == "qmtech-wukong-xc7a100t")
     ))
 

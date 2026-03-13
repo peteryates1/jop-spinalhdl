@@ -110,33 +110,23 @@ case class JopSystem(
   def needsIntegerCompute: Boolean = coreConfigs.exists(_.needsIntegerCompute)
   def needsFloatCompute: Boolean = coreConfigs.exists(_.needsFloatCompute)
 
-  // --- Device presence queries (work on either path: devices or ioConfig) ---
-  def hasDevice(deviceType: String): Boolean = {
-    if (devices.nonEmpty) devices.values.exists(_.deviceType == deviceType)
-    else deviceType match {
-      case "uart"      => ioConfig.hasUart
-      case "ethernet"  => ioConfig.hasEth
-      case "sdspi"     => ioConfig.hasSdSpi
-      case "sdnative"  => ioConfig.hasSdNative
-      case "vgadma"    => ioConfig.hasVgaDma
-      case "vgatext"   => ioConfig.hasVgaText
-      case "cfgflash"  => ioConfig.hasConfigFlash
-      case _           => false
-    }
-  }
+  // --- Resolved devices: always populated (auto-converts from ioConfig if empty) ---
+  lazy val effectiveDevices: Map[String, DeviceInstance] =
+    if (devices.nonEmpty) devices else ioConfig.toDevices()
+
+  // --- Device presence queries (single path via effectiveDevices) ---
+  def hasDevice(deviceType: String): Boolean =
+    effectiveDevices.values.exists(_.deviceType == deviceType)
   def hasUart: Boolean = hasDevice("uart")
   def hasEth: Boolean = hasDevice("ethernet")
   def hasVga: Boolean = hasDevice("vgadma") || hasDevice("vgatext")
   def hasSdNative: Boolean = hasDevice("sdnative")
   def hasSdSpi: Boolean = hasDevice("sdspi")
   def hasConfigFlash: Boolean = hasDevice("cfgflash")
-  def ethGmii: Boolean = {
-    if (devices.nonEmpty) {
-      devices.values.find(_.deviceType == "ethernet")
-        .flatMap(_.params.get("gmii"))
-        .exists(_.asInstanceOf[Boolean])
-    } else ioConfig.ethGmii
-  }
+  def ethGmii: Boolean =
+    effectiveDevices.values.find(_.deviceType == "ethernet")
+      .flatMap(_.params.get("gmii"))
+      .exists(_.asInstanceOf[Boolean])
   def phyDataWidth: Int = if (ethGmii) 8 else 4
 }
 

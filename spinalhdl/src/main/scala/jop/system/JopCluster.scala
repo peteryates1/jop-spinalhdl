@@ -65,10 +65,10 @@ case class JopCluster(
   // Number of BMB inputs: cores + optional debug controller + DMA devices (core 0) + optional stack DMA (per-core)
   // When separateStackDmaBus=true, DMA uses its own bus (not the main arbiter)
   val hasDebugMem = debugConfig.exists(_.hasMemAccess)
-  val dmaDeviceCount = if (baseConfig.devices.nonEmpty) {
+  val dmaDeviceCount = {
     import jop.io.DeviceTypes
-    DeviceTypes.dmaCount(baseConfig.devices)
-  } else if (baseConfig.ioConfig.hasVgaDma) 1 else 0
+    DeviceTypes.dmaCount(baseConfig.effectiveDevices)
+  }
   val hasStackDma = baseConfig.useStackCache
   val stackDmaInArbiter = hasStackDma && !separateStackDmaBus
   val totalBmbInputs = cpuCnt + (if (hasDebugMem) 1 else 0) + dmaDeviceCount + (if (stackDmaInArbiter) cpuCnt else 0)
@@ -159,32 +159,13 @@ case class JopCluster(
   val cores = (0 until cpuCnt).map { i =>
     // Use per-core config if provided, otherwise fall back to baseConfig.
     val base = perCoreConfigs.map(_(i)).getOrElse(baseConfig)
-    val coreConfig = if (base.devices.nonEmpty) {
-      // New path: per-core device restriction via map filtering
-      val coreDevices = if (i == 0) base.devices
-        else {
-          // Core 0 gets everything; cores 1+ get UART only (if perCoreUart)
-          if (perCoreUart) base.devices.filter(_._2.deviceType == "uart")
-          else Map.empty[String, DeviceInstance]
-        }
-      base.copy(cpuId = i, cpuCnt = cpuCnt, devices = coreDevices)
-    } else {
-      // Legacy path: IoConfig boolean masking
-      base.copy(
-        cpuId = i,
-        cpuCnt = cpuCnt,
-        ioConfig = base.ioConfig.copy(
-          hasUart        = if (perCoreUart) base.ioConfig.hasUart else (i == 0),
-          hasEth         = (i == 0) && base.ioConfig.hasEth,
-          ethGmii        = (i == 0) && base.ioConfig.ethGmii,
-          hasSdSpi       = (i == 0) && base.ioConfig.hasSdSpi,
-          hasSdNative    = (i == 0) && base.ioConfig.hasSdNative,
-          hasVgaDma      = (i == 0) && base.ioConfig.hasVgaDma,
-          hasVgaText     = (i == 0) && base.ioConfig.hasVgaText,
-          hasConfigFlash = (i == 0) && base.ioConfig.hasConfigFlash
-        )
-      )
-    }
+    // Per-core device restriction: core 0 gets all devices, cores 1+ get UART only (if perCoreUart)
+    val coreDevices = if (i == 0) base.effectiveDevices
+      else {
+        if (perCoreUart) base.effectiveDevices.filter(_._2.deviceType == "uart")
+        else Map.empty[String, DeviceInstance]
+      }
+    val coreConfig = base.copy(cpuId = i, cpuCnt = cpuCnt, devices = coreDevices)
     JopCore(
       config = coreConfig,
       romInit = romInit,

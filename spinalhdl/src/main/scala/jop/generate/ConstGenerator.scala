@@ -2,7 +2,7 @@ package jop.generate
 
 import jop.config._
 import jop.memory.JopIoSpace
-import jop.io.IoAddressAllocator
+import jop.io.{DeviceTypes, IoAddressAllocator}
 
 /**
  * Generates Const.java from JopConfig.
@@ -37,8 +37,8 @@ object ConstGenerator {
     val hasVgaText = config.systems.exists(_.hasDevice("vgatext"))
     val hasCfgFlash = config.systems.exists(_.hasConfigFlash)
 
-    // Create superset IoConfig for address allocation
-    // (IoConfig is kept in sync with devices on all presets during migration)
+    // Build superset devices from all systems for address allocation
+    val supersetDevices: Map[String, DeviceInstance] = config.systems.flatMap(_.effectiveDevices).toMap
     val supersetIo = IoConfig(
       hasEth = hasEth,
       ethGmii = config.systems.exists(_.ethGmii),
@@ -65,10 +65,7 @@ object ConstGenerator {
     }
 
     // Number of interrupts: timer + max numIoInt across systems
-    val maxNumIoInt = config.systems.map { sys =>
-      val dummyCfg = JopCoreConfig(devices = sys.devices, ioConfig = sys.ioConfig)
-      dummyCfg.effectiveNumIoInt
-    }.max
+    val maxNumIoInt = config.systems.map(sys => DeviceTypes.interruptCount(sys.effectiveDevices)).max
     val numInterrupts = 1 + maxNumIoInt
 
     val sb = new StringBuilder
