@@ -112,7 +112,7 @@ final class DigitList {
         if (decimalAt < MAX_COUNT) return true;
 
         for (int i=0; i<count; ++i) {
-            char dig = digits[i], max = LONG_MIN_REP[i];
+            char dig = digits[i], max = getLongMinRep()[i];
             if (dig > max) return false;
             if (dig < max) return true;
         }
@@ -217,36 +217,37 @@ final class DigitList {
 
     private boolean shouldRoundUp(int maximumDigits) {
         if (maximumDigits < count) {
-            switch(roundingMode) {
-            case UP:
+            // RoundingMode is a plain class (not enum) on JOP — switch on ordinal
+            switch(roundingMode.ordinal()) {
+            case 0: // UP
                 for (int i=maximumDigits; i<count; ++i) {
                     if (digits[i] != '0') {
                         return true;
                     }
                 }
                 break;
-            case DOWN:
+            case 1: // DOWN
                 break;
-            case CEILING:
+            case 2: // CEILING
                 for (int i=maximumDigits; i<count; ++i) {
                     if (digits[i] != '0') {
                         return !isNegative;
                     }
                 }
                 break;
-            case FLOOR:
+            case 3: // FLOOR
                 for (int i=maximumDigits; i<count; ++i) {
                     if (digits[i] != '0') {
                         return isNegative;
                     }
                 }
                 break;
-            case HALF_UP:
+            case 4: // HALF_UP
                 if (digits[maximumDigits] >= '5') {
                     return true;
                 }
                 break;
-            case HALF_DOWN:
+            case 5: // HALF_DOWN
                 if (digits[maximumDigits] > '5') {
                     return true;
                 } else if (digits[maximumDigits] == '5') {
@@ -257,7 +258,7 @@ final class DigitList {
                     }
                 }
                 break;
-            case HALF_EVEN:
+            case 6: // HALF_EVEN
                 if (digits[maximumDigits] > '5') {
                     return true;
                 } else if (digits[maximumDigits] == '5') {
@@ -269,7 +270,7 @@ final class DigitList {
                     return maximumDigits > 0 && (digits[maximumDigits-1] % 2 != 0);
                 }
                 break;
-            case UNNECESSARY:
+            case 7: // UNNECESSARY
                 for (int i=maximumDigits; i<count; ++i) {
                     if (digits[i] != '0') {
                         throw new ArithmeticException(
@@ -295,7 +296,7 @@ final class DigitList {
             if (source == Long.MIN_VALUE) {
                 decimalAt = count = MAX_COUNT;
                 for (int i = 0; i < MAX_COUNT; i++) {
-                    digits[i] = LONG_MIN_REP[i];
+                    digits[i] = getLongMinRep()[i];
                 }
             } else {
                 decimalAt = count = 0;
@@ -371,7 +372,7 @@ final class DigitList {
             return false;
         }
         for (int i = 0; i < count; ++i) {
-            if (digits[i] != LONG_MIN_REP[i]) return false;
+            if (digits[i] != getLongMinRep()[i]) return false;
         }
         return true;
     }
@@ -398,7 +399,15 @@ final class DigitList {
         return positive ? value : -value;
     }
 
-    private static final char[] LONG_MIN_REP = "9223372036854775808".toCharArray();
+    // Lazy-initialized (JOP: clinit before GC)
+    private static char[] LONG_MIN_REP;
+
+    private static char[] getLongMinRep() {
+        if (LONG_MIN_REP == null) {
+            LONG_MIN_REP = "9223372036854775808".toCharArray();
+        }
+        return LONG_MIN_REP;
+    }
 
     public String toString() {
         if (isZero()) {

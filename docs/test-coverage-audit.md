@@ -456,8 +456,8 @@ The TypeConversion test exercises d2i, d2l, d2f, f2d, i2d, l2d conversions separ
 
 | Harness | Memory | App | Cycles | What it Tests |
 |---|---|---|---|---|
-| JopJvmTestsBramSim | BRAM | JvmTests (DoAll) | 25M | 53 JVM bytecode tests |
-| JopJvmTestsSmpBramSim | BRAM (2-core) | JvmTests (DoAll) | 40M | 52/53 JVM tests on 2-core SMP |
+| JopJvmTestsBramSim | BRAM | JvmTests (DoAll) | 25M | 64 JVM bytecode tests |
+| JopJvmTestsSmpBramSim | BRAM (2-core) | JvmTests (DoAll) | 40M | 63/64 JVM tests on 2-core SMP |
 | JopJvmTestsStackCacheBramSim | BRAM (512KB) | JvmTests (DoAll) | - | JVM tests with stack cache + DMA spill |
 
 #### SMP Simulations
@@ -477,7 +477,7 @@ The TypeConversion test exercises d2i, d2l, d2f, f2d, i2d, l2d conversions separ
 
 | Harness | Memory | App | Cycles | What it Tests |
 |---|---|---|---|---|
-| JopFpuBramSim | BRAM | JvmTests (DoAll) | 27M | 60 JVM tests with HW FPU (float ops via FloatComputeUnit) |
+| JopFpuBramSim | BRAM | JvmTests (DoAll) | 27M | 64 JVM tests with HW FPU (float ops via FloatComputeUnit) |
 
 #### Debug & Special
 
@@ -573,10 +573,11 @@ Implemented as `FloatArray.java` (faload/fastore with float arrays, 4 elements +
 
 ### JVM Test Suite
 
-- **Total test classes**: 61 (in `java/apps/JvmTests/src/jvm/`)
-- **Tests run by DoAll**: 53
+- **Total test classes**: 67 (in `java/apps/JvmTests/src/jvm/`)
+- **Tests run by DoAll**: 64
 - **Infrastructure**: 2 (TestCase base class, NullTestIface interface), 1 coordinator (DoAll)
-- **SMP**: 52/53 pass on 2-core (DeepRecursion excluded — needs stack cache)
+- **SMP**: 63/64 pass on 2-core (DeepRecursion excluded — needs stack cache)
+- **FPGA**: 64/64 pass on QMTECH DB_FPGA at 80 MHz (including BigMathTest + TextFormatTest)
 
 ### Exception Coverage
 

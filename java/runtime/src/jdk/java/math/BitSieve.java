@@ -59,7 +59,8 @@ class BitSieve {
      * A small sieve used to filter out multiples of small primes in a search
      * sieve.
      */
-    private static BitSieve smallSieve = new BitSieve();
+    // Lazy-initialized (JOP: clinit before GC)
+    private static BitSieve smallSieve;
 
     /**
      * Construct a "small sieve" with a base of 0.  This constructor is
@@ -106,6 +107,7 @@ class BitSieve {
         length = searchLen;
         int start = 0;
 
+        if (smallSieve == null) smallSieve = new BitSieve();
         int step = smallSieve.sieveSearch(smallSieve.length, start);
         int convertedStep = (step *2) + 1;
 

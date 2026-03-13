@@ -88,7 +88,7 @@ end process;
 			LPM_OUTDATA => "UNREGISTERED",
 			LPM_RDADDRESS_CONTROL => "REGISTERED",
 			LPM_WRADDRESS_CONTROL => "REGISTERED",
-			LPM_FILE => "../../asm/generated/ram.mif",
+			LPM_FILE => "../../asm/generated/serial/ram.mif",
 			LPM_HINT => "USE_EAB=ON")
 		port map (
 			rdaddress => rdaddress,

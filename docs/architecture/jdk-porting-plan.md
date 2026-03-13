@@ -313,7 +313,7 @@ bug with 8 `swap()` overloads. Tests use inline insertion sort as workaround.
   addRemove, Hashtable basic/enum, int sort, object sort, list ordering, reverse, binarySearch)
 - Both in DoAll — pass in BRAM sim (56 tests, 55 ok) and on FPGA hardware
 
-### Phase 6: Utility Classes
+### Phase 6: Utility Classes — COMPLETE
 
 **Source**: jopmin (stubs for reflection-dependent features)
 
@@ -337,11 +337,13 @@ java/lang/annotation/Target.java
 - **Random**: functional as-is but slow (~50 cycles per `long` op). Acceptable for occasional use.
 - **Enum.valueOf()**: stub with `throw new UnsupportedOperationException()` (needs reflection).
 
-### Phase 7: java.math (BigInteger / BigDecimal)
+**Status**: Complete. All files ported. UtilityTest added to JvmTests.
+
+### Phase 7: java.math (BigInteger / BigDecimal) — COMPLETE
 
 **Source**: OpenJDK 6 only (not in jopmin or jop.original)
 
-**Classes** (~7 files, ~7,000 lines):
+**Classes** (6 files):
 
 ```
 java/math/BigInteger.java          — 3,168 lines
@@ -350,7 +352,6 @@ java/math/MathContext.java
 java/math/RoundingMode.java
 java/math/BitSieve.java            — internal helper
 java/math/MutableBigInteger.java   — internal helper
-java/math/SignedMutableBigInteger.java
 ```
 
 **JOP adaptations**:
@@ -359,8 +360,13 @@ java/math/SignedMutableBigInteger.java
 - Heavy `long` arithmetic for cross-digit multiply — functional but slow
 - Skip crypto-oriented methods (modPow with large keys) or accept slow performance
 - No native `montMul` — all modular exponentiation in pure Java
+- `RoundingMode`: lazy enum constant initialization via `ensureInstances()` (JOP enum limitation)
+- `BigInteger`/`BigDecimal`/`MathContext`: lazy static constant initialization via `ensureConstants()`/`ensureBdConstants()`
 
-### Phase 8: java.text (Formatting)
+**Status**: Complete. BigMathTest added to JvmTests (4 tests). Verified on FPGA hardware — all pass.
+Also verified as standalone (`BigMathStandalone.java`) on FPGA.
+
+### Phase 8: java.text (Formatting) — COMPLETE
 
 **Source**: Simplified reimplementation (OpenJDK 6 for reference)
 
@@ -370,10 +376,26 @@ java/math/SignedMutableBigInteger.java
 java/text/Format.java
 java/text/NumberFormat.java        — simplified
 java/text/DecimalFormat.java       — simplified
+java/text/DecimalFormatSymbols.java
+java/text/DigitList.java           — internal helper
 java/text/FieldPosition.java
 java/text/ParsePosition.java
-java/text/SimpleDateFormat.java    — simplified, single locale
+java/text/ParseException.java
 ```
+
+**JOP adaptations**:
+- DecimalFormat: simplified from OpenJDK ~2000 lines to ~570 lines
+- Locale-independent: hardcoded US symbols (`.` decimal, `,` grouping, `-` minus)
+- No currency formatting, no percent/permille, no scientific notation
+- Uses StringBuffer internally — required String(StringBuffer) fix (see bugs-and-issues.md #5)
+
+**Bugs fixed during FPGA testing**:
+- Digit truncation: `digitList.set()` 3-arg version truncated to maxIntegerDigits
+- Grouping leak: `NumberFormat.groupingUsed` defaults to `true`, not reset by `applyPattern()`
+- maxIntegerDigits: set to pattern digit count instead of JDK default 309
+
+**Status**: Complete. TextFormatTest added to JvmTests (10 tests). Verified on FPGA hardware —
+64/64 DoAll tests pass. Also verified as standalone (`TextFormatStandalone.java`, 14 tests) on FPGA.
 
 ## Threading for SMP
 
@@ -486,8 +508,9 @@ independent of the JDK 8 upgrade. Both can proceed in parallel.
 For each phase:
 
 1. **Compile**: `cd java && make clean && make all` — no errors
-2. **JVM test suite**: `JopJvmTestsBramSim` — 56 tests, all pass except SwapTest T1 (pre-existing)
-3. **New tests**: phase-specific tests in `java/apps/JvmTests/`
+2. **JVM test suite**: `JopJvmTestsBramSim` — 64 tests in DoAll, all pass
+3. **FPGA**: 64/64 DoAll tests pass on QMTECH DB_FPGA at 80 MHz (including BigMathTest + TextFormatTest)
+4. **New tests**: phase-specific tests in `java/apps/JvmTests/`
    - Phase 2: **CollectionTest** (12 tests) — ArrayList add/get/remove/grow/iterator/addAll, HashMap basic/overwrite/grow/remove/iterate, HashSet, for-each loop
    - Phase 3: **WrapperTest** (11 tests) — Integer parseInt/valueOf/compare/hex, Boolean, Byte, Short, Number polymorphism, Math.pow, Float wrapper (floatToIntBits/intBitsToFloat/isNaN/isInfinite/equals/compare), Double wrapper (doubleToLongBits/longBitsToDouble/isNaN/isInfinite/equals/compare)
    - Phase 3: **MathTest** (6 tests) — abs (int/long/float/double), min/max, sqrt, sin (float/double), cos (float/double), atan
@@ -495,7 +518,10 @@ For each phase:
    - Phase 4: **IoTest** (6 tests) — ByteArrayStreams, DataStreams (int/short/byte/boolean), DataStreamsExtended (long/char/unsignedByte), DataStreamsUTF (writeUTF/readUTF), ReaderWriter (OutputStreamWriter/InputStreamReader string), WriterCharArray (char array write/read)
    - Phase 5: **ExtCollMinimal** (4 tests) — Vector, Stack, LinkedList, Hashtable basics
    - Phase 5: **ExtCollectionTest** (13 tests) — Vector basic/grow/remove, Stack basic, LinkedList basic/addRemove, Hashtable basic/enum, int/object sort (inline), list ordering, reverse, binarySearch. All pass in BRAM sim and FPGA
+   - Phase 6: **UtilityTest** — Random, Enum, Class, Runtime basics
+   - Phase 7: **BigMathTest** (4 tests) — BigInteger create/arithmetic, BigDecimal create/arithmetic. Requires `ensureInstances()`/`ensureConstants()` init calls.
+   - Phase 8: **TextFormatTest** (10 tests) — DecimalFormat integer/grouping/negative/pattern formatting, parse integer/negative/position, DecimalFormatSymbols, NumberFormat factory, FieldPosition. Requires BigMath + RoundingMode init calls.
    - **DeepRecursion** (3 tests) — excluded from DoAll, stack cache configs only (run via JopStackCacheSim)
-4. **FPGA**: run DoAll.jop on QMTECH SDRAM — verify no regressions
-5. **Heap pressure**: monitor GC round count in Small app with collections enabled
-6. **DSP multiply**: all tests verified in both standard and `useDspMul=true` BRAM sims
+5. **FPGA standalone tests**: `TextFormatStandalone.java` (14 tests: 4 BigMath + 10 TextFormat) — all pass on FPGA
+6. **Heap pressure**: monitor GC round count in Small app with collections enabled
+7. **DSP multiply**: all tests verified in both standard and `useDspMul=true` BRAM sims

@@ -73,7 +73,8 @@ class MutableBigInteger {
      * BigDecimal divideAndRound to increment the quotient. Use this constant
      * only when the method is not going to modify this object.
      */
-    static final MutableBigInteger ONE = new MutableBigInteger(1);
+    // Lazy-initialized (JOP: clinit before GC)
+    static MutableBigInteger ONE;
 
     // Constructors
 
@@ -138,7 +139,7 @@ class MutableBigInteger {
      * sure this MutableBigInteger can be fit into long.
      */
     private long toLong() {
-        assert (intLen <= 2) : "this MutableBigInteger exceeds the range of long";
+        // assert removed (JOP: ldc class constant not supported)
         if (intLen == 0)
             return 0;
         long d = value[offset] & LONG_MASK;

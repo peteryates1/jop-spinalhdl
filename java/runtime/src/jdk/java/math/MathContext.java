@@ -59,7 +59,7 @@ public final class MathContext implements Serializable {
 
     // defaults for constructors
     private static final int DEFAULT_DIGITS = 9;
-    private static final RoundingMode DEFAULT_ROUNDINGMODE = RoundingMode.HALF_UP;
+    // Note: can't use RoundingMode.HALF_UP here — it's lazy-initialized (JOP clinit before GC)
     // Smallest values for digits (Maximum is Integer.MAX_VALUE)
     private static final int MIN_DIGITS = 0;
 
@@ -75,35 +75,21 @@ public final class MathContext implements Serializable {
      *  precision=0 roundingMode=HALF_UP
      *  </code>
      */
-    public static final MathContext UNLIMITED =
-        new MathContext(0, RoundingMode.HALF_UP);
+    // Lazy-initialized constants (JOP: clinit runs before GC)
+    public static MathContext UNLIMITED;
+    public static MathContext DECIMAL32;
+    public static MathContext DECIMAL64;
+    public static MathContext DECIMAL128;
 
-    /**
-     *  A {@code MathContext} object with a precision setting
-     *  matching the IEEE 754R Decimal32 format, 7 digits, and a
-     *  rounding mode of {@link RoundingMode#HALF_EVEN HALF_EVEN}, the
-     *  IEEE 754R default.
-     */
-    public static final MathContext DECIMAL32 =
-        new MathContext(7, RoundingMode.HALF_EVEN);
-
-    /**
-     *  A {@code MathContext} object with a precision setting
-     *  matching the IEEE 754R Decimal64 format, 16 digits, and a
-     *  rounding mode of {@link RoundingMode#HALF_EVEN HALF_EVEN}, the
-     *  IEEE 754R default.
-     */
-    public static final MathContext DECIMAL64 =
-        new MathContext(16, RoundingMode.HALF_EVEN);
-
-    /**
-     *  A {@code MathContext} object with a precision setting
-     *  matching the IEEE 754R Decimal128 format, 34 digits, and a
-     *  rounding mode of {@link RoundingMode#HALF_EVEN HALF_EVEN}, the
-     *  IEEE 754R default.
-     */
-    public static final MathContext DECIMAL128 =
-        new MathContext(34, RoundingMode.HALF_EVEN);
+    public static void ensureConstants() {
+        if (UNLIMITED == null) {
+            RoundingMode.ensureInstances();
+            UNLIMITED = new MathContext(0, RoundingMode.HALF_UP);
+            DECIMAL32 = new MathContext(7, RoundingMode.HALF_EVEN);
+            DECIMAL64 = new MathContext(16, RoundingMode.HALF_EVEN);
+            DECIMAL128 = new MathContext(34, RoundingMode.HALF_EVEN);
+        }
+    }
 
     /* ----- Shared Properties ----- */
     /**
@@ -138,8 +124,11 @@ public final class MathContext implements Serializable {
      *         than zero.
      */
     public MathContext(int setPrecision) {
-        this(setPrecision, DEFAULT_ROUNDINGMODE);
-        return;
+        RoundingMode.ensureInstances();
+        if (setPrecision < MIN_DIGITS)
+            throw new IllegalArgumentException("Digits < 0");
+        precision = setPrecision;
+        roundingMode = RoundingMode.HALF_UP;
     }
 
     /**

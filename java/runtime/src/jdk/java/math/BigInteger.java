@@ -315,7 +315,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
             cursor++;
         if (cursor == len) {
             signum = 0;
-            mag = ZERO.mag;
+            mag = new int[0];  // avoid ZERO ref before lazy init
             return;
         }
 
@@ -370,7 +370,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
             cursor++;
         if (cursor == len) {
             signum = 0;
-            mag = ZERO.mag;
+            mag = new int[0];  // avoid ZERO ref before lazy init
             return;
         }
 
@@ -421,11 +421,8 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
 
     // bitsPerDigit in the given radix times 1024
     // Rounded up to avoid underallocation.
-    private static long bitsPerDigit[] = { 0, 0,
-        1024, 1624, 2048, 2378, 2648, 2875, 3072, 3247, 3402, 3543, 3672,
-        3790, 3899, 4001, 4096, 4186, 4271, 4350, 4426, 4498, 4567, 4633,
-        4696, 4756, 4814, 4870, 4923, 4975, 5025, 5074, 5120, 5166, 5210,
-                                           5253, 5295};
+    // Lazy-initialized (JOP: clinit before GC — arrays are objects)
+    private static long bitsPerDigit[];
 
     // Multiply x array times word y in place, and add word z
     private static void destructiveMulAdd(int[] x, int y, int z) {
@@ -588,7 +585,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
 
             // Do cheap "pre-test" if applicable
             if (bitLength > 6) {
-                long r = p.remainder(SMALL_PRIME_PRODUCT).longValue();
+                long r = p.remainder(getSmallPrimeProduct()).longValue();
                 if ((r%3==0)  || (r%5==0)  || (r%7==0)  || (r%11==0) ||
                     (r%13==0) || (r%17==0) || (r%19==0) || (r%23==0) ||
                     (r%29==0) || (r%31==0) || (r%37==0) || (r%41==0))
@@ -605,8 +602,12 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
         }
     }
 
-    private static final BigInteger SMALL_PRIME_PRODUCT
-                       = valueOf(3L*5*7*11*13*17*19*23*29*31*37*41);
+    private static BigInteger SMALL_PRIME_PRODUCT;
+    private static BigInteger getSmallPrimeProduct() {
+        if (SMALL_PRIME_PRODUCT == null)
+            SMALL_PRIME_PRODUCT = valueOf(3L*5*7*11*13*17*19*23*29*31*37*41);
+        return SMALL_PRIME_PRODUCT;
+    }
 
     /**
      * Find a random number of the specified bitLength that is probably prime.
@@ -667,7 +668,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
             while(true) {
                 // Do cheap "pre-test" if applicable
                 if (result.bitLength() > 6) {
-                    long r = result.remainder(SMALL_PRIME_PRODUCT).longValue();
+                    long r = result.remainder(getSmallPrimeProduct()).longValue();
                     if ((r%3==0)  || (r%5==0)  || (r%7==0)  || (r%11==0) ||
                         (r%13==0) || (r%17==0) || (r%19==0) || (r%23==0) ||
                         (r%29==0) || (r%31==0) || (r%37==0) || (r%41==0)) {
@@ -820,7 +821,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
             if (u == 1)
                 return j;
             // Now both u and p are odd, so use quadratic reciprocity
-            assert (u < p);
+            // assert removed (JOP: ldc class constant not supported)
             int t = u; u = p; p = t;
             if ((u & p & 2) != 0) // u = p = 3 (mod 4)?
                 j = -j;
@@ -940,6 +941,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
      * @return a BigInteger with the specified value.
      */
     public static BigInteger valueOf(long val) {
+        ensureConstants();
         // If -MAX_CONSTANT < val < MAX_CONSTANT, return stashed constant
         if (val == 0)
             return ZERO;
@@ -985,45 +987,81 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
     // Constants
 
     /**
-     * Initialize static constant array when class is loaded.
+     * Lazy-initialized constant arrays (JOP: clinit runs before GC).
      */
     private final static int MAX_CONSTANT = 16;
-    private static BigInteger posConst[] = new BigInteger[MAX_CONSTANT+1];
-    private static BigInteger negConst[] = new BigInteger[MAX_CONSTANT+1];
-    static {
-        for (int i = 1; i <= MAX_CONSTANT; i++) {
-            int[] magnitude = new int[1];
-            magnitude[0] = i;
-            posConst[i] = new BigInteger(magnitude,  1);
-            negConst[i] = new BigInteger(magnitude, -1);
+    private static BigInteger posConst[];
+    private static BigInteger negConst[];
+
+    /** The BigInteger constant zero. @since 1.2 */
+    public static BigInteger ZERO;
+    /** The BigInteger constant one. @since 1.2 */
+    public static BigInteger ONE;
+    /** The BigInteger constant two. (Not exported.) */
+    static BigInteger TWO;
+    /** The BigInteger constant ten. @since 1.5 */
+    public static BigInteger TEN;
+
+    /** Lazy init of all BigInteger constants (JOP: clinit before GC). */
+    public static void ensureConstants() {
+        if (ZERO == null) {
+            // Primitive lookup tables (arrays are objects, need GC)
+            bitsPerDigit = new long[] { 0, 0,
+                1024, 1624, 2048, 2378, 2648, 2875, 3072, 3247, 3402, 3543, 3672,
+                3790, 3899, 4001, 4096, 4186, 4271, 4350, 4426, 4498, 4567, 4633,
+                4696, 4756, 4814, 4870, 4923, 4975, 5025, 5074, 5120, 5166, 5210,
+                                                   5253, 5295};
+            bnExpModThreshTable = new int[] {7, 25, 81, 241, 673, 1793,
+                                                    Integer.MAX_VALUE};
+            digitsPerLong = new int[] {0, 0,
+                62, 39, 31, 27, 24, 22, 20, 19, 18, 18, 17, 17, 16, 16, 15, 15, 15, 14,
+                14, 14, 14, 13, 13, 13, 13, 13, 13, 12, 12, 12, 12, 12, 12, 12, 12};
+            longRadixValues = new long[] {0, 0,
+                0x4000000000000000L, 0x383d9170b85ff80bL,
+                0x4000000000000000L, 0x6765c793fa10079dL,
+                0x41c21cb8e1000000L, 0x3642798750226111L,
+                0x1000000000000000L, 0x12bf307ae81ffd59L,
+                 0xde0b6b3a7640000L, 0x4d28cb56c33fa539L,
+                0x1eca170c00000000L, 0x780c7372621bd74dL,
+                0x1e39a5057d810000L, 0x5b27ac993df97701L,
+                0x1000000000000000L, 0x27b95e997e21d9f1L,
+                0x5da0e1e53c5c8000L,  0xb16a458ef403f19L,
+                0x16bcc41e90000000L, 0x2d04b7fdd9c0ef49L,
+                0x5658597bcaa24000L,  0x6feb266931a75b7L,
+                 0xc29e98000000000L, 0x14adf4b7320334b9L,
+                0x226ed36478bfa000L, 0x383d9170b85ff80bL,
+                0x5a3c23e39c000000L,  0x4e900abb53e6b71L,
+                 0x7600ec618141000L,  0xaee5720ee830681L,
+                0x1000000000000000L, 0x172588ad4f5f0981L,
+                0x211e44f7d02c1000L, 0x2ee56725f06e5c71L,
+                0x41c21cb8e1000000L};
+            digitsPerInt = new int[] {0, 0, 30, 19, 15, 13, 11,
+                11, 10, 9, 9, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 6, 6, 6, 6,
+                6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5};
+            intRadix = new int[] {0, 0,
+                0x40000000, 0x4546b3db, 0x40000000, 0x48c27395, 0x159fd800,
+                0x75db9c97, 0x40000000, 0x17179149, 0x3b9aca00, 0xcc6db61,
+                0x19a10000, 0x309f1021, 0x57f6c100, 0xa2f1b6f,  0x10000000,
+                0x18754571, 0x247dbc80, 0x3547667b, 0x4c4b4000, 0x6b5a6e1d,
+                0x6c20a40,  0x8d2d931,  0xb640000,  0xe8d4a51,  0x1269ae40,
+                0x17179149, 0x1cb91000, 0x23744899, 0x2b73a840, 0x34e63b41,
+                0x40000000, 0x4cfa3cc1, 0x5c13d840, 0x6d91b519, 0x39aa400};
+
+            // BigInteger constant objects
+            ZERO = new BigInteger(new int[0], 0);
+            posConst = new BigInteger[MAX_CONSTANT+1];
+            negConst = new BigInteger[MAX_CONSTANT+1];
+            for (int i = 1; i <= MAX_CONSTANT; i++) {
+                int[] magnitude = new int[1];
+                magnitude[0] = i;
+                posConst[i] = new BigInteger(magnitude,  1);
+                negConst[i] = new BigInteger(magnitude, -1);
+            }
+            ONE = posConst[1];
+            TWO = posConst[2];
+            TEN = posConst[10];
         }
     }
-
-    /**
-     * The BigInteger constant zero.
-     *
-     * @since   1.2
-     */
-    public static final BigInteger ZERO = new BigInteger(new int[0], 0);
-
-    /**
-     * The BigInteger constant one.
-     *
-     * @since   1.2
-     */
-    public static final BigInteger ONE = valueOf(1);
-
-    /**
-     * The BigInteger constant two.  (Not exported.)
-     */
-    private static final BigInteger TWO = valueOf(2);
-
-    /**
-     * The BigInteger constant ten.
-     *
-     * @since   1.5
-     */
-    public static final BigInteger TEN = valueOf(10);
 
     // Arithmetic Operations
 
@@ -1625,8 +1663,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
         return (invertResult ? result.modInverse(m) : result);
     }
 
-    static int[] bnExpModThreshTable = {7, 25, 81, 241, 673, 1793,
-                                                Integer.MAX_VALUE}; // Sentinel
+    static int[] bnExpModThreshTable;
 
     /**
      * Returns a BigInteger whose value is x to the power of y mod z.
@@ -2610,6 +2647,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
         BigInteger tmp = this.abs();
         int numGroups = 0;
         while (tmp.signum != 0) {
+            ensureLongRadix();
             BigInteger d = longRadix[radix];
 
             MutableBigInteger q = new MutableBigInteger(),
@@ -2634,6 +2672,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
             // Prepend (any) leading zeros for this digit group
             int numLeadingZeros = digitsPerLong[radix]-digitGroup[i].length();
             if (numLeadingZeros != 0)
+                ensureZeros();
                 buf.append(zeros[numLeadingZeros]);
             buf.append(digitGroup[i]);
         }
@@ -2641,12 +2680,15 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
     }
 
     /* zero[i] is a string of i consecutive zeros. */
-    private static String zeros[] = new String[64];
-    static {
-        zeros[63] =
-            "000000000000000000000000000000000000000000000000000000000000000";
-        for (int i=0; i<63; i++)
-            zeros[i] = zeros[63].substring(0, i);
+    private static String zeros[];
+    private static void ensureZeros() {
+        if (zeros == null) {
+            zeros = new String[64];
+            zeros[63] =
+                "000000000000000000000000000000000000000000000000000000000000000";
+            for (int i=0; i<63; i++)
+                zeros[i] = zeros[63].substring(0, i);
+        }
     }
 
     /**
@@ -2923,46 +2965,24 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
      * nonsense values in their 0 and 1 elements, as radixes 0 and 1 are not
      * used.
      */
-    private static int digitsPerLong[] = {0, 0,
-        62, 39, 31, 27, 24, 22, 20, 19, 18, 18, 17, 17, 16, 16, 15, 15, 15, 14,
-        14, 14, 14, 13, 13, 13, 13, 13, 13, 12, 12, 12, 12, 12, 12, 12, 12};
+    private static int digitsPerLong[];
 
-    private static BigInteger longRadix[] = {null, null,
-        valueOf(0x4000000000000000L), valueOf(0x383d9170b85ff80bL),
-        valueOf(0x4000000000000000L), valueOf(0x6765c793fa10079dL),
-        valueOf(0x41c21cb8e1000000L), valueOf(0x3642798750226111L),
-        valueOf(0x1000000000000000L), valueOf(0x12bf307ae81ffd59L),
-        valueOf( 0xde0b6b3a7640000L), valueOf(0x4d28cb56c33fa539L),
-        valueOf(0x1eca170c00000000L), valueOf(0x780c7372621bd74dL),
-        valueOf(0x1e39a5057d810000L), valueOf(0x5b27ac993df97701L),
-        valueOf(0x1000000000000000L), valueOf(0x27b95e997e21d9f1L),
-        valueOf(0x5da0e1e53c5c8000L), valueOf( 0xb16a458ef403f19L),
-        valueOf(0x16bcc41e90000000L), valueOf(0x2d04b7fdd9c0ef49L),
-        valueOf(0x5658597bcaa24000L), valueOf( 0x6feb266931a75b7L),
-        valueOf( 0xc29e98000000000L), valueOf(0x14adf4b7320334b9L),
-        valueOf(0x226ed36478bfa000L), valueOf(0x383d9170b85ff80bL),
-        valueOf(0x5a3c23e39c000000L), valueOf( 0x4e900abb53e6b71L),
-        valueOf( 0x7600ec618141000L), valueOf( 0xaee5720ee830681L),
-        valueOf(0x1000000000000000L), valueOf(0x172588ad4f5f0981L),
-        valueOf(0x211e44f7d02c1000L), valueOf(0x2ee56725f06e5c71L),
-        valueOf(0x41c21cb8e1000000L)};
+    private static BigInteger longRadix[];
+    private static long[] longRadixValues;
+    private static void ensureLongRadix() {
+        if (longRadix == null) {
+            longRadix = new BigInteger[longRadixValues.length];
+            for (int i = 2; i < longRadixValues.length; i++)
+                longRadix[i] = valueOf(longRadixValues[i]);
+        }
+    }
 
     /*
      * These two arrays are the integer analogue of above.
      */
-    private static int digitsPerInt[] = {0, 0, 30, 19, 15, 13, 11,
-        11, 10, 9, 9, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 7, 6, 6, 6, 6,
-        6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5};
+    private static int digitsPerInt[];
 
-    private static int intRadix[] = {0, 0,
-        0x40000000, 0x4546b3db, 0x40000000, 0x48c27395, 0x159fd800,
-        0x75db9c97, 0x40000000, 0x17179149, 0x3b9aca00, 0xcc6db61,
-        0x19a10000, 0x309f1021, 0x57f6c100, 0xa2f1b6f,  0x10000000,
-        0x18754571, 0x247dbc80, 0x3547667b, 0x4c4b4000, 0x6b5a6e1d,
-        0x6c20a40,  0x8d2d931,  0xb640000,  0xe8d4a51,  0x1269ae40,
-        0x17179149, 0x1cb91000, 0x23744899, 0x2b73a840, 0x34e63b41,
-        0x40000000, 0x4cfa3cc1, 0x5c13d840, 0x6d91b519, 0x39aa400
-    };
+    private static int intRadix[];
 
     /**
      * These routines provide access to the two's complement representation

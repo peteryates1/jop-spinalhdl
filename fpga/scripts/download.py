@@ -296,7 +296,7 @@ def main():
         sys.exit(1)
 
     if echo_mode:
-        ser.timeout = None  # blocking reads for UART monitoring
+        ser.timeout = 0.1  # short timeout so partial reads return promptly
         print("Monitoring UART output (Ctrl+C to exit)...")
         try:
             while True:

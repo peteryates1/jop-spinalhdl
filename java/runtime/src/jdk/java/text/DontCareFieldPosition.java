@@ -6,7 +6,13 @@
 package java.text;
 
 class DontCareFieldPosition extends FieldPosition {
-    static final FieldPosition INSTANCE = new DontCareFieldPosition();
+    // Lazy-initialized (JOP: clinit before GC)
+    static FieldPosition INSTANCE;
+
+    static FieldPosition getInstance() {
+        if (INSTANCE == null) INSTANCE = new DontCareFieldPosition();
+        return INSTANCE;
+    }
 
     private final Format.FieldDelegate noDelegate = new Format.FieldDelegate() {
         public void formatted(Format.Field attr, Object value, int start,

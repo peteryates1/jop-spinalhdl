@@ -272,77 +272,54 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
     /* Appease the serialization gods */
     private static final long serialVersionUID = 6108874887143696463L;
 
-    private static final ThreadLocal<StringBuilderHelper>
-        threadLocalStringBuilderHelper = new ThreadLocal<StringBuilderHelper>() {
-        @Override
-        protected StringBuilderHelper initialValue() {
-            return new StringBuilderHelper();
-        }
-    };
+    // JOP: no ThreadLocal (clinit before GC), use simple lazy field
+    private static StringBuilderHelper sbHelperInstance;
 
-    // Cache of common small BigDecimal values.
-    private static final BigDecimal zeroThroughTen[] = {
-        new BigDecimal(BigInteger.ZERO,         0,  0, 1),
-        new BigDecimal(BigInteger.ONE,          1,  0, 1),
-        new BigDecimal(BigInteger.valueOf(2),   2,  0, 1),
-        new BigDecimal(BigInteger.valueOf(3),   3,  0, 1),
-        new BigDecimal(BigInteger.valueOf(4),   4,  0, 1),
-        new BigDecimal(BigInteger.valueOf(5),   5,  0, 1),
-        new BigDecimal(BigInteger.valueOf(6),   6,  0, 1),
-        new BigDecimal(BigInteger.valueOf(7),   7,  0, 1),
-        new BigDecimal(BigInteger.valueOf(8),   8,  0, 1),
-        new BigDecimal(BigInteger.valueOf(9),   9,  0, 1),
-        new BigDecimal(BigInteger.TEN,          10, 0, 2),
-    };
-
-    // Cache of zero scaled by 0 - 15
-    private static final BigDecimal[] ZERO_SCALED_BY = {
-        zeroThroughTen[0],
-        new BigDecimal(BigInteger.ZERO, 0, 1, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 2, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 3, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 4, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 5, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 6, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 7, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 8, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 9, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 10, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 11, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 12, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 13, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 14, 1),
-        new BigDecimal(BigInteger.ZERO, 0, 15, 1),
-    };
+    // No cached arrays — JOP clinit runs before GC, can't allocate.
+    // valueOf() creates values on-the-fly instead.
 
     // Half of Long.MIN_VALUE & Long.MAX_VALUE.
     private static final long HALF_LONG_MAX_VALUE = Long.MAX_VALUE / 2;
     private static final long HALF_LONG_MIN_VALUE = Long.MIN_VALUE / 2;
 
-    // Constants
-    /**
-     * The value 0, with a scale of 0.
-     *
-     * @since  1.5
-     */
-    public static final BigDecimal ZERO =
-        zeroThroughTen[0];
+    // Constants — created on first access via static method
+    /** The value 0, with a scale of 0. @since 1.5 */
+    public static BigDecimal ZERO;
+    /** The value 1, with a scale of 0. @since 1.5 */
+    public static BigDecimal ONE;
+    /** The value 10, with a scale of 0. @since 1.5 */
+    public static BigDecimal TEN;
 
-    /**
-     * The value 1, with a scale of 0.
-     *
-     * @since  1.5
-     */
-    public static final BigDecimal ONE =
-        zeroThroughTen[1];
+    /** Lazy init of ZERO/ONE/TEN constants (JOP: clinit before GC). */
+    public static void ensureBdConstants() {
+        if (ZERO == null) {
+            RoundingMode.ensureInstances();
+            BigInteger.ensureConstants();
+            MathContext.ensureConstants();
 
-    /**
-     * The value 10, with a scale of 0.
-     *
-     * @since  1.5
-     */
-    public static final BigDecimal TEN =
-        zeroThroughTen[10];
+            // Primitive lookup tables (arrays are objects, need GC)
+            LONG_TEN_POWERS_TABLE = new long[] {
+                1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000,
+                1000000000, 10000000000L, 100000000000L, 1000000000000L,
+                10000000000000L, 100000000000000L, 1000000000000000L,
+                10000000000000000L, 100000000000000000L, 1000000000000000000L
+            };
+            THRESHOLDS_TABLE = new long[] {
+                Long.MAX_VALUE, Long.MAX_VALUE/10L, Long.MAX_VALUE/100L,
+                Long.MAX_VALUE/1000L, Long.MAX_VALUE/10000L, Long.MAX_VALUE/100000L,
+                Long.MAX_VALUE/1000000L, Long.MAX_VALUE/10000000L, Long.MAX_VALUE/100000000L,
+                Long.MAX_VALUE/1000000000L, Long.MAX_VALUE/10000000000L,
+                Long.MAX_VALUE/100000000000L, Long.MAX_VALUE/1000000000000L,
+                Long.MAX_VALUE/10000000000000L, Long.MAX_VALUE/100000000000000L,
+                Long.MAX_VALUE/1000000000000000L, Long.MAX_VALUE/10000000000000000L,
+                Long.MAX_VALUE/100000000000000000L, Long.MAX_VALUE/1000000000000000000L
+            };
+
+            ZERO = new BigDecimal(0);
+            ONE = new BigDecimal(1);
+            TEN = new BigDecimal(10);
+        }
+    }
 
     // Constructors
 
@@ -1014,13 +991,11 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
      *         <tt>(unscaledVal &times; 10<sup>-scale</sup>)</tt>.
      */
     public static BigDecimal valueOf(long unscaledVal, int scale) {
+        ensureBdConstants();
         if (scale == 0)
             return valueOf(unscaledVal);
         else if (unscaledVal == 0) {
-            if (scale > 0 && scale < ZERO_SCALED_BY.length)
-                return ZERO_SCALED_BY[scale];
-            else
-                return new BigDecimal(BigInteger.ZERO, 0, scale, 1);
+            return new BigDecimal(null, 0, scale, 1);
         }
         return new BigDecimal(unscaledVal == INFLATED ?
                               BigInteger.valueOf(unscaledVal) : null,
@@ -1038,9 +1013,8 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
      * @return a {@code BigDecimal} whose value is {@code val}.
      */
     public static BigDecimal valueOf(long val) {
-        if (val >= 0 && val < zeroThroughTen.length)
-            return zeroThroughTen[(int)val];
-        else if (val != INFLATED)
+        ensureBdConstants();
+        if (val != INFLATED)
             return new BigDecimal(null, val, 0, 0);
         return new BigDecimal(BigInteger.valueOf(val), val, 0, 0);
     }
@@ -1214,7 +1188,7 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
      */
     private BigDecimal[] preAlign(BigDecimal lhs, BigDecimal augend,
                                   long padding, MathContext mc) {
-        assert padding != 0;
+        // assert removed (JOP: ldc class constant not supported)
         BigDecimal big;
         BigDecimal small;
 
@@ -1486,6 +1460,7 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
             res = new BigDecimal(null, (increment ? q + qsign : q), scale, 0);
         else {
             if (increment)
+                if (MutableBigInteger.ONE == null) MutableBigInteger.ONE = new MutableBigInteger(1);
                 mq.add(MutableBigInteger.ONE);
             res = mq.toBigDecimal(qsign, scale);
         }
@@ -1591,10 +1566,7 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
         // Calculate preferred scale
         int preferredScale = saturateLong((long)this.scale - divisor.scale);
         if (this.signum() == 0)        // 0/y
-            return (preferredScale >= 0 &&
-                    preferredScale < ZERO_SCALED_BY.length) ?
-                ZERO_SCALED_BY[preferredScale] :
-                BigDecimal.valueOf(0, preferredScale);
+            return BigDecimal.valueOf(0, preferredScale);
         else {
             this.inflate();
             divisor.inflate();
@@ -2997,13 +2969,20 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
     }
 
     private static class LongOverflow {
-        /** BigInteger equal to Long.MIN_VALUE. */
-        private static final BigInteger LONGMIN = BigInteger.valueOf(Long.MIN_VALUE);
+        // Lazy-initialized (JOP: clinit before GC)
+        private static BigInteger LONGMIN;
+        private static BigInteger LONGMAX;
 
-        /** BigInteger equal to Long.MAX_VALUE. */
-        private static final BigInteger LONGMAX = BigInteger.valueOf(Long.MAX_VALUE);
+        private static void ensure() {
+            if (LONGMIN == null) {
+                BigInteger.ensureConstants();
+                LONGMIN = BigInteger.valueOf(Long.MIN_VALUE);
+                LONGMAX = BigInteger.valueOf(Long.MAX_VALUE);
+            }
+        }
 
         public static void check(BigDecimal num) {
+            ensure();
             num.inflate();
             if ((num.intVal.compareTo(LONGMIN) < 0) ||
                 (num.intVal.compareTo(LONGMAX) > 0))
@@ -3198,7 +3177,8 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
          * Note: intCompact must be greater or equal to zero.
          */
         int putIntCompact(long intCompact) {
-            assert intCompact >= 0;
+            ensureDigitArrays();
+            // assert removed (JOP: ldc class constant not supported)
 
             long q;
             int r;
@@ -3233,31 +3213,38 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
             return charPos;
         }
 
-        final static char[] DIGIT_TENS = {
-            '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',
-            '1', '1', '1', '1', '1', '1', '1', '1', '1', '1',
-            '2', '2', '2', '2', '2', '2', '2', '2', '2', '2',
-            '3', '3', '3', '3', '3', '3', '3', '3', '3', '3',
-            '4', '4', '4', '4', '4', '4', '4', '4', '4', '4',
-            '5', '5', '5', '5', '5', '5', '5', '5', '5', '5',
-            '6', '6', '6', '6', '6', '6', '6', '6', '6', '6',
-            '7', '7', '7', '7', '7', '7', '7', '7', '7', '7',
-            '8', '8', '8', '8', '8', '8', '8', '8', '8', '8',
-            '9', '9', '9', '9', '9', '9', '9', '9', '9', '9',
-        };
+        // Lazy-initialized (JOP: clinit before GC)
+        static char[] DIGIT_TENS;
+        static char[] DIGIT_ONES;
 
-        final static char[] DIGIT_ONES = {
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-        };
+        static void ensureDigitArrays() {
+            if (DIGIT_TENS == null) {
+                DIGIT_TENS = new char[] {
+                    '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',
+                    '1', '1', '1', '1', '1', '1', '1', '1', '1', '1',
+                    '2', '2', '2', '2', '2', '2', '2', '2', '2', '2',
+                    '3', '3', '3', '3', '3', '3', '3', '3', '3', '3',
+                    '4', '4', '4', '4', '4', '4', '4', '4', '4', '4',
+                    '5', '5', '5', '5', '5', '5', '5', '5', '5', '5',
+                    '6', '6', '6', '6', '6', '6', '6', '6', '6', '6',
+                    '7', '7', '7', '7', '7', '7', '7', '7', '7', '7',
+                    '8', '8', '8', '8', '8', '8', '8', '8', '8', '8',
+                    '9', '9', '9', '9', '9', '9', '9', '9', '9', '9',
+                };
+                DIGIT_ONES = new char[] {
+                    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                };
+            }
+        }
     }
 
     /**
@@ -3275,7 +3262,9 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
                 Long.toString(intCompact):
                 intVal.toString();
 
-        StringBuilderHelper sbHelper = threadLocalStringBuilderHelper.get();
+        if (sbHelperInstance == null)
+            sbHelperInstance = new StringBuilderHelper();
+        StringBuilderHelper sbHelper = sbHelperInstance;
         char[] coeff;
         int offset;  // offset is the starting index for coeff array
         // Get the significand as an absolute value
@@ -3370,6 +3359,7 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
         if (n < 0)
             return BigInteger.ZERO;
 
+        ensureBigTenPowersTable();
         if (n < BIG_TEN_POWERS_TABLE_MAX) {
             BigInteger[] pows = BIG_TEN_POWERS_TABLE;
             if (n < pows.length)
@@ -3417,71 +3407,39 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
         }
     }
 
-    private static final long[] LONG_TEN_POWERS_TABLE = {
-        1,                     // 0 / 10^0
-        10,                    // 1 / 10^1
-        100,                   // 2 / 10^2
-        1000,                  // 3 / 10^3
-        10000,                 // 4 / 10^4
-        100000,                // 5 / 10^5
-        1000000,               // 6 / 10^6
-        10000000,              // 7 / 10^7
-        100000000,             // 8 / 10^8
-        1000000000,            // 9 / 10^9
-        10000000000L,          // 10 / 10^10
-        100000000000L,         // 11 / 10^11
-        1000000000000L,        // 12 / 10^12
-        10000000000000L,       // 13 / 10^13
-        100000000000000L,      // 14 / 10^14
-        1000000000000000L,     // 15 / 10^15
-        10000000000000000L,    // 16 / 10^16
-        100000000000000000L,   // 17 / 10^17
-        1000000000000000000L   // 18 / 10^18
-    };
+    // Lazy-initialized (JOP: clinit before GC — arrays are objects)
+    private static long[] LONG_TEN_POWERS_TABLE;
 
-    private static volatile BigInteger BIG_TEN_POWERS_TABLE[] = {BigInteger.ONE,
-        BigInteger.valueOf(10),       BigInteger.valueOf(100),
-        BigInteger.valueOf(1000),     BigInteger.valueOf(10000),
-        BigInteger.valueOf(100000),   BigInteger.valueOf(1000000),
-        BigInteger.valueOf(10000000), BigInteger.valueOf(100000000),
-        BigInteger.valueOf(1000000000),
-        BigInteger.valueOf(10000000000L),
-        BigInteger.valueOf(100000000000L),
-        BigInteger.valueOf(1000000000000L),
-        BigInteger.valueOf(10000000000000L),
-        BigInteger.valueOf(100000000000000L),
-        BigInteger.valueOf(1000000000000000L),
-        BigInteger.valueOf(10000000000000000L),
-        BigInteger.valueOf(100000000000000000L),
-        BigInteger.valueOf(1000000000000000000L)
-    };
+    // Lazy-initialized (JOP: clinit before GC)
+    private static volatile BigInteger BIG_TEN_POWERS_TABLE[];
+    private static int BIG_TEN_POWERS_TABLE_INITLEN;
+    private static int BIG_TEN_POWERS_TABLE_MAX;
 
-    private static final int BIG_TEN_POWERS_TABLE_INITLEN =
-        BIG_TEN_POWERS_TABLE.length;
-    private static final int BIG_TEN_POWERS_TABLE_MAX =
-        16 * BIG_TEN_POWERS_TABLE_INITLEN;
+    private static void ensureBigTenPowersTable() {
+        if (BIG_TEN_POWERS_TABLE == null) {
+            BigInteger.ensureConstants();
+            BIG_TEN_POWERS_TABLE = new BigInteger[] {BigInteger.ONE,
+                BigInteger.valueOf(10),       BigInteger.valueOf(100),
+                BigInteger.valueOf(1000),     BigInteger.valueOf(10000),
+                BigInteger.valueOf(100000),   BigInteger.valueOf(1000000),
+                BigInteger.valueOf(10000000), BigInteger.valueOf(100000000),
+                BigInteger.valueOf(1000000000),
+                BigInteger.valueOf(10000000000L),
+                BigInteger.valueOf(100000000000L),
+                BigInteger.valueOf(1000000000000L),
+                BigInteger.valueOf(10000000000000L),
+                BigInteger.valueOf(100000000000000L),
+                BigInteger.valueOf(1000000000000000L),
+                BigInteger.valueOf(10000000000000000L),
+                BigInteger.valueOf(100000000000000000L),
+                BigInteger.valueOf(1000000000000000000L)
+            };
+            BIG_TEN_POWERS_TABLE_INITLEN = BIG_TEN_POWERS_TABLE.length;
+            BIG_TEN_POWERS_TABLE_MAX = 16 * BIG_TEN_POWERS_TABLE_INITLEN;
+        }
+    }
 
-    private static final long THRESHOLDS_TABLE[] = {
-        Long.MAX_VALUE,                     // 0
-        Long.MAX_VALUE/10L,                 // 1
-        Long.MAX_VALUE/100L,                // 2
-        Long.MAX_VALUE/1000L,               // 3
-        Long.MAX_VALUE/10000L,              // 4
-        Long.MAX_VALUE/100000L,             // 5
-        Long.MAX_VALUE/1000000L,            // 6
-        Long.MAX_VALUE/10000000L,           // 7
-        Long.MAX_VALUE/100000000L,          // 8
-        Long.MAX_VALUE/1000000000L,         // 9
-        Long.MAX_VALUE/10000000000L,        // 10
-        Long.MAX_VALUE/100000000000L,       // 11
-        Long.MAX_VALUE/1000000000000L,      // 12
-        Long.MAX_VALUE/10000000000000L,     // 13
-        Long.MAX_VALUE/100000000000000L,    // 14
-        Long.MAX_VALUE/1000000000000000L,   // 15
-        Long.MAX_VALUE/10000000000000000L,  // 16
-        Long.MAX_VALUE/100000000000000000L, // 17
-        Long.MAX_VALUE/1000000000000000000L // 18
-    };
+    private static long THRESHOLDS_TABLE[];
 
     /**
      * Compute val * 10 ^ n; return this product if it is
@@ -3573,7 +3531,7 @@ public class BigDecimal extends Number implements Comparable<BigDecimal> {
          * 11-4.  Adding one to bit length allows comparing downward
          * from the LONG_TEN_POWERS_TABLE that we need anyway.
          */
-        assert x != INFLATED;
+        // assert removed (JOP: ldc class constant not supported)
         if (x < 0)
             x = -x;
         if (x < 10) // must screen for 0, might as well 10

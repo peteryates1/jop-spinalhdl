@@ -38,12 +38,12 @@ public abstract class NumberFormat extends Format {
 
     public final String format(double number) {
         return format(number, new StringBuffer(),
-                      DontCareFieldPosition.INSTANCE).toString();
+                      DontCareFieldPosition.getInstance()).toString();
     }
 
     public final String format(long number) {
         return format(number, new StringBuffer(),
-                      DontCareFieldPosition.INSTANCE).toString();
+                      DontCareFieldPosition.getInstance()).toString();
     }
 
     public abstract StringBuffer format(double number,
@@ -187,17 +187,34 @@ public abstract class NumberFormat extends Format {
      * Field constants for FieldPosition.
      */
     public static class Field extends Format.Field {
-        public static final Field INTEGER = new Field("integer");
-        public static final Field FRACTION = new Field("fraction");
-        public static final Field EXPONENT = new Field("exponent");
-        public static final Field EXPONENT_SIGN = new Field("exponent sign");
-        public static final Field EXPONENT_SYMBOL = new Field("exponent symbol");
-        public static final Field DECIMAL_SEPARATOR = new Field("decimal separator");
-        public static final Field SIGN = new Field("sign");
-        public static final Field GROUPING_SEPARATOR = new Field("grouping separator");
-        public static final Field PERCENT = new Field("percent");
-        public static final Field PERMILLE = new Field("per mille");
-        public static final Field CURRENCY = new Field("currency");
+        // Lazy-initialized (JOP: clinit before GC)
+        public static Field INTEGER;
+        public static Field FRACTION;
+        public static Field EXPONENT;
+        public static Field EXPONENT_SIGN;
+        public static Field EXPONENT_SYMBOL;
+        public static Field DECIMAL_SEPARATOR;
+        public static Field SIGN;
+        public static Field GROUPING_SEPARATOR;
+        public static Field PERCENT;
+        public static Field PERMILLE;
+        public static Field CURRENCY;
+
+        public static void ensureFields() {
+            if (INTEGER == null) {
+                INTEGER = new Field("integer");
+                FRACTION = new Field("fraction");
+                EXPONENT = new Field("exponent");
+                EXPONENT_SIGN = new Field("exponent sign");
+                EXPONENT_SYMBOL = new Field("exponent symbol");
+                DECIMAL_SEPARATOR = new Field("decimal separator");
+                SIGN = new Field("sign");
+                GROUPING_SEPARATOR = new Field("grouping separator");
+                PERCENT = new Field("percent");
+                PERMILLE = new Field("per mille");
+                CURRENCY = new Field("currency");
+            }
+        }
 
         protected Field(String name) {
             super(name);

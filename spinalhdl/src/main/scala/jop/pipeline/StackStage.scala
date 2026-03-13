@@ -375,7 +375,7 @@ case class StackStage(
         val lpmWrAddr = Mux(io.debugRamWrEn, io.debugRamWrAddr.resize(spWidth), wraddr)
         val lpmWrEn   = io.debugRamWrEn | io.wrEna
         val lpmWrData = Mux(io.debugRamWrEn, io.debugRamWrData, mmux)
-        val lpmRam = AlteraLpmRam(config.width, config.ramWidth, "../../asm/generated/ram.mif")
+        val lpmRam = AlteraLpmRam(config.width, config.ramWidth, "../../asm/generated/serial/ram.mif")
         lpmRam.io.data      := lpmWrData
         lpmRam.io.wraddress := lpmWrAddr.resize(config.ramWidth)
         lpmRam.io.wren      := lpmWrEn

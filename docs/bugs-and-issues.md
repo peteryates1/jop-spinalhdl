@@ -62,6 +62,32 @@ cost is proportional to object size, bounded and predictable for real-time.
 Explicit constructors in existing code (FAT32 classes, etc.) are now
 redundant but harmless — they serve as documentation of the expected defaults.
 
+### 5. String(StringBuffer) Infinite Recursion (FIXED)
+
+`String(StringBuffer sb)` constructor called `sb.toString()` which calls
+`new String(this)` — creating infinite recursion and stack overflow. Any code
+path converting StringBuffer to String (e.g., `DecimalFormat.format()` returning
+`.toString()`) would hang on JOP.
+
+**Fix**: Changed `String(StringBuffer)` to directly copy chars with a for loop
+instead of calling `sb.toString()`.
+
+```java
+// BEFORE (infinite recursion):
+public String(StringBuffer sb) { this(sb.toString().toCharArray()); }
+
+// AFTER:
+public String(StringBuffer sb) {
+    int len = sb.length();
+    value = new char[len];
+    for (int i = 0; i < len; i++)
+        value[i] = sb.charAt(i);
+}
+```
+
+**Test**: TextFormatStandalone (14 tests) and TextFormatTest in DoAll — all pass
+on FPGA hardware.
+
 ### 4. Hardware Division-by-Zero Exception Not Catchable
 
 JOP's `idiv`/`irem` bytecodes are implemented in Java (not microcode) because
@@ -222,6 +248,16 @@ See [SDR SDRAM GC Hang](gc/sdr-sdram-gc-hang.md) for the full investigation.
 | 24 | `GC.push()` dereferences null handle (address 0) during conservative stack scanning — triggers hardware NPE during GC | Added `if (ref == 0) return;` guard |
 | 10 | `Startup.java` cpuStart array requires GC before GC is ready — NPE on multi-core boot | Removed array; direct main loop entry |
 | 21 | `System.arraycopy` raw writes (`wrMem`) don't invalidate array cache — stale data | Added `Native.invalidate()` after copy |
+
+### DecimalFormat Bugs (3 fixes for Phase 8)
+
+Three bugs in the JOP-ported `DecimalFormat.java` found during FPGA testing:
+
+| Bug | Symptom | Fix |
+|-----|---------|-----|
+| Digit truncation | `format(42)` with pattern "0" returned "40" — `digitList.set(isNeg, number, maxIntDigits)` passed maxIntDigits=1, rounding 42 to 1 significant digit | Call 2-arg `set(isNeg, number)` without digit limit |
+| Grouping leak | `format(1000000)` with pattern "0" returned "1,000,000" — `NumberFormat.groupingUsed` defaults to `true` and was never reset by `applyPattern()` | Added `setGroupingUsed(false)` in `applyPattern()` when pattern has no grouping separators |
+| maxIntegerDigits too small | `applyPattern("0")` set maxIntegerDigits=1, truncating any number >9 | Changed to JDK default: `maxInt > 0 ? 309 : 0` (309 = max decimal digits for double) |
 
 ---
 

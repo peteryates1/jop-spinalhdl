@@ -121,7 +121,7 @@ case class FetchStage(
       // megafunction registers the address internally on the clock edge.
       // Feed combinational pcMux directly — the LPM does the registration.
       // This gives the same timing as Generic path (romAddrReg + readAsync).
-      val lpmRom = AlteraLpmRom(config.romWidth, config.pcWidth, "../../asm/generated/rom.mif")
+      val lpmRom = AlteraLpmRom(config.romWidth, config.pcWidth, "../../asm/generated/serial/rom.mif")
       lpmRom.io.address := pcMux
       lpmRom.io.q
 

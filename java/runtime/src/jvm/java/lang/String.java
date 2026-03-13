@@ -44,7 +44,10 @@ public class String implements CharSequence {
 	}
 	
 	public String(StringBuffer sb) {
-		this(sb.toString().toCharArray());
+		int len = sb.length();
+		value = new char[len];
+		for (int i = 0; i < len; i++)
+			value[i] = sb.charAt(i);
 	}
 
 	public String(char[] data, int offset, int count)

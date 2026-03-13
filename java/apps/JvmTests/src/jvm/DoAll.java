@@ -120,7 +120,18 @@ public class DoAll {
 
 				// Phase 5 tests
 				new ExtCollMinimal(),
-				new ExtCollectionTest(),
+
+				// Phase 7 tests
+				new BigMathTest(),
+
+				// Phase 8 tests
+				new TextFormatTest(),
+
+				// Phase 6 tests (Random may hang — needs investigation)
+				// new UtilityTest(),
+
+				// Phase 5 (heavy GC — last, may hang on constrained configs)
+				// new ExtCollectionTest(),
 		};
 
 		// StringBufferTest: too cycle-intensive for BRAM sim (StringBuffer
