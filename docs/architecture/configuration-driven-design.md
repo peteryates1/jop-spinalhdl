@@ -1336,17 +1336,41 @@ Migration: existing `.qsf` files can be generated from `SystemAssembly` data, or
 
 A **JopSystem** is a processor cluster targeting a specific FPGA and memory on the assembly. Most assemblies have one JopSystem. The Wukong dual-subsystem has two, each using a different memory.
 
+#### Memory map and I/O space
+
+Each core sees a 32-bit address space split into two regions:
+
+| Range | Scope | Description |
+|-------|-------|-------------|
+| `0x00000000`–`0xBFFFFFFF` | Per-cluster (shared) | Memory — all cores in a cluster see the same SDRAM/BRAM |
+| `0xC0000000`–`0xFFFFFFFF` | Per-core (private) | I/O — each core has its own devices, independently addressed |
+
+Because I/O is per-core, two cores can both have `uart0` at address 0xEE without conflict — they are separate physical UART instances in separate address spaces. A core that doesn't have a particular device simply has dead space at that address.
+
 #### Device scopes
 
 I/O devices exist at three levels:
 
 | Scope | Instantiation | Example |
 |-------|--------------|---------|
-| **Per-core** | Each core gets its own instance | UART, SPI, I2C |
-| **Per-cluster** | Shared across cores in a cluster, BMB-arbitrated | Watchdog FSM, shared timer |
+| **Per-core** | Each core has its own instance in its private I/O space | UART, SPI, I2C |
+| **Per-cluster** | Shared across cores in a cluster, BMB-arbitrated | Boot device, watchdog FSM, shared timer |
 | **System-level** | Shared across clusters | Inter-cluster FIFO, global watchdog |
 
-Per-core devices are declared in the core config and get their own I/O address space per core. Per-cluster and system-level devices require BMB bus arbitration for concurrent access from multiple cores.
+Per-core devices are instantiated per-core with independent address allocation. Per-cluster and system-level devices require BMB bus arbitration for concurrent access from multiple cores.
+
+> **Note:** Only single-cluster systems are supported initially. Multi-cluster support (inter-cluster FIFO, cross-cluster boot) is modeled in the config but not yet implemented.
+
+#### Boot model
+
+Boot is a **per-cluster** concern. Each cluster has a boot device — either a UART (serial download, development) or config flash (autonomous boot, production).
+
+- **Core 0** of each cluster performs the boot: serial download or flash read
+- Other cores in the cluster wait until boot completes
+- In multi-cluster systems, **cluster 0 is the boot master** — it loads other clusters' `.jop` images over a FIFO channel from its config flash (different flash offsets per cluster)
+- Config flash is the presumed boot device for production JOP systems
+
+The boot device occupies the fixed address 0xEE–0xEF in core 0's I/O space. UART and config flash are mutually exclusive boot devices sharing this address.
 
 #### Named device instances
 
@@ -1442,21 +1466,26 @@ object ArbiterType {
   case object Tdma extends ArbiterType
 }
 
-/** A cluster of cores sharing a memory controller */
+/** A cluster of cores sharing a memory controller and a single .jop binary */
 case class ClusterConfig(
   name: String,
   memory: String,                                    // memory device (by part or role)
-  bootMode: BootMode,
+  bootMode: BootMode,                                // how this cluster boots (Serial/Flash/Simulation)
   arbiterType: ArbiterType = ArbiterType.RoundRobin,
   clkFreqHz: Long,
   cores: Seq[CoreConfig],                            // per-core config (length = core count)
   clusterDevices: Map[String, DeviceInstance] = Map.empty,  // cluster-level shared devices
+  flashOffset: Long = 0L,                            // .jop offset in config flash (multi-cluster)
 ) {
   def cpuCnt: Int = cores.length
 
   // --- Derived paths from boot mode ---
   def romPath: String = s"asm/generated/${bootMode.dirName}/mem_rom.dat"
   def ramPath: String = s"asm/generated/${bootMode.dirName}/mem_ram.dat"
+
+  // Superset of all cores' device descriptors (for address allocation + Const.java)
+  def allDeviceTypes: Set[String] =
+    cores.flatMap(_.devices.values.map(_.deviceType)).toSet
 }
 ```
 
@@ -1513,17 +1542,52 @@ case class WatchdogConfig(timeoutMs: Int = 1000) extends MonitorConfig
 
 #### Address allocation
 
-The `IoAddressAllocator` operates per-core, allocating addresses for that core's devices. Fixed addresses (boot device at 0xEE) are reserved system-wide. Cluster-level and system-level devices get their own address ranges visible to all cores in scope, allocated from a separate pool.
+The `IoAddressAllocator` runs once per cluster on the **superset** (union) of all cores' device descriptors. This ensures every device type gets the same address regardless of which core it's on — necessary because all cores in a cluster share one `.jop` binary and one `Const.java`.
+
+A core that doesn't have a particular device simply has dead space at that address. Software uses the per-core existence flags in `Const.java` (or the Sys CPU ID register) to know which devices are available.
 
 ```
 Per-core I/O address space (0x80-0xFF):
   0xF0-0xFF  Sys (always present, 16 addrs)
-  0xEE-0xEF  Boot device (UART or cfgFlash, fixed)
-  0xED down  Per-core devices (auto-allocated, largest first)
+  0xEE-0xEF  Boot device (UART or cfgFlash, core 0 only, fixed)
+  0xED down  Per-core devices (auto-allocated from superset, largest first)
 
 Cluster-level devices: separate BMB address range (memory-mapped, not I/O space)
 System-level devices: separate BMB address range
 ```
+
+#### Generated constants (Const.java)
+
+One `Const.java` is generated **per cluster** with flat `static final int` constants. Device names include instance numbers:
+
+```java
+// Generated: Cluster 0 Const.java — superset of all cores' devices
+public interface Const {
+    int IO_BASE = -128;
+
+    // Boot device (core 0 only, fixed at 0xEE)
+    int BOOT_STATUS = IO_BASE + 0x6E;  // -18
+    int BOOT_DATA   = IO_BASE + 0x6F;  // -17
+
+    // Allocated devices (superset — not all exist on every core)
+    int ETH0_STATUS  = IO_BASE + 0x68;
+    int ETH0_CMD     = IO_BASE + 0x69;
+    // ...
+    int SD0_STATUS   = IO_BASE + 0x64;
+    int SD0_DATA     = IO_BASE + 0x65;
+    // ...
+
+    // Per-core existence flags
+    boolean CORE0_HAS_ETH0 = true;
+    boolean CORE1_HAS_ETH0 = false;
+    boolean CORE0_HAS_UART0 = true;   // boot UART
+    boolean CORE1_HAS_UART0 = false;  // no UART — communicates through core 0
+}
+```
+
+All constants are compile-time (`bipush` operands for `Native.rd`/`Native.wr`). No runtime indexing — the flat constants are zero-cost on the JOP stack architecture. Most boards have a single UART; other cores communicate through core 0 via shared memory.
+
+Each cluster gets its own `Const.java` and `.jop` binary compiled against it. In multi-cluster systems, cluster 0 loads other clusters' `.jop` from config flash at different offsets.
 
 ### System presets — builder pattern with `copy()`
 
@@ -1556,14 +1620,27 @@ object JopConfig {
           "eth0"  -> DeviceInstance("ethernet", Map("mdc" -> "db.eth_mdc", "mdio" -> "db.eth_mdio" /*, ... */)),
           "sd0"   -> DeviceInstance("sdspi", Map("sclk" -> "db.sd_clk", "mosi" -> "db.sd_cmd" /*, ... */))))))))
 
-  /** SMP: N cores, each with its own UART */
+  /** SMP: N cores — core 0 has boot UART + eth + sd, others have no UART
+    * (most boards have 1 UART; other cores communicate through core 0 via shared memory)
+    * Optional: extra UARTs on PMOD headers for cores that need them */
   def qmtechSmp(n: Int) = {
     val base = qmtechSerial
-    val cores = (0 until n).map { i =>
+    val core0 = base.cluster.cores.head  // has uart0, eth0, sd0
+    val coreN = CoreConfig()             // no devices — communicates through core 0
+    base.copy(clusters = Seq(base.cluster.copy(
+      name = s"smp$n",
+      cores = core0 +: Seq.fill(n - 1)(coreN))))
+  }
+
+  /** SMP with per-core UARTs on PMOD headers (optional, for debugging) */
+  def qmtechSmpWithUarts(n: Int) = {
+    val base = qmtechSerial
+    val core0 = base.cluster.cores.head
+    val extras = (1 until n).map { i =>
       CoreConfig(devices = Map(
-        s"uart$i" -> DeviceInstance("uart", Map("txd" -> s"j11.${i*2+1}", "rxd" -> s"j11.${i*2+2}"))))
+        s"uart0" -> DeviceInstance("uart", Map("txd" -> s"j11.${i*2+1}", "rxd" -> s"j11.${i*2+2}"))))
     }
-    base.copy(clusters = Seq(base.cluster.copy(name = s"smp$n", cores = cores)))
+    base.copy(clusters = Seq(base.cluster.copy(name = s"smp$n", cores = core0 +: extras)))
   }
 
   /** CYC5000 standalone */
@@ -1603,27 +1680,36 @@ object JopConfig {
       cores = Seq(minimalCore))))
 
   // --- Multi-cluster preset (Wukong dual-subsystem) ---
+  // Cluster 0 is boot master — loads cluster 1's .jop over FIFO channel from config flash.
+  // Each cluster has its own flash offset and its own Const.java / .jop binary.
+  // NOTE: multi-cluster not yet implemented, modeled here for future support.
 
   /** Wukong: heavy compute on DDR3 + light I/O on SDR SDRAM */
   def wukongDual = JopConfig(
     assembly = SystemAssembly.wukong,
-    loader = BootMode.Serial,
+    loader = BootMode.Flash,
     clusters = Seq(
       ClusterConfig(
         name = "compute",
         memory = "ddr3",
-        bootMode = BootMode.Serial,
+        bootMode = BootMode.Flash,
         clkFreqHz = 100000000L,
-        cores = Seq.fill(4)(hwMathCore.copy(
-          devices = hwMathCore.devices ++ Map(
-            "eth0" -> DeviceInstance("ethernet"),
-            "sd0"  -> DeviceInstance("sdnative"))))),
+        flashOffset = 0x800000L,          // cluster 0 .jop at 8 MB
+        cores = CoreConfig(devices = Map(  // core 0: boot device + peripherals
+          "uart0" -> DeviceInstance("uart"),
+          "cfgflash" -> DeviceInstance("cfgflash"),
+          "eth0" -> DeviceInstance("ethernet"),
+          "sd0"  -> DeviceInstance("sdnative")))
+          +: Seq.fill(3)(hwMathCore)),    // cores 1-3: compute only, no devices
       ClusterConfig(
         name = "io",
         memory = "sdr",
-        bootMode = BootMode.Serial,
+        bootMode = BootMode.Flash,        // loaded by cluster 0 over FIFO
         clkFreqHz = 50000000L,
-        cores = Seq.fill(2)(minimalCore))),
+        flashOffset = 0xC00000L,          // cluster 1 .jop at 12 MB
+        cores = Seq(
+          CoreConfig(devices = Map("uart0" -> DeviceInstance("uart"))),  // core 0: boot receiver
+          CoreConfig()))),                // core 1: no devices
     interconnect = Some(InterconnectConfig(fifoDepth = 64)),
     monitors = Seq(WatchdogConfig(timeoutMs = 2000)))
 
@@ -1658,11 +1744,20 @@ The current `IoConfig` with boolean flags (`hasUart`, `hasEth`, etc.) maps to th
 
 The `IoAddressAllocator` and `HasBusIo` infrastructure remain unchanged — they already work with named devices and dynamic allocation. The change is in how device lists are built: from boolean flags on a global `IoConfig` to named instances on each `CoreConfig`.
 
+**ConstGenerator migration:** Currently generates one `Const.java` from a superset `IoConfig`. New model generates one `Const.java` per cluster from the superset of all cores' device descriptors within that cluster. Device constants use named format (`ETH0_STATUS`, `SD0_DATA`) and include per-core existence flags (`CORE0_HAS_ETH0`).
+
 **Incremental migration path:**
-1. Add `DeviceInstance` and `CoreConfig` types alongside existing `IoConfig`
-2. Add `CoreConfig.toIoConfig()` bridge that converts named instances to boolean flags
-3. Migrate presets one at a time from `IoConfig` to `CoreConfig`
-4. Remove `IoConfig` boolean flags once all consumers use `CoreConfig`
+1. Add `DeviceInstance`, `DeviceTypes` registry, and `CoreConfig` types alongside existing `IoConfig`
+2. Add `effectiveDeviceDescriptors()` on `JopCoreConfig` — falls back to `IoConfig` when `devices` is empty
+3. Wire `JopCore` through `effectiveDeviceDescriptors()` (no behavior change)
+4. Add `IoConfig.toDevices()` bridge and unit tests verifying both paths produce identical descriptors
+5. Add query methods (`hasDevice()`, `hasEth`, etc.) that work on either path
+6. Migrate `JopCluster` per-core device restriction to `restrictToCore()` method
+7. Migrate presets one at a time (pilot: ep4cgx150Serial, then simple→complex order)
+8. Migrate `ConstGenerator` to per-cluster superset generation with named constants
+9. Migrate top-level conditional ports to query methods
+10. Merge `DeviceDriver` pin mapping into `DeviceInstance.mapping`
+11. Remove `IoConfig` boolean flags, `DeviceDriver`, and backward-compat fallbacks
 
 ### What the config drives
 
