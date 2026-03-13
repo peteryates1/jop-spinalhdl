@@ -6,7 +6,7 @@ import jop.config.Implementation._
 
 /**
  * Generate Verilog for multiple EP4CGX150 SDR SDRAM configs to measure per-feature LUT cost.
- * All variants use the same entity name (JopSdramTop) — copy/rename between runs.
+ * All variants use the same entity name (JopTop) — copy/rename between runs.
  *
  * Usage: sbt "runMain jop.system.AlteraUtilSweep <label>"
  *   Labels: baseline, no_icu, no_acache, icu_full, icu_dsp, fcu, lcu, dcu, all_cu,

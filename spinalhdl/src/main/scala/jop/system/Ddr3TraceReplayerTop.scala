@@ -21,7 +21,7 @@ import jop.utils.TraceFileLoader
  *   4. For reads: compare response against expected data
  *   5. Report PASS/FAIL with mismatch details via UART
  *
- * Same DDR3 path as JopDdr3Top:
+ * Same DDR3 path as JopTop (DDR3):
  *   BMB -> BmbCacheBridge -> LruCacheCore -> CacheToMigAdapter -> MIG -> DDR3
  *
  * @param initData   Memory init words (32-bit, from gc_mem_init.hex) — just the .jop content
@@ -125,7 +125,7 @@ case class Ddr3TraceReplayerTop(
     val bmbParam = memConfig.bmbParameter
 
     // ==================================================================
-    // DDR3 Memory Path (identical to JopDdr3Top)
+    // DDR3 Memory Path (identical to JopTop DDR3)
     // ==================================================================
 
     val cacheAddrWidth = 28

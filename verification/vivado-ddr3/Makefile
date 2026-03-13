@@ -1,4 +1,4 @@
-# Makefile for Vivado xsim DDR3 simulation of JopDdr3Top
+# Makefile for Vivado xsim DDR3 simulation of JopTop (DDR3)
 #
 # Uses the real MIG RTL and Xilinx DDR3 behavioral model (ddr3_model.sv).
 # Requires Vivado installation (XILINX_VIVADO must be set).
@@ -48,7 +48,7 @@ help:
 # ============================================================================
 
 gen:
-	cd $(PROJECT_ROOT) && sbt "Test / runMain jop.system.JopDdr3SimGen"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog auSerial"
 
 # ============================================================================
 # Compile

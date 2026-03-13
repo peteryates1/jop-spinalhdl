@@ -17,7 +17,7 @@ import jop.memory.JopMemoryConfig
  *   P4: Read-modify-write storm (scattered dirty evictions)
  *   P5: Full sequential verify
  *
- * Same DDR3 path as JopDdr3Top:
+ * Same DDR3 path as JopTop (DDR3):
  *   BMB -> BmbCacheBridge -> LruCacheCore -> CacheToMigAdapter -> MIG -> DDR3
  */
 case class Ddr3GcExerciserTop() extends Component {
@@ -114,7 +114,7 @@ case class Ddr3GcExerciserTop() extends Component {
     val bmbParam = memConfig.bmbParameter
 
     // ==================================================================
-    // DDR3 Memory Path (identical to JopDdr3Top)
+    // DDR3 Memory Path (identical to JopTop DDR3)
     // ==================================================================
 
     val cacheAddrWidth = 28  // BMB byte address width

@@ -225,7 +225,7 @@ object JopBramGcTopVerilog extends App {
 /**
  * JOP BRAM FPGA Top-Level with Serial Boot
  *
- * Same pinout as JopSdramTop but uses BRAM instead of SDRAM.
+ * Same pinout as JopTop (SDR SDRAM) but uses BRAM instead of SDRAM.
  * Serial-boot microcode downloads .jop via UART RX into uninitialised BRAM.
  * Isolates whether the GC hang is caused by serial download vs SDRAM issues.
  */

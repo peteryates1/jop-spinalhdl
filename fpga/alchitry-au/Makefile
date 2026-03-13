@@ -95,7 +95,7 @@ microcode:
 # --------------------------------------------------------------------------
 
 generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopDdr3TopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog auSerial"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
 
 # --------------------------------------------------------------------------

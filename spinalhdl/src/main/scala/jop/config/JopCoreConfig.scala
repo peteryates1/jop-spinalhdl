@@ -37,7 +37,6 @@ object MemoryStyle {
  * @param supersetJumpTable  Superset jump table (all HW handlers present). Patched by resolveJumpTable().
  * @param cpuId        CPU identifier (for multi-core; 0 for single-core)
  * @param cpuCnt       Total number of CPUs (1 for single-core)
- * @param ioConfig     I/O device configuration (device presence, parameters, interrupts)
  * @param clkFreq      System clock frequency (for Sys microsecond prescaler)
  */
 case class JopCoreConfig(
@@ -51,7 +50,6 @@ case class JopCoreConfig(
   supersetJumpTable: JumpTableInitData = JumpTableInitData.simulation,
   cpuId:        Int              = 0,
   cpuCnt:       Int              = 1,
-  ioConfig:     IoConfig         = IoConfig(),
   clkFreq:      HertzNumber      = HertzNumber(100000000),
   useCmpSync:   Boolean          = false,  // Use CmpSync (global lock) instead of IHLU (per-object lock)
   useStackCache: Boolean         = false,  // Use 3-bank rotating stack cache with DMA spill/fill
@@ -59,7 +57,7 @@ case class JopCoreConfig(
   useDspMul:    Boolean          = false,  // Use 1-cycle DSP multiplier in ALU (bypasses CU for imul)
   useSyncRam:   Option[Boolean]  = None,   // None = auto (true for all — readAsync emits ram_style=distributed); Some(x) = explicit override
   memoryStyle:  Option[MemoryStyle] = None, // None = auto from FPGA family; Some(x) = explicit override
-  devices:      Map[String, DeviceInstance] = Map.empty, // Declarative device list (when non-empty, replaces ioConfig)
+  devices:      Map[String, DeviceInstance] = Map.empty,
 
   // --- Per-bytecode implementation selection ---
   // Integer — Microcode = iterative SW, Hardware = IntegerComputeUnit, Java = JOPizer invokestatic.
@@ -108,9 +106,8 @@ case class JopCoreConfig(
 ) {
   import Implementation._
 
-  // --- Resolved devices: always populated (auto-converts from ioConfig if empty) ---
-  lazy val effectiveDevices: Map[String, DeviceInstance] =
-    if (devices.nonEmpty) devices else ioConfig.toDevices()
+  // --- Device map (populated from JopSystem.effectiveDevices at elaboration) ---
+  lazy val effectiveDevices: Map[String, DeviceInstance] = devices
 
   // --- Device queries (single path via effectiveDevices) ---
   def hasDevice(deviceType: String): Boolean =

@@ -29,7 +29,7 @@ object ConstGenerator {
     // Union of all cores' configs across all systems
     val allCores = config.systems.flatMap(_.coreConfigs)
 
-    // Union of all systems' device presence (works on either devices or ioConfig path)
+    // Union of all systems' device presence
     val hasEth = config.systems.exists(_.hasEth)
     val hasSdSpi = config.systems.exists(_.hasSdSpi)
     val hasSdNative = config.systems.exists(_.hasSdNative)

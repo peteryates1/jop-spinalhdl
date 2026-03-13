@@ -116,7 +116,7 @@ case class Ddr3ExerciserTop() extends Component {
     val bmbParam = memConfig.bmbParameter
 
     // ==================================================================
-    // DDR3 Memory Path (identical to JopDdr3Top)
+    // DDR3 Memory Path (identical to JopTop DDR3)
     // ==================================================================
 
     val cacheAddrWidth = 28  // BMB byte address width

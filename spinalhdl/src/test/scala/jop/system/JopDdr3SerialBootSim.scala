@@ -24,7 +24,7 @@ import java.io.PrintWriter
  * Hypothesis: serial boot writes ~8K words through the cache to DDR3, leaving
  * the cache in a specific dirty state that might trigger the GC hang.
  *
- * Architecture matches JopDdr3Top.scala FPGA configuration exactly:
+ * Architecture matches JopTop (DDR3) FPGA configuration exactly:
  *   - addressWidth = 26 (28-bit BMB byte address)
  *   - burstLen = 0 (single-word BC fill, matching FPGA)
  *   - supersetJumpTable = JumpTableInitData.serial
@@ -45,7 +45,7 @@ case class JopDdr3SerialBootHarness(
     memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = 128 * 1024, burstLen = 0),
     supersetJumpTable = JumpTableInitData.serial,
     clkFreq = 100 MHz,
-    ioConfig = IoConfig(uartBaudRate = 1000000)
+    devices = Map("uart" -> DeviceInstance("uart", params = Map("baudRate" -> 1000000)))
   )
 
   val cacheAddrWidth = 28  // BMB byte address width (addressWidth + 2)

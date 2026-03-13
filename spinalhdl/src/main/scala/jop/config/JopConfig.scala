@@ -64,7 +64,6 @@ object ArbiterType {
  * @param cpuCnt         Number of CPU cores
  * @param coreConfig     Default configuration for all cores
  * @param perCoreConfigs Optional per-core override (heterogeneous cores)
- * @param ioConfig       I/O device configuration
  * @param perCoreUart    Whether each core gets its own UART (debug)
  */
 case class JopSystem(
@@ -76,7 +75,6 @@ case class JopSystem(
   cpuCnt: Int = 1,
   coreConfig: JopCoreConfig = JopCoreConfig(),
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None,
-  ioConfig: IoConfig = IoConfig(),
   perCoreUart: Boolean = false,
   devices: Map[String, DeviceInstance] = Map.empty
 ) {
@@ -108,9 +106,8 @@ case class JopSystem(
   def needsIntegerCompute: Boolean = coreConfigs.exists(_.needsIntegerCompute)
   def needsFloatCompute: Boolean = coreConfigs.exists(_.needsFloatCompute)
 
-  // --- Resolved devices: always populated (auto-converts from ioConfig if empty) ---
-  lazy val effectiveDevices: Map[String, DeviceInstance] =
-    if (devices.nonEmpty) devices else ioConfig.toDevices()
+  // --- Resolved devices ---
+  lazy val effectiveDevices: Map[String, DeviceInstance] = devices
 
   // --- Device presence queries (single path via effectiveDevices) ---
   def hasDevice(deviceType: String): Boolean =
@@ -503,7 +500,6 @@ object JopConfig {
       memory = "bram",
       bootMode = BootMode.Simulation,
       cpuCnt = 1,
-      ioConfig = IoConfig(),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
   }
 
@@ -519,7 +515,6 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
-      ioConfig = IoConfig.wukongFull,
       devices = Map(
         "uart" -> DeviceInstance("uart", devicePart = Some("CH340N")),
         "eth" -> DeviceInstance("ethernet", params = Map("gmii" -> true, "phyDataWidth" -> 8),
@@ -541,7 +536,6 @@ object JopConfig {
   def wukongDdr3AllCu = {
     val base = wukongFull
     base.copy(systems = Seq(base.system.copy(
-      ioConfig = IoConfig(),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
   }
 
@@ -557,7 +551,6 @@ object JopConfig {
     base.copy(systems = Seq(base.system.copy(
       name = s"smp$n",
       cpuCnt = n,
-      ioConfig = IoConfig(),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
   }
 
@@ -608,7 +601,6 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
-      ioConfig = IoConfig.wukongFull,
       devices = Map(
         "uart" -> DeviceInstance("uart", devicePart = Some("CH340N")),
         "eth" -> DeviceInstance("ethernet", params = Map("gmii" -> true, "phyDataWidth" -> 8),
