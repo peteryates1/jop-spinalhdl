@@ -76,16 +76,23 @@ object JopVgaBramSim extends App {
       // VGA display window
       val display = new SimDisplay(scale = 2)
 
+      // VGA pin references (auto-generated outside io bundle)
+      val vgaHs = dut.ioPinMap("vga_hs").asInstanceOf[Bool]
+      val vgaVs = dut.ioPinMap("vga_vs").asInstanceOf[Bool]
+      val vgaR  = dut.ioPinMap("vga_r").asInstanceOf[Bits]
+      val vgaG  = dut.ioPinMap("vga_g").asInstanceOf[Bits]
+      val vgaB  = dut.ioPinMap("vga_b").asInstanceOf[Bits]
+
       // VGA capture fork (runs on pixel clock)
       fork {
         while (true) {
           dut.deviceClockDomains.vgaCd.get.waitSampling()
           display.tick(
-            dut.io.vga_hs.toBoolean,
-            dut.io.vga_vs.toBoolean,
-            dut.io.vga_r.toInt,
-            dut.io.vga_g.toInt,
-            dut.io.vga_b.toInt)
+            vgaHs.toBoolean,
+            vgaVs.toBoolean,
+            vgaR.toInt,
+            vgaG.toInt,
+            vgaB.toInt)
         }
       }
 

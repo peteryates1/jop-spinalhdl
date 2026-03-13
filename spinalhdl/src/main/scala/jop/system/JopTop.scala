@@ -101,7 +101,8 @@ case class JopTop(
 
   // Auto-generated device IO ports from DeviceTopWiring.topPins.
   // Adding a new device type only requires a DeviceTopWiring implementation — no JopTop changes.
-  private val ioPinMap: Map[String, Data] = {
+  // Public for simulation access (e.g. dut.ioPinMap("vga_hs")).
+  val ioPinMap: Map[String, Data] = {
     val manufacturer = config.fpgaFamily.manufacturer
     val ports = scala.collection.mutable.LinkedHashMap.empty[String, Data]
     for ((_, inst) <- sys.effectiveDevices) {
