@@ -88,6 +88,35 @@ object DeviceTypes {
     n.max(2) // Sys requires at least 2
   }
 
+  /** Descriptors for address allocation only (no clock domains, dummy factories).
+   *  Used by ConstGenerator to compute I/O addresses without hardware context. */
+  def toDescriptorsForAllocation(
+    devices: Map[String, DeviceInstance],
+    bootDeviceName: Option[String]
+  ): Seq[IoDeviceDescriptor] = {
+    val noop: JopCoreConfig => Component with HasBusIo = _ => ???
+    devices.toSeq.map { case (name, inst) =>
+      val info = registry.getOrElse(inst.deviceType,
+        throw new NoSuchElementException(
+          s"Unknown device type '${inst.deviceType}' for device '$name'. " +
+          s"Available: ${registry.keys.mkString(", ")}"))
+      IoDeviceDescriptor(
+        name = name,
+        addrBits = info.addrBits,
+        interruptCount = info.interruptCount,
+        fixedBase = if (bootDeviceName.contains(name)) Some(0xEE) else None,
+        registerNames = info.registerNames,
+        factory = noop
+      )
+    }
+  }
+
+  /** Determine boot device name from a device map.
+   *  cfgFlash takes priority; otherwise falls back to first uart instance. */
+  def bootDeviceName(devices: Map[String, DeviceInstance]): Option[String] =
+    if (devices.contains("cfgFlash")) Some("cfgFlash")
+    else devices.keys.find(k => devices(k).deviceType == "uart")
+
   /** Count DMA-capable devices in a device map */
   def dmaCount(devices: Map[String, DeviceInstance]): Int = {
     devices.values.count { inst =>

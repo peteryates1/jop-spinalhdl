@@ -39,16 +39,9 @@ object ConstGenerator {
 
     // Build superset devices from all systems for address allocation
     val supersetDevices: Map[String, DeviceInstance] = config.systems.flatMap(_.effectiveDevices).toMap
-    val supersetIo = IoConfig(
-      hasEth = hasEth,
-      ethGmii = config.systems.exists(_.ethGmii),
-      hasSdSpi = hasSdSpi,
-      hasSdNative = hasSdNative,
-      hasVgaDma = hasVgaDma,
-      hasVgaText = hasVgaText,
-      hasConfigFlash = hasCfgFlash
-    )
-    val allocatedDevices = IoAddressAllocator.allocate(supersetIo.allDescriptorsForAllocation())
+    val bootName = DeviceTypes.bootDeviceName(supersetDevices)
+    val allocatedDevices = IoAddressAllocator.allocate(
+      DeviceTypes.toDescriptorsForAllocation(supersetDevices, bootName))
     val addrMap: Map[String, Int] = allocatedDevices.map(ad => ad.descriptor.name -> ad.baseAddr).toMap
 
     // Helper: get allocated base address for a device, or 0x80 (IO_BASE) as fallback
@@ -296,7 +289,7 @@ object ConstGenerator {
     sb.append(
       s"""
          |	// ====================================================================
-         |	// Hardware availability (derived from IoConfig)
+         |	// Hardware availability (derived from device config)
          |	// ====================================================================
          |
          |	/** Board has Ethernet PHY */

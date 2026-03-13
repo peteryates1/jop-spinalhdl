@@ -127,9 +127,7 @@ case class JopCoreConfig(
   /** Build device descriptors from effectiveDevices */
   def effectiveDeviceDescriptors(ctx: DeviceContext = DeviceContext()): Seq[IoDeviceDescriptor] = {
     val devs = effectiveDevices
-    val bootName = if (devs.contains("cfgFlash")) Some("cfgFlash")
-                   else devs.keys.find(k => devs(k).deviceType == "uart")
-    DeviceTypes.toDescriptors(devs, bootName, this, ctx)
+    DeviceTypes.toDescriptors(devs, DeviceTypes.bootDeviceName(devs), this, ctx)
   }
 
   /** Interrupt count from effectiveDevices */
