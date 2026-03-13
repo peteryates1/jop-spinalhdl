@@ -77,38 +77,23 @@ case class JopTop(
     val sdram_clk = isSdr generate (out Bool())
     val sdram = isSdr generate master(SdramInterface(sdrLayout))
 
-    // DDR3 (conditional) — Alchitry Au V2 variant (with CS pin)
-    val ddr3_dq      = (isDdr3 && board.name == "alchitry-au-v2") generate inout(Analog(Bits(16 bits)))
-    val ddr3_dqs_n   = (isDdr3 && board.name == "alchitry-au-v2") generate inout(Analog(Bits(2 bits)))
-    val ddr3_dqs_p   = (isDdr3 && board.name == "alchitry-au-v2") generate inout(Analog(Bits(2 bits)))
-    val ddr3_addr    = (isDdr3 && board.name == "alchitry-au-v2") generate (out Bits(14 bits))
-    val ddr3_ba      = (isDdr3 && board.name == "alchitry-au-v2") generate (out Bits(3 bits))
-    val ddr3_ras_n   = (isDdr3 && board.name == "alchitry-au-v2") generate (out Bool())
-    val ddr3_cas_n   = (isDdr3 && board.name == "alchitry-au-v2") generate (out Bool())
-    val ddr3_we_n    = (isDdr3 && board.name == "alchitry-au-v2") generate (out Bool())
-    val ddr3_reset_n = (isDdr3 && board.name == "alchitry-au-v2") generate (out Bool())
-    val ddr3_ck_p    = (isDdr3 && board.name == "alchitry-au-v2") generate (out Bits(1 bits))
-    val ddr3_ck_n    = (isDdr3 && board.name == "alchitry-au-v2") generate (out Bits(1 bits))
-    val ddr3_cke     = (isDdr3 && board.name == "alchitry-au-v2") generate (out Bits(1 bits))
-    val ddr3_cs_n    = (isDdr3 && board.name == "alchitry-au-v2") generate (out Bits(1 bits))
-    val ddr3_dm      = (isDdr3 && board.name == "alchitry-au-v2") generate (out Bits(2 bits))
-    val ddr3_odt     = (isDdr3 && board.name == "alchitry-au-v2") generate (out Bits(1 bits))
-
-    // DDR3 — Wukong variant (no CS pin)
-    val wk_ddr3_dq      = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate inout(Analog(Bits(16 bits)))
-    val wk_ddr3_dqs_n   = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate inout(Analog(Bits(2 bits)))
-    val wk_ddr3_dqs_p   = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate inout(Analog(Bits(2 bits)))
-    val wk_ddr3_addr    = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate (out Bits(14 bits))
-    val wk_ddr3_ba      = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate (out Bits(3 bits))
-    val wk_ddr3_ras_n   = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate (out Bool())
-    val wk_ddr3_cas_n   = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate (out Bool())
-    val wk_ddr3_we_n    = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate (out Bool())
-    val wk_ddr3_reset_n = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate (out Bool())
-    val wk_ddr3_ck_p    = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate (out Bits(1 bits))
-    val wk_ddr3_ck_n    = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate (out Bits(1 bits))
-    val wk_ddr3_cke     = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate (out Bits(1 bits))
-    val wk_ddr3_dm      = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate (out Bits(2 bits))
-    val wk_ddr3_odt     = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate (out Bits(1 bits))
+    // DDR3 (conditional — Au V2 has CS pin, Wukong does not)
+    val ddr3HasCs    = isDdr3 && board.name == "alchitry-au-v2"
+    val ddr3_dq      = isDdr3 generate inout(Analog(Bits(16 bits)))
+    val ddr3_dqs_n   = isDdr3 generate inout(Analog(Bits(2 bits)))
+    val ddr3_dqs_p   = isDdr3 generate inout(Analog(Bits(2 bits)))
+    val ddr3_addr    = isDdr3 generate (out Bits(14 bits))
+    val ddr3_ba      = isDdr3 generate (out Bits(3 bits))
+    val ddr3_ras_n   = isDdr3 generate (out Bool())
+    val ddr3_cas_n   = isDdr3 generate (out Bool())
+    val ddr3_we_n    = isDdr3 generate (out Bool())
+    val ddr3_reset_n = isDdr3 generate (out Bool())
+    val ddr3_ck_p    = isDdr3 generate (out Bits(1 bits))
+    val ddr3_ck_n    = isDdr3 generate (out Bits(1 bits))
+    val ddr3_cke     = isDdr3 generate (out Bits(1 bits))
+    val ddr3_cs_n    = ddr3HasCs generate (out Bits(1 bits))
+    val ddr3_dm      = isDdr3 generate (out Bits(2 bits))
+    val ddr3_odt     = isDdr3 generate (out Bits(1 bits))
 
     // Ethernet (EP4CGX150 with DB_FPGA only)
     val e_txd    = sys.hasEth generate (out Bits(sys.phyDataWidth bits))
@@ -220,8 +205,7 @@ case class JopTop(
   // Forward declarations for FPGA-only values (null in sim)
   private var pllResult: PllResult = null
   private var systemReset: Bool = null
-  private var auMig: MigBlackBox = null
-  private var wkMig: WukongMigBlackBox = null
+  private var ddr3Mig: MigBlackBox = null
   private var ethPll: EthPll = null
 
   private val effectiveMainCd: ClockDomain = if (simulation) {
@@ -254,64 +238,37 @@ case class JopTop(
     } else null
 
     // 5. DDR3 MIG (provides ui_clk for system clock)
-    if (isDdr3 && board.name == "alchitry-au-v2") {
-      auMig = new MigBlackBox
-      io.ddr3_dq    <> auMig.io.ddr3_dq
-      io.ddr3_dqs_n <> auMig.io.ddr3_dqs_n
-      io.ddr3_dqs_p <> auMig.io.ddr3_dqs_p
-      io.ddr3_addr    := auMig.io.ddr3_addr
-      io.ddr3_ba      := auMig.io.ddr3_ba
-      io.ddr3_ras_n   := auMig.io.ddr3_ras_n
-      io.ddr3_cas_n   := auMig.io.ddr3_cas_n
-      io.ddr3_we_n    := auMig.io.ddr3_we_n
-      io.ddr3_reset_n := auMig.io.ddr3_reset_n
-      io.ddr3_ck_p    := auMig.io.ddr3_ck_p
-      io.ddr3_ck_n    := auMig.io.ddr3_ck_n
-      io.ddr3_cke     := auMig.io.ddr3_cke
-      io.ddr3_cs_n    := auMig.io.ddr3_cs_n
-      io.ddr3_dm      := auMig.io.ddr3_dm
-      io.ddr3_odt     := auMig.io.ddr3_odt
-      auMig.io.sys_clk_i := pllResult.migSysClk.get
-      auMig.io.clk_ref_i := pllResult.migRefClk.get
-      auMig.io.sys_rst   := !pllResult.locked
-      auMig.io.app_sr_req  := False
-      auMig.io.app_ref_req := False
-      auMig.io.app_zq_req  := False
-    }
-
-    if (isDdr3 && board.name == "qmtech-wukong-xc7a100t") {
-      wkMig = new WukongMigBlackBox
-      io.wk_ddr3_dq    <> wkMig.io.ddr3_dq
-      io.wk_ddr3_dqs_n <> wkMig.io.ddr3_dqs_n
-      io.wk_ddr3_dqs_p <> wkMig.io.ddr3_dqs_p
-      io.wk_ddr3_addr    := wkMig.io.ddr3_addr
-      io.wk_ddr3_ba      := wkMig.io.ddr3_ba
-      io.wk_ddr3_ras_n   := wkMig.io.ddr3_ras_n
-      io.wk_ddr3_cas_n   := wkMig.io.ddr3_cas_n
-      io.wk_ddr3_we_n    := wkMig.io.ddr3_we_n
-      io.wk_ddr3_reset_n := wkMig.io.ddr3_reset_n
-      io.wk_ddr3_ck_p    := wkMig.io.ddr3_ck_p
-      io.wk_ddr3_ck_n    := wkMig.io.ddr3_ck_n
-      io.wk_ddr3_cke     := wkMig.io.ddr3_cke
-      io.wk_ddr3_dm      := wkMig.io.ddr3_dm
-      io.wk_ddr3_odt     := wkMig.io.ddr3_odt
-      wkMig.io.sys_clk_i := pllResult.migSysClk.get
-      wkMig.io.clk_ref_i := pllResult.migRefClk.get
-      wkMig.io.sys_rst   := !pllResult.locked
-      wkMig.io.app_sr_req  := False
-      wkMig.io.app_ref_req := False
-      wkMig.io.app_zq_req  := False
+    if (isDdr3) {
+      val hasCs = board.name == "alchitry-au-v2"
+      ddr3Mig = new MigBlackBox(hasCs)
+      io.ddr3_dq    <> ddr3Mig.io.ddr3_dq
+      io.ddr3_dqs_n <> ddr3Mig.io.ddr3_dqs_n
+      io.ddr3_dqs_p <> ddr3Mig.io.ddr3_dqs_p
+      io.ddr3_addr    := ddr3Mig.io.ddr3_addr
+      io.ddr3_ba      := ddr3Mig.io.ddr3_ba
+      io.ddr3_ras_n   := ddr3Mig.io.ddr3_ras_n
+      io.ddr3_cas_n   := ddr3Mig.io.ddr3_cas_n
+      io.ddr3_we_n    := ddr3Mig.io.ddr3_we_n
+      io.ddr3_reset_n := ddr3Mig.io.ddr3_reset_n
+      io.ddr3_ck_p    := ddr3Mig.io.ddr3_ck_p
+      io.ddr3_ck_n    := ddr3Mig.io.ddr3_ck_n
+      io.ddr3_cke     := ddr3Mig.io.ddr3_cke
+      if (hasCs) io.ddr3_cs_n := ddr3Mig.io.ddr3_cs_n
+      io.ddr3_dm      := ddr3Mig.io.ddr3_dm
+      io.ddr3_odt     := ddr3Mig.io.ddr3_odt
+      ddr3Mig.io.sys_clk_i := pllResult.migSysClk.get
+      ddr3Mig.io.clk_ref_i := pllResult.migRefClk.get
+      ddr3Mig.io.sys_rst   := !pllResult.locked
+      ddr3Mig.io.app_sr_req  := False
+      ddr3Mig.io.app_ref_req := False
+      ddr3Mig.io.app_zq_req  := False
     }
 
     // DDR3 UI Clock Domain
     val ddr3MainCd: ClockDomain = if (isDdr3) {
-      val migUiClk = if (board.name == "alchitry-au-v2") auMig.io.ui_clk
-                     else wkMig.io.ui_clk
-      val migUiRst = if (board.name == "alchitry-au-v2") auMig.io.ui_clk_sync_rst
-                     else wkMig.io.ui_clk_sync_rst
       ClockDomain(
-        clock = migUiClk,
-        reset = migUiRst,
+        clock = ddr3Mig.io.ui_clk,
+        reset = ddr3Mig.io.ui_clk_sync_rst,
         frequency = FixedFrequency(sys.clkFreq),
         config = ClockDomainConfig(resetKind = SYNC, resetActiveLevel = HIGH)
       )
@@ -401,12 +358,7 @@ case class JopTop(
     if (isDdr3) {
       val ddr3Path = MemoryControllerFactory.createDdr3Path(cluster.bmbParameter)
       ddr3Path.bmbBridge.io.bmb <> cluster.io.bmb
-
-      if (board.name == "alchitry-au-v2") {
-        MemoryControllerFactory.wireMig(ddr3Path.adapter, auMig)
-      } else {
-        MemoryControllerFactory.wireWukongMig(ddr3Path.adapter, wkMig)
-      }
+      MemoryControllerFactory.wireMig(ddr3Path.adapter, ddr3Mig)
     }
 
     if (isBram) {

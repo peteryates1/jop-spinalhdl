@@ -5,7 +5,6 @@ import spinal.lib.memory.sdram.SdramLayout
 import spinal.lib.memory.sdram.sdr.SdramTimings
 import jop.memory.BmbSdramCtrl32
 import jop.ddr3.{BmbCacheBridge, LruCacheCore, CacheConfig, CacheToMigAdapter, MigBlackBox}
-import jop.system.WukongMigBlackBox
 
 /**
  * Memory controller creation result.
@@ -171,35 +170,9 @@ object MemoryControllerFactory {
    * interface. This handles the app_addr/cmd/en/wdf/rd signals in both directions.
    *
    * @param adapter CacheToMigAdapter from createDdr3Path()
-   * @param mig     MIG BlackBox instance (with ddr3_cs_n port)
+   * @param mig     MIG BlackBox instance
    */
   def wireMig(adapter: CacheToMigAdapter, mig: MigBlackBox): Unit = {
-    // MIG -> Adapter (status/response)
-    adapter.io.app_rdy           := mig.io.app_rdy
-    adapter.io.app_wdf_rdy       := mig.io.app_wdf_rdy
-    adapter.io.app_rd_data       := mig.io.app_rd_data
-    adapter.io.app_rd_data_valid := mig.io.app_rd_data_valid
-
-    // Adapter -> MIG (commands/write data)
-    mig.io.app_addr     := adapter.io.app_addr
-    mig.io.app_cmd      := adapter.io.app_cmd
-    mig.io.app_en       := adapter.io.app_en
-    mig.io.app_wdf_data := adapter.io.app_wdf_data
-    mig.io.app_wdf_end  := adapter.io.app_wdf_end
-    mig.io.app_wdf_mask := adapter.io.app_wdf_mask
-    mig.io.app_wdf_wren := adapter.io.app_wdf_wren
-  }
-
-  /**
-   * Wire a DDR3 memory path to a Wukong MIG BlackBox (no CS pin variant).
-   *
-   * Identical wiring to wireMig() but for the WukongMigBlackBox which lacks
-   * the ddr3_cs_n port (Wukong MIG config has emrCSSelection=Disable).
-   *
-   * @param adapter CacheToMigAdapter from createDdr3Path()
-   * @param mig     Wukong MIG BlackBox instance (no ddr3_cs_n port)
-   */
-  def wireWukongMig(adapter: CacheToMigAdapter, mig: WukongMigBlackBox): Unit = {
     // MIG -> Adapter (status/response)
     adapter.io.app_rdy           := mig.io.app_rdy
     adapter.io.app_wdf_rdy       := mig.io.app_wdf_rdy

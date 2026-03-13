@@ -117,8 +117,8 @@ object DeviceTypes {
   /** Determine boot device name from a device map.
    *  cfgFlash takes priority; otherwise falls back to first uart instance. */
   def bootDeviceName(devices: Map[String, DeviceInstance]): Option[String] =
-    if (devices.contains("cfgFlash")) Some("cfgFlash")
-    else devices.keys.find(k => devices(k).deviceType == "uart")
+    devices.keys.find(k => devices(k).deviceType == "cfgflash")
+      .orElse(devices.keys.find(k => devices(k).deviceType == "uart"))
 
   /** Count DMA-capable devices in a device map */
   def dmaCount(devices: Map[String, DeviceInstance]): Int = {

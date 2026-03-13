@@ -61,7 +61,6 @@ case class JopCluster(
     }
   }
 
-  // Detect per-core UART from config (replaces old perCoreUart boolean flag).
   // True when cpuCnt > 1 and any core other than 0 has a UART device.
   val hasPerCoreUart = cpuCnt > 1 && (1 until cpuCnt).exists { i =>
     val cc = perCoreConfigs.map(_(i)).getOrElse(baseConfig)

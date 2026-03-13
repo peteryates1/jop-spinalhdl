@@ -333,10 +333,6 @@ object ConfigFlashTopWiring extends DeviceTopWiring {
     } else if (ctx.isXilinx) {
       cluster.devicePin[Bool](instanceName, "data0") := ioPins("cf_miso").asInstanceOf[Bool]
       cluster.devicePin[Bool](instanceName, "flashReady") := True
-      // Expose cluster SPI for top-level mux wiring
-      val cfClusterDclk = cluster.devicePin[Bool](instanceName, "dclk")
-      val cfClusterNcs  = cluster.devicePin[Bool](instanceName, "ncs")
-      val cfClusterAsdo = cluster.devicePin[Bool](instanceName, "asdo")
     }
   }
 }

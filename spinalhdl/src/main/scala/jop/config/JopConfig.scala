@@ -119,7 +119,7 @@ case class JopSystem(
   lazy val effectiveDevices: Map[String, DeviceInstance] =
     coreConfigs.flatMap(_.effectiveDevices).toMap
 
-  // --- Per-core UART detection (replaces old perCoreUart boolean flag) ---
+  // --- Per-core UART detection ---
   def hasPerCoreUart: Boolean = cpuCnt > 1 &&
     coreConfigs.drop(1).exists(_.effectiveDevices.values.exists(_.deviceType == "uart"))
 

@@ -53,8 +53,6 @@ case class JopCore(
     // DMA BMB master ports (for devices with hasDma, e.g. VGA framebuffer reads)
     val dmaBmbCount = DeviceTypes.dmaCount(config.effectiveDevices)
     val dmaBmb = Vec(master(Bmb(config.memConfig.bmbParameter)), dmaBmbCount)
-    // Legacy alias for backward compat during migration
-    val vgaDmaBmb: Option[Bmb] = if (dmaBmbCount > 0) Some(dmaBmb(0)) else None
 
     // Pipeline status
     val pc        = out UInt(config.pcWidth bits)

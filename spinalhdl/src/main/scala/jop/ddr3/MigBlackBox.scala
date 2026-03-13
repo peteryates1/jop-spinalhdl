@@ -2,9 +2,14 @@ package jop.ddr3
 
 import spinal.core._
 
-// BlackBox for Vivado-generated MIG core (Native UI variant).
-// Port list matches the generated mig_7series_0 top-level.
-class MigBlackBox extends BlackBox {
+/**
+ * BlackBox for Vivado-generated MIG core (Native UI variant).
+ * Port list matches the generated mig_7series_0 top-level.
+ *
+ * @param hasCs Whether the MIG config includes ddr3_cs_n.
+ *              Au V2 has CS; Wukong MIG has emrCSSelection=Disable (no CS pin).
+ */
+class MigBlackBox(hasCs: Boolean = true) extends BlackBox {
   val io = new Bundle {
     val ddr3_dq      = inout(Analog(Bits(16 bits)))
     val ddr3_dqs_n   = inout(Analog(Bits(2 bits)))
@@ -18,7 +23,7 @@ class MigBlackBox extends BlackBox {
     val ddr3_ck_p    = out Bits(1 bits)
     val ddr3_ck_n    = out Bits(1 bits)
     val ddr3_cke     = out Bits(1 bits)
-    val ddr3_cs_n    = out Bits(1 bits)
+    val ddr3_cs_n    = hasCs generate (out Bits(1 bits))
     val ddr3_dm      = out Bits(2 bits)
     val ddr3_odt     = out Bits(1 bits)
 
