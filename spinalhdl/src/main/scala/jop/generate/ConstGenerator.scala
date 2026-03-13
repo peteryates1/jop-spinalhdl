@@ -29,20 +29,19 @@ object ConstGenerator {
     // Union of all cores' configs across all systems
     val allCores = config.systems.flatMap(_.coreConfigs)
 
-    // Union of all systems' IoConfigs (superset of device presence)
-    // Use system-level ioConfig (authoritative), not coreConfig.ioConfig (default)
-    val allIo = config.systems.map(_.ioConfig)
-    val hasEth = allIo.exists(_.hasEth)
-    val hasSdSpi = allIo.exists(_.hasSdSpi)
-    val hasSdNative = allIo.exists(_.hasSdNative)
-    val hasVgaDma = allIo.exists(_.hasVgaDma)
-    val hasVgaText = allIo.exists(_.hasVgaText)
-    val hasCfgFlash = allIo.exists(_.hasConfigFlash)
+    // Union of all systems' device presence (works on either devices or ioConfig path)
+    val hasEth = config.systems.exists(_.hasEth)
+    val hasSdSpi = config.systems.exists(_.hasSdSpi)
+    val hasSdNative = config.systems.exists(_.hasSdNative)
+    val hasVgaDma = config.systems.exists(_.hasDevice("vgadma"))
+    val hasVgaText = config.systems.exists(_.hasDevice("vgatext"))
+    val hasCfgFlash = config.systems.exists(_.hasConfigFlash)
 
     // Create superset IoConfig for address allocation
+    // (IoConfig is kept in sync with devices on all presets during migration)
     val supersetIo = IoConfig(
       hasEth = hasEth,
-      ethGmii = allIo.exists(_.ethGmii),
+      ethGmii = config.systems.exists(_.ethGmii),
       hasSdSpi = hasSdSpi,
       hasSdNative = hasSdNative,
       hasVgaDma = hasVgaDma,
@@ -66,7 +65,10 @@ object ConstGenerator {
     }
 
     // Number of interrupts: timer + max numIoInt across systems
-    val maxNumIoInt = allIo.map(_.numIoInt).max
+    val maxNumIoInt = config.systems.map { sys =>
+      val dummyCfg = JopCoreConfig(devices = sys.devices, ioConfig = sys.ioConfig)
+      dummyCfg.effectiveNumIoInt
+    }.max
     val numInterrupts = 1 + maxNumIoInt
 
     val sb = new StringBuilder

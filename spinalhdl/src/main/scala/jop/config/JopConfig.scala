@@ -79,7 +79,8 @@ case class JopSystem(
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None,
   ioConfig: IoConfig = IoConfig(),
   drivers: Seq[DeviceDriver] = Seq.empty,
-  perCoreUart: Boolean = false
+  perCoreUart: Boolean = false,
+  devices: Map[String, DeviceInstance] = Map.empty
 ) {
   require(cpuCnt >= 1, s"System '$name': cpuCnt must be at least 1")
   perCoreConfigs.foreach(pcc =>
@@ -108,6 +109,35 @@ case class JopSystem(
   // --- Derived: union of all cores' needs ---
   def needsIntegerCompute: Boolean = coreConfigs.exists(_.needsIntegerCompute)
   def needsFloatCompute: Boolean = coreConfigs.exists(_.needsFloatCompute)
+
+  // --- Device presence queries (work on either path: devices or ioConfig) ---
+  def hasDevice(deviceType: String): Boolean = {
+    if (devices.nonEmpty) devices.values.exists(_.deviceType == deviceType)
+    else deviceType match {
+      case "uart"      => ioConfig.hasUart
+      case "ethernet"  => ioConfig.hasEth
+      case "sdspi"     => ioConfig.hasSdSpi
+      case "sdnative"  => ioConfig.hasSdNative
+      case "vgadma"    => ioConfig.hasVgaDma
+      case "vgatext"   => ioConfig.hasVgaText
+      case "cfgflash"  => ioConfig.hasConfigFlash
+      case _           => false
+    }
+  }
+  def hasUart: Boolean = hasDevice("uart")
+  def hasEth: Boolean = hasDevice("ethernet")
+  def hasVga: Boolean = hasDevice("vgadma") || hasDevice("vgatext")
+  def hasSdNative: Boolean = hasDevice("sdnative")
+  def hasSdSpi: Boolean = hasDevice("sdspi")
+  def hasConfigFlash: Boolean = hasDevice("cfgflash")
+  def ethGmii: Boolean = {
+    if (devices.nonEmpty) {
+      devices.values.find(_.deviceType == "ethernet")
+        .flatMap(_.params.get("gmii"))
+        .exists(_.asInstanceOf[Boolean])
+    } else ioConfig.ethGmii
+  }
+  def phyDataWidth: Int = if (ethGmii) 8 else 4
 }
 
 // ==========================================================================
@@ -264,6 +294,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.Uart, DeviceDriver.EthGmii, DeviceDriver.SdNative))))
 
   /** EP4CGX150 + daughter board — SMP, N cores */
@@ -306,6 +337,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.UartFt2232))))
 
   /** Alchitry Au V2 */
@@ -317,6 +349,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,  // MIG ui_clk = 100 MHz (4:1, DDR3-800)
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.UartFt2232))))
 
   /** Alchitry Au V2 — minimum: no caches, no HW math */
@@ -328,6 +361,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = HertzNumber(BigDecimal(250000000) / 3),
       coreConfig = JopCoreConfig(memConfig = noCacheMemConfig),
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.UartFt2232))))
 
   /** Simulation (no physical board — uses QMTECH assembly as placeholder) */
@@ -338,7 +372,8 @@ object JopConfig {
       memory = "W9825G6JH6",
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
-      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware))))
+      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      devices = Map("uart" -> DeviceInstance("uart")))))
 
   // ========================================================================
   // Multi-system preset (Wukong dual-subsystem)
@@ -359,6 +394,7 @@ object JopConfig {
           fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
           fneg = Hardware, i2f = Hardware, f2i = Hardware,
           fcmpl = Hardware, fcmpg = Hardware),
+        devices = Map("uart" -> DeviceInstance("uart")),
         drivers = Seq(DeviceDriver.EthGmii, DeviceDriver.SdNative)),
       JopSystem(
         name = "io",
@@ -366,7 +402,8 @@ object JopConfig {
         bootMode = BootMode.Serial,
         clkFreq = 50 MHz,
         cpuCnt = 2,
-        coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware))),
+        coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+        devices = Map("uart" -> DeviceInstance("uart")))),
     interconnect = Some(InterconnectConfig(fifoDepth = 64)),
     monitors = Seq(WatchdogConfig(timeoutMs = 2000)))
 
@@ -384,6 +421,7 @@ object JopConfig {
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(
         supersetJumpTable = JumpTableInitData.serial),
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.Uart))))
 
   // ========================================================================
@@ -404,6 +442,7 @@ object JopConfig {
       memory = "W9864G6JT",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.UartFt2232))))
 
   /** Generic EP4CE6 — SDR SDRAM, no caches (6K LEs too small for O$/A$) */
@@ -415,6 +454,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(memConfig = noCacheMemConfig),
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.Uart))))
 
   // ========================================================================
@@ -430,6 +470,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.UartCh340))))
 
   /** Wukong SDR — all compute units, UART only (no Ethernet/SD) */
@@ -458,6 +499,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.UartCh340))))
 
   /** Wukong BRAM (single-system, simulation-mode) */
@@ -469,6 +511,7 @@ object JopConfig {
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.UartCh340))))
 
   /** Wukong BRAM with all compute units (DCU debug — simulation only) */
@@ -480,6 +523,7 @@ object JopConfig {
       bootMode = BootMode.Simulation,
       cpuCnt = 1,
       ioConfig = IoConfig(),
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.UartCh340))))
   }
 
@@ -496,6 +540,10 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       ioConfig = IoConfig.wukongFull,
+      devices = Map(
+        "uart" -> DeviceInstance("uart"),
+        "eth" -> DeviceInstance("ethernet", params = Map("gmii" -> true, "phyDataWidth" -> 8)),
+        "sdNative" -> DeviceInstance("sdnative")),
       coreConfig = JopCoreConfig(
         useDspMul = true,
         imul = Hardware, idiv = Hardware, irem = Hardware,
@@ -514,6 +562,7 @@ object JopConfig {
     val base = wukongFull
     base.copy(systems = Seq(base.system.copy(
       ioConfig = IoConfig(),
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.UartCh340))))
   }
 
@@ -530,6 +579,7 @@ object JopConfig {
       name = s"smp$n",
       cpuCnt = n,
       ioConfig = IoConfig(),
+      devices = Map("uart" -> DeviceInstance("uart")),
       drivers = Seq(DeviceDriver.UartCh340))))
   }
 
@@ -581,6 +631,10 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       ioConfig = IoConfig.wukongFull,
+      devices = Map(
+        "uart" -> DeviceInstance("uart"),
+        "eth" -> DeviceInstance("ethernet", params = Map("gmii" -> true, "phyDataWidth" -> 8)),
+        "sdNative" -> DeviceInstance("sdnative")),
       coreConfig = JopCoreConfig(
         useDspMul = true,
         imul = Hardware, idiv = Hardware, irem = Hardware,

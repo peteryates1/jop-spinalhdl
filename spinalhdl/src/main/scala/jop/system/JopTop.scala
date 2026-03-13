@@ -111,50 +111,50 @@ case class JopTop(
     val wk_ddr3_odt     = (isDdr3 && board.name == "qmtech-wukong-xc7a100t") generate (out Bits(1 bits))
 
     // Ethernet (EP4CGX150 with DB_FPGA only)
-    val e_txd    = sys.ioConfig.hasEth generate (out Bits(sys.ioConfig.phyDataWidth bits))
-    val e_txen   = sys.ioConfig.hasEth generate (out Bool())
-    val e_txer   = sys.ioConfig.hasEth generate (out Bool())
-    val e_txc    = (sys.ioConfig.hasEth && !sys.ioConfig.ethGmii) generate (in Bool())
-    val e_gtxc   = sys.ioConfig.hasEth generate (out Bool())
-    val e_rxd    = sys.ioConfig.hasEth generate (in Bits(sys.ioConfig.phyDataWidth bits))
-    val e_rxdv   = sys.ioConfig.hasEth generate (in Bool())
-    val e_rxer   = sys.ioConfig.hasEth generate (in Bool())
-    val e_rxc    = sys.ioConfig.hasEth generate (in Bool())
-    val e_mdc    = sys.ioConfig.hasEth generate (out Bool())
-    val e_mdio   = sys.ioConfig.hasEth generate master(TriState(Bool()))
-    val e_resetn = sys.ioConfig.hasEth generate (out Bool())
+    val e_txd    = sys.hasEth generate (out Bits(sys.phyDataWidth bits))
+    val e_txen   = sys.hasEth generate (out Bool())
+    val e_txer   = sys.hasEth generate (out Bool())
+    val e_txc    = (sys.hasEth && !sys.ethGmii) generate (in Bool())
+    val e_gtxc   = sys.hasEth generate (out Bool())
+    val e_rxd    = sys.hasEth generate (in Bits(sys.phyDataWidth bits))
+    val e_rxdv   = sys.hasEth generate (in Bool())
+    val e_rxer   = sys.hasEth generate (in Bool())
+    val e_rxc    = sys.hasEth generate (in Bool())
+    val e_mdc    = sys.hasEth generate (out Bool())
+    val e_mdio   = sys.hasEth generate master(TriState(Bool()))
+    val e_resetn = sys.hasEth generate (out Bool())
 
     // VGA (optional)
-    val vga_hs = sys.ioConfig.hasVga generate (out Bool())
-    val vga_vs = sys.ioConfig.hasVga generate (out Bool())
-    val vga_r  = sys.ioConfig.hasVga generate (out Bits(5 bits))
-    val vga_g  = sys.ioConfig.hasVga generate (out Bits(6 bits))
-    val vga_b  = sys.ioConfig.hasVga generate (out Bits(5 bits))
+    val vga_hs = sys.hasVga generate (out Bool())
+    val vga_vs = sys.hasVga generate (out Bool())
+    val vga_r  = sys.hasVga generate (out Bits(5 bits))
+    val vga_g  = sys.hasVga generate (out Bits(6 bits))
+    val vga_b  = sys.hasVga generate (out Bits(5 bits))
 
     // SD Native (optional)
-    val sd_clk   = sys.ioConfig.hasSdNative generate (out Bool())
-    val sd_cmd   = sys.ioConfig.hasSdNative generate master(TriState(Bool()))
-    val sd_dat_0 = sys.ioConfig.hasSdNative generate master(TriState(Bool()))
-    val sd_dat_1 = sys.ioConfig.hasSdNative generate master(TriState(Bool()))
-    val sd_dat_2 = sys.ioConfig.hasSdNative generate master(TriState(Bool()))
-    val sd_dat_3 = sys.ioConfig.hasSdNative generate master(TriState(Bool()))
-    val sd_cd    = sys.ioConfig.hasSdNative generate (in Bool())
+    val sd_clk   = sys.hasSdNative generate (out Bool())
+    val sd_cmd   = sys.hasSdNative generate master(TriState(Bool()))
+    val sd_dat_0 = sys.hasSdNative generate master(TriState(Bool()))
+    val sd_dat_1 = sys.hasSdNative generate master(TriState(Bool()))
+    val sd_dat_2 = sys.hasSdNative generate master(TriState(Bool()))
+    val sd_dat_3 = sys.hasSdNative generate master(TriState(Bool()))
+    val sd_cd    = sys.hasSdNative generate (in Bool())
 
     // SD SPI (optional)
-    val sd_spi_clk  = sys.ioConfig.hasSdSpi generate (out Bool())
-    val sd_spi_mosi = sys.ioConfig.hasSdSpi generate (out Bool())
-    val sd_spi_miso = sys.ioConfig.hasSdSpi generate (in Bool())
-    val sd_spi_cs   = sys.ioConfig.hasSdSpi generate (out Bool())
-    val sd_spi_cd   = sys.ioConfig.hasSdSpi generate (in Bool())
+    val sd_spi_clk  = sys.hasSdSpi generate (out Bool())
+    val sd_spi_mosi = sys.hasSdSpi generate (out Bool())
+    val sd_spi_miso = sys.hasSdSpi generate (in Bool())
+    val sd_spi_cs   = sys.hasSdSpi generate (out Bool())
+    val sd_spi_cd   = sys.hasSdSpi generate (in Bool())
 
     // Config flash SPI (optional)
-    val cf_dclk  = (sys.ioConfig.hasConfigFlash && isAltera) generate (out Bool())
-    val cf_ncs   = (sys.ioConfig.hasConfigFlash && isAltera) generate (out Bool())
-    val cf_asdo  = (sys.ioConfig.hasConfigFlash && isAltera) generate (out Bool())
-    val cf_data0 = (sys.ioConfig.hasConfigFlash && isAltera) generate (in Bool())
-    val cf_mosi  = (sys.ioConfig.hasConfigFlash && isXilinx) generate (out Bool())
-    val cf_miso  = (sys.ioConfig.hasConfigFlash && isXilinx) generate (in Bool())
-    val cf_cs    = (sys.ioConfig.hasConfigFlash && isXilinx) generate (out Bool())
+    val cf_dclk  = (sys.hasConfigFlash && isAltera) generate (out Bool())
+    val cf_ncs   = (sys.hasConfigFlash && isAltera) generate (out Bool())
+    val cf_asdo  = (sys.hasConfigFlash && isAltera) generate (out Bool())
+    val cf_data0 = (sys.hasConfigFlash && isAltera) generate (in Bool())
+    val cf_mosi  = (sys.hasConfigFlash && isXilinx) generate (out Bool())
+    val cf_miso  = (sys.hasConfigFlash && isXilinx) generate (in Bool())
+    val cf_cs    = (sys.hasConfigFlash && isXilinx) generate (out Bool())
 
     // Per-core UART TX (optional, for SMP debug)
     val jp1_txd = sys.perCoreUart generate (out Bits(sys.cpuCnt bits))
@@ -203,7 +203,7 @@ case class JopTop(
     pllResult = Pll.create(board.name, memType, boardClk)
 
     // 3. Ethernet PLL (EP4CGX150 GMII only)
-    if (sys.ioConfig.ethGmii && board.name == "qmtech-ep4cgx150") {
+    if (sys.ethGmii && board.name == "qmtech-ep4cgx150") {
       ethPll = EthPll()
       ethPll.io.inclk0 := boardClk
     }
@@ -291,12 +291,12 @@ case class JopTop(
 
   // 6. Ethernet/VGA Clock Domains (FPGA only, not in sim)
 
-  val ethTxClk = if (!simulation && sys.ioConfig.ethGmii && ethPll != null) ethPll.io.c0
-                 else if (!simulation && sys.ioConfig.ethGmii && pllResult != null && pllResult.ethClk.isDefined) pllResult.ethClk.get
-                 else if (!simulation && sys.ioConfig.hasEth) io.e_txc
+  val ethTxClk = if (!simulation && sys.ethGmii && ethPll != null) ethPll.io.c0
+                 else if (!simulation && sys.ethGmii && pllResult != null && pllResult.ethClk.isDefined) pllResult.ethClk.get
+                 else if (!simulation && sys.hasEth) io.e_txc
                  else null
 
-  val ethTxCd = (!simulation && sys.ioConfig.hasEth) generate {
+  val ethTxCd = (!simulation && sys.hasEth) generate {
     val txBootCd = ClockDomain(ethTxClk, config = ClockDomainConfig(resetKind = BOOT))
     val txReset = ResetCtrl.asyncAssertSyncDeassert(
       input = systemReset,
@@ -311,9 +311,9 @@ case class JopTop(
     )
   }
 
-  val ethRxClk = if (!simulation && sys.ioConfig.hasEth) io.e_rxc else null
+  val ethRxClk = if (!simulation && sys.hasEth) io.e_rxc else null
 
-  val ethRxCd = (!simulation && sys.ioConfig.hasEth) generate {
+  val ethRxCd = (!simulation && sys.hasEth) generate {
     val rxBootCd = ClockDomain(ethRxClk, config = ClockDomainConfig(resetKind = BOOT))
     val rxReset = ResetCtrl.asyncAssertSyncDeassert(
       input = systemReset,
@@ -328,7 +328,7 @@ case class JopTop(
     )
   }
 
-  val vgaCd = sys.ioConfig.hasVga generate {
+  val vgaCd = sys.hasVga generate {
     if (simulation) {
       ClockDomain.external("vgaCd", withReset = false,
         config = ClockDomainConfig(resetKind = BOOT))
@@ -374,6 +374,7 @@ case class JopTop(
       supersetJumpTable = sys.baseJumpTable,
       clkFreq = sys.clkFreq,
       ioConfig = sys.ioConfig,
+      devices = sys.devices,
       useStackCache = isDdr3 || (isSdr && board.name == "qmtech-wukong-xc7a100t")
     ))
 
@@ -387,9 +388,9 @@ case class JopTop(
       romInit = Some(romInit),
       ramInit = Some(ramInit),
       jbcInit = Some(Seq.fill(2048)(BigInt(0))),
-      ethTxCd = if (!simulation && sys.ioConfig.hasEth) Some(ethTxCd) else None,
-      ethRxCd = if (!simulation && sys.ioConfig.hasEth) Some(ethRxCd) else None,
-      vgaCd = if (sys.ioConfig.hasVga) Some(vgaCd) else None,
+      ethTxCd = if (!simulation && sys.hasEth) Some(ethTxCd) else None,
+      ethRxCd = if (!simulation && sys.hasEth) Some(ethRxCd) else None,
+      vgaCd = if (sys.hasVga) Some(vgaCd) else None,
       perCoreUart = sys.perCoreUart,
       perCoreConfigs = if (coreConfigs.length > 1 || coreConfigs.head != JopCoreConfig())
         Some(coreConfigs) else None
@@ -452,10 +453,10 @@ case class JopTop(
     // ==================================================================
 
     if (cluster.devicePins.contains("eth")) {
-      val dataWidth = sys.ioConfig.phyDataWidth
+      val dataWidth = sys.phyDataWidth
 
       // GTX clock (125 MHz from EthPll on Altera, PLL ethClk on Xilinx)
-      if (sys.ioConfig.ethGmii) {
+      if (sys.ethGmii) {
         io.e_gtxc := ethTxClk
       } else {
         io.e_gtxc := False
@@ -566,7 +567,7 @@ case class JopTop(
     // Config Flash — Altera (optional)
     // ==================================================================
 
-    if (sys.ioConfig.hasConfigFlash && isAltera && cluster.devicePins.contains("cfgFlash")) {
+    if (sys.hasConfigFlash && isAltera && cluster.devicePins.contains("cfgFlash")) {
       io.cf_dclk := cluster.devicePin[Bool]("cfgFlash", "dclk")
       io.cf_ncs  := cluster.devicePin[Bool]("cfgFlash", "ncs")
       io.cf_asdo := cluster.devicePin[Bool]("cfgFlash", "asdo")
@@ -580,7 +581,7 @@ case class JopTop(
     //       For now, just expose the cluster's SPI signals directly.
     // ==================================================================
 
-    if (sys.ioConfig.hasConfigFlash && isXilinx && cluster.devicePins.contains("cfgFlash")) {
+    if (sys.hasConfigFlash && isXilinx && cluster.devicePins.contains("cfgFlash")) {
       cluster.devicePin[Bool]("cfgFlash", "data0") := io.cf_miso
       cluster.devicePin[Bool]("cfgFlash", "flashReady") := True
 
