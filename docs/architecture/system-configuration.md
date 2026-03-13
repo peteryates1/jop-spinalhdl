@@ -544,13 +544,13 @@ System-level integration. Defined in `jop/system/JopCluster.scala`.
 | `ramInit` | Option[Seq[BigInt]] | None | Stack RAM initialization |
 | `jbcInit` | Option[Seq[BigInt]] | None | JBC RAM initialization |
 | `separateStackDmaBus` | Boolean | false | Route stack DMA to separate BMB port |
-| `perCoreUart` | Boolean | false | Per-core UART TX pins (SMP debug) |
-| `perCoreConfigs` | Option[Seq[JopCoreConfig]] | None | Per-core config overrides |
+| `perCoreConfigs` | Option[Seq[JopCoreConfig]] | None | Per-core config overrides (devices, bytecodes) |
 
 ### SMP Behaviour
 
 - **cpuCnt = 1**: Direct BMB connection (no arbiter overhead)
 - **cpuCnt >= 2**: Round-robin BMB arbiter + CmpSync (or IHLU) for synchronization
 - Each core gets a unique `cpuId` (0 to cpuCnt-1)
-- Core 0 has UART; other cores have `hasUart = false`
+- Devices are per-core: core 0 inherits system `devices`, cores 1+ get empty by default
+- Per-core UART: put UART in each core's `perCoreConfigs` devices for SMP debug
 - Boot: Core 0 runs init; other cores wait for `IO_SIGNAL`

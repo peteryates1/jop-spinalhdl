@@ -157,8 +157,8 @@ case class JopTop(
     val cf_cs    = (sys.hasConfigFlash && isXilinx) generate (out Bool())
 
     // Per-core UART TX (optional, for SMP debug)
-    val jp1_txd = sys.perCoreUart generate (out Bits(sys.cpuCnt bits))
-    val jp1_wd  = sys.perCoreUart generate (out Bits(sys.cpuCnt bits))
+    val jp1_txd = sys.hasPerCoreUart generate (out Bits(sys.cpuCnt bits))
+    val jp1_wd  = sys.hasPerCoreUart generate (out Bits(sys.cpuCnt bits))
   }
 
   noIoPrefix()
@@ -344,6 +344,8 @@ case class JopTop(
     val burstLen = if (sys.cpuCnt > 1 && (isSdr || isDdr3)) 4
                    else 0
 
+    // Per-core configs: devices are already distributed by sys.coreConfigs
+    // (core 0 gets system devices, cores 1+ get empty unless overridden).
     val coreConfigs = sys.coreConfigs.map(cc => cc.copy(
       memConfig = if (isDdr3) cc.memConfig.copy(
         addressWidth = 28,
@@ -359,7 +361,6 @@ case class JopTop(
       ),
       supersetJumpTable = sys.baseJumpTable,
       clkFreq = sys.clkFreq,
-      devices = sys.effectiveDevices,
       useStackCache = isDdr3 || (isSdr && board.name == "qmtech-wukong-xc7a100t")
     ))
 
@@ -376,9 +377,7 @@ case class JopTop(
       ethTxCd = deviceClockDomains.ethTxCd,
       ethRxCd = deviceClockDomains.ethRxCd,
       vgaCd = deviceClockDomains.vgaCd,
-      perCoreUart = sys.perCoreUart,
-      perCoreConfigs = if (coreConfigs.length > 1 || coreConfigs.head != JopCoreConfig())
-        Some(coreConfigs) else None
+      perCoreConfigs = Some(coreConfigs)
     )
 
     // ==================================================================
@@ -426,7 +425,7 @@ case class JopTop(
     cluster.devicePin[Bool]("uart", "rxd") := io.ser_rxd
 
     // Per-core UART TX (when enabled)
-    if (sys.perCoreUart) {
+    if (sys.hasPerCoreUart) {
       for (i <- 0 until sys.cpuCnt) {
         io.jp1_txd(i) := cluster.io.perCoreTxd.get(i)
         io.jp1_wd(i)  := cluster.io.wd(i)(0)

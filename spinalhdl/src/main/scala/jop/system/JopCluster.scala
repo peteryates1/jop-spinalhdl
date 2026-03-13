@@ -44,7 +44,6 @@ case class JopCluster(
   ethRxCd: Option[ClockDomain] = None,
   vgaCd:   Option[ClockDomain] = None,
   separateStackDmaBus: Boolean = false,
-  perCoreUart: Boolean = false,
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
@@ -62,12 +61,20 @@ case class JopCluster(
     }
   }
 
+  // Detect per-core UART from config (replaces old perCoreUart boolean flag).
+  // True when cpuCnt > 1 and any core other than 0 has a UART device.
+  val hasPerCoreUart = cpuCnt > 1 && (1 until cpuCnt).exists { i =>
+    val cc = perCoreConfigs.map(_(i)).getOrElse(baseConfig)
+    cc.effectiveDevices.values.exists(_.deviceType == "uart")
+  }
+
   // Number of BMB inputs: cores + optional debug controller + DMA devices (core 0) + optional stack DMA (per-core)
   // When separateStackDmaBus=true, DMA uses its own bus (not the main arbiter)
   val hasDebugMem = debugConfig.exists(_.hasMemAccess)
+  val core0Config = perCoreConfigs.map(_(0)).getOrElse(baseConfig)
   val dmaDeviceCount = {
     import jop.io.DeviceTypes
-    DeviceTypes.dmaCount(baseConfig.effectiveDevices)
+    DeviceTypes.dmaCount(core0Config.effectiveDevices)
   }
   val hasStackDma = baseConfig.useStackCache
   val stackDmaInArbiter = hasStackDma && !separateStackDmaBus
@@ -144,7 +151,7 @@ case class JopCluster(
     val debugTransport = if (debugConfig.isDefined) Some(slave(DebugTransport())) else None
 
     // Per-core UART TX (optional, for SMP debug via JP1 header)
-    val perCoreTxd = if (perCoreUart) Some(out Vec(Bool(), cpuCnt)) else None
+    val perCoreTxd = if (hasPerCoreUart) Some(out Vec(Bool(), cpuCnt)) else None
 
   }
 
@@ -157,15 +164,9 @@ case class JopCluster(
   // bus, and all other cores check tags and selectively invalidate.
 
   val cores = (0 until cpuCnt).map { i =>
-    // Use per-core config if provided, otherwise fall back to baseConfig.
+    // Per-core devices are set declaratively in the config (by JopSystem.coreConfigs).
     val base = perCoreConfigs.map(_(i)).getOrElse(baseConfig)
-    // Per-core device restriction: core 0 gets all devices, cores 1+ get UART only (if perCoreUart)
-    val coreDevices = if (i == 0) base.effectiveDevices
-      else {
-        if (perCoreUart) base.effectiveDevices.filter(_._2.deviceType == "uart")
-        else Map.empty[String, DeviceInstance]
-      }
-    val coreConfig = base.copy(cpuId = i, cpuCnt = cpuCnt, devices = coreDevices)
+    val coreConfig = base.copy(cpuId = i, cpuCnt = cpuCnt)
     JopCore(
       config = coreConfig,
       romInit = romInit,
@@ -493,7 +494,7 @@ case class JopCluster(
   }
 
   // Per-core UART TX routing (for SMP debug via JP1)
-  if (perCoreUart) {
+  if (hasPerCoreUart) {
     for (i <- 0 until cpuCnt) {
       if (cores(i).devicePins.contains("uart")) {
         io.perCoreTxd.get(i) := cores(i).devicePin[Bool]("uart", "txd")

@@ -63,8 +63,10 @@ object ArbiterType {
  * @param clkFreq        System clock frequency (after PLL)
  * @param cpuCnt         Number of CPU cores
  * @param coreConfig     Default configuration for all cores
- * @param perCoreConfigs Optional per-core override (heterogeneous cores)
- * @param perCoreUart    Whether each core gets its own UART (debug)
+ * @param perCoreConfigs Optional per-core override (heterogeneous cores).
+ *                       Per-core configs with non-empty `devices` keep their
+ *                       own devices; otherwise core 0 inherits system `devices`
+ *                       and cores 1+ start with an empty device map.
  */
 case class JopSystem(
   name: String,
@@ -75,7 +77,6 @@ case class JopSystem(
   cpuCnt: Int = 1,
   coreConfig: JopCoreConfig = JopCoreConfig(),
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None,
-  perCoreUart: Boolean = false,
   devices: Map[String, DeviceInstance] = Map.empty
 ) {
   require(cpuCnt >= 1, s"System '$name': cpuCnt must be at least 1")
@@ -98,16 +99,29 @@ case class JopSystem(
     case BootMode.Simulation => JumpTableInitData.simulation
   }
 
-  // --- Derived: per-core configs (heterogeneous or uniform) ---
-  def coreConfigs: Seq[JopCoreConfig] = perCoreConfigs.getOrElse(
-    Seq.fill(cpuCnt)(coreConfig))
+  // --- Derived: per-core configs with devices distributed ---
+  // Core 0 inherits system `devices` (unless its config already has devices).
+  // Cores 1+ start with empty devices (unless their config has explicit devices).
+  def coreConfigs: Seq[JopCoreConfig] = {
+    val base = perCoreConfigs.getOrElse(Seq.fill(cpuCnt)(coreConfig))
+    base.zipWithIndex.map { case (cc, i) =>
+      if (cc.devices.nonEmpty) cc
+      else if (i == 0) cc.copy(devices = devices)
+      else cc
+    }
+  }
 
   // --- Derived: union of all cores' needs ---
   def needsIntegerCompute: Boolean = coreConfigs.exists(_.needsIntegerCompute)
   def needsFloatCompute: Boolean = coreConfigs.exists(_.needsFloatCompute)
 
-  // --- Resolved devices ---
-  lazy val effectiveDevices: Map[String, DeviceInstance] = devices
+  // --- Resolved devices (union of all cores' devices) ---
+  lazy val effectiveDevices: Map[String, DeviceInstance] =
+    coreConfigs.flatMap(_.effectiveDevices).toMap
+
+  // --- Per-core UART detection (replaces old perCoreUart boolean flag) ---
+  def hasPerCoreUart: Boolean = cpuCnt > 1 &&
+    coreConfigs.drop(1).exists(_.effectiveDevices.values.exists(_.deviceType == "uart"))
 
   // --- Device presence queries (single path via effectiveDevices) ---
   def hasDevice(deviceType: String): Boolean =
