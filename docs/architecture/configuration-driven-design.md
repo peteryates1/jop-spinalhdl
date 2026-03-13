@@ -15,7 +15,7 @@
 | 5e | Simulation Mode | **Done** — `JopTop(simulation=true)` bypasses PLL/MIG for Verilator |
 | 5f | Vendor-Specific Memory Primitives | **Done** — `MemoryStyle` config: `AlteraLpm` (lpm_rom/lpm_ram_dp BlackBox with .mif) vs `Generic` (SpinalHDL Mem). Auto-derived from FPGA manufacturer. Small FPGA presets disable caches. |
 | 5g | Pluggable I/O (HasBusIo / IoAddressAllocator) | **Done** — `IoDeviceDescriptor`, `HasBusIo` trait, `IoAddressAllocator`, compact I/O address layout (Sys 0xF0-0xFF, boot 0xEE-0xEF, auto-alloc 0xED down) |
-| 5h | Declarative Assembly Config | Not started — `DeviceInstance`, `DeviceTypes` registry, per-core devices, per-cluster `Const.java`, 11-step migration from `IoConfig` boolean flags |
+| 5h | Declarative Assembly Config | **Done** — `DeviceInstance`/`DeviceTypes` registry, `effectiveDevices` pattern (lazy val with `IoConfig.toDevices()` fallback), `DeviceTopWiring` dispatch trait (5 concrete wiring objects), all 18 presets migrated to declarative `devices` map, `ConstGenerator` uses `effectiveDevices` directly, JopTop shrunk ~140 lines |
 | 6 | Board-Specific Modular Java Runtime | Not started |
 | 7 | Simulation Harness Dedup | Not started |
 | 8 | Build System | Not started |
