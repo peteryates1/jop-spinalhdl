@@ -8,6 +8,17 @@ import jop.config._
 import jop.system.{JopCluster, EthPll, ResetGenerator}
 import jop.system.pll.PllResult
 
+/** Direction and width of a top-level device port. */
+sealed trait TopPinType
+object TopPinType {
+  case class Out(width: Int = 1) extends TopPinType
+  case class In(width: Int = 1) extends TopPinType
+  case object TriStateBool extends TopPinType
+}
+
+/** A top-level FPGA port required by a device. */
+case class TopPin(name: String, pinType: TopPinType)
+
 /**
  * Context for top-level device wiring.
  *
@@ -52,6 +63,15 @@ trait DeviceTopWiring {
   def deviceType: String
 
   /**
+   * Top-level FPGA ports this device requires.
+   * Used by JopTop to auto-generate ports — no hardcoded per-device declarations needed.
+   *
+   * @param inst         Device instance (params for width/mode selection)
+   * @param manufacturer FPGA manufacturer (for vendor-specific pin sets)
+   */
+  def topPins(inst: DeviceInstance, manufacturer: Manufacturer): Seq[TopPin] = Seq.empty
+
+  /**
    * Create clock domains needed before mainArea.
    * Default: none. Override for Ethernet/VGA.
    */
@@ -85,6 +105,24 @@ trait DeviceTopWiring {
 
 object EthernetTopWiring extends DeviceTopWiring {
   val deviceType = "ethernet"
+
+  override def topPins(inst: DeviceInstance, manufacturer: Manufacturer): Seq[TopPin] = {
+    val gmii = inst.params.getOrElse("gmii", false).asInstanceOf[Boolean]
+    val dataWidth = inst.params.getOrElse("phyDataWidth", if (gmii) 8 else 4).asInstanceOf[Int]
+    Seq(
+      TopPin("e_txd", TopPinType.Out(dataWidth)),
+      TopPin("e_txen", TopPinType.Out()),
+      TopPin("e_txer", TopPinType.Out()),
+      TopPin("e_gtxc", TopPinType.Out()),
+      TopPin("e_rxd", TopPinType.In(dataWidth)),
+      TopPin("e_rxdv", TopPinType.In()),
+      TopPin("e_rxer", TopPinType.In()),
+      TopPin("e_rxc", TopPinType.In()),
+      TopPin("e_mdc", TopPinType.Out()),
+      TopPin("e_mdio", TopPinType.TriStateBool),
+      TopPin("e_resetn", TopPinType.Out())
+    ) ++ (if (!gmii) Seq(TopPin("e_txc", TopPinType.In())) else Seq.empty)
+  }
 
   override def createClockDomains(
     ctx: TopWiringContext,
@@ -208,6 +246,14 @@ object EthernetTopWiring extends DeviceTopWiring {
 object VgaTopWiring extends DeviceTopWiring {
   val deviceType = "vga"
 
+  override def topPins(inst: DeviceInstance, manufacturer: Manufacturer): Seq[TopPin] = Seq(
+    TopPin("vga_hs", TopPinType.Out()),
+    TopPin("vga_vs", TopPinType.Out()),
+    TopPin("vga_r", TopPinType.Out(5)),
+    TopPin("vga_g", TopPinType.Out(6)),
+    TopPin("vga_b", TopPinType.Out(5))
+  )
+
   override def createClockDomains(
     ctx: TopWiringContext,
     ioPins: Map[String, Data]
@@ -254,6 +300,16 @@ object VgaTopWiring extends DeviceTopWiring {
 object SdNativeTopWiring extends DeviceTopWiring {
   val deviceType = "sdnative"
 
+  override def topPins(inst: DeviceInstance, manufacturer: Manufacturer): Seq[TopPin] = Seq(
+    TopPin("sd_clk", TopPinType.Out()),
+    TopPin("sd_cmd", TopPinType.TriStateBool),
+    TopPin("sd_dat_0", TopPinType.TriStateBool),
+    TopPin("sd_dat_1", TopPinType.TriStateBool),
+    TopPin("sd_dat_2", TopPinType.TriStateBool),
+    TopPin("sd_dat_3", TopPinType.TriStateBool),
+    TopPin("sd_cd", TopPinType.In())
+  )
+
   def wireDevice(
     instanceName: String,
     cluster: JopCluster,
@@ -295,6 +351,14 @@ object SdNativeTopWiring extends DeviceTopWiring {
 object SdSpiTopWiring extends DeviceTopWiring {
   val deviceType = "sdspi"
 
+  override def topPins(inst: DeviceInstance, manufacturer: Manufacturer): Seq[TopPin] = Seq(
+    TopPin("sd_spi_clk", TopPinType.Out()),
+    TopPin("sd_spi_mosi", TopPinType.Out()),
+    TopPin("sd_spi_miso", TopPinType.In()),
+    TopPin("sd_spi_cs", TopPinType.Out()),
+    TopPin("sd_spi_cd", TopPinType.In())
+  )
+
   def wireDevice(
     instanceName: String,
     cluster: JopCluster,
@@ -314,6 +378,17 @@ object SdSpiTopWiring extends DeviceTopWiring {
 
 object ConfigFlashTopWiring extends DeviceTopWiring {
   val deviceType = "cfgflash"
+
+  override def topPins(inst: DeviceInstance, manufacturer: Manufacturer): Seq[TopPin] = {
+    if (manufacturer == Manufacturer.Altera) Seq(
+      TopPin("cf_dclk", TopPinType.Out()),
+      TopPin("cf_ncs", TopPinType.Out()),
+      TopPin("cf_asdo", TopPinType.Out()),
+      TopPin("cf_data0", TopPinType.In())
+    ) else if (manufacturer == Manufacturer.Xilinx) Seq(
+      TopPin("cf_miso", TopPinType.In())
+    ) else Seq.empty
+  }
 
   def wireDevice(
     instanceName: String,

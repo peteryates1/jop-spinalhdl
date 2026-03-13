@@ -4,18 +4,15 @@ import jop.config._
 
 import spinal.core._
 import spinal.lib._
-import spinal.lib.io.{InOutWrapper, TriState}
+import spinal.lib.io.TriState
 import spinal.lib.memory.sdram.SdramLayout
 import spinal.lib.memory.sdram.sdr._
 import jop.memory.W9864G6JT
-import jop.utils.JopFileLoader
 import jop.memory.{JopMemoryConfig, BmbSdramCtrl32}
-import jop.pipeline.JumpTableInitData
-import jop.debug.{DebugConfig, DebugUart}
-import jop.ddr3.{MigBlackBox, StartupE2}
+import jop.ddr3.MigBlackBox
 import jop.system.pll.{Pll, PllResult}
-import jop.system.memory.{MemoryControllerFactory, SdrMemCtrl, Ddr3MemCtrl}
-import jop.io.{DeviceTopWirings, TopWiringContext, DeviceClockDomains}
+import jop.system.memory.MemoryControllerFactory
+import jop.io.{DeviceTopWirings, TopWiringContext, DeviceClockDomains, TopPinType}
 
 /**
  * Unified JOP FPGA Top-Level — replaces all 7 board-specific top files.
@@ -95,52 +92,6 @@ case class JopTop(
     val ddr3_dm      = isDdr3 generate (out Bits(2 bits))
     val ddr3_odt     = isDdr3 generate (out Bits(1 bits))
 
-    // Ethernet (EP4CGX150 with DB_FPGA only)
-    val e_txd    = sys.hasEth generate (out Bits(sys.phyDataWidth bits))
-    val e_txen   = sys.hasEth generate (out Bool())
-    val e_txer   = sys.hasEth generate (out Bool())
-    val e_txc    = (sys.hasEth && !sys.ethGmii) generate (in Bool())
-    val e_gtxc   = sys.hasEth generate (out Bool())
-    val e_rxd    = sys.hasEth generate (in Bits(sys.phyDataWidth bits))
-    val e_rxdv   = sys.hasEth generate (in Bool())
-    val e_rxer   = sys.hasEth generate (in Bool())
-    val e_rxc    = sys.hasEth generate (in Bool())
-    val e_mdc    = sys.hasEth generate (out Bool())
-    val e_mdio   = sys.hasEth generate master(TriState(Bool()))
-    val e_resetn = sys.hasEth generate (out Bool())
-
-    // VGA (optional)
-    val vga_hs = sys.hasVga generate (out Bool())
-    val vga_vs = sys.hasVga generate (out Bool())
-    val vga_r  = sys.hasVga generate (out Bits(5 bits))
-    val vga_g  = sys.hasVga generate (out Bits(6 bits))
-    val vga_b  = sys.hasVga generate (out Bits(5 bits))
-
-    // SD Native (optional)
-    val sd_clk   = sys.hasSdNative generate (out Bool())
-    val sd_cmd   = sys.hasSdNative generate master(TriState(Bool()))
-    val sd_dat_0 = sys.hasSdNative generate master(TriState(Bool()))
-    val sd_dat_1 = sys.hasSdNative generate master(TriState(Bool()))
-    val sd_dat_2 = sys.hasSdNative generate master(TriState(Bool()))
-    val sd_dat_3 = sys.hasSdNative generate master(TriState(Bool()))
-    val sd_cd    = sys.hasSdNative generate (in Bool())
-
-    // SD SPI (optional)
-    val sd_spi_clk  = sys.hasSdSpi generate (out Bool())
-    val sd_spi_mosi = sys.hasSdSpi generate (out Bool())
-    val sd_spi_miso = sys.hasSdSpi generate (in Bool())
-    val sd_spi_cs   = sys.hasSdSpi generate (out Bool())
-    val sd_spi_cd   = sys.hasSdSpi generate (in Bool())
-
-    // Config flash SPI (optional)
-    val cf_dclk  = (sys.hasConfigFlash && isAltera) generate (out Bool())
-    val cf_ncs   = (sys.hasConfigFlash && isAltera) generate (out Bool())
-    val cf_asdo  = (sys.hasConfigFlash && isAltera) generate (out Bool())
-    val cf_data0 = (sys.hasConfigFlash && isAltera) generate (in Bool())
-    val cf_mosi  = (sys.hasConfigFlash && isXilinx) generate (out Bool())
-    val cf_miso  = (sys.hasConfigFlash && isXilinx) generate (in Bool())
-    val cf_cs    = (sys.hasConfigFlash && isXilinx) generate (out Bool())
-
     // Per-core UART TX (optional, for SMP debug)
     val jp1_txd = sys.hasPerCoreUart generate (out Bits(sys.cpuCnt bits))
     val jp1_wd  = sys.hasPerCoreUart generate (out Bits(sys.cpuCnt bits))
@@ -148,35 +99,29 @@ case class JopTop(
 
   noIoPrefix()
 
-  // Build io pin map for DeviceTopWiring dispatch
+  // Auto-generated device IO ports from DeviceTopWiring.topPins.
+  // Adding a new device type only requires a DeviceTopWiring implementation — no JopTop changes.
   private val ioPinMap: Map[String, Data] = {
-    var m = Map.empty[String, Data]
-    if (sys.hasEth) {
-      m ++= Map(
-        "e_txd" -> io.e_txd, "e_txen" -> io.e_txen, "e_txer" -> io.e_txer,
-        "e_gtxc" -> io.e_gtxc, "e_rxd" -> io.e_rxd, "e_rxdv" -> io.e_rxdv,
-        "e_rxer" -> io.e_rxer, "e_rxc" -> io.e_rxc, "e_mdc" -> io.e_mdc,
-        "e_mdio" -> io.e_mdio, "e_resetn" -> io.e_resetn)
-      if (!sys.ethGmii) m += "e_txc" -> io.e_txc
+    val manufacturer = config.fpgaFamily.manufacturer
+    val ports = scala.collection.mutable.LinkedHashMap.empty[String, Data]
+    for ((_, inst) <- sys.effectiveDevices) {
+      DeviceTopWirings.forInstance(inst).foreach { wiring =>
+        for (pin <- wiring.topPins(inst, manufacturer)) {
+          if (!ports.contains(pin.name)) {
+            val signal: Data = pin.pinType match {
+              case TopPinType.Out(1) => out(Bool())
+              case TopPinType.Out(w) => out(Bits(w bits))
+              case TopPinType.In(1)  => in(Bool())
+              case TopPinType.In(w)  => in(Bits(w bits))
+              case TopPinType.TriStateBool => master(TriState(Bool()))
+            }
+            signal.setName(pin.name)
+            ports(pin.name) = signal
+          }
+        }
+      }
     }
-    if (sys.hasVga) m ++= Map(
-      "vga_hs" -> io.vga_hs, "vga_vs" -> io.vga_vs,
-      "vga_r" -> io.vga_r, "vga_g" -> io.vga_g, "vga_b" -> io.vga_b)
-    if (sys.hasSdNative) m ++= Map(
-      "sd_clk" -> io.sd_clk, "sd_cmd" -> io.sd_cmd,
-      "sd_dat_0" -> io.sd_dat_0, "sd_dat_1" -> io.sd_dat_1,
-      "sd_dat_2" -> io.sd_dat_2, "sd_dat_3" -> io.sd_dat_3,
-      "sd_cd" -> io.sd_cd)
-    if (sys.hasSdSpi) m ++= Map(
-      "sd_spi_clk" -> io.sd_spi_clk, "sd_spi_mosi" -> io.sd_spi_mosi,
-      "sd_spi_miso" -> io.sd_spi_miso, "sd_spi_cs" -> io.sd_spi_cs,
-      "sd_spi_cd" -> io.sd_spi_cd)
-    if (sys.hasConfigFlash && isAltera) m ++= Map(
-      "cf_dclk" -> io.cf_dclk, "cf_ncs" -> io.cf_ncs,
-      "cf_asdo" -> io.cf_asdo, "cf_data0" -> io.cf_data0)
-    if (sys.hasConfigFlash && isXilinx) m ++= Map(
-      "cf_miso" -> io.cf_miso)
-    m
+    ports.toMap
   }
 
   // ========================================================================

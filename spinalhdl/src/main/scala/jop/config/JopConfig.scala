@@ -331,9 +331,15 @@ object JopConfig {
       name = "main",
       memory = "W9864G6JT",
       bootMode = BootMode.Serial,
-      clkFreq = 100 MHz,
+      clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))))))
+
+  /** CYC5000 SMP (N cores) */
+  def cyc5000Smp(n: Int) = {
+    val base = cyc5000Serial
+    base.copy(systems = Seq(base.system.copy(cpuCnt = n)))
+  }
 
   /** Alchitry Au V2 */
   def auSerial = JopConfig(

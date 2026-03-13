@@ -72,11 +72,11 @@ microcode:
 # --------------------------------------------------------------------------
 
 generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopCyc5000TopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog cyc5000Serial"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
 
 generate-smp:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopSmpCyc5000TopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog cyc5000Smp 2"
 	@echo "=== SMP Verilog generated: $(GENERATED_SMP_V) ==="
 
 # --------------------------------------------------------------------------

@@ -2,8 +2,41 @@ package jop.system.pll
 
 import spinal.core._
 import jop.config._
-import jop.system.{DramPll, Cyc5000Pll, Max1000Pll, Ep4ce6Pll, SdramExerciserClkWiz, WukongClkWizBlackBox}
+import jop.system.{DramPll, Max1000Pll, Ep4ce6Pll, SdramExerciserClkWiz}
 import jop.ddr3.ClkWizBlackBox
+
+/**
+ * CYC5000 PLL BlackBox — Cyclone V altera_pll megafunction.
+ * 12 MHz input -> c0=80MHz (JOP system), c1=80MHz/-2.5ns (SDRAM clock pin)
+ */
+case class Cyc5000Pll() extends BlackBox {
+  setDefinitionName("cyc5000_pll")
+
+  val io = new Bundle {
+    val refclk   = in Bool()
+    val rst      = in Bool()
+    val outclk_0 = out Bool()
+    val outclk_1 = out Bool()
+    val locked   = out Bool()
+  }
+
+  noIoPrefix()
+}
+
+/**
+ * Wukong BRAM ClkWiz BlackBox — Vivado clk_wiz_0: 50 MHz -> 100 MHz.
+ */
+class WukongClkWizBlackBox extends BlackBox {
+  val io = new Bundle {
+    val resetn  = in Bool()
+    val clk_in  = in Bool()
+    val clk_100 = out Bool()
+    val locked  = out Bool()
+  }
+
+  setBlackBoxName("clk_wiz_0")
+  noIoPrefix()
+}
 
 /**
  * Unified PLL result -- all clock outputs from the PLL subsystem.

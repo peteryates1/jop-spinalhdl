@@ -30,6 +30,9 @@ object JopTopVerilog {
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.ep4cgx150Smp(n)
     case "cyc5000Serial"    => JopConfig.cyc5000Serial
+    case "cyc5000Smp" =>
+      val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
+      JopConfig.cyc5000Smp(n)
     case "auSerial"         => JopConfig.auSerial
     case "wukongSdram"      => JopConfig.wukongSdram
     case "wukongSdrAllCu"   => JopConfig.wukongSdrAllCu

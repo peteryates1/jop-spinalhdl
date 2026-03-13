@@ -22,7 +22,7 @@ all: build
 # === JOP BRAM targets ===
 
 generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopBramWukongTopVerilog"
+	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongBram"
 
 create-ip:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_clk_wiz.tcl
@@ -97,7 +97,7 @@ sdram-monitor:
 # === JOP SDRAM targets ===
 
 jop-sdram-generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopSdramWukongTopVerilog"
+	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongSdram"
 
 jop-sdram-build:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_jop_sdram_bitstream.tcl
