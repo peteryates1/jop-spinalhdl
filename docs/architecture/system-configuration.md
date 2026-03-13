@@ -336,58 +336,34 @@ The `spillBaseAddr` is normally computed automatically by `JopCoreConfig`:
 - **Legacy BRAM** (burstLen=0): `memWords * 3/4 + cpuId * 4096`
 - **Legacy SDRAM/DDR3**: `0x780000 + cpuId * 0x8000`
 
-## IoConfig
+## Device Configuration
 
-I/O device presence and parameters. Defined in `jop/system/IoConfig.scala`.
+I/O devices are declared per-system via `devices: Map[String, DeviceInstance]`.
+Device presence queries (`hasUart`, `hasEth`, etc.) are derived from the device map.
+Per-core device distribution is handled by `JopSystem.coreConfigs` (core 0 inherits
+system devices, cores 1+ empty by default; `perCoreConfigs` with explicit devices overrides).
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `hasUart` | Boolean | true | Instantiate BmbUart (TX/RX with 16-entry FIFOs) |
-| `hasEth` | Boolean | false | Instantiate BmbEth + BmbMdio (Ethernet MAC) |
-| `ethGmii` | Boolean | false | 8-bit GMII (1Gbps) vs 4-bit MII (100Mbps) |
-| `hasSdSpi` | Boolean | false | Instantiate BmbSdSpi (SD card via SPI) |
-| `hasSdNative` | Boolean | false | Instantiate BmbSdNative (SD card native mode) |
-| `hasVgaDma` | Boolean | false | Instantiate BmbVgaDma (VGA framebuffer DMA) |
-| `hasVgaText` | Boolean | false | Instantiate BmbVgaText (VGA text mode) |
-| `hasConfigFlash` | Boolean | false | Instantiate BmbCfgFlash (W25Q128 SPI flash boot) |
-| `uartBaudRate` | Int | 2000000 | UART baud rate in Hz (2 Mbaud default) |
-| `mdioClkDivider` | Int | 40 | MDIO clock divider |
-| `sdSpiClkDivInit` | Int | 199 | SD SPI init clock divider (~200 kHz @ 80MHz) |
-| `sdNativeClkDivInit` | Int | 99 | SD Native init clock divider (~400 kHz @ 80MHz) |
-| `vgaDmaFifoDepth` | Int | 512 | VGA DMA CDC FIFO depth in 32-bit words |
-| `cfgFlashClkDivInit` | Int | 3 | Config flash SPI clock divider (~10 MHz @ 80MHz) |
+### Available Device Types
 
-**Constraints:**
-- `!(hasSdSpi && hasSdNative)` — SD SPI and SD Native are mutually exclusive (share pins)
-- `!(hasVgaDma && hasVgaText)` — VGA DMA and VGA Text are mutually exclusive (share pins)
-- `!ethGmii || hasEth` — GMII requires Ethernet enabled
+| Device Type | BMB Component | Description |
+|-------------|--------------|-------------|
+| `uart` | BmbUart | TX/RX with 16-entry FIFOs |
+| `ethernet` | BmbEth + BmbMdio | Ethernet MAC (params: `gmii`, `phyDataWidth`) |
+| `sdspi` | BmbSdSpi | SD card via SPI mode |
+| `sdnative` | BmbSdNative | SD card native 4-bit mode |
+| `vgadma` | BmbVgaDma | VGA framebuffer with DMA |
+| `vgatext` | BmbVgaText | VGA text-mode controller |
+| `cfgflash` | BmbCfgFlash | SPI config flash (W25Q128/SST26) |
 
-### IoConfig Presets
+### I/O Address Map
 
-| Preset | Devices |
-|--------|---------|
-| `IoConfig.minimal` | UART only |
-| `IoConfig.qmtechSdram` | UART + Ethernet (MII) + Config Flash |
-| `IoConfig.qmtechDbFpga` | UART + Ethernet (GMII 1Gbps) + SD Native + VGA Text |
-| `IoConfig.qmtechDbFpgaVgaDma` | UART + Ethernet (GMII 1Gbps) + SD Native + VGA DMA |
+Addresses are dynamically allocated by `IoAddressAllocator`. Fixed addresses:
 
-## I/O Address Map
-
-8-bit `ioAddr` derived from bipush range `0x80`–`0xFF`:
-
-| ioAddr Range | Peripheral | Slots |
-|:---:|---|:---:|
-| `0x80–0x8F` | BmbSys (system registers) | 4 |
-| `0x90–0x93` | BmbUart | 1 |
-| `0x98–0x9F` | BmbEth | 2 |
-| `0xA0–0xA7` | BmbMdio | 2 |
-| `0xA8–0xAB` | BmbSdSpi | 1 |
-| `0xAC–0xAF` | BmbVgaDma | 1 |
-| `0xB0–0xBF` | BmbSdNative | 4 |
-| `0xC0–0xCF` | BmbVgaText | 4 |
-| `0xD0–0xD3` | BmbCfgFlash | 1 |
-| `0xE0–0xE3` | ~~BmbDiv~~ (removed -- replaced by IntegerComputeUnit) | 1 |
-| `0xF0–0xF3` | ~~BmbFpu~~ (removed -- replaced by FloatComputeUnit) | 1 |
+| ioAddr Range | Peripheral | Notes |
+|:---:|---|---|
+| `0xEE–0xEF` | Boot device (UART or cfgFlash) | Fixed |
+| `0xF0–0xFF` | BmbSys (system registers) | Fixed |
+| `0x80–0xED` | Other devices | Dynamically allocated |
 
 ## DebugConfig
 
