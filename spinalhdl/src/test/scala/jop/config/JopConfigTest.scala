@@ -133,7 +133,7 @@ class JopConfigTest extends AnyFunSuite {
     }
   }
 
-  test("invalid driver device fails") {
+  test("invalid devicePart fails") {
     assertThrows[IllegalArgumentException] {
       JopConfig(
         assembly = SystemAssembly.cyc5000,   // no CP2102N on CYC5000
@@ -142,7 +142,7 @@ class JopConfigTest extends AnyFunSuite {
           memory = "W9864G6JT",
           bootMode = BootMode.Serial,
           clkFreq = 100 MHz,
-          drivers = Seq(DeviceDriver.Uart)))) // CP2102N driver, but board has FT2232H
+          devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
     }
   }
 
@@ -202,7 +202,7 @@ class JopConfigTest extends AnyFunSuite {
         perCoreConfigs = Some(Seq(
           JopCoreConfig(imul = Implementation.Microcode, idiv = Implementation.Hardware, irem = Implementation.Hardware),
           JopCoreConfig(imul = Implementation.Microcode, idiv = Implementation.Java, irem = Implementation.Java))),
-        drivers = Seq(DeviceDriver.Uart))))
+        devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
     assert(config.system.coreConfigs.length == 2)
     assert(config.system.coreConfigs(0).needsIntegerCompute)  // idiv=Hardware
     assert(!config.system.coreConfigs(1).needsIntegerCompute) // all Microcode/Java, no Hardware
@@ -322,14 +322,15 @@ class JopConfigTest extends AnyFunSuite {
     assert(pinMap("sd_cmd") == "J8")
   }
 
-  test("devicePins matches driverPins for wukongFull") {
+  test("devicePins resolves all peripherals for wukongFull") {
     import jop.generate.PinResolver
     val config = JopConfig.wukongFull
-    val devPins = PinResolver.devicePins(config.assembly, config.system.effectiveDevices)
-      .map(p => p.verilogPort -> p.fpgaPin).toMap
-    val drvPins = PinResolver.driverPins(config.assembly, config.system)
-      .map(p => p.verilogPort -> p.fpgaPin).toMap
-    // New path should produce same pins as old path
-    assert(devPins == drvPins)
+    val pins = PinResolver.devicePins(config.assembly, config.system.effectiveDevices)
+    val pinMap = pins.map(p => p.verilogPort -> p.fpgaPin).toMap
+    // UART + Ethernet (GMII) + SD Native all resolved
+    assert(pinMap.contains("ser_txd"))
+    assert(pinMap.contains("e_gtxc"))
+    assert(pinMap.contains("sd_clk"))
+    assert(pins.size > 30)  // UART(2) + GMII(~20) + SD(7) = ~29 pins
   }
 }

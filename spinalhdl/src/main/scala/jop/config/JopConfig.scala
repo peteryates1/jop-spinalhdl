@@ -65,7 +65,6 @@ object ArbiterType {
  * @param coreConfig     Default configuration for all cores
  * @param perCoreConfigs Optional per-core override (heterogeneous cores)
  * @param ioConfig       I/O device configuration
- * @param drivers        Which device drivers to instantiate
  * @param perCoreUart    Whether each core gets its own UART (debug)
  */
 case class JopSystem(
@@ -78,7 +77,6 @@ case class JopSystem(
   coreConfig: JopCoreConfig = JopCoreConfig(),
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None,
   ioConfig: IoConfig = IoConfig(),
-  drivers: Seq[DeviceDriver] = Seq.empty,
   perCoreUart: Boolean = false,
   devices: Map[String, DeviceInstance] = Map.empty
 ) {
@@ -218,12 +216,14 @@ case class JopConfig(
       s"but assembly '${assembly.name}' has no such device or role")
   }
 
-  // Each driver's device must exist on the assembly
+  // Each device's devicePart must exist on the assembly (when specified)
   systems.foreach { sys =>
-    sys.drivers.foreach { d =>
-      require(assembly.findDevice(d.devicePart).isDefined,
-        s"System '${sys.name}' driver ${d.componentName} requires device " +
-        s"'${d.devicePart}' but assembly '${assembly.name}' has none")
+    sys.effectiveDevices.foreach { case (name, inst) =>
+      inst.devicePart.foreach { part =>
+        require(assembly.findDevice(part).isDefined,
+          s"System '${sys.name}' device '$name' references part " +
+          s"'$part' but assembly '${assembly.name}' has none")
+      }
     }
   }
 
@@ -284,8 +284,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))),
-      drivers = Seq(DeviceDriver.Uart, DeviceDriver.EthGmii, DeviceDriver.SdNative))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
 
   /** EP4CGX150 + daughter board — SMP, N cores */
   def ep4cgx150Smp(n: Int) = {
@@ -327,8 +326,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))),
-      drivers = Seq(DeviceDriver.UartFt2232))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))))))
 
   /** Alchitry Au V2 */
   def auSerial = JopConfig(
@@ -339,8 +337,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,  // MIG ui_clk = 100 MHz (4:1, DDR3-800)
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))),
-      drivers = Seq(DeviceDriver.UartFt2232))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))))))
 
   /** Alchitry Au V2 — minimum: no caches, no HW math */
   def auMinimal = JopConfig(
@@ -351,8 +348,8 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = HertzNumber(BigDecimal(250000000) / 3),
       coreConfig = JopCoreConfig(memConfig = noCacheMemConfig),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))),
-      drivers = Seq(DeviceDriver.UartFt2232))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))))))
+
 
   /** Simulation (no physical board — uses QMTECH assembly as placeholder) */
   def simulation = JopConfig(
@@ -384,8 +381,7 @@ object JopConfig {
           fadd = Hardware, fsub = Hardware, fmul = Hardware, fdiv = Hardware,
           fneg = Hardware, i2f = Hardware, f2i = Hardware,
           fcmpl = Hardware, fcmpg = Hardware),
-        devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))),
-        drivers = Seq(DeviceDriver.EthGmii, DeviceDriver.SdNative)),
+        devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N")))),
       JopSystem(
         name = "io",
         memory = "sdr",                  // by role
@@ -411,8 +407,7 @@ object JopConfig {
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(
         supersetJumpTable = JumpTableInitData.serial),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))),
-      drivers = Seq(DeviceDriver.Uart))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
 
   // ========================================================================
   // Small FPGA presets (fit-check targets)
@@ -432,8 +427,7 @@ object JopConfig {
       memory = "W9864G6JT",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))),
-      drivers = Seq(DeviceDriver.UartFt2232))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))))))
 
   /** Generic EP4CE6 — SDR SDRAM, no caches (6K LEs too small for O$/A$) */
   def ep4ce6Sdram = JopConfig(
@@ -444,8 +438,8 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(memConfig = noCacheMemConfig),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))),
-      drivers = Seq(DeviceDriver.Uart))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
+
 
   // ========================================================================
   // Wukong single-system presets
@@ -460,8 +454,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))),
-      drivers = Seq(DeviceDriver.UartCh340))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
 
   /** Wukong SDR — all compute units, UART only (no Ethernet/SD) */
   def wukongSdrAllCu = {
@@ -489,8 +482,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))),
-      drivers = Seq(DeviceDriver.UartCh340))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
 
   /** Wukong BRAM (single-system, simulation-mode) */
   def wukongBram = JopConfig(
@@ -501,8 +493,7 @@ object JopConfig {
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))),
-      drivers = Seq(DeviceDriver.UartCh340))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
 
   /** Wukong BRAM with all compute units (DCU debug — simulation only) */
   def wukongBramFull = {
@@ -513,8 +504,7 @@ object JopConfig {
       bootMode = BootMode.Simulation,
       cpuCnt = 1,
       ioConfig = IoConfig(),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))),
-      drivers = Seq(DeviceDriver.UartCh340))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
   }
 
   // ========================================================================
@@ -545,16 +535,14 @@ object JopConfig {
         lshl = Hardware, lshr = Hardware, lushr = Hardware, lcmp = Hardware,
         dadd = Hardware, dsub = Hardware, dmul = Hardware, ddiv = Hardware,
         i2d = Hardware, d2i = Hardware, l2d = Hardware, d2l = Hardware,
-        f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware),
-      drivers = Seq(DeviceDriver.UartCh340, DeviceDriver.EthGmii, DeviceDriver.SdNative))))
+        f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware))))
 
   /** Wukong DDR3 — all compute units, UART only (no Ethernet/SD) */
   def wukongDdr3AllCu = {
     val base = wukongFull
     base.copy(systems = Seq(base.system.copy(
       ioConfig = IoConfig(),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))),
-      drivers = Seq(DeviceDriver.UartCh340))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
   }
 
   /** Wukong DDR3 — full featured SMP (with Ethernet + SD) */
@@ -570,8 +558,7 @@ object JopConfig {
       name = s"smp$n",
       cpuCnt = n,
       ioConfig = IoConfig(),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))),
-      drivers = Seq(DeviceDriver.UartCh340))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
   }
 
   /** Wukong DDR3 — all CUs except DCU (debug: isolate DCU hang).
@@ -637,6 +624,5 @@ object JopConfig {
         lshl = Hardware, lshr = Hardware, lushr = Hardware, lcmp = Hardware,
         dadd = Hardware, dsub = Hardware, dmul = Hardware, ddiv = Hardware,
         i2d = Hardware, d2i = Hardware, l2d = Hardware, d2l = Hardware,
-        f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware),
-      drivers = Seq(DeviceDriver.UartCh340, DeviceDriver.EthGmii, DeviceDriver.SdNative))))
+        f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware))))
 }

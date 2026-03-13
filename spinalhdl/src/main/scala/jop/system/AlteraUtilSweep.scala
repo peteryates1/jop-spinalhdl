@@ -23,19 +23,30 @@ object AlteraUtilSweep extends App {
       memory = "W9825G6JH6",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      ioConfig = IoConfig(),
-      drivers = Seq(DeviceDriver.Uart))))
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
 
   val baseCc = base.system.coreConfig
 
   def withCc(cc: JopCoreConfig): JopConfig =
     base.copy(systems = Seq(base.system.copy(coreConfig = cc)))
 
-  def withIo(io: IoConfig, drivers: Seq[DeviceDriver]): JopConfig =
-    base.copy(systems = Seq(base.system.copy(ioConfig = io, drivers = drivers)))
+  def withDevices(devs: Map[String, DeviceInstance]): JopConfig =
+    base.copy(systems = Seq(base.system.copy(devices = devs)))
 
-  def withCcAndIo(cc: JopCoreConfig, io: IoConfig, drivers: Seq[DeviceDriver]): JopConfig =
-    base.copy(systems = Seq(base.system.copy(coreConfig = cc, ioConfig = io, drivers = drivers)))
+  def withCcAndDevices(cc: JopCoreConfig, devs: Map[String, DeviceInstance]): JopConfig =
+    base.copy(systems = Seq(base.system.copy(coreConfig = cc, devices = devs)))
+
+  // Common device instances for QMTECH daughter board
+  private val uartDev = "uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))
+  private val ethDev = "eth" -> DeviceInstance("ethernet",
+    params = Map("gmii" -> true, "phyDataWidth" -> 8),
+    devicePart = Some("RTL8211EG"))
+  private val sdNativeDev = "sdNative" -> DeviceInstance("sdnative",
+    devicePart = Some("SD_CARD"))
+  private val sdSpiDev = "sdSpi" -> DeviceInstance("sdspi",
+    devicePart = Some("SD_CARD"))
+  private val vgaTextDev = "vga" -> DeviceInstance("vgatext", devicePart = Some("VGA"))
+  private val vgaDmaDev = "vga" -> DeviceInstance("vgadma", devicePart = Some("VGA"))
 
   val allCuCc = baseCc.copy(
     useDspMul = true, imul = Hardware,
@@ -75,32 +86,22 @@ object AlteraUtilSweep extends App {
 
     "all_cu" -> withCc(allCuCc),
 
-    "eth" -> withIo(IoConfig(hasEth = true, ethGmii = true),
-      Seq(DeviceDriver.Uart, DeviceDriver.EthGmii)),
+    "eth" -> withDevices(Map(uartDev, ethDev)),
 
-    "sd_native" -> withIo(IoConfig(hasSdNative = true),
-      Seq(DeviceDriver.Uart, DeviceDriver.SdNative)),
+    "sd_native" -> withDevices(Map(uartDev, sdNativeDev)),
 
-    "sd_spi" -> withIo(IoConfig(hasSdSpi = true),
-      Seq(DeviceDriver.Uart, DeviceDriver.SdSpi)),
+    "sd_spi" -> withDevices(Map(uartDev, sdSpiDev)),
 
-    "vga_text" -> withIo(IoConfig(hasVgaText = true),
-      Seq(DeviceDriver.Uart, DeviceDriver.VgaText)),
+    "vga_text" -> withDevices(Map(uartDev, vgaTextDev)),
 
-    "vga_dma" -> withIo(IoConfig(hasVgaDma = true),
-      Seq(DeviceDriver.Uart, DeviceDriver.VgaDma)),
+    "vga_dma" -> withDevices(Map(uartDev, vgaDmaDev)),
 
-    "eth_sd_native" -> withIo(
-      IoConfig(hasEth = true, ethGmii = true, hasSdNative = true),
-      Seq(DeviceDriver.Uart, DeviceDriver.EthGmii, DeviceDriver.SdNative)),
+    "eth_sd_native" -> withDevices(Map(uartDev, ethDev, sdNativeDev)),
 
-    "eth_sd_spi" -> withIo(
-      IoConfig(hasEth = true, ethGmii = true, hasSdSpi = true),
-      Seq(DeviceDriver.Uart, DeviceDriver.EthGmii, DeviceDriver.SdSpi)),
+    "eth_sd_spi" -> withDevices(Map(uartDev, ethDev, sdSpiDev)),
 
-    "full" -> withCcAndIo(allCuCc,
-      IoConfig(hasEth = true, ethGmii = true, hasSdNative = true, hasVgaText = true),
-      Seq(DeviceDriver.Uart, DeviceDriver.EthGmii, DeviceDriver.SdNative, DeviceDriver.VgaText)),
+    "full" -> withCcAndDevices(allCuCc,
+      Map(uartDev, ethDev, sdNativeDev, vgaTextDev)),
 
     // --- Cache size sweep variants ---
     // Object cache: 32 entries (up from 16)

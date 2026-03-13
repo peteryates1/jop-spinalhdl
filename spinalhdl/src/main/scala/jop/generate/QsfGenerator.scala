@@ -21,7 +21,7 @@ object QsfGenerator {
       .map(PinAssignment(_, "sdram_clk")).toSeq
     val leds = PinResolver.ledPins(assembly)
     val sdram = PinResolver.sdramPins(assembly)
-    val drivers = PinResolver.driverPins(assembly, sys)
+    val drivers = PinResolver.devicePins(assembly, sys.effectiveDevices)
 
     clock ++ sdramClk ++ leds ++ sdram ++ drivers
   }
@@ -72,13 +72,19 @@ object QsfGenerator {
 
 /** Print generated QSF for EP4CGX150 preset */
 object QsfGeneratorMain extends App {
-  val config = if (args.contains("--dbfpga"))
-    JopConfig.ep4cgx150Serial.copy(systems = Seq(
-      JopConfig.ep4cgx150Serial.system.copy(
-        drivers = Seq(DeviceDriver.Uart, DeviceDriver.EthGmii,
-                      DeviceDriver.SdNative, DeviceDriver.VgaDma))))
-  else
-    JopConfig.ep4cgx150Serial
+  val base = JopConfig.ep4cgx150Serial
+  // Daughter board peripherals for pin reservation
+  val dbPeripherals = Map(
+    "eth" -> DeviceInstance("ethernet",
+      params = Map("gmii" -> true, "phyDataWidth" -> 8),
+      devicePart = Some("RTL8211EG")),
+    "sdNative" -> DeviceInstance("sdnative",
+      devicePart = Some("SD_CARD")))
+  val vga = Map(
+    "vga" -> DeviceInstance("vgadma", devicePart = Some("VGA")))
+  val extraDevices = if (args.contains("--dbfpga")) dbPeripherals ++ vga else dbPeripherals
+  val config = base.copy(systems = Seq(
+    base.system.copy(devices = base.system.devices ++ extraDevices)))
 
   println(QsfGenerator.generate(config))
 }

@@ -46,8 +46,8 @@ object XdcGenerator {
       sb.append("\n")
     }
 
-    // Separate driver pins into UART and others
-    val allDriverPins = PinResolver.driverPins(assembly, sys)
+    // Separate device pins into UART and others
+    val allDriverPins = PinResolver.devicePins(assembly, sys.effectiveDevices)
     val uartPins = allDriverPins.filter(_.verilogPort.startsWith("ser_"))
     val otherDriverPins = allDriverPins.filterNot(_.verilogPort.startsWith("ser_"))
 

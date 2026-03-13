@@ -42,8 +42,7 @@ object JopVgaBramSim extends App {
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
       ioConfig = IoConfig(hasVgaText = true),
-      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware),
-      drivers = Seq(DeviceDriver.UartCh340))))
+      coreConfig = JopCoreConfig(idiv = Hardware, irem = Hardware))))
 
   SimConfig
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))

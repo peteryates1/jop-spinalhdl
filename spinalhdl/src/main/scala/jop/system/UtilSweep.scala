@@ -19,8 +19,18 @@ object UtilSweep extends App {
   def withCc(cc: JopCoreConfig): JopConfig =
     base.copy(systems = Seq(base.system.copy(coreConfig = cc)))
 
-  def withIo(io: IoConfig, drivers: Seq[DeviceDriver]): JopConfig =
-    base.copy(systems = Seq(base.system.copy(ioConfig = io, drivers = drivers)))
+  def withDevices(devs: Map[String, DeviceInstance]): JopConfig =
+    base.copy(systems = Seq(base.system.copy(devices = devs)))
+
+  // Common device instances for Wukong board
+  private val uartDev = "uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))
+  private val ethDev = "eth" -> DeviceInstance("ethernet",
+    params = Map("gmii" -> true, "phyDataWidth" -> 8),
+    devicePart = Some("RTL8211EG"))
+  private val sdNativeDev = "sdNative" -> DeviceInstance("sdnative",
+    devicePart = Some("SD_CARD"))
+  private val sdSpiDev = "sdSpi" -> DeviceInstance("sdspi",
+    devicePart = Some("SD_CARD"))
 
   val configs: Map[String, JopConfig] = Map(
     "baseline" -> base,
@@ -58,17 +68,13 @@ object UtilSweep extends App {
       i2d = Hardware, d2i = Hardware, l2d = Hardware, d2l = Hardware,
       f2d = Hardware, d2f = Hardware, dcmpl = Hardware, dcmpg = Hardware)),
 
-    "eth" -> withIo(IoConfig(hasEth = true, ethGmii = true),
-      Seq(DeviceDriver.UartCh340, DeviceDriver.EthGmii)),
+    "eth" -> withDevices(Map(uartDev, ethDev)),
 
-    "sd" -> withIo(IoConfig(hasSdNative = true),
-      Seq(DeviceDriver.UartCh340, DeviceDriver.SdNative)),
+    "sd" -> withDevices(Map(uartDev, sdNativeDev)),
 
-    "sd_spi" -> withIo(IoConfig(hasSdSpi = true),
-      Seq(DeviceDriver.UartCh340, DeviceDriver.SdSpi)),
+    "sd_spi" -> withDevices(Map(uartDev, sdSpiDev)),
 
-    "eth_sd" -> withIo(IoConfig.wukongFull,
-      Seq(DeviceDriver.UartCh340, DeviceDriver.EthGmii, DeviceDriver.SdNative)),
+    "eth_sd" -> withDevices(Map(uartDev, ethDev, sdNativeDev)),
 
     "full" -> JopConfig.wukongFull,
 
