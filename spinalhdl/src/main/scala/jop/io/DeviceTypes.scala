@@ -1,0 +1,96 @@
+package jop.io
+
+import spinal.core._
+import spinal.lib.bus.bmb._
+import jop.config.JopCoreConfig
+
+/**
+ * Device bus interface metadata.
+ *
+ * Describes what a device type needs: I/O register address bits, interrupt count,
+ * DMA capability, and a factory function to create the SpinalHDL component.
+ *
+ * @param addrBits       Sub-address width: device occupies 2^addrBits I/O addresses
+ * @param interruptCount Number of interrupt lines to Sys
+ * @param hasDma         Device has a BMB master port for memory DMA
+ * @param registerNames  (subAddr, name) pairs for Const.java generation
+ * @param factory        Creates a device instance given (coreConfig, params, clockDomainContext)
+ */
+case class DeviceTypeInfo(
+  addrBits: Int,
+  interruptCount: Int,
+  hasDma: Boolean = false,
+  registerNames: Seq[(Int, String)] = Seq.empty,
+  factory: (JopCoreConfig, Map[String, Any], DeviceContext) => Component with HasBusIo
+)
+
+/**
+ * External clock domains needed by some device factories.
+ *
+ * These are FPGA-specific resources created at the top level (from clock pins or PLLs)
+ * and cannot be derived from JopCoreConfig. Threaded from top-level through cluster to core.
+ *
+ * @param vgaCd   VGA pixel clock domain (for VgaText, VgaBmbDma)
+ * @param ethTxCd Ethernet TX clock domain (for Eth)
+ * @param ethRxCd Ethernet RX clock domain (for Eth)
+ */
+case class DeviceContext(
+  vgaCd: Option[ClockDomain] = None,
+  ethTxCd: Option[ClockDomain] = None,
+  ethRxCd: Option[ClockDomain] = None
+)
+
+/**
+ * Registry of device types to factory metadata.
+ *
+ * Each entry maps a device type string to its DeviceTypeInfo. New device types
+ * are registered here; instances are created by looking up the type string.
+ */
+object DeviceTypes {
+  val registry: Map[String, DeviceTypeInfo] = Map(
+    "uart" -> DeviceTypeInfo(
+      addrBits = 1, interruptCount = 2,
+      registerNames = Seq((0, "STATUS"), (1, "DATA")),
+      factory = (c, p, _) => Uart(
+        baudRate = p.getOrElse("baudRate", c.uartBaudRate).asInstanceOf[Int],
+        clkFreq = c.clkFreq)),
+
+    "ethernet" -> DeviceTypeInfo(
+      addrBits = 4, interruptCount = 1,
+      factory = (c, p, ctx) => Eth(
+        txCd = ctx.ethTxCd.get,
+        rxCd = ctx.ethRxCd.get,
+        phyTxDataWidth = p.getOrElse("phyDataWidth", 4).asInstanceOf[Int],
+        phyRxDataWidth = p.getOrElse("phyDataWidth", 4).asInstanceOf[Int],
+        mdioClkDivider = p.getOrElse("mdioClkDivider", 40).asInstanceOf[Int])),
+
+    "sdspi" -> DeviceTypeInfo(
+      addrBits = 2, interruptCount = 1,
+      registerNames = Seq((0, "STATUS"), (1, "DATA"), (2, "CLK_DIV")),
+      factory = (_, p, _) => SdSpi(
+        clkDivInit = p.getOrElse("clkDivInit", 199).asInstanceOf[Int])),
+
+    "sdnative" -> DeviceTypeInfo(
+      addrBits = 4, interruptCount = 1,
+      factory = (_, p, _) => SdNative(
+        clkDivInit = p.getOrElse("clkDivInit", 99).asInstanceOf[Int])),
+
+    "vgadma" -> DeviceTypeInfo(
+      addrBits = 2, interruptCount = 1, hasDma = true,
+      factory = (c, p, ctx) => VgaBmbDma(
+        bmbParam = c.memConfig.bmbParameter,
+        vgaCd = ctx.vgaCd.get,
+        fifoDepth = p.getOrElse("fifoDepth", 512).asInstanceOf[Int])),
+
+    "vgatext" -> DeviceTypeInfo(
+      addrBits = 4, interruptCount = 1,
+      factory = (_, _, ctx) => VgaText(
+        vgaCd = ctx.vgaCd.get)),
+
+    "cfgflash" -> DeviceTypeInfo(
+      addrBits = 1, interruptCount = 0,
+      registerNames = Seq((0, "STATUS"), (1, "DATA")),
+      factory = (_, p, _) => ConfigFlash(
+        clkDivInit = p.getOrElse("clkDivInit", 3).asInstanceOf[Int]))
+  )
+}

@@ -317,4 +317,5 @@ case class VgaBmbDma(
   override def busRdData: Bits = bus.rdData
   override def busInterrupts: Seq[Bool] = Seq(bus.vsyncInterrupt)
   override def busExternalIo: Option[Bundle] = Some(io)
+  override def busDmaBmb: Option[Bmb] = Some(bus.bmb)
 }

@@ -1,6 +1,7 @@
 package jop.io
 
 import spinal.core._
+import spinal.lib.bus.bmb._
 
 /**
  * Trait for I/O devices with a standard register bus interface.
@@ -23,6 +24,7 @@ import spinal.core._
  *   - busInterrupts: Device interrupt outputs wired to Sys
  *   - busBusy: Pipeline stall (for compute-bound devices)
  *   - busBoutSink: Direct NOS (bottom-of-stack) wire for auto-capture
+ *   - busDmaBmb: BMB master port for DMA memory access (e.g., VGA framebuffer read)
  */
 trait HasBusIo { self: Component =>
   /** 4-bit sub-address input */
@@ -43,4 +45,8 @@ trait HasBusIo { self: Component =>
   def busBoutSink: Option[Bits] = None
   /** External pin bundle for auto-passthrough (default: none) */
   def busExternalIo: Option[Bundle] = None
+  /** BMB master port for DMA memory access (default: none).
+   *  Devices with DMA override this to expose their BMB master.
+   *  JopCore/JopCluster generically wire DMA ports to the memory arbiter. */
+  def busDmaBmb: Option[Bmb] = None
 }
