@@ -53,7 +53,7 @@ run: program monitor
 # --------------------------------------------------------------------------
 
 generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopBramTopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Bram"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
 
 # --------------------------------------------------------------------------

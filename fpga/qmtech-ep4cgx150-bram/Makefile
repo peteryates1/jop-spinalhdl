@@ -47,12 +47,12 @@ run: program monitor
 # --------------------------------------------------------------------------
 
 generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopBramTopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Bram"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
 
 # Generate with Small GC app (128KB BRAM) for GC debugging
 generate-gc:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopBramGcTopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150BramGc"
 	@echo "=== GC Verilog generated: $(GENERATED_V) ==="
 
 # --------------------------------------------------------------------------

@@ -259,7 +259,9 @@ case class JopConfig(
     val smp = if (sys.cpuCnt >= 2) "Smp" else ""
     val platform = assembly.fpgaBoard.name match {
       case "qmtech-ep4cgx150" =>
-        if (memoryTypes.contains(MemoryType.BRAM)) "Bram" else "Sdram"
+        if (memoryTypes.contains(MemoryType.SDRAM_SDR)) "Sdram"
+        else if (sys.bootMode == BootMode.Serial) "BramSerial"
+        else "Bram"
       case "cyc5000" => "Cyc5000"
       case "alchitry-au-v2" => "Ddr3"
       case "qmtech-wukong-xc7a100t" =>
@@ -323,6 +325,38 @@ object JopConfig {
         supersetJumpTable = base.system.coreConfig.supersetJumpTable,
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw", "float" -> "hw")))))
   }
+
+  /** EP4CGX150 — pre-initialized BRAM (32KB, simulation microcode) */
+  def ep4cgx150Bram = JopConfig(
+    assembly = SystemAssembly.qmtechWithDb,
+    systems = Seq(JopSystem(
+      name = "bram",
+      memory = "bram",
+      bootMode = BootMode.Simulation,
+      clkFreq = 100 MHz,
+      coreConfig = JopCoreConfig(
+        memConfig = JopMemoryConfig(mainMemSize = 32 * 1024)),
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
+
+  /** EP4CGX150 — pre-initialized BRAM (128KB) for GC testing */
+  def ep4cgx150BramGc = {
+    val base = ep4cgx150Bram
+    base.copy(systems = Seq(base.system.copy(
+      coreConfig = JopCoreConfig(
+        memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)))))
+  }
+
+  /** EP4CGX150 — serial download into BRAM (128KB) */
+  def ep4cgx150BramSerial = JopConfig(
+    assembly = SystemAssembly.qmtechWithDb,
+    systems = Seq(JopSystem(
+      name = "bram-serial",
+      memory = "bram",
+      bootMode = BootMode.Serial,
+      clkFreq = 100 MHz,
+      coreConfig = JopCoreConfig(
+        memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)),
+      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
 
   /** CYC5000 standalone */
   def cyc5000Serial = JopConfig(
@@ -492,7 +526,9 @@ object JopConfig {
       memory = "bram",  // no physical memory — uses on-chip BRAM
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
-      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+      coreConfig = JopCoreConfig(
+        memConfig = JopMemoryConfig(mainMemSize = 64 * 1024),
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
 
   /** Wukong BRAM with all compute units (DCU debug — simulation only) */
@@ -503,6 +539,9 @@ object JopConfig {
       memory = "bram",
       bootMode = BootMode.Simulation,
       cpuCnt = 1,
+      coreConfig = JopCoreConfig(
+        memConfig = JopMemoryConfig(mainMemSize = 64 * 1024),
+        bytecodes = base.system.coreConfig.bytecodes),
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
   }
 

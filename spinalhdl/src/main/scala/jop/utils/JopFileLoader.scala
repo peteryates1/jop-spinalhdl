@@ -224,6 +224,6 @@ object JopFileLoader {
    */
   def jopFileToMemoryInit(filepath: String, memSize: Int = 65536): Seq[BigInt] = {
     val data = loadJopFile(filepath)
-    data.words.padTo(memSize, BigInt(0))
+    data.words.take(memSize).padTo(memSize, BigInt(0))
   }
 }

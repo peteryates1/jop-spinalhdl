@@ -25,7 +25,7 @@ all: generate build
 run: program download monitor
 
 generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopBramSerialTopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150BramSerial"
 
 build: $(SOF_FILE)
 
