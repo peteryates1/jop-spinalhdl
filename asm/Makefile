@@ -40,6 +40,7 @@ serial: ../java/tools/dist/jopa.jar
 	cp generated/mem_rom.dat generated/serial/mem_rom.dat
 	cp generated/mem_ram.dat generated/serial/mem_ram.dat
 	cp generated/rom.mif generated/serial/rom.mif
+	python3 make_ram_mif.py generated/mem_ram.dat generated/serial/ram.mif
 	mv generated/SerialJumpTableData.scala generated/serial/SerialJumpTableData.scala
 	$(MAKE) simulation
 
@@ -53,6 +54,7 @@ flash-altera: ../java/tools/dist/jopa.jar
 	cp generated/mem_rom.dat generated/flash/mem_rom.dat
 	cp generated/mem_ram.dat generated/flash/mem_ram.dat
 	cp generated/rom.mif generated/flash/rom.mif
+	python3 make_ram_mif.py generated/mem_ram.dat generated/flash/ram.mif
 	mv generated/FlashJumpTableData.scala generated/flash/FlashJumpTableData.scala
 	$(MAKE) simulation
 
@@ -65,6 +67,7 @@ flash-alchitry: ../java/tools/dist/jopa.jar
 	cp generated/mem_rom.dat generated/flash/mem_rom.dat
 	cp generated/mem_ram.dat generated/flash/mem_ram.dat
 	cp generated/rom.mif generated/flash/rom.mif
+	python3 make_ram_mif.py generated/mem_ram.dat generated/flash/ram.mif
 	mv generated/FlashJumpTableData.scala generated/flash/FlashJumpTableData.scala
 	$(MAKE) simulation
 

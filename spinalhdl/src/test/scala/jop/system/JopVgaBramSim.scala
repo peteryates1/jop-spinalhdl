@@ -68,7 +68,7 @@ object JopVgaBramSim extends App {
 
       // Initialize clocks
       dut.clockDomain.forkStimulus(10)    // 100 MHz system clock
-      dut.vgaCd.forkStimulus(40)          // 25 MHz pixel clock
+      dut.deviceClockDomains.vgaCd.get.forkStimulus(40)          // 25 MHz pixel clock
 
       // Drive UART RX idle (HIGH)
       dut.io.ser_rxd #= true
@@ -81,7 +81,7 @@ object JopVgaBramSim extends App {
       // VGA capture fork (runs on pixel clock)
       fork {
         while (true) {
-          dut.vgaCd.waitSampling()
+          dut.deviceClockDomains.vgaCd.get.waitSampling()
           display.tick(
             dut.io.vga_hs.toBoolean,
             dut.io.vga_vs.toBoolean,
