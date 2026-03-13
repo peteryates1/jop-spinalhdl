@@ -52,6 +52,9 @@ object JopTopVerilog {
     case "wukongSmp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.wukongSmp(n)
+    case "wukongSmpMinimal" =>
+      val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
+      JopConfig.wukongSmpMinimal(n)
     case "wukongNoDcu"      => JopConfig.wukongNoDcu
     case "wukongDdr3DspMul" => JopConfig.wukongDdr3DspMul
     case "wukongDdr3Fcu"    => JopConfig.wukongDdr3Fcu

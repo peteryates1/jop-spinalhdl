@@ -586,6 +586,15 @@ object JopConfig {
       devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
   }
 
+  /** Wukong DDR3 — minimal SMP (no CUs, just cores + UART) for SMP+DDR3 debug */
+  def wukongSmpMinimal(n: Int) = {
+    val base = wukongDdr3
+    base.copy(systems = Seq(base.system.copy(
+      name = s"smpmin$n",
+      cpuCnt = n,
+      coreConfig = JopCoreConfig())))
+  }
+
   /** Wukong DDR3 — all CUs except DCU (debug: isolate DCU hang).
     * Derived from wukongSmp(1) with all double ops set to Java. */
   def wukongNoDcu = {

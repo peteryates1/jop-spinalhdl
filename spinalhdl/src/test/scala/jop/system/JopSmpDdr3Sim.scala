@@ -24,16 +24,18 @@ case class JopSmpDdr3TestHarness(
   cpuCnt: Int,
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
-  mainMemInit: Seq[BigInt]
+  mainMemInit: Seq[BigInt],
+  useCmpSync: Boolean = false
 ) extends Component {
   require(cpuCnt >= 1)
 
   val cacheAddrWidth = 28  // BMB byte address width (addressWidth=26 + 2)
   val cacheDataWidth = 128 // MIG native data width
+  val mainMemSizeBytes = (mainMemInit.length * 4) max (128 * 1024)
 
   val io = new Bundle {
     // Per-core pipeline outputs
-    val pc  = out Vec(UInt(11 bits), cpuCnt)
+    val pc  = out Vec(UInt(12 bits), cpuCnt)
     val jpc = out Vec(UInt(12 bits), cpuCnt)
 
     // Per-core stack outputs
@@ -82,7 +84,8 @@ case class JopSmpDdr3TestHarness(
   val cluster = JopCluster(
     cpuCnt = cpuCnt,
     baseConfig = JopCoreConfig(
-      memConfig = JopMemoryConfig(addressWidth = 26, burstLen = 4)
+      memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = mainMemSizeBytes, burstLen = 4),
+      useCmpSync = useCmpSync
     ),
     romInit = Some(romInit),
     ramInit = Some(ramInit),
@@ -194,15 +197,18 @@ case class JopSmpDdr3TestHarness(
  * Tests N cores (default 2) running NCoreHelloWorld through the DDR3 cache path
  * (BmbCacheBridge -> LruCacheCore -> CacheToMigAdapter -> MigBehavioralModel).
  *
- * Usage: sbt "Test/runMain jop.system.JopSmpDdr3NCoreHelloWorldSim [cpuCnt]"
+ * Usage: sbt "Test/runMain jop.system.JopSmpDdr3NCoreHelloWorldSim [cpuCnt] [--cmpsync]"
  */
 object JopSmpDdr3NCoreHelloWorldSim extends App {
-  val cpuCnt = if (args.length > 0) args(0).toInt else 2
+  val positionalArgs = args.filterNot(_.startsWith("--"))
+  val cpuCnt = positionalArgs.headOption.map(_.toInt).getOrElse(2)
+  val useCmpSync = args.contains("--cmpsync")
+  val lockType = if (useCmpSync) "CmpSync" else "IHLU"
 
   val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
   val romFilePath = "asm/generated/mem_rom.dat"
   val ramFilePath = "asm/generated/mem_ram.dat"
-  val logFilePath = "spinalhdl/smp_ddr3_ncore_simulation.log"
+  val logFilePath = s"spinalhdl/smp_ddr3_ncore_${lockType.toLowerCase}_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -211,14 +217,14 @@ object JopSmpDdr3NCoreHelloWorldSim extends App {
   println(s"Loaded ROM: ${romData.length} entries")
   println(s"Loaded RAM: ${ramData.length} entries")
   println(s"Loaded main memory: ${mainMemData.length} entries (${mainMemData.count(_ != BigInt(0))} non-zero)")
-  println(s"CPU count: $cpuCnt")
+  println(s"CPU count: $cpuCnt, Lock: $lockType")
   println(s"Log file: $logFilePath")
 
-  val run = TestHistory.startRun("JopSmpDdr3NCoreHelloWorldSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
+  val run = TestHistory.startRun(s"JopSmpDdr3NCoreHelloWorldSim-$lockType", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
   SimConfig
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
-    .compile(JopSmpDdr3TestHarness(cpuCnt, romData, ramData, mainMemData))
+    .compile(JopSmpDdr3TestHarness(cpuCnt, romData, ramData, mainMemData, useCmpSync = useCmpSync))
     .doSim { dut =>
       val log = new PrintWriter(logFilePath)
       var uartOutput = new StringBuilder
@@ -233,8 +239,8 @@ object JopSmpDdr3NCoreHelloWorldSim extends App {
       dut.clockDomain.forkStimulus(10)  // 10ns = 100MHz
       dut.clockDomain.waitSampling(5)
 
-      val maxCycles = 10000000  // 10M cycles (DDR3 latency higher than SDRAM)
-      val reportInterval = 500000
+      val maxCycles = 40000000  // 40M cycles (DDR3 latency 20-60 cycles/miss)
+      val reportInterval = 2000000
       var done = false
       var cycle = 0
 

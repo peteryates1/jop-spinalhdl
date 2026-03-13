@@ -296,12 +296,13 @@ def main():
         sys.exit(1)
 
     if echo_mode:
-        ser.timeout = 0.1  # short timeout so partial reads return promptly
+        ser.timeout = 0.1  # short timeout so partial reads flush promptly
         print("Monitoring UART output (Ctrl+C to exit)...")
         try:
             while True:
-                data = ser.read(256)
+                data = ser.read(1)  # block for first byte (up to timeout)
                 if data:
+                    data += ser.read(ser.in_waiting)  # grab any remaining
                     sys.stdout.buffer.write(data)
                     sys.stdout.flush()
         except KeyboardInterrupt:

@@ -244,7 +244,9 @@ case class JopTop(
   val mainArea = new ClockingArea(effectiveMainCd) {
 
     // Build per-core configs
-    val burstLen = if (sys.cpuCnt > 1 && (isSdr || isDdr3)) 4
+    // Burst reads prevent A$ interleaving corruption on SDR SDRAM SMP.
+    // DDR3 doesn't need bursts: LruCacheCore serializes all access.
+    val burstLen = if (sys.cpuCnt > 1 && isSdr) 4
                    else 0
 
     // Per-core configs: devices are already distributed by sys.coreConfigs
@@ -264,7 +266,8 @@ case class JopTop(
       ),
       supersetJumpTable = sys.baseJumpTable,
       clkFreq = sys.clkFreq,
-      useStackCache = isDdr3 || (isSdr && board.name == "qmtech-wukong-xc7a100t")
+      // TODO: DDR3 SMP hangs with stack cache — investigate DMA+arbiter interaction
+      useStackCache = (isDdr3 && sys.cpuCnt == 1) || (isSdr && board.name == "qmtech-wukong-xc7a100t")
     ))
 
     // ==================================================================

@@ -16,7 +16,7 @@ generate-const: $(CONST_JAVA)
 
 $(CONST_JAVA): $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/generate/ConstGenerator.scala \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/JopConfig.scala \
-               $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/IoConfig.scala
+               $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/JopCoreConfig.scala
 	cd $(PROJECT_ROOT) && sbt -error "runMain jop.generate.ConstGeneratorMain $(JOP_PRESET) --write"
 
 tools: $(CONST_JAVA)

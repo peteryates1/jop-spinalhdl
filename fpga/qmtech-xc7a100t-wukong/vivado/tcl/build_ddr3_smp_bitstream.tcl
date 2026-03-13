@@ -1,4 +1,4 @@
-# Bitstream build script for JOP DDR3 SMP on QMTECH XC7A100T Wukong.
+# Bitstream build script for JOP SMP DDR3 on QMTECH XC7A100T Wukong.
 # Uses non-project (in-process) flow to reduce memory footprint.
 
 set script_dir [file dirname [file normalize [info script]]]
@@ -16,21 +16,28 @@ read_ip [file join $ip_root mig_7series_0/mig_7series_0.xci]
 # Read RTL
 read_verilog [file join $rtl_dir JopSmpDdr3WukongTop.v]
 
-# Read constraints (base only — no Ethernet/SD in SMP build)
+# Read constraints (read base + full separately; XDC source doesn't resolve in non-project mode)
 read_xdc [file join $repo_root vivado/constraints/wukong_ddr3_base.xdc]
+read_xdc [file join $repo_root vivado/constraints/wukong_ddr3.xdc]
 
-# Synthesize
-synth_design -top JopSmpDdr3WukongTop -part xc7a100tfgg676-2
+# Synthesize (performance-optimized: retiming, resource sharing, LUT combining)
+synth_design -top JopSmpDdr3WukongTop -part xc7a100tfgg676-2 \
+  -directive PerformanceOptimized -retiming
 write_checkpoint -force [file join $build_dir post_synth.dcp]
 report_utilization -file [file join $build_dir utilization_synth.rpt]
 
-# Implement
-opt_design
-place_design
-route_design
+# Implement (aggressive timing closure)
+opt_design -directive Explore
+place_design -directive ExtraTimingOpt
+phys_opt_design -directive AggressiveExplore
+route_design -directive AggressiveExplore
+phys_opt_design -directive AggressiveExplore
 write_checkpoint -force [file join $build_dir post_route.dcp]
 report_utilization -file [file join $build_dir utilization_impl.rpt]
 report_timing_summary -file [file join $build_dir timing_summary.rpt]
+
+# Waive combinatorial loop DRC from SpinalHDL StreamFifoLowLatency
+set_property IS_ENABLED FALSE [get_drc_checks LUTLP-1]
 
 # Write bitstream
 write_bitstream -force [file join $build_dir JopSmpDdr3WukongTop.bit]
