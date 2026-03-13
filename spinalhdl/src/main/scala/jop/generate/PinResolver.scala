@@ -1,6 +1,7 @@
 package jop.generate
 
 import jop.config._
+import jop.io.DeviceTypes
 
 /** Pin assignment: maps an FPGA pin to a Verilog port name */
 case class PinAssignment(fpgaPin: String, verilogPort: String)
@@ -59,12 +60,26 @@ object PinResolver {
     }
   }
 
-  /** Resolve driver pins (UART, Ethernet, VGA, SD) */
+  /** Resolve driver pins (UART, Ethernet, VGA, SD) — legacy path via DeviceDriver enum */
   def driverPins(assembly: SystemAssembly, sys: JopSystem): Seq[PinAssignment] =
     sys.drivers.flatMap { driver =>
       val devicePins = assembly.pinMapping(driver.devicePart)
       driver.pins.flatMap { case (verilogPort, deviceSignal) =>
         devicePins.get(deviceSignal).map(PinAssignment(_, verilogPort))
       }
+    }
+
+  /** Resolve device pins from effectiveDevices + DeviceTypes registry.
+   *  Each DeviceInstance with a devicePart is resolved through the assembly. */
+  def devicePins(assembly: SystemAssembly,
+                 devices: Map[String, DeviceInstance]): Seq[PinAssignment] =
+    devices.values.toSeq.flatMap { inst =>
+      for {
+        part <- inst.devicePart.toSeq
+        info <- DeviceTypes.registry.get(inst.deviceType).toSeq
+        boardPins = assembly.pinMapping(part)
+        (verilogPort, deviceSignal) <- info.verilogPins(inst.params)
+        fpgaPin <- boardPins.get(deviceSignal)
+      } yield PinAssignment(fpgaPin, verilogPort)
     }
 }

@@ -291,4 +291,45 @@ class JopConfigTest extends AnyFunSuite {
     assert(asm.resolvePin("J4:1").isEmpty)           // GND pin, not in map
     assert(asm.resolvePin("J6:1").isEmpty)            // nonexistent connector
   }
+
+  // ==========================================================================
+  // PinResolver.devicePins tests
+  // ==========================================================================
+
+  test("devicePins resolves UART from devicePart") {
+    import jop.generate.PinResolver
+    val config = JopConfig.ep4cgx150Serial
+    val pins = PinResolver.devicePins(config.assembly, config.system.effectiveDevices)
+    val pinMap = pins.map(p => p.verilogPort -> p.fpgaPin).toMap
+    assert(pinMap("ser_txd") == "PIN_AD20")
+    assert(pinMap("ser_rxd") == "PIN_AE21")
+  }
+
+  test("devicePins resolves full Wukong (UART + Eth + SD)") {
+    import jop.generate.PinResolver
+    val config = JopConfig.wukongFull
+    val pins = PinResolver.devicePins(config.assembly, config.system.effectiveDevices)
+    val pinMap = pins.map(p => p.verilogPort -> p.fpgaPin).toMap
+    // UART (CH340N on Wukong)
+    assert(pinMap("ser_txd") == "E3")
+    assert(pinMap("ser_rxd") == "F3")
+    // Ethernet GMII
+    assert(pinMap("e_gtxc") == "U1")
+    assert(pinMap("e_mdc") == "H2")
+    assert(pinMap("e_txd[7]") == "K1")  // GMII 8-bit
+    // SD Native
+    assert(pinMap("sd_clk") == "L4")
+    assert(pinMap("sd_cmd") == "J8")
+  }
+
+  test("devicePins matches driverPins for wukongFull") {
+    import jop.generate.PinResolver
+    val config = JopConfig.wukongFull
+    val devPins = PinResolver.devicePins(config.assembly, config.system.effectiveDevices)
+      .map(p => p.verilogPort -> p.fpgaPin).toMap
+    val drvPins = PinResolver.driverPins(config.assembly, config.system)
+      .map(p => p.verilogPort -> p.fpgaPin).toMap
+    // New path should produce same pins as old path
+    assert(devPins == drvPins)
+  }
 }
