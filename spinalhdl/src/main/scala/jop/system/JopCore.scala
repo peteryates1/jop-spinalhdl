@@ -50,9 +50,12 @@ case class JopCore(
     // Watchdog from Sys
     val wd = out Bits(32 bits)
 
-    // VGA DMA BMB master port (optional — for framebuffer reads)
-    // This is a bus master interface, not an external pin, so it's handled explicitly.
-    val vgaDmaBmb = if (config.ioConfig.hasVgaDma) Some(master(Bmb(config.memConfig.bmbParameter))) else None
+    // DMA BMB master ports (for devices with hasDma, e.g. VGA framebuffer reads)
+    val dmaBmbCount = DeviceTypes.dmaCount(config.devices) +
+      (if (config.devices.isEmpty && config.ioConfig.hasVgaDma) 1 else 0) // fallback for legacy path
+    val dmaBmb = Vec(master(Bmb(config.memConfig.bmbParameter)), dmaBmbCount)
+    // Legacy alias for backward compat during migration
+    val vgaDmaBmb: Option[Bmb] = if (dmaBmbCount > 0) Some(dmaBmb(0)) else None
 
     // Pipeline status
     val pc        = out UInt(config.pcWidth bits)
@@ -238,8 +241,8 @@ case class JopCore(
   // I/O address (8-bit, decoded by JopIoSpace match predicates)
   val ioAddr = memCtrl.io.ioAddr
 
-  // Number of I/O interrupt sources (computed from IoConfig)
-  val numIoInt = config.ioConfig.numIoInt
+  // Number of I/O interrupt sources
+  val numIoInt = config.effectiveNumIoInt
 
   // System I/O (0xF0-0xFF, always present, manually wired)
   val sys = Sys(clkFreq = config.clkFreq, cpuId = config.cpuId, cpuCnt = config.cpuCnt, numIoInt = numIoInt,
@@ -264,7 +267,8 @@ case class JopCore(
   sys.io.ackExc := pipeline.io.ackExc
 
   // ---------- Pluggable I/O: allocate addresses and instantiate devices ----------
-  val allDescriptors = config.ioConfig.allDevices(config, vgaCd, ethTxCd, ethRxCd)
+  val ctx = DeviceContext(vgaCd, ethTxCd, ethRxCd)
+  val allDescriptors = config.effectiveDeviceDescriptors(ctx)
   val allocatedDevices = IoAddressAllocator.allocate(allDescriptors)
   IoAddressAllocator.printAllocation(allocatedDevices)
 
@@ -299,7 +303,7 @@ case class JopCore(
   ioRdData := 0
   when(JopIoSpace.isSys(ioAddr)) { ioRdData := sys.io.rdData }
   // Null UART: if UART not present, return TDRE=1 so writes silently succeed
-  if (!config.ioConfig.hasUart) {
+  if (!config.hasUart) {
     when(JopIoSpace.isUart(ioAddr)) { ioRdData := B(1, 32 bits) }
   }
   allocatedDevices.foreach { ad =>
@@ -344,12 +348,15 @@ case class JopCore(
       ._2.asInstanceOf[T]
   }
 
-  // ---------- Special device wiring (not covered by passthrough) ----------
-
-  // VGA DMA BMB master port (bus interface, not external pin)
-  ioDevices.get("vgaDma").foreach { dev =>
-    val vga = dev.asInstanceOf[VgaBmbDma]
-    io.vgaDmaBmb.get <> vga.bus.bmb
+  // ---------- DMA BMB master wiring (generic for any device with busDmaBmb) ----------
+  {
+    var dmaIdx = 0
+    ioDevices.values.foreach { dev =>
+      dev.busDmaBmb.foreach { dmaBmb =>
+        io.dmaBmb(dmaIdx) <> dmaBmb
+        dmaIdx += 1
+      }
+    }
   }
 
   // Watchdog output

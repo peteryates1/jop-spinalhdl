@@ -1,6 +1,7 @@
 package jop.config
 
 import spinal.core.HertzNumber
+import jop.io.{DeviceContext, DeviceTypes, IoDeviceDescriptor}
 import jop.pipeline._
 import jop.memory._
 
@@ -58,6 +59,7 @@ case class JopCoreConfig(
   useDspMul:    Boolean          = false,  // Use 1-cycle DSP multiplier in ALU (bypasses CU for imul)
   useSyncRam:   Option[Boolean]  = None,   // None = auto (true for all — readAsync emits ram_style=distributed); Some(x) = explicit override
   memoryStyle:  Option[MemoryStyle] = None, // None = auto from FPGA family; Some(x) = explicit override
+  devices:      Map[String, DeviceInstance] = Map.empty, // Declarative device list (when non-empty, replaces ioConfig)
 
   // --- Per-bytecode implementation selection ---
   // Integer — Microcode = iterative SW, Hardware = IntegerComputeUnit, Java = JOPizer invokestatic.
@@ -106,10 +108,49 @@ case class JopCoreConfig(
 ) {
   import Implementation._
 
-  // Convenience accessors
-  def hasUart: Boolean = ioConfig.hasUart
-  def hasEth: Boolean = ioConfig.hasEth
-  def uartBaudRate: Int = ioConfig.uartBaudRate
+  // Convenience accessors (work on either path)
+  def hasUart: Boolean = if (devices.nonEmpty) hasDevice("uart") else ioConfig.hasUart
+  def hasEth: Boolean = if (devices.nonEmpty) hasDevice("ethernet") else ioConfig.hasEth
+  def uartBaudRate: Int = if (devices.nonEmpty) {
+    devices.values.find(_.deviceType == "uart")
+      .flatMap(_.params.get("baudRate").map(_.asInstanceOf[Int]))
+      .getOrElse(2000000)
+  } else ioConfig.uartBaudRate
+
+  /** Check if a device type is present (works on either path) */
+  def hasDevice(deviceType: String): Boolean = {
+    if (devices.nonEmpty) devices.values.exists(_.deviceType == deviceType)
+    else deviceType match {
+      case "uart"      => ioConfig.hasUart
+      case "ethernet"  => ioConfig.hasEth
+      case "sdspi"     => ioConfig.hasSdSpi
+      case "sdnative"  => ioConfig.hasSdNative
+      case "vgadma"    => ioConfig.hasVgaDma
+      case "vgatext"   => ioConfig.hasVgaText
+      case "cfgflash"  => ioConfig.hasConfigFlash
+      case _           => false
+    }
+  }
+
+  def hasAnyVga: Boolean = hasDevice("vgadma") || hasDevice("vgatext")
+  def hasAnySd: Boolean = hasDevice("sdspi") || hasDevice("sdnative")
+
+  /** Build device descriptors from either declarative devices or IoConfig fallback */
+  def effectiveDeviceDescriptors(ctx: DeviceContext = DeviceContext()): Seq[IoDeviceDescriptor] = {
+    if (devices.nonEmpty) {
+      val bootName = if (devices.contains("cfgFlash")) Some("cfgFlash")
+                     else devices.keys.find(k => devices(k).deviceType == "uart")
+      DeviceTypes.toDescriptors(devices, bootName, this, ctx)
+    } else {
+      ioConfig.allDevices(this, ctx.vgaCd, ctx.ethTxCd, ctx.ethRxCd)
+    }
+  }
+
+  /** Interrupt count from either path */
+  def effectiveNumIoInt: Int = {
+    if (devices.nonEmpty) DeviceTypes.interruptCount(devices)
+    else ioConfig.numIoInt
+  }
 
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(instrWidth == 10, "Instruction width must be 10 bits")

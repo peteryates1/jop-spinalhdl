@@ -2,7 +2,7 @@ package jop.io
 
 import spinal.core._
 import spinal.lib.bus.bmb._
-import jop.config.JopCoreConfig
+import jop.config.{DeviceInstance, JopCoreConfig}
 
 /**
  * Device bus interface metadata.
@@ -45,8 +45,55 @@ case class DeviceContext(
  *
  * Each entry maps a device type string to its DeviceTypeInfo. New device types
  * are registered here; instances are created by looking up the type string.
+ *
+ * Also provides conversion from DeviceInstance maps to IoDeviceDescriptor sequences.
  */
 object DeviceTypes {
+
+  /**
+   * Convert a named device map to IoDeviceDescriptor sequence.
+   *
+   * @param devices       Named device instances (e.g., "uart0" -> DeviceInstance("uart"))
+   * @param bootDeviceName Name of the boot device (gets fixedBase=0xEE), or None
+   * @param cfg           Core config (passed to factory lambdas at elaboration time)
+   * @param ctx           Clock domain context (eth, vga)
+   */
+  def toDescriptors(
+    devices: Map[String, DeviceInstance],
+    bootDeviceName: Option[String],
+    cfg: JopCoreConfig,
+    ctx: DeviceContext
+  ): Seq[IoDeviceDescriptor] = {
+    devices.toSeq.map { case (name, inst) =>
+      val info = registry.getOrElse(inst.deviceType,
+        throw new NoSuchElementException(
+          s"Unknown device type '${inst.deviceType}' for device '$name'. " +
+          s"Available: ${registry.keys.mkString(", ")}"))
+      IoDeviceDescriptor(
+        name = name,
+        addrBits = info.addrBits,
+        interruptCount = info.interruptCount,
+        fixedBase = if (bootDeviceName.contains(name)) Some(0xEE) else None,
+        registerNames = info.registerNames,
+        factory = c => info.factory(c, inst.params, ctx)
+      )
+    }
+  }
+
+  /** Compute interrupt count from a device map */
+  def interruptCount(devices: Map[String, DeviceInstance]): Int = {
+    val n = devices.values.map { inst =>
+      registry.get(inst.deviceType).map(_.interruptCount).getOrElse(0)
+    }.sum
+    n.max(2) // Sys requires at least 2
+  }
+
+  /** Count DMA-capable devices in a device map */
+  def dmaCount(devices: Map[String, DeviceInstance]): Int = {
+    devices.values.count { inst =>
+      registry.get(inst.deviceType).exists(_.hasDma)
+    }
+  }
   val registry: Map[String, DeviceTypeInfo] = Map(
     "uart" -> DeviceTypeInfo(
       addrBits = 1, interruptCount = 2,
