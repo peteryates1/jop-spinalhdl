@@ -75,7 +75,7 @@ case class JopTop(
     val sdram = isSdr generate master(SdramInterface(sdrLayout))
 
     // DDR3 (conditional — Au V2 has CS pin, Wukong does not)
-    val ddr3HasCs    = isDdr3 && board.name == "alchitry-au-v2"
+    val ddr3HasCs = isDdr3 && board.ddr3HasCs
     val ddr3_dq      = isDdr3 generate inout(Analog(Bits(16 bits)))
     val ddr3_dqs_n   = isDdr3 generate inout(Analog(Bits(2 bits)))
     val ddr3_dqs_p   = isDdr3 generate inout(Analog(Bits(2 bits)))
@@ -161,10 +161,10 @@ case class JopTop(
     val boardClk = if (isAltera) io.clk_in else ClockDomain.current.readClockWire
 
     // 2. PLL
-    pllResult = Pll.create(board.name, memType, boardClk)
+    pllResult = Pll.create(board, memType, boardClk)
 
-    // 3. Ethernet PLL (EP4CGX150 GMII only)
-    if (sys.ethGmii && board.name == "qmtech-ep4cgx150") {
+    // 3. Ethernet PLL (boards with dedicated Ethernet PLL)
+    if (sys.ethGmii && board.hasEthPll) {
       ethPll = EthPll()
       ethPll.io.inclk0 := boardClk
     }
@@ -185,7 +185,7 @@ case class JopTop(
 
     // 5. DDR3 MIG (provides ui_clk for system clock)
     if (isDdr3) {
-      val hasCs = board.name == "alchitry-au-v2"
+      val hasCs = board.ddr3HasCs
       ddr3Mig = new MigBlackBox(hasCs)
       io.ddr3_dq    <> ddr3Mig.io.ddr3_dq
       io.ddr3_dqs_n <> ddr3Mig.io.ddr3_dqs_n
@@ -262,12 +262,12 @@ case class JopTop(
         burstLen = 0
       ) else cc.memConfig.copy(
         burstLen = burstLen,
-        stackRegionWordsPerCore = if (board.name == "qmtech-wukong-xc7a100t") 8192 else 0
+        stackRegionWordsPerCore = if (board.useStackCache) 8192 else 0
       ),
       supersetJumpTable = sys.baseJumpTable,
       clkFreq = sys.clkFreq,
       // TODO: DDR3 SMP hangs with stack cache — investigate DMA+arbiter interaction
-      useStackCache = (isDdr3 && sys.cpuCnt == 1) || (isSdr && board.name == "qmtech-wukong-xc7a100t")
+      useStackCache = (isDdr3 && sys.cpuCnt == 1) || (isSdr && board.useStackCache)
     ))
 
     // ==================================================================

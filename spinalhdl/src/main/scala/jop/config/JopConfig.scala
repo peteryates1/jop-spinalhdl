@@ -253,25 +253,20 @@ case class JopConfig(
   def memoryTypes: Seq[MemoryType] =
     systems.flatMap(sys => resolveMemory(sys).map(_.memType)).distinct
 
-  /** Entity name for backward-compatible Verilog generation */
+  /** Entity name derived from Board properties (entityTag, entitySuffix) and memory type */
   def entityName: String = {
     val sys = systems.head
+    val board = assembly.fpgaBoard
     val smp = if (sys.cpuCnt >= 2) "Smp" else ""
-    val platform = assembly.fpgaBoard.name match {
-      case "qmtech-ep4cgx150" =>
-        if (memoryTypes.contains(MemoryType.SDRAM_SDR)) "Sdram"
+    val platform = if (board.entityTag.nonEmpty) {
+      board.entityTag
+    } else {
+      val memPart =
+        if (memoryTypes.contains(MemoryType.SDRAM_DDR3)) "Ddr3"
+        else if (memoryTypes.contains(MemoryType.SDRAM_SDR)) "Sdram"
         else if (sys.bootMode == BootMode.Serial) "BramSerial"
         else "Bram"
-      case "cyc5000" => "Cyc5000"
-      case "alchitry-au-v2" => "Ddr3"
-      case "qmtech-wukong-xc7a100t" =>
-        if (memoryTypes.contains(MemoryType.SDRAM_DDR3)) "Ddr3Wukong"
-        else if (memoryTypes.contains(MemoryType.SDRAM_SDR)) "SdramWukong"
-        else "BramWukong"
-      case "qmtech-xc7a100t" => "Ddr3"  // same as AU for now
-      case "max1000" => "Max1000Sdram"
-      case "generic-ep4ce6" => "Ep4ce6Sdram"
-      case other => other.split("-").map(_.capitalize).mkString
+      memPart + board.entitySuffix
     }
     s"Jop${smp}${platform}Top"
   }

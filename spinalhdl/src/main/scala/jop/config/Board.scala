@@ -42,6 +42,20 @@ case class BoardDevice(
 )
 
 // ==========================================================================
+// PLL Type — which PLL family a board uses
+// ==========================================================================
+
+sealed trait PllType
+object PllType {
+  case object AlteraDramPll extends PllType      // EP4CGX150 (Cyclone IV GX)
+  case object AlteraCyc5000 extends PllType      // CYC5000 (Cyclone V)
+  case object AlteraMax1000 extends PllType      // MAX1000 (MAX10)
+  case object AlteraEp4ce6 extends PllType       // EP4CE6 (Cyclone IV E)
+  case object XilinxWukong extends PllType       // Wukong XC7A100T (SDR/DDR3/BRAM variants)
+  case object XilinxDdr3ClkWiz extends PllType   // Au V2, QmtechXC7A100T (DDR3 ClkWiz)
+}
+
+// ==========================================================================
 // Board
 // ==========================================================================
 
@@ -57,7 +71,14 @@ case class Board(
   name: String,
   fpga: Option[FpgaDevice] = None,
   devices: Seq[BoardDevice] = Seq.empty,
-  connectors: Map[String, Map[Int, String]] = Map.empty
+  connectors: Map[String, Map[Int, String]] = Map.empty,
+  pllType: Option[PllType] = None,
+  entityTag: String = "",       // Replaces memType-based entity name (e.g., "Cyc5000", "Max1000Sdram")
+  entitySuffix: String = "",    // Appended to memType-based entity name (e.g., "Wukong")
+  ledActiveHigh: Boolean = false,
+  ddr3HasCs: Boolean = false,
+  hasEthPll: Boolean = false,
+  useStackCache: Boolean = false
 ) {
   def hasFpga: Boolean = fpga.isDefined
 
@@ -82,12 +103,6 @@ case class Board(
     }.getOrElse(HertzNumber(BigDecimal(50000000)))
   }
 
-  /** LED active-high vs active-low (board-level hardware fact) */
-  def ledActiveHigh: Boolean = name match {
-    case n if n.contains("wukong") => true
-    case _ => false  // QMTECH EP4CGX150, CYC5000, Alchitry Au all active-low
-  }
-
   /** Number of on-board LEDs */
   def ledCount: Int = devices.filter(_.part == "LED").flatMap(_.mapping.keys).size
 }
@@ -108,6 +123,8 @@ object Board {
   def QmtechEP4CGX150 = Board(
     name = "qmtech-ep4cgx150",
     fpga = Some(FpgaDevice.EP4CGX150DF27I7),
+    pllType = Some(PllType.AlteraDramPll),
+    hasEthPll = true,
     devices = Seq(
       // On-board SDRAM (direct FPGA pins, verified against jop_sdram.qsf)
       BoardDevice("W9825G6JH6", mapping = Map(
@@ -172,6 +189,8 @@ object Board {
    */
   def CYC5000 = Board(
     name = "cyc5000",
+    pllType = Some(PllType.AlteraCyc5000),
+    entityTag = "Cyc5000",
     fpga = Some(FpgaDevice.`5CEBA2U15C8`),
     devices = Seq(
       BoardDevice("W9864G6JT", mapping = Map(
@@ -212,6 +231,8 @@ object Board {
   def AlchitryAuV2 = Board(
     name = "alchitry-au-v2",
     fpga = Some(FpgaDevice.XC7A35T),
+    pllType = Some(PllType.XilinxDdr3ClkWiz),
+    ddr3HasCs = true,
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K"),   // DDR3 pins managed by MIG IP
       BoardDevice("CLOCK_100MHz", mapping = Map("clock" -> "N14")),
@@ -264,6 +285,10 @@ object Board {
   def WukongXC7A100T = Board(
     name = "qmtech-wukong-xc7a100t",
     fpga = Some(FpgaDevice.XC7A100T),
+    pllType = Some(PllType.XilinxWukong),
+    entitySuffix = "Wukong",
+    ledActiveHigh = true,
+    useStackCache = true,
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3")),  // DDR3 pins managed by MIG IP
       // SDR SDRAM — Bank 14 (address/control) + Bank 15 (data)
@@ -326,6 +351,7 @@ object Board {
   def QmtechXC7A100T = Board(
     name = "qmtech-xc7a100t",
     fpga = Some(FpgaDevice.XC7A100T),
+    pllType = Some(PllType.XilinxDdr3ClkWiz),
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K"),   // DDR3 pins managed by MIG IP
       BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "U22")),
@@ -503,6 +529,8 @@ object Board {
   def MAX1000 = Board(
     name = "max1000",
     fpga = Some(FpgaDevice.`10M08SAE144C8G`),
+    pllType = Some(PllType.AlteraMax1000),
+    entityTag = "Max1000Sdram",
     devices = Seq(
       BoardDevice("W9864G6JT"),
       BoardDevice("CLOCK_12MHz", mapping = Map("clock" -> "PIN_H6")),
@@ -520,6 +548,8 @@ object Board {
   def GenericEP4CE6 = Board(
     name = "generic-ep4ce6",
     fpga = Some(FpgaDevice.EP4CE6E22C8),
+    pllType = Some(PllType.AlteraEp4ce6),
+    entityTag = "Ep4ce6Sdram",
     devices = Seq(
       BoardDevice("W9864G6JT"),
       BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "PIN_23")),
