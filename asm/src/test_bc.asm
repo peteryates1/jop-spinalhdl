@@ -2,12 +2,12 @@ version         =  20250529
 
 stack_init      =  64
 
-io_count        = -128
-io_us_count     = -127
-io_sw_int       = -126
-io_wd           = -125
-io_uart_status  = -112
-io_uart_data    = -111
+io_count        = -16
+io_us_count     = -15
+io_sw_int       = -14
+io_wd           = -13
+io_uart_status  = -18
+io_uart_data    = -17
 io_led          = -64
 io_ss           = -48
 

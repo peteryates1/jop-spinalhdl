@@ -28,10 +28,10 @@ version		= 20091128
 //
 //	io address
 //
-io_cnt		=	-128
-io_wd		=	-125
-io_status	=	-112
-io_uart		=	-111
+io_cnt		=	-16
+io_wd		=	-13
+io_status	=	-18
+io_uart		=	-17
 
 usb_status	=	-96
 usb_data	=	-95

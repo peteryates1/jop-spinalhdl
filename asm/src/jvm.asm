@@ -169,7 +169,7 @@ stack_init	= 64
 //	io address are negativ memory addresses
 //
 //	BmbSys at 0xF0 (bipush -16..-1)
-//	BmbUart at 0xE0 (bipush -32..-17)
+//	Boot device at 0xEE (bipush -18..-17)
 //
 io_cnt		=	-16
 io_wd		=	-13

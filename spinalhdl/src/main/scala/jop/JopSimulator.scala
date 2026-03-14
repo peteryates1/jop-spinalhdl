@@ -48,46 +48,6 @@ case class JopSimulatorConfig(
 }
 
 /**
- * I/O Address Constants (32-bit form for simulation)
- *
- * JOP uses negative addresses for I/O via `bipush` (-128 to -1),
- * which sign-extend to 0xFFFFFF80-0xFFFFFFFF. Low byte matches
- * JopIoSpace layout (0x80-0xFF).
- */
-object JopIoAddresses {
-  private val IO_BASE = 0xFFFFFF00L
-
-  // System registers (0x80-0x8F)
-  val IO_CNT      = IO_BASE | 0x80L  // -128: System counter / Interrupt enable
-  val IO_US_CNT   = IO_BASE | 0x81L  // -127: Microsecond counter
-  val IO_TIMER    = IO_BASE | 0x82L  // -126: Timer interrupt
-  val IO_WD       = IO_BASE | 0x83L  // -125: Watchdog
-  val IO_EXC      = IO_BASE | 0x84L  // -124: Exception
-  val IO_LOCK     = IO_BASE | 0x85L  // -123: Lock
-  val IO_CPU_ID   = IO_BASE | 0x86L  // -122: CPU ID
-  val IO_SIGNAL   = IO_BASE | 0x87L  // -121: Signal
-  val IO_INT_ENA  = IO_BASE | 0x80L  // -128: Interrupt enable (same as CNT)
-
-  // UART registers (0x90-0x93)
-  val IO_STATUS   = IO_BASE | 0x90L  // -112: UART status
-  val IO_UART     = IO_BASE | 0x91L  // -111: UART data
-
-  // Ethernet registers (0x98-0x9F)
-  val IO_ETH_STATUS   = IO_BASE | 0x98L
-  val IO_ETH_TX_AVAIL = IO_BASE | 0x99L
-  val IO_ETH_TX_DATA  = IO_BASE | 0x9AL
-  val IO_ETH_RX_DATA  = IO_BASE | 0x9BL
-  val IO_ETH_RX_STATS = IO_BASE | 0x9CL
-
-  // MDIO registers (0xA0-0xA7)
-  val IO_MDIO_CMD     = IO_BASE | 0xA0L
-  val IO_MDIO_DATA    = IO_BASE | 0xA1L
-  val IO_MDIO_ADDR    = IO_BASE | 0xA2L
-  val IO_PHY_RESET    = IO_BASE | 0xA3L
-  val IO_ETH_INT_CTRL = IO_BASE | 0xA4L
-}
-
-/**
  * JOP Simulator - Integrated Testbench
  *
  * This component provides a complete JOP simulation environment:

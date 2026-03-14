@@ -6,10 +6,10 @@ package test;
  */
 public class ImulTest {
 
-    // JOP I/O addresses (from Const.java)
-    static final int IO_BASE = -128;        // 0xFFFFFF80
-    static final int IO_STATUS = IO_BASE + 0x10;  // UART status
-    static final int IO_UART = IO_BASE + 0x11;    // UART data
+    // Use canonical I/O addresses from Const
+    static final int IO_STATUS = com.jopdesign.sys.Const.IO_STATUS;
+    static final int IO_UART = com.jopdesign.sys.Const.IO_UART;
+    static final int IO_WD = com.jopdesign.sys.Const.IO_WD;
 
     public static void main(String[] args) {
 
@@ -49,8 +49,8 @@ public class ImulTest {
 
         // Busy loop — toggle watchdog
         for (;;) {
-            int wd = com.jopdesign.sys.Native.rd(IO_BASE + 3);
-            com.jopdesign.sys.Native.wr(wd + 1, IO_BASE + 3);
+            int wd = com.jopdesign.sys.Native.rd(IO_WD);
+            com.jopdesign.sys.Native.wr(wd + 1, IO_WD);
         }
     }
 

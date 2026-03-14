@@ -10,9 +10,9 @@ version     = 20260216
 stack_init  = 64
 
 // I/O addresses (negative = high address, I/O space)
-io_status   = -112
-io_uart     = -111
-io_cpu_id   = -122
+io_status   = -18
+io_uart     = -17
+io_cpu_id   = -10
 
 // Status register bit masks
 ua_rdrf     = 2

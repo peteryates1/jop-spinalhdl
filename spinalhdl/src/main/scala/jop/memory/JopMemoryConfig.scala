@@ -146,7 +146,7 @@ object JopAddressSpace {
  *
  * Fixed layout:
  *   0xF0-0xFF  Sys   (16 addrs)  — always present, top of space
- *   0xE0-0xEF  Uart  (16 addrs)  — just below Sys
+ *   0xEE-0xEF  Boot  (2 addrs)   — just below Sys
  *   0x80-0xDF  Dynamic  (96 addrs)  — auto-allocated, packing downward from 0xDF
  */
 object JopIoSpace {
