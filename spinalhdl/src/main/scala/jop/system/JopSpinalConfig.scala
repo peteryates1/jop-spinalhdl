@@ -17,16 +17,14 @@ import jop.config._
 object JopSpinalConfig {
   def apply(config: JopConfig): SpinalConfig = {
     val boardFreq = config.assembly.boardClockFreq
-    val isXilinx = config.fpgaFamily.manufacturer == Manufacturer.Xilinx
-
     SpinalConfig(
       mode = Verilog,
       targetDirectory = "spinalhdl/generated",
       defaultClockDomainFrequency = FixedFrequency(boardFreq),
-      defaultConfigForClockDomains = if (isXilinx)
-        ClockDomainConfig(resetKind = SYNC, resetActiveLevel = LOW)
-      else
-        ClockDomainConfig(resetKind = SYNC, resetActiveLevel = HIGH)
+      defaultConfigForClockDomains = ClockDomainConfig(
+        resetKind = SYNC,
+        resetActiveLevel = if (config.fpgaFamily.manufacturer.resetActiveLow) LOW else HIGH
+      )
     )
   }
 }

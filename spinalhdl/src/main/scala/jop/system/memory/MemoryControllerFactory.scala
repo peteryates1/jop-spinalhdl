@@ -96,7 +96,7 @@ object MemoryControllerFactory {
    * @param layout       SDRAM layout from device (e.g. W9825G6JH6.layout)
    * @param timing       SDRAM timing from device speed grade (e.g. W9825G6JH6.timingGrade7)
    * @param cas          CAS latency (e.g. 3 for W9825G6JH6, 2 for W9864G6JT)
-   * @param isAltera     Whether to use Altera IP (vs SpinalHDL SdramCtrlNoCke for sim/Xilinx)
+   * @param useAlteraCtrl Whether to use Altera IP (vs SpinalHDL SdramCtrlNoCke for sim/Xilinx)
    * @param clockFreqHz  System clock frequency in Hz for timing calculations
    */
   def createSdr(
@@ -104,7 +104,7 @@ object MemoryControllerFactory {
     layout: SdramLayout,
     timing: SdramTimings,
     cas: Int,
-    isAltera: Boolean,
+    useAlteraCtrl: Boolean,
     clockFreqHz: Long
   ): SdrMemCtrl = {
     val ctrl = BmbSdramCtrl32(
@@ -112,7 +112,7 @@ object MemoryControllerFactory {
       layout = layout,
       timing = timing,
       CAS = cas,
-      useAlteraCtrl = isAltera,
+      useAlteraCtrl = useAlteraCtrl,
       clockFreqHz = clockFreqHz
     )
     SdrMemCtrl(ctrl)

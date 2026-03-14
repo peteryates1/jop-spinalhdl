@@ -35,13 +35,7 @@ object QsfGenerator {
   /** Generate global assignments (FAMILY, DEVICE, TOP_LEVEL_ENTITY) */
   def globalAssignments(config: JopConfig): String = {
     val fpga = config.fpga
-    val family = fpga.family match {
-      case FpgaFamily.CycloneIV => "Cyclone IV GX"
-      case FpgaFamily.CycloneV  => "Cyclone V"
-      case FpgaFamily.MAX10     => "MAX 10"
-      case FpgaFamily.Artix7    => "Artix-7"
-      case FpgaFamily.ECP5      => "ECP5"
-    }
+    val family = fpga.family.quartusFamilyName
     Seq(
       s"""set_global_assignment -name FAMILY "$family"""",
       s"set_global_assignment -name DEVICE ${fpga.name}",

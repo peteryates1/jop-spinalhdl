@@ -41,8 +41,7 @@ case class JopTop(
 
   private val sys = config.system
   private val board = config.assembly.fpgaBoard
-  private val isAltera = config.fpgaFamily.manufacturer == Manufacturer.Altera
-  private val isXilinx = config.fpgaFamily.manufacturer == Manufacturer.Xilinx
+  private val manufacturer = config.fpgaFamily.manufacturer
   private val memDevice = config.resolveMemory(sys)
   private val memType = memDevice.map(_.memType).getOrElse(MemoryType.BRAM)
   private val isSdr = memType == MemoryType.SDRAM_SDR
@@ -60,7 +59,7 @@ case class JopTop(
 
   val io = new Bundle {
     // Clock input (Altera: explicit port; Xilinx: uses default clock domain; Sim: none)
-    val clk_in = (!simulation && isAltera) generate (in Bool())
+    val clk_in = (!simulation && manufacturer.explicitClockPort) generate (in Bool())
 
     // UART
     val ser_txd = out Bool()
@@ -148,7 +147,7 @@ case class JopTop(
     ClockDomain.current
   } else {
     // 1. Board Clock Source
-    val boardClk = if (isAltera) io.clk_in else ClockDomain.current.readClockWire
+    val boardClk = if (manufacturer.explicitClockPort) io.clk_in else ClockDomain.current.readClockWire
 
     // 2. PLL
     pllResult = Pll.create(board, memType, boardClk)
@@ -215,7 +214,7 @@ case class JopTop(
 
   // 6. Device Clock Domains (delegated to DeviceTopWiring)
   val deviceClockDomains: DeviceClockDomains = {
-    val ctx = TopWiringContext(config, isAltera, isXilinx, simulation, systemReset, pllResult, ethPll)
+    val ctx = TopWiringContext(config, simulation, systemReset, pllResult, ethPll)
     sys.effectiveDevices.values.flatMap { inst =>
       DeviceTopWirings.forInstance(inst).map(_.createClockDomains(ctx, ioPinMap))
     }.foldLeft(DeviceClockDomains()) { (acc, cd) =>
@@ -287,7 +286,7 @@ case class JopTop(
         layout = sdrLayout,
         timing = sdrTiming,
         cas = md.casLatency,
-        isAltera = isAltera,
+        useAlteraCtrl = manufacturer == Manufacturer.Altera,
         clockFreqHz = sys.clkFreq.toLong
       )
       sdrCtrl.ctrl.io.bmb <> cluster.io.bmb
@@ -327,7 +326,7 @@ case class JopTop(
     // Device Wiring (delegated to DeviceTopWiring)
     // ==================================================================
 
-    val wiringCtx = TopWiringContext(config, isAltera, isXilinx, simulation, systemReset, pllResult, ethPll)
+    val wiringCtx = TopWiringContext(config, simulation, systemReset, pllResult, ethPll)
     for ((instanceName, inst) <- sys.effectiveDevices) {
       DeviceTopWirings.forInstance(inst).foreach { wiring =>
         wiring.wireDevice(instanceName, cluster, ioPinMap, deviceClockDomains, wiringCtx)
@@ -353,7 +352,7 @@ case class JopTop(
     io.led := 0
     io.led(0) := mainArea.cluster.io.wd(0)(0)
 
-  } else if (!isDdr3 && isAltera) {
+  } else if (!isDdr3 && manufacturer.explicitClockPort) {
     // --- Altera non-DDR3: everything in mainArea clock domain ---
     val boardClkFreqHz = board.clockFreq.toLong
     val alteraMainHeartbeat = new ClockingArea(effectiveMainCd) {
@@ -386,7 +385,7 @@ case class JopTop(
       }
     }
 
-  } else if (isDdr3 || isXilinx) {
+  } else if (isDdr3 || !manufacturer.explicitClockPort) {
     // --- DDR3 or Xilinx: board clock domain with CDC ---
     val boardClkFreqHz = board.clockFreq.toLong
     val halfPeriod = (boardClkFreqHz / 2 - 1).toInt

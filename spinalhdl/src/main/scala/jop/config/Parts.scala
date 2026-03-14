@@ -12,23 +12,39 @@ package jop.config
 // FPGA
 // ==========================================================================
 
-/** FPGA manufacturer — determines synthesis tool and primitives */
-sealed trait Manufacturer
+/** FPGA manufacturer — determines synthesis tool, primitives, and clock/reset conventions.
+  * @param resetActiveLow   Xilinx uses active-LOW reset; Altera uses active-HIGH
+  * @param explicitClockPort Altera needs explicit clk_in port; Xilinx uses default clock domain */
+sealed trait Manufacturer {
+  def resetActiveLow: Boolean
+  def explicitClockPort: Boolean
+}
 object Manufacturer {
-  case object Altera extends Manufacturer   // Intel
-  case object Xilinx extends Manufacturer   // AMD
-  case object Lattice extends Manufacturer
+  case object Altera extends Manufacturer {
+    val resetActiveLow = false
+    val explicitClockPort = true
+  }
+  case object Xilinx extends Manufacturer {
+    val resetActiveLow = true
+    val explicitClockPort = false
+  }
+  case object Lattice extends Manufacturer {
+    val resetActiveLow = false
+    val explicitClockPort = true
+  }
 }
 
-/** FPGA family — determines DSP type, memory primitives, tool version */
+/** FPGA family — determines DSP type, memory primitives, tool version.
+  * @param quartusFamilyName Quartus FAMILY string (Altera families only) */
 sealed trait FpgaFamily {
   def manufacturer: Manufacturer
   def memoryStyle: MemoryStyle = MemoryStyle.Generic
+  def quartusFamilyName: String = ""
 }
 object FpgaFamily {
-  case object CycloneIV  extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm }
-  case object CycloneV   extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm }
-  case object MAX10      extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm }
+  case object CycloneIV  extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm; override val quartusFamilyName = "Cyclone IV GX" }
+  case object CycloneV   extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm; override val quartusFamilyName = "Cyclone V" }
+  case object MAX10      extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm; override val quartusFamilyName = "MAX 10" }
   case object Artix7     extends FpgaFamily { val manufacturer = Manufacturer.Xilinx }
   case object ECP5       extends FpgaFamily { val manufacturer = Manufacturer.Lattice }
 }

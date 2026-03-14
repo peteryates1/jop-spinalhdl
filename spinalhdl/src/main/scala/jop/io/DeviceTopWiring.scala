@@ -27,13 +27,15 @@ case class TopPin(name: String, pinType: TopPinType)
  */
 case class TopWiringContext(
   config: JopConfig,
-  isAltera: Boolean,
-  isXilinx: Boolean,
   simulation: Boolean,
   systemReset: Bool = null,
   pllResult: PllResult = null,
   ethPll: EthPll = null
-)
+) {
+  val manufacturer: Manufacturer = config.fpgaFamily.manufacturer
+  val isAltera: Boolean = manufacturer == Manufacturer.Altera
+  val isXilinx: Boolean = manufacturer == Manufacturer.Xilinx
+}
 
 /**
  * Clock domains created by a device at the top level.
