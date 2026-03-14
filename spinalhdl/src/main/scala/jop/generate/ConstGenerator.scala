@@ -30,12 +30,12 @@ object ConstGenerator {
     val allCores = config.systems.flatMap(_.coreConfigs)
 
     // Union of all systems' device presence
-    val hasEth = config.systems.exists(_.hasEth)
-    val hasSdSpi = config.systems.exists(_.hasSdSpi)
-    val hasSdNative = config.systems.exists(_.hasSdNative)
-    val hasVgaDma = config.systems.exists(_.hasDevice("vgadma"))
-    val hasVgaText = config.systems.exists(_.hasDevice("vgatext"))
-    val hasCfgFlash = config.systems.exists(_.hasConfigFlash)
+    val hasEth = config.systems.exists(_.hasDevice(DeviceType.Ethernet))
+    val hasSdSpi = config.systems.exists(_.hasDevice(DeviceType.SdSpi))
+    val hasSdNative = config.systems.exists(_.hasDevice(DeviceType.SdNative))
+    val hasVgaDma = config.systems.exists(_.hasDevice(DeviceType.VgaDma))
+    val hasVgaText = config.systems.exists(_.hasDevice(DeviceType.VgaText))
+    val hasCfgFlash = config.systems.exists(_.hasDevice(DeviceType.CfgFlash))
 
     // Build superset devices from all systems for address allocation
     val supersetDevices: Map[String, DeviceInstance] = config.systems.flatMap(_.effectiveDevices).toMap

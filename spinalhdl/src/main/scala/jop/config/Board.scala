@@ -38,6 +38,7 @@ package jop.config
 case class BoardDevice(
   part: String,                                // part number or device name
   role: Option[String] = None,                 // optional role disambiguation
+  count: Int = 1,                              // physical chip count (>1 = ganged for wider bus)
   mapping: Map[String, String] = Map.empty     // device signal → pin reference
 )
 
@@ -127,7 +128,7 @@ object Board {
     hasEthPll = true,
     devices = Seq(
       // On-board SDRAM (direct FPGA pins, verified against jop_sdram.qsf)
-      BoardDevice("W9825G6JH6", mapping = Map(
+      BoardDevice("W9825G6JH6", role = Some("sdr"), mapping = Map(
         "CLK" -> "PIN_E22", "CKE" -> "PIN_K24",
         "CS_n" -> "PIN_H26", "RAS_n" -> "PIN_H25",
         "CAS_n" -> "PIN_G26", "WE_n" -> "PIN_G25",
@@ -193,7 +194,7 @@ object Board {
     entityTag = "Cyc5000",
     fpga = Some(FpgaDevice.`5CEBA2U15C8`),
     devices = Seq(
-      BoardDevice("W9864G6JT", mapping = Map(
+      BoardDevice("W9864G6JT", role = Some("sdr"), mapping = Map(
         "CLK" -> "PIN_P16", "CKE" -> "PIN_T14",
         "CS_n" -> "PIN_L13", "RAS_n" -> "PIN_P13",
         "CAS_n" -> "PIN_M14", "WE_n" -> "PIN_N12",
@@ -234,7 +235,7 @@ object Board {
     pllType = Some(PllType.XilinxDdr3ClkWiz),
     ddr3HasCs = true,
     devices = Seq(
-      BoardDevice("MT41K128M16JT-125:K"),   // DDR3 pins managed by MIG IP
+      BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3")),   // DDR3 pins managed by MIG IP
       BoardDevice("CLOCK_100MHz", mapping = Map("clock" -> "N14")),
       BoardDevice("FT2232H", mapping = Map(
         "TXD" -> "P16", "RXD" -> "P15")),
@@ -353,7 +354,7 @@ object Board {
     fpga = Some(FpgaDevice.XC7A100T),
     pllType = Some(PllType.XilinxDdr3ClkWiz),
     devices = Seq(
-      BoardDevice("MT41K128M16JT-125:K"),   // DDR3 pins managed by MIG IP
+      BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3")),   // DDR3 pins managed by MIG IP
       BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "U22")),
       BoardDevice("CH340N", mapping = Map(
         "TXD" -> "E3", "RXD" -> "F3")),
@@ -532,7 +533,7 @@ object Board {
     pllType = Some(PllType.AlteraMax1000),
     entityTag = "Max1000Sdram",
     devices = Seq(
-      BoardDevice("W9864G6JT"),
+      BoardDevice("W9864G6JT", role = Some("sdr")),
       BoardDevice("CLOCK_12MHz", mapping = Map("clock" -> "PIN_H6")),
       BoardDevice("FT2232H", mapping = Map(
         "TXD" -> "PIN_A4", "RXD" -> "PIN_B4")),
@@ -551,7 +552,7 @@ object Board {
     pllType = Some(PllType.AlteraEp4ce6),
     entityTag = "Ep4ce6Sdram",
     devices = Seq(
-      BoardDevice("W9864G6JT"),
+      BoardDevice("W9864G6JT", role = Some("sdr")),
       BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "PIN_23")),
       BoardDevice("CP2102N", mapping = Map(
         "TXD" -> "PIN_114", "RXD" -> "PIN_115")),

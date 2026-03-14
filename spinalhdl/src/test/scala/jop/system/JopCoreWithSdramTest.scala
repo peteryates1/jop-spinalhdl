@@ -7,7 +7,7 @@ import spinal.lib._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import org.scalatest.funsuite.AnyFunSuite
-import jop.memory.JopMemoryConfig
+import jop.memory.{JopMemoryConfig, SdramDeviceInfo}
 import jop.utils.JopFileLoader
 
 /**
@@ -24,14 +24,11 @@ case class JopCoreWithSdramTestHarness(
 
   val config = JopCoreConfig(memConfig = JopMemoryConfig(burstLen = 4))
 
-  // Use W9825G6JH6 SDRAM parameters
-  val sdramLayout = W9825G6JH6.layout
-  val sdramTiming = W9825G6JH6.timingGrade7
-  val CAS = 3
+  val md = MemoryDevice.W9825G6JH6
 
   val io = new Bundle {
     // SDRAM interface (directly exposed for simulation model)
-    val sdram = master(SdramInterface(sdramLayout))
+    val sdram = master(SdramInterface(SdramDeviceInfo.layoutFor(md)))
 
     // Pipeline outputs
     val pc = out UInt(config.pcWidth bits)
@@ -66,9 +63,7 @@ case class JopCoreWithSdramTestHarness(
   // JOP System with SDRAM backend (Sys + Uart internal)
   val jopSystem = JopCoreWithSdram(
     config = config,
-    sdramLayout = sdramLayout,
-    sdramTiming = sdramTiming,
-    CAS = CAS,
+    memDevice = md,
     romInit = Some(romInit),
     ramInit = Some(ramInit),
     jbcInit = Some(jbcInit)
@@ -138,7 +133,7 @@ class JopCoreWithSdramTest extends AnyFunSuite {
         // Create SDRAM simulation model
         val sdramModel = SdramModel(
           io = dut.io.sdram,
-          layout = dut.sdramLayout,
+          layout = SdramDeviceInfo.layoutFor(dut.md),
           clockDomain = dut.clockDomain
         )
 
@@ -201,7 +196,7 @@ class JopCoreWithSdramTest extends AnyFunSuite {
         // Create SDRAM simulation model
         val sdramModel = SdramModel(
           io = dut.io.sdram,
-          layout = dut.sdramLayout,
+          layout = SdramDeviceInfo.layoutFor(dut.md),
           clockDomain = dut.clockDomain
         )
 

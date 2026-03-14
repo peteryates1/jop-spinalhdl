@@ -5,6 +5,7 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
+import jop.memory.SdramDeviceInfo
 import jop.utils.{JopFileLoader, TestHistory}
 import java.io.PrintWriter
 
@@ -60,7 +61,7 @@ object JopCoreWithSdramSim extends App {
       // Create SDRAM simulation model
       val sdramModel = SdramModel(
         io = dut.io.sdram,
-        layout = dut.sdramLayout,
+        layout = SdramDeviceInfo.layoutFor(dut.md),
         clockDomain = dut.clockDomain
       )
 

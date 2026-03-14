@@ -21,11 +21,14 @@ object Manufacturer {
 }
 
 /** FPGA family — determines DSP type, memory primitives, tool version */
-sealed trait FpgaFamily { def manufacturer: Manufacturer }
+sealed trait FpgaFamily {
+  def manufacturer: Manufacturer
+  def memoryStyle: MemoryStyle = MemoryStyle.Generic
+}
 object FpgaFamily {
-  case object CycloneIV  extends FpgaFamily { val manufacturer = Manufacturer.Altera }
-  case object CycloneV   extends FpgaFamily { val manufacturer = Manufacturer.Altera }
-  case object MAX10      extends FpgaFamily { val manufacturer = Manufacturer.Altera }
+  case object CycloneIV  extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm }
+  case object CycloneV   extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm }
+  case object MAX10      extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm }
   case object Artix7     extends FpgaFamily { val manufacturer = Manufacturer.Xilinx }
   case object ECP5       extends FpgaFamily { val manufacturer = Manufacturer.Lattice }
 }

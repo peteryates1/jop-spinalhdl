@@ -19,10 +19,10 @@ object AlteraUtilSweep extends App {
     assembly = SystemAssembly.qmtechWithDb,
     systems = Seq(JopSystem(
       name = "main",
-      memory = "W9825G6JH6",
+      memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
   val baseCc = base.system.coreConfig
 
@@ -39,16 +39,16 @@ object AlteraUtilSweep extends App {
     base.copy(systems = Seq(base.system.copy(coreConfig = cc, devices = devs)))
 
   // Common device instances for QMTECH daughter board
-  private val uartDev = "uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))
-  private val ethDev = "eth" -> DeviceInstance("ethernet",
+  private val uartDev = "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))
+  private val ethDev = "eth" -> DeviceInstance(DeviceType.Ethernet,
     params = Map("gmii" -> true, "phyDataWidth" -> 8),
     devicePart = Some("RTL8211EG"))
-  private val sdNativeDev = "sdNative" -> DeviceInstance("sdnative",
+  private val sdNativeDev = "sdNative" -> DeviceInstance(DeviceType.SdNative,
     devicePart = Some("SD_CARD"))
-  private val sdSpiDev = "sdSpi" -> DeviceInstance("sdspi",
+  private val sdSpiDev = "sdSpi" -> DeviceInstance(DeviceType.SdSpi,
     devicePart = Some("SD_CARD"))
-  private val vgaTextDev = "vga" -> DeviceInstance("vgatext", devicePart = Some("VGA"))
-  private val vgaDmaDev = "vga" -> DeviceInstance("vgadma", devicePart = Some("VGA"))
+  private val vgaTextDev = "vga" -> DeviceInstance(DeviceType.VgaText, devicePart = Some("VGA"))
+  private val vgaDmaDev = "vga" -> DeviceInstance(DeviceType.VgaDma, devicePart = Some("VGA"))
 
   val allCuCc = baseCc.copy(useDspMul = true, bytecodes = Map("*" -> "hw"))
 

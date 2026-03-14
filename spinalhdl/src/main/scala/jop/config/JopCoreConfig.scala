@@ -198,16 +198,12 @@ case class JopCoreConfig(
   lazy val effectiveDevices: Map[String, DeviceInstance] = devices
 
   // --- Device queries ---
-  def hasDevice(deviceType: String): Boolean =
-    effectiveDevices.values.exists(_.deviceType == deviceType)
-  def hasUart: Boolean = hasDevice("uart")
-  def hasEth: Boolean = hasDevice("ethernet")
+  def hasDevice(dt: DeviceType): Boolean =
+    effectiveDevices.values.exists(_.deviceType == dt)
   def uartBaudRate: Int =
-    effectiveDevices.values.find(_.deviceType == "uart")
+    effectiveDevices.values.find(_.deviceType == DeviceType.Uart)
       .flatMap(_.params.get("baudRate").map(_.asInstanceOf[Int]))
       .getOrElse(2000000)
-  def hasAnyVga: Boolean = hasDevice("vgadma") || hasDevice("vgatext")
-  def hasAnySd: Boolean = hasDevice("sdspi") || hasDevice("sdnative")
 
   /** Build device descriptors from effectiveDevices */
   def effectiveDeviceDescriptors(ctx: DeviceContext = DeviceContext()): Seq[IoDeviceDescriptor] = {

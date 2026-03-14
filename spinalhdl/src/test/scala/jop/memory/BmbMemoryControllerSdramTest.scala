@@ -8,6 +8,7 @@ import spinal.lib.memory.sdram._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import org.scalatest.funsuite.AnyFunSuite
+import jop.config.MemoryDevice
 
 /**
  * Test harness: BmbMemoryController connected to BmbSdramCtrl32
@@ -15,9 +16,7 @@ import org.scalatest.funsuite.AnyFunSuite
  */
 case class BmbMemCtrlSdramTestHarness(
   config: JopMemoryConfig = JopMemoryConfig(),
-  layout: SdramLayout = W9825G6JH6.layout,
-  timing: SdramTimings = W9825G6JH6.timingGrade7,
-  CAS: Int = 3,
+  md: MemoryDevice = MemoryDevice.W9825G6JH6,
   jpcWidth: Int = 11
 ) extends Component {
 
@@ -36,7 +35,7 @@ case class BmbMemCtrlSdramTestHarness(
     val jbcWrEnable = out Bool()
 
     // SDRAM interface
-    val sdram = master(SdramInterface(layout))
+    val sdram = master(SdramInterface(SdramDeviceInfo.layoutFor(md)))
 
     // Debug
     val debugState = out UInt(5 bits)
@@ -47,9 +46,9 @@ case class BmbMemCtrlSdramTestHarness(
 
   val sdramCtrl = BmbSdramCtrl32(
     bmbParameter = config.bmbParameter,
-    layout = layout,
-    timing = timing,
-    CAS = CAS
+    layout = SdramDeviceInfo.layoutFor(md),
+    timing = SdramDeviceInfo.timingFor(md),
+    CAS = md.casLatency
   )
 
   // Connect memory controller to SDRAM controller
@@ -89,8 +88,7 @@ case class BmbMemCtrlSdramTestHarness(
  */
 class BmbMemoryControllerSdramTest extends AnyFunSuite {
 
-  val layout = W9825G6JH6.layout
-  val timing = W9825G6JH6.timingGrade7
+  val md = MemoryDevice.W9825G6JH6
 
   /** Initialize all memory controller inputs to defaults */
   def initMemIn(dut: BmbMemCtrlSdramTestHarness): Unit = {
@@ -143,7 +141,7 @@ class BmbMemoryControllerSdramTest extends AnyFunSuite {
 
         val sdramModel = SdramModel(
           io = dut.io.sdram,
-          layout = layout,
+          layout = SdramDeviceInfo.layoutFor(md),
           clockDomain = dut.clockDomain
         )
 
@@ -195,7 +193,7 @@ class BmbMemoryControllerSdramTest extends AnyFunSuite {
 
         val sdramModel = SdramModel(
           io = dut.io.sdram,
-          layout = layout,
+          layout = SdramDeviceInfo.layoutFor(md),
           clockDomain = dut.clockDomain
         )
 
@@ -284,7 +282,7 @@ class BmbMemoryControllerSdramTest extends AnyFunSuite {
 
         val sdramModel = SdramModel(
           io = dut.io.sdram,
-          layout = layout,
+          layout = SdramDeviceInfo.layoutFor(md),
           clockDomain = dut.clockDomain
         )
 
@@ -336,7 +334,7 @@ class BmbMemoryControllerSdramTest extends AnyFunSuite {
 
         val sdramModel = SdramModel(
           io = dut.io.sdram,
-          layout = layout,
+          layout = SdramDeviceInfo.layoutFor(md),
           clockDomain = dut.clockDomain
         )
 
@@ -391,7 +389,7 @@ class BmbMemoryControllerSdramTest extends AnyFunSuite {
 
         val sdramModel = SdramModel(
           io = dut.io.sdram,
-          layout = layout,
+          layout = SdramDeviceInfo.layoutFor(md),
           clockDomain = dut.clockDomain
         )
 

@@ -45,7 +45,7 @@ case class JopDdr3SerialBootHarness(
     memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = 128 * 1024, burstLen = 0),
     supersetJumpTable = JumpTableInitData.serial,
     clkFreq = 100 MHz,
-    devices = Map("uart" -> DeviceInstance("uart", params = Map("baudRate" -> 1000000)))
+    devices = Map("uart" -> DeviceInstance(DeviceType.Uart, params = Map("baudRate" -> 1000000)))
   )
 
   val cacheAddrWidth = 28  // BMB byte address width (addressWidth + 2)

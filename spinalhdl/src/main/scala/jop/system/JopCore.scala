@@ -300,7 +300,7 @@ case class JopCore(
   ioRdData := 0
   when(JopIoSpace.isSys(ioAddr)) { ioRdData := sys.io.rdData }
   // Null UART: if UART not present, return TDRE=1 so writes silently succeed
-  if (!config.hasUart) {
+  if (!config.hasDevice(DeviceType.Uart)) {
     when(JopIoSpace.isUart(ioAddr)) { ioRdData := B(1, 32 bits) }
   }
   allocatedDevices.foreach { ad =>

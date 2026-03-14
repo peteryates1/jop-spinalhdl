@@ -7,7 +7,7 @@ import spinal.lib.bus.bmb._
 import spinal.lib.memory.sdram._
 import spinal.lib.memory.sdram.sdr._
 import jop.io.{SyncIn, SyncOut}
-import jop.memory.BmbSdramCtrl32
+import jop.memory.{BmbSdramCtrl32, SdramDeviceInfo}
 
 /**
  * JOP Core with SDR SDRAM Backend
@@ -22,9 +22,7 @@ import jop.memory.BmbSdramCtrl32
  */
 case class JopCoreWithSdram(
   config: JopCoreConfig = JopCoreConfig(),
-  sdramLayout: SdramLayout = W9825G6JH6.layout,
-  sdramTiming: SdramTimings = W9825G6JH6.timingGrade7,
-  CAS: Int = 3,
+  memDevice: MemoryDevice = MemoryDevice.W9825G6JH6,
   useAlteraCtrl: Boolean = false,
   clockFreqHz: Long = 100000000L,
   romInit: Option[Seq[BigInt]] = None,
@@ -34,7 +32,7 @@ case class JopCoreWithSdram(
 
   val io = new Bundle {
     // SDRAM interface (directly exposed)
-    val sdram = master(SdramInterface(sdramLayout))
+    val sdram = master(SdramInterface(SdramDeviceInfo.layoutFor(memDevice)))
 
     // CmpSync interface
     val syncIn  = in(SyncOut())
@@ -97,9 +95,9 @@ case class JopCoreWithSdram(
   // 32-bit BMB to 16-bit SDRAM bridge (handles width conversion internally)
   val sdramCtrl = BmbSdramCtrl32(
     bmbParameter = config.memConfig.bmbParameter,
-    layout = sdramLayout,
-    timing = sdramTiming,
-    CAS = CAS,
+    layout = SdramDeviceInfo.layoutFor(memDevice),
+    timing = SdramDeviceInfo.timingFor(memDevice),
+    CAS = memDevice.casLatency,
     useAlteraCtrl = useAlteraCtrl,
     clockFreqHz = clockFreqHz
   )

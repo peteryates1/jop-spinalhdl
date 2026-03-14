@@ -75,13 +75,13 @@ object QsfGeneratorMain extends App {
   val base = JopConfig.ep4cgx150Serial
   // Daughter board peripherals for pin reservation
   val dbPeripherals = Map(
-    "eth" -> DeviceInstance("ethernet",
+    "eth" -> DeviceInstance(DeviceType.Ethernet,
       params = Map("gmii" -> true, "phyDataWidth" -> 8),
       devicePart = Some("RTL8211EG")),
-    "sdNative" -> DeviceInstance("sdnative",
+    "sdNative" -> DeviceInstance(DeviceType.SdNative,
       devicePart = Some("SD_CARD")))
   val vga = Map(
-    "vga" -> DeviceInstance("vgadma", devicePart = Some("VGA")))
+    "vga" -> DeviceInstance(DeviceType.VgaDma, devicePart = Some("VGA")))
   val extraDevices = if (args.contains("--dbfpga")) dbPeripherals ++ vga else dbPeripherals
   val config = base.copy(systems = Seq(
     base.system.copy(devices = base.system.devices ++ extraDevices)))

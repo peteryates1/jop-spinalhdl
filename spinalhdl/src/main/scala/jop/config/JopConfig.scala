@@ -121,19 +121,13 @@ case class JopSystem(
 
   // --- Per-core UART detection ---
   def hasPerCoreUart: Boolean = cpuCnt > 1 &&
-    coreConfigs.drop(1).exists(_.effectiveDevices.values.exists(_.deviceType == "uart"))
+    coreConfigs.drop(1).exists(_.effectiveDevices.values.exists(_.deviceType == DeviceType.Uart))
 
   // --- Device presence queries (single path via effectiveDevices) ---
-  def hasDevice(deviceType: String): Boolean =
-    effectiveDevices.values.exists(_.deviceType == deviceType)
-  def hasUart: Boolean = hasDevice("uart")
-  def hasEth: Boolean = hasDevice("ethernet")
-  def hasVga: Boolean = hasDevice("vgadma") || hasDevice("vgatext")
-  def hasSdNative: Boolean = hasDevice("sdnative")
-  def hasSdSpi: Boolean = hasDevice("sdspi")
-  def hasConfigFlash: Boolean = hasDevice("cfgflash")
+  def hasDevice(dt: DeviceType): Boolean =
+    effectiveDevices.values.exists(_.deviceType == dt)
   def ethGmii: Boolean =
-    effectiveDevices.values.find(_.deviceType == "ethernet")
+    effectiveDevices.values.find(_.deviceType == DeviceType.Ethernet)
       .flatMap(_.params.get("gmii"))
       .exists(_.asInstanceOf[Boolean])
   def phyDataWidth: Int = if (ethGmii) 8 else 4
@@ -194,10 +188,7 @@ case class JopConfig(
     * works but AlteraLpm is more robust and matches proven jopmin approach. */
   lazy val resolvedSystems: Seq[JopSystem] = {
     val needsSync = true
-    val autoMemStyle = fpgaFamily.manufacturer match {
-      case Manufacturer.Altera => MemoryStyle.AlteraLpm
-      case _                   => MemoryStyle.Generic
-    }
+    val autoMemStyle = fpgaFamily.memoryStyle
     def resolveCore(cc: JopCoreConfig): JopCoreConfig = {
       val r1 = cc.useSyncRam match {
         case Some(_) => cc
@@ -249,6 +240,11 @@ case class JopConfig(
     bd.flatMap(d => MemoryDevice.byName(d.part))
   }
 
+  /** Resolve the board device entry for a system's memory */
+  def resolveBoardDevice(sys: JopSystem): Option[BoardDevice] =
+    assembly.findDevice(sys.memory)
+      .orElse(assembly.findDeviceByRole(sys.memory))
+
   /** All memory types used across all systems */
   def memoryTypes: Seq[MemoryType] =
     systems.flatMap(sys => resolveMemory(sys).map(_.memType)).distinct
@@ -287,11 +283,11 @@ object JopConfig {
     assembly = SystemAssembly.qmtechWithDb,
     systems = Seq(JopSystem(
       name = "main",
-      memory = "W9825G6JH6",
+      memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
   /** EP4CGX150 + daughter board — SMP, N cores */
   def ep4cgx150Smp(n: Int) = {
@@ -331,7 +327,7 @@ object JopConfig {
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 32 * 1024)),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
   /** EP4CGX150 — pre-initialized BRAM (128KB) for GC testing */
   def ep4cgx150BramGc = {
@@ -351,18 +347,18 @@ object JopConfig {
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
   /** CYC5000 standalone */
   def cyc5000Serial = JopConfig(
     assembly = SystemAssembly.cyc5000,
     systems = Seq(JopSystem(
       name = "main",
-      memory = "W9864G6JT",
+      memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("FT2232H"))))))
 
   /** CYC5000 SMP (N cores) */
   def cyc5000Smp(n: Int) = {
@@ -375,22 +371,22 @@ object JopConfig {
     assembly = SystemAssembly.alchitryAuV2,
     systems = Seq(JopSystem(
       name = "main",
-      memory = "MT41K128M16JT-125:K",
+      memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,  // MIG ui_clk = 100 MHz (4:1, DDR3-800)
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("FT2232H"))))))
 
   /** Alchitry Au V2 — minimum: no caches, no HW math */
   def auMinimal = JopConfig(
     assembly = SystemAssembly.alchitryAuV2,
     systems = Seq(JopSystem(
       name = "min",
-      memory = "MT41K128M16JT-125:K",
+      memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = HertzNumber(BigDecimal(250000000) / 3),
       coreConfig = JopCoreConfig(memConfig = noCacheMemConfig),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("FT2232H"))))))
 
 
   /** Simulation (no physical board — uses QMTECH assembly as placeholder) */
@@ -398,11 +394,11 @@ object JopConfig {
     assembly = SystemAssembly.qmtechWithDb,
     systems = Seq(JopSystem(
       name = "sim",
-      memory = "W9825G6JH6",
+      memory = "sdr",
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
   // ========================================================================
   // Multi-system preset (Wukong dual-subsystem)
@@ -420,7 +416,7 @@ object JopConfig {
         cpuCnt = 4,
         coreConfig = JopCoreConfig(
           bytecodes = Map("idiv" -> "hw", "irem" -> "hw", "float" -> "hw")),
-        devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N")))),
+        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N")))),
       JopSystem(
         name = "io",
         memory = "sdr",                  // by role
@@ -428,7 +424,7 @@ object JopConfig {
         clkFreq = 50 MHz,
         cpuCnt = 2,
         coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-        devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))),
+        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))),
     interconnect = Some(InterconnectConfig(fifoDepth = 64)),
     monitors = Seq(WatchdogConfig(timeoutMs = 2000)))
 
@@ -441,12 +437,12 @@ object JopConfig {
     assembly = SystemAssembly.qmtechWithDb,
     systems = Seq(JopSystem(
       name = "min",
-      memory = "W9825G6JH6",
+      memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(
         supersetJumpTable = JumpTableInitData.serial),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
   // ========================================================================
   // Small FPGA presets (fit-check targets)
@@ -463,21 +459,21 @@ object JopConfig {
     assembly = SystemAssembly.max1000,
     systems = Seq(JopSystem(
       name = "main",
-      memory = "W9864G6JT",
+      memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("FT2232H"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("FT2232H"))))))
 
   /** Generic EP4CE6 — SDR SDRAM, no caches (6K LEs too small for O$/A$) */
   def ep4ce6Sdram = JopConfig(
     assembly = SystemAssembly.genericEp4ce6,
     systems = Seq(JopSystem(
       name = "main",
-      memory = "W9864G6JT",
+      memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
       coreConfig = JopCoreConfig(memConfig = noCacheMemConfig),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
 
   // ========================================================================
@@ -493,7 +489,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
 
   /** Wukong SDR — all compute units, UART only (no Ethernet/SD) */
   def wukongSdrAllCu = {
@@ -511,7 +507,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
 
   /** Wukong BRAM (single-system, simulation-mode) */
   def wukongBram = JopConfig(
@@ -524,7 +520,7 @@ object JopConfig {
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 64 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
 
   /** Wukong BRAM with all compute units (DCU debug — simulation only) */
   def wukongBramFull = {
@@ -537,7 +533,7 @@ object JopConfig {
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 64 * 1024),
         bytecodes = base.system.coreConfig.bytecodes),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
   }
 
   // ========================================================================
@@ -553,17 +549,17 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       devices = Map(
-        "uart" -> DeviceInstance("uart", devicePart = Some("CH340N")),
-        "eth" -> DeviceInstance("ethernet", params = Map("gmii" -> true, "phyDataWidth" -> 8),
+        "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N")),
+        "eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true, "phyDataWidth" -> 8),
           devicePart = Some("RTL8211EG")),
-        "sdNative" -> DeviceInstance("sdnative", devicePart = Some("SD_CARD"))),
+        "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))),
       coreConfig = JopCoreConfig(useDspMul = true, bytecodes = Map("*" -> "hw")))))
 
   /** Wukong DDR3 — all compute units, UART only (no Ethernet/SD) */
   def wukongDdr3AllCu = {
     val base = wukongFull
     base.copy(systems = Seq(base.system.copy(
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
   }
 
   /** Wukong DDR3 — full featured SMP (with Ethernet + SD) */
@@ -578,7 +574,7 @@ object JopConfig {
     base.copy(systems = Seq(base.system.copy(
       name = s"smp$n",
       cpuCnt = n,
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
   }
 
   /** Wukong DDR3 — minimal SMP (no CUs, just cores + UART) for SMP+DDR3 debug */
@@ -635,9 +631,9 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       devices = Map(
-        "uart" -> DeviceInstance("uart", devicePart = Some("CH340N")),
-        "eth" -> DeviceInstance("ethernet", params = Map("gmii" -> true, "phyDataWidth" -> 8),
+        "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N")),
+        "eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true, "phyDataWidth" -> 8),
           devicePart = Some("RTL8211EG")),
-        "sdNative" -> DeviceInstance("sdnative", devicePart = Some("SD_CARD"))),
+        "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))),
       coreConfig = JopCoreConfig(useDspMul = true, bytecodes = Map("*" -> "hw")))))
 }

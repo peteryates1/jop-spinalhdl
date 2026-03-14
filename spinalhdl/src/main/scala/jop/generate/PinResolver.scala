@@ -1,7 +1,6 @@
 package jop.generate
 
 import jop.config._
-import jop.io.DeviceTypes
 
 /** Pin assignment: maps an FPGA pin to a Verilog port name */
 case class PinAssignment(fpgaPin: String, verilogPort: String)
@@ -10,7 +9,7 @@ case class PinAssignment(fpgaPin: String, verilogPort: String)
  * Shared pin resolution for constraint generators (QSF, XDC).
  *
  * Resolution chain:
- *   DeviceTypeInfo.verilogPins: verilogPort -> deviceSignal
+ *   DeviceType.verilogPins: verilogPort -> deviceSignal
  *   BoardDevice.mapping: deviceSignal -> connectorRef
  *   SystemAssembly.resolvePin: connectorRef -> fpgaPin
  */
@@ -71,16 +70,15 @@ object PinResolver {
     }
   }
 
-  /** Resolve device pins from DeviceTypes registry.
+  /** Resolve device pins from DeviceType.verilogPins.
    *  Each DeviceInstance with a devicePart is resolved through the assembly. */
   def devicePins(assembly: SystemAssembly,
                  devices: Map[String, DeviceInstance]): Seq[PinAssignment] =
     devices.values.toSeq.flatMap { inst =>
       for {
         part <- inst.devicePart.toSeq
-        info <- DeviceTypes.registry.get(inst.deviceType).toSeq
         boardPins = assembly.pinMapping(part)
-        (verilogPort, deviceSignal) <- info.verilogPins(inst.params)
+        (verilogPort, deviceSignal) <- inst.deviceType.verilogPins(inst.params)
         fpgaPin <- boardPins.get(deviceSignal)
       } yield PinAssignment(fpgaPin, verilogPort)
     }

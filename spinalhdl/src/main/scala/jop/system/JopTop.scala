@@ -7,8 +7,7 @@ import spinal.lib._
 import spinal.lib.io.TriState
 import spinal.lib.memory.sdram.SdramLayout
 import spinal.lib.memory.sdram.sdr._
-import jop.memory.W9864G6JT
-import jop.memory.{JopMemoryConfig, BmbSdramCtrl32}
+import jop.memory.SdramDeviceInfo
 import jop.ddr3.MigBlackBox
 import jop.system.pll.{Pll, PllResult}
 import jop.system.memory.MemoryControllerFactory
@@ -129,17 +128,8 @@ case class JopTop(
   // SDR SDRAM Layout (needed for io bundle, resolved at class construction)
   // ========================================================================
 
-  private def sdrLayout: SdramLayout = {
-    memDevice.map { md =>
-      SdramLayout(
-        generation = spinal.lib.memory.sdram.SdramGeneration.SDR,
-        bankWidth = md.bankWidth,
-        columnWidth = md.columnWidth,
-        rowWidth = md.rowWidth,
-        dataWidth = md.dataWidth
-      )
-    }.getOrElse(W9825G6JH6.layout)  // fallback
-  }
+  private def sdrLayout: SdramLayout =
+    SdramDeviceInfo.layoutFor(memDevice.get)
 
   // ========================================================================
   // 1-6. Clock, PLL, Reset, MIG, Clock Domains (FPGA only — skipped in sim)
@@ -252,12 +242,12 @@ case class JopTop(
     // Per-core configs: devices are already distributed by sys.coreConfigs
     // (core 0 gets system devices, cores 1+ get empty unless overridden).
     val coreConfigs = sys.coreConfigs.map(cc => cc.copy(
-      memConfig = if (isDdr3) cc.memConfig.copy(
-        addressWidth = 28,
-        mainMemSize = 256L * 1024 * 1024,
+      memConfig = if (isDdr3) { val md = memDevice.get; cc.memConfig.copy(
+        addressWidth = log2Up((md.sizeBytes / 4).toInt) + 2,
+        mainMemSize = md.sizeBytes,
         burstLen = burstLen,
         stackRegionWordsPerCore = 8192
-      ) else if (isBram) cc.memConfig.copy(
+      ) } else if (isBram) cc.memConfig.copy(
         mainMemSize = mainMemSize,
         burstLen = 0
       ) else cc.memConfig.copy(
@@ -462,14 +452,6 @@ case class JopTop(
   // Helper: SDR SDRAM Timing
   // ========================================================================
 
-  private def sdrTiming: SdramTimings = {
-    memDevice.map { md =>
-      md.name match {
-        case "W9825G6JH6"  => W9825G6JH6.timingGrade7
-        case "IS42S16160G" => W9825G6JH6.timingGrade7  // Same geometry/timing as W9825G6JH6
-        case "W9864G6JT"   => W9864G6JT.timingGrade6
-        case other => throw new RuntimeException(s"No SDRAM timing for device '$other'")
-      }
-    }.getOrElse(W9825G6JH6.timingGrade7)
-  }
+  private def sdrTiming: SdramTimings =
+    SdramDeviceInfo.timingFor(memDevice.get)
 }

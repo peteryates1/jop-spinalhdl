@@ -25,13 +25,13 @@ object UtilSweep extends App {
     base.copy(systems = Seq(base.system.copy(devices = devs)))
 
   // Common device instances for Wukong board
-  private val uartDev = "uart" -> DeviceInstance("uart", devicePart = Some("CH340N"))
-  private val ethDev = "eth" -> DeviceInstance("ethernet",
+  private val uartDev = "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))
+  private val ethDev = "eth" -> DeviceInstance(DeviceType.Ethernet,
     params = Map("gmii" -> true, "phyDataWidth" -> 8),
     devicePart = Some("RTL8211EG"))
-  private val sdNativeDev = "sdNative" -> DeviceInstance("sdnative",
+  private val sdNativeDev = "sdNative" -> DeviceInstance(DeviceType.SdNative,
     devicePart = Some("SD_CARD"))
-  private val sdSpiDev = "sdSpi" -> DeviceInstance("sdspi",
+  private val sdSpiDev = "sdSpi" -> DeviceInstance(DeviceType.SdSpi,
     devicePart = Some("SD_CARD"))
 
   val configs: Map[String, JopConfig] = Map(

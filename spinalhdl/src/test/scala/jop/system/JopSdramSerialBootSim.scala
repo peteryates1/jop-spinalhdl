@@ -6,7 +6,7 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
-import jop.memory.JopMemoryConfig
+import jop.memory.{JopMemoryConfig, SdramDeviceInfo}
 import jop.utils.JopFileLoader
 import jop.pipeline.JumpTableInitData
 
@@ -27,12 +27,10 @@ case class JopSdramSerialBootHarness(
     memConfig = JopMemoryConfig(burstLen = 4),
     supersetJumpTable = JumpTableInitData.serial
   )
-  val sdramLayout = W9825G6JH6.layout
-  val sdramTiming = W9825G6JH6.timingGrade7
-  val CAS = 3
+  val md = MemoryDevice.W9825G6JH6
 
   val io = new Bundle {
-    val sdram = master(SdramInterface(sdramLayout))
+    val sdram = master(SdramInterface(SdramDeviceInfo.layoutFor(md)))
 
     // Pipeline status
     val pc = out UInt(config.pcWidth bits)
@@ -59,9 +57,7 @@ case class JopSdramSerialBootHarness(
   val jbcInit = Seq.fill(2048)(BigInt(0))
   val jopSystem = JopCoreWithSdram(
     config = config,
-    sdramLayout = sdramLayout,
-    sdramTiming = sdramTiming,
-    CAS = CAS,
+    memDevice = md,
     romInit = Some(romInit),
     ramInit = Some(ramInit),
     jbcInit = Some(jbcInit)
@@ -140,7 +136,7 @@ object JopSdramSerialBootSim extends App {
       // Create SDRAM model (starts empty)
       val sdramModel = SdramModel(
         io = dut.io.sdram,
-        layout = dut.sdramLayout,
+        layout = SdramDeviceInfo.layoutFor(dut.md),
         clockDomain = dut.clockDomain
       )
 

@@ -8,14 +8,13 @@ import spinal.lib.memory.sdram._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import org.scalatest.funsuite.AnyFunSuite
+import jop.config.MemoryDevice
 
 /**
  * Test harness for BmbSdramCtrl32 with exposed SDRAM interface
  */
 case class BmbSdramCtrl32TestHarness(
-  layout: SdramLayout = W9825G6JH6.layout,
-  timing: SdramTimings = W9825G6JH6.timingGrade7,
-  CAS: Int = 3
+  md: MemoryDevice = MemoryDevice.W9825G6JH6
 ) extends Component {
 
   val bmbParam = BmbParameter(
@@ -31,14 +30,14 @@ case class BmbSdramCtrl32TestHarness(
 
   val io = new Bundle {
     val bmb = slave(Bmb(bmbParam))
-    val sdram = master(SdramInterface(layout))
+    val sdram = master(SdramInterface(SdramDeviceInfo.layoutFor(md)))
   }
 
   val ctrl = BmbSdramCtrl32(
     bmbParameter = bmbParam,
-    layout = layout,
-    timing = timing,
-    CAS = CAS
+    layout = SdramDeviceInfo.layoutFor(md),
+    timing = SdramDeviceInfo.timingFor(md),
+    CAS = md.casLatency
   )
 
   io.bmb <> ctrl.io.bmb
@@ -50,8 +49,7 @@ case class BmbSdramCtrl32TestHarness(
  */
 class BmbSdramCtrl32Test extends AnyFunSuite {
 
-  val layout = W9825G6JH6.layout
-  val timing = W9825G6JH6.timingGrade7
+  val md = MemoryDevice.W9825G6JH6
 
   /** Helper: initialize default BMB command signals */
   def initBmb(dut: BmbSdramCtrl32TestHarness): Unit = {
@@ -149,7 +147,7 @@ class BmbSdramCtrl32Test extends AnyFunSuite {
         // Create SDRAM model
         val sdramModel = SdramModel(
           io = dut.io.sdram,
-          layout = layout,
+          layout = SdramDeviceInfo.layoutFor(md),
           clockDomain = dut.clockDomain
         )
 
@@ -190,7 +188,7 @@ class BmbSdramCtrl32Test extends AnyFunSuite {
 
         val sdramModel = SdramModel(
           io = dut.io.sdram,
-          layout = layout,
+          layout = SdramDeviceInfo.layoutFor(md),
           clockDomain = dut.clockDomain
         )
 
@@ -228,7 +226,7 @@ class BmbSdramCtrl32Test extends AnyFunSuite {
 
         val sdramModel = SdramModel(
           io = dut.io.sdram,
-          layout = layout,
+          layout = SdramDeviceInfo.layoutFor(md),
           clockDomain = dut.clockDomain
         )
 
@@ -276,7 +274,7 @@ class BmbSdramCtrl32Test extends AnyFunSuite {
 
         val sdramModel = SdramModel(
           io = dut.io.sdram,
-          layout = layout,
+          layout = SdramDeviceInfo.layoutFor(md),
           clockDomain = dut.clockDomain
         )
 

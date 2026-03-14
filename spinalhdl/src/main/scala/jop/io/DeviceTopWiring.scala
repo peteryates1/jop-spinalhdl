@@ -59,7 +59,9 @@ case class DeviceClockDomains(
  *   2. wireDevice — called inside mainArea, wires cluster.devicePins to io pins
  */
 trait DeviceTopWiring {
-  /** Device type key matching DeviceTypes.registry */
+  /** Device type key matching DeviceType.key.
+    * This is the string key, not DeviceType, because VgaTopWiring
+    * covers both vgadma and vgatext under a single "vga" key. */
   def deviceType: String
 
   /**
@@ -426,15 +428,15 @@ object DeviceTopWirings {
     ConfigFlashTopWiring
   )
 
-  /** Map from device type to wiring object */
+  /** Map from device type string key to wiring object */
   val byType: Map[String, DeviceTopWiring] =
     all.map(w => w.deviceType -> w).toMap
 
   /** Look up wiring for a DeviceInstance. VGA maps both vgadma/vgatext to VgaTopWiring. */
   def forInstance(inst: DeviceInstance): Option[DeviceTopWiring] = {
-    byType.get(inst.deviceType).orElse(
+    byType.get(inst.deviceType.key).orElse(
       inst.deviceType match {
-        case "vgadma" | "vgatext" => Some(VgaTopWiring)
+        case DeviceType.VgaDma | DeviceType.VgaText => Some(VgaTopWiring)
         case _ => None
       }
     )

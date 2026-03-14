@@ -7,7 +7,7 @@ import spinal.lib._
 import spinal.lib.bus.bmb._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
-import jop.memory.{JopMemoryConfig, BmbSdramCtrl32}
+import jop.memory.{JopMemoryConfig, BmbSdramCtrl32, SdramDeviceInfo}
 import jop.utils.{JopFileLoader, TestHistory}
 import java.io.PrintWriter
 
@@ -33,13 +33,11 @@ case class JopSmpSdramTestHarness(
 ) extends Component {
   require(cpuCnt >= 1)
 
-  val sdramLayout = W9825G6JH6.layout
-  val sdramTiming = W9825G6JH6.timingGrade7
-  val CAS = 3
+  val md = MemoryDevice.W9825G6JH6
 
   val io = new Bundle {
     // SDRAM interface (exposed for simulation model)
-    val sdram = master(SdramInterface(sdramLayout))
+    val sdram = master(SdramInterface(SdramDeviceInfo.layoutFor(md)))
 
     // Per-core pipeline outputs
     val pc  = out Vec(UInt(11 bits), cpuCnt)
@@ -111,9 +109,9 @@ case class JopSmpSdramTestHarness(
 
   val sdramCtrl = BmbSdramCtrl32(
     bmbParameter = cluster.bmbParameter,
-    layout = sdramLayout,
-    timing = sdramTiming,
-    CAS = CAS,
+    layout = SdramDeviceInfo.layoutFor(md),
+    timing = SdramDeviceInfo.timingFor(md),
+    CAS = md.casLatency,
     useAlteraCtrl = false
   )
 
@@ -189,7 +187,7 @@ object JopSmpSdramNCoreHelloWorldSim extends App {
       // Create SDRAM simulation model
       val sdramModel = SdramModel(
         io = dut.io.sdram,
-        layout = dut.sdramLayout,
+        layout = SdramDeviceInfo.layoutFor(dut.md),
         clockDomain = dut.clockDomain
       )
 

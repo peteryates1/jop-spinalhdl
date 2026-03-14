@@ -5,7 +5,8 @@ import spinal.lib._
 import spinal.lib.com.uart._
 import spinal.lib.io.InOutWrapper
 import spinal.lib.memory.sdram.sdr._
-import jop.memory.{BmbSdramCtrl32, JopMemoryConfig}
+import jop.config.{MemoryDevice, SystemAssembly}
+import jop.memory.{BmbSdramCtrl32, JopMemoryConfig, SdramDeviceInfo}
 
 /**
  * ClkWiz BlackBox for SDRAM exerciser on Wukong board.
@@ -37,7 +38,7 @@ class SdramExerciserClkWiz extends BlackBox {
  *   T3: Write-then-read same address back-to-back (256 words)
  *   All tests loop continuously, reporting pass/fail via UART.
  */
-case class SdramExerciserWukongTop() extends Component {
+case class SdramExerciserWukongTop(md: MemoryDevice) extends Component {
 
   val io = new Bundle {
     val clk_in    = in Bool()
@@ -45,7 +46,7 @@ case class SdramExerciserWukongTop() extends Component {
     val led       = out Bits(2 bits)
     val j10_led   = out Bits(8 bits)
     val sdram_clk = out Bool()
-    val sdram     = master(SdramInterface(W9825G6JH6.layout))
+    val sdram     = master(SdramInterface(SdramDeviceInfo.layoutFor(md)))
   }
 
   noIoPrefix()
@@ -87,8 +88,8 @@ case class SdramExerciserWukongTop() extends Component {
     // SDRAM controller — identical chain to JOP
     val sdramCtrl = BmbSdramCtrl32(
       bmbParameter = memConfig.bmbParameter,
-      layout = W9825G6JH6.layout,
-      timing = W9825G6JH6.timingGrade7,
+      layout = SdramDeviceInfo.layoutFor(md),
+      timing = SdramDeviceInfo.timingFor(md),
       CAS = 3
     )
     io.sdram <> sdramCtrl.io.sdram
@@ -572,11 +573,15 @@ case class SdramExerciserWukongTop() extends Component {
  * Generate Verilog for SdramExerciserWukongTop
  */
 object SdramExerciserWukongTopVerilog extends App {
+  val asm = SystemAssembly.wukong
+  val bd = asm.findDeviceByRole("sdr").get
+  val md = MemoryDevice.byName(bd.part).get
+
   SpinalConfig(
     mode = Verilog,
     targetDirectory = "spinalhdl/generated",
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
-  ).generate(InOutWrapper(SdramExerciserWukongTop()))
+  ).generate(InOutWrapper(SdramExerciserWukongTop(md)))
 
   println("Generated: spinalhdl/generated/SdramExerciserWukongTop.v")
 }

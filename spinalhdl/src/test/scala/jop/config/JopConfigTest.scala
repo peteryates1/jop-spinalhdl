@@ -9,7 +9,7 @@ class JopConfigTest extends AnyFunSuite {
     val config = JopConfig.ep4cgx150Serial
     assert(config.systems.length == 1)
     assert(config.system.name == "main")
-    assert(config.system.memory == "W9825G6JH6")
+    assert(config.system.memory == "sdr")
     assert(config.system.bootMode == BootMode.Serial)
     assert(config.system.clkFreq == (80 MHz))
     assert(config.system.cpuCnt == 1)
@@ -139,10 +139,10 @@ class JopConfigTest extends AnyFunSuite {
         assembly = SystemAssembly.cyc5000,   // no CP2102N on CYC5000
         systems = Seq(JopSystem(
           name = "bad",
-          memory = "W9864G6JT",
+          memory = "sdr",
           bootMode = BootMode.Serial,
           clkFreq = 100 MHz,
-          devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
+          devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
     }
   }
 
@@ -182,7 +182,7 @@ class JopConfigTest extends AnyFunSuite {
     assertThrows[IllegalArgumentException] {
       JopSystem(
         name = "bad",
-        memory = "W9825G6JH6",
+        memory = "sdr",
         bootMode = BootMode.Serial,
         clkFreq = 100 MHz,
         cpuCnt = 2,
@@ -195,14 +195,14 @@ class JopConfigTest extends AnyFunSuite {
       assembly = SystemAssembly.qmtechWithDb,
       systems = Seq(JopSystem(
         name = "hetero",
-        memory = "W9825G6JH6",
+        memory = "sdr",
         bootMode = BootMode.Serial,
         clkFreq = 80 MHz,
         cpuCnt = 2,
         perCoreConfigs = Some(Seq(
           JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
           JopCoreConfig())),
-        devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("CP2102N"))))))
+        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
     assert(config.system.coreConfigs.length == 2)
     assert(config.system.coreConfigs(0).needsIntegerCompute)  // idiv=Hardware
     assert(!config.system.coreConfigs(1).needsIntegerCompute) // all Microcode/Java, no Hardware

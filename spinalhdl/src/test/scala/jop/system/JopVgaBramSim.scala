@@ -40,7 +40,7 @@ object JopVgaBramSim extends App {
       memory = "bram",
       bootMode = BootMode.Simulation,
       clkFreq = 100 MHz,
-      devices = Map("uart" -> DeviceInstance("uart"), "vga" -> DeviceInstance("vgatext")),
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart), "vga" -> DeviceInstance(DeviceType.VgaText)),
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")))))
 
   SimConfig
