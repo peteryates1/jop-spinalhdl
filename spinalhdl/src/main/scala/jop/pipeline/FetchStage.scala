@@ -5,7 +5,6 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.misc.pipeline._
 import jop.config.MemoryStyle
-import jop.memory.AlteraLpmRom
 
 /**
  * Fetch Stage Configuration
@@ -115,31 +114,11 @@ case class FetchStage(
   // concurrent hardware graph, so declaration order doesn't affect semantics.
   val pcMux = UInt(config.pcWidth bits)
 
-  val romData = config.memoryStyle match {
-    case MemoryStyle.AlteraLpm =>
-      // Altera lpm_rom BlackBox: LPM_ADDRESS_CONTROL=REGISTERED means the
-      // megafunction registers the address internally on the clock edge.
-      // Feed combinational pcMux directly — the LPM does the registration.
-      // This gives the same timing as Generic path (romAddrReg + readAsync).
-      val lpmRom = AlteraLpmRom(config.romWidth, config.pcWidth, "../../asm/generated/serial/rom.mif")
-      lpmRom.io.address := pcMux
-      lpmRom.io.q
-
-    case MemoryStyle.Generic =>
-      // SpinalHDL Mem with explicit romAddrReg + async read.
-      val rom = Mem(Bits(config.romWidth bits), config.romDepth)
-      romInit match {
-        case Some(data) =>
-          // Pad to romDepth if data is shorter (e.g., 2K assembler output into 4K ROM)
-          val padded = if (data.length < config.romDepth)
-            data ++ Seq.fill(config.romDepth - data.length)(BigInt(0))
-          else data
-          rom.init(padded.map(v => B(v, config.romWidth bits)))
-        case None =>
-          rom.init(initDefaultRom())
-      }
-      rom.readAsync(romAddrReg)
-  }
+  val romData = config.memoryStyle.createRom(
+    width = config.romWidth, addrWidth = config.pcWidth, depth = config.romDepth,
+    combinationalAddr = pcMux, registeredAddr = romAddrReg,
+    initBigInt = romInit, defaultInitBits = initDefaultRom()
+  )
 
   // Extract fields from ROM data
   val jfetch    = romData(config.iWidth + 1)

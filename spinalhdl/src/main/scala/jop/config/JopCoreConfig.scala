@@ -1,6 +1,6 @@
 package jop.config
 
-import spinal.core.HertzNumber
+import spinal.core._
 import jop.io.{DeviceContext, DeviceTypes, IoDeviceDescriptor}
 import jop.pipeline._
 import jop.memory._
@@ -16,10 +16,136 @@ object Implementation {
 /** Memory primitive style — controls ROM/RAM instantiation in pipeline stages.
   * Generic:   SpinalHDL Mem with init() -> $readmemb inference (works on Cyclone IV, Xilinx)
   * AlteraLpm: lpm_rom / lpm_ram_dp BlackBox with .mif -> works on all Altera incl. MAX10 */
-sealed trait MemoryStyle
+sealed trait MemoryStyle {
+
+  /** Create microcode ROM. Returns ROM data output.
+    * @param combinationalAddr  pcMux (AlteraLpm: LPM registers internally)
+    * @param registeredAddr     romAddrReg (Generic: async read from registered addr)
+    * @param initBigInt         User-provided ROM init data (Generic only)
+    * @param defaultInitBits    Fallback ROM init (Generic only, lazy) */
+  def createRom(width: Int, addrWidth: Int, depth: Int,
+                combinationalAddr: UInt, registeredAddr: UInt,
+                initBigInt: Option[Seq[BigInt]],
+                defaultInitBits: => Seq[Bits]): Bits
+
+  /** Create stack RAM. Returns (ramDout, debugRamData).
+    * @param wrAddr/wrEna       Undelayed write signals (AlteraLpm)
+    * @param wrAddrDly/wrEnaDly Delayed write signals (Generic)
+    * @param wrData             Write data (mmux)
+    * @param rdAddr             Combinational read address
+    * @param rdAddrReg          Registered read address (Generic async only)
+    * @param debugAddr          Debug read address
+    * @param debugWrEn/debugWrAddr/debugWrData  Debug write signals */
+  def createRam(width: Int, addrWidth: Int, spWidth: Int, useSyncRam: Boolean,
+                wrAddr: UInt, wrEna: Bool,
+                wrAddrDly: UInt, wrEnaDly: Bool,
+                wrData: Bits,
+                rdAddr: UInt, rdAddrReg: UInt,
+                debugAddr: UInt, debugWrEn: Bool,
+                debugWrAddr: UInt, debugWrData: Bits,
+                initData: Option[Seq[BigInt]]): (Bits, Bits)
+}
+
 object MemoryStyle {
-  case object Generic extends MemoryStyle
-  case object AlteraLpm extends MemoryStyle
+
+  case object Generic extends MemoryStyle {
+    def createRom(width: Int, addrWidth: Int, depth: Int,
+                  combinationalAddr: UInt, registeredAddr: UInt,
+                  initBigInt: Option[Seq[BigInt]],
+                  defaultInitBits: => Seq[Bits]): Bits = {
+      val rom = Mem(Bits(width bits), depth)
+      initBigInt match {
+        case Some(data) =>
+          val padded = if (data.length < depth)
+            data ++ Seq.fill(depth - data.length)(BigInt(0))
+          else data
+          rom.init(padded.map(v => B(v, width bits)))
+        case None =>
+          rom.init(defaultInitBits)
+      }
+      rom.readAsync(registeredAddr)
+    }
+
+    def createRam(width: Int, addrWidth: Int, spWidth: Int, useSyncRam: Boolean,
+                  wrAddr: UInt, wrEna: Bool,
+                  wrAddrDly: UInt, wrEnaDly: Bool,
+                  wrData: Bits,
+                  rdAddr: UInt, rdAddrReg: UInt,
+                  debugAddr: UInt, debugWrEn: Bool,
+                  debugWrAddr: UInt, debugWrData: Bits,
+                  initData: Option[Seq[BigInt]]): (Bits, Bits) = {
+      val stackRam = Mem(Bits(width bits), 1 << addrWidth)
+
+      initData.foreach { data =>
+        val ramSize = 1 << addrWidth
+        val paddedInit = data.padTo(ramSize, BigInt(0))
+        println(s"Stack RAM init (no shift): want RAM[32]=${data(32)}, RAM[38]=${data(38)}, RAM[45]=${data(45)}")
+        stackRam.init(paddedInit.map { v =>
+          val unsigned = if (v < 0) v + (BigInt(1) << width) else v
+          B(unsigned.toLong, width bits)
+        })
+      }
+
+      // Debug write port takes priority (delayed signals for Generic)
+      val effectiveWrAddr = Mux(debugWrEn, debugWrAddr.resize(spWidth), wrAddrDly)
+      val effectiveWrData = Mux(debugWrEn, debugWrData, wrData)
+      val effectiveWrEn = debugWrEn | wrEnaDly
+
+      stackRam.write(
+        address = effectiveWrAddr.resize(addrWidth),
+        data    = effectiveWrData,
+        enable  = effectiveWrEn
+      )
+
+      if (useSyncRam) {
+        val debugReading = (debugAddr =/= 0) || debugWrEn
+        val effectiveRdAddr = Mux(debugReading, debugAddr, rdAddr.resize(addrWidth))
+        val syncDout = stackRam.readSync(effectiveRdAddr)
+        // Write-through bypass
+        val wrBypass = RegNext(
+          effectiveWrEn && effectiveWrAddr.resize(addrWidth) === effectiveRdAddr
+        ) init(False)
+        val wrBypassData = RegNext(effectiveWrData) init(0)
+        val readResult = Mux(wrBypass, wrBypassData, syncDout)
+        (readResult, readResult)
+      } else {
+        val ramDout = stackRam.readAsync(rdAddrReg.resize(addrWidth))
+        val debugData = stackRam.readAsync(debugAddr)
+        (ramDout, debugData)
+      }
+    }
+  }
+
+  case object AlteraLpm extends MemoryStyle {
+    def createRom(width: Int, addrWidth: Int, depth: Int,
+                  combinationalAddr: UInt, registeredAddr: UInt,
+                  initBigInt: Option[Seq[BigInt]],
+                  defaultInitBits: => Seq[Bits]): Bits = {
+      val lpmRom = AlteraLpmRom(width, addrWidth, "../../asm/generated/serial/rom.mif")
+      lpmRom.io.address := combinationalAddr
+      lpmRom.io.q
+    }
+
+    def createRam(width: Int, addrWidth: Int, spWidth: Int, useSyncRam: Boolean,
+                  wrAddr: UInt, wrEna: Bool,
+                  wrAddrDly: UInt, wrEnaDly: Bool,
+                  wrData: Bits,
+                  rdAddr: UInt, rdAddrReg: UInt,
+                  debugAddr: UInt, debugWrEn: Bool,
+                  debugWrAddr: UInt, debugWrData: Bits,
+                  initData: Option[Seq[BigInt]]): (Bits, Bits) = {
+      // Debug write mux uses undelayed signals (aram.vhd delays internally)
+      val lpmWrAddr = Mux(debugWrEn, debugWrAddr.resize(spWidth), wrAddr)
+      val lpmWrEn   = debugWrEn | wrEna
+      val lpmWrData = Mux(debugWrEn, debugWrData, wrData)
+      val lpmRam = AlteraLpmRam(width, addrWidth, "../../asm/generated/serial/ram.mif")
+      lpmRam.io.data      := lpmWrData
+      lpmRam.io.wraddress := lpmWrAddr.resize(addrWidth)
+      lpmRam.io.wren      := lpmWrEn
+      lpmRam.io.rdaddress := rdAddr.resize(addrWidth)
+      (lpmRam.io.q, lpmRam.io.q)  // debug shares the single read port
+    }
+  }
 }
 
 // ==========================================================================
