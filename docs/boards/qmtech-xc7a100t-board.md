@@ -4,14 +4,14 @@
 
 QMTECH Artix-7 core board with onboard DDR3 SDRAM. Connects to the
 [DB_FPGA daughter board](qmtech-db-fpga.md) via dual 32x2 pin headers
-(J2, J3) for Ethernet, UART, VGA, and SD card.
+(U2, U4) for Ethernet, UART, VGA, and SD card.
+U2 mates with DB_FPGA J2, U4 mates with DB_FPGA J3.
 
 GitHub: <https://github.com/ChinaQMTECH/QMTECH_XC7A75T-100T-200T_Core_Board>
 
 Reference files: `/srv/git/qmtech/QMTECH_XC7A75T-100T-200T_Core_Board/XC7A100T/`
 
 Schematic: [QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf](https://github.com/ChinaQMTECH/QMTECH_XC7A75T-100T-200T_Core_Board/blob/main/XC7A100T/Hardware/QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf)
-(local: `XC7A100T/Hardware/QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf`)
 
 ## FPGA
 
@@ -149,15 +149,24 @@ From `/srv/git/qmtech/QMTECH_XC7A75T-100T-200T_Core_Board/XC7A100T/Software_XC7A
 
 The core board has a CH340N USB-to-UART bridge connected to a Mini USB
 connector. When used with the DB_FPGA daughter board, the UART on the
-daughter board (CP2102N) is on different FPGA pins via the J2/J3 connector.
+daughter board is on different FPGA pins via the expansion connectors:
+V4 CP2102N is on DB_FPGA J2 (mates with core board U2),
+V5 RP2040 UART0 is on DB_FPGA J3 (mates with core board U4).
 
-### J2/J3 Connector Mapping
+### U2/U4 Connector Mapping
 
-The J2 and J3 headers are 32x2 pin (64 pins each).
+The U2 and U4 headers are 32x2 pin (64 pins each), with signal pins 5-58
+(27 I/O pairs per header). On the DB_FPGA daughter board, the mating
+connectors are labeled J2 and J3. **U2 mates with DB_FPGA J2, and U4 mates
+with DB_FPGA J3** (verified by physical inspection). Note: DB_FPGA "IO" signal
+numbering (e.g., J3_IO7) does not match physical pin numbers due to header
+mirroring — always use the FPGA pin from the tables below.
 
 From schematic `QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf`:
 
-**J2** (Banks 13, 14, 15 — active-high, LVCMOS33):
+**U2** (Banks 13, 14, 15 — active-high, LVCMOS33) — mates with DB_FPGA J2:
+
+![U2 connector pinout](images/xc7a100t-u2-pinout.png)
 
 | Pin | FPGA | Pin | FPGA | Pin | FPGA | Pin | FPGA |
 |:---:|:----:|:---:|:----:|:---:|:----:|:---:|:----:|
@@ -178,7 +187,9 @@ From schematic `QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf`:
 | 57 | AC26 | 58 | AB26 | 59 | NC | 60 | NC |
 | 61 | NC | 62 | NC | 63 | VIN | 64 | VIN |
 
-**J3** (Banks 34, 35 — active-high, LVCMOS33):
+**U4** (Banks 34, 35 — active-high, LVCMOS33) — mates with DB_FPGA J3:
+
+![U4 connector pinout](images/xc7a100t-u4-pinout.png)
 
 | Pin | FPGA | Pin | FPGA | Pin | FPGA | Pin | FPGA |
 |:---:|:----:|:---:|:----:|:---:|:----:|:---:|:----:|
@@ -199,8 +210,8 @@ From schematic `QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf`:
 | 57 | U2 | 58 | U1 | 59 | NC | 60 | NC |
 | 61 | NC | 62 | NC | 63 | VIN | 64 | VIN |
 
-27 I/O pairs per header (54 I/O pins each, 108 total). Pin 1-2 = ground,
-pin 3-4 = bank power (3V3 for J2, VCCO_34_35 for J3), pin 59-62 = NC,
+27 I/O pairs per header (54 I/O pins each, pins 5-58, 108 total). Pin 1-2 = ground,
+pin 3-4 = bank power (3V3 for U2, VCCO_34_35 for U4), pin 59-62 = NC,
 pin 63-64 = VIN (unregulated input power).
 
 ### DB_FPGA Peripheral Pin Assignments (XC7A100T)
@@ -209,112 +220,122 @@ Derived by mapping the [EP4CGX150 cross-reference](qmtech-ep4cgx150-board.md#dbf
 connector pin numbers to XC7A100T FPGA pins via the tables above. The DB_FPGA
 connector pinout is identical across all QMTECH core boards.
 
-**UART (CP2102N):**
+- **ETH, VGA, SD** are on DB_FPGA **J3** (mates with core board **U4**)
+- **PMODs, JP1** are on DB_FPGA **J2** (mates with core board **U2**)
+- **UART**: V4 CP2102N is on DB_FPGA **J2** (mates with **U2**); V5 RP2040 UART0 is on DB_FPGA **J3** (mates with **U4**)
 
-| Signal | Connector | FPGA Pin |
-|--------|:---------:|:--------:|
-| TX (FPGA→CP2102N) | J3-13 | C2 |
-| RX (CP2102N→FPGA) | J3-14 | B2 |
+**UART (V4: CP2102N on J2 pins 13/14, V5: RP2040 UART0 on J3 pins 5/6):**
 
-**SD Card:**
+| Signal | V4 DB_FPGA | V4 FPGA | V5 DB_FPGA | V5 FPGA |
+|--------|:----------:|:-------:|:----------:|:-------:|
+| TX (FPGA->bridge) | J2-13 (U2) | F22 | J3-6 (U4) | A5 |
+| RX (bridge->FPGA) | J2-14 (U2) | G22 | J3-5 (U4) | B5 |
 
-| Signal | Connector | FPGA Pin |
-|--------|:---------:|:--------:|
-| SD_CLK | J2-9 | G26 |
-| SD_CMD | J2-10 | H26 |
-| SD_DAT0 | J2-8 | E25 |
-| SD_DAT1 | J2-7 | D25 |
-| SD_DAT2 | J2-12 | F23 |
-| SD_DAT3/CS | J2-11 | E23 |
-| SD_CD | J2-6 | E26 |
+V5 UART1 (`/dev/ttyACM1`) -- **not working**, hangs on open. GPIO4/5 -> J2_IO42/IO41
+but ttyACM1 never becomes responsive regardless of FPGA pin configuration.
+Tested with both mirrored (R25/P25) and direct (T24/T25) pin assignments.
 
-**Ethernet (RTL8211EG, GMII):**
+V5 note: DB_FPGA schematic labels UART0 as "J3_IO7/IO8" but they connect to
+core board U4 pins 5/6 (not 7/8) due to header mirroring. Verified by FPGA
+loopback test. RP2040 UART0: GPIO0 (TX) -> B5, GPIO1 (RX) -> A5.
+UART1: GPIO4 (TX) -> R25, GPIO5 (RX) -> P25 (assuming same mirroring, unverified).
+Requires `dsrdtr=True` and `dtr=True` when opening serial port.
 
-| Signal | Connector | FPGA Pin |
-|--------|:---------:|:--------:|
-| MDC | J2-14 | G22 |
-| MDIO | J2-13 | F22 |
-| RESET_N | J2-24 | K25 |
-| RXC | J2-35 | N22 |
-| RXDV | J2-40 | R25 |
-| RXD[0] | J2-39 | P25 |
-| RXD[1] | J2-38 | P23 |
-| RXD[2] | J2-37 | P24 |
-| RXD[3] | J2-36 | N21 |
-| RXD[4] | J2-34 | M24 |
-| RXD[5] | J2-33 | M25 |
-| RXD[6] | J2-32 | R26 |
-| RXD[7] | J2-31 | P26 |
-| RXER | J2-30 | L22 |
-| GTXC | J2-27 | M26 |
-| TXEN | J2-26 | K22 |
-| TXER | J2-15 | J26 |
-| TXD[0] | J2-25 | K23 |
-| TXD[1] | J2-23 | K26 |
-| TXD[2] | J2-22 | K21 |
-| TXD[3] | J2-21 | J21 |
-| TXD[4] | J2-19 | H22 |
-| TXD[5] | J2-18 | G20 |
-| TXD[6] | J2-17 | G21 |
-| TXD[7] | J2-16 | J25 |
+**SD Card (DB_FPGA J3 -> core board U4):**
 
-**VGA (RGB 5-6-5):**
+| Signal | J3 Pin | FPGA Pin |
+|--------|:------:|:--------:|
+| SD_CLK | 9 | A3 |
+| SD_CMD | 10 | A2 |
+| SD_DAT0 | 8 | A4 |
+| SD_DAT1 | 7 | B4 |
+| SD_DAT2 | 12 | C4 |
+| SD_DAT3/CS | 11 | D4 |
+| SD_CD | 6 | A5 |
 
-| Signal | Connector | FPGA Pin |
-|--------|:---------:|:--------:|
-| HS | J2-42 | T24 |
-| VS | J2-41 | T25 |
-| R[4] | J2-55 | Y26 |
-| R[3] | J2-54 | W21 |
-| R[2] | J2-57 | AC26 |
-| R[1] | J2-56 | W25 |
-| R[0] | J2-58 | AB26 |
-| G[5] | J2-49 | AA25 |
-| G[4] | J2-48 | Y22 |
-| G[3] | J2-51 | AC24 |
-| G[2] | J2-50 | Y25 |
-| G[1] | J2-52 | AB24 |
-| G[0] | J2-53 | Y21 |
-| B[4] | J2-44 | U21 |
-| B[3] | J2-43 | V21 |
-| B[2] | J2-46 | V23 |
-| B[1] | J2-45 | W23 |
-| B[0] | J2-47 | Y23 |
+**Ethernet (RTL8211EG, GMII — DB_FPGA J3 -> core board U4):**
 
-## JOP DDR3 Compatibility
+| Signal | J3 Pin | FPGA Pin |
+|--------|:------:|:--------:|
+| MDC | 14 | B2 |
+| MDIO | 13 | C2 |
+| RESET_N | 24 | F4 |
+| RXC | 35 | L5 |
+| RXDV | 40 | N2 |
+| RXD[0] | 39 | N3 |
+| RXD[1] | 38 | L4 |
+| RXD[2] | 37 | M4 |
+| RXD[3] | 36 | K5 |
+| RXD[4] | 34 | L2 |
+| RXD[5] | 33 | M2 |
+| RXD[6] | 32 | G9 |
+| RXD[7] | 31 | H9 |
+| RXER | 30 | H1 |
+| GTXC | 27 | J4 |
+| TXEN | 26 | G1 |
+| TXER | 15 | E5 |
+| TXD[0] | 25 | G2 |
+| TXD[1] | 23 | G4 |
+| TXD[2] | 22 | E2 |
+| TXD[3] | 21 | F2 |
+| TXD[4] | 19 | E1 |
+| TXD[5] | 18 | B1 |
+| TXD[6] | 17 | C1 |
+| TXD[7] | 16 | D5 |
 
-This board uses the same MT41K128M16 DDR3 chip as the Alchitry Au V2 (the
-existing JOP DDR3 platform). Porting JOP requires:
+**VGA (RGB 5-6-5 — DB_FPGA J3 -> core board U4):**
+
+| Signal | J3 Pin | FPGA Pin |
+|--------|:------:|:--------:|
+| HS | 42 | M5 |
+| VS | 41 | M6 |
+| R[4] | 55 | T2 |
+| R[3] | 54 | P1 |
+| R[2] | 57 | U2 |
+| R[1] | 56 | R2 |
+| R[0] | 58 | U1 |
+| G[5] | 49 | P6 |
+| G[4] | 48 | T3 |
+| G[3] | 51 | N1 |
+| G[2] | 50 | P5 |
+| G[1] | 52 | M1 |
+| G[0] | 53 | R1 |
+| B[4] | 44 | J1 |
+| B[3] | 43 | K1 |
+| B[2] | 46 | P3 |
+| B[1] | 45 | R3 |
+| B[0] | 47 | T4 |
+
+## JOP Configuration
+
+This board uses the same MT41K128M16 DDR3 chip as the Alchitry Au V2 and
+Wukong V3. The unified `JopTop` supports this board via three presets:
+
+```bash
+# Serial boot, DDR3, single-core
+sbt "runMain jop.system.JopTopVerilog xc7a100tDbSerial"
+
+# Full I/O (Ethernet + VGA + SD + DSP imul), single-core
+sbt "runMain jop.system.JopTopVerilog xc7a100tDbFull"
+
+# SMP with N cores
+sbt "runMain jop.system.JopTopVerilog xc7a100tDbSmp 4"
+```
+
+Board definitions: `Board.QmtechXC7A100T` + `Board.QmtechFpgaDbV5` (V5 with RP2040).
+Assembly: `SystemAssembly.xc7a100tWithDbV5`.
+
+### Remaining Steps for FPGA Build
 
 1. **MIG regeneration**: New Vivado MIG IP targeting XC7A100T-FGG676-2 with
    the pin assignments above. The MIG local interface (28-bit address, 128-bit
-   data) will be identical.
+   data) will be identical to the Au V2 and Wukong builds.
 
-2. **Pin constraint file**: New XDC with DDR3 pins, system clock, UART (from
-   DB_FPGA), and LEDs.
+2. **Pin constraint file**: New XDC with DDR3 pins, system clock, DB_FPGA
+   peripherals (UART, Ethernet, VGA, SD), and LEDs.
 
-3. **JopDdr3Top adaptation**: New top-level (or parameterized variant) for
-   the XC7A100T with its PLL configuration. The DDR3 subsystem
-   (BmbCacheBridge → LruCacheCore → CacheToMigAdapter → MIG) is unchanged.
-
-4. **DB_FPGA peripherals**: Ethernet, UART, VGA, SD card via daughter board.
-   Pin assignments will differ from EP4CGX150 — need to map J2/J3 connector
-   pins to XC7A100T FPGA pins using the core board schematic.
-
-### JOP Configuration (estimated)
-
-```scala
-JopCoreConfig(
-  memConfig = JopMemoryConfig(
-    addressWidth = 28,                    // 26-bit physical word + 2 type bits = 256 MB
-    mainMemSize = 256L * 1024 * 1024,     // 256 MB DDR3
-    burstLen = 8,                         // DDR3 burst
-    stackRegionWordsPerCore = 8192        // 32 KB per core
-  ),
-  clkFreqHz = 100000000L,
-  ioConfig = IoConfig(hasEth = true, ethGmii = true, hasVgaText = true, hasSdNative = true)
-)
-```
+3. **Vivado project**: Makefile targets for synthesis, implementation, and
+   bitstream generation.
 
 ### Address Flow
 
@@ -336,7 +357,7 @@ XC7A100T vs other JOP platforms:
 | Block RAM | 4,860 Kbit | 1,800 Kbit | 6,635 Kbit |
 | DSP / Mult | 240 | 90 | 360 |
 
-Estimated JOP capacity on XC7A100T:
+Expected JOP capacity on XC7A100T (based on Wukong V3 builds):
 
 | Config | LUTs (est.) | % of XC7A100T |
 |--------|:-----------:|:-------------:|
@@ -352,19 +373,19 @@ SMP feasible.
 
 | Bank | Voltage | Primary Function |
 |------|---------|------------------|
-| 13 | 3.3V | SYS_CLK (U22) + J2 connector (Bank 13 GPIO) |
-| 14 | 3.3V | LEDs (T23, R23) + J2 connector (Bank 14 GPIO) |
-| 15 | 3.3V | J2 connector (Bank 15 GPIO) |
+| 13 | 3.3V | SYS_CLK (U22) + U2 connector (Bank 13 GPIO) |
+| 14 | 3.3V | LEDs (T23, R23) + U2 connector (Bank 14 GPIO) |
+| 15 | 3.3V | U2 connector (Bank 15 GPIO) |
 | 16 | 1.35V | DDR3 (all: address, data, control, DQS, DM, clock) |
-| 34 | 3.3V | J3 connector (Bank 34 GPIO) + user button (P4) |
-| 35 | 3.3V | J3 connector (Bank 35 GPIO) |
+| 34 | 3.3V | U4 connector (Bank 34 GPIO) + user button (P4) |
+| 35 | 3.3V | U4 connector (Bank 35 GPIO) |
 
 Bank 34/35 VCCO is configurable: remove R14/R15 (0-ohm) and inject custom
-voltage (e.g., 2.5V or 1.8V) via J3 pins 3-4.
+voltage (e.g., 2.5V or 1.8V) via U4 pins 3-4.
 
 ## Power
 
-- **Input**: 5V DC via DC-050 jack (5.5mm x 2.1mm) or J2/J3 VIN pins
+- **Input**: 5V DC via DC-050 jack (5.5mm x 2.1mm) or U2/U4 VIN pins
 - **Current**: 2A recommended
 - **1.0V** (VCCINT): MP8712 DC/DC
 - **1.8V** (VCCAUX): TPS563201
@@ -388,8 +409,8 @@ For DB_FPGA peripheral examples, see `/srv/git/qmtech/CYCLONE_IV_EP4CE15/Softwar
 
 ## Daughter Board
 
-Connects to [QMTECH DB_FPGA daughter board](qmtech-db-fpga.md) via J2/J3 headers.
-The J2/J3 connector mapping above provides the FPGA pin for each connector pin.
+Connects to [QMTECH DB_FPGA daughter board](qmtech-db-fpga.md) via U2/U4 headers.
+The U2/U4 connector mapping above provides the FPGA pin for each connector pin.
 To determine DB_FPGA peripheral pin assignments for this core board, cross-reference
 the DB_FPGA connector pinout with the tables above.
 

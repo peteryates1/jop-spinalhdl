@@ -167,11 +167,11 @@ generate-smp8:
 	@echo "=== 8-core SMP test Verilog generated: $(GENERATED_SMP_V) ==="
 
 generate-dbfpga:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopDbFpgaTopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Serial"
 	@echo "=== DB_FPGA Verilog generated: $(GENERATED_DBFPGA_V) ==="
 
 generate-dbfpga-vgadma:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopDbFpgaVgaDmaTopVerilog"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Serial"
 	@echo "=== DB_FPGA VGA DMA Verilog generated: $(GENERATED_DBFPGA_V) ==="
 
 generate-flash-boot:

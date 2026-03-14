@@ -4,7 +4,8 @@
 
 Primary JOP development platform. QMTECH EP4CGX150DF27 core board with onboard
 SDR SDRAM. Connects to the [DB_FPGA daughter board](qmtech-db-fpga.md) via dual
-32x2 pin headers (J2, J3) for Ethernet, UART, VGA, and SD card.
+32x2 pin headers (U4, U5) for Ethernet, UART, VGA, and SD card.
+U4 mates with DB_FPGA J3, U5 mates with DB_FPGA J2.
 
 GitHub: <https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD>
 
@@ -259,14 +260,19 @@ bus, microcode PC, and Java bytecode PC. Useful for debugging SDRAM timing
 issues and pipeline stalls. Enable by uncommenting the SignalTap section in
 `jop_sdram.qsf`.
 
-## J2/J3 Connector Mapping
+## U4/U5 Connector Mapping
 
-The J2 and J3 headers are 32x2 pin (64 pins each) at 0.1" pitch. These
-connect the core board to daughter boards (e.g. DB_FPGA).
+The U4 and U5 headers are 32x2 pin (64 pins each) at 0.1" pitch. These
+connect the core board to daughter boards (e.g. DB_FPGA). U4 mates with
+DB_FPGA J3, U5 mates with DB_FPGA J2.
 
-From schematic `QMTECH_EP4CGX150DF27_V2.pdf`:
+From core board schematic `QMTECH-EP4CGX150GX-CORE-BOARD-V01`.
 
-**J2** (Banks 5, 6, 7):
+**U4** (Banks 5, 6, 7 -- mates with DB_FPGA J3):
+
+![EP4CGX150 U4 Connector Pinout](images/ep4cgx150-u4-pinout.png)
+
+Carries ETH, VGA, SD card signals when DB_FPGA is attached.
 
 | Pin | FPGA | Pin | FPGA | Pin | FPGA | Pin | FPGA |
 |:---:|:----:|:---:|:----:|:---:|:----:|:---:|:----:|
@@ -284,10 +290,14 @@ From schematic `QMTECH_EP4CGX150DF27_V2.pdf`:
 | 45 | B5 | 46 | A5 | 47 | B4 | 48 | A4 |
 | 49 | C5 | 50 | C4 | 51 | A3 | 52 | A2 |
 | 53 | B2 | 54 | B1 | 55 | D1 | 56 | C1 |
-| 57 | E2 | 58 | E1 | 59 | NC | 60 | NC |
-| 61 | NC | 62 | NC | 63 | VIN | 64 | VIN |
+| 57 | E2 | 58 | E1 | | | | |
 
-**J3** (Banks 3, 4):
+**U5** (Banks 3, 4 -- mates with DB_FPGA J2):
+
+![EP4CGX150 U5 Connector Pinout](images/ep4cgx150-u5-pinout.png)
+
+Carries CP2102N UART, 7-segment display, LEDs, PMODs J10/J11, JP1 signals
+when DB_FPGA is attached.
 
 | Pin | FPGA | Pin | FPGA | Pin | FPGA | Pin | FPGA |
 |:---:|:----:|:---:|:----:|:---:|:----:|:---:|:----:|
@@ -305,54 +315,57 @@ From schematic `QMTECH_EP4CGX150DF27_V2.pdf`:
 | 45 | AF7 | 46 | AF8 | 47 | AE7 | 48 | AF6 |
 | 49 | AE5 | 50 | AE6 | 51 | AD5 | 52 | AD6 |
 | 53 | AF4 | 54 | AF5 | 55 | AD3 | 56 | AE3 |
-| 57 | AC4 | 58 | AD4 | 59 | NC | 60 | NC |
-| 61 | NC | 62 | NC | 63 | VIN | 64 | VIN |
+| 57 | AC4 | 58 | AD4 | | | | |
 
-27 I/O pairs per header (54 I/O pins each, 108 total). Pin 1-2 = ground,
-pin 3-4 = 3V3, pin 59-62 = NC, pin 63-64 = VIN.
+27 I/O pairs per header (54 I/O pins each, 108 total). Pin 1-2 = GND,
+pin 3-4 = 3V3, pin 5-58 = I/O signals, 59-62 = NC,
+pin 63-64 = VIN.
 
 ### DB_FPGA Peripheral to Connector Cross-Reference
 
-The DB_FPGA daughter board's peripherals map to these connector pins:
+The DB_FPGA daughter board's peripherals map to these connector pins.
+Connector names are DB_FPGA designators: J2 resolves through U5 (Banks 3,4),
+J3 resolves through U4 (Banks 5,6,7). Pin numbers are physical connector
+pin numbers matching Board.scala.
 
 | Function | Connector | Pins | FPGA Pins |
 |----------|:---------:|------|-----------|
-| UART TX | J3 | 13 | AD20 |
-| UART RX | J3 | 14 | AE21 |
-| SD CLK | J2 | 9 | B21 |
-| SD CMD | J2 | 10 | A22 |
-| SD DAT0 | J2 | 8 | A23 |
-| SD DAT1 | J2 | 7 | B23 |
-| SD DAT2 | J2 | 12 | B19 |
-| SD DAT3/CS | J2 | 11 | C19 |
-| SD CD | J2 | 6 | B22 |
-| ETH MDC | J2 | 14 | A20 |
-| ETH MDIO | J2 | 13 | A21 |
-| ETH RESET | J2 | 24 | A15 |
-| ETH RXC | J2 | 35 | B10 |
-| ETH RXDV | J2 | 40 | A8 |
-| ETH RXD[0:7] | J2 | 39-31 | A9,B9,C10,A10,A11,B11,A12,A13 |
-| ETH RXER | J2 | 30 | C11 |
-| ETH GTXC | J2 | 27 | C13 |
-| ETH TXEN | J2 | 26 | C14 |
-| ETH TXER | J2 | 15 | A19 |
-| ETH TXD[0:7] | J2 | 25-16 | C15,B15,A16,A17,C16,B18,C17,A18 |
-| VGA HS | J2 | 42 | A6 |
-| VGA VS | J2 | 41 | A7 |
-| VGA R[4:0] | J2 | 55,54,57,56,58 | D1,B1,E2,C1,E1 |
-| VGA G[5:0] | J2 | 49,48,51,50,52,53 | C5,A4,A3,C4,A2,B2 |
-| VGA B[4:0] | J2 | 44,43,46,45,47 | B6,B7,A5,B5,B4 |
-| 7-Seg data | J3 | 29,24,26,30,32,27,23,28 | AF15,AD18,AF17,AF16,AD16,AC17,AC18,AD17 |
-| 7-Seg scan | J3 | 33,25,31 | AE14,AE17,AC16 |
-| LEDs [2:6] | J3 | 38,37,36,35,34 | AD14,AC14,AD15,AC15,AE15 |
-| DIP SW [2:6] | J2-5,J3 | J2:5, J3:42,41,40,39 | C21,AD10,AC10,AF12,AF11 |
-| PMOD J10 | J3 | 16,18,20,22,15,17,19,21 | AF21,AF19,AD19,AF18,AF20,AE19,AC19,AE18 |
-| PMOD J11 | J3 | 6,8,10,12,5,7,9,11 | AF25,AD21,AF23,AF22,AF24,AC21,AE23,AE22 |
-| JP1 GPIO | J3 | 58,57,56,55,54,53,52,51,50,49,48,47,46,45,44,43 | AD4,AC4,AE3,AD3,AF5,AF4,AD6,AD5,AE6,AE5,AF6,AE7,AF8,AF7,AF9,AE9 |
+| UART TX | J2 | 13 | AD20 |
+| UART RX | J2 | 14 | AE21 |
+| SD CLK | J3 | 9 | B21 |
+| SD CMD | J3 | 10 | A22 |
+| SD DAT0 | J3 | 8 | A23 |
+| SD DAT1 | J3 | 7 | B23 |
+| SD DAT2 | J3 | 12 | B19 |
+| SD DAT3/CS | J3 | 11 | C19 |
+| SD CD | J3 | 6 | B22 |
+| ETH MDC | J3 | 14 | A20 |
+| ETH MDIO | J3 | 13 | A21 |
+| ETH RESET | J3 | 24 | A15 |
+| ETH RXC | J3 | 35 | B10 |
+| ETH RXDV | J3 | 40 | A8 |
+| ETH RXD[0:7] | J3 | 39-31 | A9,B9,C10,A10,A11,B11,A12,A13 |
+| ETH RXER | J3 | 30 | C11 |
+| ETH GTXC | J3 | 27 | C13 |
+| ETH TXEN | J3 | 26 | C14 |
+| ETH TXER | J3 | 15 | A19 |
+| ETH TXD[0:7] | J3 | 25-16 | C15,B15,A16,A17,C16,B18,C17,A18 |
+| VGA HS | J3 | 42 | A6 |
+| VGA VS | J3 | 41 | A7 |
+| VGA R[4:0] | J3 | 58,56,57,54,55 | E1,C1,E2,B1,D1 |
+| VGA G[5:0] | J3 | 53,52,50,51,48,49 | B2,A2,C4,A3,A4,C5 |
+| VGA B[4:0] | J3 | 47,45,46,43,44 | B4,B5,A5,B7,B6 |
+| 7-Seg data | J2 | 29,24,26,30,32,27,23,28 | AF15,AD18,AF17,AF16,AD16,AC17,AC18,AD17 |
+| 7-Seg scan | J2 | 33,25,31 | AE14,AE17,AC16 |
+| LEDs [2:6] | J2 | 38,37,36,35,34 | AD14,AC14,AD15,AC15,AE15 |
+| DIP SW [2:6] | J3,J2 | J3:5, J2:42,41,40,39 | C21,AD10,AC10,AF12,AF11 |
+| PMOD J10 | J2 | 15,17,19,21,16,18,20,22 | AF20,AE19,AC19,AE18,AF21,AF19,AD19,AF18 |
+| PMOD J11 | J2 | 5,7,9,11,6,8,10,12 | AF24,AC21,AE23,AE22,AF25,AD21,AF23,AF22 |
+| JP1 GPIO | J2 | 43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58 | AE9,AF9,AF7,AF8,AE7,AF6,AE5,AE6,AD5,AD6,AF4,AF5,AD3,AE3,AC4,AD4 |
 
 ## Daughter Boards
 
-The EP4CGX150 core board connects to daughter boards via the J2/J3 headers
+The EP4CGX150 core board connects to daughter boards via the U4/U5 headers
 described above.
 
 **DB_FPGA**: See [QMTECH DB_FPGA Daughter Board](qmtech-db-fpga.md) for

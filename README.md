@@ -184,6 +184,9 @@ sbt "runMain jop.system.JopTopVerilog wukongSdrFull"     # Wukong SDR full (all 
 sbt "runMain jop.system.JopTopVerilog wukongNoDcu"       # Wukong DDR3 no DCU
 sbt "runMain jop.system.JopTopVerilog max1000Sdram"      # MAX1000 SDR SDRAM
 sbt "runMain jop.system.JopTopVerilog ep4ce6Sdram"       # EP4CE6 SDR SDRAM (no caches)
+sbt "runMain jop.system.JopTopVerilog xc7a100tDbSerial"   # XC7A100T + DB_FPGA DDR3
+sbt "runMain jop.system.JopTopVerilog xc7a100tDbFull"     # XC7A100T + DB_FPGA full I/O
+sbt "runMain jop.system.JopTopVerilog xc7a100tDbSmp 4"    # XC7A100T + DB_FPGA 4-core SMP
 sbt "runMain jop.system.JopTopVerilog minimum"           # Minimum resources
 
 # Flash boot — autonomous boot from SPI flash, no JTAG needed after programming
@@ -303,6 +306,7 @@ sbt "Test / runMain jop.system.JopIhluGcBramSim"
 | A-E115FB | Altera Cyclone IV E (EP4CE115F23I7) | BRAM (on-chip) | Quartus Prime | BRAM only, programmed via [pico-dirtyJtag](docs/pico-dirtyjtag-setup.md) |
 | [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au) | Xilinx Artix-7 (XC7A35T) | MT41K128M16JT DDR3 (256MB) | Vivado | 100 MHz — single-core + SMP (2-core), full 256MB addressed, GC working ([details](docs/gc/ddr3-gc-hang.md)) |
 | [QMTECH Wukong V3](docs/boards/qmtech-wukong-board.md) | Xilinx Artix-7 (XC7A100T) | MT41K128M16JT DDR3 (256MB) + W9825G6KH SDR SDRAM (32MB) | Vivado | 100 MHz — full featured (all 4 CUs + DSP imul), 66/66 JVM tests on hardware |
+| [QMTECH XC7A100T + DB_FPGA V5](docs/boards/qmtech-xc7a100t-board.md) | Xilinx Artix-7 (XC7A100T-FGG676) | MT41K128M16JT DDR3 (256MB) | Vivado | Board definitions and presets defined — awaiting FPGA build |
 
 ### Resource Usage
 

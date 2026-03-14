@@ -157,9 +157,10 @@ object PllType {
  * A physical PCB — any board in the system.
  *
  * @param connectors Expansion header pin-to-FPGA-pin mapping (FPGA boards only).
- *                   Key: connector name ("J2", "J3").
+ *                   Key: physical connector designator ("U4", "U5", "U2", "J4", "J5").
  *                   Value: physical pin number → FPGA pin name.
- *                   Pins 1-4 (power/GND) and 59+ (NC/VIN) are excluded.
+ *                   QMTECH 2x32 headers: pins 1-6 (power/GND) and 61+ (NC/VIN) excluded;
+ *                   signal pins are 5-58. Alchitry DF40C: per-connector pin numbering.
  */
 case class Board(
   name: String,
@@ -209,8 +210,9 @@ object Board {
   /**
    * QMTECH EP4CGX150 FPGA module (Cyclone IV GX + W9825G6JH6 SDR SDRAM).
    *
-   * J2 and J3 are 2x32 pin expansion headers (64 pins each).
+   * U5 and U4 are 2x32 pin expansion headers (64 pins each).
    * Pins 1-2: GND, 3-4: 3V3, 5-58: I/O, 59-62: NC, 63-64: VIN.
+   * U4 (Banks 5,6,7) mates with DB_FPGA J3. U5 (Banks 3,4) mates with DB_FPGA J2.
    * Pin-to-FPGA mapping from core board schematic QMTECH-EP4CGX150GX-CORE-BOARD-V01.
    * SDRAM pins verified against jop_sdram.qsf (working FPGA build).
    */
@@ -242,8 +244,8 @@ object Board {
       BoardDevice("LED", mapping = Map("led0" -> "PIN_A25", "led1" -> "PIN_A24")),
       BoardDevice("SWITCH", mapping = Map("sw0" -> "PIN_AD23", "sw1" -> "PIN_AD24"))),
     connectors = Map(
-      // J2: Banks 5, 6, 7 — from core board schematic sheet 2
-      "J2" -> Map(
+      // U4: Banks 5, 6, 7 — mates with DB_FPGA J3 when used with daughter board
+      "U4" -> Map(
         5 -> "PIN_C21",  6 -> "PIN_B22",  7 -> "PIN_B23",  8 -> "PIN_A23",
         9 -> "PIN_B21",  10 -> "PIN_A22", 11 -> "PIN_C19", 12 -> "PIN_B19",
         13 -> "PIN_A21", 14 -> "PIN_A20", 15 -> "PIN_A19", 16 -> "PIN_A18",
@@ -258,8 +260,8 @@ object Board {
         49 -> "PIN_C5",  50 -> "PIN_C4",  51 -> "PIN_A3",  52 -> "PIN_A2",
         53 -> "PIN_B2",  54 -> "PIN_B1",  55 -> "PIN_D1",  56 -> "PIN_C1",
         57 -> "PIN_E2",  58 -> "PIN_E1"),
-      // J3: Banks 3, 4 — from core board schematic sheet 2
-      "J3" -> Map(
+      // U5: Banks 3, 4 — mates with DB_FPGA J2 when used with daughter board
+      "U5" -> Map(
         5 -> "PIN_AF24",  6 -> "PIN_AF25",  7 -> "PIN_AC21",  8 -> "PIN_AD21",
         9 -> "PIN_AE23",  10 -> "PIN_AF23", 11 -> "PIN_AE22", 12 -> "PIN_AF22",
         13 -> "PIN_AD20", 14 -> "PIN_AE21", 15 -> "PIN_AF20", 16 -> "PIN_AF21",
@@ -437,8 +439,10 @@ object Board {
   /**
    * QMTECH XC7A100T FPGA core board (Artix-7 XC7A100T + MT41K128M16JT DDR3).
    *
-   * Separate module that mates with DB_FPGA daughter board via J2/J3 headers.
-   * J2/J3 are 2x32 pin expansion headers (64 pins each).
+   * Separate module that mates with DB_FPGA daughter board via U2/U4 headers.
+   * U2 and U4 are 2x32 pin expansion headers (64 pins each).
+   * Pins 1-2: GND, 3-4: 3V3, 5-58: I/O, 59-62: NC, 63-64: VIN.
+   * U2 (Banks 13,14,15) mates with DB_FPGA J2. U4 (Banks 34,35) mates with DB_FPGA J3.
    * Pin-to-FPGA mapping from core board schematic QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01.
    * On-board: DDR3 (MIG-managed), 50 MHz clock, CH340N UART, 2 LEDs, SW2 reset.
    */
@@ -454,8 +458,8 @@ object Board {
       BoardDevice("LED", mapping = Map("led0" -> "T23", "led1" -> "R23")),
       BoardDevice("SWITCH", mapping = Map("sw2" -> "P4"))),
     connectors = Map(
-      // J2: Banks 13, 14, 15 — from core board schematic sheet 1
-      "J2" -> Map(
+      // U2: Banks 13, 14, 15 — mates with DB_FPGA J2 when used with daughter board
+      "U2" -> Map(
         5 -> "D26",  6 -> "E26",  7 -> "D25",  8 -> "E25",
         9 -> "G26",  10 -> "H26", 11 -> "E23", 12 -> "F23",
         13 -> "F22", 14 -> "G22", 15 -> "J26", 16 -> "J25",
@@ -470,8 +474,8 @@ object Board {
         49 -> "AA25", 50 -> "Y25", 51 -> "AC24", 52 -> "AB24",
         53 -> "Y21", 54 -> "W21", 55 -> "Y26", 56 -> "W25",
         57 -> "AC26", 58 -> "AB26"),
-      // J3: Banks 34, 35 — from core board schematic sheet 1
-      "J3" -> Map(
+      // U4: Banks 34, 35 — mates with DB_FPGA J3 when used with daughter board
+      "U4" -> Map(
         5 -> "B5",  6 -> "A5",  7 -> "B4",  8 -> "A4",
         9 -> "A3",  10 -> "A2", 11 -> "D4", 12 -> "C4",
         13 -> "C2", 14 -> "B2", 15 -> "E5", 16 -> "D5",
@@ -501,57 +505,57 @@ object Board {
   def QmtechFpgaDbV4 = Board(
     name = "qmtech-fpga-db-v4",
     devices = Seq(
-      // CP2102N USB-UART — on J3
+      // CP2102N USB-UART — on J2 (J2_IO15/IO16)
       BoardDevice("CP2102N", mapping = Map(
-        "TXD" -> "J3:13", "RXD" -> "J3:14")),
-      // RTL8211EG Ethernet PHY — full GMII 8-bit on J2
+        "TXD" -> "J2:13", "RXD" -> "J2:14")),
+      // RTL8211EG Ethernet PHY — full GMII 8-bit on J3
       BoardDevice("RTL8211EG", mapping = Map(
-        "MDC" -> "J2:14", "MDIO" -> "J2:13",
-        "RESET" -> "J2:24",
-        "GTX_CLK" -> "J2:27",              // FPGA 125 MHz TX clock output
-        "TX_CLK" -> "J2:20",               // PHY 25 MHz MII TX clock (unused in GMII)
-        "TX_EN" -> "J2:26", "TX_ER" -> "J2:15",
-        "TXD0" -> "J2:25", "TXD1" -> "J2:23", "TXD2" -> "J2:22", "TXD3" -> "J2:21",
-        "TXD4" -> "J2:19", "TXD5" -> "J2:18", "TXD6" -> "J2:17", "TXD7" -> "J2:16",
-        "RX_CLK" -> "J2:35", "RX_DV" -> "J2:40", "RX_ER" -> "J2:30",
-        "RXD0" -> "J2:39", "RXD1" -> "J2:38", "RXD2" -> "J2:37", "RXD3" -> "J2:36",
-        "RXD4" -> "J2:34", "RXD5" -> "J2:33", "RXD6" -> "J2:32", "RXD7" -> "J2:31")),
-      // VGA DAC (5R-6G-5B resistor network) — on J2
+        "MDC" -> "J3:14", "MDIO" -> "J3:13",
+        "RESET" -> "J3:24",
+        "GTX_CLK" -> "J3:27",              // FPGA 125 MHz TX clock output
+        "TX_CLK" -> "J3:20",               // PHY 25 MHz MII TX clock (unused in GMII)
+        "TX_EN" -> "J3:26", "TX_ER" -> "J3:15",
+        "TXD0" -> "J3:25", "TXD1" -> "J3:23", "TXD2" -> "J3:22", "TXD3" -> "J3:21",
+        "TXD4" -> "J3:19", "TXD5" -> "J3:18", "TXD6" -> "J3:17", "TXD7" -> "J3:16",
+        "RX_CLK" -> "J3:35", "RX_DV" -> "J3:40", "RX_ER" -> "J3:30",
+        "RXD0" -> "J3:39", "RXD1" -> "J3:38", "RXD2" -> "J3:37", "RXD3" -> "J3:36",
+        "RXD4" -> "J3:34", "RXD5" -> "J3:33", "RXD6" -> "J3:32", "RXD7" -> "J3:31")),
+      // VGA DAC (5R-6G-5B resistor network) — on J3
       BoardDevice("VGA", mapping = Map(
-        "HS" -> "J2:42", "VS" -> "J2:41",
-        "R0" -> "J2:58", "R1" -> "J2:56", "R2" -> "J2:57", "R3" -> "J2:54", "R4" -> "J2:55",
-        "G0" -> "J2:53", "G1" -> "J2:52", "G2" -> "J2:50", "G3" -> "J2:51",
-        "G4" -> "J2:48", "G5" -> "J2:49",
-        "B0" -> "J2:47", "B1" -> "J2:45", "B2" -> "J2:46", "B3" -> "J2:43", "B4" -> "J2:44")),
-      // Micro SD card — on J2
+        "HS" -> "J3:42", "VS" -> "J3:41",
+        "R0" -> "J3:58", "R1" -> "J3:56", "R2" -> "J3:57", "R3" -> "J3:54", "R4" -> "J3:55",
+        "G0" -> "J3:53", "G1" -> "J3:52", "G2" -> "J3:50", "G3" -> "J3:51",
+        "G4" -> "J3:48", "G5" -> "J3:49",
+        "B0" -> "J3:47", "B1" -> "J3:45", "B2" -> "J3:46", "B3" -> "J3:43", "B4" -> "J3:44")),
+      // Micro SD card — on J3
       BoardDevice("SD_CARD", mapping = Map(
-        "CLK" -> "J2:9", "CMD" -> "J2:10",
-        "DAT0" -> "J2:8", "DAT1" -> "J2:7",
-        "DAT2" -> "J2:12", "DAT3" -> "J2:11",
-        "CD" -> "J2:6")),
-      // 3-digit seven segment display — on J3
+        "CLK" -> "J3:9", "CMD" -> "J3:10",
+        "DAT0" -> "J3:8", "DAT1" -> "J3:7",
+        "DAT2" -> "J3:12", "DAT3" -> "J3:11",
+        "CD" -> "J3:6")),
+      // 3-digit seven segment display — on J2 (J2_IO25-IO35)
       BoardDevice("SEVEN_SEG", mapping = Map(
-        "SEL0" -> "J3:33", "SEL1" -> "J3:25", "SEL2" -> "J3:31",
-        "A" -> "J3:29", "B" -> "J3:24",
-        "C" -> "J3:26", "D" -> "J3:30",
-        "E" -> "J3:32", "F" -> "J3:27",
-        "G" -> "J3:23", "DP" -> "J3:28")),
-      // LEDs (active low) — on J3
+        "SEL0" -> "J2:33", "SEL1" -> "J2:25", "SEL2" -> "J2:31",
+        "A" -> "J2:29", "B" -> "J2:24",
+        "C" -> "J2:26", "D" -> "J2:30",
+        "E" -> "J2:32", "F" -> "J2:27",
+        "G" -> "J2:23", "DP" -> "J2:28")),
+      // LEDs (active low) — on J2 (J2_IO36-IO40)
       BoardDevice("LED", mapping = Map(
-        "led2" -> "J3:38", "led3" -> "J3:37",
-        "led4" -> "J3:36", "led5" -> "J3:35", "led6" -> "J3:34")),
-      // PMOD J10 connector — routed through J3
+        "led2" -> "J2:38", "led3" -> "J2:37",
+        "led4" -> "J2:36", "led5" -> "J2:35", "led6" -> "J2:34")),
+      // PMOD J10 connector — routed through J2 (conflicts with ETH TX path)
       BoardDevice("PMOD_J10", mapping = Map(
-        "pin1" -> "J3:16", "pin2" -> "J3:18",
-        "pin3" -> "J3:20", "pin4" -> "J3:22",
-        "pin5" -> "J3:15", "pin6" -> "J3:17",
-        "pin7" -> "J3:19", "pin8" -> "J3:21")),
-      // PMOD J11 connector — routed through J3
+        "pin1" -> "J2:15", "pin2" -> "J2:17",
+        "pin3" -> "J2:19", "pin4" -> "J2:21",
+        "pin7" -> "J2:16", "pin8" -> "J2:18",
+        "pin9" -> "J2:20", "pin10" -> "J2:22")),
+      // PMOD J11 connector — routed through J2 (conflicts with SD card)
       BoardDevice("PMOD_J11", mapping = Map(
-        "pin1" -> "J3:6", "pin2" -> "J3:8",
-        "pin3" -> "J3:10", "pin4" -> "J3:12",
-        "pin5" -> "J3:5", "pin6" -> "J3:7",
-        "pin7" -> "J3:9", "pin8" -> "J3:11"))))
+        "pin1" -> "J2:5", "pin2" -> "J2:7",
+        "pin3" -> "J2:9", "pin4" -> "J2:11",
+        "pin7" -> "J2:6", "pin8" -> "J2:8",
+        "pin9" -> "J2:10", "pin10" -> "J2:12"))))
 
   /**
    * Alchitry Io V2 daughter board.
@@ -594,6 +598,71 @@ object Board {
         "btn0" -> "J4:24", "btn1" -> "J4:22", "btn2" -> "J4:18",
         "btn3" -> "J4:16", "btn4" -> "J4:28"))))
 
+  /**
+   * QMTECH DB_FPGA V5 daughter board (with RP2040).
+   *
+   * Same peripheral pin assignments as V4 (Ethernet, VGA, SD on J3;
+   * PMODs, JP1 on J2) except no 7-segment display or LEDs on V5.
+   * Key difference: RP2040 replaces CP2102N
+   * for USB-UART, and additionally provides DirtyJTAG for Xilinx FPGAs.
+   *
+   * UART pins differ from V4: RP2040 UART0 is on J3:5/6,
+   * NOT J2:13/14 like V4's CP2102N. Different FPGA pins required.
+   */
+  def QmtechFpgaDbV5 = Board(
+    name = "qmtech-fpga-db-v5",
+    devices = Seq(
+      // RP2040 DirtyJTAG + 2x UART (USB 1209:c0ca)
+      // DirtyJTAG pins: TMS=GP19, TDI=GP16, TDO=GP17, TCK=GP18
+      // UART0 (/dev/ttyACM0): GPIO0 (TX) → J3 pin 5 (J3_IO7), GPIO1 (RX) → J3 pin 6 (J3_IO8)
+      // UART1 (/dev/ttyACM1): GPIO4 (TX) → J2 pin 40 (J2_IO42), GPIO5 (RX) → J2 pin 39 (J2_IO41)
+      // UART1 on J2 — does NOT conflict with Ethernet (which is on J3)
+      // (V4 CP2102N was on J2:13/14 — V5 RP2040 UART0 uses J3:5/6, different connector!)
+      // Firmware: pico-dirtyJtag with BOARD_PICO config, CDC_UART_INTF_COUNT=2
+      BoardDevice("RP2040", mapping = Map(
+        "TXD" -> "J3:5", "RXD" -> "J3:6",
+        "TXD1" -> "J2:40", "RXD1" -> "J2:39")),
+      // RTL8211EG Ethernet PHY — full GMII 8-bit on J3 (same as V4)
+      BoardDevice("RTL8211EG", mapping = Map(
+        "MDC" -> "J3:14", "MDIO" -> "J3:13",
+        "RESET" -> "J3:24",
+        "GTX_CLK" -> "J3:27",
+        "TX_CLK" -> "J3:20",
+        "TX_EN" -> "J3:26", "TX_ER" -> "J3:15",
+        "TXD0" -> "J3:25", "TXD1" -> "J3:23", "TXD2" -> "J3:22", "TXD3" -> "J3:21",
+        "TXD4" -> "J3:19", "TXD5" -> "J3:18", "TXD6" -> "J3:17", "TXD7" -> "J3:16",
+        "RX_CLK" -> "J3:35", "RX_DV" -> "J3:40", "RX_ER" -> "J3:30",
+        "RXD0" -> "J3:39", "RXD1" -> "J3:38", "RXD2" -> "J3:37", "RXD3" -> "J3:36",
+        "RXD4" -> "J3:34", "RXD5" -> "J3:33", "RXD6" -> "J3:32", "RXD7" -> "J3:31")),
+      // VGA DAC (5R-6G-5B resistor network) — on J3 (same as V4)
+      BoardDevice("VGA", mapping = Map(
+        "HS" -> "J3:42", "VS" -> "J3:41",
+        "R0" -> "J3:58", "R1" -> "J3:56", "R2" -> "J3:57", "R3" -> "J3:54", "R4" -> "J3:55",
+        "G0" -> "J3:53", "G1" -> "J3:52", "G2" -> "J3:50", "G3" -> "J3:51",
+        "G4" -> "J3:48", "G5" -> "J3:49",
+        "B0" -> "J3:47", "B1" -> "J3:45", "B2" -> "J3:46", "B3" -> "J3:43", "B4" -> "J3:44")),
+      // Micro SD card — on J3 (same as V4)
+      BoardDevice("SD_CARD", mapping = Map(
+        "CLK" -> "J3:9", "CMD" -> "J3:10",
+        "DAT0" -> "J3:8", "DAT1" -> "J3:7",
+        "DAT2" -> "J3:12", "DAT3" -> "J3:11",
+        "CD" -> "J3:6")),
+      // No 7-segment display on V5 (removed, was on V4)
+      // No FPGA-accessible LEDs on V5 (only RP2040 LED on GPIO25)
+      // No FPGA-accessible switches on V5 (only RP2040 BOOTSEL + RUN buttons)
+      // PMOD J10 connector — routed through J2
+      BoardDevice("PMOD_J10", mapping = Map(
+        "pin1" -> "J2:15", "pin2" -> "J2:17",
+        "pin3" -> "J2:19", "pin4" -> "J2:21",
+        "pin7" -> "J2:16", "pin8" -> "J2:18",
+        "pin9" -> "J2:20", "pin10" -> "J2:22")),
+      // PMOD J11 connector — routed through J2 (conflicts with SD card on J3 via mating)
+      BoardDevice("PMOD_J11", mapping = Map(
+        "pin1" -> "J2:5", "pin2" -> "J2:7",
+        "pin3" -> "J2:9", "pin4" -> "J2:11",
+        "pin7" -> "J2:6", "pin8" -> "J2:8",
+        "pin9" -> "J2:10", "pin10" -> "J2:12"))))
+
   // ========================================================================
   // Composite board aliases
   // ========================================================================
@@ -602,9 +671,17 @@ object Board {
   def QmtechEP4CGX150_FPGA_DB_V4: Seq[Board] =
     Seq(QmtechEP4CGX150, QmtechFpgaDbV4)
 
+  /** QMTECH EP4CGX150 module + DB_FPGA_V5 daughter board (with RP2040) */
+  def QmtechEP4CGX150_FPGA_DB_V5: Seq[Board] =
+    Seq(QmtechEP4CGX150, QmtechFpgaDbV5)
+
   /** QMTECH XC7A100T module + DB_FPGA_V4 daughter board */
   def QmtechXC7A100T_FPGA_DB_V4: Seq[Board] =
     Seq(QmtechXC7A100T, QmtechFpgaDbV4)
+
+  /** QMTECH XC7A100T module + DB_FPGA_V5 daughter board (with RP2040) */
+  def QmtechXC7A100T_FPGA_DB_V5: Seq[Board] =
+    Seq(QmtechXC7A100T, QmtechFpgaDbV5)
 
   /** Alchitry Au V2 + Io V2 daughter board */
   def AlchitryAuV2_IoV2: Seq[Board] =
@@ -657,10 +734,20 @@ object Board {
 // System Assembly
 // ==========================================================================
 
-/** System assembly — a collection of boards forming the complete hardware */
+/**
+ * System assembly — a collection of boards forming the complete hardware.
+ *
+ * @param connectorMating Maps daughter board connector names to FPGA board connector names.
+ *                        E.g., Map("J2" -> "U5", "J3" -> "U4") means DB_FPGA J2 mates with
+ *                        EP4CGX150 U5, and DB_FPGA J3 mates with EP4CGX150 U4.
+ *                        Used by resolvePin to translate connector references in device
+ *                        mappings to the correct FPGA board connector.
+ *                        Empty for single-board systems or when connector names already match.
+ */
 case class SystemAssembly(
   name: String,
-  boards: Seq[Board]
+  boards: Seq[Board],
+  connectorMating: Map[String, String] = Map.empty
 ) {
   require(boards.exists(_.hasFpga), s"SystemAssembly '$name': at least one board must carry an FPGA")
 
@@ -695,15 +782,18 @@ case class SystemAssembly(
    * Resolve a pin reference to an FPGA pin name.
    *
    * Direct references ("PIN_A20", "N14") pass through unchanged.
-   * Connector references ("J2:14") are resolved via the FPGA board's
-   * connector mapping.
+   * Connector references ("J2:16") are resolved via connector mating
+   * (daughter board connector → FPGA board connector) then pin lookup.
+   * All pin numbers are physical connector pin numbers.
    */
   def resolvePin(ref: String): Option[String] = {
     if (ref.contains(":")) {
       val parts = ref.split(":")
-      val connector = parts(0)
+      val daughterConnector = parts(0)
       val pin = parts(1).toInt
-      fpgaBoard.connectors.get(connector).flatMap(_.get(pin))
+      // Map daughter board connector name to FPGA board connector name
+      val fpgaConnector = connectorMating.getOrElse(daughterConnector, daughterConnector)
+      fpgaBoard.connectors.get(fpgaConnector).flatMap(_.get(pin))
     } else {
       Some(ref)
     }
@@ -741,9 +831,16 @@ case class SystemAssembly(
 }
 
 object SystemAssembly {
+  // Connector mating for QMTECH core boards + DB_FPGA daughter board.
+  // DB_FPGA J2 mates with core board U5 (EP4CGX150) or U2 (XC7A100T).
+  // DB_FPGA J3 mates with core board U4 (both boards).
+  // Verified by physical inspection and QSF cross-reference.
+  private val ep4cgx150DbMating = Map("J2" -> "U5", "J3" -> "U4")
+  private val xc7a100tDbMating  = Map("J2" -> "U2", "J3" -> "U4")
+
   /** QMTECH EP4CGX150 + daughter board — primary dev platform */
   def qmtechWithDb = SystemAssembly("qmtech-ep4cgx150-db-v4",
-    Board.QmtechEP4CGX150_FPGA_DB_V4)
+    Board.QmtechEP4CGX150_FPGA_DB_V4, ep4cgx150DbMating)
 
   /** CYC5000 standalone */
   def cyc5000 = SystemAssembly("cyc5000", Seq(Board.CYC5000))
@@ -754,9 +851,17 @@ object SystemAssembly {
   /** Wukong standalone (two memories, dual-subsystem capable) */
   def wukong = SystemAssembly("wukong-xc7a100t", Seq(Board.WukongXC7A100T))
 
-  /** QMTECH XC7A100T core board + daughter board */
+  /** QMTECH XC7A100T core board + DB_FPGA_V4 daughter board */
   def xc7a100tWithDb = SystemAssembly("qmtech-xc7a100t-db-v4",
-    Board.QmtechXC7A100T_FPGA_DB_V4)
+    Board.QmtechXC7A100T_FPGA_DB_V4, xc7a100tDbMating)
+
+  /** QMTECH XC7A100T core board + DB_FPGA_V5 daughter board (with RP2040) */
+  def xc7a100tWithDbV5 = SystemAssembly("qmtech-xc7a100t-db-v5",
+    Board.QmtechXC7A100T_FPGA_DB_V5, xc7a100tDbMating)
+
+  /** QMTECH EP4CGX150 + DB_FPGA_V5 daughter board (with RP2040) */
+  def qmtechWithDbV5 = SystemAssembly("qmtech-ep4cgx150-db-v5",
+    Board.QmtechEP4CGX150_FPGA_DB_V5, ep4cgx150DbMating)
 
   /** Alchitry Au V2 + Io V2 daughter board */
   def alchitryAuV2WithIo = SystemAssembly("alchitry-au-v2-io-v2",

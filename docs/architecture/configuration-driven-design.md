@@ -11,7 +11,7 @@
 | 5 | Hardware Description (Parts, Board, Assembly) | **Done** — `jop.config` package with full board/FPGA/memory metadata |
 | 5b | Unified FPGA Top-Level (`JopTop`) | **Done** — replaces 7 board-specific tops, verified on hardware (QMTECH EP4CGX150) and simulation |
 | 5c | PLL / Reset / Memory Controller Factories | **Done** — `Pll.create()`, `ResetGenerator`, `MemoryControllerFactory` |
-| 5d | `JopTopVerilog` Entry Point | **Done** — 12 presets (incl. `max1000Sdram`, `ep4ce6Sdram`), backward-compatible entity names |
+| 5d | `JopTopVerilog` Entry Point | **Done** — 20+ presets (incl. XC7A100T + DB_FPGA V5), backward-compatible entity names |
 | 5e | Simulation Mode | **Done** — `JopTop(simulation=true)` bypasses PLL/MIG for Verilator |
 | 5f | Vendor-Specific Memory Primitives | **Done** — `MemoryStyle` config: `AlteraLpm` (lpm_rom/lpm_ram_dp BlackBox with .mif) vs `Generic` (SpinalHDL Mem). Auto-derived from FPGA manufacturer. Small FPGA presets disable caches. |
 | 5g | Pluggable I/O (HasBusIo / IoAddressAllocator) | **Done** — `IoDeviceDescriptor`, `HasBusIo` trait, `IoAddressAllocator`, compact I/O address layout (Sys 0xF0-0xFF, boot 0xEE-0xEF, auto-alloc 0xED down) |
@@ -29,7 +29,6 @@
 | `jop/config/JopConfig.scala` | Top-level config: presets, validation, entity naming |
 | `jop/config/Board.scala` | Board/FPGA/device metadata with pin mappings |
 | `jop/config/Parts.scala` | FPGA and memory device catalog |
-| `jop/config/IoConfig.scala` | I/O device configuration (boolean flags — to be replaced by DeviceInstance) |
 | `jop/config/JopCoreConfig.scala` | Per-core bytecode implementation choices |
 | `jop/io/IoDeviceDescriptor.scala` | Device descriptor: name, addrBits, interruptCount, factory |
 | `jop/io/IoAddressAllocator.scala` | Per-core I/O address allocation (fixed + auto, largest-first) |

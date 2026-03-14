@@ -59,6 +59,11 @@ object JopTopVerilog {
     case "wukongDdr3DspMul" => JopConfig.wukongDdr3DspMul
     case "wukongDdr3Fcu"    => JopConfig.wukongDdr3Fcu
     case "wukongDdr3Lcu"    => JopConfig.wukongDdr3Lcu
+    case "xc7a100tDbSerial" => JopConfig.xc7a100tDbSerial
+    case "xc7a100tDbFull"   => JopConfig.xc7a100tDbFull
+    case "xc7a100tDbSmp" =>
+      val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
+      JopConfig.xc7a100tDbSmp(n)
     case "minimum"          => JopConfig.minimum
     case "max1000Sdram"     => JopConfig.max1000Sdram
     case "ep4ce6Sdram"      => JopConfig.ep4ce6Sdram
@@ -67,8 +72,9 @@ object JopTopVerilog {
         "ep4cgx150Serial, ep4cgx150Bram, ep4cgx150BramGc, ep4cgx150BramSerial, " +
         "ep4cgx150HwMath, ep4cgx150HwFloat, ep4cgx150Smp, " +
         "cyc5000Serial, auSerial, wukongSdram, wukongDdr3, wukongBram, " +
-        "wukongFull, wukongSdrFull, wukongFullSmp, wukongSmp, minimum, " +
-        "max1000Sdram, ep4ce6Sdram")
+        "wukongFull, wukongSdrFull, wukongFullSmp, wukongSmp, " +
+        "xc7a100tDbSerial, xc7a100tDbFull, xc7a100tDbSmp, " +
+        "minimum, max1000Sdram, ep4ce6Sdram")
   }
 
   /** Generate Verilog from a JopConfig */
