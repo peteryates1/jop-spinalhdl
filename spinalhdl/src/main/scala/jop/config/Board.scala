@@ -46,14 +46,107 @@ case class BoardDevice(
 // PLL Type — which PLL family a board uses
 // ==========================================================================
 
-sealed trait PllType
+import spinal.core._
+import jop.system.{DramPll, Max1000Pll, Ep4ce6Pll, SdramExerciserClkWiz}
+import jop.system.pll.{Cyc5000Pll, WukongClkWizBlackBox, PllResult}
+import jop.ddr3.ClkWizBlackBox
+
+sealed trait PllType {
+  /** Instantiate the PLL and return all clock outputs. */
+  def create(memType: MemoryType, inputClock: Bool): PllResult
+}
+
 object PllType {
-  case object AlteraDramPll extends PllType      // EP4CGX150 (Cyclone IV GX)
-  case object AlteraCyc5000 extends PllType      // CYC5000 (Cyclone V)
-  case object AlteraMax1000 extends PllType      // MAX1000 (MAX10)
-  case object AlteraEp4ce6 extends PllType       // EP4CE6 (Cyclone IV E)
-  case object XilinxWukong extends PllType       // Wukong XC7A100T (SDR/DDR3/BRAM variants)
-  case object XilinxDdr3ClkWiz extends PllType   // Au V2, QmtechXC7A100T (DDR3 ClkWiz)
+
+  /** EP4CGX150 (Cyclone IV GX): DramPll megafunction.
+    * SDR: c1=80MHz system, c2=80MHz/-3ns SDRAM, c3=25MHz VGA/Eth.
+    * BRAM: c1=100MHz system. */
+  case object AlteraDramPll extends PllType {
+    def create(memType: MemoryType, inputClock: Bool) = {
+      val pll = DramPll()
+      pll.io.inclk0 := inputClock
+      pll.io.areset := False
+      memType match {
+        case MemoryType.SDRAM_SDR =>
+          PllResult(systemClk = Some(pll.io.c1), locked = pll.io.locked,
+            sdramClk = Some(pll.io.c2), ethClk = Some(pll.io.c3), vgaClk = Some(pll.io.c3))
+        case _ =>
+          PllResult(systemClk = Some(pll.io.c1), locked = pll.io.locked)
+      }
+    }
+  }
+
+  /** CYC5000 (Cyclone V): altera_pll megafunction.
+    * 12 MHz -> outclk_0=80MHz system, outclk_1=80MHz/-2.5ns SDRAM. */
+  case object AlteraCyc5000 extends PllType {
+    def create(memType: MemoryType, inputClock: Bool) = {
+      val pll = Cyc5000Pll()
+      pll.io.refclk := inputClock
+      pll.io.rst := False
+      PllResult(systemClk = Some(pll.io.outclk_0), locked = pll.io.locked,
+        sdramClk = Some(pll.io.outclk_1))
+    }
+  }
+
+  /** MAX1000 (MAX10): c0=80MHz system, c1=80MHz/-3ns SDRAM. */
+  case object AlteraMax1000 extends PllType {
+    def create(memType: MemoryType, inputClock: Bool) = {
+      val pll = Max1000Pll()
+      pll.io.inclk0 := inputClock
+      pll.io.areset := False
+      PllResult(systemClk = Some(pll.io.c0), locked = pll.io.locked,
+        sdramClk = Some(pll.io.c1))
+    }
+  }
+
+  /** EP4CE6 (Cyclone IV E): c0=80MHz system, c1=80MHz/-3ns SDRAM. */
+  case object AlteraEp4ce6 extends PllType {
+    def create(memType: MemoryType, inputClock: Bool) = {
+      val pll = Ep4ce6Pll()
+      pll.io.inclk0 := inputClock
+      pll.io.areset := False
+      PllResult(systemClk = Some(pll.io.c0), locked = pll.io.locked,
+        sdramClk = Some(pll.io.c1))
+    }
+  }
+
+  /** Wukong XC7A100T: Vivado clk_wiz variants per memory type.
+    * SDR: clk_100 system + clk_100_shift SDRAM + clk_125 Eth.
+    * DDR3: clk_100 MIG sys + clk_200 MIG ref + clk_125 Eth.
+    * BRAM: clk_100 system. */
+  case object XilinxWukong extends PllType {
+    def create(memType: MemoryType, inputClock: Bool) = memType match {
+      case MemoryType.SDRAM_SDR =>
+        val clkWiz = new SdramExerciserClkWiz
+        clkWiz.io.clk_in := inputClock
+        clkWiz.io.resetn := True
+        PllResult(systemClk = Some(clkWiz.io.clk_100), locked = clkWiz.io.locked,
+          sdramClk = Some(clkWiz.io.clk_100_shift), ethClk = Some(clkWiz.io.clk_125))
+      case MemoryType.SDRAM_DDR3 =>
+        val clkWiz = new ClkWizBlackBox
+        clkWiz.io.clk_in := inputClock
+        clkWiz.io.resetn := !ClockDomain.current.readResetWire
+        PllResult(locked = clkWiz.io.locked, migSysClk = Some(clkWiz.io.clk_100),
+          migRefClk = Some(clkWiz.io.clk_200), ethClk = Some(clkWiz.io.clk_125))
+      case _ =>
+        val clkWiz = new WukongClkWizBlackBox
+        clkWiz.io.clk_in := inputClock
+        clkWiz.io.resetn := False
+        PllResult(systemClk = Some(clkWiz.io.clk_100), locked = clkWiz.io.locked)
+    }
+  }
+
+  /** Au V2, QmtechXC7A100T (DDR3 ClkWiz):
+    * clk_100=MIG sys, clk_200=MIG ref, clk_125=Eth. */
+  case object XilinxDdr3ClkWiz extends PllType {
+    def create(memType: MemoryType, inputClock: Bool) = {
+      val clkWiz = new ClkWizBlackBox
+      clkWiz.io.clk_in := inputClock
+      clkWiz.io.resetn := !ClockDomain.current.readResetWire
+      PllResult(locked = clkWiz.io.locked, migSysClk = Some(clkWiz.io.clk_100),
+        migRefClk = Some(clkWiz.io.clk_200), ethClk = Some(clkWiz.io.clk_125))
+    }
+  }
 }
 
 // ==========================================================================
