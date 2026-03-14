@@ -95,15 +95,20 @@ object JopTopJvmTestsBramSim extends App {
       }
 
       val maxCycles = 120000000  // 120M cycles — enough for full JVM test suite
-      val reportInterval = 1000000
+      val reportInterval = 5000000
+      var txdTransitions = 0
+      var lastTxd = true
 
       logLine(s"Starting simulation for $maxCycles cycles...")
 
       for (cycle <- 0 until maxCycles) {
         dut.clockDomain.waitSampling()
 
+        val txd = dut.io.ser_txd.toBoolean
+        if (txd != lastTxd) { txdTransitions += 1; lastTxd = txd }
+
         if (cycle > 0 && cycle % reportInterval == 0) {
-          println(f"  [$cycle%9d cycles]")
+          println(f"  [$cycle%9d] txd_trans=$txdTransitions lines=${uartOutput.count(_ == '\n')}")
         }
       }
 

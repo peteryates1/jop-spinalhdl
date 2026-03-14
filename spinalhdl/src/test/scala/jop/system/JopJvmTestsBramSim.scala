@@ -20,14 +20,15 @@ object JopJvmTestsBramSim extends App {
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
-  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 256 * 1024 / 4)
+  val bramSize = 4 * 1024 * 1024  // 4MB (DoAll.jop is ~2.9MB)
+  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, bramSize / 4)
 
   println(s"Loaded ROM: ${romData.length} entries")
   println(s"Loaded RAM: ${ramData.length} entries")
   println(s"Loaded main memory: ${mainMemData.length} entries")
 
   SimConfig
-    .compile(JopCoreTestHarness(romData, ramData, mainMemData))
+    .compile(JopCoreTestHarness(romData, ramData, mainMemData, memSize = bramSize))
     .doSim { dut =>
       val log = new PrintWriter(logFilePath)
       var uartOutput = new StringBuilder
