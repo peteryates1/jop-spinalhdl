@@ -635,7 +635,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      devices = Map("uart" -> DeviceInstance("uart", devicePart = Some("RP2040"))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("RP2040"))))))
 
   /** XC7A100T + DB_FPGA V5 — DDR3, full I/O (Ethernet + VGA + SD) */
   def xc7a100tDbFull = JopConfig(
@@ -646,11 +646,11 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       devices = Map(
-        "uart" -> DeviceInstance("uart", devicePart = Some("RP2040")),
-        "eth" -> DeviceInstance("ethernet", params = Map("gmii" -> true, "phyDataWidth" -> 8),
+        "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("RP2040")),
+        "eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true, "phyDataWidth" -> 8),
           devicePart = Some("RTL8211EG")),
-        "vgaText" -> DeviceInstance("vgatext", devicePart = Some("VGA")),
-        "sdNative" -> DeviceInstance("sdnative", devicePart = Some("SD_CARD"))),
+        "vgaText" -> DeviceInstance(DeviceType.VgaText, devicePart = Some("VGA")),
+        "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))),
       coreConfig = JopCoreConfig(useDspMul = true, bytecodes = Map("*" -> "hw")))))
 
   /** XC7A100T + DB_FPGA V5 — DDR3 SMP */
