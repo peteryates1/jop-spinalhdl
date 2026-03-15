@@ -6,17 +6,24 @@ silent failures — wrong handlers, data corruption, or heap/stack collisions.
 
 ## Quick Reference: Risk Summary
 
-| Category | Cross-file check? | Risk | Failure mode |
-|----------|-------------------|------|-------------|
-| Method cache sizing | **NO** | High | Silent bytecode truncation |
-| Microcode widths | YES (`require`) | Low | Won't compile |
-| Bytecode opcodes | **NO** — 3 sources | Critical | Wrong handler runs silently |
-| I/O addresses | Partial — generated but microcode hardcoded | High | Reads/writes wrong device |
-| Stack layout | **NO** — STACK_OFF=64 assumed | Medium | Scratch area corruption |
-| Clock / baud rate | **NO** | Medium | UART garbage, timing drift |
-| Memory / heap | **NO** — Startup.java unaware of stack regions | High | Heap/stack collision |
-| SDRAM timing | **NO** — assumes correct device | Medium | Data corruption |
-| Memory style | **NO** — paths hardcoded | Medium | ROM loads zeros |
+| § | Category | Cross-file check? | Risk | Failure mode |
+|---|----------|-------------------|------|-------------|
+| 3 | Bytecode opcodes | **NO** — 3 sources | Critical | Wrong handler runs silently |
+| 14 | GC handle struct | **NO** | Critical | GC corrupts object graph |
+| 1 | Method cache sizing | **NO** | High | Silent bytecode truncation |
+| 4 | I/O addresses | Partial — generated but microcode hardcoded | High | Reads/writes wrong device |
+| 7 | Memory / heap | **NO** — Startup.java unaware of stack regions | High | Heap/stack collision |
+| 11 | Jopa assembler | **NO** | High | ROM/RAM layout mismatch |
+| 12 | JOPizer linker | **NO** | High | Class struct / method size mismatch |
+| 16 | Device register maps | **NO** | High | Driver misreads device status |
+| 5 | Stack layout | **NO** — STACK_OFF=64 assumed | Medium | Scratch area corruption |
+| 6 | Clock / baud rate | **NO** | Medium | UART garbage, timing drift |
+| 8 | SDRAM timing | **NO** — assumes correct device | Medium | Data corruption |
+| 9 | Memory style | **NO** — paths hardcoded | Medium | ROM loads zeros |
+| 10 | Interrupt config | Partial — generated | Medium | Wrong exception handler |
+| 13 | JopSim simulator | **NO** | Medium | Sim diverges from hardware |
+| 2 | Microcode widths | YES (`require`) | Low | Won't compile |
+| 15 | Runtime feature flags | YES (generated) | Low | Stale if not regenerated |
 
 ---
 
@@ -361,6 +368,238 @@ are hardcoded — no cross-check.
 
 ---
 
+## 11. Microcode Assembler (Jopa)
+
+The assembler (`Jopa.java`) has hardcoded ROM/RAM layout constants that must
+match the hardware pipeline.
+
+| Constant | File | Value | Must match |
+|----------|------|-------|------------|
+| `ADDRBITS` | `Jopa.java` | 12 | = pcWidth in JopCoreConfig |
+| `INSTLEN` | `Instruction.java` | 10 | = instrWidth in JopCoreConfig |
+| `DATABITS` | `Jopa.java` | INSTLEN + 2 = 12 | Derived |
+| `ROM_LEN` | `Jopa.java` | 2^ADDRBITS = 4096 | = ROM depth |
+| `RAM_LEN` | `Jopa.java` | 256 | = 2^ramWidth in JopCoreConfig |
+| `CONST_ADDR` | `Jopa.java` | 32 | Fixed ROM address for constant pool |
+
+### What breaks
+
+- `ADDRBITS ≠ pcWidth`: Assembled ROM has wrong depth, microcode
+  addresses wrap or overflow.
+- `RAM_LEN ≠ 2^ramWidth`: Assembler allows references to RAM addresses
+  that don't exist in hardware.
+- `INSTLEN ≠ instrWidth`: Instruction encoding misaligned, decode
+  extracts wrong fields.
+
+### Validation
+
+**NONE** — Jopa hardcodes these independently from JopCoreConfig.
+
+---
+
+## 12. JOPizer (Bytecode Linker)
+
+JOPizer converts Java class files into the `.jop` binary format. It has
+architecture assumptions about class structure and method sizing.
+
+| Constant | File | Value | Purpose |
+|----------|------|-------|---------|
+| `METHOD_MAX_SIZE` | `JOPizer.java` | 2048 | Max method bytecode bytes |
+| `CLS_HEAD` | `ClassStructConstants.java` | 5 | Class header size (words) |
+| `METH_STR` | `ClassStructConstants.java` | 2 | Method table entry size (words) |
+| `IMPORTANT_PTRS` | `ClassStructConstants.java` | 12 | Important pointers offset |
+
+### Class structure layout
+
+These offsets define the in-memory layout of JOP class/method structures.
+They are used by both JOPizer (linking) and the GC (scanning). Both must
+agree on the layout.
+
+| Constant | File | Value | Also in |
+|----------|------|-------|---------|
+| `CLS_HEAD` | `ClassStructConstants.java` | 5 | GC.java header scanning |
+| `METH_STR` | `ClassStructConstants.java` | 2 | Pipeline method dispatch |
+| `MTAB2CLINFO` | `ClassStructConstants.java` | -5 | GC.java, Startup.java |
+| `MTAB2GC_INFO` | `ClassStructConstants.java` | -3 | GC.java |
+| `CLINITS_OFFSET` | `ClassStructConstants.java` | 11 | Startup.java class init |
+
+### What breaks
+
+- `CLS_HEAD` mismatch: GC scans wrong header fields, corrupts live objects.
+- `METH_STR` mismatch: method table lookup returns wrong code pointer.
+- `METHOD_MAX_SIZE` too large for cache: method loads past cache end,
+  bytecode fetch returns garbage.
+
+### Validation
+
+**NONE** between JOPizer and hardware cache size. JOPizer allows 2048 bytes
+but hardware cache may only hold 512 words (2048 bytes at 4 bytes/word —
+this happens to match by coincidence, not by design).
+
+---
+
+## 13. JopSim (Software Simulator)
+
+JopSim simulates the JOP processor in Java for testing. It has its own
+memory and cache constants that should match hardware but don't always.
+
+| Constant | File | Value | Hardware equiv |
+|----------|------|-------|---------------|
+| `MAX_MEM` | `JopSim.java` | 262144 (1MB) | mainMemSize / 4 |
+| `MAX_STACK` | `JopSim.java` | 65536 | 2^ramWidth = 256 (mismatch!) |
+| `MIN_IO_ADDRESS` | `JopSim.java` | -128 | = IO_BASE |
+| `SYS_INT` | `JopSim.java` | 0xf0 | = SYS_BASE |
+| `SYS_EXC` | `JopSim.java` | 0xf1 | Not in hardware |
+
+### JOPConfig.java (Timing Model)
+
+Used by WCET analysis and simulator for cycle-accurate timing.
+
+| Constant | File | Value | Purpose |
+|----------|------|-------|---------|
+| `CACHE_BLOCKS` | `JOPConfig.java` | 16 | = 2^blockBits |
+| `CACHE_SIZE_WORDS` | `JOPConfig.java` | 1024 | Cache size in words |
+| `OBJECT_CACHE_ASSOCIATIVITY` | `JOPConfig.java` | 16 | Object cache ways |
+| `OBJECT_CACHE_WORDS_PER_LINE` | `JOPConfig.java` | 16 | Words per line |
+| `OBJECT_CACHE_HIT_CYCLES` | `JOPConfig.java` | 5 | Hit latency |
+| `OBJECT_CACHE_LOAD_FIELD_CYCLES` | `JOPConfig.java` | 8 | Field bypass latency |
+| `OBJECT_CACHE_LOAD_BLOCK_CYCLES` | `JOPConfig.java` | 8 | Block miss latency |
+| `READ_WAIT_STATES` | `JOPConfig.java` | 1 | Memory read wait |
+| `WRITE_WAIT_STATES` | `JOPConfig.java` | 2 | Memory write wait |
+| `CMP_CPUS` | `JOPConfig.java` | 8 | SMP CPU count |
+| `CMP_TIMESLOT` | `JOPConfig.java` | 10 | Arbiter timeslot cycles |
+
+### What breaks
+
+- `CACHE_BLOCKS ≠ 2^blockBits`: WCET analysis computes wrong miss penalty.
+- `CACHE_SIZE_WORDS ≠ actual`: WCET analysis overestimates cache capacity.
+- Wait state mismatches: WCET bounds are unsound (too optimistic or
+  too pessimistic).
+
+### Validation
+
+**NONE** — JOPConfig.java is completely independent from SpinalHDL config.
+WCET analysis results are only valid if these constants match actual hardware.
+
+---
+
+## 14. GC Handle Structure
+
+The garbage collector uses a fixed handle structure that must match between
+GC.java (runtime) and JOPizer (linking).
+
+| Constant | File | Value | Purpose |
+|----------|------|-------|---------|
+| `HANDLE_SIZE` | `GC.java` | 8 | Words per GC handle |
+| `MAX_HANDLES` | `GC.java` | 65536 | Maximum handle count |
+| `OFF_PTR` | `GC.java` | 0 | Object pointer field |
+| `OFF_MTAB_ALEN` | `GC.java` | 1 | Method table / array length |
+| `OFF_SPACE` | `GC.java` | 2 | Mark space / scope level |
+| `OFF_TYPE` | `GC.java` | 3 | Object type (obj/ref-arr/prim-arr) |
+| `OFF_NEXT` | `GC.java` | 4 | Free/use list next |
+| `OFF_GREY` | `GC.java` | 5 | Gray list threading |
+
+### What breaks
+
+- `HANDLE_SIZE` mismatch: handle table arithmetic wrong, GC overwrites
+  adjacent handles.
+- `OFF_*` mismatch: GC reads wrong field from handle, corrupts object graph.
+- `MAX_HANDLES` too large: handle table exceeds available memory.
+
+### Validation
+
+**NONE** — these are pure architectural constants with no cross-check.
+They are stable (unchanged since original JOP) but fragile if modified.
+
+---
+
+## 15. Runtime Feature Flags
+
+`Const.java` contains feature flags that gate runtime behavior. These are
+generated by `ConstGenerator` from `JopCoreConfig`.
+
+| Flag | File | Value | Drives |
+|------|------|-------|--------|
+| `SUPPORT_FLOAT` | `Const.java` | true/false | Software float emulation in JVMHelp |
+| `SUPPORT_DOUBLE` | `Const.java` | true/false | Software double emulation |
+| `HAS_ETHERNET` | `Const.java` | true/false | Network stack initialization |
+| `HAS_SD_CARD` | `Const.java` | true/false | SD card driver |
+| `HAS_VGA` | `Const.java` | true/false | VGA text controller |
+| `HAS_CONFIG_FLASH` | `Const.java` | true/false | Config flash support |
+| `NUM_INTERRUPTS` | `Const.java` | computed | Interrupt vector table size |
+
+### What breaks
+
+- Flag set but device not in hardware: Java code accesses non-existent I/O
+  registers, reads garbage.
+- Flag clear but device present: device never initialized, wasted hardware.
+- `NUM_INTERRUPTS` wrong: interrupt vector table too small, overwrite.
+
+### Validation
+
+Generated by `ConstGenerator` — safe as long as Const.java is regenerated
+when config changes. Risk is forgetting to regenerate.
+
+---
+
+## 16. Device Register Maps
+
+Each I/O device has register bit definitions in both SpinalHDL (hardware)
+and Java (driver). These must match exactly.
+
+### UART (BmbUart.scala ↔ SerialPort.java / Const.java)
+
+| Bit | SpinalHDL | Java | Value |
+|-----|-----------|------|-------|
+| TX empty (TDRE) | `txReady` | `MSK_UA_TDRE` | bit 0 |
+| RX full (RDRF) | `rxValid` | `MSK_UA_RDRF` | bit 1 |
+
+### Ethernet MAC (BmbEth.scala ↔ EthMac.java)
+
+| Bit | SpinalHDL | Java | Value |
+|-----|-----------|------|-------|
+| TX flush | status bit 0 | `STATUS_TX_FLUSH` | 1 << 0 |
+| TX ready | status bit 1 | `STATUS_TX_READY` | 1 << 1 |
+| RX flush | status bit 4 | `STATUS_RX_FLUSH` | 1 << 4 |
+| RX valid | status bit 5 | `STATUS_RX_VALID` | 1 << 5 |
+
+### SD Native (BmbSdNative.scala ↔ SdNative.java)
+
+| Bit | SpinalHDL | Java | Value |
+|-----|-----------|------|-------|
+| CMD busy | status bit 0 | `STATUS_CMD_BUSY` | 1 << 0 |
+| CMD resp valid | status bit 1 | `STATUS_CMD_RESP_VALID` | 1 << 1 |
+| CMD resp error | status bit 2 | `STATUS_CMD_RESP_ERR` | 1 << 2 |
+| CMD timeout | status bit 3 | `STATUS_CMD_TIMEOUT` | 1 << 3 |
+| Data busy | status bit 4 | `STATUS_DATA_BUSY` | 1 << 4 |
+| Data CRC error | status bit 5 | `STATUS_DATA_CRC_ERR` | 1 << 5 |
+| Data timeout | status bit 6 | `STATUS_DATA_TIMEOUT` | 1 << 6 |
+| Data done | status bit 7 | `STATUS_DATA_DONE` | 1 << 7 |
+| FIFO full | status bit 9 | `STATUS_FIFO_FULL` | 1 << 9 |
+| FIFO empty | status bit 10 | `STATUS_FIFO_EMPTY` | 1 << 10 |
+
+### VGA Text (BmbVgaText.scala ↔ VgaText.java)
+
+Register offsets and control bit definitions in both files.
+
+### VGA DMA (BmbVgaDma.scala ↔ VgaDma.java)
+
+Status/control bit definitions for framebuffer DMA.
+
+### What breaks
+
+- Bit position mismatch: driver reads wrong status, misinterprets device
+  state (e.g., thinks TX is ready when it's not → data loss).
+- Register offset mismatch: driver accesses wrong register entirely.
+
+### Validation
+
+**NONE** — each register map is defined independently in SpinalHDL and Java.
+Could be addressed by generating Java driver constants from SpinalHDL
+`DeviceType.registerNames` and a new `registerBits` field.
+
+---
+
 ## Dependency Graph
 
 ```
@@ -374,15 +613,23 @@ Board oscillator
   │           │
   │           └─→ JopCoreConfig
   │                 ├─→ pcWidth=12 ──→ ROM depth (4096)
+  │                 │     └─→ Jopa.ADDRBITS (NO LINK)
   │                 ├─→ instrWidth=10 ──→ decode bit slices
+  │                 │     └─→ Instruction.INSTLEN (NO LINK)
   │                 ├─→ jpcWidth=11 ──→ JBC RAM depth
   │                 │     └─→ MethodCache(jpcWidth, blockBits)
   │                 │           └─→ METHOD_SIZE_BITS (NO LINK to MAX_BC)
+  │                 │           └─→ JOPConfig.CACHE_SIZE_WORDS (NO LINK)
   │                 ├─→ ramWidth=8 ──→ stack depth (256)
+  │                 │     └─→ Jopa.RAM_LEN (NO LINK)
   │                 │     └─→ STACK_OFF=64 (NO LINK to Const.java)
   │                 ├─→ BytecodeConfig ──→ jump table patching
   │                 │     └─→ Instruction.java (NO LINK)
   │                 │     └─→ jvm.asm (NO LINK)
+  │                 ├─→ devices ──→ ConstGenerator ──→ Const.java
+  │                 │     └─→ Feature flags (HAS_ETHERNET, etc.)
+  │                 │     └─→ NUM_INTERRUPTS
+  │                 │     └─→ I/O addresses
   │                 └─→ memoryStyle ──→ ROM/RAM factories
   │                       └─→ .mif paths (HARDCODED)
   │
@@ -390,16 +637,81 @@ Board oscillator
   │     ├─→ bankWidth, rowWidth, columnWidth ──→ SDRAM controller
   │     └─→ casLatency ──→ read timing
   │
-  └─→ JopMemoryConfig
-        ├─→ addressWidth=24 ──→ BMB address width
-        ├─→ mainMemSize ──→ usableMemWords
-        │     └─→ stackRegionWordsPerCore ──→ spill base addr
-        │           └─→ Startup.java heap end (NO LINK)
-        └─→ JopIoSpace
-              ├─→ SYS_BASE=0xF0 ──→ microcode (HARDCODED)
-              ├─→ UART_BASE=0xEE ──→ microcode (HARDCODED)
-              └─→ IoAddressAllocator ──→ ConstGenerator ──→ Const.java
+  ├─→ JopMemoryConfig
+  │     ├─→ addressWidth=24 ──→ BMB address width
+  │     ├─→ mainMemSize ──→ usableMemWords
+  │     │     └─→ stackRegionWordsPerCore ──→ spill base addr
+  │     │           └─→ Startup.java heap end (NO LINK)
+  │     └─→ JopIoSpace
+  │           ├─→ SYS_BASE=0xF0 ──→ microcode (HARDCODED)
+  │           ├─→ UART_BASE=0xEE ──→ microcode (HARDCODED)
+  │           └─→ IoAddressAllocator ──→ ConstGenerator ──→ Const.java
+  │
+  ├─→ SpinalHDL device RTL (BmbEth, BmbSdNative, BmbVgaText, ...)
+  │     └─→ Register bit definitions (NO LINK to Java drivers)
+  │           └─→ EthMac.java, SdNative.java, VgaText.java, VgaDma.java
+  │
+  └─→ Java Toolchain
+        ├─→ Jopa (assembler)
+        │     ├─→ ADDRBITS=12 (NO LINK to pcWidth)
+        │     ├─→ RAM_LEN=256 (NO LINK to ramWidth)
+        │     └─→ ROM_LEN=4096 (NO LINK to pcWidth)
+        ├─→ JOPizer (linker)
+        │     ├─→ METHOD_MAX_SIZE=2048 (NO LINK to cache size)
+        │     └─→ ClassStructConstants (NO LINK to GC.java)
+        ├─→ JopSim (simulator)
+        │     ├─→ MAX_MEM=262144 (NO LINK to mainMemSize)
+        │     └─→ JOPConfig cache/timing (NO LINK to hardware)
+        └─→ GC.java (runtime)
+              └─→ HANDLE_SIZE=8, OFF_* fields (NO LINK to JOPizer)
 ```
 
 Arrows marked **(NO LINK)** or **(HARDCODED)** are where mismatches can
 occur silently.
+
+---
+
+## File Index
+
+All files containing hardware-dependent constants:
+
+### SpinalHDL (source of truth)
+- `jop/types/JopConstants.scala` — METHOD_SIZE_BITS
+- `jop/config/JopCoreConfig.scala` — pcWidth, instrWidth, jpcWidth, blockBits, ramWidth
+- `jop/config/JopConfig.scala` — presets, clkFreq
+- `jop/config/Parts.scala` — SDRAM timing, FPGA families
+- `jop/memory/JopMemoryConfig.scala` — addressWidth, mainMemSize, burstLen
+- `jop/memory/JopIoSpace.scala` — SYS_BASE, UART_BASE
+- `jop/memory/MethodCache.scala` — methodSizeBits
+- `jop/io/BmbUart.scala` — UART divider
+- `jop/io/BmbEth.scala` — Ethernet register bits
+- `jop/io/BmbSdNative.scala` — SD register bits
+- `jop/io/BmbVgaText.scala` — VGA register bits
+- `jop/io/BmbVgaDma.scala` — VGA DMA register bits
+- `jop/generate/ConstGenerator.scala` — generates Const.java
+
+### Java Tools (must match hardware)
+- `com/jopdesign/tools/Jopa.java` — ADDRBITS, RAM_LEN, ROM_LEN
+- `com/jopdesign/tools/Instruction.java` — INSTLEN, opcode table
+- `com/jopdesign/tools/Cache.java` — MAX_BC, MAX_BC_MASK
+- `com/jopdesign/tools/JopSim.java` — MAX_MEM, MAX_STACK, MIN_IO_ADDRESS
+- `com/jopdesign/build/JOPizer.java` — METHOD_MAX_SIZE
+- `com/jopdesign/build/ClassStructConstants.java` — CLS_HEAD, METH_STR
+- `com/jopdesign/common/processormodel/JOPConfig.java` — cache/timing model
+
+### Java Runtime (must match hardware)
+- `com/jopdesign/sys/Const.java` — I/O addresses, exceptions, feature flags (generated)
+- `com/jopdesign/sys/GC.java` — HANDLE_SIZE, OFF_* handle fields
+- `com/jopdesign/sys/Startup.java` — heap fallback, MAX_STACK
+- `com/jopdesign/sys/Memory.java` — IM_SIZE
+- `com/jopdesign/hw/EthMac.java` — Ethernet status/control bits
+- `com/jopdesign/hw/SdNative.java` — SD status/control bits
+- `com/jopdesign/hw/VgaText.java` — VGA color palette, status bits
+- `com/jopdesign/hw/VgaDma.java` — VGA DMA control bits
+- `com/jopdesign/io/SerialPort.java` — UART status masks
+
+### Microcode (must match hardware)
+- `asm/src/jvm.asm` — I/O bipush values, handler labels, scratch offsets
+
+### Scripts (must match hardware)
+- `fpga/scripts/download.py` — baud rate
