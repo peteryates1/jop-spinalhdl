@@ -166,6 +166,26 @@ Optional per-core IEEE 754 single-precision FPU via **FloatComputeUnit** (pipeli
 - **Future**: Protect the halt flag with CmpSync lock for safe multi-core allocation (currently only core 0 allocates). Any core triggering GC should acquire the lock first, then set gcHalt.
 - **Verified**: CYC5000 SMP hardware — NCoreHelloWorld running 3+ minutes through multiple GC cycles with no corruption. SMP GC BRAM sim shows `halted=.H` during GC rounds.
 
+## Dual-Cluster Architecture (Wukong)
+
+Two independent JOP clusters running concurrently in a single bitstream on the
+QMTECH XC7A100T Wukong V3 board, exploiting both on-board DDR3 and SDR SDRAM.
+
+- **Cluster 0 (DDR3)**: All compute units (ICU+FCU+LCU+DCU+DSP imul), 100 MHz
+  (MIG `ui_clk`), 256 MB DDR3 with 32KB L2 cache, CH340N UART (E3/F3)
+- **Cluster 1 (SDR SDRAM)**: Integer-only (no compute units), 80 MHz
+  (`clk_wiz_1`), 32 MB SDR SDRAM, J12 header UART (TX=U14, RX=V14)
+- **Presets**: `wukongDualIndependent` (1+1 cores), `wukongDualSmp N` (N+N cores)
+- **Entity name**: `JopDualWukongTop`
+- **Implementation**: `JopTop` iterates `config.systems`, instantiating one
+  `JopCluster` + memory controller per system. Each cluster has its own clock
+  domain and reset, with independent serial boot on separate UARTs.
+- **FPGA utilization**: 1+1 = 28,043 LUTs (44.2%), 2+2 = 46,644 LUTs (73.6%)
+- **Timing**: Both configs pass timing (WNS +0.034 ns / +0.013 ns)
+- **Build**: `make dual-generate dual-create-ip dual-build`
+- **Future**: Phase 3 (message queues via `StreamFifoCC`), Phase 4 (watchdog FSM).
+  See `docs/architecture/dual-subsystem-design.md` for full design document.
+
 ## Debug Subsystem (`jop.debug` package)
 
 - **DebugConfig**: numBreakpoints (0-8), baudRate, hasMemAccess

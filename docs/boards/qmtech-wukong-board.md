@@ -445,6 +445,37 @@ Alchitry Au V2 (LruCacheCore + CacheToMigAdapter) with `WukongMigBlackBox`
 - **Features**: Same hang detector / DiagUart mux as SDRAM top
 - **Build**: `make ddr3-generate && make ddr3-build`
 
+### JopDualWukongTop — Dual-Cluster (wukongDualIndependent / wukongDualSmp)
+
+Two independent JOP clusters in a single bitstream, each with its own memory
+controller, clock domain, and UART. Cluster 0 runs on DDR3 with all compute
+units; Cluster 1 runs on SDR SDRAM with integer-only cores.
+
+- **Presets**: `JopConfig.wukongDualIndependent` (1+1 cores), `JopConfig.wukongDualSmp(n)` (N+N cores)
+- **Generate**: `sbt "runMain jop.system.JopTopVerilog wukongDualIndependent"` or `sbt "runMain jop.system.JopTopVerilog wukongDualSmp 2"`
+- **Entity name**: `JopDualWukongTop`
+
+**Cluster 0 (DDR3)**:
+- Clock: 100 MHz from MIG `ui_clk`
+- Memory: 256 MB DDR3 (MT41K128M16JT), 32KB write-back L2 cache
+- Compute: ICU + FCU + LCU + DCU + DSP imul
+- UART: CH340N USB bridge (E3/F3)
+
+**Cluster 1 (SDR SDRAM)**:
+- Clock: 80 MHz from `clk_wiz_1`
+- Memory: 32 MB SDR SDRAM (W9825G6KH-6), CAS=3, direct BMB
+- Compute: None (integer-only microcode)
+- UART: J12 header pins (TX=U14, RX=V14)
+
+**FPGA utilization**:
+
+| Config | LUTs | % of XC7A100T | WNS |
+|--------|:----:|:-------------:|:---:|
+| 1+1 cores | 28,043 | 44.2% | +0.034 ns |
+| 2+2 cores | 46,644 | 73.6% | +0.013 ns |
+
+- **Build**: `make dual-generate && make dual-create-ip && make dual-build`
+
 ### SdramExerciserWukongTop — SDRAM Test
 
 Standalone SDRAM exerciser (no JOP). Three tests loop continuously, reporting
@@ -484,6 +515,11 @@ make sdram-create-ip      # ClkWiz IP (once)
 make jop-sdram-build      # Vivado synth + impl + bitstream
 make jop-sdram-program    # openFPGALoader via dirtyJtag
 make jop-sdram-monitor    # UART monitor (after serial download)
+
+# Dual-cluster (wukongDualIndependent — DDR3 + SDR, 1+1 cores)
+make dual-generate        # sbt "runMain jop.system.JopTopVerilog wukongDualIndependent"
+make dual-create-ip       # ClkWiz + MIG IP (once)
+make dual-build           # Vivado synth + impl + bitstream
 ```
 
 ### Built-In Peripherals vs DB_FPGA

@@ -1,6 +1,6 @@
-# Dual-Subsystem Architecture — Design Proposal
+# Dual-Subsystem Architecture
 
-**Status**: Proposal — for discussion and future implementation.
+**Status**: Implemented (Phase 2) — dual independent clusters running concurrently.
 
 **Target board**: QMTECH XC7A100T Wukong V3 (DDR3 + SDR SDRAM on-board).
 
@@ -353,71 +353,76 @@ Both subsystems boot independently from their respective memories:
 Alternative: both subsystems have their own config flash loader and boot
 independently from SPI flash partitions.
 
-## Possible Implementation Phases
+## Implementation Status
 
-These phases are a suggested order of incremental development. Each phase
-is independently useful and validates a subset of the design.
+### Phase 1: Single-Subsystem DDR3 -- DONE
 
-### Phase 1: Single-Subsystem DDR3
+JOP cluster running on DDR3 via MIG on Wukong. Validated DDR3 memory path,
+MIG integration, and pin assignments. Serial boot + GC + 59/59 JVM tests.
 
-Get one JOP cluster running on DDR3 via MIG on the Wukong board. This
-validates the DDR3 memory path, MIG integration, and pin assignments.
+### Phase 2: Dual Memory Controllers -- DONE
 
-- Generate MIG IP for Wukong DDR3 pins
-- Adapt `JopDdr3Top` for Wukong (clock, pins, reset)
-- Verify basic operation (UART echo, LED blink)
+Two independent JOP clusters running concurrently in a single bitstream.
+Each cluster has its own clock domain, memory controller, and UART.
 
-### Phase 2: Dual Memory Controllers
+**Implementation**:
+- `JopTop` extended with multi-system support: iterates `config.systems`,
+  instantiating one `JopCluster` + memory controller per system
+- Cluster 0 (DDR3): All compute units (ICU+FCU+LCU+DCU+DSP imul), 100 MHz
+  (MIG `ui_clk`), CH340N UART (E3/F3)
+- Cluster 1 (SDR SDRAM): No compute units, 80 MHz (`clk_wiz_1`), J12 header
+  UART (U14/V14)
+- Each cluster boots independently via serial download on its own UART
+- Entity name: `JopDualWukongTop`
 
-Run both SDR SDRAM and DDR3 controllers simultaneously. Two independent
-JOP clusters, no inter-connection yet.
+**Presets**:
+- `wukongDualIndependent` — 1 DDR3 core + 1 SDR core (independent serial boot)
+- `wukongDualSmp N` — N DDR3 cores + N SDR cores (SMP within each cluster)
 
-- Instantiate both memory controllers in one top-level
-- Separate clock domains (80 MHz SDR, 100 MHz DDR3)
-- Independent UART for each subsystem (for debug)
-- Verify both clusters run concurrently
+**FPGA utilization** (XC7A100T-2FGG676):
 
-### Phase 3: Message Queues
+| Config | LUTs | % | WNS |
+|--------|:----:|:-:|:---:|
+| 1+1 cores (`wukongDualIndependent`) | 28,043 | 44.2% | +0.034 ns |
+| 2+2 cores (`wukongDualSmp 2`) | 46,644 | 73.6% | +0.013 ns |
 
-Add `StreamFifoCC` pair between subsystems. Implement `BmbMsgQueue`
-peripheral (BMB slave wrapping the FIFO interfaces).
+**FPGA build**:
+```bash
+cd fpga/qmtech-xc7a100t-wukong
+make dual-generate       # sbt "runMain jop.system.JopTopVerilog wukongDualIndependent"
+make dual-create-ip      # ClkWiz + MIG IP (once)
+make dual-build          # Vivado synth + impl + bitstream
+```
 
-- Hardware: CDC FIFOs + BMB slave wrapper
-- Software: `MsgQueue` Java class
-- Test: echo messages between subsystems
+**Clock domains**:
+- DDR3 cluster: 100 MHz from MIG `ui_clk` (derived from 200 MHz MIG reference)
+- SDR cluster: 80 MHz from `clk_wiz_1` (50 MHz oscillator input)
+- Both PLLs run from the same 50 MHz board oscillator (M21)
 
-### Phase 4: Watchdog FSM
+### Phase 3: Message Queues -- Future
 
-Add independent watchdog. Heartbeat I/O register in each subsystem.
+`StreamFifoCC` pair between subsystems for cross-cluster communication.
 
-- Pure RTL module, 50 MHz oscillator clock
-- Synchronizers for heartbeat inputs
-- Timeout + reset logic
-- LED status indicators
-- Test: verify reset on heartbeat timeout
+### Phase 4: Watchdog FSM -- Future
 
-### Phase 5: Heterogeneous Cores
+Independent watchdog clocked from raw 50 MHz oscillator.
 
-Configure light cores (SDR) and heavy cores (DDR3) with different
-`JopCoreConfig` / compute units. Move I/O peripherals to SDR cluster,
-compute peripherals to DDR3 cluster.
+### Phase 5: Heterogeneous Cores -- Partially Done
 
-- SDR: integer-only microcode, Ethernet + SD + UART
-- DDR3: full compute units, VGA DMA
-- Work offload demo application
+The dual-cluster design already achieves heterogeneous core differentiation:
+DDR3 cluster has full compute units, SDR cluster is integer-only. Remaining
+work is I/O peripheral migration (Ethernet, SD to SDR cluster only).
 
 ## Open Questions
 
-- **Core count per subsystem**: 1-4 each shown here, but the right split
-  depends on target applications. A single I/O core may suffice for many
-  use cases.
 - **Message queue depth**: 16 vs 64 entries — depends on message size and
   latency tolerance. Larger FIFOs buffer more but cost distributed RAM.
 - **Shared BRAM vs FIFO-only**: For bulk data (e.g. Ethernet frames), a
   shared dual-port BRAM may be more efficient than streaming through FIFOs.
   Trade-off is added complexity and potential coherence issues.
-- **Boot coordination**: Who boots first? Does the SDR subsystem load DDR3
-  firmware, or do both boot independently from flash?
+- **Boot coordination**: Currently both clusters boot independently via
+  serial download. Future: SDR subsystem loads DDR3 firmware, or both boot
+  from flash partitions.
 - **Interrupt vs polling**: Message arrival could trigger an interrupt instead
   of polling. Adds hardware complexity but reduces latency.
 - **Watchdog policy**: Should failure of one subsystem reset the other?

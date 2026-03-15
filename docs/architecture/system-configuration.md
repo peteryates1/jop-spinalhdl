@@ -470,7 +470,13 @@ JopConfig.wukongSdram    // SDR SDRAM via SdramCtrlNoCke
 JopConfig.wukongBram     // On-chip BRAM (simulation boot mode)
 JopConfig.wukongFull     // DDR3 + full HW: ICU+FCU+LCU+DCU+DSP imul, Ethernet, SD
 JopConfig.wukongSdrFull  // SDR + full HW: ICU+FCU+LCU+DCU+DSP imul, Ethernet, SD
-// All use SystemAssembly.wukong with DeviceDriver.UartCh340
+// All single-system use SystemAssembly.wukong with DeviceDriver.UartCh340
+
+// Dual-cluster (two independent JOP clusters in one bitstream):
+JopConfig.wukongDualIndependent  // DDR3 (all CUs, 100 MHz) + SDR (no CUs, 80 MHz), 1+1 cores
+JopConfig.wukongDualSmp(n)       // DDR3 (all CUs, 100 MHz) + SDR (no CUs, 80 MHz), N+N cores
+// Cluster 0: DDR3, CH340N UART (E3/F3). Cluster 1: SDR, J12 UART (U14/V14).
+// Entity name: JopDualWukongTop
 ```
 
 ### Compute Unit Presets
