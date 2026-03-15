@@ -13,20 +13,20 @@ IP_ROOT="$REPO_ROOT/fpga/qmtech-xc7a100t-wukong/vivado/ip"
 XDC="$REPO_ROOT/fpga/qmtech-xc7a100t-wukong/vivado/constraints/wukong_ddr3_base.xdc"
 export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 
-LABELS="baseline no_acache icu_full icu_dsp fcu lcu dcu all_cu eth sd sd_spi eth_sd full ocache_32 ocache_64 ocache_16f acache_32 acache_8e mcache_32b"
+LABELS="baseline no_icu no_acache icu_full icu_dsp fcu lcu dcu all_cu eth sd sd_spi eth_sd full ocache_32 ocache_64 ocache_16f acache_32 acache_8e mcache_32b"
 
 mkdir -p "$BUILD_DIR"
 
 # Step 1: Generate all Verilog variants (fast, sequential via sbt)
+# Each variant gets its own subdirectory for .v and .bin files to avoid collisions.
 echo "=== Generating all Verilog variants ==="
 for label in $LABELS; do
     echo "--- $label ---"
     cd "$REPO_ROOT"
     sbt -error "runMain jop.system.UtilSweep $label" 2>&1 | tail -3
-    # Copy the generated .v to a unique name (entity is always JopDdr3WukongTop)
-    cp "$RTL_DIR/JopDdr3WukongTop.v" "$BUILD_DIR/${label}.v"
-    # Also copy any .bin files needed
-    cp "$RTL_DIR"/JopDdr3WukongTop.v_*.bin "$BUILD_DIR/" 2>/dev/null || true
+    mkdir -p "$BUILD_DIR/$label"
+    cp "$RTL_DIR/JopDdr3WukongTop.v" "$BUILD_DIR/$label/JopDdr3WukongTop.v"
+    cp "$RTL_DIR"/JopDdr3WukongTop.v_*.bin "$BUILD_DIR/$label/" 2>/dev/null || true
 done
 
 # Step 2: Create per-variant TCL scripts and run synth (2 at a time)
@@ -38,10 +38,11 @@ synth_one() {
     cat > "$logdir/synth.tcl" << TCLEOF
 read_ip [glob $IP_ROOT/clk_wiz_0/clk_wiz_0.xci]
 read_ip [glob $IP_ROOT/mig_7series_0/mig_7series_0.xci]
-read_verilog $BUILD_DIR/${label}.v
+read_verilog $logdir/JopDdr3WukongTop.v
 read_xdc $XDC
 synth_design -top JopDdr3WukongTop -part xc7a100tfgg676-2
 report_utilization -file $logdir/util.rpt
+report_utilization -hierarchical -hierarchical_depth 3 -file $logdir/util_hier.rpt
 TCLEOF
 
     echo "--- Synthesizing $label ---"
@@ -102,3 +103,13 @@ done
 echo ""
 echo "=== RESULTS ==="
 column -t -s, "$BUILD_DIR/results.csv"
+
+echo ""
+echo "=== HIERARCHICAL BREAKDOWN (sd variant — SdNative investigation) ==="
+if [ -f "$BUILD_DIR/sd/util_hier.rpt" ]; then
+    # Show top-level modules and any SD-related hierarchy
+    grep -E '^\|.*\|.*\|' "$BUILD_DIR/sd/util_hier.rpt" | head -40
+    echo ""
+    echo "--- SdNative module (if visible) ---"
+    grep -i 'sdnative\|sd_native' "$BUILD_DIR/sd/util_hier.rpt" || echo "(not found — may be flattened)"
+fi
