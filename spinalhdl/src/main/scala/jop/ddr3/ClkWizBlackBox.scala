@@ -3,7 +3,7 @@ package jop.ddr3
 import spinal.core._
 
 // BlackBox for Vivado-generated clock wizard.
-class ClkWizBlackBox extends BlackBox {
+class ClkWizBlackBox(instanceName: String = "clk_wiz_0") extends BlackBox {
   val io = new Bundle {
     val resetn = in Bool()
     val clk_in = in Bool()
@@ -13,6 +13,6 @@ class ClkWizBlackBox extends BlackBox {
     val locked = out Bool()
   }
 
-  setBlackBoxName("clk_wiz_0")
+  setBlackBoxName(instanceName)
   noIoPrefix()
 }

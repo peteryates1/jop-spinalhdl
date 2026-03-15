@@ -64,6 +64,10 @@ object JopTopVerilog {
     case "xc7a100tDbSmp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.xc7a100tDbSmp(n)
+    case "wukongDualIndependent" => JopConfig.wukongDualIndependent
+    case "wukongDualSmp" =>
+      val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
+      JopConfig.wukongDualIndependentSmp(n)
     case "minimum"          => JopConfig.minimum
     case "max1000Sdram"     => JopConfig.max1000Sdram
     case "ep4ce6Sdram"      => JopConfig.ep4ce6Sdram
@@ -73,6 +77,7 @@ object JopTopVerilog {
         "ep4cgx150HwMath, ep4cgx150HwFloat, ep4cgx150Smp, " +
         "cyc5000Serial, auSerial, wukongSdram, wukongDdr3, wukongBram, " +
         "wukongFull, wukongSdrFull, wukongFullSmp, wukongSmp, " +
+        "wukongDualIndependent, wukongDualSmp, " +
         "xc7a100tDbSerial, xc7a100tDbFull, xc7a100tDbSmp, " +
         "minimum, max1000Sdram, ep4ce6Sdram")
   }
@@ -82,7 +87,8 @@ object JopTopVerilog {
     jopConfig: JopConfig,
     jopFilePath: Option[String] = None
   ): Unit = {
-    val sys = jopConfig.system
+    val isMultiSystem = jopConfig.systems.length > 1
+    val sys = jopConfig.resolvedSystems.head
     val isBram = !jopConfig.resolveMemory(sys).isDefined
     val bramSize = sys.coreConfig.memConfig.mainMemSize.toInt
 
@@ -101,10 +107,16 @@ object JopTopVerilog {
     println(s"  Entity: ${jopConfig.entityName}")
     println(s"  Board:  ${jopConfig.assembly.fpgaBoard.name}")
     println(s"  FPGA:   ${jopConfig.fpga.name}")
-    println(s"  Memory: ${sys.memory}")
+    if (isMultiSystem) {
+      jopConfig.systems.foreach { s =>
+        println(s"  System '${s.name}': memory=${s.memory}, cores=${s.cpuCnt}, clock=${s.clkFreq}")
+      }
+    } else {
+      println(s"  Memory: ${sys.memory}")
+      println(s"  Cores:  ${sys.cpuCnt}, Clock: ${sys.clkFreq}")
+    }
     println(s"  ROM:    ${sys.romPath} (${romData.length} entries)")
     println(s"  RAM:    ${sys.ramPath} (${ramData.length} entries)")
-    println(s"  Cores:  ${sys.cpuCnt}, Clock: ${sys.clkFreq}")
 
     val spinalConfig = JopSpinalConfig(jopConfig)
 

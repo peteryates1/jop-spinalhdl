@@ -12,7 +12,7 @@ import jop.memory.{BmbSdramCtrl32, JopMemoryConfig, SdramDeviceInfo}
  * ClkWiz BlackBox for SDRAM exerciser on Wukong board.
  * Vivado clk_wiz_0: 50 MHz input -> 100 MHz + 100 MHz phase-shifted outputs.
  */
-class SdramExerciserClkWiz extends BlackBox {
+class SdramExerciserClkWiz(instanceName: String = "clk_wiz_0") extends BlackBox {
   val io = new Bundle {
     val resetn        = in Bool()
     val clk_in        = in Bool()
@@ -22,7 +22,7 @@ class SdramExerciserClkWiz extends BlackBox {
     val locked        = out Bool()
   }
 
-  setBlackBoxName("clk_wiz_0")
+  setBlackBoxName(instanceName)
   noIoPrefix()
 }
 

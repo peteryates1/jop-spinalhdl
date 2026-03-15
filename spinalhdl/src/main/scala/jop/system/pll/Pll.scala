@@ -24,7 +24,7 @@ case class Cyc5000Pll() extends BlackBox {
 /**
  * Wukong BRAM ClkWiz BlackBox — Vivado clk_wiz_0: 50 MHz -> 100 MHz.
  */
-class WukongClkWizBlackBox extends BlackBox {
+class WukongClkWizBlackBox(instanceName: String = "clk_wiz_0") extends BlackBox {
   val io = new Bundle {
     val resetn  = in Bool()
     val clk_in  = in Bool()
@@ -32,7 +32,7 @@ class WukongClkWizBlackBox extends BlackBox {
     val locked  = out Bool()
   }
 
-  setBlackBoxName("clk_wiz_0")
+  setBlackBoxName(instanceName)
   noIoPrefix()
 }
 
@@ -67,9 +67,9 @@ case class PllResult(
  */
 object Pll {
 
-  def create(board: Board, memType: MemoryType, inputClock: Bool): PllResult = {
+  def create(board: Board, memType: MemoryType, inputClock: Bool, systemIndex: Int = 0): PllResult = {
     val pllType = board.pllType.getOrElse(
       throw new RuntimeException(s"Board '${board.name}' has no pllType defined"))
-    pllType.create(memType, inputClock)
+    pllType.create(memType, inputClock, systemIndex)
   }
 }

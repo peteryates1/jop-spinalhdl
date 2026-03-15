@@ -58,6 +58,13 @@ sbt "runMain jop.system.JopTopVerilog <preset> [args]"
 | `wukongSdram` | Wukong XC7A100T | SDR SDRAM | `JopSdramWukongTop` |
 | `wukongDdr3` | Wukong XC7A100T | DDR3 | `JopDdr3WukongTop` |
 | `wukongBram` | Wukong XC7A100T | BRAM | `JopBramWukongTop` |
+| `wukongDdr3AllCu` | Wukong XC7A100T | DDR3 | `JopDdr3WukongTop` |
+| `wukongSdrAllCu` | Wukong XC7A100T | SDR SDRAM | `JopSdramWukongTop` |
+| `wukongFull` | Wukong XC7A100T | DDR3 | `JopDdr3WukongTop` |
+| `wukongSdrFull` | Wukong XC7A100T | SDR SDRAM | `JopSdramWukongTop` |
+| `wukongSmp N` | Wukong XC7A100T | DDR3 | `JopSmpDdr3WukongTop` |
+| `wukongDualIndependent` | Wukong XC7A100T | DDR3 + SDR | `JopDualWukongTop` |
+| `wukongDualSmp N` | Wukong XC7A100T | DDR3 + SDR | `JopDualWukongTop` |
 | `minimum` | QMTECH EP4CGX150 | SDR SDRAM | `JopSdramTop` |
 | `max1000Sdram` | Arrow MAX1000 | SDR SDRAM | `JopMax1000SdramTop` |
 | `ep4ce6Sdram` | Generic EP4CE6 | SDR SDRAM | `JopEp4ce6SdramTop` |

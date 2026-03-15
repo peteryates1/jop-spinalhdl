@@ -251,20 +251,25 @@ case class JopConfig(
 
   /** Entity name derived from Board properties (entityTag, entitySuffix) and memory type */
   def entityName: String = {
-    val sys = systems.head
     val board = assembly.fpgaBoard
-    val smp = if (sys.cpuCnt >= 2) "Smp" else ""
-    val platform = if (board.entityTag.nonEmpty) {
-      board.entityTag
+    if (systems.length > 1) {
+      // Multi-system: JopDual<suffix>Top
+      s"JopDual${board.entitySuffix}Top"
     } else {
-      val memPart =
-        if (memoryTypes.contains(MemoryType.SDRAM_DDR3)) "Ddr3"
-        else if (memoryTypes.contains(MemoryType.SDRAM_SDR)) "Sdram"
-        else if (sys.bootMode == BootMode.Serial) "BramSerial"
-        else "Bram"
-      memPart + board.entitySuffix
+      val sys = systems.head
+      val smp = if (sys.cpuCnt >= 2) "Smp" else ""
+      val platform = if (board.entityTag.nonEmpty) {
+        board.entityTag
+      } else {
+        val memPart =
+          if (memoryTypes.contains(MemoryType.SDRAM_DDR3)) "Ddr3"
+          else if (memoryTypes.contains(MemoryType.SDRAM_SDR)) "Sdram"
+          else if (sys.bootMode == BootMode.Serial) "BramSerial"
+          else "Bram"
+        memPart + board.entitySuffix
+      }
+      s"Jop${smp}${platform}Top"
     }
-    s"Jop${smp}${platform}Top"
   }
 }
 
@@ -427,6 +432,21 @@ object JopConfig {
         devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))),
     interconnect = Some(InterconnectConfig(fifoDepth = 64)),
     monitors = Seq(WatchdogConfig(timeoutMs = 2000)))
+
+  /** Wukong dual-independent: DDR3 + SDR with separate UARTs (no interconnect) */
+  def wukongDualIndependent = wukongDualIndependentSmp()
+
+  def wukongDualIndependentSmp(cpuCnt: Int = 1, sdrClkMhz: Int = 80) = JopConfig(
+    assembly = SystemAssembly.wukongWithJ12Uart,
+    systems = Seq(
+      JopSystem(name = "ddr3", memory = "ddr3", bootMode = BootMode.Serial,
+        clkFreq = 100 MHz, cpuCnt = cpuCnt,
+        coreConfig = JopCoreConfig(useDspMul = true, bytecodes = Map("*" -> "hw")),
+        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N")))),
+      JopSystem(name = "sdr", memory = "sdr", bootMode = BootMode.Serial,
+        clkFreq = sdrClkMhz MHz, cpuCnt = cpuCnt, coreConfig = JopCoreConfig(),
+        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("J12_UART"))))),
+    interconnect = None)
 
   // ========================================================================
   // Minimum resource preset
