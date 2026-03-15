@@ -1,6 +1,6 @@
 # Wukong XC7A100T Feature Utilization Sweep
 
-Date: 2026-03-10
+Date: 2026-03-15 (updated — SD Native FIFO fix)
 Platform: QMTECH Wukong V3, Xilinx XC7A100T-2FGG676 (63,400 LUTs, 126,800 FFs, 135 BRAM, 240 DSP)
 Tool: Vivado 2025.2, non-project flow, synth_design only (post-synthesis estimates)
 Memory: DDR3 via MIG 7 Series (all variants)
@@ -31,10 +31,10 @@ Reports: `fpga/qmtech-xc7a100t-wukong/vivado/build/util_sweep/*/util.rpt`
 | + DCU (12 double ops) | 22,297 | 14,078 | 12.5 | 9 | 35.2% |
 | All 4 CUs + DSP imul | 24,922 | 14,946 | 12.5 | 15 | 39.3% |
 | + Ethernet GMII | 18,305 | 13,648 | 13.5 | 0 | 28.9% |
-| + SD Native | 29,556 | 17,872 | 12.5 | 0 | 46.6% |
+| + SD Native | 17,828 | 14,459 | 16 | 0 | 28.1% |
 | + SD SPI | 17,759 | 13,131 | 12.5 | 0 | 28.0% |
-| + Ethernet + SD | 30,117 | 18,457 | 13.5 | 0 | 47.5% |
-| **Full** (all CUs + Eth + SD) | **37,275** | **19,988** | **13.5** | **15** | **58.8%** |
+| + Ethernet + SD | ~18,800 | ~15,050 | 17 | 0 | ~29.6% |
+| **Full** (all CUs + Eth + SD) | **~26,500** | **~16,000** | **14** | **15** | **~41.8%** |
 
 ## Results: Per-Feature Marginal Cost
 
@@ -50,17 +50,15 @@ Delta measured from the "No ICU" baseline (17,336 LUTs).
 | **DCU** (12 double ops) | +4,961 | +1,217 | 0 | +9 | IEEE 754 double: add/sub/mul/div/cmp/cvt |
 | **All 4 CUs + DSP** | +7,586 | +2,085 | 0 | +15 | Combined (less than sum — shared operand stack) |
 | **Ethernet GMII** | +969 | +787 | +1 | 0 | RTL8211EG PHY interface + MDIO + CDC |
-| **SD Native** | +12,220 | +5,011 | 0 | 0 | SpinalHDL SdcardCtrl (4-bit, cmd/data FSMs) |
+| **SD Native** | +661 | +596 | +0.5 | 0 | jop.io.SdNative (4-bit, cmd/data FSMs, 128×32 FIFO in BRAM) |
 | **SD SPI** | +423 | +270 | 0 | 0 | Simple SPI shift register + clock divider |
 | **Array cache** | +506 | +925 | 0.5 | 0 | 16-entry FA, 4 elements/line (delta: baseline - no_acache) |
 
 ### Observations
 
-1. **SD Native dominates**: At 12,220 LUTs, SpinalHDL's SD native controller
-   costs more than all four compute units combined (7,586 LUTs). This is the
-   primary obstacle for SMP builds on XC7A100T — it alone consumes 19% of the
-   device. SD SPI (423 LUTs) is **29x cheaper** — a viable alternative when
-   throughput is not critical.
+1. **SD Native is now cheap**: After fixing a FIFO BRAM inference bug (see
+   below), SD Native costs only 661 LUTs — comparable to SD SPI (423 LUTs).
+   SD Native is no longer an obstacle for SMP builds.
 
 2. **DCU is the most expensive CU**: Double-precision IEEE 754 at 4,961 LUTs
    is ~3.5x the cost of FCU (single-precision). The 52-bit mantissa multiplier
@@ -80,14 +78,40 @@ Delta measured from the "No ICU" baseline (17,336 LUTs).
    Savings of ~1,020 LUTs come from the shared ComputeUnitTop operand stack
    and result MUX.
 
+## SD Native FIFO Fix (2026-03-15)
+
+The original sweep reported SD Native at +12,220 LUTs. Root cause: SpinalHDL's
+`Mem.write()` was called twice in different `when/elsewhen` branches (push+pop
+path and push-only path), both writing the same address and data. SpinalHDL
+emitted two separate Verilog `always` blocks, creating a 3-port memory (2 write
++ 1 read). BRAM only supports 2 ports, so Vivado implemented the 128×32 FIFO
+entirely in flip-flops — 4,096 FFs for storage plus ~11,000 LUTs of mux logic.
+
+Fix: hoist the single `.write()` call outside the when chain, gated only by
+`fifoPushValid`. Commit `2e9912d`.
+
+Vivado-validated result (XC7A100T, 1-core DDR3, baseline = 17,167 LUTs):
+
+| Metric | Before fix | After fix |
+|--------|----------:|----------:|
+| SdNative LUTs | 11,663 | 609 |
+| SdNative FFs | 4,797 | 590 |
+| SdNative BRAM | 0 | 0.5 |
+| Total (with SD) | 28,816 | 17,828 |
+| SD delta | +11,649 | +661 |
+
+**Note:** Rows marked with `~` in the tables above are estimates based on
+subtracting the 11,000 LUT savings from the original measurements. A full
+sweep re-run will provide exact numbers.
+
 ## SMP Implications
 
 Using the 2-core SMP build (wukongSmp, all CUs, no Eth/SD) as a reference:
 
 | Config | LUTs | LUT% | Timing (WNS) | Status |
 |--------|------:|-----:|-------------:|--------|
-| 1-core full (CUs + Eth + SD) | 37,027 | 58.4% | -2.043 ns | Violations in CDC |
-| 2-core SMP (CUs + Eth + SD) | 55,359 | 87.3% | -2.150 ns | **Too congested** |
+| 1-core full (CUs + Eth + SD) | ~26,500 | ~41.8% | TBD | Expect comfortable |
+| 2-core SMP (CUs + Eth + SD) | ~44,400 | ~70.0% | TBD | Should be feasible (was 87.3% before fix) |
 | 2-core SMP (CUs, no Eth/SD) | 38,011 | 59.9% | +0.080 ns | **Timing met** |
 
 Per additional core (with all CUs, no Eth/SD): approximately **7,200 LUTs**.
@@ -127,9 +151,9 @@ in-system due to logic sharing with the common operand stack infrastructure.
 | Preset | Description | Est. LUTs |
 |--------|-------------|----------:|
 | `wukongDdr3` | Bare DDR3 (idiv/irem HW) | 17,741 |
-| `wukongFull` | All CUs + Eth + SD | 37,275 |
+| `wukongFull` | All CUs + Eth + SD | ~26,500 |
 | `wukongSmp 2` | 2-core, all CUs, no Eth/SD | 38,011 |
-| `wukongFullSmp 2` | 2-core, all CUs + Eth + SD | 55,359 |
+| `wukongFullSmp 2` | 2-core, all CUs + Eth + SD | ~44,400 |
 
 ```bash
 # Generate Verilog
