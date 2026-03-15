@@ -145,18 +145,22 @@ case class SdNative(clkDivInit: Int = 99) extends Component with HasBusIo {
   // Reset request (abort or startRead)
   val fifoReset = False
 
-  // FIFO occupancy and pointer update (single driver)
+  // FIFO write — single .write() call so SpinalHDL emits one write port
+  // (two .write() calls would generate two always blocks → 3-port memory → no BRAM)
+  when(fifoPushValid) {
+    fifoMem.write(fifoWrPtr, fifoPushData)
+  }
+
+  // FIFO pointer and occupancy update
   when(fifoReset) {
     fifoWrPtr := 0
     fifoRdPtr := 0
     fifoOccupancy := 0
   } elsewhen(fifoPushValid && fifoPopValid) {
-    fifoMem.write(fifoWrPtr, fifoPushData)
     fifoWrPtr := fifoWrPtr + 1
     fifoRdPtr := fifoRdPtr + 1
     // occupancy unchanged
   } elsewhen(fifoPushValid) {
-    fifoMem.write(fifoWrPtr, fifoPushData)
     fifoWrPtr := fifoWrPtr + 1
     fifoOccupancy := fifoOccupancy + 1
   } elsewhen(fifoPopValid) {
