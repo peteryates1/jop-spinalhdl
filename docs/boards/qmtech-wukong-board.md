@@ -310,6 +310,8 @@ Post-configuration flash access requires STARTUPE2 primitive for CCLK.
 
 ## PMOD Connectors
 
+![Wukong Connectors](images/wukong-top-labelled-connectors.png)
+
 Standard 12-pin PMOD (8 I/O + 2 GND + 2 VCC).
 
 **J10 (Bank 35, LVCMOS33):**
