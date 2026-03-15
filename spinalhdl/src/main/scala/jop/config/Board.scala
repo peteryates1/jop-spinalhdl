@@ -676,7 +676,7 @@ object Board {
    */
   def J12UartAdapter = Board(
     name = "j12-uart-adapter",
-    devices = Seq(BoardDevice("J12_UART", mapping = Map("TXD" -> "U14", "RXD" -> "V14"))))
+    devices = Seq(BoardDevice("J12_UART", mapping = Map("TXD" -> "U14", "RXD" -> "V14", "SEL" -> "U15"))))
 
   // ========================================================================
   // Composite board aliases

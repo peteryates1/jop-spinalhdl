@@ -83,6 +83,10 @@ case class JopTop(
     val ser_txd_1 = isMultiSystem generate (out Bool())
     val ser_rxd_1 = isMultiSystem generate (in Bool())
 
+    // UART MUX select (multi-system only): 0 = DDR3 on primary/SDR on secondary,
+    //                                       1 = SDR on primary/DDR3 on secondary
+    val uart_sel = isMultiSystem generate (in Bool())
+
     // LEDs
     val led = out Bits(ledCount bits)
 
@@ -111,6 +115,12 @@ case class JopTop(
     // Per-core UART TX (optional, for SMP debug — single-system only)
     val jp1_txd = (!isMultiSystem && sys != null && sys.hasPerCoreUart) generate (out Bits(sys.cpuCnt bits))
     val jp1_wd  = (!isMultiSystem && sys != null && sys.hasPerCoreUart) generate (out Bits(sys.cpuCnt bits))
+
+    // Debug outputs for SDR SDRAM write debugging (multi-system only)
+    // J12: 8 GPIO pins (Pico capture — fast signals)
+    // J13: 8 LED PMOD (visual — slower signals)
+    val dbg_j12 = isMultiSystem generate (out Bits(8 bits))
+    val dbg_j13 = isMultiSystem generate (out Bits(8 bits))
   }
 
   noIoPrefix()
@@ -577,8 +587,8 @@ case class JopTop(
       ddr3Path.bmbBridge.io.bmb <> cluster.io.bmb
       MemoryControllerFactory.wireMig(ddr3Path.adapter, ddr3Mig)
 
-      // Primary UART RX
-      cluster.devicePin[Bool]("uart", "rxd") := io.ser_rxd
+      // DDR3 UART RX: primary when sel=0, secondary when sel=1
+      cluster.devicePin[Bool]("uart", "rxd") := Mux(io.uart_sel, io.ser_rxd_1, io.ser_rxd)
     }
 
     // ==================================================================
@@ -623,8 +633,8 @@ case class JopTop(
       sdrCtrl.ctrl.io.bmb <> cluster.io.bmb
       io.sdram <> sdrCtrl.ctrl.io.sdram
 
-      // Secondary UART RX
-      cluster.devicePin[Bool]("uart", "rxd") := io.ser_rxd_1
+      // SDR UART RX: secondary when sel=0, primary when sel=1
+      cluster.devicePin[Bool]("uart", "rxd") := Mux(io.uart_sel, io.ser_rxd, io.ser_rxd_1)
     }
 
     // SDR SDRAM clock output
@@ -664,7 +674,7 @@ case class JopTop(
     hangDet0.io.cacheState := U(0, 3 bits)
     hangDet0.io.adapterState := U(0, 3 bits)
     hangDet0.io.jopTxd := txd0Sync
-    io.ser_txd := hangDet0.io.muxedTxd
+    // TX routing deferred until after hangDet1 (see MUX below)
 
     // System 1 (SDR) CDC + HangDetector
     val wd1Sync = BufferCC(sdrArea.cluster.io.wd(0)(0), init = False)
@@ -684,7 +694,14 @@ case class JopTop(
     hangDet1.io.pc := pc1Sync
     hangDet1.io.jpc := jpc1Sync
     hangDet1.io.jopTxd := txd1Sync
-    io.ser_txd_1 := hangDet1.io.muxedTxd
+
+    // UART TX MUX: swap DDR3/SDR UART assignment based on uart_sel
+    // sel=0: primary=DDR3, secondary=SDR (default)
+    // sel=1: primary=SDR, secondary=DDR3
+    val ddr3Txd = hangDet0.io.muxedTxd
+    val sdrTxd = hangDet1.io.muxedTxd
+    io.ser_txd   := Mux(io.uart_sel, sdrTxd, ddr3Txd)
+    io.ser_txd_1 := Mux(io.uart_sel, ddr3Txd, sdrTxd)
 
     // LEDs: LED[0] = DDR3 WD/hang, LED[1] = SDR WD/hang
     when(!hangDet0.io.hangDetected) {
@@ -700,6 +717,39 @@ case class JopTop(
     for (i <- 1 until ledCount - 1) {
       io.led(i) := (if (activeHigh) False else True)
     }
+
+    // ==================================================================
+    // Debug outputs: SDR SDRAM write debugging
+    // Directly wired from SDR clock domain (no CDC — external observer only)
+    // ==================================================================
+
+    // J12 (Pico GPIO capture — fast BMB/SDRAM handshake signals):
+    //   [0] = BMB cmd.valid (cluster→SDRAM ctrl)
+    //   [1] = BMB cmd.ready (SDRAM ctrl→cluster)
+    //   [2] = BMB cmd.opcode bit0 (1=write, 0=read)
+    //   [3] = BMB rsp.valid (SDRAM ctrl→cluster)
+    //   [4] = SdramCtrl cmd.valid (SDRAM ctrl→chip)
+    //   [5] = SdramCtrl cmd.ready (chip→ctrl)
+    //   [6] = SdramCtrl cmd.write
+    //   [7] = BmbSdramCtrl32 sendingHigh (half-word phase)
+    io.dbg_j12(0) := sdrArea.sdrCtrl.ctrl.io.bmb.cmd.valid
+    io.dbg_j12(1) := sdrArea.sdrCtrl.ctrl.io.bmb.cmd.ready
+    io.dbg_j12(2) := sdrArea.sdrCtrl.ctrl.io.bmb.cmd.fragment.opcode(0)
+    io.dbg_j12(3) := sdrArea.sdrCtrl.ctrl.io.bmb.rsp.valid
+    io.dbg_j12(4) := sdrArea.sdrCtrl.ctrl.io.debug.ctrlCmdValid
+    io.dbg_j12(5) := sdrArea.sdrCtrl.ctrl.io.debug.ctrlCmdReady
+    io.dbg_j12(6) := sdrArea.sdrCtrl.ctrl.io.debug.ctrlCmdWrite
+    io.dbg_j12(7) := sdrArea.sdrCtrl.ctrl.io.debug.sendingHigh
+
+    // J13 (LED PMOD — visual state indicators):
+    //   [4:0] = BmbMemoryController state (5 bits)
+    //   [5]   = memBusy
+    //   [6]   = BmbSdramCtrl32 burstActive
+    //   [7]   = BMB rsp.valid
+    io.dbg_j13(4 downto 0) := sdrArea.cluster.io.debugMemState.asBits.resized
+    io.dbg_j13(5) := sdrArea.cluster.io.memBusy(0)
+    io.dbg_j13(6) := sdrArea.sdrCtrl.ctrl.io.debug.burstActive
+    io.dbg_j13(7) := sdrArea.sdrCtrl.ctrl.io.bmb.rsp.valid
 
   } // end multi-system path
 }

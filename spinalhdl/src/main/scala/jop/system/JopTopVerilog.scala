@@ -64,10 +64,13 @@ object JopTopVerilog {
     case "xc7a100tDbSmp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.xc7a100tDbSmp(n)
-    case "wukongDualIndependent" => JopConfig.wukongDualIndependent
+    case "wukongDualIndependent" =>
+      val mhz = args.drop(1).headOption.map(_.toInt).getOrElse(80)
+      JopConfig.wukongDualIndependentSmp(sdrClkMhz = mhz)
     case "wukongDualSmp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
-      JopConfig.wukongDualIndependentSmp(n)
+      val mhz = args.drop(2).headOption.map(_.toInt).getOrElse(80)
+      JopConfig.wukongDualIndependentSmp(n, sdrClkMhz = mhz)
     case "minimum"          => JopConfig.minimum
     case "max1000Sdram"     => JopConfig.max1000Sdram
     case "ep4ce6Sdram"      => JopConfig.ep4ce6Sdram

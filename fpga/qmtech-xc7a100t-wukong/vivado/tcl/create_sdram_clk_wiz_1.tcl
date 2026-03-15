@@ -1,7 +1,7 @@
 # Clock wizard generation script for SDR SDRAM cluster (clk_wiz_1) on QMTECH XC7A100T Wukong.
 # 50 MHz input -> 80 MHz system + 80 MHz phase-shifted (-108 deg) SDRAM.
 # Used by dual-cluster build (DDR3 + SDR). DDR3 cluster uses clk_wiz_0.
-# 80 MHz chosen to relax timing when sharing die with DDR3 cluster at 74% utilization.
+# 80 MHz chosen: divides cleanly for 2M baud UART + relaxes SDRAM timing.
 # Run with: vivado -mode batch -source vivado/tcl/create_sdram_clk_wiz_1.tcl
 
 set script_dir [file dirname [file normalize [info script]]]

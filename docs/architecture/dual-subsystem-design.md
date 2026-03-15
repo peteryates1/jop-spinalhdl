@@ -399,6 +399,53 @@ make dual-build          # Vivado synth + impl + bitstream
 - SDR cluster: 80 MHz from `clk_wiz_1` (50 MHz oscillator input)
 - Both PLLs run from the same 50 MHz board oscillator (M21)
 
+#### Phase 2 Debug: SDR Cluster Hang (2026-03-15)
+
+**Symptom**: DDR3 cluster boots and runs "Hello World" successfully. SDR cluster
+accepts serial download (XOR checksum passes) but hangs during GC init — UART
+outputs `.Small boot.GC init....` then stops.
+
+**Ruled out by simulation and analysis**:
+
+1. **SdramCtrlNoCke logic at 80 MHz**: `JopSdram80MhzSim` passes with burstLen=0
+   at 80 MHz. Takes ~9M cycles (vs ~500k with burstLen=4) because every BC_FILL
+   word is an individual SDRAM access. Previous 2M cycle limit was too short.
+2. **burstLen=0 logic bug**: Sim passes cleanly. The `buildMultiCoreConfigs` sets
+   burstLen=0 for single-core SDR, which is correct — just slower.
+3. **Generated Verilog wiring**: All clock domains, reset, SDRAM signals, UART MUX
+   verified correct in `JopDualWukongTop.v`.
+4. **Internal SDR timing**: clk_100_clk_wiz_1 domain meets timing (WNS=+0.229ns).
+   DDR3 domain (clk_pll_i) also meets (WNS=+0.006ns).
+5. **Clock phase shift**: -108° at 80 MHz gives 3.75 ns lead (more margin than
+   100 MHz's 3.0 ns). W9825G6KH-6 requires 1.5 ns setup, 0.8 ns hold.
+
+**Remaining suspect — DQ writeEnable IOB packing failure**:
+
+The timing report shows 16 failing endpoints, all `chip_sdram_DQ_writeEnable_reg`
+paths from clk_100_clk_wiz_1 to SDRAM output ports. WNS=-0.378ns. The
+writeEnable register (at SLICE_X0Y110) controls the DQ tri-state buffer (OBUFT).
+Path breakdown: FDRE C→Q (0.379ns) + routing (1.652ns, fanout=16) + OBUFT
+(3.347ns) = 5.378ns vs 5.0ns `set_max_delay` constraint.
+
+This is significant because `writeEnable` controls the DQ tri-state direction.
+If it switches late, the FPGA may still drive DQ when SDRAM tries to return read
+data (bus contention on reads), or the tri-state may not enable in time for
+writes (SDRAM sees floating data lines).
+
+The download checksum does NOT detect this — it's computed from UART-received
+data, not SDRAM readback.
+
+**Next steps** (requires board access):
+
+1. Check Vivado IOB packing report — verify whether DQ output FFs are in IOBs
+2. Add SDRAM readback verification to download protocol
+3. Try standalone SDR-only build at 80 MHz to isolate dual-cluster placement
+   pressure vs frequency-specific issues
+4. Consider reducing DQ writeEnable fanout (per-byte enables instead of shared)
+   or tightening placement constraints for the writeEnable register
+
+**Test harness**: `JopSdram80MhzSim` — 80 MHz, burstLen=0, 10M cycle limit.
+
 ### Phase 3: Message Queues -- Future
 
 `StreamFifoCC` pair between subsystems for cross-cluster communication.
