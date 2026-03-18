@@ -268,15 +268,17 @@ case class VgaText(
   val sysAttrRdData = attrRam.readSync(sysCharRdAddr)
 
   // Write ports (system clock domain)
+  // Pipeline register breaks the critical path from JOP I/O decode through
+  // the row*COLS+col multiply to the BRAM write enable.
   charRam.write(
-    address = sysCharWrAddr,
-    data    = sysCharWrData,
-    enable  = sysCharWrEn
+    address = RegNext(sysCharWrAddr),
+    data    = RegNext(sysCharWrData),
+    enable  = RegNext(sysCharWrEn) init(False)
   )
   attrRam.write(
-    address = sysAttrWrAddr,
-    data    = sysAttrWrData,
-    enable  = sysAttrWrEn
+    address = RegNext(sysAttrWrAddr),
+    data    = RegNext(sysAttrWrData),
+    enable  = RegNext(sysAttrWrEn) init(False)
   )
 
   // Scroll state machine
@@ -428,7 +430,7 @@ case class VgaText(
         // Write char+attr at cursor, auto-advance
         val charCode = bus.wrData(7 downto 0)
         val attr     = bus.wrData(15 downto 8)
-        val addr     = (cursorRow * COLS + cursorCol).resize(log2Up(CHAR_COUNT))
+        val addr     = ((cursorRow << 6) + (cursorRow << 4) + cursorCol).resize(log2Up(CHAR_COUNT))
 
         sysCharWrEn   := True
         sysCharWrAddr := addr
@@ -455,7 +457,7 @@ case class VgaText(
         val attr     = bus.wrData(15 downto 8)
         val col      = bus.wrData(22 downto 16).asUInt
         val row      = bus.wrData(28 downto 24).asUInt
-        val addr     = (row * COLS + col).resize(log2Up(CHAR_COUNT))
+        val addr     = ((row << 6) + (row << 4) + col).resize(log2Up(CHAR_COUNT))
 
         sysCharWrEn   := True
         sysCharWrAddr := addr
@@ -535,7 +537,7 @@ case class VgaText(
     val vBlankEdge = vBlank && !RegNext(vBlank, False)
     val charCol_s0 = (hLookAhead >> 3).resize(7)   // hPixel / 8
     val charRow_s0 = (vLookAhead >> 4).resize(5)    // vPixel / 16
-    val charAddr_s0 = (charRow_s0 * COLS + charCol_s0).resize(log2Up(CHAR_COUNT))
+    val charAddr_s0 = ((charRow_s0 << 6) + (charRow_s0 << 4) + charCol_s0).resize(log2Up(CHAR_COUNT))
 
     // Read character and attribute RAM (port B, pixel clock domain)
     val charData_s1 = charRam.readSync(charAddr_s0, clockCrossing = true)
