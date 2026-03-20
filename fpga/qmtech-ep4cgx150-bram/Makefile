@@ -20,7 +20,7 @@ BLASTER_TYPE ?= USB-Blaster
 
 # Serial port for UART monitoring
 SERIAL_PORT ?= /dev/ttyUSB0
-BAUD_RATE = 1000000
+BAUD_RATE = 2000000
 
 # SpinalHDL project (sbt runs from repo root)
 PROJECT_ROOT = ../..

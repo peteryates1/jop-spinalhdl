@@ -17,9 +17,13 @@ set_global_assignment -name NOMINAL_CORE_SUPPLY_VOLTAGE 1.2V
 set_global_assignment -name VERILOG_FILE ../../spinalhdl/generated/JopBramTop.v
 set_global_assignment -name VHDL_FILE ../qmtech-ep4cgx150-sdram/dram_pll.vhd
 set_global_assignment -name SDC_FILE jop_bram.sdc
+# AlteraLpm ROM/RAM not needed — Generic memory style uses inline $readmemb
 
 # I/O standard
 set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVCMOS"
+
+# Optimization — force standard fit effort (prevent Auto Fit from skipping optimizations)
+set_global_assignment -name FITTER_EFFORT "STANDARD FIT"
 
 # Configuration
 set_global_assignment -name ENABLE_OCT_DONE OFF
@@ -41,8 +45,9 @@ set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -
 # 50 MHz Clock
 set_location_assignment PIN_B14 -to clk_in
 
-# UART TX (CP2102N on daughter board)
+# UART TX/RX (CP2102N on daughter board)
 set_location_assignment PIN_AD20 -to ser_txd
+set_location_assignment PIN_AE21 -to ser_rxd
 
 # Core board LEDs
 set_location_assignment PIN_A25 -to led[0]

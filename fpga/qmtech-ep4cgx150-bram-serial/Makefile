@@ -7,7 +7,7 @@ QUARTUS_DIR ?= /opt/altera/25.1/quartus
 QUARTUS_BIN = $(QUARTUS_DIR)/bin
 BLASTER_TYPE ?= USB-Blaster
 SERIAL_PORT ?= /dev/ttyUSB0
-BAUD_RATE = 1000000
+BAUD_RATE = 2000000
 
 PROJECT_ROOT = ../..
 GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopBramSerialTop.v
