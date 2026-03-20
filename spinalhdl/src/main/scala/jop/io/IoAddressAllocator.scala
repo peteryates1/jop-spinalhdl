@@ -28,7 +28,7 @@ case class AllocatedDevice(
  * giving range 0x80-0xFF (128 addresses, accessed via bipush -128..-1).
  *
  * Fixed devices (Sys, Uart) are placed first. Remaining devices
- * are packed downward from 0xDF, largest first, respecting alignment.
+ * are packed downward from 0xED, largest first, respecting alignment.
  */
 object IoAddressAllocator {
 
@@ -66,11 +66,11 @@ object IoAddressAllocator {
     // Sort auto devices by size (largest first for best packing)
     val sortedAuto = auto.sortBy(-_.size)
 
-    // Allocate auto devices packing downward from 0xDF
+    // Allocate auto devices packing downward from 0xED
     val autoAllocated = sortedAuto.map { d =>
       val alignment = d.size  // 2^addrBits alignment
       // Scan downward from 0xED to find first aligned slot that fits
-      // (0xEE-0xEF = boot device, 0xF0-0xFF = Sys)
+      // (0xE0-0xE1 = boot device, 0xF0-0xFF = Sys)
       val candidates = (0xED to 0x80 by -1).filter(addr =>
         (addr & (alignment - 1)) == 0 &&  // aligned
         addr + d.size - 1 <= 0xED &&       // fits below boot region

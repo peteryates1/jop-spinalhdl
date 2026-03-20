@@ -2,6 +2,7 @@ package jop.io
 
 import spinal.core._
 import jop.config.{DeviceInstance, DeviceType, JopCoreConfig}
+import jop.memory.JopIoSpace
 
 /**
  * External clock domains needed by some device factories.
@@ -47,7 +48,7 @@ object DeviceTypes {
         name = name,
         addrBits = dt.addrBits,
         interruptCount = dt.interruptCount,
-        fixedBase = if (bootDeviceName.contains(name)) Some(0xEE) else None,
+        fixedBase = if (bootDeviceName.contains(name)) Some(JopIoSpace.UART_BASE) else None,
         registerNames = dt.registerNames,
         factory = c => dt.create(c, inst.params, ctx)
       )
@@ -73,7 +74,7 @@ object DeviceTypes {
         name = name,
         addrBits = dt.addrBits,
         interruptCount = dt.interruptCount,
-        fixedBase = if (bootDeviceName.contains(name)) Some(0xEE) else None,
+        fixedBase = if (bootDeviceName.contains(name)) Some(JopIoSpace.UART_BASE) else None,
         registerNames = dt.registerNames,
         factory = noop
       )

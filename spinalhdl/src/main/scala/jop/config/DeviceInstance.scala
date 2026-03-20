@@ -113,6 +113,19 @@ object DeviceType {
       ConfigFlash(clkDivInit = p.getOrElse("clkDivInit", 3).asInstanceOf[Int])
   }
 
+  /** Custom device type for external peripherals not defined in jop-spinalhdl.
+   *  Allows board-specific packages to register I/O devices with JopCore. */
+  case class Custom(
+    key: String,
+    addrBits: Int,
+    interruptCount: Int = 0,
+    override val registerNames: Seq[(Int, String)] = Seq.empty,
+    factory: (JopCoreConfig, Map[String, Any], DeviceContext) => Component with HasBusIo
+  ) extends DeviceType {
+    def create(cfg: JopCoreConfig, p: Map[String, Any], ctx: DeviceContext) =
+      factory(cfg, p, ctx)
+  }
+
   val all: Seq[DeviceType] = Seq(Uart, Ethernet, SdNative, SdSpi, VgaDma, VgaText, CfgFlash)
 
   def byKey(key: String): Option[DeviceType] = all.find(_.key == key)

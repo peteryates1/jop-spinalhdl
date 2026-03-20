@@ -146,8 +146,8 @@ object JopAddressSpace {
  *
  * Fixed layout:
  *   0xF0-0xFF  Sys   (16 addrs)  — always present, top of space
- *   0xEE-0xEF  Boot  (2 addrs)   — just below Sys
- *   0x80-0xDF  Dynamic  (96 addrs)  — auto-allocated, packing downward from 0xDF
+ *   0xEE-0xEF  Boot  (2 addrs)   — UART or cfgFlash
+ *   0x80-0xED  Dynamic  (110 addrs)  — auto-allocated, packing downward from 0xED
  */
 object JopIoSpace {
   // Fixed base addresses (referenced by jvm.asm)
@@ -165,7 +165,7 @@ object JopIoSpace {
   def SYS_SIGNAL   = SYS_BASE + 7   // Signal
   def SYS_FPU_CAP  = SYS_BASE + 15  // FPU capability (bit 0 = HW float)
 
-  // Boot device named register addresses (UART or cfgFlash at 0xEE-0xEF)
+  // Boot device named register addresses (UART or cfgFlash at 0xE0-0xE1)
   def UART_STATUS  = UART_BASE + 0  // Status register
   def UART_DATA    = UART_BASE + 1  // Data register
 
