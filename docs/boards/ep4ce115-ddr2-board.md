@@ -330,9 +330,19 @@ based on bottom board PE connector topology.
 **Keys** — on core board, active low, accent key caps:
 - KEY[0]: N21, KEY[1]: T1, KEY[2]: N22 (not on connectors)
 
-**SD Card, IR, Buzzer, DIP switches** — on power-side connector (EP4CE115
-pin assignments unconfirmed, need metering). SD card likely near pins 73-78
-of the power-side DOWN connector (EP4CE115 pins C6, D7, A7, B7, A6, B6).
+**SD Card** — on power-side connector.
+
+| Pin | SIGNAL | EP4CE115 |
+|-----|--------|----------|
+| 9 | CD | C6 |
+| 8 | D1 | A7 |
+| 7 | D0 | A6 |
+| 6 | VSS | GND |
+| 5 | CLK | B6 |
+| 4 | VDD | 3V3 |
+| 3 | CMD | B7 |
+| 2 | D3 | D7 |
+| 1 | D2 | C8 |
 
 ### Recommended UART Pins (Pico Serial Bridge)
 
