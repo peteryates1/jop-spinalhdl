@@ -271,6 +271,10 @@ Note: SW1 (J3_IO7) shares its pin with RP2040 UART0 TX on V5.
 | SW1 | RP2040 Boot Select (BOOTSEL) |
 | SW2 | RP2040 RUN (reset) |
 
+### PMOD J10, J11 & JP1
+
+![PMOD J10, J11 & JP1](images/J10_J11_JP1_Connectors.png)
+
 ### PMOD J10 (12-pin, 2x6, on J2)
 
 ![PMOD J10/J11 schematic (V4, on J2)](images/dbfpga-v4-j10-j11.png)
