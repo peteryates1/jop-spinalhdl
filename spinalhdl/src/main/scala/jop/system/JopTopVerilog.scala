@@ -25,7 +25,6 @@ object JopTopVerilog {
 
   /** Resolve a preset name to a JopConfig */
   def resolvePreset(name: String, args: Array[String] = Array.empty): JopConfig = name match {
-    case "atariEp4cgx150"      => JopConfig.atariEp4cgx150
     case "ep4cgx150Serial"     => JopConfig.ep4cgx150Serial
     case "ep4cgx150Bram"       => JopConfig.ep4cgx150Bram
     case "ep4cgx150BramGc"     => JopConfig.ep4cgx150BramGc

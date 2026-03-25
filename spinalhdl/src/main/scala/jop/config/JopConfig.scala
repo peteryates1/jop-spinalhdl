@@ -322,30 +322,6 @@ object JopConfig {
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw", "float" -> "hw")))))
   }
 
-  /** EP4CGX150 + Atari 800 — JOP with SdSpi (CH376T) + atariCtrl (Custom, 4-bit addr) */
-  def atariEp4cgx150 = JopConfig(
-    assembly = SystemAssembly.qmtechWithDb,
-    systems = Seq(JopSystem(
-      name = "atari",
-      memory = "sdr",
-      bootMode = BootMode.Serial,
-      clkFreq = HertzNumber(56670000),
-      coreConfig = JopCoreConfig(
-        useDspMul = true,
-        memConfig = JopMemoryConfig(addressWidth = 24, burstLen = 0,
-          useOcache = true, ocacheWayBits = 4, ocacheIndexBits = 4,
-          useAcache = true, acacheWayBits = 4, acacheFieldBits = 2)),
-      devices = Map(
-        "uart"      -> DeviceInstance(DeviceType.Uart, params = Map("baudRate" -> 500000)),
-        "sdSpi"     -> DeviceInstance(DeviceType.SdSpi, params = Map("clkDivInit" -> 112)),
-        "vgaText"   -> DeviceInstance(DeviceType.VgaText),
-        "atariCtrl" -> DeviceInstance(DeviceType.Custom(
-          key = "atariCtrl", addrBits = 4, registerNames = Seq(
-            (0, "STATUS_CTRL"), (1, "CART_SELECT"), (2, "CONFIG"),
-            (3, "PADDLE_01"), (4, "PADDLE_23"), (5, "PADDLE_45"), (6, "PADDLE_67"),
-            (7, "JOY_12"), (8, "JOY_34"), (9, "KB_THROTTLE"),
-            (10, "CART_SLOT_ADDR"), (11, "CART_SLOT_DATA"), (12, "KEYBOARD")),
-          factory = (_, _, _) => throw new RuntimeException("atariCtrl: use atari subproject for elaboration")))))))
   /** EP4CGX150 — pre-initialized BRAM (512KB, simulation microcode) */
   def ep4cgx150Bram = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
