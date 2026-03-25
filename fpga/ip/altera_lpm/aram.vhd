@@ -16,7 +16,7 @@ use IEEE.std_logic_arith.all;
 use IEEE.std_logic_unsigned.all;
 
 entity ram is
-generic (width : integer := 32; addr_width : integer := 8);
+generic (width : integer := 32; addr_width : integer := 8; LPM_FILE : string := "UNUSED");
 port (
 	reset		: in std_logic;
 	data		: in std_logic_vector(width-1 downto 0);
@@ -88,7 +88,7 @@ end process;
 			LPM_OUTDATA => "UNREGISTERED",
 			LPM_RDADDRESS_CONTROL => "REGISTERED",
 			LPM_WRADDRESS_CONTROL => "REGISTERED",
-			LPM_FILE => "../../asm/generated/serial/ram.mif",
+			LPM_FILE => LPM_FILE,
 			LPM_HINT => "USE_EAB=ON")
 		port map (
 			rdaddress => rdaddress,

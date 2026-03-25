@@ -116,12 +116,14 @@ object MemoryStyle {
     }
   }
 
-  case object AlteraLpm extends MemoryStyle {
+  /** @param mifBasePath  Directory containing rom.mif / ram.mif, relative to Quartus project.
+    *                      Default suits jop-spinalhdl internal builds (fpga/<board>/ projects). */
+  case class AlteraLpm(mifBasePath: String = "../../asm/generated/serial") extends MemoryStyle {
     def createRom(width: Int, addrWidth: Int, depth: Int,
                   combinationalAddr: UInt, registeredAddr: UInt,
                   initBigInt: Option[Seq[BigInt]],
                   defaultInitBits: => Seq[Bits]): Bits = {
-      val lpmRom = AlteraLpmRom(width, addrWidth, "../../asm/generated/serial/rom.mif")
+      val lpmRom = AlteraLpmRom(width, addrWidth, s"$mifBasePath/rom.mif")
       lpmRom.io.address := combinationalAddr
       lpmRom.io.q
     }
@@ -138,7 +140,7 @@ object MemoryStyle {
       val lpmWrAddr = Mux(debugWrEn, debugWrAddr.resize(spWidth), wrAddr)
       val lpmWrEn   = debugWrEn | wrEna
       val lpmWrData = Mux(debugWrEn, debugWrData, wrData)
-      val lpmRam = AlteraLpmRam(width, addrWidth, "../../asm/generated/serial/ram.mif")
+      val lpmRam = AlteraLpmRam(width, addrWidth, s"$mifBasePath/ram.mif")
       lpmRam.io.data      := lpmWrData
       lpmRam.io.wraddress := lpmWrAddr.resize(addrWidth)
       lpmRam.io.wren      := lpmWrEn

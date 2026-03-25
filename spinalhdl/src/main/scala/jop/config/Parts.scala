@@ -42,9 +42,9 @@ sealed trait FpgaFamily {
   def quartusFamilyName: String = ""
 }
 object FpgaFamily {
-  case object CycloneIV  extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm; override val quartusFamilyName = "Cyclone IV GX" }
-  case object CycloneV   extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm; override val quartusFamilyName = "Cyclone V" }
-  case object MAX10      extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm; override val quartusFamilyName = "MAX 10" }
+  case object CycloneIV  extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone IV GX" }
+  case object CycloneV   extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone V" }
+  case object MAX10      extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "MAX 10" }
   case object Artix7     extends FpgaFamily { val manufacturer = Manufacturer.Xilinx }
   case object ECP5       extends FpgaFamily { val manufacturer = Manufacturer.Lattice }
 }

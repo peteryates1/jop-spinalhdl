@@ -15,7 +15,7 @@ use IEEE.std_logic_arith.all;
 use IEEE.std_logic_unsigned.all;
 
 entity rom is
-generic (width : integer; addr_width : integer);
+generic (width : integer; addr_width : integer; LPM_FILE : string := "UNUSED");
 port (
 	clk		: in std_logic;
 	address	: in std_logic_vector(addr_width-1 downto 0);
@@ -49,7 +49,7 @@ begin
 			LPM_TYPE => "LPM_ROM",
 			LPM_WIDTHAD => addr_width,
 			LPM_NUMWORDS => 2**addr_width,
-			LPM_FILE => "../../asm/generated/serial/rom.mif",
+			LPM_FILE => LPM_FILE,
 			LPM_ADDRESS_CONTROL => "REGISTERED",
 			LPM_OUTDATA => "UNREGISTERED",
 			LPM_HINT => "USE_EAB=ON")

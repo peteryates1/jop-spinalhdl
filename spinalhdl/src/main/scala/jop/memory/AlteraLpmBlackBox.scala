@@ -22,6 +22,7 @@ case class AlteraLpmRom(width: Int, addrWidth: Int, mifPath: String) extends Bla
 
   addGeneric("width", width)
   addGeneric("addr_width", addrWidth)
+  addGeneric("LPM_FILE", mifPath)
 
   val io = new Bundle {
     val clk     = in Bool()
@@ -55,6 +56,7 @@ case class AlteraLpmRam(width: Int, addrWidth: Int, mifPath: String) extends Bla
 
   addGeneric("width", width)
   addGeneric("addr_width", addrWidth)
+  addGeneric("LPM_FILE", mifPath)
 
   val io = new Bundle {
     val reset     = in Bool()
