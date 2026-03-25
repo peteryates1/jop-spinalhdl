@@ -274,48 +274,80 @@ From core board schematic `QMTECH-EP4CGX150GX-CORE-BOARD-V01`.
 
 Carries ETH, VGA, SD card signals when DB_FPGA is attached.
 
-| Pin | FPGA | Pin | FPGA | Pin | FPGA | Pin | FPGA |
-|:---:|:----:|:---:|:----:|:---:|:----:|:---:|:----:|
-| 1 | GND | 2 | GND | 3 | 3V3 | 4 | 3V3 |
-| 5 | C21 | 6 | B22 | 7 | B23 | 8 | A23 |
-| 9 | B21 | 10 | A22 | 11 | C19 | 12 | B19 |
-| 13 | A21 | 14 | A20 | 15 | A19 | 16 | A18 |
-| 17 | C17 | 18 | B18 | 19 | C16 | 20 | B17 |
-| 21 | A17 | 22 | A16 | 23 | B15 | 24 | A15 |
-| 25 | C15 | 26 | C14 | 27 | C13 | 28 | B13 |
-| 29 | C12 | 30 | C11 | 31 | A13 | 32 | A12 |
-| 33 | B11 | 34 | A11 | 35 | B10 | 36 | A10 |
-| 37 | C10 | 38 | B9 | 39 | A9 | 40 | A8 |
-| 41 | A7 | 42 | A6 | 43 | B7 | 44 | B6 |
-| 45 | B5 | 46 | A5 | 47 | B4 | 48 | A4 |
-| 49 | C5 | 50 | C4 | 51 | A3 | 52 | A2 |
-| 53 | B2 | 54 | B1 | 55 | D1 | 56 | C1 |
-| 57 | E2 | 58 | E1 | | | | |
-
 **U5** (Banks 3, 4 -- mates with DB_FPGA J2):
 
 ![EP4CGX150 U5 Connector Pinout](images/ep4cgx150-u5-pinout.png)
 
-Carries CP2102N UART, 7-segment display, LEDs, PMODs J10/J11, JP1 signals
-when DB_FPGA is attached.
+Carries CP2102N UART, 7-segment display, LEDs, PMODs J10/J11, JP1 signals when DB_FPGA is attached.
 
-| Pin | FPGA | Pin | FPGA | Pin | FPGA | Pin | FPGA |
-|:---:|:----:|:---:|:----:|:---:|:----:|:---:|:----:|
-| 1 | GND | 2 | GND | 3 | 3V3 | 4 | 3V3 |
-| 5 | AF24 | 6 | AF25 | 7 | AC21 | 8 | AD21 |
-| 9 | AE23 | 10 | AF23 | 11 | AE22 | 12 | AF22 |
-| 13 | AD20 | 14 | AE21 | 15 | AF20 | 16 | AF21 |
-| 17 | AE19 | 18 | AF19 | 19 | AC19 | 20 | AD19 |
-| 21 | AE18 | 22 | AF18 | 23 | AC18 | 24 | AD18 |
-| 25 | AE17 | 26 | AF17 | 27 | AC17 | 28 | AD17 |
-| 29 | AF15 | 30 | AF16 | 31 | AC16 | 32 | AD16 |
-| 33 | AE14 | 34 | AE15 | 35 | AC15 | 36 | AD15 |
-| 37 | AC14 | 38 | AD14 | 39 | AF11 | 40 | AF12 |
-| 41 | AC10 | 42 | AD10 | 43 | AE9 | 44 | AF9 |
-| 45 | AF7 | 46 | AF8 | 47 | AE7 | 48 | AF6 |
-| 49 | AE5 | 50 | AE6 | 51 | AD5 | 52 | AD6 |
-| 53 | AF4 | 54 | AF5 | 55 | AD3 | 56 | AE3 |
-| 57 | AC4 | 58 | AD4 | | | | |
+| Pin | U4 | U5 |
+|:---:|:----:|:----:|
+| 1 | GND | GND |
+| 2 | GND | GND |
+| 3 | 3V3 | 3V3 |
+| 4 | 3V3 | 3V3 |
+| 5 | GND | GND |
+| 6 | GND | GND |
+| 7 | C21 | AF24 |
+| 8 | B22 | AF25 |
+| 9 | B23 | AC21 |
+| 10 | A23 | AD21 |
+| 11 | B21 | AE23 |
+| 12 | A22 | AF23 |
+| 13 | C19 | AE22 |
+| 14 | B19 | AF22 |
+| 15 | A21 | AD20 |
+| 16 | A20 | AE21 |
+| 17 | A19 | AF20 |
+| 18 | A18 | AF21 |
+| 19 | C17 | AE19 |
+| 20 | B18 | AF19 |
+| 21 | C16 | AC19 |
+| 22 | B17 | AD19 |
+| 23 | A17 | AE18 |
+| 24 | A16 | AF18 |
+| 25 | B15 | AC18 |
+| 26 | A15 | AD18 |
+| 27 | C15 | AE17 |
+| 28 | C14 | AF17 |
+| 29 | C13 | AC17 |
+| 30 | B13 | AD17 |
+| 31 | C12 | AF15 |
+| 32 | C11 | AF16 |
+| 33 | A13 | AC16 |
+| 34 | A12 | AD16 |
+| 35 | B11 | AE14 |
+| 36 | A11 | AE15 |
+| 37 | B10 | AC15 |
+| 38 | A10 | AD15 |
+| 39 | C10 | AC14 |
+| 40 | B9 | AD14 |
+| 41 | A9 | AF11 |
+| 42 | A8 | AF12 |
+| 43 | A7 | AC10 |
+| 44 | A6 | AD10 |
+| 45 | B7 | AE9 |
+| 46 | B6 | AF9 |
+| 47 | B5 | AF7 |
+| 48 | A5 | AF8 |
+| 49 | B4 | AE7 |
+| 50 | A4 | AF6 |
+| 51 | C5 | AE5 |
+| 52 | C4 | AE6 |
+| 53 | A3 | AD5 |
+| 54 | A2 | AD6 |
+| 55 | B2 | AF4 |
+| 56 | B1 | AF5 |
+| 57 | D1 | AD3 |
+| 58 | C1 | AE3 |
+| 59 | E2 | AC4 |
+| 60 | E1 | AD4 |
+| 61 | GND | GND |
+| 62 | GND | GND |
+| 63 | VIN | VIN |
+| 64 | VIN | VIN |
+
+
 
 27 I/O pairs per header (54 I/O pins each, 108 total). Pin 1-2 = GND,
 pin 3-4 = 3V3, pin 5-58 = I/O signals, 59-62 = NC,
