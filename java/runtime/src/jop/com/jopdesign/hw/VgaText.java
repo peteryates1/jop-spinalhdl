@@ -80,6 +80,10 @@ public final class VgaText extends HardwareObject {
 	public volatile int clearScreen;
 	/** +9: W scroll up (any write triggers) */
 	public volatile int scrollUp;
+	/** +10: R/W horizontal text start position (pixels) */
+	public volatile int hTextStart;
+	/** +11: R/W vertical text start position (lines) */
+	public volatile int vTextStart;
 
 	// --- Convenience methods ---
 
@@ -155,5 +159,15 @@ public final class VgaText extends HardwareObject {
 	public void scroll() {
 		scrollUp = 0;
 		waitReady();
+	}
+
+	/** Set horizontal text start position in pixels. */
+	public void setHTextStart(int pixels) {
+		hTextStart = pixels & 0x7FF;
+	}
+
+	/** Set vertical text start position in lines. */
+	public void setVTextStart(int lines) {
+		vTextStart = lines & 0x3FF;
 	}
 }
