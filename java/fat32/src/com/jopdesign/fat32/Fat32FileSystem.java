@@ -47,8 +47,10 @@ public class Fat32FileSystem {
 		if (partIndex < 0 || partIndex > 3) return false;
 
 		// Read MBR (sector 0)
+		com.jopdesign.sys.JVMHelp.wr("MBR..\n");
 		Sector mbr = new Sector();
 		if (!mbr.load(dev, 0)) return false;
+		com.jopdesign.sys.JVMHelp.wr("MBR OK\n");
 
 		// Check boot signature
 		if (mbr.getByte(510) != 0x55 || mbr.getByte(511) != 0xAA) return false;
