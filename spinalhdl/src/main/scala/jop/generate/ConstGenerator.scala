@@ -266,6 +266,35 @@ object ConstGenerator {
          |	public static final int IO_UART2 = IO_BASE + 0x31;
          |""".stripMargin)
 
+    // Per-device register constants for all devices with registerNames
+    // Skip boot device (uart/cfgFlash) — already defined in boot device section above
+    val devicesWithRegs = allocatedDevices
+      .filter(ad => ad.descriptor.registerNames.nonEmpty && !bootName.contains(ad.descriptor.name))
+      .sortBy(_.baseAddr)
+
+    if (devicesWithRegs.nonEmpty) {
+      sb.append(
+        s"""
+           |	// ====================================================================
+           |	// Per-device register addresses (auto-generated from registerNames)
+           |	// ====================================================================
+           |""".stripMargin)
+
+      for (ad <- devicesWithRegs) {
+        val devName = ad.descriptor.name.toUpperCase
+        val baseOffset = ioOffset(ad.baseAddr)
+        sb.append(s"\n\t/** ${ad.descriptor.name} base address */\n")
+        sb.append(s"\tpublic static final int IO_${devName} = IO_BASE + ${hexOffset(baseOffset)};\n")
+        for ((subAddr, regName) <- ad.descriptor.registerNames) {
+          val constName = s"IO_${devName}_$regName"
+          if (subAddr == 0)
+            sb.append(s"\tpublic static final int $constName = IO_${devName};\n")
+          else
+            sb.append(s"\tpublic static final int $constName = IO_${devName} + $subAddr;\n")
+        }
+      }
+    }
+
     // RTTM constants (referenced by ReplaceAtomicAnnotation in toolchain)
     sb.append(
       s"""
