@@ -138,11 +138,19 @@ From `fpga/qmtech-ep4cgx150-sdram/jop_sdram.qsf`:
 
 ### Other Pins
 
-| Signal | Pin | Function |
-|--------|-----|----------|
-| `clk_in` | PIN_B14 | 50 MHz oscillator |
-| `led[0]` | PIN_A25 | Core board LED 0 |
-| `led[1]` | PIN_A24 | Core board LED 1 |
+| Signal | Pin | Function | Designator |
+|--------|-----|----------|-----|
+| `clk_in` | PIN_B14 | 50 MHz oscillator | Y1 |
+| `led[0]` | PIN_A25 | Core board LED 0 | D1 |
+| `led[1]` | PIN_A24 | Core board LED 1 | D2 |
+| `sw[0]` | PIN_AD23 | Core board push switch 0 | SW1 |
+| `sw[1]` | PIN_AD24 | Core board push switch 1 | SW2 |
+
+![LEDS](images/ep4cgx150-leds.png)
+- D3 (Furthest from U4) - 3V3 power indicator.
+
+![SWITCHES](images/ep4cgx150-switches.png)
+- SW3 (Nearest to U5) - wired to nCONFIG and reloads fpga from flash.
 
 UART, Ethernet, VGA, and SD card pins are on the DB_FPGA daughter board.
 See [QMTECH DB_FPGA Daughter Board](qmtech-db-fpga.md) for pin assignments.
