@@ -155,7 +155,7 @@ V5 RP2040 UART0 is on DB_FPGA J3 (mates with core board U4).
 
 ### U2/U4 Connector Mapping
 
-The U2 and U4 headers are 32x2 pin (64 pins each), with signal pins 5-58
+The U2 and U4 headers are 32x2 pin (64 pins each), with signal pins 7-60
 (27 I/O pairs per header). On the DB_FPGA daughter board, the mating
 connectors are labeled J2 and J3. **U2 mates with DB_FPGA J2, and U4 mates
 with DB_FPGA J3** (verified by physical inspection). Note: DB_FPGA "IO" signal
@@ -168,51 +168,97 @@ From schematic `QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf`:
 
 ![U2 connector pinout](images/xc7a100t-u2-pinout.png)
 
-| Pin | FPGA | Pin | FPGA | Pin | FPGA | Pin | FPGA |
-|:---:|:----:|:---:|:----:|:---:|:----:|:---:|:----:|
-| 1 | GND | 2 | GND | 3 | 3V3 | 4 | 3V3 |
-| 5 | D26 | 6 | E26 | 7 | D25 | 8 | E25 |
-| 9 | G26 | 10 | H26 | 11 | E23 | 12 | F23 |
-| 13 | F22 | 14 | G22 | 15 | J26 | 16 | J25 |
-| 17 | G21 | 18 | G20 | 19 | H22 | 20 | H21 |
-| 21 | J21 | 22 | K21 | 23 | K26 | 24 | K25 |
-| 25 | K23 | 26 | K22 | 27 | M26 | 28 | N26 |
-| 29 | L23 | 30 | L22 | 31 | P26 | 32 | R26 |
-| 33 | M25 | 34 | M24 | 35 | N22 | 36 | N21 |
-| 37 | P24 | 38 | P23 | 39 | P25 | 40 | R25 |
-| 41 | T25 | 42 | T24 | 43 | V21 | 44 | U21 |
-| 45 | W23 | 46 | V23 | 47 | Y23 | 48 | Y22 |
-| 49 | AA25 | 50 | Y25 | 51 | AC24 | 52 | AB24 |
-| 53 | Y21 | 54 | W21 | 55 | Y26 | 56 | W25 |
-| 57 | AC26 | 58 | AB26 | 59 | NC | 60 | NC |
-| 61 | NC | 62 | NC | 63 | VIN | 64 | VIN |
+Odd pins (left side of header) on the left, even pins (right side) on the right.
+
+| Pin | FPGA | Pin | FPGA |
+|:---:|:----:|:---:|:----:|
+| 1 | GND | 2 | GND |
+| 3 | 3V3 | 4 | 3V3 |
+| 5 | GND | 6 | GND |
+| 7 | D26 | 8 | E26 |
+| 9 | D25 | 10 | E25 |
+| 11 | G26 | 12 | H26 |
+| 13 | E23 | 14 | F23 |
+| 15 | F22 | 16 | G22 |
+| 17 | J26 | 18 | J25 |
+| 19 | G21 | 20 | G20 |
+| 21 | H22 | 22 | H21 |
+| 23 | J21 | 24 | K21 |
+| 25 | K26 | 26 | K25 |
+| 27 | K23 | 28 | K22 |
+| 29 | M26 | 30 | N26 |
+| 31 | L23 | 32 | L22 |
+| 33 | P26 | 34 | R26 |
+| 35 | M25 | 36 | M24 |
+| 37 | N22 | 38 | N21 |
+| 39 | P24 | 40 | P23 |
+| 41 | P25 | 42 | R25 |
+| 43 | T25 | 44 | T24 |
+| 45 | V21 | 46 | U21 |
+| 47 | W23 | 48 | V23 |
+| 49 | Y23 | 50 | Y22 |
+| 51 | AA25 | 52 | Y25 |
+| 53 | AC24 | 54 | AB24 |
+| 55 | Y21 | 56 | W21 |
+| 57 | Y26 | 58 | W25 |
+| 59 | AC26 | 60 | AB26 |
+| 61 | GND | 62 | GND |
+| 63 | VIN | 64 | VIN |
 
 **U4** (Banks 34, 35 — active-high, LVCMOS33) — mates with DB_FPGA J3:
 
 ![U4 connector pinout](images/xc7a100t-u4-pinout.png)
 
-| Pin | FPGA | Pin | FPGA | Pin | FPGA | Pin | FPGA |
-|:---:|:----:|:---:|:----:|:---:|:----:|:---:|:----:|
-| 1 | GND | 2 | GND | 3 | VCCO | 4 | VCCO |
-| 5 | B5 | 6 | A5 | 7 | B4 | 8 | A4 |
-| 9 | A3 | 10 | A2 | 11 | D4 | 12 | C4 |
-| 13 | C2 | 14 | B2 | 15 | E5 | 16 | D5 |
-| 17 | C1 | 18 | B1 | 19 | E1 | 20 | D1 |
-| 21 | F2 | 22 | E2 | 23 | G4 | 24 | F4 |
-| 25 | G2 | 26 | G1 | 27 | J4 | 28 | H4 |
-| 29 | H2 | 30 | H1 | 31 | H9 | 32 | G9 |
-| 33 | M2 | 34 | L2 | 35 | L5 | 36 | K5 |
-| 37 | M4 | 38 | L4 | 39 | N3 | 40 | N2 |
-| 41 | M6 | 42 | M5 | 43 | K1 | 44 | J1 |
-| 45 | R3 | 46 | P3 | 47 | T4 | 48 | T3 |
-| 49 | P6 | 50 | P5 | 51 | N1 | 52 | M1 |
-| 53 | R1 | 54 | P1 | 55 | T2 | 56 | R2 |
-| 57 | U2 | 58 | U1 | 59 | NC | 60 | NC |
-| 61 | NC | 62 | NC | 63 | VIN | 64 | VIN |
+| Pin | FPGA | Pin | FPGA |
+|:---:|:----:|:---:|:----:|
+| 1 | GND | 2 | GND |
+| 3 | VCCO | 4 | VCCO |
+| 5 | GND | 6 | GND |
+| 7 | B5 | 8 | A5 |
+| 9 | B4 | 10 | A4 |
+| 11 | A3 | 12 | A2 |
+| 13 | D4 | 14 | C4 |
+| 15 | C2 | 16 | B2 |
+| 17 | E5 | 18 | D5 |
+| 19 | C1 | 20 | B1 |
+| 21 | E1 | 22 | D1 |
+| 23 | F2 | 24 | E2 |
+| 25 | G4 | 26 | F4 |
+| 27 | G2 | 28 | G1 |
+| 29 | J4 | 30 | H4 |
+| 31 | H2 | 32 | H1 |
+| 33 | H9 | 34 | G9 |
+| 35 | M2 | 36 | L2 |
+| 37 | L5 | 38 | K5 |
+| 39 | M4 | 40 | L4 |
+| 41 | N3 | 42 | N2 |
+| 43 | M6 | 44 | M5 |
+| 45 | K1 | 46 | J1 |
+| 47 | R3 | 48 | P3 |
+| 49 | T4 | 50 | T3 |
+| 51 | P6 | 52 | P5 |
+| 53 | N1 | 54 | M1 |
+| 55 | R1 | 56 | P1 |
+| 57 | T2 | 58 | R2 |
+| 59 | U2 | 60 | U1 |
+| 61 | GND | 62 | GND |
+| 63 | VIN | 64 | VIN |
 
-27 I/O pairs per header (54 I/O pins each, pins 5-58, 108 total). Pin 1-2 = ground,
-pin 3-4 = bank power (3V3 for U2, VCCO_34_35 for U4), pin 59-62 = NC,
-pin 63-64 = VIN (unregulated input power).
+27 I/O pairs per header (54 I/O pins each, pins 7-60, 108 total). Pins
+1-2, 5-6, and 61-62 = ground; pins 3-4 = bank power (3V3 for U2,
+VCCO_34_35 for U4); pins 63-64 = VIN (unregulated input power).
+Several U4 pins are also bank VREF inputs (B2, G9, M5, P5) — these are
+normal I/O when VREF is not used.
+
+> **QMTECH 64-pin header invariant:** Across every QMTECH core board and
+> daughter board with two 32×2 (64-pin) headers, the power/ground pins are
+> always at the same positions: pins **1, 2, 5, 6, 61, 62 = GND**, pins
+> **3, 4 = 3V3** (or bank VCCO), pins **63, 64 = VIN**, and pins **7–60**
+> are I/O. Use this invariant when reading any QMTECH connector schematic.
+> (NB: an earlier version of this doc placed I/O at pins 5–58 instead of
+> 7–60, missing the second GND pair — that error is corrected here per
+> the QMTECH schematic `QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01-20210109.pdf`
+> and `U2.png`/`U4.png`.)
 
 ### DB_FPGA Peripheral Pin Assignments (XC7A100T)
 
@@ -220,91 +266,111 @@ Derived by mapping the [EP4CGX150 cross-reference](qmtech-ep4cgx150-board.md#dbf
 connector pin numbers to XC7A100T FPGA pins via the tables above. The DB_FPGA
 connector pinout is identical across all QMTECH core boards.
 
+> **Note:** the FPGA-pin column in the tables below has been correct all
+> along (back-traced through the DB_FPGA `J3_IO N` net names, which equal
+> physical J3 pin N). Earlier revisions of these tables paired those FPGA
+> pins with J3 pin numbers derived from the off-by-2 U4 table — those J3
+> pin numbers were 2 lower than the actual J3 pin and have now been
+> corrected. The V5 UART entry is the only one independently verified by
+> hardware loopback test.
+
 - **ETH, VGA, SD** are on DB_FPGA **J3** (mates with core board **U4**)
 - **PMODs, JP1** are on DB_FPGA **J2** (mates with core board **U2**)
 - **UART**: V4 CP2102N is on DB_FPGA **J2** (mates with **U2**); V5 RP2040 UART0 is on DB_FPGA **J3** (mates with **U4**)
 
-**UART (V4: CP2102N on J2 pins 13/14, V5: RP2040 UART0 on J3 pins 5/6):**
+**UART (V4: CP2102N on J2 pins 15/16, V5: RP2040 UART0 on J3 pins 7/8):**
 
 | Signal | V4 DB_FPGA | V4 FPGA | V5 DB_FPGA | V5 FPGA |
 |--------|:----------:|:-------:|:----------:|:-------:|
-| TX (FPGA->bridge) | J2-13 (U2) | F22 | J3-6 (U4) | A5 |
-| RX (bridge->FPGA) | J2-14 (U2) | G22 | J3-5 (U4) | B5 |
+| TX (FPGA->bridge) | J2-15 (U2) | F22 | J3-8 (U4) | A5 |
+| RX (bridge->FPGA) | J2-16 (U2) | G22 | J3-7 (U4) | B5 |
 
 V5 UART1 (`/dev/ttyACM1`) -- **not working**, hangs on open. GPIO4/5 -> J2_IO42/IO41
 but ttyACM1 never becomes responsive regardless of FPGA pin configuration.
 Tested with both mirrored (R25/P25) and direct (T24/T25) pin assignments.
 
-V5 note: DB_FPGA schematic labels UART0 as "J3_IO7/IO8" but they connect to
-core board U4 pins 5/6 (not 7/8) due to header mirroring. Verified by FPGA
-loopback test. RP2040 UART0: GPIO0 (TX) -> B5, GPIO1 (RX) -> A5.
-UART1: GPIO4 (TX) -> R25, GPIO5 (RX) -> P25 (assuming same mirroring, unverified).
+V5 note: RP2040 UART0 → DB_FPGA net `J3_IO7/IO8` → J3 pins 7/8 → U4 pins
+7/8 → FPGA B5/A5. Verified by hardware loopback test (10/10 echo passes).
+On QMTECH boards the `Jx_IO N` net name uses the same number as the
+header pin (i.e. `J3_IO7` is on J3 pin 7), and J3 mates pin-for-pin with
+core-board U4. (Older revisions of this doc paired UART0 with J3 pins
+5/6 — those pins are GND on every QMTECH 64-pin header; the FPGA pin
+B5/A5 was always right, only the J3 pin number was wrong.)
+RP2040 UART0: GPIO0 (TX) -> B5, GPIO1 (RX) -> A5.
+UART1: GPIO4 (TX) -> R25, GPIO5 (RX) -> P25 (unverified).
 Requires `dsrdtr=True` and `dtr=True` when opening serial port.
 
 **SD Card (DB_FPGA J3 -> core board U4):**
 
+J3 pin numbers verified from `dbfpga-v4-sdcard.png` (J9 connector pins
+1–9 carry nets `J3_IO14`, `J3_IO13`, `J3_IO12`, VDD, `J3_IO11`, VSS,
+`J3_IO10`, `J3_IO9`, `J3_IO8`). Each `J3_IO N` net is on J3 pin N.
+
 | Signal | J3 Pin | FPGA Pin |
 |--------|:------:|:--------:|
-| SD_CLK | 9 | A3 |
-| SD_CMD | 10 | A2 |
-| SD_DAT0 | 8 | A4 |
-| SD_DAT1 | 7 | B4 |
-| SD_DAT2 | 12 | C4 |
-| SD_DAT3/CS | 11 | D4 |
-| SD_CD | 6 | A5 |
+| SD_CLK | 11 | A3 |
+| SD_CMD | 12 | A2 |
+| SD_DAT0 | 10 | A4 |
+| SD_DAT1 | 9 | B4 |
+| SD_DAT2 | 14 | C4 |
+| SD_DAT3/CS | 13 | D4 |
+| SD_CD | 8 | A5 |
 
 **Ethernet (RTL8211EG, GMII — DB_FPGA J3 -> core board U4):**
 
 | Signal | J3 Pin | FPGA Pin |
 |--------|:------:|:--------:|
-| MDC | 14 | B2 |
-| MDIO | 13 | C2 |
-| RESET_N | 24 | F4 |
-| RXC | 35 | L5 |
-| RXDV | 40 | N2 |
-| RXD[0] | 39 | N3 |
-| RXD[1] | 38 | L4 |
-| RXD[2] | 37 | M4 |
-| RXD[3] | 36 | K5 |
-| RXD[4] | 34 | L2 |
-| RXD[5] | 33 | M2 |
-| RXD[6] | 32 | G9 |
-| RXD[7] | 31 | H9 |
-| RXER | 30 | H1 |
-| GTXC | 27 | J4 |
-| TXEN | 26 | G1 |
-| TXER | 15 | E5 |
-| TXD[0] | 25 | G2 |
-| TXD[1] | 23 | G4 |
-| TXD[2] | 22 | E2 |
-| TXD[3] | 21 | F2 |
-| TXD[4] | 19 | E1 |
-| TXD[5] | 18 | B1 |
-| TXD[6] | 17 | C1 |
-| TXD[7] | 16 | D5 |
+| MDC | 16 | B2 |
+| MDIO | 15 | C2 |
+| RESET_N | 26 | F4 |
+| RXC | 37 | L5 |
+| RXDV | 42 | N2 |
+| RXD[0] | 41 | N3 |
+| RXD[1] | 40 | L4 |
+| RXD[2] | 39 | M4 |
+| RXD[3] | 38 | K5 |
+| RXD[4] | 36 | L2 |
+| RXD[5] | 35 | M2 |
+| RXD[6] | 34 | G9 |
+| RXD[7] | 33 | H9 |
+| RXER | 32 | H1 |
+| GTXC | 29 | J4 |
+| TXEN | 28 | G1 |
+| TXER | 17 | E5 |
+| TXD[0] | 27 | G2 |
+| TXD[1] | 25 | G4 |
+| TXD[2] | 24 | E2 |
+| TXD[3] | 23 | F2 |
+| TXD[4] | 21 | E1 |
+| TXD[5] | 20 | B1 |
+| TXD[6] | 19 | C1 |
+| TXD[7] | 18 | D5 |
 
 **VGA (RGB 5-6-5 — DB_FPGA J3 -> core board U4):**
 
+J3 pin numbers verified from `dbfpga-v4-vga.png`: HS = `J3_IO44`,
+VS = `J3_IO43`, RED MSB = `J3_IO57`, etc.
+
 | Signal | J3 Pin | FPGA Pin |
 |--------|:------:|:--------:|
-| HS | 42 | M5 |
-| VS | 41 | M6 |
-| R[4] | 55 | T2 |
-| R[3] | 54 | P1 |
-| R[2] | 57 | U2 |
-| R[1] | 56 | R2 |
-| R[0] | 58 | U1 |
-| G[5] | 49 | P6 |
-| G[4] | 48 | T3 |
-| G[3] | 51 | N1 |
-| G[2] | 50 | P5 |
-| G[1] | 52 | M1 |
-| G[0] | 53 | R1 |
-| B[4] | 44 | J1 |
-| B[3] | 43 | K1 |
-| B[2] | 46 | P3 |
-| B[1] | 45 | R3 |
-| B[0] | 47 | T4 |
+| HS | 44 | M5 |
+| VS | 43 | M6 |
+| R[4] | 57 | T2 |
+| R[3] | 56 | P1 |
+| R[2] | 59 | U2 |
+| R[1] | 58 | R2 |
+| R[0] | 60 | U1 |
+| G[5] | 51 | P6 |
+| G[4] | 50 | T3 |
+| G[3] | 53 | N1 |
+| G[2] | 52 | P5 |
+| G[1] | 54 | M1 |
+| G[0] | 55 | R1 |
+| B[4] | 46 | J1 |
+| B[3] | 45 | K1 |
+| B[2] | 48 | P3 |
+| B[1] | 47 | R3 |
+| B[0] | 49 | T4 |
 
 ## JOP Configuration
 
