@@ -20,7 +20,7 @@ object JopJvmTestsBramSim extends App {
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
-  val bramSize = 4 * 1024 * 1024  // 4MB (DoAll.jop is ~2.9MB)
+  val bramSize = 512 * 1024  // 512KB — DoAll.jop code is ~280KB, leaving ~230KB heap
   val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, bramSize / 4)
 
   println(s"Loaded ROM: ${romData.length} entries")
