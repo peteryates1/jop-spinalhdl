@@ -377,7 +377,99 @@ Recommended implementation order for Option 4:
 
 ---
 
-## 8. Complexity / Risk Summary
+## 8. Real-Time Compatibility
+
+JOP was designed for **hard real-time Java** (RTSJ). The key property is that
+every microcode instruction has an exactly known execution time — the pipeline
+is deterministic, SDRAM has worst-case access bounds, and the memory controller
+has no hidden stalls. Every bytecode has a bounded WCET that a static analyser
+can verify.
+
+GC fits this model by making each increment bounded:
+- Each `newObject()` calls `tryGcIncrement()` → at most `MARK_STEP=20` or
+  `COMPACT_STEP=10` objects processed per call.
+- The *total* GC pause is bounded by `heap_size` (zeroing) — for 8 MB this is
+  ~110 ms, which was acceptable in the original design.
+
+The problem with large memories is not that the GC becomes *unbounded* — it
+remains bounded — but that the bound grows to seconds, making it useless for
+real-time analysis.
+
+### Option 1: Heap Cap
+**Compatible with real-time. Restores the original small-heap property.**
+
+Capping at 32 MB gives a worst-case zeroing pause of ~490 ms — the same kind of
+bound the original 8 MB heap provided (~110 ms). Nothing changes about per-step
+WCET. A static analyser can still compute a valid bound; it is just larger than
+the original. For soft real-time this is often acceptable.
+
+### Option 2: Region-Based GC
+**Partial improvement to the bound, with new complexity.**
+
+Reduces the worst-case zeroing per cycle to one region (e.g., 32 MB → ~490 ms)
+regardless of total heap size. This is a meaningful improvement — cycles become
+more uniform. However, the mark phase WCET still depends on how many reachable
+objects are in the target region, which is only bounded by the total handle count
+(65536), not the region size. The bound is tighter but requires more careful
+analysis.
+
+### Option 3: Parallel GC
+**Most damaging to real-time properties. Not suitable as a standalone approach.**
+
+When multiple cores share the SDRAM bus during GC work, memory access timing for
+any single core becomes non-deterministic from that core's perspective. The
+round-robin BMB arbiter adds variable latency: a core's read or write may stall
+waiting for a GC-worker core's burst. This breaks the fundamental assumption that
+memory access has a bounded worst-case latency independent of other cores'
+activity. WCET analysis becomes either impossible or extremely conservative.
+
+Option 3 should only be considered as a throughput optimiser for major GC — not
+as a standalone real-time approach — and only for non-RT cores.
+
+### Option 4: Generational GC
+**Restores real-time properties better than the current large-heap STW GC.**
+
+With a fixed nursery size:
+
+- **Minor GC pause** is bounded by nursery size (e.g., 4 MB → ~75 ms). This
+  bound is small and fixed regardless of total heap size.
+- **Write barrier** adds bounded per-store overhead. With the HW write barrier
+  assist (card table in BRAM, updated by the memory controller), the overhead is
+  constant-time — identical in structure to the current `putfield` latency.
+- **Major GC** is still the expensive STW cycle, but it fires rarely. Under RTSJ,
+  the scheduler can be aware of major GC cycles and plan around them.
+
+The pattern matches the original JOP design intent: small, bounded GC pauses
+during normal operation with a rare but known worst-case event. For a 4 MB
+nursery and 1 MB/s allocation rate, minor GC fires every ~4 seconds and takes
+~75 ms — a *better* real-time story than the current 8 MB heap with ~110 ms
+full GC, while supporting 256 MB total heap.
+
+### The RTSJ Escape Hatch
+
+JOP already implements the RTSJ answer to hard real-time: `Config.USE_SCOPES`
+(scoped memory, `NoHeapRealtimeThread`). On this path there is no GC at all —
+memory is managed by entering and exiting scopes. The GC infrastructure
+(`RtThreadImpl`, `Memory`, `Scheduler`) is already present.
+
+For truly hard real-time tasks (servo control, safety logic), the right answer
+is `NoHeapRealtimeThread` with scoped or immortal memory — GC never runs during
+those threads. For the rest of the application (networking, UI, data processing),
+generational GC provides predictable soft real-time behaviour with large heap.
+
+### Summary
+
+| Option | WCET compatible? | Notes |
+|--------|-----------------|-------|
+| 1. Heap cap | Yes | Restores original small-heap bound |
+| 2. Region-based | Mostly | Per-cycle bound = region_size; mark WCET less tight |
+| 3. Parallel GC | No | Shared bus makes per-core latency non-deterministic |
+| 4. Generational | Yes, better than current | Minor GC bound = nursery_size (small + fixed); HW write barrier is constant-time |
+| RTSJ scoped memory | Yes (perfect) | No GC on real-time threads; already implemented |
+
+---
+
+## 9. Complexity / Risk Summary
 
 | Option | Java runtime | SpinalHDL | Microcode | Risk |
 |--------|-------------|-----------|-----------|------|
