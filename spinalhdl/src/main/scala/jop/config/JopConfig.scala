@@ -446,7 +446,8 @@ object JopConfig {
         devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N")))),
       JopSystem(name = "sdr", memory = "sdr", bootMode = BootMode.Serial,
         clkFreq = sdrClkMhz MHz, cpuCnt = cpuCnt, coreConfig = JopCoreConfig(),
-        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("J12_UART"))))),
+        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("J12_UART"),
+          params = Map("baudRate" -> 115200))))),
     interconnect = None)
 
   // ========================================================================

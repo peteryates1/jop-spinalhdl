@@ -16,8 +16,7 @@ set_property PACKAGE_PIN H7 [get_ports {resetn}]
 set_property IOSTANDARD LVCMOS33 [get_ports {resetn}]
 
 # ============================================================================
-# Primary UART — CH340N on-board (E3/F3)
-# Default (uart_sel=0): DDR3 cluster. When uart_sel=1: SDR cluster.
+# Primary UART — CH340N on-board (E3/F3) — DDR3 cluster
 # ============================================================================
 set_property PACKAGE_PIN E3 [get_ports {ser_txd}]
 set_property IOSTANDARD LVCMOS33 [get_ports {ser_txd}]
@@ -25,23 +24,13 @@ set_property PACKAGE_PIN F3 [get_ports {ser_rxd}]
 set_property IOSTANDARD LVCMOS33 [get_ports {ser_rxd}]
 
 # ============================================================================
-# Secondary UART — J12 header (Pico UART0)
+# Secondary UART — J12 header (Pico UART0) — SDR cluster
 # U14=FPGA TX → Pico GP1 (RX), V14=FPGA RX ← Pico GP0 (TX)
-# Default (uart_sel=0): SDR cluster. When uart_sel=1: DDR3 cluster.
 # ============================================================================
 set_property PACKAGE_PIN U14 [get_ports {ser_txd_1}]
 set_property IOSTANDARD LVCMOS33 [get_ports {ser_txd_1}]
 set_property PACKAGE_PIN V14 [get_ports {ser_rxd_1}]
 set_property IOSTANDARD LVCMOS33 [get_ports {ser_rxd_1}]
-
-# ============================================================================
-# UART MUX select — J12 pin 5 (U15), active high, directly driven by Pico GP2
-# 0 = DDR3 on CH340 + SDR on J12 (default)
-# 1 = SDR on CH340 + DDR3 on J12
-# ============================================================================
-set_property PACKAGE_PIN U15 [get_ports {uart_sel}]
-set_property IOSTANDARD LVCMOS33 [get_ports {uart_sel}]
-set_property PULLDOWN TRUE [get_ports {uart_sel}]
 
 # ============================================================================
 # On-board LEDs (active high)
@@ -161,47 +150,6 @@ set_property IOB TRUE [get_ports {sdram_WEn}]
 # SDR SDRAM timing constraints and async clock groups are applied
 # POST-SYNTHESIS in build_dual_bitstream.tcl (IP internal pins must be resolved).
 # ============================================================================
-
-# ============================================================================
-# Debug: J12 header (Pico GPIO capture — fast BMB/SDRAM handshake signals)
-# Directly driven from SDR clock domain (~80 MHz)
-# ============================================================================
-set_property PACKAGE_PIN U16 [get_ports {dbg_j12[0]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j12[0]}]
-set_property PACKAGE_PIN V17 [get_ports {dbg_j12[1]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j12[1]}]
-set_property PACKAGE_PIN W18 [get_ports {dbg_j12[2]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j12[2]}]
-set_property PACKAGE_PIN W19 [get_ports {dbg_j12[3]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j12[3]}]
-set_property PACKAGE_PIN U20 [get_ports {dbg_j12[4]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j12[4]}]
-set_property PACKAGE_PIN Y21 [get_ports {dbg_j12[5]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j12[5]}]
-set_property PACKAGE_PIN V22 [get_ports {dbg_j12[6]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j12[6]}]
-set_property PACKAGE_PIN W23 [get_ports {dbg_j12[7]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j12[7]}]
-
-# ============================================================================
-# Debug: J13 PMOD (8-LED visual — SDR state indicators)
-# ============================================================================
-set_property PACKAGE_PIN N22 [get_ports {dbg_j13[0]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j13[0]}]
-set_property PACKAGE_PIN N21 [get_ports {dbg_j13[1]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j13[1]}]
-set_property PACKAGE_PIN R20 [get_ports {dbg_j13[2]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j13[2]}]
-set_property PACKAGE_PIN T22 [get_ports {dbg_j13[3]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j13[3]}]
-set_property PACKAGE_PIN P20 [get_ports {dbg_j13[4]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j13[4]}]
-set_property PACKAGE_PIN N23 [get_ports {dbg_j13[5]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j13[5]}]
-set_property PACKAGE_PIN P21 [get_ports {dbg_j13[6]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j13[6]}]
-set_property PACKAGE_PIN R21 [get_ports {dbg_j13[7]}]
-set_property IOSTANDARD LVCMOS33 [get_ports {dbg_j13[7]}]
 
 # ============================================================================
 # Configuration
