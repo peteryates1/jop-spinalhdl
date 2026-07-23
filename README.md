@@ -378,6 +378,8 @@ Active work items:
 
 Lower-priority or longer-term items:
 
+- **DDR3 heap size cap** — `JopTop` unconditionally sets `mainMemSize = md.sizeBytes` (256 MB) for DDR3 clusters, ignoring any smaller value in `JopCoreConfig`. For a single-core cluster, 32 MB gives ~160 ms GC rounds vs ~1.3 s at 256 MB. Fix: add `ddr3HeapSizeCap: Option[BigInt]` to `JopSystem` (or use `min(cc.memConfig.mainMemSize, md.sizeBytes)` with a sentinel default) so presets can opt in to a smaller heap without breaking existing configs.
+- **GC optimization for large memory** — The GC free-space zeroing loop dominates pause time at large heap sizes (e.g., ~4 s at 256 MB). Four options analysed (heap cap, region-based, parallel, generational) plus hardware accelerators (zero-fill DMA, object copy DMA, HW write barrier). Generational GC is the recommended long-term target: minor GC pause ~75–150 ms on 8–4 MB nursery, major GC rare. `writeBarrier()` infrastructure already exists in `GC.java`. Zero-fill DMA (extend `BmbMemoryController`) gives ~2.5× speedup with no Java runtime changes. See [GC optimization options](docs/gc/gc-optimization-options.md).
 - Memory controller — remaining VHDL features: address translation on read paths (for concurrent GC), data cache control signals, fast-path array access (`iald23`)
 - Interrupt handling — timer interrupts verified; UART RX/TX interrupts exercised in simulation; scheduler preemption not tested
 - DDR3 burst optimization — method cache fills could use burst reads through the cache bridge

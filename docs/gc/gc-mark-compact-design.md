@@ -7,6 +7,10 @@
 > in Section 1 below is historical context only. See
 > [Incremental GC Analysis](incremental-gc-analysis.md) for the
 > incremental design details.
+>
+> For GC performance on large memories (DDR2/DDR3, 64 MB–1 GB) and
+> future optimization options (generational GC, hardware accelerators),
+> see [GC Optimization Options](gc-optimization-options.md).
 
 ## 1. Previous GC Analysis (Semi-Space Copying Collector — Replaced)
 
