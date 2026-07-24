@@ -14,6 +14,7 @@ def main():
     baud = int(sys.argv[2]) if len(sys.argv) > 2 else 1000000
 
     ser = serial.Serial(port, baud, timeout=0.1)
+    ser.dtr = True   # required for RP2040 DirtyJTAG CDC bridge
     print(f"Listening on {ser.port} at {ser.baudrate} baud (Ctrl+C to exit)...")
 
     try:

@@ -140,19 +140,6 @@ From `/srv/git/qmtech/QMTECH_XC7A75T-100T-200T_Core_Board/XC7A100T/Software_XC7A
 | `led[0]` | T23 | LVCMOS33 | 14 | Core board LED 0 (D5, active low) |
 | `led[1]` | R23 | LVCMOS33 | 14 | Core board LED 1 (D6, active low) |
 
-### On-Board UART (CH340N)
-
-| Signal | Pin | Direction |
-|--------|-----|-----------|
-| `uart_rx` | F3 | CH340N → FPGA |
-| `uart_tx` | E3 | FPGA → CH340N |
-
-The core board has a CH340N USB-to-UART bridge connected to a Mini USB
-connector. When used with the DB_FPGA daughter board, the UART on the
-daughter board is on different FPGA pins via the expansion connectors:
-V4 CP2102N is on DB_FPGA J2 (mates with core board U2),
-V5 RP2040 UART0 is on DB_FPGA J3 (mates with core board U4).
-
 ### U2/U4 Connector Mapping
 
 The U2 and U4 headers are 32x2 pin (64 pins each), with signal pins 7-60

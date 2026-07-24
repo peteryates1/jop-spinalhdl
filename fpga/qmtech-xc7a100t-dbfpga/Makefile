@@ -35,6 +35,7 @@ DDR3_BITSTREAM := $(BUILD_DIR)/xc7a100t_ddr3/JopDdr3Top.bit
 .PHONY: generate-uart-echo create-uart-echo build-uart-echo program-uart-echo uart-echo test-uart-echo
 .PHONY: ddr3-generate ddr3-create-ip ddr3-build ddr3-program ddr3-monitor ddr3-download
 
+
 # === UART Echo Test (board bring-up) ===
 
 generate-uart-echo:

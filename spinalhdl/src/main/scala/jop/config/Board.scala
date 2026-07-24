@@ -449,7 +449,8 @@ object Board {
    * Pins 1-2: GND, 3-4: 3V3, 5-58: I/O, 59-62: NC, 63-64: VIN.
    * U2 (Banks 13,14,15) mates with DB_FPGA J2. U4 (Banks 34,35) mates with DB_FPGA J3.
    * Pin-to-FPGA mapping from core board schematic QMTECH_XC7A75T_100T_200T-CORE-BOARD-V01.
-   * On-board: DDR3 (MIG-managed), 50 MHz clock, CH340N UART, 2 LEDs, SW2 reset.
+   * On-board: DDR3 (MIG-managed), 50 MHz clock, 2 LEDs, SW2 reset.
+   * No on-board UART — use DB_FPGA daughter board (V4 CP2102N or V5 RP2040).
    */
   def QmtechXC7A100T = Board(
     name = "qmtech-xc7a100t",
@@ -458,8 +459,6 @@ object Board {
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3")),   // DDR3 pins managed by MIG IP
       BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "U22")),
-      BoardDevice("CH340N", mapping = Map(
-        "TXD" -> "E3", "RXD" -> "F3")),
       BoardDevice("LED", mapping = Map("led0" -> "T23", "led1" -> "R23")),
       BoardDevice("SWITCH", mapping = Map("sw2" -> "P4"))),
     connectors = Map(

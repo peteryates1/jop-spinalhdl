@@ -261,6 +261,7 @@ def main():
     data, checksum = pack_words(words)
 
     ser = serial.Serial(port, baud, timeout=2)
+    ser.dtr = True   # required for RP2040 DirtyJTAG CDC bridge (cdc_uart.c stops on DTR=0)
     ser.reset_input_buffer()
     ser.reset_output_buffer()
     print(f"Opened {ser.port} at {ser.baudrate} baud")
