@@ -10,11 +10,13 @@ JOP_SDRAM_BITSTREAM := vivado/build/wukong_jop_sdram/JopSdramWukongTop.bit
 DUAL_BITSTREAM := vivado/build/wukong_jop_dual_np/JopDualWukongTop.bit
 UART_DEV := /dev/ttyUSB0
 UART_BAUD := 1000000
+DUAL_SDR_UART_DEV := /dev/ttyACM0
+DUAL_SDR_UART_BAUD := 115200
 
 .PHONY: generate create-ip create-project build program program-flash monitor all clean
 .PHONY: ddr3-generate ddr3-create-ip ddr3-create-project ddr3-build ddr3-program ddr3-monitor
 .PHONY: ddr3-smp-generate ddr3-smp-build ddr3-smp-program ddr3-smp-monitor
-.PHONY: dual-generate dual-create-ip dual-build dual-program dual-monitor
+.PHONY: dual-generate dual-create-ip dual-build dual-program dual-monitor dual-sdr-monitor dual-sdr-download
 .PHONY: sdram-generate sdram-create-ip sdram-build sdram-program sdram-monitor
 .PHONY: jop-sdram-generate jop-sdram-build jop-sdram-program jop-sdram-monitor
 .PHONY: blink-create-project blink-build blink-program
@@ -95,6 +97,15 @@ dual-program:
 
 dual-monitor:
 	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
+
+# SDR cluster: UART via Pico ttyACM0 at 115200 baud
+dual-sdr-monitor:
+	$(REPO_ROOT)/fpga/scripts/monitor.py $(DUAL_SDR_UART_DEV) $(DUAL_SDR_UART_BAUD)
+
+dual-sdr-download:
+	python3 $(REPO_ROOT)/fpga/scripts/download.py -e \
+	  $(REPO_ROOT)/java/apps/Smallest/HelloWorld.jop \
+	  $(DUAL_SDR_UART_DEV) $(DUAL_SDR_UART_BAUD)
 
 # === SDRAM Exerciser targets ===
 
