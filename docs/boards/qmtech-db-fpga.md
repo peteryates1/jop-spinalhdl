@@ -14,19 +14,25 @@ GitHub: <https://github.com/ChinaQMTECH/DB_FPGA>
 Reference files: `/srv/git/qmtech/DB_FPGA/`
 
 Schematic: `QMTECH_DB_For_FPGA_V04.pdf` (V04, CP2102N USB-UART)
-Enhanced version: `/srv/git/qmtech/DB_FPGA_with_RP2040/DB_FPGA_V5-20221108.pdf` (V05, RP2040 replaces CP2102N)
+Enhanced version: `/srv/git/qmtech/DB_FPGA_with_RP2040/DB_FPGA_V5-20221108.pdf` (V05, RP2040 — no dedicated UART chip)
+
+### V4 vs V5 UART
+
+**V4** has a CP2102N USB-to-UART chip on J2 (Mini USB connector, `/dev/ttyUSB0`).
+
+**V5** has **no dedicated UART chip**. Serial communication is provided by the RP2040
+via its USB CDC ACM bridge (`/dev/ttyACM0`), or by a module plugged into the extension
+connectors. The 7-segment display, V4 LEDs, and CP2102N are all removed on V5.
 
 ### V5 RP2040 Firmware
 
-The V5 with a DirtyJTAG + UART composite USB device on the RP2040:
+The V5 RP2040 runs DirtyJTAG + UART composite USB device:
 - **USB ID**: `1209:c0ca` (Generic Jean THOMAS DirtyJTAG)
 - **JTAG**: DirtyJTAG interface for OpenOCD / openFPGALoader
 - **UART**: CDC ACM serial port (`/dev/ttyACM0`)
-- UART0: RP2040 GPIO0 (TX) / GPIO1 (RX) on J3 (J3_IO7/IO8)
-- Maps to core board J3 pins **5/6** (not 7/8 — header mirroring between boards)
-- UART0 XC7A100T: TX->B5, RX->A5 (verified). EP4CGX150: TX->C21, RX->B22
-- UART1 (`/dev/ttyACM1`): GPIO4/5 -> J2 pins 40/39 (J2_IO42/IO41)
-- UART1 does NOT conflict with Ethernet (Ethernet is on J3, not J2)
+- UART0: RP2040 GPIO0 (TX) / GPIO1 (RX) on J3 (J3_IO7/IO8) → J3 pins **7/8**
+- UART0 XC7A100T: TX→B5, RX←A5 (verified by loopback). EP4CGX150: TX→C21, RX←B22
+- UART1 (`/dev/ttyACM1`): GPIO4/5 → J2 pins 40/39 (J2_IO42/IO41) — **not working** (hangs on open)
 - **Not** J2:13/14 like V4's CP2102N — different connector and different pins!
 - `dsrdtr=True` and `dtr=True` required when opening `/dev/ttyACM0`
 - Verified working by FPGA pin loopback test
@@ -36,12 +42,12 @@ The V5 with a DirtyJTAG + UART composite USB device on the RP2040:
 **Programming**: `sudo openFPGALoader -c dirtyJtag design.bit`
 
 **RP2040 GPIO to FPGA connector mapping** (from DB_FPGA V5 schematic; NB schematic wiring note for JTAG is incorrect).
-IO signal numbers have a +2 offset from physical pin numbers (e.g., J3_IO7 = J3 pin 5, verified by loopback).
+`J3_IO N` net name = J3 physical pin N (no offset — J3_IO7 is on J3 pin 7, verified by loopback).
 
 | RP2040 | DB_FPGA Signal | Pin | Function | Conflicts with |
 |:------:|:--------------:|:---:|----------|----------------|
-| GPIO0 | J3_IO7 | J3:5 | UART0_TX | — |
-| GPIO1 | J3_IO8 | J3:6 | UART0_RX | SD CD |
+| GPIO0 | J3_IO7 | J3:7 | UART0_TX | — |
+| GPIO1 | J3_IO8 | J3:8 | UART0_RX | SD CD |
 | GPIO2 | J2_IO44 | J2:42 | | — |
 | GPIO3 | J2_IO43 | J2:41 | | — |
 | GPIO4 | J2_IO42 | J2:40 | UART1_TX | — |
@@ -81,9 +87,9 @@ Source: `/home/peter/pico-dirtyJtag/dirtyJtagConfig.h`
 The DB_FPGA has two 32x2 pin headers (J2, J3) that mate with the FPGA core board's
 expansion connectors. All peripherals are routed to one of these two connectors.
 
-**Pin numbering convention**: Physical pins 5-58 are signal pins (pins 1-4 are
-power/GND, 59+ are NC/VIN). DB_FPGA IO signal numbers = physical pin number + 2
-(e.g., physical pin 5 = IO7, physical pin 14 = IO16, physical pin 58 = IO60).
+**Pin numbering convention**: On QMTECH 64-pin headers, pins 1-2, 5-6, 61-62 = GND;
+pins 3-4 = 3V3/VCCO; pins 63-64 = VIN; pins 7-60 are I/O.
+DB_FPGA `Jx_IO N` net names equal the physical Jx pin number (J3_IO7 is on J3 pin 7).
 
 ![J2 connector pinout (V4)](images/dbfpga-v4-j2-pinout.png)
 
@@ -98,7 +104,7 @@ power/GND, 59+ are NC/VIN). DB_FPGA IO signal numbers = physical pin number + 2
 | Peripheral | Component | Interface | Connector | Status in JOP |
 |------------|-----------|-----------|:---------:|--------------|
 | **Ethernet** | RTL8211EG PHY | GMII 8-bit (1 Gbps) | J3 | Working — `BmbEth` + `BmbMdio` |
-| **UART** | CP2102N USB-to-UART (V4) / RP2040 (V5) | TX/RX + USB | J2 (V4) / J3 (V5) | Working — `BmbUart` (2 Mbaud) |
+| **UART** | CP2102N chip (V4) / RP2040 CDC bridge (V5, no dedicated chip) | TX/RX + USB | J2:13/14 (V4) / J3:7/8 (V5) | Working — `BmbUart` (2 Mbaud) |
 | **VGA** | Direct RGB (5-6-5) | 15-pin D-sub | J3 | Working — `BmbVgaText` (80x30) |
 | **SD card** | microSD slot | Native 4-bit / SPI | J3 | Working — `BmbSdNative` / `BmbSdSpi` |
 | **7-segment** | 3-digit (2352B) | Multiplexed 8+3 lines | J2 | V4 only (removed in V5) |
@@ -118,8 +124,8 @@ V4 (CP2102N) on J2 and V5 (RP2040) on J3 use **different** connector pins.
 |--------|:---:|:---------:|:--------:|:-------:|
 | TXD (to FPGA) | J2:13 | AD20 | F22 | V4 |
 | RXD (from FPGA) | J2:14 | AE21 | G22 | V4 |
-| TXD (to FPGA) | J3:5 | C21 | B5 | V5 |
-| RXD (from FPGA) | J3:6 | B22 | A5 | V5 |
+| TXD (to FPGA) | J3:7 | C21 | B5 | V5 |
+| RXD (from FPGA) | J3:8 | B22 | A5 | V5 |
 
 ![CP2102N UART schematic (V4, on J2)](images/dbfpga-v4-cp2102n.png)
 
