@@ -44,11 +44,11 @@ generate-uart-echo:
 	cd $(REPO_ROOT) && sbt "runMain jop.system.UartEchoTopVerilog"
 
 create-uart-echo: generate-uart-echo
-	cd $(REPO_ROOT)/fpga/qmtech-xc7a100t-dbfpga && \
+	cd $(REPO_ROOT)/fpga/qmtech-xc7a100t-dbfpga-v5 && \
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/create_uart_echo_project.tcl
 
 build-uart-echo: create-uart-echo
-	cd $(REPO_ROOT)/fpga/qmtech-xc7a100t-dbfpga && \
+	cd $(REPO_ROOT)/fpga/qmtech-xc7a100t-dbfpga-v5 && \
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/build_uart_echo_bitstream.tcl
 
 program-uart-echo:

@@ -403,7 +403,7 @@ suite (`DoAll.jop`, 66 tests) passes over serial download at **2 Mbaud**,
 DDR3, single-core. Post-route WNS ≈ +0.07 ns.
 
 ```bash
-cd fpga/qmtech-xc7a100t-dbfpga
+cd fpga/qmtech-xc7a100t-dbfpga-v5
 
 # One-time: generate clk_wiz + MIG IPs
 make ddr3-create-ip
