@@ -70,4 +70,6 @@ report_timing_summary -file [file join $build_dir timing_summary.rpt]
 # Write bitstream
 write_bitstream -force [file join $build_dir JopDualWukongTop.bit]
 
+source [file join $script_dir ../../../scripts/vivado_fit_summary.tcl]
 puts "INFO: Bitstream at [file join $build_dir JopDualWukongTop.bit]"
+emit_fit_summary $build_dir [file join $rtl_dir JopDualWukongTop.summary.txt]

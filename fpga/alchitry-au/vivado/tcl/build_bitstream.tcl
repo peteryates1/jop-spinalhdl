@@ -27,3 +27,8 @@ launch_runs impl_1 -to_step write_bitstream -jobs 8
 wait_on_run impl_1
 
 puts "INFO: Bitstream available under [get_property DIRECTORY [get_runs impl_1]]"
+
+# Fit summary (project flow: load the routed design first).
+open_run impl_1
+source [file join $script_dir ../../../scripts/vivado_fit_summary.tcl]
+emit_fit_summary $build_dir [file normalize [file join $repo_root ../../spinalhdl/generated JopDdr3Top.summary.txt]]

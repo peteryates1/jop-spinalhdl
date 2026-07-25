@@ -43,4 +43,6 @@ set_property IS_ENABLED FALSE [get_drc_checks LUTLP-1]
 # Write bitstream
 write_bitstream -force [file join $build_dir JopDdr3WukongTop.bit]
 
+source [file join $script_dir ../../../scripts/vivado_fit_summary.tcl]
 puts "INFO: Bitstream at [file join $build_dir JopDdr3WukongTop.bit]"
+emit_fit_summary $build_dir [file join $rtl_dir JopDdr3WukongTop.summary.txt]
