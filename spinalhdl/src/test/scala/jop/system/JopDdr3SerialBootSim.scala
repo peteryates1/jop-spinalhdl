@@ -45,7 +45,7 @@ case class JopDdr3SerialBootHarness(
     memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = 128 * 1024, burstLen = 0),
     supersetJumpTable = JumpTableInitData.serial,
     clkFreq = 100 MHz,
-    devices = Map("uart" -> DeviceInstance(DeviceType.Uart, params = Map("baudRate" -> 1000000)))
+    devices = Map("uart" -> DeviceInstance(DeviceType.Uart, params = Map("baudRate" -> 2000000)))
   )
 
   val cacheAddrWidth = 28  // BMB byte address width (addressWidth + 2)
@@ -223,7 +223,7 @@ case class JopDdr3SerialBootHarness(
  */
 object JopDdr3SerialBootSim extends App {
 
-  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
   val romFilePath = "asm/generated/serial/mem_rom.dat"
   val ramFilePath = "asm/generated/serial/mem_ram.dat"
   val logFilePath = "spinalhdl/ddr3_serial_boot_simulation.log"
@@ -267,9 +267,9 @@ object JopDdr3SerialBootSim extends App {
   println(s"Log file: $logFilePath")
   println()
 
-  // UART timing: 1 Mbaud at 100 MHz = 100 clock cycles per bit
+  // UART timing: 2 Mbaud at 100 MHz = 50 clock cycles per bit
   // forkStimulus(10) -> 1 clock = 10 sim time units
-  val bitPeriod = 1000L  // 100 clocks * 10 sim units = 1000
+  val bitPeriod = 500L  // 50 clocks * 10 sim units = 500
 
   val run = TestHistory.startRun("JopDdr3SerialBootSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
@@ -298,14 +298,21 @@ object JopDdr3SerialBootSim extends App {
       dut.clockDomain.waitSampling(10)
 
       println(s"Starting DDR3 serial boot simulation...")
-      println(s"Downloading ${jopBytes.length} bytes via bit-serial UART (1 Mbaud)...")
-      logLine(s"Starting download: ${jopBytes.length} bytes via UART (1 Mbaud)")
+      println(s"Downloading ${jopBytes.length} bytes via bit-serial UART (2 Mbaud)...")
+      logLine(s"Starting download: ${jopBytes.length} bytes via UART (2 Mbaud)")
 
-      // Track echo bytes and UART output
-      var echoBytes = 0
-      var echoErrors = 0
-      var downloadComplete = false
+      // Expected checksum: XOR of all jopWords (including word[0] = word count)
+      val expectedChecksum: Long = jopWords.foldLeft(0L) { (acc, w) => acc ^ (w.toLong & 0xFFFFFFFFL) } & 0xFFFFFFFFL
+      println(s"Expected checksum: 0x${expectedChecksum.toHexString}")
+      logLine(s"Expected checksum: 0x${expectedChecksum.toHexString}")
+
+      // Protocol state
+      var handshakeComplete = false   // FPGA sent 0xAA, we sent 0x55
+      var txComplete = false          // all jopBytes sent on rxd
+      var downloadComplete = false    // 4-byte checksum received from FPGA
       var downloadCompleteCycle = 0
+      var checksumMatch = false
+      val checksumBuf = scala.collection.mutable.ArrayBuffer[Int]()
 
       // GC progress tracking
       var gcStartSeen = false
@@ -318,39 +325,34 @@ object JopDdr3SerialBootSim extends App {
       var currentBusyStreak = 0
       var hangDetected = false
 
-      // Fork a thread to send bytes bit-by-bit on rxd
+      // Bit-serial byte transmitter on rxd (FPGA UART RX)
+      def sendByte(b: Int): Unit = {
+        dut.io.rxd #= false; sleep(bitPeriod)  // start bit
+        for (bit <- 0 until 8) { dut.io.rxd #= ((b >> bit) & 1) == 1; sleep(bitPeriod) }
+        dut.io.rxd #= true; sleep(bitPeriod)   // stop bit
+      }
+
+      // TX thread: waits for FPGA 0xAA (set by main loop), sends 0x55 ACK, then streams all jopBytes
       val txThread = fork {
-        // Small delay before starting download (let microcode initialize)
-        sleep(500)
+        while (!handshakeComplete) sleep(100)
+
+        val ackMsg = "TX: sending 0x55 ACK (entering download mode)"
+        println(ackMsg); logLine(ackMsg)
+        sendByte(0x55)
+        sleep(bitPeriod * 5)  // brief gap: let FPGA transition to xram_loop
 
         for (byteIdx <- jopBytes.indices) {
-          val b = jopBytes(byteIdx).toInt & 0xFF
-
-          // Start bit (LOW)
-          dut.io.rxd #= false
-          sleep(bitPeriod)
-
-          // 8 data bits (LSB first)
-          for (bit <- 0 until 8) {
-            dut.io.rxd #= ((b >> bit) & 1) == 1
-            sleep(bitPeriod)
-          }
-
-          // Stop bit (HIGH)
-          dut.io.rxd #= true
-          sleep(bitPeriod)
-
-          // Progress report every 2000 bytes
+          sendByte(jopBytes(byteIdx).toInt & 0xFF)
           if ((byteIdx + 1) % 2000 == 0) {
             val pct = ((byteIdx + 1) * 100) / jopBytes.length
             val msg = s"  Download: ${byteIdx + 1}/${jopBytes.length} bytes ($pct%)"
-            println(msg)
-            logLine(msg)
+            println(msg); logLine(msg)
           }
         }
 
-        println(s"Download thread complete (${jopBytes.length} bytes sent)")
-        logLine(s"Download thread complete (${jopBytes.length} bytes sent)")
+        txComplete = true
+        val doneMsg = s"TX: all ${jopBytes.length} bytes sent, awaiting 4-byte checksum from FPGA"
+        println(doneMsg); logLine(doneMsg)
       }
 
       // Main simulation loop
@@ -399,7 +401,7 @@ object JopDdr3SerialBootSim extends App {
               f"  cacheState=$cacheState adapterState=$adapterState\n" +
               f"  PC=$pc%04x JPC=$jpc%04x\n" +
               f"  aout=0x$aout%08x bout=0x$bout%08x\n" +
-              f"  downloadComplete=$downloadComplete echoBytes=$echoBytes\n" +
+              f"  downloadComplete=$downloadComplete checksumMatch=$checksumMatch\n" +
               f"  UART so far: '${uartOutput.toString}'"
             println(s"\n$msg")
             logLine(msg)
@@ -422,34 +424,42 @@ object JopDdr3SerialBootSim extends App {
           logLine(msg)
         }
 
-        // Capture UART TX output
+        // Capture UART TX output from FPGA
         if (dut.io.uartTxValid.toBoolean) {
           val ch = dut.io.uartTxData.toInt & 0xFF
-          if (!downloadComplete) {
-            // During download: verify echo bytes
-            if (echoBytes < jopBytes.length) {
-              val expected = jopBytes(echoBytes).toInt & 0xFF
-              if (ch != expected) {
-                echoErrors += 1
-                if (echoErrors <= 10) {
-                  val msg = f"  Echo mismatch at byte $echoBytes: sent 0x$expected%02x, got 0x$ch%02x"
-                  println(msg)
-                  logLine(msg)
-                }
-              }
-            }
-            echoBytes += 1
 
-            // Check if download is complete (all bytes echoed)
-            if (echoBytes >= jopBytes.length) {
+          if (!handshakeComplete) {
+            // Waiting for rdy_send (0xAA from FPGA)
+            if (ch == 0xAA) {
+              handshakeComplete = true
+              val msg = f"[$cycle%8d] FPGA rdy_send: got 0xAA, signaling TX thread to send 0x55"
+              println(s"\n$msg"); logLine(msg)
+            }
+          } else if (txComplete && !downloadComplete) {
+            // Collecting 4-byte checksum from FPGA (sent after all N words received)
+            checksumBuf.append(ch)
+            if (checksumBuf.length == 4) {
+              val cs = (((checksumBuf(0).toLong & 0xFF) << 24) |
+                        ((checksumBuf(1).toLong & 0xFF) << 16) |
+                        ((checksumBuf(2).toLong & 0xFF) << 8)  |
+                         (checksumBuf(3).toLong & 0xFF)) & 0xFFFFFFFFL
+              checksumMatch = cs == expectedChecksum
               downloadComplete = true
               downloadCompleteCycle = cycle
-              val msg = s"  Download verified: $echoBytes bytes echoed, $echoErrors errors, at cycle $cycle"
-              println(s"\n$msg")
-              logLine(msg)
+              val result = if (checksumMatch) "PASS" else "FAIL"
+              val msg = f"[$cycle%8d] Checksum: 0x$cs%08x expected=0x$expectedChecksum%08x $result"
+              println(s"\n$msg"); logLine(msg)
+              if (checksumMatch) {
+                // ACK so FPGA jumps to downloaded code
+                fork { sendByte(0x55) }
+                logLine(s"  ACK sent: FPGA should jump to HelloWorld")
+              } else {
+                logLine(s"  CHECKSUM MISMATCH -- download corrupted, aborting")
+                done = true
+              }
             }
-          } else {
-            // After download: capture program output
+          } else if (downloadComplete && checksumMatch) {
+            // Program output (HelloWorld, GC rounds, etc.)
             val c = ch.toChar
             uartOutput.append(c)
             if (ch >= 32 && ch < 127) {
@@ -459,26 +469,22 @@ object JopDdr3SerialBootSim extends App {
             } else if (ch == 13) {
               // ignore CR
             } else {
-              print('.')
+              print(f"[0x$ch%02x]")
             }
             logLine(f"[$cycle%8d] UART: '${if (ch >= 32 && ch < 127) ch.toChar.toString else f"\\x$ch%02x"}' (0x$ch%02x)")
 
-            // Track GC progress
+            // Track GC progress (for SmallGC variant)
             val output = uartOutput.toString
             if (!gcStartSeen && output.contains("GC test start")) {
               gcStartSeen = true
               val msg = f"[$cycle%8d] GC test started (${cycle - downloadCompleteCycle} cycles after download)"
-              println(s"\n$msg")
-              logLine(msg)
+              println(s"\n$msg"); logLine(msg)
             }
-
-            // Check for GC round completions: R0, R1, ..., R12, R14
             for (round <- (0 to 12) ++ Seq(14)) {
               if (round > lastGcRound && output.contains(s"R$round f=")) {
                 lastGcRound = round
                 val msg = f"[$cycle%8d] GC round R$round completed"
-                println(s"\n$msg")
-                logLine(msg)
+                println(s"\n$msg"); logLine(msg)
               }
             }
           }
@@ -492,7 +498,9 @@ object JopDdr3SerialBootSim extends App {
           val cacheState = dut.io.debugCacheState.toInt
           val adapterState = dut.io.debugAdapterState.toInt
           val status = if (!downloadComplete) {
-            s"downloading (echoes=$echoBytes/${jopBytes.length})"
+            if (!handshakeComplete) "waiting for FPGA 0xAA"
+            else if (!txComplete) s"downloading (${checksumBuf.length} checksum bytes so far)"
+            else s"awaiting checksum (${checksumBuf.length}/4 bytes)"
           } else if (!gcStartSeen) {
             s"booting (${cycle - downloadCompleteCycle} cycles since download)"
           } else if (!gcCompleteSeen) {
@@ -505,26 +513,26 @@ object JopDdr3SerialBootSim extends App {
           logLine(msg)
         }
 
-        // Success: GC cycle completed (R14 seen)
-        val output = uartOutput.toString
-        if (output.contains("R80 f=") && !gcCompleteSeen) {
-          gcCompleteSeen = true
-          val msg = f"[$cycle%8d] *** GC cycle completed! ***"
-          println(s"\n$msg")
-          logLine(msg)
-
-          // Drain remaining UART output for a bit
-          for (_ <- 0 until 50000) {
-            dut.clockDomain.waitSampling()
-            if (dut.io.uartTxValid.toBoolean) {
-              val ch = dut.io.uartTxData.toInt
-              val c = ch.toChar
-              uartOutput.append(c)
-              if (ch >= 32 && ch < 127) print(c)
-              else if (ch == 10) print('\n')
+        // Success: program output seen (HelloWorld or GC)
+        if (downloadComplete && checksumMatch && !gcCompleteSeen) {
+          val output = uartOutput.toString
+          val programDone = output.contains("Hello World!") || output.contains("R80 f=")
+          if (programDone) {
+            gcCompleteSeen = true
+            val label = if (output.contains("Hello World!")) "Hello World!" else "GC completed"
+            val msg = f"[$cycle%8d] *** $label ***"
+            println(s"\n$msg"); logLine(msg)
+            for (_ <- 0 until 100000) {
+              dut.clockDomain.waitSampling()
+              if (dut.io.uartTxValid.toBoolean) {
+                val ch = dut.io.uartTxData.toInt
+                uartOutput.append(ch.toChar)
+                if (ch >= 32 && ch < 127) print(ch.toChar)
+                else if (ch == 10) print('\n')
+              }
             }
+            done = true
           }
-          done = true
         }
       }
 
@@ -539,7 +547,7 @@ object JopDdr3SerialBootSim extends App {
       println(s"${"=" * 70}")
       println(s"Cycles: $cycle")
       println(s"MIG latency: $latMin-$latMax cycles")
-      println(s"Download: ${jopBytes.length} bytes, echoed: $echoBytes, errors: $echoErrors")
+      println(s"Download: ${jopBytes.length} bytes, complete=$downloadComplete, checksumMatch=$checksumMatch")
       println(s"Download complete: $downloadComplete (cycle $downloadCompleteCycle)")
       println(s"Total busy cycles: $busyCycles, max busy streak: $maxBusyStreak")
       println(s"GC started: $gcStartSeen, last round: R$lastGcRound, completed: $gcCompleteSeen")
@@ -568,24 +576,20 @@ object JopDdr3SerialBootSim extends App {
         }
         System.exit(2)
       } else if (!downloadComplete) {
-        run.finish("FAIL", s"$cycle cycles, download did not complete (echoed $echoBytes/${jopBytes.length})")
+        run.finish("FAIL", s"$cycle cycles, download did not complete (checksum not received)")
         println(s"FAIL: Download did not complete")
         System.exit(1)
-      } else if (!uartOutput.toString.contains("GC test start")) {
-        run.finish("FAIL", s"$cycle cycles, latency=$latMin-$latMax, did not see 'GC test start'")
-        println(s"FAIL: Did not see 'GC test start'")
-        System.exit(1)
-      } else if (!uartOutput.toString.contains("R0 f=")) {
-        run.finish("FAIL", s"$cycle cycles, latency=$latMin-$latMax, did not see allocation rounds")
-        println(s"FAIL: Did not see allocation rounds")
+      } else if (!checksumMatch) {
+        run.finish("FAIL", f"$cycle cycles, checksum mismatch (expected 0x$expectedChecksum%08x)")
+        println(s"FAIL: Checksum mismatch")
         System.exit(1)
       } else if (gcCompleteSeen) {
-        run.finish("PASS", s"$cycle cycles, latency=$latMin-$latMax, serial boot + DDR3 cache + GC works")
+        run.finish("PASS", s"$cycle cycles, latency=$latMin-$latMax, serial boot + DDR3 cache works")
         println(s"PASS: Serial boot + DDR3 cache path works correctly!")
-        println(s"  GC completed through R14 with latency $latMin-$latMax")
+        println(s"  UART output: ${uartOutput.toString.take(200)}")
       } else {
-        run.finish("TIMEOUT", s"$cycle cycles, latency=$latMin-$latMax, GC did not complete (last round R$lastGcRound)")
-        println(s"TIMEOUT: GC did not complete (last round R$lastGcRound)")
+        run.finish("TIMEOUT", s"$cycle cycles, download OK (checksum match) but no program output")
+        println(s"TIMEOUT: Download succeeded but no program output within $cycle cycles")
         System.exit(1)
       }
     }

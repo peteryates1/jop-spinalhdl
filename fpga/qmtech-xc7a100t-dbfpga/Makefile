@@ -26,13 +26,15 @@ GENERATED := $(REPO_ROOT)/spinalhdl/generated
 CABLE := dirtyJtag
 
 # UART via RP2040 ttyACM0 (DB_FPGA V5 UART bridge)
-UART_DEV := /dev/ttyACM0
-UART_BAUD := 115200
+# ttyACM0 = Debug Probe UART; ttyACM1 = DirtyJTAG CDC0 (FPGA UART bridge)
+UART_DEV := /dev/ttyACM1
+UART_BAUD := 2000000
 
 # Bitstream paths
 DDR3_BITSTREAM := $(BUILD_DIR)/xc7a100t_ddr3/JopDdr3Top.bit
 
 .PHONY: generate-uart-echo create-uart-echo build-uart-echo program-uart-echo uart-echo test-uart-echo
+.PHONY: loopback-create loopback-build loopback-program uart-loopback
 .PHONY: ddr3-generate ddr3-create-ip ddr3-build ddr3-program ddr3-monitor ddr3-download
 
 
@@ -58,6 +60,42 @@ uart-echo: build-uart-echo program-uart-echo
 
 test-uart-echo:
 	python3 $(REPO_ROOT)/fpga/scripts/uart_echo_test.py
+
+# === UART Loopback (FPGA wires B5 rxd → A5 txd, no logic) ===
+# Programs FPGA with a trivial combinational loopback.
+# Any byte sent from RP2040 GPIO0 exits immediately on A5 back to GPIO1.
+# Run uart_loopback.py to verify the full GPIO0→B5→A5→GPIO1 path.
+
+loopback-create:
+	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/create_uart_loopback_project.tcl
+
+loopback-build: loopback-create
+	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/build_uart_loopback_bitstream.tcl
+
+loopback-program:
+	sudo openFPGALoader -c $(CABLE) \
+		$(BUILD_DIR)/uart_loopback/uart_loopback.runs/impl_1/UartLoopback.bit
+
+uart-loopback: loopback-build loopback-program
+	@echo "=== UART loopback programmed — test with: python3 ../../fpga/scripts/uart_loopback.py ==="
+
+# === UART TX generator (FPGA independently drives 0xAA on A5 + P25) ===
+# Tests FPGA→GPIO RX path without needing GPIO TX to work.
+# With UART0 firmware: ttyACM0 should receive 0xAA from A5→GPIO1 (known good ref)
+# With UART1 firmware: ttyACM0 should receive 0xAA from P25→GPIO5 (tests J2 path)
+
+txgen-create:
+	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/create_uart_txgen_project.tcl
+
+txgen-build: txgen-create
+	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/build_uart_txgen_bitstream.tcl
+
+txgen-program:
+	sudo openFPGALoader -c $(CABLE) \
+		$(BUILD_DIR)/uart_txgen/uart_txgen.runs/impl_1/UartTxGen.bit
+
+uart-txgen: txgen-build txgen-program
+	@echo "=== TX generator programmed — python3 ../../fpga/scripts/uart_loopback.py --rx-only ==="
 
 # === JOP DDR3 (xc7a100tDbSerial preset) ===
 

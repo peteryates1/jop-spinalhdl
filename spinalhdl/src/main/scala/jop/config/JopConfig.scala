@@ -657,6 +657,9 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+      // 2 Mbaud (default). host->FPGA is lossless at full speed here (RP2040
+      // USB backpressure works). FPGA->host byte drops were a ring-wrap bug in
+      // the RP2040 cdc_uart.c bridge, fixed in firmware, not a baud problem.
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("RP2040"))))))
 
   /** XC7A100T + DB_FPGA V5 — DDR3, full I/O (Ethernet + VGA + SD) */
