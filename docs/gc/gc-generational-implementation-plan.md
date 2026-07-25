@@ -49,7 +49,7 @@ the high-risk `GC.java` generational rewrite.
 
 | Stage | What | Risk | Depends on |
 |---|---|---|---|
-| **0. HW Zero-Fill DMA** | `ZERO` state in `BmbMemoryController` (template: `cp0-cpstop`) + `IO_ZERO_START`/`IO_ZERO_END` I/O regs; replace the two SW zero loops (`GC.java:725,869`) with a DMA call (SW fallback retained) | Low | — |
+| **0. HW Zero-Fill DMA ✅ DONE** | `ZERO` state in `BmbMemoryController` (template: `cp0-cpstop`) + `IO_ZERO_START`/`IO_ZERO_END` I/O regs; replace the two SW zero loops (`GC.java:725,869`) with a DMA call (SW fallback retained) | Low | — |
 | **1. HW card-marking barrier** | Memory controller dirties a BRAM card table (1 bit / 16-word card) on writes into the tenure range; GC reads it during minor root scan | Low–Med | — |
 | **2. Nursery + `minorGc()`** | Bump-pointer nursery in `newObject`/`newArray`; minor GC = root scan + card scan → copy survivors to tenure → HW-zero nursery | High | 0, 1 |
 | **3. Tune & validate** | Per-preset nursery sizing; major-GC trigger threshold; validate bounded ~75 ms minor pause on real 256 MB DDR3 | Med | 2 |
@@ -103,6 +103,30 @@ world, so the pipeline can stall in `ZERO_RUN` until done. The win is throughput
 
 **Scope:** ~150 lines Scala + small `GC.java`/`Const.java` changes. No GC
 algorithm change — safe stepping stone.
+
+### Stage 0 results (hardware, XC7A100T + DB_FPGA V5, DDR3, 2026-07-25)
+
+Cost: **+66 LUTs, +37 FF**, 0 BRAM/DSP (16585 vs 16519 LUTs). Timing MET
+(WNS +0.272 ns). Validated via `java/apps/Small/src/test/ZeroBench.java`
+(`make -C java/apps/Small APP_NAME=ZeroBench`), zeroing a 4 MB int[] backing
+store both ways on the same bitstream:
+
+| | Time (4 MB) | Correctness |
+|---|---|---|
+| SW word loop | 604 ms | — |
+| **HW zero DMA** | **194 ms** | `nonzeroAfterHW=0` (region reads back all-zero) |
+
+**3.11× speedup** (beats the doc's projected 2.5×), and DoAll 66/66 still
+passes with GC routing through the DMA — no regression.
+
+**Finding — throughput is cache-bound.** Both paths go through the 32 KB L2
+(`BmbCacheBridge` → `LruCacheCore`), so zeroing cold memory is dominated by
+write-allocate misses (read-line-then-write); absolute rate (~21 MB/s HW) is
+far below raw DDR3. The 3.11× comes purely from eliminating the per-word JOP
+pipeline round-trip. A large future win: make the ZERO DMA **bypass the
+cache** (write straight to the MIG, invalidating touched lines) and/or use
+burst writes (BL=8) — could push zeroing to hundreds of MB/s. Worth a
+Stage 0.5 before generational, since minor-GC nursery zeroing rides on this.
 
 ---
 
