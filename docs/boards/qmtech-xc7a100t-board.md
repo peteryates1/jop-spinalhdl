@@ -272,9 +272,27 @@ connector pinout is identical across all QMTECH core boards.
 | TX (FPGA->bridge) | J2-15 (U2) | F22 | J3-8 (U4) | A5 |
 | RX (bridge->FPGA) | J2-16 (U2) | G22 | J3-7 (U4) | B5 |
 
-V5 UART1 (`/dev/ttyACM1`) -- **not working**, hangs on open. GPIO4/5 -> J2_IO42/IO41
-but ttyACM1 never becomes responsive regardless of FPGA pin configuration.
-Tested with both mirrored (R25/P25) and direct (T24/T25) pin assignments.
+The RP2040 **UART0** bridge appears on the host as `/dev/ttyACM1` (DirtyJTAG
+CDC0). It is the **working** JOP serial-download/console port — verified at
+2 Mbaud (`download.py ... /dev/ttyACM1 2000000`). Port map on this board:
+`ttyACM0` = Debug Probe, `ttyACM1` = DirtyJTAG CDC0 (FPGA UART0 bridge),
+`ttyACM2` = DirtyJTAG CDC1 (GPIO MUX control).
+
+A separate attempt to expose RP2040 **UART1** (GPIO4/5 → J2_IO42/IO41) was
+abandoned — that path never became responsive regardless of FPGA pin
+configuration (tested mirrored R25/P25 and direct T24/T25). It is unrelated
+to the working UART0 bridge above.
+
+**DirtyJTAG firmware note:** reliable full-speed download requires the
+CDC↔UART bridge to be lossless. The stock `cdc_uart.c` RX→USB forwarding
+batched with a `FULL_SWO_PACKET`/`n_checks>4` heuristic (from the SWO-trace
+use case) and dropped the tail of small bursts — the 4-byte download
+checksum came back short and test output lost characters, which hung large
+downloads (`DoAll.jop`). Fixed by forwarding received bytes immediately and
+clamping each `tud_cdc_n_write` to the contiguous span before the ring
+wrap (pico-dirtyJtag master `36809d0`). Lowering the FPGA baud is **not**
+the fix — it just moves the loss to the host→FPGA direction. See
+[pico-dirtyjtag-setup.md](../pico-dirtyjtag-setup.md).
 
 V5 note: RP2040 UART0 → DB_FPGA net `J3_IO7/IO8` → J3 pins 7/8 → U4 pins
 7/8 → FPGA B5/A5. Verified by hardware loopback test (10/10 echo passes).
@@ -378,17 +396,39 @@ sbt "runMain jop.system.JopTopVerilog xc7a100tDbSmp 4"
 Board definitions: `Board.QmtechXC7A100T` + `Board.QmtechFpgaDbV5` (V5 with RP2040).
 Assembly: `SystemAssembly.xc7a100tWithDbV5`.
 
-### Remaining Steps for FPGA Build
+### Build & Serial Download (working — verified 2026-07-25)
 
-1. **MIG regeneration**: New Vivado MIG IP targeting XC7A100T-FGG676-2 with
-   the pin assignments above. The MIG local interface (28-bit address, 128-bit
-   data) will be identical to the Au V2 and Wukong builds.
+The DDR3 build is complete and verified on hardware: the full JVM test
+suite (`DoAll.jop`, 66 tests) passes over serial download at **2 Mbaud**,
+DDR3, single-core. Post-route WNS ≈ +0.07 ns.
 
-2. **Pin constraint file**: New XDC with DDR3 pins, system clock, DB_FPGA
-   peripherals (UART, Ethernet, VGA, SD), and LEDs.
+```bash
+cd fpga/qmtech-xc7a100t-dbfpga
 
-3. **Vivado project**: Makefile targets for synthesis, implementation, and
-   bitstream generation.
+# One-time: generate clk_wiz + MIG IPs
+make ddr3-create-ip
+
+# Generate Verilog + build bitstream
+make ddr3-build
+
+# Program the FPGA (DirtyJTAG RP2040 on DB_FPGA V5)
+make ddr3-program
+
+# Download a .jop over the RP2040 UART0 bridge (/dev/ttyACM1, 2 Mbaud)
+python3 ../../fpga/scripts/download.py -e \
+  ../../java/apps/JvmTests/DoAll.jop /dev/ttyACM1 2000000
+```
+
+**Reprogram before every download.** Once JOP boots it stops sending the
+`0xAA` ready byte, so a second `download.py` against a running JOP just
+times out. Re-run `make ddr3-program` (which resets the FPGA back into the
+boot handshake) before each download.
+
+The serial loader has **no per-byte handshake** — the host free-streams
+and the FPGA counts words until `heap == size`, so a single dropped byte
+hangs the FPGA forever (no checksum, then a host-side timeout). Reliable
+full-speed transfer therefore depends on a lossless USB↔UART bridge; see
+the DirtyJTAG firmware note below.
 
 ### Address Flow
 

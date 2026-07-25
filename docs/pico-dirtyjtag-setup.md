@@ -32,7 +32,7 @@ is needed when switching between firmwares.
 
 ## Building the Firmware
 
-The pico-dirtyJtag source is at `~/pico-dirtyJtag` with two local
+The pico-dirtyJtag source is at `~/pico-dirtyJtag` with these local
 modifications from upstream:
 
 1. **Custom pin assignments** in `dirtyJtagConfig.h` — TCK=GP2, TMS=GP3,
@@ -40,6 +40,18 @@ modifications from upstream:
 2. **Multicore disabled** in `dirtyJtag.c` — `#define MULTICORE` commented
    out. The multicore USB handling causes bulk transfer timeouts with Pico
    SDK 2.2.0.
+3. **CDC↔UART bridge reliability fixes** in `cdc_uart.c` — used as the JOP
+   serial console/download bridge (FPGA UART0 ↔ host `/dev/ttyACM1`):
+   - `dma_handler` NULL-guard for uninitialised interfaces (master
+     `488f86f`) — an uninitialised `uart_devices[1]` corrupted the TX DMA
+     write address so nothing was transmitted.
+   - RX→USB forwarding rewrite (master `36809d0`) — the stock
+     `FULL_SWO_PACKET`/`n_checks>4` batching (from the SWO-trace use case)
+     dropped the tail of small bursts, so the 4-byte JOP download checksum
+     came back short and console output lost characters. Now forwards
+     received bytes immediately and clamps each `tud_cdc_n_write` to the
+     contiguous span before the ring-buffer wrap. Verified: reliable JOP
+     downloads at full 2 Mbaud with no host-side throttling.
 
 ```bash
 cd ~/pico-dirtyJtag/build
