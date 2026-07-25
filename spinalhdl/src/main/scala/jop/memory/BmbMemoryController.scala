@@ -150,6 +150,8 @@ case class BmbMemoryController(
         AC_FILL_CMD, AC_FILL_WAIT,
         // GC copy states (matching VHDL cp0-cpstop) - busy
         CP_SETUP, CP_READ, CP_READ_WAIT, CP_WRITE, CP_STOP,
+        // Zero-fill DMA (bulk memset 0 over [zeroCur, zeroEnd)) - busy
+        ZERO_RUN, ZERO_WAIT,
         // getstatic/putstatic - busy
         GS_READ, PS_WRITE, LAST
       = newElement()
@@ -163,6 +165,12 @@ case class BmbMemoryController(
 
   // Address register for memory writes (set by stmwa, used by stmwd)
   val addrReg = Reg(UInt(config.addressWidth bits)) init(0)
+
+  // Zero-fill DMA state: current/end word addresses (see JopIoSpace.ZERO_*).
+  // Writing ZERO_START latches zeroCur; writing ZERO_END latches zeroEnd and
+  // launches ZERO_RUN, which BMB-writes 0 across [zeroCur, zeroEnd).
+  val zeroCur = Reg(UInt(config.addressWidth bits)) init(0)
+  val zeroEnd = Reg(UInt(config.addressWidth bits)) init(0)
 
   // Read data register (captured from BMB response or I/O read)
   val rdDataReg = Reg(Bits(32 bits)) init(0)
@@ -564,9 +572,20 @@ case class BmbMemoryController(
       }.elsewhen(io.memIn.wr || io.memIn.wrf) {
         // Memory write (stmwd/stmwf) - use addrReg for address, io.aout for data
         when(addrIsIo) {
-          io.ioAddr := addrReg(7 downto 0)
-          io.ioWr := True
-          io.ioWrData := io.aout
+          when(JopIoSpace.isZero(addrReg(7 downto 0))) {
+            // Zero-fill DMA registers — owned here, not forwarded to a slave.
+            // Data (io.aout) is a word address.
+            when(JopIoSpace.zeroSel(addrReg(7 downto 0)) === 0) {
+              zeroCur := io.aout(config.addressWidth - 1 downto 0).asUInt  // ZERO_START
+            }.otherwise {
+              zeroEnd := io.aout(config.addressWidth - 1 downto 0).asUInt  // ZERO_END
+              state := State.ZERO_RUN                                      // launch
+            }
+          }.otherwise {
+            io.ioAddr := addrReg(7 downto 0)
+            io.ioWr := True
+            io.ioWrData := io.aout
+          }
         }.otherwise {
           // Note: address translation not applied — see translateAddr comment.
           io.bmb.cmd.valid := True
@@ -1321,6 +1340,35 @@ case class BmbMemoryController(
       // posReg := baseReg makes range [baseReg, baseReg) = empty
       posReg := baseReg
       state := State.IDLE
+    }
+
+    // ========================================================================
+    // Zero-Fill DMA (busy) — bulk memset 0 over [zeroCur, zeroEnd)
+    // ========================================================================
+    // Launched by a write to JopIoSpace.ZERO_END. Writes one zero word per
+    // BMB cmd/rsp round-trip (data defaults to 0, mask=1111, length=1 word),
+    // staying resident so it avoids the per-word JOP pipeline round-trip. The
+    // pipeline is stalled (busy) until the whole range is zeroed — GC zeroing
+    // is stop-the-world, so blocking here is fine.
+    is(State.ZERO_RUN) {
+      when(zeroCur === zeroEnd) {
+        state := State.IDLE
+      }.otherwise {
+        io.bmb.cmd.valid := True
+        io.bmb.cmd.fragment.opcode := Bmb.Cmd.Opcode.WRITE
+        io.bmb.cmd.fragment.address := (zeroCur << 2).resized
+        // fragment.data defaults to 0 and mask to all-ones (see cmd defaults).
+        when(io.bmb.cmd.fire) {
+          state := State.ZERO_WAIT
+        }
+      }
+    }
+
+    is(State.ZERO_WAIT) {
+      when(io.bmb.rsp.fire) {
+        zeroCur := zeroCur + 1
+        state := State.ZERO_RUN
+      }
     }
   }
 

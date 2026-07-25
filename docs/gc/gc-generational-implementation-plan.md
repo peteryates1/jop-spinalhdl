@@ -62,19 +62,36 @@ the high-risk `GC.java` generational rewrite.
 and later the nursery zero) with a hardware burst-write DMA. Deterministic timing,
 ~2.5× throughput.
 
-### HDL (`spinalhdl/src/main/scala/jop/memory/BmbMemoryController.scala`)
-- Add `ZERO_RUN` / `ZERO_WAIT` states modelled on the existing GC copy states.
-- I/O-mapped registers (new `Const.IO_ZERO_*`):
-  - `IO_ZERO_START` (word address) — writing it latches start.
-  - `IO_ZERO_END` (word address) — writing it launches the DMA.
-  - read `IO_ZERO_STATUS` — 0 = busy, 1 = done (`rdy`).
-- State machine issues BMB/SDRAM writes of `0` across `[start, end)`, using the
-  burst path where available (BL=4/8). Pipeline stalls only on the `rdy` poll.
+### Chosen trigger design — controller-owned I/O registers, blocking
 
-### Runtime (`GC.java` + `Const.java`)
-- Add `Native`/`Const` hooks for the new I/O regs.
-- New helper `zeroMem(from, to)`: launch DMA, poll `rdy`. Keep the SW loop behind
-  a `USE_HW_ZERO` flag as fallback / for boards without the DMA.
+Grounded in the code: the memory controller sees *every* I/O write via its
+`addrIsIo` path (before forwarding to external slaves) and owns the BMB master.
+The auto I/O allocator packs devices *downward from 0xED*, so fixed addresses
+just below the boot region are free. Three trigger options were considered —
+(A) controller-owned I/O regs, (B) Sys registers + a `syncOut` wire to the
+controller (like `gcHalt`), (C) a new microcode primitive like `stcp`. **A is
+chosen**: least invasive, no microcode, no Sys wiring, no new pipeline op.
+
+Blocking (not `rdy`-polled) for the first cut: GC zeroing is already stop-the-
+world, so the pipeline can stall in `ZERO_RUN` until done. The win is throughput
++ deterministic burst timing, not concurrency. Async/`rdy` is a later option.
+
+### HDL (`BmbMemoryController.scala` + `JopMemoryConfig.scala` + `IoAddressAllocator.scala`)
+- Reserve two fixed I/O sub-addresses `ZERO_START = 0xEC`, `ZERO_END = 0xED`
+  (`JopMemoryConfig`); `markRange` them in `IoAddressAllocator.allocate()` so no
+  auto device collides.
+- Add `ZERO_RUN` state + `zeroCur`/`zeroEnd` regs. In the IDLE I/O-write path:
+  write to `ZERO_START` latches `zeroCur`; write to `ZERO_END` latches `zeroEnd`
+  and enters `ZERO_RUN`. `ZERO_RUN` drives BMB `WRITE 0` to `(zeroCur<<2)`; on
+  `fire`, `zeroCur += 1`; when `zeroCur === zeroEnd` → `IDLE`. (Burst BL=4/8 is a
+  later throughput optimization; a resident word loop already removes the
+  ~6 cycle/word pipeline round-trip.)
+
+### Runtime (`GC.java` + `Const.java` + `ConstGenerator.scala`)
+- Add `Const.IO_ZERO_START`/`IO_ZERO_END` (generated to match the sub-addresses).
+- `zeroMem(from, to)`: `Native.wr(from, IO_ZERO_START); Native.wr(to, IO_ZERO_END)`
+  (the second write blocks until done). Behind a `USE_HW_ZERO` flag; SW loop kept
+  as fallback for boards without the DMA.
 - Swap the two zero loops (`finishCycle` ~725, `gc` ~869) to `zeroMem`.
 
 ### Test (uses the new upload/run loop)

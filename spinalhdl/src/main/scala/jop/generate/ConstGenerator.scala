@@ -214,6 +214,14 @@ object ConstGenerator {
          |	public static final int IO_FPU_CAP = IO_BASE + ${ioOffset(JopIoSpace.SYS_BASE + 15)};
          |
          |	// ====================================================================
+         |	// Zero-fill DMA registers (BmbMemoryController, fixed at 0xEC-0xED)
+         |	// ====================================================================
+         |	/** Zero-fill DMA: start word address — write to latch */
+         |	public static final int IO_ZERO_START = IO_BASE + ${ioOffset(JopIoSpace.ZERO_START)};
+         |	/** Zero-fill DMA: end word address, exclusive — write to launch (blocks until done) */
+         |	public static final int IO_ZERO_END = IO_BASE + ${ioOffset(JopIoSpace.ZERO_END)};
+         |
+         |	// ====================================================================
          |	// Boot device registers (UART or cfgFlash, fixed at 0xEE)
          |	// ====================================================================
          |

@@ -147,7 +147,8 @@ object JopAddressSpace {
  * Fixed layout:
  *   0xF0-0xFF  Sys   (16 addrs)  — always present, top of space
  *   0xEE-0xEF  Boot  (2 addrs)   — UART or cfgFlash
- *   0x80-0xED  Dynamic  (110 addrs)  — auto-allocated, packing downward from 0xED
+ *   0xEC-0xED  Zero  (2 addrs)   — zero-fill DMA regs (BmbMemoryController)
+ *   0x80-0xEB  Dynamic (108 addrs) — auto-allocated, packing downward from 0xEB
  */
 object JopIoSpace {
   // Fixed base addresses (referenced by jvm.asm)
@@ -169,13 +170,22 @@ object JopIoSpace {
   def UART_STATUS  = UART_BASE + 0  // Status register
   def UART_DATA    = UART_BASE + 1  // Data register
 
+  // Zero-fill DMA registers, owned by BmbMemoryController (not an I/O slave).
+  // Reserved just below the boot device so the auto allocator (packs down from
+  // 0xED) never assigns them; markRange'd in IoAddressAllocator.
+  val ZERO_BASE    = 0xEC  // 2 addrs, 1-bit sub-addr
+  def ZERO_START   = ZERO_BASE + 0  // write: start word address (latch)
+  def ZERO_END     = ZERO_BASE + 1  // write: end word address (launch, exclusive)
+
   // Hardware address-match predicates for fixed devices (operate on 8-bit ioAddr)
   def isSys(a: UInt): Bool   = a(7 downto 4) === (SYS_BASE >> 4)
   def isUart(a: UInt): Bool  = a(7 downto 1) === (UART_BASE >> 1)
+  def isZero(a: UInt): Bool  = a(7 downto 1) === (ZERO_BASE >> 1)
 
   // Sub-address extraction for fixed devices
   def sysAddr(a: UInt): UInt  = a(3 downto 0)
   def uartAddr(a: UInt): UInt = a(0 downto 0)
+  def zeroSel(a: UInt): UInt  = a(0 downto 0)  // 0 = START, 1 = END
 }
 
 /**

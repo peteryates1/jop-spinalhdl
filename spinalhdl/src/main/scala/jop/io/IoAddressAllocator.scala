@@ -63,6 +63,12 @@ object IoAddressAllocator {
       AllocatedDevice(d, base)
     }
 
+    // Reserve the memory-controller zero-fill DMA registers
+    // (JopIoSpace.ZERO_BASE = 0xEC-0xED). These are decoded by
+    // BmbMemoryController, not an I/O slave, so they are not in `descriptors`;
+    // reserve them here so no auto device is placed on top of them.
+    markRange(0xEC, 2)
+
     // Sort auto devices by size (largest first for best packing)
     val sortedAuto = auto.sortBy(-_.size)
 

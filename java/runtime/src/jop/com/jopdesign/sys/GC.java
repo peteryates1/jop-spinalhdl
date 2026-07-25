@@ -196,6 +196,16 @@ public class GC {
 	/** Number of objects to compact per compact increment. */
 	static final int COMPACT_STEP = 10;
 
+	/**
+	 * Use the hardware zero-fill DMA (BmbMemoryController ZERO state) instead of
+	 * a software word-by-word write loop for zeroing the free region. The DMA
+	 * stays resident in the memory controller (no per-word JOP pipeline
+	 * round-trip) and gives deterministic burst timing — the dominant GC cost.
+	 * Requires the ZERO registers (Const.IO_ZERO_START/END); safe to disable on
+	 * builds without them.
+	 */
+	static final boolean USE_HW_ZERO = true;
+
 	// --- Compact phase state ---
 	static int compactList;    // sorted snapshot of useList for compaction
 	static int compactDst;     // compaction destination pointer
@@ -722,9 +732,7 @@ public class GC {
 			copyPtr = compactDst;
 		}
 
-		for (int i = copyPtr; i < allocPtr; ++i) {
-			Native.wrMem(0, i);
-		}
+		zeroMem(copyPtr, allocPtr);
 
 		Native.invalidate();
 	}
@@ -866,9 +874,7 @@ public class GC {
 		// Replaces zapSemi() from the semi-space collector.
 		// Ensures newly allocated objects have zeroed fields
 		// (JVM spec: all fields default to 0/null).
-		for (int i = copyPtr; i < allocPtr; ++i) {
-			Native.wrMem(0, i);
-		}
+		zeroMem(copyPtr, allocPtr);
 
 		// Invalidate caches after compaction -- object data has moved
 		Native.invalidate();
@@ -879,6 +885,23 @@ public class GC {
 
 	static int free() {
 		return allocPtr-copyPtr;
+	}
+
+	/**
+	 * Zero the word range [from, to). Uses the hardware zero-fill DMA when
+	 * enabled (writing IO_ZERO_END launches it; the next memory access blocks
+	 * until the memory controller finishes and returns to IDLE), otherwise a
+	 * software word loop.
+	 */
+	static void zeroMem(int from, int to) {
+		if (USE_HW_ZERO) {
+			Native.wr(from, Const.IO_ZERO_START);
+			Native.wr(to, Const.IO_ZERO_END);   // launch; blocks on next mem access
+		} else {
+			for (int i = from; i < to; ++i) {
+				Native.wrMem(0, i);
+			}
+		}
 	}
 
 	/**
