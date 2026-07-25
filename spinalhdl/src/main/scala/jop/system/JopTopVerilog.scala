@@ -85,12 +85,50 @@ object JopTopVerilog {
         "minimum, max1000Sdram, ep4ce6Sdram")
   }
 
+  /** Build a human-readable configuration summary for a resolved JopConfig. */
+  def configSummary(presetName: String, jopConfig: JopConfig): String = {
+    val sb = new StringBuilder
+    def line(s: String): Unit = { sb.append(s); sb.append('\n') }
+    line("=== JOP Build Configuration ===")
+    line(f"  Preset:        $presetName")
+    line(f"  Entity:        ${jopConfig.entityName}")
+    line(f"  Board:         ${jopConfig.assembly.fpgaBoard.name}")
+    line(f"  FPGA:          ${jopConfig.fpga.name}")
+    val systems = jopConfig.resolvedSystems
+    if (systems.length > 1)
+      line(f"  Topology:      ${systems.length} independent systems")
+    systems.foreach { sys =>
+      val p = if (systems.length > 1) s"  [${sys.name}] " else "  "
+      val mhz = (sys.clkFreq.toBigDecimal / 1000000).bigDecimal.stripTrailingZeros.toPlainString
+      line(f"${p}Cores:       ${sys.cpuCnt}")
+      line(f"${p}Clock:       $mhz MHz")
+      line(f"${p}Memory:      ${sys.memory}")
+      line(f"${p}Boot mode:   ${sys.bootMode}")
+      val devs = sys.effectiveDevices
+      devs.values.find(_.deviceType.key == "uart").foreach { u =>
+        val baud = u.params.get("baudRate").map(_.asInstanceOf[Int]).getOrElse(2000000)
+        line(f"${p}UART baud:   $baud")
+      }
+      val bc = sys.coreConfig.bytecodes
+      if (bc.nonEmpty)
+        line(f"${p}HW bytecodes: ${bc.toSeq.sortBy(_._1).map { case (k, v) => s"$k=$v" }.mkString(", ")}")
+      if (sys.coreConfig.useDspMul) line(f"${p}DSP multiply: yes")
+      if (sys.coreConfig.useStackCache) line(f"${p}Stack cache: on")
+      val devList = devs.toSeq.sortBy(_._1).map { case (n, d) =>
+        n + d.devicePart.map(pt => s" ($pt)").getOrElse("")
+      }
+      if (devList.nonEmpty) line(f"${p}Devices:     ${devList.mkString(", ")}")
+    }
+    line(f"  Generated:     ${java.time.LocalDateTime.now().withNano(0)}")
+    sb.toString
+  }
+
   /** Generate Verilog from a JopConfig */
   def generate(
     jopConfig: JopConfig,
-    jopFilePath: Option[String] = None
+    jopFilePath: Option[String] = None,
+    presetName: String = "(custom)"
   ): Unit = {
-    val isMultiSystem = jopConfig.systems.length > 1
     val sys = jopConfig.resolvedSystems.head
     val isBram = !jopConfig.resolveMemory(sys).isDefined
     val bramSize = sys.coreConfig.memConfig.mainMemSize.toInt
@@ -106,20 +144,12 @@ object JopTopVerilog {
       Some(data)
     } else None
 
-    println(s"=== JopTop Verilog Generation ===")
-    println(s"  Entity: ${jopConfig.entityName}")
-    println(s"  Board:  ${jopConfig.assembly.fpgaBoard.name}")
-    println(s"  FPGA:   ${jopConfig.fpga.name}")
-    if (isMultiSystem) {
-      jopConfig.systems.foreach { s =>
-        println(s"  System '${s.name}': memory=${s.memory}, cores=${s.cpuCnt}, clock=${s.clkFreq}")
-      }
-    } else {
-      println(s"  Memory: ${sys.memory}")
-      println(s"  Cores:  ${sys.cpuCnt}, Clock: ${sys.clkFreq}")
-    }
-    println(s"  ROM:    ${sys.romPath} (${romData.length} entries)")
-    println(s"  RAM:    ${sys.ramPath} (${ramData.length} entries)")
+    val summary = configSummary(presetName, jopConfig)
+    val romRamLines =
+      f"  ROM:           ${sys.romPath} (${romData.length} entries)%n" +
+      f"  RAM:           ${sys.ramPath} (${ramData.length} entries)%n"
+    print(summary)
+    print(romRamLines)
 
     val spinalConfig = JopSpinalConfig(jopConfig)
 
@@ -131,7 +161,12 @@ object JopTopVerilog {
       mainMemSize = if (isBram) bramSize else 64 * 1024
     )))
 
+    val summaryPath = s"spinalhdl/generated/${jopConfig.entityName}.summary.txt"
+    val pw = new java.io.PrintWriter(summaryPath)
+    try { pw.print(summary); pw.print(romRamLines) } finally pw.close()
+
     println(s"Generated: spinalhdl/generated/${jopConfig.entityName}.v")
+    println(s"Summary:   $summaryPath")
   }
 
   def main(args: Array[String]): Unit = {
@@ -141,6 +176,6 @@ object JopTopVerilog {
       case "ep4cgx150BramGc" => Some("java/apps/Small/HelloWorld.jop")
       case _ => None
     }
-    generate(config, jopFilePath = jopFile)
+    generate(config, jopFilePath = jopFile, presetName = preset)
   }
 }
