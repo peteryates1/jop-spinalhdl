@@ -291,7 +291,10 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+      // hasBackendFill: use the SDR backend's fast block-fill for GC zeroing
+      // (~full SDR bandwidth) instead of the controller's per-word loop.
+      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasBackendFill = true),
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
   /** EP4CGX150 + daughter board — SMP, N cores */

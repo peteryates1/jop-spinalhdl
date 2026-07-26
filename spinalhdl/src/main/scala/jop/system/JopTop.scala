@@ -331,9 +331,14 @@ case class JopTop(
         )
         sdrCtrl.ctrl.io.bmb <> cluster.io.bmb
         io.sdram <> sdrCtrl.ctrl.io.sdram
-        // Fill sideband tie-off (SDR presets have hasBackendFill=false for now).
-        sdrCtrl.ctrl.io.fill.cmd := False; sdrCtrl.ctrl.io.fill.start := 0
-        sdrCtrl.ctrl.io.fill.end := 0; sdrCtrl.ctrl.io.fill.value := 0
+        // Block-fill: wire the cluster's fill master to the SDR backend, or tie
+        // it off when the config has no backend fill.
+        cluster.io.fill match {
+          case Some(f) => f <> sdrCtrl.ctrl.io.fill
+          case None =>
+            sdrCtrl.ctrl.io.fill.cmd := False; sdrCtrl.ctrl.io.fill.start := 0
+            sdrCtrl.ctrl.io.fill.end := 0; sdrCtrl.ctrl.io.fill.value := 0
+        }
       }
 
       if (isDdr3) {
@@ -626,9 +631,14 @@ case class JopTop(
       )
       sdrCtrl.ctrl.io.bmb <> cluster.io.bmb
       io.sdram <> sdrCtrl.ctrl.io.sdram
-      // Fill sideband tie-off (SDR presets have hasBackendFill=false for now).
-      sdrCtrl.ctrl.io.fill.cmd := False; sdrCtrl.ctrl.io.fill.start := 0
-      sdrCtrl.ctrl.io.fill.end := 0; sdrCtrl.ctrl.io.fill.value := 0
+      // Block-fill: wire the cluster's fill master to the SDR backend, or tie
+      // it off when the config has no backend fill.
+      cluster.io.fill match {
+        case Some(f) => f <> sdrCtrl.ctrl.io.fill
+        case None =>
+          sdrCtrl.ctrl.io.fill.cmd := False; sdrCtrl.ctrl.io.fill.start := 0
+          sdrCtrl.ctrl.io.fill.end := 0; sdrCtrl.ctrl.io.fill.value := 0
+      }
 
       // SDR UART RX: secondary (J12 header)
       cluster.devicePin[Bool]("uart", "rxd") := io.ser_rxd_1

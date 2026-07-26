@@ -145,6 +145,10 @@ case class JopCluster(
     // Separate DMA BMB (when separateStackDmaBus=true, DMA uses its own bus)
     val stackDmaBmb = if (separateStackDmaBus && hasStackDma) Some(master(Bmb(inputParam))) else None
 
+    // Block-fill sideband (optional, when the backend provides a fast fill).
+    // GC runs only on core 0 during STW, so core 0's fill is routed out.
+    val fill = if (baseConfig.memConfig.hasBackendFill) Some(master(jop.memory.MemFill(baseConfig.memConfig.addressWidth))) else None
+
     // Debug transport byte interface (byte-stream abstraction point).
     // FPGA top-levels connect DebugUart to this; sim harnesses connect directly.
     val debugTransport = if (debugConfig.isDefined) Some(slave(DebugTransport())) else None
@@ -176,6 +180,12 @@ case class JopCluster(
       vgaCd   = if (i == 0) vgaCd else None
     )
   }
+
+  // Block-fill sideband: route core 0's fill master to the cluster output.
+  // Other cores never fill (GC is single-threaded on core 0), so tie their
+  // fill busy input low.
+  io.fill.foreach { f => f <> cores(0).io.fill.get }
+  for (i <- 1 until cpuCnt) cores(i).io.fill.foreach { _.busy := False }
 
   // ==================================================================
   // Memory Bus: direct (single-core, no debug mem) or arbitrated
