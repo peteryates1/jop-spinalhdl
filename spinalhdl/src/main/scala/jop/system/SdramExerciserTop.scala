@@ -74,6 +74,8 @@ case class SdramExerciserTop(md: MemoryDevice) extends Component {
       CAS = md.casLatency
     )
     io.sdram <> sdramCtrl.io.sdram
+    sdramCtrl.io.fill.cmd := False; sdramCtrl.io.fill.start := 0
+    sdramCtrl.io.fill.end := 0; sdramCtrl.io.fill.value := 0
 
     // UART TX (1 Mbaud)
     val uartCtrl = new UartCtrl(UartCtrlGenerics(

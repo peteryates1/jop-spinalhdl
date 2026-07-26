@@ -56,6 +56,8 @@ case class BmbMemCtrlSdramTestHarness(
 
   // SDRAM interface
   io.sdram <> sdramCtrl.io.sdram
+  sdramCtrl.io.fill.cmd := False; sdramCtrl.io.fill.start := 0
+  sdramCtrl.io.fill.end := 0; sdramCtrl.io.fill.value := 0
 
   // Wire up memory controller signals
   memCtrl.io.memIn := io.memIn

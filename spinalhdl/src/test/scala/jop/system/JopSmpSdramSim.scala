@@ -117,6 +117,8 @@ case class JopSmpSdramTestHarness(
 
   sdramCtrl.io.bmb <> cluster.io.bmb
   io.sdram <> sdramCtrl.io.sdram
+  sdramCtrl.io.fill.cmd := False; sdramCtrl.io.fill.start := 0
+  sdramCtrl.io.fill.end := 0; sdramCtrl.io.fill.value := 0
 
   // ====================================================================
   // Per-core Debug Output Wiring
