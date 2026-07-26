@@ -119,18 +119,67 @@ store both ways on the same bitstream:
 **3.11× speedup** (beats the doc's projected 2.5×), and DoAll 66/66 still
 passes with GC routing through the DMA — no regression.
 
-**Finding — throughput is cache-bound.** Both paths go through the 32 KB L2
-(`BmbCacheBridge` → `LruCacheCore`), so zeroing cold memory is dominated by
-write-allocate misses (read-line-then-write); absolute rate (~21 MB/s HW) is
-far below raw DDR3. The 3.11× comes purely from eliminating the per-word JOP
-pipeline round-trip. A large future win: make the ZERO DMA **bypass the
-cache** (write straight to the MIG, invalidating touched lines) and/or use
-burst writes (BL=8) — could push zeroing to hundreds of MB/s. Worth a
-Stage 0.5 before generational, since minor-GC nursery zeroing rides on this.
+**Finding — throughput is bound by the word-granular L2, not write-allocate.**
+Both paths go through the 32 KB L2 (`BmbCacheBridge` → `LruCacheCore`). The L2
+already *skips* read-allocate on full-word writes
+(`pendingNeedRefill := !(write && compReqIsFullLineWrite)`), so refill is not the
+cost. The cost is that the L2 line is **one word (32-bit)**: each zeroed word is a
+per-word cache-state round-trip, and dirty-line writeback drives the 128-bit MIG
+at ¼ utilization (32 useful bits per transaction). Net ~21 MB/s. The 3.11× comes
+purely from removing the per-word JOP pipeline round-trip. Real throughput needs
+wide (128-bit / burst) writes to the MIG — see Stage 0.5.
 
 ---
 
-## 4. Stages 1–3 outline (expand when reached)
+## 4. Stage 0.5 — fast, portable fill (per-backend mechanism)
+
+**Constraint (user):** must work across swappable backends — BRAM / SDR / DDR2 /
+DDR3 — wired via `MemoryControllerFactory` (sealed trait: `BramMemCtrl`,
+`SdrMemCtrl`, `Ddr3MemCtrl`). So the fill is a **capability each backend module
+provides**, exposed through a common interface at the BMB level; the
+`BmbMemoryController` drives it and falls back to the Stage-0 word loop for
+backends that don't implement it.
+
+**Principle (user):** the controller *always* delegates fill to the backend; each
+backend fills at its **native full memory speed, whatever the technology.** No
+controller-side fallback loop — every backend implements the mechanism (a trivial
+loop is fine where that is already full speed).
+
+### Interface
+- Common sideband `MemFill` bundle threaded alongside `io.bmb` (controller =
+  master, backend = slave): `valid` (start pulse), `start`/`end` word addresses,
+  `value`, `busy` (backend asserts while filling).
+- `BmbMemoryController`: a write to `ZERO_END` drives `io.fill` and stalls on
+  `fill.busy`. The Stage-0 `ZERO_RUN` word loop is removed — the mechanism now
+  lives in each backend.
+- Threaded controller → `JopCore` → cluster → top → backend, parallel to `io.bmb`.
+
+### Build order (confirmed) + test rig
+1. **`MemFill` interface** + `BmbMemoryController` driving it.
+2. **BRAM fill** (word/line loop into the on-chip `Mem`) and **SDR fill** (SDR
+   burst zero writes in `BmbSdramCtrl32`; no write-back L2 in this path).
+3. Validate on **EP4CGX150 + FPGA-DB V4** (primary SDR board, now connected):
+   Altera USB-Blaster (`09fb:6001`) for programming, CP210x UART (`10c4:ea60`,
+   from DB V4) for serial. Quartus flow: `fpga/qmtech-ep4cgx150-sdram`.
+4. **DDR3 fill** — separate follow-up (below).
+
+### DDR3 mechanism (later) — option B **and** A
+Chosen: **128-bit L2 line + invalidate-line + block-zero at full MIG speed.**
+- **(B)** Widen `LruCacheCore` line to 128 bits (matches `app_wdf_data`): general
+  DDR3 speedup (spatial locality) and makes full-line zeroing a single MIG beat.
+- **(A)** Fill = invalidate the L2 lines in `[start,end)` (writeback dirty
+  live-object lines, drop clean ones) + block-write 0 straight to the MIG in
+  128-bit bursts. Needs a new L2 invalidate/flush capability (none today).
+- Open: full-L2 flush (simplest, OK during STW GC) vs range invalidate; MIG
+  arbitration (fill vs cache — safe during STW since cache is idle).
+
+**Effort:** interface + SDR/BRAM is moderate; DDR3 (B+A) is the substantial part,
+deferred. Justified because minor-GC nursery zeroing (Stage 2) rides on fill
+throughput for its bounded pause.
+
+---
+
+## 5. Stages 1–3 outline (expand when reached)
 
 - **Stage 1 (card table):** BRAM card table sized 1 bit / 16-word card (4 KB for
   256 MB). Memory controller sets `card[(addr−tenureBase)>>4]` on tenure-range
