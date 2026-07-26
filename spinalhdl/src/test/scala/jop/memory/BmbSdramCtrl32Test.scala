@@ -31,6 +31,7 @@ case class BmbSdramCtrl32TestHarness(
   val io = new Bundle {
     val bmb = slave(Bmb(bmbParam))
     val sdram = master(SdramInterface(SdramDeviceInfo.layoutFor(md)))
+    val fill = slave(MemFill(bmbParam.access.addressWidth - 2))
   }
 
   val ctrl = BmbSdramCtrl32(
@@ -42,6 +43,7 @@ case class BmbSdramCtrl32TestHarness(
 
   io.bmb <> ctrl.io.bmb
   io.sdram <> ctrl.io.sdram
+  ctrl.io.fill <> io.fill
 }
 
 /**
@@ -63,6 +65,26 @@ class BmbSdramCtrl32Test extends AnyFunSuite {
     dut.io.bmb.cmd.fragment.data #= 0
     dut.io.bmb.cmd.fragment.mask #= 0xF
     dut.io.bmb.rsp.ready #= true
+    dut.io.fill.cmd #= false
+    dut.io.fill.start #= 0
+    dut.io.fill.end #= 0
+    dut.io.fill.value #= 0
+  }
+
+  /** Helper: run a block fill over [startWord, endWord) and wait for completion. */
+  def fillRange(dut: BmbSdramCtrl32TestHarness, startWord: Int, endWord: Int): Unit = {
+    dut.io.fill.start #= startWord
+    dut.io.fill.end #= endWord
+    dut.io.fill.value #= 0
+    dut.io.fill.cmd #= true
+    // hold cmd until backend raises busy (command latched)
+    var t = 10000
+    while (!dut.io.fill.busy.toBoolean && t > 0) { dut.clockDomain.waitSampling(); t -= 1 }
+    dut.io.fill.cmd #= false
+    // wait for busy to fall (fill complete, all writes committed)
+    t = 2000000
+    while (dut.io.fill.busy.toBoolean && t > 0) { dut.clockDomain.waitSampling(); t -= 1 }
+    assert(t > 0, "fill did not complete (busy stuck)")
   }
 
   /** Helper: issue a BMB read and return the 32-bit data.
@@ -302,6 +324,32 @@ class BmbSdramCtrl32Test extends AnyFunSuite {
         }
 
         println("=== JOP memory data roundtrip: PASSED ===")
+      }
+  }
+
+  test("BmbSdramCtrl32: block fill zeroes a range and leaves neighbours intact") {
+    SimConfig
+      .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
+      .compile(BmbSdramCtrl32TestHarness())
+      .doSim { dut =>
+        dut.clockDomain.forkStimulus(10)
+        initBmb(dut)
+        SdramModel(io = dut.io.sdram, layout = SdramDeviceInfo.layoutFor(md), clockDomain = dut.clockDomain)
+        dut.clockDomain.waitSampling(40000)
+
+        // Dirty words [0,32) plus a guard word at 32 with distinct values.
+        for (i <- 0 until 33) bmbWrite(dut, i, 0xA5A50000L | i)
+        for (i <- 0 until 33) assert(bmbRead(dut, i) == (0xA5A50000L | i), s"pre-fill word $i wrong")
+
+        // HW fill zeroes [4, 20) only.
+        fillRange(dut, 4, 20)
+
+        for (i <- 0 until 33) {
+          val got = bmbRead(dut, i)
+          val exp = if (i >= 4 && i < 20) 0L else (0xA5A50000L | i)
+          assert(got == exp, f"word $i: expected 0x$exp%08X got 0x$got%08X")
+        }
+        println("=== SDR block fill: PASSED ===")
       }
   }
 }

@@ -37,6 +37,10 @@ case class BmbSdramCtrl32(
   val io = new Bundle {
     val bmb = slave(Bmb(bmbParameter))
     val sdram = master(SdramInterface(layout))
+    // Block-fill (memset) sideband: controller requests a fast zero of a word
+    // range; we stream writes into the SDRAM controller at full speed. Word
+    // address width = BMB byte-address width - 2.
+    val fill = slave(MemFill(bmbParameter.access.addressWidth - 2))
     val debug = out(new Bundle {
       val sendingHigh   = Bool()
       val burstActive   = Bool()
@@ -58,6 +62,7 @@ case class BmbSdramCtrl32(
     val context = Bits(bmbParameter.access.contextWidth bits)
     val isHigh = Bool()
     val isBurst = Bool()
+    val isFill = Bool()   // fill-DMA write: response is swallowed + counted, not sent to BMB
   }
 
   val ctrlBus: SdramCtrlBus[SdramContext] = if (!useAlteraCtrl) {
@@ -120,11 +125,71 @@ case class BmbSdramCtrl32(
   val burstSource = Reg(UInt(bmbParameter.access.sourceWidth bits))
   val burstContext = Reg(Bits(bmbParameter.access.contextWidth bits))
 
+  // --------------------------------------------------------------------------
+  // Block-fill state: stream 16-bit writes to zero a word range at full speed.
+  // A 32-bit word w maps to SDRAM 16-bit words [2w, 2w+1]. We issue writes for
+  // [start<<1, end<<1) and hold `busy` until every write has been acknowledged
+  // (response received), so the range is committed before the controller resumes.
+  // --------------------------------------------------------------------------
+  val fw = layout.wordAddressWidth
+  val fillActive  = RegInit(False)
+  val fillAddr16  = Reg(UInt(fw bits)) init(0)        // next 16-bit SDRAM word to write
+  val fillEnd16   = Reg(UInt(fw + 1 bits)) init(0)    // exclusive end (16-bit words)
+  val fillTotal   = Reg(UInt(fw + 1 bits)) init(0)    // total 16-bit writes
+  val fillRspRcvd = Reg(UInt(fw + 1 bits)) init(0)    // fill responses received
+  val fillValueReg = Reg(Bits(32 bits)) init(0)
+
+  io.fill.busy := fillActive
+
+  // Launch on request pulse when idle and range non-empty.
+  when(!fillActive && io.fill.cmd) {
+    val start16 = (io.fill.start << 1).resize(fw)
+    val total16 = ((io.fill.end - io.fill.start) << 1).resize(fw + 1)
+    when(total16 =/= 0) {
+      fillActive   := True
+      fillAddr16   := start16
+      fillEnd16    := (io.fill.end << 1).resize(fw + 1)
+      fillTotal    := total16
+      fillRspRcvd  := 0
+      fillValueReg := io.fill.value
+    }
+  }
+  // Complete when all issued writes have been acknowledged.
+  when(fillActive && fillRspRcvd === fillTotal) {
+    fillActive := False
+  }
+
   // Detect burst read (length > 3 means more than one 32-bit word)
   val isBurstRead = io.bmb.cmd.valid && !io.bmb.cmd.isWrite &&
                     io.bmb.cmd.fragment.length > 3
 
-  when(burstActive) {
+  when(fillActive) {
+    // Block-fill: stream write commands into the SDRAM controller at full speed.
+    io.bmb.cmd.ready := False
+    ctrlBus.cmd.write := True
+    ctrlBus.cmd.context.source := 0
+    ctrlBus.cmd.context.context := 0
+    ctrlBus.cmd.context.isBurst := False
+    ctrlBus.cmd.context.isFill := True
+    when(fillAddr16 =/= fillEnd16) {
+      ctrlBus.cmd.valid := True
+      ctrlBus.cmd.address := fillAddr16
+      ctrlBus.cmd.data := Mux(fillAddr16(0), fillValueReg(31 downto 16), fillValueReg(15 downto 0))
+      ctrlBus.cmd.mask := B"11"
+      ctrlBus.cmd.context.isHigh := fillAddr16(0)
+      when(ctrlBus.cmd.fire) {
+        fillAddr16 := fillAddr16 + 1
+      }
+    }.otherwise {
+      // All writes issued; wait for responses to drain (fillActive clears above).
+      ctrlBus.cmd.valid := False
+      ctrlBus.cmd.address := 0
+      ctrlBus.cmd.data := 0
+      ctrlBus.cmd.mask := 0
+      ctrlBus.cmd.context.isHigh := False
+    }
+
+  }.elsewhen(burstActive) {
     // Burst mode: issue SDRAM read commands from latched state
     io.bmb.cmd.ready := False
     ctrlBus.cmd.write := False
@@ -134,6 +199,7 @@ case class BmbSdramCtrl32(
     ctrlBus.cmd.context.context := burstContext
 
     ctrlBus.cmd.context.isBurst := True
+    ctrlBus.cmd.context.isFill := False
 
     when(burstCmdIdx < burstCmdTotal) {
       ctrlBus.cmd.valid := True
@@ -161,6 +227,7 @@ case class BmbSdramCtrl32(
     ctrlBus.cmd.context.context := io.bmb.cmd.context
     ctrlBus.cmd.context.isHigh := False
     ctrlBus.cmd.context.isBurst := False
+    ctrlBus.cmd.context.isFill := False
 
     burstActive := True
     burstBaseAddr := sdramWordAddr
@@ -179,6 +246,7 @@ case class BmbSdramCtrl32(
     ctrlBus.cmd.context.source := io.bmb.cmd.source
     ctrlBus.cmd.context.context := io.bmb.cmd.context
     ctrlBus.cmd.context.isBurst := False
+    ctrlBus.cmd.context.isFill := False
 
     when(!sendingHigh) {
       // Low half: even SDRAM word
@@ -215,8 +283,14 @@ case class BmbSdramCtrl32(
 
   val lowHalfData = Reg(Bits(16 bits))
 
-  when(rsp.fire && !rsp.context.isHigh) {
+  when(rsp.fire && !rsp.context.isHigh && !rsp.context.isFill) {
     lowHalfData := rsp.data
+  }
+
+  // Fill responses are swallowed (never assembled into a BMB response) and
+  // counted so the fill can signal completion once all writes are committed.
+  when(rsp.fire && rsp.context.isFill) {
+    fillRspRcvd := fillRspRcvd + 1
   }
 
   // --- Pipeline stage: register assembled 32-bit response ---
@@ -227,7 +301,7 @@ case class BmbSdramCtrl32(
   val pipeIsBurst = Reg(Bool()) init(False)
 
   // Capture into pipeline on high-half response from SDRAM controller
-  val highHalfFire = rsp.valid && rsp.context.isHigh
+  val highHalfFire = rsp.valid && rsp.context.isHigh && !rsp.context.isFill
   when(highHalfFire && (!pipeValid || io.bmb.rsp.fire)) {
     // Capture when pipe is empty OR pipe is being consumed this cycle
     pipeValid := True
@@ -264,9 +338,13 @@ case class BmbSdramCtrl32(
   // Accept low-half responses immediately (just buffer them);
   // accept high-half responses when pipe is empty or being consumed
   rsp.ready := Mux(
-    rsp.context.isHigh,
-    !pipeValid || io.bmb.rsp.ready,
-    True
+    rsp.context.isFill,
+    True,                                  // fill responses: always swallow
+    Mux(
+      rsp.context.isHigh,
+      !pipeValid || io.bmb.rsp.ready,
+      True
+    )
   )
 
   // Debug outputs
