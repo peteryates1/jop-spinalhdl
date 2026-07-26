@@ -593,9 +593,18 @@ case class BmbMemoryController(
             when(JopIoSpace.zeroSel(addrReg(7 downto 0)) === 0) {
               zeroCur := io.aout(config.addressWidth - 1 downto 0).asUInt  // ZERO_START
             }.otherwise {
-              zeroEnd := io.aout(config.addressWidth - 1 downto 0).asUInt  // ZERO_END
-              // Delegate to the backend fill when available, else the word loop.
-              state := (if(config.hasBackendFill) State.FILL_REQ else State.ZERO_RUN)  // launch
+              val newEnd = io.aout(config.addressWidth - 1 downto 0).asUInt  // ZERO_END
+              zeroEnd := newEnd
+              // Empty/inverted range (from >= to) => nothing to zero, matching
+              // the old `for (i=from; i<to; ++i)` loop. GC.finishCycle can leave
+              // copyPtr >= allocPtr (crossed free region); without this guard the
+              // cur!=end loop / fill would wrap around and hang.
+              when(newEnd <= zeroCur) {
+                state := State.IDLE
+              }.otherwise {
+                // Delegate to the backend fill when available, else the word loop.
+                state := (if(config.hasBackendFill) State.FILL_REQ else State.ZERO_RUN)
+              }
             }
           }.otherwise {
             io.ioAddr := addrReg(7 downto 0)

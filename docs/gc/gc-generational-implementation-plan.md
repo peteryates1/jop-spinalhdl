@@ -154,6 +154,23 @@ loop is fine where that is already full speed).
   lives in each backend.
 - Threaded controller → `JopCore` → cluster → top → backend, parallel to `io.bmb`.
 
+### Status (SDR slice — sim-validated)
+- SDR fill FSM + `MemFill` + controller `FILL_REQ`/`FILL_WAIT` + threading:
+  implemented, unit-tested, integration-tested.
+- **Bug found + fixed — inverted/empty range hang.** The old software zero loop
+  `for (i=from; i<to; ++i)` silently does nothing when `from >= to`, which
+  `GC.finishCycle` produces (sets `copyPtr=compactDst` without resetting
+  `allocPtr`, so the free region can be crossed). The HW fill and Stage-0
+  `ZERO_RUN` looped `while (cur != end)` and **wrapped around → hang**. Fixed with
+  a controller guard (`newEnd <= zeroCur` ⇒ IDLE, covers both fill and the DDR3
+  `ZERO_RUN` path) plus a defensive `total16=0` in the SDR backend.
+- Direct end-to-end proof: `FillTest` HW-zeros a 512-word buffer over a valid
+  range; `JopSdramFillSim` confirms `FILL OK` + a positive-range `fillBusy` pulse.
+- **Open — throughput.** The current SDR fill streams single 16-bit writes through
+  the SDRAM controller (~75 cyc/write, no page mode) — correct but slow. Real
+  speedup needs page-mode/burst writes (keep the row open). Same shape as the DDR3
+  128-bit-burst work: "full memory speed" is not yet met for SDR.
+
 ### Build order (confirmed) + test rig
 1. **`MemFill` interface** + `BmbMemoryController` driving it.
 2. **BRAM fill** (word/line loop into the on-chip `Mem`) and **SDR fill** (SDR

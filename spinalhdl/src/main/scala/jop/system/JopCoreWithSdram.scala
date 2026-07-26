@@ -66,6 +66,9 @@ case class JopCoreWithSdram(
     // Memory controller debug
     val debugMemState = out UInt(5 bits)
     val debugMemHandleActive = out Bool()
+    val debugFillBusy = out Bool()   // SDR block-fill in progress (GC zeroing)
+    val debugFillStart = out UInt(config.memConfig.addressWidth bits)
+    val debugFillEnd   = out UInt(config.memConfig.addressWidth bits)
 
     // BMB debug
     val bmbCmdValid  = out Bool()
@@ -107,6 +110,9 @@ case class JopCoreWithSdram(
 
   // Block-fill sideband: connect the core's fill master to the SDRAM backend,
   // or tie the backend's fill request off when the core has no fill port.
+  io.debugFillBusy := sdramCtrl.io.fill.busy
+  io.debugFillStart := sdramCtrl.io.fill.start
+  io.debugFillEnd := sdramCtrl.io.fill.end
   jopCore.io.fill match {
     case Some(f) => f <> sdramCtrl.io.fill
     case None =>

@@ -146,7 +146,10 @@ case class BmbSdramCtrl32(
   // the controller's busy handshake always terminates instead of hanging.
   when(!fillActive && io.fill.cmd) {
     val start16 = (io.fill.start << 1).resize(fw)
-    val total16 = ((io.fill.end - io.fill.start) << 1).resize(fw + 1)
+    // Empty for an inverted/empty range (end <= start) — avoids an unsigned
+    // underflow that would make the fill run ~forever.
+    val total16 = Mux(io.fill.end > io.fill.start,
+      ((io.fill.end - io.fill.start) << 1).resize(fw + 1), U(0, fw + 1 bits))
     fillActive   := True
     fillAddr16   := start16
     fillEnd16    := (io.fill.end << 1).resize(fw + 1)

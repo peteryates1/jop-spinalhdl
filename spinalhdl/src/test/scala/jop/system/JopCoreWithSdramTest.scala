@@ -19,10 +19,11 @@ import jop.utils.JopFileLoader
 case class JopCoreWithSdramTestHarness(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
-  mainMemInit: Seq[BigInt]
+  mainMemInit: Seq[BigInt],
+  memBytes: Int = 8 * 1024 * 1024   // usable heap; small values force GC to fire
 ) extends Component {
 
-  val config = JopCoreConfig(memConfig = JopMemoryConfig(burstLen = 4, hasBackendFill = true))
+  val config = JopCoreConfig(memConfig = JopMemoryConfig(burstLen = 4, hasBackendFill = true, mainMemSize = memBytes))
 
   val md = MemoryDevice.W9825G6JH6
 
@@ -47,6 +48,9 @@ case class JopCoreWithSdramTestHarness(
     // UART output (from JopCore debug snoop)
     val uartTxData = out Bits(8 bits)
     val uartTxValid = out Bool()
+    val fillBusy = out Bool()   // SDR block-fill active (proves GC->fill fired)
+    val fillStart = out UInt(config.memConfig.addressWidth bits)
+    val fillEnd = out UInt(config.memConfig.addressWidth bits)
 
     // BMB debug signals (32-bit JOP side)
     val bmbCmdValid = out Bool()
@@ -91,6 +95,9 @@ case class JopCoreWithSdramTestHarness(
   io.memBusy := jopSystem.io.memBusy
   io.uartTxData := jopSystem.io.uartTxData
   io.uartTxValid := jopSystem.io.uartTxValid
+  io.fillBusy := jopSystem.io.debugFillBusy
+  io.fillStart := jopSystem.io.debugFillStart
+  io.fillEnd := jopSystem.io.debugFillEnd
 
   // BMB debug (32-bit side)
   io.bmbCmdValid := jopSystem.io.bmbCmdValid
