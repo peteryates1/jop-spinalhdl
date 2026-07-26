@@ -22,7 +22,7 @@ case class JopCoreWithSdramTestHarness(
   mainMemInit: Seq[BigInt]
 ) extends Component {
 
-  val config = JopCoreConfig(memConfig = JopMemoryConfig(burstLen = 4))
+  val config = JopCoreConfig(memConfig = JopMemoryConfig(burstLen = 4, hasBackendFill = true))
 
   val md = MemoryDevice.W9825G6JH6
 

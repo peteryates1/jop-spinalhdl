@@ -105,6 +105,17 @@ case class JopCoreWithSdram(
   // Connect JOP BMB directly to SDRAM controller
   sdramCtrl.io.bmb <> jopCore.io.bmb
 
+  // Block-fill sideband: connect the core's fill master to the SDRAM backend,
+  // or tie the backend's fill request off when the core has no fill port.
+  jopCore.io.fill match {
+    case Some(f) => f <> sdramCtrl.io.fill
+    case None =>
+      sdramCtrl.io.fill.cmd   := False
+      sdramCtrl.io.fill.start := 0
+      sdramCtrl.io.fill.end   := 0
+      sdramCtrl.io.fill.value := 0
+  }
+
   // SDRAM interface
   io.sdram <> sdramCtrl.io.sdram
 

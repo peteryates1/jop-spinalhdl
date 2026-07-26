@@ -33,7 +33,10 @@ case class JopMemoryConfig(
   acacheInvalOnStidx: Boolean = true,   // Invalidate A$ on stidx (method scope change).
                                          // True = WCET-safe (conservative). False = better hit rate.
                                          // Array data is heap-allocated; stidx doesn't affect it.
-  stackRegionWordsPerCore: Int = 0      // per-core stack spill region size (0 = legacy)
+  stackRegionWordsPerCore: Int = 0,     // per-core stack spill region size (0 = legacy)
+  hasBackendFill: Boolean = false       // backend provides a MemFill block-zero mechanism
+                                         // (SDR); when false the controller uses its own
+                                         // per-word ZERO loop (BRAM, DDR3-for-now)
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(addressWidth >= 16 && addressWidth <= 28, "Address width must be 16-28 bits")

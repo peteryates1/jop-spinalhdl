@@ -141,18 +141,18 @@ case class BmbSdramCtrl32(
 
   io.fill.busy := fillActive
 
-  // Launch on request pulse when idle and range non-empty.
+  // Launch on request pulse when idle. An empty range (start==end) still enters
+  // fillActive and completes immediately (fillTotal==0 => done next cycle), so
+  // the controller's busy handshake always terminates instead of hanging.
   when(!fillActive && io.fill.cmd) {
     val start16 = (io.fill.start << 1).resize(fw)
     val total16 = ((io.fill.end - io.fill.start) << 1).resize(fw + 1)
-    when(total16 =/= 0) {
-      fillActive   := True
-      fillAddr16   := start16
-      fillEnd16    := (io.fill.end << 1).resize(fw + 1)
-      fillTotal    := total16
-      fillRspRcvd  := 0
-      fillValueReg := io.fill.value
-    }
+    fillActive   := True
+    fillAddr16   := start16
+    fillEnd16    := (io.fill.end << 1).resize(fw + 1)
+    fillTotal    := total16
+    fillRspRcvd  := 0
+    fillValueReg := io.fill.value
   }
   // Complete when all issued writes have been acknowledged.
   when(fillActive && fillRspRcvd === fillTotal) {

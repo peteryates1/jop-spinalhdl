@@ -43,6 +43,9 @@ case class JopCore(
     // Stack cache DMA BMB master (optional, only when useStackCache)
     val stackDmaBmb = if (config.useStackCache) Some(master(Bmb(config.memConfig.bmbParameter))) else None
 
+    // Block-fill sideband to a fill-capable backend (optional, e.g. SDR)
+    val fill = if (config.memConfig.hasBackendFill) Some(master(MemFill(config.memConfig.addressWidth))) else None
+
     // CmpSync interface
     val syncIn  = in(SyncOut())    // From CmpSync: halted + signal
     val syncOut = out(SyncIn())    // To CmpSync: lock request + signal
@@ -151,6 +154,7 @@ case class JopCore(
 
   // Connect BMB controller to external interface
   io.bmb <> memCtrl.io.bmb
+  io.fill.foreach { f => f <> memCtrl.io.fill.get }
 
   // ==========================================================================
   // Pipeline <-> Memory Controller Wiring

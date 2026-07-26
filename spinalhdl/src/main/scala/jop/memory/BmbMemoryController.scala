@@ -95,6 +95,11 @@ case class BmbMemoryController(
     // BMB master interface to memory
     val bmb       = master(Bmb(config.bmbParameter))
 
+    // Optional block-fill sideband to a fill-capable backend (e.g. SDR). When
+    // present, a ZERO request delegates to the backend instead of running the
+    // per-word ZERO_RUN loop over BMB.
+    val fill      = if(config.hasBackendFill) Some(master(MemFill(config.addressWidth))) else None
+
     // I/O interface (directly exposed, not through BMB)
     val ioAddr    = out UInt(8 bits)
     val ioRd      = out Bool()
@@ -152,6 +157,8 @@ case class BmbMemoryController(
         CP_SETUP, CP_READ, CP_READ_WAIT, CP_WRITE, CP_STOP,
         // Zero-fill DMA (bulk memset 0 over [zeroCur, zeroEnd)) - busy
         ZERO_RUN, ZERO_WAIT,
+        // Backend-delegated fill (drive io.fill, wait on busy) - busy
+        FILL_REQ, FILL_WAIT,
         // getstatic/putstatic - busy
         GS_READ, PS_WRITE, LAST
       = newElement()
@@ -308,6 +315,14 @@ case class BmbMemoryController(
   if(config.bmbParameter.access.canWrite) {
     io.bmb.cmd.fragment.data := 0
     io.bmb.cmd.fragment.mask := B"1111"
+  }
+
+  // Backend fill defaults (asserted in FILL_REQ). Range comes from the ZERO regs.
+  io.fill.foreach { f =>
+    f.cmd   := False
+    f.start := zeroCur
+    f.end   := zeroEnd
+    f.value := 0
   }
 
   // Always ready for responses
@@ -579,7 +594,8 @@ case class BmbMemoryController(
               zeroCur := io.aout(config.addressWidth - 1 downto 0).asUInt  // ZERO_START
             }.otherwise {
               zeroEnd := io.aout(config.addressWidth - 1 downto 0).asUInt  // ZERO_END
-              state := State.ZERO_RUN                                      // launch
+              // Delegate to the backend fill when available, else the word loop.
+              state := (if(config.hasBackendFill) State.FILL_REQ else State.ZERO_RUN)  // launch
             }
           }.otherwise {
             io.ioAddr := addrReg(7 downto 0)
@@ -1368,6 +1384,23 @@ case class BmbMemoryController(
       when(io.bmb.rsp.fire) {
         zeroCur := zeroCur + 1
         state := State.ZERO_RUN
+      }
+    }
+
+    // ========================================================================
+    // Backend-delegated fill (busy) — drive io.fill, block until backend done
+    // ========================================================================
+    is(State.FILL_REQ) {
+      io.fill.foreach { f =>
+        f.cmd := True                              // hold request until latched
+        when(f.busy) { state := State.FILL_WAIT }
+      }
+    }
+
+    is(State.FILL_WAIT) {
+      io.fill.foreach { f =>
+        // f.cmd defaults False here
+        when(!f.busy) { state := State.IDLE }      // fill complete
       }
     }
   }

@@ -341,6 +341,10 @@ class BmbSdramCtrl32Test extends AnyFunSuite {
         for (i <- 0 until 33) bmbWrite(dut, i, 0xA5A50000L | i)
         for (i <- 0 until 33) assert(bmbRead(dut, i) == (0xA5A50000L | i), s"pre-fill word $i wrong")
 
+        // Empty fill must complete (not hang) and change nothing.
+        fillRange(dut, 8, 8)
+        assert(bmbRead(dut, 8) == (0xA5A50000L | 8), "empty fill must not modify memory")
+
         // HW fill zeroes [4, 20) only.
         fillRange(dut, 4, 20)
 
