@@ -154,7 +154,15 @@ loop is fine where that is already full speed).
   lives in each backend.
 - Threaded controller → `JopCore` → cluster → top → backend, parallel to `io.bmb`.
 
-### Status (SDR slice — sim-validated)
+### Status (SDR slice — DONE, hardware-validated)
+**EP4CGX150 + FPGA-DB V4, real SDR SDRAM (2026-07-26):** FillTest → `FILL OK`
+(SDRAM zeroed correctly); ZeroBench 4 MB → **HW 27.4 ms vs SW 712 ms = 26.0×**,
+= 153 MB/s = **96% of peak SDR bandwidth** (80 MHz × 16-bit). `hasBackendFill=true`
+on `ep4cgx150Serial`; fill threaded controller→JopCluster→JopTop→SDR backend.
+(Far bigger win than DDR3's 3.11× because SDR streams page-mode; DDR3 zeroing
+still traverses the write-allocate L2.)
+
+### Sim validation (detail)
 - SDR fill FSM + `MemFill` + controller `FILL_REQ`/`FILL_WAIT` + threading:
   implemented, unit-tested, integration-tested.
 - **Bug found + fixed — inverted/empty range hang.** The old software zero loop
