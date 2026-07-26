@@ -166,10 +166,13 @@ loop is fine where that is already full speed).
   `ZERO_RUN` path) plus a defensive `total16=0` in the SDR backend.
 - Direct end-to-end proof: `FillTest` HW-zeros a 512-word buffer over a valid
   range; `JopSdramFillSim` confirms `FILL OK` + a positive-range `fillBusy` pulse.
-- **Open — throughput.** The current SDR fill streams single 16-bit writes through
-  the SDRAM controller (~75 cyc/write, no page mode) — correct but slow. Real
-  speedup needs page-mode/burst writes (keep the row open). Same shape as the DDR3
-  128-bit-burst work: "full memory speed" is not yet met for SDR.
+- **Throughput — already at full SDR bandwidth.** Measured (`FillTest` N=8192 via
+  `JopSdramFillSim`): **2.04 cyc/32-bit-word = 1.02 cyc/16-bit-write ≈ 98% of peak
+  SDR write bandwidth (~196 MB/s @ 100 MHz)**. No page-mode work needed:
+  `SdramCtrlNoCke` already keeps the row open for sequential same-row writes, and
+  the fill FSM streams writes back-to-back (advances on `cmd.fire`, not on the
+  response — no per-write round-trip). ~4× the software loop (~8 cyc/word). The
+  earlier "slow" reading was the hung inverted-range run, not a real fill.
 
 ### Build order (confirmed) + test rig
 1. **`MemFill` interface** + `BmbMemoryController` driving it.

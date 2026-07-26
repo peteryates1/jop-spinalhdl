@@ -25,7 +25,7 @@ object JopSdramFillSim extends App {
 
   SimConfig
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
-    .compile(JopCoreWithSdramTestHarness(romData, ramData, mainMemData))
+    .compile(JopCoreWithSdramTestHarness(romData, ramData, mainMemData, memBytes = 256 * 1024))
     .doSim { dut =>
       dut.clockDomain.forkStimulus(10)
       val sdramModel = SdramModel(io = dut.io.sdram,
@@ -41,7 +41,9 @@ object JopSdramFillSim extends App {
 
       val uart = new StringBuilder
       var fillPulses = 0; var prevFill = false; var rangeOk = false
+      var fillCycles = 0; var fillWords = BigInt(0)
       var cycle = 0; var done = false
+      val N = 8192   // must match FillTest.N
       while (cycle < 20000000 && !done) {
         cycle += 1
         dut.clockDomain.waitSampling()
@@ -50,10 +52,11 @@ object JopSdramFillSim extends App {
           uart.append(if (c >= 32 && c < 127) c.toChar else '.'); print(if (c >= 32 && c < 127) c.toChar else '.')
         }
         val fb = dut.io.fillBusy.toBoolean
+        if (fb) fillCycles += 1
         if (fb && !prevFill) {
           fillPulses += 1
           val s = dut.io.fillStart.toBigInt; val e = dut.io.fillEnd.toBigInt
-          if (e > s) rangeOk = true
+          if (e > s) { rangeOk = true; fillWords = e - s }
           println(f"\n[$cycle%8d] FILL fired: start=0x$s%x end=0x$e%x range=${e - s}")
         }
         prevFill = fb
@@ -64,6 +67,11 @@ object JopSdramFillSim extends App {
 
       val o = uart.toString
       println(s"\n=== Done ($cycle cycles) fills=$fillPulses rangeOk=$rangeOk ===")
+      if (fillWords > 0) {
+        val writes16 = fillWords * 2   // two 16-bit SDRAM writes per 32-bit word
+        println(f"THROUGHPUT: filled $fillWords words in $fillCycles cycles = " +
+          f"${fillCycles.toDouble / fillWords.toDouble}%.2f cyc/word (${fillCycles.toDouble / writes16.toDouble}%.2f cyc/16b-write)")
+      }
       def fail(m: String): Unit = { run.finish("FAIL", m); println(s"FAIL: $m"); System.exit(1) }
       if (o.contains("FILL FAIL")) fail("FillTest reported non-zero words after HW fill")
       if (!o.contains("FILL OK")) fail("did not see FILL OK")

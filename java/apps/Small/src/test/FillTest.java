@@ -14,7 +14,7 @@ import com.jopdesign.sys.JVMHelp;
  */
 public class FillTest {
 
-	static final int N = 512;   // words
+	static final int N = 8192;   // words (large enough to measure fill throughput)
 
 	public static void main(String[] args) {
 		int[] buf = new int[N];
