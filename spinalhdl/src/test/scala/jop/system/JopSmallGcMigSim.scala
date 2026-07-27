@@ -173,11 +173,13 @@ case class MigBehavioralModel(
 case class JopCoreWithMigTestHarness(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
-  mainMemInit: Seq[BigInt]
+  mainMemInit: Seq[BigInt],
+  hasFill: Boolean = false,
+  memSizeBytes: Int = 128 * 1024
 ) extends Component {
 
   val config = JopCoreConfig(
-    memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = 128 * 1024, burstLen = 8)
+    memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = memSizeBytes, burstLen = 8, hasBackendFill = hasFill)
   )
 
   val cacheAddrWidth = 28
@@ -199,6 +201,9 @@ case class JopCoreWithMigTestHarness(
     val debugMemState = out UInt(5 bits)
     val debugCacheState = out UInt(4 bits)
     val debugAdapterState = out UInt(3 bits)
+    val fillBusy = out Bool()
+    val fillStart = out UInt(config.memConfig.addressWidth bits)
+    val fillEnd = out UInt(config.memConfig.addressWidth bits)
   }
 
   // Extract JBC init from main memory
@@ -232,20 +237,29 @@ case class JopCoreWithMigTestHarness(
   // ==========================================================================
 
   val bmbBridge = new BmbCacheBridge(config.memConfig.bmbParameter, cacheAddrWidth, cacheDataWidth)
-  val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth))
+  val cache = new LruCacheCore(CacheConfig(
+    addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth,
+    hasFill = hasFill,
+    fillAddrWidth = if (hasFill) config.memConfig.addressWidth else 0))
   val adapter = new CacheToMigAdapter
   val migModel = MigBehavioralModel(
     addrWidth = 28,
     dataWidth = 128,
-    memSizeBytes = 128 * 1024,
+    memSizeBytes = memSizeBytes,
     readLatencyMin = 8,
     readLatencyMax = 15,
     refreshInterval = 780,
     refreshDuration = 30
   )
 
+  // GC block-fill: JopCore fill sideband -> cache streaming write-through
+  jopCore.io.fill.foreach { f => f <> cache.io.fill.get }
+  io.fillBusy  := cache.io.fill.map(_.busy).getOrElse(False)
+  io.fillStart := cache.io.fill.map(_.start).getOrElse(U(0, config.memConfig.addressWidth bits))
+  io.fillEnd   := cache.io.fill.map(_.end).getOrElse(U(0, config.memConfig.addressWidth bits))
+
   // Initialize MIG model memory from 32-bit words (same packing as cache sim)
-  val memWords32 = mainMemInit.take(128 * 1024 / 4).padTo(128 * 1024 / 4, BigInt(0))
+  val memWords32 = mainMemInit.take(memSizeBytes / 4).padTo(memSizeBytes / 4, BigInt(0))
   val memWords128 = memWords32.grouped(4).toSeq.map { group =>
     val g = group.padTo(4, BigInt(0))
     (g(3) << 96) | (g(2) << 64) | (g(1) << 32) | g(0)

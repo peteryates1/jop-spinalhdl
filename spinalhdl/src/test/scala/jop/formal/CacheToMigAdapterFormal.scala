@@ -17,8 +17,8 @@ import jop.ddr3.{CacheToMigAdapter, CacheToMigAdapterState}
  * - Responsive MIG returns to IDLE (no deadlock)
  * - IDLE stable when no commands
  * - Read data captured when rspFifo full (MIG one-cycle pulse protection)
- * - Write: both cmd and data sent before response
- * - app_en only asserted in active states
+ * - Write: cmd + data issued together on the same cycle as the response push
+ * - app_en only asserted in active states (IDLE streaming-write or ISSUE_READ)
  */
 class CacheToMigAdapterFormal extends SpinalFormalFunSuite {
 
@@ -86,7 +86,7 @@ class CacheToMigAdapterFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("app_en only in ISSUE_WRITE or ISSUE_READ") {
+  test("app_en only in IDLE (streaming write) or ISSUE_READ") {
     formalConfig
       .withBMC(8)
       .doVerify(new Component {
@@ -97,7 +97,7 @@ class CacheToMigAdapterFormal extends SpinalFormalFunSuite {
         when(pastValidAfterReset()) {
           when(dut.io.app_en) {
             assert(
-              dut.state === CacheToMigAdapterState.ISSUE_WRITE ||
+              dut.state === CacheToMigAdapterState.IDLE ||
               dut.state === CacheToMigAdapterState.ISSUE_READ
             )
           }
@@ -105,7 +105,7 @@ class CacheToMigAdapterFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("app_wdf_wren only in ISSUE_WRITE") {
+  test("app_wdf_wren only during a streaming write (IDLE)") {
     formalConfig
       .withBMC(8)
       .doVerify(new Component {
@@ -115,7 +115,7 @@ class CacheToMigAdapterFormal extends SpinalFormalFunSuite {
 
         when(pastValidAfterReset()) {
           when(dut.io.app_wdf_wren) {
-            assert(dut.state === CacheToMigAdapterState.ISSUE_WRITE)
+            assert(dut.state === CacheToMigAdapterState.IDLE)
           }
         }
       })
@@ -142,7 +142,7 @@ class CacheToMigAdapterFormal extends SpinalFormalFunSuite {
       })
   }
 
-  test("write response only after both cmd and data sent") {
+  test("write response pushed only when cmd + data issued together") {
     formalConfig
       .withBMC(8)
       .doVerify(new Component {
@@ -151,11 +151,13 @@ class CacheToMigAdapterFormal extends SpinalFormalFunSuite {
         setupDut(dut)
 
         when(pastValidAfterReset()) {
-          // In ISSUE_WRITE, rspFifo push only when both phases complete
-          when(dut.state === CacheToMigAdapterState.ISSUE_WRITE &&
+          // A push while in IDLE is the streaming-write ack: the command and the
+          // write data must be issued on the very same cycle.
+          when(dut.state === CacheToMigAdapterState.IDLE &&
                dut.rspFifo.io.push.valid) {
-            assert(dut.writeCmdSent)
-            assert(dut.writeDataSent)
+            assert(dut.io.app_en)
+            assert(dut.io.app_wdf_wren)
+            assert(dut.io.app_wdf_end)
           }
         }
       })

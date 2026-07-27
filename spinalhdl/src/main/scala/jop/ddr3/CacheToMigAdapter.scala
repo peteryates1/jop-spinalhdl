@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.lib._
 
 object CacheToMigAdapterState extends SpinalEnum {
-  val IDLE, ISSUE_WRITE, ISSUE_READ, WAIT_READ = newElement()
+  val IDLE, ISSUE_READ, WAIT_READ = newElement()
 }
 
 class CacheToMigAdapter extends Component {
@@ -57,8 +57,6 @@ class CacheToMigAdapter extends Component {
 
   val activeCmd = Reg(io.cmd.payloadType)
   val state = Reg(CacheToMigAdapterState()) init(CacheToMigAdapterState.IDLE)
-  val writeCmdSent = Reg(Bool()) init (False)
-  val writeDataSent = Reg(Bool()) init (False)
 
   // Defensive: capture MIG read data when rspFifo is not ready.
   // MIG app_rd_data_valid is a one-cycle pulse — if missed, data is lost forever.
@@ -66,10 +64,14 @@ class CacheToMigAdapter extends Component {
   val readDataReg = Reg(Bits(128 bits)) init(0)
 
   // MIG app_addr is byte-space addressed; low bits must be zero for 128-bit transactions.
-  val appAddrAligned = UInt(io.app_addr.getWidth bits)
-  appAddrAligned := activeCmd.addr.asUInt.resized
-  appAddrAligned(addrAlignBits - 1 downto 0) := 0
-  io.app_addr := appAddrAligned.asBits
+  def alignedAddr(addr: Bits): Bits = {
+    val a = UInt(io.app_addr.getWidth bits)
+    a := addr.asUInt.resized
+    a(addrAlignBits - 1 downto 0) := 0
+    a.asBits
+  }
+
+  io.app_addr := alignedAddr(activeCmd.addr)
   io.app_cmd := writeCmd
   io.app_en := False
   io.app_wdf_data := activeCmd.wdata
@@ -83,35 +85,29 @@ class CacheToMigAdapter extends Component {
     is(CacheToMigAdapterState.IDLE) {
       readDataCaptured := False
       when(cmdFifo.io.pop.valid) {
-        activeCmd := cmdFifo.io.pop.payload
-        cmdFifo.io.pop.ready := True
-        writeCmdSent := False
-        writeDataSent := False
         when(cmdFifo.io.pop.payload.write) {
-          state := CacheToMigAdapterState.ISSUE_WRITE
+          // Streaming write: issue command + data on the same cycle when the MIG
+          // accepts both and a response slot is free, then stay in IDLE so the
+          // next queued write can issue on the following cycle (1 write/cycle).
+          when(io.app_rdy && io.app_wdf_rdy && rspFifo.io.push.ready) {
+            io.app_addr     := alignedAddr(cmdFifo.io.pop.payload.addr)
+            io.app_cmd      := writeCmd
+            io.app_en       := True
+            io.app_wdf_data := cmdFifo.io.pop.payload.wdata
+            io.app_wdf_mask := cmdFifo.io.pop.payload.wmask
+            io.app_wdf_wren := True
+            io.app_wdf_end  := True
+            cmdFifo.io.pop.ready := True
+            rspFifo.io.push.valid := True
+            rspFifo.io.push.payload.rdata := B(0, 128 bits)
+            rspFifo.io.push.payload.error := False
+          }
         } otherwise {
+          // Read: latch and run through the round-trip state machine.
+          activeCmd := cmdFifo.io.pop.payload
+          cmdFifo.io.pop.ready := True
           state := CacheToMigAdapterState.ISSUE_READ
         }
-      }
-    }
-
-    is(CacheToMigAdapterState.ISSUE_WRITE) {
-      io.app_cmd := writeCmd
-      val canSendCmd = !writeCmdSent && io.app_rdy
-      when(canSendCmd) {
-        io.app_en := True
-        writeCmdSent := True
-      }
-      when(!writeDataSent && io.app_wdf_rdy && (writeCmdSent || canSendCmd)) {
-        io.app_wdf_wren := True
-        io.app_wdf_end := True
-        writeDataSent := True
-      }
-      when(writeCmdSent && writeDataSent && rspFifo.io.push.ready) {
-        rspFifo.io.push.valid := True
-        rspFifo.io.push.payload.rdata := B(0, 128 bits)
-        rspFifo.io.push.payload.error := False
-        state := CacheToMigAdapterState.IDLE
       }
     }
 
