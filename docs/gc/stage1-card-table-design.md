@@ -34,7 +34,15 @@ shared remembered set** snooping the arbitrated write stream, not per-core.
 
 ---
 
-## Part A — Address-width parameterization (prerequisite)
+## Part A — Address-width parameterization (prerequisite) — ✅ DONE (2026-07-27, commit `6b50069`)
+
+Implemented per A.3 below: `CacheToMigAdapter(addrWidth=28)`,
+`MigBlackBox(appAddrWidth=28)`, `createDdr3Path` derives
+`cacheAddrWidth = access.addressWidth − 2`, `JopTop` derives the MIG width from
+the device, and `JopMemoryConfig.addressWidth` cap raised 28→32. All defaults
+stay 28, so the 256 MB build is byte-identical (`app_addr` still `[27:0]`).
+`Ddr3WidthElabTest` elaborates the full path at both 28-bit (256 MB) and 30-bit
+(1 GB). Real 1 GB hardware still needs a board + MIG-IP regen.
 
 ### A.1 The problem
 The DDR3 datapath is currently pinned to 28-bit byte addresses (= 256 MB) in two
