@@ -125,3 +125,7 @@ java/apps/*/*.jop.link.txt
 
 # Microcode assembler generated files
 asm/generated/
+
+# Root-level default SpinalHDL output (formal/ad-hoc generation)
+/toplevel.v
+/*.v_toplevel_*

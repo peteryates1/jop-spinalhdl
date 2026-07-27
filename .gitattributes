@@ -1,0 +1,13 @@
+# Language-stat hygiene (GitHub Linguist). The project is primarily SpinalHDL
+# (Scala) + Java; the tracked HDL below is generated or vendored, not authored
+# here, so exclude it from the language breakdown.
+
+# Generated verilator/SpinalHDL test harnesses and testbenches
+verification/**/*.v      linguist-generated
+verification/**/*.sv     linguist-generated
+
+# Vendored / reference FPGA IP and reference designs
+fpga/ip/**                              linguist-vendored
+fpga/**/rtl/**                          linguist-vendored
+fpga/**/*.vhd                           linguist-vendored
+fpga/qmtech-ep4cgx150-eth-ref/**        linguist-vendored
