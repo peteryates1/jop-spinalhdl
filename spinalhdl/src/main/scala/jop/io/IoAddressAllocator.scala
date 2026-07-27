@@ -69,6 +69,11 @@ object IoAddressAllocator {
     // reserve them here so no auto device is placed on top of them.
     markRange(0xEC, 2)
 
+    // Reserve the card-table registers (JopIoSpace.CARD_BASE = 0xE0-0xE7),
+    // decoded in JopCore. Only used when hasCardTable, but reserve unconditionally
+    // so the address map is stable across configs.
+    markRange(0xE0, 8)
+
     // Sort auto devices by size (largest first for best packing)
     val sortedAuto = auto.sortBy(-_.size)
 

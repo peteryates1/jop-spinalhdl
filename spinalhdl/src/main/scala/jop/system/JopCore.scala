@@ -299,7 +299,52 @@ case class JopCore(
     }
   }
 
-  // I/O read mux (Sys + all allocated devices)
+  // ---------- Card table (generational GC card-marking barrier, Stage 1) ----------
+  // Passive write snoop marks the covering card for stores into [tenureLo, tenureHi);
+  // decoded as an I/O slave (CARD_BASE) for config/read/clear. See CardTable.scala.
+  val cardRdData = Bits(32 bits)
+  cardRdData := 0
+  if (config.memConfig.hasCardTable) {
+    val mc = config.memConfig
+    val cardTable = new CardTable(mc.cardCount, mc.cardShift, mc.addressWidth)
+    val cardIdxW  = cardTable.idxWidth
+
+    // Snoop committed writes (word address of the store).
+    val cmdIsWrite = memCtrl.io.bmb.cmd.fragment.opcode === Bmb.Cmd.Opcode.WRITE
+    cardTable.io.markValid := memCtrl.io.bmb.cmd.fire && cmdIsWrite
+    cardTable.io.markAddr  := (memCtrl.io.bmb.cmd.fragment.address >> 2).resize(mc.addressWidth)
+
+    val cardWr = memCtrl.io.ioWr && JopIoSpace.isCard(ioAddr)
+    val csel   = JopIoSpace.cardSel(ioAddr)
+    val cardLo    = Reg(UInt(mc.addressWidth bits)) init (0)  // tenure base word
+    val cardHi    = Reg(UInt(mc.addressWidth bits)) init (0)  // tenure top word
+    val cardRdIdx = Reg(UInt(cardIdxW bits)) init (0)         // word index for DATA read
+    when(cardWr) {
+      switch(csel) {
+        is(0) { cardLo    := memCtrl.io.ioWrData(mc.addressWidth - 1 downto 0).asUInt }
+        is(1) { cardHi    := memCtrl.io.ioWrData(mc.addressWidth - 1 downto 0).asUInt }
+        is(2) { cardRdIdx := memCtrl.io.ioWrData(cardIdxW - 1 downto 0).asUInt }
+      }
+    }
+    cardTable.io.baseWord := cardLo
+    cardTable.io.topWord  := cardHi
+    cardTable.io.rdIdx    := cardRdIdx
+
+    // CARD_CLEAR write: data = word index to clear, or all-ones (-1) => clear all.
+    val clrWr   = cardWr && (csel === U(6, 3 bits))
+    val clrAllV = memCtrl.io.ioWrData.andR
+    cardTable.io.clrEn  := clrWr && !clrAllV
+    cardTable.io.clrAll := clrWr && clrAllV
+    cardTable.io.clrIdx := memCtrl.io.ioWrData(cardIdxW - 1 downto 0).asUInt
+
+    switch(csel) {
+      is(3) { cardRdData := cardTable.io.rdData }                 // DATA: 32 cards at IDX
+      is(4) { cardRdData := B(mc.cardShift, 32 bits) }            // SHIFT
+      is(5) { cardRdData := B(mc.cardWords32, 32 bits) }          // COUNT (32-card words)
+    }
+  }
+
+  // I/O read mux (Sys + all allocated devices + card table)
   val ioRdData = Bits(32 bits)
   ioRdData := 0
   when(JopIoSpace.isSys(ioAddr)) { ioRdData := sys.io.rdData }
@@ -309,6 +354,9 @@ case class JopCore(
   }
   allocatedDevices.foreach { ad =>
     when(ad.isSelected(ioAddr)) { ioRdData := ioDevices(ad.descriptor.name).busRdData }
+  }
+  if (config.memConfig.hasCardTable) {
+    when(JopIoSpace.isCard(ioAddr)) { ioRdData := cardRdData }
   }
   memCtrl.io.ioRdData := ioRdData
 

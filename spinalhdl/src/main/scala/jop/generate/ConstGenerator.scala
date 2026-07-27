@@ -222,6 +222,24 @@ object ConstGenerator {
          |	public static final int IO_ZERO_END = IO_BASE + ${ioOffset(JopIoSpace.ZERO_END)};
          |
          |	// ====================================================================
+         |	// Card table (generational GC card-marking barrier, JopCore, 0xE0-0xE7)
+         |	// ====================================================================
+         |	/** Card table: tenure base word address (write) */
+         |	public static final int IO_CARD_TENURE_LO = IO_BASE + ${ioOffset(JopIoSpace.CARD_TENURE_LO)};
+         |	/** Card table: tenure top word address, exclusive (write) */
+         |	public static final int IO_CARD_TENURE_HI = IO_BASE + ${ioOffset(JopIoSpace.CARD_TENURE_HI)};
+         |	/** Card table: 32-card word index for the next DATA read (write) */
+         |	public static final int IO_CARD_IDX = IO_BASE + ${ioOffset(JopIoSpace.CARD_IDX)};
+         |	/** Card table: 32 cards at IO_CARD_IDX (read) */
+         |	public static final int IO_CARD_DATA = IO_BASE + ${ioOffset(JopIoSpace.CARD_DATA)};
+         |	/** Card table: cardShift = log2(words per card) (read) */
+         |	public static final int IO_CARD_SHIFT = IO_BASE + ${ioOffset(JopIoSpace.CARD_SHIFT)};
+         |	/** Card table: number of 32-card words in the table (read) */
+         |	public static final int IO_CARD_COUNT = IO_BASE + ${ioOffset(JopIoSpace.CARD_COUNT)};
+         |	/** Card table: clear one word=index (write), or -1 to clear all */
+         |	public static final int IO_CARD_CLEAR = IO_BASE + ${ioOffset(JopIoSpace.CARD_CLEAR)};
+         |
+         |	// ====================================================================
          |	// Boot device registers (UART or cfgFlash, fixed at 0xEE)
          |	// ====================================================================
          |

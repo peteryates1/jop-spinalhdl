@@ -206,15 +206,29 @@ object JopIoSpace {
   def ZERO_START   = ZERO_BASE + 0  // write: start word address (latch)
   def ZERO_END     = ZERO_BASE + 1  // write: end word address (launch, exclusive)
 
+  // Card-table registers (generational GC, Stage 1), decoded in JopCore (I/O
+  // slave). 8 addrs, 3-bit sub-addr, 8-aligned so a[7:3] selects the block.
+  // Reserved in IoAddressAllocator so the auto allocator skips them.
+  val CARD_BASE      = 0xE0  // 8 addrs, 3-bit sub-addr
+  def CARD_TENURE_LO = CARD_BASE + 0  // write: tenure base word address
+  def CARD_TENURE_HI = CARD_BASE + 1  // write: tenure top word address (exclusive)
+  def CARD_IDX       = CARD_BASE + 2  // write: 32-card word index for the next DATA read
+  def CARD_DATA      = CARD_BASE + 3  // read:  32 cards at CARD_IDX
+  def CARD_SHIFT     = CARD_BASE + 4  // read:  cardShift (log2 words per card)
+  def CARD_COUNT     = CARD_BASE + 5  // read:  number of 32-card words in the table
+  def CARD_CLEAR     = CARD_BASE + 6  // write: clear word=value (or -1 => clear all)
+
   // Hardware address-match predicates for fixed devices (operate on 8-bit ioAddr)
   def isSys(a: UInt): Bool   = a(7 downto 4) === (SYS_BASE >> 4)
   def isUart(a: UInt): Bool  = a(7 downto 1) === (UART_BASE >> 1)
   def isZero(a: UInt): Bool  = a(7 downto 1) === (ZERO_BASE >> 1)
+  def isCard(a: UInt): Bool  = a(7 downto 3) === (CARD_BASE >> 3)
 
   // Sub-address extraction for fixed devices
   def sysAddr(a: UInt): UInt  = a(3 downto 0)
   def uartAddr(a: UInt): UInt = a(0 downto 0)
   def zeroSel(a: UInt): UInt  = a(0 downto 0)  // 0 = START, 1 = END
+  def cardSel(a: UInt): UInt  = a(2 downto 0)
 }
 
 /**

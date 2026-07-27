@@ -98,17 +98,17 @@ case class JopCoreWithCacheTestHarness(
   readLatency: Int = 10,
   writeLatency: Int = 3,
   coreConfigOverride: Option[JopCoreConfig] = None,
-  hasFill: Boolean = false
+  hasFill: Boolean = false,
+  hasCard: Boolean = false
 ) extends Component {
 
   // Match DDR3 config: addressWidth=26 (28-bit BMB byte addr), burstLen=8
   val mainMemSizeBytes = (mainMemInit.length * 4) max (128 * 1024)  // At least 128KB, or fit .jop
-  val defaultConfig = JopCoreConfig(
-    memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = mainMemSizeBytes, burstLen = 8, hasBackendFill = hasFill)
-  )
-  val config = coreConfigOverride.map(_.copy(
-    memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = mainMemSizeBytes, burstLen = 8, hasBackendFill = hasFill)
-  )).getOrElse(defaultConfig)
+  val cardBudget = if (hasCard) 512 else 0   // 512B -> small card table for sim
+  def mkMem = JopMemoryConfig(addressWidth = 26, mainMemSize = mainMemSizeBytes, burstLen = 8,
+    hasBackendFill = hasFill, hasCardTable = hasCard, cardTableBudgetBytes = cardBudget)
+  val defaultConfig = JopCoreConfig(memConfig = mkMem)
+  val config = coreConfigOverride.map(_.copy(memConfig = mkMem)).getOrElse(defaultConfig)
 
   val cacheAddrWidth = 28   // BMB byte address width
   val cacheDataWidth = 128  // Cache line width (matching DDR3 MIG)
