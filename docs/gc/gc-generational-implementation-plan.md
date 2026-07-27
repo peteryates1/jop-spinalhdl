@@ -189,21 +189,38 @@ still traverses the write-allocate L2.)
 3. Validate on **EP4CGX150 + FPGA-DB V4** (primary SDR board, now connected):
    Altera USB-Blaster (`09fb:6001`) for programming, CP210x UART (`10c4:ea60`,
    from DB V4) for serial. Quartus flow: `fpga/qmtech-ep4cgx150-sdram`.
-4. **DDR3 fill** — separate follow-up (below).
+4. **DDR3 fill** — done, sim-validated (below); hardware validation on
+   XC7A100T + DB_FPGA V5 pending.
 
-### DDR3 mechanism (later) — option B **and** A
-Chosen: **128-bit L2 line + invalidate-line + block-zero at full MIG speed.**
-- **(B)** Widen `LruCacheCore` line to 128 bits (matches `app_wdf_data`): general
-  DDR3 speedup (spatial locality) and makes full-line zeroing a single MIG beat.
-- **(A)** Fill = invalidate the L2 lines in `[start,end)` (writeback dirty
-  live-object lines, drop clean ones) + block-write 0 straight to the MIG in
-  128-bit bursts. Needs a new L2 invalidate/flush capability (none today).
-- Open: full-L2 flush (simplest, OK during STW GC) vs range invalidate; MIG
-  arbitration (fill vs cache — safe during STW since cache is idle).
+### DDR3 mechanism — DONE (sim-validated), simpler than the original B+A plan
+Original plan was option B (widen L2 to 128-bit) + option A (add an L2
+invalidate/flush + block-zero straight to MIG). **B was already done** — the
+DDR3 L2 (`LruCacheCore` via `CacheConfig.dataWidth`) already defaults to 128-bit
+— and A turned out unnecessary: `LruCacheCore` already treats a full-line write
+(cache mask = 0, all 16 bytes) as a no-refill write-allocate, so we zero
+**through the cache** with no separate invalidate path and full coherency.
 
-**Effort:** interface + SDR/BRAM is moderate; DDR3 (B+A) is the substantial part,
-deferred. Justified because minor-GC nursery zeroing (Stage 2) rides on fill
-throughput for its bounded pause.
+Implemented in `BmbCacheBridge` (`jop.ddr3`): a `MemFill` slave sideband zeroes
+`[start,end)` (word addresses) by issuing whole 128-bit cache lines —
+- interior lines: `mask = 0` (full-line write ⇒ cache skips the write-allocate
+  refill, so no read traffic; dirty evictions become 128-bit MIG writes),
+- the ≤2 edge lines mask out-of-range words so partial lines are preserved.
+One cache response per issued line; req/rsp counters detect completion.
+Inverted ranges (`end <= start`) are rejected up front (GC's crossed free
+region — same class of bug the SDR path and the controller guard handle).
+
+Wired `cluster.io.fill → ddr3Path.bmbBridge.io.fill` in `JopTop` (both DDR3
+paths); `xc7a100tDbSerial` sets `hasBackendFill = true`. Same controller
+`FILL_REQ`/`FILL_WAIT` path as SDR — no controller changes for DDR3.
+
+**Sim-validated** (`JopDdr3FillSim`, 2026-07-27): FillTest zeroes `int[8192]`
+via `IO_ZERO_START/END`, verifies all-zero, prints `FILL OK`; one positive-range
+`io.fillBusy` pulse (range = 8192) confirms the backend fill fired. Throughput
+2.25 cyc/word through the cache→BRAM harness (real-DDR3 rate pending hardware).
+
+**Effort:** far less than budgeted — no L2 rework, no new invalidate capability.
+Justified because minor-GC nursery zeroing (Stage 2) rides on fill throughput
+for its bounded pause.
 
 ---
 
