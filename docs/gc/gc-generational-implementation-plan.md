@@ -216,7 +216,16 @@ paths); `xc7a100tDbSerial` sets `hasBackendFill = true`. Same controller
 **Sim-validated** (`JopDdr3FillSim`, 2026-07-27): FillTest zeroes `int[8192]`
 via `IO_ZERO_START/END`, verifies all-zero, prints `FILL OK`; one positive-range
 `io.fillBusy` pulse (range = 8192) confirms the backend fill fired. Throughput
-2.25 cyc/word through the cache→BRAM harness (real-DDR3 rate pending hardware).
+2.25 cyc/word through the cache→BRAM harness.
+
+**Hardware-validated** (XC7A100T + DB_FPGA V5, real DDR3, 2026-07-27): build
+timing MET (WNS +0.235 ns, WHS +0.068 ns). FillTest → `FILL OK`. ZeroBench 4 MB
+(1 M words): **HW = 29.1 ms vs SW = 603.8 ms → 20.7×**, `nonzeroAfterHW=0`,
+`HW ZERO OK`. ≈144 MB/s. (Lower than SDR's 26× / 153 MB/s because DDR3 fill
+rides the 128-bit L2 — full-line writes skip the refill, but dirty-line eviction
+round-trips to the MIG cap throughput below raw DDR3 bandwidth; SDR streams
+page-mode with no L2. Still a large, deterministic win, and the number that
+Stage 2 minor-GC nursery zeroing budgets against.)
 
 **Effort:** far less than budgeted — no L2 rework, no new invalidate capability.
 Justified because minor-GC nursery zeroing (Stage 2) rides on fill throughput
