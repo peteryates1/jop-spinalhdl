@@ -36,20 +36,44 @@ case class JopMemoryConfig(
                                          // True = WCET-safe (conservative). False = better hit rate.
                                          // Array data is heap-allocated; stidx doesn't affect it.
   stackRegionWordsPerCore: Int = 0,     // per-core stack spill region size (0 = legacy)
-  hasBackendFill: Boolean = false       // backend provides a MemFill block-zero mechanism
+  hasBackendFill: Boolean = false,      // backend provides a MemFill block-zero mechanism
                                          // (SDR); when false the controller uses its own
                                          // per-word ZERO loop (BRAM, DDR3-for-now)
+  hasCardTable: Boolean = false,        // HW card-marking write barrier (generational GC, Stage 1)
+  cardTableBudgetBytes: Int = 0         // BRAM bytes for the card table; card size derived from
+                                         // (mainMemSize, this). See docs/gc/stage1-card-table-design.md
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(addressWidth >= 16 && addressWidth <= 32, "Address width must be 16-32 bits (30 = 1GB)")
   require(burstLen == 0 || (burstLen >= 2 && (burstLen & (burstLen - 1)) == 0),
     "burstLen must be 0 (no burst) or a power of 2 >= 2")
+  require(!hasCardTable || cardTableBudgetBytes > 0, "hasCardTable requires cardTableBudgetBytes > 0")
+  require(!hasCardTable || cardCount >= 32, "card table too small (need >= 32 cards)")
 
   /** Bytes per word */
   def byteCount: Int = dataWidth / 8
 
   /** Main memory size in words */
   def mainMemWords: BigInt = mainMemSize / byteCount
+
+  // --- Card table (generational GC remembered set) geometry ---
+  // See docs/gc/stage1-card-table-design.md. cardShift = log2(words per card);
+  // derived as the smallest shift (>= floor) making the table fit the budget.
+  def cardMinShift: Int = 2   // >= 4 words (16 B) — no finer than a cache line
+  def cardShift: Int = {
+    if (!hasCardTable) 0
+    else {
+      val words = mainMemWords
+      val bits  = BigInt(cardTableBudgetBytes) * 8   // bit-packed cards
+      var sh = cardMinShift
+      while ((words >> sh) > bits) sh += 1
+      sh
+    }
+  }
+  /** Number of card bits (covers all of main memory). */
+  def cardCount: Int = if (hasCardTable) (mainMemWords >> cardShift).toInt else 0
+  /** Card table storage as 32-bit words. */
+  def cardWords32: Int = if (hasCardTable) cardCount / 32 else 0
 
   /** Scratch pad size in words */
   def scratchWords: BigInt = scratchSize / byteCount
