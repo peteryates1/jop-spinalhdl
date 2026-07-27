@@ -293,7 +293,9 @@ object JopConfig {
       clkFreq = 80 MHz,
       // hasBackendFill: use the SDR backend's fast block-fill for GC zeroing
       // (~full SDR bandwidth) instead of the controller's per-word loop.
-      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasBackendFill = true),
+      // hasCardTable: HW card-marking barrier (generational GC, Stage 1), 16KB.
+      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasBackendFill = true,
+        hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
@@ -663,7 +665,9 @@ object JopConfig {
       // cache writes (no refill) instead of the controller's per-word loop.
       // JopTop overrides addressWidth/mainMemSize from the device but preserves
       // this flag.
-      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasBackendFill = true),
+      // hasCardTable: HW card-marking barrier (generational GC, Stage 1), 16KB.
+      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasBackendFill = true,
+        hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       // 2 Mbaud (default). host->FPGA is lossless at full speed here (RP2040
       // USB backpressure works). FPGA->host byte drops were a ring-wrap bug in
