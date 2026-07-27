@@ -953,6 +953,141 @@ public class GC {
 		}
 	}
 
+	// =========================================================================
+	// Generational minor GC (Stage 2). Only reached when USE_GENERATIONAL.
+	// A young object's data lives at OFF_PTR >= nurseryBase; copying it to tenure
+	// rewrites OFF_PTR below nurseryBase, so OFF_PTR alone encodes
+	// young / copied / dead(0) — no separate minor mark bit, and the major mark
+	// (OFF_SPACE) is untouched. minorGc reuses the gray-list threading (major GC
+	// never runs during a stop-the-world minor).
+	// See docs/gc/stage2-generational-design.md.
+	// =========================================================================
+
+	/** Add a candidate young root to the copy worklist (conservative handle check). */
+	static void pushYoung(int ref) {
+		if (ref == 0) return;
+		if (ref < mem_start || ref >= mem_start + handle_cnt*HANDLE_SIZE) return;
+		if ((ref & 0x7) != 0) return;
+		int ptr = Native.rdMem(ref+OFF_PTR);
+		if (ptr < nurseryBase) return;            // dead(0), tenured, or already copied
+		if (Native.rdMem(ref+OFF_GREY) == 0) {    // not already on the worklist
+			Native.wrMem(grayList, ref+OFF_GREY);
+			grayList = ref;
+		}
+	}
+
+	/** Scan all thread stacks + static fields for young roots. */
+	static void getYoungRoots() {
+		int i, j, cnt;
+		i = Native.getSP();
+		for (j = Const.STACK_OFF; j <= i; ++j) {
+			pushYoung(Native.rdIntMem(j));
+		}
+		cnt = RtThreadImpl.getCnt();
+		for (i = 0; i < cnt; ++i) {
+			if (i != RtThreadImpl.getActive()) {
+				int[] mem = RtThreadImpl.getStack(i);
+				if (mem != null) {
+					int sp = RtThreadImpl.getSP(i) - Const.STACK_OFF;
+					for (j = 0; j <= sp; ++j) pushYoung(mem[j]);
+				}
+			}
+		}
+		int addr = Native.rdMem(addrStaticRefs);
+		cnt = Native.rdMem(addrStaticRefs+1);
+		for (i = 0; i < cnt; ++i) pushYoung(Native.rdMem(addr+i));
+	}
+
+	/** Scan dirty cards for tenure->nursery pointers (conservative). */
+	static void scanCards() {
+		int cardShift = Native.rd(Const.IO_CARD_SHIFT);
+		int baseCard = heapStart >>> cardShift;
+		int topCard  = tenureTop  >>> cardShift;
+		int wStart = baseCard >>> 5;
+		int wEnd   = (topCard + 31) >>> 5;        // 32 cards per readable word
+		int cardWords = 1 << cardShift;
+		for (int w = wStart; w < wEnd; ++w) {
+			Native.wr(w, Const.IO_CARD_IDX);
+			int bits = Native.rd(Const.IO_CARD_DATA);
+			if (bits == 0) continue;
+			int card0 = w << 5;
+			for (int b = 0; bits != 0; ++b, bits >>>= 1) {
+				if ((bits & 1) == 0) continue;
+				int card = card0 + b;
+				if (card < baseCard || card >= topCard) continue;
+				int from = card << cardShift;
+				if (from < heapStart) from = heapStart;
+				int to = from + cardWords;
+				if (to > tenureTop) to = tenureTop;
+				for (int p = from; p < to; ++p) pushYoung(Native.rdMem(p));
+			}
+		}
+	}
+
+	/** Copy a young object's data to tenure, rewrite OFF_PTR, enqueue young children. */
+	static void copyYoung(int ref) {
+		int src = Native.rdMem(ref+OFF_PTR);
+		if (src < nurseryBase) return;            // already copied
+		int size = getObjectSize(ref);
+		int dst = allocPtr - size;                // tenure grows down (headroom ensured by minorGc)
+		allocPtr = dst;
+		for (int i = 0; i < size; ++i) Native.wrMem(Native.rdMem(src+i), dst+i);
+		Native.wrMem(dst, ref+OFF_PTR);           // handle now points to tenure
+		int type = Native.rdMem(ref+OFF_TYPE);
+		if (type == IS_REFARR) {
+			int len = Native.rdMem(ref+OFF_MTAB_ALEN);
+			for (int i = 0; i < len; ++i) pushYoung(Native.rdMem(dst+i));
+		} else if (type == IS_OBJ) {
+			int gc = Native.rdMem(ref+OFF_MTAB_ALEN);
+			gc = Native.rdMem(gc+Const.MTAB2GC_INFO);
+			for (int i = 0; gc != 0; ++i, gc >>>= 1) {
+				if ((gc & 1) != 0) pushYoung(Native.rdMem(dst+i));
+			}
+		}
+	}
+
+	/** Free handles whose data is still in the nursery (dead young) after copying. */
+	static void reclaimDeadYoung() {
+		int ref = useList;
+		int prev = 0;
+		while (ref != 0) {
+			int next = Native.rdMem(ref+OFF_NEXT);
+			int ptr = Native.rdMem(ref+OFF_PTR);
+			if (ptr >= nurseryBase) {
+				// dead young: unlink from useList, return handle to freeList
+				if (prev == 0) useList = next; else Native.wrMem(next, prev+OFF_NEXT);
+				Native.wrMem(0, ref+OFF_PTR);
+				Native.wrMem(freeList, ref+OFF_NEXT);
+				freeList = ref;
+			} else {
+				prev = ref;
+			}
+			ref = next;
+		}
+	}
+
+	/** Stop-the-world minor GC: promote live young objects, reclaim the nursery. */
+	static void minorGc() {
+		// Precondition: tenure must fit the worst case (the whole nursery promotes).
+		int nurseryUsed = nurseryTop - nurseryAllocPtr;
+		if (allocPtr - copyPtr < nurseryUsed) {
+			gc();   // major GC to make tenure room
+		}
+		grayList = GREY_END;
+		getYoungRoots();
+		scanCards();
+		while (grayList != GREY_END) {
+			int ref = grayList;
+			grayList = Native.rdMem(ref+OFF_GREY);
+			Native.wrMem(0, ref+OFF_GREY);
+			copyYoung(ref);
+		}
+		reclaimDeadYoung();
+		zeroMem(nurseryBase, nurseryTop);
+		Native.wr(-1, Const.IO_CARD_CLEAR);   // clear all cards (HW sweep)
+		nurseryAllocPtr = nurseryTop;
+	}
+
 	/**
 	 * Size of scratchpad memory in 32-bit words
 	 * @return
