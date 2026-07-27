@@ -243,9 +243,14 @@ rides on fill throughput for its bounded pause.
 
 ## 5. Stages 1–3 outline (expand when reached)
 
-- **Stage 1 (card table):** BRAM card table sized 1 bit / 16-word card (4 KB for
-  256 MB). Memory controller sets `card[(addr−tenureBase)>>4]` on tenure-range
-  writes. `tenureBase`/`tenureTop` via I/O regs. GC clears cards after scanning.
+- **Stage 1 (card table):** shared, post-arbiter BRAM card table, **sized per
+  board** from `(memSizeBytes, cardTableBudgetBytes)` so it scales 32 MB SDR →
+  1 GB DDR2/DDR3 without blowing the BRAM budget (a fixed 1 bit / 16-word card
+  would be 2 MB over 1 GB — larger than the EP4CE115's entire BRAM). Marks
+  `card[wordAddr >> cardShift]` on tenure-range writes; `tenureBase`/`tenureTop`
+  + readable/clearable table via I/O regs. Also parameterizes the DDR3/DDR2
+  datapath address width (currently pinned at 28-bit = 256 MB) as a prerequisite
+  for using >256 MB. **Full design: [`stage1-card-table-design.md`](stage1-card-table-design.md).**
 - **Stage 2 (nursery + minorGc):** `nurseryBase/nurseryTop/nurseryAllocPtr` in
   `init`; allocate data from nursery; on full → `minorGc()`: scan stack/static
   roots + dirty cards → mark nursery-reachable → copy survivors to tenure bump
@@ -255,7 +260,8 @@ rides on fill throughput for its bounded pause.
 
 ---
 
-## 5. References
+## 6. References
+- [Stage 1 card-table design](stage1-card-table-design.md) — parameterized card table + datapath address-width work.
 - [GC Optimization Options](gc-optimization-options.md) — full analysis, HW accelerators §6, RT compatibility §8.
 - [Mark-Compact GC Design](gc-mark-compact-design.md)
 - `java/runtime/src/jop/com/jopdesign/sys/GC.java`
