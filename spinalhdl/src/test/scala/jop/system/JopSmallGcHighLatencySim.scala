@@ -262,6 +262,7 @@ case class JopCoreWithHighLatencyMigHarness(
   // ==========================================================================
 
   val bmbBridge = new BmbCacheBridge(config.memConfig.bmbParameter, cacheAddrWidth, cacheDataWidth)
+    bmbBridge.io.fill.cmd := False; bmbBridge.io.fill.start := 0; bmbBridge.io.fill.end := 0; bmbBridge.io.fill.value := 0
   val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth))
   val adapter = new CacheToMigAdapter
   val migModel = MigBehavioralModel(

@@ -659,7 +659,12 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
-      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+      // hasBackendFill: DDR3 backend zeroes GC free space via full-line 128-bit
+      // cache writes (no refill) instead of the controller's per-word loop.
+      // JopTop overrides addressWidth/mainMemSize from the device but preserves
+      // this flag.
+      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasBackendFill = true),
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       // 2 Mbaud (default). host->FPGA is lossless at full speed here (RP2040
       // USB backpressure works). FPGA->host byte drops were a ring-wrap bug in
       // the RP2040 cdc_uart.c bridge, fixed in firmware, not a baud problem.

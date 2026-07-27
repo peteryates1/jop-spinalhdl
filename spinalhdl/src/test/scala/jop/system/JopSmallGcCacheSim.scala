@@ -97,16 +97,17 @@ case class JopCoreWithCacheTestHarness(
   mainMemInit: Seq[BigInt],
   readLatency: Int = 10,
   writeLatency: Int = 3,
-  coreConfigOverride: Option[JopCoreConfig] = None
+  coreConfigOverride: Option[JopCoreConfig] = None,
+  hasFill: Boolean = false
 ) extends Component {
 
   // Match DDR3 config: addressWidth=26 (28-bit BMB byte addr), burstLen=8
   val mainMemSizeBytes = (mainMemInit.length * 4) max (128 * 1024)  // At least 128KB, or fit .jop
   val defaultConfig = JopCoreConfig(
-    memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = mainMemSizeBytes, burstLen = 8)
+    memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = mainMemSizeBytes, burstLen = 8, hasBackendFill = hasFill)
   )
   val config = coreConfigOverride.map(_.copy(
-    memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = mainMemSizeBytes, burstLen = 8)
+    memConfig = JopMemoryConfig(addressWidth = 26, mainMemSize = mainMemSizeBytes, burstLen = 8, hasBackendFill = hasFill)
   )).getOrElse(defaultConfig)
 
   val cacheAddrWidth = 28   // BMB byte address width
@@ -126,6 +127,9 @@ case class JopCoreWithCacheTestHarness(
     val excFired = out Bool()
     val excType = out Bits(8 bits)
     val debugMemState = out UInt(5 bits)
+    val fillBusy = out Bool()
+    val fillStart = out UInt(config.memConfig.addressWidth bits)
+    val fillEnd = out UInt(config.memConfig.addressWidth bits)
   }
 
   // Extract JBC init from main memory (same as JopCoreTestHarness)
@@ -159,6 +163,14 @@ case class JopCoreWithCacheTestHarness(
   // ==========================================================================
 
   val bmbBridge = new BmbCacheBridge(config.memConfig.bmbParameter, cacheAddrWidth, cacheDataWidth)
+  jopCore.io.fill match {
+    case Some(f) => f <> bmbBridge.io.fill
+    case None =>
+      bmbBridge.io.fill.cmd := False; bmbBridge.io.fill.start := 0; bmbBridge.io.fill.end := 0; bmbBridge.io.fill.value := 0
+  }
+  io.fillBusy := bmbBridge.io.fill.busy
+  io.fillStart := bmbBridge.io.fill.start
+  io.fillEnd := bmbBridge.io.fill.end
   val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth))
   // DDR3-like latency: ~10 cycles for read, ~3 cycles for write (matching MIG behavior)
   val backendSizeBytes = mainMemSizeBytes max (256 * 1024)  // At least 256KB backing store

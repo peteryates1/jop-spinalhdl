@@ -88,6 +88,7 @@ case class JopCoreTraceCaptureHarness(
   // ==========================================================================
 
   val bmbBridge = new BmbCacheBridge(config.memConfig.bmbParameter, cacheAddrWidth, cacheDataWidth)
+    bmbBridge.io.fill.cmd := False; bmbBridge.io.fill.start := 0; bmbBridge.io.fill.end := 0; bmbBridge.io.fill.value := 0
   val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth))
   // DDR3-like latency: ~10 cycles for read, ~3 cycles for write
   val backend = CacheToBramAdapter(cacheAddrWidth, cacheDataWidth, 128 * 1024,
