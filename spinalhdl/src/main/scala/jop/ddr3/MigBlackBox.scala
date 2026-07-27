@@ -9,7 +9,7 @@ import spinal.core._
  * @param hasCs Whether the MIG config includes ddr3_cs_n.
  *              Au V2 has CS; Wukong MIG has emrCSSelection=Disable (no CS pin).
  */
-class MigBlackBox(hasCs: Boolean = true) extends BlackBox {
+class MigBlackBox(hasCs: Boolean = true, appAddrWidth: Int = 28) extends BlackBox {
   val io = new Bundle {
     val ddr3_dq      = inout(Analog(Bits(16 bits)))
     val ddr3_dqs_n   = inout(Analog(Bits(2 bits)))
@@ -30,7 +30,7 @@ class MigBlackBox(hasCs: Boolean = true) extends BlackBox {
     val sys_clk_i = in Bool()
     val clk_ref_i = in Bool()
 
-    val app_addr         = in Bits(28 bits)
+    val app_addr         = in Bits(appAddrWidth bits)
     val app_cmd          = in Bits(3 bits)
     val app_en           = in Bool()
     val app_wdf_data     = in Bits(128 bits)

@@ -10,7 +10,9 @@ import spinal.lib.bus.bmb._
  * Defines the memory layout and BMB parameters for the JOP memory subsystem.
  *
  * @param dataWidth      Data path width (32 bits)
- * @param addressWidth   Word address width incl. 2 type bits (24=64MB, 26=256MB, 28=1GB)
+ * @param addressWidth   Word address width incl. 2 type bits; numerically = log2(mainMemSize).
+ *                       26=64MB, 28=256MB, 30=1GB. (JopTop derives it as
+ *                       log2Up(mainMemSize/4)+2 from the memory device.)
  * @param mainMemSize    Main memory size in bytes
  * @param scratchSize    Scratch pad size in bytes (optional fast local memory)
  */
@@ -39,7 +41,7 @@ case class JopMemoryConfig(
                                          // per-word ZERO loop (BRAM, DDR3-for-now)
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")
-  require(addressWidth >= 16 && addressWidth <= 28, "Address width must be 16-28 bits")
+  require(addressWidth >= 16 && addressWidth <= 32, "Address width must be 16-32 bits (30 = 1GB)")
   require(burstLen == 0 || (burstLen >= 2 && (burstLen & (burstLen - 1)) == 0),
     "burstLen must be 0 (no burst) or a power of 2 >= 2")
 

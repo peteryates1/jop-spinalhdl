@@ -131,20 +131,23 @@ object MemoryControllerFactory {
    */
   def createDdr3Path(
     bmbParameter: BmbParameter,
-    cacheAddrWidth: Int = 28,
+    cacheAddrWidth: Int = -1,   // -1 = derive from the device (byte addr = bmb access − 2)
     cacheDataWidth: Int = 128,
     cacheSetCount: Int = 512,
     hasFill: Boolean = false
   ): Ddr3MemCtrl = {
-    val bmbBridge = new BmbCacheBridge(bmbParameter, cacheAddrWidth, cacheDataWidth)
+    // Physical byte-address width the cache/adapter/MIG see (strips the 2 type
+    // bits). Derived from the memory device so 256 MB (28) and 1 GB (30) both work.
+    val caw = if (cacheAddrWidth > 0) cacheAddrWidth else bmbParameter.access.addressWidth - 2
+    val bmbBridge = new BmbCacheBridge(bmbParameter, caw, cacheDataWidth)
     val cache = new LruCacheCore(CacheConfig(
-      addrWidth = cacheAddrWidth,
+      addrWidth = caw,
       dataWidth = cacheDataWidth,
       setCount = cacheSetCount,
       hasFill = hasFill,
       fillAddrWidth = if (hasFill) bmbParameter.access.addressWidth - 2 else 0
     ))
-    val adapter = new CacheToMigAdapter
+    val adapter = new CacheToMigAdapter(caw)
 
     // Wire BmbCacheBridge -> LruCacheCore
     cache.io.frontend.req << bmbBridge.io.cache.req

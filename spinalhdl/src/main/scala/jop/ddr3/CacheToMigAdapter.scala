@@ -7,10 +7,10 @@ object CacheToMigAdapterState extends SpinalEnum {
   val IDLE, ISSUE_READ, WAIT_READ = newElement()
 }
 
-class CacheToMigAdapter extends Component {
+class CacheToMigAdapter(addrWidth: Int = 28) extends Component {
   val io = new Bundle {
     val cmd = slave Stream(new Bundle {
-      val addr = Bits(28 bits)
+      val addr = Bits(addrWidth bits)
       val write = Bool()
       val wdata = Bits(128 bits)
       val wmask = Bits(16 bits)
@@ -30,7 +30,7 @@ class CacheToMigAdapter extends Component {
     val app_rd_data = in Bits(128 bits)
     val app_rd_data_valid = in Bool()
 
-    val app_addr = out Bits(28 bits)
+    val app_addr = out Bits(addrWidth bits)
     val app_cmd = out Bits(3 bits)
     val app_en = out Bool()
     val app_wdf_data = out Bits(128 bits)

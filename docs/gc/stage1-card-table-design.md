@@ -203,14 +203,15 @@ marking + the I/O interface — no `GC.java` changes.
 
 ---
 
-## Part D — Open decisions (please confirm)
+## Part D — Decisions (locked 2026-07-27)
 
-1. **Per-board `cardTableBudgetBytes`.** Proposal: 16 KB default; 8 KB on
-   EP4CE115; 32 KB on a roomy Artix. → sets card size per the B.1 table.
-2. **Shared post-arbiter snoop** (recommended) vs per-core tables.
-3. **Plain readable table now**, HW `NEXT_DIRTY` scanner deferred (recommended).
-4. **Full-memory coverage** (`index = W >> cardShift`, GC filters) vs
-   tenure-only indexing. Recommended: full coverage.
+1. **Per-board `cardTableBudgetBytes`** — ✅ **16 KB default**, 8 KB on the
+   BRAM-tight EP4CE115, up to 32–64 KB on roomier Artix parts. Sets card size per
+   the B.1 table.
+2. **Shared post-arbiter snoop** — ✅ (one remembered set for all cores).
+3. **Plain readable table now, HW `NEXT_DIRTY` scanner deferred** — ✅.
+4. **Full-memory coverage** (`index = W >> cardShift`, GC filters) — ✅.
+5. **Sequencing** — ✅ **Part A (address widths) first**, then the card table.
 
 ---
 

@@ -220,7 +220,11 @@ case class JopTop(
       // 5. DDR3 MIG (provides ui_clk for system clock)
       if (isDdr3) {
         val hasCs = board.ddr3HasCs
-        ddr3Mig = new MigBlackBox(hasCs)
+        // MIG app_addr = physical byte-address width (256 MB → 28, 1 GB → 30),
+        // must match the cache/adapter (createDdr3Path derives the same) and the
+        // generated MIG IP.
+        val migAddrW = memDevice.map(md => log2Up((md.sizeBytes / 4).toInt) + 2).getOrElse(28)
+        ddr3Mig = new MigBlackBox(hasCs, appAddrWidth = migAddrW)
         io.ddr3_dq    <> ddr3Mig.io.ddr3_dq
         io.ddr3_dqs_n <> ddr3Mig.io.ddr3_dqs_n
         io.ddr3_dqs_p <> ddr3Mig.io.ddr3_dqs_p
