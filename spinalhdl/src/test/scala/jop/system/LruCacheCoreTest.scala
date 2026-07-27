@@ -20,7 +20,7 @@ object LruCacheCoreTest extends App {
 
     val io = new Bundle {
       val frontend = slave(CacheFrontend(addrWidth, dataWidth))
-      val cacheState = out UInt(3 bits)
+      val cacheState = out UInt(4 bits)
       val busy = out Bool()
     }
 

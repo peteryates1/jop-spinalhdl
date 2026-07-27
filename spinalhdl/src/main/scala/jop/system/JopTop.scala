@@ -342,14 +342,11 @@ case class JopTop(
       }
 
       if (isDdr3) {
-        val ddr3Path = MemoryControllerFactory.createDdr3Path(cluster.bmbParameter)
+        val ddr3Path = MemoryControllerFactory.createDdr3Path(
+          cluster.bmbParameter, hasFill = cluster.io.fill.isDefined)
         ddr3Path.bmbBridge.io.bmb <> cluster.io.bmb
-        cluster.io.fill match {
-          case Some(f) => f <> ddr3Path.bmbBridge.io.fill
-          case None =>
-            ddr3Path.bmbBridge.io.fill.cmd := False; ddr3Path.bmbBridge.io.fill.start := 0
-            ddr3Path.bmbBridge.io.fill.end := 0; ddr3Path.bmbBridge.io.fill.value := 0
-        }
+        // GC block-fill now streams write-through zeros inside the cache.
+        cluster.io.fill.foreach { f => f <> ddr3Path.cache.io.fill.get }
         MemoryControllerFactory.wireMig(ddr3Path.adapter, ddr3Mig)
       }
 
@@ -588,14 +585,11 @@ case class JopTop(
       )
 
       // DDR3 memory path
-      val ddr3Path = MemoryControllerFactory.createDdr3Path(cluster.bmbParameter)
+      val ddr3Path = MemoryControllerFactory.createDdr3Path(
+        cluster.bmbParameter, hasFill = cluster.io.fill.isDefined)
       ddr3Path.bmbBridge.io.bmb <> cluster.io.bmb
-      cluster.io.fill match {
-        case Some(f) => f <> ddr3Path.bmbBridge.io.fill
-        case None =>
-          ddr3Path.bmbBridge.io.fill.cmd := False; ddr3Path.bmbBridge.io.fill.start := 0
-          ddr3Path.bmbBridge.io.fill.end := 0; ddr3Path.bmbBridge.io.fill.value := 0
-      }
+      // GC block-fill now streams write-through zeros inside the cache.
+      cluster.io.fill.foreach { f => f <> ddr3Path.cache.io.fill.get }
       MemoryControllerFactory.wireMig(ddr3Path.adapter, ddr3Mig)
 
       // DDR3 UART RX: primary (CH340N)

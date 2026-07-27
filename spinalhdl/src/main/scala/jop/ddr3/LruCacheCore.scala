@@ -2,9 +2,11 @@ package jop.ddr3
 
 import spinal.core._
 import spinal.lib._
+import jop.memory.MemFill
 
 object LruCacheCoreState extends SpinalEnum {
-  val IDLE, TAG_COMPARE, CHECK_HIT, WRITE_HIT, ISSUE_EVICT, WAIT_EVICT_RSP, ISSUE_REFILL, WAIT_REFILL_RSP = newElement()
+  val IDLE, TAG_COMPARE, CHECK_HIT, WRITE_HIT, ISSUE_EVICT, WAIT_EVICT_RSP, ISSUE_REFILL, WAIT_REFILL_RSP,
+      FILL_TAG, FILL_WRITE, FILL_DRAIN = newElement()
 }
 
 class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
@@ -18,8 +20,11 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
     val frontend = slave(CacheFrontend(addrWidth, dataWidth))
     val memCmd = master(Stream(CacheReq(addrWidth, dataWidth)))
     val memRsp = slave(Stream(CacheRsp(dataWidth)))
+    // Optional block-fill (GC zeroing) sideband. Streams write-through zero
+    // writes for [start,end) straight to memory, invalidating any cached copy.
+    val fill = if (config.hasFill) Some(slave(MemFill(config.fillAddrWidth))) else None
     val busy = out Bool()
-    val debugState = out UInt(3 bits)
+    val debugState = out UInt(4 bits)
   }
 
   // --- Geometry ---
@@ -105,6 +110,31 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   val pendingMergedData = Reg(Bits(dataWidth bits)) init (0)
   val pendingNewDirtyWord = Reg(Bits(wayCount * dataBytes bits)) init (0)
 
+  // --- Block-fill (GC zeroing) state ---
+  // Streams write-through zero writes for [start,end) straight to memory,
+  // invalidating any cached copy — no allocate, so no per-line eviction cascade.
+  // Interior (fully-in-range) lines: write-all zeros + invalidate. Partial edge
+  // lines: masked write (miss) or merge cached out-of-range words (hit) so live
+  // data adjacent to the free region is preserved. One memRsp per issued line.
+  private val fillW = config.fillAddrWidth max 1
+  private val wordBytes = 4                        // 32-bit BMB word
+  private val wordsPerLine = dataBytes / wordBytes // 4 for a 128-bit line
+  private val lineWordShift = log2Up(wordsPerLine) // 2
+  val fillActive    = Reg(Bool()) init (False)
+  val fillWord      = Reg(UInt(fillW bits)) init (0)  // current line's first word (line-aligned)
+  val fillStartWord = Reg(UInt(fillW bits)) init (0)
+  val fillEndWord   = Reg(UInt(fillW bits)) init (0)
+  val fillIssued    = Reg(UInt(fillW bits)) init (0)
+  val fillRsp       = Reg(UInt(fillW bits)) init (0)
+
+  def fillByteAddr(word: UInt): UInt = (word << 2).resize(addrWidth)
+  def fillIndexOf(word: UInt): UInt = {
+    val b = fillByteAddr(word)
+    if (indexWidth == 0) U(0, 1 bits)
+    else b(byteOffsetWidth + indexWidth - 1 downto byteOffsetWidth).resize(indexWidth max 1)
+  }
+  def fillTagOf(word: UInt): Bits = fillByteAddr(word)(addrWidth - 1 downto byteOffsetWidth + indexWidth).asBits
+
   // --- Default Outputs ---
   io.memCmd.valid := False
   io.memCmd.payload.addr := pendingReq.addr
@@ -121,6 +151,11 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   bramReadAddr := reqIndex
   when(state =/= LruCacheCoreState.IDLE) {
     bramReadAddr := pendingIndex
+  }
+  // During a fill, drive the read port with the current fill line's set index so
+  // FILL_WRITE sees this line's tags/data (for hit detection + invalidation).
+  if (config.hasFill) {
+    when(fillActive) { bramReadAddr := fillIndexOf(fillWord) }
   }
 
   val dataReadVals = dataMems.map(_.readSync(bramReadAddr.resize(indexWidth max 1)))
@@ -232,6 +267,19 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
         pendingTag := reqAddr(addrWidth - 1 downto byteOffsetWidth + indexWidth)
         cmdFifo.io.pop.ready := True
         state := LruCacheCoreState.TAG_COMPARE
+      } otherwise {
+        // No frontend work pending: service a block-fill request if one is held.
+        if (config.hasFill) {
+          when(io.fill.get.cmd && io.fill.get.end > io.fill.get.start) {
+            fillActive    := True
+            fillStartWord := io.fill.get.start
+            fillEndWord   := io.fill.get.end
+            fillWord      := (io.fill.get.start >> lineWordShift) << lineWordShift
+            fillIssued    := 0
+            fillRsp       := 0
+            state         := LruCacheCoreState.FILL_TAG
+          }
+        }
       }
     }
 
@@ -528,6 +576,89 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
           state := LruCacheCoreState.IDLE
         }
       }
+    }
+
+    // FILL_TAG: read port is driving this line's set index (see bramReadAddr
+    // override). Advance to FILL_WRITE, or finish if the range is exhausted.
+    is(LruCacheCoreState.FILL_TAG) {
+      when(fillWord >= fillEndWord) {
+        state := LruCacheCoreState.FILL_DRAIN
+      } otherwise {
+        state := LruCacheCoreState.FILL_WRITE
+      }
+    }
+
+    // FILL_WRITE: tags/data for this line are available. Detect a hit, issue one
+    // write-through zero write, and invalidate any cached copy.
+    is(LruCacheCoreState.FILL_WRITE) {
+      if (config.hasFill) {
+        val idx = fillIndexOf(fillWord)
+        val tg  = fillTagOf(fillWord)
+        val wayTags   = (0 until wayCount).map(w => tagReadVal(w * tagWidth + tagWidth - 1 downto w * tagWidth))
+        val wayValids = (0 until wayCount).map(w => getValid(idx, w))
+        val wayHits   = (0 until wayCount).map(w => wayValids(w) && wayTags(w) === tg)
+        val anyHit    = wayHits.reduce(_ || _)
+        val hitWay    = UInt(wayBits bits); hitWay := 0
+        for (w <- 0 until wayCount) when(wayHits(w)) { hitWay := U(w, wayBits bits) }
+        val hitData = Bits(dataWidth bits); hitData := dataReadVals(0)
+        for (w <- 0 until wayCount) when(wayHits(w)) { hitData := dataReadVals(w) }
+
+        // keepMask: 1 = keep (out-of-range word), 0 = write zero (in-range word)
+        val keepMask = Bits(dataBytes bits)
+        val inRange  = Vec(Bool(), wordsPerLine)
+        for (j <- 0 until wordsPerLine) {
+          val wa = fillWord + j
+          inRange(j) := (wa >= fillStartWord) && (wa < fillEndWord)
+          for (b <- 0 until wordBytes) keepMask(j * wordBytes + b) := !inRange(j)
+        }
+        val fullLine = inRange.reduce(_ && _)
+
+        val fillData = Bits(dataWidth bits)
+        for (j <- 0 until wordsPerLine) fillData(j * 32 + 31 downto j * 32) := io.fill.get.value
+        // merge: keep? cached : fill  -> out-of-range stays cached, in-range zeroed
+        val merged = mergeData(hitData, fillData, keepMask)
+
+        io.memCmd.valid         := True
+        io.memCmd.payload.addr  := fillByteAddr(fillWord).asBits
+        io.memCmd.payload.write := True
+        when(fullLine) {                       // interior: overwrite whole line
+          io.memCmd.payload.data := fillData
+          io.memCmd.payload.mask := B(0, dataBytes bits)
+        } elsewhen (anyHit) {                  // partial hit: write merged whole line
+          io.memCmd.payload.data := merged
+          io.memCmd.payload.mask := B(0, dataBytes bits)
+        } otherwise {                          // partial miss: masked write (preserve DRAM)
+          io.memCmd.payload.data := fillData
+          io.memCmd.payload.mask := keepMask
+        }
+
+        // Invalidate any cached copy so future reads refill zeros from memory.
+        when(anyHit) { setValidForWay(idx, hitWay, False) }
+
+        when(io.memCmd.ready) {
+          fillIssued := fillIssued + 1
+          fillWord   := fillWord + wordsPerLine
+          state      := LruCacheCoreState.FILL_TAG
+        }
+      }
+    }
+
+    // FILL_DRAIN: wait for all issued writes to be acknowledged, then finish.
+    is(LruCacheCoreState.FILL_DRAIN) {
+      when(fillRsp === fillIssued) {
+        fillActive := False
+        state      := LruCacheCoreState.IDLE
+      }
+    }
+  }
+
+  // Fill response accounting + busy (outside the switch: responses can arrive a
+  // cycle after FILL_WRITE hands off to FILL_TAG/FILL_DRAIN).
+  if (config.hasFill) {
+    io.fill.get.busy := fillActive
+    when(fillActive) {
+      io.memRsp.ready := True
+      when(io.memRsp.valid) { fillRsp := fillRsp + 1 }
     }
   }
 

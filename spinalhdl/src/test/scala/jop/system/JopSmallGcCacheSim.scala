@@ -163,15 +163,16 @@ case class JopCoreWithCacheTestHarness(
   // ==========================================================================
 
   val bmbBridge = new BmbCacheBridge(config.memConfig.bmbParameter, cacheAddrWidth, cacheDataWidth)
-  jopCore.io.fill match {
-    case Some(f) => f <> bmbBridge.io.fill
-    case None =>
-      bmbBridge.io.fill.cmd := False; bmbBridge.io.fill.start := 0; bmbBridge.io.fill.end := 0; bmbBridge.io.fill.value := 0
-  }
-  io.fillBusy := bmbBridge.io.fill.busy
-  io.fillStart := bmbBridge.io.fill.start
-  io.fillEnd := bmbBridge.io.fill.end
-  val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth))
+  val cache = new LruCacheCore(CacheConfig(
+    addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth,
+    hasFill = hasFill,
+    fillAddrWidth = if (hasFill) config.memConfig.addressWidth else 0))
+
+  // GC block-fill: JopCore fill sideband -> cache streaming write-through
+  jopCore.io.fill.foreach { f => f <> cache.io.fill.get }
+  io.fillBusy  := cache.io.fill.map(_.busy).getOrElse(False)
+  io.fillStart := cache.io.fill.map(_.start).getOrElse(U(0, config.memConfig.addressWidth bits))
+  io.fillEnd   := cache.io.fill.map(_.end).getOrElse(U(0, config.memConfig.addressWidth bits))
   // DDR3-like latency: ~10 cycles for read, ~3 cycles for write (matching MIG behavior)
   val backendSizeBytes = mainMemSizeBytes max (256 * 1024)  // At least 256KB backing store
   val backend = CacheToBramAdapter(cacheAddrWidth, cacheDataWidth, backendSizeBytes,

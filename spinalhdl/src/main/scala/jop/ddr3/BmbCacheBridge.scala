@@ -3,7 +3,6 @@ package jop.ddr3
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.memory.MemFill
 
 /**
  * BMB-to-Cache bridge for JOP DDR3.
@@ -41,9 +40,6 @@ class BmbCacheBridge(p: BmbParameter, cacheAddrWidth: Int, cacheDataWidth: Int) 
   val io = new Bundle {
     val bmb = slave(Bmb(p.access, p.invalidation))
     val cache = master(CacheFrontend(cacheAddrWidth, cacheDataWidth))
-    // Block-fill sideband: zero a word range at full speed by writing whole
-    // 128-bit cache lines (mask=0 => full-line write, cache skips the refill).
-    val fill = slave(MemFill(p.access.addressWidth - 2))
   }
 
   val cmdAddrByteOffset = if (cacheByteOffsetWidth == 0) {
@@ -129,61 +125,7 @@ class BmbCacheBridge(p: BmbParameter, cacheAddrWidth: Int, cacheDataWidth: Int) 
 
   io.bmb.cmd.ready := False
 
-  // ---- Block-fill state ----
-  // Zero [start,end) (word addresses) by writing whole 128-bit cache lines.
-  // Interior lines use mask=0 (full-line write => cache skips the refill); the
-  // <=2 edge lines mask out-of-range words. One cache response per line issued;
-  // count req vs rsp for completion.
-  val fw = p.access.addressWidth - 2                 // word-address width
-  val wordsPerLine = cacheDataBytes / bmbDataBytes   // 4 words per 128-bit line
-  val lineWordShift = log2Up(wordsPerLine)           // 2
-  val fillActive    = Reg(Bool()) init(False)
-  val fillLineWord  = Reg(UInt(fw bits)) init(0)     // first word of current line (aligned)
-  val fillStartWord = Reg(UInt(fw bits)) init(0)
-  val fillEndWord   = Reg(UInt(fw bits)) init(0)
-  val fillReqCnt    = Reg(UInt(fw bits)) init(0)
-  val fillRspCnt    = Reg(UInt(fw bits)) init(0)
-
-  io.fill.busy := fillActive
-
-  when(!fillActive && io.fill.cmd && io.fill.end > io.fill.start) {
-    fillActive    := True
-    fillStartWord := io.fill.start
-    fillEndWord   := io.fill.end
-    fillLineWord  := (io.fill.start >> lineWordShift) << lineWordShift  // line-align
-    fillReqCnt    := 0
-    fillRspCnt    := 0
-  }
-  when(fillActive && (fillLineWord >= fillEndWord) && (fillRspCnt === fillReqCnt)) {
-    fillActive := False
-  }
-
-  when(fillActive) {
-    io.bmb.cmd.ready := False
-    // Issue one full/partial line write per accepted request.
-    when(fillLineWord < fillEndWord) {
-      io.cache.req.valid := True
-      io.cache.req.payload.addr := ((fillLineWord << 2)(cacheAddrWidth - 1 downto 0)).asBits
-      io.cache.req.payload.write := True
-      io.cache.req.payload.data := B(0, cacheDataWidth bits)
-      val m = Bits(cacheDataBytes bits)
-      for (j <- 0 until wordsPerLine) {
-        val inRange = (fillLineWord + j >= fillStartWord) && (fillLineWord + j < fillEndWord)
-        val lo = j * bmbDataBytes
-        m(lo + bmbDataBytes - 1 downto lo) :=
-          Mux(inRange, B(0, bmbDataBytes bits), B((BigInt(1) << bmbDataBytes) - 1, bmbDataBytes bits))
-      }
-      io.cache.req.payload.mask := m
-      when(io.cache.req.fire) {
-        fillLineWord := fillLineWord + wordsPerLine
-        fillReqCnt := fillReqCnt + 1
-      }
-    }
-    // Swallow + count the write responses (not BMB responses).
-    io.cache.rsp.ready := True
-    when(io.cache.rsp.fire) { fillRspCnt := fillRspCnt + 1 }
-
-  }.elsewhen(burstActive) {
+  when(burstActive) {
     // ---- Burst read processing ----
     // Two sub-states: issue cache read (!burstCacheReqSent), await response (burstCacheReqSent)
     when(!burstCacheReqSent) {

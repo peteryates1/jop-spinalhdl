@@ -74,7 +74,7 @@ case class JopDdr3SerialBootHarness(
     // Debug
     val excFired = out Bool()
     val debugMemState = out UInt(5 bits)
-    val debugCacheState = out UInt(3 bits)
+    val debugCacheState = out UInt(4 bits)
     val debugAdapterState = out UInt(3 bits)
   }
 
@@ -94,7 +94,6 @@ case class JopDdr3SerialBootHarness(
   // ==========================================================================
 
   val bmbBridge = new BmbCacheBridge(config.memConfig.bmbParameter, cacheAddrWidth, cacheDataWidth)
-    bmbBridge.io.fill.cmd := False; bmbBridge.io.fill.start := 0; bmbBridge.io.fill.end := 0; bmbBridge.io.fill.value := 0
   val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth))
   val adapter = new CacheToMigAdapter
   val migModel = MigBehavioralModel(

@@ -133,13 +133,16 @@ object MemoryControllerFactory {
     bmbParameter: BmbParameter,
     cacheAddrWidth: Int = 28,
     cacheDataWidth: Int = 128,
-    cacheSetCount: Int = 512
+    cacheSetCount: Int = 512,
+    hasFill: Boolean = false
   ): Ddr3MemCtrl = {
     val bmbBridge = new BmbCacheBridge(bmbParameter, cacheAddrWidth, cacheDataWidth)
     val cache = new LruCacheCore(CacheConfig(
       addrWidth = cacheAddrWidth,
       dataWidth = cacheDataWidth,
-      setCount = cacheSetCount
+      setCount = cacheSetCount,
+      hasFill = hasFill,
+      fillAddrWidth = if (hasFill) bmbParameter.access.addressWidth - 2 else 0
     ))
     val adapter = new CacheToMigAdapter
 
