@@ -166,6 +166,19 @@ public class GC {
 	static int useList;
 	static int grayList;
 
+	// =========================================================================
+	// Generational GC (Stage 2) — see docs/gc/stage2-generational-design.md.
+	// Nursery/tenure are two DATA regions (handles never move). New data is
+	// bump-allocated from the nursery at the top of the heap; minorGc() copies
+	// survivors down into tenure and rewrites OFF_PTR. All gated by
+	// USE_GENERATIONAL — when false the layout below degenerates to the classic
+	// single-pointer mark-compact heap and none of the generational paths run.
+	// =========================================================================
+	static int nurseryBase;      // low bound of the nursery data region (word addr)
+	static int nurseryTop;       // high bound (== end of heap)
+	static int nurseryAllocPtr;  // bump pointer, grows DOWN from nurseryTop
+	static int tenureTop;        // top of tenure allocation (== nurseryBase; == heap end when !gen)
+
 	static int addrStaticRefs;
 
 	static Object mutex;
@@ -206,6 +219,20 @@ public class GC {
 	 */
 	static final boolean USE_HW_ZERO = true;
 
+	/**
+	 * Generational GC (Stage 2). When true, object/array data is bump-allocated
+	 * from a nursery at the top of the heap and reclaimed by a stop-the-world
+	 * minorGc() (bounded by nursery size); the existing mark-compact runs as the
+	 * major collector over the tenure region. Requires the HW card table
+	 * (Const.IO_CARD_*) for the inter-generational (tenure->nursery) root scan.
+	 * When false the heap is the classic single mark-compact region — the proven
+	 * fallback. See docs/gc/stage2-generational-design.md.
+	 */
+	static final boolean USE_GENERATIONAL = false;
+
+	/** Nursery size cap (words). 1<<20 words = 4 MB. */
+	static final int NURSERY_MAX_WORDS = 1 << 20;
+
 	// --- Compact phase state ---
 	static int compactList;    // sorted snapshot of useList for compaction
 	static int compactDst;     // compaction destination pointer
@@ -239,11 +266,33 @@ public class GC {
 			heapStart = mem_start + handleArea;
 			heapSize = mem_size - heapStart;
 
-			// Single contiguous heap: [heapStart, heapStart+heapSize)
-			// Compacted data grows upward from heapStart (copyPtr)
-			// New allocations grow downward from top (allocPtr)
+			// Compacted tenure data grows upward from heapStart (copyPtr).
 			copyPtr = heapStart;
-			allocPtr = heapStart + heapSize;
+
+			if (USE_GENERATIONAL) {
+				// Carve a nursery off the top of the heap. Tenure = the rest;
+				// tenure allocation (promotions) grows DOWN from tenureTop toward
+				// copyPtr; new object data bump-allocates DOWN from nurseryTop.
+				int nurserySize = heapSize >> 3;               // ~1/8 of heap
+				if (nurserySize > NURSERY_MAX_WORDS) nurserySize = NURSERY_MAX_WORDS;
+				nurseryTop = heapStart + heapSize;
+				nurseryBase = nurseryTop - nurserySize;
+				nurseryAllocPtr = nurseryTop;
+				tenureTop = nurseryBase;
+				allocPtr = nurseryBase;                        // tenure alloc top
+				// Card table marks writes into tenure [heapStart, tenureTop);
+				// minorGc scans dirty cards for tenure->nursery pointers.
+				Native.wr(heapStart, Const.IO_CARD_TENURE_LO);
+				Native.wr(tenureTop, Const.IO_CARD_TENURE_HI);
+			} else {
+				// Classic single contiguous heap: new allocations grow downward
+				// from the top (allocPtr); free = [copyPtr, allocPtr).
+				allocPtr = heapStart + heapSize;
+				nurseryTop = allocPtr;
+				nurseryBase = allocPtr;                        // empty nursery
+				nurseryAllocPtr = allocPtr;
+				tenureTop = allocPtr;
+			}
 
 			// Initial mark value - use 1, will toggle to 2, back to 1, etc.
 			toSpace = 1;
