@@ -229,6 +229,10 @@ public class GC {
 	 * fallback. See docs/gc/stage2-generational-design.md.
 	 */
 	static final boolean USE_GENERATIONAL = false;
+	/** Debug tracing of generational GC events (temporary). */
+	static final boolean GEN_TRACE = false;
+	static int genCopyCnt;
+	static int genPushCnt;
 
 	/** Nursery size cap (words). 1<<20 words = 4 MB. */
 	static final int NURSERY_MAX_WORDS = 1 << 20;
@@ -953,6 +957,16 @@ public class GC {
 	// See docs/gc/stage2-generational-design.md.
 	// =========================================================================
 
+	/** Minimal decimal print for GEN_TRACE. */
+	static void wrIntG(int v) {
+		if (v < 0) { JVMHelp.wr('-'); v = -v; }
+		if (v >= 10000) JVMHelp.wr((char)('0' + (v / 10000) % 10));
+		if (v >= 1000) JVMHelp.wr((char)('0' + (v / 1000) % 10));
+		if (v >= 100) JVMHelp.wr((char)('0' + (v / 100) % 10));
+		if (v >= 10) JVMHelp.wr((char)('0' + (v / 10) % 10));
+		JVMHelp.wr((char)('0' + v % 10));
+	}
+
 	/** Add a candidate young root to the copy worklist (conservative handle check). */
 	static void pushYoung(int ref) {
 		if (ref == 0) return;
@@ -963,6 +977,7 @@ public class GC {
 		if (Native.rdMem(ref+OFF_GREY) == 0) {    // not already on the worklist
 			Native.wrMem(grayList, ref+OFF_GREY);
 			grayList = ref;
+			if (GEN_TRACE) genPushCnt++;
 		}
 	}
 
@@ -1014,46 +1029,80 @@ public class GC {
 		}
 	}
 
-	/** Copy a young object's data to tenure, rewrite OFF_PTR, enqueue young children. */
-	static void copyYoung(int ref) {
+	/** Young-survivor mark sentinel (distinct from toSpace 1/2 and 0). Set by the
+	 *  mark phase, restored to toSpace when the survivor is copied. */
+	static final int YOUNG_SURV = 3;
+
+	/**
+	 * Mark a young object live and enqueue its young children. Conservative
+	 * roots may be false positives; marking a non-object is harmless (only real
+	 * useList handles are copied later). Children are read from the object's
+	 * nursery data (src); implausible array lengths are ignored (false positive).
+	 */
+	static void markYoung(int ref) {
 		int src = Native.rdMem(ref+OFF_PTR);
-		if (src < nurseryBase) return;            // already copied
-		int size = getObjectSize(ref);
-		int dst = allocPtr - size;                // tenure grows down (headroom ensured by minorGc)
-		allocPtr = dst;
-		for (int i = 0; i < size; ++i) Native.wrMem(Native.rdMem(src+i), dst+i);
-		Native.wrMem(dst, ref+OFF_PTR);           // handle now points to tenure
+		if (src < nurseryBase) return;                 // tenured / dead / already copied
+		if (Native.rdMem(ref+OFF_SPACE) == YOUNG_SURV) return;  // already marked
+		Native.wrMem(YOUNG_SURV, ref+OFF_SPACE);
 		int type = Native.rdMem(ref+OFF_TYPE);
 		if (type == IS_REFARR) {
 			int len = Native.rdMem(ref+OFF_MTAB_ALEN);
-			for (int i = 0; i < len; ++i) pushYoung(Native.rdMem(dst+i));
+			if (len > 0 && len <= (nurseryTop - nurseryBase)) {   // sane length only
+				for (int i = 0; i < len; ++i) pushYoung(Native.rdMem(src+i));
+			}
 		} else if (type == IS_OBJ) {
 			int gc = Native.rdMem(ref+OFF_MTAB_ALEN);
 			gc = Native.rdMem(gc+Const.MTAB2GC_INFO);
 			for (int i = 0; gc != 0; ++i, gc >>>= 1) {
-				if ((gc & 1) != 0) pushYoung(Native.rdMem(dst+i));
+				if ((gc & 1) != 0) pushYoung(Native.rdMem(src+i));
 			}
 		}
 	}
 
-	/** Free handles whose data is still in the nursery (dead young) after copying. */
-	static void reclaimDeadYoung() {
+	/**
+	 * Walk useList (only REAL handles): copy marked young survivors to tenure
+	 * (rewrite OFF_PTR, restore OFF_SPACE), and reclaim dead young handles. Using
+	 * useList — not the conservative worklist — means getObjectSize is only ever
+	 * called on real objects, so false positives can never drive a bogus copy.
+	 */
+	static void copyAndSweepYoung() {
 		int ref = useList;
 		int prev = 0;
+		int nCopied = 0, nReclaimed = 0;
 		while (ref != 0) {
 			int next = Native.rdMem(ref+OFF_NEXT);
 			int ptr = Native.rdMem(ref+OFF_PTR);
-			if (ptr >= nurseryBase) {
-				// dead young: unlink from useList, return handle to freeList
-				if (prev == 0) useList = next; else Native.wrMem(next, prev+OFF_NEXT);
-				Native.wrMem(0, ref+OFF_PTR);
-				Native.wrMem(freeList, ref+OFF_NEXT);
-				freeList = ref;
+			if (ptr >= nurseryBase) {                                 // young
+				if (Native.rdMem(ref+OFF_SPACE) == YOUNG_SURV) {      // survivor -> promote
+					int size = getObjectSize(ref);
+					if (size <= 0 || size > (nurseryTop - nurseryBase)) {
+						// Impossible size for a nursery-allocated object — corrupt/
+						// stale handle. Skip (don't drive a runaway copy).
+						if (GEN_TRACE) { JVMHelp.wr("[BADSZ ref="); wrIntG(ref); JVMHelp.wr(" sz="); wrIntG(size);
+							JVMHelp.wr(" ty="); wrIntG(Native.rdMem(ref+OFF_TYPE));
+							JVMHelp.wr(" al="); wrIntG(Native.rdMem(ref+OFF_MTAB_ALEN)); JVMHelp.wr("]\n"); }
+						prev = ref; ref = next; continue;
+					}
+					int dst = allocPtr - size;
+					allocPtr = dst;
+					for (int i = 0; i < size; ++i) Native.wrMem(Native.rdMem(ptr+i), dst+i);
+					Native.wrMem(dst, ref+OFF_PTR);
+					Native.wrMem(toSpace, ref+OFF_SPACE);             // restore major mark
+					prev = ref;
+					nCopied++;
+				} else {                                              // dead young -> reclaim
+					if (prev == 0) useList = next; else Native.wrMem(next, prev+OFF_NEXT);
+					Native.wrMem(0, ref+OFF_PTR);
+					Native.wrMem(freeList, ref+OFF_NEXT);
+					freeList = ref;
+					nReclaimed++;
+				}
 			} else {
-				prev = ref;
+				prev = ref;                                           // tenured -> keep
 			}
 			ref = next;
 		}
+		if (GEN_TRACE) { JVMHelp.wr("[cs c="); wrIntG(nCopied); JVMHelp.wr(" r="); wrIntG(nReclaimed); JVMHelp.wr("]\n"); }
 	}
 
 	/** Stop-the-world minor GC: promote live young objects, reclaim the nursery. */
@@ -1066,6 +1115,8 @@ public class GC {
 			majorGc();
 			return;
 		}
+		if (GEN_TRACE) JVMHelp.wr("[gc");
+		// Mark: conservative roots (stack/static) + inter-gen (dirty cards).
 		grayList = GREY_END;
 		getYoungRoots();
 		scanCards();
@@ -1073,9 +1124,11 @@ public class GC {
 			int ref = grayList;
 			grayList = Native.rdMem(ref+OFF_GREY);
 			Native.wrMem(0, ref+OFF_GREY);
-			copyYoung(ref);
+			markYoung(ref);
 		}
-		reclaimDeadYoung();
+		if (GEN_TRACE) JVMHelp.wr("m]");
+		// Copy survivors + reclaim dead, driven by useList (real handles only).
+		copyAndSweepYoung();
 		zeroMem(nurseryBase, nurseryTop);
 		Native.wr(-1, Const.IO_CARD_CLEAR);   // clear all cards (HW sweep)
 		nurseryAllocPtr = nurseryTop;
@@ -1096,13 +1149,23 @@ public class GC {
 		allocPtr = nurseryBase;                             // tenure/promotion alloc top
 		Native.wr(heapStart, Const.IO_CARD_TENURE_LO);
 		Native.wr(tenureTop, Const.IO_CARD_TENURE_HI);
+		if (GEN_TRACE) {
+			JVMHelp.wr("[carve hStart="); wrIntG(heapStart);
+			JVMHelp.wr(" hSize="); wrIntG(heapSize);
+			JVMHelp.wr(" nBase="); wrIntG(nurseryBase);
+			JVMHelp.wr(" nSize="); wrIntG(nurserySize);
+			JVMHelp.wr(" copy="); wrIntG(copyPtr);
+			JVMHelp.wr("]\n");
+		}
 	}
 
 	/** Full major GC (mark-compact whole heap) then re-carve an empty nursery. */
 	static void majorGc() {
+		if (GEN_TRACE) JVMHelp.wr("[MAJOR]");
 		gc();                                  // compacts all live -> [heapStart, copyPtr)
 		carveNursery();                        // re-establish nursery from reclaimed space
 		Native.wr(-1, Const.IO_CARD_CLEAR);    // cards stale after moving everything
+		if (GEN_TRACE) JVMHelp.wr("[MAJOR-DONE]");
 	}
 
 	/**
