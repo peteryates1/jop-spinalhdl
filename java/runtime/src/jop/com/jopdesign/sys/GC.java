@@ -270,20 +270,10 @@ public class GC {
 			copyPtr = heapStart;
 
 			if (USE_GENERATIONAL) {
-				// Carve a nursery off the top of the heap. Tenure = the rest;
-				// tenure allocation (promotions) grows DOWN from tenureTop toward
-				// copyPtr; new object data bump-allocates DOWN from nurseryTop.
-				int nurserySize = heapSize >> 3;               // ~1/8 of heap
-				if (nurserySize > NURSERY_MAX_WORDS) nurserySize = NURSERY_MAX_WORDS;
-				nurseryTop = heapStart + heapSize;
-				nurseryBase = nurseryTop - nurserySize;
-				nurseryAllocPtr = nurseryTop;
-				tenureTop = nurseryBase;
-				allocPtr = nurseryBase;                        // tenure alloc top
-				// Card table marks writes into tenure [heapStart, tenureTop);
-				// minorGc scans dirty cards for tenure->nursery pointers.
-				Native.wr(heapStart, Const.IO_CARD_TENURE_LO);
-				Native.wr(tenureTop, Const.IO_CARD_TENURE_HI);
+				// Carve a nursery off the top of the heap (copyPtr already at
+				// heapStart — empty tenure). New data bump-allocates DOWN from
+				// nurseryTop; tenure/promotions grow DOWN from tenureTop.
+				carveNursery();
 			} else {
 				// Classic single contiguous heap: new allocations grow downward
 				// from the top (allocPtr); free = [copyPtr, allocPtr).
@@ -1068,10 +1058,13 @@ public class GC {
 
 	/** Stop-the-world minor GC: promote live young objects, reclaim the nursery. */
 	static void minorGc() {
-		// Precondition: tenure must fit the worst case (the whole nursery promotes).
+		// If tenure can't fit the worst case (whole nursery promotes), run a full
+		// major GC instead — it compacts everything (incl. the nursery) and
+		// re-carves an empty nursery, so there's nothing left to do here.
 		int nurseryUsed = nurseryTop - nurseryAllocPtr;
 		if (allocPtr - copyPtr < nurseryUsed) {
-			gc();   // major GC to make tenure room
+			majorGc();
+			return;
 		}
 		grayList = GREY_END;
 		getYoungRoots();
@@ -1086,6 +1079,98 @@ public class GC {
 		zeroMem(nurseryBase, nurseryTop);
 		Native.wr(-1, Const.IO_CARD_CLEAR);   // clear all cards (HW sweep)
 		nurseryAllocPtr = nurseryTop;
+	}
+
+	/** (Re)establish the nursery at the top of the heap; tenure = [heapStart, tenureTop). */
+	static void carveNursery() {
+		int top = heapStart + heapSize;
+		int nurserySize = heapSize >> 3;                    // ~1/8 of heap
+		if (nurserySize > NURSERY_MAX_WORDS) nurserySize = NURSERY_MAX_WORDS;
+		if (top - nurserySize <= copyPtr) {                 // not enough room: shrink
+			nurserySize = (top - copyPtr) >> 1;
+		}
+		nurseryTop = top;
+		nurseryBase = top - nurserySize;
+		nurseryAllocPtr = nurseryTop;
+		tenureTop = nurseryBase;
+		allocPtr = nurseryBase;                             // tenure/promotion alloc top
+		Native.wr(heapStart, Const.IO_CARD_TENURE_LO);
+		Native.wr(tenureTop, Const.IO_CARD_TENURE_HI);
+	}
+
+	/** Full major GC (mark-compact whole heap) then re-carve an empty nursery. */
+	static void majorGc() {
+		gc();                                  // compacts all live -> [heapStart, copyPtr)
+		carveNursery();                        // re-establish nursery from reclaimed space
+		Native.wr(-1, Const.IO_CARD_CLEAR);    // cards stale after moving everything
+	}
+
+	/**
+	 * Generational allocation: `size` words of data (nursery, or tenure for
+	 * objects larger than the nursery) + a handle. Returns the handle with
+	 * OFF_PTR/OFF_SPACE/OFF_GREY set and on the useList; data zeroed. Caller sets
+	 * OFF_TYPE and OFF_MTAB_ALEN.
+	 */
+	static int allocGen(int size) {
+		boolean tenure = size > (nurseryTop - nurseryBase);   // bigger than the whole nursery
+		if (!tenure && nurseryAllocPtr - size < nurseryBase) {
+			minorGc();                                        // reclaim nursery (+ dead young handles)
+		}
+		if (freeList == 0) {                                  // need a handle
+			minorGc();
+			if (freeList == 0) { majorGc(); if (freeList == 0) throw OOMError; }
+		}
+		int data;
+		if (tenure) {
+			if (allocPtr - size < copyPtr) { majorGc(); }
+			if (allocPtr - size < copyPtr) throw OOMError;
+			allocPtr -= size;
+			data = allocPtr;
+		} else {
+			nurseryAllocPtr -= size;
+			data = nurseryAllocPtr;
+		}
+		for (int i = 0; i < size; ++i) Native.wrMem(0, data + i);
+		int ref = freeList;
+		freeList = Native.rdMem(ref+OFF_NEXT);
+		Native.wrMem(useList, ref+OFF_NEXT);
+		useList = ref;
+		Native.wrMem(data, ref);                              // OFF_PTR
+		Native.wrMem(toSpace, ref+OFF_SPACE);
+		Native.wrMem(0, ref+OFF_GREY);
+		return ref;
+	}
+
+	static int newObjectGen(int cons, int size) {
+		int ref;
+		if (mutex != null) {
+			synchronized (mutex) {
+				ref = allocGen(size);
+				Native.wrMem(IS_OBJ, ref+OFF_TYPE);
+				Native.wrMem(cons+Const.CLASS_HEADR, ref+OFF_MTAB_ALEN);
+			}
+		} else {
+			ref = allocGen(size);
+			Native.wrMem(IS_OBJ, ref+OFF_TYPE);
+			Native.wrMem(cons+Const.CLASS_HEADR, ref+OFF_MTAB_ALEN);
+		}
+		return ref;
+	}
+
+	static int newArrayGen(int arrayLength, int type, int size) {
+		int ref;
+		if (mutex != null) {
+			synchronized (mutex) {
+				ref = allocGen(size);
+				Native.wrMem(type, ref+OFF_TYPE);
+				Native.wrMem(arrayLength, ref+OFF_MTAB_ALEN);
+			}
+		} else {
+			ref = allocGen(size);
+			Native.wrMem(type, ref+OFF_TYPE);
+			Native.wrMem(arrayLength, ref+OFF_MTAB_ALEN);
+		}
+		return ref;
 	}
 
 	/**
@@ -1147,6 +1232,10 @@ public class GC {
 			// TODO: memory initialization is needed
 			// either on scope creation+exit or in new
 			return ptr;
+		}
+
+		if (USE_GENERATIONAL) {
+			return newObjectGen(cons, size);
 		}
 
 		// that's the stop-the-world GC
@@ -1272,6 +1361,10 @@ public class GC {
 			Native.wrMem(arrayLength, ptr+OFF_MTAB_ALEN);
 			Native.wrMem(type, ptr+OFF_TYPE); // Array type
 			return ptr;
+		}
+
+		if (USE_GENERATIONAL) {
+			return newArrayGen(arrayLength, type, size);
 		}
 
 		synchronized (mutex) {
