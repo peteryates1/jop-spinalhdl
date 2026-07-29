@@ -324,7 +324,7 @@ based on bottom board PE connector topology.
 - AUD_ADCDAT: L6, AUD_ADCLRCK: M6
 
 **UART (CH340)** — 2 pins on JTAG-side connector (confirmed from QSF):
-- FPGA TX → CH340 RX: H5 (DOWN pin 41 only, **broken** — signal doesn't reach CH340)
+- FPGA TX → CH340 RX: H5 (DOWN pin 41 only, working -> proven using loopback: assign tx=rx)
 - CH340 TX → FPGA RX: N1 (DOWN pin 38 = UP pin 30, working)
 
 **Keys** — on core board, active low, accent key caps:
