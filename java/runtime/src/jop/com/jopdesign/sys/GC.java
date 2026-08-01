@@ -226,10 +226,14 @@ public class GC {
 	 * major collector over the tenure region. Requires the HW card table
 	 * (Const.IO_CARD_*) for the inter-generational (tenure->nursery) root scan.
 	 * When false the heap is the classic single mark-compact region — the proven
-	 * fallback. See docs/gc/stage2-generational-design.md.
+	 * fallback for cores built without a card table. See
+	 * docs/gc/stage2-generational-design.md.
+	 *
+	 * Hardware-validated 2026-08-01 on both XC7A100T (DDR3) and EP4CGX150 (SDR):
+	 * JVM DoAll 66/66 plus GcStressTest sustaining ~90k churn rounds fault-free.
 	 */
-	static final boolean USE_GENERATIONAL = false;
-	/** Debug tracing of generational GC events (temporary). */
+	static final boolean USE_GENERATIONAL = true;
+	/** Debug tracing of generational GC events (compile-time folded away when false). */
 	static final boolean GEN_TRACE = false;
 	static int genCopyCnt;
 	static int genPushCnt;
