@@ -130,11 +130,11 @@ public class GC {
 	 * Start of the single heap region (after handle area).
 	 * Mark-compact uses one contiguous heap instead of two semi-spaces.
 	 */
-	static int heapStart;
+	public static int heapStart;
 	/**
 	 * Total heap size in words.
 	 */
-	static int heapSize;
+	public static int heapSize;
 
 	/**
 	 * Current mark value. Toggled each GC cycle.
@@ -152,19 +152,30 @@ public class GC {
 	 * New allocations happen at the top, from allocPtr downward.
 	 * Free space = [copyPtr, allocPtr).
 	 */
-	static int copyPtr;
+	public static int copyPtr;
 	/**
 	 * Points to the lowest allocated-but-not-yet-compacted object.
 	 * New objects are allocated by decrementing allocPtr.
 	 * Free space = [copyPtr, allocPtr).
 	 */
-	static int allocPtr;
+	public static int allocPtr;
 
 	static int freeList;
 	// TODO: useList is only used for a faster handle sweep
 	// do we need it?
 	static int useList;
 	static int grayList;
+	/**
+	 * Handles whose data lives in the nursery (generational mode only). Split out
+	 * of useList so a minor GC sweeps O(young) instead of O(all live) — walking
+	 * tenured handles every minor GC made the pause grow with the tenured live
+	 * set, so no nursery size could bound it (measured: on SDR only 59% of swept
+	 * handles were young after 66 collections). A handle is on exactly one of
+	 * freeList / youngList / useList, so OFF_NEXT is reused as the link.
+	 * Promotion moves the handle to useList; majorGc splices the two back
+	 * together before the classic collector runs.
+	 */
+	static int youngList;
 
 	// =========================================================================
 	// Generational GC (Stage 2) — see docs/gc/stage2-generational-design.md.
@@ -174,10 +185,10 @@ public class GC {
 	// USE_GENERATIONAL — when false the layout below degenerates to the classic
 	// single-pointer mark-compact heap and none of the generational paths run.
 	// =========================================================================
-	static int nurseryBase;      // low bound of the nursery data region (word addr)
-	static int nurseryTop;       // high bound (== end of heap)
-	static int nurseryAllocPtr;  // bump pointer, grows DOWN from nurseryTop
-	static int tenureTop;        // top of tenure allocation (== nurseryBase; == heap end when !gen)
+	public static int nurseryBase;      // low bound of the nursery data region (word addr)
+	public static int nurseryTop;       // high bound (== end of heap)
+	public static int nurseryAllocPtr;  // bump pointer, grows DOWN from nurseryTop
+	public static int tenureTop;        // top of tenure allocation (== nurseryBase; == heap end when !gen)
 
 	static int addrStaticRefs;
 
@@ -262,6 +273,13 @@ public class GC {
 	public static int gcSweptHandles, gcCopiedHandles, gcReclaimedHandles;
 	/** Swept-handle count of the worst minor GC. */
 	public static int gcWSweptHandles;
+	/**
+	 * Handles the compactor rejected as having an impossible size/extent, plus
+	 * the details of the first one. Non-zero means something put a corrupt or
+	 * stale handle on useList — see the BADSZ screen in copyAndSweepYoung.
+	 */
+	public static int gcBadHandleCnt, gcBadHandle, gcBadHandleSize,
+			gcBadHandleType, gcBadHandleAlen, gcBadHandlePtr;
 	/** Major GC: number run, last/worst pause (us). */
 	public static int gcMajorCount, gcMajorLast, gcMajorMax;
 
@@ -324,6 +342,7 @@ public class GC {
 
 			freeList = 0;
 			useList = 0;
+			youngList = 0;
 			grayList = GREY_END;
 			// Use incrementing pointer instead of i*HANDLE_SIZE (multiplication broken)
 			int ref = mem_start;
@@ -678,6 +697,29 @@ public class GC {
 				int size = getObjectSize(ref);
 				int oldAddr = Native.rdMem(ref+OFF_PTR);
 
+				// A size that cannot fit the heap means a corrupt or stale
+				// handle (same condition copyAndSweepYoung screens for). Sliding
+				// it would run compactPtr off the end of the heap and destroy
+				// everything above it, so drop it instead of compacting it.
+				if (size < 0 || size > heapSize || oldAddr < heapStart
+						|| oldAddr + size > heapStart + heapSize) {
+					if (GC_TIMING) {
+						if (gcBadHandleCnt == 0) {
+							gcBadHandle = ref;
+							gcBadHandleSize = size;
+							gcBadHandleType = Native.rdMem(ref+OFF_TYPE);
+							gcBadHandleAlen = Native.rdMem(ref+OFF_MTAB_ALEN);
+							gcBadHandlePtr = oldAddr;
+						}
+						++gcBadHandleCnt;
+					}
+					Native.wrMem(freeList, ref+OFF_NEXT);
+					freeList = ref;
+					Native.wrMem(0, ref+OFF_PTR);
+					ref = next;
+					continue;
+				}
+
 				// Only move if the new position is different
 				if (oldAddr != compactPtr && size > 0) {
 					// Copy data to compacted position (forward copy).
@@ -924,6 +966,13 @@ public class GC {
 		// partially-moved objects during the compaction phase.
 		Native.wr(1, Const.IO_GC_HALT);
 
+		// Generational mode keeps nursery handles on youngList, which this
+		// collector knows nothing about. Splice them back before doing anything
+		// else — gc() is public and reachable straight from System.gc(), not just
+		// via majorGc(), and a young handle left off useList would be neither
+		// compacted nor reclaimed.
+		if (USE_GENERATIONAL) spliceYoungIntoUse();
+
 		// For stop-the-world GC, discard write barrier entries.
 		// All live objects are found via roots (stack + static refs).
 		// The write barrier gray list may contain non-handle values
@@ -949,6 +998,16 @@ public class GC {
 		// Ensures newly allocated objects have zeroed fields
 		// (JVM spec: all fields default to 0/null).
 		zeroMem(copyPtr, allocPtr);
+
+		// Generational: compaction moved every object and reset allocPtr, so the
+		// nursery bounds are now stale — re-establish an empty nursery before
+		// anything can allocate again, and drop the cards (every recorded
+		// tenure->nursery pointer refers to pre-compaction addresses). Done here
+		// rather than only in majorGc() so a direct System.gc() is safe too.
+		if (USE_GENERATIONAL) {
+			carveNursery();
+			Native.wr(-1, Const.IO_CARD_CLEAR);
+		}
 
 		// Invalidate caches after compaction -- object data has moved
 		Native.invalidate();
@@ -1097,45 +1156,65 @@ public class GC {
 	 * called on real objects, so false positives can never drive a bogus copy.
 	 */
 	static void copyAndSweepYoung() {
-		int ref = useList;
-		int prev = 0;
+		int ref = youngList;
 		int nCopied = 0, nReclaimed = 0, nSwept = 0;
+		// Every entry leaves youngList: survivors move to useList (they are
+		// tenured once copied), dead ones go back to freeList. So the list is
+		// rebuilt from empty rather than unlinked in place.
+		youngList = 0;
 		while (ref != 0) {
 			if (GC_TIMING) ++nSwept;
 			int next = Native.rdMem(ref+OFF_NEXT);
-			int ptr = Native.rdMem(ref+OFF_PTR);
-			if (ptr >= nurseryBase) {                                 // young
-				if (Native.rdMem(ref+OFF_SPACE) == YOUNG_SURV) {      // survivor -> promote
-					int size = getObjectSize(ref);
-					if (size <= 0 || size > (nurseryTop - nurseryBase)) {
-						// Impossible size for a nursery-allocated object — corrupt/
-						// stale handle. Skip (don't drive a runaway copy).
-						if (GEN_TRACE) { JVMHelp.wr("[BADSZ ref="); wrIntG(ref); JVMHelp.wr(" sz="); wrIntG(size);
-							JVMHelp.wr(" ty="); wrIntG(Native.rdMem(ref+OFF_TYPE));
-							JVMHelp.wr(" al="); wrIntG(Native.rdMem(ref+OFF_MTAB_ALEN)); JVMHelp.wr("]\n"); }
-						prev = ref; ref = next; continue;
-					}
-					int dst = allocPtr - size;
-					allocPtr = dst;
-					for (int i = 0; i < size; ++i) Native.wrMem(Native.rdMem(ptr+i), dst+i);
-					Native.wrMem(dst, ref+OFF_PTR);
-					Native.wrMem(toSpace, ref+OFF_SPACE);             // restore major mark
-					prev = ref;
-					nCopied++;
-				} else {                                              // dead young -> reclaim
-					if (prev == 0) useList = next; else Native.wrMem(next, prev+OFF_NEXT);
-					Native.wrMem(0, ref+OFF_PTR);
-					Native.wrMem(freeList, ref+OFF_NEXT);
-					freeList = ref;
-					nReclaimed++;
+			// OFF_PTR is only needed to copy a survivor, and survivors are a
+			// fraction of a percent here — keep it out of the common dead path,
+			// where every avoided main-memory read is ~18% of the per-handle cost.
+			if (Native.rdMem(ref+OFF_SPACE) == YOUNG_SURV) {          // survivor -> promote
+				int ptr = Native.rdMem(ref+OFF_PTR);
+				int size = getObjectSize(ref);
+				if (size <= 0 || size > (nurseryTop - nurseryBase)) {
+					// Impossible size for a nursery-allocated object — corrupt/
+					// stale handle. Skip (don't drive a runaway copy), but keep it
+					// on youngList so it is not lost or double-freed.
+					if (GEN_TRACE) { JVMHelp.wr("[BADSZ ref="); wrIntG(ref); JVMHelp.wr(" sz="); wrIntG(size);
+						JVMHelp.wr(" ty="); wrIntG(Native.rdMem(ref+OFF_TYPE));
+						JVMHelp.wr(" al="); wrIntG(Native.rdMem(ref+OFF_MTAB_ALEN)); JVMHelp.wr("]\n"); }
+					Native.wrMem(youngList, ref+OFF_NEXT);
+					youngList = ref;
+					ref = next;
+					continue;
 				}
-			} else {
-				prev = ref;                                           // tenured -> keep
+				int dst = allocPtr - size;
+				allocPtr = dst;
+				for (int i = 0; i < size; ++i) Native.wrMem(Native.rdMem(ptr+i), dst+i);
+				Native.wrMem(dst, ref+OFF_PTR);
+				Native.wrMem(toSpace, ref+OFF_SPACE);                 // restore major mark
+				Native.wrMem(useList, ref+OFF_NEXT);                  // now tenured
+				useList = ref;
+				nCopied++;
+			} else {                                                  // dead young -> reclaim
+				Native.wrMem(0, ref+OFF_PTR);
+				Native.wrMem(freeList, ref+OFF_NEXT);
+				freeList = ref;
+				nReclaimed++;
 			}
 			ref = next;
 		}
 		if (GC_TIMING) { gcSweptHandles = nSwept; gcCopiedHandles = nCopied; gcReclaimedHandles = nReclaimed; }
 		if (GEN_TRACE) { JVMHelp.wr("[cs c="); wrIntG(nCopied); JVMHelp.wr(" r="); wrIntG(nReclaimed); JVMHelp.wr("]\n"); }
+	}
+
+	/**
+	 * Concatenate youngList onto useList and empty it, so the classic collector
+	 * sees every live handle. Safe to call when youngList is already empty.
+	 */
+	static void spliceYoungIntoUse() {
+		if (youngList == 0) return;
+		int tail = youngList;
+		int next = Native.rdMem(tail+OFF_NEXT);
+		while (next != 0) { tail = next; next = Native.rdMem(tail+OFF_NEXT); }
+		Native.wrMem(useList, tail+OFF_NEXT);
+		useList = youngList;
+		youngList = 0;
 	}
 
 	/** Stop-the-world minor GC: promote live young objects, reclaim the nursery. */
@@ -1222,9 +1301,9 @@ public class GC {
 		if (GEN_TRACE) JVMHelp.wr("[MAJOR]");
 		int t0 = 0;
 		if (GC_TIMING) t0 = Native.rd(Const.IO_US_CNT);
-		gc();                                  // compacts all live -> [heapStart, copyPtr)
-		carveNursery();                        // re-establish nursery from reclaimed space
-		Native.wr(-1, Const.IO_CARD_CLEAR);    // cards stale after moving everything
+		// gc() splices youngList in, compacts everything, then re-carves an empty
+		// nursery and clears the cards.
+		gc();
 		if (GC_TIMING) {
 			gcMajorLast = Native.rd(Const.IO_US_CNT) - t0;
 			if (gcMajorLast > gcMajorMax) gcMajorMax = gcMajorLast;
@@ -1261,11 +1340,24 @@ public class GC {
 		for (int i = 0; i < size; ++i) Native.wrMem(0, data + i);
 		int ref = freeList;
 		freeList = Native.rdMem(ref+OFF_NEXT);
-		Native.wrMem(useList, ref+OFF_NEXT);
-		useList = ref;
+		if (tenure) {                                         // born tenured: minor GC ignores it
+			Native.wrMem(useList, ref+OFF_NEXT);
+			useList = ref;
+		} else {                                              // nursery: only these are swept
+			Native.wrMem(youngList, ref+OFF_NEXT);
+			youngList = ref;
+		}
 		Native.wrMem(data, ref);                              // OFF_PTR
 		Native.wrMem(toSpace, ref+OFF_SPACE);
 		Native.wrMem(0, ref+OFF_GREY);
+		// The caller writes the real OFF_TYPE/OFF_MTAB_ALEN after we return, so
+		// until then this handle is reachable from youngList with whatever those
+		// fields last held. Describe it as an int array of exactly `size` words:
+		// getObjectSize then returns the true size for a collection landing in
+		// that window, instead of dereferencing a stale method table (which
+		// yielded sizes larger than the heap and ran the compactor off the end).
+		Native.wrMem(10, ref+OFF_TYPE);                       // T_INT: size == alen
+		Native.wrMem(size, ref+OFF_MTAB_ALEN);
 		return ref;
 	}
 
@@ -1615,6 +1707,21 @@ public class GC {
 
 	      // not found yet. Let's go to the next element and try again.
 	      handlePointer = Native.rdMem(handlePointer+OFF_NEXT);
+	    }
+
+	    // In generational mode the live handles are split across two lists, so a
+	    // nursery-allocated object is valid but absent from useList.
+	    if (USE_GENERATIONAL && !isValid) {
+	      handlePointer = youngList;
+	      while(handlePointer != 0)
+	      {
+	        if(handle == handlePointer)
+	        {
+	          isValid = true;
+	          break;
+	        }
+	        handlePointer = Native.rdMem(handlePointer+OFF_NEXT);
+	      }
 	    }
 	  }
 

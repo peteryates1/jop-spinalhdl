@@ -18,7 +18,7 @@ import com.jopdesign.sys.*;
 public class GcPauseTest {
 
 	/** Live set retained across collections, so each minor GC has real work to do. */
-	static Object[] live;
+	static int[][] live;
 	/** Sink for the garbage, to stop anything being optimised away. */
 	static int[] garbage;
 
@@ -61,6 +61,20 @@ public class GcPauseTest {
 		JVMHelp.wr("%)\n");
 	}
 
+	/** Full-width dump of the heap pointers (GEN_TRACE's printer truncates). */
+	static void dumpPtrs(String when) {
+		JVMHelp.wr(when);
+		JVMHelp.wr(": hStart="); wrInt(GC.heapStart);
+		JVMHelp.wr(" hSize="); wrInt(GC.heapSize);
+		JVMHelp.wr(" top="); wrInt(GC.heapStart + GC.heapSize);
+		JVMHelp.wr(" copy="); wrInt(GC.copyPtr);
+		JVMHelp.wr(" alloc="); wrInt(GC.allocPtr);
+		JVMHelp.wr(" nBase="); wrInt(GC.nurseryBase);
+		JVMHelp.wr(" nTop="); wrInt(GC.nurseryTop);
+		JVMHelp.wr(" nAlloc="); wrInt(GC.nurseryAllocPtr);
+		JVMHelp.wr("\n");
+	}
+
 	public static void main(String[] args) {
 
 		JVMHelp.wr("GcPauseTest start\n");
@@ -72,7 +86,7 @@ public class GcPauseTest {
 			return;
 		}
 
-		live = new Object[LIVE_SLOTS];
+		live = new int[LIVE_SLOTS][];
 
 		// Churn: mostly garbage, with a rotating slice kept alive so that the
 		// copy phase actually promotes objects instead of measuring an empty heap.
@@ -122,7 +136,55 @@ public class GcPauseTest {
 			JVMHelp.wr(", reclaimed "); wrInt(GC.gcReclaimedHandles); JVMHelp.wr(")\n");
 		}
 
-		JVMHelp.wr("\n=== major GC ===\n");
+		// The churn above never fills tenure, so it leaves the major path — the
+		// youngList splice and the nursery re-carve — completely untested. Drive
+		// it explicitly through GC.gc() (what Runtime.gc() calls), which lands
+		// there directly rather than via majorGc(), then keep allocating and check
+		// the retained set survived. A stale nursery bound or lost young handle
+		// shows up here as corrupted or missing data.
+		JVMHelp.wr("\n=== major GC path ===\n");
+		int liveBefore = 0;
+		for (int i = 0; i < LIVE_SLOTS; ++i) if (live[i] != null) ++liveBefore;
+
+		dumpPtrs("before gc1");
+		JVMHelp.wr("[gc1"); GC.gc(); JVMHelp.wr("]\n");
+		dumpPtrs("after gc1");
+		// Allocate again afterwards: this is what would corrupt the heap if the
+		// nursery had not been re-carved.
+		JVMHelp.wr("[alloc");
+		for (int i = 0; i < 500; ++i) {
+			garbage = new int[32];
+			garbage[0] = i;
+		}
+		JVMHelp.wr("]");
+		JVMHelp.wr("[gc2"); GC.gc(); JVMHelp.wr("]");   // youngList already spliced/empty
+		JVMHelp.wr("[verify");
+
+		int liveAfter = 0, bad = 0;
+		for (int i = 0; i < LIVE_SLOTS; ++i) {
+			int[] a = live[i];
+			if (a == null) continue;
+			++liveAfter;
+			if (a.length != 16) ++bad;
+		}
+		JVMHelp.wr("]\n");
+		JVMHelp.wr("retained before "); wrInt(liveBefore);
+		JVMHelp.wr(", after "); wrInt(liveAfter);
+		JVMHelp.wr(", corrupt "); wrInt(bad); JVMHelp.wr("\n");
+		if (liveAfter == liveBefore && bad == 0) {
+			JVMHelp.wr("MAJOR OK\n");
+		} else {
+			JVMHelp.wr("MAJOR FAIL\n");
+		}
+
+		if (GC.gcBadHandleCnt != 0) {
+			JVMHelp.wr("BAD HANDLES "); wrInt(GC.gcBadHandleCnt);
+			JVMHelp.wr(" first: ref="); wrInt(GC.gcBadHandle);
+			JVMHelp.wr(" size="); wrInt(GC.gcBadHandleSize);
+			JVMHelp.wr(" type="); wrInt(GC.gcBadHandleType);
+			JVMHelp.wr(" alen="); wrInt(GC.gcBadHandleAlen);
+			JVMHelp.wr(" ptr="); wrInt(GC.gcBadHandlePtr); JVMHelp.wr("\n");
+		}
 		JVMHelp.wr("count   "); wrInt(GC.gcMajorCount); JVMHelp.wr("\n");
 		if (GC.gcMajorCount > 0) {
 			JVMHelp.wr("worst   "); wrMs(GC.gcMajorMax); JVMHelp.wr("\n");
