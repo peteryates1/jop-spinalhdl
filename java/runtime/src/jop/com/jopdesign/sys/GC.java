@@ -283,6 +283,12 @@ public class GC {
 	/** Major GC: number run, last/worst pause (us). */
 	public static int gcMajorCount, gcMajorLast, gcMajorMax;
 
+	/**
+	 * Largest single hardware zero-fill request, in words. 1<<20 words = 4 MB,
+	 * the size the fill DMA is validated at (ZeroBench).
+	 */
+	static final int ZERO_CHUNK_WORDS = 1 << 20;
+
 	/** Nursery size cap (words). 1<<20 words = 4 MB. */
 	static final int NURSERY_MAX_WORDS = 1 << 20;
 
@@ -618,37 +624,63 @@ public class GC {
 	 * in address order so that sliding compaction never overwrites
 	 * not-yet-copied data.
 	 *
-	 * Uses insertion sort on a singly-linked list. O(n^2) worst case,
-	 * which is acceptable for JOP's typical object counts (dozens to hundreds).
+	 * Bottom-up merge sort on the singly-linked list: O(n log n) time, O(1)
+	 * extra space. This was an insertion sort, justified by "dozens to hundreds"
+	 * of objects — but a major GC on the 256 MB board sorts tens of thousands
+	 * (the 4 MB nursery holds ~33k), and at O(n^2) with two main-memory reads
+	 * per inner step against handles that miss the L2 cache, the collector
+	 * appeared to hang. Small heaps completed only because they sort ~30x less.
 	 *
 	 * @param list head of the linked list to sort
 	 * @return head of the sorted list
 	 */
 	static int sortListByAddress(int list) {
-		int sorted = 0;
-		int curr = list;
+		if (list == 0) return 0;
 
-		while (curr != 0) {
-			int next = Native.rdMem(curr + OFF_NEXT);
-			int currAddr = Native.rdMem(curr + OFF_PTR);
+		// Bottom-up merge sort, relinking through OFF_NEXT (no extra storage).
+		// Runs of `width` are merged pairwise until one run remains.
+		int width = 1;
+		for (;;) {
+			int p = list;
+			int head = 0;
+			int tail = 0;
+			int merges = 0;
 
-			if (sorted == 0 || currAddr <= Native.rdMem(sorted + OFF_PTR)) {
-				Native.wrMem(sorted, curr + OFF_NEXT);
-				sorted = curr;
-			} else {
-				int prev = sorted;
-				int scan = Native.rdMem(sorted + OFF_NEXT);
-				while (scan != 0 && Native.rdMem(scan + OFF_PTR) < currAddr) {
-					prev = scan;
-					scan = Native.rdMem(scan + OFF_NEXT);
+			while (p != 0) {
+				++merges;
+				// Split off the right-hand run: q = p advanced by `width`,
+				// psize = how many the left run actually has (may be short).
+				int q = p;
+				int psize = 0;
+				for (int i = 0; i < width && q != 0; ++i) {
+					++psize;
+					q = Native.rdMem(q + OFF_NEXT);
 				}
-				Native.wrMem(scan, curr + OFF_NEXT);
-				Native.wrMem(curr, prev + OFF_NEXT);
-			}
-			curr = next;
-		}
+				int qsize = width;
 
-		return sorted;
+				// Merge the two runs by ascending OFF_PTR.
+				while (psize > 0 || (qsize > 0 && q != 0)) {
+					int e;
+					if (psize == 0) {
+						e = q; q = Native.rdMem(q + OFF_NEXT); --qsize;
+					} else if (qsize == 0 || q == 0) {
+						e = p; p = Native.rdMem(p + OFF_NEXT); --psize;
+					} else if (Native.rdMem(q + OFF_PTR) < Native.rdMem(p + OFF_PTR)) {
+						e = q; q = Native.rdMem(q + OFF_NEXT); --qsize;
+					} else {
+						e = p; p = Native.rdMem(p + OFF_NEXT); --psize;
+					}
+					if (tail == 0) head = e; else Native.wrMem(e, tail + OFF_NEXT);
+					tail = e;
+				}
+				p = q;
+			}
+
+			Native.wrMem(0, tail + OFF_NEXT);
+			if (merges <= 1) return head;   // one run left: sorted
+			list = head;
+			width <<= 1;
+		}
 	}
 
 	/**
@@ -997,7 +1029,15 @@ public class GC {
 		// Replaces zapSemi() from the semi-space collector.
 		// Ensures newly allocated objects have zeroed fields
 		// (JVM spec: all fields default to 0/null).
-		zeroMem(copyPtr, allocPtr);
+		// NOTE: this used to zero the whole free region here ("replaces zapSemi()
+		// from the semi-space collector"), so that new objects saw zeroed fields.
+		// That is redundant — every allocation path zeroes its own data before
+		// handing the object out (allocGen, and both newObject branches plus
+		// newArray) — and it made a major GC cost O(heap) rather than O(live).
+		// On the 256 MB board it meant zeroing 254 MB per collection, which did
+		// not complete: the collector wedged here in both generational and
+		// classic mode. Free memory is never scanned, only live objects and
+		// roots are, so leaving it dirty is safe.
 
 		// Generational: compaction moved every object and reset allocPtr, so the
 		// nursery bounds are now stale — re-establish an empty nursery before
@@ -1027,9 +1067,25 @@ public class GC {
 	 * software word loop.
 	 */
 	static void zeroMem(int from, int to) {
+		if (from >= to) return;
 		if (USE_HW_ZERO) {
-			Native.wr(from, Const.IO_ZERO_START);
-			Native.wr(to, Const.IO_ZERO_END);   // launch; blocks on next mem access
+			// Issue the fill in bounded chunks rather than as one huge request.
+			// A whole-heap request (254 MB after a major GC on the 256 MB DDR3
+			// board) does not complete correctly, while 4 MB requests are the
+			// proven size. Chunking also bounds how long the CPU blocks, which
+			// matters for a collector we are trying to make real-time.
+			int cur = from;
+			while (cur < to) {
+				int end = cur + ZERO_CHUNK_WORDS;
+				if (end > to || end < cur) end = to;   // clamp, and guard overflow
+				Native.wr(cur, Const.IO_ZERO_START);
+				Native.wr(end, Const.IO_ZERO_END);     // launch
+				// Writing IO_ZERO_END only blocks on the NEXT memory access, and
+				// everything between here and the following chunk is I/O, so
+				// touch memory to wait for this chunk before launching another.
+				Native.rdMem(cur);
+				cur = end;
+			}
 		} else {
 			for (int i = from; i < to; ++i) {
 				Native.wrMem(0, i);
