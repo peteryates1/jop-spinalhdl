@@ -232,11 +232,38 @@ public class GC {
 	 * Hardware-validated 2026-08-01 on both XC7A100T (DDR3) and EP4CGX150 (SDR):
 	 * JVM DoAll 66/66 plus GcStressTest sustaining ~90k churn rounds fault-free.
 	 */
-	static final boolean USE_GENERATIONAL = true;
+	public static final boolean USE_GENERATIONAL = true;
 	/** Debug tracing of generational GC events (compile-time folded away when false). */
 	static final boolean GEN_TRACE = false;
 	static int genCopyCnt;
 	static int genPushCnt;
+
+	/**
+	 * Stage 3 pause instrumentation. Costs ~6 reads of the microsecond counter
+	 * per collection (nothing next to a multi-ms pause), so it stays on by
+	 * default; javac folds it away entirely when false. Times are microseconds
+	 * from IO_US_CNT, which is clock-rate independent so results compare
+	 * directly across boards running at different frequencies.
+	 */
+	public static final boolean GC_TIMING = true;
+	/** Minor GC: number run, last/worst/total pause (us). */
+	public static int gcMinorCount, gcMinorLast, gcMinorMax, gcMinorTotal;
+	/** Per-phase split of the LAST minor GC (us). */
+	public static int gcTRoots, gcTMark, gcTCopy, gcTZero, gcTCards;
+	/** Per-phase split of the WORST minor GC seen (us) — captured when gcMinorMax moves. */
+	public static int gcWRoots, gcWMark, gcWCopy, gcWZero, gcWCards;
+	/** Words scanned/promoted by the last minor GC (to correlate pause with work). */
+	public static int gcMinorNurseryWords, gcMinorPromotedWords;
+	/**
+	 * useList entries visited / promoted / reclaimed by the last minor GC. The
+	 * sweep is O(entries visited), so gcTCopy/gcSweptHandles is the per-handle
+	 * cost that actually sets the pause — measured, not inferred from object size.
+	 */
+	public static int gcSweptHandles, gcCopiedHandles, gcReclaimedHandles;
+	/** Swept-handle count of the worst minor GC. */
+	public static int gcWSweptHandles;
+	/** Major GC: number run, last/worst pause (us). */
+	public static int gcMajorCount, gcMajorLast, gcMajorMax;
 
 	/** Nursery size cap (words). 1<<20 words = 4 MB. */
 	static final int NURSERY_MAX_WORDS = 1 << 20;
@@ -1072,8 +1099,9 @@ public class GC {
 	static void copyAndSweepYoung() {
 		int ref = useList;
 		int prev = 0;
-		int nCopied = 0, nReclaimed = 0;
+		int nCopied = 0, nReclaimed = 0, nSwept = 0;
 		while (ref != 0) {
+			if (GC_TIMING) ++nSwept;
 			int next = Native.rdMem(ref+OFF_NEXT);
 			int ptr = Native.rdMem(ref+OFF_PTR);
 			if (ptr >= nurseryBase) {                                 // young
@@ -1106,6 +1134,7 @@ public class GC {
 			}
 			ref = next;
 		}
+		if (GC_TIMING) { gcSweptHandles = nSwept; gcCopiedHandles = nCopied; gcReclaimedHandles = nReclaimed; }
 		if (GEN_TRACE) { JVMHelp.wr("[cs c="); wrIntG(nCopied); JVMHelp.wr(" r="); wrIntG(nReclaimed); JVMHelp.wr("]\n"); }
 	}
 
@@ -1120,22 +1149,47 @@ public class GC {
 			return;
 		}
 		if (GEN_TRACE) JVMHelp.wr("[gc");
+		int t0 = 0, t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0, allocBefore = 0;
+		if (GC_TIMING) { t0 = Native.rd(Const.IO_US_CNT); allocBefore = allocPtr; }
 		// Mark: conservative roots (stack/static) + inter-gen (dirty cards).
 		grayList = GREY_END;
 		getYoungRoots();
 		scanCards();
+		if (GC_TIMING) t1 = Native.rd(Const.IO_US_CNT);
 		while (grayList != GREY_END) {
 			int ref = grayList;
 			grayList = Native.rdMem(ref+OFF_GREY);
 			Native.wrMem(0, ref+OFF_GREY);
 			markYoung(ref);
 		}
+		if (GC_TIMING) t2 = Native.rd(Const.IO_US_CNT);
 		if (GEN_TRACE) JVMHelp.wr("m]");
 		// Copy survivors + reclaim dead, driven by useList (real handles only).
 		copyAndSweepYoung();
+		if (GC_TIMING) t3 = Native.rd(Const.IO_US_CNT);
 		zeroMem(nurseryBase, nurseryTop);
+		if (GC_TIMING) t4 = Native.rd(Const.IO_US_CNT);
 		Native.wr(-1, Const.IO_CARD_CLEAR);   // clear all cards (HW sweep)
 		nurseryAllocPtr = nurseryTop;
+		if (GC_TIMING) {
+			t5 = Native.rd(Const.IO_US_CNT);
+			gcTRoots = t1 - t0;
+			gcTMark  = t2 - t1;
+			gcTCopy  = t3 - t2;
+			gcTZero  = t4 - t3;
+			gcTCards = t5 - t4;
+			gcMinorLast = t5 - t0;
+			gcMinorTotal += gcMinorLast;
+			if (gcMinorLast > gcMinorMax) {
+				gcMinorMax = gcMinorLast;
+				gcWRoots = gcTRoots; gcWMark = gcTMark; gcWCopy = gcTCopy;
+				gcWZero = gcTZero;   gcWCards = gcTCards;
+				gcWSweptHandles = gcSweptHandles;
+			}
+			gcMinorNurseryWords = nurseryUsed;
+			gcMinorPromotedWords = allocBefore - allocPtr;
+			++gcMinorCount;
+		}
 	}
 
 	/** (Re)establish the nursery at the top of the heap; tenure = [heapStart, tenureTop). */
@@ -1166,9 +1220,16 @@ public class GC {
 	/** Full major GC (mark-compact whole heap) then re-carve an empty nursery. */
 	static void majorGc() {
 		if (GEN_TRACE) JVMHelp.wr("[MAJOR]");
+		int t0 = 0;
+		if (GC_TIMING) t0 = Native.rd(Const.IO_US_CNT);
 		gc();                                  // compacts all live -> [heapStart, copyPtr)
 		carveNursery();                        // re-establish nursery from reclaimed space
 		Native.wr(-1, Const.IO_CARD_CLEAR);    // cards stale after moving everything
+		if (GC_TIMING) {
+			gcMajorLast = Native.rd(Const.IO_US_CNT) - t0;
+			if (gcMajorLast > gcMajorMax) gcMajorMax = gcMajorLast;
+			++gcMajorCount;
+		}
 		if (GEN_TRACE) JVMHelp.wr("[MAJOR-DONE]");
 	}
 
