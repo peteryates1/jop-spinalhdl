@@ -142,13 +142,51 @@ DDR2 board will need this.
 **Root scan is now the floor**: at 3.88 ms it is 20% of the DDR3 pause and does
 not shrink with the cap. Targeting much below ~10 ms means attacking that next.
 
-## 5. `GC.gc()` is O(live) now but still unbounded in the mutator's view
+## 5. Major GC worst case — MEASURED, and it is bad
 
-`5e0a3a0` made a major GC O(live) rather than O(heap), and replaced the O(n²)
-handle sort with a merge sort. It is no longer a hang, but it is still a
-stop-the-world pause with no bound published anywhere. `GcPauseTest` reports
-`gcMajorCount`/`gcMajorMax`; nothing yet drives enough promotion on the 256 MB
-board to make a major GC fire naturally, so the worst case is unmeasured.
+`GcMajorPauseTest` forces full collections at increasing live-set sizes.
+Previously nothing measured this at all: the timing lived in `majorGc()`, so a
+direct `GC.gc()` was not counted, which is why `GcPauseTest` always reported
+`major GCs 0`. Timing now lives inside `gc()` itself, with a mark/compact split
+and a live-handle census, so every path is measured.
+
+XC7A100T DDR3:
+
+| live objs | pause | mark | compact | live handles |
+|---|---|---|---|---|
+| 6000 | 460 ms | 199 ms | 257 ms | 6024 |
+| 18000 | 1150 ms | 486 ms | 660 ms | 18024 |
+| 36000 | **2231 ms** | 916 ms | 1311 ms | 36024 |
+
+**O(live) is confirmed** — the pause is linear in live handles, so `5e0a3a0` did
+what it set out to do. But the constant is **~25 µs/handle for mark and
+~36 µs/handle for compact**, against **1.3-1.5 µs/handle** for the minor sweep.
+Both phases do roughly the same kind of work (walk handles, touch a few words),
+so a 20-25x gap is not explained by what the code appears to do.
+
+Even a nearly-empty heap is expensive: `GcPauseTest`'s explicit `GC.gc()` calls
+now report 161 ms (SDR) and 99.6 ms (DDR3) with only ~4300 promoted handles live.
+
+Tried and rejected: `compactAndSweep` took the monitor and touched the
+`useList`/`freeList` statics **per handle**. Hoisting both out of the loop (kept,
+it is correct and strictly safer than removing the lock) bought only **1.6%**, so
+monitors are ~1 µs each and are not the problem.
+
+**Leading hypothesis, not yet confirmed**: the merge sort inside
+`compactAndSweep`. Sorting 36024 handles is ~545k merge steps, each doing about
+three scattered handle accesses. At ~2.4 µs per step that is ~1.31 s — which is
+exactly the measured compact time. It is O(n log n) over a range where log n only
+moves 12.5→15.1, so it would look near-linear in this data. If that is right the
+fix is a bucket/radix sort by address (O(n), and handle addresses are dense and
+bounded), not a faster comparison sort.
+
+To confirm before optimising: time `sortUseListByAddress()` separately from the
+rest of `compactAndSweep`. Do that first — two hypotheses about this pause have
+already been wrong.
+
+Why it matters: 2.2 s is fatal for anything real-time, and the minor pause is now
+bounded at 19 ms. A major GC currently fires only on tenure exhaustion, so it is
+rare — but "rare and unbounded" is exactly the property RT systems cannot have.
 
 ## 6. Smaller items
 

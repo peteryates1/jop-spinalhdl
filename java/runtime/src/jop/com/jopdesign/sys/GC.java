@@ -301,6 +301,10 @@ public class GC {
 			gcBadYoungW4, gcBadYoungW5, gcBadYoungW6, gcBadYoungW7;
 	/** Major GC: number run, last/worst pause (us). */
 	public static int gcMajorCount, gcMajorLast, gcMajorMax;
+	/** Phase split of the last major GC (us): mark, then compact+sweep. */
+	public static int gcMajTMark, gcMajTCompact;
+	/** Live handles and words the last major GC compacted. */
+	public static int gcMajLiveHandles, gcMajLiveWords;
 
 	/**
 	 * Largest single hardware zero-fill request, in words. 1<<20 words = 4 MB,
@@ -760,6 +764,15 @@ public class GC {
 			ref = useList;		// get start of the list
 			useList = 0;		// new uselist starts empty
 		}
+		int nLiveHandles = 0;
+		// Hold the list heads in locals across the walk instead of taking the
+		// monitor and touching the statics once per handle. compactAndSweep is
+		// stop-the-world (the incremental collector uses compactStep instead),
+		// so nothing else can be manipulating these lists; the single
+		// synchronized region below publishes the result. The per-handle
+		// monitorenter/monitorexit was a large part of the major-GC pause.
+		int localUse = useList;
+		int localFree = freeList;
 
 		while (ref!=0) {
 
@@ -787,8 +800,8 @@ public class GC {
 						}
 						++gcBadHandleCnt;
 					}
-					Native.wrMem(freeList, ref+OFF_NEXT);
-					freeList = ref;
+					Native.wrMem(localFree, ref+OFF_NEXT);
+					localFree = ref;
 					Native.wrMem(0, ref+OFF_PTR);
 					ref = next;
 					continue;
@@ -809,27 +822,28 @@ public class GC {
 				}
 
 				compactPtr += size;
+				if (GC_TIMING) ++nLiveHandles;
 
 				// add to used list
-				synchronized (mutex) {
-					Native.wrMem(useList, ref+OFF_NEXT);
-					useList = ref;
-				}
+				Native.wrMem(localUse, ref+OFF_NEXT);
+				localUse = ref;
 			// a WHITE one (unmarked = garbage)
 			} else {
-				synchronized (mutex) {
-					// pointer to former freelist head
-					Native.wrMem(freeList, ref+OFF_NEXT);
-					freeList = ref;
-					// mark handle as free
-					Native.wrMem(0, ref+OFF_PTR);
-				}
+				// pointer to former freelist head
+				Native.wrMem(localFree, ref+OFF_NEXT);
+				localFree = ref;
+				// mark handle as free
+				Native.wrMem(0, ref+OFF_PTR);
 			}
 			ref = next;
 		}
 
+		if (GC_TIMING) gcMajLiveHandles = nLiveHandles;
+
 		// Update heap pointers
 		synchronized (mutex) {
+			useList = localUse;
+			freeList = localFree;
 			copyPtr = compactPtr;
 			allocPtr = heapStart + heapSize;
 		}
@@ -1035,6 +1049,8 @@ public class GC {
 	}
 
 	public static void gc() {
+		int gt0 = 0;
+		if (GC_TIMING) gt0 = Native.rd(Const.IO_US_CNT);
 		// Stop-the-world: halt all other cores during GC.
 		// This prevents concurrent SDRAM access that could see
 		// partially-moved objects during the compaction phase.
@@ -1064,8 +1080,15 @@ public class GC {
 			toSpace = 1;
 		}
 
+		int mt0 = 0, mt1 = 0;
+		if (GC_TIMING) mt0 = Native.rd(Const.IO_US_CNT);
 		mark();
+		if (GC_TIMING) mt1 = Native.rd(Const.IO_US_CNT);
 		compactAndSweep();
+		if (GC_TIMING) {
+			gcMajTMark = mt1 - mt0;
+			gcMajTCompact = Native.rd(Const.IO_US_CNT) - mt1;
+		}
 
 		// Zero the free region for fresh allocations.
 		// Replaces zapSemi() from the semi-space collector.
@@ -1096,6 +1119,13 @@ public class GC {
 
 		// Resume other cores
 		Native.wr(0, Const.IO_GC_HALT);
+
+		if (GC_TIMING) {
+			gcMajorLast = Native.rd(Const.IO_US_CNT) - gt0;
+			if (gcMajorLast > gcMajorMax) gcMajorMax = gcMajorLast;
+			++gcMajorCount;
+			gcMajLiveWords = copyPtr - heapStart;   // compacted live data
+		}
 	}
 
 	static int free() {
@@ -1461,16 +1491,10 @@ public class GC {
 	/** Full major GC (mark-compact whole heap) then re-carve an empty nursery. */
 	static void majorGc() {
 		if (GEN_TRACE) JVMHelp.wr("[MAJOR]");
-		int t0 = 0;
-		if (GC_TIMING) t0 = Native.rd(Const.IO_US_CNT);
-		// gc() splices youngList in, compacts everything, then re-carves an empty
-		// nursery and clears the cards.
+		// gc() splices youngList in, compacts everything, re-carves an empty
+		// nursery, clears the cards — and times itself, so a direct System.gc()
+		// is measured too, not just collections that arrive through here.
 		gc();
-		if (GC_TIMING) {
-			gcMajorLast = Native.rd(Const.IO_US_CNT) - t0;
-			if (gcMajorLast > gcMajorMax) gcMajorMax = gcMajorLast;
-			++gcMajorCount;
-		}
 		if (GEN_TRACE) JVMHelp.wr("[MAJOR-DONE]");
 	}
 
