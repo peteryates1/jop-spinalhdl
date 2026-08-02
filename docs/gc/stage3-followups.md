@@ -11,23 +11,32 @@ Commits: `1916415` (measure), `8a8e154` (young list), `5e0a3a0` (256 MB full GC)
 
 ---
 
-## 1. `addInterruptHandler` is untested under GC — highest priority
+## 1. `addInterruptHandler` under GC — DONE (IntHandlerGcTest)
 
 `JVMHelp.ih = new Runnable[cpus][NUM_INTERRUPTS]` (`JVMHelp.java:177`) is the
 allocation that exposed the `multianewarray` defect fixed in `78cc968`: its
 inner arrays were typed `IS_OBJ`, so the collector never traced them and any
 registered handler was invisible to it — collectable while still installed.
 
-The fix is verified by `MultiArrayGcTest`, but **that test does not use
-`addInterruptHandler`**. Nothing in the suite registers a handler at all, which
-is the only reason the defect never produced a crash: the slots stay null.
+`java/apps/Small/src/test/IntHandlerGcTest.java` now covers it: it registers a
+handler whose ONLY reference is `ih[core][INT_NR]` (created in its own frame),
+fires it in software via `IO_SWINT`, runs many minor GCs plus a full
+mark-compact, then fires again and checks both that it still runs and that its
+own field survived intact — proving the object was traced and relocated, not
+merely that something callable was there.
 
-Needed: a test that registers a real interrupt handler, runs enough collections
-to promote and compact it, and then confirms the handler still runs and its
-captured state is intact. Until that exists, "interrupt handlers survive GC" is
-inferred from the array-type fix, not demonstrated.
+Correcting an earlier note here: the boot-time slots are **not** null.
+`JVMHelp.init()` fills every slot with a `DummyHandler`, which stays rooted via
+the static field `JVMHelp.dh` regardless of how `ih` is traced. That is why
+nothing crashed before — the exposure was only ever a handler with no other
+reference.
 
-Related: check whether any *other* runtime structure is reachable only through a
+Verified on EP4CGX150: passes with the fix (13 minor GCs + a full GC, handler
+runs, tag intact); with the `multianewarray` fix reverted the run **dies during
+the churn phase** and never reaches "done". So the failure signal is a crash
+rather than a clean FAIL line — absence of `IntHandlerGcTest done` is the check.
+
+Still open: whether any *other* runtime structure is reachable only through a
 reference array built by `multianewarray`. `JVMHelp.ih` is the one we know of.
 
 ## 2. Sweep cost dominates the minor pause — ~1.9 µs/handle
