@@ -63,16 +63,27 @@ Ideas not yet tried: pack the fields the sweep touches into one cache line;
 prefetch the next handle; segregate young handles into a contiguous block so
 the walk is sequential.
 
-## 3. The nursery zero is probably redundant (~7% of the pause)
+## 3. The nursery zero — DONE (removed)
 
-`minorGc` calls `zeroMem(nurseryBase, nurseryTop)` — 5.43 ms on DDR3, 5.10 ms on
-SDR. This is likely unnecessary for the same reason the post-compaction bulk
-zero was (removed in `5e0a3a0`): every allocation path already zeroes its own
-data before handing the object out (`allocGen`, both `newObject` branches,
-`newArray`), and free memory is never scanned.
+`minorGc` no longer calls `zeroMem(nurseryBase, nurseryTop)`. It was redundant
+for the same reason the post-compaction bulk zero was (`5e0a3a0`): once
+survivors are copied out the whole nursery is garbage, `allocGen` zeroes each
+object's data before handing it out, and free memory is never scanned — only
+live objects and roots.
 
-Not removed yet only because it was one change too many at the time. Should be
-cheap to verify and worth ~7% of the pause.
+Measured worst-case minor pause:
+
+| board | before | after |
+|---|---|---|
+| EP4CGX150 SDR | 20.20 ms | **15.11 ms** (-25%) |
+| XC7A100T DDR3 | 73.80 ms | **69.15 ms** (-6.3%) |
+
+The SDR board gains more because the zero was a larger share there (5.10 ms of
+20.2 vs 5.43 of 73.8). `zero` now reports 0.000 ms on both.
+
+Note the incremental collector's own `zeroMem(copyPtr, allocPtr)` in
+`finishCycle` is untouched — a different path, only used when `concurrentGc` is
+enabled.
 
 ## 4. Nursery sizing (the original Stage 3 goal)
 

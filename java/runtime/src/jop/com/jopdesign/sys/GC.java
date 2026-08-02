@@ -1346,7 +1346,12 @@ public class GC {
 		// Copy survivors + reclaim dead, driven by useList (real handles only).
 		copyAndSweepYoung();
 		if (GC_TIMING) t3 = Native.rd(Const.IO_US_CNT);
-		zeroMem(nurseryBase, nurseryTop);
+		// The nursery is NOT zeroed here. Everything above nurseryAllocPtr is
+		// garbage once the survivors are copied out, and allocGen zeroes each
+		// object's data before handing it out, so nothing can observe the stale
+		// bytes — free memory is never scanned, only live objects and roots.
+		// This is the same redundancy that was removed from gc() in 5e0a3a0;
+		// it was costing ~5.4 ms of a 73.8 ms pause on DDR3 (~7%).
 		if (GC_TIMING) t4 = Native.rd(Const.IO_US_CNT);
 		Native.wr(-1, Const.IO_CARD_CLEAR);   // clear all cards (HW sweep)
 		nurseryAllocPtr = nurseryTop;
