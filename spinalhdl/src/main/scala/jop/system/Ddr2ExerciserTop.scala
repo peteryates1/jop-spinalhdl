@@ -30,15 +30,22 @@ object Ddr2ExState extends SpinalEnum {
  * stuck-at bits, byte-lane swaps and — because it varies per address — aliasing
  * from wrong row/bank/rank decoding.
  *
- * CLOCKING: user logic runs on `phy_clk`, an output of the controller. Its exact
- * frequency depends on how the IP was generated (~83 MHz at DDR2-667 half rate)
- * and has NOT been confirmed on hardware yet, so `phyClkHz` below is a stated
- * assumption. LED0 toggles every 2^23 phy_clk cycles precisely so the real
- * frequency can be measured from its period and the constant corrected — do
- * that before trusting the UART baud rate.
+ * CLOCKING: user logic runs on `phy_clk`, an output of the controller. This IP
+ * was generated with `local_if_drate = Full` and `mem_if_clk = 166 MHz`, so the
+ * local interface carries 128 bits per memory clock and **phy_clk is 166 MHz**
+ * — confirmed from the timing report (6.021 ns generated clock off a 25 MHz
+ * reference), not assumed.
+ *
+ * 166 MHz is far above JOP's fmax, so the eventual JOP integration cannot simply
+ * run in this domain: either regenerate the IP at half rate (phy_clk 83 MHz,
+ * 256-bit local data, which would also match a 256-bit cache line) or cross
+ * clock domains. See docs/boards/ae115fb-ddr2-bringup.md.
+ *
+ * LED0 still toggles every 2^23 phy_clk cycles as an independent check: at
+ * 166 MHz that is a ~0.10 s period (~5 Hz visible blink).
  */
 case class Ddr2ExerciserTop(
-    phyClkHz: Int = 83375000,   // ASSUMPTION — verify via the LED0 heartbeat
+    phyClkHz: Int = 166000000,  // from the IP: local_if_drate=Full, mem_if_clk=166 MHz
     baud: Int = 115200,         // low rate, tolerant of phyClkHz being off
     testWords: Int = 4096       // 128-bit words per pass = 64 KB
 ) extends Component {

@@ -78,22 +78,52 @@ Three things the vendor reference taught us that were not in the plan:
   and should be explicitly 3.3-V LVTTL — left unconstrained they defaulted to
   2.5 V, marginal into the CH340.
 
-## Open before hardware
+## Timing: closed, but only just
 
-1. **The SDC is wrong for this design.** The `.qip` pulls in
-   `ddr2_64bit_example_top.sdc`, which constrains the IP's *example* top and
-   references ports we do not have (`pnf`, `test_complete`). A proper project SDC
-   is needed — `create_clock` on the 25 MHz input plus `derive_pll_clocks` /
-   `derive_clock_uncertainty` — before any timing number means anything.
-2. **Worst setup slack is -0.439 ns** at the Slow 1200mV 100C corner, on a path
-   *inside* the vendor controller (`alt_mem_ddrx_controller_top`), not in our
-   logic. Our own logic needed two pipeline stages to get there: the 128-bit
-   read compare was -2.151 ns, splitting compare from the error-counter
-   increment moved the bottleneck into the IP. Resolve (1) first, since the
-   number may change.
-3. **`phyClkHz` is an assumption** (83.375 MHz). LED0 toggles every 2^23 phy_clk
-   cycles so the real frequency can be measured from its period; correct the
-   constant before trusting the UART baud rate.
+**`phy_clk` is 166 MHz, not the ~83 MHz the plan assumed.** The IP was generated
+with `local_if_drate = Full` and `mem_if_clk = 166 MHz`, so the local interface
+carries 128 bits per memory clock. Confirmed from the timing report, not
+inferred: `clk` base 40.000 ns (25 MHz), `pll1|clk[1..4]` 6.021 ns (166.0 MHz).
+
+The SDC turned out to be **fine**, contrary to a first reading. The real
+constraints come from `ddr2_64bit_phy_ddr_timing.sdc`, pulled in by
+`ddr2_64bit_phy.qip`, and they do `create_clock` on the 25 MHz reference plus
+`derive_pll_clocks`. The inapplicable `ddr2_64bit_example_top.sdc` contains only
+three `set_false_path`s to ports we do not have — noisy warnings, nothing more.
+`ddr2_exerciser.sdc` was added for our own pins (reset, UART, LEDs) so they stop
+appearing as unconstrained.
+
+Getting to closure, worst setup slack at Slow 1200mV 100C:
+
+| step | slack |
+|---|---|
+| first build | -2.151 ns (our 128-bit read compare) |
+| pipeline the compare | -0.329 ns |
+| split compare from the error-counter increment | -0.439 ns (now inside the IP) |
+| project SDC | -0.079 ns |
+| `SEED 3` + `HIGH PERFORMANCE EFFORT` | **+0.008 ns** |
+
+Our logic is off the critical path; the residual was always inside
+`ddr2_64bit_controller_phy`. **+0.008 ns is a seed-dependent close, not real
+margin** — treat it as "will probably work on the bench", not as timing closure
+you can build on.
+
+## The half-rate question — decide before JOP integration
+
+166 MHz is far above JOP's fmax (~80-100 MHz on faster silicon than this -7
+part), so JOP cannot simply live in the phy_clk domain. Two ways out:
+
+1. **Regenerate the IP at half rate** with Quartus 18.1 (installed for exactly
+   this). `phy_clk` becomes ~83 MHz and `local_wdata`/`local_rdata` become
+   **256 bits**. That suits JOP directly, gives real timing margin instead of
+   +0.008 ns, and — neatly — a 256-bit local interface matches both the DDR2
+   BL=4 burst (32 bytes) and the 256-bit cache line that the "Open decisions"
+   section below already wanted. Three problems, one change.
+2. Keep full rate and cross clock domains between JOP and phy_clk. More logic,
+   no benefit to the burst/line-width mismatch.
+
+Option 1 looks clearly better, and the exerciser is the right place to try it —
+it is small, and it already proves the flow end to end.
 
 ## Work items
 
