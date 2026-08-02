@@ -31,10 +31,11 @@ the static field `JVMHelp.dh` regardless of how `ih` is traced. That is why
 nothing crashed before — the exposure was only ever a handler with no other
 reference.
 
-Verified on EP4CGX150: passes with the fix (13 minor GCs + a full GC, handler
-runs, tag intact); with the `multianewarray` fix reverted the run **dies during
-the churn phase** and never reaches "done". So the failure signal is a crash
-rather than a clean FAIL line — absence of `IntHandlerGcTest done` is the check.
+Verified on **both boards**: EP4CGX150 (13 minor GCs + a full GC) and XC7A100T
+DDR3 (2 minor GCs + a full GC), handler runs before and after, tag `0x5A5A`
+intact. With the `multianewarray` fix reverted the run **dies during the churn
+phase** and never reaches "done" — so the failure signal is a crash rather than
+a clean FAIL line, and absence of `IntHandlerGcTest done` is the check.
 
 Still open: whether any *other* runtime structure is reachable only through a
 reference array built by `multianewarray`. `JVMHelp.ih` is the one we know of.
@@ -99,10 +100,13 @@ board to make a major GC fire naturally, so the worst case is unmeasured.
   worth either implementing or documenting in the programmer's guide.
 - **`f_multianewarray` only supports 2 dimensions** — `dim != 2` prints
   "dimensions not supported" and calls `noim()`. Pre-existing.
-- **A one-off startup fault on the XC7A100T**, once, during GC init: an
-  `Uncaught exception` that re-faulted in its own handler. An identical
-  reprogram-and-retry ran clean and it has not recurred across many runs since.
-  Unexplained; noted in case it reappears.
+- **An intermittent startup fault on the XC7A100T** — now seen **twice**, so no
+  longer a one-off. Before `main`, an `Uncaught exception` that re-faults inside
+  its own handler, printing endlessly. Both times an identical
+  reprogram-and-retry ran clean, and both times the download itself verified OK
+  (checksum good), so it is not a corrupted image. Unexplained. If it becomes
+  frequent it is worth catching with the SWD probe or by trapping the first
+  exception's type before the handler re-enters.
 - **`GC_META_CHECK`** (in `GC.java`, off, compile-time folded) validates handle
   metadata at creation. It is what localised the `multianewarray` defect —
   turn it on if another mis-typed allocation ever shows up.
