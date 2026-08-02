@@ -108,22 +108,46 @@ Our logic is off the critical path; the residual was always inside
 margin** — treat it as "will probably work on the bench", not as timing closure
 you can build on.
 
-## The half-rate question — decide before JOP integration
+## Half rate: done
 
-166 MHz is far above JOP's fmax (~80-100 MHz on faster silicon than this -7
-part), so JOP cannot simply live in the phy_clk domain. Two ways out:
+The IP is now regenerated at half rate, and it resolved all three problems at
+once:
 
-1. **Regenerate the IP at half rate** with Quartus 18.1 (installed for exactly
-   this). `phy_clk` becomes ~83 MHz and `local_wdata`/`local_rdata` become
-   **256 bits**. That suits JOP directly, gives real timing margin instead of
-   +0.008 ns, and — neatly — a 256-bit local interface matches both the DDR2
-   BL=4 burst (32 bytes) and the 256-bit cache line that the "Open decisions"
-   section below already wanted. Three problems, one change.
-2. Keep full rate and cross clock domains between JOP and phy_clk. More logic,
-   no benefit to the burst/line-width mismatch.
+| | full rate | half rate |
+|---|---|---|
+| `phy_clk` | 166.09 MHz | **83.04 MHz** |
+| `local_wdata`/`local_rdata` | 128 bits | **256 bits** |
+| `local_be` | 16 | 32 |
+| `local_address` | 26 bits | **25 bits** (2^25 x 32 B = 1 GB) |
+| worst setup slack | +0.008 ns, seed-dependent | **+1.086 ns** |
+| logic | 6,517 LE | 7,430 LE (6%) |
 
-Option 1 looks clearly better, and the exerciser is the right place to try it —
-it is small, and it already proves the flow end to end.
+83 MHz is within reach of JOP, and a 256-bit local word equals the DDR2 BL=4
+burst (32 bytes) — so the "cache line width" open decision below answers itself:
+go straight to a 256-bit line.
+
+### How the IP is regenerated
+
+`make ip` rebuilds it from `ip-src/ddr2_64bit.v`, a ~30 KB variation file under
+version control; the ~3.7 MB of generated Verilog is derived and is not. Needs
+Quartus **18.1** — Intel dropped Cyclone IV DDR2 ALTMEMPHY after that, which is
+why 18.1 is installed.
+
+Getting `qmegawiz` to regenerate headlessly took three attempts, worth recording:
+
+- `qmegawiz -silent -xmlin ddr2_64bit.xml` fails with *"No launch command line
+  found for megafunction wizard plug-in Uninstalled/Unknown MegaWizard"*, and
+  consumes the XML. Editing the XML's `version=` does not help.
+- The wizard is found by the name in the **first line of the `.v`**:
+  `// megafunction wizard: %DDR2 High Performance Controller v13.1%`. The
+  installed plug-in registers aliases for **v18.1 / v18.0 / v9.0** only
+  (`/opt/altera/18.1/ip/altera/ddr2_high_perf/lib/*.lst`), so v13.1 is not
+  matched — bump it to v18.1.
+- Parameters come from the **"Retrieval info" comments in the `.v`**, not from
+  the XML. `local_if_drate` is set there; the wizard recomputes the derived
+  values (`local_if_dwidth_label` 128 -> 256, `local_if_clk_mhz_label` 166 -> 83).
+- `qmegawiz` generates against the project's family/device, so it needs a
+  minimal `.qpf`/`.qsf` in the working directory. The Makefile writes them.
 
 ## Work items
 

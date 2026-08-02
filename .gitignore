@@ -129,3 +129,5 @@ asm/generated/
 # Root-level default SpinalHDL output (formal/ad-hoc generation)
 /toplevel.v
 /*.v_toplevel_*
+.cnxerr
+qmegawiz_errors_log.txt

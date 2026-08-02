@@ -30,24 +30,19 @@ object Ddr2ExState extends SpinalEnum {
  * stuck-at bits, byte-lane swaps and — because it varies per address — aliasing
  * from wrong row/bank/rank decoding.
  *
- * CLOCKING: user logic runs on `phy_clk`, an output of the controller. This IP
- * was generated with `local_if_drate = Full` and `mem_if_clk = 166 MHz`, so the
- * local interface carries 128 bits per memory clock and **phy_clk is 166 MHz**
- * — confirmed from the timing report (6.021 ns generated clock off a 25 MHz
- * reference), not assumed.
+ * CLOCKING: user logic runs on `phy_clk`, an output of the controller. The IP is
+ * regenerated at HALF rate (`local_if_drate = Half`), so the local interface is
+ * 256 bits at **83 MHz** rather than 128 bits at 166 MHz. That keeps the domain
+ * within reach of JOP's fmax for the eventual integration, and makes a local
+ * word equal to the DDR2 BL=4 burst (32 bytes).
  *
- * 166 MHz is far above JOP's fmax, so the eventual JOP integration cannot simply
- * run in this domain: either regenerate the IP at half rate (phy_clk 83 MHz,
- * 256-bit local data, which would also match a 256-bit cache line) or cross
- * clock domains. See docs/boards/ae115fb-ddr2-bringup.md.
- *
- * LED0 still toggles every 2^23 phy_clk cycles as an independent check: at
- * 166 MHz that is a ~0.10 s period (~5 Hz visible blink).
+ * LED0 toggles every 2^23 phy_clk cycles as an independent frequency check: at
+ * 83 MHz that is a ~0.20 s period.
  */
 case class Ddr2ExerciserTop(
-    phyClkHz: Int = 166000000,  // from the IP: local_if_drate=Full, mem_if_clk=166 MHz
+    phyClkHz: Int = 83000000,   // half-rate IP: local_if_clk = 83 MHz
     baud: Int = 115200,         // low rate, tolerant of phyClkHz being off
-    testWords: Int = 4096       // 128-bit words per pass = 64 KB
+    testWords: Int = 4096       // 256-bit words per pass = 128 KB
 ) extends Component {
 
   val io = new Bundle {
@@ -111,19 +106,21 @@ case class Ddr2ExerciserTop(
   val core = new ClockingArea(phyDomain) {
 
     // ---- pattern -------------------------------------------------------
-    val seed = Reg(UInt(26 bits)) init (0)
+    val seed = Reg(UInt(25 bits)) init (0)
     def pattern(a: UInt): Bits = {
       val x = (a ^ seed).resize(32).asBits
-      ~x ## x ## ~x ## x                    // 128 bits
+      // 256 bits: alternating x / ~x so a stuck bit, a swapped byte lane or a
+      // mis-decoded row/bank all show up.
+      ~x ## x ## ~x ## x ## ~x ## x ## ~x ## x
     }
 
     // ---- test sequencer -------------------------------------------------
     import Ddr2ExState._
     val state = RegInit(IDLE)
 
-    val wrAddr  = Reg(UInt(26 bits)) init (0)   // next word to write
-    val rdAddr  = Reg(UInt(26 bits)) init (0)   // next read command to issue
-    val rxCount = Reg(UInt(26 bits)) init (0)   // read words returned so far
+    val wrAddr  = Reg(UInt(25 bits)) init (0)   // next word to write
+    val rdAddr  = Reg(UInt(25 bits)) init (0)   // next read command to issue
+    val rxCount = Reg(UInt(25 bits)) init (0)   // read words returned so far
     val errors  = Reg(UInt(16 bits)) init (0)
     val passes  = Reg(UInt(16 bits)) init (0)
     val settle  = Reg(UInt(2 bits)) init (0)
@@ -134,8 +131,8 @@ case class Ddr2ExerciserTop(
     ddr2.io.local_burstbegin := False
     ddr2.io.local_address    := wrAddr.asBits
     ddr2.io.local_wdata      := pattern(wrAddr)
-    ddr2.io.local_be         := B"16'hFFFF"
-    ddr2.io.local_size       := B"3'd1"        // single 128-bit word per command
+    ddr2.io.local_be         := B"32'hFFFFFFFF"
+    ddr2.io.local_size       := B"3'd1"        // single 256-bit word per command
 
     switch(state) {
       is(IDLE) {
@@ -189,15 +186,16 @@ case class Ddr2ExerciserTop(
     // Read data returns out of band from the command stream, in order.
     //
     // The compare is PIPELINED: doing `local_rdata =/= pattern(rxCount)` in one
-    // cycle puts a 128-bit comparator plus the pattern generator on the phy_clk
-    // critical path, which cost -2.151 ns of setup slack. Capture the returned
-    // word and its expected value together, then compare a cycle later.
+    // cycle puts a wide comparator plus the pattern generator on the phy_clk
+    // critical path, which cost -2.151 ns of setup slack when the interface was
+    // 128 bits. Capture the returned word and its expected value together, then
+    // compare a cycle later.
     val rdAccept = ddr2.io.local_rdata_valid && (state === READ_ISSUE || state === READ_DRAIN)
     val cmpValid = RegNext(rdAccept) init (False)
     val cmpGot   = RegNext(ddr2.io.local_rdata)
     val cmpWant  = RegNext(pattern(rxCount))
     when(rdAccept) { rxCount := rxCount + 1 }
-    // Second pipeline stage: the 128-bit compare drives a single flop rather
+    // Second pipeline stage: the wide compare drives a single flop rather
     // than a 16-bit counter increment. Compare-into-adder was still the
     // critical path at -0.329 ns after the first stage.
     val mismatch = RegNext(cmpValid && cmpGot =/= cmpWant) init (False)

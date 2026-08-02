@@ -6,20 +6,25 @@ import spinal.core._
  * BlackBox for the Altera ALTMEMPHY DDR2 High Performance Controller as
  * generated for the A-E115FB board (EP4CE115 + 1 GB DDR2 SODIMM).
  *
- * The port list is taken verbatim from the generated `ddr2_64bit_bb.v`
- * (DDR2 High Performance Controller 13.1, IP Toolbench 1.3.0). The IP is
- * pre-generated — see docs/boards/ae115fb-ddr2-bringup.md for where it lives and
- * why we do not regenerate it (Quartus dropped Cyclone IV DDR2 ALTMEMPHY after
- * 18.1).
+ * HALF-RATE variation: the local interface is 256 bits wide at 83 MHz, rather
+ * than 128 bits at 166 MHz. Regenerated from the vendor's full-rate original
+ * because 166 MHz is well above JOP's fmax on this -7 part, and because a
+ * 256-bit local word matches both the DDR2 BL=4 burst (32 bytes) and the cache
+ * line width we want. See docs/boards/ae115fb-ddr2-bringup.md.
+ *
+ * The port list matches the generated `ddr2_64bit.v`. The IP is regenerated from
+ * a checked-in variation file by `make ip` — the generated output is ~3.7 MB and
+ * is derived, so only the variation is under version control. Regeneration needs
+ * Quartus 18.1: Intel dropped Cyclone IV DDR2 ALTMEMPHY after that.
  *
  * Local interface notes, versus the Xilinx MIG we already drive:
  *  - ONE `local_ready` covers both the command and its write data; MIG splits
  *    those into app_rdy and app_wdf_rdy.
  *  - `local_wdata` is accepted on the same cycle as `local_write_req`; there is
  *    no separate write-data handshake.
- *  - User logic runs on `phy_clk`, an OUTPUT of the controller (~83 MHz at
- *    DDR2-667 half rate), so the whole datapath lives in that domain.
- *  - `local_address` counts 128-bit words: 2^26 * 16 bytes = 1 GB.
+ *  - User logic runs on `phy_clk`, an OUTPUT of the controller — 83 MHz for this
+ *    half-rate variation, so the whole datapath lives in that domain.
+ *  - `local_address` counts 256-bit words: 2^25 * 32 bytes = 1 GB.
  *  - Nothing may be issued until `local_init_done` — calibration takes a while
  *    after reset.
  */
@@ -28,15 +33,15 @@ class Ddr2BlackBox extends BlackBox {
 
   val io = new Bundle {
     // --- controller local (user) interface ---
-    val local_address     = in Bits (26 bits)   // 128-bit word address -> 1 GB
+    val local_address     = in Bits (25 bits)   // 256-bit word address -> 1 GB
     val local_write_req   = in Bool()
     val local_read_req    = in Bool()
     val local_burstbegin  = in Bool()
-    val local_wdata       = in Bits (128 bits)
-    val local_be          = in Bits (16 bits)   // byte enables, active high
+    val local_wdata       = in Bits (256 bits)
+    val local_be          = in Bits (32 bits)   // byte enables, active high
     val local_size        = in Bits (3 bits)    // burst length in local words
     val local_ready       = out Bool()          // command AND write data accepted
-    val local_rdata       = out Bits (128 bits)
+    val local_rdata       = out Bits (256 bits)
     val local_rdata_valid = out Bool()
     val local_refresh_ack = out Bool()
     val local_init_done   = out Bool()          // calibration complete

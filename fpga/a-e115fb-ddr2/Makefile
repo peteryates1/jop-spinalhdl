@@ -23,10 +23,15 @@ QUARTUS_BIN  = $(QUARTUS_DIR)/bin
 
 PROJECT := ddr2_exerciser
 
-# Vendor-generated DDR2 controller. Not vendored into this repo: ~3.7 MB of
-# generated Verilog under a vendor licence, and Quartus >18.1 cannot regenerate
-# it. Override if the reference projects live elsewhere.
-DDR2_IP_DIR ?= /srv/git/cycloneEthernet/A-E115FB_core_V2/E115_core_test/read_write_1G/DDR667_read_write/ddr2_64bit
+# The DDR2 controller is REGENERATED from the variation file in ip-src/, which is
+# ~30 KB and under version control; the ~3.7 MB of generated Verilog is derived
+# and is not. Regeneration needs Quartus 18.1 — Intel dropped Cyclone IV DDR2
+# ALTMEMPHY after that, which is the whole reason 18.1 is installed.
+#
+# ip-src/ddr2_64bit.v is the vendor's variation with local_if_drate switched from
+# Full to Half: 256-bit local interface at 83 MHz instead of 128-bit at 166 MHz.
+# The wizard reads its parameters from the "Retrieval info" comments in that file.
+IP_SRC := ip-src/ddr2_64bit.v
 
 # Board selection resolves from the probe's USB serial, since port paths move on
 # every replug — see fpga/scripts/jtag_probe_map.
@@ -44,16 +49,18 @@ all: generate ip build
 generate:
 	cd $(ROOT) && sbt "runMain jop.system.Ddr2ExerciserTopVerilog"
 
-ip:
-	@if [ ! -d "$(DDR2_IP_DIR)" ]; then \
-	  echo "ERROR: DDR2 IP not found at $(DDR2_IP_DIR)"; \
-	  echo "Set DDR2_IP_DIR to the generated ddr2_64bit directory."; \
-	  exit 1; \
-	fi
-	mkdir -p ip
-	rm -f ip/ddr2_64bit
-	ln -s "$(DDR2_IP_DIR)" ip/ddr2_64bit
-	@echo "=== DDR2 IP linked from $(DDR2_IP_DIR) ==="
+ip: ip/ddr2_64bit/ddr2_64bit.qip
+
+ip/ddr2_64bit/ddr2_64bit.qip: $(IP_SRC)
+	@echo "=== regenerating DDR2 IP (half rate) from $(IP_SRC) ==="
+	rm -rf ip/ddr2_64bit
+	mkdir -p ip/ddr2_64bit
+	cp $(IP_SRC) ip/ddr2_64bit/
+	@# qmegawiz generates against the project's family/device, so it needs one.
+	printf 'QUARTUS_VERSION = "18.1"\nPROJECT_REVISION = "gen"\n' > ip/ddr2_64bit/gen.qpf
+	printf 'set_global_assignment -name FAMILY "Cyclone IV E"\nset_global_assignment -name DEVICE EP4CE115F23I7\nset_global_assignment -name TOP_LEVEL_ENTITY ddr2_64bit\n' > ip/ddr2_64bit/gen.qsf
+	cd ip/ddr2_64bit && $(QUARTUS_BIN)/qmegawiz -silent ddr2_64bit.v
+	@grep -E "local_if_drate|local_if_dwidth" ip/ddr2_64bit/ddr2_64bit_phy_ddr_timing.sdc | head -2
 
 build:
 	$(QUARTUS_BIN)/quartus_map $(PROJECT)

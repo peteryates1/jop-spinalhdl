@@ -64,9 +64,8 @@ set_global_assignment -name CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION "USE AS R
 # are not driving in this design.
 set_global_assignment -name RESERVE_ALL_UNUSED_PINS "AS INPUT TRI-STATED"
 
-# Timing closure: the vendor controller has a small internal setup violation at
-# 166 MHz on this -7 part. Higher effort plus a different placement seed.
-set_global_assignment -name SEED 3
+# Recommended by the ALTMEMPHY wizard for memory interfaces.
+set_global_assignment -name OPTIMIZE_MULTI_CORNER_TIMING ON
 set_global_assignment -name OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT"
 
 set_global_assignment -name LAST_QUARTUS_VERSION "18.1.1 Lite Edition"
