@@ -311,6 +311,29 @@ public class GC {
 	/** Nursery size cap (words). 1<<20 words = 4 MB. */
 	static final int NURSERY_MAX_WORDS = 1 << 20;
 
+	// --- Pause bound -------------------------------------------------------
+	// The minor pause is dominated by the sweep, which is O(young HANDLES), not
+	// O(nursery bytes) — a nursery full of small objects holds far more handles
+	// than the same space full of large ones. So sizing the nursery in bytes
+	// cannot bound the pause; capping the young-object COUNT can, and does so
+	// regardless of object size. Measured costs are in
+	// docs/gc/stage3-followups.md.
+	/** Worst-case minor pause we are aiming for, microseconds. */
+	static final int MINOR_TARGET_US = 20000;
+	/** Sweep cost per young handle, ns. Slowest measured board (DDR3 1506), rounded up. */
+	static final int SWEEP_NS_PER_HANDLE = 1600;
+	/** Fixed per-collection cost, us: root scan + mark + card clear, rounded up. */
+	static final int MINOR_FIXED_US = 4500;
+	/**
+	 * Young objects allowed before a minor GC is forced. Derived, not tuned:
+	 * (target - fixed) / per-handle. Set MINOR_TARGET_US to 0 to disable the cap
+	 * and go back to collecting only when the nursery fills.
+	 */
+	static final int MAX_YOUNG_OBJECTS =
+			((MINOR_TARGET_US - MINOR_FIXED_US) * 1000) / SWEEP_NS_PER_HANDLE;
+	/** Young objects allocated since the last minor GC. */
+	static int youngObjects;
+
 	// --- Compact phase state ---
 	static int compactList;    // sorted snapshot of useList for compaction
 	static int compactDst;     // compaction destination pointer
@@ -1387,6 +1410,7 @@ public class GC {
 		if (GC_TIMING) t4 = Native.rd(Const.IO_US_CNT);
 		Native.wr(-1, Const.IO_CARD_CLEAR);   // clear all cards (HW sweep)
 		nurseryAllocPtr = nurseryTop;
+		youngObjects = 0;
 		if (GC_TIMING) {
 			t5 = Native.rd(Const.IO_US_CNT);
 			gcTRoots = t1 - t0;
@@ -1419,6 +1443,7 @@ public class GC {
 		nurseryTop = top;
 		nurseryBase = top - nurserySize;
 		nurseryAllocPtr = nurseryTop;
+		youngObjects = 0;
 		tenureTop = nurseryBase;
 		allocPtr = nurseryBase;                             // tenure/promotion alloc top
 		Native.wr(heapStart, Const.IO_CARD_TENURE_LO);
@@ -1457,7 +1482,11 @@ public class GC {
 	 */
 	static int allocGen(int size) {
 		boolean tenure = size > (nurseryTop - nurseryBase);   // bigger than the whole nursery
-		if (!tenure && nurseryAllocPtr - size < nurseryBase) {
+		// Collect when the nursery is full OR when enough young objects have
+		// accumulated to put the sweep over budget — whichever comes first. The
+		// second condition is what actually bounds the pause.
+		if (!tenure && (nurseryAllocPtr - size < nurseryBase
+				|| (MINOR_TARGET_US > 0 && youngObjects >= MAX_YOUNG_OBJECTS))) {
 			minorGc();                                        // reclaim nursery (+ dead young handles)
 		}
 		if (freeList == 0) {                                  // need a handle
@@ -1483,6 +1512,7 @@ public class GC {
 		} else {                                              // nursery: only these are swept
 			Native.wrMem(youngList, ref+OFF_NEXT);
 			youngList = ref;
+			++youngObjects;
 		}
 		Native.wrMem(data, ref);                              // OFF_PTR
 		Native.wrMem(toSpace, ref+OFF_SPACE);

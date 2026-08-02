@@ -102,16 +102,45 @@ Note the incremental collector's own `zeroMem(copyPtr, allocPtr)` in
 `finishCycle` is untouched — a different path, only used when `concurrentGc` is
 enabled.
 
-## 4. Nursery sizing (the original Stage 3 goal)
+## 4. Pause bound — DONE (young-object cap)
 
-Only meaningful once (2) and (3) settle, since they change the constant. The
-model that now holds:
+The original plan was to size the nursery in bytes. That cannot bound the pause:
+the sweep is O(young **handles**), and a nursery full of small objects holds far
+more handles than the same space full of large ones. So the cap is on the young
+object COUNT, which bounds the sweep regardless of object size:
 
-    pause ≈ (objects in nursery) × ~1.9 µs + (nursery bytes ÷ fill rate) + ~3 ms roots
+```java
+MAX_YOUNG_OBJECTS = (MINOR_TARGET_US - MINOR_FIXED_US) * 1000 / SWEEP_NS_PER_HANDLE
+```
 
-Note this is **object count**, not nursery bytes — the opposite of what
-`gc-optimization-options.md` assumed. That document's ~75 ms estimate is
-retired: it predicted zeroing would be ~83% of the pause; measured it is 5-16%.
+Derived, not tuned, from the hardware measurements above:
+`MINOR_TARGET_US = 20000`, `SWEEP_NS_PER_HANDLE = 1600` (slowest board, DDR3
+1506, rounded up), `MINOR_FIXED_US = 4500` (roots + mark + cards). That gives
+9687 objects. `allocGen` collects when the nursery fills **or** the count is
+reached, whichever comes first. Set `MINOR_TARGET_US = 0` to disable.
+
+| board | worst pause | handles swept | note |
+|---|---|---|---|
+| XC7A100T DDR3 | **19.26 ms** (target 20) | 9687 = the cap | cap binds; 42 GCs vs 12 |
+| EP4CGX150 SDR | 11.93 ms | 6168 | nursery fills first, cap never binds |
+
+The model predicts 4.5 + 9687 × 1.6 µs = 20.0 ms against 19.26 ms measured, and
+worst 19.257 vs mean 19.217 ms is a 0.2% spread — the bound is tight and
+deterministic, which is the property we were actually after.
+
+**Cost**: 3.5x more collections on DDR3, so the fixed ~4 ms of root scanning is
+paid 3.5x as often. That is the real-time trade — bounded pause for lower
+throughput. Anyone who wants throughput over latency should raise
+`MINOR_TARGET_US`.
+
+**Caveat**: `SWEEP_NS_PER_HANDLE` and `MINOR_FIXED_US` are measured constants for
+*these two boards at 100 MHz*. A different clock, memory system or core count
+invalidates them, and the bound silently becomes wrong rather than failing
+loudly. Re-measure with `GcPauseTest` when the hardware changes — the A-E115FB
+DDR2 board will need this.
+
+**Root scan is now the floor**: at 3.88 ms it is 20% of the DDR3 pause and does
+not shrink with the cap. Targeting much below ~10 ms means attacking that next.
 
 ## 5. `GC.gc()` is O(live) now but still unbounded in the mutator's view
 
