@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# Map JTAG probes to the selector each tool wants, resolved at run time from the
+# probe's USB serial number.
+#
+# Port paths (1-4, 1-7, ...) move when you replug, so nothing here hardcodes
+# them. Serial numbers are fixed per probe, so a board alias resolves to a
+# serial, and the serial resolves to whatever the tool needs right now:
+#
+#   Quartus          cable name "<usb product> [<port-path>]" -- the suffix IS
+#                    the sysfs port path, and the prefix is the USB product
+#                    string, which differs between a real Altera cable
+#                    ("USB-Blaster") and pico-usb-blaster ("USB Blaster")
+#   openFPGALoader   --busdev-num <bus>:<dev>
+#
+# Companion to usb_serial_map, which does the same job for serial ports.
+set -euo pipefail
+
+# --- board registry ------------------------------------------------------
+# alias|serial|kind|description
+BOARDS=$(cat <<'EOF'
+ep4cgx150|91d28408|usb-blaster|QMTECH EP4CGX150 (real Altera USB-Blaster)
+xc7a100t|E662C876|pico|QMTECH XC7A100T + DB_FPGA V5 (Pico: dirtyJtag or usb-blaster)
+ae115fb|E6616408|pico|A-E115FB EP4CE115 + 1GB DDR2 (Pico: dirtyJtag or usb-blaster)
+debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashing Picos)
+EOF
+)
+
+# vid:pid values we recognise as JTAG probes
+is_probe_id() {
+  case "${1,,}" in
+    1209:c0ca|09fb:6001|2e8a:000c) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+probe_kind() {
+  case "${1,,}" in
+    1209:c0ca) echo "dirtyjtag" ;;
+    09fb:6001) echo "usb-blaster" ;;
+    2e8a:000c) echo "cmsis-dap" ;;
+    *) echo "unknown" ;;
+  esac
+}
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  jtag_probe_map                    list every attached JTAG probe
+  jtag_probe_map --cable <alias>    print the Quartus cable name for a board
+  jtag_probe_map --busdev <alias>   print bus:dev for openFPGALoader
+  jtag_probe_map --serial <alias>   print the probe serial for a board
+  jtag_probe_map --health           per-port USB enumeration health (needs dmesg)
+  jtag_probe_map --boards           list known board aliases
+
+Aliases: ep4cgx150, xc7a100t, ae115fb, debugprobe
+
+Examples:
+  quartus_pgm -c "$(jtag_probe_map --cable ep4cgx150)" -m JTAG foo.cdf
+  openFPGALoader --busdev-num "$(jtag_probe_map --busdev xc7a100t)" -b ... foo.bit
+USAGE
+}
+
+serial_for_alias() {
+  local want="$1" line
+  while IFS='|' read -r alias serial kind desc; do
+    [ "$alias" = "$want" ] && { echo "$serial"; return 0; }
+  done <<<"$BOARDS"
+  echo "unknown board alias: $want" >&2
+  echo "known:" >&2
+  while IFS='|' read -r alias serial kind desc; do echo "  $alias" >&2; done <<<"$BOARDS"
+  return 1
+}
+
+serial_matches() {
+  # true when either serial is a case-insensitive prefix of the other. A Pico
+  # reports 16 hex chars of its unique ID under dirtyJtag but only the first 8
+  # under pico-usb-blaster, so the same board matches across firmware swaps.
+  local a="${1,,}" b="${2,,}"
+  [ -n "$a" ] && [ -n "$b" ] || return 1
+  [ "${a:0:${#b}}" = "$b" ] || [ "${b:0:${#a}}" = "$a" ]
+}
+
+alias_for_serial() {
+  local want="$1"
+  while IFS='|' read -r alias serial kind desc; do
+    serial_matches "$want" "$serial" && { echo "$alias"; return 0; }
+  done <<<"$BOARDS"
+  echo "-"
+}
+
+# Walk sysfs and emit: portpath vidpid serial bus dev kind
+enumerate() {
+  local d v p s bus dev
+  for d in /sys/bus/usb/devices/[0-9]*-[0-9]*/; do
+    [ -e "$d/idVendor" ] || continue
+    v=$(cat "$d/idVendor"); p=$(cat "$d/idProduct")
+    is_probe_id "$v:$p" || continue
+    s=$(cat "$d/serial" 2>/dev/null || echo "")
+    bus=$(cat "$d/busnum"); dev=$(cat "$d/devnum")
+    printf '%s %s:%s %s %s %s %s\n' \
+      "$(basename "$d")" "$v" "$p" "${s:--}" "$bus" "$dev" "$(probe_kind "$v:$p")"
+  done
+}
+
+find_by_serial() {
+  local want="$1" path vidpid serial bus dev kind
+  while read -r path vidpid serial bus dev kind; do
+    serial_matches "$serial" "$want" && { echo "$path $vidpid $serial $bus $dev $kind"; return 0; }
+  done < <(enumerate)
+  return 1
+}
+
+cmd_list() {
+  printf '%-8s %-11s %-18s %-8s %-12s %s\n' PORT VID:PID SERIAL BUS:DEV KIND BOARD
+  local path vidpid serial bus dev kind
+  while read -r path vidpid serial bus dev kind; do
+    printf '%-8s %-11s %-18s %-8s %-12s %s\n' \
+      "$path" "$vidpid" "$serial" "$(printf '%03d:%03d' "$bus" "$dev")" \
+      "$kind" "$(alias_for_serial "$serial")"
+  done < <(enumerate)
+}
+
+cmd_health() {
+  local out
+  out=$(dmesg 2>/dev/null || sudo dmesg 2>/dev/null) || {
+    echo "cannot read dmesg" >&2; return 1; }
+  echo "Per-port USB enumeration health this boot."
+  echo "Repeated enumerations or descriptor errors mean an unstable link. Usual"
+  echo "causes: the probe losing power (a Pico fed from the FPGA board dies when"
+  echo "that board browns out), a bad cable, or passthrough churn from replugging"
+  echo "and BOOTSEL cycles. NOTE: under a VM these port numbers are virtual, so a"
+  echo "'bad port' is not necessarily a physical socket."
+  echo
+  printf '%-8s %-12s %-14s %s\n' PORT ENUMERATIONS DESC_ERRORS VERDICT
+  local p n m verdict
+  for p in $(grep -oE 'usb [0-9]+-[0-9]+' <<<"$out" | awk '{print $2}' | sort -u); do
+    m=$(grep -c "usb $p: new " <<<"$out" || true)
+    n=$(grep -c "usb $p: device descriptor" <<<"$out" || true)
+    verdict=ok
+    [ "$n" -gt 0 ] && verdict="SUSPECT"
+    [ "$m" -gt 10 ] && verdict="BAD (re-enumerating)"
+    printf '%-8s %-12s %-14s %s\n' "$p" "$m" "$n" "$verdict"
+  done
+}
+
+main() {
+  case "${1:-}" in
+    ""|--list) cmd_list ;;
+    --boards)
+      printf '%-12s %-18s %-12s %s\n' ALIAS SERIAL KIND DESCRIPTION
+      while IFS='|' read -r alias serial kind desc; do
+        printf '%-12s %-18s %-12s %s\n' "$alias" "$serial" "$kind" "$desc"
+      done <<<"$BOARDS" ;;
+    --health) cmd_health ;;
+    --serial) serial_for_alias "${2:?alias required}" ;;
+    --cable)
+      s=$(serial_for_alias "${2:?alias required}")
+      if ! r=$(find_by_serial "$s"); then
+        echo "probe for '$2' (serial $s) is NOT attached" >&2; exit 1
+      fi
+      # Quartus names a cable "<usb product string> [<port path>]". Read the
+      # product rather than assuming: the real Altera cable reports
+      # "USB-Blaster", pico-usb-blaster reports "USB Blaster" (no hyphen).
+      port=$(awk '{print $1}' <<<"$r")
+      prod=$(cat "/sys/bus/usb/devices/$port/product" 2>/dev/null || echo "USB-Blaster")
+      echo "$prod [$port]" ;;
+    --busdev)
+      s=$(serial_for_alias "${2:?alias required}")
+      if ! r=$(find_by_serial "$s"); then
+        echo "probe for '$2' (serial $s) is NOT attached" >&2; exit 1
+      fi
+      awk '{printf "%d:%d\n", $4, $5}' <<<"$r" ;;
+    -h|--help) usage ;;
+    *) usage >&2; exit 1 ;;
+  esac
+}
+
+main "$@"
