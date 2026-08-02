@@ -88,6 +88,42 @@ public String(StringBuffer sb) {
 **Test**: TextFormatStandalone (14 tests) and TextFormatTest in DoAll — all pass
 on FPGA hardware.
 
+### 6. multianewarray Mis-typed Reference Inner Arrays (FIXED)
+
+`JVM.f_multianewarray` takes the inner arrays' type from a constant-pool entry
+that holds a primitive type code (4–11) for a primitive element type but **0**
+for a reference element type — there is no primitive code for that case. The 0
+was passed straight to `f_newarray`, so the inner arrays of any `Object[][]`
+were created with `OFF_TYPE = IS_OBJ`.
+
+Two consequences. The collector dereferenced their length as a method table,
+computing a size larger than the heap; and far worse, it never scanned their
+elements as references, so anything reachable *only* through them was collected
+as garbage.
+
+That is the shape of `JVMHelp.ih = new Runnable[cpus][NUM_INTERRUPTS]`
+(`JVMHelp.java:177`) — any handler registered via `addInterruptHandler` was
+invisible to the GC. No crash had been observed only because nothing in the
+test suite registers a handler, leaving the slots null.
+
+**Fix**: `if (type == 0) type = 1;` (IS_REFARR) in `f_multianewarray`, matching
+the convention `f_anewarray` already uses.
+
+Primitive 2-D arrays were unaffected (`new int[7][5]` resolves correctly).
+
+**Why the existing tests missed it**: DoAll's `MultiArray` and `ArrayMulti`
+pass either way, because `OFF_TYPE` is never consulted by `iaload`/`iastore` —
+only by the collector. The arrays work perfectly while being invisible-broken
+to the GC.
+
+**Test**: `MultiArrayGcTest` (`java/apps/Small`) retains an `int[7][5]` and a
+`Cell[7][5]` across many minor GCs and a full mark-compact, then checks contents
+*and* the collector's bad-handle censuses. Without the fix: 34 of 35 cells
+corrupt, 13 bad-handle sightings. With it: all zero. Verified on both boards.
+
+Still outstanding: nothing exercises `addInterruptHandler` under GC — see
+[GC Stage 3 follow-ups](gc/stage3-followups.md).
+
 ### 4. Hardware Division-by-Zero Exception Not Catchable
 
 JOP's `idiv`/`irem` bytecodes are implemented in Java (not microcode) because
@@ -248,6 +284,15 @@ See [SDR SDRAM GC Hang](gc/sdr-sdram-gc-hang.md) for the full investigation.
 | 24 | `GC.push()` dereferences null handle (address 0) during conservative stack scanning — triggers hardware NPE during GC | Added `if (ref == 0) return;` guard |
 | 10 | `Startup.java` cpuStart array requires GC before GC is ready — NPE on multi-core boot | Removed array; direct main loop entry |
 | 21 | `System.arraycopy` raw writes (`wrMem`) don't invalidate array cache — stale data | Added `Native.invalidate()` after copy |
+| 25 | `sortListByAddress` was insertion sort, O(n²) — a major GC on the 256 MB board sorts ~33k handles and appeared to hang | Bottom-up linked-list merge sort, O(n log n), O(1) space |
+| 26 | `gc()` bulk-zeroed the whole free region after compacting (zapSemi legacy) — 254 MB per collection on the 256 MB board, never completed | Removed; every allocation path already zeroes its own data. Major GC is now O(live), not O(heap) |
+| 27 | A single hardware zero-fill request spanning the whole heap ran away and overwrote memory (the CPU then executed garbage) | `zeroMem` issues the fill in bounded 4 MB chunks — the size ZeroBench validates — and guards `from >= to` |
+| 28 | Generational `copyAndSweepYoung` rejected legal **zero-size** objects (`size <= 0`); a class with no instance fields has size 0, which `compactAndSweep` has always allowed | Only `size < 0` is treated as corrupt. Previously every zero-field object became an unpromoted zombie holding a stale nursery pointer |
+
+Bugs 25–27 were pre-existing and affected the **classic** collector too — a full
+mark-compact GC on the 256 MB DDR3 board had simply never been exercised, since
+DoAll and GcStressTest never trigger one. Reproduced with
+`USE_GENERATIONAL=false` before fixing.
 
 ### DecimalFormat Bugs (3 fixes for Phase 8)
 
