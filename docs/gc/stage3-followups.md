@@ -40,28 +40,45 @@ a clean FAIL line, and absence of `IntHandlerGcTest done` is the check.
 Still open: whether any *other* runtime structure is reachable only through a
 reference array built by `multianewarray`. `JVMHelp.ih` is the one we know of.
 
-## 2. Sweep cost dominates the minor pause — ~1.9 µs/handle
+## 2. Sweep cost — reduced 27% (SDR) / 22% (DDR3), partly done
 
-Measured worst-case minor pause is 20.2 ms (EP4CGX150 SDR) and 73.8 ms
-(XC7A100T DDR3). The split on DDR3:
+The sweep is O(handles in the nursery) and still dominates. Two changes so far,
+both aimed at the number of memory accesses the common (dead-handle) path makes:
 
-| phase | time | share |
-|-------|------|-------|
-| roots | 3.81 ms | 5% |
-| mark  | 0.21 ms | 0% |
-| **copy/sweep** | **64.4 ms** | **87%** |
-| zero  | 5.43 ms | 7% |
-| cards | 0.00 ms | 0% |
+1. **Hoist the list heads into locals.** `freeList`/`useList` are static fields,
+   and JOP keeps statics in main memory, so `Native.wrMem(freeList, ...)` was a
+   `getstatic` (read) and `freeList = ref` a `putstatic` (write). The dead path
+   was making **six** memory accesses per handle, not four.
+2. **Splice runs instead of relinking each handle.** Dead handles are already
+   chained in `youngList` order, so whole runs can be spliced onto `freeList`;
+   a run only has to be closed where a survivor interrupts it. ~67 writes
+   instead of 33k.
 
-The sweep is O(handles in the nursery) at ~1850 ns (SDR) / ~1946 ns (DDR3) per
-handle — six word accesses to a 32-byte handle costing ~190 cycles, which
-suggests the handle area is missing cache badly. Worth attacking before any
-nursery sizing: the constant sets the pause, and reducing it costs no
-throughput, whereas shrinking the nursery does.
+| | sweep ns/handle | worst pause |
+|---|---|---|
+| EP4CGX150 SDR | 1854 → 1441 → **1346** | 15.11 → **11.93 ms** |
+| XC7A100T DDR3 | 1940 → 1727 → **1506** | 69.15 → **53.89 ms** |
 
-Ideas not yet tried: pack the fields the sweep touches into one cache line;
-prefetch the next handle; segregate young handles into a contiguous block so
-the walk is sequential.
+Note the two boards responded differently: hoisting statics helped SDR far more
+(-22% vs -11%, it has no L2 to cache them), while run-splicing helped DDR3 more
+(-13% vs -6.6%). An earlier guess that the sweep was *not* memory-bound — based
+on the two boards having near-identical per-handle costs — was wrong; removing
+accesses clearly helps.
+
+**Remaining per dead handle: 2 reads (`OFF_NEXT`, `OFF_SPACE`) + 1 write
+(`OFF_PTR = 0`).** All three look irreducible without changing the handle layout:
+the two reads are traversal and the survivor test, and the write is what stops a
+conservative root resurrecting a freed handle (`push()` rejects `OFF_PTR == 0`).
+Diminishing returns set in — removing a write bought only 6.6% on SDR — which
+suggests a fixed per-iteration cost now dominates (~1350 ns ≈ 135 cycles for
+three accesses plus loop overhead).
+
+Further gains need a different approach, in rough order of promise:
+- **Fewer iterations, not cheaper ones** — the sweep is O(objects allocated), so
+  this is where nursery sizing (item 4) and the pause bound actually meet.
+- **Handle layout**: put `OFF_NEXT` and the survivor mark in one word so the
+  traversal needs a single read.
+- **Segregate young handles** into a contiguous block so the walk is sequential.
 
 ## 3. The nursery zero — DONE (removed)
 

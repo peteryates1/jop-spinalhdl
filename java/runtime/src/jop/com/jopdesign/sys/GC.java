@@ -1237,6 +1237,22 @@ public class GC {
 		// tenured once copied), dead ones go back to freeList. So the list is
 		// rebuilt from empty rather than unlinked in place.
 		youngList = 0;
+		// Hold the two list heads in locals for the duration of the walk. They
+		// are static fields, and JOP keeps statics in main memory, so every
+		// getstatic/putstatic is a memory access: touching freeList inline cost
+		// two of the six accesses the common (dead) path makes per handle.
+		// Nothing else can observe them mid-sweep — the collector runs
+		// stop-the-world with the other cores halted.
+		int localFree = freeList;
+		int localUse = useList;
+		// Dead handles are already chained together in youngList order, so we do
+		// not have to relink each one onto freeList individually — we splice
+		// whole RUNS of consecutive dead handles. A run only has to be closed
+		// where a survivor interrupts it (survivors get relinked onto useList,
+		// so the preceding handle's OFF_NEXT must stop pointing at them). With
+		// ~66 survivors in 33k handles that is ~67 writes instead of 33k,
+		// removing one of the four memory accesses the dead path made per handle.
+		int runStart = 0, runEnd = 0;
 		while (ref != 0) {
 			if (GC_TIMING) ++nSwept;
 			int next = Native.rdMem(ref+OFF_NEXT);
@@ -1244,6 +1260,13 @@ public class GC {
 			// fraction of a percent here — keep it out of the common dead path,
 			// where every avoided main-memory read is ~18% of the per-handle cost.
 			if (Native.rdMem(ref+OFF_SPACE) == YOUNG_SURV) {          // survivor -> promote
+				// This handle is leaving the dead chain, so terminate the run
+				// that precedes it before its OFF_NEXT is repointed.
+				if (runStart != 0) {
+					Native.wrMem(localFree, runEnd+OFF_NEXT);
+					localFree = runStart;
+					runStart = 0;
+				}
 				int ptr = Native.rdMem(ref+OFF_PTR);
 				int size = getObjectSize(ref);
 				// size == 0 is LEGAL: a class with no instance fields. Such an
@@ -1288,17 +1311,26 @@ public class GC {
 				for (int i = 0; i < size; ++i) Native.wrMem(Native.rdMem(ptr+i), dst+i);
 				Native.wrMem(dst, ref+OFF_PTR);
 				Native.wrMem(toSpace, ref+OFF_SPACE);                 // restore major mark
-				Native.wrMem(useList, ref+OFF_NEXT);                  // now tenured
-				useList = ref;
+				Native.wrMem(localUse, ref+OFF_NEXT);                 // now tenured
+				localUse = ref;
 				nCopied++;
 			} else {                                                  // dead young -> reclaim
 				Native.wrMem(0, ref+OFF_PTR);
-				Native.wrMem(freeList, ref+OFF_NEXT);
-				freeList = ref;
+				// Extend the current run; its OFF_NEXT already points at the
+				// following youngList entry, which is the next dead handle
+				// unless a survivor intervenes (handled above).
+				if (runStart == 0) runStart = ref;
+				runEnd = ref;
 				nReclaimed++;
 			}
 			ref = next;
 		}
+		if (runStart != 0) {                                          // close the final run
+			Native.wrMem(localFree, runEnd+OFF_NEXT);
+			localFree = runStart;
+		}
+		freeList = localFree;
+		useList = localUse;
 		if (GC_TIMING) { gcSweptHandles = nSwept; gcCopiedHandles = nCopied; gcReclaimedHandles = nReclaimed; }
 		if (GEN_TRACE) { JVMHelp.wr("[cs c="); wrIntG(nCopied); JVMHelp.wr(" r="); wrIntG(nReclaimed); JVMHelp.wr("]\n"); }
 	}
