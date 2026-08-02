@@ -3,9 +3,10 @@
 Getting JOP running against the 1 GB DDR2 SODIMM on the A-E115FB (EP4CE115).
 Board reference: [ep4ce115-ddr2-board.md](ep4ce115-ddr2-board.md).
 
-Status: **not started**. This is the plan and what is already de-risked, so the
-work is not lost while the GC follow-ups finish
-([../gc/stage3-followups.md](../gc/stage3-followups.md)).
+Status: **exerciser builds, not yet run on hardware.** Items 1, 2 and 5 below
+are done; the design synthesises, fits, assembles to a `.sof`, and its own logic
+is off the critical path. Two things to resolve before or alongside the first
+hardware run — see "Open before hardware".
 
 ---
 
@@ -53,6 +54,46 @@ work is not lost while the GC follow-ups finish
 Simpler than the Xilinx MIG: single `local_ready` (MIG splits command and
 write-data channels), `local_wdata` accepted on the same cycle as
 `local_write_req` (no `app_wdf_*` handshake), and a single clock domain.
+
+## Done so far
+
+- `Parts.scala`: added `EP4CE115F23I7` and a **Cyclone IV E** family (the
+  existing `CycloneIV` hardcodes "Cyclone IV GX", which is a different Quartus
+  family). Noted in passing that `EP4CE6E22C8` looks mis-assigned to GX as well —
+  left alone rather than changed blind.
+- `jop.ddr2.Ddr2BlackBox` — ports transcribed from `ddr2_64bit_bb.v`.
+- `jop.system.Ddr2ExerciserTop` — drives the local interface directly, with an
+  address-derived pattern, UART reporting and LED status.
+- `fpga/a-e115fb-ddr2/` — Quartus project. The vendor IP is **not** vendored into
+  the repo (~3.7 MB, vendor licence, not regenerable after 18.1); `make ip` links
+  it from `DDR2_IP_DIR`.
+- Build result: **6,534 LEs (6%)**, 118 pins, `.sof` produced with Quartus 18.1.
+
+Three things the vendor reference taught us that were not in the plan:
+- `mem_addr[10]` sits on **K22, the nCEO configuration pin** — needs
+  `CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION "USE AS REGULAR IO"`.
+- `clk`, `rst_n` and the LEDs are in banks shared with DDR2, so they must use the
+  **1.8 V** I/O standard, not 3.3-V LVTTL.
+- The UART pins (H5/N1) are in banks 1/2, which are *not* DDR2 banks, so they can
+  and should be explicitly 3.3-V LVTTL — left unconstrained they defaulted to
+  2.5 V, marginal into the CH340.
+
+## Open before hardware
+
+1. **The SDC is wrong for this design.** The `.qip` pulls in
+   `ddr2_64bit_example_top.sdc`, which constrains the IP's *example* top and
+   references ports we do not have (`pnf`, `test_complete`). A proper project SDC
+   is needed — `create_clock` on the 25 MHz input plus `derive_pll_clocks` /
+   `derive_clock_uncertainty` — before any timing number means anything.
+2. **Worst setup slack is -0.439 ns** at the Slow 1200mV 100C corner, on a path
+   *inside* the vendor controller (`alt_mem_ddrx_controller_top`), not in our
+   logic. Our own logic needed two pipeline stages to get there: the 128-bit
+   read compare was -2.151 ns, splitting compare from the error-counter
+   increment moved the bottleneck into the IP. Resolve (1) first, since the
+   number may change.
+3. **`phyClkHz` is an assumption** (83.375 MHz). LED0 toggles every 2^23 phy_clk
+   cycles so the real frequency can be measured from its period; correct the
+   constant before trusting the UART baud rate.
 
 ## Work items
 

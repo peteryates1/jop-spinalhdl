@@ -1,0 +1,4 @@
+QUARTUS_VERSION = "18.1"
+DATE = "2026/08/02"
+
+PROJECT_REVISION = "ddr2_exerciser"

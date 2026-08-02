@@ -43,6 +43,12 @@ sealed trait FpgaFamily {
 }
 object FpgaFamily {
   case object CycloneIV  extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone IV GX" }
+  // Cyclone IV E is a distinct Quartus family from Cyclone IV GX — the name is
+  // used verbatim in the generated .qsf, so they cannot share an entry.
+  // NOTE: EP4CE6E22C8 below is also a Cyclone IV E part but is still assigned to
+  // CycloneIV (GX). Left alone rather than changed blind, since it would alter
+  // an existing board's project file; worth checking if that board is revived.
+  case object CycloneIVE extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone IV E" }
   case object CycloneV   extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone V" }
   case object MAX10      extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "MAX 10" }
   case object Artix7     extends FpgaFamily { val manufacturer = Manufacturer.Xilinx }
@@ -70,6 +76,10 @@ object FpgaDevice {
 
   def EP4CE6E22C8 = FpgaDevice("EP4CE6E22C8", FpgaFamily.CycloneIV,
     les = 6272, dspBlocks = 0, bramKbits = 276)
+
+  /** A-E115FB board: EP4CE115 + 1 GB DDR2 SODIMM. See docs/boards/ep4ce115-ddr2-board.md */
+  def EP4CE115F23I7 = FpgaDevice("EP4CE115F23I7", FpgaFamily.CycloneIVE,
+    les = 114480, dspBlocks = 266, bramKbits = 3888)
 
   def XC7A35T = FpgaDevice("XC7A35T-1FTG256C", FpgaFamily.Artix7,
     les = 33280, dspBlocks = 90, bramKbits = 1800)

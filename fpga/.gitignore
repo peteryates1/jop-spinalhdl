@@ -11,3 +11,8 @@ simulation/
 *.summary
 *.pin
 *.qws
+a-e115fb-ddr2/db/
+a-e115fb-ddr2/incremental_db/
+a-e115fb-ddr2/output_files/
+a-e115fb-ddr2/ip/
+a-e115fb-ddr2/ddr2_64bit_phy_*
