@@ -4,8 +4,24 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 
+/**
+ * Line-width is selectable so the same functional suite can be run at the widths
+ * we actually care about: 32 (fast default), 128 (current DDR3 line) and 256
+ * (matches the A-E115FB DDR2 4-beat burst of 32 bytes).
+ *
+ *   sbt "Test/runMain jop.ddr3.LruCacheCoreUnitSim 256"
+ *
+ * WARNING: only dataWidth=32 currently PASSES. The test vectors below hardcode
+ * addresses and patterns for a 32-bit line — at 256 bits byteOffsetWidth is 5
+ * rather than 2, so e.g. addr 0x0020 maps to a different word and the eviction
+ * / write-back cases fail on address mapping (reads still pass). That is a
+ * harness limitation, not a known RTL defect: LruCacheCore elaborates cleanly at
+ * 128/256/512 (see CacheWidthElabTest). Generalising these vectors is a
+ * prerequisite for trusting a wide line on the A-E115FB DDR2 bring-up.
+ */
 object LruCacheCoreUnitSim extends App {
-  val config = CacheConfig(addrWidth = 16, dataWidth = 32, setCount = 4, wayCount = 2)
+  val lineWidth = if (args.nonEmpty) args(0).toInt else 32
+  val config = CacheConfig(addrWidth = 16, dataWidth = lineWidth, setCount = 4, wayCount = 2)
   val dataBytes = config.dataWidth / 8
   val byteOffsetWidth = log2Up(dataBytes)
 
@@ -32,7 +48,8 @@ object LruCacheCoreUnitSim extends App {
 
       // Memory model: maps word addresses to data values
       val memory = scala.collection.mutable.Map[Int, BigInt]()
-      val mask32 = (BigInt(1) << 32) - 1
+      // Line-wide mask; was hardcoded to 32 bits when this sim only ran at dataWidth=32.
+      val mask32 = (BigInt(1) << config.dataWidth) - 1
       for (i <- 0 until 256) {
         memory(i) = (BigInt("AA000000", 16) + i) & mask32
       }
@@ -81,8 +98,8 @@ object LruCacheCoreUnitSim extends App {
           if (dut.io.memCmd.valid.toBoolean && dut.io.memCmd.ready.toBoolean) {
             val cmdAddr = dut.io.memCmd.payload.addr.toInt
             val cmdWrite = dut.io.memCmd.payload.write.toBoolean
-            val cmdData = dut.io.memCmd.payload.data.toInt
-            val cmdMask = dut.io.memCmd.payload.mask.toInt
+            val cmdData = dut.io.memCmd.payload.data.toBigInt
+            val cmdMask = dut.io.memCmd.payload.mask.toBigInt
             val wordAddr = cmdAddr >> byteOffsetWidth
 
             if (cmdWrite) {
@@ -92,7 +109,7 @@ object LruCacheCoreUnitSim extends App {
               for (b <- 0 until dataBytes) {
                 if (((cmdMask >> b) & 1) == 0) {  // mask=0 means write this byte
                   val byteMask = BigInt(0xFF) << (b * 8)
-                  merged = (merged & ~byteMask) | ((BigInt(cmdData) & byteMask))
+                  merged = (merged & ~byteMask) | (cmdData & byteMask)
                 }
               }
               memory(wordAddr) = merged & mask32
