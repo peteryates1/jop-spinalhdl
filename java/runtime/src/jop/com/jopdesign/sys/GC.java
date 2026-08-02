@@ -280,6 +280,25 @@ public class GC {
 	 */
 	public static int gcBadHandleCnt, gcBadHandle, gcBadHandleSize,
 			gcBadHandleType, gcBadHandleAlen, gcBadHandlePtr;
+	/**
+	 * Same for the minor GC's BADSZ screen, which sees it much earlier. Captures
+	 * all 8 handle words of the first offender plus which collection saw it, to
+	 * identify where such a handle comes from.
+	 */
+	public static int gcBadYoungCnt, gcBadYoung, gcBadYoungGc, gcBadYoungSize;
+	/**
+	 * Diagnostic (off by default, javac folds it away): validate handle metadata
+	 * at CREATION time. If this fires the handle was born with an impossible
+	 * size; if it never fires but BADSZ does, something corrupted the handle
+	 * after allocation. This is how the multianewarray defect below was found —
+	 * turn it on again if another mis-typed allocation shows up.
+	 */
+	static final boolean GC_META_CHECK = false;
+	public static int gcOddNewCnt, gcOddNew, gcOddNewType, gcOddNewAlen, gcOddNewSize;
+	/** 1 = came from newArrayGen, 0 = newObjectGen; plus the size that was requested. */
+	public static int gcOddNewIsArray, gcOddNewReq;
+	public static int gcBadYoungW0, gcBadYoungW1, gcBadYoungW2, gcBadYoungW3,
+			gcBadYoungW4, gcBadYoungW5, gcBadYoungW6, gcBadYoungW7;
 	/** Major GC: number run, last/worst pause (us). */
 	public static int gcMajorCount, gcMajorLast, gcMajorMax;
 
@@ -1227,10 +1246,35 @@ public class GC {
 			if (Native.rdMem(ref+OFF_SPACE) == YOUNG_SURV) {          // survivor -> promote
 				int ptr = Native.rdMem(ref+OFF_PTR);
 				int size = getObjectSize(ref);
-				if (size <= 0 || size > (nurseryTop - nurseryBase)) {
+				// size == 0 is LEGAL: a class with no instance fields. Such an
+				// object occupies no words, so consecutive ones legitimately share
+				// a data address — compactAndSweep has always allowed that (it
+				// guards the copy with size > 0 and adds 0), which is why the
+				// classic collector never flagged one. Rejecting it here left every
+				// zero-field object unpromoted and re-linked onto youngList as a
+				// permanent zombie holding a stale nursery pointer across
+				// zero-and-reuse; one eventually reached the compactor with a
+				// garbage method table and a size larger than the whole heap.
+				if (size < 0 || size > (nurseryTop - nurseryBase)) {
 					// Impossible size for a nursery-allocated object — corrupt/
 					// stale handle. Skip (don't drive a runaway copy), but keep it
 					// on youngList so it is not lost or double-freed.
+					if (GC_TIMING) {
+						if (gcBadYoungCnt == 0) {          // capture the first sighting whole
+							gcBadYoung = ref;
+							gcBadYoungGc = gcMinorCount;
+							gcBadYoungSize = size;
+							gcBadYoungW0 = Native.rdMem(ref+0);
+							gcBadYoungW1 = Native.rdMem(ref+1);
+							gcBadYoungW2 = Native.rdMem(ref+2);
+							gcBadYoungW3 = Native.rdMem(ref+3);
+							gcBadYoungW4 = Native.rdMem(ref+4);
+							gcBadYoungW5 = Native.rdMem(ref+5);
+							gcBadYoungW6 = Native.rdMem(ref+6);
+							gcBadYoungW7 = Native.rdMem(ref+7);
+						}
+						++gcBadYoungCnt;
+					}
 					if (GEN_TRACE) { JVMHelp.wr("[BADSZ ref="); wrIntG(ref); JVMHelp.wr(" sz="); wrIntG(size);
 						JVMHelp.wr(" ty="); wrIntG(Native.rdMem(ref+OFF_TYPE));
 						JVMHelp.wr(" al="); wrIntG(Native.rdMem(ref+OFF_MTAB_ALEN)); JVMHelp.wr("]\n"); }
@@ -1417,6 +1461,22 @@ public class GC {
 		return ref;
 	}
 
+	/** Diagnostic: verify a freshly created handle describes a plausible size. */
+	static void checkMeta(int ref, int isArray, int reqSize) {
+		int size = getObjectSize(ref);
+		if (size < 0 || size > (nurseryTop - nurseryBase)) {
+			if (gcOddNewCnt == 0) {
+				gcOddNew = ref;
+				gcOddNewType = Native.rdMem(ref+OFF_TYPE);
+				gcOddNewAlen = Native.rdMem(ref+OFF_MTAB_ALEN);
+				gcOddNewSize = size;
+				gcOddNewIsArray = isArray;
+				gcOddNewReq = reqSize;
+			}
+			++gcOddNewCnt;
+		}
+	}
+
 	static int newObjectGen(int cons, int size) {
 		int ref;
 		if (mutex != null) {
@@ -1424,11 +1484,13 @@ public class GC {
 				ref = allocGen(size);
 				Native.wrMem(IS_OBJ, ref+OFF_TYPE);
 				Native.wrMem(cons+Const.CLASS_HEADR, ref+OFF_MTAB_ALEN);
+				if (GC_META_CHECK) checkMeta(ref, 0, size);
 			}
 		} else {
 			ref = allocGen(size);
 			Native.wrMem(IS_OBJ, ref+OFF_TYPE);
 			Native.wrMem(cons+Const.CLASS_HEADR, ref+OFF_MTAB_ALEN);
+			if (GC_META_CHECK) checkMeta(ref, 0, size);
 		}
 		return ref;
 	}
@@ -1440,11 +1502,13 @@ public class GC {
 				ref = allocGen(size);
 				Native.wrMem(type, ref+OFF_TYPE);
 				Native.wrMem(arrayLength, ref+OFF_MTAB_ALEN);
+				if (GC_META_CHECK) checkMeta(ref, 1, size);
 			}
 		} else {
 			ref = allocGen(size);
 			Native.wrMem(type, ref+OFF_TYPE);
 			Native.wrMem(arrayLength, ref+OFF_MTAB_ALEN);
+			if (GC_META_CHECK) checkMeta(ref, 1, size);
 		}
 		return ref;
 	}

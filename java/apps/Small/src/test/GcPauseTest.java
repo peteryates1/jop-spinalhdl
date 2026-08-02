@@ -177,6 +177,32 @@ public class GcPauseTest {
 			JVMHelp.wr("MAJOR FAIL\n");
 		}
 
+		if (GC.gcBadYoungCnt != 0) {
+			JVMHelp.wr("BADSZ young "); wrInt(GC.gcBadYoungCnt);
+			JVMHelp.wr(" first at minorGc#"); wrInt(GC.gcBadYoungGc);
+			JVMHelp.wr(" ref="); wrInt(GC.gcBadYoung); JVMHelp.wr(" size="); wrInt(GC.gcBadYoungSize); JVMHelp.wr("\n");
+			JVMHelp.wr("  handle: ptr="); wrInt(GC.gcBadYoungW0);
+			JVMHelp.wr(" mtab/alen="); wrInt(GC.gcBadYoungW1);
+			JVMHelp.wr(" space="); wrInt(GC.gcBadYoungW2);
+			JVMHelp.wr(" type="); wrInt(GC.gcBadYoungW3); JVMHelp.wr("\n");
+			JVMHelp.wr("          next="); wrInt(GC.gcBadYoungW4);
+			JVMHelp.wr(" grey="); wrInt(GC.gcBadYoungW5);
+			JVMHelp.wr(" w6="); wrInt(GC.gcBadYoungW6);
+			JVMHelp.wr(" w7="); wrInt(GC.gcBadYoungW7); JVMHelp.wr("\n");
+			JVMHelp.wr("  nBase="); wrInt(GC.nurseryBase);
+			JVMHelp.wr(" nTop="); wrInt(GC.nurseryTop);
+			JVMHelp.wr(" hStart="); wrInt(GC.heapStart); JVMHelp.wr("\n");
+		}
+		JVMHelp.wr("born-bad "); wrInt(GC.gcOddNewCnt);
+		if (GC.gcOddNewCnt != 0) {
+			JVMHelp.wr(" first ref="); wrInt(GC.gcOddNew);
+			JVMHelp.wr(" type="); wrInt(GC.gcOddNewType);
+			JVMHelp.wr(" alen="); wrInt(GC.gcOddNewAlen);
+			JVMHelp.wr(" size="); wrInt(GC.gcOddNewSize);
+			JVMHelp.wr(" isArray="); wrInt(GC.gcOddNewIsArray);
+			JVMHelp.wr(" reqSize="); wrInt(GC.gcOddNewReq);
+		}
+		JVMHelp.wr("\n");
 		if (GC.gcBadHandleCnt != 0) {
 			JVMHelp.wr("BAD HANDLES "); wrInt(GC.gcBadHandleCnt);
 			JVMHelp.wr(" first: ref="); wrInt(GC.gcBadHandle);

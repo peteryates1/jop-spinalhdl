@@ -852,6 +852,17 @@ public class JVM {
 		type += j;
 		type += cp;
 		type = Native.rdMem(type);
+		// The cp entry holds a primitive array type code (4..11) when the
+		// element type is primitive, and 0 when it is a reference — there is no
+		// primitive code for that case. Passing the 0 straight to f_newarray
+		// below created every inner array with OFF_TYPE = IS_OBJ, so the GC
+		// could neither compute its size (it dereferenced the length as a method
+		// table) nor scan its elements as references: a handler stored in
+		// JVMHelp.ih[core][nr] (new Runnable[cpus][NUM_INTERRUPTS]) was invisible
+		// to the collector. Reference arrays use type 1, as f_anewarray does.
+		if (type == 0) {
+			type = 1;	// IS_REFARR
+		}
 		++pc;	// now to dimensions
 		int dim = Native.rdMem(start+(pc>>2));
 		for (i=(pc&0x03); i<3; ++i) dim >>= 8;
