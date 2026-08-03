@@ -42,7 +42,10 @@ object Ddr2ExState extends SpinalEnum {
 case class Ddr2ExerciserTop(
     phyClkHz: Int = 83000000,   // half-rate IP: local_if_clk = 83 MHz
     baud: Int = 115200,         // low rate, tolerant of phyClkHz being off
-    testWords: Int = 4096       // 256-bit words per pass = 128 KB
+    // Full 1 GB: 2^25 words of 256 bits. A small window cannot detect wrong
+    // row/bank/rank decoding — the interesting boundaries, especially the rank
+    // change on mem_cs_n, only appear near the top of the space.
+    testWords: Int = 1 << 25
 ) extends Component {
 
   val io = new Bundle {
@@ -108,7 +111,10 @@ case class Ddr2ExerciserTop(
     // ---- pattern -------------------------------------------------------
     val seed = Reg(UInt(25 bits)) init (0)
     def pattern(a: UInt): Bits = {
-      val x = (a ^ seed).resize(32).asBits
+      // Both operands widened to 32 first: the write side supplies a 25-bit
+      // address and the read side a 26-bit count, and the pattern for a given
+      // word index must be identical either way.
+      val x = (a.resize(32) ^ seed.resize(32)).asBits
       // 256 bits: alternating x / ~x so a stuck bit, a swapped byte lane or a
       // mis-decoded row/bank all show up.
       ~x ## x ## ~x ## x ## ~x ## x ## ~x ## x
@@ -120,7 +126,7 @@ case class Ddr2ExerciserTop(
 
     val wrAddr  = Reg(UInt(25 bits)) init (0)   // next word to write
     val rdAddr  = Reg(UInt(25 bits)) init (0)   // next read command to issue
-    val rxCount = Reg(UInt(25 bits)) init (0)   // read words returned so far
+    val rxCount = Reg(UInt(26 bits)) init (0)   // read words returned so far (must reach testWords)
     val errors  = Reg(UInt(16 bits)) init (0)
     val passes  = Reg(UInt(16 bits)) init (0)
     val settle  = Reg(UInt(2 bits)) init (0)
@@ -224,7 +230,7 @@ case class Ddr2ExerciserTop(
     // just "FAIL".
     // "DDR2 i=x s=y w=wwww r=rrrr e=eeee" — init_done, state, write/read
     // progress and error count, so a stall is diagnosable from one line.
-    val msg = "DDR2 i=x s=y w=wwww r=rrrr e=eeee\r\n"
+    val msg = "DDR2 i=x s=y w=wwwwwww r=rrrrrrr e=eeee\r\n"
     val msgRom = Mem(Bits(8 bits), msg.map(c => B(c.toInt, 8 bits)))
     val msgIdx = Reg(UInt(6 bits)) init (0)
     val sending = Reg(Bool()) init (False)
@@ -244,28 +250,42 @@ case class Ddr2ExerciserTop(
     switch(msgIdx) {
       is(7)  { curByte := Mux(ddr2.io.local_init_done, B"8'd49", B"8'd48") }  // '1'/'0'
       is(11) { curByte := digit(state.asBits.asUInt.resize(4)) }
-      is(15) { curByte := hexDigit(wrAddr(15 downto 12)) }
-      is(16) { curByte := hexDigit(wrAddr(11 downto 8)) }
-      is(17) { curByte := hexDigit(wrAddr(7 downto 4)) }
-      is(18) { curByte := hexDigit(wrAddr(3 downto 0)) }
-      is(22) { curByte := hexDigit(rxCount(15 downto 12)) }
-      is(23) { curByte := hexDigit(rxCount(11 downto 8)) }
-      is(24) { curByte := hexDigit(rxCount(7 downto 4)) }
-      is(25) { curByte := hexDigit(rxCount(3 downto 0)) }
-      is(29) { curByte := hexDigit(errors(15 downto 12)) }
-      is(30) { curByte := hexDigit(errors(11 downto 8)) }
-      is(31) { curByte := hexDigit(errors(7 downto 4)) }
-      is(32) { curByte := hexDigit(errors(3 downto 0)) }
+      // words written: 7 hex digits (25-bit address space)
+      is(15) { curByte := hexDigit(wrAddr(24 downto 24).resize(4)) }
+      is(16) { curByte := hexDigit(wrAddr(23 downto 20)) }
+      is(17) { curByte := hexDigit(wrAddr(19 downto 16)) }
+      is(18) { curByte := hexDigit(wrAddr(15 downto 12)) }
+      is(19) { curByte := hexDigit(wrAddr(11 downto 8)) }
+      is(20) { curByte := hexDigit(wrAddr(7 downto 4)) }
+      is(21) { curByte := hexDigit(wrAddr(3 downto 0)) }
+      // words read back
+      is(25) { curByte := hexDigit(rxCount(25 downto 24).resize(4)) }
+      is(26) { curByte := hexDigit(rxCount(23 downto 20)) }
+      is(27) { curByte := hexDigit(rxCount(19 downto 16)) }
+      is(28) { curByte := hexDigit(rxCount(15 downto 12)) }
+      is(29) { curByte := hexDigit(rxCount(11 downto 8)) }
+      is(30) { curByte := hexDigit(rxCount(7 downto 4)) }
+      is(31) { curByte := hexDigit(rxCount(3 downto 0)) }
+      // errors
+      is(35) { curByte := hexDigit(errors(15 downto 12)) }
+      is(36) { curByte := hexDigit(errors(11 downto 8)) }
+      is(37) { curByte := hexDigit(errors(7 downto 4)) }
+      is(38) { curByte := hexDigit(errors(3 downto 0)) }
     }
 
     // Emit periodically, not only on completion: a stall anywhere (calibration
     // never finishing, local_ready never asserting) would otherwise produce
     // total silence, which tells us nothing. ~0.4 s at 83 MHz.
     val tick = Reg(UInt(25 bits)) init (0)
+    val sendFromReport = Reg(Bool()) init (False)
     tick := tick + 1
     when((state === REPORT || tick === 0) && !sending) {
       sending := True
       msgIdx := 0
+      // Only a send that was triggered BY completion may advance the pass.
+      // A periodic progress line must leave the running test alone — with a
+      // 1 GB sweep the tick fires many times mid-pass.
+      sendFromReport := state === REPORT
     }
     when(sending) {
       txFifo.io.push.valid   := True
@@ -273,9 +293,11 @@ case class Ddr2ExerciserTop(
       when(txFifo.io.push.ready) {
         when(msgIdx === msg.length - 1) {
           sending := False
-          passes := passes + 1
-          seed := seed + 1        // different data next pass
-          state := IDLE
+          when(sendFromReport) {
+            passes := passes + 1
+            seed := seed + 1      // different data next pass
+            state := IDLE
+          }
         } otherwise {
           msgIdx := msgIdx + 1
         }

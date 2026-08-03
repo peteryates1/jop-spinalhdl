@@ -10,10 +10,21 @@ the real 1 GB SODIMM and a write/read/verify pass runs clean:
 DDR2 i=1 s=5 w=0fff r=1000 e=0000
 ```
 
-`i=1` = `local_init_done`, `s=5` = REPORT (pass complete), 4096 x 256-bit words
-written and read back, **zero errors**, repeatedly, with a rolling seed so stale
-data cannot pass twice. That is 128 KB of the 1 GB exercised — see "Still to
-prove" below.
+**FULL 1 GB VERIFIED.** The sweep covers the whole 25-bit space:
+
+```
+DDR2 i=1 s=5 w=1ffffff r=2000000 e=0000
+```
+
+`w=0x1FFFFFF` = 33,554,431 words written, `r=0x2000000` = 33,554,432 read back,
+zero errors. Over a 130 s window: **77 complete 1 GB passes, ~154 GB of traffic,
+and the only error count ever observed was 0000**, each pass using a different
+seed so stale data cannot pass twice. Sustained ~1.2 GB/s combined
+(write + read), which is command-rate limited — single-word commands
+(`local_size=1`), no bursting.
+
+This exercises row, bank AND rank decoding, including the `mem_cs_n` rank
+boundary near the top of the space.
 
 ---
 
@@ -117,11 +128,17 @@ you can build on.
 
 ## Still to prove
 
-- **Only 128 KB of 1 GB is exercised** (`testWords = 4096`). A pass this small
-  cannot detect wrong row/bank/rank decoding — the interesting boundaries are far
-  higher. Sweep the full 25-bit address space, and specifically cross the rank
-  boundary (`mem_cs_n`), before trusting 1 GB.
-- The GC suite at 1 GB, which is the actual point of the exercise.
+- The GC suite at 1 GB, which is the actual point of the exercise. That needs
+  `CacheToDdr2Adapter` + the JOP preset (items 3, 4, 6 below).
+- Bursting. At `local_size=1` the interface is command-rate limited to ~1.2 GB/s
+  against a ~5.3 GB/s DDR2-667 peak. A 256-bit local word already equals the
+  BL=4 burst, so multi-word bursts are the next bandwidth lever if the cache
+  path needs it.
+
+**Gotcha found while scaling the sweep**: the periodic status line reset the test
+state machine when it fired, which was invisible at 4096 words (a pass finished
+between ticks) but restarts a 1 GB pass forever. Only a send triggered *by*
+completion may advance the pass — see `sendFromReport`.
 
 ## Getting it programmed — what actually mattered
 
