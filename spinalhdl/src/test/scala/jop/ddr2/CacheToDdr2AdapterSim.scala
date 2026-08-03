@@ -21,6 +21,14 @@ import scala.util.Random
  * Checks: every read returns the value previously written to that address,
  * responses arrive in order, byte enables are honoured (a masked write must
  * leave those bytes alone), and nothing is dropped when the consumer stalls.
+ *
+ * NOTE ON THE CONTRACT: every command gets exactly one response, WRITES
+ * INCLUDED. That is LruCacheCore's requirement, not the DDR2 interface's — an
+ * eviction is issued as a memCmd write and the cache then blocks in
+ * WAIT_EVICT_RSP until a memRsp arrives. This test originally expected
+ * responses only for reads, mirroring the local interface where a write is
+ * fire-and-forget, and so passed while the first dirty eviction deadlocked on
+ * hardware. See CacheDdr2EvictSim, which drives the real cache.
  */
 object CacheToDdr2AdapterSim extends App {
 
@@ -108,7 +116,9 @@ object CacheToDdr2AdapterSim extends App {
     }
 
     val N = 200
-    val expected = mutable.Queue[BigInt]()
+    // One entry per command, in issue order. None = a write acknowledgement,
+    // whose payload is don't-care; Some(v) = a read that must return v.
+    val expected = mutable.Queue[Option[BigInt]]()
     val golden = mutable.Map[BigInt, BigInt]()
 
     // consumer: sometimes stalls, to prove the response FIFO bound holds
@@ -120,10 +130,11 @@ object CacheToDdr2AdapterSim extends App {
         dut.clockDomain.waitSampling()
         if (dut.io.rsp.valid.toBoolean && dut.io.rsp.ready.toBoolean) {
           val d = dut.io.rsp.payload.data.toBigInt
-          val want = expected.dequeue()
-          if (d != want) {
-            println(f"MISMATCH at response $got: got 0x$d%x want 0x$want%x")
-            mismatches += 1
+          expected.dequeue() match {
+            case Some(want) if d != want =>
+              println(f"MISMATCH at response $got: got 0x$d%x want 0x$want%x")
+              mismatches += 1
+            case _ => // write ack, or a matching read
           }
           got += 1
         }
@@ -143,6 +154,7 @@ object CacheToDdr2AdapterSim extends App {
     // 1. write a block, full-line (keep-mask all zero = write every byte)
     for (i <- 0 until N) {
       golden(BigInt(i)) = word(i)
+      expected.enqueue(None)
       issue(i, isWrite = true, word(i), BigInt(0))
     }
 
@@ -150,6 +162,7 @@ object CacheToDdr2AdapterSim extends App {
     val maskedAddr = 5
     val keepMask = (BigInt(1) << (WORD_BYTES / 2)) - 1        // 1 = keep
     val newData = BigInt("A5", 16) * ((BigInt(1) << DATA_W) - 1) / 255
+    expected.enqueue(None)
     issue(maskedAddr, isWrite = true, newData, keepMask)
     val oldV = golden(BigInt(maskedAddr))
     val lowMask = (BigInt(1) << (DATA_W / 2)) - 1
@@ -157,21 +170,25 @@ object CacheToDdr2AdapterSim extends App {
 
     // 3. read everything back
     for (i <- 0 until N) {
-      expected.enqueue(golden(BigInt(i)))
+      expected.enqueue(Some(golden(BigInt(i))))
       issue(i, isWrite = false, 0, BigInt(0))
     }
 
+    // N writes + 1 masked write + N reads, each owed exactly one response
+    val totalRsp = N + 1 + N
+
     // drain
     var guard = 0
-    while (got < N && guard < 200000) { dut.clockDomain.waitSampling(); guard += 1 }
+    while (got < totalRsp && guard < 200000) { dut.clockDomain.waitSampling(); guard += 1 }
 
     println(s"writes accepted=$acceptedWrites reads accepted=$acceptedReads returned=$returned")
-    println(s"responses checked=$got mismatches=$mismatches")
+    println(s"responses checked=$got/$totalRsp mismatches=$mismatches")
 
     def fail(m: String): Unit = { println(s"FAIL: $m"); simFailure(m) }
-    if (got != N) fail(s"expected $N responses, got $got (data lost?)")
+    if (got != totalRsp) fail(s"expected $totalRsp responses, got $got (data lost?)")
     if (mismatches != 0) fail(s"$mismatches data mismatches")
     if (returned != acceptedReads) fail("read responses lost")
-    println("PASS: CacheToDdr2Adapter — data, ordering, byte enables and FIFO bound all hold")
+    println("PASS: CacheToDdr2Adapter — data, ordering, byte enables, per-command " +
+            "responses (writes included) and the FIFO bound all hold")
   }
 }

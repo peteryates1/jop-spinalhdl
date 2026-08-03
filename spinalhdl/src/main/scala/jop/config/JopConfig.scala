@@ -703,12 +703,15 @@ object JopConfig {
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasBackendFill = true,
         hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      // 115200, not the 2 Mbaud default. UartCtrl divides by baud x 5 samples,
-      // so at 75 MHz a 2 Mbaud divider is 7.5 -> 7, i.e. 2.143 Mbaud, +7% and
-      // far outside UART tolerance. At 115200 the divider is 130 (+0.16%).
-      // Raise it once the link is proven, keeping the divider comfortably large.
+      // 1 Mbaud, not the 2 Mbaud default. UartCtrl divides by baud x 5 samples,
+      // so at 75 MHz a 2 Mbaud divider is 7.5 -> 7, i.e. 2.143 Mbaud: +7% and
+      // far outside UART tolerance. 75 MHz divides EXACTLY into 1 M (divider
+      // 15), 1.5 M (10) and 3 M (5) — 2 M is the one standard rate it cannot
+      // reach, so the odd core clock is not the problem it looks like.
+      // Brought up at 115200 (divider 130, +0.16%) and raised once the link was
+      // proven; 1 Mbaud cuts a 44 KB download from 4.0 s to ~0.5 s.
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340"),
-        params = Map("baudRate" -> 115200))))))
+        params = Map("baudRate" -> 1000000))))))
 
   /** XC7A100T + DB_FPGA V5 — DDR3, full I/O (Ethernet + VGA + SD) */
   def xc7a100tDbFull = JopConfig(

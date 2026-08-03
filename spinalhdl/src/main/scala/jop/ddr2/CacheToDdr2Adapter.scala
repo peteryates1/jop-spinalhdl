@@ -68,44 +68,72 @@ class CacheToDdr2Adapter(addrWidth: Int = 30,
     val debugOutstanding = out UInt (log2Up(rspDepth + 1) bits)
   }
 
+  // Register the incoming command before it reaches the controller. Without
+  // this, `local_wdata` is driven combinationally all the way from inside the
+  // cache: during a backend fill, `fillWord` addresses the data BRAM, whose
+  // read feeds the merge logic, which feeds 256 bits of routing into the IP's
+  // write-data buffer input — 13.75 ns against a 13.33 ns period at 75 MHz.
+  // That path is placement-sensitive enough to swing ~0.6 ns between fitter
+  // runs, so seeds only move it around; the register removes it. Costs one
+  // cycle per memory command, against a DRAM access of tens.
+  val cmd = io.cmd.m2sPipe()
+
   // Responses are buffered because the controller cannot be stalled.
   val rspFifo = StreamFifo(CacheRsp(dataWidth), rspDepth)
   io.rsp << rspFifo.io.pop
 
-  rspFifo.io.push.valid          := io.local_rdata_valid
-  rspFifo.io.push.payload.data   := io.local_rdata
-  rspFifo.io.push.payload.error  := False
+  // Responses owed: commands accepted whose response has not yet been consumed.
+  // Counted all the way to the POP rather than to the FIFO push, because reads
+  // still in flight and responses already queued draw on the same rspDepth
+  // budget — so the push below can never be refused. (Counting only to the push
+  // bounds in-flight reads but not queued ones, which lets a stalled consumer
+  // overflow the FIFO and silently drop returned data.)
+  val owed = Reg(UInt(log2Up(rspDepth + 1) bits)) init (0)
+  val room = owed < rspDepth
 
-  // Reads in flight. Capped at rspDepth so the push above can never be refused:
-  // every read we issue has a slot reserved for it before it is issued.
-  val outstanding = Reg(UInt(log2Up(rspDepth + 1) bits)) init (0)
-  val issueRead   = False
-  val readRoom    = outstanding < rspDepth
-
-  when(issueRead && !io.local_rdata_valid) {
-    outstanding := outstanding + 1
-  } elsewhen (!issueRead && io.local_rdata_valid) {
-    outstanding := outstanding - 1
-  }
+  // A write acknowledgement that lost the race with read data waits here for
+  // one cycle. Read data arrives on the controller's schedule and cannot be
+  // held off, so it always wins the single FIFO push port.
+  val ackPending = RegInit(False)
 
   // --- command issue -------------------------------------------------------
   // Single-word accesses: one local word IS one cache line, so no bursting is
   // needed and local_size stays 1 with burstbegin on every command.
-  val canIssue = io.cmd.valid && io.local_init_done &&
-                 (io.cmd.payload.write || readRoom)
+  val canIssue = cmd.valid && io.local_init_done && room && !ackPending
 
-  io.local_address    := io.cmd.payload.addr(addrWidth - 1 downto wordShift)
-  io.local_wdata      := io.cmd.payload.data
-  io.local_be         := ~io.cmd.payload.mask     // keep-mask -> byte-enable
+  io.local_address    := cmd.payload.addr(addrWidth - 1 downto wordShift)
+  io.local_wdata      := cmd.payload.data
+  io.local_be         := ~cmd.payload.mask     // keep-mask -> byte-enable
   io.local_size       := B"3'd1"
-  io.local_write_req  := canIssue && io.cmd.payload.write
-  io.local_read_req   := canIssue && !io.cmd.payload.write
+  io.local_write_req  := canIssue && cmd.payload.write
+  io.local_read_req   := canIssue && !cmd.payload.write
   io.local_burstbegin := canIssue
 
   // One signal acknowledges both the command and its write data.
-  io.cmd.ready := canIssue && io.local_ready
-  when(io.cmd.ready && !io.cmd.payload.write) { issueRead := True }
+  cmd.ready := canIssue && io.local_ready
 
-  io.busy := io.cmd.valid || outstanding =/= 0 || rspFifo.io.occupancy =/= 0
-  io.debugOutstanding := outstanding
+  // EVERY command gets exactly one response, writes included. LruCacheCore
+  // issues an eviction as a memCmd WRITE and then waits in WAIT_EVICT_RSP for
+  // a memRsp, exactly as it waits after a refill; CacheToMigAdapter satisfies
+  // this by pushing a dummy response for each accepted write. Without it the
+  // first dirty eviction deadlocks the whole memory path — which is what hung
+  // the A-E115FB serial download at 8193 words, one word past the 32 KB cache.
+  val writeFire = cmd.fire && cmd.payload.write
+  val ackNow    = writeFire || ackPending
+
+  rspFifo.io.push.valid         := io.local_rdata_valid || ackNow
+  rspFifo.io.push.payload.data  := io.local_rdata   // ignored for a write ack
+  rspFifo.io.push.payload.error := False
+
+  ackPending := io.local_rdata_valid && ackNow
+
+  when(cmd.fire && !io.rsp.fire) {
+    owed := owed + 1
+  } elsewhen (!cmd.fire && io.rsp.fire) {
+    owed := owed - 1
+  }
+
+  // Both stages count: a command still waiting at the port has not been seen yet.
+  io.busy := io.cmd.valid || cmd.valid || owed =/= 0
+  io.debugOutstanding := owed
 }

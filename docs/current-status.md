@@ -66,19 +66,26 @@ Because the microcode is shared, **re-test a download on the EP4CGX150 and
 XC7A100T** — they exercise the same handshake at 2 Mbaud and have not been
 re-run since the change.
 
-**The new blocker is one layer down**: the download hangs at exactly 8193 words.
-8192 words = 32 KB = the full cache (`LruCacheCore`, 4 ways x 256 sets x 32 B),
-so **word 8192 is the first write that must evict a dirty line**, and it never
-completes — a hard hang in the `wait` after `stmwd`, confirmed by feeding 888
-words of padding with no progress. Everything at or below 8192 words returns a
-correct checksum.
+**Second blocker, found and fixed the same day**: the download hung at exactly
+8193 words. 8192 words = 32 KB = the full cache (`LruCacheCore`, 4 ways x 256
+sets x 32 B), so word 8192 was the first write that had to evict a dirty line.
 
-The writeback path is exactly what `CacheToDdr2AdapterSim` never exercised
-("not yet exercised on hardware", and its vectors never force an eviction).
-**Next action: extend that sim to issue a writeback and a fill together**, which
-is the deadlock candidate — reads cannot be back-pressured, so they queue in a
-FIFO, and a writeback blocked on FIFO space that only frees when the cache
-consumes the fill would deadlock. Reproduce in simulation before touching RTL.
+Root cause: **`CacheToDdr2Adapter` never responded to writes.** `LruCacheCore`
+issues an eviction as a `memCmd` write and then blocks in `WAIT_EVICT_RSP` for a
+`memRsp` — its contract is one response per command, writes included, which
+`CacheToMigAdapter` honours by pushing a dummy response per write. The DDR2
+adapter pushed only from `local_rdata_valid`, which a write never asserts.
+
+The same fix removes a second latent hang: `FILL_DRAIN` waits for
+`fillRsp === fillIssued` over the writes `FILL_WRITE` issues, so the GC's
+hardware zero-fill (`hasBackendFill = true`) would have deadlocked identically
+the first time it ran.
+
+`CacheToDdr2AdapterSim` missed it because it drives the adapter alone and
+modelled the DDR2 interface faithfully — where a write *is* fire-and-forget.
+New `CacheDdr2EvictSim` wires the real cache to the real adapter at a shrunk
+geometry, reproduced the hang (16/17 completions), and now passes 200 line
+writes through 184 evictions with full readback verification.
 
 Do not chase these two — both were checked and neither is involved:
 `Startup.java:161`'s memory probe (runs only *after* download; `0xAA` is pure
@@ -145,6 +152,23 @@ cable that moves.
 - **Small UART dividers quantise badly.** `UartCtrl` divides by `baud x 5
   samples`; at 75 MHz a 2 Mbaud request gives a divider of 7.5 -> 7 = +7%, far
   outside tolerance and unframeable at any host rate. Keep the divider large.
+- **`GC.wrIntG` prints only the low 5 digits.** It starts at `if (v >= 10000)`,
+  so any value >= 100000 is silently truncated — which on a 1 GB board is every
+  heap figure it prints. The `[carve ...]` line looked like a ~500 KB heap on a
+  1 GB board; the real values were `hStart=535768`, `hSize=267891496`,
+  `nSize=1048576` (exactly `NURSERY_MAX_WORDS`), all reconciling perfectly.
+  **Nothing was wrong.** Reconstruct the full number before believing a GC trace
+  on a large heap, or fix the printer.
+- **A component testbench can model the hardware correctly and the contract
+  wrongly.** `CacheToDdr2AdapterSim` faithfully reproduced the DDR2 local
+  interface, where a write completes on `local_ready` and returns nothing — and
+  passed, while `LruCacheCore` above it was deadlocked waiting for a write
+  response. **An adapter has two interfaces; a testbench that only models the
+  far one proves half of it.** Wire the real consumer in.
+- **Measure completions, not acceptances.** `LruCacheCore` has a 4-deep input
+  FIFO, so `frontend.req.ready` keeps asserting after everything behind it has
+  stopped. The first version of `CacheDdr2EvictSim` reported PASS on a fully
+  deadlocked cache for exactly this reason.
 - **A gapless UART stream can lock a receiver into a stable wrong byte.** Sent
   back-to-back with no idle line, one repeated value has several phases that
   yield a valid start bit, eight data bits and a valid stop bit; the receiver

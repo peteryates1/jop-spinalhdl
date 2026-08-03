@@ -238,28 +238,83 @@ That it is a hard hang, not lost data, was confirmed by feeding 3,553 padding
 bytes (888 words) after a failed transfer: the loop never advanced and no
 checksum appeared.
 
-So the untested path is the **writeback**. `CacheToDdr2AdapterSim` covers
-201 writes / 200 reads with random `local_ready` back-pressure and 0 mismatches,
-but the doc note below is the relevant one: *"Not yet exercised on hardware."*
-The prime suspect is the interaction the adapter has to get right — reads cannot
-be back-pressured, so responses land in a FIFO and reads in flight are capped at
-the space available. A dirty eviction issues a writeback *and* a fill for the
-same request; if the adapter holds the writeback while waiting for read-FIFO
-space that only frees once the cache consumes the fill, and the cache will not
-consume the fill until the writeback retires, that is a deadlock the existing
-testbench would not produce because it never issues the two together.
+**Root cause: `CacheToDdr2Adapter` never responded to writes.**
 
-**Next action is to extend `CacheToDdr2AdapterSim` to force a dirty eviction**
-(write past capacity so a writeback and a fill are outstanding at once) rather
-than to change RTL — reproduce it in simulation first. Reproducing at 8193 words
-takes ~11 s on hardware including a reprogram, so the loop is cheap either way.
+`LruCacheCore` issues an eviction as a `memCmd` **write** and then blocks in
+`WAIT_EVICT_RSP` until a `memRsp` arrives — exactly as it blocks after a refill
+read. Its contract is *one response per command, writes included*.
+`CacheToMigAdapter` satisfies this by pushing a dummy response for every
+accepted write (`CacheToMigAdapter.scala:101`). The DDR2 adapter pushed only
+from `local_rdata_valid`, and a write never produces one — so the first dirty
+eviction hung the whole memory path.
+
+The deadlock guess recorded here first (a writeback blocked behind read-FIFO
+space) was wrong: writes were never gated on read room. The bug was simpler and
+one level up — a contract mismatch, not a flow-control one.
+
+**Why the tests missed it**: `CacheToDdr2AdapterSim` drives the adapter directly
+and only enqueued an expected response per *read*, mirroring the DDR2 interface,
+where a write is genuinely fire-and-forget on `local_ready`. That is the right
+model of the hardware and the wrong model of the cache above it. The testbench
+never instantiated `LruCacheCore`, so nothing ever waited for a write response.
+
+**Second latent hang, same cause**: `FILL_DRAIN` finishes only when
+`fillRsp === fillIssued`, counting `memRsp` for the writes that `FILL_WRITE`
+issues. With `hasBackendFill = true`, the GC's hardware zero-fill would have
+deadlocked identically the first time it ran — which matters, because the GC
+suite is the entire point of this board.
+
+**Fix**: the adapter now emits a response for every accepted command. Two
+details it has to get right:
+
+- Read data cannot be stalled, so it always wins the single FIFO push port; a
+  write acknowledgement that collides with it waits one cycle in `ackPending`,
+  and no new command is accepted while one is pending, which preserves ordering.
+- The reservation counter now counts to the **pop**, not to the FIFO push. The
+  old counter bounded reads *in flight* but ignored responses already queued, so
+  a stalled consumer could hold `rspDepth` entries while further reads were
+  still issued — an overflow that would have silently dropped read data. Both
+  draw on the same budget now.
+
+**Tests**: `CacheDdr2EvictSim` (new) wires the real `LruCacheCore` to the real
+adapter with a shrunk geometry (4 sets x 4 ways x 32 B = 16 lines), so the same
+eviction happens after 17 line writes instead of 1025. It reproduced the hang
+exactly — 16/17 completions, one evict write issued and then silence — and now
+passes 200 line writes through 184 evictions with every line read back and
+verified. `CacheToDdr2AdapterSim` was corrected to expect a response per
+command; 401/401, 0 mismatches.
+
+A trap worth keeping: the first version of `CacheDdr2EvictSim` checked
+`frontend.req.ready` and reported PASS while deadlocked, because the cache has a
+4-deep input FIFO that keeps accepting requests after the pipeline behind it has
+stopped. **Measure completions, not acceptances.**
 
 Useful harness: `fpga/scripts/download_sizetest.py <n_words>` streams a
 synthetic N-word image with a correct size word and checks the returned XOR
 checksum, isolating the memory path from anything Java. Reprogram between runs —
 the FPGA accepts one download per configuration.
 
-### Clock choice: 75 MHz is a good baud clock, keep it
+### The 1 GB heap is real (and the GC trace lies about it)
+
+The first boot printed
+`[carve hStart=35768 hSize=91496 nBase=78688 nSize=48576 copy=35768]`, which
+reads as a ~500 KB heap on a 1 GB board. It is not. `GC.wrIntG`
+(`GC.java:1179`) begins at `if (v >= 10000)` and so emits **only the low five
+digits**; on this board that truncates everything it prints. Reconstructed:
+
+| printed | actual | derivation |
+|---|---:|---|
+| `copy` / `hStart` | 535,768 | `mem_start` 11,480 + handle area 524,288 |
+| `hSize` | 267,891,496 | 268,427,264 - 535,768 |
+| `nBase` | 267,378,688 | top - 1,048,576 |
+| `nSize` | 1,048,576 | exactly `NURSERY_MAX_WORDS` (1 << 20) |
+
+`mem_size` = 268,427,264 = 2^28 - 8192, exactly `usableMemWords` for 1 GB minus
+the per-core stack region — so `IO_MEM_SIZE` is reaching Java correctly and the
+handle table is capped at `MAX_HANDLES` as intended. **The heap is ~1.02 GB and
+everything reconciles.** Worth fixing the printer before reading GC traces here.
+
+### Clock choice: 75 MHz is a good baud clock, and 1 Mbaud is exact
 
 Worth recording because the instinct is to blame the odd frequency. `UartCtrl`
 divides by `baud x 5`, and 75 MHz divides *exactly* into several standard rates:
@@ -275,7 +330,15 @@ divides by `baud x 5`, and 75 MHz divides *exactly* into several standard rates:
 Only 2 Mbaud is unreachable. 83 MHz (the frequency we backed away from) is
 *worse*: it misses 1 M by 3.8% and 3 M by 10.7%. Changing the memory clock would
 mean regenerating the ALTMEMPHY IP through the fragile `qmegawiz` path and
-re-closing timing at +0.123 ns slack, to fix a problem the clock never caused.
+re-closing timing, to fix a problem the clock never caused.
+
+The preset was brought up at 115200 and now runs at **1 Mbaud** (divider 15,
+0.00% error), which takes a 44 KB download from 4.0 s to ~0.5 s. Pass the baud
+explicitly — `download.py` still defaults to 2 Mbaud:
+
+```bash
+python3 fpga/scripts/download.py -e <app.jop> /dev/ttyUSB0 1000000
+```
 
 ## Still to prove
 
