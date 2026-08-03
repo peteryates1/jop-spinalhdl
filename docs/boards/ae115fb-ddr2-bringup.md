@@ -165,6 +165,28 @@ Two days of the bring-up went on programming rather than DDR2, so:
   like. LED0 blinked with the FPGA unconfigured, which is what exposed it. Use
   the UART, not the LEDs.
 
+## Preset and top-level: done (elaboration)
+
+`JopConfig.ae115fbDdr2` → `JopDdr2Ae115fbTop`. The DDR2 path follows the DDR3
+structure in `JopTop`: the controller sits outside the main clocking area and
+the whole system runs in the clock it produces. Two differences from DDR3:
+
+- **No board PLL.** ALTMEMPHY contains its own, takes the 25 MHz oscillator as
+  its reference, and sources `phy_clk` (83 MHz half-rate) for everything. The
+  board declares no `pllType`, and `Pll.create` throws if called — so the DDR2
+  path skips it.
+- **Reset is active-LOW and asynchronous** (`reset_phy_clk_n`), where the MIG's
+  `ui_clk_sync_rst` is synchronous active-HIGH.
+
+Also needed, and easy to miss because each fails in a different place:
+`MemoryDevice.byName` must know the part (otherwise `resolveMemory` returns None
+and the board silently looks like BRAM); the entity-name derivation needs a DDR2
+branch; and the device-derived `addressWidth` override in `JopTop` applied only
+to DDR3, so the adapter came out 24-bit instead of 30-bit.
+
+Top-level ports match `Ddr2ExerciserTop`, so `ddr2_exerciser.qsf`'s pin
+assignments carry over to the JOP build.
+
 ## Adapter: done (simulation)
 
 `jop.ddr2.CacheToDdr2Adapter` bridges `LruCacheCore`'s memCmd/memRsp to the
@@ -244,9 +266,10 @@ Getting `qmegawiz` to regenerate headlessly took three attempts, worth recording
    `Ddr3ExerciserTop`: bring up the IP, wait for `local_init_done`, run read/write
    patterns over 1 GB. Proves BlackBox + adapter + pins + calibration in
    isolation, before JOP is in the picture.
-6. **Preset + top-level** — `ae115fbDdr2` in `JopConfig` (1 GB → `addressWidth=30`,
-   card table, backend fill) and a `createDdr2Path` in `JopTop`. Clock the core
-   from `phy_clk`.
+6. **Preset + top-level** — DONE. `JopConfig.ae115fbDdr2` generates
+   `JopDdr2Ae115fbTop`, with a 25-bit `local_address` (1 GB of 256-bit words)
+   derived from the memory device, not hardcoded. Existing presets
+   (xc7a100tDbSerial, ep4cgx150Serial, wukongDdr3) still elaborate cleanly.
 7. **Quartus project** `fpga/a-e115fb-ddr2/` — Makefile modelled on
    `fpga/qmtech-ep4cgx150-sdram/`, sourcing the IP `.qip` and the pin-assignment
    TCL verbatim. Select the cable with

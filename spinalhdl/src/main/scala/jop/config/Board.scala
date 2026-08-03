@@ -383,6 +383,34 @@ object Board {
    * Test10_SDRAM, Test08_GMII_Ethernet, and working JOP XDC constraints).
    * All peripherals on-board — no expansion connectors needed.
    */
+  /**
+   * A-E115FB: EP4CE115 core board + 1 GB DDR2 SODIMM.
+   *
+   * The DDR2 pins are owned by the ALTMEMPHY IP and constrained by the vendor
+   * pin script (fpga/a-e115fb-ddr2/ddr2_pins.qsf), so they are not mapped here —
+   * same arrangement as the DDR3 boards, whose pins the MIG owns.
+   *
+   * LEDs are active low, and note they are wired into 1.8 V banks shared with
+   * DDR2. See docs/boards/ep4ce115-ddr2-board.md.
+   */
+  def AE115FB = Board(
+    name = "a-e115fb",
+    fpga = Some(FpgaDevice.EP4CE115F23I7),
+    entitySuffix = "Ae115fb",
+    ledActiveHigh = false,
+    devices = Seq(
+      BoardDevice("HYS64T128021", role = Some("ddr2")),
+      // On-board CH340: FPGA TX -> CH340 RX is H5, CH340 TX -> FPGA RX is N1.
+      // Both verified by loopback (commit a32434b), so no Pico bridge is needed
+      // here — which is why that board's Pico could be switched to a blaster.
+      BoardDevice("CH340", mapping = Map("TXD" -> "H5", "RXD" -> "N1")),
+      // Core-board LEDs D3..D6, active low, in banks shared with the 1.8 V DDR2
+      // interface. NOTE: the board auto-loads a factory EPCS demo at power-up
+      // that also drives these, so they are unreliable as design status.
+      BoardDevice("LED", mapping = Map(
+        "led0" -> "A5", "led1" -> "B5", "led2" -> "C4", "led3" -> "C3"))
+    ))
+
   def WukongXC7A100T = Board(
     name = "qmtech-wukong-xc7a100t",
     fpga = Some(FpgaDevice.XC7A100T),
@@ -864,6 +892,9 @@ object SystemAssembly {
 
   /** Wukong standalone (two memories, dual-subsystem capable) */
   def wukong = SystemAssembly("wukong-xc7a100t", Seq(Board.WukongXC7A100T))
+
+  /** A-E115FB standalone — EP4CE115 + 1 GB DDR2 SODIMM */
+  def ae115fb = SystemAssembly("a-e115fb", Seq(Board.AE115FB))
 
   /** QMTECH XC7A100T core board + DB_FPGA_V4 daughter board */
   def xc7a100tWithDb = SystemAssembly("qmtech-xc7a100t-db-v4",

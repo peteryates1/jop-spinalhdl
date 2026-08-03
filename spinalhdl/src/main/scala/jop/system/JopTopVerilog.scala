@@ -59,6 +59,7 @@ object JopTopVerilog {
     case "wukongDdr3DspMul" => JopConfig.wukongDdr3DspMul
     case "wukongDdr3Fcu"    => JopConfig.wukongDdr3Fcu
     case "wukongDdr3Lcu"    => JopConfig.wukongDdr3Lcu
+    case "ae115fbDdr2" => JopConfig.ae115fbDdr2
     case "xc7a100tDbSerial" => JopConfig.xc7a100tDbSerial
     case "xc7a100tDbFull"   => JopConfig.xc7a100tDbFull
     case "xc7a100tDbSmp" =>
@@ -81,7 +82,7 @@ object JopTopVerilog {
         "cyc5000Serial, auSerial, wukongSdram, wukongDdr3, wukongBram, " +
         "wukongFull, wukongSdrFull, wukongFullSmp, wukongSmp, " +
         "wukongDualIndependent, wukongDualSmp, " +
-        "xc7a100tDbSerial, xc7a100tDbFull, xc7a100tDbSmp, " +
+        "xc7a100tDbSerial, xc7a100tDbFull, xc7a100tDbSmp, ae115fbDdr2, " +
         "minimum, max1000Sdram, ep4ce6Sdram")
   }
 

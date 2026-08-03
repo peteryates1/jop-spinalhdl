@@ -122,6 +122,14 @@ object MemoryDevice {
     dataWidth = 16, bankWidth = 2, columnWidth = 9, rowWidth = 13,
     casLatency = 3)
 
+  /** A-E115FB DDR2 SODIMM — 1 GB, 64-bit, DDR2-667 */
+  def HYS64T128021 = MemoryDevice(
+    name = "HYS64T128021",
+    memType = MemoryType.SDRAM_DDR2,
+    sizeBytes = 1024L * 1024 * 1024,
+    dataWidth = 64, bankWidth = 2, columnWidth = 10, rowWidth = 14,
+    casLatency = 5)
+
   /** CYC5000 on-board SDR SDRAM — 64 Mbit = 8 MB */
   def W9864G6JT = MemoryDevice(
     name = "W9864G6JT",
@@ -151,6 +159,7 @@ object MemoryDevice {
     case "W9864G6JT"           => Some(W9864G6JT)
     case "IS42S16160G"         => Some(IS42S16160G)
     case "MT41K128M16JT-125:K" => Some(MT41K128M16JT)
+    case "HYS64T128021"        => Some(HYS64T128021)
     case _                     => None
   }
 }

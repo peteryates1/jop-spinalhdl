@@ -263,6 +263,7 @@ case class JopConfig(
       } else {
         val memPart =
           if (memoryTypes.contains(MemoryType.SDRAM_DDR3)) "Ddr3"
+          else if (memoryTypes.contains(MemoryType.SDRAM_DDR2)) "Ddr2"
           else if (memoryTypes.contains(MemoryType.SDRAM_SDR)) "Sdram"
           else if (sys.bootMode == BootMode.Serial) "BramSerial"
           else "Bram"
@@ -673,6 +674,32 @@ object JopConfig {
       // USB backpressure works). FPGA->host byte drops were a ring-wrap bug in
       // the RP2040 cdc_uart.c bridge, fixed in firmware, not a baud problem.
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("RP2040"))))))
+
+  /**
+   * A-E115FB — EP4CE115 + 1 GB DDR2 SODIMM, serial boot.
+   *
+   * clkFreq is 83 MHz because the core runs in the controller's `phy_clk`
+   * domain, and the half-rate ALTMEMPHY produces 83.04 MHz (measured, not
+   * assumed — see docs/boards/ae115fb-ddr2-bringup.md). The 25 MHz board
+   * oscillator only feeds the controller's PLL reference.
+   *
+   * addressWidth/mainMemSize are overridden from the memory device by JopTop, so
+   * this picks up 1 GB (addressWidth 30) automatically. That path was
+   * parameterised in Stage 1 but has never run on hardware before this board.
+   *
+   * The UART is the board's own CH340 (FPGA TX H5 / RX N1), not a Pico bridge.
+   */
+  def ae115fbDdr2 = JopConfig(
+    assembly = SystemAssembly.ae115fb,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "ddr2",
+      bootMode = BootMode.Serial,
+      clkFreq = 83 MHz,
+      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasBackendFill = true,
+        hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340"))))))
 
   /** XC7A100T + DB_FPGA V5 — DDR3, full I/O (Ethernet + VGA + SD) */
   def xc7a100tDbFull = JopConfig(

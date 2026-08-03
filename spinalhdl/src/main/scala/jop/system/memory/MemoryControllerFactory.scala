@@ -34,6 +34,18 @@ case class Ddr3MemCtrl(
 ) extends MemCtrlResult
 
 /**
+ * DDR2 path for the A-E115FB: BmbCacheBridge -> LruCacheCore ->
+ * CacheToDdr2Adapter. The Ddr2BlackBox is instantiated separately because it
+ * needs top-level pin wiring and, unlike the MIG, it also SOURCES the clock the
+ * whole path runs on.
+ */
+case class Ddr2MemCtrl(
+  bmbBridge: BmbCacheBridge,
+  cache: LruCacheCore,
+  adapter: jop.ddr2.CacheToDdr2Adapter
+) extends MemCtrlResult
+
+/**
  * Memory controller factory -- creates the appropriate memory controller
  * based on memory type and board configuration.
  *
@@ -178,6 +190,59 @@ object MemoryControllerFactory {
    * @param adapter CacheToMigAdapter from createDdr3Path()
    * @param mig     MIG BlackBox instance
    */
+  /**
+   * Build the DDR2 memory path for the A-E115FB (EP4CE115 + 1 GB DDR2 SODIMM).
+   *
+   * Mirrors createDdr3Path, with the line width defaulting to 256 bits rather
+   * than 128: that is the half-rate ALTMEMPHY local word AND the DDR2 BL=4 burst
+   * (32 bytes), so a narrower line would waste half of every burst. Verified at
+   * that width by LruCacheCoreUnitSim and CacheToDdr2AdapterSim.
+   */
+  def createDdr2Path(
+    bmbParameter: BmbParameter,
+    cacheAddrWidth: Int = -1,   // -1 = derive from the device (byte addr = bmb access - 2)
+    cacheDataWidth: Int = 256,
+    cacheSetCount: Int = 256,
+    hasFill: Boolean = false
+  ): Ddr2MemCtrl = {
+    val caw = if (cacheAddrWidth > 0) cacheAddrWidth else bmbParameter.access.addressWidth - 2
+    val bmbBridge = new BmbCacheBridge(bmbParameter, caw, cacheDataWidth)
+    val cache = new LruCacheCore(CacheConfig(
+      addrWidth = caw,
+      dataWidth = cacheDataWidth,
+      setCount = cacheSetCount,
+      hasFill = hasFill,
+      fillAddrWidth = if (hasFill) bmbParameter.access.addressWidth - 2 else 0
+    ))
+    val adapter = new jop.ddr2.CacheToDdr2Adapter(caw, cacheDataWidth)
+
+    cache.io.frontend.req << bmbBridge.io.cache.req
+    bmbBridge.io.cache.rsp << cache.io.frontend.rsp
+
+    // The adapter takes CacheReq/CacheRsp directly, so this is a straight
+    // Stream connection rather than the field-by-field copy the MIG needs.
+    adapter.io.cmd << cache.io.memCmd
+    cache.io.memRsp << adapter.io.rsp
+
+    Ddr2MemCtrl(bmbBridge, cache, adapter)
+  }
+
+  /** Connect the DDR2 adapter to the ALTMEMPHY controller's local interface. */
+  def wireDdr2(adapter: jop.ddr2.CacheToDdr2Adapter, ddr2: jop.ddr2.Ddr2BlackBox): Unit = {
+    adapter.io.local_ready       := ddr2.io.local_ready
+    adapter.io.local_rdata       := ddr2.io.local_rdata
+    adapter.io.local_rdata_valid := ddr2.io.local_rdata_valid
+    adapter.io.local_init_done   := ddr2.io.local_init_done
+
+    ddr2.io.local_address    := adapter.io.local_address
+    ddr2.io.local_write_req  := adapter.io.local_write_req
+    ddr2.io.local_read_req   := adapter.io.local_read_req
+    ddr2.io.local_burstbegin := adapter.io.local_burstbegin
+    ddr2.io.local_wdata      := adapter.io.local_wdata
+    ddr2.io.local_be         := adapter.io.local_be
+    ddr2.io.local_size       := adapter.io.local_size
+  }
+
   def wireMig(adapter: CacheToMigAdapter, mig: MigBlackBox): Unit = {
     // MIG -> Adapter (status/response)
     adapter.io.app_rdy           := mig.io.app_rdy

@@ -54,6 +54,7 @@ case class JopTop(
   private val memType = if (!isMultiSystem) memDevice.map(_.memType).getOrElse(MemoryType.BRAM) else null
   private val isSdr = !isMultiSystem && memType == MemoryType.SDRAM_SDR
   private val isDdr3 = !isMultiSystem && memType == MemoryType.SDRAM_DDR3
+  private val isDdr2 = !isMultiSystem && memType == MemoryType.SDRAM_DDR2
   private val isBram = !isMultiSystem && memType == MemoryType.BRAM
 
   // Multi-system: presence of any SDR/DDR3 system (for IO ports)
@@ -63,6 +64,9 @@ case class JopTop(
   private val anyDdr3 = if (isMultiSystem)
     config.systems.exists(s => config.resolveMemory(s).exists(_.memType == MemoryType.SDRAM_DDR3))
   else isDdr3
+  private val anyDdr2 = if (isMultiSystem)
+    config.systems.exists(s => config.resolveMemory(s).exists(_.memType == MemoryType.SDRAM_DDR2))
+  else isDdr2
 
   // Backward-compatible entity name
   setDefinitionName(config.entityName)
@@ -92,6 +96,23 @@ case class JopTop(
 
     // DDR3 (conditional — Au V2 has CS pin, Wukong does not)
     val ddr3HasCs = anyDdr3 && board.ddr3HasCs
+    // DDR2 SODIMM (A-E115FB). mem_ba is 3 bits at the top level to match the
+    // board's pin script even though this IP drives only 2 (2 banks x 2 ranks
+    // via mem_cs_n covers 1 GB) — same as the vendor reference design.
+    val mem_odt   = anyDdr2 generate (out Bits(2 bits))
+    val mem_cs_n  = anyDdr2 generate (out Bits(2 bits))
+    val mem_cke   = anyDdr2 generate (out Bits(2 bits))
+    val mem_addr  = anyDdr2 generate (out Bits(14 bits))
+    val mem_ba    = anyDdr2 generate (out Bits(3 bits))
+    val mem_ras_n = anyDdr2 generate (out Bool())
+    val mem_cas_n = anyDdr2 generate (out Bool())
+    val mem_we_n  = anyDdr2 generate (out Bool())
+    val mem_dm    = anyDdr2 generate (out Bits(8 bits))
+    val mem_clk   = anyDdr2 generate inout(Analog(Bits(2 bits)))
+    val mem_clk_n = anyDdr2 generate inout(Analog(Bits(2 bits)))
+    val mem_dq    = anyDdr2 generate inout(Analog(Bits(64 bits)))
+    val mem_dqs   = anyDdr2 generate inout(Analog(Bits(8 bits)))
+
     val ddr3_dq      = anyDdr3 generate inout(Analog(Bits(16 bits)))
     val ddr3_dqs_n   = anyDdr3 generate inout(Analog(Bits(2 bits)))
     val ddr3_dqs_p   = anyDdr3 generate inout(Analog(Bits(2 bits)))
@@ -186,6 +207,7 @@ case class JopTop(
     var pllResult: PllResult = null
     var systemReset: Bool = null
     var ddr3Mig: MigBlackBox = null
+    var ddr2Ctl: jop.ddr2.Ddr2BlackBox = null
     var ethPll: EthPll = null
 
     val effectiveMainCd: ClockDomain = if (simulation) {
@@ -194,8 +216,11 @@ case class JopTop(
       // 1. Board Clock Source
       val boardClk = if (manufacturer.explicitClockPort) io.clk_in else ClockDomain.current.readClockWire
 
-      // 2. PLL
-      pllResult = Pll.create(board, memType, boardClk)
+      // 2. PLL — not for DDR2: the ALTMEMPHY controller contains its own PLL,
+      // takes the 25 MHz board oscillator as its reference, and sources phy_clk
+      // for the whole system. Boards like the A-E115FB therefore declare no
+      // pllType, and Pll.create would throw.
+      if (!isDdr2) pllResult = Pll.create(board, memType, boardClk)
 
       // 3. Ethernet PLL (boards with dedicated Ethernet PLL)
       if (sys.ethGmii && board.hasEthPll) {
@@ -204,11 +229,12 @@ case class JopTop(
       }
 
       // 4. Reset Generation + Main Clock Domain
-      val systemClk = if (!isDdr3) pllResult.systemClk.get else null
-      systemReset = if (!isDdr3) ResetGenerator(pllResult.locked, systemClk)
-                    else !pllResult.locked  // DDR3: reset when PLL not locked (for Eth/peripheral CDs)
+      val systemClk = if (!isDdr3 && !isDdr2) pllResult.systemClk.get else null
+      systemReset = if (!isDdr3 && !isDdr2) ResetGenerator(pllResult.locked, systemClk)
+                    else if (isDdr3) !pllResult.locked  // DDR3: reset when PLL not locked
+                    else null                            // DDR2: filled in below from the controller
 
-      val mainClockDomain: ClockDomain = if (!isDdr3) {
+      val mainClockDomain: ClockDomain = if (!isDdr3 && !isDdr2) {
         ClockDomain(
           clock = systemClk,
           reset = systemReset,
@@ -248,6 +274,41 @@ case class JopTop(
         ddr3Mig.io.app_zq_req  := False
       }
 
+      // 5b. DDR2 controller (A-E115FB). Like the MIG it must sit outside the
+      // main clocking area, but unlike the MIG it also SOURCES the clock that
+      // area runs on: phy_clk, 83 MHz for the half-rate variation.
+      if (isDdr2) {
+        ddr2Ctl = new jop.ddr2.Ddr2BlackBox
+        ddr2Ctl.io.pll_ref_clk    := boardClk
+        ddr2Ctl.io.global_reset_n := ClockDomain.current.readResetWire
+        ddr2Ctl.io.soft_reset_n   := ClockDomain.current.readResetWire
+
+        io.mem_odt   := ddr2Ctl.io.mem_odt
+        io.mem_cs_n  := ddr2Ctl.io.mem_cs_n
+        io.mem_cke   := ddr2Ctl.io.mem_cke
+        io.mem_addr  := ddr2Ctl.io.mem_addr
+        io.mem_ba    := B"0" ## ddr2Ctl.io.mem_ba
+        io.mem_ras_n := ddr2Ctl.io.mem_ras_n
+        io.mem_cas_n := ddr2Ctl.io.mem_cas_n
+        io.mem_we_n  := ddr2Ctl.io.mem_we_n
+        io.mem_dm    := ddr2Ctl.io.mem_dm
+        io.mem_clk   <> ddr2Ctl.io.mem_clk
+        io.mem_clk_n <> ddr2Ctl.io.mem_clk_n
+        io.mem_dq    <> ddr2Ctl.io.mem_dq
+        io.mem_dqs   <> ddr2Ctl.io.mem_dqs
+
+        systemReset = !ddr2Ctl.io.reset_phy_clk_n
+      }
+
+      val ddr2MainCd: ClockDomain = if (isDdr2) {
+        ClockDomain(
+          clock = ddr2Ctl.io.phy_clk,
+          reset = ddr2Ctl.io.reset_phy_clk_n,
+          frequency = FixedFrequency(sys.clkFreq),
+          config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = LOW)
+        )
+      } else null
+
       // DDR3 UI Clock Domain
       val ddr3MainCd: ClockDomain = if (isDdr3) {
         ClockDomain(
@@ -258,7 +319,7 @@ case class JopTop(
         )
       } else null
 
-      if (isDdr3) ddr3MainCd else mainClockDomain
+      if (isDdr3) ddr3MainCd else if (isDdr2) ddr2MainCd else mainClockDomain
     }
 
     // 6. Device Clock Domains (delegated to DeviceTopWiring)
@@ -286,7 +347,10 @@ case class JopTop(
                      else 0
 
       val coreConfigs = sys.coreConfigs.map(cc => cc.copy(
-        memConfig = if (isDdr3) { val md = memDevice.get; cc.memConfig.copy(
+        // DDR2 and DDR3 both take their address width from the memory device
+        // rather than the config default, so 256 MB (28) and 1 GB (30) both
+        // work without per-board constants.
+        memConfig = if (isDdr3 || isDdr2) { val md = memDevice.get; cc.memConfig.copy(
           addressWidth = log2Up((md.sizeBytes / 4).toInt) + 2,
           mainMemSize = md.sizeBytes,
           burstLen = burstLen,
@@ -352,6 +416,14 @@ case class JopTop(
         // GC block-fill now streams write-through zeros inside the cache.
         cluster.io.fill.foreach { f => f <> ddr3Path.cache.io.fill.get }
         MemoryControllerFactory.wireMig(ddr3Path.adapter, ddr3Mig)
+      }
+
+      if (isDdr2) {
+        val ddr2Path = MemoryControllerFactory.createDdr2Path(
+          cluster.bmbParameter, hasFill = cluster.io.fill.isDefined)
+        ddr2Path.bmbBridge.io.bmb <> cluster.io.bmb
+        cluster.io.fill.foreach { f => f <> ddr2Path.cache.io.fill.get }
+        MemoryControllerFactory.wireDdr2(ddr2Path.adapter, ddr2Ctl)
       }
 
       if (isBram) {
