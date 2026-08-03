@@ -104,12 +104,19 @@ separated "board broken" from "our design broken".
 
 ## 3. After that, in priority order
 
-1. **GC suite at 1 GB** — the actual point of the DDR2 exercise. DoAll,
-   GcStressTest, GcPauseTest, MultiArrayGcTest, IntHandlerGcTest.
-2. **Re-measure the pause constants on this board.** `SWEEP_NS_PER_HANDLE` and
-   `MINOR_FIXED_US` in `GC.java` were measured at 100 MHz on different silicon.
-   Different hardware silently invalidates the pause bound rather than failing
-   loudly — re-measure with `GcPauseTest`.
+1. ~~**GC suite at 1 GB**~~ — **DONE 2026-08-03, all green.** DoAll 66/66,
+   GcStressTest 537k rounds clean, MultiArrayGcTest and IntHandlerGcTest OK,
+   `free 1,067,359,856 bytes`. Detail in the bring-up doc.
+2. **The minor-pause bound is VIOLATED on this board: 25.4 ms against a 20 ms
+   target.** The cap works (it swept exactly `MAX_YOUNG_OBJECTS` = 9687); the
+   model is wrong. `SWEEP_NS_PER_HANDLE` 1600 vs 1711 measured is fine, but
+   `MINOR_FIXED_US` 4500 vs **8795** measured is not — the root scan alone is
+   8.53 ms, and 75 vs 100 MHz explains only 1.33x of it, so the rest is DDR2
+   latency. Holding 20 ms here needs the cap at 6548, i.e. 1.48x more frequent
+   minor GCs on *every* board. **Re-measure the EP4CGX150 and XC7A100T before
+   changing anything** — a single global constant cannot bound the pause across
+   these three boards without taxing the fast two, so the real choice is
+   per-board constants or a runtime-derived cap.
 3. **Major GC constant** — 2.2 s at 36k live objects, O(live) confirmed but the
    constant is 20-25x the minor sweep's and unexplained. Next action is a
    *measurement*, not a change: time `sortUseListByAddress()` separately from the

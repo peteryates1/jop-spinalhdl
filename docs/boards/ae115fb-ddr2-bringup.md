@@ -294,6 +294,65 @@ synthetic N-word image with a correct size word and checks the returned XOR
 checksum, isolating the memory path from anything Java. Reprogram between runs —
 the FPGA accepts one download per configuration.
 
+## GC suite at 1 GB — the payoff (2026-08-03)
+
+All green, at 1 Mbaud, on the timing-closed build:
+
+| test | result |
+|---|---|
+| `DoAll` (JVM suite) | **66/66 ok**, 0 fail, `JVM exit!` |
+| `GcStressTest` | **537,119 rounds** (~5.4M allocations), 0 errors, no exhaustion |
+| `MultiArrayGcTest` | `MULTIARRAY GC OK` — corrupt 0, badYoung 0, badCompact 0 |
+| `IntHandlerGcTest` | `INTHANDLER GC OK` — handler tag intact across minor+major GC |
+| `GcPauseTest` | ran; **pause bound violated, see below** |
+
+`free 1,067,359,856 bytes` confirms the full ~1.07 GB heap in use.
+
+### The pause bound does not hold on this board
+
+`GcPauseTest`, 42 minor collections:
+
+| | |
+|---|---|
+| worst / mean / last | **25.376** / 25.089 / 25.173 ms |
+| roots | 8.530 ms (33%) |
+| mark | 0.264 ms (1%) |
+| copy (the O(handles) sweep) | 16.581 ms (65%) |
+| zero / cards | 0.000 / 0.001 ms |
+| swept handles | 9687 — **exactly `MAX_YOUNG_OBJECTS`** |
+| sweep ns/handle | **1711** |
+
+The cap is doing its job — the sweep stops at exactly the derived 9687 handles.
+The *model* is what is wrong, and by much more than clock scaling explains:
+
+| constant | value | measured here | error |
+|---|---:|---:|---:|
+| `SWEEP_NS_PER_HANDLE` | 1600 | 1711 | +7% |
+| `MINOR_FIXED_US` | 4500 | **8795** | **+95%** |
+| resulting pause | 20.0 ms (target) | **25.4 ms** | +27% |
+
+`SWEEP_NS_PER_HANDLE` is nearly right. **The error is almost entirely the root
+scan**: 8.53 ms against a 4.5 ms budget that is supposed to cover roots + mark +
+cards together. 75 MHz vs the 100 MHz the constant was measured at accounts for
+only 1.33x (3.9 -> 5.2 ms), so the rest is DDR2 latency on the root walk.
+
+To hold 20 ms here the cap would have to be **6548** instead of 9687 — a 32%
+cut, i.e. 1.48x more frequent minor GCs **on every board**, including the two
+that already meet the bound. That is the open decision: a single global constant
+cannot bound the pause across heterogeneous boards without taxing the fast ones.
+Options are (a) adopt this board's numbers per the existing "slowest measured
+board" policy and accept the throughput cost everywhere, (b) make the two
+constants per-board config rather than `static final`, or (c) derive the cap at
+runtime from the first few measured collections. **Do not change them before
+re-measuring the EP4CGX150 and XC7A100T** — they have not been re-run since the
+microcode change, and (a) is only defensible with all three numbers in hand.
+
+### Major GC
+
+`count 2, worst 120.623 ms, last 14.126 ms`, `MAJOR OK`, retained 64/64,
+corrupt 0. Not comparable to the 2.2 s at 36k live objects seen on DDR3 — this
+test retains only 64 objects, so the O(live) constant is untested at scale here.
+
 ### The 1 GB heap is real (and the GC trace lies about it)
 
 The first boot printed
