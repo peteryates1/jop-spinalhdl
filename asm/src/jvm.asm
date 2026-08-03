@@ -197,8 +197,12 @@ ua_tdre		= 	1
 // Serial download handshake bytes
 rdy_byte	=	170		// 0xAA: FPGA sends "memory ready"
 rdy_ack		=	85		// 0x55: Host acknowledges, start download
-// Handshake timeout: ~500 ms between ready byte resends
+// Handshake timeout: ~500 ms between ready byte resends. The gap matters as
+// much as the byte: it is what gives the receiver an idle line to frame on.
 rdy_timeout_us	=	500000
+// Sign bit, for testing the result of a wrap-safe 32-bit timestamp compare.
+// Same value as 0x80000000, which is already in the ldi constant pool.
+sign_mask	=	-2147483648
 
 // BmbDiv I/O constants removed — idiv/irem now handled by IntegerComputeUnit via sthw
 
@@ -404,8 +408,23 @@ rdy_send:
 			wait
 			wait
 
-			// Timeout counter on stack (~78 poll iterations before resend)
-			ldi	78
+			// Resend deadline on stack: now + rdy_timeout_us.
+			// This MUST be a real time interval, not an instruction count.
+			// An instruction count scales with clock but not with baud, so on
+			// a slow link it outruns the transmitter, the 16-deep TX FIFO
+			// never drains, and the 0xAA frames go out back-to-back with no
+			// idle time. A gapless 0xAA stream has three stable false framing
+			// locks (0x35, 0x4D, 0x53) that a receiver cannot escape without
+			// an idle gap — the A-E115FB at 115200 sat in the 0x4D lock
+			// forever. The idle gap between ready bytes is what lets the
+			// receiver frame correctly, so it has to be timed in microseconds.
+			ldi	io_us_cnt
+			stmra
+			wait
+			wait
+			ldmrd
+			ldi	rdy_timeout_us
+			add
 
 			// Poll UART RX for host ACK (0x55)
 rdy_poll:
@@ -421,21 +440,30 @@ rdy_poll:
 			nop
 			nop
 
-			// No byte — decrement timeout counter (on stack)
-			ldi	1
-			sub
+			// No byte — has the deadline passed? Keep the deadline on the
+			// stack and test the sign of (deadline - now). Wrap-safe: the
+			// difference is a small countdown even when the 32-bit
+			// microsecond counter wraps (every ~71 minutes).
 			dup
+			ldi	io_us_cnt
+			stmra
+			wait
+			wait
+			ldmrd
+			sub					// deadline - now  (sub is NOS - TOS)
+			ldi	sign_mask
+			and
 			nop
-			bnz	rdy_poll
+			bz	rdy_poll		// still positive — not expired yet
 			nop
 			nop
-			pop					// counter expired
+			pop					// deadline passed
 			jmp	rdy_send		// timeout → resend 0xAA
 			nop
 			nop
 
 rdy_got_byte:
-			pop					// discard timeout counter
+			pop					// discard resend deadline
 			ldi	io_uart
 			stmra
 			wait

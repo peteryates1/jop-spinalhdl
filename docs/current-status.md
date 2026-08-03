@@ -33,19 +33,62 @@ live set, so no nursery size could have bounded it. It no longer does.
 | `CacheToDdr2Adapter` | ✅ simulation, 0 mismatches |
 | 256-bit cache line | ✅ 7/7 at 32/128/256/512 |
 | `ae115fbDdr2` preset + JopTop | ✅ elaborates, no regression to other boards |
-| JOP building on the board | ✅ 27% LE, +0.123 ns slack, programs |
-| **JOP serial handshake** | ❌ **the one open blocker** |
+| JOP building on the board | ✅ 27% LE, +0.584 ns slack, programs |
+| JOP serial handshake | ✅ **fixed and confirmed on hardware** |
+| **Download > 32 KB** | ❌ **new blocker: first dirty cache eviction deadlocks** |
 
 ## 2. The immediate next task
 
-**JOP on the A-E115FB emits a continuous `0x4D` instead of the `0xAA` ready byte
-that `download.py` waits for.** Framing is correct (57,856 identical bytes, no
-aliasing), so this is content, not baud.
+**The `0x4D` blocker is diagnosed and fixed in microcode; it needs a hardware
+run to confirm.**
 
-Two leads, both untested, in the bring-up doc:
-- Does `Startup`'s memory-size probe terminate on a 1 GB cached space? It writes
-  `0xaaaa5555` and reads it back (`Startup.java:161`).
-- Is the ROM/RAM pair built for this preset the serial-boot one?
+JOP was sending `0xAA` correctly the whole time — the *receiver* was locked onto
+the wrong bit. A gapless stream of 8N1 `0xAA` frames is the repeating pattern
+`0010101011`, which offers four phases where a receiver finds a falling edge,
+eight data bits and a valid stop bit. `0x4D` is the phase-5 lock (`0x35` and
+`0x53` are the other two). Nothing escapes a false lock without an idle line.
+
+The cause was `rdy_send` timing its ACK poll with an instruction count
+(`ldi 78`) rather than a real interval. That scales with clock but not with
+baud, so at 115200 the loop outran the UART ~4x, the 16-deep TX FIFO never
+drained, and the ready bytes went out back-to-back with no idle gap. At 2 Mbaud
+on the other two boards the same loop is *slower* than a byte, leaving a ~9 us
+gap that lets the receiver resync — which is why this never showed up before.
+
+`rdy_send` now derives a deadline from `io_us_cnt` and tests the sign of
+`deadline - now` (wrap-safe). `rdy_timeout_us = 500000` and the counter were
+both already defined and unused. Constant-pool cost was zero. `JopCoreBramSim`
+still boots to `Hello World!`.
+
+**Confirmed on hardware 2026-08-03**: the board emits `0xAA` at a measured
+0.51 s cadence, `download.py` reaches `ready!`, and all 11,477 words stream.
+Because the microcode is shared, **re-test a download on the EP4CGX150 and
+XC7A100T** — they exercise the same handshake at 2 Mbaud and have not been
+re-run since the change.
+
+**The new blocker is one layer down**: the download hangs at exactly 8193 words.
+8192 words = 32 KB = the full cache (`LruCacheCore`, 4 ways x 256 sets x 32 B),
+so **word 8192 is the first write that must evict a dirty line**, and it never
+completes — a hard hang in the `wait` after `stmwd`, confirmed by feeding 888
+words of padding with no progress. Everything at or below 8192 words returns a
+correct checksum.
+
+The writeback path is exactly what `CacheToDdr2AdapterSim` never exercised
+("not yet exercised on hardware", and its vectors never force an eviction).
+**Next action: extend that sim to issue a writeback and a fill together**, which
+is the deadlock candidate — reads cannot be back-pressured, so they queue in a
+FIFO, and a writeback blocked on FIFO space that only frees when the cache
+consumes the fill would deadlock. Reproduce in simulation before touching RTL.
+
+Do not chase these two — both were checked and neither is involved:
+`Startup.java:161`'s memory probe (runs only *after* download; `0xAA` is pure
+microcode), and the ROM/RAM pair (already `asm/generated/serial/`, per
+`JopDdr2Ae115fbTop.summary.txt`).
+
+**Clock**: leave it at 75 MHz. It divides exactly into 1 M, 1.5 M and 3 M baud;
+only 2 Mbaud is unreachable (+7.14%), and 83 MHz is worse. Once the handshake is
+proven at 115200, 1 Mbaud is a free ~8x download speedup (divider 15, 0.00%
+error) — but change one thing at a time.
 
 **The control that still passes**: reprogramming `ddr2_exerciser.sof` prints
 `i=1 … e=0000` cleanly. Board, DDR2 and the CH340 path are healthy — the problem
@@ -102,6 +145,16 @@ cable that moves.
 - **Small UART dividers quantise badly.** `UartCtrl` divides by `baud x 5
   samples`; at 75 MHz a 2 Mbaud request gives a divider of 7.5 -> 7 = +7%, far
   outside tolerance and unframeable at any host rate. Keep the divider large.
+- **A gapless UART stream can lock a receiver into a stable wrong byte.** Sent
+  back-to-back with no idle line, one repeated value has several phases that
+  yield a valid start bit, eight data bits and a valid stop bit; the receiver
+  picks one and never leaves. `0xAA` has three such false locks — `0x35`,
+  `0x4D`, `0x53`. **Tell: perfectly clean framing, no aliasing, wrong content,
+  and the byte is not explainable by any baud error.** Before blaming the
+  sender, check that the line ever goes idle. Any handshake that repeats a byte
+  needs its interval timed in real units (`io_us_cnt`), never in instruction
+  counts — an instruction count tracks the clock but not the baud, so it
+  silently inverts when either changes.
 - **`make -C java all` does not reliably rebuild apps.** Force
   `make -C java runtime && make -C java/apps/<X> clean && make -C java/apps/<X> [APP_NAME=Y]`.
   Stale `.jop` files have produced both false passes and false failures.

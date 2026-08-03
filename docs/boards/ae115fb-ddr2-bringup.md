@@ -151,22 +151,131 @@ Three real problems were found and fixed getting this far:
    115200 the divider is 130 (+0.16%) and the stream decodes cleanly. Small
    dividers quantise badly; keep the divider comfortably large.
 
-**Where it stops**: the design emits a clean, correctly framed, continuous
-stream of `0x4D` instead of the `0xAA` ready byte that `download.py` waits for.
-Framing is right (57,856 identical bytes, no aliasing), so this is content, not
-baud. `0x4D` is `'M'`, which appears in `Startup.java:221` (`"MHz, "` in the boot
-banner) — but a banner would produce several distinct characters, so a single
-repeating byte is more consistent with the TX register being re-sent than with
-JOP printing.
+### `0x4D` diagnosed: it *is* `0xAA`, mis-framed
 
-Worth checking next:
-- Whether the boot path reaches the ready state at all. `Startup` probes memory
-  size by writing `0xaaaa5555` and reading it back (`Startup.java:161`); on a
-  1 GB space backed by a cache that may not terminate as expected.
-- Whether the ROM/RAM images built for this preset are the serial-boot pair.
+The design emitted a clean, correctly framed, continuous stream of `0x4D`
+instead of the `0xAA` ready byte. It turned out JOP was sending `0xAA`
+correctly all along — the **receiver** was locked onto the wrong bit.
+
+A gapless back-to-back stream of 8N1 `0xAA` frames is the repeating 10-bit
+pattern `0010101011`. That pattern contains four phases at which a receiver can
+see a falling edge, sample eight bits, and find a **valid stop bit** — four
+*stable* locks, not transient glitches:
+
+| lock phase | decodes as |
+|---|---|
+| 0 (correct) | `0xAA` |
+| 3 | `0x35` |
+| 5 | **`0x4D`** ← what we saw |
+| 7 | `0x53` |
+
+Once in a false lock there is no way out without an idle line, which is why the
+stream looked perfectly framed and perfectly wrong. A sweep of every
+clock/divider combination that yields a single stable byte confirms `0x4D` is
+not reachable by any baud error (`0x35` is, at several).
+
+**Root cause**: `rdy_send` polled for the ACK using a bare instruction counter
+(`ldi 78`), not a time interval. An instruction count scales with clock but not
+with baud, so the resend rate and the byte rate drift apart per board:
+
+| board | resend interval | byte time | result |
+|---|---|---|---|
+| EP4CGX150 / XC7A100T @ 2 Mbaud | ~14 us | 5 us | ~9 us idle gap, receiver resyncs every byte |
+| A-E115FB @ 115200 | ~19-31 us @ 75 MHz | **87 us** | loop outruns the UART ~4x, 16-deep TX FIFO never drains, **zero idle** |
+
+Dropping to 115200 — forced by the 75 MHz divider quantisation — made the
+resend loop faster than the transmitter for the first time, so the line never
+went idle. **The idle gap between ready bytes is load-bearing**, not incidental.
+
+**Fix**: `rdy_send` now computes a deadline from `io_us_cnt` (the 32-bit
+microsecond counter in `Sys`, previously defined in `jvm.asm` but never used)
+and tests the sign of `deadline - now`, which is wrap-safe across the counter's
+~71-minute rollover. `rdy_timeout_us = 500000` was already defined, and already
+matches what `download.py`'s docstring claims. The handshake is now
+baud-independent. Constant-pool cost is zero: `ldi` indexes a 32-entry pool via
+a 5-bit operand, and dropping `78` paid for `500000` (`0x80000000` for the sign
+test was already there).
+
+Two leads recorded here earlier were both dead ends, worth stating so nobody
+re-walks them:
+- **`Startup.java:161`'s memory probe cannot be involved.** `0xAA` comes from
+  microcode, before the download; `Startup` runs only after the transfer.
+- **The ROM/RAM pair was already correct** —
+  `JopDdr2Ae115fbTop.summary.txt` records `asm/generated/serial/`, selected by
+  `bootMode = Serial`.
 - **Control that still passes**: reprogramming `ddr2_exerciser.sof` prints
   `i=1 ... e=0000` cleanly, so the board, the DDR2 interface and the CH340 path
-  are all healthy — the problem is confined to the JOP design.
+  are all healthy — the problem was confined to the JOP design.
+
+Status: **fixed and confirmed on hardware (2026-08-03).** The board now emits
+`0xAA` at a measured 0.51 s cadence (12 bytes in 6 s), `download.py` prints
+`ready!`, and all 11,477 words stream at full line rate. Build: 30,731 LE (27%),
+worst-case setup slack **+0.584 ns** at Slow 1200mV 100C, zero TNS.
+
+### Next blocker: the first dirty cache-line eviction deadlocks
+
+With the handshake working, the download itself now fails — and it fails at an
+exact, repeatable boundary.
+
+| image size | result |
+|---|---|
+| 16 words | checksum returned, MATCH |
+| 1024 / 2048 / 2049 / 3072 | MATCH |
+| 6144 / 8192 words (32,768 B) | MATCH |
+| **8193 words (32,772 B)** | **no checksum, JOP hangs** |
+| 8256 / 8320 / 8448 / 8704 / 9216 / 10240 / 11477 | hangs |
+
+**8192 words is exactly the cache size.** `createDdr2Path` builds
+`LruCacheCore` with `setCount = 256`, `dataWidth = 256`, and `wayCount = 4`
+(the `CacheConfig` default): 4 x 256 x 32 B = **32 KB = 8192 words**. The
+download writes sequentially from word 0, so it fills all 1024 line slots with
+dirty lines; at exactly 8192 words the cache is precisely full and no eviction
+is ever needed. **Word 8192 is the first write that must evict a dirty line, and
+that write never completes** — the microcode blocks forever in the `wait` after
+`stmwd`.
+
+That it is a hard hang, not lost data, was confirmed by feeding 3,553 padding
+bytes (888 words) after a failed transfer: the loop never advanced and no
+checksum appeared.
+
+So the untested path is the **writeback**. `CacheToDdr2AdapterSim` covers
+201 writes / 200 reads with random `local_ready` back-pressure and 0 mismatches,
+but the doc note below is the relevant one: *"Not yet exercised on hardware."*
+The prime suspect is the interaction the adapter has to get right — reads cannot
+be back-pressured, so responses land in a FIFO and reads in flight are capped at
+the space available. A dirty eviction issues a writeback *and* a fill for the
+same request; if the adapter holds the writeback while waiting for read-FIFO
+space that only frees once the cache consumes the fill, and the cache will not
+consume the fill until the writeback retires, that is a deadlock the existing
+testbench would not produce because it never issues the two together.
+
+**Next action is to extend `CacheToDdr2AdapterSim` to force a dirty eviction**
+(write past capacity so a writeback and a fill are outstanding at once) rather
+than to change RTL — reproduce it in simulation first. Reproducing at 8193 words
+takes ~11 s on hardware including a reprogram, so the loop is cheap either way.
+
+Useful harness: `fpga/scripts/download_sizetest.py <n_words>` streams a
+synthetic N-word image with a correct size word and checks the returned XOR
+checksum, isolating the memory path from anything Java. Reprogram between runs —
+the FPGA accepts one download per configuration.
+
+### Clock choice: 75 MHz is a good baud clock, keep it
+
+Worth recording because the instinct is to blame the odd frequency. `UartCtrl`
+divides by `baud x 5`, and 75 MHz divides *exactly* into several standard rates:
+
+| baud | divider @ 75 MHz | error |
+|---|---:|---|
+| 115200 | 130 | +0.16% |
+| **1000000** | **15** | **0.00%** |
+| **1500000** | **10** | **0.00%** |
+| 2000000 | 7 | +7.14% — unusable |
+| **3000000** | **5** | **0.00%** |
+
+Only 2 Mbaud is unreachable. 83 MHz (the frequency we backed away from) is
+*worse*: it misses 1 M by 3.8% and 3 M by 10.7%. Changing the memory clock would
+mean regenerating the ALTMEMPHY IP through the fragile `qmegawiz` path and
+re-closing timing at +0.123 ns slack, to fix a problem the clock never caused.
 
 ## Still to prove
 
