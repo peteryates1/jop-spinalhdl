@@ -257,16 +257,12 @@ Getting `qmegawiz` to regenerate headlessly took three attempts, worth recording
 
 ## Open decisions
 
-- **Cache line width.** DDR2 BL=4 on a 64-bit bus is 32 bytes = **256 bits**, but
-  the current line is 128-bit, so each burst would be half wasted. `LruCacheCore`
-  already elaborates at 256 — but see the caveat below before relying on it.
-  Either run at 128 for bring-up and widen later, or go straight to 256.
-- **PREREQUISITE for a wide line**: `LruCacheCoreUnitSim` only *passes* at
-  `dataWidth=32`. Its test vectors hardcode addresses/patterns for a 32-bit line
-  (at 256, `byteOffsetWidth` is 5 not 2, so eviction/write-back cases fail on
-  address mapping — reads still pass). That is a harness limitation, not a known
-  RTL defect, but **a 256-bit line is not functionally verified until those
-  vectors are generalised.**
+- **Cache line width — SETTLED: use 256 bits.** DDR2 BL=4 on a 64-bit bus is 32
+  bytes = 256 bits, which is also exactly the half-rate local word, so a 128-bit
+  line would waste half of every burst. `LruCacheCore` elaborates at 128/256/512
+  (`CacheWidthElabTest`) **and now passes 7/7 functionally at 32/128/256/512**
+  (`LruCacheCoreUnitSim <width>`) — the vectors are derived from the cache
+  geometry instead of hardcoded, so a 256-bit line is verified, not assumed.
 - **`MAX_HANDLES`** is 65536, which caps the handle table regardless of heap size.
   At 1 GB that is worth revisiting — it bounds how many live objects the heap can
   hold, independent of free space.

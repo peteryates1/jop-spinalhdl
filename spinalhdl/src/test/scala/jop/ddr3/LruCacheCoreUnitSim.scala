@@ -11,13 +11,10 @@ import spinal.lib._
  *
  *   sbt "Test/runMain jop.ddr3.LruCacheCoreUnitSim 256"
  *
- * WARNING: only dataWidth=32 currently PASSES. The test vectors below hardcode
- * addresses and patterns for a 32-bit line — at 256 bits byteOffsetWidth is 5
- * rather than 2, so e.g. addr 0x0020 maps to a different word and the eviction
- * / write-back cases fail on address mapping (reads still pass). That is a
- * harness limitation, not a known RTL defect: LruCacheCore elaborates cleanly at
- * 128/256/512 (see CacheWidthElabTest). Generalising these vectors is a
- * prerequisite for trusting a wide line on the A-E115FB DDR2 bring-up.
+ * Passes 7/7 at 32, 128, 256 and 512-bit lines. The vectors are derived from the
+ * cache geometry (`addrOf(tag, set)`) rather than hardcoded, because the address
+ * layout moves with the line width — byteOffsetWidth is 2 at 32 bits but 5 at
+ * 256, so a literal like 0x0020 lands in a different set and tag at each width.
  */
 object LruCacheCoreUnitSim extends App {
   val lineWidth = if (args.nonEmpty) args(0).toInt else 32
@@ -44,14 +41,24 @@ object LruCacheCoreUnitSim extends App {
 
       dut.clockDomain.waitSampling(5)
 
-      println("=== LruCacheCore Unit Test (2-way, 4 sets, 16-bit addr, 32-bit data) ===")
+      println(s"=== LruCacheCore Unit Test (${config.wayCount}-way, ${config.setCount} sets, " +
+              s"${config.addrWidth}-bit addr, ${config.dataWidth}-bit line) ===")
+
+      // Address layout: [ tag | index | byte offset ]. Consecutive sets are one
+      // line apart; the same set with a different tag is setCount lines apart.
+      // Deriving the test addresses from these rather than hardcoding them is
+      // what lets the suite run at any line width.
+      val setStride = dataBytes
+      val tagStride = config.setCount * dataBytes
+      def addrOf(tag: Int, set: Int): Int = tag * tagStride + set * setStride
+      def wordOf(addr: Int): Int = addr >> byteOffsetWidth
 
       // Memory model: maps word addresses to data values
       val memory = scala.collection.mutable.Map[Int, BigInt]()
       // Line-wide mask; was hardcoded to 32 bits when this sim only ran at dataWidth=32.
-      val mask32 = (BigInt(1) << config.dataWidth) - 1
+      val lineMask = (BigInt(1) << config.dataWidth) - 1
       for (i <- 0 until 256) {
-        memory(i) = (BigInt("AA000000", 16) + i) & mask32
+        memory(i) = (BigInt("AA000000", 16) + i) & lineMask
       }
 
       var testsPassed = 0
@@ -67,7 +74,7 @@ object LruCacheCoreUnitSim extends App {
 
       // Execute a cache transaction (read or write) and return the response data
       // The memory interface is handled automatically each cycle
-      def cacheTransaction(addr: Int, write: Boolean, data: Int, mask: Int): BigInt = {
+      def cacheTransaction(addr: Int, write: Boolean, data: BigInt, mask: BigInt): BigInt = {
         // Drive request
         dut.io.frontend.req.valid #= true
         dut.io.frontend.req.payload.addr #= addr
@@ -112,7 +119,7 @@ object LruCacheCoreUnitSim extends App {
                   merged = (merged & ~byteMask) | (cmdData & byteMask)
                 }
               }
-              memory(wordAddr) = merged & mask32
+              memory(wordAddr) = merged & lineMask
               pendingMemRsp = true
               pendingMemRspData = BigInt(0)
               pendingMemRspIsWrite = true
@@ -156,10 +163,12 @@ object LruCacheCoreUnitSim extends App {
       }
 
       def doRead(addr: Int): BigInt = {
-        cacheTransaction(addr, write = false, data = 0, mask = (1 << dataBytes) - 1)
+        // all-ones keep-mask = write nothing; (1 << dataBytes) overflows Int
+        // once the line reaches 256 bits, hence BigInt
+        cacheTransaction(addr, write = false, data = 0, mask = (BigInt(1) << dataBytes) - 1)
       }
 
-      def doWrite(addr: Int, data: Int, mask: Int): BigInt = {
+      def doWrite(addr: Int, data: BigInt, mask: BigInt): BigInt = {
         cacheTransaction(addr, write = true, data = data, mask = mask)
       }
 
@@ -174,43 +183,44 @@ object LruCacheCoreUnitSim extends App {
       }
 
       // --- Test 1: Read miss (cold cache) ---
-      println("Test 1: Read miss (addr 0x0000)")
-      check("read 0x0000", doRead(0x0000), BigInt("AA000000", 16))
+      val a00 = addrOf(0, 0)          // set 0, tag 0
+      val a10 = addrOf(1, 0)          // set 0, tag 1 — same set, evicts nothing yet
+      val a20 = addrOf(2, 0)          // set 0, tag 2 — forces an eviction (2-way)
+      val a01 = addrOf(0, 1)          // set 1, tag 0
+      println(f"Test 1: Read miss (addr 0x$a00%04x)")
+      check(f"read 0x$a00%04x", doRead(a00), memory(wordOf(a00)))
 
       // --- Test 2: Read hit (same addr) ---
-      println("Test 2: Read hit (addr 0x0000)")
-      check("read 0x0000 hit", doRead(0x0000), BigInt("AA000000", 16))
+      println(f"Test 2: Read hit (addr 0x$a00%04x)")
+      check(f"read 0x$a00%04x hit", doRead(a00), memory(wordOf(a00)))
 
       // --- Test 3: Read different address in same set ---
-      // setCount=4, byteOffset=2: index = addr[3:2], tag = addr[15:4]
-      // addr 0x0010 → index=0, tag=1 (different tag, same set as 0x0000)
-      println("Test 3: Read miss (addr 0x0010, same set)")
-      check("read 0x0010", doRead(0x0010), BigInt("AA000004", 16))
+      println(f"Test 3: Read miss (addr 0x$a10%04x, same set)")
+      check(f"read 0x$a10%04x", doRead(a10), memory(wordOf(a10)))
 
       // --- Test 4: Both ways of set 0 now full, read another addr in set 0 ---
-      // addr 0x0020 → index=0, tag=2
-      println("Test 4: Read miss with eviction (addr 0x0020, set 0 eviction)")
-      check("read 0x0020", doRead(0x0020), BigInt("AA000008", 16))
+      println(f"Test 4: Read miss with eviction (addr 0x$a20%04x, set 0 eviction)")
+      check(f"read 0x$a20%04x", doRead(a20), memory(wordOf(a20)))
 
       // --- Test 5: Read from set 1 ---
-      // addr 0x0004 → index=1, tag=0
-      println("Test 5: Read miss (addr 0x0004, set 1)")
-      check("read 0x0004", doRead(0x0004), BigInt("AA000001", 16))
+      println(f"Test 5: Read miss (addr 0x$a01%04x, set 1)")
+      check(f"read 0x$a01%04x", doRead(a01), memory(wordOf(a01)))
 
       // --- Test 6: Write hit then read back ---
-      // addr 0x0020 is in cache (from test 4)
-      println("Test 6: Write hit then read back (addr 0x0020)")
-      doWrite(0x0020, 0x0EADBEEF, mask = 0x0)  // mask=0 means write all bytes
-      check("read back", doRead(0x0020), BigInt("0EADBEEF", 16))
+      // mask = 0 writes every byte, so the line becomes the (zero-extended)
+      // value regardless of how wide it is.
+      println(f"Test 6: Write hit then read back (addr 0x$a20%04x)")
+      doWrite(a20, BigInt("0EADBEEF", 16), mask = 0)
+      check("read back", doRead(a20), BigInt("0EADBEEF", 16))
 
       // --- Test 7: Evict dirty data and verify write-back ---
       // Fill set 0 with two other lines to evict 0x0020 (which has dirty data)
       println("Test 7: Evict dirty data and verify write-back")
-      doRead(0x0000)  // may or may not evict, depends on PLRU
-      doRead(0x0010)  // should ensure both ways are filled with different data
-      doRead(0x0030)  // addr 0x0030 → index=0, tag=3. Forces eviction from set 0
-      // Check memory was updated with 0x0EADBEEF at word addr 8 (0x0020 >> 2)
-      val memVal = memory.getOrElse(8, BigInt(-1))
+      doRead(a00)              // may or may not evict, depends on PLRU
+      doRead(a10)              // ensure both ways hold different lines
+      doRead(addrOf(3, 0))     // set 0, tag 3 — forces the dirty line out
+      // The dirty line for a20 must have been written back to memory.
+      val memVal = memory.getOrElse(wordOf(a20), BigInt(-1))
       if (memVal == BigInt("0EADBEEF", 16)) {
         println(s"  PASS: dirty data written back to memory (0x${memVal.toString(16)})")
         testsPassed += 1
