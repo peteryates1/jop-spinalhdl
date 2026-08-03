@@ -165,6 +165,31 @@ Two days of the bring-up went on programming rather than DDR2, so:
   like. LED0 blinked with the FPGA unconfigured, which is what exposed it. Use
   the UART, not the LEDs.
 
+## Adapter: done (simulation)
+
+`jop.ddr2.CacheToDdr2Adapter` bridges `LruCacheCore`'s memCmd/memRsp to the
+local interface. Two asymmetries with the MIG that are easy to get wrong:
+
+- **Mask polarity inverts.** The cache's `mask` is a KEEP mask (1 = leave this
+  byte alone), which happens to match MIG's `app_wdf_mask` so that adapter
+  passes it through. DDR2's `local_be` is a byte ENABLE, so `local_be := ~mask`.
+- **Reads cannot be back-pressured.** `local_rdata_valid` arrives when the
+  controller decides and cannot be stalled, but the cache's memRsp is a Stream
+  that can. Responses therefore land in a FIFO and reads in flight are capped at
+  the space available — otherwise a slow consumer silently loses returned data.
+
+`CacheToDdr2AdapterSim` drives it against a behavioural model with random
+`local_ready` back-pressure, 3-9 cycle read latency and a stalling consumer:
+201 writes, 200 reads, **0 mismatches**, and the masked write confirms the byte
+enables. Not yet exercised on hardware.
+
+**Testbench gotcha worth remembering**: the model first randomised `local_ready`
+and then used that new value to decide whether the DUT's current command had
+been accepted — but the DUT saw the PREVIOUS value. The model and DUT then
+disagreed about which commands were taken, producing duplicated reads that
+looked exactly like an RTL ordering bug (`got[n] == want[n-1]`). Always decide
+acceptance from the signal value the DUT actually saw at that edge.
+
 ## Half rate: done
 
 The IP is now regenerated at half rate, and it resolved all three problems at
@@ -212,9 +237,9 @@ Getting `qmegawiz` to regenerate headlessly took three attempts, worth recording
    hardcodes `quartusFamilyName = "Cyclone IV GX"`; this board is Cyclone IV **E**,
    so the family needs splitting.
 2. **`Ddr2BlackBox`** — wrap `ddr2_64bit` from `ddr2_64bit_bb.v`.
-3. **`CacheToDdr2Adapter`** — `LruCacheCore` memCmd/memRsp ↔ `local_*`.
-4. **DDR2 local-interface sim model** + adapter sim, analogous to the MIG model,
-   so the adapter is validated before hardware.
+3. **`CacheToDdr2Adapter`** — DONE (`jop.ddr2.CacheToDdr2Adapter`).
+4. **DDR2 local-interface sim model** — DONE (`CacheToDdr2AdapterSim`), passes:
+   200 reads, 0 mismatches, byte enables and the FIFO bound both verified.
 5. **`Ddr2ExerciserTop`** — *first hardware milestone*. Model on
    `Ddr3ExerciserTop`: bring up the IP, wait for `local_init_done`, run read/write
    patterns over 1 GB. Proves BlackBox + adapter + pins + calibration in
