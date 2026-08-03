@@ -300,10 +300,19 @@ case class JopTop(
         systemReset = !ddr2Ctl.io.reset_phy_clk_n
       }
 
+      // Hold the system in reset until calibration finishes, not merely until
+      // the PHY clock is stable. reset_phy_clk_n deasserts as soon as phy_clk
+      // is running, but the memory is unusable until local_init_done — the MIG
+      // does not need this because ui_clk_sync_rst already spans calibration.
+      // Without it JOP starts executing against uncalibrated DRAM and hangs
+      // before it ever reaches the serial boot handshake.
+      val ddr2ResetN = if (isDdr2)
+        ddr2Ctl.io.reset_phy_clk_n && ddr2Ctl.io.local_init_done else null
+
       val ddr2MainCd: ClockDomain = if (isDdr2) {
         ClockDomain(
           clock = ddr2Ctl.io.phy_clk,
-          reset = ddr2Ctl.io.reset_phy_clk_n,
+          reset = ddr2ResetN,
           frequency = FixedFrequency(sys.clkFreq),
           config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = LOW)
         )

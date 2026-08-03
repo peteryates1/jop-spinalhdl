@@ -126,6 +126,48 @@ Our logic is off the critical path; the residual was always inside
 margin** — treat it as "will probably work on the bench", not as timing closure
 you can build on.
 
+## JOP on DDR2 — builds and runs, serial handshake not yet working
+
+`make PROJECT=jop_ddr2 all` builds `JopDdr2Ae115fbTop`:
+**30,765 LE (27%)**, 585 Kbit BRAM (15%), worst setup slack **+0.123 ns**.
+It programs, and the design comes up and drives the UART. It does NOT yet
+complete the serial-boot handshake.
+
+Three real problems were found and fixed getting this far:
+
+1. **Reset must be gated on `local_init_done`, not just `reset_phy_clk_n`.**
+   The latter deasserts as soon as phy_clk is stable, but the memory is unusable
+   until calibration finishes, so JOP started executing against uncalibrated
+   DRAM. The MIG needs no equivalent because `ui_clk_sync_rst` already spans
+   calibration.
+2. **83 MHz was unachievable.** `LruCacheCore` missed by -1.053 ns
+   (`pendingIndex -> compVictimIsDirty`) on this -7 part. The IP was regenerated
+   at a 150 MHz memory clock, so phy_clk is 75 MHz — that fixes every path at
+   once, and DDR2 bandwidth is not the constraint (the exerciser was
+   command-rate limited at 1.2 GB/s, not clock limited).
+3. **UART baud quantisation.** `UartCtrl` divides by `baud x 5 samples`, so at
+   75 MHz a 2 Mbaud request gives a divider of 7.5 -> 7 = 2.143 Mbaud, **+7%**,
+   far outside UART tolerance — the line was unframeable at every host rate. At
+   115200 the divider is 130 (+0.16%) and the stream decodes cleanly. Small
+   dividers quantise badly; keep the divider comfortably large.
+
+**Where it stops**: the design emits a clean, correctly framed, continuous
+stream of `0x4D` instead of the `0xAA` ready byte that `download.py` waits for.
+Framing is right (57,856 identical bytes, no aliasing), so this is content, not
+baud. `0x4D` is `'M'`, which appears in `Startup.java:221` (`"MHz, "` in the boot
+banner) — but a banner would produce several distinct characters, so a single
+repeating byte is more consistent with the TX register being re-sent than with
+JOP printing.
+
+Worth checking next:
+- Whether the boot path reaches the ready state at all. `Startup` probes memory
+  size by writing `0xaaaa5555` and reading it back (`Startup.java:161`); on a
+  1 GB space backed by a cache that may not terminate as expected.
+- Whether the ROM/RAM images built for this preset are the serial-boot pair.
+- **Control that still passes**: reprogramming `ddr2_exerciser.sof` prints
+  `i=1 ... e=0000` cleanly, so the board, the DDR2 interface and the CH340 path
+  are all healthy — the problem is confined to the JOP design.
+
 ## Still to prove
 
 - The GC suite at 1 GB, which is the actual point of the exercise. That needs

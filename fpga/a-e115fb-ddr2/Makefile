@@ -21,7 +21,7 @@ ROOT := ../..
 QUARTUS_DIR ?= /opt/altera/18.1/quartus
 QUARTUS_BIN  = $(QUARTUS_DIR)/bin
 
-PROJECT := ddr2_exerciser
+PROJECT ?= ddr2_exerciser
 
 # The DDR2 controller is REGENERATED from the variation file in ip-src/, which is
 # ~30 KB and under version control; the ~3.7 MB of generated Verilog is derived

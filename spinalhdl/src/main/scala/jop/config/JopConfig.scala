@@ -678,10 +678,14 @@ object JopConfig {
   /**
    * A-E115FB — EP4CE115 + 1 GB DDR2 SODIMM, serial boot.
    *
-   * clkFreq is 83 MHz because the core runs in the controller's `phy_clk`
-   * domain, and the half-rate ALTMEMPHY produces 83.04 MHz (measured, not
-   * assumed — see docs/boards/ae115fb-ddr2-bringup.md). The 25 MHz board
-   * oscillator only feeds the controller's PLL reference.
+   * clkFreq is 75 MHz because the core runs in the controller's `phy_clk`
+   * domain. The IP is generated at a 150 MHz memory clock, half-rate, so
+   * phy_clk = 75 MHz. It was originally 166/83 MHz, but LruCacheCore could not
+   * close timing at 83 MHz on this -7 part (-1.053 ns, on
+   * pendingIndex -> compVictimIsDirty), and lowering the memory clock fixes
+   * every path at once. DDR2 bandwidth is not the constraint — the exerciser
+   * measured 1.2 GB/s and was command-rate limited, not clock limited. The
+   * 25 MHz board oscillator only feeds the controller's PLL reference.
    *
    * addressWidth/mainMemSize are overridden from the memory device by JopTop, so
    * this picks up 1 GB (addressWidth 30) automatically. That path was
@@ -695,11 +699,16 @@ object JopConfig {
       name = "main",
       memory = "ddr2",
       bootMode = BootMode.Serial,
-      clkFreq = 83 MHz,
+      clkFreq = 75 MHz,
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasBackendFill = true,
         hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340"))))))
+      // 115200, not the 2 Mbaud default. UartCtrl divides by baud x 5 samples,
+      // so at 75 MHz a 2 Mbaud divider is 7.5 -> 7, i.e. 2.143 Mbaud, +7% and
+      // far outside UART tolerance. At 115200 the divider is 130 (+0.16%).
+      // Raise it once the link is proven, keeping the divider comfortably large.
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340"),
+        params = Map("baudRate" -> 115200))))))
 
   /** XC7A100T + DB_FPGA V5 — DDR3, full I/O (Ethernet + VGA + SD) */
   def xc7a100tDbFull = JopConfig(

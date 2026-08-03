@@ -227,7 +227,7 @@ endmodule
 // Retrieval info:      <PRIVATE name = "export_debug_port" value="false"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "use_generated_memory_model" value="true"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "dedicated_memory_clk_phase_label" value="Dedicated memory clock phase:"  type="STRING"  enable="1" />
-// Retrieval info:      <PRIVATE name = "mem_if_clk_mhz" value="166.0"  type="STRING"  enable="1" />
+// Retrieval info:      <PRIVATE name = "mem_if_clk_mhz" value="150.0"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "quartus_project_exists" value="true"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "local_if_drate" value="Half"  type="STRING"  enable="1" />
 // Retrieval info:      <PRIVATE name = "enable_v72_rsu" value="false"  type="STRING"  enable="1" />
