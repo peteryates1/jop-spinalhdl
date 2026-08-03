@@ -3,10 +3,17 @@
 Getting JOP running against the 1 GB DDR2 SODIMM on the A-E115FB (EP4CE115).
 Board reference: [ep4ce115-ddr2-board.md](ep4ce115-ddr2-board.md).
 
-Status: **exerciser builds, not yet run on hardware.** Items 1, 2 and 5 below
-are done; the design synthesises, fits, assembles to a `.sof`, and its own logic
-is off the critical path. Two things to resolve before or alongside the first
-hardware run — see "Open before hardware".
+Status: **DDR2 WORKS ON HARDWARE (2026-08-03).** Calibration completes against
+the real 1 GB SODIMM and a write/read/verify pass runs clean:
+
+```
+DDR2 i=1 s=5 w=0fff r=1000 e=0000
+```
+
+`i=1` = `local_init_done`, `s=5` = REPORT (pass complete), 4096 x 256-bit words
+written and read back, **zero errors**, repeatedly, with a rolling seed so stale
+data cannot pass twice. That is 128 KB of the 1 GB exercised — see "Still to
+prove" below.
 
 ---
 
@@ -107,6 +114,39 @@ Our logic is off the critical path; the residual was always inside
 `ddr2_64bit_controller_phy`. **+0.008 ns is a seed-dependent close, not real
 margin** — treat it as "will probably work on the bench", not as timing closure
 you can build on.
+
+## Still to prove
+
+- **Only 128 KB of 1 GB is exercised** (`testWords = 4096`). A pass this small
+  cannot detect wrong row/bank/rank decoding — the interesting boundaries are far
+  higher. Sweep the full 25-bit address space, and specifically cross the rank
+  boundary (`mem_cs_n`), before trusting 1 GB.
+- The GC suite at 1 GB, which is the actual point of the exercise.
+
+## Getting it programmed — what actually mattered
+
+Two days of the bring-up went on programming rather than DDR2, so:
+
+- **The pico-usb-blaster clone never successfully configured this board.** It
+  reads IDCODE reliably but a 3.5 MB configuration stream ends with CONF_DONE
+  low. The Terasic cable + `quartus_pgm` worked first time. Suspect the flying
+  leads from the Pico to the JTAG header.
+- **A ghost USB device wasted most of the effort.** The VM held stale
+  passthrough entries: a disconnected board still appeared in `lsusb`/sysfs, and
+  writes to it "succeeded" at a plausible rate while reaching nothing. Every
+  firmware theory (TCK too fast, FIFO desync, stale binary) was chasing that
+  artefact. **Tell: transfers succeed but produce no observable effect on the
+  target, and no firmware change alters the throughput.** Disconnect and replug
+  everything when that pattern appears.
+- **Tools that pick the first matching VID:PID are a trap.** A genuine Altera
+  cable and the clone are both `09fb:6001`. `openFPGALoader` ignores
+  `--busdev-num` on both its dirtyJtag *and* usb-blaster backends, and
+  `program_fpga` used `libusb_open_device_with_vid_pid()`. `quartus_pgm -c
+  "<cable name>"` is the one that selects correctly.
+- **The LEDs lied.** The board auto-loads a factory EPCS demo at power-up, which
+  blinks LED0 and lights the rest — identical to what a running design looks
+  like. LED0 blinked with the FPGA unconfigured, which is what exposed it. Use
+  the UART, not the LEDs.
 
 ## Half rate: done
 

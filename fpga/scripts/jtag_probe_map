@@ -18,7 +18,7 @@ set -euo pipefail
 # --- board registry ------------------------------------------------------
 # alias|serial|kind|description
 BOARDS=$(cat <<'EOF'
-ep4cgx150|91d28408|usb-blaster|QMTECH EP4CGX150 (real Altera USB-Blaster)
+terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board: move it between boards freely
 xc7a100t|E662C876|pico|QMTECH XC7A100T + DB_FPGA V5 (Pico: dirtyJtag or usb-blaster)
 ae115fb|E6616408|pico|A-E115FB EP4CE115 + 1GB DDR2 (Pico: dirtyJtag or usb-blaster)
 debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashing Picos)
@@ -52,7 +52,11 @@ Usage:
   jtag_probe_map --health           per-port USB enumeration health (needs dmesg)
   jtag_probe_map --boards           list known board aliases
 
-Aliases: ep4cgx150, xc7a100t, ae115fb, debugprobe
+Aliases: terasic, xc7a100t, ae115fb, debugprobe
+
+NOTE: an alias names whatever the SERIAL is attached to. A Pico is soldered to
+one board so its alias names that board; a standalone cable like the Terasic
+moves, so it is named for the cable and you pick the board by plugging it in.
 
 Examples:
   quartus_pgm -c "$(jtag_probe_map --cable ep4cgx150)" -m JTAG foo.cdf

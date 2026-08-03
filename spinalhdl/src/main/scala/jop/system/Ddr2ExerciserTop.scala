@@ -222,9 +222,11 @@ case class Ddr2ExerciserTop(
     // "DDR2 PASS eeee\r\n" / "DDR2 FAIL eeee\r\n" — the error count is printed
     // either way so a partially working configuration is visible rather than
     // just "FAIL".
-    val msg = "DDR2 xxxx eeee\r\n"
+    // "DDR2 i=x s=y w=wwww r=rrrr e=eeee" — init_done, state, write/read
+    // progress and error count, so a stall is diagnosable from one line.
+    val msg = "DDR2 i=x s=y w=wwww r=rrrr e=eeee\r\n"
     val msgRom = Mem(Bits(8 bits), msg.map(c => B(c.toInt, 8 bits)))
-    val msgIdx = Reg(UInt(5 bits)) init (0)
+    val msgIdx = Reg(UInt(6 bits)) init (0)
     val sending = Reg(Bool()) init (False)
 
     def hexDigit(v: UInt): Bits = {
@@ -232,22 +234,36 @@ case class Ddr2ExerciserTop(
       when(v < 10) { d := (B"8'd48".asUInt + v).asBits } otherwise { d := (B"8'd87".asUInt + v).asBits }
       d
     }
+    def digit(v: UInt): Bits = (B"8'd48".asUInt + v.resize(8)).asBits
 
     val curByte = Bits(8 bits)
     curByte := msgRom.readAsync(msgIdx.resize(log2Up(msg.length)))
-    // patch in the verdict and the error count
+    // Patch the live values into the fixed template:
+    //   idx 7  init_done      idx 11 state
+    //   15-18  words written  22-25 words read back   29-32 errors
     switch(msgIdx) {
-      is(5)  { curByte := Mux(errors === 0, B"8'd80", B"8'd70") }   // 'P' / 'F'
-      is(6)  { curByte := Mux(errors === 0, B"8'd65", B"8'd65") }   // 'A'
-      is(7)  { curByte := Mux(errors === 0, B"8'd83", B"8'd73") }   // 'S' / 'I'
-      is(8)  { curByte := Mux(errors === 0, B"8'd83", B"8'd76") }   // 'S' / 'L'
-      is(10) { curByte := hexDigit(errors(15 downto 12)) }
-      is(11) { curByte := hexDigit(errors(11 downto 8)) }
-      is(12) { curByte := hexDigit(errors(7 downto 4)) }
-      is(13) { curByte := hexDigit(errors(3 downto 0)) }
+      is(7)  { curByte := Mux(ddr2.io.local_init_done, B"8'd49", B"8'd48") }  // '1'/'0'
+      is(11) { curByte := digit(state.asBits.asUInt.resize(4)) }
+      is(15) { curByte := hexDigit(wrAddr(15 downto 12)) }
+      is(16) { curByte := hexDigit(wrAddr(11 downto 8)) }
+      is(17) { curByte := hexDigit(wrAddr(7 downto 4)) }
+      is(18) { curByte := hexDigit(wrAddr(3 downto 0)) }
+      is(22) { curByte := hexDigit(rxCount(15 downto 12)) }
+      is(23) { curByte := hexDigit(rxCount(11 downto 8)) }
+      is(24) { curByte := hexDigit(rxCount(7 downto 4)) }
+      is(25) { curByte := hexDigit(rxCount(3 downto 0)) }
+      is(29) { curByte := hexDigit(errors(15 downto 12)) }
+      is(30) { curByte := hexDigit(errors(11 downto 8)) }
+      is(31) { curByte := hexDigit(errors(7 downto 4)) }
+      is(32) { curByte := hexDigit(errors(3 downto 0)) }
     }
 
-    when(state === REPORT && !sending) {
+    // Emit periodically, not only on completion: a stall anywhere (calibration
+    // never finishing, local_ready never asserting) would otherwise produce
+    // total silence, which tells us nothing. ~0.4 s at 83 MHz.
+    val tick = Reg(UInt(25 bits)) init (0)
+    tick := tick + 1
+    when((state === REPORT || tick === 0) && !sending) {
       sending := True
       msgIdx := 0
     }
