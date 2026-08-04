@@ -237,8 +237,11 @@ class JopConfigTest extends AnyFunSuite {
     val asm = SystemAssembly.qmtechWithDb
     // CP2102N UART on daughter board, via J3 connector
     val uart = asm.pinMapping("CP2102N")
-    assert(uart("TXD") == "PIN_AD20")   // J3:13 → PIN_AD20
-    assert(uart("RXD") == "PIN_AE21")   // J3:14 → PIN_AE21
+    // The V4 daughter board puts the CP2102N on J2, not J3 (the V5 board moves
+    // the UART to J3:5/6 for the RP2040 — see QmtechFpgaDbV5). Mating for this
+    // assembly is J2 -> U5, so J2:13 -> U5:13 -> PIN_AD20.
+    assert(uart("TXD") == "PIN_AD20")   // J2:13 → U5:13 → PIN_AD20
+    assert(uart("RXD") == "PIN_AE21")   // J2:14 → U5:14 → PIN_AE21
     // Ethernet PHY via J2 connector
     val eth = asm.pinMapping("RTL8211EG")
     assert(eth("MDC") == "PIN_A20")     // J2:14 → PIN_A20
@@ -248,9 +251,17 @@ class JopConfigTest extends AnyFunSuite {
   test("QMTECH connector pin resolution (XC7A100T + DB)") {
     val asm = SystemAssembly.xc7a100tWithDb
     val uart = asm.pinMapping("CP2102N")
-    // J3:13 → C2, J3:14 → B2 on XC7A100T core board
-    assert(uart("TXD") == "C2")
-    assert(uart("RXD") == "B2")
+    // The V4 CP2102N is on J2:13/14, and this assembly mates J2 -> U2, so the
+    // pins come from the XC7A100T's U2 connector.
+    //
+    // This previously asserted C2/B2, which are U2's counterparts on U4 — i.e.
+    // it was written as if the UART were on J3. J3 does mate to U4 and U4:13/14
+    // really are C2/B2, so the numbers looked plausible and the stale comment
+    // agreed with them; only the connector was wrong. Corroborated by
+    // QmtechFpgaDbV5's note that the RP2040 sits on J3:5/6 "NOT J2:13/14 like
+    // V4's CP2102N".
+    assert(uart("TXD") == "F22")   // J2:13 → U2:13 → F22
+    assert(uart("RXD") == "G22")   // J2:14 → U2:14 → G22
   }
 
   test("direct FPGA pin passes through unchanged") {
