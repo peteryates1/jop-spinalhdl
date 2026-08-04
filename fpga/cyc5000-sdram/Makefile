@@ -21,12 +21,29 @@
 QUARTUS_DIR ?= /opt/altera/25.1/quartus
 QUARTUS_BIN = $(QUARTUS_DIR)/bin
 
-# JTAG programmer
+# JTAG programmer.
+#
+# Quartus does NOT see this board: the on-board programmer is an FT2232H
+# ("Arrow USB Blaster TEI0050", 0403:6010), not an Altera Blaster, and
+# jtagconfig lists nothing. openFPGALoader knows it as board `cyc5000` and
+# works with no extra driver — use `make program` below, not quartus_pgm.
+#
+# openFPGALoader also will not take a .sof for SRAM programming ("please use
+# rbf or svf file"), so the sof is converted with quartus_cpf first.
 BLASTER_TYPE ?= Arrow-USB-Blaster
+OFL ?= openFPGALoader
 
-# Serial port for UART
-SERIAL_PORT ?= /dev/ttyUSB0
-BAUD_RATE = 1000000
+# Serial port for UART.
+#
+# The FT2232H exposes TWO interfaces and ftdi_sio claims both: interface A
+# (if00) carries JTAG, interface B (if01) is the FPGA UART (F16/E18). So the
+# console is the SECOND ttyUSB of the pair, not the first. Numbering moves on
+# every replug — re-check with fpga/scripts/usb_serial_map rather than trusting
+# this default.
+SERIAL_PORT ?= /dev/ttyUSB2
+# 2 Mbaud: cyc5000Serial runs at 80 MHz and UartCtrl divides by baud x 5, so
+# the divider is exactly 8 — 0.00% error.
+BAUD_RATE = 2000000
 
 # JOP application file
 JOP_FILE ?= ../../java/apps/Smallest/HelloWorld.jop
@@ -117,9 +134,21 @@ $(QP).cdf: $(SOF_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program: $(SOF_FILE) $(QP).cdf
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP).cdf
+RBF_FILE = $(OUTPUT_DIR)/$(QP).rbf
+
+$(RBF_FILE): $(SOF_FILE)
+	$(QUARTUS_BIN)/quartus_cpf -c $(SOF_FILE) $(RBF_FILE)
+
+# openFPGALoader claims the FTDI interface from ftdi_sio itself, so this needs
+# no unbinding — but it does need root for raw USB access.
+program: $(RBF_FILE)
+	sudo $(OFL) -b cyc5000 $(RBF_FILE)
 	@echo "=== FPGA programmed ==="
+
+# Kept for reference: Quartus cannot see the Arrow blaster, so this will fail
+# with "Unable to scan device chain". Use `make program` instead.
+program-quartus: $(SOF_FILE) $(QP).cdf
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP).cdf
 
 $(QP_SMP).cdf: $(SOF_SMP_FILE)
 	@echo '/* Auto-generated CDF */' > $@
