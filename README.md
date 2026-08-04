@@ -342,32 +342,57 @@ sbt "Test / runMain jop.system.JopIhluGcBramSim"
 
 ### Resource Usage
 
-All builds at 100 MHz except CYC5000 (80 MHz). Cyclone IV uses Logic Elements (4-input LUT + FF), Cyclone V uses ALMs (8-input fracturable LUT + 2 FFs), Artix-7 uses LUTs (6-input). Numbers are not directly comparable across families.
+Measured from the build reports in this tree (2026-08-04, commit `48243a0`).
+Every column is a configuration verified on hardware in that state.
 
-| Component | EP4CGX150 BRAM | EP4CGX150 SDRAM | EP4CGX150 SMP (2-core) | CYC5000 SDRAM | Artix-7 DDR3 | Artix-7 DDR3 SMP |
-|-----------|:-:|:-:|:-:|:-:|:-:|:-:|
-| | LEs | LEs | LEs | ALMs | LUTs | LUTs |
-| **JOP Core** | **5,426** | **5,447** | **5,447 x2** | **1,821** | | |
-| — Pipeline | 2,948 | 2,999 | 2,999 x2 | 928 | | |
-| — Memory controller | 985 | 960 | 960 x2 | 357 | | |
-| — Method cache | 599 | 600 | 600 x2 | 143 | | |
-| — Object cache | 899 | 892 | 892 x2 | 393 | | |
-| Memory backend | 103 | 657 | 657 | 231 | | |
-| I/O (BmbSys + BmbUart) | 326 | 333 | ~660 | 138 | | |
-| BMB Arbiter + CmpSync | — | — | ~200 | — | | |
-| **System total** | **5,856** | **6,461** | **~12,400** | **2,231** | **12,021** | **19,069** |
-| % of device | 4% | 4% | 8% | — | 57.8% | 91.7% |
-| Registers | 2,108 | 2,428 | ~4,900 | 2,698 | 10,279 | 15,049 |
-| Block RAM | 1,054 Kbit | 28 Kbit | 56 Kbit | 28 Kbit | 450 Kbit | 540 Kbit |
-| Timing (WNS) | | | | | +0.115 ns | +0.197 ns |
+**Units are not comparable across families.** Cyclone IV counts Logic Elements
+(4-input LUT + FF), Cyclone V counts ALMs (fracturable 8-input LUT + 2 FFs),
+Artix-7 counts LUTs (6-input).
+
+| | EP4CGX150 SDR | A-E115FB DDR2 | CYC5000 SDR | XC7A100T DDR3 |
+|---|:-:|:-:|:-:|:-:|
+| clock | 100 MHz | 75 MHz | 80 MHz | 100 MHz |
+| unit | LEs | LEs | ALMs | LUTs |
+| **JopCore** | **6,765** | **6,488** | **4,189** | n/a |
+| — Pipeline | 2,486 | 2,187 | 1,289 | |
+| — Memory controller | 3,497 | 3,589 | 2,363 | |
+| — Method cache | 605 | 591 | 290 | |
+| — Object cache | 898 | 874 | 799 | |
+| — Array cache | 710 | 665 | 420 | |
+| — Card table | 311 | 276 | 197 | |
+| **System total** | **8,386** | **31,170** | **3,161** | **22,273** |
+| % of device | 6% | 27% | 34% | 35% |
+| Registers | 4,326 | 17,264 | 4,574 | 14,096 |
+| Block RAM | 219 Kbit (3%) | 978 Kbit (25%) | 121 Kbit (7%) | 19.5 BRAM (14%) |
+| Timing (WNS) | +0.479 ns | +0.543 ns | +0.896 ns | +0.001 ns |
 
 Notes:
-- EP4CGX150 BRAM uses 1,054 Kbit block RAM for program memory (128 M9Ks); SDRAM builds store programs in external RAM
-- SMP (2-core) uses ~8% of EP4CGX150's 150K LEs, leaving substantial headroom for additional cores
-- Artix-7 single-core uses 16KB L2 cache; SMP uses 32KB L2 cache (512 sets × 4 ways). Per-core cost ~4,400 LUT, ~2,900 FF, ~2.5 BRAM
-- Vivado does not report per-hierarchy utilization; Artix-7 core-only numbers not available from build reports
-- Artix-7 uses `readSync` for stack cache bank RAMs (auto-derived from FPGA family), enabling Xilinx BRAM inference. Altera uses `readAsync` (M9K/M10K supports async reads natively). See [distributed RAM optimization](docs/analysis/artix7-distram-optimization.md)
-- See [Artix-7 core count estimates](docs/analysis/artix7-core-estimates.md) for scaling projections across the Artix-7 family
+- **Per-entity rows come from synthesis (`.map.rpt`) hierarchy; system totals are
+  post-fit (`.fit.rpt`).** They will not sum — optimisation moves logic across
+  boundaries after synthesis. Use the totals for sizing and the breakdown only
+  for relative cost.
+- **System totals are not comparable between columns**, because the memory
+  subsystem dominates and differs: the A-E115FB carries an ALTMEMPHY DDR2
+  controller plus a 32 KB write-back cache with 256-bit lines, and the XC7A100T
+  a Xilinx MIG plus its cache, while the SDR boards have a small SDRAM
+  controller. The JopCore rows are the fairer comparison.
+- The card table is per-board sized from `cardTableBudgetBytes`; its block RAM
+  is included in the memory figures (64 KB on the A-E115FB, hence the 25%).
+- **XC7A100T timing is marginal at +0.001 ns** and one download in seven
+  misbehaved during regression testing. Worth re-implementing for margin before
+  relying on that board.
+- Vivado does not report per-hierarchy utilization, so the Artix-7 core-only
+  numbers are unavailable from build reports.
+- Artix-7 uses `readSync` for stack cache bank RAMs (auto-derived from FPGA
+  family), enabling Xilinx BRAM inference. Altera uses `readAsync` (M9K/M10K
+  supports async reads natively). See [distributed RAM optimization](docs/analysis/artix7-distram-optimization.md)
+- See [Artix-7 core count estimates](docs/analysis/artix7-core-estimates.md) for
+  scaling projections across the Artix-7 family
+- **Not re-measured**: BRAM-only and SMP configurations. The previous table
+  carried figures for EP4CGX150 BRAM, EP4CGX150 2-core SMP and Artix-7 DDR3 SMP
+  from an unrecorded commit; they have been dropped rather than left undated.
+  Rebuild those presets to restore them.
+
 
 ## Implementation Status
 
