@@ -434,6 +434,22 @@ object JopConfig {
   // ========================================================================
 
   /** Wukong: heavy compute on DDR3 + light I/O on SDR SDRAM */
+  // Card-table budgets on the Wukong presets below.
+  //
+  // hasCardTable is required for generational GC to be SOUND, not just fast:
+  // without it GC.init sees IO_CARD_SHIFT == 0 and falls back to the classic
+  // collector (safe, but no minor GC at all). See the CYC5000 note above.
+  //
+  // Sizing: cardShift is derived as the smallest shift fitting the budget over
+  // `mainMemWords`, and JopTop only overrides mainMemSize from the memory
+  // device for DDR3/DDR2 — SDR systems keep the 8 MB JopMemoryConfig default
+  // regardless of the physical chip (the Wukong carries 32 MB but JOP uses 8).
+  // So:
+  //   ddr3 (256 MB, device-derived) + 16 KB -> 512 words/card
+  //   sdr  (8 MB default)           +  8 KB ->  32 words/card
+  // Both cover the whole GC-visible heap, which matters: CardTable resizes the
+  // index, so an address past the covered range would ALIAS onto a low card and
+  // the real one would never be marked.
   def wukongDual = JopConfig(
     assembly = SystemAssembly.wukong,
     systems = Seq(
@@ -443,7 +459,8 @@ object JopConfig {
         bootMode = BootMode.Serial,
         clkFreq = 100 MHz,
         cpuCnt = 4,
-        coreConfig = JopCoreConfig(
+        coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
+        
           bytecodes = Map("idiv" -> "hw", "irem" -> "hw", "float" -> "hw")),
         devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N")))),
       JopSystem(
@@ -452,7 +469,8 @@ object JopConfig {
         bootMode = BootMode.Serial,
         clkFreq = 50 MHz,
         cpuCnt = 2,
-        coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+        coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
         devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))),
     interconnect = Some(InterconnectConfig(fifoDepth = 64)),
     monitors = Seq(WatchdogConfig(timeoutMs = 2000)))
@@ -465,10 +483,11 @@ object JopConfig {
     systems = Seq(
       JopSystem(name = "ddr3", memory = "ddr3", bootMode = BootMode.Serial,
         clkFreq = 100 MHz, cpuCnt = cpuCnt,
-        coreConfig = JopCoreConfig(useDspMul = true, bytecodes = Map("*" -> "hw")),
+        coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
+        useDspMul = true, bytecodes = Map("*" -> "hw")),
         devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N")))),
       JopSystem(name = "sdr", memory = "sdr", bootMode = BootMode.Serial,
-        clkFreq = sdrClkMhz MHz, cpuCnt = cpuCnt, coreConfig = JopCoreConfig(),
+        clkFreq = sdrClkMhz MHz, cpuCnt = cpuCnt, coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024)),
         devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("J12_UART"),
           params = Map("baudRate" -> 115200))))),
     interconnect = None)
@@ -533,7 +552,8 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
-      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
 
   /** Wukong SDR — all compute units, UART only (no Ethernet/SD) */
@@ -551,7 +571,8 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
-      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
 
   /** Wukong BRAM (single-system, simulation-mode) */
@@ -598,7 +619,8 @@ object JopConfig {
         "eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true, "phyDataWidth" -> 8),
           devicePart = Some("RTL8211EG")),
         "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))),
-      coreConfig = JopCoreConfig(useDspMul = true, bytecodes = Map("*" -> "hw")))))
+      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
+        useDspMul = true, bytecodes = Map("*" -> "hw")))))
 
   /** Wukong DDR3 — all compute units, UART only (no Ethernet/SD) */
   def wukongDdr3AllCu = {
@@ -773,5 +795,6 @@ object JopConfig {
         "eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true, "phyDataWidth" -> 8),
           devicePart = Some("RTL8211EG")),
         "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))),
-      coreConfig = JopCoreConfig(useDspMul = true, bytecodes = Map("*" -> "hw")))))
+      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
+        useDspMul = true, bytecodes = Map("*" -> "hw")))))
 }
