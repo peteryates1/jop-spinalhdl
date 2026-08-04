@@ -263,6 +263,16 @@ cable that moves.
 - **`checkcast` is not implemented for array types**: `(int[]) someObject` throws.
 - **Don't count `dmesg` lines to judge USB stability** — the ring buffer evicts
   them and the count falsely holds constant. Watch `devnum` instead.
+- **A flaky USB cable looks exactly like a design failure.** During the
+  2026-08-04 `GcPauseTest` run the EP4CGX150's CP2102N vanished from the bus
+  mid-test; `download.py` died with "device reports readiness to read but
+  returned no data". Nothing in software touched it — the device was simply
+  gone from `usb_serial_map` and only returned, at a new devnum, after a
+  physical replug. **Tell: the port disappears entirely rather than erroring,
+  and it happens partway through sustained traffic rather than at open.**
+  Suspected the specific cable (it had previously been on the
+  RP2040 <-> XC7A100T link). Before believing a mid-run failure on any board,
+  check the tty still exists and its devnum has not changed.
 - JVM tests deliberately fire hardware exceptions; judge by ok/fail text and
   `JVM exit!`, not `excFired`. Grepping for "exception" also matches the test
   *name* `HwExceptionTest`.
