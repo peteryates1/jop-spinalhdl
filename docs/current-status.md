@@ -152,12 +152,29 @@ separated "board broken" from "our design broken".
    constraint, so it is unaffected by any cap change. Only the two large-heap
    boards are cap-bound.
 
-   **Proposal**: `SWEEP_NS_PER_HANDLE = 1750`, `MINOR_FIXED_US = 8800`, giving
-   `MAX_YOUNG_OBJECTS = 6400`. That bounds all three under target — 11.94 /
-   14.95 / 19.75 ms — at the cost of 1.51x more frequent minor GCs on the two
-   big-heap boards and none on the SDR board. The alternative is per-board
-   constants, which would keep the XC7A100T at 9687; worth it only if that
-   board's throughput matters. Not applied — it is a throughput call.
+   **APPLIED**: `SWEEP_NS_PER_HANDLE = 1750`, `MINOR_FIXED_US = 8800`, giving
+   `MAX_YOUNG_OBJECTS = 6400` (was 9687). Re-measured:
+
+   | board | before | after | swept | status |
+   |---|---:|---:|---:|---|
+   | EP4CGX150 SDR | 11.942 ms | **11.943 ms** | 6168 | unchanged — nursery-bound, so the cap never binds |
+   | XC7A100T DDR3 | 20.109 ms | **14.400 ms** | 6400 | cap now binding, bound holds with 5.6 ms margin |
+   | A-E115FB DDR2 | 25.376 ms | *predicted <=19.75* | — | **NOT YET RE-MEASURED — board disconnected** |
+
+   The EP4CGX150 result confirms the prediction that a global cap change costs
+   the small-heap board nothing.
+
+   **Refinement the re-run exposed**: the "fixed" term is not entirely fixed.
+   On the XC7A100T the root scan fell from 4.719 to 3.847 ms when the cap
+   dropped 9687 -> 6400, i.e. part of it scales with the young-set size (it is
+   scanning for young references). So the model is slightly conservative, and
+   the A-E115FB should land *below* the 19.75 ms predicted from its old
+   fixed cost of 8795 us — but that is an inference, not a measurement.
+   **Re-run `GcPauseTest` on the A-E115FB when it is reconnected**; it is the
+   board the whole change was made for and the only one still unverified. It
+   needs BOTH a UART cable and the **Terasic** moved back — the FPGA has to be
+   reconfigured before a download (JOP only accepts one per configuration), and
+   the Pico clone cannot configure it (no level shifter, see section 4).
 3. **Major GC constant** — 2.2 s at 36k live objects, O(live) confirmed but the
    constant is 20-25x the minor sweep's and unexplained. Next action is a
    *measurement*, not a change: time `sortUseListByAddress()` separately from the

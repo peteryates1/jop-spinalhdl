@@ -324,14 +324,39 @@ public class GC {
 	// docs/gc/stage3-followups.md.
 	/** Worst-case minor pause we are aiming for, microseconds. */
 	static final int MINOR_TARGET_US = 20000;
-	/** Sweep cost per young handle, ns. Slowest measured board (DDR3 1506), rounded up. */
-	static final int SWEEP_NS_PER_HANDLE = 1600;
-	/** Fixed per-collection cost, us: root scan + mark + card clear, rounded up. */
-	static final int MINOR_FIXED_US = 4500;
+	/**
+	 * Sweep cost per young handle, ns, and the fixed per-collection cost, us
+	 * (root scan + mark + card clear). Both are the SLOWEST measured board,
+	 * rounded up, because these are compile-time constants shared by every
+	 * target. Measured with GcPauseTest on 2026-08-04:
+	 *
+	 *   board            fixed us   ns/handle   swept   worst pause
+	 *   EP4CGX150 SDR        3637        1346    6168      11.94 ms
+	 *   XC7A100T DDR3        4920        1567    9687      20.11 ms
+	 *   A-E115FB DDR2        8795        1711    9687      25.38 ms
+	 *
+	 * The earlier values (1600 / 4500) were taken from the DDR3 board alone and
+	 * happened to hit the 20 ms target there only because the fixed cost was
+	 * over budget and the per-handle cost under, cancelling out. On DDR2 both
+	 * errors point the same way and the bound broke by 27%.
+	 *
+	 * The dominant term is the root scan and it does NOT track clock frequency:
+	 * the SDR and DDR3 boards are both 100 MHz yet differ 2.1x (2.211 vs
+	 * 4.719 ms). It tracks memory latency — 2.2 / 4.7 / 8.5 ms across
+	 * SDR / DDR3 / DDR2 — so expect it to grow again on any slower memory.
+	 */
+	static final int SWEEP_NS_PER_HANDLE = 1750;
+	static final int MINOR_FIXED_US = 8800;
 	/**
 	 * Young objects allowed before a minor GC is forced. Derived, not tuned:
 	 * (target - fixed) / per-handle. Set MINOR_TARGET_US to 0 to disable the cap
 	 * and go back to collecting only when the nursery fills.
+	 *
+	 * Now 6400 (was 9687). Only boards with a heap large enough to be cap-bound
+	 * pay for this: the EP4CGX150 sweeps ~6168 handles because its ~6 MB heap
+	 * makes the NURSERY the binding constraint, so it is unaffected. The two
+	 * large-heap boards collect 1.51x more often in exchange for the bound
+	 * actually holding — predicted 11.94 / 14.95 / 19.75 ms.
 	 */
 	static final int MAX_YOUNG_OBJECTS =
 			((MINOR_TARGET_US - MINOR_FIXED_US) * 1000) / SWEEP_NS_PER_HANDLE;
