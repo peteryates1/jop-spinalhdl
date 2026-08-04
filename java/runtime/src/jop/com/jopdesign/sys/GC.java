@@ -244,6 +244,28 @@ public class GC {
 	 * JVM DoAll 66/66 plus GcStressTest sustaining ~90k churn rounds fault-free.
 	 */
 	public static final boolean USE_GENERATIONAL = true;
+	/**
+	 * Whether generational mode is ACTUALLY in use. Compile-time
+	 * `USE_GENERATIONAL` is the master switch; this is it AND'd with "the
+	 * hardware has a card table", decided once in {@link #init}.
+	 *
+	 * Generational GC is unsound without the card-marking barrier. With no card
+	 * table `JopCore` drives `cardRdData := 0`, so `IO_CARD_SHIFT` reads 0,
+	 * every card read returns 0, and `scanCards` finds nothing — the remembered
+	 * set is permanently empty, every tenured->nursery reference is invisible to
+	 * the minor collector, and those young objects are collected while still
+	 * live. Observed on the CYC5000 before its card table was added: 3 survivors
+	 * copied instead of 66, `corrupt 23`, `MAJOR FAIL` — while `DoAll` passed
+	 * 66/66 on the same bitstream. The mutator cannot see the damage.
+	 *
+	 * Hardware never reports a shift below `cardMinShift` (2), so 0 is an
+	 * unambiguous "absent" sentinel. Falling back to the classic collector is
+	 * always safe: it is a full mark-compact over one contiguous heap and needs
+	 * no remembered set.
+	 */
+	static boolean genActive;
+	/** Card size in words when generational is active, else 0. Reported at boot. */
+	static int genCardWords;
 	/** Debug tracing of generational GC events (compile-time folded away when false). */
 	static final boolean GEN_TRACE = false;
 	static int genCopyCnt;
@@ -403,7 +425,15 @@ public class GC {
 			// Compacted tenure data grows upward from heapStart (copyPtr).
 			copyPtr = heapStart;
 
-			if (USE_GENERATIONAL) {
+			// Decide the collector BEFORE laying out the heap: the two modes
+			// carve it differently. A zero card shift means the core was built
+			// without a card table, so the barrier does not exist and
+			// generational mode would silently collect live young objects.
+			int cardShift0 = Native.rd(Const.IO_CARD_SHIFT);
+			genActive = USE_GENERATIONAL && cardShift0 != 0;
+			genCardWords = genActive ? (1 << cardShift0) : 0;
+
+			if (genActive) {
 				// Carve a nursery off the top of the heap (copyPtr already at
 				// heapStart — empty tenure). New data bump-allocates DOWN from
 				// nurseryTop; tenure/promotions grow DOWN from tenureTop.
@@ -438,6 +468,20 @@ public class GC {
 				ref += HANDLE_SIZE;  // increment by 8 using addition
 			}
 			concurrentGc = false;
+			// Say which collector is running. Generational silently degrades to
+			// something UNSOUND if the card table is missing, so the mode must
+			// be visible at boot rather than inferred from a corrupted heap
+			// later — "GC: classic" on a board you expected to be generational
+			// is the signal that hasCardTable is missing from its preset.
+			if (genActive) {
+				JVMHelp.wr("GC: generational, ");
+				wrIntG(genCardWords);
+				JVMHelp.wr("-word cards\n");
+			} else if (USE_GENERATIONAL) {
+				JVMHelp.wr("GC: classic (no card table - generational disabled)\n");
+			} else {
+				JVMHelp.wr("GC: classic\n");
+			}
 		}
 		// allocate the monitor
 		mutex = new Object();
@@ -1090,7 +1134,7 @@ public class GC {
 		// else — gc() is public and reachable straight from System.gc(), not just
 		// via majorGc(), and a young handle left off useList would be neither
 		// compacted nor reclaimed.
-		if (USE_GENERATIONAL) spliceYoungIntoUse();
+		if (genActive) spliceYoungIntoUse();
 
 		// For stop-the-world GC, discard write barrier entries.
 		// All live objects are found via roots (stack + static refs).
@@ -1138,7 +1182,7 @@ public class GC {
 		// anything can allocate again, and drop the cards (every recorded
 		// tenure->nursery pointer refers to pre-compaction addresses). Done here
 		// rather than only in majorGc() so a direct System.gc() is safe too.
-		if (USE_GENERATIONAL) {
+		if (genActive) {
 			carveNursery();
 			Native.wr(-1, Const.IO_CARD_CLEAR);
 		}
@@ -1724,7 +1768,7 @@ public class GC {
 			return ptr;
 		}
 
-		if (USE_GENERATIONAL) {
+		if (USE_GENERATIONAL && genActive) {
 			return newObjectGen(cons, size);
 		}
 
@@ -1853,7 +1897,7 @@ public class GC {
 			return ptr;
 		}
 
-		if (USE_GENERATIONAL) {
+		if (USE_GENERATIONAL && genActive) {
 			return newArrayGen(arrayLength, type, size);
 		}
 
@@ -1981,7 +2025,7 @@ public class GC {
 
 	    // In generational mode the live handles are split across two lists, so a
 	    // nursery-allocated object is valid but absent from useList.
-	    if (USE_GENERATIONAL && !isValid) {
+	    if (genActive && !isValid) {
 	      handlePointer = youngList;
 	      while(handlePointer != 0)
 	      {

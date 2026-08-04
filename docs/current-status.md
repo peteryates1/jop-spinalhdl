@@ -358,10 +358,29 @@ cable that moves.
   including every Wukong preset, `max1000Sdram`, `auSerial`, `ep4ce6Sdram` and
   `xc7a100tDbFull` — so any GC result recorded on those boards after
   generational became the default should be treated as suspect.
-  `cyc5000Serial` is fixed; **the others are not**. The real fix is for `GC.init`
-  to detect `IO_CARD_SHIFT == 0` (hardware never reports below
-  `cardMinShift = 2`, so 0 is an unambiguous sentinel) and fall back to the
-  classic collector rather than corrupt the heap.
+  **GUARDED as of 2026-08-04.** `GC.init` now reads `IO_CARD_SHIFT` before
+  laying out the heap and sets `genActive = USE_GENERATIONAL && shift != 0`
+  (hardware never reports below `cardMinShift = 2`, so 0 is an unambiguous
+  "absent" sentinel). Without a card table it falls back to the classic
+  mark-compact collector, which needs no remembered set and is always safe.
+  Verified both ways on the CYC5000 — the same configuration that gave
+  `corrupt 23 / MAJOR FAIL` now reports
+  `GC: classic (no card table - generational disabled)` with `corrupt 0`,
+  `MAJOR OK`.
+
+  **The collector is now named at boot**, so the mode is visible instead of
+  inferred from a corrupted heap later:
+
+  ```
+  GC: generational, 64-word cards     <- CYC5000
+  GC: generational, 512-word cards    <- XC7A100T, A-E115FB
+  GC: classic (no card table - generational disabled)
+  ```
+
+  Seeing `GC: classic` on a board you expected to be generational is the signal
+  that `hasCardTable` is missing from its preset. The other sixteen presets are
+  now *safe* but still *slow* — they run classic, so add `hasCardTable` to any
+  board where generational performance is wanted.
 - **`GC.wrIntG` prints only the low 5 digits.** It starts at `if (v >= 10000)`,
   so any value >= 100000 is silently truncated — which on a 1 GB board is every
   heap figure it prints. The `[carve ...]` line looked like a ~500 KB heap on a
