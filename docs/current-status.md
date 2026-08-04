@@ -270,9 +270,12 @@ cable that moves.
   gone from `usb_serial_map` and only returned, at a new devnum, after a
   physical replug. **Tell: the port disappears entirely rather than erroring,
   and it happens partway through sustained traffic rather than at open.**
-  Suspected the specific cable (it had previously been on the
-  RP2040 <-> XC7A100T link). Before believing a mid-run failure on any board,
-  check the tty still exists and its devnum has not changed.
+  **Confirmed to be the cable**: after swapping it out, a `GcStressTest` soak on
+  the same board ran **704,984 rounds** (~7M allocations, 10.5 MB of continuous
+  2 Mbaud output over ~5 min) with zero serial errors and the devnum constant
+  across 145 samples taken every 2 s — far heavier traffic than the run that
+  failed. Before believing a mid-run failure on any board, check the tty still
+  exists and its devnum has not changed.
 - JVM tests deliberately fire hardware exceptions; judge by ok/fail text and
   `JVM exit!`, not `excFired`. Grepping for "exception" also matches the test
   *name* `HwExceptionTest`.
