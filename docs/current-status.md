@@ -155,6 +155,19 @@ separated "board broken" from "our design broken".
    **APPLIED**: `SWEEP_NS_PER_HANDLE = 1750`, `MINOR_FIXED_US = 8800`, giving
    `MAX_YOUNG_OBJECTS = 6400` (was 9687). Re-measured:
 
+   Four boards, after all the Stage 3 work (constants, tenure-bounded card
+   scan, card granularity):
+
+   | board | clock / memory | worst | swept | bound by |
+   |---|---|---:|---:|---|
+   | CYC5000 SDR | 80 MHz / 8 MB | **10.181 ms** | 6168 | nursery |
+   | EP4CGX150 SDR | 100 MHz / 32 MB | **11.943 ms** | 6168 | nursery |
+   | XC7A100T DDR3 | 100 MHz / 256 MB | **12.523 ms** | 6400 | object cap |
+   | A-E115FB DDR2 | 75 MHz / 1 GB | **14.143 ms** | 6400 | object cap |
+
+   All four now inside the 20 ms target, and `copy` is the dominant phase on
+   every one of them (79-82%).
+
    | board | before | after | swept | status |
    |---|---:|---:|---:|---|
    | EP4CGX150 SDR | 11.942 ms | **11.943 ms** | 6168 | unchanged — nursery-bound, so the cap never binds |
@@ -329,6 +342,26 @@ cable that moves.
 - **Small UART dividers quantise badly.** `UartCtrl` divides by `baud x 5
   samples`; at 75 MHz a 2 Mbaud request gives a divider of 7.5 -> 7 = +7%, far
   outside tolerance and unframeable at any host rate. Keep the divider large.
+- **Generational GC is UNSOUND on any preset without `hasCardTable`, and it
+  fails silently.** `GC.USE_GENERATIONAL` defaults to true, but the card table
+  is per-preset. Without it `JopCore` drives `cardRdData := 0`, so
+  `IO_CARD_SHIFT` reads 0, every card read returns 0, and `scanCards` finds
+  nothing — the remembered set is permanently empty, every tenured->nursery
+  reference is invisible to the minor collector, and those young objects are
+  collected while still live. Measured on the CYC5000: **copied 3 survivors
+  instead of 66, `corrupt 23`, `MAJOR FAIL`** — while **`DoAll` passed 66/66 on
+  the same bitstream minutes earlier**. The mutator cannot see the damage; only
+  the collector can. `GcPauseTest`'s verify step is the only thing in the suite
+  that catches it.
+  **Only three standalone presets set it**: `ep4cgx150Serial`,
+  `xc7a100tDbSerial`, `ae115fbDdr2` (plus derivatives). Seventeen do not,
+  including every Wukong preset, `max1000Sdram`, `auSerial`, `ep4ce6Sdram` and
+  `xc7a100tDbFull` — so any GC result recorded on those boards after
+  generational became the default should be treated as suspect.
+  `cyc5000Serial` is fixed; **the others are not**. The real fix is for `GC.init`
+  to detect `IO_CARD_SHIFT == 0` (hardware never reports below
+  `cardMinShift = 2`, so 0 is an unambiguous sentinel) and fall back to the
+  classic collector rather than corrupt the heap.
 - **`GC.wrIntG` prints only the low 5 digits.** It starts at `if (v >= 10000)`,
   so any value >= 100000 is silently truncated — which on a 1 GB board is every
   heap figure it prints. The `[carve ...]` line looked like a ~500 KB heap on a

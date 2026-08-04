@@ -361,7 +361,22 @@ object JopConfig {
         memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
-  /** CYC5000 standalone */
+  /**
+   * CYC5000 standalone.
+   *
+   * hasCardTable is REQUIRED, not optional: `GC.USE_GENERATIONAL` defaults to
+   * true, and without the hardware card-marking barrier the remembered set is
+   * permanently empty — `IO_CARD_SHIFT` reads 0 (JopCore drives cardRdData := 0
+   * when the table is absent), so `scanCards` finds nothing and every
+   * tenured->nursery reference is invisible to the minor collector. Those young
+   * objects are then collected while still live. Measured on this board without
+   * it: GcPauseTest copied 3 survivors instead of 66 and reported
+   * `corrupt 23 / MAJOR FAIL`, while DoAll still passed 66/66 — the mutator
+   * cannot see the damage, only the collector can.
+   *
+   * 4 KB covers the 8 MB SDR at 64 words per card, which is finer than any
+   * other board and costs almost nothing on a 5CEBA2.
+   */
   def cyc5000Serial = JopConfig(
     assembly = SystemAssembly.cyc5000,
     systems = Seq(JopSystem(
@@ -369,7 +384,9 @@ object JopConfig {
       memory = "sdr",
       bootMode = BootMode.Serial,
       clkFreq = 80 MHz,
-      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(
+        hasCardTable = true, cardTableBudgetBytes = 4 * 1024),
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("FT2232H"))))))
 
   /** CYC5000 SMP (N cores) */
