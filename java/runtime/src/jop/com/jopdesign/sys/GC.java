@@ -1249,13 +1249,32 @@ public class GC {
 	// =========================================================================
 
 	/** Minimal decimal print for GEN_TRACE. */
+	/**
+	 * Minimal decimal print for GEN_TRACE — full 32-bit range.
+	 *
+	 * The previous version started at `v >= 10000` and so emitted only the low
+	 * FIVE digits, silently truncating anything larger. On a 1 GB heap that is
+	 * every figure it prints: a `[carve ...]` line read as a ~500 KB heap when
+	 * the real values were hStart 535,768 / hSize 267,891,496 / nSize 1,048,576.
+	 * Everything reconciled once reconstructed, but only after the numbers had
+	 * been taken at face value first.
+	 *
+	 * Allocation-free by design — this runs inside the collector and during
+	 * GC.init before the heap is usable, so it cannot use a scratch buffer.
+	 */
 	static void wrIntG(int v) {
-		if (v < 0) { JVMHelp.wr('-'); v = -v; }
-		if (v >= 10000) JVMHelp.wr((char)('0' + (v / 10000) % 10));
-		if (v >= 1000) JVMHelp.wr((char)('0' + (v / 1000) % 10));
-		if (v >= 100) JVMHelp.wr((char)('0' + (v / 100) % 10));
-		if (v >= 10) JVMHelp.wr((char)('0' + (v / 10) % 10));
-		JVMHelp.wr((char)('0' + v % 10));
+		if (v < 0) {
+			JVMHelp.wr('-');
+			// -Integer.MIN_VALUE overflows back to itself, so print its
+			// magnitude directly instead of negating.
+			if (v == -2147483648) { JVMHelp.wr("2147483648"); return; }
+			v = -v;
+		}
+		boolean lead = false;
+		for (int div = 1000000000; div > 0; div /= 10) {
+			int d = (v / div) % 10;
+			if (d != 0 || lead || div == 1) { JVMHelp.wr((char)('0' + d)); lead = true; }
+		}
 	}
 
 	/** Add a candidate young root to the copy worklist (conservative handle check). */

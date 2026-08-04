@@ -11,11 +11,16 @@ public class GcStressTest {
 			JVMHelp.wr('-');
 			val = -val;
 		}
-		if (val >= 10000) JVMHelp.wr((char)('0' + (val / 10000) % 10));
-		if (val >= 1000) JVMHelp.wr((char)('0' + (val / 1000) % 10));
-		if (val >= 100) JVMHelp.wr((char)('0' + (val / 100) % 10));
-		if (val >= 10) JVMHelp.wr((char)('0' + (val / 10) % 10));
-		JVMHelp.wr((char)('0' + val % 10));
+		// Full 32-bit range. This used to start at `val >= 10000` and print only
+		// the low five digits, which made both the round counter and
+		// GC.freeMemory() wrap invisibly — a 705k-round soak appeared to cycle
+		// through the same numbers, and free memory on a large heap was
+		// unreadable, so the log could only be judged by counting lines.
+		boolean lead = false;
+		for (int div = 1000000000; div > 0; div /= 10) {
+			int d = (val / div) % 10;
+			if (d != 0 || lead || div == 1) { JVMHelp.wr((char)('0' + d)); lead = true; }
+		}
 	}
 
 	public static void main(String[] args) {

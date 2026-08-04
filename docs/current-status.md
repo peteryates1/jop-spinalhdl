@@ -381,13 +381,19 @@ cable that moves.
   that `hasCardTable` is missing from its preset. The other sixteen presets are
   now *safe* but still *slow* — they run classic, so add `hasCardTable` to any
   board where generational performance is wanted.
-- **`GC.wrIntG` prints only the low 5 digits.** It starts at `if (v >= 10000)`,
-  so any value >= 100000 is silently truncated — which on a 1 GB board is every
-  heap figure it prints. The `[carve ...]` line looked like a ~500 KB heap on a
-  1 GB board; the real values were `hStart=535768`, `hSize=267891496`,
-  `nSize=1048576` (exactly `NURSERY_MAX_WORDS`), all reconciling perfectly.
-  **Nothing was wrong.** Reconstruct the full number before believing a GC trace
-  on a large heap, or fix the printer.
+- ~~**`GC.wrIntG` prints only the low 5 digits.**~~ **FIXED.** It started at
+  `if (v >= 10000)`, so any value >= 100000 was silently truncated — on a 1 GB
+  board that is every heap figure it prints. A `[carve ...]` line read as a
+  ~500 KB heap when the real values were `hStart=535768`, `hSize=267891496`,
+  `nSize=1048576`. `GcStressTest` had its own copy of the same printer, which
+  wrapped both the round counter and `GC.freeMemory()`. Both now print the full
+  32-bit range (and handle `Integer.MIN_VALUE`, which the old code both
+  truncated and mis-negated). Verified on the A-E115FB: `f=1067369664`.
+  **Related trap that this exposed**: the `[carve ...]` line was appearing at
+  all only because `java/apps/Smallest/HelloWorld.jop` was a stale build from
+  when `GEN_TRACE` was true. `GEN_TRACE` is `false` in the current source. That
+  is the documented "make does not reliably rebuild apps" gotcha showing up as
+  a phantom debug line — rebuild the app before trusting anything it prints.
 - **A component testbench can model the hardware correctly and the contract
   wrongly.** `CacheToDdr2AdapterSim` faithfully reproduced the DDR2 local
   interface, where a write completes on `local_ready` and returns nothing — and
