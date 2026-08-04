@@ -15,6 +15,12 @@ set_global_assignment -name NOMINAL_CORE_SUPPLY_VOLTAGE 1.2V
 
 # Source files
 set_global_assignment -name VERILOG_FILE ../../spinalhdl/generated/JopBramTop.v
+# Microcode ROM and stack RAM: SpinalHDL emits these as blackbox instances of
+# "rom"/"ram" (jop.memory.AlteraLpmBlackBox), so the entities must be supplied
+# here or Analysis & Synthesis fails with "instantiates undefined entity" —
+# once per core, so an N-core build reports 2N errors.
+set_global_assignment -name VHDL_FILE ../../fpga/ip/altera_lpm/arom.vhd
+set_global_assignment -name VHDL_FILE ../../fpga/ip/altera_lpm/aram.vhd
 set_global_assignment -name VHDL_FILE ../qmtech-ep4cgx150-sdram/dram_pll.vhd
 set_global_assignment -name SDC_FILE jop_bram.sdc
 # AlteraLpm ROM/RAM not needed — Generic memory style uses inline $readmemb

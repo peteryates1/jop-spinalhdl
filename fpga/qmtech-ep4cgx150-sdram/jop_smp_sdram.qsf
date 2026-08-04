@@ -19,6 +19,13 @@ set_global_assignment -name VHDL_FILE dram_pll.vhd
 set_global_assignment -name SDC_FILE jop_sdram.sdc
 set_global_assignment -name VERILOG_FILE ../../fpga/ip/altera_sdram_tri_controller/altera_sdram_tri_controller.v
 set_global_assignment -name VERILOG_FILE ../../fpga/ip/altera_sdram_tri_controller/efifo_module.v
+# Microcode ROM and stack RAM. SpinalHDL emits these as blackbox instances of
+# "rom"/"ram" (jop.memory.AlteraLpmBlackBox) loading rom.mif / ram.mif, so the
+# entities must come from here or Analysis & Synthesis fails with "instantiates
+# undefined entity" — once per core, so an N-core build reports 2N errors.
+# jop_sdram.qsf has always listed these; this SMP project was never updated.
+set_global_assignment -name VHDL_FILE ../../fpga/ip/altera_lpm/arom.vhd
+set_global_assignment -name VHDL_FILE ../../fpga/ip/altera_lpm/aram.vhd
 
 # I/O standard
 set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVCMOS"

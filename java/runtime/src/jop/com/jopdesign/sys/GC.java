@@ -426,11 +426,26 @@ public class GC {
 			copyPtr = heapStart;
 
 			// Decide the collector BEFORE laying out the heap: the two modes
-			// carve it differently. A zero card shift means the core was built
-			// without a card table, so the barrier does not exist and
-			// generational mode would silently collect live young objects.
+			// carve it differently.
+			//
+			// Two conditions must hold, and BOTH failures are silent:
+			//
+			//  1. A card table must exist. A zero shift means the core was built
+			//     without one, so the barrier does not exist at all.
+			//
+			//  2. The cluster must be single-core. The card table is instantiated
+			//     PER CORE (JopCore.scala) and snoops that core's own BMB port
+			//     ahead of the arbiter, and IO_CARD_* is decoded per core — so
+			//     the collecting core scans only its own table. A tenured->
+			//     nursery pointer written by another core marks THAT core's
+			//     table and is invisible here, and the young object it protects
+			//     is then collected while still live. Fixing this properly means
+			//     one cluster-level card table fed from the arbiter output, so
+			//     that one shared heap has one shared remembered set; until then
+			//     SMP runs the classic collector, which needs no remembered set.
 			int cardShift0 = Native.rd(Const.IO_CARD_SHIFT);
-			genActive = USE_GENERATIONAL && cardShift0 != 0;
+			int cpuCnt0 = Native.rdMem(Const.IO_CPUCNT);
+			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 1;
 			genCardWords = genActive ? (1 << cardShift0) : 0;
 
 			if (genActive) {
@@ -477,6 +492,8 @@ public class GC {
 				JVMHelp.wr("GC: generational, ");
 				wrIntG(genCardWords);
 				JVMHelp.wr("-word cards\n");
+			} else if (USE_GENERATIONAL && Native.rdMem(Const.IO_CPUCNT) > 1) {
+				JVMHelp.wr("GC: classic (SMP - per-core card tables, generational disabled)\n");
 			} else if (USE_GENERATIONAL) {
 				JVMHelp.wr("GC: classic (no card table - generational disabled)\n");
 			} else {
