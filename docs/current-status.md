@@ -159,22 +159,30 @@ separated "board broken" from "our design broken".
    |---|---:|---:|---:|---|
    | EP4CGX150 SDR | 11.942 ms | **11.943 ms** | 6168 | unchanged — nursery-bound, so the cap never binds |
    | XC7A100T DDR3 | 20.109 ms | **14.400 ms** | 6400 | cap now binding, bound holds with 5.6 ms margin |
-   | A-E115FB DDR2 | 25.376 ms | *predicted <=19.75* | — | **NOT YET RE-MEASURED — board disconnected** |
+   | A-E115FB DDR2 | 25.376 ms | **21.633 ms** | 6400 | improved 15%, but **still over the 20 ms target** |
 
    The EP4CGX150 result confirms the prediction that a global cap change costs
-   the small-heap board nothing.
+   the small-heap board nothing. The A-E115FB **falsified** the other
+   prediction, and in the opposite direction:
 
-   **Refinement the re-run exposed**: the "fixed" term is not entirely fixed.
-   On the XC7A100T the root scan fell from 4.719 to 3.847 ms when the cap
-   dropped 9687 -> 6400, i.e. part of it scales with the young-set size (it is
-   scanning for young references). So the model is slightly conservative, and
-   the A-E115FB should land *below* the 19.75 ms predicted from its old
-   fixed cost of 8795 us — but that is an inference, not a measurement.
-   **Re-run `GcPauseTest` on the A-E115FB when it is reconnected**; it is the
-   board the whole change was made for and the only one still unverified. It
-   needs BOTH a UART cable and the **Terasic** moved back — the FPGA has to be
-   reconfigured before a download (JOP only accepts one per configuration), and
-   the Pico clone cannot configure it (no level shifter, see section 4).
+   - Predicted <=19.75 ms on the reasoning that the root scan would shrink with
+     the young set, as it did on the XC7A100T (4.719 -> 3.847 ms).
+   - Measured 21.633 ms, with the root scan **rising** 8.530 -> 10.096 ms.
+
+   Most likely a sampling artefact rather than a real regression: a smaller cap
+   means more collections (42 -> 63), so the *worst* of them is drawn from more
+   samples. The mean moved the way the model expects — 25.089 -> 19.837 ms, a
+   21% improvement, and now under target. Do not read a single worst-case figure
+   as the whole story when the collection count changes with the parameter.
+
+   **The cap has hit diminishing returns on DDR2.** The fixed term there is now
+   10,361 us, so the root scan alone is **47% of the worst pause** and sets a
+   ~10.4 ms floor that no cap value can go below. Holding 20 ms would need the
+   cap at ~5473 (another 1.17x cut), taxing the two large-heap boards further
+   for a bound that the root scan will breach again on any slower memory.
+
+   **Next lever is the root scan, not the cap** — already listed as item 4 below
+   and now clearly the dominant term on the slowest board.
 3. **Major GC constant** — 2.2 s at 36k live objects, O(live) confirmed but the
    constant is 20-25x the minor sweep's and unexplained. Next action is a
    *measurement*, not a change: time `sortUseListByAddress()` separately from the
