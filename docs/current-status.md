@@ -126,16 +126,38 @@ separated "board broken" from "our design broken".
 1. ~~**GC suite at 1 GB**~~ — **DONE 2026-08-03, all green.** DoAll 66/66,
    GcStressTest 537k rounds clean, MultiArrayGcTest and IntHandlerGcTest OK,
    `free 1,067,359,856 bytes`. Detail in the bring-up doc.
-2. **The minor-pause bound is VIOLATED on this board: 25.4 ms against a 20 ms
-   target.** The cap works (it swept exactly `MAX_YOUNG_OBJECTS` = 9687); the
-   model is wrong. `SWEEP_NS_PER_HANDLE` 1600 vs 1711 measured is fine, but
-   `MINOR_FIXED_US` 4500 vs **8795** measured is not — the root scan alone is
-   8.53 ms, and 75 vs 100 MHz explains only 1.33x of it, so the rest is DDR2
-   latency. Holding 20 ms here needs the cap at 6548, i.e. 1.48x more frequent
-   minor GCs on *every* board. **Re-measure the EP4CGX150 and XC7A100T before
-   changing anything** — a single global constant cannot bound the pause across
-   these three boards without taxing the fast two, so the real choice is
-   per-board constants or a runtime-derived cap.
+2. **The minor-pause bound holds on two boards and is VIOLATED on the
+   A-E115FB.** All three measured with `GcPauseTest` (2026-08-04):
+
+   | board | fixed us | sweep ns/handle | swept | worst | model predicts |
+   |---|---:|---:|---:|---:|---:|
+   | EP4CGX150 SDR | 3637 | 1346 | 6168 | **11.94 ms** | 11.94 |
+   | XC7A100T DDR3 | 4920 | 1567 | 9687 | **20.11 ms** | 20.10 |
+   | A-E115FB DDR2 | 8795 | 1711 | 9687 | **25.38 ms** | 25.37 |
+
+   The model's *shape* is exactly right — `fixed + swept x per-handle` predicts
+   all three to within 0.01 ms. Only the constants are wrong:
+   `SWEEP_NS_PER_HANDLE` 1600 vs 1346/1567/**1711** measured, and
+   `MINOR_FIXED_US` 4500 vs 3637/4920/**8795**. The XC7A100T lands on 20 ms by
+   luck: its fixed cost is already over budget (4920) but its sweep is under
+   (1567), and the two errors cancel.
+
+   The dominant term is the **root scan**, and it does not track clock — the
+   EP4CGX150 and XC7A100T are both 100 MHz yet differ 2.1x (2.211 vs 4.719 ms),
+   so it is memory latency. Across SDR -> DDR3 -> DDR2 it is 2.2 / 4.7 / 8.5 ms.
+
+   **Correction to an earlier note here**: adopting the slowest board's numbers
+   does *not* tax every board. The EP4CGX150 sweeps 6168 handles — fewer than
+   the 9687 cap — because its ~6 MB heap makes the nursery the binding
+   constraint, so it is unaffected by any cap change. Only the two large-heap
+   boards are cap-bound.
+
+   **Proposal**: `SWEEP_NS_PER_HANDLE = 1750`, `MINOR_FIXED_US = 8800`, giving
+   `MAX_YOUNG_OBJECTS = 6400`. That bounds all three under target — 11.94 /
+   14.95 / 19.75 ms — at the cost of 1.51x more frequent minor GCs on the two
+   big-heap boards and none on the SDR board. The alternative is per-board
+   constants, which would keep the XC7A100T at 9687; worth it only if that
+   board's throughput matters. Not applied — it is a throughput call.
 3. **Major GC constant** — 2.2 s at 36k live objects, O(live) confirmed but the
    constant is 20-25x the minor sweep's and unexplained. Next action is a
    *measurement*, not a change: time `sortUseListByAddress()` separately from the
