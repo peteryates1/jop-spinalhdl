@@ -2,13 +2,15 @@
 
 A complete reimplementation of the [Java Optimized Processor](https://github.com/jop-devel/jop) (JOP) in [SpinalHDL](https://spinalhdl.github.io/SpinalDoc-RTD/). JOP is a hardware implementation of the Java Virtual Machine as a soft-core processor for FPGAs, originally developed by Martin Schoeberl. See [jopdesign.com](https://www.jopdesign.com/) for the original project.
 
-This port runs Java programs on FPGA hardware. The primary development platform is the **QMTECH EP4CGX150** (Altera Cyclone IV GX + SDR SDRAM), which supports single-core and SMP (up to 16-core) configurations with stable garbage collection. The **QMTECH Wukong V3** (Xilinx Artix-7 XC7A100T + DDR3) provides the full-featured configuration with all four hardware compute units.
+This port runs Java programs on FPGA hardware. The primary development platform is the **QMTECH EP4CGX150** (Altera Cyclone IV GX + SDR SDRAM), which supports single-core and SMP (up to 16-core) configurations with stable garbage collection. The **QMTECH Wukong V3** (Xilinx Artix-7 XC7A100T + DDR3) provides the full-featured configuration with all four hardware compute units, and the **A-E115FB** (Cyclone IV E + 1 GB DDR2) is the large-memory platform.
+
+**Current state and open work items are tracked in [docs/current-status.md](docs/current-status.md)** — start there rather than here if you are picking the project up.
 
 Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 
 ## Status
 
-**Working on hardware.** The processor boots and runs Java programs at 100 MHz:
+**Working on hardware.** The processor boots and runs Java programs on six boards, at 75–100 MHz depending on the memory subsystem:
 
 - **SDRAM + SMP (primary)**: up to 16-core SMP on QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V) — all cores running independently with CmpSync global lock (or optional IHLU per-object locking), round-robin BMB arbitration, and GC stop-the-world halt (halts all other cores during garbage collection)
 - **SDRAM (single-core)**: Serial boot over UART into SDR SDRAM on two boards — QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V, W9864G6JT)
@@ -16,8 +18,18 @@ Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 - **DDR3**: Serial boot through write-back cache into DDR3 (Alchitry Au V2, Xilinx Artix-7, full 256MB addressed) — single-core and 2-core SMP verified on hardware with GC (67K+ rounds single-core, NCoreHelloWorld SMP). See [DDR3 notes](docs/gc/ddr3-gc-hang.md).
 - **DB_FPGA (full I/O)**: QMTECH EP4CGX150 + DB_FPGA daughter board at 80 MHz — Ethernet 1Gbps GMII, VGA text 80x30, SD card native 4-bit, TCP/IP networking (ICMP/UDP/TCP echo, DHCP, DNS, HTTP file server), FAT32 filesystem, all verified on hardware. JVM test suite: 64/64 on hardware.
 - **Wukong DDR3 (full-featured)**: All four compute units (IntegerComputeUnit + FloatComputeUnit + LongComputeUnit + DoubleComputeUnit) with DSP imul, Ethernet (GMII 1Gbps), and SD Native. JVM test suite: 66/66 on hardware.
+- **DDR2 (1 GB)**: Serial boot through a 256-bit-line write-back cache into 1 GB DDR2 on the A-E115FB (Cyclone IV E, ALTMEMPHY half-rate at 75 MHz). Memory verified at full capacity (77 passes, ~154 GB, zero errors); JVM suite 66/66 and the full GC suite pass on a ~1.07 GB heap. See [DDR2 bring-up](docs/boards/ae115fb-ddr2-bringup.md).
 - **8-core SMP**: Verified on QMTECH EP4CGX150 — all 8 cores running independently with per-core UART, tested via Pico debug probe
-- **GC support**: Automatic garbage collection with hardware-accelerated object copying (`memCopy`), MAX_HANDLES cap (65536) for large memories. Tested 98,000+ rounds (BRAM), 9,800+ rounds (CYC5000 SDRAM), 2,000+ rounds (QMTECH SDRAM), 67,000+ rounds (DDR3 8MB), 1,870+ rounds (DDR3 256MB)
+- **GC (generational)**: Generational collector is the default — hardware card-marking write barrier, nursery/tenure split, minor collections bounded by a young-object cap. Verified on four boards, with the minor pause measured on each:
+
+  | board | memory | worst minor pause |
+  |---|---|---:|
+  | Trenz CYC5000 | 8 MB SDR | 10.2 ms |
+  | QMTECH EP4CGX150 | SDR | 11.9 ms |
+  | QMTECH XC7A100T + DB V5 | 256 MB DDR3 | 12.5 ms |
+  | A-E115FB | 1 GB DDR2 | 14.1 ms |
+
+  Falls back automatically to the classic mark-compact collector on cores built without a card table (generational is unsound without the barrier), and reports which collector is active at boot. Soak-tested to 705k rounds (EP4CGX150) and 537k rounds (A-E115FB) fault-free. See [GC stage 3 follow-ups](docs/gc/stage3-followups.md).
 
 ## Project Goals
 
@@ -88,6 +100,7 @@ jop/
 │   ├── core/                 # Compute units (IntegerCU, FloatCU, LongCU, DoubleCU, ComputeUnitTop)
 │   ├── memory/                # Memory controller, method/object/array cache, SDRAM ctrl
 │   ├── ddr3/                  # DDR3 subsystem (cache, MIG adapter, clock wizard)
+│   ├── ddr2/                  # DDR2 subsystem (ALTMEMPHY blackbox, CacheToDdr2Adapter)
 │   ├── io/                    # I/O slaves (BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdNative, BmbSdSpi, BmbVgaText, Ihlu, CmpSync)
 │   ├── debug/                 # Debug subsystem (protocol, controller, breakpoints, UART)
 │   ├── config/                # Configuration hierarchy (JopConfig, Board, Parts, IoConfig)
@@ -105,6 +118,9 @@ jop/
 │   ├── scripts/               # download.py, monitor.py, make_flash_image.py, flash_program.py
 │   ├── ip/                    # Third-party IP (Altera SDRAM controller)
 │   ├── alchitry-au/           # DDR3 FPGA project (Vivado)
+│   ├── a-e115fb-ddr2/         # 1 GB DDR2 FPGA project (Quartus 18.1, Cyclone IV E)
+│   ├── qmtech-xc7a100t-dbfpga-v5/ # DDR3 + DB_FPGA V5 project (Vivado)
+│   ├── qmtech-xc7a100t-wukong/    # Wukong DDR3/SDR project (Vivado)
 │   ├── cyc5000-sdram/         # SDRAM FPGA project (Quartus, Cyclone V)
 │   ├── qmtech-ep4cgx150-bram/ # BRAM FPGA project (Quartus, Cyclone IV)
 │   ├── qmtech-ep4cgx150-sdram/# SDRAM FPGA project (Quartus, Cyclone IV)
@@ -187,6 +203,7 @@ sbt "runMain jop.system.JopTopVerilog ep4ce6Sdram"       # EP4CE6 SDR SDRAM (no 
 sbt "runMain jop.system.JopTopVerilog xc7a100tDbSerial"   # XC7A100T + DB_FPGA DDR3
 sbt "runMain jop.system.JopTopVerilog xc7a100tDbFull"     # XC7A100T + DB_FPGA full I/O
 sbt "runMain jop.system.JopTopVerilog xc7a100tDbSmp 4"    # XC7A100T + DB_FPGA 4-core SMP
+sbt "runMain jop.system.JopTopVerilog ae115fbDdr2"       # A-E115FB 1 GB DDR2
 sbt "runMain jop.system.JopTopVerilog minimum"           # Minimum resources
 
 # Flash boot — autonomous boot from SPI flash, no JTAG needed after programming
@@ -231,9 +248,24 @@ cd fpga/cyc5000-sdram
 make microcode   # Assemble serial boot microcode
 make generate    # Generate Verilog
 make build       # Quartus synthesis
-make program     # Program FPGA via JTAG
-make download    # Download HelloWorld.jop over UART
+make program     # sof -> rbf, then openFPGALoader -b cyc5000 (Quartus cannot
+                 # see the board's FT2232H "Arrow USB Blaster")
+make download    # Download HelloWorld.jop over UART (2 Mbaud)
 make monitor     # Watch serial output
+# The FT2232H exposes two interfaces and ftdi_sio claims both: interface A is
+# JTAG, interface B is the FPGA UART — the console is the SECOND ttyUSB of the
+# pair. Numbering moves on replug; re-check with fpga/scripts/usb_serial_map.
+
+# DDR2 target — A-E115FB, Altera Cyclone IV E + 1 GB DDR2 (serial boot, 75 MHz)
+# Needs Quartus 18.1: Intel dropped Cyclone IV DDR2 ALTMEMPHY after that.
+cd fpga/a-e115fb-ddr2
+make ip                     # Regenerate the DDR2 IP from the checked-in variation
+make PROJECT=jop_ddr2 all   # generate + ip + build
+/opt/altera/18.1/quartus/bin/quartus_pgm -c "$(../scripts/jtag_probe_map --cable terasic)" \
+  -m JTAG -o "p;output_files/jop_ddr2.sof"
+python3 ../scripts/download.py -e ../../java/apps/Smallest/HelloWorld.jop /dev/ttyUSB0 1000000
+# PROJECT=ddr2_exerciser builds a standalone memory test instead — useful as a
+# control to separate "board broken" from "design broken"
 
 # SMP (2-core) — Trenz CYC5000, Altera Cyclone V (serial boot, 80 MHz)
 cd fpga/cyc5000-sdram
@@ -302,11 +334,11 @@ sbt "Test / runMain jop.system.JopIhluGcBramSim"
 | **[QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD)** | **Altera Cyclone IV GX** | **W9825G6JH6 SDR SDRAM** | **Quartus Prime** | **Primary — 100 MHz (1-8 core), 80 MHz (16-core)** |
 | [QMTECH EP4CGX150 + DB_FPGA](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Altera Cyclone IV GX | W9825G6JH6 SDR SDRAM | Quartus Prime | 80 MHz — Ethernet 1Gbps GMII ([details](docs/peripherals/db-fpga-ethernet.md)), VGA text 80x30 ([details](docs/peripherals/db-fpga-vga-text.md)), SD card native 4-bit ([details](docs/peripherals/db-fpga-sd-card.md)) |
 | [QMTECH EP4CGX150](https://github.com/ChinaQMTECH/EP4CGX150DF27_CORE_BOARD) | Altera Cyclone IV GX | BRAM (on-chip) | Quartus Prime | Working at 100 MHz |
-| [Trenz CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) | Altera Cyclone V E (5CEBA2U15C8N) | W9864G6JT SDR SDRAM | Quartus Prime | Working at 80 MHz |
-| A-E115FB | Altera Cyclone IV E (EP4CE115F23I7) | BRAM (on-chip) | Quartus Prime | BRAM only, programmed via [pico-dirtyJtag](docs/pico-dirtyjtag-setup.md) |
+| [Trenz CYC5000](https://www.trenz-electronic.de/en/CYC5000-with-Altera-Cyclone-V-E-5CEBA2-C8-8-MByte-SDRAM/TEI0050-01-AAH13A) | Altera Cyclone V E (5CEBA2U15C8N) | W9864G6JT SDR SDRAM (8 MB) | Quartus Prime | 80 MHz — JVM 66/66. Its FT2232H "Arrow USB Blaster" is invisible to Quartus; program with `openFPGALoader -b cyc5000` (needs `.rbf`, not `.sof`) |
+| [A-E115FB](docs/boards/ep4ce115-ddr2-board.md) | Altera Cyclone IV E (EP4CE115F23I7) | 1 GB DDR2 SODIMM (also BRAM) | Quartus Prime 18.1 | 75 MHz — largest heap; JVM 66/66 + full GC suite on ~1.07 GB ([bring-up](docs/boards/ae115fb-ddr2-bringup.md)). Program with a **genuine USB-Blaster** — the Pico clone cannot configure it (no level shifter for the 2.5 V JTAG bank) |
 | [Alchitry Au V2](https://shop.alchitry.com/products/alchitry-au) | Xilinx Artix-7 (XC7A35T) | MT41K128M16JT DDR3 (256MB) | Vivado | 100 MHz — single-core + SMP (2-core), full 256MB addressed, GC working ([details](docs/gc/ddr3-gc-hang.md)) |
 | [QMTECH Wukong V3](docs/boards/qmtech-wukong-board.md) | Xilinx Artix-7 (XC7A100T) | MT41K128M16JT DDR3 (256MB) + W9825G6KH SDR SDRAM (32MB) | Vivado | 100 MHz — full featured (all 4 CUs + DSP imul), 66/66 JVM tests on hardware |
-| [QMTECH XC7A100T + DB_FPGA V5](docs/boards/qmtech-xc7a100t-board.md) | Xilinx Artix-7 (XC7A100T-FGG676) | MT41K128M16JT DDR3 (256MB) | Vivado | Board definitions and presets defined — awaiting FPGA build |
+| [QMTECH XC7A100T + DB_FPGA V5](docs/boards/qmtech-xc7a100t-board.md) | Xilinx Artix-7 (XC7A100T-FGG676) | MT41K128M16JT DDR3 (256MB) | Vivado | 100 MHz — end-to-end on hardware, JVM 66/66, GC verified. UART and DirtyJTAG both via the on-board RP2040 |
 
 ### Resource Usage
 
@@ -356,7 +388,7 @@ Notes:
 - **BRAM system**: Complete system with on-chip memory at 100 MHz (QMTECH EP4CGX150, Altera Cyclone IV; Wukong XC7A100T, Xilinx Artix-7)
 - **DDR3 system**: Serial boot over UART through 32KB 4-way write-back cache into DDR3 at 100 MHz (Alchitry Au V2, Xilinx Artix-7, full 256MB addressed). Single-core and 2-core SMP verified with GC (67K+ rounds single-core at 8MB, 1870+ rounds at 256MB). Standalone `Ddr3ExerciserTop` memory test and `Ddr3TraceReplayerTop` BMB trace verification also available.
 - **Microcode tooling**: Jopa assembler generates VHDL and Scala outputs from `jvm.asm`
-- **GC support**: Mark-compact garbage collection with incremental mark/compact phases (bounded per-allocation increments) and STW fallback. Hardware `memCopy` for GC object relocation, MAX_HANDLES cap (65536) prevents O(N) sweep explosion on large memories (256MB+). Tested with allocation-heavy GC app (98,000+ rounds on BRAM, 9,800+ on CYC5000 SDRAM, 2,000+ on QMTECH SDRAM, 1,870+ on 256MB DDR3). SMP GC uses `IO_GC_HALT` to freeze all other cores during collection, preventing concurrent SDRAM access to partially-moved objects
+- **GC support**: Generational collector by default, over a mark-compact base. New objects allocate in a nursery carved off the top of the heap; a hardware card table (`CardTable`, per-core, sized from `cardTableBudgetBytes`) records tenure→nursery pointers so minor collections need not scan the tenured set. Minor pause is bounded by a young-object cap derived from measured per-handle sweep cost, and the dirty-card scan is limited to the two used tenure regions rather than the whole span. Hardware `memCopy` for object relocation, hardware zero-fill DMA for free space, `MAX_HANDLES` cap (65536). **Generational mode is unsound without the card table**, so `GC.init` detects its absence (`IO_CARD_SHIFT == 0`) and falls back to classic mark-compact, naming the active collector at boot. SMP GC uses `IO_GC_HALT` to freeze other cores during collection. Design notes: [stage 1 card table](docs/gc/stage1-card-table-design.md), [stage 2 generational](docs/gc/stage2-generational-design.md), [stage 3 follow-ups](docs/gc/stage3-followups.md)
 - **Hardware exception detection**: Null pointer and array bounds checks fully enabled — NPE fires on handle address 0, ABE fires on negative index (MSB) or index >= array length. Wired through BmbSys `exc` pulse to `sys_exc` microcode handler. Div-by-zero handled via Java `throw JVMHelp.ArithExc` in f_idiv/f_irem/f_ldiv/f_lrem.
 - **Formal verification**: 117 properties verified across 25 test suites using SymbiYosys + Z3 — covers core arithmetic, all pipeline stages, memory subsystem (method cache, object cache, memory controller), DDR3 cache + MIG adapter, I/O (CmpSync, BmbSys, BmbUart), and BMB protocol compliance. See [formal verification docs](docs/formal-verification.md).
 - **Debug subsystem** (`jop.debug` package): Optional on-chip debug controller with framed byte-stream protocol over dedicated UART. Supports halt/resume/single-step (microcode and bytecode), register and stack inspection, memory read/write, and up to 4 hardware breakpoints (JPC or microcode PC). Integrated into `JopCluster` via `DebugConfig`. Automated protocol test (`JopDebugProtocolSim`) verifies 39 checks across 14 test sequences.
@@ -379,7 +411,8 @@ Active work items:
 Lower-priority or longer-term items:
 
 - **DDR3 heap size cap** — `JopTop` unconditionally sets `mainMemSize = md.sizeBytes` (256 MB) for DDR3 clusters, ignoring any smaller value in `JopCoreConfig`. For a single-core cluster, 32 MB gives ~160 ms GC rounds vs ~1.3 s at 256 MB. Fix: add `ddr3HeapSizeCap: Option[BigInt]` to `JopSystem` (or use `min(cc.memConfig.mainMemSize, md.sizeBytes)` with a sentinel default) so presets can opt in to a smaller heap without breaking existing configs.
-- **GC optimization for large memory** — The GC free-space zeroing loop dominates pause time at large heap sizes (e.g., ~4 s at 256 MB). Four options analysed (heap cap, region-based, parallel, generational) plus hardware accelerators (zero-fill DMA, object copy DMA, HW write barrier). Generational GC is the recommended long-term target: minor GC pause ~75–150 ms on 8–4 MB nursery, major GC rare. `writeBarrier()` infrastructure already exists in `GC.java`. Zero-fill DMA (extend `BmbMemoryController`) gives ~2.5× speedup with no Java runtime changes. See [GC optimization options](docs/gc/gc-optimization-options.md).
+- **GC minor-pause copy phase** — generational GC is done (see Status), and the copy phase is now 79–82% of the remaining minor pause on every board. It is latency-bound rather than clock-bound: the handle table is 2 MB against a 32 KB cache and a handle is exactly one 256-bit cache line, so each of ~6400 handles swept costs a compulsory miss to find ~66 survivors. Fixing it means moving the young-generation bookkeeping into cache-resident side structures. Analysis, staged plan and open questions in [copy-phase redesign](docs/gc/copy-phase-redesign.md).
+- **Major GC constant** — major collection is O(live) as intended but the constant is ~20–25x the minor sweep's and unexplained. Next action is a measurement (time `sortUseListByAddress()` separately), not a change; two prior hypotheses were wrong.
 - Memory controller — remaining VHDL features: address translation on read paths (for concurrent GC), data cache control signals, fast-path array access (`iald23`)
 - Interrupt handling — timer interrupts verified; UART RX/TX interrupts exercised in simulation; scheduler preemption not tested
 - DDR3 burst optimization — method cache fills could use burst reads through the cache bridge
@@ -425,6 +458,11 @@ Design notes and investigation logs in `docs/`:
 - [Networking](docs/peripherals/networking.md) — TCP/IP stack with ICMP ping, UDP/TCP echo, DHCP client, DNS resolver, HTTP/1.0 file server; verified on FPGA hardware
 - [Flash Boot](docs/boards/flash-boot.md) — autonomous Active Serial boot from W25Q128, UART flash programmer, flash image format
 - [pico-dirtyJtag Setup](docs/pico-dirtyjtag-setup.md) — program FPGAs via Raspberry Pi Pico + openFPGALoader (alternative to USB-Blaster)
+- [Current Status](docs/current-status.md) — **read first**: where the project is, open items, and the traps that have cost real time
+- [Generational GC — stage 1 card table](docs/gc/stage1-card-table-design.md), [stage 2 design](docs/gc/stage2-generational-design.md), [stage 3 follow-ups](docs/gc/stage3-followups.md)
+- [GC copy-phase redesign](docs/gc/copy-phase-redesign.md) — the remaining 79-82% of the minor pause: analysis, staged plan, open questions
+- [A-E115FB DDR2 bring-up](docs/boards/ae115fb-ddr2-bringup.md) — 1 GB DDR2, half-rate ALTMEMPHY, cache adapter, and everything that went wrong
+- [EP4CE115 DDR2 board](docs/boards/ep4ce115-ddr2-board.md) — board reference
 - [SDR SDRAM GC Hang](docs/gc/sdr-sdram-gc-hang.md) — resolved: SpinalHDL SdramCtrl DQ timing issue
 - [DDR3 GC Hang](docs/gc/ddr3-gc-hang.md) — resolved (32KB L2 cache)
 
