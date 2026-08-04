@@ -60,11 +60,30 @@ gap that lets the receiver resync — which is why this never showed up before.
 both already defined and unused. Constant-pool cost was zero. `JopCoreBramSim`
 still boots to `Hello World!`.
 
-**Confirmed on hardware 2026-08-03**: the board emits `0xAA` at a measured
-0.51 s cadence, `download.py` reaches `ready!`, and all 11,477 words stream.
-Because the microcode is shared, **re-test a download on the EP4CGX150 and
-XC7A100T** — they exercise the same handshake at 2 Mbaud and have not been
-re-run since the change.
+**Confirmed on ALL THREE boards (2026-08-03/04).** The microcode is shared, so
+every board was re-run after the change; each emits `0xAA` at a measured ~0.5 s
+cadence and completes the handshake:
+
+| board | clock / baud | ready byte | download | JVM suite |
+|---|---|---|---|---|
+| A-E115FB (DDR2) | 75 MHz / 1 Mbaud | ✅ 0.51 s | ✅ 0.5 s @ 88 KB/s | ✅ 66/66 |
+| XC7A100T (DDR3) | 100 MHz / 2 Mbaud | ✅ ~0.5 s | ✅ 215 KB/s | — |
+| EP4CGX150 (SDR) | 100 MHz / 2 Mbaud | ✅ ~0.5 s | ✅ 188 KB/s | ✅ 66/66 |
+
+All three return identical checksums for the same image (`0x8f197bc7` for
+HelloWorld, `0x2ed0b59a` for DoAll), so the transfers are byte-identical across
+boards. The old instruction-count loop left only a ~9 us idle gap at 2 Mbaud —
+which is why those two boards happened to work; the timer version idles ~500 ms
+and is baud-independent.
+
+**Two things noted while regressing, neither caused by the microcode change:**
+- **XC7A100T timing is marginal**: this build came out at **WNS +0.001 ns**
+  (previously +0.117 ns) — placement noise, since the RTL is unchanged and
+  microcode is ROM content. One download out of seven produced garbage carve
+  values and repeated `Uncaught exception`; it did not reproduce in 5
+  consecutive runs afterwards. A regression platform with no timing margin will
+  eventually generate false failures — worth re-implementing for margin.
+- EP4CGX150 closed at +0.479 ns, 8,386 LE (6%) — healthy.
 
 **Second blocker, found and fixed the same day**: the download hung at exactly
 8193 words. 8192 words = 32 KB = the full cache (`LruCacheCore`, 4 ways x 256
@@ -132,6 +151,31 @@ separated "board broken" from "our design broken".
 | EP4CGX150 (SDR) | Terasic USB-Blaster (`terasic`) | `quartus_pgm -c "$(jtag_probe_map --cable terasic)"` |
 | XC7A100T + DB_FPGA V5 (DDR3) | RP2040 on the DB-V5, pico-dirtyJtag | `openFPGALoader` |
 | A-E115FB (1 GB DDR2) | **Terasic** — its Pico clone cannot configure | `quartus_pgm` |
+
+**Why the Pico USB-Blaster clone cannot configure either Altera board — it has
+no level shifter.** Pin 4 of the Altera 10-pin JTAG header is VCC(TRGT); a
+genuine USB-Blaster powers its output buffers and sets its input thresholds from
+that pin, which is how one cable spans 1.5-5 V targets. The Pico is fixed 3.3 V
+in both directions. The EP4CGX150's JTAG bank is **2.5 V** (TDI/TMS 10 k pull-up
+to 2.5 V, TCK 1 k pull-down, TDO no pull), so:
+- Pico -> FPGA (TCK/TMS/TDI) drives 3.3 V into a 2.5 V bank, forward-biasing the
+  input clamp diodes into VCCIO. Out of spec and potentially damaging.
+- FPGA -> Pico (TDO) presents 2.5 V into an RP2040 input whose V_IH is ~0.65 x
+  IOVDD ~ 2.15 V — only ~0.35 V of margin, marginal at 6 MHz over flying leads.
+
+This explains the whole symptom set: IDCODE reads fine (short burst), sustained
+shifts corrupt after the first byte, and a 3.5 MB configuration stream never
+completes. **No firmware change can fix it** — three were tried and all failed.
+Fix is a fixed-direction translator (74LVC8T245 / 74LVC2T45) with VCCB taken
+from header pin 4. Avoid TXS0108E (open-drain oriented, poor at 6 MHz push-pull).
+
+One real firmware bug *was* found and fixed on the way: `gpio_init()` leaves
+RP2040 pads pull-DOWN, but a target's TDO is high-Z outside Shift states, so a
+genuine Blaster reads 1 where the clone read 0. `gpio_pull_up()` on TDO and
+DATAOUT now makes the bit-bang reads match the genuine cable byte-for-byte
+(verified by usbmon capture). Diagnostic tool: `pico-usb-blaster/jtag_pintest.c`,
+which selects the probe by bus:dev — necessary because a genuine cable and the
+clone share VID:PID 09fb:6001.
 
 `fpga/scripts/jtag_probe_map` resolves board → USB serial → the selector each
 tool needs; `usb_serial_map` does the same for tty devices. **Never hardcode port
