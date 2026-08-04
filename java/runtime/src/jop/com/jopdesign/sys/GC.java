@@ -261,8 +261,12 @@ public class GC {
 	public static int gcMinorCount, gcMinorLast, gcMinorMax, gcMinorTotal;
 	/** Per-phase split of the LAST minor GC (us). */
 	public static int gcTRoots, gcTMark, gcTCopy, gcTZero, gcTCards;
+	/** gcTRoots split: stack+static scan vs dirty-card scan. The two scale
+	 *  differently — the card scan is O(heap), the root scan is O(roots). */
+	public static int gcTRootScan, gcTCardScan;
 	/** Per-phase split of the WORST minor GC seen (us) — captured when gcMinorMax moves. */
 	public static int gcWRoots, gcWMark, gcWCopy, gcWZero, gcWCards;
+	public static int gcWRootScan, gcWCardScan;
 	/** Words scanned/promoted by the last minor GC (to correlate pause with work). */
 	public static int gcMinorNurseryWords, gcMinorPromotedWords;
 	/**
@@ -1246,11 +1250,33 @@ public class GC {
 		for (i = 0; i < cnt; ++i) pushYoung(Native.rdMem(addr+i));
 	}
 
-	/** Scan dirty cards for tenure->nursery pointers (conservative). */
+	/**
+	 * Scan dirty cards for tenure->nursery pointers (conservative).
+	 *
+	 * Tenure is TWO used regions with a large free gap between them:
+	 *   [heapStart, copyPtr)    major-GC compacted data, grows up
+	 *   [allocPtr,  tenureTop)  promotions, grow down
+	 * Nothing is allocated in the gap, so the write barrier can never have
+	 * marked a card there, and there would be nothing to trace even if a stale
+	 * bit survived — cards are cleared wholesale at the end of every minor GC.
+	 *
+	 * Scanning the whole span instead was O(heap) and dominated the minor pause
+	 * on a large heap: on the 1 GB A-E115FB it walked 4072 card-table words
+	 * (7.671 ms, 38% of the pause) over a region that was 99.98% free, to reach
+	 * 2 words of real work. Each iteration costs ~141 cycles because it is two
+	 * I/O accesses, so this is not something a tighter loop can fix.
+	 */
 	static void scanCards() {
+		scanCardRange(heapStart, copyPtr);
+		scanCardRange(allocPtr, tenureTop);
+	}
+
+	/** Scan the dirty cards covering [from, to). */
+	static void scanCardRange(int from, int to) {
+		if (from >= to) return;
 		int cardShift = Native.rd(Const.IO_CARD_SHIFT);
-		int baseCard = heapStart >>> cardShift;
-		int topCard  = tenureTop  >>> cardShift;
+		int baseCard = from >>> cardShift;
+		int topCard  = to   >>> cardShift;
 		int wStart = baseCard >>> 5;
 		int wEnd   = (topCard + 31) >>> 5;        // 32 cards per readable word
 		int cardWords = 1 << cardShift;
@@ -1262,12 +1288,15 @@ public class GC {
 			for (int b = 0; bits != 0; ++b, bits >>>= 1) {
 				if ((bits & 1) == 0) continue;
 				int card = card0 + b;
-				if (card < baseCard || card >= topCard) continue;
-				int from = card << cardShift;
-				if (from < heapStart) from = heapStart;
-				int to = from + cardWords;
-				if (to > tenureTop) to = tenureTop;
-				for (int p = from; p < to; ++p) pushYoung(Native.rdMem(p));
+				// `> topCard`, not `>=`: when `to` is not card-aligned the last
+				// card partially covers the range and must still be scanned.
+				// Erring inclusive is safe — pushYoung filters non-handles.
+				if (card < baseCard || card > topCard) continue;
+				int f = card << cardShift;
+				if (f < from) f = from;
+				int t = f + cardWords;
+				if (t > to) t = to;
+				for (int p = f; p < t; ++p) pushYoung(Native.rdMem(p));
 			}
 		}
 	}
@@ -1443,6 +1472,8 @@ public class GC {
 		// Mark: conservative roots (stack/static) + inter-gen (dirty cards).
 		grayList = GREY_END;
 		getYoungRoots();
+		int t0b = 0;
+		if (GC_TIMING) t0b = Native.rd(Const.IO_US_CNT);
 		scanCards();
 		if (GC_TIMING) t1 = Native.rd(Const.IO_US_CNT);
 		while (grayList != GREY_END) {
@@ -1469,6 +1500,8 @@ public class GC {
 		if (GC_TIMING) {
 			t5 = Native.rd(Const.IO_US_CNT);
 			gcTRoots = t1 - t0;
+			gcTRootScan = t0b - t0;
+			gcTCardScan = t1 - t0b;
 			gcTMark  = t2 - t1;
 			gcTCopy  = t3 - t2;
 			gcTZero  = t4 - t3;
@@ -1479,6 +1512,7 @@ public class GC {
 				gcMinorMax = gcMinorLast;
 				gcWRoots = gcTRoots; gcWMark = gcTMark; gcWCopy = gcTCopy;
 				gcWZero = gcTZero;   gcWCards = gcTCards;
+				gcWRootScan = gcTRootScan; gcWCardScan = gcTCardScan;
 				gcWSweptHandles = gcSweptHandles;
 			}
 			gcMinorNurseryWords = nurseryUsed;

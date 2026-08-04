@@ -117,6 +117,10 @@ public class GcPauseTest {
 			int worst = GC.gcMinorMax;
 			JVMHelp.wr("worst-pause phase split:\n");
 			row("roots  ", GC.gcWRoots, worst);
+			// "roots" is two different scans with different scaling: the
+			// stack+static walk is O(roots), the dirty-card walk is O(heap).
+			row("  stk/st", GC.gcWRootScan, worst);
+			row("  cardsc", GC.gcWCardScan, worst);
 			row("mark   ", GC.gcWMark,  worst);
 			row("copy   ", GC.gcWCopy,  worst);
 			row("zero   ", GC.gcWZero,  worst);

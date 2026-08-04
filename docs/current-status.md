@@ -175,14 +175,43 @@ separated "board broken" from "our design broken".
    21% improvement, and now under target. Do not read a single worst-case figure
    as the whole story when the collection count changes with the parameter.
 
-   **The cap has hit diminishing returns on DDR2.** The fixed term there is now
-   10,361 us, so the root scan alone is **47% of the worst pause** and sets a
-   ~10.4 ms floor that no cap value can go below. Holding 20 ms would need the
-   cap at ~5473 (another 1.17x cut), taxing the two large-heap boards further
-   for a bound that the root scan will breach again on any slower memory.
+   **The "root scan" turned out to be two different scans, and the expensive
+   one was pure waste.** `gcTRoots` bundled `getYoungRoots()` (stack + statics)
+   with `scanCards()` (dirty-card walk); splitting the timer showed:
 
-   **Next lever is the root scan, not the cap** — already listed as item 4 below
-   and now clearly the dominant term on the slowest board.
+   | | A-E115FB |
+   |---|---:|
+   | stack + static scan | 0.647 ms (3%) |
+   | **dirty-card scan** | **7.671 ms (38%)** |
+
+   The obvious optimisation — hoisting `pushYoung`'s statics out of the scan
+   loop, per the "statics live in main memory" rule — would have targeted the
+   0.647 ms. Measuring first is what stopped that.
+
+   `scanCards` walked the card table across the whole tenure span, but tenure is
+   **two used regions with a huge free gap**: compacted data grows up from
+   `heapStart` to `copyPtr`, promotions grow down from `tenureTop` to
+   `allocPtr`. On the 1 GB board the span scanned was **99.98% free** — 4072
+   card-table words to reach 2 words of real work, at ~141 cycles each (two I/O
+   accesses per iteration, so no tighter loop would have helped).
+
+   **Fix: scan only `[heapStart, copyPtr)` and `[allocPtr, tenureTop)`.** The
+   gap holds no objects, so the write barrier can never mark a card there and
+   there is nothing to trace even if a stale bit survived.
+
+   | board | constants only | + card-scan fix |
+   |---|---:|---:|
+   | XC7A100T DDR3 | 14.400 ms | **12.523 ms** |
+   | A-E115FB DDR2 | 19.887 ms | **17.338 ms** |
+
+   Both large-heap boards now clear the 20 ms target with margin;
+   `MAJOR OK`, retained 64/64, corrupt 0 on both.
+
+   **Next lever: card granularity.** The remaining card-scan cost (5.1 ms DDR2 /
+   1.5 ms DDR3) is now genuine work — `cardShift = 11` means one dirty card
+   forces scanning 2048 words. Smaller cards would cut that proportionally, and
+   the card table is no longer scanned end-to-end so a larger table is cheap.
+   That is an RTL change to `CardTable`.
 3. **Major GC constant** — 2.2 s at 36k live objects, O(live) confirmed but the
    constant is 20-25x the minor sweep's and unexplained. Next action is a
    *measurement*, not a change: time `sortUseListByAddress()` separately from the
