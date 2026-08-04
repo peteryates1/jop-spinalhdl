@@ -263,8 +263,12 @@ separated "board broken" from "our design broken".
    5-8x copy improvement would come from. **It is a real redesign** of the young
    generation bookkeeping (allocation, marking and sweeping all change), and
    this area has produced subtle premature-collection bugs before — which is why
-   `MultiArrayGcTest` and `IntHandlerGcTest` exist. Scope it with its own
-   before/after measurement on all three boards.
+   `MultiArrayGcTest` and `IntHandlerGcTest` exist.
+
+   **Written up in [gc/copy-phase-redesign.md](gc/copy-phase-redesign.md)** —
+   measurements, the structural analysis, a four-stage plan where each stage is
+   independently measurable, the constraints that must not break, and the open
+   questions (cache pressure being the main one). Not started.
 
 ## 4. Hardware setup
 
