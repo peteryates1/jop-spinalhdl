@@ -700,8 +700,16 @@ object JopConfig {
       memory = "ddr2",
       bootMode = BootMode.Serial,
       clkFreq = 75 MHz,
+      // cardTableBudgetBytes 64 KB, not the 16 KB the other boards use.
+      // cardShift is derived as the smallest shift that fits the budget, so on
+      // a 1 GB heap 16 KB gives 2048-word (8 KB) cards — four times coarser
+      // than the XC7A100T gets from the same budget over 256 MB. A dirty card
+      // costs a scan of every word it covers, which made the card scan 5.1 ms
+      // of a 17.3 ms minor pause here against 1.5 ms on the XC7A100T. 64 KB
+      // buys 512-word cards, matching that board's granularity, for ~10% more
+      // of the EP4CE115's BRAM.
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasBackendFill = true,
-        hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
+        hasCardTable = true, cardTableBudgetBytes = 64 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       // 1 Mbaud, not the 2 Mbaud default. UartCtrl divides by baud x 5 samples,
       // so at 75 MHz a 2 Mbaud divider is 7.5 -> 7, i.e. 2.143 Mbaud: +7% and

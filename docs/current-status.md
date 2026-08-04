@@ -207,18 +207,64 @@ separated "board broken" from "our design broken".
    Both large-heap boards now clear the 20 ms target with margin;
    `MAJOR OK`, retained 64/64, corrupt 0 on both.
 
-   **Next lever: card granularity.** The remaining card-scan cost (5.1 ms DDR2 /
-   1.5 ms DDR3) is now genuine work — `cardShift = 11` means one dirty card
-   forces scanning 2048 words. Smaller cards would cut that proportionally, and
-   the card table is no longer scanned end-to-end so a larger table is cheap.
-   That is an RTL change to `CardTable`.
+   **Card granularity — done, and it needed no RTL change.** `cardShift` is
+   derived as the smallest shift fitting `cardTableBudgetBytes`, so raising the
+   A-E115FB budget 16 KB -> 64 KB took cards from 2048 to 512 words, matching
+   the XC7A100T's granularity (the same 16 KB budget covers 4x less memory
+   there, which is why its card scan was already cheap). Software reads
+   `IO_CARD_SHIFT` at runtime, so nothing on the Java side changed.
+
+   Cost: BRAM 15% -> 25% (978,272 bits) on the EP4CE115, timing still closes at
+   +0.543 ns, 31,170 LE (27%).
+
+   **A-E115FB minor pause, cumulative:**
+
+   | step | worst | card scan |
+   |---|---:|---:|
+   | original constants | 25.376 ms | — |
+   | retuned constants (cap 6400) | 19.887 ms | 7.671 ms |
+   | + scan only used tenure regions | 17.338 ms | 5.122 ms |
+   | + 512-word cards | **14.143 ms** | **1.931 ms** |
+
+   **44% off the pause overall**, and comfortably inside the 20 ms target.
+   Predicted ~13.5 ms and a 4x card-scan cut; got 14.143 ms and 2.65x — halving
+   card size does not quite halve the scanned words, because scattered writes
+   dirty proportionally more cards.
+
+   **Next lever is the copy phase**, now **79%** of the pause (11.300 ms) and
+   essentially unchanged throughout — see item 4.
 3. **Major GC constant** — 2.2 s at 36k live objects, O(live) confirmed but the
    constant is 20-25x the minor sweep's and unexplained. Next action is a
    *measurement*, not a change: time `sortUseListByAddress()` separately from the
    rest of `compactAndSweep`. Two hypotheses about this pause have already been
    wrong.
-4. **Root scan** — 3.9 ms, the minor-pause floor, doesn't shrink with the object
-   cap. Needed to get much below ~10 ms.
+4. **Copy phase — now the dominant term**, 11.3 ms of a 14.1 ms A-E115FB pause
+   (79%) and 10.3 ms of 12.5 ms on the XC7A100T (82%). It barely moved when the
+   clock rose because it is **latency-bound, not clock-bound**: 1766 ns/handle
+   at 75 MHz is *132* cycles against *162* on the 100 MHz DDR3 board.
+
+   The dead path is already down to two main-memory reads per handle
+   (`OFF_NEXT` to walk `youngList`, `OFF_SPACE` to test survivorship) with
+   run-splicing removing most writes — so there is no easy fat left. The cost is
+   structural: the handle table is **2 MB against a 32 KB cache**, and
+   `HANDLE_SIZE` = 8 words = 32 bytes = **exactly one 256-bit cache line**, so
+   every handle touched is one compulsory miss with no intra-handle locality.
+   ~6400 scattered line fetches to find ~66 survivors.
+
+   Both causes are placement decisions, not algorithmic necessities:
+   - `youngList` is a linked list, so walking it needs `OFF_NEXT` from each
+     handle. A dense **array of refs** would put 8 per cache line — 8x fewer
+     misses for the traversal.
+   - The survivor mark lives in the handle (`OFF_SPACE == YOUNG_SURV`), forcing
+     a random read each. A dense **bitmap** would be 6400 bits = 200 words
+     ~ 25 cache lines instead of 6400.
+
+   Together: ~6400 scattered fetches -> ~825 sequential ones. That is where a
+   5-8x copy improvement would come from. **It is a real redesign** of the young
+   generation bookkeeping (allocation, marking and sweeping all change), and
+   this area has produced subtle premature-collection bugs before — which is why
+   `MultiArrayGcTest` and `IntHandlerGcTest` exist. Scope it with its own
+   before/after measurement on all three boards.
 
 ## 4. Hardware setup
 
