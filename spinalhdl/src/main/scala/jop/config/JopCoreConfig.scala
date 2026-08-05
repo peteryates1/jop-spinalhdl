@@ -182,18 +182,18 @@ object BytecodeConfig {
   val all: Seq[BytecodeEntry] = Seq(
     // Integer
     BytecodeEntry("imul",  0x68, "int",    Microcode, Asm),      // Microcode=shift-add ~35cyc, Hardware=CU ~22cyc or DSP 2cyc
-    BytecodeEntry("idiv",  0x6C, "int",    Java,      JavaOk),   // Java=invokestatic ~1300cyc, Hardware=ICU DivUnit ~36cyc
-    BytecodeEntry("irem",  0x70, "int",    Java,      JavaOk),   // Java=invokestatic ~1300cyc, Hardware=ICU DivUnit ~36cyc
+    BytecodeEntry("idiv",  0x6C, "int",    Java,      NoMicrocode),  // Java=invokestatic ~1300cyc, Hardware=ICU DivUnit ~36cyc; no idiv_sw
+    BytecodeEntry("irem",  0x70, "int",    Java,      NoMicrocode),  // Java=invokestatic ~1300cyc, Hardware=ICU DivUnit ~36cyc; no irem_sw
     // Float
     BytecodeEntry("fadd",  0x62, "float",  Java, JavaOk),
     BytecodeEntry("fsub",  0x66, "float",  Java, JavaOk),
     BytecodeEntry("fmul",  0x6A, "float",  Java, JavaOk),
     BytecodeEntry("fdiv",  0x6E, "float",  Java, JavaOk),
-    BytecodeEntry("fneg",  0x76, "float",  Java, JavaOk),   // Hardware -> microcode XOR sign bit (no FCU needed)
-    BytecodeEntry("i2f",   0x86, "float",  Java, JavaOk),
-    BytecodeEntry("f2i",   0x8B, "float",  Java, JavaOk),
-    BytecodeEntry("fcmpl", 0x95, "float",  Java, JavaOk),
-    BytecodeEntry("fcmpg", 0x96, "float",  Java, JavaOk),
+    BytecodeEntry("fneg",  0x76, "float",  Java, NoMicrocode),  // no fneg_sw yet, though it is only an XOR of the sign bit
+    BytecodeEntry("i2f",   0x86, "float",  Java, NoMicrocode),  // no i2f_sw
+    BytecodeEntry("f2i",   0x8B, "float",  Java, NoMicrocode),  // no f2i_sw
+    BytecodeEntry("fcmpl", 0x95, "float",  Java, NoMicrocode),  // no fcmpl_sw
+    BytecodeEntry("fcmpg", 0x96, "float",  Java, NoMicrocode),  // no fcmpg_sw
     // Long — IMP_ASM ops have pure microcode handlers; lmul is IMP_JAVA.
     BytecodeEntry("ladd",  0x61, "long",   Microcode, Asm),
     BytecodeEntry("lsub",  0x65, "long",   Microcode, Asm),
@@ -381,18 +381,25 @@ case class JopCoreConfig(
   /** Resolve the jump table: patch bytecodes based on their configured Implementation.
     *
     * - Java -> patch to sys_noim (JOPizer replaces these with invokestatic)
-    * - Microcode -> use alternate handler from ROM if available (e.g., imul_sw)
+    * - Microcode -> use the ROM's `_sw` handler (e.g. imul_sw)
     * - Hardware -> keep default (HW handler from superset ROM)
+    *
+    * `useAlt` throws if the requested `_sw` handler does not exist rather than
+    * leaving the entry at its `_hw` default, because that default dispatches to
+    * a compute unit — so failing open turns "implement in microcode" into
+    * "implement in hardware" and, when the unit is not instantiated, into wrong
+    * arithmetic with no build error. Only 13 of the 32 configurable bytecodes
+    * have a `_sw` alternate; see JumpTableInitData.useAlt.
     */
   def resolveJumpTable: JumpTableInitData = {
     var result = supersetJumpTable
     for (entry <- BytecodeConfig.all) {
       impl(entry.name) match {
         case Java     => result = result.disable(entry.opcode)
-        case Microcode => result = result.useAlt(entry.opcode)
+        case Microcode => result = result.useAlt(entry.opcode, entry.name)
         case Hardware =>
           if (entry.name == "imul" && useDspMul)
-            result = result.useDspAlt(entry.opcode)
+            result = result.useDspAlt(entry.opcode, entry.name)
       }
     }
     result

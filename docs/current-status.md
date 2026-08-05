@@ -126,9 +126,14 @@ project have looked fine while being wrong.
       `JopCoreConfig.scala:353` documents exactly that (`lmul_sw` drives the ICU
       via `sthw`), so the predicates were known incomplete *before* `621aac7`
       relied on them.
-    - `JumpTable.useAlt` fails open: `case None => this` keeps the `_hw` (CU)
-      handler when a bytecode is set to `Microcode` but has no `_sw` alternate.
-      Only **13 of 32** configurable bytecodes have one.
+    - ~~`JumpTable.useAlt` fails open~~ — **fixed** (`useAlt` now throws). It had
+      kept the `_hw` (CU) handler when a bytecode was set to `Microcode` with no
+      `_sw` alternate. `BytecodeConfig.validate` was supposed to catch that via
+      the `NoMicrocode` constraint, but only 12 of the 19 bytecodes lacking a
+      `_sw` were marked — `idiv`, `irem`, `fneg`, `i2f`, `f2i`, `fcmpl` and
+      `fcmpg` were `JavaOk`, so `mc` passed validation and then silently
+      dispatched to a compute unit. Both layers are now correct and
+      `JumpTableResolutionTest` pins them against each other.
 
     **The exact dispatch path is still unexplained** — on paper the default
     config reaches no CU at all, so removing them should be free. Reproduce with
@@ -153,14 +158,18 @@ project have looked fine while being wrong.
     `Microcode` silently gets the CU handler instead (see item 17) — a
     configuration that looks accepted and is wrong.
 
+    **The silent-misconfiguration half of this is now fixed** (`useAlt` throws,
+    and the seven mismarked constraints are corrected — see below), so what
+    remains is purely the question of how much microcode to write.
+
     Worth deciding deliberately rather than drifting: **long is fully covered,
     double is not covered at all, float is half covered.** Candidates, cheapest
-    first — (a) make `useAlt` *fail loudly* when asked for a missing alternate,
-    which costs nothing and removes the silent-wrong-config class entirely;
-    (b) `fcmpl`/`fcmpg`/`fneg` are trivial in microcode (sign/compare, no
-    arithmetic); (c) `i2f`/`f2i` are moderate; (d) the 12 double ops are a large
-    piece of work and the Java trap (SoftFloat64, ~3000-5000 cycles) may simply
-    be the right answer. Note `compute-unit-design.md` records **`lmul_sw` as
+    first — (a) `fcmpl`/`fcmpg`/`fneg` are trivial in microcode (sign test and
+    compare, no arithmetic; `fneg` is one XOR of the sign bit); (b) `i2f`/`f2i`
+    are moderate; (c) `idiv`/`irem` have an ICU implementation and a ~1300-cycle
+    Java trap, so microcode is only worth it for a board that wants neither;
+    (d) the 12 double ops are a large piece of work and the Java trap
+    (SoftFloat64, ~3000-5000 cycles) may simply be the right answer. Note `compute-unit-design.md` records **`lmul_sw` as
     broken** — check whether `900f66a` ("fix lmul_sw") has since fixed it, as
     that doc may be stale on the point.
 

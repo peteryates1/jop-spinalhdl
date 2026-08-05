@@ -24,18 +24,59 @@ case class JumpTableInitData(
       if (bytecodes.contains(i)) BigInt(sysNoimAddr) else addr
     })
 
-  /** Patch a bytecode to its alternate (software) handler address. */
-  def useAlt(bytecode: Int): JumpTableInitData =
+  /**
+   * Patch a bytecode to its alternate (software) handler address.
+   *
+   * Throws if the ROM has no `<name>_sw` handler, rather than leaving the entry
+   * alone. Failing open here is not a safe default: the superset ROM's default
+   * entry for these opcodes is the `_hw` handler, so quietly keeping it turns
+   * "implement this in microcode" into "dispatch to a compute unit" — and if the
+   * configuration does not instantiate that unit, the result is wrong arithmetic
+   * at run time with no elaboration error and no failing build.
+   *
+   * That is not hypothetical. Only 13 of the 32 configurable bytecodes have a
+   * `_sw` alternate (all 8 long ops, `imul`, and `fadd`/`fsub`/`fmul`/`fdiv`);
+   * the other 19 reach only the Java trap. See item 18 in
+   * docs/current-status.md and the per-unit tables in
+   * docs/architecture/compute-unit-design.md.
+   *
+   * @param name bytecode mnemonic, for the error message only
+   */
+  def useAlt(bytecode: Int, name: String): JumpTableInitData =
     altEntries.get(bytecode) match {
       case Some(altAddr) => copy(entries = entries.updated(bytecode, BigInt(altAddr)))
-      case None => this  // no alternate available, keep default
+      case None =>
+        val available = altEntries.keys.toSeq.sorted.map(op => f"0x$op%02X").mkString(", ")
+        throw new IllegalArgumentException(
+          f"Bytecode '$name' (0x$bytecode%02X) is configured as Microcode, but this " +
+          f"microcode ROM has no '${name}_sw' handler.\n" +
+          "  The superset ROM's default entry for this opcode is the '_hw' handler, so " +
+          "accepting this would silently dispatch to a compute unit instead of to " +
+          "microcode — and produce wrong results rather than an error if that unit is " +
+          "not instantiated.\n" +
+          f"  Fix: set '$name' to \"java\" or \"hw\", or add a '${name}_sw' handler to " +
+          "asm/src/jvm.asm.\n" +
+          f"  Opcodes with a _sw alternate in this ROM: $available")
     }
 
-  /** Patch a bytecode to its DSP-accelerated handler address. */
-  def useDspAlt(bytecode: Int): JumpTableInitData =
+  /**
+   * Patch a bytecode to its DSP-accelerated handler address.
+   *
+   * Strict for the same reason as [[useAlt]]: silently keeping the default would
+   * mean `useDspMul = true` quietly did nothing, which is a performance claim
+   * the build would then not be delivering.
+   *
+   * @param name bytecode mnemonic, for the error message only
+   */
+  def useDspAlt(bytecode: Int, name: String): JumpTableInitData =
     dspAltEntries.get(bytecode) match {
       case Some(dspAddr) => copy(entries = entries.updated(bytecode, BigInt(dspAddr)))
-      case None => this  // no DSP alternate available, keep default
+      case None =>
+        throw new IllegalArgumentException(
+          f"useDspMul is set, but this microcode ROM has no '${name}_dsp' handler " +
+          f"for '$name' (0x$bytecode%02X). Accepting this would leave useDspMul " +
+          "silently ineffective. Fix: set useDspMul = false, or add a " +
+          f"'${name}_dsp' handler to asm/src/jvm.asm.")
     }
 }
 
