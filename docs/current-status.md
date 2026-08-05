@@ -256,6 +256,29 @@ trusting the table as true coverage rather than as a configuration matrix.
     bytecode set to `mc` — not merely with the default config, which would not
     execute the new handler at all.
 
+20a. **`lmul` in microcode on a board with no multiplier — a gap, but not
+    worth closing.** Raised because `imul = mc, lmul = mc` is rejected, which
+    looks like a hole in "a microcode fallback for all or most bytecodes".
+
+    It is a gap in the *matrix*, not in *capability*. The zero-multiplier
+    configuration is the **default** — `imul` defaults to `Microcode` (a
+    self-contained shift-add loop needing no CU) and `lmul` to `Java` — and it
+    passes DoAll 66/66 in `JopJvmTestsBramSim`. So a board with no ICU
+    multiplier already has a working `lmul`.
+
+    Closing the gap means a CU-free `lmul_sw` built from three shift-add
+    products. `imul_sw` alone is ~775 cycles for one 32x32, so three partial
+    products is **~2300+ cycles against the Java trap's ~1200** — the microcode
+    version would be roughly twice as slow as what it replaced. That inverts the
+    usual argument for microcode fallbacks, which exists because the Java trap is
+    normally 20-100x worse.
+
+    Caveat on the comparison: the ~1200 figure is from
+    `compute-unit-design.md` and Java `f_lmul` computes its partial products with
+    the `imul` *bytecode*, so its real cost tracks whatever `imul` is set to. It
+    has not been measured with `imul = mc`. The direction is clear enough to not
+    act on, but the number is not load-bearing — measure before revisiting.
+
 20. **Decide whether the double group gets microcode at all** — measure before
     committing. All 12 (`dadd`, `dsub`, `dmul`, `ddiv`, `i2d`, `d2i`, `l2d`,
     `d2l`, `f2d`, `d2f`, `dcmpl`, `dcmpg`) currently reach only SoftFloat64 at

@@ -784,7 +784,7 @@ Genuine software float for those four would be SoftFloat32 via the Java trap.
 | lsub | -- | 37 (negate + half-add) | 9 + 2 = **11** | 2 | Combinational sub, 1-cycle exec |
 | lneg | -- | 34 (xor + fall-through to ladd_sw) | 13 + 2 = **15** | 2 | HW uses lsub(0 - value): stm(2)+ldm(2)+stop(4)+sthw+wait(2)+ldop(2) |
 | lcmp | -- | ~25 (branch-heavy, sign checks) | 8 + 2 = **10** | 2 | Combinational compare, 1-cycle exec |
-| lmul | ~1200 (Java f_lmul) | **BROKEN** (see note) | 9 + 34 = **43** | 34 | Radix-4, 32 iterations |
+| lmul | ~1200 (Java f_lmul) | 43 + ICU (requires imul=hw) | 9 + 34 = **43** | 34 | Radix-4, 32 iterations |
 | ldiv | ~1500 (Java f_ldiv) | -- | 9 + 68 = **77** | 68 | Binary restoring, 64 iterations |
 | lrem | ~1500 (Java f_lrem) | -- | 9 + 68 = **77** | 68 | Same divider as ldiv |
 | lshl | -- | 6-23 (path-dependent) | 8 + 2 = **10** | 2 | Combinational barrel shift |
