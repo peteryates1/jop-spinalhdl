@@ -110,7 +110,8 @@ project have looked fine while being wrong.
     in BRAM simulation, needs per-core stack regions on SDRAM.
 15. **`GcPauseTest` on the Wukong boards** — never run; they have card tables now
     but no measured pause.
-16. ~~**Colorlight i5 Stage 2 (SDRAM)**~~ — **DONE** (`a7fdf93`). 8 MB working on
+16. ~~**Colorlight i5 SDRAM ("stage 2" of that board's bring-up — unrelated to
+    the GC stages elsewhere in this document)**~~ — **DONE** (`a7fdf93`). 8 MB working on
     hardware, DoAll 66/66 at 1 Mbaud. `BmbSdramCtrlWide` added for the 32-bit
     part; `MemoryControllerFactory.createSdr` selects on `layout.dataWidth`.
     Remaining i5 work is ordinary: raise the clock above 40 MHz, and try SMP now
@@ -224,11 +225,14 @@ project have looked fine while being wrong.
 
 ### Boards
 
-21. **Colorlight i5 is EBR-bound, not logic-bound** — with 64 KB on-chip memory
-    it sat at 71% block RAM against 30% of LUTs; on SDRAM it is 21% / 42%. Anything wider (SMP, more compute
-    units) has plenty of logic room but needs Stage 2 first. It is also the only
-    board on the open-source toolchain, so it is the natural place to notice
-    yosys/nextpnr-specific breakage before it reaches the vendor flows.
+21. **Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound** — with
+    64 KB of on-chip main memory it sat at 71% block RAM against 30% of LUTs.
+    Moving main memory to SDRAM inverts that to **21% block RAM / 42% LUTs**, so
+    SMP and extra compute units are now worth trying; they were not possible
+    while a single core consumed 71% of the EBR, which is why the board went to
+    SDRAM before anything else. It is also the only board on the open-source
+    toolchain, so it is the natural place to notice yosys/nextpnr-specific
+    breakage before it reaches the vendor flows.
 
 ### Coupling — read before sequencing any of this
 
@@ -329,11 +333,11 @@ independent corroboration on a fourth board rather than part of that run:
 
 (i5 row added 2026-08-05, after the three-board run above.)
 
-The i5 could not run the JVM suite in Stage 1: `DoAll.jop` is 72,428 words =
+The i5 could not run the JVM suite in its BRAM stage: `DoAll.jop` is 72,428 words =
 **283 KB**, against 64 KB of configured main memory and **126 KB of total EBR on
 the LFE5U-25F** — it would not fit even with every block RAM given to main memory
 and nothing left for the microcode ROM, JBC cache, stack cache or jump table.
-Stage 2 (8 MB SDRAM) removed that limit and it now passes 66/66.
+The SDRAM stage (8 MB) removed that limit and it now passes 66/66.
 
 All three return identical checksums for the same image (`0x8f197bc7` for
 HelloWorld, `0x2ed0b59a` for DoAll), so the transfers are byte-identical across

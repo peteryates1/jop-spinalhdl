@@ -6,6 +6,10 @@ and the 283 KB `DoAll.jop` JVM suite both download over the DAPLink and run.
 This is the project's first board on a fully open-source toolchain — every other
 target goes through Quartus or Vivado. Nothing is shared with those flows.
 
+"Stage 1" and "Stage 2" throughout this document mean **this board's bring-up
+steps** — BRAM first, then SDRAM. They have nothing to do with the GC stages
+(card marking, generational, pause work) numbered elsewhere in the project.
+
 ## Hardware
 
 | | |
@@ -207,16 +211,18 @@ would hit, since a doubled mapping still passes write-then-read), burst reads,
 a single read after a burst, block fill including empty and inverted ranges,
 back-to-back adjacent single-word access, and DQM masking.
 
-## The JVM suite does not fit in Stage 1
+## Why the JVM suite needed Stage 2 (resolved)
 
-`DoAll.jop` is 72,428 words = **283 KB**. Stage 1 has 64 KB of main memory, so it
-is 4.4x too big — but the more useful figure is that the LFE5U-25F has **126 KB of
-EBR in total**, so DoAll would not fit even with every block RAM on the chip
-assigned to main memory and nothing left for the microcode ROM, JBC cache, stack
-cache or jump table.
+`DoAll.jop` is 72,428 words = **283 KB**. Stage 1 had 64 KB of main memory, so it
+was 4.4x too big — but the more useful figure is that the LFE5U-25F has **126 KB
+of EBR in total**, so DoAll would not have fit even with every block RAM on the
+chip assigned to main memory and nothing left for the microcode ROM, JBC cache,
+stack cache or jump table.
 
-So the JVM suite is gated on Stage 2 (SDRAM) categorically, not on tuning the BRAM
-split. `HelloWorld.jop` (11,929 words = 47 KB) is what Stage 1 can host.
+The suite was therefore gated on SDRAM categorically, not on tuning the BRAM
+split — worth stating because it is the kind of limit someone otherwise spends a
+day trying to tune around. `HelloWorld.jop` (11,929 words = 47 KB) is what Stage 1
+could host; Stage 2's 8 MB now runs DoAll at 66/66.
 
 ## Gotcha hit during bring-up: stale generated Verilog
 
