@@ -780,16 +780,15 @@ Java trap (SoftFloat32). The old I/O-based BmbFpu peripheral has been removed.
 | lshr | -- | 6-23 (path-dependent) | 8 + 2 = **10** | 2 | Combinational barrel shift |
 | lushr | -- | 6-23 (path-dependent) | 8 + 2 = **10** | 2 | Combinational barrel shift |
 
-**lmul_sw is currently broken.** It uses the old `sthw`/`ldmul`/`ldmulh`
-interface to perform 3 partial-product 32×32→64 multiplies (P0=a0*b0,
-P1=a1*b0, P2=a0*b1), relying on `ldmulh` to get the upper 32 bits. The
-new ICU only produces the lower 32 bits (`resultCount=1`) and the old
-`sthw`(0x040)/`ldmul`/`ldmulh` instructions are no longer wired. Options:
-(a) extend ICU imul to output 64 bits (resultCount=2) and rewrite lmul_sw
-to use `stop`/`stop`/`sthw 0`/`wait`/`wait`/`ldop`/`ldop`, (b) rewrite as
-pure shift-and-add (~1500+ cycles), or (c) remove lmul_sw entirely (lmul
-always requires LCU or falls to Java trap). ldiv/lrem have no pure
-microcode — Java trap only when CU disabled. Shift SW costs: cnt=0
+**lmul_sw was broken and is now fixed** (`900f66a`, option (a)). It used the
+old `sthw`/`ldmul`/`ldmulh` interface to perform 3 partial-product
+32×32→64 multiplies (P0=a0*b0, P1=a1*b0, P2=a0*b1), relying on `ldmulh`
+for the upper 32 bits, which the new ICU no longer provides. The ICU
+gained `imul_wide` (resultCount=2) and lmul_sw was rewritten onto
+`stop`/`stop`/`sthw 3`/`wait`/`wait`/`ldop`/`ldop`. It therefore still
+requires an ICU — which is what the `lmul` require in
+`JopCoreConfig.scala:353` enforces. ldiv/lrem have no pure microcode —
+Java trap only when the CU is disabled. Shift SW costs: cnt=0
 early exit (6), cnt 1-31 (23), cnt 32-63 (12).
 
 ### DCU — Double Compute Unit

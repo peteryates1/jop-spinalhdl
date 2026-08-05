@@ -87,11 +87,12 @@ project have looked fine while being wrong.
 
 ### The measurement gap
 
-11. **There is no application benchmark, and three decisions rest on it:**
+11. **There is no application benchmark, and four decisions rest on it:**
     whether a cycle of arbiter latency is worth 4+ cores (item 5); whether the
-    caches (2,213 LE/core, 33% of a core) earn their area; and whether the copy
-    redesign helps real workloads (item 4). Currently all three are reasoned
-    rather than measured. Probably the highest-leverage thing to build next —
+    caches (2,213 LE/core, 33% of a core) earn their area; whether the copy
+    redesign helps real workloads (item 4); and whether the double bytecodes are
+    used enough to deserve microcode at all (item 20). Currently all four are
+    reasoned rather than measured. Probably the highest-leverage thing to build next —
     and items 1 and 2 need a multi-core allocating application anyway, so the
     first slice of this is already on the critical path (see *Coupling*).
 
@@ -114,6 +115,8 @@ project have looked fine while being wrong.
     part; `MemoryControllerFactory.createSdr` selects on `layout.dataWidth`.
     Remaining i5 work is ordinary: raise the clock above 40 MHz, and try SMP now
     that block RAM is only 21% used. See `docs/boards/colorlight-i5-bringup.md`.
+### Compute units and bytecode implementation
+
 17. **`needs*Compute` predicates understate compute-unit reachability.**
     `621aac7` used them to skip instantiating unused CUs and regressed the JVM
     suite 66/66 -> 56/66; reverted in `eda6de7`. The area win is real (~474 LE
@@ -162,18 +165,50 @@ project have looked fine while being wrong.
     and the seven mismarked constraints are corrected — see below), so what
     remains is purely the question of how much microcode to write.
 
-    Worth deciding deliberately rather than drifting: **long is fully covered,
-    double is not covered at all, float is half covered.** Candidates, cheapest
-    first — (a) `fcmpl`/`fcmpg`/`fneg` are trivial in microcode (sign test and
-    compare, no arithmetic; `fneg` is one XOR of the sign bit); (b) `i2f`/`f2i`
-    are moderate; (c) `idiv`/`irem` have an ICU implementation and a ~1300-cycle
-    Java trap, so microcode is only worth it for a board that wants neither;
-    (d) the 12 double ops are a large piece of work and the Java trap
-    (SoftFloat64, ~3000-5000 cycles) may simply be the right answer. Note `compute-unit-design.md` records **`lmul_sw` as
-    broken** — check whether `900f66a` ("fix lmul_sw") has since fixed it, as
-    that doc may be stale on the point.
+    **Long is fully covered, float is half covered, double is not covered at
+    all.** The work to close that is items 19 and 20.
 
-19. **Colorlight i5 is EBR-bound, not logic-bound** — with 64 KB on-chip memory
+    (`compute-unit-design.md` recorded `lmul_sw` as broken; verified fixed by
+    `900f66a`, which added ICU `imul_wide` and rewrote it onto the
+    `stop`/`sthw`/`ldop` interface. That doc has been corrected.)
+
+19. **Write the missing `_sw` microcode handlers.** Goal: a microcode fallback
+    for *all or most* configurable bytecodes, so that any board can trade area
+    for cycles without dropping to the Java trap. Seven of the nine gaps outside
+    the double group are small; the double group is item 20.
+
+    Per-operation cycle costs for the alternatives are already tabulated in
+    `docs/architecture/compute-unit-design.md`.
+
+    | tier | bytecodes | effort | why |
+    |---|---|---|---|
+    | 1 | `fneg`, `fcmpl`, `fcmpg` | small | no arithmetic — `fneg` is one XOR of the sign bit, the compares are a sign test plus an integer compare |
+    | 2 | `i2f`, `f2i` | moderate | normalise/denormalise: count leading zeros, shift, assemble exponent |
+    | 3 | `idiv`, `irem` | moderate | restoring division loop. Lowest value of the three: the ICU already does it in ~36 cycles and the Java trap in ~1300, so this only pays for a board that wants neither |
+
+    Each one is done when: the `_sw` handler exists in `asm/src/jvm.asm`, its
+    `BytecodeEntry` constraint moves `NoMicrocode` -> `JavaOk`, the coverage
+    expectation in `JumpTableResolutionTest` is updated (it is deliberately
+    pinned so this cannot pass unnoticed), and DoAll passes 66/66 with that
+    bytecode set to `mc` — not merely with the default config, which would not
+    execute the new handler at all.
+
+20. **Decide whether the double group gets microcode at all** — measure before
+    committing. All 12 (`dadd`, `dsub`, `dmul`, `ddiv`, `i2d`, `d2i`, `l2d`,
+    `d2l`, `f2d`, `d2f`, `dcmpl`, `dcmpg`) currently reach only SoftFloat64 at
+    ~3000-5000 cycles, against ~14 cycles on the DCU. Microcode would land
+    somewhere between, but it is a large piece of work for a group most JOP
+    applications use rarely, and the ROM is finite (4096 entries).
+
+    Unlike item 19 this is a genuine question, not a task: the honest answer may
+    be that double stays Java-trap-or-DCU. Worth deferring until there is an
+    application benchmark (item 11) that shows whether double is on any hot
+    path. `dcmpl`/`dcmpg` are the exception — they are as cheap as their float
+    counterparts in tier 1 and could be done with them.
+
+### Boards
+
+21. **Colorlight i5 is EBR-bound, not logic-bound** — with 64 KB on-chip memory
     it sat at 71% block RAM against 30% of LUTs; on SDRAM it is 21% / 42%. Anything wider (SMP, more compute
     units) has plenty of logic room but needs Stage 2 first. It is also the only
     board on the open-source toolchain, so it is the natural place to notice
@@ -197,6 +232,12 @@ So build the application once and it serves all three: it makes item 2's test
 meaningful, gives item 1 something that can fail before the RTL changes, and is
 the beginning of item 11. Doing them in the other order means writing a
 throwaway harness twice.
+
+**Third coupling**: item 20 (does double deserve microcode?) is not answerable
+without item 11 either. It is a cost/benefit question about a group of bytecodes
+whose usage frequency nobody here has measured, and writing ~12 handlers to find
+out is the expensive way round. Item 19's three tiers are *not* coupled to it —
+they are small enough to be worth doing on their own merits.
 
 **Second coupling, weaker**: items 4 and 6 may be the same defect. The copy
 phase's problem is placement — the handle table is far larger than the cache and
