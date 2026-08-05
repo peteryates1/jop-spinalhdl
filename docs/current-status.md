@@ -1,12 +1,109 @@
-# Where we are — 2026-08-03
+# Where we are — 2026-08-05
 
-Resumption notes covering the GC work, the A-E115FB DDR2 bring-up, and the
+Resumption notes covering the GC work, the A-E115FB DDR2 bring-up, SMP, and the
 board/probe setup. Written to be read cold.
 
 Detail lives in:
 - [gc/stage3-followups.md](gc/stage3-followups.md) — GC items, each with its next action
 - [boards/ae115fb-ddr2-bringup.md](boards/ae115fb-ddr2-bringup.md) — DDR2, including everything that went wrong
 - [bugs-and-issues.md](bugs-and-issues.md) — the defects fixed along the way
+- [gc/copy-phase-redesign.md](gc/copy-phase-redesign.md) — the remaining 79-82% of the minor pause
+
+---
+
+## 0. Outstanding items
+
+Scannable index; the numbered sections below carry the reasoning. Each entry
+says what is **verified** versus **asserted**, because several things in this
+project have looked fine while being wrong.
+
+### Blocking / correctness
+
+1. **Generational GC is unsound on SMP — currently guarded off.** The card table
+   is per core, snoops that core's own BMB port ahead of the arbiter, and
+   `IO_CARD_*` is decoded per core, so the collector sees only its own table: a
+   tenured->nursery write by another core is invisible and that young object is
+   collected while still live. `GC.init` falls back to classic when `cpuCnt > 1`
+   and says so at boot (verified on hardware). Fix is ONE cluster-level card
+   table fed from the arbiter output — `CmpSync` is the precedent for a
+   cluster-level resource reached through per-core I/O. **Write the failing test
+   first**: the existing SMP GC tests do not construct a cross-core old->young
+   reference and would pass either way. ~1-2 days, dominated by the test.
+
+2. **`JopIhluGcBramSim` cannot fail.** It loads `java/apps/Small/HelloWorld.jop`
+   — a single-core app — so core 1 parks in the boot-wait loop and IHLU is never
+   exercised. Verified by running it to 49M cycles: core 1 never moved. Needs a
+   real SMP GC application before "IHLU GC verified" means anything.
+
+3. **Sixteen presets still run classic GC.** Safe but slow after the guard;
+   `hasCardTable` is one line each and the boot line confirms it took effect.
+   The Wukong presets have it but are **elaboration-verified only** — no Wukong
+   board has been attached, so `GC: generational` is unconfirmed there.
+
+### Performance
+
+4. **Copy phase — 79-82% of the minor pause** and the dominant remaining term.
+   Latency-bound, not clock-bound: 132 cycles/handle at 75 MHz against 162 at
+   100 MHz. The handle table is 2 MB against a 32 KB cache and a handle is
+   exactly one 256-bit line, so ~6400 compulsory misses to find ~66 survivors.
+   Plan in [gc/copy-phase-redesign.md](gc/copy-phase-redesign.md). The 5-8x
+   estimate is **asserted from transaction counts, not measured**.
+
+5. **The BMB arbiter caps SMP at 2 cores @ 100 MHz.** Path is
+   `coreX zeroCur -> arbiter -> coreY memCtrl state machine`, widening with core
+   count. Measured on EP4CGX150: 1 core 7,870 LE (~107 MHz), 2 cores 19,439 LE
+   (+0.270 ns at 100 MHz), 4 cores 38,372 LE (**65.3 MHz**). Area allows ~12
+   cores at 73% with full caches; BRAM never binds (~52% at 16). Pipelining the
+   arbiter costs a cycle on every memory access — see item 11 before committing.
+
+6. **Major GC constant unexplained** — 2.2 s at 36k live objects. O(live)
+   confirmed but the constant is 20-25x the minor sweep's. Next action is a
+   *measurement* (time `sortUseListByAddress()` separately), not a change; two
+   hypotheses have already been wrong. Check whether `compactAndSweep` shares
+   the copy phase's placement problem — one redesign may fix both.
+
+7. **Root-scan floor: 2.2 / 4.7 / 8.5 ms** across SDR / DDR3 / DDR2. Tracks
+   memory latency, not clock (the SDR and DDR3 boards are both 100 MHz yet
+   differ 2.1x), so it will grow again on slower memory.
+
+### Hardware / infrastructure
+
+8. **XC7A100T timing margin is +0.001 ns**, with one bad run in seven during
+   regression testing. A regression platform with no margin manufactures false
+   failures. Re-implement for margin.
+
+9. **Pico USB-Blaster needs a level shifter** — 74LVC8T245 (or 2x 74LVC2T45)
+   with `VCCB` from JTAG header pin 4. No firmware change can fix it: the clone
+   drives a fixed 3.3 V into a 2.5 V bank and reads 2.5 V against an RP2040
+   V_IH of ~2.15 V. Unblocks having both Altera boards connected at once. The
+   pull-up fix and `jtag_pintest.c` are **uncommitted** in `~/workspaces/pico-usb-blaster`.
+
+10. **pico-usb-blaster protocol bug** — low-level shift works (IDCODE reads
+    correctly), so the fault is in byte-shift-mode or response framing. Lower
+    priority now the level shifter is understood as the real blocker.
+
+### The measurement gap
+
+11. **There is no application benchmark, and three decisions rest on it:**
+    whether a cycle of arbiter latency is worth 4+ cores (item 5); whether the
+    caches (2,213 LE/core, 33% of a core) earn their area; and whether the copy
+    redesign helps real workloads (item 4). Currently all three are reasoned
+    rather than measured. Probably the highest-leverage thing to build next.
+
+### Smaller
+
+12. **`LongComputeUnitConfig` has no enable flag** for its base 64-bit ALU
+    (`ladd/lsub/lneg/lcmp`), unlike `FloatComputeUnitConfig.withAdd`. Worked
+    around at the `ComputeUnitTop` level (conditional instantiation), but the
+    config asymmetry remains and would bite anyone relying on the `with*` flags
+    alone.
+13. **`java/apps/Small` `make clean` deletes `HelloWorld.jop`** — `JOP_OUT`
+    derives from `APP_NAME`, which defaults to HelloWorld. Cost a sim failure
+    and nearly a wrong SMP result. Build HelloWorld last, or `rm -rf build`.
+14. **Stack cache SDRAM integration** — pre-existing; 3-bank rotation verified
+    in BRAM simulation, needs per-core stack regions on SDRAM.
+15. **`GcPauseTest` on the Wukong boards** — never run; they have card tables now
+    but no measured pause.
 
 ---
 
@@ -35,12 +132,13 @@ live set, so no nursery size could have bounded it. It no longer does.
 | `ae115fbDdr2` preset + JopTop | ✅ elaborates, no regression to other boards |
 | JOP building on the board | ✅ 27% LE, +0.584 ns slack, programs |
 | JOP serial handshake | ✅ **fixed and confirmed on hardware** |
-| **Download > 32 KB** | ❌ **new blocker: first dirty cache eviction deadlocks** |
+| Download > 32 KB | ✅ fixed — the adapter now responds to writes |
+| Full GC suite on ~1.07 GB | ✅ JVM 66/66, minor pause 14.1 ms |
 
-## 2. The immediate next task
+## 2. How the serial-boot handshake was fixed (history)
 
-**The `0x4D` blocker is diagnosed and fixed in microcode; it needs a hardware
-run to confirm.**
+**Resolved and confirmed on all four boards.** Kept because the failure mode is
+instructive and the reasoning is reusable.
 
 JOP was sending `0xAA` correctly the whole time — the *receiver* was locked onto
 the wrong bit. A gapless stream of 8N1 `0xAA` frames is the repeating pattern
