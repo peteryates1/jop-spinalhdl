@@ -353,23 +353,34 @@ jobs:
           make -C java/apps/JvmTests
           ls -l java/apps/JvmTests/DoAll.jop
 
+      # --no-colors matters: with ANSI escapes sbt's output lines do not END in
+      # "ok", they end in the colour reset, so a ' ok$' grep silently matches
+      # nothing and a passing run looks like a run that never started. Locally
+      # sbt does not colourise when piped, which is why this only shows up here.
+      # The sed is belt and braces in case something else emits escapes.
       - name: Run ${{ matrix.name }}
-        run: sbt -J-Xmx4g "Test/runMain jop.system.${{ matrix.sim }}" 2>&1 | tee sim.log
+        run: |
+          sbt -J-Xmx4g --no-colors "Test/runMain jop.system.${{ matrix.sim }}" 2>&1 \
+            | sed -r 's/\x1B\[[0-9;]*[mK]//g' | tee sim.log
 
       - name: Check DoAll result
         run: |
+          # These sims are App objects: they exit 0 whatever the suite reports,
+          # so the verdict has to be read out of the log or a regression passes
+          # silently.
           fails=$(grep -c 'failed!' sim.log || true)
-          oks=$(grep -cE ' ok$' sim.log || true)
-          echo "passed=$oks failed=$fails"
-          # These sims are App objects: they exit 0 whatever DoAll reports, so
-          # the result has to be read out of the log or a regression is silent.
+          # Two result formats: DoAll prints "<name> ok" per test, JopDcuCacheSim
+          # prints a summary line. Accept either as evidence the suite ran.
+          oks=$(grep -cE '[A-Za-z0-9_)] ok[[:space:]]*$' sim.log || true)
+          summary=$(grep -cE 'All [0-9]+ tests passed|Tests passed: [0-9]+/[0-9]+' sim.log || true)
+          echo "per-test ok lines=$oks  summary lines=$summary  failed=$fails"
           if [ "$fails" -ne 0 ]; then
-            echo "::error::${{ matrix.name }}: $fails DoAll test(s) failed"
+            echo "::error::${{ matrix.name }}: $fails test(s) failed"
             grep 'failed!' sim.log
             exit 1
           fi
-          if [ "$oks" -eq 0 ]; then
-            echo "::error::${{ matrix.name }}: no test results found — the run did not reach DoAll"
+          if [ "$oks" -eq 0 ] && [ "$summary" -eq 0 ]; then
+            echo "::error::${{ matrix.name }}: no results found — the suite did not run to completion"
             tail -40 sim.log
             exit 1
           fi
