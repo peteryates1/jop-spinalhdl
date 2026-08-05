@@ -234,26 +234,37 @@ The Makefile now makes `$(GENDIR)/$(TOP).v` depend on `$(SCALA_SRC)` and the
 microcode `.dat` files. If the UART ever emits a stable repeating non-`0xAA`
 pattern, suspect a clock/baud mismatch before suspecting the wiring.
 
-## Next: Stage 2 (SDRAM)
+## Next
 
-The EM638325BK-6H is 8 MB and unusually **32 bits wide**, with **CKE tied high, CS
-tied low and all four DQM tied low** — none of those are driven by the FPGA.
+Ordinary work now, no known blockers:
 
-Two consequences:
+- **Raise the clock.** 40 MHz was chosen for bring-up; the SDRAM build closes at
+  48.08 MHz, and the limit is the usual JOP fetch/branch path rather than
+  anything ECP5-specific.
+- **Try SMP.** Block RAM is only 21% used now that main memory is off-chip, and
+  LUTs are at 42%. This was impossible in Stage 1, where EBR bound at 71% with a
+  single core.
+- **Flash boot** needs the GD25Q16 unlock procedure
+  ([kazkojima/colorlight-i5-tips#spiflash](https://github.com/kazkojima/colorlight-i5-tips#spiflash)).
+- **2 Mbaud** divides exactly at 40 MHz (divider 4) if the DAPLink CDC will take it.
 
-1. **No byte masking.** Any sub-word write would need read-modify-write. JOP's main
-   memory is word-addressed, so a JOP word is exactly one SDRAM access and nothing
-   needs masking — this actually suits JOP well.
-2. **`BmbSdramCtrl32` is the wrong shape.** It is explicitly a 32-bit-BMB-to-16-bit-SDRAM
-   bridge that splits each word into two half-word bursts. Here the bus is already
-   32 bits wide, so a 32-bit path is needed instead — this is the main piece of new
-   work for Stage 2, not a parameter change.
+## A trap this board exposed, which was not this board's fault
 
-`SdramCtrlNoCke` already exists in the project and is relevant given CKE is tied.
+Stage 2 first came up with the JVM suite at 56/66 — ten failures, all in
+long/float/double arithmetic and the formatting that depends on it, while
+`FloatField` and `LongStaticField` passed. That reads exactly like a bug in a
+brand-new 32-bit SDRAM bridge, and two plausible hypotheses (software `idiv`, a
+stale `.jop`) were both tested and both wrong.
 
-The PLL will also need a second, phase-shifted output for the SDRAM clock pin, the
-way every other SDR board here does it. `EHXPLLL` has CLKOS/CLKOS2/CLKOS3 for that,
-so it is a wrapper change rather than a structural one.
+Running the *same* `DoAll.jop` under `JopJvmTestsBramSim` — default config, no
+SDRAM, no ECP5 — reproduced the identical ten failures. The regression was
+`621aac7`, committed earlier the same day, and affected every board; reverting it
+restored 66/66 in the sim and 66/66 on this hardware. See item 17 in
+`docs/current-status.md`.
+
+The lesson is cheap to reuse: **when a new platform fails a suite, run the same
+image on a known platform before debugging the new one.** It cost one 15-minute
+simulation and would have cost a day of bridge debugging.
 
 ## References
 

@@ -109,14 +109,63 @@ project have looked fine while being wrong.
     in BRAM simulation, needs per-core stack regions on SDRAM.
 15. **`GcPauseTest` on the Wukong boards** — never run; they have card tables now
     but no measured pause.
-16. **Colorlight i5 Stage 2 (SDRAM)** — Stage 1 (BRAM) is working on hardware;
-    see `docs/boards/colorlight-i5-bringup.md`. The blocker is that the
-    EM638325BK-6H is **32 bits wide**, so `BmbSdramCtrl32` (a 32-bit-BMB-to-
-    16-bit-SDRAM bridge) is the wrong shape and a 32-bit path is needed — real
-    work, not a parameter change. CKE/CS/DQM are all hard-tied on the board, so
-    there is no byte masking; JOP's word-addressed memory does not need any.
-17. **Colorlight i5 is EBR-bound, not logic-bound** — 71% of block RAM at 30% of
-    LUTs with one core and 64 KB of memory. Anything wider (SMP, more compute
+16. ~~**Colorlight i5 Stage 2 (SDRAM)**~~ — **DONE** (`a7fdf93`). 8 MB working on
+    hardware, DoAll 66/66 at 1 Mbaud. `BmbSdramCtrlWide` added for the 32-bit
+    part; `MemoryControllerFactory.createSdr` selects on `layout.dataWidth`.
+    Remaining i5 work is ordinary: raise the clock above 40 MHz, and try SMP now
+    that block RAM is only 21% used. See `docs/boards/colorlight-i5-bringup.md`.
+17. **`needs*Compute` predicates understate compute-unit reachability.**
+    `621aac7` used them to skip instantiating unused CUs and regressed the JVM
+    suite 66/66 -> 56/66; reverted in `eda6de7`. The area win is real (~474 LE
+    per core, ~5,700 across 12 cores) and worth recovering, but needs a
+    predicate that asks *"can any dispatch path reach this unit"* rather than
+    *"is any bytecode set to Hardware"*. Two known ways the current ones
+    understate it:
+    - `needs*Compute` is `isHw(...)`, i.e. `impl == Hardware` only. A bytecode
+      set to `Microcode` that reaches a CU is invisible. The `lmul` require at
+      `JopCoreConfig.scala:353` documents exactly that (`lmul_sw` drives the ICU
+      via `sthw`), so the predicates were known incomplete *before* `621aac7`
+      relied on them.
+    - `JumpTable.useAlt` fails open: `case None => this` keeps the `_hw` (CU)
+      handler when a bytecode is set to `Microcode` but has no `_sw` alternate.
+      Only **13 of 32** configurable bytecodes have one.
+
+    **The exact dispatch path is still unexplained** — on paper the default
+    config reaches no CU at all, so removing them should be free. Reproduce with
+    `JopJvmTestsBramSim` (default config, no board involved); it fails in ~15 min.
+    Do not re-land the optimisation without that sim passing 66/66.
+
+18. **Software/microcode fallback coverage is uneven** — 19 of 32 configurable
+    bytecodes have no `_sw` microcode handler, so their only non-hardware path
+    is the Java trap. Per-operation cycle costs already exist in
+    `docs/architecture/compute-unit-design.md` (ICU/FCU/LCU/DCU tables); what
+    follows is the coverage summary.
+
+    | group | has `_sw` | no `_sw` (Java trap only) |
+    |---|---|---|
+    | int | imul | idiv, irem |
+    | long | ladd, lsub, lmul, lneg, lshl, lshr, lushr, lcmp | — |
+    | float | fadd, fsub, fmul, fdiv | fneg, i2f, f2i, fcmpl, fcmpg |
+    | double | — | all 12 (dadd, dsub, dmul, ddiv, i2d, d2i, l2d, d2l, f2d, d2f, dcmpl, dcmpg) |
+
+    This is safe *today* only because every one of those 19 defaults to `Java`,
+    which the jump table turns into `invokestatic`. Setting any of them to
+    `Microcode` silently gets the CU handler instead (see item 17) — a
+    configuration that looks accepted and is wrong.
+
+    Worth deciding deliberately rather than drifting: **long is fully covered,
+    double is not covered at all, float is half covered.** Candidates, cheapest
+    first — (a) make `useAlt` *fail loudly* when asked for a missing alternate,
+    which costs nothing and removes the silent-wrong-config class entirely;
+    (b) `fcmpl`/`fcmpg`/`fneg` are trivial in microcode (sign/compare, no
+    arithmetic); (c) `i2f`/`f2i` are moderate; (d) the 12 double ops are a large
+    piece of work and the Java trap (SoftFloat64, ~3000-5000 cycles) may simply
+    be the right answer. Note `compute-unit-design.md` records **`lmul_sw` as
+    broken** — check whether `900f66a` ("fix lmul_sw") has since fixed it, as
+    that doc may be stale on the point.
+
+19. **Colorlight i5 is EBR-bound, not logic-bound** — with 64 KB on-chip memory
+    it sat at 71% block RAM against 30% of LUTs; on SDRAM it is 21% / 42%. Anything wider (SMP, more compute
     units) has plenty of logic room but needs Stage 2 first. It is also the only
     board on the open-source toolchain, so it is the natural place to notice
     yosys/nextpnr-specific breakage before it reaches the vendor flows.
@@ -210,16 +259,15 @@ independent corroboration on a fourth board rather than part of that run:
 | A-E115FB (DDR2) | 75 MHz / 1 Mbaud | ✅ 0.51 s | ✅ 0.5 s @ 88 KB/s | ✅ 66/66 |
 | XC7A100T (DDR3) | 100 MHz / 2 Mbaud | ✅ ~0.5 s | ✅ 215 KB/s | — |
 | EP4CGX150 (SDR) | 100 MHz / 2 Mbaud | ✅ ~0.5 s | ✅ 188 KB/s | ✅ 66/66 |
-| Colorlight i5 (BRAM) | 40 MHz / 1 Mbaud | ✅ | ✅ 0.7 s @ 63 KB/s | — (needs SDRAM, see below) |
+| Colorlight i5 (SDRAM) | 40 MHz / 1 Mbaud | ✅ | ✅ 4.6 s @ 63 KB/s | ✅ 66/66 |
 
 (i5 row added 2026-08-05, after the three-board run above.)
 
-The i5 cannot run the JVM suite until Stage 2. `DoAll.jop` is 72,428 words =
-**283 KB**, against 64 KB of configured main memory — and against **126 KB of
-total EBR on the LFE5U-25F**, so it does not fit even if every block RAM on the
-chip were given to main memory with nothing left for the microcode ROM, JBC
-cache, stack cache or jump table. This is a hard limit of the BRAM stage, not a
-tuning problem. (`HelloWorld.jop`, by contrast, is 11,929 words = 47 KB.)
+The i5 could not run the JVM suite in Stage 1: `DoAll.jop` is 72,428 words =
+**283 KB**, against 64 KB of configured main memory and **126 KB of total EBR on
+the LFE5U-25F** — it would not fit even with every block RAM given to main memory
+and nothing left for the microcode ROM, JBC cache, stack cache or jump table.
+Stage 2 (8 MB SDRAM) removed that limit and it now passes 66/66.
 
 All three return identical checksums for the same image (`0x8f197bc7` for
 HelloWorld, `0x2ed0b59a` for DoAll), so the transfers are byte-identical across
