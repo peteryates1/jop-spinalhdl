@@ -599,6 +599,45 @@ object JopConfig {
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
 
+  /**
+   * Colorlight i5 v7.0 — serial download into BRAM. Stage 1 bring-up.
+   *
+   * 64 KB main memory, not the 128 KB the EP4CGX150 BRAM preset uses: the
+   * LFE5U-25F has 1008 Kbit of EBR in total and 128 KB of it would be 1024 Kbit
+   * before a single cache or the microcode store.
+   *
+   * 40 MHz rather than the 80-100 MHz of the mature boards. This is a first
+   * bring-up on a toolchain (yosys/nextpnr) the project has never targeted, so
+   * the clock is deliberately slack — but 40 is also what the design actually
+   * holds honestly. It routes anywhere between 47.6 and 50.6 MHz depending only
+   * on the nextpnr placer seed; 50 MHz does pass, on seed 2, by 0.56 MHz. That
+   * is inside the seed noise, not headroom, and any later edit re-rolls it.
+   * The critical path is the JBC RAM output -> bytecode byte select ->
+   * branchOffset -> fetch.pcMux, 5.8 ns of which is DP16KD clock-to-out — the
+   * same fetch/branch path that limits JOP on every other board.
+   *
+   * No card table, so the generational collector disables itself at boot via the
+   * `genActive` guard and reports "GC: classic". That is the intended stage-1
+   * state, not an oversight; a card table follows once SDRAM lands and there is
+   * a heap worth collecting.
+   */
+  def colorlightI5Bram = JopConfig(
+    assembly = SystemAssembly.colorlightI5,
+    systems = Seq(JopSystem(
+      name = "bram-serial",
+      memory = "bram",
+      bootMode = BootMode.Serial,
+      clkFreq = 40 MHz,
+      coreConfig = JopCoreConfig(
+        memConfig = JopMemoryConfig(mainMemSize = 64 * 1024)),
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("DAPLINK"),
+        // 115200 for bring-up: this goes through the DAPLink's CDC endpoint and
+        // nothing is known yet about how fast that firmware will actually run.
+        // Worth revisiting immediately once it works — 40 MHz divides exactly
+        // for both 1 Mbaud (divider 8) and 2 Mbaud (divider 4), so there is no
+        // baud error to trade off, only the DAPLink's own limit.
+        params = Map("baudRate" -> 115200))))))
+
   /** Wukong BRAM with all compute units (DCU debug — simulation only) */
   def wukongBramFull = {
     val base = wukongFull

@@ -37,6 +37,29 @@ class WukongClkWizBlackBox(instanceName: String = "clk_wiz_0") extends BlackBox 
 }
 
 /**
+ * Colorlight i5 PLL BlackBox — Lattice ECP5 EHXPLLL.
+ * 25 MHz board oscillator (P3) -> 50 MHz JOP system clock.
+ *
+ * The Verilog wrapper (fpga/colorlight-i5/pll_jop_i5.v) is `ecppll` output
+ * verbatim, so the divider set is one the tool guarantees will lock:
+ * Fpfd = 25/1 = 25 MHz, Fvco = 25 * 2 * 12 = 600 MHz (legal band 400-800),
+ * CLKOP = 600/12 = 50 MHz. Hand-picked dividers are the usual way to get an
+ * illegal Fvco and a PLL that never asserts LOCK, which parks the whole core
+ * in reset with no other symptom.
+ */
+case class I5Pll() extends BlackBox {
+  setDefinitionName("pll_jop_i5")
+
+  val io = new Bundle {
+    val clkin   = in Bool()
+    val clkout0 = out Bool()
+    val locked  = out Bool()
+  }
+
+  noIoPrefix()
+}
+
+/**
  * Unified PLL result -- all clock outputs from the PLL subsystem.
  *
  * Different boards produce different subsets of clocks:

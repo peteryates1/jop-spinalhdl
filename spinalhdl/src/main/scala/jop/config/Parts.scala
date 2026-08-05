@@ -86,6 +86,13 @@ object FpgaDevice {
 
   def XC7A100T = FpgaDevice("XC7A100T-1FGG676C", FpgaFamily.Artix7,
     les = 101440, dspBlocks = 240, bramKbits = 4860)
+
+  /** Colorlight i5 v7.0 module. `les` is LUT4 count, not Altera LEs — the two are
+    * not comparable, so don't read across to the Cyclone entries above.
+    * EBR is 56 x 18 Kbit = 1008 Kbit = 126 KB, which is what bounds a BRAM-only
+    * build here (the EP4CGX150 has 6.5x as much). */
+  def LFE5U25F = FpgaDevice("LFE5U-25F-6BG381C", FpgaFamily.ECP5,
+    les = 24288, dspBlocks = 28, bramKbits = 1008)
 }
 
 // ==========================================================================

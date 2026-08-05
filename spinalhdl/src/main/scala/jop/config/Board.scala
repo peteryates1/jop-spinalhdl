@@ -48,7 +48,7 @@ case class BoardDevice(
 
 import spinal.core._
 import jop.system.{DramPll, Max1000Pll, Ep4ce6Pll, SdramExerciserClkWiz}
-import jop.system.pll.{Cyc5000Pll, WukongClkWizBlackBox, PllResult}
+import jop.system.pll.{Cyc5000Pll, WukongClkWizBlackBox, I5Pll, PllResult}
 import jop.ddr3.ClkWizBlackBox
 
 sealed trait PllType {
@@ -86,6 +86,20 @@ object PllType {
       pll.io.rst := False
       PllResult(systemClk = Some(pll.io.outclk_0), locked = pll.io.locked,
         sdramClk = Some(pll.io.outclk_1))
+    }
+  }
+
+  /** Colorlight i5 (ECP5): EHXPLLL, 25 MHz -> 50 MHz system.
+    *
+    * BRAM only for now. The SDRAM stage will need a second, phase-shifted output
+    * for the memory clock pin, the same way every other SDR board here does it —
+    * EHXPLLL has CLKOS/CLKOS2/CLKOS3 for that, so it is a wrapper change, not a
+    * structural one. */
+  case object LatticeEcp5I5 extends PllType {
+    def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
+      val pll = I5Pll()
+      pll.io.clkin := inputClock
+      PllResult(systemClk = Some(pll.io.clkout0), locked = pll.io.locked)
     }
   }
 
@@ -317,6 +331,56 @@ object Board {
         "led0" -> "PIN_P4", "led1" -> "PIN_M4", "led2" -> "PIN_M3",
         "led3" -> "PIN_N3", "led4" -> "PIN_V2", "led5" -> "PIN_T2",
         "led6" -> "PIN_L1", "led7" -> "PIN_K1"))))
+
+  /**
+   * Colorlight i5 v7.0 module + its ext (breakout) board.
+   *
+   * FPGA: LFE5U-25F-6BG381C. Open-source toolchain only (yosys / nextpnr-ecp5 /
+   * ecppack), so pin names are bare ECP5 ball designators as an .lpf wants them,
+   * with no "PIN_" prefix — the Xilinx convention, not the Altera one.
+   *
+   * The UART is the CDC serial of the ext board's ARM mbed DAPLink, which is the
+   * same USB device that carries JTAG. One cable does programming and download.
+   * Pins are from Colorlight's own i5 examples (src/i5/uart_tx/top.lpf and
+   * src/i5/picosoc/top.lpf both agree): TX=J17, RX=H18.
+   *
+   * Do NOT take the UART pins from riscvOnColorlight-5A-75B (U16 / R16). That is
+   * the 5A-75B, a different module: on the i5, U16 is LED D2 and R16 is not
+   * bonded out to the SODIMM at all.
+   *
+   * SDRAM (stage 2) is an EM638325BK-6H, 8 MB, and unusually is **32 bits wide**
+   * with CKE tied high, CS tied low and all four DQM tied low. Two consequences:
+   *   - no byte masking, so any sub-word write needs read-modify-write. JOP's
+   *     main memory is word-addressed, so a JOP word is exactly one SDRAM access
+   *     and nothing needs masking — this actually suits it.
+   *   - BmbSdramCtrl32 is a 32-bit-BMB-to-16-bit-SDRAM bridge and is the wrong
+   *     shape here; a 32-bit-wide path is needed instead.
+   */
+  def ColorlightI5 = Board(
+    name = "colorlight-i5",
+    pllType = Some(PllType.LatticeEcp5I5),
+    entitySuffix = "I5",
+    fpga = Some(FpgaDevice.LFE5U25F),
+    devices = Seq(
+      BoardDevice("CLOCK_25MHz", mapping = Map("clock" -> "P3")),
+      // DAPLink CDC serial on the ext board
+      BoardDevice("DAPLINK", mapping = Map(
+        "TXD" -> "J17", "RXD" -> "H18")),
+      BoardDevice("LED", mapping = Map("led0" -> "U16")),
+      BoardDevice("EM638325BK6H", role = Some("sdr"), mapping = Map(
+        "CLK" -> "B9", "RAS_n" -> "B10", "CAS_n" -> "A9", "WE_n" -> "A10",
+        "BA0" -> "B11", "BA1" -> "C8",
+        "A0" -> "B13", "A1" -> "C14", "A2" -> "A16", "A3" -> "A17",
+        "A4" -> "B16", "A5" -> "B15", "A6" -> "A14", "A7" -> "A13",
+        "A8" -> "A12", "A9" -> "A11", "A10" -> "B12",
+        "DQ0" -> "B6", "DQ1" -> "A5", "DQ2" -> "A6", "DQ3" -> "A7",
+        "DQ4" -> "C7", "DQ5" -> "B8", "DQ6" -> "B5", "DQ7" -> "A8",
+        "DQ8" -> "D8", "DQ9" -> "D7", "DQ10" -> "E8", "DQ11" -> "D6",
+        "DQ12" -> "C6", "DQ13" -> "D5", "DQ14" -> "E7", "DQ15" -> "C5",
+        "DQ16" -> "C10", "DQ17" -> "D9", "DQ18" -> "E11", "DQ19" -> "D11",
+        "DQ20" -> "C11", "DQ21" -> "D12", "DQ22" -> "E9", "DQ23" -> "C12",
+        "DQ24" -> "E14", "DQ25" -> "C15", "DQ26" -> "E13", "DQ27" -> "D15",
+        "DQ28" -> "E12", "DQ29" -> "B17", "DQ30" -> "D14", "DQ31" -> "D13"))))
 
   /**
    * Alchitry Au V2 (Artix-7 XC7A35T + MT41K128M16JT DDR3).
@@ -921,4 +985,9 @@ object SystemAssembly {
 
   /** Generic EP4CE6 standalone */
   def genericEp4ce6 = SystemAssembly("generic-ep4ce6", Seq(Board.GenericEP4CE6))
+
+  /** Colorlight i5 v7.0 module + ext board (modelled as one board: the ext board
+    * carries no devices of its own beyond the DAPLink, whose serial pins are
+    * already in the module's pin space) */
+  def colorlightI5 = SystemAssembly("colorlight-i5", Seq(Board.ColorlightI5))
 }

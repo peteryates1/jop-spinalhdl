@@ -503,10 +503,21 @@ case class JopTop(
       io.ser_txd := mainArea.cluster.devicePin[Bool]("uart", "txd")
 
       if (sys.cpuCnt == 1) {
-        io.led(1) := (if (activeHigh) alteraMainHeartbeat.hb else ~alteraMainHeartbeat.hb)
-        io.led(0) := (if (activeHigh) mainArea.cluster.io.wd(0)(0) else ~mainArea.cluster.io.wd(0)(0))
-        for (i <- 2 until ledCount) {
-          io.led(i) := (if (activeHigh) False else True)
+        if (ledCount > 1) {
+          io.led(1) := (if (activeHigh) alteraMainHeartbeat.hb else ~alteraMainHeartbeat.hb)
+          io.led(0) := (if (activeHigh) mainArea.cluster.io.wd(0)(0) else ~mainArea.cluster.io.wd(0)(0))
+          for (i <- 2 until ledCount) {
+            io.led(i) := (if (activeHigh) False else True)
+          }
+        } else {
+          // Single-LED board (Colorlight i5 module: one LED, D2 on U16). The
+          // heartbeat takes the pin rather than the watchdog. It is the more
+          // informative of the two here because it is driven by the clock tree
+          // alone, so a blinking LED proves the bitstream loaded, the PLL
+          // locked and reset released — independently of whether the JVM
+          // booted. The watchdog only reports that the JVM is running, and the
+          // UART already reports that in far more detail.
+          io.led(0) := (if (activeHigh) alteraMainHeartbeat.hb else ~alteraMainHeartbeat.hb)
         }
       } else {
         for (i <- 0 until sys.cpuCnt.min(ledCount)) {

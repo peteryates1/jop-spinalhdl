@@ -1,0 +1,37 @@
+# ---------------------------------------------------------------------------
+# JOP on Colorlight i5 v7.0 + ext board  --  Stage 1 (BRAM, serial download)
+#
+# FPGA: LFE5U-25F-6BG381C (CABGA381, speed grade 6)
+#
+# Pin sources:
+#   clk_in  P3   -- 25 MHz oscillator, Colorlight-FPGA-Projects README "Clock"
+#   ser_txd J17  -- DAPLink CDC serial, src/i5/uart_tx/top.lpf + src/i5/picosoc/top.lpf
+#   ser_rxd H18  --   "
+#   led[0]  U16  -- module LED D2, README "LED" (also SODIMM pin 41)
+#
+# NOTE on the UART: do not use U16/R16 for it. Those are the UART pins of the
+# *5A-75B* (riscvOnColorlight-5A-75B/README.md) which is a different module. On
+# the i5, U16 is the LED and R16 is not bonded out to the SODIMM at all.
+# ---------------------------------------------------------------------------
+
+BLOCK RESETPATHS;
+BLOCK ASYNCPATHS;
+
+# 25 MHz board oscillator -> PLL -> 50 MHz system clock
+LOCATE COMP "clk_in"  SITE "P3";
+IOBUF  PORT "clk_in"  PULLMODE=NONE IO_TYPE=LVCMOS33;
+FREQUENCY PORT "clk_in" 25 MHZ;
+
+# UART -- the ext board's ARM mbed DAPLink CDC endpoint. Same USB device that
+# carries JTAG, so one cable does both programming and .jop download.
+# RX is pulled up so an unconnected/idle line reads as UART idle (mark) rather
+# than floating into a stream of phantom start bits.
+LOCATE COMP "ser_txd" SITE "J17";
+IOBUF  PORT "ser_txd" IO_TYPE=LVCMOS33 DRIVE=8;
+LOCATE COMP "ser_rxd" SITE "H18";
+IOBUF  PORT "ser_rxd" PULLMODE=UP IO_TYPE=LVCMOS33;
+
+# Single LED (D2). JopTop drives the heartbeat here, not the watchdog -- see the
+# ledCount == 1 branch in JopTop.scala.
+LOCATE COMP "led[0]"  SITE "U16";
+IOBUF  PORT "led[0]"  PULLMODE=NONE IO_TYPE=LVCMOS33 DRIVE=4;
