@@ -21,6 +21,7 @@ steps** — BRAM first, then SDRAM. They have nothing to do with the GC stages
 | Flash | GD25Q16, 2 MB — ships **write-locked** |
 | Debug | ARM mbed DAPLink (`0d28:0204`), JTAG + CDC serial on one USB cable |
 | Baud | 1 Mbaud (verified) — 46 KB download in 0.7 s at 63 KB/s |
+| JVM suite | DoAll 66/66 on hardware |
 
 Only the USB cable is connected. JTAG programming and the JOP serial download
 both go through the DAPLink, so no second cable or external adapter is needed.
@@ -239,6 +240,21 @@ elsewhere in this project — a wrong artefact that still *does something*.
 The Makefile now makes `$(GENDIR)/$(TOP).v` depend on `$(SCALA_SRC)` and the
 microcode `.dat` files. If the UART ever emits a stable repeating non-`0xAA`
 pattern, suspect a clock/baud mismatch before suspecting the wiring.
+
+## Bytecode implementation choices
+
+This board has no compute units beyond the ICU, so it is the one that exercises
+JOP's microcode fallbacks on real hardware:
+
+| bytecode | choice | why |
+|---|---|---|
+| `idiv`, `irem` | `hw` (ICU) | ~36 cycles vs ~1300 for the Java trap; every other hardware preset does the same |
+| `fcmpl`, `fcmpg` | `mc` | no FCU here, so the alternative is SoftFloat32 at ~600 cycles; the microcode is ~30, for 97 ROM words out of ~1940 free |
+
+The `fcmpl`/`fcmpg` choice is deliberate and load-bearing for testing, not just
+for speed: a build left on the default Java path never executes
+`fcmpl_sw`/`fcmpg_sw` at all, so it could pass DoAll while saying nothing about
+them. This is the only configuration in the project that runs them.
 
 ## Next
 

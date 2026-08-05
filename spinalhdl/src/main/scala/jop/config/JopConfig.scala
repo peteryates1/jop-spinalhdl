@@ -630,11 +630,11 @@ object JopConfig {
       clkFreq = 40 MHz,
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 64 * 1024),
-        // Matches colorlightI5Sdram and every other hardware preset. Keeping
-        // the two i5 cores identical apart from the memory system is the whole
-        // value of having a BRAM stage: it only predicts anything about the
-        // SDRAM build if the core is the same.
-        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+        // Matches colorlightI5Sdram. Keeping the two i5 cores identical apart
+        // from the memory system is the whole value of having a BRAM stage: it
+        // only predicts anything about the SDRAM build if the core is the same.
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw",
+                        "fcmpl" -> "mc", "fcmpg" -> "mc")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("DAPLINK"),
         // 1 Mbaud, verified on hardware. 40 MHz divides exactly here
         // (UartCtrl divides by baud x 5 samples, so 40e6/(1e6*5) = 8 with no
@@ -674,14 +674,15 @@ object JopConfig {
       clkFreq = 40 MHz,
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(
         hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
-        // Same as every other hardware preset here, and not optional in
-        // practice: with idiv/irem left in software, DoAll fails 10 tests on
-        // this board (FloatTest, LongTest, LongArithmetic, TypeConversion,
-        // DoubleField, DoubleArith, WrapperTest, MathTest, BigMathTest,
-        // TextFormatTest) while everything that does not divide passes. The
-        // software float/double emulation and the formatting tests all divide,
-        // which is what ties that list together.
-        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+        // idiv/irem: same as every other hardware preset here.
+        //
+        // fcmpl/fcmpg: this board has no FCU, so the alternative is the Java
+        // trap through SoftFloat32 at ~600 cycles; fcmpl_sw/fcmpg_sw do it in
+        // ~30 for 97 ROM words, out of ~1940 free. Being the only board that
+        // selects them, it is also where they get exercised on real hardware —
+        // a build using the default Java path never executes them at all.
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw",
+                        "fcmpl" -> "mc", "fcmpg" -> "mc")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("DAPLINK"),
         params = Map("baudRate" -> 1000000))))))
 

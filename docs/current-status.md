@@ -196,9 +196,16 @@ project have looked fine while being wrong.
     0x7FFFFFFF and 0x7F800000 are derived from constants already present
     (`-1 >>> 1`, `(255 << 24) >>> 1`) rather than added. Verified against IEEE
     semantics over 1152 cases (NaN, ±0, ±Inf, denormals, non-canonical NaN
-    payloads) and by `JopJvmTestsMcFcmpSim`, which runs DoAll with both set to
-    `mc` — the default config implements them in Java and would never execute
-    the handlers at all.
+    payloads), by `JopJvmTestsMcFcmpSim` (DoAll 66/66 in simulation with both set
+    to `mc`), and **on hardware** — `colorlightI5Sdram` now selects them, so the
+    i5 runs DoAll 66/66 with the microcode actually executing. That preset
+    change is the point: a build left on the default Java path never executes
+    these handlers, so "DoAll passed on hardware" would otherwise have said
+    nothing about them.
+
+    The i5 is the natural home for that because it has no FCU, so its
+    alternative was the ~600-cycle SoftFloat32 trap against ~30 cycles of
+    microcode.
 
     | tier | bytecodes | effort | why |
     |---|---|---|---|
