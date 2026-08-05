@@ -2523,6 +2523,11 @@ f2i_hw:
 			ldop nxt			// push int result
 
 // ---------- fneg (pure microcode, no HW/IO variants needed) ----------
+// fneg_sw aliases the same address rather than duplicating two instructions.
+// Without the _sw label, resolveJumpTable's useAlt has no alternate to select
+// and rejects fneg = mc -- even though the default handler here IS the software
+// implementation. Costs zero ROM words: two labels, one address.
 fneg:
+fneg_sw:
 			ldi -2147483648	// 0x80000000
 			xor nxt			// XOR sign bit, done (pure microcode, no CU)

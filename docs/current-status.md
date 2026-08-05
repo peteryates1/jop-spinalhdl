@@ -135,7 +135,9 @@ project have looked fine while being wrong.
       the `NoMicrocode` constraint, but only 12 of the 19 bytecodes lacking a
       `_sw` were marked — `idiv`, `irem`, `fneg`, `i2f`, `f2i`, `fcmpl` and
       `fcmpg` were `JavaOk`, so `mc` passed validation and then silently
-      dispatched to a compute unit. Both layers are now correct and
+      dispatched to a compute unit. (`fneg` turned out to be the opposite case:
+      pure microcode already, with no `_hw` variant at all. It needed the
+      missing `fneg_sw` label, not a restriction — now fixed, so 18 remain.) Both layers are now correct and
       `JumpTableResolutionTest` pins them against each other.
 
     **The exact dispatch path is still unexplained** — on paper the default
@@ -143,7 +145,7 @@ project have looked fine while being wrong.
     `JopJvmTestsBramSim` (default config, no board involved); it fails in ~15 min.
     Do not re-land the optimisation without that sim passing 66/66.
 
-18. **Software/microcode fallback coverage is uneven** — 19 of 32 configurable
+18. **Software/microcode fallback coverage is uneven** — 18 of 32 configurable
     bytecodes have no `_sw` microcode handler, so their only non-hardware path
     is the Java trap. Per-operation cycle costs already exist in
     `docs/architecture/compute-unit-design.md` (ICU/FCU/LCU/DCU tables); what
@@ -153,7 +155,7 @@ project have looked fine while being wrong.
     |---|---|---|
     | int | imul | idiv, irem |
     | long | ladd, lsub, lmul, lneg, lshl, lshr, lushr, lcmp | — |
-    | float | fadd, fsub, fmul, fdiv | fneg, i2f, f2i, fcmpl, fcmpg |
+    | float | fadd, fsub, fmul, fdiv, fneg | i2f, f2i, fcmpl, fcmpg |
     | double | — | all 12 (dadd, dsub, dmul, ddiv, i2d, d2i, l2d, d2l, f2d, d2f, dcmpl, dcmpg) |
 
     This is safe *today* only because every one of those 19 defaults to `Java`,
@@ -180,9 +182,13 @@ project have looked fine while being wrong.
     Per-operation cycle costs for the alternatives are already tabulated in
     `docs/architecture/compute-unit-design.md`.
 
+    ~~`fneg`~~ — **done**, and it cost nothing: its default handler was already
+    pure microcode (`ldi 0x80000000; xor`), it simply lacked the `fneg_sw` label
+    that `useAlt` looks for. Two labels on one address, ROM byte-identical.
+
     | tier | bytecodes | effort | why |
     |---|---|---|---|
-    | 1 | `fneg`, `fcmpl`, `fcmpg` | small | no arithmetic — `fneg` is one XOR of the sign bit, the compares are a sign test plus an integer compare |
+    | 1 | `fcmpl`, `fcmpg` | small | no arithmetic — a sign test plus an integer compare |
     | 2 | `i2f`, `f2i` | moderate | normalise/denormalise: count leading zeros, shift, assemble exponent |
     | 3 | `idiv`, `irem` | moderate | restoring division loop. Lowest value of the three: the ICU already does it in ~36 cycles and the Java trap in ~1300, so this only pays for a board that wants neither |
 
@@ -198,7 +204,17 @@ project have looked fine while being wrong.
     `d2l`, `f2d`, `d2f`, `dcmpl`, `dcmpg`) currently reach only SoftFloat64 at
     ~3000-5000 cycles, against ~14 cycles on the DCU. Microcode would land
     somewhere between, but it is a large piece of work for a group most JOP
-    applications use rarely, and the ROM is finite (4096 entries).
+    applications use rarely.
+
+    **ROM budget is not the constraint for items 19 or 20's smaller tiers.**
+    The ROM is 4096 words (`pcWidth = 12`) and the largest variant, serial,
+    uses 2055 — so ~2040 words are free, and `pcWidth` can go to 16 if it ever
+    is the constraint. For scale: all 13 existing `_sw` handlers together are
+    176 words, the largest being `lsub_sw` at 38. Tier 1-3 would add perhaps
+    150-250. A full software double group is the only thing on this list large
+    enough to make ROM size worth checking again — the DCU's 12 dispatch stubs
+    are 90 words, but real SoftFloat64-equivalent microcode is a different
+    order.
 
     Unlike item 19 this is a genuine question, not a task: the honest answer may
     be that double stays Java-trap-or-DCU. Worth deferring until there is an

@@ -189,7 +189,7 @@ object BytecodeConfig {
     BytecodeEntry("fsub",  0x66, "float",  Java, JavaOk),
     BytecodeEntry("fmul",  0x6A, "float",  Java, JavaOk),
     BytecodeEntry("fdiv",  0x6E, "float",  Java, JavaOk),
-    BytecodeEntry("fneg",  0x76, "float",  Java, NoMicrocode),  // no fneg_sw yet, though it is only an XOR of the sign bit
+    BytecodeEntry("fneg",  0x76, "float",  Java, JavaOk),   // fneg_sw = pure microcode, one XOR of the sign bit; no CU
     BytecodeEntry("i2f",   0x86, "float",  Java, NoMicrocode),  // no i2f_sw
     BytecodeEntry("f2i",   0x8B, "float",  Java, NoMicrocode),  // no f2i_sw
     BytecodeEntry("fcmpl", 0x95, "float",  Java, NoMicrocode),  // no fcmpl_sw
