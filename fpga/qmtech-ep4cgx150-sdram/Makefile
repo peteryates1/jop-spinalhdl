@@ -110,6 +110,10 @@ all: microcode generate build
 # Full flow: microcode, generate, build, program, download, monitor
 full: microcode generate build run
 
+# Exercises every working _sw microcode handler on this board — see
+# ep4cgx150McFallback in JopConfig.scala and item 19 in docs/current-status.md.
+full-mc-fallback: microcode generate-mc-fallback build run
+
 # SMP full flow
 full-smp: microcode generate-smp build-smp run-smp
 
@@ -157,6 +161,11 @@ microcode-flash:
 generate:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Serial"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
+
+# Microcode-fallback coverage build. Same hardware project as `generate`; only
+# the bytecode implementation choices differ, so it reuses build/program/download.
+generate-mc-fallback:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150McFallback"
 
 generate-smp:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Smp 2"

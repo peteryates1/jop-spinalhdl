@@ -340,6 +340,48 @@ object JopConfig {
   }
 
   /** EP4CGX150 — pre-initialized BRAM (512KB, simulation microcode) */
+  /**
+   * EP4CGX150 — microcode-fallback coverage build.
+   *
+   * Selects every bytecode that has a *working* `_sw` handler, so the microcode
+   * paths are exercised on a board other than the Colorlight i5. Without a
+   * config like this most of them are never executed anywhere: the defaults put
+   * float and double on the Java trap and `lmul` on it too, so `lmul_sw` in
+   * particular has no coverage at all despite `compute-unit-design.md` having
+   * once recorded it as broken and `900f66a` claiming a fix.
+   *
+   * `idiv`/`irem` are hardware **on purpose**, not an oversight in a build whose
+   * point is software paths: it keeps an ICU in the design so `imul` can stay
+   * `mc` and `imul_sw` is still exercised.
+   *
+   * The first run of this preset immediately paid for itself: with `lmul = mc`
+   * it dropped 6 DoAll tests, which `JopJvmTestsLmulSwSim` narrowed to
+   * `lmul_sw` alone. That handler had never been executed anywhere, because
+   * `lmul` defaults to Java on every board.
+   *
+   * Not included: `fadd`/`fsub`/`fmul`/`fdiv`. They appear to have `_sw`
+   * handlers but those drive the removed BmbFpu peripheral over I/O — see item
+   * 22 in docs/current-status.md.
+   *
+   * This does not currently save area. CU instantiation is unconditional again
+   * after `eda6de7`; recovering that is item 17. The value here is coverage.
+   */
+  def ep4cgx150McFallback = {
+    val base = ep4cgx150Serial
+    base.copy(systems = Seq(base.system.copy(
+      name = "mc-fallback",
+      coreConfig = base.system.coreConfig.copy(bytecodes = Map(
+        // ICU present so lmul_sw has something to drive
+        "idiv" -> "hw", "irem" -> "hw",
+        // integer + long microcode. lmul is NOT here: lmul_sw is broken (item
+        // 22) and this preset found it — DoAll drops 6 tests with lmul = mc.
+        "imul" -> "mc",
+        "ladd" -> "mc", "lsub" -> "mc", "lneg" -> "mc", "lcmp" -> "mc",
+        "lshl" -> "mc", "lshr" -> "mc", "lushr" -> "mc",
+        // float microcode (no FCU needed for any of these)
+        "fneg" -> "mc", "fcmpl" -> "mc", "fcmpg" -> "mc")))))
+  }
+
   def ep4cgx150Bram = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
     systems = Seq(JopSystem(

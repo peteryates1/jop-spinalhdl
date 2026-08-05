@@ -30,6 +30,7 @@ object JopTopVerilog {
     case "ep4cgx150BramGc"     => JopConfig.ep4cgx150BramGc
     case "ep4cgx150BramSerial" => JopConfig.ep4cgx150BramSerial
     case "ep4cgx150HwMath"     => JopConfig.ep4cgx150HwMath
+    case "ep4cgx150McFallback" => JopConfig.ep4cgx150McFallback
     case "ep4cgx150HwFloat"    => JopConfig.ep4cgx150HwFloat
     case "ep4cgx150Smp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
@@ -80,7 +81,7 @@ object JopTopVerilog {
     case other =>
       throw new RuntimeException(s"Unknown preset: '$other'. Available: " +
         "ep4cgx150Serial, ep4cgx150Bram, ep4cgx150BramGc, ep4cgx150BramSerial, " +
-        "ep4cgx150HwMath, ep4cgx150HwFloat, ep4cgx150Smp, " +
+        "ep4cgx150HwMath, ep4cgx150HwFloat, ep4cgx150Smp, ep4cgx150McFallback, " +
         "cyc5000Serial, auSerial, wukongSdram, wukongDdr3, wukongBram, " +
         "wukongFull, wukongSdrFull, wukongFullSmp, wukongSmp, " +
         "wukongDualIndependent, wukongDualSmp, " +

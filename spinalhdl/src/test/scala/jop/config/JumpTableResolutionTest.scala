@@ -27,6 +27,7 @@ class JumpTableResolutionTest extends AnyFunSuite {
     "ep4cgx150BramSerial"      -> JopConfig.ep4cgx150BramSerial,
     "ep4cgx150HwMath"          -> JopConfig.ep4cgx150HwMath,
     "ep4cgx150HwFloat"         -> JopConfig.ep4cgx150HwFloat,
+    "ep4cgx150McFallback"      -> JopConfig.ep4cgx150McFallback,
     "ep4cgx150Smp(2)"          -> JopConfig.ep4cgx150Smp(2),
     "cyc5000Serial"            -> JopConfig.cyc5000Serial,
     "cyc5000Smp(2)"            -> JopConfig.cyc5000Smp(2),
