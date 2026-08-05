@@ -16,6 +16,7 @@ target goes through Quartus or Vivado. Nothing is shared with those flows.
 | SDRAM | EM638325BK-6H, 8 MB, **32-bit wide** |
 | Flash | GD25Q16, 2 MB — ships **write-locked** |
 | Debug | ARM mbed DAPLink (`0d28:0204`), JTAG + CDC serial on one USB cable |
+| Baud | 1 Mbaud (verified) — 46 KB download in 0.7 s at 63 KB/s |
 
 Only the USB cable is connected. JTAG programming and the JOP serial download
 both go through the DAPLink, so no second cable or external adapter is needed.
@@ -91,7 +92,7 @@ are limited by EBR, so they need SDRAM first.
 cd fpga/colorlight-i5
 make                 # generate -> yosys -> nextpnr-ecp5 -> ecppack
 make program         # load into SRAM over DAPLink
-make download        # send HelloWorld.jop over the DAPLink serial port
+make download        # send HelloWorld.jop over the DAPLink serial port (1 Mbaud)
 ```
 
 The FPGA must be reprogrammed before each download — the serial bootloader only
@@ -100,6 +101,22 @@ listens once, right after configuration. This matches the other boards.
 `make program` loads SRAM only (volatile). Flash boot is not available: the i5's
 GD25Q16 ships write-locked, and unlocking needs the procedure from
 [kazkojima/colorlight-i5-tips#spiflash](https://github.com/kazkojima/colorlight-i5-tips#spiflash).
+
+### Baud rate
+
+1 Mbaud, verified on hardware. 40 MHz divides exactly for it — `UartCtrl` divides
+by baud x 5 samples, so `40e6/(1e6*5) = 8` with no remainder — which is why this
+rate rather than a rounder-looking one. There is no baud error to trade off, only
+the DAPLink CDC firmware's own limit.
+
+Measured on the 46 KB `HelloWorld.jop`:
+
+| baud | time | rate |
+|---|---|---|
+| 115200 | 4.1 s | 11 KB/s |
+| **1000000** | **0.7 s** | **63 KB/s** |
+
+2 Mbaud also divides exactly (divider 4) if the DAPLink will take it — untested.
 
 ### Serial port
 

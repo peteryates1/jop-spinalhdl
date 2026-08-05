@@ -631,12 +631,13 @@ object JopConfig {
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 64 * 1024)),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("DAPLINK"),
-        // 115200 for bring-up: this goes through the DAPLink's CDC endpoint and
-        // nothing is known yet about how fast that firmware will actually run.
-        // Worth revisiting immediately once it works — 40 MHz divides exactly
-        // for both 1 Mbaud (divider 8) and 2 Mbaud (divider 4), so there is no
-        // baud error to trade off, only the DAPLink's own limit.
-        params = Map("baudRate" -> 115200))))))
+        // 1 Mbaud, verified on hardware. 40 MHz divides exactly here
+        // (UartCtrl divides by baud x 5 samples, so 40e6/(1e6*5) = 8 with no
+        // remainder), which is why this rate and not a rounder-looking one —
+        // there is no baud error to trade off, only the DAPLink CDC firmware's
+        // own limit. Cuts the 46 KB HelloWorld download from 4.1 s to ~0.5 s.
+        // 2 Mbaud also divides exactly (divider 4) if the DAPLink will take it.
+        params = Map("baudRate" -> 1000000))))))
 
   /** Wukong BRAM with all compute units (DCU debug — simulation only) */
   def wukongBramFull = {

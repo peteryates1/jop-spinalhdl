@@ -109,6 +109,17 @@ project have looked fine while being wrong.
     in BRAM simulation, needs per-core stack regions on SDRAM.
 15. **`GcPauseTest` on the Wukong boards** — never run; they have card tables now
     but no measured pause.
+16. **Colorlight i5 Stage 2 (SDRAM)** — Stage 1 (BRAM) is working on hardware;
+    see `docs/boards/colorlight-i5-bringup.md`. The blocker is that the
+    EM638325BK-6H is **32 bits wide**, so `BmbSdramCtrl32` (a 32-bit-BMB-to-
+    16-bit-SDRAM bridge) is the wrong shape and a 32-bit path is needed — real
+    work, not a parameter change. CKE/CS/DQM are all hard-tied on the board, so
+    there is no byte masking; JOP's word-addressed memory does not need any.
+17. **Colorlight i5 is EBR-bound, not logic-bound** — 71% of block RAM at 30% of
+    LUTs with one core and 64 KB of memory. Anything wider (SMP, more compute
+    units) has plenty of logic room but needs Stage 2 first. It is also the only
+    board on the open-source toolchain, so it is the natural place to notice
+    yosys/nextpnr-specific breakage before it reaches the vendor flows.
 
 ### Coupling — read before sequencing any of this
 
@@ -197,6 +208,7 @@ cadence and completes the handshake:
 | A-E115FB (DDR2) | 75 MHz / 1 Mbaud | ✅ 0.51 s | ✅ 0.5 s @ 88 KB/s | ✅ 66/66 |
 | XC7A100T (DDR3) | 100 MHz / 2 Mbaud | ✅ ~0.5 s | ✅ 215 KB/s | — |
 | EP4CGX150 (SDR) | 100 MHz / 2 Mbaud | ✅ ~0.5 s | ✅ 188 KB/s | ✅ 66/66 |
+| Colorlight i5 (BRAM) | 40 MHz / 1 Mbaud | ✅ | ✅ 0.7 s @ 63 KB/s | — (64 KB, too small) |
 
 All three return identical checksums for the same image (`0x8f197bc7` for
 HelloWorld, `0x2ed0b59a` for DoAll), so the transfers are byte-identical across

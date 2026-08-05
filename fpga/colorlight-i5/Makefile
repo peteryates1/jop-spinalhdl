@@ -38,7 +38,7 @@ LOADER_BRD := colorlight-i5
 # this host (see fpga/scripts/usb_serial_map). Interface -if01 is the CDC data
 # endpoint; -if00 is the HID debug endpoint openFPGALoader uses.
 TTY        := /dev/serial/by-id/usb-ARM_DAPLink_CMSIS-DAP_07000001002700424e00000256304750a5a5a5a597969908-if01
-BAUD       := 115200
+BAUD       := 1000000
 APP        := $(ROOT)/java/apps/Smallest/HelloWorld.jop
 
 .PHONY: all generate synth pnr bitstream program download clean
@@ -92,11 +92,13 @@ pnr: $(BUILD)/$(TOP).config
 $(BUILD)/$(TOP).bit: $(BUILD)/$(TOP).config
 	ecppack --compress $(BUILD)/$(TOP).config $(BUILD)/$(TOP).bit
 
+# nextpnr indents the utilisation table with a tab, so match anywhere on the
+# line rather than anchoring after "Info:".
 bitstream: $(BUILD)/$(TOP).bit
 	@echo "--- timing ---"
-	@grep -E "Max frequency|Info: Max" $(BUILD)/nextpnr.log | tail -5
+	@grep -E "Max frequency" $(BUILD)/nextpnr.log | tail -1
 	@echo "--- utilisation ---"
-	@grep -E "^Info: +(TRELLIS_COMB|TRELLIS_FF|DP16KD|MULT18X18D|EHXPLLL)" $(BUILD)/nextpnr.log | tail -10
+	@grep -E "(TRELLIS_COMB|TRELLIS_FF|DP16KD|MULT18X18D|EHXPLLL):" $(BUILD)/nextpnr.log | tail -6
 
 # --- 5. Program (SRAM) ------------------------------------------------------
 # SRAM only. The i5's GD25Q16 SPI flash ships write-locked, so flash boot needs
