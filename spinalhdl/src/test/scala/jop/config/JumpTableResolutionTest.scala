@@ -119,6 +119,23 @@ class JumpTableResolutionTest extends AnyFunSuite {
       s"NoMicrocode but _sw exists: ${(noMc -- noSw).toSeq.sorted.mkString(", ")}")
   }
 
+  test("imul_sw and lmul_sw are mutually exclusive") {
+    // imul_sw is a self-contained shift-add loop needing no CU, selected by
+    // imul = mc. lmul_sw drives ICU imul_wide, whose multiplier only exists
+    // when imul = hw. So no single build can exercise both, and any config
+    // asking for it must be rejected rather than silently producing an ICU
+    // with no multiplier — which is what happened before the require was
+    // corrected to check needsIntMul.
+    val ex = intercept[IllegalArgumentException] {
+      JopCoreConfig(bytecodes = Map("imul" -> "mc", "lmul" -> "mc",
+                                    "idiv" -> "hw", "irem" -> "hw"))
+    }
+    assert(ex.getMessage.contains("lmul"), ex.getMessage)
+    // The two legal halves, each fine on its own.
+    JopCoreConfig(bytecodes = Map("imul" -> "mc")).resolveJumpTable   // imul_sw
+    JopCoreConfig(bytecodes = Map("imul" -> "hw", "lmul" -> "mc")).resolveJumpTable // lmul_sw
+  }
+
   test("_sw coverage is 12 of 32 configurable bytecodes") {
     val alts = JumpTableInitData.simulation.altEntries.keySet
     val configurable = BytecodeConfig.all.map(_.opcode).toSet

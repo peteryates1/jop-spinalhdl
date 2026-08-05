@@ -50,8 +50,10 @@ object JopJvmTestsMcFallbackSim extends App {
         memConfig = JopMemoryConfig(mainMemSize = bramSize),
         bytecodes = Map(
           "idiv" -> "hw", "irem" -> "hw",
-          // imul = hw is lmul_sw's real precondition (ICU imul_wide). imul_sw
-          // keeps its coverage from the default-config sims.
+          // imul = hw is lmul_sw's precondition (it drives ICU imul_wide, and
+          // that multiplier only exists when imul == Hardware). It also means
+          // imul_sw is NOT exercised here — the two are mutually exclusive.
+          // imul_sw is covered by the default-config sims instead.
           "imul" -> "hw", "lmul" -> "mc",
           "ladd" -> "mc", "lsub" -> "mc", "lneg" -> "mc", "lcmp" -> "mc",
           "lshl" -> "mc", "lshr" -> "mc", "lushr" -> "mc",

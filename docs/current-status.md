@@ -194,8 +194,20 @@ trusting the table as true coverage rather than as a configuration matrix.
     for *all or most* configurable bytecodes, so that any board can trade area
     for cycles without dropping to the Java trap.
 
-    **Coverage vehicle: `ep4cgx150McFallback`** — selects all 12 `_sw` handlers
-    at once and is the regression build for this item. It paid for itself on its
+    **Coverage vehicle: `ep4cgx150McFallback`** — selects 11 of the 12 `_sw`
+    handlers and is the regression build for this item.
+
+    Eleven, not twelve, because **`imul_sw` and `lmul_sw` are mutually
+    exclusive** and no single build can run both. `imul_sw` is a self-contained
+    shift-add loop that touches no compute unit, and it is selected by
+    `imul = mc`. `lmul_sw` computes its partial products on the ICU's
+    `imul`/`imul_wide`, and that multiplier is only built when `imul = hw`
+    (`IntegerComputeUnitConfig.withMul` is `needsIntMul`). So `imul = mc` gives
+    `imul_sw` but breaks `lmul_sw`, and `imul = hw` fixes `lmul_sw` but stops
+    selecting `imul_sw`. This preset takes `imul = hw` and covers `lmul_sw`.
+    `imul_sw` is covered instead by every default-config sim, since `imul`
+    defaults to `Microcode` — so the *set* of tests covers all 12 even though no
+    single one does. It paid for itself on its
     first run by surfacing the `lmul` configuration defect (item 22). Run it with
     `make -C fpga/qmtech-ep4cgx150-sdram full-mc-fallback`, or in simulation via
     `JopJvmTestsMcFallbackSim` (nightly in CI). **New handlers must be added to

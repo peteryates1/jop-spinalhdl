@@ -373,10 +373,16 @@ object JopConfig {
       coreConfig = base.system.coreConfig.copy(bytecodes = Map(
         // ICU present so lmul_sw has something to drive
         "idiv" -> "hw", "irem" -> "hw",
-        // imul = hw, NOT mc: lmul_sw computes partial products with ICU
-        // imul_wide, and that multiplier only exists when imul itself is
-        // hardware. imul_sw loses no coverage — every default-config sim runs
-        // it, since imul defaults to Microcode.
+        // imul = hw, NOT mc — and this is a genuine either/or, not a
+        // preference. imul_sw and lmul_sw cannot both be exercised in one
+        // build:
+        //   imul = mc -> imul_sw runs (it is a self-contained shift-add loop
+        //                and needs no CU), but the ICU is built without a
+        //                multiplier, so lmul_sw has nothing to dispatch to
+        //   imul = hw -> lmul_sw works, but the jump table now points imul at
+        //                imul_hw, so imul_sw is not selected
+        // This preset takes the second. imul_sw keeps its coverage from every
+        // default-config sim, since imul defaults to Microcode.
         "imul" -> "hw", "lmul" -> "mc",
         "ladd" -> "mc", "lsub" -> "mc", "lneg" -> "mc", "lcmp" -> "mc",
         "lshl" -> "mc", "lshr" -> "mc", "lushr" -> "mc",
