@@ -210,9 +210,16 @@ independent corroboration on a fourth board rather than part of that run:
 | A-E115FB (DDR2) | 75 MHz / 1 Mbaud | ✅ 0.51 s | ✅ 0.5 s @ 88 KB/s | ✅ 66/66 |
 | XC7A100T (DDR3) | 100 MHz / 2 Mbaud | ✅ ~0.5 s | ✅ 215 KB/s | — |
 | EP4CGX150 (SDR) | 100 MHz / 2 Mbaud | ✅ ~0.5 s | ✅ 188 KB/s | ✅ 66/66 |
-| Colorlight i5 (BRAM) | 40 MHz / 1 Mbaud | ✅ | ✅ 0.7 s @ 63 KB/s | — (64 KB, too small) |
+| Colorlight i5 (BRAM) | 40 MHz / 1 Mbaud | ✅ | ✅ 0.7 s @ 63 KB/s | — (needs SDRAM, see below) |
 
 (i5 row added 2026-08-05, after the three-board run above.)
+
+The i5 cannot run the JVM suite until Stage 2. `DoAll.jop` is 72,428 words =
+**283 KB**, against 64 KB of configured main memory — and against **126 KB of
+total EBR on the LFE5U-25F**, so it does not fit even if every block RAM on the
+chip were given to main memory with nothing left for the microcode ROM, JBC
+cache, stack cache or jump table. This is a hard limit of the BRAM stage, not a
+tuning problem. (`HelloWorld.jop`, by contrast, is 11,929 words = 47 KB.)
 
 All three return identical checksums for the same image (`0x8f197bc7` for
 HelloWorld, `0x2ed0b59a` for DoAll), so the transfers are byte-identical across

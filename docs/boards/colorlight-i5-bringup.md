@@ -143,6 +143,17 @@ table, so `GC.genActive` disables the generational collector at boot rather than
 running it with a permanently empty remembered set. A card table follows once
 SDRAM lands and there is a heap worth collecting.
 
+## The JVM suite does not fit in Stage 1
+
+`DoAll.jop` is 72,428 words = **283 KB**. Stage 1 has 64 KB of main memory, so it
+is 4.4x too big — but the more useful figure is that the LFE5U-25F has **126 KB of
+EBR in total**, so DoAll would not fit even with every block RAM on the chip
+assigned to main memory and nothing left for the microcode ROM, JBC cache, stack
+cache or jump table.
+
+So the JVM suite is gated on Stage 2 (SDRAM) categorically, not on tuning the BRAM
+split. `HelloWorld.jop` (11,929 words = 47 KB) is what Stage 1 can host.
+
 ## Gotcha hit during bring-up: stale generated Verilog
 
 Changing the preset's `clkFreq` from 50 to 40 MHz reprograms the PLL — which lives
