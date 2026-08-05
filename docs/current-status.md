@@ -28,12 +28,15 @@ project have looked fine while being wrong.
    table fed from the arbiter output — `CmpSync` is the precedent for a
    cluster-level resource reached through per-core I/O. **Write the failing test
    first**: the existing SMP GC tests do not construct a cross-core old->young
-   reference and would pass either way. ~1-2 days, dominated by the test.
+   reference and would pass either way. ~1-2 days, dominated by the test — and
+   that test is **the same missing artefact as items 2 and 11** (see
+   *Coupling* below).
 
 2. **`JopIhluGcBramSim` cannot fail.** It loads `java/apps/Small/HelloWorld.jop`
    — a single-core app — so core 1 parks in the boot-wait loop and IHLU is never
    exercised. Verified by running it to 49M cycles: core 1 never moved. Needs a
-   real SMP GC application before "IHLU GC verified" means anything.
+   real SMP GC application before "IHLU GC verified" means anything — the same
+   application item 1 needs to build its failing test on (see *Coupling*).
 
 3. **Sixteen presets still run classic GC.** Safe but slow after the guard;
    `hasCardTable` is one line each and the boot line confirms it took effect.
@@ -88,7 +91,9 @@ project have looked fine while being wrong.
     whether a cycle of arbiter latency is worth 4+ cores (item 5); whether the
     caches (2,213 LE/core, 33% of a core) earn their area; and whether the copy
     redesign helps real workloads (item 4). Currently all three are reasoned
-    rather than measured. Probably the highest-leverage thing to build next.
+    rather than measured. Probably the highest-leverage thing to build next —
+    and items 1 and 2 need a multi-core allocating application anyway, so the
+    first slice of this is already on the critical path (see *Coupling*).
 
 ### Smaller
 
@@ -104,6 +109,31 @@ project have looked fine while being wrong.
     in BRAM simulation, needs per-core stack regions on SDRAM.
 15. **`GcPauseTest` on the Wukong boards** — never run; they have card tables now
     but no measured pause.
+
+### Coupling — read before sequencing any of this
+
+**Items 1, 2 and 11 share one missing artefact: a multi-core application that
+allocates.** They look independent and are not.
+
+- Item 1 (shared card table) is ~1-2 days, and the *test* is the bulk of it. The
+  bug is "a young object reachable only from a tenured object written by another
+  core is collected while live". Demonstrating that needs two cores allocating
+  and storing cross-generation references — i.e. exactly such an application.
+- Item 2 is vacuous today *because* no such application exists:
+  `JopIhluGcBramSim` falls back to a single-core app, so core 1 never boots.
+- Item 11 needs the same thing as its first slice, before it grows into a
+  benchmark that can answer the arbiter and cache questions.
+
+So build the application once and it serves all three: it makes item 2's test
+meaningful, gives item 1 something that can fail before the RTL changes, and is
+the beginning of item 11. Doing them in the other order means writing a
+throwaway harness twice.
+
+**Second coupling, weaker**: items 4 and 6 may be the same defect. The copy
+phase's problem is placement — the handle table is far larger than the cache and
+a handle is exactly one cache line. `compactAndSweep` walks `useList` the same
+way, so the unexplained major-GC constant may have the same cause. Check that
+before treating them as separate projects.
 
 ---
 
