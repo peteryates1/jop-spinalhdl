@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Nightly, for the JVM-suite simulations only — they are far too slow to
+    # gate a push (60M Verilator cycles each).
+    - cron: '0 3 * * *'
 
 permissions:
   checks: write
@@ -202,7 +207,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y verilator
 
       - name: Run simulation tests
-        run: sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* -- -u target/test-reports"
+        run: sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* jop.config.* jop.system.* jop.utils.* jop.sim.* -- -u target/test-reports"
 
       - name: Publish simulation test results
         uses: dorny/test-reporter@v1
@@ -211,3 +216,90 @@ jobs:
           name: Simulation Test Results
           path: target/test-reports/**/*.xml
           reporter: java-junit
+
+  # ----------------------------------------------------------------
+  # JVM test suite (jvm.DoAll) across bytecode implementation choices.
+  #
+  # NOT run on push or PR: each of these is a 60M-cycle Verilator run taking
+  # tens of minutes, which would make every push unbearable. Nightly and on
+  # manual dispatch instead.
+  #
+  # Why they need to exist at all: a bytecode implementation that no test
+  # SELECTS gets no coverage, and JOP's defaults select very few microcode
+  # handlers. lmul_sw was broken for months precisely because lmul defaults to
+  # Java on every board, so nothing ran it. These three runs cover every
+  # implementation choice that currently works:
+  #
+  #   baseline     every bytecode at its default -> covers all Java handlers
+  #   mc-fallback  every working _sw handler     -> covers all microcode
+  #   all-hw       "*" -> "hw"                   -> covers all four CUs
+  #
+  # Deliberately absent: lmul = mc (lmul_sw is broken) and fadd/fsub/fmul/fdiv
+  # = mc (their _sw handlers drive the removed BmbFpu). See item 22 in
+  # docs/current-status.md. JopJvmTestsLmulSwSim reproduces the lmul failure on
+  # demand and is expected to fail, so it is not run here.
+  # ----------------------------------------------------------------
+  jvm-suite-sims:
+    needs: build-microcode
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline (all defaults, Java handlers)
+            sim: JopJvmTestsBramSim
+          - name: microcode fallbacks
+            sim: JopJvmTestsMcFallbackSim
+          - name: all compute units
+            sim: JopDcuCacheSim
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up SBT
+        uses: sbt/setup-sbt@v1
+
+      - name: Cache SBT
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.sbt
+            ~/.cache/coursier
+          key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.sbt') }}
+
+      - name: Download microcode
+        uses: actions/download-artifact@v4
+        with:
+          name: microcode
+          path: asm/generated
+
+      - name: Install Verilator
+        run: sudo apt-get update && sudo apt-get install -y verilator
+
+      - name: Run ${{ matrix.name }}
+        run: sbt -J-Xmx4g "Test/runMain jop.system.${{ matrix.sim }}" 2>&1 | tee sim.log
+
+      - name: Check DoAll result
+        run: |
+          fails=$(grep -c 'failed!' sim.log || true)
+          oks=$(grep -cE ' ok$' sim.log || true)
+          echo "passed=$oks failed=$fails"
+          # These sims are App objects: they exit 0 whatever DoAll reports, so
+          # the result has to be read out of the log or a regression is silent.
+          if [ "$fails" -ne 0 ]; then
+            echo "::error::${{ matrix.name }}: $fails DoAll test(s) failed"
+            grep 'failed!' sim.log
+            exit 1
+          fi
+          if [ "$oks" -eq 0 ]; then
+            echo "::error::${{ matrix.name }}: no test results found — the run did not reach DoAll"
+            tail -40 sim.log
+            exit 1
+          fi

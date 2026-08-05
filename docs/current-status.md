@@ -118,6 +118,27 @@ project have looked fine while being wrong.
     that block RAM is only 21% used. See `docs/boards/colorlight-i5-bringup.md`.
 ### Compute units and bytecode implementation
 
+**Implementation coverage, measured 2026-08-05.** Every configurable bytecode
+crossed with every implementation it may legally take, against the configs that
+some passing DoAll simulation actually selects:
+
+| implementation | covered | gaps |
+|---|---|---|
+| **Java** | **32 / 32** | none — the default-config sims select every Java handler |
+| **Hardware** | **32 / 32** | none — `JopDcuCacheSim` runs `"*" -> "hw"` |
+| **Microcode** | **11 / 16** | `lmul` (broken) and `fadd`/`fsub`/`fmul`/`fdiv` (dead) — all of item 22 |
+
+So every implementation that *works* is now selected by a passing simulation.
+The five gaps are exactly the five known-bad handlers, not untested ones.
+
+**The caveat that matters**: this measures which handlers a config *selects*,
+not which the workload *executes*. DoAll passing with `lushr = mc` proves the
+build is sound; it does not prove DoAll contains an `lushr`. Closing that would
+need per-bytecode execution counters in the simulation — worth doing before
+trusting the table as true coverage rather than as a configuration matrix.
+
+
+
 17. **`needs*Compute` predicates understate compute-unit reachability.**
     `621aac7` used them to skip instantiating unused CUs and regressed the JVM
     suite 66/66 -> 56/66; reverted in `eda6de7`. The area win is real (~474 LE

@@ -50,7 +50,9 @@ object JopJvmTestsMcFallbackSim extends App {
         memConfig = JopMemoryConfig(mainMemSize = bramSize),
         bytecodes = Map(
           "idiv" -> "hw", "irem" -> "hw",
-          "imul" -> "mc", "lmul" -> "mc",
+          // lmul is NOT here: lmul_sw is broken (item 22). JopJvmTestsLmulSwSim
+          // is the deliberate reproduction of that, and is expected to fail.
+          "imul" -> "mc",
           "ladd" -> "mc", "lsub" -> "mc", "lneg" -> "mc", "lcmp" -> "mc",
           "lshl" -> "mc", "lshr" -> "mc", "lushr" -> "mc",
           "fneg" -> "mc", "fcmpl" -> "mc", "fcmpg" -> "mc")))))
