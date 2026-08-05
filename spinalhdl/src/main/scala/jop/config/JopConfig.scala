@@ -303,17 +303,18 @@ object JopConfig {
   /** EP4CGX150 + daughter board — SMP, N cores */
   def ep4cgx150Smp(n: Int) = {
     val base = ep4cgx150Serial
-    // useCmpSync = true: JopCluster instantiates Ihlu whenever cpuCnt >= 2 and
-    // useCmpSync is false, and `false` is the JopCoreConfig default — so an SMP
-    // preset silently gets per-object locking unless it opts out. Ihlu does not
-    // close timing at 100 MHz on this part: its queueRam address path
-    // (curCpu/dataReg -> portb_address_reg) misses by 1.282 ns and owns the four
-    // worst paths in the design. CmpSync is the global lock this board is
-    // documented and verified with; select Ihlu explicitly if you want it, and
-    // drop the clock to ~80 MHz when you do.
-    base.copy(systems = Seq(base.system.copy(
-      name = s"smp$n", cpuCnt = n,
-      coreConfig = base.system.coreConfig.copy(useCmpSync = true))))
+    // Leaves useCmpSync at its default (false), so JopCluster instantiates Ihlu
+    // — per-object hardware locking. That is the point of SMP: CmpSync is a
+    // single global lock, so two threads locking DIFFERENT objects still
+    // serialise on it.
+    //
+    // Ihlu previously missed 100 MHz here by 1.282 ns, owning the four worst
+    // paths in the design, because its queue RAM address was computed from the
+    // combinational CAM result inside one cycle. That is fixed in Ihlu.scala by
+    // moving the address into the already-idle RAM_DELAY state and driving it
+    // from the registered index — no extra cycles. Set useCmpSync = true if you
+    // want the simpler global lock.
+    base.copy(systems = Seq(base.system.copy(name = s"smp$n", cpuCnt = n)))
   }
 
   /** EP4CGX150 + daughter board — hardware integer math (IntegerComputeUnit) */

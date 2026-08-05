@@ -230,18 +230,32 @@ case class Ihlu(config: IhluConfig) extends Component {
       emptyHitReg := emptyHit
       emptyIndexReg := emptyIndex
 
-      // Set up RAM read: read queue head entry for the matched slot
-      // (needed for unlock to find next waiter)
-      when(matchHit) {
-        ramRdAddr := queueAddr(matchIndex, queueHead(matchIndex.resized).resized)
-      }
-
       state := State.RAM_DELAY
     }
 
     is(State.RAM_DELAY) {
-      // One-cycle delay for synchronous RAM read
-      // RAM read data available next cycle (ramRdData)
+      // Set up the RAM read here, not in RAM_READ, and drive it from the
+      // REGISTERED CAM result.
+      //
+      // Timing: driving it from the combinational `matchIndex` put this whole
+      // chain in one cycle — curCpu -> dataReg mux -> 32 x 32-bit CAM compare
+      // -> priority encode -> queueHead lookup indexed by that same
+      // combinational value -> multiply -> RAM address register. It missed
+      // 100 MHz by 1.282 ns on the EP4CGX150 and owned the four worst paths in
+      // the design. From a register it is just a lookup, a multiply and the
+      // address port.
+      //
+      // Correctness: readSync samples the address every cycle and ramRdAddr
+      // defaults to 0, so presenting the address in RAM_READ meant RAM_DELAY
+      // re-sampled address 0 and EXECUTE saw queueRam[0] rather than the
+      // matched slot's queue head. Presenting it here lines the data up with
+      // EXECUTE, which is where it is consumed (the nextOwner read).
+      //
+      // Costs no extra cycles — RAM_DELAY previously did nothing but wait.
+      when(matchHitReg) {
+        ramRdAddr := queueAddr(matchIndexReg, queueHead(matchIndexReg.resized).resized)
+      }
+
       state := State.EXECUTE
     }
 

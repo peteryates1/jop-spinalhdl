@@ -51,9 +51,25 @@ class CardTable(cardCount: Int, cardShift: Int, wordAddrWidth: Int) extends Comp
 
   val mem = Mem(Bits(32 bits), nWords)
 
+  // --- snoop input register (stage 0) ---
+  //
+  // The mark address arrives combinationally from the core's BMB command, which
+  // is itself driven by whatever is generating the write — during a GC zero-fill
+  // that is the DMA's `zeroCur` counter. Without this register the whole chain
+  //
+  //   zeroCur -> BMB address -> inRange compare + shift -> read-port address
+  //
+  // is one path ending at a BRAM address pin, and it became the critical path of
+  // the 4-core SMP build (-2.862 ns at 100 MHz). Registering here splits it into
+  // two short halves and costs nothing that matters: a card is marked one cycle
+  // later, and the collector only reads the table after halting every core, so
+  // an in-flight mark has long since landed.
+  val mValid = RegNext(io.markValid) init (False)
+  val mAddr  = RegNext(io.markAddr)  init (0)
+
   // --- card index of the marked write ---
-  val inRange = io.markValid && (io.markAddr >= io.baseWord) && (io.markAddr < io.topWord)
-  val cardIdx = (io.markAddr >> cardShift).resize(cardBits)
+  val inRange = mValid && (mAddr >= io.baseWord) && (mAddr < io.topWord)
+  val cardIdx = (mAddr >> cardShift).resize(cardBits)
   val wIdx    = cardIdx(cardBits - 1 downto 5).resize(idxWidth)  // which 32-card word
   val bIdx    = cardIdx(4 downto 0)                              // bit within the word
 
@@ -68,7 +84,10 @@ class CardTable(cardCount: Int, cardShift: Int, wordAddrWidth: Int) extends Comp
   io.clrBusy := clrAllActive
 
   // --- read port (mark RMW read has priority over GC readback; never overlap) ---
-  val readAddr = Mux(io.markValid, wIdx, io.rdIdx)
+  // mValid, not io.markValid: the read must be issued for the mark now in
+  // stage 0, and the GC readback path is unaffected because the collector only
+  // reads with every core halted, so no mark can be in flight.
+  val readAddr = Mux(mValid, wIdx, io.rdIdx)
   val memRead  = mem.readSync(readAddr)
   io.rdData := memRead
 

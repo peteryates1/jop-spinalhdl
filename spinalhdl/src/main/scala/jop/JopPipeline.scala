@@ -151,7 +151,15 @@ case class JopPipeline(
       withD2L = config.impl("d2l") == Implementation.Hardware,
       withF2D = config.impl("f2d") == Implementation.Hardware,
       withD2F = config.impl("d2f") == Implementation.Hardware,
-      withDcmp = config.needsDoubleCmp)
+      withDcmp = config.needsDoubleCmp),
+    // Skip a unit entirely when no bytecode maps to it in hardware. The per-unit
+    // `with*` flags above only hollow a unit out; LongComputeUnit's base ALU
+    // (ladd/lsub/lneg/lcmp) has no such flag, so without this it survived as
+    // ~400 LEs of unreachable logic in every core.
+    hasIcu = config.needsIntegerCompute,
+    hasFcu = config.needsFloatCompute,
+    hasLcu = config.needsLongCompute,
+    hasDcu = config.needsDoubleCompute
   )
 
   // ==========================================================================

@@ -24,9 +24,20 @@ case class JopIhluTestHarness(
 ) extends Component {
   require(cpuCnt >= 2)
 
+  // Derived from the config the cluster is actually built with, not hardcoded.
+  // These were previously fixed at pc=11 / jpc=12 — transposed, since the
+  // JopCoreConfig defaults are pcWidth=12 and jpcWidth=11. It happened to
+  // elaborate while pcWidth was 11; once it grew to 12 both IHLU sims failed
+  // with "WIDTH MISMATCH (11 bits <- 12 bits) on io_pc_*" and have not run
+  // since, which is why the IHLU verification claim went stale unnoticed.
+  val harnessCfg = JopCoreConfig(
+    memConfig = JopMemoryConfig(mainMemSize = memSize),
+    useCmpSync = false
+  )
+
   val io = new Bundle {
-    val pc  = out Vec(UInt(11 bits), cpuCnt)
-    val jpc = out Vec(UInt(12 bits), cpuCnt)
+    val pc  = out Vec(UInt(harnessCfg.pcWidth bits), cpuCnt)
+    val jpc = out Vec(UInt((harnessCfg.jpcWidth + 1) bits), cpuCnt)  // JopCluster exposes jpcWidth+1
     val aout = out Vec(Bits(32 bits), cpuCnt)
     val bout = out Vec(Bits(32 bits), cpuCnt)
     val memBusy = out Vec(Bool(), cpuCnt)
@@ -57,10 +68,7 @@ case class JopIhluTestHarness(
 
   val cluster = JopCluster(
     cpuCnt = cpuCnt,
-    baseConfig = JopCoreConfig(
-      memConfig = JopMemoryConfig(mainMemSize = memSize),
-      useCmpSync = false
-    ),
+    baseConfig = harnessCfg,
     romInit = Some(romInit),
     ramInit = Some(ramInit),
     jbcInit = Some(jbcInit)
