@@ -317,6 +317,31 @@ jobs:
       - name: Install Verilator
         run: sudo apt-get update && sudo apt-get install -y verilator
 
+      # DoAll.jop is a gitignored build artifact, so CI has to build it. That
+      # needs JDK 8 specifically: the app compiles with -source/-target 1.6, and
+      # JDK 9 dropped target 6, while JOPizer's BCEL 5.2 cannot read class files
+      # newer than Java 6. JDK 8 is the only version satisfying both. JAVA_HOME
+      # stays on 17 for sbt and the tools; only javac for the app is pinned.
+      - name: Set up JDK 8 for the JOP app compile
+        id: jdk8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Set up JDK 17 (sbt, tools, JOPizer)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build JOP tools and DoAll.jop
+        run: |
+          make -C java/tools
+          make -C java runtime
+          make -C java/apps/JvmTests JDK6_HOME=${{ steps.jdk8.outputs.path }}
+          ls -l java/apps/JvmTests/DoAll.jop
+
       - name: Run ${{ matrix.name }}
         run: sbt -J-Xmx4g "Test/runMain jop.system.${{ matrix.sim }}" 2>&1 | tee sim.log
 
