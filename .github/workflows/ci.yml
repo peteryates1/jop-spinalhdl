@@ -206,8 +206,14 @@ jobs:
       - name: Install Verilator
         run: sudo apt-get update && sudo apt-get install -y verilator
 
+      # jop.system.* and jop.utils.* are deliberately NOT here: JopCoreTest,
+      # JopCoreWithSdramTest and JopFileLoaderSpec all load
+      # java/apps/Smallest/HelloWorld.jop, which is a gitignored build artifact.
+      # CI builds jopa.jar and the microcode but not the Java apps — those need
+      # JDK 6 — so those three fail in CI while passing locally. Adding the
+      # packages wholesale is exactly the mistake that broke this job once.
       - name: Run simulation tests
-        run: sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* jop.config.* jop.system.* jop.utils.* jop.sim.* -- -u target/test-reports"
+        run: sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* jop.config.* jop.sim.* -- -u target/test-reports"
 
       - name: Publish simulation test results
         uses: dorny/test-reporter@v1
