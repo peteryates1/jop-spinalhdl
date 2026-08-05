@@ -751,8 +751,8 @@ MAX_VALUE*2=-2, MIN_VALUE*-1=MIN_VALUE, 1000000*1000=1000000000
 | fsub | ~1500 (SoftFloat32) | -- | 6 + 6 = **12** | 5-6 | Same pipeline as fadd |
 | fmul | ~1400 (SoftFloat32) | -- | 6 + 4 = **10** | 4 | MUL: unpack/step1/step2/round |
 | fdiv | ~1600 (SoftFloat32) | -- | 6 + 30 = **36** | 30 | 25 division iterations + overhead |
-| fcmpl | ~600 (SoftFloat32) | -- | 6 + 2 = **8** | 2 | Unpack + compare |
-| fcmpg | ~600 (SoftFloat32) | -- | 6 + 2 = **8** | 2 | Unpack + compare |
+| fcmpl | ~600 (SoftFloat32) | ~30 (fcmpl_sw) | 6 + 2 = **8** | 2 | Unpack + compare |
+| fcmpg | ~600 (SoftFloat32) | ~30 (fcmpg_sw) | 6 + 2 = **8** | 2 | Unpack + compare |
 | i2f | ~800 (SoftFloat32) | -- | 5 + 3 = **8** | 3 | 1 operand. I2F_EXEC/shift/round |
 | f2i | ~700 (SoftFloat32) | -- | 5 + 2 = **7** | 2 | 1 operand. Unpack + F2I_EXEC |
 
@@ -762,8 +762,19 @@ isNaN (×2), isInfinite (×2), unpackMantissa (×2), unpackExponent (×2),
 pack → countLeadingZeros → roundingRightShift. Each nested call adds ~75
 cycles overhead. fmul additionally calls lmul for mantissa multiplication.
 
-No microcode (SW) path exists for float ops — it's either CU hardware or
-Java trap (SoftFloat32). The old I/O-based BmbFpu peripheral has been removed.
+`fneg`, `fcmpl` and `fcmpg` have real microcode paths: `fneg` is a single XOR
+of the sign bit, and `fcmpl_sw`/`fcmpg_sw` (97 words for the pair) do the
+compare on the raw bit patterns — sign test, NaN test against 0x7F800000, then
+a magnitude compare with the order reversed for two negatives. Neither needs
+the FCU.
+
+`fadd`/`fsub`/`fmul`/`fdiv` **appear** to have `_sw` handlers but do not: those
+drive the old I/O-based BmbFpu peripheral, which has been removed, so they
+write to addresses that no longer exist. They are dead code that a
+configuration can still select — see item 22 in `docs/current-status.md`.
+Genuine software float for those four would be SoftFloat32 via the Java trap.
+
+`i2f`/`f2i` have no microcode path at all — CU or Java trap only.
 
 ### LCU — Long Compute Unit
 

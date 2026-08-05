@@ -156,7 +156,8 @@ project have looked fine while being wrong.
     |---|---|---|
     | int | imul | idiv, irem |
     | long | ladd, lsub, lmul, lneg, lshl, lshr, lushr, lcmp | — |
-    | float | fadd, fsub, fmul, fdiv, fneg | i2f, f2i, fcmpl, fcmpg |
+    | float | fneg, fcmpl, fcmpg | i2f, f2i |
+    | float (dead, see item 22) | ~~fadd, fsub, fmul, fdiv~~ | |
     | double | — | all 12 (dadd, dsub, dmul, ddiv, i2d, d2i, l2d, d2l, f2d, d2f, dcmpl, dcmpg) |
 
     This is safe *today* only because every one of those 19 defaults to `Java`,
@@ -168,8 +169,9 @@ project have looked fine while being wrong.
     and the seven mismarked constraints are corrected — see below), so what
     remains is purely the question of how much microcode to write.
 
-    **Long is fully covered, float is half covered, double is not covered at
-    all.** The work to close that is items 19 and 20.
+    **Long is fully covered; float has three real handlers and four dead ones;
+    double is not covered at all.** The work to close that is items 19, 20 and
+    22.
 
     (`compute-unit-design.md` recorded `lmul_sw` as broken; verified fixed by
     `900f66a`, which added ICU `imul_wide` and rewrote it onto the
@@ -187,9 +189,19 @@ project have looked fine while being wrong.
     pure microcode (`ldi 0x80000000; xor`), it simply lacked the `fneg_sw` label
     that `useAlt` looks for. Two labels on one address, ROM byte-identical.
 
+    ~~tier 1 (`fcmpl`, `fcmpg`)~~ — **done**. `fcmpl_sw`/`fcmpg_sw`, 97 ROM
+    words for the pair, sharing one body that differs only in the NaN result.
+    **No new `ldi` constants**: the serial pool is the binding one at 30 of 32
+    and `ldi` is a hard 5-bit field, while the ROM had ~2000 words free, so
+    0x7FFFFFFF and 0x7F800000 are derived from constants already present
+    (`-1 >>> 1`, `(255 << 24) >>> 1`) rather than added. Verified against IEEE
+    semantics over 1152 cases (NaN, ±0, ±Inf, denormals, non-canonical NaN
+    payloads) and by `JopJvmTestsMcFcmpSim`, which runs DoAll with both set to
+    `mc` — the default config implements them in Java and would never execute
+    the handlers at all.
+
     | tier | bytecodes | effort | why |
     |---|---|---|---|
-    | 1 | `fcmpl`, `fcmpg` | small | no arithmetic — a sign test plus an integer compare |
     | 2 | `i2f`, `f2i` | moderate | normalise/denormalise: count leading zeros, shift, assemble exponent |
     | 3 | `idiv`, `irem` | moderate | restoring division loop. Lowest value of the three: the ICU already does it in ~36 cycles and the Java trap in ~1300, so this only pays for a board that wants neither |
 
@@ -222,6 +234,26 @@ project have looked fine while being wrong.
     application benchmark (item 11) that shows whether double is on any hot
     path. `dcmpl`/`dcmpg` are the exception — they are as cheap as their float
     counterparts in tier 1 and could be done with them.
+
+22. **`fadd_sw`/`fsub_sw`/`fmul_sw`/`fdiv_sw` are dead code and a live trap.**
+    They are not software float at all — they are I/O handlers for the BmbFpu
+    peripheral, which has been removed. They write to 0xF0-0xF3 (`fpu_add` ..
+    `fpu_div`) and read a result from `fpu_res`, none of which exist in the
+    design any more; `compute-unit-design.md` says so in prose while the ROM
+    still contains them.
+
+    So `fadd = mc` today passes `BytecodeConfig.validate` (it is `JavaOk`),
+    finds an alternate in `useAlt` (one exists), and then talks to absent
+    hardware. The item 17 guard cannot catch this: the alternate is present, it
+    is simply dead. It is the same silent-wrong-configuration class, one level
+    deeper — "has an alternate" is not "has a *working* alternate".
+
+    Fix is a deletion, not an implementation: remove the four handlers and their
+    `fpu_*` address constants, which drops the four bogus `altEntries`, lets
+    fadd/fsub/fmul/fdiv be marked `NoMicrocode`, and keeps
+    `JumpTableResolutionTest`'s `noSw == noMc` invariant true. Frees ~36 ROM
+    words and possibly some constant-pool slots. Real software float for those
+    four is a separate question and belongs with item 20's reasoning, not here.
 
 ### Boards
 

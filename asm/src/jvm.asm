@@ -2504,6 +2504,166 @@ fcmpg_hw:
 			wait				// 2nd wait: pcwait+bsy → stall until CU done
 			ldop nxt			// push int result (-1, 0, or 1)
 
+// ==========================================================================
+// fcmpl_sw / fcmpg_sw — pure microcode float compare, no FCU
+//
+// Stack: ..., value1, value2 (TOS = value2)  ->  ..., result
+//   value1 > value2 ->  1
+//   value1 = value2 ->  0
+//   value1 < value2 -> -1
+//   either is NaN   -> -1 for fcmpl, +1 for fcmpg
+//
+// The two entry points differ only in the NaN result, which is stashed in f and
+// used by the shared body — duplicating ~45 words would be cheap in ROM but not
+// in maintenance.
+//
+// No new ldi constants. The serial build's constant pool is the binding one at
+// 30 of 32 entries (ldi is 00110nnnnn, a hard 5-bit limit that cannot grow
+// without an ISA change), while the ROM has ~2000 words free. So 0x7FFFFFFF and
+// 0x7F800000 are derived from constants already in the pool rather than added
+// to it: spend the abundant resource, not the scarce one.
+//
+// Why not compare the raw bits directly: as signed ints, IEEE-754 floats order
+// correctly only when positive. For negatives the order reverses (-2.0 is
+// 0xC0000000, -1.0 is 0xBF800000, so the more negative float is the LARGER
+// signed int). Hence the compare below splits on sign and, for two negatives,
+// compares magnitudes the other way round.
+//
+// Compared to the FCU (6 words, ~4 cycles) this is ~45 words and ~30 cycles,
+// and compared to the Java trap (SoftFloat32, several hundred cycles) it is a
+// large win. See item 19 in docs/current-status.md.
+// ==========================================================================
+fcmpl_sw:
+			ldi -1
+			stm f				// f = NaN result for fcmpl
+			jmp fcmp_sw_body
+			nop
+			nop
+
+fcmpg_sw:
+			ldi 1
+			stm f				// f = NaN result for fcmpg
+			nop					// fall through
+
+fcmp_sw_body:
+			stm b				// b = value2
+			stm a				// a = value1
+
+			// c = 0x7FFFFFFF  (-1 >>> 1) — mask off the sign bit
+			ldi -1
+			ldi 1
+			ushr
+			stm c
+
+			ldm a				// e = |value1|
+			ldm c
+			and
+			stm e
+			ldm b				// d = |value2|
+			ldm c
+			and
+			stm d
+
+			// c = 0x7F800000  ((255 << 24) >>> 1) — +Infinity, the NaN threshold
+			ldi 255
+			ldi 24
+			shl
+			ldi 1
+			ushr
+			stm c
+
+			// NaN iff |x| > 0x7F800000. Test the sign of (0x7F800000 - |x|):
+			// equal (Infinity) gives 0, which is correctly not NaN.
+			ldm c
+			ldm e
+			sub
+			ldi 31
+			shr					// 0, or -1 if value1 is NaN
+			ldm c
+			ldm d
+			sub
+			ldi 31
+			shr					// 0, or -1 if value2 is NaN
+			or
+			nop
+			bz fcmp_sw_ordered
+			nop
+			nop
+			ldm f nxt			// NaN: -1 for fcmpl, +1 for fcmpg
+
+fcmp_sw_ordered:
+			// +0.0 and -0.0 must compare equal, but they differ in the sign bit
+			// and would otherwise fall into the differing-signs case below.
+			// |v1| | |v2| is zero only when both are a zero of either sign.
+			ldm e
+			ldm d
+			or
+			nop
+			bnz fcmp_sw_nonzero
+			nop
+			nop
+			ldi 0 nxt
+
+fcmp_sw_nonzero:
+			ldm a				// c = sign(value1), 0 or -1
+			ldi 31
+			shr
+			stm c
+			ldm b				// b = sign(value2); value2 itself is done with
+			ldi 31
+			shr
+			stm b
+			ldm c
+			ldm b
+			xor
+			nop
+			bz fcmp_sw_samesign
+			nop
+			nop
+			// Signs differ and they are not both zero, so the negative one is
+			// the smaller. c is sign(value1): -1 -> value1 < value2 -> -1.
+			ldm c
+			ldi 1
+			or nxt
+
+fcmp_sw_samesign:
+			// Both operands are known non-NaN and not both zero, and
+			// |x| <= 0x7F800000 < 2^31, so these subtractions cannot overflow —
+			// unlike a difference of the raw bit patterns would.
+			ldm c
+			nop
+			bnz fcmp_sw_bothneg
+			nop
+			nop
+			ldm e				// both positive: larger magnitude is larger
+			ldm d
+			sub
+			stm a
+			jmp fcmp_sw_result
+			nop
+			nop
+
+fcmp_sw_bothneg:
+			ldm d				// both negative: larger magnitude is smaller
+			ldm e
+			sub
+			stm a
+
+fcmp_sw_result:
+			ldm a
+			nop
+			bnz fcmp_sw_signres
+			nop
+			nop
+			ldi 0 nxt
+
+fcmp_sw_signres:
+			ldm a
+			ldi 31
+			shr					// -1 if negative, 0 if positive
+			ldi 1
+			or nxt				// -1 | 1 = -1 ; 0 | 1 = 1
+
 // ---------- i2f ----------
 i2f:
 i2f_hw:

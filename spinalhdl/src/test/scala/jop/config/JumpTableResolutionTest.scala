@@ -12,7 +12,7 @@ import jop.pipeline.JumpTableInitData
  * if a bad configuration is caught by the build rather than by someone running
  * the JVM suite on hardware — hence this test.
  *
- * It also pins the coverage figure the strictness rests on: 14 of the 32
+ * It also pins the coverage figure the strictness rests on: 16 of the 32
  * configurable bytecodes have a `_sw` alternate. If a `_sw` handler is added to
  * jvm.asm, that number changes and the expectation below should be updated
  * deliberately, not silently.
@@ -91,14 +91,14 @@ class JumpTableResolutionTest extends AnyFunSuite {
     assert(ex.getMessage.contains("dadd"), s"should name the bytecode: ${ex.getMessage}")
   }
 
-  test("a Microcode bytecode with no _sw handler is rejected — the six that slipped through") {
+  test("a Microcode bytecode with no _sw handler is rejected — the four still open") {
     // idiv, irem, i2f, f2i, fcmpl and fcmpg have no _sw handler but were marked
     // JavaOk, so `mc` passed validation and then silently kept the compute-unit
     // entry — the exact configuration that produces wrong arithmetic instead of
-    // a build error. (fneg was in this group too, but turned out to have a pure
-    // microcode default handler and no _hw variant at all: the right fix there
-    // was to give it the fneg_sw label it was missing, not to forbid mc.)
-    for (name <- Seq("idiv", "irem", "i2f", "f2i", "fcmpl", "fcmpg")) {
+    // a build error. fneg, fcmpl and fcmpg have since left this group: fneg
+    // already had a microcode implementation and only lacked the _sw label,
+    // and fcmpl/fcmpg gained real _sw handlers (item 19 tier 1).
+    for (name <- Seq("idiv", "irem", "i2f", "f2i")) {
       val ex = intercept[IllegalArgumentException] {
         JopCoreConfig(bytecodes = Map(name -> "mc")).resolveJumpTable
       }
@@ -118,14 +118,20 @@ class JumpTableResolutionTest extends AnyFunSuite {
       s"NoMicrocode but _sw exists: ${(noMc -- noSw).toSeq.sorted.mkString(", ")}")
   }
 
-  test("_sw coverage is 14 of 32 configurable bytecodes") {
+  test("_sw coverage is 16 of 32 configurable bytecodes") {
     val alts = JumpTableInitData.simulation.altEntries.keySet
     val configurable = BytecodeConfig.all.map(_.opcode).toSet
     val covered = configurable.intersect(alts)
-    assert(covered.size == 14,
-      s"expected 14 bytecodes with a _sw alternate, found ${covered.size}. " +
+    assert(covered.size == 16,
+      s"expected 16 bytecodes with a _sw alternate, found ${covered.size}. " +
       "If a _sw handler was added to jvm.asm this is good news — update this " +
       "expectation and item 18 in docs/current-status.md.")
+    // CAVEAT: this counts alternates that EXIST, which is not the same as
+    // alternates that WORK. fadd/fsub/fmul/fdiv have _sw handlers that drive
+    // the removed BmbFpu peripheral over I/O, so they are present here and
+    // nonetheless unusable — see item 22 in docs/current-status.md. The
+    // NoMicrocode invariant below is therefore necessary but not sufficient.
+    //
     // Long is fully covered; double has nothing. Pin that shape too, since it
     // is the actual gap rather than the raw count.
     val longOps = BytecodeConfig.all.filter(_.group == "long").map(_.opcode).toSet

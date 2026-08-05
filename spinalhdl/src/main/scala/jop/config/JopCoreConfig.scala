@@ -192,8 +192,8 @@ object BytecodeConfig {
     BytecodeEntry("fneg",  0x76, "float",  Java, JavaOk),   // fneg_sw = pure microcode, one XOR of the sign bit; no CU
     BytecodeEntry("i2f",   0x86, "float",  Java, NoMicrocode),  // no i2f_sw
     BytecodeEntry("f2i",   0x8B, "float",  Java, NoMicrocode),  // no f2i_sw
-    BytecodeEntry("fcmpl", 0x95, "float",  Java, NoMicrocode),  // no fcmpl_sw
-    BytecodeEntry("fcmpg", 0x96, "float",  Java, NoMicrocode),  // no fcmpg_sw
+    BytecodeEntry("fcmpl", 0x95, "float",  Java, JavaOk),   // fcmpl_sw: pure microcode, no FCU
+    BytecodeEntry("fcmpg", 0x96, "float",  Java, JavaOk),   // fcmpg_sw: pure microcode, no FCU
     // Long — IMP_ASM ops have pure microcode handlers; lmul is IMP_JAVA.
     BytecodeEntry("ladd",  0x61, "long",   Microcode, Asm),
     BytecodeEntry("lsub",  0x65, "long",   Microcode, Asm),
