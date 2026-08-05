@@ -126,10 +126,10 @@ some passing DoAll simulation actually selects:
 |---|---|---|
 | **Java** | **32 / 32** | none — the default-config sims select every Java handler |
 | **Hardware** | **32 / 32** | none — `JopDcuCacheSim` runs `"*" -> "hw"` |
-| **Microcode** | **11 / 16** | `lmul` (broken) and `fadd`/`fsub`/`fmul`/`fdiv` (dead) — all of item 22 |
+| **Microcode** | **12 / 12** | none — the four dead float handlers were deleted and `lmul` was a config defect (item 22) |
 
-So every implementation that *works* is now selected by a passing simulation.
-The five gaps are exactly the five known-bad handlers, not untested ones.
+So every implementation that exists is now selected by a passing simulation,
+with no gaps in any of the three columns.
 
 **The caveat that matters**: this measures which handlers a config *selects*,
 not which the workload *executes*. DoAll passing with `lushr = mc` proves the
@@ -177,39 +177,32 @@ trusting the table as true coverage rather than as a configuration matrix.
     |---|---|---|
     | int | imul | idiv, irem |
     | long | ladd, lsub, lmul, lneg, lshl, lshr, lushr, lcmp | — |
-    | float | fneg, fcmpl, fcmpg | i2f, f2i |
-    | float (dead, see item 22) | ~~fadd, fsub, fmul, fdiv~~ | |
+    | float | fneg, fcmpl, fcmpg | fadd, fsub, fmul, fdiv, i2f, f2i |
     | double | — | all 12 (dadd, dsub, dmul, ddiv, i2d, d2i, l2d, d2l, f2d, d2f, dcmpl, dcmpg) |
 
-    This is safe *today* only because every one of those 19 defaults to `Java`,
-    which the jump table turns into `invokestatic`. Setting any of them to
-    `Microcode` silently gets the CU handler instead (see item 17) — a
-    configuration that looks accepted and is wrong.
+    All 20 without one default to `Java`, which the jump table turns into
+    `invokestatic`, and all 20 are now marked `NoMicrocode` so asking for `mc`
+    is rejected rather than silently dispatched to a compute unit (item 17).
 
-    **The silent-misconfiguration half of this is now fixed** (`useAlt` throws,
-    and the seven mismarked constraints are corrected — see below), so what
-    remains is purely the question of how much microcode to write.
+    **The silent-misconfiguration part of this is closed**: `useAlt` throws, the
+    constraint table matches the ROM, and the four bogus float alternates are
+    gone. What remains is purely how much microcode to write — items 19 and 20.
 
-    **Long is fully covered; float has three real handlers and four dead ones;
-    double is not covered at all.** The work to close that is items 19, 20 and
-    22.
-
-    (`compute-unit-design.md` recorded `lmul_sw` as broken; verified fixed by
-    `900f66a`, which added ICU `imul_wide` and rewrote it onto the
-    `stop`/`sthw`/`ldop` interface. That doc has been corrected.)
+    **Long is fully covered, float has three of nine, double none.**
 
 19. **Write the missing `_sw` microcode handlers.** Goal: a microcode fallback
     for *all or most* configurable bytecodes, so that any board can trade area
     for cycles without dropping to the Java trap.
 
-    **Coverage vehicle: `ep4cgx150McFallback`** — selects every working `_sw`
-    handler at once and is the regression build for this item. It found
-    `lmul_sw` broken on its first run (item 22). Run it with
+    **Coverage vehicle: `ep4cgx150McFallback`** — selects all 12 `_sw` handlers
+    at once and is the regression build for this item. It paid for itself on its
+    first run by surfacing the `lmul` configuration defect (item 22). Run it with
     `make -C fpga/qmtech-ep4cgx150-sdram full-mc-fallback`, or in simulation via
-    `JopJvmTestsMcFallbackSim`. New handlers should be added to it, otherwise
-    they get no coverage: JOP's defaults select very few `_sw` handlers, which is
-    how `lmul_sw` stayed broken unnoticed. Seven of the nine gaps outside
-    the double group are small; the double group is item 20.
+    `JopJvmTestsMcFallbackSim` (nightly in CI). **New handlers must be added to
+    it**, or they get no coverage at all: JOP's defaults select very few `_sw`
+    handlers, which is how `lmul` went years without anything executing it.
+    Six of the eight gaps outside the double group are small; the double group
+    is item 20.
 
     Per-operation cycle costs for the alternatives are already tabulated in
     `docs/architecture/compute-unit-design.md`.
@@ -274,53 +267,36 @@ trusting the table as true coverage rather than as a configuration matrix.
     path. `dcmpl`/`dcmpg` are the exception — they are as cheap as their float
     counterparts in tier 1 and could be done with them.
 
-22. **Five `_sw` handlers exist but do not work — a live trap.**
+22. ~~**Five `_sw` handlers exist but do not work**~~ — **RESOLVED**. It was two
+    different faults, and only one was in microcode.
 
-    **`lmul_sw` is broken.** Measured 2026-08-05 by `JopJvmTestsLmulSwSim`
-    (DoAll with `lmul = mc` and nothing else changed): 6 tests fail — FloatTest,
-    LongTest, LongArithmetic, DoubleArith, MathTest, WrapperTest. The float and
-    double failures follow from the same defect, since SoftFloat32/64 call lmul
-    for mantissa multiplication. It had never been executed anywhere, because
-    `lmul` defaults to Java on every board; `ep4cgx150McFallback` found it on
-    its first run.
+    **`lmul_sw` was never broken.** It needs the ICU's *multiplier*, and
+    `IntegerComputeUnitConfig.withMul` is `needsIntMul`, i.e. `imul == Hardware`
+    specifically. The `require` guarding it checked `needsIntegerCompute`
+    (`isHw("imul","idiv","irem")`), which `idiv = hw` satisfies on its own — so
+    `idiv = hw, imul = mc, lmul = mc` passed validation and then built an ICU
+    with **no multiplier at all**. `sthw 3` had nothing to dispatch to and lmul
+    returned garbage: 6 DoAll failures, the float and double ones because
+    SoftFloat32/64 call lmul for mantissa multiplication.
 
-    `compute-unit-design.md` had recorded it as broken, `900f66a` rewrote it
-    from the removed `ldmul`/`ldmulh` interface onto `stop`/`sthw 3`/`ldop`
-    against the ICU's new `imul_wide`, and this document then claimed it fixed
-    on the strength of the interface change alone. **Using the right interface
-    is not evidence of correct results** — that inference is what let a broken
-    handler look repaired for months.
+    With `imul = hw` the same handler passes DoAll 66/66. The `require` now
+    checks `needsIntMul` and says why `idiv/irem = hw` is not sufficient.
 
-    **`fadd_sw`/`fsub_sw`/`fmul_sw`/`fdiv_sw` are dead code.**
-    They are not software float at all — they are I/O handlers for the BmbFpu
-    peripheral, which has been removed. They write to 0xF0-0xF3 (`fpu_add` ..
-    `fpu_div`) and read a result from `fpu_res`, none of which exist in the
-    design any more; `compute-unit-design.md` says so in prose while the ROM
-    still contains them.
+    Worth recording how this looked from outside: a handler that had never been
+    executed, documented as broken, produced exactly the failure signature of a
+    broken handler — and was fine. The evidence that it was "broken" and the
+    evidence that it was "fixed" were both inference rather than measurement.
 
-    So `fadd = mc` today passes `BytecodeConfig.validate` (it is `JavaOk`),
-    finds an alternate in `useAlt` (one exists), and then talks to absent
-    hardware. The item 17 guard cannot catch any of these five: the alternate is
-    present, it is simply dead or wrong. Same silent-wrong-configuration class,
-    one level deeper — **"has an alternate" is not "has a *working*
-    alternate"**, and no static check can tell them apart.
+    **`fadd_sw`/`fsub_sw`/`fmul_sw`/`fdiv_sw` were genuinely dead** — I/O
+    handlers for the BmbFpu peripheral, writing to 0xF0-0xF3 which stopped
+    decoding when that peripheral was removed. Deleted, along with their
+    `fpu_*` address constants. Those four bytecodes are now `NoMicrocode`, which
+    is true rather than merely enforced.
 
-    Two different fixes:
-    - fadd/fsub/fmul/fdiv: a **deletion**. Remove the four handlers and their
-      `fpu_*` address constants, dropping the bogus `altEntries` so the four can
-      be marked `NoMicrocode`. Frees ~36 ROM words and possibly some pool slots.
-      Real software float for them is item 20's question, not this one.
-    - lmul: a **repair or a deletion**. Either debug the `imul_wide` partial
-      products, or drop `lmul_sw` and let `lmul` be DCU-or-Java like the double
-      group. `compute-unit-design.md` sets out the original options.
-
-    Either way `JumpTableResolutionTest`'s `noSw == noMc` invariant stays true
-    afterwards, which it cannot be while these five exist.
-
-    **The general lesson is the testable one**: a `_sw` handler that no preset
-    selects has no coverage, and JOP's defaults select very few. That is what
-    `ep4cgx150McFallback` exists to fix, and why it is worth keeping in the
-    regression set rather than treating as a curiosity.
+    Net: `altEntries` goes 16 -> 12, and all 12 are real. "Has an alternate" and
+    "has a *working* alternate" mean the same thing again, so
+    `JumpTableResolutionTest`'s `noSw == noMc` invariant is now sufficient as
+    well as necessary.
 
 ### Boards
 

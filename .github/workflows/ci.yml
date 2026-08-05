@@ -245,9 +245,37 @@ jobs:
   # docs/current-status.md. JopJvmTestsLmulSwSim reproduces the lmul failure on
   # demand and is expected to fail, so it is not run here.
   # ----------------------------------------------------------------
-  jvm-suite-sims:
-    needs: build-microcode
+  # Skips a scheduled run when nothing was committed since the last one, so the
+  # nightly does not burn ~30 minutes re-testing identical code. Manual dispatch
+  # always runs.
+  check-recent-commits:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    outputs:
+      should-run: ${{ steps.check.outputs.should-run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should-run=true" >> "$GITHUB_OUTPUT"
+            echo "manual dispatch — running"
+            exit 0
+          fi
+          if [ -n "$(git log --since='24 hours ago' --oneline)" ]; then
+            echo "should-run=true" >> "$GITHUB_OUTPUT"
+            echo "commits in the last 24h — running"
+          else
+            echo "should-run=false" >> "$GITHUB_OUTPUT"
+            echo "no commits in the last 24h — skipping the JVM suite sims"
+          fi
+
+  jvm-suite-sims:
+    needs: [build-microcode, check-recent-commits]
+    if: needs.check-recent-commits.outputs.should-run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     strategy:

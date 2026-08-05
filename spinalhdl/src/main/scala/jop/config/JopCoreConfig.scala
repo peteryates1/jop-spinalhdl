@@ -185,10 +185,10 @@ object BytecodeConfig {
     BytecodeEntry("idiv",  0x6C, "int",    Java,      NoMicrocode),  // Java=invokestatic ~1300cyc, Hardware=ICU DivUnit ~36cyc; no idiv_sw
     BytecodeEntry("irem",  0x70, "int",    Java,      NoMicrocode),  // Java=invokestatic ~1300cyc, Hardware=ICU DivUnit ~36cyc; no irem_sw
     // Float
-    BytecodeEntry("fadd",  0x62, "float",  Java, JavaOk),
-    BytecodeEntry("fsub",  0x66, "float",  Java, JavaOk),
-    BytecodeEntry("fmul",  0x6A, "float",  Java, JavaOk),
-    BytecodeEntry("fdiv",  0x6E, "float",  Java, JavaOk),
+    BytecodeEntry("fadd",  0x62, "float",  Java, NoMicrocode),
+    BytecodeEntry("fsub",  0x66, "float",  Java, NoMicrocode),
+    BytecodeEntry("fmul",  0x6A, "float",  Java, NoMicrocode),
+    BytecodeEntry("fdiv",  0x6E, "float",  Java, NoMicrocode),
     BytecodeEntry("fneg",  0x76, "float",  Java, JavaOk),   // fneg_sw = pure microcode, one XOR of the sign bit; no CU
     BytecodeEntry("i2f",   0x86, "float",  Java, NoMicrocode),  // no i2f_sw
     BytecodeEntry("f2i",   0x8B, "float",  Java, NoMicrocode),  // no f2i_sw
@@ -349,10 +349,26 @@ case class JopCoreConfig(
   require(!useStackCache || spillBaseAddrOverride.isDefined || memConfig.stackRegionWordsPerCore > 0,
     "useStackCache requires stackRegionWordsPerCore > 0 (or spillBaseAddrOverride) to prevent GC heap/stack overlap")
 
-  // lmul_sw uses ICU (sthw 0/3 for partial products) — requires IntegerComputeUnit.
-  require(impl("lmul") != Microcode || needsIntegerCompute,
-    "lmul: mc requires IntegerComputeUnit (lmul_sw uses sthw for partial products). " +
-    "Set int=hw, or use lmul=java or lmul=hw.")
+  // lmul_sw computes its partial products with ICU imul/imul_wide (sthw 0/3), so
+  // it needs the ICU's MULTIPLIER, not merely an ICU.
+  //
+  // This used to require needsIntegerCompute, which is isHw("imul","idiv","irem")
+  // — satisfied by idiv = hw alone. But IntegerComputeUnitConfig.withMul is
+  // needsIntMul, i.e. imul == Hardware specifically, so "idiv = hw, imul = mc,
+  // lmul = mc" passed this check and then built an ICU with no multiplier at
+  // all. sthw 3 had nothing to dispatch to and lmul returned garbage: measured
+  // as 6 DoAll failures (FloatTest, LongTest, LongArithmetic, DoubleArith,
+  // MathTest, WrapperTest — the float and double ones because SoftFloat32/64
+  // call lmul for mantissa multiplication).
+  //
+  // That looked exactly like a broken lmul_sw and was recorded as one for a
+  // while. It is not: with imul = hw the same handler passes DoAll 66/66.
+  require(impl("lmul") != Microcode || needsIntMul,
+    "lmul: mc requires imul = hw. lmul_sw computes partial products with ICU " +
+    "imul/imul_wide, and the ICU's multiplier is only built when imul itself " +
+    "is hardware (IntegerComputeUnitConfig.withMul = needsIntMul). Setting " +
+    "idiv/irem = hw is NOT sufficient — it yields an ICU with no multiplier. " +
+    "Use lmul = java or lmul = hw instead if imul must stay microcode.")
 
   // --- Derived: what hardware to instantiate ---
   private def isHw(names: String*): Boolean = names.exists(impl(_) == Hardware)

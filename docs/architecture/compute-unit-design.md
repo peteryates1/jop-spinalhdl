@@ -791,28 +791,28 @@ Genuine software float for those four would be SoftFloat32 via the Java trap.
 | lshr | -- | 6-23 (path-dependent) | 8 + 2 = **10** | 2 | Combinational barrel shift |
 | lushr | -- | 6-23 (path-dependent) | 8 + 2 = **10** | 2 | Combinational barrel shift |
 
-**lmul_sw is still broken.** It originally used the old
+**lmul_sw works, and requires `imul = hw`.** It originally used the old
 `sthw`/`ldmul`/`ldmulh` interface for 3 partial-product 32×32→64
 multiplies (P0=a0*b0, P1=a1*b0, P2=a0*b1), relying on `ldmulh` for the
 upper 32 bits, which the new ICU no longer provides. `900f66a` added ICU
-`imul_wide` (resultCount=2) and rewrote lmul_sw onto
-`stop`/`stop`/`sthw 3`/`wait`/`wait`/`ldop`/`ldop` — but the rewrite does
-not produce correct results.
+`imul_wide` (resultCount=2) and rewrote it onto
+`stop`/`stop`/`sthw 3`/`wait`/`wait`/`ldop`/`ldop`. Verified 2026-08-05 by
+`JopJvmTestsLmulSwSim`: DoAll 66/66.
 
-Measured 2026-08-05 by `JopJvmTestsLmulSwSim`, which runs DoAll with
-`lmul = mc` and nothing else changed: FloatTest and LongTest fail, and in
-the broader `ep4cgx150McFallback` configuration so do LongArithmetic,
-DoubleArith, MathTest and WrapperTest. The float and double failures
-follow from the same defect, since SoftFloat32/64 call lmul for mantissa
-multiplication.
+**Its precondition is `imul = hw`, not merely "an ICU".** The multiplier
+only exists when `IntegerComputeUnitConfig.withMul` is set, and that is
+`needsIntMul` = `imul == Hardware`. With `idiv = hw, imul = mc` the ICU is
+built *without* a multiplier, `sthw 3` has nothing to dispatch to, and
+lmul silently returns garbage — 6 DoAll failures, including float and
+double, since SoftFloat32/64 call lmul for mantissa multiplication. The
+`lmul` require in `JopCoreConfig.scala` now checks `needsIntMul` and
+rejects that configuration.
 
-**Do not read "uses the new interface" as "works"** — that is the mistake
-that let this doc claim it was fixed. `lmul = mc` is still a selectable
-and wrong configuration; see item 22 in `docs/current-status.md`.
-
-It requires an ICU either way, which is what the `lmul` require in
-`JopCoreConfig.scala:353` enforces. ldiv/lrem have no pure microcode —
-Java trap only when the CU is disabled. Shift SW costs: cnt=0
+That configuration defect presented exactly as a broken handler, and this
+document recorded it as one for a long time. Both the "broken" claim and
+a later "fixed" claim were inference from reading the code; neither was a
+measurement. ldiv/lrem have no pure microcode — Java trap only when the
+CU is disabled. Shift SW costs: cnt=0
 early exit (6), cnt 1-31 (23), cnt 32-63 (12).
 
 ### DCU — Double Compute Unit

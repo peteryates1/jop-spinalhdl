@@ -373,9 +373,11 @@ object JopConfig {
       coreConfig = base.system.coreConfig.copy(bytecodes = Map(
         // ICU present so lmul_sw has something to drive
         "idiv" -> "hw", "irem" -> "hw",
-        // integer + long microcode. lmul is NOT here: lmul_sw is broken (item
-        // 22) and this preset found it — DoAll drops 6 tests with lmul = mc.
-        "imul" -> "mc",
+        // imul = hw, NOT mc: lmul_sw computes partial products with ICU
+        // imul_wide, and that multiplier only exists when imul itself is
+        // hardware. imul_sw loses no coverage — every default-config sim runs
+        // it, since imul defaults to Microcode.
+        "imul" -> "hw", "lmul" -> "mc",
         "ladd" -> "mc", "lsub" -> "mc", "lneg" -> "mc", "lcmp" -> "mc",
         "lshl" -> "mc", "lshr" -> "mc", "lushr" -> "mc",
         // float microcode (no FCU needed for any of these)

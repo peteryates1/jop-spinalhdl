@@ -49,8 +49,11 @@ object JopJvmTestsLmulSwSim extends App {
       coreConfig = Some(JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = bramSize),
         bytecodes = Map(
-          // ICU for lmul_sw's partial products; everything else at default
-          "idiv" -> "hw", "irem" -> "hw",
+          // imul = hw is the REAL precondition for lmul_sw, not idiv/irem:
+          // IntegerComputeUnitConfig.withMul is needsIntMul == (imul == Hardware),
+          // so with imul left at mc the ICU is built with no multiplier and
+          // sthw 3 (imul_wide) has nothing to dispatch to.
+          "imul" -> "hw",
           "lmul" -> "mc"))))) 
     .doSim { dut =>
       val log = new PrintWriter(logFilePath)

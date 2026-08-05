@@ -209,11 +209,11 @@ sign_mask	=	-2147483648
 // Legacy FPU I/O constants (BmbFpu has been removed — FloatComputeUnit replaces it).
 // These constants are retained for the _sw float handlers below, which remain in the
 // superset ROM but are never selected by resolveJumpTable (no code path reaches them).
-fpu_add  = -16    // 0xF0: write starts float ADD
-fpu_sub  = -15    // 0xF1: write starts float SUB
-fpu_mul  = -14    // 0xF2: write starts float MUL
-fpu_div  = -13    // 0xF3: write starts float DIV
-fpu_res  = -16    // 0xF0: read returns result
+// The BmbFpu I/O peripheral (0xF0-0xF3) and its fadd_sw/fsub_sw/fmul_sw/fdiv_sw
+// handlers were removed 2026-08-05. They had outlived the hardware by some time
+// and were still selectable: "fadd = mc" passed validation, found an alternate,
+// and wrote to addresses that no longer decoded. Software float for these four
+// is the Java trap (SoftFloat32), or the FCU.
 
 #ifdef FLASH
 // Config flash SPI I/O registers — boot device at 0xEE-0xEF
@@ -2392,11 +2392,11 @@ lmul_sw:
 
 
 // ==========================================================================
-// Floating point operations: HW (CU, default) and I/O (FPU) implementations
-// Both are unconditionally present. Default labels point to HW (CU) versions.
+// Floating point operations — FCU (compute unit) handlers.
 //
 // CU handlers (_hw): uses ComputeUnitTop via stop/sthw/wait/ldop
-// I/O handlers (_sw): legacy BmbFpu I/O handlers (dead code — BmbFpu removed)
+// There is no _sw for fadd/fsub/fmul/fdiv: the alternative is the Java trap
+// (SoftFloat32). fneg, fcmpl and fcmpg DO have microcode — none needs the FCU.
 // ==========================================================================
 
 // ---------- fadd ----------
@@ -2409,18 +2409,6 @@ fadd_hw:
 			wait				// 2nd wait: pcwait+bsy → stall until CU done
 			ldop nxt			// push result
 
-fadd_sw:                       // stack: [value1, value2], TOS=value2
-		ldi fpu_add            // push FPU ADD address (0xF0 = -16)
-		stmwa                  // addr_reg = FPU_ADD, pop
-		stmwd                  // I/O write: auto-capture + start ADD, pop value2
-		                       // FPU busy stalls pipeline until result ready
-		pop                    // drop value1
-		ldi fpu_res            // push FPU result read address
-		stmra                  // start I/O read
-		wait                   // I/O read latency (rdy_cnt=1)
-		wait
-		ldmrd nxt              // push result
-
 // ---------- fsub ----------
 fsub:
 fsub_hw:
@@ -2430,17 +2418,6 @@ fsub_hw:
 			wait				// 1st wait: sets pcwait
 			wait				// 2nd wait: pcwait+bsy → stall until CU done
 			ldop nxt			// push result
-
-fsub_sw:                       // stack: [value1, value2]
-		ldi fpu_sub            // push FPU SUB address (0xF1)
-		stmwa
-		stmwd                  // auto-capture + start SUB
-		pop
-		ldi fpu_res
-		stmra
-		wait
-		wait
-		ldmrd nxt
 
 // ---------- fmul ----------
 fmul:
@@ -2452,17 +2429,6 @@ fmul_hw:
 			wait				// 2nd wait: pcwait+bsy → stall until CU done
 			ldop nxt			// push result
 
-fmul_sw:                       // stack: [value1, value2]
-		ldi fpu_mul            // push FPU MUL address (0xF2)
-		stmwa
-		stmwd                  // auto-capture + start MUL
-		pop
-		ldi fpu_res
-		stmra
-		wait
-		wait
-		ldmrd nxt
-
 // ---------- fdiv ----------
 fdiv:
 fdiv_hw:
@@ -2472,17 +2438,6 @@ fdiv_hw:
 			wait				// 1st wait: sets pcwait
 			wait				// 2nd wait: pcwait+bsy → stall until CU done
 			ldop nxt			// push result
-
-fdiv_sw:                       // stack: [value1, value2]
-		ldi fpu_div            // push FPU DIV address (0xF3)
-		stmwa
-		stmwd                  // auto-capture + start DIV
-		pop
-		ldi fpu_res
-		stmra
-		wait
-		wait
-		ldmrd nxt
 
 // ---------- fcmpl ----------
 fcmpl:
