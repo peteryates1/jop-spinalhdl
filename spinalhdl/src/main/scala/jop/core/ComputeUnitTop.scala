@@ -24,34 +24,15 @@ case class ComputeUnitTop(
   icuConfig: IntegerComputeUnitConfig = IntegerComputeUnitConfig(),
   fcuConfig: FloatComputeUnitConfig = FloatComputeUnitConfig(),
   lcuConfig: LongComputeUnitConfig = LongComputeUnitConfig(),
-  dcuConfig: DoubleComputeUnitConfig = DoubleComputeUnitConfig(),
-  hasIcu: Boolean = true,
-  hasFcu: Boolean = true,
-  hasLcu: Boolean = true,
-  hasDcu: Boolean = true
+  dcuConfig: DoubleComputeUnitConfig = DoubleComputeUnitConfig()
 ) extends Component {
   val io = ComputeUnitBundle()
 
-  // Instantiate only the units the config actually dispatches to.
-  //
-  // Implementation choice is per bytecode (Hardware / Microcode / Java), so the
-  // right question is "does ANY instruction map to this unit in hardware?" —
-  // JopCoreConfig.needs*Compute answers exactly that, and JopPipeline passes it.
-  //
-  // Previously all four were instantiated unconditionally and the per-unit
-  // `with*` flags were relied on to hollow them out for synthesis to prune. That
-  // works for FCU (disappears) and DCU (4 LE shell), but NOT for LCU: its base
-  // 64-bit ALU (ladd/lsub/lneg/lcmp) has no `with*` flag and is unconditional,
-  // so 403 LEs of unreachable logic survived in every core — ~4.8k LEs across a
-  // 12-core SMP build. Skipping instantiation removes the shells too.
-  val icu = if (hasIcu) Some(IntegerComputeUnit(icuConfig)) else None
-  val fcu = if (hasFcu) Some(FloatComputeUnit(fcuConfig))   else None
-  val lcu = if (hasLcu) Some(LongComputeUnit(lcuConfig))    else None
-  val dcu = if (hasDcu) Some(DoubleComputeUnit(dcuConfig))  else None
-
-  /** Unit i's io, if present. Index matches the opcode's unit-select field. */
-  val unitIo: Seq[Option[ComputeUnitCoreBundle]] =
-    Seq(icu.map(_.io), fcu.map(_.io), lcu.map(_.io), dcu.map(_.io))
+  // Instantiate all 4 CU cores
+  val icu = IntegerComputeUnit(icuConfig)
+  val fcu = FloatComputeUnit(fcuConfig)
+  val lcu = LongComputeUnit(lcuConfig)
+  val dcu = DoubleComputeUnit(dcuConfig)
 
   // ========================================================================
   // Shared operand stack (4 deep)
@@ -74,12 +55,20 @@ case class ComputeUnitTop(
   val latchedUnitSel = Reg(UInt(2 bits)) init(0)
   when(io.start) { latchedUnitSel := unitSel }
 
-  // Route operands, op and start to whichever units exist
-  for ((u, i) <- unitIo.zipWithIndex) u.foreach { cu =>
-    cu.operands := opStack
-    cu.op       := io.opcode(3 downto 0)
-    cu.start    := io.start && unitSel === i
-  }
+  // Route operands and op to all units (unrolled — heterogeneous types)
+  icu.io.operands := opStack
+  icu.io.op := io.opcode(3 downto 0)
+  fcu.io.operands := opStack
+  fcu.io.op := io.opcode(3 downto 0)
+  lcu.io.operands := opStack
+  lcu.io.op := io.opcode(3 downto 0)
+  dcu.io.operands := opStack
+  dcu.io.op := io.opcode(3 downto 0)
+
+  icu.io.start := io.start && unitSel === 0
+  fcu.io.start := io.start && unitSel === 1
+  lcu.io.start := io.start && unitSel === 2
+  dcu.io.start := io.start && unitSel === 3
 
   // ========================================================================
   // Result sequencing
@@ -89,22 +78,23 @@ case class ComputeUnitTop(
   when(io.pop) { resultPtr := resultPtr + 1 }
 
   // Result mux — select active unit's result, sequence hi then lo
-  // Absent units read as zero. Their select value is unreachable — decode never
-  // emits an opcode for a unit that has no hardware instruction — so the
-  // constant only exists to keep the mux total.
-  private def pick(f: ComputeUnitCoreBundle => UInt, width: Int) =
-    latchedUnitSel.mux((0 to 3).map { i =>
-      i -> unitIo(i).map(f).getOrElse(U(0, width bits))
-    }: _*)
-
-  val activeResultLo    = pick(_.resultLo, 32)
-  val activeResultHi    = pick(_.resultHi, 32)
-  val activeResultCount = pick(_.resultCount, 2)
+  val activeResultLo = latchedUnitSel.mux(
+    0 -> icu.io.resultLo, 1 -> fcu.io.resultLo,
+    2 -> lcu.io.resultLo, 3 -> dcu.io.resultLo
+  )
+  val activeResultHi = latchedUnitSel.mux(
+    0 -> icu.io.resultHi, 1 -> fcu.io.resultHi,
+    2 -> lcu.io.resultHi, 3 -> dcu.io.resultHi
+  )
+  val activeResultCount = latchedUnitSel.mux(
+    0 -> icu.io.resultCount, 1 -> fcu.io.resultCount,
+    2 -> lcu.io.resultCount, 3 -> dcu.io.resultCount
+  )
 
   // First pop: if 2-word result, return Hi; if 1-word, return Lo
   // Second pop: return Lo
   io.dout := Mux(resultPtr === 0 && activeResultCount === 2, activeResultHi, activeResultLo)
 
   // Busy: OR of all units, plus start (immediate busy on dispatch cycle)
-  io.busy := unitIo.flatten.map(_.busy).foldLeft(False)(_ || _) || io.start
+  io.busy := icu.io.busy || fcu.io.busy || lcu.io.busy || dcu.io.busy || io.start
 }
