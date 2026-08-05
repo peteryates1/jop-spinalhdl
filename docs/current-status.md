@@ -199,9 +199,11 @@ gap that lets the receiver resync — which is why this never showed up before.
 both already defined and unused. Constant-pool cost was zero. `JopCoreBramSim`
 still boots to `Hello World!`.
 
-**Confirmed on ALL THREE boards (2026-08-03/04).** The microcode is shared, so
-every board was re-run after the change; each emits `0xAA` at a measured ~0.5 s
-cadence and completes the handshake:
+**Confirmed on ALL THREE boards that existed at the time (2026-08-03/04).** The
+microcode is shared, so every board was re-run after the change; each emits
+`0xAA` at a measured ~0.5 s cadence and completes the handshake. The Colorlight
+i5 is listed below too, but it was brought up later (2026-08-05) and so is
+independent corroboration on a fourth board rather than part of that run:
 
 | board | clock / baud | ready byte | download | JVM suite |
 |---|---|---|---|---|
@@ -210,9 +212,16 @@ cadence and completes the handshake:
 | EP4CGX150 (SDR) | 100 MHz / 2 Mbaud | ✅ ~0.5 s | ✅ 188 KB/s | ✅ 66/66 |
 | Colorlight i5 (BRAM) | 40 MHz / 1 Mbaud | ✅ | ✅ 0.7 s @ 63 KB/s | — (64 KB, too small) |
 
+(i5 row added 2026-08-05, after the three-board run above.)
+
 All three return identical checksums for the same image (`0x8f197bc7` for
 HelloWorld, `0x2ed0b59a` for DoAll), so the transfers are byte-identical across
-boards. The old instruction-count loop left only a ~9 us idle gap at 2 Mbaud —
+boards. The i5's HelloWorld checksum is `0xbdc92b6f`, which does **not**
+contradict that: `HelloWorld.jop` is a build artefact (gitignored) and was
+rebuilt at 21:25 on 2026-08-04, two minutes after the `wrIntG` fix in `b3fd4e5`
+(21:23) — i.e. after the three-board run above. It is a different image, not a
+different transfer. Checksums are only comparable across boards for the same
+build of the `.jop`. The old instruction-count loop left only a ~9 us idle gap at 2 Mbaud —
 which is why those two boards happened to work; the timer version idles ~500 ms
 and is baud-independent.
 
