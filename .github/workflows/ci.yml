@@ -335,9 +335,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Use the java/ Makefile targets, not java/tools directly: JOPizer imports
+      # com.jopdesign.sys.Const, which is generated from JopConfig and
+      # gitignored, so building the tools first fails with 'cannot find symbol'.
+      # `make -C java tools` declares that dependency; calling the sub-make
+      # bypasses it. Locally it is masked because Const.java already exists.
       - name: Build JOP tools and DoAll.jop
         run: |
-          make -C java/tools
+          make -C java tools
           make -C java runtime
           make -C java/apps/JvmTests JDK6_HOME=${{ steps.jdk8.outputs.path }}
           ls -l java/apps/JvmTests/DoAll.jop
