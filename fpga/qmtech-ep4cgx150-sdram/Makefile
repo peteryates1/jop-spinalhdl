@@ -159,7 +159,7 @@ generate:
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
 
 generate-smp:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Smp 4"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Smp 2"
 	@echo "=== SMP Verilog generated: $(GENERATED_SMP_V) ==="
 
 generate-smp8:
