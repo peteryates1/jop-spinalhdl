@@ -76,6 +76,7 @@ object JopTopVerilog {
     case "max1000Sdram"     => JopConfig.max1000Sdram
     case "ep4ce6Sdram"      => JopConfig.ep4ce6Sdram
     case "colorlightI5Bram" => JopConfig.colorlightI5Bram
+    case "colorlightI5Sdram" => JopConfig.colorlightI5Sdram
     case other =>
       throw new RuntimeException(s"Unknown preset: '$other'. Available: " +
         "ep4cgx150Serial, ep4cgx150Bram, ep4cgx150BramGc, ep4cgx150BramSerial, " +
@@ -84,7 +85,7 @@ object JopTopVerilog {
         "wukongFull, wukongSdrFull, wukongFullSmp, wukongSmp, " +
         "wukongDualIndependent, wukongDualSmp, " +
         "xc7a100tDbSerial, xc7a100tDbFull, xc7a100tDbSmp, ae115fbDdr2, " +
-        "colorlightI5Bram, " +
+        "colorlightI5Bram, colorlightI5Sdram, " +
         "minimum, max1000Sdram, ep4ce6Sdram")
   }
 

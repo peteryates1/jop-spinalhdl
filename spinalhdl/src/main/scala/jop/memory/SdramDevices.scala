@@ -53,6 +53,37 @@ object W9864G6JT {
 }
 
 /**
+ * EM638325BK-6H - Etron 64Mbit SDR SDRAM (8MB)
+ *
+ * **32-bit data**, 11-bit row, 8-bit column, 4 banks — the only 32-bit-wide SDR
+ * part here. Used on the Colorlight i5 v7.0.
+ */
+object EM638325BK6H {
+  /** Timings for the -6 speed grade.
+    *
+    * tREF is 32 ms, not the 64 ms the other parts here use, and that is
+    * deliberate rather than a typo. SpinalHDL's SdramCtrl derives the refresh
+    * interval as `tREF / 2^rowWidth`, so what matters is the quotient: this part
+    * has 2048 rows, so 32 ms gives 15.6 us between refreshes — the same interval
+    * the 4096-row W9864G6JT gets from 64 ms. Using 64 ms here would refresh half
+    * as often as every other board and drift outside the usual SDR spec.
+    */
+  def timingGrade6 = SdramTimings(
+    bootRefreshCount =   8,
+    tPOW             = 200 us,
+    tREF             =  32 ms,
+    tRC              =  60 ns,
+    tRFC             =  60 ns,
+    tRAS             =  42 ns,
+    tRP              =  18 ns,
+    tRCD             =  18 ns,
+    cMRD             =  2,
+    tWR              =   6 ns,
+    cWR              =  1
+  )
+}
+
+/**
  * Centralized SDRAM device info — derives layout and timing from MemoryDevice.
  */
 object SdramDeviceInfo {
@@ -72,6 +103,7 @@ object SdramDeviceInfo {
     case "W9825G6JH6"  => W9825G6JH6.timingGrade7
     case "IS42S16160G" => W9825G6JH6.timingGrade7  // Same geometry/timing
     case "W9864G6JT"   => W9864G6JT.timingGrade6
+    case "EM638325BK6H" => EM638325BK6H.timingGrade6
     case other => throw new RuntimeException(s"No SDRAM timing for device '$other'")
   }
 }

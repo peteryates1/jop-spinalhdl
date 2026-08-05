@@ -89,17 +89,23 @@ object PllType {
     }
   }
 
-  /** Colorlight i5 (ECP5): EHXPLLL, 25 MHz -> 50 MHz system.
+  /** Colorlight i5 (ECP5): EHXPLLL, 25 MHz -> 40 MHz system + 40 MHz/-3.1 ns
+    * SDRAM clock.
     *
-    * BRAM only for now. The SDRAM stage will need a second, phase-shifted output
-    * for the memory clock pin, the same way every other SDR board here does it —
-    * EHXPLLL has CLKOS/CLKOS2/CLKOS3 for that, so it is a wrapper change, not a
-    * structural one. */
+    * `sdramClk` is returned unconditionally rather than only for
+    * MemoryType.SDRAM_SDR. The BRAM preset simply never reads it, and the
+    * unused PLL output costs nothing — whereas making it conditional means the
+    * BRAM and SDRAM builds instantiate different PLLs, which is exactly the
+    * kind of difference that makes a working BRAM build stop predicting
+    * anything about the SDRAM one. */
   case object LatticeEcp5I5 extends PllType {
     def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
       val pll = I5Pll()
       pll.io.clkin := inputClock
-      PllResult(systemClk = Some(pll.io.clkout0), locked = pll.io.locked)
+      PllResult(
+        systemClk = Some(pll.io.clkout0),
+        locked = pll.io.locked,
+        sdramClk = Some(pll.io.clkout1))
     }
   }
 

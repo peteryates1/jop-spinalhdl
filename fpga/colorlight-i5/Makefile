@@ -12,12 +12,29 @@
 #   make clean
 # ---------------------------------------------------------------------------
 
-TOP        := JopBramSerialI5Top
-PRESET     := colorlightI5Bram
+# Stage selector. Stage 1 is BRAM-only (64 KB, proves the board and toolchain);
+# stage 2 adds the 8 MB SDRAM and is what can host a real heap.
+#   make              build stage 2
+#   make STAGE=bram   build stage 1
+STAGE      ?= sdram
+
+ifeq ($(STAGE),bram)
+  TOP      := JopBramSerialI5Top
+  PRESET   := colorlightI5Bram
+  LPF      := jop_i5.lpf
+else ifeq ($(STAGE),sdram)
+  TOP      := JopSdramI5Top
+  PRESET   := colorlightI5Sdram
+  LPF      := jop_i5_sdram.lpf
+else
+  $(error STAGE must be 'bram' or 'sdram', got '$(STAGE)')
+endif
 
 ROOT       := ../..
 GENDIR     := $(ROOT)/spinalhdl/generated
-BUILD      := build
+# Per-stage build dir so the two bitstreams never overwrite each other and a
+# stale .json from the other stage cannot be picked up.
+BUILD      := build/$(STAGE)
 
 DEVICE     := --25k
 PACKAGE    := CABGA381
@@ -78,10 +95,10 @@ $(BUILD)/$(TOP).json: $(GENDIR)/$(TOP).v pll_jop_i5.v
 synth: $(BUILD)/$(TOP).json
 
 # --- 3. Place and route -----------------------------------------------------
-$(BUILD)/$(TOP).config: $(BUILD)/$(TOP).json jop_i5.lpf
+$(BUILD)/$(TOP).config: $(BUILD)/$(TOP).json $(LPF)
 	nextpnr-ecp5 $(DEVICE) --package $(PACKAGE) --speed $(SPEED) \
 	    --json $(BUILD)/$(TOP).json \
-	    --lpf jop_i5.lpf \
+	    --lpf $(LPF) \
 	    --seed $(SEED) \
 	    --textcfg $(BUILD)/$(TOP).config \
 	    2>&1 | tee $(BUILD)/nextpnr.log

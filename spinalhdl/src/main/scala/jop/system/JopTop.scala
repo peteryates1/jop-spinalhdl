@@ -406,15 +406,15 @@ case class JopTop(
           useAlteraCtrl = manufacturer == Manufacturer.Altera,
           clockFreqHz = sys.clkFreq.toLong
         )
-        sdrCtrl.ctrl.io.bmb <> cluster.io.bmb
-        io.sdram <> sdrCtrl.ctrl.io.sdram
+        sdrCtrl.ctrl.bmbPort <> cluster.io.bmb
+        io.sdram <> sdrCtrl.ctrl.sdramPort
         // Block-fill: wire the cluster's fill master to the SDR backend, or tie
         // it off when the config has no backend fill.
         cluster.io.fill match {
-          case Some(f) => f <> sdrCtrl.ctrl.io.fill
+          case Some(f) => f <> sdrCtrl.ctrl.fillPort
           case None =>
-            sdrCtrl.ctrl.io.fill.cmd := False; sdrCtrl.ctrl.io.fill.start := 0
-            sdrCtrl.ctrl.io.fill.end := 0; sdrCtrl.ctrl.io.fill.value := 0
+            sdrCtrl.ctrl.fillPort.cmd := False; sdrCtrl.ctrl.fillPort.start := 0
+            sdrCtrl.ctrl.fillPort.end := 0; sdrCtrl.ctrl.fillPort.value := 0
         }
       }
 
@@ -731,15 +731,15 @@ case class JopTop(
         useAlteraCtrl = manufacturer == Manufacturer.Altera,
         clockFreqHz = sys1.clkFreq.toLong
       )
-      sdrCtrl.ctrl.io.bmb <> cluster.io.bmb
-      io.sdram <> sdrCtrl.ctrl.io.sdram
+      sdrCtrl.ctrl.bmbPort <> cluster.io.bmb
+      io.sdram <> sdrCtrl.ctrl.sdramPort
       // Block-fill: wire the cluster's fill master to the SDR backend, or tie
       // it off when the config has no backend fill.
       cluster.io.fill match {
-        case Some(f) => f <> sdrCtrl.ctrl.io.fill
+        case Some(f) => f <> sdrCtrl.ctrl.fillPort
         case None =>
-          sdrCtrl.ctrl.io.fill.cmd := False; sdrCtrl.ctrl.io.fill.start := 0
-          sdrCtrl.ctrl.io.fill.end := 0; sdrCtrl.ctrl.io.fill.value := 0
+          sdrCtrl.ctrl.fillPort.cmd := False; sdrCtrl.ctrl.fillPort.start := 0
+          sdrCtrl.ctrl.fillPort.end := 0; sdrCtrl.ctrl.fillPort.value := 0
       }
 
       // SDR UART RX: secondary (J12 header)

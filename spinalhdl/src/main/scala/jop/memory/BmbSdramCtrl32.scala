@@ -30,7 +30,7 @@ case class BmbSdramCtrl32(
   CAS: Int,
   useAlteraCtrl: Boolean = false,
   clockFreqHz: Long = 100000000L
-) extends Component {
+) extends Component with SdramBridge {
   assert(bmbParameter.access.dataWidth == 32, "BMB data width must be 32")
   assert(layout.dataWidth == 16, "SDRAM data width must be 16")
 
@@ -349,6 +349,10 @@ case class BmbSdramCtrl32(
       True
     )
   )
+
+  def bmbPort = io.bmb
+  def sdramPort = io.sdram
+  def fillPort = io.fill
 
   // Debug outputs
   io.debug.sendingHigh   := sendingHigh

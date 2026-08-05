@@ -3,7 +3,7 @@ package jop.system.memory
 import spinal.lib.bus.bmb._
 import spinal.lib.memory.sdram.SdramLayout
 import spinal.lib.memory.sdram.sdr.SdramTimings
-import jop.memory.BmbSdramCtrl32
+import jop.memory.{BmbSdramCtrl32, BmbSdramCtrlWide, SdramBridge}
 import jop.ddr3.{BmbCacheBridge, LruCacheCore, CacheConfig, CacheToMigAdapter, MigBlackBox}
 
 /**
@@ -19,9 +19,14 @@ case class BramMemCtrl(
   ram: BmbOnChipRam
 ) extends MemCtrlResult
 
-/** SDR SDRAM memory controller -- BmbSdramCtrl32 wrapper */
+/** SDR SDRAM memory controller.
+ *
+ *  Holds whichever bridge suits the device's data width -- BmbSdramCtrl32 for a
+ *  16-bit SDRAM, BmbSdramCtrlWide for a 32-bit one. Both expose the same three
+ *  ports through SdramBridge, so the top level wires them identically.
+ */
 case class SdrMemCtrl(
-  ctrl: BmbSdramCtrl32
+  ctrl: SdramBridge
 ) extends MemCtrlResult
 
 /** DDR3 memory controller -- cache + MIG adapter.
@@ -110,6 +115,15 @@ object MemoryControllerFactory {
    * @param cas          CAS latency (e.g. 3 for W9825G6JH6, 2 for W9864G6JT)
    * @param useAlteraCtrl Whether to use Altera IP (vs SpinalHDL SdramCtrlNoCke for sim/Xilinx)
    * @param clockFreqHz  System clock frequency in Hz for timing calculations
+   *
+   * The bridge is chosen by the device's data width, not by the board:
+   *   - 16-bit SDRAM -> BmbSdramCtrl32, two SDRAM ops per BMB beat
+   *   - 32-bit SDRAM -> BmbSdramCtrlWide, one op per beat (Colorlight i5)
+   *
+   * `useAlteraCtrl` only applies to the 16-bit path. The Altera SDRAM IP is a
+   * Quartus-only blackbox and the sole 32-bit board here is a Lattice part on
+   * the open-source toolchain, so asking for it in the wide path is a
+   * configuration error rather than something to silently ignore.
    */
   def createSdr(
     bmbParameter: BmbParameter,
@@ -119,14 +133,31 @@ object MemoryControllerFactory {
     useAlteraCtrl: Boolean,
     clockFreqHz: Long
   ): SdrMemCtrl = {
-    val ctrl = BmbSdramCtrl32(
-      bmbParameter = bmbParameter,
-      layout = layout,
-      timing = timing,
-      CAS = cas,
-      useAlteraCtrl = useAlteraCtrl,
-      clockFreqHz = clockFreqHz
-    )
+    val ctrl = layout.dataWidth match {
+      case 16 =>
+        BmbSdramCtrl32(
+          bmbParameter = bmbParameter,
+          layout = layout,
+          timing = timing,
+          CAS = cas,
+          useAlteraCtrl = useAlteraCtrl,
+          clockFreqHz = clockFreqHz
+        )
+      case 32 =>
+        require(!useAlteraCtrl,
+          "createSdr: useAlteraCtrl is not supported for a 32-bit SDRAM -- the " +
+          "Altera SDRAM IP blackbox is Quartus-only and BmbSdramCtrlWide always " +
+          "uses SdramCtrlNoCke")
+        BmbSdramCtrlWide(
+          bmbParameter = bmbParameter,
+          layout = layout,
+          timing = timing,
+          CAS = cas
+        )
+      case other =>
+        throw new RuntimeException(
+          s"createSdr: unsupported SDRAM data width $other (expected 16 or 32)")
+    }
     SdrMemCtrl(ctrl)
   }
 

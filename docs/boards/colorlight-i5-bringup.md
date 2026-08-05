@@ -1,7 +1,7 @@
 # Colorlight i5 v7.0 — bring-up
 
-**Status: Stage 1 (BRAM) working on hardware.** `HelloWorld.jop` downloads over the
-DAPLink serial port and runs.
+**Status: Stage 2 (SDRAM) working on hardware.** 8 MB of SDRAM, `HelloWorld.jop`
+and the 283 KB `DoAll.jop` JVM suite both download over the DAPLink and run.
 
 This is the project's first board on a fully open-source toolchain — every other
 target goes through Quartus or Vivado. Nothing is shared with those flows.
@@ -142,6 +142,70 @@ Hello World!
 table, so `GC.genActive` disables the generational collector at boot rather than
 running it with a permanently empty remembered set. A card table follows once
 SDRAM lands and there is a heap worth collecting.
+
+## Stage 2 — SDRAM
+
+Working on hardware. 8 MB EM638325BK-6H at 40 MHz, single core, card table enabled.
+
+| | Stage 1 (BRAM) | Stage 2 (SDRAM) |
+|---|---|---|
+| Main memory | 64 KB on-chip | **8 MB external** |
+| Fmax (target 40 MHz) | 46.11 MHz | **47.67 MHz** |
+| LUT4 | 30% | 39% |
+| Block RAM | **71%** | **21%** |
+| GC mode at boot | `classic` (no card table) | `generational, 32-word cards` |
+
+Block RAM drops from 71% to 21% because main memory left the chip — which is what
+makes SMP or extra compute units conceivable here, since logic was never the
+constraint.
+
+### The 32-bit-wide SDRAM
+
+The EM638325BK-6H is **32 bits wide**, unlike every other SDR part in this project.
+`BmbSdramCtrl32` is a 32-bit-BMB-to-**16**-bit-SDRAM bridge that issues two SDRAM
+operations per BMB beat, splitting and reassembling halves — the wrong shape here.
+
+Stage 2 adds `BmbSdramCtrlWide`: 32-bit BMB to 32-bit SDRAM, **one operation per
+beat**, so all the half-splitting machinery disappears (no `sendingHigh`, no
+`isHigh` context, no reassembly register, burst counts are word counts).
+`MemoryControllerFactory.createSdr` picks between the two on `layout.dataWidth`,
+so no board or preset has to name a bridge.
+
+It is a separate component rather than a width switch inside `BmbSdramCtrl32`:
+that one is hardware-validated on three boards and its command/response FSM is
+subtle, so threading a width parameter through every state would risk those
+boards to save a file.
+
+### CKE, CS and DQM do not exist here
+
+All are strapped on the PCB — CKE to VCC, CS to GND, all four DQM to GND — and
+none reach the FPGA. Two consequences:
+
+1. `SdramCtrlNoCke` is used, as on the other boards, and CKE goes nowhere.
+2. **No byte masking exists.** Every write writes all four bytes. This is safe
+   only because JOP issues full-word writes exclusively —
+   `BmbMemoryController:317`, `StackCacheDma` and `DebugController` all drive
+   `mask := B"1111"` unconditionally. It is a property of *JOP*, not of the
+   bridge, and cannot be checked at elaboration because the mask is a runtime
+   value. If a narrower write path is ever added to JOP, this is the board that
+   breaks, and it breaks silently.
+
+Conveniently, JOP's memory is word-addressed, so one JOP word is exactly one
+SDRAM access and nothing needs masking in the first place.
+
+The generated top still carries `sdram_CKE`, `sdram_CSn` and `sdram_DQM[3:0]`
+ports because `SdramInterface` is a fixed bundle. The `.lpf` parks them on unused
+ext-board header balls. The alternative, nextpnr's `--lpf-allow-unconstrained`,
+lets the placer put them on *any* free ball including connected ones — trading a
+documented harmless output for an undocumented possibly-harmful one.
+
+### Verification
+
+`BmbSdramCtrlWideTest` (12 tests) covers the bridge against an `SdramModel`:
+read/write, 1:1 address mapping (with a decoy at the address a doubled mapping
+would hit, since a doubled mapping still passes write-then-read), burst reads,
+a single read after a burst, block fill including empty and inverted ranges,
+back-to-back adjacent single-word access, and DQM masking.
 
 ## The JVM suite does not fit in Stage 1
 

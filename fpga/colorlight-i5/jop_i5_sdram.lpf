@@ -1,0 +1,174 @@
+# ---------------------------------------------------------------------------
+# JOP on Colorlight i5 v7.0 + ext board  --  Stage 2 (SDRAM, serial download)
+#
+# FPGA: LFE5U-25F-6BG381C (CABGA381, speed grade 6)
+# SDRAM: EM638325BK-6H, 8 MB, 32-bit wide
+#
+# Pin sources: Colorlight-FPGA-Projects README (SDRAM U18 table, Clock, LED)
+# and src/i5/uart_tx/top.lpf for the DAPLink serial pins. Mirrored in
+# Board.ColorlightI5 (spinalhdl/.../config/Board.scala), which is the source of
+# truth -- keep the two in step.
+# ---------------------------------------------------------------------------
+
+BLOCK RESETPATHS;
+BLOCK ASYNCPATHS;
+
+# --- Clock -----------------------------------------------------------------
+# 25 MHz board oscillator -> EHXPLLL -> 40 MHz system + 40 MHz/-3.1 ns SDRAM
+LOCATE COMP "clk_in"  SITE "P3";
+IOBUF  PORT "clk_in"  PULLMODE=NONE IO_TYPE=LVCMOS33;
+FREQUENCY PORT "clk_in" 25 MHZ;
+
+# --- UART (DAPLink CDC) ----------------------------------------------------
+# NOT U16/R16 -- those are the 5A-75B's pins. On the i5, U16 is the LED and R16
+# is not bonded out to the SODIMM at all.
+LOCATE COMP "ser_txd" SITE "J17";
+IOBUF  PORT "ser_txd" IO_TYPE=LVCMOS33 DRIVE=8;
+LOCATE COMP "ser_rxd" SITE "H18";
+IOBUF  PORT "ser_rxd" PULLMODE=UP IO_TYPE=LVCMOS33;
+
+# --- LED (D2) --------------------------------------------------------------
+LOCATE COMP "led[0]"  SITE "U16";
+IOBUF  PORT "led[0]"  PULLMODE=NONE IO_TYPE=LVCMOS33 DRIVE=4;
+
+# --- SDRAM control ---------------------------------------------------------
+LOCATE COMP "sdram_clk"  SITE "B9";
+LOCATE COMP "sdram_RASn" SITE "B10";
+LOCATE COMP "sdram_CASn" SITE "A9";
+LOCATE COMP "sdram_WEn"  SITE "A10";
+
+# --- SDRAM pins that DO NOT EXIST on this board ----------------------------
+#
+# On the i5, CKE is strapped to VCC, CS to GND, and all four DQM to GND. None of
+# them reach the FPGA, but the generated top still has the ports because
+# SdramInterface is a fixed bundle.
+#
+# They are parked on ext-board header balls that this design does not otherwise
+# use (SODIMM pins 69/71/73/75/77/79). The alternative --
+# nextpnr's --lpf-allow-unconstrained -- lets the placer put them on ANY free
+# ball, including ones wired to something, so it trades a documented harmless
+# output for an undocumented possibly-harmful one. Nothing is attached to these
+# headers.
+#
+# Consequence of DQM being strapped low: no byte masking exists, so every write
+# writes all four bytes. Safe only because JOP issues full-word writes
+# exclusively -- see BmbSdramCtrlWide's header comment.
+LOCATE COMP "sdram_CKE"    SITE "U18";
+LOCATE COMP "sdram_CSn"    SITE "U17";
+LOCATE COMP "sdram_DQM[0]" SITE "P18";
+LOCATE COMP "sdram_DQM[1]" SITE "N17";
+LOCATE COMP "sdram_DQM[2]" SITE "N18";
+LOCATE COMP "sdram_DQM[3]" SITE "M18";
+
+# --- SDRAM bank address ----------------------------------------------------
+# BA1 is C8 on v7.0 (it was strapped to GND on v6.0).
+LOCATE COMP "sdram_BA[0]" SITE "B11";
+LOCATE COMP "sdram_BA[1]" SITE "C8";
+
+# --- SDRAM address (A0-A10; 2048 rows x 256 columns x 4 banks x 4 B = 8 MB) --
+LOCATE COMP "sdram_ADDR[0]"  SITE "B13";
+LOCATE COMP "sdram_ADDR[1]"  SITE "C14";
+LOCATE COMP "sdram_ADDR[2]"  SITE "A16";
+LOCATE COMP "sdram_ADDR[3]"  SITE "A17";
+LOCATE COMP "sdram_ADDR[4]"  SITE "B16";
+LOCATE COMP "sdram_ADDR[5]"  SITE "B15";
+LOCATE COMP "sdram_ADDR[6]"  SITE "A14";
+LOCATE COMP "sdram_ADDR[7]"  SITE "A13";
+LOCATE COMP "sdram_ADDR[8]"  SITE "A12";
+LOCATE COMP "sdram_ADDR[9]"  SITE "A11";
+LOCATE COMP "sdram_ADDR[10]" SITE "B12";
+
+# --- SDRAM data (32-bit) ---------------------------------------------------
+LOCATE COMP "sdram_DQ[0]"  SITE "B6";
+LOCATE COMP "sdram_DQ[1]"  SITE "A5";
+LOCATE COMP "sdram_DQ[2]"  SITE "A6";
+LOCATE COMP "sdram_DQ[3]"  SITE "A7";
+LOCATE COMP "sdram_DQ[4]"  SITE "C7";
+LOCATE COMP "sdram_DQ[5]"  SITE "B8";
+LOCATE COMP "sdram_DQ[6]"  SITE "B5";
+LOCATE COMP "sdram_DQ[7]"  SITE "A8";
+LOCATE COMP "sdram_DQ[8]"  SITE "D8";
+LOCATE COMP "sdram_DQ[9]"  SITE "D7";
+LOCATE COMP "sdram_DQ[10]" SITE "E8";
+LOCATE COMP "sdram_DQ[11]" SITE "D6";
+LOCATE COMP "sdram_DQ[12]" SITE "C6";
+LOCATE COMP "sdram_DQ[13]" SITE "D5";
+LOCATE COMP "sdram_DQ[14]" SITE "E7";
+LOCATE COMP "sdram_DQ[15]" SITE "C5";
+LOCATE COMP "sdram_DQ[16]" SITE "C10";
+LOCATE COMP "sdram_DQ[17]" SITE "D9";
+LOCATE COMP "sdram_DQ[18]" SITE "E11";
+LOCATE COMP "sdram_DQ[19]" SITE "D11";
+LOCATE COMP "sdram_DQ[20]" SITE "C11";
+LOCATE COMP "sdram_DQ[21]" SITE "D12";
+LOCATE COMP "sdram_DQ[22]" SITE "E9";
+LOCATE COMP "sdram_DQ[23]" SITE "C12";
+LOCATE COMP "sdram_DQ[24]" SITE "E14";
+LOCATE COMP "sdram_DQ[25]" SITE "C15";
+LOCATE COMP "sdram_DQ[26]" SITE "E13";
+LOCATE COMP "sdram_DQ[27]" SITE "D15";
+LOCATE COMP "sdram_DQ[28]" SITE "E12";
+LOCATE COMP "sdram_DQ[29]" SITE "B17";
+LOCATE COMP "sdram_DQ[30]" SITE "D14";
+LOCATE COMP "sdram_DQ[31]" SITE "D13";
+
+# --- SDRAM IO standard -----------------------------------------------------
+IOBUF PORT "sdram_clk"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_RASn" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_CASn" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_WEn"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_CKE"  IO_TYPE=LVCMOS33 DRIVE=4;
+IOBUF PORT "sdram_CSn"  IO_TYPE=LVCMOS33 DRIVE=4;
+
+IOBUF PORT "sdram_BA[0]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_BA[1]" IO_TYPE=LVCMOS33 DRIVE=8;
+
+IOBUF PORT "sdram_DQM[0]" IO_TYPE=LVCMOS33 DRIVE=4;
+IOBUF PORT "sdram_DQM[1]" IO_TYPE=LVCMOS33 DRIVE=4;
+IOBUF PORT "sdram_DQM[2]" IO_TYPE=LVCMOS33 DRIVE=4;
+IOBUF PORT "sdram_DQM[3]" IO_TYPE=LVCMOS33 DRIVE=4;
+
+IOBUF PORT "sdram_ADDR[0]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_ADDR[1]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_ADDR[2]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_ADDR[3]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_ADDR[4]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_ADDR[5]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_ADDR[6]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_ADDR[7]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_ADDR[8]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_ADDR[9]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_ADDR[10]" IO_TYPE=LVCMOS33 DRIVE=8;
+
+IOBUF PORT "sdram_DQ[0]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[1]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[2]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[3]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[4]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[5]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[6]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[7]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[8]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[9]"  IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[10]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[11]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[12]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[13]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[14]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[15]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[16]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[17]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[18]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[19]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[20]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[21]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[22]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[23]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[24]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[25]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[26]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[27]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[28]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[29]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[30]" IO_TYPE=LVCMOS33 DRIVE=8;
+IOBUF PORT "sdram_DQ[31]" IO_TYPE=LVCMOS33 DRIVE=8;

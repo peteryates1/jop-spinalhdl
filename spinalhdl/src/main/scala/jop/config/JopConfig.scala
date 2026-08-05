@@ -629,7 +629,12 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 40 MHz,
       coreConfig = JopCoreConfig(
-        memConfig = JopMemoryConfig(mainMemSize = 64 * 1024)),
+        memConfig = JopMemoryConfig(mainMemSize = 64 * 1024),
+        // Matches colorlightI5Sdram and every other hardware preset. Keeping
+        // the two i5 cores identical apart from the memory system is the whole
+        // value of having a BRAM stage: it only predicts anything about the
+        // SDRAM build if the core is the same.
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("DAPLINK"),
         // 1 Mbaud, verified on hardware. 40 MHz divides exactly here
         // (UartCtrl divides by baud x 5 samples, so 40e6/(1e6*5) = 8 with no
@@ -637,6 +642,47 @@ object JopConfig {
         // there is no baud error to trade off, only the DAPLink CDC firmware's
         // own limit. Cuts the 46 KB HelloWorld download from 4.1 s to ~0.5 s.
         // 2 Mbaud also divides exactly (divider 4) if the DAPLink will take it.
+        params = Map("baudRate" -> 1000000))))))
+
+  /**
+   * Colorlight i5 v7.0 — SDRAM. Stage 2.
+   *
+   * 8 MB of EM638325BK-6H, which is **32 bits wide** — the only such part in
+   * this project. That is why it uses `BmbSdramCtrlWide` (one SDRAM access per
+   * JOP word) rather than `BmbSdramCtrl32`, which splits each word into two
+   * 16-bit halves. `MemoryControllerFactory.createSdr` picks between them on
+   * `layout.dataWidth`, so nothing here has to say which.
+   *
+   * Card table enabled, unlike the BRAM preset. It is not optional once there
+   * is a real heap: `GC.USE_GENERATIONAL` defaults true, and without the
+   * hardware card-marking barrier the remembered set is permanently empty, so
+   * the minor collector cannot see tenured->nursery references and collects
+   * live young objects. The CYC5000 demonstrated exactly that failure
+   * (`corrupt 23 / MAJOR FAIL`) while DoAll still passed 66/66. 8 KB of budget
+   * on an 8 MB heap gives a card shift comparable to the other SDR boards.
+   *
+   * Still 40 MHz. The BRAM build closed at 46 MHz and this one is strictly
+   * larger, so raising the clock is a separate exercise from getting SDRAM
+   * working — do them one at a time.
+   */
+  def colorlightI5Sdram = JopConfig(
+    assembly = SystemAssembly.colorlightI5,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "sdr",
+      bootMode = BootMode.Serial,
+      clkFreq = 40 MHz,
+      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(
+        hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
+        // Same as every other hardware preset here, and not optional in
+        // practice: with idiv/irem left in software, DoAll fails 10 tests on
+        // this board (FloatTest, LongTest, LongArithmetic, TypeConversion,
+        // DoubleField, DoubleArith, WrapperTest, MathTest, BigMathTest,
+        // TextFormatTest) while everything that does not divide passes. The
+        // software float/double emulation and the formatting tests all divide,
+        // which is what ties that list together.
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("DAPLINK"),
         params = Map("baudRate" -> 1000000))))))
 
   /** Wukong BRAM with all compute units (DCU debug — simulation only) */

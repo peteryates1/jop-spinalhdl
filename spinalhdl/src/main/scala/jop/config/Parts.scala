@@ -160,8 +160,27 @@ object MemoryDevice {
     dataWidth = 16, bankWidth = 2, columnWidth = 9, rowWidth = 13,
     casLatency = 3)
 
+  /** Colorlight i5 on-board SDR SDRAM — 64 Mbit = 8 MB.
+    *
+    * The odd one out: **32 bits wide**, where every other SDR part here is 16.
+    * 2048 rows x 256 columns x 4 banks x 4 bytes = 8 MB exactly, which is what
+    * the module's 11 address pins (A0-A10) and BA0/BA1 imply.
+    *
+    * On the i5, CKE is tied to VCC, CS to GND and all four DQM to GND — none are
+    * driven by the FPGA. No byte masking is therefore possible, which is safe
+    * only because JOP issues full-word writes exclusively (`BmbMemoryController`
+    * drives mask := B"1111" unconditionally, as do the stack-cache DMA and the
+    * debug controller). */
+  def EM638325BK6H = MemoryDevice(
+    name = "EM638325BK6H",
+    memType = MemoryType.SDRAM_SDR,
+    sizeBytes = 8L * 1024 * 1024,
+    dataWidth = 32, bankWidth = 2, columnWidth = 8, rowWidth = 11,
+    casLatency = 2)
+
   /** Lookup by part name */
   def byName(name: String): Option[MemoryDevice] = name match {
+    case "EM638325BK6H"        => Some(EM638325BK6H)
     case "W9825G6JH6"          => Some(W9825G6JH6)
     case "W9864G6JT"           => Some(W9864G6JT)
     case "IS42S16160G"         => Some(IS42S16160G)
