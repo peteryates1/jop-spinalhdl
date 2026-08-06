@@ -22,6 +22,18 @@ Scannable index; the numbered sections below carry the reasoning. Each entry
 says what is **verified** versus **asserted**, because several things in this
 project have looked fine while being wrong.
 
+**Item numbers are stable IDs, not reading order.** They are assigned when an
+item is created and then grouped by topic, so the page runs 1-16, 24, 25, ...
+23, ... 17-22 ... 21. They are referenced from `bugs-and-issues.md`, the GC
+design notes and a good many commit messages, so renumbering would silently
+invalidate all of that. Use this to find one:
+
+| # | section | # | section | # | section |
+|---|---|---|---|---|---|
+| 1-3 | Blocking / correctness | 11 | The measurement gap | 21 | Boards |
+| 4-7, 24, 25 | Performance | 12-16, 23 | Smaller | 17-20, 22 | Compute units |
+| 8-10 | Hardware / infrastructure | | | | |
+
 ### Blocking / correctness
 
 1. **Generational GC is unsound on SMP — currently guarded off.** The card table
