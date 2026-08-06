@@ -52,7 +52,11 @@ public class GcMajorPauseTest {
 	public static void main(String[] args) {
 
 		JVMHelp.wr("GcMajorPauseTest start\n");
-		JVMHelp.wr("live_objs  pause_ms  mark_ms  compact_ms  live_handles  live_words\n");
+		// compact_ms splits into sort_ms + slide_ms, and copy_ms is the object
+		// data movement inside slide. The three separate the suspects for the
+		// unexplained ~36 us/handle: a merge sort making ~log n scattered passes
+		// over the handle list, the per-handle walk, or the data copy itself.
+		JVMHelp.wr("live_objs pause_ms mark_ms compact_ms sort_ms slide_ms copy_ms live_handles live_words\n");
 
 		live = new Node[TOTAL];
 		int filled = 0;
@@ -75,11 +79,14 @@ public class GcMajorPauseTest {
 
 			GC.gc();
 
-			wrInt(filled); JVMHelp.wr("      ");
-			wrMs(GC.gcMajorLast); JVMHelp.wr("    ");
-			wrMs(GC.gcMajTMark); JVMHelp.wr("   ");
-			wrMs(GC.gcMajTCompact); JVMHelp.wr("      ");
-			wrInt(GC.gcMajLiveHandles); JVMHelp.wr("       ");
+			wrInt(filled); JVMHelp.wr("   ");
+			wrMs(GC.gcMajorLast); JVMHelp.wr("  ");
+			wrMs(GC.gcMajTMark); JVMHelp.wr("  ");
+			wrMs(GC.gcMajTCompact); JVMHelp.wr("  ");
+			wrMs(GC.gcMajTSort); JVMHelp.wr("  ");
+			wrMs(GC.gcMajTSlide); JVMHelp.wr("  ");
+			wrMs(GC.gcMajTCopyWords); JVMHelp.wr("   ");
+			wrInt(GC.gcMajLiveHandles); JVMHelp.wr("      ");
 			wrInt(GC.gcMajLiveWords); JVMHelp.wr("\n");
 		}
 

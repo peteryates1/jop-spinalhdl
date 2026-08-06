@@ -62,11 +62,17 @@ project have looked fine while being wrong.
    cores at 73% with full caches; BRAM never binds (~52% at 16). Pipelining the
    arbiter costs a cycle on every memory access — see item 11 before committing.
 
-6. **Major GC constant unexplained** — 2.2 s at 36k live objects. O(live)
-   confirmed but the constant is 20-25x the minor sweep's. Next action is a
-   *measurement* (time `sortUseListByAddress()` separately), not a change; two
-   hypotheses have already been wrong. Check whether `compactAndSweep` shares
-   the copy phase's placement problem — one redesign may fix both.
+6. **Major GC — the address sort is 65% of it.** Measured 2026-08-06 on
+   XC7A100T DDR3: at 36k live objects the merge sort in `compactAndSweep` is
+   1127 ms, mark 422 ms, slide 171 ms, and the **object data copy just 9.6 ms**.
+   The pause is 1721 ms after fixing an `imul` in `push()` (see below), down
+   from 2215 ms. Two consequences: a hardware block-copy engine would buy
+   ~0.6%, so **do not build one for this**; and the next action is to replace
+   the O(n log n) linked-list merge sort. First measure its actual pass count —
+   per-handle sort cost is flat at ~30 µs from n=6k to 36k, which `n x log n`
+   does not predict, so the obvious cost model is wrong. Root cause is shared
+   with item 4: a handle is exactly one cache line and every phase walks the
+   handle table scattered. Detail in [gc/stage3-followups.md](gc/stage3-followups.md) item 1.
 
 7. **Root-scan floor: 2.2 / 4.7 / 8.5 ms** across SDR / DDR3 / DDR2. Tracks
    memory latency, not clock (the SDR and DDR3 boards are both 100 MHz yet

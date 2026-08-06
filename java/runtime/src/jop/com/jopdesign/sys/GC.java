@@ -125,6 +125,18 @@ public class GC {
 
 	static final int TYPICAL_OBJ_SIZE = 5;
 	static int handle_cnt;
+	/**
+	 * One past the last word of the handle area, precomputed.
+	 *
+	 * push() and pushYoung() screen every candidate root against the handle
+	 * area, and both used to spell that bound `mem_start + handle_cnt*HANDLE_SIZE`
+	 * — three static reads (statics live in main memory on JOP) plus an `imul`
+	 * bytecode. HANDLE_SIZE is a power of two, but javac emits imul rather than
+	 * strength-reducing, and imul defaults to Microcode: a ~775-cycle shift-add
+	 * loop, per push, on any board without an ICU multiplier. Note line 429
+	 * already wrote the same product as `<< 3` for exactly this reason.
+	 */
+	static int handleEnd;
 
 	/**
 	 * Start of the single heap region (after handle area).
@@ -329,6 +341,15 @@ public class GC {
 	public static int gcMajorCount, gcMajorLast, gcMajorMax;
 	/** Phase split of the last major GC (us): mark, then compact+sweep. */
 	public static int gcMajTMark, gcMajTCompact;
+	/**
+	 * Inside gcMajTCompact: the address sort, then the slide loop, then the
+	 * word-copy alone (us). Three separate suspects for the unexplained
+	 * ~36 us/handle compact constant — a merge sort making ~log n scattered
+	 * passes over the handle list, the per-handle walk, or the object data
+	 * movement itself. Only splitting them tells the three apart, and two
+	 * hypotheses about this pause have already been wrong.
+	 */
+	public static int gcMajTSort, gcMajTSlide, gcMajTCopyWords;
 	/** Live handles and words the last major GC compacted. */
 	public static int gcMajLiveHandles, gcMajLiveWords;
 
@@ -400,6 +421,10 @@ public class GC {
 		// align mem_start to 8 word boundary for the
 		// conservative handle check
 		mem_start = (mem_start+7)&0xfffffff8;
+		// Default matches what `mem_start + handle_cnt*HANDLE_SIZE` evaluated to
+		// with handle_cnt still 0, so the USE_SCOPES path (no handle area, no
+		// tracing collector) keeps rejecting every candidate root as before.
+		handleEnd = mem_start;
 
 		if(Config.USE_SCOPES) {
 			allocationPointer = mem_start;
@@ -418,6 +443,7 @@ public class GC {
 			handle_cnt = full_heap_size >> 4;  // /16
 			if (handle_cnt > MAX_HANDLES) handle_cnt = MAX_HANDLES;
 			int handleArea = handle_cnt << 3;  // handle_cnt * HANDLE_SIZE
+			handleEnd = mem_start + handleArea;
 
 			heapStart = mem_start + handleArea;
 			heapSize = mem_size - heapStart;
@@ -524,7 +550,7 @@ public class GC {
 		// handle area are considered for GC.
 		// Null pointer and references to static strings are not
 		// investigated.
-		if (ref<mem_start || ref>=mem_start+handle_cnt*HANDLE_SIZE) {
+		if (ref<mem_start || ref>=handleEnd) {
 			return;
 		}
 		// does the reference point to a handle start?
@@ -845,6 +871,9 @@ public class GC {
 		int ref;
 		int compactPtr = heapStart;
 
+		int st0 = 0;
+		if (GC_TIMING) st0 = Native.rd(Const.IO_US_CNT);
+
 		synchronized (mutex) {
 			// CRITICAL: sort by object address before compaction.
 			// Without this, sliding compaction can overwrite objects
@@ -854,7 +883,15 @@ public class GC {
 			ref = useList;		// get start of the list
 			useList = 0;		// new uselist starts empty
 		}
+
+		int st1 = 0;
+		if (GC_TIMING) {
+			st1 = Native.rd(Const.IO_US_CNT);
+			gcMajTSort = st1 - st0;
+			gcMajTCopyWords = 0;
+		}
 		int nLiveHandles = 0;
+		int copyUs = 0;
 		// Hold the list heads in locals across the walk instead of taking the
 		// monitor and touching the statics once per handle. compactAndSweep is
 		// stop-the-world (the incremental collector uses compactStep instead),
@@ -904,9 +941,18 @@ public class GC {
 					// by ascending address (proven by induction:
 					// compactPtr advances by sum of sizes of objects
 					// below this one, which <= their address span).
+					//
+					// Timed separately: this is the one part of the compact
+					// phase a hardware block-copy engine could take over (the
+					// zero-fill DMA is the precedent), so its share decides
+					// whether that is worth building. The two IO_US_CNT reads
+					// per moved object cost ~0.2% of the measured phase.
+					int ct0 = 0;
+					if (GC_TIMING) ct0 = Native.rd(Const.IO_US_CNT);
 					for (int i=0; i<size; ++i) {
 						Native.wrMem(Native.rdMem(oldAddr+i), compactPtr+i);
 					}
+					if (GC_TIMING) copyUs += Native.rd(Const.IO_US_CNT) - ct0;
 					// Update handle's data pointer
 					Native.wrMem(compactPtr, ref+OFF_PTR);
 				}
@@ -928,7 +974,11 @@ public class GC {
 			ref = next;
 		}
 
-		if (GC_TIMING) gcMajLiveHandles = nLiveHandles;
+		if (GC_TIMING) {
+			gcMajLiveHandles = nLiveHandles;
+			gcMajTCopyWords = copyUs;
+			gcMajTSlide = Native.rd(Const.IO_US_CNT) - st1;
+		}
 
 		// Update heap pointers
 		synchronized (mutex) {
@@ -1297,7 +1347,7 @@ public class GC {
 	/** Add a candidate young root to the copy worklist (conservative handle check). */
 	static void pushYoung(int ref) {
 		if (ref == 0) return;
-		if (ref < mem_start || ref >= mem_start + handle_cnt*HANDLE_SIZE) return;
+		if (ref < mem_start || ref >= handleEnd) return;
 		if ((ref & 0x7) != 0) return;
 		int ptr = Native.rdMem(ref+OFF_PTR);
 		if (ptr < nurseryBase) return;            // dead(0), tenured, or already copied

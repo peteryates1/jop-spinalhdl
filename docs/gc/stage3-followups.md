@@ -6,6 +6,10 @@ the pause bound holds on all four boards it has been measured on, and the boards
 in the handshake table pass DoAll 66/66 along with the GC stress, pause and
 multi-array tests.
 
+**Item 1 is the only one still open**, and it is the largest number left in the
+collector by an order of magnitude. Items 2-5 are done; they are kept because
+each records a wrong turn worth not repeating.
+
 > **Pause numbers live in [`../current-status.md`](../current-status.md) §3, not
 > here.** This file kept its own copies through Stage 3 and they drifted out of
 > date within two days, so the tables below have been cut back to the *deltas*
@@ -14,14 +18,134 @@ multi-array tests.
 > current-status wins.
 
 Context: `gc-generational-implementation-plan.md`, `stage2-generational-design.md`,
-and `copy-phase-redesign.md` for the successor to items 2 and 4.
+and `copy-phase-redesign.md` for the successor to items 3 and 5.
 Commits: `1916415` (measure), `8a8e154` (young list), `5e0a3a0` (256 MB full GC),
 `78cc968` (multianewarray / zero-size), `dfe7f46` (constants retuned),
 `42a52aa` (tenure-bounded card scan), `4a0b446` (512-word cards).
 
 ---
 
-## 1. `addInterruptHandler` under GC — DONE (IntHandlerGcTest)
+## 1. Major GC worst case — SPLIT MEASURED, sort confirmed — **OPEN**
+
+**2026-08-06, XC7A100T DDR3.** `gcMajTCompact` now splits into sort / slide /
+copy, which settles the standing hypothesis and kills a second one.
+
+| live objs | pause | mark | compact | **sort** | slide | copy | live words |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 6000 | 452.6 | 199.5 | 252.2 | **186.8** | 65.4 | 33.9 | 48244 |
+| 18000 | 1134.5 | 486.3 | 647.3 | **554.6** | 92.8 | 9.4 | 72244 |
+| 36000 | **2214.9** | 915.8 | 1298.2 | **1127.6** | 170.6 | 9.5 | 108244 |
+
+- **The merge sort is the single largest term: 1127.6 ms of the 1298.2 ms
+  compact phase, and 51% of the whole pause.** The hypothesis recorded below was
+  right.
+- **The object data copy is 9.5 ms — 0.4%.** That is the important negative
+  result: a hardware block-copy engine (the zero-fill DMA is the obvious
+  precedent, 110.7x on DDR3) would take 9.5 ms off a 2215 ms pause. The live set
+  is only 108k words; a major GC here moves almost no data and spends its time
+  chasing pointers through the handle table. **Do not build copy acceleration
+  for this.**
+- Copy is 33.9 ms on the first collection and ~9.5 ms after, because once the
+  heap is compacted only newly allocated objects move.
+
+**A real defect found while measuring, now fixed.** `push()` and `pushYoung()`
+screened every candidate root with `ref >= mem_start + handle_cnt*HANDLE_SIZE`:
+three static reads (statics live in main memory) plus an **`imul` bytecode**.
+`HANDLE_SIZE` is 8, but javac emits `imul` rather than strength-reducing, and
+`imul` defaults to **Microcode** — a ~775-cycle shift-add loop — on any preset
+that does not ask for an ICU multiplier, which includes `xc7a100tDbSerial`
+(it sets only `idiv`/`irem` to hw). Line 429 of `GC.java` had already written
+the identical product as `<< 3` for exactly this reason. Precomputing
+`handleEnd` once at init:
+
+| | before | after |
+|---|---:|---:|
+| mark @36k | 915.8 ms | **422.2 ms** (-54%) |
+| major pause @36k | 2214.9 ms | **1720.8 ms** (-22%) |
+| minor pause | 12.523 ms | **11.757 ms** |
+| minor stack+static root scan | — | 0.235 ms |
+
+`corrupt 0`, `MAJOR OK`, retained 64/64 on both `GcMajorPauseTest` and
+`GcPauseTest`. Compact is unchanged, as expected — the fix only touches `push`.
+
+**Where the remaining 1720 ms goes @36k live**: sort **1127 ms (65%)**, mark
+422 ms (25%), slide 171 ms (10%), copy 9.6 ms (0.6%).
+
+**An anomaly worth resolving before promising a speedup factor**: sort cost per
+handle is *flat* at ~30 µs across n = 6024..36024 (31.0, 30.0, 30.8, 30.0, 29.6,
+31.3). A bottom-up merge sort makes ceil(log2 n) passes — 13 to 16 over that
+range — so per-handle cost should rise ~23%. It does not. So "n x passes x
+constant" is not the right cost model, and the pass count should be measured
+before assuming a linear-time sort buys 4x or 10x. Two hypotheses about this
+pause were already wrong; this document has a poor record with unmeasured cost
+models.
+
+**Why a desktop JVM does not have this problem**: it is not software versus
+hardware, it is the data structure. HotSpot has no handle table — object
+references are direct pointers, marking uses a side bitmap with good locality,
+and compaction computes forwarding addresses over regions. JOP's handle
+indirection is what forces a full address sort of every live object on every
+major collection, and a handle is exactly one 256-bit cache line, so no walk of
+the handle table ever gets spatial reuse. That is the thing to attack, and it is
+the same root cause as the minor GC's copy phase.
+
+---
+
+### Original entry (measurements above supersede the numbers here)
+
+`GcMajorPauseTest` forces full collections at increasing live-set sizes.
+Previously nothing measured this at all: the timing lived in `majorGc()`, so a
+direct `GC.gc()` was not counted, which is why `GcPauseTest` always reported
+`major GCs 0`. Timing now lives inside `gc()` itself, with a mark/compact split
+and a live-handle census, so every path is measured.
+
+XC7A100T DDR3:
+
+| live objs | pause | mark | compact | live handles |
+|---|---|---|---|---|
+| 6000 | 460 ms | 199 ms | 257 ms | 6024 |
+| 18000 | 1150 ms | 486 ms | 660 ms | 18024 |
+| 36000 | **2231 ms** | 916 ms | 1311 ms | 36024 |
+
+**O(live) is confirmed** — the pause is linear in live handles, so `5e0a3a0` did
+what it set out to do. But the constant is **~25 µs/handle for mark and
+~36 µs/handle for compact**, against **1.3-1.5 µs/handle** for the minor sweep.
+Both phases do roughly the same kind of work (walk handles, touch a few words),
+so a 20-25x gap is not explained by what the code appears to do.
+
+Even a nearly-empty heap is expensive: `GcPauseTest`'s explicit `GC.gc()` calls
+now report 161 ms (SDR) and 99.6 ms (DDR3) with only ~4300 promoted handles live.
+
+Tried and rejected: `compactAndSweep` took the monitor and touched the
+`useList`/`freeList` statics **per handle**. Hoisting both out of the loop (kept,
+it is correct and strictly safer than removing the lock) bought only **1.6%**, so
+monitors are ~1 µs each and are not the problem.
+
+**Leading hypothesis, not yet confirmed**: the merge sort inside
+`compactAndSweep`. Sorting 36024 handles is ~545k merge steps, each doing about
+three scattered handle accesses. At ~2.4 µs per step that is ~1.31 s — which is
+exactly the measured compact time. It is O(n log n) over a range where log n only
+moves 12.5→15.1, so it would look near-linear in this data. If that is right the
+fix is a bucket/radix sort by address (O(n), and handle addresses are dense and
+bounded), not a faster comparison sort.
+
+To confirm before optimising: time `sortUseListByAddress()` separately from the
+rest of `compactAndSweep`. Do that first — two hypotheses about this pause have
+already been wrong.
+
+**Check the copy phase first, though**: `compactAndSweep` walks `useList` the
+same way the copy phase walks `youngList`, and the copy phase's problem turned
+out to be placement — the handle table is far larger than the cache and a handle
+is exactly one cache line. This constant may have the same cause, in which case
+one redesign fixes both. See [`copy-phase-redesign.md`](copy-phase-redesign.md)
+and the *Coupling* section of current-status.
+
+Why it matters: 2.2 s is fatal for anything real-time, and the minor pause is now
+bounded at 14.1 ms worst across four boards. A major GC currently fires only on
+tenure exhaustion, so it is rare — but "rare and unbounded" is exactly the
+property RT systems cannot have.
+
+## 2. `addInterruptHandler` under GC — DONE (IntHandlerGcTest)
 
 `JVMHelp.ih = new Runnable[cpus][NUM_INTERRUPTS]` (`JVMHelp.java:177`) is the
 allocation that exposed the `multianewarray` defect fixed in `78cc968`: its
@@ -50,7 +174,7 @@ a clean FAIL line, and absence of `IntHandlerGcTest done` is the check.
 Still open: whether any *other* runtime structure is reachable only through a
 reference array built by `multianewarray`. `JVMHelp.ih` is the one we know of.
 
-## 2. Sweep cost — reduced 27% (SDR) / 22% (DDR3), closed
+## 3. Sweep cost — reduced 27% (SDR) / 22% (DDR3), closed
 
 The sweep is O(handles in the nursery), and at the time was the term that
 dominated. Two changes, both aimed at the number of memory accesses the common
@@ -101,7 +225,7 @@ fetches down to ~825 sequential ones — is
 [`copy-phase-redesign.md`](copy-phase-redesign.md), with a four-stage plan and
 the constraints that must not break. Go there, not here.
 
-## 3. The nursery zero — DONE (removed)
+## 4. The nursery zero — DONE (removed)
 
 `minorGc` no longer calls `zeroMem(nurseryBase, nurseryTop)`. It was redundant
 for the same reason the post-compaction bulk zero was (`5e0a3a0`): once
@@ -123,7 +247,7 @@ Note the incremental collector's own `zeroMem(copyPtr, allocPtr)` in
 `finishCycle` is untouched — a different path, only used when `concurrentGc` is
 enabled.
 
-## 4. Pause bound — DONE (young-object cap)
+## 5. Pause bound — DONE (young-object cap)
 
 The original plan was to size the nursery in bytes. That cannot bound the pause:
 the sweep is O(young **handles**), and a nursery full of small objects holds far
@@ -175,59 +299,6 @@ the whole pause 25.376 -> **14.143 ms**, 44% off.
 
 Measure before optimising is the lesson, and it is the second time in this
 document that a confident guess about where the pause went was wrong.
-
-## 5. Major GC worst case — MEASURED, and it is bad
-
-`GcMajorPauseTest` forces full collections at increasing live-set sizes.
-Previously nothing measured this at all: the timing lived in `majorGc()`, so a
-direct `GC.gc()` was not counted, which is why `GcPauseTest` always reported
-`major GCs 0`. Timing now lives inside `gc()` itself, with a mark/compact split
-and a live-handle census, so every path is measured.
-
-XC7A100T DDR3:
-
-| live objs | pause | mark | compact | live handles |
-|---|---|---|---|---|
-| 6000 | 460 ms | 199 ms | 257 ms | 6024 |
-| 18000 | 1150 ms | 486 ms | 660 ms | 18024 |
-| 36000 | **2231 ms** | 916 ms | 1311 ms | 36024 |
-
-**O(live) is confirmed** — the pause is linear in live handles, so `5e0a3a0` did
-what it set out to do. But the constant is **~25 µs/handle for mark and
-~36 µs/handle for compact**, against **1.3-1.5 µs/handle** for the minor sweep.
-Both phases do roughly the same kind of work (walk handles, touch a few words),
-so a 20-25x gap is not explained by what the code appears to do.
-
-Even a nearly-empty heap is expensive: `GcPauseTest`'s explicit `GC.gc()` calls
-now report 161 ms (SDR) and 99.6 ms (DDR3) with only ~4300 promoted handles live.
-
-Tried and rejected: `compactAndSweep` took the monitor and touched the
-`useList`/`freeList` statics **per handle**. Hoisting both out of the loop (kept,
-it is correct and strictly safer than removing the lock) bought only **1.6%**, so
-monitors are ~1 µs each and are not the problem.
-
-**Leading hypothesis, not yet confirmed**: the merge sort inside
-`compactAndSweep`. Sorting 36024 handles is ~545k merge steps, each doing about
-three scattered handle accesses. At ~2.4 µs per step that is ~1.31 s — which is
-exactly the measured compact time. It is O(n log n) over a range where log n only
-moves 12.5→15.1, so it would look near-linear in this data. If that is right the
-fix is a bucket/radix sort by address (O(n), and handle addresses are dense and
-bounded), not a faster comparison sort.
-
-To confirm before optimising: time `sortUseListByAddress()` separately from the
-rest of `compactAndSweep`. Do that first — two hypotheses about this pause have
-already been wrong.
-
-**Check the copy phase first, though**: `compactAndSweep` walks `useList` the
-same way the copy phase walks `youngList`, and the copy phase's problem turned
-out to be placement — the handle table is far larger than the cache and a handle
-is exactly one cache line. This constant may have the same cause, in which case
-one redesign fixes both. See [`copy-phase-redesign.md`](copy-phase-redesign.md)
-and the *Coupling* section of current-status.
-
-Why it matters: 2.2 s is fatal for anything real-time, and the minor pause is now
-bounded at 19 ms. A major GC currently fires only on tenure exhaustion, so it is
-rare — but "rare and unbounded" is exactly the property RT systems cannot have.
 
 ## 6. Smaller items
 
