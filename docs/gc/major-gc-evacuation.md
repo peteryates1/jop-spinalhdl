@@ -17,8 +17,11 @@ Validated: DoAll 66/66, `GcPauseTest` MAJOR OK / retained 64/64 / born-bad 0,
 `MultiArrayGcTest` and `IntHandlerGcTest` OK, `GcStressTest` 320k+ rounds with
 0 errors and an unchanged 0.42 bytes/round promotion slope.
 
-Cumulative for the day: **2214.9 -> 865.6 ms, 2.56x**, from two static hoists
-and this.
+**Confirmed on the XC7A100T DDR3 too** (256 MB heap, different memory system):
+2214.9 -> **689.8 ms** at 36k live, sort `passes 0`, corrupt 0, DoAll 66/66.
+
+Cumulative for the day: **2214.9 -> 865.6 ms (EP4CGX150) / 689.8 ms
+(XC7A100T), 2.6-3.2x**, from two static hoists and this.
 
 The trade is visible in the copy row: sliding left objects in place when they
 were already positioned, so after the first collection almost nothing moved.
