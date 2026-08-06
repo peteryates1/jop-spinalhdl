@@ -121,7 +121,11 @@ to the GC.
 *and* the collector's bad-handle censuses. Without the fix: 34 of 35 cells
 corrupt, 13 bad-handle sightings. With it: all zero. Verified on both boards.
 
-Still outstanding: nothing exercises `addInterruptHandler` under GC — see
+`addInterruptHandler` under GC is now covered too, by `IntHandlerGcTest` — it
+registers a handler whose only reference is `ih[core][INT_NR]`, fires it via
+`IO_SWINT` after many minor GCs and a full mark-compact, and checks its field
+survived. Verified on EP4CGX150 and XC7A100T. With this fix reverted the run
+dies during the churn phase, so the signal is a crash, not a FAIL line. See
 [GC Stage 3 follow-ups](gc/stage3-followups.md).
 
 ### 4. Hardware Division-by-Zero Exception Not Catchable

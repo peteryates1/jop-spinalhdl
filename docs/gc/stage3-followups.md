@@ -1,13 +1,23 @@
-# GC Stage 3 — open follow-ups
+# GC Stage 3 — history and open follow-ups
 
-Things surfaced while measuring and fixing the generational collector that are
-*not* yet done. Recorded here so they are not lost; none of them block the
-current state (both boards pass DoAll 66/66, the GC stress test, and the pause
-and multi-array tests).
+Things surfaced while measuring and fixing the generational collector: what was
+done and why, plus the items still open. None of them block the current state:
+the pause bound holds on all four boards it has been measured on, and the boards
+in the handshake table pass DoAll 66/66 along with the GC stress, pause and
+multi-array tests.
 
-Context: `gc-generational-implementation-plan.md`, `stage2-generational-design.md`.
+> **Pause numbers live in [`../current-status.md`](../current-status.md) §3, not
+> here.** This file kept its own copies through Stage 3 and they drifted out of
+> date within two days, so the tables below have been cut back to the *deltas*
+> each change produced. For the current per-board figures and the tuning
+> constants actually compiled in, read current-status; if the two disagree,
+> current-status wins.
+
+Context: `gc-generational-implementation-plan.md`, `stage2-generational-design.md`,
+and `copy-phase-redesign.md` for the successor to items 2 and 4.
 Commits: `1916415` (measure), `8a8e154` (young list), `5e0a3a0` (256 MB full GC),
-`78cc968` (multianewarray / zero-size).
+`78cc968` (multianewarray / zero-size), `dfe7f46` (constants retuned),
+`42a52aa` (tenure-bounded card scan), `4a0b446` (512-word cards).
 
 ---
 
@@ -40,10 +50,11 @@ a clean FAIL line, and absence of `IntHandlerGcTest done` is the check.
 Still open: whether any *other* runtime structure is reachable only through a
 reference array built by `multianewarray`. `JVMHelp.ih` is the one we know of.
 
-## 2. Sweep cost — reduced 27% (SDR) / 22% (DDR3), partly done
+## 2. Sweep cost — reduced 27% (SDR) / 22% (DDR3), closed
 
-The sweep is O(handles in the nursery) and still dominates. Two changes so far,
-both aimed at the number of memory accesses the common (dead-handle) path makes:
+The sweep is O(handles in the nursery), and at the time was the term that
+dominated. Two changes, both aimed at the number of memory accesses the common
+(dead-handle) path makes:
 
 1. **Hoist the list heads into locals.** `freeList`/`useList` are static fields,
    and JOP keeps statics in main memory, so `Native.wrMem(freeList, ...)` was a
@@ -54,16 +65,20 @@ both aimed at the number of memory accesses the common (dead-handle) path makes:
    a run only has to be closed where a survivor interrupts it. ~67 writes
    instead of 33k.
 
-| | sweep ns/handle | worst pause |
-|---|---|---|
-| EP4CGX150 SDR | 1854 → 1441 → **1346** | 15.11 → **11.93 ms** |
-| XC7A100T DDR3 | 1940 → 1727 → **1506** | 69.15 → **53.89 ms** |
+| sweep ns/handle | baseline | + hoist statics | + splice runs |
+|---|---|---|---|
+| EP4CGX150 SDR | 1854 | 1441 | **1346** |
+| XC7A100T DDR3 | 1940 | 1727 | **1506** |
 
 Note the two boards responded differently: hoisting statics helped SDR far more
 (-22% vs -11%, it has no L2 to cache them), while run-splicing helped DDR3 more
 (-13% vs -6.6%). An earlier guess that the sweep was *not* memory-bound — based
 on the two boards having near-identical per-handle costs — was wrong; removing
 accesses clearly helps.
+
+(The later three-board `GcPauseTest` run measured DDR3 at 1567 ns/handle rather
+than 1506 — a different run, not a regression. The cross-board figures in
+current-status §3 are the ones the tuning constants were derived from.)
 
 **Remaining per dead handle: 2 reads (`OFF_NEXT`, `OFF_SPACE`) + 1 write
 (`OFF_PTR = 0`).** All three look irreducible without changing the handle layout:
@@ -73,12 +88,18 @@ Diminishing returns set in — removing a write bought only 6.6% on SDR — whic
 suggests a fixed per-iteration cost now dominates (~1350 ns ≈ 135 cycles for
 three accesses plus loop overhead).
 
-Further gains need a different approach, in rough order of promise:
-- **Fewer iterations, not cheaper ones** — the sweep is O(objects allocated), so
-  this is where nursery sizing (item 4) and the pause bound actually meet.
-- **Handle layout**: put `OFF_NEXT` and the survivor mark in one word so the
-  traversal needs a single read.
-- **Segregate young handles** into a contiguous block so the walk is sequential.
+**Superseded — do not plan from this item.** The three directions guessed at
+here (fewer iterations, fold `OFF_NEXT` and the survivor mark into one word,
+segregate young handles contiguously) were the right instinct, but the sweep is
+no longer where the time is. Once the constants, the tenure-bounded card scan
+and finer cards had landed, the **copy phase** was 79-82% of the minor pause on
+every board and had not moved at any point during Stage 3.
+
+The developed version of the last two bullets — a dense array of refs for the
+traversal and a bitmap for the survivor mark, taking ~6400 scattered line
+fetches down to ~825 sequential ones — is
+[`copy-phase-redesign.md`](copy-phase-redesign.md), with a four-stage plan and
+the constraints that must not break. Go there, not here.
 
 ## 3. The nursery zero — DONE (removed)
 
@@ -113,34 +134,47 @@ object COUNT, which bounds the sweep regardless of object size:
 MAX_YOUNG_OBJECTS = (MINOR_TARGET_US - MINOR_FIXED_US) * 1000 / SWEEP_NS_PER_HANDLE
 ```
 
-Derived, not tuned, from the hardware measurements above:
-`MINOR_TARGET_US = 20000`, `SWEEP_NS_PER_HANDLE = 1600` (slowest board, DDR3
-1506, rounded up), `MINOR_FIXED_US = 4500` (roots + mark + cards). That gives
-9687 objects. `allocGen` collects when the nursery fills **or** the count is
-reached, whichever comes first. Set `MINOR_TARGET_US = 0` to disable.
+`allocGen` collects when the nursery fills **or** the count is reached,
+whichever comes first. Set `MINOR_TARGET_US = 0` to disable.
 
-| board | worst pause | handles swept | note |
-|---|---|---|---|
-| XC7A100T DDR3 | **19.26 ms** (target 20) | 9687 = the cap | cap binds; 42 GCs vs 12 |
-| EP4CGX150 SDR | 11.93 ms | 6168 | nursery fills first, cap never binds |
+**The model's shape held; its constants did not.** `fixed + swept x per-handle`
+predicted all three measured boards to within 0.01 ms — but the constants were
+derived from the DDR3 board alone and it met the target by luck, its fixed cost
+over budget and its per-handle cost under, the two errors cancelling. On DDR2
+both errors pointed the same way and the bound broke by 27%. Retuned to the
+slowest board in `dfe7f46`: `SWEEP_NS_PER_HANDLE` 1600 -> **1750**,
+`MINOR_FIXED_US` 4500 -> **8800**, `MAX_YOUNG_OBJECTS` 9687 -> **6400**.
+Current per-board pauses are in current-status §3 item 2.
 
-The model predicts 4.5 + 9687 × 1.6 µs = 20.0 ms against 19.26 ms measured, and
-worst 19.257 vs mean 19.217 ms is a 0.2% spread — the bound is tight and
-deterministic, which is the property we were actually after.
+**Cost**: more collections, so the fixed root-scan cost is paid more often. That
+is the real-time trade — bounded pause for lower throughput. Anyone who wants
+throughput over latency should raise `MINOR_TARGET_US`. Small-heap boards are
+unaffected by a cap change: they sweep fewer handles than the cap because the
+nursery binds first.
 
-**Cost**: 3.5x more collections on DDR3, so the fixed ~4 ms of root scanning is
-paid 3.5x as often. That is the real-time trade — bounded pause for lower
-throughput. Anyone who wants throughput over latency should raise
-`MINOR_TARGET_US`.
+**Caveat, and it has already bitten once**: these are measured constants for
+specific hardware. A different clock, memory system or core count invalidates
+them, and the bound then **silently becomes wrong rather than failing loudly**.
+Re-measure with `GcPauseTest` when the hardware changes.
 
-**Caveat**: `SWEEP_NS_PER_HANDLE` and `MINOR_FIXED_US` are measured constants for
-*these two boards at 100 MHz*. A different clock, memory system or core count
-invalidates them, and the bound silently becomes wrong rather than failing
-loudly. Re-measure with `GcPauseTest` when the hardware changes — the A-E115FB
-DDR2 board will need this.
+**Correcting the note that stood here**: this item used to say "root scan is now
+the floor at 3.88 ms — targeting much below ~10 ms means attacking that next."
+That was wrong, and acting on it would have wasted a day. `gcTRoots` bundled two
+different scans under one timer; splitting it (`42a52aa`) showed the stack and
+static scan was **0.647 ms — 3% of the pause** — while the dirty-card walk was
+**7.671 ms, 38%**. The optimisation this paragraph recommended targeted the 3%.
 
-**Root scan is now the floor**: at 3.88 ms it is 20% of the DDR3 pause and does
-not shrink with the cap. Targeting much below ~10 ms means attacking that next.
+The card walk was nearly all waste: it scanned the whole tenure span, but tenure
+is two used regions with a large free gap (compacted data grows up from
+`heapStart` to `copyPtr`, promotions grow down from `tenureTop` to `allocPtr`).
+On the 1 GB board the scanned span was **99.98% free**. Scanning only the two
+used regions, then halving card size (`4a0b446`, budget 16 -> 64 KB, cards 2048
+-> 512 words, no RTL change — `cardShift` is derived and read at runtime via
+`IO_CARD_SHIFT`), took the A-E115FB card scan 7.671 -> 5.122 -> **1.931 ms** and
+the whole pause 25.376 -> **14.143 ms**, 44% off.
+
+Measure before optimising is the lesson, and it is the second time in this
+document that a confident guess about where the pause went was wrong.
 
 ## 5. Major GC worst case — MEASURED, and it is bad
 
@@ -184,6 +218,13 @@ To confirm before optimising: time `sortUseListByAddress()` separately from the
 rest of `compactAndSweep`. Do that first — two hypotheses about this pause have
 already been wrong.
 
+**Check the copy phase first, though**: `compactAndSweep` walks `useList` the
+same way the copy phase walks `youngList`, and the copy phase's problem turned
+out to be placement — the handle table is far larger than the cache and a handle
+is exactly one cache line. This constant may have the same cause, in which case
+one redesign fixes both. See [`copy-phase-redesign.md`](copy-phase-redesign.md)
+and the *Coupling* section of current-status.
+
 Why it matters: 2.2 s is fatal for anything real-time, and the minor pause is now
 bounded at 19 ms. A major GC currently fires only on tenure exhaustion, so it is
 rare — but "rare and unbounded" is exactly the property RT systems cannot have.
@@ -194,7 +235,10 @@ rare — but "rare and unbounded" is exactly the property RT systems cannot have
   throws an uncaught exception. Cost me two debugging cycles writing tests;
   worth either implementing or documenting in the programmer's guide.
 - **`f_multianewarray` only supports 2 dimensions** — `dim != 2` prints
-  "dimensions not supported" and calls `noim()`. Pre-existing.
+  "dimensions not supported" and calls `noim()`. Pre-existing, and now tracked
+  as **item 23 in current-status** (investigate and assess generalising it).
+  Noted here because the `78cc968` defect was in exactly the per-level type
+  assignment that generalising has to get right at every level, not just two.
 - **An intermittent startup fault on the XC7A100T** — now seen **twice**, so no
   longer a one-off. Before `main`, an `Uncaught exception` that re-faults inside
   its own handler, printing endlessly. Both times an identical

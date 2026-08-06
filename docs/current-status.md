@@ -4,7 +4,10 @@ Resumption notes covering the GC work, the A-E115FB DDR2 bring-up, SMP, and the
 board/probe setup. Written to be read cold.
 
 Detail lives in:
-- [gc/stage3-followups.md](gc/stage3-followups.md) — GC items, each with its next action
+- [gc/stage3-followups.md](gc/stage3-followups.md) — GC Stage 3 history: what each
+  change bought, the corrections along the way, and the small leftovers.
+  **This file is authoritative for pause numbers and tuning constants**, not that
+  one — it kept duplicate tables through Stage 3 and they drifted within two days
 - [boards/ae115fb-ddr2-bringup.md](boards/ae115fb-ddr2-bringup.md) — DDR2, including everything that went wrong
 - [bugs-and-issues.md](bugs-and-issues.md) — the defects fixed along the way
 - [gc/copy-phase-redesign.md](gc/copy-phase-redesign.md) — the remaining 79-82% of the minor pause
@@ -116,6 +119,29 @@ project have looked fine while being wrong.
     part; `MemoryControllerFactory.createSdr` selects on `layout.dataWidth`.
     Remaining i5 work is ordinary: raise the clock above 40 MHz, and try SMP now
     that block RAM is only 21% used. See `docs/boards/colorlight-i5-bringup.md`.
+23. **`f_multianewarray` handles exactly 2 dimensions** — `dim != 2` prints
+    "dimensions not supported" and calls `noim()`, so `new int[a][b][c]` is an
+    unimplemented trap, not a wrong answer. Assess before implementing: find out
+    whether anything in the target workloads uses 3-D at all, since the JVM spec
+    allows up to 255 and the cost is not in the loop but in the GC metadata.
+
+    What generalising has to get right: the constant-pool entry gives the type of
+    the **innermost** level only — every level above it is a reference array
+    (`IS_REFARR`), which is precisely the distinction `78cc968` got wrong at two
+    levels and which caused **premature collection** rather than a visible fault.
+    The current code hardcodes that split (`f_anewarray` outer, `f_newarray(type)`
+    inner); N levels need it derived per level. Two further constraints: the
+    method manipulates its own stack frame through `Native.getSP()`/`rdIntMem`,
+    so any recursive or worklist helper must run *after* the frame fixup at
+    `JVM.java:871-876`, not before; and a partially built nest must stay
+    traceable, since a GC can fire inside the allocation loop and intermediate
+    arrays are reachable only from locals at that moment.
+
+    Test with a GC, not just a mutator: `MultiArrayGcTest` exists because
+    `DoAll`'s `MultiArray` passed throughout the `78cc968` bug — a reference array
+    can be completely broken for the collector while working perfectly for
+    ordinary reads and writes.
+
 ### Compute units and bytecode implementation
 
 **Implementation coverage, measured 2026-08-05.** Every configurable bytecode
