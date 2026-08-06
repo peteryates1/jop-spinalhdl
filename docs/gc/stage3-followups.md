@@ -60,6 +60,30 @@ without anyone noticing. And it means every per-object GC path should be read
 with "is there arithmetic on statics here?" in mind, because on JOP neither
 statics nor `*` are free.
 
+**Validated on both boards** (2026-08-06), since `handleEnd` changed the root
+screen that every scan runs and a wrong bound there drops roots silently rather
+than failing:
+
+| | EP4CGX150 SDR | XC7A100T DDR3 |
+|---|---|---|
+| `DoAll` | **66/66**, 0 fail | **66/66**, 0 fail |
+| `MultiArrayGcTest` | OK, corrupt 0, badYoung/badCompact 0 | OK, corrupt 0, badYoung/badCompact 0 |
+| `IntHandlerGcTest` | OK, tag 0x5A5A, 1 major GC | OK, tag 0x5A5A, 1 major GC |
+| `GcStressTest` | **760k+ rounds**, 0 errors | (pause tests only) |
+| `GcPauseTest` / `GcMajorPauseTest` | MAJOR PAUSE OK, corrupt 0 | MAJOR OK, retained 64/64 |
+
+**`GcStressTest` free memory declines linearly and that is correct**, worth
+recording because it looks like a leak on first inspection. Free fell 5,462,688
+-> 5,140,880 over 760k rounds: a straight line at **0.42 bytes/round**. The test
+retains nothing (ten garbage `int[32]` per round), so the loss is *promoted
+floating garbage* — the static `data` happens to be live at each minor GC and is
+tenured, and only a major GC reclaims tenure, which this test never triggers
+(32 MB would take ~76M rounds). Rate checks out: 1600 bytes/round allocated, one
+array surviving per ~305 rounds, against a minor GC every ~640 rounds from the
+6400-object cap, so 1-2 promotions per collection. The **linearity** is the
+evidence — a broken root screen gives erratic or accelerating loss, not a
+straight line.
+
 **An anomaly worth resolving before promising a speedup factor**: sort cost per
 handle is *flat* at ~30 µs across n = 6024..36024 (31.0, 30.0, 30.8, 30.0, 29.6,
 31.3). A bottom-up merge sort makes ceil(log2 n) passes — 13 to 16 over that
