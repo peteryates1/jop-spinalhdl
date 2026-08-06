@@ -174,28 +174,30 @@ silently invalidate all of that. Use this to find one:
     part; `MemoryControllerFactory.createSdr` selects on `layout.dataWidth`.
     Remaining i5 work is ordinary: raise the clock above 40 MHz, and try SMP now
     that block RAM is only 21% used. See `docs/boards/colorlight-i5-bringup.md`.
-- **23.** **`f_multianewarray` handles exactly 2 dimensions** — `dim != 2` prints
-    "dimensions not supported" and calls `noim()`, so `new int[a][b][c]` is an
-    unimplemented trap, not a wrong answer. Assess before implementing: find out
-    whether anything in the target workloads uses 3-D at all, since the JVM spec
-    allows up to 255 and the cost is not in the loop but in the GC metadata.
+- **23.** ~~**`f_multianewarray` handles exactly 2 dimensions**~~ — **FIXED
+    2026-08-06.** It was hardcoded to `dim == 2` and printed "dimensions not
+    supported" for anything else, so `new int[a][b][c]` was an unimplemented
+    trap. `JVMHelp.multiNew` now builds any nest up to `MAX_ARRAY_DIM = 8` by
+    recursing one level at a time. The spec allows 255, but a runaway nest would
+    overflow the stack part-way through allocating and leave a half-built
+    structure, which is worse than a clean refusal.
 
-    What generalising has to get right: the constant-pool entry gives the type of
-    the **innermost** level only — every level above it is a reference array
-    (`IS_REFARR`), which is precisely the distinction `78cc968` got wrong at two
-    levels and which caused **premature collection** rather than a visible fault.
-    The current code hardcodes that split (`f_anewarray` outer, `f_newarray(type)`
-    inner); N levels need it derived per level. Two further constraints: the
-    method manipulates its own stack frame through `Native.getSP()`/`rdIntMem`,
-    so any recursive or worklist helper must run *after* the frame fixup at
-    `JVM.java:871-876`, not before; and a partially built nest must stay
-    traceable, since a GC can fire inside the allocation loop and intermediate
-    arrays are reachable only from locals at that moment.
+    The part that mattered was never the loop, it was the **GC metadata**: only
+    the innermost level carries the element type and every level above it is a
+    reference array. Getting that wrong at two levels was `78cc968` — inner
+    arrays typed `IS_OBJ`, collector unable to size them or scan their elements,
+    premature collection with no visible fault. `MultiDimTest` checks 3-D and
+    4-D primitive, 3-D reference and the degenerate zero-length shapes **after**
+    30k rounds of churn and two full mark-compacts, because DoAll's `MultiArray`
+    passed throughout that defect and reading values back proves nothing.
+    10/10 on EP4CGX150 and XC7A100T, `MultiArrayGcTest` OK, DoAll 66/66.
 
-    Test with a GC, not just a mutator: `MultiArrayGcTest` exists because
-    `DoAll`'s `MultiArray` passed throughout the `78cc968` bug — a reference array
-    can be completely broken for the collector while working perfectly for
-    ordinary reads and writes.
+    **Still open, and it is the same missing metadata**: a reference array
+    records only `IS_REFARR` with no element class, and JOPizer writes 0 for
+    `[Ljava/lang/Foo;`. So `checkcast`/`instanceof` cannot decide reference-array
+    targets or tell `int[]` from `int[][]` — the unsound cases pinned by
+    `ArrayCastTest`. Recording the element class would close those and give item
+    24's evacuate-versus-slide decision something to work from.
 
 ### Compute units and bytecode implementation
 

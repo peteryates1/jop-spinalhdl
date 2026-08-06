@@ -396,6 +396,56 @@ synchronized (o) {
 //		}
 //	}
 
+	/**
+	 * Largest `multianewarray` dimension count accepted.
+	 *
+	 * The JVM spec allows 255. {@link #multiNew} recurses once per level, and a
+	 * runaway nest would overflow JOP's stack part-way through allocating —
+	 * leaving a partially built structure behind, which is a far worse failure
+	 * than a clean refusal. Real code does not go past 3 or 4.
+	 */
+	static final int MAX_ARRAY_DIM = 8;
+
+	/**
+	 * Build one level of a `multianewarray` nest, recursing into the rest.
+	 *
+	 * Levels 0..dim-2 are reference arrays; only the innermost carries the
+	 * element type. That distinction is the whole defect fixed in `78cc968`,
+	 * which typed inner arrays `IS_OBJ` so the collector could neither size them
+	 * nor scan their elements — premature collection with no visible fault. Here
+	 * it has to hold at every level, not just two.
+	 *
+	 * `Native.rdMem(arr)` is re-read on every iteration on purpose: allocating
+	 * the inner array can trigger a GC, which relocates `arr`'s data. The handle
+	 * itself does not move, so holding `arr` across the call is safe, and the
+	 * conservative stack scan finds both it and the partially built nest.
+	 *
+	 * Lives here rather than in JVM.java because that class's method order is
+	 * the bytecode dispatch table — see `arrayCastOk`.
+	 *
+	 * @param level  0 for the outermost dimension
+	 * @param dim    total dimensions being allocated
+	 * @param sp     stack pointer such that counts are at sp+1 .. sp+dim
+	 * @param type   innermost element type code (4..11, or IS_REFARR)
+	 */
+	static int multiNew(int level, int dim, int sp, int type) {
+		int cnt = Native.rdIntMem(sp + 1 + level);
+		if (level == dim - 1) {
+			// Innermost: this is the level the constant-pool type code describes.
+			return JVM.f_newarray(cnt, type);
+		}
+		// Any level above the innermost holds references, whatever the element
+		// type of the nest is. f_anewarray ignores its second argument.
+		int arr = JVM.f_anewarray(cnt, 0);
+		for (int i = 0; i < cnt; ++i) {
+			int inner = multiNew(level + 1, dim, sp, type);
+			synchronized (GC.mutex) {
+				Native.wrMem(inner, Native.rdMem(arr) + i);
+			}
+		}
+		return arr;
+	}
+
 	// NOTE: this lives here and NOT in JVM.java. JOPizer emits JVM's method
 	// table as the bytecode dispatch table ("pointer to first non Object method
 	// struct of class JVM"), so handlers are indexed by POSITION. Adding a

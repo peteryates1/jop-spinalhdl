@@ -888,25 +888,21 @@ public class JVM {
 		sp = Native.rdIntMem(fp);
 		sp -= dim;		// correct the sp
 		Native.wrIntMem(sp, fp);
-		if (dim!=2) {
-//			System.out.print("multanewarray: ");
+		// Any number of dimensions, built by JVMHelp.multiNew. This was
+		// hardcoded to exactly 2 and printed "dimensions not supported" for
+		// anything else, so `new int[a][b][c]` was an unimplemented trap.
+		//
+		// The constant-pool code is the INNERMOST element type — for "[[[I" it
+		// is 10, because JOPizer derives it from the last two characters of the
+		// class name. Every level above the innermost is a reference array
+		// regardless. Getting that wrong at two levels was `78cc968`; multiNew
+		// has to get it right at all of them.
+		if (dim < 1 || dim > JVMHelp.MAX_ARRAY_DIM) {
 			System.out.print(dim);
-			System.out.println("dimensions not supported");
+			System.out.println(" dimensions not supported");
 			JVMHelp.noim();
 		}
-		// first dimension
-		int cnt = Native.rdIntMem(sp+1);
-		int cnt2 = Native.rdIntMem(sp+2);
-		// we ignore type on anewarray
-		ret = f_anewarray(cnt, 0);
-		// handle
-		for (i=0; i<cnt; ++i) {
-			int arr = f_newarray(cnt2, type);
-			synchronized(GC.mutex) {
-				Native.wrMem(arr, Native.rdMem(ret)+i);
-			}
-		}
-		return ret;
+		return JVMHelp.multiNew(0, dim, sp, type);
 	}
 	static void f_ifnull() { JVMHelp.noim(); /* jvm.asm */ }
 	static void f_ifnonnull() { JVMHelp.noim(); /* jvm.asm */ }
