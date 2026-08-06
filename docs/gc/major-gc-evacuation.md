@@ -102,18 +102,48 @@ which is why `MultiArrayGcTest` and `IntHandlerGcTest` exist. Both must pass,
 and neither is a formality — the `multianewarray` failure signal was a crash
 during churn, not a FAIL line.
 
-## Open question that gates the choice
+## The gating question — RESOLVED (EP4CGX150, 2026-08-06)
 
-Sort cost per handle is **flat at ~30 µs** from n=6024 to n=36024, while a
-bottom-up merge sort makes `ceil(log2 n)` = 13 -> 16 passes over that range.
-Per-handle cost should rise ~23%; it does not. **The obvious cost model is
-therefore wrong**, and until that is resolved neither "a linear sort buys 4x"
-nor "evacuation buys 65%" can be stated honestly — the second only follows if
-the sort's cost really is the sort.
+`GC_SORT_TRACE` reports pass count and the cost of the first and last pass.
 
-Cheapest resolution: instrument the existing `sortListByAddress` to report its
-actual pass count and per-pass time. Ten lines, one two-minute hardware cycle.
-**Do this before choosing between the options above.**
+| n | passes | ceil(log2 n) | pass 1 | pass N | sort total | **µs / element / pass** |
+|---:|---:|---:|---:|---:|---:|---:|
+| 6024 | 13 | 13 | 15.448 | 15.196 | 179.810 | 2.296 |
+| 18024 | 15 | 15 | 39.471 | 35.169 | 533.396 | 1.973 |
+| 36024 | 16 | 16 | 75.553 | 67.325 | 1086.513 | 1.885 |
+
+Three things settle it:
+
+1. **Pass count is exactly `ceil(log2 n)`**, as the algorithm says it must be.
+2. **First pass costs the same as last pass** (75.6 vs 67.3 at n=36024). Early
+   passes merge short runs in list order; late passes merge long runs already in
+   address order. If locality were the story these would differ sharply. They do
+   not, so **the sort is not a locality story** — it is simply doing the work
+   `n x log n` times.
+3. The earlier "flat ~30 µs per handle" anomaly was **two effects cancelling**:
+   passes rose 23% (13 -> 16) while cost per element-pass fell 18% (2.296 ->
+   1.885). The `n x passes x constant` model was right after all; per-*handle*
+   was the wrong thing to plot. Recording that because the wrong conclusion —
+   "the obvious cost model is wrong" — was drawn from it and could have sent
+   someone hunting a phantom.
+
+**Cross-board**: the XC7A100T DDR3 gives 1.956 µs/element/pass against the
+EP4CGX150 SDR's 1.885 — within 4%, on completely different memory systems (DDR3
+plus a 32 KB L2 versus bare SDR). The minor *sweep* differs 16% between the same
+two boards. So the sort is not memory-latency-bound in the way the sweep is, and
+no amount of cache or memory improvement will help it. **Only removing passes
+will.**
+
+### What that is worth
+
+Sort is `n x ceil(log2 n) x ~2 µs`. At 36k live that is 16 passes.
+
+- **Linear sort** (radix, 1-2 passes): ~8-16x on the sort, 1086 -> ~70-140 ms.
+- **Evacuation** (no sort at all): the whole 1086 ms, **58% of the 1883 ms
+  pause** on this board.
+
+Both are now honest numbers rather than estimates, because the cost model has
+been validated on two boards with different memory.
 
 ## How this gets validated
 

@@ -332,6 +332,28 @@ public class GC {
 	 * turn it on again if another mis-typed allocation shows up.
 	 */
 	static final boolean GC_META_CHECK = false;
+
+	/**
+	 * Instrument the address sort: pass count, and the cost of the first and
+	 * last pass separately.
+	 *
+	 * Off for production. `static final false` means javac folds every guarded
+	 * block away, so a build without it carries no counters, no IO_US_CNT reads
+	 * and no dead statics — same as GC_META_CHECK and GEN_TRACE.
+	 *
+	 * Why first and last rather than every pass: a bottom-up merge sort relinks
+	 * every element exactly once per pass, so steps == n * passes and counting
+	 * steps would tell us nothing that passes does not — while costing an
+	 * increment in the innermost loop. What is NOT known is whether the cost per
+	 * element is uniform across passes. Early passes merge short runs in list
+	 * order; late passes merge long runs that are already address-ordered. If
+	 * locality is the story those should differ, and timing the two ends is
+	 * enough to see it. Three IO_US_CNT reads per sort, so the measurement does
+	 * not perturb what it measures.
+	 */
+	public static final boolean GC_SORT_TRACE = true;
+	/** Passes the last sort made, and the microseconds its first/last pass took. */
+	public static int gcSortPasses, gcSortT1, gcSortTLast;
 	public static int gcOddNewCnt, gcOddNew, gcOddNewType, gcOddNewAlen, gcOddNewSize;
 	/** 1 = came from newArrayGen, 0 = newObjectGen; plus the size that was requested. */
 	public static int gcOddNewIsArray, gcOddNewReq;
@@ -802,7 +824,13 @@ public class GC {
 		// Bottom-up merge sort, relinking through OFF_NEXT (no extra storage).
 		// Runs of `width` are merged pairwise until one run remains.
 		int width = 1;
+		int passes = 0;
 		for (;;) {
+			int pt0 = 0;
+			if (GC_SORT_TRACE) {
+				++passes;
+				pt0 = Native.rd(Const.IO_US_CNT);
+			}
 			int p = list;
 			int head = 0;
 			int tail = 0;
@@ -839,7 +867,16 @@ public class GC {
 			}
 
 			Native.wrMem(0, tail + OFF_NEXT);
-			if (merges <= 1) return head;   // one run left: sorted
+			if (GC_SORT_TRACE) {
+				int dt = Native.rd(Const.IO_US_CNT) - pt0;
+				if (passes == 1) gcSortT1 = dt;
+				gcSortTLast = dt;        // overwritten each pass; the final
+				                         // write is the last pass
+			}
+			if (merges <= 1) {
+				if (GC_SORT_TRACE) gcSortPasses = passes;
+				return head;             // one run left: sorted
+			}
 			list = head;
 			width <<= 1;
 		}

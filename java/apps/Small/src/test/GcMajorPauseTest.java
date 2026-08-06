@@ -87,7 +87,16 @@ public class GcMajorPauseTest {
 			wrMs(GC.gcMajTSlide); JVMHelp.wr("  ");
 			wrMs(GC.gcMajTCopyWords); JVMHelp.wr("   ");
 			wrInt(GC.gcMajLiveHandles); JVMHelp.wr("      ");
-			wrInt(GC.gcMajLiveWords); JVMHelp.wr("\n");
+			wrInt(GC.gcMajLiveWords);
+			if (GC.GC_SORT_TRACE) {
+				// passes is analytically ceil(log2 n) and is printed to confirm
+				// that, not to discover it. p1/pN are the interesting pair: a
+				// uniform cost per pass says the sort is not a locality story.
+				JVMHelp.wr("  passes "); wrInt(GC.gcSortPasses);
+				JVMHelp.wr(" p1 "); wrMs(GC.gcSortT1);
+				JVMHelp.wr(" pN "); wrMs(GC.gcSortTLast);
+			}
+			JVMHelp.wr("\n");
 		}
 
 		// Integrity: every retained object must have survived every collection
