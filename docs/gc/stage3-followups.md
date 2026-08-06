@@ -28,48 +28,37 @@ Commits: `1916415` (measure), `8a8e154` (young list), `5e0a3a0` (256 MB full GC)
 ## 1. Major GC worst case — SPLIT MEASURED, sort confirmed — **OPEN**
 
 **2026-08-06, XC7A100T DDR3.** `gcMajTCompact` now splits into sort / slide /
-copy, which settles the standing hypothesis and kills a second one.
+copy, which settles the standing hypothesis and kills a second one. **Numbers,
+and the choice of what to do next, are in
+[current-status](../current-status.md) §3 item 3** — per the banner above they
+are not repeated here. In one line: the merge sort is **51% of the pause**, and
+the object data copy is **0.4%**.
 
-| live objs | pause | mark | compact | **sort** | slide | copy | live words |
-|---:|---:|---:|---:|---:|---:|---:|---:|
-| 6000 | 452.6 | 199.5 | 252.2 | **186.8** | 65.4 | 33.9 | 48244 |
-| 18000 | 1134.5 | 486.3 | 647.3 | **554.6** | 92.8 | 9.4 | 72244 |
-| 36000 | **2214.9** | 915.8 | 1298.2 | **1127.6** | 170.6 | 9.5 | 108244 |
+The copy figure is the one that changes plans, so it is worth stating why it is
+a result and not a footnote. A hardware block-copy engine was the obvious next
+move — the zero-fill DMA gets 110.7x on this board and a memcpy engine is the
+same machinery plus a source address. It would take 9.5 ms off 2215. A major GC
+here moves 108k words and spends almost none of its time doing it; it spends its
+time chasing pointers through the handle table. **Do not build copy acceleration
+for this pause.**
 
-- **The merge sort is the single largest term: 1127.6 ms of the 1298.2 ms
-  compact phase, and 51% of the whole pause.** The hypothesis recorded below was
-  right.
-- **The object data copy is 9.5 ms — 0.4%.** That is the important negative
-  result: a hardware block-copy engine (the zero-fill DMA is the obvious
-  precedent, 110.7x on DDR3) would take 9.5 ms off a 2215 ms pause. The live set
-  is only 108k words; a major GC here moves almost no data and spends its time
-  chasing pointers through the handle table. **Do not build copy acceleration
-  for this.**
-- Copy is 33.9 ms on the first collection and ~9.5 ms after, because once the
-  heap is compacted only newly allocated objects move.
-
-**A real defect found while measuring, now fixed.** `push()` and `pushYoung()`
-screened every candidate root with `ref >= mem_start + handle_cnt*HANDLE_SIZE`:
-three static reads (statics live in main memory) plus an **`imul` bytecode**.
+**A real defect found while measuring, now fixed** (bug 29 in
+[bugs-and-issues](../bugs-and-issues.md)). `push()` and `pushYoung()` screened
+every candidate root with `ref >= mem_start + handle_cnt*HANDLE_SIZE`: three
+static reads (statics live in main memory) plus an **`imul` bytecode**.
 `HANDLE_SIZE` is 8, but javac emits `imul` rather than strength-reducing, and
 `imul` defaults to **Microcode** — a ~775-cycle shift-add loop — on any preset
 that does not ask for an ICU multiplier, which includes `xc7a100tDbSerial`
 (it sets only `idiv`/`irem` to hw). Line 429 of `GC.java` had already written
 the identical product as `<< 3` for exactly this reason. Precomputing
-`handleEnd` once at init:
+`handleEnd` once at init **halved the mark phase**.
 
-| | before | after |
-|---|---:|---:|
-| mark @36k | 915.8 ms | **422.2 ms** (-54%) |
-| major pause @36k | 2214.9 ms | **1720.8 ms** (-22%) |
-| minor pause | 12.523 ms | **11.757 ms** |
-| minor stack+static root scan | — | 0.235 ms |
-
-`corrupt 0`, `MAJOR OK`, retained 64/64 on both `GcMajorPauseTest` and
-`GcPauseTest`. Compact is unchanged, as expected — the fix only touches `push`.
-
-**Where the remaining 1720 ms goes @36k live**: sort **1127 ms (65%)**, mark
-422 ms (25%), slide 171 ms (10%), copy 9.6 ms (0.6%).
+Two things worth taking from that beyond the fix itself. It was found by
+instrumenting a pause, not by reading the code — the expression had looked
+reasonable for years, and the file contradicted itself twenty lines apart
+without anyone noticing. And it means every per-object GC path should be read
+with "is there arithmetic on statics here?" in mind, because on JOP neither
+statics nor `*` are free.
 
 **An anomaly worth resolving before promising a speedup factor**: sort cost per
 handle is *flat* at ~30 µs across n = 6024..36024 (31.0, 30.0, 30.8, 30.0, 29.6,

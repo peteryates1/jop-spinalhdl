@@ -662,11 +662,54 @@ separated "board broken" from "our design broken".
 
    **Next lever is the copy phase**, now **79%** of the pause (11.300 ms) and
    essentially unchanged throughout — see item 4.
-3. **Major GC constant** — 2.2 s at 36k live objects, O(live) confirmed but the
-   constant is 20-25x the minor sweep's and unexplained. Next action is a
-   *measurement*, not a change: time `sortUseListByAddress()` separately from the
-   rest of `compactAndSweep`. Two hypotheses about this pause have already been
-   wrong.
+3. **Major GC — measured 2026-08-06, and it is an address sort.** The recorded
+   next action (time `sortUseListByAddress()` separately) is **done**. XC7A100T
+   DDR3, 36000 live objects:
+
+   | live objs | pause | mark | compact | **sort** | slide | copy | live words |
+   |---:|---:|---:|---:|---:|---:|---:|---:|
+   | 6000 | 452.6 | 199.5 | 252.2 | **186.8** | 65.4 | 33.9 | 48244 |
+   | 18000 | 1134.5 | 486.3 | 647.3 | **554.6** | 92.8 | 9.4 | 72244 |
+   | 36000 | **2214.9** | 915.8 | 1298.2 | **1127.6** | 170.6 | 9.5 | 108244 |
+
+   The merge-sort hypothesis was right: **1127.6 ms of the 1298.2 ms compact
+   phase, 51% of the whole pause.**
+
+   **The data copy is 9.5 ms — 0.4%**, and that is the result that changes
+   plans. A hardware block-copy engine was the obvious move given the zero-fill
+   DMA gets 110.7x on this board; it would take 9.5 ms off 2215. A major GC here
+   moves 108k words and spends almost none of its time doing it. **Do not build
+   copy acceleration for this pause.**
+
+   **A real defect found while measuring** (bug 29): `push()`/`pushYoung()` ran
+   an `imul` bytecode — ~775 cycles of microcode on a preset with no ICU
+   multiplier — on every candidate root. Precomputing `handleEnd` took mark
+   915.8 -> **422.2 ms** and the pause 2214.9 -> **1720.8 ms**. Remaining at
+   36k: sort 1127 (65%), mark 422 (25%), slide 171 (10%), copy 9.6 (0.6%).
+
+   **Next, and not yet chosen** — measure the sort's actual pass count first,
+   because per-handle sort cost is *flat* at ~30 µs from n=6024 to 36024 while
+   `ceil(log2 n)` goes 13 -> 16, so the obvious `n x passes x constant` model is
+   wrong and neither option below can be sized honestly until that is resolved:
+
+   - **Replace the sort** with a linear-time radix distribution over the
+     address. Contained, low risk, keeps every existing heap invariant. Each
+     pass touches one handle per element (all three words are in the same cache
+     line) against the merge sort's two or three scattered handles per step.
+   - **Eliminate the sort.** Sliding compaction needs address order only because
+     source and destination overlap. Copying live objects into free space
+     instead removes the constraint entirely — 65% of the pause — at the cost of
+     needing free >= live and changing the layout invariants `carveNursery` and
+     the tenure-bounded card scan depend on. Bigger win, bigger blast radius,
+     and this is the area that has produced premature-collection bugs before.
+
+   **Why a desktop JVM does not have this problem**: not software versus
+   hardware — the data structure. HotSpot has no handle table, so nothing is
+   sorted; references are direct pointers, marking uses a side bitmap, and
+   compaction forwards over regions. JOP's handle indirection forces a full
+   address sort of every live object on every major GC, and a handle is exactly
+   one 256-bit cache line so no walk of the table ever gets spatial reuse. Same
+   root cause as item 4.
 4. **Copy phase — now the dominant term**, 11.3 ms of a 14.1 ms A-E115FB pause
    (79%) and 10.3 ms of 12.5 ms on the XC7A100T (82%). It barely moved when the
    clock rose because it is **latency-bound, not clock-bound**: 1766 ns/handle

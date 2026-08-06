@@ -292,11 +292,19 @@ See [SDR SDRAM GC Hang](gc/sdr-sdram-gc-hang.md) for the full investigation.
 | 26 | `gc()` bulk-zeroed the whole free region after compacting (zapSemi legacy) — 254 MB per collection on the 256 MB board, never completed | Removed; every allocation path already zeroes its own data. Major GC is now O(live), not O(heap) |
 | 27 | A single hardware zero-fill request spanning the whole heap ran away and overwrote memory (the CPU then executed garbage) | `zeroMem` issues the fill in bounded 4 MB chunks — the size ZeroBench validates — and guards `from >= to` |
 | 28 | Generational `copyAndSweepYoung` rejected legal **zero-size** objects (`size <= 0`); a class with no instance fields has size 0, which `compactAndSweep` has always allowed | Only `size < 0` is treated as corrupt. Previously every zero-field object became an unpromoted zombie holding a stale nursery pointer |
+| 29 | `push()` / `pushYoung()` screened every candidate root against `mem_start + handle_cnt*HANDLE_SIZE` — three main-memory static reads plus an **`imul` bytecode**, which is a ~775-cycle microcode shift-add loop on any preset without an ICU multiplier. Halved the major-GC mark phase | Precompute `handleEnd` once in `init()`. Mark 915.8 -> 422.2 ms at 36k live, major pause -22%, minor pause 12.523 -> 11.757 ms |
 
 Bugs 25–27 were pre-existing and affected the **classic** collector too — a full
 mark-compact GC on the 256 MB DDR3 board had simply never been exercised, since
 DoAll and GcStressTest never trigger one. Reproduced with
 `USE_GENERATIONAL=false` before fixing.
+
+Bug 29 is a reminder that on JOP a plain `*` is not free: `HANDLE_SIZE` is a
+power of two and the same product is written `<< 3` twenty lines earlier in the
+same file, but javac does not strength-reduce and `imul` is only hardware when a
+preset asks for an ICU multiplier. Any per-object GC path doing arithmetic on
+statics is worth reading with that in mind. It was found by instrumenting a
+pause, not by reading the code — the code had looked fine for years.
 
 ### DecimalFormat Bugs (3 fixes for Phase 8)
 
