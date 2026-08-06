@@ -11,6 +11,7 @@ Detail lives in:
 - [boards/ae115fb-ddr2-bringup.md](boards/ae115fb-ddr2-bringup.md) — DDR2, including everything that went wrong
 - [bugs-and-issues.md](bugs-and-issues.md) — the defects fixed along the way
 - [gc/copy-phase-redesign.md](gc/copy-phase-redesign.md) — the remaining 79-82% of the minor pause
+- [gc/major-gc-evacuation.md](gc/major-gc-evacuation.md) — design note: drop the address sort from the major GC
 
 ---
 
@@ -696,12 +697,13 @@ separated "board broken" from "our design broken".
      address. Contained, low risk, keeps every existing heap invariant. Each
      pass touches one handle per element (all three words are in the same cache
      line) against the merge sort's two or three scattered handles per step.
-   - **Eliminate the sort.** Sliding compaction needs address order only because
-     source and destination overlap. Copying live objects into free space
-     instead removes the constraint entirely — 65% of the pause — at the cost of
-     needing free >= live and changing the layout invariants `carveNursery` and
-     the tenure-bounded card scan depend on. Bigger win, bigger blast radius,
-     and this is the area that has produced premature-collection bugs before.
+   - **Eliminate the sort by evacuating** rather than sliding — what G1,
+     Shenandoah and ZGC all do. Source and destination are disjoint, so no
+     ordering is needed. JOP suits this *better* than HotSpot: relocating an
+     object costs one word (the handle's `OFF_PTR`) instead of a pointer-
+     adjustment phase. Cost: needs free >= live, and changes the layout
+     invariants `carveNursery` and the tenure-bounded card scan depend on.
+     Design note: [gc/major-gc-evacuation.md](gc/major-gc-evacuation.md).
 
    **Why a desktop JVM does not have this problem**: not software versus
    hardware — the data structure. HotSpot has no handle table, so nothing is
