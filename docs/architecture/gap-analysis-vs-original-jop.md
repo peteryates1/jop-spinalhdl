@@ -247,4 +247,3 @@ These exist in jop-spinalhdl but NOT in the original:
 19. AC97 audio, sigma-delta ADC/DAC (specific boards)
 20. CLDC 1.1, JOP UI framework (niche)
 21. YAFFS2 (FAT32 on SD card is more practical)
-20. YAFFS2 (FAT32 on SD card is more practical)

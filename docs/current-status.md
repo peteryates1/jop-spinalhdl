@@ -22,11 +22,18 @@ Scannable index; the numbered sections below carry the reasoning. Each entry
 says what is **verified** versus **asserted**, because several things in this
 project have looked fine while being wrong.
 
-**Item numbers are stable IDs, not reading order.** They are assigned when an
-item is created and then grouped by topic, so the page runs 1-16, 24, 25, ...
-23, ... 17-22 ... 21. They are referenced from `bugs-and-issues.md`, the GC
-design notes and a good many commit messages, so renumbering would silently
-invalidate all of that. Use this to find one:
+**Item numbers are stable IDs, not reading order**, and they are written as
+`- **N.**` bullets rather than a Markdown ordered list **on purpose**. An
+ordered list renumbers from its first marker when rendered, so a source that
+read `12. 13. 14. 15. 16. 23.` displayed as `12..17` — item 23 was invisible and
+there were two 17s on the page, one of them fictional. Every `item N` reference
+in these docs was wrong for anyone reading rendered Markdown. Keep the bullet
+form.
+
+IDs are assigned on creation and then grouped by topic, so the page runs 1-16,
+24, 25, ... 23, ... 17-22 ... 21. They are referenced from `bugs-and-issues.md`,
+the GC design notes and a good many commit messages, so renumbering would
+silently invalidate all of that. Use this to find one:
 
 | # | section | # | section | # | section |
 |---|---|---|---|---|---|
@@ -36,7 +43,7 @@ invalidate all of that. Use this to find one:
 
 ### Blocking / correctness
 
-1. **Generational GC is unsound on SMP — currently guarded off.** The card table
+- **1.** **Generational GC is unsound on SMP — currently guarded off.** The card table
    is per core, snoops that core's own BMB port ahead of the arbiter, and
    `IO_CARD_*` is decoded per core, so the collector sees only its own table: a
    tenured->nursery write by another core is invisible and that young object is
@@ -49,34 +56,34 @@ invalidate all of that. Use this to find one:
    that test is **the same missing artefact as items 2 and 11** (see
    *Coupling* below).
 
-2. **`JopIhluGcBramSim` cannot fail.** It loads `java/apps/Small/HelloWorld.jop`
+- **2.** **`JopIhluGcBramSim` cannot fail.** It loads `java/apps/Small/HelloWorld.jop`
    — a single-core app — so core 1 parks in the boot-wait loop and IHLU is never
    exercised. Verified by running it to 49M cycles: core 1 never moved. Needs a
    real SMP GC application before "IHLU GC verified" means anything — the same
    application item 1 needs to build its failing test on (see *Coupling*).
 
-3. **Sixteen presets still run classic GC.** Safe but slow after the guard;
+- **3.** **Sixteen presets still run classic GC.** Safe but slow after the guard;
    `hasCardTable` is one line each and the boot line confirms it took effect.
    The Wukong presets have it but are **elaboration-verified only** — no Wukong
    board has been attached, so `GC: generational` is unconfirmed there.
 
 ### Performance
 
-4. **Copy phase — 79-82% of the minor pause** and the dominant remaining term.
+- **4.** **Copy phase — 79-82% of the minor pause** and the dominant remaining term.
    Latency-bound, not clock-bound: 132 cycles/handle at 75 MHz against 162 at
    100 MHz. The handle table is 2 MB against a 32 KB cache and a handle is
    exactly one 256-bit line, so ~6400 compulsory misses to find ~66 survivors.
    Plan in [gc/copy-phase-redesign.md](gc/copy-phase-redesign.md). The 5-8x
    estimate is **asserted from transaction counts, not measured**.
 
-5. **The BMB arbiter caps SMP at 2 cores @ 100 MHz.** Path is
+- **5.** **The BMB arbiter caps SMP at 2 cores @ 100 MHz.** Path is
    `coreX zeroCur -> arbiter -> coreY memCtrl state machine`, widening with core
    count. Measured on EP4CGX150: 1 core 7,870 LE (~107 MHz), 2 cores 19,439 LE
    (+0.270 ns at 100 MHz), 4 cores 38,372 LE (**65.3 MHz**). Area allows ~12
    cores at 73% with full caches; BRAM never binds (~52% at 16). Pipelining the
    arbiter costs a cycle on every memory access — see item 11 before committing.
 
-6. ~~**Major GC constant unexplained**~~ — **LARGELY FIXED 2026-08-06, 2.6-3.2x.**
+- **6.** ~~**Major GC constant unexplained**~~ — **LARGELY FIXED 2026-08-06, 2.6-3.2x.**
    At 36k live objects the pause went **2214.9 -> 865.6 ms (EP4CGX150)** and
    **-> 689.8 ms (XC7A100T DDR3)**, from three changes: an `imul` in `push()`
    (bug 29), hoisting `push()`'s loop-invariant statics, and replacing sliding
@@ -90,7 +97,7 @@ invalidate all of that. Use this to find one:
    save its ~142-cycle call — worth ~102 ms, against duplicating GC logic in the
    most safety-critical loop in the collector. Not obviously worth it.
 
-24. **The evacuation trade is untested at larger object sizes.** Sliding left
+- **24.** **The evacuation trade is untested at larger object sizes.** Sliding left
     objects in place once positioned, so copy was 10 ms; evacuation moves every
     live object every time, and copy went to 86 ms. That bought removing 1085 ms
     of sorting, so it is a large net win **at the object size the test uses** —
@@ -109,36 +116,36 @@ invalidate all of that. Use this to find one:
     document have been wrong. If it holds, the answer is a size threshold that
     picks sliding for large live sets, not abandoning either.
 
-25. **Two loose ends from the GC work.** `GC_SORT_TRACE` and `GC_MARK_TRACE`
+- **25.** **Two loose ends from the GC work.** `GC_SORT_TRACE` and `GC_MARK_TRACE`
     still default `true` — they fold away when false, but production builds
     currently carry them. And `prepareCompact` (the incremental collector) is
     now the **only remaining caller of `sortListByAddress`**; it still slides to
     `heapStart` and was deliberately not touched, but that path is unexercised
     (item 2's territory) and now diverges from the stop-the-world one.
 
-7. **Root-scan floor: 2.2 / 4.7 / 8.5 ms** across SDR / DDR3 / DDR2. Tracks
+- **7.** **Root-scan floor: 2.2 / 4.7 / 8.5 ms** across SDR / DDR3 / DDR2. Tracks
    memory latency, not clock (the SDR and DDR3 boards are both 100 MHz yet
    differ 2.1x), so it will grow again on slower memory.
 
 ### Hardware / infrastructure
 
-8. **XC7A100T timing margin is +0.001 ns**, with one bad run in seven during
+- **8.** **XC7A100T timing margin is +0.001 ns**, with one bad run in seven during
    regression testing. A regression platform with no margin manufactures false
    failures. Re-implement for margin.
 
-9. **Pico USB-Blaster needs a level shifter** — 74LVC8T245 (or 2x 74LVC2T45)
+- **9.** **Pico USB-Blaster needs a level shifter** — 74LVC8T245 (or 2x 74LVC2T45)
    with `VCCB` from JTAG header pin 4. No firmware change can fix it: the clone
    drives a fixed 3.3 V into a 2.5 V bank and reads 2.5 V against an RP2040
    V_IH of ~2.15 V. Unblocks having both Altera boards connected at once. The
    pull-up fix and `jtag_pintest.c` are **uncommitted** in `~/workspaces/pico-usb-blaster`.
 
-10. **pico-usb-blaster protocol bug** — low-level shift works (IDCODE reads
+- **10.** **pico-usb-blaster protocol bug** — low-level shift works (IDCODE reads
     correctly), so the fault is in byte-shift-mode or response framing. Lower
     priority now the level shifter is understood as the real blocker.
 
 ### The measurement gap
 
-11. **There is no application benchmark, and four decisions rest on it:**
+- **11.** **There is no application benchmark, and four decisions rest on it:**
     whether a cycle of arbiter latency is worth 4+ cores (item 5); whether the
     caches (2,213 LE/core, 33% of a core) earn their area; whether the copy
     redesign helps real workloads (item 4); and whether the double bytecodes are
@@ -149,25 +156,25 @@ invalidate all of that. Use this to find one:
 
 ### Smaller
 
-12. **`LongComputeUnitConfig` has no enable flag** for its base 64-bit ALU
+- **12.** **`LongComputeUnitConfig` has no enable flag** for its base 64-bit ALU
     (`ladd/lsub/lneg/lcmp`), unlike `FloatComputeUnitConfig.withAdd`. Worked
     around at the `ComputeUnitTop` level (conditional instantiation), but the
     config asymmetry remains and would bite anyone relying on the `with*` flags
     alone.
-13. **`java/apps/Small` `make clean` deletes `HelloWorld.jop`** — `JOP_OUT`
+- **13.** **`java/apps/Small` `make clean` deletes `HelloWorld.jop`** — `JOP_OUT`
     derives from `APP_NAME`, which defaults to HelloWorld. Cost a sim failure
     and nearly a wrong SMP result. Build HelloWorld last, or `rm -rf build`.
-14. **Stack cache SDRAM integration** — pre-existing; 3-bank rotation verified
+- **14.** **Stack cache SDRAM integration** — pre-existing; 3-bank rotation verified
     in BRAM simulation, needs per-core stack regions on SDRAM.
-15. **`GcPauseTest` on the Wukong boards** — never run; they have card tables now
+- **15.** **`GcPauseTest` on the Wukong boards** — never run; they have card tables now
     but no measured pause.
-16. ~~**Colorlight i5 SDRAM ("stage 2" of that board's bring-up — unrelated to
+- **16.** ~~**Colorlight i5 SDRAM ("stage 2" of that board's bring-up — unrelated to
     the GC stages elsewhere in this document)**~~ — **DONE** (`a7fdf93`). 8 MB working on
     hardware, DoAll 66/66 at 1 Mbaud. `BmbSdramCtrlWide` added for the 32-bit
     part; `MemoryControllerFactory.createSdr` selects on `layout.dataWidth`.
     Remaining i5 work is ordinary: raise the clock above 40 MHz, and try SMP now
     that block RAM is only 21% used. See `docs/boards/colorlight-i5-bringup.md`.
-23. **`f_multianewarray` handles exactly 2 dimensions** — `dim != 2` prints
+- **23.** **`f_multianewarray` handles exactly 2 dimensions** — `dim != 2` prints
     "dimensions not supported" and calls `noim()`, so `new int[a][b][c]` is an
     unimplemented trap, not a wrong answer. Assess before implementing: find out
     whether anything in the target workloads uses 3-D at all, since the JVM spec
@@ -213,7 +220,7 @@ trusting the table as true coverage rather than as a configuration matrix.
 
 
 
-17. **`needs*Compute` predicates understate compute-unit reachability.**
+- **17.** **`needs*Compute` predicates understate compute-unit reachability.**
     `621aac7` used them to skip instantiating unused CUs and regressed the JVM
     suite 66/66 -> 56/66; reverted in `eda6de7`. The area win is real (~474 LE
     per core, ~5,700 across 12 cores) and worth recovering, but needs a
@@ -241,7 +248,7 @@ trusting the table as true coverage rather than as a configuration matrix.
     `JopJvmTestsBramSim` (default config, no board involved); it fails in ~15 min.
     Do not re-land the optimisation without that sim passing 66/66.
 
-18. **Software/microcode fallback coverage is uneven** — 18 of 32 configurable
+- **18.** **Software/microcode fallback coverage is uneven** — 18 of 32 configurable
     bytecodes have no `_sw` microcode handler, so their only non-hardware path
     is the Java trap. Per-operation cycle costs already exist in
     `docs/architecture/compute-unit-design.md` (ICU/FCU/LCU/DCU tables); what
@@ -264,7 +271,7 @@ trusting the table as true coverage rather than as a configuration matrix.
 
     **Long is fully covered, float has three of nine, double none.**
 
-19. **Write the missing `_sw` microcode handlers.** Goal: a microcode fallback
+- **19.** **Write the missing `_sw` microcode handlers.** Goal: a microcode fallback
     for *all or most* configurable bytecodes, so that any board can trade area
     for cycles without dropping to the Java trap.
 
@@ -353,7 +360,7 @@ trusting the table as true coverage rather than as a configuration matrix.
     has not been measured with `imul = mc`. The direction is clear enough to not
     act on, but the number is not load-bearing — measure before revisiting.
 
-20. **Decide whether the double group gets microcode at all** — measure before
+- **20.** **Decide whether the double group gets microcode at all** — measure before
     committing. All 12 (`dadd`, `dsub`, `dmul`, `ddiv`, `i2d`, `d2i`, `l2d`,
     `d2l`, `f2d`, `d2f`, `dcmpl`, `dcmpg`) currently reach only SoftFloat64 at
     ~3000-5000 cycles, against ~14 cycles on the DCU. Microcode would land
@@ -376,7 +383,7 @@ trusting the table as true coverage rather than as a configuration matrix.
     path. `dcmpl`/`dcmpg` are the exception — they are as cheap as their float
     counterparts in tier 1 and could be done with them.
 
-22. ~~**Five `_sw` handlers exist but do not work**~~ — **RESOLVED**. It was two
+- **22.** ~~**Five `_sw` handlers exist but do not work**~~ — **RESOLVED**. It was two
     different faults, and only one was in microcode.
 
     **`lmul_sw` was never broken.** It needs the ICU's *multiplier*, and
@@ -409,7 +416,7 @@ trusting the table as true coverage rather than as a configuration matrix.
 
 ### Boards
 
-21. **Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound** — with
+- **21.** **Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound** — with
     64 KB of on-chip main memory it sat at 71% block RAM against 30% of LUTs.
     Moving main memory to SDRAM inverts that to **21% block RAM / 42% LUTs**, so
     SMP and extra compute units are now worth trying; they were not possible
