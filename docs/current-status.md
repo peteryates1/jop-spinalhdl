@@ -97,31 +97,37 @@ silently invalidate all of that. Use this to find one:
    save its ~142-cycle call — worth ~102 ms, against duplicating GC logic in the
    most safety-critical loop in the collector. Not obviously worth it.
 
-- **24.** **The evacuation trade is untested at larger object sizes.** Sliding left
-    objects in place once positioned, so copy was 10 ms; evacuation moves every
-    live object every time, and copy went to 86 ms. That bought removing 1085 ms
-    of sorting, so it is a large net win **at the object size the test uses** —
-    `GcMajorPauseTest` allocates `Node { int tag; Node link }`, 2 words, giving
-    ~3 live words per handle.
+- **24.** ~~**The evacuation trade is untested at larger object sizes**~~ —
+    **MEASURED 2026-08-06, and the obvious fix was wrong.** `GcObjSizeTest`
+    holds handles fixed at 12024 and varies payload size: mark stays flat at
+    99.4 ms and copy is linear in live words at **0.673 µs/word**, so the
+    predicted ~38-word crossover measured at ~43 (XC7A100T) / ~40 (EP4CGX150) —
+    the one prediction all day that held.
 
-    The two costs scale differently: **copy is O(live words), the sort it
-    replaced was O(handles x log handles)**. From the measured ~0.8 µs/word and
-    the 1085 ms sort at 36k handles, they break even at roughly **1.36M live
-    words — about 38 words (152 bytes) of average object size**. A 40-element
-    `int[]` is past that. Above it, evacuation copies more than the sort cost.
+    **The size threshold that followed from it made every large-object row
+    325 ms worse and was reverted.** Sliding copies exactly as much as
+    evacuating under churn (1624.4 ms vs 1624.1 at 200 words), so it is strictly
+    worse by the whole sort. The crossover only exists in the *steady state*,
+    where a stable live set leaves objects already in position
+    (`GcMajorPauseTest`: slide copy 10 ms vs evacuation's 86). Deciding needs to
+    know how far objects are from their slide destination, which is not
+    derivable from live size and handle count. Left always-evacuate, both
+    regimes recorded in `chooseEvacDest`'s contract.
 
-    So the next performance work is **not more objects — it is fatter ones**
-    (`MAX_HANDLES` caps count at 65536 anyway). That is a falsifiable prediction
-    and is recorded as one deliberately, given how many estimates in this
-    document have been wrong. If it holds, the answer is a size threshold that
-    picks sliding for large live sets, not abandoning either.
+    **So evacuation is not a strict improvement**: much better under churn,
+    worse for large objects in the steady state. An application benchmark
+    (item 11) is what would say which regime real code sits in.
 
-- **25.** **Two loose ends from the GC work.** `GC_SORT_TRACE` and `GC_MARK_TRACE`
-    still default `true` — they fold away when false, but production builds
-    currently carry them. And `prepareCompact` (the incremental collector) is
-    now the **only remaining caller of `sortListByAddress`**; it still slides to
-    `heapStart` and was deliberately not touched, but that path is unexercised
-    (item 2's territory) and now diverges from the stop-the-world one.
+- **25.** ~~**Two loose ends from the GC work**~~ — **DONE 2026-08-06.**
+    `GC_SORT_TRACE` and `GC_MARK_TRACE` now default `false`; having them on cost
+    6.4 ms of the 865.6 ms pause, which matches the estimate made when they were
+    added. `prepareCompact` is now documented as **deliberately frozen** rather
+    than merely untouched — it is the last caller of `sortListByAddress`, still
+    slides to `heapStart`, and was not converted because the incremental
+    collector is unexercised (item 2) and evacuation needs its destination
+    reserved before the walk starts, which does not obviously survive being cut
+    into `COMPACT_STEP` pieces. Its comment warns that the pause figures in
+    `major-gc-evacuation.md` do not apply to that path.
 
 - **7.** **Root-scan floor: 2.2 / 4.7 / 8.5 ms** across SDR / DDR3 / DDR2. Tracks
    memory latency, not clock (the SDR and DDR3 boards are both 100 MHz yet
