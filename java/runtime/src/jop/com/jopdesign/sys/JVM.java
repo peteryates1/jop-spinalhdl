@@ -760,6 +760,13 @@ public class JVM {
 		if (objref==0) {
 			return objref;
 		}
+		int type = Native.rdMem(objref+GC.OFF_TYPE);
+		if (type != GC.IS_OBJ || (cons >= 4 && cons <= 11)) {
+			if (JVMHelp.arrayCastOk(type, cons)) {
+				return objref;
+			}
+			throw JVMHelp.CCExc;
+		}
 		int p = Native.rdMem(objref+GC.OFF_MTAB_ALEN);	// ptr to MTAB
 		p -= Const.CLASS_HEADR;							// start of class info
 		// check against interface
@@ -793,6 +800,13 @@ public class JVM {
 	static int f_instanceof(int objref, int cons) {
 		if (objref==0) {
 			return 0;
+		}
+		// Same array screen as f_checkcast — see arrayCastOk. This path is also
+		// how catch clauses are matched (f_athrow), so a garbage walk here was
+		// reachable from exception dispatch.
+		int type = Native.rdMem(objref+GC.OFF_TYPE);
+		if (type != GC.IS_OBJ || (cons >= 4 && cons <= 11)) {
+			return JVMHelp.arrayCastOk(type, cons) ? 1 : 0;
 		}
 		int p = Native.rdMem(objref+GC.OFF_MTAB_ALEN);	// handle indirection
 		p -= Const.CLASS_HEADR;							// start of class info

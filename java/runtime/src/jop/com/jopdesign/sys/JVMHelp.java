@@ -396,7 +396,69 @@ synchronized (o) {
 //		}
 //	}
 
-
+	// NOTE: this lives here and NOT in JVM.java. JOPizer emits JVM's method
+	// table as the bytecode dispatch table ("pointer to first non Object method
+	// struct of class JVM"), so handlers are indexed by POSITION. Adding a
+	// helper anywhere in that class shifts every bytecode after it; the symptom
+	// is a bogus "bytecode NNN not implemented" at boot, which is how this was
+	// found.
+	/**
+	 * checkcast/instanceof where either side is an array.
+	 *
+	 * Arrays have no method table — `OFF_MTAB_ALEN` holds the array LENGTH — so
+	 * the superclass walk in `f_checkcast`/`f_instanceof` would compute
+	 * `length - CLASS_HEADR` and chase pointers through arbitrary memory until
+	 * it happened to hit 0 or the target. That was not a missing feature, it was
+	 * an unbounded read of the address space, and `instanceof` did it silently
+	 * on a path that also matches catch clauses.
+	 *
+	 * Exact: a primitive-array source against a primitive-array target, and an
+	 * array cast to a class (an array is an instance of `java.lang.Object` only,
+	 * and Object is the one class whose `CLASS_SUPER` is 0 — interfaces store a
+	 * negative ID).
+	 *
+	 * Deliberately unsound, pinned by `ArrayCastTest`:
+	 * <ul>
+	 * <li>The cp code comes from the last two characters of the class name, so
+	 *     `[[I` also yields 10. `f_multianewarray` <i>depends</i> on that — it
+	 *     must create the inner `int[]` arrays with type 10, and narrowing it to
+	 *     single-dimension names types them `IS_REFARR` and fails at boot. So a
+	 *     reference-array source against a primitive code has to be accepted in
+	 *     case it is a real `int[][]`, and `(int[]) intArrArr` wrongly succeeds.</li>
+	 * <li>A reference-array target (`[Ljava/lang/Foo;`) is encoded 0 with no
+	 *     element class, and the handle records only `IS_REFARR`, so any
+	 *     reference array matches it.</li>
+	 * <li>`(Cloneable) arr` and `(Serializable) arr` are rejected, for the same
+	 *     reason — the interface ID is not resolvable without the element class.</li>
+	 * </ul>
+	 *
+	 * All three need the element class recorded, which is the same missing
+	 * metadata that limits `f_multianewarray` — current-status item 23.
+	 *
+	 * @param type the source handle's OFF_TYPE
+	 * @param cons the constant-pool value for the target type
+	 */
+	public static boolean arrayCastOk(int type, int cons) {
+		// Target is a primitive array (possibly multi-dimensional — the code is
+		// the innermost element type either way).
+		if (cons >= 4 && cons <= 11) {
+			if (type == cons) return true;
+			// Could be a legitimate int[][] against a "[[I" whose code is 10.
+			return type == GC.IS_REFARR;
+		}
+		if (type == GC.IS_OBJ) {
+			// Plain object against a non-array target: the caller's normal
+			// superclass walk handles that, so reaching here is a screen error.
+			return false;
+		}
+		if (cons == 0) {
+			// Target could not be encoded: a reference-array type, or a class
+			// outside the application. Undecidable — see above.
+			return type == GC.IS_REFARR;
+		}
+		// Target is a real class or an interface. Only java.lang.Object matches.
+		return Native.rdMem(cons+Const.CLASS_SUPER) == 0;
+	}
 }
 
 class DummyHandler implements Runnable {

@@ -62,6 +62,17 @@ cycles, readable over I/O — would make that a measurement instead of an
 inference. Weigh against the XC7A100T closing at +0.001 ns, which makes adding
 logic to the cache path there risky; the EP4CGX150 has margin.
 
+## A structural trap worth knowing
+
+**`JVM.java`'s method order IS the bytecode dispatch table.** JOPizer emits
+"pointer to first non Object method struct of class JVM" and handlers are
+indexed by position, so adding *any* method to that class — even a private
+helper at the end — shifts every bytecode after it. The symptom is a bogus
+`bytecode NNN not implemented` at boot, nowhere near the change.
+
+Put helpers in `JVMHelp` or another class. `JVMHelp.arrayCastOk` is there for
+exactly this reason.
+
 ## Caveats
 
 - **Clock and memory system.** Scattered-access cost tracks memory latency, not

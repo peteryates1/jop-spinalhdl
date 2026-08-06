@@ -328,9 +328,17 @@ document that a confident guess about where the pause went was wrong.
 
 ## 6. Smaller items
 
-- **`checkcast` is not implemented for array types.** `(int[]) someObject`
-  throws an uncaught exception. Cost me two debugging cycles writing tests;
-  worth either implementing or documenting in the programmer's guide.
+- ~~**`checkcast` is not implemented for array types.**~~ **FIXED 2026-08-06.**
+  The old note here said it "throws an uncaught exception". It did not — it was
+  a **memory-safety bug**. `f_checkcast` and `f_instanceof` read
+  `OFF_MTAB_ALEN` as a method-table pointer, but for an array that word is the
+  LENGTH, so the superclass walk computed `length - CLASS_HEADR` and chased
+  pointers through arbitrary memory. `instanceof` did it silently, on the path
+  that also matches catch clauses. Now screened by `JVMHelp.arrayCastOk`,
+  pinned by `ArrayCastTest` (15 checks), DoAll 66/66. Primitive-array casts and
+  array-to-class are exact; reference-array targets and `int[][]` stay unsound
+  for want of the element class — same gap as item 23, and the test pins those
+  cases too so closing them is deliberate.
 - **`f_multianewarray` only supports 2 dimensions** — `dim != 2` prints
   "dimensions not supported" and calls `noim()`. Pre-existing, and now tracked
   as **item 23 in current-status** (investigate and assess generalising it).

@@ -528,6 +528,17 @@ public class JopClassInfo extends OldClassInfo implements Serializable {
                             .get(clname);
                     if (clinfo == null) {
                         cpoolComments[pos] = "Problem with class: " + clname;
+                        // The last two characters, deliberately: this yields the
+                        // INNERMOST element type, which is what
+                        // f_multianewarray needs — for "[[I" it must create the
+                        // inner int[] arrays with type 10. Narrowing this to
+                        // single-dimension arrays (so that checkcast could tell
+                        // int[] from int[][]) types those inner arrays as
+                        // IS_REFARR instead, and the GC then traces their
+                        // elements as references. That fails at boot.
+                        // Consequence: the code is ambiguous between "[I" and
+                        // "[[I", so f_checkcast cannot distinguish them either —
+                        // see JVM.arrayCastOk.
                         String type = clname.substring(clname.length()-2);
                         if (type.charAt(0)=='[') {
                         	switch (type.charAt(1)) {
