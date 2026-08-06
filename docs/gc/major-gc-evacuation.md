@@ -172,6 +172,48 @@ two boards. So the sort is not memory-latency-bound in the way the sweep is, and
 no amount of cache or memory improvement will help it. **Only removing passes
 will.**
 
+## The mark phase — measured too (EP4CGX150, 2026-08-06)
+
+Mark is 591 ms at 36k live and becomes **~71% of the pause** once evacuation
+removes the sort, so it was instrumented before starting that work.
+`GC_MARK_TRACE` splits it into popping a gray object and pushing its children.
+
+| n | mark | push | push % | pop+header | µs/pop | µs/push |
+|---:|---:|---:|---:|---:|---:|---:|
+| 6024 | 164.9 | 142.5 | 86% | 22.4 | 3.72 | 3.39 |
+| 18024 | 335.4 | 269.0 | 80% | 66.4 | 3.68 | 4.98 |
+| 36024 | 591.1 | 458.8 | **78%** | 132.4 | 3.67 | 6.37 |
+
+**`push()` is 78-86% of the mark phase.** Popping a gray object and reading its
+header is flat at 3.7 µs and is not the problem.
+
+At ~6.4 µs — **640 cycles** — per call, what `push()` actually does per
+reference is:
+
+- read `mem_start` and `handleEnd` (two statics, so two main-memory reads)
+  before it does anything else
+- take `mutex` — a third static read plus a monitor pair
+- read `toSpace` (fourth static)
+- read `grayList` and write it back (fifth and sixth)
+- three `rdMem` on the handle itself, all in one cache line
+
+So roughly **six main-memory static accesses per pushed reference**, against
+three accesses that do actual work. This is the same defect class as the `imul`
+in the same method: JOP keeps statics in main memory, and this is the hottest
+loop in the collector.
+
+The fix has direct in-tree precedent — hoisting `freeList`/`useList` into locals
+is what cut the minor sweep 27% — and `compactAndSweep` already establishes that
+the per-object monitor can go on the stop-the-world path. The complication is
+that `push()` is a method, so hoisting means either passing the bounds in or
+giving the STW mark its own inlined path. **Not yet attempted; the numbers above
+are the measurement, not a fix.**
+
+Caveat on reading the µs/push column: it rises with n partly because the
+`Node[36000]` root array is a fixed size across every row, so at small n most of
+its slots are null and return from `push()` immediately. The 78% share is the
+solid number; the per-call cost is an average over a changing mix.
+
 ### What that is worth
 
 Sort is `n x ceil(log2 n) x ~2 µs`. At 36k live that is 16 passes.

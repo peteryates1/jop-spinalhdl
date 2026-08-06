@@ -354,6 +354,23 @@ public class GC {
 	public static final boolean GC_SORT_TRACE = true;
 	/** Passes the last sort made, and the microseconds its first/last pass took. */
 	public static int gcSortPasses, gcSortT1, gcSortTLast;
+
+	/**
+	 * Instrument the mark phase: how the time splits between popping a gray
+	 * object and pushing its children, and how many of each there were.
+	 *
+	 * Off for production, same folding as GC_SORT_TRACE.
+	 *
+	 * Timing wraps the whole child-push section of one object rather than each
+	 * push call — one IO_US_CNT pair per marked object instead of per reference,
+	 * so on a 570 ms phase the reads cost single-digit milliseconds. Counts are
+	 * accumulated in locals and stored once at the end; a static increment would
+	 * be a main-memory access per push and would dominate what it is counting,
+	 * which is the mistake that made push() expensive in the first place.
+	 */
+	public static final boolean GC_MARK_TRACE = true;
+	/** Gray objects popped, child refs pushed, and us spent pushing children. */
+	public static int gcMarkPops, gcMarkPushes, gcMarkTPush;
 	public static int gcOddNewCnt, gcOddNew, gcOddNewType, gcOddNewAlen, gcOddNewSize;
 	/** 1 = came from newArrayGen, 0 = newObjectGen; plus the size that was requested. */
 	public static int gcOddNewIsArray, gcOddNewReq;
@@ -659,6 +676,7 @@ public class GC {
 			getStackRoots();
 		}
 		getStaticRoots();
+		int pops = 0, pushes = 0, pushUs = 0;
 		for (;;) {
 
 			// pop one object from the gray list
@@ -686,6 +704,9 @@ public class GC {
 
 			// push all children
 
+			int mt0 = 0;
+			if (GC_MARK_TRACE) { ++pops; mt0 = Native.rd(Const.IO_US_CNT); }
+
 			// get pointer to object
 			int addr = Native.rdMem(ref);
 			int flags = Native.rdMem(ref+OFF_TYPE);
@@ -695,6 +716,7 @@ public class GC {
 				for (i=0; i<size; ++i) {
 					push(Native.rdMem(addr+i));
 				}
+				if (GC_MARK_TRACE) pushes += size;
 				// However, multianewarray does probably NOT work
 			} else if (flags==IS_OBJ){
 				// it's a plain object
@@ -705,10 +727,17 @@ public class GC {
 				for (i=0; flags!=0; ++i) {
 					if ((flags&1)!=0) {
 						push(Native.rdMem(addr+i));
+						if (GC_MARK_TRACE) ++pushes;
 					}
 					flags >>>= 1;
 				}
 			}
+			if (GC_MARK_TRACE) pushUs += Native.rd(Const.IO_US_CNT) - mt0;
+		}
+		if (GC_MARK_TRACE) {
+			gcMarkPops = pops;
+			gcMarkPushes = pushes;
+			gcMarkTPush = pushUs;
 		}
 	}
 

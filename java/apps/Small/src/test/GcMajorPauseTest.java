@@ -88,6 +88,14 @@ public class GcMajorPauseTest {
 			wrMs(GC.gcMajTCopyWords); JVMHelp.wr("   ");
 			wrInt(GC.gcMajLiveHandles); JVMHelp.wr("      ");
 			wrInt(GC.gcMajLiveWords);
+			if (GC.GC_MARK_TRACE) {
+				// pops/pushes give the access count mark actually makes;
+				// push_ms separates "walk the object's fields and enqueue"
+				// from "pop and read the header".
+				JVMHelp.wr("\n  mark: pops "); wrInt(GC.gcMarkPops);
+				JVMHelp.wr(" pushes "); wrInt(GC.gcMarkPushes);
+				JVMHelp.wr(" push_ms "); wrMs(GC.gcMarkTPush);
+			}
 			if (GC.GC_SORT_TRACE) {
 				// passes is analytically ceil(log2 n) and is printed to confirm
 				// that, not to discover it. p1/pN are the interesting pair: a
