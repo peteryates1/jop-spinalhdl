@@ -351,7 +351,7 @@ public class GC {
 	 * enough to see it. Three IO_US_CNT reads per sort, so the measurement does
 	 * not perturb what it measures.
 	 */
-	public static final boolean GC_SORT_TRACE = true;
+	public static final boolean GC_SORT_TRACE = false;
 	/** Passes the last sort made, and the microseconds its first/last pass took. */
 	public static int gcSortPasses, gcSortT1, gcSortTLast;
 
@@ -368,7 +368,7 @@ public class GC {
 	 * be a main-memory access per push and would dominate what it is counting,
 	 * which is the mistake that made push() expensive in the first place.
 	 */
-	public static final boolean GC_MARK_TRACE = true;
+	public static final boolean GC_MARK_TRACE = false;
 	/** Gray objects popped, child refs pushed, and us spent pushing children. */
 	public static int gcMarkPops, gcMarkPushes, gcMarkTPush;
 	public static int gcOddNewCnt, gcOddNew, gcOddNewType, gcOddNewAlen, gcOddNewSize;
@@ -1187,14 +1187,34 @@ public class GC {
 	/**
 	 * Prepare for incremental compaction.
 	 */
+	/**
+	 * Prepare for incremental compaction.
+	 *
+	 * <p><b>This is the only remaining caller of `sortListByAddress`, and it is
+	 * deliberately frozen.</b> The stop-the-world collector evacuates (see
+	 * `chooseEvacDest`) and no longer sorts at all; this path still slides to
+	 * `heapStart` and therefore still needs address order. The two have diverged.
+	 *
+	 * <p>It was not converted because the incremental collector is
+	 * <b>unexercised</b> — `concurrentGc` is opt-in through `setConcurrent()`,
+	 * nothing in the test suite turns it on, and item 2 records that the one
+	 * simulation aimed at this area cannot fail. Evacuation also needs its
+	 * destination reserved before the walk starts, which does not obviously
+	 * survive being cut into `COMPACT_STEP`-sized pieces with the mutator
+	 * allocating in between. Converting it blind would be a change with no way
+	 * to tell whether it worked.
+	 *
+	 * <p>Anyone enabling the incremental collector should expect the major-GC
+	 * pause characteristics measured in `major-gc-evacuation.md` <b>not</b> to
+	 * apply here: this path still pays `n * ceil(log2 n) * ~2 us` for the sort.
+	 */
 	static void prepareCompact() {
 		synchronized (mutex) {
 			compactList = sortListByAddress(useList);
 			useList = 0;
 			compactDst = heapStart;
-			// The incremental collector still slides to heapStart, so it keeps
-			// the sort. tenureBase must follow it or the card scan would look
-			// for tenure data in the wrong place after an incremental cycle.
+			// tenureBase must follow compactDst or the card scan would look for
+			// tenure data in the wrong place after an incremental cycle.
 			tenureBase = heapStart;
 			newUseList = 0;
 		}
