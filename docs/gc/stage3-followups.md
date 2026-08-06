@@ -25,7 +25,20 @@ Commits: `1916415` (measure), `8a8e154` (young list), `5e0a3a0` (256 MB full GC)
 
 ---
 
-## 1. Major GC worst case — SPLIT MEASURED, sort confirmed — **OPEN**
+## 1. Major GC worst case — **FIXED 2026-08-06**
+
+**Outcome: 2214.9 -> 865.6 ms (EP4CGX150) / 689.8 ms (XC7A100T DDR3)** at 36k
+live objects, validated on both boards. Three changes: an `imul` in `push()`
+(bug 29), hoisting `push()`'s loop-invariant statics, and replacing sliding
+compaction with evacuation so the O(n log n) address sort never runs.
+
+Design, measurements and what is still open (the object-size trade, the
+untouched incremental path) are in
+[`major-gc-evacuation.md`](major-gc-evacuation.md) and current-status items 24
+and 25. The investigation that got there is kept below, because three of its
+turns were wrong in instructive ways.
+
+### The investigation (history)
 
 **2026-08-06, XC7A100T DDR3.** `gcMajTCompact` now splits into sort / slide /
 copy, which settles the standing hypothesis and kills a second one. **Numbers,

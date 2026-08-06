@@ -64,17 +64,45 @@ project have looked fine while being wrong.
    cores at 73% with full caches; BRAM never binds (~52% at 16). Pipelining the
    arbiter costs a cycle on every memory access — see item 11 before committing.
 
-6. **Major GC — the address sort is 65% of it.** Measured 2026-08-06 on
-   XC7A100T DDR3: at 36k live objects the merge sort in `compactAndSweep` is
-   1127 ms, mark 422 ms, slide 171 ms, and the **object data copy just 9.6 ms**.
-   The pause is 1721 ms after fixing an `imul` in `push()` (see below), down
-   from 2215 ms. Two consequences: a hardware block-copy engine would buy
-   ~0.6%, so **do not build one for this**; and the next action is to replace
-   the O(n log n) linked-list merge sort. First measure its actual pass count —
-   per-handle sort cost is flat at ~30 µs from n=6k to 36k, which `n x log n`
-   does not predict, so the obvious cost model is wrong. Root cause is shared
-   with item 4: a handle is exactly one cache line and every phase walks the
-   handle table scattered. Detail in [gc/stage3-followups.md](gc/stage3-followups.md) item 1.
+6. ~~**Major GC constant unexplained**~~ — **LARGELY FIXED 2026-08-06, 2.6-3.2x.**
+   At 36k live objects the pause went **2214.9 -> 865.6 ms (EP4CGX150)** and
+   **-> 689.8 ms (XC7A100T DDR3)**, from three changes: an `imul` in `push()`
+   (bug 29), hoisting `push()`'s loop-invariant statics, and replacing sliding
+   compaction with **evacuation**, which removes the O(n log n) address sort
+   entirely (`passes 0`). `GcPauseTest`'s explicit `GC.gc()` went 161 -> 12.4 ms.
+   Validated on both boards; minor GC unchanged at 1344 ns/handle.
+   Detail: [gc/major-gc-evacuation.md](gc/major-gc-evacuation.md).
+
+   **Now mark is 64% of what remains** (432-556 ms), and `push()` is 78% of
+   mark. The one lever left there is inlining `push` into `mark`'s two loops to
+   save its ~142-cycle call — worth ~102 ms, against duplicating GC logic in the
+   most safety-critical loop in the collector. Not obviously worth it.
+
+24. **The evacuation trade is untested at larger object sizes.** Sliding left
+    objects in place once positioned, so copy was 10 ms; evacuation moves every
+    live object every time, and copy went to 86 ms. That bought removing 1085 ms
+    of sorting, so it is a large net win **at the object size the test uses** —
+    `GcMajorPauseTest` allocates `Node { int tag; Node link }`, 2 words, giving
+    ~3 live words per handle.
+
+    The two costs scale differently: **copy is O(live words), the sort it
+    replaced was O(handles x log handles)**. From the measured ~0.8 µs/word and
+    the 1085 ms sort at 36k handles, they break even at roughly **1.36M live
+    words — about 38 words (152 bytes) of average object size**. A 40-element
+    `int[]` is past that. Above it, evacuation copies more than the sort cost.
+
+    So the next performance work is **not more objects — it is fatter ones**
+    (`MAX_HANDLES` caps count at 65536 anyway). That is a falsifiable prediction
+    and is recorded as one deliberately, given how many estimates in this
+    document have been wrong. If it holds, the answer is a size threshold that
+    picks sliding for large live sets, not abandoning either.
+
+25. **Two loose ends from the GC work.** `GC_SORT_TRACE` and `GC_MARK_TRACE`
+    still default `true` — they fold away when false, but production builds
+    currently carry them. And `prepareCompact` (the incremental collector) is
+    now the **only remaining caller of `sortListByAddress`**; it still slides to
+    `heapStart` and was deliberately not touched, but that path is unexercised
+    (item 2's territory) and now diverges from the stop-the-world one.
 
 7. **Root-scan floor: 2.2 / 4.7 / 8.5 ms** across SDR / DDR3 / DDR2. Tracks
    memory latency, not clock (the SDR and DDR3 boards are both 100 MHz yet
@@ -664,9 +692,14 @@ separated "board broken" from "our design broken".
 
    **Next lever is the copy phase**, now **79%** of the pause (11.300 ms) and
    essentially unchanged throughout — see item 4.
-3. **Major GC — measured 2026-08-06, and it is an address sort.** The recorded
-   next action (time `sortUseListByAddress()` separately) is **done**. XC7A100T
-   DDR3, 36000 live objects:
+3. ~~**Major GC constant**~~ — **FIXED 2026-08-06.** Full history below; the
+   outcome is **2214.9 -> 865.6 ms (EP4CGX150) / 689.8 ms (XC7A100T)** at 36k
+   live, and the address sort no longer runs at all. Design and validation:
+   [gc/major-gc-evacuation.md](gc/major-gc-evacuation.md). Remaining work is
+   item 24 (the object-size trade) and item 25 (loose ends).
+
+   The measurement that started it — the recorded next action, time
+   `sortUseListByAddress()` separately — on XC7A100T DDR3, 36000 live objects:
 
    | live objs | pause | mark | compact | **sort** | slide | copy | live words |
    |---:|---:|---:|---:|---:|---:|---:|---:|

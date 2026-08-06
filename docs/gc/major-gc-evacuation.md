@@ -23,10 +23,50 @@ Validated: DoAll 66/66, `GcPauseTest` MAJOR OK / retained 64/64 / born-bad 0,
 Cumulative for the day: **2214.9 -> 865.6 ms (EP4CGX150) / 689.8 ms
 (XC7A100T), 2.6-3.2x**, from two static hoists and this.
 
-The trade is visible in the copy row: sliding left objects in place when they
-were already positioned, so after the first collection almost nothing moved.
-Evacuation ping-pongs the region and moves everything every time — 76 ms more
-copying to remove 1085 ms of sorting.
+## Open: the trade is untested at larger object sizes
+
+The copy row is the cost, and it is not free. Sliding left objects in place once
+positioned, so copy was 10 ms; evacuation ping-pongs the region and moves
+everything every time, so copy is 86 ms. That bought removing 1085 ms of
+sorting — a large win **at the object size this test uses**.
+`GcMajorPauseTest` allocates `Node { int tag; Node link }`: 2 words, ~3 live
+words per handle.
+
+The two costs scale on different axes:
+
+| | scales with |
+|---|---|
+| evacuation copy | **live words** |
+| the sort it replaced | **handles x log(handles)** |
+
+From the measured ~0.8 µs/word and the 1085 ms sort at 36024 handles, they break
+even near **1.36M live words — an average object of about 38 words (152
+bytes)**. A 40-element `int[]` is past that. Above that size evacuation copies
+more than the sort it removed.
+
+**So the next performance test is fatter objects, not more of them** —
+`MAX_HANDLES` caps the count at 65536 regardless. Stated as a falsifiable
+prediction on purpose: this document has a poor record with unmeasured cost
+models, and 38 words is derived from two measured constants rather than
+observed.
+
+If it holds, the fix is not to abandon either strategy but to choose between
+them on live size — `chooseEvacDest` already returns 0 to fall back to
+sort-and-slide, so the hook exists.
+
+## Open: loose ends
+
+- **`GC_SORT_TRACE` and `GC_MARK_TRACE` still default `true`.** They fold away
+  when false, but production builds currently carry the counters and their
+  `IO_US_CNT` reads.
+- **`prepareCompact` is now the only caller of `sortListByAddress`.** The
+  incremental collector still slides to `heapStart` and was deliberately left
+  alone, so the stop-the-world and incremental paths have diverged. That path is
+  also unexercised — see current-status item 2.
+- **Mark is now 64% of the pause** (432-556 ms), of which `push()` is 78%. The
+  remaining lever is inlining `push` into `mark`'s two loops to save its
+  ~142-cycle call: worth ~102 ms, against duplicating GC logic in the most
+  safety-critical loop in the collector.
 
 **Correction to an earlier draft of this note**, which said this and
 [`copy-phase-redesign.md`](copy-phase-redesign.md) share one root cause — no
