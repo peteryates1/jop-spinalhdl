@@ -462,6 +462,15 @@ public class GC {
 
 	/** Total size of everything mark() marked, in words. Sized by mark, used by the compact phase. */
 	static int markedWords;
+	/**
+	 * How many objects mark() marked. With markedWords this gives average object
+	 * size, which is what any future evacuate-versus-slide policy needs.
+	 *
+	 * A size threshold was tried here and **reverted** — it made every
+	 * large-object case 325 ms worse. See `chooseEvacDest`.
+	 */
+	static int markedHandles;
+
 
 	// --- Compact phase state ---
 	static int compactList;    // sorted snapshot of useList for compaction
@@ -699,7 +708,7 @@ public class GC {
 		// live object. A separate pass would cost a whole extra walk of useList;
 		// mark already has the type and mtab in hand, so this is at most one
 		// extra read per object.
-		int liveWords = 0;
+		int liveWords = 0, liveHandles = 0;
 		for (;;) {
 
 			// pop one object from the gray list
@@ -724,6 +733,7 @@ public class GC {
 
 			// Mark it BLACK
 			Native.wrMem(toSpace, ref+OFF_SPACE);
+			++liveHandles;
 
 			// push all children
 
@@ -767,6 +777,7 @@ public class GC {
 			if (GC_MARK_TRACE) pushUs += Native.rd(Const.IO_US_CNT) - mt0;
 		}
 		markedWords = liveWords;
+		markedHandles = liveHandles;
 		if (GC_MARK_TRACE) {
 			gcMarkPops = pops;
 			gcMarkPushes = pushes;
@@ -967,6 +978,28 @@ public class GC {
 	 * region walk upward; the next collection will usually be able to flip it
 	 * back down. That ping-pong is a semi-space flip, except it needs only
 	 * `liveWords` of headroom rather than half the heap.
+	 *
+	 * <p><b>A size threshold was tried here and reverted.</b> Evacuation copies
+	 * every live object; sliding skips objects already in position but must sort
+	 * first. That suggests a crossover at large object sizes, and
+	 * `GcObjSizeTest` appeared to confirm one at ~40 words. But it depends
+	 * entirely on which regime you are in, and `chooseEvacDest` cannot tell:
+	 *
+	 * <pre>
+	 *   steady state (stable live set, repeated GCs)
+	 *       sliding copy ~ 0 — objects are already where they belong
+	 *       GcMajorPauseTest: slide copy 10 ms vs evac 86 ms -> crossover real
+	 *   churn (live set rebuilt between collections)
+	 *       sliding copy == evacuation copy — everything moves either way
+	 *       GcObjSizeTest @200 words: slide 1624.4 ms vs evac 1624.1 -> sliding
+	 *       is strictly worse, by the whole 325 ms sort
+	 * </pre>
+	 *
+	 * The threshold assumed the steady state and cost 325 ms in every
+	 * large-object row of GcObjSizeTest on the XC7A100T. Deciding correctly
+	 * needs to know how far objects are from their slide destination, which is
+	 * not derivable from live size and handle count. Left always-evacuate;
+	 * `markedHandles` is kept for whatever measures this properly.
 	 *
 	 * @param liveWords total size to place, from mark()
 	 * @return destination start, or 0 if neither region has room

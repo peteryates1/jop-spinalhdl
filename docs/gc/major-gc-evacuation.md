@@ -23,36 +23,59 @@ Validated: DoAll 66/66, `GcPauseTest` MAJOR OK / retained 64/64 / born-bad 0,
 Cumulative for the day: **2214.9 -> 865.6 ms (EP4CGX150) / 689.8 ms
 (XC7A100T), 2.6-3.2x**, from two static hoists and this.
 
-## Open: the trade is untested at larger object sizes
+## The object-size trade — MEASURED (`GcObjSizeTest`, 2026-08-06)
 
-The copy row is the cost, and it is not free. Sliding left objects in place once
-positioned, so copy was 10 ms; evacuation ping-pongs the region and moves
-everything every time, so copy is 86 ms. That bought removing 1085 ms of
-sorting — a large win **at the object size this test uses**.
-`GcMajorPauseTest` allocates `Node { int tag; Node link }`: 2 words, ~3 live
-words per handle.
+`GcObjSizeTest` holds the handle count fixed at 12024 and varies only payload
+size, so mark does identical work in every row and copy is the only moving term.
+XC7A100T DDR3:
 
-The two costs scale on different axes:
+| obj words | live words | pause | mark | copy | µs/word |
+|---:|---:|---:|---:|---:|---:|
+| 2 | 36233 | 186.9 | 99.4 | 27.3 | 0.755 |
+| 10 | 132233 | 250.8 | 99.4 | 91.1 | 0.690 |
+| 40 | 492233 | 492.7 | 99.4 | 333.7 | 0.678 |
+| 100 | 1212233 | 976.8 | 99.4 | 817.2 | 0.674 |
+| 200 | 2412233 | 1781.8 | 99.4 | 1623.8 | 0.673 |
 
-| | scales with |
-|---|---|
-| evacuation copy | **live words** |
-| the sort it replaced | **handles x log(handles)** |
+**Mark is flat at 99.4 ms and copy is linear in live words at 0.673 µs/word**,
+exactly as the model said. The predicted crossover of ~38 words came out at ~43
+(XC7A100T) and ~40 (EP4CGX150) — the one prediction in this whole investigation
+that held.
 
-From the measured ~0.8 µs/word and the 1085 ms sort at 36024 handles, they break
-even near **1.36M live words — an average object of about 38 words (152
-bytes)**. A 40-element `int[]` is past that. Above that size evacuation copies
-more than the sort it removed.
+### The threshold that followed from it was wrong, and is reverted
 
-**So the next performance test is fatter objects, not more of them** —
-`MAX_HANDLES` caps the count at 65536 regardless. Stated as a falsifiable
-prediction on purpose: this document has a poor record with unmeasured cost
-models, and 38 words is derived from two measured constants rather than
-observed.
+The obvious conclusion — switch to sliding above ~40 words — **made every
+large-object row 325 ms worse** and was reverted. The measurement that killed it:
 
-If it holds, the fix is not to abandon either strategy but to choose between
-them on live size — `chooseEvacDest` already returns 0 to fall back to
-sort-and-slide, so the hook exists.
+| obj words | evac copy | slide copy | sort |
+|---:|---:|---:|---:|
+| 40 | 333.7 | 332.8 | 324.9 |
+| 100 | 817.5 | 817.5 | 324.7 |
+| 200 | 1624.1 | 1624.4 | 324.9 |
+
+**Sliding copies exactly as much as evacuating here**, so it is strictly worse by
+the whole cost of the sort. The crossover argument assumed sliding's copy is
+near zero, which is true only in one regime:
+
+| regime | sliding copy | who wins |
+|---|---|---|
+| **steady state** — stable live set, repeated GCs | ~0, objects already in position (`GcMajorPauseTest`: 10 ms vs evacuation's 86) | sliding, for large objects |
+| **churn** — live set rebuilt between collections | equal to evacuation's, everything moves either way (`GcObjSizeTest`) | evacuation, by the entire sort |
+
+Deciding correctly needs to know how far objects are from their slide
+destination. That is not derivable from live size and handle count, which is all
+`chooseEvacDest` has. Left as always-evacuate; `markedHandles` is kept for
+whatever measures it properly.
+
+The EP4CGX150 shows the steady-state case by accident: at 100 words its small
+heap forced the sort-and-slide fallback (`passes 14`), and sliding's copy was
+**169.2 ms for 1.21M words — 0.14 µs/word against 0.72 elsewhere**, because most
+objects were already in place. There, sliding genuinely won: 662.6 ms against an
+extrapolated ~1062 for evacuation.
+
+So both regimes are real, evacuation is not a strict improvement, and the honest
+position is that it is much better in the churn case, worse for large objects in
+the steady state, and there is currently no cheap way to tell them apart.
 
 ## Open: loose ends
 
