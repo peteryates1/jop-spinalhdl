@@ -202,12 +202,37 @@ three accesses that do actual work. This is the same defect class as the `imul`
 in the same method: JOP keeps statics in main memory, and this is the hottest
 loop in the collector.
 
-The fix has direct in-tree precedent — hoisting `freeList`/`useList` into locals
-is what cut the minor sweep 27% — and `compactAndSweep` already establishes that
-the per-object monitor can go on the stop-the-world path. The complication is
-that `push()` is a method, so hoisting means either passing the bounds in or
-giving the STW mark its own inlined path. **Not yet attempted; the numbers above
-are the measurement, not a fix.**
+### Applied, and it calibrated something more useful than the win
+
+Hoisting `mem_start`/`handleEnd`/`toSpace` into locals at the three loop call
+sites (`mark`, `getStaticRoots`, `getStackRoots`) and passing them to a
+`pushFast`: **mark 591.1 -> 542.5 ms (-8.2%)**, pause 1897 -> 1849 ms. Validated
+on EP4CGX150 — DoAll 66/66, MultiArray and IntHandler OK, GcStressTest 320k+
+rounds with the identical 0.42 bytes/round slope.
+
+**The first attempt was a 22% regression**, and that is the valuable part. It
+kept the logic in one place by having `pushFast` delegate to a `pushInto` that
+took the hoisted values — one extra method call per push. Mark went 591 -> 693
+ms. Collapsing the delegation and inlining the body gave the -8.2% above.
+
+Two costs fall out, and they invert the guidance this codebase has been working
+from:
+
+| | cost | note |
+|---|---:|---|
+| JOP method call | **~142 cycles** | 102 ms / 72020 pushes, from the regression |
+| main-memory static read | **~22 cycles** | 48 ms / 72020 / 3, from the fix |
+
+**A method call costs about 6.5 static reads.** The established pattern here has
+been "hoist statics" — it cut the minor sweep 27% — and the estimate going into
+this change was that six statics were ~60% of `push`'s 637 cycles. They were
+~11%. The estimate was 3x too high, and the *call* was the bigger term all along.
+
+What remains: `push` is 570 cycles, of which ~142 is its own invoke. Inlining it
+into `mark`'s two loops would take ~102 ms off a 542 ms mark (19%), but it
+duplicates GC logic into the most safety-critical loop in the collector for 5.5%
+of the pause. **Not worth it while the sort is still 1085 ms** — evacuation
+removes that entirely and is the better use of the same risk budget.
 
 Caveat on reading the µs/push column: it rises with n partly because the
 `Node[36000]` root array is a fixed size across every row, so at small n most of

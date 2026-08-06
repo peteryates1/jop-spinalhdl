@@ -576,52 +576,47 @@ public class GC {
 	}
 
 	/**
-	 * Add object to the gray list/stack
-	 * @param ref
+	 * Push onto the gray list, with the loop-invariant statics already in hand.
+	 *
+	 * `push()` was 78% of the major GC's mark phase at ~640 cycles per
+	 * reference, and the cost was not the three `rdMem` that do real work: it
+	 * read SIX statics per call (`mem_start`, `handleEnd`, `mutex`, `toSpace`,
+	 * and `grayList` read then written), and statics live in main memory on JOP.
+	 * Callers in a loop read the invariant three once and pass them down —
+	 * `memStart`/`hEnd` are fixed at init, `markVal` for the whole collection.
+	 *
+	 * `grayList` and the monitor are deliberately NOT hoisted. `gc()` can run
+	 * with `concurrentGc` set, and the write barrier pushes onto `grayList`, so
+	 * caching the head across the mark loop needs an argument about what can run
+	 * during a collection that has not been made. Three of the six go; the other
+	 * three stay until that argument exists.
 	 */
-	static void push(int ref) {
-
-		// Explicit null guard -- prevents hardware NPE when GC's conservative
-		// stack scanner passes address 0 to Native.rdMem() during handle checks.
+	static void pushFast(int ref, int memStart, int hEnd, int markVal) {
 		if (ref == 0) return;
-
-		// Only objects that are referenced by a handle in the
-		// handle area are considered for GC.
-		// Null pointer and references to static strings are not
-		// investigated.
-		if (ref<mem_start || ref>=handleEnd) {
-			return;
-		}
-		// does the reference point to a handle start?
-		// TODO: happens in concurrent
-		if ((ref&0x7)!=0) {
-//				log("a not aligned handle");
-			return;
-		}
+		if (ref<memStart || ref>=hEnd) return;
+		if ((ref&0x7)!=0) return;
 
 		synchronized (mutex) {
-			// Is this handle on the free list?
-			// Is possible when using conservative stack scanning
-			if (Native.rdMem(ref+OFF_PTR)==0) {
-				// TODO: that happens in concurrent!
-//				log("push of a handle with 0 at OFF_PRT!", ref);
-				return;
-			}
-
-			// Is it already marked (black)?
-			if (Native.rdMem(ref+OFF_SPACE)==toSpace) {
-//				log("push: already marked");
-				return;
-			}
-
-			// only objects not already in the gray list
-			// are added
+			// Body inlined rather than calling pushInto. Delegating cost 102 ms
+			// of a 591 ms mark phase — a JOP method call is ~142 cycles, more
+			// than the three main-memory static reads this hoisting removes, so
+			// the first version of this change was a 22% regression. One call
+			// per push is the budget; there is no room for a second.
+			if (Native.rdMem(ref+OFF_PTR)==0) return;
+			if (Native.rdMem(ref+OFF_SPACE)==markVal) return;
 			if (Native.rdMem(ref+OFF_GREY)==0) {
-				// pointer to former gray list head
 				Native.wrMem(grayList, ref+OFF_GREY);
 				grayList = ref;
 			}
 		}
+	}
+
+	/**
+	 * Add object to the gray list/stack
+	 * @param ref
+	 */
+	static void push(int ref) {
+		pushFast(ref, mem_start, handleEnd, toSpace);
 	}
 
 	/**
@@ -631,9 +626,10 @@ public class GC {
 	static void getStackRoots() {
 		int i, j, cnt;
 		synchronized (mutex) {
+			int memStart = mem_start, hEnd = handleEnd, markVal = toSpace;
 			i = Native.getSP();
 			for (j = Const.STACK_OFF; j <= i; ++j) {
-				push(Native.rdIntMem(j));
+				pushFast(Native.rdIntMem(j), memStart, hEnd, markVal);
 			}
 			// Stacks from the other threads
 			cnt = RtThreadImpl.getCnt();
@@ -643,7 +639,7 @@ public class GC {
 					if (mem != null) {
 						int sp = RtThreadImpl.getSP(i) - Const.STACK_OFF;
 						for (j = 0; j <= sp; ++j) {
-							push(mem[j]);
+							pushFast(mem[j], memStart, hEnd, markVal);
 						}
 					}
 				}
@@ -658,8 +654,9 @@ public class GC {
 	private static void getStaticRoots() {
 		int addr = Native.rdMem(addrStaticRefs);
 		int cnt = Native.rdMem(addrStaticRefs+1);
+		int memStart = mem_start, hEnd = handleEnd, markVal = toSpace;
 		for (int i=0; i<cnt; ++i) {
-			push(Native.rdMem(addr+i));
+			pushFast(Native.rdMem(addr+i), memStart, hEnd, markVal);
 		}
 	}
 
@@ -676,6 +673,11 @@ public class GC {
 			getStackRoots();
 		}
 		getStaticRoots();
+		// Loop-invariant for the whole phase: mem_start/handleEnd are fixed at
+		// init, toSpace for the duration of a collection. Reading them once here
+		// instead of inside every push removes three main-memory accesses per
+		// traced reference.
+		int memStart = mem_start, hEnd = handleEnd, markVal = toSpace;
 		int pops = 0, pushes = 0, pushUs = 0;
 		for (;;) {
 
@@ -714,7 +716,7 @@ public class GC {
 				// is an array of references
 				int size = Native.rdMem(ref+OFF_MTAB_ALEN);
 				for (i=0; i<size; ++i) {
-					push(Native.rdMem(addr+i));
+					pushFast(Native.rdMem(addr+i), memStart, hEnd, markVal);
 				}
 				if (GC_MARK_TRACE) pushes += size;
 				// However, multianewarray does probably NOT work
@@ -726,7 +728,7 @@ public class GC {
 				flags = Native.rdMem(flags+Const.MTAB2GC_INFO);
 				for (i=0; flags!=0; ++i) {
 					if ((flags&1)!=0) {
-						push(Native.rdMem(addr+i));
+						pushFast(Native.rdMem(addr+i), memStart, hEnd, markVal);
 						if (GC_MARK_TRACE) ++pushes;
 					}
 					flags >>>= 1;
