@@ -1,10 +1,48 @@
 # Major GC — evacuation instead of sliding
 
-**Status: design note, nothing implemented.** Sibling of
-[`copy-phase-redesign.md`](copy-phase-redesign.md); the two share one root cause
-(every GC phase walks the handle table with no spatial locality, because a
-handle is exactly one 256-bit cache line) and should probably be merged once
-both have been through hardware.
+**Status: design note, nothing implemented.**
+
+**Correction to an earlier draft of this note**, which said this and
+[`copy-phase-redesign.md`](copy-phase-redesign.md) share one root cause — no
+spatial locality on the handle table. The pass-count measurement below
+undermines that, and the two problems should not be planned as one:
+
+| | minor GC copy phase | major GC sort |
+|---|---|---|
+| evidence | 132 cycles/handle at 75 MHz vs 162 at 100 MHz — scales with **memory latency**, not clock | pass 1 costs the same as pass N; within 4% across SDR and DDR3+L2 |
+| diagnosis | **locality**: ~6400 scattered line fetches to find ~66 survivors | **algorithmic**: `ceil(log2 n)` passes, each doing the same uniform work |
+| fix | dense side arrays (copy-phase-redesign) | remove the passes (this note) |
+
+They smell alike because both walk the handle table. They are not the same
+problem, and evacuation does nothing for the minor pause.
+
+**What would help both** is de-interleaving the handle: `OFF_PTR` must stay at
+offset 0 (the hardware's `stgf` indirection depends on it), but the GC's own
+bookkeeping — `OFF_NEXT`, `OFF_SPACE`, `OFF_GREY` — could live in dense arrays
+indexed by handle number, eight per cache line instead of eight lines. That is
+copy-phase-redesign's plan and it composes with evacuation rather than competing.
+Consistent with the measurements, but not itself measured.
+
+## This is not a new mechanism — the minor GC already does it
+
+`copyAndSweepYoung` promotes survivors exactly this way today:
+
+```java
+int dst = allocPtr - size;
+allocPtr = dst;
+for (int i = 0; i < size; ++i) Native.wrMem(Native.rdMem(ptr+i), dst+i);
+Native.wrMem(dst, ref+OFF_PTR);      // one word relocates the object
+```
+
+Fresh destination, list order, no sort — and `sortListByAddress` is called from
+only two places, both major-GC paths (`compactAndSweep` and `prepareCompact`).
+So the proposal is to make the major GC do what the minor GC has been doing on
+four boards through the whole GC stress suite, not to invent something. That is
+the strongest argument for this over a linear-time sort: the relocation
+mechanism is already proven in-tree.
+
+**It does not change the minor GC's algorithm.** It does touch the minor GC's
+*correctness*, through the shared layout invariants — see below.
 
 Measurements: [`../current-status.md`](../current-status.md) §3 item 3.
 Not repeated here.
