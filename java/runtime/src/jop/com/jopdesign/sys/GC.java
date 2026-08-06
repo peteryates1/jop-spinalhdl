@@ -449,6 +449,20 @@ public class GC {
 	/** Young objects allocated since the last minor GC. */
 	static int youngObjects;
 
+	/**
+	 * Start of the compacted tenure region. Was implicitly `heapStart`.
+	 *
+	 * The major GC evacuates rather than slides: live objects are copied to a
+	 * destination that does not overlap any live source, so they can be
+	 * processed in whatever order `useList` happens to be in and the O(n log n)
+	 * address sort disappears. The destination is not always `heapStart`, so the
+	 * region's base has to be tracked. Live tenure is `[tenureBase, copyPtr)`.
+	 */
+	static int tenureBase;
+
+	/** Total size of everything mark() marked, in words. Sized by mark, used by the compact phase. */
+	static int markedWords;
+
 	// --- Compact phase state ---
 	static int compactList;    // sorted snapshot of useList for compaction
 	static int compactDst;     // compaction destination pointer
@@ -487,7 +501,8 @@ public class GC {
 			heapStart = mem_start + handleArea;
 			heapSize = mem_size - heapStart;
 
-			// Compacted tenure data grows upward from heapStart (copyPtr).
+			// Compacted tenure data grows upward from tenureBase (copyPtr).
+			tenureBase = heapStart;
 			copyPtr = heapStart;
 
 			// Decide the collector BEFORE laying out the heap: the two modes
@@ -679,6 +694,12 @@ public class GC {
 		// traced reference.
 		int memStart = mem_start, hEnd = handleEnd, markVal = toSpace;
 		int pops = 0, pushes = 0, pushUs = 0;
+		// Total size of everything marked, accumulated here so the compact phase
+		// can pick an evacuation destination that provably does not overlap any
+		// live object. A separate pass would cost a whole extra walk of useList;
+		// mark already has the type and mtab in hand, so this is at most one
+		// extra read per object.
+		int liveWords = 0;
 		for (;;) {
 
 			// pop one object from the gray list
@@ -715,6 +736,7 @@ public class GC {
 			if (flags==IS_REFARR) {
 				// is an array of references
 				int size = Native.rdMem(ref+OFF_MTAB_ALEN);
+				liveWords += size;                   // 1 word per element
 				for (i=0; i<size; ++i) {
 					pushFast(Native.rdMem(addr+i), memStart, hEnd, markVal);
 				}
@@ -723,9 +745,11 @@ public class GC {
 			} else if (flags==IS_OBJ){
 				// it's a plain object
 				// get pointer to method table
-				flags = Native.rdMem(ref+OFF_MTAB_ALEN);
+				int mtab = Native.rdMem(ref+OFF_MTAB_ALEN);
+				// instance size lives just before the method table
+				liveWords += Native.rdMem(mtab-Const.CLASS_HEADR);
 				// get real flags
-				flags = Native.rdMem(flags+Const.MTAB2GC_INFO);
+				flags = Native.rdMem(mtab+Const.MTAB2GC_INFO);
 				for (i=0; flags!=0; ++i) {
 					if ((flags&1)!=0) {
 						pushFast(Native.rdMem(addr+i), memStart, hEnd, markVal);
@@ -733,9 +757,16 @@ public class GC {
 					}
 					flags >>>= 1;
 				}
+			} else if (flags==7 || flags==11) {
+				// long/double array: 2 words per element
+				liveWords += Native.rdMem(ref+OFF_MTAB_ALEN) << 1;
+			} else {
+				// other primitive arrays: 1 word per element
+				liveWords += Native.rdMem(ref+OFF_MTAB_ALEN);
 			}
 			if (GC_MARK_TRACE) pushUs += Native.rd(Const.IO_US_CNT) - mt0;
 		}
+		markedWords = liveWords;
 		if (GC_MARK_TRACE) {
 			gcMarkPops = pops;
 			gcMarkPushes = pushes;
@@ -922,31 +953,86 @@ public class GC {
 	}
 
 	/**
-	 * Compact phase: slide all marked (live) objects down to eliminate gaps.
-	 * Walk the use list IN ADDRESS ORDER. For each marked handle:
-	 *   - compute new position at compactPtr (grows from heapStart)
-	 *   - copy object data to new position (forward copy, safe since dest < source)
-	 *   - update handle's OFF_PTR to new position
+	 * Pick an evacuation destination that cannot overlap any live object, or
+	 * return 0 if none exists and the caller must fall back to sort-and-slide.
+	 *
+	 * On entry to a major GC every live object lies in one of two regions —
+	 * `[tenureBase, copyPtr)` (previously compacted) and `[allocPtr, nurseryTop)`
+	 * (promotions, plus the nursery once `spliceYoungIntoUse` has run) — with a
+	 * large free gap between them. A destination disjoint from both means
+	 * objects can be copied in any order, which is what removes the sort.
+	 *
+	 * Preference is `heapStart`, which reclaims any creep from previous
+	 * collections and keeps live data low. Falling back to the gap makes the
+	 * region walk upward; the next collection will usually be able to flip it
+	 * back down. That ping-pong is a semi-space flip, except it needs only
+	 * `liveWords` of headroom rather than half the heap.
+	 *
+	 * @param liveWords total size to place, from mark()
+	 * @return destination start, or 0 if neither region has room
+	 */
+	static int chooseEvacDest(int liveWords) {
+		// Below the current tenure region: disjoint from [tenureBase, copyPtr)
+		// by construction, and from [allocPtr, nurseryTop) because allocPtr is
+		// above copyPtr which is above tenureBase.
+		if (heapStart + liveWords <= tenureBase) {
+			return heapStart;
+		}
+		// Into the free gap: above every previously compacted object, and below
+		// every promotion provided it fits under allocPtr.
+		if (copyPtr + liveWords <= allocPtr) {
+			return copyPtr;
+		}
+		return 0;
+	}
+
+	/**
+	 * Compact phase: evacuate all marked (live) objects to a fresh region.
+	 *
+	 * Walk the use list in WHATEVER ORDER IT IS IN. For each marked handle:
+	 *   - copy object data to the destination bump pointer
+	 *   - update the handle's OFF_PTR — one word relocates the object, which is
+	 *     the whole benefit of JOP's handle indirection
 	 * Unmarked handles are freed.
 	 *
+	 * This used to slide down to heapStart, which forced the list to be sorted
+	 * by address first so that a destination never overwrote a not-yet-copied
+	 * source. That sort was 59% of the major GC pause (1085 ms of 1849 at 36k
+	 * live objects) and is `n * ceil(log2 n) * ~2 us` — measured on two boards
+	 * with different memory systems to within 4%, so no cache or memory
+	 * improvement would have touched it. Evacuating to a disjoint region removes
+	 * the ordering requirement entirely.
+	 *
+	 * The minor GC has always worked this way: `copyAndSweepYoung` promotes
+	 * survivors to a fresh destination in list order and has never sorted
+	 * anything. This makes the two collectors consistent rather than inventing a
+	 * mechanism.
+	 *
 	 * After compaction:
-	 *   - copyPtr = end of compacted data (next free word from bottom)
-	 *   - allocPtr = top of heap (new allocations grow down from here)
-	 *   - All live data is contiguous in [heapStart, copyPtr)
+	 *   - copyPtr = end of live data, allocPtr = top of heap
+	 *   - all live data is contiguous in [tenureBase, copyPtr)
 	 */
 	static void compactAndSweep() {
 
 		int ref;
-		int compactPtr = heapStart;
 
 		int st0 = 0;
 		if (GC_TIMING) st0 = Native.rd(Const.IO_US_CNT);
 
+		int dest = chooseEvacDest(markedWords);
+		int compactPtr;
+
 		synchronized (mutex) {
-			// CRITICAL: sort by object address before compaction.
-			// Without this, sliding compaction can overwrite objects
-			// that haven't been copied yet.
-			sortUseListByAddress();
+			if (dest == 0) {
+				// No disjoint region big enough. Fall back to sliding, which
+				// needs address order so that dest <= source for every object.
+				sortUseListByAddress();
+				compactPtr = heapStart;
+				tenureBase = heapStart;
+			} else {
+				compactPtr = dest;
+				tenureBase = dest;
+			}
 
 			ref = useList;		// get start of the list
 			useList = 0;		// new uselist starts empty
@@ -1004,11 +1090,15 @@ public class GC {
 
 				// Only move if the new position is different
 				if (oldAddr != compactPtr && size > 0) {
-					// Copy data to compacted position (forward copy).
-					// Safe because compactPtr <= oldAddr when sorted
-					// by ascending address (proven by induction:
-					// compactPtr advances by sum of sizes of objects
-					// below this one, which <= their address span).
+					// Copy data to its new position, ascending.
+					//
+					// When evacuating, source and destination regions are
+					// disjoint by construction (see chooseEvacDest), so there is
+					// no aliasing at all and the direction does not matter. On
+					// the sort-and-slide fallback the old argument still holds:
+					// compactPtr <= oldAddr because the list is in ascending
+					// address order and compactPtr advances by the sum of sizes
+					// of objects below this one, which is <= their address span.
 					//
 					// Timed separately: this is the one part of the compact
 					// phase a hardware block-copy engine could take over (the
@@ -1069,6 +1159,10 @@ public class GC {
 			compactList = sortListByAddress(useList);
 			useList = 0;
 			compactDst = heapStart;
+			// The incremental collector still slides to heapStart, so it keeps
+			// the sort. tenureBase must follow it or the card scan would look
+			// for tenure data in the wrong place after an incremental cycle.
+			tenureBase = heapStart;
 			newUseList = 0;
 		}
 	}
@@ -1332,7 +1426,7 @@ public class GC {
 			gcMajorLast = Native.rd(Const.IO_US_CNT) - gt0;
 			if (gcMajorLast > gcMajorMax) gcMajorMax = gcMajorLast;
 			++gcMajorCount;
-			gcMajLiveWords = copyPtr - heapStart;   // compacted live data
+			gcMajLiveWords = copyPtr - tenureBase;   // compacted live data
 		}
 	}
 
@@ -1452,7 +1546,7 @@ public class GC {
 	 * Scan dirty cards for tenure->nursery pointers (conservative).
 	 *
 	 * Tenure is TWO used regions with a large free gap between them:
-	 *   [heapStart, copyPtr)    major-GC compacted data, grows up
+	 *   [tenureBase, copyPtr)   major-GC compacted data, grows up
 	 *   [allocPtr,  tenureTop)  promotions, grow down
 	 * Nothing is allocated in the gap, so the write barrier can never have
 	 * marked a card there, and there would be nothing to trace even if a stale
@@ -1465,7 +1559,7 @@ public class GC {
 	 * I/O accesses, so this is not something a tighter loop can fix.
 	 */
 	static void scanCards() {
-		scanCardRange(heapStart, copyPtr);
+		scanCardRange(tenureBase, copyPtr);
 		scanCardRange(allocPtr, tenureTop);
 	}
 

@@ -1,6 +1,29 @@
 # Major GC — evacuation instead of sliding
 
-**Status: design note, nothing implemented.**
+**Status: IMPLEMENTED and hardware-validated (EP4CGX150, 2026-08-06).**
+
+| @36k live | before | after |
+|---|---:|---:|
+| **major pause** | 1849.2 ms | **865.6 ms** (-53%) |
+| sort | 1084.9 ms | **0.006 ms** (`passes 0` — never runs) |
+| compact | 1306.1 ms | 309.4 ms |
+| mark | 542.5 ms | 555.6 ms (+13, the `liveWords` accumulation) |
+| copy | 10.1 ms | 86.5 ms (every object moves now, not just displaced ones) |
+
+`GcPauseTest`'s explicit `GC.gc()` went **161 -> 12.4 ms**. Minor GC untouched:
+sweep 1344 ns/handle against 1346 before.
+
+Validated: DoAll 66/66, `GcPauseTest` MAJOR OK / retained 64/64 / born-bad 0,
+`MultiArrayGcTest` and `IntHandlerGcTest` OK, `GcStressTest` 320k+ rounds with
+0 errors and an unchanged 0.42 bytes/round promotion slope.
+
+Cumulative for the day: **2214.9 -> 865.6 ms, 2.56x**, from two static hoists
+and this.
+
+The trade is visible in the copy row: sliding left objects in place when they
+were already positioned, so after the first collection almost nothing moved.
+Evacuation ping-pongs the region and moves everything every time — 76 ms more
+copying to remove 1085 ms of sorting.
 
 **Correction to an earlier draft of this note**, which said this and
 [`copy-phase-redesign.md`](copy-phase-redesign.md) share one root cause — no
