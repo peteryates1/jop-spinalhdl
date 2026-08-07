@@ -1,4 +1,4 @@
-# Where we are — 2026-08-05
+# Where we are — 2026-08-07
 
 Resumption notes covering the GC work, the A-E115FB DDR2 bring-up, SMP, and the
 board/probe setup. Written to be read cold.
@@ -31,14 +31,14 @@ in these docs was wrong for anyone reading rendered Markdown. Keep the bullet
 form.
 
 IDs are assigned on creation and then grouped by topic, so the page runs 1-16,
-24, 25, ... 23, ... 17-22 ... 21. They are referenced from `bugs-and-issues.md`,
+24, 25, ... 23, 26, 27, ... 17-22 ... 21. They are referenced from `bugs-and-issues.md`,
 the GC design notes and a good many commit messages, so renumbering would
 silently invalidate all of that. Use this to find one:
 
 | # | section | # | section | # | section |
 |---|---|---|---|---|---|
 | 1-3 | Blocking / correctness | 11 | The measurement gap | 21 | Boards |
-| 4-7, 24, 25 | Performance | 12-16, 23, 26 | Smaller | 17-20, 22 | Compute units |
+| 4-7, 24, 25 | Performance | 12-16, 23, 26, 27 | Smaller | 17-20, 22 | Compute units |
 | 8-10 | Hardware / infrastructure | | | | |
 
 ### Blocking / correctness
@@ -84,18 +84,27 @@ silently invalidate all of that. Use this to find one:
    arbiter costs a cycle on every memory access — see item 11 before committing.
 
 - **6.** ~~**Major GC constant unexplained**~~ — **LARGELY FIXED 2026-08-06, 2.6-3.2x.**
-   At 36k live objects the pause went **2214.9 -> 865.6 ms (EP4CGX150)** and
-   **-> 689.8 ms (XC7A100T DDR3)**, from three changes: an `imul` in `push()`
-   (bug 29), hoisting `push()`'s loop-invariant statics, and replacing sliding
-   compaction with **evacuation**, which removes the O(n log n) address sort
-   entirely (`passes 0`). `GcPauseTest`'s explicit `GC.gc()` went 161 -> 12.4 ms.
-   Validated on both boards; minor GC unchanged at 1344 ns/handle.
+   At 36k live objects, from three changes: an `imul` in `push()` (bug 29),
+   hoisting `push()`'s loop-invariant statics, and replacing sliding compaction
+   with **evacuation**, which removes the O(n log n) address sort entirely.
+
+   | board | before | after |
+   |---|---:|---:|
+   | EP4CGX150 SDR 100 MHz | 2214.9 ms | **859.1 ms** |
+   | CYC5000 SDR 80 MHz | — | **846.4 ms** |
+   | XC7A100T DDR3 100 MHz | 2214.9 ms | **689.8 ms** * |
+
+   \* the only figure still measured with `GC_SORT_TRACE`/`GC_MARK_TRACE` on,
+   so it is ~6 ms pessimistic; not re-run since item 25 turned them off.
+   The CYC5000 beating the EP4CGX150 on a slower clock is the latency-bound
+   behaviour showing through. `GcPauseTest`'s explicit `GC.gc()` went
+   161 -> 12.4 ms. Minor GC unchanged (1344 / 1315 ns/handle).
    Detail: [gc/major-gc-evacuation.md](gc/major-gc-evacuation.md).
 
-   **Now mark is 64% of what remains** (432-556 ms), and `push()` is 78% of
-   mark. The one lever left there is inlining `push` into `mark`'s two loops to
-   save its ~142-cycle call — worth ~102 ms, against duplicating GC logic in the
-   most safety-critical loop in the collector. Not obviously worth it.
+   **Mark is now ~64% of what remains.** The one lever left is inlining `push`
+   into `mark`'s two loops to save its ~142-cycle call — worth ~102 ms of a
+   542 ms mark, against duplicating GC logic in the most safety-critical loop
+   in the collector. Not obviously worth it.
 
 - **24.** ~~**The evacuation trade is untested at larger object sizes**~~ —
     **MEASURED 2026-08-06, and the obvious fix was wrong.** `GcObjSizeTest`
@@ -170,7 +179,9 @@ silently invalidate all of that. Use this to find one:
     whether a cycle of arbiter latency is worth 4+ cores (item 5); whether the
     caches (2,213 LE/core, 33% of a core) earn their area; whether the copy
     redesign helps real workloads (item 4); and whether the double bytecodes are
-    used enough to deserve microcode at all (item 20). Currently all four are
+    used enough to deserve microcode at all (item 20); and — added 2026-08-07 —
+    whether real workloads sit in the churn or steady-state regime, which is
+    what decides evacuate-versus-slide (item 24). Currently all five are
     reasoned rather than measured. Probably the highest-leverage thing to build next —
     and items 1 and 2 need a multi-core allocating application anyway, so the
     first slice of this is already on the critical path (see *Coupling*).
@@ -260,6 +271,15 @@ silently invalidate all of that. Use this to find one:
     `ArrayCastTest` is now **36 checks**, passing on EP4CGX150, XC7A100T and
     Colorlight i5. DoAll 66/66, `MultiDimTest` OK, `GcStressTest` 240k+ clean.
 
+- **27.** **The `aastore` type check's cost was never measured.** Item 26 added
+    a covariant store check to `f_aastore`, which every reference-array store
+    goes through. The common case is inlined — three reads and no call, chosen
+    because a helper call is ~142 cycles — but "chosen because" is reasoning,
+    not measurement, and this document's record on that is four wrong out of
+    five. Nothing in the suite times array stores, so the check could be costing
+    a few percent or a third and nobody would know. Needs a store-heavy
+    microbenchmark, or the item 11 application benchmark, before the design is
+    called settled.
 
 ### Compute units and bytecode implementation
 
