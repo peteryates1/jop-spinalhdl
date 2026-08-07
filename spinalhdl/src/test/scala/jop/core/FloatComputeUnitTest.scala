@@ -335,6 +335,48 @@ class FloatComputeUnitTest extends AnyFunSuite {
     }
   }
 
+  /**
+   * Exactly ONE operand zero, against a magnitude below 1.0.
+   *
+   * This is the case the suite missed, and it was wrong in hardware for months.
+   * `unpackFloat` flushes zero to `exp := 0`, which is the UNBIASED exponent of
+   * 1.0f, so the exponent compare treated 0.0 as if it were ~1.0 and called
+   * every magnitude < 1.0 "less than zero". `0.75f <= 0` came out TRUE, which
+   * made HashMap's constructor throw on its default load factor and took
+   * CollectionTest down on any FCU build (current-status item 28).
+   *
+   * It stayed hidden because every other fcmp case here uses 1.0/2.0 — at
+   * exponent >= 0 the comparison happens to come out right — and `fcmp_zeros`
+   * only ever tested zero against zero.
+   *
+   * runFloat(dut, x, y, op) puts y in value1 and x in value2, so the assertion
+   * text below reads value1 <op> value2.
+   */
+  test("fcmp_one_operand_zero") {
+    compileFull().doSim(seed = 42) { dut =>
+      implicit val cd: ClockDomain = dut.clockDomain
+      cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
+
+      // The exact expression that failed: HashMap's `loadFactor <= 0`.
+      assertBits(runFloat(dut, 0.0f, 0.75f, FCMPG), int32Bits(1),  "fcmpg: 0.75 > 0 -> +1")
+      assertBits(runFloat(dut, 0.0f, 0.75f, FCMPL), int32Bits(1),  "fcmpl: 0.75 > 0 -> +1")
+      assertBits(runFloat(dut, 0.75f, 0.0f, FCMPG), int32Bits(-1), "fcmpg: 0 < 0.75 -> -1")
+
+      // Other sub-1.0 magnitudes, both signs.
+      assertBits(runFloat(dut, 0.0f, 0.5f, FCMPL),   int32Bits(1),  "fcmpl: 0.5 > 0 -> +1")
+      assertBits(runFloat(dut, 0.0f, -0.75f, FCMPL), int32Bits(-1), "fcmpl: -0.75 < 0 -> -1")
+      assertBits(runFloat(dut, -0.75f, 0.0f, FCMPL), int32Bits(1),  "fcmpl: 0 > -0.75 -> +1")
+
+      // Against negative zero, which must behave as zero.
+      assertBits(runFloat(dut, -0.0f, 0.75f, FCMPG), int32Bits(1),  "fcmpg: 0.75 > -0.0 -> +1")
+
+      // Magnitudes >= 1.0 against zero: these already worked, keep them honest.
+      assertBits(runFloat(dut, 0.0f, 1.0f, FCMPL), int32Bits(1),  "fcmpl: 1.0 > 0 -> +1")
+      assertBits(runFloat(dut, 0.0f, 2.0f, FCMPL), int32Bits(1),  "fcmpl: 2.0 > 0 -> +1")
+      assertBits(runFloat(dut, 1.0f, 0.0f, FCMPL), int32Bits(-1), "fcmpl: 0 < 1.0 -> -1")
+    }
+  }
+
   // ========================================================================
   // Overflow / underflow
   // ========================================================================

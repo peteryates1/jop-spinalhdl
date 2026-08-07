@@ -610,7 +610,18 @@ case class FloatComputeUnit(config: FloatComputeUnitConfig = FloatComputeUnitCon
           state := State.DONE
         } otherwise {
           when(aZero && bZero) {
+            // IEEE: +0.0 == -0.0
             resultReg := U(0, 64 bits)
+          } elsewhen (aZero) {
+            // a is zero, b is not. unpackFloat flushes zero to exp := 0, which
+            // is the UNBIASED exponent of 1.0f, so falling through to the
+            // exponent compare below would treat 0.0 as if it were ~1.0 and
+            // call every magnitude < 1.0 "less than zero". Decide on b's sign
+            // instead: b < 0 means a > b.
+            resultReg := Mux(bSign, B"32'x00000001", B"32'xFFFFFFFF").asUInt.resize(64)
+          } elsewhen (bZero) {
+            // b is zero, a is not — mirror of the above.
+            resultReg := Mux(aSign, B"32'xFFFFFFFF", B"32'x00000001").asUInt.resize(64)
           } otherwise {
             val aLess = Bool()
             val bLess = Bool()
