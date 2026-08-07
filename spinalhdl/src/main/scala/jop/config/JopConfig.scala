@@ -763,7 +763,15 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       devices = Map(
-        "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N")),
+        // 1 Mbaud, not the 2 Mbaud default. The on-board CH340N drops
+        // characters at 2 Mbaud on this board: a GcPauseTest run came back with
+        // "generatlona disabled", "GsPaueTest done" and hSize=6696246 where the
+        // real value is 66562496 — text still readable, numbers silently wrong,
+        // which is the worst kind of lossy. 100 MHz / (1e6 x 5) = 20 exactly, so
+        // there is no baud error compounding a marginal cable. Drop to 500000
+        // (divider 40, also exact) if 1 Mbaud still loses characters.
+        "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"),
+          params = Map("baudRate" -> 1000000)),
         "eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true, "phyDataWidth" -> 8),
           devicePart = Some("RTL8211EG")),
         "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))),

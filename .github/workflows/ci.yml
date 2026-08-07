@@ -158,6 +158,29 @@ jobs:
       - name: Run formal verification
         run: sbt -J-Xmx4g "testOnly jop.formal.* -- -u target/test-reports"
 
+      # ScalaTest's -u writer dumps all 64 JVM system properties into a
+      # <properties> block, unescaped and all on one line — line.separator's
+      # value is a literal newline inside an attribute. It parses locally but
+      # broke dorny/test-reporter on CI with "Invalid attribute name" at a line
+      # that is inside that block, and the values there differ between runners,
+      # so the failure is environment-dependent and not reproducible locally.
+      # None of it is test data. Strip the block and any stray control
+      # characters before the reporter sees the file.
+      - name: Sanitise JUnit XML before reporting
+        if: always()
+        run: |
+          python3 - <<'PYEOF'
+          import glob, re, sys
+          ctrl = re.compile(rb'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+          for f in glob.glob('target/test-reports/**/*.xml', recursive=True):
+              d = open(f, 'rb').read()
+              n = re.sub(rb'<properties>.*?</properties>', b'<properties/>', d, flags=re.S)
+              n = ctrl.sub(b'', n)
+              if n != d:
+                  open(f, 'wb').write(n)
+                  print('sanitised', f)
+          PYEOF
+
       - name: Publish formal test results
         uses: dorny/test-reporter@v1
         if: always()
@@ -214,6 +237,29 @@ jobs:
       # packages wholesale is exactly the mistake that broke this job once.
       - name: Run simulation tests
         run: sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* jop.config.* jop.sim.* -- -u target/test-reports"
+
+      # ScalaTest's -u writer dumps all 64 JVM system properties into a
+      # <properties> block, unescaped and all on one line — line.separator's
+      # value is a literal newline inside an attribute. It parses locally but
+      # broke dorny/test-reporter on CI with "Invalid attribute name" at a line
+      # that is inside that block, and the values there differ between runners,
+      # so the failure is environment-dependent and not reproducible locally.
+      # None of it is test data. Strip the block and any stray control
+      # characters before the reporter sees the file.
+      - name: Sanitise JUnit XML before reporting
+        if: always()
+        run: |
+          python3 - <<'PYEOF'
+          import glob, re, sys
+          ctrl = re.compile(rb'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+          for f in glob.glob('target/test-reports/**/*.xml', recursive=True):
+              d = open(f, 'rb').read()
+              n = re.sub(rb'<properties>.*?</properties>', b'<properties/>', d, flags=re.S)
+              n = ctrl.sub(b'', n)
+              if n != d:
+                  open(f, 'wb').write(n)
+                  print('sanitised', f)
+          PYEOF
 
       - name: Publish simulation test results
         uses: dorny/test-reporter@v1
