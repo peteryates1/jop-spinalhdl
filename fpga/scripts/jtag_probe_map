@@ -10,7 +10,18 @@
 #                    the sysfs port path, and the prefix is the USB product
 #                    string, which differs between a real Altera cable
 #                    ("USB-Blaster") and pico-usb-blaster ("USB Blaster")
-#   openFPGALoader   --busdev-num <bus>:<dev>
+#   openFPGALoader   --busdev-num <bus>:<dev> -- BUT ONLY WITH THE PATCHED
+#                    BUILD. Stock openFPGALoader (including the Debian package)
+#                    accepts --busdev-num and --cable-index and IGNORES BOTH:
+#                    libusb_open_device_with_vid_pid() returns the first match,
+#                    so with two identical probes it always takes whichever
+#                    enumerated first. Verified 2026-08-07 by asking for a
+#                    bus:dev that does not exist -- it happily detected a chip.
+#                    Fix: ~/workspaces/openfpgaloader-dirtyjtag-busdev.patch,
+#                    built and installed to /usr/local/bin (shadows the .deb).
+#                    A patched build FAILS on a bogus bus:dev; that is the test.
+#                    NOTE the patch covers dirtyJtag only -- the usb-blaster
+#                    driver still has the same bug.
 #
 # Companion to usb_serial_map, which does the same job for serial ports.
 set -euo pipefail
@@ -24,7 +35,7 @@ ae115fb|E6616408|pico|A-E115FB EP4CE115 + 1GB DDR2 (Pico: dirtyJtag or usb-blast
 debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashing Picos)
 cyc5000|ARA30135|arrow-usb-blaster|Arrow CYC5000 (onboard Arrow USB Blaster TEI0050, FT2232H)
 i5|07000001002700424e|cmsis-dap|Colorlight i5 on the ext board (DAPLink, also the UART bridge)
-wukong|0B383D0435D957EC|usb-blaster|QMTECH Wukong XC7A100T (Pico 2 W running atari800 supervisor firmware)
+wukong|0B383D0435D957EC|pico|QMTECH Wukong XC7A100T (Pico 2 W: dirtyJtag, or USB-Blaster emulation under the atari800 supervisor firmware)
 EOF
 )
 
@@ -57,13 +68,6 @@ Usage:
   jtag_probe_map --cable <alias>    print the Quartus cable name for a board
   jtag_probe_map --busdev <alias>   print bus:dev for openFPGALoader
   jtag_probe_map --serial <alias>   print the probe serial for a board
-  jtag_probe_map --isolate <alias> -- <cmd...>
-                                    run <cmd> with every other probe sharing
-                                    that vid:pid hidden, then restore them.
-                                    openFPGALoader ignores --busdev-num and
-                                    --cable-index, so this is how you pick
-                                    between two identical cables without
-                                    unplugging anything.
   jtag_probe_map --health           per-port USB enumeration health (needs dmesg)
   jtag_probe_map --boards           list known board aliases
 
@@ -75,7 +79,7 @@ moves, so it is named for the cable and you pick the board by plugging it in.
 
 Examples:
   quartus_pgm -c "$(jtag_probe_map --cable ep4cgx150)" -m JTAG foo.cdf
-  openFPGALoader --busdev-num "$(jtag_probe_map --busdev xc7a100t)" -b ... foo.bit
+  openFPGALoader -c dirtyJtag --busdev-num "$(jtag_probe_map --busdev xc7a100t)" foo.bit
 USAGE
 }
 
@@ -189,53 +193,6 @@ main() {
         echo "probe for '$2' (serial $s) is NOT attached" >&2; exit 1
       fi
       awk '{printf "%d:%d\n", $4, $5}' <<<"$r" ;;
-    --isolate)
-      # Run a command with every OTHER probe of the same vid:pid hidden from
-      # libusb, then put them back.
-      #
-      # openFPGALoader cannot select among identical probes: --busdev-num and
-      # --cable-index are both accepted and both IGNORED (verified 2026-08-07 —
-      # asking for the Wukong's bus:dev returned the Terasic's EP4CGX150). With
-      # two 09fb:6001 cables attached it always takes the first. Quartus does
-      # not have this problem because its cable name carries the port path.
-      #
-      # Deauthorising a device makes libusb unable to open it, which is enough
-      # to make the survivor the only candidate. It is reversible and needs no
-      # replugging, so every board can stay connected for regression runs.
-      shift
-      local want="${1:?alias required}"; shift
-      [ "${1:-}" = "--" ] && shift
-      [ $# -gt 0 ] || { echo "usage: jtag_probe_map --isolate <alias> -- <command...>" >&2; exit 1; }
-      s=$(serial_for_alias "$want")
-      if ! r=$(find_by_serial "$s"); then
-        echo "probe for '$want' (serial $s) is NOT attached" >&2; exit 1
-      fi
-      keep_port=$(awk '{print $1}' <<<"$r")
-      keep_vidpid=$(awk '{print $2}' <<<"$r")
-      hidden=()
-      while read -r path vidpid serial bus dev kind; do
-        [ "$vidpid" = "$keep_vidpid" ] || continue
-        [ "$path" = "$keep_port" ] && continue
-        hidden+=("$path")
-      done < <(enumerate)
-      restore() {
-        local h
-        for h in "${hidden[@]:-}"; do
-          [ -n "$h" ] || continue
-          echo 1 | sudo tee "/sys/bus/usb/devices/$h/authorized" >/dev/null 2>&1 || true
-        done
-        # Give the kernel a moment to re-enumerate before the next command runs.
-        [ ${#hidden[@]} -gt 0 ] && sleep 2
-        return 0
-      }
-      trap restore EXIT INT TERM
-      for h in "${hidden[@]:-}"; do
-        [ -n "$h" ] || continue
-        echo "isolating: hiding $h (same $keep_vidpid as $want)" >&2
-        echo 0 | sudo tee "/sys/bus/usb/devices/$h/authorized" >/dev/null
-      done
-      [ ${#hidden[@]} -gt 0 ] && sleep 2
-      "$@" ;;
     -h|--help) usage ;;
     *) usage >&2; exit 1 ;;
   esac
