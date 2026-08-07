@@ -288,27 +288,51 @@ silently invalidate all of that. Use this to find one:
     microbenchmark, or the item 11 application benchmark, before the design is
     called settled.
 
-- **28.** **`DoAll` dies at `CollectionTest` on the Wukong — 59 of 66.** Same
-    `DoAll.jop` passes **66/66** on EP4CGX150, XC7A100T+DB V5 and Colorlight i5,
-    so it is not the runtime. The distinguishing feature is the config:
-    `wukongFull` is the only preset tested with **`bytecodes = Map("*" -> "hw")`
-    and `useDspMul = true`** — every compute unit in hardware. The others run
-    `idiv`/`irem` in hardware and little else.
+- **28.** **The FCU's float compare is wrong: `0.75f <= 0` returns TRUE.**
+    Found 2026-08-07 by bisecting a `DoAll` failure; root cause confirmed with a
+    minimal reproducer and a control on a second board.
 
-    Symptom is `JOP: bytecode 255 not implemented` with `mp=000006` — a method
-    pointer far too low to be real, so this is execution going off the rails
-    rather than a genuinely missing handler. It stops exactly at the boundary of
-    the **older 59-test suite**, which is the last thing this board was measured
-    against (`59/59`), so the seven newer tests have never run here and this is
-    almost certainly pre-existing rather than a regression — though nothing
-    proves that, since there is no earlier card-table Wukong bitstream to
-    compare against.
+    | config | `CollectionTest` |
+    |---|---|
+    | `wukongDdr3` (idiv/irem only) | ok |
+    | `wukongDdr3DspMul` (+DspMul, +imul hw) | ok |
+    | **`wukongDdr3Fcu` (+`float -> hw`)** | **hangs** |
+    | `wukongDdr3AllCu`, `wukongFull` | hangs |
+    | XC7A100T DB V5 (no FCU), same binary | ok |
 
-    Squarely in item 17's territory (`needs*Compute` understating CU
-    reachability; signature was long/float/double *arithmetic* failing while
-    *storage* works). Next step is to run `CollectionTest` standalone on the
-    Wukong, then bisect the CU set — `wukongDdr3Fcu`, `Lcu`, `NoDcu` and
-    `DspMul` exist precisely to isolate this.
+    **The chain.** `CollectionTest` contains no float at all, but
+    `HashMap`'s constructor does:
+
+    ```java
+    if (loadFactor <= 0 || Float.isNaN(loadFactor))
+        throw new IllegalArgumentException("Illegal load factor: " + loadFactor);
+    ```
+
+    With the FCU, `0.75f <= 0` evaluates **true**, so every `HashMap`
+    construction throws — and the throw builds its message by concatenating a
+    *float*, so control disappears into float-to-string. That is why the symptom
+    varied: under `DoAll` it surfaced as `bytecode 255 not implemented` with a
+    stack trace, standalone it just went silent. Two landings of one wrong
+    branch.
+
+    `FcuBugTest` (`java/apps/Small`) isolates it — the exact operations
+    `HashMap` performs, integers only, no collections. On the FCU build 10 of 11
+    checks pass; only the comparison fails. `f2i`, `i2f`, `fmul` and the
+    `(int)(capacity * loadFactor)` expression are all **correct**, so this is
+    specifically the compare, not float arithmetic generally. `FloatArray` and
+    `DoubleArith` pass on the failing config for the same reason.
+
+    **Workaround available today**: `fcmpl`/`fcmpg` gained working `_sw`
+    microcode handlers earlier in this cycle (item 19 tier 1, validated on
+    EP4CGX150 and Colorlight i5), so a config can take the FCU for arithmetic
+    while routing the compares to microcode —
+    `bytecodes = Map("float" -> "hw", "fcmpl" -> "mc", "fcmpg" -> "mc")`.
+    Untested as a combination.
+
+    **Not yet done**: read the FCU's compare RTL against IEEE-754 and fix it,
+    then re-run `FcuBugTest` and `DoAll` on `wukongFull`. Note this was latent
+    for months — `useDspMul`/FCU were validated at "52/52 BRAM JVM tests" on the
+    older suite, which had no `CollectionTest`.
 
 ### Compute units and bytecode implementation
 
