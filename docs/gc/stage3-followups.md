@@ -337,7 +337,7 @@ document that a confident guess about where the pause went was wrong.
   that also matches catch clauses. Now screened by `JVMHelp.arrayCastOk`,
   pinned by `ArrayCastTest` (15 checks), DoAll 66/66. Primitive-array casts and
   array-to-class are exact; reference-array targets and `int[][]` stay unsound
-  for want of the element class — same gap as item 23, and the test pins those
+  for want of the element class — **current-status item 26** — and the test pins those
   cases too so closing them is deliberate.
 - **`f_multianewarray` only supports 2 dimensions** — `dim != 2` prints
   "dimensions not supported" and calls `noim()`. Pre-existing, and now tracked

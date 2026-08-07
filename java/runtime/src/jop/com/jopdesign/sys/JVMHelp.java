@@ -483,7 +483,7 @@ synchronized (o) {
 	 * </ul>
 	 *
 	 * All three need the element class recorded, which is the same missing
-	 * metadata that limits `f_multianewarray` — current-status item 23.
+	 * metadata tracked as current-status item 26.
 	 *
 	 * @param type the source handle's OFF_TYPE
 	 * @param cons the constant-pool value for the target type

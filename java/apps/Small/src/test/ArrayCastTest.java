@@ -16,7 +16,7 @@ import com.jopdesign.sys.*;
  *
  * What is exact after the fix, and what deliberately is not, is documented on
  * `JVM.arrayCastOk`. This test pins both — including the unsound cases, so that
- * closing them later (current-status item 23, the missing element class) is a
+ * closing them later (current-status item 26, the missing element class) is a
  * visible change rather than a silent one.
  */
 public class ArrayCastTest {
@@ -122,7 +122,7 @@ public class ArrayCastTest {
 		// array against a primitive code has to be accepted in case it is a
 		// real int[][]. (int[]) intArrArr therefore succeeds when it should
 		// throw. Likewise a reference-array TARGET is encoded 0 with no element
-		// class, so any reference array matches it. When item 23 records the
+		// class, so any reference array matches it. When item 26 records the
 		// element class both become false and these lines should be updated
 		// deliberately rather than discovered.
 		obj = ints2;

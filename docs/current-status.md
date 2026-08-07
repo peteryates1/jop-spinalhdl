@@ -38,7 +38,7 @@ silently invalidate all of that. Use this to find one:
 | # | section | # | section | # | section |
 |---|---|---|---|---|---|
 | 1-3 | Blocking / correctness | 11 | The measurement gap | 21 | Boards |
-| 4-7, 24, 25 | Performance | 12-16, 23 | Smaller | 17-20, 22 | Compute units |
+| 4-7, 24, 25 | Performance | 12-16, 23, 26 | Smaller | 17-20, 22 | Compute units |
 | 8-10 | Hardware / infrastructure | | | | |
 
 ### Blocking / correctness
@@ -198,12 +198,32 @@ silently invalidate all of that. Use this to find one:
     passed throughout that defect and reading values back proves nothing.
     10/10 on EP4CGX150 and XC7A100T, `MultiArrayGcTest` OK, DoAll 66/66.
 
-    **Still open, and it is the same missing metadata**: a reference array
-    records only `IS_REFARR` with no element class, and JOPizer writes 0 for
-    `[Ljava/lang/Foo;`. So `checkcast`/`instanceof` cannot decide reference-array
-    targets or tell `int[]` from `int[][]` — the unsound cases pinned by
-    `ArrayCastTest`. Recording the element class would close those and give item
-    24's evacuate-versus-slide decision something to work from.
+    What it did **not** close is the missing element class — now **item 26**,
+    so it is not buried inside a finished item.
+
+- **26.** **Reference arrays carry no element class**, and it blocks three
+    separate things. A handle records only `IS_REFARR`; JOPizer writes **0** to
+    the constant pool for `[Ljava/lang/Foo;` (the array type code is derived
+    from the last two characters of the class name, which only works for
+    primitives). Neither side of a check knows what the elements are.
+
+    Consequences, all live:
+    - `checkcast`/`instanceof` cannot decide a reference-array target, so
+      `(Foo[]) aBarArray` **wrongly succeeds**. Pinned by `ArrayCastTest`.
+    - The same code is ambiguous between `[I` and `[[I` — `f_multianewarray`
+      *needs* the innermost element type, so the code cannot be narrowed — hence
+      `(int[]) intArrArr` also wrongly succeeds.
+    - `(Cloneable) arr` and `(Serializable) arr` are rejected, because the
+      interface ID is not resolvable without knowing the element type.
+
+    Fixing it means encoding element class plus dimension in the constant pool
+    and recording it in the handle: JOPizer, the allocation paths and the GC's
+    type handling. Multi-day, and it is the area that produced the
+    premature-collection defect `78cc968`. **`ArrayCastTest` pins every unsound
+    case**, so closing this flips known assertions rather than being discovered.
+
+    Worth noting it would also give item 24's evacuate-versus-slide decision a
+    basis, since average object size per handle becomes knowable per type.
 
 ### Compute units and bytecode implementation
 
