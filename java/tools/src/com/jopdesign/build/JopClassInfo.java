@@ -527,50 +527,68 @@ public class JopClassInfo extends OldClassInfo implements Serializable {
                     JopClassInfo clinfo = (JopClassInfo) appInfo.cliMap
                             .get(clname);
                     if (clinfo == null) {
-                        cpoolComments[pos] = "Problem with class: " + clname;
-                        // The last two characters, deliberately: this yields the
-                        // INNERMOST element type, which is what
-                        // f_multianewarray needs — for "[[I" it must create the
-                        // inner int[] arrays with type 10. Narrowing this to
-                        // single-dimension arrays (so that checkcast could tell
-                        // int[] from int[][]) types those inner arrays as
-                        // IS_REFARR instead, and the GC then traces their
-                        // elements as references. That fails at boot.
-                        // Consequence: the code is ambiguous between "[I" and
-                        // "[[I", so f_checkcast cannot distinguish them either —
-                        // see JVM.arrayCastOk.
-                        String type = clname.substring(clname.length()-2);
-                        if (type.charAt(0)=='[') {
-                        	switch (type.charAt(1)) {
-                        	case 'Z':
-                        		cpoolArry[pos] = 4;
-                        		break;
-                        	case 'C':
-                        		cpoolArry[pos] = 5;
-                        		break;
-                        	case 'F':
-                        		cpoolArry[pos] = 6;
-                        		break;
-                        	case 'D':
-                        		cpoolArry[pos] = 7;
-                        		break;
-                        	case 'B':
-                        		cpoolArry[pos] = 8;
-                        		break;
-                        	case 'S':
-                        		cpoolArry[pos] = 9;
-                        		break;
-                        	case 'I':
-                        		cpoolArry[pos] = 10;
-                        		break;
-                        	case 'J':
-                        		cpoolArry[pos] = 11;
-                        		break;
-                        	default:
-                        		; // all other types are missing...
-                        	}
+                        // An array type. There is no class struct for one, so
+                        // emit an ARRAY DESCRIPTOR instead:
+                        //
+                        //     (dim << 24) | elem
+                        //
+                        // elem is the INNERMOST element: a primitive type code
+                        // 4..11, or the class-struct address of the element
+                        // class (always >= 16, so the two never collide).
+                        //
+                        // This replaces a scheme that took the last two
+                        // characters of the name, which yielded only the
+                        // innermost primitive code and left "[I" and "[[I"
+                        // indistinguishable — and wrote 0 for every reference
+                        // array, so `(Foo[]) x` could not be checked at all.
+                        // The dim field is what separates them now, and it also
+                        // makes anewarray uniform at run time: `desc + (1<<24)`
+                        // promotes either a plain class address (dim 0) or an
+                        // existing descriptor by exactly one dimension.
+                        int dim = 0;
+                        while (dim < clname.length() && clname.charAt(dim) == '[') {
+                            ++dim;
                         }
-                        // System.out.println(cpoolComments[pos]+" "+type+" "+cpoolArry[pos]);
+                        int elem = 0;
+                        String rest = clname.substring(dim);
+                        if (dim == 0) {
+                            // Not an array and not a known class: a genuinely
+                            // unresolvable reference. Leave 0, as before.
+                            cpoolComments[pos] = "Problem with class: " + clname;
+                            continue;
+                        }
+                        if (rest.length() == 1) {
+                            switch (rest.charAt(0)) {
+                            case 'Z': elem = 4;  break;
+                            case 'C': elem = 5;  break;
+                            case 'F': elem = 6;  break;
+                            case 'D': elem = 7;  break;
+                            case 'B': elem = 8;  break;
+                            case 'S': elem = 9;  break;
+                            case 'I': elem = 10; break;
+                            case 'J': elem = 11; break;
+                            default: break;      // unknown primitive: leave 0
+                            }
+                        } else if (rest.startsWith("L") && rest.endsWith(";")) {
+                            // Reference element: resolve the element class so
+                            // that checkcast/instanceof/aastore can compare it.
+                            String elname = rest.substring(1, rest.length() - 1);
+                            JopClassInfo eli = (JopClassInfo) appInfo.cliMap.get(elname);
+                            if (eli != null) {
+                                elem = eli.classRefAddress;
+                                if (elem < 16) {
+                                    throw new Error("class " + elname + " at address "
+                                        + elem + " collides with the primitive type"
+                                        + " codes 4..11 used in array descriptors");
+                                }
+                            }
+                            // eli == null means the element class was not linked
+                            // into the image (it is unreachable), so no instance
+                            // of it can exist and elem 0 is correct.
+                        }
+                        cpoolArry[pos] = (dim << 24) | elem;
+                        cpoolComments[pos] = "Array: " + clname
+                                + " dim=" + dim + " elem=" + elem;
                         continue;
                     }
                     cpoolArry[pos] = clinfo.classRefAddress;

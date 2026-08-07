@@ -682,12 +682,18 @@ public class JVM {
 		return GC.newObject(cons);
 	}
 	static int f_newarray(int count, int type) {
-		return GC.newArray(count, type);
+		// A 1-D primitive array: descriptor is (1 << 24) | atype.
+		return JVMHelp.newArrayDesc(count, type,
+				(1 << JVMHelp.ARRAY_DIM_SHIFT) | type);
 	}
 	static int f_anewarray(int count, int cons) {
-		// ignore cons (type info)
-		// should be different for the GC!!!
-		return GC.newArray(count, 1); //1..type not available=reference
+		// cons is the COMPONENT type: a class address for `new Foo[n]`, or an
+		// array descriptor for `new int[n][]`. Adding one to the dim field
+		// promotes either uniformly, because a plain class address has dim 0.
+		// It used to be discarded — "should be different for the GC!!!" — which
+		// is why checkcast could not decide reference arrays.
+		return JVMHelp.newArrayDesc(count, GC.IS_REFARR,
+				cons + (1 << JVMHelp.ARRAY_DIM_SHIFT));
 	}
 	static void f_arraylength() { JVMHelp.noim(); /* jvm.asm */ }
 	static Throwable f_athrow(Throwable t) {
@@ -761,8 +767,8 @@ public class JVM {
 			return objref;
 		}
 		int type = Native.rdMem(objref+GC.OFF_TYPE);
-		if (type != GC.IS_OBJ || (cons >= 4 && cons <= 11)) {
-			if (JVMHelp.arrayCastOk(type, cons)) {
+		if (type != GC.IS_OBJ || (cons >>> JVMHelp.ARRAY_DIM_SHIFT) != 0) {
+			if (JVMHelp.arrayCastOk(objref, type, cons)) {
 				return objref;
 			}
 			throw JVMHelp.CCExc;
@@ -805,8 +811,8 @@ public class JVM {
 		// how catch clauses are matched (f_athrow), so a garbage walk here was
 		// reachable from exception dispatch.
 		int type = Native.rdMem(objref+GC.OFF_TYPE);
-		if (type != GC.IS_OBJ || (cons >= 4 && cons <= 11)) {
-			return JVMHelp.arrayCastOk(type, cons) ? 1 : 0;
+		if (type != GC.IS_OBJ || (cons >>> JVMHelp.ARRAY_DIM_SHIFT) != 0) {
+			return JVMHelp.arrayCastOk(objref, type, cons) ? 1 : 0;
 		}
 		int p = Native.rdMem(objref+GC.OFF_MTAB_ALEN);	// handle indirection
 		p -= Const.CLASS_HEADR;							// start of class info
@@ -874,9 +880,9 @@ public class JVM {
 		// table) nor scan its elements as references: a handler stored in
 		// JVMHelp.ih[core][nr] (new Runnable[cpus][NUM_INTERRUPTS]) was invisible
 		// to the collector. Reference arrays use type 1, as f_anewarray does.
-		if (type == 0) {
-			type = 1;	// IS_REFARR
-		}
+		// No 'type == 0 -> IS_REFARR' fixup any more: `type` is a descriptor
+		// now, and multiNew derives each level's GC type from its own
+		// dimensionality and the element code.
 		++pc;	// now to dimensions
 		int dim = Native.rdMem(start+(pc>>2));
 		for (i=(pc&0x03); i<3; ++i) dim >>= 8;
@@ -902,7 +908,16 @@ public class JVM {
 			System.out.println(" dimensions not supported");
 			JVMHelp.noim();
 		}
-		return JVMHelp.multiNew(0, dim, sp, type);
+		// `type` is the array descriptor (dim << 24) | elem for this array
+		// class. Its dim is the dimensionality of the TYPE, which can exceed
+		// the operand: `new int[a][b][]` is `multianewarray [[[I 2`, three
+		// dimensions but only two levels allocated.
+		int descDim = type >>> JVMHelp.ARRAY_DIM_SHIFT;
+		int elem = type & JVMHelp.ARRAY_ELEM_MASK;
+		if (descDim < dim) {
+			descDim = dim;      // unresolvable descriptor: assume fully allocated
+		}
+		return JVMHelp.multiNew(0, dim, descDim, elem, sp);
 	}
 	static void f_ifnull() { JVMHelp.noim(); /* jvm.asm */ }
 	static void f_ifnonnull() { JVMHelp.noim(); /* jvm.asm */ }

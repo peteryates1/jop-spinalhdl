@@ -406,14 +406,42 @@ synchronized (o) {
 	 */
 	static final int MAX_ARRAY_DIM = 8;
 
+	/** Array descriptor layout: (dim << 24) | elem. See GC.OFF_ELEM. */
+	static final int ARRAY_DIM_SHIFT = 24;
+	static final int ARRAY_ELEM_MASK = 0x00ffffff;
+
+	/** Primitive element codes occupy 4..11; class addresses are always >= 16. */
+	static boolean isPrimElem(int elem) {
+		return elem >= 4 && elem <= 11;
+	}
+
+	/**
+	 * Allocate an array and record its descriptor.
+	 *
+	 * The descriptor is written after `GC.newArray` rather than threaded
+	 * through it: nothing allocates in between, so no collection can observe
+	 * the half-initialised handle, and the GC's allocation paths (three
+	 * branches for scopes, generational and classic) stay untouched.
+	 */
+	static int newArrayDesc(int count, int gcType, int desc) {
+		int ref = GC.newArray(count, gcType);
+		Native.wrMem(desc, ref + GC.OFF_ELEM);
+		return ref;
+	}
+
 	/**
 	 * Build one level of a `multianewarray` nest, recursing into the rest.
 	 *
-	 * Levels 0..dim-2 are reference arrays; only the innermost carries the
-	 * element type. That distinction is the whole defect fixed in `78cc968`,
-	 * which typed inner arrays `IS_OBJ` so the collector could neither size them
-	 * nor scan their elements — premature collection with no visible fault. Here
-	 * it has to hold at every level, not just two.
+	 * Levels are numbered from the outside. A level's own dimensionality is
+	 * `descDim - level`, which is NOT the same as how many levels are being
+	 * allocated: `new int[a][b][]` is `multianewarray [[[I 2`, so the type is
+	 * 3-D but only two levels get built and the innermost allocated level is
+	 * still a reference array.
+	 *
+	 * Only a level whose own dimensionality is 1 carries the element type;
+	 * every level above it is a reference array. Getting that wrong at two
+	 * levels was `78cc968` — inner arrays typed `IS_OBJ`, so the collector
+	 * could neither size them nor scan their elements.
 	 *
 	 * `Native.rdMem(arr)` is re-read on every iteration on purpose: allocating
 	 * the inner array can trigger a GC, which relocates `arr`'s data. The handle
@@ -423,22 +451,27 @@ synchronized (o) {
 	 * Lives here rather than in JVM.java because that class's method order is
 	 * the bytecode dispatch table — see `arrayCastOk`.
 	 *
-	 * @param level  0 for the outermost dimension
-	 * @param dim    total dimensions being allocated
-	 * @param sp     stack pointer such that counts are at sp+1 .. sp+dim
-	 * @param type   innermost element type code (4..11, or IS_REFARR)
+	 * @param level     0 for the outermost dimension
+	 * @param allocDims how many levels to actually allocate
+	 * @param descDim   dimensionality of the whole array type
+	 * @param elem      innermost element: primitive code or class address
+	 * @param sp        stack pointer such that counts are at sp+1 .. sp+allocDims
 	 */
-	static int multiNew(int level, int dim, int sp, int type) {
+	static int multiNew(int level, int allocDims, int descDim, int elem, int sp) {
 		int cnt = Native.rdIntMem(sp + 1 + level);
-		if (level == dim - 1) {
-			// Innermost: this is the level the constant-pool type code describes.
-			return JVM.f_newarray(cnt, type);
+		int dimHere = descDim - level;
+		int desc = (dimHere << ARRAY_DIM_SHIFT) | elem;
+		// A level is only "the element level" when its own dimensionality is 1.
+		int gcType = GC.IS_REFARR;
+		if (dimHere == 1 && isPrimElem(elem)) {
+			gcType = elem;
 		}
-		// Any level above the innermost holds references, whatever the element
-		// type of the nest is. f_anewarray ignores its second argument.
-		int arr = JVM.f_anewarray(cnt, 0);
+		if (level == allocDims - 1) {
+			return newArrayDesc(cnt, gcType, desc);
+		}
+		int arr = newArrayDesc(cnt, GC.IS_REFARR, desc);
 		for (int i = 0; i < cnt; ++i) {
-			int inner = multiNew(level + 1, dim, sp, type);
+			int inner = multiNew(level + 1, allocDims, descDim, elem, sp);
 			synchronized (GC.mutex) {
 				Native.wrMem(inner, Native.rdMem(arr) + i);
 			}
@@ -457,57 +490,102 @@ synchronized (o) {
 	 *
 	 * Arrays have no method table — `OFF_MTAB_ALEN` holds the array LENGTH — so
 	 * the superclass walk in `f_checkcast`/`f_instanceof` would compute
-	 * `length - CLASS_HEADR` and chase pointers through arbitrary memory until
-	 * it happened to hit 0 or the target. That was not a missing feature, it was
-	 * an unbounded read of the address space, and `instanceof` did it silently
-	 * on a path that also matches catch clauses.
+	 * `length - CLASS_HEADR` and chase pointers through arbitrary memory. This
+	 * screens both directions first.
 	 *
-	 * Exact: a primitive-array source against a primitive-array target, and an
-	 * array cast to a class (an array is an instance of `java.lang.Object` only,
-	 * and Object is the one class whose `CLASS_SUPER` is 0 — interfaces store a
-	 * negative ID).
+	 * Both sides now carry a full array descriptor, `(dim << 24) | elem`: the
+	 * target from the constant pool, the source from `GC.OFF_ELEM`. That is the
+	 * same information HotSpot keeps in an `ObjArrayKlass` (`_element_klass`
+	 * plus `_dimension`), so the check is the ordinary one — equal dimensions,
+	 * then an element subtype walk, with covariance falling out of comparing
+	 * element classes.
 	 *
-	 * Deliberately unsound, pinned by `ArrayCastTest`:
+	 * Remaining imprecision, deliberate:
 	 * <ul>
-	 * <li>The cp code comes from the last two characters of the class name, so
-	 *     `[[I` also yields 10. `f_multianewarray` <i>depends</i> on that — it
-	 *     must create the inner `int[]` arrays with type 10, and narrowing it to
-	 *     single-dimension names types them `IS_REFARR` and fails at boot. So a
-	 *     reference-array source against a primitive code has to be accepted in
-	 *     case it is a real `int[][]`, and `(int[]) intArrArr` wrongly succeeds.</li>
-	 * <li>A reference-array target (`[Ljava/lang/Foo;`) is encoded 0 with no
-	 *     element class, and the handle records only `IS_REFARR`, so any
-	 *     reference array matches it.</li>
-	 * <li>`(Cloneable) arr` and `(Serializable) arr` are rejected, for the same
-	 *     reason — the interface ID is not resolvable without the element class.</li>
+	 * <li>A source descriptor of 0 means none was recorded. Hardware objects
+	 *     from `makeHWArray` are two-word fake handles that never had one, so a
+	 *     0 is treated as "undecidable" and accepted rather than rejected —
+	 *     rejecting would break working code for a case we cannot see.</li>
+	 * <li>An element class that did not get linked into the image resolves to
+	 *     0, and no instance of it can exist, so a 0 target element only
+	 *     matches a 0 source element.</li>
 	 * </ul>
 	 *
-	 * All three need the element class recorded, which is the same missing
-	 * metadata tracked as current-status item 26.
-	 *
-	 * @param type the source handle's OFF_TYPE
-	 * @param cons the constant-pool value for the target type
+	 * @param objref the source handle
+	 * @param type   its OFF_TYPE
+	 * @param cons   the constant-pool value for the target type
 	 */
-	public static boolean arrayCastOk(int type, int cons) {
-		// Target is a primitive array (possibly multi-dimensional — the code is
-		// the innermost element type either way).
-		if (cons >= 4 && cons <= 11) {
-			if (type == cons) return true;
-			// Could be a legitimate int[][] against a "[[I" whose code is 10.
-			return type == GC.IS_REFARR;
+	static boolean arrayCastOk(int objref, int type, int cons) {
+
+		int tDim = cons >>> ARRAY_DIM_SHIFT;
+
+		if (tDim == 0) {
+			// Target is a class or interface, source is an array (the caller
+			// only sends us objects when the target is an array).
+			if (type == GC.IS_OBJ) {
+				return false;
+			}
+			if (cons == 0) {
+				return false;          // unresolvable target
+			}
+			// An array is an instance of java.lang.Object and nothing else.
+			// Object is the one class whose CLASS_SUPER is 0; interfaces store
+			// a negative ID, so Cloneable/Serializable land here and are
+			// rejected — they would need the array class to declare them.
+			return Native.rdMem(cons + Const.CLASS_SUPER) == 0;
 		}
+
+		// Target is an array type.
 		if (type == GC.IS_OBJ) {
-			// Plain object against a non-array target: the caller's normal
-			// superclass walk handles that, so reaching here is a screen error.
+			return false;              // a plain object is never an array
+		}
+		int srcDesc = Native.rdMem(objref + GC.OFF_ELEM);
+		if (srcDesc == 0) {
+			return true;               // undecidable — see above
+		}
+		if ((srcDesc >>> ARRAY_DIM_SHIFT) != tDim) {
+			return false;              // int[] is not int[][]
+		}
+		int sElem = srcDesc & ARRAY_ELEM_MASK;
+		int tElem = cons & ARRAY_ELEM_MASK;
+		if (sElem == tElem) {
+			return true;
+		}
+		// Primitive element types must match exactly; there is no widening.
+		if (isPrimElem(sElem) || isPrimElem(tElem) || sElem == 0 || tElem == 0) {
 			return false;
 		}
-		if (cons == 0) {
-			// Target could not be encoded: a reference-array type, or a class
-			// outside the application. Undecidable — see above.
-			return type == GC.IS_REFARR;
+		return classAssignable(sElem, tElem);
+	}
+
+	/**
+	 * Is an instance of class `sub` assignable to `target`?
+	 *
+	 * Both are class-info addresses (`classRefAddress`, which is the same thing
+	 * `f_checkcast` computes as `mtab - CLASS_HEADR`). Mirrors that method: a
+	 * negative `CLASS_SUPER` marks an interface and is tested through the
+	 * interface bit table, otherwise walk the superclass chain.
+	 */
+	static boolean classAssignable(int sub, int target) {
+		int ifidx = Native.rdMem(target + Const.CLASS_SUPER);
+		if (ifidx < 0) {
+			int iftab = Native.rdMem(sub + Const.CLASS_IFTAB);
+			if (iftab == 0) {
+				return false;
+			}
+			int i = Native.rdMem(iftab - ((-ifidx + 31) >>> 5));
+			return ((i >>> (~ifidx & 0x1f)) & 1) != 0;
 		}
-		// Target is a real class or an interface. Only java.lang.Object matches.
-		return Native.rdMem(cons+Const.CLASS_SUPER) == 0;
+		int p = sub;
+		for (;;) {
+			if (p == target) {
+				return true;
+			}
+			p = Native.rdMem(p + Const.CLASS_SUPER);
+			if (p <= 0) {
+				return false;          // 0 = past Object, negative = interface
+			}
+		}
 	}
 }
 

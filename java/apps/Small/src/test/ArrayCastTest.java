@@ -16,8 +16,8 @@ import com.jopdesign.sys.*;
  *
  * What is exact after the fix, and what deliberately is not, is documented on
  * `JVM.arrayCastOk`. This test pins both — including the unsound cases, so that
- * closing them later (current-status item 26, the missing element class) is a
- * visible change rather than a silent one.
+ * Item 26 has since recorded the element class in GC.OFF_ELEM, so the
+ * reference-array and dimensionality cases below are now exact.
  */
 public class ArrayCastTest {
 
@@ -58,6 +58,29 @@ public class ArrayCastTest {
 	static boolean castToIntArr2(Object o) {
 		try {
 			int[][] a = (int[][]) o;
+			return a != null || o == null;
+		} catch (ClassCastException e) {
+			return false;
+		}
+	}
+
+	static class Base { int a; }
+	static class Derived extends Base { int b; }
+
+	/** Does `(Base[]) o` succeed? */
+	static boolean castToBaseArr(Object o) {
+		try {
+			Base[] a = (Base[]) o;
+			return a != null || o == null;
+		} catch (ClassCastException e) {
+			return false;
+		}
+	}
+
+	/** Does `(Derived[]) o` succeed? */
+	static boolean castToDerivedArr(Object o) {
+		try {
+			Derived[] a = (Derived[]) o;
 			return a != null || o == null;
 		} catch (ClassCastException e) {
 			return false;
@@ -116,18 +139,30 @@ public class ArrayCastTest {
 		inner[1] = 7;
 		check("int[][] elem works  ", ints2[0][1] == 7, true);
 
-		// --- UNSOUND BY DESIGN, pinned so a future fix is visible ---
-		// The cp code for "[[I" is 10, the same as "[I", because
-		// f_multianewarray needs the innermost element type. So a reference
-		// array against a primitive code has to be accepted in case it is a
-		// real int[][]. (int[]) intArrArr therefore succeeds when it should
-		// throw. Likewise a reference-array TARGET is encoded 0 with no element
-		// class, so any reference array matches it. When item 26 records the
-		// element class both become false and these lines should be updated
-		// deliberately rather than discovered.
+		// --- reference-array identity and covariance (item 26) ---
+		// These are what the element class in GC.OFF_ELEM buys. Before it,
+		// every one of them silently succeeded.
+		Base[] bases = new Base[3];
+		Derived[] derived = new Derived[3];
+		derived[0] = new Derived();
+
+		obj = derived;
+		check("Derived[] as Derived[]", castToDerivedArr(obj), true);
+		check("Derived[] as Base[]   ", castToBaseArr(obj), true);   // covariant
+		obj = bases;
+		check("Base[] as Base[]      ", castToBaseArr(obj), true);
+		check("Base[] as Derived[]   ", castToDerivedArr(obj), false); // NOT covariant
+		check("Base[] inst Derived[] ", obj instanceof Derived[], false);
+		check("Base[] as int[]       ", castToIntArr(obj), false);
+		obj = ints;
+		check("int[] as Base[]       ", castToBaseArr(obj), false);
+
+		// --- dimensionality is now distinguished ---
 		obj = ints2;
-		check("int[][] as int[] (unsound)", castToIntArr(obj), true);
-		check("int[][] as int[][]        ", castToIntArr2(obj), true);
+		check("int[][] as int[][]    ", castToIntArr2(obj), true);
+		check("int[][] as int[]      ", castToIntArr(obj), false);
+		obj = ints;
+		check("int[] as int[][]      ", castToIntArr2(obj), false);
 
 		JVMHelp.wr("fails ");
 		if (fails == 0) {

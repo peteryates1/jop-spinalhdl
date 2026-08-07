@@ -201,62 +201,39 @@ silently invalidate all of that. Use this to find one:
     What it did **not** close is the missing element class — now **item 26**,
     so it is not buried inside a finished item.
 
-- **26.** **Reference arrays carry no element class**, and it blocks three
-    separate things. A handle records only `IS_REFARR`; JOPizer writes **0** to
-    the constant pool for `[Ljava/lang/Foo;` (the array type code is derived
-    from the last two characters of the class name, which only works for
-    primitives). Neither side of a check knows what the elements are.
+- **26.** ~~**Reference arrays carry no element class**~~ — **FIXED
+    2026-08-07.** Arrays now carry a descriptor `(dim << 24) | elem` in handle
+    word **`GC.OFF_ELEM = 6`**, and JOPizer emits the same encoding for array
+    constant-pool entries. `elem` is a primitive code 4..11 or the element
+    class's struct address (always >= 16, so they never collide). This is the
+    information HotSpot keeps in an `ObjArrayKlass` — `_element_klass` plus
+    `_dimension` — so `checkcast`/`instanceof` are now the ordinary check:
+    equal dimensions, then an element subtype walk, with covariance falling out.
 
-    Consequences, all live:
-    - `checkcast`/`instanceof` cannot decide a reference-array target, so
-      `(Foo[]) aBarArray` **wrongly succeeds**. Pinned by `ArrayCastTest`.
-    - The same code is ambiguous between `[I` and `[[I` — `f_multianewarray`
-      *needs* the innermost element type, so the code cannot be narrowed — hence
-      `(int[]) intArrArr` also wrongly succeeds.
-    - `(Cloneable) arr` and `(Serializable) arr` are rejected, because the
-      interface ID is not resolvable without knowing the element type.
+    **Costs no memory.** `HANDLE_SIZE` is 8 and only 0-5 were used, so word 6
+    was already allocated. `OFF_TYPE` stays a small code, so the GC's tracing
+    paths are untouched — that was the constraint that mattered.
 
-    - `aastore` does no covariant store check either — storing a `Bar` into a
-      `Foo[]` should throw `ArrayStoreException` and does not (`f_aastore` runs
-      the GC write barrier and stores). Same missing information.
+    `anewarray` turned out to already *receive* the component type and discard
+    it (`// ignore cons ... should be different for the GC!!!`). Because a plain
+    class address has a zero dim field, `desc = cons + (1 << 24)` promotes
+    either a class or an existing descriptor by exactly one dimension, which
+    makes `new Foo[n]` and `new int[n][]` the same line of code.
 
-    **How HotSpot solves it, and why the same shape fits here.** Every object
-    carries a klass pointer in its header, and array types are first-class
-    `Klass` objects — `TypeArrayKlass` for `int[]`, `ObjArrayKlass` for
-    reference arrays with an `_element_klass` and `_dimension` field (`int[][]`
-    is an `ObjArrayKlass` whose element is `TypeArrayKlass(int)`). They are
-    created lazily, only for array types a program actually uses. `checkcast
-    [LFoo;` resolves the constant-pool entry to that same Klass, so both sides
-    know the exact type and the check is the ordinary subtype walk; covariance
-    falls out of recursing on element klasses, and `ArrayKlass` declares
-    Cloneable and Serializable as its interfaces.
+    Now exact, all previously wrong: `(Derived[]) x` where x is `Base[]`
+    **rejected** (was accepted), `(Base[]) derivedArray` accepted (covariance),
+    `int[][]` distinguished from `int[]` in both directions. `ArrayCastTest`
+    23/23 on **EP4CGX150, XC7A100T and Colorlight i5**; `MultiDimTest` 10/10 on
+    all three; DoAll 66/66, `MultiArrayGcTest` OK, `GcStressTest` 240k+ rounds
+    clean.
 
-    JOP has neither half: no header, and the cp holds 0. But the port is
-    cheaper than it sounds — **the handle has two spare words**. `HANDLE_SIZE`
-    is 8 and only 0-5 are used (`OFF_PTR`, `OFF_MTAB_ALEN`, `OFF_SPACE`,
-    `OFF_TYPE`, `OFF_NEXT`, `OFF_GREY`), so 6 and 7 are free and already
-    allocated. Sketch:
+    Still open, small: `f_aastore` does no covariant store check, so storing a
+    `Bar` into a `Foo[]` does not throw `ArrayStoreException` — the descriptor
+    needed for it now exists, so this is a short follow-up. `(Cloneable) arr`
+    and `(Serializable) arr` are still rejected; arrays would have to declare
+    those interfaces. And `f_checkcast`'s WCET bound (`@WCA loop <= 5`) does not
+    account for the element subtype walk.
 
-    - JOPizer emits a small array-class struct per distinct array type
-      referenced — element type code or element class pointer, dimension, super
-      = `java.lang.Object`, interface bits for Cloneable/Serializable
-    - the cp entry for `[LFoo;` / `[[I` points at it instead of 0
-    - allocation stores that pointer in a spare handle word
-    - `checkcast`/`instanceof`/`aastore` walk it, reusing the existing class path
-
-    Cost: one struct per array *type* used (a handful), one word per array
-    *object* — **already paid for**. `OFF_TYPE` stays a small code so the GC's
-    hot paths are untouched, which is the part that must not regress.
-
-    Two things to weigh: it is the area that produced the premature-collection
-    defect `78cc968`, and a covariant subtype walk recurses on element klasses,
-    so the WCET bound on `f_checkcast` (currently `@WCA loop <= 5`) needs
-    revisiting for a real-time claim.
-
-    **`ArrayCastTest` pins every unsound case**, so closing this flips known
-    assertions rather than being discovered. It would also give item 24's
-    evacuate-versus-slide decision a basis, since average object size becomes
-    knowable per type.
 
 ### Compute units and bytecode implementation
 

@@ -91,6 +91,21 @@ public class GC {
 	public static final int OFF_MTAB_ALEN = 1;
 	public static final int OFF_SPACE = 2;
 	public static final int OFF_TYPE = 3;
+	/**
+	 * Array descriptor: `(dim << 24) | elem`, where elem is a primitive type
+	 * code 4..11 or the element class's struct address (always >= 16).
+	 *
+	 * Only meaningful when OFF_TYPE says this handle is an array. 0 means "not
+	 * recorded" — hardware objects built by `JVMHelp.makeHWArray` are two-word
+	 * fake handles that never had one, so readers must stay permissive on 0
+	 * rather than treating it as a type.
+	 *
+	 * Uses handle word 6, which was free: HANDLE_SIZE is 8 and only 0-5 were
+	 * used. Every handle is 8 words regardless, so this costs no memory. It is
+	 * deliberately NOT folded into OFF_TYPE, which stays a small code so the
+	 * GC's tracing paths are untouched.
+	 */
+	public static final int OFF_ELEM = 6;
 
 	// Scope level shares the to/from pointer
 	public static final int OFF_SCOPE_LEVEL = OFF_SPACE;
