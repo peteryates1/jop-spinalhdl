@@ -91,6 +91,28 @@ public class JVM {
 	static void f_fastore() { JVMHelp.noim(); /* jvm.asm */ }
 	static void f_dastore() { JVMHelp.noim();}
 	static void f_aastore(int ref, int index, int value) {
+		// Covariant store check. `Object[] o = new Foo[1]; o[0] = new Bar();`
+		// type-checks at compile time and must throw at run time; JOP could not
+		// check it at all before the element class was recorded (item 26).
+		//
+		// Inlined fast path, because aastore is hot and a helper call is ~142
+		// cycles: a 1-D reference array whose element class is exactly the
+		// value's class, which is what almost every store looks like. Three
+		// reads and no call. Anything else goes to arrayStoreOk.
+		if (value != 0) {
+			int desc = Native.rdMem(ref + GC.OFF_ELEM);
+			int elem = desc & JVMHelp.ARRAY_ELEM_MASK;
+			boolean ok = desc == 0;
+			if (!ok && (desc >>> JVMHelp.ARRAY_DIM_SHIFT) == 1 && elem >= 16
+					&& Native.rdMem(value + GC.OFF_TYPE) == GC.IS_OBJ
+					&& Native.rdMem(value + GC.OFF_MTAB_ALEN)
+							- Const.CLASS_HEADR == elem) {
+				ok = true;
+			}
+			if (!ok && !JVMHelp.arrayStoreOk(ref, value)) {
+				throw JVMHelp.ASExc;
+			}
+		}
 		synchronized (GC.mutex) {
 			// snapshot-at-beginning barrier
 			int oldVal = Native.arrayLoad(ref, index);

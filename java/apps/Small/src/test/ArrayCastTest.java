@@ -87,6 +87,16 @@ public class ArrayCastTest {
 		}
 	}
 
+	/** Does `a[0] = v` succeed, or throw ArrayStoreException? */
+	static boolean storeOk(Object[] a, Object v) {
+		try {
+			a[0] = v;
+			return true;
+		} catch (ArrayStoreException e) {
+			return false;
+		}
+	}
+
 	/** Does `(StringBuffer) o` succeed? A class target with an array source. */
 	static boolean castToClass(Object o) {
 		try {
@@ -163,6 +173,36 @@ public class ArrayCastTest {
 		check("int[][] as int[]      ", castToIntArr(obj), false);
 		obj = ints;
 		check("int[] as int[][]      ", castToIntArr2(obj), false);
+
+		// --- aastore covariant store check (item 26 follow-up) ---
+		// Array covariance means this type-checks at compile time and must
+		// throw at run time. JOP could not check it at all before the element
+		// class was recorded.
+		Object[] asObjects = derived;          // Derived[] seen as Object[]
+		check("store Derived into Derived[]", storeOk(asObjects, new Derived()), true);
+		check("store Base into Derived[]   ", storeOk(asObjects, new Base()), false);
+		check("store null into Derived[]   ", storeOk(asObjects, null), true);
+
+		Object[] baseAsObj = bases;
+		check("store Derived into Base[]   ", storeOk(baseAsObj, new Derived()), true);
+		check("store Base into Base[]      ", storeOk(baseAsObj, new Base()), true);
+		check("store StringBuf into Base[] ", storeOk(baseAsObj, new StringBuffer()), false);
+
+		Object[] anyObjects = new Object[2];
+		check("store Base into Object[]    ", storeOk(anyObjects, new Base()), true);
+		check("store int[] into Object[]   ", storeOk(anyObjects, ints), true);
+		check("store int[] into Base[]     ", storeOk(baseAsObj, ints), false);
+
+		// --- arrays implement Cloneable and Serializable ---
+		// They have no interface table of their own, so this needs the two
+		// class addresses JOPizer emits into the special-pointer block.
+		obj = ints;
+		check("int[] inst Cloneable   ", obj instanceof Cloneable, true);
+		check("int[] inst Serializable", obj instanceof java.io.Serializable, true);
+		obj = derived;
+		check("Derived[] inst Cloneable", obj instanceof Cloneable, true);
+		obj = sb;
+		check("StringBuf inst Cloneable", obj instanceof Cloneable, false);
 
 		JVMHelp.wr("fails ");
 		if (fails == 0) {

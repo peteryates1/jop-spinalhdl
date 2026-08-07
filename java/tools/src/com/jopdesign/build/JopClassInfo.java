@@ -178,6 +178,14 @@ public class JopClassInfo extends OldClassInfo implements Serializable {
     public int staticValueVarAddress;
     public int staticRefVarAddress;
     public int classRefAddress;
+    /**
+     * Link-time addresses of the two interfaces every array implements.
+     * Emitted into the special-pointer block so the runtime can answer
+     * `(Cloneable) someArray` — arrays have no class struct and therefore no
+     * interface table of their own.
+     */
+    public static int cloneableAddress;
+    public static int serializableAddress;
     public int methodsAddress;
     public int cpoolAddress;
     public int iftableAddress;
@@ -330,6 +338,12 @@ public class JopClassInfo extends OldClassInfo implements Serializable {
         int i;
         instGCinfo = getGCInfo();
         classRefAddress = addr;
+        String cn = clazz.getClassName();
+        if (cn.equals("java.lang.Cloneable")) {
+            cloneableAddress = addr;
+        } else if (cn.equals("java.io.Serializable")) {
+            serializableAddress = addr;
+        }
         // class head contains the instance size and
         // a pointer to the interface table
         // class references point to the instance size

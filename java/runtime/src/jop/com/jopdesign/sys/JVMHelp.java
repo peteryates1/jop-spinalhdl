@@ -46,6 +46,20 @@ public class JVMHelp {
 	static ArrayIndexOutOfBoundsException ABExc;
 	static ArithmeticException ArithExc;
 	static ClassCastException CCExc;
+	static ArrayStoreException ASExc;
+
+	/**
+	 * Class-info addresses of the two interfaces every array implements.
+	 *
+	 * Arrays have no class struct and therefore no interface table, so
+	 * `(Cloneable) someArray` cannot be answered by the ordinary bit-table
+	 * check. JOPizer emits these into the special-pointer block at link time;
+	 * 0 means the interface was not linked into the image, in which case no
+	 * cast to it can appear either. This is what HotSpot expresses by having
+	 * ArrayKlass declare Cloneable and Serializable as its interfaces.
+	 */
+	static int cloneableAddr;
+	static int serializableAddr;
 	static IllegalMonitorStateException IMSExc;
 	
 	static RetryException RetryExc;
@@ -189,6 +203,13 @@ synchronized (o) {
 		ABExc = new ArrayIndexOutOfBoundsException();
 		ArithExc = new ArithmeticException();
 		CCExc = new ClassCastException();
+		ASExc = new ArrayStoreException();
+
+		// Special-pointer block: 0 boot, 1 jvm, 2 jvmHelp, 3 main,
+		// 4 static refs, 5 static ref count, 6 Cloneable, 7 Serializable.
+		int special = Native.rdMem(1);
+		cloneableAddr = Native.rdMem(special + 6);
+		serializableAddr = Native.rdMem(special + 7);
 		IMSExc = new IllegalMonitorStateException();
 
 		RetryExc = RetryException.instance;
@@ -528,11 +549,17 @@ synchronized (o) {
 			if (cons == 0) {
 				return false;          // unresolvable target
 			}
-			// An array is an instance of java.lang.Object and nothing else.
-			// Object is the one class whose CLASS_SUPER is 0; interfaces store
-			// a negative ID, so Cloneable/Serializable land here and are
-			// rejected — they would need the array class to declare them.
-			return Native.rdMem(cons + Const.CLASS_SUPER) == 0;
+			int sup = Native.rdMem(cons + Const.CLASS_SUPER);
+			if (sup == 0) {
+				return true;           // java.lang.Object
+			}
+			if (sup < 0) {
+				// An interface. Arrays implement exactly Cloneable and
+				// Serializable; their addresses come from the special-pointer
+				// block because an array has no interface table of its own.
+				return cons == cloneableAddr || cons == serializableAddr;
+			}
+			return false;              // any other class
 		}
 
 		// Target is an array type.
@@ -559,6 +586,79 @@ synchronized (o) {
 	}
 
 	/**
+	 * May `value` be stored into reference array `ref`?
+	 *
+	 * The JVM spec requires `aastore` to throw `ArrayStoreException` when the
+	 * value is not assignable to the array's element type — array covariance
+	 * means `Object[] o = new Foo[1]; o[0] = new Bar();` type-checks at compile
+	 * time and must fail at run time. JOP could not check it at all until the
+	 * element class was recorded (item 26).
+	 *
+	 * The caller handles the common case inline; this is the slow path, so it
+	 * is written for clarity rather than to avoid its own call.
+	 */
+	static boolean arrayStoreOk(int ref, int value) {
+		int desc = Native.rdMem(ref + GC.OFF_ELEM);
+		if (desc == 0) {
+			return true;               // no descriptor recorded — undecidable
+		}
+		int dim = desc >>> ARRAY_DIM_SHIFT;
+		int elem = desc & ARRAY_ELEM_MASK;
+		if (elem == 0 || dim == 0) {
+			return true;               // element class not linked in
+		}
+		int vType = Native.rdMem(value + GC.OFF_TYPE);
+
+		if (dim == 1) {
+			if (isPrimElem(elem)) {
+				return false;          // a primitive array cannot hold refs
+			}
+			// Storing into Object[] always succeeds — including storing an
+			// array, which is why this is checked before the IS_OBJ test.
+			// Object is the one class whose CLASS_SUPER is 0.
+			int sup = Native.rdMem(elem + Const.CLASS_SUPER);
+			if (sup == 0) {
+				return true;
+			}
+			if (sup < 0) {
+				// Element type is an interface. For a plain object the bit
+				// table decides; for an array we have no interface list, so
+				// accept rather than reject something that may be legal.
+				if (vType != GC.IS_OBJ) {
+					return true;
+				}
+				return classAssignable(
+					Native.rdMem(value + GC.OFF_MTAB_ALEN) - Const.CLASS_HEADR, elem);
+			}
+			if (vType != GC.IS_OBJ) {
+				return false;          // an array is not a Foo
+			}
+			return classAssignable(
+				Native.rdMem(value + GC.OFF_MTAB_ALEN) - Const.CLASS_HEADR, elem);
+		}
+
+		// Element type is itself an array, of (dim-1, elem).
+		if (vType == GC.IS_OBJ) {
+			return false;
+		}
+		int vDesc = Native.rdMem(value + GC.OFF_ELEM);
+		if (vDesc == 0) {
+			return true;               // undecidable
+		}
+		if ((vDesc >>> ARRAY_DIM_SHIFT) != dim - 1) {
+			return false;
+		}
+		int vElem = vDesc & ARRAY_ELEM_MASK;
+		if (vElem == elem) {
+			return true;
+		}
+		if (isPrimElem(vElem) || isPrimElem(elem) || vElem == 0) {
+			return false;
+		}
+		return classAssignable(vElem, elem);
+	}
+
+	/**
 	 * Is an instance of class `sub` assignable to `target`?
 	 *
 	 * Both are class-info addresses (`classRefAddress`, which is the same thing
@@ -578,7 +678,8 @@ synchronized (o) {
 		}
 		int p = sub;
 		for (;;) {
-			if (p == target) {
+			// always check this bound with TypeGraphTool!
+			if (p == target) { // @WCA loop <= 5
 				return true;
 			}
 			p = Native.rdMem(p + Const.CLASS_SUPER);

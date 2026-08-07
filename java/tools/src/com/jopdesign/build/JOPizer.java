@@ -47,7 +47,16 @@ public class JOPizer extends OldAppInfo implements Serializable {
 	public final static String stringClass = "java.lang.String";
 	public final static String objectClass = "java.lang.Object";
 
-	public static final int PTRS = 6;
+	/**
+	 * Number of words in the special-pointer block.
+	 *
+	 * MUST match what JopWriter actually emits there — it is what places the
+	 * string table and everything after it. Getting it wrong shifts every
+	 * address in the image and shows up only as a download checksum mismatch,
+	 * with no hint of the cause. Startup's clinit-table offset must follow it
+	 * too. JopWriter asserts the two agree.
+	 */
+	public static final int PTRS = 8;
 
 	public static final int IMPORTANT_PTRS = 12;
 	public static final int GCINFO_NONREFARRY = 6; // gci is at -1 from classinfo

@@ -250,7 +250,10 @@ public class Startup {
 
 		stack = new int[MAX_STACK];
 
-		int table = Native.rdMem(1)+6;		// start of clinit table
+		// +8, not +6: two special pointers were appended for the Cloneable and
+		// Serializable class-info addresses. Microcode only reads slots 1 and 2
+		// (jjp/jjhp), so appending is safe, but this offset must follow.
+		int table = Native.rdMem(1)+8;		// start of clinit table
 		int cnt = Native.rdMem(table);		// number of methods
 		++table;
 		for (int i=0; i<cnt; ++i) {

@@ -76,6 +76,21 @@ public class JopWriter {
 		out.println("\t\t"+JopClassInfo.mainAddress+",\t// pointer to main method struct");
 		out.println("\t\t"+JopClassInfo.addrRefStatic+",\t// pointer to static reference fields");
 		out.println("\t\t"+JopClassInfo.cntRefStatic+",\t// number of static reference fields");
+		// Arrays implement Cloneable and Serializable but have no class struct
+		// to hold an interface table, so the runtime needs these addresses to
+		// answer `(Cloneable) someArray`. 0 when the interface is not linked in,
+		// which is correct: no cast to it can appear either.
+		out.println("\t\t"+JopClassInfo.cloneableAddress+",\t// java.lang.Cloneable class info (0 if absent)");
+		out.println("\t\t"+JopClassInfo.serializableAddress+",\t// java.io.Serializable class info (0 if absent)");
+		// Emitted count must equal JOPizer.PTRS, which is what positions the
+		// string table and every address after it. A mismatch corrupts the whole
+		// image and surfaces only as a download checksum failure.
+		final int emittedPtrs = 8;
+		if (emittedPtrs != JOPizer.PTRS) {
+			throw new Error("special pointer block: emitting " + emittedPtrs
+					+ " words but JOPizer.PTRS is " + JOPizer.PTRS
+					+ " — every address after the block would be wrong");
+		}
 
 		if (JopClassInfo.mainAddress==0 || JopClassInfo.mainAddress==-1) {
 			System.out.println("Error: no main() method found");

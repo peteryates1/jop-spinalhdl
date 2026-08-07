@@ -227,12 +227,23 @@ silently invalidate all of that. Use this to find one:
     all three; DoAll 66/66, `MultiArrayGcTest` OK, `GcStressTest` 240k+ rounds
     clean.
 
-    Still open, small: `f_aastore` does no covariant store check, so storing a
-    `Bar` into a `Foo[]` does not throw `ArrayStoreException` — the descriptor
-    needed for it now exists, so this is a short follow-up. `(Cloneable) arr`
-    and `(Serializable) arr` are still rejected; arrays would have to declare
-    those interfaces. And `f_checkcast`'s WCET bound (`@WCA loop <= 5`) does not
-    account for the element subtype walk.
+    **The three follow-ups are done too (2026-08-07).**
+    - `f_aastore` now performs the covariant store check and throws
+      `ArrayStoreException` (a class JOP's JDK subset did not have — likely part
+      of why this was never implemented). The common case is inlined: a 1-D
+      reference array whose element class is exactly the value's class, three
+      reads and no call, because a helper call is ~142 cycles on a hot path.
+    - `(Cloneable) arr` and `(Serializable) arr` now succeed. Arrays have no
+      interface table, so JOPizer emits the two class-info addresses into the
+      special-pointer block and `JVMHelp.init` reads them — the equivalent of
+      HotSpot's `ArrayKlass` declaring those interfaces.
+    - The **WCET bound is unchanged at `@WCA loop <= 5`**, and the earlier
+      concern was wrong: the array path and the object path in `f_checkcast`
+      are mutually exclusive, so it is still one walk. The new element walk in
+      `classAssignable` is annotated accordingly.
+
+    `ArrayCastTest` is now **36 checks**, passing on EP4CGX150, XC7A100T and
+    Colorlight i5. DoAll 66/66, `MultiDimTest` OK, `GcStressTest` 240k+ clean.
 
 
 ### Compute units and bytecode implementation
