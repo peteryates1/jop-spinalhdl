@@ -216,14 +216,47 @@ silently invalidate all of that. Use this to find one:
     - `(Cloneable) arr` and `(Serializable) arr` are rejected, because the
       interface ID is not resolvable without knowing the element type.
 
-    Fixing it means encoding element class plus dimension in the constant pool
-    and recording it in the handle: JOPizer, the allocation paths and the GC's
-    type handling. Multi-day, and it is the area that produced the
-    premature-collection defect `78cc968`. **`ArrayCastTest` pins every unsound
-    case**, so closing this flips known assertions rather than being discovered.
+    - `aastore` does no covariant store check either — storing a `Bar` into a
+      `Foo[]` should throw `ArrayStoreException` and does not (`f_aastore` runs
+      the GC write barrier and stores). Same missing information.
 
-    Worth noting it would also give item 24's evacuate-versus-slide decision a
-    basis, since average object size per handle becomes knowable per type.
+    **How HotSpot solves it, and why the same shape fits here.** Every object
+    carries a klass pointer in its header, and array types are first-class
+    `Klass` objects — `TypeArrayKlass` for `int[]`, `ObjArrayKlass` for
+    reference arrays with an `_element_klass` and `_dimension` field (`int[][]`
+    is an `ObjArrayKlass` whose element is `TypeArrayKlass(int)`). They are
+    created lazily, only for array types a program actually uses. `checkcast
+    [LFoo;` resolves the constant-pool entry to that same Klass, so both sides
+    know the exact type and the check is the ordinary subtype walk; covariance
+    falls out of recursing on element klasses, and `ArrayKlass` declares
+    Cloneable and Serializable as its interfaces.
+
+    JOP has neither half: no header, and the cp holds 0. But the port is
+    cheaper than it sounds — **the handle has two spare words**. `HANDLE_SIZE`
+    is 8 and only 0-5 are used (`OFF_PTR`, `OFF_MTAB_ALEN`, `OFF_SPACE`,
+    `OFF_TYPE`, `OFF_NEXT`, `OFF_GREY`), so 6 and 7 are free and already
+    allocated. Sketch:
+
+    - JOPizer emits a small array-class struct per distinct array type
+      referenced — element type code or element class pointer, dimension, super
+      = `java.lang.Object`, interface bits for Cloneable/Serializable
+    - the cp entry for `[LFoo;` / `[[I` points at it instead of 0
+    - allocation stores that pointer in a spare handle word
+    - `checkcast`/`instanceof`/`aastore` walk it, reusing the existing class path
+
+    Cost: one struct per array *type* used (a handful), one word per array
+    *object* — **already paid for**. `OFF_TYPE` stays a small code so the GC's
+    hot paths are untouched, which is the part that must not regress.
+
+    Two things to weigh: it is the area that produced the premature-collection
+    defect `78cc968`, and a covariant subtype walk recurses on element klasses,
+    so the WCET bound on `f_checkcast` (currently `@WCA loop <= 5`) needs
+    revisiting for a real-time claim.
+
+    **`ArrayCastTest` pins every unsound case**, so closing this flips known
+    assertions rather than being discovered. It would also give item 24's
+    evacuate-versus-slide decision a basis, since average object size becomes
+    knowable per type.
 
 ### Compute units and bytecode implementation
 
