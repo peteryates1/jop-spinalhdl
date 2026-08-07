@@ -23,10 +23,20 @@ QUARTUS_BIN = $(QUARTUS_DIR)/bin
 
 # JTAG programmer.
 #
-# Quartus does NOT see this board: the on-board programmer is an FT2232H
-# ("Arrow USB Blaster TEI0050", 0403:6010), not an Altera Blaster, and
-# jtagconfig lists nothing. openFPGALoader knows it as board `cyc5000` and
-# works with no extra driver — use `make program` below, not quartus_pgm.
+# The on-board programmer is an FT2232H ("Arrow USB Blaster TEI0050",
+# 0403:6010), not an Altera Blaster. openFPGALoader knows it as board `cyc5000`
+# and needs nothing special — use `make program` below.
+#
+# Quartus CAN see it, but only with BOTH of:
+#   1. libjtag_hw_arrow.so present in $(QUARTUS_DIR)/linux64/. This does NOT
+#      ship with Quartus, any version — it is obtained from Arrow/Trenz and
+#      copied in by hand. It works in 18.1 as well as 25.1.
+#   2. ftdi_sio unbound from JTAG interface 0, which it claims on plug-in:
+#        echo -n 1-8:1.0 | sudo tee /sys/bus/usb/drivers/ftdi_sio/unbind
+#      (substitute the real port path; fpga/scripts/jtag_probe_map shows it).
+#      Leave interface 1 bound — that one is the UART, see SERIAL_PORT below.
+#   Then `pkill jtagd` so the daemon rescans. Verified 2026-08-07: jtagconfig
+#   then lists "Arrow-USB-Blaster [ARA30135-TEI0050]" with device 5CE(BA2|FA2).
 #
 # openFPGALoader also will not take a .sof for SRAM programming ("please use
 # rbf or svf file"), so the sof is converted with quartus_cpf first.
@@ -145,8 +155,9 @@ program: $(RBF_FILE)
 	sudo $(OFL) -b cyc5000 $(RBF_FILE)
 	@echo "=== FPGA programmed ==="
 
-# Kept for reference: Quartus cannot see the Arrow blaster, so this will fail
-# with "Unable to scan device chain". Use `make program` instead.
+# Needs the two conditions in the JTAG programmer note above (hand-installed
+# libjtag_hw_arrow.so, ftdi_sio unbound from interface 0). Without them this
+# fails with "Unable to scan device chain". `make program` needs neither.
 program-quartus: $(SOF_FILE) $(QP).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP).cdf
 

@@ -22,13 +22,15 @@ terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board: move 
 xc7a100t|E662C876|pico|QMTECH XC7A100T + DB_FPGA V5 (Pico: dirtyJtag or usb-blaster)
 ae115fb|E6616408|pico|A-E115FB EP4CE115 + 1GB DDR2 (Pico: dirtyJtag or usb-blaster)
 debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashing Picos)
+cyc5000|ARA30135|arrow-usb-blaster|Arrow CYC5000 (onboard Arrow USB Blaster TEI0050, FT2232H)
+i5|07000001002700424e|cmsis-dap|Colorlight i5 on the ext board (DAPLink, also the UART bridge)
 EOF
 )
 
 # vid:pid values we recognise as JTAG probes
 is_probe_id() {
   case "${1,,}" in
-    1209:c0ca|09fb:6001|2e8a:000c) return 0 ;;
+    1209:c0ca|09fb:6001|2e8a:000c|0403:6010|0d28:0204) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -38,6 +40,11 @@ probe_kind() {
     1209:c0ca) echo "dirtyjtag" ;;
     09fb:6001) echo "usb-blaster" ;;
     2e8a:000c) echo "cmsis-dap" ;;
+    # Arrow's onboard blaster is an FT2232H, so it shares a vid:pid with every
+    # other FTDI dual-UART part. The serial (ARA...) and product string
+    # ("Arrow USB Blaster") are what actually identify it.
+    0403:6010) echo "arrow-usb-blaster" ;;
+    0d28:0204) echo "cmsis-dap" ;;
     *) echo "unknown" ;;
   esac
 }
@@ -52,7 +59,7 @@ Usage:
   jtag_probe_map --health           per-port USB enumeration health (needs dmesg)
   jtag_probe_map --boards           list known board aliases
 
-Aliases: terasic, xc7a100t, ae115fb, debugprobe
+Aliases: terasic, xc7a100t, ae115fb, debugprobe, cyc5000, i5
 
 NOTE: an alias names whatever the SERIAL is attached to. A Pico is soldered to
 one board so its alias names that board; a standalone cable like the Terasic

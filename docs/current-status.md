@@ -118,6 +118,21 @@ silently invalidate all of that. Use this to find one:
     worse for large objects in the steady state. An application benchmark
     (item 11) is what would say which regime real code sits in.
 
+    **Validated on a third memory system (CYC5000, Cyclone V SDR, 80 MHz,
+    2026-08-07)**, which is the one board whose *clock* differs and whose 8 MB
+    heap forces the sort-and-slide fallback deliberately rather than by
+    accident. Major pause **846.4 ms** at 36k live (against 859.1 on the
+    100 MHz EP4CGX150 — slower clock, faster collection, consistent with the
+    pause being latency-bound). `GcObjSizeTest`: evacuation at 2/10/40 words,
+    **fallback engaging at 100 words** (`sort_ms` 299.4), and the 200-word case
+    cleanly refused as too large for the heap. `corrupt 0`, `OBJSIZE OK`.
+    `GcPauseTest`: minor worst **9.292 ms**, sweep 1315 ns/handle, MAJOR OK,
+    retained 64/64, born-bad 0.
+
+    Note `GcObjSizeTest`'s `passes` column reads 0 regardless now — it is under
+    `GC_SORT_TRACE`, which item 25 switched off. Read `sort_ms` to tell which
+    strategy ran.
+
 - **25.** ~~**Two loose ends from the GC work**~~ — **DONE 2026-08-06.**
     `GC_SORT_TRACE` and `GC_MARK_TRACE` now default `false`; having them on cost
     6.4 ms of the 865.6 ms pause, which matches the estimate made when they were
@@ -173,7 +188,7 @@ silently invalidate all of that. Use this to find one:
 - **14.** **Stack cache SDRAM integration** — pre-existing; 3-bank rotation verified
     in BRAM simulation, needs per-core stack regions on SDRAM.
 - **15.** **`GcPauseTest` on the Wukong boards** — never run; they have card tables now
-    but no measured pause.
+    but no measured pause. (The CYC5000 *has* now been measured — see item 24.)
 - **16.** ~~**Colorlight i5 SDRAM ("stage 2" of that board's bring-up — unrelated to
     the GC stages elsewhere in this document)**~~ — **DONE** (`a7fdf93`). 8 MB working on
     hardware, DoAll 66/66 at 1 Mbaud. `BmbSdramCtrlWide` added for the 32-bit

@@ -31,10 +31,13 @@ import com.jopdesign.sys.*;
  *   - does copy_ms track live_words linearly, as the model says?
  *   - does the pause cross back over what sliding used to cost?
  *
- * `passes` also matters: it is 0 while evacuation is in use and non-zero when
+ * **Read `sort_ms`, not `passes`, to see which strategy ran.** `sort_ms` is
+ * under GC_TIMING and always populated; `passes` is under GC_SORT_TRACE, which
+ * is off for production, so it reads 0 regardless. A non-zero `sort_ms` means
  * `chooseEvacDest` found no disjoint region and fell back to sort-and-slide.
- * On a small heap the fallback engages once live approaches half of it, which
- * is the other thing worth exercising here — that path is otherwise untested.
+ * On a small heap that fallback engages once live approaches half of it, which
+ * is the other thing worth exercising here — the path is otherwise only hit by
+ * accident.
  */
 public class GcObjSizeTest {
 
