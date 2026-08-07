@@ -38,7 +38,7 @@ silently invalidate all of that. Use this to find one:
 | # | section | # | section | # | section |
 |---|---|---|---|---|---|
 | 1-3 | Blocking / correctness | 11 | The measurement gap | 21 | Boards |
-| 4-7, 24, 25 | Performance | 12-16, 23, 26, 27 | Smaller | 17-20, 22 | Compute units |
+| 4-7, 24, 25 | Performance | 12-16, 23, 26, 27 | Smaller | 17-20, 22, 28 | Compute units |
 | 8-10 | Hardware / infrastructure | | | | |
 
 ### Blocking / correctness
@@ -64,8 +64,10 @@ silently invalidate all of that. Use this to find one:
 
 - **3.** **Sixteen presets still run classic GC.** Safe but slow after the guard;
    `hasCardTable` is one line each and the boot line confirms it took effect.
-   The Wukong presets have it but are **elaboration-verified only** — no Wukong
-   board has been attached, so `GC: generational` is unconfirmed there.
+   ~~The Wukong presets are elaboration-verified only~~ — **confirmed on
+   hardware 2026-08-07**: a Wukong was attached for the first time and
+   `wukongFull` boots `GC: generational, 512-word cards`. The sixteen other
+   presets remain unverified.
 
 ### Performance
 
@@ -198,8 +200,13 @@ silently invalidate all of that. Use this to find one:
     and nearly a wrong SMP result. Build HelloWorld last, or `rm -rf build`.
 - **14.** **Stack cache SDRAM integration** — pre-existing; 3-bank rotation verified
     in BRAM simulation, needs per-core stack regions on SDRAM.
-- **15.** **`GcPauseTest` on the Wukong boards** — never run; they have card tables now
-    but no measured pause. (The CYC5000 *has* now been measured — see item 24.)
+- **15.** ~~**`GcPauseTest` on the Wukong boards** — never run~~ — **DONE
+    2026-08-07.** Wukong XC7A100T + DDR3, `wukongFull` at 100 MHz: minor pause
+    **worst 11.840 ms / mean 11.813** over 63 collections, sweep 1624
+    ns/handle, copy **87%** of the pause (the other boards are 79-82%), major
+    `MAJOR OK` with retained 64/64 and `corrupt 0`, free 262 MB.
+    `GcMajorPauseTest` at 36k live: **681.2 ms**, the best of the four boards
+    measured — sort never runs. (The CYC5000 was measured too — see item 24.)
 - **16.** ~~**Colorlight i5 SDRAM ("stage 2" of that board's bring-up — unrelated to
     the GC stages elsewhere in this document)**~~ — **DONE** (`a7fdf93`). 8 MB working on
     hardware, DoAll 66/66 at 1 Mbaud. `BmbSdramCtrlWide` added for the 32-bit
@@ -280,6 +287,28 @@ silently invalidate all of that. Use this to find one:
     a few percent or a third and nobody would know. Needs a store-heavy
     microbenchmark, or the item 11 application benchmark, before the design is
     called settled.
+
+- **28.** **`DoAll` dies at `CollectionTest` on the Wukong — 59 of 66.** Same
+    `DoAll.jop` passes **66/66** on EP4CGX150, XC7A100T+DB V5 and Colorlight i5,
+    so it is not the runtime. The distinguishing feature is the config:
+    `wukongFull` is the only preset tested with **`bytecodes = Map("*" -> "hw")`
+    and `useDspMul = true`** — every compute unit in hardware. The others run
+    `idiv`/`irem` in hardware and little else.
+
+    Symptom is `JOP: bytecode 255 not implemented` with `mp=000006` — a method
+    pointer far too low to be real, so this is execution going off the rails
+    rather than a genuinely missing handler. It stops exactly at the boundary of
+    the **older 59-test suite**, which is the last thing this board was measured
+    against (`59/59`), so the seven newer tests have never run here and this is
+    almost certainly pre-existing rather than a regression — though nothing
+    proves that, since there is no earlier card-table Wukong bitstream to
+    compare against.
+
+    Squarely in item 17's territory (`needs*Compute` understating CU
+    reachability; signature was long/float/double *arithmetic* failing while
+    *storage* works). Next step is to run `CollectionTest` standalone on the
+    Wukong, then bisect the CU set — `wukongDdr3Fcu`, `Lcu`, `NoDcu` and
+    `DspMul` exist precisely to isolate this.
 
 ### Compute units and bytecode implementation
 
@@ -1094,6 +1123,13 @@ before the retry (the script's own retry cannot work).
 | XC7A100T | `make -C fpga/qmtech-xc7a100t-dbfpga-v5 ddr3-program` | `… /dev/ttyACM0 2000000` |
 | Colorlight i5 | `make -C fpga/colorlight-i5 program` | `… <DAPLink by-id> 1000000` |
 | CYC5000 | `make -C fpga/cyc5000-sdram program` | `… /dev/ttyUSB2 2000000` |
+| Wukong | `openFPGALoader -c dirtyJtag --busdev-num "$(jtag_probe_map --busdev wukong)" <bit>` | `… /dev/ttyUSB3 1000000` |
+
+**The Wukong needs the PATCHED openFPGALoader** (see `jtag_probe_map`'s header):
+its Pico 2 W runs dirtyJtag, so two dirtyJtag probes are attached and stock
+openFPGALoader silently takes whichever enumerated first. Its Makefile's
+`UART_BAUD := 1000000` is right only for a bitstream built after 2026-08-07;
+older ones are 2 Mbaud, where the on-board CH340N drops characters.
 
 ```bash
 python3 fpga/scripts/download.py -e <app.jop> <tty> <baud>
