@@ -675,8 +675,13 @@ separated "board broken" from "our design broken".
 1. ~~**GC suite at 1 GB**~~ — **DONE 2026-08-03, all green.** DoAll 66/66,
    GcStressTest 537k rounds clean, MultiArrayGcTest and IntHandlerGcTest OK,
    `free 1,067,359,856 bytes`. Detail in the bring-up doc.
-2. **The minor-pause bound holds on two boards and is VIOLATED on the
-   A-E115FB.** All three measured with `GcPauseTest` (2026-08-04):
+2. ~~**The minor-pause bound is VIOLATED on the A-E115FB**~~ — **FIXED, all
+   four boards inside 20 ms** (see the four-board table further down). The
+   heading is kept struck through because the investigation below is worth
+   reading; the numbers immediately following it are the *starting* state, not
+   the current one.
+
+   Measured with `GcPauseTest` (2026-08-04), before any of the fixes:
 
    | board | fixed us | sweep ns/handle | swept | worst | model predicts |
    |---|---:|---:|---:|---:|---:|
@@ -888,6 +893,25 @@ separated "board broken" from "our design broken".
 | EP4CGX150 (SDR) | Terasic USB-Blaster (`terasic`) | `quartus_pgm -c "$(jtag_probe_map --cable terasic)"` |
 | XC7A100T + DB_FPGA V5 (DDR3) | RP2040 on the DB-V5, pico-dirtyJtag | `openFPGALoader` |
 | A-E115FB (1 GB DDR2) | **Terasic** — its Pico clone cannot configure | `quartus_pgm` |
+| Colorlight i5 (ECP5, 8 MB SDR) | DAPLink on the ext board (`i5`) | `openFPGALoader -b colorlight_i5` — also the UART bridge |
+| CYC5000 (Cyclone V, 8 MB SDR) | on-board Arrow USB Blaster TEI0050 (`cyc5000`) | `openFPGALoader -b cyc5000` on an **.rbf** — see below |
+
+**The CYC5000's Arrow blaster needs two things nobody wrote down.** It is an
+FT2232H (`0403:6010`), so its vid:pid is shared with every other FTDI dual-UART
+part — `jtag_probe_map` identifies it by serial (`ARA…`) and product string.
+`openFPGALoader` needs neither of the following and is the easy path; Quartus
+needs both:
+- `libjtag_hw_arrow.so` in `quartus/linux64/`. It does **not** ship with
+  Quartus in any version — it comes from Arrow/Trenz and is copied in by hand.
+  It works in 18.1 as well as 25.1.
+- `ftdi_sio` unbound from **interface 0 only**:
+  `echo -n 1-8:1.0 | sudo tee /sys/bus/usb/drivers/ftdi_sio/unbind`, then
+  `pkill jtagd`. Interface 1 must stay bound — that one is the FPGA UART.
+  With the driver present but `ftdi_sio` still attached, `jtagconfig` lists
+  nothing, which is what made "Quartus cannot see this board" look true.
+
+Also: `openFPGALoader` refuses a `.sof` for SRAM programming, so the CYC5000
+flow converts to `.rbf` with `quartus_cpf` first.
 
 **Why the Pico USB-Blaster clone cannot configure either Altera board — it has
 no level shifter.** Pin 4 of the Altera 10-pin JTAG header is VCC(TRGT); a
@@ -1047,15 +1071,39 @@ cable that moves.
 ## 6. Build quick reference
 
 ```bash
-# GC test apps (force clean — see the trap above)
-make -C java runtime && make -C java/apps/Small clean && make -C java/apps/Small APP_NAME=GcPauseTest
+# GC / test apps.  Use `rm -rf build`, NOT `make clean`: clean deletes
+# HelloWorld.jop, because JOP_OUT derives from APP_NAME (item 13).
+make -C java runtime
+rm -rf java/apps/Small/build && make -C java/apps/Small APP_NAME=GcPauseTest
+rm -rf java/apps/JvmTests/build && make -C java/apps/JvmTests      # DoAll
 
 # A-E115FB DDR2
 cd fpga/a-e115fb-ddr2
 make ip                        # regenerate the DDR2 IP (needs Quartus 18.1)
 make PROJECT=jop_ddr2 all      # or PROJECT=ddr2_exerciser for the memory test
 /opt/altera/18.1/quartus/bin/quartus_pgm -c "USB-Blaster [1-5]" -m JTAG -o "p;output_files/jop_ddr2.sof"
-
-# download / monitor
-python3 fpga/scripts/download.py -e <app.jop> /dev/ttyUSB0 115200
 ```
+
+**Program, then download — in that order, every time.** The serial bootloader
+listens once, right after configuration, so a failed download needs a reprogram
+before the retry (the script's own retry cannot work).
+
+| board | program | download |
+|---|---|---|
+| EP4CGX150 | `make -C fpga/qmtech-ep4cgx150-sdram program` | `… /dev/ttyUSB0 2000000` |
+| XC7A100T | `make -C fpga/qmtech-xc7a100t-dbfpga-v5 ddr3-program` | `… /dev/ttyACM0 2000000` |
+| Colorlight i5 | `make -C fpga/colorlight-i5 program` | `… <DAPLink by-id> 1000000` |
+| CYC5000 | `make -C fpga/cyc5000-sdram program` | `… /dev/ttyUSB2 2000000` |
+
+```bash
+python3 fpga/scripts/download.py -e <app.jop> <tty> <baud>
+```
+
+**The baud is baked into the bitstream** — the UART divider is fixed at build
+time, so downloading at the wrong rate simply never handshakes. It is 2 Mbaud
+everywhere except the i5, which is 1 Mbaud over the DAPLink.
+
+**Port paths above are examples, not constants.** They renumber on every replug
+— the XC7A100T's `ttyACM0` and the CYC5000's `ttyUSB2` both moved during a
+single session. Re-resolve with `fpga/scripts/usb_serial_map` (tty) and
+`fpga/scripts/jtag_probe_map` (JTAG) rather than trusting this table.
