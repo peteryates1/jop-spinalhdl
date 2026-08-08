@@ -190,6 +190,28 @@ silently invalidate all of that. Use this to find one:
 
 ### Smaller
 
+- **29.** **`BytecodeFetchStage: JumpTable integration` is flaky in CI, and the
+    failure is seed-dependent.** It broke the 2026-08-08 push and a rerun of the
+    *same commit* passed, so it is not a regression. Reproduce on demand:
+
+    ```scala
+    // BytecodeFetchStageTest.scala:161
+    bcfSimConfig.compile(createDut(jbcData)).doSim(seed = 360571106) { dut =>
+    ```
+
+    gives the CI failure exactly — `1868 did not equal 550, NOP should map to
+    0x226, got 0x74C`. `0x74C` is `entries[0xEC]`, and `0xEC` is an *undefined*
+    bytecode (the highest address in the table, the not-implemented handler), so
+    the DUT sampled an undefined bytecode rather than byte 0/1/2 of the test ROM
+    — randomised post-reset state, not a mis-timed read. Adding a settle cycle
+    does **not** fix it (tried; identical failure), so the cause is upstream in
+    what the JBC RAM or `jpc` hold after reset.
+
+    Ruled out, each of which looks plausible until checked: stale generated
+    artifacts (`asm/generated/` is gitignored and CI rebuilds it, but
+    regenerating locally with CI's exact `make && make serial && make
+    flash-altera` gives **byte-identical** output); parallel test collisions
+    (`build.sbt` sets `Test / parallelExecution := false`).
 - **12.** **`LongComputeUnitConfig` has no enable flag** for its base 64-bit ALU
     (`ladd/lsub/lneg/lcmp`), unlike `FloatComputeUnitConfig.withAdd`. Worked
     around at the `ComputeUnitTop` level (conditional instantiation), but the
@@ -337,7 +359,7 @@ silently invalidate all of that. Use this to find one:
     structure differs and it never had the defect. `div_inexact` passes there
     unmodified and now stands as proof.
 
-    **All five DDR3 Wukong presets re-verified against the final RTL**
+    **All six DDR3 Wukong presets re-verified against the final RTL**
     (2026-08-08), rather than leaving intermediate-state results lying around —
     `wukongDdr3AllCu`'s only previous record was a *failure* from before any fix:
 
@@ -346,12 +368,19 @@ silently invalidate all of that. Use this to find one:
     | `wukongDdr3` (baseline) | 17515 | +0.360 | **66/66** |
     | `wukongDdr3DspMul` | 17850 | +0.263 | **66/66** |
     | `wukongDdr3Lcu` | 18474 | +0.207 | **66/66** |
+    | `wukongDdr3Fcu` | 18870 | +0.029 | **66/66** |
     | `wukongNoDcu` | 20161 | +0.033 | **66/66** |
     | `wukongDdr3AllCu` | 24497 | +0.008 | **66/66** |
     | `wukongFull` | 25624 | +0.121 | **66/66** |
 
     `wukongDdr3Lcu` passing means the **LCU is clean** — the three defects were
-    confined to the FCU and DCU. Builds were staggered against tests, so each
+    confined to the FCU and DCU.
+
+    `wukongDdr3Fcu` was added on 2026-08-08: it had **never been built or run**,
+    despite being the preset that isolates the FCU (`wukongDdr3 + float -> hw`)
+    and therefore the most direct check on the compare fix in item 28. It was
+    missed because the sweep was assembled from the presets that already had
+    bitstreams, so the one preset with no history was the one that got skipped. Builds were staggered against tests, so each
     Vivado run overlapped the previous bitstream's ~4-minute DoAll; bitstreams
     are stashed per preset because every build writes the same output path and
     would otherwise clobber the one under test.
@@ -427,9 +456,18 @@ silently invalidate all of that. Use this to find one:
     - **`wukongDualSmp` is misleadingly named** — its `case` maps to
       `wukongDualIndependentSmp`, the *no*-interconnect variant. Neither name
       reaches the interconnect design.
-    - **`wukongBramFull`** — no `case` in `JopTopVerilog`, so unreachable. Unlike
-      `wukongDual` this looks like a plain omission rather than an unimplemented
-      feature.
+    - **`wukongBramFull`** and **`auMinimal`** — no `case` in `JopTopVerilog`, so
+      unreachable. Unlike `wukongDual` these look like plain omissions rather
+      than unimplemented features.
+
+    **Every other preset has now been on hardware, or has no board attached.**
+    Sweeping `JopConfig`'s definitions against `JopTopVerilog`'s cases is the
+    cheap way to find this class of gap — it is what surfaced the three
+    unreachable presets above. Note that all 40 presets *are* covered at config
+    level by `JumpTableResolutionTest`, including the unreachable ones, so a
+    green test suite does not imply a preset can be generated, let alone run.
+    The presets with no board attached are `auSerial`, `max1000Sdram` and
+    `ep4ce6Sdram` (`minimum` and `simulation` are not board targets).
 
 ### Compute units and bytecode implementation
 
