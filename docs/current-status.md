@@ -337,6 +337,32 @@ silently invalidate all of that. Use this to find one:
     structure differs and it never had the defect. `div_inexact` passes there
     unmodified and now stands as proof.
 
+    **All five DDR3 Wukong presets re-verified against the final RTL**
+    (2026-08-08), rather than leaving intermediate-state results lying around —
+    `wukongDdr3AllCu`'s only previous record was a *failure* from before any fix:
+
+    | preset | LUTs | WNS | DoAll |
+    |---|---:|---:|---|
+    | `wukongDdr3` (baseline) | 17515 | +0.360 | **66/66** |
+    | `wukongDdr3DspMul` | 17850 | +0.263 | **66/66** |
+    | `wukongDdr3Lcu` | 18474 | +0.207 | **66/66** |
+    | `wukongNoDcu` | 20161 | +0.033 | **66/66** |
+    | `wukongDdr3AllCu` | 24497 | +0.008 | **66/66** |
+    | `wukongFull` | 25624 | +0.121 | **66/66** |
+
+    `wukongDdr3Lcu` passing means the **LCU is clean** — the three defects were
+    confined to the FCU and DCU. Builds were staggered against tests, so each
+    Vivado run overlapped the previous bitstream's ~4-minute DoAll; bitstreams
+    are stashed per preset because every build writes the same output path and
+    would otherwise clobber the one under test.
+
+    **Still never run on hardware**, and the reason the board was attached:
+    `wukongDual` / `wukongDualIndependent` (the only multi-`JopSystem` presets
+    and the only users of `InterconnectConfig`), the SDR-on-Artix trio
+    (`wukongSdram`, `wukongSdrAllCu`, `wukongSdrFull`), the SMP presets, and the
+    BRAM ones. Those use different top modules and TCL flows, so they are not a
+    continuation of this loop.
+
 ### Compute units and bytecode implementation
 
 **Implementation coverage, measured 2026-08-05.** Every configurable bytecode
