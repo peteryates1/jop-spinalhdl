@@ -742,7 +742,7 @@ case class JopTop(
           sdrCtrl.ctrl.fillPort.end := 0; sdrCtrl.ctrl.fillPort.value := 0
       }
 
-      // SDR UART RX: secondary (J12 header)
+      // SDR UART RX: secondary (J11 header, to the Pico 2 W uart0 bridge)
       cluster.devicePin[Bool]("uart", "rxd") := io.ser_rxd_1
     }
 

@@ -540,7 +540,7 @@ object JopConfig {
   def wukongDualIndependent = wukongDualIndependentSmp()
 
   def wukongDualIndependentSmp(cpuCnt: Int = 1, sdrClkMhz: Int = 80) = JopConfig(
-    assembly = SystemAssembly.wukongWithJ12Uart,
+    assembly = SystemAssembly.wukongWithJ11Uart,
     systems = Seq(
       JopSystem(name = "ddr3", memory = "ddr3", bootMode = BootMode.Serial,
         clkFreq = 100 MHz, cpuCnt = cpuCnt,
@@ -549,7 +549,7 @@ object JopConfig {
         devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N")))),
       JopSystem(name = "sdr", memory = "sdr", bootMode = BootMode.Serial,
         clkFreq = sdrClkMhz MHz, cpuCnt = cpuCnt, coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024)),
-        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("J12_UART"),
+        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("J11_UART"),
           params = Map("baudRate" -> 115200))))),
     interconnect = None)
 

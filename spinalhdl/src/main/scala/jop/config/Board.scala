@@ -766,14 +766,28 @@ object Board {
         "pin9" -> "J2:10", "pin10" -> "J2:12"))))
 
   /**
-   * J12 UART adapter — simple UART breakout on Wukong J12 header.
+   * J11 UART adapter — second UART on the Wukong J11 header.
    *
-   * Provides a second UART channel for dual-subsystem designs where each
-   * subsystem needs its own serial port. Directly connected to FPGA pins.
+   * Second UART for dual-subsystem designs, on header J11, wired to the
+   * on-board Pico 2 W's uart0 so it appears as one of the Pico's CDC ports.
+   *
+   * Direction is from the FPGA's point of view, which is the opposite of the
+   * Pico's: the Pico's TX drives an FPGA input.
+   *
+   *   J11.1 -> D5 <- Pico GP8  (uart1_tx)   FPGA RXD
+   *   J11.2 -> G5 -> Pico GP9  (uart1_rx)   FPGA TXD
+   *   J11.3 -> G7 <- Pico GP12 (uart0_tx)   FPGA RXD   <- used here
+   *   J11.4 -> G8 -> Pico GP13 (uart0_rx)   FPGA TXD   <- used here
+   *
+   * uart0 (GP12/13) is the pair to use: dirtyJtagConfig.h puts uart1 on GP4/5,
+   * not GP8/9, so J11.1/.2 are not bridged by the current Pico firmware.
+   *
+   * This previously claimed J12 with TXD=U14/RXD=V14 and a SEL pin. Those pins
+   * are not what is wired, and SEL was never consumed by any generator.
    */
-  def J12UartAdapter = Board(
-    name = "j12-uart-adapter",
-    devices = Seq(BoardDevice("J12_UART", mapping = Map("TXD" -> "U14", "RXD" -> "V14", "SEL" -> "U15"))))
+  def J11UartAdapter = Board(
+    name = "j11-uart-adapter",
+    devices = Seq(BoardDevice("J11_UART", mapping = Map("TXD" -> "G8", "RXD" -> "G7"))))
 
   // ========================================================================
   // Composite board aliases
@@ -982,9 +996,9 @@ object SystemAssembly {
   def alchitryAuV2WithIo = SystemAssembly("alchitry-au-v2-io-v2",
     Board.AlchitryAuV2_IoV2)
 
-  /** Wukong + J12 UART adapter (dual-subsystem: DDR3 + SDR with separate UARTs) */
-  def wukongWithJ12Uart = SystemAssembly("wukong-xc7a100t-dual",
-    Seq(Board.WukongXC7A100T, Board.J12UartAdapter))
+  /** Wukong + J11 UART adapter (dual-subsystem: DDR3 + SDR with separate UARTs) */
+  def wukongWithJ11Uart = SystemAssembly("wukong-xc7a100t-dual",
+    Seq(Board.WukongXC7A100T, Board.J11UartAdapter))
 
   /** Arrow MAX1000 standalone */
   def max1000 = SystemAssembly("max1000", Seq(Board.MAX1000))
