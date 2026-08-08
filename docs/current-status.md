@@ -288,51 +288,54 @@ silently invalidate all of that. Use this to find one:
     microbenchmark, or the item 11 application benchmark, before the design is
     called settled.
 
-- **28.** **The FCU's float compare is wrong: `0.75f <= 0` returns TRUE.**
-    Found 2026-08-07 by bisecting a `DoAll` failure; root cause confirmed with a
-    minimal reproducer and a control on a second board.
+- **28.** ~~**`DoAll` dies at `CollectionTest` on the Wukong**~~ — **FIXED
+    2026-08-08. Three real hardware defects, `wukongFull` now DoAll 66/66** with
+    every compute unit in hardware (was 59/66 with a crash).
 
-    | config | `CollectionTest` |
-    |---|---|
-    | `wukongDdr3` (idiv/irem only) | ok |
-    | `wukongDdr3DspMul` (+DspMul, +imul hw) | ok |
-    | **`wukongDdr3Fcu` (+`float -> hw`)** | **hangs** |
-    | `wukongDdr3AllCu`, `wukongFull` | hangs |
-    | XC7A100T DB V5 (no FCU), same binary | ok |
+    | # | defect | symptom |
+    |---|---|---|
+    | 1 | **FCU compare**: a lone zero operand fell through to the exponent compare | `0.75f <= 0` TRUE |
+    | 2 | **DCU compare**: identical defect in the sibling unit | same, for double |
+    | 3 | **DCU divider**: dropped its last quotient bit | `Math.sqrt(9.0)` = 3.345 |
 
-    **The chain.** `CollectionTest` contains no float at all, but
-    `HashMap`'s constructor does:
+    **1 and 2 — the compare.** `unpackFloat`/`unpackDouble` flush zero to
+    `exp := 0`, which is the *unbiased* exponent of 1.0. Only both-operands-zero
+    was special-cased, so a lone zero was compared as if it were ~1.0 and every
+    magnitude below 1.0 came out "less than zero". `HashMap`'s constructor is
+    `if (loadFactor <= 0 …) throw`, so with an FCU present **every `HashMap`
+    construction threw** on the default `0.75f` — and the throw concatenates a
+    float into its message, so control vanished into float-to-string. That is
+    why `CollectionTest`, which contains no float at all, died: silently
+    standalone, as `bytecode 255 not implemented` under `DoAll`. Fixed by
+    deciding on the sign of the non-zero operand.
 
-    ```java
-    if (loadFactor <= 0 || Float.isNaN(loadFactor))
-        throw new IllegalArgumentException("Illegal load factor: " + loadFactor);
-    ```
+    **3 — the divider.** `DIV_ITER` read `val q = divQuotient` at the final
+    count; that is a register, so it returned the pre-update value and lost the
+    last quotient bit. `resMant`'s leading 1 landed at bit 53 instead of 54 and
+    `ROUND` read a zero as the hidden bit — packing `1.1010…` for `1.0101…`, so
+    `1.0/3.0` gave 0.416667. Only quotients with dividend < divisor are
+    affected, which is why `div_normal` (7/2, 12/4) never caught it.
 
-    With the FCU, `0.75f <= 0` evaluates **true**, so every `HashMap`
-    construction throws — and the throw builds its message by concatenating a
-    *float*, so control disappears into float-to-string. That is why the symptom
-    varied: under `DoAll` it surfaced as `bytecode 255 not implemented` with a
-    stack trace, standalone it just went silent. Two landings of one wrong
-    branch.
+    **Why it stayed latent for months.** Every one of these hides behind the
+    values the tests happened to use: `fcmp_zeros` only compared zero *with*
+    zero, all other compare cases use 1.0/2.0 where exponent ≥ 0 gives the right
+    answer, and both divide cases are exact with dividend > divisor. The FCU was
+    signed off at "52/52 BRAM JVM tests" on a suite predating `CollectionTest`.
 
-    `FcuBugTest` (`java/apps/Small`) isolates it — the exact operations
-    `HashMap` performs, integers only, no collections. On the FCU build 10 of 11
-    checks pass; only the comparison fails. `f2i`, `i2f`, `fmul` and the
-    `(int)(capacity * loadFactor)` expression are all **correct**, so this is
-    specifically the compare, not float arithmetic generally. `FloatArray` and
-    `DoubleArith` pass on the failing config for the same reason.
+    Guards added, each **verified to fail on the unfixed RTL** rather than
+    merely passing: `fcmp_one_operand_zero`, `dcmp_one_operand_zero`,
+    `div_inexact` (both units). 145/145 in `jop.core`.
 
-    **Workaround available today**: `fcmpl`/`fcmpg` gained working `_sw`
-    microcode handlers earlier in this cycle (item 19 tier 1, validated on
-    EP4CGX150 and Colorlight i5), so a config can take the FCU for arithmetic
-    while routing the compares to microcode —
-    `bytecodes = Map("float" -> "hw", "fcmpl" -> "mc", "fcmpg" -> "mc")`.
-    Untested as a combination.
+    On-target reproducers kept: `FcuBugTest` (the exact operations `HashMap`
+    performs, integers only) and `MathBugTest` (`MathTest`'s 21 checks reported
+    individually, because `MathTest` chains them with `&&` and reports only
+    "failed!"). `OneTest` runs a single `TestCase` from a cold start.
 
-    **Not yet done**: read the FCU's compare RTL against IEEE-754 and fix it,
-    then re-run `FcuBugTest` and `DoAll` on `wukongFull`. Note this was latent
-    for months — `useDspMul`/FCU were validated at "52/52 BRAM JVM tests" on the
-    older suite, which had no `CollectionTest`.
+    **A fourth suspicion was wrong and is worth recording**: the FCU divider has
+    the same `val q = divQuotient` shape, so it looked like the same bug. Patching
+    it broke `7.0/2.0`, which had been correct. Reverted — its iteration
+    structure differs and it never had the defect. `div_inexact` passes there
+    unmodified and now stands as proof.
 
 ### Compute units and bytecode implementation
 
