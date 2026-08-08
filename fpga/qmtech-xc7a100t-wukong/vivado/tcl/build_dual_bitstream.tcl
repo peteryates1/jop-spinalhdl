@@ -33,7 +33,9 @@ report_utilization -file [file join $build_dir utilization_synth.rpt]
 # SDR SDRAM timing strategy:
 # All SDRAM data I/O registers are in the clk_100_clk_wiz_1 (80 MHz system) domain.
 # clk_100_shift_clk_wiz_1 only drives the sdram_clk output pad (phase-shifted -108°).
-# The fixed phase relationship (~3.7ns lead) provides setup/hold margin at the SDRAM chip.
+# The fixed phase relationship (3.0ns lead at 100 MHz) provides setup/hold margin at the
+# SDRAM chip. This is an absolute time but is specified in degrees, so it scales with the
+# period -- changing the SDR clock without re-deriving the phase detunes it.
 # IOB packing (in XDC) ensures minimal I/O delay for all SDRAM pins.
 #
 # We do NOT use set_output_delay/set_input_delay with the phase-shifted clock because
@@ -50,7 +52,7 @@ set_max_delay 5.0 -datapath_only -from [get_ports {sdram_DQ[*]}] -to [get_clocks
 # Async clock groups: all three system clocks are mutually asynchronous (CDC via BufferCC)
 #   sys_clk:           50 MHz board clock (HangDetector, heartbeat)
 #   clk_pll_i:         DDR3 MIG ui_clk (~100 MHz, DDR3 cluster)
-#   clk_100_clk_wiz_1: 80 MHz SDR system clock (SDR cluster)
+#   clk_100_clk_wiz_1: 100 MHz SDR system clock (SDR cluster)
 # clk_100_shift_clk_wiz_1 is same group as clk_100_clk_wiz_1 (same MMCM, output-only)
 set_clock_groups -asynchronous \
   -group [get_clocks sys_clk] \

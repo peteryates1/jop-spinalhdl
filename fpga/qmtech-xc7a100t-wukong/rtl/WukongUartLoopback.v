@@ -12,8 +12,17 @@
 // below the design.
 //
 //   ser_txd  / ser_rxd    E3 / F3   on-board CH340  — known-good control
-//   ser_txd_1/ ser_rxd_1  G8 / G7   J11.4/.3 -> Pico GP13/GP12 (uart0)
-//   ser_txd_2/ ser_rxd_2  G5 / D5   J11.2/.1 -> Pico GP5/GP4   (uart1)
+// Four candidate pairs, because the header the Pico is jumpered to is in doubt.
+// The pins first given as "J11.1-4 = D5,G5,G7,G8" are J10's, per the board doc;
+// J11 is H4,F4,A4,A5. Loop both headers at once and let the hardware say which.
+//   ser_txd_1/ ser_rxd_1  G8 / G7   J10.4/.3
+//   ser_txd_2/ ser_rxd_2  G5 / D5   J10.2/.1
+//   ser_txd_3/ ser_rxd_3  A5 / A4   J11.4/.3
+//   ser_txd_4/ ser_rxd_4  F4 / H4   J11.2/.1
+//
+// Odd header pin = Pico TX = FPGA input, even = Pico RX = FPGA output, which
+// is the convention the working GP12/GP13 jumper test confirmed. Keeping to it
+// avoids driving a pin the Pico is also driving.
 //
 // Pin directions are from the FPGA's side: the Pico's TX drives an FPGA input.
 module WukongUartLoopback (
@@ -24,10 +33,16 @@ module WukongUartLoopback (
     output wire       ser_txd_1,
     input  wire       ser_rxd_2,
     output wire       ser_txd_2,
+    input  wire       ser_rxd_3,
+    output wire       ser_txd_3,
+    input  wire       ser_rxd_4,
+    output wire       ser_txd_4,
     output wire [1:0] led
 );
     assign ser_txd   = ser_rxd;
     assign ser_txd_1 = ser_rxd_1;
     assign ser_txd_2 = ser_rxd_2;
+    assign ser_txd_3 = ser_rxd_3;
+    assign ser_txd_4 = ser_rxd_4;
     assign led       = 2'b01;   // steady, so a configured board is obvious
 endmodule

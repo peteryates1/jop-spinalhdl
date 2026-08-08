@@ -27,15 +27,17 @@ set_property IOSTANDARD LVCMOS33 [get_ports {ser_rxd}]
 # Secondary UART — J11 header, to the on-board Pico 2 W uart0 — SDR cluster
 #
 # Direction is from the FPGA's side; the Pico's TX drives an FPGA input:
-#   J11.3 -> G7 <- Pico GP12 (uart0_tx)   FPGA RXD
-#   J11.4 -> G8 -> Pico GP13 (uart0_rx)   FPGA TXD
+#   J11.3 -> A4 <- Pico GP12 (uart0_tx)   FPGA RXD
+#   J11.4 -> A5 -> Pico GP13 (uart0_rx)   FPGA TXD
+#
+# Confirmed by loopback. G7/G8 are J10, not J11.
 #
 # Was U14/V14 and described as "Pico GP0/GP1". Neither the pins nor the GPIOs
 # matched the actual wiring, so this UART went nowhere.
 # ============================================================================
-set_property PACKAGE_PIN G8 [get_ports {ser_txd_1}]
+set_property PACKAGE_PIN A5 [get_ports {ser_txd_1}]
 set_property IOSTANDARD LVCMOS33 [get_ports {ser_txd_1}]
-set_property PACKAGE_PIN G7 [get_ports {ser_rxd_1}]
+set_property PACKAGE_PIN A4 [get_ports {ser_rxd_1}]
 set_property IOSTANDARD LVCMOS33 [get_ports {ser_rxd_1}]
 
 # ============================================================================

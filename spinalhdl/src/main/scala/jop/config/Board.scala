@@ -774,10 +774,15 @@ object Board {
    * Direction is from the FPGA's point of view, which is the opposite of the
    * Pico's: the Pico's TX drives an FPGA input.
    *
-   *   J11.1 -> D5 <- Pico GP8  (uart1_tx)   FPGA RXD
-   *   J11.2 -> G5 -> Pico GP9  (uart1_rx)   FPGA TXD
-   *   J11.3 -> G7 <- Pico GP12 (uart0_tx)   FPGA RXD   <- used here
-   *   J11.4 -> G8 -> Pico GP13 (uart0_rx)   FPGA TXD   <- used here
+   *   J11.1 -> H4 <- Pico GP4  (uart1_tx)   FPGA RXD
+   *   J11.2 -> F4 -> Pico GP5  (uart1_rx)   FPGA TXD
+   *   J11.3 -> A4 <- Pico GP12 (uart0_tx)   FPGA RXD   <- used here
+   *   J11.4 -> A5 -> Pico GP13 (uart0_rx)   FPGA TXD   <- used here
+   *
+   * Confirmed by loopback, not by reading a table: a jig looping all four
+   * candidate pairs echoed on A4/A5 and nowhere else. D5/G5/G7/G8 are J10 —
+   * the board doc lists J10's table first while J11 sits first on the silk, so
+   * it is easy to read the wrong one.
    *
    * uart0 (GP12/13) is the pair to use: dirtyJtagConfig.h puts uart1 on GP4/5,
    * not GP8/9, so J11.1/.2 are not bridged by the current Pico firmware.
@@ -787,7 +792,7 @@ object Board {
    */
   def J11UartAdapter = Board(
     name = "j11-uart-adapter",
-    devices = Seq(BoardDevice("J11_UART", mapping = Map("TXD" -> "G8", "RXD" -> "G7"))))
+    devices = Seq(BoardDevice("J11_UART", mapping = Map("TXD" -> "A5", "RXD" -> "A4"))))
 
   // ========================================================================
   // Composite board aliases

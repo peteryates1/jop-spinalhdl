@@ -176,13 +176,29 @@ def wait_for_ready(ser):
 
 
 def stream_download(ser, data, total_words):
-    """Stream packed data to serial port in chunks with progress."""
+    """Stream packed data to serial port in chunks with progress.
+
+    Paced to the line rate. Most paths apply USB backpressure, so write()
+    blocks and the pacing below sleeps ~0 — the CH340 and the DB V5's RP2040
+    both behave that way. The Wukong's Pico 2 W CDC-UART bridge does not: it
+    accepts 47 KB at USB speed and drops whatever its buffer cannot drain at
+    115200, which showed up as "Sent in 0.1s (820 KB/s)" followed by a checksum
+    timeout with 0 bytes back. Sleeping off the shortfall between elapsed and
+    theoretical time self-limits to the line rate and costs nothing on paths
+    that already backpressure.
+    """
     total_bytes = len(data)
     sent = 0
+    # 10 bits per byte on the wire: 8 data + start + stop.
+    bytes_per_sec = ser.baudrate / 10.0
+    start = time.time()
     while sent < total_bytes:
         chunk_end = min(sent + CHUNK_SIZE, total_bytes)
         ser.write(data[sent:chunk_end])
         sent = chunk_end
+        behind = sent / bytes_per_sec - (time.time() - start)
+        if behind > 0:
+            time.sleep(behind)
         words_sent = sent // 4
         if words_sent % 128 == 0 or sent == total_bytes:
             print_progress(words_sent, total_words)

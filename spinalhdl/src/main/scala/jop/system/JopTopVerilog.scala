@@ -66,12 +66,16 @@ object JopTopVerilog {
     case "xc7a100tDbSmp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.xc7a100tDbSmp(n)
+    // These defaults must match sdrClkMhz in JopConfig AND CLKOUT1/CLKOUT2 in
+    // create_sdram_clk_wiz_1.tcl. Nothing cross-checks the three, and a
+    // mismatch is silent: the IP generates one frequency while the design is
+    // constrained for another.
     case "wukongDualIndependent" =>
-      val mhz = args.drop(1).headOption.map(_.toInt).getOrElse(80)
+      val mhz = args.drop(1).headOption.map(_.toInt).getOrElse(100)
       JopConfig.wukongDualIndependentSmp(sdrClkMhz = mhz)
     case "wukongDualSmp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
-      val mhz = args.drop(2).headOption.map(_.toInt).getOrElse(80)
+      val mhz = args.drop(2).headOption.map(_.toInt).getOrElse(100)
       JopConfig.wukongDualIndependentSmp(n, sdrClkMhz = mhz)
     case "minimum"          => JopConfig.minimum
     case "max1000Sdram"     => JopConfig.max1000Sdram

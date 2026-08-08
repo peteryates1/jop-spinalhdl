@@ -34,7 +34,7 @@ FIFO-based message passing and an independent hardware watchdog.
 ```
 ┌──────────────────────────────┐    ┌──────────────────────────────┐
 │     SDR SDRAM Subsystem      │    │      DDR3 Subsystem          │
-│         (80 MHz)             │    │        (100 MHz)             │
+│        (100 MHz)             │    │        (100 MHz)             │
 │                              │    │                              │
 │  Light JOP cores (1-4)       │    │  Heavy JOP cores (1-4)       │
 │  - Integer-only microcode    │    │  - DSP multiply              │
@@ -98,7 +98,7 @@ Two independent subsystems provide natural fault domains:
 
 | Memory | Peak BW | Effective BW | Suitable For |
 |---|---|---|---|
-| SDR SDRAM (16-bit, 80 MHz) | ~320 MB/s | ~100-130 MB/s | I/O + 1-4 light cores |
+| SDR SDRAM (16-bit, 100 MHz) | ~400 MB/s | ~100-130 MB/s | I/O + 1-4 light cores |
 | DDR3 (16-bit, DDR3-1333) | ~2,670 MB/s | ~1,600-1,900 MB/s | Compute + 1-4 heavy cores |
 
 Ethernet at 1 Gbps is ~125 MB/s — SDR handles this alongside a few light
@@ -108,7 +108,7 @@ cores. DDR3 is free for computation without I/O contention.
 
 ### SDR Subsystem — I/O Cores
 
-Runs on the existing JOP SDRAM controller (`JopSdramTop` style), 80 MHz
+Runs on the existing JOP SDRAM controller (`JopSdramTop` style), 100 MHz
 system clock derived from the 50 MHz oscillator via PLL.
 
 **Cores**: 1-4 lightweight JOP cores with integer-only microcode. No DSP
@@ -153,10 +153,10 @@ Uses `perCoreConfigs` if cores need different compute unit mixes.
 ### Inter-Subsystem Message Queues
 
 Two `StreamFifoCC` instances provide bidirectional clock-domain-crossing
-communication between the 80 MHz SDR domain and 100 MHz DDR3 domain.
+communication between the 100 MHz SDR domain and 100 MHz DDR3 domain.
 
 ```
-     SDR domain (80 MHz)              DDR3 domain (100 MHz)
+     SDR domain (100 MHz)             DDR3 domain (100 MHz)
            │                                   │
            ├──► StreamFifoCC(32 bits, depth N) ►│   SDR → DDR3
            │                                   │
@@ -223,7 +223,8 @@ Native.wr(heartbeat, Native.rd(heartbeat) ^ 1);
 
 ### Memory Bandwidth Budget
 
-**SDR Subsystem** (W9825G6KH-6, 16-bit, 80 MHz):
+**SDR Subsystem** (W9825G6KH-6, 16-bit, 100 MHz — bandwidth figures below were
+computed at the original 80 MHz and have not been rescaled):
 
 | Consumer | Bandwidth | Notes |
 |---|---|---|
@@ -370,8 +371,8 @@ Each cluster has its own clock domain, memory controller, and UART.
   instantiating one `JopCluster` + memory controller per system
 - Cluster 0 (DDR3): All compute units (ICU+FCU+LCU+DCU+DSP imul), 100 MHz
   (MIG `ui_clk`), CH340N UART (E3/F3)
-- Cluster 1 (SDR SDRAM): No compute units, 80 MHz (`clk_wiz_1`), J12 header
-  UART (U14/V14)
+- Cluster 1 (SDR SDRAM): No compute units, 100 MHz (`clk_wiz_1`), J11 header
+  UART (A5/A4)
 - Each cluster boots independently via serial download on its own UART
 - Entity name: `JopDualWukongTop`
 
@@ -396,7 +397,8 @@ make dual-build          # Vivado synth + impl + bitstream
 
 **Clock domains**:
 - DDR3 cluster: 100 MHz from MIG `ui_clk` (derived from 200 MHz MIG reference)
-- SDR cluster: 80 MHz from `clk_wiz_1` (50 MHz oscillator input)
+- SDR cluster: 100 MHz from `clk_wiz_1` (50 MHz oscillator input). 80 MHz hangs
+  on hardware -- see "Phase 2 Resolved" below before changing this.
 - Both PLLs run from the same 50 MHz board oscillator (M21)
 
 #### Phase 2 Debug: SDR Cluster Hang (2026-03-15)
@@ -419,7 +421,8 @@ outputs `.Small boot.GC init....` then stops.
 5. **Clock phase shift**: -108° at 80 MHz gives 3.75 ns lead (more margin than
    100 MHz's 3.0 ns). W9825G6KH-6 requires 1.5 ns setup, 0.8 ns hold.
 
-**Remaining suspect — DQ writeEnable IOB packing failure**:
+**Suspected at the time — DQ writeEnable IOB packing failure** (later disproved,
+see below):
 
 The timing report shows 16 failing endpoints, all `chip_sdram_DQ_writeEnable_reg`
 paths from clk_100_clk_wiz_1 to SDRAM output ports. WNS=-0.378ns. The
@@ -433,18 +436,58 @@ data (bus contention on reads), or the tri-state may not enable in time for
 writes (SDRAM sees floating data lines).
 
 The download checksum does NOT detect this — it's computed from UART-received
-data, not SDRAM readback.
-
-**Next steps** (requires board access):
-
-1. Check Vivado IOB packing report — verify whether DQ output FFs are in IOBs
-2. Add SDRAM readback verification to download protocol
-3. Try standalone SDR-only build at 80 MHz to isolate dual-cluster placement
-   pressure vs frequency-specific issues
-4. Consider reducing DQ writeEnable fanout (per-byte enables instead of shared)
-   or tightening placement constraints for the writeEnable register
+data, not SDRAM readback. (Confirmed in microcode: `asm/src/jvm.asm:881`
+accumulates `b ^= c` from the word just received, immediately after `stmwd`, so a
+completely dead SDRAM still returns a correct checksum. Any future "it downloads
+but won't run" symptom should skip the checksum as evidence.)
 
 **Test harness**: `JopSdram80MhzSim` — 80 MHz, burstLen=0, 10M cycle limit.
+
+#### Phase 2 Resolved: SDR Cluster Hang (2026-08-08)
+
+**Fix**: run the dual build's SDR cluster at **100 MHz**, not 80 MHz. This is the
+frequency the standalone SDR presets have always used. With it, both clusters run
+`DoAll` **66/66 concurrently** from a single programming (SDR on the J11 UART at
+115200, DDR3 on the CH340 at 2 Mbaud).
+
+The frequency lives in three uncoupled places that must agree, and nothing checks
+them — `sdrClkMhz` in `JopConfig`, the `getOrElse` defaults in `JopTopVerilog`,
+and CLKOUT1/CLKOUT2 in `create_sdram_clk_wiz_1.tcl`. A mismatch is silent: the IP
+generates one frequency while the design is constrained for another.
+
+**The IOB-packing suspect above was disproved by measurement.** Opening both
+post-route checkpoints and querying the register directly:
+
+| | standalone (**works**) | dual @80 MHz (**hangs**) |
+|---|---|---|
+| `chip_sdram_DQ_writeEnable_reg` count | 1 | 1 |
+| fanout | 17 | 17 |
+| placement | SLICE_X48Y57 | SLICE_X0Y110 |
+| `IOB` property | unset | TRUE |
+
+Neither design packs the register into an IOB — with fanout 17 it cannot be, as a
+tri-state IOB register serves exactly one pin. The *working* design does not pack
+it either, and is placed considerably further from the I/O bank. So the packing
+failure is real but is not what breaks the cluster.
+
+Also disproved, for the record:
+
+- **The `set_max_delay 5.0` violation is not the fault.** It persisted unchanged
+  across the fix (-0.376 ns at 80 MHz, -0.365 ns at 100 MHz) while behaviour went
+  from hanging to 66/66. Note the standalone builds do **not** apply this
+  constraint at all, so their WNS figures are for unrelated internal core paths
+  and must not be compared against the dual's.
+- **Clock frequency was not compensating for the phase shift.** Lowering to
+  70 MHz (which changes the `sdram_clk` lead from 3.75 to 4.29 ns) moved WNS by
+  0.011 ns and did not help — as expected, since `set_max_delay` is an absolute
+  budget and cannot be relaxed by slowing the clock.
+
+**The mechanism remains unexplained.** 80 MHz is the *slower*, nominally easier
+operating point, it passes in simulation (`JopSdram80MhzSim`), and it meets
+internal timing. Only 100 MHz is validated on hardware; treat any other SDR
+frequency in this design as unproven until it is run on a board. If 80 MHz is
+wanted for the bandwidth/resource reasons in the Motivation section above, it
+needs a proper investigation rather than a config change.
 
 ### Phase 3: Message Queues -- Future
 

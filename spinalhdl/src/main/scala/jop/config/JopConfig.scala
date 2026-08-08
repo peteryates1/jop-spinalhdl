@@ -539,7 +539,26 @@ object JopConfig {
   /** Wukong dual-independent: DDR3 + SDR with separate UARTs (no interconnect) */
   def wukongDualIndependent = wukongDualIndependentSmp()
 
-  def wukongDualIndependentSmp(cpuCnt: Int = 1, sdrClkMhz: Int = 80) = JopConfig(
+  // sdrClkMhz must match CLKOUT1/CLKOUT2 in create_sdram_clk_wiz_1.tcl AND the
+  // getOrElse default in JopTopVerilog — three places, none cross-checked.
+  //
+  // Do not lower it to chase the "VIOLATED" status in the dual build. That
+  // WNS is measured against the hand-picked `set_max_delay 5.0` in
+  // build_dual_bitstream.tcl, which exists only as placement guidance, not as a
+  // real SDRAM requirement — wukongSdrFull misses the same constraint by
+  // -0.774 ns and runs correctly on hardware. Lowering the clock also detunes
+  // sdram_clk: the -108 degree phase shift is a ~3.75 ns lead at 80 MHz, and
+  // scales with the period, so 70 MHz makes timing at the SDRAM chip worse
+  // while leaving the max_delay path (an absolute 5 ns budget on a 3.35 ns
+  // OBUFT) essentially unchanged. Measured: 80 -> 70 MHz moved WNS by 0.011 ns.
+  // 100 MHz matches the standalone SDR presets (wukongSdram / wukongSdrAllCu /
+  // wukongSdrFull), all of which run DoAll 66/66 on this board's SDRAM. The
+  // dual build previously used 80 MHz while keeping create_sdram_clk_wiz_1's
+  // -108 degree shift on sdram_clk. That shift is an absolute setup/hold margin
+  // at the SDRAM chip but is specified in degrees, so it scales with the
+  // period: 3.00 ns at 100 MHz (the only value validated on hardware) silently
+  // became 3.75 ns at 80 MHz.
+  def wukongDualIndependentSmp(cpuCnt: Int = 1, sdrClkMhz: Int = 100) = JopConfig(
     assembly = SystemAssembly.wukongWithJ11Uart,
     systems = Seq(
       JopSystem(name = "ddr3", memory = "ddr3", bootMode = BootMode.Serial,
