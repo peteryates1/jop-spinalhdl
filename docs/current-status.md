@@ -388,10 +388,48 @@ silently invalidate all of that. Use this to find one:
       depend on was not worth the risk — so the two are **duplicated and must be
       kept in sync**; collapsing that is a follow-up.
 
-    **Still never run on hardware**, and the reason the board was attached:
-    `wukongDual` / `wukongDualIndependent` (the only multi-`JopSystem` presets
-    and the only users of `InterconnectConfig`), the SMP presets, and the BRAM
-    ones.
+    **The dual, SMP and BRAM presets now run too** (2026-08-08) — every Wukong
+    preset that can be built has been on hardware:
+
+    | preset | WNS | test |
+    |---|---:|---|
+    | `wukongDualIndependent` | -0.365 | **both clusters `DoAll` 66/66 concurrently** |
+    | `wukongBram` | — | Hello World from the built-in BRAM image |
+    | `wukongSmpMinimal 2` | +0.500 | `SmpCacheTest` PASS |
+    | `wukongSmp 2` | +0.318 | `SmpCacheTest` PASS + `DoAll` 66/66 |
+    | `wukongFullSmp 2` | +0.285 | `SmpCacheTest` PASS + `DoAll` 66/66 |
+
+    `SmpCacheTest` is the meaningful SMP test — `NCoreHelloWorld` only prints
+    from `cpuID==0`, so it cannot distinguish a working second core from a dead
+    one. Its `.jop` had never been built; `make -C java/apps/SmpCacheTest`.
+
+    The dual needed its SDR cluster moved from 80 to 100 MHz — see
+    `docs/architecture/dual-subsystem-design.md`, "Phase 2 Resolved", which also
+    records what that was *not* (IOB packing, the `set_max_delay` violation, the
+    `sdram_clk` phase shift), each disproved by measurement.
+
+    `wukongBram` could not generate a bitstream at all: `wukong_jop_bram.xdc`
+    constrained a port named `clk_in`, but the generated top's ports are `clk`
+    and `resetn`. The stale name matched nothing, so both reached implementation
+    unconstrained and DRC refused (NSTD-1 / UCIO-1) — the same failure mode as
+    `wukongSdrFull` above, from a different cause. This is now the third build
+    killed by unconstrained ports; a pre-implementation check that every top-level
+    port has a LOC would have caught all three.
+
+    **Two presets cannot be tested, and should be fixed or deleted:**
+
+    - **`wukongDual`** — differs from `wukongDualIndependent` only by
+      `interconnect = Some(InterconnectConfig(...))` and
+      `monitors = Seq(WatchdogConfig(...))`, and **neither field is read by any
+      RTL** (Phase 3 message queues are still "Future"). It also has no `case` in
+      `JopTopVerilog`, so it cannot be generated. Building it would produce the
+      same hardware as `wukongDualIndependent` under a name implying otherwise.
+    - **`wukongDualSmp` is misleadingly named** — its `case` maps to
+      `wukongDualIndependentSmp`, the *no*-interconnect variant. Neither name
+      reaches the interconnect design.
+    - **`wukongBramFull`** — no `case` in `JopTopVerilog`, so unreachable. Unlike
+      `wukongDual` this looks like a plain omission rather than an unimplemented
+      feature.
 
 ### Compute units and bytecode implementation
 

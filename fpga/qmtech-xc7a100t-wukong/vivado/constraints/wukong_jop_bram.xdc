@@ -1,9 +1,16 @@
 # QMTECH XC7A100T Wukong V3 — JOP BRAM constraints
 
-# 50 MHz system clock
-set_property PACKAGE_PIN M21 [get_ports {clk_in}]
-set_property IOSTANDARD LVCMOS33 [get_ports {clk_in}]
-create_clock -period 20.000 -name clk_in [get_ports {clk_in}]
+# 50 MHz system clock (Y1 oscillator)
+# The port is `clk`, not `clk_in` -- this file said clk_in, which matched
+# nothing, so `clk` and `resetn` reached implementation unconstrained and the
+# build died in DRC (NSTD-1 / UCIO-1) rather than at the stale constraint.
+set_property PACKAGE_PIN M21 [get_ports {clk}]
+set_property IOSTANDARD LVCMOS33 [get_ports {clk}]
+create_clock -period 20.000 -name sys_clk [get_ports {clk}]
+
+# Reset (active-low from SpinalHDL default CD)
+set_property PACKAGE_PIN H7 [get_ports {resetn}]
+set_property IOSTANDARD LVCMOS33 [get_ports {resetn}]
 
 # UART (CH340N on-board)
 set_property PACKAGE_PIN E3 [get_ports {ser_txd}]
