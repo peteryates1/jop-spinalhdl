@@ -219,6 +219,26 @@ class FloatComputeUnitTest extends AnyFunSuite {
     }
   }
 
+  /**
+   * Quotients that do NOT terminate in binary, i.e. dividend < divisor.
+   *
+   * The existing div cases all divide exactly, so a divider that loses the last
+   * quotient bit still passes them. That bit loss put resMant's leading 1 one
+   * position low and ROUND read a zero as the hidden bit — see the DCU, where
+   * the same defect made Math.sqrt(9.0) return 3.345.
+   */
+  test("div_inexact") {
+    compileFull().doSim(seed = 42) { dut =>
+      implicit val cd: ClockDomain = dut.clockDomain
+      cd.forkStimulus(10); SimTimeout(20000); initIo(dut); cd.waitSampling(5)
+
+      assertFloat(runFloat(dut, 3.0f, 1.0f, FDIV), 1.0f / 3.0f, "1.0 / 3.0")
+      assertFloat(runFloat(dut, 3.0f, 10.0f, FDIV), 10.0f / 3.0f, "10.0 / 3.0")
+      assertFloat(runFloat(dut, 5.0f, 9.0f, FDIV), 9.0f / 5.0f, "9.0 / 5.0")
+      assertFloat(runFloat(dut, 7.0f, 2.0f, FDIV), 2.0f / 7.0f, "2.0 / 7.0")
+    }
+  }
+
   test("div_special_values") {
     compileFull().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain

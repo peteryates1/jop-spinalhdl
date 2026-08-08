@@ -293,6 +293,33 @@ class DoubleComputeUnitTest extends AnyFunSuite {
     }
   }
 
+  /**
+   * Quotients that do NOT terminate in binary.
+   *
+   * Both cases above divide exactly — 7/2 and 12/4 — so a divider that drops
+   * quotient bits still passes them. `Math.sqrt(9.0)` returned 3.345 instead of
+   * 3.0 on hardware while the float version was correct, and Newton's iteration
+   * cannot settle at 3.345 with accurate arithmetic, so the double divide is
+   * the suspect. These are the divisions that iteration actually performs.
+   */
+  test("div_inexact") {
+    compileFull().doSim(seed = 42) { dut =>
+      implicit val cd: ClockDomain = dut.clockDomain
+      cd.forkStimulus(10); SimTimeout(20000); initIo(dut); cd.waitSampling(5)
+
+      assertDouble(runDouble(dut, 1.0, 3.0, DDIV), 1.0 / 3.0, "1.0 / 3.0")
+      assertDouble(runDouble(dut, 10.0, 3.0, DDIV), 10.0 / 3.0, "10.0 / 3.0")
+      assertDouble(runDouble(dut, 9.0, 5.0, DDIV), 9.0 / 5.0, "9.0 / 5.0")
+      assertDouble(runDouble(dut, 2.0, 7.0, DDIV), 2.0 / 7.0, "2.0 / 7.0")
+
+      // The exact steps Math.sqrt(9.0) walks through.
+      assertDouble(runDouble(dut, 9.0, 5.0, DDIV), 1.8, "sqrt step: 9/5")
+      assertDouble(runDouble(dut, 9.0, 3.4, DDIV), 9.0 / 3.4, "sqrt step: 9/3.4")
+      assertDouble(runDouble(dut, 9.0, 3.023529411764706, DDIV),
+                   9.0 / 3.023529411764706, "sqrt step: 9/3.0235")
+    }
+  }
+
   test("div_special_values") {
     compileFull().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain

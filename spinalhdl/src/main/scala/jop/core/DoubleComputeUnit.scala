@@ -498,23 +498,33 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
 
       is(State.DIV_ITER) {
         val trial = (divRemainder |<< 1).resize(57 bits) - divDivisor
+        // The quotient value THIS cycle produces. It has to be named, because
+        // `divQuotient` is a register: reading it below would give the value
+        // from before this update and silently drop the last quotient bit.
+        // That left resMant's leading 1 at bit 53 instead of 54, so ROUND —
+        // which takes bit 54 as the hidden bit — read a zero there and packed
+        // 1.1010... where 1.0101... was meant. 1.0/3.0 came out 0.41666
+        // instead of 0.33333. Only quotients needing the normalisation shift
+        // were affected, i.e. dividend < divisor, which is why 7.0/2.0 and
+        // 12.0/4.0 passed and Math.sqrt(9.0) returned 3.345.
+        val qNext = UInt(55 bits)
         when(!trial(56)) {
           divRemainder := trial
-          divQuotient := (divQuotient |<< 1) | 1
+          qNext := (divQuotient |<< 1) | 1
         } otherwise {
           divRemainder := (divRemainder |<< 1).resize(57 bits)
-          divQuotient := (divQuotient |<< 1)
+          qNext := (divQuotient |<< 1)
         }
+        divQuotient := qNext
         divCount := divCount + 1
 
         // After 54 iterations (+ 1 pre-comparison bit = 55 quotient bits)
         when(divCount === 53) {
           sticky := (divRemainder =/= 0)
-          val q = divQuotient
-          when(q(54)) {
-            resMant := q
+          when(qNext(54)) {
+            resMant := qNext
           } otherwise {
-            resMant := (q |<< 1).resized
+            resMant := (qNext |<< 1).resized
           }
           state := State.ROUND
         }
