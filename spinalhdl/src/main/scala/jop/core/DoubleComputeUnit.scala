@@ -773,7 +773,17 @@ case class DoubleComputeUnit(config: DoubleComputeUnitConfig = DoubleComputeUnit
           state := State.DONE
         } otherwise {
           when(aZero && bZero) {
+            // IEEE: +0.0 == -0.0
             resultReg := U(0, 64 bits)
+          } elsewhen (aZero) {
+            // Same defect the FCU had: unpackDouble flushes zero to exp := 0,
+            // which is the UNBIASED exponent of 1.0, so falling through to the
+            // exponent compare would treat 0.0 as ~1.0 and call every magnitude
+            // below 1.0 "less than zero". Decide on the sign of the non-zero
+            // operand instead.
+            resultReg := Mux(bSign, B"32'x00000001", B"32'xFFFFFFFF").asUInt.resize(64)
+          } elsewhen (bZero) {
+            resultReg := Mux(aSign, B"32'xFFFFFFFF", B"32'x00000001").asUInt.resize(64)
           } otherwise {
             val aLess = Bool()
             val bLess = Bool()

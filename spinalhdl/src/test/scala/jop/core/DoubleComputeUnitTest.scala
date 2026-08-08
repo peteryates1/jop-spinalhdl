@@ -498,6 +498,40 @@ class DoubleComputeUnitTest extends AnyFunSuite {
     }
   }
 
+  /**
+   * Exactly ONE operand zero, against a magnitude below 1.0.
+   *
+   * Same defect the FCU had (current-status item 28): unpackDouble flushes zero
+   * to exp := 0, the UNBIASED exponent of 1.0, so the exponent compare treated
+   * 0.0 as ~1.0 and called every magnitude below 1.0 "less than zero". The
+   * existing dcmp tests all use 1.0/2.0, where exponent >= 0 happens to give
+   * the right answer, so nothing caught it.
+   *
+   * Convention here: runDouble(dut, x, y, op) puts x in value1 and y in
+   * value2 — the OPPOSITE of FloatComputeUnitTest's helper. Assertions read
+   * value1 <op> value2.
+   */
+  test("dcmp_one_operand_zero") {
+    compileFull().doSim(seed = 42) { dut =>
+      implicit val cd: ClockDomain = dut.clockDomain
+      cd.forkStimulus(10); SimTimeout(10000); initIo(dut); cd.waitSampling(5)
+
+      assertBits32(runDouble(dut, 0.75, 0.0, DCMPG), int32Bits(1),  "dcmpg: 0.75 > 0 -> +1")
+      assertBits32(runDouble(dut, 0.75, 0.0, DCMPL), int32Bits(1),  "dcmpl: 0.75 > 0 -> +1")
+      assertBits32(runDouble(dut, 0.0, 0.75, DCMPG), int32Bits(-1), "dcmpg: 0 < 0.75 -> -1")
+
+      assertBits32(runDouble(dut, 0.25, 0.0, DCMPL),  int32Bits(1),  "dcmpl: 0.25 > 0 -> +1")
+      assertBits32(runDouble(dut, -0.75, 0.0, DCMPL), int32Bits(-1), "dcmpl: -0.75 < 0 -> -1")
+      assertBits32(runDouble(dut, 0.0, -0.75, DCMPL), int32Bits(1),  "dcmpl: 0 > -0.75 -> +1")
+
+      assertBits32(runDouble(dut, 0.75, -0.0, DCMPG), int32Bits(1),  "dcmpg: 0.75 > -0.0 -> +1")
+
+      // >= 1.0 against zero already worked; keep them as regression guards.
+      assertBits32(runDouble(dut, 1.0, 0.0, DCMPL), int32Bits(1),  "dcmpl: 1.0 > 0 -> +1")
+      assertBits32(runDouble(dut, 0.0, 2.0, DCMPL), int32Bits(-1), "dcmpl: 0 < 2.0 -> -1")
+    }
+  }
+
   test("dcmpl_nan") {
     compileFull().doSim(seed = 42) { dut =>
       implicit val cd: ClockDomain = dut.clockDomain
