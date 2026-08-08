@@ -22,6 +22,9 @@ foreach f [glob -nocomplain [file join $rtl_dir JopSdramWukongTop.v_*.bin]] {
 
 # Read constraints
 read_xdc [file join $repo_root vivado/constraints/wukong_jop_sdram.xdc]
+# Ethernet/SD pins, needed by wukongSdrFull. Harmless for configs without those
+# peripherals: Vivado ignores constraints for ports that do not exist.
+read_xdc [file join $repo_root vivado/constraints/wukong_peripherals.xdc]
 
 # Synthesize
 synth_design -top JopSdramWukongTop -part xc7a100tfgg676-2
