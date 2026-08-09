@@ -281,10 +281,10 @@ silently invalidate all of that. Use this to find one:
     Builds are deterministic **within** an environment: two consecutive local
     builds are byte-identical, so this was never per-build randomness.
 
-    **The JDK 8 toolchain is validated on hardware across four boards, three
-    FPGA vendors and three toolchains** (2026-08-09) — every app image was
-    rebuilt by the switch, so this is a re-validation of the whole fleet, not a
-    spot check:
+    **The JDK 8 toolchain is validated on hardware across all five attached
+    boards, three FPGA vendors and three toolchains** (2026-08-09) — every app
+    image was rebuilt by the switch, so this is a re-validation of the whole
+    fleet, not a spot check:
 
     | board | config | result |
     |---|---|---|
@@ -296,13 +296,20 @@ silently invalidate all of that. Use this to find one:
     | EP4CGX150 (Cyclone IV, Quartus) | `jop_sdram` | **66/66** |
     | XC7A100T + DB V5 (Vivado) | DDR3 | **66/66** |
     | Colorlight i5 (ECP5, yosys/nextpnr) | SDRAM | **66/66** |
+    | CYC5000 (Cyclone V, Quartus) | `jop_cyc5000` SDRAM | **66/66** |
 
-    Plus `JopJvmTestsBramSim` 66/66 in simulation. The i5 and Wukong SDR runs
-    report the same download checksum (`0x695472d1`), confirming the boards ran
-    an identical image.
+    Plus `JopJvmTestsBramSim` 66/66 in simulation. The i5, CYC5000 and Wukong
+    SDR runs all report the same download checksum (`0x695472d1`), confirming
+    the boards ran an identical image.
 
-    **Not covered: the CYC5000** — no `.sof` is built for it, so it was the one
-    attached board that could not be checked. Everything else attached was.
+    The CYC5000 needed a rebuild first: its `.sof` had vanished even though the
+    2026-08-07 build **succeeded** (`Flow Status: Successful - Fri Aug 7
+    08:15:11`) and every report from that run survived. It was not staleness —
+    neither make nor Quartus deletes a target for being out of date — and not
+    `make clean` or `git clean`, both of which would have taken the reports too
+    (all of `output_files/` is gitignored). Something removed only that one
+    file; the cause could not be established from what was on disk. Rebuilt with
+    `make -C fpga/cyc5000-sdram all`, timing met (worst slack +0.383 ns).
 
     That last point matters for diagnosing this item. If CI's `DoAll.jop` hash
     ever differs between two runs of the *same commit*, then CI is running a
