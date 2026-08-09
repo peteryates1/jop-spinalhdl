@@ -212,6 +212,46 @@ silently invalidate all of that. Use this to find one:
     regenerating locally with CI's exact `make && make serial && make
     flash-altera` gives **byte-identical** output); parallel test collisions
     (`build.sbt` sets `Test / parallelExecution := false`).
+- **30.** **`JopJvmTestsBramSim` (the CI baseline job) intermittently dies at
+    `E1` — the GC runs out of heap on its first allocation.** Broke the
+    2026-08-09 scheduled run; a rerun of the *same commit* passed, so it is not a
+    regression. Whole JVM output on a bad run:
+
+    ```
+    Small boot
+    GC init...
+    GC: classic (no card table - generational disabled)
+    E1
+    ```
+
+    then 60,000,000 cycles of silence. `E1` is `GC.java:2134` — the first
+    allocation (creating the mutex) finds `copyPtr+size >= allocPtr` and hits a
+    deliberate `for(;;)`. So a bad run reports "no results found", not a test
+    failure. Both good and bad runs execute the full 60M cycles; the difference
+    is that the program hangs, not that it runs out of budget.
+
+    **Ruled out — every one of these looks like the answer until measured:**
+
+    - *The DCU change* (the only functional RTL change in the window): the sim
+      passes locally on that exact RTL.
+    - *A config change shifting I/O addresses*: regenerating `Const.java` with
+      CI's own command produces a **byte-identical** file.
+    - *`DoAll.jop` outgrowing the 512 KB BRAM*: CI logs `ls -l DoAll.jop` on
+      every run — **2,926,493 bytes on both** the passing and failing runs.
+    - *Seed dependence* (as in item 29): running locally with CI's failing seed
+      `405669157` passes. Failing seed 405669157, passing seeds 42187758 and
+      1370482694.
+
+    **Do not be misled by the `Elaboration failed (2 errors)` /
+    `UNASSIGNED REGISTER (.../icu/resultReg)` messages in the log.** They appear
+    *identically in passing runs* — SpinalHDL restarts with a scala trace and
+    continues. They are long-standing noise and cost real time here.
+
+    Same application bytes, same seed, same RTL, passes locally — so whatever
+    differs is environmental and not yet identified. Note this job runs **only on
+    the schedule**: push builds take ~6 minutes and skip `jvm-suite-sims`
+    entirely, so a genuine break here can sit undetected for up to a day and a
+    row of green push runs says nothing about it.
 - **12.** **`LongComputeUnitConfig` has no enable flag** for its base 64-bit ALU
     (`ladd/lsub/lneg/lcmp`), unlike `FloatComputeUnitConfig.withAdd`. Worked
     around at the `ComputeUnitTop` level (conditional instantiation), but the
