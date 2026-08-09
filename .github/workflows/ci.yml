@@ -189,6 +189,19 @@ jobs:
           name: Formal Verification Results
           path: target/test-reports/**/*.xml
           reporter: java-junit
+          # The reporter must not decide whether CI is green. It parses
+          # ScalaTest's -u XML, which is fragile: the 2026-08-09 run had
+          # "Tests: succeeded 460, failed 0" and still failed the job with
+          # "Invalid attribute name" -- a REPORTING bug turning a fully green
+          # run red. The sanitise step above already strips the known offender
+          # (the <properties> block) and had run on that very file, so the
+          # remaining breakage is in ScalaTest's escaping, not something CI can
+          # reliably pre-clean.
+          #
+          # Genuine test failures are still gated: sbt exits non-zero on a
+          # failed test and the "Run ..." step above fails the job. This only
+          # stops a presentation layer from vetoing a passing build.
+          fail-on-error: false
 
   # ----------------------------------------------------------------
   # Simulation tests (Verilator)
@@ -269,6 +282,19 @@ jobs:
           name: Simulation Test Results
           path: target/test-reports/**/*.xml
           reporter: java-junit
+          # The reporter must not decide whether CI is green. It parses
+          # ScalaTest's -u XML, which is fragile: the 2026-08-09 run had
+          # "Tests: succeeded 460, failed 0" and still failed the job with
+          # "Invalid attribute name" -- a REPORTING bug turning a fully green
+          # run red. The sanitise step above already strips the known offender
+          # (the <properties> block) and had run on that very file, so the
+          # remaining breakage is in ScalaTest's escaping, not something CI can
+          # reliably pre-clean.
+          #
+          # Genuine test failures are still gated: sbt exits non-zero on a
+          # failed test and the "Run ..." step above fails the job. This only
+          # stops a presentation layer from vetoing a passing build.
+          fail-on-error: false
 
   # ----------------------------------------------------------------
   # JVM test suite (jvm.DoAll) across bytecode implementation choices.

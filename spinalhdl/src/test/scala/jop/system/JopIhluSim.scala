@@ -311,7 +311,13 @@ object JopIhluNCoreHelloWorldSim extends App {
 object JopIhluGcBramSim extends App {
   val cpuCnt = 2
 
-  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  // SmpGcTest, not HelloWorld. This sim used to load a SINGLE-CORE app, so core
+  // 1 parked in the boot-wait loop and IHLU was never exercised at all —
+  // verified by running it to 49M cycles with core 1 never moving. It therefore
+  // could not fail for the reason it exists, which is current-status item 2.
+  // SmpGcTest is the multi-core allocating workload item 1 needed; reusing it
+  // here is what makes this sim mean something.
+  val jopFilePath = "java/apps/SmpGcTest/SmpGcTest.jop"
   val romFilePath = "asm/generated/mem_rom.dat"
   val ramFilePath = "asm/generated/mem_ram.dat"
   val logFilePath = "spinalhdl/ihlu_gc_bram_simulation.log"
@@ -391,26 +397,39 @@ object JopIhluGcBramSim extends App {
       println(s"\n\n=== IHLU GC Simulation Complete ($cpuCnt cores, $cycle cycles) ===")
       println(s"UART Output: '${uartOutput.toString}'")
 
-      if (!uartOutput.toString.contains("GC test start")) {
-        run.finish("FAIL", "Did not see 'GC test start'")
-        println("FAIL: Did not see 'GC test start'")
+      val out = uartOutput.toString
+
+      if (!out.contains("SmpGcTest done")) {
+        run.finish("FAIL", "SmpGcTest did not run to completion")
+        println("FAIL: SmpGcTest did not run to completion")
         System.exit(1)
       }
-      if (!uartOutput.toString.contains("R0 f=")) {
-        run.finish("FAIL", "Did not see allocation rounds")
-        println("FAIL: Did not see allocation rounds")
+      if (out.contains("SMPGC FAIL")) {
+        run.finish("FAIL", "cross-core references were lost")
+        println("FAIL: SMPGC FAIL — cross-core references lost")
         System.exit(1)
       }
-      val freePattern = """R\d+ f=(\d+)""".r
-      val freeVals = freePattern.findAllMatchIn(uartOutput.toString).map(_.group(1).toInt).toList
-      val gcOccurred = freeVals.length >= 2 && freeVals.sliding(2).exists { case List(a, b) => b > a case _ => false }
-      if (!gcOccurred) {
-        run.finish("FAIL", "GC never triggered")
-        println("FAIL: GC never triggered")
+
+      // The point of this sim is that core 1 actually RAN. SmpGcTest's
+      // "verified N" counts holders core 0 checked after the other cores stored
+      // into them, so a non-zero N is proof the second core executed — which is
+      // exactly what the old HelloWorld payload could never demonstrate. A
+      // passing run with verified=0 is the vacuous outcome this sim had before.
+      val verified = """verified (\d+)""".r.findFirstMatchIn(out).map(_.group(1).toInt).getOrElse(0)
+      if (verified == 0) {
+        run.finish("FAIL", "verified=0 — the second core never published")
+        println("FAIL: verified=0 — the second core never published, IHLU unexercised")
         System.exit(1)
       }
-      val gcCycles = freeVals.sliding(2).count { case List(a, b) => b > a case _ => false }
-      run.finish("PASS", s"$cpuCnt cores, $cycle cycles, $gcCycles GC cycles, IHLU verified")
-      println(s"PASS: $cpuCnt cores, $gcCycles GC cycles with IHLU in $cycle cycles")
+
+      // INCONCLUSIVE is the honest result while GC.java's SMP guard is in place:
+      // no nursery means no minor GC to exercise. It is a pass for IHLU (both
+      // cores ran, locks were taken) but NOT evidence about the card table, so
+      // say which was demonstrated rather than blurring them.
+      val minors = """minors (\d+)""".r.findFirstMatchIn(out).map(_.group(1).toInt).getOrElse(0)
+      val note = if (minors == 0) "classic GC (SMP guard on) — IHLU exercised, card table NOT"
+                 else s"$minors minor GCs — IHLU and shared card table exercised"
+      run.finish("PASS", s"$cpuCnt cores, $cycle cycles, verified=$verified, $note")
+      println(s"PASS: $cpuCnt cores, verified=$verified, $note")
     }
 }
