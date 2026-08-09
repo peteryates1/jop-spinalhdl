@@ -85,10 +85,19 @@ public class SmpGcTest {
 	 */
 	static int[] pubRound;
 
+	/**
+	 * Heartbeat per publisher, bumped every loop iteration. Distinguishes the
+	 * two hangs that look identical from core 0: a core that has stopped
+	 * executing, versus a core still spinning whose pubRound write core 0
+	 * cannot see.
+	 */
+	static int[] liveTick;
+
 	static int cpuCnt;
 	static int publishers;            // cores 1..cpuCnt-1
 
 	static int errors;
+	static int stalls;
 	static int minors;
 	static int verified;
 
@@ -159,7 +168,8 @@ public class SmpGcTest {
 		wrInt(publishers);
 		JVMHelp.wr("\r\n");
 		pubRound = new int[cpuCnt];
-		for (int p = 0; p < cpuCnt; p++) pubRound[p] = 0;
+		liveTick = new int[cpuCnt];
+		for (int p = 0; p < cpuCnt; p++) { pubRound[p] = 0; liveTick[p] = 0; }
 		holders = new Holder[HOLDERS];
 		for (int i = 0; i < HOLDERS; i++) {
 			holders[i] = new Holder();
@@ -187,11 +197,45 @@ public class SmpGcTest {
 			// Wait for EVERY publisher independently. One shared counter would
 			// let a slow core look like a finished one and core 0 would verify
 			// holders nobody had written.
+			// Bounded, and it reports WHO did not arrive. An unbounded wait here
+			// turns any publisher fault into a silent hang, which is exactly
+			// what it did at 4 cores: "minors after tenuring 6" and then
+			// nothing, with no way to tell a lost progress write from a crashed
+			// core from a GC that never returned.
 			boolean all = false;
+			int spins = 0;
 			while (!all) {
 				all = true;
 				for (int p = 1; p < cpuCnt; p++) {
 					if (pubRound[p] <= round) { all = false; }
+				}
+				// Allocate while waiting. A minor GC triggered by ANOTHER core
+				// has to halt this one, and a tight loop that never touches the
+				// heap appears to give it no opportunity to do so: at 4 cores a
+				// publisher froze mid-publish (heartbeat stopped dead at 117)
+				// while every other core spun millions of iterations. If this
+				// allocation clears the hang, the waiting loop was starving the
+				// collector of a safepoint.
+				if (!all) { Object y = new Young(); if (y == null) return; }
+				if (!all && ++spins > 2000000) {
+					JVMHelp.wr("STALL round ");
+					wrInt(round);
+					JVMHelp.wr(" phase ");
+					wrInt(phase);
+					JVMHelp.wr(" publishRound ");
+					wrInt(publishRound);
+					for (int p = 1; p < cpuCnt; p++) {
+						JVMHelp.wr(" pub[");
+						wrInt(p);
+						JVMHelp.wr("]=");
+						wrInt(pubRound[p]);
+					}
+					JVMHelp.wr(" live=");
+					for (int p = 1; p < cpuCnt; p++) { wrInt(liveTick[p]); JVMHelp.wr(","); }
+					JVMHelp.wr("\r\n");
+					spins = 0;
+					++stalls;
+					if (stalls > 6) { JVMHelp.wr("SMPGC STALLED\r\n"); phase = 3; return; }
 				}
 			}
 			phase = 2;
@@ -266,6 +310,7 @@ public class SmpGcTest {
 	static void publisher(int id) {
 		int round = 0;
 		while (true) {
+			liveTick[id] = liveTick[id] + 1;
 			int ph = phase;
 			if (ph == 3) return;
 			if (ph == 1 && round == publishRound) {

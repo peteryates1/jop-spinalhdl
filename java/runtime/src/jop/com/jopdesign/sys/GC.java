@@ -557,8 +557,21 @@ public class GC {
 			// on timing-MET bitstreams at both 2 and 4 cores. To reproduce the
 			// failure, put `&& cpuCnt0 <= 1` back and rebuild the RTL from
 			// before 767178b.
+			// RE-GUARDED 2026-08-09, for a DIFFERENT reason than before. The card
+			// table half is genuinely fixed and verified (2 cores: SmpGcTest
+			// SMPGC OK, DoAll 66/66 with GC: generational). But at 4 cores the
+			// collector DEADLOCKS: SmpGcTest's publisher cores freeze
+			// permanently mid-allocation — per-core heartbeats stop dead while
+			// core 0 keeps running and printing — which is a stop-the-world
+			// halt/release fault, not a remembered-set fault. Diagnosis is in
+			// current-status item 1.
+			//
+			// Two cores is validated and four is not, so the guard is set at the
+			// validated boundary rather than at 1. Raise it as higher core counts
+			// are proven, and delete it once the halt/release path is fixed.
 			int cardShift0 = Native.rd(Const.IO_CARD_SHIFT);
-			genActive = USE_GENERATIONAL && cardShift0 != 0;
+			int cpuCnt0 = Native.rdMem(Const.IO_CPUCNT);
+			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 2;
 			genCardWords = genActive ? (1 << cardShift0) : 0;
 
 			if (genActive) {
@@ -605,6 +618,11 @@ public class GC {
 				JVMHelp.wr("GC: generational, ");
 				wrIntG(genCardWords);
 				JVMHelp.wr("-word cards\n");
+			} else if (USE_GENERATIONAL && cardShift0 != 0) {
+				// Card table present, so the reason is the core count. Say so:
+				// "no card table" here would send the next person hunting a
+				// missing hasCardTable in the preset, which is not the problem.
+				JVMHelp.wr("GC: classic (SMP >2 cores - generational deadlocks, see item 1)\n");
 			} else if (USE_GENERATIONAL) {
 				JVMHelp.wr("GC: classic (no card table - generational disabled)\n");
 			} else {

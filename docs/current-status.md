@@ -85,21 +85,45 @@ silently invalidate all of that. Use this to find one:
    | EP4CGX150 **2 cores** @80 MHz — `DoAll` | **66/66**, `GC: generational` |
    | EP4CGX150 **4 cores** @60 MHz (MET +0.302) — `SmpGcTest` | **HANGS after tenuring — see below** |
 
-   **OPEN: the 4-core case regressed.** It passed earlier the same day
-   (`cores 4, publishers 3, minors 31 verified 192 errors 0`) on the same
-   bitstream configuration, and now stops after `minors after tenuring 6` and
-   never completes a round — confirmed hung, not slow, over 500 s. Two cores
-   pass with the *same* binary, so it is specific to having more than one
-   publisher.
+   **The 4-core hang is a SEPARATE, REAL bug — a stop-the-world halt that never
+   releases — and the guard is back, set at `cpuCnt <= 2`.**
 
-   The prime suspect is the TEST, not the GC: `pubRound[]` is a single array
-   written concurrently by cores 1..N-1 at different indices. If A$ snoop
-   invalidation is per-handle rather than per-element, a publisher's progress
-   write can be lost and core 0 waits forever. That is a plausible false
-   failure — but it is equally plausible that it is real, and it must be run
-   down before the 4-core result is claimed. Do not treat the earlier 4-core
-   pass as validation of the guard removal; only the 2-core results above are
-   solid.
+   Investigated by instrumenting the test: core 0's wait is now bounded and
+   prints a per-core heartbeat, so a hang says *who* stopped. It does not read
+   as a lost write:
+
+   ```
+   STALL round 1 phase 1 publishRound 1  pub[1]=1 pub[2]=2 pub[3]=2
+                                         live=117, 2283077, 2328250
+   ```
+
+   Core 1's heartbeat is frozen dead at 117 mid-`publish()` — the allocating
+   path — while cores 2 and 3 spin millions of iterations. It has stopped
+   executing, not merely failed to publish a value.
+
+   My first hypothesis (`pubRound[]` losing a write to A$ snoop granularity)
+   was **wrong**, and so was the second. Making core 0 allocate inside its wait
+   loop — to give a GC initiated elsewhere a safepoint — did not help; it moved
+   the symptom, freezing **all three** publishers (heartbeats identical across
+   successive reports) while core 0 carried on running and printing. Cores
+   halted and never released is a stop-the-world halt/release fault, which is a
+   different mechanism from the remembered set entirely.
+
+   Note the earlier 4-core pass was luck, not a regression since: the only app
+   change between them returns `true` in this configuration, and the RTL and
+   timing were identical. Allocation volume decides which core trips the
+   nursery, and three publishers make it far more likely to be one of them.
+
+   **What is validated**: card table correctness (2 cores, `SmpGcTest` SMPGC OK
+   and `DoAll` 66/66 with generational active) and single-core no-regression.
+   **What is not**: anything above 2 cores. The guard is therefore set at the
+   validated boundary rather than at 1, and the boot line says which reason
+   applies — `SMP >2 cores - generational deadlocks` rather than the old, and
+   now wrong, "no card table", which would send the next reader hunting a
+   missing `hasCardTable` in the preset.
+
+   Next: the halt/release path (`gcHalt`, and the IHLU drain that exempts lock
+   owners) is where to look, not the card table.
 
 - **2.** **`JopIhluGcBramSim` cannot fail.** It loads `java/apps/Small/HelloWorld.jop`
    — a single-core app — so core 1 parks in the boot-wait loop and IHLU is never
