@@ -72,10 +72,34 @@ silently invalidate all of that. Use this to find one:
    `&& cpuCnt0 <= 1` from `genActive`. **The guard is restored**; that
    configuration is unsound and must not be shipped.
 
-   So what remains of item 1 is the RTL: one cluster-level card table fed from
-   the arbiter output, with `CmpSync` as the precedent. The test to prove it is
-   done — and it reports **INCONCLUSIVE rather than OK** when the nursery does
-   not exist, so it cannot become another item 2.
+   The RTL fix landed in 767178b (one cluster-level table fed from the
+   memory-side bus) with timing closed in 2389e40, and **the guard was removed
+   in cd75352** — generational GC is now available on SMP.
+
+   **Validation sweep (2026-08-09), guard off by default:**
+
+   | check | result |
+   |---|---|
+   | `JopGenGcBramSim` — single core, no regression | **PASS**, `GC: generational, 4-word cards` |
+   | EP4CGX150 **2 cores** @80 MHz (MET +0.133) — `SmpGcTest` | **SMPGC OK**, `minors 31 verified 192 errors 0` |
+   | EP4CGX150 **2 cores** @80 MHz — `DoAll` | **66/66**, `GC: generational` |
+   | EP4CGX150 **4 cores** @60 MHz (MET +0.302) — `SmpGcTest` | **HANGS after tenuring — see below** |
+
+   **OPEN: the 4-core case regressed.** It passed earlier the same day
+   (`cores 4, publishers 3, minors 31 verified 192 errors 0`) on the same
+   bitstream configuration, and now stops after `minors after tenuring 6` and
+   never completes a round — confirmed hung, not slow, over 500 s. Two cores
+   pass with the *same* binary, so it is specific to having more than one
+   publisher.
+
+   The prime suspect is the TEST, not the GC: `pubRound[]` is a single array
+   written concurrently by cores 1..N-1 at different indices. If A$ snoop
+   invalidation is per-handle rather than per-element, a publisher's progress
+   write can be lost and core 0 waits forever. That is a plausible false
+   failure — but it is equally plausible that it is real, and it must be run
+   down before the 4-core result is claimed. Do not treat the earlier 4-core
+   pass as validation of the guard removal; only the 2-core results above are
+   solid.
 
 - **2.** **`JopIhluGcBramSim` cannot fail.** It loads `java/apps/Small/HelloWorld.jop`
    — a single-core app — so core 1 parks in the boot-wait loop and IHLU is never
