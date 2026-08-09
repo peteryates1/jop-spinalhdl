@@ -5,6 +5,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.bmb._
 import jop.io.{CmpSync, Ihlu, IhluConfig}
+import jop.memory.CardTable
 import jop.debug._
 
 /**
@@ -412,6 +413,77 @@ case class JopCluster(
     }
     io.bmb <> arbiter.io.output
   }
+
+  // ==================================================================
+  // Card table — ONE per cluster, fed from the memory-side bus (item 1)
+  // ==================================================================
+  //
+  // It used to live inside each JopCore, snooping that core's own BMB command.
+  // That snoop sits AHEAD of the arbiter, so each table saw only its own core's
+  // writes: on SMP a tenured->nursery store by another core marked the wrong
+  // table, the minor GC never traced the young object, and it was collected
+  // while live. java/apps/SmpGcTest loses 192/192 cross-core references that
+  // way with GC.java's `cpuCnt0 <= 1` guard removed.
+  //
+  // io.bmb is the right snoop point in BOTH topologies, which is why this is one
+  // code path and not two: on SMP it is the arbiter output, and on single-core
+  // it is the core's own port wired straight through — so single-core behaviour
+  // is bit-for-bit what it was.
+  //
+  // Cores reach the table through CardCtrlPort, the same shape as CmpSync: a
+  // cluster-level resource addressed through per-core I/O. Config writes are
+  // priority-muxed by core index. That is safe because every writer is the
+  // collector, which is stop-the-world — but it is a real constraint, so it is
+  // stated here rather than left to be rediscovered.
+  val cardTable: Option[CardTable] = if (baseConfig.memConfig.hasCardTable) {
+    val mc = baseConfig.memConfig
+    val ct = new CardTable(mc.cardCount, mc.cardShift, mc.addressWidth)
+    val idxW = ct.idxWidth
+
+    val cmdIsWrite = io.bmb.cmd.fragment.opcode === Bmb.Cmd.Opcode.WRITE
+    ct.io.markValid := io.bmb.cmd.fire && cmdIsWrite
+    ct.io.markAddr  := (io.bmb.cmd.fragment.address >> 2).resize(mc.addressWidth)
+
+    val ports = cores.map(_.io.card.get)
+
+    // Lowest core index wins a same-cycle collision.
+    val wrValid  = ports.map(_.wr).reduce(_ || _)
+    val wrSel    = UInt(3 bits)
+    val wrData   = Bits(32 bits)
+    wrSel  := 0
+    wrData := 0
+    for (i <- (cpuCnt - 1) to 0 by -1) {
+      when(ports(i).wr) {
+        wrSel  := ports(i).sel
+        wrData := ports(i).wrData
+      }
+    }
+
+    val cardLo    = Reg(UInt(mc.addressWidth bits)) init (0)  // tenure base word
+    val cardHi    = Reg(UInt(mc.addressWidth bits)) init (0)  // tenure top word
+    val cardRdIdx = Reg(UInt(idxW bits)) init (0)             // word index for DATA read
+    when(wrValid) {
+      switch(wrSel) {
+        is(0) { cardLo    := wrData(mc.addressWidth - 1 downto 0).asUInt }
+        is(1) { cardHi    := wrData(mc.addressWidth - 1 downto 0).asUInt }
+        is(2) { cardRdIdx := wrData(idxW - 1 downto 0).asUInt }
+      }
+    }
+    ct.io.baseWord := cardLo
+    ct.io.topWord  := cardHi
+    ct.io.rdIdx    := cardRdIdx
+
+    // CARD_CLEAR write: data = word index to clear, or all-ones (-1) => clear all.
+    val clrWr   = wrValid && (wrSel === U(6, 3 bits))
+    val clrAllV = wrData.andR
+    ct.io.clrEn  := clrWr && !clrAllV
+    ct.io.clrAll := clrWr && clrAllV
+    ct.io.clrIdx := wrData(idxW - 1 downto 0).asUInt
+
+    // One rdIdx, so every core sees the same word — broadcast is correct.
+    ports.foreach(_.rdData := ct.io.rdData)
+    Some(ct)
+  } else None
 
   // Separate DMA bus: wire core(s)' DMA BMB to the dedicated IO port
   if (separateStackDmaBus && hasStackDma) {

@@ -115,3 +115,31 @@ class CardTable(cardCount: Int, cardShift: Int, wordAddrWidth: Int) extends Comp
   prevWrIdx  := wrIdx
   prevWrWord := wrData
 }
+
+/**
+ * Per-core control port to a CLUSTER-LEVEL card table.
+ *
+ * The table used to live inside each JopCore and snoop that core's own BMB
+ * command — ahead of the arbiter, so it saw only that core's writes. On SMP
+ * that makes generational GC unsound: a tenured->nursery store by another core
+ * leaves its mark in the wrong table and the young object is collected while
+ * live (current-status item 1, reproduced by java/apps/SmpGcTest).
+ *
+ * The table is now one cluster-level resource whose mark port is fed from the
+ * memory-side bus, and each core reaches it through this port — the same shape
+ * as CmpSync, a cluster-level resource addressed through per-core I/O.
+ *
+ * Only the DATA read travels back over the port; SHIFT and COUNT are compile-
+ * time constants the core answers locally.
+ */
+case class CardCtrlPort() extends Bundle with IMasterSlave {
+  val wr     = Bool()          // config/clear register write strobe
+  val sel    = UInt(3 bits)    // which CARD_* register
+  val wrData = Bits(32 bits)
+  val rdData = Bits(32 bits)   // DATA: the 32-card word at the current index
+
+  override def asMaster(): Unit = {
+    out(wr, sel, wrData)
+    in(rdData)
+  }
+}

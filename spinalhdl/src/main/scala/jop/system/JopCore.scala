@@ -46,6 +46,10 @@ case class JopCore(
     // Block-fill sideband to a fill-capable backend (optional, e.g. SDR)
     val fill = if (config.memConfig.hasBackendFill) Some(master(MemFill(config.memConfig.addressWidth))) else None
 
+    // Control port to the CLUSTER-level card table (see the card-table section
+    // below). The table is not per core: that is item 1's bug.
+    val card = if (config.memConfig.hasCardTable) Some(master(CardCtrlPort())) else None
+
     // CmpSync interface
     val syncIn  = in(SyncOut())    // From CmpSync: halted + signal
     val syncOut = out(SyncIn())    // To CmpSync: lock request + signal
@@ -302,43 +306,28 @@ case class JopCore(
   // ---------- Card table (generational GC card-marking barrier, Stage 1) ----------
   // Passive write snoop marks the covering card for stores into [tenureLo, tenureHi);
   // decoded as an I/O slave (CARD_BASE) for config/read/clear. See CardTable.scala.
+  // The table itself is CLUSTER-level, not per core. A per-core table snooping
+  // this core's BMB command sits ahead of the arbiter and therefore sees only
+  // this core's writes, which makes generational GC unsound on SMP: a
+  // tenured->nursery store by another core marks the wrong table and the young
+  // object is collected while live (item 1; reproduced by java/apps/SmpGcTest,
+  // 192/192 references lost with the guard removed). The core keeps only the
+  // I/O decode and forwards it over CardCtrlPort; JopCluster owns the table and
+  // snoops the memory-side bus. SHIFT and COUNT are compile-time constants, so
+  // they are answered here rather than travelling over the port.
   val cardRdData = Bits(32 bits)
   cardRdData := 0
   if (config.memConfig.hasCardTable) {
-    val mc = config.memConfig
-    val cardTable = new CardTable(mc.cardCount, mc.cardShift, mc.addressWidth)
-    val cardIdxW  = cardTable.idxWidth
+    val mc   = config.memConfig
+    val port = io.card.get
+    val csel = JopIoSpace.cardSel(ioAddr)
 
-    // Snoop committed writes (word address of the store).
-    val cmdIsWrite = memCtrl.io.bmb.cmd.fragment.opcode === Bmb.Cmd.Opcode.WRITE
-    cardTable.io.markValid := memCtrl.io.bmb.cmd.fire && cmdIsWrite
-    cardTable.io.markAddr  := (memCtrl.io.bmb.cmd.fragment.address >> 2).resize(mc.addressWidth)
-
-    val cardWr = memCtrl.io.ioWr && JopIoSpace.isCard(ioAddr)
-    val csel   = JopIoSpace.cardSel(ioAddr)
-    val cardLo    = Reg(UInt(mc.addressWidth bits)) init (0)  // tenure base word
-    val cardHi    = Reg(UInt(mc.addressWidth bits)) init (0)  // tenure top word
-    val cardRdIdx = Reg(UInt(cardIdxW bits)) init (0)         // word index for DATA read
-    when(cardWr) {
-      switch(csel) {
-        is(0) { cardLo    := memCtrl.io.ioWrData(mc.addressWidth - 1 downto 0).asUInt }
-        is(1) { cardHi    := memCtrl.io.ioWrData(mc.addressWidth - 1 downto 0).asUInt }
-        is(2) { cardRdIdx := memCtrl.io.ioWrData(cardIdxW - 1 downto 0).asUInt }
-      }
-    }
-    cardTable.io.baseWord := cardLo
-    cardTable.io.topWord  := cardHi
-    cardTable.io.rdIdx    := cardRdIdx
-
-    // CARD_CLEAR write: data = word index to clear, or all-ones (-1) => clear all.
-    val clrWr   = cardWr && (csel === U(6, 3 bits))
-    val clrAllV = memCtrl.io.ioWrData.andR
-    cardTable.io.clrEn  := clrWr && !clrAllV
-    cardTable.io.clrAll := clrWr && clrAllV
-    cardTable.io.clrIdx := memCtrl.io.ioWrData(cardIdxW - 1 downto 0).asUInt
+    port.wr     := memCtrl.io.ioWr && JopIoSpace.isCard(ioAddr)
+    port.sel    := csel
+    port.wrData := memCtrl.io.ioWrData
 
     switch(csel) {
-      is(3) { cardRdData := cardTable.io.rdData }                 // DATA: 32 cards at IDX
+      is(3) { cardRdData := port.rdData }                         // DATA: 32 cards at IDX
       is(4) { cardRdData := B(mc.cardShift, 32 bits) }            // SHIFT
       is(5) { cardRdData := B(mc.cardWords32, 32 bits) }          // COUNT (32-card words)
     }
