@@ -39,7 +39,7 @@ silently invalidate all of that. Use this to find one:
 |---|---|---|---|---|---|
 | 1-3 | Blocking / correctness | 11 | The measurement gap | 21 | Boards |
 | 4-7, 24, 25 | Performance | 12-16, 23, 26, 27 | Smaller | 17-20, 22, 28 | Compute units |
-| 8-10 | Hardware / infrastructure | | | | |
+| 8-10, 31 | Hardware / infrastructure | 29, 30 | Smaller (CI flakiness) | | |
 
 ### Blocking / correctness
 
@@ -195,6 +195,38 @@ silently invalidate all of that. Use this to find one:
 - **10.** **pico-usb-blaster protocol bug** — low-level shift works (IDCODE reads
     correctly), so the fault is in byte-shift-mode or response framing. Lower
     priority now the level shifter is understood as the real blocker.
+
+- **31.** **The BMB arbiter is what stops SMP scaling, on both FPGA families.**
+    Measured 2026-08-09 while validating item 1, and worth stating plainly
+    because it is easy to blame whatever feature was added last:
+
+    | build | cores | result |
+    |---|---|---|
+    | EP4CGX150 @80 MHz | 2 | MET +0.133 ns |
+    | EP4CGX150 @80 MHz | 4 | **VIOLATED -2.399 ns** |
+    | EP4CGX150 @65 MHz | 4 | VIOLATED -0.070 ns |
+    | EP4CGX150 @60 MHz | 4 | MET +0.302 ns |
+    | Wukong `wukongSmpMinimal` @100 MHz | 4 | MET +0.192 ns |
+    | Wukong `wukongSmpMinimal` @100 MHz | 8 | **VIOLATED -0.227 ns** |
+
+    On the EP4CGX150 the worst path is
+    `cores_1|memCtrl|zeroCur -> [BMB arbiter] -> cores_3|memCtrl|bcFillAddr`,
+    with **zero CardTable nodes and 16 arbiter nodes** on it — so this is not
+    the shared card table from item 1, and the 2-core build with identical RTL
+    closes. On the Wukong at 8 cores the negative slack is spread over many
+    endpoints (TNS -20.3) rather than one path, which is congestion, not a
+    single fixable chain.
+
+    **Capacity is not the limit.** 8 minimal cores fit the XC7A100T in 76% of
+    its LUTs, and 4 cores on the EP4CGX150 use 25% of its LEs. The ceiling is
+    entirely arbiter timing.
+
+    Consequence today: 4-core SMP GC validation runs at 60 MHz on the
+    EP4CGX150. That is enough to prove correctness but not to measure SMP
+    scaling honestly — any throughput number taken there is at a handicapped
+    clock. Fixing this is what unlocks the item 5 question (whether a cycle of
+    arbiter latency is worth 4+ cores), and it needs a pipelined or
+    tree-structured arbiter rather than the flat round-robin.
 
 ### The measurement gap
 

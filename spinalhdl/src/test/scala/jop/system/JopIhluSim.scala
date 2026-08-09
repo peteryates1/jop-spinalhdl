@@ -30,8 +30,15 @@ case class JopIhluTestHarness(
   // elaborate while pcWidth was 11; once it grew to 12 both IHLU sims failed
   // with "WIDTH MISMATCH (11 bits <- 12 bits) on io_pc_*" and have not run
   // since, which is why the IHLU verification claim went stale unnoticed.
+  // hasCardTable matters here, not just for completeness: without it
+  // IO_CARD_SHIFT reads 0, GC.init falls back to the classic collector, and the
+  // sim reports "no card table - generational disabled" having exercised
+  // nothing generational. That is how this harness could run SmpGcTest to
+  // completion and still say INCONCLUSIVE. With it, the cluster-level card
+  // table is instantiated and minor GCs actually happen.
   val harnessCfg = JopCoreConfig(
-    memConfig = JopMemoryConfig(mainMemSize = memSize),
+    memConfig = JopMemoryConfig(mainMemSize = memSize,
+      hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
     useCmpSync = false
   )
 

@@ -532,24 +532,33 @@ public class GC {
 			// Decide the collector BEFORE laying out the heap: the two modes
 			// carve it differently.
 			//
-			// Two conditions must hold, and BOTH failures are silent:
+			// One condition must hold, and its failure is silent: a card table
+			// must exist. A zero shift means the core was built without one, so
+			// the barrier does not exist at all and generational mode would be
+			// unsound — hence the check rather than an assumption.
 			//
-			//  1. A card table must exist. A zero shift means the core was built
-			//     without one, so the barrier does not exist at all.
+			// There used to be a second condition, `cpuCnt0 <= 1`. The card table
+			// was instantiated PER CORE and snooped that core's own BMB port
+			// ahead of the arbiter, so a collecting core scanned only its own
+			// table: a tenured->nursery pointer written by another core marked
+			// THAT core's table, was invisible here, and the young object it
+			// protected was collected while still live.
 			//
-			//  2. The cluster must be single-core. The card table is instantiated
-			//     PER CORE (JopCore.scala) and snoops that core's own BMB port
-			//     ahead of the arbiter, and IO_CARD_* is decoded per core — so
-			//     the collecting core scans only its own table. A tenured->
-			//     nursery pointer written by another core marks THAT core's
-			//     table and is invisible here, and the young object it protects
-			//     is then collected while still live. Fixing this properly means
-			//     one cluster-level card table fed from the arbiter output, so
-			//     that one shared heap has one shared remembered set; until then
-			//     SMP runs the classic collector, which needs no remembered set.
+			// That is fixed in RTL. The card table is now ONE cluster-level
+			// resource fed from the memory-side bus (JopCluster.scala), so one
+			// shared heap has one shared remembered set. Removing the guard is
+			// what makes generational GC available on SMP.
+			//
+			// The failure and the fix are both demonstrated by
+			// java/apps/SmpGcTest, which constructs exactly the cross-core
+			// old->young reference the old code lost:
+			//   per-core table   minors 31 verified 192 errors 192 -> FAIL
+			//   shared table     minors 31 verified 192 errors 0   -> OK
+			// on timing-MET bitstreams at both 2 and 4 cores. To reproduce the
+			// failure, put `&& cpuCnt0 <= 1` back and rebuild the RTL from
+			// before 767178b.
 			int cardShift0 = Native.rd(Const.IO_CARD_SHIFT);
-			int cpuCnt0 = Native.rdMem(Const.IO_CPUCNT);
-			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 1;
+			genActive = USE_GENERATIONAL && cardShift0 != 0;
 			genCardWords = genActive ? (1 << cardShift0) : 0;
 
 			if (genActive) {
@@ -596,8 +605,6 @@ public class GC {
 				JVMHelp.wr("GC: generational, ");
 				wrIntG(genCardWords);
 				JVMHelp.wr("-word cards\n");
-			} else if (USE_GENERATIONAL && Native.rdMem(Const.IO_CPUCNT) > 1) {
-				JVMHelp.wr("GC: classic (SMP - per-core card tables, generational disabled)\n");
 			} else if (USE_GENERATIONAL) {
 				JVMHelp.wr("GC: classic (no card table - generational disabled)\n");
 			} else {
