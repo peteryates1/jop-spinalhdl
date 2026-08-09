@@ -401,12 +401,13 @@ jobs:
       # `make -C java tools` declares that dependency; calling the sub-make
       # bypasses it. Locally it is masked because Const.java already exists.
       - name: Build JOP tools and DoAll.jop
-        # JDK6_HOME as step env, not a make argument: seven Makefiles default it
-        # to /opt/jdk1.6.0_45 with ?=, so one environment variable overrides all
-        # of them. Passing it to a single sub-make only moves the failure to the
-        # next one that needs it.
+        # TARGET_JDK_HOME as step env, not a make argument: seven Makefiles set
+        # it with ?=, so one environment variable overrides all of them. Passing
+        # it to a single sub-make only moves the failure to the next one that
+        # needs it. (Was JDK6_HOME until 2026-08-09 — the name was a lie here,
+        # since this points at a JDK 8.)
         env:
-          JDK6_HOME: ${{ steps.jdk8.outputs.path }}
+          TARGET_JDK_HOME: ${{ steps.jdk8.outputs.path }}
         run: |
           make -C java tools
           make -C java runtime

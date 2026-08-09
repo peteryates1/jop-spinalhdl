@@ -252,23 +252,37 @@ silently invalidate all of that. Use this to find one:
     The first fingerprints (added the same day) showed CI's `DoAll.jop` at
     `f388b4ca…` against a local `2f5d046c…`, while `mem_rom.dat`,
     `mem_ram.dat`, `JumpTableData.scala` and `Const.java` all matched exactly.
-    Cause: CI sets `JDK6_HOME` to **JDK 8** compiling `-source/-target 1.6`,
-    while the Makefiles default to a real **JDK 6** at `/opt/jdk1.6.0_45`.
-    Different `javac`, different bytecode — CI's image is 4645 bytes (~116
-    words) larger.
+    **Cause: TWO JVMs shape the image, and both differed from CI.** Resolved
+    2026-08-09 — local now reproduces CI's `DoAll.jop` **byte for byte**
+    (`f388b4ca…`).
 
-    **To reproduce a CI JVM-sim result locally, build the app the way CI does:**
+    | | sets | was local | is CI |
+    |---|---|---|---|
+    | `TARGET_JDK_HOME` (target `javac`) | image **size** | JDK 6 | **JDK 8** |
+    | `JAVA` (runs JOPizer/PreLinker) | image **layout** | JDK 21 | **JDK 17** |
+
+    The size difference is the target `javac` alone (JDK 8's image is 4645 bytes
+    / ~116 words larger). With JDK 8 the size matched CI exactly while the bytes
+    still differed — that residual was the *tools* JVM, not the target one.
+    Hypotheses tested and killed on the way: the JDK 8 **patch** level (1.8.0_202
+    and 8u492 produce identical output), and source-file ordering from `find`
+    (reversing it produces a byte-identical `.jop`; the toolchain normalises it).
+
+    Both JDKs are now pinned and installed at `/opt/jdk8u492-b09` and
+    `/opt/jdk-17.0.19+10`, matching CI's Temurin 8.0.492 / 17.0.19. The
+    Makefiles default `TARGET_JDK_HOME` to the former. `JAVA ?= java` is
+    deliberately left alone — hardcoding a path there would break CI, which gets
+    its 17 from `setup-java`. For a CI-identical build:
 
     ```sh
-    make -C java/apps/JvmTests clean
-    JDK6_HOME=/opt/jdk1.8.0_202 make -C java/apps/JvmTests
+    JAVA_HOME=/opt/jdk-17.0.19+10 PATH=/opt/jdk-17.0.19+10/bin:$PATH make ...
     ```
 
-    That reproduces CI's size *exactly* (2,926,493 bytes), though the content
-    still differs (`053fc083…`), so something further is environment-specific —
-    JDK patch level or directory-iteration order in the tools. Builds are
-    deterministic **within** an environment: two consecutive local builds are
-    byte-identical, so this is not per-build randomness.
+    Builds are deterministic **within** an environment: two consecutive local
+    builds are byte-identical, so this was never per-build randomness.
+
+    The JDK 8 toolchain is validated: `JopJvmTestsBramSim` 66/66 in simulation
+    and `DoAll` 66/66 on Wukong hardware, both on JDK 8-built images.
 
     That last point matters for diagnosing this item. If CI's `DoAll.jop` hash
     ever differs between two runs of the *same commit*, then CI is running a

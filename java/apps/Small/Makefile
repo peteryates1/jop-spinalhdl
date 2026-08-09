@@ -1,6 +1,6 @@
 # JDK 6 for target compilation, system Java for running tools
-JDK6_HOME ?= /opt/jdk1.6.0_45
-JAVAC6 := $(JDK6_HOME)/bin/javac
+TARGET_JDK_HOME ?= /opt/jdk8u492-b09
+TARGET_JAVAC := $(TARGET_JDK_HOME)/bin/javac
 JAVA ?= java
 
 ROOT := ../..
@@ -35,7 +35,7 @@ all: jop
 
 classes:
 	mkdir -p $(CLASSES_DIR) $(BUILD_DIR)
-	$(JAVAC6) -source 1.6 -target 1.6 \
+	$(TARGET_JAVAC) -source 1.6 -target 1.6 \
 		-sourcepath $(SRCPATH) \
 		-d $(CLASSES_DIR) \
 		$(APP_SRC)/$(APP_PKG)/$(APP_NAME).java
