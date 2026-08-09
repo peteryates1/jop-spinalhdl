@@ -7,8 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    # Nightly, for the JVM-suite simulations only — they are far too slow to
-    # gate a push (60M Verilator cycles each).
+    # The JVM-suite sims run on push as well as here (see jvm-suite-sims). The
+    # nightly is kept as a backstop: it catches anything that only shows up
+    # intermittently, and it still runs when nobody has pushed for a day.
     - cron: '0 3 * * *'
 
 permissions:
@@ -291,13 +292,15 @@ jobs:
   # docs/current-status.md. JopJvmTestsLmulSwSim reproduces the lmul failure on
   # demand and is expected to fail, so it is not run here.
   # ----------------------------------------------------------------
-  # Skips a scheduled run when nothing was committed since the last one, so the
-  # nightly does not burn ~30 minutes re-testing identical code. Manual dispatch
-  # always runs.
+  # Decides whether jvm-suite-sims runs. Push, PR and manual dispatch always
+  # run it. Only the nightly is gated, and only to skip re-testing identical
+  # code when nothing was committed since the last one.
+  #
+  # This job must NOT be restricted by event: a skipped job makes everything
+  # that `needs` it skip too, which would silently disable the sims on push.
   check-recent-commits:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     outputs:
       should-run: ${{ steps.check.outputs.should-run }}
     steps:
@@ -306,9 +309,9 @@ jobs:
           fetch-depth: 0
       - id: check
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" != "schedule" ]; then
             echo "should-run=true" >> "$GITHUB_OUTPUT"
-            echo "manual dispatch — running"
+            echo "${{ github.event_name }} — running"
             exit 0
           fi
           if [ -n "$(git log --since='24 hours ago' --oneline)" ]; then
@@ -319,14 +322,17 @@ jobs:
             echo "no commits in the last 24h — skipping the JVM suite sims"
           fi
 
-  # Runs on the SCHEDULE (and manual dispatch) only — never on push. A push run
-  # is ~6 minutes and does not execute any of these sims; the scheduled run is
-  # ~18. That is the intended trade (running the full suite per push would have
-  # meant nine ~18-minute runs on 2026-08-08 alone), but it means a green push
-  # run says nothing about the JVM suite, and a genuine break here can sit
-  # undetected for up to a day. If you are asking "did my change break the JVM
-  # tests?", a green push tick is not the answer — dispatch this workflow
-  # manually, or run the sim locally.
+  # Runs on every push and PR, plus nightly. This takes CI from ~6 minutes to
+  # ~18, which is the deliberate trade: these sims are the only thing that
+  # exercises the JVM suite end to end, and while they were nightly-only a
+  # green push tick said nothing about them — a break could sit undetected for
+  # a day. Minutes are free on a public repo, so the only price is latency, and
+  # `concurrency.cancel-in-progress` means a rapid series of pushes cancels the
+  # superseded runs rather than queueing them.
+  #
+  # If this becomes too slow to live with, prefer trimming the matrix (the
+  # baseline sim is the one that has caught real regressions) over going back
+  # to nightly-only.
   jvm-suite-sims:
     needs: [build-microcode, check-recent-commits]
     if: needs.check-recent-commits.outputs.should-run == 'true'
