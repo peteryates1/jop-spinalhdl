@@ -319,6 +319,14 @@ jobs:
             echo "no commits in the last 24h — skipping the JVM suite sims"
           fi
 
+  # Runs on the SCHEDULE (and manual dispatch) only — never on push. A push run
+  # is ~6 minutes and does not execute any of these sims; the scheduled run is
+  # ~18. That is the intended trade (running the full suite per push would have
+  # meant nine ~18-minute runs on 2026-08-08 alone), but it means a green push
+  # run says nothing about the JVM suite, and a genuine break here can sit
+  # undetected for up to a day. If you are asking "did my change break the JVM
+  # tests?", a green push tick is not the answer — dispatch this workflow
+  # manually, or run the sim locally.
   jvm-suite-sims:
     needs: [build-microcode, check-recent-commits]
     if: needs.check-recent-commits.outputs.should-run == 'true'
@@ -399,6 +407,22 @@ jobs:
           make -C java/apps/JvmTests
           ls -l java/apps/JvmTests/DoAll.jop
 
+      # Hash the sim's inputs on EVERY run, passing or failing. Chasing the
+      # item 30 intermittent failure, the only evidence that the failing run's
+      # DoAll.jop matched the passing run's was `ls -l` size — and equal size is
+      # not equal content. Hashes make that comparison exact, and because they
+      # are recorded on green runs too there is always a known-good baseline to
+      # diff a future failure against.
+      - name: Fingerprint sim inputs
+        run: |
+          sha256sum \
+            java/apps/JvmTests/DoAll.jop \
+            asm/generated/mem_rom.dat \
+            asm/generated/mem_ram.dat \
+            asm/generated/JumpTableData.scala \
+            java/runtime/src/jop/com/jopdesign/sys/Const.java \
+            | tee fingerprints.txt
+
       # --no-colors matters: with ANSI escapes sbt's output lines do not END in
       # "ok", they end in the colour reset, so a ' ok$' grep silently matches
       # nothing and a passing run looks like a run that never started. Locally
@@ -420,6 +444,10 @@ jobs:
           oks=$(grep -cE '[A-Za-z0-9_)] ok[[:space:]]*$' sim.log || true)
           summary=$(grep -cE 'All [0-9]+ tests passed|Tests passed: [0-9]+/[0-9]+' sim.log || true)
           echo "per-test ok lines=$oks  summary lines=$summary  failed=$fails"
+          # The seed is what makes these sims reproducible: item 29 was pinned
+          # down only by re-running with the seed from the failing job. Surface
+          # it here so it is readable without downloading the log.
+          grep -oE 'with seed [0-9]+' sim.log | head -1 || true
           if [ "$fails" -ne 0 ]; then
             echo "::error::${{ matrix.name }}: $fails test(s) failed"
             grep 'failed!' sim.log
@@ -430,3 +458,41 @@ jobs:
             tail -40 sim.log
             exit 1
           fi
+
+      # simWorkspace is the one piece of a failing run that cannot be
+      # reconstructed afterwards — it dies with the runner. Both CI failures so
+      # far (items 29 and 30) were intermittent and did NOT reproduce locally on
+      # the same commit, seed and inputs, which left nothing to examine after the
+      # fact. Collect on failure only.
+      #
+      # Only the generated Verilog is worth keeping: Verilator's obj_dir is
+      # hundreds of MB of .o/.cpp that rebuild from the .v anyway. Every copy is
+      # `|| true` — a diagnostics step must never be the reason a run reports a
+      # different failure than the real one.
+      - name: Collect failure diagnostics
+        if: failure()
+        run: |
+          out=sim-diagnostics
+          mkdir -p "$out"
+          cp sim.log fingerprints.txt "$out"/ 2>/dev/null || true
+          find simWorkspace -name '*.v' -o -name '*.sv' 2>/dev/null \
+            | tar -czf "$out"/generated-verilog.tar.gz -T - 2>/dev/null || true
+          # Waveforms only if the sim was configured to write them, and only if
+          # small enough to be worth uploading.
+          find simWorkspace \( -name '*.fst' -o -name '*.vcd' \) -size -100M \
+            -exec cp {} "$out"/ \; 2>/dev/null || true
+          cp java/apps/JvmTests/DoAll.jop "$out"/ 2>/dev/null || true
+          cp asm/generated/mem_rom.dat asm/generated/mem_ram.dat "$out"/ 2>/dev/null || true
+          cp java/runtime/src/jop/com/jopdesign/sys/Const.java "$out"/ 2>/dev/null || true
+          ls -lR "$out"
+          du -sh "$out"
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          # matrix.sim, not matrix.name: the names contain spaces and parens.
+          name: sim-diagnostics-${{ matrix.sim }}
+          path: sim-diagnostics
+          retention-days: 14
+          if-no-files-found: warn
