@@ -301,7 +301,27 @@ object JopConfig {
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
   /** EP4CGX150 + daughter board — SMP, N cores */
-  def ep4cgx150Smp(n: Int) = {
+  // clkMhz must match dram_pll.vhd's clk1/clk2 multiply/divide (50 MHz in) and
+  // the note in jop_sdram.sdc. Nothing cross-checks them: the PLL decides the
+  // real frequency while clkFreq only sets the microsecond prescaler and the
+  // UART divider, so a mismatch shows up as a wrong-speed console and a
+  // GC clock that lies, not as a build error.
+  //
+  // 80 MHz is right for 1-2 cores (PLL 8/5, the checked-in default). At 4 cores
+  // the BMB arbiter misses it badly — -2.399 ns setup, worst path
+  // cores_1|zeroCur -> arbiter -> cores_3|bcFillAddr, with NO CardTable nodes on
+  // it, so this is arbiter scaling and not the card-table work.
+  //
+  // Measured on EP4CGX150, 4 cores: 65 MHz still misses (-0.070), 60 MHz closes
+  // (+0.302 setup / +0.321 hold). 60 also divides cleanly — exact microsecond
+  // prescaler (59) and an exact 2 Mbaud UART divider (30), where 65 would have
+  // given 32.5 and ~1.5% baud error.
+  //
+  // A 4-core build therefore needs dram_pll.vhd edited to clk1/clk2 = 6/5 as
+  // well; the file is shared by every EP4CGX150 build, so it is left at 8/5 and
+  // the edit is deliberate rather than checked in — leaving it at 60 would
+  // silently slow the 1- and 2-core builds.
+  def ep4cgx150Smp(n: Int, clkMhz: Int = 80) = {
     val base = ep4cgx150Serial
     // Leaves useCmpSync at its default (false), so JopCluster instantiates Ihlu
     // — per-object hardware locking. That is the point of SMP: CmpSync is a
@@ -314,7 +334,7 @@ object JopConfig {
     // moving the address into the already-idle RAM_DELAY state and driving it
     // from the registered index — no extra cycles. Set useCmpSync = true if you
     // want the simpler global lock.
-    base.copy(systems = Seq(base.system.copy(name = s"smp$n", cpuCnt = n)))
+    base.copy(systems = Seq(base.system.copy(name = s"smp$n", cpuCnt = n, clkFreq = clkMhz MHz)))
   }
 
   /** EP4CGX150 + daughter board — hardware integer math (IntegerComputeUnit) */

@@ -32,9 +32,12 @@ object JopTopVerilog {
     case "ep4cgx150HwMath"     => JopConfig.ep4cgx150HwMath
     case "ep4cgx150McFallback" => JopConfig.ep4cgx150McFallback
     case "ep4cgx150HwFloat"    => JopConfig.ep4cgx150HwFloat
+    // ep4cgx150Smp <cores> [clkMhz]. clkMhz must match dram_pll.vhd — see the
+    // note on JopConfig.ep4cgx150Smp. 4 cores needs 65; 1-2 run at 80.
     case "ep4cgx150Smp" =>
-      val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
-      JopConfig.ep4cgx150Smp(n)
+      val n   = args.drop(1).headOption.map(_.toInt).getOrElse(2)
+      val mhz = args.drop(2).headOption.map(_.toInt).getOrElse(80)
+      JopConfig.ep4cgx150Smp(n, mhz)
     case "cyc5000Serial"    => JopConfig.cyc5000Serial
     case "cyc5000Smp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
