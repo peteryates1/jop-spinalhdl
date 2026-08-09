@@ -247,11 +247,38 @@ silently invalidate all of that. Use this to find one:
     *identically in passing runs* — SpinalHDL restarts with a scala trace and
     continues. They are long-standing noise and cost real time here.
 
-    Same application bytes, same seed, same RTL, passes locally — so whatever
-    differs is environmental and not yet identified. Note this job runs **only on
-    the schedule**: push builds take ~6 minutes and skip `jvm-suite-sims`
-    entirely, so a genuine break here can sit undetected for up to a day and a
-    row of green push runs says nothing about it.
+    **Correction (2026-08-09): "passes locally" above was not a clean
+    exoneration — CI and a local build produce DIFFERENT `DoAll.jop` images.**
+    The first fingerprints (added the same day) showed CI's `DoAll.jop` at
+    `f388b4ca…` against a local `2f5d046c…`, while `mem_rom.dat`,
+    `mem_ram.dat`, `JumpTableData.scala` and `Const.java` all matched exactly.
+    Cause: CI sets `JDK6_HOME` to **JDK 8** compiling `-source/-target 1.6`,
+    while the Makefiles default to a real **JDK 6** at `/opt/jdk1.6.0_45`.
+    Different `javac`, different bytecode — CI's image is 4645 bytes (~116
+    words) larger.
+
+    **To reproduce a CI JVM-sim result locally, build the app the way CI does:**
+
+    ```sh
+    make -C java/apps/JvmTests clean
+    JDK6_HOME=/opt/jdk1.8.0_202 make -C java/apps/JvmTests
+    ```
+
+    That reproduces CI's size *exactly* (2,926,493 bytes), though the content
+    still differs (`053fc083…`), so something further is environment-specific —
+    JDK patch level or directory-iteration order in the tools. Builds are
+    deterministic **within** an environment: two consecutive local builds are
+    byte-identical, so this is not per-build randomness.
+
+    That last point matters for diagnosing this item. If CI's `DoAll.jop` hash
+    ever differs between two runs of the *same commit*, then CI is running a
+    different binary each time and that is the whole explanation — no
+    environmental theory needed. The fingerprints now recorded on every run make
+    that a one-line comparison; it could not be checked for the 2026-08-09
+    failure because only `ls -l` sizes existed then, and they were equal.
+
+    The 4645-byte difference is far too small to cause `E1` by itself: the
+    baseline sim has ~58,000 words of heap headroom.
 - **12.** **`LongComputeUnitConfig` has no enable flag** for its base 64-bit ALU
     (`ladd/lsub/lneg/lcmp`), unlike `FloatComputeUnitConfig.withAdd`. Worked
     around at the `ComputeUnitTop` level (conditional instantiation), but the
