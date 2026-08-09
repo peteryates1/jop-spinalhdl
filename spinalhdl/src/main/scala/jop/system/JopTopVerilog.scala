@@ -37,7 +37,8 @@ object JopTopVerilog {
     case "ep4cgx150Smp" =>
       val n   = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       val mhz = args.drop(2).headOption.map(_.toInt).getOrElse(80)
-      JopConfig.ep4cgx150Smp(n, mhz)
+      val cs  = args.drop(3).headOption.exists(_ == "cmpsync")
+      JopConfig.ep4cgx150Smp(n, mhz, cs)
     case "cyc5000Serial"    => JopConfig.cyc5000Serial
     case "cyc5000Smp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)

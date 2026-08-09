@@ -122,8 +122,24 @@ silently invalidate all of that. Use this to find one:
    now wrong, "no card table", which would send the next reader hunting a
    missing `hasCardTable` in the preset.
 
-   Next: the halt/release path (`gcHalt`, and the IHLU drain that exempts lock
-   owners) is where to look, not the card table.
+   **IHLU is exonerated — the fault is in the shared stop-the-world path.**
+   Rebuilding the same 4-core config with `useCmpSync = true` (a single global
+   lock, IHLU not instantiated) **hangs in exactly the same place**, after
+   `minors after tenuring 6`. It is in fact a harder hang: with IHLU core 0 kept
+   running and printed its STALL diagnostics, whereas with CmpSync core 0 is
+   frozen too and prints nothing.
+
+   That was the point of the swap, and it rules out the obvious suspect: the
+   IHLU drain that exempts lock owners from `gcHalt`. Whatever fails is common
+   to both locking schemes, so look at `gcHalt` itself — the halt request,
+   acknowledgement and release — rather than at either lock.
+
+   `ep4cgx150Smp` now takes a `cmpSync` flag for exactly this bisection:
+   `sbt "runMain jop.system.JopTopVerilog ep4cgx150Smp 4 60 cmpsync"`.
+
+   Useful side observation: the CmpSync build closes timing at **+0.810 ns**
+   against IHLU's +0.302 at the same 4 cores and 60 MHz, so IHLU is costing
+   ~0.5 ns. That is a separate lead for item 31.
 
 - **2.** **`JopIhluGcBramSim` cannot fail.** It loads `java/apps/Small/HelloWorld.jop`
    — a single-core app — so core 1 parks in the boot-wait loop and IHLU is never

@@ -321,7 +321,11 @@ object JopConfig {
   // well; the file is shared by every EP4CGX150 build, so it is left at 8/5 and
   // the edit is deliberate rather than checked in — leaving it at 60 would
   // silently slow the 1- and 2-core builds.
-  def ep4cgx150Smp(n: Int, clkMhz: Int = 80) = {
+  // useCmpSync swaps IHLU (per-object locking) for the single global lock. It
+  // exists to bisect the >2-core generational deadlock (item 1): IHLU's drain
+  // exempts lock owners from gcHalt, so if 4 cores run with CmpSync and hang
+  // with IHLU, the fault is in that exemption rather than in gcHalt itself.
+  def ep4cgx150Smp(n: Int, clkMhz: Int = 80, cmpSync: Boolean = false) = {
     val base = ep4cgx150Serial
     // Leaves useCmpSync at its default (false), so JopCluster instantiates Ihlu
     // — per-object hardware locking. That is the point of SMP: CmpSync is a
@@ -334,7 +338,8 @@ object JopConfig {
     // moving the address into the already-idle RAM_DELAY state and driving it
     // from the registered index — no extra cycles. Set useCmpSync = true if you
     // want the simpler global lock.
-    base.copy(systems = Seq(base.system.copy(name = s"smp$n", cpuCnt = n, clkFreq = clkMhz MHz)))
+    base.copy(systems = Seq(base.system.copy(name = s"smp$n", cpuCnt = n, clkFreq = clkMhz MHz,
+      coreConfig = base.system.coreConfig.copy(useCmpSync = cmpSync))))
   }
 
   /** EP4CGX150 + daughter board — hardware integer math (IntegerComputeUnit) */
