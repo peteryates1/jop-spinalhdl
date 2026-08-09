@@ -447,17 +447,35 @@ case class JopCluster(
     val ports = cores.map(_.io.card.get)
 
     // Lowest core index wins a same-cycle collision.
-    val wrValid  = ports.map(_.wr).reduce(_ || _)
-    val wrSel    = UInt(3 bits)
-    val wrData   = Bits(32 bits)
-    wrSel  := 0
-    wrData := 0
+    val wrValidC = ports.map(_.wr).reduce(_ || _)
+    val wrSelC   = UInt(3 bits)
+    val wrDataC  = Bits(32 bits)
+    wrSelC  := 0
+    wrDataC := 0
     for (i <- (cpuCnt - 1) to 0 by -1) {
       when(ports(i).wr) {
-        wrSel  := ports(i).sel
-        wrData := ports(i).wrData
+        wrSelC  := ports(i).sel
+        wrDataC := ports(i).wrData
       }
     }
+
+    // Register the muxed control write before it reaches the table.
+    //
+    // Without this the critical path was, measured on EP4CGX150 SMP:
+    //   memCtrl|handleIndex -> a ~46-stage LessThan carry chain (the I/O address
+    //   decode) -> io_ioAddr -> core's card.wr -> this priority mux -> clrIdx ->
+    //   the card-table BRAM address pin
+    // i.e. -0.490 ns at 100 MHz. The decode chain was always that long; what
+    // this change added was carrying its result across the core->cluster
+    // boundary and through a mux into a BRAM address, which is what tipped it.
+    //
+    // A cycle of latency here is free: every one of these writes is the
+    // stop-the-world collector configuring the tenure window, setting a read
+    // index, or clearing a card word. Nothing is waiting on it in the same
+    // cycle, and the mark path is untouched (it has its own input register).
+    val wrValid = RegNext(wrValidC) init (False)
+    val wrSel   = RegNext(wrSelC)   init (0)
+    val wrData  = RegNext(wrDataC)  init (0)
 
     val cardLo    = Reg(UInt(mc.addressWidth bits)) init (0)  // tenure base word
     val cardHi    = Reg(UInt(mc.addressWidth bits)) init (0)  // tenure top word
