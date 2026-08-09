@@ -141,6 +141,30 @@ silently invalidate all of that. Use this to find one:
    against IHLU's +0.302 at the same 4 cores and 60 MHz, so IHLU is costing
    ~0.5 ns. That is a separate lead for item 31.
 
+   **Code reading then found the likely cause — `minorGc()` never halts anyone.**
+   Every write of `IO_GC_HALT` in `GC.java` is in `startCycle()`,
+   `finishCycleNow()` or the public `gc()` — all classic/incremental paths.
+   **Neither `minorGc()` nor `majorGc()` asserts it.** So the generational
+   collector relocates objects and rewrites handles while every other core keeps
+   running, which is unsound on SMP independently of anything to do with cards.
+   That the guard's stated reason was only the remembered set is why this went
+   unnoticed: the guard was hiding two faults, and fixing the card table exposed
+   the second.
+
+   The specific deadlock shape, consistent with the CmpSync result: allocation
+   runs inside `synchronized (mutex)`, and both lock units halt a core when any
+   *other* core asserts `gcHalt` (`CmpSync.scala:140`, `Ihlu.scala:371`). A core
+   that asserts `gcHalt` while another core holds `mutex` halts the very core
+   that must release it, and then blocks on that lock — with more cores, far
+   more likely to be hit. This is a strong hypothesis from reading, not yet
+   confirmed by experiment; the check is whether the halting core is inside the
+   allocation monitor when it halts.
+
+   Two cores are unaffected in practice but are **not proven safe by this
+   analysis** — the same shape exists there, just with a much smaller window.
+   Treat the validated 2-core result as empirical, not as a correctness
+   argument.
+
 - **2.** **`JopIhluGcBramSim` cannot fail.** It loads `java/apps/Small/HelloWorld.jop`
    — a single-core app — so core 1 parks in the boot-wait loop and IHLU is never
    exercised. Verified by running it to 49M cycles: core 1 never moved. Needs a
