@@ -56,6 +56,27 @@ silently invalidate all of that. Use this to find one:
    that test is **the same missing artefact as items 2 and 11** (see
    *Coupling* below).
 
+   **The failing test now exists and the bug is reproduced on hardware**
+   (2026-08-09). `java/apps/SmpGcTest` — core 1 stores a nursery object into a
+   TENURED holder, core 0 churns until a minor GC is observed, then re-checks
+   every magic word. On the EP4CGX150 SMP (2 cores, Ihlu):
+
+   | | boot line | result |
+   |---|---|---|
+   | guard in place | `GC: classic (SMP - per-core card tables…)` | `minors 0 verified 192 errors 0` → **INCONCLUSIVE** |
+   | guard removed | `GC: generational, 16-word cards` | `minors 31 verified 192 errors 192` → **FAIL** |
+
+   Every one of the 192 cross-core references was lost, and the magic reads back
+   as unrelated data — the young objects were collected while live and their
+   space reused. The one-line experiment is in `GC.java:552`: drop
+   `&& cpuCnt0 <= 1` from `genActive`. **The guard is restored**; that
+   configuration is unsound and must not be shipped.
+
+   So what remains of item 1 is the RTL: one cluster-level card table fed from
+   the arbiter output, with `CmpSync` as the precedent. The test to prove it is
+   done — and it reports **INCONCLUSIVE rather than OK** when the nursery does
+   not exist, so it cannot become another item 2.
+
 - **2.** **`JopIhluGcBramSim` cannot fail.** It loads `java/apps/Small/HelloWorld.jop`
    — a single-core app — so core 1 parks in the boot-wait loop and IHLU is never
    exercised. Verified by running it to 49M cycles: core 1 never moved. Needs a
@@ -240,7 +261,11 @@ silently invalidate all of that. Use this to find one:
       every run — **2,926,493 bytes on both** the passing and failing runs.
     - *Seed dependence* (as in item 29): running locally with CI's failing seed
       `405669157` passes. Failing seed 405669157, passing seeds 42187758 and
-      1370482694.
+      1370482694. **Strengthened 2026-08-09**: a ten-seed sweep against the
+      **CI-identical** `DoAll.jop` (`f388b4ca…`) — including CI's failing seed —
+      came back healthy on all ten. So image *and* seed together are not
+      sufficient to reproduce; whatever differs really is environmental.
+      `JOP_SIM_SEED` makes replaying any future failing seed a one-liner.
 
     **Do not be misled by the `Elaboration failed (2 errors)` /
     `UNASSIGNED REGISTER (.../icu/resultReg)` messages in the log.** They appear
