@@ -281,8 +281,28 @@ silently invalidate all of that. Use this to find one:
     Builds are deterministic **within** an environment: two consecutive local
     builds are byte-identical, so this was never per-build randomness.
 
-    The JDK 8 toolchain is validated: `JopJvmTestsBramSim` 66/66 in simulation
-    and `DoAll` 66/66 on Wukong hardware, both on JDK 8-built images.
+    **The JDK 8 toolchain is validated on hardware across four boards, three
+    FPGA vendors and three toolchains** (2026-08-09) — every app image was
+    rebuilt by the switch, so this is a re-validation of the whole fleet, not a
+    spot check:
+
+    | board | config | result |
+    |---|---|---|
+    | Wukong (Artix-7) | `wukongDdr3Fcu` — DDR3 | **66/66** |
+    | Wukong | `wukongSdram` — SDR | **66/66** |
+    | Wukong | `wukongSmp2` — 2-core | `SmpCacheTest` **PASS** + DoAll **66/66** |
+    | Wukong | `wukongDualIndependent` — DDR3 cluster | **66/66** |
+    | Wukong | `wukongDualIndependent` — SDR cluster | **66/66** |
+    | EP4CGX150 (Cyclone IV, Quartus) | `jop_sdram` | **66/66** |
+    | XC7A100T + DB V5 (Vivado) | DDR3 | **66/66** |
+    | Colorlight i5 (ECP5, yosys/nextpnr) | SDRAM | **66/66** |
+
+    Plus `JopJvmTestsBramSim` 66/66 in simulation. The i5 and Wukong SDR runs
+    report the same download checksum (`0x695472d1`), confirming the boards ran
+    an identical image.
+
+    **Not covered: the CYC5000** — no `.sof` is built for it, so it was the one
+    attached board that could not be checked. Everything else attached was.
 
     That last point matters for diagnosing this item. If CI's `DoAll.jop` hash
     ever differs between two runs of the *same commit*, then CI is running a
