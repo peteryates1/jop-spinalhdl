@@ -116,8 +116,26 @@ public class SmpGcTest {
 		return a ^ b ^ c ^ d ^ e ^ f ^ g ^ h;
 	}
 
-	/** Allocate garbage until a minor GC is observed, or budget runs out. */
+	/**
+	 * True when a nursery exists, i.e. the collector is generational. GC.init
+	 * sets nurseryBase == nurseryTop for the classic heap, which is what the SMP
+	 * guard currently forces.
+	 */
+	static boolean generational() {
+		return GC.nurseryTop != GC.nurseryBase;
+	}
+
+	/**
+	 * Allocate garbage until a minor GC is observed, or budget runs out.
+	 *
+	 * Returns immediately with no nursery: there can be no minor GC to wait for,
+	 * so churning the full budget only burns time. That matters — in simulation
+	 * the two tenuring calls alone ran past 45M cycles before this check existed,
+	 * and JopIhluGcBramSim gave up at its 100M limit having never reached the
+	 * interesting part.
+	 */
 	static int churnUntilMinor(int budget) {
+		if (!generational()) return 0;
 		int before = GC.nurseryAllocPtr;
 		int seen = 0;
 		for (int i = 0; i < budget; i++) {

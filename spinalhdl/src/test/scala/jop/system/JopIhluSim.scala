@@ -378,8 +378,12 @@ object JopIhluGcBramSim extends App {
         }
 
         val output = uartOutput.toString
-        if (output.contains("R80 f=")) {
-          println("\n*** Multiple GC cycles completed with IHLU! ***")
+        // Stop when the payload says it is finished. This looked for "R80 f=",
+        // a marker of the OLD single-core payload that SmpGcTest never prints,
+        // so the sim could never stop early: it ran the full 100M cycles (21
+        // minutes) despite the app completing around 10M.
+        if (output.contains("SmpGcTest done")) {
+          println("\n*** SmpGcTest completed with IHLU! ***")
           for (_ <- 0 until 50000) {
             dut.clockDomain.waitSampling()
             if (dut.io.uartTxValid.toBoolean) {
