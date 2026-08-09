@@ -71,9 +71,22 @@ public class SmpGcTest {
 
 	static Holder[] holders;
 
-	static volatile int phase;        // 0 = idle, 1 = core1 publish, 2 = core0 verify
+	static volatile int phase;        // 0 = idle, 1 = publishers run, 2 = core0 verifies
 	static volatile int publishRound;
-	static volatile int core1Published;
+
+	/**
+	 * Per-core progress: pubRound[p] is the next round core p has not yet
+	 * published. An array rather than one counter because every publisher must
+	 * be waited on independently — with a single counter, one slow core is
+	 * indistinguishable from one that has finished, and core 0 would verify
+	 * holders nobody had written yet. Allocated by core 0 before tenuring, so it
+	 * is itself tenured and the writes into it are ordinary SMP array traffic
+	 * (A$ snoop invalidation, which SmpCacheTest T1 already proves works).
+	 */
+	static int[] pubRound;
+
+	static int cpuCnt;
+	static int publishers;            // cores 1..cpuCnt-1
 
 	static int errors;
 	static int minors;
@@ -122,7 +135,13 @@ public class SmpGcTest {
 	// ---------------------------------------------------------------- core 0
 
 	static void core0() {
-		JVMHelp.wr("SmpGcTest: core0 building holders\r\n");
+		JVMHelp.wr("SmpGcTest: cores ");
+		wrInt(cpuCnt);
+		JVMHelp.wr(", publishers ");
+		wrInt(publishers);
+		JVMHelp.wr("\r\n");
+		pubRound = new int[cpuCnt];
+		for (int p = 0; p < cpuCnt; p++) pubRound[p] = 0;
 		holders = new Holder[HOLDERS];
 		for (int i = 0; i < HOLDERS; i++) {
 			holders[i] = new Holder();
@@ -146,9 +165,16 @@ public class SmpGcTest {
 
 		for (int round = 0; round < 8; round++) {
 			publishRound = round;
-			phase = 1;                                  // core 1: publish now
-			while (core1Published <= round) {
-				// spin until core 1 has stored this round's Young objects
+			phase = 1;                                  // publishers: store now
+			// Wait for EVERY publisher independently. One shared counter would
+			// let a slow core look like a finished one and core 0 would verify
+			// holders nobody had written.
+			boolean all = false;
+			while (!all) {
+				all = true;
+				for (int p = 1; p < cpuCnt; p++) {
+					if (pubRound[p] <= round) { all = false; }
+				}
 			}
 			phase = 2;
 
@@ -214,17 +240,22 @@ public class SmpGcTest {
 		y = null;
 	}
 
-	static void core1() {
+	/**
+	 * Publisher core. Each takes a DISJOINT slice of the holders — two cores
+	 * writing the same holder would make a lost object ambiguous (whose store
+	 * went missing?) and could mask a fault by overwriting it with a good one.
+	 */
+	static void publisher(int id) {
 		int round = 0;
 		while (true) {
-			int p = phase;
-			if (p == 3) return;
-			if (p == 1 && round == publishRound) {
-				for (int i = 0; i < HOLDERS; i++) {
+			int ph = phase;
+			if (ph == 3) return;
+			if (ph == 1 && round == publishRound) {
+				for (int i = id - 1; i < HOLDERS; i += publishers) {
 					publish(round, i);
 					if (scrub() == 0x7fffffff) JVMHelp.wr("");  // keep scrub() live
 				}
-				core1Published = round + 1;
+				pubRound[id] = round + 1;
 				round++;
 			}
 		}
@@ -234,17 +265,18 @@ public class SmpGcTest {
 
 	public static void main(String[] args) {
 		int cpuId = Native.rdMem(Const.IO_CPU_ID);
+		cpuCnt = Native.rdMem(Const.IO_CPUCNT);
+		publishers = cpuCnt - 1;
 		if (cpuId == 0) {
 			phase = 0;
 			publishRound = 0;
-			core1Published = 0;
 			core0();
-		} else if (cpuId == 1) {
-			core1();
 		} else {
-			// Cores 2+ idle for now. Raising the core count is how the race is
-			// made more probable once the two-core case is understood.
-			for (;;) { if (phase == 3) return; }
+			// EVERY other core publishes. More publishers means more concurrent
+			// cross-core stores between minor GCs, so the window the shared card
+			// table has to cover is wider — and it puts >1 writer on the
+			// cluster's config-write priority mux, which two cores never did.
+			publisher(cpuId);
 		}
 	}
 }
