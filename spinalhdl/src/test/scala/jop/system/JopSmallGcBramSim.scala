@@ -13,7 +13,14 @@ import java.io.PrintWriter
  */
 object JopSmallGcBramSim extends App {
 
-  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  // GcStressTest.jop, not HelloWorld.jop. This sim asserts on "GC test start",
+  // which ONLY java/apps/Small/src/test/GcStressTest.java prints —
+  // src/test/HelloWorld.java just prints "Hello World!". It was passing on a
+  // stale HelloWorld.jop built from some other source at some point in the
+  // past: the file's provenance no longer matched the tree, so the sim was
+  // testing a binary nobody could rebuild. Rebuild it with
+  //   make -C java/apps/Small APP_NAME=GcStressTest
+  val jopFilePath = "java/apps/Small/GcStressTest.jop"
   val romFilePath = "asm/generated/mem_rom.dat"
   val ramFilePath = "asm/generated/mem_ram.dat"
   val logFilePath = "spinalhdl/small_gc_bram_simulation.log"
@@ -80,9 +87,17 @@ object JopSmallGcBramSim extends App {
           println(f"\n[$cycle%8d] PC=$pc%04x JPC=$jpc%04x UART: '${uartOutput.toString}'")
         }
 
-        // Exit after multiple GC cycles (mark-compact: heap fills ~R24, so R80 = ~3 GC cycles)
+        // Stop on the EVIDENCE (free memory jumped back up), not on a fixed
+        // Watch a WINDOW that comfortably contains the first collection rather
+        // than ending exactly on it. Stopping at "R80 f=" made the pass depend
+        // on the GC firing at exactly R80: any change to runtime code size
+        // shifts the heap start, which shifts free-per-round, which moves the
+        // trigger a round either way. A GC.java edit that fires the collector
+        // at R81 instead of R80 failed this sim while collecting perfectly well
+        // (HEAD: R79 f=1180 -> GC at R80; slightly larger runtime: R79 f=1308
+        // -> GC at R81, one round outside the window).
         val output = uartOutput.toString
-        if (output.contains("R80 f=")) {
+        if (output.contains("R95 f=")) {
           println("\n*** Multiple GC cycles completed! ***")
           // Capture a bit more
           for (_ <- 0 until 50000) {

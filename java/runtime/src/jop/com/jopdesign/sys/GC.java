@@ -649,38 +649,48 @@ public class GC {
 	 * Callers in a loop read the invariant three once and pass them down —
 	 * `memStart`/`hEnd` are fixed at init, `markVal` for the whole collection.
 	 *
-	 * `grayList` and the monitor are deliberately NOT hoisted. `gc()` can run
-	 * with `concurrentGc` set, and the write barrier pushes onto `grayList`, so
-	 * caching the head across the mark loop needs an argument about what can run
-	 * during a collection that has not been made. Three of the six go; the other
-	 * three stay until that argument exists.
+	 * `grayList` is deliberately NOT hoisted. `gc()` can run with `concurrentGc`
+	 * set, and the write barrier pushes onto `grayList`, so caching the head
+	 * across the mark loop needs an argument about what can run during a
+	 * collection that has not been made.
+	 *
+	 * <p>The monitor WAS the sixth static read, and it is now gone for a
+	 * different reason: the caller MUST hold it (see {@link #gc()}). Taking it
+	 * here made this the largest source of nested acquisition in the collector —
+	 * once per root and once per reference field, so a mark phase acquired and
+	 * RELEASED the global lock thousands of times. That lock is not reentrant,
+	 * so each release handed the heap to whichever core was waiting, in the
+	 * middle of a collection.
 	 */
 	static void pushFast(int ref, int memStart, int hEnd, int markVal) {
 		if (ref == 0) return;
 		if (ref<memStart || ref>=hEnd) return;
 		if ((ref&0x7)!=0) return;
 
-		synchronized (mutex) {
-			// Body inlined rather than calling pushInto. Delegating cost 102 ms
-			// of a 591 ms mark phase — a JOP method call is ~142 cycles, more
-			// than the three main-memory static reads this hoisting removes, so
-			// the first version of this change was a 22% regression. One call
-			// per push is the budget; there is no room for a second.
-			if (Native.rdMem(ref+OFF_PTR)==0) return;
-			if (Native.rdMem(ref+OFF_SPACE)==markVal) return;
-			if (Native.rdMem(ref+OFF_GREY)==0) {
-				Native.wrMem(grayList, ref+OFF_GREY);
-				grayList = ref;
-			}
+		// Body inlined rather than calling pushInto. Delegating cost 102 ms
+		// of a 591 ms mark phase — a JOP method call is ~142 cycles, more
+		// than the three main-memory static reads this hoisting removes, so
+		// the first version of this change was a 22% regression. One call
+		// per push is the budget; there is no room for a second.
+		if (Native.rdMem(ref+OFF_PTR)==0) return;
+		if (Native.rdMem(ref+OFF_SPACE)==markVal) return;
+		if (Native.rdMem(ref+OFF_GREY)==0) {
+			Native.wrMem(grayList, ref+OFF_GREY);
+			grayList = ref;
 		}
 	}
 
 	/**
-	 * Add object to the gray list/stack
-	 * @param ref
+	 * Add object to the gray list/stack from OUTSIDE a collection.
+	 *
+	 * <p>The snapshot-at-beginning write barrier is the only such caller, and it
+	 * runs on a mutator that does not hold the monitor — so this one still takes
+	 * it. Collector-internal call sites use pushFast directly.
 	 */
 	static void push(int ref) {
-		pushFast(ref, mem_start, handleEnd, toSpace);
+		synchronized (mutex) {
+			pushFast(ref, mem_start, handleEnd, toSpace);
+		}
 	}
 
 	/**
@@ -689,22 +699,21 @@ public class GC {
 	 */
 	static void getStackRoots() {
 		int i, j, cnt;
-		synchronized (mutex) {
-			int memStart = mem_start, hEnd = handleEnd, markVal = toSpace;
-			i = Native.getSP();
-			for (j = Const.STACK_OFF; j <= i; ++j) {
-				pushFast(Native.rdIntMem(j), memStart, hEnd, markVal);
-			}
-			// Stacks from the other threads
-			cnt = RtThreadImpl.getCnt();
-			for (i = 0; i < cnt; ++i) {
-				if (i != RtThreadImpl.getActive()) {
-					int[] mem = RtThreadImpl.getStack(i);
-					if (mem != null) {
-						int sp = RtThreadImpl.getSP(i) - Const.STACK_OFF;
-						for (j = 0; j <= sp; ++j) {
-							pushFast(mem[j], memStart, hEnd, markVal);
-						}
+		// Monitor held by the caller (mark / startCycle) — see gc().
+		int memStart = mem_start, hEnd = handleEnd, markVal = toSpace;
+		i = Native.getSP();
+		for (j = Const.STACK_OFF; j <= i; ++j) {
+			pushFast(Native.rdIntMem(j), memStart, hEnd, markVal);
+		}
+		// Stacks from the other threads
+		cnt = RtThreadImpl.getCnt();
+		for (i = 0; i < cnt; ++i) {
+			if (i != RtThreadImpl.getActive()) {
+				int[] mem = RtThreadImpl.getStack(i);
+				if (mem != null) {
+					int sp = RtThreadImpl.getSP(i) - Const.STACK_OFF;
+					for (j = 0; j <= sp; ++j) {
+						pushFast(mem[j], memStart, hEnd, markVal);
 					}
 				}
 			}
@@ -751,15 +760,13 @@ public class GC {
 		int liveWords = 0, liveHandles = 0;
 		for (;;) {
 
-			// pop one object from the gray list
-			synchronized (mutex) {
-				ref = grayList;
-				if (ref==GREY_END) {
-					break;
-				}
-				grayList = Native.rdMem(ref+OFF_GREY);
-				Native.wrMem(0, ref+OFF_GREY);		// mark as not in list
+			// pop one object from the gray list (monitor held by gcLocked)
+			ref = grayList;
+			if (ref==GREY_END) {
+				break;
 			}
+			grayList = Native.rdMem(ref+OFF_GREY);
+			Native.wrMem(0, ref+OFF_GREY);		// mark as not in list
 
 			// already marked
 			if (Native.rdMem(ref+OFF_SPACE)==toSpace) {
@@ -846,14 +853,16 @@ public class GC {
 		// Mark it BLACK
 		Native.wrMem(toSpace, ref+OFF_SPACE);
 
-		// push all children
+		// push all children — pushFast, not push: markChildren runs inside the
+		// collection, which already holds the monitor.
+		int memStart = mem_start, hEnd = handleEnd, markVal = toSpace;
 		int addr = Native.rdMem(ref);
 		int flags = Native.rdMem(ref+OFF_TYPE);
 		if (flags==IS_REFARR) {
 			// is an array of references
 			int size = Native.rdMem(ref+OFF_MTAB_ALEN);
 			for (i=0; i<size; ++i) {
-				push(Native.rdMem(addr+i));
+				pushFast(Native.rdMem(addr+i), memStart, hEnd, markVal);
 			}
 		} else if (flags==IS_OBJ) {
 			// it's a plain object
@@ -861,7 +870,7 @@ public class GC {
 			flags = Native.rdMem(flags+Const.MTAB2GC_INFO);
 			for (i=0; flags!=0; ++i) {
 				if ((flags&1)!=0) {
-					push(Native.rdMem(addr+i));
+					pushFast(Native.rdMem(addr+i), memStart, hEnd, markVal);
 				}
 				flags >>>= 1;
 			}
@@ -876,15 +885,14 @@ public class GC {
 		int ref;
 		int count = 0;
 
+		// Monitor held by the caller (tryGcIncrement / finishCycleNow) — see gc().
 		while (count < MARK_STEP) {
-			synchronized (mutex) {
-				ref = grayList;
-				if (ref==GREY_END) {
-					return true;  // marking complete
-				}
-				grayList = Native.rdMem(ref+OFF_GREY);
-				Native.wrMem(0, ref+OFF_GREY);
+			ref = grayList;
+			if (ref==GREY_END) {
+				return true;  // marking complete
 			}
+			grayList = Native.rdMem(ref+OFF_GREY);
+			Native.wrMem(0, ref+OFF_GREY);
 
 			markChildren(ref);
 			count++;
@@ -1095,21 +1103,24 @@ public class GC {
 		int dest = chooseEvacDest(markedWords);
 		int compactPtr;
 
-		synchronized (mutex) {
-			if (dest == 0) {
-				// No disjoint region big enough. Fall back to sliding, which
-				// needs address order so that dest <= source for every object.
-				sortUseListByAddress();
-				compactPtr = heapStart;
-				tenureBase = heapStart;
-			} else {
-				compactPtr = dest;
-				tenureBase = dest;
-			}
-
-			ref = useList;		// get start of the list
-			useList = 0;		// new uselist starts empty
+		// NO `synchronized (mutex)` here — see gcLocked(). The caller already
+		// holds the monitor, and re-taking it would RELEASE it on the inner
+		// monitorexit: JOP's global lock is not reentrant (jvm.asm monitorexit
+		// writes io_cpu_id unconditionally; `lockcnt` only gates interrupt
+		// re-enable). That let another core into the heap mid-compaction.
+		if (dest == 0) {
+			// No disjoint region big enough. Fall back to sliding, which
+			// needs address order so that dest <= source for every object.
+			sortUseListByAddress();
+			compactPtr = heapStart;
+			tenureBase = heapStart;
+		} else {
+			compactPtr = dest;
+			tenureBase = dest;
 		}
+
+		ref = useList;		// get start of the list
+		useList = 0;		// new uselist starts empty
 
 		int st1 = 0;
 		if (GC_TIMING) {
@@ -1211,13 +1222,11 @@ public class GC {
 			gcMajTSlide = Native.rd(Const.IO_US_CNT) - st1;
 		}
 
-		// Update heap pointers
-		synchronized (mutex) {
-			useList = localUse;
-			freeList = localFree;
-			copyPtr = compactPtr;
-			allocPtr = heapStart + heapSize;
-		}
+		// Update heap pointers (monitor already held by the caller — see above)
+		useList = localUse;
+		freeList = localFree;
+		copyPtr = compactPtr;
+		allocPtr = heapStart + heapSize;
 	}
 
 	// ================================================================
@@ -1249,15 +1258,14 @@ public class GC {
 	 * apply here: this path still pays `n * ceil(log2 n) * ~2 us` for the sort.
 	 */
 	static void prepareCompact() {
-		synchronized (mutex) {
-			compactList = sortListByAddress(useList);
-			useList = 0;
-			compactDst = heapStart;
-			// tenureBase must follow compactDst or the card scan would look for
-			// tenure data in the wrong place after an incremental cycle.
-			tenureBase = heapStart;
-			newUseList = 0;
-		}
+		// Monitor held by the caller (tryGcIncrement / gc_alloc) — see gc().
+		compactList = sortListByAddress(useList);
+		useList = 0;
+		compactDst = heapStart;
+		// tenureBase must follow compactDst or the card scan would look for
+		// tenure data in the wrong place after an incremental cycle.
+		tenureBase = heapStart;
+		newUseList = 0;
 	}
 
 	/**
@@ -1268,14 +1276,15 @@ public class GC {
 		int count = 0;
 		int ref;
 
+		// Monitor held by the caller for the whole step — see gc(). Incremental
+		// behaviour is unchanged: one call is still one COMPACT_STEP slice, and
+		// the monitor is dropped between calls, not within one.
 		while (count < COMPACT_STEP) {
-			synchronized (mutex) {
-				ref = compactList;
-				if (ref == 0) {
-					return true;
-				}
-				compactList = Native.rdMem(ref + OFF_NEXT);
+			ref = compactList;
+			if (ref == 0) {
+				return true;
 			}
+			compactList = Native.rdMem(ref + OFF_NEXT);
 
 			if (Native.rdMem(ref + OFF_SPACE) == toSpace) {
 				int size = getObjectSize(ref);
@@ -1290,16 +1299,12 @@ public class GC {
 
 				compactDst += size;
 
-				synchronized (mutex) {
-					Native.wrMem(newUseList, ref + OFF_NEXT);
-					newUseList = ref;
-				}
+				Native.wrMem(newUseList, ref + OFF_NEXT);
+				newUseList = ref;
 			} else {
-				synchronized (mutex) {
-					Native.wrMem(freeList, ref + OFF_NEXT);
-					freeList = ref;
-					Native.wrMem(0, ref + OFF_PTR);
-				}
+				Native.wrMem(freeList, ref + OFF_NEXT);
+				freeList = ref;
+				Native.wrMem(0, ref + OFF_PTR);
 			}
 
 			count++;
@@ -1312,24 +1317,23 @@ public class GC {
 	 * Finish an incremental GC cycle.
 	 */
 	static void finishCycle() {
-		synchronized (mutex) {
-			if (newUseList == 0) {
-				// Nothing compacted
-			} else if (useList == 0) {
-				useList = newUseList;
-			} else {
-				int tail = newUseList;
-				int tailNext = Native.rdMem(tail + OFF_NEXT);
-				while (tailNext != 0) {
-					tail = tailNext;
-					tailNext = Native.rdMem(tail + OFF_NEXT);
-				}
-				Native.wrMem(useList, tail + OFF_NEXT);
-				useList = newUseList;
+		// Monitor held by the caller — see gc().
+		if (newUseList == 0) {
+			// Nothing compacted
+		} else if (useList == 0) {
+			useList = newUseList;
+		} else {
+			int tail = newUseList;
+			int tailNext = Native.rdMem(tail + OFF_NEXT);
+			while (tailNext != 0) {
+				tail = tailNext;
+				tailNext = Native.rdMem(tail + OFF_NEXT);
 			}
-			newUseList = 0;
-			copyPtr = compactDst;
+			Native.wrMem(useList, tail + OFF_NEXT);
+			useList = newUseList;
 		}
+		newUseList = 0;
+		copyPtr = compactDst;
 
 		zeroMem(copyPtr, allocPtr);
 
@@ -1417,10 +1421,17 @@ public class GC {
 		int freeSpace = allocPtr - copyPtr;
 		int threshold = heapSize >> 2;  // 25% of heap
 
-		if (gcPhase != PHASE_IDLE) {
-			gcIncrement();
-		} else if (freeSpace < threshold) {
-			gcIncrement();
+		// Called from newObject/newArray AFTER their synchronized block, so the
+		// monitor is NOT held here — and startCycle() asserts IO_GC_HALT. A core
+		// that halts the others without owning the lock is halted itself the
+		// moment another core wins the lock, mid-root-scan. Take the monitor for
+		// the increment so the collector is the lock owner (both CmpSync and
+		// IHLU exempt the owner from gcHalt) — the invariant gc() documents.
+		// One call is still one increment; the monitor is released between them.
+		if (gcPhase != PHASE_IDLE || freeSpace < threshold) {
+			synchronized (mutex) {
+				gcIncrement();
+			}
 		}
 	}
 
@@ -1431,19 +1442,60 @@ public class GC {
 		if (Config.USE_SCOPES) {
 			throw OOMError;
 		}
+		// gcLocked(), not gc(): gc_alloc is only ever reached from inside
+		// `synchronized (mutex)` in newObject/newArray, and re-taking the
+		// monitor would release it — see gc().
 		if (gcPhase != PHASE_IDLE) {
 			// Incremental GC in progress -- drain it to completion
 			finishCycleNow();
 			// If still not enough space, run a full STW cycle
 			if (freeList == 0 || (allocPtr - copyPtr) < (heapSize >> 3)) {
-				gc();
+				gcLocked();
 			}
 		} else {
-			gc();
+			gcLocked();
 		}
 	}
 
+	/**
+	 * Public entry point: acquire the allocation monitor, then collect.
+	 *
+	 * <p>THE RULE THIS ENFORCES: the monitor is taken exactly ONCE, at the
+	 * outermost GC entry, and IO_GC_HALT is only ever asserted while holding
+	 * it. Both halves matter on SMP:
+	 *
+	 * <ul>
+	 * <li>Taking it once, because JOP's global lock is not reentrant. The
+	 *     microcode monitorexit (jvm.asm) always writes io_cpu_id; the
+	 *     `lockcnt` it keeps only decides when to re-enable interrupts. IHLU
+	 *     reference-counts each lock slot and so survives nesting, but CmpSync
+	 *     has a single global lock and no counter (Sys.scala clears lockReqReg
+	 *     unconditionally on IO_UNLOCK). A nested `synchronized (mutex)` inside
+	 *     the collector therefore RELEASED the lock on its inner exit, letting
+	 *     another core into the heap in the middle of a compaction.
+	 * <li>Holding it while halted, because CmpSync and IHLU both exempt the
+	 *     current lock owner from gcHalt. Owning the lock is what keeps the
+	 *     collector itself running; a collector that asserts gcHalt without
+	 *     owning it gets halted the moment another core wins the lock, and if
+	 *     two cores ever reach that state at once they halt each other with no
+	 *     way out.
+	 * </ul>
+	 *
+	 * <p>Callers already inside the monitor (allocation, gc_alloc, majorGc)
+	 * must call {@link #gcLocked()} directly, NOT this.
+	 */
 	public static void gc() {
+		if (mutex != null) {
+			synchronized (mutex) {
+				gcLocked();
+			}
+		} else {
+			gcLocked();
+		}
+	}
+
+	/** Full stop-the-world collection. Caller MUST hold `mutex` — see {@link #gc()}. */
+	static void gcLocked() {
 		int gt0 = 0;
 		if (GC_TIMING) gt0 = Native.rd(Const.IO_US_CNT);
 		// Stop-the-world: halt all other cores during GC.
@@ -1851,6 +1903,19 @@ public class GC {
 			majorGc();
 			return;
 		}
+		// STOP THE WORLD. This was missing entirely: every IO_GC_HALT write in
+		// this file used to be in startCycle/finishCycleNow/gc — all classic
+		// collector paths — so a minor GC moved surviving objects and rewrote
+		// their handles with every other core still running. Handle indirection
+		// does not save us: a mutator can read OFF_PTR, then read the data
+		// after copyAndSweepYoung has moved it, and Native.invalidate() only
+		// invalidates the calling core's caches. Asserted AFTER the majorGc
+		// fallback above, so that path is left to gcLocked()'s own halt rather
+		// than nesting one halt inside another and releasing the world early.
+		//
+		// Safe to halt here because minorGc is only reached from allocGen,
+		// i.e. with `mutex` held — the invariant gc() documents.
+		Native.wr(1, Const.IO_GC_HALT);
 		if (GEN_TRACE) JVMHelp.wr("[gc");
 		int t0 = 0, t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0, allocBefore = 0;
 		if (GC_TIMING) { t0 = Native.rd(Const.IO_US_CNT); allocBefore = allocPtr; }
@@ -1882,6 +1947,10 @@ public class GC {
 		Native.wr(-1, Const.IO_CARD_CLEAR);   // clear all cards (HW sweep)
 		nurseryAllocPtr = nurseryTop;
 		youngObjects = 0;
+		// Objects moved, so this core's caches are stale, and the other cores
+		// must not resume until both the move and the invalidate are done.
+		Native.invalidate();
+		Native.wr(0, Const.IO_GC_HALT);       // resume the other cores
 		if (GC_TIMING) {
 			t5 = Native.rd(Const.IO_US_CNT);
 			gcTRoots = t1 - t0;
@@ -1935,10 +2004,12 @@ public class GC {
 	/** Full major GC (mark-compact whole heap) then re-carve an empty nursery. */
 	static void majorGc() {
 		if (GEN_TRACE) JVMHelp.wr("[MAJOR]");
-		// gc() splices youngList in, compacts everything, re-carves an empty
-		// nursery, clears the cards — and times itself, so a direct System.gc()
-		// is measured too, not just collections that arrive through here.
-		gc();
+		// gcLocked() splices youngList in, compacts everything, re-carves an
+		// empty nursery, clears the cards — and times itself, so a direct
+		// System.gc() is measured too, not just collections that arrive here.
+		// Locked variant: majorGc is only called from allocGen, which runs
+		// inside the allocation monitor.
+		gcLocked();
 		if (GEN_TRACE) JVMHelp.wr("[MAJOR-DONE]");
 	}
 

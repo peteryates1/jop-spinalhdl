@@ -151,19 +151,189 @@ silently invalidate all of that. Use this to find one:
    unnoticed: the guard was hiding two faults, and fixing the card table exposed
    the second.
 
-   The specific deadlock shape, consistent with the CmpSync result: allocation
-   runs inside `synchronized (mutex)`, and both lock units halt a core when any
-   *other* core asserts `gcHalt` (`CmpSync.scala:140`, `Ihlu.scala:371`). A core
-   that asserts `gcHalt` while another core holds `mutex` halts the very core
-   that must release it, and then blocks on that lock — with more cores, far
-   more likely to be hit. This is a strong hypothesis from reading, not yet
-   confirmed by experiment; the check is whether the halting core is inside the
-   allocation monitor when it halts.
+   **CORRECTION to the deadlock shape given in 9cfbd65.** That commit proposed
+   "a core asserts `gcHalt` while another holds `mutex`, halting the very core
+   that must release it, then blocks on that lock". **That cannot happen** — the
+   hardware already handles it. Both lock units exempt the current lock owner
+   from `gcHalt` (`CmpSync.scala:137-147`, `Ihlu.scala:371`), and CmpSync's
+   comment says so explicitly: *"Lock owner is NEVER halted — must complete
+   critical section to avoid deadlock (e.g., GC core sets gcHalt while another
+   core holds the lock; owner must release first)."* The hypothesis was wrong in
+   its detail. The real mechanism is the mirror image of it: not the collector
+   *blocking* on the lock, but the collector *releasing* it mid-collection.
+
+   **The global lock is not reentrant, and the collector nests it.** In
+   `asm/src/jvm.asm`, `monitorexit` unconditionally writes `io_cpu_id`
+   (= `IO_UNLOCK`); the `lockcnt` it maintains decides only when to re-enable
+   interrupts, never whether to release. `Sys.scala:302` clears `lockReqReg`
+   unconditionally on that write. IHLU survives this because it reference-counts
+   each lock slot (`count(s)`); **CmpSync has one global lock and no counter at
+   all**, so an inner `monitorexit` drops the lock outright while the outer
+   critical section is still running.
+
+   The collector is entered from inside `synchronized (mutex)`
+   (`newObjectGen`/`newArrayGen` -> `allocGen` -> `majorGc` -> `gc`) and then
+   took the monitor *again* in eight places. `pushFast` was by far the worst: it
+   is called once per root and once per reference field, so a mark phase
+   acquired and released the global lock **thousands of times**, and every
+   release handed the heap to whichever core was waiting — in the middle of a
+   collection. `compactAndSweep`, `getStackRoots`, the two gray-list pops,
+   `prepareCompact`, `compactStep` and `finishCycle` did the same, less often.
+
+   That explains the symptom far better than a deadlock does. The observed
+   4-core failure was never a clean mutual halt; it is a corrupted heap.
+
+   `copyAndSweepYoung` even documents the invariant it did not have: *"Nothing
+   else can observe them mid-sweep — the collector runs stop-the-world with the
+   other cores halted."* For a minor GC that comment was simply false.
 
    Two cores are unaffected in practice but are **not proven safe by this
-   analysis** — the same shape exists there, just with a much smaller window.
+   analysis** — the same windows exist there, just far less likely to be hit.
    Treat the validated 2-core result as empirical, not as a correctness
    argument.
+
+   **Reproduced in simulation, which the hardware-only loop could not do.**
+   `JopGcHaltDeadlockSim` (new) runs `SmpGcTest` on a 4-core CmpSync BRAM
+   cluster with a cluster card table, and dumps `CmpSync.state`/`lockedId` plus
+   every core's `gcHaltReg`/`lockReqReg` when it wedges. First run, guard
+   lifted: generational genuinely active (`GC: generational, 4-word cards`,
+   `minors after tenuring 197`), and then core 0 died with an **uncaught
+   exception** at ~52M cycles — moments after `Native.wr(1, IO_SIGNAL)` released
+   the three publishers, i.e. as soon as anything else ran concurrently.
+
+   Note what the probe did *not* find: **no core was ever halted and no core
+   ever asserted `gcHalt`** at any sample. So the failure is not a stop-the-world
+   halt that never releases, which is how items above describe it. It is
+   memory corruption from a collection that ran concurrently with mutators.
+
+   **The fix** — one rule, applied throughout `GC.java`: *the allocation monitor
+   is acquired exactly once, at the outermost GC entry, and `IO_GC_HALT` is only
+   ever asserted while holding it.*
+
+   - `gc()` split into a public entry that takes the monitor and `gcLocked()`
+     that assumes it; `gc_alloc()` and `majorGc()` call `gcLocked()`.
+   - Every nested `synchronized (mutex)` inside the collector removed, with the
+     precondition documented at each site. `pushFast` is now collector-internal
+     and lock-free; `push()` keeps the monitor for its one mutator caller, the
+     snapshot-at-beginning write barrier.
+   - `tryGcIncrement()` takes the monitor around `gcIncrement()`. It is called
+     from `newObject`/`newArray` *after* their synchronized block, so
+     `startCycle()` was asserting `gcHalt` while owning no lock — the one place
+     that really could be halted mid-root-scan by another core winning the lock.
+   - **`minorGc()` now stops the world**, which it never did. It asserts
+     `IO_GC_HALT` after the `majorGc` fallback check (so the two halts do not
+     nest and release early) and clears it after `Native.invalidate()`.
+
+   Holding the monitor across a whole collection also keeps interrupts disabled
+   for its duration (`monitorenter` disables them). That is a behaviour change
+   for the classic path and a deliberate one: a thread switch during `mark()`,
+   which scans other threads' stacks, was previously possible.
+
+   Side benefit: removing the per-push `monitorenter`/`monitorexit` should make
+   the mark phase measurably faster — `push()` was already documented as 78% of
+   the major GC's mark phase. That is also a candidate explanation for the open
+   *"major GC = 2.2 s @36k live, 20-25x the minor sweep, unexplained"* item in
+   *Performance* below: the mark phase was paying a lock round-trip per
+   reference. **Not yet measured — do not treat it as the answer.**
+
+   **RESULT: the crash is fixed, a freeze is not.** Same 4-core probe, rebuilt:
+
+   | | broken | fixed |
+   |---|---|---|
+   | reaches `minors after tenuring` | 197 @ ~52M | 196 @ ~55M |
+   | immediately after releasing publishers | **uncaught exception, `JVM exit!`** | runs on |
+   | by 200M cycles | dead | **frozen, no crash** |
+
+   So the concurrent-collection defect was real and is closed — but something
+   else stops the run, at ~55.8M cycles. With the probe reading the RIGHT
+   signals (see below), the end state is unambiguous:
+
+   ```
+   CmpSync: state=LOCKED lockedId=1
+   core 0: pc=01b6 syncHalt=true  memBusy=false gcHalt=false lockReq=false
+   core 1: pc=02c3 syncHalt=false memBusy=false gcHalt=false lockReq=true   <- RUNNING
+   core 2: pc=01df syncHalt=true  memBusy=false gcHalt=false lockReq=false
+   core 3: pc=02a8 syncHalt=true  memBusy=false gcHalt=false lockReq=false
+   ```
+
+   **Core 1 is not stalled — it is running, holding the global lock, and never
+   releasing it.** Its PC advances through the `goto` handler (0x2c1-0x2c4) with
+   `jpc` confined to 0x049a-0x049d: a tight loop of a few bytecodes containing
+   no method call (a call would swing `jpc` across the callee). The other three
+   have `lockReq=false` — they never asked for the lock. CmpSync halts *every*
+   non-owner whenever anyone holds it (`CmpSync.scala:141-147`), so they are
+   bystanders frozen by a lock they do not want, which is the design, not a
+   fault.
+
+   So the question is not "why does the owner stall" — it does not stall — but
+   **"why does it never release"**. Best current lead, NOT yet confirmed: an
+   infinite walk of a corrupted handle list. `spliceYoungIntoUse`,
+   `copyAndSweepYoung`'s dead-handle path and `finishCycle`'s tail walk are all
+   tight `OFF_NEXT` loops with no method calls, all run under the monitor, and
+   any cycle in the chain spins forever while holding the global lock. That
+   would mean residual list corruption at 4 cores — narrower than before, but
+   real. `isValidObjectHandle` fits the shape too but is dead code (no callers).
+
+   **Whether this freeze predates the fix is UNKNOWN**: the broken build died at
+   52M, before this point, so it was never observable. Plausibly the next bug in
+   line rather than one introduced here — but that is an assumption.
+
+   **Two instrumentation faults, both fixed, both worth remembering.** The first
+   probe read `cluster.io.halted`, which `JopCluster.scala:617` wires from
+   `debugHalted` — the DEBUG halt, always false here — and so printed
+   "halted=0/4" through a total freeze, which is what produced the wrong "stalled
+   owner" reading. The pipeline actually stalls on an OR of five terms
+   (`JopCore.scala:294`) and the probe now samples all five. Second, the stall
+   detector required *every* core to be stable at once; core 3 creeps through a
+   software-`imul` loop forever, so a three-of-four freeze never tripped it. It
+   is now per core.
+
+   **Regression sweep of the fix** (it touches every collector path, so the
+   already-validated configurations matter more than the 4-core one):
+
+   | check | result |
+   |---|---|
+   | 1 core, generational — `JopGenGcBramSim` | **PASS** |
+   | 1 core, classic — `JopSmallGcBramSim` | **PASS**, 1 GC cycle |
+   | 2 cores, generational — 4-core probe run at 2 | **healthy**: no freeze, no core halted, no lock held |
+   | 4 cores | crash fixed; freeze remains |
+
+   The 2-core run does not finish `SmpGcTest`'s eight publish rounds inside 75M
+   cycles, but nothing is stuck — both cores run, `syncHalt=false` on both. That
+   is the same simulation-speed limit already recorded against
+   `JopIhluGcBramSim`, not a hang.
+
+   **Do not read this as "generational SMP works now".** One real defect is
+   closed with a reproduction and a fix; the guard stays at `cpuCnt <= 2` until
+   a 4-core run completes and reports `errors 0`.
+
+   **Two sims in this area could not fail, and a third could fail for the wrong
+   reason.** All three were found by running them properly during this work:
+
+   - `JopSmallGcBramSim` asserted on `"GC test start"` — printed only by
+     `Small/src/test/GcStressTest.java` — while loading `HelloWorld.jop`, whose
+     source prints `"Hello World!"`. It passed only because a stale
+     `HelloWorld.jop`, built from some other source at some point and not
+     reproducible from the tree, happened to be on disk; `make clean` in that
+     directory destroyed it and the mismatch surfaced. Now loads
+     `GcStressTest.jop`.
+   - The same sim then stopped on the literal `"R80 f="`, and the collector
+     fires at exactly R80, so the pass criterion was ONE ROUND WIDE. HEAD
+     reaches `R79 f=1180` and cannot satisfy round 80; a slightly larger runtime
+     reaches `R79 f=1308`, satisfies round 80 with 28 words to spare, and
+     collects at R81 — outside the window. Any GC.java edit that moves the heap
+     start by a word could flip this either way regardless of whether the
+     collector works. Window widened to R95.
+   - `make -C java/apps/Small clean` leaves the directory UNBUILDABLE:
+     `MissingClassError: java.lang.Throwable`. The Makefile compiles only its
+     own entry point with the runtime on `-sourcepath`, so `build/classes`
+     normally accumulates runtime classes across builds of the several apps that
+     share that directory. Stage them with
+     `cp -rn ../../runtime/classes/* build/classes/` before `make jop`.
+
+   Together with item 2 (`JopIhluGcBramSim` loading a single-core app) that is
+   four instances of one shape in this area: **the test cannot fail for the
+   reason it exists**.
 
 - **2.** **`JopIhluGcBramSim` cannot fail.** It loads `java/apps/Small/HelloWorld.jop`
    — a single-core app — so core 1 parks in the boot-wait loop and IHLU is never
