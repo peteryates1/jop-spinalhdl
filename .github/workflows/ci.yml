@@ -159,32 +159,27 @@ jobs:
       - name: Run formal verification
         run: sbt -J-Xmx4g "testOnly jop.formal.* -- -u target/test-reports"
 
-      # ScalaTest's -u writer dumps all 64 JVM system properties into a
-      # <properties> block, unescaped and all on one line — line.separator's
-      # value is a literal newline inside an attribute. It parses locally but
-      # broke dorny/test-reporter on CI with "Invalid attribute name" at a line
-      # that is inside that block, and the values there differ between runners,
-      # so the failure is environment-dependent and not reproducible locally.
-      # None of it is test data. Strip the block and any stray control
-      # characters before the reporter sees the file.
+      # ScalaTest's -u writer emits XML that is valid often enough to pass
+      # locally and fail on a runner — three separate reporting-only breakages
+      # so far, each turning a green build red. Stripping the known offenders
+      # one at a time did not converge (the 2026-08-10 scheduled run still hit
+      # "Invalid XML" with the <properties> block already gone). The script
+      # round-trips every file through a real parser and, if one cannot be
+      # parsed, degrades it to a counts-only stub — so the reporter is
+      # guaranteed well-formed input. See the script header for the full list.
       - name: Sanitise JUnit XML before reporting
         if: always()
-        run: |
-          python3 - <<'PYEOF'
-          import glob, re, sys
-          ctrl = re.compile(rb'[\x00-\x08\x0b\x0c\x0e-\x1f]')
-          for f in glob.glob('target/test-reports/**/*.xml', recursive=True):
-              d = open(f, 'rb').read()
-              n = re.sub(rb'<properties>.*?</properties>', b'<properties/>', d, flags=re.S)
-              n = ctrl.sub(b'', n)
-              if n != d:
-                  open(f, 'wb').write(n)
-                  print('sanitised', f)
-          PYEOF
+        run: python3 .github/scripts/sanitise-junit-xml.py
 
       - name: Publish formal test results
         uses: dorny/test-reporter@v1
         if: always()
+        # `fail-on-error: false` is NOT sufficient: the 2026-08-10 scheduled run
+        # set it and the step still failed the job on "Invalid XML", because
+        # that option covers failing TESTS, not a parse error in the action
+        # itself. continue-on-error is the only thing that actually stops a
+        # reporting fault from deciding whether CI is green.
+        continue-on-error: true
         with:
           name: Formal Verification Results
           path: target/test-reports/**/*.xml
@@ -252,32 +247,27 @@ jobs:
       - name: Run simulation tests
         run: sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* jop.config.* jop.sim.* -- -u target/test-reports"
 
-      # ScalaTest's -u writer dumps all 64 JVM system properties into a
-      # <properties> block, unescaped and all on one line — line.separator's
-      # value is a literal newline inside an attribute. It parses locally but
-      # broke dorny/test-reporter on CI with "Invalid attribute name" at a line
-      # that is inside that block, and the values there differ between runners,
-      # so the failure is environment-dependent and not reproducible locally.
-      # None of it is test data. Strip the block and any stray control
-      # characters before the reporter sees the file.
+      # ScalaTest's -u writer emits XML that is valid often enough to pass
+      # locally and fail on a runner — three separate reporting-only breakages
+      # so far, each turning a green build red. Stripping the known offenders
+      # one at a time did not converge (the 2026-08-10 scheduled run still hit
+      # "Invalid XML" with the <properties> block already gone). The script
+      # round-trips every file through a real parser and, if one cannot be
+      # parsed, degrades it to a counts-only stub — so the reporter is
+      # guaranteed well-formed input. See the script header for the full list.
       - name: Sanitise JUnit XML before reporting
         if: always()
-        run: |
-          python3 - <<'PYEOF'
-          import glob, re, sys
-          ctrl = re.compile(rb'[\x00-\x08\x0b\x0c\x0e-\x1f]')
-          for f in glob.glob('target/test-reports/**/*.xml', recursive=True):
-              d = open(f, 'rb').read()
-              n = re.sub(rb'<properties>.*?</properties>', b'<properties/>', d, flags=re.S)
-              n = ctrl.sub(b'', n)
-              if n != d:
-                  open(f, 'wb').write(n)
-                  print('sanitised', f)
-          PYEOF
+        run: python3 .github/scripts/sanitise-junit-xml.py
 
       - name: Publish simulation test results
         uses: dorny/test-reporter@v1
         if: always()
+        # `fail-on-error: false` is NOT sufficient: the 2026-08-10 scheduled run
+        # set it and the step still failed the job on "Invalid XML", because
+        # that option covers failing TESTS, not a parse error in the action
+        # itself. continue-on-error is the only thing that actually stops a
+        # reporting fault from deciding whether CI is green.
+        continue-on-error: true
         with:
           name: Simulation Test Results
           path: target/test-reports/**/*.xml
