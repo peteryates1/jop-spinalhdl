@@ -596,6 +596,37 @@ silently invalidate all of that. Use this to find one:
 
    `phase=6` — where this investigation started — is step 5 of 5.
 
+   ### The board's MHz labels straddle a real PLL change — read this before comparing runs
+
+   `dram_pll.vhd` **hardwires** the system clock: 50 MHz in, times
+   `clk1_multiply_by` over `clk1_divide_by`. The preset's MHz argument does NOT
+   set the clock. It only feeds the SDC constraint and the UART baud divider
+   (`Uart(baudRate, clkFreq)`).
+
+   | commit | PLL | actual clock |
+   |---|---|---|
+   | `3405d75` | x8/5 | 80 MHz |
+   | **`7be77d0`** — *"4-core hang ... re-guard at 2 cores"* | **x6/5** | **60 MHz** |
+
+   So the commit that re-guarded at 2 cores also dropped the board from 80 to
+   60 MHz. **"2 cores @80 MHz" and "4 cores @60 MHz" in the tables above are not
+   the same hardware**, and comparing results across `7be77d0` compares two
+   different clocks.
+
+   Two practical consequences, both learned the hard way today:
+
+   - Building with an MHz argument that disagrees with the PLL **breaks the
+     UART** — the divider is computed from the declared frequency, so an 80 MHz
+     build on a 60 MHz PLL runs the link 25% slow and the downloader reports
+     *"FPGA not responding (no ready signal)"*. That is a build mismatch, not a
+     dead board.
+   - Restoring the PLL to x8/5 and building 2 cores at 80 MHz reproduces the
+     documented **+0.133 ns** slack exactly, so that configuration is
+     identifiable. But it no longer downloads reliably — two attempts streamed
+     all 13479 words and then stalled at checksum verification. +0.133 ns is
+     very tight, which is presumably why the clock was lowered in the first
+     place.
+
    ### HARDWARE VERDICT (2026-08-10) — the bug is real, and it is NOT the collector
 
    The EP4CGX150 was rebuilt at **4 cores / 60 MHz**, closing timing at
@@ -626,6 +657,32 @@ silently invalidate all of that. Use this to find one:
       `cpuCnt <= 2` guard has been guarding the wrong thing. Note this
       contradicts the previously recorded "4-core classic completes clean" —
       that claim does not reproduce and should not be relied on.
+
+   **Core-count bisect, all at 60 MHz on the current RTL.** This is the result
+   that should change how the item is framed:
+
+   | cores | collector | runtime | result |
+   |---|---|---|---|
+   | 4 | generational | HEAD | `minors 6` -> `ni ...` (noim) |
+   | 4 | classic | HEAD | silent hang |
+   | 3 | generational | HEAD | silent hang |
+   | 3 | classic | HEAD | silent hang |
+   | 2 | generational | HEAD | silent hang |
+   | 2 | generational | pre-`d8d93f8` | `STALL round 2` |
+   | 2 | generational | pre-`6cd91bd` | `STALL round 2` |
+   | 4 | `NCoreHelloWorld` | HEAD | **WORKS** |
+
+   **`SmpGcTest` fails at TWO cores as well**, so there is no >2-core boundary at
+   60 MHz. Reverting the three lock-park fixes still fails, and reverting the GC
+   monitor restructuring (`6cd91bd`) still fails — both land on the same
+   `STALL round 2`. So neither change caused this.
+
+   What it does NOT prove is a regression, because **the documented 2-core pass
+   was at 80 MHz, on the other side of the PLL change above**. 2 cores at 60 MHz
+   is simply a configuration nobody has validated. Establishing whether 2-core
+   still works needs an 80 MHz build that downloads reliably — see the caveat
+   there. Until then, treat "2 cores validated" as **not currently reproducible**,
+   which matters because the shipping `cpuCnt <= 2` guard rests on it.
 
    The generational run's behaviour has also **changed for the better**: it used
    to hang emitting nothing, and now reports before dying. That is the three
