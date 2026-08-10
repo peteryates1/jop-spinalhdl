@@ -596,6 +596,14 @@ silently invalidate all of that. Use this to find one:
 
    `phase=6` — where this investigation started — is step 5 of 5.
 
+   > **RETRACTION (2026-08-10, later the same day).** The `NCoreHelloWorld`
+   > evidence in the next few paragraphs is a **simulation artifact** and does
+   > not support the conclusion drawn from it. Read the *Uninitialised
+   > registers* section below before believing any of it. The 4-core
+   > `SmpGcTest` failure that started this item is a separate question and is
+   > being re-tested under a corrected simulator setup. Left in place rather
+   > than deleted because the correction is the useful part.
+
    **IT IS NOT A GC BUG AT ALL, AND IT REPRODUCES IN 3M CYCLES.** Retargeting
    the probe at `java/apps/Small/NCoreHelloWorld.jop` — a program that does
    nothing but start N cores and toggle a watchdog — reproduces the null fill,
@@ -622,6 +630,54 @@ silently invalidate all of that. Use this to find one:
    wrong title for this item throughout — the generational collector was a
    passenger, and what it did was allocate hard enough to make a 4-core SMP
    wake-up fault show up as heap-shaped symptoms 56M cycles downstream.
+
+   ### Uninitialised registers make this simulator unreliable — read this first
+
+   **The 4-core `NCoreHelloWorld` failure is caused by Verilator randomising
+   registers that have no reset. It is not a hardware bug, and the conclusions
+   drawn from it above are withdrawn.**
+
+   Three independent results, each cheap to re-run:
+
+   | experiment | result |
+   |---|---|
+   | 4 cores, seed 70704150 | **DEAD** — no UART at all, core 0 never boots |
+   | 4 cores, seeds 1 / 2 / 3 | **BOOTS** |
+   | 4 cores, seed 70704150, `--x-initial 0` | **BOOTS** |
+
+   `--x-initial 0` starts every register at zero, which is what an FPGA does at
+   power-up. With it, the failure disappears. Without it, whether the machine
+   boots at all depends on the seed.
+
+   Worse, it depends on **observation**: adding `simPublic` to the BMB response
+   signals — which cannot change logic, only which registers survive pruning and
+   therefore how the seeded randomisation lands — turned a 4-core run that
+   booted and failed later at 208k cycles into one that is dead from cycle 78.
+   Two runs of the same RTL and the same seed, differing only in what was being
+   watched.
+
+   `grep -rE "= *Reg(Next)? *\(" spinalhdl/src/main/scala/jop/ | grep -v init(`
+   counts **~405** registers with no `init`. That is the raw material.
+
+   **Consequences, in order of importance:**
+
+   1. **Add `--x-initial 0` to the sims** (`SimConfig.addSimulatorFlag`). It
+      matches FPGA power-up and removes a large class of false failures. Every
+      sim in this project is exposed to this, not just this probe.
+   2. **A sim failure that moves when you add a probe is X-state, not a bug.**
+      That test costs one run and would have saved most of today.
+   3. Pin the seed (done) — but pinning alone is not enough, because the netlist
+      changes under you as instrumentation is added.
+   4. Registers that genuinely need a defined reset should get one. Randomised
+      state that can prevent boot is worth fixing on its own merits, even though
+      the FPGA masks it.
+
+   What this does **not** settle: the original 4-core `SmpGcTest` failure
+   reproduced under four *different* random seeds, which is far more robust than
+   anything here, and the EP4CGX150 4-core hang is on real hardware where X-state
+   does not exist. Both may still be real. Everything downstream of the
+   null-fill reading — the wake-up narrative, "not a GC bug" — needs redoing
+   under `--x-initial 0` before it can be trusted.
 
    **THE NULL FILL HAPPENS AT CORE WAKE-UP.** Triggering a dump on the *first*
    `start=0` fill of the whole run moved the origin earlier again, and onto a

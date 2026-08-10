@@ -172,6 +172,15 @@ case class JopGcHaltTestHarness(
   ram.io.bus.cmd.fragment.mask.simPublic()
   val hasBusSource = cluster.bmbParameter.access.sourceWidth > 0
   if (hasBusSource) ram.io.bus.cmd.fragment.source.simPublic()
+  // The RESPONSE side too. The open question is whether the wake-up read that
+  // yields a null method pointer returns 0 ON THE BUS, or returns the right
+  // value and the core loses it. Those are different bugs in different places,
+  // and only the response channel separates them.
+  ram.io.bus.rsp.valid.simPublic()
+  ram.io.bus.rsp.ready.simPublic()
+  ram.io.bus.rsp.fragment.data.simPublic()
+  ram.io.bus.rsp.fragment.opcode.simPublic()
+  if (hasBusSource) ram.io.bus.rsp.fragment.source.simPublic()
 
   val initData = mainMemInit.take(memWords).padTo(memWords, BigInt(0))
   ram.ram.init(initData.map(v => B(v, 32 bits)))
@@ -217,6 +226,7 @@ object JopGcHaltDeadlockSim extends App {
   println(s"Sim seed: $simSeed (PINNED — see the note at doSim)")
 
   SimConfig
+    .addSimulatorFlag("--x-initial 0")
     .compile(JopGcHaltTestHarness(cpuCnt, romData, ramData, mainMemData))
     // PIN THE SEED. `doSim` without one picks a fresh seed every run, and this
     // harness had been running with 748489979, 617838352, 370588204, 70704150
@@ -583,14 +593,63 @@ object JopGcHaltDeadlockSim extends App {
       val fillVal = Array.fill(cpuCnt, FILLS)(0)
       val fillIdx = Array.fill(cpuCnt)(0)
       val lastBcRd = Array.fill(cpuCnt)(false)
+      val fillPend = Array.fill(cpuCnt)(-1)
       var nullFillDumps = 0
+      var fillLogged = 0
+      var pendingNullDump = -1
+
+      // Every BMB transaction, command and response, in a ring. The wake-up
+      // sequence for a non-zero core is only three memory reads
+      // (Startup.boot(): rdMem(1), rdMem(val+3), then the invoke's own read of
+      // the method struct), so a couple of hundred entries covers it with room
+      // to spare. Recording BOTH sides is the point: if a read returns 0 on the
+      // bus the fault is in memory/arbitration, and if it returns the right
+      // value the fault is in the core that received it.
+      val BMB = 512
+      val bmbCyc  = Array.fill(BMB)(-1)
+      val bmbKind = Array.fill(BMB)(0)      // 0 = read cmd, 1 = write cmd, 2 = rsp
+      val bmbSrc  = Array.fill(BMB)(-1)
+      val bmbAddr = Array.fill(BMB)(0)
+      val bmbData = Array.fill(BMB)(0)
+      var bmbIdx  = 0
+      // Pending read addresses per source, so a response can be paired with its
+      // command and checked against what the RAM actually holds. That check is
+      // the whole point: it says whether a read that yields 0 was given 0 BY
+      // MEMORY (so the address was wrong, and the fault is upstream in whatever
+      // computed it) or whether memory holds something else and the bus lost it
+      // (so the fault is in the arbiter/controller). BMB responses are in order
+      // per source, so a FIFO per source is sufficient.
+      val pendingRd = Array.fill(16)(scala.collection.mutable.Queue[Int]())
+      val bmbWant = Array.fill(BMB)(0)      // RAM content at the read address
+      val bmbBad  = Array.fill(BMB)(false)  // response disagreed with RAM
+      var mismatches = 0
+
+      def bmbLog(): String = {
+        val sb = new StringBuilder
+        sb.append("  BMB transactions at the arbiter output (word addresses):\n")
+        for (k <- 0 until BMB) {
+          val i = (bmbIdx + k) % BMB
+          if (bmbCyc(i) >= 0) {
+            val what = bmbKind(i) match {
+              case 0 => f"READ  word=${bmbAddr(i)}%7d"
+              case 1 => f"WRITE word=${bmbAddr(i)}%7d data=0x${bmbData(i)}%08x"
+              case _ => f"  rsp                data=0x${bmbData(i)}%08x (${bmbData(i)}%d)" +
+                        (if (bmbAddr(i) != 0) "  *** ERROR RESPONSE ***" else "") +
+                        (if (bmbBad(i)) f"  *** BUS DISAGREES WITH RAM, which holds " +
+                                        f"0x${bmbWant(i)}%08x ***" else "  (matches RAM)")
+            }
+            sb.append(f"      cycle ${bmbCyc(i)}%9d  src=${bmbSrc(i)}%2d  $what\n")
+          }
+        }
+        sb.toString
+      }
 
       def fillsOf(core: Int): String = {
         val sb = new StringBuilder
         sb.append(f"  core $core%d recent bytecode cache fills (start/len from TOS at bcRd):\n")
         for (k <- 0 until FILLS) {
           val i = (fillIdx(core) + k) % FILLS
-          if (fillCyc(core)(i) >= 0) {
+          if (fillCyc(core)(i) >= 0 && fillVal(core)(i) != -1) {
             val v = fillVal(core)(i)
             val start = v >>> 10
             val len = v & 0x3ff
@@ -676,33 +735,44 @@ object JopGcHaltDeadlockSim extends App {
         // earlier; the exception log is what provides that evidence.
         val detail = cycle >= DETAIL_FROM
 
+        // Resolve the PREVIOUS cycle's fill from the RTL's own capture register.
+        //
+        // This used to read `pipeline.stack.a` on the cycle `bcRd` was seen, on
+        // the reasoning that `bcRdCaptureReg := io.aout` latches the same value
+        // at the coming edge. That reasoning is wrong often enough to matter:
+        // the cross-check caught a fill this probe recorded as 0 which the
+        // design had captured as 0x20. Read the register the design actually
+        // uses, one cycle on, and stop guessing at the sampling point.
+        if (detail) for (i <- 0 until cpuCnt) if (fillPend(i) >= 0) {
+          val k = fillPend(i)
+          fillPend(i) = -1
+          val v = dut.cluster.cores(i).memCtrl.bcRdCaptureReg.toLong.toInt
+          fillVal(i)(k) = v
+          // Log the opening fills unconditionally. Comparing the boot sequence
+          // at 2 cores against 4 is what says where they diverge — the memory
+          // image is identical, so any difference is the design reacting to core
+          // count, which is the thing under investigation.
+          if (fillLogged < 40) {
+            fillLogged += 1
+            logLine(f"FILL  cycle=${fillCyc(i)(k)}%9d core=$i%d raw=0x$v%08x " +
+                    f"start=${v >>> 10}%7d len=${v & 0x3ff}%4d  ${methodAt(v >>> 10)}")
+          }
+          if (v == 0 && nullFillDumps < 2 && pendingNullDump < 0) {
+            nullFillDumps += 1
+            pendingNullDump = i
+          }
+        }
+
         if (detail) for (i <- 0 until cpuCnt) {
           val r = dut.cluster.cores(i).memCtrl.io.memIn.bcRd.toBoolean
           if (r && !lastBcRd(i)) {
             val k = fillIdx(i)
             fillCyc(i)(k) = cycle
-            // bcRdCaptureReg latches on the same edge, so read TOS here.
-            val v = dut.cluster.cores(i).pipeline.stack.a.toLong.toInt
-            fillVal(i)(k) = v
+            fillVal(i)(k) = -1            // filled in next cycle from the RTL
+            fillPend(i) = k
             fillIdx(i) = (k + 1) % FILLS
-            // THE ORIGIN TRIGGER. A fill of start=0/len=0 is an invoke through
-            // a NULL METHOD POINTER: nothing is loaded, so the core executes
-            // zero-filled cache, nop-slides and eventually hits an
-            // unimplemented bytecode. This is the primitive the whole failure
-            // is built from — it happens at least twice, and `noim()` prints
-            // `mp=0` in between, which is the same null pointer seen from the
-            // software side. Dump everything the FIRST time it happens.
-            if (v == 0 && nullFillDumps < 2) {
-              nullFillDumps += 1
-              val sb = new StringBuilder
-              sb.append(s"\n*** NULL METHOD POINTER: bytecode cache fill with " +
-                        s"start=0 len=0 on core $i ***\n")
-              sb.append(fillsOf(i))
-              sb.append(historyOf(i))
-              sb.append(snapshot(s"AT NULL FILL core $i"))
-              println("\n" + sb.toString)
-              logLine(sb.toString)
-            }
+            // The trigger for a fill of start=0/len=0 lives in the resolve block
+            // above, because the value is only known a cycle later.
           }
           lastBcRd(i) = r
         }
@@ -731,6 +801,63 @@ object JopGcHaltDeadlockSim extends App {
             }
           }
           lastExc(i) = e
+        }
+
+        if (pendingNullDump >= 0) {
+          val i = pendingNullDump
+          pendingNullDump = -1
+          val cap = dut.cluster.cores(i).memCtrl.bcRdCaptureReg.toLong.toInt
+          val sb = new StringBuilder
+          sb.append(s"\n*** NULL METHOD POINTER: bytecode cache fill with " +
+                    s"start=0 len=0 on core $i ***\n")
+          sb.append(f"  RTL's own capture one cycle on: bcRdCaptureReg=0x$cap%08x " +
+                    (if (cap == 0) "-- CONFIRMS the probe's sample\n"
+                     else "-- DISAGREES with the probe's stack.a sample, trust this one\n"))
+          sb.append(bmbLog())
+          sb.append(fillsOf(i))
+          sb.append(historyOf(i))
+          sb.append(snapshot(s"AT NULL FILL core $i"))
+          println("\n" + sb.toString)
+          logLine(sb.toString)
+        }
+
+        // BMB command and response ring. Both channels, every cycle they fire.
+        if (detail) {
+          if (dut.ram.io.bus.cmd.valid.toBoolean && dut.ram.io.bus.cmd.ready.toBoolean) {
+            val isWrite = dut.ram.io.bus.cmd.fragment.opcode.toInt == 1
+            bmbCyc(bmbIdx)  = cycle
+            bmbKind(bmbIdx) = if (isWrite) 1 else 0
+            bmbSrc(bmbIdx)  = if (dut.hasBusSource) dut.ram.io.bus.cmd.fragment.source.toInt else -1
+            val w = (dut.ram.io.bus.cmd.fragment.address.toLong >> 2).toInt
+            bmbAddr(bmbIdx) = w
+            bmbData(bmbIdx) = if (isWrite) dut.ram.io.bus.cmd.fragment.data.toLong.toInt else 0
+            bmbIdx = (bmbIdx + 1) % BMB
+            val s = if (dut.hasBusSource) dut.ram.io.bus.cmd.fragment.source.toInt else 0
+            if (!isWrite && s < pendingRd.length) pendingRd(s).enqueue(w)
+          }
+          if (dut.ram.io.bus.rsp.valid.toBoolean && dut.ram.io.bus.rsp.ready.toBoolean) {
+            bmbCyc(bmbIdx)  = cycle
+            bmbKind(bmbIdx) = 2
+            val s = if (dut.hasBusSource) dut.ram.io.bus.rsp.fragment.source.toInt else 0
+            val got = dut.ram.io.bus.rsp.fragment.data.toLong.toInt
+            bmbSrc(bmbIdx)  = s
+            bmbAddr(bmbIdx) = dut.ram.io.bus.rsp.fragment.opcode.toInt   // non-zero = error
+            bmbData(bmbIdx) = got
+            if (s < pendingRd.length && pendingRd(s).nonEmpty) {
+              val w = pendingRd(s).dequeue()
+              // Only meaningful for addresses inside the RAM. `rd()` returns 0
+              // for anything out of range, so checking those would manufacture
+              // mismatches: an early boot read of word 10790418 did exactly
+              // that, and the "bus disagrees" it produced was this probe's
+              // artifact, not the design's.
+              if (w >= 0 && w < dut.memWords) {
+                val want = rd(w)
+                bmbWant(bmbIdx) = want
+                if (want != got) { bmbBad(bmbIdx) = true; mismatches += 1 }
+              } else bmbWant(bmbIdx) = got   // unknown; do not flag
+            } else bmbBad(bmbIdx) = false
+            bmbIdx = (bmbIdx + 1) % BMB
+          }
         }
 
         // The watchpoint itself. Ordered cheapest-first: `valid` is one signal
