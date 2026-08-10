@@ -672,17 +672,51 @@ silently invalidate all of that. Use this to find one:
    | 2 | generational | pre-`6cd91bd` | `STALL round 2` |
    | 4 | `NCoreHelloWorld` | HEAD | **WORKS** |
 
-   **`SmpGcTest` fails at TWO cores as well**, so there is no >2-core boundary at
-   60 MHz. Reverting the three lock-park fixes still fails, and reverting the GC
-   monitor restructuring (`6cd91bd`) still fails — both land on the same
+   **`SmpGcTest` fails at TWO cores as well**, so there is no >2-core boundary.
+   Reverting the three lock-park fixes still fails, and reverting the GC monitor
+   restructuring (`6cd91bd`) still fails — both land on the same
    `STALL round 2`. So neither change caused this.
 
-   What it does NOT prove is a regression, because **the documented 2-core pass
-   was at 80 MHz, on the other side of the PLL change above**. 2 cores at 60 MHz
-   is simply a configuration nobody has validated. Establishing whether 2-core
-   still works needs an 80 MHz build that downloads reliably — see the caveat
-   there. Until then, treat "2 cores validated" as **not currently reproducible**,
-   which matters because the shipping `cpuCnt <= 2` guard rests on it.
+   ### THERE IS NO PRODUCT REGRESSION — the TEST changed, and the new one is harder
+
+   Rebuilding at 80 MHz (both PLL clocks, see above) and varying one thing at a
+   time settles it. All 2 cores @80 MHz, all closing at the same +0.133 ns:
+
+   | RTL | runtime | app | result |
+   |---|---|---|---|
+   | `fbf3d42` | `fbf3d42` | `fbf3d42` | **`minors 31 verified 192 errors 0`, `SMPGC OK`** |
+   | **HEAD** | **HEAD** | `fbf3d42` | **`minors 31 verified 192 errors 0`, `SMPGC OK`** |
+   | HEAD | HEAD | HEAD | `Uncaught exception:` |
+   | HEAD | pre-`6cd91bd` | HEAD | `ni 010619 000010 002 255` (noim) |
+
+   Row 1 reproduces the documented sweep **exactly**, numbers and all, so that
+   validation was real. Row 2 is the important one: **HEAD's RTL and runtime pass
+   the original test**, so nothing in the product regressed — including the three
+   lock-park fixes, which are in that build.
+
+   The variable is `SmpGcTest.java` itself. `7be77d0` changed it (+46 lines) at
+   the same time as the PLL and the guard, and among the additions is
+
+   ```java
+   if (!all) { Object y = new Young(); if (y == null) return; }
+   ```
+
+   — **core 0 now allocates inside its wait loop**, added to give a GC initiated
+   elsewhere a safepoint. That turns the test from "core 0 waits quietly while
+   publishers allocate" into "every core allocates concurrently, with cross-core
+   stores in flight". It is a strictly better test, and it fails at **two** cores
+   where the old one passes.
+
+   **So the item should be reframed again.** This is not "generational GC breaks
+   above 2 cores". It is: *concurrent allocation on several cores, with
+   cross-generation stores, corrupts execution* — and it reproduces at **2 cores
+   @80 MHz**, which is the cheapest and best-validated configuration on the
+   board. The `cpuCnt <= 2` guard is not shipping a knowingly broken
+   configuration for the original workload, but it does not protect against this
+   either.
+
+   **Use 2 cores @80 MHz to chase this**, not 4 cores @60: same fault, half the
+   cores, the clock the board is actually validated at, and a one-second run.
 
    The generational run's behaviour has also **changed for the better**: it used
    to hang emitting nothing, and now reports before dying. That is the three
