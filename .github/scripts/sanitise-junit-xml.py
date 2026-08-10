@@ -28,9 +28,17 @@ only stops a presentation layer from vetoing a passing build.
 """
 
 import glob
+import os
 import re
+import shutil
 import sys
 import xml.etree.ElementTree as ET
+
+# Pristine copies of every input, taken BEFORE anything is rewritten. This
+# script edits in place, so without it the artifact uploaded when the reporter
+# fails would contain only the sanitised output — valid XML, and therefore
+# useless for working out what the reporter actually choked on.
+RAW_DIR = 'target/test-reports-raw'
 
 # XML 1.0 forbids most C0 controls even escaped; ScalaTest passes them through
 # from captured test output.
@@ -74,9 +82,15 @@ def main():
         print('sanitise: no XML found under target/test-reports')
         return 0
 
+    os.makedirs(RAW_DIR, exist_ok=True)
+
     for path in files:
         with open(path, 'rb') as fh:
             raw = fh.read()
+
+        # Keep the untouched original alongside, flattened so the names stay
+        # readable in the artifact listing.
+        shutil.copyfile(path, os.path.join(RAW_DIR, os.path.basename(path)))
 
         cleaned = PROPS.sub(b'<properties/>', raw)
         cleaned = CTRL.sub(b'', cleaned)

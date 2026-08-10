@@ -172,6 +172,7 @@ jobs:
         run: python3 .github/scripts/sanitise-junit-xml.py
 
       - name: Publish formal test results
+        id: formal-reporter
         uses: dorny/test-reporter@v1
         if: always()
         # `fail-on-error: false` is NOT sufficient: the 2026-08-10 scheduled run
@@ -197,6 +198,23 @@ jobs:
           # failed test and the "Run ..." step above fails the job. This only
           # stops a presentation layer from vetoing a passing build.
           fail-on-error: false
+
+      # Capture the evidence when the reporter rejects a file. `outcome`, NOT
+      # `conclusion`: continue-on-error rewrites conclusion to "success", so a
+      # condition on conclusion would never fire. Both directories go up —
+      # -raw holds the pristine ScalaTest output (the sanitiser edits in place,
+      # so the sanitised copy alone would be valid XML and prove nothing), and
+      # the sanitised copy shows what the reporter was actually handed.
+      - name: Upload test reports on reporter failure
+        if: always() && steps.formal-reporter.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: formal-test-reports-${{ github.run_id }}
+          path: |
+            target/test-reports/
+            target/test-reports-raw/
+          retention-days: 14
+          if-no-files-found: warn
 
   # ----------------------------------------------------------------
   # Simulation tests (Verilator)
@@ -260,6 +278,7 @@ jobs:
         run: python3 .github/scripts/sanitise-junit-xml.py
 
       - name: Publish simulation test results
+        id: sim-reporter
         uses: dorny/test-reporter@v1
         if: always()
         # `fail-on-error: false` is NOT sufficient: the 2026-08-10 scheduled run
@@ -285,6 +304,21 @@ jobs:
           # failed test and the "Run ..." step above fails the job. This only
           # stops a presentation layer from vetoing a passing build.
           fail-on-error: false
+
+      # See the note on the formal job's equivalent step. This is the one that
+      # actually fired on 2026-08-10 ("Invalid XML" on
+      # TEST-jop.pipeline.BytecodeFetchStageTest.xml) with no way to inspect the
+      # file, which is why the trigger is still only suspected rather than known.
+      - name: Upload test reports on reporter failure
+        if: always() && steps.sim-reporter.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulation-test-reports-${{ github.run_id }}
+          path: |
+            target/test-reports/
+            target/test-reports-raw/
+          retention-days: 14
+          if-no-files-found: warn
 
   # ----------------------------------------------------------------
   # JVM test suite (jvm.DoAll) across bytecode implementation choices.
