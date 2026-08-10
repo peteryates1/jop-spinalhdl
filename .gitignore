@@ -123,6 +123,12 @@ java/apps/*/*.jop
 java/apps/*/*.jop.txt
 java/apps/*/*.jop.link.txt
 
+# Kept-aside binaries for a reproduction that is sensitive to code layout: the
+# 4-core generational GC failure only reproduces for a particular image, and any
+# runtime edit relinks it away (see docs/current-status.md item 1). Not tracked —
+# these are build outputs like every other .jop — but not deleted either.
+spinalhdl/repro/
+
 # Microcode assembler generated files
 asm/generated/
 

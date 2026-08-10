@@ -101,6 +101,36 @@ case class JopGcHaltTestHarness(
     // were in fact frozen by the lock unit. Read the term that actually stalls
     // the pipe instead of the one with the convenient name.
     cluster.cores(i).sys.io.halted.simPublic()
+    // Hardware exception strobe, per core. `io.excFired` below is core 0 only
+    // (JopCluster.scala:631 wires it from cores(0)), and "which core threw" is
+    // the whole question here.
+    cluster.cores(i).sys.io.exc.simPublic()
+    // WHICH exception. Const: 1=SPOV(stack overflow), 2=NP, 3=AB(array bounds),
+    // 4=ROLLBACK, 5=MON, 8=DIVZ. SPOV matters more than the others here because
+    // `JVMHelp.except()` responds to it with `Native.setSP(Const.STACK_OFF)` —
+    // it DISCARDS THE STACK — which would explain a core resuming in the wrong
+    // method with the wrong operand values, and `sp` was indeed 55 at the bad
+    // store against ~180 a few thousand cycles earlier.
+    cluster.cores(i).sys.excTypeReg.simPublic()
+    // BYTECODE CACHE FILLS. The first fault is core 1 invoking a method and
+    // then running straight through ~450 bytes and off the end into zero-filled
+    // cache, nop-sliding until something decoded as an invoke — the SAME call
+    // site and target having returned normally 200 cycles earlier. So either
+    // the invoke's method pointer was wrong or the fill delivered wrong bytes,
+    // and the fill's own parameters distinguish them: `bcRdCaptureReg` is TOS at
+    // `bcRd`, packing start = val>>>10 and length = val & 0x3ff. Matching start
+    // against the link file's method table says which method was asked for.
+    cluster.cores(i).memCtrl.bcRdCaptureReg.simPublic()
+    cluster.cores(i).memCtrl.io.memIn.bcRd.simPublic()
+    // Top of stack. A store lands with the ADDRESS from the bytecode operand
+    // and the DATA from `io.aout` (BmbMemoryController:626,630), and the two
+    // disagreed at the wedge: `iconst_0; putstatic phase` stored 6. Reading A
+    // and B at the store separates the two candidate explanations — the core is
+    // not running the bytecode the cache shows, or `valueReg` is not capturing
+    // the `aout` that belongs to the store.
+    cluster.cores(i).pipeline.stack.a.simPublic()
+    cluster.cores(i).pipeline.stack.b.simPublic()
+    cluster.cores(i).pipeline.stack.sp.simPublic()
     cluster.cores(i).pipeline.io.hwBusy.simPublic()
     cluster.cores(i).extBusy.simPublic()
     // The bytecode cache. Dumping the opcodes around jpc is the only thing that
@@ -123,6 +153,26 @@ case class JopGcHaltTestHarness(
   // different binary. Only an observer outside the binary can look at the
   // failing one.
   ram.ram.simPublic()
+  // WRITE WATCHPOINT. Every store the cluster makes passes through this one
+  // command channel — it is the arbiter output (JopCluster: `io.bmb <>
+  // arbiter.io.output`), the same snoop point the cluster card table uses. It
+  // carries `source`, which is the arbiter input index and therefore the core
+  // id for source < cpuCnt, so a store can be attributed without instrumenting
+  // anything in the binary.
+  //
+  // This is the tool for "who wrote that": chasing wild control flow backwards
+  // from the exception it eventually causes has already produced two retracted
+  // readings. A watchpoint on a known-good static goes the other way — from the
+  // first bad value to the instant and the core that produced it.
+  ram.io.bus.cmd.valid.simPublic()
+  ram.io.bus.cmd.ready.simPublic()
+  ram.io.bus.cmd.fragment.address.simPublic()
+  ram.io.bus.cmd.fragment.opcode.simPublic()
+  ram.io.bus.cmd.fragment.data.simPublic()
+  ram.io.bus.cmd.fragment.mask.simPublic()
+  val hasBusSource = cluster.bmbParameter.access.sourceWidth > 0
+  if (hasBusSource) ram.io.bus.cmd.fragment.source.simPublic()
+
   val initData = mainMemInit.take(memWords).padTo(memWords, BigInt(0))
   ram.ram.init(initData.map(v => B(v, 32 bits)))
   ram.io.bus << cluster.io.bmb
@@ -197,6 +247,10 @@ object JopGcHaltDeadlockSim extends App {
       def sAddr(name: String): Int = staticAddr.getOrElse(name, {
         println(s"WARNING: static '$name' not found in $linkPath"); -1
       })
+      // Reverse map, so a watched address reports the field it belongs to
+      // rather than a bare number. Built from the same parse, so it moves with
+      // the link file too.
+      val staticName: Map[Int, String] = staticAddr.map(_.swap)
 
       val ADDR_FREE_LIST  = sAddr("com.jopdesign.sys.GC.freeList")
       val ADDR_USE_LIST   = sAddr("com.jopdesign.sys.GC.useList")
@@ -353,6 +407,165 @@ object JopGcHaltDeadlockSim extends App {
         sb.toString
       }
 
+      // ------------------------------------------------------- write watchpoint
+      //
+      // `phase` reads 6 at the wedge and the application only ever assigns it
+      // 0..3, so something writes where it should not. Rather than trace wild
+      // execution backwards from the exception it eventually raises, watch the
+      // word itself and report the first store that puts it out of range,
+      // naming the core and the bytecode it was running.
+      //
+      // The window is the whole SmpGcTest static block plus a few words either
+      // side: an off-by-N store into a neighbouring field is exactly the shape
+      // being looked for, and the neighbours are cheap to include.
+      val WATCH_LO = sAddr("test.SmpGcTest.HOLDERS") - 2      // 288
+      val WATCH_HI = sAddr("test.SmpGcTest.verified") + 2     // 301
+      val WATCH_ARR_LO = sAddr("test.SmpGcTest.holders") - 2  // 373
+      val WATCH_ARR_HI = sAddr("test.SmpGcTest.liveTick") + 2 // 379
+
+      def watched(word: Int): Boolean =
+        (word >= WATCH_LO && word <= WATCH_HI) ||
+        (word >= WATCH_ARR_LO && word <= WATCH_ARR_HI)
+
+      /** The value each watched field is allowed to take. `None` = anything.
+        * A violation is the event this probe exists to catch. */
+      def violation(word: Int, v: Int): Option[String] = {
+        if (word == sAddr("test.SmpGcTest.phase") && (v < 0 || v > 3))
+          Some(s"phase := $v — the application only ever assigns 0..3")
+        else if (word == sAddr("test.SmpGcTest.publishRound") && (v < 0 || v > 7))
+          Some(s"publishRound := $v — rounds are 0..7")
+        else if (word == sAddr("test.SmpGcTest.HOLDERS") && v != 24)
+          Some(s"HOLDERS := $v — static final, must be 24")
+        else if (word == sAddr("test.SmpGcTest.MAGIC_BASE") && v != 0x5A5A0000)
+          Some(f"MAGIC_BASE := 0x$v%08x — static final, must be 0x5a5a0000")
+        else if (word == sAddr("test.SmpGcTest.cpuCnt") && v != cpuCnt)
+          Some(s"cpuCnt := $v — must be $cpuCnt")
+        else if (word == sAddr("test.SmpGcTest.publishers") && v != cpuCnt - 1)
+          Some(s"publishers := $v — must be ${cpuCnt - 1}")
+        else None
+      }
+
+      // Per-core jpc history. The store reaches the bus a few cycles after the
+      // putstatic issues, so the jpc sampled at the write has already moved on;
+      // the trailing history is what names the method. Recorded only on change,
+      // so a spin loop does not flush it.
+      // Sized to reach BACK PAST the derailment, not just to name the current
+      // method. The 64-entry version showed core 0 arriving at main()'s first
+      // bytecode and said nothing about how it got there; at roughly one entry
+      // per two cycles this covers ~30k cycles, which spans the invoke chain
+      // before it.
+      val HIST = 16384
+      val histJpc = Array.fill(cpuCnt, HIST)(-1)
+      val histPc  = Array.fill(cpuCnt, HIST)(-1)
+      val histCyc = Array.fill(cpuCnt, HIST)(-1)
+      // TOS and SP alongside, sampled on the same jpc-change edge rather than
+      // every cycle, so the cost is a read per recorded entry and not per clock.
+      // `iconst_0` must leave A = 0; if the trace shows A = 6 there, the core is
+      // not executing the bytecode the cache shows and the search moves to the
+      // fetch path rather than to the store path.
+      val histA   = Array.fill(cpuCnt, HIST)(0)
+      val histSp  = Array.fill(cpuCnt, HIST)(0)
+      val histIdx = Array.fill(cpuCnt)(0)
+      val lastJpc = Array.fill(cpuCnt)(-1)
+
+      /** Ordered oldest-first view of the ring. */
+      def histOrdered(core: Int): Seq[(Int, Int, Int, Int, Int)] =
+        (0 until HIST).map(k => (histIdx(core) + k) % HIST)
+          .filter(i => histCyc(core)(i) >= 0)
+          .map(i => (histCyc(core)(i), histPc(core)(i), histJpc(core)(i),
+                     histA(core)(i), histSp(core)(i)))
+
+      /** Printing 16k lines is useless. Two views instead:
+        *
+        *  - CONTROL TRANSFERS: entries where jpc did not simply advance, which
+        *    is every branch, invoke and return. This is the call chain, and it
+        *    is what says how a core reached a method it had no business being
+        *    in. A large cycle gap on such an entry is a bytecode cache fill,
+        *    i.e. an invoke or a return into a method that had been evicted.
+        *  - the last 80 entries in full, for the instruction-level detail.
+        */
+      def historyOf(core: Int): String = {
+        val h = histOrdered(core)
+        val sb = new StringBuilder
+        sb.append(f"  core $core%d control transfers (${h.length} samples held, oldest first):\n")
+        for (k <- 1 until h.length) {
+          val (c0, _, j0, _, _) = h(k - 1)
+          val (c1, p1, j1, _, s1) = h(k)
+          val d = j1 - j0
+          if (d < 0 || d > 8) {
+            val gap = c1 - c0
+            val kind = if (gap > 40) "invoke/return + cache fill"
+                       else if (d < 0) "backward branch" else "forward branch"
+            sb.append(f"      cycle $c1%9d  0x$j0%04x -> 0x$j1%04x  (gap ${gap}%4d, $kind)  " +
+                      f"pc=0x$p1%04x sp=$s1%d\n")
+          }
+        }
+        sb.append(f"  core $core%d last 80 samples (A = top of stack at the jpc change):\n")
+        for ((c, p, j, a, s) <- h.takeRight(80))
+          sb.append(f"      cycle $c%9d  pc=0x$p%04x jpc=0x$j%04x  A=0x$a%08x ($a) sp=$s%d\n")
+        sb.toString
+      }
+
+      var writeLog = 0
+      val WRITE_LOG_MAX = 4000
+      var anomalyCycle = -1
+
+      // Hardware exception strobes, every core, whole run. The ring buffer can
+      // only reach back so far; this is the cheap signal that covers everything
+      // before it. SmpGcTest throws nothing, so ANY exception here is the fault
+      // — and `f_athrow` resumes by faking a return frame and calling
+      // Native.setSP(), which is a mechanism that can land a core in an
+      // arbitrary method with an arbitrary stack. That is what the wedge looks
+      // like from the other end, so it is worth knowing whether one fired.
+      val lastExc = Array.fill(cpuCnt)(false)
+      var excCount = 0
+      val excName = Map(0 -> "none", 1 -> "SPOV(stack overflow)", 2 -> "NP(null pointer)",
+                        3 -> "AB(array bounds)", 4 -> "ROLLBACK", 5 -> "MON", 8 -> "DIVZ")
+      // The FIRST exception is the origin of the whole failure — the storm runs
+      // from ~56.18M and core 0 only derails at 56.61M, 437k cycles later — so
+      // dump everything there rather than at the consequence.
+      var fullExcDumps = 0
+
+      // Method table, so a fill's start address becomes a method name. Same
+      // link file, same mechanical rule as the statics — never hardcoded.
+      val methodTable: Vector[(Int, String)] = {
+        val re = """bytecode\s+(\S+)\s+(\d+)""".r
+        scala.io.Source.fromFile(linkPath).getLines().collect {
+          case re(name, addr) => (addr.toInt, name)
+        }.toVector.sortBy(_._1)
+      }
+      def methodAt(word: Int): String = {
+        val before = methodTable.takeWhile(_._1 <= word)
+        if (before.isEmpty) "(before first method)"
+        else {
+          val (start, name) = before.last
+          if (start == word) name else f"$name +${word - start}"
+        }
+      }
+
+      // Ring of recent fills per core.
+      val FILLS = 48
+      val fillCyc = Array.fill(cpuCnt, FILLS)(-1)
+      val fillVal = Array.fill(cpuCnt, FILLS)(0)
+      val fillIdx = Array.fill(cpuCnt)(0)
+      val lastBcRd = Array.fill(cpuCnt)(false)
+
+      def fillsOf(core: Int): String = {
+        val sb = new StringBuilder
+        sb.append(f"  core $core%d recent bytecode cache fills (start/len from TOS at bcRd):\n")
+        for (k <- 0 until FILLS) {
+          val i = (fillIdx(core) + k) % FILLS
+          if (fillCyc(core)(i) >= 0) {
+            val v = fillVal(core)(i)
+            val start = v >>> 10
+            val len = v & 0x3ff
+            sb.append(f"      cycle ${fillCyc(core)(i)}%9d  start=$start%6d len=$len%4d  " +
+                      f"raw=0x$v%08x  ${methodAt(start)}\n")
+          }
+        }
+        sb.toString
+      }
+
       def snapshot(tag: String): String = {
         val sb = new StringBuilder
         sb.append(f"--- $tag at cycle $cycle%d ---\n")
@@ -399,6 +612,109 @@ object JopGcHaltDeadlockSim extends App {
           val ch = if (c >= 32 && c < 127) c.toChar else '.'
           uartOutput.append(ch)
           print(ch)
+        }
+
+        // Record jpc transitions before looking at the bus, so the history is
+        // current when a watched store fires on this same cycle.
+        for (i <- 0 until cpuCnt) {
+          val j = dut.io.jpc(i).toInt
+          if (j != lastJpc(i)) {
+            lastJpc(i) = j
+            val k = histIdx(i)
+            histJpc(i)(k) = j
+            histPc(i)(k)  = dut.io.pc(i).toInt
+            histCyc(i)(k) = cycle
+            histA(i)(k)   = dut.cluster.cores(i).pipeline.stack.a.toLong.toInt
+            histSp(i)(k)  = dut.cluster.cores(i).pipeline.stack.sp.toInt
+            histIdx(i) = (k + 1) % HIST
+          }
+        }
+
+        for (i <- 0 until cpuCnt) {
+          val r = dut.cluster.cores(i).memCtrl.io.memIn.bcRd.toBoolean
+          if (r && !lastBcRd(i)) {
+            val k = fillIdx(i)
+            fillCyc(i)(k) = cycle
+            // bcRdCaptureReg latches on the same edge, so read TOS here.
+            fillVal(i)(k) = dut.cluster.cores(i).pipeline.stack.a.toLong.toInt
+            fillIdx(i) = (k + 1) % FILLS
+          }
+          lastBcRd(i) = r
+        }
+
+        for (i <- 0 until cpuCnt) {
+          val e = dut.cluster.cores(i).sys.io.exc.toBoolean
+          if (e && !lastExc(i)) {
+            excCount += 1
+            val t = dut.cluster.cores(i).sys.excTypeReg.toInt
+            val nm = excName.getOrElse(t, s"unknown($t)")
+            if (excCount <= 400)
+              logLine(f"EXC   cycle=$cycle%9d core=$i%d type=$t%d $nm%-20s " +
+                      f"pc=0x${dut.io.pc(i).toInt}%04x jpc=0x${dut.io.jpc(i).toInt}%04x " +
+                      f"A=0x${dut.cluster.cores(i).pipeline.stack.a.toLong.toInt}%08x " +
+                      f"sp=${dut.cluster.cores(i).pipeline.stack.sp.toInt}")
+            if (fullExcDumps < 3) {
+              fullExcDumps += 1
+              val sb = new StringBuilder
+              sb.append(s"\n*** EXCEPTION #$excCount on core $i: $nm ***\n")
+              sb.append(fillsOf(i))
+              sb.append(historyOf(i))
+              sb.append(bcDump(i, dut.io.jpc(i).toInt, back = 24, fwd = 24))
+              sb.append(snapshot(s"AT EXCEPTION #$excCount core $i"))
+              println("\n" + sb.toString)
+              logLine(sb.toString)
+            }
+          }
+          lastExc(i) = e
+        }
+
+        // The watchpoint itself. Ordered cheapest-first: `valid` is one signal
+        // read per cycle and everything else is behind it, so the cost on a
+        // 75M-cycle run stays small.
+        if (dut.ram.io.bus.cmd.valid.toBoolean && dut.ram.io.bus.cmd.ready.toBoolean &&
+            dut.ram.io.bus.cmd.fragment.opcode.toInt == 1) {
+          val word = (dut.ram.io.bus.cmd.fragment.address.toLong >> 2).toInt
+          if (watched(word)) {
+            val data = dut.ram.io.bus.cmd.fragment.data.toLong.toInt
+            val mask = dut.ram.io.bus.cmd.fragment.mask.toInt
+            val src  = if (dut.hasBusSource) dut.ram.io.bus.cmd.fragment.source.toInt else -1
+            val core = if (src >= 0 && src < cpuCnt) src else -1
+            val name = staticName.getOrElse(word, s"<word $word>")
+            val bad  = violation(word, data)
+            val where = if (core >= 0)
+              f" pc=0x${dut.io.pc(core).toInt}%04x jpc=0x${dut.io.jpc(core).toInt}%04x" +
+              f" A=0x${dut.cluster.cores(core).pipeline.stack.a.toLong.toInt}%08x" +
+              f" B=0x${dut.cluster.cores(core).pipeline.stack.b.toLong.toInt}%08x" +
+              f" sp=${dut.cluster.cores(core).pipeline.stack.sp.toInt}" else ""
+            val line = f"WRITE cycle=$cycle%9d src=$src%d word=$word%d ($name) " +
+                       f"data=0x$data%08x ($data) mask=0x$mask%x$where"
+            if (bad.isDefined) {
+              val sb = new StringBuilder
+              sb.append(s"\n*** OUT-OF-RANGE STORE *** ${bad.get}\n")
+              sb.append(line + "\n")
+              if (core >= 0) {
+                sb.append(historyOf(core))
+                sb.append(bcDump(core, dut.io.jpc(core).toInt, back = 24, fwd = 24))
+              } else {
+                sb.append(s"  source $src is not a core port — DMA or debug master\n")
+              }
+              sb.append(snapshot("AT OUT-OF-RANGE STORE"))
+              println("\n" + sb.toString)
+              logLine(sb.toString)
+              if (anomalyCycle < 0) anomalyCycle = cycle
+            } else if (writeLog < WRITE_LOG_MAX) {
+              writeLog += 1
+              logLine(line)
+            }
+          }
+        }
+
+        // Once the first bad store is caught, the rest of the run only repeats
+        // the wedge that is already understood. Give it a window to show what
+        // the corruption leads to, then stop rather than burn 20 more minutes.
+        if (anomalyCycle > 0 && cycle - anomalyCycle > 1000000) {
+          println("\n" + snapshot("TERMINAL after out-of-range store"))
+          done = true
         }
 
         // Per-core, not "all cores at once". The 200M run never tripped the
@@ -457,6 +773,13 @@ object JopGcHaltDeadlockSim extends App {
 
       println(s"\n\n=== gcHalt deadlock probe: $cpuCnt cores, $cycle cycles ===")
       println(s"UART output: '${uartOutput.toString.takeRight(400)}'")
+      if (anomalyCycle > 0)
+        println(s"WATCHPOINT: first out-of-range store to a SmpGcTest static at " +
+                s"cycle $anomalyCycle — see the log for the core and its bytecode.")
+      else
+        println("WATCHPOINT: no out-of-range store to a SmpGcTest static was seen. " +
+                "If a static nevertheless reads out of range, it was not written " +
+                "through the arbiter output — look at DMA or at the probe's own addresses.")
 
       if (deadlockCycle > 0) {
         val nGcHalt = (0 until cpuCnt).count(dut.cluster.cores(_).sys.gcHaltReg.toBoolean)

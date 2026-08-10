@@ -365,15 +365,202 @@ silently invalidate all of that. Use this to find one:
    previously impossible now appears after `minors after tenuring 198` —
    `ni 000000  000013  103  200`, the column layout of `JVMHelp.trace()`.
 
-   **A SECOND wedge is behind it.** With `exit()` fixed, core 0 now holds the
-   lock and spins in `x <<= 4; i += 4; if ((x >>> 30) != 0)` — integer
-   formatting, consistent with the half-printed trace. So an uncaught exception
-   is being raised and its *trace printer* hangs while holding the global lock.
-   That makes at least three separate faults stacked on this one symptom:
-   concurrent collection (fixed, 6cd91bd), `exit()` under lock (fixed here), and
-   now the trace/format path. The underlying exception is still unidentified —
-   `phase=6` is out of range for a variable the app only ever sets to 0..3, so
-   something is also writing where it should not.
+   **A SECOND wedge is behind it, and it is the SAME BUG in two more places.**
+   `ni 000000  000013  103  200` is not `trace()`'s column layout, it is
+   `JVMHelp.noim()`'s own preamble, character for character: `wr('n'); wr('i');
+   wr(' ')` then `wrSmall(mp); wrSmall(start); wrByte(pc); wrByte(val)`. So an
+   **unimplemented bytecode was executed** — and `noim()` ends with
+
+   ```java
+   Object o = new Object();
+   synchronized (o) {
+       System.out.println(); ... trace(sp);
+       for (;;);              // <-- infinite loop INSIDE a monitor, again
+   }
+   ```
+
+   which is `Startup.exit()`'s bug verbatim, and worse: it allocates first, so a
+   machine that has just executed a wild bytecode re-enters the collector before
+   it parks. Grepping the runtime for `for(;;)`/`while(true)` within 25 lines of
+   a `synchronized` found exactly these two.
+
+   A third instance is in `JVM.f_athrow()`. It takes `Native.lock(0)` — the
+   global lock — on entry, and the uncaught-exception path deliberately never
+   releases it: *"No need to unlock if we're about to crash anyway"*. True on
+   one core; on SMP it stops every other core for the length of the report and
+   then forever, because `System.exit()` parks. One core's crash became four.
+
+   Two unbounded frame walks feed those paths: `JVMHelp.trace()`'s
+   `fp = vp+args+loc` chain and `f_athrow`'s unwind. Neither forced `fp` to
+   decrease, and both are only ever reached when the frames are already corrupt
+   — `noim()` printed **`mp=0`**, so they were being handed precisely the input
+   that spins them forever, with the global lock held. That is the "core 0 keeps
+   executing while holding the lock" behaviour, and it explains why the earlier
+   reading saw an integer-formatting loop: `wrSmall()` is called once per frame
+   of a walk that never ends.
+
+   **All three FIXED**: `noim()` and the uncaught path in `f_athrow()` now
+   report without holding a lock (`Native.wr(0, Const.IO_INT_ENA)` /
+   `Native.unlock(0)`), and both walks are bounded — `MAX_TRACE_FRAMES = 64`
+   plus a "frames must descend" check, which prints a truncation note instead
+   of hanging. `Native.unlock(0)` from a non-owner is safe: `CmpSync` releases
+   only when the **owner's** `req` drops (`CmpSync.scala:108-119`), so it cannot
+   disturb another core's lock.
+
+   **THE CORRUPTION ITSELF IS NOW CAUGHT AT SOURCE.** `JopGcHaltDeadlockSim`
+   grew a **write watchpoint** on the arbiter output — the same snoop point the
+   cluster card table uses, and the one bus that carries `source`, so a store is
+   attributed to a core without instrumenting the binary. It flags any store
+   that puts a `SmpGcTest` static outside its legal range. Two fired, 13 cycles
+   apart, both from core 0:
+
+   ```
+   WRITE cycle=56614043 src=0 word=294 (cpuCnt)     data=0x00000004 (4)       jpc=0x070a
+   *** OUT-OF-RANGE *** publishers := -12484 — must be 3
+   WRITE cycle=56614059 src=0 word=295 (publishers) data=0xffffcf3c (-12484)  jpc=0x0712
+   *** OUT-OF-RANGE *** phase := 6 — the application only ever assigns 0..3
+   WRITE cycle=56614072 src=0 word=292 (phase)      data=0x00000006 (6)       jpc=0x071a
+   ```
+
+   **Core 0 is executing `SmpGcTest.main()` — for the second time.** It ran it
+   once at cycle 248,508; its last legitimate act was `phase=2` at 56,100,122,
+   inside `core0()`'s round loop. At 56,614,021 it arrives at jpc 0x0700 after a
+   ~95-cycle gap (a bytecode cache fill, i.e. an invoke) and runs main() from
+   its first bytecode.
+
+   The identification is not a guess. JOP's linker patches get/putstatic
+   operands to **absolute static addresses** (`jvm.asm`: *"put/getstatic support
+   in mmu (bc operand as address)"*, and `putstatic: stps opd` takes the address
+   from the operand), so the operand bytes in the cache dump can be read
+   straight off:
+
+   | jpc | bytes | operand | word | field |
+   |---|---|---|---|---|
+   | 0x0707 | `b3 01 26` | 0x0126 | 294 | `cpuCnt` |
+   | 0x070a | `b2 01 26` | 0x0126 | 294 | `cpuCnt` |
+   | 0x070f | `b3 01 27` | 0x0127 | 295 | `publishers` |
+   | 0x0717 | `b3 01 24` | 0x0124 | 292 | `phase` |
+   | 0x071b | `b3 01 25` | 0x0125 | 293 | `publishRound` |
+
+   Those are exactly `main()`'s statics in exactly `main()`'s order, and they
+   match the link file independently. The `ifne` at 0x0713 falls through, which
+   is `cpuId == 0` — core 0, as `source` says.
+
+   **The addresses are right and the DATA is wrong.** That split matters because
+   on JOP the two come from different places, and both are visible in the RTL:
+   `BmbMemoryController.scala:630` takes the address from `io.bcopd` (the
+   bytecode operand) and `:626` captures the data as `valueReg := io.aout`
+   (TOS) on the cycle the `putstatic` signal fires.
+
+   - `bipush -5; jopsys_rd; putstatic cpuCnt` -> **4, correct**.
+   - `getstatic cpuCnt; iconst_1; isub; putstatic publishers` -> **-12484**,
+     implying the `getstatic` returned -12483 for a word this same core had
+     written as 4 sixteen cycles earlier.
+   - `iconst_0; putstatic phase` -> **6**.
+
+   So `phase=6` is NOT a stray pointer scribbling over the statics, which is
+   what it looked like for two days. The address decoding is provably intact;
+   what arrives as data is not what the bytecode says. Everything after it —
+   `phase=6`, `publishRound=6`, the unimplemented bytecode, `noim()` parking
+   under the lock — is downstream. Core 0 holds the global lock
+   (`state=LOCKED lockedId=0`) throughout.
+
+   **Do not over-read the last bullet.** "Corrupt operand stack" is the obvious
+   story and it does not survive contact with `iconst_0`, which loads TOS with a
+   literal one instruction earlier — no stack pointer, however wrong, changes
+   what that puts in `A`. Two possibilities remain and they are very different
+   in consequence:
+
+   1. the core is not executing the bytecode this cache dump shows (the dump is
+      taken at the same cycle and disassembles as valid `main()`, but that is
+      consistency, not proof); or
+   2. `valueReg` is not capturing the `io.aout` that belongs to the store —
+      note `memBusy=true` at both stores, and the capture at `:626` is not
+      obviously qualified against a stalled pipeline.
+
+   (2) would be an RTL bug rather than a software one, and it should be
+   disqualified first precisely because it *cannot* be the whole story: the same
+   path executes correctly millions of times per run and on one core. Establish
+   which of the two it is by reading `A`/`B` and `io.aout` directly at the store
+   — the probe already has the write watchpoint to trigger on.
+
+   **WHAT PUT CORE 0 THERE: AN EXCEPTION STORM ON ALL FOUR CORES, 437k CYCLES
+   EARLIER.** Logging the hardware exception strobe (`cores(i).sys.io.exc`) for
+   the whole run — cheap, and it reaches back further than any ring buffer —
+   moved the origin a long way upstream of everything above:
+
+   | | cycle |
+   |---|---|
+   | core 0 sets `phase=2`, last legitimate act | 56,100,122 |
+   | **first hardware exception (core 1)** | **56,176,845** |
+   | ...200 more, every ~700-1400 cycles, all four cores | |
+   | core 0 executing `main()`, `phase := 6` | 56,614,043 |
+
+   Distribution over the logged window: core 1 x111 (all at jpc 0x0083), core 2
+   x39 (0x0683), core 0 x28 (0x0163), core 3 x22 (four sites). Each core is
+   **re-throwing from the same bytecode over and over** — one per loop
+   iteration, which is why the interval is so regular. Nothing before 56.176M
+   throws at all, and `SmpGcTest` contains no `throw` and no `try`.
+
+   So the ordering is settled: the storm comes FIRST, the wild control flow and
+   the bad stores are consequences of it, and `phase=6` is the last link in the
+   chain rather than the first. Every previous reading of this bug started from
+   the wrong end.
+
+   **THE EXCEPTION TYPE RULES OUT STACK OVERFLOW — and the fault is in the
+   INVOKE/BYTECODE-FETCH PATH, not in the heap at all.** Reading
+   `sys.excTypeReg` at each strobe:
+
+   ```
+   EXC cycle=56176845 core=1 type=3 AB(array bounds)  jpc=0x0084 A=0x0000020b sp=155
+   EXC cycle=56177828 core=1 type=2 NP(null pointer)  jpc=0x0083 A=0x000000a0 sp=157
+   EXC cycle=56179249 core=1 type=2 NP(null pointer)  jpc=0x0083 A=0x000000a0 sp=157   (and on, identical)
+   ```
+
+   One array-bounds, then null-pointer forever at a **fixed `jpc`, fixed `A`,
+   fixed `sp`** — a core re-faulting on the same bytecode. So `setSP` is not
+   involved and the earlier `sp=55` reading has some other cause; do not build
+   on it.
+
+   What the 16k-sample trace shows immediately BEFORE that first exception is
+   the actual fault:
+
+   ```
+   56175990  0x0428 -> 0x0000  (gap 70, invoke + cache fill)   sp=150
+   56176031  0x0016 -> 0x0428  (gap 21, return)                sp=147     <- fine
+   56176187  0x0428 -> 0x0000  (gap 70, invoke + cache fill)   sp=150     <- same site, same target
+   ...  ~450 bytes executed straight through, no control transfer at all ...
+   56176639..56176707  jpc 0x01c1 -> 0x0205, ONE BYTE PER CYCLE, pc frozen at 0x01e0
+   56176813  0x020b -> 0x0080  (gap 94, invoke + cache fill)
+   56176845  EXCEPTION
+   ```
+
+   Core 1 invoked a method, **ran straight off the end of it**, nop-slid ~68
+   bytes through zero-filled bytecode cache (`pc` pinned at one microinstruction
+   while `jpc` increments every cycle is exactly a run of `nop`), hit bytes that
+   decoded as an invoke, and started faulting. The **same call site invoked the
+   same target 197 cycles earlier and returned normally** from `jpc 0x0016`.
+
+   That reframes the whole item. This is not heap corruption, and it never was:
+   the handle lists were intact, the collector was idle and consistent, and the
+   statics only went wrong 437k cycles later. **A method invocation went to the
+   wrong place, or its bytecode cache fill delivered the wrong bytes.**
+
+   **Next measurement, and it separates those two cleanly.** The fill's own
+   parameters are already in the RTL: `bcRdCaptureReg` latches TOS at `bcRd`
+   (`BmbMemoryController.scala:649`), packing `start = val >>> 10` and
+   `len = val & 0x3ff`. The probe now keeps the last 48 fills per core and
+   prints them at the first exception, with `start` resolved against the link
+   file's `bytecode <name> <addr>` table. Then:
+
+   - `start` names a method but `len` is wrong -> the fill is truncated and the
+     core runs past the end. Look at the fill state machine.
+   - `start` is not a method entry at all -> the invoke's method pointer was
+     wrong. Look at what produced it.
+
+   Run this and read the fill list first; it is a two-line answer either way.
+   Note it must be an SMP-specific mechanism: the same fill path executes
+   correctly millions of times per run, and on one and two cores.
 
    **Probe hardening after a self-inflicted false alarm**: every static address
    is now read from `<app>.jop.link.txt` at startup instead of being hardcoded.
@@ -398,6 +585,13 @@ silently invalidate all of that. Use this to find one:
    The same sensitivity broke `JopSmallGcBramSim` (R80 vs R81) on the same day.
    Anything that changes the failing binary destroys the reproduction; observe
    from the simulator instead.
+
+   Because of that, the failing image is **kept aside** at `spinalhdl/repro/`
+   (`SmpGcTest.jop` + `.jop.link.txt`, gitignored like every other build
+   output). It is the build with the `cpuCnt0 <= 2` guard at `GC.java:574`
+   lifted to `<= 99`, and it prints `minors after tenuring 198`. A run that
+   prints anything else is a different binary and its result is void. Point the
+   probe at that copy rather than rebuilding when the runtime has moved on.
 
    **Whether this freeze predates the fix is UNKNOWN**: the broken build died at
    52M, before this point, so it was never observable. Plausibly the next bug in
