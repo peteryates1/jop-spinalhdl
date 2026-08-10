@@ -546,21 +546,61 @@ silently invalidate all of that. Use this to find one:
    statics only went wrong 437k cycles later. **A method invocation went to the
    wrong place, or its bytecode cache fill delivered the wrong bytes.**
 
-   **Next measurement, and it separates those two cleanly.** The fill's own
-   parameters are already in the RTL: `bcRdCaptureReg` latches TOS at `bcRd`
-   (`BmbMemoryController.scala:649`), packing `start = val >>> 10` and
-   `len = val & 0x3ff`. The probe now keeps the last 48 fills per core and
-   prints them at the first exception, with `start` resolved against the link
-   file's `bytecode <name> <addr>` table. Then:
+   **ANSWERED: THE INVOKE USES A NULL METHOD POINTER.** Logging every bytecode
+   cache fill (`bcRdCaptureReg` latches TOS at `bcRd`,
+   `BmbMemoryController.scala:649`, packing `start = val >>> 10`,
+   `len = val & 0x3ff`) and resolving `start` against the link file's method
+   table gives the last fill before the storm, unambiguously:
 
-   - `start` names a method but `len` is wrong -> the fill is truncated and the
-     core runs past the end. Look at the fill state machine.
-   - `start` is not a method entry at all -> the invoke's method pointer was
-     wrong. Look at what produced it.
+   ```
+   cycle 56176152  start=  6688 len=  6  raw=0x00688006  com.jopdesign.sys.JVM.f_i2b(I)I
+   cycle 56176778  start=     0 len=  0  raw=0x00000000  (before first method)
+                                                          ^^^ NULL METHOD POINTER
+   ```
 
-   Run this and read the fill list first; it is a two-line answer either way.
-   Note it must be an SMP-specific mechanism: the same fill path executes
-   correctly millions of times per run, and on one and two cores.
+   `raw = 0` means the invoke asked to fill a method at address 0 of length 0.
+   Nothing is loaded, so the core executes **zero-filled cache**, nop-slides
+   (that is the `pc` pinned at one microinstruction while `jpc` increments every
+   cycle), runs into whatever the cache still held, and starts faulting 67
+   cycles later. That is the entire mechanism.
+
+   **`noim()` printed the same null pointer, from the software side, and nobody
+   noticed for two days.** The fill list shows core 1 was already inside
+   `JVMHelp.noim()` at cycle 56,172,657 — *before* the exception storm — with
+   its whole print path visible (`PrintStream.println`, `String.getBytes`,
+   `GC.newArray`/`newArrayGen`/`allocGen` from the `new Object()`). And the UART
+   line reads `ni 000000  000013  103  200`, whose **first column is
+   `wrSmall(mp)` = 0**. `mp = 0` was the null method pointer all along.
+
+   So the chain, end to end, and every link measured:
+
+   1. an invoke reads a method pointer of **0**;
+   2. the cache fill loads nothing; the core executes zeros, nop-slides, and
+      hits an unimplemented bytecode;
+   3. `JVMHelp.noim()` reports it (printing `mp=0`) and then — in the binary
+      under test — allocates and parks forever holding the global lock;
+   4. inside that print/allocate path a **second** null-pointer invoke happens
+      (56,176,778), starting the AB-then-NP exception storm on all four cores;
+   5. 437k cycles later core 0 resumes into `main()` on a wrecked stack, writes
+      `phase := 6`, and the cluster is frozen.
+
+   `phase=6` — where this investigation started — is step 5 of 5.
+
+   **The one thing still to find is what produces the null method pointer**, and
+   it must be SMP-specific: the same invoke path runs correctly millions of
+   times per run and on one and two cores. The probe now dumps full state on the
+   **first** fill with `start=0`, which is the origin rather than any of its
+   consequences; run it and read that dump first.
+
+   A concrete place to look while doing so: `BytecodeFetchStage.scala:157-173`
+   carries a hand-built read/write collision bypass whose own comment says
+   *"During BC fill, the last write can coincide with the bytecode fetch read at
+   the dispatch moment (**timing depends on memory latency**)"*. `doBypass`
+   compares a one-cycle-registered write address against a registered read
+   address, and four-core BMB arbitration changes exactly the variable that
+   comment names. That is a lead, **not a finding** — the null pointer is in the
+   value fed to the fill, so the method-pointer *load* is the first suspect and
+   the fetch bypass the second.
 
    **Probe hardening after a self-inflicted false alarm**: every static address
    is now read from `<app>.jop.link.txt` at startup instead of being hardcoded.

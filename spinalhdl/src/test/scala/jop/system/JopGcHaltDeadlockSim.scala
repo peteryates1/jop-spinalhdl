@@ -220,6 +220,9 @@ object JopGcHaltDeadlockSim extends App {
       // minor GCs are long but they still move PCs, so PC-stability is the
       // discriminator, not UART silence alone.
       val stallWindow = 200000
+      // Cycle from which the per-cycle sampling below is switched on. See the
+      // note at its use. Set to 0 to instrument the whole run.
+      val DETAIL_FROM = if (args.length > 1) args(1).toInt else 55000000
 
       var cycle = 0
       var done = false
@@ -549,6 +552,7 @@ object JopGcHaltDeadlockSim extends App {
       val fillVal = Array.fill(cpuCnt, FILLS)(0)
       val fillIdx = Array.fill(cpuCnt)(0)
       val lastBcRd = Array.fill(cpuCnt)(false)
+      var nullFillDumps = 0
 
       def fillsOf(core: Int): String = {
         val sb = new StringBuilder
@@ -616,7 +620,7 @@ object JopGcHaltDeadlockSim extends App {
 
         // Record jpc transitions before looking at the bus, so the history is
         // current when a watched store fires on this same cycle.
-        for (i <- 0 until cpuCnt) {
+        if (cycle >= DETAIL_FROM) for (i <- 0 until cpuCnt) {
           val j = dut.io.jpc(i).toInt
           if (j != lastJpc(i)) {
             lastJpc(i) = j
@@ -630,19 +634,49 @@ object JopGcHaltDeadlockSim extends App {
           }
         }
 
-        for (i <- 0 until cpuCnt) {
+        // Fine-grained sampling costs ~3 signal reads per core per cycle and
+        // dominates the run: ungated it turned a 50-minute simulation into
+        // 2.5 hours. Everything it looks for lives in a known window — the
+        // first exception is at 56,176,845 and nothing throws before it, which
+        // runs 3 and 4 established over the whole run — so it is switched on
+        // shortly before that. Verilator is deterministic and reading a signal
+        // does not perturb the DUT, so this changes only wall-clock time.
+        // Raise DETAIL_FROM only with evidence that nothing interesting happens
+        // earlier; the exception log is what provides that evidence.
+        val detail = cycle >= DETAIL_FROM
+
+        if (detail) for (i <- 0 until cpuCnt) {
           val r = dut.cluster.cores(i).memCtrl.io.memIn.bcRd.toBoolean
           if (r && !lastBcRd(i)) {
             val k = fillIdx(i)
             fillCyc(i)(k) = cycle
             // bcRdCaptureReg latches on the same edge, so read TOS here.
-            fillVal(i)(k) = dut.cluster.cores(i).pipeline.stack.a.toLong.toInt
+            val v = dut.cluster.cores(i).pipeline.stack.a.toLong.toInt
+            fillVal(i)(k) = v
             fillIdx(i) = (k + 1) % FILLS
+            // THE ORIGIN TRIGGER. A fill of start=0/len=0 is an invoke through
+            // a NULL METHOD POINTER: nothing is loaded, so the core executes
+            // zero-filled cache, nop-slides and eventually hits an
+            // unimplemented bytecode. This is the primitive the whole failure
+            // is built from — it happens at least twice, and `noim()` prints
+            // `mp=0` in between, which is the same null pointer seen from the
+            // software side. Dump everything the FIRST time it happens.
+            if (v == 0 && nullFillDumps < 2) {
+              nullFillDumps += 1
+              val sb = new StringBuilder
+              sb.append(s"\n*** NULL METHOD POINTER: bytecode cache fill with " +
+                        s"start=0 len=0 on core $i ***\n")
+              sb.append(fillsOf(i))
+              sb.append(historyOf(i))
+              sb.append(snapshot(s"AT NULL FILL core $i"))
+              println("\n" + sb.toString)
+              logLine(sb.toString)
+            }
           }
           lastBcRd(i) = r
         }
 
-        for (i <- 0 until cpuCnt) {
+        if (detail) for (i <- 0 until cpuCnt) {
           val e = dut.cluster.cores(i).sys.io.exc.toBoolean
           if (e && !lastExc(i)) {
             excCount += 1
