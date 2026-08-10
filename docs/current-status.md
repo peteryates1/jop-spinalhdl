@@ -359,7 +359,31 @@ silently invalidate all of that. Use this to find one:
    `publisher()` must decode as `iconst_0; istore_1` then
    `iaload; iconst_1; iadd; iastore`.
 
-   **Fix**: `exit()` must not hold a lock while parking. Note `Startup` has
+   **FIXED** (`Startup.exit()` now does `Native.wr(0, Const.IO_INT_ENA)` then a
+   bare `for (;;) ;` — same intent, no lock). Re-running the 4-core probe proves
+   the fix bit: the cluster no longer freezes silently, and UART output that was
+   previously impossible now appears after `minors after tenuring 198` —
+   `ni 000000  000013  103  200`, the column layout of `JVMHelp.trace()`.
+
+   **A SECOND wedge is behind it.** With `exit()` fixed, core 0 now holds the
+   lock and spins in `x <<= 4; i += 4; if ((x >>> 30) != 0)` — integer
+   formatting, consistent with the half-printed trace. So an uncaught exception
+   is being raised and its *trace printer* hangs while holding the global lock.
+   That makes at least three separate faults stacked on this one symptom:
+   concurrent collection (fixed, 6cd91bd), `exit()` under lock (fixed here), and
+   now the trace/format path. The underlying exception is still unidentified —
+   `phase=6` is out of range for a variable the app only ever sets to 0..3, so
+   something is also writing where it should not.
+
+   **Probe hardening after a self-inflicted false alarm**: every static address
+   is now read from `<app>.jop.link.txt` at startup instead of being hardcoded.
+   Fixing `exit()` grew the runtime and shifted `SmpGcTest.phase` 287 -> 292,
+   so the hardcoded probe reported `phase=0` with null arrays and looked exactly
+   like catastrophic heap corruption. It was reading the wrong words. The file
+   already carried a comment warning that these move on relink; that was not
+   enough, so it is now mechanical.
+
+   Historical note: `exit()` must not hold a lock while parking. `Startup` has
    three other park loops (lines 127, 286, 416) that do NOT take a monitor —
    only this one does, and the `synchronized (stack)` serves no purpose since
    nothing is ever released. Also worth auditing: `JVM.except()` ends an

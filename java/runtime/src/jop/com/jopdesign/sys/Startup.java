@@ -238,9 +238,23 @@ public class Startup {
 			RtThreadImpl.sleepMs(1000);
 		}
 		JVMHelp.wr("\r\nJVM exit!\r\n");
-		synchronized (stack) {
-			for (;;) ;
-		}
+		// Park this core WITHOUT holding a lock.
+		//
+		// This used to be `synchronized (stack) { for (;;) ; }`. On one core
+		// that is harmless — the monitor was only ever a way to get interrupts
+		// disabled, which monitorenter does as a side effect, and nothing was
+		// ever going to release it. On SMP it is fatal: `synchronized` takes the
+		// GLOBAL lock under CmpSync, and CmpSync halts every non-owner for as
+		// long as it is held (CmpSync.scala:141-147), so ONE core reaching
+		// exit() froze the entire cluster permanently. That was the 4-core
+		// generational GC "hang" of current-status item 1 — the collector was
+		// idle and the heap intact; a core had simply exited.
+		//
+		// Disable interrupts directly to keep the original intent. The other
+		// park loops in this file (the non-zero-core wait in boot(), and the
+		// ones at ~286 and ~416) already spin without a monitor.
+		Native.wr(0, Const.IO_INT_ENA);
+		for (;;) ;
 	}
 	
 	public static int getSPMSize() {

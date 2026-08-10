@@ -182,15 +182,25 @@ object JopGcHaltDeadlockSim extends App {
       // partial freeze is visible even if one core keeps moving forever.
       val reportedStuck = Array.fill(cpuCnt)(false)
 
-      // Static-field word addresses from java/apps/SmpGcTest/SmpGcTest.jop.link.txt:
-      //   static com.jopdesign.sys.GC.freeListI 62
-      //   static com.jopdesign.sys.GC.useListI  63
-      //   static com.jopdesign.sys.GC.youngListI 65
-      // These move whenever the app is relinked — re-read them from the link
-      // file if the walk reports nonsense.
-      val ADDR_FREE_LIST  = 62
-      val ADDR_USE_LIST   = 63
-      val ADDR_YOUNG_LIST = 65
+      // Static-field addresses are READ FROM THE LINK FILE, never hardcoded.
+      // They shift whenever the app is relinked: fixing Startup.exit() grew the
+      // runtime and moved SmpGcTest.phase from 287 to 292, so a hardcoded probe
+      // reported phase=0 with null arrays and looked exactly like catastrophic
+      // heap corruption. It was reading the wrong words.
+      val linkPath = jopFilePath + ".link.txt"
+      val staticAddr: Map[String, Int] = {
+        val re = """static\s+(\S+?)([IJFDZBCS]|\[[IJFDZBCSL].*)\s+(\d+)""".r
+        scala.io.Source.fromFile(linkPath).getLines().collect {
+          case re(name, _, addr) => name -> addr.toInt
+        }.toMap
+      }
+      def sAddr(name: String): Int = staticAddr.getOrElse(name, {
+        println(s"WARNING: static '$name' not found in $linkPath"); -1
+      })
+
+      val ADDR_FREE_LIST  = sAddr("com.jopdesign.sys.GC.freeList")
+      val ADDR_USE_LIST   = sAddr("com.jopdesign.sys.GC.useList")
+      val ADDR_YOUNG_LIST = sAddr("com.jopdesign.sys.GC.youngList")
       val OFF_NEXT = 4
 
       def rd(word: Int): Int =
@@ -232,11 +242,11 @@ object JopGcHaltDeadlockSim extends App {
       // core is in the test's state machine, which the microcode PC cannot:
       // a frozen core that is still incrementing liveTick[] is running the
       // publisher loop, not stuck in the collector.
-      val ADDR_PHASE     = 287
-      val ADDR_PUB_ROUND = 288
-      val ADDR_HOLDERS   = 370
-      val ADDR_PUBROUND_ARR = 371
-      val ADDR_LIVETICK_ARR = 372
+      val ADDR_PHASE        = sAddr("test.SmpGcTest.phase")
+      val ADDR_PUB_ROUND    = sAddr("test.SmpGcTest.publishRound")
+      val ADDR_HOLDERS      = sAddr("test.SmpGcTest.holders")
+      val ADDR_PUBROUND_ARR = sAddr("test.SmpGcTest.pubRound")
+      val ADDR_LIVETICK_ARR = sAddr("test.SmpGcTest.liveTick")
 
       /** JOP handle: H[0] = data pointer, H[1] = array length. */
       def arrayElem(handleAddr: Int, idx: Int): Int = {
@@ -252,19 +262,19 @@ object JopGcHaltDeadlockSim extends App {
       // in — grayList != GREY_END means a mark drain, gcPhase != 0 means the
       // incremental collector, and the nursery/alloc pointers show whether a
       // minor GC has just finished.
-      val ADDR_HANDLE_CNT = 55
-      val ADDR_TO_SPACE   = 59
-      val ADDR_COPY_PTR   = 60
-      val ADDR_ALLOC_PTR  = 61
-      val ADDR_GRAY_LIST  = 64
-      val ADDR_NUR_BASE   = 66
-      val ADDR_NUR_TOP    = 67
-      val ADDR_NUR_ALLOC  = 68
-      val ADDR_GC_PHASE   = 77
-      val ADDR_MINOR_CNT  = 88
-      val ADDR_YOUNG_OBJ  = 162
-      val ADDR_COMPACT_LIST = 166
-      val ADDR_NEW_USE_LIST = 168
+      val ADDR_HANDLE_CNT = sAddr("com.jopdesign.sys.GC.handle_cnt")
+      val ADDR_TO_SPACE   = sAddr("com.jopdesign.sys.GC.toSpace")
+      val ADDR_COPY_PTR   = sAddr("com.jopdesign.sys.GC.copyPtr")
+      val ADDR_ALLOC_PTR  = sAddr("com.jopdesign.sys.GC.allocPtr")
+      val ADDR_GRAY_LIST  = sAddr("com.jopdesign.sys.GC.grayList")
+      val ADDR_NUR_BASE   = sAddr("com.jopdesign.sys.GC.nurseryBase")
+      val ADDR_NUR_TOP    = sAddr("com.jopdesign.sys.GC.nurseryTop")
+      val ADDR_NUR_ALLOC  = sAddr("com.jopdesign.sys.GC.nurseryAllocPtr")
+      val ADDR_GC_PHASE   = sAddr("com.jopdesign.sys.GC.gcPhase")
+      val ADDR_MINOR_CNT  = sAddr("com.jopdesign.sys.GC.gcMinorCount")
+      val ADDR_YOUNG_OBJ  = sAddr("com.jopdesign.sys.GC.youngObjects")
+      val ADDR_COMPACT_LIST = sAddr("com.jopdesign.sys.GC.compactList")
+      val ADDR_NEW_USE_LIST = sAddr("com.jopdesign.sys.GC.newUseList")
 
       def gcState(): String =
         f"  GC: gcPhase=${rd(ADDR_GC_PHASE)} grayList=0x${rd(ADDR_GRAY_LIST)}%06x " +
