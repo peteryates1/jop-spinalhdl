@@ -191,7 +191,16 @@ case class JopGcHaltTestHarness(
 object JopGcHaltDeadlockSim extends App {
   val cpuCnt = if (args.length > 0) args(0).toInt else 4
 
-  val jopFilePath = "java/apps/SmpGcTest/SmpGcTest.jop"
+  // argv: <cpuCnt> [detailFromCycle] [seed] [app.jop] [maxCycles]
+  //
+  // The app is a parameter because the fault is now known to be at CORE
+  // WAKE-UP, not in the workload: core 3 fails at jpc=0x0003, in its first few
+  // bytecodes, immediately after being released. SmpGcTest only reaches that
+  // point at 56M cycles because it churns two tenuring rounds first, so it
+  // costs ~45 minutes to observe something that happens within a few hundred
+  // cycles of the release. Any app that starts N cores reaches the same moment
+  // in ~250k cycles -- e.g. java/apps/Small/NCoreHelloWorld.jop.
+  val jopFilePath = if (args.length > 3) args(3) else "java/apps/SmpGcTest/SmpGcTest.jop"
   val romFilePath = "asm/generated/mem_rom.dat"
   val ramFilePath = "asm/generated/mem_ram.dat"
   val logFilePath = "spinalhdl/gchalt_deadlock_simulation.log"
@@ -229,7 +238,7 @@ object JopGcHaltDeadlockSim extends App {
       val uartOutput = new StringBuilder
       // The freeze lands by ~57M; 200M only bought 143M cycles of the same
       // frozen snapshot at ~55 minutes a run.
-      val maxCycles = 75000000
+      val maxCycles = if (args.length > 4) args(4).toInt else 75000000
       // A wedge is "nothing observable changed for this long". SmpGcTest's
       // minor GCs are long but they still move PCs, so PC-stability is the
       // discriminator, not UART silence alone.
@@ -440,9 +449,17 @@ object JopGcHaltDeadlockSim extends App {
       val WATCH_ARR_LO = sAddr("test.SmpGcTest.holders") - 2  // 373
       val WATCH_ARR_HI = sAddr("test.SmpGcTest.liveTick") + 2 // 379
 
-      def watched(word: Int): Boolean =
+      // The static watch is SmpGcTest-specific. With another app those names are
+      // absent, sAddr returns -1, and the windows would collapse onto words 0-1
+      // — the special-pointer table — reporting nonsense. Switch it off instead.
+      val watchEnabled = sAddr("test.SmpGcTest.phase") > 0
+      if (!watchEnabled)
+        println(s"NOTE: $linkPath has no SmpGcTest statics — static watchpoint disabled. " +
+                "The null-fill and exception triggers still apply.")
+
+      def watched(word: Int): Boolean = watchEnabled && (
         (word >= WATCH_LO && word <= WATCH_HI) ||
-        (word >= WATCH_ARR_LO && word <= WATCH_ARR_HI)
+        (word >= WATCH_ARR_LO && word <= WATCH_ARR_HI))
 
       /** The value each watched field is allowed to take. `None` = anything.
         * A violation is the event this probe exists to catch. */
