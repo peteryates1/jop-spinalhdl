@@ -306,12 +306,43 @@ silently invalidate all of that. Use this to find one:
      and core 0 is `syncHalt=true`, halted by the lock core 1 holds.
 
    So core 1 holds the global lock and executes a loop that **writes no GC
-   static and no app static**. That is the whole remaining question: which loop.
-   Next step is to dump the bytecode cache around `jpc` at the wedge — the raw
-   opcodes identify the loop directly, and like the heap walk it costs the
-   binary nothing. A UART-status poll (`while ((Native.rd(IO_STATUS)&1)==0);`)
-   fits the shape and would explain a silent spin, but that is a guess and the
-   last three guesses here were wrong.
+   static and no app static**.
+
+   **The bytecode cache names it.** Dumped from `jbcRamWord` at the wedge (again
+   without touching the binary), around core 1's `jpc`:
+
+   ```
+   0x0499: 194 0xc2  monitorenter
+   0x049a: 167 0xa7  goto            <-- core 1 sits here / 0x049b / 0x049d
+   0x049b:   0 0x00  nop
+   0x049c:   0 0x00  nop
+   0x049d:  76 0x4c  astore_1        <-- handler entry
+   0x049e:  42 0x2a  aload_0
+   0x049f: 195 0xc3  monitorexit
+   0x04a0:  43 0x2b  aload_1
+   0x04a1: 191 0xbf  athrow
+   ```
+
+   `astore_1; aload_0; monitorexit; aload_1; athrow` is exactly the compiler's
+   synthetic **exception handler for a `synchronized` block** — the any-catch
+   that releases the monitor and rethrows. Core 1 is parked in that handler
+   region, and `jpc` only ever samples 0x049a/0x049b/0x049d, i.e. the `goto` and
+   the handler entry, never past the `monitorexit` at 0x049f.
+
+   So the wedge is **an exception thrown inside `synchronized (mutex)` whose
+   handler never completes its `monitorexit`** — which is precisely the "lost
+   monitorexit" the stuck `lockReq` implies, and it points at the unwind path in
+   `JVM.except()` (per-frame `Native.unlock`, plus one unmatched `unlock(0)`)
+   rather than at the collector.
+
+   `io.excFired` never asserts, so this is a *software* throw, not a hardware
+   exception — consistent with an OOMError or a checked throw from the
+   allocation path rather than a trap.
+
+   Next: identify the throw. Widen the dump to find the enclosing method, and
+   have the probe latch `excFired`/`excType` and the exception statics so the
+   thrown type is known. Then decide whether the handler is being re-entered in
+   a loop (`athrow` dispatching back to itself) or simply never advancing.
 
    **Do not instrument `GC.java` to chase this.** Adding a per-iteration counter
    to the list walks changed the runtime's code size, which moved the heap

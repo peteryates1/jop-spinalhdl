@@ -103,6 +103,11 @@ case class JopGcHaltTestHarness(
     cluster.cores(i).sys.io.halted.simPublic()
     cluster.cores(i).pipeline.io.hwBusy.simPublic()
     cluster.cores(i).extBusy.simPublic()
+    // The bytecode cache. Dumping the opcodes around jpc is the only thing that
+    // says WHICH loop a wedged core is in: the microcode PC only names the
+    // bytecode handler, and reading it across 2M-cycle samples was misleading
+    // enough to produce two wrong readings already.
+    cluster.cores(i).pipeline.bcfetch.jbcRamWord.simPublic()
   }
 
   if (cluster.devicePins.contains("uart")) cluster.devicePin[Bool]("uart", "rxd") := True
@@ -277,6 +282,67 @@ object JopGcHaltDeadlockSim extends App {
         f"pubRound=[$rounds] liveTick=[$ticks]"
       }
 
+      // Enough of the JVM opcode set to read a loop, plus JOP's jopsys_*
+      // extensions (JopSim.java: 206 lock, 207 unlock, 209 rd, 210 wr).
+      val opName = Map(
+        0x00 -> "nop", 0x01 -> "aconst_null",
+        0x02 -> "iconst_m1", 0x03 -> "iconst_0", 0x04 -> "iconst_1",
+        0x05 -> "iconst_2", 0x06 -> "iconst_3", 0x07 -> "iconst_4", 0x08 -> "iconst_5",
+        0x10 -> "bipush", 0x11 -> "sipush", 0x12 -> "ldc", 0x13 -> "ldc_w",
+        0x15 -> "iload", 0x19 -> "aload",
+        0x1a -> "iload_0", 0x1b -> "iload_1", 0x1c -> "iload_2", 0x1d -> "iload_3",
+        0x2a -> "aload_0", 0x2b -> "aload_1", 0x2c -> "aload_2", 0x2d -> "aload_3",
+        0x2e -> "iaload", 0x32 -> "aaload",
+        0x36 -> "istore", 0x3a -> "astore",
+        0x3b -> "istore_0", 0x3c -> "istore_1", 0x3d -> "istore_2", 0x3e -> "istore_3",
+        0x4b -> "astore_0", 0x4c -> "astore_1", 0x4d -> "astore_2", 0x4e -> "astore_3",
+        0x4f -> "iastore", 0x53 -> "aastore",
+        0x57 -> "pop", 0x59 -> "dup",
+        0x60 -> "iadd", 0x64 -> "isub", 0x68 -> "imul", 0x6c -> "idiv",
+        0x7e -> "iand", 0x80 -> "ior", 0x82 -> "ixor",
+        0x78 -> "ishl", 0x7a -> "ishr", 0x7c -> "iushr",
+        0x84 -> "iinc", 0x91 -> "i2b", 0x92 -> "i2c",
+        0x99 -> "ifeq", 0x9a -> "ifne", 0x9b -> "iflt", 0x9c -> "ifge",
+        0x9d -> "ifgt", 0x9e -> "ifle",
+        0x9f -> "if_icmpeq", 0xa0 -> "if_icmpne", 0xa1 -> "if_icmplt",
+        0xa2 -> "if_icmpge", 0xa3 -> "if_icmpgt", 0xa4 -> "if_icmple",
+        0xa5 -> "if_acmpeq", 0xa6 -> "if_acmpne",
+        0xa7 -> "goto", 0xac -> "ireturn", 0xb0 -> "areturn", 0xb1 -> "return",
+        0xb2 -> "getstatic", 0xb3 -> "putstatic", 0xb4 -> "getfield", 0xb5 -> "putfield",
+        0xb6 -> "invokevirtual", 0xb7 -> "invokespecial", 0xb8 -> "invokestatic",
+        0xbb -> "new", 0xbc -> "newarray", 0xbd -> "anewarray", 0xbe -> "arraylength",
+        0xbf -> "athrow", 0xc0 -> "checkcast", 0xc2 -> "monitorenter", 0xc3 -> "monitorexit",
+        206 -> "jopsys_lock", 207 -> "jopsys_unlock", 209 -> "jopsys_rd", 210 -> "jopsys_wr"
+      )
+
+      /** Read one byte of the bytecode cache. Little-endian byte select:
+        * byte 0 is bits 7:0 (BytecodeFetchStage). */
+      def bcByte(core: Int, jpc: Int): Int = {
+        val mem = dut.cluster.cores(core).pipeline.bcfetch.jbcRamWord
+        val words = dut.cluster.cores(core).pipeline.bcfetch.jbcWordDepth
+        val w = jpc >> 2
+        if (w < 0 || w >= words) return -1
+        val word = mem.getBigInt(w).toLong
+        ((word >> (8 * (jpc & 3))) & 0xFF).toInt
+      }
+
+      /** Opcodes around the current jpc — this is what names the loop. */
+      def bcDump(core: Int, jpc: Int, back: Int = 12, fwd: Int = 12): String = {
+        val sb = new StringBuilder
+        sb.append(f"  core $core bytecode cache around jpc=0x$jpc%04x:\n")
+        var a = (jpc - back).max(0)
+        val end = jpc + fwd
+        while (a <= end) {
+          val b = bcByte(core, a)
+          if (b >= 0) {
+            val marker = if (a == jpc) " <== jpc" else ""
+            sb.append(f"      0x$a%04x: ${b}%3d 0x$b%02x  ${opName.getOrElse(b, "?")}%-14s$marker\n")
+          }
+          a += 1
+        }
+        sb.toString
+      }
+
       def snapshot(tag: String): String = {
         val sb = new StringBuilder
         sb.append(f"--- $tag at cycle $cycle%d ---\n")
@@ -304,8 +370,13 @@ object JopGcHaltDeadlockSim extends App {
         // comparing consecutive ones shows whether a "frozen" core is actually
         // still making progress. The list walk is 1000+ reads, so wedge only.
         sb.append(appState() + "\n" + gcState() + "\n")
-        if (tag.startsWith("WEDGED") || tag.startsWith("CORE") || tag.startsWith("TERMINAL"))
+        if (tag.startsWith("WEDGED") || tag.startsWith("CORE") || tag.startsWith("TERMINAL")) {
           sb.append(heapLists() + "\n")
+          // Dump the running core(s) — the halted ones are stopped wherever the
+          // lock caught them and say nothing about the cause.
+          for (i <- 0 until cpuCnt if !dut.cluster.cores(i).sys.io.halted.toBoolean)
+            sb.append(bcDump(i, dut.io.jpc(i).toInt))
+        }
         sb.toString
       }
 
