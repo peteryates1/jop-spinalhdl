@@ -586,6 +586,33 @@ silently invalidate all of that. Use this to find one:
 
    `phase=6` — where this investigation started — is step 5 of 5.
 
+   **IT IS NOT A GC BUG AT ALL, AND IT REPRODUCES IN 3M CYCLES.** Retargeting
+   the probe at `java/apps/Small/NCoreHelloWorld.jop` — a program that does
+   nothing but start N cores and toggle a watchdog — reproduces the null fill,
+   with the boot line reading `GC: classic (SMP - per-core card tables,
+   generational disabled)`. **The generational collector is switched off in that
+   run.** The bracket is sharp:
+
+   | cores | null fills | GC |
+   |---|---|---|
+   | 2 | 0 | classic (disabled) |
+   | 3 | 0 | classic (disabled) |
+   | **4** | **2, both on core 3** | classic (disabled) |
+
+   ```
+   sbt "Test/runMain jop.system.JopGcHaltDeadlockSim 4 0 70704150 java/apps/Small/NCoreHelloWorld.jop 3000000"
+   ```
+
+   Under a minute, no GC, no allocation, no card table, deterministic with the
+   pinned seed — against 45 minutes for the `SmpGcTest` route. **Use this.**
+
+   The 2- and 3-core runs are the control this investigation needed and never
+   had: a `start=0` fill is *not* normal wake-up behaviour, it appears at
+   exactly four cores. So "generational GC deadlocks above 2 cores" has been the
+   wrong title for this item throughout — the generational collector was a
+   passenger, and what it did was allocate hard enough to make a 4-core SMP
+   wake-up fault show up as heap-shaped symptoms 56M cycles downstream.
+
    **THE NULL FILL HAPPENS AT CORE WAKE-UP.** Triggering a dump on the *first*
    `start=0` fill of the whole run moved the origin earlier again, and onto a
    different core:
