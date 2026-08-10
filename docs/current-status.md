@@ -596,6 +596,52 @@ silently invalidate all of that. Use this to find one:
 
    `phase=6` — where this investigation started — is step 5 of 5.
 
+   ### HARDWARE VERDICT (2026-08-10) — the bug is real, and it is NOT the collector
+
+   The EP4CGX150 was rebuilt at **4 cores / 60 MHz**, closing timing at
+   **+0.302 ns** — the identical figure recorded for the 2026-08-09 hang, so it
+   is the same configuration, not a lookalike. Three runs on that one bitstream:
+
+   | run | result |
+   |---|---|
+   | `NCoreHelloWorld`, 4 cores | **WORKS** — boots and prints indefinitely |
+   | `SmpGcTest`, 4 cores, **generational** (guard lifted) | fails at `minors after tenuring 6`, then `ni 006400  527810  011  200` |
+   | `SmpGcTest`, 4 cores, **classic** (guard in place) | **HANGS SILENTLY** after `minors after tenuring 0`, 150 s, nothing |
+
+   Four things follow, and hardware has no X-state so none of them is an
+   artifact:
+
+   1. **The board, the 4-core build and the modified runtime are all sound** —
+      `NCoreHelloWorld` is the control that says so.
+   2. **`JVMHelp.noim()` fires on real hardware.** The wild-execution ->
+      unimplemented-bytecode chain that the simulator found is genuine. `mp` here
+      is 6400, not 0, and `start` decodes to 527810 — an address far outside a
+      52 KB image — so it is the same shape of fault, a method pointer leading
+      nowhere.
+   3. **It reproduces at exactly the documented failure point**,
+      `minors after tenuring 6`, which is the number the 2026-08-09 CmpSync run
+      printed before going quiet.
+   4. **THE CLASSIC COLLECTOR HANGS TOO.** Same bitstream, same app, same cores;
+      only `genActive` differs. So the fault is **not generational**, and the
+      `cpuCnt <= 2` guard has been guarding the wrong thing. Note this
+      contradicts the previously recorded "4-core classic completes clean" —
+      that claim does not reproduce and should not be relied on.
+
+   The generational run's behaviour has also **changed for the better**: it used
+   to hang emitting nothing, and now reports before dying. That is the three
+   lock-park fixes (`4df8edd`, `d8d93f8`) doing their job — `noim()` no longer
+   freezes the cluster under the global lock, so the machine can tell you what
+   went wrong. The fixes did not make the underlying fault go away, and were
+   never going to; they made it observable.
+
+   **And the simulation failure is REAL.** Re-running the 4-core `SmpGcTest`
+   probe under `--x-initial 0` reproduces it unchanged: same first exception at
+   cycle **56,176,845**, same core 1, same `AB` then `NP` storm, same two null
+   fills. So the retraction below applies **only** to the `NCoreHelloWorld`
+   experiment. Everything measured on the `SmpGcTest` route — the exception
+   storm, the wild execution, `noim()`, the wrecked-stack stores — stands, and is
+   now corroborated on hardware.
+
    > **RETRACTION (2026-08-10, later the same day).** The `NCoreHelloWorld`
    > evidence in the next few paragraphs is a **simulation artifact** and does
    > not support the conclusion drawn from it. Read the *Uninitialised
