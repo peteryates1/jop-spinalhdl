@@ -76,13 +76,27 @@ def stub_from(raw, path):
     return ET.tostring(suite, encoding='utf-8', xml_declaration=True)
 
 
+def emit_output(stubbed):
+    """Report how many files had to be stubbed, so the workflow can upload the
+    evidence. Without this the sanitiser HIDES the bug it exists to contain: it
+    repairs the file, the reporter succeeds, and an upload conditioned only on
+    reporter failure never fires. The 2026-08-10 green run stubbed three files
+    and would have discarded all three."""
+    path = os.environ.get('GITHUB_OUTPUT')
+    if path:
+        with open(path, 'a') as fh:
+            fh.write(f'stubbed={stubbed}\n')
+
+
 def main():
     files = sorted(glob.glob('target/test-reports/**/*.xml', recursive=True))
     if not files:
         print('sanitise: no XML found under target/test-reports')
+        emit_output(0)
         return 0
 
     os.makedirs(RAW_DIR, exist_ok=True)
+    stubbed = 0
 
     for path in files:
         with open(path, 'rb') as fh:
@@ -104,12 +118,20 @@ def main():
         except ET.ParseError as exc:
             final = stub_from(raw, path)
             note = f'UNPARSEABLE ({exc}) -> counts-only stub'
+            stubbed += 1
 
         if final != raw:
             with open(path, 'wb') as fh:
                 fh.write(final)
         print(f'sanitise: {path} [{note}]')
 
+    if stubbed:
+        # Loud, because a stub silently drops that suite's per-test detail from
+        # the report — only its counts survive.
+        print(f'sanitise: {stubbed} file(s) were not well formed and were '
+              f'reduced to counts. Originals kept in {RAW_DIR}/ and uploaded '
+              f'as a build artifact.')
+    emit_output(stubbed)
     return 0
 
 

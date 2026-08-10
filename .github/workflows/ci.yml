@@ -168,6 +168,7 @@ jobs:
       # parsed, degrades it to a counts-only stub — so the reporter is
       # guaranteed well-formed input. See the script header for the full list.
       - name: Sanitise JUnit XML before reporting
+        id: sanitise
         if: always()
         run: python3 .github/scripts/sanitise-junit-xml.py
 
@@ -206,7 +207,7 @@ jobs:
       # so the sanitised copy alone would be valid XML and prove nothing), and
       # the sanitised copy shows what the reporter was actually handed.
       - name: Upload test reports on reporter failure
-        if: always() && steps.formal-reporter.outcome == 'failure'
+        if: always() && (steps.formal-reporter.outcome == 'failure' || steps.sanitise.outputs.stubbed != '0')
         uses: actions/upload-artifact@v4
         with:
           name: formal-test-reports-${{ github.run_id }}
@@ -274,6 +275,7 @@ jobs:
       # parsed, degrades it to a counts-only stub — so the reporter is
       # guaranteed well-formed input. See the script header for the full list.
       - name: Sanitise JUnit XML before reporting
+        id: sanitise
         if: always()
         run: python3 .github/scripts/sanitise-junit-xml.py
 
@@ -310,7 +312,7 @@ jobs:
       # TEST-jop.pipeline.BytecodeFetchStageTest.xml) with no way to inspect the
       # file, which is why the trigger is still only suspected rather than known.
       - name: Upload test reports on reporter failure
-        if: always() && steps.sim-reporter.outcome == 'failure'
+        if: always() && (steps.sim-reporter.outcome == 'failure' || steps.sanitise.outputs.stubbed != '0')
         uses: actions/upload-artifact@v4
         with:
           name: simulation-test-reports-${{ github.run_id }}
