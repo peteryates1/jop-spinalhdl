@@ -323,26 +323,48 @@ silently invalidate all of that. Use this to find one:
    0x04a1: 191 0xbf  athrow
    ```
 
-   `astore_1; aload_0; monitorexit; aload_1; athrow` is exactly the compiler's
-   synthetic **exception handler for a `synchronized` block** — the any-catch
-   that releases the monitor and rethrows. Core 1 is parked in that handler
-   region, and `jpc` only ever samples 0x049a/0x049b/0x049d, i.e. the `goto` and
-   the handler entry, never past the `monitorexit` at 0x049f.
+   **ROOT CAUSE: `Startup.exit()` spins forever while holding a monitor.**
 
-   So the wedge is **an exception thrown inside `synchronized (mutex)` whose
-   handler never completes its `monitorexit`** — which is precisely the "lost
-   monitorexit" the stuck `lockReq` implies, and it points at the unwind path in
-   `JVM.except()` (per-frame `Native.unlock`, plus one unmatched `unlock(0)`)
-   rather than at the collector.
+   ```java
+   public static void exit() {
+       for (;RtThreadImpl.mission;) { RtThreadImpl.sleepMs(1000); }
+       JVMHelp.wr("\r\nJVM exit!\r\n");
+       synchronized (stack) {
+           for (;;) ;              // <-- infinite loop INSIDE a monitor
+       }
+   }
+   ```
 
-   `io.excFired` never asserts, so this is a *software* throw, not a hardware
-   exception — consistent with an OOMError or a checked throw from the
-   allocation path rather than a trap.
+   On one core that is a harmless way to park the CPU. Under CmpSync
+   `synchronized` takes the **global** lock and `CmpSync.scala:141-147` halts
+   every non-owner while it is held, so **any core that reaches `exit()` freezes
+   the whole cluster permanently**. The `goto` at cache 0x049a has operand bytes
+   `00 00` — branch offset ZERO, the `for(;;)` self-loop — and `jpc` only ever
+   samples 0x049a/0x049b, that goto and its operand.
 
-   Next: identify the throw. Widen the dump to find the enclosing method, and
-   have the probe latch `excFired`/`excType` and the exception statics so the
-   thrown type is known. Then decide whether the handler is being re-entered in
-   a loop (`athrow` dispatching back to itself) or simply never advancing.
+   The method was identified with `JopBytecodeLocate`, which loads the image
+   through `JopFileLoader` (what the simulator itself uses) and reports the
+   enclosing method for a byte pattern. The 9-byte sequence occurs exactly ONCE
+   in the image, in `Startup.exit()` at words 4095..4106.
+
+   **An earlier reading of this same dump was wrong and is retracted.** It said
+   "an exception inside `synchronized (mutex)` whose handler never completes"
+   (commit 7ab1019). The `astore_1; aload_0; monitorexit; aload_1; athrow` bytes
+   are just the any-catch handler javac emits for EVERY synchronized block; the
+   core never enters them, it is parked on the `goto` three bytes earlier. That
+   mistake came from a hand-written .jop parse whose word index was not the
+   memory address — it produced 12354 words against a header of 13175 and named
+   `Startup.version()`, which contains no synchronized block at all. Always
+   calibrate the mapping against a method whose bytecode is known:
+   `publisher()` must decode as `iconst_0; istore_1` then
+   `iaload; iconst_1; iadd; iastore`.
+
+   **Fix**: `exit()` must not hold a lock while parking. Note `Startup` has
+   three other park loops (lines 127, 286, 416) that do NOT take a monitor —
+   only this one does, and the `synchronized (stack)` serves no purpose since
+   nothing is ever released. Also worth auditing: `JVM.except()` ends an
+   uncaught exception with `System.exit(1)`, so on SMP any uncaught exception on
+   any core wedges the cluster by this same path rather than stopping one core.
 
    **Do not instrument `GC.java` to chase this.** Adding a per-iteration counter
    to the list walks changed the runtime's code size, which moved the heap
