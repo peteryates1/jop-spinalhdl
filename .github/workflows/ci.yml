@@ -157,7 +157,7 @@ jobs:
           cd /tmp/sby && sudo make install PREFIX=/usr/local
 
       - name: Run formal verification
-        run: sbt -J-Xmx4g "testOnly jop.formal.* -- -u target/test-reports"
+        run: sbt -J-Xmx4g "testOnly jop.formal.* -- -u target/scalatest-reports"
 
       # ScalaTest's -u writer emits XML that is valid often enough to pass
       # locally and fail on a runner — three separate reporting-only breakages
@@ -184,7 +184,7 @@ jobs:
         continue-on-error: true
         with:
           name: Formal Verification Results
-          path: target/test-reports/**/*.xml
+          path: target/scalatest-reports/**/*.xml
           reporter: java-junit
           # The reporter must not decide whether CI is green. It parses
           # ScalaTest's -u XML, which is fragile: the 2026-08-09 run had
@@ -212,8 +212,8 @@ jobs:
         with:
           name: formal-test-reports-${{ github.run_id }}
           path: |
-            target/test-reports/
-            target/test-reports-raw/
+            target/scalatest-reports/
+            target/scalatest-reports-raw/
           retention-days: 14
           if-no-files-found: warn
 
@@ -264,7 +264,7 @@ jobs:
       # JDK 6 — so those three fail in CI while passing locally. Adding the
       # packages wholesale is exactly the mistake that broke this job once.
       - name: Run simulation tests
-        run: sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* jop.config.* jop.sim.* -- -u target/test-reports"
+        run: sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* jop.config.* jop.sim.* -- -u target/scalatest-reports"
 
       # ScalaTest's -u writer emits XML that is valid often enough to pass
       # locally and fail on a runner — three separate reporting-only breakages
@@ -291,7 +291,7 @@ jobs:
         continue-on-error: true
         with:
           name: Simulation Test Results
-          path: target/test-reports/**/*.xml
+          path: target/scalatest-reports/**/*.xml
           reporter: java-junit
           # The reporter must not decide whether CI is green. It parses
           # ScalaTest's -u XML, which is fragile: the 2026-08-09 run had
@@ -317,8 +317,8 @@ jobs:
         with:
           name: simulation-test-reports-${{ github.run_id }}
           path: |
-            target/test-reports/
-            target/test-reports-raw/
+            target/scalatest-reports/
+            target/scalatest-reports-raw/
           retention-days: 14
           if-no-files-found: warn
 

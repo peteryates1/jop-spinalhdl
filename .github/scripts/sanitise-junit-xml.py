@@ -4,23 +4,28 @@ Make ScalaTest's JUnit XML safe for dorny/test-reporter.
 
 WHY THIS EXISTS
 ---------------
-ScalaTest's `-u` writer emits XML that is valid often enough to pass locally and
-fail on a runner. Three separate breakages have come from it, each turning a
-fully green build red in the REPORTING step while every test passed:
+Reporting-only breakages from the JUnit XML kept turning fully green builds red.
+The ROOT CAUSE is now known, and it was never an escaping bug:
 
-  1. The <properties> block dumps all ~64 JVM system properties unescaped on one
-     line; line.separator's value is a literal newline inside an attribute.
-  2. "Invalid attribute name" at a line inside that block — the values differ
-     between runners, so it reproduces on CI and not locally.
-  3. "Invalid XML" on TEST-jop.pipeline.BytecodeFetchStageTest.xml even with the
-     properties block stripped. That file is the one carrying <system-out>/
-     <system-err> CDATA; those are empty locally but not on a runner, and test
-     output containing "]]>" or a non-UTF-8 byte breaks the CDATA section.
+  TWO writers were producing target/test-reports/TEST-<suite>.xml. The uploaded
+  originals from run 31369568424 show 19 files in ScalaTest's `-u` format and 6
+  in another (single-quoted XML declaration, `skipped=` attribute, hostname
+  first, 10-space indent). Where they collided, one wrote over the other from
+  offset 0 WITHOUT truncating; being shorter it left the previous file's tail
+  behind, giving a complete </testsuite> followed by the middle of a line from
+  the other format — "junk after document element", one </testsuite> too many.
 
-Chasing each escaping bug one at a time has not converged. This script instead
-guarantees the output is well formed BY CONSTRUCTION: it parses, and if it
-cannot parse, it degrades to a minimal valid file that still carries the counts
-rather than handing the reporter something broken.
+  It only happened on CI because only CI has the second writer: the runner
+  installs a newer sbt (2.0.6 launcher) than project/build.properties pins
+  (1.9.7) or local dev uses. Same testOnly command locally produces the same 25
+  files with 0 malformed.
+
+The real fix is directory isolation — ScalaTest's -u now writes to
+target/scalatest-reports, which nothing else touches. This script stays as a
+belt-and-braces guard: it round-trips every file through a real parser and, if
+one cannot be parsed, degrades it to a counts-only stub rather than handing the
+reporter something broken. If a malformed file ever appears again, the artifact
+it uploads is what identified the cause the first time.
 
 Genuine test failures are NOT hidden by any of this: sbt exits non-zero on a
 failed test and the "Run ..." step fails the job before the reporter runs. This
@@ -38,7 +43,8 @@ import xml.etree.ElementTree as ET
 # script edits in place, so without it the artifact uploaded when the reporter
 # fails would contain only the sanitised output — valid XML, and therefore
 # useless for working out what the reporter actually choked on.
-RAW_DIR = 'target/test-reports-raw'
+REPORT_DIR = 'target/scalatest-reports'
+RAW_DIR = 'target/scalatest-reports-raw'
 
 # XML 1.0 forbids most C0 controls even escaped; ScalaTest passes them through
 # from captured test output.
@@ -89,9 +95,9 @@ def emit_output(stubbed):
 
 
 def main():
-    files = sorted(glob.glob('target/test-reports/**/*.xml', recursive=True))
+    files = sorted(glob.glob(f'{REPORT_DIR}/**/*.xml', recursive=True))
     if not files:
-        print('sanitise: no XML found under target/test-reports')
+        print(f'sanitise: no XML found under {REPORT_DIR}')
         emit_output(0)
         return 0
 
