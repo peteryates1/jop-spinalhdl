@@ -200,12 +200,26 @@ object JopGcHaltDeadlockSim extends App {
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
   val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 128 * 1024 / 4)
 
+  // argv: <cpuCnt> [detailFromCycle] [seed]
+  val simSeed = if (args.length > 2) args(2).toInt else 70704150
+
   println(s"CPU count: $cpuCnt (CmpSync global lock)")
   println(s"App: $jopFilePath")
+  println(s"Sim seed: $simSeed (PINNED — see the note at doSim)")
 
   SimConfig
     .compile(JopGcHaltTestHarness(cpuCnt, romData, ramData, mainMemData))
-    .doSim { dut =>
+    // PIN THE SEED. `doSim` without one picks a fresh seed every run, and this
+    // harness had been running with 748489979, 617838352, 370588204, 70704150
+    // on four consecutive invocations of the same binary — so "Verilator is
+    // deterministic" was only ever true for a FIXED seed. It is not a harmless
+    // detail here: with the seed floating, the failure moves (in one run core 1
+    // dies mid-workload at 56.18M, in another core 3 dies at wake-up at 56.06M
+    // and never executes main() at all), and any conclusion of the form "I
+    // changed X and the failure went away" has an uncontrolled variable in it.
+    // See the note in current-status item 1 about five clean runs after
+    // instrumenting GC.java — that inference was drawn without this control.
+    .doSim(seed = simSeed) { dut =>
       val log = new PrintWriter(logFilePath)
       def logLine(s: String): Unit = { log.println(s); log.flush() }
 

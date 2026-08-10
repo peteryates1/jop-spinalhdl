@@ -586,11 +586,47 @@ silently invalidate all of that. Use this to find one:
 
    `phase=6` — where this investigation started — is step 5 of 5.
 
-   **The one thing still to find is what produces the null method pointer**, and
-   it must be SMP-specific: the same invoke path runs correctly millions of
-   times per run and on one and two cores. The probe now dumps full state on the
-   **first** fill with `start=0`, which is the origin rather than any of its
-   consequences; run it and read that dump first.
+   **THE NULL FILL HAPPENS AT CORE WAKE-UP.** Triggering a dump on the *first*
+   `start=0` fill of the whole run moved the origin earlier again, and onto a
+   different core:
+
+   ```
+   56,063,443  core 0 writes phase=1                (publishers released)
+   56,063,499  core 3 FILL start=0 len=0            <-- first null fill in the run
+   56,063,544  core 3 EXC NP  jpc=0x0003 sp=219
+   56,063,582  core 3 FILL start=0 len=0
+   56,063,651  core 3 EXC AB  jpc=0x0004 sp=118
+   56,063,745  core 1 writes cpuCnt=4 \  cores 1 and 2 start main() normally
+   56,063,746  core 2 writes cpuCnt=4 /  CORE 3 NEVER DOES, EVER
+   56,063,817+ core 3 NP storm, forever
+   ```
+
+   Core 3 fails **in its first few bytecodes**, at `jpc=0x0003`, and never
+   reaches `main()`'s first two putstatics — there is no `src=3` store anywhere
+   in the run. Cores 1 and 2, released by the same signal on the same cycle,
+   start correctly.
+
+   So the target is much narrower than "somewhere in a 56M-cycle workload": it
+   is the **SMP wake-up path**, where three cores leave `Startup`'s boot-wait
+   loop simultaneously, all miss in their bytecode caches at once, and all hit
+   the BMB arbiter together. One of them reads a method pointer of 0.
+
+   **AND THE SIMULATION IS NOT REPRODUCIBLE RUN TO RUN — this invalidates a
+   documented inference.** `doSim` without an explicit seed picks a new one
+   every invocation; four consecutive runs of the *same binary* used seeds
+   748489979, 617838352, 370588204 and 70704150. The failure is robust (every
+   run wedges) but its details move: core 1 dying mid-workload at 56.18M in one
+   run, core 3 dying at wake-up at 56.06M in another.
+
+   That means the note above — *"adding a counter changed the code size ... and
+   the freeze stopped happening: five consecutive clean runs. Verilator is
+   deterministic, so that is not luck, it is a different binary"* — was drawn
+   with an uncontrolled variable. Verilator is deterministic **for a fixed
+   seed**, and the seed was not fixed. The layout sensitivity may well be real,
+   but it has not been shown, and five clean runs is a much weaker result than
+   it looked. The probe now pins the seed (`doSim(seed = simSeed)`, default
+   70704150, overridable as argv[3]); re-establish that claim with the seed held
+   before relying on it.
 
    A concrete place to look while doing so: `BytecodeFetchStage.scala:157-173`
    carries a hand-built read/write collision bypass whose own comment says
@@ -621,10 +657,16 @@ silently invalidate all of that. Use this to find one:
    to the list walks changed the runtime's code size, which moved the heap
    start, which changed the allocation pattern — `minors after tenuring` went
    196 to 198 — and the freeze stopped happening: five consecutive clean runs.
-   Verilator is deterministic, so that is not luck, it is a different binary.
    The same sensitivity broke `JopSmallGcBramSim` (R80 vs R81) on the same day.
-   Anything that changes the failing binary destroys the reproduction; observe
-   from the simulator instead.
+   Observing from the simulator costs nothing and cannot do this, so prefer it
+   regardless.
+
+   **But the "Verilator is deterministic, so that is not luck" half of this
+   argument does not hold as written** — see the seed note below. `doSim` was
+   picking a fresh seed every run, so those five clean runs were not five
+   samples of one deterministic system. The layout sensitivity is plausible and
+   the R80/R81 case is independent of seeding, but the five-run result needs
+   re-running with the seed pinned before it means what it says.
 
    Because of that, the failing image is **kept aside** at `spinalhdl/repro/`
    (`SmpGcTest.jop` + `.jop.link.txt`, gitignored like every other build
