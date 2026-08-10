@@ -399,6 +399,16 @@ silently invalidate all of that. Use this to find one:
    reading saw an integer-formatting loop: `wrSmall()` is called once per frame
    of a walk that never ends.
 
+   **Regression sweep of these three runtime changes** (2026-08-10). The
+   `f_athrow` one matters most, because it touches the path every hardware
+   exception takes:
+
+   | check | result |
+   |---|---|
+   | `JopGenGcBramSim` — 1 core, generational | **PASS**, `GC: generational, 4-word cards` |
+   | `JopSmallGcBramSim` — 1 core, classic | **PASS**, 1 GC cycle in 14.1M |
+   | `JopJvmTestsBramSim` — the suite that fires HW exceptions on purpose | **PASS**, 132 `ok`, zero failures, normal `JVM exit!` |
+
    **All three FIXED**: `noim()` and the uncaught path in `f_athrow()` now
    report without holding a lock (`Native.wr(0, Const.IO_INT_ENA)` /
    `Native.unlock(0)`), and both walks are bounded — `MAX_TRACE_FRAMES = 64`
