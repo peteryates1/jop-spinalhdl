@@ -718,6 +718,58 @@ silently invalidate all of that. Use this to find one:
    **Use 2 cores @80 MHz to chase this**, not 4 cores @60: same fault, half the
    cores, the clock the board is actually validated at, and a one-second run.
 
+   ### AT 2 CORES THE FAULT *IS* GENERATIONAL — matched pair on one bitstream
+
+   Everything below is 2 cores @80 MHz on the same bitstream, same app source,
+   same allocation load. The only difference in the last two rows is `genActive`.
+
+   | app | collector | result |
+   |---|---|---|
+   | HEAD | generational | ❌ `Uncaught exception:` |
+   | HEAD, no alloc in core 0's wait loop (variant A) | generational | ❌ `STALL round 1`, core 1 frozen at `live=190` |
+   | HEAD, no `liveTick[id]++` (variant B) | generational | ❌ `STALL round 1`, and core 0 reads its OWN statics back as `phase 0 publishRound 0` at round 1 |
+   | churn allocates in classic too | **classic** | ✅ **`minors 0 verified 192 errors 0`**, all 8 rounds |
+   | churn allocates in classic too | **generational** | ❌ `STALL round 1`, core 1 frozen at `live=44` |
+
+   The last two rows are the experiment that matters. `churnUntilMinor` normally
+   short-circuits for classic (`if (!generational()) return 0;`), so a plain
+   classic run barely allocates and proves nothing — that confound is why the
+   4-core "classic hangs too" result was over-read. Removing the short-circuit
+   makes classic allocate exactly as hard, and **classic then completes cleanly
+   while generational fails**.
+
+   **So this correction is needed: "not a collector bug" was wrong at 2 cores.**
+   That claim came from 4-core classic hanging, which was measured with the
+   short-circuit in place. The consistent reading of all the hardware data is
+   two distinct faults:
+
+   - **generational, >=2 cores** — the one reproduced here, collector-specific;
+   - **something more general, >=3 cores** — classic hangs at 3 and 4 cores even
+     with almost no allocation, and passes at 2.
+
+   Variants A and B both still fail, so **no single line of the test is the
+   trigger** — which also means the reproduction is robust to editing the app.
+   That lifts the constraint that dominated the simulator work: `SmpGcTest.java`
+   *can* be instrumented here without the failure evaporating.
+
+   **Sharpest signature to chase next**: core 1 stops executing inside
+   `publish()` — its `liveTick` heartbeat freezes at a fixed value (190, 44)
+   while core 0 keeps running — i.e. a publisher dies while a minor GC is in
+   progress on the other core.
+
+   Reproduction recipe (the PLL edit is required; HEAD ships 60 MHz for 4-core):
+
+   ```
+   # dram_pll.vhd: set BOTH clk1_multiply_by and clk2_multiply_by to 8  (x8/5 = 80 MHz)
+   sbt "runMain jop.system.JopTopVerilog ep4cgx150Smp 2 80"
+   make -C fpga/qmtech-ep4cgx150-sdram build-smp program-smp
+   make -C java runtime && make -C java/apps/SmpGcTest clean && make -C java/apps/SmpGcTest
+   python3 fpga/scripts/download.py -e java/apps/SmpGcTest/SmpGcTest.jop /dev/ttyUSB0 2000000
+   ```
+
+   Rebuild the app every time — a stale `.jop` silently passes, which cost a run
+   here (the binary was 4 KB smaller than the source implied).
+
    The generational run's behaviour has also **changed for the better**: it used
    to hang emitting nothing, and now reports before dying. That is the three
    lock-park fixes (`4df8edd`, `d8d93f8`) doing their job — `noim()` no longer
