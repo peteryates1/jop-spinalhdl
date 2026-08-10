@@ -109,6 +109,15 @@ case class JopGcHaltTestHarness(
 
   val memWords = memSize / 4
   val ram = BmbOnChipRam(p = cluster.bmbParameter, size = memSize, hexInit = null)
+  // Read the heap from the simulator so the handle lists can be walked WITHOUT
+  // touching the runtime. Instrumenting GC.java to find the corruption does not
+  // work: adding a per-iteration counter to the list walks shifted the code
+  // size, which shifted the heap start, which changed the allocation pattern
+  // (minors after tenuring went 196 -> 198) and the freeze stopped happening —
+  // five clean runs. Verilator is deterministic, so that is not luck, it is a
+  // different binary. Only an observer outside the binary can look at the
+  // failing one.
+  ram.ram.simPublic()
   val initData = mainMemInit.take(memWords).padTo(memWords, BigInt(0))
   ram.ram.init(initData.map(v => B(v, 32 bits)))
   ram.io.bus << cluster.io.bmb
@@ -168,6 +177,106 @@ object JopGcHaltDeadlockSim extends App {
       // partial freeze is visible even if one core keeps moving forever.
       val reportedStuck = Array.fill(cpuCnt)(false)
 
+      // Static-field word addresses from java/apps/SmpGcTest/SmpGcTest.jop.link.txt:
+      //   static com.jopdesign.sys.GC.freeListI 62
+      //   static com.jopdesign.sys.GC.useListI  63
+      //   static com.jopdesign.sys.GC.youngListI 65
+      // These move whenever the app is relinked — re-read them from the link
+      // file if the walk reports nonsense.
+      val ADDR_FREE_LIST  = 62
+      val ADDR_USE_LIST   = 63
+      val ADDR_YOUNG_LIST = 65
+      val OFF_NEXT = 4
+
+      def rd(word: Int): Int =
+        if (word < 0 || word >= dut.memWords) 0
+        else dut.ram.ram.getBigInt(word).toLong.toInt
+
+      /** Walk an OFF_NEXT chain, reporting its length or where it cycles.
+        * Floyd is unnecessary here — the handle count bounds the walk, so a walk
+        * that exceeds it is following a cycle by definition. */
+      def walkList(name: String, headAddr: Int): String = {
+        val head = rd(headAddr)
+        if (head == 0) return f"    $name%-10s head=0 (empty)"
+        val seen = scala.collection.mutable.LinkedHashSet[Int]()
+        var ref = head
+        var steps = 0
+        val limit = 70000            // > MAX_HANDLES, so any real list terminates
+        while (ref != 0 && steps < limit) {
+          if (seen.contains(ref)) {
+            val cyc = seen.toList.dropWhile(_ != ref)
+            return f"    $name%-10s head=0x$head%06x  *** CYCLE after $steps steps at " +
+                   f"0x$ref%06x, loop length ${cyc.length} *** " +
+                   cyc.take(6).map(a => f"0x$a%06x").mkString(" -> ")
+          }
+          seen += ref
+          ref = rd(ref + OFF_NEXT)
+          steps += 1
+        }
+        if (steps >= limit) f"    $name%-10s head=0x$head%06x  *** RUNAWAY, >$limit steps ***"
+        else f"    $name%-10s head=0x$head%06x  length=$steps (terminates)"
+      }
+
+      def heapLists(): String =
+        "  handle lists (read from RAM, runtime untouched):\n" +
+        walkList("youngList", ADDR_YOUNG_LIST) + "\n" +
+        walkList("useList", ADDR_USE_LIST) + "\n" +
+        walkList("freeList", ADDR_FREE_LIST)
+
+      // SmpGcTest's own statics, same link file. Reading these says WHERE each
+      // core is in the test's state machine, which the microcode PC cannot:
+      // a frozen core that is still incrementing liveTick[] is running the
+      // publisher loop, not stuck in the collector.
+      val ADDR_PHASE     = 287
+      val ADDR_PUB_ROUND = 288
+      val ADDR_HOLDERS   = 370
+      val ADDR_PUBROUND_ARR = 371
+      val ADDR_LIVETICK_ARR = 372
+
+      /** JOP handle: H[0] = data pointer, H[1] = array length. */
+      def arrayElem(handleAddr: Int, idx: Int): Int = {
+        val h = rd(handleAddr)
+        if (h == 0) 0 else rd(rd(h) + idx)
+      }
+      def arrayLen(handleAddr: Int): Int = {
+        val h = rd(handleAddr)
+        if (h == 0) 0 else rd(h + 1)
+      }
+
+      // GC internals, same link file. These say which PHASE the stuck core is
+      // in — grayList != GREY_END means a mark drain, gcPhase != 0 means the
+      // incremental collector, and the nursery/alloc pointers show whether a
+      // minor GC has just finished.
+      val ADDR_HANDLE_CNT = 55
+      val ADDR_TO_SPACE   = 59
+      val ADDR_COPY_PTR   = 60
+      val ADDR_ALLOC_PTR  = 61
+      val ADDR_GRAY_LIST  = 64
+      val ADDR_NUR_BASE   = 66
+      val ADDR_NUR_TOP    = 67
+      val ADDR_NUR_ALLOC  = 68
+      val ADDR_GC_PHASE   = 77
+      val ADDR_MINOR_CNT  = 88
+      val ADDR_YOUNG_OBJ  = 162
+      val ADDR_COMPACT_LIST = 166
+      val ADDR_NEW_USE_LIST = 168
+
+      def gcState(): String =
+        f"  GC: gcPhase=${rd(ADDR_GC_PHASE)} grayList=0x${rd(ADDR_GRAY_LIST)}%06x " +
+        f"minors=${rd(ADDR_MINOR_CNT)} youngObjects=${rd(ADDR_YOUNG_OBJ)} toSpace=${rd(ADDR_TO_SPACE)}\n" +
+        f"      copyPtr=0x${rd(ADDR_COPY_PTR)}%06x allocPtr=0x${rd(ADDR_ALLOC_PTR)}%06x " +
+        f"nursery=[0x${rd(ADDR_NUR_BASE)}%06x..0x${rd(ADDR_NUR_TOP)}%06x] alloc=0x${rd(ADDR_NUR_ALLOC)}%06x\n" +
+        f"      compactList=0x${rd(ADDR_COMPACT_LIST)}%06x newUseList=0x${rd(ADDR_NEW_USE_LIST)}%06x " +
+        f"handle_cnt=${rd(ADDR_HANDLE_CNT)}"
+
+      def appState(): String = {
+        val n = arrayLen(ADDR_LIVETICK_ARR).max(0).min(16)
+        val ticks = (0 until n).map(i => arrayElem(ADDR_LIVETICK_ARR, i)).mkString(",")
+        val rounds = (0 until n).map(i => arrayElem(ADDR_PUBROUND_ARR, i)).mkString(",")
+        f"  SmpGcTest: phase=${rd(ADDR_PHASE)} publishRound=${rd(ADDR_PUB_ROUND)} " +
+        f"pubRound=[$rounds] liveTick=[$ticks]"
+      }
+
       def snapshot(tag: String): String = {
         val sb = new StringBuilder
         sb.append(f"--- $tag at cycle $cycle%d ---\n")
@@ -189,6 +298,14 @@ object JopGcHaltDeadlockSim extends App {
         val nHalt = (0 until cpuCnt).count(dut.cluster.cores(_).sys.io.halted.toBoolean)
         val nGcHalt = (0 until cpuCnt).count(dut.cluster.cores(_).sys.gcHaltReg.toBoolean)
         sb.append(s"  => halted=$nHalt/$cpuCnt  gcHalt asserted by $nGcHalt core(s)\n")
+        // Only on a wedge: walking 3 lists costs real sim time, and the periodic
+        // progress snapshots fire every 2M cycles.
+        // appState is a handful of RAM reads, so include it in every snapshot —
+        // comparing consecutive ones shows whether a "frozen" core is actually
+        // still making progress. The list walk is 1000+ reads, so wedge only.
+        sb.append(appState() + "\n" + gcState() + "\n")
+        if (tag.startsWith("WEDGED") || tag.startsWith("CORE") || tag.startsWith("TERMINAL"))
+          sb.append(heapLists() + "\n")
         sb.toString
       }
 

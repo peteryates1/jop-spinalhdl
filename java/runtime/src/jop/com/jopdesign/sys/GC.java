@@ -758,6 +758,7 @@ public class GC {
 		// mark already has the type and mtab in hand, so this is at most one
 		// extra read per object.
 		int liveWords = 0, liveHandles = 0;
+		int grayLimit = handle_cnt, grayN = 0;   // cycle guard, see gcListOverrun
 		for (;;) {
 
 			// pop one object from the gray list (monitor held by gcLocked)
@@ -765,6 +766,7 @@ public class GC {
 			if (ref==GREY_END) {
 				break;
 			}
+			if (++grayN > grayLimit) { gcListOverrun(WALK_GRAY_MAJOR, grayN, ref); grayList = GREY_END; break; }
 			grayList = Native.rdMem(ref+OFF_GREY);
 			Native.wrMem(0, ref+OFF_GREY);		// mark as not in list
 
@@ -1139,7 +1141,9 @@ public class GC {
 		int localUse = useList;
 		int localFree = freeList;
 
+		int walkLimit = handle_cnt, walkN = 0;   // cycle guard, see gcListOverrun
 		while (ref!=0) {
+			if (++walkN > walkLimit) { gcListOverrun(WALK_COMPACT, walkN, ref); break; }
 
 			// read next element, as it is destroyed by list operations
 			int next = Native.rdMem(ref+OFF_NEXT);
@@ -1636,6 +1640,46 @@ public class GC {
 	 * Allocation-free by design — this runs inside the collector and during
 	 * GC.init before the heap is usable, so it cannot use a scratch buffer.
 	 */
+	// Handle-list walks. A chain of handles cannot be longer than the number of
+	// handles that exist, so a walk that exceeds handle_cnt is following a cycle
+	// or a corrupt OFF_NEXT. These identify WHICH walk overran.
+	static final int WALK_YOUNG_SWEEP = 1;   // copyAndSweepYoung, youngList
+	static final int WALK_SPLICE      = 2;   // spliceYoungIntoUse, youngList tail
+	static final int WALK_COMPACT     = 3;   // compactAndSweep, useList
+	static final int WALK_GRAY_MINOR  = 4;   // minorGc gray drain
+	static final int WALK_GRAY_MAJOR  = 5;   // mark() gray drain
+
+	/**
+	 * Report a handle-list walk that cannot terminate, instead of spinning in it
+	 * forever.
+	 *
+	 * <p>WHY: the >2-core generational failure now presents as a core that holds
+	 * the global lock and never releases it (current-status item 1). Every core
+	 * that does not own the lock is halted by CmpSync, so ONE collector stuck in
+	 * a `while (ref != 0)` over a corrupt chain freezes the whole cluster, with
+	 * no output and nothing to attribute it to — the walks in question are tight
+	 * loops of `Native.rdMem`, which is a bytecode, not a call, so there is not
+	 * even a stack to look at. Turning that into a printed line is the
+	 * difference between a hang and a diagnosis.
+	 *
+	 * <p>Costs one local increment and compare per iteration on the sweep path;
+	 * the limit is hoisted into a local by each caller so it is not a static
+	 * read (statics live in main memory on JOP).
+	 */
+	static void gcListOverrun(int walk, int iters, int ref) {
+		JVMHelp.wr("\r\n*** GC LIST OVERRUN walk=");
+		wrIntG(walk);
+		JVMHelp.wr(" iters=");
+		wrIntG(iters);
+		JVMHelp.wr(" handles=");
+		wrIntG(handle_cnt);
+		JVMHelp.wr(" ref=");
+		wrIntG(ref);
+		JVMHelp.wr(" next=");
+		wrIntG(ref == 0 ? 0 : Native.rdMem(ref + OFF_NEXT));
+		JVMHelp.wr(" -- cyclic or corrupt list, truncated\r\n");
+	}
+
 	static void wrIntG(int v) {
 		if (v < 0) {
 			JVMHelp.wr('-');
@@ -1797,7 +1841,11 @@ public class GC {
 		// ~66 survivors in 33k handles that is ~67 writes instead of 33k,
 		// removing one of the four memory accesses the dead path made per handle.
 		int runStart = 0, runEnd = 0;
+		// Cycle guard — see gcListOverrun. Limit hoisted into a local so the
+		// per-handle cost is an increment and a compare, not a static read.
+		int walkLimit = handle_cnt, walkN = 0;
 		while (ref != 0) {
+			if (++walkN > walkLimit) { gcListOverrun(WALK_YOUNG_SWEEP, walkN, ref); break; }
 			if (GC_TIMING) ++nSwept;
 			int next = Native.rdMem(ref+OFF_NEXT);
 			// OFF_PTR is only needed to copy a survivor, and survivors are a
@@ -1887,7 +1935,11 @@ public class GC {
 		if (youngList == 0) return;
 		int tail = youngList;
 		int next = Native.rdMem(tail+OFF_NEXT);
-		while (next != 0) { tail = next; next = Native.rdMem(tail+OFF_NEXT); }
+		int walkLimit = handle_cnt, walkN = 0;   // cycle guard, see gcListOverrun
+		while (next != 0) {
+			if (++walkN > walkLimit) { gcListOverrun(WALK_SPLICE, walkN, tail); break; }
+			tail = next; next = Native.rdMem(tail+OFF_NEXT);
+		}
 		Native.wrMem(useList, tail+OFF_NEXT);
 		useList = youngList;
 		youngList = 0;
@@ -1926,7 +1978,12 @@ public class GC {
 		if (GC_TIMING) t0b = Native.rd(Const.IO_US_CNT);
 		scanCards();
 		if (GC_TIMING) t1 = Native.rd(Const.IO_US_CNT);
+		// The gray list is bounded by the handle count too: a handle is only
+		// pushed when its OFF_GREY is 0 and OFF_GREY is cleared on pop, so a
+		// drain longer than that means the grey chain has looped.
+		int grayLimit = handle_cnt, grayN = 0;
 		while (grayList != GREY_END) {
+			if (++grayN > grayLimit) { gcListOverrun(WALK_GRAY_MINOR, grayN, grayList); grayList = GREY_END; break; }
 			int ref = grayList;
 			grayList = Native.rdMem(ref+OFF_GREY);
 			Native.wrMem(0, ref+OFF_GREY);

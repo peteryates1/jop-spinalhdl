@@ -266,13 +266,61 @@ silently invalidate all of that. Use this to find one:
    fault.
 
    So the question is not "why does the owner stall" — it does not stall — but
-   **"why does it never release"**. Best current lead, NOT yet confirmed: an
-   infinite walk of a corrupted handle list. `spliceYoungIntoUse`,
-   `copyAndSweepYoung`'s dead-handle path and `finishCycle`'s tail walk are all
-   tight `OFF_NEXT` loops with no method calls, all run under the monitor, and
-   any cycle in the chain spins forever while holding the global lock. That
-   would mean residual list corruption at 4 cores — narrower than before, but
-   real. `isValidObjectHandle` fits the shape too but is dead code (no callers).
+   **"why does it never release"**.
+
+   **The corrupt-handle-list hypothesis is REFUTED.** The probe now reads the
+   heap straight out of `ram.ram` and walks the chains itself, so the failing
+   binary is untouched. At the wedge:
+
+   ```
+   youngList  head=0 (empty)
+   useList    head=0x0057e8  length=81   (terminates)
+   freeList   head=0x005368  length=1143 (terminates)
+   ```
+
+   No cycle, no runaway. The bounded-walk guards added to `GC.java` are still
+   worth having — a corrupt list must never be able to wedge a whole cluster
+   silently — but they were never going to catch this, and in fact **could not
+   be used to look for it**: see the layout note below.
+
+   **What the wedge actually is.** Reading `SmpGcTest`'s and `GC`'s own statics
+   out of RAM at the freeze:
+
+   ```
+   SmpGcTest: phase=2 publishRound=0 pubRound=[0,1,1,1] liveTick=[0,63,51,42]
+   GC: gcPhase=0 grayList=0xffffffff minors=196 youngObjects=0 toSpace=2
+       copyPtr=0x005ba4 allocPtr=0x007b37 nursery=[0x007b37..0x008000] alloc=0x008000
+   ```
+
+   Every one of those is IDENTICAL in every later snapshot. So:
+
+   - The collector is **idle and consistent** — a minor GC completed cleanly
+     (`gcPhase=IDLE`, gray list empty, nursery reset, `youngObjects=0`), ~8000
+     words of tenure are free and 1143 handles are on the free list. It is not
+     stuck mid-phase and it is not out of memory.
+   - Core 1 is **not in the publisher loop**: that loop increments
+     `liveTick[1]` every iteration and `liveTick` never changes, while core 1's
+     PC keeps advancing.
+   - The test is genuinely deadlocked, not merely slow: all three publishers
+     finished round 0, core 0 reached `phase=2` and must run to start round 1 —
+     and core 0 is `syncHalt=true`, halted by the lock core 1 holds.
+
+   So core 1 holds the global lock and executes a loop that **writes no GC
+   static and no app static**. That is the whole remaining question: which loop.
+   Next step is to dump the bytecode cache around `jpc` at the wedge — the raw
+   opcodes identify the loop directly, and like the heap walk it costs the
+   binary nothing. A UART-status poll (`while ((Native.rd(IO_STATUS)&1)==0);`)
+   fits the shape and would explain a silent spin, but that is a guess and the
+   last three guesses here were wrong.
+
+   **Do not instrument `GC.java` to chase this.** Adding a per-iteration counter
+   to the list walks changed the runtime's code size, which moved the heap
+   start, which changed the allocation pattern — `minors after tenuring` went
+   196 to 198 — and the freeze stopped happening: five consecutive clean runs.
+   Verilator is deterministic, so that is not luck, it is a different binary.
+   The same sensitivity broke `JopSmallGcBramSim` (R80 vs R81) on the same day.
+   Anything that changes the failing binary destroys the reproduction; observe
+   from the simulator instead.
 
    **Whether this freeze predates the fix is UNKNOWN**: the broken build died at
    52M, before this point, so it was never observable. Plausibly the next bug in
