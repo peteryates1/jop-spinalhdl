@@ -771,8 +771,26 @@ public class JVM {
 			}
 			// go up one frame
 			i = Native.rdMem(mp+1);
-			fp = vp + (i & 0x1f) + ((i >>> 5) & 0x1f);
+			int next = vp + (i & 0x1f) + ((i >>> 5) & 0x1f);
+			// A stack descends. `next` is computed from frame words that an
+			// exception-time fault may have corrupted, and nothing forced it to
+			// decrease, so a bad frame spun this unwind forever WITH THE GLOBAL
+			// LOCK HELD. Give up and report instead.
+			if (next >= fp) break;
+			fp = next;
 		}
+		// RELEASE THE GLOBAL LOCK BEFORE REPORTING.
+		//
+		// This used to say "no need to unlock if we're about to crash anyway",
+		// which is true on one core and fatal on SMP. `Native.lock(0)` above is
+		// the global lock; CmpSync halts every non-owner while it is held
+		// (CmpSync.scala:141-147), so an uncaught exception on ANY core stopped
+		// the whole cluster — first for the length of the report, then forever,
+		// because System.exit() parks. One core's crash became four.
+		//
+		// Nothing below needs the lock: the unwind is finished and this call
+		// does not return.
+		Native.unlock(0);
 		JVMHelp.wr("Uncaught exception: ");
 		String s = t.getMessage();
 		if (s!=null) {
@@ -780,7 +798,6 @@ public class JVM {
 		}
 		JVMHelp.wr("\n");
 		JVMHelp.trace(Native.getSP());
-		// Native.unlock(); // No need to unlock if we're about to crash anyway
 		System.exit(1);
 		return t;
 	}

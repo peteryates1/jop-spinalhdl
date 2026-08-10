@@ -139,8 +139,22 @@ wr(' ');
 		val &= 0xff;
 		wrByte(val);
 
-Object o = new Object();
-synchronized (o) {
+		// Report and park WITHOUT holding a lock.
+		//
+		// This used to be `Object o = new Object(); synchronized (o) { ...
+		// trace(sp); for (;;); }`. On one core that is only a clumsy way to
+		// disable interrupts. On SMP it is fatal, for exactly the reason
+		// Startup.exit() was: `synchronized` takes the GLOBAL lock under
+		// CmpSync, CmpSync halts every non-owner for as long as it is held
+		// (CmpSync.scala:141-147), and this block never releases — so one core
+		// hitting an unimplemented bytecode freezes the entire cluster. It is
+		// worse than exit() was, because it allocates first: `new Object()` on
+		// a machine that has just executed a wild bytecode can re-enter the
+		// collector, and the printing that follows runs for a long time with
+		// every other core stopped.
+		//
+		// Disabling interrupts directly is all the monitor was buying.
+		Native.wr(0, Const.IO_INT_ENA);
 
 		System.out.println();
 		System.out.print("JOP: bytecode ");
@@ -150,7 +164,6 @@ synchronized (o) {
 		trace(sp);
 
 		for (;;);
-}
 	}
 
 	static void handleException() {
@@ -217,6 +230,9 @@ synchronized (o) {
 	}
 
 
+	/** Deepest stack trace printed. A real JOP stack is nowhere near this. */
+	static final int MAX_TRACE_FRAMES = 64;
+
 	static void trace(int sp) {
 
 		int fp, mp, vp, pc, addr, loc, args;
@@ -237,7 +253,21 @@ synchronized (o) {
 		wr('\n');
 		
 
-		while (fp>Const.STACK_OFF+5) {
+		// BOUNDED. This walk is only ever reached when something has already
+		// gone wrong, so `sp` and every frame it chains through are exactly the
+		// values least worth trusting. `fp = vp+args+loc` is derived from memory
+		// the fault may have corrupted, and nothing here forced it to decrease:
+		// a garbage frame that computes an fp above the threshold, or one that
+		// simply repeats, spun this loop forever. On SMP that is fatal, because
+		// the caller reaches this after an unimplemented bytecode and the whole
+		// cluster is waiting on it.
+		//
+		// Two guards, both cheap: a frame cap, and the invariant a real stack
+		// already has — frames go DOWN. Either one firing says the trace is
+		// untrustworthy from that point, so say so rather than print more.
+		int frames = 0;
+		while (fp>Const.STACK_OFF+5 && frames<MAX_TRACE_FRAMES) {
+			++frames;
 			mp = Native.rdIntMem(fp+4);
 			vp = Native.rdIntMem(fp+2);
 			pc = Native.rdIntMem(fp+1);
@@ -253,7 +283,17 @@ synchronized (o) {
 			val = Native.rdMem(mp+1);	// cp, locals, args
 			args = val & 0x1f;
 			loc = (val>>>5) & 0x1f;
-			fp = vp+args+loc;			// new fp can be calc. with vp and count of local vars
+			int next = vp+args+loc;		// new fp can be calc. with vp and count of local vars
+			if (next>=fp) {				// not a stack any more
+				wr("  (frame chain does not descend - trace truncated)");
+				wr('\n');
+				break;
+			}
+			fp = next;
+		}
+		if (frames>=MAX_TRACE_FRAMES) {
+			wr("  (frame limit reached - trace truncated)");
+			wr('\n');
 		}
 		wr('\n');
 	}
