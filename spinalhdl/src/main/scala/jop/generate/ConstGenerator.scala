@@ -213,6 +213,29 @@ object ConstGenerator {
          |	/** FPU capability register (bit 0: HW single-precision FPU present) */
          |	public static final int IO_FPU_CAP = IO_BASE + ${ioOffset(JopIoSpace.SYS_BASE + 15)};
          |
+         |	/**
+         |	 * Cross-core GC roots. A collector cannot see another core's stack --
+         |	 * Native.rdIntMem reads core-private RAM -- so objects reachable only
+         |	 * from another core's stack were collected while live. These reach a
+         |	 * HALTED core's roots.
+         |	 *
+         |	 * The sys device decodes 4 bits and all 16 names are taken, so these
+         |	 * use the free DIRECTION of two existing addresses: IO_ROOT_SEL is the
+         |	 * write side of IO_MEM_SIZE, IO_ROOT_DATA the read side of IO_GC_HALT.
+         |	 * That is why each is strictly write-only or read-only.
+         |	 *
+         |	 * Write IO_ROOT_SEL to choose, then read IO_ROOT_DATA:
+         |	 *   bits  7..0  index (stack RAM word address)
+         |	 *   bits 11..8  target core id
+         |	 *   bits 13..12 what: 0 = stack word, 1 = SP, 2 = A, 3 = B
+         |	 */
+         |	public static final int IO_ROOT_SEL  = IO_BASE + ${ioOffset(JopIoSpace.SYS_BASE + 14)};
+         |	public static final int IO_ROOT_DATA = IO_BASE + ${ioOffset(JopIoSpace.SYS_BASE + 13)};
+         |	public static final int ROOT_WHAT_STACK = 0;
+         |	public static final int ROOT_WHAT_SP    = 1 << 12;
+         |	public static final int ROOT_WHAT_A     = 2 << 12;
+         |	public static final int ROOT_WHAT_B     = 3 << 12;
+         |
          |	// ====================================================================
          |	// Zero-fill DMA registers (BmbMemoryController, fixed at 0xEC-0xED)
          |	// ====================================================================

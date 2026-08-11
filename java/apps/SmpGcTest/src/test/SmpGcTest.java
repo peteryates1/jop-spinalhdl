@@ -230,6 +230,27 @@ public class SmpGcTest {
 		if (publishers >= 1) {
 			while (stackProbeReady == 0) { }
 			int pm = churnUntilMinor(20000) + churnUntilMinor(20000);
+			// Dump core 1's stack RAM while it is still holding the reference.
+			int portSp = GC.rootRead(1, Const.ROOT_WHAT_SP, 0);
+			int foundAt = -1;
+			int nonZero = 0;
+			for (int i = 0; i < 256; i++) {
+				int w = GC.rootRead(1, Const.ROOT_WHAT_STACK, i);
+				if (w != 0) nonZero++;
+				if (w == stackProbeHandle && foundAt < 0) foundAt = i;
+			}
+			JVMHelp.wr("dump: selfSp ");
+			wrInt(stackProbeSp);
+			JVMHelp.wr(" portSp ");
+			wrInt(portSp);
+			JVMHelp.wr(" handle ");
+			wrInt(stackProbeHandle);
+			JVMHelp.wr(" foundAt ");
+			wrInt(foundAt);
+			JVMHelp.wr(" nonZero ");
+			wrInt(nonZero);
+			JVMHelp.wr("\r\n");
+
 			stackProbeGcDone = 1;
 			while (stackProbeDone == 0) { }
 			JVMHelp.wr("STACKROOT minors ");
@@ -473,6 +494,8 @@ public class SmpGcTest {
 	static volatile int stackProbeReady;   // core 1 -> core 0: reference is held
 	static volatile int stackProbeGcDone;  // core 0 -> core 1: collections done
 	static volatile int stackProbeMagic;   // core 1 -> core 0: what survived
+	static volatile int stackProbeSp;      // core 1's OWN view of its SP
+	static volatile int stackProbeHandle;  // the handle core 1 is holding
 	static volatile int stackProbeDone;    // separate flag: 0 is a LEGAL magic
 	                                       // (a collected object reads back zeroed)
 	static final int STACK_PROBE_MAGIC = 0x5A5A0FFF;
@@ -502,6 +525,12 @@ public class SmpGcTest {
 		if (id == 1) {
 			Young probe = new Young();
 			probe.magic = STACK_PROBE_MAGIC;
+			// Publish this core's own view so core 0 can compare: if core 0
+			// cannot find this exact handle anywhere in the 256-word RAM, the
+			// address space or the read path is wrong; if it finds it above the
+			// SP core 0 reads, the SP is wrong.
+			stackProbeSp = Native.getSP();
+			stackProbeHandle = Native.toInt(probe);
 			stackProbeReady = 1;
 			while (stackProbeGcDone == 0) { }   // reference lives ONLY here
 			stackProbeMagic = probe.magic;

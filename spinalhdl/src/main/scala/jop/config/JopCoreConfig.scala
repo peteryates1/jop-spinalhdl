@@ -144,8 +144,25 @@ object MemoryStyle {
       lpmRam.io.data      := lpmWrData
       lpmRam.io.wraddress := lpmWrAddr.resize(addrWidth)
       lpmRam.io.wren      := lpmWrEn
-      lpmRam.io.rdaddress := rdAddr.resize(addrWidth)
-      (lpmRam.io.q, lpmRam.io.q)  // debug shares the single read port
+      // Debug/GC reads STEAL the read port. The comment here used to say "debug
+      // shares the single read port" while driving rdaddress from rdAddr only —
+      // so debugAddr was discarded and every debug read returned whatever the
+      // pipeline happened to be reading. That silently broke cross-core GC root
+      // scanning (current-status item 1): reading core N's stack word 64 and
+      // word 70 returned the same value, and no handle was ever found.
+      //
+      // Stealing is safe because both users are mutually exclusive in practice:
+      // the debug controller reads only while the core is debug-halted, and the
+      // collector reads only while the core is gcHalt-ed. A halted pipeline is
+      // not fetching operands. This mirrors what the Generic sync path already
+      // did (`debugReading` mux).
+      //
+      // Address 0 means "not reading", exactly as in the Generic path, so word 0
+      // is unreadable through this port. Nothing needs it: stack scans start at
+      // Const.STACK_OFF.
+      val lpmDebugReading = (debugAddr =/= 0) || debugWrEn
+      lpmRam.io.rdaddress := Mux(lpmDebugReading, debugAddr, rdAddr).resize(addrWidth)
+      (lpmRam.io.q, lpmRam.io.q)
     }
   }
 }
