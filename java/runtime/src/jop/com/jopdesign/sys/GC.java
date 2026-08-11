@@ -179,6 +179,29 @@ public class GC {
 	 * New allocations happen at the top, from allocPtr downward.
 	 * Free space = [copyPtr, allocPtr).
 	 */
+	/**
+	 * Whether minorGc() clears the card table when it finishes. NOT final and
+	 * not a compile-time constant, deliberately: a test flips it at run time so
+	 * one image can measure both settings. False is always safe — cards simply
+	 * accumulate and later minor GCs scan more than they need to.
+	 */
+	public static boolean cardClearEnabled = true;
+
+	/**
+	 * Bumped freely by a mutator; read by minorGc() to check that the world it
+	 * claims to stop is actually stopped.
+	 *
+	 * The card for a cross-generation store is provably marked, and the holder
+	 * provably lies in a range scanCards() visits, yet the reference is still
+	 * lost — so the remaining suspect is the halt. If a mutator advances between
+	 * IO_GC_HALT going high and going low, the collector moved objects and
+	 * rewrote handles underneath a running core, which explains a lost reference
+	 * and a wild-pointer crash equally well.
+	 */
+	public static int mutatorTick;
+	/** Largest mutator advance seen across a stop-the-world. Must stay 0. */
+	public static int haltDeltaMax;
+
 	public static int copyPtr;
 	/**
 	 * Points to the lowest allocated-but-not-yet-compacted object.
@@ -1977,6 +2000,8 @@ public class GC {
 		// Safe to halt here because minorGc is only reached from allocGen,
 		// i.e. with `mutex` held — the invariant gc() documents.
 		Native.wr(1, Const.IO_GC_HALT);
+		// Snapshot the mutator counter INSIDE the halt window.
+		int mtAtHalt = mutatorTick;
 		if (GEN_TRACE) JVMHelp.wr("[gc");
 		int t0 = 0, t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0, allocBefore = 0;
 		if (GC_TIMING) { t0 = Native.rd(Const.IO_US_CNT); allocBefore = allocPtr; }
@@ -2010,12 +2035,26 @@ public class GC {
 		// This is the same redundancy that was removed from gc() in 5e0a3a0;
 		// it was costing ~5.4 ms of a 73.8 ms pause on DDR3 (~7%).
 		if (GC_TIMING) t4 = Native.rd(Const.IO_US_CNT);
-		Native.wr(-1, Const.IO_CARD_CLEAR);   // clear all cards (HW sweep)
+		// Gated so ONE binary can test both settings. Whether the SMP loss of a
+		// cross-generation reference comes from the barrier never recording the
+		// store, or from this clear wiping a mark the scan should have seen, was
+		// answered by rebuilding with the line commented out — and that answer
+		// is worthless, because a one-line edit moves this layout-sensitive
+		// workload enough to change where it dies. A non-final flag cannot be
+		// constant-folded, so the test can flip it per round and correlate
+		// losses against it with nothing else varying.
+		//
+		// Leaving cards dirty is always SAFE, only slower: the next minor GC
+		// then scans every card ever dirtied, which is conservative.
+		if (cardClearEnabled) Native.wr(-1, Const.IO_CARD_CLEAR);  // clear all cards (HW sweep)
 		nurseryAllocPtr = nurseryTop;
 		youngObjects = 0;
 		// Objects moved, so this core's caches are stale, and the other cores
 		// must not resume until both the move and the invalidate are done.
 		Native.invalidate();
+		// Did anything run while the world was supposed to be stopped?
+		int mtDelta = mutatorTick - mtAtHalt;
+		if (mtDelta > haltDeltaMax) haltDeltaMax = mtDelta;
 		Native.wr(0, Const.IO_GC_HALT);       // resume the other cores
 		if (GC_TIMING) {
 			t5 = Native.rd(Const.IO_US_CNT);

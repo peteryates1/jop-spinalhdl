@@ -227,6 +227,13 @@ public class SmpGcTest {
 		Native.wr(1, Const.IO_SIGNAL);   // release core 1
 
 		for (int round = 0; round < 8; round++) {
+			// A/B THE CARD CLEAR INSIDE ONE BINARY. Even rounds clear the card
+			// table at the end of each minor GC (the shipping behaviour), odd
+			// rounds leave it dirty. Rebuilding to switch this instead moves the
+			// code and changes where the run dies, which is what made the first
+			// attempt at this question unusable. Here nothing varies but the
+			// flag.
+			GC.cardClearEnabled = (round & 1) == 0;
 			publishRound = round;
 			phase = 1;                                  // publishers: store now
 			// Wait for EVERY publisher independently. One shared counter would
@@ -321,6 +328,11 @@ public class SmpGcTest {
 			int m = churnUntilMinor(20000);
 			minors += m;
 
+			// One line per round: which setting it ran under, how many minor
+			// GCs actually happened (a round with none proves nothing), and how
+			// many references were lost in it. That is the whole experiment.
+			int errBefore = errors;
+
 			for (int i = 0; i < HOLDERS; i++) {
 				Object o = holders[i].ref;
 				if (o == null) continue;
@@ -339,6 +351,7 @@ public class SmpGcTest {
 						wrInt(i);
 						JVMHelp.wr(" round ");
 						wrInt(round);
+						JVMHelp.wr(GC.cardClearEnabled ? " clear=ON" : " clear=OFF");
 						JVMHelp.wr(" magic ");
 						wrInt(yMagic);
 						JVMHelp.wr(" want ");
@@ -360,6 +373,16 @@ public class SmpGcTest {
 					}
 				}
 			}
+			JVMHelp.wr("R");
+			wrInt(round);
+			JVMHelp.wr(GC.cardClearEnabled ? " clear=ON  " : " clear=OFF ");
+			JVMHelp.wr("minors ");
+			wrInt(m);
+			JVMHelp.wr(" lost ");
+			wrInt(errors - errBefore);
+			JVMHelp.wr(" haltLeak ");
+			wrInt(GC.haltDeltaMax);
+			JVMHelp.wr("\r\n");
 		}
 
 		phase = 3;   // tell core 1 to stop

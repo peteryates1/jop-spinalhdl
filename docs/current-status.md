@@ -865,6 +865,50 @@ silently invalidate all of that. Use this to find one:
    thing to build, and it is worth doing properly because the answer decides
    whether the fix is in the collector's ordering or in the hardware barrier.
 
+   ### The mark IS set, and the holder IS scanned — so it is the halt
+
+   The single-binary A/B is built (`GC.cardClearEnabled`, non-final so it cannot
+   be folded; the test flips it per round and reports `R<n> clear=ON/OFF minors N
+   lost N`). It has not yet produced a two-arm result, because the freeze kills
+   the run before both arms execute. But the probe that runs alongside it
+   answered two questions outright:
+
+   ```
+   probe: h0d 1902227 card 1 copyPtr 538184 allocPtr 1901895 tenureTop 1902281
+   R0 clear=ON  minors 3 lost 0
+   ```
+
+   - **`card 1`** — the card covering holder[0]'s data word IS MARKED after core
+     1's cross-generation store. **The hardware write barrier records another
+     core's write correctly.** That kills the "per-core card table" framing that
+     item 1 opened with; the cluster-level table (767178b) does its job.
+   - **`h0d 1902227` lies inside `[allocPtr 1901895, tenureTop 1902281)`**, one
+     of the two ranges `scanCards()` visits. So the holder is reachable by the
+     scan.
+
+   Neither a missing mark nor an unscanned region. That leaves the **stop-the-
+   world halt** as the remaining suspect: if core 1 advances at all between
+   `IO_GC_HALT` going high and going low, the collector moved objects and
+   rewrote handles underneath a running core — which explains a lost reference
+   and a wild-pointer crash (`noim`, `bytecode 202 not implemented`) equally
+   well, and would unify the two faults into one.
+
+   **Measure the halt in SIMULATION, not on hardware.** Every attempt to
+   instrument core 1's hot loop made the failure arrive *sooner* — adding a
+   `GC.mutatorTick` bump to the publisher took it from "fails in round 1" to
+   "dies before round 0 finishes". That is itself evidence (more cross-core
+   traffic, more race) but it makes hardware instrumentation self-defeating for
+   this question. The simulator can watch `cores(i).sys.io.halted` and
+   `gcHaltReg` directly with **zero perturbation** — the check is simply: while
+   any core asserts `gcHaltReg`, does another core's `pc` advance? The probe
+   already samples all of those signals.
+
+   The runtime-side half is committed and inert: `GC.mutatorTick` /
+   `GC.haltDeltaMax`, with `minorGc()` snapshotting the counter inside the halt
+   window and recording the largest advance. Nothing bumps `mutatorTick` by
+   default, so it costs one static read per minor GC and shifts nothing. Wire it
+   up from a mutator only if hardware measurement becomes worthwhile again.
+
    Also useful when doing it: `scanCards()` visits only `[tenureBase, copyPtr)`
    and `[allocPtr, tenureTop)`, treating the middle as free. Confirm the holders
    actually lie inside a scanned range before concluding anything about marks —
