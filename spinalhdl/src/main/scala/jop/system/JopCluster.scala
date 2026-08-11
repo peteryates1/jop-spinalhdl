@@ -563,7 +563,8 @@ case class JopCluster(
   // every other core is halted), so requests to a given target are simply
   // OR-reduced rather than arbitrated.
   val gcRootRamAddr = Vec(UInt(8 bits), cpuCnt)
-  for (t <- 0 until cpuCnt) {
+  gcRootRamAddr.foreach(_ := 0)
+  if (cpuCnt > 1) for (t <- 0 until cpuCnt) {
     var a = U(0, 8 bits)
     for (r <- 0 until cpuCnt if r != t) {
       val sel = cores(r).io.rootSel
@@ -572,7 +573,7 @@ case class JopCluster(
     }
     gcRootRamAddr(t) := a
   }
-  for (r <- 0 until cpuCnt) {
+  if (cpuCnt > 1) for (r <- 0 until cpuCnt) {
     val sel  = cores(r).io.rootSel
     val tgt  = sel(11 downto 8).asUInt
     val what = sel(13 downto 12)

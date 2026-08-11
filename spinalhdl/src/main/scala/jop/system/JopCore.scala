@@ -113,12 +113,17 @@ case class JopCore(
 
     // Cross-core GC root access (see Sys.io.rootSel). `rootSel` is this core's
     // request; `rootData` is the answer the cluster muxes back from the target.
-    val rootSel   = out Bits(14 bits)
-    val rootData  = in Bits(32 bits)
+    // Only exist on a multi-core build: with one core there is no other core's
+    // stack to read, and making them unconditional forced every single-core
+    // harness to tie them off. Fifteen of them already tie off debugRamAddr;
+    // adding a second such obligation broke all three CI sims at ELABORATION
+    // time, which `compile Test/compile` does not catch.
+    val rootSel   = (config.cpuCnt > 1) generate (out Bits(14 bits))
+    val rootData  = (config.cpuCnt > 1) generate (in Bits(32 bits))
     // Top-of-stack registers of THIS core, readable by a collector on another
     // core. Not in stack RAM, so a root scan that ignores them loses objects.
-    val stackA    = out Bits(config.dataWidth bits)
-    val stackB    = out Bits(config.dataWidth bits)
+    val stackA    = (config.cpuCnt > 1) generate (out Bits(config.dataWidth bits))
+    val stackB    = (config.cpuCnt > 1) generate (out Bits(config.dataWidth bits))
     val debugVp   = out UInt(config.stackConfig.spWidth bits)
     val debugAr   = out UInt(config.stackConfig.spWidth bits)
     val debugFlags = out Bits(4 bits)
@@ -460,10 +465,14 @@ case class JopCore(
 
   // Debug controller register passthrough
   io.debugSp := pipeline.io.debugSp
-  io.rootSel := sys.io.rootSel
-  sys.io.rootData := io.rootData
-  io.stackA := pipeline.io.aout
-  io.stackB := pipeline.io.bout
+  if (config.cpuCnt > 1) {
+    io.rootSel := sys.io.rootSel
+    sys.io.rootData := io.rootData
+    io.stackA := pipeline.io.aout
+    io.stackB := pipeline.io.bout
+  } else {
+    sys.io.rootData := 0
+  }
   io.debugVp := pipeline.io.debugVp
   io.debugAr := pipeline.io.debugAr
   io.debugFlags := pipeline.io.debugFlags
