@@ -34,6 +34,12 @@ class SysFormal extends SpinalFormalFunSuite {
     dut.io.ackIrq := False
     dut.io.ackExc := False
     dut.io.ioInt := 0
+    // Cross-core GC root data: a free input from the cluster, irrelevant to
+    // every property here but it still needs a driver. Left as anyseq rather
+    // than tied to a constant so the properties are proven for ANY value —
+    // omitting it entirely is what broke this suite, since a Sys input with no
+    // driver fails elaboration and takes all four tests down with it.
+    anyseq(dut.io.rootData)
   }
 
   test("clock counter increments every cycle") {
