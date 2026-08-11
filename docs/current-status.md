@@ -865,6 +865,71 @@ silently invalidate all of that. Use this to find one:
    thing to build, and it is worth doing properly because the answer decides
    whether the fix is in the collector's ordering or in the hardware barrier.
 
+   ### ROOT CAUSE: A GC ON ONE CORE CANNOT SEE ANOTHER CORE'S STACK
+
+   ```
+   STACKROOT minors 6 magic 0 LOST (other core's stack is NOT scanned)
+   ```
+
+   Core 1 held a live object in a **local variable only** — so the reference
+   existed nowhere but core 1's own stack RAM — while core 0 ran 6 minor GCs.
+   The object was collected. Its magic read back **0**: freed and zeroed.
+
+   **This is a design hole, not a race.** Both root scanners have the same shape:
+
+   ```java
+   i = Native.getSP();
+   for (j = Const.STACK_OFF; j <= i; ++j) pushYoung(Native.rdIntMem(j));   // THIS core
+   cnt = RtThreadImpl.getCnt();                                            // other THREADS
+   ```
+
+   `Native.rdIntMem` reads **core-private** internal RAM, so it can only ever
+   reach the collecting core's stack. `RtThreadImpl` covers other *threads*,
+   whose stacks are saved into heap arrays — not other **cores**, which are
+   running and hold their roots in hardware. Nothing anywhere in the runtime
+   scans another core's stack: `getYoungRoots()` (generational) and
+   `getStackRoots()` (classic) are the only two stack scanners, and both are
+   core-local. **So this affects the classic collector too**, which is why
+   classic hangs at 3 and 4 cores.
+
+   It explains every observation, including the ones that refuted the earlier
+   hypotheses:
+
+   - **the lost reference** — `publish()` does `Young y = new Young(); ... ;
+     holders[slot].ref = y;`. Between those two statements `y` exists only in
+     core 1's stack. A minor GC on core 0 in that window collects it, and core 1
+     then stores an already-dead reference into the holder. The observed freeze
+     at `step[1]=3` — core 1 halted between the magic write and the store — is
+     precisely that window.
+   - **why the card was marked and the holder was in a scanned range** — both
+     true and both irrelevant: the object died *before* the store, so there was
+     nothing for the card to protect.
+   - **why the stop-the-world holding made no difference** — halting core 1 is
+     exactly the problem. It is frozen mid-`publish()` holding the only
+     reference, and the collector cannot see it.
+   - **why the overlap is required** — the old test only collected in phase 2,
+     when publishers held no live young objects.
+   - **the wild-pointer crashes** (`noim`, AB, NP) — the same mechanism applied
+     to any other reference a core holds while another core collects.
+
+   The test's own hazard note had it exactly backwards: *"If core 1 leaves the
+   Young reference in a stack slot, it stays reachable as a root and survives
+   regardless of the card table."* On SMP the opposite is true — a stack slot on
+   another core is the one place a reference is **not** safe.
+
+   **Fix direction** (not yet implemented): the collector must see every core's
+   roots. Either each core spills its stack to memory at a GC safepoint before
+   acknowledging the halt, or the halt handshake includes a per-core root
+   handover. Both mean `gcHalt` needs an *acknowledgement* rather than being
+   fire-and-forget — which also closes the 2-cycle halt latency found below.
+   Until then the `cpuCnt <= 1` guard is the only thing keeping this sound, and
+   it is guarding the right thing at last.
+
+   The probe is committed as part of `SmpGcTest` (`STACKROOT` line) and is
+   deterministic, layout-independent, and takes about a second — unlike the main
+   workload it does not depend on hitting a window by luck. Use it as the
+   regression test for any fix.
+
    ### HALT CHECK RESULT: the stop-the-world HOLDS. Hypothesis refuted.
 
    Measured in simulation (zero perturbation — it only compares signals the

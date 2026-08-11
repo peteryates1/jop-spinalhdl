@@ -226,6 +226,21 @@ public class SmpGcTest {
 
 		Native.wr(1, Const.IO_SIGNAL);   // release core 1
 
+		// Run the stack-root test before the main rounds.
+		if (publishers >= 1) {
+			while (stackProbeReady == 0) { }
+			int pm = churnUntilMinor(20000) + churnUntilMinor(20000);
+			stackProbeGcDone = 1;
+			while (stackProbeDone == 0) { }
+			JVMHelp.wr("STACKROOT minors ");
+			wrInt(pm);
+			JVMHelp.wr(" magic ");
+			wrInt(stackProbeMagic);
+			JVMHelp.wr(stackProbeMagic == STACK_PROBE_MAGIC
+					? " OK (other core's stack IS scanned)\r\n"
+					: " LOST (other core's stack is NOT scanned)\r\n");
+		}
+
 		for (int round = 0; round < 8; round++) {
 			// A/B THE CARD CLEAR INSIDE ONE BINARY. Even rounds clear the card
 			// table at the end of each minor GC (the shipping behaviour), odd
@@ -413,10 +428,36 @@ public class SmpGcTest {
 	 * The cross-generation write. Allocates a young object and stores it into a
 	 * tenured holder, keeping the reference out of any surviving stack slot.
 	 */
+	/**
+	 * ROOT-CAUSE PROBE. A static IS scanned by getYoungRoots() (via
+	 * addrStaticRefs) no matter which core collects; a core's STACK is not —
+	 * `Native.rdIntMem` reads core-private RAM, so a GC on core 0 cannot see
+	 * core 1's stack at all. Parking `y` here across the window between
+	 * allocating it and storing it makes it reachable to a collector on the
+	 * other core. If the losses stop, that invisibility is the bug.
+	 */
+	static Object keepAlive;
+
+	// ------------------------------------------------ STACK-ROOT TEST (item 1)
+	// Direct test of the suspected root cause, independent of the main workload
+	// and of code layout: core 1 holds a reference ONLY in a local (i.e. only in
+	// its own stack RAM) while core 0 runs minor GCs, then reports whether the
+	// object survived. `Native.rdIntMem` reads core-PRIVATE memory, so
+	// getYoungRoots()/getStackRoots() can only ever see the collecting core's
+	// stack — nothing in the runtime scans another core's. If that is the bug,
+	// this object is collected and its magic comes back wrong.
+	static volatile int stackProbeReady;   // core 1 -> core 0: reference is held
+	static volatile int stackProbeGcDone;  // core 0 -> core 1: collections done
+	static volatile int stackProbeMagic;   // core 1 -> core 0: what survived
+	static volatile int stackProbeDone;    // separate flag: 0 is a LEGAL magic
+	                                       // (a collected object reads back zeroed)
+	static final int STACK_PROBE_MAGIC = 0x5A5A0FFF;
+
 	static void publish(int id, int round, int slot) {
 		pubSlot[id] = slot;
 		pubStep[id] = 1;
 		Young y = new Young();
+		keepAlive = y;
 		pubStep[id] = 2;
 		y.magic = MAGIC_BASE | (round << 8) | slot;
 		pubStep[id] = 3;
@@ -424,6 +465,7 @@ public class SmpGcTest {
 		pubStep[id] = 4;
 		holders[slot].ref = y;    // TENURED holder <- NURSERY object
 		pubStep[id] = 5;
+		keepAlive = null;
 		y = null;
 	}
 
@@ -433,6 +475,15 @@ public class SmpGcTest {
 	 * went missing?) and could mask a fault by overwriting it with a good one.
 	 */
 	static void publisher(int id) {
+		if (id == 1) {
+			Young probe = new Young();
+			probe.magic = STACK_PROBE_MAGIC;
+			stackProbeReady = 1;
+			while (stackProbeGcDone == 0) { }   // reference lives ONLY here
+			stackProbeMagic = probe.magic;
+			stackProbeDone = 1;
+			probe = null;
+		}
 		int round = 0;
 		while (true) {
 			liveTick[id] = liveTick[id] + 1;
