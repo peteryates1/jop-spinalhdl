@@ -839,6 +839,39 @@ silently invalidate all of that. Use this to find one:
    whether it reaches verification), as it has all along. The *kind* of failure
    is stable; the exact line is not. Do not bisect on the symptom.
 
+   ### Card-clear experiment: SUGGESTIVE, not conclusive — and why
+
+   Commenting out `Native.wr(-1, Const.IO_CARD_CLEAR)` in `minorGc()` (cards then
+   accumulate, so every later minor GC scans everything ever dirtied) removed the
+   loss: round 0 verified with **no `LOST` line**, where the same test with the
+   clear in place reported `LOST slot 0` deterministically. Read at face value
+   that says the barrier *does* record core 1's store and the scan-then-clear
+   ordering loses it.
+
+   **Do not bank it yet.** The two builds are not the same binary, and this
+   workload is layout-sensitive: restoring the clear and adding the card-bit
+   probe produced a build that froze at **round 0** (`step[1]=3`, core 1 inside
+   `publish()` before its store, `holder=null`), so it never reached
+   verification and could not confirm the other half of the pair. One-line edits
+   move where it dies.
+
+   **The freeze now blocks measuring the loss**, so it is no longer the lesser of
+   the two faults — it has to be dealt with first or in parallel.
+
+   **What would make the card-clear result airtight**: A/B *inside one binary*.
+   Add a non-final `public static boolean cardClearEnabled` to `GC`, gate the
+   clear on it, and have the test flip it per round. One image, one run, losses
+   correlated against the flag — no layout variable at all. That is the next
+   thing to build, and it is worth doing properly because the answer decides
+   whether the fix is in the collector's ordering or in the hardware barrier.
+
+   Also useful when doing it: `scanCards()` visits only `[tenureBase, copyPtr)`
+   and `[allocPtr, tenureTop)`, treating the middle as free. Confirm the holders
+   actually lie inside a scanned range before concluding anything about marks —
+   an object in the gap is never reached however dirty its card is. The probe for
+   this is written (`cardBit()` plus a `copyPtr`/`allocPtr`/`tenureTop` dump at
+   `phase = 2`); it just needs a build that survives to round 0's verification.
+
    The generational run's behaviour has also **changed for the better**: it used
    to hang emitting nothing, and now reports before dying. That is the three
    lock-park fixes (`4df8edd`, `d8d93f8`) doing their job — `noim()` no longer

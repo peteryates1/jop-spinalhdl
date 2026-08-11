@@ -147,6 +147,14 @@ public class SmpGcTest {
 	 * sets nurseryBase == nurseryTop for the classic heap, which is what the SMP
 	 * guard currently forces.
 	 */
+	/** The card-table bit covering a word address, read the same way
+	 *  `GC.scanCardRange` reads it: 32 cards per readable word. */
+	static int cardBit(int addr) {
+		int card = addr >>> Native.rd(Const.IO_CARD_SHIFT);
+		Native.wr(card >>> 5, Const.IO_CARD_IDX);
+		return (Native.rd(Const.IO_CARD_DATA) >>> (card & 31)) & 1;
+	}
+
 	static boolean generational() {
 		return GC.nurseryTop != GC.nurseryBase;
 	}
@@ -288,6 +296,27 @@ public class SmpGcTest {
 				}
 			}
 			phase = 2;
+
+			// Publishers are done and no GC has run yet this round, so this is
+			// the one moment the evidence is intact: is the card MARKED for the
+			// holder core 1 just wrote, and does that holder lie inside a range
+			// `scanCards()` actually visits? It scans only [tenureBase,copyPtr)
+			// and [allocPtr,tenureTop) — the middle is presumed free — so an
+			// object in the gap is never reached however dirty its card is.
+			if (round == 0) {
+				int hd = Native.rdMem(Native.toInt(holders[0]));
+				JVMHelp.wr("probe: h0d ");
+				wrInt(hd);
+				JVMHelp.wr(" card ");
+				wrInt(cardBit(hd));
+				JVMHelp.wr(" copyPtr ");
+				wrInt(GC.copyPtr);
+				JVMHelp.wr(" allocPtr ");
+				wrInt(GC.allocPtr);
+				JVMHelp.wr(" tenureTop ");
+				wrInt(GC.tenureTop);
+				JVMHelp.wr("\r\n");
+			}
 
 			int m = churnUntilMinor(20000);
 			minors += m;
