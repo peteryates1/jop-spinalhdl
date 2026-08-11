@@ -118,6 +118,17 @@ case class JopCore(
     // harness to tie them off. Fifteen of them already tie off debugRamAddr;
     // adding a second such obligation broke all three CI sims at ELABORATION
     // time, which `compile Test/compile` does not catch.
+    /**
+     * True while ANOTHER core is holding this one in a stop-the-world.
+     *
+     * Driven by the cluster from the peers' existing `syncOut.gcHalt` outputs,
+     * rather than added to the SyncOut bundle: a new field there obliges every
+     * single-core harness that ties off syncIn to drive it too, and there are
+     * ~15 of them. Conditional for the same reason the root ports are — a
+     * single-core build has no peer to be halted by.
+     */
+    val gcHaltedIn = (config.cpuCnt > 1) generate (in Bool())
+
     val rootSel   = (config.cpuCnt > 1) generate (out Bits(14 bits))
     val rootData  = (config.cpuCnt > 1) generate (in Bits(32 bits))
     // Top-of-stack registers of THIS core, readable by a collector on another
@@ -180,6 +191,36 @@ case class JopCore(
 
   // Pipeline -> MemCtrl
   memCtrl.io.memIn := pipeline.io.memCtrl
+  // INVALIDATE THIS CORE'S CACHES FOR THE WHOLE OF A STOP-THE-WORLD.
+  //
+  // The collector moves objects and rewrites handles with RAW memory writes
+  // (copyAndSweepYoung: Native.wrMem(dst, ref+OFF_PTR)). Those produce no snoop
+  // event -- the object cache snoops putfield traffic only, keyed on
+  // (handle, field index) -- so a core resuming from gcHalt would still hold
+  // pre-move state and read a relocated object at its old address. Measured on
+  // hardware: core 0 saw the object alive and correctly promoted while core 1,
+  // reading the same handle, got garbage.
+  //
+  // Held for the DURATION of the halt rather than pulsed on its falling edge.
+  // The core is stopped, so repeated invalidation costs nothing, and it removes
+  // the race a single pulse would have: cache valid bits clear on a clock edge,
+  // so a core resuming in the same cycle as the pulse could still get one stale
+  // read in first.
+  //
+  // Native.invalidate() at the end of minorGc cannot do this job: it is
+  // core-local, as GC.java already notes, and the cores that need it are halted.
+  // allowOverride: the bundle assignment above already drives every field,
+  // and this deliberately replaces one of them.
+  // Registered, not combinational: gcHaltedIn comes from an OR across the other
+  // cores' gcHalt registers, and feeding that straight into the cache-invalidate
+  // enable — which fans out to every valid bit in the object and array caches —
+  // cost 1.5 ns and broke timing at 80 MHz (-1.407 ns). A halt lasts thousands
+  // of cycles, so a cycle of latency on each edge is free. The delayed FALLING
+  // edge is a bonus: the invalidate stays asserted one cycle into the resume,
+  // which closes the window where a core could get a stale read in before the
+  // valid bits clear.
+  val gcHaltedDly = if (config.cpuCnt > 1) RegNext(io.gcHaltedIn) init(False) else False
+  memCtrl.io.memIn.cinval.allowOverride := pipeline.io.memCtrl.cinval || gcHaltedDly
   memCtrl.io.aout := pipeline.io.aout
   memCtrl.io.bout := pipeline.io.bout
   memCtrl.io.bcopd := pipeline.io.bcopd

@@ -548,6 +548,15 @@ case class JopCluster(
   // Tie-offs when debug is not present
   // ==================================================================
 
+  // Tell each core when a PEER is holding it in a stop-the-world, so it can
+  // keep its caches invalidated for the duration. Derived from the peers'
+  // existing syncOut.gcHalt outputs — no new field in the shared SyncOut bundle,
+  // which would have forced a change on every single-core harness.
+  if (cpuCnt > 1) for (i <- 0 until cpuCnt) {
+    cores(i).io.gcHaltedIn :=
+      (0 until cpuCnt).filter(_ != i).map(j => cores(j).io.syncOut.gcHalt).reduce(_ || _)
+  }
+
   // ==========================================================================
   // CROSS-CORE GC ROOTS
   // ==========================================================================
@@ -562,11 +571,14 @@ case class JopCluster(
   // Only the collector issues requests (it holds the allocation monitor and
   // every other core is halted), so requests to a given target are simply
   // OR-reduced rather than arbitrated.
+  // Exactly ONE assignment per element: a default plus a conditional loop
+  // double-assigns whenever cpuCnt > 1, which SpinalHDL rejects as an
+  // ASSIGNMENT OVERLAP at elaboration. That slipped through CI once because
+  // every CI sim is single-core, where only the default ran.
   val gcRootRamAddr = Vec(UInt(8 bits), cpuCnt)
-  gcRootRamAddr.foreach(_ := 0)
-  if (cpuCnt > 1) for (t <- 0 until cpuCnt) {
+  for (t <- 0 until cpuCnt) {
     var a = U(0, 8 bits)
-    for (r <- 0 until cpuCnt if r != t) {
+    if (cpuCnt > 1) for (r <- 0 until cpuCnt if r != t) {
       val sel = cores(r).io.rootSel
       val hit = sel(11 downto 8).asUInt === U(t, 4 bits)
       a = a | Mux(hit, sel(7 downto 0).asUInt, U(0, 8 bits))
