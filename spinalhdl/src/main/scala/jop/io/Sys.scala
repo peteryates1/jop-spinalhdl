@@ -51,6 +51,26 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
     val syncIn  = in(SyncOut())   // From CmpSync: halted status
     val syncOut = out(SyncIn())   // To CmpSync: lock request
     val halted  = out Bool()      // Pipeline stall signal
+
+    // ------------------------------------------------------ CROSS-CORE ROOTS
+    //
+    // A garbage collector running on one core cannot see another core's roots:
+    // stacks live in core-private RAM and `Native.rdIntMem` only ever reaches
+    // the calling core's. Objects reachable only from another core's stack were
+    // therefore collected while live (current-status item 1). This port lets a
+    // collector read the roots of a HALTED core.
+    //
+    // `rootSel` is written once to choose what to look at, then `rootData`
+    // reads it back:
+    //   bits  7..0  index (stack RAM word address)
+    //   bits 11..8  target core id
+    //   bits 13..12 what: 0 = stack word at index, 1 = SP, 2 = A, 3 = B
+    //
+    // A and B matter as much as the stack: JOP keeps top-of-stack in those two
+    // registers, so a freshly allocated handle sits in `a` before it ever
+    // reaches RAM. Reading only the stack would look correct and still lose it.
+    val rootSel  = out Bits(14 bits)
+    val rootData = in Bits(32 bits)
   }
 
   // ==========================================================================
@@ -227,6 +247,9 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
   // clears it after gc(). All other cores' pipelines are frozen.
   val gcHaltReg = Reg(Bool()) init(False)
 
+  /** Cross-core root selector; see io.rootSel. */
+  val rootSelReg = Reg(Bits(14 bits)) init(0)
+
   // Clear one-cycle pulse by default
   lockReqPulseReg := False
 
@@ -267,6 +290,8 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
     is(11) { io.rdData := B(cpuCnt, 32 bits) }          // IO_CPUCNT
     is(14) { io.rdData := B(memEndWords, 32 bits) }    // IO_MEM_SIZE: usable memory end (words)
     is(15) { io.rdData := B(fpuCapability, 32 bits) }  // IO_FPU_CAP: bit 0 = HW float present
+    // Reg 13's READ direction is free — its write side is IO_GC_HALT.
+    is(13) { io.rdData := io.rootData }                // IO_ROOT_DATA
   }
 
   // ==========================================================================
@@ -309,8 +334,11 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
       is(8)  { mask := io.wrData(NUM_INT - 1 downto 0) } // IO_INTMASK
       is(9)  { clearAll := True }                         // IO_INTCLEARALL
       is(13) { gcHaltReg := io.wrData(0) }                // IO_GC_HALT
+      // Reg 14's WRITE direction is free — its read side is IO_MEM_SIZE.
+      is(14) { rootSelReg := io.wrData(13 downto 0) }    // IO_ROOT_SEL
     }
   }
 
   io.wd := wdReg
+  io.rootSel := rootSelReg
 }

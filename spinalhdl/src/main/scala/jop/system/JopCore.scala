@@ -110,6 +110,15 @@ case class JopCore(
     // Debug controller interface
     val debugHalt = in Bool()             // Freeze pipeline (from debug controller)
     val debugSp   = out UInt(config.stackConfig.spWidth bits)
+
+    // Cross-core GC root access (see Sys.io.rootSel). `rootSel` is this core's
+    // request; `rootData` is the answer the cluster muxes back from the target.
+    val rootSel   = out Bits(14 bits)
+    val rootData  = in Bits(32 bits)
+    // Top-of-stack registers of THIS core, readable by a collector on another
+    // core. Not in stack RAM, so a root scan that ignores them loses objects.
+    val stackA    = out Bits(config.dataWidth bits)
+    val stackB    = out Bits(config.dataWidth bits)
     val debugVp   = out UInt(config.stackConfig.spWidth bits)
     val debugAr   = out UInt(config.stackConfig.spWidth bits)
     val debugFlags = out Bits(4 bits)
@@ -451,6 +460,10 @@ case class JopCore(
 
   // Debug controller register passthrough
   io.debugSp := pipeline.io.debugSp
+  io.rootSel := sys.io.rootSel
+  sys.io.rootData := io.rootData
+  io.stackA := pipeline.io.aout
+  io.stackB := pipeline.io.bout
   io.debugVp := pipeline.io.debugVp
   io.debugAr := pipeline.io.debugAr
   io.debugFlags := pipeline.io.debugFlags

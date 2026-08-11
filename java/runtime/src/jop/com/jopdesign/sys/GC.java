@@ -750,6 +750,10 @@ public class GC {
 				}
 			}
 		}
+		// The other cores' stacks. The classic collector has exactly the same
+		// blind spot as the generational one — which is why classic also fails
+		// above 2 cores.
+		scanOtherCoreRoots(false);
 	}
 
 	/**
@@ -1741,6 +1745,66 @@ public class GC {
 		}
 	}
 
+	/** Read one root word from another (halted) core. */
+	/** Diagnostics: words scanned from other cores, and calls made. */
+	public static int otherRootWords;
+	public static int otherRootCands;   // words that look like a handle
+	public static int otherRootYoung;   // ...and point into the nursery
+	public static int otherRootCalls;
+
+	public static int rootRead(int core, int what, int index) {
+		Native.wr((core << 8) | what | (index & 0xff), Const.IO_ROOT_SEL);
+		return Native.rd(Const.IO_ROOT_DATA);
+	}
+
+	/**
+	 * Scan every OTHER core's roots.
+	 *
+	 * A core's stack is private RAM: `Native.rdIntMem` only ever reads the
+	 * calling core's, and nothing else in the runtime reached another core's at
+	 * all. So a GC here collected objects that were live in a stack slot over
+	 * there — proven directly by SmpGcTest's STACKROOT probe, which held a
+	 * reference in a local on core 1 across six minor GCs on core 0 and got it
+	 * back zeroed.
+	 *
+	 * Only valid with the other cores HALTED, which is the caller's job: their
+	 * stacks must not move while being read. `young` selects the generational
+	 * filter (pushYoung) or the classic one (pushFast).
+	 *
+	 * A and B are read as well as the stack. JOP holds top-of-stack in those two
+	 * registers, so a freshly allocated handle sits in `a` before it reaches
+	 * RAM; scanning only the stack looks right and still loses it.
+	 */
+	static void scanOtherCoreRoots(boolean young) {
+		otherRootCalls++;
+		int me = Native.rdMem(Const.IO_CPU_ID);
+		int n = Native.rdMem(Const.IO_CPUCNT);
+		int memStart = mem_start, hEnd = handleEnd, markVal = toSpace;
+		for (int c = 0; c < n; ++c) {
+			if (c == me) continue;
+			int sp = rootRead(c, Const.ROOT_WHAT_SP, 0);
+			// A wild SP would walk the whole 256-word RAM harmlessly, but cap it
+			// anyway: conservative scanning tolerates junk, unbounded loops do not.
+			if (sp > STACK_RAM_WORDS) sp = STACK_RAM_WORDS;
+			for (int j = Const.STACK_OFF; j <= sp; ++j) {
+				int v = rootRead(c, Const.ROOT_WHAT_STACK, j);
+				otherRootWords++;
+				if (v != 0 && v >= mem_start && v < handleEnd && (v & 0x7) == 0) {
+					otherRootCands++;
+					if (Native.rdMem(v + OFF_PTR) >= nurseryBase) otherRootYoung++;
+				}
+				if (young) pushYoung(v); else pushFast(v, memStart, hEnd, markVal);
+			}
+			int a = rootRead(c, Const.ROOT_WHAT_A, 0);
+			int b = rootRead(c, Const.ROOT_WHAT_B, 0);
+			if (young) { pushYoung(a); pushYoung(b); }
+			else { pushFast(a, memStart, hEnd, markVal); pushFast(b, memStart, hEnd, markVal); }
+		}
+	}
+
+	/** Words in a core's stack RAM (ramWidth = 8 → 256). */
+	static final int STACK_RAM_WORDS = 256;
+
 	/** Scan all thread stacks + static fields for young roots. */
 	static void getYoungRoots() {
 		int i, j, cnt;
@@ -1761,6 +1825,8 @@ public class GC {
 		int addr = Native.rdMem(addrStaticRefs);
 		cnt = Native.rdMem(addrStaticRefs+1);
 		for (i = 0; i < cnt; ++i) pushYoung(Native.rdMem(addr+i));
+		// The other cores' stacks — invisible to everything above.
+		scanOtherCoreRoots(true);
 	}
 
 	/**

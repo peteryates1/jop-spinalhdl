@@ -296,7 +296,7 @@ case class JopCluster(
       ctrl.io.coreSignals(i).memBusy   := cores(i).io.memBusy
 
       // Stack RAM debug port
-      cores(i).io.debugRamAddr := ctrl.io.debugRamAddr(i)
+      cores(i).io.debugRamAddr := ctrl.io.debugRamAddr(i) | gcRootRamAddr(i)
       ctrl.io.coreSignals(i).debugRamData := cores(i).io.debugRamData
     }
 
@@ -548,9 +548,65 @@ case class JopCluster(
   // Tie-offs when debug is not present
   // ==================================================================
 
+  // ==========================================================================
+  // CROSS-CORE GC ROOTS
+  // ==========================================================================
+  //
+  // A collector can only see its own stack: stacks are core-private RAM and
+  // `Native.rdIntMem` reads the calling core's. Objects live only in another
+  // core's stack were collected while still reachable (current-status item 1,
+  // proven by the STACKROOT probe). This lets a collector read a HALTED core's
+  // roots — stack words via the per-core debug read port, plus SP and the A/B
+  // top-of-stack registers, which live in no RAM at all.
+  //
+  // Only the collector issues requests (it holds the allocation monitor and
+  // every other core is halted), so requests to a given target are simply
+  // OR-reduced rather than arbitrated.
+  val gcRootRamAddr = Vec(UInt(8 bits), cpuCnt)
+  for (t <- 0 until cpuCnt) {
+    var a = U(0, 8 bits)
+    for (r <- 0 until cpuCnt if r != t) {
+      val sel = cores(r).io.rootSel
+      val hit = sel(11 downto 8).asUInt === U(t, 4 bits)
+      a = a | Mux(hit, sel(7 downto 0).asUInt, U(0, 8 bits))
+    }
+    gcRootRamAddr(t) := a
+  }
+  for (r <- 0 until cpuCnt) {
+    val sel  = cores(r).io.rootSel
+    val tgt  = sel(11 downto 8).asUInt
+    val what = sel(13 downto 12)
+    val word = Bits(32 bits)
+    val sp   = Bits(32 bits)
+    val ra   = Bits(32 bits)
+    val rb   = Bits(32 bits)
+    if (cpuCnt > 1) {
+      word := cores(0).io.debugRamData
+      sp   := cores(0).io.debugSp.asBits.resized
+      ra   := cores(0).io.stackA
+      rb   := cores(0).io.stackB
+      for (t <- 1 until cpuCnt) {
+        when(tgt === U(t, 4 bits)) {
+          word := cores(t).io.debugRamData
+          sp   := cores(t).io.debugSp.asBits.resized
+          ra   := cores(t).io.stackA
+          rb   := cores(t).io.stackB
+        }
+      }
+    } else {
+      word := 0; sp := 0; ra := 0; rb := 0
+    }
+    cores(r).io.rootData := what.mux(
+      B"00" -> word,
+      B"01" -> sp,
+      B"10" -> ra,
+      default -> rb
+    )
+  }
+
   if (debugConfig.isEmpty) {
     for (i <- 0 until cpuCnt) {
-      cores(i).io.debugRamAddr := 0
+      cores(i).io.debugRamAddr := gcRootRamAddr(i)
       cores(i).io.debugHalt := False
     }
   }

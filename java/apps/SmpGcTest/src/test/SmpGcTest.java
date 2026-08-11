@@ -239,6 +239,30 @@ public class SmpGcTest {
 			JVMHelp.wr(stackProbeMagic == STACK_PROBE_MAGIC
 					? " OK (other core's stack IS scanned)\r\n"
 					: " LOST (other core's stack is NOT scanned)\r\n");
+			// Does the cross-core root port work at all? Read core 1's SP, A and
+			// B, and a couple of stack words. If SP reads back as junk the scan
+			// loop never runs and the fix is inert.
+			JVMHelp.wr("scan calls ");
+			wrInt(GC.otherRootCalls);
+			JVMHelp.wr(" words ");
+			wrInt(GC.otherRootWords);
+			JVMHelp.wr(" cands ");
+			wrInt(GC.otherRootCands);
+			JVMHelp.wr(" young ");
+			wrInt(GC.otherRootYoung);
+			JVMHelp.wr("\r\n");
+			JVMHelp.wr("rootport: sp ");
+			int rsp = GC.rootRead(1, Const.ROOT_WHAT_SP, 0);
+			wrInt(rsp);
+			JVMHelp.wr(" A ");
+			wrInt(GC.rootRead(1, Const.ROOT_WHAT_A, 0));
+			JVMHelp.wr(" B ");
+			wrInt(GC.rootRead(1, Const.ROOT_WHAT_B, 0));
+			JVMHelp.wr(" w64 ");
+			wrInt(GC.rootRead(1, Const.ROOT_WHAT_STACK, 64));
+			JVMHelp.wr(" w70 ");
+			wrInt(GC.rootRead(1, Const.ROOT_WHAT_STACK, 70));
+			JVMHelp.wr("\r\n");
 		}
 
 		for (int round = 0; round < 8; round++) {
