@@ -1749,6 +1749,10 @@ public class GC {
 	/** Diagnostics: words scanned from other cores, and calls made. */
 	public static int otherRootWords;
 	public static int otherRootCands;   // words that look like a handle
+	public static int lastYoungHandle;  // last young handle actually pushed
+	public static int lastScanSp;       // SP read on the most recent scan
+	public static int minScanSp = 99999;
+	public static int maxScanSp;
 	public static int otherRootYoung;   // ...and point into the nursery
 	public static int otherRootCalls;
 
@@ -1786,12 +1790,18 @@ public class GC {
 			// A wild SP would walk the whole 256-word RAM harmlessly, but cap it
 			// anyway: conservative scanning tolerates junk, unbounded loops do not.
 			if (sp > STACK_RAM_WORDS) sp = STACK_RAM_WORDS;
+			lastScanSp = sp;
+			if (sp < minScanSp) minScanSp = sp;
+			if (sp > maxScanSp) maxScanSp = sp;
 			for (int j = Const.STACK_OFF; j <= sp; ++j) {
 				int v = rootRead(c, Const.ROOT_WHAT_STACK, j);
 				otherRootWords++;
 				if (v != 0 && v >= mem_start && v < handleEnd && (v & 0x7) == 0) {
 					otherRootCands++;
-					if (Native.rdMem(v + OFF_PTR) >= nurseryBase) otherRootYoung++;
+					if (Native.rdMem(v + OFF_PTR) >= nurseryBase) {
+						otherRootYoung++;
+						lastYoungHandle = v;
+					}
 				}
 				if (young) pushYoung(v); else pushFast(v, memStart, hEnd, markVal);
 			}

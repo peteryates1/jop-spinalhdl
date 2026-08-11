@@ -272,6 +272,16 @@ public class SmpGcTest {
 			JVMHelp.wr(" young ");
 			wrInt(GC.otherRootYoung);
 			JVMHelp.wr("\r\n");
+			JVMHelp.wr("  lastYoung ");
+			wrInt(GC.lastYoungHandle);
+			JVMHelp.wr(" probeHandle ");
+			wrInt(stackProbeHandle);
+			JVMHelp.wr(GC.lastYoungHandle == stackProbeHandle ? " MATCH" : " differ");
+			JVMHelp.wr(" spMin ");
+			wrInt(GC.minScanSp);
+			JVMHelp.wr(" spMax ");
+			wrInt(GC.maxScanSp);
+			JVMHelp.wr("\r\n");
 			JVMHelp.wr("rootport: sp ");
 			int rsp = GC.rootRead(1, Const.ROOT_WHAT_SP, 0);
 			wrInt(rsp);
