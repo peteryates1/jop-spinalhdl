@@ -93,6 +93,23 @@ public class SmpGcTest {
 	 */
 	static int[] liveTick;
 
+	/**
+	 * Where each publisher is, to the statement. `liveTick` says only THAT a
+	 * publisher stopped; this says WHERE. The observed freeze is inside
+	 * `publish()` — heartbeat stuck at a fixed value while core 0 runs on — and
+	 * the whole question is which statement it died on, because they do very
+	 * different things: allocate a nursery object, write its fields, or store it
+	 * into a TENURED holder (the cross-generation write the card table exists
+	 * for).
+	 *
+	 * Codes: 1 entered publish, 2 allocated, 3 magic written, 4 padding written,
+	 * 5 stored into the holder, 6 returned, 7 scrubbed, 10 loop top,
+	 * 11 entered the publish batch, 12 batch done.
+	 */
+	static int[] pubStep;
+	/** Which holder slot a publisher was on when it stopped. */
+	static int[] pubSlot;
+
 	static int cpuCnt;
 	static int publishers;            // cores 1..cpuCnt-1
 
@@ -169,7 +186,11 @@ public class SmpGcTest {
 		JVMHelp.wr("\r\n");
 		pubRound = new int[cpuCnt];
 		liveTick = new int[cpuCnt];
-		for (int p = 0; p < cpuCnt; p++) { pubRound[p] = 0; liveTick[p] = 0; }
+		pubStep = new int[cpuCnt];
+		pubSlot = new int[cpuCnt];
+		for (int p = 0; p < cpuCnt; p++) {
+			pubRound[p] = 0; liveTick[p] = 0; pubStep[p] = 0; pubSlot[p] = -1;
+		}
 		holders = new Holder[HOLDERS];
 		for (int i = 0; i < HOLDERS; i++) {
 			holders[i] = new Holder();
@@ -187,6 +208,12 @@ public class SmpGcTest {
 
 		JVMHelp.wr("SmpGcTest: minors after tenuring ");
 		wrInt(minors);
+		JVMHelp.wr("\r\n");
+
+		JVMHelp.wr("layout: cardShift ");
+		wrInt(Native.rd(Const.IO_CARD_SHIFT));
+		JVMHelp.wr(" nurseryBase ");
+		wrInt(GC.nurseryBase);
 		JVMHelp.wr("\r\n");
 
 		Native.wr(1, Const.IO_SIGNAL);   // release core 1
@@ -232,6 +259,28 @@ public class SmpGcTest {
 					}
 					JVMHelp.wr(" live=");
 					for (int p = 1; p < cpuCnt; p++) { wrInt(liveTick[p]); JVMHelp.wr(","); }
+					// WHERE it stopped, and whether its cross-generation store
+					// landed. `step` names the statement; `holder` distinguishes
+					// "died before the store" from "stored and then died", which
+					// point at completely different mechanisms.
+					for (int p = 1; p < cpuCnt; p++) {
+						JVMHelp.wr(" step[");
+						wrInt(p);
+						JVMHelp.wr("]=");
+						wrInt(pubStep[p]);
+						JVMHelp.wr(" slot=");
+						wrInt(pubSlot[p]);
+						int s = pubSlot[p];
+						if (s >= 0 && s < HOLDERS) {
+							JVMHelp.wr(" holder=");
+							Object o = holders[s].ref;
+							if (o == null) {
+								JVMHelp.wr("null");
+							} else {
+								wrInt(((Young) o).magic - MAGIC_BASE);
+							}
+						}
+					}
 					JVMHelp.wr("\r\n");
 					spins = 0;
 					++stalls;
@@ -246,10 +295,15 @@ public class SmpGcTest {
 			for (int i = 0; i < HOLDERS; i++) {
 				Object o = holders[i].ref;
 				if (o == null) continue;
-				Young y = (Young) o;
+				// Read the magic through the handle instead of casting. A lost
+				// reference points at reused space that is often no longer a
+				// Young at all, so `(Young) o` throws ClassCastException and the
+				// run dies on the FIRST loss — which hides how many were lost.
+				// JOP object layout: handle -> data pointer, fields from there.
+				int yMagic = Native.rdMem(Native.rdMem(Native.toInt(o)));
 				int want = MAGIC_BASE | (round << 8) | i;
 				verified++;
-				if (y.magic != want) {
+				if (yMagic != want) {
 					errors++;
 					if (errors <= 4) {
 						JVMHelp.wr("  LOST slot ");
@@ -257,9 +311,22 @@ public class SmpGcTest {
 						JVMHelp.wr(" round ");
 						wrInt(round);
 						JVMHelp.wr(" magic ");
-						wrInt(y.magic);
+						wrInt(yMagic);
 						JVMHelp.wr(" want ");
 						wrInt(want);
+						// WHERE the lost holder lives. Only slot 0 is lost, and
+						// deterministically, so the answer is an address, not a
+						// race. The write barrier marks the card of the holder's
+						// DATA word (that is what `ref` is part of), so print
+						// that and the card it lands in.
+						int hh = Native.toInt(holders[i]);
+						int dd = Native.rdMem(hh);
+						JVMHelp.wr(" hdlr d=");
+						wrInt(dd);
+						JVMHelp.wr(" card=");
+						wrInt(dd >>> Native.rd(Const.IO_CARD_SHIFT));
+						JVMHelp.wr(" yAddr=");
+						wrInt(Native.toInt(o));
 						JVMHelp.wr("\r\n");
 					}
 				}
@@ -294,11 +361,17 @@ public class SmpGcTest {
 	 * The cross-generation write. Allocates a young object and stores it into a
 	 * tenured holder, keeping the reference out of any surviving stack slot.
 	 */
-	static void publish(int round, int slot) {
+	static void publish(int id, int round, int slot) {
+		pubSlot[id] = slot;
+		pubStep[id] = 1;
 		Young y = new Young();
+		pubStep[id] = 2;
 		y.magic = MAGIC_BASE | (round << 8) | slot;
+		pubStep[id] = 3;
 		y.p0 = slot; y.p1 = round; y.p2 = 0; y.p3 = 0; y.p4 = 0;
+		pubStep[id] = 4;
 		holders[slot].ref = y;    // TENURED holder <- NURSERY object
+		pubStep[id] = 5;
 		y = null;
 	}
 
@@ -311,13 +384,18 @@ public class SmpGcTest {
 		int round = 0;
 		while (true) {
 			liveTick[id] = liveTick[id] + 1;
+			pubStep[id] = 10;
 			int ph = phase;
 			if (ph == 3) return;
 			if (ph == 1 && round == publishRound) {
+				pubStep[id] = 11;
 				for (int i = id - 1; i < HOLDERS; i += publishers) {
-					publish(round, i);
+					publish(id, round, i);
+					pubStep[id] = 6;
 					if (scrub() == 0x7fffffff) JVMHelp.wr("");  // keep scrub() live
+					pubStep[id] = 7;
 				}
+				pubStep[id] = 12;
 				pubRound[id] = round + 1;
 				round++;
 			}

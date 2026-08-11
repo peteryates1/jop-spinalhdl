@@ -770,6 +770,75 @@ silently invalidate all of that. Use this to find one:
    Rebuild the app every time — a stale `.jop` silently passes, which cost a run
    here (the binary was 4 KB smaller than the source implied).
 
+   **`make program-smp` SILENTLY REBUILDS the bitstream.** `program-smp` depends
+   on `$(SOF_SMP_FILE)`, so touching `dram_pll.vhd` — including reverting it with
+   `git checkout` — makes the `.sof` stale and the next *program* step rebuilds
+   it. That produced an 80 MHz design on a 60 MHz PLL: the board came up, sent
+   its ready byte at exactly 3/4 rate, and `download.py` reported
+   *"FPGA not responding"*. Diagnosed by sweeping the host baud — `0xb4` at
+   2 Mbaud became a clean `0xAA` at 1.5 Mbaud, and 1.5/2.0 = 60/80 named the
+   mismatch immediately. **Check the reported slack after any program step**:
+   +0.133 ns means 80 MHz, +2.36 ns means 60.
+
+   ### THE ORIGINAL BUG IS BACK, AND IT IS A LOST CROSS-GENERATION REFERENCE
+
+   Instrumenting the test (per-statement `pubStep`/`pubSlot` markers, and reading
+   the magic through the handle instead of casting) gives a **deterministic**
+   2-core failure — byte-identical across three runs:
+
+   ```
+   LOST slot 0 round 0 magic 3 want 1515847680
+   STALL round 1 phase 1 publishRound 1 pub[1]=1 live=101, step[1]=10 slot=23 holder=23
+   ```
+
+   `magic 3` where `0x5A5A0000` was written means the young object **was
+   collected while still referenced from a tenured holder** — exactly the fault
+   `SmpGcTest` was written to catch, and item 1's original premise, happening at
+   2 cores *with the cluster-level card table in place*.
+
+   A second run confirmed it from another direction: an uncaught
+   `ClassCastException`, with a bounded stack trace naming the frames via the
+   link file's `-mtab` entries —
+
+   ```
+   JVM.f_checkcast  <-  test.SmpGcTest.core0  <-  main  <-  Startup.boot
+   ```
+
+   — the `(Young) o` in the verify loop, throwing because the holder's reference
+   now points at reused space that is no longer a `Young`. (That trace printing
+   cleanly and ending in `JVM exit!` instead of freezing the cluster is
+   `4df8edd` + `d8d93f8` working on hardware.)
+
+   **Mechanism, and it explains why the OLD test passed.** In the old test core 0
+   churned only during `phase == 2`, after every publisher had finished, so
+   minor GCs and cross-generation stores were **serialised**. The new test
+   allocates in the wait loop during `phase == 1`, so a minor GC on core 0 now
+   runs **while core 1 is storing a nursery object into a tenured holder**. And
+   the variants line up with that reading:
+
+   | | overlap? | lost refs? |
+   |---|---|---|
+   | old test | no | none — `SMPGC OK` |
+   | variant A (no wait-loop alloc) | no | **none** — freeze only |
+   | HEAD | yes | **LOST slot 0** |
+
+   So: **a minor GC concurrent with a cross-generation store loses the
+   reference.** The card mark and the collector's scan/clear of the card table
+   are not safe against each other, even though `minorGc()` asserts
+   `IO_GC_HALT` — which suggests the halt does not take effect before the
+   window that matters. That is the thing to look at next: the ordering of
+   card-table clear, card scan, and `gcHalt` taking effect.
+
+   And it decomposes the item into two faults, each with its own experiment:
+
+   1. **lost cross-generation reference** — needs the overlap; use HEAD's test.
+   2. **the freeze** — survives *without* the overlap (variant A), so it is
+      independent and still unexplained.
+
+   Caveat: the failure mode moves with code layout (which statement it dies on,
+   whether it reaches verification), as it has all along. The *kind* of failure
+   is stable; the exact line is not. Do not bisect on the symptom.
+
    The generational run's behaviour has also **changed for the better**: it used
    to hang emitting nothing, and now reports before dying. That is the three
    lock-park fixes (`4df8edd`, `d8d93f8`) doing their job — `noim()` no longer
