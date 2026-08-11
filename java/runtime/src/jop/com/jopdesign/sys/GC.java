@@ -1800,6 +1800,14 @@ public class GC {
 			if (young) { pushYoung(a); pushYoung(b); }
 			else { pushFast(a, memStart, hEnd, markVal); pushFast(b, memStart, hEnd, markVal); }
 		}
+		// RELEASE THE READ PORT. `rootSel` is a register, and the cluster drives
+		// the target core's stack-RAM read address straight from it, with
+		// "address != 0" meaning "a debug/GC read is in progress". Leaving it set
+		// would steal that core's read port FOREVER: every operand fetch on it
+		// would return the last word scanned instead of the one asked for. Index
+		// 0 is the existing not-reading sentinel, so writing 0 hands the port
+		// back.
+		Native.wr(0, Const.IO_ROOT_SEL);
 	}
 
 	/** Words in a core's stack RAM (ramWidth = 8 → 256). */
