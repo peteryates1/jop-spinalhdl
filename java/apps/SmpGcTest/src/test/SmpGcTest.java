@@ -251,6 +251,22 @@ public class SmpGcTest {
 			wrInt(nonZero);
 			JVMHelp.wr("\r\n");
 
+			// What does THIS core think the object is now? Handle layout:
+			// H[0] = data pointer, H[2] = space/mark. If core 0 sees the magic at
+			// the promoted location and core 1 does not, the two disagree and it
+			// is coherence; if core 0 also sees garbage, the object was genuinely
+			// lost and the collector is at fault.
+			int hPtr = Native.rdMem(stackProbeHandle);
+			JVMHelp.wr("core0 view: ptr ");
+			wrInt(hPtr);
+			JVMHelp.wr(" space ");
+			wrInt(Native.rdMem(stackProbeHandle + 2));
+			JVMHelp.wr(" magic ");
+			wrInt(hPtr != 0 ? Native.rdMem(hPtr) : -1);
+			JVMHelp.wr(" nurseryBase ");
+			wrInt(GC.nurseryBase);
+			JVMHelp.wr("\r\n");
+
 			stackProbeGcDone = 1;
 			while (stackProbeDone == 0) { }
 			JVMHelp.wr("STACKROOT minors ");
