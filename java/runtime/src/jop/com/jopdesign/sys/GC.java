@@ -571,7 +571,16 @@ public class GC {
 			// are proven, and delete it once the halt/release path is fixed.
 			int cardShift0 = Native.rd(Const.IO_CARD_SHIFT);
 			int cpuCnt0 = Native.rdMem(Const.IO_CPUCNT);
-			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 2;
+			// Tightened from `<= 2` to `<= 1` on 2026-08-11. Two cores was set as
+			// the validated boundary on the strength of a SmpGcTest run that
+			// never overlapped a minor GC with a cross-generation store: the old
+			// test churned only in phase 2, after every publisher had finished.
+			// With the overlap the same 2-core configuration LOSES REFERENCES on
+			// hardware, deterministically — a young object still referenced from
+			// a tenured holder is collected. So 2 cores was never validated
+			// against the case the card table exists for. Raise it again only
+			// with a run that overlaps the two.
+			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 1;
 			genCardWords = genActive ? (1 << cardShift0) : 0;
 
 			if (genActive) {
@@ -622,7 +631,7 @@ public class GC {
 				// Card table present, so the reason is the core count. Say so:
 				// "no card table" here would send the next person hunting a
 				// missing hasCardTable in the preset, which is not the problem.
-				JVMHelp.wr("GC: classic (SMP >2 cores - generational deadlocks, see item 1)\n");
+				JVMHelp.wr("GC: classic (SMP - minor GC loses cross-gen refs, see item 1)\n");
 			} else if (USE_GENERATIONAL) {
 				JVMHelp.wr("GC: classic (no card table - generational disabled)\n");
 			} else {
