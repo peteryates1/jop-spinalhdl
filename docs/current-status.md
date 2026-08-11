@@ -865,7 +865,59 @@ silently invalidate all of that. Use this to find one:
    thing to build, and it is worth doing properly because the answer decides
    whether the fix is in the collector's ordering or in the hardware barrier.
 
-   ### The mark IS set, and the holder IS scanned — so it is the halt
+   ### HALT CHECK RESULT: the stop-the-world HOLDS. Hypothesis refuted.
+
+   Measured in simulation (zero perturbation — it only compares signals the
+   probe already samples: while any core asserts `gcHaltReg`, does another
+   core's `pc` advance?). 2 cores, 50M-90M cycles:
+
+   ```
+   HALT CHECK: 128 stop-the-world windows observed, 1 of them had another core still executing.
+   HALTLEAK window 85842797..85876686 (33889 cy) asserted by core 0: core 1 advanced 2 cycles
+   ```
+
+   **127 of 128 windows are perfectly clean.** The one exception leaked **2
+   cycles** — halt latency, a core taking a couple of cycles to stall after
+   `IO_GC_HALT` goes high — and by a core that did **not** hold the lock, so the
+   lock-owner exemption never even fired.
+
+   Three things make this a refutation rather than a lead:
+
+   1. **The fault precedes the leak by 28 million cycles.** First exception at
+      cycle **57,232,985**; the only leak at **85,842,797**. Whatever breaks core
+      1 had already broken it long before any halt leaked.
+   2. **A round with 102 minor GCs lost nothing**: `R0 clear=ON minors 102
+      lost 0`. If a 2-cycle leak were sufficient, 102 collections would have
+      shown it.
+   3. The leak is 2 cycles out of a 33,889-cycle window — 0.006% of one
+      stop-the-world.
+
+   So the unifying "the collector runs while a mutator does" story is **wrong**,
+   and the halt is not the mechanism for either fault. Worth fixing the 2-cycle
+   latency on general principle (assert `gcHalt`, then wait for acknowledgement
+   before touching the heap), but it is not this bug.
+
+   **What is now eliminated**, each by direct measurement rather than argument:
+
+   | candidate | verdict |
+   |---|---|
+   | per-core card table / mark never recorded | **refuted** — `card 1` after core 1's store |
+   | holder outside a scanned range | **refuted** — inside `[allocPtr, tenureTop)` |
+   | stop-the-world leaks | **refuted** — 127/128 clean, leak postdates the fault |
+
+   That leaves the scan -> mark -> copy pipeline itself: `pushYoung`'s filtering,
+   the young-survivor marking, or `copyAndSweepYoung`. Those are now the only
+   places left for the lost reference, and they are ordinary single-threaded code
+   that can be read and unit-tested rather than raced against.
+
+   **And the simulator now reproduces the FREEZE at 2 cores** — exceptions start
+   on core 1 at cycle 57.2M, immediately after the publishers are released, same
+   AB-then-NP signature as the 4-core run, plus two null-method-pointer fills.
+   That is a much cheaper vehicle than the 4-core route and it has full
+   visibility. Use **hardware for the lost reference** (which the sim's 128 KB
+   heap does not reproduce) and **the 2-core sim for the freeze**.
+
+   ### Superseded: the mark IS set, and the holder IS scanned
 
    The single-binary A/B is built (`GC.cardClearEnabled`, non-final so it cannot
    be folded; the test flips it per round and reports `R<n> clear=ON/OFF minors N

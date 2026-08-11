@@ -561,6 +561,31 @@ object JopGcHaltDeadlockSim extends App {
       // Native.setSP(), which is a mechanism that can land a core in an
       // arbitrary method with an arbitrary stack. That is what the wedge looks
       // like from the other end, so it is worth knowing whether one fired.
+      // ---------------------------------------------------- HALT LEAK DETECTOR
+      //
+      // The question the hardware could not answer without changing the thing it
+      // was measuring: while one core asserts gcHaltReg for a stop-the-world,
+      // does any OTHER core keep executing? If so the collector moves objects
+      // and rewrites handles underneath a running mutator, which accounts for
+      // both observed faults — a lost cross-generation reference and a
+      // wild-pointer crash — with one mechanism.
+      //
+      // This is pure observation of signals already sampled, so it perturbs
+      // nothing. A core advancing here is not automatically a bug: BOTH lock
+      // units deliberately exempt the current lock owner from gcHalt
+      // (CmpSync.scala:141-147), so the owner is *designed* to keep running.
+      // That exemption is itself a candidate root cause, so record ownership
+      // alongside the advance rather than filtering it out.
+      var haltActive = false
+      var haltStart = 0
+      var haltAsserter = -1
+      val advDuringHalt = Array.fill(cpuCnt)(0)
+      val ownerDuringHalt = Array.fill(cpuCnt)(false)
+      val lastPcH = Array.fill(cpuCnt)(-1)
+      var haltWindows = 0
+      var leakWindows = 0
+      var haltLogged = 0
+
       val lastExc = Array.fill(cpuCnt)(false)
       var excCount = 0
       val excName = Map(0 -> "none", 1 -> "SPOV(stack overflow)", 2 -> "NP(null pointer)",
@@ -777,6 +802,43 @@ object JopGcHaltDeadlockSim extends App {
           lastBcRd(i) = r
         }
 
+        if (detail) {
+          var asserter = -1
+          for (i <- 0 until cpuCnt)
+            if (asserter < 0 && dut.cluster.cores(i).sys.gcHaltReg.toBoolean) asserter = i
+          val owner =
+            if (dut.cluster.cmpSync.exists(_.state.toEnum.toString == "LOCKED"))
+              dut.cluster.cmpSync.map(_.lockedId.toInt).getOrElse(-1)
+            else -1
+
+          if (asserter >= 0) {
+            if (!haltActive) {
+              haltActive = true; haltStart = cycle; haltAsserter = asserter
+              for (i <- 0 until cpuCnt) { advDuringHalt(i) = 0; ownerDuringHalt(i) = false }
+            }
+            for (i <- 0 until cpuCnt if i != asserter) {
+              val pc = dut.io.pc(i).toInt
+              if (pc != lastPcH(i)) advDuringHalt(i) += 1
+              if (owner == i) ownerDuringHalt(i) = true
+            }
+          } else if (haltActive) {
+            haltActive = false
+            haltWindows += 1
+            val leaked = (0 until cpuCnt).exists(i => i != haltAsserter && advDuringHalt(i) > 0)
+            if (leaked) leakWindows += 1
+            if (leaked && haltLogged < 40) {
+              haltLogged += 1
+              val who = (0 until cpuCnt).filter(i => i != haltAsserter && advDuringHalt(i) > 0)
+                .map(i => f"core $i advanced ${advDuringHalt(i)}%d cycles" +
+                          (if (ownerDuringHalt(i)) " (HELD THE LOCK — exempt by design)" else ""))
+                .mkString("; ")
+              logLine(f"HALTLEAK window ${haltStart}%9d..$cycle%9d (${cycle - haltStart}%6d cy) " +
+                      f"asserted by core $haltAsserter%d: $who")
+            }
+          }
+          for (i <- 0 until cpuCnt) lastPcH(i) = dut.io.pc(i).toInt
+        }
+
         if (detail) for (i <- 0 until cpuCnt) {
           val e = dut.cluster.cores(i).sys.io.exc.toBoolean
           if (e && !lastExc(i)) {
@@ -965,6 +1027,19 @@ object JopGcHaltDeadlockSim extends App {
 
       println(s"\n\n=== gcHalt deadlock probe: $cpuCnt cores, $cycle cycles ===")
       println(s"UART output: '${uartOutput.toString.takeRight(400)}'")
+      println(f"HALT CHECK: $haltWindows%d stop-the-world windows observed, " +
+              f"$leakWindows%d of them had another core still executing.")
+      logLine(f"HALT CHECK: $haltWindows windows, $leakWindows leaked")
+      if (haltWindows == 0)
+        println("  (no halt window seen in the instrumented range — lower DETAIL_FROM " +
+                "or run further; the check proves nothing without windows)")
+      else if (leakWindows == 0)
+        println("  Stop-the-world HOLDS: no core advanced while another asserted gcHalt. " +
+                "The lost reference is then NOT explained by a leaking halt — look elsewhere.")
+      else
+        println("  Stop-the-world LEAKS. Check the per-window lines for whether the " +
+                "runner held the lock (exempt by design, and then the design is the bug).")
+
       if (anomalyCycle > 0)
         println(s"WATCHPOINT: first out-of-range store to a SmpGcTest static at " +
                 s"cycle $anomalyCycle — see the log for the core and its bytecode.")
