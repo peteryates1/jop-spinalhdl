@@ -865,6 +865,44 @@ silently invalidate all of that. Use this to find one:
    thing to build, and it is worth doing properly because the answer decides
    whether the fix is in the collector's ordering or in the hardware barrier.
 
+   ### A cache-invalidate-on-halt-release fix exists in the history — see `a31b2cc`
+
+   Built, verified, and then **reverted deliberately**. If cross-core cache
+   staleness comes up again, take the implementation from that commit rather
+   than rewriting it; the reasoning and the traps are in its message.
+
+   **What it did.** `ObjectCache` snoops remote *putfield* traffic only
+   (`BmbMemoryController:517-519`, keyed on handle + field index), while the
+   collector moves objects with raw writes (`copyAndSweepYoung`:
+   `Native.wrMem(dst, ref+OFF_PTR)`). Relocating an object therefore generates
+   **no snoop at all**, so a core resuming from `gcHalt` can hold pre-move
+   state. `Native.invalidate()` at the end of `minorGc` cannot help — it is
+   core-local and the cores that need it are halted. The fix drove `cinval` for
+   the whole duration of a stop-the-world.
+
+   **Why it was reverted:**
+
+   - It cost **0.233 ns** of timing margin (2 cores @80 MHz: +0.413 -> +0.180),
+     on a design where 4 cores at 80 MHz already misses by -2.399.
+   - It fixed nothing observable — `STACKROOT` was unchanged, with the identical
+     `magic 11818962`.
+   - The path is disabled anyway while the guard sits at `cpuCnt <= 1`.
+   - It was the sixth confident-but-unmeasured hypothesis of that session, after
+     "corrupt operand stack", "stack overflow", "leaking halt", "the read-port
+     steal" and "stale mutator caches" had each been killed by measurement.
+     Landing unfalsifiable RTL cuts against the only method that has worked here.
+
+   **Two implementation details worth not rediscovering**, both in `a31b2cc`:
+   hold `cinval` for the *duration* of the halt rather than pulsing on the
+   falling edge (valid bits clear on a clock edge, so a core resuming in the
+   same cycle could get one stale read in first); and **register** the
+   cross-core signal, because feeding it combinationally into the invalidate
+   fanout costs 1.5 ns and fails timing outright (-1.407).
+
+   **Re-apply it when there is a test that demonstrates the staleness.** That
+   "invalidating changed nothing" is not proof the hole is absent — only that
+   `STACKROOT` does not exercise it.
+
    ### ROOT CAUSE: A GC ON ONE CORE CANNOT SEE ANOTHER CORE'S STACK
 
    ```

@@ -548,15 +548,6 @@ case class JopCluster(
   // Tie-offs when debug is not present
   // ==================================================================
 
-  // Tell each core when a PEER is holding it in a stop-the-world, so it can
-  // keep its caches invalidated for the duration. Derived from the peers'
-  // existing syncOut.gcHalt outputs — no new field in the shared SyncOut bundle,
-  // which would have forced a change on every single-core harness.
-  if (cpuCnt > 1) for (i <- 0 until cpuCnt) {
-    cores(i).io.gcHaltedIn :=
-      (0 until cpuCnt).filter(_ != i).map(j => cores(j).io.syncOut.gcHalt).reduce(_ || _)
-  }
-
   // ==========================================================================
   // CROSS-CORE GC ROOTS
   // ==========================================================================
