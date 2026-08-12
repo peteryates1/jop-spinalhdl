@@ -92,6 +92,11 @@ case class FetchStage(
     val extStall = in Bool()                        // External stall: unconditionally freeze PC/IR
 
     // Outputs
+    // True while this stage is frozen, so downstream stages that latch on
+    // jfetch/jopdfetch can hold too. `nxt`/`opd` come from IR, and IR is HELD
+    // during a freeze, so both stay asserted for the whole stall — a consumer
+    // that treats them as per-cycle events will act on them repeatedly.
+    val frozen = out Bool()
     val nxt    = out Bool()                         // jfetch signal (fetch Java bytecode)
     val opd    = out Bool()                         // jopdfetch signal (fetch Java operand)
     val dout   = out Bits(config.iWidth bits)       // Instruction output
@@ -231,6 +236,9 @@ case class FetchStage(
   // Output Assignments
   // ==========================================================================
 
+  // Exactly the condition of the freeze `when` above — deliberately the same
+  // expression rather than an approximation, so the two cannot drift.
+  io.frozen := (pcwait && io.bsy) || io.extStall
   io.nxt    := jfetch
   io.opd    := jopdfetch
   io.dout   := ir
