@@ -144,6 +144,11 @@ case class BytecodeFetchStage(
   // Forward declare jmp (will be defined in branch logic section)
   val jmp = Bool()
 
+  // Forward-declared: the JPC update below needs doAckExc, which is driven in
+  // the interrupt/exception section further down.
+  val doAckIrq = Bool()
+  val doAckExc = Bool()
+
   when(jmp) {
     jbcAddr := jmp_addr(config.jpcWidth - 1 downto 0)  // Branch target
   }.elsewhen(io.jfetch || io.jopdfetch) {
@@ -194,8 +199,28 @@ case class BytecodeFetchStage(
     }.elsewhen(jmp) {
       // Branch taken: load branch target
       jpc := jmp_addr
-    }.elsewhen(io.jfetch || io.jopdfetch) {
-      // Increment
+    }.elsewhen((io.jfetch || io.jopdfetch) && !doAckExc) {
+      // Increment — SUPPRESSED on the fetch that takes an exception.
+      //
+      // A hardware exception is dispatched by overriding the jump table
+      // (JumpTable:149) while the fetch still happens, so jpc advanced past the
+      // faulting bytecode and `sys_exc` had to undo it with
+      // `ldjpc; ldi 1; sub; stjpc`. That correction runs THROUGH THE OPERAND
+      // STACK, and the stack is not in a defined state when an exception is
+      // taken mid-bytecode: the aborted `iaload` had already popped its
+      // operands, so a/b were refilled from never-written stack RAM
+      // (0x12345678, the mem_ram.dat fill pattern). The subtraction then
+      // computed 0x1ec - 0x12345678 = 0xedcbab74 and stjpc wrote its low 12
+      // bits, landing jpc at 0xb74 — 2548 bytes outside the method. From there
+      // the core executed aliased cache contents, hit a 0xE8 (jopsys_memcpy),
+      // fired the hardware copy engine with junk operands and corrupted
+      // GC.handle_cnt. See docs/current-status.md.
+      //
+      // Not incrementing means jpc still points AT the faulting bytecode, which
+      // is exactly what the correction was computing, so sys_exc no longer needs
+      // to touch the stack at all. Interrupts are unaffected (doAckIrq is
+      // separate): they are taken at bytecode boundaries where the stack IS
+      // well defined, so sys_int keeps its correction.
       jpc := jpc + 1
     }
   }
@@ -317,8 +342,6 @@ case class BytecodeFetchStage(
   val excPend = Reg(Bool()) init(False)
 
   // Acknowledge signals (active during jfetch when pending is cleared)
-  val doAckIrq = Bool()
-  val doAckExc = Bool()
 
   // Use io.exc combinationally alongside registered excPend so that if the
   // exc pulse and jfetch arrive in the same cycle, the exception is caught

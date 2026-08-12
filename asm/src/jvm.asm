@@ -1353,10 +1353,26 @@ sys_int:
 //	call com.jopdesign.sys.JVMHelp.except()	(
 //
 sys_exc:
-			ldjpc				// correct wrong increment on jpc
-			ldi	1				//    could also be done in bcfetch.vhd
-			sub					//    but this is simpler :-)
-			stjpc
+			// The jpc correction that used to live here is now done in hardware
+			// (BytecodeFetchStage: the increment is SUPPRESSED on the fetch that
+			// takes an exception) — which is the option the original comment
+			// here already suggested, "could also be done in bcfetch.vhd".
+			//
+			// It had to move. `ldjpc; ldi 1; sub; stjpc` computes the resume
+			// address THROUGH THE OPERAND STACK, and the stack is not in a
+			// defined state when an exception is taken mid-bytecode: the aborted
+			// iaload had popped its operands, so a/b were refilled from
+			// never-written stack RAM (0x12345678, the mem_ram.dat fill
+			// pattern). The subtraction computed 0x1ec - 0x12345678 and stjpc
+			// wrote its low 12 bits, landing jpc 2548 bytes outside the method.
+			//
+			// Kept as four nops ON PURPOSE: the instruction count fixes every
+			// microcode address after this point, and the jump table is
+			// generated from them. Reclaim them only with a full regeneration.
+			nop
+			nop
+			nop
+			nop
 			ldm	jjhp			// interrupt() is at offset 0
 								// jjhp points to first method after
 								// Object methods (<init>,hashCode,equals,toString)
