@@ -52,7 +52,8 @@ object JopJvmTestsMcFallbackSim extends App {
   // different seed and passed.
   //   JOP_SIM_SEED=871203250 sbt "Test/runMain jop.system.JopJvmTestsMcFallbackSim"
   private val simSeed: Int =
-    sys.env.get("JOP_SIM_SEED").map(_.trim.toInt).getOrElse(scala.util.Random.nextInt())
+    sys.env.get("JOP_SIM_SEED").map(_.trim).filter(_.nonEmpty).map(_.toInt)
+      .getOrElse(scala.util.Random.nextInt())
   println(s"Simulation seed: $simSeed  (set JOP_SIM_SEED to replay)")
 
   SimConfig

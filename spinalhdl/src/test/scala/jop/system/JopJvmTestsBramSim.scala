@@ -34,7 +34,8 @@ object JopJvmTestsBramSim extends App {
   // unchanged behaviour.
   //   JOP_SIM_SEED=405669157 sbt "Test/runMain jop.system.JopJvmTestsBramSim"
   private val simSeed: Int =
-    sys.env.get("JOP_SIM_SEED").map(_.trim.toInt).getOrElse(scala.util.Random.nextInt())
+    sys.env.get("JOP_SIM_SEED").map(_.trim).filter(_.nonEmpty).map(_.toInt)
+      .getOrElse(scala.util.Random.nextInt())
   println(s"Simulation seed: $simSeed  (set JOP_SIM_SEED to replay)")
 
   SimConfig

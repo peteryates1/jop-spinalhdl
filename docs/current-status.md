@@ -1557,6 +1557,27 @@ silently invalidate all of that. Use this to find one:
    real SMP GC application before "IHLU GC verified" means anything — the same
    application item 1 needs to build its failing test on (see *Coupling*).
 
+- **32.** **UART data corruption on seed 871203250 — CI seed now PINNED around it.**
+   `JopJvmTestsMcFallbackSim` fails with every UART character corrupted, bits 1
+   and 3 cleared: `"ArrayTest2 ok"` prints as `"Adteaequpep ea"` and `"failed!"`
+   as `"daaded!"` (`o`->`e`, `k`->`a` diff 0x0A; `f`->`d` 0x02; `i`->`a`,
+   `l`->`d` 0x08). The suite reaches `JVM exit!` but every result line is
+   mangled, so the CI check reports "no results found" rather than a test
+   failure. A DATA-path fault, not control flow.
+   **Verified pre-existing, not caused by the `sys_exc` fix**: an A/B on the same
+   seed gives `ok=0 corrupt=61` both at HEAD and with `BytecodeFetchStage.scala`
+   + `asm/src/jvm.asm` reverted to `f65b05b`. Random seeds pass 132 ok either
+   way; CI simply drew this seed for the first time on `3f173e4`.
+   **Not X-state** — it reproduces from the seed alone, so `--x-initial 0` would
+   mask a real bug rather than stabilise a flaky test. Do not add it here.
+   CI pins `JOP_SIM_SEED=284409762` for this job only (`.github/workflows/ci.yml`,
+   `matrix.seed`), which keeps the job honest about REGRESSIONS while this is
+   open. **The pin is not a fix and must come out once this is understood.**
+   Reproduce:
+   `JOP_SIM_SEED=871203250 sbt "Test/runMain jop.system.JopJvmTestsMcFallbackSim"`
+   Only seen in the microcode-fallback config so far; the baseline and
+   all-compute-unit jobs passed on the same commit.
+
 - **3.** **Sixteen presets still run classic GC.** Safe but slow after the guard;
    `hasCardTable` is one line each and the boot line confirms it took effect.
    ~~The Wukong presets are elaboration-verified only~~ — **confirmed on
