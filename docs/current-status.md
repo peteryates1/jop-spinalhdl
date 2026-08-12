@@ -1608,6 +1608,30 @@ silently invalidate all of that. Use this to find one:
    real SMP GC application before "IHLU GC verified" means anything — the same
    application item 1 needs to build its failing test on (see *Coupling*).
 
+- **33.** ~~**`AlteraLpm.createRam` discarded the debug stack-RAM address**~~ —
+   **FIXED `8ef6aa9`, HARDWARE-VERIFIED 2026-08-12.** The debug read port returned
+   the wrong word on every Altera build, which is why the cross-core root scan
+   read `cands 0`. The fix steals the RAM's read port when a debug read is in
+   flight, so the risk was breaking NORMAL stack reads — and **no simulation
+   covers this**: every sim uses `MemoryStyle.Generic`.
+   EP4CGX150 single-core, fresh build, timing met (+2.445 ns setup, TNS 0.000):
+   **DoAll 66/66, `JVM exit!`**, checksum 0x88e4f517. That also puts `89da8fb`
+   (the `sys_exc` fix) on silicon for the first time — DoAll fires real hardware
+   exceptions (`Except`, `HwExceptionTest`, `NullPointer`, `DivZero`,
+   `AthrowTest`) and all pass.
+   **STILL NOT COVERED: debug READS themselves.** A plain boot never drives
+   `debugRamAddr`, so this is "no regression from the fix", not "debug reads
+   work". Closing that needs the DebugController or a 2-core build, where
+   `scanOtherCoreRoots` exercises the port via `rootRead`.
+   Two procedure notes, both of which cost attempts here:
+   **download at 1.5 Mbaud, not 2** (`ep4cgx150Serial` declares `clkFreq = 80 MHz`
+   but `dram_pll.vhd` is hardwired to 60 — 2e6 x 60/80 = 1.5e6; the preset/PLL
+   mismatch is a live trap worth fixing properly), and **reprogram immediately
+   before each download** — the ready handshake is consumed once and the board
+   then waits for data, so a download run standalone times out on `0xAA`.
+   When probing the port by hand, listen for **>500 ms**: that is the ready-byte
+   period, and a shorter window reads zero bytes and looks like a dead board.
+
 - **32.** **UART data corruption on seed 871203250 — CI seed now PINNED around it.**
    `JopJvmTestsMcFallbackSim` fails with every UART character corrupted, bits 1
    and 3 cleared: `"ArrayTest2 ok"` prints as `"Adteaequpep ea"` and `"failed!"`
