@@ -903,6 +903,71 @@ silently invalidate all of that. Use this to find one:
    "invalidating changed nothing" is not proof the hole is absent — only that
    `STACKROOT` does not exercise it.
 
+   ### RETRACTED: "the collector is correct, the cores disagree" (`63c1ed5`)
+
+   That finding, and the `magic 11818962` it rested on, were an **artefact of the
+   probe**. Retired 2026-08-12.
+
+   `GC.rootRead()` sets `rootSel` and does not clear it. The cluster drives the
+   TARGET core's stack-RAM read address straight from that register, with
+   "index != 0" meaning "a debug read is in progress", so leaving it set steals
+   the target's read port — every operand fetch returns the last word scanned.
+   `scanOtherCoreRoots()` documents this and releases the port at the end; the
+   `dump:` block added to SmpGcTest scanned 256 words and **never released**,
+   while core 1 was still RUNNING. Everything core 1 reported after that point
+   was the instrument, not the machine.
+
+   The signature was unmistakable in hindsight: three DIFFERENT addresses
+   (`h+OFF_PTR`, `h+OFF_SPACE`, `h+OFF_TYPE`) all returned the same 4194304
+   (`0x400000`), and dereferencing it returned the contents of address 0.
+
+   Standing check: `git show 415293e` has **zero** `rootRead` calls, so the ROOT
+   CAUSE finding below predates the leak and is unaffected. Only the later
+   coherence story was wrong — which is also why `a31b2cc` fixed nothing when it
+   invalidated caches: there was nothing stale.
+
+   `GC.rootRelease()` now names the obligation, and both call sites use it.
+
+   ### THE REAL REMAINING FAULT: A WILD `stcp` CORRUPTS `GC.handle_cnt`
+
+   Caught by watchpoint 2026-08-12, deterministic on both seeds:
+
+   ```
+   WRITE cycle=5327112 src=1 word=55 (GC.handle_cnt) data=0x0 pc=0x0684 jpc=0x0fec A=0x0a B=0x15
+   WRITE cycle=5327304 src=1 word=55 (GC.handle_cnt) data=0x4 pc=0x0684 jpc=0x0fec A=0x0a B=0xffffffd3
+   ```
+
+   `handle_cnt` is assigned once in `GC.init` and never reassigned, yet it goes
+   **1117 -> 0 -> 4**. `src=1` is CORE 1 — the publisher, not the collector.
+
+   `pc=0x0681` is `jopsys_memcpy` (bytecode 0xE8) per `JumpTableData.scala`, and
+   the calibration is exact: counting active microcode words from that label
+   (`stcp`, `pop`, `wait`, `wait`, `pop nxt`) puts `jopsys_nop` at 0x686, which is
+   where the table says it is. `jopsys_memcpy` is not a stub — upstream JOP
+   deliberately implements it as a single `stcp`, the hardware GC copy engine
+   (`BmbMemoryController:724`, "At stcp: TOS = pos, NOS = src").
+
+   **Nothing in the Java tree calls `Native.memCopy`.** So 0xE8 should never
+   execute; that it does means core 1 is running GARBAGE AS BYTECODE, and 0xE8
+   fires the copy engine with whatever is on the stack.
+
+   Why this is quietly fatal: every handle-list walk hoists `handle_cnt` as its
+   cycle-guard limit, so a value of 4 makes `gcListOverrun` TRUNCATE valid chains.
+   The reported overruns are healthy lists being cut short — `walk=1 iters=5
+   handles=4 ref=22448 next=22456`, one HANDLE_SIZE apart. Truncated walks then
+   drop live objects, and core 1 freezes.
+
+   **So the GC is downstream of everything.** The remaining bug is a control-flow
+   derailment on core 1, not a collector fault.
+
+   NEXT: `jpc` sits at 0x0fe9-0x0fec, the top of the 4 KB bytecode cache, wrapping
+   0x0fff -> 0x000c. Dump the bytecode CACHE CONTENTS at the store (the existing
+   "bytecode cache around jpc" dump printed nothing — `bcRdCaptureReg` did not
+   capture) and pattern-match them with `JopBytecodeLocate`. That says whether the
+   cache holds the method core 1 believes it is executing. Note `jpc` is a 12-bit
+   offset INTO THE CACHE, not a global image address — mapping it through the link
+   file's method table gives a confident wrong answer.
+
    ### ROOT CAUSE: A GC ON ONE CORE CANNOT SEE ANOTHER CORE'S STACK
 
    ```
@@ -955,13 +1020,25 @@ silently invalidate all of that. Use this to find one:
    regardless of the card table."* On SMP the opposite is true — a stack slot on
    another core is the one place a reference is **not** safe.
 
-   **Fix direction** (not yet implemented): the collector must see every core's
-   roots. Either each core spills its stack to memory at a GC safepoint before
-   acknowledging the halt, or the halt handshake includes a per-core root
-   handover. Both mean `gcHalt` needs an *acknowledgement* rather than being
-   fire-and-forget — which also closes the 2-cycle halt latency found below.
-   Until then the `cpuCnt <= 1` guard is the only thing keeping this sound, and
-   it is guarding the right thing at last.
+   **FIXED, and verified 2026-08-12.** `scanOtherCoreRoots()` (GC.java) reads
+   every other core's SP, stack RAM and A/B top-of-stack registers over
+   `IO_ROOT_SEL`/`IO_ROOT_DATA`, and is wired into BOTH scanners — `getYoungRoots()`
+   (generational) and `getStackRoots()` (classic). STACKROOT now reports:
+
+   ```
+   STACKROOT minors 6 magic 1515851775 OK (other core's stack IS scanned)
+   core1 view:  ptr 31301 space 1 type 0 raw 1515851775 field 1515851775
+   core0 after: ptr 31301 space 1 type 0 raw 1515851775 PTR-AGREE
+   ```
+
+   Identical on seeds 70704150 and 424242, so this is not seed luck. The object
+   survives and both cores agree on every word.
+
+   A halt ACKNOWLEDGEMENT is still worth adding — `gcHalt` is fire-and-forget and
+   the halt check measured a 2-cycle stop latency, so the collector samples a
+   peer's SP and stack RAM while that peer may still be executing. A stale SP
+   silently truncates the scan. That is a correctness precondition for the root
+   snapshot, not a tidiness issue.
 
    The probe is committed as part of `SmpGcTest` (`STACKROOT` line) and is
    deterministic, layout-independent, and takes about a second — unlike the main

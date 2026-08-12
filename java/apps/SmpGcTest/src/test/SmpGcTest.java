@@ -169,6 +169,20 @@ public class SmpGcTest {
 	 * interesting part.
 	 */
 	static int churnUntilMinor(int budget) {
+		return churnUntilMinor(budget, 1);
+	}
+
+	/**
+	 * Churn until `wanted` minor GCs have been observed, or the budget runs out.
+	 *
+	 * The budget is a SAFETY LIMIT, not a target. This used to run every one of
+	 * its 20000 allocations no matter how many minors it had already seen, which
+	 * is why the two tenuring calls alone cost ~80M cycles in simulation and the
+	 * probe past them was never reached inside a sane cycle cap. Stopping at
+	 * `wanted` cuts tenuring to a few hundred allocations and leaves the observed
+	 * minor count — the thing every recorded result is quoted against — unchanged.
+	 */
+	static int churnUntilMinor(int budget, int wanted) {
 		if (!generational()) return 0;
 		int before = GC.nurseryAllocPtr;
 		int seen = 0;
@@ -178,7 +192,11 @@ public class SmpGcTest {
 			int now = GC.nurseryAllocPtr;
 			// The bump pointer grows DOWN; a minor GC re-carves the nursery, so
 			// the pointer jumping back UP is the observable event.
-			if (now > before) { seen++; before = now; }
+			if (now > before) {
+				seen++;
+				before = now;
+				if (seen >= wanted) return seen;
+			}
 			else before = now;
 		}
 		return seen;
@@ -229,7 +247,9 @@ public class SmpGcTest {
 		// Run the stack-root test before the main rounds.
 		if (publishers >= 1) {
 			while (stackProbeReady == 0) { }
-			int pm = churnUntilMinor(20000) + churnUntilMinor(20000);
+			// 3 + 3 minors, matching the `STACKROOT minors 6` run every recorded
+			// result is quoted against. Core 1 holds the reference throughout.
+			int pm = churnUntilMinor(20000, 3) + churnUntilMinor(20000, 3);
 			// Dump core 1's stack RAM while it is still holding the reference.
 			int portSp = GC.rootRead(1, Const.ROOT_WHAT_SP, 0);
 			int foundAt = -1;
@@ -239,6 +259,13 @@ public class SmpGcTest {
 				if (w != 0) nonZero++;
 				if (w == stackProbeHandle && foundAt < 0) foundAt = i;
 			}
+			// RELEASE THE PORT. Core 1 is RUNNING throughout this dump (it spins
+			// on stackProbeGcDone holding the reference), so leaving rootSel set
+			// makes its every stack-RAM read return the last word scanned. Without
+			// this the probe corrupts the core it is measuring: core 1 reported
+			// ptr/space/type all identically 0x400000 and a magic of memStart,
+			// which reads as a lost object but is purely the instrument.
+			GC.rootRelease();
 			JVMHelp.wr("dump: selfSp ");
 			wrInt(stackProbeSp);
 			JVMHelp.wr(" portSp ");
@@ -260,11 +287,31 @@ public class SmpGcTest {
 			JVMHelp.wr("core0 view: ptr ");
 			wrInt(hPtr);
 			JVMHelp.wr(" space ");
-			wrInt(Native.rdMem(stackProbeHandle + 2));
+			wrInt(Native.rdMem(stackProbeHandle + GC.OFF_SPACE));
+			JVMHelp.wr(" type ");
+			wrInt(Native.rdMem(stackProbeHandle + GC.OFF_TYPE));
 			JVMHelp.wr(" magic ");
 			wrInt(hPtr != 0 ? Native.rdMem(hPtr) : -1);
+			JVMHelp.wr("\r\n");
+
+			// Heap boundaries, so the value core 1 reads can be CLASSIFIED rather
+			// than guessed at: handle area is [memStart, heapStart), tenure is
+			// [heapStart, nurseryBase), nursery is [nurseryBase, tenureTop).
+			// Anything outside all three is not a heap address at all.
+			JVMHelp.wr("bounds: memStart ");
+			wrInt(Native.rdMem(0));
+			JVMHelp.wr(" heapStart ");
+			wrInt(GC.heapStart);
+			JVMHelp.wr(" copyPtr ");
+			wrInt(GC.copyPtr);
+			JVMHelp.wr(" allocPtr ");
+			wrInt(GC.allocPtr);
 			JVMHelp.wr(" nurseryBase ");
 			wrInt(GC.nurseryBase);
+			JVMHelp.wr(" tenureTop ");
+			wrInt(GC.tenureTop);
+			JVMHelp.wr(" memSize ");
+			wrInt(Native.rdMem(Const.IO_MEM_SIZE));
 			JVMHelp.wr("\r\n");
 
 			stackProbeGcDone = 1;
@@ -276,6 +323,34 @@ public class SmpGcTest {
 			JVMHelp.wr(stackProbeMagic == STACK_PROBE_MAGIC
 					? " OK (other core's stack IS scanned)\r\n"
 					: " LOST (other core's stack is NOT scanned)\r\n");
+
+			// THE COMPARISON. Same handle, both cores, raw and cached paths.
+			JVMHelp.wr("core1 view: ptr ");
+			wrInt(stackProbeC1Ptr);
+			JVMHelp.wr(" space ");
+			wrInt(stackProbeC1Space);
+			JVMHelp.wr(" type ");
+			wrInt(stackProbeC1Type);
+			JVMHelp.wr(" raw ");
+			wrInt(stackProbeC1Raw);
+			JVMHelp.wr(" field ");
+			wrInt(stackProbeMagic);
+			JVMHelp.wr("\r\n");
+
+			// Core 0 re-reads AFTER core 1 has, so the two views are compared at
+			// the same point in time. No collection runs in between, so any
+			// difference from "core0 view" above is core 0's own doing.
+			int hPtr2 = Native.rdMem(stackProbeHandle);
+			JVMHelp.wr("core0 after: ptr ");
+			wrInt(hPtr2);
+			JVMHelp.wr(" space ");
+			wrInt(Native.rdMem(stackProbeHandle + GC.OFF_SPACE));
+			JVMHelp.wr(" type ");
+			wrInt(Native.rdMem(stackProbeHandle + GC.OFF_TYPE));
+			JVMHelp.wr(" raw ");
+			wrInt(hPtr2 != 0 ? Native.rdMem(hPtr2) : -1);
+			JVMHelp.wr(hPtr2 == stackProbeC1Ptr
+					? " PTR-AGREE\r\n" : " PTR-DIFFER (cores disagree on the handle)\r\n");
 			// Does the cross-core root port work at all? Read core 1's SP, A and
 			// B, and a couple of stack words. If SP reads back as junk the scan
 			// loop never runs and the fix is inert.
@@ -309,6 +384,8 @@ public class SmpGcTest {
 			wrInt(GC.rootRead(1, Const.ROOT_WHAT_STACK, 64));
 			JVMHelp.wr(" w70 ");
 			wrInt(GC.rootRead(1, Const.ROOT_WHAT_STACK, 70));
+			// Same obligation as the dump above — core 1 runs on after this.
+			GC.rootRelease();
 			JVMHelp.wr("\r\n");
 		}
 
@@ -524,6 +601,13 @@ public class SmpGcTest {
 	static volatile int stackProbeHandle;  // the handle core 1 is holding
 	static volatile int stackProbeDone;    // separate flag: 0 is a LEGAL magic
 	                                       // (a collected object reads back zeroed)
+	// Core 1's OWN view of the same handle, so the two cores can be compared
+	// word for word. `stackProbeMagic` alone cannot distinguish the three
+	// remaining explanations for the wrong value core 1 reads.
+	static volatile int stackProbeC1Ptr;   // core 1's read of H[OFF_PTR]
+	static volatile int stackProbeC1Space; // core 1's read of H[OFF_SPACE]
+	static volatile int stackProbeC1Type;  // core 1's read of H[OFF_TYPE]
+	static volatile int stackProbeC1Raw;   // core 1's RAW read of the data word
 	static final int STACK_PROBE_MAGIC = 0x5A5A0FFF;
 
 	static void publish(int id, int round, int slot) {
@@ -559,6 +643,19 @@ public class SmpGcTest {
 			stackProbeHandle = Native.toInt(probe);
 			stackProbeReady = 1;
 			while (stackProbeGcDone == 0) { }   // reference lives ONLY here
+			// Read the SAME handle three ways before dropping the reference:
+			//   rdMem(h + OFF_*)  raw handle words
+			//   rdMem(H[OFF_PTR]) raw data word, wherever the handle now points
+			//   probe.magic       the getfield path, through the object cache
+			// raw disagreeing with field => the cache is stale.
+			// both agreeing but differing from core 0 => the handle words are stale.
+			// all three agreeing with core 0 => the object really was lost, and the
+			// fault is in the collector, not in coherence.
+			int h = stackProbeHandle;
+			stackProbeC1Ptr   = Native.rdMem(h + GC.OFF_PTR);
+			stackProbeC1Space = Native.rdMem(h + GC.OFF_SPACE);
+			stackProbeC1Type  = Native.rdMem(h + GC.OFF_TYPE);
+			stackProbeC1Raw   = stackProbeC1Ptr != 0 ? Native.rdMem(stackProbeC1Ptr) : -1;
 			stackProbeMagic = probe.magic;
 			stackProbeDone = 1;
 			probe = null;

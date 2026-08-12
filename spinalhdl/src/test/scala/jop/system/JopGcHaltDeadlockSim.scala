@@ -467,9 +467,23 @@ object JopGcHaltDeadlockSim extends App {
         println(s"NOTE: $linkPath has no SmpGcTest statics — static watchpoint disabled. " +
                 "The null-fill and exception triggers still apply.")
 
-      def watched(word: Int): Boolean = watchEnabled && (
+      // GC STATIC WATCH — independent of the SmpGcTest window above, because it
+      // is the runtime's own state and applies whatever app is loaded.
+      //
+      // `handle_cnt` is assigned exactly once, in GC.init (`full_heap_size >> 4`,
+      // capped at MAX_HANDLES), and never reassigned. It was observed going
+      // 1117 -> 4 mid-run, which is fatal in a quiet way: every handle-list walk
+      // hoists it as its cycle-guard limit, so a bogus small value makes
+      // gcListOverrun TRUNCATE valid chains — the collector then drops live
+      // objects and blames a "cyclic or corrupt list".
+      val gcWatchEnabled = ADDR_HANDLE_CNT > 0
+      val GC_WATCH_LO = ADDR_HANDLE_CNT - 2
+      val GC_WATCH_HI = ADDR_HANDLE_CNT + 2
+
+      def watched(word: Int): Boolean = (watchEnabled && (
         (word >= WATCH_LO && word <= WATCH_HI) ||
-        (word >= WATCH_ARR_LO && word <= WATCH_ARR_HI))
+        (word >= WATCH_ARR_LO && word <= WATCH_ARR_HI))) ||
+        (gcWatchEnabled && word >= GC_WATCH_LO && word <= GC_WATCH_HI)
 
       /** The value each watched field is allowed to take. `None` = anything.
         * A violation is the event this probe exists to catch. */
@@ -486,6 +500,12 @@ object JopGcHaltDeadlockSim extends App {
           Some(s"cpuCnt := $v — must be $cpuCnt")
         else if (word == sAddr("test.SmpGcTest.publishers") && v != cpuCnt - 1)
           Some(s"publishers := $v — must be ${cpuCnt - 1}")
+        // Bounds, not an exact value: handle_cnt depends on heap size, so pin
+        // only what cannot be legitimate. Anything under 64 makes every
+        // list-walk guard fire on a valid chain.
+        else if (word == ADDR_HANDLE_CNT && (v < 64 || v > 65536))
+          Some(s"handle_cnt := $v — set once in GC.init and never reassigned; " +
+               "a value this small makes every handle-list walk guard truncate")
         else None
       }
 

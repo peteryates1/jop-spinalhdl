@@ -1762,6 +1762,25 @@ public class GC {
 	}
 
 	/**
+	 * Hand the target core's stack-RAM read port BACK. Mandatory after any
+	 * rootRead() on a core that is still RUNNING.
+	 *
+	 * `rootSel` is a register, and the cluster drives the target's stack-RAM read
+	 * address straight from it, with "index != 0" meaning "a debug/GC read is in
+	 * progress". Leave it set and every operand fetch on that core returns the
+	 * last word scanned instead of the one asked for — local variables silently
+	 * read as a constant. That is not hypothetical: a diagnostic in SmpGcTest
+	 * scanned 256 words without releasing, and every value the target core
+	 * reported afterwards was an artefact of the instrument.
+	 *
+	 * scanOtherCoreRoots() gets away with a single release at the end only
+	 * because the cores it reads are halted for the duration.
+	 */
+	public static void rootRelease() {
+		Native.wr(0, Const.IO_ROOT_SEL);
+	}
+
+	/**
 	 * Scan every OTHER core's roots.
 	 *
 	 * A core's stack is private RAM: `Native.rdIntMem` only ever reads the
