@@ -558,6 +558,25 @@ object JopGcHaltDeadlockSim extends App {
       val escapeSeen = Array.fill(cpuCnt)(0)
       val poisonSeen = Array.fill(cpuCnt)(0)
 
+      /**
+       * The last `n` jpc changes in full, oldest first.
+       *
+       * `historyOf` is the wrong shape for pinning a mechanism to a handful of
+       * cycles: it prints thousands of control transfers plus a fixed 80-sample
+       * tail, and a spin loop floods both. The poison read and the escape are 6
+       * cycles apart, so what is needed is a short trailing window that includes
+       * BOTH and the instructions between them.
+       */
+      def recentOf(core: Int, n: Int): String = {
+        val h = histOrdered(core)
+        val sb = new StringBuilder
+        sb.append(f"    last ${n} jpc changes on core $core (oldest first):\n")
+        for ((c, p, j, a, s) <- h.takeRight(n))
+          sb.append(f"      cycle $c%9d  pc=0x$p%04x jpc=0x$j%04x  " +
+                    f"A=0x$a%08x ($a) sp=$s%d\n")
+        sb.toString
+      }
+
       /** Ordered oldest-first view of the ring. */
       def histOrdered(core: Int): Seq[(Int, Int, Int, Int, Int)] =
         (0 until HIST).map(k => (histIdx(core) + k) % HIST)
@@ -813,6 +832,7 @@ object JopGcHaltDeadlockSim extends App {
                       f"sp=${dut.cluster.cores(i).pipeline.stack.sp.toInt}  " +
                       f"loaded method [0x$mStart%04x, 0x${mStart + mLen}%04x)")
               print(bcDump(i, j, back = 6, fwd = 6))
+              print(recentOf(i, 12))
             }
 
             // METHOD ESCAPE. The first jpc outside the loaded method's extent is
@@ -840,6 +860,11 @@ object JopGcHaltDeadlockSim extends App {
                           f"sp=${dut.cluster.cores(i).pipeline.stack.sp.toInt} " +
                           f"A=0x${dut.cluster.cores(i).pipeline.stack.a.toLong.toInt}%08x")
                   print(bcDump(i, j))
+                  // The instructions BETWEEN the poison read and this escape.
+                  // Whether the poison was CONSUMED as a branch/invoke target or
+                  // merely sat in a top-of-stack register is the open question,
+                  // and only this window answers it.
+                  print(recentOf(i, 24))
                 }
               }
             }

@@ -960,13 +960,53 @@ silently invalidate all of that. Use this to find one:
    **So the GC is downstream of everything.** The remaining bug is a control-flow
    derailment on core 1, not a collector fault.
 
-   NEXT: `jpc` sits at 0x0fe9-0x0fec, the top of the 4 KB bytecode cache, wrapping
-   0x0fff -> 0x000c. Dump the bytecode CACHE CONTENTS at the store (the existing
-   "bytecode cache around jpc" dump printed nothing — `bcRdCaptureReg` did not
-   capture) and pattern-match them with `JopBytecodeLocate`. That says whether the
-   cache holds the method core 1 believes it is executing. Note `jpc` is a 12-bit
-   offset INTO THE CACHE, not a global image address — mapping it through the link
-   file's method table gives a confident wrong answer.
+   ### THE HEAD OF THE CHAIN: AN ARRAY-BOUNDS EXCEPTION ON A VALID INDEX
+
+   Established 2026-08-12 with a 24-sample trailing window on the jpc ring.
+   Everything above is downstream of this:
+
+   ```
+   4733632  *** EXCEPTION #1 on core 1: AB(array bounds) ***
+   4733634  pc=0x00a7  (sys_exc region, jvm.asm:550)   A=0x12345678  sp=90
+   4733640  jpc=0x0b74  METHOD ESCAPE, 2548 bytes outside [0x0180, 0x025c)
+   4733705  NULL METHOD POINTER, fill [0x0700, 0x0700) — len 0
+   5327112  aliased 0xE8 -> jopsys_memcpy -> stcp -> GC.handle_cnt 1117 -> 0 -> 4
+   ```
+
+   Two ORDERING CORRECTIONS to earlier commits in this series, both of which
+   named a later link as the head:
+   - `41cbbf8` called the null method pointer the first event. It is not; it is
+     ~70 cycles downstream of the exception.
+   - `a9a5bf7` called the poison read the first event. It is not; it is 2 cycles
+     downstream, and `pc=0x00a7` shows the core was already in `sys_exc`. The
+     poison in `A` is handler state, not a cause.
+
+   **The exception is on a VALID index.** Core 1 is in
+   `test.SmpGcTest.publisher(I)V` (confirmed by pattern match, one hit: `MATCH at
+   byte 0x0059e6 = word 5753, words 5728..5783`) executing the heartbeat
+   `liveTick[id] = liveTick[id] + 1` — bytecodes `0xe0 aconst_null 0x97 iload_0
+   iaload iconst_1 iadd iastore`. `liveTick` is `int[cpuCnt]` = `int[2]` and
+   `id` is 1. At the exception `liveTick=[0,13824]`, so that exact statement had
+   already run 13824 times.
+
+   State at the exception rules out the obvious candidates:
+   - **No GC in flight** — `gcPhase=0`, `gcHalt` asserted by 0 cores, `halted=0/2`
+   - **Heap metadata intact** — `handle_cnt=1117`, not yet corrupted
+   - **Not the lock** — `CmpSync state=IDLE`
+
+   So the hardware bounds check read an array length of <= 1 for an `int[2]` that
+   had worked 13824 times. Prime suspect is the length read itself: `ArrayCache`
+   is a 16-entry FIFO with SMP snoop-invalidate, and core 0 is allocating hard
+   throughout. NEXT: watch the length operand the bounds check actually uses,
+   against `H[OFF_MTAB_ALEN]` in RAM, and report the first disagreement.
+
+   **Second bug, independent and arguably worse:** taking a hardware exception
+   derails the core instead of reporting it. `sys_exc` entry leaves `jpc` 2548
+   bytes outside the method and the next fill gets a null pointer. `f_athrow`
+   resuming via a faked return frame plus `Native.setSP()` is a known mechanism
+   for landing in an arbitrary method with an arbitrary stack. Fixing THAT turns
+   every future instance of this class from silent memory corruption into an
+   attributable trap, which is worth doing regardless of what causes the AB.
 
    ### ROOT CAUSE: A GC ON ONE CORE CANNOT SEE ANOTHER CORE'S STACK
 
