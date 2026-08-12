@@ -195,19 +195,7 @@ case class JopPipeline(
   fetch.io.bsy := decode.io.wrDly || io.memBusy || stackRotBusy || cu.io.busy
   fetch.io.extStall := stackRotBusy
   decode.io.stall := stackRotBusy
-  // Freeze the Java PC for the WHOLE fetch-stage freeze, not just stack-cache
-  // rotation. `jfetch`/`jopdfetch` are ROM bits carried in IR, and IR is held
-  // during a memory-wait freeze, so they stay asserted for every cycle of the
-  // stall while bcfetch happily increments jpc on each one.
-  //
-  // Measured: `iastore` ends `wait; wait; nop nxt` (ROM 0x2f9/0x2fa = 0x101,
-  // 0x2fb = 0x900 with jfetch set). Reaching 0x2fb with pcwait still set and
-  // bsy asserted freezes the stage THERE, and jpc then walked 0x024d -> 0x025d
-  // one byte per cycle for 17 cycles, straight through the end of the method at
-  // 0x025c. From there the core executed aliased bytecode-cache contents.
-  // `stackRotBusy` alone never covered this: the memory freeze is a different
-  // condition and it is the common one.
-  bcfetch.io.stall := fetch.io.frozen
+  bcfetch.io.stall := stackRotBusy
 
   // Decode stage connections
   decode.io.instr := fetch.io.dout

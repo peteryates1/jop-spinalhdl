@@ -1043,6 +1043,57 @@ silently invalidate all of that. Use this to find one:
    R0 clear=ON  minors 1 lost 0  haltLeak 0     <- the test now RUNS ROUNDS
    ```
 
+   ### THE NAIVE FIX FOR THE jpc RUNAWAY IS WRONG — see `4ba87fc`, reverted
+
+   Built, regression-clean, and REVERTED because it traded one derailment for a
+   subtler one. Take the analysis from here; do not re-apply the patch.
+
+   **The bug is real.** `jfetch`/`jopdfetch` are ROM bits carried in IR;
+   `FetchStage` freezes on `(pcwait && bsy)` and HOLDS IR, so they stay asserted
+   for every cycle of the stall, while `bcfetch.io.stall` saw only
+   `stackRotBusy`. Measured: `iastore` ends `wait; wait; nop nxt`
+   (ROM 0x2f9/0x2fa = 0x101, 0x2fb = 0x900 with bit 11 `jfetch` set); frozen at
+   0x2fb, jpc walked 0x024d -> 0x025d one byte per cycle through the method end
+   at 0x025c. 127 frozen-at-0x2fb samples.
+
+   **The naive fix** — expose the freeze as `fetch.io.frozen` and use it for
+   `bcfetch.io.stall` — kills the walk (127 -> 0 samples) and passes everything:
+   JvmTests 132, McFallback 132, DcuCache 59/59, formal 121/121.
+
+   **But it misaligns the bytecode stream on resume.** A NEW escape appears,
+   only in runs with the fix:
+
+   ```
+   without fix   cycle 4896159  jpc=0x0264   (the walk)
+   with fix      cycle 4896564  jpc=0x0c00   (a one-cycle jump)
+   ```
+
+   Traced: `0x01ee` holds 0xE0 = `getstatic_ref` (handler 0x2C5), a THREE-byte
+   instruction. On resume the core dispatched pc=0x0228 — the handler for 0x01,
+   the byte at `0x01ef` — so `getstatic_ref` was never dispatched at all. It then
+   executed `0x99` at `0x01f0`, that instruction's second operand byte, as `ifeq`
+   (pc=0x2B9), which branched on a bogus 16-bit offset 0x1A10 truncated to 0xA10:
+
+   ```
+   jpc_br 0x1F0 + 0xA10 = 0xC00   == observed
+   ```
+
+   The correct stream is `getstatic_ref pubStep; iload_0; bipush 10; iastore`,
+   i.e. `pubStep[id] = 10`. So an instruction's dispatch was skipped and its
+   operands ran as opcodes — an OFF-BY-ONE across the freeze/resume boundary.
+
+   Why the regressions did not catch it: they never hit this boundary. Passing
+   132/132/59/121 says the suites do not exercise it, not that the change is
+   sound — the same trap that made `lmul_sw` look fine for years (item 29).
+
+   **For the next attempt:** the increment must be suppressed DURING the freeze
+   and happen exactly once on the resume, and the two edges are not symmetric.
+   Gating `bcfetch.io.stall` on the same combinational condition as the freeze is
+   too blunt — it also suppresses the resume-cycle increment, or shifts it,
+   leaving jinstr and jpc disagreeing by one. Instrument the boundary (jpc,
+   jinstr, pc, the dispatched handler address) across a stall before changing it
+   again; the reproducer is 2-core SmpGcTest seed 70704150 around cycle 4.896M.
+
    ### STILL OPEN: core 1 streams jpc past the method end from `iastore`
 
    Remaining head of chain, with the probes off. Five consecutive escapes, then

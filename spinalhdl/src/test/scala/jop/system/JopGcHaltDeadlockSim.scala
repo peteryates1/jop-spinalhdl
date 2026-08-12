@@ -868,6 +868,16 @@ object JopGcHaltDeadlockSim extends App {
                           f"sp=${dut.cluster.cores(i).pipeline.stack.sp.toInt} " +
                           f"A=0x${dut.cluster.cores(i).pipeline.stack.a.toLong.toInt}%08x")
                   print(bcDump(i, j))
+                  // The instruction the core LEFT FROM. bcDump above shows the
+                  // destination, which for a one-cycle jump says nothing about
+                  // what jumped. Read from the simulator's own cache rather than
+                  // decoding the .jop: the image is rebuilt constantly here and a
+                  // hand decode silently mis-anchored once already (a pattern
+                  // JopBytecodeLocate had confirmed no longer matched at the
+                  // offset it was supposed to).
+                  val prevJ = histJpc(i)((k - 1 + HIST) % HIST)
+                  println(f"    ORIGIN — cache around the previous jpc 0x$prevJ%04x:")
+                  print(bcDump(i, prevJ, back = 8, fwd = 8))
                   // The instructions BETWEEN the poison read and this escape.
                   // Whether the poison was CONSUMED as a branch/invoke target or
                   // merely sat in a top-of-stack register is the open question,
