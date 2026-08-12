@@ -44,6 +44,17 @@ object JopJvmTestsMcFallbackSim extends App {
   println(s"Loaded RAM: ${ramData.length} entries")
   println(s"Loaded main memory: ${mainMemData.length} entries")
 
+  // Seed replay, same contract as JopJvmTestsBramSim. Without it a CI failure
+  // here is unreproducible: `doSim` picks a fresh seed every run, so the seed
+  // printed by the failing job could not be fed back. That is not hypothetical
+  // — this sim failed CI on seed 871203250 with UART output corrupted (bits 1
+  // and 3 cleared in every character) and the local re-run silently used a
+  // different seed and passed.
+  //   JOP_SIM_SEED=871203250 sbt "Test/runMain jop.system.JopJvmTestsMcFallbackSim"
+  private val simSeed: Int =
+    sys.env.get("JOP_SIM_SEED").map(_.trim.toInt).getOrElse(scala.util.Random.nextInt())
+  println(s"Simulation seed: $simSeed  (set JOP_SIM_SEED to replay)")
+
   SimConfig
     .compile(JopCoreTestHarness(romData, ramData, mainMemData, memSize = bramSize,
       coreConfig = Some(JopCoreConfig(
@@ -58,7 +69,7 @@ object JopJvmTestsMcFallbackSim extends App {
           "ladd" -> "mc", "lsub" -> "mc", "lneg" -> "mc", "lcmp" -> "mc",
           "lshl" -> "mc", "lshr" -> "mc", "lushr" -> "mc",
           "fneg" -> "mc", "fcmpl" -> "mc", "fcmpg" -> "mc")))))
-    .doSim { dut =>
+    .doSim(seed = simSeed) { dut =>
       val log = new PrintWriter(logFilePath)
       var uartOutput = new StringBuilder
       var lineBuffer = new StringBuilder
