@@ -1086,13 +1086,55 @@ silently invalidate all of that. Use this to find one:
    132/132/59/121 says the suites do not exercise it, not that the change is
    sound — the same trap that made `lmul_sw` look fine for years (item 29).
 
-   **For the next attempt:** the increment must be suppressed DURING the freeze
-   and happen exactly once on the resume, and the two edges are not symmetric.
-   Gating `bcfetch.io.stall` on the same combinational condition as the freeze is
-   too blunt — it also suppresses the resume-cycle increment, or shifts it,
-   leaving jinstr and jpc disagreeing by one. Instrument the boundary (jpc,
-   jinstr, pc, the dispatched handler address) across a stall before changing it
-   again; the reproducer is 2-core SmpGcTest seed 70704150 around cycle 4.896M.
+   **SOLVED 2026-08-12 by an A/B trace of the boundary — THREE signals must
+   freeze and the reverted fix froze two.** Run the sim with a trace window
+   (`argv 5/6/7` = from, to, core) to reproduce either side.
+
+   WITHOUT the fix, frozen at 0x02fb (`nop nxt`, jfetch=1), a bytecode is
+   CONSUMED EVERY CYCLE — `jinstr` latches 0x4f, 0xe0, 0x01, 0x99, 0x1a while pc
+   is stuck and none of them execute:
+
+   ```
+   cy=4896042 pc=0x02fb jpc=0x01ef jinstr=0xe0 jpaddr=0x0228 frz=1
+   cy=4896043 pc=0x02fb jpc=0x01f0 jinstr=0x01 jpaddr=0x02b9 frz=1
+   ```
+
+   The control case is in the same trace: frozen at 0x02fa (a `wait`, jfetch=0),
+   cycles 4896033-4896039, NOTHING advances. The damage is specific to freezing
+   on an instruction whose jfetch bit is set.
+
+   WITH the fix, `jpc` and `jinstr` hold correctly — but `jpaddr` slips and stays
+   slipped:
+
+   ```
+   cy=4896041 pc=0x02fb jpc=0x01ee jinstr=0x4f jpaddr=0x02c5 frz=1
+   cy=4896042 pc=0x02fb jpc=0x01ee jinstr=0x4f jpaddr=0x0228 frz=1   <- and stays
+   ```
+
+   0x02c5 is `getstatic_ref`'s handler, correct for the 0xE0 at jpc=0x01ee;
+   0x0228 is the handler for 0x01, the byte at 0x01ef. The cause is the read
+   address mux, which `io.stall` does NOT gate:
+
+   ```scala
+   }.elsewhen(io.jfetch || io.jopdfetch) {
+     jbcAddr := (jpc + 1)(config.jpcWidth - 1 downto 0)   // prefetch next
+   }
+   ```
+
+   `jfetch` is held through the freeze, so `jbcAddr` advances to jpc+1, the RAM
+   returns the NEXT byte and `jpaddr` recomputes to its handler. On release
+   `pcMux := io.jpaddr` sends pc to 0x0228 — `getstatic_ref` skipped, its operand
+   executed as an opcode.
+
+   **So the fix must hold `jpc`, `jinstr` AND `jbcAddr`.** `io.stall` already
+   covers the first two (`when(!io.stall)` at :195/:239 and
+   `when(!io.stall && io.jfetch)` at :260). The missing piece is gating the
+   `jbcAddr` mux so the read stays on the pending byte during a stall.
+
+   Watch the 1-cycle `readSync` latency when doing it: `jpaddr` reflects
+   `jbcAddr` from the previous cycle, so a naive hold still lets one wrong value
+   through on the first frozen cycle. Re-run the same A/B window to confirm
+   `jpaddr` holds at 0x02c5 for the whole freeze.
 
    ### STILL OPEN: core 1 streams jpc past the method end from `iastore`
 

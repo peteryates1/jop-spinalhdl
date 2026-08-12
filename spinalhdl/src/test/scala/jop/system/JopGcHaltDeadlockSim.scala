@@ -136,6 +136,15 @@ case class JopGcHaltTestHarness(
     // wrong, or the response did not match RAM. These two say which.
     cluster.cores(i).memCtrl.addrReg.simPublic()
     cluster.cores(i).memCtrl.handleIndex.simPublic()
+    // FREEZE-BOUNDARY TRACE. `jfetch`/`jopdfetch` ride in IR, which is HELD
+    // during a memory-wait freeze, so they stay asserted for the whole stall and
+    // jpc free-runs. Suppressing the increment for the whole freeze instead
+    // desynchronises jinstr from jpc by one (see the reverted 4ba87fc). Both
+    // halves of the condition plus jinstr and the dispatch address are what
+    // distinguish "increment suppressed one cycle too many" from "one too few".
+    cluster.cores(i).pipeline.fetch.pcwait.simPublic()
+    cluster.cores(i).pipeline.fetch.io.bsy.simPublic()
+    cluster.cores(i).pipeline.bcfetch.io.jpaddr.simPublic()
     // Top of stack. A store lands with the ADDRESS from the bytecode operand
     // and the DATA from `io.aout` (BmbMemoryController:626,630), and the two
     // disagreed at the wedge: `iconst_0; putstatic phase` stored 6. Reading A
@@ -263,6 +272,11 @@ object JopGcHaltDeadlockSim extends App {
       // The freeze lands by ~57M; 200M only bought 143M cycles of the same
       // frozen snapshot at ~55 minutes a run.
       val maxCycles = if (args.length > 4) args(4).toInt else 75000000
+      // argv 5/6/7: freeze-boundary window [from, to] and which core to trace.
+      // Off unless a window is given, since it prints one line per cycle.
+      val TRACE_FROM = if (args.length > 5) args(5).toInt else Int.MaxValue
+      val TRACE_TO   = if (args.length > 6) args(6).toInt else Int.MinValue
+      val traceCore  = if (args.length > 7) args(7).toInt else (cpuCnt - 1)
       // A wedge is "nothing observable changed for this long". SmpGcTest's
       // minor GCs are long but they still move PCs, so PC-stability is the
       // discriminator, not UART silence alone.
@@ -1038,6 +1052,26 @@ object JopGcHaltDeadlockSim extends App {
             }
           }
           lastExc(i) = e
+        }
+
+        // FREEZE-BOUNDARY WINDOW. Unconditional per-cycle dump between two
+        // cycles given on the command line — no arming, because the event to
+        // study is a NORMAL stall, not a fault, and there is nothing to trigger
+        // on. `frz` is the freeze condition; when it is set, pc/ir/pcwait hold,
+        // so `nxt`/`opd` (which come from IR) stay asserted and jpc advances
+        // unless bcfetch is told otherwise. What matters is the exact cycle
+        // jinstr changes relative to jpc across the boundary.
+        if (cycle >= TRACE_FROM && cycle <= TRACE_TO) {
+          val i = traceCore
+          val p  = dut.cluster.cores(i).pipeline
+          val pw = p.fetch.pcwait.toBoolean
+          val by = p.fetch.io.bsy.toBoolean
+          println(f"  FRZ core $i cy=$cycle%9d pc=0x${dut.io.pc(i).toInt}%04x " +
+                  f"jpc=0x${dut.io.jpc(i).toInt}%04x jinstr=0x${p.bcfetch.jinstr.toInt}%02x " +
+                  f"jpaddr=0x${p.bcfetch.io.jpaddr.toInt}%04x " +
+                  f"pcwait=${if (pw) 1 else 0} bsy=${if (by) 1 else 0} " +
+                  f"frz=${if (pw && by) 1 else 0} " +
+                  f"sp=${p.stack.sp.toInt}")
         }
 
         // The armed window itself. Printed raw, one line per cycle, because the

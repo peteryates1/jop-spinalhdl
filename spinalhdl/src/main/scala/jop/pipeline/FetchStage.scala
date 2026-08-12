@@ -136,6 +136,9 @@ case class FetchStage(
   pc.simPublic()
   ir.simPublic()
   val pcwait = Reg(Bool()) init(False)                  // Wait state flag
+  // The freeze boundary is where jpc and jinstr can disagree by one; observing
+  // it needs both halves of the freeze condition, not just its result.
+  pcwait.simPublic()
 
   // ==========================================================================
   // PC Increment (Combinational)
