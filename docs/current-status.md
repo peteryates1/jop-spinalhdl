@@ -1000,6 +1000,71 @@ silently invalidate all of that. Use this to find one:
    throughout. NEXT: watch the length operand the bounds check actually uses,
    against `H[OFF_MTAB_ALEN]` in RAM, and report the first disagreement.
 
+   ### RETRACTED: "the AB fires on a VALID index" — the probe supplied the index
+
+   The index was NOT valid. Reading `handleIndex` out of the hardware at the
+   exception (rather than reasoning from `liveTick=[0,13824]`) gives:
+
+   ```
+   AB DETAIL core 1: handle=0x005c30 (23600)  index=3430008
+                     RAM[handle+1] (length) = 2   RAM[handle+0] (ptr) = 31567
+   ```
+
+   The handle is CORRECT — length 2 is exactly `liveTick`'s. The index is
+   3430008 = **0x345678**, i.e. `0x12345678` truncated to the index width. The
+   bounds check was behaving perfectly; the index operand was poison.
+
+   **The probe manufactured it.** `SmpGcTest`'s `rootport:` block called
+   `GC.rootRead(1, ROOT_WHAT_STACK, 64)` while core 1 was RUNNING. That parks
+   `rootSel` on core 1's stack word 64, whose contents are `0x12345678` (the
+   mem_ram.dat fill pattern — printed in the same line as `w64 305419896`). Core
+   1's concurrent `iload_0` therefore returned `0x12345678` as `id`. Every number
+   matches an independently observed value.
+
+   This is the THIRD instrument-induced fault in this investigation, all from the
+   same root — `rootRead` leaving `rootSel` set:
+   1. the `dump:` block manufacturing `magic 11818962` (retracted above)
+   2. `bcDump` returning -1 and printing an EMPTY dump at the one moment worth
+      seeing
+   3. `rootport:` manufacturing this AB
+   Releasing AFTER a block is NOT sufficient — the theft spans the whole block.
+   Both blocks are now behind `PROBE_RUNNING_CORE`, default FALSE.
+   `scanOtherCoreRoots()` is unaffected: its targets are halted.
+
+   Also corrected: the poison in `a`/`b` at the strobe was NOT the aborted
+   `iaload` refilling registers. The poison arrived first, through the stolen
+   port, and CAUSED the AB.
+
+   With the probes gated off (2 cores, seed 70704150):
+   ```
+   NULL METHOD POINTER   2 -> 0        OUT-OF-RANGE STORE  0
+   handle_cnt            constant 1123 (no corruption)
+   STACKROOT             OK, PTR-AGREE
+   R0 clear=ON  minors 1 lost 0  haltLeak 0     <- the test now RUNS ROUNDS
+   ```
+
+   ### STILL OPEN: core 1 streams jpc past the method end from `iastore`
+
+   Remaining head of chain, with the probes off. Five consecutive escapes, then
+   ABs on GARBAGE HANDLES (105, 114, 172 — far below heapStart ~23784), and at
+   the first AB `jpc=0x0853`, already outside the cache. So the ABs are again
+   downstream; the escape is the head.
+
+   ```
+   4896136..4896152  pc=0x02fb CONSTANT, jpc 0x024d -> 0x025d, one byte per cycle
+   4896159           METHOD ESCAPE jpc=0x0264, method [0x0180, 0x025c)
+   ```
+
+   `pc=0x02fb` is the LAST microcode word of the `iastore` handler (`iastore`
+   starts at 0x2f6, `iaload` at 0x2fc per JumpTableData). A fixed microcode
+   address with `jpc` advancing every cycle is operand fetching that does not
+   stop: `jpc` increments on `jfetch || jopdfetch`, so something is holding one
+   of those asserted at the end of an array store, and `jpc` walks straight
+   through the method end.
+
+   NOT a stop-the-world artefact: at the first AB, `gcHalt` is asserted by 0
+   cores and `halted=0/2`.
+
    ### BUG 2, SOLVED: `sys_exc` CORRECTS jpc THROUGH THE OPERAND STACK
 
    A per-cycle trace armed by the exception strobe pins this to one instruction.

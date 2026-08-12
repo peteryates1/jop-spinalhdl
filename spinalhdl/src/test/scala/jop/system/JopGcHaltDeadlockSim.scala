@@ -130,6 +130,12 @@ case class JopGcHaltTestHarness(
     // garbage" into a timestamped first event.
     cluster.cores(i).memCtrl.bcCacheStartReg.simPublic()
     cluster.cores(i).memCtrl.bcFillLen.simPublic()
+    // Array bounds check inputs. The length is read straight from main memory
+    // (HANDLE_BOUND_READ issues a BMB read of handle[1]) — no cache sits in that
+    // path — so an AB on a valid index means the HANDLE address or the INDEX is
+    // wrong, or the response did not match RAM. These two say which.
+    cluster.cores(i).memCtrl.addrReg.simPublic()
+    cluster.cores(i).memCtrl.handleIndex.simPublic()
     // Top of stack. A store lands with the ADDRESS from the bytecode operand
     // and the DATA from `io.aout` (BmbMemoryController:626,630), and the two
     // disagreed at the wedge: `iconst_0; putstatic phase` stored 6. Reading A
@@ -974,6 +980,28 @@ object JopGcHaltDeadlockSim extends App {
                       f"pc=0x${dut.io.pc(i).toInt}%04x jpc=0x${dut.io.jpc(i).toInt}%04x " +
                       f"A=0x${dut.cluster.cores(i).pipeline.stack.a.toLong.toInt}%08x " +
                       f"sp=${dut.cluster.cores(i).pipeline.stack.sp.toInt}")
+            // ARRAY BOUNDS: say WHICH operand was wrong.
+            //
+            // The check is `handleIndex >= arrayLength` where arrayLength comes
+            // from a BMB read of handle[1] — main memory, no cache in the path.
+            // So an AB on an index known to be valid narrows to: a bad handle
+            // address, a bad index, or a response that did not match RAM. Read
+            // RAM directly here and print all three side by side.
+            if (t == 3) {
+              val h   = dut.cluster.cores(i).memCtrl.addrReg.toLong.toInt
+              val idx = dut.cluster.cores(i).memCtrl.handleIndex.toLong.toInt
+              val lenInRam = rd(h + 1)
+              val ptrInRam = rd(h)
+              println(f"  AB DETAIL core $i: handle=0x$h%06x ($h)  index=$idx  " +
+                      f"RAM[handle+1] (length) = $lenInRam  RAM[handle+0] (ptr) = $ptrInRam")
+              println(f"    verdict: " + (
+                if (h == 0) "handle is ZERO — the arrayref was null/garbage"
+                else if (lenInRam > idx) "RAM SAYS THE INDEX IS FINE — the length the " +
+                     "check saw did not match memory (bad response, or handle read at the wrong time)"
+                else if (lenInRam <= 0) "length in RAM is <= 0 — the handle does not point at a live array"
+                else "index genuinely >= length in RAM"))
+            }
+
             // ARM THE CYCLE-BY-CYCLE TRACE. sys_exc runs `ldjpc; ldi 1; sub;
             // stjpc` and then invokes JVMHelp.except() through jjhp — a dozen
             // MICROCODE steps during which jpc changes exactly once, from the

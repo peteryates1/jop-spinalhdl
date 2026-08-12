@@ -251,10 +251,11 @@ public class SmpGcTest {
 			// result is quoted against. Core 1 holds the reference throughout.
 			int pm = churnUntilMinor(20000, 3) + churnUntilMinor(20000, 3);
 			// Dump core 1's stack RAM while it is still holding the reference.
-			int portSp = GC.rootRead(1, Const.ROOT_WHAT_SP, 0);
+			// GATED: this reads a RUNNING core's stack RAM — see PROBE_RUNNING_CORE.
+			int portSp = PROBE_RUNNING_CORE ? GC.rootRead(1, Const.ROOT_WHAT_SP, 0) : -1;
 			int foundAt = -1;
 			int nonZero = 0;
-			for (int i = 0; i < 256; i++) {
+			for (int i = 0; PROBE_RUNNING_CORE && i < 256; i++) {
 				int w = GC.rootRead(1, Const.ROOT_WHAT_STACK, i);
 				if (w != 0) nonZero++;
 				if (w == stackProbeHandle && foundAt < 0) foundAt = i;
@@ -373,6 +374,7 @@ public class SmpGcTest {
 			JVMHelp.wr(" spMax ");
 			wrInt(GC.maxScanSp);
 			JVMHelp.wr("\r\n");
+			if (PROBE_RUNNING_CORE) {
 			JVMHelp.wr("rootport: sp ");
 			int rsp = GC.rootRead(1, Const.ROOT_WHAT_SP, 0);
 			wrInt(rsp);
@@ -387,6 +389,7 @@ public class SmpGcTest {
 			// Same obligation as the dump above — core 1 runs on after this.
 			GC.rootRelease();
 			JVMHelp.wr("\r\n");
+			}
 		}
 
 		for (int round = 0; round < 8; round++) {
@@ -609,6 +612,27 @@ public class SmpGcTest {
 	static volatile int stackProbeC1Type;  // core 1's read of H[OFF_TYPE]
 	static volatile int stackProbeC1Raw;   // core 1's RAW read of the data word
 	static final int STACK_PROBE_MAGIC = 0x5A5A0FFF;
+
+	/**
+	 * Read another core's stack RAM while that core is RUNNING.
+	 *
+	 * OFF, and it must stay off outside a deliberate experiment. `rootSel` drives
+	 * the TARGET core's stack-RAM read address, so for as long as it is set that
+	 * core's own reads return the scanned word instead of the one it asked for.
+	 * Releasing after the loop is not enough — the theft spans the whole block.
+	 *
+	 * This is not theoretical. With these blocks on, `rootRead(1, STACK, 64)`
+	 * parked rootSel at word 64, whose contents are 0x12345678 (the mem_ram.dat
+	 * fill pattern). Core 1, concurrently executing `liveTick[id]++`, took that
+	 * value as `id`, so `iload_0` yielded 0x12345678, the index arrived at the
+	 * bounds check as 0x345678 = 3430008 against a length of 2, and the hardware
+	 * correctly raised an array-bounds exception. Every downstream symptom —
+	 * the derailment, the null method pointer, the corrupted GC.handle_cnt —
+	 * followed from a fault the probe itself manufactured.
+	 *
+	 * `scanOtherCoreRoots()` is unaffected: the cores it reads are HALTED.
+	 */
+	static final boolean PROBE_RUNNING_CORE = false;
 
 	static void publish(int id, int round, int slot) {
 		pubSlot[id] = slot;
