@@ -122,6 +122,14 @@ case class JopGcHaltTestHarness(
     // against the link file's method table says which method was asked for.
     cluster.cores(i).memCtrl.bcRdCaptureReg.simPublic()
     cluster.cores(i).memCtrl.io.memIn.bcRd.simPublic()
+    // The EXTENT of the method currently in the bytecode cache. jpc must stay
+    // inside [bcCacheStart*4, +bcFillLen*4) modulo the 12-bit jpc space; the
+    // cache is circular by design (fill uses `(bcCacheStartReg + bcFillCount)
+    // .resized`, fetch truncates to jpcWidth), so wrapping is legal and only
+    // leaving the extent is not. This turns "core 1 eventually executed
+    // garbage" into a timestamped first event.
+    cluster.cores(i).memCtrl.bcCacheStartReg.simPublic()
+    cluster.cores(i).memCtrl.bcFillLen.simPublic()
     // Top of stack. A store lands with the ADDRESS from the bytecode operand
     // and the DATA from `io.aout` (BmbMemoryController:626,630), and the two
     // disagreed at the wedge: `iconst_0; putstatic phase` stored 6. Reading A
@@ -420,23 +428,39 @@ object JopGcHaltDeadlockSim extends App {
       def bcByte(core: Int, jpc: Int): Int = {
         val mem = dut.cluster.cores(core).pipeline.bcfetch.jbcRamWord
         val words = dut.cluster.cores(core).pipeline.bcfetch.jbcWordDepth
-        val w = jpc >> 2
-        if (w < 0 || w >= words) return -1
+        // ALIAS rather than give up. jpc is jpcWidth+1 bits (12) but the cache
+        // covers only jpcWidth (11 => 2KB), so a jpc past the end silently wraps
+        // into the low 2KB and the core executes whatever is there. Returning -1
+        // for those printed an EMPTY dump at exactly the moment worth seeing —
+        // the out-of-range jpc IS the event.
+        if (jpc < 0) return -1
+        val w = (jpc >> 2) % words
         val word = mem.getBigInt(w).toLong
         ((word >> (8 * (jpc & 3))) & 0xFF).toInt
       }
 
+      /** True when this jpc is past the end of the cache and therefore aliased. */
+      def bcAliased(core: Int, jpc: Int): Boolean =
+        (jpc >> 2) >= dut.cluster.cores(core).pipeline.bcfetch.jbcWordDepth
+
       /** Opcodes around the current jpc — this is what names the loop. */
       def bcDump(core: Int, jpc: Int, back: Int = 12, fwd: Int = 12): String = {
         val sb = new StringBuilder
-        sb.append(f"  core $core bytecode cache around jpc=0x$jpc%04x:\n")
+        val depth = dut.cluster.cores(core).pipeline.bcfetch.jbcWordDepth
+        sb.append(f"  core $core bytecode cache around jpc=0x$jpc%04x " +
+                  f"(cache ${depth * 4} bytes, jpc 0x000..0x${depth * 4 - 1}%03x)")
+        if (bcAliased(core, jpc))
+          sb.append(f" *** jpc PAST END OF CACHE — fetch aliases to 0x${jpc % (depth * 4)}%04x ***")
+        sb.append(":\n")
         var a = (jpc - back).max(0)
         val end = jpc + fwd
         while (a <= end) {
           val b = bcByte(core, a)
           if (b >= 0) {
             val marker = if (a == jpc) " <== jpc" else ""
-            sb.append(f"      0x$a%04x: ${b}%3d 0x$b%02x  ${opName.getOrElse(b, "?")}%-14s$marker\n")
+            val alias = if (bcAliased(core, a)) f"  [aliased from 0x$a%04x]" else ""
+            sb.append(f"      0x${a % (depth * 4)}%04x: ${b}%3d 0x$b%02x  " +
+                      f"${opName.getOrElse(b, "?")}%-14s$marker$alias\n")
           }
           a += 1
         }
@@ -531,6 +555,7 @@ object JopGcHaltDeadlockSim extends App {
       val histSp  = Array.fill(cpuCnt, HIST)(0)
       val histIdx = Array.fill(cpuCnt)(0)
       val lastJpc = Array.fill(cpuCnt)(-1)
+      val escapeSeen = Array.fill(cpuCnt)(0)
 
       /** Ordered oldest-first view of the ring. */
       def histOrdered(core: Int): Seq[(Int, Int, Int, Int, Int)] =
@@ -766,6 +791,35 @@ object JopGcHaltDeadlockSim extends App {
             histA(i)(k)   = dut.cluster.cores(i).pipeline.stack.a.toLong.toInt
             histSp(i)(k)  = dut.cluster.cores(i).pipeline.stack.sp.toInt
             histIdx(i) = (k + 1) % HIST
+
+            // METHOD ESCAPE. The first jpc outside the loaded method's extent is
+            // the derailment itself; everything after it (the 0xE8 dispatch, the
+            // stcp, the handle_cnt corruption) is consequence. Reported once per
+            // core so a derailed core does not drown the log.
+            if (escapeSeen(i) < 5) {
+              val mStart = dut.cluster.cores(i).memCtrl.bcCacheStartReg.toInt * 4
+              val mLen   = dut.cluster.cores(i).memCtrl.bcFillLen.toInt * 4
+              if (mLen > 0) {
+                val off = (j - mStart) & 0xFFF
+                // TOLERANCE. jpc legitimately runs a little past the final
+                // `return` while the fetch pipeline drains — the first version of
+                // this check fired at cycle 652 on exactly that, jpc one byte past
+                // a method ending in 0xb1. A bytecode plus a two-byte operand
+                // reaches +3, so 8 is clear of the pipeline and far short of the
+                // ~0x110 overshoot actually being hunted.
+                if (off >= mLen + 8) {
+                  escapeSeen(i) += 1
+                  println(f"\n*** METHOD ESCAPE *** core $i at cycle $cycle%9d: " +
+                          f"jpc=0x$j%04x is outside the loaded method " +
+                          f"[0x$mStart%04x, 0x${mStart + mLen}%04x) " +
+                          f"(start=0x$mStart%04x len=$mLen bytes, offset into method $off)")
+                  println(f"    pc=0x${dut.io.pc(i).toInt}%04x " +
+                          f"sp=${dut.cluster.cores(i).pipeline.stack.sp.toInt} " +
+                          f"A=0x${dut.cluster.cores(i).pipeline.stack.a.toLong.toInt}%08x")
+                  print(bcDump(i, j))
+                }
+              }
+            }
           }
         }
 
