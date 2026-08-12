@@ -653,6 +653,8 @@ object JopGcHaltDeadlockSim extends App {
 
       val lastExc = Array.fill(cpuCnt)(false)
       var excCount = 0
+      val excTraceLeft = Array.fill(cpuCnt)(0)
+      var excTracesDone = 0
       val excName = Map(0 -> "none", 1 -> "SPOV(stack overflow)", 2 -> "NP(null pointer)",
                         3 -> "AB(array bounds)", 4 -> "ROLLBACK", 5 -> "MON", 8 -> "DIVZ")
       // The FIRST exception is the origin of the whole failure — the storm runs
@@ -972,6 +974,19 @@ object JopGcHaltDeadlockSim extends App {
                       f"pc=0x${dut.io.pc(i).toInt}%04x jpc=0x${dut.io.jpc(i).toInt}%04x " +
                       f"A=0x${dut.cluster.cores(i).pipeline.stack.a.toLong.toInt}%08x " +
                       f"sp=${dut.cluster.cores(i).pipeline.stack.sp.toInt}")
+            // ARM THE CYCLE-BY-CYCLE TRACE. sys_exc runs `ldjpc; ldi 1; sub;
+            // stjpc` and then invokes JVMHelp.except() through jjhp — a dozen
+            // MICROCODE steps during which jpc changes exactly once, from the
+            // interrupted bytecode straight to a value 2548 bytes outside the
+            // method. Every jpc-change sampler is blind to that: there is no
+            // intermediate change to sample. Only a per-cycle window shows WHICH
+            // microcode instruction writes the bad jpc, and `stjpc` storing a
+            // corrupt TOS is the specific thing to confirm or eliminate.
+            if (excTraceLeft(i) == 0 && excTracesDone < 2) {
+              excTracesDone += 1
+              excTraceLeft(i) = 40
+              println(f"\n=== CYCLE TRACE armed by exception on core $i at cycle $cycle%9d ===")
+            }
             if (fullExcDumps < 3) {
               fullExcDumps += 1
               val sb = new StringBuilder
@@ -985,6 +1000,17 @@ object JopGcHaltDeadlockSim extends App {
             }
           }
           lastExc(i) = e
+        }
+
+        // The armed window itself. Printed raw, one line per cycle, because the
+        // question is which single microcode step corrupts jpc.
+        if (detail) for (i <- 0 until cpuCnt) if (excTraceLeft(i) > 0) {
+          excTraceLeft(i) -= 1
+          println(f"  TRACE core $i cycle=$cycle%9d " +
+                  f"pc=0x${dut.io.pc(i).toInt}%04x jpc=0x${dut.io.jpc(i).toInt}%04x " +
+                  f"A=0x${dut.cluster.cores(i).pipeline.stack.a.toLong.toInt}%08x " +
+                  f"B=0x${dut.cluster.cores(i).pipeline.stack.b.toLong.toInt}%08x " +
+                  f"sp=${dut.cluster.cores(i).pipeline.stack.sp.toInt}")
         }
 
         if (pendingNullDump >= 0) {

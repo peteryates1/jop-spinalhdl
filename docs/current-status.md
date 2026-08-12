@@ -1000,13 +1000,63 @@ silently invalidate all of that. Use this to find one:
    throughout. NEXT: watch the length operand the bounds check actually uses,
    against `H[OFF_MTAB_ALEN]` in RAM, and report the first disagreement.
 
-   **Second bug, independent and arguably worse:** taking a hardware exception
-   derails the core instead of reporting it. `sys_exc` entry leaves `jpc` 2548
-   bytes outside the method and the next fill gets a null pointer. `f_athrow`
-   resuming via a faked return frame plus `Native.setSP()` is a known mechanism
-   for landing in an arbitrary method with an arbitrary stack. Fixing THAT turns
-   every future instance of this class from silent memory corruption into an
-   attributable trap, which is worth doing regardless of what causes the AB.
+   ### BUG 2, SOLVED: `sys_exc` CORRECTS jpc THROUGH THE OPERAND STACK
+
+   A per-cycle trace armed by the exception strobe pins this to one instruction.
+   `sys_exc` (jvm.asm:550) starts by undoing the fetch increment:
+
+   ```
+   ldjpc; ldi 1; sub; stjpc     // intended: jpc := jpc - 1
+   ```
+
+   Trace of core 1, cycle by cycle (`sys_exc` occupies 0x00a7..0x00b0 — ten
+   microcode words, then `jmp invoke` to 0x010d, which matches the listing
+   exactly):
+
+   ```
+   4733632 pc=0x02ff jpc=0x01eb A=0x12345678 B=0x12345678 sp=90  <- strobe; a/b ALREADY poison
+   4733637 pc=0x00aa jpc=0x01ec A=0x000001ec B=0x00005c30 sp=93  <- ldjpc pushed jpc
+   4733638 pc=0x00ab jpc=0x01ec A=0x12345678 B=0x000001ec sp=92  <- TOS is POISON, not 1
+   4733639 pc=0x00ac jpc=0x01ec A=0xedcbab74 B=0x12345678 sp=91  <- sub
+   4733640 pc=0x00ad jpc=0x0b74 A=0x12345678 B=0x12345678 sp=92  <- stjpc
+   ```
+
+   The arithmetic is exact:
+
+   ```
+   0x1ec - 0x12345678 = 0xedcbab74     (0xedcbab74 & 0xfff) = 0xb74
+   observed jpc                         = 0x0b74     MATCH
+   ```
+
+   So the subtraction that should have been `jpc - 1` used the POISON as its
+   operand, and `stjpc` wrote the low 12 bits of the result. That is the whole
+   derailment — not a fill fault, not a branch-target fault.
+
+   **Why the operand was poison.** `a`/`b` are already `0x12345678` at the strobe,
+   BEFORE `sys_exc` runs. The AB fires during the `iaload` of `liveTick[id]`: the
+   operands have been popped, the load never delivers, and the top-of-stack
+   registers refill from stack RAM slots that were never written. `sp` also rises
+   90->93 across the entry, one push more than `sys_exc`'s two, so `sp` and `a`/`b`
+   are inconsistent with each other. `sys_exc` then does arithmetic on that.
+
+   **The defect is the design, not a stray value:** a hardware exception is taken
+   mid-bytecode, so the operand stack is NOT in a defined state, yet `sys_exc`'s
+   very first action computes the resume address through it. Any poison in `a`
+   becomes a wild `jpc`.
+
+   Fix directions, in order of preference:
+   1. Do not route the jpc correction through the operand stack. The faulting jpc
+      is already known to the hardware — present it in a register the handler can
+      read directly, or have `bcfetch` not apply the increment when an exception
+      is strobed, removing the need to undo it.
+   2. Failing that, make the entry establish a known stack state before arithmetic.
+   3. Independently: `stjpc` silently accepts a value with bit 11 set. The RTL
+      comment at BytecodeFetchStage:134 says the extra bit exists "to detect
+      overflow", but NOTHING tests it — see the note above. Acting on it would
+      have turned this into a trap instead of 600k cycles of corruption.
+
+   Note this is a SINGLE-CORE bug in an SMP-looking dress: nothing about it needs
+   two cores, which is why every GC and coherence hypothesis failed to explain it.
 
    ### ROOT CAUSE: A GC ON ONE CORE CANNOT SEE ANOTHER CORE'S STACK
 
