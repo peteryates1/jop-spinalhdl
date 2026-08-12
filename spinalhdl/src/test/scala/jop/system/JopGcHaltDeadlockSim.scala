@@ -556,6 +556,7 @@ object JopGcHaltDeadlockSim extends App {
       val histIdx = Array.fill(cpuCnt)(0)
       val lastJpc = Array.fill(cpuCnt)(-1)
       val escapeSeen = Array.fill(cpuCnt)(0)
+      val poisonSeen = Array.fill(cpuCnt)(0)
 
       /** Ordered oldest-first view of the ring. */
       def histOrdered(core: Int): Seq[(Int, Int, Int, Int, Int)] =
@@ -791,6 +792,28 @@ object JopGcHaltDeadlockSim extends App {
             histA(i)(k)   = dut.cluster.cores(i).pipeline.stack.a.toLong.toInt
             histSp(i)(k)  = dut.cluster.cores(i).pipeline.stack.sp.toInt
             histIdx(i) = (k + 1) % HIST
+
+            // POISON READ. 0x12345678 is the fill pattern of the ENTIRE stack RAM
+            // init (asm/generated/mem_ram.dat, all 256 entries), so seeing it at
+            // the top of stack means a slot that was never written has been read.
+            // That is the suspected first cause of the null method pointer.
+            //
+            // CAVEAT, and why this prints context rather than just asserting: the
+            // linked image contains exactly ONE constant with this value (an
+            // Integer in the constant pool). If the dump below shows an `ldc`,
+            // this is that constant and not a poison read — discount it and look
+            // for the next.
+            if (poisonSeen(i) < 3 && histA(i)(k) == 0x12345678) {
+              poisonSeen(i) += 1
+              val mStart = dut.cluster.cores(i).memCtrl.bcCacheStartReg.toInt * 4
+              val mLen   = dut.cluster.cores(i).memCtrl.bcFillLen.toInt * 4
+              println(f"\n*** POISON READ *** core $i at cycle $cycle%9d: " +
+                      f"A = 0x12345678 (unwritten stack-RAM fill pattern)")
+              println(f"    jpc=0x$j%04x pc=0x${dut.io.pc(i).toInt}%04x " +
+                      f"sp=${dut.cluster.cores(i).pipeline.stack.sp.toInt}  " +
+                      f"loaded method [0x$mStart%04x, 0x${mStart + mLen}%04x)")
+              print(bcDump(i, j, back = 6, fwd = 6))
+            }
 
             // METHOD ESCAPE. The first jpc outside the loaded method's extent is
             // the derailment itself; everything after it (the 0xE8 dispatch, the
