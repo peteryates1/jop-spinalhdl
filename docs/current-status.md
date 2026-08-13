@@ -1721,7 +1721,21 @@ silently invalidate all of that. Use this to find one:
    | BRAM sim | PASS |
    | SDRAM sim (`JopSmpSdramNCoreHelloWorldSim 4 250000000 <SmpGcTest.jop>`) | PASS |
    | **BRAM hardware** (`ep4cgx150BramSmp 4 60`) | **PASS** — SMPGC OK, 192 verified, 0 errors |
-   | SDRAM hardware (`ep4cgx150Smp 4 60`) | **STALL** — core 2 starves |
+   | **SDRAM hardware, 2 CORES** (`ep4cgx150Smp 2 60`) | **PASS** — SMPGC OK, 192 verified, 0 errors |
+   | SDRAM hardware, 4 cores (`ep4cgx150Smp 4 60`) | **STALL** — core 2 starves |
+
+   **So the stall needs BOTH the SDRAM path AND 4 cores — it is
+   CONTENTION-DEPENDENT.** 2 cores on the same memory, same clock, same app and
+   same guard passes cleanly (+2.468 ns slack, so timing is not a factor), and 4
+   cores on BRAM passes too. Only four masters against the SDRAM controller
+   fails.
+
+   Note the BMB arbiter is already ROUND-ROBIN (`lowerFirstPriority = false`,
+   JopCluster:385), so this is not naive fixed-priority starvation — do not
+   start there. Look instead at what can hold the bus across arbitration
+   decisions with four masters: burst behaviour in `BmbSdramCtrl32` (the 32->16
+   bridge), refresh colliding with a loaded queue, or a request being dropped
+   rather than deferred.
 
    The BRAM board build passes at only **+0.050 ns** setup slack, which makes the
    result strong rather than weak: marginal timing produces failures, not
