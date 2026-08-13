@@ -482,6 +482,14 @@ public class SmpGcTest {
 						wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_SP, 0));
 						JVMHelp.wr(" busy ");
 						wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_A, 0));
+						// Cycles halted by the LOCK MANAGER. The req/gnt counters
+						// showed the stalled core stops asking rather than being
+						// starved; a core waiting on a monitor issues no memory
+						// traffic, so it looks identical from the bus. Large here
+						// => blocked in Ihlu/CmpSync. Small => spinning in
+						// ordinary code, and neither bus nor lock is to blame.
+						JVMHelp.wr(" halt ");
+						wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_B, 0));
 						JVMHelp.wr("\r\n");
 					}
 					GC.rootRelease();

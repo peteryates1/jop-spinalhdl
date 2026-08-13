@@ -107,6 +107,17 @@ case class JopCore(
     // Debug: halted by CmpSync (from internal Sys)
     val debugHalted = out Bool()
 
+    // Halted by the LOCK MANAGER (Sys.io.halted <- syncIn.halted: Ihlu or
+    // CmpSync, plus gcHalt during a stop-the-world). Distinct from debugHalted,
+    // which is the debug controller's freeze.
+    //
+    // Exposed because the cluster cannot read a grandchild's port — reaching for
+    // `cores(i).sys.io.halted` there is a HIERARCHY VIOLATION. An OUTPUT is safe
+    // to add unconditionally: parents need not drive it, unlike the rootData
+    // INPUT whose unconditional addition broke every single-core harness with
+    // NO DRIVER.
+    val debugSyncHalted = out Bool()
+
     // Debug controller interface
     val debugHalt = in Bool()             // Freeze pipeline (from debug controller)
     val debugSp   = out UInt(config.stackConfig.spWidth bits)
@@ -462,6 +473,7 @@ case class JopCore(
   io.debugIoWrCount := ioWrCounter
 
   io.debugHalted := io.debugHalt
+  io.debugSyncHalted := sys.io.halted
 
   // Debug controller register passthrough
   io.debugSp := pipeline.io.debugSp

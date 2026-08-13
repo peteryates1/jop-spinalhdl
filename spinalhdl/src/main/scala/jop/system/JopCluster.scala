@@ -409,7 +409,18 @@ case class JopCluster(
     busCounters(i)(0) := reqCnt.asBits
     busCounters(i)(1) := gntCnt.asBits
     busCounters(i)(2) := busyCnt.asBits
-    busCounters(i)(3) := B(0, 32 bits)
+    // Slot 3: cycles HALTED BY THE LOCK MANAGER (Sys.io.halted, driven from
+    // syncIn.halted — Ihlu or CmpSync, and gcHalt during a stop-the-world).
+    //
+    // This is the follow-on question after the req/gnt counters showed the
+    // stalled core stops ASKING rather than being starved: a core waiting on a
+    // monitor issues no memory traffic at all, so it looks identical from the
+    // bus. If this counter is huge on the stalled core it is blocked in the lock
+    // manager; if it is small the core is spinning somewhere in ordinary code
+    // and neither the bus nor the lock is responsible.
+    val haltCnt = Reg(UInt(32 bits)) init(0)
+    when(cores(i).io.debugSyncHalted && haltCnt =/= U(haltCnt.maxValue)) { haltCnt := haltCnt + 1 }
+    busCounters(i)(3) := haltCnt.asBits
   }
 
   // Arbiter (deferred to here so debug BMB controller can be included)

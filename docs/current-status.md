@@ -1772,6 +1772,33 @@ silently invalidate all of that. Use this to find one:
    pub[3] is now 0 too and core 3 lags — because the RTL changed when the
    counters were added. It is the same class of failure, not the same instance.
 
+   **(b3) The lock-manager halt counter does NOT discriminate — null result.**
+   Slot 3 counts cycles with `Sys.io.halted` (syncIn.halted: Ihlu/CmpSync plus
+   gcHalt). Measured:
+
+   ```
+   STALL live=102731,69,40421628
+     bus[0] req 1589725286 gnt 442929483 busy 1146797891 halt  16411259
+     bus[1] req   59645450 gnt   3876185 busy   55769265 halt 250058075
+     bus[2] req      45727 gnt      2391 busy      43336 halt 250050098
+     bus[3] req         -1 gnt 444574624 busy         -1 halt 250060879
+   ```
+
+   Cores 1, 2 and 3 are all within 0.004% of each other (~250.05M) while core 3
+   RUNS FINE (40.4M heartbeats) and core 2 is wedged (69). A signal identical on
+   a healthy and a wedged core cannot explain the difference, so "blocked in the
+   lock manager" is NOT the answer and this counter should not be re-run
+   expecting one. `Sys.io.halted` looks to be asserted for nearly the whole run
+   on every non-boot core, so it is dominated by something common.
+
+   ALSO: which core stalls now VARIES between runs (live=102731,69,40421628 here
+   against 411990,80,40236098 before). Adding the counters shifted the timing
+   enough to move it, so the earlier bit-identical determinism was a property of
+   that bitstream, not of the bug. Do not rely on it.
+
+   Still true and still unexplained: the wedged core issues almost no memory
+   traffic (45k request-cycles against core 0's 1.59G).
+
    **(b1) The stall was DETERMINISTIC before instrumentation.** Two runs bit-identical:
    `live=411990,80,40236098`, handle 487432, ptr 1902014, same slots and steps.
    Core 2 stops after exactly 80 loop iterations at `step=10` (loop top), never
