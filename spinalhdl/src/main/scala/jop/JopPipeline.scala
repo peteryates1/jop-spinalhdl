@@ -195,7 +195,11 @@ case class JopPipeline(
   fetch.io.bsy := decode.io.wrDly || io.memBusy || stackRotBusy || cu.io.busy
   fetch.io.extStall := stackRotBusy
   decode.io.stall := stackRotBusy
-  bcfetch.io.stall := stackRotBusy
+  // Freeze the bytecode fetch for the WHOLE fetch-stage freeze, not just stack
+  // cache rotation. This holds jpc, jinstr AND jbcAddr together — all three are
+  // gated by io.stall, and freezing fewer than all three desynchronises them
+  // (4ba87fc froze two and skipped a dispatch). See docs/current-status.md.
+  bcfetch.io.stall := fetch.io.frozen
 
   // Decode stage connections
   decode.io.instr := fetch.io.dout

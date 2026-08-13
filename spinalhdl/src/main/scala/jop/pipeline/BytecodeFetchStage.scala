@@ -149,7 +149,28 @@ case class BytecodeFetchStage(
   val doAckIrq = Bool()
   val doAckExc = Bool()
 
-  when(jmp) {
+  when(io.stall) {
+    // HOLD THE READ ON THE PENDING BYTE.
+    //
+    // Highest priority, above jmp and jfetch, because `jfetch`/`jopdfetch` come
+    // from IR and IR is HELD during a memory-wait freeze — so they stay asserted
+    // for the whole stall. Without this the `jpc + 1` branch below keeps firing,
+    // the RAM returns the byte AFTER the pending one, `jpaddr` recomputes to
+    // that byte's handler, and on release `pcMux := io.jpaddr` (FetchStage)
+    // dispatches the WRONG handler: the pending instruction is skipped and its
+    // first operand byte executes as an opcode.
+    //
+    // Measured, 2-core SmpGcTest seed 70704150 at cycle 4896042: frozen at
+    // microcode 0x02fb with jpc=0x01ee (byte 0xE0 = getstatic_ref), jpaddr slid
+    // 0x02c5 -> 0x0228 and stayed there; 0x0228 is the handler for 0x01, the
+    // byte at 0x01ef. See docs/current-status.md.
+    //
+    // `jpc` is the right address to hold: jpc points at the byte still to be
+    // dispatched, and `jinstr := jbcData` on release must see exactly that byte.
+    // The +1 form is only correct when jpc increments in the same cycle, which
+    // is precisely what the stall prevents.
+    jbcAddr := jpc(config.jpcWidth - 1 downto 0)
+  }.elsewhen(jmp) {
     jbcAddr := jmp_addr(config.jpcWidth - 1 downto 0)  // Branch target
   }.elsewhen(io.jfetch || io.jopdfetch) {
     jbcAddr := (jpc + 1)(config.jpcWidth - 1 downto 0)  // Next address

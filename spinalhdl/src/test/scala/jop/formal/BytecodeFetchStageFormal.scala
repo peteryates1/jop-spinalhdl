@@ -45,6 +45,76 @@ class BytecodeFetchStageFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.ena)
   }
 
+  /**
+   * THE FREEZE INVARIANT. While `stall` is asserted nothing about the bytecode
+   * stream may move: not the Java PC, not the latched bytecode, and not the
+   * dispatch address derived from the RAM read.
+   *
+   * This is the property whose absence cost three cascading bugs. `jfetch` and
+   * `jopdfetch` come from the microcode IR, and IR is HELD during a memory-wait
+   * freeze, so they stay asserted for the whole stall — anything keyed off them
+   * as a per-cycle event fires repeatedly. Two separate fixes each froze SOME of
+   * the three and desynchronised the rest:
+   *
+   *   nothing frozen  -> a bytecode is CONSUMED EVERY CYCLE of the stall
+   *   jpc+jinstr only -> jbcAddr prefetches on, jpaddr slides to the NEXT byte's
+   *                      handler, and on release the pending instruction is
+   *                      skipped while its operand executes as an opcode
+   *
+   * Neither showed up in JopJvmTestsBramSim, JopJvmTestsMcFallbackSim or
+   * JopDcuCacheSim — all three passed with the pipeline skipping a dispatch.
+   * A whole-system suite cannot see this: it needs a memory stall to land on an
+   * instruction with jfetch set AND something downstream to notice. `stall` is
+   * driven by anyseq here, so this covers every jfetch/jopdfetch/jmp
+   * combination, which is precisely the space the bug lived in.
+   *
+   * Note every EXISTING unit test in BytecodeFetchStageTest sets stall = false,
+   * so before this the stall path had no behavioural coverage at all.
+   */
+  test("stall freezes jpc, jinstr and the dispatch address") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(BytecodeFetchStage())
+        assumeInitial(ClockDomain.current.isResetActive)
+        setupAllInputs(dut)
+
+        // A bytecode-cache FILL legitimately rewrites the RAM under the read,
+        // which moves jbcData and hence jpaddr. That is a method being replaced,
+        // not the stream advancing, so exclude it rather than weaken the
+        // property: with a fill in flight the core is being redirected anyway.
+        assume(!dut.io.jbcWrEn)
+        // An exception or interrupt arriving during the stall legitimately
+        // REDIRECTS the dispatch: JumpTable muxes jpaddr to sysExcAddr/sysIntAddr
+        // ahead of the decoded bytecode. That is the trap being taken, not the
+        // stream advancing, so exclude it too. Both are latched (excPend/intPend
+        // are registers), hence excluding the inputs from reset suffices.
+        assume(!dut.io.exc)
+        assume(!dut.io.irq)
+
+        // jpaddr needs ONE cycle to settle, and the formal engine found it.
+        // Entering a stall from a jfetch cycle, jbcAddr moves from jpc+1 back to
+        // jpc; the JBC RAM is synchronous, so jpaddr reflects that a cycle later.
+        // That settling is CORRECT — on the release cycle jpaddr is the pending
+        // byte's handler either way — but it is a change, so the invariant is
+        // "held for two cycles => stable", not "held => stable".
+        val stallD  = RegNext(dut.io.stall) init (False)
+        val stallD2 = RegNext(stallD) init (False)
+
+        when(pastValidAfterReset() && past(dut.io.stall)) {
+          assert(stable(dut.io.jpc_out))
+          assert(stable(dut.io.jinstr_out))
+        }
+        when(pastValidAfterReset() && stallD && stallD2) {
+          // FetchStage does `pcMux := io.jpaddr` when jfetch, so a jpaddr that
+          // slides during the stall sends the microcode to the WRONG handler on
+          // release — the pending instruction is skipped and its operand byte
+          // executes as an opcode. That was the 4ba87fc failure exactly.
+          assert(stable(dut.io.jpaddr))
+        }
+      })
+  }
+
   test("no double acknowledge") {
     formalConfig
       .withBMC(4)

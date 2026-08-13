@@ -1043,7 +1043,41 @@ silently invalidate all of that. Use this to find one:
    R0 clear=ON  minors 1 lost 0  haltLeak 0     <- the test now RUNS ROUNDS
    ```
 
-   ### THE NAIVE FIX FOR THE jpc RUNAWAY IS WRONG — see `4ba87fc`, reverted
+   ### FIXED 2026-08-13 — three signals must freeze, and now they do
+
+   `BytecodeFetchStage`: `when(io.stall) { jbcAddr := jpc }` as the HIGHEST
+   priority arm of the read-address mux, above `jmp` and `jfetch`.
+   `JopPipeline`: `bcfetch.io.stall := fetch.io.frozen`. Both are required —
+   either alone desynchronises.
+
+   Verified in the order cheapest-first, which is the point:
+
+   1. **Boundary trace** — `jpaddr` holds at 0x02c5 for all 20 frozen cycles,
+      alongside pc/jpc/jinstr. It previously slid to 0x0228 on the second cycle.
+   2. **Reproducer** — `EXC=0 ESCAPE=0 NULLMP=0 WILD=0`, handle_cnt constant, and
+      SmpGcTest runs **R0..R5 all `lost 0`** at 2 cores. It derailed at ~4.9M
+      every previous run.
+   3. **Regressions** — JvmTests 132, McFallback 132 (pinned seed), DcuCache
+      59/59, formal **122** (was 121; the new property is the +1).
+
+   **A formal property now covers this**, in `BytecodeFetchStageFormal`:
+   during a sustained stall, `jpc`, `jinstr` and `jpaddr` are all stable. It has
+   TEETH — verified to FAIL with the fix disabled and pass with it, which matters
+   because this repo has form for tests that cannot fail (items 2 and 29).
+
+   Three exclusions the solver forced, each a real fact about the design:
+   a cache FILL (`jbcWrEn`) legitimately rewrites RAM under the read; `jpaddr`
+   needs ONE cycle to settle because entering a stall moves `jbcAddr` from
+   `jpc+1` back to `jpc` and the JBC RAM is synchronous; and `exc`/`irq`
+   legitimately redirect dispatch to `sysExcAddr`/`sysIntAddr`.
+
+   **Why this was invisible for so long:** every one of the ~12 tests in
+   `BytecodeFetchStageTest` sets `io.stall = false`, and the formal harness drove
+   `stall` with `anyseq` but asserted nothing about it. The stall path had NO
+   behavioural coverage, which is exactly how a fix that skipped a dispatch
+   passed 132/132/59/121.
+
+   ### The history: the naive fix was wrong — see `4ba87fc`, reverted
 
    Built, regression-clean, and REVERTED because it traded one derailment for a
    subtler one. Take the analysis from here; do not re-apply the patch.
