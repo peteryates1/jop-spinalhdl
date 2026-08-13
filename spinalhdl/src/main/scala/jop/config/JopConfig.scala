@@ -435,6 +435,36 @@ object JopConfig {
         memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)))))
   }
 
+  /**
+   * EP4CGX150 — BRAM, serial download, N cores. THE SIM/HARDWARE BRIDGE.
+   *
+   * At 4 cores SmpGcTest passes in simulation on BOTH memory models (BRAM and
+   * the SDRAM model) but STALLS on the board, with one core starving
+   * deterministically. Every other variable has been matched — core count, lock
+   * (Ihlu), GC mode, even the layout (cardShift 4, nurseryBase 1902394) — so the
+   * remaining difference is silicon itself. This build keeps Quartus synthesis
+   * and the real device while removing the SDRAM controller and the physical
+   * memory from the equation, which bisects "silicon" from "the SDRAM path".
+   *
+   * 60 MHz by default, NOT the 80 the other presets declare: dram_pll.vhd is
+   * hardwired to 60, and the preset frequency only feeds the SDC constraint and
+   * the UART divider. Matching it means the UART lands on the nominal baud
+   * instead of needing the 1.5 Mbaud scaling workaround.
+   *
+   * hasCardTable is required or IO_CARD_SHIFT reads 0, GC.init falls back to the
+   * classic collector, and the run exercises nothing generational.
+   */
+  def ep4cgx150BramSmp(n: Int, clkMhz: Int = 60) = {
+    val base = ep4cgx150BramSerial
+    base.copy(systems = Seq(base.system.copy(
+      name = s"bram-smp$n",
+      cpuCnt = n,
+      clkFreq = clkMhz MHz,
+      coreConfig = base.system.coreConfig.copy(
+        memConfig = JopMemoryConfig(mainMemSize = 128 * 1024,
+          hasCardTable = true, cardTableBudgetBytes = 16 * 1024)))))
+  }
+
   /** EP4CGX150 — serial download into BRAM (128KB) */
   def ep4cgx150BramSerial = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,

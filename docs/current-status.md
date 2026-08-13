@@ -1713,7 +1713,23 @@ silently invalidate all of that. Use this to find one:
    Reproducer, still valid as a FAILURE:
    `sbt "Test/runMain jop.system.JopSmpNCoreHelloWorldSim 4"`.
 
-   **(b) The hardware 4-core stall is DETERMINISTIC.** Two runs bit-identical:
+   **(b) NARROWED 2026-08-13 — the SDRAM PATH is implicated, silicon is not.**
+   A BRAM build on the SAME board isolates it:
+
+   | config | 4 cores + SmpGcTest |
+   |---|---|
+   | BRAM sim | PASS |
+   | SDRAM sim (`JopSmpSdramNCoreHelloWorldSim 4 250000000 <SmpGcTest.jop>`) | PASS |
+   | **BRAM hardware** (`ep4cgx150BramSmp 4 60`) | **PASS** — SMPGC OK, 192 verified, 0 errors |
+   | SDRAM hardware (`ep4cgx150Smp 4 60`) | **STALL** — core 2 starves |
+
+   The BRAM board build passes at only **+0.050 ns** setup slack, which makes the
+   result strong rather than weak: marginal timing produces failures, not
+   successes. Quartus synthesis and the real device are common to both hardware
+   rows, so what differs is the SDRAM controller, refresh, and the physical
+   device under 4-core contention. Next look there, NOT at the cores.
+
+   **(b1) The stall itself is DETERMINISTIC.** Two runs bit-identical:
    `live=411990,80,40236098`, handle 487432, ptr 1902014, same slots and steps.
    Core 2 stops after exactly 80 loop iterations at `step=10` (loop top), never
    entering `publish()`. Determinism rules out a race, and rules out X-state

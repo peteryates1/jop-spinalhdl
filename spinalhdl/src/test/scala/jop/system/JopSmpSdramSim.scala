@@ -35,13 +35,29 @@ case class JopSmpSdramTestHarness(
 
   val md = MemoryDevice.W9825G6JH6
 
+  // ONE config for the cluster and the io widths.
+  //
+  // hasCardTable is not optional here: without it IO_CARD_SHIFT reads 0, GC.init
+  // falls back to the classic collector, and the run reports "no card table -
+  // generational disabled" — which made this harness incomparable with
+  // JopIhluTestHarness and produced a spurious core-1 no-start in the BRAM
+  // twin. burstLen = 4 (4-word burst BC_FILL) is preserved from the original.
+  val harnessCfg = JopCoreConfig(
+    memConfig = JopMemoryConfig(burstLen = 4,
+      hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
+    useCmpSync = false
+  )
+
   val io = new Bundle {
     // SDRAM interface (exposed for simulation model)
     val sdram = master(SdramInterface(SdramDeviceInfo.layoutFor(md)))
 
     // Per-core pipeline outputs
-    val pc  = out Vec(UInt(11 bits), cpuCnt)
-    val jpc = out Vec(UInt(12 bits), cpuCnt)
+    // Widths from the CONFIG, not literals — an 11-bit pc against a 12-bit
+    // JopCoreConfig.pcWidth failed elaboration with WIDTH MISMATCH, which is
+    // why this sim had not run since the microcode ROM widened to 4K.
+    val pc  = out Vec(UInt(harnessCfg.pcWidth bits), cpuCnt)
+    val jpc = out Vec(UInt((harnessCfg.jpcWidth + 1) bits), cpuCnt)
 
     // Per-core stack outputs
     val aout = out Vec(Bits(32 bits), cpuCnt)
@@ -83,9 +99,7 @@ case class JopSmpSdramTestHarness(
 
   val cluster = JopCluster(
     cpuCnt = cpuCnt,
-    baseConfig = JopCoreConfig(
-      memConfig = JopMemoryConfig(burstLen = 4)  // 4-word burst BC_FILL
-    ),
+    baseConfig = harnessCfg,
     romInit = Some(romInit),
     ramInit = Some(ramInit),
     jbcInit = Some(jbcInit)
@@ -153,7 +167,12 @@ case class JopSmpSdramTestHarness(
 object JopSmpSdramNCoreHelloWorldSim extends App {
   val cpuCnt = if (args.length > 0) args(0).toInt else 4
 
-  val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
+  // App is overridable so this harness can run the SAME workload as the board.
+  // The 4-core hardware stall is SmpGcTest on SDRAM; NCoreHelloWorld only wakes
+  // the cores and toggles watchdogs, so passing it says nothing about the heavy
+  // GC workload that actually stalls.
+  //   argv: [cpuCnt] [maxCycles] [app.jop]
+  val jopFilePath = if (args.length > 2) args(2) else "java/apps/Small/NCoreHelloWorld.jop"
   val romFilePath = "asm/generated/mem_rom.dat"
   val ramFilePath = "asm/generated/mem_ram.dat"
   val logFilePath = "spinalhdl/smp_sdram_ncore_simulation.log"
@@ -205,7 +224,12 @@ object JopSmpSdramNCoreHelloWorldSim extends App {
 
       dut.clockDomain.waitSampling(5)
 
-      val maxCycles = 5000000  // 5M cycles (A$ line fill increases SDRAM traffic in SMP)
+      // 5M was the default and it is NOT enough once the card table is present:
+      // the run stopped inside "GC init...." with every core at zero, which
+      // reads as a total wedge but is just the cap. SDRAM costs far more cycles
+      // per access than the BRAM twin (which finishes in ~261k). Overridable so
+      // a cap can be ruled out before a failure is believed.
+      val maxCycles = if (args.length > 1) args(1).toInt else 40000000
       val reportInterval = 500000
       var done = false
       var cycle = 0

@@ -26,14 +26,29 @@ case class JopSmpTestHarness(
 ) extends Component {
   require(cpuCnt >= 1)
 
+  // ONE config, used for both the cluster and the io widths below.
+  //
+  // hasCardTable matters, and its absence made this harness incomparable with
+  // JopIhluTestHarness: without it IO_CARD_SHIFT reads 0, GC.init falls back to
+  // the classic collector, and the sim reports "no card table - generational
+  // disabled" having exercised nothing generational. The two harnesses were
+  // then being compared across DIFFERENT GC modes, and a core-1 no-start here
+  // was wrongly read as a locking difference — both use Ihlu
+  // (useCmpSync defaults to false and neither overrides it).
+  val harnessCfg = JopCoreConfig(
+    memConfig = JopMemoryConfig(mainMemSize = memSize,
+      hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
+    useCmpSync = false
+  )
+
   val io = new Bundle {
     // Per-core pipeline outputs
     // Widths come from the CONFIG, not literals: pcWidth moved 11 -> 12 (4K
     // microcode ROM) and this harness kept an 11-bit literal, so it failed
     // elaboration with WIDTH MISMATCH and nobody noticed — `compile` does not
     // elaborate, and this sim is not in CI.
-    val pc  = out Vec(UInt(JopCoreConfig().pcWidth bits), cpuCnt)
-    val jpc = out Vec(UInt(12 bits), cpuCnt)
+    val pc  = out Vec(UInt(harnessCfg.pcWidth bits), cpuCnt)
+    val jpc = out Vec(UInt((harnessCfg.jpcWidth + 1) bits), cpuCnt)
 
     // Per-core stack outputs
     val aout = out Vec(Bits(32 bits), cpuCnt)
@@ -76,9 +91,7 @@ case class JopSmpTestHarness(
 
   val cluster = JopCluster(
     cpuCnt = cpuCnt,
-    baseConfig = JopCoreConfig(
-      memConfig = JopMemoryConfig(mainMemSize = memSize)
-    ),
+    baseConfig = harnessCfg,
     romInit = Some(romInit),
     ramInit = Some(ramInit),
     jbcInit = Some(jbcInit)
