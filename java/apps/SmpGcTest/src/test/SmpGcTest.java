@@ -463,6 +463,28 @@ public class SmpGcTest {
 						}
 					}
 					JVMHelp.wr("\r\n");
+					// BUS COUNTERS per core, straight from the arbiter inputs.
+					// This is the whole point of the stall dump: it separates
+					// "the core is asking and not being served" (req climbing,
+					// gnt flat => starvation in the arbiter or SDRAM controller)
+					// from "the core is not asking at all" (req flat => it is
+					// wedged elsewhere and the bus is a red herring). `busy` is
+					// cycles spent with a request outstanding and ungranted, so a
+					// slow path and a stopped one look different.
+					// Read through the root port: target >= 8 selects the counter
+					// bank of core (target-8). See JopCluster.
+					for (int c = 0; c < cpuCnt; c++) {
+						JVMHelp.wr("  bus[");
+						wrInt(c);
+						JVMHelp.wr("] req ");
+						wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_STACK, 0));
+						JVMHelp.wr(" gnt ");
+						wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_SP, 0));
+						JVMHelp.wr(" busy ");
+						wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_A, 0));
+						JVMHelp.wr("\r\n");
+					}
+					GC.rootRelease();
 					spins = 0;
 					++stalls;
 					if (stalls > 6) { JVMHelp.wr("SMPGC STALLED\r\n"); phase = 3; return; }

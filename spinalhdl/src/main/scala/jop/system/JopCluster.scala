@@ -375,6 +375,43 @@ case class JopCluster(
   }
 
   // ==================================================================
+  // PER-CORE BUS COUNTERS, for the 4-core SDRAM stall (item 34).
+  //
+  // The stall needs BOTH the SDRAM path AND four masters: 2 cores on the same
+  // memory passes, and 4 cores passes on BRAM and in BOTH simulations. It does
+  // not reproduce anywhere a waveform can reach, so the only place to measure it
+  // is the board. These separate the two possibilities that look identical from
+  // the application:
+  //   req climbing, gnt flat -> the core IS asking and not being served:
+  //                             starvation in the arbiter or the controller
+  //   req flat               -> it is not asking, so it is wedged elsewhere and
+  //                             the bus is a red herring
+  //   busy                   -> cycles spent with a request outstanding and
+  //                             ungranted, to tell a slow path from a stopped one
+  //
+  // Saturating, not wrapping: a wrapped counter read once after a stall cannot
+  // be told from a small one.
+  //
+  // EXACTLY ONE assignment per element. A default `:= 0` here plus a conditional
+  // drive inside the arbiter block is an ASSIGNMENT OVERLAP, which `compile`
+  // does not catch because it never elaborates — the same way gcRootRamAddr
+  // broke SMP elaboration silently.
+  val busCounters = Vec.fill(cpuCnt)(Vec(Bits(32 bits), 4))
+  for (i <- 0 until cpuCnt) {
+    val reqCnt  = Reg(UInt(32 bits)) init(0)
+    val gntCnt  = Reg(UInt(32 bits)) init(0)
+    val busyCnt = Reg(UInt(32 bits)) init(0)
+    val req = cores(i).io.bmb.cmd.valid
+    val gnt = cores(i).io.bmb.cmd.valid && cores(i).io.bmb.cmd.ready
+    when(req && reqCnt  =/= U(reqCnt.maxValue))  { reqCnt  := reqCnt + 1 }
+    when(gnt && gntCnt  =/= U(gntCnt.maxValue))  { gntCnt  := gntCnt + 1 }
+    when(req && !gnt && busyCnt =/= U(busyCnt.maxValue)) { busyCnt := busyCnt + 1 }
+    busCounters(i)(0) := reqCnt.asBits
+    busCounters(i)(1) := gntCnt.asBits
+    busCounters(i)(2) := busyCnt.asBits
+    busCounters(i)(3) := B(0, 32 bits)
+  }
+
   // Arbiter (deferred to here so debug BMB controller can be included)
   // ==================================================================
 
@@ -387,6 +424,7 @@ case class JopCluster(
     for (i <- 0 until cpuCnt) {
       arbiter.io.inputs(i) << cores(i).io.bmb
     }
+
     var nextPort = cpuCnt
     // Debug BMB controller
     if (hasDebugMem) {
@@ -600,12 +638,23 @@ case class JopCluster(
     } else {
       word := 0; sp := 0; ra := 0; rb := 0
     }
-    cores(r).io.rootData := what.mux(
+    // Counter bank shares the root port rather than taking a new I/O address:
+    // Sys decodes 4 bits and all 16 names are already used. The target field is
+    // 4 bits but never exceeds cpuCnt, so tgt >= 8 is free and means "read the
+    // bus counters of core tgt-8", with `what` picking req/gnt/busy.
+    val ctrTgt = (tgt - 8).resize(log2Up(cpuCnt) max 1)
+    val ctr    = Bits(32 bits)
+    ctr := busCounters(0)(what.asUInt)
+    for (t <- 1 until cpuCnt) {
+      when(ctrTgt === U(t, ctrTgt.getWidth bits)) { ctr := busCounters(t)(what.asUInt) }
+    }
+
+    cores(r).io.rootData := Mux(tgt >= U(8, 4 bits), ctr, what.mux(
       B"00" -> word,
       B"01" -> sp,
       B"10" -> ra,
       default -> rb
-    )
+    ))
   }
 
   if (debugConfig.isEmpty) {

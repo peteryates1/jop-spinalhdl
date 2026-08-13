@@ -1743,7 +1743,36 @@ silently invalidate all of that. Use this to find one:
    rows, so what differs is the SDRAM controller, refresh, and the physical
    device under 4-core contention. Next look there, NOT at the cores.
 
-   **(b1) The stall itself is DETERMINISTIC.** Two runs bit-identical:
+   **(b2) MEASURED ON HARDWARE 2026-08-13 — NOT bus starvation.** Per-core
+   counters at the arbiter inputs (req/gnt/busy, read back through the root port,
+   `tgt >= 8` selects the counter bank; dumped by SmpGcTest at STALL):
+
+   ```
+   STALL live=40294532,191,307987  pub[1]=1 pub[2]=0 pub[3]=0
+     bus[0] req 1577182941  gnt 440891195  busy 1136293713
+     bus[1] req         -1  gnt 445742537  busy         -1   (saturated)
+     bus[2] req      76125  gnt      3881  busy      72244
+     bus[3] req   35409712  gnt   3085714  busy   32323998
+   ```
+
+   `req` counts CYCLES with a request outstanding, so a core blocked on the bus
+   climbs without bound — core 1 does exactly that (saturated) while running
+   fine. The stalled core 2 shows **76k** request-cycles against core 3's 35M and
+   core 0's 1.5G: four to five orders of magnitude LESS traffic, not more
+   waiting. `req = busy + gnt` holds exactly (76125 = 72244 + 3881), so the
+   counters are self-consistent.
+
+   **So the core stopped ASKING. Arbiter and SDRAM-controller starvation are
+   ruled out, and the bus is a red herring** — do not start there. The SDRAM
+   correlation is real but indirect: something about that configuration wedges a
+   core in a path that issues no memory traffic. Next suspects are the Ihlu lock
+   (a core waiting on a monitor issues nothing) and the exception path.
+
+   Note this run's stall differs in detail from the earlier bit-identical pair —
+   pub[3] is now 0 too and core 3 lags — because the RTL changed when the
+   counters were added. It is the same class of failure, not the same instance.
+
+   **(b1) The stall was DETERMINISTIC before instrumentation.** Two runs bit-identical:
    `live=411990,80,40236098`, handle 487432, ptr 1902014, same slots and steps.
    Core 2 stops after exactly 80 loop iterations at `step=10` (loop top), never
    entering `publish()`. Determinism rules out a race, and rules out X-state
