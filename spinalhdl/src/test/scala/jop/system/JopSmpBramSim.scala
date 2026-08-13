@@ -28,7 +28,11 @@ case class JopSmpTestHarness(
 
   val io = new Bundle {
     // Per-core pipeline outputs
-    val pc  = out Vec(UInt(11 bits), cpuCnt)
+    // Widths come from the CONFIG, not literals: pcWidth moved 11 -> 12 (4K
+    // microcode ROM) and this harness kept an 11-bit literal, so it failed
+    // elaboration with WIDTH MISMATCH and nobody noticed — `compile` does not
+    // elaborate, and this sim is not in CI.
+    val pc  = out Vec(UInt(JopCoreConfig().pcWidth bits), cpuCnt)
     val jpc = out Vec(UInt(12 bits), cpuCnt)
 
     // Per-core stack outputs

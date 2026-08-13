@@ -1684,6 +1684,59 @@ silently invalidate all of that. Use this to find one:
    real SMP GC application before "IHLU GC verified" means anything — the same
    application item 1 needs to build its failing test on (see *Coupling*).
 
+- **34.** **4-CORE STATUS after the fetch-stall fixes (2026-08-13).** Two DISTINCT
+   failures remain, and the fixes landed today are implicated in neither.
+
+   | test | lock | memory | 4 cores |
+   |---|---|---|---|
+   | SmpGcTest | Ihlu | BRAM sim | **PASS** — 8 rounds, 192 verified, 0 errors |
+   | `JopIhluNCoreHelloWorldSim` | Ihlu | BRAM sim | **PASS** — 89 lock ops, C0-C3 all toggle |
+   | `JopSmpNCoreHelloWorldSim` | **CmpSync** | BRAM sim | **FAIL** — C1 never toggles |
+   | SmpGcTest | Ihlu | **SDRAM hardware** | **STALL** — core 2 starves |
+
+   **(a) The GLOBAL LOCK fails at 4 cores — cheap sim reproducer.** Same app,
+   same core count, opposite outcome purely on the lock: `JopIhluTestHarness`
+   sets `useCmpSync = false` and passes; the CmpSync harness reports
+   `Per-core WD toggles: C0=1 C1=0 C2=1 C3=1` — core 1 never starts at all. Fits
+   the known "CmpSync is not reentrant and has no counter" note. Reproduce:
+   `sbt "Test/runMain jop.system.JopSmpNCoreHelloWorldSim 4"`.
+   NOTE the boards are NOT affected by this one: `ep4cgx150Smp` defaults
+   `cmpSync = false`, so hardware runs Ihlu.
+
+   **(b) The hardware 4-core stall is DETERMINISTIC.** Two runs bit-identical:
+   `live=411990,80,40236098`, handle 487432, ptr 1902014, same slots and steps.
+   Core 2 stops after exactly 80 loop iterations at `step=10` (loop top), never
+   entering `publish()`. Determinism rules out a race, and rules out X-state
+   (simulation-only). What DOES work on silicon at 4 cores: generational GC with
+   16-word cards, tenuring, and `STACKROOT ... OK` with `PTR-AGREE` — the cores
+   agree word for word on a 2 MB SDRAM heap.
+   The discriminator is BRAM-sim-passes vs SDRAM-hardware-stalls, so
+   `JopSmpSdramNCoreHelloWorldSim` (4 cores, SDRAM model) is the bridge; it
+   hardcodes NCoreHelloWorld, so pointing it at SmpGcTest is the targeted version.
+
+   **THREE SMP HARNESSES WERE BROKEN**, which is why none of this had been seen:
+   - `JopSmpBramSim` did not ELABORATE — `val pc = out Vec(UInt(11 bits), ...)`
+     against a 12-bit `JopCoreConfig.pcWidth` (the 4K microcode ROM). Fixed here
+     to derive from the config. `compile` does not elaborate and this sim is not
+     in CI, so it failed silently since the ROM widened.
+   - `JopSmpBramSim` ALSO hardcodes `cpuCnt = 2`, so a core-count argument is
+     silently ignored, and it waits for `"GC test start"` while loading
+     single-core `HelloWorld.jop` — output that app never produces. It cannot
+     pass. Same defect as item 2.
+   - `JopIhluSim` has no object of that name; the runnable ones are
+     `JopIhluNCoreHelloWorldSim` and `JopIhluGcBramSim`.
+
+   **The `java/apps/Small` build only works via ACCUMULATED STATE.** `PreLinker`
+   needs the full transitive closure of runtime classes, but javac compiles only
+   what the app references, so `build/classes` is populated by whatever earlier
+   builds happened to leave. `rm -rf build` breaks it for everyone: the linker
+   then fails on `java/lang/Throwable.class`, then `java/io/PrintStream.class`,
+   and so on. Recovery is to compile the whole runtime tree once:
+   `javac -sourcepath "src:../../runtime/src/{jop,jvm,jdk}" -d build/classes
+   $(find ../../runtime/src -name '*.java') src/test/<App>.java`.
+   Also beware `make clean` here — `JOP_OUT` derives from `APP_NAME`, so it
+   deletes `HelloWorld.jop` (item 13).
+
 - **33.** ~~**`AlteraLpm.createRam` discarded the debug stack-RAM address**~~ —
    **FIXED `8ef6aa9`, HARDWARE-VERIFIED 2026-08-12.** The debug read port returned
    the wrong word on every Altera build, which is why the cross-core root scan
