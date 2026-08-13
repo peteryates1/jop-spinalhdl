@@ -594,16 +594,30 @@ public class GC {
 			// are proven, and delete it once the halt/release path is fixed.
 			int cardShift0 = Native.rd(Const.IO_CARD_SHIFT);
 			int cpuCnt0 = Native.rdMem(Const.IO_CPUCNT);
-			// Tightened from `<= 2` to `<= 1` on 2026-08-11. Two cores was set as
-			// the validated boundary on the strength of a SmpGcTest run that
-			// never overlapped a minor GC with a cross-generation store: the old
-			// test churned only in phase 2, after every publisher had finished.
-			// With the overlap the same 2-core configuration LOSES REFERENCES on
-			// hardware, deterministically — a young object still referenced from
-			// a tenured holder is collected. So 2 cores was never validated
-			// against the case the card table exists for. Raise it again only
-			// with a run that overlaps the two.
-			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 1;
+			// RAISED BACK to `<= 2` on 2026-08-13, on hardware evidence.
+			//
+			// It was tightened to `<= 1` on 2026-08-11 because SmpGcTest with the
+			// minor-GC / cross-generation-store OVERLAP lost references on
+			// hardware at 2 cores, deterministically. The condition for raising
+			// it again was "a run that overlaps the two". That run now passes on
+			// the board: EP4CGX150, SDRAM, 2 cores at 60 MHz, SmpGcTest with the
+			// overlap and the card-clear A/B — 8 rounds, minors 10, verified 192,
+			// errors 0, SMPGC OK.
+			//
+			// The reference loss was never a collector fault. It was a
+			// FETCH-PIPELINE bug: during a memory-wait freeze jfetch stayed
+			// asserted out of a held IR, so bytecodes were consumed unexecuted
+			// and a dispatch was skipped, derailing a core into aliased cache
+			// contents that eventually fired the hardware copy engine over
+			// GC.handle_cnt. Fixed by freezing jpc, jinstr AND jbcAddr together
+			// (BytecodeFetchStage + JopPipeline), with a formal property in
+			// BytecodeFetchStageFormal to keep it fixed.
+			//
+			// STILL 2, NOT 4: four cores on SDRAM hardware stalls with one core
+			// starved. That is contention in the SDRAM path, not the collector —
+			// 4 cores passes in both simulations and on a BRAM board build. See
+			// item 34 in docs/current-status.md.
+			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 2;
 			genCardWords = genActive ? (1 << cardShift0) : 0;
 
 			if (genActive) {
