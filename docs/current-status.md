@@ -1694,14 +1694,24 @@ silently invalidate all of that. Use this to find one:
    | `JopSmpNCoreHelloWorldSim` | **CmpSync** | BRAM sim | **FAIL** — C1 never toggles |
    | SmpGcTest | Ihlu | **SDRAM hardware** | **STALL** — core 2 starves |
 
-   **(a) The GLOBAL LOCK fails at 4 cores — cheap sim reproducer.** Same app,
-   same core count, opposite outcome purely on the lock: `JopIhluTestHarness`
-   sets `useCmpSync = false` and passes; the CmpSync harness reports
-   `Per-core WD toggles: C0=1 C1=0 C2=1 C3=1` — core 1 never starts at all. Fits
-   the known "CmpSync is not reentrant and has no counter" note. Reproduce:
+   **(a) RETRACTED — this is NOT a global-lock failure.** `JopSmpNCoreHelloWorldSim 4`
+   does report `Per-core WD toggles: C0=1 C1=0 C2=1 C3=1` — core 1 never starts —
+   while `JopIhluNCoreHelloWorldSim 4` passes. But BOTH use Ihlu:
+   `JopCoreConfig.useCmpSync` defaults to false and NEITHER harness overrides it.
+   The claim that the global lock was implicated came from reading the
+   `JopIhluSim` header comment instead of checking the config, and is withdrawn.
+
+   The harnesses differ in CONFIGURATION, not locking. `JopIhluTestHarness`
+   builds an explicit `harnessCfg` with `hasCardTable = true`;
+   `JopSmpTestHarness` has none, so `IO_CARD_SHIFT` reads 0 and GC.init falls
+   back to the classic collector — the UART says exactly that:
+   `GC: classic (no card table - generational disabled)`. So the comparison was
+   generational-Ihlu against classic-Ihlu, and the cause of the core-1 no-start
+   is NOT yet isolated. Give `JopSmpTestHarness` the same explicit config before
+   drawing anything from it.
+
+   Reproducer, still valid as a FAILURE:
    `sbt "Test/runMain jop.system.JopSmpNCoreHelloWorldSim 4"`.
-   NOTE the boards are NOT affected by this one: `ep4cgx150Smp` defaults
-   `cmpSync = false`, so hardware runs Ihlu.
 
    **(b) The hardware 4-core stall is DETERMINISTIC.** Two runs bit-identical:
    `live=411990,80,40236098`, handle 487432, ptr 1902014, same slots and steps.
