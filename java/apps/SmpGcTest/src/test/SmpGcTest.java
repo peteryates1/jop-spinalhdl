@@ -91,6 +91,25 @@ public class SmpGcTest {
 	static int[] pubExcCnt;
 	static int[] pubExcStep;
 
+	/**
+	 * Handle of `liveTick`, captured by core 0 so the publishers can read the
+	 * SAME length word two different ways every iteration.
+	 *
+	 * The bounds fault reports length 0 for a word that holds 4, and the heap is
+	 * mostly zeros, so "wrong data" and "wrong address" are indistinguishable
+	 * from that one number. These two counters separate the paths instead:
+	 *   rawLenBad  Native.rdMem(handle+1) -- the plain memory-read state machine
+	 *   aLenBad    liveTick.length        -- the handle/array state machine
+	 * Both read the identical word over the same BMB port, so
+	 *   rawLenBad > 0 => the memory system returns wrong data, and the array
+	 *                    path is just where it happens to show
+	 *   rawLenBad = 0 and aLenBad > 0 => only the handle path is wrong, and the
+	 *                    memory system is exonerated
+	 */
+	static int liveTickHandle;
+	static int[] rawLenBad;
+	static int[] aLenBad;
+
 	static volatile int phase;        // 0 = idle, 1 = publishers run, 2 = core0 verifies
 	static volatile int publishRound;
 
@@ -236,6 +255,9 @@ public class SmpGcTest {
 		pubSlot = new int[cpuCnt];
 		pubExcCnt = new int[cpuCnt];
 		pubExcStep = new int[cpuCnt];
+		rawLenBad = new int[cpuCnt];
+		aLenBad = new int[cpuCnt];
+		liveTickHandle = Native.toInt(liveTick);
 		for (int p = 0; p < cpuCnt; p++) {
 			pubRound[p] = 0; liveTick[p] = 0; pubStep[p] = 0; pubSlot[p] = -1;
 		}
@@ -830,6 +852,12 @@ public class SmpGcTest {
 		// returns the previous transaction's data.
 		JVMHelp.wr(" bmbOut ");
 		wrInt(tb2 >>> 8);
+		if (c > 0) {
+			JVMHelp.wr(" rawLenBad ");
+			wrInt(rawLenBad[c]);
+			JVMHelp.wr(" aLenBad ");
+			wrInt(aLenBad[c]);
+		}
 		JVMHelp.wr("\r\n");
 	}
 		GC.rootRelease();
@@ -888,6 +916,13 @@ public class SmpGcTest {
 		int round = 0;
 		while (true) {
 			try {
+				// Same word, two paths — see liveTickHandle.
+				if (Native.rdMem(liveTickHandle + GC.OFF_MTAB_ALEN) != cpuCnt) {
+					rawLenBad[id] = rawLenBad[id] + 1;
+				}
+				if (liveTick.length != cpuCnt) {
+					aLenBad[id] = aLenBad[id] + 1;
+				}
 				liveTick[id] = liveTick[id] + 1;
 				pubStep[id] = 10;
 				int ph = phase;

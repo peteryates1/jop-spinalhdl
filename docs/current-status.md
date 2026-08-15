@@ -1772,6 +1772,31 @@ silently invalidate all of that. Use this to find one:
    pub[3] is now 0 too and core 3 lags — because the RTL changed when the
    counters were added. It is the same class of failure, not the same instance.
 
+   **(b9) A PLAIN `rdMem` GETS IT WRONG TOO — so the array path is exonerated.**
+   Each publisher now reads the SAME length word two ways every iteration:
+   `Native.rdMem(handle+1)` (the plain memory-read state machine) and
+   `liveTick.length` (the handle/array state machine). Both are wrong sometimes:
+
+   ```
+     core[1] ... exc 4 type 3 bmbOut 0 rawLenBad 2 aLenBad 1
+     core[2] ... exc 0 type 0 bmbOut 1 rawLenBad 0 aLenBad 1
+     core[3] ... exc 0 type 0 bmbOut 0 rawLenBad 0 aLenBad 1
+   ```
+
+   `rawLenBad` counts a plain `rdMem` of that word returning something other than
+   4, and it GROWS (1 -> 2 across rounds on core 1). The bounds check is not
+   special; it is simply where a bad read gets noticed, because it is the only
+   read whose result is checked. So the fault is BELOW `BmbMemoryController` —
+   in the arbiter, `BmbSdramCtrl32`, or the SDRAM controller.
+
+   Note the rate: a handful of events against millions of iterations. Any theory
+   has to explain something that rare, which argues for a narrow timing window
+   rather than a structural mistake in the state machines.
+
+   Also worth keeping in mind when reading `abLen 0`: the heap is mostly zeros,
+   so a read that goes to the WRONG ADDRESS returns 0 just as readily as one that
+   returns wrong data. "Always exactly 0" does not by itself distinguish the two.
+
    **(b8) THE FAULT IS A READ THAT RETURNS 0 FOR AN ARRAY LENGTH OF 4.** The
    bounds-check operands are now latched in hardware at the first EXC_AB per core
    and reported every round:
