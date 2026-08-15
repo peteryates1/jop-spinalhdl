@@ -874,6 +874,27 @@ object JopConfig {
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
   }
 
+  /**
+   * Wukong DDR3 — SMP, N cores, for validating the generational collector on a
+   * DDR3 board (current-status item 1 lists DDR3 above 2 cores as asserted but
+   * not verified).
+   *
+   * Derived from `wukongDdr3` rather than `wukongSmpMinimal`, which looks like
+   * the obvious base and is the wrong one twice over: it replaces coreConfig
+   * with a bare `JopCoreConfig()`, so `hasCardTable` goes false and `GC.init`
+   * falls back to the CLASSIC collector — a generational test on it measures
+   * nothing at all. `wukongDdr3` keeps the 16 KB card table.
+   *
+   * It is also ICU-only (`idiv`/`irem` hw, everything else microcode), which
+   * keeps the Vivado build tractable at 4 cores and costs nothing here:
+   * SmpGcTest is integer-only. Do not run DoAll on this expecting 66/66 without
+   * checking the bytecode map first — see item 17.
+   */
+  def wukongDdr3Smp(n: Int) = {
+    val base = wukongDdr3
+    base.copy(systems = Seq(base.system.copy(name = s"ddr3smp$n", cpuCnt = n)))
+  }
+
   /** Wukong DDR3 — minimal SMP (no CUs, just cores + UART) for SMP+DDR3 debug */
   def wukongSmpMinimal(n: Int) = {
     val base = wukongDdr3

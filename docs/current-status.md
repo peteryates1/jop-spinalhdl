@@ -84,12 +84,50 @@ silently invalidate all of that. Use this to find one:
    SmpGcTest checks the same bound before reading them. Restoring them for a
    wider cluster means widening `rootSel`, which is a `Sys` change.
 
-   **Still asserted, not verified:** 16 cores; the DDR3 boards at >2 cores, which
-   do not use this adapter and so were never affected by this bug but have also
-   never been run generational above 2 cores. The cluster-level card table the
-   original entry proposed turned out **not** to be needed: the per-core tables
-   are fine, and `SMPGC OK` means the cross-generation references genuinely
-   survived, so the workload did exercise it.
+   **DDR3 CONFIRMED at 4 cores (2026-08-15).** Wukong XC7A100T, new preset
+   `wukongDdr3Smp(4)`, 100 MHz, post-route WNS **+0.081 ns** / WHS +0.065:
+   `GC: generational, 512-word cards`, `SMPGC OK`, `minors 10 / verified 192 /
+   errors 0`, **5 of 6 runs**. This matters as an independent check as well as a
+   coverage tick — DDR3 goes MIG -> `CacheToMigAdapter` and never touches
+   `AlteraSdramAdapter`, so it confirms the fix's claimed scope.
+
+   The one failure was the FIRST run after programming: the card size printed as
+   `!!` instead of `512` and the run then hung. Every run after a fresh reprogram
+   was clean. That has the shape of the item 32 UART corruption plus the known
+   "reprogram immediately before each download" rule rather than anything in the
+   collector, but it is one data point and is recorded rather than dismissed.
+
+   Note `wukongDdr3Smp` derives from `wukongDdr3`, NOT `wukongSmpMinimal`. The
+   latter looks like the obvious base and is wrong twice: it replaces coreConfig
+   with a bare `JopCoreConfig()`, so `hasCardTable` goes false, `GC.init` falls
+   back to classic, and a generational test on it measures nothing.
+
+   **Still asserted, not verified:** the XC7A100T DB V5 board (only Wukong was
+   run); DDR3 above 4 cores. The cluster-level card table the original entry
+   proposed turned out **not** to be needed: the per-core tables are fine, and
+   `SMPGC OK` means the cross-generation references genuinely survived, so the
+   workload did exercise it.
+
+   **EP4CGX150 CORE-COUNT CEILING, all measured 2026-08-15, not extrapolated:**
+
+   | cores | LE | of device | timing | status |
+   |---|---|---|---|---|
+   | 1 | 8,784 | 6 % | 60-80 MHz | validated |
+   | 4 | 42,769 | 29 % | 60 MHz, +0.944 | validated, generational |
+   | 8 | 77,145 | 52 % | 50 MHz, +0.463 | validated, generational |
+   | 12 | 118,086 | 79 % | **-5.394 at 50 MHz** -> Fmax ~39 MHz | fits, untested on HW |
+   | 16 | **182,501** | **122 %** | — | **DOES NOT FIT** |
+
+   So the device runs out somewhere between 12 and 16 cores, and timing runs out
+   earlier: 12 would need the PLL at about 37.5-40 MHz (4/5 = 40 MHz is
+   marginal against Fmax 39.4; 3/4 = 37.5 is safe). Per-core cost is ~11.3k LE.
+
+   Item 5's "area allows ~12 cores at 73 %" was based on a 4-core figure of
+   38,372 LE and is optimistic against today's builds — 12 costs 79 %. Shedding
+   the ~33k LE that 16 needs means trimming the object and array caches, which
+   are in the SMP coherency path, so it would change the thing under test rather
+   than just the size. Trimming CUs would not be enough and would not touch the
+   real cost, which is per-core memory-controller and cache logic.
 
    **The failing test now exists and the bug is reproduced on hardware**
    (2026-08-09). `java/apps/SmpGcTest` — core 1 stores a nursery object into a
