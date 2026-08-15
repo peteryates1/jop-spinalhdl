@@ -2076,35 +2076,48 @@ silently invalidate all of that. Use this to find one:
    When probing the port by hand, listen for **>500 ms**: that is the ready-byte
    period, and a shorter window reads zero bytes and looks like a dead board.
 
-- **35.** **`AlteraSdramAdapter` has NO simulation coverage, on any board that
-   uses it — write a unit test for it.** `useAlteraCtrl = manufacturer ==
-   Manufacturer.Altera` (`JopTop.scala:406,731`), so Altera boards run this
-   adapter plus the Altera controller BlackBox, while **every** simulation
-   substitutes `SdramCtrlNoCke` — Verilator cannot build a BlackBox. The
-   component is unreachable by the test suite on exactly the hardware that runs
-   it. Same shape as item 33's `MemoryStyle.Generic` blind spot, and it is not a
-   theoretical risk: it hid the two response-path bugs behind item 1's >2-core
-   failure for weeks, and the fix (`ef36d99`) is **validated on hardware only**.
+- **35.** ~~**`AlteraSdramAdapter` has NO simulation coverage**~~ — **DONE
+   2026-08-15**, `spinalhdl/src/test/scala/jop/memory/AlteraSdramAdapterTest.scala`
+   + `src/test/resources/altera_sdram_tri_controller_stub.v`. Picked up by the
+   existing `simulation-tests` CI job, which already runs `jop.memory.*`.
 
-   **What to write**: a testbench driving `AlteraSdramAdapter` against a stub
-   Avalon slave, checking that every response carries the data and context of the
-   command it belongs to, under
-   - `io.bus.rsp.ready` deasserted for long stretches (this is what dropped read
-     data — Avalon `readdatavalid` is a pulse and cannot be stalled), and
-   - reads and writes interleaved (this is what let a write response, which
-     hardcodes `data := 0`, answer an outstanding read, since the consumer
-     matches responses BY ORDER).
+   The blocker was that `altera_sdram_tri_controller` is a BlackBox with no
+   Verilog body, so Verilator cannot build any design containing it. Solved with
+   a behavioural Avalon stub attached via `addRTLPath` **in test scope only** —
+   the production adapter is untouched. The stub models the Avalon contract, not
+   SDRAM: `readdatavalid` as a one-cycle pulse with no back-pressure,
+   `waitrequest` stalling commands unpredictably, in-order variable read
+   latency. It drives `avs_readdata` to X between pulses on purpose, so a
+   consumer that samples a cycle late fails loudly instead of reading a stale
+   value that happens to be right.
 
-   Both fail against the pre-`ef36d99` adapter, which is the acceptance
-   criterion — **write them against the old file first and watch them fail**,
-   or this becomes another test that cannot fail (items 2 and 11). The stub only
-   has to honour `avs_waitrequest`, pulse `avs_readdatavalid` after a variable
-   latency, and never stall read data; it does not need to model SDRAM at all.
+   Four tests, and the three that matter were **confirmed to fail against the
+   pre-`ef36d99` adapter** before being kept:
 
-   **Note for whoever does this**: a bare outstanding-transaction counter will
-   NOT catch either bug. The substituted write response kept commands and
-   responses balanced, so the count stayed correct while only the data was
-   wrong. The test has to check response *content and pairing*, not arithmetic.
+   | test | on the broken adapter |
+   |---|---|
+   | read data survives a stalling consumer | `WRONG READ DATA ctx=0 @0x0: expected 0xa5a5, got 0xa5f1` |
+   | a write response never answers a read | `MISPAIRED: expected ctx=2 (read), got ctx=3` (the write) |
+   | a read returns the last value written | `MISPAIRED: expected ctx=15, got ctx=16` |
+   | back-to-back, never-stalling (control) | **passes** — kept deliberately |
+
+   The control passing on the broken adapter is the point: it is the shape the
+   adapter was developed against, and it is why this went unnoticed.
+
+   **Two things worth carrying to the next test of this kind.** First, bug 1
+   presents as wrong DATA with a correct response COUNT and correct context
+   order — the old adapter popped its context FIFO on `rsp.ready` while taking
+   data from a pulse already gone, so contexts marched in order while data slid.
+   Any check built on counting responses, or on outstanding-transaction
+   arithmetic, sails straight past it; only content-and-pairing catches it.
+
+   Second, the first version of this file **passed against the broken adapter**,
+   because the producer loop ended with `if (failure.isDefined) return` — a
+   non-local return that left the method before `failure.foreach(fail)`, so a
+   detected fault was swallowed. It looked like four healthy green tests. That is
+   exactly the failure mode this item was written to prevent, and it was caught
+   only by running against the old file first. **Do that step; it is not
+   ceremony.**
 
 - **32.** **UART data corruption on seed 871203250 — CI seed now PINNED around it.**
    `JopJvmTestsMcFallbackSim` fails with every UART character corrupted, bits 1
