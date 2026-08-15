@@ -3,7 +3,6 @@ package jop.memory
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
-import spinal.lib.memory.sdram._
 import spinal.lib.memory.sdram.sdr._
 import jop.config.MemoryDevice
 import org.scalatest.funsuite.AnyFunSuite
