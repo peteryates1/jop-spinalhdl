@@ -42,11 +42,27 @@ case class JopSmpSdramTestHarness(
   // generational disabled" — which made this harness incomparable with
   // JopIhluTestHarness and produced a spurious core-1 no-start in the BRAM
   // twin. burstLen = 4 (4-word burst BC_FILL) is preserved from the original.
-  val harnessCfg = JopCoreConfig(
-    memConfig = JopMemoryConfig(burstLen = 4,
-      hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
-    useCmpSync = false
-  )
+  // TAKEN FROM THE BOARD PRESET, not hand-rolled.
+  //
+  // This used to read `JopMemoryConfig(burstLen = 4, hasCardTable = true, ...)`,
+  // which is NOT what ep4cgx150Smp builds: the board runs burstLen = 0 (no
+  // burst, pipelined single-word) and hasBackendFill = true. Those are exactly
+  // the two multi-command paths in BmbSdramCtrl32 — so the harness exercised a
+  // burst path the board never uses and never exercised the fill path the board
+  // does, while appearing to be "the same design at 4 cores".
+  //
+  // That is not a detail: this harness was used to conclude that a fault seen on
+  // the board does not reproduce in simulation, i.e. to argue the RTL was
+  // innocent. A harness that silently differs from the thing it models can only
+  // produce that kind of wrong answer, so it now derives from the preset and
+  // cannot drift again.
+  // memoryStyle is the ONE thing that must not come from the board: Cyclone IV
+  // selects MemoryStyle.AlteraLpm, whose lpm_rom/lpm_ram_dp are BlackBoxes with
+  // no Verilog body, so Verilator fails with "Cannot find file containing
+  // module: 'rom'". Generic infers the same memories. Everything else — burstLen,
+  // hasBackendFill, the caches, addressWidth — is the board's.
+  val boardCfg = JopConfig.ep4cgx150Smp(cpuCnt, 60).system.coreConfig
+  val harnessCfg = boardCfg.copy(useCmpSync = false, memoryStyle = Some(MemoryStyle.Generic))
 
   val io = new Bundle {
     // SDRAM interface (exposed for simulation model)
@@ -140,9 +156,20 @@ case class JopSmpSdramTestHarness(
   )
 
   sdramCtrl.io.bmb <> cluster.io.bmb
+
+  // THE BLOCK-FILL SIDEBAND, which the board has and this harness did not.
+  // It is the only path that can preempt BmbSdramCtrl32 between the two 16-bit
+  // halves of a 32-bit transfer, so leaving it unconnected removed the most
+  // interesting interaction in the bridge from every run this harness ever did.
+  cluster.io.fill match {
+    case Some(f) => f <> sdramCtrl.io.fill
+    case None =>
+      sdramCtrl.io.fill.cmd   := False
+      sdramCtrl.io.fill.start := 0
+      sdramCtrl.io.fill.end   := 0
+      sdramCtrl.io.fill.value := 0
+  }
   io.sdram <> sdramCtrl.io.sdram
-  sdramCtrl.io.fill.cmd := False; sdramCtrl.io.fill.start := 0
-  sdramCtrl.io.fill.end := 0; sdramCtrl.io.fill.value := 0
 
   // ====================================================================
   // Per-core Debug Output Wiring
