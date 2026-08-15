@@ -397,6 +397,17 @@ case class JopCluster(
   // does not catch because it never elaborates — the same way gcRootRamAddr
   // broke SMP elaboration silently.
   val busCounters = Vec.fill(cpuCnt)(Vec(Bits(32 bits), 4))
+  // SECOND BANK: where the core IS, not how much bus it used. The req/gnt
+  // counters showed the wedged core stops asking, and the halt counter did not
+  // discriminate (healthy and wedged cores were within 0.004%), so the open
+  // question is simply what it is executing.
+  //   0 = pc (microcode), 1 = jpc (bytecode), 2 = exception count, 3 = spare
+  // pc/jpc are sampled live, so a wedged core shows a fixed value while a
+  // running one shows whatever it happened to be doing. The exception COUNT is
+  // the one that could answer outright: this session already found the
+  // exception path derailing a core, and a non-zero count here on the wedged
+  // core names the cause immediately.
+  val stateCounters = Vec.fill(cpuCnt)(Vec(Bits(32 bits), 4))
   for (i <- 0 until cpuCnt) {
     val reqCnt  = Reg(UInt(32 bits)) init(0)
     val gntCnt  = Reg(UInt(32 bits)) init(0)
@@ -421,6 +432,37 @@ case class JopCluster(
     val haltCnt = Reg(UInt(32 bits)) init(0)
     when(cores(i).io.debugSyncHalted && haltCnt =/= U(haltCnt.maxValue)) { haltCnt := haltCnt + 1 }
     busCounters(i)(3) := haltCnt.asBits
+
+    val excCnt = Reg(UInt(32 bits)) init(0)
+    val excPrev = RegNext(cores(i).io.debugExc) init(False)
+    when(cores(i).io.debugExc && !excPrev && excCnt =/= U(excCnt.maxValue)) {
+      excCnt := excCnt + 1   // rising edges only: debugExc is a level
+    }
+    // WHERE THE FIRST EXCEPTION LANDED. The live pc/jpc say where a wedged core
+    // is sitting NOW, which is downstream of whatever derailed it; the first
+    // exception is the event itself. Latched once and never updated, so a core
+    // that goes on to take more exceptions (or to wedge somewhere unrelated)
+    // cannot overwrite the origin. `excType` is valid on the same cycle as the
+    // pulse — Sys writes excTypeReg and excPend together.
+    val excSeen  = Reg(Bool()) init(False)
+    val excPc    = Reg(UInt(cores(i).io.pc.getWidth bits)) init(0)
+    val excJpc   = Reg(UInt(cores(i).io.jpc.getWidth bits)) init(0)
+    val excFirst = Reg(Bits(8 bits)) init(0)
+    when(cores(i).io.debugExc && !excPrev && !excSeen) {
+      excSeen  := True
+      excPc    := cores(i).io.pc
+      excJpc   := cores(i).io.jpc
+      excFirst := cores(i).io.debugExcType
+    }
+    // Two values per slot: the root port has only 4 bits of target and 12..15
+    // are all this bank has, so pc and jpc share a word. pc is 12 bits and jpc
+    // fits in 16, which is checked here rather than silently truncated.
+    require(cores(i).io.pc.getWidth <= 16 && cores(i).io.jpc.getWidth <= 16,
+      s"state counter packing assumes pc/jpc <= 16 bits, got ${cores(i).io.pc.getWidth}/${cores(i).io.jpc.getWidth}")
+    stateCounters(i)(0) := cores(i).io.pc.asBits.resize(16) ## cores(i).io.jpc.asBits.resize(16)
+    stateCounters(i)(1) := excPc.asBits.resize(16) ## excJpc.asBits.resize(16)
+    stateCounters(i)(2) := excCnt.asBits
+    stateCounters(i)(3) := B(0, 24 bits) ## excFirst
   }
 
   // Arbiter (deferred to here so debug BMB controller can be included)
@@ -660,12 +702,20 @@ case class JopCluster(
       when(ctrTgt === U(t, ctrTgt.getWidth bits)) { ctr := busCounters(t)(what.asUInt) }
     }
 
-    cores(r).io.rootData := Mux(tgt >= U(8, 4 bits), ctr, what.mux(
+    val stTgt = (tgt - 12).resize(log2Up(cpuCnt) max 1)
+    val st    = Bits(32 bits)
+    st := stateCounters(0)(what.asUInt)
+    for (t <- 1 until cpuCnt) {
+      when(stTgt === U(t, stTgt.getWidth bits)) { st := stateCounters(t)(what.asUInt) }
+    }
+
+    cores(r).io.rootData := Mux(tgt >= U(12, 4 bits), st,
+                            Mux(tgt >= U(8, 4 bits), ctr, what.mux(
       B"00" -> word,
       B"01" -> sp,
       B"10" -> ra,
       default -> rb
-    ))
+    )))
   }
 
   if (debugConfig.isEmpty) {

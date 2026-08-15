@@ -81,6 +81,9 @@ case class JopCore(
 
     // Debug: exception fired (from internal Sys)
     val debugExc = out Bool()
+    // ...and which one. Lets a cluster-level probe distinguish a core that
+    // derailed into a null-pointer trap from one that took a legitimate trap.
+    val debugExcType = out Bits(8 bits)
 
     // Debug: bytecode cache fill
     val debugBcRd = out Bool()
@@ -453,6 +456,7 @@ case class JopCore(
   io.memBusy := memCtrl.io.memOut.busy
 
   io.debugExc := sys.io.exc
+  io.debugExcType := sys.io.excType
   io.debugBcRd := pipeline.io.debugBcRd
   io.debugMemState := memCtrl.io.debug.state
   io.debugBcFillAddr := memCtrl.io.debug.bcFillAddr

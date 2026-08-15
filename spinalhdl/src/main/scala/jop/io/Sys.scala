@@ -35,6 +35,10 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
     val rdData = out Bits(32 bits)
     val wd     = out Bits(32 bits)
     val exc    = out Bool()  // Exception pulse to bcfetch
+    // The type that goes with that pulse, so a cluster-level probe can say WHICH
+    // exception a derailed core took instead of only that it took one. Valid on
+    // the same cycle as `exc` (excTypeReg and excPend are written together).
+    val excType = out Bits(8 bits)
 
     // Interrupt outputs (to pipeline via JopCore)
     val irq    = out Bool()  // Interrupt request pulse
@@ -213,6 +217,7 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
   // Exception pulse: single-cycle on rising edge of excPend (matching VHDL)
   val excDly = RegNext(excPend) init(False)
   io.exc := excPend && !excDly
+  io.excType := excTypeReg
 
   // ==========================================================================
   // CMP sync registers

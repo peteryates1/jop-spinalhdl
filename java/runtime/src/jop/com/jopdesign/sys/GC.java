@@ -1728,6 +1728,52 @@ public class GC {
 		JVMHelp.wr(" next=");
 		wrIntG(ref == 0 ? 0 : Native.rdMem(ref + OFF_NEXT));
 		JVMHelp.wr(" -- cyclic or corrupt list, truncated\r\n");
+		// MEASURE THE CYCLE. After more than handle_cnt steps the walk is
+		// necessarily standing INSIDE the loop (a rho's tail is at most
+		// handle_cnt long), so walking on from `ref` until it comes back to
+		// `ref` gives the loop length exactly — no Floyd pass needed.
+		//
+		// The length is the whole diagnosis. Every push onto these lists is
+		// serialised by `mutex`, so a loop can only mean the same handle entered
+		// the list twice, and the two mechanisms that could do that leave
+		// different lengths: a handle popped from freeList by two cores at once
+		// closes a loop of 1 or 2, whereas a list head restored over a newer one
+		// (a lost update) closes a loop as long as the run that was published in
+		// between. `onFree` separates a third case — a handle that is on this
+		// list AND still on freeList, i.e. reclaimed without being unlinked.
+		if (ref != 0) {
+			int p = Native.rdMem(ref + OFF_NEXT);
+			int len = 1;
+			int lo = ref, hi = ref;
+			while (p != ref && p != 0 && len <= handle_cnt) {
+				if (p < lo) lo = p;
+				if (p > hi) hi = p;
+				p = Native.rdMem(p + OFF_NEXT);
+				++len;
+			}
+			JVMHelp.wr("    cycle len=");
+			wrIntG(p == ref ? len : -1);          // -1: not a closed loop from here
+			JVMHelp.wr(" lo=");
+			wrIntG(lo);
+			JVMHelp.wr(" hi=");
+			wrIntG(hi);
+			JVMHelp.wr(" space=");
+			wrIntG(Native.rdMem(ref + OFF_SPACE));
+			JVMHelp.wr(" ptr=");
+			wrIntG(Native.rdMem(ref + OFF_PTR));
+			// Is the same handle also sitting on freeList? Bounded by handle_cnt
+			// so a corrupt freeList cannot turn the diagnostic into a second hang.
+			int f = freeList, fn = 0, onFree = 0;
+			while (f != 0 && ++fn <= handle_cnt) {
+				if (f == ref) { onFree = 1; break; }
+				f = Native.rdMem(f + OFF_NEXT);
+			}
+			JVMHelp.wr(" onFree=");
+			wrIntG(onFree);
+			JVMHelp.wr(" freeWalk=");
+			wrIntG(fn);
+			JVMHelp.wr("\r\n");
+		}
 	}
 
 	static void wrIntG(int v) {

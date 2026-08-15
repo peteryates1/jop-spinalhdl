@@ -1772,6 +1772,106 @@ silently invalidate all of that. Use this to find one:
    pub[3] is now 0 too and core 3 lags — because the RTL changed when the
    counters were added. It is the same class of failure, not the same instance.
 
+   **(b7) THE WEDGE IS AN UNCAUGHT ARRAY-BOUNDS EXCEPTION KILLING A PUBLISHER.**
+   The hardware exception latch (see b6) reported, at a 4-core stall:
+
+   ```
+   bus[0] ... pc 727 jpc 1171 exc 0 excAt pc    0 jpc   0 type 0
+   bus[1] ... pc 951 jpc 1305 exc 1 excAt pc 1008 jpc 494 type 3   <- wedged
+   bus[2] ... pc 951 jpc 1817 exc 1 excAt pc 1008 jpc 494 type 3
+   bus[3] ... pc 952 jpc 1818 exc 1 excAt pc 1008 jpc 501 type 3
+   ```
+
+   Type 3 is `Const.EXC_AB`, array bounds. Microcode pc 1008 is the hardware
+   bounds check (`BmbMemoryController` `HANDLE_BOUND_WAIT`, which compares
+   `handleIndex` against the array length it reads back over BMB). Core 0, which
+   stays healthy, takes none.
+
+   `JVMHelp.handleException()` turns EXC_AB into a throw of the preallocated
+   `ABExc`. Nothing in `publisher()` catches it, so it unwinds out of `main()`
+   and the core PARKS. **That is the entire wedge.** It explains every earlier
+   null result at once: the core stops issuing bus requests because it is dead,
+   not starved (b2); the lock-manager halt counter cannot discriminate because
+   being dead and being halted look identical from there (b3); and if the throw
+   lands inside the allocator's `synchronized (mutex)` the global lock is never
+   released, which is precisely the "core holds the lock and never releases it"
+   that item 1 has described since 2026-08-09.
+
+   **PROVEN BY MAKING IT SURVIVABLE.** `publisher()`'s loop body is now wrapped
+   in `try { ... } catch (Throwable)` which counts the fault and retries. With
+   that one change and NOTHING else, the 4-core SDRAM run completes all 8 rounds
+   and reaches `JVM exit!` instead of wedging. Every index in that loop is a
+   constant or a core id, so a retry of the identical access succeeding means
+   **the bounds check itself was wrong** — a spurious fault, not a program bug.
+
+   Next: the length it compares against arrives as `io.bmb.rsp.fragment.data`.
+   Under 4 masters that response has to be routed back by `source` through
+   `BmbArbiter` and `BmbSdramCtrl32`'s 32<-16 reassembly (`pipeSource` is a
+   1-deep register). A response delivered to the wrong core would give a valid
+   index a wrong length — and would equally explain (b5)'s cyclic handle list,
+   since the collector builds those lists out of raw `rdMem` results. Check the
+   `source`/`context` path end to end before anything else.
+
+   Corroborating, from the same run: core 0 read `holders[13].ref` as
+   `-1465206102` through a getfield while the identical word read raw out of
+   memory was `0` (`rawRef=0`). A cached read returning a value that is in
+   neither the old nor the new state of that word is a bad read, not staleness.
+
+   **(b6) The wedge is NOT generational.** Running the same 4-core bitstream with
+   the guard back at `cpuCnt <= 2` — so `GC.init` selects the CLASSIC collector
+   and reports `minors 0`, no minor GC anywhere — stalls too:
+   `STALL round 1 ... pub[3]=1 live=27541351,33607907,1560`. Item 1 has framed
+   this as a generational-GC bug throughout; it is not. It is under the GC, and
+   the generational guard neither causes nor prevents it. (An earlier 240 s run
+   that reached R1 cleanly was simply too short — do not read a passing prefix as
+   a pass.)
+
+   **(b5) A HANDLE LIST GOES CYCLIC — the first hard corruption caught in the act.**
+   With the pc/jpc/exc counter bank in, one 4-core SDRAM hardware run printed:
+
+   ```
+   *** GC LIST OVERRUN walk=1 iters=65537 handles=65536 ref=533840 next=533848
+   ```
+
+   `walk=1` is `WALK_YOUNG_SWEEP` — `copyAndSweepYoung` walking `youngList`. The
+   list cannot legitimately be that long: `handle_cnt` is 65536 (`MAX_HANDLES`),
+   and a minor GC is forced at `MAX_YOUNG_OBJECTS` (a few thousand), so 65537
+   steps means the chain closes on itself. **Every push onto these lists is
+   serialised by `mutex`, so a loop can only mean one handle entered the list
+   twice.** This is the first evidence that the >2-core failure is heap-structure
+   corruption and not (only) a lost lock or a starved bus — and it is exactly the
+   "infinite handle-list walk" that item 1 has been guessing at since 2026-08-09,
+   now printed instead of hung.
+
+   `gcListOverrun` was extended to name the mechanism rather than just report the
+   overrun: after >`handle_cnt` steps the walk is necessarily standing INSIDE the
+   loop, so walking on from `ref` until it returns gives the loop length exactly.
+   Length 1 or 2 => the same handle popped from `freeList` twice; a long loop =>
+   a list head restored over a newer one. It also reports whether `ref` is STILL
+   on `freeList` (`onFree`), which separates a third case: reclaimed without
+   being unlinked.
+
+   **(b4) The wedge is DETERMINISTIC again — 6/6 runs, same point.** With that
+   build every run dies immediately after
+
+   ```
+   scan calls 8 words 738 cands 24 young 1
+     lastYoung 487712 probeHandle 487712 MATCH spMin 64 spMax 135
+   ```
+
+   and before round 0's `probe: h0d` line — i.e. inside the publisher wait loop
+   or a minor GC triggered from it. Core 0 itself is wedged, so **no software
+   probe can fire**: the STALL dump needs core 0 to reach 2M spins and it never
+   does. That kills the "read the counters from Java" approach for this
+   manifestation and is why (b5) came from a guard inside the collector instead.
+
+   Note the determinism moved AGAIN with the code change (b3 saw it vary), which
+   is the standing layout sensitivity, not a new fact. What is new: the 4-core
+   SDRAM Verilator harness now **tracks the board exactly** — same output text,
+   same `nurseryBase 1902429`, cores released at the same point — so
+   `JopSmpSdramNCoreHelloWorldSim 4 <cycles> java/apps/SmpGcTest/SmpGcTest.jop`
+   is a working bridge with full pc/jpc/halted visibility, at ~20k cycles/s.
+
    **(b3) The lock-manager halt counter does NOT discriminate — null result.**
    Slot 3 counts cycles with `Sys.io.halted` (syncIn.halted: Ihlu/CmpSync plus
    gcHalt). Measured:

@@ -71,6 +71,26 @@ public class SmpGcTest {
 
 	static Holder[] holders;
 
+	/**
+	 * Exceptions caught inside publisher(), per core, and the pubStep at which
+	 * the last one was thrown.
+	 *
+	 * WHY THIS EXISTS: at 4 cores the hardware exception counter reported one
+	 * EXC_AB (type 3, array bounds) per publisher, latched at the microcode
+	 * bounds-check site. Uncaught, an ArrayIndexOutOfBoundsException unwinds
+	 * straight out of publisher() and out of main(), and the core PARKS — which
+	 * is exactly what a wedged publisher looks like from outside (heartbeat
+	 * stops, bus requests stop, and if the throw happened inside the allocator's
+	 * `synchronized (mutex)` the global lock is never released and takes the
+	 * whole cluster with it).
+	 *
+	 * Catching and retrying turns that into a measurement: every index used in
+	 * this loop is a constant or a core id, so if the retry SUCCEEDS the index
+	 * was valid and the bounds check itself read the wrong array length.
+	 */
+	static int[] pubExcCnt;
+	static int[] pubExcStep;
+
 	static volatile int phase;        // 0 = idle, 1 = publishers run, 2 = core0 verifies
 	static volatile int publishRound;
 
@@ -214,6 +234,8 @@ public class SmpGcTest {
 		liveTick = new int[cpuCnt];
 		pubStep = new int[cpuCnt];
 		pubSlot = new int[cpuCnt];
+		pubExcCnt = new int[cpuCnt];
+		pubExcStep = new int[cpuCnt];
 		for (int p = 0; p < cpuCnt; p++) {
 			pubRound[p] = 0; liveTick[p] = 0; pubStep[p] = 0; pubSlot[p] = -1;
 		}
@@ -440,6 +462,13 @@ public class SmpGcTest {
 					}
 					JVMHelp.wr(" live=");
 					for (int p = 1; p < cpuCnt; p++) { wrInt(liveTick[p]); JVMHelp.wr(","); }
+					// Exceptions CAUGHT inside the publisher loop, and where.
+					// Non-zero with the loop still ticking means the access was
+					// retried successfully — i.e. a spurious bounds fault.
+					JVMHelp.wr(" caught=");
+					for (int p = 1; p < cpuCnt; p++) {
+						wrInt(pubExcCnt[p]); JVMHelp.wr("@"); wrInt(pubExcStep[p]); JVMHelp.wr(",");
+					}
 					// WHERE it stopped, and whether its cross-generation store
 					// landed. `step` names the statement; `holder` distinguishes
 					// "died before the store" from "stored and then died", which
@@ -490,6 +519,32 @@ public class SmpGcTest {
 						// ordinary code, and neither bus nor lock is to blame.
 						JVMHelp.wr(" halt ");
 						wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_B, 0));
+						// WHERE the core is, sampled live: microcode pc, bytecode
+						// jpc, and how many hardware exceptions it has taken. A
+						// wedged core shows a fixed pc/jpc; a non-zero exc on it
+						// names the cause outright, since the exception path has
+						// already been found derailing cores this session.
+						// The live pc/jpc are packed one per half-word (the root
+						// port has 4 bits of target and this bank owns 12..15, so
+						// there was no room for a slot each).
+						int live = GC.rootRead(12 + c, Const.ROOT_WHAT_STACK, 0);
+						JVMHelp.wr(" pc ");
+						wrInt(live >>> 16);
+						JVMHelp.wr(" jpc ");
+						wrInt(live & 0xffff);
+						JVMHelp.wr(" exc ");
+						wrInt(GC.rootRead(12 + c, Const.ROOT_WHAT_A, 0));
+						// The FIRST exception this core took, latched in hardware
+						// and never overwritten. The live pc is where the core
+						// ended up; this is where it went wrong. A core with
+						// exc>0 and a wedge is explained by this line.
+						int at = GC.rootRead(12 + c, Const.ROOT_WHAT_SP, 0);
+						JVMHelp.wr(" excAt pc ");
+						wrInt(at >>> 16);
+						JVMHelp.wr(" jpc ");
+						wrInt(at & 0xffff);
+						JVMHelp.wr(" type ");
+						wrInt(GC.rootRead(12 + c, Const.ROOT_WHAT_B, 0));
 						JVMHelp.wr("\r\n");
 					}
 					GC.rootRelease();
@@ -565,6 +620,22 @@ public class SmpGcTest {
 						wrInt(dd >>> Native.rd(Const.IO_CARD_SHIFT));
 						JVMHelp.wr(" yAddr=");
 						wrInt(Native.toInt(o));
+						// THE SAME FIELD, READ RAW. `o` came from `holders[i].ref`,
+						// a getfield — that goes through the object cache. This
+						// reads the identical word straight out of memory
+						// (handle -> data pointer -> field 0 == `ref`), which is
+						// uncached. The two CANNOT legitimately differ:
+						//   rawRef == yAddr  -> the reference core 0 holds is the
+						//     one in memory, so the publisher's store landed and
+						//     the stale value is the OBJECT's magic.
+						//   rawRef != yAddr  -> core 0's object cache handed back a
+						//     reference the publisher has already overwritten, i.e.
+						//     a MISSED SNOOP INVALIDATION, with no GC involved.
+						// The second is the only reading that survives `minors 0`.
+						JVMHelp.wr(" rawRef=");
+						wrInt(Native.rdMem(dd));
+						JVMHelp.wr(" rawMagic=");
+						wrInt(Native.rdMem(Native.rdMem(Native.rdMem(dd))));
 						JVMHelp.wr("\r\n");
 					}
 				}
@@ -589,6 +660,25 @@ public class SmpGcTest {
 		wrInt(verified);
 		JVMHelp.wr(" errors ");
 		wrInt(errors);
+		// Always printed, not only from the stall dump: the run that PASSES is
+		// the interesting one here. A completed 8-round run with a non-zero
+		// count is the whole result — the publisher hit a bounds fault, retried
+		// the identical access, and got through. See pubExcCnt.
+		JVMHelp.wr(" caught=");
+		for (int p = 1; p < cpuCnt; p++) {
+			wrInt(pubExcCnt[p]); JVMHelp.wr("@"); wrInt(pubExcStep[p]); JVMHelp.wr(",");
+		}
+		// And the hardware's own count, which cannot be confused with a Java
+		// control-flow artefact: exceptions taken, plus where the FIRST one was.
+		for (int c = 1; c < cpuCnt; c++) {
+			JVMHelp.wr("\r\n  hw core "); wrInt(c);
+			JVMHelp.wr(" exc "); wrInt(GC.rootRead(12 + c, Const.ROOT_WHAT_A, 0));
+			int at = GC.rootRead(12 + c, Const.ROOT_WHAT_SP, 0);
+			JVMHelp.wr(" excAt pc "); wrInt(at >>> 16);
+			JVMHelp.wr(" jpc "); wrInt(at & 0xffff);
+			JVMHelp.wr(" type "); wrInt(GC.rootRead(12 + c, Const.ROOT_WHAT_B, 0));
+		}
+		GC.rootRelease();
 		JVMHelp.wr("\r\n");
 
 		if (minors == 0 || verified == 0) {
@@ -716,21 +806,28 @@ public class SmpGcTest {
 		}
 		int round = 0;
 		while (true) {
-			liveTick[id] = liveTick[id] + 1;
-			pubStep[id] = 10;
-			int ph = phase;
-			if (ph == 3) return;
-			if (ph == 1 && round == publishRound) {
-				pubStep[id] = 11;
-				for (int i = id - 1; i < HOLDERS; i += publishers) {
-					publish(id, round, i);
-					pubStep[id] = 6;
-					if (scrub() == 0x7fffffff) JVMHelp.wr("");  // keep scrub() live
-					pubStep[id] = 7;
+			try {
+				liveTick[id] = liveTick[id] + 1;
+				pubStep[id] = 10;
+				int ph = phase;
+				if (ph == 3) return;
+				if (ph == 1 && round == publishRound) {
+					pubStep[id] = 11;
+					for (int i = id - 1; i < HOLDERS; i += publishers) {
+						publish(id, round, i);
+						pubStep[id] = 6;
+						if (scrub() == 0x7fffffff) JVMHelp.wr("");  // keep scrub() live
+						pubStep[id] = 7;
+					}
+					pubStep[id] = 12;
+					pubRound[id] = round + 1;
+					round++;
 				}
-				pubStep[id] = 12;
-				pubRound[id] = round + 1;
-				round++;
+			} catch (Throwable t) {
+				// See pubExcCnt. Deliberately swallows and retries: the point is
+				// to find out whether the SAME access succeeds a moment later.
+				pubExcCnt[id] = pubExcCnt[id] + 1;
+				pubExcStep[id] = pubStep[id];
 			}
 		}
 	}
