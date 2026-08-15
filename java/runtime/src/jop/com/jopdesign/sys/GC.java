@@ -617,7 +617,16 @@ public class GC {
 			// starved. That is contention in the SDRAM path, not the collector —
 			// 4 cores passes in both simulations and on a BRAM board build. See
 			// item 34 in docs/current-status.md.
-			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 2;
+			// 4, raised from 2 once the SDRAM read corruption behind the >2-core
+			// failure was fixed (AlteraSdramAdapter: Avalon read data was being
+			// dropped when the consumer stalled, and write responses could
+			// overtake outstanding reads and answer them with 0). Evidence:
+			// SmpGcTest at 4 cores on EP4CGX150 SDRAM, 3/3 runs SMPGC OK with
+			// minors 10 / verified 192 / errors 0, plus DoAll 66/66 on the same
+			// 4-core bitstream and on the single-core one. 8 and 16 cores are
+			// still untested, and so are the DDR3 boards, which is why this is a
+			// number and not a removal.
+			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 4;
 			genCardWords = genActive ? (1 << cardShift0) : 0;
 
 			if (genActive) {

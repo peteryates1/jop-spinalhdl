@@ -1772,6 +1772,51 @@ silently invalidate all of that. Use this to find one:
    pub[3] is now 0 too and core 3 lags — because the RTL changed when the
    counters were added. It is the same class of failure, not the same instance.
 
+   **(b10) SOLVED — two bugs in `AlteraSdramAdapter`, and 4-core generational GC
+   now passes on hardware.** The adapter bridges the Altera SDRAM controller's
+   Avalon-MM interface to `SdramCtrlBus`. Two defects, both on the response path:
+
+   1. **Avalon read data was dropped when the consumer stalled.**
+      `readdatavalid` is a PULSE — the data is on `avs_readdata` for one cycle and
+      cannot be held (`avs_waitrequest` backpressures commands only). It was wired
+      straight to `io.bus.rsp`, a Stream whose consumer does deassert `ready`:
+      `BmbSdramCtrl32` drops `rsp.ready` for a high half whenever its assembly
+      pipe is occupied. When they coincided the data was presented, not accepted,
+      and lost.
+   2. **Write responses could overtake outstanding reads.** A write response is
+      manufactured locally and available immediately; a read response waits for
+      SDRAM. The adapter emitted whichever was ready. Since the consumer matches
+      responses to commands BY ORDER, a write issued after a read could answer
+      that read — with `data := 0`, which the write branch hardcodes.
+
+   That is where the zero came from. Both are fixed: read data is captured into a
+   FIFO on the cycle Avalon offers it, commands are refused unless there is room
+   to hold every in-flight result, and an `orderFifo` releases responses strictly
+   in command order.
+
+   **Why it took so long, worth internalising:** because a substitute response
+   still came back, commands and responses stayed BALANCED, so every "did the
+   response stream slip a beat?" check said no (b8's `bmbOut`). Only the data was
+   wrong, and only ever to zero. And it needs sustained back-to-back traffic for
+   `rsp.ready` to drop at all, which is why 2 cores never showed it.
+
+   **This file had NO simulation coverage on any board that uses it** — the Altera
+   controller is a BlackBox Verilator cannot build, so every sim substitutes
+   `SdramCtrlNoCke`, a proper Stream that honours `ready`. That is why matching
+   the harness to the board (0da41f1) still did not reproduce it, and it is the
+   real lesson here: the component that failed was the one no test could reach.
+
+   Results on EP4CGX150 SDRAM:
+   - SmpGcTest, 4 cores, GENERATIONAL: `SMPGC OK`, `minors 10 verified 192
+     errors 0`, 3/3 runs. This case has never passed before.
+   - DoAll 66/66 on the 4-core bitstream and on the single-core one.
+   - `rawLenBad 0 aLenBad 0 exc 0` on every core, where it was `exc 1..4` before.
+
+   The generational SMP guard is raised **2 -> 4** on that evidence. 8 and 16
+   cores are untested, as are the DDR3 boards, so it stays a number rather than a
+   removal. Everything below is the investigation that led here, kept because
+   several entries are retractions worth not repeating.
+
    **(b9) A PLAIN `rdMem` GETS IT WRONG TOO — so the array path is exonerated.**
    Each publisher now reads the SAME length word two ways every iteration:
    `Native.rdMem(handle+1)` (the plain memory-read state machine) and
