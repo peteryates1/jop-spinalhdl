@@ -301,11 +301,16 @@ object JopConfig {
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
   /** EP4CGX150 + daughter board — SMP, N cores */
-  // clkMhz must match dram_pll.vhd's clk1/clk2 multiply/divide (50 MHz in) and
-  // the note in jop_sdram.sdc. Nothing cross-checks them: the PLL decides the
-  // real frequency while clkFreq only sets the microsecond prescaler and the
-  // UART divider, so a mismatch shows up as a wrong-speed console and a
-  // GC clock that lies, not as a build error.
+  // clkMhz IS the frequency: `JopTopVerilog` generates
+  // fpga/qmtech-ep4cgx150-sdram/generated/dram_pll.vhd from it (multiply/divide
+  // reduced against the 50 MHz input), so the PLL cannot disagree with the
+  // preset any more. It also reports the baud the board will actually manage
+  // and warns when the requested one is not achievable -- see DramPllGen.
+  //
+  // It used to be the other way round, and the comment here said "clkMhz must
+  // match dram_pll.vhd". Nothing cross-checked them, the PLL decided the real
+  // frequency, and a mismatch surfaced as "FPGA not responding" rather than a
+  // build error. That cost time on the 4-, 8- and 12-core bring-ups.
   //
   // 80 MHz is right for 1-2 cores (PLL 8/5, the checked-in default). At 4 cores
   // the BMB arbiter misses it badly — -2.399 ns setup, worst path
@@ -317,10 +322,9 @@ object JopConfig {
   // prescaler (59) and an exact 2 Mbaud UART divider (30), where 65 would have
   // given 32.5 and ~1.5% baud error.
   //
-  // A 4-core build therefore needs dram_pll.vhd edited to clk1/clk2 = 6/5 as
-  // well; the file is shared by every EP4CGX150 build, so it is left at 8/5 and
-  // the edit is deliberate rather than checked in — leaving it at 60 would
-  // silently slow the 1- and 2-core builds.
+  // The PLL follows automatically now — `ep4cgx150Smp 4 60` emits a 6/5 PLL.
+  // Known-good points: 4 cores 60 MHz, 8 cores 50 MHz, 12 cores 36 MHz (and at
+  // 36 the UART drops to 1.8 Mbaud, which the generator warns about).
   // useCmpSync swaps IHLU (per-object locking) for the single global lock. It
   // exists to bisect the >2-core generational deadlock (item 1): IHLU's drain
   // exempts lock owners from gcHalt, so if 4 cores run with CmpSync and hang

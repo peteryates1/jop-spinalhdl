@@ -70,11 +70,10 @@ silently invalidate all of that. Use this to find one:
    failing path is precisely what item 31 describes — `cores_N|memCtrl|addrReg`
    through the arbiter to `cores_0|memCtrl|state`, 18.185 ns of data delay,
    Fmax ~56 MHz. At 50 MHz it closes with **+0.463 ns setup / +0.234 hold**.
-   Recipe: set `clk1`/`clk2` to 1/1 and generate with `ep4cgx150Smp 8 50`. 50
-   also divides exactly for the UART (25) and the microsecond prescaler (49),
-   so 2 Mbaud downloads work unchanged. The PLL edit is deliberately NOT
-   committed, same as the 60 MHz one, because the file is shared by every
-   EP4CGX150 build and checking it in would silently slow the 1-4 core ones.
+   **The PLL now follows the preset automatically** (2026-08-15): `JopTopVerilog`
+   generates `fpga/qmtech-ep4cgx150-sdram/generated/dram_pll.vhd` from
+   `clkFreq`, so `ep4cgx150Smp 8 50` emits a 1/1 PLL with no hand edit, and it
+   reports the baud the board will actually manage. See `DramPllGen`.
 
    **The per-core probe banks are limited to 4 cores** (`JopCluster.hasProbeBanks`).
    The root port's target field is 4 bits, cores take 0..cpuCnt-1, and the banks
@@ -2145,10 +2144,12 @@ silently invalidate all of that. Use this to find one:
    work". Closing that needs the DebugController or a 2-core build, where
    `scanOtherCoreRoots` exercises the port via `rootRead`.
    Two procedure notes, both of which cost attempts here:
-   **download at 1.5 Mbaud, not 2** (`ep4cgx150Serial` declares `clkFreq = 80 MHz`
-   but `dram_pll.vhd` is hardwired to 60 — 2e6 x 60/80 = 1.5e6; the preset/PLL
-   mismatch is a live trap worth fixing properly), and **reprogram immediately
-   before each download** — the ready handshake is consumed once and the board
+   ~~**download at 1.5 Mbaud, not 2**~~ — **NO LONGER NEEDED (2026-08-15).** That
+   was the preset/PLL mismatch: `ep4cgx150Serial` declared 80 MHz while the
+   shared `dram_pll.vhd` was hardwired to 60, so the console ran at 2e6 x 60/80.
+   The PLL is now generated from the preset, an `ep4cgx150Serial` build really
+   does run at 80 MHz, and 2 Mbaud is correct. Still true: **reprogram
+   immediately before each download** — the ready handshake is consumed once and the board
    then waits for data, so a download run standalone times out on `0xAA`.
    When probing the port by hand, listen for **>500 ms**: that is the ready-byte
    period, and a shorter window reads zero bytes and looks like a dead board.

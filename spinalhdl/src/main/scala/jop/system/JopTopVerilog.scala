@@ -32,7 +32,7 @@ object JopTopVerilog {
     case "ep4cgx150HwMath"     => JopConfig.ep4cgx150HwMath
     case "ep4cgx150McFallback" => JopConfig.ep4cgx150McFallback
     case "ep4cgx150HwFloat"    => JopConfig.ep4cgx150HwFloat
-    // ep4cgx150Smp <cores> [clkMhz]. clkMhz must match dram_pll.vhd — see the
+    // ep4cgx150Smp <cores> [clkMhz]. clkMhz drives the generated PLL — see the
     // note on JopConfig.ep4cgx150Smp. 4 cores needs 65; 1-2 run at 80.
     // ep4cgx150BramSmp <cores> [clkMhz] — the sim/hardware bridge, see the note
     // on JopConfig.ep4cgx150BramSmp. Defaults to 60 MHz to match dram_pll.vhd.
@@ -170,8 +170,30 @@ object JopTopVerilog {
     val romRamLines =
       f"  ROM:           ${sys.romPath} (${romData.length} entries)%n" +
       f"  RAM:           ${sys.ramPath} (${ramData.length} entries)%n"
+
+    // THE PLL AND THE BAUD, both derived from the preset rather than left for a
+    // human to keep in step. Getting either wrong produces the SAME symptom --
+    // "FPGA not responding (no ready signal)" -- which reads as a dead build,
+    // so both are computed here and the baud is checked rather than assumed.
+    val pllLines = if (jopConfig.assembly.fpgaBoard.name == "qmtech-ep4cgx150") {
+      val mhz  = (sys.clkFreq.toBigDecimal / 1000000).toInt
+      val baud = sys.effectiveDevices.values.find(_.deviceType.key == "uart")
+        .flatMap(_.params.get("baudRate").map(_.asInstanceOf[Int])).getOrElse(2000000)
+      val pll  = jop.config.DramPllGen.emit("fpga/qmtech-ep4cgx150-sdram", mhz)
+      val eff  = jop.config.DramPllGen.effectiveBaud(mhz, baud)
+      val baudLine =
+        if (eff == baud) f"  Baud check:  $baud exact at $mhz MHz%n"
+        else
+          f"  *** BAUD WARNING: $baud is NOT achievable at $mhz MHz -- the board will%n" +
+          f"  *** transmit at $eff. UartCtrl divides clkFreq by (baud x 5), so an exact%n" +
+          f"  *** $baud needs a clock that is a multiple of ${baud * 5 / 1000000} MHz.%n" +
+          f"  *** Download with: python3 fpga/scripts/download.py -e <app>.jop <tty> $eff%n"
+      f"  $pll%n" + baudLine
+    } else ""
+
     print(summary)
     print(romRamLines)
+    print(pllLines)
 
     val spinalConfig = JopSpinalConfig(jopConfig)
 
@@ -185,7 +207,7 @@ object JopTopVerilog {
 
     val summaryPath = s"spinalhdl/generated/${jopConfig.entityName}.summary.txt"
     val pw = new java.io.PrintWriter(summaryPath)
-    try { pw.print(summary); pw.print(romRamLines) } finally pw.close()
+    try { pw.print(summary); pw.print(romRamLines); pw.print(pllLines) } finally pw.close()
 
     println(s"Generated: spinalhdl/generated/${jopConfig.entityName}.v")
     println(s"Summary:   $summaryPath")
