@@ -126,6 +126,13 @@ case class JopCluster(
     val uartTxData    = out Bits(8 bits)
     val uartTxValid   = out Bool()
     val debugExc      = out Bool()
+    // Per-core array-bounds fault, live. Pruned in FPGA builds (nothing drives a
+    // pin from them); exists so a simulation can STOP on the fault instead of
+    // discovering it thousands of cycles later from a printed counter.
+    val debugAbFire   = out Vec(Bool(), cpuCnt)
+    val debugAbIndex  = out Vec(UInt(baseConfig.memConfig.addressWidth bits), cpuCnt)
+    val debugAbLength = out Vec(UInt(baseConfig.memConfig.addressWidth bits), cpuCnt)
+    val debugAbHandle = out Vec(UInt(baseConfig.memConfig.addressWidth bits), cpuCnt)
 
     // Stack cache debug (core 0, optional)
     val scDebugRotState     = if (baseConfig.useStackCache) Some(out UInt(3 bits)) else None
@@ -435,6 +442,10 @@ case class JopCluster(
       abLength := cores(i).io.debugAbLength
       abHandle := cores(i).io.debugAbHandle
     }
+    io.debugAbFire(i)   := cores(i).io.debugAbFire
+    io.debugAbIndex(i)  := cores(i).io.debugAbIndex
+    io.debugAbLength(i) := cores(i).io.debugAbLength
+    io.debugAbHandle(i) := cores(i).io.debugAbHandle
     busCounters(i)(0) := abIndex.asBits.resized
     busCounters(i)(1) := abLength.asBits.resized
     busCounters(i)(2) := abHandle.asBits.resized

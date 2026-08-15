@@ -78,6 +78,16 @@ case class JopSmpSdramTestHarness(
 
     // Exception debug (core 0)
     val excFired = out Bool()
+
+    // Array-bounds fault, per core. The 4-core hardware wedge is an EXC_AB whose
+    // operands are all provably right (index = the core's own id, handle = a
+    // real array, length word = 4 in memory) while the check sees length 0, so
+    // the fault is a bad READ. Stopping the simulation ON it is the only way to
+    // see the BMB transaction that produced the zero.
+    val abFire   = out Vec(Bool(), cpuCnt)
+    val abIndex  = out Vec(UInt(harnessCfg.memConfig.addressWidth bits), cpuCnt)
+    val abLength = out Vec(UInt(harnessCfg.memConfig.addressWidth bits), cpuCnt)
+    val abHandle = out Vec(UInt(harnessCfg.memConfig.addressWidth bits), cpuCnt)
   }
 
   // Extract JBC init from main memory (same as JopSmpTestHarness)
@@ -154,6 +164,12 @@ case class JopSmpSdramTestHarness(
 
   // Exception debug (core 0)
   io.excFired := cluster.io.debugExc
+  for (i <- 0 until cpuCnt) {
+    io.abFire(i)   := cluster.io.debugAbFire(i)
+    io.abIndex(i)  := cluster.io.debugAbIndex(i)
+    io.abLength(i) := cluster.io.debugAbLength(i)
+    io.abHandle(i) := cluster.io.debugAbHandle(i)
+  }
 }
 
 /**
@@ -230,9 +246,12 @@ object JopSmpSdramNCoreHelloWorldSim extends App {
       // per access than the BRAM twin (which finishes in ~261k). Overridable so
       // a cap can be ruled out before a failure is believed.
       val maxCycles = if (args.length > 1) args(1).toInt else 40000000
+      // argv[3]: stop after this many array-bounds faults (0 = never stop).
+      val abStop = if (args.length > 3) args(3).toInt else 1
       val reportInterval = 500000
       var done = false
       var cycle = 0
+      var abCount = 0
 
       // Track per-core watchdog values and toggle counts
       val lastWd = Array.fill(cpuCnt)(0)
@@ -241,6 +260,26 @@ object JopSmpSdramNCoreHelloWorldSim extends App {
       while (cycle < maxCycles && !done) {
         cycle += 1
         dut.clockDomain.waitSampling()
+
+        // THE BOUNDS FAULT. Report every occurrence with its operands; the
+        // hardware only ever showed the FIRST one per core, and whether the
+        // later ones look the same is itself a data point. `abStop` (argv 3)
+        // ends the run on the Nth fault so a VCD window can be aimed at it.
+        for (i <- 0 until cpuCnt) {
+          if (dut.io.abFire(i).toBoolean) {
+            abCount += 1
+            val idx = dut.io.abIndex(i).toLong
+            val len = dut.io.abLength(i).toLong
+            val hdl = dut.io.abHandle(i).toLong
+            val msg = f"[$cycle%9d] *** AB FAULT #$abCount core $i idx=$idx len=$len handle=$hdl pc=${dut.io.pc(i).toInt}%04x jpc=${dut.io.jpc(i).toInt}"
+            println("\n" + msg)
+            logLine(msg)
+            if (abStop > 0 && abCount >= abStop) {
+              println(s"\n*** stopping on AB fault #$abCount (argv[3]=$abStop) ***")
+              done = true
+            }
+          }
+        }
 
         // Check for exception firing (core 0)
         if (dut.io.excFired.toBoolean) {
@@ -280,7 +319,10 @@ object JopSmpSdramNCoreHelloWorldSim extends App {
         }
 
         // Exit after all cores have toggled watchdog at least once
-        if (wdToggles.forall(_ >= 1)) {
+        // Only an exit condition for the NCoreHelloWorld workload this harness
+        // was written for. SmpGcTest toggles no watchdogs and must run on to the
+        // fault, so the early exit is suppressed whenever an app was named.
+        if (args.length <= 2 && wdToggles.forall(_ >= 1)) {
           println(s"\n*** All cores toggling watchdog! toggles=${wdToggles.mkString(",")} ***")
           for (_ <- 0 until 10000) {
             dut.clockDomain.waitSampling()
