@@ -39,22 +39,32 @@ silently invalidate all of that. Use this to find one:
 |---|---|---|---|---|---|
 | 1-3 | Blocking / correctness | 11 | The measurement gap | 21 | Boards |
 | 4-7, 24, 25 | Performance | 12-16, 23, 26, 27 | Smaller | 17-20, 22, 28 | Compute units |
-| 8-10, 31 | Hardware / infrastructure | 29, 30 | Smaller (CI flakiness) | | |
+| 8-10, 31, 33, 35 | Hardware / infrastructure | 29, 30, 36 | Smaller (CI flakiness) | | |
 
 ### Blocking / correctness
 
-- **1.** **Generational GC is unsound on SMP — currently guarded off.** The card table
-   is per core, snoops that core's own BMB port ahead of the arbiter, and
-   `IO_CARD_*` is decoded per core, so the collector sees only its own table: a
-   tenured->nursery write by another core is invisible and that young object is
-   collected while still live. `GC.init` falls back to classic when `cpuCnt > 1`
-   and says so at boot (verified on hardware). Fix is ONE cluster-level card
-   table fed from the arbiter output — `CmpSync` is the precedent for a
-   cluster-level resource reached through per-core I/O. **Write the failing test
-   first**: the existing SMP GC tests do not construct a cross-core old->young
-   reference and would pass either way. ~1-2 days, dominated by the test — and
-   that test is **the same missing artefact as items 2 and 11** (see
-   *Coupling* below).
+- **1.** ~~**Generational GC is unsound on SMP**~~ — **RESOLVED to 4 cores
+   (2026-08-15, `ef36d99`), guard now `cpuCnt <= 4`.** The long-standing
+   >2-core failure was **not a GC bug and not a card-table bug**. It was two
+   response-path defects in `AlteraSdramAdapter` that corrupted reads to zero
+   (Avalon `readdatavalid` is a pulse and was dropped whenever the consumer
+   stalled; locally-generated write responses, which hardcode `data := 0`, could
+   overtake outstanding reads, which the consumer matches BY ORDER). It surfaced
+   as an array-bounds exception on a valid index, which killed a publisher
+   thread and wedged the cluster. Full narrative and every retraction along the
+   way in the item-1 section below, entries (b1)-(b10).
+
+   **Verified on EP4CGX150 SDRAM:** SmpGcTest at 4 cores GENERATIONAL, `SMPGC
+   OK`, `minors 10 / verified 192 / errors 0`, 3/3 runs; DoAll 66/66 on the
+   4-core bitstream and on the single-core one; `JopJvmTestsBramSim` 132 ok.
+
+   **Still asserted, not verified:** 8 and 16 cores (untested — that is why the
+   guard is a number and not a removal); the DDR3 boards at >2 cores, which do
+   not use this adapter and so were never affected by this bug but have also
+   never been run generational at 4 cores. The cluster-level card table the
+   original entry proposed turned out **not** to be needed: the per-core tables
+   are fine, and `SMPGC OK` means the cross-generation references genuinely
+   survived, so the workload did exercise it.
 
    **The failing test now exists and the bug is reproduced on hardware**
    (2026-08-09). `java/apps/SmpGcTest` — core 1 stores a nursery object into a
@@ -2066,6 +2076,36 @@ silently invalidate all of that. Use this to find one:
    When probing the port by hand, listen for **>500 ms**: that is the ready-byte
    period, and a shorter window reads zero bytes and looks like a dead board.
 
+- **35.** **`AlteraSdramAdapter` has NO simulation coverage, on any board that
+   uses it — write a unit test for it.** `useAlteraCtrl = manufacturer ==
+   Manufacturer.Altera` (`JopTop.scala:406,731`), so Altera boards run this
+   adapter plus the Altera controller BlackBox, while **every** simulation
+   substitutes `SdramCtrlNoCke` — Verilator cannot build a BlackBox. The
+   component is unreachable by the test suite on exactly the hardware that runs
+   it. Same shape as item 33's `MemoryStyle.Generic` blind spot, and it is not a
+   theoretical risk: it hid the two response-path bugs behind item 1's >2-core
+   failure for weeks, and the fix (`ef36d99`) is **validated on hardware only**.
+
+   **What to write**: a testbench driving `AlteraSdramAdapter` against a stub
+   Avalon slave, checking that every response carries the data and context of the
+   command it belongs to, under
+   - `io.bus.rsp.ready` deasserted for long stretches (this is what dropped read
+     data — Avalon `readdatavalid` is a pulse and cannot be stalled), and
+   - reads and writes interleaved (this is what let a write response, which
+     hardcodes `data := 0`, answer an outstanding read, since the consumer
+     matches responses BY ORDER).
+
+   Both fail against the pre-`ef36d99` adapter, which is the acceptance
+   criterion — **write them against the old file first and watch them fail**,
+   or this becomes another test that cannot fail (items 2 and 11). The stub only
+   has to honour `avs_waitrequest`, pulse `avs_readdatavalid` after a variable
+   latency, and never stall read data; it does not need to model SDRAM at all.
+
+   **Note for whoever does this**: a bare outstanding-transaction counter will
+   NOT catch either bug. The substituted write response kept commands and
+   responses balanced, so the count stayed correct while only the data was
+   wrong. The test has to check response *content and pairing*, not arithmetic.
+
 - **32.** **UART data corruption on seed 871203250 — CI seed now PINNED around it.**
    `JopJvmTestsMcFallbackSim` fails with every UART character corrupted, bits 1
    and 3 cleared: `"ArrayTest2 ok"` prints as `"Adteaequpep ea"` and `"failed!"`
@@ -2246,6 +2286,28 @@ silently invalidate all of that. Use this to find one:
     first slice of this is already on the critical path (see *Coupling*).
 
 ### Smaller
+
+- **36.** ~~**The `stall freezes jpc, jinstr and the dispatch address` formal
+    property timed out in CI**~~ — **FIXED 2026-08-15**, timeout 300 -> 900 s.
+    Not a regression and not a counterexample: SymbiYosys was killed at the wall
+    having reached BMC step 5, reported as `*** FAILED *** (5 minutes, 2
+    seconds)` + `java.lang.Exception: SymbiYosys failure`. The property takes
+    **2m47s locally** and CI's runner is roughly twice as slow, so it failed or
+    passed according to how busy the runner was — including on commits touching
+    no RTL at all (`fb3e8b6` is Java and docs only, and failed; `0da41f1` has
+    the same RTL and passed). Worth recognising the signature: a formal
+    "failure" with no counterexample and a duration equal to the timeout is a
+    timeout.
+
+    Tried and rejected: pinning `jbcWrAddr`/`jbcWrData`, which under
+    `assume(!jbcWrEn)` cannot affect anything and so looked like 19 free bits
+    per step the BMC need not carry. It made the property **slower**, 2m47s ->
+    3m42s — extra assumes change the solver's search and here for the worse.
+    The note is left in the source so it is not re-attempted.
+
+    This property is worth its runtime: it is the one that pins the freeze
+    invariant behind the three cascading fetch bugs, and no whole-system sim
+    catches that class.
 
 - **29.** **`BytecodeFetchStage: JumpTable integration` is flaky in CI, and the
     failure is seed-dependent.** It broke the 2026-08-08 push and a rerun of the

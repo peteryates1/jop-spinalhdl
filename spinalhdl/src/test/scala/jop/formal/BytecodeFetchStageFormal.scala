@@ -21,9 +21,16 @@ import jop.pipeline.{BytecodeFetchStage, BytecodeFetchConfig}
  */
 class BytecodeFetchStageFormal extends SpinalFormalFunSuite {
 
+  // 900, not 300. The stall property below takes 2m47s locally and CI's runner
+  // is roughly twice as slow, so at 300 it failed as a TIMEOUT ("SymbiYosys
+  // failure" after 5m02s, having reached BMC step 5) on some pushes and passed
+  // on others — including on commits that touched no RTL at all. That is runner
+  // variance against a wall, not a regression, and chasing it as one wasted a
+  // CI cycle. The headroom is deliberate: a formal timeout should mean "this
+  // property has become intractable", not "the runner was busy".
   val formalConfig = FormalConfig
     .addEngin(SmtBmc(solver = SmtBmcSolver.Z3))
-    .withTimeout(300)
+    .withTimeout(900)
 
   /** Helper to drive all inputs with anyseq */
   def setupAllInputs(dut: BytecodeFetchStage): Unit = {
@@ -84,6 +91,11 @@ class BytecodeFetchStageFormal extends SpinalFormalFunSuite {
         // not the stream advancing, so exclude it rather than weaken the
         // property: with a fill in flight the core is being redirected anyway.
         assume(!dut.io.jbcWrEn)
+        // Pinning jbcWrAddr/jbcWrData as well was tried, on the reasoning that
+        // with writes disabled they cannot reach anything and so are 19 free
+        // bits the BMC need not carry. It made the property SLOWER, 2m47s ->
+        // 3m42s: the extra assumes change the solver's search and, here, for the
+        // worse. Not re-adding it — the timeout is the real fix.
         // An exception or interrupt arriving during the stall legitimately
         // REDIRECTS the dispatch: JumpTable muxes jpaddr to sysExcAddr/sysIntAddr
         // ahead of the decoded bytecode. That is the trap being taken, not the
