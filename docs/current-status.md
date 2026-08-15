@@ -115,12 +115,26 @@ silently invalidate all of that. Use this to find one:
    | 1 | 8,784 | 6 % | 60-80 MHz | validated |
    | 4 | 42,769 | 29 % | 60 MHz, +0.944 | validated, generational |
    | 8 | 77,145 | 52 % | 50 MHz, +0.463 | validated, generational |
-   | 12 | 118,086 | 79 % | **-5.394 at 50 MHz** -> Fmax ~39 MHz | fits, untested on HW |
+   | 12 | 118,085 | 79 % | 36 MHz, +3.084 | **validated, generational** |
    | 16 | **182,501** | **122 %** | — | **DOES NOT FIT** |
 
-   So the device runs out somewhere between 12 and 16 cores, and timing runs out
-   earlier: 12 would need the PLL at about 37.5-40 MHz (4/5 = 40 MHz is
-   marginal against Fmax 39.4; 3/4 = 37.5 is safe). Per-core cost is ~11.3k LE.
+   12 cores validated 2026-08-15: PLL 18/25 = 36 MHz, `SMPGC OK` with `minors 10
+   / verified 192 / errors 0` on **4/4 runs**, `cores 12, publishers 11`, and
+   DoAll **66/66** generational. Per-core cost is ~11.3k LE. Fmax at 12 cores is
+   ~40 MHz, so 40 (4/5) may also close and would keep 2 Mbaud — untested.
+
+   **THE BAUD RATE FOLLOWS THE CLOCK, and not the way it first looks.** UartCtrl
+   computes `clockDivider = round(clkFreq / baud / rxSamplePerBit) - 1` with
+   `rxSamplePerBit = 5`, so an exact baud needs **`clkFreq / (baud * 5)`** to be
+   an integer — for 2 Mbaud, a clock that is a multiple of **10 MHz**. 80, 60 and
+   50 all qualify, which is why nothing noticed. 36 does not: 36/(2*5) = 3.6,
+   which rounds to 4, and the board transmits at **1.8 Mbaud**. A 12-core build
+   therefore needs `download.py ... 1800000`; at 2 Mbaud it looks like a dead
+   board ("FPGA not responding"), which is the same symptom as a PLL/preset
+   mismatch and easy to misdiagnose. Diagnose it by listening raw and sweeping
+   the baud until the ready byte reads back as `0xAA` — at the wrong rate it
+   decodes as a steady wrong value (`0x5A` at 2 Mbaud here), which tells you the
+   FPGA is alive and only the rate is wrong.
 
    Item 5's "area allows ~12 cores at 73 %" was based on a 4-core figure of
    38,372 LE and is optimistic against today's builds — 12 costs 79 %. Shedding

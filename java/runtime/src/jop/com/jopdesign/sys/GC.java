@@ -617,27 +617,36 @@ public class GC {
 			// starved. That is contention in the SDRAM path, not the collector —
 			// 4 cores passes in both simulations and on a BRAM board build. See
 			// item 34 in docs/current-status.md.
-			// 8. Raised from 2 to 4 once the SDRAM read corruption behind the
+			// 12. Raised 2 -> 4 once the SDRAM read corruption behind the
 			// >2-core failure was fixed (AlteraSdramAdapter: Avalon read data
 			// dropped when the consumer stalled, and write responses overtaking
-			// outstanding reads and answering them with 0), then 4 -> 8 on an
-			// 8-core EP4CGX150 build.
+			// outstanding reads and answering them with 0), then 4 -> 8 -> 12 as
+			// each core count was validated on hardware.
 			//
-			// Evidence at 8 cores (50 MHz, see below): SmpGcTest generational
-			// SMPGC OK with minors 10 / verified 192 / errors 0, 3/3 runs, and
-			// DoAll 66/66 both generational and classic. At 4 cores (60 MHz):
-			// the same, plus DoAll 66/66 on the single-core build.
+			// Evidence, all EP4CGX150 SDRAM, SmpGcTest GENERATIONAL reporting
+			// SMPGC OK with minors 10 / verified 192 / errors 0, plus DoAll
+			// 66/66 at every step:
+			//     4 cores  60 MHz  3/3 runs
+			//     8 cores  50 MHz  3/3 runs
+			//    12 cores  36 MHz  4/4 runs
+			// and Wukong DDR3 at 4 cores, 100 MHz, 5/6 runs.
 			//
-			// AN 8-CORE BUILD NEEDS THE PLL AT 50 MHz. dram_pll.vhd ships at 6/5
-			// (60 MHz) for up to 4 cores; 8 cores misses that by -1.199 ns on a
-			// cross-core arbiter path (core N addrReg -> core 0 memCtrl state,
-			// current-status item 31), giving Fmax ~56 MHz. Set clk1/clk2 to 1/1
-			// and generate with `ep4cgx150Smp 8 50`; 50 also divides exactly for
-			// the UART (25) and the microsecond prescaler (49).
+			// EACH CORE COUNT NEEDS ITS OWN PLL SETTING, because the BMB arbiter
+			// path (core N addrReg -> core 0 memCtrl state, item 31) lengthens
+			// with core count. dram_pll.vhd ships at 6/5 = 60 MHz, good to 4
+			// cores. 8 needs 1/1 = 50 MHz; 12 needs 18/25 = 36 MHz (Fmax ~40).
+			// 16 does not fit at all -- 182,501 of 149,760 LE.
 			//
-			// 16 cores is untested, and so are the DDR3 boards, which is why
-			// this is a number and not a removal.
-			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 8;
+			// AND THE BAUD RATE FOLLOWS THE CLOCK. UartCtrl computes
+			// clockDivider = round(clkFreq / baud / 5) - 1, so an exact baud
+			// needs clkFreq / (baud * 5) to be an integer -- for 2 Mbaud, a
+			// multiple of 10 MHz. 60 and 50 qualify; 36 does not (3.6 rounds to
+			// 4), so a 12-core build talks at 1.8 Mbaud, not 2. Download with
+			// `-b 1800000` there or the board looks dead.
+			//
+			// 16 cores does not fit; DDR3 above 4 cores is untested. Hence a
+			// number and not a removal.
+			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 12;
 			genCardWords = genActive ? (1 << cardShift0) : 0;
 
 			if (genActive) {
