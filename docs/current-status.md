@@ -1772,6 +1772,45 @@ silently invalidate all of that. Use this to find one:
    pub[3] is now 0 too and core 3 lags — because the RTL changed when the
    counters were added. It is the same class of failure, not the same instance.
 
+   **(b8) THE FAULT IS A READ THAT RETURNS 0 FOR AN ARRAY LENGTH OF 4.** The
+   bounds-check operands are now latched in hardware at the first EXC_AB per core
+   and reported every round:
+
+   ```
+   arrays: liveTick 539528 pubStep 539520 ... holders 539488 len 4
+     core[1] abIdx 1 abLen 0 abHdl 539528 nowLen 4 nowPtr 2096867 exc 4 type 3 bmbOut 1
+     core[2] abIdx 2 abLen 0 abHdl 539520 nowLen 4 nowPtr 2096863 exc 1 type 3 bmbOut 0
+     core[3] abIdx 3 abLen 0 abHdl 539520 nowLen 4 nowPtr 2096863 exc 2 type 3 bmbOut 1
+   ```
+
+   Read it line by line, because each column closes off a hypothesis:
+
+   - `abIdx` is always the core's OWN id, so the index is valid. The faulting
+     statement is `liveTick[id] = liveTick[id] + 1`, the first statement of the
+     publisher loop, executed millions of times and faulting a handful.
+   - `abHdl` resolves to `liveTick` or `pubStep` — real arrays, not a stray
+     handle. So the handle the pipeline supplied was right.
+   - `nowLen 4` — the length word read back from a working core is correct. Memory
+     was never wrong; **the read was**.
+   - `bmbOut` (BMB commands issued minus responses received, per core) sits at 0
+     or 1 and never grows, so the response stream has NOT slipped a beat. A
+     persistent off-by-one is ruled out.
+   - `abLen` is always exactly **0**, never an arbitrary value. That rules out
+     plain mis-delivery of another master's data, which would land arbitrary
+     bits. Zero is what a WRITE response carries (no data), what a reset register
+     holds, and what `rsp.data ## lowHalfData` produces when the low half was
+     never captured — 4 is `0x0000_0004`, so losing the LOW half alone gives
+     exactly 0.
+
+   That points at `BmbSdramCtrl32`'s 32<-16 reassembly rather than at routing:
+   `lowHalfData` is a SINGLE register shared by every in-flight transaction, and
+   `pipeData := rsp.data ## lowHalfData`. Reading the command side did not find a
+   sequence that loses it — command halves are issued as an atomic pair, the fill
+   path tags its responses `isFill` and is excluded, and bursts hold
+   `io.bmb.cmd.ready` low — so the next step is a waveform, not more reading.
+   Reproduce in `JopSmpSdramNCoreHelloWorldSim 4 <cycles> SmpGcTest.jop`, which
+   already tracks the board output for output, and stop the sim on `abFire`.
+
    **(b7) THE WEDGE IS AN UNCAUGHT ARRAY-BOUNDS EXCEPTION KILLING A PUBLISHER.**
    The hardware exception latch (see b6) reported, at a 4-core stall:
 

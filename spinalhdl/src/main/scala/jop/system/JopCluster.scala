@@ -417,9 +417,31 @@ case class JopCluster(
     when(req && reqCnt  =/= U(reqCnt.maxValue))  { reqCnt  := reqCnt + 1 }
     when(gnt && gntCnt  =/= U(gntCnt.maxValue))  { gntCnt  := gntCnt + 1 }
     when(req && !gnt && busyCnt =/= U(busyCnt.maxValue)) { busyCnt := busyCnt + 1 }
-    busCounters(i)(0) := reqCnt.asBits
-    busCounters(i)(1) := gntCnt.asBits
-    busCounters(i)(2) := busyCnt.asBits
+    // THE ARRAY-BOUNDS FAULT'S OPERANDS, latched on the FIRST fault per core.
+    //
+    // These take over slots 0..2 from req/gnt/busy. That is deliberate: the bus
+    // counters have already returned their answer (the stalled core is not
+    // starved, it stops asking — d3a634b) and they saturate to -1 within a
+    // second, so they are dead weight, while the fault operands are the open
+    // question. `halt` stays in slot 3. Restore reqCnt/gntCnt/busyCnt here if a
+    // starvation question ever comes back; the counters themselves still run.
+    val abSeen   = Reg(Bool()) init(False)
+    val abIndex  = Reg(UInt(cores(i).io.debugAbIndex.getWidth bits)) init(0)
+    val abLength = Reg(UInt(cores(i).io.debugAbLength.getWidth bits)) init(0)
+    val abHandle = Reg(UInt(cores(i).io.debugAbHandle.getWidth bits)) init(0)
+    when(cores(i).io.debugAbFire && !abSeen) {
+      abSeen   := True
+      abIndex  := cores(i).io.debugAbIndex
+      abLength := cores(i).io.debugAbLength
+      abHandle := cores(i).io.debugAbHandle
+    }
+    busCounters(i)(0) := abIndex.asBits.resized
+    busCounters(i)(1) := abLength.asBits.resized
+    busCounters(i)(2) := abHandle.asBits.resized
+    // Keep the counters driven so they are not pruned and can be restored by
+    // swapping three lines above.
+    val busCountersUnused = reqCnt.asBits ## gntCnt.asBits ## busyCnt.asBits
+    busCountersUnused.allowPruning()
     // Slot 3: cycles HALTED BY THE LOCK MANAGER (Sys.io.halted, driven from
     // syncIn.halted — Ihlu or CmpSync, and gcHalt during a stop-the-world).
     //
@@ -462,7 +484,20 @@ case class JopCluster(
     stateCounters(i)(0) := cores(i).io.pc.asBits.resize(16) ## cores(i).io.jpc.asBits.resize(16)
     stateCounters(i)(1) := excPc.asBits.resize(16) ## excJpc.asBits.resize(16)
     stateCounters(i)(2) := excCnt.asBits
-    stateCounters(i)(3) := B(0, 24 bits) ## excFirst
+    // BMB COMMAND/RESPONSE BALANCE. Every BMB command this core issues must
+    // produce exactly one response, and the controller consumes exactly one per
+    // command, so `issued - received` is bounded by the outstanding depth and
+    // returns to 0. If it DRIFTS, responses are off by one and every read
+    // afterwards returns the previous transaction's data — which is exactly the
+    // shape of the fault: the array-length read came back 0 (a write response
+    // carries no data) for a word that really holds 4.
+    //
+    // Sits in the top 24 bits of the excType slot, which had 24 spare.
+    val cmdCnt  = Reg(UInt(24 bits)) init(0)
+    val rspCnt  = Reg(UInt(24 bits)) init(0)
+    when(cores(i).io.bmb.cmd.fire && cores(i).io.bmb.cmd.last) { cmdCnt := cmdCnt + 1 }
+    when(cores(i).io.bmb.rsp.fire && cores(i).io.bmb.rsp.last) { rspCnt := rspCnt + 1 }
+    stateCounters(i)(3) := (cmdCnt - rspCnt).asBits ## excFirst
   }
 
   // Arbiter (deferred to here so debug BMB controller can be included)

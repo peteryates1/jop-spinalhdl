@@ -118,6 +118,16 @@ case class BmbMemoryController(
       val bcFillLen    = out UInt(10 bits)
       val bcFillCount  = out UInt(10 bits)
       val bcRdCapture  = out Bits(32 bits)  // io.aout captured when bcRd fires
+      // THE ARRAY-BOUNDS FAULT, at the instant it is decided. The 4-core SDRAM
+      // wedge is an EXC_AB on an index that succeeds when retried, so the
+      // question is which of the two operands is wrong: the index the pipeline
+      // supplied, or the length that came back over BMB. Exported raw and
+      // latched by JopCluster (first fault only), because by the time software
+      // can read anything the state machine is long gone.
+      val abFire   = out Bool()
+      val abIndex  = out UInt(config.addressWidth bits)
+      val abLength = out UInt(config.addressWidth bits)
+      val abHandle = out UInt(config.addressWidth bits)
     }
 
     // Snoop bus for cross-core cache invalidation (only when caches are enabled)
@@ -347,6 +357,14 @@ case class BmbMemoryController(
 
   // Default: no write this cycle
   jbcWrEnReg := False
+
+  // Array-bounds fault defaults. MUST be here and not with the other io.debug
+  // drives near the end of the file: those come AFTER the state machine, and
+  // last-assignment-wins would overwrite the values captured at the fault.
+  io.debug.abFire   := False
+  io.debug.abIndex  := 0
+  io.debug.abLength := 0
+  io.debug.abHandle := 0
 
   // Snoop output defaults
   io.snoopOut.foreach { s =>
@@ -1246,6 +1264,10 @@ case class BmbMemoryController(
           io.ioAddr := U(JopIoSpace.SYS_EXC, 8 bits)
           io.ioWr := True
           io.ioWrData := B(3, 32 bits)  // EXC_AB = 3
+          io.debug.abFire   := True
+          io.debug.abIndex  := handleIndex.resized
+          io.debug.abLength := arrayLength
+          io.debug.abHandle := addrReg
           state := State.AB_EXC
         }.otherwise {
           state := State.HANDLE_CALC  // Bounds OK, proceed

@@ -264,6 +264,27 @@ public class SmpGcTest {
 		wrInt(GC.nurseryBase);
 		JVMHelp.wr("\r\n");
 
+		// The handles of every array publisher() indexes. The bounds fault
+		// reports the handle it faulted on; without this there is no way to tell
+		// "the length read came back wrong" from "the handle was wrong".
+		JVMHelp.wr("arrays: liveTick ");
+		wrInt(Native.toInt(liveTick));
+		JVMHelp.wr(" pubStep ");
+		wrInt(Native.toInt(pubStep));
+		JVMHelp.wr(" pubRound ");
+		wrInt(Native.toInt(pubRound));
+		JVMHelp.wr(" pubSlot ");
+		wrInt(Native.toInt(pubSlot));
+		JVMHelp.wr(" pubExcCnt ");
+		wrInt(Native.toInt(pubExcCnt));
+		JVMHelp.wr(" pubExcStep ");
+		wrInt(Native.toInt(pubExcStep));
+		JVMHelp.wr(" holders ");
+		wrInt(Native.toInt(holders));
+		JVMHelp.wr(" len ");
+		wrInt(cpuCnt);
+		JVMHelp.wr("\r\n");
+
 		Native.wr(1, Const.IO_SIGNAL);   // release core 1
 
 		// Run the stack-root test before the main rounds.
@@ -502,52 +523,8 @@ public class SmpGcTest {
 					// slow path and a stopped one look different.
 					// Read through the root port: target >= 8 selects the counter
 					// bank of core (target-8). See JopCluster.
-					for (int c = 0; c < cpuCnt; c++) {
-						JVMHelp.wr("  bus[");
-						wrInt(c);
-						JVMHelp.wr("] req ");
-						wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_STACK, 0));
-						JVMHelp.wr(" gnt ");
-						wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_SP, 0));
-						JVMHelp.wr(" busy ");
-						wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_A, 0));
-						// Cycles halted by the LOCK MANAGER. The req/gnt counters
-						// showed the stalled core stops asking rather than being
-						// starved; a core waiting on a monitor issues no memory
-						// traffic, so it looks identical from the bus. Large here
-						// => blocked in Ihlu/CmpSync. Small => spinning in
-						// ordinary code, and neither bus nor lock is to blame.
-						JVMHelp.wr(" halt ");
-						wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_B, 0));
-						// WHERE the core is, sampled live: microcode pc, bytecode
-						// jpc, and how many hardware exceptions it has taken. A
-						// wedged core shows a fixed pc/jpc; a non-zero exc on it
-						// names the cause outright, since the exception path has
-						// already been found derailing cores this session.
-						// The live pc/jpc are packed one per half-word (the root
-						// port has 4 bits of target and this bank owns 12..15, so
-						// there was no room for a slot each).
-						int live = GC.rootRead(12 + c, Const.ROOT_WHAT_STACK, 0);
-						JVMHelp.wr(" pc ");
-						wrInt(live >>> 16);
-						JVMHelp.wr(" jpc ");
-						wrInt(live & 0xffff);
-						JVMHelp.wr(" exc ");
-						wrInt(GC.rootRead(12 + c, Const.ROOT_WHAT_A, 0));
-						// The FIRST exception this core took, latched in hardware
-						// and never overwritten. The live pc is where the core
-						// ended up; this is where it went wrong. A core with
-						// exc>0 and a wedge is explained by this line.
-						int at = GC.rootRead(12 + c, Const.ROOT_WHAT_SP, 0);
-						JVMHelp.wr(" excAt pc ");
-						wrInt(at >>> 16);
-						JVMHelp.wr(" jpc ");
-						wrInt(at & 0xffff);
-						JVMHelp.wr(" type ");
-						wrInt(GC.rootRead(12 + c, Const.ROOT_WHAT_B, 0));
-						JVMHelp.wr("\r\n");
-					}
-					GC.rootRelease();
+					dumpCores();
+
 					spins = 0;
 					++stalls;
 					if (stalls > 6) { JVMHelp.wr("SMPGC STALLED\r\n"); phase = 3; return; }
@@ -650,6 +627,13 @@ public class SmpGcTest {
 			JVMHelp.wr(" haltLeak ");
 			wrInt(GC.haltDeltaMax);
 			JVMHelp.wr("\r\n");
+			// EVERY ROUND, not just at the end and not just on a stall. With the
+			// publisher catch in place a bounds fault no longer wedges anything,
+			// so the run can sail past it and die somewhere else entirely — two
+			// runs have now ended on an unrelated derailment with the fault
+			// operands never printed. This is the only place guaranteed to be
+			// reached after the fault has happened.
+			dumpCores();
 		}
 
 		phase = 3;   // tell core 1 to stop
@@ -676,7 +660,18 @@ public class SmpGcTest {
 			int at = GC.rootRead(12 + c, Const.ROOT_WHAT_SP, 0);
 			JVMHelp.wr(" excAt pc "); wrInt(at >>> 16);
 			JVMHelp.wr(" jpc "); wrInt(at & 0xffff);
-			JVMHelp.wr(" type "); wrInt(GC.rootRead(12 + c, Const.ROOT_WHAT_B, 0));
+			int tb = GC.rootRead(12 + c, Const.ROOT_WHAT_B, 0);
+		JVMHelp.wr(" type "); wrInt(tb & 0xff);
+		// Outstanding BMB commands minus responses. Must return to 0; a value
+		// that grows means the response stream has slipped and every read is
+		// getting the previous transaction's data.
+		JVMHelp.wr(" bmbOut "); wrInt(tb >>> 8);
+			// The operands of that fault, so a PASSING run reports them too —
+			// with the catch in place the run completes, and the fault would
+			// otherwise leave no trace at all.
+			JVMHelp.wr(" abIdx "); wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_STACK, 0));
+			JVMHelp.wr(" abLen "); wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_SP, 0));
+			JVMHelp.wr(" abHdl "); wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_A, 0));
 		}
 		GC.rootRelease();
 		JVMHelp.wr("\r\n");
@@ -753,6 +748,92 @@ public class SmpGcTest {
 	 * `scanOtherCoreRoots()` is unaffected: the cores it reads are HALTED.
 	 */
 	static final boolean PROBE_RUNNING_CORE = false;
+
+
+	/**
+	 * Per-core hardware probe, split out of core0() because that method hit
+	 * JOPizer's 512-byte method limit ("wrong size: test.SmpGcTest.core0()V").
+	 * Keep new probes here rather than inline.
+	 */
+	static void dumpCores() {
+	for (int c = 0; c < cpuCnt; c++) {
+		JVMHelp.wr("  core[");
+		wrInt(c);
+		// THE BOUNDS FAULT'S OPERANDS, latched in hardware at the
+		// first EXC_AB on this core. Slots 0..2 used to carry
+		// req/gnt/busy; those answered their question (not
+		// starvation) and saturate to -1 anyway. Reading:
+		//   idx < len   -> impossible, the check compares these
+		//                  two, so a wrong pair means one of them
+		//                  was not what the pipeline/memory held
+		//   len absurd  -> the LENGTH word came back wrong, i.e.
+		//                  the BMB response for handle+1
+		//   hdl absurd  -> the handle itself was wrong, and the
+		//                  length is whatever lives at hdl+1
+		JVMHelp.wr("] abIdx ");
+		wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_STACK, 0));
+		JVMHelp.wr(" abLen ");
+		wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_SP, 0));
+		int abh = GC.rootRead(8 + c, Const.ROOT_WHAT_A, 0);
+		JVMHelp.wr(" abHdl ");
+		wrInt(abh);
+		// THE SAME WORD, READ BACK NOW, from a core that is working. The fault
+		// reported length 0 for an array that is cpuCnt long. If this reads the
+		// correct length then memory was never wrong and the READ was — a BMB
+		// response that did not belong to that request. If it reads 0 too, the
+		// handle in `abHdl` is not the array's and the fault is downstream of a
+		// bad handle, which is a different bug entirely.
+		if (abh != 0) {
+			JVMHelp.wr(" nowLen ");
+			wrInt(Native.rdMem(abh + GC.OFF_MTAB_ALEN));
+			JVMHelp.wr(" nowPtr ");
+			wrInt(Native.rdMem(abh + GC.OFF_PTR));
+		}
+		// Cycles halted by the LOCK MANAGER. The req/gnt counters
+		// showed the stalled core stops asking rather than being
+		// starved; a core waiting on a monitor issues no memory
+		// traffic, so it looks identical from the bus. Large here
+		// => blocked in Ihlu/CmpSync. Small => spinning in
+		// ordinary code, and neither bus nor lock is to blame.
+		JVMHelp.wr(" halt ");
+		wrInt(GC.rootRead(8 + c, Const.ROOT_WHAT_B, 0));
+		// WHERE the core is, sampled live: microcode pc, bytecode
+		// jpc, and how many hardware exceptions it has taken. A
+		// wedged core shows a fixed pc/jpc; a non-zero exc on it
+		// names the cause outright, since the exception path has
+		// already been found derailing cores this session.
+		// The live pc/jpc are packed one per half-word (the root
+		// port has 4 bits of target and this bank owns 12..15, so
+		// there was no room for a slot each).
+		int live = GC.rootRead(12 + c, Const.ROOT_WHAT_STACK, 0);
+		JVMHelp.wr(" pc ");
+		wrInt(live >>> 16);
+		JVMHelp.wr(" jpc ");
+		wrInt(live & 0xffff);
+		JVMHelp.wr(" exc ");
+		wrInt(GC.rootRead(12 + c, Const.ROOT_WHAT_A, 0));
+		// The FIRST exception this core took, latched in hardware
+		// and never overwritten. The live pc is where the core
+		// ended up; this is where it went wrong. A core with
+		// exc>0 and a wedge is explained by this line.
+		int at = GC.rootRead(12 + c, Const.ROOT_WHAT_SP, 0);
+		JVMHelp.wr(" excAt pc ");
+		wrInt(at >>> 16);
+		JVMHelp.wr(" jpc ");
+		wrInt(at & 0xffff);
+		int tb2 = GC.rootRead(12 + c, Const.ROOT_WHAT_B, 0);
+		JVMHelp.wr(" type ");
+		wrInt(tb2 & 0xff);
+		// Live BMB commands issued minus responses received. Bounded and
+		// self-clearing (0 or 1 in a healthy core); a growing value would mean
+		// the response stream has slipped a beat and every read after it
+		// returns the previous transaction's data.
+		JVMHelp.wr(" bmbOut ");
+		wrInt(tb2 >>> 8);
+		JVMHelp.wr("\r\n");
+	}
+		GC.rootRelease();
+	}
 
 	static void publish(int id, int round, int slot) {
 		pubSlot[id] = slot;

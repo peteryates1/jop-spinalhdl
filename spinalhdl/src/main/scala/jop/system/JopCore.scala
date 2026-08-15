@@ -84,6 +84,11 @@ case class JopCore(
     // ...and which one. Lets a cluster-level probe distinguish a core that
     // derailed into a null-pointer trap from one that took a legitimate trap.
     val debugExcType = out Bits(8 bits)
+    // The array-bounds fault's operands, straight from the memory controller.
+    val debugAbFire   = out Bool()
+    val debugAbIndex  = out UInt(config.memConfig.addressWidth bits)
+    val debugAbLength = out UInt(config.memConfig.addressWidth bits)
+    val debugAbHandle = out UInt(config.memConfig.addressWidth bits)
 
     // Debug: bytecode cache fill
     val debugBcRd = out Bool()
@@ -457,6 +462,10 @@ case class JopCore(
 
   io.debugExc := sys.io.exc
   io.debugExcType := sys.io.excType
+  io.debugAbFire   := memCtrl.io.debug.abFire
+  io.debugAbIndex  := memCtrl.io.debug.abIndex
+  io.debugAbLength := memCtrl.io.debug.abLength
+  io.debugAbHandle := memCtrl.io.debug.abHandle
   io.debugBcRd := pipeline.io.debugBcRd
   io.debugMemState := memCtrl.io.debug.state
   io.debugBcFillAddr := memCtrl.io.debug.bcFillAddr
