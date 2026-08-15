@@ -617,16 +617,27 @@ public class GC {
 			// starved. That is contention in the SDRAM path, not the collector —
 			// 4 cores passes in both simulations and on a BRAM board build. See
 			// item 34 in docs/current-status.md.
-			// 4, raised from 2 once the SDRAM read corruption behind the >2-core
-			// failure was fixed (AlteraSdramAdapter: Avalon read data was being
-			// dropped when the consumer stalled, and write responses could
-			// overtake outstanding reads and answer them with 0). Evidence:
-			// SmpGcTest at 4 cores on EP4CGX150 SDRAM, 3/3 runs SMPGC OK with
-			// minors 10 / verified 192 / errors 0, plus DoAll 66/66 on the same
-			// 4-core bitstream and on the single-core one. 8 and 16 cores are
-			// still untested, and so are the DDR3 boards, which is why this is a
-			// number and not a removal.
-			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 4;
+			// 8. Raised from 2 to 4 once the SDRAM read corruption behind the
+			// >2-core failure was fixed (AlteraSdramAdapter: Avalon read data
+			// dropped when the consumer stalled, and write responses overtaking
+			// outstanding reads and answering them with 0), then 4 -> 8 on an
+			// 8-core EP4CGX150 build.
+			//
+			// Evidence at 8 cores (50 MHz, see below): SmpGcTest generational
+			// SMPGC OK with minors 10 / verified 192 / errors 0, 3/3 runs, and
+			// DoAll 66/66 both generational and classic. At 4 cores (60 MHz):
+			// the same, plus DoAll 66/66 on the single-core build.
+			//
+			// AN 8-CORE BUILD NEEDS THE PLL AT 50 MHz. dram_pll.vhd ships at 6/5
+			// (60 MHz) for up to 4 cores; 8 cores misses that by -1.199 ns on a
+			// cross-core arbiter path (core N addrReg -> core 0 memCtrl state,
+			// current-status item 31), giving Fmax ~56 MHz. Set clk1/clk2 to 1/1
+			// and generate with `ep4cgx150Smp 8 50`; 50 also divides exactly for
+			// the UART (25) and the microsecond prescaler (49).
+			//
+			// 16 cores is untested, and so are the DDR3 boards, which is why
+			// this is a number and not a removal.
+			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 8;
 			genCardWords = genActive ? (1 << cardShift0) : 0;
 
 			if (genActive) {

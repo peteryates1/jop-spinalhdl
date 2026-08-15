@@ -676,7 +676,7 @@ public class SmpGcTest {
 		}
 		// And the hardware's own count, which cannot be confused with a Java
 		// control-flow artefact: exceptions taken, plus where the FIRST one was.
-		for (int c = 1; c < cpuCnt; c++) {
+		for (int c = 1; c < cpuCnt && cpuCnt <= 4; c++) {
 			JVMHelp.wr("\r\n  hw core "); wrInt(c);
 			JVMHelp.wr(" exc "); wrInt(GC.rootRead(12 + c, Const.ROOT_WHAT_A, 0));
 			int at = GC.rootRead(12 + c, Const.ROOT_WHAT_SP, 0);
@@ -777,7 +777,21 @@ public class SmpGcTest {
 	 * JOPizer's 512-byte method limit ("wrong size: test.SmpGcTest.core0()V").
 	 * Keep new probes here rather than inline.
 	 */
+	/**
+	 * Reads the per-core probe banks through the GC root port.
+	 *
+	 * ONLY VALID UP TO 4 CORES. The root port's target field is 4 bits: cores
+	 * take 0..cpuCnt-1 and the banks live at 8+core and 12+core, which stops
+	 * fitting once the cores themselves need 0..7. JopCluster omits the banks
+	 * above 4 cores (`hasProbeBanks`), so reading them there would return the
+	 * ordinary root-mux data and print convincing nonsense. Same bound, checked
+	 * on both sides.
+	 */
 	static void dumpCores() {
+		if (cpuCnt > 4) {
+			JVMHelp.wr("  (probe banks omitted above 4 cores)\r\n");
+			return;
+		}
 	for (int c = 0; c < cpuCnt; c++) {
 		JVMHelp.wr("  core[");
 		wrInt(c);

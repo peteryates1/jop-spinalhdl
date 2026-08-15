@@ -414,6 +414,9 @@ case class JopCluster(
   // the one that could answer outright: this session already found the
   // exception path derailing a core, and a non-zero count here on the wedged
   // core names the cause immediately.
+  // See the root-port decode below: the probe banks only fit while the cores
+  // leave enough of the 4-bit target field free, which stops at 4 cores.
+  val hasProbeBanks = cpuCnt <= 4
   val stateCounters = Vec.fill(cpuCnt)(Vec(Bits(32 bits), 4))
   for (i <- 0 until cpuCnt) {
     val reqCnt  = Reg(UInt(32 bits)) init(0)
@@ -737,31 +740,48 @@ case class JopCluster(
     } else {
       word := 0; sp := 0; ra := 0; rb := 0
     }
-    // Counter bank shares the root port rather than taking a new I/O address:
-    // Sys decodes 4 bits and all 16 names are already used. The target field is
-    // 4 bits but never exceeds cpuCnt, so tgt >= 8 is free and means "read the
-    // bus counters of core tgt-8", with `what` picking req/gnt/busy.
-    val ctrTgt = (tgt - 8).resize(log2Up(cpuCnt) max 1)
-    val ctr    = Bits(32 bits)
-    ctr := busCounters(0)(what.asUInt)
-    for (t <- 1 until cpuCnt) {
-      when(ctrTgt === U(t, ctrTgt.getWidth bits)) { ctr := busCounters(t)(what.asUInt) }
-    }
+    // The probe banks share the root port rather than taking new I/O addresses:
+    // Sys decodes 4 bits and all 16 names are already used. `tgt` is 4 bits and
+    // cores occupy 0..cpuCnt-1, so tgt >= 8 was free and carries the bus
+    // counters (8 + core) and the state bank (12 + core).
+    //
+    // THAT ONLY WORKS UP TO 4 CORES. At 8, the cores themselves need targets
+    // 0..7, leaving 8..15 — room for exactly ONE bank of eight, not two, and
+    // `12 + core` runs off the end of a 4-bit field and wraps onto another
+    // core's slot. Rather than ship a probe that silently reads the wrong core,
+    // the banks are omitted above 4 cores; `hasProbeBanks` is the single switch
+    // and SmpGcTest checks the same bound before reading them. Restoring them
+    // for a wider cluster means widening `rootSel`, which is a Sys change.
+    if (hasProbeBanks) {
+      val ctrTgt = (tgt - 8).resize(log2Up(cpuCnt) max 1)
+      val ctr    = Bits(32 bits)
+      ctr := busCounters(0)(what.asUInt)
+      for (t <- 1 until cpuCnt) {
+        when(ctrTgt === U(t, ctrTgt.getWidth bits)) { ctr := busCounters(t)(what.asUInt) }
+      }
 
-    val stTgt = (tgt - 12).resize(log2Up(cpuCnt) max 1)
-    val st    = Bits(32 bits)
-    st := stateCounters(0)(what.asUInt)
-    for (t <- 1 until cpuCnt) {
-      when(stTgt === U(t, stTgt.getWidth bits)) { st := stateCounters(t)(what.asUInt) }
-    }
+      val stTgt = (tgt - 12).resize(log2Up(cpuCnt) max 1)
+      val st    = Bits(32 bits)
+      st := stateCounters(0)(what.asUInt)
+      for (t <- 1 until cpuCnt) {
+        when(stTgt === U(t, stTgt.getWidth bits)) { st := stateCounters(t)(what.asUInt) }
+      }
 
-    cores(r).io.rootData := Mux(tgt >= U(12, 4 bits), st,
-                            Mux(tgt >= U(8, 4 bits), ctr, what.mux(
-      B"00" -> word,
-      B"01" -> sp,
-      B"10" -> ra,
-      default -> rb
-    )))
+      cores(r).io.rootData := Mux(tgt >= U(12, 4 bits), st,
+                              Mux(tgt >= U(8, 4 bits), ctr, what.mux(
+        B"00" -> word,
+        B"01" -> sp,
+        B"10" -> ra,
+        default -> rb
+      )))
+    } else {
+      cores(r).io.rootData := what.mux(
+        B"00" -> word,
+        B"01" -> sp,
+        B"10" -> ra,
+        default -> rb
+      )
+    }
   }
 
   if (debugConfig.isEmpty) {

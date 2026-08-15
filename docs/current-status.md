@@ -43,8 +43,8 @@ silently invalidate all of that. Use this to find one:
 
 ### Blocking / correctness
 
-- **1.** ~~**Generational GC is unsound on SMP**~~ — **RESOLVED to 4 cores
-   (2026-08-15, `ef36d99`), guard now `cpuCnt <= 4`.** The long-standing
+- **1.** ~~**Generational GC is unsound on SMP**~~ — **RESOLVED to 8 cores
+   (2026-08-15, `ef36d99`), guard now `cpuCnt <= 8`.** The long-standing
    >2-core failure was **not a GC bug and not a card-table bug**. It was two
    response-path defects in `AlteraSdramAdapter` that corrupted reads to zero
    (Avalon `readdatavalid` is a pulse and was dropped whenever the consumer
@@ -54,14 +54,39 @@ silently invalidate all of that. Use this to find one:
    thread and wedged the cluster. Full narrative and every retraction along the
    way in the item-1 section below, entries (b1)-(b10).
 
-   **Verified on EP4CGX150 SDRAM:** SmpGcTest at 4 cores GENERATIONAL, `SMPGC
-   OK`, `minors 10 / verified 192 / errors 0`, 3/3 runs; DoAll 66/66 on the
-   4-core bitstream and on the single-core one; `JopJvmTestsBramSim` 132 ok.
+   **Verified on EP4CGX150 SDRAM:**
 
-   **Still asserted, not verified:** 8 and 16 cores (untested — that is why the
-   guard is a number and not a removal); the DDR3 boards at >2 cores, which do
-   not use this adapter and so were never affected by this bug but have also
-   never been run generational at 4 cores. The cluster-level card table the
+   | cores | clock | SmpGcTest generational | DoAll |
+   |---|---|---|---|
+   | 1 | 60 MHz | — | 66/66 |
+   | 4 | 60 MHz | `SMPGC OK`, minors 10 / verified 192 / errors 0, 3/3 | 66/66 |
+   | 8 | 50 MHz | `SMPGC OK`, minors 10 / verified 192 / errors 0, 3/3 | 66/66 generational AND classic |
+
+   plus `JopJvmTestsBramSim` 132 ok. 8 cores fits in **77,145 LE (52 %)**, so
+   the device is not the limit.
+
+   **AN 8-CORE BUILD NEEDS THE PLL AT 50 MHz.** `dram_pll.vhd` ships at 6/5
+   (60 MHz), which suits up to 4 cores; 8 misses it by **-1.199 ns** and the
+   failing path is precisely what item 31 describes — `cores_N|memCtrl|addrReg`
+   through the arbiter to `cores_0|memCtrl|state`, 18.185 ns of data delay,
+   Fmax ~56 MHz. At 50 MHz it closes with **+0.463 ns setup / +0.234 hold**.
+   Recipe: set `clk1`/`clk2` to 1/1 and generate with `ep4cgx150Smp 8 50`. 50
+   also divides exactly for the UART (25) and the microsecond prescaler (49),
+   so 2 Mbaud downloads work unchanged. The PLL edit is deliberately NOT
+   committed, same as the 60 MHz one, because the file is shared by every
+   EP4CGX150 build and checking it in would silently slow the 1-4 core ones.
+
+   **The per-core probe banks are limited to 4 cores** (`JopCluster.hasProbeBanks`).
+   The root port's target field is 4 bits, cores take 0..cpuCnt-1, and the banks
+   live at `8 + core` and `12 + core` — which stops fitting once the cores need
+   0..7, where `12 + core` runs off the end and wraps onto another core's slot.
+   Above 4 cores the banks are omitted rather than shipped silently wrong, and
+   SmpGcTest checks the same bound before reading them. Restoring them for a
+   wider cluster means widening `rootSel`, which is a `Sys` change.
+
+   **Still asserted, not verified:** 16 cores; the DDR3 boards at >2 cores, which
+   do not use this adapter and so were never affected by this bug but have also
+   never been run generational above 2 cores. The cluster-level card table the
    original entry proposed turned out **not** to be needed: the per-core tables
    are fine, and `SMPGC OK` means the cross-generation references genuinely
    survived, so the workload did exercise it.
