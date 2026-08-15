@@ -2343,6 +2343,34 @@ silently invalidate all of that. Use this to find one:
     | EP4CGX150 @60 MHz | 4 | MET +0.302 ns |
     | Wukong `wukongSmpMinimal` @100 MHz | 4 | MET +0.192 ns |
     | Wukong `wukongSmpMinimal` @100 MHz | 8 | **VIOLATED -0.227 ns** |
+    | Wukong `wukongDdr3Smp` @100 MHz | 4 | MET +0.081 ns, 55.4 % LUT |
+    | Wukong `wukongDdr3Smp` @100 MHz | 6 | VIOLATED -0.156 ns, 69.6 % LUT |
+    | Wukong `wukongDdr3Smp` @100 MHz | 8 | VIOLATED -0.805 ns, 86.9 % LUT |
+
+    The `wukongDdr3Smp` rows (2026-08-15) are the generational-capable config —
+    card table, ICU, both caches — as opposed to `wukongSmpMinimal`, which has
+    no card table and so cannot run the generational test at all.
+
+    **ON THE WUKONG THE SYSTEM CLOCK IS NOT A FREE PLL OUTPUT.** For DDR3,
+    `Board.scala`'s `SDRAM_DDR3` case returns NO `systemClk` — only `migSysClk`,
+    `migRefClk` and `ethClk` — and `JopTop.scala:324` clocks the whole cluster
+    from `ddr3Mig.io.ui_clk`. `mig.prj` sets `TimePeriod 2500` ps (400 MHz
+    memory) and `PHYRatio 4:1`, so **ui_clk = 400/4 = 100 MHz**. Lowering the
+    core clock means regenerating the MIG with a longer `TimePeriod`; it is
+    quantised, not continuous:
+
+    | TimePeriod | memory clock | ui_clk (4:1) | covers |
+    |---|---|---|---|
+    | 2500 ps | 400 MHz | 100 MHz | 4 cores only (today) |
+    | 2727 ps | 366.7 MHz | 91.7 MHz | **6 and 8 cores both close** |
+    | 3000 ps | 333.3 MHz | 83.3 MHz | headroom |
+    | 3300 ps | 303 MHz | 75.8 MHz | near the DDR3 DLL floor |
+
+    Required Fmax is 98.5 MHz at 6 cores and 92.6 at 8, so **one MIG
+    regeneration at 2727 ps unlocks both** — at the price of 8 % of DDR3
+    bandwidth. Capacity is not the constraint at either count (69.6 % / 86.9 %),
+    though 8 cores routes with heavy congestion (2604 nodes with overlaps mid-
+    route, TNS -203) where 6 does not (TNS -0.628 from a single path).
 
     On the EP4CGX150 the worst path is
     `cores_1|memCtrl|zeroCur -> [BMB arbiter] -> cores_3|memCtrl|bcFillAddr`,
@@ -2352,9 +2380,11 @@ silently invalidate all of that. Use this to find one:
     endpoints (TNS -20.3) rather than one path, which is congestion, not a
     single fixable chain.
 
-    **Capacity is not the limit.** 8 minimal cores fit the XC7A100T in 76% of
-    its LUTs, and 4 cores on the EP4CGX150 use 25% of its LEs. The ceiling is
-    entirely arbiter timing.
+    **Capacity is not the limit on the Wukong** — 8 generational-capable cores
+    fit in 86.9 % of the XC7A100T's LUTs. It IS the limit on the EP4CGX150 above
+    12 cores: 16 needs 182,501 of 149,760 LE (122 %). Below that the ceiling is
+    arbiter timing, and on the Wukong it is arbiter timing plus routing
+    congestion at 8 cores.
 
     Consequence today: 4-core SMP GC validation runs at 60 MHz on the
     EP4CGX150. That is enough to prove correctness but not to measure SMP
