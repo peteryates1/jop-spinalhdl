@@ -43,8 +43,8 @@ silently invalidate all of that. Use this to find one:
 
 ### Blocking / correctness
 
-- **1.** ~~**Generational GC is unsound on SMP**~~ — **RESOLVED to 8 cores
-   (2026-08-15, `ef36d99`), guard now `cpuCnt <= 8`.** The long-standing
+- **1.** ~~**Generational GC is unsound on SMP**~~ — **RESOLVED (2026-08-15,
+   `ef36d99`); the core-count guard is GONE as of 2026-08-16.** The long-standing
    >2-core failure was **not a GC bug and not a card-table bug**. It was two
    response-path defects in `AlteraSdramAdapter` that corrupted reads to zero
    (Avalon `readdatavalid` is a pulse and was dropped whenever the consumer
@@ -1934,7 +1934,20 @@ silently invalidate all of that. Use this to find one:
    - DoAll 66/66 on the 4-core bitstream and on the single-core one.
    - `rawLenBad 0 aLenBad 0 exc 0` on every core, where it was `exc 1..4` before.
 
-   The generational SMP guard is raised **2 -> 4** on that evidence. 8 and 16
+   **THE GUARD IS REMOVED.** It went 1 -> 2 -> 4 -> 8 -> 12 while the failure was
+   unexplained, and by the end it had stopped meaning anything: no board in the
+   tree can build past 12 (16 cores needs 182,501 of the EP4CGX150's 149,760 LE),
+   so it was unreachable, and a number implies "13+ is known bad" when the truth
+   is "untested". `genActive` is now just `USE_GENERATIONAL && cardShift0 != 0`.
+
+   **The real ceiling moved to where it can be checked.** `JopCluster` now
+   requires `cpuCnt <= 16`, because the cross-core root port's target field is
+   4 bits (`Sys.rootSel(11 downto 8)`). Past 16 that field ALIASES — a collector
+   asking for core 16's stack reads core 0's, silently, handing the GC another
+   core's roots and collecting live objects. That is the failure class the guard
+   was nervous about, stated precisely and enforced at elaboration instead of
+   guessed at runtime. Verified: 16 cores elaborates, 17 refuses with the reason.
+   Raising it means widening `rootSel` and the root mux. 8 and 16
    cores are untested, as are the DDR3 boards, so it stays a number rather than a
    removal. Everything below is the investigation that led here, kept because
    several entries are retractions worth not repeating.

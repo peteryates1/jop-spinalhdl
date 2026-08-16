@@ -617,36 +617,25 @@ public class GC {
 			// starved. That is contention in the SDRAM path, not the collector —
 			// 4 cores passes in both simulations and on a BRAM board build. See
 			// item 34 in docs/current-status.md.
-			// 12. Raised 2 -> 4 once the SDRAM read corruption behind the
-			// >2-core failure was fixed (AlteraSdramAdapter: Avalon read data
-			// dropped when the consumer stalled, and write responses overtaking
-			// outstanding reads and answering them with 0), then 4 -> 8 -> 12 as
-			// each core count was validated on hardware.
+			// NO CORE-COUNT GUARD. There was one -- 1, then 2, 4, 8, 12 -- while the
+			// >2-core failure was unexplained. That turned out to be two response-path
+			// bugs in AlteraSdramAdapter corrupting reads to zero (ef36d99), not
+			// anything in the collector, and the generational path has since been
+			// validated on hardware at 1, 4, 8 and 12 cores on the EP4CGX150 and 4, 6
+			// and 8 on Wukong DDR3 -- SMPGC OK every time, with the cross-generation
+			// references genuinely surviving.
 			//
-			// Evidence, all EP4CGX150 SDRAM, SmpGcTest GENERATIONAL reporting
-			// SMPGC OK with minors 10 / verified 192 / errors 0, plus DoAll
-			// 66/66 at every step:
-			//     4 cores  60 MHz  3/3 runs
-			//     8 cores  50 MHz  3/3 runs
-			//    12 cores  36 MHz  4/4 runs
-			// and Wukong DDR3 at 4 cores, 100 MHz, 5/6 runs.
+			// The number was removed rather than raised again because it had stopped
+			// meaning anything: no board in the tree can build past 12 (16 cores needs
+			// 182,501 of the EP4CGX150's 149,760 LE), so it was unreachable, and a
+			// numeric guard implies "13+ is known bad" when the truth is "untested".
 			//
-			// EACH CORE COUNT NEEDS ITS OWN PLL SETTING, because the BMB arbiter
-			// path (core N addrReg -> core 0 memCtrl state, item 31) lengthens
-			// with core count. dram_pll.vhd ships at 6/5 = 60 MHz, good to 4
-			// cores. 8 needs 1/1 = 50 MHz; 12 needs 18/25 = 36 MHz (Fmax ~40).
-			// 16 does not fit at all -- 182,501 of 149,760 LE.
-			//
-			// AND THE BAUD RATE FOLLOWS THE CLOCK. UartCtrl computes
-			// clockDivider = round(clkFreq / baud / 5) - 1, so an exact baud
-			// needs clkFreq / (baud * 5) to be an integer -- for 2 Mbaud, a
-			// multiple of 10 MHz. 60 and 50 qualify; 36 does not (3.6 rounds to
-			// 4), so a 12-core build talks at 1.8 Mbaud, not 2. Download with
-			// `-b 1800000` there or the board looks dead.
-			//
-			// 16 cores does not fit; DDR3 above 4 cores is untested. Hence a
-			// number and not a removal.
-			genActive = USE_GENERATIONAL && cardShift0 != 0 && cpuCnt0 <= 12;
+			// The REAL ceiling is architectural and now lives where it can be checked:
+			// JopCluster requires cpuCnt <= 16, because the cross-core root port's
+			// target field is 4 bits (Sys.rootSel(11 downto 8)). Past 16 that field
+			// aliases and a collector reads the wrong core's stack -- silently, which
+			// is the failure class this guard was nervous about in the first place.
+			genActive = USE_GENERATIONAL && cardShift0 != 0;
 			genCardWords = genActive ? (1 << cardShift0) : 0;
 
 			if (genActive) {

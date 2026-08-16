@@ -48,6 +48,19 @@ case class JopCluster(
   perCoreConfigs: Option[Seq[JopCoreConfig]] = None
 ) extends Component {
   require(cpuCnt >= 1, "cpuCnt must be at least 1")
+  // THE CROSS-CORE ROOT PORT SETS THE CEILING. `Sys.rootSel` is 14 bits and the
+  // target field is bits 11..8 -- four bits, so 16 addressable cores. Past that
+  // the field aliases: a collector asking for core 16's stack reads core 0's,
+  // silently and with no way to notice, which would hand the GC another core's
+  // roots and collect live objects. This is the real limit that the GC's old
+  // `cpuCnt <= N` guard was standing in for; it belongs here, where it is
+  // checked at elaboration rather than assumed at runtime. Raising it means
+  // widening rootSel and the decode in the root mux below.
+  require(cpuCnt <= 16,
+    s"cpuCnt = $cpuCnt exceeds 16: the cross-core GC root port's target field " +
+    "is 4 bits (Sys.rootSel(11 downto 8)), so cores above 15 alias onto lower " +
+    "ones and the collector would read the wrong core's stack. Widen rootSel " +
+    "and the root mux in JopCluster to go further.")
 
   // Validate per-core configs if provided
   perCoreConfigs.foreach { configs =>
