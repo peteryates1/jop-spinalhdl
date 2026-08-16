@@ -37,9 +37,17 @@ silently invalidate all of that. Use this to find one:
 
 | # | section | # | section | # | section |
 |---|---|---|---|---|---|
-| 1-3 | Blocking / correctness | 11 | The measurement gap | 21 | Boards |
+| 1-3, 34 | Blocking / correctness | 11 | The measurement gap | 21 | Boards |
 | 4-7, 24, 25 | Performance | 12-16, 23, 26, 27 | Smaller | 17-20, 22, 28 | Compute units |
-| 8-10, 31, 33, 35 | Hardware / infrastructure | 29, 30, 36 | Smaller (CI flakiness) | | |
+| 8-10, 31, 32, 33, 35 | Hardware / infrastructure | 29, 30, 36 | Smaller (CI flakiness) | | |
+
+**Closed 2026-08-15/16**, the SMP push: **1** (generational GC on SMP — root
+cause was `AlteraSdramAdapter`, not the collector), **2** (`JopIhluGcBramSim`
+could not fail), **34** (its SDRAM row), **35** (`AlteraSdramAdapter` had no
+simulation coverage), **36** (formal-property CI timeout). Still open and
+sharpened by that work: **5**/**31** (the arbiter now sets the CLOCK at each core
+count rather than capping the count), **3** (presets lacking `hasCardTable`),
+**11** (no application benchmark — still gates the arbiter decision).
 
 ### Blocking / correctness
 
@@ -1806,8 +1814,23 @@ silently invalidate all of that. Use this to find one:
    count and so picked up `STACKROOT minors 6`, a mid-run probe, reporting 6
    where the run's own summary says 10. A verdict that under-reports what it
    exercised is a small lie in the one place that has to be trustworthy.
-- **34.** **4-CORE STATUS after the fetch-stall fixes (2026-08-13).** Two DISTINCT
-   failures remain, and the fixes landed today are implicated in neither.
+- **34.** ~~**4-CORE STATUS after the fetch-stall fixes**~~ — **the SDRAM row is
+   SOLVED (2026-08-16); one BRAM-sim row remains open.** Kept because the table
+   below is the clean statement of which combinations were tried, and because
+   two of its entries were retracted in ways worth not repeating.
+
+   **The `SmpGcTest / Ihlu / SDRAM hardware / STALL` row was the
+   `AlteraSdramAdapter` bug** (`ef36d99`) -- Avalon read data dropped when the
+   consumer stalled, and write responses overtaking outstanding reads and
+   answering them with 0. Nothing to do with Ihlu, the lock, or 4 cores as such;
+   the core count only decided how often `rsp.ready` dropped. Full account in
+   item 1. Generational SMP now runs at up to 12 cores.
+
+   **Still open from this entry:** `JopSmpNCoreHelloWorldSim` with **CmpSync** at
+   4 cores, where C1 never toggles. That is a BRAM sim, so the SDRAM fix does not
+   touch it, and the Ihlu equivalent passes. Small, concrete and unexplained.
+
+   The original 2026-08-13 text follows.
 
    | test | lock | memory | 4 cores |
    |---|---|---|---|
@@ -2267,8 +2290,11 @@ silently invalidate all of that. Use this to find one:
    Only seen in the microcode-fallback config so far; the baseline and
    all-compute-unit jobs passed on the same commit.
 
-- **3.** **Sixteen presets still run classic GC.** Safe but slow after the guard;
-   `hasCardTable` is one line each and the boot line confirms it took effect.
+- **3.** **Sixteen presets still run classic GC.** Safe but slow. The cause is a
+   missing `hasCardTable` in each preset, NOT the old SMP guard -- that is gone
+   (item 1), so `GC.init` now selects generational on any preset that has a card
+   table, at any core count. `hasCardTable` is one line each and the boot line
+   confirms it took effect.
    ~~The Wukong presets are elaboration-verified only~~ — **confirmed on
    hardware 2026-08-07**: a Wukong was attached for the first time and
    `wukongFull` boots `GC: generational, 512-word cards`. The sixteen other
@@ -2283,7 +2309,12 @@ silently invalidate all of that. Use this to find one:
    Plan in [gc/copy-phase-redesign.md](gc/copy-phase-redesign.md). The 5-8x
    estimate is **asserted from transaction counts, not measured**.
 
-- **5.** **The BMB arbiter caps SMP at 2 cores @ 100 MHz.** Path is
+- **5.** **The BMB arbiter sets the clock ceiling at every core count** (headline
+   corrected 2026-08-16 -- it read "caps SMP at 2 cores @ 100 MHz", which is no
+   longer true: 12 cores run on the EP4CGX150 and 8 on Wukong DDR3, each at its
+   own clock). What the arbiter costs is FREQUENCY, not core count: 60 MHz at 4,
+   50 at 8, 36 at 12 on the EP4CGX150; 100 MHz at 4 and 91.68 at 6-8 on Wukong.
+   The measurements below stand and the path is unchanged. Path is
    `coreX zeroCur -> arbiter -> coreY memCtrl state machine`, widening with core
    count. Measured on EP4CGX150: 1 core 7,870 LE (~107 MHz), 2 cores 19,439 LE
    (+0.270 ns at 100 MHz), 4 cores 38,372 LE (**65.3 MHz**). Area allows ~12
