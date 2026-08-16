@@ -63,6 +63,69 @@ reassignment.
 | Voltage | 1.35V |
 | I/O standard | SSTL135 |
 
+### The system clock IS the MIG user clock — read this before changing core count
+
+There is **no free-running system PLL on the DDR3 path**. `Board.scala`'s
+`SDRAM_DDR3` case returns no `systemClk` at all — only `migSysClk`, `migRefClk`
+and `ethClk` — and `JopTop.scala` clocks the entire JOP cluster from
+`ddr3Mig.io.ui_clk`. With `PHYRatio 4:1`:
+
+```
+clk_wiz CLKOUT1  ->  MIG sys_clk  ->  memory clock  ->  ui_clk = memory / 4
+```
+
+Stock is `TimePeriod 2500` ps → 400 MHz memory → **ui_clk 100 MHz**. So the core
+clock is quantised to (memory clock)/4 and cannot be dialled like an Altera PLL:
+lowering it to fit more cores means regenerating the MIG IP.
+
+**It is three coupled edits, not one.** MIG dictates its own sys_clk input for a
+given memory period, and will *silently retune* it if you change only the period:
+
+```
+CRITICAL WARNING: [Mig7series 79-144] Invalid Input Clock Period 100.0.
+Setting to nearest possible Input Clock Period value 97.787.
+```
+
+Left unnoticed, that gives a memory clock a few percent off target and a ui_clk
+to match — with everything still building cleanly.
+
+#### Recipe: 6 cores at ui_clk 91.65 MHz (validated 2026-08-16)
+
+1. `vivado/ip/mig.prj` — `TimePeriod` 2500 → **2727**, `InputClkFreq` 100.0 →
+   **97.787**. Change both, or MIG overrides you.
+2. `vivado/tcl/create_ddr3_clk_wiz.tcl` — `CLKOUT1_REQUESTED_OUT_FREQ`
+   100.000 → **97.787**. Achieved 97.764 (50 × 60.125/3 / 10.25), 0.02 % low.
+3. `make ddr3-create-ip` — runs both scripts.
+4. Generate with the matching ui_clk **in Hz**:
+   `sbt "runMain jop.system.JopTopVerilog wukongDdr3Smp 6 91650000"`.
+   91.65 MHz is not an integer MHz, hence Hz. This sets the microsecond
+   prescaler and the UART divider; get it wrong and the board goes quiet.
+5. `make ddr3-smp-build`, program, and **download at 2037000 baud** —
+   `UartCtrl` divides `clkFreq / (baud × 5)`, so 91.65 MHz yields 2.0367 Mbaud,
+   not 2.
+
+Result: 68.4 % LUT, post-route WNS +0.018 / WHS +0.059; `SMPGC OK` 4/4 runs and
+DoAll 66/66, both generational.
+
+**Why this is not checked in.** Eleven presets declare `clkFreq = 100 MHz` and
+share this MIG, so committing 2727 would silently drop all of them to 91.65 MHz
+with a wrong UART divider. `mig.prj` and the clk_wiz script stay at 2500 / 100.0
+and the edit is deliberate — the same convention `dram_pll.vhd` uses on the
+EP4CGX150. `JopTopVerilog` cross-checks the two against the preset at generation
+time and refuses to proceed on a mismatch, so a forgotten step is caught before
+a build rather than after a silent board.
+
+#### Known-good points
+
+| TimePeriod | MIG sys_clk in | memory | ui_clk | status |
+|---|---|---|---|---|
+| 2500 ps | 100.0 MHz | 400 MHz | 100 MHz | stock; 4 cores |
+| 2727 ps | 97.787 MHz | 366.6 MHz | 91.65 MHz | **validated, 6 cores** |
+| 2778 ps | 102.848 MHz | 360 MHz | 90 MHz | rejected — MIG will not take a 100 MHz input, and 102.848 is not what the clk_wiz feeds it |
+
+2778 was tried first because a 90 MHz ui_clk would give an exact 2 Mbaud. It is
+not reachable from this board's clk_wiz, so the awkward 2.0367 Mbaud stands.
+
 ### DDR3 Pin Assignments
 
 From `DDR3.ucf`:

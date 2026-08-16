@@ -192,6 +192,10 @@ object JopTopVerilog {
           f"  *** $baud needs a clock that is a multiple of ${baud * 5 / 1000000} MHz.%n" +
           f"  *** Download with: python3 fpga/scripts/download.py -e <app>.jop <tty> $eff%n"
       f"  $pll%n" + baudLine
+    } else if (jopConfig.assembly.fpgaBoard.name.contains("wukong") && sys.memory == "ddr3") {
+      // The Wukong DDR3 clock chain is a deliberate human edit rather than a
+      // generated file (see MigClockCheck for why), so it is verified instead.
+      f"  ${jop.config.MigClockCheck.check("fpga/qmtech-xc7a100t-wukong", sys.clkFreq.toLong)}%n"
     } else ""
 
     print(summary)
