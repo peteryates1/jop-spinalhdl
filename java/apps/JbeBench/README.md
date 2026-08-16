@@ -48,12 +48,41 @@ published JOP figures:
 
 The workloads themselves (`kfl/`, `lift/`, `udpip/`, `micro/`) are untouched.
 
-## First result
+## Baseline results (EP4CGX150, generational GC)
 
-12-core EP4CGX150 bitstream, core 0, 36 MHz, generational GC:
+| benchmark | 1 core @ 80 MHz | 12-core bitstream, core 0 @ 36 MHz |
+|---|---|---|
+| Kfl | 7742 1/s | 4401 1/s |
+| UdpIp | 3524 1/s | 1961 1/s |
+| Lift | 12681 1/s | 5872 1/s |
 
-```
-Kfl    4401 1/s
-UdpIp  1961 1/s
-Lift   5872 1/s
-```
+### The first thing the numbers say
+
+Normalised per MHz, the LOWER clock does more work per cycle on two of three:
+
+| benchmark | 80 MHz | 36 MHz | per-MHz gain at 36 |
+|---|---|---|---|
+| Kfl | 96.8 /MHz | 122.3 /MHz | **+26 %** |
+| UdpIp | 44.1 /MHz | 54.5 /MHz | **+24 %** |
+| Lift | 158.5 /MHz | 163.1 /MHz | +3 % |
+
+That is the signature of **memory-latency-bound** code. SDRAM latency is fixed
+in nanoseconds, so it costs fewer CYCLES at a lower clock; a workload that
+spends its time waiting on memory therefore looks more efficient per cycle as
+the clock drops. Lift, at +3 %, is compute-bound and scales with the clock as
+you would expect.
+
+Two consequences worth carrying into items 5, 24 and 31:
+
+- **Raising the core clock buys less than it appears to** for Kfl and UdpIp.
+  That reframes the arbiter trade: a pipelined arbiter costing a cycle per
+  access is a much worse deal for memory-bound workloads than a clock-focused
+  reading of item 5 would suggest.
+- **Kfl and UdpIp are the workloads to use when judging the caches** (do they
+  remove the stalls?), and Lift is the one to use when judging compute changes
+  such as the double bytecodes in item 20.
+
+Caveat on the comparison: the two builds differ in core count as well as clock
+(1 vs 12, the other 11 idle). Idle cores issue no bus traffic and arbiter
+latency in cycles is unchanged, so the clock is the dominant term — but a clean
+single-variable measurement would rebuild one core at 36 MHz.
