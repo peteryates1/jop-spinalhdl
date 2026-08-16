@@ -2517,7 +2517,49 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 
 ### The measurement gap
 
-- **11.** **There is no application benchmark, and four decisions rest on it:**
+- **11.** **Application benchmark now EXISTS (`java/apps/JbeBench`, 2026-08-16);
+    one of the five decisions is settled, four remain.**
+
+    JavaBenchEmbedded ported from the original JOP tree — Kfl, UdpIp, Lift, via
+    `jbe.DoApp`. Baseline, EP4CGX150 single core @80 MHz: Kfl 7742, UdpIp 3524,
+    Lift 12681 iterations/s.
+
+    **SETTLED — the caches earn their area.** `ep4cgx150NoCache` A/B, single
+    variable:
+
+    | | with caches | no caches | gain |
+    |---|---|---|---|
+    | Kfl | 7742 | 7386 | +4.8 % |
+    | UdpIp | 3524 | 2761 | +27.6 % |
+    | Lift | 12681 | 6400 | **+98.1 %** |
+    | area | 8,784 LE | 6,386 LE | caches cost **2,398 LE**, +37.6 % |
+
+    +37.6 % area for +98 % / +28 % is a trade nothing else in the core
+    approaches. Kfl at +4.8 % is the marginal case.
+
+    **A METHOD NOTE THAT COST A WRONG PREDICTION.** Clock-scaling (running the
+    same build at 36 vs 80 MHz) shows whether a workload is memory-bound *in its
+    current configuration*, NOT whether it is memory-intensive. Lift scaled
+    almost linearly with clock and I read that as compute-bound — then it nearly
+    halved without caches, because its working set FITS the caches and so it
+    rarely reaches SDRAM. Only an A/B against the feature itself separates the
+    two. Full account in the JbeBench README.
+
+    **Still open, and what each now needs:**
+    - item 5/31, arbiter latency vs core count — needs slice B, a parallel
+      throughput harness. Note the finding above reframes it: Kfl and UdpIp do
+      ~25 % more work per MHz at 36 MHz than 80, so a pipelined arbiter costing
+      a cycle per access is a worse deal for memory-bound work than a
+      clock-focused reading suggests.
+    - item 4, whether the copy redesign helps real workloads — JbeBench can
+      answer it now; needs an allocation-profile report alongside throughput.
+    - item 20, whether the double bytecodes deserve microcode — needs the
+      `DoMicro`/`DoKernel` drivers, which already compile and just need a second
+      `.jop` with a different main class.
+    - item 24, churn vs steady-state regime — needs the same allocation profile
+      as item 4.
+
+    *Original entry:* **There is no application benchmark, and four decisions rest on it:**
     whether a cycle of arbiter latency is worth 4+ cores (item 5); whether the
     caches (2,213 LE/core, 33% of a core) earn their area; whether the copy
     redesign helps real workloads (item 4); and whether the double bytecodes are
