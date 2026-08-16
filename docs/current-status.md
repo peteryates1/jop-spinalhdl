@@ -65,6 +65,17 @@ silently invalidate all of that. Use this to find one:
    plus `JopJvmTestsBramSim` 132 ok. 8 cores fits in **77,145 LE (52 %)**, so
    the device is not the limit.
 
+   **WHAT THE DoAll COLUMN DOES AND DOES NOT MEAN.** Nothing in `java/apps/JvmTests`
+   writes `IO_SIGNAL`, so on a multi-core bitstream cores 1..N-1 stay parked in
+   the microcode `cpux_loop` and **DoAll runs entirely on core 0**. It is a
+   regression test that the larger, slower build still executes the JVM
+   correctly with N cores instantiated and the arbiter widened — worth having,
+   and it caught nothing but would have caught plenty — but it exercises no
+   cross-core coherency, no lock contention, no arbiter contention and no SMP
+   GC. **`SmpGcTest` is the only test in the tree that actually runs all the
+   cores** (`cores 8, publishers 7`), which is why every core-count claim above
+   rests on it and why item 2's "JopIhluGcBramSim cannot fail" matters.
+
    **AN 8-CORE BUILD NEEDS THE PLL AT 50 MHz.** `dram_pll.vhd` ships at 6/5
    (60 MHz), which suits up to 4 cores; 8 misses it by **-1.199 ns** and the
    failing path is precisely what item 31 describes — `cores_N|memCtrl|addrReg`
