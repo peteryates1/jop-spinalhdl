@@ -2362,7 +2362,16 @@ silently invalidate all of that. Use this to find one:
 
     Both 91.68 MHz rows are the `Ddr3_366` MIG profile plus the CDC constraint
     below; **8 cores runs on hardware**, `SMPGC OK` with `cores 8, publishers 7`,
-    minors 10 / verified 192 / errors 0. Utilisation at 8 cores: 53,524 / 63,400
+    minors 10 / verified 192 / errors 0, over **16 runs — 4 cold plus a 12-run
+    back-to-back soak, 0 failures**.
+
+    The soak is the one that counts at +0.074 ns. Repeat runs are in this project
+    to catch INTERMITTENCY, and they have earned it (the Wukong 4-core case was
+    5/6, and that one failure was real information). But cold repeats re-measure
+    the same conditions; what threatens a design with 74 ps of margin is
+    temperature and voltage drift, so the runs were chained with no cooling gap
+    to let the die heat while under load. Prefer a soak to more cold repeats
+    whenever the margin is the worry rather than the logic. Utilisation at 8 cores: 53,524 / 63,400
     LUT (84.4 %), 41,551 registers (32.8 %), 42.5 BRAM (31.5 %), 0 DSP. LUTs
     bind; BRAM and registers have plenty of room.
 
