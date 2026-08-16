@@ -172,3 +172,45 @@ core count beyond 4 — the signature of a fully serialised resource.
   memory. Kfl's own mix would sit somewhere above it.
 - SDR only so far. The DDR3 path has an `LruCacheCore` L2 in front of MIG and
   may saturate very differently — that measurement is still to do.
+
+## DDR3 scales no better — the saturation is not the SDR controller
+
+Wukong XC7A100T, DDR3 through `LruCacheCore` (32 KB L2) and MIG, `Ddr3_366`
+profile so ui_clk is held at 91.68 MHz for every point.
+
+| cores | SDR @36 MHz | DDR3 @91.68 MHz |
+|---|---|---|
+| 4 | 605 kacc/s | 733 kacc/s |
+| 8 | 635 kacc/s (+5 %) | 754 kacc/s (**+3 %**) |
+
+**DDR3 saturates at least as hard as SDR.** Doubling from 4 to 8 cores buys 3 %,
+against SDR's 5 %. A 32 KB write-back L2 and several times the raw bandwidth do
+not change the shape of the curve at all.
+
+That is the useful part. It says the ceiling is **not** the SDR controller being
+slow, and not raw bandwidth — otherwise DDR3 would have moved the knee. What
+both paths share is a single arbiter funnelling every core into one memory port,
+and a working set deliberately larger than any cache. So the bottleneck is
+**serialisation at the shared port**, and it is a property of the topology
+rather than of either memory technology.
+
+Which sharpens the conclusion from the SDR curve: more cores past ~4 need a
+**wider or split memory path** — more ports, banking, per-core slices — not a
+faster controller and not a faster arbiter. Buying a bigger memory technology is
+the option the data specifically rules out.
+
+Note DDR3 at 91.68 MHz does only ~1.2x the SDR figure at 36 MHz despite 2.5x the
+clock, which is consistent with the same story: both are limited by the port,
+not the core.
+
+### Measurement notes
+
+- The 1-core DDR3 point is MISSING. `wukongDdr3Smp 1` did not produce a fresh
+  bitstream (its post-route WNS came back byte-identical to the 8-core build,
+  the tell that nothing was rebuilt), so there is no same-clock DDR3 baseline
+  and the DDR3 column cannot be expressed as a speedup. The 4-vs-8 comparison
+  does not depend on it.
+- One run reported `AGGREATE` rather than `AGGREGATE` — a dropped character on
+  the UART at the non-standard 2.0372 Mbaud this clock forces. The number was
+  fine; the sweep script's `grep -q AGGREGATE` was not, and reported a false
+  "RUN DID NOT COMPLETE". Match a prefix when scraping a lossy link.
