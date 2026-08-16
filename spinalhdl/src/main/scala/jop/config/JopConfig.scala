@@ -304,6 +304,33 @@ object JopConfig {
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
+  /**
+   * EP4CGX150 single core with the object and array caches REMOVED.
+   *
+   * The A/B half of current-status item 11's cache question: do the caches earn
+   * their ~2,213 LE per core? Identical to `ep4cgx150Serial` in every other
+   * respect, so a JbeBench run against each isolates the caches as the only
+   * variable -- and the fit report gives the area side of the same trade.
+   *
+   * Kfl and UdpIp are the workloads that matter here: JbeBench showed both are
+   * memory-latency-bound (they do ~25 % more work per MHz at 36 MHz than at 80,
+   * because SDRAM latency is fixed in nanoseconds), which is exactly what a
+   * cache is supposed to fix. Lift is compute-bound and should barely move --
+   * if it does, something other than the caches changed.
+   *
+   * SINGLE CORE ON PURPOSE. Both caches sit in the SMP coherency path, so
+   * turning them off on a multi-core build would change correctness as well as
+   * performance and confuse the measurement with the thing being measured.
+   */
+  def ep4cgx150NoCache = {
+    val base = ep4cgx150Serial
+    base.copy(systems = Seq(base.system.copy(
+      name = "nocache",
+      coreConfig = base.system.coreConfig.copy(
+        memConfig = base.system.coreConfig.memConfig.copy(
+          useOcache = false, useAcache = false)))))
+  }
+
   /** EP4CGX150 + daughter board — SMP, N cores */
   // clkMhz IS the frequency: `JopTopVerilog` generates
   // fpga/qmtech-ep4cgx150-sdram/generated/dram_pll.vhd from it (multiply/divide

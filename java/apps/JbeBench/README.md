@@ -72,6 +72,9 @@ spends its time waiting on memory therefore looks more efficient per cycle as
 the clock drops. Lift, at +3 %, is compute-bound and scales with the clock as
 you would expect.
 
+**That inference was half wrong, and the cache A/B below shows why** — see the
+correction there before reusing this reasoning.
+
 Two consequences worth carrying into items 5, 24 and 31:
 
 - **Raising the core clock buys less than it appears to** for Kfl and UdpIp.
@@ -86,3 +89,40 @@ Caveat on the comparison: the two builds differ in core count as well as clock
 (1 vs 12, the other 11 idle). Idle cores issue no bus traffic and arbiter
 latency in cycles is unchanged, so the clock is the dominant term — but a clean
 single-variable measurement would rebuild one core at 36 MHz.
+
+## Cache A/B — do the caches earn their area? (item 11)
+
+`ep4cgx150NoCache` is `ep4cgx150Serial` with `useOcache` and `useAcache` off and
+nothing else changed. Single core at 80 MHz, so the caches are the only variable.
+
+| benchmark | with caches | no caches | gain from caches |
+|---|---|---|---|
+| Kfl | 7742 1/s | 7386 1/s | **+4.8 %** |
+| UdpIp | 3524 1/s | 2761 1/s | **+27.6 %** |
+| Lift | 12681 1/s | 6400 1/s | **+98.1 %** |
+
+Area: **8,784 LE with, 6,386 without** — the caches cost **2,398 LE**, +37.6 % on
+a cacheless core (and corroborating the ~2,213 LE/core figure item 11 quotes).
+
+**Verdict: they earn it.** +37.6 % area for +98 % on Lift and +28 % on UdpIp is a
+trade nothing else in the core comes close to. Kfl at +4.8 % is the one case
+where it is marginal.
+
+### The prediction this refuted
+
+From the clock-scaling data above I expected Lift — which scaled almost linearly
+with clock, +3 % per MHz — to be compute-bound and barely move without caches,
+and Kfl/UdpIp to suffer most. **Exactly the opposite happened.**
+
+The resolution is that clock-scaling measures whether a workload is memory-bound
+**in its current configuration**, not whether it is memory-INTENSIVE. Lift is
+memory-intensive but its working set fits the caches, so with caches it rarely
+reaches SDRAM and therefore scales with the clock like compute-bound code.
+Remove the caches and it goes to SDRAM constantly and halves. Kfl and UdpIp have
+working sets the caches serve less well, so they stay partly memory-bound even
+with caches — which is why they showed the per-MHz gain at 36 MHz AND gain less
+from the caches.
+
+Worth keeping, because the same mistake is easy to repeat: **"scales with the
+clock" means "not currently waiting on memory", not "does not touch memory".**
+Only an A/B against the hardware feature itself distinguishes the two.

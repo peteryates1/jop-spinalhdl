@@ -40,6 +40,7 @@ object JopTopVerilog {
       val n   = args.drop(1).headOption.map(_.toInt).getOrElse(4)
       val mhz = args.drop(2).headOption.map(_.toInt).getOrElse(60)
       JopConfig.ep4cgx150BramSmp(n, mhz)
+    case "ep4cgx150NoCache" => JopConfig.ep4cgx150NoCache
     case "ep4cgx150Smp" =>
       val n   = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       val mhz = args.drop(2).headOption.map(_.toInt).getOrElse(80)
