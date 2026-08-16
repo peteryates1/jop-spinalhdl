@@ -126,3 +126,49 @@ from the caches.
 Worth keeping, because the same mistake is easy to repeat: **"scales with the
 clock" means "not currently waiting on memory", not "does not touch memory".**
 Only an A/B against the hardware feature itself distinguishes the two.
+
+## Memory scaling curve — does adding cores actually help? (items 5, 11, 31)
+
+`jbe.Scale` runs a **private** 64 KB working set on every core simultaneously
+(stride-walked, read-modify-write) and sums the throughput. EP4CGX150, SDR
+SDRAM, **clock held at 36 MHz for every point** so core count is the only
+variable.
+
+| cores | aggregate | speedup | efficiency | per core |
+|---|---|---|---|---|
+| 1 | 188 kacc/s | 1.00x | 100 % | 188 |
+| 4 | 605 kacc/s | **3.22x** | 80 % | 151 |
+| 8 | 635 kacc/s | 3.38x | 42 % | 79 |
+| 12 | 664 kacc/s | 3.53x | 29 % | 55 |
+
+**The shared memory path saturates at about 4 cores.** Going 4 -> 8 buys 5 %.
+Going 8 -> 12 buys another 5 %. The 12-core build delivers **3.5x** a single
+core, not 12x, and per-core throughput falls almost exactly in proportion to
+core count beyond 4 — the signature of a fully serialised resource.
+
+### What this settles
+
+- **Do not pipeline the arbiter to raise the clock.** Item 5 framed the trade as
+  "is a cycle of arbiter latency worth 4+ cores". On this workload the question
+  does not arise: past 4 cores the limit is memory SERVICE RATE, not the clock,
+  so buying clock at the cost of a cycle per access would make things worse.
+- **4 cores is the sweet spot for memory-bound work on SDR.** 3.22x at 80 %
+  efficiency, and it needs only 60 MHz rather than 36, so it wins on both axes.
+  Today's 8- and 12-core builds are a correctness achievement, not a throughput
+  one.
+- **The next lever is the memory path, not the core count** — wider SDRAM, a
+  shared L2, or per-core banking. That reframes items 5 and 31 from "make the
+  arbiter faster" to "give the arbiter more to arbitrate".
+
+### Caveats, stated because they bound the claim
+
+- This is a **pure memory probe**, deliberately: every JBE workload is
+  single-core code built on static state (Kfl's `BBSys` alone has 52 statics),
+  so running one on N cores gives N cores mutating one state machine, not N
+  instances. The first version of this harness did that and the 4-core run
+  never terminated — a bug here, not a hardware finding.
+- Real applications mix compute with memory, so they will scale BETTER than this
+  curve. It is the pessimistic bound: a workload that does nothing but touch
+  memory. Kfl's own mix would sit somewhere above it.
+- SDR only so far. The DDR3 path has an `LruCacheCore` L2 in front of MIG and
+  may saturate very differently — that measurement is still to do.

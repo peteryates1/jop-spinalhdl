@@ -47,11 +47,21 @@ import com.jopdesign.sys.Native;
 public class Scale {
 
 	/**
-	 * Iterations per core. Sized so one core takes roughly a second at 36 MHz
-	 * (Kfl measured 4401/s there), which is long enough to swamp the startup
-	 * transient without making a 12-core sweep tedious.
+	 * Words per core's PRIVATE working set. 16384 words = 64 KB, far beyond the
+	 * object cache (16 entries x 16 fields) and array cache (16 x 4 elements),
+	 * so every access goes to shared memory -- which is the point.
 	 */
-	static final int ITERATIONS = 4096;
+	static final int WORDS = 16384;
+
+	/** Passes over the working set. Sized for ~1 s per core at 36 MHz. */
+	static final int ITERATIONS = 24;
+
+	/**
+	 * Stride in words, chosen odd and larger than a cache line so consecutive
+	 * accesses never share one, and coprime with WORDS so a pass still touches
+	 * every element.
+	 */
+	static final int STRIDE = 517;
 
 	static int cpuCnt;
 	/** Microseconds each core took for ITERATIONS. Written by that core only. */
@@ -68,15 +78,43 @@ public class Scale {
 		}
 	}
 
-	/** Run the workload and record how long it took. */
+	/**
+	 * The workload: stride-walk a PRIVATE array, read-modify-write.
+	 *
+	 * NOT a JBE benchmark, and that is deliberate. Every JBE workload is
+	 * single-core code built on static state -- Kfl's BBSys alone has 52 statics,
+	 * Triac 44, and even BenchSieve keeps its flags array static. Running one of
+	 * them on N cores does not give N independent instances; it gives N cores
+	 * mutating one state machine. The first version of this harness did exactly
+	 * that and the 4-core run never terminated. That was a bug here, not a
+	 * finding about the hardware.
+	 *
+	 * So this measures what the scaling question actually needs: aggregate
+	 * MEMORY-SYSTEM throughput, with each core on its own working set and no
+	 * sharing at all. What it deliberately does not model is a real application's
+	 * instruction mix -- for that, run DoApp on one core and quote it separately.
+	 */
 	static void runOne(int id) {
-		BenchKfl bench = new BenchKfl();
+		int[] buf = new int[WORDS];      // private to this core
+		int acc = 0;
 		int t0 = LowLevel.timeMicros();
-		bench.test(ITERATIONS);
+		for (int it = 0; it < ITERATIONS; it++) {
+			int idx = 0;
+			for (int i = 0; i < WORDS; i++) {
+				buf[idx] = buf[idx] + idx + it;
+				acc += buf[idx];
+				idx += STRIDE;
+				if (idx >= WORDS) idx -= WORDS;
+			}
+		}
 		int t1 = LowLevel.timeMicros();
+		sink = acc;                       // keep the work live
 		micros[id] = t1 - t0;
 		done[id] = 1;
 	}
+
+	/** Consumed so the optimiser cannot discard the loop. */
+	static int sink;
 
 	/**
 	 * iterations/s from a microsecond duration.
@@ -87,9 +125,10 @@ public class Scale {
 	 * (LongArithmetic is in the JVM suite); this runs once per core at the end
 	 * of a run, so microcode long division costs nothing that matters.
 	 */
+	/** Thousands of word-accesses per second. */
 	static int ratePerSec(int us) {
 		if (us <= 0) return 0;
-		return (int) (((long) ITERATIONS * 1000000L) / (long) us);
+		return (int) (((long) ITERATIONS * (long) WORDS * 1000L) / (long) us);
 	}
 
 	public static void main(String[] args) {
@@ -108,9 +147,11 @@ public class Scale {
 
 		JVMHelp.wr("Scale: cores ");
 		wrInt(cpuCnt);
-		JVMHelp.wr(" iterations ");
+		JVMHelp.wr(" words ");
+		wrInt(WORDS);
+		JVMHelp.wr(" x ");
 		wrInt(ITERATIONS);
-		JVMHelp.wr(" (Kfl)\r\n");
+		JVMHelp.wr(" passes (private memwalk)\r\n");
 
 		Native.wr(1, Const.IO_SIGNAL);   // release the other cores
 		runOne(0);
@@ -135,14 +176,14 @@ public class Scale {
 			wrInt(micros[i]);
 			JVMHelp.wr(" us -> ");
 			wrInt(r);
-			JVMHelp.wr(" 1/s");
+			JVMHelp.wr(" kacc/s");
 			if (done[i] == 0 && i != 0) JVMHelp.wr("  (DID NOT FINISH)");
 			JVMHelp.wr("\r\n");
 		}
 
 		JVMHelp.wr("AGGREGATE ");
 		wrInt(total);
-		JVMHelp.wr(" 1/s over ");
+		JVMHelp.wr(" kacc/s over ");
 		wrInt(cpuCnt);
 		JVMHelp.wr(" cores\r\n");
 		JVMHelp.wr("Scale done\r\n");
