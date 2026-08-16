@@ -437,7 +437,11 @@ object JopIhluGcBramSim extends App {
       // no nursery means no minor GC to exercise. It is a pass for IHLU (both
       // cores ran, locks were taken) but NOT evidence about the card table, so
       // say which was demonstrated rather than blurring them.
-      val minors = """minors (\d+)""".r.findFirstMatchIn(out).map(_.group(1).toInt).getOrElse(0)
+      // LAST match, not first. `findFirstMatchIn` picked up "STACKROOT minors 6"
+      // — a mid-run probe — and reported 6 where the run's own summary line says
+      // 10. A verdict that under-reports what it exercised is a small lie in the
+      // one place that has to be trustworthy.
+      val minors = """minors (\d+)""".r.findAllMatchIn(out).map(_.group(1).toInt).toSeq.lastOption.getOrElse(0)
       val note = if (minors == 0) "classic GC (SMP guard on) — IHLU exercised, card table NOT"
                  else s"$minors minor GCs — IHLU and shared card table exercised"
       run.finish("PASS", s"$cpuCnt cores, $cycle cycles, verified=$verified, $note")

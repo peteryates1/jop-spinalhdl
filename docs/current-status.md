@@ -1775,12 +1775,37 @@ silently invalidate all of that. Use this to find one:
    four instances of one shape in this area: **the test cannot fail for the
    reason it exists**.
 
-- **2.** **`JopIhluGcBramSim` cannot fail.** It loads `java/apps/Small/HelloWorld.jop`
-   — a single-core app — so core 1 parks in the boot-wait loop and IHLU is never
-   exercised. Verified by running it to 49M cycles: core 1 never moved. Needs a
-   real SMP GC application before "IHLU GC verified" means anything — the same
-   application item 1 needs to build its failing test on (see *Coupling*).
+- **2.** ~~**`JopIhluGcBramSim` cannot fail**~~ — **CLOSED 2026-08-16.** It loaded
+   `java/apps/Small/HelloWorld.jop`, a single-core app, so core 1 parked in the
+   boot-wait loop and IHLU was never exercised — verified at the time by running
+   to 49M cycles with core 1 never moving.
 
+   It now loads `SmpGcTest.jop`, the multi-core allocating workload item 1
+   needed, and has three ways to fail rather than none:
+
+   - the payload not reaching `SmpGcTest done`;
+   - `SMPGC FAIL`, i.e. cross-core references lost;
+   - **`verified == 0`** — the specific anti-vacuous guard. `verified N` counts
+     holders core 0 checked *after another core stored into them*, so a non-zero
+     N is proof the second core executed. This is the check the old payload
+     could never have satisfied.
+
+   **Result:** `PASS: 2 cores, verified=192, 10 minor GCs — IHLU and shared card
+   table exercised`, 20.2M cycles. Both cores run, `SMPGC OK`, minors 10 /
+   verified 192 / errors 0. Generational is active at 2 cores now that the guard
+   is `<= 12`, so this exercises the shared card table as well as IHLU — the
+   entry's original "INCONCLUSIVE while the SMP guard is on" caveat no longer
+   applies.
+
+   **Demonstrated failing, not assumed.** Pointed back at `HelloWorld.jop` with a
+   short cycle cap it exits non-zero with `FAIL: SmpGcTest did not run to
+   completion`. A test that has never failed has not been shown to be able to —
+   the same discipline item 35 sets, and it is worth the two minutes.
+
+   Also fixed while here: the verdict used `findFirstMatchIn` for the minor-GC
+   count and so picked up `STACKROOT minors 6`, a mid-run probe, reporting 6
+   where the run's own summary says 10. A verdict that under-reports what it
+   exercised is a small lie in the one place that has to be trustworthy.
 - **34.** **4-CORE STATUS after the fetch-stall fixes (2026-08-13).** Two DISTINCT
    failures remain, and the fixes landed today are implicated in neither.
 
