@@ -19,14 +19,14 @@ TARGET_DIR := $(ROOT)/runtime
 LIB_DIR := $(ROOT)/lib
 
 APP_PKG := jbe
-APP_NAME := DoApp
+APP_NAME ?= DoApp
 APP_SRC := src
 
 BUILD_DIR := build
 CLASSES_DIR := $(BUILD_DIR)/classes
 PP_DIR := $(BUILD_DIR)/pp
 PP_CLASSES_DIR := $(PP_DIR)/classes
-JOP_OUT := JbeBench.jop
+JOP_OUT ?= JbeBench.jop
 
 # Classpath for tools
 LIB_CP := $(LIB_DIR)/bcel-5.2.jar:$(LIB_DIR)/jakarta-regexp-1.3.jar:$(LIB_DIR)/log4j-1.2.15.jar:$(LIB_DIR)/jgrapht-jdk1.5.jar
