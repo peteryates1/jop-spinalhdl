@@ -2346,6 +2346,18 @@ silently invalidate all of that. Use this to find one:
     | Wukong `wukongDdr3Smp` @100 MHz | 4 | MET +0.081 ns, 55.4 % LUT |
     | Wukong `wukongDdr3Smp` @100 MHz | 6 | VIOLATED -0.156 ns, 69.6 % LUT |
     | Wukong `wukongDdr3Smp` @100 MHz | 8 | VIOLATED -0.805 ns, 86.9 % LUT |
+    | Wukong `wukongDdr3Smp` @91.68 MHz | 6 | **MET +0.018 ns**, 68.4 % LUT — validated |
+    | Wukong `wukongDdr3Smp` @91.68 MHz | 8 | **MET +0.074 ns**, 84.4 % LUT — validated |
+
+    Both 91.68 MHz rows are the `Ddr3_366` MIG profile plus the CDC constraint
+    below; **8 cores runs on hardware**, `SMPGC OK` with `cores 8, publishers 7`,
+    minors 10 / verified 192 / errors 0. Utilisation at 8 cores: 53,524 / 63,400
+    LUT (84.4 %), 41,551 registers (32.8 %), 42.5 BRAM (31.5 %), 0 DSP. LUTs
+    bind; BRAM and registers have plenty of room.
+
+    Note the clock is not the whole story — at 100 MHz the 8-core TNS was -203
+    over many endpoints, and at 91.68 with the CDC constrained it is 0. Some of
+    that -0.805 was bogus paths, not congestion.
 
     The `wukongDdr3Smp` rows (2026-08-15) are the generational-capable config —
     card table, ICU, both caches — as opposed to `wukongSmpMinimal`, which has

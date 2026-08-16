@@ -1,3 +1,11 @@
+# DDR3 system clock: MIG dictates the sys_clk it wants for a given memory
+# period, so this frequency is not free -- see jop.config.MigProfile. The
+# generated fragment wins when a preset has been generated; the literal below is
+# the stock Ddr3_400 value for standalone runs.
+set ddr3_clkwiz_mhz 100.000
+set _gen [file join [file dirname [info script]] ../ip/generated/ddr3_clocks.tcl]
+if {[file exists $_gen]} { source $_gen ; puts "INFO: clk_wiz from profile: $ddr3_clkwiz_mhz MHz" }
+
 # Clock wizard generation script for JOP DDR3 on QMTECH XC7A100T Wukong.
 # 50 MHz input -> 100 MHz (MIG sys_clk) + 200 MHz (MIG ref_clk) + 125 MHz (ETH GMII).
 # The 125 MHz output is optimized away by Vivado if unused (non-GMII builds).
@@ -32,7 +40,7 @@ set_property -dict [list \
   CONFIG.PRIM_IN_FREQ {50.000} \
   CONFIG.PRIMARY_PORT {clk_in} \
   CONFIG.NUM_OUT_CLKS {3} \
-  CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {100.000} \
+  CONFIG.CLKOUT1_REQUESTED_OUT_FREQ $ddr3_clkwiz_mhz \
   CONFIG.CLK_OUT1_PORT {clk_100} \
   CONFIG.CLKOUT1_DRIVES {BUFG} \
   CONFIG.CLKOUT2_USED {true} \

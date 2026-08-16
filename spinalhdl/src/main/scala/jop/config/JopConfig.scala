@@ -166,7 +166,11 @@ case class JopConfig(
   assembly: SystemAssembly,
   systems: Seq[JopSystem],
   interconnect: Option[InterconnectConfig] = None,
-  monitors: Seq[MonitorConfig] = Seq.empty
+  monitors: Seq[MonitorConfig] = Seq.empty,
+  /** DDR3 memory-clock profile, for boards whose system clock is MIG's ui_clk.
+    * None everywhere else. See MigProfile for why this is an enum of measured
+    * points rather than a frequency parameter. */
+  migProfile: Option[MigProfile] = None
 ) {
   require(systems.nonEmpty, "At least one JopSystem required")
 
@@ -889,7 +893,7 @@ object JopConfig {
    * falls back to the CLASSIC collector — a generational test on it measures
    * nothing at all. `wukongDdr3` keeps the 16 KB card table.
    *
-   * CLKHZ MUST MATCH MIG's ui_clk, which is NOT free to choose: the DDR3 path
+   * THE MIG PROFILE PICKS THE CLOCK, and clkFreq follows from it. The DDR3 path
    * has no `systemClk` from the clk_wiz at all (see `Board.scala`), and
    * `JopTop` clocks the cluster from `ddr3Mig.io.ui_clk` = memory clock / 4.
    * Stock is `TimePeriod 2500` ps -> 400 MHz -> 100 MHz. Lowering it for more
@@ -906,10 +910,16 @@ object JopConfig {
    * SmpGcTest is integer-only. Do not run DoAll on this expecting 66/66 without
    * checking the bytecode map first — see item 17.
    */
-  def wukongDdr3Smp(n: Int, clkHz: Int = 100000000) = {
+  def wukongDdr3Smp(n: Int, mig: MigProfile = MigProfile.Ddr3_400) = {
     val base = wukongDdr3
-    base.copy(systems = Seq(base.system.copy(
-      name = s"ddr3smp$n", cpuCnt = n, clkFreq = HertzNumber(clkHz))))
+    // clkFreq is DERIVED from the profile, never passed alongside it. The two
+    // must agree -- ui_clk is what the cluster actually runs at, and clkFreq is
+    // what the microsecond prescaler and UART divider are computed from -- so
+    // there is deliberately only one knob.
+    base.copy(
+      migProfile = Some(mig),
+      systems = Seq(base.system.copy(
+        name = s"ddr3smp$n", cpuCnt = n, clkFreq = HertzNumber(mig.uiClkHz))))
   }
 
   /** Wukong DDR3 — minimal SMP (no CUs, just cores + UART) for SMP+DDR3 debug */

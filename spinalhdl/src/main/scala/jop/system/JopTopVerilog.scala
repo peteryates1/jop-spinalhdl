@@ -64,11 +64,16 @@ object JopTopVerilog {
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.wukongSmp(n)
     case "wukongDdr3Smp" =>
-      val n  = if (args.length > 1) args(1).toInt else 4
-      // argv[2] is the ui_clk in Hz, not MHz -- it is 91_650_000 for a 2727 ps
-      // MIG, which no integer MHz expresses.
-      val hz = if (args.length > 2) args(2).toInt else 100000000
-      JopConfig.wukongDdr3Smp(n, hz)
+      val n = if (args.length > 1) args(1).toInt else 4
+      // argv[2] names a MigProfile, not a frequency: the clock is one of a few
+      // measured points, and clkFreq is derived from whichever is picked.
+      val mig = args.drop(2).headOption.map { name =>
+        MigProfile.all.find(_.name.equalsIgnoreCase(name)).getOrElse(
+          throw new IllegalArgumentException(
+            s"unknown MIG profile '$name'; known: " +
+            MigProfile.all.map(_.name).mkString(", ")))
+      }.getOrElse(MigProfile.Ddr3_400)
+      JopConfig.wukongDdr3Smp(n, mig)
     case "wukongSmpMinimal" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.wukongSmpMinimal(n)
@@ -193,9 +198,14 @@ object JopTopVerilog {
           f"  *** Download with: python3 fpga/scripts/download.py -e <app>.jop <tty> $eff%n"
       f"  $pll%n" + baudLine
     } else if (jopConfig.assembly.fpgaBoard.name.contains("wukong") && sys.memory == "ddr3") {
-      // The Wukong DDR3 clock chain is a deliberate human edit rather than a
-      // generated file (see MigClockCheck for why), so it is verified instead.
-      f"  ${jop.config.MigClockCheck.check("fpga/qmtech-xc7a100t-wukong", sys.clkFreq.toLong)}%n"
+      // Emit the MIG + clk_wiz inputs for the preset's profile, then verify the
+      // chain. The emit covers "someone forgot which numbers go together"; the
+      // check covers "someone edited the tracked files by hand, or has not
+      // re-run make ddr3-create-ip since changing profile".
+      val dir = "fpga/qmtech-xc7a100t-wukong"
+      val emitted = jopConfig.migProfile
+        .map(p => f"  ${MigProfile.emit(dir, p)}%n").getOrElse("")
+      emitted + f"  ${jop.config.MigClockCheck.check(dir, sys.clkFreq.toLong)}%n"
     } else ""
 
     print(summary)

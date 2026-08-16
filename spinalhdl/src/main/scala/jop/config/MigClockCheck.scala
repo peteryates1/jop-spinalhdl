@@ -45,7 +45,8 @@ object MigClockCheck {
    * message when the chain is inconsistent.
    */
   def check(boardDir: String, presetClkHz: Long): String = {
-    val migPath = Paths.get(boardDir, "vivado/ip/mig.prj")
+    val genMig  = Paths.get(boardDir, "vivado/ip/generated/mig.prj")
+    val migPath = if (Files.exists(genMig)) genMig else Paths.get(boardDir, "vivado/ip/mig.prj")
     val wizPath = Paths.get(boardDir, "vivado/tcl/create_ddr3_clk_wiz.tcl")
     if (!Files.exists(migPath) || !Files.exists(wizPath))
       return "MIG check:   skipped (mig.prj or clk_wiz script not found)"
@@ -57,8 +58,17 @@ object MigClockCheck {
       .getOrElse(return "MIG check:   skipped (no TimePeriod in mig.prj)")
     val migInMhz = readNum(migText, """<InputClkFreq>([0-9.]+)<""")
       .getOrElse(return "MIG check:   skipped (no InputClkFreq in mig.prj)")
-    val wizMhz = readNum(wizText, """CLKOUT1_REQUESTED_OUT_FREQ \{([0-9.]+)\}""")
-      .getOrElse(return "MIG check:   skipped (no CLKOUT1 frequency in the clk_wiz script)")
+    // The clk_wiz frequency now normally arrives as a generated tcl fragment
+    // (MigProfile.emit) which the wizard script sources; the literal in the
+    // script is only the stock fallback for standalone runs.
+    val genPath = Paths.get(boardDir, "vivado/ip/generated/ddr3_clocks.tcl")
+    val wizMhz = (if (Files.exists(genPath))
+        readNum(new String(Files.readAllBytes(genPath), "UTF-8"),
+                """set ddr3_clkwiz_mhz ([0-9.]+)""")
+      else None)
+      .orElse(readNum(wizText, """set ddr3_clkwiz_mhz ([0-9.]+)"""))
+      .orElse(readNum(wizText, """CLKOUT1_REQUESTED_OUT_FREQ \{([0-9.]+)\}"""))
+      .getOrElse(return "MIG check:   skipped (no clk_wiz frequency found)")
 
     // 1. The clk_wiz must feed MIG exactly what MIG expects, or MIG retunes.
     if (math.abs(wizMhz - migInMhz) > 0.01)
@@ -76,6 +86,8 @@ object MigClockCheck {
     val presetMhz = presetClkHz / 1e6
 
     // 2. The preset must know the real ui_clk, or the UART divider is wrong.
+    val knownProfiles = MigProfile.all
+      .map(pr => "%s (ui_clk %.2f MHz)".format(pr.name, pr.uiClkMhz)).mkString(", ")
     if (math.abs(uiMhz - presetMhz) > 0.05)
       throw new IllegalStateException(
         f"""|PRESET CLOCK DOES NOT MATCH ui_clk.
@@ -86,9 +98,10 @@ object MigClockCheck {
             |ddr3Mig.io.ui_clk, so the preset must declare that frequency. It only
             |feeds the microsecond prescaler and the UART divider, so a mismatch does
             |NOT fail the build -- the board simply goes quiet, which looks exactly
-            |like a dead bitstream. Generate with the right value, e.g.
-            |  sbt "runMain jop.system.JopTopVerilog wukongDdr3Smp <cores> ${(uiMhz * 1e6).round}"
-            |(the argument is Hz, because ui_clk is rarely an integer MHz.)""".stripMargin)
+            |like a dead bitstream. Either pick the MigProfile that matches the IP
+            |currently generated, or re-run `make ddr3-create-ip` after generating
+            |with the profile you want -- the two have to be regenerated together.
+            |Known profiles: $knownProfiles""".stripMargin)
 
     f"MIG check:   ok — $periodPs%.0f ps -> memory $memMhz%.1f MHz -> ui_clk $uiMhz%.2f MHz"
   }

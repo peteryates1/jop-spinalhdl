@@ -5,7 +5,14 @@ set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file normalize [file join $script_dir ../..]]
 set ip_root    [file normalize [file join $repo_root vivado/ip]]
 set ip_proj    [file normalize [file join $ip_root managed_ip_project]]
+# Prefer the profile-generated config (written by JopTopVerilog from the
+# preset's MigProfile); fall back to the tracked one for standalone runs.
 set mig_prj    [file join $ip_root mig.prj]
+set mig_gen    [file join $ip_root generated mig.prj]
+if {[file exists $mig_gen]} {
+  set mig_prj $mig_gen
+  puts "INFO: using profile-generated MIG config: $mig_gen"
+}
 set mig_name   "mig_7series_0"
 
 if {![file exists $mig_prj]} {
