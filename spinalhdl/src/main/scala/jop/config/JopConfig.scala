@@ -889,14 +889,27 @@ object JopConfig {
    * falls back to the CLASSIC collector — a generational test on it measures
    * nothing at all. `wukongDdr3` keeps the 16 KB card table.
    *
+   * CLKHZ MUST MATCH MIG's ui_clk, which is NOT free to choose: the DDR3 path
+   * has no `systemClk` from the clk_wiz at all (see `Board.scala`), and
+   * `JopTop` clocks the cluster from `ddr3Mig.io.ui_clk` = memory clock / 4.
+   * Stock is `TimePeriod 2500` ps -> 400 MHz -> 100 MHz. Lowering it for more
+   * cores means regenerating the MIG AND the clk_wiz together, because MIG also
+   * dictates its own sys_clk input for a given memory period:
+   *
+   *     TimePeriod 2727 ps -> MIG wants 97.787 MHz in -> 366.6 MHz -> ui_clk 91.65
+   *
+   * Getting clkHz wrong does not fail the build -- it mis-sets the microsecond
+   * prescaler and the UART divider, and the board goes quiet.
+   *
    * It is also ICU-only (`idiv`/`irem` hw, everything else microcode), which
    * keeps the Vivado build tractable at 4 cores and costs nothing here:
    * SmpGcTest is integer-only. Do not run DoAll on this expecting 66/66 without
    * checking the bytecode map first — see item 17.
    */
-  def wukongDdr3Smp(n: Int) = {
+  def wukongDdr3Smp(n: Int, clkHz: Int = 100000000) = {
     val base = wukongDdr3
-    base.copy(systems = Seq(base.system.copy(name = s"ddr3smp$n", cpuCnt = n)))
+    base.copy(systems = Seq(base.system.copy(
+      name = s"ddr3smp$n", cpuCnt = n, clkFreq = HertzNumber(clkHz))))
   }
 
   /** Wukong DDR3 — minimal SMP (no CUs, just cores + UART) for SMP+DDR3 debug */

@@ -64,8 +64,11 @@ object JopTopVerilog {
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.wukongSmp(n)
     case "wukongDdr3Smp" =>
-      val n = if (args.length > 1) args(1).toInt else 4
-      JopConfig.wukongDdr3Smp(n)
+      val n  = if (args.length > 1) args(1).toInt else 4
+      // argv[2] is the ui_clk in Hz, not MHz -- it is 91_650_000 for a 2727 ps
+      // MIG, which no integer MHz expresses.
+      val hz = if (args.length > 2) args(2).toInt else 100000000
+      JopConfig.wukongDdr3Smp(n, hz)
     case "wukongSmpMinimal" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.wukongSmpMinimal(n)

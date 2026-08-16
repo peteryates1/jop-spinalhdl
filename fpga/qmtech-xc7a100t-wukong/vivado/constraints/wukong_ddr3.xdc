@@ -77,6 +77,24 @@ set_clock_groups -asynchronous \
     -group [get_clocks clk_pll_i] \
     -group [get_clocks clk_125_clk_wiz_0]
 
+# CDC false path: board oscillator (sys_clk, 50 MHz) <-> MIG ui_clk (clk_pll_i).
+# Same justification as above -- the crossings are SpinalHDL BufferCC, e.g.
+# io_uart_txd_buffercc -- but this one stayed INVISIBLE while ui_clk was exactly
+# 2x sys_clk, because aligned edges gave the analyser a full period to play with.
+# Lower ui_clk to a non-integer ratio (91.65 MHz for a 2727 ps MIG) and the same
+# path is suddenly required to close in 0.325 ns:
+#
+#   Source:      cores_0/uart_1/.../_zz_io_txd_reg   clk_pll_i period=10.911
+#   Destination: io_uart_txd_buffercc/buffers_0_reg  sys_clk   period=20.000
+#   Requirement: 0.325ns (sys_clk rise@10780.000 - clk_pll_i rise@10779.675)
+#
+# which produced WNS -2.037 over 31 endpoints and looked like an arbiter failure
+# until the failing path was actually read. It is a synchroniser; constrain it as
+# one.
+set_clock_groups -asynchronous \
+    -group [get_clocks sys_clk] \
+    -group [get_clocks clk_pll_i]
+
 # ============================================================================
 # SD Card (microSD J9, 4-bit native mode) — all LVCMOS33
 # ============================================================================

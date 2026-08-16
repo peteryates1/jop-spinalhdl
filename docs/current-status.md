@@ -2372,6 +2372,27 @@ silently invalidate all of that. Use this to find one:
     though 8 cores routes with heavy congestion (2604 nodes with overlaps mid-
     route, TNS -203) where 6 does not (TNS -0.628 from a single path).
 
+    **AN UNCONSTRAINED CDC WAS HIDING BEHIND THE 2:1 CLOCK RATIO** (fixed
+    2026-08-16, `wukong_ddr3.xdc`). Dropping ui_clk to 91.65 MHz made the 6-core
+    build come back **WORSE**, WNS -2.037 against -0.156 at 100 MHz, which looks
+    impossible for a slower clock. The failing path was not the arbiter:
+
+        Source:      cores_0/uart_1/.../_zz_io_txd_reg   clk_pll_i period=10.911
+        Destination: io_uart_txd_buffercc/buffers_0_reg  sys_clk   period=20.000
+        Requirement: 0.325 ns
+
+    a crossing between ui_clk and the 50 MHz board oscillator. While ui_clk was
+    exactly 2x sys_clk the edges aligned and the analyser allowed a full period;
+    at a 1.833 ratio the common period collapses to 0.325 ns. `buffercc` is
+    SpinalHDL's two-FF synchroniser, so this is a genuine asynchronous crossing
+    that was never declared -- the Ethernet crossings next to it already are.
+    Adding `set_clock_groups -asynchronous` for sys_clk/clk_pll_i took it from
+    -2.037 to **+0.018**.
+
+    Worth generalising: a timing result that gets WORSE when you slow the clock
+    is a synchronous-CDC artefact, not a logic problem. Read the failing path
+    before touching anything else.
+
     On the EP4CGX150 the worst path is
     `cores_1|memCtrl|zeroCur -> [BMB arbiter] -> cores_3|memCtrl|bcFillAddr`,
     with **zero CardTable nodes and 16 arbiter nodes** on it — so this is not
