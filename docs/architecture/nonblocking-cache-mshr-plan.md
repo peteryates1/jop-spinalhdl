@@ -1,8 +1,8 @@
 # Non-blocking L2: MSHR plan for `LruCacheCore`
 
-**Status**: implemented and verified in simulation (2026-08-17). Off by default
-(`JopMemoryConfig.l2MshrCount = 1`); **no hardware measurement yet**. See
-[What was built](#what-was-built) and [What is left](#what-is-left).
+**Status**: implemented and **measured on hardware** (2026-08-17). Off by
+default (`JopMemoryConfig.l2MshrCount = 1`). The eight-core DDR2 ceiling moved
+from **682 to 1613 kacc/s, 2.37x** — see [Hardware results](#hardware-results).
 
 ## Why
 
@@ -150,6 +150,85 @@ read/write turnaround, `local_ready` held high).
   `frontend.req.ready` and reported PASS while deadlocked, because the cache has a
   4-deep input FIFO that keeps accepting after the pipeline behind it stopped.
   **Measure completions, not acceptances** — doubly true once misses overlap.
+
+## Hardware results
+
+A-E115FB, EP4CE115 + 1 GB DDR2, 75 MHz, `jbe.Scale` (private 64 KB stride walk
+per core, so nearly every access misses). **`CHECK 1645838336` in every run
+below, including the baselines** — every configuration computes bit-identical
+results, which is what makes the timing caveat further down tolerable.
+
+| cores | MSHRs | RTL | kacc/s | ratio vs 1 core |
+|---|---|---|---|---|
+| 1 | — | old | 377 | 1.00x |
+| 4 | — | old | 661 | 1.75x |
+| 8 | — | old | **682** (reconfirmed on the bench today) | 1.81x |
+| 4 | 1 | new | 618 (618/618/618) | 1.64x |
+| 4 | 4 | new | **937** median (936/937/937/963/1007) | 2.48x |
+| 8 | 4 | new | **1613** median (1554/1613/1652) | **4.28x** |
+
+**The serialisation ceiling is gone.** Eight-core DDR2 was 1.81x a single core
+and is now 4.28x — SDR, which has no `LruCacheCore` at all, gets 4.45x. Four
+cores with MSHRs (937) beat the old EIGHT-core figure (682) outright.
+
+Three things to be honest about:
+
+- **The restructure costs ~6.5 % when the overlap is switched off.** At
+  `mshrCount = 1` the new non-blocking FSM gives 618 against the old blocking
+  one's 661: the funnel through `IDLE` plus `RSP_FILL` spends about two more
+  cycles per miss, and with one MSHR there is no overlap to pay for it. Against
+  the configuration that actually shipped, the four-core gain is 937/661 =
+  **1.42x**, not 1.51x.
+- **The projection in this document was too optimistic.** It guessed 2.7-5.5
+  Macc/s for eight cores; the answer is 1.6. What it got right was the shape —
+  the ceiling was the serial miss FSM, and removing it moves the curve.
+- **Run-to-run variance appears only with MSHRs.** The baseline is perfectly
+  repeatable (618 three times); the MSHR builds spread 936-1007 at four cores
+  and 1554-1652 at eight. That is expected: once misses overlap, throughput
+  depends on the relative phase of the cores' request streams, which varies with
+  boot timing. Quote a median and the spread, not a single run.
+
+### Cost, and the timing risk that did not materialise
+
+| build | logic elements | Fmax (Slow 1200mV 100C) | WNS at 75 MHz |
+|---|---|---|---|
+| 4-core, 1 MSHR | 66,958 (58 %) | 67.48 MHz | -1.486 ns |
+| 4-core, 4 MSHRs | 70,366 (61 %) | 67.31 MHz | -1.524 ns |
+| 8-core, 4 MSHRs | 106,405 (93 %) | ~62 MHz | -3.056 ns |
+
+The plan's headline risk was that the MSHR would land on the critical path,
+which already terminated at `lruCacheCore|cmdFifo|logic_ram`. **It did not.**
+The worst path is the same one in both four-core builds —
+`BmbMemoryController|Equal3 -> LruCacheCore|cmdFifo|logic_ram`, N cores' address
+decode fanning into one command port — and adding four MSHRs moved it by
+**0.038 ns, 0.25 % of Fmax**, for +5.1 % logic. None of the new registers or
+comparators appear in the failing paths.
+
+**These builds do not close timing**, at four cores or eight — but neither did
+the baselines they are being compared against. The numbers in
+`java/apps/JbeBench/README.md` for the original blocking builds are **-1.997 ns
+at four cores and -3.059 ns at eight**, at the same corner. So against the
+configurations that produced 661 and 682:
+
+| | old (blocking) | new (4 MSHRs) |
+|---|---|---|
+| 4-core WNS | -1.997 ns | **-1.524 ns** |
+| 8-core WNS | -3.059 ns | **-3.056 ns** |
+
+The non-blocking rewrite is *better* at four cores and a wash at eight. The
+worry that an MSHR would make Fmax worse before it made throughput better was
+reasonable and turned out to be unfounded.
+
+`jbe.Scale`'s `CHECK` is what makes measuring on a violating bitstream
+defensible — bit-identical across every build and every repeat — and the corner
+analysis in the benchmark README explains why: Quartus reports Slow/100 C, the
+bench runs at room temperature, and the same path measures +1.398 ns at the fast
+corner. Treat all three as measurement vehicles, not shippable bitstreams.
+
+### Correctness on hardware
+
+`DoAll` **66/66** on both the 4-core and 8-core MSHR bitstreams, no failures and
+no unexpected exceptions.
 
 ## What was built
 
@@ -318,31 +397,23 @@ model that, or the ordering logic is untested.
 
 ## What is left
 
-1. **Hardware.** Nothing here has been on a board. Build
-   `ae115fbDdr2SmpMshr <cores> <mshrs>` against the `ae115fbDdr2Smp` baseline and
-   run `JbeScale` on both — the two presets differ in exactly `l2MshrCount`.
-   **Watch WNS on the first fit**, not at the end: the MSHR adds logic to the
-   `cmdFifo` command path, which is already where the 4- and 8-core critical
-   paths terminate. The 8-core case cannot be timing-clean on this board at any
-   legal DDR2 clock; `JbeScale`'s `CHECK` makes a corner-violating bitstream
-   acceptable for measurement but not for shipping.
-2. **`CacheToMigAdapter` reads** are serial (see the correction above), so the
+1. **`CacheToMigAdapter` reads are serial** (see the correction above), so the
    DDR3 boards need that fixed before `mshrCount > 1` is worth setting there.
-3. **Secondary-hit merging** — currently a request to a line already being
-   filled is replayed, not attached. Pure throughput, no correctness impact.
-4. **Register cost** is real: each MSHR holds a whole cache line of write data
-   (256 bits on DDR2) plus tag and dirty words. Four entries is roughly 1.5 k
-   flip-flops on the A-E115FB. Worth checking against the fit report.
-
-## Two sims that were already broken
-
-Neither is in the CI matrix, which is why neither was noticed.
-
-- **`JopSmpDdr3NCoreHelloWorldSim`** declared `debugCacheState` as 3 bits and
-  assigned `LruCacheCore.io.debugState` (4 bits) to it without a resize, so it
-  had not elaborated since the cache grew past 8 states. Fixed here, because it
-  is the SMP-through-the-cache coverage this change wants.
-- **`JopSmallGcCacheSim`** loads `java/apps/Small/HelloWorld.jop` but its pass
-  criteria look for `GcStressTest` output (`"GC test start"`, `"R80 f="`), so it
-  runs 40 M cycles printing "Hello World!" and then fails. **Left alone** — it
-  needs a Java rebuild decision (which app should it load?), not an RTL fix.
+   This is now the highest-value follow-up: the mechanism is proven on DDR2, and
+   DDR3 is one adapter away from the same gain.
+2. **Timing.** Neither core count closes at 75 MHz, MSHRs or not. That is a
+   pre-existing property of the `BmbMemoryController -> cmdFifo` path, and it is
+   what to attack next if these configurations are ever to ship — pipelining
+   that command port would also raise the achievable clock. The 8-core build is
+   additionally at 93 % logic.
+3. **The remaining gap to linear.** Eight cores now give 4.28x, not 8x. With the
+   miss FSM no longer the limit, the next candidates are the single BMB command
+   port, the 4-MSHR cap (the DDR2 adapter's `rspDepth = 8` allows no more, since
+   each miss can need an eviction and a refill), and DRAM bank/refresh effects.
+   Worth re-running `Ddr2ConcurrencyProbe` against the measured numbers before
+   guessing.
+4. **Secondary-hit merging** — a request to a line already being filled is
+   replayed, not attached. Pure throughput, no correctness impact.
+5. **Register cost** is real: each MSHR holds a whole cache line of write data
+   (256 bits on DDR2) plus tag and dirty words. Measured at +3,408 LE for four
+   entries on the 4-core build.

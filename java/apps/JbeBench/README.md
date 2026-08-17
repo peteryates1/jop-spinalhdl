@@ -406,3 +406,55 @@ below ~125 MHz memory — flooring the system clock at 62.5 MHz. 8 cores needs
 is available, but a trustworthy 8-core point needs the `cmdFifo` path fixed.
 Since `CHECK` already validates the existing numbers, that re-sweep buys
 confirmation rather than information.
+
+## The ceiling moves: non-blocking L2 (2026-08-17)
+
+Everything above diagnosed the flat DDR2/DDR3 curve as `LruCacheCore`'s serial
+miss FSM. That FSM has now been replaced with a non-blocking one (an MSHR file,
+`JopMemoryConfig.l2MshrCount`), and the prediction holds.
+
+Same board, same clock, same benchmark. `CHECK 1645838336` in **every** row,
+including the baselines — every configuration computes bit-identical results.
+
+| cores | MSHRs | kacc/s | ratio vs 1 core |
+|---|---|---|---|
+| 1 | — | 377 | 1.00x |
+| 4 | — | 661 | 1.75x |
+| 8 | — | **682** | **1.81x** |
+| 4 | 1 | 618 | 1.64x |
+| 4 | 4 | **937** | **2.48x** |
+| 8 | 4 | **1613** | **4.28x** |
+
+The 682 row was re-measured on the bench the same day and came back at exactly
+682, so the comparison is against a live baseline, not a remembered one.
+
+**DDR2 now scales 4.28x on eight cores against SDR's 4.45x** — the two memory
+architectures finally agree, which is what you would expect once the component
+SDR never had is no longer the limit. Four cores with MSHRs (937) beat the old
+eight-core figure outright.
+
+Three caveats, because they bound the claim:
+
+- **Medians, not single runs.** The blocking builds are perfectly repeatable
+  (618 three times). The MSHR builds are not: 936-1007 at four cores,
+  1554-1652 at eight. Once misses overlap, throughput depends on the relative
+  phase of the cores' request streams, which varies with boot timing.
+- **The restructure costs ~6.5 % with the overlap switched off** — 618 at
+  `mshrCount = 1` against the old 661, because the non-blocking FSM spends about
+  two more cycles per miss and one MSHR gives nothing back. Against the
+  configuration that shipped, the four-core gain is 937/661 = **1.42x**.
+- **Still not linear.** 4.28x on eight cores, not 8x. The miss FSM is no longer
+  the limit; the remaining candidates are the single BMB command port (which is
+  also the critical path), the 4-MSHR cap forced by the DDR2 adapter's 8-deep
+  response FIFO, and DRAM bank/refresh behaviour.
+
+Timing did NOT get worse, which was the main risk: at the Slow/100 C corner the
+four-core build goes -1.997 ns (blocking) to **-1.524 ns** (4 MSHRs) and the
+eight-core -3.059 to **-3.056**. The worst path is unchanged —
+`BmbMemoryController|Equal3 -> LruCacheCore|cmdFifo|logic_ram` — and none of the
+new logic appears in it. Cost is +5.1 % logic at four cores.
+
+`DoAll` passes **66/66** on both MSHR bitstreams.
+
+Detail, including a response-ordering bug in `CacheToDdr2Adapter` that this work
+exposed: `docs/architecture/nonblocking-cache-mshr-plan.md`.
