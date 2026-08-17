@@ -87,7 +87,7 @@ dual-generate:
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongDualIndependent"
 
 dual-create-ip: ddr3-create-ip
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz_1.tcl
+	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl
 
 dual-build:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_dual_bitstream.tcl

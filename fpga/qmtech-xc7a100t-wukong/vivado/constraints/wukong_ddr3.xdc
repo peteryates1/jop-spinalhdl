@@ -70,12 +70,12 @@ source ../../../../fpga/constraints/rtl8211eg_gmii.xdc
 # CDC false paths: Ethernet 125 MHz ↔ MIG ui_clk (clk_pll_i)
 # All crossings use SpinalHDL BufferCC/StreamFifoCC (safe gray-code CDC).
 set_clock_groups -asynchronous \
-    -group [get_clocks clk_125_clk_wiz_0] \
+    -group [get_clocks clk_125_ddr3_clk] \
     -group [get_clocks clk_pll_i]
 set_clock_groups -asynchronous \
     -group [get_clocks e_rxc] \
     -group [get_clocks clk_pll_i] \
-    -group [get_clocks clk_125_clk_wiz_0]
+    -group [get_clocks clk_125_ddr3_clk]
 
 # CDC false path: board oscillator (sys_clk, 50 MHz) <-> MIG ui_clk (clk_pll_i).
 # Same justification as above -- the crossings are SpinalHDL BufferCC, e.g.

@@ -7,7 +7,7 @@ set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file normalize [file join $script_dir ../..]]
 set ip_root    [file normalize [file join $repo_root vivado/ip]]
 set ip_proj    [file normalize [file join $ip_root managed_ip_project]]
-set clk_name   "clk_wiz_0"
+set clk_name   "sdr_clk"
 
 file mkdir $ip_root
 

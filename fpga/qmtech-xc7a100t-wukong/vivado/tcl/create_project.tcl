@@ -31,7 +31,7 @@ if {[file exists $xdc_file]} {
 }
 
 # Add ClkWiz IP
-set clk_xci [file join $repo_root vivado/ip/clk_wiz_0/clk_wiz_0.xci]
+set clk_xci [file join $repo_root vivado/ip/bram_clk/bram_clk.xci]
 if {[file exists $clk_xci]} {
   add_files -norecurse $clk_xci
 } else {

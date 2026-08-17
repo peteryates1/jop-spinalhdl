@@ -22,9 +22,9 @@ case class Cyc5000Pll() extends BlackBox {
 }
 
 /**
- * Wukong BRAM ClkWiz BlackBox — Vivado clk_wiz_0: 50 MHz -> 100 MHz.
+ * Wukong BRAM ClkWiz BlackBox — Vivado `bram_clk`: 50 MHz -> 100 MHz.
  */
-class WukongClkWizBlackBox(instanceName: String = "clk_wiz_0") extends BlackBox {
+class WukongClkWizBlackBox(instanceName: String = "bram_clk") extends BlackBox {
   val io = new Bundle {
     val resetn  = in Bool()
     val clk_in  = in Bool()

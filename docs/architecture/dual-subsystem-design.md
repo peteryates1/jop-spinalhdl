@@ -371,7 +371,7 @@ Each cluster has its own clock domain, memory controller, and UART.
   instantiating one `JopCluster` + memory controller per system
 - Cluster 0 (DDR3): All compute units (ICU+FCU+LCU+DCU+DSP imul), 100 MHz
   (MIG `ui_clk`), CH340N UART (E3/F3)
-- Cluster 1 (SDR SDRAM): No compute units, 100 MHz (`clk_wiz_1`), J11 header
+- Cluster 1 (SDR SDRAM): No compute units, 100 MHz (`sdr_clk`, was `clk_wiz_1`), J11 header
   UART (A5/A4)
 - Each cluster boots independently via serial download on its own UART
 - Entity name: `JopDualWukongTop`
@@ -397,7 +397,7 @@ make dual-build          # Vivado synth + impl + bitstream
 
 **Clock domains**:
 - DDR3 cluster: 100 MHz from MIG `ui_clk` (derived from 200 MHz MIG reference)
-- SDR cluster: 100 MHz from `clk_wiz_1` (50 MHz oscillator input). 80 MHz hangs
+- SDR cluster: 100 MHz from `sdr_clk` (was `clk_wiz_1`; 50 MHz oscillator input). 80 MHz hangs
   on hardware -- see "Phase 2 Resolved" below before changing this.
 - Both PLLs run from the same 50 MHz board oscillator (M21)
 
@@ -416,7 +416,7 @@ outputs `.Small boot.GC init....` then stops.
    burstLen=0 for single-core SDR, which is correct — just slower.
 3. **Generated Verilog wiring**: All clock domains, reset, SDRAM signals, UART MUX
    verified correct in `JopDualWukongTop.v`.
-4. **Internal SDR timing**: clk_100_clk_wiz_1 domain meets timing (WNS=+0.229ns).
+4. **Internal SDR timing**: clk_100_sdr_clk (was clk_100_clk_wiz_1) domain meets timing (WNS=+0.229ns).
    DDR3 domain (clk_pll_i) also meets (WNS=+0.006ns).
 5. **Clock phase shift**: -108° at 80 MHz gives 3.75 ns lead (more margin than
    100 MHz's 3.0 ns). W9825G6KH-6 requires 1.5 ns setup, 0.8 ns hold.
@@ -425,7 +425,7 @@ outputs `.Small boot.GC init....` then stops.
 see below):
 
 The timing report shows 16 failing endpoints, all `chip_sdram_DQ_writeEnable_reg`
-paths from clk_100_clk_wiz_1 to SDRAM output ports. WNS=-0.378ns. The
+paths from clk_100_sdr_clk (was clk_100_clk_wiz_1) to SDRAM output ports. WNS=-0.378ns. The
 writeEnable register (at SLICE_X0Y110) controls the DQ tri-state buffer (OBUFT).
 Path breakdown: FDRE C→Q (0.379ns) + routing (1.652ns, fanout=16) + OBUFT
 (3.347ns) = 5.378ns vs 5.0ns `set_max_delay` constraint.
@@ -452,8 +452,15 @@ frequency the standalone SDR presets have always used. With it, both clusters ru
 
 The frequency lives in three uncoupled places that must agree, and nothing checks
 them — `sdrClkMhz` in `JopConfig`, the `getOrElse` defaults in `JopTopVerilog`,
-and CLKOUT1/CLKOUT2 in `create_sdram_clk_wiz_1.tcl`. A mismatch is silent: the IP
+and CLKOUT1/CLKOUT2 in `create_sdram_clk_wiz.tcl`. A mismatch is silent: the IP
 generates one frequency while the design is constrained for another.
+
+(Was `create_sdram_clk_wiz_1.tcl` until 2026-08-17. The dual cluster's SDR clock
+had been raised 80→100 MHz, making that script config-identical to the standalone
+one, so the two were collapsed into a single function-named `sdr_clk` that both
+the dual and standalone SDR flows share. The DDR3 cluster's wizard is `ddr3_clk`;
+neither can clobber the other now, and `Board.scala` picks the name from the
+cluster's memory type rather than its index in `systems`.)
 
 **The IOB-packing suspect above was disproved by measurement.** Opening both
 post-route checkpoints and querying the register directly:

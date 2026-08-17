@@ -29,7 +29,7 @@ if {[file exists $xdc_file]} {
 }
 
 # Add Clock Wizard IP
-set clk_wiz_xci [file join $repo_root vivado/ip/clk_wiz_0/clk_wiz_0.xci]
+set clk_wiz_xci [file join $repo_root vivado/ip/ddr3_clk/ddr3_clk.xci]
 if {[file exists $clk_wiz_xci]} {
   add_files -norecurse $clk_wiz_xci
   generate_target all [get_files $clk_wiz_xci]

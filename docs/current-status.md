@@ -2925,6 +2925,34 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
       IP, so switching without regenerating fails synthesis with *"named port
       connection 'clk_100_shift' does not exist"*. The SDR build now regenerates
       its own clk_wiz first.
+
+      **FIXED PROPERLY 2026-08-17 — the clock wizards are named for their
+      FUNCTION**: `sdr_clk`, `ddr3_clk`, `bram_clk`. Regenerating first was a
+      workaround that cost ~105 s on every flow switch and still left one live
+      IP; the three variants now occupy three directories and coexist, so
+      switching memory type regenerates nothing. It was in fact a THREE-way
+      collision — the BRAM flow emitted `clk_wiz_0` too, with only `clk_100`.
+      `Board.scala` derives the instance name from `memType` rather than from
+      the index in `systems`, so the dual build no longer depends on SDR
+      happening to sit at index 1. Two things fell out: `create_sdram_clk_wiz_1.tcl`
+      was config-identical to `create_sdram_clk_wiz.tcl` (the dual's SDR clock
+      was raised 80→100 MHz and the two were never collapsed) and is deleted;
+      `build_sdram_exerciser_80mhz.tcl` is deleted too — its 80 MHz wizard no
+      longer existed, so pointing it at `sdr_clk` would have silently built a
+      100 MHz bitstream from RTL named `_80mhz`. It is recoverable from `6b31502`
+      if the 80 MHz exerciser is ever wanted again; rebuilding it needs a
+      `sdr_clk_80` variant of `create_sdram_clk_wiz.tcl`. Its hand-modified
+      `SdramExerciserWukongTop_80mhz.v` was never tracked (it lived in the
+      gitignored `spinalhdl/generated/`), so that part is gone for good — it was
+      a hand-edit of generated output, which is why it should never have been the
+      only copy of anything.
+
+      Note the derived clock names in XDC follow the **IP module** name, not the
+      RTL instance name (which is `clkWizBlackBox`) — hence `clk_125_clk_wiz_0`
+      became `clk_125_ddr3_clk`, and the dual's `clk_100_clk_wiz_1` became
+      `clk_100_sdr_clk`. Getting this wrong is silent: `set_clock_groups` on a
+      clock that matches nothing simply does not constrain, which is how the
+      −2.037 ns CDC regression hid in the first place.
     - **`wukongSdrFull` could not generate a bitstream at all.** Ethernet and SD
       pin constraints existed only in `wukong_ddr3.xdc`, so 32 of 77 ports had no
       LOC/IOSTANDARD and `write_bitstream` refused (DRC NSTD-1 / UCIO-1). Moved

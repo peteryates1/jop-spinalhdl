@@ -134,10 +134,24 @@ object PllType {
   /** Wukong XC7A100T: Vivado clk_wiz variants per memory type.
     * SDR: clk_100 system + clk_100_shift SDRAM + clk_125 Eth.
     * DDR3: clk_100 MIG sys + clk_200 MIG ref + clk_125 Eth.
-    * BRAM: clk_100 system. */
+    * BRAM: clk_100 system.
+    *
+    * The IP instance is named for its FUNCTION, not its position in `systems`.
+    * These three variants have incompatible port sets, and while they were all
+    * called `clk_wiz_0` the three generator scripts each deleted the other two's
+    * output -- so switching memory type without re-running create-ip failed with
+    * "named port connection 'clk_100_shift' does not exist", and the dual build
+    * could only work because SDR happened to land at index 1. Naming by function
+    * makes the flows independent: `make sdram-create-ip` and `ddr3-create-ip`
+    * now produce different directories and no longer clobber each other, and the
+    * dual build gets both from one generation with no index dependence. */
   case object XilinxWukong extends PllType {
     def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
-      val instanceName = if (systemIndex == 0) "clk_wiz_0" else s"clk_wiz_$systemIndex"
+      val instanceName = memType match {
+        case MemoryType.SDRAM_SDR  => "sdr_clk"
+        case MemoryType.SDRAM_DDR3 => "ddr3_clk"
+        case _                     => "bram_clk"
+      }
       memType match {
         case MemoryType.SDRAM_SDR =>
           val clkWiz = new SdramExerciserClkWiz(instanceName)

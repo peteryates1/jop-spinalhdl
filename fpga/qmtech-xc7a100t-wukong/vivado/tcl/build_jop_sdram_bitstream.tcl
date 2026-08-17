@@ -10,7 +10,7 @@ set ip_root    [file normalize [file join $repo_root vivado/ip]]
 file mkdir $build_dir
 
 # Read IP netlist
-read_ip [file join $ip_root clk_wiz_0/clk_wiz_0.xci]
+read_ip [file join $ip_root sdr_clk/sdr_clk.xci]
 
 # Read RTL
 read_verilog [file join $rtl_dir JopSdramWukongTop.v]

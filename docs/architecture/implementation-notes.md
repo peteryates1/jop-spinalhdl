@@ -174,7 +174,7 @@ QMTECH XC7A100T Wukong V3 board, exploiting both on-board DDR3 and SDR SDRAM.
 - **Cluster 0 (DDR3)**: All compute units (ICU+FCU+LCU+DCU+DSP imul), 100 MHz
   (MIG `ui_clk`), 256 MB DDR3 with 32KB L2 cache, CH340N UART (E3/F3)
 - **Cluster 1 (SDR SDRAM)**: Integer-only (no compute units), 80 MHz
-  (`clk_wiz_1`), 32 MB SDR SDRAM, J12 header UART (TX=U14, RX=V14)
+  (`sdr_clk`, was `clk_wiz_1`), 32 MB SDR SDRAM, J12 header UART (TX=U14, RX=V14)
 - **Presets**: `wukongDualIndependent` (1+1 cores), `wukongDualSmp N` (N+N cores)
 - **Entity name**: `JopDualWukongTop`
 - **Implementation**: `JopTop` iterates `config.systems`, instantiating one

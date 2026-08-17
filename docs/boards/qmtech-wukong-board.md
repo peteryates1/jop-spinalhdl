@@ -525,7 +525,7 @@ units; Cluster 1 runs on SDR SDRAM with integer-only cores.
 - UART: CH340N USB bridge (E3/F3)
 
 **Cluster 1 (SDR SDRAM)**:
-- Clock: 80 MHz from `clk_wiz_1`
+- Clock: 80 MHz from `clk_wiz_1` (the IP is now `sdr_clk` and runs at 100 MHz — see dual-subsystem-design.md)
 - Memory: 32 MB SDR SDRAM (W9825G6KH-6), CAS=3, direct BMB
 - Compute: None (integer-only microcode)
 - UART: J12 header pins (TX=U14, RX=V14)
