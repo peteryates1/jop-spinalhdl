@@ -459,7 +459,7 @@ new logic appears in it. Cost is +5.1 % logic at four cores.
 Detail, including a response-ordering bug in `CacheToDdr2Adapter` that this work
 exposed: `docs/architecture/nonblocking-cache-mshr-plan.md`.
 
-### DDR3 too: 692 -> 1380 kacc/s at four cores
+### DDR3 too, and at eight cores the curves converge
 
 Same experiment on the Wukong XC7A100T (ui_clk 91.676 MHz, `MigProfile.Ddr3_366`
 — the clock the DDR3 rows above were taken at). DDR3 needed a second fix before
@@ -472,17 +472,40 @@ cache offered concurrency the adapter refused.
 | 4 | — | 733 | 1.70x |
 | 8 | — | 754 | 1.75x |
 | 4 | 1 | 692 | 1.61x |
+| 8 | 1 | 701 | 1.63x |
 | 4 | 4 | **1380** | **3.21x** |
+| 8 | 4 | **1882** | **4.38x** |
 
-**1.99x against the same-RTL baseline, 1.88x against what shipped**, and four
-cores now beat the old eight-core figure. `CHECK 1645838336` in every run — the
-same value the DDR2 board gives. `DoAll` 66/66 on both bitstreams.
+**Eight cores: 2.68x against the same-RTL baseline, 2.50x against what shipped.**
+`CHECK 1645838336` in every run, the same value DDR2 gives. `DoAll` 66/66 on
+both MSHR bitstreams.
 
-The two boards agree on the cost of the restructure with overlap disabled: DDR3
-692 vs 733 (-5.6 %), DDR2 618 vs 661 (-6.5 %). Independent confirmation of a
-number that would otherwise be one measurement.
+The blocking baseline shows the ceiling this README diagnosed, directly: 4 -> 8
+cores buys **1.3 %** (692 -> 701). With MSHRs the same step buys **36 %**
+(1380 -> 1882).
 
-On Artix-7 the change is also **cheaper in fabric**: -369 LUTs for +810
-registers, measured consistently across two clock profiles. Timing is neutral —
-all four builds close, and the WNS difference between configurations flips sign
-between profiles, so it is fitter noise rather than a real improvement.
+### The three memory architectures now agree
+
+| memory | clock | 8-core kacc/s | ratio vs 1 core |
+|---|---|---|---|
+| SDR (no L2) | 100 MHz | 2764 | 4.45x |
+| DDR3 + MSHR | 91.68 MHz | 1882 | **4.38x** |
+| DDR2 + MSHR | 75 MHz | 1613 | **4.28x** |
+
+They started 2.5x apart — 1.75x and 1.81x for the two DRAM paths against SDR's
+4.45x — and that gap is what this whole investigation was about. Within 4 % now.
+Absolute rates still differ (SDR 27.6 kacc/s per MHz, DDR3 20.5, DDR2 21.5), but
+the SHAPE of the curve no longer depends on which memory is attached. **Whatever
+caps all three at ~4.3x is shared** — the single BMB command port and its
+arbiter are the obvious suspects, and the critical path terminating there is
+probably not a coincidence. That is the next question, and it is now well posed.
+
+Both boards independently agree on the cost of the restructure with overlap
+disabled: DDR3 692 vs 733 (-5.6 %) at four cores and 701 vs 754 (-7.0 %) at
+eight, DDR2 618 vs 661 (-6.5 %). Three measurements of the same ~6 %.
+
+On Artix-7 the change is also **cheaper in fabric**: -373, -369 and -279 LUTs
+across three build pairs, for +810 / +658 registers. Timing is neutral at four
+cores (all close; the WNS delta flips sign between clock profiles, so it is
+fitter noise) and neither configuration closes at eight (-0.501 vs -0.465 ns),
+which is why `CHECK` is the acceptance criterion there.

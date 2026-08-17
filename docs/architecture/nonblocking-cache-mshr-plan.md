@@ -422,53 +422,77 @@ under misses, evictions no longer waiting — **and the adapter carries the
 remaining 2.37x.** That control case is a permanent part of the sim, so the
 claim stays measured rather than remembered.
 
-### Hardware: Wukong XC7A100T, 4 cores, ui_clk 91.676 MHz
+### Hardware: Wukong XC7A100T, ui_clk 91.676 MHz
 
 `jbe.Scale`, `CHECK 1645838336` in every run — the same value the DDR2 board
 produces, so both memory systems compute bit-identically.
 
-| config | kacc/s | runs | ratio vs 1 core (430) |
+| cores | MSHRs | kacc/s | ratio vs 1 core (430) |
 |---|---|---|---|
-| old RTL (published) | 733 | — | 1.70x |
-| new RTL, 1 MSHR | 692 | 692 / 693 / 692 | 1.61x |
-| new RTL, 4 MSHRs | **1380** | 1380 / 1380 / 1380 / 1389 / 1392 | **3.21x** |
+| 4 | — | 733 (published, old RTL) | 1.70x |
+| 8 | — | 754 (published, old RTL) | 1.75x |
+| 4 | 1 | 692 | 1.61x |
+| 8 | 1 | 701 | 1.63x |
+| 4 | 4 | **1380** | **3.21x** |
+| 8 | 4 | **1882** (1836 / 1882 / 1915) | **4.38x** |
 
-**1.99x against the same-RTL baseline, 1.88x against the configuration that
-shipped.** Four cores with MSHRs (1380) comfortably beat the old EIGHT-core DDR3
-figure (754). `DoAll` passes **66/66 on both** bitstreams, identical.
+**Eight cores: 701 -> 1882, 2.68x against the same RTL and 2.50x against what
+shipped.** `DoAll` passes 66/66 on both the 4- and 8-core MSHR bitstreams.
 
-The restructure again costs about 6 % with the overlap switched off (692 against
-the old blocking 733, versus DDR2's 618 against 661) — two independent boards
-agreeing on that number is worth more than either alone.
+The blocking baseline shows the ceiling directly: going 4 -> 8 cores buys
+692 -> 701, i.e. **1.3 %**. With MSHRs the same step buys 1380 -> 1882, **36 %**.
 
-### Fabric cost, measured across two clock profiles
+### All three memory architectures now scale the same
 
-| profile | | WNS | Slice LUTs | Slice Registers |
+That is the result worth keeping, more than any single number:
+
+| memory | clock | 8-core kacc/s | ratio vs 1 core |
+|---|---|---|---|
+| SDR (no L2 at all) | 100 MHz | 2764 | 4.45x |
+| DDR3 + MSHR | 91.68 MHz | 1882 | **4.38x** |
+| DDR2 + MSHR | 75 MHz | 1613 | **4.28x** |
+
+Before this work the two DRAM paths sat at 1.75x and 1.81x while SDR reached
+4.45x, and that gap was the whole reason for the investigation. The three
+architectures now agree within 4 %, having started 2.5x apart. Absolute rates
+still differ (SDR is ~27.6 kacc/s per MHz against DDR3's 20.5) but the SHAPE of
+the curve no longer depends on which memory is attached — which says the
+remaining limit is something all three share, not anything about DRAM. The
+single BMB command port and its arbiter are the obvious next suspects, and the
+fact that the critical path also terminates there is not a coincidence.
+
+### Fabric cost, measured across four build pairs
+
+| build | | WNS | Slice LUTs | Slice Registers |
 |---|---|---|---|---|
-| Ddr3_400 | 1 MSHR | +0.120 ns | 39,245 | 27,147 |
-| Ddr3_400 | 4 MSHRs | +0.363 ns | 38,888 | 27,957 |
-| Ddr3_366 | 1 MSHR | +0.375 ns | 39,257 | 27,147 |
-| Ddr3_366 | 4 MSHRs | +0.111 ns | 38,888 | 27,957 |
+| 4-core Ddr3_400 | 1 MSHR | +0.120 ns | 39,245 | 27,147 |
+| 4-core Ddr3_400 | 4 MSHRs | +0.363 ns | 38,872 | 27,957 |
+| 4-core Ddr3_366 | 1 MSHR | +0.375 ns | 39,257 | 27,147 |
+| 4-core Ddr3_366 | 4 MSHRs | +0.111 ns | 38,888 | 27,957 |
+| 8-core Ddr3_366 | 1 MSHR | -0.501 ns | 58,135 (91.7 %) | 41,514 |
+| 8-core Ddr3_366 | 4 MSHRs | -0.465 ns | 57,856 (91.3 %) | 42,172 |
 
-All four close timing with margin. **Do not read a timing improvement into
-this**: the WNS difference between the two configurations changes SIGN between
-the profiles (+0.243 favouring the MSHR at 400, -0.264 favouring the baseline at
-366), which is fitter noise, not signal. One build pair looked like the MSHR
-bought margin and it does not.
+**Area is consistently in the MSHR's favour: -373, -369 and -279 LUTs** across
+the three pairs, for +810 / +658 registers. Deleting the adapter's state machine
+and the cache's two `WAIT_*` states removes more control logic than the MSHR
+file adds, and the MSHR's cost lands in flip-flops, where there is headroom
+(33 %) rather than in LUTs, where at eight cores there is not (91 %).
 
-What IS consistent is the area: **-373 and -369 LUTs** across the two pairs, for
-**+810 registers**. Deleting the adapter's state machine and the cache's two
-`WAIT_*` states removes more control logic than the MSHR file adds, and the
-MSHR's cost lands in flip-flops. So on Artix-7 the non-blocking design is
-cheaper in LUTs and timing-neutral — a much easier result to act on than DDR2,
-where both builds violated a pre-existing path.
+**Do not read a timing improvement into this.** The WNS difference between
+configurations changes sign between the two 4-core profiles (+0.243 favouring
+the MSHR at 400, -0.264 favouring the baseline at 366): fitter noise. At four
+cores everything closes; at eight NEITHER configuration closes (-0.501 and
+-0.465 ns, 73 and 254 failing endpoints), which is why `jbe.Scale`'s `CHECK` is
+the acceptance criterion there, exactly as on DDR2.
 
 ## What is left
 
-1. **Eight cores.** Both boards are measured at four; DDR2 also has an
-   eight-core point (1613 kacc/s, 4.28x). The DDR3 eight-core baseline is 754,
-   so the equivalent run is worth having.
-2. **Timing.** Neither core count closes at 75 MHz, MSHRs or not. That is a
+1. **The next limit is shared, not memory-specific.** All three memory
+   architectures now land within 4 % of each other on the scaling ratio, so
+   whatever caps them at ~4.3x is common to all three. The single BMB command
+   port and its arbiter are the candidates, and the critical path terminates
+   there too. That is the next investigation, and it is now a well-posed one.
+2. **Timing at eight cores.** Neither core count closes at 75 MHz, MSHRs or not. That is a
    pre-existing property of the `BmbMemoryController -> cmdFifo` path, and it is
    what to attack next if these configurations are ever to ship — pipelining
    that command port would also raise the achievable clock. The 8-core build is
