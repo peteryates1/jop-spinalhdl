@@ -87,6 +87,9 @@ object JopTopVerilog {
     case "wukongDdr3Fcu"    => JopConfig.wukongDdr3Fcu
     case "wukongDdr3Lcu"    => JopConfig.wukongDdr3Lcu
     case "ae115fbDdr2" => JopConfig.ae115fbDdr2
+    case "ae115fbDdr2Smp" =>
+      val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
+      JopConfig.ae115fbDdr2Smp(n)
     case "xc7a100tDbSerial" => JopConfig.xc7a100tDbSerial
     case "xc7a100tDbFull"   => JopConfig.xc7a100tDbFull
     case "xc7a100tDbSmp" =>

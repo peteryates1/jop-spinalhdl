@@ -1085,6 +1085,25 @@ object JopConfig {
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340"),
         params = Map("baudRate" -> 1000000))))))
 
+  /** A-E115FB EP4CE115 + 1 GB DDR2 — SMP.
+    *
+    * The third memory architecture in the scaling study, and the one that
+    * separates two explanations that the SDR-vs-DDR3 comparison confounds. The
+    * DDR2 path shares `LruCacheCore` with DDR3 but replaces the whole backend
+    * (`CacheToDdr2Adapter` + Altera half-rate ALTMEMPHY, 256-bit local
+    * interface) where DDR3 uses `CacheToMigAdapter` + MIG. So if DDR2 also
+    * stalls at ~1.75x on eight cores, the limit is the shared cache; if it
+    * scales like SDR, the limit is specific to the MIG adapter.
+    *
+    * Scaling ratios are the comparable quantity here, not absolute rates: this
+    * is a different fabric (Cyclone IV E) at a different clock (75 MHz) from
+    * both Artix-7 boards, so n-core/1-core normalises away what per-MHz cannot.
+    */
+  def ae115fbDdr2Smp(n: Int) = {
+    val base = ae115fbDdr2
+    base.copy(systems = Seq(base.system.copy(name = s"ddr2smp$n", cpuCnt = n)))
+  }
+
   /** XC7A100T + DB_FPGA V5 — DDR3, full I/O (Ethernet + VGA + SD) */
   def xc7a100tDbFull = JopConfig(
     assembly = SystemAssembly.xc7a100tWithDbV5,
