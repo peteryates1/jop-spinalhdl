@@ -174,8 +174,37 @@ object CacheToDdr2AdapterSim extends App {
       issue(i, isWrite = false, 0, BigInt(0))
     }
 
-    // N writes + 1 masked write + N reads, each owed exactly one response
-    val totalRsp = N + 1 + N
+    // 4. INTERLEAVED reads and writes.
+    //
+    // Phases 1-3 issue all writes and then all reads, so a read and a write are
+    // never in flight together -- and that is precisely the case that breaks.
+    // The controller acknowledges a write the cycle it accepts it, while read
+    // data comes back tens of cycles later, so a write issued AFTER a read will
+    // have its acknowledgement ready first. The adapter has to hold it back:
+    // LruCacheCore matches responses to commands by ORDER, and one response out
+    // of place makes it install returned data into the wrong miss.
+    //
+    // The `expected` queue is in ISSUE order, so a write ack overtaking a read
+    // lands where `Some(value)` is expected and the mismatch is caught.
+    val interleaved = 80
+    for (i <- 0 until interleaved) {
+      if (i % 2 == 0) {
+        // read a line written in phase 1 -- data must be the golden value
+        val a = i % N
+        expected.enqueue(Some(golden(BigInt(a))))
+        issue(a, isWrite = false, 0, BigInt(0))
+      } else {
+        // write a line nothing reads back afterwards, so ordering is the only
+        // thing under test here
+        val a = N + i
+        expected.enqueue(None)
+        issue(a, isWrite = true, word(a), BigInt(0))
+      }
+    }
+
+    // N writes + 1 masked write + N reads + the interleaved phase, each owed
+    // exactly one response
+    val totalRsp = N + 1 + N + interleaved
 
     // drain
     var guard = 0
@@ -188,7 +217,8 @@ object CacheToDdr2AdapterSim extends App {
     if (got != totalRsp) fail(s"expected $totalRsp responses, got $got (data lost?)")
     if (mismatches != 0) fail(s"$mismatches data mismatches")
     if (returned != acceptedReads) fail("read responses lost")
-    println("PASS: CacheToDdr2Adapter — data, ordering, byte enables, per-command " +
-            "responses (writes included) and the FIFO bound all hold")
+    println("PASS: CacheToDdr2Adapter — data, ordering (including reads and writes " +
+            "in flight together), byte enables, per-command responses (writes " +
+            "included) and the FIFO bound all hold")
   }
 }

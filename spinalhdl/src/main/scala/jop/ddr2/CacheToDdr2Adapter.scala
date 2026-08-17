@@ -78,28 +78,34 @@ class CacheToDdr2Adapter(addrWidth: Int = 30,
   // cycle per memory command, against a DRAM access of tens.
   val cmd = io.cmd.m2sPipe()
 
-  // Responses are buffered because the controller cannot be stalled.
-  val rspFifo = StreamFifo(CacheRsp(dataWidth), rspDepth)
-  io.rsp << rspFifo.io.pop
+  // --- response ordering ---------------------------------------------------
+  // A write is acknowledged LOCALLY, the cycle the controller accepts it, while
+  // read data comes back tens of cycles later. With one command in flight that
+  // never mattered. Once misses overlap it does: an eviction issued after an
+  // earlier refill would have its ack overtake that refill's data, and
+  // LruCacheCore matches responses to commands BY ORDER, so it would install
+  // whatever was on `local_rdata` as the earlier miss's cache line. That is the
+  // AlteraSdramAdapter bug (ef36d99) exactly, in a second place.
+  //
+  // So responses are re-serialised into COMMAND order. `orderFifo` records what
+  // each accepted command was; `readFifo` buffers returned data, which is
+  // mandatory anyway because `local_rdata_valid` cannot be back-pressured. A
+  // write at the head answers immediately; a read at the head waits for its
+  // data, holding any later write's ack behind it.
+  val orderFifo = StreamFifo(Bool(), rspDepth)
+  val readFifo = StreamFifo(Bits(dataWidth bits), rspDepth)
 
   // Responses owed: commands accepted whose response has not yet been consumed.
-  // Counted all the way to the POP rather than to the FIFO push, because reads
-  // still in flight and responses already queued draw on the same rspDepth
-  // budget — so the push below can never be refused. (Counting only to the push
-  // bounds in-flight reads but not queued ones, which lets a stalled consumer
-  // overflow the FIFO and silently drop returned data.)
+  // Counted all the way to the POP, because data already queued and reads still
+  // in flight draw on the same rspDepth budget. This is what bounds BOTH FIFOs:
+  // each holds at most `owed` entries, so neither push can ever be refused.
   val owed = Reg(UInt(log2Up(rspDepth + 1) bits)) init (0)
   val room = owed < rspDepth
-
-  // A write acknowledgement that lost the race with read data waits here for
-  // one cycle. Read data arrives on the controller's schedule and cannot be
-  // held off, so it always wins the single FIFO push port.
-  val ackPending = RegInit(False)
 
   // --- command issue -------------------------------------------------------
   // Single-word accesses: one local word IS one cache line, so no bursting is
   // needed and local_size stays 1 with burstbegin on every command.
-  val canIssue = cmd.valid && io.local_init_done && room && !ackPending
+  val canIssue = cmd.valid && io.local_init_done && room
 
   io.local_address    := cmd.payload.addr(addrWidth - 1 downto wordShift)
   io.local_wdata      := cmd.payload.data
@@ -112,20 +118,23 @@ class CacheToDdr2Adapter(addrWidth: Int = 30,
   // One signal acknowledges both the command and its write data.
   cmd.ready := canIssue && io.local_ready
 
+  orderFifo.io.push.valid   := cmd.fire
+  orderFifo.io.push.payload := cmd.payload.write
+
+  readFifo.io.push.valid   := io.local_rdata_valid
+  readFifo.io.push.payload := io.local_rdata
+
   // EVERY command gets exactly one response, writes included. LruCacheCore
-  // issues an eviction as a memCmd WRITE and then waits in WAIT_EVICT_RSP for
-  // a memRsp, exactly as it waits after a refill; CacheToMigAdapter satisfies
-  // this by pushing a dummy response for each accepted write. Without it the
-  // first dirty eviction deadlocks the whole memory path — which is what hung
-  // the A-E115FB serial download at 8193 words, one word past the 32 KB cache.
-  val writeFire = cmd.fire && cmd.payload.write
-  val ackNow    = writeFire || ackPending
-
-  rspFifo.io.push.valid         := io.local_rdata_valid || ackNow
-  rspFifo.io.push.payload.data  := io.local_rdata   // ignored for a write ack
-  rspFifo.io.push.payload.error := False
-
-  ackPending := io.local_rdata_valid && ackNow
+  // records an order-queue entry per issued command -- an eviction as well as a
+  // refill -- and retires them in order, so a missing write acknowledgement
+  // deadlocks the memory path. That is what hung the A-E115FB serial download
+  // at 8193 words, one word past the 32 KB cache.
+  val headIsWrite = orderFifo.io.pop.payload
+  io.rsp.valid         := orderFifo.io.pop.valid && (headIsWrite || readFifo.io.pop.valid)
+  io.rsp.payload.data  := readFifo.io.pop.payload   // ignored for a write ack
+  io.rsp.payload.error := False
+  orderFifo.io.pop.ready := io.rsp.ready && (headIsWrite || readFifo.io.pop.valid)
+  readFifo.io.pop.ready  := io.rsp.fire && !headIsWrite
 
   when(cmd.fire && !io.rsp.fire) {
     owed := owed + 1
