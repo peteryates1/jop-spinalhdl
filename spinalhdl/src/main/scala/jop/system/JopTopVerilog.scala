@@ -90,6 +90,11 @@ object JopTopVerilog {
     case "ae115fbDdr2Smp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.ae115fbDdr2Smp(n)
+    // <cores> <mshrs>, e.g. "ae115fbDdr2SmpMshr 8 4"
+    case "ae115fbDdr2SmpMshr" =>
+      val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
+      val k = args.drop(2).headOption.map(_.toInt).getOrElse(4)
+      JopConfig.ae115fbDdr2SmpMshr(n, k)
     case "xc7a100tDbSerial" => JopConfig.xc7a100tDbSerial
     case "xc7a100tDbFull"   => JopConfig.xc7a100tDbFull
     case "xc7a100tDbSmp" =>

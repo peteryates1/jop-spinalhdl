@@ -21,22 +21,25 @@ import spinal.lib._
  */
 object CacheWidthElabTest extends App {
 
-  def gen(name: String, dataWidth: Int, addrWidth: Int) = {
+  def gen(name: String, dataWidth: Int, addrWidth: Int, mshrCount: Int = 1) = {
+    val idWidth = log2Up(mshrCount)
     SpinalVerilog(new Component {
       setDefinitionName(name)
       val cfg = CacheConfig(
         addrWidth = addrWidth,
         dataWidth = dataWidth,
         hasFill = true,
-        fillAddrWidth = addrWidth)
+        fillAddrWidth = addrWidth,
+        idWidth = idWidth,
+        mshrCount = mshrCount)
       val cache = new LruCacheCore(cfg)
       val bridge = new BmbCacheBridge(
         jop.memory.JopMemoryConfig(addressWidth = addrWidth - 2,
           mainMemSize = BigInt(1) << addrWidth).bmbParameter,
-        addrWidth, dataWidth)
+        addrWidth, dataWidth, mshrCount)
 
       val io = new Bundle {
-        val frontend = slave(CacheFrontend(addrWidth, dataWidth))
+        val frontend = slave(CacheFrontend(addrWidth, dataWidth, idWidth))
         val memCmd   = master(Stream(CacheReq(addrWidth, dataWidth)))
         val memRsp   = slave(Stream(CacheRsp(dataWidth)))
         val fill     = slave(jop.memory.MemFill(addrWidth))
@@ -49,12 +52,18 @@ object CacheWidthElabTest extends App {
       io.busy := cache.io.busy
       bridge.setName("unusedBridge")
     })
-    println(s"[ok] $name elaborated: dataWidth=$dataWidth addrWidth=$addrWidth")
+    println(s"[ok] $name elaborated: dataWidth=$dataWidth addrWidth=$addrWidth mshr=$mshrCount")
   }
 
   // 1 GB (30-bit byte address) is the A-E115FB DDR2 target.
   gen("CacheW128", 128, 30)
   gen("CacheW256", 256, 30)
   gen("CacheW512", 512, 30)
-  println("PASS: LruCacheCore elaborates at 128/256/512-bit line widths")
+  // The MSHR file scales the per-entry line-width registers, and the id width
+  // has to agree across the bridge, the frontend bundle and the cache — a
+  // mismatch is an elaboration error that `compile` alone will never surface.
+  gen("CacheW256Mshr2", 256, 30, mshrCount = 2)
+  gen("CacheW256Mshr4", 256, 30, mshrCount = 4)
+  gen("CacheW128Mshr8", 128, 30, mshrCount = 8)
+  println("PASS: LruCacheCore elaborates at 128/256/512-bit line widths, 1/2/4/8 MSHRs")
 }

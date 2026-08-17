@@ -14,6 +14,13 @@ import java.io.PrintWriter
  */
 object JopDcuCacheSim extends App {
 
+  // Optional MSHR count, e.g. `Test/runMain jop.system.JopDcuCacheSim 4`.
+  // Running the whole JVM suite through a non-blocking cache is the broadest
+  // correctness check there is for the MSHR file: 66 tests' worth of real
+  // access patterns, with hits served under outstanding misses and refills
+  // completing out of order. Default 1 keeps the CI job on the blocking path.
+  val mshrCount = args.headOption.map(_.toInt).getOrElse(1)
+
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
   val romFilePath = "asm/generated/mem_rom.dat"
   val ramFilePath = "asm/generated/mem_ram.dat"
@@ -36,7 +43,8 @@ object JopDcuCacheSim extends App {
   // Zero latency: tests pure cache logic (hit/miss/evict/writeback) without DDR3 timing overhead
   SimConfig
     .compile(JopCoreWithCacheTestHarness(romData, ramData, mainMemData,
-      readLatency = 0, writeLatency = 0, coreConfigOverride = Some(fullCuConfig)))
+      readLatency = 0, writeLatency = 0, coreConfigOverride = Some(fullCuConfig),
+      mshrCount = mshrCount))
     .doSim { dut =>
       val log = new PrintWriter(logFilePath)
       var uartOutput = new StringBuilder

@@ -99,7 +99,11 @@ case class JopCoreWithCacheTestHarness(
   writeLatency: Int = 3,
   coreConfigOverride: Option[JopCoreConfig] = None,
   hasFill: Boolean = false,
-  hasCard: Boolean = false
+  hasCard: Boolean = false,
+  // Misses allowed in flight. 1 is the blocking behaviour every existing caller
+  // gets; above 1 the bridge widens to the same number of outstanding requests
+  // and responses may complete out of order.
+  mshrCount: Int = 1
 ) extends Component {
 
   // Match DDR3 config: addressWidth=26 (28-bit BMB byte addr), burstLen=8
@@ -162,11 +166,13 @@ case class JopCoreWithCacheTestHarness(
   // Cache Memory Path (matching DDR3 top-level architecture)
   // ==========================================================================
 
-  val bmbBridge = new BmbCacheBridge(config.memConfig.bmbParameter, cacheAddrWidth, cacheDataWidth)
+  val bmbBridge = new BmbCacheBridge(config.memConfig.bmbParameter, cacheAddrWidth,
+    cacheDataWidth, mshrCount)
   val cache = new LruCacheCore(CacheConfig(
     addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth,
     hasFill = hasFill,
-    fillAddrWidth = if (hasFill) config.memConfig.addressWidth else 0))
+    fillAddrWidth = if (hasFill) config.memConfig.addressWidth else 0,
+    idWidth = log2Up(mshrCount), mshrCount = mshrCount))
 
   // GC block-fill: JopCore fill sideband -> cache streaming write-through
   jopCore.io.fill.foreach { f => f <> cache.io.fill.get }

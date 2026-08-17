@@ -60,7 +60,10 @@ case class JopSmpDdr3TestHarness(
 
     // Cache/adapter debug
     val debugMemState     = out UInt(5 bits)
-    val debugCacheState   = out UInt(3 bits)
+    // 4 bits, matching LruCacheCore.io.debugState. This harness declared 3 and
+    // assigned without a resize, so it has not elaborated since the cache grew
+    // past 8 states — it is not in the CI sim matrix, so nothing caught it.
+    val debugCacheState   = out UInt(4 bits)
     val debugAdapterState = out UInt(3 bits)
   }
 

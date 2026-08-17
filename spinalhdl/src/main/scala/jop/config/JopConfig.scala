@@ -1104,6 +1104,29 @@ object JopConfig {
     base.copy(systems = Seq(base.system.copy(name = s"ddr2smp$n", cpuCnt = n)))
   }
 
+  /** A-E115FB DDR2 SMP with a NON-BLOCKING L2 — `mshr` misses in flight.
+    *
+    * The measurement vehicle for docs/architecture/nonblocking-cache-mshr-plan.md.
+    * `ae115fbDdr2Smp` above is the blocking baseline that measured the 1.81x
+    * eight-core ceiling; this is the same system with `l2MshrCount` raised, so
+    * the pair differ in exactly the thing under test. Run `JbeScale` on both.
+    *
+    * Two cautions before reading a number off this. The MSHR file adds logic to
+    * the cmdFifo command path, which is already where the 4- and 8-core
+    * critical paths terminate, so check WNS on the first fit rather than at the
+    * end. And the board cannot give a timing-clean 8-core build at any legal
+    * DDR2 clock regardless — JbeScale's CHECK makes a corner-violating
+    * bitstream acceptable for measurement, but not shippable.
+    */
+  def ae115fbDdr2SmpMshr(n: Int, mshr: Int = 4) = {
+    val base = ae115fbDdr2Smp(n)
+    val sys = base.system
+    base.copy(systems = Seq(sys.copy(
+      name = s"ddr2smp${n}mshr$mshr",
+      coreConfig = sys.coreConfig.copy(
+        memConfig = sys.coreConfig.memConfig.copy(l2MshrCount = mshr)))))
+  }
+
   /** XC7A100T + DB_FPGA V5 — DDR3, full I/O (Ethernet + VGA + SD) */
   def xc7a100tDbFull = JopConfig(
     assembly = SystemAssembly.xc7a100tWithDbV5,

@@ -92,12 +92,16 @@ object LruCacheCoreUnitSim extends App {
 
         dut.io.frontend.req.valid #= false
 
-        // Now drive the memory interface until we get a frontend response
+        // Now drive the memory interface until we get a frontend response.
+        //
+        // The model QUEUES outstanding commands. It used to hold exactly one,
+        // which was enough only while the cache blocked in WAIT_EVICT_RSP: it
+        // now issues an eviction and its refill back to back and is owed a
+        // response to each, so a single slot silently dropped the first and the
+        // cache waited forever for a response the model had overwritten.
         var gotResponse = false
         var responseData = BigInt(0)
-        var pendingMemRsp = false
-        var pendingMemRspData = BigInt(0)
-        var pendingMemRspIsWrite = false
+        val memRspQueue = scala.collection.mutable.Queue[BigInt]()
         timeout = 500
 
         while (!gotResponse && timeout > 0) {
@@ -120,30 +124,26 @@ object LruCacheCoreUnitSim extends App {
                 }
               }
               memory(wordAddr) = merged & lineMask
-              pendingMemRsp = true
-              pendingMemRspData = BigInt(0)
-              pendingMemRspIsWrite = true
+              // An eviction is acknowledged too: one response per command.
+              memRspQueue.enqueue(BigInt(0))
             } else {
               // Refill read
-              pendingMemRsp = true
-              pendingMemRspData = memory.getOrElse(wordAddr, BigInt(0))
-              pendingMemRspIsWrite = false
+              memRspQueue.enqueue(memory.getOrElse(wordAddr, BigInt(0)))
             }
           }
 
-          // Drive memRsp if we have a pending response
-          if (pendingMemRsp) {
+          // Offer the oldest outstanding response; responses are in order.
+          if (memRspQueue.nonEmpty) {
             dut.io.memRsp.valid #= true
-            dut.io.memRsp.payload.data #= pendingMemRspData
+            dut.io.memRsp.payload.data #= memRspQueue.head
             dut.io.memRsp.payload.error #= false
           } else {
             dut.io.memRsp.valid #= false
           }
 
-          // Check if memRsp was accepted (will be evaluated next edge)
-          if (pendingMemRsp && dut.io.memRsp.valid.toBoolean && dut.io.memRsp.ready.toBoolean) {
-            pendingMemRsp = false
-          }
+          // memRsp.ready is a function of the cache's own state, not of
+          // memRsp.valid, so reading it before the edge gives this cycle's value.
+          val memRspAccepted = memRspQueue.nonEmpty && dut.io.memRsp.ready.toBoolean
 
           // Check for frontend response
           if (dut.io.frontend.rsp.valid.toBoolean && dut.io.frontend.rsp.ready.toBoolean) {
@@ -152,6 +152,7 @@ object LruCacheCoreUnitSim extends App {
           }
 
           tick()
+          if (memRspAccepted) memRspQueue.dequeue()
           timeout -= 1
         }
 

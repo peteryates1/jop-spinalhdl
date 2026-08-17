@@ -1,6 +1,8 @@
 # Non-blocking L2: MSHR plan for `LruCacheCore`
 
-**Status**: de-risking complete, implementation not started (2026-08-17).
+**Status**: implemented and verified in simulation (2026-08-17). Off by default
+(`JopMemoryConfig.l2MshrCount = 1`); **no hardware measurement yet**. See
+[What was built](#what-was-built) and [What is left](#what-is-left).
 
 ## Why
 
@@ -51,9 +53,20 @@ is ~44 MB/s against the 1.2 GB/s the DDR2 exerciser measured — **~3.6 %**.
 
 ## What is already fine (verified, do not change)
 
-- **Both adapters.** `CacheToDdr2Adapter` already supports `rspDepth = 8`
-  outstanding reads and exposes `debugOutstanding`; `CacheToMigAdapter` likewise
-  pipelines. One response per command, in order, including writes.
+- **`CacheToDdr2Adapter`.** Already supports `rspDepth = 8` outstanding reads and
+  exposes `debugOutstanding`. One response per command, in order, including
+  writes.
+
+  **CORRECTION (2026-08-17):** the claim that `CacheToMigAdapter` "likewise
+  pipelines" was wrong, and it matters. It pipelines *writes* — issued from
+  `IDLE` at one per cycle — but **serialises reads**: `IDLE → ISSUE_READ →
+  WAIT_READ → IDLE`, latching a single `activeCmd` and waiting for
+  `app_rd_data_valid` before looking at the next command
+  (`CacheToMigAdapter.scala:105-144`). So on the DDR3/MIG boards an MSHR file
+  buys nothing until that adapter is made multi-outstanding too. DDR2 is the
+  platform where this pays off today, which is also where the plan's target
+  board is. Nothing was broken by the assumption — the DDR3 path is simply left
+  at `mshrCount = 1`.
 - **`BmbArbiter`.** A thin wrapper: `StreamArbiter` on cmd appending the chosen
   input to `source`, and a **purely combinational** rsp demux
   (`memory_rspSel = io_output_rsp_payload_fragment_source`). No FIFO, no pending
@@ -137,3 +150,144 @@ read/write turnaround, `local_ready` held high).
   `frontend.req.ready` and reported PASS while deadlocked, because the cache has a
   4-deep input FIFO that keeps accepting after the pipeline behind it stopped.
   **Measure completions, not acceptances** — doubly true once misses overlap.
+
+## What was built
+
+Three commits, in the plan's order. Every number below is simulation.
+
+### 1. `CacheFrontend` request id
+
+`CacheReq`/`CacheRsp` take an optional `idWidth`. At 0 the field is **absent
+entirely**, so both backend adapters — strictly in-order, single-tagged — keep
+exactly the bundle they had, and `memCmd`/`memRsp` stay id-less however wide the
+frontend tag gets. `idValue`/`driveId` are the accessors that also compile at 0.
+
+### 2. `BmbCacheBridge` — N outstanding
+
+The single `pendingRsp`/`pendingSource`/`pendingContext`/`pendingLaneSelect`
+became a slot table indexed by id. Response return moved **out** of the
+command-acceptance tree, because returning a response and accepting the next
+command in the same cycle is the entire point. The burst-read path is still
+sequential and may now only start once the single-beat slots have drained: it
+matches responses to beats by counting, not by id.
+
+`BmbCacheBridgeOutstandingSim`, against a perfectly-pipelined cache stub with
+20-30 cycle random latency (so completions genuinely reorder), 8 BMB sources:
+
+| slots | cycles/req | speedup |
+|---|---|---|
+| 1 | 27.21 | 1.00× |
+| 2 | 13.66 | 1.99× |
+| 4 | 6.73 | 4.05× |
+| 8 | 3.65 | 7.46× |
+
+### 3. `LruCacheCore` — the MSHR file
+
+The miss FSM no longer waits on memory: a miss allocates an MSHR, issues the
+eviction and refill, and returns to `IDLE`. `WAIT_EVICT_RSP` and
+`WAIT_REFILL_RSP` are gone, replaced by one `RSP_FILL` state that applies a
+returning line and answers its waiter.
+
+**Everything funnels through `IDLE`, response handling included.** That is what
+made it tractable: a lookup is only ever in flight in `TAG_COMPARE`/`CHECK_HIT`,
+and `RSP_FILL` is only entered from `IDLE` (or from a stalled `ISSUE_*`, where
+the lookup has already finished), so a fill can never corrupt a tag comparison
+that is mid-air. The whole `lookupStale` hazard class the plan implied simply
+does not arise.
+
+Design decisions worth recording:
+
+- **One in-flight miss per set**, enforced by replaying any request — hit or
+  miss — whose index matches a live MSHR. This is the plan's "simplest correct
+  policy", and it does more than avoid duplicate victim selection: a *write*
+  that hits the way an outstanding fill is about to overwrite would otherwise be
+  silently lost. It also keeps each MSHR's saved tag/dirty words from going
+  stale, and it makes **secondary-hit merging an optimisation rather than a
+  correctness requirement** — so that bullet was deliberately not implemented.
+- **Evictions are fire-and-forget.** An eviction and its own refill are
+  different addresses (the tags differ, or it would not have been a miss), so
+  nothing has to wait. The old `WAIT_EVICT_RSP` was an artifact of the serial
+  FSM, not an ordering requirement: a later request for the *evicted* address
+  still depends on the backend not floating a read past a queued write to the
+  same address, but that was equally true before, when a write response only
+  meant the controller had accepted it.
+- **Ids are the licence to reorder.** At `idWidth = 0` the cache refuses a new
+  request while any memory work is outstanding, so every existing untagged
+  master keeps one-at-a-time, in-order responses — bit-for-bit its old contract.
+  `mshrCount > 1` is rejected at elaboration without an id.
+- **Order queue records evictions as well as refills**, since both consume a
+  response and nothing in the payload distinguishes them. `CHECK_HIT` reserves
+  two slots before committing to a miss, so `ISSUE_*` can never block on a full
+  queue — which would wedge the FSM out of the only state that drains it.
+- A stalled `ISSUE_*` can divert to `RSP_FILL` and resume, so a backend whose
+  queue is full cannot deadlock against a cache that will not drain it.
+
+`LruCacheCoreMshrSim`, all-miss line walk, backend latency 40 cycles pipelined:
+
+| MSHRs | cycles/req | speedup |
+|---|---|---|
+| 1 | 48.01 | 1.00× |
+| 2 | 24.06 | 2.00× |
+| 4 | 12.09 | 3.97× |
+| 8 | 6.72 | 7.14× |
+
+The 6.72 floor at 8 is the FSM occupancy the plan predicted (~6 cycles per
+miss), so `min(k, latency/occupancy)` is confirmed as the model: at 40 cycles of
+latency the knee is around k ≈ 7, and 8 duly returns 7.14× rather than 8×.
+
+Two more phases in the same sim: mixed reads and partial/full-line writes with
+lines partitioned per id (9.76 cycles/req, write-back through eviction verified
+under overlap), and every id aimed at **one set** with different tags, which is
+exactly what the design refuses to serve concurrently — 36.72 cycles/req, i.e.
+it serialises as intended, with no lost or duplicated response.
+
+### Two bugs found on the way
+
+- **`memRsp.ready` must not depend on `memRsp.valid`.** The first `RSP_FILL`
+  drove ready inside `when(memRsp.valid)`. The old refill path drove it
+  unconditionally within its wait state, so nothing downstream had ever had to
+  cope with a combinational valid→ready path; a one-cycle-wide observer in
+  `LruCacheCoreUnitSim` missed the handshake entirely and the sim hung.
+- **`LruCacheCoreUnitSim`'s memory model held exactly one outstanding command.**
+  Enough while the cache blocked in `WAIT_EVICT_RSP`; once the eviction and its
+  refill are issued back to back the model silently dropped the first and the
+  cache waited forever for a response that had been overwritten. Now a queue.
+
+Both are the same shape as the trap the plan already flagged: a testbench that
+was only ever correct because the DUT was serial.
+
+## Verification status
+
+| | |
+|---|---|
+| `BmbCacheBridgeFormal` | 8/8 — full slot table blocks, a slot is freed only by a response carrying its id, a burst never overlaps single-beat work, plus one test pinning `outstanding = 1` |
+| `LruCacheCoreFormal` | 12/12 — every issued command is recorded in the order queue and no response is retired without its entry; `ISSUE_*` never stalls on the queue; an MSHR is freed only by the refill naming it; **no two live MSHRs share a set**; untagged frontends take one request at a time; responsive memory and erroring memory both drain |
+| `LruCacheCoreUnitSim` | 7/7 at 32, 128 and 256-bit lines |
+| `CacheDdr2EvictSim` | 200 line writes through 184 evictions, 0 mismatches, backend fill retired |
+| `LruCacheCoreTest`, `CacheWidthElabTest`, `Ddr3WidthElabTest` | pass; elaboration now covers 1/2/4/8 MSHRs |
+| `JopDcuCacheSim` | 59/59 JVM tests through the DDR3 cache path |
+| `JopDdr3FillSim` | block fill end-to-end |
+
+A formal property deliberately *not* asserted: `memRsp.valid` implies
+`orderFifo.pop.valid`. It is false, and harmlessly so — the queue has
+push-to-pop latency, so a response can arrive a cycle or two before its entry
+surfaces. The machine waits in `IDLE` (still serving hits) rather than in
+`RSP_FILL`, which also means a response with no entry at all can never wedge it.
+
+## What is left
+
+1. **Hardware.** Nothing here has been on a board. Build
+   `ae115fbDdr2SmpMshr <cores> <mshrs>` against the `ae115fbDdr2Smp` baseline and
+   run `JbeScale` on both — the two presets differ in exactly `l2MshrCount`.
+   **Watch WNS on the first fit**, not at the end: the MSHR adds logic to the
+   `cmdFifo` command path, which is already where the 4- and 8-core critical
+   paths terminate. The 8-core case cannot be timing-clean on this board at any
+   legal DDR2 clock; `JbeScale`'s `CHECK` makes a corner-violating bitstream
+   acceptable for measurement but not for shipping.
+2. **`CacheToMigAdapter` reads** are serial (see the correction above), so the
+   DDR3 boards need that fixed before `mshrCount > 1` is worth setting there.
+3. **Secondary-hit merging** — currently a request to a line already being
+   filled is replayed, not attached. Pure throughput, no correctness impact.
+4. **Register cost** is real: each MSHR holds a whole cache line of write data
+   (256 bits on DDR2) plus tag and dirty words. Four entries is roughly 1.5 k
+   flip-flops on the A-E115FB. Worth checking against the fit report.

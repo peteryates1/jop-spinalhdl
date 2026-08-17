@@ -420,7 +420,8 @@ case class JopTop(
 
       if (isDdr3) {
         val ddr3Path = MemoryControllerFactory.createDdr3Path(
-          cluster.bmbParameter, hasFill = cluster.io.fill.isDefined)
+          cluster.bmbParameter, hasFill = cluster.io.fill.isDefined,
+          mshrCount = coreConfigs.head.memConfig.l2MshrCount)
         ddr3Path.bmbBridge.io.bmb <> cluster.io.bmb
         // GC block-fill now streams write-through zeros inside the cache.
         cluster.io.fill.foreach { f => f <> ddr3Path.cache.io.fill.get }
@@ -429,7 +430,8 @@ case class JopTop(
 
       if (isDdr2) {
         val ddr2Path = MemoryControllerFactory.createDdr2Path(
-          cluster.bmbParameter, hasFill = cluster.io.fill.isDefined)
+          cluster.bmbParameter, hasFill = cluster.io.fill.isDefined,
+          mshrCount = coreConfigs.head.memConfig.l2MshrCount)
         ddr2Path.bmbBridge.io.bmb <> cluster.io.bmb
         cluster.io.fill.foreach { f => f <> ddr2Path.cache.io.fill.get }
         MemoryControllerFactory.wireDdr2(ddr2Path.adapter, ddr2Ctl)
@@ -682,7 +684,8 @@ case class JopTop(
 
       // DDR3 memory path
       val ddr3Path = MemoryControllerFactory.createDdr3Path(
-        cluster.bmbParameter, hasFill = cluster.io.fill.isDefined)
+        cluster.bmbParameter, hasFill = cluster.io.fill.isDefined,
+        mshrCount = coreConfigs0.head.memConfig.l2MshrCount)
       ddr3Path.bmbBridge.io.bmb <> cluster.io.bmb
       // GC block-fill now streams write-through zeros inside the cache.
       cluster.io.fill.foreach { f => f <> ddr3Path.cache.io.fill.get }

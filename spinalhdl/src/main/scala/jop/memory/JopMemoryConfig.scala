@@ -40,8 +40,17 @@ case class JopMemoryConfig(
                                          // (SDR); when false the controller uses its own
                                          // per-word ZERO loop (BRAM, DDR3-for-now)
   hasCardTable: Boolean = false,        // HW card-marking write barrier (generational GC, Stage 1)
-  cardTableBudgetBytes: Int = 0         // BRAM bytes for the card table; card size derived from
+  cardTableBudgetBytes: Int = 0,        // BRAM bytes for the card table; card size derived from
                                          // (mainMemSize, this). See docs/gc/stage1-card-table-design.md
+  l2MshrCount: Int = 1                  // DRAM L2 misses allowed in flight at once. 1 = the old
+                                         // behaviour, one miss at a time, which is the ~1.8x
+                                         // multicore DRAM scaling ceiling. Raising it also widens
+                                         // BmbCacheBridge to the same number of outstanding
+                                         // requests. Costs registers per entry (a whole cache line
+                                         // of write data each) and adds logic to the cmdFifo path
+                                         // that already terminates the 4/8-core critical path, so
+                                         // check WNS on the first build.
+                                         // See docs/architecture/nonblocking-cache-mshr-plan.md
 ) {
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(addressWidth >= 16 && addressWidth <= 32, "Address width must be 16-32 bits (30 = 1GB)")
@@ -49,6 +58,8 @@ case class JopMemoryConfig(
     "burstLen must be 0 (no burst) or a power of 2 >= 2")
   require(!hasCardTable || cardTableBudgetBytes > 0, "hasCardTable requires cardTableBudgetBytes > 0")
   require(!hasCardTable || cardCount >= 32, "card table too small (need >= 32 cards)")
+  require(l2MshrCount >= 1 && (l2MshrCount & (l2MshrCount - 1)) == 0,
+    "l2MshrCount must be a power of two (it sizes the request-id space)")
 
   /** Bytes per word */
   def byteCount: Int = dataWidth / 8

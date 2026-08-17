@@ -177,18 +177,24 @@ object MemoryControllerFactory {
     cacheAddrWidth: Int = -1,   // -1 = derive from the device (byte addr = bmb access − 2)
     cacheDataWidth: Int = 128,
     cacheSetCount: Int = 512,
-    hasFill: Boolean = false
+    hasFill: Boolean = false,
+    mshrCount: Int = 1
   ): Ddr3MemCtrl = {
     // Physical byte-address width the cache/adapter/MIG see (strips the 2 type
     // bits). Derived from the memory device so 256 MB (28) and 1 GB (30) both work.
     val caw = if (cacheAddrWidth > 0) cacheAddrWidth else bmbParameter.access.addressWidth - 2
-    val bmbBridge = new BmbCacheBridge(bmbParameter, caw, cacheDataWidth)
+    // NOTE: CacheToMigAdapter serialises READS — ISSUE_READ -> WAIT_READ -> IDLE,
+    // one at a time — so mshrCount > 1 will not speed this path up until that
+    // adapter is made multi-outstanding too. It pipelines writes, not reads.
+    val bmbBridge = new BmbCacheBridge(bmbParameter, caw, cacheDataWidth, mshrCount)
     val cache = new LruCacheCore(CacheConfig(
       addrWidth = caw,
       dataWidth = cacheDataWidth,
       setCount = cacheSetCount,
       hasFill = hasFill,
-      fillAddrWidth = if (hasFill) bmbParameter.access.addressWidth - 2 else 0
+      fillAddrWidth = if (hasFill) bmbParameter.access.addressWidth - 2 else 0,
+      idWidth = spinal.core.log2Up(mshrCount),
+      mshrCount = mshrCount
     ))
     val adapter = new CacheToMigAdapter(caw)
 
@@ -234,17 +240,24 @@ object MemoryControllerFactory {
     cacheAddrWidth: Int = -1,   // -1 = derive from the device (byte addr = bmb access - 2)
     cacheDataWidth: Int = 256,
     cacheSetCount: Int = 256,
-    hasFill: Boolean = false
+    hasFill: Boolean = false,
+    mshrCount: Int = 1
   ): Ddr2MemCtrl = {
     val caw = if (cacheAddrWidth > 0) cacheAddrWidth else bmbParameter.access.addressWidth - 2
-    val bmbBridge = new BmbCacheBridge(bmbParameter, caw, cacheDataWidth)
+    val bmbBridge = new BmbCacheBridge(bmbParameter, caw, cacheDataWidth, mshrCount)
     val cache = new LruCacheCore(CacheConfig(
       addrWidth = caw,
       dataWidth = cacheDataWidth,
       setCount = cacheSetCount,
       hasFill = hasFill,
-      fillAddrWidth = if (hasFill) bmbParameter.access.addressWidth - 2 else 0
+      fillAddrWidth = if (hasFill) bmbParameter.access.addressWidth - 2 else 0,
+      idWidth = spinal.core.log2Up(mshrCount),
+      mshrCount = mshrCount
     ))
+    // rspDepth caps reads in flight at the backend; the cache can have up to
+    // 2 * mshrCount commands outstanding (an eviction and a refill each).
+    require(2 * mshrCount <= 8,
+      s"mshrCount $mshrCount exceeds CacheToDdr2Adapter's 8-deep response FIFO")
     val adapter = new jop.ddr2.CacheToDdr2Adapter(caw, cacheDataWidth)
 
     cache.io.frontend.req << bmbBridge.io.cache.req
