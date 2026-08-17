@@ -275,6 +275,47 @@ push-to-pop latency, so a response can arrive a cycle or two before its entry
 surfaces. The machine waits in `IDLE` (still serving hits) rather than in
 `RSP_FILL`, which also means a response with no entry at all can never wedge it.
 
+## The bug the hardware run would have hit
+
+Found while preparing the A-E115FB build, and worth stating separately because
+the plan's own risk list pointed straight at it without anyone noticing it
+applied to live code.
+
+`CacheToDdr2Adapter` acknowledges a write **locally**, the cycle the controller
+accepts it — ALTMEMPHY returns nothing for a write, so the adapter has to
+manufacture the response `LruCacheCore` requires. Read data comes back tens of
+cycles later. With one command in flight that asymmetry is invisible, which is
+why it sat there through every previous test.
+
+Once misses overlap it corrupts data. An eviction issued after an earlier refill
+has its acknowledgement ready first; `LruCacheCore` matches responses to
+commands **by order**; so the earlier miss is filled with whatever happened to
+be on `local_rdata`. Not a hang — a wrong cache line. Precisely the
+`AlteraSdramAdapter` shape (`ef36d99`).
+
+Fixed by re-serialising adapter responses into command order (an order queue for
+what each command was, a data queue for returned reads, a write at the head
+answering immediately and a read at the head holding later acks behind it).
+
+**Why the existing tests all passed:**
+
+| test | why it missed this |
+|---|---|
+| `CacheToDdr2AdapterSim` | issued all writes, then all reads — never both in flight |
+| `LruCacheCoreMshrSim` | backend model gives reads and writes the SAME latency, so its responses are always in command order |
+| `CacheDdr2EvictSim` | drives the cache one request at a time |
+
+Both gaps are now closed: an interleaved phase in `CacheToDdr2AdapterSim`, and a
+new `CacheDdr2MshrSim` that composes the non-blocking cache with the **real**
+adapter against a controller model that reproduces the asymmetry. Against the
+old adapter the latter gives **0 errors at 1 MSHR and 120 wrong reads at 2** —
+the cleanest possible statement of why one-outstanding hid it. With the fix, 0
+errors and 1.00 / 1.96 / 3.36× at 1 / 2 / 4 MSHRs through the full DDR2 path.
+
+**Generalisation worth carrying:** a backend model with uniform latency cannot
+find response-ordering bugs. If the real thing answers some commands early,
+model that, or the ordering logic is untested.
+
 ## What is left
 
 1. **Hardware.** Nothing here has been on a board. Build
