@@ -25,7 +25,10 @@ case class JopSmpDdr3TestHarness(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
   mainMemInit: Seq[BigInt],
-  useCmpSync: Boolean = false
+  useCmpSync: Boolean = false,
+  // Misses allowed in flight. 1 is the blocking behaviour; above 1 the bridge
+  // widens to match and CacheToMigAdapter is sized for two commands per miss.
+  mshrCount: Int = 1
 ) extends Component {
   require(cpuCnt >= 1)
 
@@ -112,9 +115,10 @@ case class JopSmpDdr3TestHarness(
   //   -> CacheToMigAdapter -> MigBehavioralModel
   // ====================================================================
 
-  val bmbBridge = new BmbCacheBridge(cluster.bmbParameter, cacheAddrWidth, cacheDataWidth)
-  val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth, setCount = 512))
-  val adapter = new CacheToMigAdapter
+  val bmbBridge = new BmbCacheBridge(cluster.bmbParameter, cacheAddrWidth, cacheDataWidth, mshrCount)
+  val cache = new LruCacheCore(CacheConfig(addrWidth = cacheAddrWidth, dataWidth = cacheDataWidth,
+    setCount = 512, idWidth = log2Up(mshrCount), mshrCount = mshrCount))
+  val adapter = new CacheToMigAdapter(28, maxOutstanding = (2 * mshrCount) max 2)
   val migModel = MigBehavioralModel(
     addrWidth = 28,
     dataWidth = 128,
@@ -206,6 +210,8 @@ object JopSmpDdr3NCoreHelloWorldSim extends App {
   val positionalArgs = args.filterNot(_.startsWith("--"))
   val cpuCnt = positionalArgs.headOption.map(_.toInt).getOrElse(2)
   val useCmpSync = args.contains("--cmpsync")
+  // Optional second positional: MSHR count, e.g. "... 2 4" for 2 cores, 4 MSHRs.
+  val mshrCount = positionalArgs.drop(1).headOption.map(_.toInt).getOrElse(1)
   val lockType = if (useCmpSync) "CmpSync" else "IHLU"
 
   val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
@@ -220,14 +226,15 @@ object JopSmpDdr3NCoreHelloWorldSim extends App {
   println(s"Loaded ROM: ${romData.length} entries")
   println(s"Loaded RAM: ${ramData.length} entries")
   println(s"Loaded main memory: ${mainMemData.length} entries (${mainMemData.count(_ != BigInt(0))} non-zero)")
-  println(s"CPU count: $cpuCnt, Lock: $lockType")
+  println(s"CPU count: $cpuCnt, Lock: $lockType, MSHRs: $mshrCount")
   println(s"Log file: $logFilePath")
 
   val run = TestHistory.startRun(s"JopSmpDdr3NCoreHelloWorldSim-$lockType", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
   SimConfig
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
-    .compile(JopSmpDdr3TestHarness(cpuCnt, romData, ramData, mainMemData, useCmpSync = useCmpSync))
+    .compile(JopSmpDdr3TestHarness(cpuCnt, romData, ramData, mainMemData,
+      useCmpSync = useCmpSync, mshrCount = mshrCount))
     .doSim { dut =>
       val log = new PrintWriter(logFilePath)
       var uartOutput = new StringBuilder

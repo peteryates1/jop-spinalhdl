@@ -183,9 +183,6 @@ object MemoryControllerFactory {
     // Physical byte-address width the cache/adapter/MIG see (strips the 2 type
     // bits). Derived from the memory device so 256 MB (28) and 1 GB (30) both work.
     val caw = if (cacheAddrWidth > 0) cacheAddrWidth else bmbParameter.access.addressWidth - 2
-    // NOTE: CacheToMigAdapter serialises READS — ISSUE_READ -> WAIT_READ -> IDLE,
-    // one at a time — so mshrCount > 1 will not speed this path up until that
-    // adapter is made multi-outstanding too. It pipelines writes, not reads.
     val bmbBridge = new BmbCacheBridge(bmbParameter, caw, cacheDataWidth, mshrCount)
     val cache = new LruCacheCore(CacheConfig(
       addrWidth = caw,
@@ -196,7 +193,9 @@ object MemoryControllerFactory {
       idWidth = spinal.core.log2Up(mshrCount),
       mshrCount = mshrCount
     ))
-    val adapter = new CacheToMigAdapter(caw)
+    // Each miss can put an eviction AND a refill in flight, so the adapter must
+    // be able to hold two commands per MSHR or it becomes the limit instead.
+    val adapter = new CacheToMigAdapter(caw, maxOutstanding = (2 * mshrCount) max 2)
 
     // Wire BmbCacheBridge -> LruCacheCore
     cache.io.frontend.req << bmbBridge.io.cache.req

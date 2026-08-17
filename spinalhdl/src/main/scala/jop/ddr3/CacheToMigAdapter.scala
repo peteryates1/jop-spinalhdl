@@ -3,11 +3,44 @@ package jop.ddr3
 import spinal.core._
 import spinal.lib._
 
-object CacheToMigAdapterState extends SpinalEnum {
-  val IDLE, ISSUE_READ, WAIT_READ = newElement()
-}
+/**
+ * Bridges LruCacheCore's memCmd/memRsp to the Xilinx MIG 7-series user interface.
+ *
+ * Multi-outstanding. The previous version pipelined writes (issued from IDLE at
+ * one per cycle) but serialised READS through `IDLE -> ISSUE_READ -> WAIT_READ`,
+ * latching a single command and waiting for `app_rd_data_valid` before looking
+ * at the next one. That made it, not the cache, the limit on the DDR3 boards
+ * once `LruCacheCore` gained an MSHR file: the cache would offer concurrency the
+ * adapter refused. There is no state machine now — commands issue as fast as the
+ * MIG accepts them, bounded only by `maxOutstanding`.
+ *
+ * TWO MIG PROPERTIES THIS RESTS ON:
+ *
+ *  1. **Ordering is STRICT** on every board here (`<Ordering>Strict</Ordering>`
+ *     in each `mig.prj`), so the controller does not reorder and read data comes
+ *     back in the order the reads were issued. That is what lets responses be
+ *     matched by position instead of by tag — the UI provides no tag.
+ *  2. **`app_rd_data_valid` is a one-cycle pulse that cannot be back-pressured.**
+ *     Returned data must be captured unconditionally, so it goes straight into
+ *     `readFifo`, whose depth is what `maxOutstanding` is really bounding.
+ *
+ * THE ORDERING TRAP, which is why the structure looks like it does: a write is
+ * acknowledged LOCALLY the cycle the MIG accepts it, because the UI returns
+ * nothing for a write, while read data arrives tens of cycles later. Push both
+ * into one response stream and a write issued after a read will answer first —
+ * and `LruCacheCore` matches responses to commands BY ORDER, so it would install
+ * the wrong data into the wrong miss. The old adapter was safe only by accident:
+ * a read blocked the issue path, so a write could never be in flight beside one.
+ * Making reads concurrent removes that accident, so responses are explicitly
+ * re-serialised here. Same fix, same reason, as `CacheToDdr2Adapter` — and the
+ * same shape as the AlteraSdramAdapter bug (ef36d99).
+ *
+ * @param addrWidth      cache-side byte address width
+ * @param maxOutstanding commands allowed in flight; also the response-FIFO depth
+ */
+class CacheToMigAdapter(addrWidth: Int = 28, maxOutstanding: Int = 8) extends Component {
+  require(maxOutstanding >= 1, "maxOutstanding must be at least 1")
 
-class CacheToMigAdapter(addrWidth: Int = 28) extends Component {
   val io = new Bundle {
     val cmd = slave Stream(new Bundle {
       val addr = Bits(addrWidth bits)
@@ -16,7 +49,6 @@ class CacheToMigAdapter(addrWidth: Int = 28) extends Component {
       val wmask = Bits(16 bits)
     })
 
-    // Read-response only in this phase.
     val rsp = master Stream(new Bundle {
       val rdata = Bits(128 bits)
       val error = Bool()
@@ -40,6 +72,8 @@ class CacheToMigAdapter(addrWidth: Int = 28) extends Component {
 
     // Debug
     val debugState = out UInt(3 bits)
+    /** Commands accepted whose response has not been consumed. */
+    val debugOutstanding = out UInt(log2Up(maxOutstanding + 1) bits)
   }
 
   private val addrAlignBits = log2Up(128 / 8)
@@ -49,19 +83,13 @@ class CacheToMigAdapter(addrWidth: Int = 28) extends Component {
   val cmdFifo = StreamFifo(io.cmd.payloadType, 2)
   cmdFifo.io.push << io.cmd
 
-  val rspFifo = StreamFifo(io.rsp.payloadType, 2)
-  io.rsp << rspFifo.io.pop
-  rspFifo.io.push.valid := False
-  rspFifo.io.push.payload.rdata := io.app_rd_data
-  rspFifo.io.push.payload.error := False
+  // What each accepted command was, in issue order, and the data reads bring
+  // back. Both are bounded by `owed`, so neither push can ever be refused.
+  val orderFifo = StreamFifo(Bool(), maxOutstanding)
+  val readFifo = StreamFifo(Bits(128 bits), maxOutstanding)
 
-  val activeCmd = Reg(io.cmd.payloadType)
-  val state = Reg(CacheToMigAdapterState()) init(CacheToMigAdapterState.IDLE)
-
-  // Defensive: capture MIG read data when rspFifo is not ready.
-  // MIG app_rd_data_valid is a one-cycle pulse — if missed, data is lost forever.
-  val readDataCaptured = Reg(Bool()) init(False)
-  val readDataReg = Reg(Bits(128 bits)) init(0)
+  val owed = Reg(UInt(log2Up(maxOutstanding + 1) bits)) init (0)
+  val room = owed < maxOutstanding
 
   // MIG app_addr is byte-space addressed; low bits must be zero for 128-bit transactions.
   def alignedAddr(addr: Bits): Bits = {
@@ -71,79 +99,54 @@ class CacheToMigAdapter(addrWidth: Int = 28) extends Component {
     a.asBits
   }
 
-  io.app_addr := alignedAddr(activeCmd.addr)
-  io.app_cmd := writeCmd
-  io.app_en := False
-  io.app_wdf_data := activeCmd.wdata
-  io.app_wdf_mask := activeCmd.wmask
-  io.app_wdf_wren := False
-  io.app_wdf_end := False
+  // --- command issue -------------------------------------------------------
+  val head = cmdFifo.io.pop
+  val headIsWrite = head.payload.write
+  // A write needs the command port AND the write-data port in the same cycle;
+  // presenting them together is what the MIG's simplest legal handshake looks
+  // like, and it is what this design has always done on hardware.
+  val portReady = io.app_rdy && (!headIsWrite || io.app_wdf_rdy)
+  val issue = head.valid && portReady && room
 
-  cmdFifo.io.pop.ready := False
+  io.app_addr     := alignedAddr(head.payload.addr)
+  io.app_cmd      := Mux(headIsWrite, writeCmd, readCmd)
+  io.app_en       := issue
+  io.app_wdf_data := head.payload.wdata
+  io.app_wdf_mask := head.payload.wmask
+  io.app_wdf_wren := issue && headIsWrite
+  io.app_wdf_end  := issue && headIsWrite
 
-  switch(state) {
-    is(CacheToMigAdapterState.IDLE) {
-      readDataCaptured := False
-      when(cmdFifo.io.pop.valid) {
-        when(cmdFifo.io.pop.payload.write) {
-          // Streaming write: issue command + data on the same cycle when the MIG
-          // accepts both and a response slot is free, then stay in IDLE so the
-          // next queued write can issue on the following cycle (1 write/cycle).
-          when(io.app_rdy && io.app_wdf_rdy && rspFifo.io.push.ready) {
-            io.app_addr     := alignedAddr(cmdFifo.io.pop.payload.addr)
-            io.app_cmd      := writeCmd
-            io.app_en       := True
-            io.app_wdf_data := cmdFifo.io.pop.payload.wdata
-            io.app_wdf_mask := cmdFifo.io.pop.payload.wmask
-            io.app_wdf_wren := True
-            io.app_wdf_end  := True
-            cmdFifo.io.pop.ready := True
-            rspFifo.io.push.valid := True
-            rspFifo.io.push.payload.rdata := B(0, 128 bits)
-            rspFifo.io.push.payload.error := False
-          }
-        } otherwise {
-          // Read: latch and run through the round-trip state machine.
-          activeCmd := cmdFifo.io.pop.payload
-          cmdFifo.io.pop.ready := True
-          state := CacheToMigAdapterState.ISSUE_READ
-        }
-      }
-    }
+  head.ready := issue
 
-    is(CacheToMigAdapterState.ISSUE_READ) {
-      io.app_cmd := readCmd
-      when(io.app_rdy) {
-        io.app_en := True
-        state := CacheToMigAdapterState.WAIT_READ
-      }
-    }
+  orderFifo.io.push.valid   := issue
+  orderFifo.io.push.payload := headIsWrite
 
-    is(CacheToMigAdapterState.WAIT_READ) {
-      when(!readDataCaptured) {
-        when(io.app_rd_data_valid) {
-          when(rspFifo.io.push.ready) {
-            // Normal path: push directly
-            rspFifo.io.push.valid := True
-            state := CacheToMigAdapterState.IDLE
-          } otherwise {
-            // rspFifo full: capture data to avoid losing MIG's one-cycle pulse
-            readDataReg := io.app_rd_data
-            readDataCaptured := True
-          }
-        }
-      } otherwise {
-        // Replay captured data when rspFifo becomes ready
-        rspFifo.io.push.payload.rdata := readDataReg
-        when(rspFifo.io.push.ready) {
-          rspFifo.io.push.valid := True
-          readDataCaptured := False
-          state := CacheToMigAdapterState.IDLE
-        }
-      }
-    }
+  // Unconditional: the pulse cannot be held off, and `owed` guarantees room.
+  readFifo.io.push.valid   := io.app_rd_data_valid
+  readFifo.io.push.payload := io.app_rd_data
+
+  // --- response return -----------------------------------------------------
+  // EVERY command gets exactly one response, writes included: LruCacheCore
+  // records an order-queue entry per issued command — an eviction as well as a
+  // refill — and retires them in order, so a missing write acknowledgement
+  // deadlocks the memory path.
+  val rspIsWrite = orderFifo.io.pop.payload
+  val rspCanGo = orderFifo.io.pop.valid && (rspIsWrite || readFifo.io.pop.valid)
+  io.rsp.valid         := rspCanGo
+  io.rsp.payload.rdata := readFifo.io.pop.payload   // ignored for a write ack
+  io.rsp.payload.error := False
+  orderFifo.io.pop.ready := io.rsp.ready && rspCanGo
+  readFifo.io.pop.ready  := io.rsp.fire && !rspIsWrite
+
+  when(issue && !io.rsp.fire) {
+    owed := owed + 1
+  } elsewhen (!issue && io.rsp.fire) {
+    owed := owed - 1
   }
 
-  io.busy := state =/= CacheToMigAdapterState.IDLE
-  io.debugState := state.asBits.asUInt.resized
+  io.busy := head.valid || io.cmd.valid || owed =/= 0
+  io.debugOutstanding := owed
+  // No state machine any more. Kept as a port so the exerciser tops that wire it
+  // out still build; reports how much concurrency is actually in use.
+  io.debugState := owed.resized
 }
