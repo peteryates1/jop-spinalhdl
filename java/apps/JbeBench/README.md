@@ -306,3 +306,103 @@ a common cause; it was a coincidence of two unrelated limits. **A same-board A/B
 was the cheap experiment that separated them, and it inverted the answer** —
 the same lesson as the cache A/B earlier, which also refuted a prediction drawn
 from indirect evidence.
+
+## Third memory architecture: DDR2, and the mechanism found (items 5, 11, 31)
+
+A-E115FB EP4CE115 + 1 GB DDR2, `ae115fbDdr2Smp(n)`, clock fixed at 75 MHz.
+
+This board was added because the SDR-vs-DDR3 comparison **cannot distinguish two
+explanations**. The DDR2 path shares `LruCacheCore` with DDR3 but replaces the
+entire backend — `CacheToDdr2Adapter` plus Altera half-rate ALTMEMPHY, against
+DDR3's `CacheToMigAdapter` plus MIG. So if DDR2 also stalls near 1.75x, the limit
+is the shared cache; if it scales like SDR, the limit is MIG-specific.
+
+Ratios are the comparable quantity, not absolute rates — different fabric
+(Cyclone IV E) and clock from both Artix-7 boards.
+
+| cores | DDR2 @75 MHz | ratio | DDR3 @91.68 MHz | ratio | SDR @100 MHz | ratio |
+|---|---|---|---|---|---|---|
+| 1 | 377 | 1.00x | 430 | 1.00x | 621 | 1.00x |
+| 2 | 552 | **1.46x** | 612 | **1.42x** | — | — |
+| 4 | 661 | **1.75x** | 733 | **1.70x** | 2090 | **3.37x** |
+| 8 | 682 | **1.81x** | 754 | **1.75x** | 2764 | **4.45x** |
+
+**Two completely different DRAM backends produce the same curve, within 3-4 % at
+every core count.** Different vendor IP, different adapter, different fabric,
+clock and bus width. Meanwhile SDR — which has no `LruCacheCore` at all, going
+BMB -> `BmbSdramCtrl32` -> `SdramCtrlNoCke` — reaches 3.37x at four cores.
+
+### The mechanism, read off the RTL rather than inferred
+
+`LruCacheCore` is a **single flat FSM**:
+
+```
+IDLE -> TAG_COMPARE -> CHECK_HIT -> (ISSUE_EVICT -> WAIT_EVICT_RSP ->)
+        ISSUE_REFILL -> WAIT_REFILL_RSP -> IDLE
+```
+
+It accepts a new request **only in IDLE**. There is no MSHR, no overlap, no
+pipelining: every miss occupies the FSM for a full DRAM round trip in
+`WAIT_REFILL_RSP` before the next request can even be looked at. In front of it
+sits `cmdFifo = StreamFifo(CacheReq, 4)` — four entries deep.
+
+That accounts for every observation at once:
+
+- The stride walk (`STRIDE = 517`, 64 KB working set) deliberately defeats the
+  32 KB L2, so essentially **every** access misses.
+- Throughput is therefore ~`1 / miss_latency`, which is **independent of core
+  count**. Extra cores fill a 4-deep FIFO and then wait.
+- Swapping ALTMEMPHY for MIG changes the latency a little and the serialisation
+  not at all — hence the same ceiling on both.
+- SDR has no such stage, so its accesses pipeline inside the SDRAM controller and
+  it keeps scaling.
+
+The timing data points at the same place independently: the 4- and 8-core builds'
+critical path is `BmbMemoryController|Equal3~7` -> `lruCacheCore|cmdFifo|logic_ram`,
+i.e. all N cores' address decode fanning into that one command port. **The
+throughput ceiling and the frequency ceiling are the same structure.**
+
+This corrects the section above: "the DDR3 path is the bottleneck ... MIG plus
+LruCacheCore plus CacheToMigAdapter" named three suspects and leaned on the
+MIG adapter. Swapping the backend wholesale changed nothing, so it is
+**`LruCacheCore`'s serial miss handling** — the one component the two DRAM paths
+share and the SDR path lacks. The fix is an MSHR or at least overlapping
+tag-lookup with refill, not anything in the adapters.
+
+### The benchmark now verifies itself
+
+`acc` used to be accumulated and dropped into `sink`, so this measured
+throughput and checked **nothing**. It now prints `CHECK`: every core walks an
+identical deterministic sequence over its own private buffer, so the value is
+bit-identical across cores, core counts, clocks and builds.
+
+That immediately paid for itself. The 4- and 8-core DDR2 builds VIOLATE setup
+timing (-1.997 and -3.059 ns) yet produced entirely plausible rates with all
+cores in lockstep — which proves only that the machine kept running. With
+`CHECK`, the -3.059 ns 8-core build returns `1645838336`, **bit-identical to the
+timing-clean 1-core build**, so those datapoints are real measurements of
+correct execution.
+
+Why a 3 ns violation still computes correctly — the corners:
+
+| corner | 4-core | 8-core |
+|---|---|---|
+| Slow 1200 mV **100 C** | -1.997 | **-3.059** |
+| Slow 1200 mV -40 C | -0.288 | -1.342 |
+| Fast 1200 mV -40 C | **+1.398** | **+1.398** |
+
+Quartus reports the slow/low-voltage/100 C corner; the bench runs at room
+temperature and nominal 1.2 V, and that spread is ~4.5 ns on a 13.333 ns period.
+It is **not** an unused path — `cmdFifo|logic_ram` is written on every access and
+a stride walk hammers it. It is corner pessimism, so the build would fail as the
+die warms or on a slower device. Note `+1.398` is identical at 4 and 8 cores: at
+the fast corner the JOP logic stops being critical and a fixed path inside the
+DDR2 IP dominates instead.
+
+**A re-sweep at a lower clock cannot fix the 8-core point.** `mem_if_clk_mhz` is
+150.0 at half rate, so the system clock is memory/2, and DDR2 cannot legally run
+below ~125 MHz memory — flooring the system clock at 62.5 MHz. 8 cores needs
+<=61.01 MHz. 1/2/4 close at 62.5 MHz with +0.67 ns margin, so a valid 1/2/4 curve
+is available, but a trustworthy 8-core point needs the `cmdFifo` path fixed.
+Since `CHECK` already validates the existing numbers, that re-sweep buys
+confirmation rather than information.

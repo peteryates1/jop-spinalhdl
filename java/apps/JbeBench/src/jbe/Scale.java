@@ -109,12 +109,31 @@ public class Scale {
 		}
 		int t1 = LowLevel.timeMicros();
 		sink = acc;                       // keep the work live
+		checks[id] = acc;                 // ...and make it verifiable, see below
 		micros[id] = t1 - t0;
 		done[id] = 1;
 	}
 
 	/** Consumed so the optimiser cannot discard the loop. */
 	static int sink;
+
+	/**
+	 * Per-core accumulator, so the benchmark checks itself.
+	 *
+	 * `acc` was already computed and thrown away into `sink`, which measured
+	 * throughput and proved nothing about correctness. Every core walks an
+	 * IDENTICAL deterministic sequence over its OWN private buffer, so all
+	 * cpuCnt values must be bit-identical -- to each other, and to the
+	 * single-core value on any other build. Printing it costs one array write
+	 * per core and turns each run into a correctness check.
+	 *
+	 * This exists because a build that VIOLATED setup timing by 3.059 ns still
+	 * produced perfectly plausible rates with all eight cores in lockstep. A
+	 * coherent rate only shows the machine kept running; it says nothing about
+	 * whether the arithmetic was right, and silent corruption is exactly how a
+	 * marginal path fails. Now a mismatch is visible.
+	 */
+	static int[] checks;
 
 	/**
 	 * iterations/s from a microsecond duration.
@@ -144,6 +163,7 @@ public class Scale {
 
 		micros = new int[cpuCnt];
 		done = new int[cpuCnt];
+		checks = new int[cpuCnt];
 
 		JVMHelp.wr("Scale: cores ");
 		wrInt(cpuCnt);
@@ -186,6 +206,26 @@ public class Scale {
 		JVMHelp.wr(" kacc/s over ");
 		wrInt(cpuCnt);
 		JVMHelp.wr(" cores\r\n");
+
+		// Correctness, not speed: every core ran the same deterministic walk over
+		// its own buffer, so all these must agree. Compare CHECK across builds
+		// too -- it is the same value at any core count and any clock, so it
+		// detects a marginal-timing build that computes wrong answers while
+		// reporting believable rates.
+		boolean same = true;
+		for (int i = 1; i < cpuCnt; i++) if (checks[i] != checks[0]) same = false;
+		JVMHelp.wr("CHECK ");
+		wrInt(checks[0]);
+		JVMHelp.wr(same ? "  all cores agree\r\n" : "  MISMATCH\r\n");
+		if (!same) {
+			for (int i = 0; i < cpuCnt; i++) {
+				JVMHelp.wr("  core ");
+				wrInt(i);
+				JVMHelp.wr(" check ");
+				wrInt(checks[i]);
+				JVMHelp.wr("\r\n");
+			}
+		}
 		JVMHelp.wr("Scale done\r\n");
 	}
 }
