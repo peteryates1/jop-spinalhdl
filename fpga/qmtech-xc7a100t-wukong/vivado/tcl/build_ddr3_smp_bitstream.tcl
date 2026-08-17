@@ -3,8 +3,21 @@
 
 set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file normalize [file join $script_dir ../..]]
-set build_dir  [file normalize [file join $repo_root vivado/build/wukong_jop_ddr3_smp_np]]
-set rtl_dir    [file normalize [file join $repo_root ../../spinalhdl/generated]]
+# Both are overridable so an A/B (e.g. blocking vs non-blocking L2) can build in
+# parallel from separate copies of the generated RTL instead of racing over the
+# one shared spinalhdl/generated directory.
+if {[info exists ::env(JOP_BUILD_DIR)]} {
+  set build_dir [file normalize $::env(JOP_BUILD_DIR)]
+} else {
+  set build_dir [file normalize [file join $repo_root vivado/build/wukong_jop_ddr3_smp_np]]
+}
+if {[info exists ::env(JOP_RTL_DIR)]} {
+  set rtl_dir [file normalize $::env(JOP_RTL_DIR)]
+} else {
+  set rtl_dir [file normalize [file join $repo_root ../../spinalhdl/generated]]
+}
+puts "INFO: build_dir = $build_dir"
+puts "INFO: rtl_dir   = $rtl_dir"
 set ip_root    [file normalize [file join $repo_root vivado/ip]]
 
 file mkdir $build_dir

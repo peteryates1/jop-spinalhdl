@@ -79,6 +79,17 @@ object JopTopVerilog {
             MigProfile.all.map(_.name).mkString(", ")))
       }.getOrElse(MigProfile.Ddr3_400)
       JopConfig.wukongDdr3Smp(n, mig)
+    // <cores> [mshrs] [migProfile], e.g. "wukongDdr3SmpMshr 4 4"
+    case "wukongDdr3SmpMshr" =>
+      val n = if (args.length > 1) args(1).toInt else 4
+      val k = args.drop(2).headOption.map(_.toInt).getOrElse(4)
+      val mig = args.drop(3).headOption.map { name =>
+        MigProfile.all.find(_.name.equalsIgnoreCase(name)).getOrElse(
+          throw new IllegalArgumentException(
+            s"unknown MIG profile '$name'; known: " +
+            MigProfile.all.map(_.name).mkString(", ")))
+      }.getOrElse(MigProfile.Ddr3_400)
+      JopConfig.wukongDdr3SmpMshr(n, k, mig)
     case "wukongSmpMinimal" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.wukongSmpMinimal(n)

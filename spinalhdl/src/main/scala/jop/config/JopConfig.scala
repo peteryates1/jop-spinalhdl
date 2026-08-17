@@ -969,6 +969,32 @@ object JopConfig {
         name = s"ddr3smp$n", cpuCnt = n, clkFreq = HertzNumber(mig.uiClkHz))))
   }
 
+  /** Wukong DDR3 SMP with a NON-BLOCKING L2 — `mshr` misses in flight.
+    *
+    * The DDR3 counterpart of `ae115fbDdr2SmpMshr`, and the same experiment: the
+    * only difference from `wukongDdr3Smp(n, mig)` is `l2MshrCount`, so running
+    * `JbeScale` on the pair isolates exactly that. DDR2 went 682 -> 1613 kacc/s
+    * at eight cores on the equivalent A/B.
+    *
+    * DDR3 needed a second change before this could pay off at all:
+    * `CacheToMigAdapter` used to serialise reads (ISSUE_READ -> WAIT_READ), so
+    * the cache would offer concurrency the adapter refused. Both halves have to
+    * be in place, which is why this preset arrived later than the DDR2 one.
+    *
+    * Derived from `wukongDdr3Smp`, NOT `wukongSmp`: only the former derives
+    * clkFreq from the MigProfile, and the DDR3 path has no system PLL — the
+    * cluster runs at ui_clk, so a preset that declares its own frequency simply
+    * goes quiet on the board.
+    */
+  def wukongDdr3SmpMshr(n: Int, mshr: Int = 4, mig: MigProfile = MigProfile.Ddr3_400) = {
+    val base = wukongDdr3Smp(n, mig)
+    val sys = base.system
+    base.copy(systems = Seq(sys.copy(
+      name = s"ddr3smp${n}mshr$mshr",
+      coreConfig = sys.coreConfig.copy(
+        memConfig = sys.coreConfig.memConfig.copy(l2MshrCount = mshr)))))
+  }
+
   /** Wukong DDR3 — minimal SMP (no CUs, just cores + UART) for SMP+DDR3 debug */
   def wukongSmpMinimal(n: Int) = {
     val base = wukongDdr3
