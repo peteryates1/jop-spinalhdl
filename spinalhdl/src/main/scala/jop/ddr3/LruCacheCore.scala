@@ -17,7 +17,9 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   private val setCount = config.setCount
 
   val io = new Bundle {
-    val frontend = slave(CacheFrontend(addrWidth, dataWidth))
+    val frontend = slave(CacheFrontend(addrWidth, dataWidth, config.idWidth))
+    // The backend is strictly in-order and single-tagged, so memCmd/memRsp stay
+    // id-less however wide the frontend tag is.
     val memCmd = master(Stream(CacheReq(addrWidth, dataWidth)))
     val memRsp = slave(Stream(CacheRsp(dataWidth)))
     // Optional block-fill (GC zeroing) sideband. Streams write-through zero
@@ -36,16 +38,21 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   val wayBits = if (wayCount > 1) log2Up(wayCount) else 1
 
   // --- FIFOs ---
-  val cmdFifo = StreamFifo(CacheReq(addrWidth, dataWidth), 4)
+  val cmdFifo = StreamFifo(CacheReq(addrWidth, dataWidth, config.idWidth), 4)
   cmdFifo.io.push << io.frontend.req
 
   // Single-entry output register (cache processes one request at a time)
   val rspValid = RegInit(False)
   val rspData = Reg(Bits(dataWidth bits))
   val rspError = RegInit(False)
+  // Echo the id of the request being answered. The cache is in-order, so this
+  // is always the pending request's tag; it exists so the master does not have
+  // to rely on that staying true.
+  val rspId = Reg(UInt((config.idWidth max 1) bits)) init (0)
   io.frontend.rsp.valid := rspValid
   io.frontend.rsp.payload.data := rspData
   io.frontend.rsp.payload.error := rspError
+  io.frontend.rsp.payload.driveId(rspId)
   val rspReady = !rspValid || io.frontend.rsp.ready
   when(io.frontend.rsp.fire) { rspValid := False }
 
@@ -80,7 +87,11 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   val state = Reg(LruCacheCoreState()) init (LruCacheCoreState.IDLE)
 
   // --- Pending Registers ---
-  val pendingReq = Reg(CacheReq(addrWidth, dataWidth)) init (CacheReq(addrWidth, dataWidth).getZero)
+  val pendingReq = Reg(CacheReq(addrWidth, dataWidth, config.idWidth)) init (CacheReq(addrWidth, dataWidth, config.idWidth).getZero)
+  // Every state that sets rspValid is answering pendingReq, which is stable
+  // until the next IDLE accept, so capturing the tag whenever the output
+  // register is free tracks it exactly.
+  when(!rspValid || io.frontend.rsp.fire) { rspId := pendingReq.idValue }
   val pendingNeedRefill = Reg(Bool()) init (False)
   val pendingIndex = Reg(UInt(indexWidth max 1 bits)) init (0)
   val pendingTag = Reg(Bits(tagWidth bits)) init (0)
