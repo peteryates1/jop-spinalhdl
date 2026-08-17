@@ -53,8 +53,18 @@
 QUARTUS_DIR ?= /opt/altera/25.1/quartus
 QUARTUS_BIN = $(QUARTUS_DIR)/bin
 
-# JTAG programmer
-BLASTER_TYPE ?= USB-Blaster
+# JTAG programmer.
+#
+# Resolved to a PORT-QUALIFIED cable name -- "USB-Blaster [1-6]", where 1-6 is
+# the USB port path. A bare "USB-Blaster" makes Quartus pick the first cable
+# whose product string matches, which is fine with one blaster attached and
+# ambiguous the moment a second appears. The pico-usb-blaster reports the
+# product string "USB Blaster" (no hyphen) and would otherwise be
+# indistinguishable in intent; selecting by USB address avoids guessing.
+#
+# jtag_probe_map maps the board alias -> probe serial -> USB port, so this
+# survives replugging (port paths move, serials do not).
+BLASTER_TYPE ?= $(shell $(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --cable ep4cgx150)
 
 # Serial port for UART
 SERIAL_PORT ?= /dev/ttyUSB0
@@ -306,7 +316,27 @@ $(QP).cdf: $(SOF_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program: $(SOF_FILE) $(QP).cdf
+# This board SHARES the Terasic USB-Blaster with the A-E115FB (that board's own
+# Pico drives 3.3V into a 1.8V-banked JTAG and is blocked on level shifters), so
+# the cable gets moved between the two and programming the wrong one succeeds
+# silently. `assert-device` is a read-only chain scan that catches it.
+#
+# EVERY program target blocks on it, DELIBERATELY, including while this board's
+# IDCODE is still unrecorded (it was unplugged when the check was written, and a
+# guard that cannot verify fails closed). So the first program attempt after
+# swapping boards will refuse and print the detected IDCODE:
+#
+#   IDCODE for 'ep4cgx150' is not recorded yet. Detected 020F70DD on ...
+#
+# Paste that value into the DEVICES table in fpga/scripts/jtag_probe_map and the
+# block clears permanently. Failing closed until then is the point: it prompts
+# the fix at the moment the information is actually available, rather than
+# letting a wrong-board program succeed silently in the meantime.
+.PHONY: assert-device
+assert-device:
+	@$(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --assert-device ep4cgx150
+
+program: assert-device $(SOF_FILE) $(QP).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP).cdf
 	@echo "=== FPGA programmed ==="
 
@@ -322,7 +352,7 @@ $(QP_SMP).cdf: $(SOF_SMP_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program-smp: $(SOF_SMP_FILE) $(QP_SMP).cdf
+program-smp: assert-device $(SOF_SMP_FILE) $(QP_SMP).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SMP).cdf
 	@echo "=== SMP FPGA programmed ==="
 
@@ -338,7 +368,7 @@ $(QP_SMP8).cdf: $(SOF_SMP8_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program-smp8: $(SOF_SMP8_FILE) $(QP_SMP8).cdf
+program-smp8: assert-device $(SOF_SMP8_FILE) $(QP_SMP8).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SMP8).cdf
 	@echo "=== 8-core SMP test FPGA programmed ==="
 
@@ -354,11 +384,11 @@ $(QP_DBFPGA).cdf: $(SOF_DBFPGA_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program-dbfpga: $(SOF_DBFPGA_FILE) $(QP_DBFPGA).cdf
+program-dbfpga: assert-device $(SOF_DBFPGA_FILE) $(QP_DBFPGA).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_DBFPGA).cdf
 	@echo "=== DB_FPGA FPGA programmed ==="
 
-program-dbfpga-vgadma: $(SOF_DBFPGA_FILE) $(QP_DBFPGA).cdf
+program-dbfpga-vgadma: assert-device $(SOF_DBFPGA_FILE) $(QP_DBFPGA).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_DBFPGA).cdf
 	@echo "=== DB_FPGA VGA DMA FPGA programmed ==="
 
@@ -374,7 +404,7 @@ $(QP_SD_NATIVE).cdf: $(SOF_SD_NATIVE_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program-sd-native-exerciser: $(SOF_SD_NATIVE_FILE) $(QP_SD_NATIVE).cdf
+program-sd-native-exerciser: assert-device $(SOF_SD_NATIVE_FILE) $(QP_SD_NATIVE).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SD_NATIVE).cdf
 	@echo "=== SD Native Exerciser FPGA programmed ==="
 
@@ -390,7 +420,7 @@ $(QP_SD_SPI).cdf: $(SOF_SD_SPI_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program-sd-spi-exerciser: $(SOF_SD_SPI_FILE) $(QP_SD_SPI).cdf
+program-sd-spi-exerciser: assert-device $(SOF_SD_SPI_FILE) $(QP_SD_SPI).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SD_SPI).cdf
 	@echo "=== SD SPI Exerciser FPGA programmed ==="
 
@@ -406,7 +436,7 @@ $(QP_CFG_FLASH).cdf: $(SOF_CFG_FLASH_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program-config-flash-exerciser: $(SOF_CFG_FLASH_FILE) $(QP_CFG_FLASH).cdf
+program-config-flash-exerciser: assert-device $(SOF_CFG_FLASH_FILE) $(QP_CFG_FLASH).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_CFG_FLASH).cdf
 	@echo "=== Config Flash Exerciser FPGA programmed ==="
 
@@ -422,7 +452,7 @@ $(QP_FLASH_PROG).cdf: $(SOF_FLASH_PROG_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program-flash-programmer: $(SOF_FLASH_PROG_FILE) $(QP_FLASH_PROG).cdf
+program-flash-programmer: assert-device $(SOF_FLASH_PROG_FILE) $(QP_FLASH_PROG).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_FLASH_PROG).cdf
 	@echo "=== Flash Programmer FPGA programmed ==="
 
@@ -438,7 +468,7 @@ $(QP_FLASH_BOOT).cdf: $(SOF_FLASH_BOOT_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program-flash-boot: $(SOF_FLASH_BOOT_FILE) $(QP_FLASH_BOOT).cdf
+program-flash-boot: assert-device $(SOF_FLASH_BOOT_FILE) $(QP_FLASH_BOOT).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_FLASH_BOOT).cdf
 	@echo "=== Flash Boot FPGA programmed ==="
 
@@ -490,7 +520,7 @@ flash-jic: flash-image
 # Two-step process: pre-load SFL bridge, then program .jic
 # The SFL must be loaded first on Cyclone IV GX boards.
 SFL_SOF := $(QUARTUS_BIN)/../common/devinfo/programmer/sfl_ep4cgx150.sof
-program-flash: flash-jic
+program-flash: assert-device flash-jic
 	@echo "Loading Serial Flash Loader into FPGA..."
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" --mode=JTAG \
 		-o "P;$(SFL_SOF)@1"

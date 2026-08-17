@@ -42,7 +42,7 @@ CABLE = $(shell $(ROOT)/fpga/scripts/jtag_probe_map --cable ae115fb)
 UART_DEV  ?= /dev/ttyUSB0
 UART_BAUD ?= 1000000
 
-.PHONY: all generate ip build program run monitor clean
+.PHONY: all generate ip build program run monitor clean assert-device
 
 all: generate ip build
 
@@ -69,7 +69,14 @@ build:
 	$(QUARTUS_BIN)/quartus_sta $(PROJECT)
 	@echo "=== built output_files/$(PROJECT).sof ==="
 
-program:
+# The Terasic blaster is SHARED with the EP4CGX150 and gets moved between the two
+# boards, so the alias alone cannot tell you which one is on the end of it -- and
+# programming the wrong Altera board succeeds silently. This is a read-only JTAG
+# chain scan that fails unless the IDCODE is the EP4CE115's.
+assert-device:
+	@$(ROOT)/fpga/scripts/jtag_probe_map --assert-device ae115fb
+
+program: assert-device
 	@echo "=== programming via cable: $(CABLE) ==="
 	$(QUARTUS_BIN)/quartus_pgm -c "$(CABLE)" -m JTAG \
 	  -o "p;output_files/$(PROJECT).sof"

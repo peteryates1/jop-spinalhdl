@@ -23,6 +23,19 @@
 #                    NOTE the patch covers dirtyJtag only -- the usb-blaster
 #                    driver still has the same bug.
 #
+# COMING: a second blaster (pico-usb-blaster, once level shifters arrive for the
+# A-E115FB's 1.8V JTAG). Two blasters attached at once means selection must be by
+# USB ADDRESS, not by product name:
+#   - Quartus is fine. Always pass the PORT-QUALIFIED name from `--cable`
+#     ("USB-Blaster [1-6]"); a bare "USB-Blaster" takes the first product-string
+#     match. Board Makefiles should never hardcode the bare string -- the
+#     EP4CGX150 one did until 2026-08-17.
+#   - openFPGALoader is NOT fine: the patch above covers dirtyJtag only, so its
+#     usb-blaster driver still ignores --busdev-num and grabs the first match.
+#     Use Quartus for usb-blaster cables until that is patched too.
+#   - Lucky break: the product strings differ ("USB-Blaster" vs "USB Blaster"),
+#     so the two are distinguishable even before the port path is considered.
+#
 # Companion to usb_serial_map, which does the same job for serial ports.
 set -euo pipefail
 
@@ -31,7 +44,8 @@ set -euo pipefail
 BOARDS=$(cat <<'EOF'
 terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board: move it between boards freely
 xc7a100t|E662C876|pico|QMTECH XC7A100T + DB_FPGA V5 (Pico: dirtyJtag or usb-blaster)
-ae115fb|E6616408|pico|A-E115FB EP4CE115 + 1GB DDR2 (Pico: dirtyJtag or usb-blaster)
+ae115fb|91d28408|usb-blaster|A-E115FB EP4CE115 + 1GB DDR2 — on the Terasic cable; its Pico (E6616408) is 3.3V into a 1.8V-banked JTAG, blocked on level shifters
+ep4cgx150|91d28408|usb-blaster|QMTECH EP4CGX150 + SDR — also on the Terasic cable; SWAPS with ae115fb, so ALWAYS --assert-device before programming
 debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashing Picos)
 cyc5000|ARA30135|arrow-usb-blaster|Arrow CYC5000 (onboard Arrow USB Blaster TEI0050, FT2232H)
 i5|07000001002700424e|cmsis-dap|Colorlight i5 on the ext board (DAPLink, also the UART bridge)
@@ -70,17 +84,88 @@ Usage:
   jtag_probe_map --serial <alias>   print the probe serial for a board
   jtag_probe_map --health           per-port USB enumeration health (needs dmesg)
   jtag_probe_map --boards           list known board aliases
+  jtag_probe_map --assert-device <alias> [cable]
+                                    scan the JTAG chain; fail unless the FPGA
+                                    on it is the one <alias> expects
 
-Aliases: terasic, xc7a100t, ae115fb, debugprobe, cyc5000, i5, wukong
+Aliases: terasic, xc7a100t, ae115fb, ep4cgx150, debugprobe, cyc5000, i5, wukong
 
 NOTE: an alias names whatever the SERIAL is attached to. A Pico is soldered to
 one board so its alias names that board; a standalone cable like the Terasic
 moves, so it is named for the cable and you pick the board by plugging it in.
 
+THE TWO ALTERA BOARDS SHARE THE TERASIC CABLE. `ae115fb` and `ep4cgx150` both
+resolve to it, so the alias alone does NOT tell you which board is plugged in,
+and programming the wrong one succeeds silently. Any `program` target for those
+two must run `--assert-device` first; it is a read-only chain scan and
+configures nothing.
+
 Examples:
   quartus_pgm -c "$(jtag_probe_map --cable ep4cgx150)" -m JTAG foo.cdf
+  jtag_probe_map --assert-device ae115fb || exit 1   # before programming
   openFPGALoader -c dirtyJtag --busdev-num "$(jtag_probe_map --busdev xc7a100t)" foo.bit
 USAGE
+}
+
+# --- expected FPGA per board ---------------------------------------------
+# Only needed for boards that SHARE a cable. An alias normally names a probe
+# soldered to one board, so the alias implies the board. The Terasic blaster is
+# a loose cable serving BOTH Altera boards (the A-E115FB's own Pico drives 3.3V
+# into a 1.8V-banked JTAG and is blocked on level shifters), so `--cable
+# ae115fb` and `--cable ep4cgx150` return the SAME cable and the alias no longer
+# proves which board is on the end of it. Programming the wrong board is
+# otherwise completely silent -- it succeeds.
+#
+# Keyed by JTAG IDCODE, NOT by device name. quartus_pgm reports the whole set of
+# IDCODE-compatible parts and TRUNCATES it -- the A-E115FB's EP4CE115 prints as
+# "10CL120(Y|Z)/EP3C120/.." because Cyclone IV E, Cyclone III and Cyclone 10 LP
+# share IDCODE 020F70DD, and the name we want is inside the "..". Matching names
+# therefore reports the wrong board on a correct one. The IDCODE itself is
+# unambiguous, and it separates the two boards that share this cable, which is
+# all this check has to do.
+#
+# alias|idcode|what it is.  idcode "?" = not yet recorded: the check then prints
+# the detected value and asks for it, rather than guessing.
+DEVICES=$(cat <<'EOF'
+ae115fb|020F70DD|EP4CE115 (IDCODE shared with EP3C120 / 10CL120)
+ep4cgx150|?|EP4CGX150 — Cyclone IV GX, distinct IDCODE; plug the board in and run --assert-device to learn it
+EOF
+)
+
+# Scan the JTAG chain and fail unless the expected FPGA is the one attached.
+# Read-only: it configures nothing.
+assert_device() {
+  local want="$1" cable="${2:-}" expect label found scan qpgm
+  expect=""; label=""
+  while IFS='|' read -r a i d; do
+    [ "$a" = "$want" ] && { expect="$i"; label="$d"; break; }
+  done <<<"$DEVICES"
+  if [ -z "$expect" ]; then
+    echo "no expected IDCODE recorded for '$want' -- nothing to check" >&2; return 0
+  fi
+  [ -n "$cable" ] || cable=$("$0" --cable "$want") || return 1
+  qpgm=${QUARTUS_PGM:-/opt/altera/18.1/quartus/bin/quartus_pgm}
+  [ -x "$qpgm" ] || { echo "quartus_pgm not found at $qpgm (set QUARTUS_PGM)" >&2; return 1; }
+  scan=$("$qpgm" -c "$cable" -a 2>/dev/null) || true
+  # Chain rows look like:  "  020F70DD   10CL120(Y|Z)/EP3C120/.."
+  found=$(grep -oE '^[[:space:]]*[0-9A-Fa-f]{8}[[:space:]]' <<<"$scan" | tr -d '[:space:]' | head -1)
+  if [ -z "$found" ]; then
+    echo "JTAG chain scan on '$cable' found no device -- board powered off, or cable on nothing" >&2
+    return 1
+  fi
+  found=${found^^}
+  if [ "$expect" = "?" ]; then
+    echo "IDCODE for '$want' is not recorded yet. Detected $found on '$cable'." >&2
+    echo "If that is the $label, add it to the DEVICES table in $0." >&2
+    return 1
+  fi
+  if [ "$found" = "$expect" ]; then
+    echo "$found  ($label)"
+  else
+    echo "WRONG BOARD on '$cable': IDCODE $found, expected $expect for alias '$want' ($label)." >&2
+    echo "The Terasic blaster is shared between the two Altera boards -- move the cable." >&2
+    return 1
+  fi
 }
 
 serial_for_alias() {
@@ -187,6 +272,7 @@ main() {
       port=$(awk '{print $1}' <<<"$r")
       prod=$(cat "/sys/bus/usb/devices/$port/product" 2>/dev/null || echo "USB-Blaster")
       echo "$prod [$port]" ;;
+    --assert-device) assert_device "${2:?alias required}" "${3:-}" ;;
     --busdev)
       s=$(serial_for_alias "${2:?alias required}")
       if ! r=$(find_by_serial "$s"); then
