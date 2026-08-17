@@ -458,3 +458,31 @@ new logic appears in it. Cost is +5.1 % logic at four cores.
 
 Detail, including a response-ordering bug in `CacheToDdr2Adapter` that this work
 exposed: `docs/architecture/nonblocking-cache-mshr-plan.md`.
+
+### DDR3 too: 692 -> 1380 kacc/s at four cores
+
+Same experiment on the Wukong XC7A100T (ui_clk 91.676 MHz, `MigProfile.Ddr3_366`
+— the clock the DDR3 rows above were taken at). DDR3 needed a second fix before
+the MSHR could pay off at all: `CacheToMigAdapter` serialised READS, so the
+cache offered concurrency the adapter refused.
+
+| cores | MSHRs | kacc/s | ratio vs 1 core |
+|---|---|---|---|
+| 1 | — | 430 | 1.00x |
+| 4 | — | 733 | 1.70x |
+| 8 | — | 754 | 1.75x |
+| 4 | 1 | 692 | 1.61x |
+| 4 | 4 | **1380** | **3.21x** |
+
+**1.99x against the same-RTL baseline, 1.88x against what shipped**, and four
+cores now beat the old eight-core figure. `CHECK 1645838336` in every run — the
+same value the DDR2 board gives. `DoAll` 66/66 on both bitstreams.
+
+The two boards agree on the cost of the restructure with overlap disabled: DDR3
+692 vs 733 (-5.6 %), DDR2 618 vs 661 (-6.5 %). Independent confirmation of a
+number that would otherwise be one measurement.
+
+On Artix-7 the change is also **cheaper in fabric**: -369 LUTs for +810
+registers, measured consistently across two clock profiles. Timing is neutral —
+all four builds close, and the WNS difference between configurations flips sign
+between profiles, so it is fitter noise rather than a real improvement.

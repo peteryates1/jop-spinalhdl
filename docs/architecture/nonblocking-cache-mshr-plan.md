@@ -422,33 +422,52 @@ under misses, evictions no longer waiting — **and the adapter carries the
 remaining 2.37x.** That control case is a permanent part of the sim, so the
 claim stays measured rather than remembered.
 
-### Fabric cost on the Wukong (XC7A100T, 4 cores, ui_clk 100 MHz)
+### Hardware: Wukong XC7A100T, 4 cores, ui_clk 91.676 MHz
 
-| | baseline (1 MSHR) | 4 MSHRs |
-|---|---|---|
-| WNS | +0.120 ns | **+0.363 ns** |
-| Failing endpoints | 0 | 0 |
-| Slice LUTs | 39,245 (61.9 %) | **38,872 (61.3 %)** |
-| Slice Registers | 27,147 (21.4 %) | 27,957 (22.1 %) |
+`jbe.Scale`, `CHECK 1645838336` in every run — the same value the DDR2 board
+produces, so both memory systems compute bit-identically.
 
-Both close timing, and the non-blocking build has **more margin and fewer LUTs**.
-That is not a fluke of the fitter: deleting the adapter's state machine and the
-cache's `WAIT_EVICT_RSP`/`WAIT_REFILL_RSP` removes more control logic than the
-MSHR file adds, and the MSHR's cost is mostly registers (+810). It is a happier
-result than DDR2, where both builds violated on a pre-existing path.
+| config | kacc/s | runs | ratio vs 1 core (430) |
+|---|---|---|---|
+| old RTL (published) | 733 | — | 1.70x |
+| new RTL, 1 MSHR | 692 | 692 / 693 / 692 | 1.61x |
+| new RTL, 4 MSHRs | **1380** | 1380 / 1380 / 1380 / 1389 / 1392 | **3.21x** |
 
-**Throughput on DDR3 hardware is still unmeasured**: the Wukong's USB-serial is
-not visible to this machine (only one CH340 enumerates, and it is the
-A-E115FB's, confirmed by it answering with `Scale: cores 8`). The bitstreams are
-built and the board programs cleanly over JTAG — the measurement needs only a
-UART. Run `JbeScale` on `wukongDdr3Smp 4` and `wukongDdr3SmpMshr 4 4`; the
-published DDR3 baseline is 733 kacc/s at four cores, 754 at eight.
+**1.99x against the same-RTL baseline, 1.88x against the configuration that
+shipped.** Four cores with MSHRs (1380) comfortably beat the old EIGHT-core DDR3
+figure (754). `DoAll` passes **66/66 on both** bitstreams, identical.
+
+The restructure again costs about 6 % with the overlap switched off (692 against
+the old blocking 733, versus DDR2's 618 against 661) — two independent boards
+agreeing on that number is worth more than either alone.
+
+### Fabric cost, measured across two clock profiles
+
+| profile | | WNS | Slice LUTs | Slice Registers |
+|---|---|---|---|---|
+| Ddr3_400 | 1 MSHR | +0.120 ns | 39,245 | 27,147 |
+| Ddr3_400 | 4 MSHRs | +0.363 ns | 38,888 | 27,957 |
+| Ddr3_366 | 1 MSHR | +0.375 ns | 39,257 | 27,147 |
+| Ddr3_366 | 4 MSHRs | +0.111 ns | 38,888 | 27,957 |
+
+All four close timing with margin. **Do not read a timing improvement into
+this**: the WNS difference between the two configurations changes SIGN between
+the profiles (+0.243 favouring the MSHR at 400, -0.264 favouring the baseline at
+366), which is fitter noise, not signal. One build pair looked like the MSHR
+bought margin and it does not.
+
+What IS consistent is the area: **-373 and -369 LUTs** across the two pairs, for
+**+810 registers**. Deleting the adapter's state machine and the cache's two
+`WAIT_*` states removes more control logic than the MSHR file adds, and the
+MSHR's cost lands in flip-flops. So on Artix-7 the non-blocking design is
+cheaper in LUTs and timing-neutral — a much easier result to act on than DDR2,
+where both builds violated a pre-existing path.
 
 ## What is left
 
-1. **Measure DDR3 on hardware.** Everything else is done: the adapter is fixed,
-   both bitstreams are built and close timing, and the board programs. It needs
-   the Wukong's UART reachable from the build machine.
+1. **Eight cores.** Both boards are measured at four; DDR2 also has an
+   eight-core point (1613 kacc/s, 4.28x). The DDR3 eight-core baseline is 754,
+   so the equivalent run is worth having.
 2. **Timing.** Neither core count closes at 75 MHz, MSHRs or not. That is a
    pre-existing property of the `BmbMemoryController -> cmdFifo` path, and it is
    what to attack next if these configurations are ever to ship — pipelining
