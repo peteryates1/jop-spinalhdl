@@ -234,15 +234,13 @@ almost entirely its clock, and at 8 cores SDR delivers more than twice the work
 per cycle. That is only explicable if both are limited by something neither
 technology changes.
 
-That something is the **single shared port**. Two different controllers, two
-different technologies, two different boards and a 2.5x clock ratio all land
-within 14 % of the same aggregate ceiling. A faster memory technology moves the
-per-core number and the knee; it does not move the ceiling.
+I concluded from this that the limit was the **single shared port**, common to
+both paths — and that scaling needed more ports rather than faster memory.
 
-**So the actionable conclusion stands and hardens: scaling past the knee needs
-more PORTS, not faster memory.** Banking, per-core slices, or a genuinely
-multi-ported path. "Fit a bigger memory" is the option these numbers rule out
-twice over.
+**THAT WAS WRONG. See the same-board comparison below, which refutes it.** The
+two ceilings looked alike only because the SDR curve came from a different,
+slower board. Running both memory systems on ONE board separates them
+completely.
 
 ### Measurement notes
 
@@ -258,3 +256,53 @@ twice over.
   2-core read `306 + 306 = 612` consistently — but scraping scripts reported
   false failures. Match loosely, and read the raw log before believing a run
   failed.
+
+## SDR vs DDR3 on ONE board — this refutes the section above
+
+Same Wukong XC7A100T, same fabric, same benchmark; only the memory path differs.
+SDR at 100 MHz (a free clk_wiz output, and an exact 2 Mbaud), DDR3 at its
+ui_clk-imposed 91.68 MHz.
+
+| cores | SDR @100 MHz | DDR3 @91.68 MHz | SDR / DDR3 |
+|---|---|---|---|
+| 1 | 621 (1.00x) | 430 (1.00x) | 1.44x |
+| 4 | **2090** (3.37x) | 733 (1.70x) | **2.85x** |
+| 8 | **2764** (4.45x) | 754 (1.75x) | **3.67x** |
+
+**SDR is not merely competitive — it is 3.7x faster at 8 cores, and it keeps
+scaling where DDR3 stops.** SDR reaches 4.45x on eight cores; DDR3 manages 1.75x
+and is done by two.
+
+Per MHz at 8 cores settles which curve is the outlier:
+
+| | kacc/s/MHz |
+|---|---|
+| Wukong SDR | **27.6** |
+| EP4CGX150 SDR | 17.6 |
+| Wukong DDR3 | 8.2 |
+
+The two SDR figures are the same order; DDR3 is a third of them. **DDR3 is the
+outlier, not the norm** — so there is no universal "shared port" ceiling.
+
+### The corrected conclusion
+
+- The EP4CGX150 plateau at 664 was a **clock** limit (36 MHz), not a port limit.
+  The same SDR controller at 100 MHz on Wukong reaches 2764.
+- **The DDR3 path is the bottleneck**, and specifically ours: MIG plus
+  `LruCacheCore` plus `CacheToMigAdapter`. It saturates with barely two cores.
+  Raw DDR3 bandwidth is not the constraint — the path we built on top of it is.
+- **Do not add ports or banking to the SDR path.** It scales 4.45x on eight
+  cores; there is no problem there to solve.
+- The DDR3 path is worth investigating on its own terms: a stride walk defeats a
+  32 KB L2, so every access pays full MIG latency, and the adapter may be
+  serialising more than it needs to. That is now a concrete, bounded question.
+
+### Why the earlier reading went wrong, and what to take from it
+
+Comparing EP4CGX150-SDR against Wukong-DDR3 varied board, fabric, clock AND
+memory system together, then attributed the result to the one variable I was
+interested in. Two ceilings landing within 14 % looked like strong evidence for
+a common cause; it was a coincidence of two unrelated limits. **A same-board A/B
+was the cheap experiment that separated them, and it inverted the answer** —
+the same lesson as the cache A/B earlier, which also refuted a prediction drawn
+from indirect evidence.
