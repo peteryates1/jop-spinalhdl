@@ -265,7 +265,8 @@ was only ever correct because the DUT was serial.
 | `LruCacheCoreUnitSim` | 7/7 at 32, 128 and 256-bit lines |
 | `CacheDdr2EvictSim` | 200 line writes through 184 evictions, 0 mismatches, backend fill retired |
 | `LruCacheCoreTest`, `CacheWidthElabTest`, `Ddr3WidthElabTest` | pass; elaboration now covers 1/2/4/8 MSHRs |
-| `JopDcuCacheSim` | 59/59 JVM tests through the DDR3 cache path |
+| `JopDcuCacheSim` | 59/59 JVM tests through the cache path at `mshrCount` **1, 4 and 8** — pass the count as an argument. The whole suite through a non-blocking cache is the broadest correctness check available: real access patterns, hits served under outstanding misses, refills completing out of order |
+| `JopSmpDdr3NCoreHelloWorldSim` | 2 cores on DDR3 (harness needed a fix first — see below) |
 | `JopDdr3FillSim` | block fill end-to-end |
 
 A formal property deliberately *not* asserted: `memRsp.valid` implies
@@ -291,3 +292,16 @@ surfaces. The machine waits in `IDLE` (still serving hits) rather than in
 4. **Register cost** is real: each MSHR holds a whole cache line of write data
    (256 bits on DDR2) plus tag and dirty words. Four entries is roughly 1.5 k
    flip-flops on the A-E115FB. Worth checking against the fit report.
+
+## Two sims that were already broken
+
+Neither is in the CI matrix, which is why neither was noticed.
+
+- **`JopSmpDdr3NCoreHelloWorldSim`** declared `debugCacheState` as 3 bits and
+  assigned `LruCacheCore.io.debugState` (4 bits) to it without a resize, so it
+  had not elaborated since the cache grew past 8 states. Fixed here, because it
+  is the SMP-through-the-cache coverage this change wants.
+- **`JopSmallGcCacheSim`** loads `java/apps/Small/HelloWorld.jop` but its pass
+  criteria look for `GcStressTest` output (`"GC test start"`, `"R80 f="`), so it
+  runs 40 M cycles printing "Hello World!" and then fails. **Left alone** — it
+  needs a Java rebuild decision (which app should it load?), not an RTL fix.
