@@ -203,14 +203,58 @@ Note DDR3 at 91.68 MHz does only ~1.2x the SDR figure at 36 MHz despite 2.5x the
 clock, which is consistent with the same story: both are limited by the port,
 not the core.
 
+### The complete DDR3 curve, and what the two together say
+
+| cores | SDR @36 MHz | DDR3 @91.68 MHz |
+|---|---|---|
+| 1 | 188 (1.00x) | 430 (1.00x) |
+| 2 | — | 612 (1.42x) |
+| 4 | 605 (3.22x) | 733 (1.70x) |
+| 8 | 635 (3.38x) | 754 (1.75x) |
+| 12 | 664 (3.53x) | — |
+
+**DDR3 buys per-core speed and loses scaling.** One DDR3 core does 430 kacc/s
+against SDR's 188 — but DDR3 is already at 57 % of its ceiling with ONE core and
+81 % with two, where SDR needs four cores to reach 91 % of its own. The DDR3 knee
+is between 1 and 2 cores; the SDR knee is around 4.
+
+**And the ceilings are nearly the same: 754 vs 664, just 14 % apart**, despite
+DDR3 running at 2.5x the clock with far more raw bandwidth and a 32 KB L2 in
+front of it.
+
+Per MHz makes it starker:
+
+| | SDR @36 | DDR3 @91.68 |
+|---|---|---|
+| 1 core | 5.22 kacc/s/MHz | 4.69 |
+| 8 cores | 17.64 kacc/s/MHz | 8.22 |
+
+**Per cycle, SDR is not worse — it is better.** DDR3's single-core advantage is
+almost entirely its clock, and at 8 cores SDR delivers more than twice the work
+per cycle. That is only explicable if both are limited by something neither
+technology changes.
+
+That something is the **single shared port**. Two different controllers, two
+different technologies, two different boards and a 2.5x clock ratio all land
+within 14 % of the same aggregate ceiling. A faster memory technology moves the
+per-core number and the knee; it does not move the ceiling.
+
+**So the actionable conclusion stands and hardens: scaling past the knee needs
+more PORTS, not faster memory.** Banking, per-core slices, or a genuinely
+multi-ported path. "Fit a bigger memory" is the option these numbers rule out
+twice over.
+
 ### Measurement notes
 
-- The 1-core DDR3 point is MISSING. `wukongDdr3Smp 1` did not produce a fresh
-  bitstream (its post-route WNS came back byte-identical to the 8-core build,
-  the tell that nothing was rebuilt), so there is no same-clock DDR3 baseline
-  and the DDR3 column cannot be expressed as a speedup. The 4-vs-8 comparison
-  does not depend on it.
-- One run reported `AGGREATE` rather than `AGGREGATE` — a dropped character on
-  the UART at the non-standard 2.0372 Mbaud this clock forces. The number was
-  fine; the sweep script's `grep -q AGGREGATE` was not, and reported a false
-  "RUN DID NOT COMPLETE". Match a prefix when scraping a lossy link.
+- The 1-core DDR3 point needs the NON-SMP flow. `wukongDdr3Smp 1` emits
+  `JopDdr3WukongTop`, not `JopSmpDdr3WukongTop`, so `ddr3-smp-build` silently
+  reuses a stale SMP Verilog — which is how the first attempt produced a
+  bitstream whose post-route WNS was byte-identical to the 8-core build. Use
+  `make ddr3-build` for one core. Same trap as `ep4cgx150Smp 1`.
+- **The UART is lossy at 91.68 MHz** and it has now bitten twice: one run
+  printed `AGGREATE`, another `AGREGATE` and `kacc/G`. The board is forced to
+  2.0372 Mbaud (`clkFreq / (baud x 5)` has no nice solution at this clock) and
+  the host cannot generate that rate exactly. The NUMBERS were fine both times —
+  2-core read `306 + 306 = 612` consistently — but scraping scripts reported
+  false failures. Match loosely, and read the raw log before believing a run
+  failed.

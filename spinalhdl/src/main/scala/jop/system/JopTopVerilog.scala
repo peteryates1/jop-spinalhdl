@@ -64,6 +64,10 @@ object JopTopVerilog {
     case "wukongSmp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.wukongSmp(n)
+    case "wukongSdrSmp" =>
+      val n = if (args.length > 1) args(1).toInt else 4
+      val mhz = args.drop(2).headOption.map(_.toInt).getOrElse(100)
+      JopConfig.wukongSdrSmp(n, mhz)
     case "wukongDdr3Smp" =>
       val n = if (args.length > 1) args(1).toInt else 4
       // argv[2] names a MigProfile, not a frequency: the clock is one of a few

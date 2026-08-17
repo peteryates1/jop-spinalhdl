@@ -726,6 +726,26 @@ object JopConfig {
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
 
+  /**
+   * Wukong SDR — SMP, N cores. The SDR counterpart of `wukongDdr3Smp`, so the
+   * two memory systems can be compared on ONE board.
+   *
+   * Why that matters: the scaling curves so far compare EP4CGX150-SDR against
+   * Wukong-DDR3, which confounds board, fabric, clock and memory system at once.
+   * Running SDR and DDR3 on the same XC7A100T leaves only the memory path
+   * different, which is the variable the saturation question is about.
+   *
+   * Unlike DDR3, the SDR clock is NOT dictated by the memory controller — it
+   * comes from the clk_wiz and is freely chosen — so `clkMhz` is a real
+   * parameter here rather than a profile. Keep it at 100 unless timing forces
+   * lower, and normalise per MHz when comparing against DDR3's 91.68.
+   */
+  def wukongSdrSmp(n: Int, clkMhz: Int = 100) = {
+    val base = wukongSdram
+    base.copy(systems = Seq(base.system.copy(
+      name = s"sdrsmp$n", cpuCnt = n, clkFreq = clkMhz MHz)))
+  }
+
   /** Wukong SDR — all compute units, UART only (no Ethernet/SD) */
   def wukongSdrAllCu = {
     val base = wukongSdram

@@ -18,7 +18,7 @@ DUAL_SDR_UART_BAUD := 115200
 .PHONY: ddr3-smp-generate ddr3-smp-build ddr3-smp-program ddr3-smp-monitor
 .PHONY: dual-generate dual-create-ip dual-build dual-program dual-monitor dual-sdr-monitor dual-sdr-download
 .PHONY: sdram-generate sdram-create-ip sdram-build sdram-program sdram-monitor
-.PHONY: jop-sdram-generate jop-sdram-build jop-sdram-program jop-sdram-monitor
+.PHONY: jop-sdram-generate jop-sdram-build jop-sdram-smp-build jop-sdram-program jop-sdram-monitor
 .PHONY: blink-create-project blink-build blink-program
 
 all: build
@@ -131,6 +131,12 @@ jop-sdram-generate:
 
 jop-sdram-build:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_jop_sdram_bitstream.tcl
+
+# SMP SDR: the counterpart of ddr3-smp-build, so SDR and DDR3 can be compared on
+# one board with only the memory path differing. Entity is JopSmpSdramWukongTop
+# (cpuCnt >= 2 inserts "Smp"), which the single-core script does not build.
+jop-sdram-smp-build:
+	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_jop_sdram_smp_bitstream.tcl
 
 jop-sdram-program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(JOP_SDRAM_BITSTREAM)
