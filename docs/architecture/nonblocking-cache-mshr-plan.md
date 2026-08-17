@@ -395,12 +395,60 @@ errors and 1.00 / 1.96 / 3.36× at 1 / 2 / 4 MSHRs through the full DDR2 path.
 find response-ordering bugs. If the real thing answers some commands early,
 model that, or the ordering logic is untested.
 
+## DDR3: the adapter was the limit, and the fix is free in fabric
+
+`CacheToMigAdapter` serialised reads (`IDLE -> ISSUE_READ -> WAIT_READ`, one
+`activeCmd` at a time) and pipelined only writes, so on the DDR3 boards the
+cache offered concurrency the adapter refused. Rewritten with no state machine,
+bounded by `maxOutstanding` (= 2 x mshrCount, an eviction and a refill per
+miss), and re-serialising responses into command order for exactly the reason
+`CacheToDdr2Adapter` had to — a locally-manufactured write acknowledgement must
+not overtake an earlier read. The old one was safe only by accident: a read
+blocked the issue path, so a write could never be in flight beside one.
+
+`CacheMigMshrSim` (real cache, real adapter, behavioural MIG UI with STRICT
+ordering and an unstallable one-cycle read pulse) decomposes the result instead
+of just reporting it:
+
+| MSHRs | cycles/req | speedup |
+|---|---|---|
+| 1 | 26.51 | 1.00x |
+| 2 | 13.51 | 1.96x |
+| 4 | 8.13 | **3.26x** |
+| *control:* 4 MSHRs, 1-deep adapter | 19.27 | 1.38x |
+
+**The cache restructure alone is worth 1.38x on a serial backend** — hits served
+under misses, evictions no longer waiting — **and the adapter carries the
+remaining 2.37x.** That control case is a permanent part of the sim, so the
+claim stays measured rather than remembered.
+
+### Fabric cost on the Wukong (XC7A100T, 4 cores, ui_clk 100 MHz)
+
+| | baseline (1 MSHR) | 4 MSHRs |
+|---|---|---|
+| WNS | +0.120 ns | **+0.363 ns** |
+| Failing endpoints | 0 | 0 |
+| Slice LUTs | 39,245 (61.9 %) | **38,872 (61.3 %)** |
+| Slice Registers | 27,147 (21.4 %) | 27,957 (22.1 %) |
+
+Both close timing, and the non-blocking build has **more margin and fewer LUTs**.
+That is not a fluke of the fitter: deleting the adapter's state machine and the
+cache's `WAIT_EVICT_RSP`/`WAIT_REFILL_RSP` removes more control logic than the
+MSHR file adds, and the MSHR's cost is mostly registers (+810). It is a happier
+result than DDR2, where both builds violated on a pre-existing path.
+
+**Throughput on DDR3 hardware is still unmeasured**: the Wukong's USB-serial is
+not visible to this machine (only one CH340 enumerates, and it is the
+A-E115FB's, confirmed by it answering with `Scale: cores 8`). The bitstreams are
+built and the board programs cleanly over JTAG — the measurement needs only a
+UART. Run `JbeScale` on `wukongDdr3Smp 4` and `wukongDdr3SmpMshr 4 4`; the
+published DDR3 baseline is 733 kacc/s at four cores, 754 at eight.
+
 ## What is left
 
-1. **`CacheToMigAdapter` reads are serial** (see the correction above), so the
-   DDR3 boards need that fixed before `mshrCount > 1` is worth setting there.
-   This is now the highest-value follow-up: the mechanism is proven on DDR2, and
-   DDR3 is one adapter away from the same gain.
+1. **Measure DDR3 on hardware.** Everything else is done: the adapter is fixed,
+   both bitstreams are built and close timing, and the board programs. It needs
+   the Wukong's UART reachable from the build machine.
 2. **Timing.** Neither core count closes at 75 MHz, MSHRs or not. That is a
    pre-existing property of the `BmbMemoryController -> cmdFifo` path, and it is
    what to attack next if these configurations are ever to ship — pipelining
