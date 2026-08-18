@@ -10,11 +10,15 @@ JOP_SDRAM_BITSTREAM := vivado/build/wukong_jop_sdram/JopSdramWukongTop.bit
 DUAL_BITSTREAM := vivado/build/wukong_jop_dual_np/JopDualWukongTop.bit
 UART_DEV := /dev/ttyUSB0
 UART_BAUD := 1000000
+# DDR3 runs off MIG ui_clk, so the baud follows the MigProfile rather than a
+# round number: Ddr3_366 puts 2 Mbaud nominal on the wire at 2.0372 Mbaud.
+DDR3_UART_BAUD := 2037000
+JOP_FILE ?= $(REPO_ROOT)/java/apps/Smallest/HelloWorld.jop
 DUAL_SDR_UART_DEV := /dev/ttyACM0
 DUAL_SDR_UART_BAUD := 115200
 
 .PHONY: generate create-ip create-project build program program-flash monitor all clean
-.PHONY: ddr3-generate ddr3-create-ip ddr3-create-project ddr3-build ddr3-program ddr3-monitor
+.PHONY: ddr3-generate ddr3-create-ip ddr3-create-project ddr3-build ddr3-program ddr3-monitor ddr3-download ddr3-reset ddr3-redownload
 .PHONY: ddr3-smp-generate ddr3-smp-build ddr3-smp-program ddr3-smp-monitor
 .PHONY: dual-generate dual-create-ip dual-build dual-program dual-monitor dual-sdr-monitor dual-sdr-download
 .PHONY: sdram-generate sdram-create-ip sdram-build sdram-program sdram-monitor
@@ -65,7 +69,19 @@ ddr3-program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(DDR3_BITSTREAM)
 
 ddr3-monitor:
-	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
+	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(DDR3_UART_BAUD)
+
+ddr3-download:
+	python3 $(REPO_ROOT)/fpga/scripts/download.py -e $(JOP_FILE) $(UART_DEV) $(DDR3_UART_BAUD)
+
+# Reset the core over UART. On DDR3 this is a CORE-ONLY reset -- the MIG keeps
+# its calibration, so it costs microseconds, not the seconds a retrain would.
+ddr3-reset:
+	python3 $(REPO_ROOT)/fpga/scripts/download.py -R $(UART_DEV) $(DDR3_UART_BAUD)
+
+# Swap the running application without reprogramming the FPGA.
+ddr3-redownload:
+	python3 $(REPO_ROOT)/fpga/scripts/download.py -e -r $(JOP_FILE) $(UART_DEV) $(DDR3_UART_BAUD)
 
 # === JOP DDR3 SMP targets ===
 

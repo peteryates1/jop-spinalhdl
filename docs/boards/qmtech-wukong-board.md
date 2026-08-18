@@ -670,3 +670,31 @@ with the matching profile (`... Ddr3_366`), after which the download baud is
 Worse than a dead board: `jbe.Scale`'s timebase is `IO_US_CNT`, derived from the
 same wrong `clkFreq`, so a mis-clocked build reports plausible numbers that are
 all 9 % wrong.
+
+## Runtime reset (2026-08-18)
+
+The FPGA no longer has to be reprogrammed to load a different application:
+
+```
+make ddr3-redownload JOP_FILE=<app>.jop   # reset + download, no JTAG
+make ddr3-reset                           # reset only
+```
+
+Note the DDR3 UART baud follows the MigProfile, not a round number: at
+`Ddr3_366` a nominal 2 Mbaud lands on the wire at **2.0372 Mbaud**
+(`DDR3_UART_BAUD` in the Makefile). The UART is the CH340 (`/dev/ttyUSB4` at
+time of writing — map it by serial, never by path).
+
+**This is a CORE-ONLY reset.** `sys_rst` stays tied to PLL lock, so the MIG
+keeps its calibration; what resets is the core, L2 cache and
+`CacheToMigAdapter`. Holding the reset long enough matters — the MIG keeps
+answering reads issued before it, and this path matches responses by position,
+so a short hold would drop a stale beat into a fresh FIFO. See
+`ResetGenerator.Ddr3ResetCycles` and `CacheMigResetSim`.
+
+The board's existing **reset button** (`resetn` into the clock wizard) is
+unchanged and remains the full reset, recalibration included — the two are
+complementary.
+
+Measured: 8/8 reset-and-redownload cycles, `CardMarkTest` reporting `CARD OK`
+afterwards. Vivado timing MET, WNS +0.696 ns.

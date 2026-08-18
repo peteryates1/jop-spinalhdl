@@ -3225,11 +3225,48 @@ USB buffer, so it went out truncated. At 10 ms it is reliable. The ~405
 unreset registers remain a real hazard in principle and item 45 stands, but on
 this board with these applications they do not stop a clean reboot.
 
-**Not done: DDR2/DDR3.** There `systemReset` comes from the memory
-controller's calibration, so recycling it would drag the PHY through a
-recalibration taking seconds. Those boards want a core-only reset that leaves
-the controller up -- a separate change. The i5 gets the UART escape but no
-button, because no user-button pin is documented for that board.
+**DDR3 done too (Wukong, same day).** It needed a different reset, not a
+wider one: `sys_rst` stays tied to PLL lock so the **MIG keeps its
+calibration**, and what resets is everything in the `ui_clk` domain -- core, L2
+cache and `CacheToMigAdapter`, all built inside `mainArea`. Measured on the
+Wukong at `Ddr3_366`: **8/8** reset-and-redownload cycles, `CardMarkTest`
+running `CARD OK` afterwards, Vivado timing MET at **WNS +0.696 ns**.
+
+**Why that is safe with the MIG still running underneath.** The MIG does not
+know a reset happened, `app_rd_data_valid` cannot be back-pressured, and this
+path matches responses **by position** -- the shape of both the DDR2 write-ack
+bug and the AlteraSdramAdapter corruption, each of which produced wrong data
+rather than a hang. Two properties make it work:
+
+1. *Writes cannot be stranded.* `CacheToMigAdapter` gates on
+  `app_rdy && (!headIsWrite || app_wdf_rdy)` and drives `app_en`,
+  `app_wdf_wren` and `app_wdf_end` in the **same cycle**, so the MIG is never
+  left waiting for a write burst.
+2. *Reads in flight are dropped.* While the adapter is in reset its FIFOs stay
+  empty, so late beats are not captured, and the hold outlasts any MIG read
+  latency.
+
+`CacheMigResetSim` tests both, and pins the second: an A/B differing **only**
+in hold length shows a long hold returns correct data while a one-cycle hold
+corrupts. `ResetGenerator.Ddr3ResetCycles` is therefore load-bearing, and that
+test is the alarm if anyone shortens it.
+
+**Honest limit on the evidence.** Time-to-ready after a UART reset was
+0.20-0.60 s against 0.60 s after configuration, but those are multiples of the
+boot loader's ~0.2 s `0xAA` retry cadence, so the measurement is too coarse to
+independently prove calibration survived. The real evidence is structural and
+checked in the generated Verilog: `sys_rst = !clkWizBlackBox_locked`, untouched
+by the runtime reset.
+
+**Still to do: DDR2 (A-E115FB).** The same pattern should transfer --
+`CacheToDdr2Adapter` has the same atomicity, one `local_ready` covering command
+and write data with `local_wdata` sampled alongside `local_write_req` -- but it
+is unbuilt and untested until that board is attached.
+
+The i5 gets the UART escape but no button, because no user-button pin is
+documented for that board. The Xilinx boards get no `reset_n` either: they
+already carry a `resetn` into the clock wizard, which is a FULL reset
+(recalibration and all) and so complements the fast core-only UART path.
 
 Usage: `make -C fpga/qmtech-ep4cgx150-sdram redownload JOP_FILE=<app>.jop`,
 or `download.py -r <app>` / `-R` for reset-only.

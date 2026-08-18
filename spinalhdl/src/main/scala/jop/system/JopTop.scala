@@ -57,12 +57,15 @@ case class JopTop(
   private val isDdr2 = !isMultiSystem && memType == MemoryType.SDRAM_DDR2
   private val isBram = !isMultiSystem && memType == MemoryType.BRAM
 
-  /** Runtime reset sources exist only where they are actually wired: a single
-    * system, on the SDR/BRAM path. DDR2/DDR3 derive systemReset from the
-    * memory controller's calibration and want a core-only reset instead, and a
-    * multi-system config has `sys == null` and builds its resets per system. */
+  /** Runtime reset exists on the SDR/BRAM path and, since 2026-08-18, on DDR3.
+    * DDR2 is not done yet, and a multi-system config has `sys == null` and
+    * builds its resets per system. */
   private val hasRuntimeReset =
-    !isMultiSystem && sys != null && !isDdr3 && !isDdr2
+    !isMultiSystem && sys != null && !isDdr2
+
+  /** SDR/BRAM recycles the whole reset generator; DDR3 resets the core, cache
+    * and MIG adapter but deliberately NOT the MIG, so calibration survives. */
+  private val hasSimpleRuntimeReset = hasRuntimeReset && !isDdr3
 
   /** Board maps a SWITCH pin named "reset" -- only then does a reset_n port
     * exist. Adding it unconditionally would give every board a new top-level
@@ -74,7 +77,7 @@ case class JopTop(
     * to, and it reaches the core by unlocking the clock wizard. A second port
     * would be a dangling input competing for the same pin. */
   private val hasResetButton =
-    hasRuntimeReset &&
+    hasSimpleRuntimeReset &&
       manufacturer != Manufacturer.Xilinx &&
       config.assembly.allDevices.filter(_.part == "SWITCH")
         .exists(_.mapping.contains("reset"))
@@ -268,13 +271,12 @@ case class JopTop(
       // the ser_rxd PIN, not the core's UART peripheral, for the same reason --
       // and so it costs no pin at all.
       //
-      // NOT wired for DDR2/DDR3 yet. There systemReset is derived from PLL lock
-      // or the memory controller's calibration, so recycling it would drag the
-      // PHY through a recalibration taking seconds. Those boards want a
-      // core-only reset that leaves the controller up; that is a separate
-      // change, not a one-line extension of this one.
+      // This branch is the SDR/BRAM one, which recycles the whole reset
+      // generator. DDR3 is handled further down and differently: it resets the
+      // core, cache and MIG adapter but NOT the MIG, so calibration survives
+      // and a reset costs microseconds instead of seconds. DDR2 is still to do.
       val runtimeResetRequest: Bool =
-        if (hasRuntimeReset) {
+        if (hasSimpleRuntimeReset) {
           val rawCd = ClockDomain(clock = systemClk,
                                   config = ClockDomainConfig(resetKind = BOOT))
           new ClockingArea(rawCd) {
@@ -394,11 +396,46 @@ case class JopTop(
         )
       } else null
 
+      // Runtime reset for DDR3: CORE-ONLY, and that distinction is the whole
+      // point. `sys_rst` stays tied to PLL lock, so the MIG keeps its
+      // calibration and a reset costs microseconds rather than the seconds a
+      // retrain would. What does reset is everything in this domain -- core,
+      // L2 cache and CacheToMigAdapter (createDdr3Path is built inside
+      // mainArea, which runs on this clock domain).
+      //
+      // WHY THAT IS SAFE, given the MIG keeps running underneath:
+      //
+      //   * Writes cannot be left half-issued. CacheToMigAdapter gates on
+      //     `app_rdy && (!headIsWrite || app_wdf_rdy)` and drives app_en,
+      //     app_wdf_wren and app_wdf_end in the SAME cycle, so a write command
+      //     is never accepted without its data. Reset can therefore never
+      //     strand the MIG waiting for a write burst.
+      //   * Reads in flight are simply dropped. `app_rd_data_valid` is
+      //     unstallable, and while the adapter is in reset its FIFOs stay
+      //     empty, so late data is not captured. The hold below is orders of
+      //     magnitude longer than any MIG read latency, so by the time the
+      //     adapter is released there is nothing outstanding and `owed` is 0.
+      //
+      // That second point is why the hold is long. Releasing early would let a
+      // stale read land in a fresh FIFO, and this path matches responses BY
+      // POSITION -- the exact hazard that produced the DDR2 write-ack bug and
+      // the AlteraSdramAdapter corruption. Do not shorten it.
+      val ddr3RuntimeReset: Bool = if (isDdr3 && hasRuntimeReset) {
+        val rawCd = ClockDomain(clock = ddr3Mig.io.ui_clk,
+                                config = ClockDomainConfig(resetKind = BOOT))
+        new ClockingArea(rawCd) {
+          val escape = UartResetEscape(sys.coreConfigs.head.uartBaudRate, sys.clkFreq)
+          escape.io.rxd := io.ser_rxd
+          val hold = ResetGenerator.requestedHold(
+            escape.io.resetRequest, ResetGenerator.Ddr3ResetCycles)
+        }.hold
+      } else null
+
       // DDR3 UI Clock Domain
       val ddr3MainCd: ClockDomain = if (isDdr3) {
         ClockDomain(
           clock = ddr3Mig.io.ui_clk,
-          reset = ddr3Mig.io.ui_clk_sync_rst,
+          reset = ddr3Mig.io.ui_clk_sync_rst || ddr3RuntimeReset,
           frequency = FixedFrequency(sys.clkFreq),
           config = ClockDomainConfig(resetKind = SYNC, resetActiveLevel = HIGH)
         )
