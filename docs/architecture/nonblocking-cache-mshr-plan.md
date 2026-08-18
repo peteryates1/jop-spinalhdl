@@ -672,12 +672,17 @@ That is the result worth keeping, more than any single number:
 
 Before this work the two DRAM paths sat at 1.75x and 1.81x while SDR reached
 4.45x, and that gap was the whole reason for the investigation. The three
-architectures now agree within 4 %, having started 2.5x apart. Absolute rates
-still differ (SDR is ~27.6 kacc/s per MHz against DDR3's 20.5) but the SHAPE of
-the curve no longer depends on which memory is attached — which says the
-remaining limit is something all three share, not anything about DRAM. The
-single BMB command port and its arbiter are the obvious next suspects, and the
-fact that the critical path also terminates there is not a coincidence.
+architectures now agree within 4 %, having started 2.5x apart.
+
+**An earlier version of this section read that convergence as evidence of a
+shared ceiling and named the BMB command port and its arbiter as the suspects.
+That is retracted** — see "Resist the obvious inference" at the top of this
+document. Dividing throughput by the work each memory actually performs shows
+the three paths are capped by three DIFFERENT mechanisms and land near each
+other by coincidence: SDR at its controller's sustained command rate, the two
+DRAM paths by `LruCacheCore`'s serial hit path. **There is no measurement
+implicating the arbiter**, and it should not be worked on on the strength of
+this table.
 
 ### Fabric cost, measured across four build pairs
 
@@ -733,29 +738,24 @@ miss needs none of it and only a partial write miss does.
 
 ## What is left
 
-1. **Cut the 9 memory transactions per array access** — see the levers above.
-   `JbeScaleBramSim` measures the count, so the effect of any change to the
-   handle/bounds path is directly observable without touching hardware.
-2. **Pipeline the L2 hit path**, which now caps both DRAM paths at ~58-61 % of
-   their measured interval.
-2. **Timing at eight cores.** Neither core count closes at 75 MHz, MSHRs or not. That is a
-   pre-existing property of the `BmbMemoryController -> cmdFifo` path, and it is
-   what to attack next if these configurations are ever to ship — pipelining
-   that command port would also raise the achievable clock. The 8-core build is
-   additionally at 93 % logic.
-3. **The remaining gap to linear.** Eight cores now give 4.28x, not 8x. With the
-   miss FSM no longer the limit, the next candidates are the single BMB command
-   port, the 4-MSHR cap (the DDR2 adapter's `rspDepth = 8` allows no more, since
-   each miss can need an eviction and a refill), and DRAM bank/refresh effects.
-   Worth re-running `Ddr2ConcurrencyProbe` against the measured numbers before
-   guessing.
-4. **A leaner MSHR entry.** Each holds a whole cache line of write data (128
-   bits on DDR3, 256 on DDR2) even though a read miss needs none of it. That is
-   what makes 8 entries unroutable at 8 cores. Storing write data only for the
-   entries that are writes, or merging into the line at allocation, would shrink
-   it substantially.
-5. **Secondary-hit merging** — a request to a line already being filled is
-   replayed, not attached. Pure throughput, no correctness impact.
-6. **Register cost** is real: each MSHR holds a whole cache line of write data
-   (256 bits on DDR2) plus tag and dirty words. Measured at +3,408 LE for four
-   entries on the 4-core build.
+**Tracked in [`../current-status.md`](../current-status.md), which is the ground
+truth for outstanding work** — this document is the working record of what was
+built, not a task list. The items this work created or changed:
+
+| item | |
+|---|---|
+| **37** | The method cache dominates real memory traffic (62 % of DoApp's transactions) |
+| **38** | Measure DoApp's memory-stall fraction — gates 37, 39 and the arbiter items |
+| **39** | The L2 hit path is serial: 3 cycles per hit, 58-61 % of the DRAM interval |
+| **40** | A leaner MSHR entry — the full cache line of write data is what makes 8 MSHRs unroutable at 8 cores |
+| **41** | Neither 8-core DRAM build closes timing, MSHRs or not |
+| **42** | Secondary-hit merging is not implemented |
+| **5 / 31** | The arbiter items, **rescoped** — they cap frequency, not throughput; see the retraction above |
+
+Two things deliberately NOT on that list, because this document's own analysis
+showed them to be dead ends:
+
+- **Caching the handle dereference** and **narrowing the A$ line fill**. Both
+  look worth multiples on `jbe.Scale` and are worth 2.8 % and nothing on DoApp.
+  Do not resurrect them from the `jbe.Scale` section without re-reading the
+  DoApp measurement that follows it.

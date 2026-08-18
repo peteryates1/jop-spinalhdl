@@ -42,7 +42,47 @@ Detail lives in:
 
 ---
 
-## 0. Outstanding items
+## 1. Outstanding now — in priority order
+
+One line each. **This section is the ground truth for what is open** —
+outstanding items from other documents belong here, not only there.
+Full reasoning and journals are in [section 3](#3-item-detail-and-journals);
+closed items are in [section 2](#2-all-items--summary).
+
+The ordering is a proposal, not a decree — it puts measurement that unblocks
+a decision above the work it would unblock, and CI trust above everything,
+on the grounds that a flaky baseline makes every other number arguable.
+
+1. **[#38](#item-38)** — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31
+2. **[#30](#item-30)** — `JopJvmTestsBramSim` — the CI baseline job — intermittently dies
+3. **[#29](#item-29)** — `BytecodeFetchStage: JumpTable integration` is flaky in CI
+4. **[#32](#item-32)** — UART data corruption on seed 871203250 — CI seed now PINNED around it
+5. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+6. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
+7. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
+8. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+9. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+10. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
+11. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+12. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+13. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+14. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+15. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+16. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+17. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+18. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+19. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+20. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
+21. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+22. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+23. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+24. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+25. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
+26. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
+27. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+
+## 2. All items — summary
+
 
 Scannable index; the numbered sections below carry the reasoning. Each entry
 says what is **verified** versus **asserted**, because several things in this
@@ -77,2967 +117,3174 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 
 ### Blocking / correctness
 
-- **1.** ~~**Generational GC is unsound on SMP**~~ — **RESOLVED (2026-08-15,
-   `ef36d99`); the core-count guard is GONE as of 2026-08-16.** The long-standing
-   >2-core failure was **not a GC bug and not a card-table bug**. It was two
-   response-path defects in `AlteraSdramAdapter` that corrupted reads to zero
-   (Avalon `readdatavalid` is a pulse and was dropped whenever the consumer
-   stalled; locally-generated write responses, which hardcode `data := 0`, could
-   overtake outstanding reads, which the consumer matches BY ORDER). It surfaced
-   as an array-bounds exception on a valid index, which killed a publisher
-   thread and wedged the cluster. Full narrative and every retraction along the
-   way in the item-1 section below, entries (b1)-(b10).
 
-   **Verified on EP4CGX150 SDRAM:**
+### Open
 
-   | cores | clock | SmpGcTest generational | DoAll |
-   |---|---|---|---|
-   | 1 | 60 MHz | — | 66/66 |
-   | 4 | 60 MHz | `SMPGC OK`, minors 10 / verified 192 / errors 0, 3/3 | 66/66 |
-   | 8 | 50 MHz | `SMPGC OK`, minors 10 / verified 192 / errors 0, 3/3 | 66/66 generational AND classic |
+- **[32](#item-32)** — UART data corruption on seed 871203250 — CI seed now PINNED around it
+- **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+- **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+- **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+- **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+- **[8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+- **[9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
+- **[10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
+- **[31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+- **[11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+- **[29](#item-29)** — `BytecodeFetchStage: JumpTable integration` is flaky in CI
+- **[30](#item-30)** — `JopJvmTestsBramSim` — the CI baseline job — intermittently dies
+- **[12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+- **[13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+- **[14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
+- **[27](#item-27)** — The `aastore` type check's cost was never measured
+- **[17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+- **[18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+- **[19](#item-19)** — Write the missing `_sw` microcode handlers
+- **[20](#item-20)** — Decide whether the double group gets microcode at all
+- **[21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+- **[37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
+- **[38](#item-38)** — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31
+- **[39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
+- **[40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+- **[41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
+- **[42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
 
-   plus `JopJvmTestsBramSim` 132 ok. 8 cores fits in **77,145 LE (52 %)**, so
-   the device is not the limit.
+### Closed
 
-   **WHAT THE DoAll COLUMN DOES AND DOES NOT MEAN.** Nothing in `java/apps/JvmTests`
-   writes `IO_SIGNAL`, so on a multi-core bitstream cores 1..N-1 stay parked in
-   the microcode `cpux_loop` and **DoAll runs entirely on core 0**. It is a
-   regression test that the larger, slower build still executes the JVM
-   correctly with N cores instantiated and the arbiter widened — worth having,
-   and it caught nothing but would have caught plenty — but it exercises no
-   cross-core coherency, no lock contention, no arbiter contention and no SMP
-   GC. **`SmpGcTest` is the only test in the tree that actually runs all the
-   cores** (`cores 8, publishers 7`), which is why every core-count claim above
-   rests on it and why item 2's "JopIhluGcBramSim cannot fail" matters.
+- ~~**[1](#item-1)**~~ — Generational GC is unsound on SMP — RESOLVED (2026-08-15
+- ~~**[2](#item-2)**~~ — `JopIhluGcBramSim` cannot fail — CLOSED 2026-08-16
+- ~~**[34](#item-34)**~~ — 4-CORE STATUS after the fetch-stall fixes — the SDRAM row is
+- ~~**[33](#item-33)**~~ — `AlteraLpm.createRam` discarded the debug stack-RAM address
+- ~~**[35](#item-35)**~~ — `AlteraSdramAdapter` has NO simulation coverage — DONE
+- ~~**[6](#item-6)**~~ — Major GC constant unexplained — LARGELY FIXED 2026-08-06, 2.6-3.2x
+- ~~**[24](#item-24)**~~ — The evacuation trade is untested at larger object sizes
+- ~~**[25](#item-25)**~~ — Two loose ends from the GC work — DONE 2026-08-06
+- ~~**[36](#item-36)**~~ — The `stall freezes jpc, jinstr and the dispatch address` formal
+- ~~**[15](#item-15)**~~ — `GcPauseTest` on the Wukong boards — never run — DONE
+- ~~**[16](#item-16)**~~ — Colorlight i5 SDRAM ("stage 2" of that board's bring-up — unrelated to
+- ~~**[23](#item-23)**~~ — `f_multianewarray` handles exactly 2 dimensions — FIXED
+- ~~**[26](#item-26)**~~ — Reference arrays carry no element class — FIXED
+- ~~**[28](#item-28)**~~ — `DoAll` dies at `CollectionTest` on the Wukong — FIXED
+- ~~**[22](#item-22)**~~ — Five `_sw` handlers exist but do not work — RESOLVED. It was two
 
-   **AN 8-CORE BUILD NEEDS THE PLL AT 50 MHz.** `dram_pll.vhd` ships at 6/5
-   (60 MHz), which suits up to 4 cores; 8 misses it by **-1.199 ns** and the
-   failing path is precisely what item 31 describes — `cores_N|memCtrl|addrReg`
-   through the arbiter to `cores_0|memCtrl|state`, 18.185 ns of data delay,
-   Fmax ~56 MHz. At 50 MHz it closes with **+0.463 ns setup / +0.234 hold**.
-   **The PLL now follows the preset automatically** (2026-08-15): `JopTopVerilog`
-   generates `fpga/qmtech-ep4cgx150-sdram/generated/dram_pll.vhd` from
-   `clkFreq`, so `ep4cgx150Smp 8 50` emits a 1/1 PLL with no hand edit, and it
-   reports the baud the board will actually manage. See `DramPllGen`.
+## 3. Item detail and journals
 
-   **The per-core probe banks are limited to 4 cores** (`JopCluster.hasProbeBanks`).
-   The root port's target field is 4 bits, cores take 0..cpuCnt-1, and the banks
-   live at `8 + core` and `12 + core` — which stops fitting once the cores need
-   0..7, where `12 + core` runs off the end and wraps onto another core's slot.
-   Above 4 cores the banks are omitted rather than shipped silently wrong, and
-   SmpGcTest checks the same bound before reading them. Restoring them for a
-   wider cluster means widening `rootSel`, which is a `Sys` change.
+Stable IDs, grouped as they were created. Every entry that had a journal
+keeps it verbatim.
 
-   **DDR3 CONFIRMED at 4 cores (2026-08-15).** Wukong XC7A100T, new preset
-   `wukongDdr3Smp(4)`, 100 MHz, post-route WNS **+0.081 ns** / WHS +0.065:
-   `GC: generational, 512-word cards`, `SMPGC OK`, `minors 10 / verified 192 /
-   errors 0`, **5 of 6 runs**. This matters as an independent check as well as a
-   coverage tick — DDR3 goes MIG -> `CacheToMigAdapter` and never touches
-   `AlteraSdramAdapter`, so it confirms the fix's claimed scope.
+<a id="item-1"></a>
 
-   The one failure was the FIRST run after programming: the card size printed as
-   `!!` instead of `512` and the run then hung. Every run after a fresh reprogram
-   was clean. That has the shape of the item 32 UART corruption plus the known
-   "reprogram immediately before each download" rule rather than anything in the
-   collector, but it is one data point and is recorded rather than dismissed.
+### Item 1 — ~~Generational GC is unsound on SMP — RESOLVED (2026-08-15~~
 
-   Note `wukongDdr3Smp` derives from `wukongDdr3`, NOT `wukongSmpMinimal`. The
-   latter looks like the obvious base and is wrong twice: it replaces coreConfig
-   with a bare `JopCoreConfig()`, so `hasCardTable` goes false, `GC.init` falls
-   back to classic, and a generational test on it measures nothing.
+~~**Generational GC is unsound on SMP**~~ — **RESOLVED (2026-08-15,
+`ef36d99`); the core-count guard is GONE as of 2026-08-16.** The long-standing
+>2-core failure was **not a GC bug and not a card-table bug**. It was two
+response-path defects in `AlteraSdramAdapter` that corrupted reads to zero
+(Avalon `readdatavalid` is a pulse and was dropped whenever the consumer
+stalled; locally-generated write responses, which hardcode `data := 0`, could
+overtake outstanding reads, which the consumer matches BY ORDER). It surfaced
+as an array-bounds exception on a valid index, which killed a publisher
+thread and wedged the cluster. Full narrative and every retraction along the
+way in the item-1 section below, entries (b1)-(b10).
 
-   **Still asserted, not verified:** the XC7A100T DB V5 board (only Wukong was
-   run); DDR3 above 4 cores. The cluster-level card table the original entry
-   proposed turned out **not** to be needed: the per-core tables are fine, and
-   `SMPGC OK` means the cross-generation references genuinely survived, so the
-   workload did exercise it.
+**Verified on EP4CGX150 SDRAM:**
 
-   **EP4CGX150 CORE-COUNT CEILING, all measured 2026-08-15, not extrapolated:**
+| cores | clock | SmpGcTest generational | DoAll |
+|---|---|---|---|
+| 1 | 60 MHz | — | 66/66 |
+| 4 | 60 MHz | `SMPGC OK`, minors 10 / verified 192 / errors 0, 3/3 | 66/66 |
+| 8 | 50 MHz | `SMPGC OK`, minors 10 / verified 192 / errors 0, 3/3 | 66/66 generational AND classic |
 
-   | cores | LE | of device | timing | status |
-   |---|---|---|---|---|
-   | 1 | 8,784 | 6 % | 60-80 MHz | validated |
-   | 4 | 42,769 | 29 % | 60 MHz, +0.944 | validated, generational |
-   | 8 | 77,145 | 52 % | 50 MHz, +0.463 | validated, generational |
-   | 12 | 118,085 | 79 % | 36 MHz, +3.084 | **validated, generational** |
-   | 16 | **182,501** | **122 %** | — | **DOES NOT FIT** |
+plus `JopJvmTestsBramSim` 132 ok. 8 cores fits in **77,145 LE (52 %)**, so
+the device is not the limit.
 
-   12 cores validated 2026-08-15: PLL 18/25 = 36 MHz, `SMPGC OK` with `minors 10
-   / verified 192 / errors 0` on **4/4 runs**, `cores 12, publishers 11`, and
-   DoAll **66/66** generational. Per-core cost is ~11.3k LE. Fmax at 12 cores is
-   ~40 MHz, so 40 (4/5) may also close and would keep 2 Mbaud — untested.
+**WHAT THE DoAll COLUMN DOES AND DOES NOT MEAN.** Nothing in `java/apps/JvmTests`
+writes `IO_SIGNAL`, so on a multi-core bitstream cores 1..N-1 stay parked in
+the microcode `cpux_loop` and **DoAll runs entirely on core 0**. It is a
+regression test that the larger, slower build still executes the JVM
+correctly with N cores instantiated and the arbiter widened — worth having,
+and it caught nothing but would have caught plenty — but it exercises no
+cross-core coherency, no lock contention, no arbiter contention and no SMP
+GC. **`SmpGcTest` is the only test in the tree that actually runs all the
+cores** (`cores 8, publishers 7`), which is why every core-count claim above
+rests on it and why item 2's "JopIhluGcBramSim cannot fail" matters.
 
-   **THE BAUD RATE FOLLOWS THE CLOCK, and not the way it first looks.** UartCtrl
-   computes `clockDivider = round(clkFreq / baud / rxSamplePerBit) - 1` with
-   `rxSamplePerBit = 5`, so an exact baud needs **`clkFreq / (baud * 5)`** to be
-   an integer — for 2 Mbaud, a clock that is a multiple of **10 MHz**. 80, 60 and
-   50 all qualify, which is why nothing noticed. 36 does not: 36/(2*5) = 3.6,
-   which rounds to 4, and the board transmits at **1.8 Mbaud**. A 12-core build
-   therefore needs `download.py ... 1800000`; at 2 Mbaud it looks like a dead
-   board ("FPGA not responding"), which is the same symptom as a PLL/preset
-   mismatch and easy to misdiagnose. Diagnose it by listening raw and sweeping
-   the baud until the ready byte reads back as `0xAA` — at the wrong rate it
-   decodes as a steady wrong value (`0x5A` at 2 Mbaud here), which tells you the
-   FPGA is alive and only the rate is wrong.
+**AN 8-CORE BUILD NEEDS THE PLL AT 50 MHz.** `dram_pll.vhd` ships at 6/5
+(60 MHz), which suits up to 4 cores; 8 misses it by **-1.199 ns** and the
+failing path is precisely what item 31 describes — `cores_N|memCtrl|addrReg`
+through the arbiter to `cores_0|memCtrl|state`, 18.185 ns of data delay,
+Fmax ~56 MHz. At 50 MHz it closes with **+0.463 ns setup / +0.234 hold**.
+**The PLL now follows the preset automatically** (2026-08-15): `JopTopVerilog`
+generates `fpga/qmtech-ep4cgx150-sdram/generated/dram_pll.vhd` from
+`clkFreq`, so `ep4cgx150Smp 8 50` emits a 1/1 PLL with no hand edit, and it
+reports the baud the board will actually manage. See `DramPllGen`.
 
-   Item 5's "area allows ~12 cores at 73 %" was based on a 4-core figure of
-   38,372 LE and is optimistic against today's builds — 12 costs 79 %. Shedding
-   the ~33k LE that 16 needs means trimming the object and array caches, which
-   are in the SMP coherency path, so it would change the thing under test rather
-   than just the size. Trimming CUs would not be enough and would not touch the
-   real cost, which is per-core memory-controller and cache logic.
+**The per-core probe banks are limited to 4 cores** (`JopCluster.hasProbeBanks`).
+The root port's target field is 4 bits, cores take 0..cpuCnt-1, and the banks
+live at `8 + core` and `12 + core` — which stops fitting once the cores need
+0..7, where `12 + core` runs off the end and wraps onto another core's slot.
+Above 4 cores the banks are omitted rather than shipped silently wrong, and
+SmpGcTest checks the same bound before reading them. Restoring them for a
+wider cluster means widening `rootSel`, which is a `Sys` change.
 
-   **The failing test now exists and the bug is reproduced on hardware**
-   (2026-08-09). `java/apps/SmpGcTest` — core 1 stores a nursery object into a
-   TENURED holder, core 0 churns until a minor GC is observed, then re-checks
-   every magic word. On the EP4CGX150 SMP (2 cores, Ihlu):
+**DDR3 CONFIRMED at 4 cores (2026-08-15).** Wukong XC7A100T, new preset
+`wukongDdr3Smp(4)`, 100 MHz, post-route WNS **+0.081 ns** / WHS +0.065:
+`GC: generational, 512-word cards`, `SMPGC OK`, `minors 10 / verified 192 /
+errors 0`, **5 of 6 runs**. This matters as an independent check as well as a
+coverage tick — DDR3 goes MIG -> `CacheToMigAdapter` and never touches
+`AlteraSdramAdapter`, so it confirms the fix's claimed scope.
 
-   | | boot line | result |
-   |---|---|---|
-   | guard in place | `GC: classic (SMP - per-core card tables…)` | `minors 0 verified 192 errors 0` → **INCONCLUSIVE** |
-   | guard removed | `GC: generational, 16-word cards` | `minors 31 verified 192 errors 192` → **FAIL** |
+The one failure was the FIRST run after programming: the card size printed as
+`!!` instead of `512` and the run then hung. Every run after a fresh reprogram
+was clean. That has the shape of the item 32 UART corruption plus the known
+"reprogram immediately before each download" rule rather than anything in the
+collector, but it is one data point and is recorded rather than dismissed.
 
-   Every one of the 192 cross-core references was lost, and the magic reads back
-   as unrelated data — the young objects were collected while live and their
-   space reused. The one-line experiment is in `GC.java:552`: drop
-   `&& cpuCnt0 <= 1` from `genActive`. **The guard is restored**; that
-   configuration is unsound and must not be shipped.
+Note `wukongDdr3Smp` derives from `wukongDdr3`, NOT `wukongSmpMinimal`. The
+latter looks like the obvious base and is wrong twice: it replaces coreConfig
+with a bare `JopCoreConfig()`, so `hasCardTable` goes false, `GC.init` falls
+back to classic, and a generational test on it measures nothing.
 
-   The RTL fix landed in 767178b (one cluster-level table fed from the
-   memory-side bus) with timing closed in 2389e40, and **the guard was removed
-   in cd75352** — generational GC is now available on SMP.
+**Still asserted, not verified:** the XC7A100T DB V5 board (only Wukong was
+run); DDR3 above 4 cores. The cluster-level card table the original entry
+proposed turned out **not** to be needed: the per-core tables are fine, and
+`SMPGC OK` means the cross-generation references genuinely survived, so the
+workload did exercise it.
 
-   **Validation sweep (2026-08-09), guard off by default:**
+**EP4CGX150 CORE-COUNT CEILING, all measured 2026-08-15, not extrapolated:**
 
-   | check | result |
-   |---|---|
-   | `JopGenGcBramSim` — single core, no regression | **PASS**, `GC: generational, 4-word cards` |
-   | EP4CGX150 **2 cores** @80 MHz (MET +0.133) — `SmpGcTest` | **SMPGC OK**, `minors 31 verified 192 errors 0` |
-   | EP4CGX150 **2 cores** @80 MHz — `DoAll` | **66/66**, `GC: generational` |
-   | EP4CGX150 **4 cores** @60 MHz (MET +0.302) — `SmpGcTest` | **HANGS after tenuring — see below** |
+| cores | LE | of device | timing | status |
+|---|---|---|---|---|
+| 1 | 8,784 | 6 % | 60-80 MHz | validated |
+| 4 | 42,769 | 29 % | 60 MHz, +0.944 | validated, generational |
+| 8 | 77,145 | 52 % | 50 MHz, +0.463 | validated, generational |
+| 12 | 118,085 | 79 % | 36 MHz, +3.084 | **validated, generational** |
+| 16 | **182,501** | **122 %** | — | **DOES NOT FIT** |
 
-   **The 4-core hang is a SEPARATE, REAL bug — a stop-the-world halt that never
-   releases — and the guard is back, set at `cpuCnt <= 2`.**
+12 cores validated 2026-08-15: PLL 18/25 = 36 MHz, `SMPGC OK` with `minors 10
+/ verified 192 / errors 0` on **4/4 runs**, `cores 12, publishers 11`, and
+DoAll **66/66** generational. Per-core cost is ~11.3k LE. Fmax at 12 cores is
+~40 MHz, so 40 (4/5) may also close and would keep 2 Mbaud — untested.
 
-   Investigated by instrumenting the test: core 0's wait is now bounded and
-   prints a per-core heartbeat, so a hang says *who* stopped. It does not read
-   as a lost write:
+**THE BAUD RATE FOLLOWS THE CLOCK, and not the way it first looks.** UartCtrl
+computes `clockDivider = round(clkFreq / baud / rxSamplePerBit) - 1` with
+`rxSamplePerBit = 5`, so an exact baud needs **`clkFreq / (baud * 5)`** to be
+an integer — for 2 Mbaud, a clock that is a multiple of **10 MHz**. 80, 60 and
+50 all qualify, which is why nothing noticed. 36 does not: 36/(2*5) = 3.6,
+which rounds to 4, and the board transmits at **1.8 Mbaud**. A 12-core build
+therefore needs `download.py ... 1800000`; at 2 Mbaud it looks like a dead
+board ("FPGA not responding"), which is the same symptom as a PLL/preset
+mismatch and easy to misdiagnose. Diagnose it by listening raw and sweeping
+the baud until the ready byte reads back as `0xAA` — at the wrong rate it
+decodes as a steady wrong value (`0x5A` at 2 Mbaud here), which tells you the
+FPGA is alive and only the rate is wrong.
 
-   ```
-   STALL round 1 phase 1 publishRound 1  pub[1]=1 pub[2]=2 pub[3]=2
-                                         live=117, 2283077, 2328250
-   ```
+Item 5's "area allows ~12 cores at 73 %" was based on a 4-core figure of
+38,372 LE and is optimistic against today's builds — 12 costs 79 %. Shedding
+the ~33k LE that 16 needs means trimming the object and array caches, which
+are in the SMP coherency path, so it would change the thing under test rather
+than just the size. Trimming CUs would not be enough and would not touch the
+real cost, which is per-core memory-controller and cache logic.
 
-   Core 1's heartbeat is frozen dead at 117 mid-`publish()` — the allocating
-   path — while cores 2 and 3 spin millions of iterations. It has stopped
-   executing, not merely failed to publish a value.
+**The failing test now exists and the bug is reproduced on hardware**
+(2026-08-09). `java/apps/SmpGcTest` — core 1 stores a nursery object into a
+TENURED holder, core 0 churns until a minor GC is observed, then re-checks
+every magic word. On the EP4CGX150 SMP (2 cores, Ihlu):
 
-   My first hypothesis (`pubRound[]` losing a write to A$ snoop granularity)
-   was **wrong**, and so was the second. Making core 0 allocate inside its wait
-   loop — to give a GC initiated elsewhere a safepoint — did not help; it moved
-   the symptom, freezing **all three** publishers (heartbeats identical across
-   successive reports) while core 0 carried on running and printing. Cores
-   halted and never released is a stop-the-world halt/release fault, which is a
-   different mechanism from the remembered set entirely.
+| | boot line | result |
+|---|---|---|
+| guard in place | `GC: classic (SMP - per-core card tables…)` | `minors 0 verified 192 errors 0` → **INCONCLUSIVE** |
+| guard removed | `GC: generational, 16-word cards` | `minors 31 verified 192 errors 192` → **FAIL** |
 
-   Note the earlier 4-core pass was luck, not a regression since: the only app
-   change between them returns `true` in this configuration, and the RTL and
-   timing were identical. Allocation volume decides which core trips the
-   nursery, and three publishers make it far more likely to be one of them.
+Every one of the 192 cross-core references was lost, and the magic reads back
+as unrelated data — the young objects were collected while live and their
+space reused. The one-line experiment is in `GC.java:552`: drop
+`&& cpuCnt0 <= 1` from `genActive`. **The guard is restored**; that
+configuration is unsound and must not be shipped.
 
-   **What is validated**: card table correctness (2 cores, `SmpGcTest` SMPGC OK
-   and `DoAll` 66/66 with generational active) and single-core no-regression.
-   **What is not**: anything above 2 cores. The guard is therefore set at the
-   validated boundary rather than at 1, and the boot line says which reason
-   applies — `SMP >2 cores - generational deadlocks` rather than the old, and
-   now wrong, "no card table", which would send the next reader hunting a
-   missing `hasCardTable` in the preset.
+The RTL fix landed in 767178b (one cluster-level table fed from the
+memory-side bus) with timing closed in 2389e40, and **the guard was removed
+in cd75352** — generational GC is now available on SMP.
 
-   **IHLU is exonerated — the fault is in the shared stop-the-world path.**
-   Rebuilding the same 4-core config with `useCmpSync = true` (a single global
-   lock, IHLU not instantiated) **hangs in exactly the same place**, after
-   `minors after tenuring 6`. It is in fact a harder hang: with IHLU core 0 kept
-   running and printed its STALL diagnostics, whereas with CmpSync core 0 is
-   frozen too and prints nothing.
+**Validation sweep (2026-08-09), guard off by default:**
 
-   That was the point of the swap, and it rules out the obvious suspect: the
-   IHLU drain that exempts lock owners from `gcHalt`. Whatever fails is common
-   to both locking schemes, so look at `gcHalt` itself — the halt request,
-   acknowledgement and release — rather than at either lock.
+| check | result |
+|---|---|
+| `JopGenGcBramSim` — single core, no regression | **PASS**, `GC: generational, 4-word cards` |
+| EP4CGX150 **2 cores** @80 MHz (MET +0.133) — `SmpGcTest` | **SMPGC OK**, `minors 31 verified 192 errors 0` |
+| EP4CGX150 **2 cores** @80 MHz — `DoAll` | **66/66**, `GC: generational` |
+| EP4CGX150 **4 cores** @60 MHz (MET +0.302) — `SmpGcTest` | **HANGS after tenuring — see below** |
 
-   `ep4cgx150Smp` now takes a `cmpSync` flag for exactly this bisection:
-   `sbt "runMain jop.system.JopTopVerilog ep4cgx150Smp 4 60 cmpsync"`.
+**The 4-core hang is a SEPARATE, REAL bug — a stop-the-world halt that never
+releases — and the guard is back, set at `cpuCnt <= 2`.**
 
-   Useful side observation: the CmpSync build closes timing at **+0.810 ns**
-   against IHLU's +0.302 at the same 4 cores and 60 MHz, so IHLU is costing
-   ~0.5 ns. That is a separate lead for item 31.
+Investigated by instrumenting the test: core 0's wait is now bounded and
+prints a per-core heartbeat, so a hang says *who* stopped. It does not read
+as a lost write:
 
-   **Code reading then found the likely cause — `minorGc()` never halts anyone.**
-   Every write of `IO_GC_HALT` in `GC.java` is in `startCycle()`,
-   `finishCycleNow()` or the public `gc()` — all classic/incremental paths.
-   **Neither `minorGc()` nor `majorGc()` asserts it.** So the generational
-   collector relocates objects and rewrites handles while every other core keeps
-   running, which is unsound on SMP independently of anything to do with cards.
-   That the guard's stated reason was only the remembered set is why this went
-   unnoticed: the guard was hiding two faults, and fixing the card table exposed
-   the second.
+```
+STALL round 1 phase 1 publishRound 1  pub[1]=1 pub[2]=2 pub[3]=2
+                                     live=117, 2283077, 2328250
+```
 
-   **CORRECTION to the deadlock shape given in 9cfbd65.** That commit proposed
-   "a core asserts `gcHalt` while another holds `mutex`, halting the very core
-   that must release it, then blocks on that lock". **That cannot happen** — the
-   hardware already handles it. Both lock units exempt the current lock owner
-   from `gcHalt` (`CmpSync.scala:137-147`, `Ihlu.scala:371`), and CmpSync's
-   comment says so explicitly: *"Lock owner is NEVER halted — must complete
-   critical section to avoid deadlock (e.g., GC core sets gcHalt while another
-   core holds the lock; owner must release first)."* The hypothesis was wrong in
-   its detail. The real mechanism is the mirror image of it: not the collector
-   *blocking* on the lock, but the collector *releasing* it mid-collection.
+Core 1's heartbeat is frozen dead at 117 mid-`publish()` — the allocating
+path — while cores 2 and 3 spin millions of iterations. It has stopped
+executing, not merely failed to publish a value.
 
-   **The global lock is not reentrant, and the collector nests it.** In
-   `asm/src/jvm.asm`, `monitorexit` unconditionally writes `io_cpu_id`
-   (= `IO_UNLOCK`); the `lockcnt` it maintains decides only when to re-enable
-   interrupts, never whether to release. `Sys.scala:302` clears `lockReqReg`
-   unconditionally on that write. IHLU survives this because it reference-counts
-   each lock slot (`count(s)`); **CmpSync has one global lock and no counter at
-   all**, so an inner `monitorexit` drops the lock outright while the outer
-   critical section is still running.
+My first hypothesis (`pubRound[]` losing a write to A$ snoop granularity)
+was **wrong**, and so was the second. Making core 0 allocate inside its wait
+loop — to give a GC initiated elsewhere a safepoint — did not help; it moved
+the symptom, freezing **all three** publishers (heartbeats identical across
+successive reports) while core 0 carried on running and printing. Cores
+halted and never released is a stop-the-world halt/release fault, which is a
+different mechanism from the remembered set entirely.
 
-   The collector is entered from inside `synchronized (mutex)`
-   (`newObjectGen`/`newArrayGen` -> `allocGen` -> `majorGc` -> `gc`) and then
-   took the monitor *again* in eight places. `pushFast` was by far the worst: it
-   is called once per root and once per reference field, so a mark phase
-   acquired and released the global lock **thousands of times**, and every
-   release handed the heap to whichever core was waiting — in the middle of a
-   collection. `compactAndSweep`, `getStackRoots`, the two gray-list pops,
-   `prepareCompact`, `compactStep` and `finishCycle` did the same, less often.
+Note the earlier 4-core pass was luck, not a regression since: the only app
+change between them returns `true` in this configuration, and the RTL and
+timing were identical. Allocation volume decides which core trips the
+nursery, and three publishers make it far more likely to be one of them.
 
-   That explains the symptom far better than a deadlock does. The observed
-   4-core failure was never a clean mutual halt; it is a corrupted heap.
+**What is validated**: card table correctness (2 cores, `SmpGcTest` SMPGC OK
+and `DoAll` 66/66 with generational active) and single-core no-regression.
+**What is not**: anything above 2 cores. The guard is therefore set at the
+validated boundary rather than at 1, and the boot line says which reason
+applies — `SMP >2 cores - generational deadlocks` rather than the old, and
+now wrong, "no card table", which would send the next reader hunting a
+missing `hasCardTable` in the preset.
 
-   `copyAndSweepYoung` even documents the invariant it did not have: *"Nothing
-   else can observe them mid-sweep — the collector runs stop-the-world with the
-   other cores halted."* For a minor GC that comment was simply false.
+**IHLU is exonerated — the fault is in the shared stop-the-world path.**
+Rebuilding the same 4-core config with `useCmpSync = true` (a single global
+lock, IHLU not instantiated) **hangs in exactly the same place**, after
+`minors after tenuring 6`. It is in fact a harder hang: with IHLU core 0 kept
+running and printed its STALL diagnostics, whereas with CmpSync core 0 is
+frozen too and prints nothing.
 
-   Two cores are unaffected in practice but are **not proven safe by this
-   analysis** — the same windows exist there, just far less likely to be hit.
-   Treat the validated 2-core result as empirical, not as a correctness
-   argument.
+That was the point of the swap, and it rules out the obvious suspect: the
+IHLU drain that exempts lock owners from `gcHalt`. Whatever fails is common
+to both locking schemes, so look at `gcHalt` itself — the halt request,
+acknowledgement and release — rather than at either lock.
 
-   **Reproduced in simulation, which the hardware-only loop could not do.**
-   `JopGcHaltDeadlockSim` (new) runs `SmpGcTest` on a 4-core CmpSync BRAM
-   cluster with a cluster card table, and dumps `CmpSync.state`/`lockedId` plus
-   every core's `gcHaltReg`/`lockReqReg` when it wedges. First run, guard
-   lifted: generational genuinely active (`GC: generational, 4-word cards`,
-   `minors after tenuring 197`), and then core 0 died with an **uncaught
-   exception** at ~52M cycles — moments after `Native.wr(1, IO_SIGNAL)` released
-   the three publishers, i.e. as soon as anything else ran concurrently.
+`ep4cgx150Smp` now takes a `cmpSync` flag for exactly this bisection:
+`sbt "runMain jop.system.JopTopVerilog ep4cgx150Smp 4 60 cmpsync"`.
 
-   Note what the probe did *not* find: **no core was ever halted and no core
-   ever asserted `gcHalt`** at any sample. So the failure is not a stop-the-world
-   halt that never releases, which is how items above describe it. It is
-   memory corruption from a collection that ran concurrently with mutators.
+Useful side observation: the CmpSync build closes timing at **+0.810 ns**
+against IHLU's +0.302 at the same 4 cores and 60 MHz, so IHLU is costing
+~0.5 ns. That is a separate lead for item 31.
 
-   **The fix** — one rule, applied throughout `GC.java`: *the allocation monitor
-   is acquired exactly once, at the outermost GC entry, and `IO_GC_HALT` is only
-   ever asserted while holding it.*
+**Code reading then found the likely cause — `minorGc()` never halts anyone.**
+Every write of `IO_GC_HALT` in `GC.java` is in `startCycle()`,
+`finishCycleNow()` or the public `gc()` — all classic/incremental paths.
+**Neither `minorGc()` nor `majorGc()` asserts it.** So the generational
+collector relocates objects and rewrites handles while every other core keeps
+running, which is unsound on SMP independently of anything to do with cards.
+That the guard's stated reason was only the remembered set is why this went
+unnoticed: the guard was hiding two faults, and fixing the card table exposed
+the second.
 
-   - `gc()` split into a public entry that takes the monitor and `gcLocked()`
-     that assumes it; `gc_alloc()` and `majorGc()` call `gcLocked()`.
-   - Every nested `synchronized (mutex)` inside the collector removed, with the
-     precondition documented at each site. `pushFast` is now collector-internal
-     and lock-free; `push()` keeps the monitor for its one mutator caller, the
-     snapshot-at-beginning write barrier.
-   - `tryGcIncrement()` takes the monitor around `gcIncrement()`. It is called
-     from `newObject`/`newArray` *after* their synchronized block, so
-     `startCycle()` was asserting `gcHalt` while owning no lock — the one place
-     that really could be halted mid-root-scan by another core winning the lock.
-   - **`minorGc()` now stops the world**, which it never did. It asserts
-     `IO_GC_HALT` after the `majorGc` fallback check (so the two halts do not
-     nest and release early) and clears it after `Native.invalidate()`.
+**CORRECTION to the deadlock shape given in 9cfbd65.** That commit proposed
+"a core asserts `gcHalt` while another holds `mutex`, halting the very core
+that must release it, then blocks on that lock". **That cannot happen** — the
+hardware already handles it. Both lock units exempt the current lock owner
+from `gcHalt` (`CmpSync.scala:137-147`, `Ihlu.scala:371`), and CmpSync's
+comment says so explicitly: *"Lock owner is NEVER halted — must complete
+critical section to avoid deadlock (e.g., GC core sets gcHalt while another
+core holds the lock; owner must release first)."* The hypothesis was wrong in
+its detail. The real mechanism is the mirror image of it: not the collector
+*blocking* on the lock, but the collector *releasing* it mid-collection.
 
-   Holding the monitor across a whole collection also keeps interrupts disabled
-   for its duration (`monitorenter` disables them). That is a behaviour change
-   for the classic path and a deliberate one: a thread switch during `mark()`,
-   which scans other threads' stacks, was previously possible.
+**The global lock is not reentrant, and the collector nests it.** In
+`asm/src/jvm.asm`, `monitorexit` unconditionally writes `io_cpu_id`
+(= `IO_UNLOCK`); the `lockcnt` it maintains decides only when to re-enable
+interrupts, never whether to release. `Sys.scala:302` clears `lockReqReg`
+unconditionally on that write. IHLU survives this because it reference-counts
+each lock slot (`count(s)`); **CmpSync has one global lock and no counter at
+all**, so an inner `monitorexit` drops the lock outright while the outer
+critical section is still running.
 
-   Side benefit: removing the per-push `monitorenter`/`monitorexit` should make
-   the mark phase measurably faster — `push()` was already documented as 78% of
-   the major GC's mark phase. That is also a candidate explanation for the open
-   *"major GC = 2.2 s @36k live, 20-25x the minor sweep, unexplained"* item in
-   *Performance* below: the mark phase was paying a lock round-trip per
-   reference. **Not yet measured — do not treat it as the answer.**
+The collector is entered from inside `synchronized (mutex)`
+(`newObjectGen`/`newArrayGen` -> `allocGen` -> `majorGc` -> `gc`) and then
+took the monitor *again* in eight places. `pushFast` was by far the worst: it
+is called once per root and once per reference field, so a mark phase
+acquired and released the global lock **thousands of times**, and every
+release handed the heap to whichever core was waiting — in the middle of a
+collection. `compactAndSweep`, `getStackRoots`, the two gray-list pops,
+`prepareCompact`, `compactStep` and `finishCycle` did the same, less often.
 
-   **RESULT: the crash is fixed, a freeze is not.** Same 4-core probe, rebuilt:
+That explains the symptom far better than a deadlock does. The observed
+4-core failure was never a clean mutual halt; it is a corrupted heap.
 
-   | | broken | fixed |
-   |---|---|---|
-   | reaches `minors after tenuring` | 197 @ ~52M | 196 @ ~55M |
-   | immediately after releasing publishers | **uncaught exception, `JVM exit!`** | runs on |
-   | by 200M cycles | dead | **frozen, no crash** |
+`copyAndSweepYoung` even documents the invariant it did not have: *"Nothing
+else can observe them mid-sweep — the collector runs stop-the-world with the
+other cores halted."* For a minor GC that comment was simply false.
 
-   So the concurrent-collection defect was real and is closed — but something
-   else stops the run, at ~55.8M cycles. With the probe reading the RIGHT
-   signals (see below), the end state is unambiguous:
+Two cores are unaffected in practice but are **not proven safe by this
+analysis** — the same windows exist there, just far less likely to be hit.
+Treat the validated 2-core result as empirical, not as a correctness
+argument.
 
-   ```
-   CmpSync: state=LOCKED lockedId=1
-   core 0: pc=01b6 syncHalt=true  memBusy=false gcHalt=false lockReq=false
-   core 1: pc=02c3 syncHalt=false memBusy=false gcHalt=false lockReq=true   <- RUNNING
-   core 2: pc=01df syncHalt=true  memBusy=false gcHalt=false lockReq=false
-   core 3: pc=02a8 syncHalt=true  memBusy=false gcHalt=false lockReq=false
-   ```
+**Reproduced in simulation, which the hardware-only loop could not do.**
+`JopGcHaltDeadlockSim` (new) runs `SmpGcTest` on a 4-core CmpSync BRAM
+cluster with a cluster card table, and dumps `CmpSync.state`/`lockedId` plus
+every core's `gcHaltReg`/`lockReqReg` when it wedges. First run, guard
+lifted: generational genuinely active (`GC: generational, 4-word cards`,
+`minors after tenuring 197`), and then core 0 died with an **uncaught
+exception** at ~52M cycles — moments after `Native.wr(1, IO_SIGNAL)` released
+the three publishers, i.e. as soon as anything else ran concurrently.
 
-   **Core 1 is not stalled — it is running, holding the global lock, and never
-   releasing it.** Its PC advances through the `goto` handler (0x2c1-0x2c4) with
-   `jpc` confined to 0x049a-0x049d: a tight loop of a few bytecodes containing
-   no method call (a call would swing `jpc` across the callee). The other three
-   have `lockReq=false` — they never asked for the lock. CmpSync halts *every*
-   non-owner whenever anyone holds it (`CmpSync.scala:141-147`), so they are
-   bystanders frozen by a lock they do not want, which is the design, not a
-   fault.
+Note what the probe did *not* find: **no core was ever halted and no core
+ever asserted `gcHalt`** at any sample. So the failure is not a stop-the-world
+halt that never releases, which is how items above describe it. It is
+memory corruption from a collection that ran concurrently with mutators.
 
-   So the question is not "why does the owner stall" — it does not stall — but
-   **"why does it never release"**.
+**The fix** — one rule, applied throughout `GC.java`: *the allocation monitor
+is acquired exactly once, at the outermost GC entry, and `IO_GC_HALT` is only
+ever asserted while holding it.*
 
-   **The corrupt-handle-list hypothesis is REFUTED.** The probe now reads the
-   heap straight out of `ram.ram` and walks the chains itself, so the failing
-   binary is untouched. At the wedge:
+- `gc()` split into a public entry that takes the monitor and `gcLocked()`
+ that assumes it; `gc_alloc()` and `majorGc()` call `gcLocked()`.
+- Every nested `synchronized (mutex)` inside the collector removed, with the
+ precondition documented at each site. `pushFast` is now collector-internal
+ and lock-free; `push()` keeps the monitor for its one mutator caller, the
+ snapshot-at-beginning write barrier.
+- `tryGcIncrement()` takes the monitor around `gcIncrement()`. It is called
+ from `newObject`/`newArray` *after* their synchronized block, so
+ `startCycle()` was asserting `gcHalt` while owning no lock — the one place
+ that really could be halted mid-root-scan by another core winning the lock.
+- **`minorGc()` now stops the world**, which it never did. It asserts
+ `IO_GC_HALT` after the `majorGc` fallback check (so the two halts do not
+ nest and release early) and clears it after `Native.invalidate()`.
 
-   ```
-   youngList  head=0 (empty)
-   useList    head=0x0057e8  length=81   (terminates)
-   freeList   head=0x005368  length=1143 (terminates)
-   ```
+Holding the monitor across a whole collection also keeps interrupts disabled
+for its duration (`monitorenter` disables them). That is a behaviour change
+for the classic path and a deliberate one: a thread switch during `mark()`,
+which scans other threads' stacks, was previously possible.
 
-   No cycle, no runaway. The bounded-walk guards added to `GC.java` are still
-   worth having — a corrupt list must never be able to wedge a whole cluster
-   silently — but they were never going to catch this, and in fact **could not
-   be used to look for it**: see the layout note below.
+Side benefit: removing the per-push `monitorenter`/`monitorexit` should make
+the mark phase measurably faster — `push()` was already documented as 78% of
+the major GC's mark phase. That is also a candidate explanation for the open
+*"major GC = 2.2 s @36k live, 20-25x the minor sweep, unexplained"* item in
+*Performance* below: the mark phase was paying a lock round-trip per
+reference. **Not yet measured — do not treat it as the answer.**
 
-   **What the wedge actually is.** Reading `SmpGcTest`'s and `GC`'s own statics
-   out of RAM at the freeze:
+**RESULT: the crash is fixed, a freeze is not.** Same 4-core probe, rebuilt:
 
-   ```
-   SmpGcTest: phase=2 publishRound=0 pubRound=[0,1,1,1] liveTick=[0,63,51,42]
-   GC: gcPhase=0 grayList=0xffffffff minors=196 youngObjects=0 toSpace=2
-       copyPtr=0x005ba4 allocPtr=0x007b37 nursery=[0x007b37..0x008000] alloc=0x008000
-   ```
+| | broken | fixed |
+|---|---|---|
+| reaches `minors after tenuring` | 197 @ ~52M | 196 @ ~55M |
+| immediately after releasing publishers | **uncaught exception, `JVM exit!`** | runs on |
+| by 200M cycles | dead | **frozen, no crash** |
 
-   Every one of those is IDENTICAL in every later snapshot. So:
+So the concurrent-collection defect was real and is closed — but something
+else stops the run, at ~55.8M cycles. With the probe reading the RIGHT
+signals (see below), the end state is unambiguous:
 
-   - The collector is **idle and consistent** — a minor GC completed cleanly
-     (`gcPhase=IDLE`, gray list empty, nursery reset, `youngObjects=0`), ~8000
-     words of tenure are free and 1143 handles are on the free list. It is not
-     stuck mid-phase and it is not out of memory.
-   - Core 1 is **not in the publisher loop**: that loop increments
-     `liveTick[1]` every iteration and `liveTick` never changes, while core 1's
-     PC keeps advancing.
-   - The test is genuinely deadlocked, not merely slow: all three publishers
-     finished round 0, core 0 reached `phase=2` and must run to start round 1 —
-     and core 0 is `syncHalt=true`, halted by the lock core 1 holds.
+```
+CmpSync: state=LOCKED lockedId=1
+core 0: pc=01b6 syncHalt=true  memBusy=false gcHalt=false lockReq=false
+core 1: pc=02c3 syncHalt=false memBusy=false gcHalt=false lockReq=true   <- RUNNING
+core 2: pc=01df syncHalt=true  memBusy=false gcHalt=false lockReq=false
+core 3: pc=02a8 syncHalt=true  memBusy=false gcHalt=false lockReq=false
+```
 
-   So core 1 holds the global lock and executes a loop that **writes no GC
-   static and no app static**.
+**Core 1 is not stalled — it is running, holding the global lock, and never
+releasing it.** Its PC advances through the `goto` handler (0x2c1-0x2c4) with
+`jpc` confined to 0x049a-0x049d: a tight loop of a few bytecodes containing
+no method call (a call would swing `jpc` across the callee). The other three
+have `lockReq=false` — they never asked for the lock. CmpSync halts *every*
+non-owner whenever anyone holds it (`CmpSync.scala:141-147`), so they are
+bystanders frozen by a lock they do not want, which is the design, not a
+fault.
 
-   **The bytecode cache names it.** Dumped from `jbcRamWord` at the wedge (again
-   without touching the binary), around core 1's `jpc`:
+So the question is not "why does the owner stall" — it does not stall — but
+**"why does it never release"**.
 
-   ```
-   0x0499: 194 0xc2  monitorenter
-   0x049a: 167 0xa7  goto            <-- core 1 sits here / 0x049b / 0x049d
-   0x049b:   0 0x00  nop
-   0x049c:   0 0x00  nop
-   0x049d:  76 0x4c  astore_1        <-- handler entry
-   0x049e:  42 0x2a  aload_0
-   0x049f: 195 0xc3  monitorexit
-   0x04a0:  43 0x2b  aload_1
-   0x04a1: 191 0xbf  athrow
-   ```
+**The corrupt-handle-list hypothesis is REFUTED.** The probe now reads the
+heap straight out of `ram.ram` and walks the chains itself, so the failing
+binary is untouched. At the wedge:
 
-   **ROOT CAUSE: `Startup.exit()` spins forever while holding a monitor.**
+```
+youngList  head=0 (empty)
+useList    head=0x0057e8  length=81   (terminates)
+freeList   head=0x005368  length=1143 (terminates)
+```
 
-   ```java
-   public static void exit() {
-       for (;RtThreadImpl.mission;) { RtThreadImpl.sleepMs(1000); }
-       JVMHelp.wr("\r\nJVM exit!\r\n");
-       synchronized (stack) {
-           for (;;) ;              // <-- infinite loop INSIDE a monitor
-       }
+No cycle, no runaway. The bounded-walk guards added to `GC.java` are still
+worth having — a corrupt list must never be able to wedge a whole cluster
+silently — but they were never going to catch this, and in fact **could not
+be used to look for it**: see the layout note below.
+
+**What the wedge actually is.** Reading `SmpGcTest`'s and `GC`'s own statics
+out of RAM at the freeze:
+
+```
+SmpGcTest: phase=2 publishRound=0 pubRound=[0,1,1,1] liveTick=[0,63,51,42]
+GC: gcPhase=0 grayList=0xffffffff minors=196 youngObjects=0 toSpace=2
+   copyPtr=0x005ba4 allocPtr=0x007b37 nursery=[0x007b37..0x008000] alloc=0x008000
+```
+
+Every one of those is IDENTICAL in every later snapshot. So:
+
+- The collector is **idle and consistent** — a minor GC completed cleanly
+ (`gcPhase=IDLE`, gray list empty, nursery reset, `youngObjects=0`), ~8000
+ words of tenure are free and 1143 handles are on the free list. It is not
+ stuck mid-phase and it is not out of memory.
+- Core 1 is **not in the publisher loop**: that loop increments
+ `liveTick[1]` every iteration and `liveTick` never changes, while core 1's
+ PC keeps advancing.
+- The test is genuinely deadlocked, not merely slow: all three publishers
+ finished round 0, core 0 reached `phase=2` and must run to start round 1 —
+ and core 0 is `syncHalt=true`, halted by the lock core 1 holds.
+
+So core 1 holds the global lock and executes a loop that **writes no GC
+static and no app static**.
+
+**The bytecode cache names it.** Dumped from `jbcRamWord` at the wedge (again
+without touching the binary), around core 1's `jpc`:
+
+```
+0x0499: 194 0xc2  monitorenter
+0x049a: 167 0xa7  goto            <-- core 1 sits here / 0x049b / 0x049d
+0x049b:   0 0x00  nop
+0x049c:   0 0x00  nop
+0x049d:  76 0x4c  astore_1        <-- handler entry
+0x049e:  42 0x2a  aload_0
+0x049f: 195 0xc3  monitorexit
+0x04a0:  43 0x2b  aload_1
+0x04a1: 191 0xbf  athrow
+```
+
+**ROOT CAUSE: `Startup.exit()` spins forever while holding a monitor.**
+
+```java
+public static void exit() {
+   for (;RtThreadImpl.mission;) { RtThreadImpl.sleepMs(1000); }
+   JVMHelp.wr("\r\nJVM exit!\r\n");
+   synchronized (stack) {
+       for (;;) ;              // <-- infinite loop INSIDE a monitor
    }
-   ```
-
-   On one core that is a harmless way to park the CPU. Under CmpSync
-   `synchronized` takes the **global** lock and `CmpSync.scala:141-147` halts
-   every non-owner while it is held, so **any core that reaches `exit()` freezes
-   the whole cluster permanently**. The `goto` at cache 0x049a has operand bytes
-   `00 00` — branch offset ZERO, the `for(;;)` self-loop — and `jpc` only ever
-   samples 0x049a/0x049b, that goto and its operand.
-
-   The method was identified with `JopBytecodeLocate`, which loads the image
-   through `JopFileLoader` (what the simulator itself uses) and reports the
-   enclosing method for a byte pattern. The 9-byte sequence occurs exactly ONCE
-   in the image, in `Startup.exit()` at words 4095..4106.
-
-   **An earlier reading of this same dump was wrong and is retracted.** It said
-   "an exception inside `synchronized (mutex)` whose handler never completes"
-   (commit 7ab1019). The `astore_1; aload_0; monitorexit; aload_1; athrow` bytes
-   are just the any-catch handler javac emits for EVERY synchronized block; the
-   core never enters them, it is parked on the `goto` three bytes earlier. That
-   mistake came from a hand-written .jop parse whose word index was not the
-   memory address — it produced 12354 words against a header of 13175 and named
-   `Startup.version()`, which contains no synchronized block at all. Always
-   calibrate the mapping against a method whose bytecode is known:
-   `publisher()` must decode as `iconst_0; istore_1` then
-   `iaload; iconst_1; iadd; iastore`.
-
-   **FIXED** (`Startup.exit()` now does `Native.wr(0, Const.IO_INT_ENA)` then a
-   bare `for (;;) ;` — same intent, no lock). Re-running the 4-core probe proves
-   the fix bit: the cluster no longer freezes silently, and UART output that was
-   previously impossible now appears after `minors after tenuring 198` —
-   `ni 000000  000013  103  200`, the column layout of `JVMHelp.trace()`.
-
-   **A SECOND wedge is behind it, and it is the SAME BUG in two more places.**
-   `ni 000000  000013  103  200` is not `trace()`'s column layout, it is
-   `JVMHelp.noim()`'s own preamble, character for character: `wr('n'); wr('i');
-   wr(' ')` then `wrSmall(mp); wrSmall(start); wrByte(pc); wrByte(val)`. So an
-   **unimplemented bytecode was executed** — and `noim()` ends with
-
-   ```java
-   Object o = new Object();
-   synchronized (o) {
-       System.out.println(); ... trace(sp);
-       for (;;);              // <-- infinite loop INSIDE a monitor, again
-   }
-   ```
-
-   which is `Startup.exit()`'s bug verbatim, and worse: it allocates first, so a
-   machine that has just executed a wild bytecode re-enters the collector before
-   it parks. Grepping the runtime for `for(;;)`/`while(true)` within 25 lines of
-   a `synchronized` found exactly these two.
-
-   A third instance is in `JVM.f_athrow()`. It takes `Native.lock(0)` — the
-   global lock — on entry, and the uncaught-exception path deliberately never
-   releases it: *"No need to unlock if we're about to crash anyway"*. True on
-   one core; on SMP it stops every other core for the length of the report and
-   then forever, because `System.exit()` parks. One core's crash became four.
-
-   Two unbounded frame walks feed those paths: `JVMHelp.trace()`'s
-   `fp = vp+args+loc` chain and `f_athrow`'s unwind. Neither forced `fp` to
-   decrease, and both are only ever reached when the frames are already corrupt
-   — `noim()` printed **`mp=0`**, so they were being handed precisely the input
-   that spins them forever, with the global lock held. That is the "core 0 keeps
-   executing while holding the lock" behaviour, and it explains why the earlier
-   reading saw an integer-formatting loop: `wrSmall()` is called once per frame
-   of a walk that never ends.
-
-   **Regression sweep of these three runtime changes** (2026-08-10). The
-   `f_athrow` one matters most, because it touches the path every hardware
-   exception takes:
-
-   | check | result |
-   |---|---|
-   | `JopGenGcBramSim` — 1 core, generational | **PASS**, `GC: generational, 4-word cards` |
-   | `JopSmallGcBramSim` — 1 core, classic | **PASS**, 1 GC cycle in 14.1M |
-   | `JopJvmTestsBramSim` — the suite that fires HW exceptions on purpose | **PASS**, 132 `ok`, zero failures, normal `JVM exit!` |
-
-   **All three FIXED**: `noim()` and the uncaught path in `f_athrow()` now
-   report without holding a lock (`Native.wr(0, Const.IO_INT_ENA)` /
-   `Native.unlock(0)`), and both walks are bounded — `MAX_TRACE_FRAMES = 64`
-   plus a "frames must descend" check, which prints a truncation note instead
-   of hanging. `Native.unlock(0)` from a non-owner is safe: `CmpSync` releases
-   only when the **owner's** `req` drops (`CmpSync.scala:108-119`), so it cannot
-   disturb another core's lock.
-
-   **THE CORRUPTION ITSELF IS NOW CAUGHT AT SOURCE.** `JopGcHaltDeadlockSim`
-   grew a **write watchpoint** on the arbiter output — the same snoop point the
-   cluster card table uses, and the one bus that carries `source`, so a store is
-   attributed to a core without instrumenting the binary. It flags any store
-   that puts a `SmpGcTest` static outside its legal range. Two fired, 13 cycles
-   apart, both from core 0:
-
-   ```
-   WRITE cycle=56614043 src=0 word=294 (cpuCnt)     data=0x00000004 (4)       jpc=0x070a
-   *** OUT-OF-RANGE *** publishers := -12484 — must be 3
-   WRITE cycle=56614059 src=0 word=295 (publishers) data=0xffffcf3c (-12484)  jpc=0x0712
-   *** OUT-OF-RANGE *** phase := 6 — the application only ever assigns 0..3
-   WRITE cycle=56614072 src=0 word=292 (phase)      data=0x00000006 (6)       jpc=0x071a
-   ```
-
-   **Core 0 is executing `SmpGcTest.main()` — for the second time.** It ran it
-   once at cycle 248,508; its last legitimate act was `phase=2` at 56,100,122,
-   inside `core0()`'s round loop. At 56,614,021 it arrives at jpc 0x0700 after a
-   ~95-cycle gap (a bytecode cache fill, i.e. an invoke) and runs main() from
-   its first bytecode.
-
-   The identification is not a guess. JOP's linker patches get/putstatic
-   operands to **absolute static addresses** (`jvm.asm`: *"put/getstatic support
-   in mmu (bc operand as address)"*, and `putstatic: stps opd` takes the address
-   from the operand), so the operand bytes in the cache dump can be read
-   straight off:
-
-   | jpc | bytes | operand | word | field |
-   |---|---|---|---|---|
-   | 0x0707 | `b3 01 26` | 0x0126 | 294 | `cpuCnt` |
-   | 0x070a | `b2 01 26` | 0x0126 | 294 | `cpuCnt` |
-   | 0x070f | `b3 01 27` | 0x0127 | 295 | `publishers` |
-   | 0x0717 | `b3 01 24` | 0x0124 | 292 | `phase` |
-   | 0x071b | `b3 01 25` | 0x0125 | 293 | `publishRound` |
-
-   Those are exactly `main()`'s statics in exactly `main()`'s order, and they
-   match the link file independently. The `ifne` at 0x0713 falls through, which
-   is `cpuId == 0` — core 0, as `source` says.
-
-   **The addresses are right and the DATA is wrong.** That split matters because
-   on JOP the two come from different places, and both are visible in the RTL:
-   `BmbMemoryController.scala:630` takes the address from `io.bcopd` (the
-   bytecode operand) and `:626` captures the data as `valueReg := io.aout`
-   (TOS) on the cycle the `putstatic` signal fires.
-
-   - `bipush -5; jopsys_rd; putstatic cpuCnt` -> **4, correct**.
-   - `getstatic cpuCnt; iconst_1; isub; putstatic publishers` -> **-12484**,
-     implying the `getstatic` returned -12483 for a word this same core had
-     written as 4 sixteen cycles earlier.
-   - `iconst_0; putstatic phase` -> **6**.
-
-   So `phase=6` is NOT a stray pointer scribbling over the statics, which is
-   what it looked like for two days. The address decoding is provably intact;
-   what arrives as data is not what the bytecode says. Everything after it —
-   `phase=6`, `publishRound=6`, the unimplemented bytecode, `noim()` parking
-   under the lock — is downstream. Core 0 holds the global lock
-   (`state=LOCKED lockedId=0`) throughout.
-
-   **Do not over-read the last bullet.** "Corrupt operand stack" is the obvious
-   story and it does not survive contact with `iconst_0`, which loads TOS with a
-   literal one instruction earlier — no stack pointer, however wrong, changes
-   what that puts in `A`. Two possibilities remain and they are very different
-   in consequence:
-
-   1. the core is not executing the bytecode this cache dump shows (the dump is
-      taken at the same cycle and disassembles as valid `main()`, but that is
-      consistency, not proof); or
-   2. `valueReg` is not capturing the `io.aout` that belongs to the store —
-      note `memBusy=true` at both stores, and the capture at `:626` is not
-      obviously qualified against a stalled pipeline.
-
-   (2) would be an RTL bug rather than a software one, and it should be
-   disqualified first precisely because it *cannot* be the whole story: the same
-   path executes correctly millions of times per run and on one core. Establish
-   which of the two it is by reading `A`/`B` and `io.aout` directly at the store
-   — the probe already has the write watchpoint to trigger on.
-
-   **WHAT PUT CORE 0 THERE: AN EXCEPTION STORM ON ALL FOUR CORES, 437k CYCLES
-   EARLIER.** Logging the hardware exception strobe (`cores(i).sys.io.exc`) for
-   the whole run — cheap, and it reaches back further than any ring buffer —
-   moved the origin a long way upstream of everything above:
-
-   | | cycle |
-   |---|---|
-   | core 0 sets `phase=2`, last legitimate act | 56,100,122 |
-   | **first hardware exception (core 1)** | **56,176,845** |
-   | ...200 more, every ~700-1400 cycles, all four cores | |
-   | core 0 executing `main()`, `phase := 6` | 56,614,043 |
-
-   Distribution over the logged window: core 1 x111 (all at jpc 0x0083), core 2
-   x39 (0x0683), core 0 x28 (0x0163), core 3 x22 (four sites). Each core is
-   **re-throwing from the same bytecode over and over** — one per loop
-   iteration, which is why the interval is so regular. Nothing before 56.176M
-   throws at all, and `SmpGcTest` contains no `throw` and no `try`.
-
-   So the ordering is settled: the storm comes FIRST, the wild control flow and
-   the bad stores are consequences of it, and `phase=6` is the last link in the
-   chain rather than the first. Every previous reading of this bug started from
-   the wrong end.
-
-   **THE EXCEPTION TYPE RULES OUT STACK OVERFLOW — and the fault is in the
-   INVOKE/BYTECODE-FETCH PATH, not in the heap at all.** Reading
-   `sys.excTypeReg` at each strobe:
-
-   ```
-   EXC cycle=56176845 core=1 type=3 AB(array bounds)  jpc=0x0084 A=0x0000020b sp=155
-   EXC cycle=56177828 core=1 type=2 NP(null pointer)  jpc=0x0083 A=0x000000a0 sp=157
-   EXC cycle=56179249 core=1 type=2 NP(null pointer)  jpc=0x0083 A=0x000000a0 sp=157   (and on, identical)
-   ```
-
-   One array-bounds, then null-pointer forever at a **fixed `jpc`, fixed `A`,
-   fixed `sp`** — a core re-faulting on the same bytecode. So `setSP` is not
-   involved and the earlier `sp=55` reading has some other cause; do not build
-   on it.
-
-   What the 16k-sample trace shows immediately BEFORE that first exception is
-   the actual fault:
-
-   ```
-   56175990  0x0428 -> 0x0000  (gap 70, invoke + cache fill)   sp=150
-   56176031  0x0016 -> 0x0428  (gap 21, return)                sp=147     <- fine
-   56176187  0x0428 -> 0x0000  (gap 70, invoke + cache fill)   sp=150     <- same site, same target
-   ...  ~450 bytes executed straight through, no control transfer at all ...
-   56176639..56176707  jpc 0x01c1 -> 0x0205, ONE BYTE PER CYCLE, pc frozen at 0x01e0
-   56176813  0x020b -> 0x0080  (gap 94, invoke + cache fill)
-   56176845  EXCEPTION
-   ```
-
-   Core 1 invoked a method, **ran straight off the end of it**, nop-slid ~68
-   bytes through zero-filled bytecode cache (`pc` pinned at one microinstruction
-   while `jpc` increments every cycle is exactly a run of `nop`), hit bytes that
-   decoded as an invoke, and started faulting. The **same call site invoked the
-   same target 197 cycles earlier and returned normally** from `jpc 0x0016`.
-
-   That reframes the whole item. This is not heap corruption, and it never was:
-   the handle lists were intact, the collector was idle and consistent, and the
-   statics only went wrong 437k cycles later. **A method invocation went to the
-   wrong place, or its bytecode cache fill delivered the wrong bytes.**
-
-   **ANSWERED: THE INVOKE USES A NULL METHOD POINTER.** Logging every bytecode
-   cache fill (`bcRdCaptureReg` latches TOS at `bcRd`,
-   `BmbMemoryController.scala:649`, packing `start = val >>> 10`,
-   `len = val & 0x3ff`) and resolving `start` against the link file's method
-   table gives the last fill before the storm, unambiguously:
-
-   ```
-   cycle 56176152  start=  6688 len=  6  raw=0x00688006  com.jopdesign.sys.JVM.f_i2b(I)I
-   cycle 56176778  start=     0 len=  0  raw=0x00000000  (before first method)
-                                                          ^^^ NULL METHOD POINTER
-   ```
-
-   `raw = 0` means the invoke asked to fill a method at address 0 of length 0.
-   Nothing is loaded, so the core executes **zero-filled cache**, nop-slides
-   (that is the `pc` pinned at one microinstruction while `jpc` increments every
-   cycle), runs into whatever the cache still held, and starts faulting 67
-   cycles later. That is the entire mechanism.
-
-   **`noim()` printed the same null pointer, from the software side, and nobody
-   noticed for two days.** The fill list shows core 1 was already inside
-   `JVMHelp.noim()` at cycle 56,172,657 — *before* the exception storm — with
-   its whole print path visible (`PrintStream.println`, `String.getBytes`,
-   `GC.newArray`/`newArrayGen`/`allocGen` from the `new Object()`). And the UART
-   line reads `ni 000000  000013  103  200`, whose **first column is
-   `wrSmall(mp)` = 0**. `mp = 0` was the null method pointer all along.
-
-   So the chain, end to end, and every link measured:
-
-   1. an invoke reads a method pointer of **0**;
-   2. the cache fill loads nothing; the core executes zeros, nop-slides, and
-      hits an unimplemented bytecode;
-   3. `JVMHelp.noim()` reports it (printing `mp=0`) and then — in the binary
-      under test — allocates and parks forever holding the global lock;
-   4. inside that print/allocate path a **second** null-pointer invoke happens
-      (56,176,778), starting the AB-then-NP exception storm on all four cores;
-   5. 437k cycles later core 0 resumes into `main()` on a wrecked stack, writes
-      `phase := 6`, and the cluster is frozen.
-
-   `phase=6` — where this investigation started — is step 5 of 5.
-
-   ### The board's MHz labels straddle a real PLL change — read this before comparing runs
-
-   `dram_pll.vhd` **hardwires** the system clock: 50 MHz in, times
-   `clk1_multiply_by` over `clk1_divide_by`. The preset's MHz argument does NOT
-   set the clock. It only feeds the SDC constraint and the UART baud divider
-   (`Uart(baudRate, clkFreq)`).
-
-   | commit | PLL | actual clock |
-   |---|---|---|
-   | `3405d75` | x8/5 | 80 MHz |
-   | **`7be77d0`** — *"4-core hang ... re-guard at 2 cores"* | **x6/5** | **60 MHz** |
-
-   So the commit that re-guarded at 2 cores also dropped the board from 80 to
-   60 MHz. **"2 cores @80 MHz" and "4 cores @60 MHz" in the tables above are not
-   the same hardware**, and comparing results across `7be77d0` compares two
-   different clocks.
-
-   Two practical consequences, both learned the hard way today:
-
-   - Building with an MHz argument that disagrees with the PLL **breaks the
-     UART** — the divider is computed from the declared frequency, so an 80 MHz
-     build on a 60 MHz PLL runs the link 25% slow and the downloader reports
-     *"FPGA not responding (no ready signal)"*. That is a build mismatch, not a
-     dead board.
-   - Restoring the PLL to x8/5 and building 2 cores at 80 MHz reproduces the
-     documented **+0.133 ns** slack exactly, so that configuration is
-     identifiable. But it no longer downloads reliably — two attempts streamed
-     all 13479 words and then stalled at checksum verification. +0.133 ns is
-     very tight, which is presumably why the clock was lowered in the first
-     place.
-
-   ### HARDWARE VERDICT (2026-08-10) — the bug is real, and it is NOT the collector
-
-   The EP4CGX150 was rebuilt at **4 cores / 60 MHz**, closing timing at
-   **+0.302 ns** — the identical figure recorded for the 2026-08-09 hang, so it
-   is the same configuration, not a lookalike. Three runs on that one bitstream:
-
-   | run | result |
-   |---|---|
-   | `NCoreHelloWorld`, 4 cores | **WORKS** — boots and prints indefinitely |
-   | `SmpGcTest`, 4 cores, **generational** (guard lifted) | fails at `minors after tenuring 6`, then `ni 006400  527810  011  200` |
-   | `SmpGcTest`, 4 cores, **classic** (guard in place) | **HANGS SILENTLY** after `minors after tenuring 0`, 150 s, nothing |
-
-   Four things follow, and hardware has no X-state so none of them is an
-   artifact:
-
-   1. **The board, the 4-core build and the modified runtime are all sound** —
-      `NCoreHelloWorld` is the control that says so.
-   2. **`JVMHelp.noim()` fires on real hardware.** The wild-execution ->
-      unimplemented-bytecode chain that the simulator found is genuine. `mp` here
-      is 6400, not 0, and `start` decodes to 527810 — an address far outside a
-      52 KB image — so it is the same shape of fault, a method pointer leading
-      nowhere.
-   3. **It reproduces at exactly the documented failure point**,
-      `minors after tenuring 6`, which is the number the 2026-08-09 CmpSync run
-      printed before going quiet.
-   4. **THE CLASSIC COLLECTOR HANGS TOO.** Same bitstream, same app, same cores;
-      only `genActive` differs. So the fault is **not generational**, and the
-      `cpuCnt <= 2` guard has been guarding the wrong thing. Note this
-      contradicts the previously recorded "4-core classic completes clean" —
-      that claim does not reproduce and should not be relied on.
-
-   **Core-count bisect, all at 60 MHz on the current RTL.** This is the result
-   that should change how the item is framed:
-
-   | cores | collector | runtime | result |
-   |---|---|---|---|
-   | 4 | generational | HEAD | `minors 6` -> `ni ...` (noim) |
-   | 4 | classic | HEAD | silent hang |
-   | 3 | generational | HEAD | silent hang |
-   | 3 | classic | HEAD | silent hang |
-   | 2 | generational | HEAD | silent hang |
-   | 2 | generational | pre-`d8d93f8` | `STALL round 2` |
-   | 2 | generational | pre-`6cd91bd` | `STALL round 2` |
-   | 4 | `NCoreHelloWorld` | HEAD | **WORKS** |
-
-   **`SmpGcTest` fails at TWO cores as well**, so there is no >2-core boundary.
-   Reverting the three lock-park fixes still fails, and reverting the GC monitor
-   restructuring (`6cd91bd`) still fails — both land on the same
-   `STALL round 2`. So neither change caused this.
-
-   ### THERE IS NO PRODUCT REGRESSION — the TEST changed, and the new one is harder
-
-   Rebuilding at 80 MHz (both PLL clocks, see above) and varying one thing at a
-   time settles it. All 2 cores @80 MHz, all closing at the same +0.133 ns:
-
-   | RTL | runtime | app | result |
-   |---|---|---|---|
-   | `fbf3d42` | `fbf3d42` | `fbf3d42` | **`minors 31 verified 192 errors 0`, `SMPGC OK`** |
-   | **HEAD** | **HEAD** | `fbf3d42` | **`minors 31 verified 192 errors 0`, `SMPGC OK`** |
-   | HEAD | HEAD | HEAD | `Uncaught exception:` |
-   | HEAD | pre-`6cd91bd` | HEAD | `ni 010619 000010 002 255` (noim) |
-
-   Row 1 reproduces the documented sweep **exactly**, numbers and all, so that
-   validation was real. Row 2 is the important one: **HEAD's RTL and runtime pass
-   the original test**, so nothing in the product regressed — including the three
-   lock-park fixes, which are in that build.
-
-   The variable is `SmpGcTest.java` itself. `7be77d0` changed it (+46 lines) at
-   the same time as the PLL and the guard, and among the additions is
-
-   ```java
-   if (!all) { Object y = new Young(); if (y == null) return; }
-   ```
-
-   — **core 0 now allocates inside its wait loop**, added to give a GC initiated
-   elsewhere a safepoint. That turns the test from "core 0 waits quietly while
-   publishers allocate" into "every core allocates concurrently, with cross-core
-   stores in flight". It is a strictly better test, and it fails at **two** cores
-   where the old one passes.
-
-   **So the item should be reframed again.** This is not "generational GC breaks
-   above 2 cores". It is: *concurrent allocation on several cores, with
-   cross-generation stores, corrupts execution* — and it reproduces at **2 cores
-   @80 MHz**, which is the cheapest and best-validated configuration on the
-   board. The `cpuCnt <= 2` guard is not shipping a knowingly broken
-   configuration for the original workload, but it does not protect against this
-   either.
-
-   **Use 2 cores @80 MHz to chase this**, not 4 cores @60: same fault, half the
-   cores, the clock the board is actually validated at, and a one-second run.
-
-   ### AT 2 CORES THE FAULT *IS* GENERATIONAL — matched pair on one bitstream
-
-   Everything below is 2 cores @80 MHz on the same bitstream, same app source,
-   same allocation load. The only difference in the last two rows is `genActive`.
-
-   | app | collector | result |
-   |---|---|---|
-   | HEAD | generational | ❌ `Uncaught exception:` |
-   | HEAD, no alloc in core 0's wait loop (variant A) | generational | ❌ `STALL round 1`, core 1 frozen at `live=190` |
-   | HEAD, no `liveTick[id]++` (variant B) | generational | ❌ `STALL round 1`, and core 0 reads its OWN statics back as `phase 0 publishRound 0` at round 1 |
-   | churn allocates in classic too | **classic** | ✅ **`minors 0 verified 192 errors 0`**, all 8 rounds |
-   | churn allocates in classic too | **generational** | ❌ `STALL round 1`, core 1 frozen at `live=44` |
-
-   The last two rows are the experiment that matters. `churnUntilMinor` normally
-   short-circuits for classic (`if (!generational()) return 0;`), so a plain
-   classic run barely allocates and proves nothing — that confound is why the
-   4-core "classic hangs too" result was over-read. Removing the short-circuit
-   makes classic allocate exactly as hard, and **classic then completes cleanly
-   while generational fails**.
-
-   **So this correction is needed: "not a collector bug" was wrong at 2 cores.**
-   That claim came from 4-core classic hanging, which was measured with the
-   short-circuit in place. The consistent reading of all the hardware data is
-   two distinct faults:
-
-   - **generational, >=2 cores** — the one reproduced here, collector-specific;
-   - **something more general, >=3 cores** — classic hangs at 3 and 4 cores even
-     with almost no allocation, and passes at 2.
-
-   Variants A and B both still fail, so **no single line of the test is the
-   trigger** — which also means the reproduction is robust to editing the app.
-   That lifts the constraint that dominated the simulator work: `SmpGcTest.java`
-   *can* be instrumented here without the failure evaporating.
-
-   **Sharpest signature to chase next**: core 1 stops executing inside
-   `publish()` — its `liveTick` heartbeat freezes at a fixed value (190, 44)
-   while core 0 keeps running — i.e. a publisher dies while a minor GC is in
-   progress on the other core.
-
-   Reproduction recipe (the PLL edit is required; HEAD ships 60 MHz for 4-core):
-
-   ```
-   # dram_pll.vhd: set BOTH clk1_multiply_by and clk2_multiply_by to 8  (x8/5 = 80 MHz)
-   sbt "runMain jop.system.JopTopVerilog ep4cgx150Smp 2 80"
-   make -C fpga/qmtech-ep4cgx150-sdram build-smp program-smp
-   make -C java runtime && make -C java/apps/SmpGcTest clean && make -C java/apps/SmpGcTest
-   python3 fpga/scripts/download.py -e java/apps/SmpGcTest/SmpGcTest.jop /dev/ttyUSB0 2000000
-   ```
-
-   Rebuild the app every time — a stale `.jop` silently passes, which cost a run
-   here (the binary was 4 KB smaller than the source implied).
-
-   **`make program-smp` SILENTLY REBUILDS the bitstream.** `program-smp` depends
-   on `$(SOF_SMP_FILE)`, so touching `dram_pll.vhd` — including reverting it with
-   `git checkout` — makes the `.sof` stale and the next *program* step rebuilds
-   it. That produced an 80 MHz design on a 60 MHz PLL: the board came up, sent
-   its ready byte at exactly 3/4 rate, and `download.py` reported
-   *"FPGA not responding"*. Diagnosed by sweeping the host baud — `0xb4` at
-   2 Mbaud became a clean `0xAA` at 1.5 Mbaud, and 1.5/2.0 = 60/80 named the
-   mismatch immediately. **Check the reported slack after any program step**:
-   +0.133 ns means 80 MHz, +2.36 ns means 60.
-
-   ### THE ORIGINAL BUG IS BACK, AND IT IS A LOST CROSS-GENERATION REFERENCE
-
-   Instrumenting the test (per-statement `pubStep`/`pubSlot` markers, and reading
-   the magic through the handle instead of casting) gives a **deterministic**
-   2-core failure — byte-identical across three runs:
-
-   ```
-   LOST slot 0 round 0 magic 3 want 1515847680
-   STALL round 1 phase 1 publishRound 1 pub[1]=1 live=101, step[1]=10 slot=23 holder=23
-   ```
-
-   `magic 3` where `0x5A5A0000` was written means the young object **was
-   collected while still referenced from a tenured holder** — exactly the fault
-   `SmpGcTest` was written to catch, and item 1's original premise, happening at
-   2 cores *with the cluster-level card table in place*.
-
-   A second run confirmed it from another direction: an uncaught
-   `ClassCastException`, with a bounded stack trace naming the frames via the
-   link file's `-mtab` entries —
-
-   ```
-   JVM.f_checkcast  <-  test.SmpGcTest.core0  <-  main  <-  Startup.boot
-   ```
-
-   — the `(Young) o` in the verify loop, throwing because the holder's reference
-   now points at reused space that is no longer a `Young`. (That trace printing
-   cleanly and ending in `JVM exit!` instead of freezing the cluster is
-   `4df8edd` + `d8d93f8` working on hardware.)
-
-   **Mechanism, and it explains why the OLD test passed.** In the old test core 0
-   churned only during `phase == 2`, after every publisher had finished, so
-   minor GCs and cross-generation stores were **serialised**. The new test
-   allocates in the wait loop during `phase == 1`, so a minor GC on core 0 now
-   runs **while core 1 is storing a nursery object into a tenured holder**. And
-   the variants line up with that reading:
-
-   | | overlap? | lost refs? |
-   |---|---|---|
-   | old test | no | none — `SMPGC OK` |
-   | variant A (no wait-loop alloc) | no | **none** — freeze only |
-   | HEAD | yes | **LOST slot 0** |
-
-   So: **a minor GC concurrent with a cross-generation store loses the
-   reference.** The card mark and the collector's scan/clear of the card table
-   are not safe against each other, even though `minorGc()` asserts
-   `IO_GC_HALT` — which suggests the halt does not take effect before the
-   window that matters. That is the thing to look at next: the ordering of
-   card-table clear, card scan, and `gcHalt` taking effect.
-
-   And it decomposes the item into two faults, each with its own experiment:
-
-   1. **lost cross-generation reference** — needs the overlap; use HEAD's test.
-   2. **the freeze** — survives *without* the overlap (variant A), so it is
-      independent and still unexplained.
-
-   Caveat: the failure mode moves with code layout (which statement it dies on,
-   whether it reaches verification), as it has all along. The *kind* of failure
-   is stable; the exact line is not. Do not bisect on the symptom.
-
-   ### Card-clear experiment: SUGGESTIVE, not conclusive — and why
-
-   Commenting out `Native.wr(-1, Const.IO_CARD_CLEAR)` in `minorGc()` (cards then
-   accumulate, so every later minor GC scans everything ever dirtied) removed the
-   loss: round 0 verified with **no `LOST` line**, where the same test with the
-   clear in place reported `LOST slot 0` deterministically. Read at face value
-   that says the barrier *does* record core 1's store and the scan-then-clear
-   ordering loses it.
-
-   **Do not bank it yet.** The two builds are not the same binary, and this
-   workload is layout-sensitive: restoring the clear and adding the card-bit
-   probe produced a build that froze at **round 0** (`step[1]=3`, core 1 inside
-   `publish()` before its store, `holder=null`), so it never reached
-   verification and could not confirm the other half of the pair. One-line edits
-   move where it dies.
-
-   **The freeze now blocks measuring the loss**, so it is no longer the lesser of
-   the two faults — it has to be dealt with first or in parallel.
-
-   **What would make the card-clear result airtight**: A/B *inside one binary*.
-   Add a non-final `public static boolean cardClearEnabled` to `GC`, gate the
-   clear on it, and have the test flip it per round. One image, one run, losses
-   correlated against the flag — no layout variable at all. That is the next
-   thing to build, and it is worth doing properly because the answer decides
-   whether the fix is in the collector's ordering or in the hardware barrier.
-
-   ### A cache-invalidate-on-halt-release fix exists in the history — see `a31b2cc`
-
-   Built, verified, and then **reverted deliberately**. If cross-core cache
-   staleness comes up again, take the implementation from that commit rather
-   than rewriting it; the reasoning and the traps are in its message.
-
-   **What it did.** `ObjectCache` snoops remote *putfield* traffic only
-   (`BmbMemoryController:517-519`, keyed on handle + field index), while the
-   collector moves objects with raw writes (`copyAndSweepYoung`:
-   `Native.wrMem(dst, ref+OFF_PTR)`). Relocating an object therefore generates
-   **no snoop at all**, so a core resuming from `gcHalt` can hold pre-move
-   state. `Native.invalidate()` at the end of `minorGc` cannot help — it is
-   core-local and the cores that need it are halted. The fix drove `cinval` for
-   the whole duration of a stop-the-world.
-
-   **Why it was reverted:**
-
-   - It cost **0.233 ns** of timing margin (2 cores @80 MHz: +0.413 -> +0.180),
-     on a design where 4 cores at 80 MHz already misses by -2.399.
-   - It fixed nothing observable — `STACKROOT` was unchanged, with the identical
-     `magic 11818962`.
-   - The path is disabled anyway while the guard sits at `cpuCnt <= 1`.
-   - It was the sixth confident-but-unmeasured hypothesis of that session, after
-     "corrupt operand stack", "stack overflow", "leaking halt", "the read-port
-     steal" and "stale mutator caches" had each been killed by measurement.
-     Landing unfalsifiable RTL cuts against the only method that has worked here.
-
-   **Two implementation details worth not rediscovering**, both in `a31b2cc`:
-   hold `cinval` for the *duration* of the halt rather than pulsing on the
-   falling edge (valid bits clear on a clock edge, so a core resuming in the
-   same cycle could get one stale read in first); and **register** the
-   cross-core signal, because feeding it combinationally into the invalidate
-   fanout costs 1.5 ns and fails timing outright (-1.407).
-
-   **Re-apply it when there is a test that demonstrates the staleness.** That
-   "invalidating changed nothing" is not proof the hole is absent — only that
-   `STACKROOT` does not exercise it.
-
-   ### RETRACTED: "the collector is correct, the cores disagree" (`63c1ed5`)
-
-   That finding, and the `magic 11818962` it rested on, were an **artefact of the
-   probe**. Retired 2026-08-12.
-
-   `GC.rootRead()` sets `rootSel` and does not clear it. The cluster drives the
-   TARGET core's stack-RAM read address straight from that register, with
-   "index != 0" meaning "a debug read is in progress", so leaving it set steals
-   the target's read port — every operand fetch returns the last word scanned.
-   `scanOtherCoreRoots()` documents this and releases the port at the end; the
-   `dump:` block added to SmpGcTest scanned 256 words and **never released**,
-   while core 1 was still RUNNING. Everything core 1 reported after that point
-   was the instrument, not the machine.
-
-   The signature was unmistakable in hindsight: three DIFFERENT addresses
-   (`h+OFF_PTR`, `h+OFF_SPACE`, `h+OFF_TYPE`) all returned the same 4194304
-   (`0x400000`), and dereferencing it returned the contents of address 0.
-
-   Standing check: `git show 415293e` has **zero** `rootRead` calls, so the ROOT
-   CAUSE finding below predates the leak and is unaffected. Only the later
-   coherence story was wrong — which is also why `a31b2cc` fixed nothing when it
-   invalidated caches: there was nothing stale.
-
-   `GC.rootRelease()` now names the obligation, and both call sites use it.
-
-   ### THE REAL REMAINING FAULT: A WILD `stcp` CORRUPTS `GC.handle_cnt`
-
-   Caught by watchpoint 2026-08-12, deterministic on both seeds:
-
-   ```
-   WRITE cycle=5327112 src=1 word=55 (GC.handle_cnt) data=0x0 pc=0x0684 jpc=0x0fec A=0x0a B=0x15
-   WRITE cycle=5327304 src=1 word=55 (GC.handle_cnt) data=0x4 pc=0x0684 jpc=0x0fec A=0x0a B=0xffffffd3
-   ```
-
-   `handle_cnt` is assigned once in `GC.init` and never reassigned, yet it goes
-   **1117 -> 0 -> 4**. `src=1` is CORE 1 — the publisher, not the collector.
-
-   `pc=0x0681` is `jopsys_memcpy` (bytecode 0xE8) per `JumpTableData.scala`, and
-   the calibration is exact: counting active microcode words from that label
-   (`stcp`, `pop`, `wait`, `wait`, `pop nxt`) puts `jopsys_nop` at 0x686, which is
-   where the table says it is. `jopsys_memcpy` is not a stub — upstream JOP
-   deliberately implements it as a single `stcp`, the hardware GC copy engine
-   (`BmbMemoryController:724`, "At stcp: TOS = pos, NOS = src").
-
-   **Nothing in the Java tree calls `Native.memCopy`.** So 0xE8 should never
-   execute; that it does means core 1 is running GARBAGE AS BYTECODE, and 0xE8
-   fires the copy engine with whatever is on the stack.
-
-   Why this is quietly fatal: every handle-list walk hoists `handle_cnt` as its
-   cycle-guard limit, so a value of 4 makes `gcListOverrun` TRUNCATE valid chains.
-   The reported overruns are healthy lists being cut short — `walk=1 iters=5
-   handles=4 ref=22448 next=22456`, one HANDLE_SIZE apart. Truncated walks then
-   drop live objects, and core 1 freezes.
-
-   **So the GC is downstream of everything.** The remaining bug is a control-flow
-   derailment on core 1, not a collector fault.
-
-   ### THE HEAD OF THE CHAIN: AN ARRAY-BOUNDS EXCEPTION ON A VALID INDEX
-
-   Established 2026-08-12 with a 24-sample trailing window on the jpc ring.
-   Everything above is downstream of this:
-
-   ```
-   4733632  *** EXCEPTION #1 on core 1: AB(array bounds) ***
-   4733634  pc=0x00a7  (sys_exc region, jvm.asm:550)   A=0x12345678  sp=90
-   4733640  jpc=0x0b74  METHOD ESCAPE, 2548 bytes outside [0x0180, 0x025c)
-   4733705  NULL METHOD POINTER, fill [0x0700, 0x0700) — len 0
-   5327112  aliased 0xE8 -> jopsys_memcpy -> stcp -> GC.handle_cnt 1117 -> 0 -> 4
-   ```
-
-   Two ORDERING CORRECTIONS to earlier commits in this series, both of which
-   named a later link as the head:
-   - `41cbbf8` called the null method pointer the first event. It is not; it is
-     ~70 cycles downstream of the exception.
-   - `a9a5bf7` called the poison read the first event. It is not; it is 2 cycles
-     downstream, and `pc=0x00a7` shows the core was already in `sys_exc`. The
-     poison in `A` is handler state, not a cause.
-
-   **The exception is on a VALID index.** Core 1 is in
-   `test.SmpGcTest.publisher(I)V` (confirmed by pattern match, one hit: `MATCH at
-   byte 0x0059e6 = word 5753, words 5728..5783`) executing the heartbeat
-   `liveTick[id] = liveTick[id] + 1` — bytecodes `0xe0 aconst_null 0x97 iload_0
-   iaload iconst_1 iadd iastore`. `liveTick` is `int[cpuCnt]` = `int[2]` and
-   `id` is 1. At the exception `liveTick=[0,13824]`, so that exact statement had
-   already run 13824 times.
-
-   State at the exception rules out the obvious candidates:
-   - **No GC in flight** — `gcPhase=0`, `gcHalt` asserted by 0 cores, `halted=0/2`
-   - **Heap metadata intact** — `handle_cnt=1117`, not yet corrupted
-   - **Not the lock** — `CmpSync state=IDLE`
-
-   So the hardware bounds check read an array length of <= 1 for an `int[2]` that
-   had worked 13824 times. Prime suspect is the length read itself: `ArrayCache`
-   is a 16-entry FIFO with SMP snoop-invalidate, and core 0 is allocating hard
-   throughout. NEXT: watch the length operand the bounds check actually uses,
-   against `H[OFF_MTAB_ALEN]` in RAM, and report the first disagreement.
-
-   ### RETRACTED: "the AB fires on a VALID index" — the probe supplied the index
-
-   The index was NOT valid. Reading `handleIndex` out of the hardware at the
-   exception (rather than reasoning from `liveTick=[0,13824]`) gives:
-
-   ```
-   AB DETAIL core 1: handle=0x005c30 (23600)  index=3430008
-                     RAM[handle+1] (length) = 2   RAM[handle+0] (ptr) = 31567
-   ```
-
-   The handle is CORRECT — length 2 is exactly `liveTick`'s. The index is
-   3430008 = **0x345678**, i.e. `0x12345678` truncated to the index width. The
-   bounds check was behaving perfectly; the index operand was poison.
-
-   **The probe manufactured it.** `SmpGcTest`'s `rootport:` block called
-   `GC.rootRead(1, ROOT_WHAT_STACK, 64)` while core 1 was RUNNING. That parks
-   `rootSel` on core 1's stack word 64, whose contents are `0x12345678` (the
-   mem_ram.dat fill pattern — printed in the same line as `w64 305419896`). Core
-   1's concurrent `iload_0` therefore returned `0x12345678` as `id`. Every number
-   matches an independently observed value.
-
-   This is the THIRD instrument-induced fault in this investigation, all from the
-   same root — `rootRead` leaving `rootSel` set:
-   1. the `dump:` block manufacturing `magic 11818962` (retracted above)
-   2. `bcDump` returning -1 and printing an EMPTY dump at the one moment worth
-      seeing
-   3. `rootport:` manufacturing this AB
-   Releasing AFTER a block is NOT sufficient — the theft spans the whole block.
-   Both blocks are now behind `PROBE_RUNNING_CORE`, default FALSE.
-   `scanOtherCoreRoots()` is unaffected: its targets are halted.
-
-   Also corrected: the poison in `a`/`b` at the strobe was NOT the aborted
-   `iaload` refilling registers. The poison arrived first, through the stolen
-   port, and CAUSED the AB.
-
-   With the probes gated off (2 cores, seed 70704150):
-   ```
-   NULL METHOD POINTER   2 -> 0        OUT-OF-RANGE STORE  0
-   handle_cnt            constant 1123 (no corruption)
-   STACKROOT             OK, PTR-AGREE
-   R0 clear=ON  minors 1 lost 0  haltLeak 0     <- the test now RUNS ROUNDS
-   ```
-
-   ### FIXED 2026-08-13 — three signals must freeze, and now they do
-
-   `BytecodeFetchStage`: `when(io.stall) { jbcAddr := jpc }` as the HIGHEST
-   priority arm of the read-address mux, above `jmp` and `jfetch`.
-   `JopPipeline`: `bcfetch.io.stall := fetch.io.frozen`. Both are required —
-   either alone desynchronises.
-
-   Verified in the order cheapest-first, which is the point:
-
-   1. **Boundary trace** — `jpaddr` holds at 0x02c5 for all 20 frozen cycles,
-      alongside pc/jpc/jinstr. It previously slid to 0x0228 on the second cycle.
-   2. **Reproducer** — `EXC=0 ESCAPE=0 NULLMP=0 WILD=0`, handle_cnt constant, and
-      SmpGcTest runs **R0..R5 all `lost 0`** at 2 cores. It derailed at ~4.9M
-      every previous run.
-   3. **Regressions** — JvmTests 132, McFallback 132 (pinned seed), DcuCache
-      59/59, formal **122** (was 121; the new property is the +1).
-
-   **A formal property now covers this**, in `BytecodeFetchStageFormal`:
-   during a sustained stall, `jpc`, `jinstr` and `jpaddr` are all stable. It has
-   TEETH — verified to FAIL with the fix disabled and pass with it, which matters
-   because this repo has form for tests that cannot fail (items 2 and 29).
-
-   Three exclusions the solver forced, each a real fact about the design:
-   a cache FILL (`jbcWrEn`) legitimately rewrites RAM under the read; `jpaddr`
-   needs ONE cycle to settle because entering a stall moves `jbcAddr` from
-   `jpc+1` back to `jpc` and the JBC RAM is synchronous; and `exc`/`irq`
-   legitimately redirect dispatch to `sysExcAddr`/`sysIntAddr`.
-
-   **Why this was invisible for so long:** every one of the ~12 tests in
-   `BytecodeFetchStageTest` sets `io.stall = false`, and the formal harness drove
-   `stall` with `anyseq` but asserted nothing about it. The stall path had NO
-   behavioural coverage, which is exactly how a fix that skipped a dispatch
-   passed 132/132/59/121.
-
-   ### The history: the naive fix was wrong — see `4ba87fc`, reverted
-
-   Built, regression-clean, and REVERTED because it traded one derailment for a
-   subtler one. Take the analysis from here; do not re-apply the patch.
-
-   **The bug is real.** `jfetch`/`jopdfetch` are ROM bits carried in IR;
-   `FetchStage` freezes on `(pcwait && bsy)` and HOLDS IR, so they stay asserted
-   for every cycle of the stall, while `bcfetch.io.stall` saw only
-   `stackRotBusy`. Measured: `iastore` ends `wait; wait; nop nxt`
-   (ROM 0x2f9/0x2fa = 0x101, 0x2fb = 0x900 with bit 11 `jfetch` set); frozen at
-   0x2fb, jpc walked 0x024d -> 0x025d one byte per cycle through the method end
-   at 0x025c. 127 frozen-at-0x2fb samples.
-
-   **The naive fix** — expose the freeze as `fetch.io.frozen` and use it for
-   `bcfetch.io.stall` — kills the walk (127 -> 0 samples) and passes everything:
-   JvmTests 132, McFallback 132, DcuCache 59/59, formal 121/121.
-
-   **But it misaligns the bytecode stream on resume.** A NEW escape appears,
-   only in runs with the fix:
-
-   ```
-   without fix   cycle 4896159  jpc=0x0264   (the walk)
-   with fix      cycle 4896564  jpc=0x0c00   (a one-cycle jump)
-   ```
-
-   Traced: `0x01ee` holds 0xE0 = `getstatic_ref` (handler 0x2C5), a THREE-byte
-   instruction. On resume the core dispatched pc=0x0228 — the handler for 0x01,
-   the byte at `0x01ef` — so `getstatic_ref` was never dispatched at all. It then
-   executed `0x99` at `0x01f0`, that instruction's second operand byte, as `ifeq`
-   (pc=0x2B9), which branched on a bogus 16-bit offset 0x1A10 truncated to 0xA10:
-
-   ```
-   jpc_br 0x1F0 + 0xA10 = 0xC00   == observed
-   ```
-
-   The correct stream is `getstatic_ref pubStep; iload_0; bipush 10; iastore`,
-   i.e. `pubStep[id] = 10`. So an instruction's dispatch was skipped and its
-   operands ran as opcodes — an OFF-BY-ONE across the freeze/resume boundary.
-
-   Why the regressions did not catch it: they never hit this boundary. Passing
-   132/132/59/121 says the suites do not exercise it, not that the change is
-   sound — the same trap that made `lmul_sw` look fine for years (item 29).
-
-   **SOLVED 2026-08-12 by an A/B trace of the boundary — THREE signals must
-   freeze and the reverted fix froze two.** Run the sim with a trace window
-   (`argv 5/6/7` = from, to, core) to reproduce either side.
-
-   WITHOUT the fix, frozen at 0x02fb (`nop nxt`, jfetch=1), a bytecode is
-   CONSUMED EVERY CYCLE — `jinstr` latches 0x4f, 0xe0, 0x01, 0x99, 0x1a while pc
-   is stuck and none of them execute:
-
-   ```
-   cy=4896042 pc=0x02fb jpc=0x01ef jinstr=0xe0 jpaddr=0x0228 frz=1
-   cy=4896043 pc=0x02fb jpc=0x01f0 jinstr=0x01 jpaddr=0x02b9 frz=1
-   ```
-
-   The control case is in the same trace: frozen at 0x02fa (a `wait`, jfetch=0),
-   cycles 4896033-4896039, NOTHING advances. The damage is specific to freezing
-   on an instruction whose jfetch bit is set.
-
-   WITH the fix, `jpc` and `jinstr` hold correctly — but `jpaddr` slips and stays
-   slipped:
-
-   ```
-   cy=4896041 pc=0x02fb jpc=0x01ee jinstr=0x4f jpaddr=0x02c5 frz=1
-   cy=4896042 pc=0x02fb jpc=0x01ee jinstr=0x4f jpaddr=0x0228 frz=1   <- and stays
-   ```
-
-   0x02c5 is `getstatic_ref`'s handler, correct for the 0xE0 at jpc=0x01ee;
-   0x0228 is the handler for 0x01, the byte at 0x01ef. The cause is the read
-   address mux, which `io.stall` does NOT gate:
-
-   ```scala
-   }.elsewhen(io.jfetch || io.jopdfetch) {
-     jbcAddr := (jpc + 1)(config.jpcWidth - 1 downto 0)   // prefetch next
-   }
-   ```
-
-   `jfetch` is held through the freeze, so `jbcAddr` advances to jpc+1, the RAM
-   returns the NEXT byte and `jpaddr` recomputes to its handler. On release
-   `pcMux := io.jpaddr` sends pc to 0x0228 — `getstatic_ref` skipped, its operand
-   executed as an opcode.
-
-   **So the fix must hold `jpc`, `jinstr` AND `jbcAddr`.** `io.stall` already
-   covers the first two (`when(!io.stall)` at :195/:239 and
-   `when(!io.stall && io.jfetch)` at :260). The missing piece is gating the
-   `jbcAddr` mux so the read stays on the pending byte during a stall.
-
-   Watch the 1-cycle `readSync` latency when doing it: `jpaddr` reflects
-   `jbcAddr` from the previous cycle, so a naive hold still lets one wrong value
-   through on the first frozen cycle. Re-run the same A/B window to confirm
-   `jpaddr` holds at 0x02c5 for the whole freeze.
-
-   ### STILL OPEN: core 1 streams jpc past the method end from `iastore`
-
-   Remaining head of chain, with the probes off. Five consecutive escapes, then
-   ABs on GARBAGE HANDLES (105, 114, 172 — far below heapStart ~23784), and at
-   the first AB `jpc=0x0853`, already outside the cache. So the ABs are again
-   downstream; the escape is the head.
-
-   ```
-   4896136..4896152  pc=0x02fb CONSTANT, jpc 0x024d -> 0x025d, one byte per cycle
-   4896159           METHOD ESCAPE jpc=0x0264, method [0x0180, 0x025c)
-   ```
-
-   `pc=0x02fb` is the LAST microcode word of the `iastore` handler (`iastore`
-   starts at 0x2f6, `iaload` at 0x2fc per JumpTableData). A fixed microcode
-   address with `jpc` advancing every cycle is operand fetching that does not
-   stop: `jpc` increments on `jfetch || jopdfetch`, so something is holding one
-   of those asserted at the end of an array store, and `jpc` walks straight
-   through the method end.
-
-   NOT a stop-the-world artefact: at the first AB, `gcHalt` is asserted by 0
-   cores and `halted=0/2`.
-
-   ### BUG 2, SOLVED: `sys_exc` CORRECTS jpc THROUGH THE OPERAND STACK
-
-   A per-cycle trace armed by the exception strobe pins this to one instruction.
-   `sys_exc` (jvm.asm:550) starts by undoing the fetch increment:
-
-   ```
-   ldjpc; ldi 1; sub; stjpc     // intended: jpc := jpc - 1
-   ```
-
-   Trace of core 1, cycle by cycle (`sys_exc` occupies 0x00a7..0x00b0 — ten
-   microcode words, then `jmp invoke` to 0x010d, which matches the listing
-   exactly):
-
-   ```
-   4733632 pc=0x02ff jpc=0x01eb A=0x12345678 B=0x12345678 sp=90  <- strobe; a/b ALREADY poison
-   4733637 pc=0x00aa jpc=0x01ec A=0x000001ec B=0x00005c30 sp=93  <- ldjpc pushed jpc
-   4733638 pc=0x00ab jpc=0x01ec A=0x12345678 B=0x000001ec sp=92  <- TOS is POISON, not 1
-   4733639 pc=0x00ac jpc=0x01ec A=0xedcbab74 B=0x12345678 sp=91  <- sub
-   4733640 pc=0x00ad jpc=0x0b74 A=0x12345678 B=0x12345678 sp=92  <- stjpc
-   ```
-
-   The arithmetic is exact:
-
-   ```
-   0x1ec - 0x12345678 = 0xedcbab74     (0xedcbab74 & 0xfff) = 0xb74
-   observed jpc                         = 0x0b74     MATCH
-   ```
-
-   So the subtraction that should have been `jpc - 1` used the POISON as its
-   operand, and `stjpc` wrote the low 12 bits of the result. That is the whole
-   derailment — not a fill fault, not a branch-target fault.
-
-   **Why the operand was poison.** `a`/`b` are already `0x12345678` at the strobe,
-   BEFORE `sys_exc` runs. The AB fires during the `iaload` of `liveTick[id]`: the
-   operands have been popped, the load never delivers, and the top-of-stack
-   registers refill from stack RAM slots that were never written. `sp` also rises
-   90->93 across the entry, one push more than `sys_exc`'s two, so `sp` and `a`/`b`
-   are inconsistent with each other. `sys_exc` then does arithmetic on that.
-
-   **The defect is the design, not a stray value:** a hardware exception is taken
-   mid-bytecode, so the operand stack is NOT in a defined state, yet `sys_exc`'s
-   very first action computes the resume address through it. Any poison in `a`
-   becomes a wild `jpc`.
-
-   Fix directions, in order of preference:
-   1. Do not route the jpc correction through the operand stack. The faulting jpc
-      is already known to the hardware — present it in a register the handler can
-      read directly, or have `bcfetch` not apply the increment when an exception
-      is strobed, removing the need to undo it.
-   2. Failing that, make the entry establish a known stack state before arithmetic.
-   3. Independently: `stjpc` silently accepts a value with bit 11 set. The RTL
-      comment at BytecodeFetchStage:134 says the extra bit exists "to detect
-      overflow", but NOTHING tests it — see the note above. Acting on it would
-      have turned this into a trap instead of 600k cycles of corruption.
-
-   Note this is a SINGLE-CORE bug in an SMP-looking dress: nothing about it needs
-   two cores, which is why every GC and coherence hypothesis failed to explain it.
-
-   ### ROOT CAUSE: A GC ON ONE CORE CANNOT SEE ANOTHER CORE'S STACK
-
-   ```
-   STACKROOT minors 6 magic 0 LOST (other core's stack is NOT scanned)
-   ```
-
-   Core 1 held a live object in a **local variable only** — so the reference
-   existed nowhere but core 1's own stack RAM — while core 0 ran 6 minor GCs.
-   The object was collected. Its magic read back **0**: freed and zeroed.
-
-   **This is a design hole, not a race.** Both root scanners have the same shape:
-
-   ```java
-   i = Native.getSP();
-   for (j = Const.STACK_OFF; j <= i; ++j) pushYoung(Native.rdIntMem(j));   // THIS core
-   cnt = RtThreadImpl.getCnt();                                            // other THREADS
-   ```
-
-   `Native.rdIntMem` reads **core-private** internal RAM, so it can only ever
-   reach the collecting core's stack. `RtThreadImpl` covers other *threads*,
-   whose stacks are saved into heap arrays — not other **cores**, which are
-   running and hold their roots in hardware. Nothing anywhere in the runtime
-   scans another core's stack: `getYoungRoots()` (generational) and
-   `getStackRoots()` (classic) are the only two stack scanners, and both are
-   core-local. **So this affects the classic collector too**, which is why
-   classic hangs at 3 and 4 cores.
-
-   It explains every observation, including the ones that refuted the earlier
-   hypotheses:
-
-   - **the lost reference** — `publish()` does `Young y = new Young(); ... ;
-     holders[slot].ref = y;`. Between those two statements `y` exists only in
-     core 1's stack. A minor GC on core 0 in that window collects it, and core 1
-     then stores an already-dead reference into the holder. The observed freeze
-     at `step[1]=3` — core 1 halted between the magic write and the store — is
-     precisely that window.
-   - **why the card was marked and the holder was in a scanned range** — both
-     true and both irrelevant: the object died *before* the store, so there was
-     nothing for the card to protect.
-   - **why the stop-the-world holding made no difference** — halting core 1 is
-     exactly the problem. It is frozen mid-`publish()` holding the only
-     reference, and the collector cannot see it.
-   - **why the overlap is required** — the old test only collected in phase 2,
-     when publishers held no live young objects.
-   - **the wild-pointer crashes** (`noim`, AB, NP) — the same mechanism applied
-     to any other reference a core holds while another core collects.
-
-   The test's own hazard note had it exactly backwards: *"If core 1 leaves the
-   Young reference in a stack slot, it stays reachable as a root and survives
-   regardless of the card table."* On SMP the opposite is true — a stack slot on
-   another core is the one place a reference is **not** safe.
-
-   **FIXED, and verified 2026-08-12.** `scanOtherCoreRoots()` (GC.java) reads
-   every other core's SP, stack RAM and A/B top-of-stack registers over
-   `IO_ROOT_SEL`/`IO_ROOT_DATA`, and is wired into BOTH scanners — `getYoungRoots()`
-   (generational) and `getStackRoots()` (classic). STACKROOT now reports:
-
-   ```
-   STACKROOT minors 6 magic 1515851775 OK (other core's stack IS scanned)
-   core1 view:  ptr 31301 space 1 type 0 raw 1515851775 field 1515851775
-   core0 after: ptr 31301 space 1 type 0 raw 1515851775 PTR-AGREE
-   ```
-
-   Identical on seeds 70704150 and 424242, so this is not seed luck. The object
-   survives and both cores agree on every word.
-
-   A halt ACKNOWLEDGEMENT is still worth adding — `gcHalt` is fire-and-forget and
-   the halt check measured a 2-cycle stop latency, so the collector samples a
-   peer's SP and stack RAM while that peer may still be executing. A stale SP
-   silently truncates the scan. That is a correctness precondition for the root
-   snapshot, not a tidiness issue.
-
-   The probe is committed as part of `SmpGcTest` (`STACKROOT` line) and is
-   deterministic, layout-independent, and takes about a second — unlike the main
-   workload it does not depend on hitting a window by luck. Use it as the
-   regression test for any fix.
-
-   ### HALT CHECK RESULT: the stop-the-world HOLDS. Hypothesis refuted.
-
-   Measured in simulation (zero perturbation — it only compares signals the
-   probe already samples: while any core asserts `gcHaltReg`, does another
-   core's `pc` advance?). 2 cores, 50M-90M cycles:
-
-   ```
-   HALT CHECK: 128 stop-the-world windows observed, 1 of them had another core still executing.
-   HALTLEAK window 85842797..85876686 (33889 cy) asserted by core 0: core 1 advanced 2 cycles
-   ```
-
-   **127 of 128 windows are perfectly clean.** The one exception leaked **2
-   cycles** — halt latency, a core taking a couple of cycles to stall after
-   `IO_GC_HALT` goes high — and by a core that did **not** hold the lock, so the
-   lock-owner exemption never even fired.
-
-   Three things make this a refutation rather than a lead:
-
-   1. **The fault precedes the leak by 28 million cycles.** First exception at
-      cycle **57,232,985**; the only leak at **85,842,797**. Whatever breaks core
-      1 had already broken it long before any halt leaked.
-   2. **A round with 102 minor GCs lost nothing**: `R0 clear=ON minors 102
-      lost 0`. If a 2-cycle leak were sufficient, 102 collections would have
-      shown it.
-   3. The leak is 2 cycles out of a 33,889-cycle window — 0.006% of one
-      stop-the-world.
-
-   So the unifying "the collector runs while a mutator does" story is **wrong**,
-   and the halt is not the mechanism for either fault. Worth fixing the 2-cycle
-   latency on general principle (assert `gcHalt`, then wait for acknowledgement
-   before touching the heap), but it is not this bug.
-
-   **What is now eliminated**, each by direct measurement rather than argument:
-
-   | candidate | verdict |
-   |---|---|
-   | per-core card table / mark never recorded | **refuted** — `card 1` after core 1's store |
-   | holder outside a scanned range | **refuted** — inside `[allocPtr, tenureTop)` |
-   | stop-the-world leaks | **refuted** — 127/128 clean, leak postdates the fault |
-
-   That leaves the scan -> mark -> copy pipeline itself: `pushYoung`'s filtering,
-   the young-survivor marking, or `copyAndSweepYoung`. Those are now the only
-   places left for the lost reference, and they are ordinary single-threaded code
-   that can be read and unit-tested rather than raced against.
-
-   **And the simulator now reproduces the FREEZE at 2 cores** — exceptions start
-   on core 1 at cycle 57.2M, immediately after the publishers are released, same
-   AB-then-NP signature as the 4-core run, plus two null-method-pointer fills.
-   That is a much cheaper vehicle than the 4-core route and it has full
-   visibility. Use **hardware for the lost reference** (which the sim's 128 KB
-   heap does not reproduce) and **the 2-core sim for the freeze**.
-
-   ### Superseded: the mark IS set, and the holder IS scanned
-
-   The single-binary A/B is built (`GC.cardClearEnabled`, non-final so it cannot
-   be folded; the test flips it per round and reports `R<n> clear=ON/OFF minors N
-   lost N`). It has not yet produced a two-arm result, because the freeze kills
-   the run before both arms execute. But the probe that runs alongside it
-   answered two questions outright:
-
-   ```
-   probe: h0d 1902227 card 1 copyPtr 538184 allocPtr 1901895 tenureTop 1902281
-   R0 clear=ON  minors 3 lost 0
-   ```
-
-   - **`card 1`** — the card covering holder[0]'s data word IS MARKED after core
-     1's cross-generation store. **The hardware write barrier records another
-     core's write correctly.** That kills the "per-core card table" framing that
-     item 1 opened with; the cluster-level table (767178b) does its job.
-   - **`h0d 1902227` lies inside `[allocPtr 1901895, tenureTop 1902281)`**, one
-     of the two ranges `scanCards()` visits. So the holder is reachable by the
-     scan.
-
-   Neither a missing mark nor an unscanned region. That leaves the **stop-the-
-   world halt** as the remaining suspect: if core 1 advances at all between
-   `IO_GC_HALT` going high and going low, the collector moved objects and
-   rewrote handles underneath a running core — which explains a lost reference
-   and a wild-pointer crash (`noim`, `bytecode 202 not implemented`) equally
-   well, and would unify the two faults into one.
-
-   **Measure the halt in SIMULATION, not on hardware.** Every attempt to
-   instrument core 1's hot loop made the failure arrive *sooner* — adding a
-   `GC.mutatorTick` bump to the publisher took it from "fails in round 1" to
-   "dies before round 0 finishes". That is itself evidence (more cross-core
-   traffic, more race) but it makes hardware instrumentation self-defeating for
-   this question. The simulator can watch `cores(i).sys.io.halted` and
-   `gcHaltReg` directly with **zero perturbation** — the check is simply: while
-   any core asserts `gcHaltReg`, does another core's `pc` advance? The probe
-   already samples all of those signals.
-
-   The runtime-side half is committed and inert: `GC.mutatorTick` /
-   `GC.haltDeltaMax`, with `minorGc()` snapshotting the counter inside the halt
-   window and recording the largest advance. Nothing bumps `mutatorTick` by
-   default, so it costs one static read per minor GC and shifts nothing. Wire it
-   up from a mutator only if hardware measurement becomes worthwhile again.
-
-   Also useful when doing it: `scanCards()` visits only `[tenureBase, copyPtr)`
-   and `[allocPtr, tenureTop)`, treating the middle as free. Confirm the holders
-   actually lie inside a scanned range before concluding anything about marks —
-   an object in the gap is never reached however dirty its card is. The probe for
-   this is written (`cardBit()` plus a `copyPtr`/`allocPtr`/`tenureTop` dump at
-   `phase = 2`); it just needs a build that survives to round 0's verification.
-
-   The generational run's behaviour has also **changed for the better**: it used
-   to hang emitting nothing, and now reports before dying. That is the three
-   lock-park fixes (`4df8edd`, `d8d93f8`) doing their job — `noim()` no longer
-   freezes the cluster under the global lock, so the machine can tell you what
-   went wrong. The fixes did not make the underlying fault go away, and were
-   never going to; they made it observable.
-
-   **And the simulation failure is REAL.** Re-running the 4-core `SmpGcTest`
-   probe under `--x-initial 0` reproduces it unchanged: same first exception at
-   cycle **56,176,845**, same core 1, same `AB` then `NP` storm, same two null
-   fills. So the retraction below applies **only** to the `NCoreHelloWorld`
-   experiment. Everything measured on the `SmpGcTest` route — the exception
-   storm, the wild execution, `noim()`, the wrecked-stack stores — stands, and is
-   now corroborated on hardware.
-
-   > **RETRACTION (2026-08-10, later the same day).** The `NCoreHelloWorld`
-   > evidence in the next few paragraphs is a **simulation artifact** and does
-   > not support the conclusion drawn from it. Read the *Uninitialised
-   > registers* section below before believing any of it. The 4-core
-   > `SmpGcTest` failure that started this item is a separate question and is
-   > being re-tested under a corrected simulator setup. Left in place rather
-   > than deleted because the correction is the useful part.
-
-   **IT IS NOT A GC BUG AT ALL, AND IT REPRODUCES IN 3M CYCLES.** Retargeting
-   the probe at `java/apps/Small/NCoreHelloWorld.jop` — a program that does
-   nothing but start N cores and toggle a watchdog — reproduces the null fill,
-   with the boot line reading `GC: classic (SMP - per-core card tables,
-   generational disabled)`. **The generational collector is switched off in that
-   run.** The bracket is sharp:
-
-   | cores | null fills | GC |
-   |---|---|---|
-   | 2 | 0 | classic (disabled) |
-   | 3 | 0 | classic (disabled) |
-   | **4** | **2, both on core 3** | classic (disabled) |
-
-   ```
-   sbt "Test/runMain jop.system.JopGcHaltDeadlockSim 4 0 70704150 java/apps/Small/NCoreHelloWorld.jop 3000000"
-   ```
-
-   Under a minute, no GC, no allocation, no card table, deterministic with the
-   pinned seed — against 45 minutes for the `SmpGcTest` route. **Use this.**
-
-   The 2- and 3-core runs are the control this investigation needed and never
-   had: a `start=0` fill is *not* normal wake-up behaviour, it appears at
-   exactly four cores. So "generational GC deadlocks above 2 cores" has been the
-   wrong title for this item throughout — the generational collector was a
-   passenger, and what it did was allocate hard enough to make a 4-core SMP
-   wake-up fault show up as heap-shaped symptoms 56M cycles downstream.
-
-   ### Uninitialised registers make this simulator unreliable — read this first
-
-   **The 4-core `NCoreHelloWorld` failure is caused by Verilator randomising
-   registers that have no reset. It is not a hardware bug, and the conclusions
-   drawn from it above are withdrawn.**
-
-   Three independent results, each cheap to re-run:
-
-   | experiment | result |
-   |---|---|
-   | 4 cores, seed 70704150 | **DEAD** — no UART at all, core 0 never boots |
-   | 4 cores, seeds 1 / 2 / 3 | **BOOTS** |
-   | 4 cores, seed 70704150, `--x-initial 0` | **BOOTS** |
-
-   `--x-initial 0` starts every register at zero, which is what an FPGA does at
-   power-up. With it, the failure disappears. Without it, whether the machine
-   boots at all depends on the seed.
-
-   Worse, it depends on **observation**: adding `simPublic` to the BMB response
-   signals — which cannot change logic, only which registers survive pruning and
-   therefore how the seeded randomisation lands — turned a 4-core run that
-   booted and failed later at 208k cycles into one that is dead from cycle 78.
-   Two runs of the same RTL and the same seed, differing only in what was being
-   watched.
-
-   `grep -rE "= *Reg(Next)? *\(" spinalhdl/src/main/scala/jop/ | grep -v init(`
-   counts **~405** registers with no `init`. That is the raw material.
-
-   **Consequences, in order of importance:**
-
-   1. **Add `--x-initial 0` to the sims** (`SimConfig.addSimulatorFlag`). It
-      matches FPGA power-up and removes a large class of false failures. Every
-      sim in this project is exposed to this, not just this probe.
-   2. **A sim failure that moves when you add a probe is X-state, not a bug.**
-      That test costs one run and would have saved most of today.
-   3. Pin the seed (done) — but pinning alone is not enough, because the netlist
-      changes under you as instrumentation is added.
-   4. Registers that genuinely need a defined reset should get one. Randomised
-      state that can prevent boot is worth fixing on its own merits, even though
-      the FPGA masks it.
-
-   What this does **not** settle: the original 4-core `SmpGcTest` failure
-   reproduced under four *different* random seeds, which is far more robust than
-   anything here, and the EP4CGX150 4-core hang is on real hardware where X-state
-   does not exist. Both may still be real. Everything downstream of the
-   null-fill reading — the wake-up narrative, "not a GC bug" — needs redoing
-   under `--x-initial 0` before it can be trusted.
-
-   **THE NULL FILL HAPPENS AT CORE WAKE-UP.** Triggering a dump on the *first*
-   `start=0` fill of the whole run moved the origin earlier again, and onto a
-   different core:
-
-   ```
-   56,063,443  core 0 writes phase=1                (publishers released)
-   56,063,499  core 3 FILL start=0 len=0            <-- first null fill in the run
-   56,063,544  core 3 EXC NP  jpc=0x0003 sp=219
-   56,063,582  core 3 FILL start=0 len=0
-   56,063,651  core 3 EXC AB  jpc=0x0004 sp=118
-   56,063,745  core 1 writes cpuCnt=4 \  cores 1 and 2 start main() normally
-   56,063,746  core 2 writes cpuCnt=4 /  CORE 3 NEVER DOES, EVER
-   56,063,817+ core 3 NP storm, forever
-   ```
-
-   Core 3 fails **in its first few bytecodes**, at `jpc=0x0003`, and never
-   reaches `main()`'s first two putstatics — there is no `src=3` store anywhere
-   in the run. Cores 1 and 2, released by the same signal on the same cycle,
-   start correctly.
-
-   So the target is much narrower than "somewhere in a 56M-cycle workload": it
-   is the **SMP wake-up path**, where three cores leave `Startup`'s boot-wait
-   loop simultaneously, all miss in their bytecode caches at once, and all hit
-   the BMB arbiter together. One of them reads a method pointer of 0.
-
-   **AND THE SIMULATION IS NOT REPRODUCIBLE RUN TO RUN — this invalidates a
-   documented inference.** `doSim` without an explicit seed picks a new one
-   every invocation; four consecutive runs of the *same binary* used seeds
-   748489979, 617838352, 370588204 and 70704150. The failure is robust (every
-   run wedges) but its details move: core 1 dying mid-workload at 56.18M in one
-   run, core 3 dying at wake-up at 56.06M in another.
-
-   That means the note above — *"adding a counter changed the code size ... and
-   the freeze stopped happening: five consecutive clean runs. Verilator is
-   deterministic, so that is not luck, it is a different binary"* — was drawn
-   with an uncontrolled variable. Verilator is deterministic **for a fixed
-   seed**, and the seed was not fixed. The layout sensitivity may well be real,
-   but it has not been shown, and five clean runs is a much weaker result than
-   it looked. The probe now pins the seed (`doSim(seed = simSeed)`, default
-   70704150, overridable as argv[3]); re-establish that claim with the seed held
-   before relying on it.
-
-   A concrete place to look while doing so: `BytecodeFetchStage.scala:157-173`
-   carries a hand-built read/write collision bypass whose own comment says
-   *"During BC fill, the last write can coincide with the bytecode fetch read at
-   the dispatch moment (**timing depends on memory latency**)"*. `doBypass`
-   compares a one-cycle-registered write address against a registered read
-   address, and four-core BMB arbitration changes exactly the variable that
-   comment names. That is a lead, **not a finding** — the null pointer is in the
-   value fed to the fill, so the method-pointer *load* is the first suspect and
-   the fetch bypass the second.
-
-   **Probe hardening after a self-inflicted false alarm**: every static address
-   is now read from `<app>.jop.link.txt` at startup instead of being hardcoded.
-   Fixing `exit()` grew the runtime and shifted `SmpGcTest.phase` 287 -> 292,
-   so the hardcoded probe reported `phase=0` with null arrays and looked exactly
-   like catastrophic heap corruption. It was reading the wrong words. The file
-   already carried a comment warning that these move on relink; that was not
-   enough, so it is now mechanical.
-
-   Historical note: `exit()` must not hold a lock while parking. `Startup` has
-   three other park loops (lines 127, 286, 416) that do NOT take a monitor —
-   only this one does, and the `synchronized (stack)` serves no purpose since
-   nothing is ever released. Also worth auditing: `JVM.except()` ends an
-   uncaught exception with `System.exit(1)`, so on SMP any uncaught exception on
-   any core wedges the cluster by this same path rather than stopping one core.
-
-   **Do not instrument `GC.java` to chase this.** Adding a per-iteration counter
-   to the list walks changed the runtime's code size, which moved the heap
-   start, which changed the allocation pattern — `minors after tenuring` went
-   196 to 198 — and the freeze stopped happening: five consecutive clean runs.
-   The same sensitivity broke `JopSmallGcBramSim` (R80 vs R81) on the same day.
-   Observing from the simulator costs nothing and cannot do this, so prefer it
-   regardless.
-
-   **But the "Verilator is deterministic, so that is not luck" half of this
-   argument does not hold as written** — see the seed note below. `doSim` was
-   picking a fresh seed every run, so those five clean runs were not five
-   samples of one deterministic system. The layout sensitivity is plausible and
-   the R80/R81 case is independent of seeding, but the five-run result needs
-   re-running with the seed pinned before it means what it says.
-
-   Because of that, the failing image is **kept aside** at `spinalhdl/repro/`
-   (`SmpGcTest.jop` + `.jop.link.txt`, gitignored like every other build
-   output). It is the build with the `cpuCnt0 <= 2` guard at `GC.java:574`
-   lifted to `<= 99`, and it prints `minors after tenuring 198`. A run that
-   prints anything else is a different binary and its result is void. Point the
-   probe at that copy rather than rebuilding when the runtime has moved on.
-
-   **Whether this freeze predates the fix is UNKNOWN**: the broken build died at
-   52M, before this point, so it was never observable. Plausibly the next bug in
-   line rather than one introduced here — but that is an assumption.
-
-   **Two instrumentation faults, both fixed, both worth remembering.** The first
-   probe read `cluster.io.halted`, which `JopCluster.scala:617` wires from
-   `debugHalted` — the DEBUG halt, always false here — and so printed
-   "halted=0/4" through a total freeze, which is what produced the wrong "stalled
-   owner" reading. The pipeline actually stalls on an OR of five terms
-   (`JopCore.scala:294`) and the probe now samples all five. Second, the stall
-   detector required *every* core to be stable at once; core 3 creeps through a
-   software-`imul` loop forever, so a three-of-four freeze never tripped it. It
-   is now per core.
-
-   **Regression sweep of the fix** (it touches every collector path, so the
-   already-validated configurations matter more than the 4-core one):
-
-   | check | result |
-   |---|---|
-   | 1 core, generational — `JopGenGcBramSim` | **PASS** |
-   | 1 core, classic — `JopSmallGcBramSim` | **PASS**, 1 GC cycle |
-   | 2 cores, generational — 4-core probe run at 2 | **healthy**: no freeze, no core halted, no lock held |
-   | 4 cores | crash fixed; freeze remains |
-
-   The 2-core run does not finish `SmpGcTest`'s eight publish rounds inside 75M
-   cycles, but nothing is stuck — both cores run, `syncHalt=false` on both. That
-   is the same simulation-speed limit already recorded against
-   `JopIhluGcBramSim`, not a hang.
-
-   **Do not read this as "generational SMP works now".** One real defect is
-   closed with a reproduction and a fix; the guard stays at `cpuCnt <= 2` until
-   a 4-core run completes and reports `errors 0`.
-
-   **Two sims in this area could not fail, and a third could fail for the wrong
-   reason.** All three were found by running them properly during this work:
-
-   - `JopSmallGcBramSim` asserted on `"GC test start"` — printed only by
-     `Small/src/test/GcStressTest.java` — while loading `HelloWorld.jop`, whose
-     source prints `"Hello World!"`. It passed only because a stale
-     `HelloWorld.jop`, built from some other source at some point and not
-     reproducible from the tree, happened to be on disk; `make clean` in that
-     directory destroyed it and the mismatch surfaced. Now loads
-     `GcStressTest.jop`.
-   - The same sim then stopped on the literal `"R80 f="`, and the collector
-     fires at exactly R80, so the pass criterion was ONE ROUND WIDE. HEAD
-     reaches `R79 f=1180` and cannot satisfy round 80; a slightly larger runtime
-     reaches `R79 f=1308`, satisfies round 80 with 28 words to spare, and
-     collects at R81 — outside the window. Any GC.java edit that moves the heap
-     start by a word could flip this either way regardless of whether the
-     collector works. Window widened to R95.
-   - `make -C java/apps/Small clean` leaves the directory UNBUILDABLE:
-     `MissingClassError: java.lang.Throwable`. The Makefile compiles only its
-     own entry point with the runtime on `-sourcepath`, so `build/classes`
-     normally accumulates runtime classes across builds of the several apps that
-     share that directory. Stage them with
-     `cp -rn ../../runtime/classes/* build/classes/` before `make jop`.
-
-   Together with item 2 (`JopIhluGcBramSim` loading a single-core app) that is
-   four instances of one shape in this area: **the test cannot fail for the
-   reason it exists**.
-
-- **2.** ~~**`JopIhluGcBramSim` cannot fail**~~ — **CLOSED 2026-08-16.** It loaded
-   `java/apps/Small/HelloWorld.jop`, a single-core app, so core 1 parked in the
-   boot-wait loop and IHLU was never exercised — verified at the time by running
-   to 49M cycles with core 1 never moving.
-
-   It now loads `SmpGcTest.jop`, the multi-core allocating workload item 1
-   needed, and has three ways to fail rather than none:
-
-   - the payload not reaching `SmpGcTest done`;
-   - `SMPGC FAIL`, i.e. cross-core references lost;
-   - **`verified == 0`** — the specific anti-vacuous guard. `verified N` counts
-     holders core 0 checked *after another core stored into them*, so a non-zero
-     N is proof the second core executed. This is the check the old payload
-     could never have satisfied.
-
-   **Result:** `PASS: 2 cores, verified=192, 10 minor GCs — IHLU and shared card
-   table exercised`, 20.2M cycles. Both cores run, `SMPGC OK`, minors 10 /
-   verified 192 / errors 0. Generational is active at 2 cores now that the guard
-   is `<= 12`, so this exercises the shared card table as well as IHLU — the
-   entry's original "INCONCLUSIVE while the SMP guard is on" caveat no longer
-   applies.
-
-   **Demonstrated failing, not assumed.** Pointed back at `HelloWorld.jop` with a
-   short cycle cap it exits non-zero with `FAIL: SmpGcTest did not run to
-   completion`. A test that has never failed has not been shown to be able to —
-   the same discipline item 35 sets, and it is worth the two minutes.
-
-   Also fixed while here: the verdict used `findFirstMatchIn` for the minor-GC
-   count and so picked up `STACKROOT minors 6`, a mid-run probe, reporting 6
-   where the run's own summary says 10. A verdict that under-reports what it
-   exercised is a small lie in the one place that has to be trustworthy.
-- **34.** ~~**4-CORE STATUS after the fetch-stall fixes**~~ — **the SDRAM row is
-   SOLVED (2026-08-16); one BRAM-sim row remains open.** Kept because the table
-   below is the clean statement of which combinations were tried, and because
-   two of its entries were retracted in ways worth not repeating.
-
-   **The `SmpGcTest / Ihlu / SDRAM hardware / STALL` row was the
-   `AlteraSdramAdapter` bug** (`ef36d99`) -- Avalon read data dropped when the
-   consumer stalled, and write responses overtaking outstanding reads and
-   answering them with 0. Nothing to do with Ihlu, the lock, or 4 cores as such;
-   the core count only decided how often `rsp.ready` dropped. Full account in
-   item 1. Generational SMP now runs at up to 12 cores.
-
-   **Still open from this entry:** `JopSmpNCoreHelloWorldSim` with **CmpSync** at
-   4 cores, where C1 never toggles. That is a BRAM sim, so the SDRAM fix does not
-   touch it, and the Ihlu equivalent passes. Small, concrete and unexplained.
-
-   The original 2026-08-13 text follows.
-
-   | test | lock | memory | 4 cores |
-   |---|---|---|---|
-   | SmpGcTest | Ihlu | BRAM sim | **PASS** — 8 rounds, 192 verified, 0 errors |
-   | `JopIhluNCoreHelloWorldSim` | Ihlu | BRAM sim | **PASS** — 89 lock ops, C0-C3 all toggle |
-   | `JopSmpNCoreHelloWorldSim` | **CmpSync** | BRAM sim | **FAIL** — C1 never toggles |
-   | SmpGcTest | Ihlu | **SDRAM hardware** | **STALL** — core 2 starves |
-
-   **(a) RETRACTED — this is NOT a global-lock failure.** `JopSmpNCoreHelloWorldSim 4`
-   does report `Per-core WD toggles: C0=1 C1=0 C2=1 C3=1` — core 1 never starts —
-   while `JopIhluNCoreHelloWorldSim 4` passes. But BOTH use Ihlu:
-   `JopCoreConfig.useCmpSync` defaults to false and NEITHER harness overrides it.
-   The claim that the global lock was implicated came from reading the
-   `JopIhluSim` header comment instead of checking the config, and is withdrawn.
-
-   The harnesses differ in CONFIGURATION, not locking. `JopIhluTestHarness`
-   builds an explicit `harnessCfg` with `hasCardTable = true`;
-   `JopSmpTestHarness` has none, so `IO_CARD_SHIFT` reads 0 and GC.init falls
-   back to the classic collector — the UART says exactly that:
-   `GC: classic (no card table - generational disabled)`. So the comparison was
-   generational-Ihlu against classic-Ihlu, and the cause of the core-1 no-start
-   is NOT yet isolated. Give `JopSmpTestHarness` the same explicit config before
-   drawing anything from it.
-
-   Reproducer, still valid as a FAILURE:
-   `sbt "Test/runMain jop.system.JopSmpNCoreHelloWorldSim 4"`.
-
-   **(b) NARROWED 2026-08-13 — the SDRAM PATH is implicated, silicon is not.**
-   A BRAM build on the SAME board isolates it:
-
-   | config | 4 cores + SmpGcTest |
-   |---|---|
-   | BRAM sim | PASS |
-   | SDRAM sim (`JopSmpSdramNCoreHelloWorldSim 4 250000000 <SmpGcTest.jop>`) | PASS |
-   | **BRAM hardware** (`ep4cgx150BramSmp 4 60`) | **PASS** — SMPGC OK, 192 verified, 0 errors |
-   | **SDRAM hardware, 2 CORES** (`ep4cgx150Smp 2 60`) | **PASS** — SMPGC OK, 192 verified, 0 errors |
-   | SDRAM hardware, 4 cores (`ep4cgx150Smp 4 60`) | **STALL** — core 2 starves |
-
-   **So the stall needs BOTH the SDRAM path AND 4 cores — it is
-   CONTENTION-DEPENDENT.** 2 cores on the same memory, same clock, same app and
-   same guard passes cleanly (+2.468 ns slack, so timing is not a factor), and 4
-   cores on BRAM passes too. Only four masters against the SDRAM controller
-   fails.
-
-   Note the BMB arbiter is already ROUND-ROBIN (`lowerFirstPriority = false`,
-   JopCluster:385), so this is not naive fixed-priority starvation — do not
-   start there. Look instead at what can hold the bus across arbitration
-   decisions with four masters: burst behaviour in `BmbSdramCtrl32` (the 32->16
-   bridge), refresh colliding with a loaded queue, or a request being dropped
-   rather than deferred.
-
-   The BRAM board build passes at only **+0.050 ns** setup slack, which makes the
-   result strong rather than weak: marginal timing produces failures, not
-   successes. Quartus synthesis and the real device are common to both hardware
-   rows, so what differs is the SDRAM controller, refresh, and the physical
-   device under 4-core contention. Next look there, NOT at the cores.
-
-   **(b2) MEASURED ON HARDWARE 2026-08-13 — NOT bus starvation.** Per-core
-   counters at the arbiter inputs (req/gnt/busy, read back through the root port,
-   `tgt >= 8` selects the counter bank; dumped by SmpGcTest at STALL):
-
-   ```
-   STALL live=40294532,191,307987  pub[1]=1 pub[2]=0 pub[3]=0
-     bus[0] req 1577182941  gnt 440891195  busy 1136293713
-     bus[1] req         -1  gnt 445742537  busy         -1   (saturated)
-     bus[2] req      76125  gnt      3881  busy      72244
-     bus[3] req   35409712  gnt   3085714  busy   32323998
-   ```
-
-   `req` counts CYCLES with a request outstanding, so a core blocked on the bus
-   climbs without bound — core 1 does exactly that (saturated) while running
-   fine. The stalled core 2 shows **76k** request-cycles against core 3's 35M and
-   core 0's 1.5G: four to five orders of magnitude LESS traffic, not more
-   waiting. `req = busy + gnt` holds exactly (76125 = 72244 + 3881), so the
-   counters are self-consistent.
-
-   **So the core stopped ASKING. Arbiter and SDRAM-controller starvation are
-   ruled out, and the bus is a red herring** — do not start there. The SDRAM
-   correlation is real but indirect: something about that configuration wedges a
-   core in a path that issues no memory traffic. Next suspects are the Ihlu lock
-   (a core waiting on a monitor issues nothing) and the exception path.
-
-   Note this run's stall differs in detail from the earlier bit-identical pair —
-   pub[3] is now 0 too and core 3 lags — because the RTL changed when the
-   counters were added. It is the same class of failure, not the same instance.
-
-   **(b10) SOLVED — two bugs in `AlteraSdramAdapter`, and 4-core generational GC
-   now passes on hardware.** The adapter bridges the Altera SDRAM controller's
-   Avalon-MM interface to `SdramCtrlBus`. Two defects, both on the response path:
-
-   1. **Avalon read data was dropped when the consumer stalled.**
-      `readdatavalid` is a PULSE — the data is on `avs_readdata` for one cycle and
-      cannot be held (`avs_waitrequest` backpressures commands only). It was wired
-      straight to `io.bus.rsp`, a Stream whose consumer does deassert `ready`:
-      `BmbSdramCtrl32` drops `rsp.ready` for a high half whenever its assembly
-      pipe is occupied. When they coincided the data was presented, not accepted,
-      and lost.
-   2. **Write responses could overtake outstanding reads.** A write response is
-      manufactured locally and available immediately; a read response waits for
-      SDRAM. The adapter emitted whichever was ready. Since the consumer matches
-      responses to commands BY ORDER, a write issued after a read could answer
-      that read — with `data := 0`, which the write branch hardcodes.
-
-   That is where the zero came from. Both are fixed: read data is captured into a
-   FIFO on the cycle Avalon offers it, commands are refused unless there is room
-   to hold every in-flight result, and an `orderFifo` releases responses strictly
-   in command order.
-
-   **Why it took so long, worth internalising:** because a substitute response
-   still came back, commands and responses stayed BALANCED, so every "did the
-   response stream slip a beat?" check said no (b8's `bmbOut`). Only the data was
-   wrong, and only ever to zero. And it needs sustained back-to-back traffic for
-   `rsp.ready` to drop at all, which is why 2 cores never showed it.
-
-   **This file had NO simulation coverage on any board that uses it** — the Altera
-   controller is a BlackBox Verilator cannot build, so every sim substitutes
-   `SdramCtrlNoCke`, a proper Stream that honours `ready`. That is why matching
-   the harness to the board (0da41f1) still did not reproduce it, and it is the
-   real lesson here: the component that failed was the one no test could reach.
-
-   Results on EP4CGX150 SDRAM:
-   - SmpGcTest, 4 cores, GENERATIONAL: `SMPGC OK`, `minors 10 verified 192
-     errors 0`, 3/3 runs. This case has never passed before.
-   - DoAll 66/66 on the 4-core bitstream and on the single-core one.
-   - `rawLenBad 0 aLenBad 0 exc 0` on every core, where it was `exc 1..4` before.
-
-   **THE GUARD IS REMOVED.** It went 1 -> 2 -> 4 -> 8 -> 12 while the failure was
-   unexplained, and by the end it had stopped meaning anything: no board in the
-   tree can build past 12 (16 cores needs 182,501 of the EP4CGX150's 149,760 LE),
-   so it was unreachable, and a number implies "13+ is known bad" when the truth
-   is "untested". `genActive` is now just `USE_GENERATIONAL && cardShift0 != 0`.
-
-   **The real ceiling moved to where it can be checked.** `JopCluster` now
-   requires `cpuCnt <= 16`, because the cross-core root port's target field is
-   4 bits (`Sys.rootSel(11 downto 8)`). Past 16 that field ALIASES — a collector
-   asking for core 16's stack reads core 0's, silently, handing the GC another
-   core's roots and collecting live objects. That is the failure class the guard
-   was nervous about, stated precisely and enforced at elaboration instead of
-   guessed at runtime. Verified: 16 cores elaborates, 17 refuses with the reason.
-   Raising it means widening `rootSel` and the root mux. 8 and 16
-   cores are untested, as are the DDR3 boards, so it stays a number rather than a
-   removal. Everything below is the investigation that led here, kept because
-   several entries are retractions worth not repeating.
-
-   **(b9) A PLAIN `rdMem` GETS IT WRONG TOO — so the array path is exonerated.**
-   Each publisher now reads the SAME length word two ways every iteration:
-   `Native.rdMem(handle+1)` (the plain memory-read state machine) and
-   `liveTick.length` (the handle/array state machine). Both are wrong sometimes:
-
-   ```
-     core[1] ... exc 4 type 3 bmbOut 0 rawLenBad 2 aLenBad 1
-     core[2] ... exc 0 type 0 bmbOut 1 rawLenBad 0 aLenBad 1
-     core[3] ... exc 0 type 0 bmbOut 0 rawLenBad 0 aLenBad 1
-   ```
-
-   `rawLenBad` counts a plain `rdMem` of that word returning something other than
-   4, and it GROWS (1 -> 2 across rounds on core 1). The bounds check is not
-   special; it is simply where a bad read gets noticed, because it is the only
-   read whose result is checked. So the fault is BELOW `BmbMemoryController` —
-   in the arbiter, `BmbSdramCtrl32`, or the SDRAM controller.
-
-   Note the rate: a handful of events against millions of iterations. Any theory
-   has to explain something that rare, which argues for a narrow timing window
-   rather than a structural mistake in the state machines.
-
-   Also worth keeping in mind when reading `abLen 0`: the heap is mostly zeros,
-   so a read that goes to the WRONG ADDRESS returns 0 just as readily as one that
-   returns wrong data. "Always exactly 0" does not by itself distinguish the two.
-
-   **(b8) THE FAULT IS A READ THAT RETURNS 0 FOR AN ARRAY LENGTH OF 4.** The
-   bounds-check operands are now latched in hardware at the first EXC_AB per core
-   and reported every round:
-
-   ```
-   arrays: liveTick 539528 pubStep 539520 ... holders 539488 len 4
-     core[1] abIdx 1 abLen 0 abHdl 539528 nowLen 4 nowPtr 2096867 exc 4 type 3 bmbOut 1
-     core[2] abIdx 2 abLen 0 abHdl 539520 nowLen 4 nowPtr 2096863 exc 1 type 3 bmbOut 0
-     core[3] abIdx 3 abLen 0 abHdl 539520 nowLen 4 nowPtr 2096863 exc 2 type 3 bmbOut 1
-   ```
-
-   Read it line by line, because each column closes off a hypothesis:
-
-   - `abIdx` is always the core's OWN id, so the index is valid. The faulting
-     statement is `liveTick[id] = liveTick[id] + 1`, the first statement of the
-     publisher loop, executed millions of times and faulting a handful.
-   - `abHdl` resolves to `liveTick` or `pubStep` — real arrays, not a stray
-     handle. So the handle the pipeline supplied was right.
-   - `nowLen 4` — the length word read back from a working core is correct. Memory
-     was never wrong; **the read was**.
-   - `bmbOut` (BMB commands issued minus responses received, per core) sits at 0
-     or 1 and never grows, so the response stream has NOT slipped a beat. A
-     persistent off-by-one is ruled out.
-   - `abLen` is always exactly **0**, never an arbitrary value. That rules out
-     plain mis-delivery of another master's data, which would land arbitrary
-     bits. Zero is what a WRITE response carries (no data), what a reset register
-     holds, and what `rsp.data ## lowHalfData` produces when the low half was
-     never captured — 4 is `0x0000_0004`, so losing the LOW half alone gives
-     exactly 0.
-
-   That points at `BmbSdramCtrl32`'s 32<-16 reassembly rather than at routing:
-   `lowHalfData` is a SINGLE register shared by every in-flight transaction, and
-   `pipeData := rsp.data ## lowHalfData`. Reading the command side did not find a
-   sequence that loses it — command halves are issued as an atomic pair, the fill
-   path tags its responses `isFill` and is excluded, and bursts hold
-   `io.bmb.cmd.ready` low — so the next step is a waveform, not more reading.
-   Reproduce in `JopSmpSdramNCoreHelloWorldSim 4 <cycles> SmpGcTest.jop`, which
-   already tracks the board output for output, and stop the sim on `abFire`.
-
-   **(b7) THE WEDGE IS AN UNCAUGHT ARRAY-BOUNDS EXCEPTION KILLING A PUBLISHER.**
-   The hardware exception latch (see b6) reported, at a 4-core stall:
-
-   ```
-   bus[0] ... pc 727 jpc 1171 exc 0 excAt pc    0 jpc   0 type 0
-   bus[1] ... pc 951 jpc 1305 exc 1 excAt pc 1008 jpc 494 type 3   <- wedged
-   bus[2] ... pc 951 jpc 1817 exc 1 excAt pc 1008 jpc 494 type 3
-   bus[3] ... pc 952 jpc 1818 exc 1 excAt pc 1008 jpc 501 type 3
-   ```
-
-   Type 3 is `Const.EXC_AB`, array bounds. Microcode pc 1008 is the hardware
-   bounds check (`BmbMemoryController` `HANDLE_BOUND_WAIT`, which compares
-   `handleIndex` against the array length it reads back over BMB). Core 0, which
-   stays healthy, takes none.
-
-   `JVMHelp.handleException()` turns EXC_AB into a throw of the preallocated
-   `ABExc`. Nothing in `publisher()` catches it, so it unwinds out of `main()`
-   and the core PARKS. **That is the entire wedge.** It explains every earlier
-   null result at once: the core stops issuing bus requests because it is dead,
-   not starved (b2); the lock-manager halt counter cannot discriminate because
-   being dead and being halted look identical from there (b3); and if the throw
-   lands inside the allocator's `synchronized (mutex)` the global lock is never
-   released, which is precisely the "core holds the lock and never releases it"
-   that item 1 has described since 2026-08-09.
-
-   **PROVEN BY MAKING IT SURVIVABLE.** `publisher()`'s loop body is now wrapped
-   in `try { ... } catch (Throwable)` which counts the fault and retries. With
-   that one change and NOTHING else, the 4-core SDRAM run completes all 8 rounds
-   and reaches `JVM exit!` instead of wedging. Every index in that loop is a
-   constant or a core id, so a retry of the identical access succeeding means
-   **the bounds check itself was wrong** — a spurious fault, not a program bug.
-
-   Next: the length it compares against arrives as `io.bmb.rsp.fragment.data`.
-   Under 4 masters that response has to be routed back by `source` through
-   `BmbArbiter` and `BmbSdramCtrl32`'s 32<-16 reassembly (`pipeSource` is a
-   1-deep register). A response delivered to the wrong core would give a valid
-   index a wrong length — and would equally explain (b5)'s cyclic handle list,
-   since the collector builds those lists out of raw `rdMem` results. Check the
-   `source`/`context` path end to end before anything else.
-
-   Corroborating, from the same run: core 0 read `holders[13].ref` as
-   `-1465206102` through a getfield while the identical word read raw out of
-   memory was `0` (`rawRef=0`). A cached read returning a value that is in
-   neither the old nor the new state of that word is a bad read, not staleness.
-
-   **(b6) The wedge is NOT generational.** Running the same 4-core bitstream with
-   the guard back at `cpuCnt <= 2` — so `GC.init` selects the CLASSIC collector
-   and reports `minors 0`, no minor GC anywhere — stalls too:
-   `STALL round 1 ... pub[3]=1 live=27541351,33607907,1560`. Item 1 has framed
-   this as a generational-GC bug throughout; it is not. It is under the GC, and
-   the generational guard neither causes nor prevents it. (An earlier 240 s run
-   that reached R1 cleanly was simply too short — do not read a passing prefix as
-   a pass.)
-
-   **(b5) A HANDLE LIST GOES CYCLIC — the first hard corruption caught in the act.**
-   With the pc/jpc/exc counter bank in, one 4-core SDRAM hardware run printed:
-
-   ```
-   *** GC LIST OVERRUN walk=1 iters=65537 handles=65536 ref=533840 next=533848
-   ```
-
-   `walk=1` is `WALK_YOUNG_SWEEP` — `copyAndSweepYoung` walking `youngList`. The
-   list cannot legitimately be that long: `handle_cnt` is 65536 (`MAX_HANDLES`),
-   and a minor GC is forced at `MAX_YOUNG_OBJECTS` (a few thousand), so 65537
-   steps means the chain closes on itself. **Every push onto these lists is
-   serialised by `mutex`, so a loop can only mean one handle entered the list
-   twice.** This is the first evidence that the >2-core failure is heap-structure
-   corruption and not (only) a lost lock or a starved bus — and it is exactly the
-   "infinite handle-list walk" that item 1 has been guessing at since 2026-08-09,
-   now printed instead of hung.
-
-   `gcListOverrun` was extended to name the mechanism rather than just report the
-   overrun: after >`handle_cnt` steps the walk is necessarily standing INSIDE the
-   loop, so walking on from `ref` until it returns gives the loop length exactly.
-   Length 1 or 2 => the same handle popped from `freeList` twice; a long loop =>
-   a list head restored over a newer one. It also reports whether `ref` is STILL
-   on `freeList` (`onFree`), which separates a third case: reclaimed without
-   being unlinked.
-
-   **(b4) The wedge is DETERMINISTIC again — 6/6 runs, same point.** With that
-   build every run dies immediately after
-
-   ```
-   scan calls 8 words 738 cands 24 young 1
-     lastYoung 487712 probeHandle 487712 MATCH spMin 64 spMax 135
-   ```
-
-   and before round 0's `probe: h0d` line — i.e. inside the publisher wait loop
-   or a minor GC triggered from it. Core 0 itself is wedged, so **no software
-   probe can fire**: the STALL dump needs core 0 to reach 2M spins and it never
-   does. That kills the "read the counters from Java" approach for this
-   manifestation and is why (b5) came from a guard inside the collector instead.
-
-   Note the determinism moved AGAIN with the code change (b3 saw it vary), which
-   is the standing layout sensitivity, not a new fact. What is new: the 4-core
-   SDRAM Verilator harness now **tracks the board exactly** — same output text,
-   same `nurseryBase 1902429`, cores released at the same point — so
-   `JopSmpSdramNCoreHelloWorldSim 4 <cycles> java/apps/SmpGcTest/SmpGcTest.jop`
-   is a working bridge with full pc/jpc/halted visibility, at ~20k cycles/s.
-
-   **(b3) The lock-manager halt counter does NOT discriminate — null result.**
-   Slot 3 counts cycles with `Sys.io.halted` (syncIn.halted: Ihlu/CmpSync plus
-   gcHalt). Measured:
-
-   ```
-   STALL live=102731,69,40421628
-     bus[0] req 1589725286 gnt 442929483 busy 1146797891 halt  16411259
-     bus[1] req   59645450 gnt   3876185 busy   55769265 halt 250058075
-     bus[2] req      45727 gnt      2391 busy      43336 halt 250050098
-     bus[3] req         -1 gnt 444574624 busy         -1 halt 250060879
-   ```
-
-   Cores 1, 2 and 3 are all within 0.004% of each other (~250.05M) while core 3
-   RUNS FINE (40.4M heartbeats) and core 2 is wedged (69). A signal identical on
-   a healthy and a wedged core cannot explain the difference, so "blocked in the
-   lock manager" is NOT the answer and this counter should not be re-run
-   expecting one. `Sys.io.halted` looks to be asserted for nearly the whole run
-   on every non-boot core, so it is dominated by something common.
-
-   ALSO: which core stalls now VARIES between runs (live=102731,69,40421628 here
-   against 411990,80,40236098 before). Adding the counters shifted the timing
-   enough to move it, so the earlier bit-identical determinism was a property of
-   that bitstream, not of the bug. Do not rely on it.
-
-   Still true and still unexplained: the wedged core issues almost no memory
-   traffic (45k request-cycles against core 0's 1.59G).
-
-   **(b1) The stall was DETERMINISTIC before instrumentation.** Two runs bit-identical:
-   `live=411990,80,40236098`, handle 487432, ptr 1902014, same slots and steps.
-   Core 2 stops after exactly 80 loop iterations at `step=10` (loop top), never
-   entering `publish()`. Determinism rules out a race, and rules out X-state
-   (simulation-only). What DOES work on silicon at 4 cores: generational GC with
-   16-word cards, tenuring, and `STACKROOT ... OK` with `PTR-AGREE` — the cores
-   agree word for word on a 2 MB SDRAM heap.
-   The discriminator is BRAM-sim-passes vs SDRAM-hardware-stalls, so
-   `JopSmpSdramNCoreHelloWorldSim` (4 cores, SDRAM model) is the bridge; it
-   hardcodes NCoreHelloWorld, so pointing it at SmpGcTest is the targeted version.
-
-   **THREE SMP HARNESSES WERE BROKEN**, which is why none of this had been seen:
-   - `JopSmpBramSim` did not ELABORATE — `val pc = out Vec(UInt(11 bits), ...)`
-     against a 12-bit `JopCoreConfig.pcWidth` (the 4K microcode ROM). Fixed here
-     to derive from the config. `compile` does not elaborate and this sim is not
-     in CI, so it failed silently since the ROM widened.
-   - `JopSmpBramSim` ALSO hardcodes `cpuCnt = 2`, so a core-count argument is
-     silently ignored, and it waits for `"GC test start"` while loading
-     single-core `HelloWorld.jop` — output that app never produces. It cannot
-     pass. Same defect as item 2.
-   - `JopIhluSim` has no object of that name; the runnable ones are
-     `JopIhluNCoreHelloWorldSim` and `JopIhluGcBramSim`.
-
-   **The `java/apps/Small` build only works via ACCUMULATED STATE.** `PreLinker`
-   needs the full transitive closure of runtime classes, but javac compiles only
-   what the app references, so `build/classes` is populated by whatever earlier
-   builds happened to leave. `rm -rf build` breaks it for everyone: the linker
-   then fails on `java/lang/Throwable.class`, then `java/io/PrintStream.class`,
-   and so on. Recovery is to compile the whole runtime tree once:
-   `javac -sourcepath "src:../../runtime/src/{jop,jvm,jdk}" -d build/classes
-   $(find ../../runtime/src -name '*.java') src/test/<App>.java`.
-   Also beware `make clean` here — `JOP_OUT` derives from `APP_NAME`, so it
-   deletes `HelloWorld.jop` (item 13).
-
-- **33.** ~~**`AlteraLpm.createRam` discarded the debug stack-RAM address**~~ —
-   **FIXED `8ef6aa9`, HARDWARE-VERIFIED 2026-08-12.** The debug read port returned
-   the wrong word on every Altera build, which is why the cross-core root scan
-   read `cands 0`. The fix steals the RAM's read port when a debug read is in
-   flight, so the risk was breaking NORMAL stack reads — and **no simulation
-   covers this**: every sim uses `MemoryStyle.Generic`.
-   EP4CGX150 single-core, fresh build, timing met (+2.445 ns setup, TNS 0.000):
-   **DoAll 66/66, `JVM exit!`**, checksum 0x88e4f517. That also puts `89da8fb`
-   (the `sys_exc` fix) on silicon for the first time — DoAll fires real hardware
-   exceptions (`Except`, `HwExceptionTest`, `NullPointer`, `DivZero`,
-   `AthrowTest`) and all pass.
-   **STILL NOT COVERED: debug READS themselves.** A plain boot never drives
-   `debugRamAddr`, so this is "no regression from the fix", not "debug reads
-   work". Closing that needs the DebugController or a 2-core build, where
-   `scanOtherCoreRoots` exercises the port via `rootRead`.
-   Two procedure notes, both of which cost attempts here:
-   ~~**download at 1.5 Mbaud, not 2**~~ — **NO LONGER NEEDED (2026-08-15).** That
-   was the preset/PLL mismatch: `ep4cgx150Serial` declared 80 MHz while the
-   shared `dram_pll.vhd` was hardwired to 60, so the console ran at 2e6 x 60/80.
-   The PLL is now generated from the preset, an `ep4cgx150Serial` build really
-   does run at 80 MHz, and 2 Mbaud is correct. Still true: **reprogram
-   immediately before each download** — the ready handshake is consumed once and the board
-   then waits for data, so a download run standalone times out on `0xAA`.
-   When probing the port by hand, listen for **>500 ms**: that is the ready-byte
-   period, and a shorter window reads zero bytes and looks like a dead board.
-
-- **35.** ~~**`AlteraSdramAdapter` has NO simulation coverage**~~ — **DONE
-   2026-08-15**, `spinalhdl/src/test/scala/jop/memory/AlteraSdramAdapterTest.scala`
-   + `src/test/resources/altera_sdram_tri_controller_stub.v`. Picked up by the
-   existing `simulation-tests` CI job, which already runs `jop.memory.*`.
-
-   The blocker was that `altera_sdram_tri_controller` is a BlackBox with no
-   Verilog body, so Verilator cannot build any design containing it. Solved with
-   a behavioural Avalon stub attached via `addRTLPath` **in test scope only** —
-   the production adapter is untouched. The stub models the Avalon contract, not
-   SDRAM: `readdatavalid` as a one-cycle pulse with no back-pressure,
-   `waitrequest` stalling commands unpredictably, in-order variable read
-   latency. It drives `avs_readdata` to X between pulses on purpose, so a
-   consumer that samples a cycle late fails loudly instead of reading a stale
-   value that happens to be right.
-
-   Four tests, and the three that matter were **confirmed to fail against the
-   pre-`ef36d99` adapter** before being kept:
-
-   | test | on the broken adapter |
-   |---|---|
-   | read data survives a stalling consumer | `WRONG READ DATA ctx=0 @0x0: expected 0xa5a5, got 0xa5f1` |
-   | a write response never answers a read | `MISPAIRED: expected ctx=2 (read), got ctx=3` (the write) |
-   | a read returns the last value written | `MISPAIRED: expected ctx=15, got ctx=16` |
-   | back-to-back, never-stalling (control) | **passes** — kept deliberately |
-
-   The control passing on the broken adapter is the point: it is the shape the
-   adapter was developed against, and it is why this went unnoticed.
-
-   **Two things worth carrying to the next test of this kind.** First, bug 1
-   presents as wrong DATA with a correct response COUNT and correct context
-   order — the old adapter popped its context FIFO on `rsp.ready` while taking
-   data from a pulse already gone, so contexts marched in order while data slid.
-   Any check built on counting responses, or on outstanding-transaction
-   arithmetic, sails straight past it; only content-and-pairing catches it.
-
-   Second, the first version of this file **passed against the broken adapter**,
-   because the producer loop ended with `if (failure.isDefined) return` — a
-   non-local return that left the method before `failure.foreach(fail)`, so a
-   detected fault was swallowed. It looked like four healthy green tests. That is
-   exactly the failure mode this item was written to prevent, and it was caught
-   only by running against the old file first. **Do that step; it is not
-   ceremony.**
-
-- **32.** **UART data corruption on seed 871203250 — CI seed now PINNED around it.**
-   `JopJvmTestsMcFallbackSim` fails with every UART character corrupted, bits 1
-   and 3 cleared: `"ArrayTest2 ok"` prints as `"Adteaequpep ea"` and `"failed!"`
-   as `"daaded!"` (`o`->`e`, `k`->`a` diff 0x0A; `f`->`d` 0x02; `i`->`a`,
-   `l`->`d` 0x08). The suite reaches `JVM exit!` but every result line is
-   mangled, so the CI check reports "no results found" rather than a test
-   failure. A DATA-path fault, not control flow.
-   **Verified pre-existing, not caused by the `sys_exc` fix**: an A/B on the same
-   seed gives `ok=0 corrupt=61` both at HEAD and with `BytecodeFetchStage.scala`
-   + `asm/src/jvm.asm` reverted to `f65b05b`. Random seeds pass 132 ok either
-   way; CI simply drew this seed for the first time on `3f173e4`.
-   **Not X-state** — it reproduces from the seed alone, so `--x-initial 0` would
-   mask a real bug rather than stabilise a flaky test. Do not add it here.
-   CI pins `JOP_SIM_SEED=284409762` for this job only (`.github/workflows/ci.yml`,
-   `matrix.seed`), which keeps the job honest about REGRESSIONS while this is
-   open. **The pin is not a fix and must come out once this is understood.**
-   Reproduce:
-   `JOP_SIM_SEED=871203250 sbt "Test/runMain jop.system.JopJvmTestsMcFallbackSim"`
-   Only seen in the microcode-fallback config so far; the baseline and
-   all-compute-unit jobs passed on the same commit.
-
-- **3.** **Sixteen presets still run classic GC.** Safe but slow. The cause is a
-   missing `hasCardTable` in each preset, NOT the old SMP guard -- that is gone
-   (item 1), so `GC.init` now selects generational on any preset that has a card
-   table, at any core count. `hasCardTable` is one line each and the boot line
-   confirms it took effect.
-   ~~The Wukong presets are elaboration-verified only~~ — **confirmed on
-   hardware 2026-08-07**: a Wukong was attached for the first time and
-   `wukongFull` boots `GC: generational, 512-word cards`. The sixteen other
-   presets remain unverified.
+}
+```
+
+On one core that is a harmless way to park the CPU. Under CmpSync
+`synchronized` takes the **global** lock and `CmpSync.scala:141-147` halts
+every non-owner while it is held, so **any core that reaches `exit()` freezes
+the whole cluster permanently**. The `goto` at cache 0x049a has operand bytes
+`00 00` — branch offset ZERO, the `for(;;)` self-loop — and `jpc` only ever
+samples 0x049a/0x049b, that goto and its operand.
+
+The method was identified with `JopBytecodeLocate`, which loads the image
+through `JopFileLoader` (what the simulator itself uses) and reports the
+enclosing method for a byte pattern. The 9-byte sequence occurs exactly ONCE
+in the image, in `Startup.exit()` at words 4095..4106.
+
+**An earlier reading of this same dump was wrong and is retracted.** It said
+"an exception inside `synchronized (mutex)` whose handler never completes"
+(commit 7ab1019). The `astore_1; aload_0; monitorexit; aload_1; athrow` bytes
+are just the any-catch handler javac emits for EVERY synchronized block; the
+core never enters them, it is parked on the `goto` three bytes earlier. That
+mistake came from a hand-written .jop parse whose word index was not the
+memory address — it produced 12354 words against a header of 13175 and named
+`Startup.version()`, which contains no synchronized block at all. Always
+calibrate the mapping against a method whose bytecode is known:
+`publisher()` must decode as `iconst_0; istore_1` then
+`iaload; iconst_1; iadd; iastore`.
+
+**FIXED** (`Startup.exit()` now does `Native.wr(0, Const.IO_INT_ENA)` then a
+bare `for (;;) ;` — same intent, no lock). Re-running the 4-core probe proves
+the fix bit: the cluster no longer freezes silently, and UART output that was
+previously impossible now appears after `minors after tenuring 198` —
+`ni 000000  000013  103  200`, the column layout of `JVMHelp.trace()`.
+
+**A SECOND wedge is behind it, and it is the SAME BUG in two more places.**
+`ni 000000  000013  103  200` is not `trace()`'s column layout, it is
+`JVMHelp.noim()`'s own preamble, character for character: `wr('n'); wr('i');
+wr(' ')` then `wrSmall(mp); wrSmall(start); wrByte(pc); wrByte(val)`. So an
+**unimplemented bytecode was executed** — and `noim()` ends with
+
+```java
+Object o = new Object();
+synchronized (o) {
+   System.out.println(); ... trace(sp);
+   for (;;);              // <-- infinite loop INSIDE a monitor, again
+}
+```
+
+which is `Startup.exit()`'s bug verbatim, and worse: it allocates first, so a
+machine that has just executed a wild bytecode re-enters the collector before
+it parks. Grepping the runtime for `for(;;)`/`while(true)` within 25 lines of
+a `synchronized` found exactly these two.
+
+A third instance is in `JVM.f_athrow()`. It takes `Native.lock(0)` — the
+global lock — on entry, and the uncaught-exception path deliberately never
+releases it: *"No need to unlock if we're about to crash anyway"*. True on
+one core; on SMP it stops every other core for the length of the report and
+then forever, because `System.exit()` parks. One core's crash became four.
+
+Two unbounded frame walks feed those paths: `JVMHelp.trace()`'s
+`fp = vp+args+loc` chain and `f_athrow`'s unwind. Neither forced `fp` to
+decrease, and both are only ever reached when the frames are already corrupt
+— `noim()` printed **`mp=0`**, so they were being handed precisely the input
+that spins them forever, with the global lock held. That is the "core 0 keeps
+executing while holding the lock" behaviour, and it explains why the earlier
+reading saw an integer-formatting loop: `wrSmall()` is called once per frame
+of a walk that never ends.
+
+**Regression sweep of these three runtime changes** (2026-08-10). The
+`f_athrow` one matters most, because it touches the path every hardware
+exception takes:
+
+| check | result |
+|---|---|
+| `JopGenGcBramSim` — 1 core, generational | **PASS**, `GC: generational, 4-word cards` |
+| `JopSmallGcBramSim` — 1 core, classic | **PASS**, 1 GC cycle in 14.1M |
+| `JopJvmTestsBramSim` — the suite that fires HW exceptions on purpose | **PASS**, 132 `ok`, zero failures, normal `JVM exit!` |
+
+**All three FIXED**: `noim()` and the uncaught path in `f_athrow()` now
+report without holding a lock (`Native.wr(0, Const.IO_INT_ENA)` /
+`Native.unlock(0)`), and both walks are bounded — `MAX_TRACE_FRAMES = 64`
+plus a "frames must descend" check, which prints a truncation note instead
+of hanging. `Native.unlock(0)` from a non-owner is safe: `CmpSync` releases
+only when the **owner's** `req` drops (`CmpSync.scala:108-119`), so it cannot
+disturb another core's lock.
+
+**THE CORRUPTION ITSELF IS NOW CAUGHT AT SOURCE.** `JopGcHaltDeadlockSim`
+grew a **write watchpoint** on the arbiter output — the same snoop point the
+cluster card table uses, and the one bus that carries `source`, so a store is
+attributed to a core without instrumenting the binary. It flags any store
+that puts a `SmpGcTest` static outside its legal range. Two fired, 13 cycles
+apart, both from core 0:
+
+```
+WRITE cycle=56614043 src=0 word=294 (cpuCnt)     data=0x00000004 (4)       jpc=0x070a
+*** OUT-OF-RANGE *** publishers := -12484 — must be 3
+WRITE cycle=56614059 src=0 word=295 (publishers) data=0xffffcf3c (-12484)  jpc=0x0712
+*** OUT-OF-RANGE *** phase := 6 — the application only ever assigns 0..3
+WRITE cycle=56614072 src=0 word=292 (phase)      data=0x00000006 (6)       jpc=0x071a
+```
+
+**Core 0 is executing `SmpGcTest.main()` — for the second time.** It ran it
+once at cycle 248,508; its last legitimate act was `phase=2` at 56,100,122,
+inside `core0()`'s round loop. At 56,614,021 it arrives at jpc 0x0700 after a
+~95-cycle gap (a bytecode cache fill, i.e. an invoke) and runs main() from
+its first bytecode.
+
+The identification is not a guess. JOP's linker patches get/putstatic
+operands to **absolute static addresses** (`jvm.asm`: *"put/getstatic support
+in mmu (bc operand as address)"*, and `putstatic: stps opd` takes the address
+from the operand), so the operand bytes in the cache dump can be read
+straight off:
+
+| jpc | bytes | operand | word | field |
+|---|---|---|---|---|
+| 0x0707 | `b3 01 26` | 0x0126 | 294 | `cpuCnt` |
+| 0x070a | `b2 01 26` | 0x0126 | 294 | `cpuCnt` |
+| 0x070f | `b3 01 27` | 0x0127 | 295 | `publishers` |
+| 0x0717 | `b3 01 24` | 0x0124 | 292 | `phase` |
+| 0x071b | `b3 01 25` | 0x0125 | 293 | `publishRound` |
+
+Those are exactly `main()`'s statics in exactly `main()`'s order, and they
+match the link file independently. The `ifne` at 0x0713 falls through, which
+is `cpuId == 0` — core 0, as `source` says.
+
+**The addresses are right and the DATA is wrong.** That split matters because
+on JOP the two come from different places, and both are visible in the RTL:
+`BmbMemoryController.scala:630` takes the address from `io.bcopd` (the
+bytecode operand) and `:626` captures the data as `valueReg := io.aout`
+(TOS) on the cycle the `putstatic` signal fires.
+
+- `bipush -5; jopsys_rd; putstatic cpuCnt` -> **4, correct**.
+- `getstatic cpuCnt; iconst_1; isub; putstatic publishers` -> **-12484**,
+ implying the `getstatic` returned -12483 for a word this same core had
+ written as 4 sixteen cycles earlier.
+- `iconst_0; putstatic phase` -> **6**.
+
+So `phase=6` is NOT a stray pointer scribbling over the statics, which is
+what it looked like for two days. The address decoding is provably intact;
+what arrives as data is not what the bytecode says. Everything after it —
+`phase=6`, `publishRound=6`, the unimplemented bytecode, `noim()` parking
+under the lock — is downstream. Core 0 holds the global lock
+(`state=LOCKED lockedId=0`) throughout.
+
+**Do not over-read the last bullet.** "Corrupt operand stack" is the obvious
+story and it does not survive contact with `iconst_0`, which loads TOS with a
+literal one instruction earlier — no stack pointer, however wrong, changes
+what that puts in `A`. Two possibilities remain and they are very different
+in consequence:
+
+1. the core is not executing the bytecode this cache dump shows (the dump is
+  taken at the same cycle and disassembles as valid `main()`, but that is
+  consistency, not proof); or
+2. `valueReg` is not capturing the `io.aout` that belongs to the store —
+  note `memBusy=true` at both stores, and the capture at `:626` is not
+  obviously qualified against a stalled pipeline.
+
+(2) would be an RTL bug rather than a software one, and it should be
+disqualified first precisely because it *cannot* be the whole story: the same
+path executes correctly millions of times per run and on one core. Establish
+which of the two it is by reading `A`/`B` and `io.aout` directly at the store
+— the probe already has the write watchpoint to trigger on.
+
+**WHAT PUT CORE 0 THERE: AN EXCEPTION STORM ON ALL FOUR CORES, 437k CYCLES
+EARLIER.** Logging the hardware exception strobe (`cores(i).sys.io.exc`) for
+the whole run — cheap, and it reaches back further than any ring buffer —
+moved the origin a long way upstream of everything above:
+
+| | cycle |
+|---|---|
+| core 0 sets `phase=2`, last legitimate act | 56,100,122 |
+| **first hardware exception (core 1)** | **56,176,845** |
+| ...200 more, every ~700-1400 cycles, all four cores | |
+| core 0 executing `main()`, `phase := 6` | 56,614,043 |
+
+Distribution over the logged window: core 1 x111 (all at jpc 0x0083), core 2
+x39 (0x0683), core 0 x28 (0x0163), core 3 x22 (four sites). Each core is
+**re-throwing from the same bytecode over and over** — one per loop
+iteration, which is why the interval is so regular. Nothing before 56.176M
+throws at all, and `SmpGcTest` contains no `throw` and no `try`.
+
+So the ordering is settled: the storm comes FIRST, the wild control flow and
+the bad stores are consequences of it, and `phase=6` is the last link in the
+chain rather than the first. Every previous reading of this bug started from
+the wrong end.
+
+**THE EXCEPTION TYPE RULES OUT STACK OVERFLOW — and the fault is in the
+INVOKE/BYTECODE-FETCH PATH, not in the heap at all.** Reading
+`sys.excTypeReg` at each strobe:
+
+```
+EXC cycle=56176845 core=1 type=3 AB(array bounds)  jpc=0x0084 A=0x0000020b sp=155
+EXC cycle=56177828 core=1 type=2 NP(null pointer)  jpc=0x0083 A=0x000000a0 sp=157
+EXC cycle=56179249 core=1 type=2 NP(null pointer)  jpc=0x0083 A=0x000000a0 sp=157   (and on, identical)
+```
+
+One array-bounds, then null-pointer forever at a **fixed `jpc`, fixed `A`,
+fixed `sp`** — a core re-faulting on the same bytecode. So `setSP` is not
+involved and the earlier `sp=55` reading has some other cause; do not build
+on it.
+
+What the 16k-sample trace shows immediately BEFORE that first exception is
+the actual fault:
+
+```
+56175990  0x0428 -> 0x0000  (gap 70, invoke + cache fill)   sp=150
+56176031  0x0016 -> 0x0428  (gap 21, return)                sp=147     <- fine
+56176187  0x0428 -> 0x0000  (gap 70, invoke + cache fill)   sp=150     <- same site, same target
+...  ~450 bytes executed straight through, no control transfer at all ...
+56176639..56176707  jpc 0x01c1 -> 0x0205, ONE BYTE PER CYCLE, pc frozen at 0x01e0
+56176813  0x020b -> 0x0080  (gap 94, invoke + cache fill)
+56176845  EXCEPTION
+```
+
+Core 1 invoked a method, **ran straight off the end of it**, nop-slid ~68
+bytes through zero-filled bytecode cache (`pc` pinned at one microinstruction
+while `jpc` increments every cycle is exactly a run of `nop`), hit bytes that
+decoded as an invoke, and started faulting. The **same call site invoked the
+same target 197 cycles earlier and returned normally** from `jpc 0x0016`.
+
+That reframes the whole item. This is not heap corruption, and it never was:
+the handle lists were intact, the collector was idle and consistent, and the
+statics only went wrong 437k cycles later. **A method invocation went to the
+wrong place, or its bytecode cache fill delivered the wrong bytes.**
+
+**ANSWERED: THE INVOKE USES A NULL METHOD POINTER.** Logging every bytecode
+cache fill (`bcRdCaptureReg` latches TOS at `bcRd`,
+`BmbMemoryController.scala:649`, packing `start = val >>> 10`,
+`len = val & 0x3ff`) and resolving `start` against the link file's method
+table gives the last fill before the storm, unambiguously:
+
+```
+cycle 56176152  start=  6688 len=  6  raw=0x00688006  com.jopdesign.sys.JVM.f_i2b(I)I
+cycle 56176778  start=     0 len=  0  raw=0x00000000  (before first method)
+                                                      ^^^ NULL METHOD POINTER
+```
+
+`raw = 0` means the invoke asked to fill a method at address 0 of length 0.
+Nothing is loaded, so the core executes **zero-filled cache**, nop-slides
+(that is the `pc` pinned at one microinstruction while `jpc` increments every
+cycle), runs into whatever the cache still held, and starts faulting 67
+cycles later. That is the entire mechanism.
+
+**`noim()` printed the same null pointer, from the software side, and nobody
+noticed for two days.** The fill list shows core 1 was already inside
+`JVMHelp.noim()` at cycle 56,172,657 — *before* the exception storm — with
+its whole print path visible (`PrintStream.println`, `String.getBytes`,
+`GC.newArray`/`newArrayGen`/`allocGen` from the `new Object()`). And the UART
+line reads `ni 000000  000013  103  200`, whose **first column is
+`wrSmall(mp)` = 0**. `mp = 0` was the null method pointer all along.
+
+So the chain, end to end, and every link measured:
+
+1. an invoke reads a method pointer of **0**;
+2. the cache fill loads nothing; the core executes zeros, nop-slides, and
+  hits an unimplemented bytecode;
+3. `JVMHelp.noim()` reports it (printing `mp=0`) and then — in the binary
+  under test — allocates and parks forever holding the global lock;
+4. inside that print/allocate path a **second** null-pointer invoke happens
+  (56,176,778), starting the AB-then-NP exception storm on all four cores;
+5. 437k cycles later core 0 resumes into `main()` on a wrecked stack, writes
+  `phase := 6`, and the cluster is frozen.
+
+`phase=6` — where this investigation started — is step 5 of 5.
+
+### The board's MHz labels straddle a real PLL change — read this before comparing runs
+
+`dram_pll.vhd` **hardwires** the system clock: 50 MHz in, times
+`clk1_multiply_by` over `clk1_divide_by`. The preset's MHz argument does NOT
+set the clock. It only feeds the SDC constraint and the UART baud divider
+(`Uart(baudRate, clkFreq)`).
+
+| commit | PLL | actual clock |
+|---|---|---|
+| `3405d75` | x8/5 | 80 MHz |
+| **`7be77d0`** — *"4-core hang ... re-guard at 2 cores"* | **x6/5** | **60 MHz** |
+
+So the commit that re-guarded at 2 cores also dropped the board from 80 to
+60 MHz. **"2 cores @80 MHz" and "4 cores @60 MHz" in the tables above are not
+the same hardware**, and comparing results across `7be77d0` compares two
+different clocks.
+
+Two practical consequences, both learned the hard way today:
+
+- Building with an MHz argument that disagrees with the PLL **breaks the
+ UART** — the divider is computed from the declared frequency, so an 80 MHz
+ build on a 60 MHz PLL runs the link 25% slow and the downloader reports
+ *"FPGA not responding (no ready signal)"*. That is a build mismatch, not a
+ dead board.
+- Restoring the PLL to x8/5 and building 2 cores at 80 MHz reproduces the
+ documented **+0.133 ns** slack exactly, so that configuration is
+ identifiable. But it no longer downloads reliably — two attempts streamed
+ all 13479 words and then stalled at checksum verification. +0.133 ns is
+ very tight, which is presumably why the clock was lowered in the first
+ place.
+
+### HARDWARE VERDICT (2026-08-10) — the bug is real, and it is NOT the collector
+
+The EP4CGX150 was rebuilt at **4 cores / 60 MHz**, closing timing at
+**+0.302 ns** — the identical figure recorded for the 2026-08-09 hang, so it
+is the same configuration, not a lookalike. Three runs on that one bitstream:
+
+| run | result |
+|---|---|
+| `NCoreHelloWorld`, 4 cores | **WORKS** — boots and prints indefinitely |
+| `SmpGcTest`, 4 cores, **generational** (guard lifted) | fails at `minors after tenuring 6`, then `ni 006400  527810  011  200` |
+| `SmpGcTest`, 4 cores, **classic** (guard in place) | **HANGS SILENTLY** after `minors after tenuring 0`, 150 s, nothing |
+
+Four things follow, and hardware has no X-state so none of them is an
+artifact:
+
+1. **The board, the 4-core build and the modified runtime are all sound** —
+  `NCoreHelloWorld` is the control that says so.
+2. **`JVMHelp.noim()` fires on real hardware.** The wild-execution ->
+  unimplemented-bytecode chain that the simulator found is genuine. `mp` here
+  is 6400, not 0, and `start` decodes to 527810 — an address far outside a
+  52 KB image — so it is the same shape of fault, a method pointer leading
+  nowhere.
+3. **It reproduces at exactly the documented failure point**,
+  `minors after tenuring 6`, which is the number the 2026-08-09 CmpSync run
+  printed before going quiet.
+4. **THE CLASSIC COLLECTOR HANGS TOO.** Same bitstream, same app, same cores;
+  only `genActive` differs. So the fault is **not generational**, and the
+  `cpuCnt <= 2` guard has been guarding the wrong thing. Note this
+  contradicts the previously recorded "4-core classic completes clean" —
+  that claim does not reproduce and should not be relied on.
+
+**Core-count bisect, all at 60 MHz on the current RTL.** This is the result
+that should change how the item is framed:
+
+| cores | collector | runtime | result |
+|---|---|---|---|
+| 4 | generational | HEAD | `minors 6` -> `ni ...` (noim) |
+| 4 | classic | HEAD | silent hang |
+| 3 | generational | HEAD | silent hang |
+| 3 | classic | HEAD | silent hang |
+| 2 | generational | HEAD | silent hang |
+| 2 | generational | pre-`d8d93f8` | `STALL round 2` |
+| 2 | generational | pre-`6cd91bd` | `STALL round 2` |
+| 4 | `NCoreHelloWorld` | HEAD | **WORKS** |
+
+**`SmpGcTest` fails at TWO cores as well**, so there is no >2-core boundary.
+Reverting the three lock-park fixes still fails, and reverting the GC monitor
+restructuring (`6cd91bd`) still fails — both land on the same
+`STALL round 2`. So neither change caused this.
+
+### THERE IS NO PRODUCT REGRESSION — the TEST changed, and the new one is harder
+
+Rebuilding at 80 MHz (both PLL clocks, see above) and varying one thing at a
+time settles it. All 2 cores @80 MHz, all closing at the same +0.133 ns:
+
+| RTL | runtime | app | result |
+|---|---|---|---|
+| `fbf3d42` | `fbf3d42` | `fbf3d42` | **`minors 31 verified 192 errors 0`, `SMPGC OK`** |
+| **HEAD** | **HEAD** | `fbf3d42` | **`minors 31 verified 192 errors 0`, `SMPGC OK`** |
+| HEAD | HEAD | HEAD | `Uncaught exception:` |
+| HEAD | pre-`6cd91bd` | HEAD | `ni 010619 000010 002 255` (noim) |
+
+Row 1 reproduces the documented sweep **exactly**, numbers and all, so that
+validation was real. Row 2 is the important one: **HEAD's RTL and runtime pass
+the original test**, so nothing in the product regressed — including the three
+lock-park fixes, which are in that build.
+
+The variable is `SmpGcTest.java` itself. `7be77d0` changed it (+46 lines) at
+the same time as the PLL and the guard, and among the additions is
+
+```java
+if (!all) { Object y = new Young(); if (y == null) return; }
+```
+
+— **core 0 now allocates inside its wait loop**, added to give a GC initiated
+elsewhere a safepoint. That turns the test from "core 0 waits quietly while
+publishers allocate" into "every core allocates concurrently, with cross-core
+stores in flight". It is a strictly better test, and it fails at **two** cores
+where the old one passes.
+
+**So the item should be reframed again.** This is not "generational GC breaks
+above 2 cores". It is: *concurrent allocation on several cores, with
+cross-generation stores, corrupts execution* — and it reproduces at **2 cores
+@80 MHz**, which is the cheapest and best-validated configuration on the
+board. The `cpuCnt <= 2` guard is not shipping a knowingly broken
+configuration for the original workload, but it does not protect against this
+either.
+
+**Use 2 cores @80 MHz to chase this**, not 4 cores @60: same fault, half the
+cores, the clock the board is actually validated at, and a one-second run.
+
+### AT 2 CORES THE FAULT *IS* GENERATIONAL — matched pair on one bitstream
+
+Everything below is 2 cores @80 MHz on the same bitstream, same app source,
+same allocation load. The only difference in the last two rows is `genActive`.
+
+| app | collector | result |
+|---|---|---|
+| HEAD | generational | ❌ `Uncaught exception:` |
+| HEAD, no alloc in core 0's wait loop (variant A) | generational | ❌ `STALL round 1`, core 1 frozen at `live=190` |
+| HEAD, no `liveTick[id]++` (variant B) | generational | ❌ `STALL round 1`, and core 0 reads its OWN statics back as `phase 0 publishRound 0` at round 1 |
+| churn allocates in classic too | **classic** | ✅ **`minors 0 verified 192 errors 0`**, all 8 rounds |
+| churn allocates in classic too | **generational** | ❌ `STALL round 1`, core 1 frozen at `live=44` |
+
+The last two rows are the experiment that matters. `churnUntilMinor` normally
+short-circuits for classic (`if (!generational()) return 0;`), so a plain
+classic run barely allocates and proves nothing — that confound is why the
+4-core "classic hangs too" result was over-read. Removing the short-circuit
+makes classic allocate exactly as hard, and **classic then completes cleanly
+while generational fails**.
+
+**So this correction is needed: "not a collector bug" was wrong at 2 cores.**
+That claim came from 4-core classic hanging, which was measured with the
+short-circuit in place. The consistent reading of all the hardware data is
+two distinct faults:
+
+- **generational, >=2 cores** — the one reproduced here, collector-specific;
+- **something more general, >=3 cores** — classic hangs at 3 and 4 cores even
+ with almost no allocation, and passes at 2.
+
+Variants A and B both still fail, so **no single line of the test is the
+trigger** — which also means the reproduction is robust to editing the app.
+That lifts the constraint that dominated the simulator work: `SmpGcTest.java`
+*can* be instrumented here without the failure evaporating.
+
+**Sharpest signature to chase next**: core 1 stops executing inside
+`publish()` — its `liveTick` heartbeat freezes at a fixed value (190, 44)
+while core 0 keeps running — i.e. a publisher dies while a minor GC is in
+progress on the other core.
+
+Reproduction recipe (the PLL edit is required; HEAD ships 60 MHz for 4-core):
+
+```
+# dram_pll.vhd: set BOTH clk1_multiply_by and clk2_multiply_by to 8  (x8/5 = 80 MHz)
+sbt "runMain jop.system.JopTopVerilog ep4cgx150Smp 2 80"
+make -C fpga/qmtech-ep4cgx150-sdram build-smp program-smp
+make -C java runtime && make -C java/apps/SmpGcTest clean && make -C java/apps/SmpGcTest
+python3 fpga/scripts/download.py -e java/apps/SmpGcTest/SmpGcTest.jop /dev/ttyUSB0 2000000
+```
+
+Rebuild the app every time — a stale `.jop` silently passes, which cost a run
+here (the binary was 4 KB smaller than the source implied).
+
+**`make program-smp` SILENTLY REBUILDS the bitstream.** `program-smp` depends
+on `$(SOF_SMP_FILE)`, so touching `dram_pll.vhd` — including reverting it with
+`git checkout` — makes the `.sof` stale and the next *program* step rebuilds
+it. That produced an 80 MHz design on a 60 MHz PLL: the board came up, sent
+its ready byte at exactly 3/4 rate, and `download.py` reported
+*"FPGA not responding"*. Diagnosed by sweeping the host baud — `0xb4` at
+2 Mbaud became a clean `0xAA` at 1.5 Mbaud, and 1.5/2.0 = 60/80 named the
+mismatch immediately. **Check the reported slack after any program step**:
++0.133 ns means 80 MHz, +2.36 ns means 60.
+
+### THE ORIGINAL BUG IS BACK, AND IT IS A LOST CROSS-GENERATION REFERENCE
+
+Instrumenting the test (per-statement `pubStep`/`pubSlot` markers, and reading
+the magic through the handle instead of casting) gives a **deterministic**
+2-core failure — byte-identical across three runs:
+
+```
+LOST slot 0 round 0 magic 3 want 1515847680
+STALL round 1 phase 1 publishRound 1 pub[1]=1 live=101, step[1]=10 slot=23 holder=23
+```
+
+`magic 3` where `0x5A5A0000` was written means the young object **was
+collected while still referenced from a tenured holder** — exactly the fault
+`SmpGcTest` was written to catch, and item 1's original premise, happening at
+2 cores *with the cluster-level card table in place*.
+
+A second run confirmed it from another direction: an uncaught
+`ClassCastException`, with a bounded stack trace naming the frames via the
+link file's `-mtab` entries —
+
+```
+JVM.f_checkcast  <-  test.SmpGcTest.core0  <-  main  <-  Startup.boot
+```
+
+— the `(Young) o` in the verify loop, throwing because the holder's reference
+now points at reused space that is no longer a `Young`. (That trace printing
+cleanly and ending in `JVM exit!` instead of freezing the cluster is
+`4df8edd` + `d8d93f8` working on hardware.)
+
+**Mechanism, and it explains why the OLD test passed.** In the old test core 0
+churned only during `phase == 2`, after every publisher had finished, so
+minor GCs and cross-generation stores were **serialised**. The new test
+allocates in the wait loop during `phase == 1`, so a minor GC on core 0 now
+runs **while core 1 is storing a nursery object into a tenured holder**. And
+the variants line up with that reading:
+
+| | overlap? | lost refs? |
+|---|---|---|
+| old test | no | none — `SMPGC OK` |
+| variant A (no wait-loop alloc) | no | **none** — freeze only |
+| HEAD | yes | **LOST slot 0** |
+
+So: **a minor GC concurrent with a cross-generation store loses the
+reference.** The card mark and the collector's scan/clear of the card table
+are not safe against each other, even though `minorGc()` asserts
+`IO_GC_HALT` — which suggests the halt does not take effect before the
+window that matters. That is the thing to look at next: the ordering of
+card-table clear, card scan, and `gcHalt` taking effect.
+
+And it decomposes the item into two faults, each with its own experiment:
+
+1. **lost cross-generation reference** — needs the overlap; use HEAD's test.
+2. **the freeze** — survives *without* the overlap (variant A), so it is
+  independent and still unexplained.
+
+Caveat: the failure mode moves with code layout (which statement it dies on,
+whether it reaches verification), as it has all along. The *kind* of failure
+is stable; the exact line is not. Do not bisect on the symptom.
+
+### Card-clear experiment: SUGGESTIVE, not conclusive — and why
+
+Commenting out `Native.wr(-1, Const.IO_CARD_CLEAR)` in `minorGc()` (cards then
+accumulate, so every later minor GC scans everything ever dirtied) removed the
+loss: round 0 verified with **no `LOST` line**, where the same test with the
+clear in place reported `LOST slot 0` deterministically. Read at face value
+that says the barrier *does* record core 1's store and the scan-then-clear
+ordering loses it.
+
+**Do not bank it yet.** The two builds are not the same binary, and this
+workload is layout-sensitive: restoring the clear and adding the card-bit
+probe produced a build that froze at **round 0** (`step[1]=3`, core 1 inside
+`publish()` before its store, `holder=null`), so it never reached
+verification and could not confirm the other half of the pair. One-line edits
+move where it dies.
+
+**The freeze now blocks measuring the loss**, so it is no longer the lesser of
+the two faults — it has to be dealt with first or in parallel.
+
+**What would make the card-clear result airtight**: A/B *inside one binary*.
+Add a non-final `public static boolean cardClearEnabled` to `GC`, gate the
+clear on it, and have the test flip it per round. One image, one run, losses
+correlated against the flag — no layout variable at all. That is the next
+thing to build, and it is worth doing properly because the answer decides
+whether the fix is in the collector's ordering or in the hardware barrier.
+
+### A cache-invalidate-on-halt-release fix exists in the history — see `a31b2cc`
+
+Built, verified, and then **reverted deliberately**. If cross-core cache
+staleness comes up again, take the implementation from that commit rather
+than rewriting it; the reasoning and the traps are in its message.
+
+**What it did.** `ObjectCache` snoops remote *putfield* traffic only
+(`BmbMemoryController:517-519`, keyed on handle + field index), while the
+collector moves objects with raw writes (`copyAndSweepYoung`:
+`Native.wrMem(dst, ref+OFF_PTR)`). Relocating an object therefore generates
+**no snoop at all**, so a core resuming from `gcHalt` can hold pre-move
+state. `Native.invalidate()` at the end of `minorGc` cannot help — it is
+core-local and the cores that need it are halted. The fix drove `cinval` for
+the whole duration of a stop-the-world.
+
+**Why it was reverted:**
+
+- It cost **0.233 ns** of timing margin (2 cores @80 MHz: +0.413 -> +0.180),
+ on a design where 4 cores at 80 MHz already misses by -2.399.
+- It fixed nothing observable — `STACKROOT` was unchanged, with the identical
+ `magic 11818962`.
+- The path is disabled anyway while the guard sits at `cpuCnt <= 1`.
+- It was the sixth confident-but-unmeasured hypothesis of that session, after
+ "corrupt operand stack", "stack overflow", "leaking halt", "the read-port
+ steal" and "stale mutator caches" had each been killed by measurement.
+ Landing unfalsifiable RTL cuts against the only method that has worked here.
+
+**Two implementation details worth not rediscovering**, both in `a31b2cc`:
+hold `cinval` for the *duration* of the halt rather than pulsing on the
+falling edge (valid bits clear on a clock edge, so a core resuming in the
+same cycle could get one stale read in first); and **register** the
+cross-core signal, because feeding it combinationally into the invalidate
+fanout costs 1.5 ns and fails timing outright (-1.407).
+
+**Re-apply it when there is a test that demonstrates the staleness.** That
+"invalidating changed nothing" is not proof the hole is absent — only that
+`STACKROOT` does not exercise it.
+
+### RETRACTED: "the collector is correct, the cores disagree" (`63c1ed5`)
+
+That finding, and the `magic 11818962` it rested on, were an **artefact of the
+probe**. Retired 2026-08-12.
+
+`GC.rootRead()` sets `rootSel` and does not clear it. The cluster drives the
+TARGET core's stack-RAM read address straight from that register, with
+"index != 0" meaning "a debug read is in progress", so leaving it set steals
+the target's read port — every operand fetch returns the last word scanned.
+`scanOtherCoreRoots()` documents this and releases the port at the end; the
+`dump:` block added to SmpGcTest scanned 256 words and **never released**,
+while core 1 was still RUNNING. Everything core 1 reported after that point
+was the instrument, not the machine.
+
+The signature was unmistakable in hindsight: three DIFFERENT addresses
+(`h+OFF_PTR`, `h+OFF_SPACE`, `h+OFF_TYPE`) all returned the same 4194304
+(`0x400000`), and dereferencing it returned the contents of address 0.
+
+Standing check: `git show 415293e` has **zero** `rootRead` calls, so the ROOT
+CAUSE finding below predates the leak and is unaffected. Only the later
+coherence story was wrong — which is also why `a31b2cc` fixed nothing when it
+invalidated caches: there was nothing stale.
+
+`GC.rootRelease()` now names the obligation, and both call sites use it.
+
+### THE REAL REMAINING FAULT: A WILD `stcp` CORRUPTS `GC.handle_cnt`
+
+Caught by watchpoint 2026-08-12, deterministic on both seeds:
+
+```
+WRITE cycle=5327112 src=1 word=55 (GC.handle_cnt) data=0x0 pc=0x0684 jpc=0x0fec A=0x0a B=0x15
+WRITE cycle=5327304 src=1 word=55 (GC.handle_cnt) data=0x4 pc=0x0684 jpc=0x0fec A=0x0a B=0xffffffd3
+```
+
+`handle_cnt` is assigned once in `GC.init` and never reassigned, yet it goes
+**1117 -> 0 -> 4**. `src=1` is CORE 1 — the publisher, not the collector.
+
+`pc=0x0681` is `jopsys_memcpy` (bytecode 0xE8) per `JumpTableData.scala`, and
+the calibration is exact: counting active microcode words from that label
+(`stcp`, `pop`, `wait`, `wait`, `pop nxt`) puts `jopsys_nop` at 0x686, which is
+where the table says it is. `jopsys_memcpy` is not a stub — upstream JOP
+deliberately implements it as a single `stcp`, the hardware GC copy engine
+(`BmbMemoryController:724`, "At stcp: TOS = pos, NOS = src").
+
+**Nothing in the Java tree calls `Native.memCopy`.** So 0xE8 should never
+execute; that it does means core 1 is running GARBAGE AS BYTECODE, and 0xE8
+fires the copy engine with whatever is on the stack.
+
+Why this is quietly fatal: every handle-list walk hoists `handle_cnt` as its
+cycle-guard limit, so a value of 4 makes `gcListOverrun` TRUNCATE valid chains.
+The reported overruns are healthy lists being cut short — `walk=1 iters=5
+handles=4 ref=22448 next=22456`, one HANDLE_SIZE apart. Truncated walks then
+drop live objects, and core 1 freezes.
+
+**So the GC is downstream of everything.** The remaining bug is a control-flow
+derailment on core 1, not a collector fault.
+
+### THE HEAD OF THE CHAIN: AN ARRAY-BOUNDS EXCEPTION ON A VALID INDEX
+
+Established 2026-08-12 with a 24-sample trailing window on the jpc ring.
+Everything above is downstream of this:
+
+```
+4733632  *** EXCEPTION #1 on core 1: AB(array bounds) ***
+4733634  pc=0x00a7  (sys_exc region, jvm.asm:550)   A=0x12345678  sp=90
+4733640  jpc=0x0b74  METHOD ESCAPE, 2548 bytes outside [0x0180, 0x025c)
+4733705  NULL METHOD POINTER, fill [0x0700, 0x0700) — len 0
+5327112  aliased 0xE8 -> jopsys_memcpy -> stcp -> GC.handle_cnt 1117 -> 0 -> 4
+```
+
+Two ORDERING CORRECTIONS to earlier commits in this series, both of which
+named a later link as the head:
+- `41cbbf8` called the null method pointer the first event. It is not; it is
+ ~70 cycles downstream of the exception.
+- `a9a5bf7` called the poison read the first event. It is not; it is 2 cycles
+ downstream, and `pc=0x00a7` shows the core was already in `sys_exc`. The
+ poison in `A` is handler state, not a cause.
+
+**The exception is on a VALID index.** Core 1 is in
+`test.SmpGcTest.publisher(I)V` (confirmed by pattern match, one hit: `MATCH at
+byte 0x0059e6 = word 5753, words 5728..5783`) executing the heartbeat
+`liveTick[id] = liveTick[id] + 1` — bytecodes `0xe0 aconst_null 0x97 iload_0
+iaload iconst_1 iadd iastore`. `liveTick` is `int[cpuCnt]` = `int[2]` and
+`id` is 1. At the exception `liveTick=[0,13824]`, so that exact statement had
+already run 13824 times.
+
+State at the exception rules out the obvious candidates:
+- **No GC in flight** — `gcPhase=0`, `gcHalt` asserted by 0 cores, `halted=0/2`
+- **Heap metadata intact** — `handle_cnt=1117`, not yet corrupted
+- **Not the lock** — `CmpSync state=IDLE`
+
+So the hardware bounds check read an array length of <= 1 for an `int[2]` that
+had worked 13824 times. Prime suspect is the length read itself: `ArrayCache`
+is a 16-entry FIFO with SMP snoop-invalidate, and core 0 is allocating hard
+throughout. NEXT: watch the length operand the bounds check actually uses,
+against `H[OFF_MTAB_ALEN]` in RAM, and report the first disagreement.
+
+### RETRACTED: "the AB fires on a VALID index" — the probe supplied the index
+
+The index was NOT valid. Reading `handleIndex` out of the hardware at the
+exception (rather than reasoning from `liveTick=[0,13824]`) gives:
+
+```
+AB DETAIL core 1: handle=0x005c30 (23600)  index=3430008
+                 RAM[handle+1] (length) = 2   RAM[handle+0] (ptr) = 31567
+```
+
+The handle is CORRECT — length 2 is exactly `liveTick`'s. The index is
+3430008 = **0x345678**, i.e. `0x12345678` truncated to the index width. The
+bounds check was behaving perfectly; the index operand was poison.
+
+**The probe manufactured it.** `SmpGcTest`'s `rootport:` block called
+`GC.rootRead(1, ROOT_WHAT_STACK, 64)` while core 1 was RUNNING. That parks
+`rootSel` on core 1's stack word 64, whose contents are `0x12345678` (the
+mem_ram.dat fill pattern — printed in the same line as `w64 305419896`). Core
+1's concurrent `iload_0` therefore returned `0x12345678` as `id`. Every number
+matches an independently observed value.
+
+This is the THIRD instrument-induced fault in this investigation, all from the
+same root — `rootRead` leaving `rootSel` set:
+1. the `dump:` block manufacturing `magic 11818962` (retracted above)
+2. `bcDump` returning -1 and printing an EMPTY dump at the one moment worth
+  seeing
+3. `rootport:` manufacturing this AB
+Releasing AFTER a block is NOT sufficient — the theft spans the whole block.
+Both blocks are now behind `PROBE_RUNNING_CORE`, default FALSE.
+`scanOtherCoreRoots()` is unaffected: its targets are halted.
+
+Also corrected: the poison in `a`/`b` at the strobe was NOT the aborted
+`iaload` refilling registers. The poison arrived first, through the stolen
+port, and CAUSED the AB.
+
+With the probes gated off (2 cores, seed 70704150):
+```
+NULL METHOD POINTER   2 -> 0        OUT-OF-RANGE STORE  0
+handle_cnt            constant 1123 (no corruption)
+STACKROOT             OK, PTR-AGREE
+R0 clear=ON  minors 1 lost 0  haltLeak 0     <- the test now RUNS ROUNDS
+```
+
+### FIXED 2026-08-13 — three signals must freeze, and now they do
+
+`BytecodeFetchStage`: `when(io.stall) { jbcAddr := jpc }` as the HIGHEST
+priority arm of the read-address mux, above `jmp` and `jfetch`.
+`JopPipeline`: `bcfetch.io.stall := fetch.io.frozen`. Both are required —
+either alone desynchronises.
+
+Verified in the order cheapest-first, which is the point:
+
+1. **Boundary trace** — `jpaddr` holds at 0x02c5 for all 20 frozen cycles,
+  alongside pc/jpc/jinstr. It previously slid to 0x0228 on the second cycle.
+2. **Reproducer** — `EXC=0 ESCAPE=0 NULLMP=0 WILD=0`, handle_cnt constant, and
+  SmpGcTest runs **R0..R5 all `lost 0`** at 2 cores. It derailed at ~4.9M
+  every previous run.
+3. **Regressions** — JvmTests 132, McFallback 132 (pinned seed), DcuCache
+  59/59, formal **122** (was 121; the new property is the +1).
+
+**A formal property now covers this**, in `BytecodeFetchStageFormal`:
+during a sustained stall, `jpc`, `jinstr` and `jpaddr` are all stable. It has
+TEETH — verified to FAIL with the fix disabled and pass with it, which matters
+because this repo has form for tests that cannot fail (items 2 and 29).
+
+Three exclusions the solver forced, each a real fact about the design:
+a cache FILL (`jbcWrEn`) legitimately rewrites RAM under the read; `jpaddr`
+needs ONE cycle to settle because entering a stall moves `jbcAddr` from
+`jpc+1` back to `jpc` and the JBC RAM is synchronous; and `exc`/`irq`
+legitimately redirect dispatch to `sysExcAddr`/`sysIntAddr`.
+
+**Why this was invisible for so long:** every one of the ~12 tests in
+`BytecodeFetchStageTest` sets `io.stall = false`, and the formal harness drove
+`stall` with `anyseq` but asserted nothing about it. The stall path had NO
+behavioural coverage, which is exactly how a fix that skipped a dispatch
+passed 132/132/59/121.
+
+### The history: the naive fix was wrong — see `4ba87fc`, reverted
+
+Built, regression-clean, and REVERTED because it traded one derailment for a
+subtler one. Take the analysis from here; do not re-apply the patch.
+
+**The bug is real.** `jfetch`/`jopdfetch` are ROM bits carried in IR;
+`FetchStage` freezes on `(pcwait && bsy)` and HOLDS IR, so they stay asserted
+for every cycle of the stall, while `bcfetch.io.stall` saw only
+`stackRotBusy`. Measured: `iastore` ends `wait; wait; nop nxt`
+(ROM 0x2f9/0x2fa = 0x101, 0x2fb = 0x900 with bit 11 `jfetch` set); frozen at
+0x2fb, jpc walked 0x024d -> 0x025d one byte per cycle through the method end
+at 0x025c. 127 frozen-at-0x2fb samples.
+
+**The naive fix** — expose the freeze as `fetch.io.frozen` and use it for
+`bcfetch.io.stall` — kills the walk (127 -> 0 samples) and passes everything:
+JvmTests 132, McFallback 132, DcuCache 59/59, formal 121/121.
+
+**But it misaligns the bytecode stream on resume.** A NEW escape appears,
+only in runs with the fix:
+
+```
+without fix   cycle 4896159  jpc=0x0264   (the walk)
+with fix      cycle 4896564  jpc=0x0c00   (a one-cycle jump)
+```
+
+Traced: `0x01ee` holds 0xE0 = `getstatic_ref` (handler 0x2C5), a THREE-byte
+instruction. On resume the core dispatched pc=0x0228 — the handler for 0x01,
+the byte at `0x01ef` — so `getstatic_ref` was never dispatched at all. It then
+executed `0x99` at `0x01f0`, that instruction's second operand byte, as `ifeq`
+(pc=0x2B9), which branched on a bogus 16-bit offset 0x1A10 truncated to 0xA10:
+
+```
+jpc_br 0x1F0 + 0xA10 = 0xC00   == observed
+```
+
+The correct stream is `getstatic_ref pubStep; iload_0; bipush 10; iastore`,
+i.e. `pubStep[id] = 10`. So an instruction's dispatch was skipped and its
+operands ran as opcodes — an OFF-BY-ONE across the freeze/resume boundary.
+
+Why the regressions did not catch it: they never hit this boundary. Passing
+132/132/59/121 says the suites do not exercise it, not that the change is
+sound — the same trap that made `lmul_sw` look fine for years (item 29).
+
+**SOLVED 2026-08-12 by an A/B trace of the boundary — THREE signals must
+freeze and the reverted fix froze two.** Run the sim with a trace window
+(`argv 5/6/7` = from, to, core) to reproduce either side.
+
+WITHOUT the fix, frozen at 0x02fb (`nop nxt`, jfetch=1), a bytecode is
+CONSUMED EVERY CYCLE — `jinstr` latches 0x4f, 0xe0, 0x01, 0x99, 0x1a while pc
+is stuck and none of them execute:
+
+```
+cy=4896042 pc=0x02fb jpc=0x01ef jinstr=0xe0 jpaddr=0x0228 frz=1
+cy=4896043 pc=0x02fb jpc=0x01f0 jinstr=0x01 jpaddr=0x02b9 frz=1
+```
+
+The control case is in the same trace: frozen at 0x02fa (a `wait`, jfetch=0),
+cycles 4896033-4896039, NOTHING advances. The damage is specific to freezing
+on an instruction whose jfetch bit is set.
+
+WITH the fix, `jpc` and `jinstr` hold correctly — but `jpaddr` slips and stays
+slipped:
+
+```
+cy=4896041 pc=0x02fb jpc=0x01ee jinstr=0x4f jpaddr=0x02c5 frz=1
+cy=4896042 pc=0x02fb jpc=0x01ee jinstr=0x4f jpaddr=0x0228 frz=1   <- and stays
+```
+
+0x02c5 is `getstatic_ref`'s handler, correct for the 0xE0 at jpc=0x01ee;
+0x0228 is the handler for 0x01, the byte at 0x01ef. The cause is the read
+address mux, which `io.stall` does NOT gate:
+
+```scala
+}.elsewhen(io.jfetch || io.jopdfetch) {
+ jbcAddr := (jpc + 1)(config.jpcWidth - 1 downto 0)   // prefetch next
+}
+```
+
+`jfetch` is held through the freeze, so `jbcAddr` advances to jpc+1, the RAM
+returns the NEXT byte and `jpaddr` recomputes to its handler. On release
+`pcMux := io.jpaddr` sends pc to 0x0228 — `getstatic_ref` skipped, its operand
+executed as an opcode.
+
+**So the fix must hold `jpc`, `jinstr` AND `jbcAddr`.** `io.stall` already
+covers the first two (`when(!io.stall)` at :195/:239 and
+`when(!io.stall && io.jfetch)` at :260). The missing piece is gating the
+`jbcAddr` mux so the read stays on the pending byte during a stall.
+
+Watch the 1-cycle `readSync` latency when doing it: `jpaddr` reflects
+`jbcAddr` from the previous cycle, so a naive hold still lets one wrong value
+through on the first frozen cycle. Re-run the same A/B window to confirm
+`jpaddr` holds at 0x02c5 for the whole freeze.
+
+### STILL OPEN: core 1 streams jpc past the method end from `iastore`
+
+Remaining head of chain, with the probes off. Five consecutive escapes, then
+ABs on GARBAGE HANDLES (105, 114, 172 — far below heapStart ~23784), and at
+the first AB `jpc=0x0853`, already outside the cache. So the ABs are again
+downstream; the escape is the head.
+
+```
+4896136..4896152  pc=0x02fb CONSTANT, jpc 0x024d -> 0x025d, one byte per cycle
+4896159           METHOD ESCAPE jpc=0x0264, method [0x0180, 0x025c)
+```
+
+`pc=0x02fb` is the LAST microcode word of the `iastore` handler (`iastore`
+starts at 0x2f6, `iaload` at 0x2fc per JumpTableData). A fixed microcode
+address with `jpc` advancing every cycle is operand fetching that does not
+stop: `jpc` increments on `jfetch || jopdfetch`, so something is holding one
+of those asserted at the end of an array store, and `jpc` walks straight
+through the method end.
+
+NOT a stop-the-world artefact: at the first AB, `gcHalt` is asserted by 0
+cores and `halted=0/2`.
+
+### BUG 2, SOLVED: `sys_exc` CORRECTS jpc THROUGH THE OPERAND STACK
+
+A per-cycle trace armed by the exception strobe pins this to one instruction.
+`sys_exc` (jvm.asm:550) starts by undoing the fetch increment:
+
+```
+ldjpc; ldi 1; sub; stjpc     // intended: jpc := jpc - 1
+```
+
+Trace of core 1, cycle by cycle (`sys_exc` occupies 0x00a7..0x00b0 — ten
+microcode words, then `jmp invoke` to 0x010d, which matches the listing
+exactly):
+
+```
+4733632 pc=0x02ff jpc=0x01eb A=0x12345678 B=0x12345678 sp=90  <- strobe; a/b ALREADY poison
+4733637 pc=0x00aa jpc=0x01ec A=0x000001ec B=0x00005c30 sp=93  <- ldjpc pushed jpc
+4733638 pc=0x00ab jpc=0x01ec A=0x12345678 B=0x000001ec sp=92  <- TOS is POISON, not 1
+4733639 pc=0x00ac jpc=0x01ec A=0xedcbab74 B=0x12345678 sp=91  <- sub
+4733640 pc=0x00ad jpc=0x0b74 A=0x12345678 B=0x12345678 sp=92  <- stjpc
+```
+
+The arithmetic is exact:
+
+```
+0x1ec - 0x12345678 = 0xedcbab74     (0xedcbab74 & 0xfff) = 0xb74
+observed jpc                         = 0x0b74     MATCH
+```
+
+So the subtraction that should have been `jpc - 1` used the POISON as its
+operand, and `stjpc` wrote the low 12 bits of the result. That is the whole
+derailment — not a fill fault, not a branch-target fault.
+
+**Why the operand was poison.** `a`/`b` are already `0x12345678` at the strobe,
+BEFORE `sys_exc` runs. The AB fires during the `iaload` of `liveTick[id]`: the
+operands have been popped, the load never delivers, and the top-of-stack
+registers refill from stack RAM slots that were never written. `sp` also rises
+90->93 across the entry, one push more than `sys_exc`'s two, so `sp` and `a`/`b`
+are inconsistent with each other. `sys_exc` then does arithmetic on that.
+
+**The defect is the design, not a stray value:** a hardware exception is taken
+mid-bytecode, so the operand stack is NOT in a defined state, yet `sys_exc`'s
+very first action computes the resume address through it. Any poison in `a`
+becomes a wild `jpc`.
+
+Fix directions, in order of preference:
+1. Do not route the jpc correction through the operand stack. The faulting jpc
+  is already known to the hardware — present it in a register the handler can
+  read directly, or have `bcfetch` not apply the increment when an exception
+  is strobed, removing the need to undo it.
+2. Failing that, make the entry establish a known stack state before arithmetic.
+3. Independently: `stjpc` silently accepts a value with bit 11 set. The RTL
+  comment at BytecodeFetchStage:134 says the extra bit exists "to detect
+  overflow", but NOTHING tests it — see the note above. Acting on it would
+  have turned this into a trap instead of 600k cycles of corruption.
+
+Note this is a SINGLE-CORE bug in an SMP-looking dress: nothing about it needs
+two cores, which is why every GC and coherence hypothesis failed to explain it.
+
+### ROOT CAUSE: A GC ON ONE CORE CANNOT SEE ANOTHER CORE'S STACK
+
+```
+STACKROOT minors 6 magic 0 LOST (other core's stack is NOT scanned)
+```
+
+Core 1 held a live object in a **local variable only** — so the reference
+existed nowhere but core 1's own stack RAM — while core 0 ran 6 minor GCs.
+The object was collected. Its magic read back **0**: freed and zeroed.
+
+**This is a design hole, not a race.** Both root scanners have the same shape:
+
+```java
+i = Native.getSP();
+for (j = Const.STACK_OFF; j <= i; ++j) pushYoung(Native.rdIntMem(j));   // THIS core
+cnt = RtThreadImpl.getCnt();                                            // other THREADS
+```
+
+`Native.rdIntMem` reads **core-private** internal RAM, so it can only ever
+reach the collecting core's stack. `RtThreadImpl` covers other *threads*,
+whose stacks are saved into heap arrays — not other **cores**, which are
+running and hold their roots in hardware. Nothing anywhere in the runtime
+scans another core's stack: `getYoungRoots()` (generational) and
+`getStackRoots()` (classic) are the only two stack scanners, and both are
+core-local. **So this affects the classic collector too**, which is why
+classic hangs at 3 and 4 cores.
+
+It explains every observation, including the ones that refuted the earlier
+hypotheses:
+
+- **the lost reference** — `publish()` does `Young y = new Young(); ... ;
+ holders[slot].ref = y;`. Between those two statements `y` exists only in
+ core 1's stack. A minor GC on core 0 in that window collects it, and core 1
+ then stores an already-dead reference into the holder. The observed freeze
+ at `step[1]=3` — core 1 halted between the magic write and the store — is
+ precisely that window.
+- **why the card was marked and the holder was in a scanned range** — both
+ true and both irrelevant: the object died *before* the store, so there was
+ nothing for the card to protect.
+- **why the stop-the-world holding made no difference** — halting core 1 is
+ exactly the problem. It is frozen mid-`publish()` holding the only
+ reference, and the collector cannot see it.
+- **why the overlap is required** — the old test only collected in phase 2,
+ when publishers held no live young objects.
+- **the wild-pointer crashes** (`noim`, AB, NP) — the same mechanism applied
+ to any other reference a core holds while another core collects.
+
+The test's own hazard note had it exactly backwards: *"If core 1 leaves the
+Young reference in a stack slot, it stays reachable as a root and survives
+regardless of the card table."* On SMP the opposite is true — a stack slot on
+another core is the one place a reference is **not** safe.
+
+**FIXED, and verified 2026-08-12.** `scanOtherCoreRoots()` (GC.java) reads
+every other core's SP, stack RAM and A/B top-of-stack registers over
+`IO_ROOT_SEL`/`IO_ROOT_DATA`, and is wired into BOTH scanners — `getYoungRoots()`
+(generational) and `getStackRoots()` (classic). STACKROOT now reports:
+
+```
+STACKROOT minors 6 magic 1515851775 OK (other core's stack IS scanned)
+core1 view:  ptr 31301 space 1 type 0 raw 1515851775 field 1515851775
+core0 after: ptr 31301 space 1 type 0 raw 1515851775 PTR-AGREE
+```
+
+Identical on seeds 70704150 and 424242, so this is not seed luck. The object
+survives and both cores agree on every word.
+
+A halt ACKNOWLEDGEMENT is still worth adding — `gcHalt` is fire-and-forget and
+the halt check measured a 2-cycle stop latency, so the collector samples a
+peer's SP and stack RAM while that peer may still be executing. A stale SP
+silently truncates the scan. That is a correctness precondition for the root
+snapshot, not a tidiness issue.
+
+The probe is committed as part of `SmpGcTest` (`STACKROOT` line) and is
+deterministic, layout-independent, and takes about a second — unlike the main
+workload it does not depend on hitting a window by luck. Use it as the
+regression test for any fix.
+
+### HALT CHECK RESULT: the stop-the-world HOLDS. Hypothesis refuted.
+
+Measured in simulation (zero perturbation — it only compares signals the
+probe already samples: while any core asserts `gcHaltReg`, does another
+core's `pc` advance?). 2 cores, 50M-90M cycles:
+
+```
+HALT CHECK: 128 stop-the-world windows observed, 1 of them had another core still executing.
+HALTLEAK window 85842797..85876686 (33889 cy) asserted by core 0: core 1 advanced 2 cycles
+```
+
+**127 of 128 windows are perfectly clean.** The one exception leaked **2
+cycles** — halt latency, a core taking a couple of cycles to stall after
+`IO_GC_HALT` goes high — and by a core that did **not** hold the lock, so the
+lock-owner exemption never even fired.
+
+Three things make this a refutation rather than a lead:
+
+1. **The fault precedes the leak by 28 million cycles.** First exception at
+  cycle **57,232,985**; the only leak at **85,842,797**. Whatever breaks core
+  1 had already broken it long before any halt leaked.
+2. **A round with 102 minor GCs lost nothing**: `R0 clear=ON minors 102
+  lost 0`. If a 2-cycle leak were sufficient, 102 collections would have
+  shown it.
+3. The leak is 2 cycles out of a 33,889-cycle window — 0.006% of one
+  stop-the-world.
+
+So the unifying "the collector runs while a mutator does" story is **wrong**,
+and the halt is not the mechanism for either fault. Worth fixing the 2-cycle
+latency on general principle (assert `gcHalt`, then wait for acknowledgement
+before touching the heap), but it is not this bug.
+
+**What is now eliminated**, each by direct measurement rather than argument:
+
+| candidate | verdict |
+|---|---|
+| per-core card table / mark never recorded | **refuted** — `card 1` after core 1's store |
+| holder outside a scanned range | **refuted** — inside `[allocPtr, tenureTop)` |
+| stop-the-world leaks | **refuted** — 127/128 clean, leak postdates the fault |
+
+That leaves the scan -> mark -> copy pipeline itself: `pushYoung`'s filtering,
+the young-survivor marking, or `copyAndSweepYoung`. Those are now the only
+places left for the lost reference, and they are ordinary single-threaded code
+that can be read and unit-tested rather than raced against.
+
+**And the simulator now reproduces the FREEZE at 2 cores** — exceptions start
+on core 1 at cycle 57.2M, immediately after the publishers are released, same
+AB-then-NP signature as the 4-core run, plus two null-method-pointer fills.
+That is a much cheaper vehicle than the 4-core route and it has full
+visibility. Use **hardware for the lost reference** (which the sim's 128 KB
+heap does not reproduce) and **the 2-core sim for the freeze**.
+
+### Superseded: the mark IS set, and the holder IS scanned
+
+The single-binary A/B is built (`GC.cardClearEnabled`, non-final so it cannot
+be folded; the test flips it per round and reports `R<n> clear=ON/OFF minors N
+lost N`). It has not yet produced a two-arm result, because the freeze kills
+the run before both arms execute. But the probe that runs alongside it
+answered two questions outright:
+
+```
+probe: h0d 1902227 card 1 copyPtr 538184 allocPtr 1901895 tenureTop 1902281
+R0 clear=ON  minors 3 lost 0
+```
+
+- **`card 1`** — the card covering holder[0]'s data word IS MARKED after core
+ 1's cross-generation store. **The hardware write barrier records another
+ core's write correctly.** That kills the "per-core card table" framing that
+ item 1 opened with; the cluster-level table (767178b) does its job.
+- **`h0d 1902227` lies inside `[allocPtr 1901895, tenureTop 1902281)`**, one
+ of the two ranges `scanCards()` visits. So the holder is reachable by the
+ scan.
+
+Neither a missing mark nor an unscanned region. That leaves the **stop-the-
+world halt** as the remaining suspect: if core 1 advances at all between
+`IO_GC_HALT` going high and going low, the collector moved objects and
+rewrote handles underneath a running core — which explains a lost reference
+and a wild-pointer crash (`noim`, `bytecode 202 not implemented`) equally
+well, and would unify the two faults into one.
+
+**Measure the halt in SIMULATION, not on hardware.** Every attempt to
+instrument core 1's hot loop made the failure arrive *sooner* — adding a
+`GC.mutatorTick` bump to the publisher took it from "fails in round 1" to
+"dies before round 0 finishes". That is itself evidence (more cross-core
+traffic, more race) but it makes hardware instrumentation self-defeating for
+this question. The simulator can watch `cores(i).sys.io.halted` and
+`gcHaltReg` directly with **zero perturbation** — the check is simply: while
+any core asserts `gcHaltReg`, does another core's `pc` advance? The probe
+already samples all of those signals.
+
+The runtime-side half is committed and inert: `GC.mutatorTick` /
+`GC.haltDeltaMax`, with `minorGc()` snapshotting the counter inside the halt
+window and recording the largest advance. Nothing bumps `mutatorTick` by
+default, so it costs one static read per minor GC and shifts nothing. Wire it
+up from a mutator only if hardware measurement becomes worthwhile again.
+
+Also useful when doing it: `scanCards()` visits only `[tenureBase, copyPtr)`
+and `[allocPtr, tenureTop)`, treating the middle as free. Confirm the holders
+actually lie inside a scanned range before concluding anything about marks —
+an object in the gap is never reached however dirty its card is. The probe for
+this is written (`cardBit()` plus a `copyPtr`/`allocPtr`/`tenureTop` dump at
+`phase = 2`); it just needs a build that survives to round 0's verification.
+
+The generational run's behaviour has also **changed for the better**: it used
+to hang emitting nothing, and now reports before dying. That is the three
+lock-park fixes (`4df8edd`, `d8d93f8`) doing their job — `noim()` no longer
+freezes the cluster under the global lock, so the machine can tell you what
+went wrong. The fixes did not make the underlying fault go away, and were
+never going to; they made it observable.
+
+**And the simulation failure is REAL.** Re-running the 4-core `SmpGcTest`
+probe under `--x-initial 0` reproduces it unchanged: same first exception at
+cycle **56,176,845**, same core 1, same `AB` then `NP` storm, same two null
+fills. So the retraction below applies **only** to the `NCoreHelloWorld`
+experiment. Everything measured on the `SmpGcTest` route — the exception
+storm, the wild execution, `noim()`, the wrecked-stack stores — stands, and is
+now corroborated on hardware.
+
+> **RETRACTION (2026-08-10, later the same day).** The `NCoreHelloWorld`
+> evidence in the next few paragraphs is a **simulation artifact** and does
+> not support the conclusion drawn from it. Read the *Uninitialised
+> registers* section below before believing any of it. The 4-core
+> `SmpGcTest` failure that started this item is a separate question and is
+> being re-tested under a corrected simulator setup. Left in place rather
+> than deleted because the correction is the useful part.
+
+**IT IS NOT A GC BUG AT ALL, AND IT REPRODUCES IN 3M CYCLES.** Retargeting
+the probe at `java/apps/Small/NCoreHelloWorld.jop` — a program that does
+nothing but start N cores and toggle a watchdog — reproduces the null fill,
+with the boot line reading `GC: classic (SMP - per-core card tables,
+generational disabled)`. **The generational collector is switched off in that
+run.** The bracket is sharp:
+
+| cores | null fills | GC |
+|---|---|---|
+| 2 | 0 | classic (disabled) |
+| 3 | 0 | classic (disabled) |
+| **4** | **2, both on core 3** | classic (disabled) |
+
+```
+sbt "Test/runMain jop.system.JopGcHaltDeadlockSim 4 0 70704150 java/apps/Small/NCoreHelloWorld.jop 3000000"
+```
+
+Under a minute, no GC, no allocation, no card table, deterministic with the
+pinned seed — against 45 minutes for the `SmpGcTest` route. **Use this.**
+
+The 2- and 3-core runs are the control this investigation needed and never
+had: a `start=0` fill is *not* normal wake-up behaviour, it appears at
+exactly four cores. So "generational GC deadlocks above 2 cores" has been the
+wrong title for this item throughout — the generational collector was a
+passenger, and what it did was allocate hard enough to make a 4-core SMP
+wake-up fault show up as heap-shaped symptoms 56M cycles downstream.
+
+### Uninitialised registers make this simulator unreliable — read this first
+
+**The 4-core `NCoreHelloWorld` failure is caused by Verilator randomising
+registers that have no reset. It is not a hardware bug, and the conclusions
+drawn from it above are withdrawn.**
+
+Three independent results, each cheap to re-run:
+
+| experiment | result |
+|---|---|
+| 4 cores, seed 70704150 | **DEAD** — no UART at all, core 0 never boots |
+| 4 cores, seeds 1 / 2 / 3 | **BOOTS** |
+| 4 cores, seed 70704150, `--x-initial 0` | **BOOTS** |
+
+`--x-initial 0` starts every register at zero, which is what an FPGA does at
+power-up. With it, the failure disappears. Without it, whether the machine
+boots at all depends on the seed.
+
+Worse, it depends on **observation**: adding `simPublic` to the BMB response
+signals — which cannot change logic, only which registers survive pruning and
+therefore how the seeded randomisation lands — turned a 4-core run that
+booted and failed later at 208k cycles into one that is dead from cycle 78.
+Two runs of the same RTL and the same seed, differing only in what was being
+watched.
+
+`grep -rE "= *Reg(Next)? *\(" spinalhdl/src/main/scala/jop/ | grep -v init(`
+counts **~405** registers with no `init`. That is the raw material.
+
+**Consequences, in order of importance:**
+
+1. **Add `--x-initial 0` to the sims** (`SimConfig.addSimulatorFlag`). It
+  matches FPGA power-up and removes a large class of false failures. Every
+  sim in this project is exposed to this, not just this probe.
+2. **A sim failure that moves when you add a probe is X-state, not a bug.**
+  That test costs one run and would have saved most of today.
+3. Pin the seed (done) — but pinning alone is not enough, because the netlist
+  changes under you as instrumentation is added.
+4. Registers that genuinely need a defined reset should get one. Randomised
+  state that can prevent boot is worth fixing on its own merits, even though
+  the FPGA masks it.
+
+What this does **not** settle: the original 4-core `SmpGcTest` failure
+reproduced under four *different* random seeds, which is far more robust than
+anything here, and the EP4CGX150 4-core hang is on real hardware where X-state
+does not exist. Both may still be real. Everything downstream of the
+null-fill reading — the wake-up narrative, "not a GC bug" — needs redoing
+under `--x-initial 0` before it can be trusted.
+
+**THE NULL FILL HAPPENS AT CORE WAKE-UP.** Triggering a dump on the *first*
+`start=0` fill of the whole run moved the origin earlier again, and onto a
+different core:
+
+```
+56,063,443  core 0 writes phase=1                (publishers released)
+56,063,499  core 3 FILL start=0 len=0            <-- first null fill in the run
+56,063,544  core 3 EXC NP  jpc=0x0003 sp=219
+56,063,582  core 3 FILL start=0 len=0
+56,063,651  core 3 EXC AB  jpc=0x0004 sp=118
+56,063,745  core 1 writes cpuCnt=4 \  cores 1 and 2 start main() normally
+56,063,746  core 2 writes cpuCnt=4 /  CORE 3 NEVER DOES, EVER
+56,063,817+ core 3 NP storm, forever
+```
+
+Core 3 fails **in its first few bytecodes**, at `jpc=0x0003`, and never
+reaches `main()`'s first two putstatics — there is no `src=3` store anywhere
+in the run. Cores 1 and 2, released by the same signal on the same cycle,
+start correctly.
+
+So the target is much narrower than "somewhere in a 56M-cycle workload": it
+is the **SMP wake-up path**, where three cores leave `Startup`'s boot-wait
+loop simultaneously, all miss in their bytecode caches at once, and all hit
+the BMB arbiter together. One of them reads a method pointer of 0.
+
+**AND THE SIMULATION IS NOT REPRODUCIBLE RUN TO RUN — this invalidates a
+documented inference.** `doSim` without an explicit seed picks a new one
+every invocation; four consecutive runs of the *same binary* used seeds
+748489979, 617838352, 370588204 and 70704150. The failure is robust (every
+run wedges) but its details move: core 1 dying mid-workload at 56.18M in one
+run, core 3 dying at wake-up at 56.06M in another.
+
+That means the note above — *"adding a counter changed the code size ... and
+the freeze stopped happening: five consecutive clean runs. Verilator is
+deterministic, so that is not luck, it is a different binary"* — was drawn
+with an uncontrolled variable. Verilator is deterministic **for a fixed
+seed**, and the seed was not fixed. The layout sensitivity may well be real,
+but it has not been shown, and five clean runs is a much weaker result than
+it looked. The probe now pins the seed (`doSim(seed = simSeed)`, default
+70704150, overridable as argv[3]); re-establish that claim with the seed held
+before relying on it.
+
+A concrete place to look while doing so: `BytecodeFetchStage.scala:157-173`
+carries a hand-built read/write collision bypass whose own comment says
+*"During BC fill, the last write can coincide with the bytecode fetch read at
+the dispatch moment (**timing depends on memory latency**)"*. `doBypass`
+compares a one-cycle-registered write address against a registered read
+address, and four-core BMB arbitration changes exactly the variable that
+comment names. That is a lead, **not a finding** — the null pointer is in the
+value fed to the fill, so the method-pointer *load* is the first suspect and
+the fetch bypass the second.
+
+**Probe hardening after a self-inflicted false alarm**: every static address
+is now read from `<app>.jop.link.txt` at startup instead of being hardcoded.
+Fixing `exit()` grew the runtime and shifted `SmpGcTest.phase` 287 -> 292,
+so the hardcoded probe reported `phase=0` with null arrays and looked exactly
+like catastrophic heap corruption. It was reading the wrong words. The file
+already carried a comment warning that these move on relink; that was not
+enough, so it is now mechanical.
+
+Historical note: `exit()` must not hold a lock while parking. `Startup` has
+three other park loops (lines 127, 286, 416) that do NOT take a monitor —
+only this one does, and the `synchronized (stack)` serves no purpose since
+nothing is ever released. Also worth auditing: `JVM.except()` ends an
+uncaught exception with `System.exit(1)`, so on SMP any uncaught exception on
+any core wedges the cluster by this same path rather than stopping one core.
+
+**Do not instrument `GC.java` to chase this.** Adding a per-iteration counter
+to the list walks changed the runtime's code size, which moved the heap
+start, which changed the allocation pattern — `minors after tenuring` went
+196 to 198 — and the freeze stopped happening: five consecutive clean runs.
+The same sensitivity broke `JopSmallGcBramSim` (R80 vs R81) on the same day.
+Observing from the simulator costs nothing and cannot do this, so prefer it
+regardless.
+
+**But the "Verilator is deterministic, so that is not luck" half of this
+argument does not hold as written** — see the seed note below. `doSim` was
+picking a fresh seed every run, so those five clean runs were not five
+samples of one deterministic system. The layout sensitivity is plausible and
+the R80/R81 case is independent of seeding, but the five-run result needs
+re-running with the seed pinned before it means what it says.
+
+Because of that, the failing image is **kept aside** at `spinalhdl/repro/`
+(`SmpGcTest.jop` + `.jop.link.txt`, gitignored like every other build
+output). It is the build with the `cpuCnt0 <= 2` guard at `GC.java:574`
+lifted to `<= 99`, and it prints `minors after tenuring 198`. A run that
+prints anything else is a different binary and its result is void. Point the
+probe at that copy rather than rebuilding when the runtime has moved on.
+
+**Whether this freeze predates the fix is UNKNOWN**: the broken build died at
+52M, before this point, so it was never observable. Plausibly the next bug in
+line rather than one introduced here — but that is an assumption.
+
+**Two instrumentation faults, both fixed, both worth remembering.** The first
+probe read `cluster.io.halted`, which `JopCluster.scala:617` wires from
+`debugHalted` — the DEBUG halt, always false here — and so printed
+"halted=0/4" through a total freeze, which is what produced the wrong "stalled
+owner" reading. The pipeline actually stalls on an OR of five terms
+(`JopCore.scala:294`) and the probe now samples all five. Second, the stall
+detector required *every* core to be stable at once; core 3 creeps through a
+software-`imul` loop forever, so a three-of-four freeze never tripped it. It
+is now per core.
+
+**Regression sweep of the fix** (it touches every collector path, so the
+already-validated configurations matter more than the 4-core one):
+
+| check | result |
+|---|---|
+| 1 core, generational — `JopGenGcBramSim` | **PASS** |
+| 1 core, classic — `JopSmallGcBramSim` | **PASS**, 1 GC cycle |
+| 2 cores, generational — 4-core probe run at 2 | **healthy**: no freeze, no core halted, no lock held |
+| 4 cores | crash fixed; freeze remains |
+
+The 2-core run does not finish `SmpGcTest`'s eight publish rounds inside 75M
+cycles, but nothing is stuck — both cores run, `syncHalt=false` on both. That
+is the same simulation-speed limit already recorded against
+`JopIhluGcBramSim`, not a hang.
+
+**Do not read this as "generational SMP works now".** One real defect is
+closed with a reproduction and a fix; the guard stays at `cpuCnt <= 2` until
+a 4-core run completes and reports `errors 0`.
+
+**Two sims in this area could not fail, and a third could fail for the wrong
+reason.** All three were found by running them properly during this work:
+
+- `JopSmallGcBramSim` asserted on `"GC test start"` — printed only by
+ `Small/src/test/GcStressTest.java` — while loading `HelloWorld.jop`, whose
+ source prints `"Hello World!"`. It passed only because a stale
+ `HelloWorld.jop`, built from some other source at some point and not
+ reproducible from the tree, happened to be on disk; `make clean` in that
+ directory destroyed it and the mismatch surfaced. Now loads
+ `GcStressTest.jop`.
+- The same sim then stopped on the literal `"R80 f="`, and the collector
+ fires at exactly R80, so the pass criterion was ONE ROUND WIDE. HEAD
+ reaches `R79 f=1180` and cannot satisfy round 80; a slightly larger runtime
+ reaches `R79 f=1308`, satisfies round 80 with 28 words to spare, and
+ collects at R81 — outside the window. Any GC.java edit that moves the heap
+ start by a word could flip this either way regardless of whether the
+ collector works. Window widened to R95.
+- `make -C java/apps/Small clean` leaves the directory UNBUILDABLE:
+ `MissingClassError: java.lang.Throwable`. The Makefile compiles only its
+ own entry point with the runtime on `-sourcepath`, so `build/classes`
+ normally accumulates runtime classes across builds of the several apps that
+ share that directory. Stage them with
+ `cp -rn ../../runtime/classes/* build/classes/` before `make jop`.
+
+Together with item 2 (`JopIhluGcBramSim` loading a single-core app) that is
+four instances of one shape in this area: **the test cannot fail for the
+reason it exists**.
+
+<a id="item-2"></a>
+
+### Item 2 — ~~`JopIhluGcBramSim` cannot fail — CLOSED 2026-08-16~~
+
+~~**`JopIhluGcBramSim` cannot fail**~~ — **CLOSED 2026-08-16.** It loaded
+`java/apps/Small/HelloWorld.jop`, a single-core app, so core 1 parked in the
+boot-wait loop and IHLU was never exercised — verified at the time by running
+to 49M cycles with core 1 never moving.
+
+It now loads `SmpGcTest.jop`, the multi-core allocating workload item 1
+needed, and has three ways to fail rather than none:
+
+- the payload not reaching `SmpGcTest done`;
+- `SMPGC FAIL`, i.e. cross-core references lost;
+- **`verified == 0`** — the specific anti-vacuous guard. `verified N` counts
+ holders core 0 checked *after another core stored into them*, so a non-zero
+ N is proof the second core executed. This is the check the old payload
+ could never have satisfied.
+
+**Result:** `PASS: 2 cores, verified=192, 10 minor GCs — IHLU and shared card
+table exercised`, 20.2M cycles. Both cores run, `SMPGC OK`, minors 10 /
+verified 192 / errors 0. Generational is active at 2 cores now that the guard
+is `<= 12`, so this exercises the shared card table as well as IHLU — the
+entry's original "INCONCLUSIVE while the SMP guard is on" caveat no longer
+applies.
+
+**Demonstrated failing, not assumed.** Pointed back at `HelloWorld.jop` with a
+short cycle cap it exits non-zero with `FAIL: SmpGcTest did not run to
+completion`. A test that has never failed has not been shown to be able to —
+the same discipline item 35 sets, and it is worth the two minutes.
+
+Also fixed while here: the verdict used `findFirstMatchIn` for the minor-GC
+count and so picked up `STACKROOT minors 6`, a mid-run probe, reporting 6
+where the run's own summary says 10. A verdict that under-reports what it
+exercised is a small lie in the one place that has to be trustworthy.
+
+<a id="item-34"></a>
+
+### Item 34 — ~~4-CORE STATUS after the fetch-stall fixes — the SDRAM row is~~
+
+~~**4-CORE STATUS after the fetch-stall fixes**~~ — **the SDRAM row is
+SOLVED (2026-08-16); one BRAM-sim row remains open.** Kept because the table
+below is the clean statement of which combinations were tried, and because
+two of its entries were retracted in ways worth not repeating.
+
+**The `SmpGcTest / Ihlu / SDRAM hardware / STALL` row was the
+`AlteraSdramAdapter` bug** (`ef36d99`) -- Avalon read data dropped when the
+consumer stalled, and write responses overtaking outstanding reads and
+answering them with 0. Nothing to do with Ihlu, the lock, or 4 cores as such;
+the core count only decided how often `rsp.ready` dropped. Full account in
+item 1. Generational SMP now runs at up to 12 cores.
+
+**Still open from this entry:** `JopSmpNCoreHelloWorldSim` with **CmpSync** at
+4 cores, where C1 never toggles. That is a BRAM sim, so the SDRAM fix does not
+touch it, and the Ihlu equivalent passes. Small, concrete and unexplained.
+
+The original 2026-08-13 text follows.
+
+| test | lock | memory | 4 cores |
+|---|---|---|---|
+| SmpGcTest | Ihlu | BRAM sim | **PASS** — 8 rounds, 192 verified, 0 errors |
+| `JopIhluNCoreHelloWorldSim` | Ihlu | BRAM sim | **PASS** — 89 lock ops, C0-C3 all toggle |
+| `JopSmpNCoreHelloWorldSim` | **CmpSync** | BRAM sim | **FAIL** — C1 never toggles |
+| SmpGcTest | Ihlu | **SDRAM hardware** | **STALL** — core 2 starves |
+
+**(a) RETRACTED — this is NOT a global-lock failure.** `JopSmpNCoreHelloWorldSim 4`
+does report `Per-core WD toggles: C0=1 C1=0 C2=1 C3=1` — core 1 never starts —
+while `JopIhluNCoreHelloWorldSim 4` passes. But BOTH use Ihlu:
+`JopCoreConfig.useCmpSync` defaults to false and NEITHER harness overrides it.
+The claim that the global lock was implicated came from reading the
+`JopIhluSim` header comment instead of checking the config, and is withdrawn.
+
+The harnesses differ in CONFIGURATION, not locking. `JopIhluTestHarness`
+builds an explicit `harnessCfg` with `hasCardTable = true`;
+`JopSmpTestHarness` has none, so `IO_CARD_SHIFT` reads 0 and GC.init falls
+back to the classic collector — the UART says exactly that:
+`GC: classic (no card table - generational disabled)`. So the comparison was
+generational-Ihlu against classic-Ihlu, and the cause of the core-1 no-start
+is NOT yet isolated. Give `JopSmpTestHarness` the same explicit config before
+drawing anything from it.
+
+Reproducer, still valid as a FAILURE:
+`sbt "Test/runMain jop.system.JopSmpNCoreHelloWorldSim 4"`.
+
+**(b) NARROWED 2026-08-13 — the SDRAM PATH is implicated, silicon is not.**
+A BRAM build on the SAME board isolates it:
+
+| config | 4 cores + SmpGcTest |
+|---|---|
+| BRAM sim | PASS |
+| SDRAM sim (`JopSmpSdramNCoreHelloWorldSim 4 250000000 <SmpGcTest.jop>`) | PASS |
+| **BRAM hardware** (`ep4cgx150BramSmp 4 60`) | **PASS** — SMPGC OK, 192 verified, 0 errors |
+| **SDRAM hardware, 2 CORES** (`ep4cgx150Smp 2 60`) | **PASS** — SMPGC OK, 192 verified, 0 errors |
+| SDRAM hardware, 4 cores (`ep4cgx150Smp 4 60`) | **STALL** — core 2 starves |
+
+**So the stall needs BOTH the SDRAM path AND 4 cores — it is
+CONTENTION-DEPENDENT.** 2 cores on the same memory, same clock, same app and
+same guard passes cleanly (+2.468 ns slack, so timing is not a factor), and 4
+cores on BRAM passes too. Only four masters against the SDRAM controller
+fails.
+
+Note the BMB arbiter is already ROUND-ROBIN (`lowerFirstPriority = false`,
+JopCluster:385), so this is not naive fixed-priority starvation — do not
+start there. Look instead at what can hold the bus across arbitration
+decisions with four masters: burst behaviour in `BmbSdramCtrl32` (the 32->16
+bridge), refresh colliding with a loaded queue, or a request being dropped
+rather than deferred.
+
+The BRAM board build passes at only **+0.050 ns** setup slack, which makes the
+result strong rather than weak: marginal timing produces failures, not
+successes. Quartus synthesis and the real device are common to both hardware
+rows, so what differs is the SDRAM controller, refresh, and the physical
+device under 4-core contention. Next look there, NOT at the cores.
+
+**(b2) MEASURED ON HARDWARE 2026-08-13 — NOT bus starvation.** Per-core
+counters at the arbiter inputs (req/gnt/busy, read back through the root port,
+`tgt >= 8` selects the counter bank; dumped by SmpGcTest at STALL):
+
+```
+STALL live=40294532,191,307987  pub[1]=1 pub[2]=0 pub[3]=0
+ bus[0] req 1577182941  gnt 440891195  busy 1136293713
+ bus[1] req         -1  gnt 445742537  busy         -1   (saturated)
+ bus[2] req      76125  gnt      3881  busy      72244
+ bus[3] req   35409712  gnt   3085714  busy   32323998
+```
+
+`req` counts CYCLES with a request outstanding, so a core blocked on the bus
+climbs without bound — core 1 does exactly that (saturated) while running
+fine. The stalled core 2 shows **76k** request-cycles against core 3's 35M and
+core 0's 1.5G: four to five orders of magnitude LESS traffic, not more
+waiting. `req = busy + gnt` holds exactly (76125 = 72244 + 3881), so the
+counters are self-consistent.
+
+**So the core stopped ASKING. Arbiter and SDRAM-controller starvation are
+ruled out, and the bus is a red herring** — do not start there. The SDRAM
+correlation is real but indirect: something about that configuration wedges a
+core in a path that issues no memory traffic. Next suspects are the Ihlu lock
+(a core waiting on a monitor issues nothing) and the exception path.
+
+Note this run's stall differs in detail from the earlier bit-identical pair —
+pub[3] is now 0 too and core 3 lags — because the RTL changed when the
+counters were added. It is the same class of failure, not the same instance.
+
+**(b10) SOLVED — two bugs in `AlteraSdramAdapter`, and 4-core generational GC
+now passes on hardware.** The adapter bridges the Altera SDRAM controller's
+Avalon-MM interface to `SdramCtrlBus`. Two defects, both on the response path:
+
+1. **Avalon read data was dropped when the consumer stalled.**
+  `readdatavalid` is a PULSE — the data is on `avs_readdata` for one cycle and
+  cannot be held (`avs_waitrequest` backpressures commands only). It was wired
+  straight to `io.bus.rsp`, a Stream whose consumer does deassert `ready`:
+  `BmbSdramCtrl32` drops `rsp.ready` for a high half whenever its assembly
+  pipe is occupied. When they coincided the data was presented, not accepted,
+  and lost.
+2. **Write responses could overtake outstanding reads.** A write response is
+  manufactured locally and available immediately; a read response waits for
+  SDRAM. The adapter emitted whichever was ready. Since the consumer matches
+  responses to commands BY ORDER, a write issued after a read could answer
+  that read — with `data := 0`, which the write branch hardcodes.
+
+That is where the zero came from. Both are fixed: read data is captured into a
+FIFO on the cycle Avalon offers it, commands are refused unless there is room
+to hold every in-flight result, and an `orderFifo` releases responses strictly
+in command order.
+
+**Why it took so long, worth internalising:** because a substitute response
+still came back, commands and responses stayed BALANCED, so every "did the
+response stream slip a beat?" check said no (b8's `bmbOut`). Only the data was
+wrong, and only ever to zero. And it needs sustained back-to-back traffic for
+`rsp.ready` to drop at all, which is why 2 cores never showed it.
+
+**This file had NO simulation coverage on any board that uses it** — the Altera
+controller is a BlackBox Verilator cannot build, so every sim substitutes
+`SdramCtrlNoCke`, a proper Stream that honours `ready`. That is why matching
+the harness to the board (0da41f1) still did not reproduce it, and it is the
+real lesson here: the component that failed was the one no test could reach.
+
+Results on EP4CGX150 SDRAM:
+- SmpGcTest, 4 cores, GENERATIONAL: `SMPGC OK`, `minors 10 verified 192
+ errors 0`, 3/3 runs. This case has never passed before.
+- DoAll 66/66 on the 4-core bitstream and on the single-core one.
+- `rawLenBad 0 aLenBad 0 exc 0` on every core, where it was `exc 1..4` before.
+
+**THE GUARD IS REMOVED.** It went 1 -> 2 -> 4 -> 8 -> 12 while the failure was
+unexplained, and by the end it had stopped meaning anything: no board in the
+tree can build past 12 (16 cores needs 182,501 of the EP4CGX150's 149,760 LE),
+so it was unreachable, and a number implies "13+ is known bad" when the truth
+is "untested". `genActive` is now just `USE_GENERATIONAL && cardShift0 != 0`.
+
+**The real ceiling moved to where it can be checked.** `JopCluster` now
+requires `cpuCnt <= 16`, because the cross-core root port's target field is
+4 bits (`Sys.rootSel(11 downto 8)`). Past 16 that field ALIASES — a collector
+asking for core 16's stack reads core 0's, silently, handing the GC another
+core's roots and collecting live objects. That is the failure class the guard
+was nervous about, stated precisely and enforced at elaboration instead of
+guessed at runtime. Verified: 16 cores elaborates, 17 refuses with the reason.
+Raising it means widening `rootSel` and the root mux. 8 and 16
+cores are untested, as are the DDR3 boards, so it stays a number rather than a
+removal. Everything below is the investigation that led here, kept because
+several entries are retractions worth not repeating.
+
+**(b9) A PLAIN `rdMem` GETS IT WRONG TOO — so the array path is exonerated.**
+Each publisher now reads the SAME length word two ways every iteration:
+`Native.rdMem(handle+1)` (the plain memory-read state machine) and
+`liveTick.length` (the handle/array state machine). Both are wrong sometimes:
+
+```
+ core[1] ... exc 4 type 3 bmbOut 0 rawLenBad 2 aLenBad 1
+ core[2] ... exc 0 type 0 bmbOut 1 rawLenBad 0 aLenBad 1
+ core[3] ... exc 0 type 0 bmbOut 0 rawLenBad 0 aLenBad 1
+```
+
+`rawLenBad` counts a plain `rdMem` of that word returning something other than
+4, and it GROWS (1 -> 2 across rounds on core 1). The bounds check is not
+special; it is simply where a bad read gets noticed, because it is the only
+read whose result is checked. So the fault is BELOW `BmbMemoryController` —
+in the arbiter, `BmbSdramCtrl32`, or the SDRAM controller.
+
+Note the rate: a handful of events against millions of iterations. Any theory
+has to explain something that rare, which argues for a narrow timing window
+rather than a structural mistake in the state machines.
+
+Also worth keeping in mind when reading `abLen 0`: the heap is mostly zeros,
+so a read that goes to the WRONG ADDRESS returns 0 just as readily as one that
+returns wrong data. "Always exactly 0" does not by itself distinguish the two.
+
+**(b8) THE FAULT IS A READ THAT RETURNS 0 FOR AN ARRAY LENGTH OF 4.** The
+bounds-check operands are now latched in hardware at the first EXC_AB per core
+and reported every round:
+
+```
+arrays: liveTick 539528 pubStep 539520 ... holders 539488 len 4
+ core[1] abIdx 1 abLen 0 abHdl 539528 nowLen 4 nowPtr 2096867 exc 4 type 3 bmbOut 1
+ core[2] abIdx 2 abLen 0 abHdl 539520 nowLen 4 nowPtr 2096863 exc 1 type 3 bmbOut 0
+ core[3] abIdx 3 abLen 0 abHdl 539520 nowLen 4 nowPtr 2096863 exc 2 type 3 bmbOut 1
+```
+
+Read it line by line, because each column closes off a hypothesis:
+
+- `abIdx` is always the core's OWN id, so the index is valid. The faulting
+ statement is `liveTick[id] = liveTick[id] + 1`, the first statement of the
+ publisher loop, executed millions of times and faulting a handful.
+- `abHdl` resolves to `liveTick` or `pubStep` — real arrays, not a stray
+ handle. So the handle the pipeline supplied was right.
+- `nowLen 4` — the length word read back from a working core is correct. Memory
+ was never wrong; **the read was**.
+- `bmbOut` (BMB commands issued minus responses received, per core) sits at 0
+ or 1 and never grows, so the response stream has NOT slipped a beat. A
+ persistent off-by-one is ruled out.
+- `abLen` is always exactly **0**, never an arbitrary value. That rules out
+ plain mis-delivery of another master's data, which would land arbitrary
+ bits. Zero is what a WRITE response carries (no data), what a reset register
+ holds, and what `rsp.data ## lowHalfData` produces when the low half was
+ never captured — 4 is `0x0000_0004`, so losing the LOW half alone gives
+ exactly 0.
+
+That points at `BmbSdramCtrl32`'s 32<-16 reassembly rather than at routing:
+`lowHalfData` is a SINGLE register shared by every in-flight transaction, and
+`pipeData := rsp.data ## lowHalfData`. Reading the command side did not find a
+sequence that loses it — command halves are issued as an atomic pair, the fill
+path tags its responses `isFill` and is excluded, and bursts hold
+`io.bmb.cmd.ready` low — so the next step is a waveform, not more reading.
+Reproduce in `JopSmpSdramNCoreHelloWorldSim 4 <cycles> SmpGcTest.jop`, which
+already tracks the board output for output, and stop the sim on `abFire`.
+
+**(b7) THE WEDGE IS AN UNCAUGHT ARRAY-BOUNDS EXCEPTION KILLING A PUBLISHER.**
+The hardware exception latch (see b6) reported, at a 4-core stall:
+
+```
+bus[0] ... pc 727 jpc 1171 exc 0 excAt pc    0 jpc   0 type 0
+bus[1] ... pc 951 jpc 1305 exc 1 excAt pc 1008 jpc 494 type 3   <- wedged
+bus[2] ... pc 951 jpc 1817 exc 1 excAt pc 1008 jpc 494 type 3
+bus[3] ... pc 952 jpc 1818 exc 1 excAt pc 1008 jpc 501 type 3
+```
+
+Type 3 is `Const.EXC_AB`, array bounds. Microcode pc 1008 is the hardware
+bounds check (`BmbMemoryController` `HANDLE_BOUND_WAIT`, which compares
+`handleIndex` against the array length it reads back over BMB). Core 0, which
+stays healthy, takes none.
+
+`JVMHelp.handleException()` turns EXC_AB into a throw of the preallocated
+`ABExc`. Nothing in `publisher()` catches it, so it unwinds out of `main()`
+and the core PARKS. **That is the entire wedge.** It explains every earlier
+null result at once: the core stops issuing bus requests because it is dead,
+not starved (b2); the lock-manager halt counter cannot discriminate because
+being dead and being halted look identical from there (b3); and if the throw
+lands inside the allocator's `synchronized (mutex)` the global lock is never
+released, which is precisely the "core holds the lock and never releases it"
+that item 1 has described since 2026-08-09.
+
+**PROVEN BY MAKING IT SURVIVABLE.** `publisher()`'s loop body is now wrapped
+in `try { ... } catch (Throwable)` which counts the fault and retries. With
+that one change and NOTHING else, the 4-core SDRAM run completes all 8 rounds
+and reaches `JVM exit!` instead of wedging. Every index in that loop is a
+constant or a core id, so a retry of the identical access succeeding means
+**the bounds check itself was wrong** — a spurious fault, not a program bug.
+
+Next: the length it compares against arrives as `io.bmb.rsp.fragment.data`.
+Under 4 masters that response has to be routed back by `source` through
+`BmbArbiter` and `BmbSdramCtrl32`'s 32<-16 reassembly (`pipeSource` is a
+1-deep register). A response delivered to the wrong core would give a valid
+index a wrong length — and would equally explain (b5)'s cyclic handle list,
+since the collector builds those lists out of raw `rdMem` results. Check the
+`source`/`context` path end to end before anything else.
+
+Corroborating, from the same run: core 0 read `holders[13].ref` as
+`-1465206102` through a getfield while the identical word read raw out of
+memory was `0` (`rawRef=0`). A cached read returning a value that is in
+neither the old nor the new state of that word is a bad read, not staleness.
+
+**(b6) The wedge is NOT generational.** Running the same 4-core bitstream with
+the guard back at `cpuCnt <= 2` — so `GC.init` selects the CLASSIC collector
+and reports `minors 0`, no minor GC anywhere — stalls too:
+`STALL round 1 ... pub[3]=1 live=27541351,33607907,1560`. Item 1 has framed
+this as a generational-GC bug throughout; it is not. It is under the GC, and
+the generational guard neither causes nor prevents it. (An earlier 240 s run
+that reached R1 cleanly was simply too short — do not read a passing prefix as
+a pass.)
+
+**(b5) A HANDLE LIST GOES CYCLIC — the first hard corruption caught in the act.**
+With the pc/jpc/exc counter bank in, one 4-core SDRAM hardware run printed:
+
+```
+*** GC LIST OVERRUN walk=1 iters=65537 handles=65536 ref=533840 next=533848
+```
+
+`walk=1` is `WALK_YOUNG_SWEEP` — `copyAndSweepYoung` walking `youngList`. The
+list cannot legitimately be that long: `handle_cnt` is 65536 (`MAX_HANDLES`),
+and a minor GC is forced at `MAX_YOUNG_OBJECTS` (a few thousand), so 65537
+steps means the chain closes on itself. **Every push onto these lists is
+serialised by `mutex`, so a loop can only mean one handle entered the list
+twice.** This is the first evidence that the >2-core failure is heap-structure
+corruption and not (only) a lost lock or a starved bus — and it is exactly the
+"infinite handle-list walk" that item 1 has been guessing at since 2026-08-09,
+now printed instead of hung.
+
+`gcListOverrun` was extended to name the mechanism rather than just report the
+overrun: after >`handle_cnt` steps the walk is necessarily standing INSIDE the
+loop, so walking on from `ref` until it returns gives the loop length exactly.
+Length 1 or 2 => the same handle popped from `freeList` twice; a long loop =>
+a list head restored over a newer one. It also reports whether `ref` is STILL
+on `freeList` (`onFree`), which separates a third case: reclaimed without
+being unlinked.
+
+**(b4) The wedge is DETERMINISTIC again — 6/6 runs, same point.** With that
+build every run dies immediately after
+
+```
+scan calls 8 words 738 cands 24 young 1
+ lastYoung 487712 probeHandle 487712 MATCH spMin 64 spMax 135
+```
+
+and before round 0's `probe: h0d` line — i.e. inside the publisher wait loop
+or a minor GC triggered from it. Core 0 itself is wedged, so **no software
+probe can fire**: the STALL dump needs core 0 to reach 2M spins and it never
+does. That kills the "read the counters from Java" approach for this
+manifestation and is why (b5) came from a guard inside the collector instead.
+
+Note the determinism moved AGAIN with the code change (b3 saw it vary), which
+is the standing layout sensitivity, not a new fact. What is new: the 4-core
+SDRAM Verilator harness now **tracks the board exactly** — same output text,
+same `nurseryBase 1902429`, cores released at the same point — so
+`JopSmpSdramNCoreHelloWorldSim 4 <cycles> java/apps/SmpGcTest/SmpGcTest.jop`
+is a working bridge with full pc/jpc/halted visibility, at ~20k cycles/s.
+
+**(b3) The lock-manager halt counter does NOT discriminate — null result.**
+Slot 3 counts cycles with `Sys.io.halted` (syncIn.halted: Ihlu/CmpSync plus
+gcHalt). Measured:
+
+```
+STALL live=102731,69,40421628
+ bus[0] req 1589725286 gnt 442929483 busy 1146797891 halt  16411259
+ bus[1] req   59645450 gnt   3876185 busy   55769265 halt 250058075
+ bus[2] req      45727 gnt      2391 busy      43336 halt 250050098
+ bus[3] req         -1 gnt 444574624 busy         -1 halt 250060879
+```
+
+Cores 1, 2 and 3 are all within 0.004% of each other (~250.05M) while core 3
+RUNS FINE (40.4M heartbeats) and core 2 is wedged (69). A signal identical on
+a healthy and a wedged core cannot explain the difference, so "blocked in the
+lock manager" is NOT the answer and this counter should not be re-run
+expecting one. `Sys.io.halted` looks to be asserted for nearly the whole run
+on every non-boot core, so it is dominated by something common.
+
+ALSO: which core stalls now VARIES between runs (live=102731,69,40421628 here
+against 411990,80,40236098 before). Adding the counters shifted the timing
+enough to move it, so the earlier bit-identical determinism was a property of
+that bitstream, not of the bug. Do not rely on it.
+
+Still true and still unexplained: the wedged core issues almost no memory
+traffic (45k request-cycles against core 0's 1.59G).
+
+**(b1) The stall was DETERMINISTIC before instrumentation.** Two runs bit-identical:
+`live=411990,80,40236098`, handle 487432, ptr 1902014, same slots and steps.
+Core 2 stops after exactly 80 loop iterations at `step=10` (loop top), never
+entering `publish()`. Determinism rules out a race, and rules out X-state
+(simulation-only). What DOES work on silicon at 4 cores: generational GC with
+16-word cards, tenuring, and `STACKROOT ... OK` with `PTR-AGREE` — the cores
+agree word for word on a 2 MB SDRAM heap.
+The discriminator is BRAM-sim-passes vs SDRAM-hardware-stalls, so
+`JopSmpSdramNCoreHelloWorldSim` (4 cores, SDRAM model) is the bridge; it
+hardcodes NCoreHelloWorld, so pointing it at SmpGcTest is the targeted version.
+
+**THREE SMP HARNESSES WERE BROKEN**, which is why none of this had been seen:
+- `JopSmpBramSim` did not ELABORATE — `val pc = out Vec(UInt(11 bits), ...)`
+ against a 12-bit `JopCoreConfig.pcWidth` (the 4K microcode ROM). Fixed here
+ to derive from the config. `compile` does not elaborate and this sim is not
+ in CI, so it failed silently since the ROM widened.
+- `JopSmpBramSim` ALSO hardcodes `cpuCnt = 2`, so a core-count argument is
+ silently ignored, and it waits for `"GC test start"` while loading
+ single-core `HelloWorld.jop` — output that app never produces. It cannot
+ pass. Same defect as item 2.
+- `JopIhluSim` has no object of that name; the runnable ones are
+ `JopIhluNCoreHelloWorldSim` and `JopIhluGcBramSim`.
+
+**The `java/apps/Small` build only works via ACCUMULATED STATE.** `PreLinker`
+needs the full transitive closure of runtime classes, but javac compiles only
+what the app references, so `build/classes` is populated by whatever earlier
+builds happened to leave. `rm -rf build` breaks it for everyone: the linker
+then fails on `java/lang/Throwable.class`, then `java/io/PrintStream.class`,
+and so on. Recovery is to compile the whole runtime tree once:
+`javac -sourcepath "src:../../runtime/src/{jop,jvm,jdk}" -d build/classes
+$(find ../../runtime/src -name '*.java') src/test/<App>.java`.
+Also beware `make clean` here — `JOP_OUT` derives from `APP_NAME`, so it
+deletes `HelloWorld.jop` (item 13).
+
+<a id="item-33"></a>
+
+### Item 33 — ~~`AlteraLpm.createRam` discarded the debug stack-RAM address~~
+
+~~**`AlteraLpm.createRam` discarded the debug stack-RAM address**~~ —
+**FIXED `8ef6aa9`, HARDWARE-VERIFIED 2026-08-12.** The debug read port returned
+the wrong word on every Altera build, which is why the cross-core root scan
+read `cands 0`. The fix steals the RAM's read port when a debug read is in
+flight, so the risk was breaking NORMAL stack reads — and **no simulation
+covers this**: every sim uses `MemoryStyle.Generic`.
+EP4CGX150 single-core, fresh build, timing met (+2.445 ns setup, TNS 0.000):
+**DoAll 66/66, `JVM exit!`**, checksum 0x88e4f517. That also puts `89da8fb`
+(the `sys_exc` fix) on silicon for the first time — DoAll fires real hardware
+exceptions (`Except`, `HwExceptionTest`, `NullPointer`, `DivZero`,
+`AthrowTest`) and all pass.
+**STILL NOT COVERED: debug READS themselves.** A plain boot never drives
+`debugRamAddr`, so this is "no regression from the fix", not "debug reads
+work". Closing that needs the DebugController or a 2-core build, where
+`scanOtherCoreRoots` exercises the port via `rootRead`.
+Two procedure notes, both of which cost attempts here:
+~~**download at 1.5 Mbaud, not 2**~~ — **NO LONGER NEEDED (2026-08-15).** That
+was the preset/PLL mismatch: `ep4cgx150Serial` declared 80 MHz while the
+shared `dram_pll.vhd` was hardwired to 60, so the console ran at 2e6 x 60/80.
+The PLL is now generated from the preset, an `ep4cgx150Serial` build really
+does run at 80 MHz, and 2 Mbaud is correct. Still true: **reprogram
+immediately before each download** — the ready handshake is consumed once and the board
+then waits for data, so a download run standalone times out on `0xAA`.
+When probing the port by hand, listen for **>500 ms**: that is the ready-byte
+period, and a shorter window reads zero bytes and looks like a dead board.
+
+<a id="item-35"></a>
+
+### Item 35 — ~~`AlteraSdramAdapter` has NO simulation coverage — DONE~~
+
+~~**`AlteraSdramAdapter` has NO simulation coverage**~~ — **DONE
+2026-08-15**, `spinalhdl/src/test/scala/jop/memory/AlteraSdramAdapterTest.scala`
++ `src/test/resources/altera_sdram_tri_controller_stub.v`. Picked up by the
+existing `simulation-tests` CI job, which already runs `jop.memory.*`.
+
+The blocker was that `altera_sdram_tri_controller` is a BlackBox with no
+Verilog body, so Verilator cannot build any design containing it. Solved with
+a behavioural Avalon stub attached via `addRTLPath` **in test scope only** —
+the production adapter is untouched. The stub models the Avalon contract, not
+SDRAM: `readdatavalid` as a one-cycle pulse with no back-pressure,
+`waitrequest` stalling commands unpredictably, in-order variable read
+latency. It drives `avs_readdata` to X between pulses on purpose, so a
+consumer that samples a cycle late fails loudly instead of reading a stale
+value that happens to be right.
+
+Four tests, and the three that matter were **confirmed to fail against the
+pre-`ef36d99` adapter** before being kept:
+
+| test | on the broken adapter |
+|---|---|
+| read data survives a stalling consumer | `WRONG READ DATA ctx=0 @0x0: expected 0xa5a5, got 0xa5f1` |
+| a write response never answers a read | `MISPAIRED: expected ctx=2 (read), got ctx=3` (the write) |
+| a read returns the last value written | `MISPAIRED: expected ctx=15, got ctx=16` |
+| back-to-back, never-stalling (control) | **passes** — kept deliberately |
+
+The control passing on the broken adapter is the point: it is the shape the
+adapter was developed against, and it is why this went unnoticed.
+
+**Two things worth carrying to the next test of this kind.** First, bug 1
+presents as wrong DATA with a correct response COUNT and correct context
+order — the old adapter popped its context FIFO on `rsp.ready` while taking
+data from a pulse already gone, so contexts marched in order while data slid.
+Any check built on counting responses, or on outstanding-transaction
+arithmetic, sails straight past it; only content-and-pairing catches it.
+
+Second, the first version of this file **passed against the broken adapter**,
+because the producer loop ended with `if (failure.isDefined) return` — a
+non-local return that left the method before `failure.foreach(fail)`, so a
+detected fault was swallowed. It looked like four healthy green tests. That is
+exactly the failure mode this item was written to prevent, and it was caught
+only by running against the old file first. **Do that step; it is not
+ceremony.**
+
+<a id="item-32"></a>
+
+### Item 32 — UART data corruption on seed 871203250 — CI seed now PINNED around it
+
+**UART data corruption on seed 871203250 — CI seed now PINNED around it.**
+`JopJvmTestsMcFallbackSim` fails with every UART character corrupted, bits 1
+and 3 cleared: `"ArrayTest2 ok"` prints as `"Adteaequpep ea"` and `"failed!"`
+as `"daaded!"` (`o`->`e`, `k`->`a` diff 0x0A; `f`->`d` 0x02; `i`->`a`,
+`l`->`d` 0x08). The suite reaches `JVM exit!` but every result line is
+mangled, so the CI check reports "no results found" rather than a test
+failure. A DATA-path fault, not control flow.
+**Verified pre-existing, not caused by the `sys_exc` fix**: an A/B on the same
+seed gives `ok=0 corrupt=61` both at HEAD and with `BytecodeFetchStage.scala`
++ `asm/src/jvm.asm` reverted to `f65b05b`. Random seeds pass 132 ok either
+way; CI simply drew this seed for the first time on `3f173e4`.
+**Not X-state** — it reproduces from the seed alone, so `--x-initial 0` would
+mask a real bug rather than stabilise a flaky test. Do not add it here.
+CI pins `JOP_SIM_SEED=284409762` for this job only (`.github/workflows/ci.yml`,
+`matrix.seed`), which keeps the job honest about REGRESSIONS while this is
+open. **The pin is not a fix and must come out once this is understood.**
+Reproduce:
+`JOP_SIM_SEED=871203250 sbt "Test/runMain jop.system.JopJvmTestsMcFallbackSim"`
+Only seen in the microcode-fallback config so far; the baseline and
+all-compute-unit jobs passed on the same commit.
+
+<a id="item-3"></a>
+
+### Item 3 — Sixteen presets still run classic GC. Safe but slow
+
+**Sixteen presets still run classic GC.** Safe but slow. The cause is a
+missing `hasCardTable` in each preset, NOT the old SMP guard -- that is gone
+(item 1), so `GC.init` now selects generational on any preset that has a card
+table, at any core count. `hasCardTable` is one line each and the boot line
+confirms it took effect.
+~~The Wukong presets are elaboration-verified only~~ — **confirmed on
+hardware 2026-08-07**: a Wukong was attached for the first time and
+`wukongFull` boots `GC: generational, 512-word cards`. The sixteen other
+presets remain unverified.
 
 ### Performance
 
-- **4.** **Copy phase — 79-82% of the minor pause** and the dominant remaining term.
-   Latency-bound, not clock-bound: 132 cycles/handle at 75 MHz against 162 at
-   100 MHz. The handle table is 2 MB against a 32 KB cache and a handle is
-   exactly one 256-bit line, so ~6400 compulsory misses to find ~66 survivors.
-   Plan in [gc/copy-phase-redesign.md](gc/copy-phase-redesign.md). The 5-8x
-   estimate is **asserted from transaction counts, not measured**.
+<a id="item-4"></a>
 
-- **5.** **The BMB arbiter sets the clock ceiling at every core count** (headline
-   corrected 2026-08-16 -- it read "caps SMP at 2 cores @ 100 MHz", which is no
-   longer true: 12 cores run on the EP4CGX150 and 8 on Wukong DDR3, each at its
-   own clock). What the arbiter costs is FREQUENCY, not core count: 60 MHz at 4,
-   50 at 8, 36 at 12 on the EP4CGX150; 100 MHz at 4 and 91.68 at 6-8 on Wukong.
-   The measurements below stand and the path is unchanged. Path is
-   `coreX zeroCur -> arbiter -> coreY memCtrl state machine`, widening with core
-   count. Measured on EP4CGX150: 1 core 7,870 LE (~107 MHz), 2 cores 19,439 LE
-   (+0.270 ns at 100 MHz), 4 cores 38,372 LE (**65.3 MHz**). Area allows ~12
-   cores at 73% with full caches; BRAM never binds (~52% at 16). Pipelining the
-   arbiter costs a cycle on every memory access — see item 11 before committing.
+### Item 4 — Copy phase — 79-82% of the minor pause and the dominant remaining term
 
-- **6.** ~~**Major GC constant unexplained**~~ — **LARGELY FIXED 2026-08-06, 2.6-3.2x.**
-   At 36k live objects, from three changes: an `imul` in `push()` (bug 29),
-   hoisting `push()`'s loop-invariant statics, and replacing sliding compaction
-   with **evacuation**, which removes the O(n log n) address sort entirely.
+**Copy phase — 79-82% of the minor pause** and the dominant remaining term.
+Latency-bound, not clock-bound: 132 cycles/handle at 75 MHz against 162 at
+100 MHz. The handle table is 2 MB against a 32 KB cache and a handle is
+exactly one 256-bit line, so ~6400 compulsory misses to find ~66 survivors.
+Plan in [gc/copy-phase-redesign.md](gc/copy-phase-redesign.md). The 5-8x
+estimate is **asserted from transaction counts, not measured**.
 
-   | board | before | after |
-   |---|---:|---:|
-   | EP4CGX150 SDR 100 MHz | 2214.9 ms | **859.1 ms** |
-   | CYC5000 SDR 80 MHz | — | **846.4 ms** |
-   | XC7A100T DDR3 100 MHz | 2214.9 ms | **689.8 ms** * |
+<a id="item-5"></a>
 
-   \* the only figure still measured with `GC_SORT_TRACE`/`GC_MARK_TRACE` on,
-   so it is ~6 ms pessimistic; not re-run since item 25 turned them off.
-   The CYC5000 beating the EP4CGX150 on a slower clock is the latency-bound
-   behaviour showing through. `GcPauseTest`'s explicit `GC.gc()` went
-   161 -> 12.4 ms. Minor GC unchanged (1344 / 1315 ns/handle).
-   Detail: [gc/major-gc-evacuation.md](gc/major-gc-evacuation.md).
+### Item 5 — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 
-   **Mark is now ~64% of what remains.** The one lever left is inlining `push`
-   into `mark`'s two loops to save its ~142-cycle call — worth ~102 ms of a
-   542 ms mark, against duplicating GC logic in the most safety-critical loop
-   in the collector. Not obviously worth it.
+**The BMB arbiter sets the clock ceiling at every core count** (headline
+corrected 2026-08-16 -- it read "caps SMP at 2 cores @ 100 MHz", which is no
+longer true: 12 cores run on the EP4CGX150 and 8 on Wukong DDR3, each at its
+own clock). What the arbiter costs is FREQUENCY, not core count: 60 MHz at 4,
+50 at 8, 36 at 12 on the EP4CGX150; 100 MHz at 4 and 91.68 at 6-8 on Wukong.
+The measurements below stand and the path is unchanged. Path is
+`coreX zeroCur -> arbiter -> coreY memCtrl state machine`, widening with core
+count. Measured on EP4CGX150: 1 core 7,870 LE (~107 MHz), 2 cores 19,439 LE
+(+0.270 ns at 100 MHz), 4 cores 38,372 LE (**65.3 MHz**). Area allows ~12
+cores at 73% with full caches; BRAM never binds (~52% at 16). Pipelining the
+arbiter costs a cycle on every memory access — see item 11 before committing.
 
-- **24.** ~~**The evacuation trade is untested at larger object sizes**~~ —
-    **MEASURED 2026-08-06, and the obvious fix was wrong.** `GcObjSizeTest`
-    holds handles fixed at 12024 and varies payload size: mark stays flat at
-    99.4 ms and copy is linear in live words at **0.673 µs/word**, so the
-    predicted ~38-word crossover measured at ~43 (XC7A100T) / ~40 (EP4CGX150) —
-    the one prediction all day that held.
+**2026-08-18.** Still true, and still about FREQUENCY. Worth separating from the
+throughput question now that the latter has been measured: the MSHR work found
+the DRAM *throughput* ceiling was `LruCacheCore`'s serial miss FSM, not the
+arbiter, and removing it took eight-core DDR2 from 1.81x to 4.28x and DDR3 from
+1.75x to 4.38x with the arbiter untouched. So this item is a clock-closure
+problem, and pipelining the arbiter buys Fmax at the cost of one cycle on every
+memory access — which item 38 should price before anyone commits.
 
-    **The size threshold that followed from it made every large-object row
-    325 ms worse and was reverted.** Sliding copies exactly as much as
-    evacuating under churn (1624.4 ms vs 1624.1 at 200 words), so it is strictly
-    worse by the whole sort. The crossover only exists in the *steady state*,
-    where a stable live set leaves objects already in position
-    (`GcMajorPauseTest`: slide copy 10 ms vs evacuation's 86). Deciding needs to
-    know how far objects are from their slide destination, which is not
-    derivable from live size and handle count. Left always-evacuate, both
-    regimes recorded in `chooseEvacDest`'s contract.
 
-    **So evacuation is not a strict improvement**: much better under churn,
-    worse for large objects in the steady state. An application benchmark
-    (item 11) is what would say which regime real code sits in.
+<a id="item-6"></a>
 
-    **Validated on a third memory system (CYC5000, Cyclone V SDR, 80 MHz,
-    2026-08-07)**, which is the one board whose *clock* differs and whose 8 MB
-    heap forces the sort-and-slide fallback deliberately rather than by
-    accident. Major pause **846.4 ms** at 36k live (against 859.1 on the
-    100 MHz EP4CGX150 — slower clock, faster collection, consistent with the
-    pause being latency-bound). `GcObjSizeTest`: evacuation at 2/10/40 words,
-    **fallback engaging at 100 words** (`sort_ms` 299.4), and the 200-word case
-    cleanly refused as too large for the heap. `corrupt 0`, `OBJSIZE OK`.
-    `GcPauseTest`: minor worst **9.292 ms**, sweep 1315 ns/handle, MAJOR OK,
-    retained 64/64, born-bad 0.
+### Item 6 — ~~Major GC constant unexplained — LARGELY FIXED 2026-08-06, 2.6-3.2x~~
 
-    Note `GcObjSizeTest`'s `passes` column reads 0 regardless now — it is under
-    `GC_SORT_TRACE`, which item 25 switched off. Read `sort_ms` to tell which
-    strategy ran.
+~~**Major GC constant unexplained**~~ — **LARGELY FIXED 2026-08-06, 2.6-3.2x.**
+At 36k live objects, from three changes: an `imul` in `push()` (bug 29),
+hoisting `push()`'s loop-invariant statics, and replacing sliding compaction
+with **evacuation**, which removes the O(n log n) address sort entirely.
 
-- **25.** ~~**Two loose ends from the GC work**~~ — **DONE 2026-08-06.**
-    `GC_SORT_TRACE` and `GC_MARK_TRACE` now default `false`; having them on cost
-    6.4 ms of the 865.6 ms pause, which matches the estimate made when they were
-    added. `prepareCompact` is now documented as **deliberately frozen** rather
-    than merely untouched — it is the last caller of `sortListByAddress`, still
-    slides to `heapStart`, and was not converted because the incremental
-    collector is unexercised (item 2) and evacuation needs its destination
-    reserved before the walk starts, which does not obviously survive being cut
-    into `COMPACT_STEP` pieces. Its comment warns that the pause figures in
-    `major-gc-evacuation.md` do not apply to that path.
+| board | before | after |
+|---|---:|---:|
+| EP4CGX150 SDR 100 MHz | 2214.9 ms | **859.1 ms** |
+| CYC5000 SDR 80 MHz | — | **846.4 ms** |
+| XC7A100T DDR3 100 MHz | 2214.9 ms | **689.8 ms** * |
 
-- **7.** **Root-scan floor: 2.2 / 4.7 / 8.5 ms** across SDR / DDR3 / DDR2. Tracks
-   memory latency, not clock (the SDR and DDR3 boards are both 100 MHz yet
-   differ 2.1x), so it will grow again on slower memory.
+\* the only figure still measured with `GC_SORT_TRACE`/`GC_MARK_TRACE` on,
+so it is ~6 ms pessimistic; not re-run since item 25 turned them off.
+The CYC5000 beating the EP4CGX150 on a slower clock is the latency-bound
+behaviour showing through. `GcPauseTest`'s explicit `GC.gc()` went
+161 -> 12.4 ms. Minor GC unchanged (1344 / 1315 ns/handle).
+Detail: [gc/major-gc-evacuation.md](gc/major-gc-evacuation.md).
+
+**Mark is now ~64% of what remains.** The one lever left is inlining `push`
+into `mark`'s two loops to save its ~142-cycle call — worth ~102 ms of a
+542 ms mark, against duplicating GC logic in the most safety-critical loop
+in the collector. Not obviously worth it.
+
+<a id="item-24"></a>
+
+### Item 24 — ~~The evacuation trade is untested at larger object sizes~~
+
+~~**The evacuation trade is untested at larger object sizes**~~ —
+**MEASURED 2026-08-06, and the obvious fix was wrong.** `GcObjSizeTest`
+holds handles fixed at 12024 and varies payload size: mark stays flat at
+99.4 ms and copy is linear in live words at **0.673 µs/word**, so the
+predicted ~38-word crossover measured at ~43 (XC7A100T) / ~40 (EP4CGX150) —
+the one prediction all day that held.
+
+**The size threshold that followed from it made every large-object row
+325 ms worse and was reverted.** Sliding copies exactly as much as
+evacuating under churn (1624.4 ms vs 1624.1 at 200 words), so it is strictly
+worse by the whole sort. The crossover only exists in the *steady state*,
+where a stable live set leaves objects already in position
+(`GcMajorPauseTest`: slide copy 10 ms vs evacuation's 86). Deciding needs to
+know how far objects are from their slide destination, which is not
+derivable from live size and handle count. Left always-evacuate, both
+regimes recorded in `chooseEvacDest`'s contract.
+
+**So evacuation is not a strict improvement**: much better under churn,
+worse for large objects in the steady state. An application benchmark
+(item 11) is what would say which regime real code sits in.
+
+**Validated on a third memory system (CYC5000, Cyclone V SDR, 80 MHz,
+2026-08-07)**, which is the one board whose *clock* differs and whose 8 MB
+heap forces the sort-and-slide fallback deliberately rather than by
+accident. Major pause **846.4 ms** at 36k live (against 859.1 on the
+100 MHz EP4CGX150 — slower clock, faster collection, consistent with the
+pause being latency-bound). `GcObjSizeTest`: evacuation at 2/10/40 words,
+**fallback engaging at 100 words** (`sort_ms` 299.4), and the 200-word case
+cleanly refused as too large for the heap. `corrupt 0`, `OBJSIZE OK`.
+`GcPauseTest`: minor worst **9.292 ms**, sweep 1315 ns/handle, MAJOR OK,
+retained 64/64, born-bad 0.
+
+Note `GcObjSizeTest`'s `passes` column reads 0 regardless now — it is under
+`GC_SORT_TRACE`, which item 25 switched off. Read `sort_ms` to tell which
+strategy ran.
+
+<a id="item-25"></a>
+
+### Item 25 — ~~Two loose ends from the GC work — DONE 2026-08-06~~
+
+~~**Two loose ends from the GC work**~~ — **DONE 2026-08-06.**
+`GC_SORT_TRACE` and `GC_MARK_TRACE` now default `false`; having them on cost
+6.4 ms of the 865.6 ms pause, which matches the estimate made when they were
+added. `prepareCompact` is now documented as **deliberately frozen** rather
+than merely untouched — it is the last caller of `sortListByAddress`, still
+slides to `heapStart`, and was not converted because the incremental
+collector is unexercised (item 2) and evacuation needs its destination
+reserved before the walk starts, which does not obviously survive being cut
+into `COMPACT_STEP` pieces. Its comment warns that the pause figures in
+`major-gc-evacuation.md` do not apply to that path.
+
+<a id="item-7"></a>
+
+### Item 7 — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+
+**Root-scan floor: 2.2 / 4.7 / 8.5 ms** across SDR / DDR3 / DDR2. Tracks
+memory latency, not clock (the SDR and DDR3 boards are both 100 MHz yet
+differ 2.1x), so it will grow again on slower memory.
 
 ### Hardware / infrastructure
 
-- **8.** **XC7A100T timing margin is +0.001 ns**, with one bad run in seven during
-   regression testing. A regression platform with no margin manufactures false
-   failures. Re-implement for margin.
+<a id="item-8"></a>
 
-- **9.** **Pico USB-Blaster needs a level shifter** — 74LVC8T245 (or 2x 74LVC2T45)
-   with `VCCB` from JTAG header pin 4. No firmware change can fix it: the clone
-   drives a fixed 3.3 V into a 2.5 V bank and reads 2.5 V against an RP2040
-   V_IH of ~2.15 V. Unblocks having both Altera boards connected at once. The
-   pull-up fix and `jtag_pintest.c` are **uncommitted** in `~/workspaces/pico-usb-blaster`.
+### Item 8 — XC7A100T timing margin is +0.001 ns — one bad run in seven
 
-- **10.** **pico-usb-blaster protocol bug** — low-level shift works (IDCODE reads
-    correctly), so the fault is in byte-shift-mode or response framing. Lower
-    priority now the level shifter is understood as the real blocker.
+**XC7A100T timing margin is +0.001 ns**, with one bad run in seven during
+regression testing. A regression platform with no margin manufactures false
+failures. Re-implement for margin.
 
-- **31.** **The BMB arbiter is what stops SMP scaling, on both FPGA families.**
-    Measured 2026-08-09 while validating item 1, and worth stating plainly
-    because it is easy to blame whatever feature was added last:
+<a id="item-9"></a>
 
-    | build | cores | result |
-    |---|---|---|
-    | EP4CGX150 @80 MHz | 2 | MET +0.133 ns |
-    | EP4CGX150 @80 MHz | 4 | **VIOLATED -2.399 ns** |
-    | EP4CGX150 @65 MHz | 4 | VIOLATED -0.070 ns |
-    | EP4CGX150 @60 MHz | 4 | MET +0.302 ns |
-    | Wukong `wukongSmpMinimal` @100 MHz | 4 | MET +0.192 ns |
-    | Wukong `wukongSmpMinimal` @100 MHz | 8 | **VIOLATED -0.227 ns** |
-    | Wukong `wukongDdr3Smp` @100 MHz | 4 | MET +0.081 ns, 55.4 % LUT |
-    | Wukong `wukongDdr3Smp` @100 MHz | 6 | VIOLATED -0.156 ns, 69.6 % LUT |
-    | Wukong `wukongDdr3Smp` @100 MHz | 8 | VIOLATED -0.805 ns, 86.9 % LUT |
-    | Wukong `wukongDdr3Smp` @91.68 MHz | 6 | **MET +0.018 ns**, 68.4 % LUT — validated |
-    | Wukong `wukongDdr3Smp` @91.68 MHz | 8 | **MET +0.074 ns**, 84.4 % LUT — validated |
+### Item 9 — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
 
-    Both 91.68 MHz rows are the `Ddr3_366` MIG profile plus the CDC constraint
-    below; **8 cores runs on hardware**, `SMPGC OK` with `cores 8, publishers 7`,
-    minors 10 / verified 192 / errors 0, over **16 runs — 4 cold plus a 12-run
-    back-to-back soak, 0 failures**.
+**Pico USB-Blaster needs a level shifter** — 74LVC8T245 (or 2x 74LVC2T45)
+with `VCCB` from JTAG header pin 4. No firmware change can fix it: the clone
+drives a fixed 3.3 V into a 2.5 V bank and reads 2.5 V against an RP2040
+V_IH of ~2.15 V. Unblocks having both Altera boards connected at once. The
+pull-up fix and `jtag_pintest.c` are **uncommitted** in `~/workspaces/pico-usb-blaster`.
 
-    The soak is the one that counts at +0.074 ns. Repeat runs are in this project
-    to catch INTERMITTENCY, and they have earned it (the Wukong 4-core case was
-    5/6, and that one failure was real information). But cold repeats re-measure
-    the same conditions; what threatens a design with 74 ps of margin is
-    temperature and voltage drift, so the runs were chained with no cooling gap
-    to let the die heat while under load. Prefer a soak to more cold repeats
-    whenever the margin is the worry rather than the logic. Utilisation at 8 cores: 53,524 / 63,400
-    LUT (84.4 %), 41,551 registers (32.8 %), 42.5 BRAM (31.5 %), 0 DSP. LUTs
-    bind; BRAM and registers have plenty of room.
+<a id="item-10"></a>
 
-    Note the clock is not the whole story — at 100 MHz the 8-core TNS was -203
-    over many endpoints, and at 91.68 with the CDC constrained it is 0. Some of
-    that -0.805 was bogus paths, not congestion.
+### Item 10 — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
 
-    The `wukongDdr3Smp` rows (2026-08-15) are the generational-capable config —
-    card table, ICU, both caches — as opposed to `wukongSmpMinimal`, which has
-    no card table and so cannot run the generational test at all.
+**pico-usb-blaster protocol bug** — low-level shift works (IDCODE reads
+correctly), so the fault is in byte-shift-mode or response framing. Lower
+priority now the level shifter is understood as the real blocker.
 
-    **ON THE WUKONG THE SYSTEM CLOCK IS NOT A FREE PLL OUTPUT.** For DDR3,
-    `Board.scala`'s `SDRAM_DDR3` case returns NO `systemClk` — only `migSysClk`,
-    `migRefClk` and `ethClk` — and `JopTop.scala:324` clocks the whole cluster
-    from `ddr3Mig.io.ui_clk`. `mig.prj` sets `TimePeriod 2500` ps (400 MHz
-    memory) and `PHYRatio 4:1`, so **ui_clk = 400/4 = 100 MHz**. Lowering the
-    core clock means regenerating the MIG with a longer `TimePeriod`; it is
-    quantised, not continuous:
+<a id="item-31"></a>
 
-    | TimePeriod | memory clock | ui_clk (4:1) | covers |
-    |---|---|---|---|
-    | 2500 ps | 400 MHz | 100 MHz | 4 cores only (today) |
-    | 2727 ps | 366.7 MHz | 91.7 MHz | **6 and 8 cores both close** |
-    | 3000 ps | 333.3 MHz | 83.3 MHz | headroom |
-    | 3300 ps | 303 MHz | 75.8 MHz | near the DDR3 DLL floor |
+### Item 31 — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
 
-    Required Fmax is 98.5 MHz at 6 cores and 92.6 at 8, so **one MIG
-    regeneration at 2727 ps unlocks both** — at the price of 8 % of DDR3
-    bandwidth. Capacity is not the constraint at either count (69.6 % / 86.9 %),
-    though 8 cores routes with heavy congestion (2604 nodes with overlaps mid-
-    route, TNS -203) where 6 does not (TNS -0.628 from a single path).
+**The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note).**
+Measured 2026-08-09 while validating item 1, and worth stating plainly
+because it is easy to blame whatever feature was added last:
 
-    **AN UNCONSTRAINED CDC WAS HIDING BEHIND THE 2:1 CLOCK RATIO** (fixed
-    2026-08-16, `wukong_ddr3.xdc`). Dropping ui_clk to 91.65 MHz made the 6-core
-    build come back **WORSE**, WNS -2.037 against -0.156 at 100 MHz, which looks
-    impossible for a slower clock. The failing path was not the arbiter:
+| build | cores | result |
+|---|---|---|
+| EP4CGX150 @80 MHz | 2 | MET +0.133 ns |
+| EP4CGX150 @80 MHz | 4 | **VIOLATED -2.399 ns** |
+| EP4CGX150 @65 MHz | 4 | VIOLATED -0.070 ns |
+| EP4CGX150 @60 MHz | 4 | MET +0.302 ns |
+| Wukong `wukongSmpMinimal` @100 MHz | 4 | MET +0.192 ns |
+| Wukong `wukongSmpMinimal` @100 MHz | 8 | **VIOLATED -0.227 ns** |
+| Wukong `wukongDdr3Smp` @100 MHz | 4 | MET +0.081 ns, 55.4 % LUT |
+| Wukong `wukongDdr3Smp` @100 MHz | 6 | VIOLATED -0.156 ns, 69.6 % LUT |
+| Wukong `wukongDdr3Smp` @100 MHz | 8 | VIOLATED -0.805 ns, 86.9 % LUT |
+| Wukong `wukongDdr3Smp` @91.68 MHz | 6 | **MET +0.018 ns**, 68.4 % LUT — validated |
+| Wukong `wukongDdr3Smp` @91.68 MHz | 8 | **MET +0.074 ns**, 84.4 % LUT — validated |
 
-        Source:      cores_0/uart_1/.../_zz_io_txd_reg   clk_pll_i period=10.911
-        Destination: io_uart_txd_buffercc/buffers_0_reg  sys_clk   period=20.000
-        Requirement: 0.325 ns
+Both 91.68 MHz rows are the `Ddr3_366` MIG profile plus the CDC constraint
+below; **8 cores runs on hardware**, `SMPGC OK` with `cores 8, publishers 7`,
+minors 10 / verified 192 / errors 0, over **16 runs — 4 cold plus a 12-run
+back-to-back soak, 0 failures**.
 
-    a crossing between ui_clk and the 50 MHz board oscillator. While ui_clk was
-    exactly 2x sys_clk the edges aligned and the analyser allowed a full period;
-    at a 1.833 ratio the common period collapses to 0.325 ns. `buffercc` is
-    SpinalHDL's two-FF synchroniser, so this is a genuine asynchronous crossing
-    that was never declared -- the Ethernet crossings next to it already are.
-    Adding `set_clock_groups -asynchronous` for sys_clk/clk_pll_i took it from
-    -2.037 to **+0.018**.
+**2026-08-18 — scope correction.** The headline read "what stops SMP scaling",
+which is ambiguous and was taken too broadly, including by me. Every row in the
+table above is **timing closure**, MET or VIOLATED — none of it measures
+throughput. The throughput ceiling was separately shown to be `LruCacheCore`'s
+serial miss FSM: fixing that moved eight cores from 1.81x to 4.28x (DDR2) and
+1.75x to 4.38x (DDR3) **with the arbiter unchanged**.
 
-    Worth generalising: a timing result that gets WORSE when you slow the clock
-    is a synchronous-CDC artefact, not a logic problem. Read the failing path
-    before touching anything else.
+A later reading of the post-MSHR numbers — three memory architectures landing
+within 4 % of each other — was briefly taken as evidence that the arbiter is now
+the shared ceiling. **That is retracted.** Dividing throughput by the work each
+memory performs shows three different limits: SDR at its controller's sustained
+command rate, the two DRAM paths at the L2's serial hit path (item 39). **There
+is no measurement implicating the arbiter in throughput.** It caps frequency
+(item 5); that is the claim to work from.
 
-    On the EP4CGX150 the worst path is
-    `cores_1|memCtrl|zeroCur -> [BMB arbiter] -> cores_3|memCtrl|bcFillAddr`,
-    with **zero CardTable nodes and 16 arbiter nodes** on it — so this is not
-    the shared card table from item 1, and the 2-core build with identical RTL
-    closes. On the Wukong at 8 cores the negative slack is spread over many
-    endpoints (TNS -20.3) rather than one path, which is congestion, not a
-    single fixable chain.
 
-    **Capacity is not the limit on the Wukong** — 8 generational-capable cores
-    fit in 86.9 % of the XC7A100T's LUTs. It IS the limit on the EP4CGX150 above
-    12 cores: 16 needs 182,501 of 149,760 LE (122 %). Below that the ceiling is
-    arbiter timing, and on the Wukong it is arbiter timing plus routing
-    congestion at 8 cores.
+The soak is the one that counts at +0.074 ns. Repeat runs are in this project
+to catch INTERMITTENCY, and they have earned it (the Wukong 4-core case was
+5/6, and that one failure was real information). But cold repeats re-measure
+the same conditions; what threatens a design with 74 ps of margin is
+temperature and voltage drift, so the runs were chained with no cooling gap
+to let the die heat while under load. Prefer a soak to more cold repeats
+whenever the margin is the worry rather than the logic. Utilisation at 8 cores: 53,524 / 63,400
+LUT (84.4 %), 41,551 registers (32.8 %), 42.5 BRAM (31.5 %), 0 DSP. LUTs
+bind; BRAM and registers have plenty of room.
 
-    Consequence today: 4-core SMP GC validation runs at 60 MHz on the
-    EP4CGX150. That is enough to prove correctness but not to measure SMP
-    scaling honestly — any throughput number taken there is at a handicapped
-    clock. Fixing this is what unlocks the item 5 question (whether a cycle of
-    arbiter latency is worth 4+ cores), and it needs a pipelined or
-    tree-structured arbiter rather than the flat round-robin.
+Note the clock is not the whole story — at 100 MHz the 8-core TNS was -203
+over many endpoints, and at 91.68 with the CDC constrained it is 0. Some of
+that -0.805 was bogus paths, not congestion.
+
+The `wukongDdr3Smp` rows (2026-08-15) are the generational-capable config —
+card table, ICU, both caches — as opposed to `wukongSmpMinimal`, which has
+no card table and so cannot run the generational test at all.
+
+**ON THE WUKONG THE SYSTEM CLOCK IS NOT A FREE PLL OUTPUT.** For DDR3,
+`Board.scala`'s `SDRAM_DDR3` case returns NO `systemClk` — only `migSysClk`,
+`migRefClk` and `ethClk` — and `JopTop.scala:324` clocks the whole cluster
+from `ddr3Mig.io.ui_clk`. `mig.prj` sets `TimePeriod 2500` ps (400 MHz
+memory) and `PHYRatio 4:1`, so **ui_clk = 400/4 = 100 MHz**. Lowering the
+core clock means regenerating the MIG with a longer `TimePeriod`; it is
+quantised, not continuous:
+
+| TimePeriod | memory clock | ui_clk (4:1) | covers |
+|---|---|---|---|
+| 2500 ps | 400 MHz | 100 MHz | 4 cores only (today) |
+| 2727 ps | 366.7 MHz | 91.7 MHz | **6 and 8 cores both close** |
+| 3000 ps | 333.3 MHz | 83.3 MHz | headroom |
+| 3300 ps | 303 MHz | 75.8 MHz | near the DDR3 DLL floor |
+
+Required Fmax is 98.5 MHz at 6 cores and 92.6 at 8, so **one MIG
+regeneration at 2727 ps unlocks both** — at the price of 8 % of DDR3
+bandwidth. Capacity is not the constraint at either count (69.6 % / 86.9 %),
+though 8 cores routes with heavy congestion (2604 nodes with overlaps mid-
+route, TNS -203) where 6 does not (TNS -0.628 from a single path).
+
+**AN UNCONSTRAINED CDC WAS HIDING BEHIND THE 2:1 CLOCK RATIO** (fixed
+2026-08-16, `wukong_ddr3.xdc`). Dropping ui_clk to 91.65 MHz made the 6-core
+build come back **WORSE**, WNS -2.037 against -0.156 at 100 MHz, which looks
+impossible for a slower clock. The failing path was not the arbiter:
+
+    Source:      cores_0/uart_1/.../_zz_io_txd_reg   clk_pll_i period=10.911
+    Destination: io_uart_txd_buffercc/buffers_0_reg  sys_clk   period=20.000
+    Requirement: 0.325 ns
+
+a crossing between ui_clk and the 50 MHz board oscillator. While ui_clk was
+exactly 2x sys_clk the edges aligned and the analyser allowed a full period;
+at a 1.833 ratio the common period collapses to 0.325 ns. `buffercc` is
+SpinalHDL's two-FF synchroniser, so this is a genuine asynchronous crossing
+that was never declared -- the Ethernet crossings next to it already are.
+Adding `set_clock_groups -asynchronous` for sys_clk/clk_pll_i took it from
+-2.037 to **+0.018**.
+
+Worth generalising: a timing result that gets WORSE when you slow the clock
+is a synchronous-CDC artefact, not a logic problem. Read the failing path
+before touching anything else.
+
+On the EP4CGX150 the worst path is
+`cores_1|memCtrl|zeroCur -> [BMB arbiter] -> cores_3|memCtrl|bcFillAddr`,
+with **zero CardTable nodes and 16 arbiter nodes** on it — so this is not
+the shared card table from item 1, and the 2-core build with identical RTL
+closes. On the Wukong at 8 cores the negative slack is spread over many
+endpoints (TNS -20.3) rather than one path, which is congestion, not a
+single fixable chain.
+
+**Capacity is not the limit on the Wukong** — 8 generational-capable cores
+fit in 86.9 % of the XC7A100T's LUTs. It IS the limit on the EP4CGX150 above
+12 cores: 16 needs 182,501 of 149,760 LE (122 %). Below that the ceiling is
+arbiter timing, and on the Wukong it is arbiter timing plus routing
+congestion at 8 cores.
+
+Consequence today: 4-core SMP GC validation runs at 60 MHz on the
+EP4CGX150. That is enough to prove correctness but not to measure SMP
+scaling honestly — any throughput number taken there is at a handicapped
+clock. Fixing this is what unlocks the item 5 question (whether a cycle of
+arbiter latency is worth 4+ cores), and it needs a pipelined or
+tree-structured arbiter rather than the flat round-robin.
 
 ### The measurement gap
 
-- **11.** **Application benchmark now EXISTS (`java/apps/JbeBench`, 2026-08-16);
-    one of the five decisions is settled, four remain.**
+<a id="item-11"></a>
 
-    JavaBenchEmbedded ported from the original JOP tree — Kfl, UdpIp, Lift, via
-    `jbe.DoApp`. Baseline, EP4CGX150 single core @80 MHz: Kfl 7742, UdpIp 3524,
-    Lift 12681 iterations/s.
+### Item 11 — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
 
-    **SETTLED — the caches earn their area.** `ep4cgx150NoCache` A/B, single
-    variable:
+**Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+one of the five decisions is settled, four remain.**
 
-    | | with caches | no caches | gain |
-    |---|---|---|---|
-    | Kfl | 7742 | 7386 | +4.8 % |
-    | UdpIp | 3524 | 2761 | +27.6 % |
-    | Lift | 12681 | 6400 | **+98.1 %** |
-    | area | 8,784 LE | 6,386 LE | caches cost **2,398 LE**, +37.6 % |
+JavaBenchEmbedded ported from the original JOP tree — Kfl, UdpIp, Lift, via
+`jbe.DoApp`. Baseline, EP4CGX150 single core @80 MHz: Kfl 7742, UdpIp 3524,
+Lift 12681 iterations/s.
 
-    +37.6 % area for +98 % / +28 % is a trade nothing else in the core
-    approaches. Kfl at +4.8 % is the marginal case.
+**SETTLED — the caches earn their area.** `ep4cgx150NoCache` A/B, single
+variable:
 
-    **A METHOD NOTE THAT COST A WRONG PREDICTION.** Clock-scaling (running the
-    same build at 36 vs 80 MHz) shows whether a workload is memory-bound *in its
-    current configuration*, NOT whether it is memory-intensive. Lift scaled
-    almost linearly with clock and I read that as compute-bound — then it nearly
-    halved without caches, because its working set FITS the caches and so it
-    rarely reaches SDRAM. Only an A/B against the feature itself separates the
-    two. Full account in the JbeBench README.
+| | with caches | no caches | gain |
+|---|---|---|---|
+| Kfl | 7742 | 7386 | +4.8 % |
+| UdpIp | 3524 | 2761 | +27.6 % |
+| Lift | 12681 | 6400 | **+98.1 %** |
+| area | 8,784 LE | 6,386 LE | caches cost **2,398 LE**, +37.6 % |
 
-    **Still open, and what each now needs:**
-    - item 5/31, arbiter latency vs core count — needs slice B, a parallel
-      throughput harness. Note the finding above reframes it: Kfl and UdpIp do
-      ~25 % more work per MHz at 36 MHz than 80, so a pipelined arbiter costing
-      a cycle per access is a worse deal for memory-bound work than a
-      clock-focused reading suggests.
-    - item 4, whether the copy redesign helps real workloads — JbeBench can
-      answer it now; needs an allocation-profile report alongside throughput.
-    - item 20, whether the double bytecodes deserve microcode — needs the
-      `DoMicro`/`DoKernel` drivers, which already compile and just need a second
-      `.jop` with a different main class.
-    - item 24, churn vs steady-state regime — needs the same allocation profile
-      as item 4.
++37.6 % area for +98 % / +28 % is a trade nothing else in the core
+approaches. Kfl at +4.8 % is the marginal case.
 
-    *Original entry:* **There is no application benchmark, and four decisions rest on it:**
-    whether a cycle of arbiter latency is worth 4+ cores (item 5); whether the
-    caches (2,213 LE/core, 33% of a core) earn their area; whether the copy
-    redesign helps real workloads (item 4); and whether the double bytecodes are
-    used enough to deserve microcode at all (item 20); and — added 2026-08-07 —
-    whether real workloads sit in the churn or steady-state regime, which is
-    what decides evacuate-versus-slide (item 24). Currently all five are
-    reasoned rather than measured. Probably the highest-leverage thing to build next —
-    and items 1 and 2 need a multi-core allocating application anyway, so the
-    first slice of this is already on the critical path (see *Coupling*).
+**A METHOD NOTE THAT COST A WRONG PREDICTION.** Clock-scaling (running the
+same build at 36 vs 80 MHz) shows whether a workload is memory-bound *in its
+current configuration*, NOT whether it is memory-intensive. Lift scaled
+almost linearly with clock and I read that as compute-bound — then it nearly
+halved without caches, because its working set FITS the caches and so it
+rarely reaches SDRAM. Only an A/B against the feature itself separates the
+two. Full account in the JbeBench README.
+
+**Still open, and what each now needs:**
+- item 5/31, arbiter latency vs core count — needs slice B, a parallel
+  throughput harness. Note the finding above reframes it: Kfl and UdpIp do
+  ~25 % more work per MHz at 36 MHz than 80, so a pipelined arbiter costing
+  a cycle per access is a worse deal for memory-bound work than a
+  clock-focused reading suggests.
+- item 4, whether the copy redesign helps real workloads — JbeBench can
+  answer it now; needs an allocation-profile report alongside throughput.
+- item 20, whether the double bytecodes deserve microcode — needs the
+  `DoMicro`/`DoKernel` drivers, which already compile and just need a second
+  `.jop` with a different main class.
+- item 24, churn vs steady-state regime — needs the same allocation profile
+  as item 4.
+
+*Original entry:* **There is no application benchmark, and four decisions rest on it:**
+whether a cycle of arbiter latency is worth 4+ cores (item 5); whether the
+caches (2,213 LE/core, 33% of a core) earn their area; whether the copy
+redesign helps real workloads (item 4); and whether the double bytecodes are
+used enough to deserve microcode at all (item 20); and — added 2026-08-07 —
+whether real workloads sit in the churn or steady-state regime, which is
+what decides evacuate-versus-slide (item 24). Currently all five are
+reasoned rather than measured. Probably the highest-leverage thing to build next —
+and items 1 and 2 need a multi-core allocating application anyway, so the
+first slice of this is already on the critical path (see *Coupling*).
 
 ### Smaller
 
-- **36.** ~~**The `stall freezes jpc, jinstr and the dispatch address` formal
-    property timed out in CI**~~ — **FIXED 2026-08-15**, timeout 300 -> 900 s.
-    Not a regression and not a counterexample: SymbiYosys was killed at the wall
-    having reached BMC step 5, reported as `*** FAILED *** (5 minutes, 2
-    seconds)` + `java.lang.Exception: SymbiYosys failure`. The property takes
-    **2m47s locally** and CI's runner is roughly twice as slow, so it failed or
-    passed according to how busy the runner was — including on commits touching
-    no RTL at all (`fb3e8b6` is Java and docs only, and failed; `0da41f1` has
-    the same RTL and passed). Worth recognising the signature: a formal
-    "failure" with no counterexample and a duration equal to the timeout is a
-    timeout.
+<a id="item-36"></a>
 
-    Tried and rejected: pinning `jbcWrAddr`/`jbcWrData`, which under
-    `assume(!jbcWrEn)` cannot affect anything and so looked like 19 free bits
-    per step the BMC need not carry. It made the property **slower**, 2m47s ->
-    3m42s — extra assumes change the solver's search and here for the worse.
-    The note is left in the source so it is not re-attempted.
+### Item 36 — ~~The `stall freezes jpc, jinstr and the dispatch address` formal~~
 
-    This property is worth its runtime: it is the one that pins the freeze
-    invariant behind the three cascading fetch bugs, and no whole-system sim
-    catches that class.
+~~**The `stall freezes jpc, jinstr and the dispatch address` formal
+property timed out in CI**~~ — **FIXED 2026-08-15**, timeout 300 -> 900 s.
+Not a regression and not a counterexample: SymbiYosys was killed at the wall
+having reached BMC step 5, reported as `*** FAILED *** (5 minutes, 2
+seconds)` + `java.lang.Exception: SymbiYosys failure`. The property takes
+**2m47s locally** and CI's runner is roughly twice as slow, so it failed or
+passed according to how busy the runner was — including on commits touching
+no RTL at all (`fb3e8b6` is Java and docs only, and failed; `0da41f1` has
+the same RTL and passed). Worth recognising the signature: a formal
+"failure" with no counterexample and a duration equal to the timeout is a
+timeout.
 
-- **29.** **`BytecodeFetchStage: JumpTable integration` is flaky in CI, and the
-    failure is seed-dependent.** It broke the 2026-08-08 push and a rerun of the
-    *same commit* passed, so it is not a regression. Reproduce on demand:
+Tried and rejected: pinning `jbcWrAddr`/`jbcWrData`, which under
+`assume(!jbcWrEn)` cannot affect anything and so looked like 19 free bits
+per step the BMC need not carry. It made the property **slower**, 2m47s ->
+3m42s — extra assumes change the solver's search and here for the worse.
+The note is left in the source so it is not re-attempted.
 
-    ```scala
-    // BytecodeFetchStageTest.scala:161
-    bcfSimConfig.compile(createDut(jbcData)).doSim(seed = 360571106) { dut =>
-    ```
+This property is worth its runtime: it is the one that pins the freeze
+invariant behind the three cascading fetch bugs, and no whole-system sim
+catches that class.
 
-    gives the CI failure exactly — `1868 did not equal 550, NOP should map to
-    0x226, got 0x74C`. `0x74C` is `entries[0xEC]`, and `0xEC` is an *undefined*
-    bytecode (the highest address in the table, the not-implemented handler), so
-    the DUT sampled an undefined bytecode rather than byte 0/1/2 of the test ROM
-    — randomised post-reset state, not a mis-timed read. Adding a settle cycle
-    does **not** fix it (tried; identical failure), so the cause is upstream in
-    what the JBC RAM or `jpc` hold after reset.
+<a id="item-29"></a>
 
-    Ruled out, each of which looks plausible until checked: stale generated
-    artifacts (`asm/generated/` is gitignored and CI rebuilds it, but
-    regenerating locally with CI's exact `make && make serial && make
-    flash-altera` gives **byte-identical** output); parallel test collisions
-    (`build.sbt` sets `Test / parallelExecution := false`).
-- **30.** **`JopJvmTestsBramSim` (the CI baseline job) intermittently dies at
-    `E1` — the GC runs out of heap on its first allocation.** Broke the
-    2026-08-09 scheduled run; a rerun of the *same commit* passed, so it is not a
-    regression. Whole JVM output on a bad run:
+### Item 29 — `BytecodeFetchStage: JumpTable integration` is flaky in CI
 
-    ```
-    Small boot
-    GC init...
-    GC: classic (no card table - generational disabled)
-    E1
-    ```
+**`BytecodeFetchStage: JumpTable integration` is flaky in CI
+failure is seed-dependent.** It broke the 2026-08-08 push and a rerun of the
+*same commit* passed, so it is not a regression. Reproduce on demand:
 
-    then 60,000,000 cycles of silence. `E1` is `GC.java:2134` — the first
-    allocation (creating the mutex) finds `copyPtr+size >= allocPtr` and hits a
-    deliberate `for(;;)`. So a bad run reports "no results found", not a test
-    failure. Both good and bad runs execute the full 60M cycles; the difference
-    is that the program hangs, not that it runs out of budget.
+```scala
+// BytecodeFetchStageTest.scala:161
+bcfSimConfig.compile(createDut(jbcData)).doSim(seed = 360571106) { dut =>
+```
 
-    **Ruled out — every one of these looks like the answer until measured:**
+gives the CI failure exactly — `1868 did not equal 550, NOP should map to
+0x226, got 0x74C`. `0x74C` is `entries[0xEC]`, and `0xEC` is an *undefined*
+bytecode (the highest address in the table, the not-implemented handler), so
+the DUT sampled an undefined bytecode rather than byte 0/1/2 of the test ROM
+— randomised post-reset state, not a mis-timed read. Adding a settle cycle
+does **not** fix it (tried; identical failure), so the cause is upstream in
+what the JBC RAM or `jpc` hold after reset.
 
-    - *The DCU change* (the only functional RTL change in the window): the sim
-      passes locally on that exact RTL.
-    - *A config change shifting I/O addresses*: regenerating `Const.java` with
-      CI's own command produces a **byte-identical** file.
-    - *`DoAll.jop` outgrowing the 512 KB BRAM*: CI logs `ls -l DoAll.jop` on
-      every run — **2,926,493 bytes on both** the passing and failing runs.
-    - *Seed dependence* (as in item 29): running locally with CI's failing seed
-      `405669157` passes. Failing seed 405669157, passing seeds 42187758 and
-      1370482694. **Strengthened 2026-08-09**: a ten-seed sweep against the
-      **CI-identical** `DoAll.jop` (`f388b4ca…`) — including CI's failing seed —
-      came back healthy on all ten. So image *and* seed together are not
-      sufficient to reproduce; whatever differs really is environmental.
-      `JOP_SIM_SEED` makes replaying any future failing seed a one-liner.
+Ruled out, each of which looks plausible until checked: stale generated
+artifacts (`asm/generated/` is gitignored and CI rebuilds it, but
+regenerating locally with CI's exact `make && make serial && make
+flash-altera` gives **byte-identical** output); parallel test collisions
+(`build.sbt` sets `Test / parallelExecution := false`).
 
-    **Do not be misled by the `Elaboration failed (2 errors)` /
-    `UNASSIGNED REGISTER (.../icu/resultReg)` messages in the log.** They appear
-    *identically in passing runs* — SpinalHDL restarts with a scala trace and
-    continues. They are long-standing noise and cost real time here.
+<a id="item-30"></a>
 
-    **Correction (2026-08-09): "passes locally" above was not a clean
-    exoneration — CI and a local build produce DIFFERENT `DoAll.jop` images.**
-    The first fingerprints (added the same day) showed CI's `DoAll.jop` at
-    `f388b4ca…` against a local `2f5d046c…`, while `mem_rom.dat`,
-    `mem_ram.dat`, `JumpTableData.scala` and `Const.java` all matched exactly.
-    **Cause: TWO JVMs shape the image, and both differed from CI.** Resolved
-    2026-08-09 — local now reproduces CI's `DoAll.jop` **byte for byte**
-    (`f388b4ca…`).
+### Item 30 — `JopJvmTestsBramSim` — the CI baseline job — intermittently dies
 
-    | | sets | was local | is CI |
-    |---|---|---|---|
-    | `TARGET_JDK_HOME` (target `javac`) | image **size** | JDK 6 | **JDK 8** |
-    | `JAVA` (runs JOPizer/PreLinker) | image **layout** | JDK 21 | **JDK 17** |
+**`JopJvmTestsBramSim` — the CI baseline job — intermittently dies
+`E1` — the GC runs out of heap on its first allocation.** Broke the
+2026-08-09 scheduled run; a rerun of the *same commit* passed, so it is not a
+regression. Whole JVM output on a bad run:
 
-    The size difference is the target `javac` alone (JDK 8's image is 4645 bytes
-    / ~116 words larger). With JDK 8 the size matched CI exactly while the bytes
-    still differed — that residual was the *tools* JVM, not the target one.
-    Hypotheses tested and killed on the way: the JDK 8 **patch** level (1.8.0_202
-    and 8u492 produce identical output), and source-file ordering from `find`
-    (reversing it produces a byte-identical `.jop`; the toolchain normalises it).
+```
+Small boot
+GC init...
+GC: classic (no card table - generational disabled)
+E1
+```
 
-    Both JDKs are now pinned and installed at `/opt/jdk8u492-b09` and
-    `/opt/jdk-17.0.19+10`, matching CI's Temurin 8.0.492 / 17.0.19. The
-    Makefiles default `TARGET_JDK_HOME` to the former. `JAVA ?= java` is
-    deliberately left alone — hardcoding a path there would break CI, which gets
-    its 17 from `setup-java`. For a CI-identical build:
+then 60,000,000 cycles of silence. `E1` is `GC.java:2134` — the first
+allocation (creating the mutex) finds `copyPtr+size >= allocPtr` and hits a
+deliberate `for(;;)`. So a bad run reports "no results found", not a test
+failure. Both good and bad runs execute the full 60M cycles; the difference
+is that the program hangs, not that it runs out of budget.
 
-    ```sh
-    JAVA_HOME=/opt/jdk-17.0.19+10 PATH=/opt/jdk-17.0.19+10/bin:$PATH make ...
-    ```
+**Ruled out — every one of these looks like the answer until measured:**
 
-    Builds are deterministic **within** an environment: two consecutive local
-    builds are byte-identical, so this was never per-build randomness.
+- *The DCU change* (the only functional RTL change in the window): the sim
+  passes locally on that exact RTL.
+- *A config change shifting I/O addresses*: regenerating `Const.java` with
+  CI's own command produces a **byte-identical** file.
+- *`DoAll.jop` outgrowing the 512 KB BRAM*: CI logs `ls -l DoAll.jop` on
+  every run — **2,926,493 bytes on both** the passing and failing runs.
+- *Seed dependence* (as in item 29): running locally with CI's failing seed
+  `405669157` passes. Failing seed 405669157, passing seeds 42187758 and
+  1370482694. **Strengthened 2026-08-09**: a ten-seed sweep against the
+  **CI-identical** `DoAll.jop` (`f388b4ca…`) — including CI's failing seed —
+  came back healthy on all ten. So image *and* seed together are not
+  sufficient to reproduce; whatever differs really is environmental.
+  `JOP_SIM_SEED` makes replaying any future failing seed a one-liner.
 
-    **The JDK 8 toolchain is validated on hardware across all five attached
-    boards, three FPGA vendors and three toolchains** (2026-08-09) — every app
-    image was rebuilt by the switch, so this is a re-validation of the whole
-    fleet, not a spot check:
+**Do not be misled by the `Elaboration failed (2 errors)` /
+`UNASSIGNED REGISTER (.../icu/resultReg)` messages in the log.** They appear
+*identically in passing runs* — SpinalHDL restarts with a scala trace and
+continues. They are long-standing noise and cost real time here.
 
-    | board | config | result |
-    |---|---|---|
-    | Wukong (Artix-7) | `wukongDdr3Fcu` — DDR3 | **66/66** |
-    | Wukong | `wukongSdram` — SDR | **66/66** |
-    | Wukong | `wukongSmp2` — 2-core | `SmpCacheTest` **PASS** + DoAll **66/66** |
-    | Wukong | `wukongDualIndependent` — DDR3 cluster | **66/66** |
-    | Wukong | `wukongDualIndependent` — SDR cluster | **66/66** |
-    | EP4CGX150 (Cyclone IV, Quartus) | `jop_sdram` | **66/66** |
-    | XC7A100T + DB V5 (Vivado) | DDR3 | **66/66** |
-    | Colorlight i5 (ECP5, yosys/nextpnr) | SDRAM | **66/66** |
-    | CYC5000 (Cyclone V, Quartus) | `jop_cyc5000` SDRAM | **66/66** |
+**Correction (2026-08-09): "passes locally" above was not a clean
+exoneration — CI and a local build produce DIFFERENT `DoAll.jop` images.**
+The first fingerprints (added the same day) showed CI's `DoAll.jop` at
+`f388b4ca…` against a local `2f5d046c…`, while `mem_rom.dat`,
+`mem_ram.dat`, `JumpTableData.scala` and `Const.java` all matched exactly.
+**Cause: TWO JVMs shape the image, and both differed from CI.** Resolved
+2026-08-09 — local now reproduces CI's `DoAll.jop` **byte for byte**
+(`f388b4ca…`).
 
-    Plus `JopJvmTestsBramSim` 66/66 in simulation. The i5, CYC5000 and Wukong
-    SDR runs all report the same download checksum (`0x695472d1`), confirming
-    the boards ran an identical image.
+| | sets | was local | is CI |
+|---|---|---|---|
+| `TARGET_JDK_HOME` (target `javac`) | image **size** | JDK 6 | **JDK 8** |
+| `JAVA` (runs JOPizer/PreLinker) | image **layout** | JDK 21 | **JDK 17** |
 
-    The CYC5000 needed a rebuild first: its `.sof` had vanished even though the
-    2026-08-07 build **succeeded** (`Flow Status: Successful - Fri Aug 7
-    08:15:11`) and every report from that run survived. It was not staleness —
-    neither make nor Quartus deletes a target for being out of date — and not
-    `make clean` or `git clean`, both of which would have taken the reports too
-    (all of `output_files/` is gitignored). Something removed only that one
-    file; the cause could not be established from what was on disk. Rebuilt with
-    `make -C fpga/cyc5000-sdram all`, timing met (worst slack +0.383 ns).
+The size difference is the target `javac` alone (JDK 8's image is 4645 bytes
+/ ~116 words larger). With JDK 8 the size matched CI exactly while the bytes
+still differed — that residual was the *tools* JVM, not the target one.
+Hypotheses tested and killed on the way: the JDK 8 **patch** level (1.8.0_202
+and 8u492 produce identical output), and source-file ordering from `find`
+(reversing it produces a byte-identical `.jop`; the toolchain normalises it).
 
-    That last point matters for diagnosing this item. If CI's `DoAll.jop` hash
-    ever differs between two runs of the *same commit*, then CI is running a
-    different binary each time and that is the whole explanation — no
-    environmental theory needed. The fingerprints now recorded on every run make
-    that a one-line comparison; it could not be checked for the 2026-08-09
-    failure because only `ls -l` sizes existed then, and they were equal.
+Both JDKs are now pinned and installed at `/opt/jdk8u492-b09` and
+`/opt/jdk-17.0.19+10`, matching CI's Temurin 8.0.492 / 17.0.19. The
+Makefiles default `TARGET_JDK_HOME` to the former. `JAVA ?= java` is
+deliberately left alone — hardcoding a path there would break CI, which gets
+its 17 from `setup-java`. For a CI-identical build:
 
-    The 4645-byte difference is far too small to cause `E1` by itself: the
-    baseline sim has ~58,000 words of heap headroom.
-- **12.** **`LongComputeUnitConfig` has no enable flag** for its base 64-bit ALU
-    (`ladd/lsub/lneg/lcmp`), unlike `FloatComputeUnitConfig.withAdd`. Worked
-    around at the `ComputeUnitTop` level (conditional instantiation), but the
-    config asymmetry remains and would bite anyone relying on the `with*` flags
-    alone.
-- **13.** **`java/apps/Small` `make clean` deletes `HelloWorld.jop`** — `JOP_OUT`
-    derives from `APP_NAME`, which defaults to HelloWorld. Cost a sim failure
-    and nearly a wrong SMP result. Build HelloWorld last, or `rm -rf build`.
-- **14.** **Stack cache SDRAM integration** — pre-existing; 3-bank rotation verified
-    in BRAM simulation, needs per-core stack regions on SDRAM.
-- **15.** ~~**`GcPauseTest` on the Wukong boards** — never run~~ — **DONE
-    2026-08-07.** Wukong XC7A100T + DDR3, `wukongFull` at 100 MHz: minor pause
-    **worst 11.840 ms / mean 11.813** over 63 collections, sweep 1624
-    ns/handle, copy **87%** of the pause (the other boards are 79-82%), major
-    `MAJOR OK` with retained 64/64 and `corrupt 0`, free 262 MB.
-    `GcMajorPauseTest` at 36k live: **681.2 ms**, the best of the four boards
-    measured — sort never runs. (The CYC5000 was measured too — see item 24.)
-- **16.** ~~**Colorlight i5 SDRAM ("stage 2" of that board's bring-up — unrelated to
-    the GC stages elsewhere in this document)**~~ — **DONE** (`a7fdf93`). 8 MB working on
-    hardware, DoAll 66/66 at 1 Mbaud. `BmbSdramCtrlWide` added for the 32-bit
-    part; `MemoryControllerFactory.createSdr` selects on `layout.dataWidth`.
-    Remaining i5 work is ordinary: raise the clock above 40 MHz, and try SMP now
-    that block RAM is only 21% used. See `docs/boards/colorlight-i5-bringup.md`.
-- **23.** ~~**`f_multianewarray` handles exactly 2 dimensions**~~ — **FIXED
-    2026-08-06.** It was hardcoded to `dim == 2` and printed "dimensions not
-    supported" for anything else, so `new int[a][b][c]` was an unimplemented
-    trap. `JVMHelp.multiNew` now builds any nest up to `MAX_ARRAY_DIM = 8` by
-    recursing one level at a time. The spec allows 255, but a runaway nest would
-    overflow the stack part-way through allocating and leave a half-built
-    structure, which is worse than a clean refusal.
+```sh
+JAVA_HOME=/opt/jdk-17.0.19+10 PATH=/opt/jdk-17.0.19+10/bin:$PATH make ...
+```
 
-    The part that mattered was never the loop, it was the **GC metadata**: only
-    the innermost level carries the element type and every level above it is a
-    reference array. Getting that wrong at two levels was `78cc968` — inner
-    arrays typed `IS_OBJ`, collector unable to size them or scan their elements,
-    premature collection with no visible fault. `MultiDimTest` checks 3-D and
-    4-D primitive, 3-D reference and the degenerate zero-length shapes **after**
-    30k rounds of churn and two full mark-compacts, because DoAll's `MultiArray`
-    passed throughout that defect and reading values back proves nothing.
-    10/10 on EP4CGX150 and XC7A100T, `MultiArrayGcTest` OK, DoAll 66/66.
+Builds are deterministic **within** an environment: two consecutive local
+builds are byte-identical, so this was never per-build randomness.
 
-    What it did **not** close is the missing element class — now **item 26**,
-    so it is not buried inside a finished item.
+**The JDK 8 toolchain is validated on hardware across all five attached
+boards, three FPGA vendors and three toolchains** (2026-08-09) — every app
+image was rebuilt by the switch, so this is a re-validation of the whole
+fleet, not a spot check:
 
-- **26.** ~~**Reference arrays carry no element class**~~ — **FIXED
-    2026-08-07.** Arrays now carry a descriptor `(dim << 24) | elem` in handle
-    word **`GC.OFF_ELEM = 6`**, and JOPizer emits the same encoding for array
-    constant-pool entries. `elem` is a primitive code 4..11 or the element
-    class's struct address (always >= 16, so they never collide). This is the
-    information HotSpot keeps in an `ObjArrayKlass` — `_element_klass` plus
-    `_dimension` — so `checkcast`/`instanceof` are now the ordinary check:
-    equal dimensions, then an element subtype walk, with covariance falling out.
+| board | config | result |
+|---|---|---|
+| Wukong (Artix-7) | `wukongDdr3Fcu` — DDR3 | **66/66** |
+| Wukong | `wukongSdram` — SDR | **66/66** |
+| Wukong | `wukongSmp2` — 2-core | `SmpCacheTest` **PASS** + DoAll **66/66** |
+| Wukong | `wukongDualIndependent` — DDR3 cluster | **66/66** |
+| Wukong | `wukongDualIndependent` — SDR cluster | **66/66** |
+| EP4CGX150 (Cyclone IV, Quartus) | `jop_sdram` | **66/66** |
+| XC7A100T + DB V5 (Vivado) | DDR3 | **66/66** |
+| Colorlight i5 (ECP5, yosys/nextpnr) | SDRAM | **66/66** |
+| CYC5000 (Cyclone V, Quartus) | `jop_cyc5000` SDRAM | **66/66** |
 
-    **Costs no memory.** `HANDLE_SIZE` is 8 and only 0-5 were used, so word 6
-    was already allocated. `OFF_TYPE` stays a small code, so the GC's tracing
-    paths are untouched — that was the constraint that mattered.
+Plus `JopJvmTestsBramSim` 66/66 in simulation. The i5, CYC5000 and Wukong
+SDR runs all report the same download checksum (`0x695472d1`), confirming
+the boards ran an identical image.
 
-    `anewarray` turned out to already *receive* the component type and discard
-    it (`// ignore cons ... should be different for the GC!!!`). Because a plain
-    class address has a zero dim field, `desc = cons + (1 << 24)` promotes
-    either a class or an existing descriptor by exactly one dimension, which
-    makes `new Foo[n]` and `new int[n][]` the same line of code.
+The CYC5000 needed a rebuild first: its `.sof` had vanished even though the
+2026-08-07 build **succeeded** (`Flow Status: Successful - Fri Aug 7
+08:15:11`) and every report from that run survived. It was not staleness —
+neither make nor Quartus deletes a target for being out of date — and not
+`make clean` or `git clean`, both of which would have taken the reports too
+(all of `output_files/` is gitignored). Something removed only that one
+file; the cause could not be established from what was on disk. Rebuilt with
+`make -C fpga/cyc5000-sdram all`, timing met (worst slack +0.383 ns).
 
-    Now exact, all previously wrong: `(Derived[]) x` where x is `Base[]`
-    **rejected** (was accepted), `(Base[]) derivedArray` accepted (covariance),
-    `int[][]` distinguished from `int[]` in both directions. `ArrayCastTest`
-    23/23 on **EP4CGX150, XC7A100T and Colorlight i5**; `MultiDimTest` 10/10 on
-    all three; DoAll 66/66, `MultiArrayGcTest` OK, `GcStressTest` 240k+ rounds
-    clean.
+That last point matters for diagnosing this item. If CI's `DoAll.jop` hash
+ever differs between two runs of the *same commit*, then CI is running a
+different binary each time and that is the whole explanation — no
+environmental theory needed. The fingerprints now recorded on every run make
+that a one-line comparison; it could not be checked for the 2026-08-09
+failure because only `ls -l` sizes existed then, and they were equal.
 
-    **The three follow-ups are done too (2026-08-07).**
-    - `f_aastore` now performs the covariant store check and throws
-      `ArrayStoreException` (a class JOP's JDK subset did not have — likely part
-      of why this was never implemented). The common case is inlined: a 1-D
-      reference array whose element class is exactly the value's class, three
-      reads and no call, because a helper call is ~142 cycles on a hot path.
-    - `(Cloneable) arr` and `(Serializable) arr` now succeed. Arrays have no
-      interface table, so JOPizer emits the two class-info addresses into the
-      special-pointer block and `JVMHelp.init` reads them — the equivalent of
-      HotSpot's `ArrayKlass` declaring those interfaces.
-    - The **WCET bound is unchanged at `@WCA loop <= 5`**, and the earlier
-      concern was wrong: the array path and the object path in `f_checkcast`
-      are mutually exclusive, so it is still one walk. The new element walk in
-      `classAssignable` is annotated accordingly.
+The 4645-byte difference is far too small to cause `E1` by itself: the
+baseline sim has ~58,000 words of heap headroom.
 
-    `ArrayCastTest` is now **36 checks**, passing on EP4CGX150, XC7A100T and
-    Colorlight i5. DoAll 66/66, `MultiDimTest` OK, `GcStressTest` 240k+ clean.
+<a id="item-12"></a>
 
-- **27.** **The `aastore` type check's cost was never measured.** Item 26 added
-    a covariant store check to `f_aastore`, which every reference-array store
-    goes through. The common case is inlined — three reads and no call, chosen
-    because a helper call is ~142 cycles — but "chosen because" is reasoning,
-    not measurement, and this document's record on that is four wrong out of
-    five. Nothing in the suite times array stores, so the check could be costing
-    a few percent or a third and nobody would know. Needs a store-heavy
-    microbenchmark, or the item 11 application benchmark, before the design is
-    called settled.
+### Item 12 — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
 
-- **28.** ~~**`DoAll` dies at `CollectionTest` on the Wukong**~~ — **FIXED
-    2026-08-08. Three real hardware defects, `wukongFull` now DoAll 66/66** with
-    every compute unit in hardware (was 59/66 with a crash).
+**`LongComputeUnitConfig` has no enable flag** for its base 64-bit ALU
+(`ladd/lsub/lneg/lcmp`), unlike `FloatComputeUnitConfig.withAdd`. Worked
+around at the `ComputeUnitTop` level (conditional instantiation), but the
+config asymmetry remains and would bite anyone relying on the `with*` flags
+alone.
 
-    | # | defect | symptom |
-    |---|---|---|
-    | 1 | **FCU compare**: a lone zero operand fell through to the exponent compare | `0.75f <= 0` TRUE |
-    | 2 | **DCU compare**: identical defect in the sibling unit | same, for double |
-    | 3 | **DCU divider**: dropped its last quotient bit | `Math.sqrt(9.0)` = 3.345 |
+<a id="item-13"></a>
 
-    **1 and 2 — the compare.** `unpackFloat`/`unpackDouble` flush zero to
-    `exp := 0`, which is the *unbiased* exponent of 1.0. Only both-operands-zero
-    was special-cased, so a lone zero was compared as if it were ~1.0 and every
-    magnitude below 1.0 came out "less than zero". `HashMap`'s constructor is
-    `if (loadFactor <= 0 …) throw`, so with an FCU present **every `HashMap`
-    construction threw** on the default `0.75f` — and the throw concatenates a
-    float into its message, so control vanished into float-to-string. That is
-    why `CollectionTest`, which contains no float at all, died: silently
-    standalone, as `bytecode 255 not implemented` under `DoAll`. Fixed by
-    deciding on the sign of the non-zero operand.
+### Item 13 — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
 
-    **3 — the divider.** `DIV_ITER` read `val q = divQuotient` at the final
-    count; that is a register, so it returned the pre-update value and lost the
-    last quotient bit. `resMant`'s leading 1 landed at bit 53 instead of 54 and
-    `ROUND` read a zero as the hidden bit — packing `1.1010…` for `1.0101…`, so
-    `1.0/3.0` gave 0.416667. Only quotients with dividend < divisor are
-    affected, which is why `div_normal` (7/2, 12/4) never caught it.
+**`java/apps/Small` `make clean` deletes `HelloWorld.jop`** — `JOP_OUT`
+derives from `APP_NAME`, which defaults to HelloWorld. Cost a sim failure
+and nearly a wrong SMP result. Build HelloWorld last, or `rm -rf build`.
 
-    **Why it stayed latent for months.** Every one of these hides behind the
-    values the tests happened to use: `fcmp_zeros` only compared zero *with*
-    zero, all other compare cases use 1.0/2.0 where exponent ≥ 0 gives the right
-    answer, and both divide cases are exact with dividend > divisor. The FCU was
-    signed off at "52/52 BRAM JVM tests" on a suite predating `CollectionTest`.
+<a id="item-14"></a>
 
-    Guards added, each **verified to fail on the unfixed RTL** rather than
-    merely passing: `fcmp_one_operand_zero`, `dcmp_one_operand_zero`,
-    `div_inexact` (both units). 145/145 in `jop.core`.
+### Item 14 — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
 
-    On-target reproducers kept: `FcuBugTest` (the exact operations `HashMap`
-    performs, integers only) and `MathBugTest` (`MathTest`'s 21 checks reported
-    individually, because `MathTest` chains them with `&&` and reports only
-    "failed!"). `OneTest` runs a single `TestCase` from a cold start.
+**Stack cache SDRAM integration** — pre-existing; 3-bank rotation verified
+in BRAM simulation, needs per-core stack regions on SDRAM.
 
-    **A fourth suspicion was wrong and is worth recording**: the FCU divider has
-    the same `val q = divQuotient` shape, so it looked like the same bug. Patching
-    it broke `7.0/2.0`, which had been correct. Reverted — its iteration
-    structure differs and it never had the defect. `div_inexact` passes there
-    unmodified and now stands as proof.
+<a id="item-15"></a>
 
-    **All six DDR3 Wukong presets re-verified against the final RTL**
-    (2026-08-08), rather than leaving intermediate-state results lying around —
-    `wukongDdr3AllCu`'s only previous record was a *failure* from before any fix:
+### Item 15 — ~~`GcPauseTest` on the Wukong boards — never run — DONE~~
 
-    | preset | LUTs | WNS | DoAll |
-    |---|---:|---:|---|
-    | `wukongDdr3` (baseline) | 17515 | +0.360 | **66/66** |
-    | `wukongDdr3DspMul` | 17850 | +0.263 | **66/66** |
-    | `wukongDdr3Lcu` | 18474 | +0.207 | **66/66** |
-    | `wukongDdr3Fcu` | 18870 | +0.029 | **66/66** |
-    | `wukongNoDcu` | 20161 | +0.033 | **66/66** |
-    | `wukongDdr3AllCu` | 24497 | +0.008 | **66/66** |
-    | `wukongFull` | 25624 | +0.121 | **66/66** |
+~~**`GcPauseTest` on the Wukong boards** — never run~~ — **DONE
+2026-08-07.** Wukong XC7A100T + DDR3, `wukongFull` at 100 MHz: minor pause
+**worst 11.840 ms / mean 11.813** over 63 collections, sweep 1624
+ns/handle, copy **87%** of the pause (the other boards are 79-82%), major
+`MAJOR OK` with retained 64/64 and `corrupt 0`, free 262 MB.
+`GcMajorPauseTest` at 36k live: **681.2 ms**, the best of the four boards
+measured — sort never runs. (The CYC5000 was measured too — see item 24.)
 
-    `wukongDdr3Lcu` passing means the **LCU is clean** — the three defects were
-    confined to the FCU and DCU.
+<a id="item-16"></a>
 
-    `wukongDdr3Fcu` was added on 2026-08-08: it had **never been built or run**,
-    despite being the preset that isolates the FCU (`wukongDdr3 + float -> hw`)
-    and therefore the most direct check on the compare fix in item 28. It was
-    missed because the sweep was assembled from the presets that already had
-    bitstreams, so the one preset with no history was the one that got skipped. Builds were staggered against tests, so each
-    Vivado run overlapped the previous bitstream's ~4-minute DoAll; bitstreams
-    are stashed per preset because every build writes the same output path and
-    would otherwise clobber the one under test.
+### Item 16 — ~~Colorlight i5 SDRAM ("stage 2" of that board's bring-up — unrelated to~~
 
-    **The SDR-on-Artix trio now runs too** (2026-08-08) — first time JOP has
-    used the Wukong's SDRAM. All three pass `DoAll` 66/66, but two do not close
-    timing at 100 MHz:
+~~**Colorlight i5 SDRAM ("stage 2" of that board's bring-up — unrelated to
+the GC stages elsewhere in this document)**~~ — **DONE** (`a7fdf93`). 8 MB working on
+hardware, DoAll 66/66 at 1 Mbaud. `BmbSdramCtrlWide` added for the 32-bit
+part; `MemoryControllerFactory.createSdr` selects on `layout.dataWidth`.
+Remaining i5 work is ordinary: raise the clock above 40 MHz, and try SMP now
+that block RAM is only 21% used. See `docs/boards/colorlight-i5-bringup.md`.
 
-    | preset | LUTs | WNS | DoAll |
-    |---|---:|---:|---|
-    | `wukongSdram` | 4963 | +0.318 | **66/66** |
-    | `wukongSdrAllCu` | 11801 | **-0.061** | 66/66 *(timing violated)* |
-    | `wukongSdrFull` | 13232 | **-0.774** | 66/66 *(timing violated)* |
+<a id="item-23"></a>
 
-    A passing `DoAll` on a violated bitstream proves nothing — it can misbehave
-    arbitrarily and the failure would be intermittent. Both need a seed sweep or
-    a lower clock before they mean anything. Note the all-CU configs sit on the
-    edge on both memories: DDR3 AllCu closed at **+0.008 ns**.
+### Item 23 — ~~`f_multianewarray` handles exactly 2 dimensions — FIXED~~
 
-    Two build-flow defects were fixed to get here, neither about the design:
+~~**`f_multianewarray` handles exactly 2 dimensions**~~ — **FIXED
+2026-08-06.** It was hardcoded to `dim == 2` and printed "dimensions not
+supported" for anything else, so `new int[a][b][c]` was an unimplemented
+trap. `JVMHelp.multiNew` now builds any nest up to `MAX_ARRAY_DIM = 8` by
+recursing one level at a time. The spec allows 255, but a runaway nest would
+overflow the stack part-way through allocating and leave a half-built
+structure, which is worse than a clean refusal.
 
-    - **`clk_wiz_0` is generated by BOTH flows into the same IP directory.**
-      `create_sdram_clk_wiz.tcl` and `create_ddr3_clk_wiz.tcl` emit the same
-      module name, and only the SDR one has the phase-shifted `CLKOUT2` that
-      `JopSdramWukongTop` wires to `sdram_clk`. Whichever flow ran last owns the
-      IP, so switching without regenerating fails synthesis with *"named port
-      connection 'clk_100_shift' does not exist"*. The SDR build now regenerates
-      its own clk_wiz first.
+The part that mattered was never the loop, it was the **GC metadata**: only
+the innermost level carries the element type and every level above it is a
+reference array. Getting that wrong at two levels was `78cc968` — inner
+arrays typed `IS_OBJ`, collector unable to size them or scan their elements,
+premature collection with no visible fault. `MultiDimTest` checks 3-D and
+4-D primitive, 3-D reference and the degenerate zero-length shapes **after**
+30k rounds of churn and two full mark-compacts, because DoAll's `MultiArray`
+passed throughout that defect and reading values back proves nothing.
+10/10 on EP4CGX150 and XC7A100T, `MultiArrayGcTest` OK, DoAll 66/66.
 
-      **FIXED PROPERLY 2026-08-17 — the clock wizards are named for their
-      FUNCTION**: `sdr_clk`, `ddr3_clk`, `bram_clk`. Regenerating first was a
-      workaround that cost ~105 s on every flow switch and still left one live
-      IP; the three variants now occupy three directories and coexist, so
-      switching memory type regenerates nothing. It was in fact a THREE-way
-      collision — the BRAM flow emitted `clk_wiz_0` too, with only `clk_100`.
-      `Board.scala` derives the instance name from `memType` rather than from
-      the index in `systems`, so the dual build no longer depends on SDR
-      happening to sit at index 1. Two things fell out: `create_sdram_clk_wiz_1.tcl`
-      was config-identical to `create_sdram_clk_wiz.tcl` (the dual's SDR clock
-      was raised 80→100 MHz and the two were never collapsed) and is deleted;
-      `build_sdram_exerciser_80mhz.tcl` is deleted too — its 80 MHz wizard no
-      longer existed, so pointing it at `sdr_clk` would have silently built a
-      100 MHz bitstream from RTL named `_80mhz`. It is recoverable from `6b31502`
-      if the 80 MHz exerciser is ever wanted again; rebuilding it needs a
-      `sdr_clk_80` variant of `create_sdram_clk_wiz.tcl`. Its hand-modified
-      `SdramExerciserWukongTop_80mhz.v` was never tracked (it lived in the
-      gitignored `spinalhdl/generated/`), so that part is gone for good — it was
-      a hand-edit of generated output, which is why it should never have been the
-      only copy of anything.
+What it did **not** close is the missing element class — now **item 26**,
+so it is not buried inside a finished item.
 
-      Note the derived clock names in XDC follow the **IP module** name, not the
-      RTL instance name (which is `clkWizBlackBox`) — hence `clk_125_clk_wiz_0`
-      became `clk_125_ddr3_clk`, and the dual's `clk_100_clk_wiz_1` became
-      `clk_100_sdr_clk`. Getting this wrong is silent: `set_clock_groups` on a
-      clock that matches nothing simply does not constrain, which is how the
-      −2.037 ns CDC regression hid in the first place.
-    - **`wukongSdrFull` could not generate a bitstream at all.** Ethernet and SD
-      pin constraints existed only in `wukong_ddr3.xdc`, so 32 of 77 ports had no
-      LOC/IOSTANDARD and `write_bitstream` refused (DRC NSTD-1 / UCIO-1). Moved
-      to `wukong_peripherals.xdc` and read by the SDR flow. `wukong_ddr3.xdc`
-      keeps its copy — removing constraints that six verified DDR3 configs
-      depend on was not worth the risk — so the two are **duplicated and must be
-      kept in sync**; collapsing that is a follow-up.
+<a id="item-26"></a>
 
-    **The dual, SMP and BRAM presets now run too** (2026-08-08) — every Wukong
-    preset that can be built has been on hardware:
+### Item 26 — ~~Reference arrays carry no element class — FIXED~~
 
-    | preset | WNS | test |
-    |---|---:|---|
-    | `wukongDualIndependent` | -0.365 | **both clusters `DoAll` 66/66 concurrently** |
-    | `wukongBram` | — | Hello World from the built-in BRAM image |
-    | `wukongSmpMinimal 2` | +0.500 | `SmpCacheTest` PASS |
-    | `wukongSmp 2` | +0.318 | `SmpCacheTest` PASS + `DoAll` 66/66 |
-    | `wukongFullSmp 2` | +0.285 | `SmpCacheTest` PASS + `DoAll` 66/66 |
+~~**Reference arrays carry no element class**~~ — **FIXED
+2026-08-07.** Arrays now carry a descriptor `(dim << 24) | elem` in handle
+word **`GC.OFF_ELEM = 6`**, and JOPizer emits the same encoding for array
+constant-pool entries. `elem` is a primitive code 4..11 or the element
+class's struct address (always >= 16, so they never collide). This is the
+information HotSpot keeps in an `ObjArrayKlass` — `_element_klass` plus
+`_dimension` — so `checkcast`/`instanceof` are now the ordinary check:
+equal dimensions, then an element subtype walk, with covariance falling out.
 
-    `SmpCacheTest` is the meaningful SMP test — `NCoreHelloWorld` only prints
-    from `cpuID==0`, so it cannot distinguish a working second core from a dead
-    one. Its `.jop` had never been built; `make -C java/apps/SmpCacheTest`.
+**Costs no memory.** `HANDLE_SIZE` is 8 and only 0-5 were used, so word 6
+was already allocated. `OFF_TYPE` stays a small code, so the GC's tracing
+paths are untouched — that was the constraint that mattered.
 
-    The dual needed its SDR cluster moved from 80 to 100 MHz — see
-    `docs/architecture/dual-subsystem-design.md`, "Phase 2 Resolved", which also
-    records what that was *not* (IOB packing, the `set_max_delay` violation, the
-    `sdram_clk` phase shift), each disproved by measurement.
+`anewarray` turned out to already *receive* the component type and discard
+it (`// ignore cons ... should be different for the GC!!!`). Because a plain
+class address has a zero dim field, `desc = cons + (1 << 24)` promotes
+either a class or an existing descriptor by exactly one dimension, which
+makes `new Foo[n]` and `new int[n][]` the same line of code.
 
-    `wukongBram` could not generate a bitstream at all: `wukong_jop_bram.xdc`
-    constrained a port named `clk_in`, but the generated top's ports are `clk`
-    and `resetn`. The stale name matched nothing, so both reached implementation
-    unconstrained and DRC refused (NSTD-1 / UCIO-1) — the same failure mode as
-    `wukongSdrFull` above, from a different cause. This is now the third build
-    killed by unconstrained ports; a pre-implementation check that every top-level
-    port has a LOC would have caught all three.
+Now exact, all previously wrong: `(Derived[]) x` where x is `Base[]`
+**rejected** (was accepted), `(Base[]) derivedArray` accepted (covariance),
+`int[][]` distinguished from `int[]` in both directions. `ArrayCastTest`
+23/23 on **EP4CGX150, XC7A100T and Colorlight i5**; `MultiDimTest` 10/10 on
+all three; DoAll 66/66, `MultiArrayGcTest` OK, `GcStressTest` 240k+ rounds
+clean.
 
-    **Two presets cannot be tested, and should be fixed or deleted:**
+**The three follow-ups are done too (2026-08-07).**
+- `f_aastore` now performs the covariant store check and throws
+  `ArrayStoreException` (a class JOP's JDK subset did not have — likely part
+  of why this was never implemented). The common case is inlined: a 1-D
+  reference array whose element class is exactly the value's class, three
+  reads and no call, because a helper call is ~142 cycles on a hot path.
+- `(Cloneable) arr` and `(Serializable) arr` now succeed. Arrays have no
+  interface table, so JOPizer emits the two class-info addresses into the
+  special-pointer block and `JVMHelp.init` reads them — the equivalent of
+  HotSpot's `ArrayKlass` declaring those interfaces.
+- The **WCET bound is unchanged at `@WCA loop <= 5`**, and the earlier
+  concern was wrong: the array path and the object path in `f_checkcast`
+  are mutually exclusive, so it is still one walk. The new element walk in
+  `classAssignable` is annotated accordingly.
 
-    - **`wukongDual`** — differs from `wukongDualIndependent` only by
-      `interconnect = Some(InterconnectConfig(...))` and
-      `monitors = Seq(WatchdogConfig(...))`, and **neither field is read by any
-      RTL** (Phase 3 message queues are still "Future"). It also has no `case` in
-      `JopTopVerilog`, so it cannot be generated. Building it would produce the
-      same hardware as `wukongDualIndependent` under a name implying otherwise.
-    - **`wukongDualSmp` is misleadingly named** — its `case` maps to
-      `wukongDualIndependentSmp`, the *no*-interconnect variant. Neither name
-      reaches the interconnect design.
-    - **`wukongBramFull`** and **`auMinimal`** — no `case` in `JopTopVerilog`, so
-      unreachable. Unlike `wukongDual` these look like plain omissions rather
-      than unimplemented features.
+`ArrayCastTest` is now **36 checks**, passing on EP4CGX150, XC7A100T and
+Colorlight i5. DoAll 66/66, `MultiDimTest` OK, `GcStressTest` 240k+ clean.
 
-    **Every other preset has now been on hardware, or has no board attached.**
-    Sweeping `JopConfig`'s definitions against `JopTopVerilog`'s cases is the
-    cheap way to find this class of gap — it is what surfaced the three
-    unreachable presets above. Note that all 40 presets *are* covered at config
-    level by `JumpTableResolutionTest`, including the unreachable ones, so a
-    green test suite does not imply a preset can be generated, let alone run.
-    The presets with no board attached are `auSerial`, `max1000Sdram` and
-    `ep4ce6Sdram` (`minimum` and `simulation` are not board targets).
+<a id="item-27"></a>
+
+### Item 27 — The `aastore` type check's cost was never measured
+
+**The `aastore` type check's cost was never measured.** Item 26 added
+a covariant store check to `f_aastore`, which every reference-array store
+goes through. The common case is inlined — three reads and no call, chosen
+because a helper call is ~142 cycles — but "chosen because" is reasoning,
+not measurement, and this document's record on that is four wrong out of
+five. Nothing in the suite times array stores, so the check could be costing
+a few percent or a third and nobody would know. Needs a store-heavy
+microbenchmark, or the item 11 application benchmark, before the design is
+called settled.
+
+<a id="item-28"></a>
+
+### Item 28 — ~~`DoAll` dies at `CollectionTest` on the Wukong — FIXED~~
+
+~~**`DoAll` dies at `CollectionTest` on the Wukong**~~ — **FIXED
+2026-08-08. Three real hardware defects, `wukongFull` now DoAll 66/66** with
+every compute unit in hardware (was 59/66 with a crash).
+
+| # | defect | symptom |
+|---|---|---|
+| 1 | **FCU compare**: a lone zero operand fell through to the exponent compare | `0.75f <= 0` TRUE |
+| 2 | **DCU compare**: identical defect in the sibling unit | same, for double |
+| 3 | **DCU divider**: dropped its last quotient bit | `Math.sqrt(9.0)` = 3.345 |
+
+**1 and 2 — the compare.** `unpackFloat`/`unpackDouble` flush zero to
+`exp := 0`, which is the *unbiased* exponent of 1.0. Only both-operands-zero
+was special-cased, so a lone zero was compared as if it were ~1.0 and every
+magnitude below 1.0 came out "less than zero". `HashMap`'s constructor is
+`if (loadFactor <= 0 …) throw`, so with an FCU present **every `HashMap`
+construction threw** on the default `0.75f` — and the throw concatenates a
+float into its message, so control vanished into float-to-string. That is
+why `CollectionTest`, which contains no float at all, died: silently
+standalone, as `bytecode 255 not implemented` under `DoAll`. Fixed by
+deciding on the sign of the non-zero operand.
+
+**3 — the divider.** `DIV_ITER` read `val q = divQuotient` at the final
+count; that is a register, so it returned the pre-update value and lost the
+last quotient bit. `resMant`'s leading 1 landed at bit 53 instead of 54 and
+`ROUND` read a zero as the hidden bit — packing `1.1010…` for `1.0101…`, so
+`1.0/3.0` gave 0.416667. Only quotients with dividend < divisor are
+affected, which is why `div_normal` (7/2, 12/4) never caught it.
+
+**Why it stayed latent for months.** Every one of these hides behind the
+values the tests happened to use: `fcmp_zeros` only compared zero *with*
+zero, all other compare cases use 1.0/2.0 where exponent ≥ 0 gives the right
+answer, and both divide cases are exact with dividend > divisor. The FCU was
+signed off at "52/52 BRAM JVM tests" on a suite predating `CollectionTest`.
+
+Guards added, each **verified to fail on the unfixed RTL** rather than
+merely passing: `fcmp_one_operand_zero`, `dcmp_one_operand_zero`,
+`div_inexact` (both units). 145/145 in `jop.core`.
+
+On-target reproducers kept: `FcuBugTest` (the exact operations `HashMap`
+performs, integers only) and `MathBugTest` (`MathTest`'s 21 checks reported
+individually, because `MathTest` chains them with `&&` and reports only
+"failed!"). `OneTest` runs a single `TestCase` from a cold start.
+
+**A fourth suspicion was wrong and is worth recording**: the FCU divider has
+the same `val q = divQuotient` shape, so it looked like the same bug. Patching
+it broke `7.0/2.0`, which had been correct. Reverted — its iteration
+structure differs and it never had the defect. `div_inexact` passes there
+unmodified and now stands as proof.
+
+**All six DDR3 Wukong presets re-verified against the final RTL**
+(2026-08-08), rather than leaving intermediate-state results lying around —
+`wukongDdr3AllCu`'s only previous record was a *failure* from before any fix:
+
+| preset | LUTs | WNS | DoAll |
+|---|---:|---:|---|
+| `wukongDdr3` (baseline) | 17515 | +0.360 | **66/66** |
+| `wukongDdr3DspMul` | 17850 | +0.263 | **66/66** |
+| `wukongDdr3Lcu` | 18474 | +0.207 | **66/66** |
+| `wukongDdr3Fcu` | 18870 | +0.029 | **66/66** |
+| `wukongNoDcu` | 20161 | +0.033 | **66/66** |
+| `wukongDdr3AllCu` | 24497 | +0.008 | **66/66** |
+| `wukongFull` | 25624 | +0.121 | **66/66** |
+
+`wukongDdr3Lcu` passing means the **LCU is clean** — the three defects were
+confined to the FCU and DCU.
+
+`wukongDdr3Fcu` was added on 2026-08-08: it had **never been built or run**,
+despite being the preset that isolates the FCU (`wukongDdr3 + float -> hw`)
+and therefore the most direct check on the compare fix in item 28. It was
+missed because the sweep was assembled from the presets that already had
+bitstreams, so the one preset with no history was the one that got skipped. Builds were staggered against tests, so each
+Vivado run overlapped the previous bitstream's ~4-minute DoAll; bitstreams
+are stashed per preset because every build writes the same output path and
+would otherwise clobber the one under test.
+
+**The SDR-on-Artix trio now runs too** (2026-08-08) — first time JOP has
+used the Wukong's SDRAM. All three pass `DoAll` 66/66, but two do not close
+timing at 100 MHz:
+
+| preset | LUTs | WNS | DoAll |
+|---|---:|---:|---|
+| `wukongSdram` | 4963 | +0.318 | **66/66** |
+| `wukongSdrAllCu` | 11801 | **-0.061** | 66/66 *(timing violated)* |
+| `wukongSdrFull` | 13232 | **-0.774** | 66/66 *(timing violated)* |
+
+A passing `DoAll` on a violated bitstream proves nothing — it can misbehave
+arbitrarily and the failure would be intermittent. Both need a seed sweep or
+a lower clock before they mean anything. Note the all-CU configs sit on the
+edge on both memories: DDR3 AllCu closed at **+0.008 ns**.
+
+Two build-flow defects were fixed to get here, neither about the design:
+
+- **`clk_wiz_0` is generated by BOTH flows into the same IP directory.**
+  `create_sdram_clk_wiz.tcl` and `create_ddr3_clk_wiz.tcl` emit the same
+  module name, and only the SDR one has the phase-shifted `CLKOUT2` that
+  `JopSdramWukongTop` wires to `sdram_clk`. Whichever flow ran last owns the
+  IP, so switching without regenerating fails synthesis with *"named port
+  connection 'clk_100_shift' does not exist"*. The SDR build now regenerates
+  its own clk_wiz first.
+
+  **FIXED PROPERLY 2026-08-17 — the clock wizards are named for their
+  FUNCTION**: `sdr_clk`, `ddr3_clk`, `bram_clk`. Regenerating first was a
+  workaround that cost ~105 s on every flow switch and still left one live
+  IP; the three variants now occupy three directories and coexist, so
+  switching memory type regenerates nothing. It was in fact a THREE-way
+  collision — the BRAM flow emitted `clk_wiz_0` too, with only `clk_100`.
+  `Board.scala` derives the instance name from `memType` rather than from
+  the index in `systems`, so the dual build no longer depends on SDR
+  happening to sit at index 1. Two things fell out: `create_sdram_clk_wiz_1.tcl`
+  was config-identical to `create_sdram_clk_wiz.tcl` (the dual's SDR clock
+  was raised 80→100 MHz and the two were never collapsed) and is deleted;
+  `build_sdram_exerciser_80mhz.tcl` is deleted too — its 80 MHz wizard no
+  longer existed, so pointing it at `sdr_clk` would have silently built a
+  100 MHz bitstream from RTL named `_80mhz`. It is recoverable from `6b31502`
+  if the 80 MHz exerciser is ever wanted again; rebuilding it needs a
+  `sdr_clk_80` variant of `create_sdram_clk_wiz.tcl`. Its hand-modified
+  `SdramExerciserWukongTop_80mhz.v` was never tracked (it lived in the
+  gitignored `spinalhdl/generated/`), so that part is gone for good — it was
+  a hand-edit of generated output, which is why it should never have been the
+  only copy of anything.
+
+  Note the derived clock names in XDC follow the **IP module** name, not the
+  RTL instance name (which is `clkWizBlackBox`) — hence `clk_125_clk_wiz_0`
+  became `clk_125_ddr3_clk`, and the dual's `clk_100_clk_wiz_1` became
+  `clk_100_sdr_clk`. Getting this wrong is silent: `set_clock_groups` on a
+  clock that matches nothing simply does not constrain, which is how the
+  −2.037 ns CDC regression hid in the first place.
+- **`wukongSdrFull` could not generate a bitstream at all.** Ethernet and SD
+  pin constraints existed only in `wukong_ddr3.xdc`, so 32 of 77 ports had no
+  LOC/IOSTANDARD and `write_bitstream` refused (DRC NSTD-1 / UCIO-1). Moved
+  to `wukong_peripherals.xdc` and read by the SDR flow. `wukong_ddr3.xdc`
+  keeps its copy — removing constraints that six verified DDR3 configs
+  depend on was not worth the risk — so the two are **duplicated and must be
+  kept in sync**; collapsing that is a follow-up.
+
+**The dual, SMP and BRAM presets now run too** (2026-08-08) — every Wukong
+preset that can be built has been on hardware:
+
+| preset | WNS | test |
+|---|---:|---|
+| `wukongDualIndependent` | -0.365 | **both clusters `DoAll` 66/66 concurrently** |
+| `wukongBram` | — | Hello World from the built-in BRAM image |
+| `wukongSmpMinimal 2` | +0.500 | `SmpCacheTest` PASS |
+| `wukongSmp 2` | +0.318 | `SmpCacheTest` PASS + `DoAll` 66/66 |
+| `wukongFullSmp 2` | +0.285 | `SmpCacheTest` PASS + `DoAll` 66/66 |
+
+`SmpCacheTest` is the meaningful SMP test — `NCoreHelloWorld` only prints
+from `cpuID==0`, so it cannot distinguish a working second core from a dead
+one. Its `.jop` had never been built; `make -C java/apps/SmpCacheTest`.
+
+The dual needed its SDR cluster moved from 80 to 100 MHz — see
+`docs/architecture/dual-subsystem-design.md`, "Phase 2 Resolved", which also
+records what that was *not* (IOB packing, the `set_max_delay` violation, the
+`sdram_clk` phase shift), each disproved by measurement.
+
+`wukongBram` could not generate a bitstream at all: `wukong_jop_bram.xdc`
+constrained a port named `clk_in`, but the generated top's ports are `clk`
+and `resetn`. The stale name matched nothing, so both reached implementation
+unconstrained and DRC refused (NSTD-1 / UCIO-1) — the same failure mode as
+`wukongSdrFull` above, from a different cause. This is now the third build
+killed by unconstrained ports; a pre-implementation check that every top-level
+port has a LOC would have caught all three.
+
+**Two presets cannot be tested, and should be fixed or deleted:**
+
+- **`wukongDual`** — differs from `wukongDualIndependent` only by
+  `interconnect = Some(InterconnectConfig(...))` and
+  `monitors = Seq(WatchdogConfig(...))`, and **neither field is read by any
+  RTL** (Phase 3 message queues are still "Future"). It also has no `case` in
+  `JopTopVerilog`, so it cannot be generated. Building it would produce the
+  same hardware as `wukongDualIndependent` under a name implying otherwise.
+- **`wukongDualSmp` is misleadingly named** — its `case` maps to
+  `wukongDualIndependentSmp`, the *no*-interconnect variant. Neither name
+  reaches the interconnect design.
+- **`wukongBramFull`** and **`auMinimal`** — no `case` in `JopTopVerilog`, so
+  unreachable. Unlike `wukongDual` these look like plain omissions rather
+  than unimplemented features.
+
+**Every other preset has now been on hardware, or has no board attached.**
+Sweeping `JopConfig`'s definitions against `JopTopVerilog`'s cases is the
+cheap way to find this class of gap — it is what surfaced the three
+unreachable presets above. Note that all 40 presets *are* covered at config
+level by `JumpTableResolutionTest`, including the unreachable ones, so a
+green test suite does not imply a preset can be generated, let alone run.
+The presets with no board attached are `auSerial`, `max1000Sdram` and
+`ep4ce6Sdram` (`minimum` and `simulation` are not board targets).
 
 ### Compute units and bytecode implementation
 
@@ -3060,212 +3307,234 @@ build is sound; it does not prove DoAll contains an `lushr`. Closing that would
 need per-bytecode execution counters in the simulation — worth doing before
 trusting the table as true coverage rather than as a configuration matrix.
 
+<a id="item-17"></a>
 
+### Item 17 — `needs*Compute` predicates understate compute-unit reachability
 
-- **17.** **`needs*Compute` predicates understate compute-unit reachability.**
-    `621aac7` used them to skip instantiating unused CUs and regressed the JVM
-    suite 66/66 -> 56/66; reverted in `eda6de7`. The area win is real (~474 LE
-    per core, ~5,700 across 12 cores) and worth recovering, but needs a
-    predicate that asks *"can any dispatch path reach this unit"* rather than
-    *"is any bytecode set to Hardware"*. Two known ways the current ones
-    understate it:
-    - `needs*Compute` is `isHw(...)`, i.e. `impl == Hardware` only. A bytecode
-      set to `Microcode` that reaches a CU is invisible. The `lmul` require at
-      `JopCoreConfig.scala:353` documents exactly that (`lmul_sw` drives the ICU
-      via `sthw`), so the predicates were known incomplete *before* `621aac7`
-      relied on them.
-    - ~~`JumpTable.useAlt` fails open~~ — **fixed** (`useAlt` now throws). It had
-      kept the `_hw` (CU) handler when a bytecode was set to `Microcode` with no
-      `_sw` alternate. `BytecodeConfig.validate` was supposed to catch that via
-      the `NoMicrocode` constraint, but only 12 of the 19 bytecodes lacking a
-      `_sw` were marked — `idiv`, `irem`, `fneg`, `i2f`, `f2i`, `fcmpl` and
-      `fcmpg` were `JavaOk`, so `mc` passed validation and then silently
-      dispatched to a compute unit. (`fneg` turned out to be the opposite case:
-      pure microcode already, with no `_hw` variant at all. It needed the
-      missing `fneg_sw` label, not a restriction — now fixed, so 18 remain.) Both layers are now correct and
-      `JumpTableResolutionTest` pins them against each other.
+**`needs*Compute` predicates understate compute-unit reachability.**
+`621aac7` used them to skip instantiating unused CUs and regressed the JVM
+suite 66/66 -> 56/66; reverted in `eda6de7`. The area win is real (~474 LE
+per core, ~5,700 across 12 cores) and worth recovering, but needs a
+predicate that asks *"can any dispatch path reach this unit"* rather than
+*"is any bytecode set to Hardware"*. Two known ways the current ones
+understate it:
+- `needs*Compute` is `isHw(...)`, i.e. `impl == Hardware` only. A bytecode
+  set to `Microcode` that reaches a CU is invisible. The `lmul` require at
+  `JopCoreConfig.scala:353` documents exactly that (`lmul_sw` drives the ICU
+  via `sthw`), so the predicates were known incomplete *before* `621aac7`
+  relied on them.
+- ~~`JumpTable.useAlt` fails open~~ — **fixed** (`useAlt` now throws). It had
+  kept the `_hw` (CU) handler when a bytecode was set to `Microcode` with no
+  `_sw` alternate. `BytecodeConfig.validate` was supposed to catch that via
+  the `NoMicrocode` constraint, but only 12 of the 19 bytecodes lacking a
+  `_sw` were marked — `idiv`, `irem`, `fneg`, `i2f`, `f2i`, `fcmpl` and
+  `fcmpg` were `JavaOk`, so `mc` passed validation and then silently
+  dispatched to a compute unit. (`fneg` turned out to be the opposite case:
+  pure microcode already, with no `_hw` variant at all. It needed the
+  missing `fneg_sw` label, not a restriction — now fixed, so 18 remain.) Both layers are now correct and
+  `JumpTableResolutionTest` pins them against each other.
 
-    **The exact dispatch path is still unexplained** — on paper the default
-    config reaches no CU at all, so removing them should be free. Reproduce with
-    `JopJvmTestsBramSim` (default config, no board involved); it fails in ~15 min.
-    Do not re-land the optimisation without that sim passing 66/66.
+**The exact dispatch path is still unexplained** — on paper the default
+config reaches no CU at all, so removing them should be free. Reproduce with
+`JopJvmTestsBramSim` (default config, no board involved); it fails in ~15 min.
+Do not re-land the optimisation without that sim passing 66/66.
 
-- **18.** **Software/microcode fallback coverage is uneven** — 18 of 32 configurable
-    bytecodes have no `_sw` microcode handler, so their only non-hardware path
-    is the Java trap. Per-operation cycle costs already exist in
-    `docs/architecture/compute-unit-design.md` (ICU/FCU/LCU/DCU tables); what
-    follows is the coverage summary.
+<a id="item-18"></a>
 
-    | group | has `_sw` | no `_sw` (Java trap only) |
-    |---|---|---|
-    | int | imul | idiv, irem |
-    | long | ladd, lsub, lmul, lneg, lshl, lshr, lushr, lcmp | — |
-    | float | fneg, fcmpl, fcmpg | fadd, fsub, fmul, fdiv, i2f, f2i |
-    | double | — | all 12 (dadd, dsub, dmul, ddiv, i2d, d2i, l2d, d2l, f2d, d2f, dcmpl, dcmpg) |
+### Item 18 — Software/microcode fallback coverage is uneven — 18 of 32 configurables
 
-    All 20 without one default to `Java`, which the jump table turns into
-    `invokestatic`, and all 20 are now marked `NoMicrocode` so asking for `mc`
-    is rejected rather than silently dispatched to a compute unit (item 17).
+**Software/microcode fallback coverage is uneven** — 18 of 32 configurable
+bytecodes have no `_sw` microcode handler, so their only non-hardware path
+is the Java trap. Per-operation cycle costs already exist in
+`docs/architecture/compute-unit-design.md` (ICU/FCU/LCU/DCU tables); what
+follows is the coverage summary.
 
-    **The silent-misconfiguration part of this is closed**: `useAlt` throws, the
-    constraint table matches the ROM, and the four bogus float alternates are
-    gone. What remains is purely how much microcode to write — items 19 and 20.
+| group | has `_sw` | no `_sw` (Java trap only) |
+|---|---|---|
+| int | imul | idiv, irem |
+| long | ladd, lsub, lmul, lneg, lshl, lshr, lushr, lcmp | — |
+| float | fneg, fcmpl, fcmpg | fadd, fsub, fmul, fdiv, i2f, f2i |
+| double | — | all 12 (dadd, dsub, dmul, ddiv, i2d, d2i, l2d, d2l, f2d, d2f, dcmpl, dcmpg) |
 
-    **Long is fully covered, float has three of nine, double none.**
+All 20 without one default to `Java`, which the jump table turns into
+`invokestatic`, and all 20 are now marked `NoMicrocode` so asking for `mc`
+is rejected rather than silently dispatched to a compute unit (item 17).
 
-- **19.** **Write the missing `_sw` microcode handlers.** Goal: a microcode fallback
-    for *all or most* configurable bytecodes, so that any board can trade area
-    for cycles without dropping to the Java trap.
+**The silent-misconfiguration part of this is closed**: `useAlt` throws, the
+constraint table matches the ROM, and the four bogus float alternates are
+gone. What remains is purely how much microcode to write — items 19 and 20.
 
-    **Coverage vehicle: `ep4cgx150McFallback`** — selects 11 of the 12 `_sw`
-    handlers and is the regression build for this item.
+**Long is fully covered, float has three of nine, double none.**
 
-    Eleven, not twelve, because **`imul_sw` and `lmul_sw` are mutually
-    exclusive** and no single build can run both. `imul_sw` is a self-contained
-    shift-add loop that touches no compute unit, and it is selected by
-    `imul = mc`. `lmul_sw` computes its partial products on the ICU's
-    `imul`/`imul_wide`, and that multiplier is only built when `imul = hw`
-    (`IntegerComputeUnitConfig.withMul` is `needsIntMul`). So `imul = mc` gives
-    `imul_sw` but breaks `lmul_sw`, and `imul = hw` fixes `lmul_sw` but stops
-    selecting `imul_sw`. This preset takes `imul = hw` and covers `lmul_sw`.
-    `imul_sw` is covered instead by every default-config sim, since `imul`
-    defaults to `Microcode` — so the *set* of tests covers all 12 even though no
-    single one does. It paid for itself on its
-    first run by surfacing the `lmul` configuration defect (item 22). Run it with
-    `make -C fpga/qmtech-ep4cgx150-sdram full-mc-fallback`, or in simulation via
-    `JopJvmTestsMcFallbackSim` (nightly in CI). **New handlers must be added to
-    it**, or they get no coverage at all: JOP's defaults select very few `_sw`
-    handlers, which is how `lmul` went years without anything executing it.
-    Six of the eight gaps outside the double group are small; the double group
-    is item 20.
+<a id="item-19"></a>
 
-    Per-operation cycle costs for the alternatives are already tabulated in
-    `docs/architecture/compute-unit-design.md`.
+### Item 19 — Write the missing `_sw` microcode handlers
 
-    ~~`fneg`~~ — **done**, and it cost nothing: its default handler was already
-    pure microcode (`ldi 0x80000000; xor`), it simply lacked the `fneg_sw` label
-    that `useAlt` looks for. Two labels on one address, ROM byte-identical.
+**Write the missing `_sw` microcode handlers.** Goal: a microcode fallback
+for *all or most* configurable bytecodes, so that any board can trade area
+for cycles without dropping to the Java trap.
 
-    ~~tier 1 (`fcmpl`, `fcmpg`)~~ — **done**. `fcmpl_sw`/`fcmpg_sw`, 97 ROM
-    words for the pair, sharing one body that differs only in the NaN result.
-    **No new `ldi` constants**: the serial pool is the binding one at 30 of 32
-    and `ldi` is a hard 5-bit field, while the ROM had ~2000 words free, so
-    0x7FFFFFFF and 0x7F800000 are derived from constants already present
-    (`-1 >>> 1`, `(255 << 24) >>> 1`) rather than added. Verified against IEEE
-    semantics over 1152 cases (NaN, ±0, ±Inf, denormals, non-canonical NaN
-    payloads), by `JopJvmTestsMcFcmpSim` (DoAll 66/66 in simulation with both set
-    to `mc`), and **on hardware** — `colorlightI5Sdram` now selects them, so the
-    i5 runs DoAll 66/66 with the microcode actually executing. That preset
-    change is the point: a build left on the default Java path never executes
-    these handlers, so "DoAll passed on hardware" would otherwise have said
-    nothing about them.
+**Coverage vehicle: `ep4cgx150McFallback`** — selects 11 of the 12 `_sw`
+handlers and is the regression build for this item.
 
-    The i5 is a natural home for that because it has no FCU, so its alternative
-    was the ~600-cycle SoftFloat32 trap against ~30 cycles of microcode. It is
-    **not** the only one: `ep4cgx150McFallback` selects the same handlers plus
-    every other working `_sw`, and passes DoAll 66/66 on EP4CGX150 hardware
-    (worst-case setup slack +0.970 ns). Two boards, so unplugging either does
-    not lose the coverage.
+Eleven, not twelve, because **`imul_sw` and `lmul_sw` are mutually
+exclusive** and no single build can run both. `imul_sw` is a self-contained
+shift-add loop that touches no compute unit, and it is selected by
+`imul = mc`. `lmul_sw` computes its partial products on the ICU's
+`imul`/`imul_wide`, and that multiplier is only built when `imul = hw`
+(`IntegerComputeUnitConfig.withMul` is `needsIntMul`). So `imul = mc` gives
+`imul_sw` but breaks `lmul_sw`, and `imul = hw` fixes `lmul_sw` but stops
+selecting `imul_sw`. This preset takes `imul = hw` and covers `lmul_sw`.
+`imul_sw` is covered instead by every default-config sim, since `imul`
+defaults to `Microcode` — so the *set* of tests covers all 12 even though no
+single one does. It paid for itself on its
+first run by surfacing the `lmul` configuration defect (item 22). Run it with
+`make -C fpga/qmtech-ep4cgx150-sdram full-mc-fallback`, or in simulation via
+`JopJvmTestsMcFallbackSim` (nightly in CI). **New handlers must be added to
+it**, or they get no coverage at all: JOP's defaults select very few `_sw`
+handlers, which is how `lmul` went years without anything executing it.
+Six of the eight gaps outside the double group are small; the double group
+is item 20.
 
-    | tier | bytecodes | effort | why |
-    |---|---|---|---|
-    | 2 | `i2f`, `f2i` | moderate | normalise/denormalise: count leading zeros, shift, assemble exponent |
-    | 3 | `idiv`, `irem` | moderate | restoring division loop. Lowest value of the three: the ICU already does it in ~36 cycles and the Java trap in ~1300, so this only pays for a board that wants neither |
+Per-operation cycle costs for the alternatives are already tabulated in
+`docs/architecture/compute-unit-design.md`.
 
-    Each one is done when: the `_sw` handler exists in `asm/src/jvm.asm`, its
-    `BytecodeEntry` constraint moves `NoMicrocode` -> `JavaOk`, the coverage
-    expectation in `JumpTableResolutionTest` is updated (it is deliberately
-    pinned so this cannot pass unnoticed), and DoAll passes 66/66 with that
-    bytecode set to `mc` — not merely with the default config, which would not
-    execute the new handler at all.
+~~`fneg`~~ — **done**, and it cost nothing: its default handler was already
+pure microcode (`ldi 0x80000000; xor`), it simply lacked the `fneg_sw` label
+that `useAlt` looks for. Two labels on one address, ROM byte-identical.
+
+~~tier 1 (`fcmpl`, `fcmpg`)~~ — **done**. `fcmpl_sw`/`fcmpg_sw`, 97 ROM
+words for the pair, sharing one body that differs only in the NaN result.
+**No new `ldi` constants**: the serial pool is the binding one at 30 of 32
+and `ldi` is a hard 5-bit field, while the ROM had ~2000 words free, so
+0x7FFFFFFF and 0x7F800000 are derived from constants already present
+(`-1 >>> 1`, `(255 << 24) >>> 1`) rather than added. Verified against IEEE
+semantics over 1152 cases (NaN, ±0, ±Inf, denormals, non-canonical NaN
+payloads), by `JopJvmTestsMcFcmpSim` (DoAll 66/66 in simulation with both set
+to `mc`), and **on hardware** — `colorlightI5Sdram` now selects them, so the
+i5 runs DoAll 66/66 with the microcode actually executing. That preset
+change is the point: a build left on the default Java path never executes
+these handlers, so "DoAll passed on hardware" would otherwise have said
+nothing about them.
+
+The i5 is a natural home for that because it has no FCU, so its alternative
+was the ~600-cycle SoftFloat32 trap against ~30 cycles of microcode. It is
+**not** the only one: `ep4cgx150McFallback` selects the same handlers plus
+every other working `_sw`, and passes DoAll 66/66 on EP4CGX150 hardware
+(worst-case setup slack +0.970 ns). Two boards, so unplugging either does
+not lose the coverage.
+
+| tier | bytecodes | effort | why |
+|---|---|---|---|
+| 2 | `i2f`, `f2i` | moderate | normalise/denormalise: count leading zeros, shift, assemble exponent |
+| 3 | `idiv`, `irem` | moderate | restoring division loop. Lowest value of the three: the ICU already does it in ~36 cycles and the Java trap in ~1300, so this only pays for a board that wants neither |
+
+Each one is done when: the `_sw` handler exists in `asm/src/jvm.asm`, its
+`BytecodeEntry` constraint moves `NoMicrocode` -> `JavaOk`, the coverage
+expectation in `JumpTableResolutionTest` is updated (it is deliberately
+pinned so this cannot pass unnoticed), and DoAll passes 66/66 with that
+bytecode set to `mc` — not merely with the default config, which would not
+execute the new handler at all.
 
 20a. **`lmul` in microcode on a board with no multiplier — a gap, but not
-    worth closing.** Raised because `imul = mc, lmul = mc` is rejected, which
-    looks like a hole in "a microcode fallback for all or most bytecodes".
+worth closing.** Raised because `imul = mc, lmul = mc` is rejected, which
+looks like a hole in "a microcode fallback for all or most bytecodes".
 
-    It is a gap in the *matrix*, not in *capability*. The zero-multiplier
-    configuration is the **default** — `imul` defaults to `Microcode` (a
-    self-contained shift-add loop needing no CU) and `lmul` to `Java` — and it
-    passes DoAll 66/66 in `JopJvmTestsBramSim`. So a board with no ICU
-    multiplier already has a working `lmul`.
+It is a gap in the *matrix*, not in *capability*. The zero-multiplier
+configuration is the **default** — `imul` defaults to `Microcode` (a
+self-contained shift-add loop needing no CU) and `lmul` to `Java` — and it
+passes DoAll 66/66 in `JopJvmTestsBramSim`. So a board with no ICU
+multiplier already has a working `lmul`.
 
-    Closing the gap means a CU-free `lmul_sw` built from three shift-add
-    products. `imul_sw` alone is ~775 cycles for one 32x32, so three partial
-    products is **~2300+ cycles against the Java trap's ~1200** — the microcode
-    version would be roughly twice as slow as what it replaced. That inverts the
-    usual argument for microcode fallbacks, which exists because the Java trap is
-    normally 20-100x worse.
+Closing the gap means a CU-free `lmul_sw` built from three shift-add
+products. `imul_sw` alone is ~775 cycles for one 32x32, so three partial
+products is **~2300+ cycles against the Java trap's ~1200** — the microcode
+version would be roughly twice as slow as what it replaced. That inverts the
+usual argument for microcode fallbacks, which exists because the Java trap is
+normally 20-100x worse.
 
-    Caveat on the comparison: the ~1200 figure is from
-    `compute-unit-design.md` and Java `f_lmul` computes its partial products with
-    the `imul` *bytecode*, so its real cost tracks whatever `imul` is set to. It
-    has not been measured with `imul = mc`. The direction is clear enough to not
-    act on, but the number is not load-bearing — measure before revisiting.
+Caveat on the comparison: the ~1200 figure is from
+`compute-unit-design.md` and Java `f_lmul` computes its partial products with
+the `imul` *bytecode*, so its real cost tracks whatever `imul` is set to. It
+has not been measured with `imul = mc`. The direction is clear enough to not
+act on, but the number is not load-bearing — measure before revisiting.
 
-- **20.** **Decide whether the double group gets microcode at all** — measure before
-    committing. All 12 (`dadd`, `dsub`, `dmul`, `ddiv`, `i2d`, `d2i`, `l2d`,
-    `d2l`, `f2d`, `d2f`, `dcmpl`, `dcmpg`) currently reach only SoftFloat64 at
-    ~3000-5000 cycles, against ~14 cycles on the DCU. Microcode would land
-    somewhere between, but it is a large piece of work for a group most JOP
-    applications use rarely.
+<a id="item-20"></a>
 
-    **ROM budget is not the constraint for items 19 or 20's smaller tiers.**
-    The ROM is 4096 words (`pcWidth = 12`) and the largest variant, serial,
-    uses 2055 — so ~2040 words are free, and `pcWidth` can go to 16 if it ever
-    is the constraint. For scale: all 13 existing `_sw` handlers together are
-    176 words, the largest being `lsub_sw` at 38. Tier 1-3 would add perhaps
-    150-250. A full software double group is the only thing on this list large
-    enough to make ROM size worth checking again — the DCU's 12 dispatch stubs
-    are 90 words, but real SoftFloat64-equivalent microcode is a different
-    order.
+### Item 20 — Decide whether the double group gets microcode at all
 
-    Unlike item 19 this is a genuine question, not a task: the honest answer may
-    be that double stays Java-trap-or-DCU. Worth deferring until there is an
-    application benchmark (item 11) that shows whether double is on any hot
-    path. `dcmpl`/`dcmpg` are the exception — they are as cheap as their float
-    counterparts in tier 1 and could be done with them.
+**Decide whether the double group gets microcode at all** — measure before
+committing. All 12 (`dadd`, `dsub`, `dmul`, `ddiv`, `i2d`, `d2i`, `l2d`,
+`d2l`, `f2d`, `d2f`, `dcmpl`, `dcmpg`) currently reach only SoftFloat64 at
+~3000-5000 cycles, against ~14 cycles on the DCU. Microcode would land
+somewhere between, but it is a large piece of work for a group most JOP
+applications use rarely.
 
-- **22.** ~~**Five `_sw` handlers exist but do not work**~~ — **RESOLVED**. It was two
-    different faults, and only one was in microcode.
+**ROM budget is not the constraint for items 19 or 20's smaller tiers.**
+The ROM is 4096 words (`pcWidth = 12`) and the largest variant, serial,
+uses 2055 — so ~2040 words are free, and `pcWidth` can go to 16 if it ever
+is the constraint. For scale: all 13 existing `_sw` handlers together are
+176 words, the largest being `lsub_sw` at 38. Tier 1-3 would add perhaps
+150-250. A full software double group is the only thing on this list large
+enough to make ROM size worth checking again — the DCU's 12 dispatch stubs
+are 90 words, but real SoftFloat64-equivalent microcode is a different
+order.
 
-    **`lmul_sw` was never broken.** It needs the ICU's *multiplier*, and
-    `IntegerComputeUnitConfig.withMul` is `needsIntMul`, i.e. `imul == Hardware`
-    specifically. The `require` guarding it checked `needsIntegerCompute`
-    (`isHw("imul","idiv","irem")`), which `idiv = hw` satisfies on its own — so
-    `idiv = hw, imul = mc, lmul = mc` passed validation and then built an ICU
-    with **no multiplier at all**. `sthw 3` had nothing to dispatch to and lmul
-    returned garbage: 6 DoAll failures, the float and double ones because
-    SoftFloat32/64 call lmul for mantissa multiplication.
+Unlike item 19 this is a genuine question, not a task: the honest answer may
+be that double stays Java-trap-or-DCU. Worth deferring until there is an
+application benchmark (item 11) that shows whether double is on any hot
+path. `dcmpl`/`dcmpg` are the exception — they are as cheap as their float
+counterparts in tier 1 and could be done with them.
 
-    With `imul = hw` the same handler passes DoAll 66/66. The `require` now
-    checks `needsIntMul` and says why `idiv/irem = hw` is not sufficient.
+<a id="item-22"></a>
 
-    Worth recording how this looked from outside: a handler that had never been
-    executed, documented as broken, produced exactly the failure signature of a
-    broken handler — and was fine. The evidence that it was "broken" and the
-    evidence that it was "fixed" were both inference rather than measurement.
+### Item 22 — ~~Five `_sw` handlers exist but do not work — RESOLVED. It was two~~
 
-    **`fadd_sw`/`fsub_sw`/`fmul_sw`/`fdiv_sw` were genuinely dead** — I/O
-    handlers for the BmbFpu peripheral, writing to 0xF0-0xF3 which stopped
-    decoding when that peripheral was removed. Deleted, along with their
-    `fpu_*` address constants. Those four bytecodes are now `NoMicrocode`, which
-    is true rather than merely enforced.
+~~**Five `_sw` handlers exist but do not work**~~ — **RESOLVED**. It was two
+different faults, and only one was in microcode.
 
-    Net: `altEntries` goes 16 -> 12, and all 12 are real. "Has an alternate" and
-    "has a *working* alternate" mean the same thing again, so
-    `JumpTableResolutionTest`'s `noSw == noMc` invariant is now sufficient as
-    well as necessary.
+**`lmul_sw` was never broken.** It needs the ICU's *multiplier*, and
+`IntegerComputeUnitConfig.withMul` is `needsIntMul`, i.e. `imul == Hardware`
+specifically. The `require` guarding it checked `needsIntegerCompute`
+(`isHw("imul","idiv","irem")`), which `idiv = hw` satisfies on its own — so
+`idiv = hw, imul = mc, lmul = mc` passed validation and then built an ICU
+with **no multiplier at all**. `sthw 3` had nothing to dispatch to and lmul
+returned garbage: 6 DoAll failures, the float and double ones because
+SoftFloat32/64 call lmul for mantissa multiplication.
+
+With `imul = hw` the same handler passes DoAll 66/66. The `require` now
+checks `needsIntMul` and says why `idiv/irem = hw` is not sufficient.
+
+Worth recording how this looked from outside: a handler that had never been
+executed, documented as broken, produced exactly the failure signature of a
+broken handler — and was fine. The evidence that it was "broken" and the
+evidence that it was "fixed" were both inference rather than measurement.
+
+**`fadd_sw`/`fsub_sw`/`fmul_sw`/`fdiv_sw` were genuinely dead** — I/O
+handlers for the BmbFpu peripheral, writing to 0xF0-0xF3 which stopped
+decoding when that peripheral was removed. Deleted, along with their
+`fpu_*` address constants. Those four bytecodes are now `NoMicrocode`, which
+is true rather than merely enforced.
+
+Net: `altEntries` goes 16 -> 12, and all 12 are real. "Has an alternate" and
+"has a *working* alternate" mean the same thing again, so
+`JumpTableResolutionTest`'s `noSw == noMc` invariant is now sufficient as
+well as necessary.
 
 ### Boards
 
-- **21.** **Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound** — with
-    64 KB of on-chip main memory it sat at 71% block RAM against 30% of LUTs.
-    Moving main memory to SDRAM inverts that to **21% block RAM / 42% LUTs**, so
-    SMP and extra compute units are now worth trying; they were not possible
-    while a single core consumed 71% of the EBR, which is why the board went to
-    SDRAM before anything else. It is also the only board on the open-source
-    toolchain, so it is the natural place to notice yosys/nextpnr-specific
-    breakage before it reaches the vendor flows.
+<a id="item-21"></a>
+
+### Item 21 — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+
+**Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound** — with
+64 KB of on-chip main memory it sat at 71% block RAM against 30% of LUTs.
+Moving main memory to SDRAM inverts that to **21% block RAM / 42% LUTs**, so
+SMP and extra compute units are now worth trying; they were not possible
+while a single core consumed 71% of the EBR, which is why the board went to
+SDRAM before anything else. It is also the only board on the open-source
+toolchain, so it is the natural place to notice yosys/nextpnr-specific
+breakage before it reaches the vendor flows.
 
 ### Coupling — read before sequencing any of this
 
@@ -3273,13 +3542,13 @@ trusting the table as true coverage rather than as a configuration matrix.
 allocates.** They look independent and are not.
 
 - Item 1 (shared card table) is ~1-2 days, and the *test* is the bulk of it. The
-  bug is "a young object reachable only from a tenured object written by another
-  core is collected while live". Demonstrating that needs two cores allocating
-  and storing cross-generation references — i.e. exactly such an application.
+bug is "a young object reachable only from a tenured object written by another
+core is collected while live". Demonstrating that needs two cores allocating
+and storing cross-generation references — i.e. exactly such an application.
 - Item 2 is vacuous today *because* no such application exists:
-  `JopIhluGcBramSim` falls back to a single-core app, so core 1 never boots.
+`JopIhluGcBramSim` falls back to a single-core app, so core 1 never boots.
 - Item 11 needs the same thing as its first slice, before it grows into a
-  benchmark that can answer the arbiter and cache questions.
+benchmark that can answer the arbiter and cache questions.
 
 So build the application once and it serves all three: it makes item 2's test
 meaningful, gives item 1 something that can fail before the RTL changes, and is
@@ -3300,7 +3569,89 @@ before treating them as separate projects.
 
 ---
 
-## 1. Two workstreams, both largely done
+<a id="item-37"></a>
+
+### Item 37 — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
+
+**The method cache dominates real memory traffic.** `DoAppAcacheSweepSim`
+attributes every BMB transaction to the memory-controller state that issued
+it, over Kfl + UdpIp + Lift: **bytecode fill 62.3 %**, direct access 18.5 %,
+statics 15.0 %, and ALL array traffic 4.2 %. If real-application memory cost
+is worth attacking, it is here.
+
+**Not yet actionable — see item 38.** 62 % of *transactions* is not 62 % of
+*time*; a method-cache fill is a burst of cheap accesses. The stall-fraction
+measurement bounds what this can be worth before any design work starts.
+
+<a id="item-38"></a>
+
+### Item 38 — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31
+
+**DoApp's memory-stall fraction is unmeasured, and it gates the whole
+memory-optimisation direction.** Everything known about real-application
+memory cost is transaction COUNTS (item 37). What is missing is what
+fraction of application *time* is spent waiting.
+
+`DoAppBramSim` runs the same binary against BRAM (single-cycle accept) for
+comparison against the hardware figures (EP4CGX150 SDR 80 MHz: Kfl 7742,
+UdpIp 3521, Lift 12690 1/s), normalised per MHz. The difference IS the stall
+fraction, and it is the ceiling on anything items 37, 39, 5 or 31 can buy on
+real code. One sim run; do it before committing to any of them.
+
+<a id="item-39"></a>
+
+### Item 39 — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
+
+**`LruCacheCore` serves every request through one FSM, hit or miss.**
+`IDLE -> TAG_COMPARE -> CHECK_HIT` is 3 cycles for a read hit, 4 with
+`WRITE_HIT`. On `jbe.Scale` that floor is 28 cycles/access with no misses at
+all, against 48.7 measured on DDR3 and 46.5 on DDR2 — **58 % and 61 % of the
+whole interval is the cache servicing hits one at a time.**
+
+The MSHR work made MISSES concurrent; hits were left strictly serial. Worth
+at most 48.7 -> 28 on that benchmark, and gated by item 38 for real code.
+
+<a id="item-40"></a>
+
+### Item 40 — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+
+**Each MSHR entry stores a whole cache line of write data** (128 bits
+on DDR3, 256 on DDR2) even though a read miss needs none of it and only a
+partial write miss does. That is what makes **8 MSHRs unroutable at 8 cores**
+on the XC7A100T (94 % LUT at synthesis, congestion level 5, 27,257 node
+overlaps).
+
+Since 4 MSHRs is already an under-provision for 8 cores — each core holds one
+outstanding BMB transaction — the measured 4.38x is a FLOOR for the approach,
+not its best. Storing write data only for write entries, or merging into the
+line at allocation, is the obvious fix.
+
+<a id="item-41"></a>
+
+### Item 41 — Neither 8-core DRAM build closes timing, MSHRs or not
+
+**8-core builds do not close timing on either DRAM board**, and did not
+before the MSHR work either: DDR2 -3.056 ns (was -3.059), DDR3 -0.501 ns
+blocking and -0.465 ns with MSHRs. `jbe.Scale`'s `CHECK` is bit-identical
+across every build, which is what makes measuring on them defensible — but
+they are **measurement vehicles, not shippable bitstreams**.
+
+The DDR2 case cannot be fixed by lowering the clock: `mem_if_clk_mhz` 150.0
+at half rate floors the system clock at 62.5 MHz against the ~61 MHz needed.
+The shared root cause is the `BmbMemoryController -> cmdFifo` path — item 5.
+
+<a id="item-42"></a>
+
+### Item 42 — Secondary-hit merging is not implemented — a request to a line being filled replays
+
+**Secondary hits replay rather than attach.** A request to a line
+already being filled is bounced back through `IDLE` instead of joining the
+MSHR that is already fetching it. Deliberate: the one-in-flight-miss-per-set
+rule makes merging an optimisation rather than a correctness requirement, and
+leaving it out kept the first implementation tractable. Pure throughput, no
+correctness impact.
+
+## 4. Two workstreams, both largely done
 
 **GC (Stage 3)** — generational GC is on by default and hardware-validated on
 both the EP4CGX150 and XC7A100T. The minor pause is now **bounded**, which was
@@ -3328,7 +3679,7 @@ live set, so no nursery size could have bounded it. It no longer does.
 | Download > 32 KB | ✅ fixed — the adapter now responds to writes |
 | Full GC suite on ~1.07 GB | ✅ JVM 66/66, minor pause 14.1 ms |
 
-## 2. How the serial-boot handshake was fixed (history)
+## 5. How the serial-boot handshake was fixed (history)
 
 **Resolved and confirmed on all four boards.** Kept because the failure mode is
 instructive and the reasoning is reusable.
@@ -3428,7 +3779,7 @@ error) — but change one thing at a time.
 is confined to the JOP design. Keep using that control; it has repeatedly
 separated "board broken" from "our design broken".
 
-## 3. After that, in priority order
+## 6. GC roadmap — history (superseded by section 1)
 
 1. ~~**GC suite at 1 GB**~~ — **DONE 2026-08-03, all green.** DoAll 66/66,
    GcStressTest 537k rounds clean, MultiArrayGcTest and IntHandlerGcTest OK,
@@ -3644,7 +3995,7 @@ separated "board broken" from "our design broken".
    independently measurable, the constraints that must not break, and the open
    questions (cache pressure being the main one). Not started.
 
-## 4. Hardware setup
+## 7. Hardware setup
 
 | board | cable | how it is programmed |
 |---|---|---|
@@ -3702,7 +4053,7 @@ paths** — they move on every replug. An alias names whatever the serial is
 attached to: a Pico soldered to a board names that board, but the Terasic is a
 cable that moves.
 
-## 5. Traps that cost real time — worth reading before debugging hardware
+## 8. Traps that cost real time — worth reading before debugging hardware
 
 - **Ghost USB devices.** The VM held stale passthrough entries: a physically
   disconnected board still appeared in `lsusb`/sysfs, and writes to it
@@ -3826,7 +4177,7 @@ cable that moves.
   whether the current command was accepted produces duplicated transactions that
   look exactly like an RTL ordering bug.
 
-## 6. Build quick reference
+## 9. Build quick reference
 
 **Running a benchmark on a board** — `fpga/scripts/run_bench <board> <bitstream>
 <app.jop> [seconds]`, for `ae115fb` / `wukong` / `ep4cgx150`. It reprograms
