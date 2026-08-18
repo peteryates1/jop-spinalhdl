@@ -17,9 +17,12 @@
 #  2. ASSERT THE DEVICE. The two Altera boards SHARE the Terasic cable and
 #     programming the wrong one succeeds silently.
 #
-#  3. THE BAUD IS PER BOARD AND NOT ALWAYS ROUND. Wukong DDR3 at
-#     MigProfile.Ddr3_366 runs ui_clk at 91.676 MHz and UartCtrl divides by
-#     baud x 5, so the line rate is 2.0372 Mbaud, not 2. If a board seems dead,
+#  3. THE BAUD IS PER BOARD. It used to be per board AND not always round:
+#     Wukong DDR3 at MigProfile.Ddr3_366 runs ui_clk at 91.676 MHz, and the old
+#     integer divider turned a requested 2 Mbaud into 2.0372. Fixed 2026-08-18
+#     by jop.io.UartBaudTick, so every board is now the round number it asks
+#     for -- but bitstreams built BEFORE that date still need 2037000. If a
+#     board seems dead,
 #     listen RAW across a sweep of bauds before believing it — a mis-clocked
 #     build transmits a stable byte that decodes to 0xAA at no standard rate,
 #     and the ratio that does decode tells you the real clock.
@@ -35,7 +38,7 @@ case "$BOARD" in
   ae115fb)   UART=/dev/ttyUSB0; BAUD=1000000; KIND=quartus ;;
   ep4cgx150) UART=/dev/ttyUSB1; BAUD=2000000; KIND=quartus ;;
   wukong)    UART=$(./fpga/scripts/usb_serial_map 2>/dev/null | awk '/1a86:7523/{print $1; exit}')
-             BAUD=2037000; KIND=openfpgaloader ;;
+             BAUD=2000000; KIND=openfpgaloader ;;   # 2037000 before 2026-08-18
   *) echo "unknown board '$BOARD'"; exit 2 ;;
 esac
 [ -n "${UART:-}" ] || { echo "no UART found for $BOARD"; exit 2; }

@@ -148,6 +148,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[29](#item-29)** — ~~`BytecodeFetchStage: JumpTable integration` is flaky in CI~~ — **FIXED** (X-state)
 - **[30](#item-30)** — ~~`JopJvmTestsBramSim` — the CI baseline job — intermittently dies~~ — **FIXED** (X-state)
 - **[45](#item-45)** — ~405 registers have no reset — zeroing X-state in sim is a floor, not a fix
+- **[49](#item-49)** — ~~The UART divided the clock by an integer, so the baud was only right on lucky clocks~~ — **FIXED** (`UartBaudTick`)
 - **[48](#item-48)** — ~~No runtime reset: the FPGA had to be reprogrammed before every download~~ — **DONE** (UART escape + button)
 - **[46](#item-46)** — ~~`formal-verification` fails intermittently~~ — **ALREADY FIXED** 2026-08-15 (`6bce639b`, formal timeout 300→900 s)
 - **[47](#item-47)** — ~~A push cancelled the nightly scheduled CI run~~ — **FIXED** (concurrency group)
@@ -3166,6 +3167,58 @@ so nothing draws attention to it.
 Adding `-${{ github.event_name }}` to the group separates them. Pushes still
 cancel each other, which was the original intent.
 
+<a id="item-49"></a>
+
+### Item 49 — ~~The UART divided the clock by an integer, so the baud was only right on lucky clocks — FIXED~~
+
+**FIXED 2026-08-18.** `UartCtrl.setClockDivider` computes
+`round(clkFreq / baud / samplesPerBit) - 1` and ticks on an integer count, so
+the achievable rate is `clkFreq / (N x 5)` and nothing else. On this project's
+clocks that is exact by luck, not design:
+
+| board | clk | want | N | integer divider gives | error |
+|---|---|---|---|---|---|
+| EP4CGX150 SDR | 80.000 MHz | 2 M | 8 | 2,000,000 | exact |
+| XC7A100T DB V5 | 100.000 MHz | 2 M | 10 | 2,000,000 | exact |
+| Colorlight i5 | 40.000 MHz | 1 M | 8 | 1,000,000 | exact |
+| A-E115FB DDR2 | 75.000 MHz | 1 M | 15 | 1,000,000 | exact |
+| **A-E115FB @ 2 M** | 75.000 MHz | 2 M | 7 | 2,142,857 | **+7.14 %** |
+| **Wukong Ddr3_366** | 91.676 MHz | 2 M | 9 | 2,037,244 | **+1.86 %** |
+
+The two inexact rows are exactly the two documented gotchas: the A-E115FB's
+"baud must divide 75 MHz / 5 exactly, 2 M does NOT", and the Wukong's
+`DDR3_UART_BAUD = 2037000`. No integer can fix either -- 2 Mbaud from
+91.676 MHz needs 45.838 clocks per bit.
+
+**`jop.io.UartBaudTick`** replaces the divider with a phase accumulator (an
+NCO): add `round(2^24 x baud x samplesPerBit / clkFreq)` each clock, tick on
+the carry. `JopUartCtrl` wraps the stock `UartCtrlTx`/`UartCtrlRx` with it, and
+both `jop.io.Uart` and `UartResetEscape` use it -- from one place, so the reset
+escape can never decode at a different rate from the UART the host is tuned to.
+Cost is an adder and 24 flip-flops.
+
+Measured in simulation, in clock cycles so the testbench clock cannot flatter
+it: Wukong **45.8379 cycles/bit against an ideal 45.8380 (-0.0002 %)** where
+the divider was +1.86 %; A-E115FB at 2 M **37.5002 vs 37.5000 (+0.0006 %)**
+where the divider was +7.14 %; EP4CGX150 unchanged at exactly 40.0000.
+
+**Hardware.** EP4CGX150 download OK with an unchanged checksum and **8/8**
+reset-and-redownload; Wukong downloads at a plain **2000000** instead of
+2037000, **6/6** reset-and-redownload, `CARD OK`. Quartus +0.756 ns, Vivado
+MET at WNS +0.109 ns.
+
+**Do not oversell this.** On the Wukong it is TIDINESS, not a repair: 1.86 % is
+inside 8N1 tolerance, both 2000000 and 2037000 decode cleanly against the new
+bitstream, and the old pairing worked. What it buys there is a round number and
+one less per-board constant. The functional win is the A-E115FB, where +7.14 %
+is outside tolerance and 2 Mbaud was simply unavailable -- and that board is
+**not attached, so that row is simulation only**. Its preset still asks for
+1 Mbaud; raising it to 2 M would halve download time and should be tried when
+the board is next connected.
+
+Bitstreams built before 2026-08-18 still need 2037000 on the Wukong;
+`run_bench`, the Makefile and the board doc all say so.
+
 <a id="item-48"></a>
 
 ### Item 48 — ~~No runtime reset: the FPGA had to be reprogrammed before every download — DONE~~
@@ -4695,8 +4748,9 @@ cable that moves.
 <app.jop> [seconds]`, for `ae115fb` / `wukong` / `ep4cgx150`. It reprograms
 first (mandatory: a previous download consumes the ready handshake and the board
 then looks dead), asserts the IDCODE (the two Altera boards share one cable),
-and picks the per-board UART and baud — including the Wukong's 2037000, which is
-not a typo. `fpga/scripts/scale_parse.py <log>` recovers `jbe.Scale` results from
+and picks the per-board UART and baud. (It carried the Wukong at 2037000 until
+2026-08-18 — not a typo but a rounding error, now fixed at source by
+`jop.io.UartBaudTick`; bitstreams older than that date still need it.) `fpga/scripts/scale_parse.py <log>` recovers `jbe.Scale` results from
 the per-core timers rather than the printed `AGGREGATE`, because the CH340 drops
 a character every few hundred at 2 Mbaud and has already mangled that line.
 

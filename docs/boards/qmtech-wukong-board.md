@@ -100,8 +100,10 @@ to match — with everything still building cleanly.
    `sbt "runMain jop.system.JopTopVerilog wukongDdr3Smp 6 91650000"`.
    91.65 MHz is not an integer MHz, hence Hz. This sets the microsecond
    prescaler and the UART divider; get it wrong and the board goes quiet.
-5. `make ddr3-smp-build`, program, and **download at 2037000 baud** —
-   `UartCtrl` divides `clkFreq / (baud × 5)`, so 91.65 MHz yields 2.0367 Mbaud,
+5. `make ddr3-smp-build`, program, and **download at 2000000 baud**
+   (2037000 for bitstreams built before 2026-08-18) —
+   the old `UartCtrl` divided `clkFreq / (baud × 5)`, so 91.65 MHz yielded
+   2.0367 Mbaud; `UartBaudTick` now makes it exact,
    not 2.
 
 Result: 68.4 % LUT, post-route WNS +0.018 / WHS +0.059; `SMPGC OK` 4/4 runs and
@@ -124,7 +126,8 @@ a build rather than after a silent board.
 | 2778 ps | 102.848 MHz | 360 MHz | 90 MHz | rejected — MIG will not take a 100 MHz input, and 102.848 is not what the clk_wiz feeds it |
 
 2778 was tried first because a 90 MHz ui_clk would give an exact 2 Mbaud. It is
-not reachable from this board's clk_wiz, so the awkward 2.0367 Mbaud stands.
+not reachable from this board's clk_wiz. The awkward 2.0367 Mbaud that used
+to imply is gone -- the UART no longer divides by an integer.
 
 ### DDR3 Pin Assignments
 
@@ -665,7 +668,8 @@ trusting the downloader:
 
 `1833520 = 2000000 x 91.676/100`, and that ratio names the real clock. Rebuild
 with the matching profile (`... Ddr3_366`), after which the download baud is
-**2037000**.
+**2000000** — or **2037000** if the bitstream predates 2026-08-18, when the
+UART still divided the clock by an integer.
 
 Worse than a dead board: `jbe.Scale`'s timebase is `IO_US_CNT`, derived from the
 same wrong `clkFreq`, so a mis-clocked build reports plausible numbers that are
@@ -680,9 +684,10 @@ make ddr3-redownload JOP_FILE=<app>.jop   # reset + download, no JTAG
 make ddr3-reset                           # reset only
 ```
 
-Note the DDR3 UART baud follows the MigProfile, not a round number: at
-`Ddr3_366` a nominal 2 Mbaud lands on the wire at **2.0372 Mbaud**
-(`DDR3_UART_BAUD` in the Makefile). The UART is the CH340 (`/dev/ttyUSB4` at
+The DDR3 UART runs at exactly **2 Mbaud** (`DDR3_UART_BAUD`). It used to be
+2037000, because ui_clk is 91.6758 MHz and an integer divisor could not express
+2 M; `jop.io.UartBaudTick` removed that. Bitstreams built before 2026-08-18
+still need 2037000. The UART is the CH340 (`/dev/ttyUSB4` at
 time of writing — map it by serial, never by path).
 
 **This is a CORE-ONLY reset.** `sys_rst` stays tied to PLL lock, so the MIG

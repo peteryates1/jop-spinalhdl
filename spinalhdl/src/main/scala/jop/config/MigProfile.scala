@@ -58,11 +58,13 @@ object MigProfile {
    * bandwidth, which is what 6 cores needs. Validated on hardware 2026-08-16:
    * SMPGC OK 4/4 and DoAll 66/66, both generational, WNS +0.018.
    *
-   * NOTE the UART: `clkFreq / (baud x 5)` lands on 2.0367 Mbaud here, not 2 —
-   * download with `... 2037000`.
+   * The UART used to need `... 2037000` here, because an integer divisor of
+   * this ui_clk lands on 2.0367 Mbaud rather than 2. Fixed 2026-08-18 by the
+   * fractional baud generator (jop.io.UartBaudTick); download at a plain
+   * 2000000 like every other board.
    */
   case object Ddr3_366 extends MigProfile(2727, 97.787,
-    "6 cores at 91.68 MHz; UART runs at 2.0372 Mbaud")
+    "6 cores at 91.68 MHz")
 
   val all: Seq[MigProfile] = Seq(Ddr3_400, Ddr3_366)
 
@@ -72,6 +74,11 @@ object MigProfile {
    * 102.848 MHz sys_clk for it, which this board's clk_wiz cannot sensibly
    * provide from its 50 MHz oscillator alongside the 200 MHz reference. The
    * awkward 2.0367 Mbaud of Ddr3_366 stands.
+   *
+   * MOOT since 2026-08-18: the UART no longer divides the clock by an integer
+   * (jop.io.UartBaudTick), so an awkward ui_clk costs nothing at the serial
+   * port and 2 Mbaud is exact here. The sys_clk argument against 2778 ps
+   * stands on its own; the baud argument for or against any profile does not.
    */
   val rejected: String = "2778 ps (ui_clk 90 MHz) — MIG demands 102.848 MHz in"
 

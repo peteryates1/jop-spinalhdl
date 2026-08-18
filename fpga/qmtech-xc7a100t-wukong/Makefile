@@ -10,9 +10,12 @@ JOP_SDRAM_BITSTREAM := vivado/build/wukong_jop_sdram/JopSdramWukongTop.bit
 DUAL_BITSTREAM := vivado/build/wukong_jop_dual_np/JopDualWukongTop.bit
 UART_DEV := /dev/ttyUSB0
 UART_BAUD := 1000000
-# DDR3 runs off MIG ui_clk, so the baud follows the MigProfile rather than a
-# round number: Ddr3_366 puts 2 Mbaud nominal on the wire at 2.0372 Mbaud.
-DDR3_UART_BAUD := 2037000
+# Exactly 2 Mbaud since 2026-08-18. It used to be 2037000: ui_clk is
+# 91.6758 MHz at Ddr3_366, an integer divisor gave 2.0372 Mbaud, and this
+# constant existed purely to chase that rounding error. jop.io.Uart now uses a
+# fractional baud generator (UartBaudTick), so the wire rate is the requested
+# one on any clock.
+DDR3_UART_BAUD := 2000000
 JOP_FILE ?= $(REPO_ROOT)/java/apps/Smallest/HelloWorld.jop
 DUAL_SDR_UART_DEV := /dev/ttyACM0
 DUAL_SDR_UART_BAUD := 115200

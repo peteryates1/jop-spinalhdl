@@ -35,14 +35,17 @@ case class Uart(baudRate: Int = 1000000, clkFreq: HertzNumber = HertzNumber(1000
     val rxd = in  Bool()
   }
 
-  // UART controller with 5x oversampling
-  val uartCtrl = new UartCtrl(UartCtrlGenerics(
+  // UART controller with 5x oversampling.
+  //
+  // JopUartCtrl, not SpinalHDL's UartCtrl: the latter divides the clock by an
+  // INTEGER, which cannot express 2 Mbaud on either 91.676 MHz (Wukong DDR3,
+  // +1.86 %) or 75 MHz (A-E115FB, +7.14 % — which is why that board's notes say
+  // 2 M "does NOT work"). JopUartCtrl uses a fractional accumulator and is
+  // exact to about one part in 10^7 on any clock. Same UartCtrlTx/UartCtrlRx
+  // underneath, same 8N1 frame.
+  val uartCtrl = JopUartCtrl(baudRate, clkFreq, UartCtrlGenerics(
     preSamplingSize = 1, samplingSize = 3, postSamplingSize = 1
   ))
-  uartCtrl.io.config.setClockDivider(baudRate Hz, clkFreq)
-  uartCtrl.io.config.frame.dataLength := 7  // 8 bits (0-indexed)
-  uartCtrl.io.config.frame.parity := UartParityType.NONE
-  uartCtrl.io.config.frame.stop := UartStopType.ONE
   uartCtrl.io.writeBreak := False
 
   // TX FIFO
@@ -62,8 +65,8 @@ case class Uart(baudRate: Int = 1000000, clkFreq: HertzNumber = HertzNumber(1000
   uartCtrl.io.read.ready := rxFifo.io.push.ready
 
   // UART pins
-  io.txd := uartCtrl.io.uart.txd
-  uartCtrl.io.uart.rxd := io.rxd
+  io.txd := uartCtrl.io.txd
+  uartCtrl.io.rxd := io.rxd
 
   // Interrupt enable registers
   val rxIntEnaReg = Reg(Bool()) init(False)

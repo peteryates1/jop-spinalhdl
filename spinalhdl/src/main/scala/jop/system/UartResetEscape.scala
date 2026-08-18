@@ -3,6 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.lib._
 import spinal.lib.com.uart._
+import jop.io.JopUartCtrl
 
 /**
  * Out-of-band reset trigger on the UART receive line.
@@ -67,19 +68,18 @@ case class UartResetEscape(baudRate: Int,
     val resetRequest = out Bool()
   }
 
-  // Same generics as jop.io.Uart, so the break threshold and bit timing here
-  // are identical to the peripheral the host is already talking to.
-  val ctrl = new UartCtrl(UartCtrlGenerics(
+  // The SAME controller and generics as jop.io.Uart, so the break threshold and
+  // bit timing here are identical to the peripheral the host is already talking
+  // to. If these ever diverge the escape decodes at a different rate from the
+  // UART the host is tuned for, and the confirmation byte silently stops
+  // matching -- so take the timing from one place, not two.
+  val ctrl = JopUartCtrl(baudRate, clkFreq, UartCtrlGenerics(
     preSamplingSize = 1, samplingSize = 3, postSamplingSize = 1
   ))
-  ctrl.io.config.setClockDivider(baudRate Hz, clkFreq)
-  ctrl.io.config.frame.dataLength := 7
-  ctrl.io.config.frame.parity := UartParityType.NONE
-  ctrl.io.config.frame.stop := UartStopType.ONE
   ctrl.io.writeBreak := False
   ctrl.io.write.valid := False
   ctrl.io.write.payload := 0
-  ctrl.io.uart.rxd := io.rxd
+  ctrl.io.rxd := io.rxd
   ctrl.io.read.ready := True
 
   // Finite, so a stray break cannot leave the trigger armed indefinitely
