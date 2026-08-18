@@ -58,4 +58,4 @@ case "$KIND" in
     openFPGALoader -c dirtyJtag --busdev-num "$BUSDEV" "$BIT" 2>&1 | tail -1 ;;
 esac
 sleep 2
-timeout "$SECS" python3 fpga/scripts/download.py -e "$APP" "$UART" "$BAUD" 2>&1
+timeout "$SECS" python3 -u fpga/scripts/download.py -e "$APP" "$UART" "$BAUD" 2>&1

@@ -57,10 +57,10 @@ on the grounds that a flaky baseline makes every other number arguable.
 2. **[#30](#item-30)** — `JopJvmTestsBramSim` — the CI baseline job — intermittently dies
 3. **[#29](#item-29)** — `BytecodeFetchStage: JumpTable integration` is flaky in CI
 4. **[#32](#item-32)** — UART data corruption on seed 871203250 — CI seed now PINNED around it
-5. **[#43](#item-43)** — Colorlight i5 SDRAM stage builds and programs but is completely silent (regression)
-6. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-7. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
-8. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
+5. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+6. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
+7. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
+8. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
 9. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 10. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
 11. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
@@ -147,11 +147,12 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
 - **[40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
 - **[41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
+- **[44](#item-44)** — The compute floor C is per-configuration; single-core latency decompositions need C re-measured
 - **[42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-- **[43](#item-43)** — Colorlight i5 SDRAM stage builds and programs but is completely silent
 
 ### Closed
 
+- ~~**[43](#item-43)**~~ — Colorlight i5 SDRAM "regression" — FALSE ALARM, my own documented trap
 - ~~**[1](#item-1)**~~ — Generational GC is unsound on SMP — RESOLVED (2026-08-15
 - ~~**[2](#item-2)**~~ — `JopIhluGcBramSim` cannot fail — CLOSED 2026-08-16
 - ~~**[34](#item-34)**~~ — 4-CORE STATUS after the fetch-stall fixes — the SDRAM row is
@@ -3655,48 +3656,89 @@ correctness impact.
 
 <a id="item-43"></a>
 
-### Item 43 — Colorlight i5 SDRAM stage builds and programs but is completely silent
+### Item 43 — ~~Colorlight i5 SDRAM stage is silent~~ — FALSE ALARM, retracted same day
 
-**Found 2026-08-18** while trying to use the i5 as an independent-toolchain data
-point. **Not caused by the MSHR work** — `JopSdramI5Top` contains none of the
-components it touched (`LruCacheCore`, `BmbCacheBridge`, `CacheToMigAdapter`,
-`CacheToDdr2Adapter` all absent; only `BmbSdramCtrlWide` is there).
+**Retracted 2026-08-18, hours after being raised.** The i5 SDRAM stage is fine.
+It builds (49.65 MHz PASS at 40), programs, boots, and runs both benchmarks:
 
 | | |
 |---|---|
-| `colorlightI5Sdram` | builds clean (**49.65 MHz PASS** at 40), programs (`Disable configuration: DONE`), UART **completely silent at every baud tried** — 115200 / 500 k / 800 k / 1 M / 2 M |
-| `colorlightI5Bram` | same board, same toolchain, same session: clean `0xAA` ready bytes at 1 Mbaud |
+| `jbe.DoApp` | Kfl **5580**, UdpIp **2547**, Lift **7713** 1/s at 40 MHz |
+| `jbe.Scale` | **287 kacc/s** single core, `CHECK 1645838336` — the same value every other board produces |
 
-So the board, the DAPLink CDC, the UART pins, the baud, the PLL and the whole
-yosys/nextpnr/ecppack path are all fine. The SDRAM design specifically never
-reaches the UART.
+**How the false alarm happened, because it is worth not repeating.** The test
+sequence was: program, run a download, download fails, then listen raw at a
+sweep of bauds — silence at every one. But **the failed download had already
+consumed the ready handshake**, which is precisely the trap documented the same
+morning in `fpga/scripts/run_bench` and the Wukong board notes: *a previous
+download attempt makes a live board look completely silent.* Reprogramming and
+listening immediately gives a clean `0xAA` stream.
 
-**Silence is the diagnostic.** The other two boards debugged this week were both
-*transmitting* when they looked dead — a mis-clocked build sends a stable byte
-that decodes to `0xAA` at no standard baud, and a raw baud sweep finds the ratio
-(see item 5's Wukong note and the A-E115FB bring-up). Nothing at all is a
-different failure: the design is not running, or reset never releases.
+The download failure underneath it was mundane and also mine: `download.py`
+output is block-buffered when piped, so `timeout` killed it and discarded the
+buffer, producing no diagnostics at all. `fpga/scripts/run_bench` now runs it
+with `python3 -u`.
 
-**First suspect: reset gated on SDRAM initialisation.** That is exactly the bug
-the A-E115FB DDR2 bring-up hit — reset must wait for `local_init_done`, not just
-for the PHY clock, or the core executes against uncalibrated memory. Worth
-checking whether the i5 path has an equivalent gate before looking anywhere else.
+**Two lessons, both already written down and both ignored in the moment:**
 
-Last known good is **2026-08-05**, `DoAll` 66/66 at 40 MHz over SDRAM
-(`boards/colorlight-i5-bringup.md`), so this regressed somewhere in the two
-weeks since and is worth bisecting while that window is small.
+- **Order matters when diagnosing a silent board.** Reprogram immediately before
+  listening, or the handshake state confounds the measurement. Writing the trap
+  into a script does not help if the debugging is done by hand around it.
+- **Silence versus garbage is a real discriminator** — and it only means what it
+  is supposed to mean if the board has not been disturbed first.
 
-**Why it matters beyond one board:** the i5 is the project's only
-**open-source-toolchain** target. Losing it means yosys/nextpnr coverage rots
-silently. It is also the only board with a **32-bit SDRAM** (`BmbSdramCtrlWide`,
-one op per BMB beat against the 16-bit boards' two), which makes it the only
-available falsification test for the transaction-cost arithmetic in
-[the MSHR plan](architecture/nonblocking-cache-mshr-plan.md) — that analysis
-divides by ops-per-beat and has never been checked on a 1:1 memory.
 
-**Blocked workaround:** the BRAM stage cannot substitute. It has 64 KB of main
-memory at **71 % EBR (40/56)** with 16 blocks free, and `JbeBench.jop` is 64 KB
-of code before any heap. Confirms item 21.
+<a id="item-44"></a>
+
+### Item 44 — The compute floor C is per-configuration, so single-core latency decompositions are unsafe
+
+**Found 2026-08-18** by trying to falsify the transaction-cost model on the
+Colorlight i5 — the only board with a **32-bit SDRAM** (`BmbSdramCtrlWide`, one
+op per BMB beat against the 16-bit boards' two), and therefore the only
+available discriminator.
+
+The test: subtract the compute floor C from measured cycles/access, divide by
+transactions and ops-per-beat, and check the implied **ns per SDRAM operation**
+is roughly a device property. It is not.
+
+| board | SDRAM | MHz | kacc/s | cyc/acc | implied ns/SDRAM op |
+|---|---|---|---|---|---|
+| Colorlight i5 | 32-bit, 1 op/beat | 40 | 287 | 139.4 | **135.0** |
+| Wukong SDR | 16-bit, 2 ops/beat | 100 | 621 | 161.0 | **38.9** |
+| EP4CGX150 SDR | 16-bit, 2 ops/beat | 36 | 188 | 191.5 | **154.6** |
+
+**The two boards that share a memory width AND a controller disagree by 4x**, so
+the premise collapses before the i5 is considered — the test cannot
+discriminate. What it does establish is that **C = 90.3 cycles/access is not
+portable.** C was measured on one core configuration (the default BRAM harness);
+`ep4cgx150Serial` and the Wukong SDR preset have different bytecode maps and
+compute units. Subtracting the wrong C throws the entire remainder off.
+
+**Consequence: do not derive per-operation costs from a single C.** Any
+decomposition of the form `(cycles/access − C) / transactions` needs C measured
+for *that* configuration. `JbeScaleBramSim` already does it; it just has to be
+run per core config instead of once.
+
+**What this does NOT invalidate:** the eight-core aggregate figure in
+[the MSHR plan](architecture/nonblocking-cache-mshr-plan.md) —
+`36.2 cyc/access / 9.09 txns / 2 halves = 1.99 cyc per 16-bit op` — uses no C at
+all. It is a service RATE, not a latency decomposition, and stands.
+
+**The i5 is healthy and is now a genuine third data point**: different fabric
+(ECP5), different toolchain (yosys/nextpnr/ecppack), different memory width. Per
+MHz on `jbe.DoApp` it beats every other board measured:
+
+| board | MHz | Kfl /MHz | UdpIp /MHz | Lift /MHz |
+|---|---|---|---|---|
+| Colorlight i5 | 40 | **139.5** | **63.7** | **192.8** |
+| EP4CGX150 | 80 | 96.8 | 44.0 | 158.6 |
+| EP4CGX150 | 36 | 122.3 | 54.5 | 163.1 |
+
+Two effects are confounded and separating them is the open work: a lower clock
+makes fixed-ns memory latency cost fewer cycles (already documented for 36 vs
+80 MHz on one board), and the 1:1 SDRAM halves operations per beat. The i5 at
+40 MHz beats the EP4CGX150 at 36 MHz by 14-18 %, which is the right order for
+the ops-per-beat effect but is not proof of it.
 
 
 ## 4. Two workstreams, both largely done
