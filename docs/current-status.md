@@ -3339,6 +3339,21 @@ already carry a `resetn` into the clock wizard, which is a FULL reset
 | Colorlight i5 | ECP5, yosys/nextpnr | SDR | 1 M | **4/4** |
 | CYC5000 | Cyclone V, Quartus | SDR | 2 M | **4/4** |
 | A-E115FB | Cyclone IV E, Quartus 18.1 | **DDR2** | 1 M | **6/6** (core-only) |
+| XC7A100T + DB V5 | Artix-7, Vivado | DDR3/MIG | 2 M | **8/8 + 6/6** (core-only) |
+
+That is every board, every vendor, every toolchain and every memory technology
+in the project.
+
+**One anomaly on the DB V5, recorded rather than smoothed over.** Between the
+first and second runs the board went quiet: a download reported OK, produced no
+output, and the next attempt got "no ready signal"; an earlier readback also
+showed three corrupted bytes (`512` as `\x15\x11\x10`). Reprogramming cleared
+it, after which 8/8 and then 6/6 ran clean with state verified at every step.
+**The cause was not isolated.** It is plausibly the Pico's CDC bridge rather
+than the FPGA -- that board's UART is a USB-CDC bridge on the dirtyJtag probe,
+not a hardware UART -- but nothing here separates the two, so do not assume it.
+Note also this build's timing is +0.010 ns (item 8: that board runs marginal),
+which is a second candidate and equally unproven.
 
 The i5 and CYC5000 needed no new code -- they are single-system SDR boards, so
 they picked up the escape from the generic path. Both were nonetheless rebuilt

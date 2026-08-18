@@ -23,11 +23,19 @@ BUILD_DIR := $(VIVADO_DIR)/build
 GENERATED := $(REPO_ROOT)/spinalhdl/generated
 
 # DirtyJTAG programming (RP2040 on DB_FPGA V5)
+# There can be MORE THAN ONE dirtyJtag probe on the host, and a bare
+# `-c dirtyJtag` then picks whichever it finds first -- i.e. possibly another
+# board. Select explicitly:
+#   make ddr3-program BUSDEV="--busdev-num $$(fpga/scripts/jtag_probe_map --busdev xc7a100t)"
 CABLE := dirtyJtag
+BUSDEV ?=
 
-# UART via RP2040 ttyACM0 (DB_FPGA V5 UART bridge)
-# ttyACM0 = Debug Probe UART; ttyACM1 = DirtyJTAG CDC0 (FPGA UART bridge)
-UART_DEV := /dev/ttyACM1
+# UART via the RP2040's CDC0 (DB_FPGA V5 UART bridge). THE NUMBER MOVES: it is
+# whichever ttyACM this board's Pico enumerated as, and every other CMSIS-DAP /
+# dirtyJtag probe on the host shifts it. With a second dirtyJtag attached it was
+# ttyACM4, not ttyACM1. Re-map before use:
+#   fpga/scripts/usb_serial_map | grep <this probe's serial>
+UART_DEV ?= /dev/ttyACM1
 UART_BAUD := 2000000
 
 # Bitstream paths
@@ -110,7 +118,7 @@ ddr3-build: ddr3-generate
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/build_ddr3_bitstream.tcl
 
 ddr3-program:
-	sudo openFPGALoader -c $(CABLE) $(DDR3_BITSTREAM)
+	sudo openFPGALoader -c $(CABLE) $(BUSDEV) $(DDR3_BITSTREAM)
 
 ddr3-monitor:
 	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
