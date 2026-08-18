@@ -1498,6 +1498,6 @@ case class BmbMemoryController(
 object BmbMemoryControllerVerilog extends App {
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "generated"
+    targetDirectory = "spinalhdl/generated"
   ).generate(BmbMemoryController())
 }

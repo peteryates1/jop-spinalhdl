@@ -125,7 +125,7 @@ object InterruptTestTb {
   def main(args: Array[String]): Unit = {
     SpinalConfig(
       mode = VHDL,
-      targetDirectory = "generated"
+      targetDirectory = "spinalhdl/generated"
     ).generate(InterruptTestTb())
   }
 }

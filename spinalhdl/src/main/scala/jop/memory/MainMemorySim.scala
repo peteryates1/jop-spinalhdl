@@ -108,7 +108,7 @@ object MainMemorySim {
   def main(args: Array[String]): Unit = {
     SpinalConfig(
       mode = Verilog,
-      targetDirectory = "generated"
+      targetDirectory = "spinalhdl/generated"
     ).generate(MainMemorySim())
   }
 }

@@ -411,7 +411,7 @@ object BytecodeFetchStage {
   def main(args: Array[String]): Unit = {
     SpinalConfig(
       mode = Verilog,
-      targetDirectory = "core/spinalhdl/generated"
+      targetDirectory = "spinalhdl/generated"
     ).generate(BytecodeFetchStage())
   }
 }

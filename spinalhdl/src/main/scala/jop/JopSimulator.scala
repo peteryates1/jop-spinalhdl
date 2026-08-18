@@ -964,7 +964,7 @@ case class JopSimulator(
  */
 object JopSimulatorTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "generated",
+    targetDirectory = "spinalhdl/generated",
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -976,5 +976,5 @@ object JopSimulatorTbVhdl extends App {
     ramFilePath = Some("asm/generated/mem_ram.dat")
   ))
 
-  println("JopSimulator VHDL generated in generated/JopSimulator.vhd")
+  println("JopSimulator VHDL generated in spinalhdl/generated/JopSimulator.vhd")
 }

@@ -33,8 +33,14 @@ gen:
 $(WORK):
 	$(VLIB) $(WORK)
 
+# The generated RTL and memory image are NOT checked in -- they are build
+# outputs, and a stale committed copy silently simulates the wrong design.
+# Build them on demand if absent; `make gen` forces a refresh.
+$(RTL) sdram_init.hex:
+	$(MAKE) gen
+
 # Compile RTL, SDRAM model, and testbench
-compile: $(WORK)
+compile: $(WORK) $(RTL) sdram_init.hex
 	$(VLOG) -work $(WORK) +acc $(RTL) $(SDRAM_MODEL) $(TB)
 
 # Run simulation (batch mode)

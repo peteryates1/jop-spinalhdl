@@ -380,12 +380,12 @@ case class FetchStage(
  */
 object FetchStageVerilog extends App {
   val config = SpinalConfig(
-    targetDirectory = "generated/verilog",
+    targetDirectory = "spinalhdl/generated",
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
   )
 
   config.generateVerilog(FetchStage())
     .printPruned()
 
-  println("FetchStage Verilog generated at: generated/verilog/FetchStage.v")
+  println("FetchStage Verilog generated at: spinalhdl/generated/FetchStage.v")
 }

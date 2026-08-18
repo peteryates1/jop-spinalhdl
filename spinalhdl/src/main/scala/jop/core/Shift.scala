@@ -190,11 +190,11 @@ object ShiftType {
 object ShiftVerilog extends App {
   val config = SpinalConfig(
     mode = Verilog,
-    targetDirectory = "generated/verilog"
+    targetDirectory = "spinalhdl/generated"
   )
 
   config.generate(Shift(32))
-  println("Verilog generation complete: generated/verilog/Shift.v")
+  println("Verilog generation complete: spinalhdl/generated/Shift.v")
 }
 
 /**
@@ -205,9 +205,9 @@ object ShiftVerilog extends App {
 object ShiftVhdl extends App {
   val config = SpinalConfig(
     mode = VHDL,
-    targetDirectory = "generated/vhdl"
+    targetDirectory = "spinalhdl/generated"
   )
 
   config.generate(Shift(32))
-  println("VHDL generation complete: generated/vhdl/Shift.vhd")
+  println("VHDL generation complete: spinalhdl/generated/Shift.vhd")
 }

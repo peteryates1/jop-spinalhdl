@@ -49,14 +49,20 @@ verification/cocotb/generated/
 *.cf
 work-obj*.cf
 
-# SpinalHDL generated
+# SpinalHDL generated. This is the ONE output directory: as of 2026-08-18
+# every SpinalConfig in spinalhdl/src targets it (the sole exception is
+# JopSmallGcQuestaGen -> verification/questa, a separate Questa flow). It is
+# what the .qsf/.tcl/Makefile board flows read, via ../../spinalhdl/generated.
 spinalhdl/generated/
 
-# Repo-root generated/ -- SpinalHDL App objects that default their
-# targetDirectory to a bare "generated" resolve here. Nothing consumes it; it
-# is scratch. generated/JopCore.v was tracked until 2026-08-18, so every run
-# of JopCoreVerilog (CI included) dirtied the tree with a spurious diff.
+# Backstop. Before the unification there were four conventions -- bare
+# "generated", "generated/verilog", "generated/vhdl", and a dead
+# "core/spinalhdl/generated" -- and generated/JopCore.v was tracked, so every
+# run of JopCoreVerilog (CI included) dirtied the tree with a spurious diff.
+# Nothing writes here now; the rule stays so a reintroduced default cannot
+# quietly get committed again.
 /generated/
+/core/
 spinalhdl/*.vhd
 spinalhdl/*.v
 spinalhdl/simWorkspace/

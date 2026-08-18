@@ -2587,7 +2587,7 @@ Each step produces artifacts with a **config hash**. If the config hasn't change
 ```
 asm/generated/serial/mem_rom.dat     # hash of (boot_mode + feature flags)
 java/runtime/build/qmtech-serial/    # hash of (core config + board devices)
-generated/verilog/JopSdramTop.v      # hash of (full system config)
+spinalhdl/generated/JopSdramTop.v            # hash of (full system config)
 fpga/qmtech-ep4cgx150-sdram/jop.sof # hash of (Verilog files)
 ```
 

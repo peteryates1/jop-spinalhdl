@@ -85,7 +85,7 @@ object MainMemorySimTb {
 
     SpinalConfig(
       mode = VHDL,
-      targetDirectory = "generated"
+      targetDirectory = "spinalhdl/generated"
     ).generate(MainMemorySimTb(
       config = MainMemorySimConfig(memSize = 256),
       testData = Some(testData)

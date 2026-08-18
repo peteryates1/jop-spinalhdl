@@ -198,7 +198,7 @@ case class JopCoreWithSdram(
 object JopCoreWithSdramVerilog extends App {
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "generated",
+    targetDirectory = "spinalhdl/generated",
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
   ).generate(JopCoreWithSdram())
 }

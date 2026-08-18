@@ -904,12 +904,12 @@ case class DecodeStage(
  */
 object DecodeStageVerilog extends App {
   val config = SpinalConfig(
-    targetDirectory = "generated/verilog",
+    targetDirectory = "spinalhdl/generated",
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
   )
 
   config.generateVerilog(DecodeStage())
     .printPruned()
 
-  println("DecodeStage Verilog generated at: generated/verilog/DecodeStage.v")
+  println("DecodeStage Verilog generated at: spinalhdl/generated/DecodeStage.v")
 }

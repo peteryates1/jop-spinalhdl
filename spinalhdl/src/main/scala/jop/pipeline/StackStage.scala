@@ -1119,12 +1119,12 @@ case class StackStage(
  */
 object StackStageVerilog extends App {
   val config = SpinalConfig(
-    targetDirectory = "generated/verilog",
+    targetDirectory = "spinalhdl/generated",
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
   )
 
   config.generateVerilog(StackStage())
     .printPruned()
 
-  println("StackStage Verilog generated at: generated/verilog/StackStage.v")
+  println("StackStage Verilog generated at: spinalhdl/generated/StackStage.v")
 }
