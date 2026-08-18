@@ -16,8 +16,14 @@ permissions:
   checks: write
   contents: read
 
+# github.event_name is in the group deliberately. Without it a push and the
+# nightly schedule share a group on refs/heads/main, so a push CANCELS an
+# in-progress scheduled run -- which happened to the 2026-08-18 03:47 run.
+# That is the one run of the day that exercises the schedule-only jobs, so
+# losing it silently costs exactly the coverage the comment on jvm-suite-sims
+# is worried about. Pushes still cancel each other, which is the intent.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:

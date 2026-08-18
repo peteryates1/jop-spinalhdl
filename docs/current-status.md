@@ -67,31 +67,30 @@ open only pending its A/B; #45 is the residue worth doing on its own merits.
 
 1. **[#45](#item-45)** — ~405 registers have no reset — zeroing X-state in sim is a floor, not a fix
 2. **[#32](#item-32)** — UART data corruption on seed 871203250 — CI seed still PINNED around it
-3. **[#46](#item-46)** — `formal-verification` fails intermittently — a proof times out at ~5 min, unrelated to X-state
-4. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
-5. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-6. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
-7. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
-8. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
-9. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
-10. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
-11. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-12. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-13. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-14. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-15. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-16. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-17. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-18. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-19. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-20. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
-21. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-22. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-23. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-24. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-25. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
-26. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
-27. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+3. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
+4. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+5. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
+6. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+7. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+8. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+9. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
+10. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+11. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+12. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+13. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+14. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+15. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+16. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+17. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+18. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+19. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
+20. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+21. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+22. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+23. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+24. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
+25. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
+26. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
 
 ## 2. All items — summary
 
@@ -145,7 +144,8 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[29](#item-29)** — ~~`BytecodeFetchStage: JumpTable integration` is flaky in CI~~ — **FIXED** (X-state)
 - **[30](#item-30)** — ~~`JopJvmTestsBramSim` — the CI baseline job — intermittently dies~~ — **FIXED** (X-state)
 - **[45](#item-45)** — ~405 registers have no reset — zeroing X-state in sim is a floor, not a fix
-- **[46](#item-46)** — `formal-verification` fails intermittently — a proof times out at ~5 min, unrelated to X-state
+- **[46](#item-46)** — ~~`formal-verification` fails intermittently~~ — **ALREADY FIXED** 2026-08-15 (`6bce639b`, formal timeout 300→900 s)
+- **[47](#item-47)** — ~~A push cancelled the nightly scheduled CI run~~ — **FIXED** (concurrency group)
 - **[12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
 - **[13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
 - **[14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
@@ -2936,6 +2936,26 @@ silently drops a minus sign. Seeds are signed and the failing one was
 negative, so it printed `748081925` — a *different* seed. Anyone who replayed
 it was reproducing the wrong run.
 
+**Verification.** Local, Verilator 5.032, CI-identical `DoAll.jop` rebuild
+(`846080c4…`, JDK 8.0.492 target / JDK 17.0.19 tools):
+
+| run | seed | X-state | result |
+|---|---|---|---|
+| A | **−748081925** (CI's failing seed) | zeroed | **132 ok**, 0 failed |
+| B | 564015666 | zeroed | **132 ok**, 0 failed |
+| C | 1 | zeroed | **132 ok**, 0 failed |
+
+Plus the whole unit suite CI runs — `jop.core.* jop.io.* jop.pipeline.*
+jop.memory.* jop.ddr3.* jop.config.* jop.sim.*` — **464 succeeded, 0 failed**
+with the flag, so zeroing X-state broke nothing that was passing.
+
+Confirmed in CI on `34976b0`: the log now carries
+`Verilator 5.020 2024-01-01 rev (Debian 5.020-1)` (against 5.032 locally —
+exactly the mismatch that invalidated the replays) and
+`Sim X-state: zeroed`. That run drew seed **−1478500386** — negative, first
+time out — so the seed-sign bug would have misreported it immediately had it
+not been fixed in the same commit.
+
 **This is a floor, not a ceiling.** `--x-initial 0` makes the simulator agree
 with an FPGA at power-up; it does not make those ~405 registers correct.
 Registers that genuinely need a defined reset should still get one, and
@@ -3089,6 +3109,82 @@ construction, so it can no longer see this class at all. That is the correct
 trade — a regression detector should not be a fuzzer — but it does mean this
 item needs deliberate sweeps, not observation.
 
+<a id="item-47"></a>
+
+### Item 47 — ~~A push cancelled the nightly scheduled CI run — FIXED~~
+
+**FIXED 2026-08-18.** `concurrency.group` was
+`${{ github.workflow }}-${{ github.ref }}`. On `refs/heads/main` a push and the
+nightly `schedule` share that group, and `cancel-in-progress: true` then lets a
+push **kill an in-progress scheduled run** — which is what happened to
+[32096717541](https://github.com/peteryates1/jop-spinalhdl/actions/runs/32096717541)
+at 03:47 on 2026-08-18 (1 of 13 scheduled runs in the sample).
+
+That is the expensive one to lose: several jobs are schedule-only precisely
+because they are 60M-cycle Verilator runs too slow for every push, so a
+cancelled nightly is a silent hole in exactly the coverage the comment above
+`jvm-suite-sims` exists to protect. It reports as `cancelled`, not `failure`,
+so nothing draws attention to it.
+
+Adding `-${{ github.event_name }}` to the group separates them. Pushes still
+cancel each other, which was the original intent.
+
+<a id="item-46"></a>
+
+### Item 46 — ~~`formal-verification` fails intermittently — ALREADY FIXED (2026-08-15)~~
+
+**Filed and closed the same day, 2026-08-18 — the fix predates the
+investigation.** Recorded because the failure pattern is still visible in the
+CI history and will otherwise be re-discovered.
+
+`formal-verification` was the only failing job in **5** of the 20 CI failures
+in the 200 runs to 2026-08-18 (31883019262, 31877585619, 31695840571,
+31691895916, 31530822513), signature:
+
+```
+##   0:02:51  Checking assertions in step 5..
+- formal_stall freezes jpc, jinstr and the dispatch address *** FAILED *** (5 minutes, 2 seconds)
+  java.lang.Exception: SymbiYosys failure
+```
+
+No counterexample and no trace: the run died, the proof did not fail. It was
+the SymbiYosys wall clock, then **300 s**. `6bce639b` (2026-08-15 12:54)
+raised it to **900 s** with the reasoning written into
+`BytecodeFetchStageFormal.scala` — *"a formal timeout should mean 'this
+property has become intractable', not 'the runner was busy'."*
+
+**The last formal-only failure was 2026-08-15 11:49, 65 minutes BEFORE that
+commit, and there has been none since.** Confirmed independently here: the
+property passes locally in **2 min 58 s** against a 900 s budget, and CI's
+runner is roughly half the speed — so the headroom is real.
+
+Lesson worth keeping: a `*** FAILED ***` whose only detail is a duration and a
+backend exception is a resource limit, not a disproof. Check the configured
+budget against the elapsed time **before** filing it as a bug — this item was
+opened on the guess "timeout", corrected to "cause unknown" for lack of
+evidence, and then closed on finding the budget in the source. Only the last
+step involved reading the code.
+
+<a id="item-47"></a>
+
+### Item 47 — ~~A push cancelled the nightly scheduled CI run — FIXED~~
+
+**FIXED 2026-08-18.** `concurrency.group` was
+`${{ github.workflow }}-${{ github.ref }}`. On `refs/heads/main` a push and the
+nightly `schedule` share that group, and `cancel-in-progress: true` then lets a
+push **kill an in-progress scheduled run** — which is what happened to
+[32096717541](https://github.com/peteryates1/jop-spinalhdl/actions/runs/32096717541)
+at 03:47 on 2026-08-18 (1 of 13 scheduled runs in the sample).
+
+That is the expensive one to lose: several jobs are schedule-only precisely
+because they are 60M-cycle Verilator runs too slow for every push, so a
+cancelled nightly is a silent hole in exactly the coverage the comment above
+`jvm-suite-sims` exists to protect. It reports as `cancelled`, not `failure`,
+so nothing draws attention to it.
+
+Adding `-${{ github.event_name }}` to the group separates them. Pushes still
+cancel each other, which was the original intent.
+
 <a id="item-46"></a>
 
 ### Item 46 — `formal-verification` fails intermittently — a proof times out, unrelated to X-state
@@ -3099,21 +3195,29 @@ item needs deliberate sweeps, not observation.
 (31883019262, 31877585619, 31695840571, 31691895916, 31530822513), on four
 different days.
 
-The signature is a solver duration, not a counterexample:
+The signature is a bare backend failure, not a counterexample:
 
 ```
+##   0:02:51  Checking assertions in step 5..
 - formal_stall freezes jpc, jinstr and the dispatch address *** FAILED *** (5 minutes, 2 seconds)
+  java.lang.Exception: SymbiYosys failure
 ```
 
-Five minutes and two seconds is a **timeout**, not a disproof — a real
-counterexample returns fast and prints a trace. A shared GitHub runner gives
-variable CPU, so a proof sized close to its budget passes or fails on how busy
-the host is.
+The property is `withBMC(6)` on `BytecodeFetchStage`, which contains the
+2048-entry JBC RAM; solver is z3. It got to step 5 of 6 and then SymbiYosys
+exited non-zero **with no counterexample and no trace** — a disproof prints
+one. So the proof did not fail, the run did.
 
-Not yet done, in order of cheapness: confirm the SymbiYosys timeout value and
-whether the proof is near it; raise the budget or bound the proof (`--depth`)
-so it has headroom; only then look for a genuine performance cliff in the
-property. Until then this job can redden an otherwise green run, so read a
+**What is NOT established:** *why* it exited. Timeout, OOM on a 16 GB runner,
+and a solver error all look like this in the log GitHub retains, and the
+`engine_0` directory that would say dies with the runner. Do not write
+"timeout" down as the cause until someone has looked — that guess is the same
+species of unverified inference that kept items 29/30 open for a week.
+
+Next, in order of cheapness: reproduce locally and time it; if it is slow but
+passes, the runner's variable CPU is the difference and the budget needs
+headroom; capture `simWorkspace/BytecodeFetchStageFormal/` as a CI artifact on
+failure so the next occurrence is diagnosable at all. Until then, read a
 `formal-verification`-only failure with suspicion.
 
 
