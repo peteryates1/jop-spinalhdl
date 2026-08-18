@@ -59,12 +59,15 @@ The ordering is a proposal, not a decree — it puts measurement that unblocks
 a decision above the work it would unblock, and CI trust above everything,
 on the grounds that a flaky baseline makes every other number arguable.
 
-CI flakiness (#30, #29) is **RESOLVED as of 2026-08-18** and no longer heads
-this list: all three CI-flake items shared one cause — Verilator randomising
-the ~405 registers in this design that have no reset, seeded per run. The
-sims now zero it (`--x-initial 0` via `jop.utils.JopSimDefaults`). #32's pin is now
-removed too, though its cause was never found; #45 is the residue worth
-doing on its own merits.
+CI flakiness is **RESOLVED as of 2026-08-18**, and no longer heads this list.
+**#30 and #29 were one bug** — Verilator randomising the ~405 registers in
+this design that have no reset, seeded per run — now zeroed by
+`--x-initial 0` (`jop.utils.JopSimDefaults`). **#32 is not the same story**:
+its pin is retired because the failure no longer reproduces at HEAD even with
+randomisation on, but its cause was never established, so it stays open,
+rescoped. #46 turned out to have been fixed on 2026-08-15 before anyone looked
+at it; #47 (a push cancelling the nightly) is fixed here. #45 is the residue —
+the missing resets themselves — worth doing on its own merits.
 
 1. **[#45](#item-45)** — ~405 registers have no reset — zeroing X-state in sim is a floor, not a fix
 2. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
@@ -132,7 +135,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 
 ### Open
 
-- **[32](#item-32)** — UART data corruption on seed 871203250 — CI seed now PINNED around it
+- **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
