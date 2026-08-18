@@ -293,3 +293,30 @@ simulation and would have cost a day of bridge debugging.
 - `/srv/git/Colorlight-FPGA-Projects` — [wuxx/Colorlight-FPGA-Projects](https://github.com/wuxx/Colorlight-FPGA-Projects); pinouts and i5 examples
 - `/srv/git/riscvOnColorlight-5A-75B` — [ghent360/riscvOnColorlight-5A-75B](https://github.com/ghent360/riscvOnColorlight-5A-75B); **5A-75B, different pinout**
 - `/srv/git/atari800-spinalhdl/boards/i5-7v0` — prior ECP5 work in this workspace; PLL example, no UART
+
+## Benchmark numbers (2026-08-18)
+
+40 MHz, SDRAM stage, single core, downloaded at 1 Mbaud over the DAPLink CDC.
+
+| | |
+|---|---|
+| `jbe.DoApp` | Kfl **5580**, UdpIp **2547**, Lift **7713** 1/s |
+| per MHz | **139.5 / 63.7 / 192.8** — the best of any board measured |
+| `jbe.Scale` | **287 kacc/s** single core, `CHECK 1645838336` |
+| fit | 49.65 MHz (PASS at 40), TRELLIS_COMB 10111/24288 (41 %), DP16KD 12/56 (21 %) |
+
+The per-MHz figures beat even the EP4CGX150 at 36 MHz by 14-18 %. Two effects
+are confounded — a lower clock makes fixed-ns memory latency cost fewer cycles,
+and this board's **32-bit SDRAM does one op per BMB beat** where the 16-bit
+boards do two. See `../current-status.md` item 44.
+
+### If it looks dead, check this first
+
+A board that has already had a **failed download attempt** looks completely
+silent, because the serial boot loader's ready handshake has been consumed.
+**Reprogram immediately before listening.** This cost an hour and a wrongly-filed
+regression on 2026-08-18 — the SDRAM stage was healthy the whole time.
+
+Use `fpga/scripts/run_bench`, which reprograms first. If driving `download.py`
+by hand, give it `python3 -u`: it block-buffers when piped, so a `timeout` kill
+discards every diagnostic and you get no error at all.

@@ -20,11 +20,17 @@
 > [architecture/nonblocking-cache-mshr-plan.md](architecture/nonblocking-cache-mshr-plan.md).
 > Benchmark tables: [../java/apps/JbeBench/README.md](../java/apps/JbeBench/README.md).
 >
-> **The next memory investigation is the method cache, not the data path.**
-> DoApp's traffic is 62 % bytecode fill; all array traffic is 4.2 %. Two
-> optimisations that looked worth multiples on `JbeScale` turned out to be worth
-> 2.8 % and nothing on real code — see the DoApp section of the plan doc before
-> acting on any JbeScale-derived number.
+> **Memory work is worth doing on real code, and the method cache is the
+> target.** Real applications lose **34-55 % of throughput to memory latency**
+> (Kfl 53.8 %, UdpIp 54.8 %, Lift 34.0 % — item 38), and **62 % of DoApp's
+> memory transactions are bytecode fill** while all array traffic is 4.2 %
+> (item 37). The BMB arbiter caps FREQUENCY, not throughput, and is a worse
+> trade at these numbers — see the retraction in items 5 and 31.
+>
+> Two optimisations that looked worth multiples on `JbeScale` are worth 2.8 %
+> and nothing on real code. **Do not act on any `JbeScale`-derived number**
+> without checking it against DoApp first; that benchmark is a pessimal data
+> probe and real code here is instruction-fetch bound.
 
 Resumption notes covering the GC work, the A-E115FB DDR2 bring-up, SMP, and the
 board/probe setup. Written to be read cold.
@@ -3570,6 +3576,12 @@ way, so the unexplained major-GC constant may have the same cause. Check that
 before treating them as separate projects.
 
 ---
+
+**Confirmed with a number, 2026-08-18.** The SDRAM stage uses **12/56 DP16KD
+(21 %)**; the BRAM stage, for only **64 KB** of main memory, uses **40/56
+(71 %)** with 16 blocks free. So the BRAM stage cannot be grown enough to hold
+an application benchmark — `JbeBench.jop` alone is 64 KB of code before any
+heap — which is why the i5 has to run its benchmarks over SDRAM.
 
 <a id="item-37"></a>
 

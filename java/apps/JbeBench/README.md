@@ -592,3 +592,59 @@ application's cost is.** Both are worth knowing; they are not the same question.
 
 Platform check, EP4CGX150 at 80 MHz single core, same day: Kfl **7742** 1/s
 (published 7742), UdpIp **3521** (3524), Lift **12690** (12681).
+
+## How much of a real application is memory stall? 34-55 % (2026-08-18)
+
+Everything above measures memory throughput. What none of it says is how much
+application *time* memory latency actually costs — and that bounds every
+memory-system change. `DoAppBramSim` runs the same binary against BRAM
+(single-cycle accept, next-cycle response) and compares per MHz with hardware:
+
+| benchmark | BRAM /MHz | EP4CGX150 SDR @80 /MHz | **stall share** |
+|---|---|---|---|
+| Kfl | 209.6 | 96.8 | **53.8 %** |
+| UdpIp | 97.4 | 44.0 | **54.8 %** |
+| Lift | 240.2 | 158.6 | **34.0 %** |
+
+**Real applications lose a third to a half of their throughput to memory
+latency**, so the ceiling on all memory work is ~2x on Kfl and UdpIp and ~1.5x
+on Lift. Combined with the traffic breakdown above — 62 % of transactions are
+bytecode fill — that makes the **method cache** the largest single target, with
+the caveat that transaction share is not time share and a `BC_FILL_LOOP` burst
+is cheaper per transaction than scattered access.
+
+This corroborates the cache A/B independently: **Lift has the lowest stall
+share**, and Lift is the benchmark that gained most from the object/array caches
+because its working set fits them. Two different measurements agreeing on which
+workload is memory-bound.
+
+**Method note.** DoApp calibrates each benchmark to one *simulated* second, so
+at a declared 100 MHz that is 100 M cycles apiece and the first run died at
+400 M without finishing Kfl. The harness takes a declared `clkMhz`; lowering it
+to 5 shrinks the calibration target proportionally **with no effect on the
+per-MHz result** — reported rate is `N x clkFreq / cycles`, so
+`rate/(clkFreq/1e6)` is `N x 1e6 / cycles` and `clkFreq` cancels. BRAM is not
+truly zero-latency either, so the real stall share is a little higher than this.
+
+## Third fabric and toolchain: Colorlight i5 (ECP5, 2026-08-18)
+
+ECP5 via yosys/nextpnr/ecppack, 40 MHz, and the only board with a **32-bit
+SDRAM** (`BmbSdramCtrlWide`, one op per BMB beat against the 16-bit boards'
+two).
+
+| benchmark | i5 @40 | /MHz | EP4CGX150 @80 /MHz | EP4CGX150 @36 /MHz |
+|---|---|---|---|---|
+| Kfl | 5580 | **139.5** | 96.8 | 122.3 |
+| UdpIp | 2547 | **63.7** | 44.0 | 54.5 |
+| Lift | 7713 | **192.8** | 158.6 | 163.1 |
+
+`jbe.Scale`: **287 kacc/s** single core, `CHECK 1645838336` — the same value
+every other board produces.
+
+**Best per-MHz figures of any board measured**, beating even the EP4CGX150 at
+36 MHz by 14-18 %. Two effects are confounded: a lower clock makes fixed-ns
+memory latency cost fewer cycles (already documented above for 36 vs 80 MHz),
+and the 1:1 SDRAM halves operations per beat. The residual over the clock-matched
+36 MHz column is the right order for the ops-per-beat effect but is not proof —
+an attempt to separate them by subtracting the compute floor failed, because
+that floor is per-configuration (current-status item 44).
