@@ -1,8 +1,82 @@
 # Non-blocking L2: MSHR plan for `LruCacheCore`
 
-**Status**: implemented and **measured on hardware** (2026-08-17). Off by
-default (`JopMemoryConfig.l2MshrCount = 1`). The eight-core DDR2 ceiling moved
-from **682 to 1613 kacc/s, 2.37x** — see [Hardware results](#hardware-results).
+**Status**: implemented and **measured on hardware, both DRAM boards**
+(2026-08-17/18). Off by default (`JopMemoryConfig.l2MshrCount = 1`), so no
+shipped configuration has changed; the MSHR presets are opt-in.
+
+## Results at a glance
+
+Everything below is `jbe.Scale` on hardware — a private 64 KB stride walk per
+core, so nearly every access misses. **`CHECK 1645838336` in every run on both
+boards**, baselines included: every configuration computes bit-identical
+results.
+
+### Throughput
+
+| board | clock | cores | blocking | +MSHRs | gain |
+|---|---|---|---|---|---|
+| DDR2 A-E115FB | 75 MHz | 4 | 618 | **937** | 1.52x |
+| DDR2 A-E115FB | 75 MHz | 8 | 682 | **1613** | 2.37x |
+| DDR3 Wukong | 91.68 MHz | 4 | 692 | **1380** | 1.99x |
+| DDR3 Wukong | 91.68 MHz | 8 | 701 | **1882** | 2.68x |
+
+kacc/s, medians. "blocking" is the same RTL at `mshrCount = 1` except the DDR2
+8-core row, which is the original build reconfirmed on the bench. Against the
+configurations that actually SHIPPED (DDR2 661/682, DDR3 733/754) the gains are
+1.42x / 2.37x and 1.88x / 2.50x — the restructure costs ~6 % with overlap off,
+so quote whichever comparison you mean.
+
+### The point of it: all three memory architectures now scale alike
+
+| memory | clock | 1 core | 8 cores | ratio, before -> after |
+|---|---|---|---|---|
+| SDR (no L2 at all) | 100 MHz | 621 | 2764 | 4.45x (unchanged) |
+| DDR3 + 4 MSHRs | 91.68 MHz | 430 | **1882** | 1.75x -> **4.38x** |
+| DDR2 + 4 MSHRs | 75 MHz | 377 | **1613** | 1.81x -> **4.28x** |
+
+The two DRAM paths started **2.5x behind** SDR and are now within 4 % of it. The
+shape of the curve no longer depends on which memory is attached, which moves
+the open question: whatever still caps all three at ~4.3x is **shared**, and the
+single BMB command port and its arbiter are the suspects — the critical path
+terminates there too.
+
+### Cost
+
+| board | build | logic | registers | WNS |
+|---|---|---|---|---|
+| DDR2 (Cyclone IV, LE = LUT+FF) | 4c, 1 MSHR | 66,958 LE (58 %) | — | -1.486 ns |
+| | 4c, 4 MSHRs | 70,366 LE (61 %) | — | -1.524 ns |
+| | 8c, 4 MSHRs | 106,405 LE (93 %) | — | -3.056 ns |
+| DDR3 (Artix-7) | 4c, 1 MSHR | 39,257 LUT (62 %) | 27,147 | +0.375 ns |
+| | 4c, 4 MSHRs | 38,888 LUT (61 %) | 27,957 | +0.111 ns |
+| | 8c, 1 MSHR | 58,135 LUT (92 %) | 41,514 | -0.501 ns |
+| | 8c, 4 MSHRs | 57,856 LUT (91 %) | 42,172 | -0.465 ns |
+| | 8c, 8 MSHRs | **fails to route** (94 % at synth) | | |
+
+**The two boards look like they disagree on area and do not.** On Artix-7 LUTs
+go DOWN (-373/-369/-279 across three pairs) and registers up: deleting the
+adapter's state machine and the cache's two `WAIT_*` states removes more control
+logic than the MSHR file adds, and the MSHR's cost is flip-flops. On Cyclone IV
+a logic element IS a LUT plus a flip-flop, so that same register cost shows up
+as +5.1 % LE — and the DDR2 line is 256 bits wide against DDR3's 128, so each
+entry stores twice as much. Same change, two counting conventions.
+
+**Timing is neutral, not improved.** Within one RTL the WNS delta is small and
+changes sign between builds (-0.038 ns on DDR2 at four cores; +0.243 then -0.264
+on DDR3 across two clock profiles). Treat it as fitter noise. Neither 8-core
+build closes on either board, which is why `CHECK` is the acceptance criterion
+there — measurement vehicles, not shippable bitstreams.
+
+### What does not work
+
+**8 cores x 8 MSHRs does not route** on the XC7A100T (congestion level 5, 27,257
+node overlaps). 4 MSHRs is already an under-provision for 8 cores — each core
+holds one outstanding BMB transaction — so **4.38x is a floor for this
+approach**, not its best. The fix is a leaner MSHR entry: each currently holds a
+whole cache line of write data that a read miss never uses.
+
+The rest of this document is the working record: why, what was built, what broke
+on the way, and what is left.
 
 ## Why
 
@@ -188,7 +262,7 @@ Three things to be honest about:
   depends on the relative phase of the cores' request streams, which varies with
   boot timing. Quote a median and the spread, not a single run.
 
-### Cost, and the timing risk that did not materialise
+### Cost, and the timing risk
 
 | build | logic elements | Fmax (Slow 1200mV 100C) | WNS at 75 MHz |
 |---|---|---|---|
@@ -215,9 +289,13 @@ configurations that produced 661 and 682:
 | 4-core WNS | -1.997 ns | **-1.524 ns** |
 | 8-core WNS | -3.059 ns | **-3.056 ns** |
 
-The non-blocking rewrite is *better* at four cores and a wash at eight. The
-worry that an MSHR would make Fmax worse before it made throughput better was
-reasonable and turned out to be unfounded.
+That looks like the rewrite BUYING margin at four cores, and it should not be
+read that way — those two builds differ in RTL *and* fitter run. The
+same-RTL comparison in the table above is -1.486 against -1.524 ns, i.e. 0.038
+ns, and on DDR3 the equivalent delta changes sign between clock profiles. The
+honest conclusion is the weaker and more useful one: **the MSHR is
+timing-neutral**, and the worry that it would cost Fmax before it bought
+throughput was reasonable but unfounded.
 
 `jbe.Scale`'s `CHECK` is what makes measuring on a violating bitstream
 defensible — bit-identical across every build and every repeat — and the corner

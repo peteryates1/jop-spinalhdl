@@ -517,3 +517,23 @@ than capacity — eight MSHRs' worth of 128-bit data muxes fanning into one set 
 BRAM write ports. So 8 cores x 4 MSHRs is the practical ceiling on this part,
 and 4 MSHRs is already an under-provision for 8 cores, which makes the 4.38x
 above a floor rather than the best this approach can do.
+
+### Both boards, one table
+
+| board | clock | cores | blocking | +MSHRs | gain |
+|---|---|---|---|---|---|
+| DDR2 A-E115FB | 75 MHz | 4 | 618 | **937** | 1.52x |
+| DDR2 A-E115FB | 75 MHz | 8 | 682 | **1613** | 2.37x |
+| DDR3 Wukong | 91.68 MHz | 4 | 692 | **1380** | 1.99x |
+| DDR3 Wukong | 91.68 MHz | 8 | 701 | **1882** | 2.68x |
+
+Medians, kacc/s, `CHECK 1645838336` throughout. "blocking" is the same RTL at
+`mshrCount = 1`, so these isolate the MSHR alone; against the configurations
+that actually SHIPPED (661/682 and 733/754) the gains are 1.42x / 2.37x and
+1.88x / 2.50x, because the restructure costs ~6 % with the overlap switched off.
+
+Full working record, including the two response-ordering bugs this exposed in
+the memory adapters: `docs/architecture/nonblocking-cache-mshr-plan.md`, which
+opens with a **Results at a glance** section covering throughput, the
+cross-architecture convergence, area/timing on both boards, and what does not
+fit.
