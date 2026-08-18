@@ -45,10 +45,36 @@ Its 3.38x at eight cores (3.53x at twelve) is a **clock** limit at 36 MHz, not a
 port limit — the same controller at 100 MHz on Wukong reaches 4.45x.
 
 The two DRAM paths started **2.5x behind** Wukong SDR and are now within 4 % of
-it. The shape of the curve no longer depends on which memory is attached, which
-moves the open question: whatever still caps the three 100-ish MHz paths at
-~4.3-4.5x is **shared**, and the single BMB command port and its arbiter are the
-suspects — the critical path terminates there too.
+it.
+
+**Resist the obvious inference.** Three curves landing within 4 % looks like
+evidence of one shared ceiling, and it is not — the three paths are limited by
+different things and happen to arrive at similar ratios. Divide the measured
+throughput by the work each memory actually performs:
+
+| path | service interval per memory operation | device capability | verdict |
+|---|---|---|---|
+| SDR | 9.1 cycles per 16-bit op (36.2 cyc/access / 4 ops) | row-miss access is 8-10 cycles, and with 8 cores interleaving every command IS a row miss | **at the limit** |
+| DDR3 | 266 ns per 16 B transfer (531 ns / 2) | DDR3-800 random access ~40-60 ns | **~5x headroom** |
+| DDR2 | 103 MB/s aggregate (1.61 Macc/s x 64 B) | 1200 MB/s, measured by the DDR2 exerciser on this board | **~9 % of it** |
+
+So SDR is genuinely memory-limited and has little left to give; the two DRAM
+paths are nowhere near their DRAM and remain limited by the path in front of it.
+The convergence is a coincidence of two unrelated ceilings.
+
+This is the **same mistake this project already made once and wrote down** — see
+"Why the earlier reading went wrong" in `java/apps/JbeBench/README.md`, where two
+ceilings landing within 14 % were taken as a common cause and were not. Numbers
+landing close together is not evidence; dividing by the work done is.
+
+What limits the DRAM paths is a latency x concurrency product, and the honest
+position is that it has **not** been cleanly attributed between the three
+candidates: MSHR count (4), one outstanding BMB transaction per core in
+`BmbMemoryController`, and the per-core compute cost of the loop itself. Little's
+law over the MSHR file gives an implied miss latency of ~195 cycles (2.1 us),
+which is far too long for DDR3 and therefore says the MSHRs are NOT saturated —
+so at least one of the other two binds first. Attribution needs the missing
+measurement below.
 
 Absolute rates still differ, and per MHz at eight cores they differ a lot:
 Wukong SDR 27.6 kacc/s/MHz, DDR2 21.5, DDR3 20.5, EP4CGX150 SDR 17.6. Before
@@ -609,11 +635,15 @@ miss needs none of it and only a partial write miss does.
 
 ## What is left
 
-1. **The next limit is shared, not memory-specific.** All three memory
-   architectures now land within 4 % of each other on the scaling ratio, so
-   whatever caps them at ~4.3x is common to all three. The single BMB command
-   port and its arbiter are the candidates, and the critical path terminates
-   there too. That is the next investigation, and it is now a well-posed one.
+1. **Measure the compute floor.** Everything about "what is the ceiling" is
+   currently blocked on one unknown: how many cycles the `jbe.Scale` inner loop
+   costs with memory latency removed. Run it on a BRAM-backed build with `WORDS`
+   reduced to fit — near-zero memory latency, so the result IS the compute floor
+   C. Then `aggregate <= N/C` is a hard bound, the queueing term falls out of
+   the measured per-core figures (390 cycles/access at 8 cores on DDR3 against
+   213 unloaded), and the three candidate limits separate arithmetically instead
+   of by argument. This is cheap and it turns the section above from analysis
+   into measurement.
 2. **Timing at eight cores.** Neither core count closes at 75 MHz, MSHRs or not. That is a
    pre-existing property of the `BmbMemoryController -> cmdFifo` path, and it is
    what to attack next if these configurations are ever to ship — pipelining

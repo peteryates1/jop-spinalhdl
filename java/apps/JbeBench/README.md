@@ -500,11 +500,21 @@ not a port limit.
 
 The two DRAM paths started 2.5x apart from Wukong SDR — 1.75x and 1.81x against
 4.45x — and that gap is what this whole investigation was about. Within 4 % now.
-The SHAPE of the curve no longer depends on which memory is attached, so
-**whatever caps the three fast paths at ~4.3-4.5x is shared** — the single BMB
-command port and its arbiter are the obvious suspects, and the critical path
-terminating there is probably not a coincidence. That is the next question, and
-it is now well posed.
+
+**But they are not converging on a shared ceiling.** Divide throughput by the
+work each memory actually does and they are in completely different places:
+
+| path | per memory operation | device capability | verdict |
+|---|---|---|---|
+| SDR | 9.1 cyc per 16-bit op | row miss is 8-10 cyc, and at 8 cores every command is a row miss | **at the limit** |
+| DDR3 | 266 ns per 16 B | ~40-60 ns random | ~5x headroom |
+| DDR2 | 103 MB/s | 1200 MB/s (exerciser, this board) | ~9 % of it |
+
+SDR is genuinely memory-limited; the DRAM paths are still limited by what sits
+in front of the DRAM. **This is the same trap recorded under "Why the earlier
+reading went wrong" above** — two ceilings within 14 % taken for a common cause,
+and it was a coincidence. Same lesson, third time: numbers landing close
+together is not evidence, dividing by the work done is.
 
 **The per-MHz gap did not close with it.** DDR3 went 8.2 -> 20.5 kacc/s/MHz, but
 Wukong SDR still does 27.6. Scaling and per-cycle efficiency are separate
