@@ -58,14 +58,14 @@ case class JopTop(
   private val isBram = !isMultiSystem && memType == MemoryType.BRAM
 
   /** Runtime reset exists on the SDR/BRAM path and, since 2026-08-18, on DDR3.
-    * DDR2 is not done yet, and a multi-system config has `sys == null` and
-    * builds its resets per system. */
+    * DDR2 followed on the same day. A multi-system config has `sys == null`
+    * and builds its resets per system, so it is still excluded. */
   private val hasRuntimeReset =
-    !isMultiSystem && sys != null && !isDdr2
+    !isMultiSystem && sys != null
 
   /** SDR/BRAM recycles the whole reset generator; DDR3 resets the core, cache
     * and MIG adapter but deliberately NOT the MIG, so calibration survives. */
-  private val hasSimpleRuntimeReset = hasRuntimeReset && !isDdr3
+  private val hasSimpleRuntimeReset = hasRuntimeReset && !isDdr3 && !isDdr2
 
   /** Board maps a SWITCH pin named "reset" -- only then does a reset_n port
     * exist. Adding it unconditionally would give every board a new top-level
@@ -387,10 +387,37 @@ case class JopTop(
       val ddr2ResetN = if (isDdr2)
         ddr2Ctl.io.reset_phy_clk_n && ddr2Ctl.io.local_init_done else null
 
+      // Runtime reset for DDR2, on the same principle as DDR3 below: the
+      // controller's own `global_reset_n` / `soft_reset_n` stay tied to the
+      // outer reset, so the ALTMEMPHY keeps its calibration and a reset costs
+      // microseconds rather than the seconds a retrain would. What resets is
+      // the core, cache and CacheToDdr2Adapter.
+      //
+      // Safe for the same two reasons, both of which hold here as well:
+      // writes cannot be stranded, because ONE `local_ready` covers command and
+      // write data and `local_wdata` is sampled on the same cycle as
+      // `local_write_req`; and reads in flight are dropped, because the adapter
+      // in reset captures nothing and the hold outlasts the controller's read
+      // latency.
+      //
+      // NOTE the polarity: this domain is ASYNC and active LOW, unlike DDR3's
+      // SYNC active HIGH, so the hold is inverted and ANDed rather than ORed.
+      val ddr2RuntimeReset: Bool = if (isDdr2 && hasRuntimeReset) {
+        val rawCd = ClockDomain(clock = ddr2Ctl.io.phy_clk,
+                                config = ClockDomainConfig(resetKind = BOOT))
+        new ClockingArea(rawCd) {
+          val escape = UartResetEscape(sys.coreConfigs.head.uartBaudRate, sys.clkFreq)
+          escape.io.rxd := io.ser_rxd
+          val hold = ResetGenerator.requestedHold(
+            escape.io.resetRequest, ResetGenerator.DramResetCycles)
+        }.hold
+      } else null
+
       val ddr2MainCd: ClockDomain = if (isDdr2) {
         ClockDomain(
           clock = ddr2Ctl.io.phy_clk,
-          reset = ddr2ResetN,
+          reset = if (ddr2RuntimeReset != null) ddr2ResetN && !ddr2RuntimeReset
+                  else ddr2ResetN,
           frequency = FixedFrequency(sys.clkFreq),
           config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = LOW)
         )
@@ -427,7 +454,7 @@ case class JopTop(
           val escape = UartResetEscape(sys.coreConfigs.head.uartBaudRate, sys.clkFreq)
           escape.io.rxd := io.ser_rxd
           val hold = ResetGenerator.requestedHold(
-            escape.io.resetRequest, ResetGenerator.Ddr3ResetCycles)
+            escape.io.resetRequest, ResetGenerator.DramResetCycles)
         }.hold
       } else null
 

@@ -41,6 +41,7 @@ CABLE = $(shell $(ROOT)/fpga/scripts/jtag_probe_map --cable ae115fb)
 # CDC interface).
 UART_DEV  ?= /dev/ttyUSB0
 UART_BAUD ?= 1000000
+JOP_FILE  ?= $(ROOT)/java/apps/Smallest/HelloWorld.jop
 
 .PHONY: all generate ip build program run monitor clean assert-device
 
@@ -80,6 +81,17 @@ program: assert-device
 	@echo "=== programming via cable: $(CABLE) ==="
 	$(QUARTUS_BIN)/quartus_pgm -c "$(CABLE)" -m JTAG \
 	  -o "p;output_files/$(PROJECT).sof"
+
+# Reset the core over UART, no JTAG and no reprogramming. On DDR2 this is a
+# CORE-ONLY reset: the ALTMEMPHY keeps its calibration (global_reset_n and
+# soft_reset_n stay on the outer reset), so it costs microseconds rather than
+# the seconds a retrain would. Needs a bitstream from 2026-08-18 or later.
+reset:
+	python3 $(ROOT)/fpga/scripts/download.py -R $(UART_DEV) $(UART_BAUD)
+
+# Swap the running application without reprogramming the FPGA.
+redownload:
+	python3 $(ROOT)/fpga/scripts/download.py -e -r $(JOP_FILE) $(UART_DEV) $(UART_BAUD)
 
 monitor:
 	@echo "=== $(UART_DEV) @ $(UART_BAUD) — expect 'DDR2 PASS 0000' per pass ==="

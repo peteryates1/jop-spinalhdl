@@ -33,12 +33,14 @@ object ResetGenerator {
     * restart. 1024 is ~17 us at 60 MHz, and costs nothing but a counter. */
   val RequestedResetCycles = 1024
 
-  /** DDR3 holds far longer, because the MIG keeps running underneath and its
-    * outstanding read data must land and be discarded while the adapter is
-    * still in reset. 4096 cycles is ~45 us at 91.7 MHz, orders of magnitude
-    * past any MIG read latency. Releasing early would drop a stale beat into a
-    * fresh FIFO on a path that matches responses BY POSITION. */
-  val Ddr3ResetCycles = 4096
+  /** DRAM boards hold far longer, because the memory controller keeps running
+    * underneath and its outstanding read data must land and be discarded while
+    * the adapter is still in reset. 4096 cycles is ~45 us at 91.7 MHz (DDR3) or
+    * ~55 us at 75 MHz (DDR2), orders of magnitude past either controller's read
+    * latency. Releasing early would drop a stale beat into a fresh FIFO on a
+    * path that matches responses BY POSITION -- see CacheMigResetSim, which
+    * fails deliberately when the hold is shortened. */
+  val DramResetCycles = 4096
 
   /** Hold a reset for `cycles` after each `resetRequest` pulse. Call inside a
     * ClockingArea whose domain is NOT the one being reset. */

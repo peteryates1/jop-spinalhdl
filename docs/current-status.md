@@ -3311,10 +3311,19 @@ independently prove calibration survived. The real evidence is structural and
 checked in the generated Verilog: `sys_rst = !clkWizBlackBox_locked`, untouched
 by the runtime reset.
 
-**Still to do: DDR2 (A-E115FB).** The same pattern should transfer --
-`CacheToDdr2Adapter` has the same atomicity, one `local_ready` covering command
-and write data with `local_wdata` sampled alongside `local_write_req` -- but it
-is unbuilt and untested until that board is attached.
+**DDR2 done too (A-E115FB, 2026-08-18): 6/6.** The pattern transferred, with
+one difference that matters: that domain is **ASYNC and active LOW**, not SYNC
+active HIGH, so the hold is inverted and ANDed rather than ORed. The
+controller's `global_reset_n` and `soft_reset_n` stay on the outer reset, so the
+ALTMEMPHY keeps its calibration; the generated Verilog reads
+`(reset_phy_clk_n && local_init_done) && !(hold != 0)`. Quartus 18.1 timing met
+at **+0.510 ns**. The safety argument is the same as DDR3's and holds for the
+same reason: `CacheToDdr2Adapter` covers command and write data with ONE
+`local_ready` and samples `local_wdata` alongside `local_write_req`, so a write
+cannot be left half-issued.
+
+`Ddr3ResetCycles` is now `DramResetCycles`, shared by both DRAM paths -- 4096
+cycles is ~45 us at 91.7 MHz and ~55 us at 75 MHz.
 
 The i5 gets the UART escape but no button, because no user-button pin is
 documented for that board. The Xilinx boards get no `reset_n` either: they
@@ -3329,6 +3338,7 @@ already carry a `resetn` into the clock wizard, which is a FULL reset
 | Wukong XC7A100T | Artix-7, Vivado | DDR3/MIG | 2 M | **6/6** (core-only) |
 | Colorlight i5 | ECP5, yosys/nextpnr | SDR | 1 M | **4/4** |
 | CYC5000 | Cyclone V, Quartus | SDR | 2 M | **4/4** |
+| A-E115FB | Cyclone IV E, Quartus 18.1 | **DDR2** | 1 M | **6/6** (core-only) |
 
 The i5 and CYC5000 needed no new code -- they are single-system SDR boards, so
 they picked up the escape from the generic path. Both were nonetheless rebuilt

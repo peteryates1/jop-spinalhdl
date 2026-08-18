@@ -193,7 +193,7 @@ class CacheMigResetSim extends AnyFunSuite {
 
   test("reset released EARLY corrupts — proves the hold length is load-bearing") {
     // Deliberately release before the MIG has answered. This is what a shorter
-    // ResetGenerator.Ddr3ResetCycles would do. If this ever stops failing, the
+    // ResetGenerator.DramResetCycles would do. If this ever stops failing, the
     // safety argument above has changed and the comment in ResetGenerator is
     // stale -- do not simply delete the test.
     val errs = withMig(holdCycles = 1) { (dut, pulseReset, e) =>
@@ -216,6 +216,6 @@ class CacheMigResetSim extends AnyFunSuite {
     // is worse than no test at all.
     assert(errs.nonEmpty,
       "releasing the reset before the MIG answered produced no corruption; " +
-      "the safety argument in ResetGenerator.Ddr3ResetCycles may have changed")
+      "the safety argument in ResetGenerator.DramResetCycles may have changed")
   }
 }
