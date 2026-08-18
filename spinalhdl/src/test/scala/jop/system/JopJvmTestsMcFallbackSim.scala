@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, JopSimDefaults, TestHistory}
 import jop.memory.JopMemoryConfig
 import jop.config.JopCoreConfig
 import java.io.PrintWriter
@@ -51,12 +51,16 @@ object JopJvmTestsMcFallbackSim extends App {
   // and 3 cleared in every character) and the local re-run silently used a
   // different seed and passed.
   //   JOP_SIM_SEED=871203250 sbt "Test/runMain jop.system.JopJvmTestsMcFallbackSim"
-  private val simSeed: Int =
-    sys.env.get("JOP_SIM_SEED").map(_.trim).filter(_.nonEmpty).map(_.toInt)
-      .getOrElse(scala.util.Random.nextInt())
-  println(s"Simulation seed: $simSeed  (set JOP_SIM_SEED to replay)")
+  //
+  // The note above concluded the corruption "reproduces from the seed alone,
+  // so it is not randomised-register behaviour". That inference is BACKWARDS:
+  // Verilator's X-state is a deterministic function of the seed, so
+  // reproducing from a seed is what X-state looks like, not what rules it out.
+  // The flag is applied here too (see JopSimDefaults). The pinned seed in CI
+  // stays until an A/B on 871203250 says whether it is still needed.
+  private val simSeed: Int = JopSimDefaults.seed()
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopCoreTestHarness(romData, ramData, mainMemData, memSize = bramSize,
       coreConfig = Some(JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = bramSize),

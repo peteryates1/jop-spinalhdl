@@ -4,7 +4,7 @@ import jop.config._
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, JopSimDefaults, TestHistory}
 import java.io.PrintWriter
 
 /**
@@ -41,11 +41,16 @@ object JopDcuCacheSim extends App {
     bytecodes = Map("*" -> "hw"))
 
   // Zero latency: tests pure cache logic (hit/miss/evict/writeback) without DDR3 timing overhead
-  SimConfig
+  // This sim ran with NO seed until 2026-08-18 -- `doSim` drew a fresh one
+  // every run and never printed it, so a CI failure here could not be replayed
+  // at all. It is one of the three jvm-suite jobs, and it failed CI five times.
+  private val simSeed: Int = JopSimDefaults.seed()
+
+  JopSimDefaults.config
     .compile(JopCoreWithCacheTestHarness(romData, ramData, mainMemData,
       readLatency = 0, writeLatency = 0, coreConfigOverride = Some(fullCuConfig),
       mshrCount = mshrCount))
-    .doSim { dut =>
+    .doSim(seed = simSeed) { dut =>
       val log = new PrintWriter(logFilePath)
       var uartOutput = new StringBuilder
 

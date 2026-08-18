@@ -477,6 +477,12 @@ jobs:
       # diff a future failure against.
       - name: Fingerprint sim inputs
         run: |
+          # The simulator build is an input too. A seed names an initial state
+          # only relative to a fixed netlist AND a fixed Verilator; replaying
+          # CI's seed on a workstation running a different version reproduces
+          # nothing, which is how item 30's seed hypothesis got wrongly cleared
+          # (CI 5.020 from noble apt, the workstation 5.032 from Debian).
+          verilator --version
           sha256sum \
             java/apps/JvmTests/DoAll.jop \
             asm/generated/mem_rom.dat \
@@ -498,10 +504,18 @@ jobs:
       # 89da8fb. See docs/current-status.md, "UART data corruption".
       #
       # Pinning keeps CI honest about REGRESSIONS while that bug is open; it is
-      # not a fix and must be removed once the corruption is understood. Do not
-      # reach for --x-initial 0 here: the fault reproduces from the seed alone,
-      # so it is not randomised-register behaviour, and masking it that way
-      # would hide a real bug rather than stabilise a flaky test.
+      # not a fix and must be removed once the corruption is understood.
+      #
+      # CORRECTION 2026-08-18. This note used to say "do not reach for
+      # --x-initial 0 here: the fault reproduces from the seed alone, so it is
+      # not randomised-register behaviour". That reasoning is backwards, and it
+      # is what kept item 30 pointed away from the answer for a week.
+      # Verilator's X-state IS a deterministic function of the seed, so
+      # reproducing from a seed is the SIGNATURE of randomised registers, not a
+      # refutation. The sims now zero X-state by default (JopSimDefaults); this
+      # pin stays only until an A/B on 871203250 shows whether it still needs
+      # to. JOP_SIM_XINIT=random restores the old behaviour for hunting the
+      # missing resets, which remain worth fixing on their own merits.
       #
       # To sweep seeds deliberately, unset this and run the sim directly.
       # Scoped to the job that needs it: 284409762 is only KNOWN good for
@@ -529,7 +543,11 @@ jobs:
           # The seed is what makes these sims reproducible: item 29 was pinned
           # down only by re-running with the seed from the failing job. Surface
           # it here so it is readable without downloading the log.
-          grep -oE 'with seed [0-9]+' sim.log | head -1 || true
+          # -?: seeds are signed 32-bit and negative ones are common. Without
+          # the sign this prints a different (positive) seed, so anyone
+          # replaying it reproduces the wrong run. The 2026-08-15 baseline
+          # failure was seed -748081925.
+          grep -oE 'with seed -?[0-9]+' sim.log | head -1 || true
           if [ "$fails" -ne 0 ]; then
             echo "::error::${{ matrix.name }}: $fails test(s) failed"
             grep 'failed!' sim.log

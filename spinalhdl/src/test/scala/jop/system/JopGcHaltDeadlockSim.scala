@@ -4,7 +4,7 @@ import jop.config._
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib.bus.bmb._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
 
@@ -248,8 +248,11 @@ object JopGcHaltDeadlockSim extends App {
   println(s"App: $jopFilePath")
   println(s"Sim seed: $simSeed (PINNED — see the note at doSim)")
 
-  SimConfig
-    .addSimulatorFlag("--x-initial 0")
+  // Was a hand-rolled addSimulatorFlag here — the first and for a long time the
+  // ONLY sim with the X-state defence, while items 29/30/32 went unexplained in
+  // the sims that lacked it. Routed through the shared helper so it cannot
+  // drift apart again.
+  JopSimDefaults.config
     .compile(JopGcHaltTestHarness(cpuCnt, romData, ramData, mainMemData))
     // PIN THE SEED. `doSim` without one picks a fresh seed every run, and this
     // harness had been running with 748489979, 617838352, 370588204, 70704150

@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, JopSimDefaults, TestHistory}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
 
@@ -27,18 +27,11 @@ object JopJvmTestsBramSim extends App {
   println(s"Loaded RAM: ${ramData.length} entries")
   println(s"Loaded main memory: ${mainMemData.length} entries")
 
-  // Seed is settable so a CI failure can be replayed exactly. This suite has
-  // failed intermittently (item 30) with the failure not reproducible locally,
-  // and the seed is printed by every run — being able to feed it back is the
-  // difference between a reproducer and a shrug. Unset means random, i.e.
-  // unchanged behaviour.
-  //   JOP_SIM_SEED=405669157 sbt "Test/runMain jop.system.JopJvmTestsBramSim"
-  private val simSeed: Int =
-    sys.env.get("JOP_SIM_SEED").map(_.trim).filter(_.nonEmpty).map(_.toInt)
-      .getOrElse(scala.util.Random.nextInt())
-  println(s"Simulation seed: $simSeed  (set JOP_SIM_SEED to replay)")
+  // Seed handling and the --x-initial 0 X-state defence both live in
+  // JopSimDefaults; see the long note there for why this suite was flaky.
+  private val simSeed: Int = JopSimDefaults.seed()
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopCoreTestHarness(romData, ramData, mainMemData, memSize = bramSize))
     .doSim(seed = simSeed) { dut =>
       val log = new PrintWriter(logFilePath)

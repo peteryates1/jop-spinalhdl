@@ -158,7 +158,16 @@ class BytecodeFetchStageTest extends AnyFunSuite {
       0xA7   // goto at address 2
     )
 
-    bcfSimConfig.compile(createDut(jbcData)).doSim { dut =>
+    // PINNED ADVERSARIAL SEED — this is a regression guard, not a fixture.
+    // 360571106 is the seed that made this test fail in CI (item 29): with
+    // Verilator randomising unreset registers, the JBC RAM powered up holding
+    // 0xEC -- an undefined bytecode -- and the test read entries[0xEC] = 0x74C
+    // instead of NOP's 0x226. It reproduces on demand, and it passes only
+    // because simWave now applies --x-initial 0. If someone removes that flag,
+    // THIS TEST IS THE ALARM: it fails with "1868 did not equal 550".
+    // Verify the guard still bites:
+    //   JOP_SIM_XINIT=random sbt 'testOnly jop.pipeline.BytecodeFetchStageTest -- -z "JumpTable integration"'
+    bcfSimConfig.compile(createDut(jbcData)).doSim(seed = 360571106) { dut =>
       dut.clockDomain.forkStimulus(period = 10)
 
       // Reset

@@ -59,9 +59,15 @@ The ordering is a proposal, not a decree — it puts measurement that unblocks
 a decision above the work it would unblock, and CI trust above everything,
 on the grounds that a flaky baseline makes every other number arguable.
 
-1. **[#30](#item-30)** — `JopJvmTestsBramSim` — the CI baseline job — intermittently dies
-2. **[#29](#item-29)** — `BytecodeFetchStage: JumpTable integration` is flaky in CI
-3. **[#32](#item-32)** — UART data corruption on seed 871203250 — CI seed now PINNED around it
+CI flakiness (#30, #29) is **RESOLVED as of 2026-08-18** and no longer heads
+this list: all three CI-flake items shared one cause — Verilator randomising
+the ~405 registers in this design that have no reset, seeded per run. The
+sims now zero it (`--x-initial 0` via `jop.utils.JopSimDefaults`). #32 remains
+open only pending its A/B; #45 is the residue worth doing on its own merits.
+
+1. **[#45](#item-45)** — ~405 registers have no reset — zeroing X-state in sim is a floor, not a fix
+2. **[#32](#item-32)** — UART data corruption on seed 871203250 — CI seed still PINNED around it
+3. **[#46](#item-46)** — `formal-verification` fails intermittently — a proof times out at ~5 min, unrelated to X-state
 4. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
 5. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 6. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
@@ -136,8 +142,10 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
 - **[31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
 - **[11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-- **[29](#item-29)** — `BytecodeFetchStage: JumpTable integration` is flaky in CI
-- **[30](#item-30)** — `JopJvmTestsBramSim` — the CI baseline job — intermittently dies
+- **[29](#item-29)** — ~~`BytecodeFetchStage: JumpTable integration` is flaky in CI~~ — **FIXED** (X-state)
+- **[30](#item-30)** — ~~`JopJvmTestsBramSim` — the CI baseline job — intermittently dies~~ — **FIXED** (X-state)
+- **[45](#item-45)** — ~405 registers have no reset — zeroing X-state in sim is a floor, not a fix
+- **[46](#item-46)** — `formal-verification` fails intermittently — a proof times out at ~5 min, unrelated to X-state
 - **[12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
 - **[13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
 - **[14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
@@ -2826,7 +2834,30 @@ catches that class.
 
 <a id="item-29"></a>
 
-### Item 29 — `BytecodeFetchStage: JumpTable integration` is flaky in CI
+### Item 29 — ~~`BytecodeFetchStage: JumpTable integration` is flaky in CI — FIXED~~
+
+**FIXED 2026-08-18 — Verilator X-state. Same root cause as items 30 and 32.**
+The analysis below was correct in every particular and stopped one step short:
+"randomised post-reset state" *is* the answer, and the fix is to stop
+randomising. `TestVectorUtils.simWave` now applies `--x-initial 0`, so every
+unit test built on it starts from zero, as an FPGA does.
+
+Closed A/B on the original failing seed, local Verilator 5.032:
+
+| X-state | seed 360571106 | result |
+|---|---|---|
+| randomised (old behaviour) | 360571106 | **FAILS** — `1868 did not equal 550`, byte-identical to CI |
+| zeroed, `--x-initial 0` (new default) | 360571106 | **PASSES** |
+
+The seed is now **pinned in the test as a regression guard**, not removed: it
+is a known-adversarial seed, so if anyone drops the flag this test is the
+alarm. Check the guard still bites with
+`JOP_SIM_XINIT=random sbt 'testOnly jop.pipeline.BytecodeFetchStageTest -- -z "JumpTable integration"'`.
+
+The register that actually powers up dirty is still worth an `init()` — see
+the note under item 30 on why zeroing is a floor, not a ceiling.
+
+**Original analysis, retained:**
 
 **`BytecodeFetchStage: JumpTable integration` is flaky in CI
 failure is seed-dependent.** It broke the 2026-08-08 push and a rerun of the
@@ -2853,7 +2884,65 @@ flash-altera` gives **byte-identical** output); parallel test collisions
 
 <a id="item-30"></a>
 
-### Item 30 — `JopJvmTestsBramSim` — the CI baseline job — intermittently dies
+### Item 30 — ~~`JopJvmTestsBramSim` — the CI baseline job — intermittently dies — FIXED~~
+
+**FIXED 2026-08-18 — Verilator X-state, the same cause as items 29 and 32.**
+
+**The proof is an A/B that needed no new instrumentation** — the fingerprints
+added on 2026-08-09 for exactly this purpose. Commit `caa8abbb` ran twice:
+
+| run | seed | outcome |
+|---|---|---|
+| [31915456539](https://github.com/peteryates1/jop-spinalhdl/actions/runs/31915456539) | **−748081925** | hangs, **0** results |
+| [31925196175](https://github.com/peteryates1/jop-spinalhdl/actions/runs/31925196175) | **564015666** | **132 ok**, 0 failed |
+
+All five input fingerprints byte-identical across the two
+(`DoAll.jop 3448530a…`, `mem_rom.dat a73153b1…`, `mem_ram.dat a6e8044f…`,
+`JumpTableData.scala 76808793…`, `Const.java e0897fb1…`), same runner image,
+same Verilator. **The seed was the only variable in the entire pipeline, so it
+was necessarily the cause** — and the only thing a seed controls in a
+SpinalSim run is the power-up value of the ~405 registers in this design that
+have no reset.
+
+**Two corrections to the analysis below.**
+
+*First, the hang is not `E1`.* The 2026-08-15 failure printed `GC done` and
+`CI` and then went silent for 59.6M cycles. `Startup.java` prints `CI` right
+before `clazzinit()` and `OK` right after, so **it hung inside static-
+initialiser execution** — well past `GC.init`, which `E1` never leaves. Same
+"no results found" verdict, different place. That is what X-state looks like:
+the failure point moves with the seed, so cataloguing where it stops was never
+going to converge.
+
+*Second, and this is the one that cost the week:* **"CI's failing seed passes
+locally" was not evidence.** A seed names an initial state only relative to a
+fixed netlist **and a fixed simulator build**. CI installs Verilator **5.020**
+from the noble apt archive; the workstation runs **5.032** from Debian. The
+same integer therefore selects a completely different power-up state on each,
+so replaying seed 405669157 locally never reproduced CI's run, and the
+ten-seed local sweep that "came back healthy on all ten" was testing something
+else entirely. CI now prints `verilator --version` beside the fingerprints so
+this is visible in every log.
+
+**The fix.** `jop.utils.JopSimDefaults` centralises the defence and the three
+jvm-suite sims plus `TestVectorUtils.simWave` (hence every unit test) now use
+it. `JOP_SIM_XINIT=random` restores the old behaviour for deliberately hunting
+missing resets. `JopDcuCacheSim` also gained seed support — it had **none**,
+drawing a fresh seed per run and never printing it, so its five CI failures
+were unreplayable by construction.
+
+Also fixed: the CI step that echoes the seed matched `with seed [0-9]+`, which
+silently drops a minus sign. Seeds are signed and the failing one was
+negative, so it printed `748081925` — a *different* seed. Anyone who replayed
+it was reproducing the wrong run.
+
+**This is a floor, not a ceiling.** `--x-initial 0` makes the simulator agree
+with an FPGA at power-up; it does not make those ~405 registers correct.
+Registers that genuinely need a defined reset should still get one, and
+`JOP_SIM_XINIT=random` is how to go looking. What changed is that CI is now a
+regression detector rather than a random number generator.
+
+**Original analysis, retained:**
 
 **`JopJvmTestsBramSim` — the CI baseline job — intermittently dies
 `E1` — the GC runs out of heap on its first allocation.** Broke the
@@ -2967,6 +3056,66 @@ failure because only `ls -l` sizes existed then, and they were equal.
 
 The 4645-byte difference is far too small to cause `E1` by itself: the
 baseline sim has ~58,000 words of heap headroom.
+
+<a id="item-45"></a>
+
+### Item 45 — ~405 registers have no reset — zeroing X-state in sim is a floor, not a fix
+
+**Opened 2026-08-18, as the residue of items 29/30/32.** `--x-initial 0` makes
+the simulator agree with an FPGA at power-up, which is what stopped CI being a
+random number generator. It does not make the design correct: a register whose
+value matters before anything writes it is a real defect, and the FPGA merely
+masks it by happening to power up at zero.
+
+```sh
+grep -rE "= *Reg(Next)? *\(" spinalhdl/src/main/scala/jop/ | grep -v init(
+```
+
+counts **~405**. Not all need a reset — most are written before they are read,
+and adding `init()` to a deep pipeline register costs fabric for nothing. The
+ones that matter are those an X-state run can demonstrably reach, and there is
+now a cheap way to find them:
+
+```sh
+JOP_SIM_XINIT=random sbt "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.*"
+```
+
+Two are already named by the closed items: whatever the JBC RAM / `jpc` hold
+after reset (item 29 — the test read an *undefined* bytecode 0xEC), and
+whatever `clazzinit()` walks into on the baseline sim (item 30).
+
+**Do not treat a green CI as evidence this is done.** CI now zeroes X-state by
+construction, so it can no longer see this class at all. That is the correct
+trade — a regression detector should not be a fuzzer — but it does mean this
+item needs deliberate sweeps, not observation.
+
+<a id="item-46"></a>
+
+### Item 46 — `formal-verification` fails intermittently — a proof times out, unrelated to X-state
+
+**Opened 2026-08-18.** Separated out from the CI-flakiness work because it is
+*not* the same cause. Of 20 CI failures in the 200 runs to 2026-08-18,
+`formal-verification` was the only failing job in **5** of them
+(31883019262, 31877585619, 31695840571, 31691895916, 31530822513), on four
+different days.
+
+The signature is a solver duration, not a counterexample:
+
+```
+- formal_stall freezes jpc, jinstr and the dispatch address *** FAILED *** (5 minutes, 2 seconds)
+```
+
+Five minutes and two seconds is a **timeout**, not a disproof — a real
+counterexample returns fast and prints a trace. A shared GitHub runner gives
+variable CPU, so a proof sized close to its budget passes or fails on how busy
+the host is.
+
+Not yet done, in order of cheapness: confirm the SymbiYosys timeout value and
+whether the proof is near it; raise the budget or bound the proof (`--depth`)
+so it has headroom; only then look for a genuine performance cliff in the
+property. Until then this job can redden an otherwise green run, so read a
+`formal-verification`-only failure with suspicion.
+
 
 <a id="item-12"></a>
 

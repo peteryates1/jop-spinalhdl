@@ -53,7 +53,15 @@ object TestVectorUtils {
     * Set SIM_WAVE=1 to enable FST waveforms.
     */
   def simWave(config: SpinalSimConfig): SpinalSimConfig = {
-    if (sys.env.getOrElse("SIM_WAVE", "0") == "1") config.withFstWave
-    else config
+    // --x-initial 0 as well as the wave flag: Verilator otherwise randomises
+    // the ~405 registers in this design that have no reset, from the sim seed,
+    // and a unit test then passes or fails on which seed it drew. That is
+    // item 29 -- "JumpTable integration" sampled an UNDEFINED bytecode on seed
+    // 360571106 because the JBC RAM powered up with garbage. An FPGA powers up
+    // at zero; this makes the simulator agree. JOP_SIM_XINIT=random restores
+    // the randomisation for deliberately hunting missing resets.
+    val base = jop.utils.JopSimDefaults.xInitial(config)
+    if (sys.env.getOrElse("SIM_WAVE", "0") == "1") base.withFstWave
+    else base
   }
 }
