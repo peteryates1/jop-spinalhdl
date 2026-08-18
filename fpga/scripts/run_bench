@@ -35,7 +35,7 @@ SECS="${4:-120}"
 cd "$ROOT" || exit 1
 
 case "$BOARD" in
-  ae115fb)   UART=/dev/ttyUSB0; BAUD=1000000; KIND=quartus ;;
+  ae115fb)   UART=/dev/ttyUSB0; BAUD=2000000; KIND=quartus ;;
   ep4cgx150) UART=/dev/ttyUSB1; BAUD=2000000; KIND=quartus ;;
   wukong)    UART=$(./fpga/scripts/usb_serial_map 2>/dev/null | awk '/1a86:7523/{print $1; exit}')
              BAUD=2000000; KIND=openfpgaloader ;;   # 2037000 before 2026-08-18

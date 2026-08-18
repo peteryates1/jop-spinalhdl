@@ -1102,14 +1102,18 @@ object JopConfig {
         hasCardTable = true, cardTableBudgetBytes = 64 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       // 1 Mbaud, not the 2 Mbaud default. UartCtrl divides by baud x 5 samples,
-      // so at 75 MHz a 2 Mbaud divider is 7.5 -> 7, i.e. 2.143 Mbaud: +7% and
-      // far outside UART tolerance. 75 MHz divides EXACTLY into 1 M (divider
-      // 15), 1.5 M (10) and 3 M (5) — 2 M is the one standard rate it cannot
-      // reach, so the odd core clock is not the problem it looks like.
-      // Brought up at 115200 (divider 130, +0.16%) and raised once the link was
-      // proven; 1 Mbaud cuts a 44 KB download from 4.0 s to ~0.5 s.
+      // 2 Mbaud since 2026-08-18, and this board is WHY the baud generator was
+      // made fractional. It used to read: "at 75 MHz a 2 Mbaud divider is
+      // 7.5 -> 7, i.e. 2.143 Mbaud: +7% and far outside UART tolerance. 75 MHz
+      // divides EXACTLY into 1 M (divider 15), 1.5 M (10) and 3 M (5) — 2 M is
+      // the one standard rate it cannot reach." That was true of an INTEGER
+      // divider. jop.io.UartBaudTick accumulates a fractional phase instead, so
+      // 75 MHz reaches 2 Mbaud to within 0.0006 % and the restriction is gone.
+      // Brought up at 115200, then 1 M (4.0 s -> 0.5 s for a 44 KB download),
+      // now 2 M. Hosts must match: Makefile UART_BAUD and run_bench both say
+      // 2000000, but a bitstream older than that date still needs 1000000.
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340"),
-        params = Map("baudRate" -> 1000000))))))
+        params = Map("baudRate" -> 2000000))))))
 
   /** A-E115FB EP4CE115 + 1 GB DDR2 — SMP.
     *

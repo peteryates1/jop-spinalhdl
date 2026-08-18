@@ -40,7 +40,7 @@ CABLE = $(shell $(ROOT)/fpga/scripts/jtag_probe_map --cable ae115fb)
 # The board's own CH340, not the Pico (which runs pico-usb-blaster and has no
 # CDC interface).
 UART_DEV  ?= /dev/ttyUSB0
-UART_BAUD ?= 1000000
+UART_BAUD ?= 2000000
 JOP_FILE  ?= $(ROOT)/java/apps/Smallest/HelloWorld.jop
 
 .PHONY: all generate ip build program run monitor clean assert-device

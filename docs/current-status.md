@@ -3207,6 +3207,41 @@ reset-and-redownload; Wukong downloads at a plain **2000000** instead of
 2037000, **6/6** reset-and-redownload, `CARD OK`. Quartus +0.756 ns, Vivado
 MET at WNS +0.109 ns.
 
+**PROVEN ON HARDWARE 2026-08-18, both directions.** The A-E115FB now runs at
+**2 Mbaud** — download OK, 6/6 then 4/4 reset-and-redownload, Quartus +0.762 ns,
+download time roughly halved. The phase increment is `0x222222`, exactly
+`round(2^24 x 2M x 5 / 75 MHz)`.
+
+And the counterfactual was measured rather than argued. A CONTROL bitstream was
+built with the preset at **2,142,857** — the rate the old integer divider
+produced — leaving everything else identical:
+
+| host rate | result against the control board |
+|---|---|
+| 2,000,000 | download fails, "no ready signal" |
+| 2,142,857 (nominal) | garbage `\xda\xd2\xca` |
+| 2.1 M / 2.2 M / 2.4 M / 1 M | garbage |
+
+The board was demonstrably alive throughout, transmitting on the ~0.5 s ready
+cadence. **No rate the CH340 can produce decodes it.** So 2 Mbaud really was
+unreachable here before the fractional generator.
+
+**The reason is stronger than this document used to claim.** The old note said
+"+7.14 %, far outside UART tolerance", which is true but incomplete: even
+*asking* the host for 2,142,857 does not help, because the CH340's divisors are
+quantised and it cannot generate that rate either. There was no host rate that
+matched. Tolerance is the second reason, not the first.
+
+**A measurement trap worth keeping.** The first attempt at this control was
+invalid and looked like a refutation: reading the 2 Mbaud board at a *requested*
+2,142,857 returned 27/27 clean lines, which appears to disprove the intolerance
+claim. It does not — the CH340 silently ignored the request and stayed at
+2,000,000, so a perfectly matched link was being measured. Worse, opening it at
+that rate wedged the bridge and produced a spurious 0/6 on the following reset
+loop, which reprogramming cleared. Put the awkward rate on the FPGA side, where
+the fractional generator makes it exact, and keep the host on a standard rate it
+can actually synthesise.
+
 **Do not oversell this.** On the Wukong it is TIDINESS, not a repair: 1.86 % is
 inside 8N1 tolerance, both 2000000 and 2037000 decode cleanly against the new
 bitstream, and the old pairing worked. What it buys there is a round number and
