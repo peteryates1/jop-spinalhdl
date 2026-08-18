@@ -3321,8 +3321,24 @@ documented for that board. The Xilinx boards get no `reset_n` either: they
 already carry a `resetn` into the clock wizard, which is a FULL reset
 (recalibration and all) and so complements the fast core-only UART path.
 
+**Verified on every attached board, across all three vendors and toolchains:**
+
+| board | fabric / toolchain | memory | UART | reset-and-redownload |
+|---|---|---|---|---|
+| EP4CGX150 | Cyclone IV GX, Quartus | SDR | 2 M | **8/8** (+ button on SW1) |
+| Wukong XC7A100T | Artix-7, Vivado | DDR3/MIG | 2 M | **6/6** (core-only) |
+| Colorlight i5 | ECP5, yosys/nextpnr | SDR | 1 M | **4/4** |
+| CYC5000 | Cyclone V, Quartus | SDR | 2 M | **4/4** |
+
+The i5 and CYC5000 needed no new code -- they are single-system SDR boards, so
+they picked up the escape from the generic path. Both were nonetheless rebuilt
+and run, because "it elaborates" is not "it works": i5 43.66 MHz PASS at 40,
+CYC5000 +0.957 ns.
+
 Usage: `make -C fpga/qmtech-ep4cgx150-sdram redownload JOP_FILE=<app>.jop`,
-or `download.py -r <app>` / `-R` for reset-only.
+or `download.py -r <app>` / `-R` for reset-only. Neither the i5 nor the CYC5000
+maps a SWITCH `"reset"` pin, so both are UART-only -- no `reset_n` port, no pin
+cost.
 
 <a id="item-46"></a>
 
