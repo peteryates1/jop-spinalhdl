@@ -48,33 +48,73 @@ The two DRAM paths started **2.5x behind** Wukong SDR and are now within 4 % of
 it.
 
 **Resist the obvious inference.** Three curves landing within 4 % looks like
-evidence of one shared ceiling, and it is not — the three paths are limited by
-different things and happen to arrive at similar ratios. Divide the measured
-throughput by the work each memory actually performs:
+evidence of one shared ceiling. It is not — and the numbers needed to show that
+came from one measurement that had been missing all along.
 
-| path | service interval per memory operation | device capability | verdict |
+### The measurement: `JbeScaleBramSim`
+
+Run the same binary against BRAM (single-cycle accept, next-cycle response) and
+the memory term nearly vanishes, so what is left is the compute floor:
+
+| | |
+|---|---|
+| compute floor **C** | **90.3 cycles/access** (1108 kacc/s at 100 MHz) |
+| BMB transactions per access | **9.09** — 8.05 reads + 1.04 writes |
+
+**The 9.09 is the important number and it is not what reading the Java suggests.**
+The loop body is `buf[idx] = buf[idx] + idx + it; acc += buf[idx];` — two reads
+and a write, so two BMB transactions once `iastore`'s write-through and the
+array cache are accounted for. It is nine. JOP arrays go through a HANDLE, so
+each of the three array operations costs a `data_ptr` read, a bounds-check
+length read, and the element itself: 3 x 3 = 9. On a stride that defeats the
+array cache, none of that is amortised.
+
+Everything below divides by 9.09, not by the 2 that seemed obvious.
+
+### Where each path actually sits
+
+| path | per BMB transaction | what that is | verdict |
 |---|---|---|---|
-| SDR | 9.1 cycles per 16-bit op (36.2 cyc/access / 4 ops) | row-miss access is 8-10 cycles, and with 8 cores interleaving every command IS a row miss | **at the limit** |
-| DDR3 | 266 ns per 16 B transfer (531 ns / 2) | DDR3-800 random access ~40-60 ns | **~5x headroom** |
-| DDR2 | 103 MB/s aggregate (1.61 Macc/s x 64 B) | 1200 MB/s, measured by the DDR2 exerciser on this board | **~9 % of it** |
+| SDR | 3.98 cyc | = 2 x 16-bit SDRAM ops at **1.99 cyc each**, the controller's sustained command rate — the handle/bounds reads hit the same open row every iteration, so these are NOT row misses | **at the limit** |
+| DDR3 | 5.36 cyc | `LruCacheCore` serves every request through one FSM, hit or miss: IDLE -> TAG_COMPARE -> CHECK_HIT is **3 cycles for a read hit**, 4 with WRITE_HIT | **hit-throughput bound** |
+| DDR2 | 5.12 cyc | same | **hit-throughput bound** |
 
-So SDR is genuinely memory-limited and has little left to give; the two DRAM
-paths are nowhere near their DRAM and remain limited by the path in front of it.
-The convergence is a coincidence of two unrelated ceilings.
+The L2 FSM floor is `8.05 x 3 + 1.04 x 4` = **28 cycles per access with no misses
+at all**, against 48.7 measured on DDR3 and 46.5 on DDR2 — **58 % and 61 % of the
+whole interval is the cache servicing HITS one at a time.**
 
-This is the **same mistake this project already made once and wrote down** — see
+So the three paths are limited by three different things and land near each
+other by coincidence: SDR by its controller's command rate, the two DRAM paths
+by the L2's serial hit path. Neither DRAM is anywhere near its device (DDR3 is
+at ~5x the random-access latency it could do; DDR2 moves 103 MB/s against the
+1200 MB/s its exerciser measured).
+
+**This is the same mistake this project already made once and wrote down** — see
 "Why the earlier reading went wrong" in `java/apps/JbeBench/README.md`, where two
 ceilings landing within 14 % were taken as a common cause and were not. Numbers
-landing close together is not evidence; dividing by the work done is.
+landing close together is not evidence; dividing by the work done is. It also
+caught an error in the first version of this section, which divided by 4
+transactions per access instead of 9 and concluded SDR was row-miss bound.
 
-What limits the DRAM paths is a latency x concurrency product, and the honest
-position is that it has **not** been cleanly attributed between the three
-candidates: MSHR count (4), one outstanding BMB transaction per core in
-`BmbMemoryController`, and the per-core compute cost of the loop itself. Little's
-law over the MSHR file gives an implied miss latency of ~195 cycles (2.1 us),
-which is far too long for DDR3 and therefore says the MSHRs are NOT saturated —
-so at least one of the other two binds first. Attribution needs the missing
-measurement below.
+### What this makes the next levers, in order
+
+1. **Cut the transactions per access.** Nine memory operations for one array
+   element is a 3x amplification, and the handle's `data_ptr` and length are
+   LOOP-INVARIANT here — the same array every iteration. Caching those
+   separately from the element would take 9 ops to ~3 and lift every path at
+   once, including SDR. Nothing else on this list is worth 3x.
+2. **Pipeline the L2 hit path.** 3 cycles per hit through a single FSM is what
+   caps both DRAM paths now. The MSHR made misses concurrent; hits are still
+   strictly serial.
+3. **More MSHRs** — worth at most 48.7 -> 28 = **1.7x** before the hit path
+   binds, which also explains why 8 MSHRs failing to route is a bounded loss
+   rather than a disaster.
+
+**Compute is not the cap.** At eight cores a free memory system would give
+`8/90.3 x 100 MHz` = **8.9 Macc/s**, against 1.88 measured on DDR3 and 2.76 on
+SDR. Memory dominates by 3-5x, so there is no point optimising the loop body.
+
+
 
 Absolute rates still differ, and per MHz at eight cores they differ a lot:
 Wukong SDR 27.6 kacc/s/MHz, DDR2 21.5, DDR3 20.5, EP4CGX150 SDR 17.6. Before
@@ -635,15 +675,11 @@ miss needs none of it and only a partial write miss does.
 
 ## What is left
 
-1. **Measure the compute floor.** Everything about "what is the ceiling" is
-   currently blocked on one unknown: how many cycles the `jbe.Scale` inner loop
-   costs with memory latency removed. Run it on a BRAM-backed build with `WORDS`
-   reduced to fit — near-zero memory latency, so the result IS the compute floor
-   C. Then `aggregate <= N/C` is a hard bound, the queueing term falls out of
-   the measured per-core figures (390 cycles/access at 8 cores on DDR3 against
-   213 unloaded), and the three candidate limits separate arithmetically instead
-   of by argument. This is cheap and it turns the section above from analysis
-   into measurement.
+1. **Cut the 9 memory transactions per array access** — see the levers above.
+   `JbeScaleBramSim` measures the count, so the effect of any change to the
+   handle/bounds path is directly observable without touching hardware.
+2. **Pipeline the L2 hit path**, which now caps both DRAM paths at ~58-61 % of
+   their measured interval.
 2. **Timing at eight cores.** Neither core count closes at 75 MHz, MSHRs or not. That is a
    pre-existing property of the `BmbMemoryController -> cmdFifo` path, and it is
    what to attack next if these configurations are ever to ship — pipelining
