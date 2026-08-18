@@ -485,6 +485,34 @@ cores everything closes; at eight NEITHER configuration closes (-0.501 and
 -0.465 ns, 73 and 254 failing endpoints), which is why `jbe.Scale`'s `CHECK` is
 the acceptance criterion there, exactly as on DDR2.
 
+### Eight MSHRs on eight cores does not fit — where the design runs out
+
+Worth recording as a bound, because 4 MSHRs against 8 cores is obviously an
+under-provision: each core holds one outstanding BMB transaction, so 8 MSHRs is
+the first configuration where the cache could absorb every core's miss at once.
+It is only reachable on DDR3 — the DDR2 adapter's `rspDepth = 8` caps
+`mshrCount` at 4, since each miss can need both an eviction and a refill.
+
+`wukongDdr3SmpMshr 8 8` **fails to route on the XC7A100T**:
+
+```
+Effective congestion level: 5
+CRITICAL WARNING: 18247 signals failed to route due to routing congestion
+ERROR: [Route 35-2] Design is not legally routed. There are 27257 node overlaps.
+```
+
+Post-synthesis it is 59,710 LUTs (**94.2 %**), 43,605 registers (34.4 %). The
+placer spent over two hours grinding overlaps down (126,245 -> 78,065 -> 55,821)
+before the router gave up. Note the failure is **congestion, not capacity** —
+94 % is survivable in isolation; what kills it is the routing demand of eight
+MSHRs' worth of 128-bit data muxes fanning into one set of BRAM write ports, on
+a device already carrying eight cores.
+
+So on this part the practical ceiling is **8 cores x 4 MSHRs**. Reaching 8 MSHRs
+at 8 cores would need either a bigger device, or an MSHR file that does not hold
+a full cache line of write data per entry — the obvious candidate, since a read
+miss needs none of it and only a partial write miss does.
+
 ## What is left
 
 1. **The next limit is shared, not memory-specific.** All three memory
@@ -503,8 +531,13 @@ the acceptance criterion there, exactly as on DDR2.
    each miss can need an eviction and a refill), and DRAM bank/refresh effects.
    Worth re-running `Ddr2ConcurrencyProbe` against the measured numbers before
    guessing.
-4. **Secondary-hit merging** — a request to a line already being filled is
+4. **A leaner MSHR entry.** Each holds a whole cache line of write data (128
+   bits on DDR3, 256 on DDR2) even though a read miss needs none of it. That is
+   what makes 8 entries unroutable at 8 cores. Storing write data only for the
+   entries that are writes, or merging into the line at allocation, would shrink
+   it substantially.
+5. **Secondary-hit merging** — a request to a line already being filled is
    replayed, not attached. Pure throughput, no correctness impact.
-5. **Register cost** is real: each MSHR holds a whole cache line of write data
+6. **Register cost** is real: each MSHR holds a whole cache line of write data
    (256 bits on DDR2) plus tag and dirty words. Measured at +3,408 LE for four
    entries on the 4-core build.

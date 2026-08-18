@@ -509,3 +509,11 @@ across three build pairs, for +810 / +658 registers. Timing is neutral at four
 cores (all close; the WNS delta flips sign between clock profiles, so it is
 fitter noise) and neither configuration closes at eight (-0.501 vs -0.465 ns),
 which is why `CHECK` is the acceptance criterion there.
+
+Eight MSHRs on eight cores **does not fit**: `wukongDdr3SmpMshr 8 8` reaches
+94.2 % LUTs post-synthesis and then fails to route (congestion level 5, 18,247
+signals unrouted, 27,257 node overlaps). The limit is routing congestion rather
+than capacity — eight MSHRs' worth of 128-bit data muxes fanning into one set of
+BRAM write ports. So 8 cores x 4 MSHRs is the practical ceiling on this part,
+and 4 MSHRs is already an under-provision for 8 cores, which makes the 4.38x
+above a floor rather than the best this approach can do.
