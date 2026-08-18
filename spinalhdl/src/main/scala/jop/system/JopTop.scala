@@ -57,6 +57,28 @@ case class JopTop(
   private val isDdr2 = !isMultiSystem && memType == MemoryType.SDRAM_DDR2
   private val isBram = !isMultiSystem && memType == MemoryType.BRAM
 
+  /** Runtime reset sources exist only where they are actually wired: a single
+    * system, on the SDR/BRAM path. DDR2/DDR3 derive systemReset from the
+    * memory controller's calibration and want a core-only reset instead, and a
+    * multi-system config has `sys == null` and builds its resets per system. */
+  private val hasRuntimeReset =
+    !isMultiSystem && sys != null && !isDdr3 && !isDdr2
+
+  /** Board maps a SWITCH pin named "reset" -- only then does a reset_n port
+    * exist. Adding it unconditionally would give every board a new top-level
+    * input, and since the .qsf/.lpf files are hand-maintained that means an
+    * unassigned pin on each of them.
+    *
+    * Excludes Xilinx: those tops ALREADY carry a `resetn` port (SpinalHDL's
+    * default clock-domain reset), it is what XdcGenerator constrains the button
+    * to, and it reaches the core by unlocking the clock wizard. A second port
+    * would be a dangling input competing for the same pin. */
+  private val hasResetButton =
+    hasRuntimeReset &&
+      manufacturer != Manufacturer.Xilinx &&
+      config.assembly.allDevices.filter(_.part == "SWITCH")
+        .exists(_.mapping.contains("reset"))
+
   // Multi-system: presence of any SDR/DDR3 system (for IO ports)
   private val anySdr = if (isMultiSystem)
     config.systems.exists(s => config.resolveMemory(s).exists(_.memType == MemoryType.SDRAM_SDR))
@@ -86,6 +108,10 @@ case class JopTop(
     // UART (secondary — system 1, multi-system only)
     val ser_txd_1 = isMultiSystem generate (out Bool())
     val ser_rxd_1 = isMultiSystem generate (in Bool())
+
+    /** Active-low reset button. Present only on boards that map a SWITCH
+      * "reset" pin -- see hasResetButton. */
+    val reset_n = hasResetButton generate (in Bool())
 
     // LEDs
     val led = out Bits(ledCount bits)
@@ -230,7 +256,57 @@ case class JopTop(
 
       // 4. Reset Generation + Main Clock Domain
       val systemClk = if (!isDdr3 && !isDdr2) pllResult.systemClk.get else null
-      systemReset = if (!isDdr3 && !isDdr2) ResetGenerator(pllResult.locked, systemClk)
+
+      // 4a. Runtime reset sources (SDR/BRAM only for now -- see below).
+      //
+      // Two of them, deliberately, because they fail in different ways: the
+      // UART escape needs the serial link to be alive, and the button needs a
+      // human in the room. Either alone leaves a hole.
+      //
+      // Both live in a BOOT-reset domain on systemClk: they must keep running
+      // while the system they reset is held in reset. The UART detector taps
+      // the ser_rxd PIN, not the core's UART peripheral, for the same reason --
+      // and so it costs no pin at all.
+      //
+      // NOT wired for DDR2/DDR3 yet. There systemReset is derived from PLL lock
+      // or the memory controller's calibration, so recycling it would drag the
+      // PHY through a recalibration taking seconds. Those boards want a
+      // core-only reset that leaves the controller up; that is a separate
+      // change, not a one-line extension of this one.
+      val runtimeResetRequest: Bool =
+        if (hasRuntimeReset) {
+          val rawCd = ClockDomain(clock = systemClk,
+                                  config = ClockDomainConfig(resetKind = BOOT))
+          new ClockingArea(rawCd) {
+            val escape = UartResetEscape(sys.coreConfigs.head.uartBaudRate, sys.clkFreq)
+            escape.io.rxd := io.ser_rxd
+
+            // Active-low button, asynchronous: two-stage sync then a debounce,
+            // because a bouncing contact would otherwise fire a burst of resets
+            // and the last bounce could land mid-reset-sequence.
+            val buttonRequest = if (hasResetButton) {
+              val sync = BufferCC(io.reset_n, init = True)
+              val pressed = !sync
+              val debounceCycles = (sys.clkFreq.toBigDecimal / 100).toBigInt // 10 ms
+              val cnt = Reg(UInt(log2Up(debounceCycles + 1) bits)) init(0)
+              val fired = Reg(Bool()) init(False)
+              when(pressed) {
+                when(cnt =/= debounceCycles) { cnt := cnt + 1 }
+              } otherwise {
+                cnt := 0
+                fired := False
+              }
+              // One pulse per press, on reaching the debounce threshold.
+              val pulse = pressed && cnt === debounceCycles && !fired
+              when(pulse) { fired := True }
+              pulse
+            } else False
+
+            val request = escape.io.resetRequest || buttonRequest
+          }.request
+        } else null
+
+      systemReset = if (!isDdr3 && !isDdr2) ResetGenerator(pllResult.locked, systemClk, runtimeResetRequest)
                     else if (isDdr3) !pllResult.locked  // DDR3: reset when PLL not locked
                     else null                            // DDR2: filled in below from the controller
 

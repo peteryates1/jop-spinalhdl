@@ -442,3 +442,22 @@ In `/srv/git/qmtech/EP4CGX150DF27_CORE_BOARD/`:
 For DB_FPGA peripheral examples (Ethernet, UART, VGA, SD card, 7-segment),
 see the EP4CE15 examples in `/srv/git/qmtech/CYCLONE_IV_EP4CE15/Software/`
 which use the same daughter board with different pin assignments.
+
+## Runtime reset (2026-08-18)
+
+The FPGA no longer has to be reprogrammed before each download. Two triggers:
+
+- **UART**, no pin cost: `make redownload JOP_FILE=<app>.jop`, or
+  `download.py -r <app>` / `-R` for reset-only. The wire protocol is a BREAK
+  followed by `'R'`; a break cannot be forged by data, so an application
+  reading from the host can never be reset by what it receives.
+- **Button SW1** (PIN_AD24), active low, 10 ms debounce — the escape hatch for
+  when the serial link itself is wedged. `sw0` (PIN_AD23) stays free.
+
+Note `pyserial.send_break()` does NOT work through this board's CP2102N: the
+ioctl is accepted and nothing reaches the wire. `download.py` therefore makes
+the break out of ordinary data by briefly dropping the host baud and sending
+`0x00`. See item 48 in `docs/current-status.md`.
+
+Measured: 10/10 bare resets from a running application returned to the
+bootloader, 8/8 reset-and-redownload cycles succeeded.

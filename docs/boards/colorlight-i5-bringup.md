@@ -100,8 +100,14 @@ make program         # load into SRAM over DAPLink
 make download        # send HelloWorld.jop over the DAPLink serial port (1 Mbaud)
 ```
 
+**Superseded 2026-08-18 — a runtime reset now exists** (item 48). The i5 gets
+the UART escape, so `download.py -r <app>` resets the core and downloads
+without reprogramming; `-R` resets only. It is the UART path only here: no user
+button pin is documented for this board, so unlike the EP4CGX150 there is no
+`reset_n`. Original note follows, and still applies to any bitstream built
+before that date.
+
 The FPGA must be reprogrammed before each download — the serial bootloader only
-listens once, right after configuration. This matches the other boards.
 
 `make program` loads SRAM only (volatile). Flash boot is not available: the i5's
 GD25Q16 ships write-locked, and unlocking needs the procedure from

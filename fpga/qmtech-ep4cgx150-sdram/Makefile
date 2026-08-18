@@ -44,6 +44,8 @@
 #   make program-flash   - Program flash via JTAG (SFL + .jic)
 #   make all             - microcode + generate + build
 #   make run             - program + download + monitor
+#   make reset           - reset the core over UART (no FPGA reprogram)
+#   make redownload      - reset + download + monitor (no FPGA reprogram)
 #   make full            - microcode + generate + build + run
 #   make full-smp        - microcode + generate-smp + build-smp + run-smp
 #   make full-dbfpga     - microcode + generate-dbfpga + build-dbfpga + run-dbfpga
@@ -112,7 +114,7 @@ SOF_SD_SPI_FILE = $(OUTPUT_DIR)/$(QP_SD_SPI).sof
 SOF_CFG_FLASH_FILE = $(OUTPUT_DIR)/$(QP_CFG_FLASH).sof
 SOF_FLASH_PROG_FILE = $(OUTPUT_DIR)/$(QP_FLASH_PROG).sof
 
-.PHONY: all microcode microcode-flash generate generate-smp generate-smp8 generate-dbfpga generate-dbfpga-vgadma generate-flash-boot generate-sd-native-exerciser generate-sd-spi-exerciser generate-config-flash-exerciser generate-flash-programmer build build-smp build-smp8 build-dbfpga build-dbfpga-vgadma build-flash-boot build-sd-native-exerciser build-sd-spi-exerciser build-config-flash-exerciser build-flash-programmer program program-smp program-smp8 program-dbfpga program-dbfpga-vgadma program-flash-boot program-sd-native-exerciser program-sd-spi-exerciser program-config-flash-exerciser program-flash-programmer download monitor run run-smp run-smp8 run-dbfpga run-dbfpga-vgadma flash-image flash-jic program-flash flash-program full full-smp full-smp8 full-dbfpga full-dbfpga-vgadma full-flash-boot full-sd-native-exerciser full-sd-spi-exerciser full-config-flash-exerciser full-flash-programmer clean
+.PHONY: all microcode microcode-flash generate generate-smp generate-smp8 generate-dbfpga generate-dbfpga-vgadma generate-flash-boot generate-sd-native-exerciser generate-sd-spi-exerciser generate-config-flash-exerciser generate-flash-programmer build build-smp build-smp8 build-dbfpga build-dbfpga-vgadma build-flash-boot build-sd-native-exerciser build-sd-spi-exerciser build-config-flash-exerciser build-flash-programmer program program-smp program-smp8 program-dbfpga program-dbfpga-vgadma program-flash-boot program-sd-native-exerciser program-sd-spi-exerciser program-config-flash-exerciser program-flash-programmer download reset redownload monitor run run-smp run-smp8 run-dbfpga run-dbfpga-vgadma flash-image flash-jic program-flash flash-program full full-smp full-smp8 full-dbfpga full-dbfpga-vgadma full-flash-boot full-sd-native-exerciser full-sd-spi-exerciser full-config-flash-exerciser full-flash-programmer clean
 
 # Default: microcode + generate + build
 all: microcode generate build
@@ -543,6 +545,17 @@ flash-program:
 
 download:
 	python3 ../scripts/download.py -e $(JOP_FILE) $(SERIAL_PORT) $(BAUD_RATE)
+
+# Reset the core over the serial line, no JTAG and no reprogramming. The
+# bitstream must contain UartResetEscape (2026-08-18 or later); on older ones
+# this is inert rather than harmful.
+reset:
+	python3 ../scripts/download.py -R $(SERIAL_PORT) $(BAUD_RATE)
+
+# The point of the reset work: swap the running application without touching
+# the FPGA. `make redownload JOP_FILE=/path/to/App.jop`.
+redownload:
+	python3 ../scripts/download.py -e -r $(JOP_FILE) $(SERIAL_PORT) $(BAUD_RATE)
 
 monitor:
 	python3 ../scripts/monitor.py $(SERIAL_PORT) $(BAUD_RATE)

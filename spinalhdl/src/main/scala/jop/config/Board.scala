@@ -281,7 +281,10 @@ object Board {
         "DQM0" -> "PIN_F26", "DQM1" -> "PIN_H24")),
       BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "PIN_B14")),
       BoardDevice("LED", mapping = Map("led0" -> "PIN_A25", "led1" -> "PIN_A24")),
-      BoardDevice("SWITCH", mapping = Map("sw0" -> "PIN_AD23", "sw1" -> "PIN_AD24"))),
+      // sw1 is the reset button. The key name "reset" is what PinResolver and
+      // JopTop look for; sw0 stays free for application use. Both are the
+      // core board's user push-buttons, active low.
+      BoardDevice("SWITCH", mapping = Map("sw0" -> "PIN_AD23", "reset" -> "PIN_AD24"))),
     connectors = Map(
       // U4: Banks 5, 6, 7 — mates with DB_FPGA J3 when used with daughter board
       "U4" -> Map(

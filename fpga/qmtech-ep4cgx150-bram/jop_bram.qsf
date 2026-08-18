@@ -59,6 +59,12 @@ set_location_assignment PIN_AE21 -to ser_rxd
 set_location_assignment PIN_A25 -to led[0]
 set_location_assignment PIN_A24 -to led[1]
 
+# Reset button (SW1, active low). Runtime reset -- without it the only reset in
+# the design is FPGA reconfiguration, which is why every workflow said
+# "reprogram before each download". Pairs with the UART break escape, which
+# needs no pin. See jop/system/ResetGenerator.scala.
+set_location_assignment PIN_AD24 -to reset_n
+
 # -------------------------------------------------------------------------- #
 # Partitions
 # -------------------------------------------------------------------------- #

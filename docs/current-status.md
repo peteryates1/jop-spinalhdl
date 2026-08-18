@@ -148,6 +148,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[29](#item-29)** — ~~`BytecodeFetchStage: JumpTable integration` is flaky in CI~~ — **FIXED** (X-state)
 - **[30](#item-30)** — ~~`JopJvmTestsBramSim` — the CI baseline job — intermittently dies~~ — **FIXED** (X-state)
 - **[45](#item-45)** — ~405 registers have no reset — zeroing X-state in sim is a floor, not a fix
+- **[48](#item-48)** — ~~No runtime reset: the FPGA had to be reprogrammed before every download~~ — **DONE** (UART escape + button)
 - **[46](#item-46)** — ~~`formal-verification` fails intermittently~~ — **ALREADY FIXED** 2026-08-15 (`6bce639b`, formal timeout 300→900 s)
 - **[47](#item-47)** — ~~A push cancelled the nightly scheduled CI run~~ — **FIXED** (concurrency group)
 - **[12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
@@ -3164,6 +3165,74 @@ so nothing draws attention to it.
 
 Adding `-${{ github.event_name }}` to the group separates them. Pushes still
 cancel each other, which was the original intent.
+
+<a id="item-48"></a>
+
+### Item 48 — ~~No runtime reset: the FPGA had to be reprogrammed before every download — DONE~~
+
+**DONE 2026-08-18, hardware-verified on the EP4CGX150.** Programmed once, then
+`HelloWorld -> reset -> CardMarkTest (CARD OK) -> HelloWorld`, with JTAG
+untouched after the initial configuration.
+
+**What the problem actually was.** Not the missing resets (item 45) -- the
+missing reset SOURCE. `ResetGenerator`'s `res_cnt` is `resetKind = BOOT`, so it
+initialises when the FPGA is CONFIGURED and never again, and `pll.io.areset` is
+tied `False`. Reprogramming was not a habit, it was the only reset in the
+design. The Xilinx boards were the accident: they already carry a `resetn` port
+into the clock wizard, which is why only Altera and Lattice felt the pain.
+
+**Two sources, because they fail differently.** `UartResetEscape` needs the
+serial link alive; the button needs a human present.
+
+| | trigger | pin cost | boards |
+|---|---|---|---|
+| UART escape | BREAK then `'R'` | **none** -- taps `ser_rxd` | every SDR/BRAM board |
+| Button | active-low, 10 ms debounce | one input | boards mapping a SWITCH `"reset"` (EP4CGX150 `sw1`, PIN_AD24) |
+
+Both live in the `resetKind = BOOT` domain, outside the reset they drive.
+
+**Why a break and not a magic byte.** A break is a framing violation, so it
+cannot be forged by data: at 8N1 the longest low run a valid frame can hold is
+9 bit-times against a 13 bit-time threshold. `UartResetEscapeSim` proves it by
+sending all 256 byte values, and back-to-back `0x00`, without a trigger. The
+confirming byte then covers what a break alone does not -- a floating line is
+an infinite break, bridges glitch on open/close, and a mismatched baud can read
+as one.
+
+**`pyserial.send_break()` does not work on a CP2102N.** The ioctl is accepted
+and nothing reaches the wire: the FPGA's own `UartCtrl` discards TX while a
+break is asserted, and a 2-second break produced no suppression at all. So
+`download.py` generates the break out of ORDINARY DATA -- drop the host baud,
+send `0x00`, restore it. At 1/16th baud that is 144 bit-times of low. Every
+bridge can do it, because it is just a byte.
+
+**Two of my own bugs worth recording, both of which passed simulation:**
+
+1. The confirmation window was sized in BIT-TIMES (64, = 32 us at 2 Mbaud).
+  The host cannot possibly meet that -- `send_break()` returns, then another
+  syscall, then a USB frame: milliseconds. Simulation passed because the
+  testbench sent the byte immediately. It is now 100 ms of wall clock, and
+  `UartResetEscapeSim` has a "byte arriving LATE" case that fails without it.
+2. `hasRuntimeReset` was declared BEFORE the `sys`/`isDdr3` vals it reads. A
+  Scala `val` referencing a later `val` silently gets its default, so the
+  feature would have been dead everywhere with no error.
+
+**I predicted item 45 would gate this. It did not.** Bare reset from a running
+application: **10/10** into the bootloader. Reset-and-redownload: **8/8**. The
+intermittent hangs I saw first were my own test harness -- a 5 ms settle
+between the `0x00` and restoring the baud, too short for the byte to clear the
+USB buffer, so it went out truncated. At 10 ms it is reliable. The ~405
+unreset registers remain a real hazard in principle and item 45 stands, but on
+this board with these applications they do not stop a clean reboot.
+
+**Not done: DDR2/DDR3.** There `systemReset` comes from the memory
+controller's calibration, so recycling it would drag the PHY through a
+recalibration taking seconds. Those boards want a core-only reset that leaves
+the controller up -- a separate change. The i5 gets the UART escape but no
+button, because no user-button pin is documented for that board.
+
+Usage: `make -C fpga/qmtech-ep4cgx150-sdram redownload JOP_FILE=<app>.jop`,
+or `download.py -r <app>` / `-R` for reset-only.
 
 <a id="item-46"></a>
 

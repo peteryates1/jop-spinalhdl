@@ -230,31 +230,90 @@ def verify_checksum(ser, expected_checksum):
         return False
 
 
+RESET_MAGIC = b"R"
+
+
+def send_reset(ser, baud, settle=0.4):
+    """Reset the JOP core over the serial line, without reprogramming the FPGA.
+
+    The FPGA trigger is a UART BREAK followed by 'R'. A break is a framing
+    violation -- at 8N1 the longest low run a valid frame can produce is 9
+    bit-times against the receiver's 13 bit-time threshold -- so no data an
+    application receives can ever forge it. The confirming byte covers what a
+    break alone does not: a floating line looks like an infinite break, bridges
+    can glitch the line on open/close, and at a mismatched baud a 0x00 reads as
+    a break.
+
+    HOW THE BREAK IS GENERATED, and why not pyserial's send_break(). Measured
+    on a CP2102N: send_break() is accepted by the ioctl and never reaches the
+    wire -- the FPGA's own UartCtrl, which discards TX while a break is
+    asserted, showed no suppression during a 2-second break, and the core never
+    reset. Rather than depend on each bridge's break support (CP2102N, CH340,
+    FT2232H and DAPLink CDC all differ), generate the break out of ORDINARY
+    DATA: drop the host baud, send 0x00, restore it. At 1/16th baud a 0x00
+    holds the line low for 9 host bits = 144 bit-times at the FPGA's rate, far
+    past the 13 needed. Every bridge can do this, because it is just a byte.
+
+    Requires a bitstream with UartResetEscape (2026-08-18 or later). On older
+    ones it is inert: the low period is discarded and 'R' is consumed as
+    ordinary input, so it is safe to send unconditionally.
+    """
+    low = min(9600, baud // 16)
+    ser.reset_input_buffer()
+    ser.baudrate = low
+    ser.write(b"\x00")
+    ser.flush()
+    time.sleep(0.01)                 # let it clear the USB buffer and the wire
+    ser.baudrate = baud
+    ser.write(RESET_MAGIC)           # inside the FPGA's 100 ms window
+    ser.flush()
+    time.sleep(settle)               # reset hold, then boot up to the ready byte
+    ser.reset_input_buffer()
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     flags = {a for a in sys.argv[1:] if a.startswith("-")}
 
     echo_mode = "-e" in flags
+    # -r: reset the core first, so a new app can be downloaded without
+    # reprogramming the FPGA. -R: reset only, download nothing.
+    do_reset = "-r" in flags or "-R" in flags
+    reset_only = "-R" in flags
 
-    if len(args) < 1:
+    if len(args) < 1 and not reset_only:
         print(
-            "Usage: python3 download.py [-e] <jop_file> [serial_port] [baud_rate]\n"
+            "Usage: python3 download.py [-e] [-r|-R] <jop_file> [serial_port] [baud_rate]\n"
+            "  -e  monitor UART output after download\n"
+            "  -r  reset the core over UART first (no FPGA reprogram needed)\n"
+            "  -R  reset only, then exit (no jop_file needed)\n"
             "  Port auto-detected via usb_serial_map if not specified.",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    jop_file = args[0]
-    baud = int(args[2]) if len(args) > 2 else 2000000
+    # With -R there is no file argument, so the positional slots shift down.
+    jop_file = args[0] if not reset_only else None
+    pos = args if not reset_only else [None] + args
+    baud = int(pos[2]) if len(pos) > 2 else 2000000
 
-    if len(args) > 1:
-        port = args[1]
+    if len(pos) > 1 and pos[1]:
+        port = pos[1]
     else:
         port = find_uart_port()
         if port is None:
             print("Error: no UART port detected; specify port explicitly",
                   file=sys.stderr)
             sys.exit(1)
+
+    if reset_only:
+        ser = serial.Serial(port, baud, timeout=2)
+        ser.dtr = True
+        print(f"Opened {ser.port} at {ser.baudrate} baud")
+        send_reset(ser, baud)
+        print("Reset sent (BREAK + 'R')")
+        ser.close()
+        return
 
     words = parse_jop_file(jop_file)
     if not words:
@@ -281,6 +340,12 @@ def main():
     ser.reset_input_buffer()
     ser.reset_output_buffer()
     print(f"Opened {ser.port} at {ser.baudrate} baud")
+
+    if do_reset:
+        # Before the ready handshake, not after: the reset restarts the boot
+        # loader, which is what emits the 0xAA we are about to wait for.
+        send_reset(ser, baud)
+        print("Reset sent (BREAK + 'R')")
 
     for attempt in range(1, MAX_RETRIES + 1):
         if attempt > 1:

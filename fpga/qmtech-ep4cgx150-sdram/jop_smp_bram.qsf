@@ -86,6 +86,12 @@ set_location_assignment PIN_AE18 -to led[14]
 # PMOD J11 LEDs for even more cores
 set_location_assignment PIN_AF25 -to led[15]
 
+# Reset button (SW1, active low). Runtime reset -- without it the only reset in
+# the design is FPGA reconfiguration, which is why every workflow said
+# "reprogram before each download". Pairs with the UART break escape, which
+# needs no pin. See jop/system/ResetGenerator.scala.
+set_location_assignment PIN_AD24 -to reset_n
+
 # SDRAM clock (PLL c2: 100 MHz, -3ns phase shift)
 
 # SDRAM control
