@@ -96,17 +96,47 @@ landing close together is not evidence; dividing by the work done is. It also
 caught an error in the first version of this section, which divided by 4
 transactions per access instead of 9 and concluded SDR was row-miss bound.
 
+### Where the nine transactions actually go
+
+Read off `BmbMemoryController`'s states rather than inferred. An array operation
+that misses the array cache runs `HANDLE_BOUND_READ` (length), `HANDLE_READ`
+(data_ptr), then `HANDLE_ACCESS` — three BMB transactions — and an `iaload` miss
+additionally fills a whole A$ line (`AC_FILL_*`, `acacheFieldBits = 2` = 4
+elements):
+
+| loop operation | transactions | why |
+|---|---|---|
+| `buf[idx]` read, A$ miss | 1 bounds + 1 handle + **4 element** = 6 rd | line fill fetches 4, the stride uses 1 |
+| `buf[idx] = ...` store | 1 bounds + 1 handle + 1 write = 2 rd + 1 wr | `IAST_WAIT` goes straight to `HANDLE_READ`; the A$ is consulted only to UPDATE the cached value, never to skip the deref |
+| `acc += buf[idx]` | 0 | A$ hit — the line was just filled |
+| **total** | **8 rd + 1 wr** | matches the measured 8.05 + 1.04 |
+
+Two independent sources of waste, and they are separately fixable:
+
+- **The handle deref is repeated per operation.** `data_ptr` and length are read
+  from memory every time, for the same array, in a loop that never changes it.
+- **The A$ line fill fetches 4 elements** where a stride walk uses one.
+
 ### What this makes the next levers, in order
 
-1. **Cut the transactions per access.** Nine memory operations for one array
-   element is a 3x amplification, and the handle's `data_ptr` and length are
-   LOOP-INVARIANT here — the same array every iteration. Caching those
-   separately from the element would take 9 ops to ~3 and lift every path at
-   once, including SDR. Nothing else on this list is worth 3x.
-2. **Pipeline the L2 hit path.** 3 cycles per hit through a single FSM is what
+1. **Cache the handle deref** — `data_ptr` and length, so an array operation
+   that misses the A$ costs one transaction instead of three. Takes 9 -> 5 on
+   this loop. **The hardware is nearly there already**: `ObjectCache` is a
+   (handle, field-index) -> value cache and H[0]/H[1] ARE fields 0 and 1, but it
+   is only consulted for `getfield`/`putfield`, never on the internal
+   `HANDLE_READ`/`HANDLE_BOUND_READ` path. The catch is GC relocation — handles
+   exist so the collector can move a data block and rewrite H[0], so any cached
+   `data_ptr` must be invalidated on GC copy (`cinval`, the `CP_*` states, and
+   the SMP snoop path already exist for exactly this). Array length is immutable,
+   so only handle REUSE after collection makes it stale.
+2. **Narrow the A$ line fill** (`acacheFieldBits`) — 4 elements fetched, 1 used,
+   on any stride longer than a line. Worth 3 of the 9 here, but it is a genuine
+   trade against sequential access and `jbe.Scale` is deliberately the pessimal
+   case. Measure a real workload before changing the default.
+3. **Pipeline the L2 hit path.** 3 cycles per hit through a single FSM is what
    caps both DRAM paths now. The MSHR made misses concurrent; hits are still
    strictly serial.
-3. **More MSHRs** — worth at most 48.7 -> 28 = **1.7x** before the hit path
+4. **More MSHRs** — worth at most 48.7 -> 28 = **1.7x** before the hit path
    binds, which also explains why 8 MSHRs failing to route is a bounded loss
    rather than a disaster.
 
