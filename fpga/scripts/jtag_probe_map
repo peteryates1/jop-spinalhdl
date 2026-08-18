@@ -128,7 +128,7 @@ USAGE
 # the detected value and asks for it, rather than guessing.
 DEVICES=$(cat <<'EOF'
 ae115fb|020F70DD|EP4CE115 (IDCODE shared with EP3C120 / 10CL120)
-ep4cgx150|?|EP4CGX150 — Cyclone IV GX, distinct IDCODE; plug the board in and run --assert-device to learn it
+ep4cgx150|028040DD|EP4CGX150 — Cyclone IV GX
 EOF
 )
 
