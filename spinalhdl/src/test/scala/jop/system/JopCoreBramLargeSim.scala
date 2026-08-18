@@ -17,11 +17,16 @@ case class JopCoreLargeBramHarness(
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
   mainMemInit: Seq[BigInt],
-  bramSize: Int = 2 * 1024 * 1024  // 2MB default
+  bramSize: Int = 2 * 1024 * 1024,  // 2MB default
+  // Array-cache line width, log2(elements). Exposed so a sim can sweep it:
+  // a wider line amortises the handle dereference over more elements but
+  // fetches elements a strided access never reads. Default 2 = 4 elements,
+  // matching JopMemoryConfig.
+  acacheFieldBits: Int = 2
 ) extends Component {
 
   val config = JopCoreConfig(
-    memConfig = JopMemoryConfig(mainMemSize = bramSize)
+    memConfig = JopMemoryConfig(mainMemSize = bramSize, acacheFieldBits = acacheFieldBits)
   )
 
   val io = new Bundle {
@@ -37,6 +42,10 @@ case class JopCoreLargeBramHarness(
     val bmbCmdOpcode = out Bits(1 bits)
     val bmbRspValid = out Bool()
     val bmbRspData = out Bits(32 bits)
+    // Which memory-controller state issued a command, so BMB traffic can be
+    // attributed to handle dereference / bounds check / element / line fill
+    // rather than counted as an undifferentiated total.
+    val debugMemState = out UInt(5 bits)
   }
 
   // Extract JBC init from main memory
@@ -97,6 +106,7 @@ case class JopCoreLargeBramHarness(
   io.memBusy := jopSystem.io.memBusy
   io.uartTxData := jopSystem.io.uartTxData
   io.uartTxValid := jopSystem.io.uartTxValid
+  io.debugMemState := jopSystem.io.debugMemState
   io.bmbCmdValid := jopSystem.io.bmb.cmd.valid
   io.bmbCmdReady := jopSystem.io.bmb.cmd.ready
   io.bmbCmdAddr := jopSystem.io.bmb.cmd.fragment.address

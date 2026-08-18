@@ -557,3 +557,38 @@ the memory adapters: `docs/architecture/nonblocking-cache-mshr-plan.md`, which
 opens with a **Results at a glance** section covering throughput, the
 cross-architecture convergence, area/timing on both boards, and what does not
 fit.
+
+## The handle/fill levers do not survive contact with DoApp (2026-08-18)
+
+The `JbeScale` analysis above says one array element costs nine memory
+transactions — four of them an A$ line fill that uses one element, four a
+repeated handle dereference — and that fixing either is worth multiples.
+`DoAppAcacheSweepSim` checked that against Kfl + UdpIp + Lift. It is not.
+
+| category | transactions | share |
+|---|---|---|
+| **bytecode fill** | 786,358 | **62.3 %** |
+| direct access | 234,026 | 18.5 % |
+| statics | 189,201 | 15.0 % |
+| bounds check | 17,857 | 1.4 % |
+| handle dereference | 17,857 | 1.4 % |
+| array element | 17,856 | 1.4 % |
+| A$ line fill | **0** | **0 %** |
+
+Handle caching would remove **2.8 %** of real traffic. Array-cache line width
+changes the total by **2 transactions in 1.26 million** across 2 / 4 / 8
+elements per line — the fill path never fires, so there is no speculation to
+tune. (The parameter was verified effective: A$ storage is 32 / 64 / 128 entries
+across the three builds.)
+
+**62 % of real memory traffic is the method cache fetching bytecode.** Data
+access of every kind is barely a third of that. Whatever the next memory
+optimisation is, `JbeScale` will not point at it — it is a pure data probe and
+real code here is instruction-fetch bound.
+
+Same lesson as the cache A/B and the DDR3 ceiling before it: **the pessimal
+microbenchmark tells you where the hardware's weakness is, not where the
+application's cost is.** Both are worth knowing; they are not the same question.
+
+Platform check, EP4CGX150 at 80 MHz single core, same day: Kfl **7742** 1/s
+(published 7742), UdpIp **3521** (3524), Lift **12690** (12681).

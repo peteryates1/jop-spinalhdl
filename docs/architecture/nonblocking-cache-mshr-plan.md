@@ -117,28 +117,56 @@ Two independent sources of waste, and they are separately fixable:
   from memory every time, for the same array, in a loop that never changes it.
 - **The A$ line fill fetches 4 elements** where a stride walk uses one.
 
-### What this makes the next levers, in order
+### The same measurement on REAL code says the opposite
 
-1. **Cache the handle deref** — `data_ptr` and length, so an array operation
-   that misses the A$ costs one transaction instead of three. Takes 9 -> 5 on
-   this loop. **The hardware is nearly there already**: `ObjectCache` is a
-   (handle, field-index) -> value cache and H[0]/H[1] ARE fields 0 and 1, but it
-   is only consulted for `getfield`/`putfield`, never on the internal
-   `HANDLE_READ`/`HANDLE_BOUND_READ` path. The catch is GC relocation — handles
-   exist so the collector can move a data block and rewrite H[0], so any cached
-   `data_ptr` must be invalidated on GC copy (`cinval`, the `CP_*` states, and
-   the SMP snoop path already exist for exactly this). Array length is immutable,
-   so only handle REUSE after collection makes it stale.
-2. **Narrow the A$ line fill** (`acacheFieldBits`) — 4 elements fetched, 1 used,
-   on any stride longer than a line. Worth 3 of the 9 here, but it is a genuine
-   trade against sequential access and `jbe.Scale` is deliberately the pessimal
-   case. Measure a real workload before changing the default.
-3. **Pipeline the L2 hit path.** 3 cycles per hit through a single FSM is what
-   caps both DRAM paths now. The MSHR made misses concurrent; hits are still
-   strictly serial.
-4. **More MSHRs** — worth at most 48.7 -> 28 = **1.7x** before the hit path
-   binds, which also explains why 8 MSHRs failing to route is a bounded loss
-   rather than a disaster.
+`jbe.Scale` is the pessimal case by construction, so the levers above were
+checked against `jbe.DoApp` (Kfl + UdpIp + Lift) before acting on them.
+`DoAppAcacheSweepSim` attributes every BMB transaction to the memory-controller
+state that issued it, over a 12 M-cycle window on BRAM:
+
+| category | transactions | share |
+|---|---|---|
+| **bytecode fill** | 786,358 | **62.3 %** |
+| direct access (issued from IDLE) | 234,026 | 18.5 % |
+| statics | 189,201 | 15.0 % |
+| bounds check | 17,857 | 1.4 % |
+| handle dereference | 17,857 | 1.4 % |
+| array element | 17,856 | 1.4 % |
+| **A$ line fill** | **0** | **0 %** |
+
+**Both levers evaporate on real code.**
+
+- **Handle caching removes 2.8 %**, not the ~1.8x it is worth on `jbe.Scale`.
+  All array traffic together is 4.2 %.
+- **Array-cache line width does nothing at all.** Sweeping `acacheFieldBits`
+  over 2 / 4 / 8 elements per line changes the total by **2 transactions in
+  1.26 million** (1,263,161 / 1,263,159 / 1,263,163). The fill path never fires
+  — every array operation here costs exactly one bounds + one handle + one
+  element, with no speculation to waste. Verified the parameter really was
+  taking effect: the A$ storage is 32 / 64 / 128 entries across the three
+  builds.
+
+**What real code actually spends memory on is fetching bytecode** — 62 % of all
+traffic is the method cache filling. Data access of every kind, arrays and
+fields and statics together, is barely a third of it.
+
+So the honest conclusion is the inverse of the one `jbe.Scale` suggested: the
+handle dereference and the fill width are artifacts of a benchmark built to
+defeat the data caches, and neither is worth hardware. **If real-application
+throughput is the goal, the method cache is where the traffic is.** That is a
+different investigation from this one, and it is now pointed at by measurement
+rather than by intuition.
+
+### Hardware check that the platform is sound
+
+`jbe.DoApp` on the EP4CGX150 at 80 MHz, single core, reproducing the published
+baseline within noise:
+
+| benchmark | published | measured |
+|---|---|---|
+| Kfl | 7742 1/s | **7742** |
+| UdpIp | 3524 1/s | **3521** |
+| Lift | 12681 1/s | **12690** |
 
 **Compute is not the cap.** At eight cores a free memory system would give
 `8/90.3 x 100 MHz` = **8.9 Macc/s**, against 1.88 measured on DDR3 and 2.76 on
