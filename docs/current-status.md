@@ -3757,13 +3757,9 @@ all. It is a service RATE, not a latency decomposition, and stands.
 
 **The i5 is healthy and is now a genuine third data point**: different fabric
 (ECP5), different toolchain (yosys/nextpnr/ecppack), different memory width. Per
-MHz on `jbe.DoApp` it beats every other board measured:
-
-| board | MHz | Kfl /MHz | UdpIp /MHz | Lift /MHz |
-|---|---|---|---|---|
-| Colorlight i5 | 40 | **139.5** | **63.7** | **192.8** |
-| EP4CGX150 | 80 | 96.8 | 44.0 | 158.6 |
-| EP4CGX150 | 36 | 122.3 | 54.5 | 163.1 |
+MHz on `jbe.DoApp` it beats every other board measured — figures in
+[`../java/apps/JbeBench/README.md`](../java/apps/JbeBench/README.md), not
+repeated here.
 
 Two effects are confounded and separating them is the open work: a lower clock
 makes fixed-ns memory latency cost fewer cycles (already documented for 36 vs

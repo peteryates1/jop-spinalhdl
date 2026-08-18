@@ -294,21 +294,26 @@ simulation and would have cost a day of bridge debugging.
 - `/srv/git/riscvOnColorlight-5A-75B` — [ghent360/riscvOnColorlight-5A-75B](https://github.com/ghent360/riscvOnColorlight-5A-75B); **5A-75B, different pinout**
 - `/srv/git/atari800-spinalhdl/boards/i5-7v0` — prior ECP5 work in this workspace; PLL example, no UART
 
-## Benchmark numbers (2026-08-18)
+## Fit, and where the benchmark numbers live (2026-08-18)
 
 40 MHz, SDRAM stage, single core, downloaded at 1 Mbaud over the DAPLink CDC.
 
 | | |
 |---|---|
-| `jbe.DoApp` | Kfl **5580**, UdpIp **2547**, Lift **7713** 1/s |
-| per MHz | **139.5 / 63.7 / 192.8** — the best of any board measured |
-| `jbe.Scale` | **287 kacc/s** single core, `CHECK 1645838336` |
-| fit | 49.65 MHz (PASS at 40), TRELLIS_COMB 10111/24288 (41 %), DP16KD 12/56 (21 %) |
+| fit | **49.65 MHz** (PASS at 40) |
+| logic | TRELLIS_COMB 10111/24288 (41 %), TRELLIS_FF 4500/24288 (18 %) |
+| block RAM | DP16KD **12/56 (21 %)** — against 40/56 for the BRAM stage's 64 KB, which is why benchmarks run over SDRAM here (current-status item 21) |
 
-The per-MHz figures beat even the EP4CGX150 at 36 MHz by 14-18 %. Two effects
-are confounded — a lower clock makes fixed-ns memory latency cost fewer cycles,
-and this board's **32-bit SDRAM does one op per BMB beat** where the 16-bit
-boards do two. See `../current-status.md` item 44.
+**Benchmark results are in [`../../java/apps/JbeBench/README.md`](../../java/apps/JbeBench/README.md)**,
+which is the single home for them — see the Colorlight i5 section. Not repeated
+here: this project has already had duplicate benchmark tables drift apart within
+two days (the GC docs), so board docs carry fit and operating detail and the
+benchmark README carries results.
+
+What the numbers are *for*, in one line: the i5 is the only board with a 32-bit
+SDRAM (one op per BMB beat against the 16-bit boards' two) and the only
+open-source toolchain, which makes it the project's independent check on both.
+Analysis in current-status item 44.
 
 ### If it looks dead, check this first
 
