@@ -53,34 +53,33 @@ The ordering is a proposal, not a decree — it puts measurement that unblocks
 a decision above the work it would unblock, and CI trust above everything,
 on the grounds that a flaky baseline makes every other number arguable.
 
-1. **[#38](#item-38)** — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31
-2. **[#30](#item-30)** — `JopJvmTestsBramSim` — the CI baseline job — intermittently dies
-3. **[#29](#item-29)** — `BytecodeFetchStage: JumpTable integration` is flaky in CI
-4. **[#32](#item-32)** — UART data corruption on seed 871203250 — CI seed now PINNED around it
+1. **[#30](#item-30)** — `JopJvmTestsBramSim` — the CI baseline job — intermittently dies
+2. **[#29](#item-29)** — `BytecodeFetchStage: JumpTable integration` is flaky in CI
+3. **[#32](#item-32)** — UART data corruption on seed 871203250 — CI seed now PINNED around it
+4. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
 5. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-6. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
-7. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
-8. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
-9. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
-10. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
-11. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
-12. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-13. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-14. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-15. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-16. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-17. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-18. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-19. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-20. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-21. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
-22. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-23. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-24. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-25. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-26. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
-27. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
-28. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+6. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
+7. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+8. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+9. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+10. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
+11. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+12. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+13. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+14. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+15. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+16. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+17. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+18. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+19. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+20. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
+21. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+22. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+23. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+24. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+25. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
+26. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
+27. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
 
 ## 2. All items — summary
 
@@ -143,7 +142,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[20](#item-20)** — Decide whether the double group gets microcode at all
 - **[21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
 - **[37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
-- **[38](#item-38)** — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31
+- ~~**[38](#item-38)**~~ — ANSWERED: stall share is 34-55 % — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31
 - **[39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
 - **[40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
 - **[41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
@@ -3588,18 +3587,38 @@ measurement bounds what this can be worth before any design work starts.
 
 <a id="item-38"></a>
 
-### Item 38 — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31
+### Item 38 — ~~Measure DoApp's memory-stall fraction~~ — **ANSWERED 2026-08-18: 34-55 %**
 
-**DoApp's memory-stall fraction is unmeasured, and it gates the whole
-memory-optimisation direction.** Everything known about real-application
-memory cost is transaction COUNTS (item 37). What is missing is what
-fraction of application *time* is spent waiting.
+`DoAppBramSim` runs the same binary against BRAM and compares per MHz with the
+EP4CGX150 SDR hardware figures:
 
-`DoAppBramSim` runs the same binary against BRAM (single-cycle accept) for
-comparison against the hardware figures (EP4CGX150 SDR 80 MHz: Kfl 7742,
-UdpIp 3521, Lift 12690 1/s), normalised per MHz. The difference IS the stall
-fraction, and it is the ceiling on anything items 37, 39, 5 or 31 can buy on
-real code. One sim run; do it before committing to any of them.
+| benchmark | BRAM /MHz | SDR @80 /MHz | **stall share** |
+|---|---|---|---|
+| Kfl | 209.6 | 96.8 | **53.8 %** |
+| UdpIp | 97.4 | 44.0 | **54.8 %** |
+| Lift | 240.2 | 158.6 | **34.0 %** |
+
+**Real applications lose a third to a half of their throughput to memory
+latency.** So memory-system work IS worth doing on real code — which was the
+open question — and this is the ceiling on all of it: roughly **2x on Kfl and
+UdpIp, 1.5x on Lift**, if memory latency were eliminated entirely.
+
+Internally consistent with what was already known: Lift has the LOWEST stall
+share, matching the cache A/B where Lift gained most from the object/array
+caches (its working set fits them), while Kfl and UdpIp stay partly
+memory-bound even with caches and showed the per-MHz gain at 36 MHz.
+
+**Method note worth reusing.** DoApp calibrates each benchmark to one *simulated*
+second, which at a declared 100 MHz is 100 M cycles apiece — the first attempt
+ran out at 400 M cycles without finishing Kfl. The harness now takes a declared
+`clkMhz`, and lowering it to 5 shrinks the calibration target proportionally
+**with no effect on the per-MHz result**: reported rate is `N x clkFreq /
+cycles`, so `rate / (clkFreq/1e6)` is `N x 1e6 / cycles` — iterations per
+million cycles, with `clkFreq` cancelled.
+
+**Caveats.** BRAM is not zero-latency (single-cycle accept, next-cycle
+response), so the true stall share is slightly higher. The figures are for the
+EP4CGX150 SDR path; a DRAM board with an L2 will differ.
 
 <a id="item-39"></a>
 

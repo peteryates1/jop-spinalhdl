@@ -35,13 +35,15 @@ object DoAppBramSim extends App {
 
   // DoApp calibrates each benchmark to ~1 simulated second = 100 M cycles here,
   // three of them plus startup.
-  val maxCycles = 400000000L
+  val CLK_MHZ = 5      // see JopCoreLargeBramHarness.clkMhz -- shrinks the
+                       // calibration target; per-MHz results are unchanged
+  val maxCycles = 120000000L
 
-  println("jbe.DoApp on BRAM, single core, 100 MHz — the zero-latency reference")
+  println(s"jbe.DoApp on BRAM, single core, declared $CLK_MHZ MHz — the zero-latency reference")
   println("hardware for comparison (EP4CGX150 SDR 80 MHz): Kfl 7742, UdpIp 3521, Lift 12690\n")
 
   SimConfig
-    .compile(JopCoreLargeBramHarness(romData, ramData, mainMemData, bramSize))
+    .compile(JopCoreLargeBramHarness(romData, ramData, mainMemData, bramSize, clkMhz = CLK_MHZ))
     .doSim { dut =>
       val uart = new StringBuilder
       dut.clockDomain.forkStimulus(10)
@@ -70,7 +72,7 @@ object DoAppBramSim extends App {
                 "SDR@80".reverse.padTo(10,' ').reverse + "BRAM/MHz".reverse.padTo(11,' ').reverse +
                 "SDR/MHz".reverse.padTo(10,' ').reverse + "stall share".reverse.padTo(13,' ').reverse)
         for (b <- Seq("Kfl", "UdpIp", "Lift"); g <- got.get(b)) {
-          val bp = g / 100.0; val sp = hw(b) / 80.0
+          val bp = g / CLK_MHZ.toDouble; val sp = hw(b) / 80.0
           println(f"$b%-8s $g%10.0f ${hw(b)}%9.0f $bp%10.2f $sp%9.2f ${(1 - sp / bp) * 100}%11.1f%%")
         }
         println()

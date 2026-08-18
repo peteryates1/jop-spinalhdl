@@ -22,11 +22,18 @@ case class JopCoreLargeBramHarness(
   // a wider line amortises the handle dereference over more elements but
   // fetches elements a strided access never reads. Default 2 = 4 elements,
   // matching JopMemoryConfig.
-  acacheFieldBits: Int = 2
+  acacheFieldBits: Int = 2,
+  // Declared system clock. It sets the IO_US_CNT prescaler and nothing else in
+  // this harness, so a LOW value makes any calibrate-to-one-second benchmark
+  // (jbe.DoApp) converge in proportionally fewer cycles. Per-MHz results are
+  // unaffected: reported rate = N x clkFreq / cycles, so rate/(clkFreq/1e6) =
+  // N x 1e6 / cycles -- iterations per million cycles, with clkFreq cancelled.
+  clkMhz: Int = 100
 ) extends Component {
 
   val config = JopCoreConfig(
-    memConfig = JopMemoryConfig(mainMemSize = bramSize, acacheFieldBits = acacheFieldBits)
+    memConfig = JopMemoryConfig(mainMemSize = bramSize, acacheFieldBits = acacheFieldBits),
+    clkFreq = HertzNumber(clkMhz.toLong * 1000000)
   )
 
   val io = new Bundle {
