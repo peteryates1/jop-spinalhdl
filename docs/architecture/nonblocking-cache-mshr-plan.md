@@ -26,19 +26,35 @@ configurations that actually SHIPPED (DDR2 661/682, DDR3 733/754) the gains are
 1.42x / 2.37x and 1.88x / 2.50x — the restructure costs ~6 % with overlap off,
 so quote whichever comparison you mean.
 
-### The point of it: all three memory architectures now scale alike
+### The point of it: every memory path now scales alike
 
-| memory | clock | 1 core | 8 cores | ratio, before -> after |
+Eight cores, all four configurations the project has measured:
+
+| board / memory | clock | 1 core | 8 cores | ratio, before -> after |
 |---|---|---|---|---|
-| SDR (no L2 at all) | 100 MHz | 621 | 2764 | 4.45x (unchanged) |
-| DDR3 + 4 MSHRs | 91.68 MHz | 430 | **1882** | 1.75x -> **4.38x** |
-| DDR2 + 4 MSHRs | 75 MHz | 377 | **1613** | 1.81x -> **4.28x** |
+| Wukong SDR (no L2) | 100 MHz | 621 | 2764 | 4.45x (untouched) |
+| Wukong DDR3 + 4 MSHRs | 91.68 MHz | 430 | **1882** | 1.75x -> **4.38x** |
+| A-E115FB DDR2 + 4 MSHRs | 75 MHz | 377 | **1613** | 1.81x -> **4.28x** |
+| EP4CGX150 SDR (no L2) | 36 MHz | 188 | 635 | 3.38x (untouched) |
 
-The two DRAM paths started **2.5x behind** SDR and are now within 4 % of it. The
-shape of the curve no longer depends on which memory is attached, which moves
-the open question: whatever still caps all three at ~4.3x is **shared**, and the
-single BMB command port and its arbiter are the suspects — the critical path
-terminates there too.
+**The EP4CGX150 is untouched by this work and cannot be otherwise**: its SDR
+path is BMB -> `BmbSdramCtrl32` -> `SdramCtrlNoCke`, with no `LruCacheCore` in
+it at all, so `l2MshrCount` has nothing to act on. It is in the table because it
+is the project's main board and its absence would otherwise read as an omission.
+Its 3.38x at eight cores (3.53x at twelve) is a **clock** limit at 36 MHz, not a
+port limit — the same controller at 100 MHz on Wukong reaches 4.45x.
+
+The two DRAM paths started **2.5x behind** Wukong SDR and are now within 4 % of
+it. The shape of the curve no longer depends on which memory is attached, which
+moves the open question: whatever still caps the three 100-ish MHz paths at
+~4.3-4.5x is **shared**, and the single BMB command port and its arbiter are the
+suspects — the critical path terminates there too.
+
+Absolute rates still differ, and per MHz at eight cores they differ a lot:
+Wukong SDR 27.6 kacc/s/MHz, DDR2 21.5, DDR3 20.5, EP4CGX150 SDR 17.6. Before
+this work DDR3 was 8.2. **Closing the scaling gap did not close the per-MHz
+gap** — SDR still does more work per cycle, and that is a separate question from
+the one this document set out to answer.
 
 ### Cost
 

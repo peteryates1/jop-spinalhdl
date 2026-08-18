@@ -486,19 +486,29 @@ cores buys **1.3 %** (692 -> 701). With MSHRs the same step buys **36 %**
 
 ### The three memory architectures now agree
 
-| memory | clock | 8-core kacc/s | ratio vs 1 core |
-|---|---|---|---|
-| SDR (no L2) | 100 MHz | 2764 | 4.45x |
-| DDR3 + MSHR | 91.68 MHz | 1882 | **4.38x** |
-| DDR2 + MSHR | 75 MHz | 1613 | **4.28x** |
+| board / memory | clock | 8-core kacc/s | ratio vs 1 core | kacc/s/MHz |
+|---|---|---|---|---|
+| Wukong SDR (no L2) | 100 MHz | 2764 | 4.45x | 27.6 |
+| Wukong DDR3 + MSHR | 91.68 MHz | 1882 | **4.38x** | 20.5 |
+| A-E115FB DDR2 + MSHR | 75 MHz | 1613 | **4.28x** | 21.5 |
+| EP4CGX150 SDR (no L2) | 36 MHz | 635 | 3.38x | 17.6 |
 
-They started 2.5x apart — 1.75x and 1.81x for the two DRAM paths against SDR's
+The EP4CGX150 row is unchanged by this work and cannot be otherwise — its path
+is BMB -> `BmbSdramCtrl32` -> `SdramCtrlNoCke` with no `LruCacheCore` for
+`l2MshrCount` to act on. Its 3.38x is the 36 MHz clock limit diagnosed above,
+not a port limit.
+
+The two DRAM paths started 2.5x apart from Wukong SDR — 1.75x and 1.81x against
 4.45x — and that gap is what this whole investigation was about. Within 4 % now.
-Absolute rates still differ (SDR 27.6 kacc/s per MHz, DDR3 20.5, DDR2 21.5), but
-the SHAPE of the curve no longer depends on which memory is attached. **Whatever
-caps all three at ~4.3x is shared** — the single BMB command port and its
-arbiter are the obvious suspects, and the critical path terminating there is
-probably not a coincidence. That is the next question, and it is now well posed.
+The SHAPE of the curve no longer depends on which memory is attached, so
+**whatever caps the three fast paths at ~4.3-4.5x is shared** — the single BMB
+command port and its arbiter are the obvious suspects, and the critical path
+terminating there is probably not a coincidence. That is the next question, and
+it is now well posed.
+
+**The per-MHz gap did not close with it.** DDR3 went 8.2 -> 20.5 kacc/s/MHz, but
+Wukong SDR still does 27.6. Scaling and per-cycle efficiency are separate
+problems and only the first one has been solved here.
 
 Both boards independently agree on the cost of the restructure with overlap
 disabled: DDR3 692 vs 733 (-5.6 %) at four cores and 701 vs 754 (-7.0 %) at
