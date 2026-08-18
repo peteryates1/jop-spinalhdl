@@ -404,9 +404,7 @@ jobs:
             sim: JopJvmTestsBramSim
           - name: microcode fallbacks
             sim: JopJvmTestsMcFallbackSim
-            # See the pinned-seed note on the Run step below. Remove once the
-            # UART corruption on seed 871203250 is fixed.
-            seed: '284409762'
+            # Seed pin REMOVED 2026-08-18 — see the note on the Run step.
           - name: all compute units
             sim: JopDcuCacheSim
     steps:
@@ -502,32 +500,30 @@ jobs:
       # nothing and a passing run looks like a run that never started. Locally
       # sbt does not colourise when piped, which is why this only shows up here.
       # The sed is belt and braces in case something else emits escapes.
-      # PINNED SEED. These sims otherwise draw a fresh seed per run, so CI was
-      # non-deterministic across seeds rather than across commits. Seed
-      # 871203250 makes JopJvmTestsMcFallbackSim fail with every UART character
-      # corrupted (bits 1 and 3 cleared) — reproducible on demand, and shown to
-      # be PRE-EXISTING by an A/B at f65b05b, not caused by the sys_exc fix in
-      # 89da8fb. See docs/current-status.md, "UART data corruption".
+      # The seed pin that used to live here is GONE (2026-08-18). It existed
+      # because JopJvmTestsMcFallbackSim failed on seed 871203250 with every
+      # UART character corrupted (bits 1 and 3 cleared), so CI was pinned to
+      # 284409762 to stay honest about regressions meanwhile — item 32.
       #
-      # Pinning keeps CI honest about REGRESSIONS while that bug is open; it is
-      # not a fix and must be removed once the corruption is understood.
+      # Two things retired it. First, the sims now zero X-state
+      # (--x-initial 0, jop.utils.JopSimDefaults), which removes the only
+      # source of run-to-run variation these sims have: with it, every seed
+      # selects the same initial state, so pinning one is meaningless.
+      # Second, the failure no longer reproduces at HEAD at all — seed
+      # 871203250 gives 132 ok and 0 corrupt lines under BOTH the zeroed and
+      # the randomised setting, as do 284409762, -1337 and 20260818.
       #
-      # CORRECTION 2026-08-18. This note used to say "do not reach for
-      # --x-initial 0 here: the fault reproduces from the seed alone, so it is
-      # not randomised-register behaviour". That reasoning is backwards, and it
-      # is what kept item 30 pointed away from the answer for a week.
-      # Verilator's X-state IS a deterministic function of the seed, so
-      # reproducing from a seed is the SIGNATURE of randomised registers, not a
-      # refutation. The sims now zero X-state by default (JopSimDefaults); this
-      # pin stays only until an A/B on 871203250 shows whether it still needs
-      # to. JOP_SIM_XINIT=random restores the old behaviour for hunting the
-      # missing resets, which remain worth fixing on their own merits.
+      # What is NOT established is WHY it stopped: the netlist has moved a
+      # long way since (the MSHR work), and a seed only names an initial state
+      # relative to a fixed netlist. The corruption was real when measured
+      # (ok=0 corrupt=61, confirmed pre-existing by an A/B at f65b05b), so
+      # item 32 stays open as "observed once, not currently reachable" rather
+      # than "fixed". Reproduce attempts:
+      #   JOP_SIM_SEED=871203250 JOP_SIM_XINIT=random \
+      #     sbt "Test/runMain jop.system.JopJvmTestsMcFallbackSim"
       #
-      # To sweep seeds deliberately, unset this and run the sim directly.
-      # Scoped to the job that needs it: 284409762 is only KNOWN good for
-      # JopJvmTestsMcFallbackSim. Pinning a seed nobody has run on the other two
-      # could break them for no reason, so `matrix.seed` is empty there and the
-      # sims treat blank as unset.
+      # matrix.seed is still honoured, so re-pinning is a one-line change if
+      # some future seed misbehaves.
       - name: Run ${{ matrix.name }}
         env:
           JOP_SIM_SEED: ${{ matrix.seed }}

@@ -62,11 +62,12 @@ on the grounds that a flaky baseline makes every other number arguable.
 CI flakiness (#30, #29) is **RESOLVED as of 2026-08-18** and no longer heads
 this list: all three CI-flake items shared one cause — Verilator randomising
 the ~405 registers in this design that have no reset, seeded per run. The
-sims now zero it (`--x-initial 0` via `jop.utils.JopSimDefaults`). #32 remains
-open only pending its A/B; #45 is the residue worth doing on its own merits.
+sims now zero it (`--x-initial 0` via `jop.utils.JopSimDefaults`). #32's pin is now
+removed too, though its cause was never found; #45 is the residue worth
+doing on its own merits.
 
 1. **[#45](#item-45)** — ~405 registers have no reset — zeroing X-state in sim is a floor, not a fix
-2. **[#32](#item-32)** — UART data corruption on seed 871203250 — CI seed still PINNED around it
+2. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
 3. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
 4. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 5. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
@@ -2428,7 +2429,39 @@ ceremony.**
 
 <a id="item-32"></a>
 
-### Item 32 — UART data corruption on seed 871203250 — CI seed now PINNED around it
+### Item 32 — UART data corruption on seed 871203250 — no longer reachable; CI pin REMOVED
+
+**RESCOPED 2026-08-18 — the CI seed pin is removed, but this is not "fixed".**
+The failure no longer reproduces at HEAD, and nobody knows why.
+
+| run | seed | X-state | ok | corrupt |
+|---|---|---|---|---|
+| D | **871203250** (the documented bad seed) | **random** | 132 | 0 |
+| E | **871203250** | zeroed | 132 | 0 |
+| F | 284409762 (CI's old pin) | zeroed | 132 | 0 |
+| G | −1337 | zeroed | 132 | 0 |
+| H | 20260818 | zeroed | 132 | 0 |
+
+Run **D** is the one that matters: the documented bad seed, with randomisation
+still on, now passes. So the pin was guarding against something that no longer
+happens, and `--x-initial 0` makes the seed irrelevant to these sims anyway —
+there is no other source of run-to-run variation in them, so pinning one seed
+is now meaningless. Pin removed; `matrix.seed` still works if a future seed
+misbehaves.
+
+**Do not read this as a fix.** The corruption was real when measured (`ok=0
+corrupt=61`, confirmed pre-existing by an A/B at `f65b05b`). What changed
+since is the netlist — the MSHR work moved a lot of the memory path — and a
+seed names an initial state only relative to a fixed netlist, so 871203250
+simply does not select the same state any more. The item stays open as
+**observed once, not currently reachable**, which is weaker than understood.
+
+The claim below that this is "not X-state" is **unsupported**: its reasoning
+("it reproduces from the seed alone") is the same backwards inference
+corrected in items 29 and 30, and the A/B that would have settled it is
+inconclusive because the control (run D) failed to reproduce the bug.
+
+**Original analysis, retained:**
 
 **UART data corruption on seed 871203250 — CI seed now PINNED around it.**
 `JopJvmTestsMcFallbackSim` fails with every UART character corrupted, bits 1
