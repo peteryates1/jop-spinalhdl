@@ -1,4 +1,30 @@
-# Where we are — 2026-08-07
+# Where we are — 2026-08-18
+
+> **2026-08-17/18 — the DRAM multicore scaling ceiling is gone.** `LruCacheCore`
+> was a blocking miss FSM and both DRAM paths stalled at ~1.8x on eight cores
+> against SDR's 4.45x. It now has an MSHR file, and both memory adapters had to
+> stop serialising with it. Measured on hardware, both boards:
+>
+> | board | 8-core before | after | ratio |
+> |---|---|---|---|
+> | A-E115FB DDR2 | 682 kacc/s | **1613** | 1.81x -> **4.28x** |
+> | Wukong DDR3 | 754 kacc/s | **1882** | 1.75x -> **4.38x** |
+>
+> **Off by default** (`JopMemoryConfig.l2MshrCount = 1`) — no shipped
+> configuration has changed; the MSHR presets are opt-in
+> (`ae115fbDdr2SmpMshr`, `wukongDdr3SmpMshr`). Neither 8-core build closes
+> timing, so those are measurement vehicles, not shippable bitstreams.
+>
+> Full record, including two response-ordering bugs it exposed in the memory
+> adapters and the analysis of what limits things now:
+> [architecture/nonblocking-cache-mshr-plan.md](architecture/nonblocking-cache-mshr-plan.md).
+> Benchmark tables: [../java/apps/JbeBench/README.md](../java/apps/JbeBench/README.md).
+>
+> **The next memory investigation is the method cache, not the data path.**
+> DoApp's traffic is 62 % bytecode fill; all array traffic is 4.2 %. Two
+> optimisations that looked worth multiples on `JbeScale` turned out to be worth
+> 2.8 % and nothing on real code — see the DoApp section of the plan doc before
+> acting on any JbeScale-derived number.
 
 Resumption notes covering the GC work, the A-E115FB DDR2 bring-up, SMP, and the
 board/probe setup. Written to be read cold.
@@ -3801,6 +3827,16 @@ cable that moves.
   look exactly like an RTL ordering bug.
 
 ## 6. Build quick reference
+
+**Running a benchmark on a board** — `fpga/scripts/run_bench <board> <bitstream>
+<app.jop> [seconds]`, for `ae115fb` / `wukong` / `ep4cgx150`. It reprograms
+first (mandatory: a previous download consumes the ready handshake and the board
+then looks dead), asserts the IDCODE (the two Altera boards share one cable),
+and picks the per-board UART and baud — including the Wukong's 2037000, which is
+not a typo. `fpga/scripts/scale_parse.py <log>` recovers `jbe.Scale` results from
+the per-core timers rather than the printed `AGGREGATE`, because the CH340 drops
+a character every few hundred at 2 Mbaud and has already mangled that line.
+
 
 ```bash
 # GC / test apps.  Use `rm -rf build`, NOT `make clean`: clean deletes

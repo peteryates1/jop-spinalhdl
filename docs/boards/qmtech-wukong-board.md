@@ -644,3 +644,29 @@ Multi-rail supply with buck converters:
 | Display | HDMI | VGA (DB_FPGA) | VGA (DB_FPGA) | — |
 | Self-contained | Yes | No | No | No |
 | Max JOP cores | ~12 | ~12 | 16 | 2-3 |
+
+## Two traps when benchmarking this board (2026-08-18)
+
+**Reprogram before EVERY download.** The serial boot loader only runs out of
+reset, and a previous download attempt consumes the ready handshake. The board
+then goes completely silent — indistinguishable from a dead bitstream, and it
+sends you looking for the wrong fault. `fpga/scripts/run_bench wukong ...` does
+this for you.
+
+**A mis-clocked build looks dead but is not.** Building with the default
+`MigProfile.Ddr3_400` while the installed IP is `TimePeriod 2727` leaves the
+cluster running at ui_clk 91.676 MHz with a UART divider computed for 100 MHz —
+everything 9 % out. Diagnose by listening RAW across a baud sweep instead of
+trusting the downloader:
+
+    1000000 -> b'\xff\xff\xff...'   garbage
+    2000000 -> b'jJ***'             mis-framed 0xAA
+    1833520 -> b'\xaa*jJ*'          <- the ready byte
+
+`1833520 = 2000000 x 91.676/100`, and that ratio names the real clock. Rebuild
+with the matching profile (`... Ddr3_366`), after which the download baud is
+**2037000**.
+
+Worse than a dead board: `jbe.Scale`'s timebase is `IO_US_CNT`, derived from the
+same wrong `clkFreq`, so a mis-clocked build reports plausible numbers that are
+all 9 % wrong.
