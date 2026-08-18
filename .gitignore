@@ -51,6 +51,12 @@ work-obj*.cf
 
 # SpinalHDL generated
 spinalhdl/generated/
+
+# Repo-root generated/ -- SpinalHDL App objects that default their
+# targetDirectory to a bare "generated" resolve here. Nothing consumes it; it
+# is scratch. generated/JopCore.v was tracked until 2026-08-18, so every run
+# of JopCoreVerilog (CI included) dirtied the tree with a spurious diff.
+/generated/
 spinalhdl/*.vhd
 spinalhdl/*.v
 spinalhdl/simWorkspace/

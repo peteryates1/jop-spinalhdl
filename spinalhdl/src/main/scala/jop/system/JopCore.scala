@@ -619,8 +619,13 @@ case class JopCoreWithBram(
  * Generate Verilog for JopCore
  */
 object JopCoreVerilog extends App {
+  // spinalhdl/generated, matching JopTopVerilog and the rest of the top-level
+  // flow, and gitignored. This used to write to a bare "generated" at the repo
+  // root, which was not ignored -- so the .v landed in version control and every
+  // run of this (including CI's elaboration check) dirtied the working tree with
+  // a spurious diff.
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "generated"
+    targetDirectory = "spinalhdl/generated"
   ).generate(JopCore())
 }
