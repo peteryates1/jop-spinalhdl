@@ -4356,13 +4356,49 @@ fill first, indirection second, idle/direct third, statics fourth — but the
 ordering INVERTS between Kfl and Lift, so the only honest recommendation is to
 pick the target from the workload that matters.
 
+**Wukong DDR3 added 2026-08-19**, once its UART was retargeted from the
+untappable CH340N pins to the J11 header:
+
+| board | bench | stall % | bytecode fill | idle/direct | statics | indirection |
+|---|---|---|---|---|---|---|
+| Wukong **DDR3** 91.7 MHz | Kfl | 52.2 % | 62.8 % | 15.6 % | 16.6 % | 5.1 % |
+| | UdpIp | 51.9 % | 53.0 % | 19.0 % | 7.8 % | 17.1 % |
+| | Lift | 30.0 % | 3.1 % | 29.5 % | 6.8 % | 60.7 % |
+
+**DDR2 and DDR3 are INDISTINGUISHABLE per cycle — all 15 numbers match to
+0.1 %.** Not a copy-paste: the captures are different files with different
+rates, and the raw cycle counts differ by 0.002 %.
+
+| | DDR2 75 MHz | DDR3 91.7 MHz | ratio |
+|---|---|---|---|
+| Kfl | 9,362 /s | 11,361 /s | 1.213 |
+| UdpIp | 4,316 /s | 5,234 /s | 1.213 |
+| Lift | 13,943 /s | 16,916 /s | 1.213 |
+| clock | 75 MHz | 91.676 MHz | **1.222** |
+
+**DDR3's entire advantage over DDR2 is clock frequency**; per cycle it is
+marginally worse (0.993x). The reason is structural, not coincidence: both DRAM
+paths are `BmbCacheBridge -> LruCacheCore -> adapter` and differ only in the
+adapter, so the core sees the same 32 KB L2 and the DRAM generation behind it is
+nearly invisible. `createSdr` has **no L2 at all**, which is why the two SDR
+boards look different from the DRAM pair and from each other.
+
+That reframes the DRAM work: the L2 is what the core experiences, so an L2
+improvement (item 39, the 3-cycle serial hit path) should move both DRAM boards
+identically, while a DRAM-side change should move neither much.
+
 **Cost of measuring.** Eleven 32-bit counters, off by default. The first
 A-E115FB build FAILED timing at **-0.654 ns** (+0.510 without them);
 registering the category decode one cycle before the increment recovered it to
 **+0.911 ns**, better than the baseline. The counts are aggregates so a uniform
-one-cycle shift is invisible. Wukong DDR3 built and programmed (WNS +0.715 ns)
-but is not in the table: its UART reaches neither Pico CDC port at any baud, a
-wiring question rather than a design one.
+one-cycle shift is invisible.
+
+**Still to do: the dual-system run.** `wukongDualIndependent` puts an SDR
+system and a DDR3 system on one die with a UART each, and both Pico UARTs are
+now defined (`PICO_UART0` A5/A4, `PICO_UART1` F4/H4). Profiling them
+simultaneously would isolate "L2 or no L2" on identical silicon, clock and
+ambient — the confound that makes CYC5000 (61.4 % stall) versus i5 (46.4 %)
+hard to read.
 
 <a id="item-38"></a>
 
