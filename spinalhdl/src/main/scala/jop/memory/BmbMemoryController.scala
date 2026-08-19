@@ -35,10 +35,16 @@ case class MemCtrlInput() extends Bundle {
  *
  * Status and data signals returned to the JOP core.
  */
-case class MemCtrlOutput() extends Bundle {
+case class MemCtrlOutput(jpcWidth: Int = 11) extends Bundle {
   val rdData    = Bits(32 bits)  // Read data result
   val busy      = Bool()          // Memory controller is busy
-  val bcStart   = UInt(12 bits)   // Bytecode start address (after fill)
+  // Byte address of the method's first block within JBC RAM, so it must span
+  // the whole cache: jpcWidth bits. This was hardcoded to 12, which is exactly
+  // 4 KB. MethodCache.io.bcStart is (jpcWidth-2) bits of WORD address, and
+  // `(bcStart ## U(0,2)).resized` TRUNCATES silently once jpcWidth > 12 -- so a
+  // 8 KB method cache elaborated cleanly, booted, and then threw uncaught
+  // exceptions as soon as a method landed above 4 KB. See item 51.
+  val bcStart   = UInt(jpcWidth bits)
 }
 
 /**
@@ -80,7 +86,7 @@ case class BmbMemoryController(
   val io = new Bundle {
     // Interface to JOP core
     val memIn     = in(MemCtrlInput())
-    val memOut    = out(MemCtrlOutput())
+    val memOut    = out(MemCtrlOutput(jpcWidth))
 
     // Stack values (TOS/NOS) for memory operations
     val aout      = in Bits(32 bits)   // TOS
@@ -214,7 +220,7 @@ case class BmbMemoryController(
   val bcFillAddr = Reg(UInt(config.addressWidth bits)) init(0)
   val bcFillLen = Reg(UInt(10 bits)) init(0)
   val bcFillCount = Reg(UInt(10 bits)) init(0)
-  val bcStartReg = Reg(UInt(12 bits)) init(0)
+  val bcStartReg = Reg(UInt(jpcWidth bits)) init(0)
   val bcRdCaptureReg = Reg(Bits(32 bits)) init(0)  // Debug: aout when bcRd fires
 
   // JBC write registers

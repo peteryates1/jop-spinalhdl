@@ -32,7 +32,7 @@ case class JopPipeline(
   val io = new Bundle {
     // === Memory data inputs (from memory controller) ===
     val memRdData  = in Bits(32 bits)
-    val memBcStart = in UInt(12 bits)
+    val memBcStart = in UInt(config.jpcWidth bits)
     val memBusy    = in Bool()
 
     // === JBC write (from memory controller for bytecode cache fill) ===

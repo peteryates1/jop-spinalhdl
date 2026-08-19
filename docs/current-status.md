@@ -76,7 +76,7 @@ the missing resets themselves — but a five-seed sweep found no offender among
 the registers, so it is now a single named defect rather than a 405-register
 audit, and has moved down accordingly.
 
-1. **[#51](#item-51)** — The method cache owns ~1/3 of all Kfl cycles; its 2 KB cap is a `require` plus a one-cycle tag compare that need not be one cycle
+1. **[#51](#item-51)** — Method cache owns ~1/3 of all Kfl cycles. **Swept**: fragmentation, not capacity — 4 KB with 16-word blocks cuts fill traffic 99.7 %. Needs a pipelined tag compare and HW validation
 2. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
 3. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 4. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
@@ -170,7 +170,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[20](#item-20)** — Decide whether the double group gets microcode at all
 - **[21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
 - **[37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
-- **[51](#item-51)** — The method cache is capped at 2 KB by a `require` AND by its tag compare — but the compare fires once per invoke, not per fetch, so it can be pipelined
+- **[51](#item-51)** — Method cache: **SWEPT** — 2 KB/128-byte blocks lose 99 % of fill traffic to FRAGMENTATION; 4 KB with 16-word blocks reaches the compulsory floor
 - ~~**[38](#item-38)**~~ — ANSWERED: stall share is 34-55 % — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31. Where that 34-55 % GOES was then measured on hardware in [50](#item-50)
 - **[39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
 - **[40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
@@ -4515,7 +4515,7 @@ repeatable results on every run.
 
 <a id="item-51"></a>
 
-### Item 51 — The method cache is capped at 2 KB by a `require`, and by its tag compare — but the compare is not on the critical path
+### Item 51 — The method cache is capped at 2 KB by a `require`, and by its tag compare — SWEPT: fragmentation costs ~99 % of the fill traffic
 
 **Why this matters.** Item 50 measured where stall time goes on real memory:
 bytecode fill is **62.8 % of Kfl's stall and 52.9 % of UdpIp's**, and stall is
@@ -4624,6 +4624,81 @@ design depends on: how much of the 33 % is capacity misses (fix with size) and
 how much is fragmentation (fix with block count) or conflict (fix with
 replacement). Item 37's transaction counts and item 50's stall shares both say
 "method cache" but neither distinguishes those three.
+
+#### SWEPT 2026-08-19 — it is FRAGMENTATION first, and the win is ~99 %
+
+`MethodCacheSweepSim` counts misses at `MethodCache.io.inCache` rather than
+inferring them from stall, so the result is a property of the geometry and not
+of the backend. Lookup counts are identical across every row (same program), so
+the columns are directly comparable.
+
+**Kfl** — 142,395 lookups:
+
+| geometry | misses | miss % | words filled |
+|---|---|---|---|
+| 2 KB, 16 x 32w — **today** | 49,569 | **34.8 %** | 966,208 |
+| 2 KB, 32 x 16w | 19,213 | 13.5 % | -62.1 % |
+| 2 KB, 64 x 8w | 13,475 | 9.5 % | -73.3 % |
+| 4 KB, 16 x 64w | 23,685 | 16.6 % | -53.7 % |
+| **4 KB, 32 x 32w** | 895 | **0.6 %** | **-98.4 %** |
+| 4 KB, 64 x 16w | 192 | 0.1 % | -99.7 % |
+| 8 KB, 64 x 32w | 179 | 0.1 % | -99.8 % |
+| 16 KB, 128 x 32w | 149 | 0.1 % | -99.8 % |
+
+**UdpIp** — 80,460 lookups, and the sharpest result in the table:
+
+| geometry | misses | miss % | words filled |
+|---|---|---|---|
+| 2 KB, 16 x 32w — today | 18,636 | **23.2 %** | 335,501 |
+| 4 KB, 16 x 64w — *2x size, same block COUNT* | 18,591 | **23.1 %** | **-0.2 %** |
+| 2 KB, 32 x 16w — *same size, 2x block COUNT* | 116 | **0.1 %** | **-99.5 %** |
+| 16 KB, 128 x 32w | 34 | 0.0 % | -99.9 % |
+
+**Doubling the cache bought nothing; doubling the block COUNT at the same 2 KB
+removed 99.5 % of the fill traffic.** UdpIp is almost purely
+fragmentation-bound — the 128-byte block was the whole problem, and adding
+capacity in bigger blocks just wasted more of it. Kfl needs both
+(fragmentation alone 34.8 -> 13.5 %; capacity at constant block size
+34.8 -> 0.6 %). **Lift was never affected** — 0.3 % at today's geometry,
+matching item 50's finding that bytecode fill is 2.7 % of its stall.
+
+**The knee is at 4 KB / 16-word blocks.** By 8 KB the miss count is ~149 for
+Kfl against 142,395 lookups, i.e. each distinct method is loaded about once:
+that is the compulsory floor, and 16 KB does not improve on it. There is no
+reason to go past 8 KB.
+
+**Scale of the prize.** Bytecode fill is ~33 % of all Kfl cycles and ~27 % of
+UdpIp's (item 50). Cutting fill traffic by 99 % should recover most of that —
+**an order of magnitude more than the 3-5 % the L2 was worth**, from a config
+parameter rather than new microarchitecture. Needs hardware confirmation: this
+sweep counts misses and words, and the stall those convert into has a
+per-miss component as well as a per-word one.
+
+**What it costs.** 4 KB doubles the JBC RAM (BRAM is not scarce on these
+parts). 64 blocks means 64 tags x 18 bits and 64 comparators in the priority
+cascade — which is exactly the `fmax` risk this item opened with, and exactly
+why the compare should be pipelined. It fires once per invoke, not per fetch.
+
+#### A latent truncation the 2 KB pin was hiding
+
+The three largest geometries elaborated cleanly, booted, and then died —
+`Small boot | GC init | GC done | CI | Uncaught exception`. Root cause:
+
+```scala
+case class MemCtrlOutput() { val bcStart = UInt(12 bits) }        // hardcoded
+bcStartReg := (methodCache.io.bcStart ## U(0, 2 bits)).asUInt.resized
+```
+
+`bcStart` is the method's BYTE address inside JBC RAM, so it has to span the
+whole cache. Hardcoded at 12 bits it spans exactly 4096 bytes, and `.resized`
+**truncates silently** beyond that — no elaboration error, a clean boot, then
+wrong jump targets the moment a method lands above 4 KB. Fixed by deriving the
+width from `jpcWidth`; a no-op at the default, confirmed by the 2 KB row
+reproducing bit-for-bit after the change.
+
+Worth remembering as a pattern: **a pinned parameter hides every bug that only
+appears when it changes.** The `require` did not just block the experiment, it
+concealed the reason the experiment would have failed.
 
 #### Other levers on stall time, from the same measurements
 

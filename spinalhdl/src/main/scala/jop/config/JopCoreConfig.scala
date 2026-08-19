@@ -362,7 +362,22 @@ case class JopCoreConfig(
   require(dataWidth == 32, "Only 32-bit data width supported")
   require(instrWidth == 10, "Instruction width must be 10 bits")
   require(pcWidth == 12, "PC width must be 12 bits (4K ROM)")
-  require(jpcWidth == 11, "JPC width must be 11 bits (2KB cache)")
+  // The method cache used to be pinned here with `require(jpcWidth == 11)`.
+  // Nothing in the RTL needed that: BytecodeFetchStage derives jbcDepth =
+  // 1 << jpcWidth and every register from config.jpcWidth, and
+  // BmbMemoryController/MethodCache take the geometry as parameters. It was a
+  // guard, and it blocked the one cheap experiment on the largest single line
+  // item in the stall profile -- bytecode fill is ~1/3 of all Kfl cycles
+  // (item 51). Replaced with the constraints that are actually real:
+  require(jpcWidth >= 11, s"jpcWidth $jpcWidth < 11: MethodCache requires at least a 2KB cache")
+  require(jpcWidth - 2 - blockBits >= 1,
+    s"jpcWidth $jpcWidth with blockBits $blockBits leaves ${jpcWidth - 2 - blockBits} word-offset bits; " +
+    "a block must be at least 2 words. Raise jpcWidth or lower blockBits.")
+  // METHOD_SIZE_BITS is 10, and nrOfBlks = bcLen[9:blockWordBits] is resized to
+  // blockBits -- so a method longer than the whole cache silently wraps. Keep
+  // the cache able to hold the largest method the format can express.
+  require(blockBits + (jpcWidth - 2 - blockBits) >= 9,
+    s"jpcWidth $jpcWidth cannot hold a maximum-size (1023-word) method without nrOfBlks truncation")
   require(!useStackCache || spillBaseAddrOverride.isDefined || memConfig.stackRegionWordsPerCore > 0,
     "useStackCache requires stackRegionWordsPerCore > 0 (or spillBaseAddrOverride) to prevent GC heap/stack overlap")
 

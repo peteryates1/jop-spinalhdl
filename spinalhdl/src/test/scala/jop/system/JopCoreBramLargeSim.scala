@@ -29,13 +29,22 @@ case class JopCoreLargeBramHarness(
   // (jbe.DoApp) converge in proportionally fewer cycles. Per-MHz results are
   // unaffected: reported rate = N x clkFreq / cycles, so rate/(clkFreq/1e6) =
   // N x 1e6 / cycles -- iterations per million cycles, with clkFreq cancelled.
-  clkMhz: Int = 100
+  clkMhz: Int = 100,
+  // Method cache geometry, exposed so item 51's sweep can separate the three
+  // causes of a bytecode-fill miss that the stall profile cannot: capacity
+  // (fix with jpcWidth), fragmentation (fix with blockBits -- more, smaller
+  // blocks) and conflict (fix with replacement policy).
+  //   blockWords = 1 << (jpcWidth - 2 - blockBits)
+  jpcWidth: Int = 11,
+  blockBits: Int = 4
 ) extends Component {
 
   val config = JopCoreConfig(
     memConfig = JopMemoryConfig(mainMemSize = bramSize, acacheFieldBits = acacheFieldBits,
       hasPerfCounters = perfCounters),
-    clkFreq = HertzNumber(clkMhz.toLong * 1000000)
+    clkFreq = HertzNumber(clkMhz.toLong * 1000000),
+    jpcWidth = jpcWidth,
+    blockBits = blockBits
   )
 
   val io = new Bundle {
@@ -73,7 +82,7 @@ case class JopCoreLargeBramHarness(
       BigInt((w >> 8) & 0xFF),
       BigInt((w >> 0) & 0xFF)
     )
-  }.padTo(2048, BigInt(0))
+  }.padTo(1 << jpcWidth, BigInt(0))   // JBC RAM is 1 << jpcWidth bytes
 
   // JOP Core (Sys + Uart internal)
   val jopSystem = JopCore(
