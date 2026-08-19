@@ -698,6 +698,12 @@ object JopConfig {
     *            alongside it — the two must agree, because ui_clk is what that
     *            cluster actually runs at. Hardcoding 100 MHz here meant this
     *            preset could not be built at all against a Ddr3_366 mig.prj. */
+  /** @param sdrClkMhz DECLARED frequency only. The SDR half's actual clock comes
+    *        from the clk_wiz IP, fixed at clk_100 — changing this does NOT
+    *        change the hardware. It changes the UART divider and the IO_US_CNT
+    *        prescaler, so a value other than 100 gives a wrong baud and a wrong
+    *        benchmark calibration while timing is analysed at 10.000 ns
+    *        regardless. Same trap as the EP4CGX150's hardwired dram_pll. */
   def wukongDualIndependentSmp(cpuCnt: Int = 1, sdrClkMhz: Int = 100,
                                mig: MigProfile = MigProfile.Ddr3_400) = JopConfig(
     assembly = SystemAssembly.wukongWithJ11Uart,
@@ -705,8 +711,20 @@ object JopConfig {
     systems = Seq(
       JopSystem(name = "ddr3", memory = "ddr3", bootMode = BootMode.Serial,
         clkFreq = HertzNumber(mig.uiClkHz), cpuCnt = cpuCnt,
+        // CORE CONFIG MUST MATCH THE sdr SYSTEM BELOW, EXACTLY.
+        // This preset exists to compare two MEMORY systems on one die, so the
+        // cores either side of that comparison have to be identical. They were
+        // not: this half had `useDspMul = true, bytecodes = "*" -> "hw"` while
+        // the sdr half took the defaults -- imul as a ~35-cycle microcode
+        // shift-add and idiv/irem as ~1300-cycle Java calls. That is a compute
+        // difference inside a memory experiment, and it biased the DDR3 half
+        // in its own favour.
+        // `idiv`/`irem` = hw is also what every other profiled board uses
+        // (A-E115FB, CYC5000, Colorlight i5, wukongDdr3), so matching DOWN to
+        // it makes both halves comparable to those boards as well as to each
+        // other -- and drops the CUs that `*=hw` pulled in.
         coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
-        useDspMul = true, bytecodes = Map("*" -> "hw")),
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
         // PICO_UART1 (F4/H4 = J11.2/J11.1), not CH340N. The on-board bridge at
         // E3/F3 is hardwired on the PCB and cannot be tapped, and a second
         // 1a86:7523 on the host is indistinguishable from the A-E115FB's. The
@@ -717,7 +735,10 @@ object JopConfig {
         devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("PICO_UART1"),
           params = Map("baudRate" -> 2000000)))),
       JopSystem(name = "sdr", memory = "sdr", bootMode = BootMode.Serial,
-        clkFreq = sdrClkMhz MHz, cpuCnt = cpuCnt, coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024)),
+        clkFreq = sdrClkMhz MHz, cpuCnt = cpuCnt,
+        // Identical to the ddr3 core above -- see the note there.
+        coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
+          bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
         // 2 Mbaud on both halves. 115200 here was a bring-up leftover from when
         // the UART divided the clock by an INTEGER and an awkward core clock
         // could not express a round rate. jop.io.UartBaudTick removed that, so
