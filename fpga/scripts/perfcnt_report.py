@@ -69,6 +69,14 @@ def show(path):
     print(f"{'bench':7} {'cycles':>13} {'stall%':>7} " +
           " ".join(f"{c:>13}" for c in ORDER if c != "other") + "   sum-stall")
     for b, v in d.items():
+        if v["stall"] == 0 or v["cycles"] == 0:
+            # Not a workload with no stalls -- a bitstream built without
+            # hasPerfCounters, where IO_PERFCNT reads 0 for everything. The
+            # throughput lines in the same capture are still valid.
+            rate = v.get("rate")
+            print(f"{b:7} {'ALL COUNTERS ZERO -- bitstream built without hasPerfCounters'}"
+                  + (f"  (rate {rate:,} 1/s is still valid)" if rate else ""))
+            continue
         pct = " ".join(f"{v.get(c,0)/v['stall']*100:12.1f}%" for c in ORDER if c != "other")
         drift = integrity(v)
         flag = "" if abs(drift) < v["stall"] * 0.001 else "   <-- BIASED"
