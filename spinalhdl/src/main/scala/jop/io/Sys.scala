@@ -26,8 +26,15 @@ import spinal.core._
  * @param numIoInt  Number of external I/O interrupt sources (default 2, matching VHDL)
  */
 case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: Int = 2, memEndWords: Int = 0,
-                  fpuCapability: Int = 0) extends Component {
+                  fpuCapability: Int = 0, perfCounters: Boolean = false) extends Component {
   val io = new Bundle {
+    // Memory-stall profiling inputs. Always present (two wires); the COUNTERS
+    // are gated on `perfCounters`, so a production build pays nothing. That
+    // matters: the XC7A100T closes at +0.001 ns and the DB V5 at +0.010 ns,
+    // and eleven 32-bit counters is not free on a marginal fit.
+    val memState = in UInt(5 bits)
+    val memBusy  = in Bool()
+
     val addr   = in UInt(4 bits)
     val rd     = in Bool()
     val wr     = in Bool()
@@ -274,6 +281,64 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
   // ==========================================================================
 
   io.rdData := 0
+  // ==========================================================================
+  // Memory-stall performance counters (IO_PERFCNT, SYS_BASE + 12)
+  //
+  // WHY IN HARDWARE. The DoApp stall profile can be simulated for BRAM, SDR and
+  // DDR3, but NOT for DDR2: that controller is Ddr2BlackBox, Altera ALTMEMPHY
+  // vendor IP with no simulation model, so the A-E115FB can only be measured on
+  // the board. The same counters then validate the simulated numbers on every
+  // other board, which is the point -- an unvalidated simulation of a memory
+  // system is a guess with error bars nobody has measured.
+  //
+  // The address was already reserved: Const.IO_PERFCNT has existed for a long
+  // time and Startup.java writes -1 to it, but nothing implemented it, so the
+  // write was a no-op. That write now means "reset all counters", which is
+  // exactly what it was presumably intended to do.
+  //
+  // PROTOCOL. Write n  -> select counter n (n >= 0), or reset all (n < 0).
+  //          Read     -> value of the selected counter.
+  // Counters are free-running once reset; software brackets a benchmark with a
+  // reset and a read.
+  //
+  // Categories mirror MemProfile.group in the simulations, so hardware and
+  // simulation tables are directly comparable. Keep the two in step.
+  val perf = perfCounters generate new Area {
+    val N = 11
+    val IDX_CYCLES = 0   // every cycle, for normalisation
+    val IDX_STALL  = 1   // every cycle memBusy is high
+
+    def catOf(st: UInt): UInt = {
+      val c = UInt(4 bits)
+      c := 10                                  // "other"
+      switch(st) {
+        is(0, 1, 2)            { c := 2 }      // idle/direct (READ_WAIT/WRITE_WAIT are NOT busy)
+        is(14, 15, 16, 17)     { c := 3 }      // bytecode fill
+        is(29, 30, 31)         { c := 4 }      // statics (LAST is the second half of every access)
+        is(10, 11)             { c := 5 }      // bounds check
+        is(5, 6, 7, 4)         { c := 6 }      // handle deref (incl. HANDLE_CALC, PF_WAIT)
+        is(8, 9, 3)            { c := 7 }      // element (incl. IAST_WAIT)
+        is(18, 19)             { c := 8 }      // A$ line fill
+        is(20, 21, 22, 23, 24) { c := 9 }      // GC copy
+      }
+      c
+    }
+
+    val counters = Vec(Reg(UInt(32 bits)) init(0), N)
+    val sel = Reg(UInt(4 bits)) init(0)
+    val doReset = False
+
+    counters(IDX_CYCLES) := counters(IDX_CYCLES) + 1
+    when(io.memBusy) {
+      counters(IDX_STALL) := counters(IDX_STALL) + 1
+      val c = catOf(io.memState)
+      when(c < N) { counters(c) := counters(c) + 1 }
+    }
+    when(doReset) { counters.foreach(_ := 0) }
+
+    val rdData = counters(sel)
+  }
+
   switch(io.addr) {
     is(0)  { io.rdData := clockCntReg.asBits }          // IO_CNT
     is(1)  { io.rdData := usCntReg.asBits }             // IO_US_CNT
@@ -293,6 +358,7 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
     is(6)  { io.rdData := B(cpuId, 32 bits) }           // IO_CPU_ID
     is(7)  { io.rdData := io.syncIn.s_out.asBits.resized } // IO_SIGNAL
     is(11) { io.rdData := B(cpuCnt, 32 bits) }          // IO_CPUCNT
+    is(12) { if (perfCounters) io.rdData := perf.rdData.asBits }  // IO_PERFCNT
     is(14) { io.rdData := B(memEndWords, 32 bits) }    // IO_MEM_SIZE: usable memory end (words)
     is(15) { io.rdData := B(fpuCapability, 32 bits) }  // IO_FPU_CAP: bit 0 = HW float present
     // Reg 13's READ direction is free — its write side is IO_GC_HALT.
@@ -338,6 +404,10 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
       is(7)  { signalReg := io.wrData(0) }                 // IO_SIGNAL: boot sync
       is(8)  { mask := io.wrData(NUM_INT - 1 downto 0) } // IO_INTMASK
       is(9)  { clearAll := True }                         // IO_INTCLEARALL
+      is(12) { if (perfCounters) {                        // IO_PERFCNT
+        when(io.wrData.msb) { perf.doReset := True }        // negative => reset all
+          .otherwise        { perf.sel := io.wrData(3 downto 0).asUInt }
+      } }
       is(13) { gcHaltReg := io.wrData(0) }                // IO_GC_HALT
       // Reg 14's WRITE direction is free — its read side is IO_MEM_SIZE.
       is(14) { rootSelReg := io.wrData(13 downto 0) }    // IO_ROOT_SEL

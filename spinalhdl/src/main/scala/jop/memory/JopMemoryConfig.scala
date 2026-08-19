@@ -40,6 +40,11 @@ case class JopMemoryConfig(
                                          // (SDR); when false the controller uses its own
                                          // per-word ZERO loop (BRAM, DDR3-for-now)
   hasCardTable: Boolean = false,        // HW card-marking write barrier (generational GC, Stage 1)
+  // Memory-stall performance counters at IO_PERFCNT. OFF by default: eleven
+  // 32-bit counters are not free on a marginal fit, and two boards close under
+  // +0.011 ns. Turn on for measurement builds only. Required for DDR2, which
+  // has no simulation model and can be profiled no other way.
+  hasPerfCounters: Boolean = false,
   cardTableBudgetBytes: Int = 0,        // BRAM bytes for the card table; card size derived from
                                          // (mainMemSize, this). See docs/gc/stage1-card-table-design.md
   l2MshrCount: Int = 1                  // DRAM L2 misses allowed in flight at once. 1 = the old

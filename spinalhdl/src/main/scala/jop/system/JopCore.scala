@@ -284,8 +284,14 @@ case class JopCore(
 
   // System I/O (0xF0-0xFF, always present, manually wired)
   val sys = Sys(clkFreq = config.clkFreq, cpuId = config.cpuId, cpuCnt = config.cpuCnt, numIoInt = numIoInt,
+    perfCounters = config.memConfig.hasPerfCounters,
     memEndWords = config.memConfig.usableMemWords(config.cpuCnt),
     fpuCapability = if (config.needsFloatCompute) 1 else 0)
+  // Stall profiling taps: the same two signals the simulations use, so the
+  // hardware table is directly comparable with MemProfile's.
+  sys.io.memState := memCtrl.io.debug.state
+  sys.io.memBusy  := memCtrl.io.memOut.busy
+
   sys.io.addr   := JopIoSpace.sysAddr(ioAddr)
   sys.io.rd     := memCtrl.io.ioRd && JopIoSpace.isSys(ioAddr)
   sys.io.wr     := memCtrl.io.ioWr && JopIoSpace.isSys(ioAddr)

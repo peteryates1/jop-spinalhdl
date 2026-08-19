@@ -50,38 +50,6 @@ object DoAppMemTimeSim extends App {
   val WARMUP = 2000000L
   val MAX_CYCLES = 90000000L
 
-  // EVERY state named, in BmbMemoryController.State declaration order, so
-  // nothing lands in an "other(state N)" bucket. The first cut of this left the
-  // wait states unmapped and silently misattributed 13.9 % of the stall time --
-  // including LAST at 11.7 %, which turned out to be the second half of every
-  // statics access.
-  val stateName = Vector(
-    "IDLE", "READ_WAIT", "WRITE_WAIT", "IAST_WAIT", "PF_WAIT",
-    "HANDLE_READ", "HANDLE_WAIT", "HANDLE_CALC", "HANDLE_ACCESS", "HANDLE_DATA_WAIT",
-    "HANDLE_BOUND_READ", "HANDLE_BOUND_WAIT", "NP_EXC", "AB_EXC",
-    "BC_CACHE_CHECK", "BC_FILL_R1", "BC_FILL_LOOP", "BC_FILL_CMD",
-    "AC_FILL_CMD", "AC_FILL_WAIT",
-    "CP_SETUP", "CP_READ", "CP_READ_WAIT", "CP_WRITE", "CP_STOP",
-    "ZERO_RUN", "ZERO_WAIT", "FILL_REQ", "FILL_WAIT",
-    "GS_READ", "PS_WRITE", "LAST")
-
-  /** Group a state into the cost category it belongs to. */
-  def group(st: Int): String = stateName.lift(st).getOrElse(s"?$st") match {
-    case "IDLE"                                     => "idle/direct"
-    case "READ_WAIT" | "WRITE_WAIT"                 => "idle/direct"
-    case n if n startsWith "BC_"                    => "bytecode fill"
-    case "GS_READ" | "PS_WRITE" | "LAST"            => "statics"
-    case "HANDLE_BOUND_READ" | "HANDLE_BOUND_WAIT"  => "bounds check"
-    case "HANDLE_READ" | "HANDLE_WAIT" | "HANDLE_CALC" | "PF_WAIT" => "handle deref"
-    case "HANDLE_ACCESS" | "HANDLE_DATA_WAIT" | "IAST_WAIT"        => "element"
-    case n if n startsWith "AC_"                    => "A$ line fill"
-    case n if n startsWith "CP_"                    => "GC copy"
-    case n if n startsWith "ZERO_"                  => "zero fill"
-    case n if n startsWith "FILL_"                  => "backend fill"
-    case n                                          => n
-  }
-
-
   JopSimDefaults.config
     .compile(JopCoreLargeBramHarness(romData, ramData, mainMemData, bramSize,
       acacheFieldBits = 2, clkMhz = CLK_MHZ))
@@ -129,7 +97,7 @@ object DoAppMemTimeSim extends App {
           } else if (c >= 32 && c < 127) line.append(c.toChar)
         }
         if (cycle > WARMUP) {
-          val cat = group(dut.io.debugMemState.toInt)
+          val cat = MemProfile.group(dut.io.debugMemState.toInt)
           pCyc += 1
           if (dut.io.memBusy.toBoolean) { pStall(cat) += 1; pBusy += 1 }
           if (dut.io.bmbCmdValid.toBoolean && dut.io.bmbCmdReady.toBoolean) pTxn(cat) += 1
