@@ -18,9 +18,14 @@ set_property IOSTANDARD LVCMOS33 [get_ports {resetn}]
 # ============================================================================
 # Primary UART — CH340N on-board (E3/F3) — DDR3 cluster
 # ============================================================================
-set_property PACKAGE_PIN E3 [get_ports {ser_txd}]
+# ser_txd/ser_rxd = the DDR3 system, on J11.2/J11.1 = pico uart1 (gpio5/gpio4).
+# NOT the CH340N at E3/F3: those are hardwired on the PCB and cannot be tapped,
+# and running both systems at once needs two host ports anyway. The SDR system
+# takes pico uart0 at A5/A4 below, so the pair can be profiled simultaneously.
+# Directions are from the FPGA: ser_txd is an OUTPUT and lands on the pico's RX.
+set_property PACKAGE_PIN F4 [get_ports {ser_txd}]
 set_property IOSTANDARD LVCMOS33 [get_ports {ser_txd}]
-set_property PACKAGE_PIN F3 [get_ports {ser_rxd}]
+set_property PACKAGE_PIN H4 [get_ports {ser_rxd}]
 set_property IOSTANDARD LVCMOS33 [get_ports {ser_rxd}]
 
 # ============================================================================

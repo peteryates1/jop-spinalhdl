@@ -673,6 +673,7 @@ object JopConfig {
 
   /** Wukong dual-independent: DDR3 + SDR with separate UARTs (no interconnect) */
   def wukongDualIndependent = wukongDualIndependentSmp()
+  def wukongDualIndependentMig(mig: MigProfile) = wukongDualIndependentSmp(mig = mig)
 
   // sdrClkMhz must match CLKOUT1/CLKOUT2 in create_sdram_clk_wiz_1.tcl AND the
   // getOrElse default in JopTopVerilog — three places, none cross-checked.
@@ -693,18 +694,38 @@ object JopConfig {
   // at the SDRAM chip but is specified in degrees, so it scales with the
   // period: 3.00 ns at 100 MHz (the only value validated on hardware) silently
   // became 3.75 ns at 80 MHz.
-  def wukongDualIndependentSmp(cpuCnt: Int = 1, sdrClkMhz: Int = 100) = JopConfig(
+  /** @param mig the DDR3 system's clkFreq is DERIVED from this, never passed
+    *            alongside it — the two must agree, because ui_clk is what that
+    *            cluster actually runs at. Hardcoding 100 MHz here meant this
+    *            preset could not be built at all against a Ddr3_366 mig.prj. */
+  def wukongDualIndependentSmp(cpuCnt: Int = 1, sdrClkMhz: Int = 100,
+                               mig: MigProfile = MigProfile.Ddr3_400) = JopConfig(
     assembly = SystemAssembly.wukongWithJ11Uart,
+    migProfile = Some(mig),
     systems = Seq(
       JopSystem(name = "ddr3", memory = "ddr3", bootMode = BootMode.Serial,
-        clkFreq = 100 MHz, cpuCnt = cpuCnt,
+        clkFreq = HertzNumber(mig.uiClkHz), cpuCnt = cpuCnt,
         coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
         useDspMul = true, bytecodes = Map("*" -> "hw")),
-        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N")))),
+        // PICO_UART1 (F4/H4 = J11.2/J11.1), not CH340N. The on-board bridge at
+        // E3/F3 is hardwired on the PCB and cannot be tapped, and a second
+        // 1a86:7523 on the host is indistinguishable from the A-E115FB's. The
+        // two systems therefore take one Pico UART each:
+        //   ddr3 -> PICO_UART1 (pico uart1, gpio4/5)
+        //   sdr  -> J11_UART   (A5/A4 = pico uart0, gpio12/13)
+        // which is what makes a simultaneous two-backend run possible at all.
+        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("PICO_UART1"),
+          params = Map("baudRate" -> 2000000)))),
       JopSystem(name = "sdr", memory = "sdr", bootMode = BootMode.Serial,
         clkFreq = sdrClkMhz MHz, cpuCnt = cpuCnt, coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024)),
+        // 2 Mbaud on both halves. 115200 here was a bring-up leftover from when
+        // the UART divided the clock by an INTEGER and an awkward core clock
+        // could not express a round rate. jop.io.UartBaudTick removed that, so
+        // both 91.676 MHz (DDR3) and 100 MHz (SDR) hit 2 Mbaud exactly, and a
+        // 65 KB download drops from ~6 s to ~0.4 s. The measurement itself is
+        // unaffected -- the counters bracket the benchmark, not the printing.
         devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("J11_UART"),
-          params = Map("baudRate" -> 115200))))),
+          params = Map("baudRate" -> 2000000))))),
     interconnect = None)
 
   // ========================================================================

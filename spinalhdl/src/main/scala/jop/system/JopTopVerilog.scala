@@ -31,7 +31,13 @@ object JopTopVerilog {
     * of pins while the constraints named another. That is exactly how a UART
     * ends up wired to a header nobody connected. */
   def resolvePreset(name: String, args: Array[String] = Array.empty): JopConfig = {
-    val base = resolveBase(name, args)
+    // Strip switches BEFORE positional parsing. Presets read args(1) as a core
+    // count and args(2) as a MigProfile, so leaving `perf` in the array makes
+    // `wukongDualIndependent perf` die in Integer.parseInt rather than doing
+    // what it says. Switches are order-independent; positionals are not.
+    val positional = args.filterNot(a =>
+      a.equalsIgnoreCase("perf") || a.toLowerCase.startsWith("uart="))
+    val base = resolveBase(name, positional)
     val withPerf = if (args.exists(_.equalsIgnoreCase("perf"))) PerfCountersOverride(base) else base
     args.find(_.toLowerCase.startsWith("uart="))
       .map(a => UartPartOverride(withPerf, a.substring(5)))
@@ -129,9 +135,15 @@ object JopTopVerilog {
     // create_sdram_clk_wiz_1.tcl. Nothing cross-checks the three, and a
     // mismatch is silent: the IP generates one frequency while the design is
     // constrained for another.
+    // wukongDualIndependent [sdrClkMhz] [migProfile]. The DDR3 half's clock is
+    // DERIVED from the profile and must match the installed mig.prj, or
+    // elaboration refuses -- this preset was unbuildable against a Ddr3_366
+    // mig.prj until the profile became selectable.
     case "wukongDualIndependent" =>
       val mhz = args.drop(1).headOption.map(_.toInt).getOrElse(100)
-      JopConfig.wukongDualIndependentSmp(sdrClkMhz = mhz)
+      val mig = args.drop(2).headOption.flatMap(n =>
+        MigProfile.all.find(_.name.equalsIgnoreCase(n))).getOrElse(MigProfile.Ddr3_400)
+      JopConfig.wukongDualIndependentSmp(sdrClkMhz = mhz, mig = mig)
     case "wukongDualSmp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       val mhz = args.drop(2).headOption.map(_.toInt).getOrElse(100)

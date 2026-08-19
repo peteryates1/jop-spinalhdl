@@ -59,25 +59,34 @@ public class DoAppPerf {
 	  * Permille, not percent: integer division only, and percent loses too much
 	  * on categories that are a fraction of a percent. */
 	static void dump(String bench) {
-		int cycles = read(0);
-		int stall = read(1);
+		/* SNAPSHOT EVERYTHING FIRST, then print.
+		   Reading a counter, printing, then reading the next one measures the
+		   printing too: LowLevel.msg does statics and method-cache work, so
+		   every category read after the first was inflated. It showed up as the
+		   category sum exceeding the `stall` snapshot by a CONSTANT per board --
+		   +95.5k on the i5, +170k on the CYC5000, +122k on the A-E115FB,
+		   identical across benchmarks because the printing is identical. Only
+		   0.09-0.47 %, but it is bias, not noise, and it costs nothing to remove.
+		   A local array is fine here; it was a STATIC array that broke <clinit>. */
+		int[] v = new int[N];
+		for (int i = 0; i < N; ++i) v[i] = read(i);
+
+		int cycles = v[0];
+		int stall = v[1];
 		LowLevel.msg("== ");
 		LowLevel.msg(bench);
 		LowLevel.lf();
 		LowLevel.msg("cycles", cycles);
 		LowLevel.msg("stall", stall);
 		if (cycles > 0) {
-			// Scale before dividing; cycles can be large, so divide first when
-			// it would overflow. 2^31 / 1000 is about 2.1 M.
 			int p = (cycles > 2000000) ? (stall / (cycles / 1000)) : (stall * 1000 / cycles);
 			LowLevel.msg("stall/1000", p);
 		}
 		for (int i = 2; i < N; ++i) {
-			int v = read(i);
-			if (v != 0) {
-				LowLevel.msg(name(i), v);
+			if (v[i] != 0) {
+				LowLevel.msg(name(i), v[i]);
 				if (stall > 0) {
-					int q = (stall > 2000000) ? (v / (stall / 1000)) : (v * 1000 / stall);
+					int q = (stall > 2000000) ? (v[i] / (stall / 1000)) : (v[i] * 1000 / stall);
 					LowLevel.msg("  of stall/1000", q);
 				}
 			}
