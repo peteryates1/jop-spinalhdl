@@ -150,6 +150,27 @@ class CacheMigResetSim extends AnyFunSuite {
     errs
   }
 
+  /** Wait for the cache to accept a request, but NEVER unboundedly.
+    *
+    * `waitSamplingWhere` spins forever if the condition never comes true, and
+    * under JOP_SIM_XINIT=random it does not: LruCacheCore has registers with no
+    * init(), so a randomised power-up can leave it in a state where `req.ready`
+    * never asserts. The first version of this test used the unbounded form and
+    * burned 8.4 hours of CPU in one `doSim` before anyone looked. A test that
+    * hangs tells you nothing; a test that fails names the problem. */
+  def acceptOrFail(dut: ResettableDut, what: String, errs: mutable.ArrayBuffer[String],
+                   limit: Int = 5000): Boolean = {
+    var n = 0
+    while (!dut.io.frontend.req.ready.toBoolean && n < limit) {
+      dut.clockDomain.waitSampling(); n += 1
+    }
+    if (n >= limit) {
+      errs += s"$what: cache never asserted req.ready within $limit cycles"
+      dut.io.frontend.req.valid #= false
+      false
+    } else { dut.clockDomain.waitSampling(); true }
+  }
+
   /** Issue a read and check the data, driving the frontend directly. */
   def readCheck(dut: ResettableDut, line: Int, errs: mutable.ArrayBuffer[String]): Unit = {
     dut.io.frontend.req.valid #= true
@@ -158,7 +179,7 @@ class CacheMigResetSim extends AnyFunSuite {
     dut.io.frontend.req.payload.data #= 0
     dut.io.frontend.req.payload.mask #= 0
     dut.io.frontend.req.payload.driveId(U(0))
-    dut.clockDomain.waitSamplingWhere(dut.io.frontend.req.ready.toBoolean)
+    if (!acceptOrFail(dut, s"line $line", errs)) return
     dut.io.frontend.req.valid #= false
     var guard = 0
     while (!dut.io.frontend.rsp.valid.toBoolean && guard < 4000) {
@@ -173,14 +194,15 @@ class CacheMigResetSim extends AnyFunSuite {
   test("reset with reads in flight — later reads still return the right data") {
     val errs = withMig(holdCycles = 4 * LATENCY) { (dut, pulseReset, errs) =>
       // Start misses, then reset while the MIG still owes us their data.
-      for (l <- 0 until MSHRS) {
+      var warmed = true
+      for (l <- 0 until MSHRS if warmed) {
         dut.io.frontend.req.valid #= true
         dut.io.frontend.req.payload.addr #= BigInt(l) << WORD_SHIFT
         dut.io.frontend.req.payload.write #= false
         dut.io.frontend.req.payload.data #= 0
         dut.io.frontend.req.payload.mask #= 0
         dut.io.frontend.req.payload.driveId(U(l % MSHRS))
-        dut.clockDomain.waitSamplingWhere(dut.io.frontend.req.ready.toBoolean)
+        warmed = acceptOrFail(dut, s"warm miss $l", errs)
       }
       dut.io.frontend.req.valid #= false
       dut.clockDomain.waitSampling(LATENCY / 2)   // beats still owed
@@ -192,19 +214,28 @@ class CacheMigResetSim extends AnyFunSuite {
   }
 
   test("reset released EARLY corrupts — proves the hold length is load-bearing") {
+    // ONLY MEANINGFUL WITH X-STATE ZEROED. This test asserts that something
+    // goes WRONG, which needs a deterministic baseline: under
+    // JOP_SIM_XINIT=random the pre-reset state varies, the early release
+    // sometimes happens to land clean, and the test then reports a failure that
+    // says nothing about the hold length. Seen on seed 20260818. Skip rather
+    // than let an item 45 sweep collect a false positive from it.
+    assume(!JopSimDefaults.randomiseXState,
+      "needs --x-initial 0: a negative-result test cannot run on a random baseline")
     // Deliberately release before the MIG has answered. This is what a shorter
     // ResetGenerator.DramResetCycles would do. If this ever stops failing, the
     // safety argument above has changed and the comment in ResetGenerator is
     // stale -- do not simply delete the test.
     val errs = withMig(holdCycles = 1) { (dut, pulseReset, e) =>
-        for (l <- 0 until MSHRS) {
+        var warmed = true
+        for (l <- 0 until MSHRS if warmed) {
           dut.io.frontend.req.valid #= true
           dut.io.frontend.req.payload.addr #= BigInt(l) << WORD_SHIFT
           dut.io.frontend.req.payload.write #= false
           dut.io.frontend.req.payload.data #= 0
           dut.io.frontend.req.payload.mask #= 0
           dut.io.frontend.req.payload.driveId(U(l % MSHRS))
-          dut.clockDomain.waitSamplingWhere(dut.io.frontend.req.ready.toBoolean)
+          warmed = acceptOrFail(dut, s"warm miss $l", e)
         }
         dut.io.frontend.req.valid #= false
         dut.clockDomain.waitSampling(LATENCY / 2)   // same as the test above
