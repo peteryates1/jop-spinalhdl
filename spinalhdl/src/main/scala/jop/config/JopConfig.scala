@@ -711,6 +711,11 @@ object JopConfig {
     systems = Seq(
       JopSystem(name = "ddr3", memory = "ddr3", bootMode = BootMode.Serial,
         clkFreq = HertzNumber(mig.uiClkHz), cpuCnt = cpuCnt,
+        // hasPerfCounters IS THE POINT OF THIS PRESET -- do not make it opt-in.
+        // It used to rely on the `perf` CLI switch, so `make dual-generate`
+        // produced a bitstream whose IO_PERFCNT reads 0 for every category.
+        // That does not fail the build, it fails silently at measurement time,
+        // an hour of synthesis later.
         // CORE CONFIG MUST MATCH THE sdr SYSTEM BELOW, EXACTLY.
         // This preset exists to compare two MEMORY systems on one die, so the
         // cores either side of that comparison have to be identical. They were
@@ -723,7 +728,8 @@ object JopConfig {
         // (A-E115FB, CYC5000, Colorlight i5, wukongDdr3), so matching DOWN to
         // it makes both halves comparable to those boards as well as to each
         // other -- and drops the CUs that `*=hw` pulled in.
-        coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
+        coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024,
+          hasPerfCounters = true),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
         // PICO_UART1 (F4/H4 = J11.2/J11.1), not CH340N. The on-board bridge at
         // E3/F3 is hardwired on the PCB and cannot be tapped, and a second
@@ -737,7 +743,8 @@ object JopConfig {
       JopSystem(name = "sdr", memory = "sdr", bootMode = BootMode.Serial,
         clkFreq = sdrClkMhz MHz, cpuCnt = cpuCnt,
         // Identical to the ddr3 core above -- see the note there.
-        coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
+        coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024,
+          hasPerfCounters = true),
           bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
         // 2 Mbaud on both halves. 115200 here was a bring-up leftover from when
         // the UART divided the clock by an INTEGER and an awkward core clock

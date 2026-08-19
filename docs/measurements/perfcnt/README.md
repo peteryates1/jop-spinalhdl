@@ -32,3 +32,17 @@ Retained because the *stall-category shares* are unaffected — they are
 memory-side ratios — and the DDR3 half reproduces the previously recorded
 Wukong DDR3 row exactly, which is useful evidence that the measurement itself
 is repeatable.
+
+## `2026-08-19-wukong-dual-matched-nocounters-*`
+
+Both halves at 100 MHz with identical cores, but built before
+`hasPerfCounters` moved into the preset — so every counter reads 0 and only the
+`<bench> <n> 1/s` throughput lines are usable. Kept because those lines ARE
+valid and give the matched-clock A/B directly (DDR3 +3.9 / +4.6 / +3.5 % on
+Kfl / UdpIp / Lift), and because comparing them against the counter-enabled
+run that follows shows enabling the counters does not perturb throughput.
+
+This is the failure mode DoAppPerf's header warns about: a bitstream without
+the counters does not fail the build, it fails silently at measurement time an
+hour of synthesis later. `perfcnt_report.py` now raises on it rather than
+printing a table of zeroes.

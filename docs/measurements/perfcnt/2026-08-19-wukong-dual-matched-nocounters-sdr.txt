@@ -1,0 +1,43 @@
+Waiting for FPGA ready  ready!
+
+Small boot
+GC init...
+Parsed java/apps/JbeBench/DoAppPerf.jop: 16815 words (65 KB)
+  * 10813 words of Java bytecode (42 KB)
+  * 16815 words external RAM (65 KB)
+Opened /dev/ttyACM1 at 2000000 baud
+Streaming 67260 bytes...
+Sent in 0.3s (195 KB/s). Verifying checksum...
+Download OK (checksum 0x224cde58)
+Monitoring UART output (Ctrl+C to exit)...
+GC: generational, 32-word cards
+GC done
+CI
+OK
+M0
+DoApp memory-stall profile (IO_PERFCNT) 
+
+Kfl 12020 1/s 
+
+==  Kfl 
+
+cycles 0 stall 0 
+
+UdpIp 5497 1/s 
+
+==  UdpIp 
+
+cycles 0 stall 0 
+
+Lift 17955 1/s 
+
+==  Lift 
+
+cycles 0 stall 0 
+
+profile done 
+
+
+
+JVM exit!
+
