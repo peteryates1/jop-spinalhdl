@@ -159,12 +159,20 @@ class BytecodeFetchStageTest extends AnyFunSuite {
     )
 
     // PINNED ADVERSARIAL SEED — this is a regression guard, not a fixture.
-    // 360571106 is the seed that made this test fail in CI (item 29): with
-    // Verilator randomising unreset registers, the JBC RAM powered up holding
-    // 0xEC -- an undefined bytecode -- and the test read entries[0xEC] = 0x74C
-    // instead of NOP's 0x226. It reproduces on demand, and it passes only
-    // because simWave now applies --x-initial 0. If someone removes that flag,
-    // THIS TEST IS THE ALARM: it fails with "1868 did not equal 550".
+    // 360571106 is the seed that made this test fail in CI (item 29). It passes
+    // only because simWave applies --x-initial 0; remove that flag and THIS
+    // TEST IS THE ALARM, failing with "1868 did not equal 550".
+    //
+    // ROOT CAUSE, measured 2026-08-19 and NOT what this comment used to say.
+    // It is not an unreset register. Verilator's randomising x-initial
+    // DISCARDS THE Mem INITIALISATION: with the write port held inactive and no
+    // write ever issued, jbcRamWord reads back garbage instead of its init()
+    // contents --
+    //     zeroed  raw=0x00a76000 -> bytecode 0x00 (NOP) -> jpaddr 0x226
+    //     random  raw=0xe03e8376 -> bytecode 0x76       -> jpaddr 0x74c
+    // so the "undefined bytecode" is a random RAM word, and the index is 0x76,
+    // not the 0xEC previously recorded. No FPGA behaves this way: block RAM
+    // contents come from the bitstream and survive any reset. See item 45.
     // Verify the guard still bites:
     //   JOP_SIM_XINIT=random sbt 'testOnly jop.pipeline.BytecodeFetchStageTest -- -z "JumpTable integration"'
     bcfSimConfig.compile(createDut(jbcData)).doSim(seed = 360571106) { dut =>

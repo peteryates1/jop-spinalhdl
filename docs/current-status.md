@@ -3139,11 +3139,46 @@ What that symptom is NOT, both checked rather than assumed:
   the test bytecode to the full 2048 bytes and passes it as `jbcInit`, so that
   memory is fully initialised at elaboration.
 
-The one candidate actually on the failing path is
-`JbcRam.scala:95`, `val byteSelect = RegNext(io.rdAddr(1 downto 0))` — no
-`init`. But it cannot by itself produce `0xEC`: the packed word at that address
-only yields `0x00`, `0x60` or `0xA7` whichever byte is selected. **So the
-offending register is still unidentified.**
+**ROOT CAUSE FOUND 2026-08-19, and it is not a register.** Instrumenting the
+failing cycle (`simPublic` on the whole path) shows the JBC RAM reading back
+garbage with the write port held inactive and no write ever issued:
+
+| X-state | `jbcWordDataRaw` | bytecode | `jpaddr` |
+|---|---|---|---|
+| zeroed | `0x00a76000` — the `init()` contents | `0x00` (NOP) | `0x226` ✅ |
+| random | `0xe03e8376` — garbage | `0x76` | `0x74c` ❌ |
+
+**Verilator's randomising x-initial discards `Mem` initialisation.** The
+`jbcRamWord.init(...)` is simply thrown away. So the "undefined bytecode" is a
+random RAM word, and the index is `0x76`, not the `0xEC` recorded since item 29.
+
+**No FPGA behaves this way.** Block RAM contents come from the bitstream and
+survive any reset, soft or otherwise. So this failure is a SIMULATOR ARTEFACT,
+not a hardware hazard — which is why six boards reset cleanly while the sweep
+kept flagging this test.
+
+**Consequences, and they matter beyond this item:**
+
+1. **The register class now has ZERO demonstrated offenders.** The single
+  failure across five seeds was this artefact. The other ~401 are unimplicated
+  by any evidence collected so far.
+2. **`JOP_SIM_XINIT=random` is NOT a faithful model of a soft reset.** A soft
+  reset leaves registers holding stale values but leaves initialised memories
+  intact. Randomised x-initial additionally destroys memory init, which cannot
+  happen in hardware, so the sweep OVER-REPORTS. Any future use of it must
+  discount memory-init failures.
+3. The pinned seed in `BytecodeFetchStageTest` is still worth keeping as an
+  alarm for `--x-initial 0` being removed, but its comment described the wrong
+  mechanism and has been corrected.
+
+**Five wrong diagnoses preceded this**, all killed by experiment rather than
+argument, and recorded so the path is not walked again: `jpc` (has `init(0)`);
+uninitialised `Mem` contents (the test pads to all 2048 bytes); `jbcByteSelect`
+(adding `init` changed nothing); floating `jbcWrEn/Addr/Data` inputs (driving
+them changed nothing); driving those inputs *before* `forkStimulus` (also
+nothing). A sixth near-miss: the first "control" run used plain `SimConfig`
+rather than `JopSimDefaults.config`, so neither arm had the flag and both
+showed garbage — a comparison that controlled nothing.
 
 **Right next step, and it is small.** Run the failing case with a waveform and
 trace what feeds the JumpTable index:
