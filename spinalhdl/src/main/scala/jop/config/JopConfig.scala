@@ -162,6 +162,24 @@ case class WatchdogConfig(timeoutMs: Int = 1000) extends MonitorConfig
  * microcode assembly, Java runtime generation, SpinalHDL elaboration,
  * FPGA synthesis, JOPizer, and FPGA testing.
  */
+/** Turn on the IO_PERFCNT memory-stall counters for a whole config.
+  *
+  * A build-time switch rather than a preset variant: every board needs the same
+  * measurement build, and duplicating four presets to flip one Boolean would
+  * guarantee they drift. `JopTopVerilog <preset> perf` applies it.
+  *
+  * Off in every preset on purpose — eleven 32-bit counters are not free on a
+  * marginal fit, and the XC7A100T closes at +0.001 ns.
+  */
+object PerfCountersOverride {
+  def apply(c: JopConfig): JopConfig = c.copy(systems = c.systems.map { sys =>
+    def on(cc: JopCoreConfig) = cc.copy(memConfig = cc.memConfig.copy(hasPerfCounters = true))
+    sys.copy(
+      coreConfig = on(sys.coreConfig),
+      perCoreConfigs = sys.perCoreConfigs.map(_.map(on)))
+  })
+}
+
 case class JopConfig(
   assembly: SystemAssembly,
   systems: Seq[JopSystem],

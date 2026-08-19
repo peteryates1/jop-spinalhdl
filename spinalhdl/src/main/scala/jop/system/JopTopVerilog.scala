@@ -256,7 +256,13 @@ object JopTopVerilog {
 
   def main(args: Array[String]): Unit = {
     val preset = args.headOption.getOrElse("ep4cgx150Serial")
-    val config = resolvePreset(preset, args)
+    // `perf` anywhere in the arguments turns on the IO_PERFCNT memory-stall
+    // counters. A measurement build, not a production one -- see
+    // PerfCountersOverride for why it is a switch and not four preset variants.
+    val wantPerf = args.exists(_.equalsIgnoreCase("perf"))
+    val config0 = resolvePreset(preset, args)
+    val config = if (wantPerf) PerfCountersOverride(config0) else config0
+    if (wantPerf) println("  PERF COUNTERS: enabled (IO_PERFCNT) — measurement build")
     val jopFile = preset match {
       case "ep4cgx150BramGc" => Some("java/apps/Small/HelloWorld.jop")
       case _ => None

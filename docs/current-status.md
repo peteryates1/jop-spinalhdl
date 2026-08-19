@@ -4281,12 +4281,34 @@ delivered nothing on a third of the suite.
   `GS_READ`/`PS_WRITE`, one in `LAST`. A predictable, uniform 17.7 % that no
   cache currently touches.
 
-**Caveat: this is BRAM.** Total stall is 8-13 % here against the 34-55 %
-throughput loss item 38 measured on SDR. The *ratios* are what transfer, and
-even they will shift on a DRAM board: bytecode fill is sequential and
-burst-friendly (it benefits from the L2 and the MSHRs), while handle
-dereference is a random round trip. Expect indirection to matter MORE on DRAM
-than these numbers suggest, not less.
+**MEASURED ON SDR 2026-08-19 (`DoAppMemTimeSdrSim`), and the BRAM caveat was
+justified — one conclusion above does NOT survive.** Same instrumentation
+(`MemProfile`), real W9825G6JH6 timings at a real 80 MHz, Kfl:
+
+| Kfl | BRAM | **SDR 80 MHz** |
+|---|---|---|
+| stalled cycles | 13.1 % | **53.9 %** |
+| bytecode fill | 65.9 % | 58.7 % |
+| **idle/direct** | **0 %** | **18.4 %** |
+| statics | 25.5 % | 17.7 % |
+| handle + element + bounds | 8.6 % | 5.2 % |
+| cyc/txn (bytecode fill) | 1.40 | 8.68 |
+
+**The harness is validated:** 53.9 % independently reproduces item 38's 53.8 %
+for Kfl, measured a completely different way (BRAM-vs-SDR throughput ratio
+there, cycle attribution here).
+
+**"Direct access is free" was a BRAM artefact.** It costs 0 % of stall on BRAM
+because `READ_WAIT`/`WRITE_WAIT` complete next cycle, and 18.4 % on SDR where a
+read is ~8.5 cycles. Striking it from the attack surface, as recorded above,
+would have been wrong on every real board.
+
+The clock cannot be scaled down for an SDR run the way it can for BRAM:
+`clockFreqHz` feeds both the controller's ns-to-cycle conversion and DoApp's
+one-second calibration, so lowering it makes memory artificially cheap. Kfl
+alone therefore takes 272 M cycles; UdpIp and Lift need either a much longer
+run or the hardware counters (item 50), which is the better route now they
+exist.
 
 <a id="item-38"></a>
 
