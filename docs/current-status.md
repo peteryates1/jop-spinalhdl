@@ -76,7 +76,7 @@ the missing resets themselves — but a five-seed sweep found no offender among
 the registers, so it is now a single named defect rather than a 405-register
 audit, and has moved down accordingly.
 
-1. **[#51](#item-51)** — Method cache owns ~1/3 of all Kfl cycles. **Swept**: fragmentation, not capacity — 4 KB with 16-word blocks cuts fill traffic 99.7 %. Needs a pipelined tag compare and HW validation
+1. **[#51](#item-51)** — Method cache — **DONE, +34.4 % Kfl on hardware.** Remaining: make 4 KB/32 the default across presets, and re-rank what is left (statics and idle/direct are now Kfl's top two)
 2. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
 3. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 4. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
@@ -170,7 +170,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[20](#item-20)** — Decide whether the double group gets microcode at all
 - **[21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
 - **[37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
-- **[51](#item-51)** — Method cache: **SWEPT** — 2 KB/128-byte blocks lose 99 % of fill traffic to FRAGMENTATION; 4 KB with 16-word blocks reaches the compulsory floor
+- ~~**[51](#item-51)**~~ — Method cache — **HW-VALIDATED +34.4 % Kfl / +27.7 % UdpIp** (A-E115FB DDR2) from 2 KB -> 4 KB/32 blocks; fragmentation, not capacity. Timing +0.446 ns
 - ~~**[38](#item-38)**~~ — ANSWERED: stall share is 34-55 % — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31. Where that 34-55 % GOES was then measured on hardware in [50](#item-50)
 - **[39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
 - **[40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
@@ -4515,7 +4515,7 @@ repeatable results on every run.
 
 <a id="item-51"></a>
 
-### Item 51 — The method cache is capped at 2 KB by a `require`, and by its tag compare — SWEPT: fragmentation costs ~99 % of the fill traffic
+### Item 51 — ~~The method cache is capped at 2 KB~~ — FIXED AND HW-VALIDATED: 4 KB/32 blocks is **+34.4 % Kfl, +27.7 % UdpIp** on the A-E115FB
 
 **Why this matters.** Item 50 measured where stall time goes on real memory:
 bytecode fill is **62.8 % of Kfl's stall and 52.9 % of UdpIp's**, and stall is
@@ -4699,6 +4699,52 @@ reproducing bit-for-bit after the change.
 Worth remembering as a pattern: **a pinned parameter hides every bug that only
 appears when it changes.** The `require` did not just block the experiment, it
 concealed the reason the experiment would have failed.
+
+#### HARDWARE-VALIDATED 2026-08-19 — A-E115FB DDR2, +34.4 % on Kfl
+
+Two bitstreams differing ONLY in method cache geometry, same board, same
+binary, same 75 MHz:
+
+| | 2 KB 16x32w (today) | 4 KB 32x32w | |
+|---|---|---|---|
+| **Kfl** | 9,367 /s | **12,593 /s** | **+34.4 %** |
+| **UdpIp** | 4,316 /s | **5,512 /s** | **+27.7 %** |
+| **Lift** | 13,931 /s | 13,943 /s | +0.1 % |
+
+| | stall % | bytecode fill |
+|---|---|---|
+| Kfl 2 KB | 52.2 % | 62.8 % |
+| **Kfl 4 KB** | **28.2 %** | **7.3 %** |
+| UdpIp 2 KB | 51.9 % | 52.9 % |
+| **UdpIp 4 KB** | **32.2 %** | **3.6 %** |
+| Lift (both) | 30.0 % | 3.0 % |
+
+**Two independent checks that this is the real mechanism.** The baseline
+reproduces item 50's recorded A-E115FB row exactly — 9,367 /s against 9,362,
+and 52.2/62.8/15.6/16.6/5.1 identical. And converting shares to ABSOLUTE cycles
+per iteration, every other category is unchanged to the cycle: `idle/direct`
+652 -> 652, statics 694 -> 692, indirection 213 -> 213. Only bytecode fill
+moved, **2,625 -> 123 cycles per iteration**. The shares only look different
+because the stall they are a share OF shrank.
+
+Lift being flat is the control: item 50 put its bytecode fill at 3 % of stall,
+the sweep put its miss rate at 0.3 %, and the hardware moved it 0.1 %.
+
+**Timing closes at +0.446 ns** (Slow 1200mV 100C), 30 % of the part, 994,656
+memory bits. So 32 comparators are not an `fmax` problem at 75 MHz and the
+pipelined-compare work is NOT needed to bank this result — it is needed only to
+go further (64 blocks, or 8 KB).
+
+**Unexplained residual, recorded rather than glossed.** Stall fell 2,500
+cycles/iteration but total cycles fell 2,051, so non-stall cycles rose ~450
+(12 %). The counters here cannot say why. It does not affect the conclusion —
+the throughput gain is measured directly — but it is not understood.
+
+**This reorders the remaining work.** With bytecode fill gone, Kfl's largest
+stall category is now **statics at 41.2 %** (692 cycles/iteration) followed by
+`idle/direct` at 38.8 % (652). Those are exactly the "statics in on-chip RAM"
+and "write buffer" levers below, which were third-order behind the method cache
+and are now first and second.
 
 #### Other levers on stall time, from the same measurements
 

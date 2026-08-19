@@ -36,12 +36,16 @@ object JopTopVerilog {
     // `wukongDualIndependent perf` die in Integer.parseInt rather than doing
     // what it says. Switches are order-independent; positionals are not.
     val positional = args.filterNot(a =>
-      a.equalsIgnoreCase("perf") || a.toLowerCase.startsWith("uart="))
+      a.equalsIgnoreCase("perf") || a.toLowerCase.startsWith("uart=") ||
+      a.toLowerCase.startsWith("mcache="))
     val base = resolveBase(name, positional)
     val withPerf = if (args.exists(_.equalsIgnoreCase("perf"))) PerfCountersOverride(base) else base
-    args.find(_.toLowerCase.startsWith("uart="))
+    val withUart = args.find(_.toLowerCase.startsWith("uart="))
       .map(a => UartPartOverride(withPerf, a.substring(5)))
       .getOrElse(withPerf)
+    args.find(_.toLowerCase.startsWith("mcache="))
+      .map(a => MCacheOverride(withUart, a.substring(7)))
+      .getOrElse(withUart)
   }
 
   private def resolveBase(name: String, args: Array[String]): JopConfig = name match {

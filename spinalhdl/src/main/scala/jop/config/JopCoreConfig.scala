@@ -439,6 +439,12 @@ case class JopCoreConfig(
     * arithmetic with no build error. Only 13 of the 32 configurable bytecodes
     * have a `_sw` alternate; see JumpTableInitData.useAlt.
     */
+  /** JBC RAM depth in BYTES — the method cache's data store.
+    * jbcInit is a BYTE sequence packed 4-to-a-word, so any caller building an
+    * initial image must produce exactly this many entries. It was hardcoded to
+    * 2048 in three places in JopTop, which silently meant "2 KB only". */
+  def jbcDepth: Int = 1 << jpcWidth
+
   def resolveJumpTable: JumpTableInitData = {
     var result = supersetJumpTable
     for (entry <- BytecodeConfig.all) {

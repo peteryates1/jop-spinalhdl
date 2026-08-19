@@ -525,7 +525,7 @@ case class JopTop(
         baseConfig = coreConfigs.head,
         romInit = Some(romInit),
         ramInit = Some(ramInit),
-        jbcInit = Some(Seq.fill(2048)(BigInt(0))),
+        jbcInit = Some(Seq.fill(coreConfigs.head.jbcDepth)(BigInt(0))),
         ethTxCd = deviceClockDomains.ethTxCd,
         ethRxCd = deviceClockDomains.ethRxCd,
         vgaCd = deviceClockDomains.vgaCd,
@@ -818,7 +818,7 @@ case class JopTop(
         baseConfig = coreConfigs0.head,
         romInit = Some(romInit),
         ramInit = Some(ramInit),
-        jbcInit = Some(Seq.fill(2048)(BigInt(0))),
+        jbcInit = Some(Seq.fill(coreConfigs0.head.jbcDepth)(BigInt(0))),
         perCoreConfigs = Some(coreConfigs0)
       )
 
@@ -859,7 +859,7 @@ case class JopTop(
         baseConfig = coreConfigs1.head,
         romInit = Some(romInit),
         ramInit = Some(ramInit),
-        jbcInit = Some(Seq.fill(2048)(BigInt(0))),
+        jbcInit = Some(Seq.fill(coreConfigs1.head.jbcDepth)(BigInt(0))),
         perCoreConfigs = Some(coreConfigs1)
       )
 

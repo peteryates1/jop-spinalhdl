@@ -207,6 +207,30 @@ object PerfCountersOverride {
   })
 }
 
+/** Method cache geometry override: `mcache=<jpcWidth>/<blockBits>`.
+  *
+  * Exists so item 51's sweep result can be built on hardware without hand-
+  * editing a preset. The geometry is
+  *   size  = 1 << jpcWidth bytes,  blocks = 1 << blockBits,
+  *   blockWords = 1 << (jpcWidth - 2 - blockBits)
+  * and the sweep found FRAGMENTATION dominates: at 2 KB the 32-word block
+  * costs Kfl 34.8 % and UdpIp 23.2 % miss, while 4 KB with 32 blocks takes
+  * both to ~0.1-0.6 %. `12/5` is that point; `12/6` goes further at twice the
+  * comparators. JopCoreConfig validates the combination.
+  */
+object MCacheOverride {
+  def apply(c: JopConfig, spec: String): JopConfig = {
+    val parts = spec.split("/")
+    require(parts.length == 2, s"mcache=$spec must be <jpcWidth>/<blockBits>, e.g. mcache=12/5")
+    val (jw, bb) = (parts(0).toInt, parts(1).toInt)
+    c.copy(systems = c.systems.map { sys =>
+      def on(cc: JopCoreConfig) = cc.copy(jpcWidth = jw, blockBits = bb)
+      sys.copy(coreConfig = on(sys.coreConfig),
+               perCoreConfigs = sys.perCoreConfigs.map(_.map(on)))
+    })
+  }
+}
+
 case class JopConfig(
   assembly: SystemAssembly,
   systems: Seq[JopSystem],
