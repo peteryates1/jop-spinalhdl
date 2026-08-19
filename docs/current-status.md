@@ -4238,9 +4238,55 @@ it, over Kfl + UdpIp + Lift: **bytecode fill 62.3 %**, direct access 18.5 %,
 statics 15.0 %, and ALL array traffic 4.2 %. If real-application memory cost
 is worth attacking, it is here.
 
-**Not yet actionable — see item 38.** 62 % of *transactions* is not 62 % of
-*time*; a method-cache fill is a burst of cheap accesses. The stall-fraction
-measurement bounds what this can be worth before any design work starts.
+**MEASURED IN TIME 2026-08-19 (`DoAppMemTimeSim`), and the headline above is
+wrong in two ways.** `memBusy` is what stalls the pipeline, so counting the
+cycles it is high and attributing each to `debugMemState` converts transactions
+into time. Every state is named, so nothing is unattributed.
+
+**First correction: the 62 % was Kfl alone, not "Kfl + UdpIp + Lift".**
+`DoAppAcacheSweepSim` samples a 12 M-cycle window at the default 100 MHz, and
+DoApp calibrates each benchmark to one simulated second — so the window never
+reaches UdpIp or Lift. Dropping the declared clock to 5 MHz shrinks the
+calibration 20x and fits all three.
+
+**Second correction: the mix is completely different per benchmark.**
+
+| stall share | Kfl | UdpIp | Lift |
+|---|---|---|---|
+| **bytecode fill** | **65.9 %** | 45.1 % | **14.6 %** |
+| handle deref + element + bounds | 8.6 % | 35.9 % | **78.1 %** |
+| statics | 25.5 % | 13.5 % | 7.2 % |
+| idle/direct | **0 %** | **0 %** | **0 %** |
+| stalled cycles | 13.1 % | 11.2 % | 8.1 % |
+
+Weighted over all three, bytecode fill is **47.7 %** of stall cycles, handle and
+array indirection **33.0 %**, statics **17.7 %**.
+
+**So the method cache is the right target for Kfl, half the story for UdpIp,
+and the wrong target for Lift**, where handle dereference and array element
+access dominate at 78 %. Optimising it would have looked like a 62 % win and
+delivered nothing on a third of the suite.
+
+**Three things worth keeping:**
+
+1. *Direct access is free.* 18-38 % of transactions issue from `IDLE`, and
+  `READ_WAIT`/`WRITE_WAIT` are explicitly not-busy states (matching VHDL
+  rd1/wr1) — the core does not wait. **Zero** stall cycles on every benchmark.
+  Strike it from the attack surface.
+2. *Lift's few bytecode fills are enormous:* 2,595 transactions for 151,485
+  stall cycles, **58.4 cycles each**, against 1.40 for Kfl. Rare misses on large
+  methods, not a steady stream. A bigger cache and a faster fill are different
+  fixes; Lift needs the former, Kfl the latter.
+3. *Statics cost exactly 2 cycles every time* on all three — one in
+  `GS_READ`/`PS_WRITE`, one in `LAST`. A predictable, uniform 17.7 % that no
+  cache currently touches.
+
+**Caveat: this is BRAM.** Total stall is 8-13 % here against the 34-55 %
+throughput loss item 38 measured on SDR. The *ratios* are what transfer, and
+even they will shift on a DRAM board: bytecode fill is sequential and
+burst-friendly (it benefits from the L2 and the MSHRs), while handle
+dereference is a random round trip. Expect indirection to matter MORE on DRAM
+than these numbers suggest, not less.
 
 <a id="item-38"></a>
 
