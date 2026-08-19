@@ -76,32 +76,33 @@ the missing resets themselves — but a five-seed sweep found no offender among
 the registers, so it is now a single named defect rather than a 405-register
 audit, and has moved down accordingly.
 
-1. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
-2. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-3. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
-4. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
-5. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
-6. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
-7. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
-8. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
-9. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
-10. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-11. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-12. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-13. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-14. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-15. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-16. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-17. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-18. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-19. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
-20. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-21. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-22. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-23. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-24. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
-25. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
-26. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+1. **[#51](#item-51)** — The method cache owns ~1/3 of all Kfl cycles; its 2 KB cap is a `require` plus a one-cycle tag compare that need not be one cycle
+2. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
+3. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+4. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
+5. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+6. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
+7. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
+8. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+9. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+10. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
+11. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+12. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+13. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+14. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+15. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+16. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+17. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+18. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+19. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+20. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
+21. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+22. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+23. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+24. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+25. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
+26. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
+27. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
 
 ## 2. All items — summary
 
@@ -169,6 +170,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[20](#item-20)** — Decide whether the double group gets microcode at all
 - **[21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
 - **[37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
+- **[51](#item-51)** — The method cache is capped at 2 KB by a `require` AND by its tag compare — but the compare fires once per invoke, not per fetch, so it can be pipelined
 - ~~**[38](#item-38)**~~ — ANSWERED: stall share is 34-55 % — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31. Where that 34-55 % GOES was then measured on hardware in [50](#item-50)
 - **[39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
 - **[40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
@@ -4510,6 +4512,158 @@ Raw captures: `docs/measurements/perfcnt/`, reduced by
 register fanning out to 16 IOBs, which `IOB TRUE` cannot pack. Slow/100C
 corner; the SDR half verified a 65 KB download by XOR checksum and produced
 repeatable results on every run.
+
+<a id="item-51"></a>
+
+### Item 51 — The method cache is capped at 2 KB by a `require`, and by its tag compare — but the compare is not on the critical path
+
+**Why this matters.** Item 50 measured where stall time goes on real memory:
+bytecode fill is **62.8 % of Kfl's stall and 52.9 % of UdpIp's**, and stall is
+~52 % of all cycles. So the method cache owns roughly **a third of every cycle
+Kfl executes** (0.522 x 0.628 = 32.8 %; UdpIp 27.5 %; Lift 0.9 %). It is the
+largest single line item in the whole profile, and item 50 also showed that a
+32 KB L2 in front of DRAM takes only 3 % off it — the fix has to be in the
+method cache itself, not behind it.
+
+#### What is actually built
+
+`jop.memory.MethodCache`, a port of the VHDL `mcache`:
+
+| | |
+|---|---|
+| capacity | **2 KB** (`jpcWidth = 11`), and JBC RAM *is* the data store |
+| organisation | 16 blocks (`blockBits = 4`) x 32 words = 128 B per block |
+| associativity | **fully associative**, one 18-bit tag + valid bit per block |
+| allocation | variable size — a method takes `ceil(len/32)` **consecutive** blocks |
+| replacement | FIFO, `nxt := nxt + nrOfBlks + 1` |
+| lookup cost | hit 2 cycles, miss 3 cycles |
+
+#### How it knows what is in the cache
+
+On a `find` pulse, state `S1` compares `bcAddr` against **all 16 tags in
+parallel**, generated as a chain of `when(tagValid(i) && tag(i) === useAddr)`
+assignments — a priority cascade, last match wins.
+
+Two details matter more than they look:
+
+1. **Only the FIRST block of a method carries a valid tag.** `S2` clears the
+  tags of every block the new method covers, then writes the tag at `nxt`
+  alone. So a 4-block method consumes 4 tag slots and uses 1. The tag array is
+  sparse, and the number of *comparators* is tied to the number of *blocks*,
+  not to the number of resident *methods*.
+2. **`clrVal` is recomputed every single cycle** — 16 subtract-and-compare
+  units running continuously to produce a mask that is only consumed in `S2`.
+  Harmless at 16 blocks; not harmless at 64.
+
+#### Why the compare caps the size
+
+The geometry is fixed by
+
+```
+blockWordBits = jpcWidth - 2 - blockBits
+```
+
+Grow `jpcWidth` with `blockBits` fixed and you grow the **block size**, not the
+block count: 8 KB with 16 blocks means 128-word blocks, and since the smallest
+method still burns a whole block, internal fragmentation gets worse — a 4-word
+method would waste 124 words. To grow capacity *and* keep blocks small you must
+grow `blockBits`, and that is one more 18-bit comparator per block, feeding a
+priority cascade. **That is the real cap, and it is why 2 KB has stood.**
+
+There is a second, quieter cap: `nrOfBlks` is `bcLen[9:blockWordBits]` resized
+to `blockBits`, so the largest cacheable method is exactly the whole cache —
+512 words at today's geometry. Growing the cache raises that limit too.
+
+#### The way out: the compare does not need to be combinational
+
+`mcacheFind` is asserted **once per `bcRd`** — method invoke and return only.
+During execution `jpc` indexes JBC RAM directly and there is **no tag check on
+the fetch path at all**. That is the whole point of JOP's method cache, and it
+is preserved no matter how wide the tag array gets.
+
+So the lookup is amortised over an entire method execution, and it already
+costs 2-3 cycles against a fill that costs **dozens to hundreds**. Splitting a
+64-tag compare into 4 pipelined groups of 16 adds ~3 cycles to a lookup and
+nothing to `fmax`. **Associativity and clock frequency are only coupled because
+the compare is currently done in one cycle, and it does not have to be.**
+
+Options, cheapest first:
+
+1. **Pipeline the tag compare.** Enables everything below. No change to the
+  fetch path, no change to the WCET story.
+2. **Decouple tags from blocks.** Keep a small method-descriptor table (tag,
+  start block, length) sized to the number of methods you want resident, and
+  let the block allocator stay FIFO and unconstrained. 128 small blocks for low
+  fragmentation with only 32 comparators.
+3. **Two-stage compare.** Narrow hashed tag (8 bit) in parallel to filter, then
+  one full 18-bit verify on the candidate. Cuts comparator width and cascade
+  depth.
+4. **Set-associative descriptors.** Hash the method address to a 4-way set —
+  4 comparators regardless of capacity. Works only in combination with (2):
+  constraining *block* placement fights variable-size contiguous allocation.
+5. **Fix `clrVal`** to compute only in `S1`/`S2` before it scales with blocks.
+6. **Revisit FIFO.** It evicts a hot small method simply because a large one
+  swept past. Costs more as the cache grows.
+
+#### Concrete first step
+
+`JopCoreConfig` line 365 has
+
+```scala
+require(jpcWidth == 11, "JPC width must be 11 bits (2KB cache)")
+```
+
+`jpcWidth` is otherwise cleanly parameterised — `BytecodeFetchStage` derives
+`jbcDepth = 1 << jpcWidth` and every register from `config.jpcWidth` — so this
+is a conservative guard, not a hard dependency. Removing it and sweeping
+capacity/`blockBits` in simulation costs no RTL work and directly attacks the
+largest category in the profile. BRAM is not the constraint on these parts.
+
+**Do this before designing anything**, because it answers the question the
+design depends on: how much of the 33 % is capacity misses (fix with size) and
+how much is fragmentation (fix with block count) or conflict (fix with
+replacement). Item 37's transaction counts and item 50's stall shares both say
+"method cache" but neither distinguishes those three.
+
+#### Other levers on stall time, from the same measurements
+
+- **Write buffer.** `WRITE_WAIT` is *busy until `rsp.valid`*, and
+  putfield/iastore/putstatic are unconditionally write-through — **the core
+  stalls waiting for a write whose result it never uses**. Those cycles are
+  inside `idle/direct`, 16-42 % of stall. Needs read-after-write forwarding and
+  an SMP coherence story.
+- **Statics in on-chip RAM.** `statics` is a uniform **7-18 % of stall on every
+  board and every workload** and no cache touches it. The region is small and
+  known at link time; putting it in BRAM deletes the category. SMP needs a
+  shared arbitrated port.
+- **Method inlining in JOPizer.** A *software* lever on the dominant category:
+  fewer, larger methods means fewer fills. Zero RTL risk, and it compounds with
+  a bigger cache rather than competing.
+- **Early restart on fill** — begin executing when the first block lands and
+  prefetch the rest. Fill delivers 4 B/cycle while execution consumes ~1 B per
+  1-3 cycles, so the fill outruns the consumer 4-12x and will nearly always
+  stay ahead. Implementation is a loaded-watermark register plus one comparator
+  on `jpc` (stall if `jpc >= watermark`) — far cheaper than a tag check per
+  fetch. **WCET survives**: the worst case is still a full method load before
+  useful progress, so today's bound remains a valid upper bound.
+- **Handle-translation cache** for Lift's 57 % indirection. `ArrayCache` caches
+  array *elements*; the dependent step is handle -> address. A small handle TLB
+  collapses two round trips into one, and it is the only structural fix for
+  indirection-bound code.
+- **Hardware multithreading** — switch threads while a method loads. The only
+  option that helps a dependent handle chase, which no prefetch can. But it
+  needs duplicated `jpc`/`vp`/`sp` and stack state (item 14 is unfinished
+  here), it complicates WCET badly, and throughput is already available from
+  cores — 12 validated on the EP4CGX150. Lowest priority unless single-thread
+  latency on indirection-bound code is specifically the goal.
+
+**Suggested order.** Grounded in measurement: (1) remove the `require` and
+sweep the method cache in simulation, (2) statics in BRAM, (3) write buffer.
+Then hypotheses: (4) pipelined compare and whatever the sweep says the geometry
+should be, (5) early restart, (6) L2 burst path (item 39) or method-fill bypass
+— decide with an L2 hit-rate measurement split by requester, (7) handle cache,
+(8) SMT. Everything from (4) on should be simulated before RTL; item 50 gave us
+both the harness and the hardware counters to check the answer against.
 
 <a id="item-38"></a>
 
