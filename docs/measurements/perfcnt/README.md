@@ -46,3 +46,17 @@ This is the failure mode DoAppPerf's header warns about: a bitstream without
 the counters does not fail the build, it fails silently at measurement time an
 hour of synthesis later. `perfcnt_report.py` now raises on it rather than
 printing a table of zeroes.
+
+## `2026-08-19-wukong-dual-matched-*` (and `-repeat-`)
+
+**The good ones.** Both halves at 100 MHz with identical cores and counters
+enabled, run simultaneously from one bitstream. `-repeat-` is an independent
+second run taken after a reprogram, and establishes the noise floor: the DDR3
+half is bit-identical, the SDR half moves under 0.1 %.
+
+    ./fpga/scripts/perfcnt_report.py <file> ...
+    ./fpga/scripts/perfcnt_report.py --compare <sdr>.txt 100 <ddr3>.txt 100
+
+Repeat runs need a REPROGRAM, not a UART reset: `hasRuntimeReset` is
+`!isMultiSystem`, so the dual preset is the one config the runtime reset does
+not cover.

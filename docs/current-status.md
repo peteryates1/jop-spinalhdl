@@ -4393,12 +4393,97 @@ registering the category decode one cycle before the increment recovered it to
 **+0.911 ns**, better than the baseline. The counts are aggregates so a uniform
 one-cycle shift is invisible.
 
-**Still to do: the dual-system run.** `wukongDualIndependent` puts an SDR
-system and a DDR3 system on one die with a UART each, and both Pico UARTs are
-now defined (`PICO_UART0` A5/A4, `PICO_UART1` F4/H4). Profiling them
-simultaneously would isolate "L2 or no L2" on identical silicon, clock and
-ambient — the confound that makes CYC5000 (61.4 % stall) versus i5 (46.4 %)
-hard to read.
+**The dual-system run — DONE 2026-08-19. A 32 KB L2 is worth 3-5 %.**
+
+`wukongDualIndependent` puts an SDR system and a DDR3 system on one die with a
+UART each, profiled **simultaneously**: same silicon, same 100 MHz, same
+ambient, same binary, one bitstream. That removes the confound that makes
+CYC5000 (61.4 % stall) versus i5 (46.4 %) hard to read, and it is the only
+measurement here where "L2 or no L2" is the sole variable — `createSdr` has no
+L2, the DDR3 path is `BmbCacheBridge -> LruCacheCore(32 KB) -> adapter`.
+
+| half | bench | stall % | bytecode fill | idle/direct | statics | indirection |
+|---|---|---|---|---|---|---|
+| **SDR, no L2** 100 MHz | Kfl | 54.1 % | 60.2 % | 17.6 % | 16.9 % | 5.4 % |
+| | UdpIp | 54.3 % | 49.8 % | 21.3 % | 8.6 % | 17.1 % |
+| | Lift | 32.1 % | 2.7 % | 32.6 % | 7.9 % | 56.7 % |
+| **DDR3, 32 KB L2** 100 MHz | Kfl | 52.2 % | 62.8 % | 15.6 % | 16.6 % | 5.1 % |
+| | UdpIp | 51.9 % | 52.9 % | 19.0 % | 7.8 % | 17.1 % |
+| | Lift | 30.0 % | 3.0 % | 29.5 % | 6.8 % | 60.7 % |
+
+**Throughput at identical clock:** Kfl 12,020 -> 12,487 (**+3.9 %**), UdpIp
+5,479 -> 5,756 (**+5.1 %**), Lift 18,044 -> 18,586 (**+3.0 %**).
+
+**Noise floor 0.1 %**, from two full repeat runs: the DDR3 half is
+*bit-identical* run to run and the SDR half moves under 0.1 %. The effect is
+~40x the noise. (The asymmetry is itself informative — the SDR half's jitter is
+refresh landing differently against the workload, while the L2 keeps the DDR3
+half off the DRAM often enough to be deterministic.)
+
+**Where the L2 actually helps — per benchmark ITERATION, DDR3 vs SDR:**
+
+| bench | bytecode fill | idle/direct | statics | indirection | stall | total |
+|---|---|---|---|---|---|---|
+| Kfl | -3.1 % | **-17.5 %** | -8.8 % | -12.1 % | -7.1 % | -3.7 % |
+| UdpIp | -3.2 % | **-18.9 %** | -16.9 % | -9.1 % | -8.9 % | -4.8 % |
+| Lift | +0.0 % | **-17.8 %** | **-22.1 %** | -2.7 % | -9.1 % | -2.9 % |
+
+**The L2 helps least exactly where each workload hurts most.** Kfl and UdpIp
+are method-cache bound — bytecode fill is 60 % and 50 % of their stall — and
+the L2 takes only 3 % off it. Lift is indirection bound at 57 % of stall, and
+the L2 takes 2.7 % off that. What the L2 *does* reliably fix is `idle/direct`,
+a uniform -18 % on all three, and statics; but those are the smaller
+categories, so the end-to-end result is 3-5 %.
+
+That is the sharpest version of the conclusion this whole item has been
+circling: **a general-purpose L2 in front of DRAM is not the lever.** It buys
+about as much as a 4 % clock bump, and it cannot touch the method cache or
+handle indirection, which between them own 57-63 % of every stall profile here.
+Item 39's L2 hit-path work should be judged against that ceiling.
+
+**Why comparing per CYCLE is legitimate on the MIG path.** Raising the DDR3
+half from 91.676 to 100 MHz changed its per-MHz throughput by +0.8 % and its
+stall profile not at all (Kfl cycles 254,340,917 -> 254,341,927, 0.0004 %). The
+MIG locks the memory clock to `ui_clk` at 4:1, so the whole DRAM subsystem
+scales with the core and cycle-denominated latency is invariant. This is also
+why DDR2 at 75 MHz and DDR3 at 91.7 MHz looked identical per cycle — that was
+not a coincidence, it is structural.
+
+**Two methodology bugs found here, both silent.** (1) The preset compared two
+memories with two *different cores*: the DDR3 half had `useDspMul = true,
+bytecodes = "*" -> "hw"`, the SDR half took the defaults (`imul` a ~35-cycle
+microcode shift-add, `idiv`/`irem` ~1300-cycle Java calls). Stall-category
+shares are memory-side ratios and barely move with bytecode implementation, so
+the contaminated run reproduced the previously recorded DDR3 row exactly and
+looked entirely self-consistent; only throughput was wrong. It showed up in the
+data exactly once, as UdpIp's SDR bytecode-fill share moving 46.7 -> 49.8 %
+when `idiv` stopped being a Java method and left the method-cache working set.
+(2) `hasPerfCounters` was reachable only via the `perf` CLI switch, which `make
+dual-generate` does not pass — so the documented build produced a bitstream
+whose counters all read 0, an hour of synthesis before anyone could notice.
+Both are now fixed in the preset itself.
+
+**Clock verified by measurement, not inference.** Sweeping the host baud
+against the FPGA's `0xAA` boot stream (the Pico CDC applies host line coding to
+its hardware UART) put both halves' clean window at 1.91-2.12 Mbaud, centre
+~2.02 M. The stale-MIG hypothesis — `ui_clk` still 91.676 MHz, which would put
+the window at 1.834 M — is excluded outright. Worth keeping as a habit: the
+Wukong's `ui_clk` comes from the INSTALLED MIG IP, and
+`vivado/ip/mig_7series_0/mig_7series_0/mig.prj` disagreed with the preset for
+some time (2727 vs 2500 ps). Building RTL against a stale IP declares one clock
+to a design running another, and an 8 % baud error reads as a dead board.
+
+**Known limitation.** `hasRuntimeReset` is `!isMultiSystem`, so the dual preset
+is the one config that CANNOT be reset over UART — repeat runs need a
+reprogram. That is backwards: this is the preset most likely to be run many
+times in a row.
+
+Raw captures: `docs/measurements/perfcnt/`, reduced by
+`fpga/scripts/perfcnt_report.py`. Timing on the dual build is VIOLATED at
+**-0.362 ns**, all 16 endpoints the SDR `sdram_DQ` tristate enable — one
+register fanning out to 16 IOBs, which `IOB TRUE` cannot pack. Slow/100C
+corner; the SDR half verified a 65 KB download by XOR checksum and produced
+repeatable results on every run.
 
 <a id="item-38"></a>
 
