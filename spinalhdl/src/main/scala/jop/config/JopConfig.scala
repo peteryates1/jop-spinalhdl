@@ -171,6 +171,33 @@ case class WatchdogConfig(timeoutMs: Int = 1000) extends MonitorConfig
   * Off in every preset on purpose — eleven 32-bit counters are not free on a
   * marginal fit, and the XC7A100T closes at +0.001 ns.
   */
+/** Move the UART onto a different board connector by swapping the device part.
+  *
+  * `JopTopVerilog <preset> uart=PICO_UART0` retargets without duplicating a
+  * preset. The pins come from the board definition, so a part that the board
+  * does not define is a hard error rather than a silently unconnected UART.
+  */
+object UartPartOverride {
+  def apply(c: JopConfig, part: String): JopConfig = {
+    require(c.assembly.fpgaBoard.devices.exists(_.part == part),
+      s"board ${c.assembly.fpgaBoard.name} defines no device part '$part'; " +
+      s"known: ${c.assembly.fpgaBoard.devices.map(_.part).distinct.mkString(", ")}")
+    c.copy(systems = c.systems.map { sys =>
+      def on(cc: JopCoreConfig) = cc.copy(devices = cc.devices.map {
+        case (k, d) if d.deviceType == DeviceType.Uart => k -> d.copy(devicePart = Some(part))
+        case other => other
+      })
+      sys.copy(
+        devices = sys.devices.map {
+          case (k, d) if d.deviceType == DeviceType.Uart => k -> d.copy(devicePart = Some(part))
+          case other => other
+        },
+        coreConfig = on(sys.coreConfig),
+        perCoreConfigs = sys.perCoreConfigs.map(_.map(on)))
+    })
+  }
+}
+
 object PerfCountersOverride {
   def apply(c: JopConfig): JopConfig = c.copy(systems = c.systems.map { sys =>
     def on(cc: JopCoreConfig) = cc.copy(memConfig = cc.memConfig.copy(hasPerfCounters = true))

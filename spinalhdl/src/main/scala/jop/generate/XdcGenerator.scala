@@ -66,9 +66,15 @@ object XdcGenerator {
       sb.append("\n")
     }
 
-    // SDR SDRAM
-    val sdramClk = PinResolver.sdramClockFpgaPin(assembly)
-    val sdramPins = PinResolver.sdramPins(assembly)
+    // SDR SDRAM — only when the SYSTEM uses it, not merely when the board has
+    // the chip. The Wukong carries both an SDR part and DDR3, so filtering on
+    // the assembly alone emitted 40-odd sdram_* constraints into a DDR3 build
+    // for ports that design does not have. Vivado only warns about those, which
+    // is worse than failing: the file looks right and the warning scrolls past.
+    val usesSdr = config.systems.exists(s =>
+      config.resolveMemory(s).exists(_.memType == MemoryType.SDRAM_SDR))
+    val sdramClk = if (usesSdr) PinResolver.sdramClockFpgaPin(assembly) else None
+    val sdramPins = if (usesSdr) PinResolver.sdramPins(assembly) else Seq.empty
     if (sdramPins.nonEmpty || sdramClk.isDefined) {
       sb.append("# SDR SDRAM\n")
       sdramClk.foreach(pin => sb.append(pinConstraint(pin, "sdram_clk")))

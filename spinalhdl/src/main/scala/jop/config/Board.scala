@@ -553,6 +553,19 @@ object Board {
       BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "M21")),
       BoardDevice("CH340N", mapping = Map(
         "TXD" -> "E3", "RXD" -> "F3")),
+      // UART brought out on the J11 header instead of the on-board CH340, for
+      // rigs where the console is a Pico rather than the board's own USB
+      // serial (which avoids two indistinguishable 1a86:7523 bridges on one
+      // host). Directions are from the FPGA's point of view, so TXD lands on
+      // the Pico's RX:
+      //   J11.1 = H4 <- pico gpio4  (uart1 TX)  => FPGA RXD
+      //   J11.2 = F4 -> pico gpio5  (uart1 RX)  => FPGA TXD
+      //   J11.3 = A4 <- pico gpio12 (uart0 TX)  => FPGA RXD
+      //   J11.4 = A5 -> pico gpio13 (uart0 RX)  => FPGA TXD
+      // Getting these the wrong way round gives silence at every baud, which
+      // looks exactly like a dead design -- it is not.
+      BoardDevice("PICO_UART0", mapping = Map("TXD" -> "A5", "RXD" -> "A4")),
+      BoardDevice("PICO_UART1", mapping = Map("TXD" -> "F4", "RXD" -> "H4")),
       BoardDevice("LED", mapping = Map("led0" -> "G21", "led1" -> "G20")),
       BoardDevice("SWITCH", mapping = Map("key1" -> "M6", "reset" -> "H7"))))
 

@@ -23,8 +23,22 @@ import jop.utils.JopFileLoader
  */
 object JopTopVerilog {
 
-  /** Resolve a preset name to a JopConfig */
-  def resolvePreset(name: String, args: Array[String] = Array.empty): JopConfig = name match {
+  /** Resolve a preset name to a JopConfig, INCLUDING any argument overrides.
+    *
+    * The overrides belong here, not in `main`. XdcGenerator and QsfGenerator
+    * call resolvePreset themselves, so an override applied afterwards in main
+    * reached the Verilog and nothing else -- the generated design drove one set
+    * of pins while the constraints named another. That is exactly how a UART
+    * ends up wired to a header nobody connected. */
+  def resolvePreset(name: String, args: Array[String] = Array.empty): JopConfig = {
+    val base = resolveBase(name, args)
+    val withPerf = if (args.exists(_.equalsIgnoreCase("perf"))) PerfCountersOverride(base) else base
+    args.find(_.toLowerCase.startsWith("uart="))
+      .map(a => UartPartOverride(withPerf, a.substring(5)))
+      .getOrElse(withPerf)
+  }
+
+  private def resolveBase(name: String, args: Array[String]): JopConfig = name match {
     case "ep4cgx150Serial"     => JopConfig.ep4cgx150Serial
     case "ep4cgx150Bram"       => JopConfig.ep4cgx150Bram
     case "ep4cgx150BramGc"     => JopConfig.ep4cgx150BramGc
@@ -259,10 +273,11 @@ object JopTopVerilog {
     // `perf` anywhere in the arguments turns on the IO_PERFCNT memory-stall
     // counters. A measurement build, not a production one -- see
     // PerfCountersOverride for why it is a switch and not four preset variants.
-    val wantPerf = args.exists(_.equalsIgnoreCase("perf"))
-    val config0 = resolvePreset(preset, args)
-    val config = if (wantPerf) PerfCountersOverride(config0) else config0
-    if (wantPerf) println("  PERF COUNTERS: enabled (IO_PERFCNT) — measurement build")
+    val config = resolvePreset(preset, args)
+    if (args.exists(_.equalsIgnoreCase("perf")))
+      println("  PERF COUNTERS: enabled (IO_PERFCNT) — measurement build")
+    args.find(_.toLowerCase.startsWith("uart="))
+      .foreach(a => println(s"  UART part: ${a.substring(5)}"))
     val jopFile = preset match {
       case "ep4cgx150BramGc" => Some("java/apps/Small/HelloWorld.jop")
       case _ => None
