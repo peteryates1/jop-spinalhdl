@@ -66,15 +66,17 @@ this design that have no reset, seeded per run — now zeroed by
 its pin is retired because the failure no longer reproduces at HEAD even with
 randomisation on, but its cause was never established, so it stays open,
 rescoped. #46 turned out to have been fixed on 2026-08-15 before anyone looked
-at it; #47 (a push cancelling the nightly) is fixed here. #45 is the residue —
-the missing resets themselves — worth doing on its own merits.
+at it; #47 (a push cancelling the nightly) is fixed here. #45 was the residue —
+the missing resets themselves — but a five-seed sweep found no offender among
+the registers, so it is now a single named defect rather than a 405-register
+audit, and has moved down accordingly.
 
-1. **[#45](#item-45)** — ~405 registers have no reset — zeroing X-state in sim is a floor, not a fix
-2. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
-3. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
-4. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-5. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
-6. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+1. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
+2. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+3. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
+4. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+5. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
+6. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
 7. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 8. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
 9. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
@@ -147,7 +149,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
 - **[29](#item-29)** — ~~`BytecodeFetchStage: JumpTable integration` is flaky in CI~~ — **FIXED** (X-state)
 - **[30](#item-30)** — ~~`JopJvmTestsBramSim` — the CI baseline job — intermittently dies~~ — **FIXED** (X-state)
-- **[45](#item-45)** — ~405 registers have no reset — zeroing X-state in sim is a floor, not a fix
+- **[45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
 - **[49](#item-49)** — ~~The UART divided the clock by an integer, so the baud was only right on lucky clocks~~ — **FIXED** (`UartBaudTick`)
 - **[48](#item-48)** — ~~No runtime reset: the FPGA had to be reprogrammed before every download~~ — **DONE** (UART escape + button)
 - **[46](#item-46)** — ~~`formal-verification` fails intermittently~~ — **ALREADY FIXED** 2026-08-15 (`6bce639b`, formal timeout 300→900 s)
@@ -3117,7 +3119,52 @@ baseline sim has ~58,000 words of heap headroom.
 
 <a id="item-45"></a>
 
-### Item 45 — ~405 registers have no reset — zeroing X-state in sim is a floor, not a fix
+### Item 45 — ONE unidentified register is read before it is written; the other ~401 look benign
+
+**RESCOPED 2026-08-19 after the sweep. The "~405 registers" framing is not what
+the evidence supports, and two of my own diagnoses of it were wrong.**
+
+Across five seeds x 471 tests with X-state randomised, the register class
+produced **zero** failures. The one reproducible symptom is
+`BytecodeFetchStage: JumpTable integration` reading `entries[0xEC]` — an
+undefined bytecode — instead of NOP's `entries[0x00]`.
+
+What that symptom is NOT, both checked rather than assumed:
+
+- **Not `jpc`.** `BytecodeFetchStage.scala:122` — `Reg(...) init(0)`. It is not
+  in the 402 at all. Item 29 named it as a suspect; it is exonerated.
+- **Not an uninitialised memory.** The JBC RAM is a `Mem`, and the grep behind
+  the 402 count matches `Reg(` only, so I proposed the real exposure was
+  uninitialised `Mem` contents. Wrong: `BytecodeFetchStageTest.createDut` pads
+  the test bytecode to the full 2048 bytes and passes it as `jbcInit`, so that
+  memory is fully initialised at elaboration.
+
+The one candidate actually on the failing path is
+`JbcRam.scala:95`, `val byteSelect = RegNext(io.rdAddr(1 downto 0))` — no
+`init`. But it cannot by itself produce `0xEC`: the packed word at that address
+only yields `0x00`, `0x60` or `0xA7` whichever byte is selected. **So the
+offending register is still unidentified.**
+
+**Right next step, and it is small.** Run the failing case with a waveform and
+trace what feeds the JumpTable index:
+
+```sh
+SIM_WAVE=1 JOP_SIM_XINIT=random sbt 'testOnly jop.pipeline.BytecodeFetchStageTest -- -z "JumpTable integration"'
+```
+
+Then add `init()` to that one register — not to 402 of them, which would cost
+fabric for no demonstrated benefit.
+
+**What would change this verdict.** The sweep covered the UNIT suite only. The
+long system sims were not swept, and item 30's `clazzinit()` hang lived exactly
+there. Sweeping `JopJvmTestsBramSim` under randomised X-state is the test that
+would either find more offenders or justify closing this item.
+
+**Why it still matters at all, given six boards reset cleanly.** Configuration
+zeroes every flip-flop; the runtime reset (item 48) does not. Empirically the
+boot path never reads one of these, on any board — but that is one path, and CI
+can no longer see the class since `--x-initial 0` became the default.
+
 
 **Opened 2026-08-18, as the residue of items 29/30/32.** `--x-initial 0` makes
 the simulator agree with an FPGA at power-up, which is what stopped CI being a
