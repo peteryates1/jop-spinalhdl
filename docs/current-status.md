@@ -27,6 +27,11 @@
 > (item 37). The BMB arbiter caps FREQUENCY, not throughput, and is a worse
 > trade at these numbers — see the retraction in items 5 and 31.
 >
+> **And a general-purpose L2 in front of DRAM is NOT the lever** — measured on
+> one die, two memory systems, same clock, run simultaneously: a 32 KB L2 is
+> worth **3-5 %**, and it cannot touch the method cache or handle indirection,
+> which between them own 57-63 % of every stall profile (item 50).
+>
 > Two optimisations that looked worth multiples on `JbeScale` are worth 2.8 %
 > and nothing on real code. **Do not act on any `JbeScale`-derived number**
 > without checking it against DoApp first; that benchmark is a pessimal data
