@@ -473,9 +473,16 @@ JopConfig.wukongSdrFull  // SDR + full HW: ICU+FCU+LCU+DCU+DSP imul, Ethernet, S
 // All single-system use SystemAssembly.wukong with DeviceDriver.UartCh340
 
 // Dual-cluster (two independent JOP clusters in one bitstream):
-JopConfig.wukongDualIndependent  // DDR3 (all CUs, 100 MHz) + SDR (no CUs, 80 MHz), 1+1 cores
+JopConfig.wukongDualIndependent  // DDR3 + SDR, both 100 MHz, IDENTICAL cores, 1+1
 JopConfig.wukongDualSmp(n)       // DDR3 (all CUs, 100 MHz) + SDR (no CUs, 80 MHz), N+N cores
-// Cluster 0: DDR3, CH340N UART (E3/F3). Cluster 1: SDR, J12 UART (U14/V14).
+// wukongDualIndependent is a MEASUREMENT rig: it exists to compare two memory
+// systems on one die, so both halves must stay identical in everything except
+// the memory (idiv/irem=hw, no DSP multiply, same clock, perf counters on).
+// It used to differ -- all CUs one side, defaults the other -- which put a
+// compute difference inside a memory experiment. Do not re-introduce one.
+// DDR3 -> PICO_UART1 (F4/H4), SDR -> J11_UART (A5/A4): the CH340N at E3/F3 is
+// hardwired on the PCB and cannot be tapped, so the on-board Pico 2 W provides
+// both ports and the two halves can be profiled simultaneously.
 // Entity name: JopDualWukongTop
 ```
 
