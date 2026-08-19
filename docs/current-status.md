@@ -30,7 +30,7 @@
 > **And a general-purpose L2 in front of DRAM is NOT the lever** — measured on
 > one die, two memory systems, same clock, run simultaneously: a 32 KB L2 is
 > worth **3-5 %**, and it cannot touch the method cache or handle indirection,
-> which between them own 57-63 % of every stall profile (item 50).
+> which between them own 57-63 % of every stall profile ([item 50](#item-50)).
 >
 > Two optimisations that looked worth multiples on `JbeScale` are worth 2.8 %
 > and nothing on real code. **Do not act on any `JbeScale`-derived number**
@@ -76,9 +76,9 @@ the missing resets themselves — but a five-seed sweep found no offender among
 the registers, so it is now a single named defect rather than a 405-register
 audit, and has moved down accordingly.
 
-1. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
+1. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
 2. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-3. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
+3. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
 4. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
 5. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
 6. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
@@ -169,7 +169,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[20](#item-20)** — Decide whether the double group gets microcode at all
 - **[21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
 - **[37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
-- ~~**[38](#item-38)**~~ — ANSWERED: stall share is 34-55 % — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31
+- ~~**[38](#item-38)**~~ — ANSWERED: stall share is 34-55 % — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31. Where that 34-55 % GOES was then measured on hardware in [50](#item-50)
 - **[39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
 - **[40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
 - **[41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
@@ -178,6 +178,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 
 ### Closed
 
+- ~~**[50](#item-50)**~~ — Memory-stall profile on real memory, on hardware — DONE. Four boards, plus the dual-system run: the L2 as built is worth 3-5 %
 - ~~**[43](#item-43)**~~ — Colorlight i5 SDRAM "regression" — FALSE ALARM, my own documented trap
 - ~~**[1](#item-1)**~~ — Generational GC is unsound on SMP — RESOLVED (2026-08-15
 - ~~**[2](#item-2)**~~ — `JopIhluGcBramSim` cannot fail — CLOSED 2026-08-16
