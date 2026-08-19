@@ -3147,6 +3147,45 @@ construction, so it can no longer see this class at all. That is the correct
 trade — a regression detector should not be a fuzzer — but it does mean this
 item needs deliberate sweeps, not observation.
 
+**First sweep run, 2026-08-19: no NEW offenders.** Five seeds (1, 20260818,
+-748081925, 360571106, 99991) of the full unit suite under
+`JOP_SIM_XINIT=random`, 471 tests each:
+
+| result | reading |
+|---|---|
+| `BytecodeFetchStage: JumpTable integration` fails on all five | the KNOWN item 29 offender (JBC RAM / `jpc`). Its seed is pinned at 360571106, so this is **one** data point repeated five times, not five |
+| `CacheMigResetSim` "early release" failed on one seed | a fault in that TEST, not the RTL — see below. Now skipped under random X-state |
+| everything else | 470/471 pass on every seed |
+
+So the demonstrated-offender count is still **one**. That is real evidence the
+other ~401 are written before they are read on the paths the unit suite covers,
+and it is NOT proof: the suite is not the whole design, and the long system sims
+were not swept.
+
+**Two process faults from the first attempt, both worth keeping.**
+
+*The probe hung for 8.4 hours and nobody noticed.* `CacheMigResetSim` used
+`waitSamplingWhere(req.ready)` with no bound. Under randomised X-state that wait
+never completed: one `doSim` burned 30,096 s of CPU at 100 % while the parent
+sbt sat at 0 %, and the sweep never got past its first seed. A hang teaches
+nothing; a bounded wait that fails names the signal. `acceptOrFail` now bounds
+all three call sites and the sweep script has `timeout 1500` per seed. Same
+lesson as the `pgrep` waiters and the `SWEEPDONE` waiters — **anything that
+waits needs a bound** — arriving three times in one session in three disguises.
+
+*A negative-result test cannot run on a random baseline.* The "early release
+corrupts" case asserts that something goes WRONG, which needs a deterministic
+starting state; under random X-state the early release sometimes lands clean
+(seed 20260818) and the test then reports a failure saying nothing about the
+hold length — a false positive fed straight into the sweep this item depends on.
+It now `assume`s zeroed X-state and is skipped otherwise.
+
+**Also corrected:** the hang was initially blamed on `LruCacheCore` wedging
+under random X-state. With the waits bounded, `req.ready` asserts normally on
+every seed tested and no accept-timeout is ever recorded, so that explanation is
+unsupported. The original hang has not been reproduced and its cause is not
+established.
+
 <a id="item-47"></a>
 
 ### Item 47 — ~~A push cancelled the nightly scheduled CI run — FIXED~~
