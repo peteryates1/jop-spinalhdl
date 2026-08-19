@@ -328,11 +328,20 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
     val sel = Reg(UInt(4 bits)) init(0)
     val doReset = False
 
+    // PIPELINE THE DECODE. Combinationally it is
+    //   memState -> catOf -> 11-way decoder -> counter enable -> 32-bit adder
+    // in one cycle, and that cost the A-E115FB its timing: +0.510 ns without
+    // the counters, -0.654 ns with them. Registering the category and the busy
+    // flag first splits the path and costs nothing that matters -- the counts
+    // are aggregates, so a uniform one-cycle shift is invisible, and only the
+    // very first and last cycle of a measurement window can differ (by one).
+    val busyD = RegNext(io.memBusy) init(False)
+    val catD  = RegNext(catOf(io.memState)) init(0)
+
     counters(IDX_CYCLES) := counters(IDX_CYCLES) + 1
-    when(io.memBusy) {
+    when(busyD) {
       counters(IDX_STALL) := counters(IDX_STALL) + 1
-      val c = catOf(io.memState)
-      when(c < N) { counters(c) := counters(c) + 1 }
+      when(catD < N) { counters(catD) := counters(catD) + 1 }
     }
     when(doReset) { counters.foreach(_ := 0) }
 

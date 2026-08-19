@@ -4310,6 +4310,60 @@ alone therefore takes 272 M cycles; UdpIp and Lift need either a much longer
 run or the hardware counters (item 50), which is the better route now they
 exist.
 
+<a id="item-50"></a>
+
+### Item 50 — ~~Memory-stall profile measured on real memory, on hardware — DONE~~
+
+**DONE 2026-08-19.** The BRAM profile in item 37 was never going to transfer,
+and it did not. Measured with the `IO_PERFCNT` counters on three boards
+covering two memory technologies, two FPGA vendors and three toolchains, plus
+an SDR simulation as a cross-check.
+
+| board | bench | stall % | bytecode fill | idle/direct | statics | indirection |
+|---|---|---|---|---|---|---|
+| A-E115FB **DDR2** 75 MHz | Kfl | 52.2 % | **62.8 %** | 15.6 % | 16.6 % | 5.1 % |
+| | UdpIp | 51.9 % | 53.0 % | 19.0 % | 7.8 % | 17.1 % |
+| | Lift | 30.0 % | 3.1 % | 29.5 % | 6.8 % | **60.7 %** |
+| CYC5000 SDR 80 MHz | Kfl | 61.4 % | 56.8 % | 20.9 % | 18.1 % | 4.4 % |
+| | UdpIp | 60.8 % | 46.6 % | 25.2 % | 9.4 % | 15.6 % |
+| | Lift | 38.9 % | 2.2 % | 42.1 % | 8.0 % | 48.0 % |
+| Colorlight i5 SDR 40 MHz | Kfl | 46.4 % | 61.5 % | 16.1 % | 17.1 % | 5.5 % |
+| | UdpIp | 46.0 % | 50.3 % | 19.8 % | 8.6 % | 18.2 % |
+| | Lift | 26.0 % | 4.0 % | 29.7 % | 7.6 % | 59.2 % |
+
+(indirection = handle deref + element + bounds check)
+
+**Simulation validated.** `DoAppMemTimeSdrSim` predicted Kfl on SDR at bytecode
+58.7 %, idle/direct 18.4 %, statics 17.7 %, indirection 5.2 % — inside the
+spread of two boards with different FPGA families, clocks and bus widths. The
+simulated stall share (53.9 %) also sits between the measured 46.4 % and
+61.4 %. The method can be trusted where hardware is unavailable.
+
+**Three conclusions that hold on every board:**
+
+1. **The workload decides, not the memory technology.** Kfl and UdpIp are
+  method-cache bound; Lift is indirection bound at 48-61 % with bytecode fill
+  at 2-4 %. The DDR2 board looks far more like the SDR boards than Lift looks
+  like Kfl. Optimising for "the memory system" is the wrong frame; optimising
+  for a workload is the right one.
+2. **`idle/direct` is real and was invisible on BRAM.** 16-42 % of stall,
+  against **0 %** on BRAM where `READ_WAIT`/`WRITE_WAIT` complete next cycle.
+  Item 37's "strike it from the attack surface" was a BRAM artefact.
+3. **Statics are a uniform 7-18 %** that no cache touches, largest on Kfl.
+
+**Ranking by weighted stall across all three benchmarks and boards:** bytecode
+fill first, indirection second, idle/direct third, statics fourth — but the
+ordering INVERTS between Kfl and Lift, so the only honest recommendation is to
+pick the target from the workload that matters.
+
+**Cost of measuring.** Eleven 32-bit counters, off by default. The first
+A-E115FB build FAILED timing at **-0.654 ns** (+0.510 without them);
+registering the category decode one cycle before the increment recovered it to
+**+0.911 ns**, better than the baseline. The counts are aggregates so a uniform
+one-cycle shift is invisible. Wukong DDR3 built and programmed (WNS +0.715 ns)
+but is not in the table: its UART reaches neither Pico CDC port at any baud, a
+wiring question rather than a design one.
+
 <a id="item-38"></a>
 
 ### Item 38 — ~~Measure DoApp's memory-stall fraction~~ — **ANSWERED 2026-08-18: 34-55 %**

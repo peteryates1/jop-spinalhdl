@@ -26,10 +26,25 @@ public class DoAppPerf {
 
 	// Must match Sys.perf.catOf.
 	static final int N = 11;
-	static final String[] NAME = {
-		"cycles", "stall", "idle/direct", "bytecode fill", "statics",
-		"bounds check", "handle deref", "element", "A$ fill", "GC copy", "other"
-	};
+
+	/* Deliberately a method, not a `static final String[]`. An array initialiser
+	   runs in <clinit>, and the array version of this class threw "Uncaught
+	   exception" during clazzinit on every board -- it was the only app in the
+	   tree using a static String[]. Literals returned from a method are
+	   resolved without allocating anything at class-init time. */
+	static String name(int i) {
+		if (i == 0) return "cycles";
+		if (i == 1) return "stall";
+		if (i == 2) return "idle/direct";
+		if (i == 3) return "bytecode fill";
+		if (i == 4) return "statics";
+		if (i == 5) return "bounds check";
+		if (i == 6) return "handle deref";
+		if (i == 7) return "element";
+		if (i == 8) return "A$ fill";
+		if (i == 9) return "GC copy";
+		return "other";
+	}
 
 	static void reset() {
 		Native.wr(-1, Const.IO_PERFCNT);
@@ -60,7 +75,7 @@ public class DoAppPerf {
 		for (int i = 2; i < N; ++i) {
 			int v = read(i);
 			if (v != 0) {
-				LowLevel.msg(NAME[i], v);
+				LowLevel.msg(name(i), v);
 				if (stall > 0) {
 					int q = (stall > 2000000) ? (v / (stall / 1000)) : (v * 1000 / stall);
 					LowLevel.msg("  of stall/1000", q);
