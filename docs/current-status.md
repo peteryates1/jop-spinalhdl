@@ -4441,10 +4441,30 @@ a uniform -18 % on all three, and statics; but those are the smaller
 categories, so the end-to-end result is 3-5 %.
 
 That is the sharpest version of the conclusion this whole item has been
-circling: **a general-purpose L2 in front of DRAM is not the lever.** It buys
-about as much as a 4 % clock bump, and it cannot touch the method cache or
-handle indirection, which between them own 57-63 % of every stall profile here.
-Item 39's L2 hit-path work should be judged against that ceiling.
+circling: **the L2 AS BUILT is not the lever.** It buys about as much as a 4 %
+clock bump.
+
+**Read the scope of that claim carefully.** 3-5 % is *this* 32 KB L2 versus *no*
+L2. It bounds what the current implementation contributes; it does NOT bound
+what a better one could, and the gap to ideal memory is still the 34-55 % of
+item 38.
+
+In fact the shape of the data points the other way for **item 39** (the 3-cycle
+serial hit path). Bytecode fill is a SEQUENTIAL BURST: the first word misses the
+L2, the rest should be cheap hits. It improved by only 3 %. If an L2 hit costs 3
+cycles, those hits are no faster than SDR page-mode reads — which would explain
+why a 32 KB cache backed by DDR3 bandwidth buys almost nothing on the category
+that owns 60 % of Kfl's stall. Bytecode fill is ~33 % of ALL Kfl cycles, so a
+hit path that actually beat page mode could be worth well more than 3-5 %.
+
+That is a HYPOTHESIS this measurement is consistent with, not a result. It is
+also cheap to test in simulation before committing to RTL. An earlier draft of
+this item said item 39 "should be judged against that ceiling" — that was
+wrong; 3-5 % is not a ceiling on item 39, it is a measurement of the thing item
+39 proposes to fix.
+
+What the 3-5 % DOES rule out is buying a win by making the DRAM behind the L2
+faster or newer: that lever is spent.
 
 **Why comparing per CYCLE is legitimate on the MIG path.** Raising the DDR3
 half from 91.676 to 100 MHz changed its per-MHz throughput by +0.8 % and its
