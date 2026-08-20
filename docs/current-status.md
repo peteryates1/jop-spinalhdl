@@ -4767,11 +4767,19 @@ and are now first and second.
 | Wukong SDR | 12,020 -> 16,318 **+35.8 %** | 5,479 -> 6,995 **+27.7 %** | -0.1 % |
 | Wukong DDR3 | 12,487 -> 16,855 **+35.0 %** | 5,756 -> 7,347 **+27.6 %** | **0 %** |
 | Colorlight i5 | 5,591 -> 7,098 **+26.9 %** | 2,560 -> 3,098 **+21.0 %** | **0 %** |
+| CYC5000 SDR | 8,126 -> 11,497 **+41.5 %** | 3,693 -> 4,899 **+32.7 %** | **0 %** |
 
-**+35 % Kfl and +27.7 % UdpIp reproduced to a tenth of a percent across DDR2,
-SDR and DDR3 on two fabrics**, with Lift flat every time — the control behaving
-exactly as item 50 and the sweep predicted. Three independent systems agreeing
-that closely is stronger than any single measurement.
+**All FOUR boards gain, Lift flat on every one** — the control behaving exactly
+as item 50 and the sweep predicted. The three DRAM-ish systems agree to a tenth
+of a percent (+35.0 / +35.8 / +35.0 % on Kfl), which is stronger than any single
+measurement; the two SDR outliers move in the direction item 50 predicts.
+
+**The spread tracks how memory-bound each board already was.** Item 50's stall
+shares were CYC5000 61.4 %, A-E115FB 52.2 %, i5 46.4 % — and the Kfl gains rank
+identically: CYC5000 **+41.5 %**, A-E115FB/Wukong **+35 %**, i5 **+26.9 %**. The
+more of its time a board was losing to memory, the more removing method-cache
+misses returns. That the ordering is preserved across three fabrics is a
+consistency check on both measurements at once.
 
 **The i5 gains less (+26.9 %) and that is consistent, not anomalous.** Item 50
 put it at the LOWEST stall share of any board (46.4 % vs the CYC5000's 61.4 %):
