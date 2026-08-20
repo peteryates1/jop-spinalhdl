@@ -58,7 +58,7 @@ case class DoAppSdrHarness(
     memDevice = md,
     romInit = Some(romInit),
     ramInit = Some(ramInit),
-    jbcInit = Some(Seq.fill(2048)(BigInt(0))),
+    jbcInit = Some(Seq.fill(config.jbcDepth)(BigInt(0))),
     clockFreqHz = clockFreqHz
   )
 

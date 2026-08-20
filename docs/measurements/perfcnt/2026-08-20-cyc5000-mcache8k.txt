@@ -1,0 +1,43 @@
+Waiting for FPGA ready  ready!
+
+Small boot
+GC init...
+Parsed java/apps/JbeBench/DoAppPerf.jop: 16815 words (65 KB)
+  * 10813 words of Java bytecode (42 KB)
+  * 16815 words external RAM (65 KB)
+Opened /dev/ttyUSB2 at 2000000 baud
+Streaming 67260 bytes...
+Sent in 0.3s (192 KB/s). Verifying checksum...
+Download OK (checksum 0x224cde58)
+Monitoring UART output (Ctrl+C to exit)...
+GC: generational, 64-word cards
+GC done
+CI
+OK
+M0
+DoApp memory-stall profile (IO_PERFCNT) 
+
+Kfl 11497 1/s 
+
+==  Kfl 
+
+cycles 221017448 stall 85003172 stall/1000 384 idle/direct 38992428   of stall/1000 458 bytecode fill 2924579   of stall/1000 34 statics 34713512   of stall/1000 408 bounds check 2502475   of stall/1000 29 handle deref 4516283   of stall/1000 53 element 1352848   of stall/1000 15 A$ fill 1279   of stall/1000 0 
+
+UdpIp 4899 1/s 
+
+==  UdpIp 
+
+cycles 250832386 stall 109051860 stall/1000 434 idle/direct 50462676   of stall/1000 462 bytecode fill 2409261   of stall/1000 22 statics 18672918   of stall/1000 171 bounds check 6988623   of stall/1000 64 handle deref 18721175   of stall/1000 171 element 5364898   of stall/1000 49 A$ fill 6432541   of stall/1000 58 
+
+Lift 12992 1/s 
+
+==  Lift 
+
+cycles 195584700 stall 75985212 stall/1000 388 idle/direct 31938060   of stall/1000 420 bytecode fill 1528202   of stall/1000 20 statics 6079947   of stall/1000 80 bounds check 9828124   of stall/1000 129 handle deref 18825173   of stall/1000 247 element 7784557   of stall/1000 102 A$ fill 1381   of stall/1000 0 
+
+profile done 
+
+
+
+JVM exit!
+

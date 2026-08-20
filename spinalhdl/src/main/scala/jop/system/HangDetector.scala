@@ -23,6 +23,10 @@ case class HangDetector(
   hasCacheState: Boolean = false,
   hasAdapterState: Boolean = false,
   pcWidth: Int = 12,
+  // The jpc SIGNAL width, which is JopCoreConfig.jpcWidth + 1 -- jpc carries an
+  // extra bit to detect overflow. 12 therefore meant "2 KB method cache only",
+  // and a larger cache produced WIDTH MISMATCH (12 bits <- 16 bits) here.
+  // Callers must pass coreConfigs.head.jpcWidth + 1.
   jpcWidth: Int = 12
 ) extends Component {
 
@@ -63,7 +67,8 @@ case class HangDetector(
   }
 
   // Diagnostic UART
-  val diagUart = DiagUart(clockFreqHz = boardClkFreqHz.toInt, baudRate = baudRate)
+  val diagUart = DiagUart(clockFreqHz = boardClkFreqHz.toInt, baudRate = baudRate,
+    jpcWidth = jpcWidth)
   diagUart.io.trigger      := hangDetected
   diagUart.io.memState     := io.memState
   diagUart.io.pc           := io.pc

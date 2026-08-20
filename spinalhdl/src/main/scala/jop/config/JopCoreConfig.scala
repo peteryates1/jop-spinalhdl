@@ -310,9 +310,21 @@ case class JopCoreConfig(
   dataWidth:    Int              = 32,
   pcWidth:      Int              = 12,
   instrWidth:   Int              = 10,
-  jpcWidth:     Int              = 11,
+  // 8 KB / 64 blocks x 32 words, changed from 2 KB / 16 x 32w on 2026-08-19.
+  // Measured, not guessed: at 2 KB the method cache costs Kfl 34.8 % and UdpIp
+  // 23.2 % miss, and the loss is FRAGMENTATION (only a method's first block
+  // carries a tag, so block COUNT caps how many methods are resident).
+  // A-E115FB hardware: 2 KB -> 4 KB/32 was +34.4 % Kfl and +27.7 % UdpIp; the
+  // sweep puts 8 KB/64 at the compulsory floor, each method loaded about once.
+  // 128 B per block means a low-complexity method never needs a second slot.
+  //
+  // Costs nothing in timing on either fabric tested: A-E115FB slack is +0.446 ns
+  // at 16, 32, 64 AND 128 blocks (the DDR2 PHY owns the critical path), and the
+  // Wukong's WNS is unchanged at -0.376 ns on its pre-existing sdram_DQ path.
+  // It costs BRAM -- 8 KB of JBC RAM per CORE, so an SMP build pays per core.
+  jpcWidth:     Int              = 13,
   ramWidth:     Int              = 8,
-  blockBits:    Int              = 4,
+  blockBits:    Int              = 6,   // 64 blocks -- see jpcWidth above
   memConfig:    JopMemoryConfig  = JopMemoryConfig(),
   supersetJumpTable: JumpTableInitData = JumpTableInitData.simulation,
   cpuId:        Int              = 0,

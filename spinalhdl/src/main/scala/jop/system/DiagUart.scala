@@ -65,7 +65,13 @@ case class DiagUart(clockFreqHz: Int = 100000000, baudRate: Int = 1000000, pcWid
 
   val latchMs  = Reg(UInt(5 bits)) init(0)
   val latchPc  = Reg(UInt(pcWidth bits)) init(0)
-  val latchJpc = Reg(UInt(12 bits)) init(0)
+  // Full jpc width, so a method cache larger than 2 KB does not produce a
+  // WIDTH MISMATCH here. NOTE: the message prints only the LOW 12 BITS (3 hex
+  // chars, states 25-27). With jpcWidth > 12 the displayed value is the offset
+  // within a 4 KB window, not the whole jpc. Widening the field means
+  // renumbering the hand-written state machine, which is not worth
+  // destabilising a hang diagnostic for; recorded rather than done silently.
+  val latchJpc = Reg(UInt(jpcWidth bits)) init(0)
   val latchCs  = Reg(UInt(3 bits)) init(0)
   val latchAs  = Reg(UInt(3 bits)) init(0)
 

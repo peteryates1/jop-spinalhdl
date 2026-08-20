@@ -55,7 +55,7 @@ case class JopSdramSerialHarness(
   }
 
   // JBC init: empty (zeros) — serial boot fills bytecodes from SDRAM
-  val jbcInit = Seq.fill(2048)(BigInt(0))
+  val jbcInit = Seq.fill(config.jbcDepth)(BigInt(0))
 
   // JOP System with SDRAM
   val jopSystem = JopCoreWithSdram(

@@ -40,7 +40,7 @@ case class JopCoreWithSdram80MhzHarness(
     val uartTxValid = out Bool()
   }
 
-  val jbcInit = Seq.fill(2048)(BigInt(0))
+  val jbcInit = Seq.fill(config.jbcDepth)(BigInt(0))
 
   val jopSystem = JopCoreWithSdram(
     config = config,

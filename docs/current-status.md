@@ -76,7 +76,7 @@ the missing resets themselves — but a five-seed sweep found no offender among
 the registers, so it is now a single named defect rather than a 405-register
 audit, and has moved down accordingly.
 
-1. **[#51](#item-51)** — Method cache — **DONE, +34.4 % Kfl on hardware.** Remaining: make 4 KB/32 the default across presets, and re-rank what is left (statics and idle/direct are now Kfl's top two)
+1. **[#51](#item-51)** — Method cache — **DONE and DEFAULTED, +35 % Kfl on four boards.** Remaining: statics and idle/direct are now Kfl's top two stall categories (42 % and 39 %)
 2. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
 3. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 4. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
@@ -170,7 +170,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[20](#item-20)** — Decide whether the double group gets microcode at all
 - **[21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
 - **[37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
-- ~~**[51](#item-51)**~~ — Method cache — **HW-VALIDATED +34.4 % Kfl / +27.7 % UdpIp** (A-E115FB DDR2) from 2 KB -> 4 KB/32 blocks; fragmentation, not capacity. Timing +0.446 ns
+- ~~**[51](#item-51)**~~ — Method cache — **DEFAULT NOW 8 KB/64 blocks. +35 % Kfl / +27.7 % UdpIp on four boards** (DDR2, SDR, DDR3; Quartus/Vivado/nextpnr). Fragmentation, not capacity
 - ~~**[38](#item-38)**~~ — ANSWERED: stall share is 34-55 % — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31. Where that 34-55 % GOES was then measured on hardware in [50](#item-50)
 - **[39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
 - **[40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
@@ -4515,7 +4515,7 @@ repeatable results on every run.
 
 <a id="item-51"></a>
 
-### Item 51 — ~~The method cache is capped at 2 KB~~ — FIXED AND HW-VALIDATED: 4 KB/32 blocks is **+34.4 % Kfl, +27.7 % UdpIp** on the A-E115FB
+### Item 51 — ~~The method cache is capped at 2 KB~~ — FIXED. Default is now 8 KB/64 blocks: **+35 % Kfl, +27.7 % UdpIp**, validated on FOUR BOARDS
 
 **Why this matters.** Item 50 measured where stall time goes on real memory:
 bytecode fill is **62.8 % of Kfl's stall and 52.9 % of UdpIp's**, and stall is
@@ -4745,6 +4745,69 @@ stall category is now **statics at 41.2 %** (692 cycles/iteration) followed by
 `idle/direct` at 38.8 % (652). Those are exactly the "statics in on-chip RAM"
 and "write buffer" levers below, which were third-order behind the method cache
 and are now first and second.
+
+#### DEFAULT CHANGED 2026-08-20 — 8 KB / 64 x 32w, validated on FOUR BOARDS
+
+`JopCoreConfig` now defaults to `jpcWidth = 13, blockBits = 6`. Measured with
+`DoAppPerf` at the new default:
+
+| system | Kfl | UdpIp | Lift |
+|---|---|---|---|
+| Colorlight i5 — SDR 40 MHz (ECP5) | 7,098 | 3,098 | 7,861 |
+| CYC5000 — SDR 80 MHz (Cyclone V) | 11,497 | 4,899 | 12,992 |
+| A-E115FB — DDR2 75 MHz (Cyclone IV) | 12,641 | 5,512 | 13,931 |
+| Wukong SDR — 100 MHz (Artix-7) | 16,318 | 6,995 | 18,034 |
+| Wukong DDR3 — 100 MHz (Artix-7) | 16,855 | 7,347 | 18,586 |
+
+**Against a matched 2 KB baseline on the same board and binary:**
+
+| system | Kfl | UdpIp | Lift |
+|---|---|---|---|
+| A-E115FB DDR2 | 9,367 -> 12,641 **+35.0 %** | 4,316 -> 5,512 **+27.7 %** | **0 %** |
+| Wukong SDR | 12,020 -> 16,318 **+35.8 %** | 5,479 -> 6,995 **+27.7 %** | -0.1 % |
+| Wukong DDR3 | 12,487 -> 16,855 **+35.0 %** | 5,756 -> 7,347 **+27.6 %** | **0 %** |
+| Colorlight i5 | 5,591 -> 7,098 **+26.9 %** | 2,560 -> 3,098 **+21.0 %** | **0 %** |
+
+**+35 % Kfl and +27.7 % UdpIp reproduced to a tenth of a percent across DDR2,
+SDR and DDR3 on two fabrics**, with Lift flat every time — the control behaving
+exactly as item 50 and the sweep predicted. Three independent systems agreeing
+that closely is stronger than any single measurement.
+
+**The i5 gains less (+26.9 %) and that is consistent, not anomalous.** Item 50
+put it at the LOWEST stall share of any board (46.4 % vs the CYC5000's 61.4 %):
+its 32-bit SDRAM at 40 MHz costs fewer CYCLES per access, because DRAM timings
+are fixed in nanoseconds and a slow clock buys more of them. Less memory-bound
+to begin with, so less to recover.
+
+**Timing closes everywhere, on three vendors and three toolchains:**
+
+| board | timing | resources |
+|---|---|---|
+| A-E115FB (Quartus) | **+0.446 ns** — identical at 16/32/64/128 blocks | 35,976 LE (30 %) |
+| CYC5000 (Quartus) | **+0.533 ns** setup, +0.390 hold | 4,060 ALM (43 %), memory **9 %** |
+| Colorlight i5 (yosys/nextpnr) | **PASS — 53.95 MHz vs 40 target** | DP16KD 15/56 (26 %) |
+| Wukong dual (Vivado) | -0.364 ns, its PRE-EXISTING `sdram_DQ` path | LUT 49.9 %, BRAM 31 % |
+
+The method cache is nowhere near critical on any fabric, at any geometry tested
+up to 128 blocks. Block memory at 9-31 % is what the change actually spends.
+
+**8 KB/64 over 4 KB/32 is only +0.4 %** (A-E115FB 12,641 vs 12,593) — the
+benchmarks are at the compulsory floor by 4 KB. The reason to default to 8 KB is
+headroom for code with more resident methods than these three have, since block
+COUNT caps residency; it is not something these benchmarks can show.
+
+**The pin had frozen assumptions into 29 places.** Nine in the design (item 51
+above) and TWENTY more in the test tree, all `Seq.fill(2048)`/`padTo(2048)` for
+jbcInit — caught only because `JopJvmTestsBramSim` was run after the default
+change (132 ok / 0 fail now, up from 126, as more tests fit the cycle budget).
+Two traps worth remembering while fixing them: a `val` referencing a LATER `val`
+in a Component body reads as null, so declaration ORDER had to be checked and
+eight files were handled individually; and a bulk rewrite wrongly edited
+`BytecodeFetchStageTest`, which legitimately pins its own geometry.
+
+`NonDefaultGeometryElabTest` (`jop.config.*`, so CI runs it already) now probes
+11/4 and 14/7 — either side of the new default. It was verified to FAIL when one
+of the nine fixes was reverted, so it is a real guard.
 
 #### Other levers on stall time, from the same measurements
 

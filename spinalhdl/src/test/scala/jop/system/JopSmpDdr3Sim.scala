@@ -81,7 +81,7 @@ case class JopSmpDdr3TestHarness(
     val w = word.toLong & 0xFFFFFFFFL
     Seq(BigInt((w >> 24) & 0xFF), BigInt((w >> 16) & 0xFF),
         BigInt((w >> 8) & 0xFF), BigInt((w >> 0) & 0xFF))
-  }.padTo(2048, BigInt(0))
+  }.padTo(JopCoreConfig().jbcDepth, BigInt(0))   // baseConfig below does not override jpcWidth
 
   // ====================================================================
   // JOP Cluster: N cores with arbiter + CmpSync

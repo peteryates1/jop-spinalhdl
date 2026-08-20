@@ -24,6 +24,8 @@ class BytecodeFetchStageTest extends AnyFunSuite {
   }
 
   // Compile zero-fill DUT once for tests that don't need specific ROM content
+  // createDut pins jpcWidth = 11 and pads to 1 << jpcWidth itself, so this
+  // 2048 is this test's own geometry, NOT the global default. Leave it.
   lazy val compiledZero = bcfSimConfig.compile(createDut(Seq.fill(2048)(0x00)))
 
   test("BytecodeFetchStage: reset clears state") {

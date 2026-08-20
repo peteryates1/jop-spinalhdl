@@ -51,7 +51,7 @@ case class JopCoreLatencyHarness(
   }
 
   // JBC starts empty - BC_FILL must load bytecodes from memory
-  val jbcInit = Seq.fill(2048)(BigInt(0))
+  val jbcInit = Seq.fill(config.jbcDepth)(BigInt(0))
 
   // JOP Core (Sys + Uart internal)
   val jopCore = JopCore(

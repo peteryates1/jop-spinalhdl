@@ -73,7 +73,7 @@ case class JopCoreTraceCaptureHarness(
       BigInt((w >> 8) & 0xFF),
       BigInt((w >> 0) & 0xFF)
     )
-  }.padTo(2048, BigInt(0))
+  }.padTo(config.jbcDepth, BigInt(0))
 
   // JOP Core (Sys + Uart internal)
   val jopCore = JopCore(

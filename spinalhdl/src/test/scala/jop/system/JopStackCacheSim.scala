@@ -89,7 +89,7 @@ case class JopStackCacheTestHarness(
     val w = word.toLong & 0xFFFFFFFFL
     Seq(BigInt((w >> 24) & 0xFF), BigInt((w >> 16) & 0xFF),
         BigInt((w >> 8) & 0xFF), BigInt((w >> 0) & 0xFF))
-  }.padTo(2048, BigInt(0))
+  }.padTo(baseConfig.jbcDepth, BigInt(0))
 
   // JOP Cluster with stack cache: cpuCnt=1, useStackCache=true
   // separateStackDmaBus=true: DMA spill/fill uses its own memory to avoid

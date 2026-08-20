@@ -35,14 +35,24 @@ object MethodCacheSweepSim extends App {
   val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
   val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
   val bramSize = 2 * 1024 * 1024
-  val mainMemData =
-    JopFileLoader.jopFileToMemoryInit("java/apps/JbeBench/JbeBench.jop", bramSize / 4)
+  // Sweep YOUR application, not just the JBE benchmarks. Their hot code
+  // footprint is tiny (Lift's is ~2,600 words), so they under-represent code
+  // written as many small methods -- where the BLOCK COUNT, which caps how many
+  // methods can be resident at once, matters more than total size.
+  //   MCACHE_JOP=java/apps/Foo/Foo.jop MCACHE_BENCHES=  (empty = one TOTAL row)
+  val jopPath  = sys.env.getOrElse("MCACHE_JOP", "java/apps/JbeBench/JbeBench.jop")
+  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopPath, bramSize / 4)
 
   // clkMhz = 5 shrinks DoApp's calibrate-to-one-simulated-second by 20x so all
   // three benchmarks fit one run (see JopCoreLargeBramHarness.clkMhz).
   val CLK_MHZ = 5
   val MAX_CYCLES = sys.env.getOrElse("MCACHE_MAX_CYCLES", "90000000").toLong
-  val benches = Seq("Kfl", "UdpIp", "Lift")
+  // Markers are DoApp-specific. An arbitrary app has none, so an empty list
+  // means "attribute the whole run to one TOTAL row at JVM exit".
+  val benches = sys.env.get("MCACHE_BENCHES")
+    .map(_.split(",").map(_.trim).filter(_.nonEmpty).toSeq)
+    .getOrElse(Seq("Kfl", "UdpIp", "Lift"))
+  val reportKeys = if (benches.isEmpty) Seq("TOTAL") else benches
 
   /** (jpcWidth, blockBits). blockWords = 1 << (jpcWidth - 2 - blockBits). */
   val only = sys.env.get("MCACHE_ONLY").map(_.split(",").map(_.trim).toSet)
@@ -55,7 +65,13 @@ object MethodCacheSweepSim extends App {
     (12, 6),   // 4 KB, 64 x 16w
     (13, 6),   // 8 KB, 64 x 32w  — same block size again
     (13, 7),   // 8 KB, 128 x 16w
-    (14, 7)    // 16 KB, 128 x 32w
+    (14, 7),   // 16 KB, 128 x 32w
+    // Many-small-methods regime: block COUNT caps how many methods can be
+    // resident (only a method's FIRST block carries a tag), so code that keeps
+    // method complexity low wants many small blocks rather than a big cache.
+    (12, 7),   // 4 KB, 128 x  8w
+    (12, 8),   // 4 KB, 256 x  4w
+    (13, 8)    // 8 KB, 256 x  8w
   )
   val geometries = only match {
     case Some(sel) => allGeometries.filter { case (j, b) => sel.contains(s"$j/$b") }
@@ -110,7 +126,11 @@ object MethodCacheSweepSim extends App {
               out(b) = Result(lookups, misses, words, cyc)
               lookups = 0; misses = 0; words = 0; cyc = 0   // per-benchmark deltas
             }
-            if (l.contains("JVM exit")) done = true
+            if (l.contains("JVM exit")) {
+              if (benches.isEmpty)
+                out("TOTAL") = Result(lookups, misses, words, cyc)
+              done = true
+            }
             line.clear()
           } else if (c >= 32 && c < 127) line.append(c.toChar)
           if (c >= 32 && c < 127) uart.append(c.toChar) else if (c == 10) uart.append('|')

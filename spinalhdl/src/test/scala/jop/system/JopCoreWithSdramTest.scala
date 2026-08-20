@@ -62,7 +62,7 @@ case class JopCoreWithSdramTestHarness(
   }
 
   // JBC starts empty - BC_FILL must load bytecodes from SDRAM
-  val jbcInit = Seq.fill(2048)(BigInt(0))
+  val jbcInit = Seq.fill(config.jbcDepth)(BigInt(0))
 
   // JOP System with SDRAM backend (Sys + Uart internal)
   val jopSystem = JopCoreWithSdram(

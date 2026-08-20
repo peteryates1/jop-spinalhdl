@@ -79,7 +79,7 @@ case class JopDdr3SerialBootHarness(
   }
 
   // JBC init: empty (zeros) -- serial boot loads bytecodes from DDR3 via BC_FILL
-  val jbcInit = Seq.fill(2048)(BigInt(0))
+  val jbcInit = Seq.fill(config.jbcDepth)(BigInt(0))
 
   // JOP Core with serial-boot microcode (Sys + Uart internal)
   val jopCore = JopCore(

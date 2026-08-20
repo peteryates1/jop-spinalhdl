@@ -64,7 +64,7 @@ case class JopCoreTestHarness(
 
   // JBC RAM starts empty — microcode fills it from main memory on demand
   // (Pre-loading extracted bytecodes causes BC fill state machine conflicts)
-  val jbcInit = Seq.fill(2048)(BigInt(0))
+  val jbcInit = Seq.fill(config.jbcDepth)(BigInt(0))
 
   // JOP System core (Sys + Uart internal)
   val jopCore = JopCore(

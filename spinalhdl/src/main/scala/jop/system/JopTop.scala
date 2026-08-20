@@ -688,9 +688,10 @@ case class JopTop(
         val memStateSync = BufferCC(mainArea.cluster.io.debugMemState, init = U(0, 5 bits))
         val memBusySync = BufferCC(mainArea.cluster.io.memBusy(0), init = False)
         val pcSync = BufferCC(mainArea.cluster.io.pc(0), init = U(0, sys.coreConfigs.head.pcWidth bits))
-        val jpcSync = BufferCC(mainArea.cluster.io.jpc(0), init = U(0, 12 bits))
+        val jpcSync = BufferCC(mainArea.cluster.io.jpc(0), init = U(0, sys.coreConfigs.head.jpcWidth + 1 bits))
 
         val hangDet = HangDetector(
+          jpcWidth = sys.coreConfigs.head.jpcWidth + 1,   // jpc carries an overflow bit
           boardClkFreqHz = boardClkFreqHz,
           hasCacheState = isDdr3,
           hasAdapterState = isDdr3
@@ -912,9 +913,10 @@ case class JopTop(
     val memState0Sync = BufferCC(ddr3Area.cluster.io.debugMemState, init = U(0, 5 bits))
     val memBusy0Sync = BufferCC(ddr3Area.cluster.io.memBusy(0), init = False)
     val pc0Sync = BufferCC(ddr3Area.cluster.io.pc(0), init = U(0, sys0.coreConfigs.head.pcWidth bits))
-    val jpc0Sync = BufferCC(ddr3Area.cluster.io.jpc(0), init = U(0, 12 bits))
+    val jpc0Sync = BufferCC(ddr3Area.cluster.io.jpc(0), init = U(0, ddr3Area.coreConfigs0.head.jpcWidth + 1 bits))
 
     val hangDet0 = HangDetector(
+      jpcWidth = ddr3Area.coreConfigs0.head.jpcWidth + 1,   // jpc carries an overflow bit
       boardClkFreqHz = boardClkFreqHz,
       hasCacheState = true,
       hasAdapterState = true
@@ -934,9 +936,10 @@ case class JopTop(
     val memState1Sync = BufferCC(sdrArea.cluster.io.debugMemState, init = U(0, 5 bits))
     val memBusy1Sync = BufferCC(sdrArea.cluster.io.memBusy(0), init = False)
     val pc1Sync = BufferCC(sdrArea.cluster.io.pc(0), init = U(0, sys1.coreConfigs.head.pcWidth bits))
-    val jpc1Sync = BufferCC(sdrArea.cluster.io.jpc(0), init = U(0, 12 bits))
+    val jpc1Sync = BufferCC(sdrArea.cluster.io.jpc(0), init = U(0, sdrArea.coreConfigs1.head.jpcWidth + 1 bits))
 
     val hangDet1 = HangDetector(
+      jpcWidth = sdrArea.coreConfigs1.head.jpcWidth + 1,   // jpc carries an overflow bit
       boardClkFreqHz = boardClkFreqHz,
       hasCacheState = false,
       hasAdapterState = false

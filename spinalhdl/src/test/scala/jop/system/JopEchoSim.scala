@@ -37,7 +37,7 @@ case class JopEchoHarness(
   }
 
   // Empty JBC (echo.asm doesn't use it)
-  val jbcInit = Seq.fill(2048)(BigInt(0))
+  val jbcInit = Seq.fill(config.jbcDepth)(BigInt(0))
 
   // JOP Core (Sys + Uart internal)
   val jopCore = JopCore(

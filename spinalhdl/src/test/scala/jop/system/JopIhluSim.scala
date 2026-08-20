@@ -67,7 +67,7 @@ case class JopIhluTestHarness(
     val w = word.toLong & 0xFFFFFFFFL
     Seq(BigInt((w >> 24) & 0xFF), BigInt((w >> 16) & 0xFF),
         BigInt((w >> 8) & 0xFF), BigInt((w >> 0) & 0xFF))
-  }.padTo(2048, BigInt(0))
+  }.padTo(harnessCfg.jbcDepth, BigInt(0))
 
   // ====================================================================
   // JOP Cluster with IHLU enabled
