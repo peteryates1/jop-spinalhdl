@@ -73,9 +73,9 @@ wukong-pico-1|1209:c0ca||0B383D0435D957EC|03|Wukong's on-board Pico 2 W, SECOND 
 i5|0d28:0204||07000001002700424e00000256304750a5a5a5a597969908|01|Colorlight i5 ext board DAPLink CDC (if00 is the HID debug endpoint)
 cyc5000|0403:6010||ARA30135|01|Arrow CYC5000 on-board Arrow USB Blaster -- console is if01, if00 is JTAG
 alchitry|0403:6010|Alchitry Au V2||01|Alchitry Au V2 -- if01 is the UART, if00 is JTAG. The product string is REQUIRED: 0403:6010 is shared with the CYC5000's Arrow blaster, and matching on vid:pid alone picks whichever enumerated first
-xc7a100t-pico-0|1209:c0ca||E662C876C3506A26|01|QMTECH XC7A100T + DB_FPGA V5, its Pico's FIRST CDC (if00 control + if01 data)
+xc7a100t-pico-0|1209:c0ca||E662C876C3506A26|01|QMTECH XC7A100T + DB_FPGA V5, its Pico's FIRST CDC (if00 control + if01 data). THIS IS THE CONSOLE -- verified on hardware 2026-08-22 at 2 Mbaud (0xAA ready pattern, then a HelloWorld download)
 ep4cgx150|10c4:ea60||de4cebf79bd1eb11910b7b54e93fd3f1|00|QMTECH EP4CGX150 + SDR -- its CP2102N. Unlike the CH340 boards this has a real unique serial, so it needs no product-string trick. Runs at 2 Mbaud
-xc7a100t-pico-1|1209:c0ca||E662C876C3506A26|03|QMTECH XC7A100T + DB_FPGA V5, its Pico's SECOND CDC (if02 control + if03 data). The board Makefile uses this one, INFERRED from the old /dev/ttyACM1 default and NOT verified; if the console is silent try -0
+xc7a100t-pico-1|1209:c0ca||E662C876C3506A26|03|QMTECH XC7A100T + DB_FPGA V5, its Pico's SECOND CDC (if02 control + if03 data). NOT the console -- silent at every baud when the board is running. Registered so the pair is addressable, not because anything uses it
 EOF
 )
 

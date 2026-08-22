@@ -37,10 +37,15 @@ BUSDEV ?=
 #   fpga/scripts/usb_serial_map | grep <this probe's serial>
 # Was /dev/ttyACM1, which is whichever Pico enumerated first -- with the Wukong
 # also attached that number has pointed at the WRONG BOARD's Pico. Resolved from
-# this board's Pico serial instead. NOTE the CDC interface (if03) is inferred
-# from that old default, not verified; if the console is silent try if01.
-UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id xc7a100t-pico-1 2>/dev/null \
-              || echo /dev/serial/by-id/usb-Jean_THOMAS_Pico_Dirty_JTAG_E662C876C3506A26-if03)
+# this board's Pico serial instead.
+#
+# The console is the FIRST CDC (if01), verified on hardware 2026-08-22: it
+# carries the 0xAA serial-boot ready pattern at 2 Mbaud and completes a
+# download, while if03 is silent at every baud. An earlier revision guessed
+# if03 from the old /dev/ttyACM1 default -- that guess was wrong, and ttyACM1
+# was simply the second node of whichever Pico enumerated first.
+UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id xc7a100t-pico-0 2>/dev/null \
+              || echo /dev/serial/by-id/usb-Jean_THOMAS_Pico_Dirty_JTAG_E662C876C3506A26-if01)
 UART_BAUD := 2000000
 
 # Bitstream paths
