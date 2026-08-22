@@ -50,7 +50,8 @@ OFL ?= openFPGALoader
 # console is the SECOND ttyUSB of the pair, not the first. Numbering moves on
 # every replug — re-check with fpga/scripts/usb_serial_map rather than trusting
 # this default.
-SERIAL_PORT ?= /dev/ttyUSB2
+SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id cyc5000 2>/dev/null \
+                 || echo /dev/serial/by-id/usb-Arrow_Arrow_USB_Blaster_TEI0050_ARA30135-if01-port0)
 # 2 Mbaud: cyc5000Serial runs at 80 MHz and UartCtrl divides by baud x 5, so
 # the divider is exactly 8 — 0.00% error.
 BAUD_RATE = 2000000

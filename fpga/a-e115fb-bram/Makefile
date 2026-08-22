@@ -23,8 +23,11 @@ BLASTER_TYPE ?= USB-Blaster
 # Pico FPGA debug tool
 PICO_DEV ?= /dev/pico-la
 
-# Serial port for UART monitoring (CH340 on base board)
-SERIAL_PORT ?= /dev/ttyUSB0
+# Serial port for UART monitoring (CH340 on base board) -- same physical board
+# as fpga/a-e115fb-ddr2, so same alias. Its CH340 has no serial number; see
+# fpga/scripts/usb_serial_map's header for why that needs special handling.
+SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id ae115fb 2>/dev/null \
+                 || echo /dev/serial/by-id/usb-1a86_USB2.0-Serial-if00-port0)
 BAUD_RATE = 1000000
 
 # SpinalHDL project (sbt runs from repo root)

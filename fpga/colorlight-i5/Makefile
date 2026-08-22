@@ -54,7 +54,8 @@ LOADER_BRD := colorlight-i5
 # numbers renumber across replugs and there are other CMSIS-DAP/CDC devices on
 # this host (see fpga/scripts/usb_serial_map). Interface -if01 is the CDC data
 # endpoint; -if00 is the HID debug endpoint openFPGALoader uses.
-TTY        := /dev/serial/by-id/usb-ARM_DAPLink_CMSIS-DAP_07000001002700424e00000256304750a5a5a5a597969908-if01
+TTY        := $(shell $(ROOT)/fpga/scripts/usb_serial_map --by-id i5 2>/dev/null \
+                || echo /dev/serial/by-id/usb-ARM_DAPLink_CMSIS-DAP_07000001002700424e00000256304750a5a5a5a597969908-if01)
 BAUD       := 1000000
 APP        := $(ROOT)/java/apps/Smallest/HelloWorld.jop
 

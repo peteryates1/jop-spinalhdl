@@ -8,7 +8,18 @@ DDR3_SMP_BITSTREAM := vivado/build/wukong_jop_ddr3_smp_np/JopSmpDdr3WukongTop.bi
 SDRAM_BITSTREAM := vivado/build/wukong_sdram_exerciser/SdramExerciserWukongTop.bit
 JOP_SDRAM_BITSTREAM := vivado/build/wukong_jop_sdram/JopSdramWukongTop.bit
 DUAL_BITSTREAM := vivado/build/wukong_jop_dual_np/JopDualWukongTop.bit
-UART_DEV := /dev/ttyUSB0
+# UART_DEV is the board's own CH340N, and applies to the SINGLE-SYSTEM builds
+# only -- those use SystemAssembly.wukong with DeviceDriver.UartCh340. The
+# DUAL-cluster builds do NOT: the CH340N at E3/F3 is hardwired on the PCB and
+# cannot be tapped, so both halves come out of the on-board Pico 2 W instead
+# (DDR3 -> PICO_UART1 F4/H4, SDR -> J11_UART A5/A4). See
+# docs/architecture/system-configuration.md.
+#
+# Resolved by alias, since ttyUSBn moves on every replug and this board's CH340
+# has no serial to key on -- see fpga/scripts/usb_serial_map, whose header
+# explains why these two CH340s need special handling.
+UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id wukong 2>/dev/null \
+              || echo /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0)
 UART_BAUD := 1000000
 # Exactly 2 Mbaud since 2026-08-18. It used to be 2037000: ui_clk is
 # 91.6758 MHz at Ddr3_366, an integer divisor gave 2.0372 Mbaud, and this
@@ -17,7 +28,12 @@ UART_BAUD := 1000000
 # one on any clock.
 DDR3_UART_BAUD := 2000000
 JOP_FILE ?= $(REPO_ROOT)/java/apps/Smallest/HelloWorld.jop
-DUAL_SDR_UART_DEV := /dev/ttyACM0
+# This board's Pico 2 W CDC. There are TWO Pico dirtyJtag probes on this host
+# (this one and the XC7A100T's E662C876C3506A26), so a bare /dev/ttyACM0 is
+# whichever enumerated first -- it can point at the wrong board. The Pico DOES
+# have a serial, so this one resolves the ordinary way.
+DUAL_SDR_UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id wukong-pico-0 2>/dev/null \
+                       || echo /dev/serial/by-id/usb-Jean_THOMAS_Pico_Dirty_JTAG_0B383D0435D957EC-if01)
 DUAL_SDR_UART_BAUD := 115200
 
 .PHONY: generate create-ip create-project build program program-flash monitor all clean
@@ -114,6 +130,11 @@ dual-build:
 dual-program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(DUAL_BITSTREAM)
 
+# SUSPECT: this watches UART_DEV, i.e. the CH340 -- but the dual build routes
+# its DDR3 half to PICO_UART1, not the CH340 (see the UART_DEV comment above).
+# It is probably meant to be `usb_serial_map --by-id wukong-pico-1`, the Pico's
+# second CDC, the way dual-sdr-monitor uses wukong-pico-0. Left as-is because
+# which CDC carries which half is unverified; check before trusting this target.
 dual-monitor:
 	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
 

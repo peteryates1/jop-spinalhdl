@@ -69,7 +69,8 @@ QUARTUS_BIN = $(QUARTUS_DIR)/bin
 BLASTER_TYPE ?= $(shell $(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --cable ep4cgx150)
 
 # Serial port for UART
-SERIAL_PORT ?= /dev/ttyUSB0
+SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id ep4cgx150 2>/dev/null \
+                 || echo /dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_de4cebf79bd1eb11910b7b54e93fd3f1-if00-port0)
 BAUD_RATE = 2000000
 
 # JOP application file

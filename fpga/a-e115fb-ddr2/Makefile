@@ -38,8 +38,16 @@ IP_SRC := ip-src/ddr2_64bit.v
 CABLE = $(shell $(ROOT)/fpga/scripts/jtag_probe_map --cable ae115fb)
 
 # The board's own CH340, not the Pico (which runs pico-usb-blaster and has no
-# CDC interface).
-UART_DEV  ?= /dev/ttyUSB0
+# CDC interface). Resolved by alias, since ttyUSBn moves on every replug and
+# this board's CH340 has no serial to key on -- see fpga/scripts/usb_serial_map,
+# whose header explains why these two CH340s need special handling.
+UART_DEV  ?= $(shell $(ROOT)/fpga/scripts/usb_serial_map --by-id ae115fb 2>/dev/null \
+               || echo /dev/serial/by-id/usb-1a86_USB2.0-Serial-if00-port0)
+# NOTE: the JOP preset on this board runs at 1 Mbaud -- 2 Mbaud is UNREACHABLE
+# at 75 MHz (divider 7.5 -> 7, +7.14 %, see docs/boards/ae115fb-ddr2-bringup.md
+# "75 MHz is a good baud clock"). 2000000 is kept here because this Makefile
+# drives the DDR2 EXERCISER, not the JOP preset; if the exerciser also runs at
+# 75 MHz then this is wrong and should be 1000000. Unverified.
 UART_BAUD ?= 2000000
 JOP_FILE  ?= $(ROOT)/java/apps/Smallest/HelloWorld.jop
 

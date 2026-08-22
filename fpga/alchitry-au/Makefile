@@ -56,7 +56,11 @@ VIVADO_HOME ?= /opt/xilinx/2025.2/Vivado
 RUN_VIVADO := VIVADO_HOME=$(VIVADO_HOME) ./scripts/run_vivado.sh
 
 # Serial port for UART
-SERIAL_PORT ?= $(shell ./scripts/find_alchitry_ports.sh --serial 2>/dev/null || echo /dev/ttyUSB1)
+# Was find_alchitry_ports.sh, which matched on vid:pid 0403:6010 alone -- the
+# same id the CYC5000's Arrow blaster uses, so it could return the Arrow's UART.
+# usb_serial_map's alchitry entry also matches the product string.
+SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id alchitry 2>/dev/null \
+                 || echo /dev/serial/by-id/usb-Xilinx_Alchitry_Au_V2_000000-if01-port0)
 BAUD_RATE = 2000000
 
 # JOP application file

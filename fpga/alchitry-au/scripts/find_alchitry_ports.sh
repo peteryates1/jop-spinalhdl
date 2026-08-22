@@ -5,9 +5,17 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 run_vivado="$repo_root/scripts/run_vivado.sh"
 hw_tcl="$repo_root/vivado/tcl/check_hw_target.tcl"
 
+# NOTE: --serial now delegates to fpga/scripts/usb_serial_map, the single
+# mechanism for resolving board UARTs (jtag_probe_map is its JTAG counterpart).
+# This script's own matcher keyed on vid:pid 0403:6010 alone, which the CYC5000's
+# Arrow USB Blaster shares -- with both boards attached it could return the
+# Arrow's UART, picked by enumeration order. usb_serial_map's "alchitry" entry
+# matches the product string as well. The --programming mode is unaffected.
 mode="summary"
 case "${1:-}" in
-  --serial) mode="serial" ;;
+  --serial)
+    exec "$repo_root/../scripts/usb_serial_map" --by-id alchitry
+    ;;
   --programming) mode="programming" ;;
   --help|-h)
     cat <<'USAGE'

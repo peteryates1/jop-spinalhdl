@@ -35,7 +35,12 @@ BUSDEV ?=
 # dirtyJtag probe on the host shifts it. With a second dirtyJtag attached it was
 # ttyACM4, not ttyACM1. Re-map before use:
 #   fpga/scripts/usb_serial_map | grep <this probe's serial>
-UART_DEV ?= /dev/ttyACM1
+# Was /dev/ttyACM1, which is whichever Pico enumerated first -- with the Wukong
+# also attached that number has pointed at the WRONG BOARD's Pico. Resolved from
+# this board's Pico serial instead. NOTE the CDC interface (if03) is inferred
+# from that old default, not verified; if the console is silent try if01.
+UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id xc7a100t-pico-1 2>/dev/null \
+              || echo /dev/serial/by-id/usb-Jean_THOMAS_Pico_Dirty_JTAG_E662C876C3506A26-if03)
 UART_BAUD := 2000000
 
 # Bitstream paths

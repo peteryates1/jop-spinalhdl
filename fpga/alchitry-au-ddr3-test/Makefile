@@ -22,7 +22,8 @@ VIVADO_HOME ?= /opt/xilinx/2025.2/Vivado
 RUN_VIVADO := VIVADO_HOME=$(VIVADO_HOME) ../alchitry-au/scripts/run_vivado.sh
 
 # Serial port for UART
-SERIAL_PORT ?= $(shell ../alchitry-au/scripts/find_alchitry_ports.sh --serial 2>/dev/null || echo /dev/ttyUSB1)
+SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id alchitry 2>/dev/null \
+                 || echo /dev/serial/by-id/usb-Xilinx_Alchitry_Au_V2_000000-if01-port0)
 BAUD_RATE = 1000000
 
 # Project paths

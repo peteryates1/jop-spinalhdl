@@ -1,10 +1,48 @@
 #!/usr/bin/env bash
+# Map USB serial ports to boards, resolved at run time.
+#
+# /dev/ttyUSB* and /dev/ttyACM* numbers move on every replug -- one A-E115FB
+# remap inside a single session took it from 1-5/busdev 1:5/ttyUSB1 to
+# 1-9/busdev 1:19/ttyUSB3. Nothing here or in a board Makefile should hardcode
+# them. Companion to jtag_probe_map, which does the same job for JTAG probes.
+#
+# MOST devices are resolved by USB SERIAL NUMBER. Two are not:
+#
+#   The Wukong and the A-E115FB both use a CH340 (1a86:7523) and NEITHER has an
+#   iSerialNumber at all. That is also why mapping them into a VM by serial
+#   fails -- there is nothing to key on. They are separable only because their
+#   iProduct strings happen to differ:
+#
+#     Wukong     "USB Serial"     bcdDevice 0232
+#     A-E115FB   "USB2.0-Serial"  bcdDevice 0254
+#
+#   Established 2026-08-22 by ELIMINATION -- unplug one board, see which device
+#   survives -- not by reading descriptors. Guessing from bcdDevice is
+#   unreliable: "0254 is the newer part and the Wukong is documented as a
+#   CH340N, so 0254 is the Wukong" was wrong, exactly backwards.
+#
+#   This is luck, not design. A third CH340 reporting either string collides on
+#   the same by-id name, and then this stops working; the fix at that point is a
+#   udev rule keyed on the physical port (KERNELS==).
+#
+# Same species as the two USB-Blasters, whose product strings also differ
+# ("USB-Blaster" vs "USB Blaster") -- see jtag_probe_map's header.
+#
+# A SERIAL NUMBER IS NOT ENOUGH ON ITS OWN when one device exposes several
+# ports. Each dirtyJtag Pico presents TWO CDC ACM ports, and a CDC port costs
+# two interfaces (control + data), so the data nodes are if01 and if03 --
+# hence the -0/-1 aliases. Matching a Pico by serial alone would hit both, so
+# every such entry pins an interface number and resolve_alias REFUSES a match
+# that is not unique rather than picking the first.
 set -euo pipefail
 
 usage() {
   cat <<'USAGE'
 Usage:
   ./usb_serial_map [--if01-only] [filter]
+  ./usb_serial_map --tty <alias>     resolve a board alias to /dev/ttyUSBn
+  ./usb_serial_map --by-id <alias>   resolve to the stable /dev/serial/by-id path
+  ./usb_serial_map --boards          list the board registry
 
 Without a filter, lists USB serial ports and their USB identity.
 With a filter, only matching ports are shown.
@@ -17,8 +55,154 @@ Accepted filters:
 
 Options:
   --if01-only   Hide known FT2232 JTAG interface (if00) and keep UART (if01)
+
+Prefer --by-id in Makefiles: it is a path that survives a replug, so it can be
+baked into a recipe, whereas --tty is only correct at the moment it is run.
 USAGE
 }
+
+# --- board registry ------------------------------------------------------
+# alias|vid:pid|product|serial|iface|description
+# Empty product/serial means "do not care". Every entry below was verified
+# against this host; do not add one from a datasheet.
+BOARDS=$(cat <<'EOF'
+wukong|1a86:7523|USB Serial||00|QMTECH Wukong -- on-board CH340N. SINGLE-SYSTEM builds only; the dual builds cannot use it (CH340N at E3/F3 is hardwired) and come out of the Pico instead
+ae115fb|1a86:7523|USB2.0-Serial||00|A-E115FB EP4CE115 + 1GB DDR2 -- the board's own CH340, not its Pico
+wukong-pico-0|1209:c0ca||0B383D0435D957EC|01|Wukong's on-board Pico 2 W, FIRST CDC (if00 control + if01 data) -- the dual build's SDR half
+wukong-pico-1|1209:c0ca||0B383D0435D957EC|03|Wukong's on-board Pico 2 W, SECOND CDC (if02 control + if03 data) -- believed to be the dual build's DDR3 half (PICO_UART1), UNVERIFIED
+i5|0d28:0204||07000001002700424e00000256304750a5a5a5a597969908|01|Colorlight i5 ext board DAPLink CDC (if00 is the HID debug endpoint)
+cyc5000|0403:6010||ARA30135|01|Arrow CYC5000 on-board Arrow USB Blaster -- console is if01, if00 is JTAG
+alchitry|0403:6010|Alchitry Au V2||01|Alchitry Au V2 -- if01 is the UART, if00 is JTAG. The product string is REQUIRED: 0403:6010 is shared with the CYC5000's Arrow blaster, and matching on vid:pid alone picks whichever enumerated first
+xc7a100t-pico-0|1209:c0ca||E662C876C3506A26|01|QMTECH XC7A100T + DB_FPGA V5, its Pico's FIRST CDC (if00 control + if01 data)
+ep4cgx150|10c4:ea60||de4cebf79bd1eb11910b7b54e93fd3f1|00|QMTECH EP4CGX150 + SDR -- its CP2102N. Unlike the CH340 boards this has a real unique serial, so it needs no product-string trick. Runs at 2 Mbaud
+xc7a100t-pico-1|1209:c0ca||E662C876C3506A26|03|QMTECH XC7A100T + DB_FPGA V5, its Pico's SECOND CDC (if02 control + if03 data). The board Makefile uses this one, INFERRED from the old /dev/ttyACM1 default and NOT verified; if the console is silent try -0
+EOF
+)
+
+list_boards() {
+  printf '%-14s %-9s %-16s %-18s %-4s %s\n' ALIAS VID:PID PRODUCT SERIAL IF DESCRIPTION
+  while IFS='|' read -r alias vidpid product serial iface desc; do
+    [[ -n "$alias" ]] || continue
+    printf '%-14s %-9s %-16s %-18s %-4s %s\n' \
+      "$alias" "$vidpid" "${product:--}" "${serial:--}" "${iface:--}" "$desc"
+  done <<< "$BOARDS"
+}
+
+# Resolve an alias to a tty name (ttyUSB3) on stdout; empty if not attached.
+resolve_alias() {
+  local want="$1" want_vidpid="" want_product="" want_serial="" want_iface=""
+  local found=""
+  local alias vidpid product serial iface desc
+
+  while IFS='|' read -r alias vidpid product serial iface desc; do
+    if [[ "$alias" == "$want" ]]; then
+      want_vidpid="$vidpid"; want_product="$product"
+      want_serial="$serial"; want_iface="$iface"
+      found=1
+    fi
+  done <<< "$BOARDS"
+
+  if [[ -z "$found" ]]; then
+    echo "unknown board alias: $want" >&2
+    echo "known aliases:" >&2
+    list_boards >&2
+    return 3
+  fi
+
+  local tty_link tty_name sys_dev usb_dev vid pid dev_product dev_serial
+  local iface_dir dev_iface
+  local -a matches=()
+  for tty_link in /sys/class/tty/ttyUSB* /sys/class/tty/ttyACM*; do
+    [[ -e "$tty_link" ]] || continue
+    tty_name="$(basename "$tty_link")"
+    sys_dev="$(readlink -f "$tty_link/device" 2>/dev/null || true)"
+    [[ -n "$sys_dev" ]] || continue
+
+    usb_dev="$sys_dev"
+    while [[ "$usb_dev" != "/" ]]; do
+      [[ -r "$usb_dev/idVendor" && -r "$usb_dev/idProduct" ]] && break
+      usb_dev="$(dirname "$usb_dev")"
+    done
+    [[ "$usb_dev" != "/" ]] || continue
+
+    vid="$(tr '[:upper:]' '[:lower:]' < "$usb_dev/idVendor")"
+    pid="$(tr '[:upper:]' '[:lower:]' < "$usb_dev/idProduct")"
+    [[ "$vid:$pid" == "${want_vidpid,,}" ]] || continue
+
+    dev_product="$(cat "$usb_dev/product" 2>/dev/null || true)"
+    dev_serial="$(cat "$usb_dev/serial" 2>/dev/null || true)"
+    [[ -z "$want_product" || "$dev_product" == "$want_product" ]] || continue
+    [[ -z "$want_serial"  || "$dev_serial"  == "$want_serial"  ]] || continue
+
+    if [[ -n "$want_iface" ]]; then
+      dev_iface=""
+      iface_dir="$sys_dev"
+      while [[ "$iface_dir" != "/" ]]; do
+        if [[ -r "$iface_dir/bInterfaceNumber" ]]; then
+          dev_iface="$(cat "$iface_dir/bInterfaceNumber")"
+          break
+        fi
+        iface_dir="$(dirname "$iface_dir")"
+      done
+      [[ "$dev_iface" == "$want_iface" ]] || continue
+    fi
+
+    matches+=("$tty_name")
+  done
+
+  if [[ "${#matches[@]}" -eq 0 ]]; then
+    echo "board '$want' is not attached (no matching ttyUSB*/ttyACM*)" >&2
+    return 1
+  fi
+
+  # More than one hit means the registry entry is under-specified -- almost
+  # always a device with several ports (a Pico's two CDCs) matched by serial
+  # alone. Picking the first is how a tool ends up talking to the wrong port,
+  # so refuse and say what to disambiguate with.
+  if [[ "${#matches[@]}" -gt 1 ]]; then
+    echo "alias '$want' is AMBIGUOUS -- it matches ${#matches[@]} ports:" >&2
+    printf '  /dev/%s\n' "${matches[@]}" >&2
+    echo "Pin an interface number in the registry entry for '$want'." >&2
+    return 4
+  fi
+
+  echo "${matches[0]}"
+  return 0
+}
+
+# Map a tty name back to its /dev/serial/by-id path.
+byid_for() {
+  local tty_name="$1" link
+  [[ -d /dev/serial/by-id ]] || { echo "/dev/serial/by-id does not exist" >&2; return 1; }
+  for link in /dev/serial/by-id/*; do
+    [[ -e "$link" ]] || continue
+    if [[ "$(basename "$(readlink -f "$link")")" == "$tty_name" ]]; then
+      echo "$link"
+      return 0
+    fi
+  done
+  echo "no by-id link for $tty_name" >&2
+  return 1
+}
+
+case "${1:-}" in
+  --boards)
+    list_boards
+    exit 0
+    ;;
+  --tty)
+    [[ $# -eq 2 ]] || { usage >&2; exit 1; }
+    tty_name="$(resolve_alias "$2")" || exit $?
+    echo "/dev/$tty_name"
+    exit 0
+    ;;
+  --by-id)
+    [[ $# -eq 2 ]] || { usage >&2; exit 1; }
+    tty_name="$(resolve_alias "$2")" || exit $?
+    byid_for "$tty_name"
+    exit $?
+    ;;
+esac
 
 detect_filter() {
   local input="$1"
