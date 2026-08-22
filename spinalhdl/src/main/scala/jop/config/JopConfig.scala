@@ -1038,7 +1038,7 @@ object JopConfig {
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 64 * 1024),
         bytecodes = base.system.coreConfig.bytecodes),
-      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
+      devices = uartOnly(base.system))))
   }
 
   // ========================================================================
@@ -1098,11 +1098,24 @@ object JopConfig {
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart,
         devicePart = Some("CH340N"), params = Map("baudRate" -> 1000000))))))
 
+  /** Just the UART entry from a system's device map, Ethernet/SD dropped.
+    *
+    * Rebuilding the map as `Map("uart" -> DeviceInstance(Uart, CH340N))` looks
+    * equivalent and is not: it silently discards the PARAMS on the entry it
+    * replaces. `wukongFull` sets `baudRate -> 1000000` there, deliberately --
+    * the on-board CH340N drops characters at 2 Mbaud, and a GcPauseTest run
+    * came back with "generatlona disabled" and hSize=6696246 for a real
+    * 66562496, i.e. text still readable while numbers were silently wrong.
+    * Every preset that rebuilt the map inherited the 2 Mbaud default instead
+    * and lost that protection without saying so. Filter, do not rebuild. */
+  private def uartOnly(sys: JopSystem): Map[String, DeviceInstance] =
+    sys.devices.filter { case (k, _) => k == "uart" }
+
   /** Wukong DDR3 — all compute units, UART only (no Ethernet/SD) */
   def wukongDdr3AllCu = {
     val base = wukongFull
     base.copy(systems = Seq(base.system.copy(
-      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
+      devices = uartOnly(base.system))))
   }
 
   /** Wukong DDR3 — full featured SMP (with Ethernet + SD) */
@@ -1117,7 +1130,7 @@ object JopConfig {
     base.copy(systems = Seq(base.system.copy(
       name = s"smp$n",
       cpuCnt = n,
-      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"))))))
+      devices = uartOnly(base.system))))
   }
 
   /**

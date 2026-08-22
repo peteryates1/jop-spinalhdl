@@ -34,7 +34,14 @@ JOP_FILE ?= $(REPO_ROOT)/java/apps/Smallest/HelloWorld.jop
 # have a serial, so this one resolves the ordinary way.
 DUAL_SDR_UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id wukong-pico-0 2>/dev/null \
                        || echo /dev/serial/by-id/usb-Jean_THOMAS_Pico_Dirty_JTAG_0B383D0435D957EC-if01)
-DUAL_SDR_UART_BAUD := 115200
+# Both dual halves run at 2 Mbaud -- see JopConfig.wukongDualIndependent, where
+# PICO_UART1 and J11_UART both set baudRate 2000000. This said 115200, which no
+# longer matches the preset.
+DUAL_UART_BAUD := 2000000
+DUAL_SDR_UART_BAUD := $(DUAL_UART_BAUD)
+# DDR3 half -> PICO_UART1 -> the Pico's SECOND CDC (if03).
+DUAL_DDR3_UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id wukong-pico-1 2>/dev/null \
+                        || echo /dev/serial/by-id/usb-Jean_THOMAS_Pico_Dirty_JTAG_0B383D0435D957EC-if03)
 
 .PHONY: generate create-ip create-project build program program-flash monitor all clean
 .PHONY: ddr3-generate ddr3-create-ip ddr3-create-project ddr3-build ddr3-program ddr3-monitor ddr3-download ddr3-reset ddr3-redownload
@@ -130,13 +137,14 @@ dual-build:
 dual-program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(DUAL_BITSTREAM)
 
-# SUSPECT: this watches UART_DEV, i.e. the CH340 -- but the dual build routes
-# its DDR3 half to PICO_UART1, not the CH340 (see the UART_DEV comment above).
-# It is probably meant to be `usb_serial_map --by-id wukong-pico-1`, the Pico's
-# second CDC, the way dual-sdr-monitor uses wukong-pico-0. Left as-is because
-# which CDC carries which half is unverified; check before trusting this target.
+# The dual build's DDR3 half. VERIFIED on hardware 2026-08-22: both halves come
+# out of the Pico's two CDCs at 2 Mbaud, and the CH340 carries nothing at all.
+# The two are told apart by their GC card size, which is derived from memory
+# size -- 512-word cards on if03 (DDR3, PICO_UART1) and 32-word on if01 (SDR,
+# J11_UART). This target used to watch UART_DEV (the CH340) at UART_BAUD
+# (1 Mbaud), so it was wrong in both the port and the rate.
 dual-monitor:
-	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
+	$(REPO_ROOT)/fpga/scripts/monitor.py $(DUAL_DDR3_UART_DEV) $(DUAL_UART_BAUD)
 
 # SDR cluster: UART via Pico ttyACM0 at 115200 baud
 dual-sdr-monitor:
