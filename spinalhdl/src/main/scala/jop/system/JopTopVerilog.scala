@@ -37,18 +37,22 @@ object JopTopVerilog {
     // what it says. Switches are order-independent; positionals are not.
     val positional = args.filterNot(a =>
       a.equalsIgnoreCase("perf") || a.toLowerCase.startsWith("uart=") ||
-      a.toLowerCase.startsWith("mcache="))
+      a.toLowerCase.startsWith("mcache=") || a.toLowerCase.startsWith("l2sets="))
     val base = resolveBase(name, positional)
     val withPerf = if (args.exists(_.equalsIgnoreCase("perf"))) PerfCountersOverride(base) else base
     val withUart = args.find(_.toLowerCase.startsWith("uart="))
       .map(a => UartPartOverride(withPerf, a.substring(5)))
       .getOrElse(withPerf)
-    args.find(_.toLowerCase.startsWith("mcache="))
+    val withMCache = args.find(_.toLowerCase.startsWith("mcache="))
       .map(a => MCacheOverride(withUart, a.substring(7)))
       .getOrElse(withUart)
+    args.find(_.toLowerCase.startsWith("l2sets="))
+      .map(a => L2SetsOverride(withMCache, a.substring(7)))
+      .getOrElse(withMCache)
   }
 
   private def resolveBase(name: String, args: Array[String]): JopConfig = name match {
+    case "wukongAuMatch"       => JopConfig.wukongAuMatch
     case "ep4cgx150Serial"     => JopConfig.ep4cgx150Serial
     case "ep4cgx150Bram"       => JopConfig.ep4cgx150Bram
     case "ep4cgx150BramGc"     => JopConfig.ep4cgx150BramGc

@@ -87,23 +87,24 @@ audit, and has moved down accordingly.
 9. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
 10. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
 11. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-12. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
-13. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-14. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-15. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-16. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-17. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-18. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-19. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-20. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-21. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
-22. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-23. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-24. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-25. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-26. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
-27. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
-28. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+12. **[#53](#item-53)** — **REGRESSION**: the 8 KB method cache default broke 4-core Wukong SMP fit — 850 LUTs/core, 63,697 of 63,400
+13. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
+14. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+15. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+16. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+17. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+18. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+19. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+20. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+21. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+22. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
+23. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+24. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+25. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+26. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+27. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
+28. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
+29. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
 
 ## 2. All items — summary
 
@@ -199,6 +200,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - ~~**[28](#item-28)**~~ — `DoAll` dies at `CollectionTest` on the Wukong — FIXED
 - ~~**[22](#item-22)**~~ — Five `_sw` handlers exist but do not work — RESOLVED. It was two
 - **[52](#item-52)** — The Java tools duplicate the hardware config by hand — three stale copies found while documenting item 51
+- **[53](#item-53)** — The 8 KB method cache default broke 4-core Wukong SMP fit — a regression nobody hit because SMP was not rebuilt
 
 ## 3. Item detail and journals
 
@@ -4454,7 +4456,9 @@ L2. It bounds what the current implementation contributes; it does NOT bound
 what a better one could, and the gap to ideal memory is still the 34-55 % of
 item 38.
 
-**Sharpened 2026-08-22 on the Alchitry Au: the L2's SIZE buys nothing.** The
+**Sharpened 2026-08-22 on the Alchitry Au: the L2's size buys nothing ON THIS
+BENCHMARK.** (Read the `ScaleL2` section below before acting on that — on
+data-heavy and multicore work the size is worth up to 33 %.) The
 3-5 % above is existence-vs-absence, measured across two boards. The Au allows
 the cleaner test — one board, one binary, one parameter (`l2SetCount`) — because
 the XC7A35T forced the question: the preset does not fit the part with the
@@ -4509,30 +4513,115 @@ a sequential burst whose cost is the 3-cycle hit path (item 39), not capacity,
 and a burst does not care how many sets sit behind it.
 
 **The cost side is what makes this matter.** At 512 sets `LruCacheCore` is
-**12,450 LUTs — more than twice the entire JOP core (5,378)**, from a
-hierarchical utilization report on the synthesis checkpoint:
+**12,348 LUTs — more than twice the entire JOP core (5,576)** — measured
+post-route on `wukongAuMatch`, a Wukong preset built to mirror `auSerial` field
+for field so the two arms differ only in the board:
 
 | block | LUTs | share |
 |---|---|---|
-| `lruCacheCore_1` | 12,450 | 68 % |
-| — own logic | 5,735 | |
-| — `rspFifo` | 3,966 | |
-| — `orderFifo` | 2,440 | |
-| `jopCluster_1` (whole CPU) | 5,378 | 29 % |
+| `lruCacheCore_1` | 12,348 | 54 % |
+| `jopCluster_1` (whole CPU) | 5,576 | 24 % |
+| `migBlackBox` (Xilinx MIG) | 4,385 | 19 % |
 
-And the cost is sharply **non-linear**: 64->256 sets costs 3,764 LUTs,
-256->512 another 5,409. Most of the L2's logic is in its last doubling.
+The cost is sharply **non-linear**: 64->256 sets costs 3,764 LUTs, 256->512
+another 5,409. Most of the L2's logic is in its last doubling, and the same
+~9,500-LUT step appears at every core count (2-core 34,335 -> 43,884; 4-core
+63,697 -> 73,252).
 
-`rspFifo` at 3,966 LUTs against **138 flops**, and `orderFifo` at 2,440 against
-**8**, is the `readAsync`-becomes-distributed-RAM signature already written up
-in [../artix7-distram-optimization.md](../artix7-distram-optimization.md) for
-the stack cache. Those two FIFOs alone are 6,406 LUTs. That is the open lever,
-not capacity.
+**What scales is NOT the FIFOs.** An earlier revision of this item blamed
+`rspFifo` (3,966 LUTs) and `orderFifo` (2,440) and called it the
+`readAsync`-becomes-distributed-RAM signature from
+[../analysis/artix7-distram-optimization.md](../analysis/artix7-distram-optimization.md).
+That was wrong: `orderFifo` is **2 deep x 2 bits** (`mshrIdxWidth =
+log2Up(mshrCount) max 1`) in every build and cannot be either of those numbers.
+Those figures are Vivado's hierarchical report charging merged parent logic to a
+child instance, and they move with `setCount` — which a fixed-size FIFO cannot.
+
+The real driver is in `LruCacheCore.scala:136,138`:
+
+```scala
+val validFlat = Vec(Reg(Bool()) init (False), setCount * wayCount)
+val lruArray  = if (plruBits > 0) Vec(Reg(Bits(plruBits bits)) init (0), setCount) else null
+```
+
+**Register arrays indexed by set**, while the tags, data and dirty bits are
+proper `Mem`/`readSync` in BRAM — which is exactly why RAMB36 stays at 10 while
+LUTs and flops explode. The arithmetic confirms it: 64->512 sets predicts
+(512-64) x (4 + 3) = 3,136 more flops, and 3,326 were measured, 94 % accounted
+for. Indexing 512 registers needs a wide read mux and a 512-way write decoder
+with per-register enables; that is where the LUTs go.
+
+**So the open lever is moving those into memory**, not the FIFOs. `lruArray` is
+the easy half — PLRU needs no reset, since any initial value is a legal LRU
+state, so it can become a `Mem` outright. `validFlat` needs clear-on-reset, so
+it would have to fold into `tagMem` with an invalidate FSM. That matters most
+at high core counts: see the SMP section below, where a 4-core build cannot have
+a 512-set L2 at all.
 
 **Settled: do NOT remove the L2.** The question was whether a board this tight
 should drop it entirely. It should not — it is worth 25-49 % for ~3,300 LUTs at
 64 sets, which is the best throughput-per-LUT in the design. A bypass path
 would be the wrong thing to build.
+
+#### `ScaleL2` — the L2's size DOES matter, on data-heavy and multicore work
+
+Everything above is `JbeBench` (Kfl/UdpIp/Lift), which is **instruction-fetch
+bound with a small data working set** and therefore structurally blind to the
+L2 — which is why 4 KB and 32 KB came out bit-identical on it. Acting on that
+alone would have been a mistake, and an earlier revision of this item proposed
+exactly that (lower the default to 64 sets everywhere).
+
+`java/apps/JbeBench/src/jbe/ScaleL2.java` (new, 2026-08-22) sweeps the per-core
+private working set across the L2's capacity, holding total work constant. It
+reuses `Scale`'s multicore harness — cores parked on `IO_CPU_ID`, released by
+`IO_SIGNAL` — with a phase barrier so every core is on the same size while it is
+timed. It exists because the obvious probe, "run Kfl on N cores", is blocked:
+every JBE workload is built on static state (Kfl's `BBSys` alone has 52
+statics), so N cores mutate one state machine. `Scale`'s own header records that
+the first attempt at that never terminated on 4 cores.
+
+**2 cores, same design, only `l2SetCount` differs** (aggregate kacc/s):
+
+| per core | aggregate set | 512 sets (32 KB) | 64 sets (4 KB) | ratio |
+|---|---|---|---|---|
+| 1 KB | 2 KB | 1,199 | 1,196 | 1.00x |
+| 4 KB | 8 KB | **1,128** | **860** | **1.31x** |
+| 16 KB | 32 KB | **1,146** | **864** | **1.33x** |
+| 64 KB | 128 KB | 940 | 798 | 1.18x |
+
+Identical where both caches hold the aggregate set, and the large cache ahead by
+a third once it does not. Note the benefit **decays rather than vanishing** past
+capacity — at 128 KB, four times the larger cache, 32 KB is still 18 % ahead,
+because a strided walk keeps catching more hits in a bigger cache.
+
+**What counts is the AGGREGATE working set, not the per-core one.** At 4 cores
+with a 4 KB L2 the cliff is far worse — 1,474 kacc/s at 1 KB/core (4 KB
+aggregate, exactly the cache) collapsing to **752** at every larger size, a 96 %
+drop. So N cores need roughly N x the L2 to keep the same per-core residency.
+
+**Scaling is sub-linear even entirely inside the cache**: 661 (1 core) ->
+1,199 (2 cores, 1.81x) -> 1,474 (4 cores, 2.23x). Most of the 2x is recovered
+going to two cores and almost nothing after, so the shared path saturates
+between two and four cores, well before DRAM bandwidth binds. These builds run
+`l2MshrCount = 1`, which serialises misses — see items 40/42.
+
+**Conclusion: the 512-set default stays.** It is worth up to 33 % on data-heavy
+multicore work and costs nothing on real code. The Au keeps `l2SetCount = 64`
+because it cannot fit otherwise, and its real-code throughput is unaffected — but
+that is a board-specific concession, not a new default.
+
+**And the core-count-dependent default runs the WRONG way to be useful.** More
+cores want more L2 (aggregate set), but more cores leave less LUT budget, and
+the L2 is what blocks the fit. On the XC7A100T a 4-core build at 512 sets needs
+~69,850 LUTs against 63,400 — **it cannot be built at all**. The configuration
+that most wants a large L2 is the one that can least afford it, which is what
+makes the `validFlat`/`lruArray` fabric-register cost above the real lever.
+
+**Caveat on `ScaleL2`**: it is a data probe, not an application. `docs/` is
+emphatic that JbeScale-derived numbers must be checked against DoApp before
+being acted on, and the same applies here. It answers "does L2 capacity matter
+to the memory system under N cores", not "how much faster is real code" — for
+which the answer above is still "not at all".
 
 **`l2SetCount = 1` does not elaborate**: `Vec address width mismatch —
 lruArray : Vec of 1 elements, Address width : 1`, because `log2Up(1) = 0` while
@@ -5201,6 +5290,52 @@ lists several other pairs with "NO LINK" against them (`METHOD_SIZE_BITS` vs
 general checker would pay for itself well beyond the method cache.
 
 
+<a id="item-53"></a>
+
+### Item 53 — REGRESSION: the 8 KB method cache default broke 4-core Wukong SMP fit
+
+**Found 2026-08-22 while measuring the L2 under SMP, not by anyone building
+SMP** — which is the point. Memory records 4/6/8-core Wukong DDR3 SMP validated
+on **2026-08-16**. The 8 KB/64-block method cache became the default on
+**2026-08-20** (item 51). Nothing rebuilt an SMP bitstream in between, so the
+regression sat undetected for two days.
+
+`wukongSmp(4)` on the XC7A100T (63,400 LUTs), synthesis totals:
+
+| L2 | method cache | LUTs | fits? |
+|---|---|---|---|
+| 512 sets (default) | 8 KB (default) | 73,252 (115.5 %) | no |
+| 64 sets | 8 KB | 63,697 (100.5 %) | **no, by 297** |
+| 64 sets | 2 KB (old) | **60,297 (95.1 %)** | yes — built, WNS +0.027 ns |
+
+**The method cache costs 850 LUTs per core** (63,697 -> 60,297 over four cores),
+matching the 869/core measured independently on the Alchitry Au. Item 51 recorded
+the method cache change as costing "9-31 % of block RAM" and closing timing on
+four boards — all true, and all single-core. Nobody multiplied the LUT cost by
+the core count.
+
+Note the two levers are independent and BOTH are needed at four cores: dropping
+only the L2 still leaves it 297 LUTs over. And the L2 cannot simply be dropped,
+because item 50 measures it as worth up to 33 % on data-heavy multicore work.
+
+**What to decide.** Options, none yet taken:
+
+1. **Per-core-count method cache**, the same shape as `l2SetCount` — smaller
+   `jpcWidth`/`blockBits` above some core count. Cheap, but item 51 measured the
+   8 KB cache as worth +35 % Kfl, so it trades a large single-core win for fit.
+2. **Make `LruCacheCore` cheaper** so the L2 stops dominating — the
+   `validFlat`/`lruArray` fabric-register arrays in item 50. This is the only
+   option that makes a 4-core build with a full L2 possible at all; today it
+   needs ~69,850 LUTs and cannot be built.
+3. **Accept 2 cores as the Wukong DDR3 SMP ceiling** at current defaults, and
+   say so, rather than leaving presets that do not build.
+
+**Nothing warns you.** `wukongSmp(n)` elaborates and synthesises happily; the
+failure is a Vivado DRC at place time, minutes in. An elaboration-time LUT
+estimate is not available, but the `--boards`-style honesty of just documenting
+the ceiling costs nothing.
+
+
 ## 4. Two workstreams, both largely done
 
 **GC (Stage 3)** — generational GC is on by default and hardware-validated on
@@ -5568,6 +5703,21 @@ and `JbeBench` running). Two things about it are not like the other boards:
   the CYC5000's Arrow blaster, so it is resolved by product string as well:
   `usb_serial_map --by-id alchitry`. Reprogram before each download, or use
   `download.py -r` to reset the core over UART without touching JTAG.
+
+**Colorlight i9+ v6.1 (XC7A50T) — evaluated on paper 2026-08-22, not ordered.**
+32,600 LUTs, between the Au's 20,800 and the XC7A100T's 63,400, so it would say
+where the fit line falls. Its memory is **8 MB of 32-bit-wide SDRAM**
+(M12L64322A) — the same width as the Colorlight i5, so `BmbSdramCtrlWide` and
+`SdramCtrlNoCke` already cover it (CKE is tied VCC, CS tied GND). Two things to
+check before building anything: **DQM0-3 are tied to GND**, so there is no byte
+masking and every write is a full 32 bits; and the board itself has **no UART**
+— to be solved by a base board carrying an RP2040-stamp for programming and
+serial. Board doc: `/srv/git/Colorlight-FPGA-Projects/colorlight_i9plus_v6.1.md`.
+
+Note it is an **SDR** board, so it is not comparable with the Au or the Wukong
+DDR3 builds — `createSdr` has no L2 at all. The like-for-like comparison would
+be the Artix-7 SDR path (`wukongSdrFull` / `JopSdramWukongTop`), not a DDR3
+preset with its part-specific MIG.
 
 The **Alchitry Io V2** daughter board (24 LEDs, 24 DIP switches, 5 buttons,
 4-digit seven-segment) is fully pin-mapped in `Board.scala` and wired into

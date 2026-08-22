@@ -218,6 +218,24 @@ object PerfCountersOverride {
   * both to ~0.1-0.6 %. `12/5` is that point; `12/6` goes further at twice the
   * comparators. JopCoreConfig validates the combination.
   */
+/** Build-time override for the DRAM L2 size, so a sweep needs no preset edit:
+  * `JopTopVerilog auSerial l2sets=256`. Sets must be a power of two.
+  *
+  * 1 does NOT elaborate -- log2Up(1) = 0 against a 1-bit index gives
+  * "Vec address width mismatch: lruArray". 2 is the practical floor. */
+object L2SetsOverride {
+  def apply(c: JopConfig, spec: String): JopConfig = {
+    val n = spec.toInt
+    require(n >= 2 && (n & (n - 1)) == 0,
+      s"l2sets=$spec must be a power of two and at least 2 (1 does not elaborate)")
+    c.copy(systems = c.systems.map { sys =>
+      def on(cc: JopCoreConfig) = cc.copy(memConfig = cc.memConfig.copy(l2SetCount = n))
+      sys.copy(coreConfig = on(sys.coreConfig),
+               perCoreConfigs = sys.perCoreConfigs.map(_.map(on)))
+    })
+  }
+}
+
 object MCacheOverride {
   def apply(c: JopConfig, spec: String): JopConfig = {
     val parts = spec.split("/")
@@ -1050,6 +1068,35 @@ object JopConfig {
         "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))),
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
         useDspMul = true, bytecodes = Map("*" -> "hw")))))
+
+  /** Wukong DDR3, configured to MATCH `auSerial` field for field.
+    *
+    * Exists to compare the Alchitry Au (XC7A35T) against the same design on a
+    * bigger part of the same family (XC7A100T), and to route L2 sizes the Au
+    * cannot fit. `wukongFull` is NOT usable for that: it is all four CUs
+    * (`"*" -> "hw"`), DSP multiply, a 16 KB card table, plus Ethernet and SD.
+    * An A/B whose arms differ in that much measures nothing -- the same trap as
+    * the dual-system halves that once differed in CORES.
+    *
+    * Everything here is auSerial's: ICU only, no DSP multiply, no card table,
+    * UART only, 100 MHz DDR3. The differences that REMAIN are the board itself
+    * (assembly, DDR3 device, UART part) and are unavoidable.
+    *
+    * Sweep the L2 with the switch rather than editing this:
+    *   sbt "runMain jop.system.JopTopVerilog wukongAuMatch l2sets=512"
+    */
+  def wukongAuMatch = JopConfig(
+    assembly = SystemAssembly.wukong,
+    systems = Seq(JopSystem(
+      name = "au-match",
+      memory = "ddr3",
+      bootMode = BootMode.Serial,
+      clkFreq = 100 MHz,
+      coreConfig = JopCoreConfig(
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw"),
+        memConfig = JopMemoryConfig(l2SetCount = 64)),
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart,
+        devicePart = Some("CH340N"), params = Map("baudRate" -> 1000000))))))
 
   /** Wukong DDR3 — all compute units, UART only (no Ethernet/SD) */
   def wukongDdr3AllCu = {
