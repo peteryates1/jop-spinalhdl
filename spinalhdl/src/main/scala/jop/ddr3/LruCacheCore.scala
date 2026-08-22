@@ -133,9 +133,34 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   val dirtyMem = Mem(Bits(wayCount * dataBytes bits), setCount)
 
   // --- Register Arrays ---
+  //
+  // validFlat is still fabric flip-flops because it must read as False out of
+  // reset and a Mem does not reset. Folding it into tagMem with an invalidate
+  // FSM is the remaining half of this work -- see current-status item 50.
   val validFlat = Vec(Reg(Bool()) init (False), setCount * wayCount)
   val plruBits = if (wayCount == 4) 3 else if (wayCount == 2) 1 else 0
-  val lruArray = if (plruBits > 0) Vec(Reg(Bits(plruBits bits)) init (0), setCount) else null
+
+  /**
+   * PLRU state, in BRAM rather than fabric registers.
+   *
+   * It used to be `Vec(Reg(Bits(plruBits bits)), setCount)`, which cost
+   * setCount x plruBits flip-flops AND -- far more expensive -- a set-wide read
+   * mux plus a setCount-way write decoder with per-register enables. Together
+   * with validFlat that was most of why 64 -> 512 sets cost ~9,500 LUTs while
+   * BRAM stayed flat at 10 RAMB36: tags, data and dirty bits were in Mem, these
+   * two were not.
+   *
+   * Safe to move because PLRU needs NO RESET: every bit pattern is a legal tree
+   * state, so an uninitialised Mem merely starts with an arbitrary victim
+   * order. That is what makes this the easy half; validFlat has real reset
+   * semantics and cannot follow the same route.
+   *
+   * The read is now synchronous, so it arrives in TAG_COMPARE alongside
+   * tagReadVal -- which is exactly where the victim is chosen -- and is
+   * registered into compLru for the CHECK_HIT/WRITE_HIT updates that follow a
+   * cycle or two later.
+   */
+  val lruMem = if (plruBits > 0) Mem(Bits(plruBits bits), setCount) else null
 
   // Valid array accessors
   private def validIdx(setIdx: UInt, way: Int): UInt = {
@@ -191,6 +216,11 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   val compReqWriteDirtyMask = Reg(Bits(dataBytes bits)) init (0)
   val compWayHits = Vec(Reg(Bool()) init (False), wayCount)
   val compWayDirtys = Vec(Reg(Bits(dataBytes bits)) init (0), wayCount)
+
+  /** PLRU word for the set under comparison, captured in TAG_COMPARE so the
+    * updates in CHECK_HIT and WRITE_HIT do not need the Mem output to still be
+    * valid by then. */
+  val compLru = if (plruBits > 0) Reg(Bits(plruBits bits)) init (0) else null
 
   // Write-hit pipeline registers (break tag comparison → data-write path)
   val pendingHitWay = Reg(UInt(wayBits bits)) init (0)
@@ -294,6 +324,8 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   val dataReadVals = dataMems.map(_.readSync(bramReadAddr.resize(indexWidth max 1)))
   val tagReadVal = tagMem.readSync(bramReadAddr.resize(indexWidth max 1))
   val dirtyReadVal = dirtyMem.readSync(bramReadAddr.resize(indexWidth max 1))
+  val lruReadVal = if (plruBits > 0) lruMem.readSync(bramReadAddr.resize(indexWidth max 1))
+                   else null
 
   // --- BRAM Write Ports (single port per BRAM, muxed by state) ---
   // Each BRAM gets ONE write port with address/data/enable muxed across states.
@@ -322,6 +354,17 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   tagWriteEnable := False
   tagWriteData := B(0, wayCount * tagWidth bits)
   tagMem.write(bramWriteAddr, tagWriteData, enable = tagWriteEnable)
+
+  // PLRU BRAM write signals. Same single-muxed-port shape as the others; the
+  // address follows bramWriteAddr so an RSP_FILL install and a lookup update
+  // cannot disagree about which set they are touching.
+  val lruWriteEnable = Bool()
+  val lruWriteData = if (plruBits > 0) Bits(plruBits bits) else null
+  lruWriteEnable := False
+  if (plruBits > 0) {
+    lruWriteData := B(0, plruBits bits)
+    lruMem.write(bramWriteAddr, lruWriteData, enable = lruWriteEnable)
+  }
 
   // Dirty BRAM write signals
   val dirtyWriteEnable = Bool()
@@ -499,7 +542,8 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
         when(!wayValids(w)) { firstInvalidWay := U(w, wayBits bits) }
       }
       if (plruBits > 0) {
-        victimWay := Mux(hasInvalid, firstInvalidWay, plruVictim(lruArray(pendingIndex)))
+        compLru := lruReadVal          // capture for the CHECK_HIT/WRITE_HIT updates
+        victimWay := Mux(hasInvalid, firstInvalidWay, plruVictim(lruReadVal))
       } else {
         victimWay := firstInvalidWay
       }
@@ -579,7 +623,8 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
           when(rspReady) {
             pushRsp(compHitData, False, pendingReq.idValue)
             if (plruBits > 0) {
-              lruArray(pendingIndex) := plruUpdate(lruArray(pendingIndex), compHitWay)
+              lruWriteData := plruUpdate(compLru, compHitWay)
+              lruWriteEnable := True
             }
             state := LruCacheCoreState.IDLE
           }
@@ -595,7 +640,8 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
         // until the data comes back; a full-line write installs it directly in
         // ISSUE_REFILL and needs none.
         if (plruBits > 0) {
-          lruArray(pendingIndex) := plruUpdate(lruArray(pendingIndex), compVictimWay)
+          lruWriteData := plruUpdate(compLru, compVictimWay)
+          lruWriteEnable := True
         }
         when(needRefill) {
           pendingMshrId := mshrAllocId
@@ -635,7 +681,8 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
         dirtyWriteData := pendingNewDirtyWord
 
         if (plruBits > 0) {
-          lruArray(pendingIndex) := plruUpdate(lruArray(pendingIndex), pendingHitWay)
+          lruWriteData := plruUpdate(compLru, pendingHitWay)
+          lruWriteEnable := True
         }
 
         pushRsp(B(0, dataWidth bits), False, pendingReq.idValue)
