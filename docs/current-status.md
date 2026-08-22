@@ -49,6 +49,7 @@ Detail lives in:
 - [bugs-and-issues.md](bugs-and-issues.md) — the defects fixed along the way
 - [gc/copy-phase-redesign.md](gc/copy-phase-redesign.md) — the remaining 79-82% of the minor pause
 - [gc/major-gc-evacuation.md](gc/major-gc-evacuation.md) — design note: drop the address sort from the major GC
+- [architecture/tuning-guide.md](architecture/tuning-guide.md) — **the configuration levers**: what each of `blockBits`, `jpcWidth`, `l2SetCount`, `l2MshrCount` and `cpuCnt` buys, what each costs, which resource binds, and a list of the plausible-sounding conclusions that measurement disproved
 - [architecture/software-cost-model.md](architecture/software-cost-model.md) — what operations cost on JOP, measured (method call ~142 cycles, static read ~22, microcode imul ~775)
 
 ---

@@ -156,7 +156,7 @@ Unified configuration for a single JOP core. Defined in `jop/config/JopCoreConfi
 | `instrWidth` | Int | 10 | Microcode instruction width |
 | `jpcWidth` | Int | **13** | Java PC width (**8KB** method cache). Was 11 (2KB) until 2026-08-20; raising it is worth **+35 % Kfl** — see current-status item 51 |
 | `ramWidth` | Int | 8 | Stack RAM address width (256 entries) |
-| `blockBits` | Int | **6** | Method cache block bits (**64 blocks** x 32 words). Block COUNT caps how many methods are resident, and is the parameter that mattered |
+| `blockBits` | Int | **6** | Method cache block bits (**64 blocks** x 32 words). Block COUNT caps how many methods are resident, and is the parameter that mattered. Costs LUTs (a comparator per block); `jpcWidth` costs only BRAM — see [tuning-guide.md](tuning-guide.md) |
 
 ### Memory and I/O
 

@@ -71,7 +71,22 @@ object MethodCacheSweepSim extends App {
     // method complexity low wants many small blocks rather than a big cache.
     (12, 7),   // 4 KB, 128 x  8w
     (12, 8),   // 4 KB, 256 x  4w
-    (13, 8)    // 8 KB, 256 x  8w
+    (13, 8),   // 8 KB, 256 x  8w
+    // DEPTH AT A FIXED BLOCK COUNT — the LUT-bound regime. On a part where the
+    // comparator array is what does not fit (a 4-core XC7A100T closes at 16
+    // blocks and violates timing at 32), block count cannot be raised and the
+    // only remaining knob is slot DEPTH. It is nearly free: blockBits is
+    // unchanged so the logic is identical (57,329 LUTs at 14/4 against 57,297
+    // at 11/4, a difference of 32), the extra capacity is BRAM which such
+    // builds have spare, and fill time does not change because the fill loop
+    // terminates on bcFillLen -- the METHOD length -- not on the block size.
+    //
+    // What it buys is namespace: a method spanning k blocks consumes k of the
+    // tag-carrying slots, so deeper slots mean fewer slots per method. DoAll's
+    // longest method is 1368 B = 11 slots at 128 B, 2 slots at 1 KB.
+    (13, 4),   // 8 KB,  16 x 128w
+    (14, 4),   // 16 KB, 16 x 256w — the 4-core candidate
+    (15, 4)    // 32 KB, 16 x 512w — any legal method (<=4 KB) in <=2 slots
   )
   val geometries = only match {
     case Some(sel) => allGeometries.filter { case (j, b) => sel.contains(s"$j/$b") }
