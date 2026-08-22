@@ -42,7 +42,25 @@ class CacheMigResetSim extends AnyFunSuite {
   val LINE_BYTES = DATA_W / 8
   val WORD_SHIFT = log2Up(LINE_BYTES)
   val MSHRS = 4
-  val LATENCY = 20                      // MIG read latency, cycles
+  /**
+   * MIG read latency in cycles. MUST outlast LruCacheCore's post-reset INIT
+   * window, which is `setCount` cycles (SETS = 16 here).
+   *
+   * INIT clears the valid-bit Mem before the cache serves anything, and while
+   * it runs the cache consumes no responses. A stale beat that arrives inside
+   * that window therefore finds no consumer and is dropped -- which prevents
+   * exactly the corruption the "released EARLY" test below exists to
+   * demonstrate. Measured 2026-08-22: at LATENCY = 20 (so LATENCY/2 = 10
+   * cycles still outstanding when the reset is pulsed) the 16-cycle INIT covers
+   * it and no corruption occurs; at 100 (50 outstanding) it does not, and the
+   * test sees corruption again.
+   *
+   * That masking is a genuine safety improvement in real builds -- setCount is
+   * 512 there against a MIG latency of tens of cycles, so INIT comfortably
+   * outlasts anything in flight -- but it is incidental rather than designed,
+   * and it must not be allowed to hide the reset-hold property under test.
+   */
+  val LATENCY = 100
 
   /** Wrap the harness in a clock domain whose reset the testbench drives. */
   class ResettableDut extends Component {

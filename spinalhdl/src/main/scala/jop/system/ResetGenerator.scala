@@ -39,7 +39,20 @@ object ResetGenerator {
     * ~55 us at 75 MHz (DDR2), orders of magnitude past either controller's read
     * latency. Releasing early would drop a stale beat into a fresh FIFO on a
     * path that matches responses BY POSITION -- see CacheMigResetSim, which
-    * fails deliberately when the hold is shortened. */
+    * fails deliberately when the hold is shortened.
+    *
+    * SECOND LAYER since 2026-08-22, and it does NOT replace this one.
+    * LruCacheCore now clears its valid-bit Mem in an INIT state before serving
+    * anything, so for `setCount` cycles after reset it consumes no responses
+    * and a stale pulsed beat arriving in that window is simply dropped. At the
+    * shipped 512 sets that is 512 cycles, well past either controller's read
+    * latency, so a short hold would often now be survivable.
+    *
+    * "Often" is the problem. The INIT window scales with setCount, not with
+    * memory latency, so the margin is accidental: a build with a small L2, or a
+    * slower controller, loses it silently. This hold is still the guarantee.
+    * The interaction is documented in CacheMigResetSim, whose LATENCY had to be
+    * raised above the INIT window for its negative test to remain meaningful. */
   val DramResetCycles = 4096
 
   /** Hold a reset for `cycles` after each `resetRequest` pulse. Call inside a
