@@ -540,8 +540,8 @@ Used by WCET analysis and simulator for cycle-accurate timing.
 
 | Constant | File | Value | Purpose |
 |----------|------|-------|---------|
-| `CACHE_BLOCKS` | `JOPConfig.java` | 16 | = 2^blockBits — **STALE, hardware is 64** |
-| `CACHE_SIZE_WORDS` | `JOPConfig.java` | 1024 | Cache size in words — **STALE, hardware is 2048** |
+| `CACHE_BLOCKS` | `JOPConfig.java` | 64 | = 2^blockBits |
+| `CACHE_SIZE_WORDS` | `JOPConfig.java` | 2048 | Cache size in words |
 | `OBJECT_CACHE_ASSOCIATIVITY` | `JOPConfig.java` | 16 | Object cache ways |
 | `OBJECT_CACHE_WORDS_PER_LINE` | `JOPConfig.java` | 16 | Words per line |
 | `OBJECT_CACHE_HIT_CYCLES` | `JOPConfig.java` | 5 | Hit latency |
@@ -557,15 +557,26 @@ Used by WCET analysis and simulator for cycle-accurate timing.
 - `CACHE_BLOCKS ≠ 2^blockBits`: WCET analysis computes wrong miss penalty.
 - `CACHE_SIZE_WORDS ≠ actual`: WCET analysis overestimates cache capacity.
 
-> **Both are mismatched as of 2026-08-20** and neither has been updated for the
-> new geometry. `CACHE_BLOCKS` is 16 against a hardware 64, and
-> `CACHE_SIZE_WORDS` is 1024 against a hardware 2048 — note that
-> `CACHE_SIZE_WORDS` was *already* wrong before the change (1024 declared
-> against 512 actual), in the pessimistic direction; it is now wrong in the
-> optimistic direction, which makes the WCET bound **unsound** rather than
-> merely loose. Nothing in the current build flow reads these — they feed the
-> `JopSim` timing model and WCET analysis, not the RTL — but they must be
-> corrected before any WCET number is quoted again.
+> **Both were stale and were corrected by hand on 2026-08-20** (16 -> 64,
+> 1024 -> 2048). `CACHE_SIZE_WORDS` had been wrong for years *before* that —
+> 1024 declared against a hardware 512 — which was harmless only by luck,
+> since overstating the cache made WCET analysis pessimistic. Once the hardware
+> grew to 2048 the same stale value understated it, which would have made a
+> WCET bound **unsound** rather than merely loose. Nothing in the build flow
+> reads them (`JOPConfig`'s constructor never loads them into a field and there
+> is no getter), so the drift was survivable, not safe.
+>
+> **This is a patch, not a fix** — they are still hand-maintained copies with no
+> cross-check, and the next configuration change will break them again. See
+> [current-status item 52](../current-status.md#item-52) for the generator that
+> should replace them.
+
+`JOPModel.getMaxMethodSize()` is a third hand-maintained copy — `return 512;`
+under a `// TODO get this from cache config` — and is **deliberately left
+stale**, because its unit is ambiguous: 512 matched the old cache size in
+WORDS, while `JVMModel` and `JamuthModel` both return 65535, the classfile
+limit in BYTES. Guessing a value for a WCET input is worse than leaving a
+stale one beside a TODO. Also covered by item 52.
 - Wait state mismatches: WCET bounds are unsound (too optimistic or
   too pessimistic).
 

@@ -87,22 +87,23 @@ audit, and has moved down accordingly.
 9. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
 10. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
 11. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-12. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-13. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-14. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-15. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-16. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-17. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-18. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-19. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-20. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
-21. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-22. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-23. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-24. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-25. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
-26. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
-27. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+12. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
+13. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+14. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+15. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+16. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+17. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+18. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+19. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+20. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+21. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
+22. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+23. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+24. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+25. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+26. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
+27. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
+28. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
 
 ## 2. All items — summary
 
@@ -197,6 +198,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - ~~**[26](#item-26)**~~ — Reference arrays carry no element class — FIXED
 - ~~**[28](#item-28)**~~ — `DoAll` dies at `CollectionTest` on the Wukong — FIXED
 - ~~**[22](#item-22)**~~ — Five `_sw` handlers exist but do not work — RESOLVED. It was two
+- **[52](#item-52)** — The Java tools duplicate the hardware config by hand — three stale copies found while documenting item 51
 
 ## 3. Item detail and journals
 
@@ -5031,6 +5033,85 @@ makes fixed-ns memory latency cost fewer cycles (already documented for 36 vs
 80 MHz on one board), and the 1:1 SDRAM halves operations per beat. The i5 at
 40 MHz beats the EP4CGX150 at 36 MHz by 14-18 %, which is the right order for
 the ops-per-beat effect but is not proof of it.
+
+
+<a id="item-52"></a>
+
+### Item 52 — The Java tools duplicate the hardware config by hand, and the copies are silently stale
+
+**How this surfaced.** Item 51 changed one number in one place —
+`JopCoreConfig.jpcWidth` 11 -> 13, `blockBits` 4 -> 6. Documenting that change
+turned up **three** hand-maintained copies of the same geometry in the Java
+tree, none of which moved with it, and none of which anything checks:
+
+| copy | file | held | should be |
+|---|---|---|---|
+| `CACHE_BLOCKS` | `JOPConfig.java` | 16 | 64 |
+| `CACHE_SIZE_WORDS` | `JOPConfig.java` | 1024 | 2048 |
+| `getMaxMethodSize()` | `JOPModel.java` | `return 512;` | unclear — see below |
+
+The first two are corrected as of 2026-08-20. **That is a patch, not a fix**,
+and the next configuration change will break them again.
+
+**Why it is worth an item rather than a shrug.** `CACHE_SIZE_WORDS` was
+*already* wrong before item 51 — it declared 1024 against a hardware 512. That
+error had been in the tree for years and was harmless by luck: it overstated the
+cache, but in the direction that made WCET analysis pessimistic. After item 51
+the same stale 1024 understates a 2048-word cache, and a WCET bound computed
+from it would be **unsound** rather than merely loose. The value did not change;
+the direction of its wrongness did, because the hardware moved past it. A
+duplicated constant is not a small problem in a WCET tool — being conservative
+by accident is not the same as being conservative.
+
+Nothing in the current build flow reads any of them, which is the only reason
+this has been survivable: `CACHE_BLOCKS` and `CACHE_SIZE_WORDS` are registered
+in `jopOptions[]` but the `JOPConfig` constructor never reads them into a field
+and there is no getter, and `getMaxMethodSize()` has no caller anywhere in
+`java/tools`. They are dead today and wrong today. The failure mode is someone
+wiring up the WCET analyser later and inheriting the drift without ever seeing
+it happen.
+
+**`getMaxMethodSize()` is left alone deliberately.** It carries its own
+`// TODO get this from cache config` and its unit is ambiguous: JOP returns
+512, which matched the *old* cache capacity in WORDS, while `JVMModel` and
+`JamuthModel` both return 65535, which is the classfile limit in BYTES. One of
+those readings is wrong and the code does not say which. Guessing a new number
+for a WCET input is worse than leaving a stale one next to a TODO, so it stays
+until someone establishes the unit.
+
+**Note the constraint inverted.** Method size used to be bound by the cache
+(`min(1024, 512) = 512` words); it is now bound by `METHOD_SIZE_BITS`
+(`min(1024, 2048) = 1024`). Any code or analysis carrying "the cache is the
+limit" is now wrong — see
+[architecture/constant-dependencies.md](architecture/constant-dependencies.md)
+section 3.
+
+#### What to build instead
+
+Two configs, not one hand-edited set:
+
+1. **A generated config per preset.** `JopCoreConfig` is already the single
+   source of truth in the SpinalHDL tree; emit the Java-side constants from it
+   at generation time, the way `DramPllGen` now emits the PLL rather than
+   having it hand-edited in `dram_pll.vhd` (see the EP4CGX150 PLL trap in
+   section 8 — same species of bug, already solved once here).
+2. **A checked-in default** for tools run without a preset, so `java/tools`
+   still builds and runs standalone.
+
+[architecture/configuration-driven-plan.md](architecture/configuration-driven-plan.md)
+section 3c already proposes exactly this (`JopSimConfig.java` generated from
+`JopCoreConfig`, then `JopSim.java` and `JOPConfig.java` importing from it).
+That plan predates item 51 and was never executed; item 51 is the evidence for
+why it should be. The plan's own example values were themselves stale (`// 16`,
+`// 512`) and were corrected on 2026-08-20 — a plan to stop hand-maintaining
+constants, whose constants had to be hand-maintained.
+
+**Minimum acceptable outcome** if the full generator is too much: a build-time
+cross-check that fails loudly when the Java copies and `JopCoreConfig` disagree.
+The drift is only dangerous because it is silent. `constant-dependencies.md`
+lists several other pairs with "NO LINK" against them (`METHOD_SIZE_BITS` vs
+`MAX_BC`, `pcWidth` vs `Jopa.ADDRBITS`, `ramWidth` vs `Jopa.RAM_LEN`), so a
+general checker would pay for itself well beyond the method cache.
 
 
 ## 4. Two workstreams, both largely done

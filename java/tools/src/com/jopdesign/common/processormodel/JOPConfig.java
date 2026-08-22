@@ -84,13 +84,19 @@ public class JOPConfig {
                     "method cache implementation",
                     CacheImplementation.FIFO_VARBLOCK_CACHE);
 
+    // Method cache geometry. MUST track jop.config.JopCoreConfig (jpcWidth,
+    // blockBits) in the SpinalHDL tree -- there is no generator and no
+    // cross-check, so these are hand-maintained copies. Updated 2026-08-20 for
+    // the 8 KB / 64-block default; see current-status item 52.
+    //   CACHE_BLOCKS     = 2^blockBits            = 2^6  = 64
+    //   CACHE_SIZE_WORDS = 2^(jpcWidth - 2)       = 2^11 = 2048
     public static final IntegerOption CACHE_BLOCKS =
-            new IntegerOption("cache-blocks", "number of cache blocks", 16);
+            new IntegerOption("cache-blocks", "number of cache blocks", 64);
 
     public static final IntegerOption CACHE_SIZE_WORDS =
             new IntegerOption("cache-size-words",
                     "size of the cache in words",
-                    1024);
+                    2048);
 
     private static final Option<?>[] jopOptions = {
             ASM_FILE, READ_WAIT_STATES, WRITE_WAIT_STATES,
