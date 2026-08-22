@@ -33,8 +33,15 @@ metals.sbt
 *~
 .DS_Store
 
-# Claude Code
-.claude/
+# Claude Code -- share the project's agents/commands/skills and settings,
+# keep machine-local overrides and runtime state out. Allowlist, so anything
+# new Claude Code drops in .claude/ is ignored until deliberately un-ignored.
+.claude/*
+!.claude/agents/
+!.claude/commands/
+!.claude/skills/
+!.claude/hooks/
+!.claude/settings.json
 
 # CocoTB
 sim_build/
