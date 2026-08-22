@@ -466,6 +466,7 @@ Design notes and investigation logs in `docs/`:
 - [Stack Architecture](docs/architecture/STACK_ARCHITECTURE.md) — stack buffer, spill/fill, local variables
 - [Jopa Tool](docs/architecture/JOPA_TOOL.md) — microcode assembler usage and output formats
 - [Programmer's Guide](docs/programmers-guide.md) — I/O register maps and Java API for all devices (BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdNative, BmbSdSpi, BmbVgaText)
+- [Tuning Guide](docs/architecture/tuning-guide.md) — **what each configuration lever buys and costs**: `blockBits` vs `jpcWidth`, `l2SetCount`, `l2MshrCount`, core count; which resource actually binds (LUTs, not BRAM); how to measure each; and the plausible-sounding conclusions that measurement disproved
 - [System Configuration](docs/architecture/system-configuration.md) — configuration reference: memory layout, JopCoreConfig, JopMemoryConfig, IoConfig, board configs, I/O register map
 - [Configuration-Driven Design](docs/architecture/configuration-driven-design.md) — unified `JopTop(config)` design: JopConfig hierarchy, board/FPGA/memory metadata, PLL/reset/memory controller factories, preset system
 - [Compute Unit Design](docs/architecture/compute-unit-design.md) — IntegerCU, FloatCU, LongCU, DoubleCU: stop/sthw/ldop pattern, operand stack, per-bytecode configuration
