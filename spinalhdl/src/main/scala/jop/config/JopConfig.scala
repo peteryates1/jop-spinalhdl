@@ -623,7 +623,33 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,  // MIG ui_clk = 100 MHz (4:1, DDR3-800)
-      coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+      // 4 KB L2 (64 sets), not the 512-set/32 KB default. The XC7A35T is the
+      // smallest part in the set at 20800 LUTs and this preset does NOT fit
+      // with the default: measured 2026-08-22, the L2 alone was 12450 LUTs --
+      // more than twice the whole JOP core (5378) -- against a 1754-LUT
+      // overflow at implementation.
+      //
+      // 64 rather than the largest that fits, and that is MEASURED, not a
+      // guess. JbeBench on this board, same binary, only this parameter
+      // changed:
+      //
+      //   sets  L2     LUTs         WNS      Kfl     UdpIp   Lift
+      //   64    4 KB   9211  (44%)  +0.477   16855   7353    18586
+      //   256   16 KB  12975 (62%)  +0.146   16855   7353    18575
+      //   512   32 KB  18384        --       does not fit
+      //
+      // Kfl and UdpIp are bit-identical and Lift is 0.06 % LOWER at 4x the
+      // cache. So 64 sets costs nothing measurable and keeps 18 points of LUT
+      // headroom and 0.33 ns of slack. Consistent with item 50 (a 32 KB L2 is
+      // worth 3-5 %): the L2's EXISTENCE may buy a little, its SIZE past 4 KB
+      // buys nothing here.
+      //
+      // Note the LUT cost is sharply non-linear -- 64->256 sets costs 3764,
+      // 256->512 costs another 5409 -- so most of the L2's logic is in the
+      // last doubling.
+      coreConfig = JopCoreConfig(
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw"),
+        memConfig = JopMemoryConfig(l2SetCount = 64)),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("FT2232H"))))))
 
   /** Alchitry Au V2 — minimum: no caches, no HW math */

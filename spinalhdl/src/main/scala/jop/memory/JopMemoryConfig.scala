@@ -47,6 +47,10 @@ case class JopMemoryConfig(
   hasPerfCounters: Boolean = false,
   cardTableBudgetBytes: Int = 0,        // BRAM bytes for the card table; card size derived from
                                          // (mainMemSize, this). See docs/gc/stage1-card-table-design.md
+  // Sets in the DRAM L2 (LruCacheCore). 4 ways x 16 B/line, so 512 sets = 32 KB.
+  // Lower it on parts that cannot afford the cache: item 50 measured a 32 KB L2
+  // as worth only 3-5 %, so this is a cheap trade where logic is tight.
+  l2SetCount: Int = 512,
   l2MshrCount: Int = 1                  // DRAM L2 misses allowed in flight at once. 1 = the old
                                          // behaviour, one miss at a time, which is the ~1.8x
                                          // multicore DRAM scaling ceiling. Raising it also widens

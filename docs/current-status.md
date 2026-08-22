@@ -4454,6 +4454,93 @@ L2. It bounds what the current implementation contributes; it does NOT bound
 what a better one could, and the gap to ideal memory is still the 34-55 % of
 item 38.
 
+**Sharpened 2026-08-22 on the Alchitry Au: the L2's SIZE buys nothing.** The
+3-5 % above is existence-vs-absence, measured across two boards. The Au allows
+the cleaner test — one board, one binary, one parameter (`l2SetCount`) — because
+the XC7A35T forced the question: the preset does not fit the part with the
+default 512-set L2.
+
+| sets | L2 | LUTs | util | WNS | Kfl | UdpIp | Lift |
+|---|---|---|---|---|---|---|---|
+| 64 | 4 KB | 9,211 | 44 % | +0.477 | 16,855 | 7,353 | 18,586 |
+| 256 | 16 KB | 12,975 | 62 % | +0.146 | 16,855 | 7,353 | 18,575 |
+| 512 | 32 KB | 18,384 | over | — | does not fit (needs 22,554 of 20,800) |
+
+**Kfl and UdpIp are bit-identical at 4x the cache**, and Lift is 0.06 % *lower*
+— noise. Two independently built bitstreams agreeing to the digit is not a
+result you get by luck.
+
+**And the L2's EXISTENCE is worth far more than 3-5 %.** Dropping to a 2-set
+(128 B) L2 — 8 lines total, the practical floor, and a fair proxy for no cache:
+
+| sets | L2 | Kfl | UdpIp | Lift |
+|---|---|---|---|---|
+| 2 | 128 B | 12,064 | 4,937 | 14,813 |
+| 64 | 4 KB | **16,855** (+39.7 %) | **7,353** (+48.9 %) | **18,586** (+25.5 %) |
+
+**This does NOT contradict the 3-5 % above — it reinterprets it.** The two
+measure different things:
+
+- the dual-system run compared **SDR with no L2** against **DDR3 with a 32 KB
+  L2**. Memory technology and caching move together, so the +3.9 % is the
+  combination, not the cache.
+- this compares **DDR3 with 128 B** against **DDR3 with 4 KB**. Same memory,
+  same board, same binary, one parameter.
+
+The reconciliation is that **bare DDR3 is much worse than bare SDR**, and the
+L2 is what rescues it. The numbers line up: the dual-system SDR-no-L2 half did
+Kfl 12,020, and DDR3 with an effectively absent L2 does 12,064. DDR3+L2 only
+just beating SDR-no-L2 never meant the cache was weak; it meant DDR3's raw
+latency is bad enough to need one.
+
+(The 12,487 vs 16,855 gap between the two DDR3 figures is not a discrepancy
+either — the dual-system run predates the 8 KB/64-block method cache default of
+2026-08-20. 12,487 x 1.35 = 16,858.)
+
+So the claim that survives is narrower and sharper: **an L2 in front of DRAM is
+essential and cheap — 4 KB of it. Everything past 4 KB is what buys nothing.**
+The earlier framing, "the L2 AS BUILT is not the lever", was drawn from a
+comparison that could not isolate it, and is withdrawn. What remains true is
+that making the DRAM *behind* the L2 faster is spent — that part was measured
+directly (DDR2 vs DDR3 per cycle, 0.993x).
+
+That size result is consistent with the bytecode-fill mechanism above — fill is
+a sequential burst whose cost is the 3-cycle hit path (item 39), not capacity,
+and a burst does not care how many sets sit behind it.
+
+**The cost side is what makes this matter.** At 512 sets `LruCacheCore` is
+**12,450 LUTs — more than twice the entire JOP core (5,378)**, from a
+hierarchical utilization report on the synthesis checkpoint:
+
+| block | LUTs | share |
+|---|---|---|
+| `lruCacheCore_1` | 12,450 | 68 % |
+| — own logic | 5,735 | |
+| — `rspFifo` | 3,966 | |
+| — `orderFifo` | 2,440 | |
+| `jopCluster_1` (whole CPU) | 5,378 | 29 % |
+
+And the cost is sharply **non-linear**: 64->256 sets costs 3,764 LUTs,
+256->512 another 5,409. Most of the L2's logic is in its last doubling.
+
+`rspFifo` at 3,966 LUTs against **138 flops**, and `orderFifo` at 2,440 against
+**8**, is the `readAsync`-becomes-distributed-RAM signature already written up
+in [../artix7-distram-optimization.md](../artix7-distram-optimization.md) for
+the stack cache. Those two FIFOs alone are 6,406 LUTs. That is the open lever,
+not capacity.
+
+**Settled: do NOT remove the L2.** The question was whether a board this tight
+should drop it entirely. It should not — it is worth 25-49 % for ~3,300 LUTs at
+64 sets, which is the best throughput-per-LUT in the design. A bypass path
+would be the wrong thing to build.
+
+**`l2SetCount = 1` does not elaborate**: `Vec address width mismatch —
+lruArray : Vec of 1 elements, Address width : 1`, because `log2Up(1) = 0` while
+the index is still generated 1 bit wide. A degenerate-case bug in
+`LruCacheCore`, found by pushing the parameter to its edge. 2 sets is the
+practical floor. The failure names a `Vec` rather than the parameter that caused
+it, so at minimum this wants a `require` with a readable message.
+
 In fact the shape of the data points the other way for **item 39** (the 3-cycle
 serial hit path). Bytecode fill is a SEQUENTIAL BURST: the first word misses the
 L2, the rest should be cheap hits. It improved by only 3 %. If an L2 hit costs 3
@@ -5467,6 +5554,27 @@ separated "board broken" from "our design broken".
 | A-E115FB (1 GB DDR2) | **Terasic** — its Pico clone cannot configure | `quartus_pgm` |
 | Colorlight i5 (ECP5, 8 MB SDR) | DAPLink on the ext board (`i5`) | `openFPGALoader -b colorlight_i5` — also the UART bridge |
 | CYC5000 (Cyclone V, 8 MB SDR) | on-board Arrow USB Blaster TEI0050 (`cyc5000`) | `openFPGALoader -b cyc5000` on an **.rbf** — see below |
+| Alchitry Au V2 (XC7A35T, DDR3) | on-board FT2232H (`alchitry`) | `make -C fpga/alchitry-au program` (Vivado hw target) |
+
+**The Alchitry Au is the smallest part in the set and the only one where fit is
+the binding constraint** — XC7A35T, 20,800 LUTs. Brought up end-to-end
+2026-08-22 (`auSerial`: build, program, serial download at 2 Mbaud, HelloWorld
+and `JbeBench` running). Two things about it are not like the other boards:
+
+- **It needs a 4 KB L2, not the 32 KB default.** With the default it needs
+  22,554 LUTs and does not fit. `JopMemoryConfig.l2SetCount = 64` in the
+  preset; the size costs nothing measurable — see [item 50](#item-50).
+- **Its UART is the FT2232H's interface 1**, sharing vid:pid `0403:6010` with
+  the CYC5000's Arrow blaster, so it is resolved by product string as well:
+  `usb_serial_map --by-id alchitry`. Reprogram before each download, or use
+  `download.py -r` to reset the core over UART without touching JTAG.
+
+The **Alchitry Io V2** daughter board (24 LEDs, 24 DIP switches, 5 buttons,
+4-digit seven-segment) is fully pin-mapped in `Board.scala` and wired into
+`SystemAssembly.alchitryAuV2WithIo` — but **no preset selects it**, so nothing
+drives it. Its only reference outside its own definition is `JopConfigTest`.
+Same species as the microcode-fallback coverage gap in item 18: config no
+preset selects gets no coverage.
 
 **The CYC5000's Arrow blaster needs two things nobody wrote down.** It is an
 FT2232H (`0403:6010`), so its vid:pid is shared with every other FTDI dual-UART

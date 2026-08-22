@@ -561,6 +561,7 @@ case class JopTop(
       if (isDdr3) {
         val ddr3Path = MemoryControllerFactory.createDdr3Path(
           cluster.bmbParameter, hasFill = cluster.io.fill.isDefined,
+          cacheSetCount = coreConfigs.head.memConfig.l2SetCount,
           mshrCount = coreConfigs.head.memConfig.l2MshrCount)
         ddr3Path.bmbBridge.io.bmb <> cluster.io.bmb
         // GC block-fill now streams write-through zeros inside the cache.
