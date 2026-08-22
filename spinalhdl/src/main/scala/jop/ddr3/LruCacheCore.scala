@@ -5,7 +5,7 @@ import spinal.lib._
 import jop.memory.MemFill
 
 object LruCacheCoreState extends SpinalEnum {
-  val IDLE, TAG_COMPARE, CHECK_HIT, WRITE_HIT, ISSUE_EVICT, ISSUE_REFILL, RSP_FILL,
+  val INIT, IDLE, TAG_COMPARE, CHECK_HIT, WRITE_HIT, ISSUE_EVICT, ISSUE_REFILL, RSP_FILL,
       FILL_TAG, FILL_WRITE, FILL_DRAIN = newElement()
 }
 
@@ -134,10 +134,21 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
 
   // --- Register Arrays ---
   //
-  // validFlat is still fabric flip-flops because it must read as False out of
-  // reset and a Mem does not reset. Folding it into tagMem with an invalidate
-  // FSM is the remaining half of this work -- see current-status item 50.
-  val validFlat = Vec(Reg(Bool()) init (False), setCount * wayCount)
+  /**
+   * Valid bits, in BRAM rather than fabric registers -- the other half of the
+   * work started with lruMem.
+   *
+   * This was `Vec(Reg(Bool()), setCount * wayCount)`: setCount x wayCount flops
+   * plus a read mux and a write decoder, and read PER WAY during tag compare,
+   * so its access logic was wider than the PLRU tree's.
+   *
+   * A Mem does not reset, and these MUST read False out of reset or the cache
+   * would report hits on uninitialised tags. Hence the INIT state, which walks
+   * every set writing zero before IDLE is entered for the first time. `io.busy`
+   * is already `state =/= IDLE`, so the frontend sees the cache as busy for
+   * setCount cycles at power-on and nothing else has to know about it.
+   */
+  val validMem = Mem(Bits(wayCount bits), setCount)
   val plruBits = if (wayCount == 4) 3 else if (wayCount == 2) 1 else 0
 
   /**
@@ -167,20 +178,25 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
     if (wayCount == 1) setIdx.resize(log2Up(setCount * wayCount))
     else (setIdx * U(wayCount) + U(way)).resize(log2Up(setCount * wayCount))
   }
-  def getValid(setIdx: UInt, way: Int): Bool = validFlat(validIdx(setIdx, way))
-  def setValidStatic(setIdx: UInt, way: Int, value: Bool): Unit = {
-    validFlat(validIdx(setIdx, way)) := value
-  }
-  def setValidForWay(setIdx: UInt, targetWay: UInt, value: Bool): Unit = {
-    for (w <- 0 until wayCount) {
-      when(targetWay === U(w, wayBits bits)) {
-        setValidStatic(setIdx, w, value)
-      }
-    }
+  /** Valid bit for a way, from the word the synchronous read produced. The
+    * index argument is gone: the read is issued on bramReadAddr a cycle
+    * earlier, so the caller cannot choose a different set here. */
+  def getValid(way: Int): Bool = validReadVal(way)
+  /** Splice one way's valid bit into `word` and drive the write port with it.
+    * The caller supplies the current word because where it comes from differs:
+    * the lookup path has it in pendingValidWord, RSP_FILL in the MSHR's copy,
+    * and the fill path straight off validReadVal. */
+  def writeValidForWay(word: Bits, targetWay: UInt, value: Bool): Unit = {
+    validWriteData := spliceWay(word, targetWay, 1, value.asBits)
+    validWriteEnable := True
   }
 
+
   // --- State Machine ---
-  val state = Reg(LruCacheCoreState()) init (LruCacheCoreState.IDLE)
+  val state = Reg(LruCacheCoreState()) init (LruCacheCoreState.INIT)
+  /** Set being cleared during INIT. Sized to hold setCount so the final
+    * increment can pass the last index without wrapping. */
+  val initIndex = Reg(UInt(log2Up(setCount + 1) max 1 bits)) init (0)
   // Where RSP_FILL hands control back. Response handling normally happens from
   // IDLE, but a stalled ISSUE_* has to be able to service a response too, or a
   // backend whose queue is full deadlocks against a cache that will not drain it.
@@ -200,6 +216,10 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   val pendingVictimTag = Reg(Bits(tagWidth bits)) init (0)
   val pendingVictimDirty = Reg(Bits(dataBytes bits)) init (0)
   val pendingTagWord = Reg(Bits(wayCount * tagWidth bits)) init (0)
+  /** Valid word for the set under comparison, captured in TAG_COMPARE. Same
+    * role as pendingTagWord: the install a few states later needs the word it
+    * is splicing into, and the Mem output has moved on by then. */
+  val pendingValidWord = Reg(Bits(wayCount bits)) init (0)
   val pendingDirtyWord = Reg(Bits(wayCount * dataBytes bits)) init (0)
   val pendingMshrId = Reg(UInt(mshrIdxWidth bits)) init (0)
 
@@ -236,6 +256,7 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   val mshrTag = Vec(Reg(Bits(tagWidth bits)) init (0), mshrCount)
   val mshrVictimWay = Vec(Reg(UInt(wayBits bits)) init (0), mshrCount)
   val mshrTagWord = Vec(Reg(Bits(wayCount * tagWidth bits)) init (0), mshrCount)
+  val mshrValidWord = Vec(Reg(Bits(wayCount bits)) init (0), mshrCount)
   val mshrDirtyWord = Vec(Reg(Bits(wayCount * dataBytes bits)) init (0), mshrCount)
   val mshrIsWrite = Vec(RegInit(False), mshrCount)
   val mshrWrData = Vec(Reg(Bits(dataWidth bits)) init (0), mshrCount)
@@ -326,6 +347,7 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   val dirtyReadVal = dirtyMem.readSync(bramReadAddr.resize(indexWidth max 1))
   val lruReadVal = if (plruBits > 0) lruMem.readSync(bramReadAddr.resize(indexWidth max 1))
                    else null
+  val validReadVal = validMem.readSync(bramReadAddr.resize(indexWidth max 1))
 
   // --- BRAM Write Ports (single port per BRAM, muxed by state) ---
   // Each BRAM gets ONE write port with address/data/enable muxed across states.
@@ -354,6 +376,13 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   tagWriteEnable := False
   tagWriteData := B(0, wayCount * tagWidth bits)
   tagMem.write(bramWriteAddr, tagWriteData, enable = tagWriteEnable)
+
+  // Valid-bit BRAM write signals, same single-muxed-port shape as the rest.
+  val validWriteEnable = Bool()
+  val validWriteData = Bits(wayCount bits)
+  validWriteEnable := False
+  validWriteData := B(0, wayCount bits)
+  validMem.write(bramWriteAddr, validWriteData, enable = validWriteEnable)
 
   // PLRU BRAM write signals. Same single-muxed-port shape as the others; the
   // address follows bramWriteAddr so an RSP_FILL install and a lookup update
@@ -460,6 +489,7 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
   val refillTag = mshrSel(mshrTag, ordHead.mshr)
   val refillVictimWay = mshrSel(mshrVictimWay, ordHead.mshr)
   val refillTagWord = mshrSel(mshrTagWord, ordHead.mshr)
+  val refillValidWord = mshrSel(mshrValidWord, ordHead.mshr)
   val refillDirtyWord = mshrSel(mshrDirtyWord, ordHead.mshr)
   val refillIsWrite = mshrSel(mshrIsWrite, ordHead.mshr)
   val refillWrData = mshrSel(mshrWrData, ordHead.mshr)
@@ -479,6 +509,21 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
 
   // --- State Machine ---
   switch(state) {
+    // INIT: clear every valid bit before serving anything. validMem is a Mem
+    // and does not reset, and stale valid bits would make the cache report hits
+    // on uninitialised tags -- returning garbage for reads that never missed.
+    // Costs setCount cycles once at power-on, during which io.busy is already
+    // True because it is `state =/= IDLE`.
+    is(LruCacheCoreState.INIT) {
+      bramWriteAddr := initIndex.resize(indexWidth max 1)
+      validWriteData := B(0, wayCount bits)
+      validWriteEnable := True
+      initIndex := initIndex + 1
+      when(initIndex === U(setCount - 1, initIndex.getWidth bits)) {
+        state := LruCacheCoreState.IDLE
+      }
+    }
+
     is(LruCacheCoreState.IDLE) {
       // Draining the memory pipeline comes first: it is what frees MSHRs, and
       // each visit costs one cycle, so new work is never starved for long.
@@ -516,7 +561,7 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
     is(LruCacheCoreState.TAG_COMPARE) {
       val wayTags = (0 until wayCount).map(w => tagReadVal(w * tagWidth + tagWidth - 1 downto w * tagWidth))
       val wayDirtys = (0 until wayCount).map(w => dirtyReadVal(w * dataBytes + dataBytes - 1 downto w * dataBytes))
-      val wayValids = (0 until wayCount).map(w => getValid(pendingIndex, w))
+      val wayValids = (0 until wayCount).map(w => getValid(w))
 
       val wayHits = (0 until wayCount).map(w => wayValids(w) && wayTags(w) === pendingTag)
       val anyHit = wayHits.reduce(_ || _)
@@ -585,6 +630,7 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
       compReqIsFullLineWrite := pendingReq.mask === 0
       compReqWriteDirtyMask := (~pendingReq.mask).asBits
       pendingTagWord := tagReadVal
+      pendingValidWord := validReadVal
       pendingDirtyWord := dirtyReadVal
 
       state := LruCacheCoreState.CHECK_HIT
@@ -652,6 +698,7 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
               mshrTag(i) := pendingTag
               mshrVictimWay(i) := compVictimWay
               mshrTagWord(i) := pendingTagWord
+              mshrValidWord(i) := pendingValidWord
               mshrDirtyWord(i) := pendingDirtyWord
               mshrIsWrite(i) := pendingReq.write
               mshrWrData(i) := pendingReq.data
@@ -740,7 +787,7 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
           dirtyWriteEnable := True
           dirtyWriteData := spliceWay(pendingDirtyWord, pendingVictimWay, dataBytes, reqWriteDirtyMask)
 
-          setValidForWay(pendingIndex, pendingVictimWay, True)
+          writeValidForWay(pendingValidWord, pendingVictimWay, True)
 
           pushRsp(B(0, dataWidth bits), False, pendingReq.idValue)
           state := LruCacheCoreState.IDLE
@@ -798,7 +845,7 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
             dirtyWriteEnable := True
             dirtyWriteData := spliceWay(refillDirtyWord, refillVictimWay, dataBytes, finalDirty)
 
-            setValidForWay(refillIndex, refillVictimWay, True)
+            writeValidForWay(refillValidWord, refillVictimWay, True)
 
             pushRsp(Mux(refillIsWrite, B(0, dataWidth bits), refillData), False, refillReqId)
           }
@@ -825,7 +872,7 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
         val idx = fillIndexOf(fillWord)
         val tg  = fillTagOf(fillWord)
         val wayTags   = (0 until wayCount).map(w => tagReadVal(w * tagWidth + tagWidth - 1 downto w * tagWidth))
-        val wayValids = (0 until wayCount).map(w => getValid(idx, w))
+        val wayValids = (0 until wayCount).map(w => getValid(w))
         val wayHits   = (0 until wayCount).map(w => wayValids(w) && wayTags(w) === tg)
         val anyHit    = wayHits.reduce(_ || _)
         val hitWay    = UInt(wayBits bits); hitWay := 0
@@ -863,7 +910,12 @@ class LruCacheCore(config: CacheConfig = CacheConfig()) extends Component {
         }
 
         // Invalidate any cached copy so future reads refill zeros from memory.
-        when(anyHit) { setValidForWay(idx, hitWay, False) }
+        // The write port is otherwise unused in FILL_WRITE, so point it at the
+        // line being zeroed rather than the lookup pipeline's set.
+        when(anyHit) {
+          bramWriteAddr := idx.resize(indexWidth max 1)
+          writeValidForWay(validReadVal, hitWay, False)
+        }
 
         when(io.memCmd.ready) {
           fillIssued := fillIssued + 1

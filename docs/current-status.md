@@ -4551,12 +4551,29 @@ LUTs and flops explode. The arithmetic confirms it: 64->512 sets predicts
 for. Indexing 512 registers needs a wide read mux and a 512-way write decoder
 with per-register enables; that is where the LUTs go.
 
-**So the open lever is moving those into memory**, not the FIFOs. `lruArray` is
-the easy half — PLRU needs no reset, since any initial value is a legal LRU
-state, so it can become a `Mem` outright. `validFlat` needs clear-on-reset, so
-it would have to fold into `tagMem` with an invalidate FSM. That matters most
-at high core counts: see the SMP section below, where a 4-core build cannot have
-a 512-set L2 at all.
+**DONE 2026-08-22 — both arrays moved to BRAM, and the L2's LUT cost is now
+flat in capacity.** `lruMem` (PLRU, needs no reset) and `validMem` (valid bits,
+cleared by a new INIT state that walks every set before IDLE). Measured on
+`wukongAuMatch` at 512 sets:
+
+| | original | +PLRU | **+valid** |
+|---|---|---|---|
+| total LUTs | 22,849 (36.0 %) | 20,558 (32.4 %) | **12,384 (19.5 %)** |
+| `lruCacheCore` | 12,348 | 10,060 | **1,793** |
+| flip-flops | 14,921 | 13,574 | 11,158 |
+| BRAM tiles | 17.0 | 17.5 | 18.0 |
+| WNS | +0.422 | +0.305 | +0.246 |
+
+**`lruCacheCore` fell 85 %** for one extra BRAM tile. The valid bits were worth
+8,174 LUTs against PLRU's 2,291 — the opposite of the "easy half is the big
+half" guess, and predictable in hindsight: valid is read PER WAY during tag
+compare while PLRU is one indexed read, so its access logic was always wider.
+
+**The non-linear cost curve is gone.** "64->256 sets costs 3,764 LUTs, 256->512
+another 5,409" described the register-array implementation, not cache capacity.
+At 4 cores the design is now 62,583 LUTs at 512 sets and 62,592 at 256 — **nine
+apart**. L2 capacity costs BRAM and essentially no logic, so shrinking the L2 is
+no longer a lever for fit.
 
 **Settled: do NOT remove the L2.** The question was whether a board this tight
 should drop it entirely. It should not — it is worth 25-49 % for ~3,300 LUTs at
@@ -4610,12 +4627,22 @@ multicore work and costs nothing on real code. The Au keeps `l2SetCount = 64`
 because it cannot fit otherwise, and its real-code throughput is unaffected — but
 that is a board-specific concession, not a new default.
 
-**And the core-count-dependent default runs the WRONG way to be useful.** More
-cores want more L2 (aggregate set), but more cores leave less LUT budget, and
-the L2 is what blocks the fit. On the XC7A100T a 4-core build at 512 sets needs
-~69,850 LUTs against 63,400 — **it cannot be built at all**. The configuration
-that most wants a large L2 is the one that can least afford it, which is what
-makes the `validFlat`/`lruArray` fabric-register cost above the real lever.
+**The core-count-dependent default is no longer needed** — it was a workaround
+for a cost that has now been removed. It used to be that more cores wanted more
+L2 while leaving less LUT budget for it, and a 4-core build at 512 sets needed
+~69,850 LUTs of 63,400. After the BRAM change a 4-core build with the FULL
+32 KB L2 fits in **57,297 LUTs (90.4 %), WNS +0.112 ns** — fewer LUTs and four
+times the slack of the old 4-core build that could only manage 4 KB (58,550,
++0.027 ns). Measured on hardware, that is worth up to **2.06x**:
+
+| per core | aggregate | 4 KB L2 | 32 KB L2 | |
+|---|---|---|---|---|
+| 1 KB | 4 KB | 1,474 | 1,562 | +6 % |
+| 4 KB | 16 KB | 752 | **1,548** | **+106 %** |
+| 16 KB | 64 KB | 752 | **1,064** | +41 % |
+| 64 KB | 256 KB | 752 | 752 | — |
+
+So keep one default (512 sets) at every core count.
 
 **Caveat on `ScaleL2`**: it is a data probe, not an application. `docs/` is
 emphatic that JbeScale-derived numbers must be checked against DoApp before
@@ -5317,6 +5344,27 @@ the core count.
 Note the two levers are independent and BOTH are needed at four cores: dropping
 only the L2 still leaves it 297 LUTs over. And the L2 cannot simply be dropped,
 because item 50 measures it as worth up to 33 % on data-heavy multicore work.
+
+**LARGELY OVERTAKEN 2026-08-22 by the BRAM change in item 50.** Moving the L2's
+valid and PLRU arrays out of fabric freed ~10,500 LUTs, so the arithmetic here
+has moved:
+
+| 4-core `wukongSmp` | L2 | method cache | LUTs | outcome |
+|---|---|---|---|---|
+| before | 512 sets | 8 KB | 73,252 | 15 % over |
+| after | 512 sets | 8 KB | 62,583 (98.7 %) | fails slice packing |
+| after | 256 sets | 8 KB | 62,592 | same -- L2 size is now free |
+| **after** | **512 sets** | **2 KB** | **57,297 (90.4 %)** | **BUILDS, WNS +0.112 ns** |
+
+The method cache is now the ONLY lever -- 850 LUTs/core, unchanged -- but it
+buys a different thing than it used to. Before, giving it up bought a 4 KB L2
+that still did not fit; now it buys the FULL 32 KB L2, worth up to 2.06x on
+data-heavy 4-core work (item 50). And that build uses fewer LUTs and has four
+times the slack of the old 4-core-with-4 KB build.
+
+Note the 8 KB method cache still does not fit at 4 cores at any L2 size, since
+L2 capacity no longer costs logic. So the decision below is unchanged in shape
+and much better in payoff.
 
 **What to decide.** Options, none yet taken:
 
