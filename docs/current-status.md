@@ -88,7 +88,7 @@ audit, and has moved down accordingly.
 9. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
 10. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
 11. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-12. **[#53](#item-53)** — **REGRESSION**: the 8 KB method cache default broke 4-core Wukong SMP fit — 850 LUTs/core, 63,697 of 63,400
+12. **[#53](#item-53)** — 4-core Wukong takes `14/4` (16 KB, 16 blocks): 32 blocks misses timing by 43 ps even under `Explore`. Preset default still open
 13. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
 14. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
 15. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
@@ -201,7 +201,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - ~~**[28](#item-28)**~~ — `DoAll` dies at `CollectionTest` on the Wukong — FIXED
 - ~~**[22](#item-22)**~~ — Five `_sw` handlers exist but do not work — RESOLVED. It was two
 - **[52](#item-52)** — The Java tools duplicate the hardware config by hand — three stale copies found while documenting item 51
-- **[53](#item-53)** — The 8 KB method cache default broke 4-core Wukong SMP fit — a regression nobody hit because SMP was not rebuilt
+- **[53](#item-53)** — The 8 KB method cache default broke 4-core Wukong SMP fit — resolved to `14/4`; whether it becomes the multicore default is open
 
 ## 3. Item detail and journals
 
@@ -5367,7 +5367,46 @@ Note the 8 KB method cache still does not fit at 4 cores at any L2 size, since
 L2 capacity no longer costs logic. So the decision below is unchanged in shape
 and much better in payoff.
 
-**What to decide.** Options, none yet taken:
+**RESOLVED 2026-08-22 — take `14/4` at four cores.** The decision below was
+framed as method cache *versus* fit. The geometry sweep splits it into two
+independent axes and the trade largely dissolves: `blockBits` (block COUNT) costs
+LUTs, `jpcWidth` (SIZE) costs only BRAM, and a 4-core Wukong is at 90 % LUT and
+23 % BRAM. So depth is nearly free and count is what binds.
+
+4-core `wukongSmp`, 512-set L2, measured:
+
+| geometry | blocks | LUTs | WNS | Kfl miss |
+|---|---|---|---|---|
+| `11/4` — 2 KB, 16 x 32w | 16 | 57,297 (90.4 %) | +0.112 ns | 34.8 % |
+| **`14/4` — 16 KB, 16 x 256w** | 16 | **57,329 (90.4 %)** | **+0.030 ns** | **16.6 %** |
+| `14/4`, `place_design -directive Explore` | 16 | 57,218 (90.3 %) | **+0.155 ns** | 16.6 % |
+| `12/5` — 4 KB, 32 x 32w | 32 | — (93.5 %) | **-0.147 ns** | 0.6 % |
+| `12/5`, `-directive Explore` | 32 | 59,228 (93.42 %) | **-0.043 ns** | 0.6 % |
+
+**32 blocks does not close at four cores, and the placer cannot rescue it.**
+`Explore` is worth ~0.10-0.13 ns on this netlist (it moved `14/4` by 0.125 and
+`12/5` by 0.104), and `12/5` still lands 43 ps short at 93.4 % LUT. That is the
+expensive half of the trade and it is unaffordable here.
+
+`14/4` is therefore the four-core recommendation: **8x the method cache of the
+old default for 32 LUTs**, cutting Kfl fill traffic 53.7 % (966,208 -> 447,374
+words) and doubling the timing slack of `11/4`. It does not touch the L2, so the
+full 32 KB stays — worth up to 2.06x on data-heavy 4-core work (item 50).
+
+What is given up is real and should be stated: 32 blocks would take Kfl to 0.6 %
+miss and UdpIp to 0.1 %, far more than depth buys. Fragmentation remains the
+dominant method-cache effect at four cores and remains unaddressed there —
+single-core builds have the room and keep 64 blocks.
+
+Two caveats on `Explore`. It is not the repo default (`ExtraTimingOpt` is), so
+`14/4`'s shipping margin is +0.030 ns, not +0.155; and a directive that happens
+to suit one netlist is not a property of the design. Treat the `Explore` row as
+evidence that `12/5` is genuinely out of reach, not as slack to spend.
+
+**Still open:** whether `14/4` should become the multicore preset default, and
+whether the per-core-count mechanism below is worth building for one geometry.
+
+Options as originally framed, for the record:
 
 1. **Per-core-count method cache**, the same shape as `l2SetCount` — smaller
    `jpcWidth`/`blockBits` above some core count. Cheap, but item 51 measured the
@@ -5375,7 +5414,8 @@ and much better in payoff.
 2. **Make `LruCacheCore` cheaper** so the L2 stops dominating — the
    `validFlat`/`lruArray` fabric-register arrays in item 50. This is the only
    option that makes a 4-core build with a full L2 possible at all; today it
-   needs ~69,850 LUTs and cannot be built.
+   needs ~69,850 LUTs and cannot be built. **DONE** — both arrays moved to BRAM
+   (item 50), ~10,500 LUTs freed, which is what made the table above possible.
 3. **Accept 2 cores as the Wukong DDR3 SMP ceiling** at current defaults, and
    say so, rather than leaving presets that do not build.
 

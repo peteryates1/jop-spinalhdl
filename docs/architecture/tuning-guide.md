@@ -57,6 +57,12 @@ WNS +0.112 ns, 32 blocks **violates timing** at -0.147 ns, and 64 blocks does
 not place. Single-core there is plenty of room, which is why the shipped default
 is 64 blocks.
 
+That violation is not a near miss the tools can absorb. Re-placing 32 blocks with
+`place_design -directive Explore` recovered 0.104 ns and still finished at
+**-0.043 ns**, at 93.4 % LUT (the same directive was worth 0.125 ns on a 16-block
+build, so this is the directive's normal yield, not a bad run). **If a geometry
+misses by more than ~0.1 ns at four cores, placement effort will not close it.**
+
 ### Slot DEPTH is nearly free, and helps when block count is capped
 
 A method spanning k blocks consumes k tag-carrying slots, so deeper slots mean
