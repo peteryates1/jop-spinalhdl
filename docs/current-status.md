@@ -4527,6 +4527,11 @@ method cache itself, not behind it.
 
 #### What is actually built
 
+> **Read this table as of the start of the investigation.** The capacity and
+> organisation rows were superseded on 2026-08-20 — the default is now 8 KB /
+> 64 blocks. See [DEFAULT CHANGED 2026-08-20](#default-changed-2026-08-20--8-kb--64-x-32w-validated-on-four-boards)
+> further down this item. Every other row still holds.
+
 `jop.memory.MethodCache`, a port of the VHDL `mcache`:
 
 | | |

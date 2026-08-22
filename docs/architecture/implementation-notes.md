@@ -46,7 +46,8 @@ captured during development — see the source code for authoritative details.
 ## Method Cache
 
 - **MethodCache** (`jop.memory`): Tag-only lookup matching VHDL `mcache` entity
-  - 16 blocks (blockBits=4), each 32 words, FIFO replacement
+  - 64 blocks (blockBits=6), each 32 words, FIFO replacement
+    (was 16 blocks / `blockBits=4` until 2026-08-20; see current-status item 51)
   - Hit: 2 cycles, Miss: 3 cycles + fill
   - `rdy` is combinational (state===IDLE), `inCache` is registered
   - `find` is combinational (same clock edge as bcRd in IDLE)

@@ -90,12 +90,12 @@ The SpinalHDL method cache consists of:
   `BC_FILL_R1`, `BC_FILL_LOOP`, `BC_FILL_CMD`)
 - JBC RAM as data storage (word write port driven by the memory controller)
 - Formal verification in `spinalhdl/src/test/scala/jop/formal/MethodCacheFormal.scala`
-- Configuration in `JopCoreConfig.scala` (`jpcWidth=11`, `blockBits=4`)
+- Configuration in `JopCoreConfig.scala` (`jpcWidth=13`, `blockBits=6` since 2026-08-20; was 11/4)
 
 ### Hardware Structure
 
-- **16 blocks** (`blockBits=4`), variable-block organization
-- **2 KB total** (`jpcWidth=11`, 2^11 = 2048 bytes)
+- **64 blocks** (`blockBits=6`), variable-block organization
+- **8 KB total** (`jpcWidth=13`, 2^13 = 8192 bytes)
 - **32 words per block** (128 bytes)
 - **18-bit tags** per block, plus a valid bit per block
 - **FIFO replacement** via `nxt` pointer
@@ -115,23 +115,49 @@ After S1/S2, the memory controller checks `inCache`:
 
 | Paper Proposal | Implementation | Assessment |
 |---|---|---|
-| Variable-block organization (N blocks, consecutive) | 16 blocks, methods span 1+ blocks, consecutive allocation | Exact match |
+| Variable-block organization (N blocks, consecutive) | 64 blocks, methods span 1+ blocks, consecutive allocation | Exact match |
 | FIFO (next-block) replacement | `nxt` pointer, advances by `nrOfBlks + 1` on miss | Exact match |
 | Tag-only lookup, JBC RAM is data | `MethodCache` manages tags only, JBC write driven by memory controller | Exact match |
-| Default 4 KB / 16 blocks | Default `jpcWidth=11` (2 KB) / 16 blocks | Smaller than paper's default — see note below |
+| Default 4 KB / 16 blocks | Default `jpcWidth=13` (8 KB) / 64 blocks | Larger than the paper's default since 2026-08-20; it was 2 KB / 16 blocks, and that cost 35 % of Kfl — see note below |
 | Whole method load on invoke/return | `bcRd` triggers lookup + fill; pipeline issues `bcRd` on invoke/return | Correct |
 | No data access interference | Method fill uses BMB bus only during BC_FILL states, no overlap with getfield/putfield | Correct |
 | Latency hidden by microcode | Fill runs concurrently with pipeline (pipeline stalls only if JBC RAM not yet ready) | Correct |
 | Modulo-wrapping cache address | `blockBits`-width unsigned arithmetic wraps naturally | Correct |
 | Pre-computed clear mask | `clrVal` register updated every cycle, used in S2 for one-cycle eviction | Correct |
 
-### Note on Cache Size
+### Note on Cache Size — MEASURED 2026-08-20, and the old note was wrong
 
-The papers describe a default of 4 KB / 16 blocks. The SpinalHDL default is
-`jpcWidth=11` (2 KB) / 16 blocks (128 bytes per block). This is half the
-paper's default. The `jtres_cache` paper shows that even 1 KB / 8 blocks
-outperforms fixed-block caches at 2-4 KB, so 2 KB / 16 blocks is a reasonable
-embedded configuration. The `jpcWidth` parameter is configurable.
+This section used to read: *"The papers describe a default of 4 KB / 16 blocks.
+The SpinalHDL default is `jpcWidth=11` (2 KB) / 16 blocks... The `jtres_cache`
+paper shows that even 1 KB / 8 blocks outperforms fixed-block caches at 2-4 KB,
+so 2 KB / 16 blocks is a reasonable embedded configuration."*
+
+**It is not reasonable — it cost 35 % of Kfl's throughput.** The default is now
+`jpcWidth=13` / `blockBits=6` (8 KB, 64 blocks), measured on four boards:
+
+| board | Kfl | UdpIp |
+|---|---|---|
+| CYC5000 SDR | +41.5 % | +32.7 % |
+| A-E115FB DDR2, Wukong SDR + DDR3 | +35 % | +27.7 % |
+| Colorlight i5 SDR | +26.9 % | +21.0 % |
+
+Two errors in the old reasoning, both instructive:
+
+1. **It compared the wrong quantity.** The `jtres_cache` result is that a
+   VARIABLE-block cache beats a FIXED-block cache of the same size. That says
+   nothing about whether 2 KB is enough — it is a comparison between
+   organisations, not a floor on capacity.
+2. **It noticed the discrepancy and explained it away.** The note itself
+   observed the default was HALF the paper's, then reasoned rather than
+   measured. The sweep (`MethodCacheSweepSim`) took about an hour and settled
+   it; the reasoning had stood for years.
+
+The dominant term is **fragmentation, not capacity**: only a method's FIRST
+block carries a tag, so block COUNT caps how many methods are resident. On
+UdpIp, doubling the SIZE at constant block count changed nothing (23.2 % ->
+23.1 % miss) while doubling the COUNT at constant size removed 99.5 % of the
+fill traffic. `jpcWidth` and `blockBits` are both configurable, and
+`mcache=<jpcWidth>/<blockBits>` on `JopTopVerilog` sets them per build.
 
 ## What the Implementation Does Well
 
@@ -246,7 +272,7 @@ functional benefit, since the controller already guarantees input stability.
 Formal verification (`assumeControllerContract`) explicitly assumes this
 contract and all 9 properties pass.
 
-### 4. Default 2 KB May Be Tight for Complex Applications
+### 4. ~~Default 2 KB May Be Tight for Complex Applications~~ — CONFIRMED AND FIXED
 
 The papers evaluated benchmarks where 4 KB / 16 blocks was the default, and
 noted:
@@ -260,12 +286,25 @@ don't all fit:
 > "SPM WCET analysis has no pessimism at all. But the M$ WCET analysis may
 > involve pessimism for any program that is larger than the local memory size."
 
-With 2 KB and 16 blocks of 128 bytes each, methods larger than 128 bytes span
-multiple blocks, consuming the 16-entry namespace quickly. The threshold for
-the all-fit analysis becomes tighter.
+With the old 2 KB and 16 blocks of 128 bytes each, methods larger than 128
+bytes spanned multiple blocks, consuming the 16-entry namespace quickly. The
+threshold for the all-fit analysis became tighter. At 8 KB / 64 blocks the
+block size is unchanged at 128 bytes — the namespace is what grew.
 
-This is a configuration choice rather than a bug, but worth noting for users
-targeting platforms with more BRAM available.
+**This was right, and calling it "a configuration choice rather than a bug"
+was the mistake.** The mechanism named here — "consuming the 16-entry namespace
+quickly" — is exactly what the 2026-08-20 sweep measured: at 2 KB, Kfl missed
+34.8 % of method lookups and UdpIp 23.2 %, and fixing the geometry was worth
++35 % and +27.7 % on hardware.
+
+The lesson is about disposition, not analysis. The analysis in this section was
+correct and specific; it was filed as a note for "users targeting platforms with
+more BRAM" rather than measured. Nothing about it needed hardware to check —
+`MethodCacheSweepSim` counts misses in simulation and took an hour to write.
+
+Fixed: the default is now 8 KB / 64 blocks. Timing was never the obstacle
+(A-E115FB slack is identical at 16, 32, 64 AND 128 blocks, because the DDR2 PHY
+owns the critical path), and the cost is 9-31 % of block RAM.
 
 ### 5. ~~Formal Verification Gaps~~ — ADDRESSED
 
@@ -327,8 +366,10 @@ The implementation supports the "all-fit" analysis from the publications:
    and memory latency, both statically known
 3. **No pipeline interaction** — the cache fill is a bus-level operation,
    not entangled with pipeline state
-4. **16 blocks** provides reasonable capacity for the all-fit analysis in
-   typical embedded Java programs
+4. **64 blocks** provides the capacity for the all-fit analysis in typical
+   embedded Java programs. At the former 16 it did not: Kfl missed 34.8 % of
+   method lookups and UdpIp 23.2 %, so neither program's working set was
+   anywhere near conflict-free
 
 The `mcana` scope-based analysis directly applies to this implementation:
 

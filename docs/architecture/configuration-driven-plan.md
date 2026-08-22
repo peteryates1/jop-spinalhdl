@@ -183,8 +183,8 @@ Generate `JopSimConfig.java` from `JopCoreConfig`:
 
 ```java
 // Generated from JopCoreConfig
-public static final int CACHE_BLOCKS = <2^blockBits>;        // 16
-public static final int CACHE_SIZE_WORDS = <2^(jpcWidth-2)>; // 512
+public static final int CACHE_BLOCKS = <2^blockBits>;        // 64
+public static final int CACHE_SIZE_WORDS = <2^(jpcWidth-2)>; // 2048
 public static final int MAX_MEM = <mainMemSize / 4>;
 ```
 

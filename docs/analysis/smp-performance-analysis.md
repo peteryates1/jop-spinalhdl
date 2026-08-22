@@ -196,8 +196,14 @@ is 0.01 per cycle. Utilization: 80% -- borderline saturation.
 
 ### 4.1 Method Cache
 
-**Configuration**: 16 blocks x 32 words = 512 words (2KB), FIFO replacement,
+**Configuration**: 64 blocks x 32 words = 2048 words (8 KB), FIFO replacement,
 tag-only lookup (JBC RAM is the data storage).
+
+> **Changed 2026-08-20.** This section was written against the old default of
+> 16 blocks x 32 words = 512 words (2 KB). The block size is the same 32 words
+> either way, so the fill costs below are unchanged; what grew is the number of
+> resident methods. See [method-cache-review.md](method-cache-review.md) and
+> current-status item 51.
 
 **Hit behavior**: 2 cycles (S1 tag match). Miss: 3 cycles (S1 miss + S2 tag update)
 plus fill time.
@@ -212,10 +218,14 @@ and MethodCache instance). No sharing or coherency issues. However, method fills
 consume SDRAM bandwidth. With N cores, N independent method fills can compete
 for the bus.
 
-**Typical hit rate**: For a warmed-up system running steady-state code,
-method cache hit rates are typically 95-99% (methods stay cached until evicted
-by FIFO). Each miss costs 30-500 cycles depending on method size, making
-even a 1% miss rate significant at higher core counts.
+**Typical hit rate**: this was estimated at 95-99 % here, and the estimate was
+wrong by an order of magnitude. Measured with `MethodCacheSweepSim` on
+2026-08-20, the 2 KB / 16-block configuration missed **34.8 %** of Kfl's method
+lookups and **23.2 %** of UdpIp's — "methods stay cached until evicted by FIFO"
+is true, and at 16 blocks eviction is constant. At 8 KB / 64 blocks the fill
+traffic drops by 99.5 %. Each miss costs 30-500 cycles depending on method
+size, so the reasoning that "even a 1 % miss rate is significant at higher core
+counts" was right; only the assumed rate was fiction.
 
 ### 4.2 Object Cache
 
@@ -639,17 +649,40 @@ context where all other cores are halted, so the lock is unnecessary).
 lock overhead. Since other cores are halted during GC anyway, the locks in
 STW GC are pure overhead with no functional benefit.
 
-### 10.5 Method Cache Prefetch / Larger Cache -- Moderate Impact, Low Effort
+### 10.5 ~~Method Cache Prefetch / Larger Cache~~ -- DONE 2026-08-20
 
-**Current**: 16 blocks x 32 words = 512 words (2KB). Large methods cause
-frequent evictions.
+**This one was done, and it was the largest single win in the list.** The
+proposal below was to raise `jpcWidth` from 11 to 12 or 13; the default is now
+`jpcWidth=13` / `blockBits=6` (8 KB, 64 blocks), measured on hardware at
+**+35 % Kfl** and **+27.7 % UdpIp** (CYC5000 +41.5 %/+32.7 %). No prefetch was
+needed.
 
-**Proposed**: Increase to `jpcWidth=12` (4KB cache, 32 blocks) or `jpcWidth=13`
-(8KB). Each doubling halves the miss rate for working sets that fit in the
-larger cache.
+Two things the original proposal got wrong, both worth keeping:
 
-**Expected impact**: Reduces bus-blocking method fills. Diminishing returns
-past 4KB for typical JOP programs. Each doubling costs 1 M9K block per core.
+- **"Each doubling halves the miss rate for working sets that fit"** framed it
+  as a capacity problem. It is a **fragmentation** problem: only a method's
+  first block carries a tag, so the block COUNT caps how many methods are
+  resident. Doubling the size at constant block count changed UdpIp's miss rate
+  by 0.1 points (23.2 % -> 23.1 %); doubling the count at constant size removed
+  99.5 % of the fill traffic. `blockBits` was the parameter that mattered.
+- **"Diminishing returns past 4 KB"** — 8 KB / 64 blocks still beat 4 KB /
+  32 blocks by a further ~5 points of Kfl throughput.
+
+**Cost as built**: 9-31 % of block RAM depending on board, and no timing cost —
+on A-E115FB the slack is identical at 16, 32, 64 and 128 blocks because the
+DDR2 PHY owns the critical path.
+
+Original text, for the record:
+
+> **Current**: 16 blocks x 32 words = 512 words (2KB). Large methods cause
+> frequent evictions.
+>
+> **Proposed**: Increase to `jpcWidth=12` (4KB cache, 32 blocks) or `jpcWidth=13`
+> (8KB). Each doubling halves the miss rate for working sets that fit in the
+> larger cache.
+>
+> **Expected impact**: Reduces bus-blocking method fills. Diminishing returns
+> past 4KB for typical JOP programs. Each doubling costs 1 M9K block per core.
 
 ### 10.6 Reduce GC Halt Scope -- Moderate Impact, Moderate Effort
 

@@ -118,34 +118,49 @@ Three independent constants must agree.
 | `methodSizeBits` | `jop/memory/MethodCache.scala:31` | 10 | Hardware `bcLen` port width |
 | `MAX_BC` | `com/jopdesign/tools/Cache.java:28` | 1024 | JOPizer linker limit per method |
 | `MAX_BC_MASK` | `com/jopdesign/tools/Cache.java:29` | 0x3ff | = MAX_BC - 1 |
-| `jpcWidth` | `jop/config/JopCoreConfig.scala:294` | 11 | Total bytecode cache = 2^jpcWidth bytes |
-| `blockBits` | `jop/config/JopCoreConfig.scala:296` | 4 | Cache blocks = 2^blockBits |
+| `jpcWidth` | `jop/config/JopCoreConfig.scala:325` | 13 | Total bytecode cache = 2^jpcWidth bytes |
+| `blockBits` | `jop/config/JopCoreConfig.scala:327` | 6 | Cache blocks = 2^blockBits |
+
+> **Changed 2026-08-20**: `jpcWidth` 11 → 13 and `blockBits` 4 → 6, i.e. 2 KB /
+> 16 blocks → 8 KB / 64 blocks. Worth +35 % Kfl on four boards; see
+> current-status item 51. The `require(jpcWidth == 11)` pin that used to sit
+> here is gone. **This inverted the constraint below** — the cache is no longer
+> the binding limit on method size.
 
 ### Derived values
 
 - Block size = 2^(jpcWidth - 2 - blockBits) = 2^5 = 32 words per block
-- Total cache = 2^(jpcWidth - 2) = 512 words
+  (unchanged by the 2026-08-20 change — both parameters moved by 2)
+- Total cache = 2^(jpcWidth - 2) = 2048 words
 - Max blocks per method = method_words / block_size
 
 ### Constraint
 
 A method must fit in contiguous cache blocks. The effective limit is:
 
-    min(2^METHOD_SIZE_BITS, total_cache_words) = min(1024, 512) = 512 words
+    min(2^METHOD_SIZE_BITS, total_cache_words) = min(1024, 2048) = 1024 words
 
-So the cache size (512 words) is the real limit, not METHOD_SIZE_BITS (1024).
+So `METHOD_SIZE_BITS` (1024 words) is now the real limit, not the cache size
+(2048 words). **This is the reverse of the pre-2026-08-20 situation**, where the
+cache held 512 words and was the binding constraint. Any future analysis that
+assumes "the cache is the limit" is now wrong.
 
 ### To increase
 
-1. Increase `jpcWidth` (e.g., 12 → 4KB cache, 13 → 8KB) — costs BRAM
-2. Increase `METHOD_SIZE_BITS` and `methodSizeBits` if methods exceed 1024 words
-3. Update `MAX_BC` and `MAX_BC_MASK` in `Cache.java` to match
-4. Remove the `require(jpcWidth == 11)` guard in `JopCoreConfig`
+1. Increase `METHOD_SIZE_BITS` and `methodSizeBits` — this is the binding limit
+   now that the cache holds 2048 words
+2. Update `MAX_BC` and `MAX_BC_MASK` in `Cache.java` to match
+3. Increase `jpcWidth` further only if methods must exceed 2048 words — costs
+   BRAM. To hold more METHODS rather than longer ones, raise `blockBits`
+   instead: block COUNT, not size, is what caps residency
 
 ### Validation
 
-`require(jpcWidth == 11)` exists in JopCoreConfig but there is **no automated
-cross-check** between `METHOD_SIZE_BITS` (SpinalHDL) and `MAX_BC` (Java tools).
+The old `require(jpcWidth == 11)` pin is replaced by three elaboration checks in
+`JopCoreConfig` (`jpcWidth >= 11`; a block must be at least 2 words; and
+`blockBits + blockWordBits >= 9` so a maximum-size 1023-word method cannot
+truncate `nrOfBlks`). There is still **no automated cross-check** between
+`METHOD_SIZE_BITS` (SpinalHDL) and `MAX_BC` (Java tools).
 
 ---
 
@@ -298,9 +313,10 @@ agree on the layout.
 
 ### Validation
 
-**NONE** between JOPizer and hardware cache size. JOPizer allows 2048 bytes
-but hardware cache may only hold 512 words (2048 bytes at 4 bytes/word —
-this happens to match by coincidence, not by design).
+**NONE** between JOPizer and hardware cache size. JOPizer allows 2048 bytes;
+the hardware cache held 512 words (2048 bytes at 4 bytes/word) until
+2026-08-20 — a match by coincidence, not by design. It now holds 2048 words
+(8 KB), so the coincidence is gone and JOPizer is the tighter of the two.
 
 ---
 
@@ -524,8 +540,8 @@ Used by WCET analysis and simulator for cycle-accurate timing.
 
 | Constant | File | Value | Purpose |
 |----------|------|-------|---------|
-| `CACHE_BLOCKS` | `JOPConfig.java` | 16 | = 2^blockBits |
-| `CACHE_SIZE_WORDS` | `JOPConfig.java` | 1024 | Cache size in words |
+| `CACHE_BLOCKS` | `JOPConfig.java` | 16 | = 2^blockBits — **STALE, hardware is 64** |
+| `CACHE_SIZE_WORDS` | `JOPConfig.java` | 1024 | Cache size in words — **STALE, hardware is 2048** |
 | `OBJECT_CACHE_ASSOCIATIVITY` | `JOPConfig.java` | 16 | Object cache ways |
 | `OBJECT_CACHE_WORDS_PER_LINE` | `JOPConfig.java` | 16 | Words per line |
 | `OBJECT_CACHE_HIT_CYCLES` | `JOPConfig.java` | 5 | Hit latency |
@@ -540,6 +556,16 @@ Used by WCET analysis and simulator for cycle-accurate timing.
 
 - `CACHE_BLOCKS ≠ 2^blockBits`: WCET analysis computes wrong miss penalty.
 - `CACHE_SIZE_WORDS ≠ actual`: WCET analysis overestimates cache capacity.
+
+> **Both are mismatched as of 2026-08-20** and neither has been updated for the
+> new geometry. `CACHE_BLOCKS` is 16 against a hardware 64, and
+> `CACHE_SIZE_WORDS` is 1024 against a hardware 2048 — note that
+> `CACHE_SIZE_WORDS` was *already* wrong before the change (1024 declared
+> against 512 actual), in the pessimistic direction; it is now wrong in the
+> optimistic direction, which makes the WCET bound **unsound** rather than
+> merely loose. Nothing in the current build flow reads these — they feed the
+> `JopSim` timing model and WCET analysis, not the RTL — but they must be
+> corrected before any WCET number is quoted again.
 - Wait state mismatches: WCET bounds are unsound (too optimistic or
   too pessimistic).
 
@@ -618,7 +644,7 @@ Board oscillator
   │                 │     └─→ Jopa.ADDRBITS (NO LINK)
   │                 ├─→ instrWidth=10 ──→ decode bit slices
   │                 │     └─→ Instruction.INSTLEN (NO LINK)
-  │                 ├─→ jpcWidth=11 ──→ JBC RAM depth
+  │                 ├─→ jpcWidth=13 ──→ JBC RAM depth
   │                 │     └─→ MethodCache(jpcWidth, blockBits)
   │                 │           └─→ METHOD_SIZE_BITS (NO LINK to MAX_BC)
   │                 │           └─→ JOPConfig.CACHE_SIZE_WORDS (NO LINK)

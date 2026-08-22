@@ -799,7 +799,7 @@ The config organizes bytecodes by category. Each field specifies Java/Microcode/
 case class JopCoreConfig(
   // --- Architectural params (unchanged) ---
   dataWidth: Int = 32, pcWidth: Int = 11, instrWidth: Int = 10,
-  jpcWidth: Int = 11, ramWidth: Int = 8, blockBits: Int = 4,
+  jpcWidth: Int = 13, ramWidth: Int = 8, blockBits: Int = 6,
   memConfig: JopMemoryConfig = JopMemoryConfig(),
   cpuId: Int = 0, cpuCnt: Int = 1,
   ioConfig: IoConfig = IoConfig(),

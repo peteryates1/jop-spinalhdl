@@ -154,9 +154,9 @@ Unified configuration for a single JOP core. Defined in `jop/config/JopCoreConfi
 | `dataWidth` | Int | 32 | Data path width (fixed) |
 | `pcWidth` | Int | 11 | Microcode PC width (2K ROM) |
 | `instrWidth` | Int | 10 | Microcode instruction width |
-| `jpcWidth` | Int | 11 | Java PC width (2KB method cache) |
+| `jpcWidth` | Int | **13** | Java PC width (**8KB** method cache). Was 11 (2KB) until 2026-08-20; raising it is worth **+35 % Kfl** — see current-status item 51 |
 | `ramWidth` | Int | 8 | Stack RAM address width (256 entries) |
-| `blockBits` | Int | 4 | Method cache block bits (16 blocks) |
+| `blockBits` | Int | **6** | Method cache block bits (**64 blocks** x 32 words). Block COUNT caps how many methods are resident, and is the parameter that mattered |
 
 ### Memory and I/O
 

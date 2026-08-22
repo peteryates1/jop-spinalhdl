@@ -294,9 +294,9 @@ object BytecodeConfig {
  * @param dataWidth    Data path width (32 bits)
  * @param pcWidth      Microcode PC width (12 bits = 4K ROM)
  * @param instrWidth   Microcode instruction width (10 bits)
- * @param jpcWidth     Java PC width (11 bits = 2KB bytecode cache)
+ * @param jpcWidth     Java PC width (13 bits = 8KB bytecode cache)
  * @param ramWidth     Stack RAM address width (8 bits = 256 entries)
- * @param blockBits    Method cache block bits (4 = 16 blocks in JBC RAM)
+ * @param blockBits    Method cache block bits (6 = 64 blocks in JBC RAM)
  * @param memConfig    Memory subsystem configuration
  * @param supersetJumpTable  Superset jump table (all HW handlers present). Patched by resolveJumpTable().
  * @param cpuId        CPU identifier (for multi-core; 0 for single-core)
