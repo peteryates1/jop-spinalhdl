@@ -30,12 +30,17 @@ read_ip [file join $ip_root mig_7series_0/mig_7series_0.xci]
 read_verilog [file join $rtl_dir JopSmpDdr3WukongTop.v]
 
 # Read constraints (read base + full separately; XDC source doesn't resolve in non-project mode)
+# GMII constraints FIRST: rtl8211eg_gmii.xdc does `create_clock -name e_rxc`,
+# and wukong_ddr3.xdc below references [get_clocks e_rxc] in its
+# set_clock_groups. Read the other way round, that get_clocks matches
+# nothing ("WARNING: [Vivado 12-627] No clocks matched 'e_rxc'") and the
+# asynchronous exclusion silently does not apply -- so the RX crossings get
+# analysed as real paths and the build reports a violation it should not.
+# Read here rather than `source`d from inside an xdc: Vivado ignores that
+# and only logs a CRITICAL WARNING (item 58).
+read_xdc [file join $repo_root ../constraints/rtl8211eg_gmii.xdc]
 read_xdc [file join $repo_root vivado/constraints/wukong_ddr3_base.xdc]
 read_xdc [file join $repo_root vivado/constraints/wukong_ddr3.xdc]
-# Shared constraints, read here rather than `source`d from inside an xdc --
-# Vivado ignores that and only logs a CRITICAL WARNING, so these had never
-# been applied to any build (item 58).
-read_xdc [file join $repo_root ../constraints/rtl8211eg_gmii.xdc]
 
 # Synthesize (performance-optimized: retiming, resource sharing, LUT combining)
 synth_design -top JopSmpDdr3WukongTop -part xc7a100tfgg676-2 \

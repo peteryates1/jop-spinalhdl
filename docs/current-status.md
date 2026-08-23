@@ -5926,10 +5926,43 @@ properties instead of emitting a `source` line, so `wukongSdram` — the first
 board on generated constraints — is the only Wukong build where that packing has
 ever taken effect. The register delta above is that fix landing.
 
-**Not yet fixed:** `wukong_sdram.xdc` (exerciser) and `wukong_ddr3.xdc`
-(Ethernet). The correct mechanism is `read_xdc` in the build TCL, which is how
-`wukong_ddr3_base.xdc` is already handled and why that one is harmless — or
-generation, which removes the question.
+**FIXED 2026-08-23, and the fix had a second trap in it.** All three moved to
+`read_xdc` in the build TCL. `wukongFull` (the only DDR3 preset carrying the
+PHY, so the only one that can test it) now reports **zero** `Designutils
+20-1307`.
+
+But applying constraints that were never applied is not a no-op, and ORDER
+matters:
+
+| `wukongFull` DDR3 | 20-1307 | `e_rxc` resolved | timing |
+|---|---|---|---|
+| dead `source` — before | 2 | never created | "MET" — nothing was analysed |
+| GMII read AFTER `wukong_ddr3.xdc` | 0 | **no** | **VIOLATED -1.228 ns** |
+| **GMII read BEFORE it** | 0 | yes | **MET +0.349 ns** |
+
+`rtl8211eg_gmii.xdc` does `create_clock -name e_rxc`, and `wukong_ddr3.xdc`
+references `[get_clocks e_rxc]` in `set_clock_groups -asynchronous`. Read the
+wrong way round, that matched nothing —
+
+```
+WARNING: [Vivado 12-627] No clocks matched 'e_rxc'. [wukong_ddr3.xdc:83]
+```
+
+— so the asynchronous exclusion silently did not apply and genuinely-async RX
+crossings were analysed as real paths. The shared file says so in its own
+header: *"After sourcing, add e_rxc to your project's set_clock_groups."*
+
+**The design meets GMII timing.** The violation was constraint ordering, not
+the hardware. Worth stating because the intermediate result looked exactly like
+"the Ethernet path has always been broken", and acting on that would have been
+expensive.
+
+**Still unresolved, pre-existing:** `clk_pll_i` and `clk_125_ddr3_clk` also
+match nothing at read time — they are MIG and clock-wizard clocks that do not
+exist until the IP is synthesised. Vivado says it defers those
+(`[Project 1-498] ... will be read post-synthesis`), and the MET result implies
+they do bind, but that has not been verified directly. Any DDR3 timing number
+rests on it.
 
 **The general lesson, and why this was invisible.** A CRITICAL WARNING in a
 30-minute log is not a failure: the build completes, the bitstream works, and
