@@ -107,6 +107,7 @@ audit, and has moved down accordingly.
 28. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
 29. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
 30. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+31. **[#56](#item-56)** — WBNI: derive the hardware config from the application (analyser -> `JopConfig`), rather than picking a preset by hand
 
 ## 2. All items — summary
 
@@ -131,7 +132,7 @@ silently invalidate all of that. Use this to find one:
 | # | section | # | section | # | section |
 |---|---|---|---|---|---|
 | 1-3, 34 | Blocking / correctness | 11 | The measurement gap | 21 | Boards |
-| 4-7, 24, 25, 37-40, 42, 50, 51, 53-55 | Performance | 12-16, 23, 26, 27 | Smaller | 17-20, 22, 28 | Compute units |
+| 4-7, 24, 25, 37-40, 42, 50, 51, 53-55 | Performance | 12-16, 23, 26, 27, 52, 56 | Smaller | 17-20, 22, 28 | Compute units |
 | 8-10, 31, 32, 33, 35 | Hardware / infrastructure | 29, 30, 36 | Smaller (CI flakiness) | | |
 
 **Closed 2026-08-15/16**, the SMP push: **1** (generational GC on SMP — root
@@ -151,6 +152,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
 - **[55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall
+- **[56](#item-56)** — WBNI: derive the hardware config from the application, instead of picking a preset
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -5558,6 +5560,84 @@ core waits for a result it does not consume.
 cycles, and nothing has separated them. **Do that first** — it sets the ceiling
 on the whole exercise, and item 51's history is that the category names in this
 profile do not always mean what they sound like.
+
+
+<a id="item-56"></a>
+
+### Item 56 — WBNI: derive the hardware configuration from the application, instead of picking a preset
+
+**Raised 2026-08-23.** Build the core for the program it will run: analyse the
+Java application, work out what it actually needs, emit a `JopConfig`, then
+build the FPGA. Light on doubles, leave the DCU out. The flow would be
+
+```
+develop on host JDK/sim -> analyser -> .jop + JopConfig for this target
+                        -> FPGA build -> remote debug if needed
+```
+
+**This is worth recording because most of the machinery already exists.**
+
+- **JOPizer already walks the whole application.** It is the linker: it visits
+  every class and method, so the bytecode usage and the method-length
+  distribution are both in its hands already. It emits `code_length` per method
+  in the `.jop.txt` dump — that is the input the method-cache geometry needs, and
+  it is what `docs/architecture/tuning-guide.md` already tells you to grep.
+- **`BytecodeConfig` already encodes which CUs may legally be dropped.** Every
+  one of the 32 entries carries an `ImpConstraint`: `Asm` (JOPizer keeps the
+  bytecode), `JavaOk` (a microcode `_sw` handler exists), `NoMicrocode` (only
+  Java or hardware). That is the analyser's safety table, already written and
+  already enforced — `bc=double:mc` is refused today with "dadd: mc is invalid —
+  no SW handler exists".
+- **The knobs are already CLI-addressable**: `bc=<key>:<impl>`, `mcache=`,
+  `l2sets=` on `JopTopVerilog`.
+- **The measurement harnesses already answer the sizing questions per app**:
+  `MethodCacheSweepSim` counts misses per geometry, `ScaleL2` sweeps L2 capacity,
+  and `docs/analysis/wukong-utilization-sweep.md` holds the per-feature LUT
+  costs.
+- **[Item 52](#item-52) is the same idea pointing the other way** — generate the
+  Java tools' config FROM the preset. Both want one source of truth instead of
+  hand-copied constants; doing either should consider the other.
+
+**A manual proof of concept exists.** On 2026-08-23, by hand: the benchmark set
+is integer, so the DCU is dead weight; dropping it on a 4-core Wukong freed
+~17,240 LUTs and bought the 64-block method cache, taking Kfl's miss rate from
+16.6 % to 0.1 % and timing from -0.043 ns to **+0.069 ns MET**. That is exactly
+what the analyser would have concluded, and it took a day of measurement to
+reach by hand.
+
+**What is missing:** JOPizer emits no bytecode histogram (nothing in
+`java/tools/src` counts opcodes), there is no dynamic frequency data, and
+nothing emits a config.
+
+**The traps, which are the reason this is an item and not a weekend:**
+
+- **Static presence is not need, and static absence is not safety.**
+  [Item 17](#item-17) is precisely this failure: the `needs*Compute` predicates
+  under-approximated CU reachability and cost 10 JVM tests (66 -> 56) before
+  being reverted. An analyser that concludes "no doubles" from the application's
+  own bytecodes can be wrong via library code, `JVMHelp`, GC and exception
+  paths.
+- **Frequency, not presence.** One `dmul` on an error path should not buy a DCU;
+  one in a hot loop should. A boolean analysis gets this wrong in both
+  directions, so it needs counts — which means a profile or at least a call-graph
+  weighting, not a grep.
+- **Dropping a CU is only safe where the fallback is both legal AND covered.**
+  `ImpConstraint` gives legality. Coverage is [item 18](#item-18), and it is
+  uneven: `lmul_sw` went years unexecuted with a `require` checking the wrong
+  predicate. A generated config must be validated by the JVM suite, not just
+  elaborated.
+- **Costs are per-part.** The LUT figures above are XC7A100T. A Cyclone IV LE
+  and an ECP5 slice are not the same currency, so the cost table has to be
+  per-family or the analyser will make confident wrong trades.
+- **It ties the bitstream to the application.** Fine for a fixed embedded
+  deployment, which is JOP's normal case, but it means changing the app can mean
+  re-running P&R — and the fallback of "build the generous preset" must stay
+  available.
+
+**Cheapest first step, and useful on its own:** have JOPizer emit a per-opcode
+histogram and the method-length distribution alongside the `.jop`. That is a
+report, not a config generator, so it cannot make a wrong trade — and it is the
+input every part of the rest needs.
 
 
 ## 4. Two workstreams, both largely done
