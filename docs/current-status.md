@@ -108,6 +108,7 @@ audit, and has moved down accordingly.
 29. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
 30. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
 31. **[#56](#item-56)** — WBNI: derive the hardware config from the application (analyser -> `JopConfig`), rather than picking a preset by hand
+32. **[#57](#item-57)** — The XDC/QSF generators exist and nothing uses them; constraints are hand-written and have drifted from the config
 
 ## 2. All items — summary
 
@@ -132,7 +133,7 @@ silently invalidate all of that. Use this to find one:
 | # | section | # | section | # | section |
 |---|---|---|---|---|---|
 | 1-3, 34 | Blocking / correctness | 11 | The measurement gap | 21 | Boards |
-| 4-7, 24, 25, 37-40, 42, 50, 51, 53-55 | Performance | 12-16, 23, 26, 27, 52, 56 | Smaller | 17-20, 22, 28 | Compute units |
+| 4-7, 24, 25, 37-40, 42, 50, 51, 53-55 | Performance | 12-16, 23, 26, 27, 52, 56, 57 | Smaller | 17-20, 22, 28 | Compute units |
 | 8-10, 31, 32, 33, 35 | Hardware / infrastructure | 29, 30, 36 | Smaller (CI flakiness) | | |
 
 **Closed 2026-08-15/16**, the SMP push: **1** (generational GC on SMP — root
@@ -153,6 +154,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
 - **[55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall
 - **[56](#item-56)** — WBNI: derive the hardware config from the application, instead of picking a preset
+- **[57](#item-57)** — The XDC/QSF generators exist and nothing uses them — constraints hand-written, drifted from the config
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -5638,6 +5640,61 @@ nothing emits a config.
 histogram and the method-length distribution alongside the `.jop`. That is a
 report, not a config generator, so it cannot make a wrong trade — and it is the
 input every part of the rest needs.
+
+
+<a id="item-57"></a>
+
+### Item 57 — The XDC/QSF generators exist and NOTHING USES THEM — constraints are still hand-written
+
+**Raised 2026-08-23**, after a summary sent the wrong console port and cost an
+hour. `jop.generate.XdcGenerator` and `jop.generate.QsfGenerator` both exist,
+both take a `JopConfig`, and both resolve pins through `PinResolver`. Neither
+is invoked by any Makefile or TCL under `fpga/` — `XdcGeneratorMain` prints to
+stdout and stops there. **Every board build reads hand-maintained
+constraints.**
+
+So the config is not the source of truth for pins, and the two drift:
+
+| | says |
+|---|---|
+| `wukongFull` preset | `devicePart = Some("CH340N")`, assembly `SystemAssembly.wukong` |
+| `wukong_ddr3_base.xdc` (what the build reads) | UART on **J11 -> Pico uart0** (A4/A5); the CH340N at E3/F3 is hardwired and "cannot be tapped" |
+
+The XDC is right and the config is wrong, and the generated summary faithfully
+reported the wrong one. [Item 52](#item-52) is the same disease pointing at the
+Java tools; this is the constraints half.
+
+**Adopting the generator today would emit the wrong pins**, so this is not
+"wire it up". `SystemAssembly.wukong` has no J11 device at all — only
+`wukongWithJ11Uart` carries `Board.J11UartAdapter`, and it is described as the
+DUAL-subsystem assembly, though single-system DDR3 builds use J11 too. The
+assembly data has to be corrected before generation can be trusted.
+
+Note the J11 choice is a HOST-side decision, not electrical: the XDC explains
+that a second `1a86:7523` bridge is indistinguishable from the A-E115FB's, so
+J11 gives a Pico CDC with a real serial number. That reasoning lives only in an
+XDC comment and is invisible to the config.
+
+**Scope, honestly.** Pin constraints are generable. Some of what is in these
+files is not: `wukong_ddr3.xdc` carries hand-tuned timing exceptions (a
+`ui_clk` -> `sys_clk` UART crossing, with a comment explaining it stayed
+invisible while the clocks were exactly equal). The realistic split is
+**generate the pins, keep hand-written timing exceptions in a separate
+file** — which also makes it obvious which constraints are derived and which
+are judgement.
+
+**On templating (jmustache or similar): not recommended.** The existing
+generators build strings in plain Scala from typed `PinResolver` output, and
+that is the right shape — the output is structured data (pin -> property), not
+prose with holes, so a template would stringify early and lose the typing that
+catches a bad pin at elaboration. It would also add a dependency and a second
+artefact to keep in sync. The problem here is adoption and wrong assembly data,
+not the rendering mechanism.
+
+**Order:** (1) fix the assembly so `wukongFull`'s UART resolves to J11,
+(2) diff generated XDC against the hand-written one per board until they agree,
+(3) switch one board's build to the generated file, (4) roll out. Step 2 is the
+real work and is a pure comparison — no build risk until step 3.
 
 
 ## 4. Two workstreams, both largely done
