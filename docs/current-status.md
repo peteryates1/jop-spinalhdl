@@ -338,7 +338,7 @@ exposure and have not been rebuilt either.
 
 **`14/5` ROUTES AND CLOSES, same day.** 12 cores at 16 KB / 32 blocks / 512 B:
 
-| 12-core, 36 MHz | `11/4` (2026-08-15) | `13/6` | **`14/5`** |
+| 12-core, **60 MHz** (see clock note) | `11/4` (2026-08-15) | `13/6` | **`14/5`** |
 |---|---|---|---|
 | LE | 118,085 (79 %) | fits, ~86 % | **126,601 (85 %)** |
 | routing | ok | **fails, 94 % congestion** | **ok, no termination** |
@@ -359,9 +359,37 @@ threshold, and it confirms `14/5` as the floor: at 12 cores it is not a
 compromise, it is the largest geometry that routes, and it keeps the 512 B
 block size the sweep identified.
 
-**Not yet done:** hardware validation. This is a fit and a timing report, not a
-`SmpGcTest` run — and the board is attached, so there is no excuse beyond time.
-Nor has 8 or 10 cores been tried, where `13/6` may well route.
+**HARDWARE-VALIDATED the same evening**: `SmpGcTest` on the 12-core `14/5`
+bitstream returns `cores 12, publishers 11`, `minors 10 verified 192 errors 0`,
+**`SMPGC OK`**, `JVM exit!`. So the geometry that routes also runs, on all
+twelve cores, with the generational collector.
+
+**CLOCK NOTE — this board does NOT run at the frequency the preset states, and
+the "36 MHz" in the table above and in older notes is wrong.** Evidence:
+
+- `dram_pll.vhd` is dated 2026-08-15 and was NOT regenerated for this build.
+  Its parameters are a 20000 ps (50 MHz) input with `clk1 = x6/5`, i.e.
+  **60 MHz**, and the core is clocked from `dramPll_c1`.
+- The STA slack of +2.792 ns is reported against
+  `dramPll|...|pll1|clk[1]` — that 60 MHz domain. So timing closed at 60 MHz,
+  not 36, which makes the result better than first written up.
+- The console runs at **2 Mbaud**, not the 1.8 Mbaud that 36 MHz would force
+  (36/(2x5) = 3.6, which rounds and detunes). `2e6 = 60e6/(5 x (5+1))` and
+  `round(60e6/(2e6 x 5)) - 1 = 5`, so the RTL's divider was computed for
+  60 MHz too. A full 15,609-word download completed with a valid checksum,
+  which a mis-tuned baud would not survive.
+
+So `ep4cgx150Smp(n, clkMhz)`'s frequency argument reached neither the PLL nor
+the UART divider. **`36` was passed on the command line and silently ignored.**
+That is the documented EP4CGX150 trap ("the clock is hardwired in
+`dram_pll.vhd`, not set by the preset MHz arg") in a form where nothing broke —
+which is why it survived: the numbers were simply recorded against the wrong
+frequency. The claim that `DramPllGen` now generates the PLL from the preset
+does not hold for this path.
+
+**Not yet done:** 8 and 10 cores, where `13/6` may well route; and confirming
+whether the 2026-08-15 baseline row was also really 60 MHz, which its own PLL
+file suggests.
 
 12 cores validated 2026-08-15: PLL 18/25 = 36 MHz, `SMPGC OK` with `minors 10
 / verified 192 / errors 0` on **4/4 runs**, `cores 12, publishers 11`, and
