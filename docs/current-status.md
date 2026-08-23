@@ -109,6 +109,7 @@ audit, and has moved down accordingly.
 30. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
 31. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
 32. **[#57](#item-57)** — The XDC/QSF generators exist and nothing uses them; constraints are hand-written and have drifted from the config
+33. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
 
 ## 2. All items — summary
 
@@ -134,7 +135,7 @@ silently invalidate all of that. Use this to find one:
 |---|---|---|---|---|---|
 | 1-3, 34 | Blocking / correctness | 11 | The measurement gap | 21 | Boards |
 | 4-7, 24, 25, 37-40, 42, 50, 51, 53-55 | Performance | 12-16, 23, 26, 27, 52, 56, 57 | Smaller | 17-20, 22, 28 | Compute units |
-| 8-10, 31, 32, 33, 35 | Hardware / infrastructure | 29, 30, 36 | Smaller (CI flakiness) | | |
+| 8-10, 31, 32, 33, 35, 58 | Hardware / infrastructure | 29, 30, 36 | Smaller (CI flakiness) | | |
 
 **Closed 2026-08-15/16**, the SMP push: **1** (generational GC on SMP — root
 cause was `AlteraSdramAdapter`, not the collector), **2** (`JopIhluGcBramSim`
@@ -155,6 +156,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall
 - **[56](#item-56)** — WBNI: derive the hardware config from the application. JOPizer static profile done; the measurement framework is the bulk
 - **[57](#item-57)** — The XDC/QSF generators exist and nothing uses them — constraints hand-written, drifted from the config
+- **[58](#item-58)** — `source` inside an XDC is silently ignored by Vivado — four shared constraint files never applied
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -5839,6 +5841,68 @@ pin on both, already identical. The generators are much closer to usable than
 this item assumed when it was filed.
 
 **Not yet checked:** the A-E115FB `.qsf`, and the non-Wukong Vivado boards.
+
+
+<a id="item-58"></a>
+
+### Item 58 — `source` inside an XDC is silently ignored by Vivado — four shared constraint files have never been applied
+
+**Found 2026-08-23 by switching one board to generated constraints and running
+the control.** `wukongSdram` was built twice from the SAME Verilog, differing
+only in which XDC was read. The results were not identical:
+
+| | generated XDC | hand-written XDC |
+|---|---|---|
+| Slice LUTs | 5,979 | 5,967 |
+| **Slice Regs** | **5,574** | **5,608** |
+| WNS | +0.414 ns | +0.404 ns |
+
+Vivado is deterministic for fixed inputs, so a 34-register difference had to
+come from the constraints. It did:
+
+```
+CRITICAL WARNING: [Designutils 20-1307] Command 'source' is not supported in
+the xdc constraint file. [wukong_jop_sdram.xdc:122]
+```
+
+**`source` does not work inside a file read by `read_xdc`.** Every shared
+constraint file included that way has been silently absent from every build:
+
+| file | includes | consequence |
+|---|---|---|
+| `wukong_jop_sdram.xdc:122` | `sdram_sdr.xdc` | **SDR SDRAM IOB packing never applied** |
+| `wukong_sdram.xdc:132` | `sdram_sdr.xdc` | same, SDRAM exerciser |
+| `wukong_ddr3.xdc:68` | `rtl8211eg_gmii.xdc` | **Ethernet GMII constraints never applied** |
+| `wukong_ddr3.xdc:5` | `wukong_ddr3_base.xdc` | harmless — the build TCL reads it directly |
+
+The DDR3 SMP build logs **ten** of these critical warnings. IOB mentions in the
+build log: 26 with the generated file, 2 with the hand-written one.
+
+**What it cost.** `sdram_sdr.xdc` exists to "place data and DQM registers in I/O
+blocks for deterministic timing" on the SDRAM interface. That has never
+happened, so every SDR build has had its DQ/DQM registers placed in the fabric
+wherever the placer liked — working (these builds pass `DoAll` on hardware) but
+with I/O timing that is neither deterministic nor as good as intended. The
+Ethernet case is worse in principle: GMII constraints simply absent on any DDR3
+build carrying the PHY.
+
+**Already fixed for one board.** `XdcGenerator` now INLINES the two IOB
+properties instead of emitting a `source` line, so `wukongSdram` — the first
+board on generated constraints — is the only Wukong build where that packing has
+ever taken effect. The register delta above is that fix landing.
+
+**Not yet fixed:** `wukong_sdram.xdc` (exerciser) and `wukong_ddr3.xdc`
+(Ethernet). The correct mechanism is `read_xdc` in the build TCL, which is how
+`wukong_ddr3_base.xdc` is already handled and why that one is harmless — or
+generation, which removes the question.
+
+**The general lesson, and why this was invisible.** A CRITICAL WARNING in a
+30-minute log is not a failure: the build completes, the bitstream works, and
+the missing constraints only show up as timing that is quietly worse than the
+constraint file claims. **The bug was found by comparing a generated artefact
+against a hand-written one and refusing to explain away a 34-register
+difference** — not by reading the log, which had been saying so on every build
+for as long as the file has existed.
 
 
 ## 4. Two workstreams, both largely done
