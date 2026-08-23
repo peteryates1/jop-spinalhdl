@@ -236,6 +236,41 @@ object L2SetsOverride {
   }
 }
 
+/** Bytecode implementation override: `bc=<key>:<impl>[,<key>:<impl>...]`,
+  * e.g. `bc=double:mc` or `bc=double:mc,float:mc`.
+  *
+  * Exists because the method cache's real competitor for LUTs is the compute
+  * units, not the core count, and that trade could not be explored without
+  * hand-editing a preset. Per-core costs measured on this part
+  * (`docs/analysis/wukong-utilization-sweep.md`): DCU 4,961 LUTs, FCU 1,788,
+  * LCU 1,452 -- against ~850 per core to take the method cache from 16 to 64
+  * blocks. CUs are PER CORE, so at four cores dropping the DCU frees ~19,800
+  * LUTs and buys the 64-block geometry nearly six times over.
+  *
+  * Merged ON TOP of the preset's map, and `BytecodeConfig.resolve` ranks
+  * name > group > "*", so `bc=double:mc` demotes just that group on a preset
+  * built with `"*" -> "hw"`. Keys are validated there.
+  *
+  * NOT free: microcode fallbacks are unevenly covered (item 18 -- `lmul_sw`
+  * went years unexecuted with a `require` checking the wrong predicate), so a
+  * build that drops a CU needs the JVM suite run against it, not just a fit.
+  */
+object BytecodesOverride {
+  def apply(c: JopConfig, spec: String): JopConfig = {
+    val pairs = spec.split(",").filter(_.nonEmpty).map { p =>
+      val kv = p.split(":")
+      require(kv.length == 2, s"bc=$spec: each entry must be <key>:<impl>, e.g. double:mc")
+      kv(0) -> kv(1)
+    }.toMap
+    require(pairs.nonEmpty, s"bc=$spec set no bytecodes")
+    c.copy(systems = c.systems.map { sys =>
+      def on(cc: JopCoreConfig) = cc.copy(bytecodes = cc.bytecodes ++ pairs)
+      sys.copy(coreConfig = on(sys.coreConfig),
+               perCoreConfigs = sys.perCoreConfigs.map(_.map(on)))
+    })
+  }
+}
+
 object MCacheOverride {
   def apply(c: JopConfig, spec: String): JopConfig = {
     val parts = spec.split("/")

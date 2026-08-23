@@ -37,7 +37,8 @@ object JopTopVerilog {
     // what it says. Switches are order-independent; positionals are not.
     val positional = args.filterNot(a =>
       a.equalsIgnoreCase("perf") || a.toLowerCase.startsWith("uart=") ||
-      a.toLowerCase.startsWith("mcache=") || a.toLowerCase.startsWith("l2sets="))
+      a.toLowerCase.startsWith("mcache=") || a.toLowerCase.startsWith("l2sets=") ||
+      a.toLowerCase.startsWith("bc="))
     val base = resolveBase(name, positional)
     val withPerf = if (args.exists(_.equalsIgnoreCase("perf"))) PerfCountersOverride(base) else base
     val withUart = args.find(_.toLowerCase.startsWith("uart="))
@@ -46,9 +47,12 @@ object JopTopVerilog {
     val withMCache = args.find(_.toLowerCase.startsWith("mcache="))
       .map(a => MCacheOverride(withUart, a.substring(7)))
       .getOrElse(withUart)
-    args.find(_.toLowerCase.startsWith("l2sets="))
+    val withL2 = args.find(_.toLowerCase.startsWith("l2sets="))
       .map(a => L2SetsOverride(withMCache, a.substring(7)))
       .getOrElse(withMCache)
+    args.find(_.toLowerCase.startsWith("bc="))
+      .map(a => BytecodesOverride(withL2, a.substring(3)))
+      .getOrElse(withL2)
   }
 
   private def resolveBase(name: String, args: Array[String]): JopConfig = name match {
