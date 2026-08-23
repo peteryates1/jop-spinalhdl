@@ -96,8 +96,62 @@ possibility and costs only BRAM we are not short of. Deeper slots do increase
 internal fragmentation (a 9-byte method in a 1 KB slot), but since the slot
 count is what binds and BRAM is spare, that waste buys namespace.
 
-**Rule of thumb**: raise `blockBits` as far as timing allows; then spend spare
-BRAM on `jpcWidth`. Do not trade the first for the second.
+### The policy: hold the BLOCK SIZE at 512 B, vary the COUNT
+
+Depth costs no logic at all. Out-of-context on xc7a100t-2, at a fixed 64 blocks:
+
+| geometry | size | block size | LUTs | FFs |
+|---|---|---|---|---|
+| `13/6` — today's default | 8 KB | 128 B | 1,919 | 1,295 |
+| `14/6` | 16 KB | 256 B | 1,910 | 1,295 |
+| `15/6` | 32 KB | **512 B** | **1,885** | 1,295 |
+
+LUTs *fall* slightly as slots get deeper — a wider `blockWordBits` means a
+narrower slice off `bcLen` for `nrOfBlks` — and the flip-flop count does not
+move at all, because the tag array is `blocks x 18` however deep the slots are.
+
+Since 512 B is where depth saturates (above), the geometry choice collapses to
+one axis:
+
+| | size | blocks | block size |
+|---|---|---|---|
+| preferred | 32 KB | 64 | **512 B** (`15/6`) |
+| **minimum** | 16 KB | 32 | **512 B** (`14/5`) |
+| today's default | 8 KB | 64 | 128 B (`13/6`) |
+
+`15/6` and `14/5` are the SAME block size and differ only in comparator count,
+which is the axis that costs LUTs. **Pick the count from the LUT budget and
+leave the block size at 512 B.** Today's default sits four times below that
+block size, which is why DoAll's p90 method (131 B) spills into a second slot
+and consumes two tags to use one.
+
+**`14/5` is the floor** on any part with BRAM to spare. Below 32 blocks the
+fragmentation cost is severe (16 blocks is 16.6 % Kfl miss against 0.1 %).
+
+### The rule inverts on very small parts
+
+On a part where BRAM binds before LUTs, the above is backwards, and the trap is
+that a "smaller" geometry may not be smaller:
+
+| part | LEs | BRAM |
+|---|---|---|
+| 10M08SAE144C8G (MAX1000) | 8,000 | 378 Kbit (47 KB) |
+| EP4CE6E22C8 | 6,272 | 276 Kbit |
+
+**`14/4` is small in BLOCKS and large in BYTES.** At 16 KB it is 128 Kbit —
+**34 % of a 10M08's entire block RAM, and twice today's 8 KB default.** Using it
+to "go smaller" on a tiny part makes the binding constraint worse. There you
+must cut `jpcWidth` as well: `12/4` (4 KB, 16 x 256 B) or `11/4`
+(2 KB, 16 x 128 B).
+
+Note the MAX1000 may not be a geometry question at all: a single JOP core
+measured **8,784 LE** on the EP4CGX150 against the 10M08's **8,000 LE total**,
+and `fpga/max1000/` has never produced a build. Check that a core fits before
+tuning its cache.
+
+**Rule of thumb**: hold the block size at 512 B; raise `blockBits` as far as
+timing allows; cut `jpcWidth` only when BRAM is the binding constraint. Do not
+trade block count for depth.
 
 ---
 
