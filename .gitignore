@@ -141,6 +141,7 @@ java/apps/*/build/
 java/apps/*/*.jop
 java/apps/*/*.jop.txt
 java/apps/*/*.jop.link.txt
+java/apps/*/*.jop.stats.txt
 
 # Kept-aside binaries for a reproduction that is sensitive to code layout: the
 # 4-core generational GC failure only reproduces for a particular image, and any
