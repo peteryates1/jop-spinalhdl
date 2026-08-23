@@ -174,6 +174,19 @@ public class JOPizer extends OldAppInfo implements Serializable {
 	        // dump of BCEL info to a text file
 			jz.iterate(new Dump(jz, jz.outTxt));
 
+			// Static profile of the linked application: opcode histogram and
+			// method-length distribution, for choosing compute units and the
+			// method cache geometry. Raw counts only -- see OpcodeStats.
+			OpcodeStats stats = new OpcodeStats(jz);
+			jz.iterate(stats);
+			PrintWriter statsOut =
+				new PrintWriter(new FileOutputStream(jz.outFile + ".stats.txt"));
+			try {
+				stats.dump(statsOut);
+			} finally {
+				statsOut.close();
+			}
+
 			// BuildVT was after SetMethodInfo
 			// we need it for replace of field offsets
 			// is this ok?

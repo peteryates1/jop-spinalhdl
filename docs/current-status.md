@@ -107,7 +107,7 @@ audit, and has moved down accordingly.
 28. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
 29. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
 30. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
-31. **[#56](#item-56)** — WBNI: derive the hardware config from the application (analyser -> `JopConfig`), rather than picking a preset by hand
+31. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
 32. **[#57](#item-57)** — The XDC/QSF generators exist and nothing uses them; constraints are hand-written and have drifted from the config
 
 ## 2. All items — summary
@@ -153,7 +153,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
 - **[55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall
-- **[56](#item-56)** — WBNI: derive the hardware config from the application, instead of picking a preset
+- **[56](#item-56)** — WBNI: derive the hardware config from the application. JOPizer static profile done; the measurement framework is the bulk
 - **[57](#item-57)** — The XDC/QSF generators exist and nothing uses them — constraints hand-written, drifted from the config
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
@@ -5682,10 +5682,44 @@ nothing emits a config.
   re-running P&R — and the fallback of "build the generous preset" must stay
   available.
 
-**Cheapest first step, and useful on its own:** have JOPizer emit a per-opcode
-histogram and the method-length distribution alongside the `.jop`. That is a
-report, not a config generator, so it cannot make a wrong trade — and it is the
-input every part of the rest needs.
+**FIRST STEP DONE 2026-08-23 — `OpcodeStats`, a JOPizer visitor.** Every link
+now writes `<app>.jop.stats.txt`: the method-length distribution, the blocks
+each method would consume at 128/256/512/1024 B, and a per-opcode histogram.
+A report, not a config generator, so it cannot make a wrong trade.
+
+It validates against numbers reached by other means: JbeBench median **9 B** and
+max **882 B** match what was previously grepped out of `.jop.txt`, and the block
+table independently confirms the 512 B geometry policy from the application side
+— 962 of 963 methods fit one 512 B slot, against 890 at today's 128 B where 73
+methods burn extra tag slots and the worst needs 7. The sweep reached 512 B from
+MISS COUNTS; this reaches it from the LENGTH DISTRIBUTION.
+
+**It also immediately demonstrated why the analyser is the hard part.** JbeBench
+contains double opcodes — one `dsub`, four `ddiv`, ten `dcmpl`, several
+conversions — in linked library code the benchmarks never execute. A naive
+"does the application mention doubles?" rule would have kept ~19,800 LUTs of DCU
+at four cores, when dropping it is measurably correct (DoAll 66/66 without it).
+**Static presence is not need. Absence is the only trustworthy signal.**
+
+Deliberately emits RAW COUNTS and no conclusion: deciding what may replace a
+bytecode needs `BytecodeConfig`'s `ImpConstraint` registry, which is in Scala,
+and copying it into the Java tools would create exactly the drift item 52
+tracks.
+
+**Remaining, and it is the bulk of the work:** a FRAMEWORK for measuring the
+existing and future hardware set — not a one-off analyser. The pieces that exist
+today (`MethodCacheSweepSim`, `ScaleL2`, `DoAppPerf`, the utilization sweep,
+now `OpcodeStats`) were each built for one question and are driven by hand.
+Turning "which CUs does this application need" into an answer means running a
+matrix of configurations against an application and comparing, repeatedly, as
+boards are added. **Preference: build it in Java** — the toolchain, JOPizer and
+the applications are already Java, so the analysis should live with them and
+drop to Scala only where it must (the config registry, elaboration).
+
+Note what `OpcodeStats` still cannot do, and the framework must: it is static,
+so it cannot distinguish an error path from an inner loop; and it counts
+everything JOPizer linked, not what is reachable. Both need execution counts,
+which is a simulator or hardware-counter job, not a linker job.
 
 
 <a id="item-57"></a>
