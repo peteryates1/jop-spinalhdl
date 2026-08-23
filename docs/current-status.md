@@ -336,10 +336,32 @@ LUTs/core multiplies — and both went undetected because no SMP build was made
 after the default changed. The A-E115FB and CYC5000 SMP builds have the same
 exposure and have not been rebuilt either.
 
-**What it does NOT tell us:** whether a smaller geometry routes here. The next
-experiment is 12 cores at `14/5` (32 blocks) — half the comparators, still the
-512 B block size — which is the step-down item 53 says the higher core counts
-need. Not yet run.
+**`14/5` ROUTES AND CLOSES, same day.** 12 cores at 16 KB / 32 blocks / 512 B:
+
+| 12-core, 36 MHz | `11/4` (2026-08-15) | `13/6` | **`14/5`** |
+|---|---|---|---|
+| LE | 118,085 (79 %) | fits, ~86 % | **126,601 (85 %)** |
+| routing | ok | **fails, 94 % congestion** | **ok, no termination** |
+| setup slack, Slow 100C | +3.084 ns | — | **+2.792 ns**, TNS 0.000 |
+| memory bits | — | — | 2,520,704 (38 %) |
+
+Zero failing or unconstrained paths. **Halving the block count is what fixed
+it** — peak regional interconnect usage fell 94 % -> 84 % — which is the
+expected lever, since `blockBits` is the axis that costs comparators and the
+failure was congestion rather than area.
+
+So the answer at the top of the core-count range: **64 blocks does not route at
+12 cores; 32 blocks does**, for ~8,500 LE and 0.29 ns against the old 16-block
+default, and it buys the count that takes Kfl from 34.8 % to 0.6 % miss.
+
+This is the data [item 53](#item-53) was missing for its per-core-count
+threshold, and it confirms `14/5` as the floor: at 12 cores it is not a
+compromise, it is the largest geometry that routes, and it keeps the 512 B
+block size the sweep identified.
+
+**Not yet done:** hardware validation. This is a fit and a timing report, not a
+`SmpGcTest` run — and the board is attached, so there is no excuse beyond time.
+Nor has 8 or 10 cores been tried, where `13/6` may well route.
 
 12 cores validated 2026-08-15: PLL 18/25 = 36 MHz, `SMPGC OK` with `minors 10
 / verified 192 / errors 0` on **4/4 runs**, `cores 12, publishers 11`, and
