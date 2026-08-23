@@ -77,35 +77,36 @@ the missing resets themselves — but a five-seed sweep found no offender among
 the registers, so it is now a single named defect rather than a 405-register
 audit, and has moved down accordingly.
 
-1. **[#51](#item-51)** — Method cache — **DONE and DEFAULTED, +35 % Kfl on four boards.** Remaining: statics and idle/direct are now Kfl's top two stall categories (42 % and 39 %)
-2. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
-3. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-4. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
-5. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
-6. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
-7. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
-8. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
-9. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
-10. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
-11. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-12. **[#53](#item-53)** — 4-core Wukong takes `14/4` (16 KB, 16 blocks): 32 blocks misses timing by 43 ps even under `Explore`. Preset default still open
-13. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
-14. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-15. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-16. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-17. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-18. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-19. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-20. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-21. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-22. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
-23. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-24. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-25. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-26. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-27. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
-28. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
-29. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+1. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
+2. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
+3. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
+4. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+5. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
+6. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+7. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
+8. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
+9. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+10. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+11. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
+12. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+13. **[#53](#item-53)** — 4-core Wukong takes `14/4` (16 KB, 16 blocks): 32 blocks misses timing by 43 ps even under `Explore`. Preset default still open
+14. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
+15. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+16. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+17. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+18. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+19. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+20. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+21. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+22. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+23. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
+24. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+25. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+26. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+27. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+28. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
+29. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
+30. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
 
 ## 2. All items — summary
 
@@ -130,7 +131,7 @@ silently invalidate all of that. Use this to find one:
 | # | section | # | section | # | section |
 |---|---|---|---|---|---|
 | 1-3, 34 | Blocking / correctness | 11 | The measurement gap | 21 | Boards |
-| 4-7, 24, 25 | Performance | 12-16, 23, 26, 27 | Smaller | 17-20, 22, 28 | Compute units |
+| 4-7, 24, 25, 37-40, 42, 50, 51, 53-55 | Performance | 12-16, 23, 26, 27 | Smaller | 17-20, 22, 28 | Compute units |
 | 8-10, 31, 32, 33, 35 | Hardware / infrastructure | 29, 30, 36 | Smaller (CI flakiness) | | |
 
 **Closed 2026-08-15/16**, the SMP push: **1** (generational GC on SMP — root
@@ -148,6 +149,8 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+- **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
+- **[55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -173,7 +176,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[20](#item-20)** — Decide whether the double group gets microcode at all
 - **[21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
 - **[37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions
-- ~~**[51](#item-51)**~~ — Method cache — **DEFAULT NOW 8 KB/64 blocks. +35 % Kfl / +27.7 % UdpIp on four boards** (DDR2, SDR, DDR3; Quartus/Vivado/nextpnr). Fragmentation, not capacity
+- ~~**[51](#item-51)**~~ — Method cache — **CLOSED 2026-08-23. DEFAULT 8 KB/64 blocks, +35 % Kfl / +27.7 % UdpIp on four boards** (DDR2, SDR, DDR3; Quartus/Vivado/nextpnr). Fragmentation, not capacity. Both design options it left open were measured away; the remainder became [54](#item-54) and [55](#item-55)
 - ~~**[38](#item-38)**~~ — ANSWERED: stall share is 34-55 % — Measure DoApp's memory-stall fraction — decides between items 37, 39 and 5/31. Where that 34-55 % GOES was then measured on hardware in [50](#item-50)
 - **[39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval
 - **[40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
@@ -5028,14 +5031,68 @@ eight files were handled individually; and a bulk rewrite wrongly edited
 11/4 and 14/7 — either side of the new default. It was verified to FAIL when one
 of the nine fixes was reverted, so it is a real guard.
 
+#### CLOSED 2026-08-23 — both design options it left open were resolved by measurement, and neither needed building
+
+This item opened by arguing that the tag compare caps the cache size, and listed
+six ways to break that cap. Two of them were live after the default change. Both
+are now closed, and **neither required any RTL**.
+
+**Option 1, pipeline the tag compare — NOT NEEDED.** The premise was that 64
+comparators in a priority cascade would cost `fmax`. Measured, they do not: the
+default change closed timing on **four boards across three toolchains**, and on
+the A-E115FB the slack was *identical at 16, 32, 64 and 128 blocks* (+0.446 ns).
+The compare is nowhere near critical on any fabric tested. Pipelining it would
+buy nothing that is currently paid for.
+
+**Option 5, `clrVal` recomputed every cycle — MEASURED, NOT WORTH FIXING.** The
+concern was stated as "harmless at 16 blocks; not harmless at 64", and the
+default moved to 64, so it looked due. It is wrong at the threshold it names.
+
+`MethodCacheVerilog` emits the component alone; out-of-context synthesis
+(xc7a100t-2) against a serial-clear variant that walks the same block range one
+per cycle, reusing the write decoder S2 already needs:
+
+| geometry | blocks | parallel mask | serial | saving |
+|---|---|---|---|---|
+| `11/4` | 16 | 484 | 473 | 11 (2.3 %) |
+| `12/5` | 32 | 982 | 951 | 31 (3.2 %) |
+| **`13/6` — default** | 64 | **1,919** | 1,854 | **65 (3.4 %)** |
+| `14/7` | 128 | 4,421 | 3,643 | **778 (17.6 %)** |
+
+**`clrVal` is harmless at 64 after all** — 65 LUTs of 1,919, or 260 across four
+cores in a build with ~6,000 spare. Vivado collapses the mask into carry chains
+(128 CARRY4 at 64 blocks) rather than building `blocks` independent
+subtract-and-compares, which is what the estimate-by-inspection missed. It only
+becomes real at **128 blocks**, and the sweep above says nothing should go there:
+64 blocks already reaches the compulsory floor (Kfl 179 misses, 128 blocks 149).
+
+So the serial variant was written, measured, and **reverted**. It is strictly
+smaller, but it lengthens every miss by `nrOfBlks` cycles and breaks three
+`MethodCacheFormal` properties that encode "S2 is a one-cycle state" — those
+would have to be rewritten to assert the new timing rather than relaxed. That is
+real risk against 0.45 % of a build.
+
+Two things worth keeping from it. **`MethodCacheVerilog` stays** — an
+out-of-context synthesis of one component takes seconds against thirty minutes
+for a full build, and it is the right tool for any future geometry question.
+OOC totals are not build totals (no surrounding logic to pack against, no IP,
+unconstrained boundary); they compare variants of one component, which is all
+they were used for here. And **the gating instinct was itself wrong**: wrapping
+the update in `when(state === S1)` would only add a clock enable — the
+arithmetic still synthesises, so it would have saved toggling, not area.
+
+**What is left in this item is not method-cache work.** With bytecode fill gone,
+Kfl's top two stall categories are statics (41.2 %) and `idle/direct` (38.8 %),
+which are now [item 54](#item-54) and [item 55](#item-55). Item 51 is closed.
+
 #### Other levers on stall time, from the same measurements
 
-- **Write buffer.** `WRITE_WAIT` is *busy until `rsp.valid`*, and
+- **Write buffer** — now [item 55](#item-55). `WRITE_WAIT` is *busy until `rsp.valid`*, and
   putfield/iastore/putstatic are unconditionally write-through — **the core
   stalls waiting for a write whose result it never uses**. Those cycles are
   inside `idle/direct`, 16-42 % of stall. Needs read-after-write forwarding and
   an SMP coherence story.
-- **Statics in on-chip RAM.** `statics` is a uniform **7-18 % of stall on every
+- **Statics in on-chip RAM** — now [item 54](#item-54). `statics` is a uniform **7-18 % of stall on every
   board and every workload** and no cache touches it. The region is small and
   known at link time; putting it in BRAM deletes the category. SMP needs a
   shared arbitrated port.
@@ -5423,6 +5480,84 @@ Options as originally framed, for the record:
 failure is a Vivado DRC at place time, minutes in. An elaboration-time LUT
 estimate is not available, but the `--boards`-style honesty of just documenting
 the ceiling costs nothing.
+
+
+<a id="item-54"></a>
+
+### Item 54 — Statics are Kfl's largest stall category (41 %) and no cache touches them
+
+**Promoted out of [item 51](#item-51) on 2026-08-23**, which fixed the category
+that used to dominate. This is what the profile looks like underneath it.
+
+On the A-E115FB with the 4 KB/32-block cache, Kfl's stall decomposes to
+**statics 41.2 %** (692 cycles per iteration), `idle/direct` 38.8 % (652,
+[item 55](#item-55)), indirection 213, bytecode fill 123. Those absolute figures
+are the load-bearing ones: item 51 showed every category except bytecode fill was
+unchanged **to the cycle** across the geometry change, so the shares moved only
+because the total shrank.
+
+**Statics are a uniform 7-18 % of stall on every board and every workload**
+measured in item 50 — before the method cache fix, when they were third-order.
+They are now first.
+
+**Why they are addressable.** The static region is small and its size is known at
+link time, so it can live in on-chip RAM instead of going to DRAM. Nothing caches
+it today: the object cache keys on handle+offset and the array cache on array
+elements, and a `getstatic`/`putstatic` is neither.
+
+**What is not yet established** — and should be, before any RTL:
+
+- **How big the region actually is** across the benchmark set and DoAll. It is
+  asserted to be small; it has not been counted.
+- **Whether the cost is latency or bandwidth.** 692 cycles/iteration is a
+  category total, not a per-access cost, and the access count was never
+  extracted. A handful of very hot statics behaves differently from a large
+  working set, and only the first is fixed by a small BRAM.
+- **The SMP story.** A per-core static RAM is wrong — statics are shared mutable
+  state and JOP's memory model expects them coherent. A shared arbitrated port is
+  another consumer on the arbiter, which items [5](#item-5) and [31](#item-31)
+  already identify as the clock ceiling. This may make the multicore case a
+  different design from the single-core one.
+
+**Suggested first step, no RTL:** count static accesses and distinct static
+addresses per benchmark, from a simulation trace. That distinguishes the three
+cases above and is the same discipline that made item 51 tractable — the sweep
+before the design.
+
+<a id="item-55"></a>
+
+### Item 55 — The core stalls on writes whose result it never uses (`idle/direct`, 39 % of Kfl stall)
+
+**Promoted out of [item 51](#item-51) on 2026-08-23.** Kfl's second-largest
+category after statics: `idle/direct` is **38.8 %** of stall, 652 cycles per
+iteration on the A-E115FB, and 16-42 % of stall across the boards in item 50.
+
+**The mechanism is known and is a genuine defect of the memory path, not a
+tuning parameter.** `WRITE_WAIT` in `BmbMemoryController` is *busy until
+`rsp.valid`* — the core blocks until the write is acknowledged. But
+`putfield`, `iastore` and `putstatic` are **unconditionally write-through**
+(`BmbMemoryController:1101-1104` issues the BMB write regardless of tag hit;
+the "only on tag hit" condition gates the cache UPDATE, not the write). So the
+core waits for a result it does not consume.
+
+**What a fix needs, and why it is not a small change:**
+
+- **Read-after-write forwarding.** Once writes are posted, a subsequent read of
+  the same address must see the buffered value rather than stale memory. This is
+  the part that makes it a correctness change rather than a latency change.
+- **An SMP coherence story.** Posted writes are visible to the issuing core
+  before other cores, which is exactly the class of bug that cost days in the
+  global-lock work ([the lock is not reentrant](#item-1) presented as corruption,
+  not deadlock). `CmpSync`, the card-marking barrier and the GC's cross-core root
+  scan all assume writes have landed.
+- **A bound for WCET.** A write buffer that can be full turns a fixed stall into
+  a variable one; the analysis needs a depth and a drain rate.
+
+**Not yet established:** how much of the 39 % is actually the write wait. The
+`idle/direct` counter aggregates write stalls with other direct-path idle
+cycles, and nothing has separated them. **Do that first** — it sets the ceiling
+on the whole exercise, and item 51's history is that the category names in this
+profile do not always mean what they sound like.
 
 
 ## 4. Two workstreams, both largely done

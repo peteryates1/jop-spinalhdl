@@ -182,6 +182,17 @@ measurement. They are here so the next person does not re-derive them.
   fails DRC before placement can only ever give you the untrustworthy one.
 - **"Verilog line count indicates area."** `LruCacheCore` was 79 % of the
   generated lines and 21 % of the LUTs.
+- **"Logic that runs every cycle and is used one cycle in hundreds must be
+  costing us."** The method cache's `clrVal` mask — one subtract-and-compare per
+  block, evaluated continuously, consumed only in `S2` — was flagged as
+  "not harmless at 64 blocks". Measured out of context it is **65 LUTs of 1,919
+  at 64 blocks (3.4 %)**, because Vivado collapses it into carry chains instead
+  of building the units you counted by eye. It reaches 17.6 % only at 128 blocks,
+  which nothing should use. A serial replacement was written, measured, and
+  reverted.
+- **"Gate the register and the logic goes away."** Wrapping an unconditional
+  register update in `when(state === S1)` adds a clock enable. The combinational
+  logic feeding the D input still synthesises — that saves toggling, not area.
 
 ---
 
@@ -193,4 +204,5 @@ measurement. They are here so the next person does not re-derive them.
 | L2 capacity, any core count | `java/apps/JbeBench/ScaleL2.jop` | one download |
 | application throughput | `java/apps/JbeBench/JbeBench.jop` | one download |
 | where the logic went | `report_utilization -hierarchical` on `post_route.dcp` | ~1 min |
+| area of ONE component, or a variant of it | `runMain jop.memory.MethodCacheVerilog <jpc> <blk>` + `synth_design -mode out_of_context` | ~30 s |
 | method length distribution | `grep -o "code_length = [0-9]*" <app>.jop.txt` | instant |
