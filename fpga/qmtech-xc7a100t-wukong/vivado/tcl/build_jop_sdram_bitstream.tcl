@@ -20,8 +20,18 @@ foreach f [glob -nocomplain [file join $rtl_dir JopSdramWukongTop.v_*.bin]] {
     file copy -force $f $build_dir
 }
 
-# Read constraints
-read_xdc [file join $repo_root vivado/constraints/wukong_jop_sdram.xdc]
+# Read constraints.
+#
+# GENERATED from JopConfig (jop.generate.XdcGenerator), not hand-maintained --
+# the first board to make the switch. `make jop-sdram-generate` writes it next
+# to the Verilog. Proven equivalent first: the only difference from the old
+# vivado/constraints/wukong_jop_sdram.xdc was that the hand file sourced
+# sdram_sdr.xdc where the generated one inlines the same two IOB constraints;
+# all 45 pins matched exactly. ConstraintDriftTest keeps the two from diverging
+# while the hand file still exists.
+#
+# To go back: point this at vivado/constraints/wukong_jop_sdram.xdc.
+read_xdc [file join $rtl_dir wukong_jop_sdram.xdc]
 # Ethernet/SD pins, needed by wukongSdrFull. Harmless for configs without those
 # peripherals: Vivado ignores constraints for ports that do not exist.
 read_xdc [file join $repo_root vivado/constraints/wukong_peripherals.xdc]

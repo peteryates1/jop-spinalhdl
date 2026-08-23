@@ -174,8 +174,11 @@ sdram-monitor:
 
 # === JOP SDRAM targets ===
 
+# Verilog AND constraints, both from the same JopConfig. This board's XDC is
+# generated rather than hand-maintained; see build_jop_sdram_bitstream.tcl.
 jop-sdram-generate:
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongSdram"
+	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain wukongSdram --write spinalhdl/generated/wukong_jop_sdram.xdc"
 
 jop-sdram-build:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_jop_sdram_bitstream.tcl

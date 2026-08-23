@@ -136,10 +136,37 @@ object XdcGenerator {
     port.dropWhile(_ != '[').drop(1).takeWhile(_ != ']').toIntOption.getOrElse(0)
 }
 
-/** Print generated XDC for a Xilinx preset */
+/** Print, or write, the generated XDC for a Xilinx preset.
+  *
+  * `--write <path>` follows ConstGeneratorMain, which has emitted Const.java
+  * into the Java build for as long as anyone has been running it -- the same
+  * shape: config in, generated artefact out, consumed downstream, staleness
+  * handled by make.
+  *
+  * Writing under spinalhdl/generated/ deliberately, alongside the Verilog: that
+  * directory is already gitignored as build output, which is where generated
+  * constraints belong if fpga/ is ever to stop being tracked by hand.
+  */
 object XdcGeneratorMain extends App {
   import jop.system.JopTopVerilog
-  val preset = args.headOption.getOrElse("wukongSdram")
-  val config = JopTopVerilog.resolvePreset(preset, args)
-  println(XdcGenerator.generate(config))
+
+  private val writeFlag = args.indexOf("--write")
+  private val outPath =
+    if (writeFlag >= 0 && args.length > writeFlag + 1) Some(args(writeFlag + 1)) else None
+  private val presetArgs =
+    args.zipWithIndex.filterNot { case (_, i) => i == writeFlag || i == writeFlag + 1 }.map(_._1)
+
+  val preset = presetArgs.headOption.getOrElse("wukongSdram")
+  val config = JopTopVerilog.resolvePreset(preset, presetArgs)
+  val xdc = XdcGenerator.generate(config)
+
+  outPath match {
+    case Some(path) =>
+      val f = new java.io.File(path)
+      Option(f.getParentFile).foreach(_.mkdirs())
+      val w = new java.io.PrintWriter(f)
+      try w.print(xdc) finally w.close()
+      println(s"Wrote $path")
+    case None => println(xdc)
+  }
 }
