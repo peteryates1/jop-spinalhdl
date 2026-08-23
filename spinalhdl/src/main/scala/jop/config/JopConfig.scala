@@ -1170,11 +1170,50 @@ object JopConfig {
   }
 
   /** Wukong DDR3 — SMP with all compute units, no Ethernet/SD (saves LUTs) */
+  /** Wukong DDR3 SMP, N cores — 32 KB/64-block method cache, doubles in Java.
+    *
+    * BOTH DEPARTURES FROM `wukongFull` ARE REQUIRED TO BUILD AT FOUR CORES, and
+    * neither is a preference. At the plain defaults this preset was 62,583 LUTs
+    * (98.7 %) and failed slice packing in Vivado's placer with no elaboration-
+    * time warning at all — item 53, a regression that sat undetected because
+    * nobody rebuilt SMP after the method cache default changed.
+    *
+    * `double -> java` is the one that frees the space. Compute units are PER
+    * CORE, so at four cores the DCU is ~19,800 LUTs against ~3,400 to take the
+    * method cache from 16 to 64 blocks: the cache never competed with the core
+    * count, it competed with the CUs. This is the DEFAULT implementation for
+    * doubles anyway (`BytecodeConfig` has no double microcode at all — item 20,
+    * and `bc=double:mc` is refused); only `wukongFull`'s `"*" -> "hw"` promoted
+    * it. DoAll's DoubleArith/DoubleField/MathTest/BigMathTest all pass.
+    *
+    * `15/6` is 32 KB in 64 blocks of 512 B. Depth is free — measured -88 LUTs
+    * against `13/6` — and 512 B is where the sweep shows depth saturating, so
+    * the block size sits at the saturation point and the count carries the LUT
+    * cost. See docs/architecture/tuning-guide.md.
+    *
+    * Hardware-validated 4-core, 2026-08-23: 43,399 LUTs (68.5 %), 59.5 BRAM
+    * (44.1 %), WNS +0.088 ns, DoAll 66/66 over the Pico console.
+    *
+    * APPLIED AT EVERY CORE COUNT, not just where it is forced. One and two
+    * cores would fit the DCU, but an SMP preset exists to measure SCALING, and
+    * an arm that changes configuration with N measures the configuration change
+    * as well as the cores — the confound that once made two halves of a dual
+    * build differ in core count. Uniform beats optimal here.
+    *
+    * NOT YET CHECKED ABOVE FOUR CORES: 59.5 BRAM at 4 implies ~119 of 135 at 8,
+    * before the L2 gets anything, so this geometry probably has to step down
+    * with core count. Do not raise the core count without re-reading the fit.
+    */
   def wukongSmp(n: Int) = {
     val base = wukongFull
+    val cc = base.system.coreConfig
     base.copy(systems = Seq(base.system.copy(
       name = s"smp$n",
       cpuCnt = n,
+      coreConfig = cc.copy(
+        jpcWidth = 15,
+        blockBits = 6,
+        bytecodes = cc.bytecodes ++ Map("double" -> "java")),
       devices = uartOnly(base.system))))
   }
 
