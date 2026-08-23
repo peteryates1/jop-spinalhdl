@@ -5809,8 +5809,36 @@ timing exceptions in `wukong_ddr3.xdc`. One real gap: the generator emits
 file used as-is would lose the SDR IOB packing — it needs to emit a real
 `source` line, and the relative path differs per board directory.
 
-**Not yet checked:** the Quartus side (`QsfGeneratorMain` against the EP4CGX150
-and A-E115FB `.qsf` files), and the non-Wukong Vivado boards.
+#### Step 2 for Quartus, same day — one MISSING pin, and it is the reset button
+
+`QsfGeneratorMain` against `fpga/qmtech-ep4cgx150-sdram/jop_sdram.qsf`:
+
+- **44 shared ports, ZERO assignment conflicts** — including `clk_in` on
+  PIN_B14 and the whole SDRAM bus. The generator gets the Altera port names
+  right, which is not obvious: the RTL port is `clk_in`, not `clk`.
+- **`reset_n` (PIN_AD24, the SW1 reset button) is not emitted at all.**
+  `QsfGenerator` has **no reset handling whatsoever** — its only "reset" match
+  is a comment — while `XdcGenerator` has a section calling
+  `PinResolver.resetFpgaPin`. This is an omission, not a decision. Adopting the
+  generated file as-is would leave the reset button unassigned for Quartus to
+  place wherever it likes.
+- **37 generated-only pins**: the Ethernet and SD daughter-board pins that
+  `QsfGeneratorMain` adds unconditionally "for pin reservation". Reasonable for
+  the DB build, but it means the output is not a drop-in for a preset without
+  those ports.
+
+**The reset fix is not a copy-paste from the Xilinx side.** `XdcGenerator` emits
+the port as `resetn`; the Altera top level calls it `reset_n`. The name is
+family-specific, which is exactly the sort of detail that makes "just wire the
+generators up" the wrong instinct.
+
+**Overall after step 2:** two boards compared, and between them the generated
+constraints are wrong in **three pins total** — two UART on the Wukong DDR3 and
+one reset on the EP4CGX150 — with everything else, including every memory-bus
+pin on both, already identical. The generators are much closer to usable than
+this item assumed when it was filed.
+
+**Not yet checked:** the A-E115FB `.qsf`, and the non-Wukong Vivado boards.
 
 
 ## 4. Two workstreams, both largely done
