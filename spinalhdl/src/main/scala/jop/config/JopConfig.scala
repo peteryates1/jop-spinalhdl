@@ -1089,15 +1089,25 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       devices = Map(
-        // 1 Mbaud, not the 2 Mbaud default. The on-board CH340N drops
-        // characters at 2 Mbaud on this board: a GcPauseTest run came back with
-        // "generatlona disabled", "GsPaueTest done" and hSize=6696246 where the
-        // real value is 66562496 — text still readable, numbers silently wrong,
-        // which is the worst kind of lossy. 100 MHz / (1e6 x 5) = 20 exactly, so
-        // there is no baud error compounding a marginal cable. Drop to 500000
-        // (divider 40, also exact) if 1 Mbaud still loses characters.
+        // 1 Mbaud, not the 2 Mbaud default. At 2 Mbaud a GcPauseTest run came
+        // back with "generatlona disabled", "GsPaueTest done" and hSize=6696246
+        // where the real value is 66562496 — text still readable, numbers
+        // silently wrong, which is the worst kind of lossy. 100 MHz / (1e6 x 5)
+        // = 20 exactly, so there is no baud error compounding a marginal cable.
+        //
+        // THE DEVICE BLAMED FOR THAT WAS THE WRONG ONE. This comment used to
+        // say "the on-board CH340N drops characters at 2 Mbaud". It cannot have
+        // been the CH340N: `devicePart` below says CH340N, but every DDR3 build
+        // reads wukong_ddr3_base.xdc, which puts the UART on the J11 header ->
+        // Pico uart0 and says in terms that the CH340N at E3/F3 is hardwired to
+        // the PCB and "cannot be tapped". So the corruption was on the PICO CDC
+        // path. The 1 Mbaud limit is real and measured; only its cause is
+        // unknown, and whether 2 Mbaud works over the Pico is untested.
+        // See `console` below and item 52 — devicePart is a LABEL here, not the
+        // routing: the Vivado flow takes pins from the hand-written XDC.
         "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N"),
-          params = Map("baudRate" -> 1000000)),
+          params = Map("baudRate" -> 1000000,
+                       "console" -> "wukong-pico-0 (J11.4/.3 -> Pico uart0); NOT the CH340N")),
         "eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true, "phyDataWidth" -> 8),
           devicePart = Some("RTL8211EG")),
         "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))),
