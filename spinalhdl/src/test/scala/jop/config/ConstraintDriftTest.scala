@@ -121,7 +121,7 @@ class ConstraintDriftTest extends AnyFunSuite {
 
   // --------------------------------------------------------------- Quartus
 
-  test("ep4cgx150 QSF matches, except the known missing reset") {
+  test("ep4cgx150 QSF matches the hand-written constraints") {
     // Mirrors QsfGeneratorMain: daughter-board peripherals are added for pin
     // reservation, which is why generated-only ports are not a failure.
     val base = JopConfig.ep4cgx150Serial
@@ -135,13 +135,11 @@ class ConstraintDriftTest extends AnyFunSuite {
 
     check("ep4cgx150Serial", QsfGenerator.generate(withDb),
       "fpga/qmtech-ep4cgx150-sdram/jop_sdram.qsf",
-      isQsf = true,
-      knownGaps = Map(
-        // QsfGenerator has NO reset handling at all, while XdcGenerator calls
-        // PinResolver.resetFpgaPin. Adopting the generated file as-is would
-        // leave the SW1 reset button for Quartus to place wherever it liked.
-        // Not a copy-paste from the Xilinx side: XdcGenerator emits "resetn"
-        // and the Altera top level calls the port "reset_n".
-        "reset_n" -> (None, "AD24")))
+      // GAP CLOSED 2026-08-23. QsfGenerator had no reset handling at all, so
+      // the SW1 button was left for Quartus to place wherever it liked. Fixed
+      // by lifting the predicate into JopConfig.resetInput, which JopTop,
+      // XdcGenerator and QsfGenerator now all read -- rather than each
+      // re-deciding whether the port exists and what it is called.
+      isQsf = true, knownGaps = Map.empty)
   }
 }

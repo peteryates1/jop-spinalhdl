@@ -23,7 +23,13 @@ object QsfGenerator {
     val sdram = PinResolver.sdramPins(assembly)
     val drivers = PinResolver.devicePins(assembly, sys.effectiveDevices)
 
-    clock ++ sdramClk ++ leds ++ sdram ++ drivers
+    // The reset button, from the SAME predicate JopTop uses to decide whether
+    // the port exists. Omitting it left the EP4CGX150's SW1 for Quartus to
+    // place wherever it liked (item 57); emitting it unconditionally would
+    // assign a port that does not exist on the DDR2/DDR3 tops.
+    val reset = config.resetInput.map(r => PinAssignment(r.pin, r.port)).toSeq
+
+    clock ++ sdramClk ++ leds ++ sdram ++ drivers ++ reset
   }
 
   /** Format pin assignments as Quartus TCL */

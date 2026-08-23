@@ -210,6 +210,12 @@ case class Board(
   entityTag: String = "",       // Replaces memType-based entity name (e.g., "Cyc5000", "Max1000Sdram")
   entitySuffix: String = "",    // Appended to memType-based entity name (e.g., "Wukong")
   ledActiveHigh: Boolean = false,
+  /** Polarity of the board's reset switch, as wired. Active-low (a button
+    * pulling to ground with a pull-up) is by far the common case, which is why
+    * the top-level port is named `reset_n`. Set false for a board that wires
+    * the switch the other way -- the config then carries the fact and `JopTop`
+    * inverts accordingly, instead of everyone assuming active-low. */
+  resetActiveLow: Boolean = true,
   ddr3HasCs: Boolean = false,
   hasEthPll: Boolean = false,
   useStackCache: Boolean = false

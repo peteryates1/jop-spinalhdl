@@ -12,7 +12,7 @@ import jop.config._
  *   - create_clock for board oscillator
  *   - resetn for default clock domain (active-low)
  *   - IOSTANDARD on every pin
- *   - SDR SDRAM IOB packing (via shared sdram_sdr.xdc)
+ *   - SDR SDRAM IOB packing (inlined)
  *   - CFGBVS / CONFIG_VOLTAGE / BITSTREAM.GENERAL.COMPRESS
  *
  * DDR3 pins are managed by MIG IP and not included here.
@@ -39,10 +39,11 @@ object XdcGenerator {
       sb.append(s"create_clock -period $periodNs -name sys_clk [get_ports {clk}]\n\n")
     }
 
-    // Reset (active-low, from board push button)
-    PinResolver.resetFpgaPin(assembly).foreach { pin =>
-      sb.append("# Reset (active low)\n")
-      sb.append(pinConstraint(pin, "resetn"))
+    // Reset, from the same config predicate JopTop and QsfGenerator use, so
+    // the port NAME is not restated here (Xilinx "resetn" vs Altera "reset_n").
+    config.resetInput.foreach { r =>
+      sb.append(s"# Reset (active ${if (r.activeLow) "low" else "high"})\n")
+      sb.append(pinConstraint(r.pin, r.port))
       sb.append("\n")
     }
 
@@ -97,8 +98,15 @@ object XdcGenerator {
       addr.foreach(p => sb.append(pinConstraint(p.fpgaPin, p.verilogPort)))
       dq.foreach(p => sb.append(pinConstraint(p.fpgaPin, p.verilogPort)))
 
-      sb.append("\n# SDR SDRAM IOB packing (include shared constraint file)\n")
-      sb.append("# source <path-to>/fpga/constraints/sdram_sdr.xdc\n\n")
+      // Inlined rather than `source`d. These are two lines that depend only on
+      // signal naming, and a source line would need a path relative to wherever
+      // this file is written -- which the generator does not know. It was a
+      // COMMENT before now, so a generated file adopted as-is would silently
+      // have lost IOB packing. fpga/constraints/sdram_sdr.xdc stays until the
+      // SDRAM exerciser flow is generated too; it still sources it.
+      sb.append("\n# SDR SDRAM I/O block packing (deterministic timing)\n")
+      sb.append("set_property IOB TRUE [get_ports {sdram_DQ[*]}]\n")
+      sb.append("set_property IOB TRUE [get_ports {sdram_DQM[*]}]\n\n")
     }
 
     // Other peripheral pins (Ethernet, VGA, SD)

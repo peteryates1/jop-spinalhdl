@@ -284,6 +284,9 @@ object MCacheOverride {
   }
 }
 
+/** A board reset input: top-level port, FPGA pin, and how it is wired. */
+case class ResetInput(port: String, pin: String, activeLow: Boolean)
+
 case class JopConfig(
   assembly: SystemAssembly,
   systems: Seq[JopSystem],
@@ -352,6 +355,46 @@ case class JopConfig(
           s"System '${sys.name}' device '$name' references part " +
           s"'$part' but assembly '${assembly.name}' has none")
       }
+    }
+  }
+
+  /** The board reset INPUT: which port exists, on which pin, at what polarity.
+    *
+    * ONE definition, used by `JopTop` to decide whether to declare the port and
+    * how to interpret it, and by `XdcGenerator`/`QsfGenerator` to constrain it.
+    * Before this it was a private predicate inside `JopTop` plus a hardcoded
+    * port name in `XdcGenerator` plus nothing at all in `QsfGenerator` — which
+    * is why the generated QSF silently omitted the EP4CGX150's reset button
+    * (item 57).
+    *
+    * The two families differ and both are captured here:
+    *
+    *  - **Xilinx** tops already carry `resetn`, SpinalHDL's default clock-domain
+    *    reset, which reaches the core by unlocking the clock wizard. There is
+    *    never a second port; the button is constrained onto that one.
+    *  - **Everyone else** gets an explicit `reset_n` port, and only when the
+    *    board actually maps a SWITCH "reset" pin. Adding it unconditionally
+    *    would give every board a top-level input with nowhere to go.
+    *
+    * NOT YET AVAILABLE ON DDR2/DDR3, and that is an RTL limit rather than a
+    * config one: those paths build their resets per memory controller
+    * (`ddr2RuntimeReset`, `ddr3RuntimeReset` in `JopTop`) and deliberately do
+    * not reset the MIG, so calibration survives. Wiring a button into them is
+    * real work, not a flag. Boards with a spare switch — the A-E115FB has
+    * one — stay without a reset button until that is done.
+    */
+  def resetInput: Option[ResetInput] = {
+    val pin = jop.generate.PinResolver.resetFpgaPin(assembly)
+    val activeLow = assembly.fpgaBoard.resetActiveLow
+    if (fpgaFamily.manufacturer == Manufacturer.Xilinx) {
+      // Always present: it is the clock domain's own reset.
+      pin.map(ResetInput("resetn", _, activeLow))
+    } else {
+      val singleSystem = systems.length == 1
+      val mem = if (singleSystem) resolveMemory(system).map(_.memType) else None
+      val dramReset = mem.contains(MemoryType.SDRAM_DDR3) || mem.contains(MemoryType.SDRAM_DDR2)
+      if (singleSystem && !dramReset) pin.map(ResetInput("reset_n", _, activeLow))
+      else None
     }
   }
 

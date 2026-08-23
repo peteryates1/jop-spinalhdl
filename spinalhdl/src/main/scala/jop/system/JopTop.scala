@@ -76,11 +76,9 @@ case class JopTop(
     * default clock-domain reset), it is what XdcGenerator constrains the button
     * to, and it reaches the core by unlocking the clock wizard. A second port
     * would be a dangling input competing for the same pin. */
-  private val hasResetButton =
-    hasSimpleRuntimeReset &&
-      manufacturer != Manufacturer.Xilinx &&
-      config.assembly.allDevices.filter(_.part == "SWITCH")
-        .exists(_.mapping.contains("reset"))
+  private val resetButton: Option[jop.config.ResetInput] =
+    if (manufacturer == Manufacturer.Xilinx) None else config.resetInput
+  private val hasResetButton = hasSimpleRuntimeReset && resetButton.isDefined
 
   // Multi-system: presence of any SDR/DDR3 system (for IO ports)
   private val anySdr = if (isMultiSystem)
@@ -287,8 +285,9 @@ case class JopTop(
             // because a bouncing contact would otherwise fire a burst of resets
             // and the last bounce could land mid-reset-sequence.
             val buttonRequest = if (hasResetButton) {
-              val sync = BufferCC(io.reset_n, init = True)
-              val pressed = !sync
+              val activeLow = resetButton.forall(_.activeLow)
+              val sync = BufferCC(io.reset_n, init = Bool(activeLow))
+              val pressed = if (activeLow) !sync else sync
               val debounceCycles = (sys.clkFreq.toBigDecimal / 100).toBigInt // 10 ms
               val cnt = Reg(UInt(log2Up(debounceCycles + 1) bits)) init(0)
               val fired = Reg(Bool()) init(False)
