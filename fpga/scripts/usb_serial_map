@@ -66,9 +66,9 @@ USAGE
 # Empty product/serial means "do not care". Every entry below was verified
 # against this host; do not add one from a datasheet.
 BOARDS=$(cat <<'EOF'
-wukong|1a86:7523|USB Serial||00|QMTECH Wukong -- on-board CH340N at E3/F3. Carries the SDRAM and BRAM builds ONLY (wukong_jop_sdram.xdc, wukong_jop_bram.xdc). NOT the DDR3 builds: wukong_ddr3_base.xdc puts the UART on the J11 header -> Pico uart0 -> wukong-pico-0. A DDR3 build therefore looks SILENT here while running perfectly, which cost an hour on 2026-08-23 -- and an SDRAM build talking on this port is not evidence the DDR3 one would
+wukong|1a86:7523|USB Serial||00|QMTECH Wukong -- on-board CH340N at E3/F3. THE DEFAULT CONSOLE for every single-system build, DDR3 included, since 2026-08-23 (JopConfig.wukongConsolePart). A build generated with `uart=PICO_UART0` comes out of wukong-pico-0 instead, and the DUAL builds always do (one CH340N cannot serve two systems). Check the build's own fit_summary.txt: its Console: line names the connector
 ae115fb|1a86:7523|USB2.0-Serial||00|A-E115FB EP4CE115 + 1GB DDR2 -- the board's own CH340, not its Pico
-wukong-pico-0|1209:c0ca||0B383D0435D957EC|01|Wukong's on-board Pico 2 W, FIRST CDC (if00 control + if01 data) = Pico uart0, J11.4/.3 -> GP13/GP12. THE CONSOLE FOR EVERY DDR3 BUILD, single-system and SMP -- VERIFIED on hardware 2026-08-23 (0xAA ready at 1 Mbaud, then DoAll 66/66 on a 4-core build). Also the dual build's SDR half
+wukong-pico-0|1209:c0ca||0B383D0435D957EC|01|Wukong's on-board Pico 2 W, FIRST CDC (if00 control + if01 data) = Pico uart0, J11.4/.3 -> GP13/GP12. Used by builds generated with `uart=PICO_UART0`, and by the dual build's SDR half. VERIFIED on hardware 2026-08-23 (0xAA ready at 1 Mbaud, then DoAll 66/66 on a 4-core DDR3 build, which defaulted here at the time)
 wukong-pico-1|1209:c0ca||0B383D0435D957EC|03|Wukong's on-board Pico 2 W, SECOND CDC (if02 control + if03 data) = Pico uart1, J11.2/.1 -> GP5/GP4. For the DUAL build's DDR3 half only -- a single-system DDR3 build comes out of wukong-pico-0, not here. Still UNVERIFIED
 i5|0d28:0204||07000001002700424e00000256304750a5a5a5a597969908|01|Colorlight i5 ext board DAPLink CDC (if00 is the HID debug endpoint)
 cyc5000|0403:6010||ARA30135|01|Arrow CYC5000 on-board Arrow USB Blaster -- console is if01, if00 is JTAG

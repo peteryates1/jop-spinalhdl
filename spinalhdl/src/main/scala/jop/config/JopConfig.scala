@@ -794,30 +794,35 @@ object JopConfig {
   // the real one would never be marked.
   /** Which connector the Wukong console comes out of, stated ONCE.
     *
-    * This is not a preference, it follows the MEMORY TYPE, because the board
-    * flow picks its constraints by memory: every DDR3 build reads
-    * `wukong_ddr3_base.xdc`, which routes the UART to the J11 header -> Pico
-    * uart0, while the SDR and BRAM flows read `wukong_jop_sdram.xdc` /
-    * `wukong_jop_bram.xdc`, which use the on-board CH340N at E3/F3.
+    * DEFAULTS TO THE ON-BOARD CH340N for every single-system build. Both are
+    * physically available -- the CH340N at E3/F3 and the Pico UARTs on the J11
+    * header -- so this is a choice about the rig, not a constraint of the
+    * design, and the CH340N needs no extra hardware.
     *
-    * The CH340N cannot be used for the DDR3 builds even if you wanted to: it is
-    * hardwired to the CH340 on the PCB, and a second `1a86:7523` bridge on the
-    * host is indistinguishable from the A-E115FB's. J11 gives a Pico CDC with a
-    * real serial number.
+    * The earlier reason for preferring J11 on DDR3 builds is gone: it was that
+    * a second `1a86:7523` bridge on the host could not be told apart from the
+    * A-E115FB's. Those adapters now pass their serial numbers through, so both
+    * boards' CH340s are addressable at once (`fpga/scripts/usb_serial_map`).
     *
-    * Getting this wrong is expensive and silent. Six DDR3 presets said CH340N,
-    * so both the generated constraints and the build's own summary named a
-    * connector the bitstream does not drive -- an hour lost on 2026-08-23
-    * listening to `/dev/ttyUSB3` while the board answered on `/dev/ttyACM0`.
-    * `ConstraintDriftTest` now fails if the config and the XDC disagree.
+    * TO PICK A DIFFERENT ONE FOR A SETUP, do not add a preset:
     *
-    * The parts themselves resolve THROUGH the J11 connector
-    * (`Board.WukongXC7A100T`), so the header pin -> ball mapping is stated once
-    * too, and a different adapter on J11 is a new `BoardDevice` against
-    * connector pins rather than a new set of ball numbers.
+    *   sbt "runMain jop.system.JopTopVerilog wukongDdr3 uart=PICO_UART0"
+    *
+    * `UartPartOverride` checks the part exists on the board, so a typo is a
+    * hard error rather than a silently unconnected UART.
+    *
+    * THE DUAL BUILDS ARE THE EXCEPTION and cannot use this: one CH340N cannot
+    * serve two systems, so they take one Pico UART each. A way to switch the
+    * CH340N between the two systems on the FPGA would remove that exception --
+    * worth looking at, not done.
+    *
+    * Getting this wrong is expensive and silent: the config said CH340N while
+    * the DDR3 XDC routed to J11, so the build summary named a connector the
+    * bitstream did not drive, and an hour went on a silent /dev/ttyUSB3 while
+    * the board answered on /dev/ttyACM0. `ConstraintDriftTest` now fails if the
+    * config and the constraints disagree.
     */
-  private val wukongDdr3ConsolePart = "PICO_UART0"
-  private val wukongSdrConsolePart  = "CH340N"
+  private val wukongConsolePart = "CH340N"
 
   def wukongDual = JopConfig(
     assembly = SystemAssembly.wukong,
@@ -831,7 +836,7 @@ object JopConfig {
         coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
         
           bytecodes = Map("idiv" -> "hw", "irem" -> "hw", "float" -> "hw")),
-        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N") /* WRONG: see wukongDdr3ConsolePart */))),
+        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("PICO_UART1")))),   // ddr3 half -- see wukongConsolePart
       JopSystem(
         name = "io",
         memory = "sdr",                  // by role
@@ -840,7 +845,7 @@ object JopConfig {
         cpuCnt = 2,
         coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340N") /* WRONG: see wukongDdr3ConsolePart */)))),
+        devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("PICO_UART0"))))),  // sdr half -- see wukongConsolePart
     interconnect = Some(InterconnectConfig(fifoDepth = 64)),
     monitors = Seq(WatchdogConfig(timeoutMs = 2000)))
 
@@ -991,7 +996,7 @@ object JopConfig {
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongSdrConsolePart))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongConsolePart))))))
 
   /**
    * Wukong SDR — SMP, N cores. The SDR counterpart of `wukongDdr3Smp`, so the
@@ -1030,7 +1035,7 @@ object JopConfig {
       clkFreq = 100 MHz,
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 16 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongDdr3ConsolePart))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongConsolePart))))))
 
   /** Wukong BRAM (single-system, simulation-mode) */
   def wukongBram = JopConfig(
@@ -1043,7 +1048,7 @@ object JopConfig {
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 64 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
-      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongSdrConsolePart))))))
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongConsolePart))))))
 
   /**
    * Colorlight i5 v7.0 — serial download into BRAM. Stage 1 bring-up.
@@ -1175,15 +1180,8 @@ object JopConfig {
         // unknown, and whether 2 Mbaud works over the Pico is untested.
         // See `console` below and item 52 — devicePart is a LABEL here, not the
         // routing: the Vivado flow takes pins from the hand-written XDC.
-        // PICO_UART0, not CH340N: every DDR3 build reads wukong_ddr3_base.xdc,
-        // which routes the UART to J11 -> Pico uart0. The preset said CH340N
-        // for months, so the generated constraints and the build's own summary
-        // both named a connector the bitstream does not drive -- an hour lost
-        // on 2026-08-23 listening to a silent /dev/ttyUSB3 while the board was
-        // answering perfectly on /dev/ttyACM0. Item 57.
-        "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("PICO_UART0"),
-          params = Map("baudRate" -> 1000000,
-                       "console" -> "wukong-pico-0 (J11.4/.3 -> Pico uart0)")),
+        "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongConsolePart),
+          params = Map("baudRate" -> 1000000)),
         "eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true, "phyDataWidth" -> 8),
           devicePart = Some("RTL8211EG")),
         "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))),
@@ -1217,7 +1215,7 @@ object JopConfig {
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw"),
         memConfig = JopMemoryConfig(l2SetCount = 64)),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart,
-        devicePart = Some(wukongDdr3ConsolePart), params = Map("baudRate" -> 1000000))))))
+        devicePart = Some(wukongConsolePart), params = Map("baudRate" -> 1000000))))))
 
   /** Just the UART entry from a system's device map, Ethernet/SD dropped.
     *
@@ -1552,7 +1550,7 @@ object JopConfig {
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
       devices = Map(
-        "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongSdrConsolePart)),
+        "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongConsolePart)),
         "eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true, "phyDataWidth" -> 8),
           devicePart = Some("RTL8211EG")),
         "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))),

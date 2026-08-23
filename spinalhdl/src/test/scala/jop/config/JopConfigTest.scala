@@ -321,14 +321,14 @@ class JopConfigTest extends AnyFunSuite {
     val config = JopConfig.wukongFull
     val pins = PinResolver.devicePins(config.assembly, config.system.effectiveDevices)
     val pinMap = pins.map(p => p.verilogPort -> p.fpgaPin).toMap
-    // UART on J11 -> Pico uart0, resolved through the J11 connector.
-    // This asserted E3/F3 (the on-board CH340N) until 2026-08-23, which was the
-    // same wrong fact the preset held: wukongFull is a DDR3 preset, and every
-    // DDR3 build reads wukong_ddr3_base.xdc, which drives A5/A4. The XDC is the
-    // ground truth here -- it is what the bitstream was built from, and what a
-    // working DoAll run came out of.
-    assert(pinMap("ser_txd") == "A5")
-    assert(pinMap("ser_rxd") == "A4")
+    // UART on the on-board CH340N, the default for single-system Wukong builds
+    // (JopConfig.wukongConsolePart). Briefly A5/A4 on 2026-08-23 while the DDR3
+    // presets were pinned to J11 -> Pico uart0; both connectors are physically
+    // available and the choice is now a per-setup override (`uart=PICO_UART0`)
+    // rather than a property of the memory type. ConstraintDriftTest is what
+    // keeps this and wukong_ddr3_base.xdc from disagreeing again.
+    assert(pinMap("ser_txd") == "E3")
+    assert(pinMap("ser_rxd") == "F3")
     // Ethernet GMII
     assert(pinMap("e_gtxc") == "U1")
     assert(pinMap("e_mdc") == "H2")
