@@ -89,7 +89,7 @@ audit, and has moved down accordingly.
 10. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
 11. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
 12. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-13. **[#53](#item-53)** — 4-core Wukong takes `14/4` (16 KB, 16 blocks): 32 blocks misses timing by 43 ps even under `Explore`. Preset default still open
+13. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
 14. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
 15. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
 16. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
@@ -208,7 +208,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - ~~**[28](#item-28)**~~ — `DoAll` dies at `CollectionTest` on the Wukong — FIXED
 - ~~**[22](#item-22)**~~ — Five `_sw` handlers exist but do not work — RESOLVED. It was two
 - **[52](#item-52)** — The Java tools duplicate the hardware config by hand — three stale copies found while documenting item 51
-- **[53](#item-53)** — The 8 KB method cache default broke 4-core Wukong SMP fit — resolved to `14/4`; whether it becomes the multicore default is open
+- **[53](#item-53)** — The 8 KB method cache default broke 4-core Wukong SMP fit — resolved to `15/6` + `double:java` (hardware-validated); the preset itself is still unfixed
 
 ## 3. Item detail and journals
 
