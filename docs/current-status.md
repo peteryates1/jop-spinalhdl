@@ -296,7 +296,13 @@ proposed turned out **not** to be needed: the per-core tables are fine, and
 `SMPGC OK` means the cross-generation references genuinely survived, so the
 workload did exercise it.
 
-**EP4CGX150 CORE-COUNT CEILING, all measured 2026-08-15, not extrapolated:**
+**EP4CGX150 CORE-COUNT CEILING, all measured 2026-08-15, not extrapolated.**
+
+> **THESE NUMBERS ARE AT THE OLD 2 KB / 16-BLOCK METHOD CACHE.** The default
+> became 8 KB / 64 blocks on 2026-08-20 (`0293415`), four days after this table
+> was measured, and **12 cores does not route at the new default** — see the
+> note below the table before rebuilding anything here.
+
 
 | cores | LE | of device | timing | status |
 |---|---|---|---|---|
@@ -305,6 +311,35 @@ workload did exercise it.
 | 8 | 77,145 | 52 % | 50 MHz, +0.463 | validated, generational |
 | 12 | 118,085 | 79 % | 36 MHz, +3.084 | **validated, generational** |
 | 16 | **182,501** | **122 %** | — | **DOES NOT FIT** |
+
+**12 CORES DOES NOT ROUTE AT THE CURRENT DEFAULT (2026-08-23).** Rebuilt at
+8 KB / 64 blocks, 36 MHz, and it **fits but cannot be routed**:
+
+```
+Info (170196): Router estimated peak interconnect usage is 94% of the available
+               device resources in the region X47_Y46 to X58_Y56
+Info (170131): Fitter routing phase terminated due to predicted failure from
+               regional routing congestion
+Warning (16618): Fitter routing phase terminated due to routing congestion.
+```
+
+Placement SUCCEEDS in 12m34s — the area is fine, roughly 86 % LE against the
+79 % in the table — and then routing dies on **regional** interconnect
+congestion, retries, and dies again. Killed after 4h20m elapsed / 18h27m CPU
+across three attempts. **Do not wait for this build: it is not slow, it is
+failing, and the failure is visible in the log within the first routing pass.**
+
+This is [item 53](#item-53) on a second board, with a different failure mode:
+the Wukong hit slice packing at 98.7 % LUT, this hits routing congestion at
+86 % LE. Both are the same cause — the method cache is per core, so ~850
+LUTs/core multiplies — and both went undetected because no SMP build was made
+after the default changed. The A-E115FB and CYC5000 SMP builds have the same
+exposure and have not been rebuilt either.
+
+**What it does NOT tell us:** whether a smaller geometry routes here. The next
+experiment is 12 cores at `14/5` (32 blocks) — half the comparators, still the
+512 B block size — which is the step-down item 53 says the higher core counts
+need. Not yet run.
 
 12 cores validated 2026-08-15: PLL 18/25 = 36 MHz, `SMPGC OK` with `minors 10
 / verified 192 / errors 0` on **4/4 runs**, `cores 12, publishers 11`, and
