@@ -5776,6 +5776,42 @@ not the rendering mechanism.
 (3) switch one board's build to the generated file, (4) roll out. Step 2 is the
 real work and is a pure comparison — no build risk until step 3.
 
+#### Step 2 done for the Wukong, 2026-08-23 — the gap is TWO PINS
+
+Ran `XdcGeneratorMain` per preset and compared pin-by-pin against the files the
+builds actually read. This is far better than the item assumed.
+
+**`wukongSdram` vs `wukong_jop_sdram.xdc`: PIN-IDENTICAL.** 45 pins each, no
+mismatched assignment, nothing missing on either side — all 16 SDRAM data pins,
+address, control, clock, reset, UART and LEDs. **That board is adoptable
+today.**
+
+**`wukongDdr3` vs `wukong_ddr3_base.xdc`: identical except the UART.**
+
+| port | generated | hand-written |
+|---|---|---|
+| `clk` + `create_clock` | M21, 20.000 ns | same |
+| `resetn` | H7 | same |
+| **`ser_txd`** | **E3** | **A5** |
+| **`ser_rxd`** | **F3** | **A4** |
+| `led[0]`, `led[1]` | G21, G20 | same |
+| CFGBVS / CONFIG_VOLTAGE / COMPRESS | same |
+
+The whole DDR3 gap is the two UART pins — E3/F3 is the CH340N, A5/A4 is J11 ->
+Pico uart0. So step 1 is not merely a prerequisite, it is *the entire remaining
+difference* for this board.
+
+**The non-pin content splits exactly as predicted.** Generated already:
+`create_clock`, `CFGBVS`, `CONFIG_VOLTAGE`, `BITSTREAM.GENERAL.COMPRESS`. Not
+generable and must stay hand-written: the `set_clock_groups -asynchronous`
+timing exceptions in `wukong_ddr3.xdc`. One real gap: the generator emits
+`# source <path-to>/fpga/constraints/sdram_sdr.xdc` as a COMMENT, so a generated
+file used as-is would lose the SDR IOB packing — it needs to emit a real
+`source` line, and the relative path differs per board directory.
+
+**Not yet checked:** the Quartus side (`QsfGeneratorMain` against the EP4CGX150
+and A-E115FB `.qsf` files), and the non-Wukong Vivado boards.
+
 
 ## 4. Two workstreams, both largely done
 
