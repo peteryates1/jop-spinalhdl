@@ -106,19 +106,17 @@ class ConstraintDriftTest extends AnyFunSuite {
       isQsf = false, knownGaps = Map.empty)
   }
 
-  test("wukongDdr3 XDC matches, except the known UART routing gap") {
+  test("wukongDdr3 XDC matches the hand-written constraints") {
+    // GAP CLOSED 2026-08-23. The preset said devicePart = CH340N (E3/F3) while
+    // every DDR3 build reads wukong_ddr3_base.xdc, which routes the UART to
+    // J11 -> Pico uart0 (A5/A4). Fixed by pointing the DDR3 presets at
+    // PICO_UART0, which the Wukong board already declared, and by mapping that
+    // device THROUGH the J11 connector rather than at raw balls. This test
+    // caught the closure itself -- it failed with "a known gap is GONE" until
+    // the entries below were removed.
     check("wukongDdr3", XdcGenerator.generate(JopConfig.wukongDdr3),
       "fpga/qmtech-xc7a100t-wukong/vivado/constraints/wukong_ddr3_base.xdc",
-      isQsf = false,
-      knownGaps = Map(
-        // The config says devicePart = CH340N (E3/F3). Every DDR3 build reads
-        // wukong_ddr3_base.xdc, which routes the UART to J11 -> Pico uart0
-        // (A5/A4) because the CH340N at E3/F3 is hardwired to the PCB and a
-        // second 1a86:7523 bridge is indistinguishable from the A-E115FB's.
-        // Fix: SystemAssembly.wukong has no J11 device; only wukongWithJ11Uart
-        // carries Board.J11UartAdapter. Item 57 step 1.
-        "ser_txd" -> (Some("E3"), "A5"),
-        "ser_rxd" -> (Some("F3"), "A4")))
+      isQsf = false, knownGaps = Map.empty)
   }
 
   // --------------------------------------------------------------- Quartus

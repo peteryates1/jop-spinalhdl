@@ -200,13 +200,15 @@ object JopTopVerilog {
       devs.values.find(_.deviceType.key == "uart").foreach { u =>
         val baud = u.params.get("baudRate").map(_.asInstanceOf[Int]).getOrElse(2000000)
         line(f"${p}UART baud:   $baud")
-        // Which physical connector the console actually comes out of. NOT
-        // derivable from devicePart: on the Wukong the Vivado flow takes pins
-        // from a hand-written XDC, so a DDR3 build labelled CH340N consoles on
-        // the Pico via J11. A build whose summary sends you to the wrong wire
-        // reads as a dead board -- it cost an hour on 2026-08-23. Item 52.
-        u.params.get("console").foreach { c =>
-          line(f"${p}Console:     $c")
+        // Which physical connector the console comes out of, DERIVED from the
+        // device part and the board's connector map -- not restated. A build
+        // whose summary names the wrong wire reads as a dead board, which cost
+        // an hour on 2026-08-23.
+        u.devicePart.foreach { part =>
+          val pins = jopConfig.assembly.pinMapping(part)
+          val detail = if (pins.isEmpty) "" else
+            pins.toSeq.sortBy(_._1).map { case (sig, pin) => s"$sig=$pin" }.mkString(" ", ", ", "")
+          line(f"${p}Console:     $part$detail")
         }
       }
       val bc = sys.coreConfig.bytecodes
