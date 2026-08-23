@@ -2,7 +2,12 @@
 # DDR3 pin constraints are handled by the MIG IP XDC files.
 
 # Base constraints (clk, reset, UART, LEDs, config)
-source [file join [file dirname [info script]] wukong_ddr3_base.xdc]
+# NO `source` HERE. Vivado does not support it inside a file read by read_xdc:
+# it logs "CRITICAL WARNING: [Designutils 20-1307] Command 'source' is not
+# supported in the xdc constraint file" and carries on, so the include silently
+# does nothing (item 58). The build TCLs read wukong_ddr3_base.xdc directly on
+# the line before this file, which is why THIS one was harmless -- the GMII
+# include below was not.
 
 # ============================================================================
 # Ethernet GMII (RTL8211EG PHY) — all LVCMOS33, Bank 34
@@ -65,7 +70,10 @@ set_property PACKAGE_PIN R1 [get_ports {e_resetn}]
 set_property IOSTANDARD LVCMOS33 [get_ports {e_resetn}]
 
 # GMII timing constraints
-source ../../../../fpga/constraints/rtl8211eg_gmii.xdc
+# Ethernet GMII constraints are read by the build TCLs (read_xdc), NOT sourced
+# here -- see the note at the top of this file. This was a `source` line until
+# 2026-08-23, which means the GMII constraints had never been applied to any
+# DDR3 build carrying the PHY.
 
 # CDC false paths: Ethernet 125 MHz ↔ MIG ui_clk (clk_pll_i)
 # All crossings use SpinalHDL BufferCC/StreamFifoCC (safe gray-code CDC).

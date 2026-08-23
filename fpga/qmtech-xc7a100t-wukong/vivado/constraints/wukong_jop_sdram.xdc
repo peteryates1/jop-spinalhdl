@@ -119,7 +119,16 @@ set_property PACKAGE_PIN E23 [get_ports {sdram_DQ[15]}]
 set_property IOSTANDARD LVCMOS33 [get_ports {sdram_DQ[15]}]
 
 # SDR SDRAM IOB packing (shared)
-source ../../../../fpga/constraints/sdram_sdr.xdc
+# SUPERSEDED FILE -- no build reads this any more. build_jop_sdram_bitstream.tcl
+# takes its constraints from spinalhdl/generated/wukong_jop_sdram.xdc, generated
+# from JopConfig (item 57). Kept as the reference ConstraintDriftTest compares
+# the generator against.
+#
+# The line below WAS `source ../../../../fpga/constraints/sdram_sdr.xdc`, and it
+# never worked: Vivado does not support `source` inside a file read by read_xdc,
+# so the SDR IOB packing was absent from every build made from this file
+# (item 58). The generated replacement inlines those two properties, which is
+# how the defect was found -- 34 registers moved.
 
 # ============================================================================
 # Configuration

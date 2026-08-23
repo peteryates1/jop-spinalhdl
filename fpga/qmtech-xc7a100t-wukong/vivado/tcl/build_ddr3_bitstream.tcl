@@ -19,6 +19,10 @@ read_verilog [file join $rtl_dir JopDdr3WukongTop.v]
 # Read constraints (read base + full separately; XDC source doesn't resolve in non-project mode)
 read_xdc [file join $repo_root vivado/constraints/wukong_ddr3_base.xdc]
 read_xdc [file join $repo_root vivado/constraints/wukong_ddr3.xdc]
+# Shared constraints, read here rather than `source`d from inside an xdc --
+# Vivado ignores that and only logs a CRITICAL WARNING, so these had never
+# been applied to any build (item 58).
+read_xdc [file join $repo_root ../constraints/rtl8211eg_gmii.xdc]
 
 # Synthesize (performance-optimized: retiming, resource sharing, LUT combining)
 synth_design -top JopDdr3WukongTop -part xc7a100tfgg676-2 \

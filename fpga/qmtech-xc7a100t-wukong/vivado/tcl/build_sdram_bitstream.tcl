@@ -17,6 +17,10 @@ read_verilog [file join $rtl_dir SdramExerciserWukongTop.v]
 
 # Read constraints
 read_xdc [file join $repo_root vivado/constraints/wukong_sdram.xdc]
+# Shared constraints, read here rather than `source`d from inside an xdc --
+# Vivado ignores that and only logs a CRITICAL WARNING, so these had never
+# been applied to any build (item 58).
+read_xdc [file join $repo_root ../constraints/sdram_sdr.xdc]
 
 # Synthesize
 synth_design -top SdramExerciserWukongTop -part xc7a100tfgg676-2
