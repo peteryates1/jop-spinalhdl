@@ -144,10 +144,17 @@ to "go smaller" on a tiny part makes the binding constraint worse. There you
 must cut `jpcWidth` as well: `12/4` (4 KB, 16 x 256 B) or `11/4`
 (2 KB, 16 x 128 B).
 
-Note the MAX1000 may not be a geometry question at all: a single JOP core
-measured **8,784 LE** on the EP4CGX150 against the 10M08's **8,000 LE total**,
-and `fpga/max1000/` has never produced a build. Check that a core fits before
-tuning its cache.
+Note the MAX1000 is not primarily a geometry question. **It used to fit** —
+historically, before compute units existed — so the target is a *cropped-back*
+core, not a smaller cache. The **8,784 LE** figure often quoted for one core is
+a fully-featured core (all CUs, object and array caches) on the EP4CGX150; it is
+not a floor. `ep4ce6Sdram` already targets a 6,272 LE part with the note
+"6K LEs too small for O$/A$", which is the shape a MAX1000 build would take.
+
+So on this part, decide the FEATURE set first (CUs, O$/A$) and the geometry
+second — the cache is a small term next to a compute unit. `fpga/max1000/` has
+a Makefile, QSF, SDC and PLL but no build outputs, so none of this is currently
+verified. Deferred; it is the smallest target we keep, not an active one.
 
 **Rule of thumb**: hold the block size at 512 B; raise `blockBits` as far as
 timing allows; cut `jpcWidth` only when BRAM is the binding constraint. Do not

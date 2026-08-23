@@ -5428,7 +5428,53 @@ Note the 8 KB method cache still does not fit at 4 cores at any L2 size, since
 L2 capacity no longer costs logic. So the decision below is unchanged in shape
 and much better in payoff.
 
-**RESOLVED 2026-08-22 — take `14/4` at four cores.** The decision below was
+**RESOLVED 2026-08-23 — take `15/6`, and the trade was never cores vs cache.**
+The 2026-08-22 answer below (`14/4`) is **SUPERSEDED**. It was reached by
+treating the method cache as competing with the CORE COUNT, which framed the
+question as "how little cache can we accept". The competitor is actually the
+COMPUTE UNITS, and they are far more expensive.
+
+CUs are per core, so the single-core sweep in
+[`../analysis/wukong-utilization-sweep.md`](../analysis/wukong-utilization-sweep.md)
+multiplies. At four cores: DCU ~19,800 LUTs, FCU ~7,150, LCU ~5,800 — against
+~3,400 to take the method cache from 16 to 64 blocks. **Dropping one CU buys the
+best geometry roughly six times over.** `wukongSmp` inherits `"*" -> "hw"` from
+`wukongFull`, so all four were in there.
+
+4-core `wukongSmp`, 512-set L2, all hardware-measured:
+
+| config | blocks | block size | LUTs | BRAM | WNS | Kfl miss | DoAll |
+|---|---|---|---|---|---|---|---|
+| `14/4`, all CUs — *superseded* | 16 | 256 B | 57,329 (90.4 %) | — | +0.030 ns | 16.6 % | never run |
+| `12/5`, all CUs (`Explore`) | 32 | 32 B | 59,228 (93.4 %) | — | **-0.043 ns** | 0.6 % | — |
+| `13/6`, `double:java` | 64 | 128 B | 43,487 (68.6 %) | 35.5 (26.3 %) | +0.069 ns | 0.1 % | **66/66** |
+| **`15/6`, `double:java`** | **64** | **512 B** | **43,399 (68.5 %)** | 59.5 (44.1 %) | **+0.088 ns** | **0.1 %** | **66/66** |
+
+`15/6` beats the superseded answer on every axis that costs anything: four times
+the blocks, four times the depth, 22 points more LUT margin, better timing, and
+it is the only one validated on hardware. Depth is free — `13/6` -> `15/6` cost
+**-88 LUTs** — so the block size sits at the 512 B saturation point. See
+[the tuning guide](../architecture/tuning-guide.md) for the policy this
+produced: hold the block size at 512 B, pick the count from the LUT budget.
+
+**What it costs:** double arithmetic runs in Java. There is no double microcode
+at all (`bc=double:mc` is refused — item 20), so this is the Java path, which is
+the DEFAULT for every preset that does not say `"*" -> "hw"`. DoAll's
+`DoubleArith`, `DoubleField`, `MathTest` and `BigMathTest` all pass. Untested:
+whether dropping the **LCU** (~5,800) instead would also fit 64 blocks while
+keeping doubles — cheaper in LUTs, and possibly the better trade if an
+application uses doubles more than longs.
+
+**STILL OPEN — the preset.** `wukongSmp(4)` at defaults is still 62,583 LUTs
+(98.7 %) and fails slice packing, so the regression this item was filed about is
+live: the preset does not build, and nothing warns until Vivado's placer. The
+fix is validated but not applied, because the right THRESHOLD is unknown —
+`15/6` is 59.5 BRAM at 4 cores and would be ~119 of 135 at 8 cores before the L2
+gets anything, so the geometry has to step down with core count. That is
+option 1 below, and this is the first case that actually needs it. Decide it
+with the 8/12-core data, not from the 4-core point.
+
+**The 2026-08-22 answer, superseded, kept for the reasoning:** the decision below was
 framed as method cache *versus* fit. The geometry sweep splits it into two
 independent axes and the trade largely dissolves: `blockBits` (block COUNT) costs
 LUTs, `jpcWidth` (SIZE) costs only BRAM, and a 4-core Wukong is at 90 % LUT and
