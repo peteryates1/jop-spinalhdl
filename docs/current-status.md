@@ -6116,13 +6116,38 @@ Something between the 2026-08-05 hardware validation (40 MHz, DoAll 66/66) and
 resolved the EP4CGX150: it would quantify the ~2 MHz, and leave the board still
 failing at ~34 MHz. The question is what cost the other 5.6.
 
-**What to do:** bisect between 2026-08-05 and 2026-08-20, when the board went
-from passing on hardware to missing by 5.6 MHz. A geometry A/B is worth running
-alongside to confirm the ~2 MHz, but on its own it cannot make this build pass.
-Shrinking `jpcWidth` does attack the right structure -- the critical path is the
-JBC RAM's output mux, and a smaller RAM spans fewer DP16KD -- which is the
-small-part inversion the tuning guide describes, so it is the geometry knob to
-try here rather than `blockBits`.
+#### Narrowed 2026-08-24 — the fetch fixes are innocent, and BOTH stages fail
+
+Built at `89da8fb^` (2026-08-12 15:05), before both fetch-path commits:
+
+| i5 build | LUT4s | DP16KD | Fmax vs 40 MHz |
+|---|---|---|---|
+| `89da8fb^`, 08-12 | 9,364 (38 %) | 12 | **35.45 FAIL** |
+| on disk, 08-20 | 10,850 (44 %) | 12 | 34.37 FAIL |
+| today, current default | 13,318 (54 %) | 15 | 32.56 FAIL |
+| **BRAM stage**, on disk 08-18 | 8,847 (36 %) | 40 (71 %) | **35.95 FAIL** |
+
+So `89da8fb` and `1f36149` are NOT the cause -- the board already missed 40 MHz
+before either landed -- and it is not specific to the SDRAM stage, since the
+BRAM build fails too. Both fetch commits are correctness fixes and should stay
+regardless.
+
+**Every recorded pass is contradicted by every build log on disk.** Item 51
+says 53.95 MHz and [item 43](#item-43) says "49.65 MHz PASS at 40"; the four
+logs above range 32.56-35.95 and all say FAIL. The design has lost roughly
+15 MHz against those figures, and the loss predates 2026-08-12.
+
+**Two readings, not yet separated.** Either the design genuinely regressed
+before 08-12, or those recorded passes were of a materially different build and
+this board has been running on hardware while its timing report failed -- which
+this project has documented before, a -3 ns setup violation computing bit-exact
+results. The 2026-08-05 hardware validation (DoAll 66/66 at 40 MHz) is
+consistent with EITHER: hardware working is not the timing report passing.
+
+**Revised next step:** the window is 2026-08-05 to 2026-08-12, not to 08-20 --
+about half the commits -- and the first question to settle is which of those two
+readings holds, because if it is the second there is no regression to find and
+the honest fix is to correct the recorded numbers and pick a real target.
 
 This board is the only open-source-toolchain target, so leaving it broken costs
 the coverage that makes yosys/nextpnr breakage visible early.
