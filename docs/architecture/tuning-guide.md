@@ -267,3 +267,17 @@ measurement. They are here so the next person does not re-derive them.
 | where the logic went | `report_utilization -hierarchical` on `post_route.dcp` | ~1 min |
 | area of ONE component, or a variant of it | `runMain jop.memory.MethodCacheVerilog <jpc> <blk>` + `synth_design -mode out_of_context` | ~30 s |
 | method length distribution | `grep -o "code_length = [0-9]*" <app>.jop.txt` | instant |
+
+**Read the FINAL number, not the first one in the log.** Every vendor tool
+prints intermediate results, and grepping the first match is how a working board
+gets reported as broken. nextpnr emits a "Max frequency" line after PLACEMENT
+and again after ROUTING; on the Colorlight i5 they differ by **17 MHz**
+(32.56 FAIL vs 49.40 PASS), and `fpga/colorlight-i5/Makefile` already extracts
+it correctly with `| tail -1`. Quartus reports utilisation per stage, and its
+`fit_summary.txt` is overwritten in place, so check the timestamp before
+believing it. Vivado's post-synthesis hierarchical report excludes IP black
+boxes — only the post-route checkpoint is trustworthy (above).
+
+**When a long-standing record disagrees with a fresh measurement, suspect the
+measurement first.** The record generally survived a hardware run; the
+measurement is minutes old.
