@@ -121,25 +121,24 @@ class ConstraintDriftTest extends AnyFunSuite {
 
   // --------------------------------------------------------------- Quartus
 
-  test("ep4cgx150 QSF matches the hand-written constraints") {
-    // Mirrors QsfGeneratorMain: daughter-board peripherals are added for pin
-    // reservation, which is why generated-only ports are not a failure.
-    val base = JopConfig.ep4cgx150Serial
-    val withDb = base.copy(systems = Seq(base.system.copy(
-      devices = base.system.devices ++ Map(
-        "eth" -> DeviceInstance(DeviceType.Ethernet,
-          params = Map("gmii" -> true, "phyDataWidth" -> 8),
-          devicePart = Some("RTL8211EG")),
-        "sdNative" -> DeviceInstance(DeviceType.SdNative,
-          devicePart = Some("SD_CARD"))))))
+  // ---------------------------------------------------------------- retired
+  //
+  // The EP4CGX150 QSF case was here, and is gone because the board now takes
+  // GENERATED pins: jop_sdram.qsf carries
+  //   set_global_assignment -name SOURCE_TCL_SCRIPT_FILE generated/pins.tcl
+  // and no longer lists set_location_assignment lines at all. There is no
+  // hand-written pin list left to drift against, so the comparison has nothing
+  // to compare -- this test failed with "parsed no pins" the moment the switch
+  // was made, which is the guard working rather than breaking.
+  //
+  // It closed its gap first: QsfGenerator had no reset handling, so the SW1
+  // button was omitted. Fixed by lifting the predicate into
+  // JopConfig.resetInput, after which the generated pins matched the hand file
+  // exactly, and a control build proved it -- 11,076 LE and +9.714 ns slack
+  // either way, with 45 assignments reported by Quartus as source "User".
+  //
+  // What guards it now is that there is only one description: the pins come
+  // from JopConfig, the same place the RTL does. The remaining case below
+  // guards a board whose constraints are STILL hand-written.
 
-    check("ep4cgx150Serial", QsfGenerator.generate(withDb),
-      "fpga/qmtech-ep4cgx150-sdram/jop_sdram.qsf",
-      // GAP CLOSED 2026-08-23. QsfGenerator had no reset handling at all, so
-      // the SW1 button was left for Quartus to place wherever it liked. Fixed
-      // by lifting the predicate into JopConfig.resetInput, which JopTop,
-      // XdcGenerator and QsfGenerator now all read -- rather than each
-      // re-deciding whether the port exists and what it is called.
-      isQsf = true, knownGaps = Map.empty)
-  }
 }

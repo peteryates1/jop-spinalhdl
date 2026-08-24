@@ -17,6 +17,19 @@ set_global_assignment -name NOMINAL_CORE_SUPPLY_VOLTAGE 1.2V
 set_global_assignment -name VERILOG_FILE ../../spinalhdl/generated/JopSdramTop.v
 set_global_assignment -name VHDL_FILE generated/dram_pll.vhd
 set_global_assignment -name SDC_FILE jop_sdram.sdc
+
+# PIN ASSIGNMENTS ARE GENERATED, not listed here. Written by
+#   sbt "runMain jop.generate.QsfGeneratorMain --pins-only --write \
+#        fpga/qmtech-ep4cgx150-sdram/generated/pins.tcl"
+# from JopConfig, so the pins and the RTL come from one description (item 57).
+#
+# Only the PINS are generated. Everything else in this file -- the source list,
+# the SDC reference, junction temperatures, core voltage, configuration pins and
+# the SignalTap VIRTUAL_PIN assignments -- is project setup the config knows
+# nothing about, and stays hand-written. That is the difference from the Vivado
+# side, where an .xdc holds constraints only and the whole file could be
+# generated.
+set_global_assignment -name SOURCE_TCL_SCRIPT_FILE generated/pins.tcl
 set_global_assignment -name VERILOG_FILE ../../fpga/ip/altera_sdram_tri_controller/altera_sdram_tri_controller.v
 set_global_assignment -name VERILOG_FILE ../../fpga/ip/altera_sdram_tri_controller/efifo_module.v
 set_global_assignment -name VHDL_FILE ../../fpga/ip/altera_lpm/arom.vhd
@@ -43,72 +56,27 @@ set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -
 # -------------------------------------------------------------------------- #
 
 # 50 MHz Clock
-set_location_assignment PIN_B14 -to clk_in
 
 # UART TX/RX (CP2102N on daughter board)
-set_location_assignment PIN_AD20 -to ser_txd
-set_location_assignment PIN_AE21 -to ser_rxd
 
 # Core board LEDs
-set_location_assignment PIN_A25 -to led[0]
-set_location_assignment PIN_A24 -to led[1]
 
 # SDRAM clock (PLL c2: 100 MHz, -3ns phase shift)
-set_location_assignment PIN_E22 -to sdram_clk
 
 # SDRAM control
-set_location_assignment PIN_H26 -to sdram_CSn
-set_location_assignment PIN_K24 -to sdram_CKE
-set_location_assignment PIN_G25 -to sdram_WEn
-set_location_assignment PIN_H25 -to sdram_RASn
-set_location_assignment PIN_G26 -to sdram_CASn
 
 # SDRAM bank address
-set_location_assignment PIN_J25 -to sdram_BA[0]
-set_location_assignment PIN_J26 -to sdram_BA[1]
 
 # SDRAM address
-set_location_assignment PIN_L25 -to sdram_ADDR[0]
-set_location_assignment PIN_L26 -to sdram_ADDR[1]
-set_location_assignment PIN_M25 -to sdram_ADDR[2]
-set_location_assignment PIN_M26 -to sdram_ADDR[3]
-set_location_assignment PIN_N22 -to sdram_ADDR[4]
-set_location_assignment PIN_N23 -to sdram_ADDR[5]
-set_location_assignment PIN_N24 -to sdram_ADDR[6]
-set_location_assignment PIN_M22 -to sdram_ADDR[7]
-set_location_assignment PIN_M24 -to sdram_ADDR[8]
-set_location_assignment PIN_L23 -to sdram_ADDR[9]
-set_location_assignment PIN_K26 -to sdram_ADDR[10]
-set_location_assignment PIN_L24 -to sdram_ADDR[11]
-set_location_assignment PIN_K23 -to sdram_ADDR[12]
 
 # SDRAM data mask
-set_location_assignment PIN_F26 -to sdram_DQM[0]
-set_location_assignment PIN_H24 -to sdram_DQM[1]
 
 # SDRAM data bus
-set_location_assignment PIN_B25 -to sdram_DQ[0]
-set_location_assignment PIN_B26 -to sdram_DQ[1]
-set_location_assignment PIN_C25 -to sdram_DQ[2]
-set_location_assignment PIN_C26 -to sdram_DQ[3]
-set_location_assignment PIN_D25 -to sdram_DQ[4]
-set_location_assignment PIN_D26 -to sdram_DQ[5]
-set_location_assignment PIN_E25 -to sdram_DQ[6]
-set_location_assignment PIN_E26 -to sdram_DQ[7]
-set_location_assignment PIN_H23 -to sdram_DQ[8]
-set_location_assignment PIN_G24 -to sdram_DQ[9]
-set_location_assignment PIN_G22 -to sdram_DQ[10]
-set_location_assignment PIN_F24 -to sdram_DQ[11]
-set_location_assignment PIN_F23 -to sdram_DQ[12]
-set_location_assignment PIN_E24 -to sdram_DQ[13]
-set_location_assignment PIN_D24 -to sdram_DQ[14]
-set_location_assignment PIN_C24 -to sdram_DQ[15]
 
 # Reset button (SW1, active low). Runtime reset -- without it the only reset in
 # the design is FPGA reconfiguration, which is why every workflow said
 # "reprogram before each download". Pairs with the UART break escape, which
 # needs no pin. See jop/system/ResetGenerator.scala.
-set_location_assignment PIN_AD24 -to reset_n
 
 # -------------------------------------------------------------------------- #
 # SignalTap II Logic Analyzer
