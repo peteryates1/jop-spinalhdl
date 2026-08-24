@@ -79,7 +79,10 @@ JOP_FILE ?= $(PROJECT_ROOT)/java/apps/Smallest/HelloWorld.jop
 # Project paths (sbt runs from repo root)
 PROJECT_ROOT = ../..
 ASM_DIR = ../../asm
-GENERATED_V = $(CFG_DIR)/rtl/JopSdramTop.v
+# A STAMP, not the .v -- the entity name is derived from the config
+# (JopSdramTop at one core, JopSmpSdramTop at two or more), so naming the file
+# here would restate config in the Makefile and be wrong for every SMP build.
+GEN_STAMP = $(CFG_DIR)/rtl/.generated
 GENERATED_SMP_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSmpSdramTop.v
 GENERATED_DBFPGA_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSdramTop.v
 GENERATED_SD_NATIVE_V = $(PROJECT_ROOT)/spinalhdl/generated/SdNativeExerciserTop.v
@@ -107,7 +110,24 @@ FLASH_COF = $(OUTPUT_DIR)/flash_boot.cof
 FLASH_JIC = $(OUTPUT_DIR)/flash_image.jic
 CFG        ?= ep4cgx150Serial
 REV        ?= jop_sdram
-CFG_DIR     = $(PROJECT_ROOT)/build/$(CFG)
+
+# The config directory is keyed by the INVOCATION -- preset plus arguments --
+# and BuildLayout owns how that becomes a directory name. A bare preset is a
+# Scala identifier, so sanitising it is the identity and no call is needed; an
+# invocation WITH arguments ("ep4cgx150Smp 4") is not, so ask BuildLayout rather
+# than reimplementing its rules here. A second copy of the naming would split a
+# build directory silently the first time an override spelling changed.
+ifeq ($(words $(CFG)),1)
+  CFG_NAME := $(CFG)
+else
+  CFG_NAME := $(shell cd $(PROJECT_ROOT) && sbt "runMain jop.generate.BuildLayoutMain $(CFG)" 2>/dev/null \
+                | sed -n 's|^\[info\] build/\(.*\)$$|\1|p' | tail -1)
+  ifeq ($(CFG_NAME),)
+    $(error BuildLayoutMain produced no directory name for CFG="$(CFG)")
+  endif
+endif
+
+CFG_DIR     = $(PROJECT_ROOT)/build/$(CFG_NAME)
 QUARTUS_PRJ = $(CFG_DIR)/quartus
 
 # Under build/<config>/quartus/output_files now, not the in-tree OUTPUT_DIR.
@@ -134,7 +154,7 @@ full: microcode generate build run
 full-mc-fallback: microcode generate-mc-fallback build run
 
 # SMP full flow
-full-smp: microcode generate-smp build-smp run-smp
+full-smp: microcode smp smp-program smp-verify
 
 # 8-core SMP test full flow
 full-smp8: microcode generate-smp8 build-smp8 run-smp8
@@ -156,7 +176,6 @@ full-flash-programmer: generate-flash-programmer build-flash-programmer program-
 
 # Program + download + monitor
 run: program download monitor
-run-smp: program-smp download monitor
 run-smp8: program-smp8 download monitor
 run-dbfpga: program-dbfpga download monitor
 run-dbfpga-vgadma: program-dbfpga-vgadma download monitor
@@ -180,18 +199,44 @@ microcode-flash:
 # `buildtree` puts the Verilog under build/<config>/rtl with everything else.
 # Without it the generator writes to the legacy spinalhdl/generated, which is
 # what the boards not yet converted still read.
-generate:
+SCALA_SRC := $(shell find $(PROJECT_ROOT)/spinalhdl/src/main/scala -name '*.scala')
+UCODE     := $(wildcard $(PROJECT_ROOT)/build/microcode/serial/mem_*.dat)
+
+$(GEN_STAMP): $(SCALA_SRC) $(UCODE)
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog $(CFG) buildtree"
-	@echo "=== Verilog generated: $(GENERATED_V) ==="
+	@mkdir -p $(dir $@) && touch $@
+
+generate: $(GEN_STAMP)
+	@echo "=== Verilog generated into $(CFG_DIR)/rtl ==="
 
 # Microcode-fallback coverage build. Same hardware project as `generate`; only
 # the bytecode implementation choices differ, so it reuses build/program/download.
 generate-mc-fallback:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150McFallback"
 
-generate-smp:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Smp 2"
-	@echo "=== SMP Verilog generated: $(GENERATED_SMP_V) ==="
+# SMP IS NOT A DIFFERENT FLOW. It is the same six rules with a different
+# configuration, so it re-enters them rather than duplicating them:
+#
+#   make smp                 2 cores (the default)
+#   make smp CORES=4
+#   make smp CORES=12 MHZ=36
+#
+# The duplicated build-smp/program-smp/run-smp rules this replaces each carried
+# their own copy of the project name, the SDC path and a dram_pll.vhd that was
+# NOT the one the JOP builds used.
+CORES ?= 2
+MHZ   ?=
+SMP_CFG = ep4cgx150Smp $(CORES) $(MHZ)
+
+smp:
+	$(MAKE) generate build CFG="$(strip $(SMP_CFG))" REV=jop_smp_sdram
+
+smp-program:
+	$(MAKE) program CFG="$(strip $(SMP_CFG))" REV=jop_smp_sdram
+
+smp-verify:
+	$(PROJECT_ROOT)/fpga/scripts/hw_verify.py $(strip $(SMP_CFG)) \
+	    --app SmpGcTest/SmpGcTest --expect-text "SMPGC OK"
 
 generate-smp8:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopSmp8TestVerilog"
@@ -250,10 +295,10 @@ build: $(SOF_FILE)
 # keying on it would let two configurations share a PLL. See BuildLayout, which
 # also owns the structure: change it there, not here.
 $(QUARTUS_PRJ)/$(REV).sdc:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.TimingConstraintsMain $(CFG) --write build/$(CFG)/quartus/$(REV).sdc"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.TimingConstraintsMain $(CFG) --write build/$(CFG_NAME)/quartus/$(REV).sdc"
 
 $(QUARTUS_PRJ)/setup_proj.tcl:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.QuartusProjectMain $(CFG) --revision $(REV) --write build/$(CFG)/quartus/setup_proj.tcl"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.QuartusProjectMain $(CFG) --revision $(REV) --write build/$(CFG_NAME)/quartus/setup_proj.tcl"
 
 # Quartus writes the .qsf/.qpf itself, in the project directory, from our Tcl.
 $(QUARTUS_PRJ)/$(REV).qsf: $(QUARTUS_PRJ)/setup_proj.tcl $(QUARTUS_PRJ)/$(REV).sdc
@@ -273,21 +318,12 @@ $(QUARTUS_PRJ)/$(REV).qsf: $(QUARTUS_PRJ)/setup_proj.tcl $(QUARTUS_PRJ)/$(REV).s
 # what clock a build ran at gives the wrong answer (it says 60 MHz; the STA
 # clock table for a 36 MHz preset says 27.777 ns / 18-over-25). Check the STA
 # report, not either file.
-$(SOF_FILE): $(GENERATED_V) $(QUARTUS_PRJ)/$(REV).qsf $(CFG_DIR)/ip/dram_pll.vhd
+$(SOF_FILE): $(GEN_STAMP) $(QUARTUS_PRJ)/$(REV).qsf $(CFG_DIR)/ip/dram_pll.vhd
 	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_map $(REV)
 	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_fit $(REV)
 	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_asm $(REV)
 	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_sta $(REV)
 	@echo "=== Build complete: $(SOF_FILE) ==="
-
-build-smp: $(SOF_SMP_FILE)
-
-$(SOF_SMP_FILE): $(GENERATED_SMP_V) $(QP_SMP).qsf $(QP).sdc generated/JopSmpSdramTop/dram_pll.vhd
-	$(QUARTUS_BIN)/quartus_map $(QP_SMP)
-	$(QUARTUS_BIN)/quartus_fit $(QP_SMP)
-	$(QUARTUS_BIN)/quartus_asm $(QP_SMP)
-	$(QUARTUS_BIN)/quartus_sta $(QP_SMP)
-	@echo "=== SMP Build complete: $(SOF_SMP_FILE) ==="
 
 build-smp8: $(SOF_SMP8_FILE)
 

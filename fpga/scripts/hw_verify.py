@@ -143,6 +143,12 @@ def main():
     ap.add_argument("--app", default="JvmTests/DoAll")
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--expect-ok", type=int, default=66)
+    # Not every app reports as a count of `ok` lines. SmpGcTest prints one
+    # verdict, "SMPGC OK", and it is the ONLY test that runs all cores --
+    # nothing in JvmTests writes IO_SIGNAL, so DoAll runs on core 0 whatever
+    # cpuCnt says. An SMP build verified with DoAll would prove nothing about
+    # the other cores.
+    ap.add_argument("--expect-text", default=None)
     ap.add_argument("--timeout", type=int, default=300)
     a = ap.parse_args()
 
@@ -165,10 +171,21 @@ def main():
         program(d, bitstream)
         out = run_app(d, jop, a.timeout)
         ok, fails, exited, crashed = judge(out)
-        good = ok >= a.expect_ok and fails == 0 and crashed == 0
+        if a.expect_text:
+            good = a.expect_text in out and crashed == 0
+        else:
+            good = ok >= a.expect_ok and fails == 0 and crashed == 0
         passes += good
+        # Keep the console text for EVERY run, pass or fail. A bare "PASS" with
+        # nothing behind it is not evidence, and this is the only record that
+        # the board actually said what the verdict claims.
+        transcript = os.path.join(cfg_dir, f"hw_verify.run{i}.txt")
+        with open(transcript, "w") as f:
+            f.write(out)
+
         line = (f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} "
                 f"{a.preset} {a.app} run={i}/{a.runs} "
+                f"{'expect=' + repr(a.expect_text) + ' ' if a.expect_text else ''}"
                 f"ok={ok} fail={fails} exit={exited} crash={crashed} "
                 f"{'PASS' if good else 'FAIL'}")
         with open(log, "a") as f:
