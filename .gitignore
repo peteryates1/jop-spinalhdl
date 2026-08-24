@@ -137,6 +137,7 @@ mig_trace.csv
 java/tools/dist/
 java/runtime/classes/
 java/runtime/src/jop/com/jopdesign/sys/Const.java
+java/runtime/src/jop/com/jopdesign/sys/.const-preset
 java/apps/*/build/
 java/apps/*/*.jop
 java/apps/*/*.jop.txt

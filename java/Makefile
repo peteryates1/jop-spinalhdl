@@ -4,17 +4,43 @@ JOP_PRESET ?= ep4cgx150Serial
 # Const.java location (generated, not tracked in git)
 CONST_JAVA := runtime/src/jop/com/jopdesign/sys/Const.java
 
+# Records which preset the CURRENT Const.java was generated from. Make cannot
+# depend on the VALUE of a variable, only on files, so the value is written to
+# a file and that file is a prerequisite of Const.java.
+#
+# WHY. Const.java is per-configuration -- ep4cgx150Serial and wukongSmp differ
+# in SUPPORT_FLOAT, for instance -- but it is generated into a SHARED source
+# tree. Without this stamp the only prerequisites were the three generator Scala
+# files, so changing JOP_PRESET did not rebuild it. Demonstrated 2026-08-24:
+#
+#   make generate-const JOP_PRESET="wukongSmp 4"   -> SUPPORT_FLOAT = false
+#   make generate-const JOP_PRESET=ep4cgx150Serial -> "Nothing to be done"
+#
+# and every .jop built afterwards for the EP4CGX150 carried the Wukong's value.
+# The real fix is per-config generation under build/<config>/; this makes the
+# shared file at least self-invalidating in the meantime.
+CONST_STAMP := runtime/src/jop/com/jopdesign/sys/.const-preset
+
 # SpinalHDL project root (relative to java/)
 PROJECT_ROOT := ..
 
-.PHONY: all tools runtime apps clean sim-smallest sim-small generate-const
+.PHONY: all tools runtime apps clean sim-smallest sim-small generate-const FORCE
 
 all: tools runtime apps
 
 # Generate Const.java from JopConfig if missing or stale
 generate-const: $(CONST_JAVA)
 
-$(CONST_JAVA): $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/generate/ConstGenerator.scala \
+# Rewritten only when the preset actually changes, so its mtime does not move on
+# every make and Const.java is not needlessly regenerated.
+FORCE:
+
+$(CONST_STAMP): FORCE
+	@mkdir -p $(dir $@)
+	@printf '%s\n' '$(JOP_PRESET)' | cmp -s - $@ || printf '%s\n' '$(JOP_PRESET)' > $@
+
+$(CONST_JAVA): $(CONST_STAMP) \
+               $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/generate/ConstGenerator.scala \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/JopConfig.scala \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/JopCoreConfig.scala
 	cd $(PROJECT_ROOT) && sbt -error "runMain jop.generate.ConstGeneratorMain $(JOP_PRESET) --write"
