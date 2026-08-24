@@ -222,6 +222,21 @@ generate-flash-programmer:
 
 build: $(SOF_FILE)
 
+# PROJECT FILES ARE GENERATED, not tracked. QuartusProjectMain emits a Tcl
+# script from JopConfig; quartus_sh runs it and QUARTUS writes the .qsf/.qpf
+# itself, so their format follows the tool version rather than being frozen by
+# hand (item 57). Proven equivalent: same RTL, hand-written project versus this
+# one, 11,076 LE and 268,416 memory bits and +9.714 ns setup slack either way,
+# with clk_in on B14 from a User assignment.
+#
+# Only jop_sdram is converted so far. The exerciser, flash-programmer, dbfpga
+# and smp8-test projects still have hand-written .qsf files.
+generated/setup_proj.tcl:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.QuartusProjectMain ep4cgx150Serial --revision jop_sdram --write fpga/qmtech-ep4cgx150-sdram/generated/setup_proj.tcl"
+
+$(QP).qsf: generated/setup_proj.tcl
+	$(QUARTUS_BIN)/quartus_sh -t generated/setup_proj.tcl
+
 # TWO dram_pll.vhd FILES EXIST HERE AND THEY ARE NOT THE SAME PLL.
 #
 #   generated/dram_pll.vhd  written by DramPllGen from the preset's clkMhz.

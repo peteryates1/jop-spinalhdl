@@ -143,6 +143,13 @@ java/apps/*/*.jop.txt
 java/apps/*/*.jop.link.txt
 java/apps/*/*.jop.stats.txt
 
+# Quartus project files for converted boards: written by quartus_sh from the
+# generated setup_proj.tcl, so they are build outputs (item 57). Other projects
+# in that directory are still hand-written and stay tracked.
+fpga/qmtech-ep4cgx150-sdram/jop_sdram.qsf
+fpga/qmtech-ep4cgx150-sdram/jop_sdram.qpf
+fpga/qmtech-ep4cgx150-sdram/generated/
+
 # Kept-aside binaries for a reproduction that is sensitive to code layout: the
 # 4-core generational GC failure only reproduces for a particular image, and any
 # runtime edit relinks it away (see docs/current-status.md item 1). Not tracked —
