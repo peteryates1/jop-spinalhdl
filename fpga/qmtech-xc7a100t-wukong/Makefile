@@ -183,7 +183,7 @@ SDRAM_CFG      ?= wukongSdram
 SDRAM_CFG_DIR   = $(REPO_ROOT)/build/$(SDRAM_CFG)
 
 jop-sdram-generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(SDRAM_CFG)"
+	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(SDRAM_CFG) buildtree"
 	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(SDRAM_CFG) --write build/$(SDRAM_CFG)/vivado/wukong_jop_sdram.xdc"
 
 jop-sdram-build:

@@ -315,7 +315,11 @@ object JopTopVerilog {
       mainMemSize = if (isBram) bramSize else 64 * 1024
     )))
 
-    val summaryPath = s"spinalhdl/generated/${jopConfig.entityName}.summary.txt"
+    // The summary follows the Verilog. It is not decoration: the Vivado and
+    // Quartus fit reports PREPEND it, so a summary left behind in the legacy
+    // directory does not fail anything -- it just silently drops the
+    // configuration header off every fit report for a converted board.
+    val summaryPath = s"$rtlDir/${jopConfig.entityName}.summary.txt"
     val pw = new java.io.PrintWriter(summaryPath)
     try { pw.print(summary); pw.print(romRamLines); pw.print(pllLines) } finally pw.close()
 

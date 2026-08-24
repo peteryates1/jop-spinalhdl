@@ -3,18 +3,19 @@
 
 set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file normalize [file join $script_dir ../..]]
-set rtl_dir    [file normalize [file join $repo_root ../../spinalhdl/generated]]
 
-# WHERE OUTPUTS GO. If JOP_CFG_DIR is set (by the Makefile, from BuildLayout)
-# everything generated lands under build/<config>/vivado; otherwise the old
-# in-tree location is used. Parameterised so the two layouts coexist while
-# boards are converted one at a time -- unset, this script behaves exactly as
-# it did.
+# WHERE EVERYTHING LIVES. If JOP_CFG_DIR is set (by the Makefile, from
+# BuildLayout) the RTL is read from and the outputs written to build/<config>/;
+# otherwise the old in-tree locations are used. Parameterised so the two layouts
+# coexist while boards are converted one at a time -- unset, this script behaves
+# exactly as it did.
 if {[info exists ::env(JOP_CFG_DIR)] && $::env(JOP_CFG_DIR) ne ""} {
     set cfg_dir   [file normalize $::env(JOP_CFG_DIR)]
+    set rtl_dir   [file join $cfg_dir rtl]
     set build_dir [file join $cfg_dir vivado build]
     set xdc_file  [file join $cfg_dir vivado wukong_jop_sdram.xdc]
 } else {
+    set rtl_dir   [file normalize [file join $repo_root ../../spinalhdl/generated]]
     set build_dir [file normalize [file join $repo_root vivado/build/wukong_jop_sdram]]
     set xdc_file  [file join $rtl_dir wukong_jop_sdram.xdc]
 }
