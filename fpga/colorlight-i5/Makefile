@@ -31,12 +31,16 @@ else
 endif
 
 ROOT       := ../..
-GENDIR     := $(ROOT)/spinalhdl/generated
 # Everything generated goes under build/<config>/, keyed by the PRESET rather
 # than by the stage: see jop.generate.BuildLayout. Stronger than the old
 # build/$(STAGE) split, which kept the two bitstreams apart but would still let
 # two different configurations of the same stage overwrite each other.
+#
+# CFG_DIR must be assigned before GENDIR and BUILD are used in any rule: Make
+# expands a rule's prerequisites when it READS the rule, so a later assignment
+# would silently yield paths like "/rtl/JopSdramI5Top.v".
 CFG_DIR    := $(ROOT)/build/$(PRESET)
+GENDIR     := $(CFG_DIR)/rtl
 BUILD      := $(CFG_DIR)/nextpnr
 
 DEVICE     := --25k
@@ -72,7 +76,7 @@ all: bitstream
 # blackboxes to supply -- unlike the Altera boards, which need arom.vhd/aram.vhd
 # listed in their .qsf or synthesis fails on undefined entities.
 generate:
-	cd $(ROOT) && sbt "runMain jop.system.JopTopVerilog $(PRESET)"
+	cd $(ROOT) && sbt "runMain jop.system.JopTopVerilog $(PRESET) buildtree"
 
 # The .v MUST depend on the Scala sources and the microcode. Without this the
 # generated Verilog silently goes stale whenever the preset changes, and the
@@ -133,5 +137,7 @@ program: $(BUILD)/$(TOP).bit
 download:
 	python3 $(ROOT)/fpga/scripts/download.py -e $(APP) $(TTY) $(BAUD)
 
+# Removes the whole configuration -- RTL, place-and-route, bitstream. Before the
+# build-tree move this could only reach $(BUILD), leaving stale Verilog behind.
 clean:
-	rm -rf $(BUILD)
+	rm -rf $(CFG_DIR)
