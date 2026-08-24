@@ -2,11 +2,17 @@ REPO_ROOT := $(shell cd ../.. && pwd)
 VIVADO := /opt/xilinx/2025.2/Vivado/bin/vivado
 VIVADO_ENV := export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 OPENFPGALOADER := openFPGALoader
+# THERE ARE TWO dirtyJtag PROBES ON THIS HOST -- this board's Pico 2 W and the
+# XC7A100T DB board's. A bare `-c dirtyJtag` takes whichever enumerated first,
+# so it can silently program the WRONG BOARD. Resolved by serial, like every
+# other probe and tty here. Needs the PATCHED openFPGALoader in /usr/local/bin;
+# a bogus `--busdev-num 099:099` must FAIL for the selection to mean anything.
+BUSDEV ?= --busdev-num $(shell $(REPO_ROOT)/fpga/scripts/jtag_probe_map --busdev wukong)
 BITSTREAM := vivado/build/wukong_jop_bram/wukong_jop_bram.runs/impl_1/JopBramWukongTop.bit
 DDR3_BITSTREAM := vivado/build/wukong_jop_ddr3_np/JopDdr3WukongTop.bit
 DDR3_SMP_BITSTREAM := vivado/build/wukong_jop_ddr3_smp_np/JopSmpDdr3WukongTop.bit
 SDRAM_BITSTREAM := vivado/build/wukong_sdram_exerciser/SdramExerciserWukongTop.bit
-JOP_SDRAM_BITSTREAM := vivado/build/wukong_jop_sdram/JopSdramWukongTop.bit
+JOP_SDRAM_BITSTREAM = $(SDRAM_CFG_DIR)/vivado/build/JopSdramWukongTop.bit
 DUAL_BITSTREAM := vivado/build/wukong_jop_dual_np/JopDualWukongTop.bit
 # UART_DEV is the board's own CH340N, and applies to the SINGLE-SYSTEM builds
 # only -- those use SystemAssembly.wukong with DeviceDriver.UartCh340. The
@@ -68,10 +74,10 @@ build: create-project
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_bitstream.tcl
 
 program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(BITSTREAM)
+	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(BITSTREAM)
 
 program-flash:
-	sudo $(OPENFPGALOADER) -c dirtyJtag --write-flash $(BITSTREAM)
+	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) --write-flash $(BITSTREAM)
 
 monitor:
 	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
@@ -92,7 +98,7 @@ ddr3-build:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_ddr3_bitstream.tcl
 
 ddr3-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(DDR3_BITSTREAM)
+	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DDR3_BITSTREAM)
 
 ddr3-monitor:
 	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(DDR3_UART_BAUD)
@@ -118,7 +124,7 @@ ddr3-smp-build:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_ddr3_smp_bitstream.tcl
 
 ddr3-smp-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(DDR3_SMP_BITSTREAM)
+	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DDR3_SMP_BITSTREAM)
 
 ddr3-smp-monitor:
 	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
@@ -135,7 +141,7 @@ dual-build:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_dual_bitstream.tcl
 
 dual-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(DUAL_BITSTREAM)
+	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DUAL_BITSTREAM)
 
 # The dual build's DDR3 half. VERIFIED on hardware 2026-08-22: both halves come
 # out of the Pico's two CDCs at 2 Mbaud, and the CH340 carries nothing at all.
@@ -167,7 +173,7 @@ sdram-build:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_sdram_bitstream.tcl
 
 sdram-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(SDRAM_BITSTREAM)
+	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(SDRAM_BITSTREAM)
 
 sdram-monitor:
 	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
@@ -196,7 +202,7 @@ jop-sdram-smp-build:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_jop_sdram_smp_bitstream.tcl
 
 jop-sdram-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(JOP_SDRAM_BITSTREAM)
+	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(JOP_SDRAM_BITSTREAM)
 
 jop-sdram-monitor:
 	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
@@ -211,7 +217,7 @@ blink-build: blink-create-project
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_blink_bitstream.tcl
 
 blink-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag vivado/build/wukong_blink/wukong_blink.runs/impl_1/WukongBlink.bit
+	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) vivado/build/wukong_blink/wukong_blink.runs/impl_1/WukongBlink.bit
 
 clean:
 	rm -rf vivado/build vivado/ip

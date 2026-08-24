@@ -113,7 +113,8 @@ audit, and has moved down accordingly.
 34. ~~**[#59](#item-59)**~~ — WITHDRAWN: the i5 passes at 49.40 MHz; a post-placement estimate was read instead of the final post-routing figure
 35. **[#60](#item-60)** — Everything generated belongs under `build/<config>/`. Three FPGA flows and the whole Java/JOP tree converted and verified; 48 flows and `asm/` to go
 36. ~~**[#61](#item-61)**~~ — FIXED 2026-08-24: no app in `apps/Small` could be built from clean; every `.jop` there was an unreproducible stale artifact
-37. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
+37. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
+38. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
 
 ## 2. All items — summary
 
@@ -164,6 +165,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[60](#item-60)** — Everything generated belongs under `build/<config>/` — three FPGA flows and the Java/JOP tree done and verified, 48 flows and `asm/` to go
 - ~~**[61](#item-61)**~~ — FIXED 2026-08-24 — no app in `apps/Small` built from clean; the runtime is now bulk-compiled and the app named
 - **[62](#item-62)** — `JopFloatCuBramSim` reads a microcode variant that does not exist, so it has never run
+- **[63](#item-63)** — One Wukong SDR startup crash in six runs, not reproduced — recorded so a second sighting is not treated as the first
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -6219,7 +6221,29 @@ The bitstream's RTL, IP, Quartus project and microcode all came from `build/`,
 and the images from `build/ep4cgx150Serial/java/apps/`, so this is the first
 end-to-end hardware confirmation of the restructured tree.
 
-The last three matter for a second reason: they are REGENERATED `apps/Small`
+**Wukong SDR and Colorlight i5 followed, 2026-08-24**, each from a wiped config
+directory and a full regenerate:
+
+| board | fit | `DoAll` |
+|---|---|---|
+| Wukong `wukongSdram` (Vivado) | 5,979 LUTs, WNS +0.414 ns | **66/66**, 5 runs of 6 |
+| Colorlight i5 `colorlightI5Sdram` (nextpnr) | 13,938 LUTs, 49.40 MHz PASS | **66/66** |
+
+Both ran the SAME `DoAll.jop` as the EP4CGX150 — the three configurations
+produce a byte-identical image, `Const.java` differing only in an assembly-name
+comment — so all three toolchains are confirmed against one known-good artifact.
+
+**One unexplained Wukong failure, recorded rather than explained away.** The
+FIRST DoAll run on the new bitstream crashed at startup into an endless
+`Uncaught exception:` loop, with visible character corruption in the banner.
+It has not recurred in five subsequent runs. It nearly became a false regression
+report: the natural conclusion was "the build-tree work broke the Wukong". Two
+checks refuted it — the Aug 23 bitstream, built before any of this session's
+work, passes 66/66 with today's image, and the same new bitstream then passed
+five times running. The generated XDC and the Verilog are byte-identical to the
+pre-session ones apart from the git-hash comment. See [item 63](#item-63).
+
+The last three EP4CGX150 tests matter for a second reason: they are REGENERATED `apps/Small`
 images, ~1.8 KB larger than the ones they replace ([item 61](#item-61)). Those
 were the only genuinely new bytes in this work — everything else was verified
 byte-identical — so hardware was the only place they could be checked.
@@ -6322,6 +6346,39 @@ coverage, and a simulation no variant supplies gets none either.
 Decide whether the float CU wants its own microcode variant or whether the
 simulation should use the standard one, then either add the target or repoint
 it.
+
+
+### Item 63 — One unexplained Wukong SDR startup crash in six runs
+
+**Observed 2026-08-24**, first hardware run of the rebuilt `wukongSdram`
+bitstream. `DoAll` never reached its first test:
+
+```
+GC: generational, #"-word cards
+Uncaught exception: Uncaught exception: Uncaught exception: ...
+```
+
+The `#"` where a digit belongs, and a later `Uncaught pxcetion`, are character
+corruption on the CH340N — the crash loop floods it faster than it keeps up.
+That is a CONSEQUENCE, not the cause: `HelloWorld` on the same bitstream at the
+same 2 Mbaud printed a clean banner immediately afterwards.
+
+**Not reproduced.** Five subsequent runs of the identical bitstream, each with a
+fresh reprogram, gave 66/66.
+
+**Why this is filed rather than dismissed.** It was one run away from being
+reported as "this session's build-tree work broke the Wukong", which would have
+been wrong. What refuted it:
+
+- the **Aug 23 bitstream**, built before any of this session's work, passes
+  66/66 with today's image — so the image and the shared chain are sound
+- the same NEW bitstream then passed five times
+- the generated XDC is byte-identical to the pre-session one, and the Verilog
+  differs only in its git-hash comment
+
+So there is no regression to bisect, and equally no explanation. Recorded so a
+second sighting is recognised as the second, not the first. Note the design
+meets timing comfortably (WNS +0.414 ns), which argues against a marginal path.
 
 ## 4. Two workstreams, both largely done
 
