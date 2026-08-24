@@ -5,6 +5,7 @@ import spinal.lib.io.InOutWrapper
 import jop.system.{JopTop, JopSpinalConfig}
 import jop.utils.JopFileLoader
 import org.scalatest.funsuite.AnyFunSuite
+import jop.config.{MicrocodePaths, BootMode}
 
 /**
  * Elaborate presets at a NON-DEFAULT method cache geometry.
@@ -42,8 +43,8 @@ class NonDefaultGeometryElabTest extends AnyFunSuite {
   // hardcoding 12 or 14).
   private val geometries = Seq((11, 4), (14, 7))
 
-  private lazy val romData = JopFileLoader.loadMicrocodeRom("asm/generated/serial/mem_rom.dat")
-  private lazy val ramData = JopFileLoader.loadStackRam("asm/generated/serial/mem_ram.dat")
+  private lazy val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.rom(BootMode.Serial))
+  private lazy val ramData = JopFileLoader.loadStackRam(MicrocodePaths.ram(BootMode.Serial))
 
   private def elaborates(name: String, cfg: JopConfig): Unit =
     JopSpinalConfig(cfg).copy(targetDirectory = "spinalhdl/generated/test")

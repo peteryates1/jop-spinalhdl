@@ -3,6 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.core.sim._
 import jop.utils.{JopFileLoader, JopSimDefaults}
+import jop.config.MicrocodePaths
 
 /**
  * Where does DoApp's memory STALL TIME go?
@@ -33,8 +34,8 @@ import jop.utils.{JopFileLoader, JopSimDefaults}
 object DoAppMemTimeSim extends App {
 
   val jopFilePath = "java/apps/JbeBench/JbeBench.jop"   // entry point is jbe.DoApp
-  val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
-  val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
+  val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
+  val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
   val bramSize = 2 * 1024 * 1024
   val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, bramSize / 4)
 

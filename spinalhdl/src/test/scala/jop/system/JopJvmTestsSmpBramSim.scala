@@ -7,6 +7,7 @@ import spinal.lib.bus.bmb._
 import jop.utils.{JopFileLoader, TestHistory}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
+import jop.config.MicrocodePaths
 
 /**
  * SMP BRAM simulation running JVM test suite (jvm.DoAll) on 2 cores.
@@ -30,8 +31,8 @@ object JopJvmTestsSmpBramSim extends App {
   val cpuCnt = 2
 
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/jvmtests_smp_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

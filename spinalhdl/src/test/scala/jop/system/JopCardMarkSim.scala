@@ -3,6 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.core.sim._
 import jop.utils.{JopFileLoader, TestHistory}
+import jop.config.MicrocodePaths
 
 /**
  * Stage-1 HW card-marking barrier end-to-end check. Runs CardMarkTest through
@@ -13,8 +14,8 @@ import jop.utils.{JopFileLoader, TestHistory}
 object JopCardMarkSim extends App {
 
   val jopFilePath = "java/apps/Small/CardMarkTest.jop"
-  val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
-  val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
+  val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
+  val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
   val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 512 * 1024 / 4)
 
   val run = TestHistory.startRun("JopCardMarkSim", "sim-verilator", jopFilePath, "", "")

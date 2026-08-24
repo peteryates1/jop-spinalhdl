@@ -3,6 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.core.sim._
 import jop.utils.{JopFileLoader, TestHistory}
+import jop.config.MicrocodePaths
 
 /**
  * End-to-end timer interrupt simulation test.
@@ -18,8 +19,8 @@ import jop.utils.{JopFileLoader, TestHistory}
 object JopInterruptSim extends App {
 
   val jopFilePath = "java/apps/InterruptTest/InterruptTest.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)

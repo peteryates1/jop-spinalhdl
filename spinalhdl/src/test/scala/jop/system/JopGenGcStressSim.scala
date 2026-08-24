@@ -5,6 +5,7 @@ import spinal.core.sim._
 import jop.config.JopCoreConfig
 import jop.memory.JopMemoryConfig
 import jop.utils.{JopFileLoader, TestHistory}
+import jop.config.MicrocodePaths
 
 /**
  * Generational GC (Stage 2) churn stress. Requires GC.USE_GENERATIONAL=true and
@@ -16,8 +17,8 @@ import jop.utils.{JopFileLoader, TestHistory}
 object JopGenGcStressSim extends App {
 
   val jopFilePath = "java/apps/Small/GcStressTest.jop"
-  val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
-  val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
+  val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
+  val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
 
   val memSize = 512 * 1024
   val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, memSize / 4)

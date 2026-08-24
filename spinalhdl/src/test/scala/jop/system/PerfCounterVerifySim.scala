@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import jop.utils.{JopFileLoader, JopSimDefaults}
 import org.scalatest.funsuite.AnyFunSuite
+import jop.config.MicrocodePaths
 
 /**
  * Verify the IO_PERFCNT hardware counters against an independent tally, in
@@ -23,8 +24,8 @@ import org.scalatest.funsuite.AnyFunSuite
 class PerfCounterVerifySim extends AnyFunSuite {
 
   test("IO_PERFCNT counters match an independent tally of the same signals") {
-    val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
-    val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
+    val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
+    val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
     val bramSize = 2 * 1024 * 1024
     val mainMemData =
       JopFileLoader.jopFileToMemoryInit("java/apps/JbeBench/JbeBench.jop", bramSize / 4)

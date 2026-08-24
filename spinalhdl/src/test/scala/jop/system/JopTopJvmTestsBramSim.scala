@@ -15,8 +15,8 @@ import java.io.PrintWriter
 object JopTopJvmTestsBramSim extends App {
 
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/joptop_jvmtests_bram_simulation.log"
   val bramSize = 4 * 1024 * 1024  // 4MB (DoAll.jop is ~2.3MB with JDK tests)
 

@@ -3,6 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.core.sim._
 import jop.utils.{JopFileLoader, JopSimDefaults}
+import jop.config.MicrocodePaths
 
 /**
  * Sweep the method cache geometry and count what it actually does.
@@ -32,8 +33,8 @@ import jop.utils.{JopFileLoader, JopSimDefaults}
  */
 object MethodCacheSweepSim extends App {
 
-  val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
-  val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
+  val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
+  val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
   val bramSize = 2 * 1024 * 1024
   // Sweep YOUR application, not just the JBE benchmarks. Their hot code
   // footprint is tiny (Lift's is ~2,600 words), so they under-represent code

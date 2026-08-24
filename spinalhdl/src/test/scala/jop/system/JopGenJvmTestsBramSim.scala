@@ -5,6 +5,7 @@ import spinal.core.sim._
 import jop.config.JopCoreConfig
 import jop.memory.JopMemoryConfig
 import jop.utils.{JopFileLoader, TestHistory}
+import jop.config.MicrocodePaths
 
 /**
  * JVM test suite (DoAll) under generational GC (Stage 2). Requires
@@ -15,8 +16,8 @@ import jop.utils.{JopFileLoader, TestHistory}
 object JopGenJvmTestsBramSim extends App {
 
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
-  val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
-  val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
+  val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
+  val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
 
   val memSize = 512 * 1024
   val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, memSize / 4)

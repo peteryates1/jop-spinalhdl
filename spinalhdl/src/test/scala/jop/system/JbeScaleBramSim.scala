@@ -33,8 +33,8 @@ object JbeScaleBramSim extends App {
   val ACCESSES = 16384L * 24
 
   val jopFilePath = "java/apps/JbeBench/JbeScale.jop"
-  val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
-  val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
+  val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
+  val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
 
   // 2 MB: the 64 KB working set plus heap, with room for the GC to breathe.
   val bramSize = 2 * 1024 * 1024

@@ -6,6 +6,7 @@ import jop.pipeline._
 import jop.core.{ComputeUnitTop, IntegerComputeUnitConfig, FloatComputeUnitConfig, LongComputeUnitConfig, DoubleComputeUnitConfig}
 import jop.memory._
 import jop.utils.JopFileLoader
+import jop.config.MicrocodePaths
 
 /**
  * JOP Simulator Configuration
@@ -972,8 +973,8 @@ object JopSimulatorTbVhdl extends App {
   // JOP file from Smallest target, microcode from local SIM build
   config.generateVhdl(JopSimulator(
     jopFilePath = "/srv/git/jop/java/Smallest/HelloWorld.jop",
-    romFilePath = "asm/generated/mem_rom.dat",
-    ramFilePath = Some("asm/generated/mem_ram.dat")
+    romFilePath = MicrocodePaths.simulationRom,
+    ramFilePath = Some(MicrocodePaths.simulationRam)
   ))
 
   println("JopSimulator VHDL generated in spinalhdl/generated/JopSimulator.vhd")

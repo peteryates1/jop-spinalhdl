@@ -102,7 +102,7 @@ object QuartusProject {
     // SEARCH_PATH lets Quartus find them by name from wherever the project is,
     // without editing shared IP that other boards still build against.
     sb.append("# Where to find memory initialisation files (see comment in the generator)\n")
-    g("SEARCH_PATH", up("asm/generated/serial"))
+    g("SEARCH_PATH", up(MicrocodePaths.serialDir))
     g("SEARCH_PATH", up("."))
     sb.append("\n")
 

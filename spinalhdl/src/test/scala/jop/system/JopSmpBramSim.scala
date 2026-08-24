@@ -172,8 +172,8 @@ object JopSmpBramSim extends App {
   val cpuCnt = 2
 
   val jopFilePath = "java/apps/Small/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/smp_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
@@ -296,8 +296,8 @@ object JopSmpNCoreHelloWorldSim extends App {
   val cpuCnt = if (args.length > 0) args(0).toInt else 2
 
   val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/smp_ncore_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
@@ -428,8 +428,8 @@ object JopSmpSmallNCoreDebugSim extends App {
   val bramSize = 128 * 1024  // Test: back to 128KB to confirm crash is reproducible
 
   val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)

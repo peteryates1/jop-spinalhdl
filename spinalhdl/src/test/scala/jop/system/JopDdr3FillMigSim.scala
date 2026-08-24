@@ -3,6 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.core.sim._
 import jop.utils.{JopFileLoader, TestHistory}
+import jop.config.MicrocodePaths
 
 /**
  * Stage-0.5 DDR3 fill THROUGHPUT validation against the realistic MIG model.
@@ -16,8 +17,8 @@ import jop.utils.{JopFileLoader, TestHistory}
 object JopDdr3FillMigSim extends App {
 
   val jopFilePath = "java/apps/Small/FillTest.jop"
-  val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
-  val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
+  val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
+  val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
   val memSizeBytes = 512 * 1024
   val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, memSizeBytes / 4)
 

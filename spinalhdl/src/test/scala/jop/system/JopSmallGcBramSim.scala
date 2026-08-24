@@ -7,6 +7,7 @@ import spinal.lib.bus.bmb._
 import jop.utils.{JopFileLoader, TestHistory}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
+import jop.config.MicrocodePaths
 
 /**
  * BRAM simulation for the Small GC test app
@@ -21,8 +22,8 @@ object JopSmallGcBramSim extends App {
   // testing a binary nobody could rebuild. Rebuild it with
   //   make -C java/apps/Small APP_NAME=GcStressTest
   val jopFilePath = "java/apps/Small/GcStressTest.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/small_gc_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

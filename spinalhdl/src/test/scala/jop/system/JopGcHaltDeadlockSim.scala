@@ -233,8 +233,8 @@ object JopGcHaltDeadlockSim extends App {
   // cycles of the release. Any app that starts N cores reaches the same moment
   // in ~250k cycles -- e.g. java/apps/Small/NCoreHelloWorld.jop.
   val jopFilePath = if (args.length > 3) args(3) else "java/apps/SmpGcTest/SmpGcTest.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/gchalt_deadlock_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

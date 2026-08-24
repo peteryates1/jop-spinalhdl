@@ -349,7 +349,7 @@ object JopTopVerilog {
     val bArgs    = args.toSeq.drop(1)
     val prjDir   = layout.quartusDir(preset, bArgs)
     val withMif  = jop.config.MifPathOverride(
-      config, layout.relativeTo(prjDir, "asm/generated/serial"))
+      config, layout.relativeTo(prjDir, MicrocodePaths.serialDir))
     generate(withMif, jopFilePath = jopFile, presetName = preset, buildArgs = bArgs)
   }
 }

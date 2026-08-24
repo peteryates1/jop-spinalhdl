@@ -5,6 +5,7 @@ import spinal.core.sim._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import jop.memory.SdramDeviceInfo
 import jop.utils.{JopFileLoader, TestHistory}
+import jop.config.MicrocodePaths
 
 /**
  * Stage-0.5 end-to-end validation for SDR: the controller's block-fill path
@@ -17,8 +18,8 @@ import jop.utils.{JopFileLoader, TestHistory}
 object JopSdramFillSim extends App {
 
   val jopFilePath = "java/apps/Small/FillTest.jop"
-  val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
-  val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
+  val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
+  val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
   val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 256 * 1024 / 4)
 
   val run = TestHistory.startRun("JopSdramFillSim", "sim-verilator", jopFilePath, "", "")

@@ -216,8 +216,8 @@ object JopSmpSdramNCoreHelloWorldSim extends App {
   // GC workload that actually stalls.
   //   argv: [cpuCnt] [maxCycles] [app.jop]
   val jopFilePath = if (args.length > 2) args(2) else "java/apps/Small/NCoreHelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/smp_sdram_ncore_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

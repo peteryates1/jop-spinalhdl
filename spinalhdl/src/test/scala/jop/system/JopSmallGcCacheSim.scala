@@ -260,8 +260,8 @@ case class JopCoreWithCacheTestHarness(
 object JopSmallGcCacheSim extends App {
 
   val jopFilePath = "java/apps/Small/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/small_gc_cache_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

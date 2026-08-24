@@ -95,8 +95,8 @@ case class JopConfigTestHarness(
 object JopMinMaxSim {
   def runSim(label: String, coreConfig: JopCoreConfig, maxCycles: Int = 60000000): Unit = {
     val jopFilePath = "java/apps/JvmTests/DoAll.jop"
-    val romFilePath = "asm/generated/mem_rom.dat"
-    val ramFilePath = "asm/generated/mem_ram.dat"
+    val romFilePath = MicrocodePaths.simulationRom
+    val ramFilePath = MicrocodePaths.simulationRam
     val logFilePath = s"spinalhdl/${label}_comparison.log"
 
     val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

@@ -78,8 +78,8 @@ case class DoAppSdrHarness(
 
 object DoAppMemTimeSdrSim extends App {
   val jopFilePath = "java/apps/JbeBench/JbeBench.jop"   // entry point is jbe.DoApp
-  val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
-  val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
+  val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
+  val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
   val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 1024 * 1024 / 4)
 
   val CLK_HZ = 80000000L

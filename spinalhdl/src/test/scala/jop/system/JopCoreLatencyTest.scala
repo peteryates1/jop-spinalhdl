@@ -127,8 +127,8 @@ case class JopCoreLatencyHarness(
 object JopCoreLatencySweep extends App {
 
   val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -247,8 +247,8 @@ object JopCoreLatencySweep extends App {
 object JopCoreLatencyDebug extends App {
 
   val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)

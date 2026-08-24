@@ -5,6 +5,7 @@ import spinal.core.sim._
 import jop.JopSimulator
 import jop.utils.JopFileLoader
 import jop.MicrocodeNames
+import jop.config.MicrocodePaths
 
 /**
  * Focused Memory Operation Test
@@ -18,8 +19,8 @@ import jop.MicrocodeNames
 object MemoryOpTest extends App {
 
   val jopFilePath = "/srv/git/jop/java/Smallest/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
 
   println("=== Memory Operation Test ===")
   println()

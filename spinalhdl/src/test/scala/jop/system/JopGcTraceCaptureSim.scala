@@ -187,8 +187,8 @@ case class JopCoreTraceCaptureHarness(
 object JopGcTraceCaptureSim extends App {
 
   val jopFilePath = "java/apps/Small/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val initHexPath = "spinalhdl/generated/gc_mem_init.hex"
   val traceHexPath = "spinalhdl/generated/gc_bmb_trace.hex"
 

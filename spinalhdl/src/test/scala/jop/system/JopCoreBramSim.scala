@@ -7,6 +7,7 @@ import spinal.lib.bus.bmb._
 import jop.utils.{JopFileLoader, TestHistory}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
+import jop.config.MicrocodePaths
 
 /**
  * Block RAM simulation for comparison with SDRAM
@@ -15,8 +16,8 @@ object JopCoreBramSim extends App {
 
   // Paths to initialization files
   val jopFilePath = "java/apps/Small/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/bram_simulation.log"
 
   // Load initialization data

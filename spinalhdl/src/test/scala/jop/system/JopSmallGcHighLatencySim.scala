@@ -23,8 +23,8 @@ import java.io.PrintWriter
 object JopSmallGcHighLatencySim extends App {
 
   val jopFilePath = "java/apps/Small/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/small_gc_high_latency_simulation.log"
 
   // Parse args: [latMin] [latMax] [burstLen]

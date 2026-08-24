@@ -115,8 +115,8 @@ class JopCoreWithSdramTest extends AnyFunSuite {
 
   // Paths to initialization files
   val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
 
   test("JopCoreWithSdram: SDRAM integration test") {
     // Load initialization data

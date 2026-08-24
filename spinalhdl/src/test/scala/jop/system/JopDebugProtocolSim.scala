@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import jop.utils.JopFileLoader
 import jop.debug.{DebugConfig, DebugMsgType, DebugHaltReason, DebugNakCode}
+import jop.config.MicrocodePaths
 
 /**
  * Self-contained debug protocol simulation test.
@@ -49,8 +50,8 @@ object JopDebugProtocolSim extends App {
   // Load data and compile
   // ===========================================================================
 
-  val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
-  val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
+  val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
+  val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
   val jopData = JopFileLoader.loadJopFile("java/apps/Smallest/HelloWorld.jop")
 
   println(s"Debug Protocol Sim: ROM=${romData.length}, RAM=${ramData.length}, JOP=${jopData.words.length} words")

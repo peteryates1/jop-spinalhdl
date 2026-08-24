@@ -8,6 +8,7 @@ import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import jop.memory.SdramDeviceInfo
 import jop.utils.{JopFileLoader, TestHistory}
 import java.io.PrintWriter
+import jop.config.MicrocodePaths
 
 /**
  * SDRAM simulation for the Small GC test app
@@ -15,8 +16,8 @@ import java.io.PrintWriter
 object JopSmallGcSdramSim extends App {
 
   val jopFilePath = "java/apps/Small/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/small_gc_sdram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

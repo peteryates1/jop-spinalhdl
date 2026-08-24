@@ -85,13 +85,10 @@ case class JopSystem(
       s"System '$name': perCoreConfigs length (${pcc.length}) must match cpuCnt ($cpuCnt)"))
 
   // --- Derived paths from boot mode ---
-  // Simulation outputs directly to asm/generated/; serial/flash use subdirectories.
-  private def generatedDir: String = bootMode match {
-    case BootMode.Simulation => "asm/generated"
-    case other               => s"asm/generated/${other.dirName}"
-  }
-  def romPath: String = s"$generatedDir/mem_rom.dat"
-  def ramPath: String = s"$generatedDir/mem_ram.dat"
+  // The layout itself lives in MicrocodePaths, which is the only place it is
+  // written down; see the note there on the simulation asymmetry.
+  def romPath: String = MicrocodePaths.rom(bootMode)
+  def ramPath: String = MicrocodePaths.ram(bootMode)
 
   def baseJumpTable: JumpTableInitData = bootMode match {
     case BootMode.Serial     => JumpTableInitData.serial

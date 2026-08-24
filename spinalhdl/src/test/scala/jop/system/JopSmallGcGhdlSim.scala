@@ -7,6 +7,7 @@ import spinal.lib.bus.bmb._
 import jop.utils.JopFileLoader
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
+import jop.config.MicrocodePaths
 
 /**
  * GHDL simulation for the Small GC test app.
@@ -18,8 +19,8 @@ import java.io.PrintWriter
 object JopSmallGcGhdlSim extends App {
 
   val jopFilePath = "java/apps/Small/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/small_gc_ghdl_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

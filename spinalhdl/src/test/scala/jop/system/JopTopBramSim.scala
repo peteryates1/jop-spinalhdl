@@ -19,8 +19,8 @@ import java.io.PrintWriter
 object JopTopBramSim extends App {
 
   val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/joptop_bram_simulation.log"
   val bramSize = 256 * 1024  // 256KB
 

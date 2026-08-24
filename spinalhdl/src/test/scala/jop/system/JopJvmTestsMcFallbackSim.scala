@@ -8,6 +8,7 @@ import jop.utils.{JopFileLoader, JopSimDefaults, TestHistory}
 import jop.memory.JopMemoryConfig
 import jop.config.JopCoreConfig
 import java.io.PrintWriter
+import jop.config.MicrocodePaths
 
 /**
  * JVM test suite (jvm.DoAll) with EVERY working `_sw` handler forced to
@@ -31,8 +32,8 @@ import java.io.PrintWriter
 object JopJvmTestsMcFallbackSim extends App {
 
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/jvmtests_mcfallback_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

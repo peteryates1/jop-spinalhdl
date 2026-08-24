@@ -155,8 +155,8 @@ object JopDebugSim extends App {
   val maxCycles = if (args.length > 2) args(2).toLong else 100000000L  // 100M cycles
 
   // Load ROM, RAM, and .jop
-  val romData = JopFileLoader.loadMicrocodeRom("asm/generated/mem_rom.dat")
-  val ramData = JopFileLoader.loadStackRam("asm/generated/mem_ram.dat")
+  val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
+  val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
   val jopData = JopFileLoader.loadJopFile("java/apps/Smallest/HelloWorld.jop")
 
   println(s"JOP Debug Sim: $cpuCnt core(s), TCP port $tcpPort, max $maxCycles cycles")

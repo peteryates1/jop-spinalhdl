@@ -154,8 +154,8 @@ object JopIhluNCoreHelloWorldSim extends App {
   val cpuCnt = if (args.length > 0) args(0).toInt else 2
 
   val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/ihlu_ncore_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
@@ -325,8 +325,8 @@ object JopIhluGcBramSim extends App {
   // SmpGcTest is the multi-core allocating workload item 1 needed; reusing it
   // here is what makes this sim mean something.
   val jopFilePath = "java/apps/SmpGcTest/SmpGcTest.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/ihlu_gc_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

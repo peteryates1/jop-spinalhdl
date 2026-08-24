@@ -5,6 +5,7 @@ import spinal.lib.io.InOutWrapper
 import jop.utils.JopFileLoader
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
+import jop.config.MicrocodePaths
 
 /**
  * Generate Verilog for the SDRAM GC test harness to run in Questa/ModelSim.
@@ -20,8 +21,8 @@ import java.io.PrintWriter
 object JopSmallGcSdramQuestaGen extends App {
 
   val jopFilePath = "java/apps/Small/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val targetDir   = "verification/questa-sdram"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

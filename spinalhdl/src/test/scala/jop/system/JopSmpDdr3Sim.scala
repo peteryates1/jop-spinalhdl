@@ -215,8 +215,8 @@ object JopSmpDdr3NCoreHelloWorldSim extends App {
   val lockType = if (useCmpSync) "CmpSync" else "IHLU"
 
   val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = s"spinalhdl/smp_ddr3_ncore_${lockType.toLowerCase}_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

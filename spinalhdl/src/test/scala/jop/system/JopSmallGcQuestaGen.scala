@@ -3,6 +3,7 @@ package jop.system
 import spinal.core._
 import jop.utils.JopFileLoader
 import jop.memory.JopMemoryConfig
+import jop.config.MicrocodePaths
 
 /**
  * Generate Verilog for the BRAM GC test harness to run in Questa/ModelSim.
@@ -11,8 +12,8 @@ import jop.memory.JopMemoryConfig
 object JopSmallGcQuestaGen extends App {
 
   val jopFilePath = "java/apps/Small/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)

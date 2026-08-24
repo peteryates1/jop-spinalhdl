@@ -7,6 +7,7 @@ import spinal.lib.bus.bmb._
 import jop.utils.{JopFileLoader, TestHistory}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
+import jop.config.MicrocodePaths
 
 /**
  * SMP cache coherency stress test simulation.
@@ -26,8 +27,8 @@ object JopSmpCacheStressSim extends App {
   val cpuCnt = 2
 
   val jopFilePath = "java/apps/SmpCacheTest/SmpCacheTest.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/smp_cache_stress_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

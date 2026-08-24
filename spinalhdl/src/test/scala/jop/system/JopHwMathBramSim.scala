@@ -118,8 +118,8 @@ case class JopHwMathTestHarness(
 object JopHwMathBramSim extends App {
 
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/hwmath_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

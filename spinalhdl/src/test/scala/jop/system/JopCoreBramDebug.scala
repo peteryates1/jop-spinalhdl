@@ -159,8 +159,8 @@ case class JopCoreBramDebugHarness(
 object JopCoreBramDebug extends App {
 
   val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
-  val romFilePath = "asm/generated/mem_rom.dat"
-  val ramFilePath = "asm/generated/mem_ram.dat"
+  val romFilePath = MicrocodePaths.simulationRom
+  val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "spinalhdl/bram_debug.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

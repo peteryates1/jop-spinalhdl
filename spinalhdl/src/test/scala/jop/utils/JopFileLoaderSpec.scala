@@ -2,6 +2,7 @@ package jop.utils
 
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
+import jop.config.MicrocodePaths
 
 /**
  * Tests for JopFileLoader utility
@@ -10,8 +11,8 @@ class JopFileLoaderSpec extends AnyFlatSpec with Matchers {
 
   // Path to test files
   val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
-  val memRomPath = "asm/generated/mem_rom.dat"
-  val memRamPath = "asm/generated/mem_ram.dat"
+  val memRomPath = MicrocodePaths.simulationRom
+  val memRamPath = MicrocodePaths.simulationRam
 
   "JopFileLoader" should "load a .jop file" in {
     val data = JopFileLoader.loadJopFile(jopFilePath)
