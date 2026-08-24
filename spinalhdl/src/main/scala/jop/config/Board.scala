@@ -883,6 +883,16 @@ object Board {
       BoardDevice("CLOCK_12MHz", mapping = Map("clock" -> "PIN_H6")),
       BoardDevice("FT2232H", mapping = Map(
         "TXD" -> "PIN_A4", "RXD" -> "PIN_B4")),
+      // INCOMPLETE: the MAX1000 has EIGHT user LEDs; only two are mapped here.
+      // The remaining six pins have not been looked up, and inventing them
+      // would be worse than the gap -- a wrong PIN_ assignment places a signal
+      // on the wrong ball and is not caught by anything until hardware.
+      // Compare Board.CYC5000, which maps all eight.
+      //
+      // Not urgent: the MAX1000 has never been built (fpga/max1000 has a
+      // Makefile, QSF, SDC and PLL but no outputs) and a 10M08 needs a
+      // cropped-back core before geometry or I/O matter -- see the tuning
+      // guide. Fix when that board is picked up.
       BoardDevice("LED", mapping = Map(
         "led0" -> "PIN_A8", "led1" -> "PIN_A9"))))
 

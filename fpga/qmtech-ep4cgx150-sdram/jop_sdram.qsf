@@ -25,11 +25,22 @@ set_global_assignment -name SDC_FILE jop_sdram.sdc
 #
 # Only the PINS are generated. Everything else in this file -- the source list,
 # the SDC reference, junction temperatures, core voltage, configuration pins and
-# the SignalTap VIRTUAL_PIN assignments -- is project setup the config knows
 # nothing about, and stays hand-written. That is the difference from the Vivado
 # side, where an .xdc holds constraints only and the whole file could be
 # generated.
 set_global_assignment -name SOURCE_TCL_SCRIPT_FILE generated/pins.tcl
+
+# NO SignalTap VIRTUAL_PIN ASSIGNMENTS HERE ANY MORE. There were 19, naming
+# stp_memState[*], stp_sdramBurstActive and friends -- debug probe ports that
+# no longer exist in the RTL. Quartus ignored every one of them:
+#   Warning (15751): Ignored Virtual Pin assignment to "stp_memState[*]"
+# The ports were removed and this file was not, which is the same failure as a
+# generated artefact drifting from its source, just slower.
+#
+# When probes come back they should arrive as a DEBUG CONFIGURATION layered on
+# a preset -- one switch that both adds the RTL ports and emits their
+# VIRTUAL_PIN assignments -- so the two cannot separate again. Re-adding them
+# by hand here would recreate exactly this.
 set_global_assignment -name VERILOG_FILE ../../fpga/ip/altera_sdram_tri_controller/altera_sdram_tri_controller.v
 set_global_assignment -name VERILOG_FILE ../../fpga/ip/altera_sdram_tri_controller/efifo_module.v
 set_global_assignment -name VHDL_FILE ../../fpga/ip/altera_lpm/arom.vhd
@@ -87,24 +98,6 @@ set_global_assignment -name ENABLE_SIGNALTAP OFF
 #set_global_assignment -name SLD_FILE db/jop_sdram_auto_stripped.stp
 
 # Virtual pins (stp_* signals are internal-only, not routed to I/O)
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_memState[*]
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_memBusy
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_bmbCmdValid
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_bmbCmdReady
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_bmbCmdOpcode[*]
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_bmbRspValid
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_bmbRspLast
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_sdramSendingHigh
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_sdramBurstActive
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_sdramCtrlCmdValid
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_sdramCtrlCmdReady
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_sdramCtrlCmdWrite
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_sdramCtrlRspValid
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_sdramCtrlRspIsHigh
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_sdramLowHalfData[*]
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_hangDetected
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_pc[*]
-set_instance_assignment -name VIRTUAL_PIN ON -to stp_jpc[*]
 
 # -------------------------------------------------------------------------- #
 # SignalTap Instance Parameters (96 signals, 2048 depth)
