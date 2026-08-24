@@ -60,9 +60,16 @@ object DramPllGen {
    * for 2 Mbaud and got 1.8.
    */
   def effectiveBaud(clkMhz: Int, requestedBaud: Int, rxSamplePerBit: Int = 5): Int = {
-    val ideal = clkMhz.toDouble * 1e6 / requestedBaud / rxSamplePerBit
-    val n = math.max(1, math.round(ideal).toInt)   // HALF_DOWN vs HALF_UP differs
-    (clkMhz.toDouble * 1e6 / (n * rxSamplePerBit)).round.toInt
+    // Delegates to the SAME generator the RTL uses. This computed an integer
+    // divider until 2026-08-24 -- `round(clkFreq / baud / 5)` -- which the RTL
+    // stopped using on 2026-08-18 when 28d8d06 replaced the divider with a
+    // fractional accumulator. For four days it reported a baud the hardware
+    // does not transmit: at 36 MHz it said 1.8 Mbaud and printed a BAUD WARNING
+    // telling the user to download at 1800000, where the board actually runs an
+    // exact 2 Mbaud. Following that warning looks exactly like a dead board.
+    jop.io.UartBaudTick
+      .actualRate(spinal.core.HertzNumber(BigDecimal(clkMhz) * 1000000), requestedBaud, rxSamplePerBit)
+      .setScale(0, BigDecimal.RoundingMode.HALF_UP).toInt
   }
 
   /** True when the requested baud is exactly representable at this clock. */
@@ -79,9 +86,18 @@ object DramPllGen {
    *
    * Returns a one-line description for the build summary.
    */
-  def emit(boardDir: String, targetMhz: Int): String = {
+  def emit(boardDir: String, targetMhz: Int, entityName: String): String = {
+    // PER ENTITY, not one file per board directory. Every project in
+    // fpga/qmtech-ep4cgx150-sdram used to share generated/dram_pll.vhd, so
+    // generating for one preset silently reclocked the others: building
+    // ep4cgx150Serial (80 MHz) after generating ep4cgx150Smp left the 36 MHz
+    // PLL in place, and the single-core build then ran at 36 MHz while every
+    // report said 80. Timing "passed" against the wrong clock.
+    //
+    // The PLL is a property of one configuration, so it belongs in that
+    // configuration's own directory. What is common lives in JopConfig.
     val template = Paths.get(boardDir, "dram_pll.vhd")
-    val outDir   = Paths.get(boardDir, "generated")
+    val outDir   = Paths.get(boardDir, "generated", entityName)
     val out      = outDir.resolve("dram_pll.vhd")
     if (!Files.exists(template))
       return s"PLL:         template not found at $template — not generated"

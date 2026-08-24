@@ -259,14 +259,15 @@ object JopTopVerilog {
       val mhz  = (sys.clkFreq.toBigDecimal / 1000000).toInt
       val baud = sys.effectiveDevices.values.find(_.deviceType.key == "uart")
         .flatMap(_.params.get("baudRate").map(_.asInstanceOf[Int])).getOrElse(2000000)
-      val pll  = jop.config.DramPllGen.emit("fpga/qmtech-ep4cgx150-sdram", mhz)
+      val pll  = jop.config.DramPllGen.emit("fpga/qmtech-ep4cgx150-sdram", mhz,
+                                            jopConfig.entityName)
       val eff  = jop.config.DramPllGen.effectiveBaud(mhz, baud)
       val baudLine =
         if (eff == baud) f"  Baud check:  $baud exact at $mhz MHz%n"
         else
           f"  *** BAUD WARNING: $baud is NOT achievable at $mhz MHz -- the board will%n" +
-          f"  *** transmit at $eff. UartCtrl divides clkFreq by (baud x 5), so an exact%n" +
-          f"  *** $baud needs a clock that is a multiple of ${baud * 5 / 1000000} MHz.%n" +
+          f"  *** transmit at $eff. The baud generator is FRACTIONAL (UartBaudTick),%n" +
+          f"  *** so most rates are reachable from any clock; this one is not.%n" +
           f"  *** Download with: python3 fpga/scripts/download.py -e <app>.jop <tty> $eff%n"
       f"  $pll%n" + baudLine
     } else if (jopConfig.assembly.fpgaBoard.name.contains("wukong") && sys.memory == "ddr3") {

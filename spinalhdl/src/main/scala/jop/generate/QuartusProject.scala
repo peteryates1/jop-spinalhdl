@@ -52,11 +52,18 @@ object QuartusProject {
     g("PROJECT_OUTPUT_DIRECTORY", "output_files")
     sb.append("\n")
 
-    // Part and board properties. Keyed by family; see the class comment.
-    sb.append("# Part / board properties\n")
-    g("MIN_CORE_JUNCTION_TEMP", "\"-40\"")
-    g("MAX_CORE_JUNCTION_TEMP", "100")
-    g("NOMINAL_CORE_SUPPLY_VOLTAGE", "1.2V")
+    // BOARD properties only. The PART's own properties are deliberately NOT
+    // restated: Quartus derives the junction-temperature range and core supply
+    // voltage from the ordering code, and EP4CGX150DF27I7's "I" is industrial.
+    // Measured 2026-08-24 -- building with and without
+    // MIN/MAX_CORE_JUNCTION_TEMP and NOMINAL_CORE_SUPPLY_VOLTAGE analysed the
+    // SAME corners either way: Fast 1200mV -40C, Slow 1200mV -40C, Slow 1200mV
+    // 100C. Restating them adds a second copy of a fact the part number already
+    // carries, which is how a wrong temperature grade would go unnoticed.
+    //
+    // What Quartus CANNOT know stays here: which I/O voltage the board wires
+    // its banks to, and whether the CRC error-check circuitry is wanted.
+    sb.append("# Board properties (the part's own come from its ordering code)\n")
     g("STRATIX_DEVICE_IO_STANDARD", "\"3.3-V LVCMOS\"")
     g("ERROR_CHECK_FREQUENCY_DIVISOR", "1")
     sb.append("\n")
@@ -79,7 +86,7 @@ object QuartusProject {
 
     sb.append("# Sources\n")
     g("VERILOG_FILE", s"../../spinalhdl/generated/${config.entityName}.v")
-    g("VHDL_FILE", "generated/dram_pll.vhd")
+    g("VHDL_FILE", s"generated/${config.entityName}/dram_pll.vhd")
     // SDR needs the tri-state SDRAM controller; every Altera build needs the
     // LPM ROM/RAM the microcode store is built from.
     if (memType.contains(MemoryType.SDRAM_SDR)) {

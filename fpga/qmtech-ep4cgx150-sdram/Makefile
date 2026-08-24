@@ -254,7 +254,7 @@ $(QP).qsf: generated/setup_proj.tcl generated/jop_sdram.sdc
 # what clock a build ran at gives the wrong answer (it says 60 MHz; the STA
 # clock table for a 36 MHz preset says 27.777 ns / 18-over-25). Check the STA
 # report, not either file.
-$(SOF_FILE): $(GENERATED_V) $(QP).qsf $(QP).sdc generated/dram_pll.vhd
+$(SOF_FILE): $(GENERATED_V) $(QP).qsf generated/jop_sdram.sdc generated/JopSdramTop/dram_pll.vhd
 	$(QUARTUS_BIN)/quartus_map $(QP)
 	$(QUARTUS_BIN)/quartus_fit $(QP)
 	$(QUARTUS_BIN)/quartus_asm $(QP)
@@ -263,7 +263,7 @@ $(SOF_FILE): $(GENERATED_V) $(QP).qsf $(QP).sdc generated/dram_pll.vhd
 
 build-smp: $(SOF_SMP_FILE)
 
-$(SOF_SMP_FILE): $(GENERATED_SMP_V) $(QP_SMP).qsf $(QP).sdc generated/dram_pll.vhd
+$(SOF_SMP_FILE): $(GENERATED_SMP_V) $(QP_SMP).qsf $(QP).sdc generated/JopSmpSdramTop/dram_pll.vhd
 	$(QUARTUS_BIN)/quartus_map $(QP_SMP)
 	$(QUARTUS_BIN)/quartus_fit $(QP_SMP)
 	$(QUARTUS_BIN)/quartus_asm $(QP_SMP)
