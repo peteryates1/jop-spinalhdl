@@ -401,18 +401,32 @@ file suggests.
 DoAll **66/66** generational. Per-core cost is ~11.3k LE. Fmax at 12 cores is
 ~40 MHz, so 40 (4/5) may also close and would keep 2 Mbaud — untested.
 
-**THE BAUD RATE FOLLOWS THE CLOCK, and not the way it first looks.** UartCtrl
-computes `clockDivider = round(clkFreq / baud / rxSamplePerBit) - 1` with
-`rxSamplePerBit = 5`, so an exact baud needs **`clkFreq / (baud * 5)`** to be
-an integer — for 2 Mbaud, a clock that is a multiple of **10 MHz**. 80, 60 and
-50 all qualify, which is why nothing noticed. 36 does not: 36/(2*5) = 3.6,
-which rounds to 4, and the board transmits at **1.8 Mbaud**. A 12-core build
-therefore needs `download.py ... 1800000`; at 2 Mbaud it looks like a dead
-board ("FPGA not responding"), which is the same symptom as a PLL/preset
-mismatch and easy to misdiagnose. Diagnose it by listening raw and sweeping
-the baud until the ready byte reads back as `0xAA` — at the wrong rate it
-decodes as a steady wrong value (`0x5A` at 2 Mbaud here), which tells you the
-FPGA is alive and only the rate is wrong.
+**~~THE BAUD RATE FOLLOWS THE CLOCK~~ — OBSOLETE since 2026-08-18, and it
+misled someone on 2026-08-23.** This used to say that `UartCtrl` computes
+`clockDivider = round(clkFreq / baud / rxSamplePerBit) - 1`, so an exact baud
+needed `clkFreq / (baud * 5)` to be an integer — making 36 MHz transmit at
+1.8 Mbaud rather than 2, and requiring `download.py ... 1800000`.
+
+**That divider is gone.** `28d8d06` replaced it with a FRACTIONAL accumulator
+(`jop.io.UartBaudTick`):
+
+```
+inc = round(2^24 * baudRate * samplesPerBit / clkFreq)
+```
+
+so **any baud is reachable from any clock**, and 2 Mbaud is exact from 36 MHz.
+A 12-core build at 36 MHz consoles at **2000000**, verified 2026-08-23 by a
+15,609-word download completing with a valid checksum.
+
+**Following the obsolete rule cost an hour.** `download.py ... 1800000` failed
+with "FPGA not responding", which was then read as evidence of a clock
+mismatch, which led to a stale `dram_pll.vhd` and a wrong conclusion that the
+board ran at 60 MHz. The board was fine and had always been at 36 MHz.
+
+The diagnostic advice below it remains right and is what eventually settled it:
+listen raw and sweep the baud until the ready byte reads back as `0xAA`; at the
+wrong rate it decodes as a steady wrong value, which tells you the FPGA is
+alive and only the rate is wrong.
 
 Item 5's "area allows ~12 cores at 73 %" was based on a 4-core figure of
 38,372 LE and is optimistic against today's builds — 12 costs 79 %. Shedding

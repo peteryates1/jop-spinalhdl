@@ -222,7 +222,21 @@ generate-flash-programmer:
 
 build: $(SOF_FILE)
 
-$(SOF_FILE): $(GENERATED_V) $(QP).qsf $(QP).sdc dram_pll.vhd
+# TWO dram_pll.vhd FILES EXIST HERE AND THEY ARE NOT THE SAME PLL.
+#
+#   generated/dram_pll.vhd  written by DramPllGen from the preset's clkMhz.
+#                           Used by jop_sdram.qsf, jop_smp_sdram.qsf and
+#                           jop_smp_bram.qsf -- i.e. every JOP build.
+#   dram_pll.vhd (here)     hand-written, 60 MHz, still used by the exerciser,
+#                           flash-programmer, dbfpga and smp8-test projects.
+#
+# The JOP targets below depend on the GENERATED one, so regenerating at a new
+# frequency refits. They used to depend on the hand-written file, which always
+# exists and therefore never triggered anything -- and reading it to find out
+# what clock a build ran at gives the wrong answer (it says 60 MHz; the STA
+# clock table for a 36 MHz preset says 27.777 ns / 18-over-25). Check the STA
+# report, not either file.
+$(SOF_FILE): $(GENERATED_V) $(QP).qsf $(QP).sdc generated/dram_pll.vhd
 	$(QUARTUS_BIN)/quartus_map $(QP)
 	$(QUARTUS_BIN)/quartus_fit $(QP)
 	$(QUARTUS_BIN)/quartus_asm $(QP)
@@ -231,7 +245,7 @@ $(SOF_FILE): $(GENERATED_V) $(QP).qsf $(QP).sdc dram_pll.vhd
 
 build-smp: $(SOF_SMP_FILE)
 
-$(SOF_SMP_FILE): $(GENERATED_SMP_V) $(QP_SMP).qsf $(QP).sdc dram_pll.vhd
+$(SOF_SMP_FILE): $(GENERATED_SMP_V) $(QP_SMP).qsf $(QP).sdc generated/dram_pll.vhd
 	$(QUARTUS_BIN)/quartus_map $(QP_SMP)
 	$(QUARTUS_BIN)/quartus_fit $(QP_SMP)
 	$(QUARTUS_BIN)/quartus_asm $(QP_SMP)
