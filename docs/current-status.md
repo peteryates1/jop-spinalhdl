@@ -6033,6 +6033,32 @@ exist until the IP is synthesised. Vivado says it defers those
 they do bind, but that has not been verified directly. Any DDR3 timing number
 rests on it.
 
+#### The same disease in Quartus, found 2026-08-24 — a dead `set_clock_groups`
+
+Not `source` this time (that works in an SDC, which is Tcl the timing analyser
+executes — item 58 is Vivado-specific). A hand-copied NAME:
+
+```
+Warning (332049): Ignored set_clock_groups at jop_sdram.sdc(23): Argument -group
+with value pll|altpll_component|auto_generated|pll1|clk[1] ... could not match
+any element of the following types: ( clk )
+```
+
+`jop_sdram.sdc` declares the DRAM PLL's outputs asynchronous to the Ethernet
+PLL and the PHY RX clock. It names the instance `pll|...`; the design
+instantiates it as `dramPll|...`. **Every group is discarded**, so the
+asynchronous declaration has never applied on this board.
+
+Harmless where it was found — a single-core SDR build has +9.714 ns and no
+Ethernet — but it is inert on every build that reads this file, and the effect
+of a missing async exclusion is pessimism or a false violation, which is exactly
+what the Wukong GMII ordering bug produced.
+
+The instance name is chosen in Scala (`JopTop`) and was copied into the SDC by
+hand, where nothing rechecks it. Same shape as the CH340N routing and the
+SignalTap virtual pins: an assertion about the design, written once, never
+verified again.
+
 **The general lesson, and why this was invisible.** A CRITICAL WARNING in a
 30-minute log is not a failure: the build completes, the bitstream works, and
 the missing constraints only show up as timing that is quietly worse than the
