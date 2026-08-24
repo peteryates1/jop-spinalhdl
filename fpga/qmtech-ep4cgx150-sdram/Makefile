@@ -105,7 +105,13 @@ OUTPUT_DIR = output_files
 JOP_APP_BIN = $(OUTPUT_DIR)/jop_app.bin
 FLASH_COF = $(OUTPUT_DIR)/flash_boot.cof
 FLASH_JIC = $(OUTPUT_DIR)/flash_image.jic
-SOF_FILE = $(OUTPUT_DIR)/$(QP).sof
+CFG        ?= ep4cgx150Serial
+REV        ?= jop_sdram
+CFG_DIR     = $(PROJECT_ROOT)/build/$(CFG)
+QUARTUS_PRJ = $(CFG_DIR)/quartus
+
+# Under build/<config>/quartus/output_files now, not the in-tree OUTPUT_DIR.
+SOF_FILE = $(QUARTUS_PRJ)/output_files/$(REV).sof
 SOF_SMP_FILE = $(OUTPUT_DIR)/$(QP_SMP).sof
 SOF_SMP8_FILE = $(OUTPUT_DIR)/$(QP_SMP8).sof
 SOF_DBFPGA_FILE = $(OUTPUT_DIR)/$(QP_DBFPGA).sof
@@ -231,14 +237,24 @@ build: $(SOF_FILE)
 #
 # Only jop_sdram is converted so far. The exerciser, flash-programmer, dbfpga
 # and smp8-test projects still have hand-written .qsf files.
-generated/jop_sdram.sdc:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.TimingConstraintsMain ep4cgx150Serial --write fpga/qmtech-ep4cgx150-sdram/generated/jop_sdram.sdc"
+# EVERYTHING GENERATED LIVES UNDER build/<config>/. The old in-tree layout
+# still works for the projects not yet converted, so the two coexist: only
+# jop_sdram builds out of build/, and the exerciser, flash-programmer, dbfpga
+# and smp8-test projects are untouched.
+#
+# The config directory is keyed by the INVOCATION (preset plus arguments), not
+# by the entity name -- JopSmpSdramTop is the same for 2 cores and 12, so
+# keying on it would let two configurations share a PLL. See BuildLayout, which
+# also owns the structure: change it there, not here.
+$(QUARTUS_PRJ)/$(REV).sdc:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.TimingConstraintsMain $(CFG) --write build/$(CFG)/quartus/$(REV).sdc"
 
-generated/setup_proj.tcl:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.QuartusProjectMain ep4cgx150Serial --revision jop_sdram --write fpga/qmtech-ep4cgx150-sdram/generated/setup_proj.tcl"
+$(QUARTUS_PRJ)/setup_proj.tcl:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.QuartusProjectMain $(CFG) --revision $(REV) --write build/$(CFG)/quartus/setup_proj.tcl"
 
-$(QP).qsf: generated/setup_proj.tcl generated/jop_sdram.sdc
-	$(QUARTUS_BIN)/quartus_sh -t generated/setup_proj.tcl
+# Quartus writes the .qsf/.qpf itself, in the project directory, from our Tcl.
+$(QUARTUS_PRJ)/$(REV).qsf: $(QUARTUS_PRJ)/setup_proj.tcl $(QUARTUS_PRJ)/$(REV).sdc
+	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_sh -t setup_proj.tcl
 
 # TWO dram_pll.vhd FILES EXIST HERE AND THEY ARE NOT THE SAME PLL.
 #
@@ -254,11 +270,11 @@ $(QP).qsf: generated/setup_proj.tcl generated/jop_sdram.sdc
 # what clock a build ran at gives the wrong answer (it says 60 MHz; the STA
 # clock table for a 36 MHz preset says 27.777 ns / 18-over-25). Check the STA
 # report, not either file.
-$(SOF_FILE): $(GENERATED_V) $(QP).qsf generated/jop_sdram.sdc generated/JopSdramTop/dram_pll.vhd
-	$(QUARTUS_BIN)/quartus_map $(QP)
-	$(QUARTUS_BIN)/quartus_fit $(QP)
-	$(QUARTUS_BIN)/quartus_asm $(QP)
-	$(QUARTUS_BIN)/quartus_sta $(QP)
+$(SOF_FILE): $(GENERATED_V) $(QUARTUS_PRJ)/$(REV).qsf $(CFG_DIR)/ip/dram_pll.vhd
+	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_map $(REV)
+	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_fit $(REV)
+	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_asm $(REV)
+	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_sta $(REV)
 	@echo "=== Build complete: $(SOF_FILE) ==="
 
 build-smp: $(SOF_SMP_FILE)

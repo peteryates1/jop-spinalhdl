@@ -143,12 +143,13 @@ java/apps/*/*.jop.txt
 java/apps/*/*.jop.link.txt
 java/apps/*/*.jop.stats.txt
 
-# Quartus project files for converted boards: written by quartus_sh from the
-# generated setup_proj.tcl, so they are build outputs (item 57). Other projects
-# in that directory are still hand-written and stay tracked.
-fpga/qmtech-ep4cgx150-sdram/jop_sdram.qsf
-fpga/qmtech-ep4cgx150-sdram/jop_sdram.qpf
-fpga/qmtech-ep4cgx150-sdram/generated/
+# ALL generated and transient build products live under build/<config>/ --
+# generated HDL, the vendor project, IP, .jop and asm outputs. One directory
+# per build CONFIGURATION (preset plus arguments), so two core counts or two
+# method-cache geometries cannot overwrite each other's artefacts. The layout
+# is parameterised in jop.generate.BuildLayout; the old in-tree locations still
+# work for boards not yet converted, and the two coexist.
+build/
 
 # Kept-aside binaries for a reproduction that is sensitive to code layout: the
 # 4-core generational GC failure only reproduces for a particular image, and any

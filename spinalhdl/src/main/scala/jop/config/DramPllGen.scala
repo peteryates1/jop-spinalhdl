@@ -86,8 +86,11 @@ object DramPllGen {
    *
    * Returns a one-line description for the build summary.
    */
-  def emit(boardDir: String, targetMhz: Int, entityName: String): String = {
-    // PER ENTITY, not one file per board directory. Every project in
+  def emit(boardDir: String, targetMhz: Int, configDir: String): String = {
+    // PER CONFIGURATION, not per board directory and not per ENTITY either.
+    // Keying on entityName was the first fix and was still wrong: that name
+    // does not encode the core count, so ep4cgx150Smp 2 and ep4cgx150Smp 12
+    // are both JopSmpSdramTop and would still share one PLL. See BuildLayout. Every project in
     // fpga/qmtech-ep4cgx150-sdram used to share generated/dram_pll.vhd, so
     // generating for one preset silently reclocked the others: building
     // ep4cgx150Serial (80 MHz) after generating ep4cgx150Smp left the 36 MHz
@@ -97,7 +100,7 @@ object DramPllGen {
     // The PLL is a property of one configuration, so it belongs in that
     // configuration's own directory. What is common lives in JopConfig.
     val template = Paths.get(boardDir, "dram_pll.vhd")
-    val outDir   = Paths.get(boardDir, "generated", entityName)
+    val outDir   = Paths.get(configDir, "ip")
     val out      = outDir.resolve("dram_pll.vhd")
     if (!Files.exists(template))
       return s"PLL:         template not found at $template — not generated"

@@ -229,7 +229,11 @@ object JopTopVerilog {
   def generate(
     jopConfig: JopConfig,
     jopFilePath: Option[String] = None,
-    presetName: String = "(custom)"
+    presetName: String = "(custom)",
+    /** The invocation's arguments, so generated artefacts land in a directory
+      * keyed by the CONFIGURATION rather than by anything that collapses core
+      * counts or overrides. See BuildLayout. */
+    buildArgs: Seq[String] = Seq.empty
   ): Unit = {
     val sys = jopConfig.resolvedSystems.head
     val isBram = !jopConfig.resolveMemory(sys).isDefined
@@ -260,7 +264,7 @@ object JopTopVerilog {
       val baud = sys.effectiveDevices.values.find(_.deviceType.key == "uart")
         .flatMap(_.params.get("baudRate").map(_.asInstanceOf[Int])).getOrElse(2000000)
       val pll  = jop.config.DramPllGen.emit("fpga/qmtech-ep4cgx150-sdram", mhz,
-                                            jopConfig.entityName)
+                                            jop.generate.BuildLayout.default.configDir(presetName, buildArgs))
       val eff  = jop.config.DramPllGen.effectiveBaud(mhz, baud)
       val baudLine =
         if (eff == baud) f"  Baud check:  $baud exact at $mhz MHz%n"
@@ -317,6 +321,15 @@ object JopTopVerilog {
       case "ep4cgx150BramGc" => Some("java/apps/Small/HelloWorld.jop")
       case _ => None
     }
-    generate(config, jopFilePath = jopFile, presetName = preset)
+    // The .mif path is relative to the QUARTUS PROJECT, which for a converted
+    // config lives under build/<config>/quartus rather than in the board
+    // directory. Computed from the layout so both trees work; see
+    // MifPathOverride.
+    val layout   = jop.generate.BuildLayout.default
+    val bArgs    = args.toSeq.drop(1)
+    val prjDir   = layout.quartusDir(preset, bArgs)
+    val withMif  = jop.config.MifPathOverride(
+      config, layout.relativeTo(prjDir, "asm/generated/serial"))
+    generate(withMif, jopFilePath = jopFile, presetName = preset, buildArgs = bArgs)
   }
 }

@@ -28,8 +28,14 @@ import jop.config._
  */
 object QuartusProject {
 
-  /** Relative paths are written from the perspective of `projectDir`. */
-  def generate(config: JopConfig, revision: String, projectDir: String = "."): String = {
+  /** The project lives at `build/<config>/quartus`, so repo-root-relative paths
+    * are written three levels up, and the PLL -- this configuration's own, at
+    * `build/<config>/ip` -- is one level up. Relative rather than absolute, so
+    * the project is relocatable and no generated file records this machine's
+    * directory layout. */
+  def generate(config: JopConfig, revision: String,
+               preset: String, buildArgs: Seq[String],
+               layout: BuildLayout = BuildLayout.default): String = {
     val sb = new StringBuilder
     val fpga = config.fpga
     val sys = config.system
@@ -84,24 +90,40 @@ object QuartusProject {
     }
     sb.append("\n")
 
+    // Depth is derived from the layout, not assumed: if the structure grows a
+    // level these paths follow it.
+    val projectDir = layout.quartusDir(preset, buildArgs)
+    def up(p: String) = layout.relativeTo(projectDir, p)
+    // The LPM ROM/RAM wrappers name their .mif files with a path relative to
+    // the OLD project location (`../../asm/generated/serial/rom.mif`), baked
+    // into fpga/ip/altera_lpm/*.vhd. Moving the project changed that depth, so
+    // the literal no longer resolves and synthesis fails with
+    //   Error (127001): Can't find Memory Initialization File ... rom.mif
+    // SEARCH_PATH lets Quartus find them by name from wherever the project is,
+    // without editing shared IP that other boards still build against.
+    sb.append("# Where to find memory initialisation files (see comment in the generator)\n")
+    g("SEARCH_PATH", up("asm/generated/serial"))
+    g("SEARCH_PATH", up("."))
+    sb.append("\n")
+
     sb.append("# Sources\n")
-    g("VERILOG_FILE", s"../../spinalhdl/generated/${config.entityName}.v")
-    g("VHDL_FILE", s"generated/${config.entityName}/dram_pll.vhd")
+    g("VERILOG_FILE", up(s"spinalhdl/generated/${config.entityName}.v"))
+    g("VHDL_FILE", layout.relativeTo(projectDir, layout.ipDir(preset, buildArgs) + "/dram_pll.vhd"))
     // SDR needs the tri-state SDRAM controller; every Altera build needs the
     // LPM ROM/RAM the microcode store is built from.
     if (memType.contains(MemoryType.SDRAM_SDR)) {
-      g("VERILOG_FILE", "../ip/altera_sdram_tri_controller/altera_sdram_tri_controller.v")
-      g("VERILOG_FILE", "../ip/altera_sdram_tri_controller/efifo_module.v")
+      g("VERILOG_FILE", up("fpga/ip/altera_sdram_tri_controller/altera_sdram_tri_controller.v"))
+      g("VERILOG_FILE", up("fpga/ip/altera_sdram_tri_controller/efifo_module.v"))
     }
-    g("VHDL_FILE", "../ip/altera_lpm/arom.vhd")
-    g("VHDL_FILE", "../ip/altera_lpm/aram.vhd")
+    g("VHDL_FILE", up("fpga/ip/altera_lpm/arom.vhd"))
+    g("VHDL_FILE", up("fpga/ip/altera_lpm/aram.vhd"))
     sb.append("\n")
 
     sb.append("# Timing constraints, generated from the same config (TimingConstraints).\n")
     sb.append("# The clock period comes from the board oscillator and the PLL instance\n")
     sb.append("# name from PllType.instanceName -- the hand-written file named it `pll`\n")
     sb.append("# where the design says `dramPll`, and Quartus discarded every group.\n")
-    g("SDC_FILE", s"generated/$revision.sdc")
+    g("SDC_FILE", s"$revision.sdc")
     sb.append("\n")
 
     sb.append("# Pin assignments, from the board definition in Board.scala\n")
@@ -131,7 +153,7 @@ object QuartusProjectMain extends App {
 
   val preset = presetArgs.headOption.getOrElse("ep4cgx150Serial")
   val config = JopTopVerilog.resolvePreset(preset, presetArgs)
-  val tcl = QuartusProject.generate(config, revision)
+  val tcl = QuartusProject.generate(config, revision, preset, presetArgs.drop(1).toSeq)
 
   outPath match {
     case Some(path) =>

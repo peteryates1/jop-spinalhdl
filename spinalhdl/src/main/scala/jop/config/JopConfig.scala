@@ -271,6 +271,38 @@ object BytecodesOverride {
   }
 }
 
+/** Point the LPM ROM/RAM at their .mif files for a project at a given depth.
+  *
+  * `MemoryStyle.AlteraLpm` carries `mifBasePath`, and its default
+  * `../../asm/generated/serial` assumes the Quartus project sits two levels
+  * below the repo root -- true of the in-tree board directories, false once a
+  * project moves under `build/<config>/quartus`. The path is baked into the
+  * generated Verilog as the megafunction's LPM_FILE generic, so getting it
+  * wrong is a synthesis failure:
+  *
+  *   Error (127001): Can't find Memory Initialization File ... rom.mif
+  *
+  * SEARCH_PATH does not rescue it -- Quartus resolves the literal. So the path
+  * is computed from the layout instead of assumed, and the old and new trees
+  * can coexist while boards are converted one at a time.
+  */
+object MifPathOverride {
+  def apply(c: JopConfig, mifBasePath: String): JopConfig =
+    c.copy(systems = c.systems.map { sys =>
+      // Consult the FAMILY, not the core config. The style is normally left
+      // unset on JopCoreConfig and filled in from FpgaFamily.memoryStyle during
+      // resolution, so testing the raw config sees None and this override
+      // silently did nothing.
+      val familyUsesLpm = c.fpgaFamily.memoryStyle.isInstanceOf[MemoryStyle.AlteraLpm]
+      def on(cc: JopCoreConfig) =
+        if (familyUsesLpm || cc.resolvedMemoryStyle.isInstanceOf[MemoryStyle.AlteraLpm])
+          cc.copy(memoryStyle = Some(MemoryStyle.AlteraLpm(mifBasePath)))
+        else cc
+      sys.copy(coreConfig = on(sys.coreConfig),
+               perCoreConfigs = sys.perCoreConfigs.map(_.map(on)))
+    })
+}
+
 object MCacheOverride {
   def apply(c: JopConfig, spec: String): JopConfig = {
     val parts = spec.split("/")
