@@ -176,12 +176,18 @@ sdram-monitor:
 
 # Verilog AND constraints, both from the same JopConfig. This board's XDC is
 # generated rather than hand-maintained; see build_jop_sdram_bitstream.tcl.
+# Generated artefacts go under build/<config>/, keyed by the invocation --
+# see jop.generate.BuildLayout. JOP_CFG_DIR tells the Vivado script where; unset,
+# it falls back to the old in-tree layout, so unconverted flows are unaffected.
+SDRAM_CFG      ?= wukongSdram
+SDRAM_CFG_DIR   = $(REPO_ROOT)/build/$(SDRAM_CFG)
+
 jop-sdram-generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongSdram"
-	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain wukongSdram --write spinalhdl/generated/wukong_jop_sdram.xdc"
+	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(SDRAM_CFG)"
+	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(SDRAM_CFG) --write build/$(SDRAM_CFG)/vivado/wukong_jop_sdram.xdc"
 
 jop-sdram-build:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_jop_sdram_bitstream.tcl
+	$(VIVADO_ENV) && JOP_CFG_DIR=$(SDRAM_CFG_DIR) $(VIVADO) -mode batch -source vivado/tcl/build_jop_sdram_bitstream.tcl
 
 # SMP SDR: the counterpart of ddr3-smp-build, so SDR and DDR3 can be compared on
 # one board with only the memory path differing. Entity is JopSmpSdramWukongTop

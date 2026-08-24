@@ -3,8 +3,21 @@
 
 set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file normalize [file join $script_dir ../..]]
-set build_dir  [file normalize [file join $repo_root vivado/build/wukong_jop_sdram]]
 set rtl_dir    [file normalize [file join $repo_root ../../spinalhdl/generated]]
+
+# WHERE OUTPUTS GO. If JOP_CFG_DIR is set (by the Makefile, from BuildLayout)
+# everything generated lands under build/<config>/vivado; otherwise the old
+# in-tree location is used. Parameterised so the two layouts coexist while
+# boards are converted one at a time -- unset, this script behaves exactly as
+# it did.
+if {[info exists ::env(JOP_CFG_DIR)] && $::env(JOP_CFG_DIR) ne ""} {
+    set cfg_dir   [file normalize $::env(JOP_CFG_DIR)]
+    set build_dir [file join $cfg_dir vivado build]
+    set xdc_file  [file join $cfg_dir vivado wukong_jop_sdram.xdc]
+} else {
+    set build_dir [file normalize [file join $repo_root vivado/build/wukong_jop_sdram]]
+    set xdc_file  [file join $rtl_dir wukong_jop_sdram.xdc]
+}
 set ip_root    [file normalize [file join $repo_root vivado/ip]]
 
 file mkdir $build_dir
@@ -31,7 +44,7 @@ foreach f [glob -nocomplain [file join $rtl_dir JopSdramWukongTop.v_*.bin]] {
 # while the hand file still exists.
 #
 # To go back: point this at vivado/constraints/wukong_jop_sdram.xdc.
-read_xdc [file join $rtl_dir wukong_jop_sdram.xdc]
+read_xdc $xdc_file
 # Ethernet/SD pins, needed by wukongSdrFull. Harmless for configs without those
 # peripherals: Vivado ignores constraints for ports that do not exist.
 read_xdc [file join $repo_root vivado/constraints/wukong_peripherals.xdc]
