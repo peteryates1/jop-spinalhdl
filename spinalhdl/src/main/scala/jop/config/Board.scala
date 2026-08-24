@@ -239,7 +239,22 @@ case class Board(
   resetActiveLow: Boolean = true,
   ddr3HasCs: Boolean = false,
   hasEthPll: Boolean = false,
-  useStackCache: Boolean = false
+  useStackCache: Boolean = false,
+  /** Default I/O standard for this board's user I/O. */
+  ioStandard: String = "LVCMOS33",
+  /** Ports the generated top HAS but this board does not WIRE.
+    *
+    * A fixed interface bundle (SdramInterface, say) always presents every
+    * signal, even where the board straps it to a rail instead of routing it to
+    * the FPGA. Those ports must still be given a ball, and parking them on a
+    * documented unused header pin is strictly better than the alternative --
+    * nextpnr's `--lpf-allow-unconstrained` lets the placer pick ANY free ball,
+    * including ones wired to something, trading a known-harmless output for an
+    * unknown possibly-harmful one.
+    *
+    * Kept as CONFIG rather than as a comment in a hand-written constraint file,
+    * because the constraint file is generated from here. */
+  parkedPins: Map[String, String] = Map.empty
 ) {
   def hasFpga: Boolean = fpga.isDefined
 
@@ -430,7 +445,19 @@ object Board {
         "DQ16" -> "C10", "DQ17" -> "D9", "DQ18" -> "E11", "DQ19" -> "D11",
         "DQ20" -> "C11", "DQ21" -> "D12", "DQ22" -> "E9", "DQ23" -> "C12",
         "DQ24" -> "E14", "DQ25" -> "C15", "DQ26" -> "E13", "DQ27" -> "D15",
-        "DQ28" -> "E12", "DQ29" -> "B17", "DQ30" -> "D14", "DQ31" -> "D13"))))
+        "DQ28" -> "E12", "DQ29" -> "B17", "DQ30" -> "D14", "DQ31" -> "D13"))),
+    // CKE is strapped to VCC, CS to GND and all four DQM to GND on this board,
+    // so none of them reach the FPGA. Parked on ext-board header balls (SODIMM
+    // 69/71/73/75/77/79) that this design does not otherwise use; nothing is
+    // attached to those headers.
+    //
+    // Consequence of DQM being strapped low: no byte masking exists, so every
+    // write writes all four bytes. Safe only because JOP issues full-word
+    // writes exclusively -- see BmbSdramCtrlWide's header comment.
+    parkedPins = Map(
+      "sdram_CKE" -> "U18", "sdram_CSn" -> "U17",
+      "sdram_DQM[0]" -> "P18", "sdram_DQM[1]" -> "N17",
+      "sdram_DQM[2]" -> "N18", "sdram_DQM[3]" -> "M18"))
 
   /**
    * Alchitry Au V2 (Artix-7 XC7A35T + MT41K128M16JT DDR3).

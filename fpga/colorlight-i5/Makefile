@@ -21,11 +21,9 @@ STAGE      ?= sdram
 ifeq ($(STAGE),bram)
   TOP      := JopBramSerialI5Top
   PRESET   := colorlightI5Bram
-  LPF      := jop_i5.lpf
 else ifeq ($(STAGE),sdram)
   TOP      := JopSdramI5Top
   PRESET   := colorlightI5Sdram
-  LPF      := jop_i5_sdram.lpf
 else
   $(error STAGE must be 'bram' or 'sdram', got '$(STAGE)')
 endif
@@ -42,6 +40,13 @@ ROOT       := ../..
 CFG_DIR    := $(ROOT)/build/$(PRESET)
 GENDIR     := $(CFG_DIR)/rtl
 BUILD      := $(CFG_DIR)/nextpnr
+
+# GENERATED, not hand-written. This was the last file in the i5 flow that was
+# maintained by hand, and its own header admitted the problem: "Mirrored in
+# Board.ColorlightI5 ... keep the two in step" -- a promise no build checked.
+# jop.generate.LpfGenerator renders it from the same board data the .qsf and
+# .xdc generators use, and TimingConstraints supplies the timing third.
+LPF        := $(CFG_DIR)/nextpnr/$(TOP).lpf
 
 DEVICE     := --25k
 PACKAGE    := CABGA381
@@ -77,6 +82,7 @@ all: bitstream
 # listed in their .qsf or synthesis fails on undefined entities.
 generate:
 	cd $(ROOT) && sbt "runMain jop.system.JopTopVerilog $(PRESET) buildtree"
+	cd $(ROOT) && sbt "runMain jop.generate.LpfGeneratorMain $(PRESET) --write build/$(PRESET)/nextpnr/$(TOP).lpf"
 
 # The .v MUST depend on the Scala sources and the microcode. Without this the
 # generated Verilog silently goes stale whenever the preset changes, and the
@@ -103,7 +109,7 @@ $(BUILD)/$(TOP).json: $(GENDIR)/$(TOP).v pll_jop_i5.v
 synth: $(BUILD)/$(TOP).json
 
 # --- 3. Place and route -----------------------------------------------------
-$(BUILD)/$(TOP).config: $(BUILD)/$(TOP).json $(LPF)
+$(BUILD)/$(TOP).config: $(BUILD)/$(TOP).json
 	nextpnr-ecp5 $(DEVICE) --package $(PACKAGE) --speed $(SPEED) \
 	    --json $(BUILD)/$(TOP).json \
 	    --lpf $(LPF) \

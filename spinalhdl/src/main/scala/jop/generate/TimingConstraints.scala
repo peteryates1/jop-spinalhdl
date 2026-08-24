@@ -92,8 +92,14 @@ case class TimingConstraints(
     // nextpnr has no clock-group syntax: asynchronous relationships are blocked
     // wholesale. Stated rather than silently dropped, so the difference from the
     // vendor flows is visible.
-    if (asyncGroups.filter(_.nonEmpty).size >= 2)
-      sb.append("BLOCK ASYNCPATHS;\nBLOCK RESETPATHS;\n")
+    //
+    // UNCONDITIONAL, and not gated on the async groups. These are not the
+    // clock-group analogue -- they tell nextpnr not to time reset and
+    // asynchronous paths at all, which is true of every design here whatever
+    // its clock topology. Gating them on "two or more groups" meant a
+    // single-clock design like the i5 got neither, and the omission would show
+    // up as timing failures on reset paths rather than as a missing line.
+    sb.append("BLOCK ASYNCPATHS;\nBLOCK RESETPATHS;\n")
     sb.toString
   }
 }

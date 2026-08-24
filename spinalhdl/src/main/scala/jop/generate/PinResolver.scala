@@ -23,8 +23,11 @@ object PinResolver {
     "sdram_CKE" -> "CKE",
     "sdram_BA[0]" -> "BA0", "sdram_BA[1]" -> "BA1"
   ) ++ (0 to 12).map(i => s"sdram_ADDR[$i]" -> s"A$i") ++
-    (0 to 15).map(i => s"sdram_DQ[$i]" -> s"DQ$i") ++
-    (0 to 1).map(i => s"sdram_DQM[$i]" -> s"DQM$i")
+    // Up to 32 bits wide: the Colorlight i5's EM638325BK-6H is a 32-bit part
+    // (BmbSdramCtrlWide drives it 1:1). Entries the board does not map are
+    // dropped by the lookup below, so a 16-bit board is unaffected.
+    (0 to 31).map(i => s"sdram_DQ[$i]" -> s"DQ$i") ++
+    (0 to 3).map(i => s"sdram_DQM[$i]" -> s"DQM$i")
 
   /** Resolve clock FPGA pin from assembly's CLOCK_* device */
   def clockFpgaPin(assembly: SystemAssembly): Option[String] =
