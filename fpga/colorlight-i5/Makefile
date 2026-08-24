@@ -32,9 +32,12 @@ endif
 
 ROOT       := ../..
 GENDIR     := $(ROOT)/spinalhdl/generated
-# Per-stage build dir so the two bitstreams never overwrite each other and a
-# stale .json from the other stage cannot be picked up.
-BUILD      := build/$(STAGE)
+# Everything generated goes under build/<config>/, keyed by the PRESET rather
+# than by the stage: see jop.generate.BuildLayout. Stronger than the old
+# build/$(STAGE) split, which kept the two bitstreams apart but would still let
+# two different configurations of the same stage overwrite each other.
+CFG_DIR    := $(ROOT)/build/$(PRESET)
+BUILD      := $(CFG_DIR)/nextpnr
 
 DEVICE     := --25k
 PACKAGE    := CABGA381

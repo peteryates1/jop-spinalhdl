@@ -110,6 +110,7 @@ audit, and has moved down accordingly.
 31. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
 32. **[#57](#item-57)** — The XDC/QSF generators exist and nothing uses them; constraints are hand-written and have drifted from the config
 33. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
+34. **[#59](#item-59)** — the Colorlight i5 SDRAM build misses its 40 MHz target (32.56 MHz) and item 51 records it as passing
 
 ## 2. All items — summary
 
@@ -5117,7 +5118,7 @@ to begin with, so less to recover.
 |---|---|---|
 | A-E115FB (Quartus) | **+0.446 ns** — identical at 16/32/64/128 blocks | 35,976 LE (30 %) |
 | CYC5000 (Quartus) | **+0.533 ns** setup, +0.390 hold | 4,060 ALM (43 %), memory **9 %** |
-| Colorlight i5 (yosys/nextpnr) | **PASS — 53.95 MHz vs 40 target** | DP16KD 15/56 (26 %) |
+| Colorlight i5 (yosys/nextpnr) | ~~PASS — 53.95 MHz vs 40 target~~ **STALE, see below** | DP16KD 15/56 (26 %) |
 | Wukong dual (Vivado) | -0.364 ns, its PRE-EXISTING `sdram_DQ` path | LUT 49.9 %, BRAM 31 % |
 
 The method cache is nowhere near critical on any fabric, at any geometry tested
@@ -6066,6 +6067,41 @@ constraint file claims. **The bug was found by comparing a generated artefact
 against a hand-written one and refusing to explain away a 34-register
 difference** — not by reading the log, which had been saying so on every build
 for as long as the file has existed.
+
+
+<a id="item-59"></a>
+
+### Item 59 — the Colorlight i5 SDRAM build does not meet timing, and has not for some time
+
+**Found 2026-08-24** while moving that board's outputs under `build/`, which
+meant rebuilding it for the first time in four days.
+
+| i5 SDRAM, 40 MHz target | LUT4s | Fmax |
+|---|---|---|
+| build dated 2026-08-20 07:59 | 10,850 (44 %) | **34.37 MHz — FAIL** |
+| rebuilt 2026-08-24, current default | **13,318 (54 %)** | **32.56 MHz — FAIL** |
+
+[Item 51](#item-51) records this board as **"PASS — 53.95 MHz vs 40 target"**.
+That is stale: the most recent build on disk before today already failed, and it
+predates the 8 KB/64-block default commit (`0293415`, 08-20 08:06) by seven
+minutes — so the board was already missing its target at the OLD geometry, and
+the recorded PASS is older still. The last hardware validation was 2026-08-05.
+
+**LUTs are up 23 % since that August build** (10,850 -> 13,318), which is the
+scale the method cache default would explain, so this is very likely the same
+regression as [item 53](#item-53) (4-core Wukong, slice packing) and the 12-core
+EP4CGX150 (routing congestion) on a third board and a third toolchain. **Not
+proven** — the two builds differ in more than geometry, and no A/B has been run.
+
+**The failing path is not the method cache**, which is worth noting before
+anyone assumes: nextpnr names
+`uartResetEscape_1.ctrl.rx.io_rxd_buffercc.buffers_0_TRELLIS_FF_Q`. The UART
+reset-escape receiver is on the critical path.
+
+**What to do:** rebuild at `14/5` or `11/4` and compare, exactly as the
+EP4CGX150 was resolved -- that separates geometry from everything else in one
+build. This board is the only open-source-toolchain target, so leaving it
+broken costs the coverage that makes yosys/nextpnr breakage visible early.
 
 
 ## 4. Two workstreams, both largely done
