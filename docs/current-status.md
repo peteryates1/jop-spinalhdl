@@ -111,6 +111,7 @@ audit, and has moved down accordingly.
 32. **[#57](#item-57)** — The XDC/QSF generators exist and nothing uses them; constraints are hand-written and have drifted from the config
 33. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
 34. ~~**[#59](#item-59)**~~ — WITHDRAWN: the i5 passes at 49.40 MHz; a post-placement estimate was read instead of the final post-routing figure
+35. **[#60](#item-60)** — Everything generated belongs under `build/<config>/`. Three flows converted and cold-verified; 48 to go, and `Const.java` is still per-config in a shared source tree
 
 ## 2. All items — summary
 
@@ -158,6 +159,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[56](#item-56)** — WBNI: derive the hardware config from the application. JOPizer static profile done; the measurement framework is the bulk
 - **[57](#item-57)** — The XDC/QSF generators exist and nothing uses them — constraints hand-written, drifted from the config
 - **[58](#item-58)** — `source` inside an XDC is silently ignored by Vivado — four shared constraint files never applied
+- **[60](#item-60)** — Everything generated belongs under `build/<config>/` — three flows done and cold-verified, 48 to go; two silent stale-artifact defects found doing it
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -6114,6 +6116,68 @@ The prior reporting was right the whole time; the check that broke the chain was
 being asked "are we sure we are correct and prior reporting is wrong?" -- at
 which point the surviving PASS lines were sitting in the same files I had
 already grepped.
+
+
+### Item 60 — Everything generated should live under `build/<config>/`, and most of it still does not
+
+**Raised 2026-08-23, in progress.** The goal the user set: *nothing generated or
+built ends up anywhere other than under that build directory*, one directory per
+build CONFIGURATION (preset plus arguments — not `entityName`, which collapses
+core counts and overrides together). The layout itself is data
+(`jop.generate.BuildLayout`), so it can be changed later without another sweep.
+
+**Why it matters more than tidiness.** Shared generated files are read by
+whichever build runs next. Two defects of exactly that shape were found by doing
+this work, and neither failed a build:
+
+| defect | symptom | found |
+|---|---|---|
+| `Const.java` generated into `java/runtime/src`, a shared source tree, with no dependency on the preset | switching preset printed "Nothing to be done" and left the previous configuration's constants in place — every `.jop` built afterwards carried them | 2026-08-24, `517bff7` |
+| `<Top>.summary.txt` still written to the legacy directory under `buildtree` | `emit_fit_summary` prepends it and skips silently when absent, so the configuration header vanished off the fit report while the numbers stayed correct | 2026-08-24, `9fe823d` |
+
+The first is the mechanism behind the long-standing "`make -C java all` does not
+reliably rebuild apps" gotcha. It is contained by a `.const-preset` stamp, not
+fixed: `Const.java` is per-configuration and belongs under `build/<config>/`.
+
+**Progress.**
+
+| flow | outputs | RTL | commit |
+|---|---|---|---|
+| `ep4cgx150Serial` (Quartus) | `build/` | `build/` | `e01b51e` |
+| `colorlightI5Sdram` (nextpnr) | `build/` | `build/` | `1af3a9e` |
+| `wukongSdram` (Vivado) | `build/` | `build/` | `9fe823d` |
+| 48 other flows across ten boards | in-tree | in-tree | — |
+
+Each was verified by a COLD build reproducing the known-good result: 11,112 LE
+/ +0.626 ns, 49.40 MHz PASS, and 5,979 LUTs / +0.414 ns respectively.
+
+**Why the RTL move is opt-in (`buildtree`) rather than a global switch.** 51
+Makefiles and TCL scripts read `spinalhdl/generated`, and only three of those
+flows can be built on this host — the rest need hardware or a toolchain that is
+not installed. Flipping the default would change 48 flows nobody could check.
+The flag says WHERE to write, not WHAT to build, so it is filtered out of the
+configuration name.
+
+**Remaining, roughly in order.**
+
+1. `asm/generated` — **cannot go under `build/<config>/`**. It holds
+   `JumpTableData.scala` and its six siblings, which `build.sbt` lists as
+   `unmanagedSourceDirectories`: they are compile INPUTS to the generator that
+   would produce the per-config output. They are keyed by microcode VARIANT
+   (simulation / serial / flash / dsp / serial-dsp / hwmath / serial-hwmath),
+   not by configuration, so their home is a shared `build/microcode/<variant>/`.
+2. `java/` — `Const.java` per configuration, and the `.jop` outputs with it.
+   This is the one that closes the defect above properly.
+3. The i5's `.lpf` is still hand-written and says so: *"Mirrored in
+   Board.ColorlightI5 ... which is the source of truth -- keep the two in
+   step."* `TimingConstraints.toLpf` renders the timing half already; the pins
+   and I/O attributes need an `LpfGenerator` sibling to `XdcGenerator`. Folds
+   into [item 57](#item-57).
+4. The other 48 flows — mechanical, but unverifiable on this host.
+
+**The `fpga/` directory does not disappear.** Board-specific inputs that are not
+derived from the config live there legitimately: `pll_jop_i5.v`, the MIG IP, the
+programming and monitor recipes.
 
 
 ## 4. Two workstreams, both largely done
