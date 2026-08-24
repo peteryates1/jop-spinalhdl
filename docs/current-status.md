@@ -112,7 +112,8 @@ audit, and has moved down accordingly.
 33. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
 34. ~~**[#59](#item-59)**~~ — WITHDRAWN: the i5 passes at 49.40 MHz; a post-placement estimate was read instead of the final post-routing figure
 35. **[#60](#item-60)** — Everything generated belongs under `build/<config>/`. Three FPGA flows and the whole Java/JOP tree converted and verified; 48 flows and `asm/` to go
-36. **[#61](#item-61)** — `make -C java all` FAILS at HEAD: `apps/Small` dies in PreLinker on `java/lang/Throwable`
+36. ~~**[#61](#item-61)**~~ — FIXED 2026-08-24: no app in `apps/Small` could be built from clean; every `.jop` there was an unreproducible stale artifact
+37. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
 
 ## 2. All items — summary
 
@@ -161,7 +162,8 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[57](#item-57)** — The XDC/QSF generators exist and nothing uses them — constraints hand-written, drifted from the config
 - **[58](#item-58)** — `source` inside an XDC is silently ignored by Vivado — four shared constraint files never applied
 - **[60](#item-60)** — Everything generated belongs under `build/<config>/` — three FPGA flows and the Java/JOP tree done and verified, 48 flows and `asm/` to go
-- **[61](#item-61)** — `make -C java all` fails at HEAD — `apps/Small` compiles via `-sourcepath` from one entry point, so PreLinker finds no `java/lang/Throwable`
+- ~~**[61](#item-61)**~~ — FIXED 2026-08-24 — no app in `apps/Small` built from clean; the runtime is now bulk-compiled and the app named
+- **[62](#item-62)** — `JopFloatCuBramSim` reads a microcode variant that does not exist, so it has never run
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -6176,17 +6178,33 @@ other. Three defects were found by testing it rather than reading it:
 - `APP_NAME` is not unique — `apps/Smallest` and `apps/Small` are both
   `HelloWorld` — so keying the output directory on it collided.
 
+**Stage 3 done 2026-08-24 (`59a74f8`): the microcode moves to
+`build/microcode/<variant>/`.** Shared, not per-config, for the reason stated
+above. Every variant now has its own directory, simulation included — it used to
+be written to the tree root, which is why `JopConfig` needed a special case.
+Every regenerated file is byte-identical to the one it replaced; a cold
+EP4CGX150 build, which reaches the microcode through `SEARCH_PATH`, reproduces
+11,112 LE / +0.626 ns.
+
+Three dead or stale things fell out, none of which had failed anything:
+
+- `build.sbt` listed **four microcode source directories that have never
+  existed** — `dsp`, `serial-dsp`, `hwmath`, `serial-hwmath`. sbt ignores a
+  missing source directory, so they cost nothing and implied variants that are
+  not built. (My earlier note here said "six siblings", taking that list at face
+  value. There are two.)
+- **`asm`'s `all` never built the flash variant**, yet `JumpTableInitData`
+  references `FlashJumpTableData` unconditionally — so a clean checkout could
+  not compile, and `asm/generated/flash` survived only because someone had once
+  run `flash-altera` by hand. It was dated **Aug 8** against an asm source
+  modified the same day I found it: **16 days stale**. CI was unaffected because
+  it named the targets explicitly, which is exactly why nobody noticed.
+- `asm/generated/ram.mif` was an orphan — 1349 bytes where the generator
+  produces 4672, and read by nothing.
+
 **Remaining, roughly in order.**
 
-1. `asm/generated` — **cannot go under `build/<config>/`**. It holds
-   `JumpTableData.scala` and its six siblings, which `build.sbt` lists as
-   `unmanagedSourceDirectories`: they are compile INPUTS to the generator that
-   would produce the per-config output. They are keyed by microcode VARIANT
-   (simulation / serial / flash / dsp / serial-dsp / hwmath / serial-hwmath),
-   not by configuration, so their home is a shared `build/microcode/<variant>/`.
-2. `java/` — `Const.java` per configuration, and the `.jop` outputs with it.
-   This is the one that closes the defect above properly.
-3. The i5's `.lpf` is still hand-written and says so: *"Mirrored in
+1. The i5's `.lpf` is still hand-written and says so: *"Mirrored in
    Board.ColorlightI5 ... which is the source of truth -- keep the two in
    step."* `TimingConstraints.toLpf` renders the timing half already; the pins
    and I/O attributes need an `LpfGenerator` sibling to `XdcGenerator`. Folds
@@ -6216,7 +6234,7 @@ derived from the config live there legitimately: `pll_jop_i5.v`, the MIG IP, the
 programming and monitor recipes.
 
 
-### Item 61 — `make -C java all` fails at HEAD: `apps/Small` dies in PreLinker
+### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 
 **Found 2026-08-24** while establishing a baseline for the build-tree move, and
 **confirmed pre-existing** by stashing that work and reproducing it at HEAD.
@@ -6244,9 +6262,44 @@ compile, which is why this survived: the failure only shows from clean. Note
 `make -C java all` builds `Smallest`, `Small` and `InterruptTest`, so the
 aggregate target fails even though six of the eight apps are fine.
 
-The fix is presumably to use the `find` form like the others, but `Small` hosts
-the `EXTRA_SRC` mechanism (`net/`, `fat32/`) and that interaction should be
-checked before changing it.
+**FIXED (`4e1c669`), and the first attempt was wrong.** Using the `find` form
+like the other seven fails here with 89 errors: this directory holds apps with
+different dependencies — `NetTest` and `HttpServer` need
+`EXTRA_SRC=../../net/src` — so compiling all of `src/test` needs every optional
+source root supplied. The fix bulk-compiles the runtime and *names* the app,
+letting `-sourcepath` pull in what it uses.
+
+Regenerated images are ~1.8 KB larger than the stale ones, the runtime now being
+fully compiled rather than reachability-pruned. `JopCoreBramSim` runs the
+rebuilt `Small/HelloWorld.jop` to completion and prints `Hello World!`.
+
+**The scope was wider than first filed**: not just `HelloWorld` but every app in
+the directory — `GcStressTest`, `CardMarkTest`, `NCoreHelloWorld`,
+`MultiArrayGcTest`, `ZeroBench` and the rest. Their `.jop` files on disk were
+artifacts of an older working state that no longer regenerated, so any test
+using one was running an image that could not be reproduced from source.
+
+### Item 62 — `JopFloatCuBramSim` reads a microcode variant that has never existed
+
+**Raised 2026-08-24** while moving the microcode tree. The simulation loads:
+
+```scala
+val romFilePath = s"${MicrocodePaths.root}/floatcu/mem_rom.dat"
+```
+
+`asm/Makefile` builds `simulation`, `serial` and `flash`. There is no `floatcu`
+target and there is no evidence there ever was, so this simulation has never
+run.
+
+It was left pointing at the variant it asks for rather than quietly repointed at
+the simulation ROM, which would make it run against microcode nobody has checked
+it against — a passing test proving nothing. Same family as the `lmul_sw`
+fallback that went years unexecuted: an implementation no preset selects gets no
+coverage, and a simulation no variant supplies gets none either.
+
+Decide whether the float CU wants its own microcode variant or whether the
+simulation should use the standard one, then either add the target or repoint
+it.
 
 ## 4. Two workstreams, both largely done
 
