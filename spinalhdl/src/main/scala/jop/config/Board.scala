@@ -242,6 +242,22 @@ case class Board(
   useStackCache: Boolean = false,
   /** Default I/O standard for this board's user I/O. */
   ioStandard: String = "LVCMOS33",
+  /** This board's alias in `fpga/scripts/jtag_probe_map`, and its CONSOLE alias
+    * in `fpga/scripts/usb_serial_map`. The two namespaces differ on purpose:
+    * JTAG has one alias per board, but serial needs one per CDC ENDPOINT --
+    * a Pico presents two, and there are two Picos, so the XC7A100T's console is
+    * `xc7a100t-pico-0` while its probe is `xc7a100t`.
+    *
+    * Named here so a preset knows its own hardware. Guessing an alias from the
+    * board name silently yields nothing, and an empty string reads as "not
+    * attached" -- which has twice been mistaken for a broken board. */
+  probeAlias: Option[String] = None,
+  consoleAlias: Option[String] = None,
+  /** openFPGALoader `-c` cable or `-b` board profile. Empty on Altera boards,
+    * which are programmed with quartus_pgm using the cable NAME that
+    * jtag_probe_map reports. */
+  loaderCable: Option[String] = None,
+  loaderBoard: Option[String] = None,
   /** Ports the generated top HAS but this board does not WIRE.
     *
     * A fixed interface bundle (SdramInterface, say) always presents every
@@ -299,6 +315,8 @@ object Board {
    */
   def QmtechEP4CGX150 = Board(
     name = "qmtech-ep4cgx150",
+    probeAlias = Some("ep4cgx150"),
+    consoleAlias = Some("ep4cgx150"),
     fpga = Some(FpgaDevice.EP4CGX150DF27I7),
     pllType = Some(PllType.AlteraDramPll),
     hasEthPll = true,
@@ -369,6 +387,8 @@ object Board {
    */
   def CYC5000 = Board(
     name = "cyc5000",
+    probeAlias = Some("cyc5000"),
+    consoleAlias = Some("cyc5000"),
     pllType = Some(PllType.AlteraCyc5000),
     entityTag = "Cyc5000",
     fpga = Some(FpgaDevice.`5CEBA2U15C8`),
@@ -423,6 +443,9 @@ object Board {
    */
   def ColorlightI5 = Board(
     name = "colorlight-i5",
+    probeAlias = Some("i5"),
+    consoleAlias = Some("i5"),
+    loaderBoard = Some("colorlight-i5"),
     pllType = Some(PllType.LatticeEcp5I5),
     entitySuffix = "I5",
     fpga = Some(FpgaDevice.LFE5U25F),
@@ -472,6 +495,7 @@ object Board {
    */
   def AlchitryAuV2 = Board(
     name = "alchitry-au-v2",
+    consoleAlias = Some("alchitry"),
     fpga = Some(FpgaDevice.XC7A35T),
     pllType = Some(PllType.XilinxDdr3ClkWiz),
     ddr3HasCs = true,
@@ -536,6 +560,8 @@ object Board {
    */
   def AE115FB = Board(
     name = "a-e115fb",
+    probeAlias = Some("ae115fb"),
+    consoleAlias = Some("ae115fb"),
     fpga = Some(FpgaDevice.EP4CE115F23I7),
     entitySuffix = "Ae115fb",
     ledActiveHigh = false,
@@ -554,6 +580,9 @@ object Board {
 
   def WukongXC7A100T = Board(
     name = "qmtech-wukong-xc7a100t",
+    probeAlias = Some("wukong"),
+    consoleAlias = Some("wukong"),
+    loaderCable = Some("dirtyJtag"),
     fpga = Some(FpgaDevice.XC7A100T),
     pllType = Some(PllType.XilinxWukong),
     entitySuffix = "Wukong",
@@ -645,6 +674,9 @@ object Board {
    */
   def QmtechXC7A100T = Board(
     name = "qmtech-xc7a100t",
+    probeAlias = Some("xc7a100t"),
+    consoleAlias = Some("xc7a100t-pico-0"),
+    loaderCable = Some("dirtyJtag"),
     fpga = Some(FpgaDevice.XC7A100T),
     pllType = Some(PllType.XilinxDdr3ClkWiz),
     devices = Seq(

@@ -6248,6 +6248,53 @@ images, ~1.8 KB larger than the ones they replace ([item 61](#item-61)). Those
 were the only genuinely new bytes in this work — everything else was verified
 byte-identical — so hardware was the only place they could be checked.
 
+**THE CONVERSION LOOP, and it is five steps not four (2026-08-24).**
+
+1. point the flow's RTL and outputs at `build/<config>/`
+2. generate its constraints — `QsfGenerator` / `XdcGenerator` / `LpfGenerator`
+   now cover Quartus, Vivado and Lattice, so no new generator is needed
+3. cold-build and compare against a known-good result
+4. delete the hand-written file, retiring it from `ConstraintDriftTest` if it
+   was an oracle
+5. **`fpga/scripts/hw_verify.py <preset>`** — program the board and run it
+
+**Why step 5 is not optional.** Steps 1-4 compare artifacts, so they can only
+prove that nothing CHANGED. They cannot prove something still WORKS when a
+change was intended, and three artifacts this week had no byte-identical
+predecessor to compare against: the regenerated `apps/Small` images, the flash
+microcode (16 days stale), and the generated `.lpf`. Step 3 passes on all three
+regardless.
+
+**Why it is a script.** Three boards were verified by hand on 2026-08-24 and got
+three different incantations — one programmed a stale bitstream from the
+pre-move path, one used a bare `-c dirtyJtag` with TWO dirtyJtag probes attached
+(which takes whichever enumerated first, possibly the other board), and one used
+a GUESSED console alias that resolved to nothing and was reported as a broken
+board. All three are board facts restated at the point of use. The script takes
+them from `HwVerifyDescriptor` (the config) and the two registries, and REFUSES
+on an unresolved alias rather than letting an empty string flow into a device
+path.
+
+It records one line per run rather than a boolean, because a Wukong SDR build
+failed 1 run in 6 that day ([item 63](#item-63)) — collapsing that to "pass"
+would make the next sighting look like the first.
+
+```
+$ fpga/scripts/hw_verify.py ep4cgx150Serial
+2026-08-24T19:45:13+00:00 ep4cgx150Serial JvmTests/DoAll run=1/1 ok=66 fail=0 exit=True crash=0 PASS
+```
+
+Verified on all three converted boards: EP4CGX150 1/1, Wukong 2/2, i5 1/1.
+
+**Coverage.** Six boards carry a probe and console alias and can run step 5:
+EP4CGX150, Wukong, i5, CYC5000, Alchitry Au, XC7A100T DB V5. Two cannot and take
+the four-step path — the **MAX1000** (no hardware) and the **A-E115FB** (its
+JTAG resolves to the same Terasic blaster as the EP4CGX150, so both cannot be
+attached at once, and its CH340 console is not currently plugged in either).
+A conversion without step 5 must be recorded as **converted, not
+hardware-verified**; treating the two as the same is the conflation item 60
+already caught once.
+
 **Remaining, roughly in order.**
 
 1. The i5's `.lpf` is still hand-written and says so: *"Mirrored in
