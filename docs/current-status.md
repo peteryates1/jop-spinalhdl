@@ -110,7 +110,7 @@ audit, and has moved down accordingly.
 31. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
 32. **[#57](#item-57)** — The XDC/QSF generators exist and nothing uses them; constraints are hand-written and have drifted from the config
 33. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
-34. **[#59](#item-59)** — the Colorlight i5 SDRAM build misses its 40 MHz target (32.56 MHz) and item 51 records it as passing
+34. ~~**[#59](#item-59)**~~ — WITHDRAWN: the i5 passes at 49.40 MHz; a post-placement estimate was read instead of the final post-routing figure
 
 ## 2. All items — summary
 
@@ -5118,7 +5118,7 @@ to begin with, so less to recover.
 |---|---|---|
 | A-E115FB (Quartus) | **+0.446 ns** — identical at 16/32/64/128 blocks | 35,976 LE (30 %) |
 | CYC5000 (Quartus) | **+0.533 ns** setup, +0.390 hold | 4,060 ALM (43 %), memory **9 %** |
-| Colorlight i5 (yosys/nextpnr) | ~~PASS — 53.95 MHz vs 40 target~~ **STALE, see below** | DP16KD 15/56 (26 %) |
+| Colorlight i5 (yosys/nextpnr) | **PASS — 53.95 MHz vs 40 target** | DP16KD 15/56 (26 %) |
 | Wukong dual (Vivado) | -0.364 ns, its PRE-EXISTING `sdram_DQ` path | LUT 49.9 %, BRAM 31 % |
 
 The method cache is nowhere near critical on any fabric, at any geometry tested
@@ -6071,86 +6071,49 @@ for as long as the file has existed.
 
 <a id="item-59"></a>
 
-### Item 59 — the Colorlight i5 SDRAM build does not meet timing, and has not for some time
+### Item 59 — ~~the Colorlight i5 SDRAM build does not meet timing~~ — WITHDRAWN, it passes. I read the wrong line
 
-**Found 2026-08-24** while moving that board's outputs under `build/`, which
-meant rebuilding it for the first time in four days.
+**Raised and withdrawn 2026-08-24. There is no failure and no regression.** The
+i5 meets its 40 MHz target and always did:
 
-| i5 SDRAM, 40 MHz target | LUT4s | Fmax |
-|---|---|---|
-| build dated 2026-08-20 07:59 | 10,850 (44 %) | **34.37 MHz — FAIL** |
-| rebuilt 2026-08-24, current default | **13,318 (54 %)** | **32.56 MHz — FAIL** |
-
-[Item 51](#item-51) records this board as **"PASS — 53.95 MHz vs 40 target"**.
-That is stale: the most recent build on disk before today already failed, and it
-predates the 8 KB/64-block default commit (`0293415`, 08-20 08:06) by seven
-minutes — so the board was already missing its target at the OLD geometry, and
-the recorded PASS is older still. The last hardware validation was 2026-08-05.
-
-**Both builds have the SAME critical path, and it is the method cache's data
-store** -- not, as first written here, the UART reset escape. That was a
-misreading: the sink line following nextpnr's "Max frequency" line belongs to
-the next report. The real path starts at the JBC RAM and runs through two LUT4
-mux stages:
-
-```
-5.8  Source ...bcfetch.jbcRamWord.0.1.DOB0
-7.4  Source ...jbcRamWord.0.1_DOB0_LUT4_B.F         <- BRAM output muxing
-8.5  Source ...jbcRamWord.0.1_DOB0_LUT4_B_Z_LUT4_C.F
-11.2 Source ...bcfetch.jbcData_PFUMX_Z_5_BLUT_LUT4_Z.OFX
-```
-
-**The geometry change is real but is NOT the cause of the failure.** DP16KD
-went 12 -> 15, exactly the 2 KB -> 8 KB JBC RAM (1 -> 4 blocks), confirming the
-08-20 build was the OLD geometry -- and it already failed, at 34.37 MHz. So:
-
-- the method cache default cost this board ~2 MHz and ~2,500 LUTs, which is
-  consistent with item 53 and worth recording
-- but the 40 MHz target was already being missed by 5.6 MHz before it, so
-  fixing the geometry cannot fix the build
-
-Something between the 2026-08-05 hardware validation (40 MHz, DoAll 66/66) and
-2026-08-20 broke it, and the method cache is not it.
-
-**Why a geometry A/B is the wrong first experiment**, despite being what
-resolved the EP4CGX150: it would quantify the ~2 MHz, and leave the board still
-failing at ~34 MHz. The question is what cost the other 5.6.
-
-#### Narrowed 2026-08-24 — the fetch fixes are innocent, and BOTH stages fail
-
-Built at `89da8fb^` (2026-08-12 15:05), before both fetch-path commits:
-
-| i5 build | LUT4s | DP16KD | Fmax vs 40 MHz |
+| i5 build | LUT4s | DP16KD | Fmax (final) |
 |---|---|---|---|
-| `89da8fb^`, 08-12 | 9,364 (38 %) | 12 | **35.45 FAIL** |
-| on disk, 08-20 | 10,850 (44 %) | 12 | 34.37 FAIL |
-| today, current default | 13,318 (54 %) | 15 | 32.56 FAIL |
-| **BRAM stage**, on disk 08-18 | 8,847 (36 %) | 40 (71 %) | **35.95 FAIL** |
+| `89da8fb^`, 08-12 code | 9,364 (38 %) | 12 | **47.45 MHz PASS** |
+| BRAM stage, 08-18 | 8,847 (36 %) | 40 | **48.62 MHz PASS** |
+| current default, 08-24 | 13,318 (54 %) | 15 | **49.40 MHz PASS** |
 
-So `89da8fb` and `1f36149` are NOT the cause -- the board already missed 40 MHz
-before either landed -- and it is not specific to the SDRAM stage, since the
-BRAM build fails too. Both fetch commits are correctness fixes and should stay
-regardless.
+**The error.** A nextpnr log contains TWO "Max frequency" lines per clock: an
+estimate after PLACEMENT, and the real figure after ROUTING. In this design they
+differ by 17 MHz --
 
-**Every recorded pass is contradicted by every build log on disk.** Item 51
-says 53.95 MHz and [item 43](#item-43) says "49.65 MHz PASS at 40"; the four
-logs above range 32.56-35.95 and all say FAIL. The design has lost roughly
-15 MHz against those figures, and the loss predates 2026-08-12.
+```
+line 195:  32.56 MHz (FAIL at 40.00 MHz)   <- post-placement estimate
+line 488:  49.40 MHz (PASS at 40.00 MHz)   <- final, post-routing
+```
 
-**Two readings, not yet separated.** Either the design genuinely regressed
-before 08-12, or those recorded passes were of a materially different build and
-this board has been running on hardware while its timing report failed -- which
-this project has documented before, a -3 ns setup violation computing bit-exact
-results. The 2026-08-05 hardware validation (DoAll 66/66 at 40 MHz) is
-consistent with EITHER: hardware working is not the timing report passing.
+-- and I grepped the first match every time. The Makefile already does it
+correctly, `grep -E "Max frequency" ... | tail -1`, which is where the reporting
+convention was available to be read.
 
-**Revised next step:** the window is 2026-08-05 to 2026-08-12, not to 08-20 --
-about half the commits -- and the first question to settle is which of those two
-readings holds, because if it is the second there is no regression to find and
-the honest fix is to correct the recorded numbers and pick a real target.
+**What survives, and is worth keeping.** The method cache default DID cost this
+board area: 9,364 -> 13,318 LUT4s and 12 -> 15 DP16KD, the latter being exactly
+2 KB -> 8 KB of JBC RAM (1 -> 4 blocks). But it cost NO timing -- 47.45 ->
+49.40 MHz, slightly faster. So the i5 absorbed the change that broke the 4-core
+Wukong and the 12-core EP4CGX150, which fits: it is a single-core build at 54 %
+LUT, not a multi-core build at 90 %+.
 
-This board is the only open-source-toolchain target, so leaving it broken costs
-the coverage that makes yosys/nextpnr breakage visible early.
+**And the critical-path reading stands**: the post-placement path does start at
+`jbcRamWord`, the JBC RAM output mux. That is a real property of the design on
+this part, and the reason `jpcWidth` rather than `blockBits` would be the knob
+if this board ever did need one.
+
+**The lesson is not about the i5.** Three claims were built on one mis-read
+line, each of which sounded plausible and reinforced the last: a board failing
+timing, a regression to bisect, and recorded passes contradicted by the logs.
+The prior reporting was right the whole time; the check that broke the chain was
+being asked "are we sure we are correct and prior reporting is wrong?" -- at
+which point the surviving PASS lines were sitting in the same files I had
+already grepped.
 
 
 ## 4. Two workstreams, both largely done
