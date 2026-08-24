@@ -6202,6 +6202,28 @@ Three dead or stale things fell out, none of which had failed anything:
 - `asm/generated/ram.mif` was an orphan — 1349 bytes where the generator
   produces 4672, and read by nothing.
 
+**HARDWARE-VALIDATED 2026-08-24, EP4CGX150, from a scratch rebuild.** `build/`
+wiped and the whole chain rebuilt in order — microcode, Scala, Java tools,
+runtime, applications, RTL, Quartus project, bitstream — then programmed over
+the Terasic USB-Blaster and run at 2 Mbaud on the CP2102N console:
+
+| test | result |
+|---|---|
+| `DoAll` | **66/66 ok**, `JVM exit!`, zero failures |
+| `CardMarkTest` | **CARD OK** |
+| `MultiArrayGcTest` | **MULTIARRAY GC OK** — 13 minor GCs, corrupt 0, badYoung 0, badCompact 0 |
+| `GcStressTest` | **479,784 rounds**, free flat at 5,257,068 — no leak, no corruption |
+
+Fit was 11,112 LE / +0.626 ns, identical to every previous build of this preset.
+The bitstream's RTL, IP, Quartus project and microcode all came from `build/`,
+and the images from `build/ep4cgx150Serial/java/apps/`, so this is the first
+end-to-end hardware confirmation of the restructured tree.
+
+The last three matter for a second reason: they are REGENERATED `apps/Small`
+images, ~1.8 KB larger than the ones they replace ([item 61](#item-61)). Those
+were the only genuinely new bytes in this work — everything else was verified
+byte-identical — so hardware was the only place they could be checked.
+
 **Remaining, roughly in order.**
 
 1. The i5's `.lpf` is still hand-written and says so: *"Mirrored in
