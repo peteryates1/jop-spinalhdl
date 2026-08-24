@@ -79,7 +79,7 @@ JOP_FILE ?= $(PROJECT_ROOT)/java/apps/Smallest/HelloWorld.jop
 # Project paths (sbt runs from repo root)
 PROJECT_ROOT = ../..
 ASM_DIR = ../../asm
-GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSdramTop.v
+GENERATED_V = $(CFG_DIR)/rtl/JopSdramTop.v
 GENERATED_SMP_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSmpSdramTop.v
 GENERATED_DBFPGA_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSdramTop.v
 GENERATED_SD_NATIVE_V = $(PROJECT_ROOT)/spinalhdl/generated/SdNativeExerciserTop.v
@@ -177,8 +177,11 @@ microcode-flash:
 # SpinalHDL Verilog generation
 # --------------------------------------------------------------------------
 
+# `buildtree` puts the Verilog under build/<config>/rtl with everything else.
+# Without it the generator writes to the legacy spinalhdl/generated, which is
+# what the boards not yet converted still read.
 generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Serial"
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog $(CFG) buildtree"
 	@echo "=== Verilog generated: $(GENERATED_V) ==="
 
 # Microcode-fallback coverage build. Same hardware project as `generate`; only

@@ -107,7 +107,7 @@ object QuartusProject {
     sb.append("\n")
 
     sb.append("# Sources\n")
-    g("VERILOG_FILE", up(s"spinalhdl/generated/${config.entityName}.v"))
+    g("VERILOG_FILE", up(s"${layout.rtlDir(preset, buildArgs)}/${config.entityName}.v"))
     g("VHDL_FILE", layout.relativeTo(projectDir, layout.ipDir(preset, buildArgs) + "/dram_pll.vhd"))
     // SDR needs the tri-state SDRAM controller; every Altera build needs the
     // LPM ROM/RAM the microcode store is built from.

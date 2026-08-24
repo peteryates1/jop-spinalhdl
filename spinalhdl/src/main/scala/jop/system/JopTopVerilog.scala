@@ -38,7 +38,7 @@ object JopTopVerilog {
     val positional = args.filterNot(a =>
       a.equalsIgnoreCase("perf") || a.toLowerCase.startsWith("uart=") ||
       a.toLowerCase.startsWith("mcache=") || a.toLowerCase.startsWith("l2sets=") ||
-      a.toLowerCase.startsWith("bc="))
+      a.toLowerCase.startsWith("bc=") || a.equalsIgnoreCase("buildtree"))
     val base = resolveBase(name, positional)
     val withPerf = if (args.exists(_.equalsIgnoreCase("perf"))) PerfCountersOverride(base) else base
     val withUart = args.find(_.toLowerCase.startsWith("uart="))
@@ -264,7 +264,8 @@ object JopTopVerilog {
       val baud = sys.effectiveDevices.values.find(_.deviceType.key == "uart")
         .flatMap(_.params.get("baudRate").map(_.asInstanceOf[Int])).getOrElse(2000000)
       val pll  = jop.config.DramPllGen.emit("fpga/qmtech-ep4cgx150-sdram", mhz,
-                                            jop.generate.BuildLayout.default.configDir(presetName, buildArgs))
+                                            jop.generate.BuildLayout.default.configDir(presetName,
+                                              buildArgs.filterNot(_.equalsIgnoreCase("buildtree"))))
       val eff  = jop.config.DramPllGen.effectiveBaud(mhz, baud)
       val baudLine =
         if (eff == baud) f"  Baud check:  $baud exact at $mhz MHz%n"
@@ -289,7 +290,22 @@ object JopTopVerilog {
     print(romRamLines)
     print(pllLines)
 
-    val spinalConfig = JopSpinalConfig(jopConfig)
+    // WHERE THE VERILOG GOES. Legacy `spinalhdl/generated` unless the flow opts
+    // in with `buildtree`, in which case it lands beside the rest of this
+    // configuration's artefacts. Opt-in rather than a global switch because 51
+    // Makefiles and TCL scripts across ten boards read the legacy path and only
+    // three of those flows can be verified by building them here -- changing it
+    // for all of them at once would be a change nobody could check.
+    val useBuildTree = buildArgs.exists(_.equalsIgnoreCase("buildtree"))
+    // `buildtree` says WHERE to write, not WHAT to build, so it must not appear
+    // in the configuration's name -- otherwise the same design gets two
+    // directories depending on how it was invoked.
+    val cfgArgs = buildArgs.filterNot(_.equalsIgnoreCase("buildtree"))
+    val rtlDir =
+      if (useBuildTree) jop.generate.BuildLayout.default.rtlDir(presetName, cfgArgs)
+      else "spinalhdl/generated"
+    if (useBuildTree) println(s"  RTL output:  $rtlDir")
+    val spinalConfig = JopSpinalConfig(jopConfig).copy(targetDirectory = rtlDir)
 
     spinalConfig.generate(InOutWrapper(JopTop(
       config = jopConfig,
@@ -303,7 +319,7 @@ object JopTopVerilog {
     val pw = new java.io.PrintWriter(summaryPath)
     try { pw.print(summary); pw.print(romRamLines); pw.print(pllLines) } finally pw.close()
 
-    println(s"Generated: spinalhdl/generated/${jopConfig.entityName}.v")
+    println(s"Generated: $rtlDir/${jopConfig.entityName}.v")
     println(s"Summary:   $summaryPath")
   }
 
