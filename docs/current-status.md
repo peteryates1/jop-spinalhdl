@@ -6087,21 +6087,45 @@ predates the 8 KB/64-block default commit (`0293415`, 08-20 08:06) by seven
 minutes — so the board was already missing its target at the OLD geometry, and
 the recorded PASS is older still. The last hardware validation was 2026-08-05.
 
-**LUTs are up 23 % since that August build** (10,850 -> 13,318), which is the
-scale the method cache default would explain, so this is very likely the same
-regression as [item 53](#item-53) (4-core Wukong, slice packing) and the 12-core
-EP4CGX150 (routing congestion) on a third board and a third toolchain. **Not
-proven** — the two builds differ in more than geometry, and no A/B has been run.
+**Both builds have the SAME critical path, and it is the method cache's data
+store** -- not, as first written here, the UART reset escape. That was a
+misreading: the sink line following nextpnr's "Max frequency" line belongs to
+the next report. The real path starts at the JBC RAM and runs through two LUT4
+mux stages:
 
-**The failing path is not the method cache**, which is worth noting before
-anyone assumes: nextpnr names
-`uartResetEscape_1.ctrl.rx.io_rxd_buffercc.buffers_0_TRELLIS_FF_Q`. The UART
-reset-escape receiver is on the critical path.
+```
+5.8  Source ...bcfetch.jbcRamWord.0.1.DOB0
+7.4  Source ...jbcRamWord.0.1_DOB0_LUT4_B.F         <- BRAM output muxing
+8.5  Source ...jbcRamWord.0.1_DOB0_LUT4_B_Z_LUT4_C.F
+11.2 Source ...bcfetch.jbcData_PFUMX_Z_5_BLUT_LUT4_Z.OFX
+```
 
-**What to do:** rebuild at `14/5` or `11/4` and compare, exactly as the
-EP4CGX150 was resolved -- that separates geometry from everything else in one
-build. This board is the only open-source-toolchain target, so leaving it
-broken costs the coverage that makes yosys/nextpnr breakage visible early.
+**The geometry change is real but is NOT the cause of the failure.** DP16KD
+went 12 -> 15, exactly the 2 KB -> 8 KB JBC RAM (1 -> 4 blocks), confirming the
+08-20 build was the OLD geometry -- and it already failed, at 34.37 MHz. So:
+
+- the method cache default cost this board ~2 MHz and ~2,500 LUTs, which is
+  consistent with item 53 and worth recording
+- but the 40 MHz target was already being missed by 5.6 MHz before it, so
+  fixing the geometry cannot fix the build
+
+Something between the 2026-08-05 hardware validation (40 MHz, DoAll 66/66) and
+2026-08-20 broke it, and the method cache is not it.
+
+**Why a geometry A/B is the wrong first experiment**, despite being what
+resolved the EP4CGX150: it would quantify the ~2 MHz, and leave the board still
+failing at ~34 MHz. The question is what cost the other 5.6.
+
+**What to do:** bisect between 2026-08-05 and 2026-08-20, when the board went
+from passing on hardware to missing by 5.6 MHz. A geometry A/B is worth running
+alongside to confirm the ~2 MHz, but on its own it cannot make this build pass.
+Shrinking `jpcWidth` does attack the right structure -- the critical path is the
+JBC RAM's output mux, and a smaller RAM spans fewer DP16KD -- which is the
+small-part inversion the tuning guide describes, so it is the geometry knob to
+try here rather than `blockBits`.
+
+This board is the only open-source-toolchain target, so leaving it broken costs
+the coverage that makes yosys/nextpnr breakage visible early.
 
 
 ## 4. Two workstreams, both largely done
