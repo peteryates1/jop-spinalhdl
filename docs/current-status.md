@@ -111,7 +111,8 @@ audit, and has moved down accordingly.
 32. **[#57](#item-57)** — The XDC/QSF generators exist and nothing uses them; constraints are hand-written and have drifted from the config
 33. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
 34. ~~**[#59](#item-59)**~~ — WITHDRAWN: the i5 passes at 49.40 MHz; a post-placement estimate was read instead of the final post-routing figure
-35. **[#60](#item-60)** — Everything generated belongs under `build/<config>/`. Three flows converted and cold-verified; 48 to go, and `Const.java` is still per-config in a shared source tree
+35. **[#60](#item-60)** — Everything generated belongs under `build/<config>/`. Three FPGA flows and the whole Java/JOP tree converted and verified; 48 flows and `asm/` to go
+36. **[#61](#item-61)** — `make -C java all` FAILS at HEAD: `apps/Small` dies in PreLinker on `java/lang/Throwable`
 
 ## 2. All items — summary
 
@@ -159,7 +160,8 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[56](#item-56)** — WBNI: derive the hardware config from the application. JOPizer static profile done; the measurement framework is the bulk
 - **[57](#item-57)** — The XDC/QSF generators exist and nothing uses them — constraints hand-written, drifted from the config
 - **[58](#item-58)** — `source` inside an XDC is silently ignored by Vivado — four shared constraint files never applied
-- **[60](#item-60)** — Everything generated belongs under `build/<config>/` — three flows done and cold-verified, 48 to go; two silent stale-artifact defects found doing it
+- **[60](#item-60)** — Everything generated belongs under `build/<config>/` — three FPGA flows and the Java/JOP tree done and verified, 48 flows and `asm/` to go
+- **[61](#item-61)** — `make -C java all` fails at HEAD — `apps/Small` compiles via `-sourcepath` from one entry point, so PreLinker finds no `java/lang/Throwable`
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -6158,6 +6160,22 @@ not installed. Flipping the default would change 48 flows nobody could check.
 The flag says WHERE to write, not WHAT to build, so it is filtered out of the
 configuration name.
 
+**Stage 2 done 2026-08-24 (`4cea16b`): `java/` moves under `build/<config>/`.**
+`Const.java`, the runtime classes and every `.jop` follow the configuration,
+opt-in with `BUILDTREE=1`, shared logic in `java/config.mk`. Five apps produce
+BYTE-IDENTICAL images in both layouts; two presets produce separate directories
+carrying `SUPPORT_FLOAT` true and false, and building one does not touch the
+other. Three defects were found by testing it rather than reading it:
+
+- **javac takes the FIRST match on the sourcepath.** With a legacy `Const.java`
+  still in `runtime/src`, the generated one was written, ignored, and the wrong
+  constants compiled in — silently. Proven by compiling both orders and reading
+  the constant back with `javap`, not by assuming.
+- The find exclusion `*/com/jopdesign/sys/Const.java` matched the GENERATED copy
+  too, dropping both and failing 100 classes on "cannot find symbol Const".
+- `APP_NAME` is not unique — `apps/Smallest` and `apps/Small` are both
+  `HelloWorld` — so keying the output directory on it collided.
+
 **Remaining, roughly in order.**
 
 1. `asm/generated` — **cannot go under `build/<config>/`**. It holds
@@ -6197,6 +6215,38 @@ A-E115FB (sharing the Terasic blaster). The two real constraints are:
 derived from the config live there legitimately: `pll_jop_i5.v`, the MIG IP, the
 programming and monitor recipes.
 
+
+### Item 61 — `make -C java all` fails at HEAD: `apps/Small` dies in PreLinker
+
+**Found 2026-08-24** while establishing a baseline for the build-tree move, and
+**confirmed pre-existing** by stashing that work and reproducing it at HEAD.
+
+```
+com.jopdesign.common.misc.ClassInfoNotFoundException:
+  Class 'java.lang.Throwable' could not be loaded: Couldn't find: java/lang/Throwable.class
+    at com.jopdesign.build.PreLinker.main(PreLinker.java:53)
+```
+
+`apps/Small` is the ONE app that compiles with `-sourcepath` from a single entry
+point:
+
+```make
+$(TARGET_JAVAC) -sourcepath $(SRCPATH) -d $(CLASSES_DIR) $(APP_SRC)/$(APP_PKG)/$(APP_NAME).java
+```
+
+The other seven `find` every source and compile the lot. With `-sourcepath`,
+javac emits only what is reachable from the entry point, so classes the JVM
+needs but the application never names — `java.lang.Throwable` among them — are
+never written, and PreLinker cannot resolve them.
+
+It builds when `build/classes` already holds the output of some earlier, wider
+compile, which is why this survived: the failure only shows from clean. Note
+`make -C java all` builds `Smallest`, `Small` and `InterruptTest`, so the
+aggregate target fails even though six of the eight apps are fine.
+
+The fix is presumably to use the `find` form like the others, but `Small` hosts
+the `EXTRA_SRC` mechanism (`net/`, `fat32/`) and that interaction should be
+checked before changing it.
 
 ## 4. Two workstreams, both largely done
 
