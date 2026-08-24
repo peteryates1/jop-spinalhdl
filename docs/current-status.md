@@ -6173,7 +6173,25 @@ configuration name.
    step."* `TimingConstraints.toLpf` renders the timing half already; the pins
    and I/O attributes need an `LpfGenerator` sibling to `XdcGenerator`. Folds
    into [item 57](#item-57).
-4. The other 48 flows — mechanical, but unverifiable on this host.
+4. The other 48 flows — mechanical. **Not blocked by tooling**: every board's
+   device is supported by the installed toolchains (Quartus 25.1 covers Cyclone
+   10 LP / IV E / IV GX / V, MAX II / V and MAX 10; Vivado 2025.2 has artix7;
+   yosys/nextpnr cover the ECP5) and the MIG and clock-wizard IP is checked in.
+   Proven by building the CYC5000 cold on 2026-08-24 — 3,728 ALMs (40 %),
+   +0.864 ns, four minutes.
+
+**What actually limits the sweep** — and it is not what this item first said.
+Hardware is available for every FPGA type except the MAX1000's 10M08: both
+XC7A100T boards, the EP4CGX150, the i5, the CYC5000, the Alchitry Au, and the
+A-E115FB (sharing the Terasic blaster). The two real constraints are:
+
+- **Baselines, not buildability.** A conversion is verified by a cold build
+  REPRODUCING a known-good result, and there are only **7 recorded fit summaries**
+  in the tree. Many of the 48 are not JOP builds at all — blink, SDRAM and DDR3
+  exercisers, SPI diagnostics, a UART echo — and several have never had a number
+  recorded. For those a cold build proves the paths resolve and nothing more.
+  Worth fixing on its own account: see [item 60a](#item-60).
+- **Time.** The Vivado DDR3 SMP builds run 30-60 minutes each.
 
 **The `fpga/` directory does not disappear.** Board-specific inputs that are not
 derived from the config live there legitimately: `pll_jop_i5.v`, the MIG IP, the
