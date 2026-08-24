@@ -93,3 +93,18 @@ object BuildLayout {
     s.replace("=", "").replace("/", "_").replace(":", "_")
      .replaceAll("[^A-Za-z0-9._-]", "")
 }
+
+/**
+ * Prints the configuration directory for an invocation, so Makefiles can ask
+ * for it instead of reimplementing `configName`.
+ *
+ * The sanitisation rules are deliberately NOT duplicated in Make. A second copy
+ * of the naming would go stale the first time an override spelling changed, and
+ * the failure would be a silently split build directory rather than an error --
+ * the same class of defect this layout exists to remove.
+ */
+object BuildLayoutMain extends App {
+  val preset = args.headOption.getOrElse("ep4cgx150Serial")
+  val rest = args.drop(1).filterNot(_.equalsIgnoreCase("buildtree"))
+  println(BuildLayout.default.configDir(preset, rest))
+}

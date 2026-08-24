@@ -8,15 +8,21 @@ TOOLS_DIR := $(ROOT)/tools
 TARGET_DIR := $(ROOT)/runtime
 LIB_DIR := $(ROOT)/lib
 
+# Per-configuration build tree (Const.java, classes, .jop). Included AFTER
+# TARGET_DIR is set -- config.mk builds paths from it. Default is the old
+# in-tree layout; BUILDTREE=1 moves the outputs under build/<config>/java/.
+PROJECT_ROOT := $(ROOT)/..
+include $(ROOT)/config.mk
+
 APP_PKG := test
 APP_NAME := SmpCacheTest
 APP_SRC := src
 
-BUILD_DIR := build
+BUILD_DIR := $(if $(JAVA_OUT),$(JAVA_OUT)/apps/$(APP_DIR_NAME),build)
 CLASSES_DIR := $(BUILD_DIR)/classes
 PP_DIR := $(BUILD_DIR)/pp
 PP_CLASSES_DIR := $(PP_DIR)/classes
-JOP_OUT := $(APP_NAME).jop
+JOP_OUT := $(if $(JAVA_OUT),$(JAVA_OUT)/apps/$(APP_DIR_NAME)/$(APP_NAME).jop,$(APP_NAME).jop)
 
 # Classpath for tools
 LIB_CP := $(LIB_DIR)/bcel-5.2.jar:$(LIB_DIR)/jakarta-regexp-1.3.jar:$(LIB_DIR)/log4j-1.2.15.jar:$(LIB_DIR)/jgrapht-jdk1.5.jar
@@ -28,7 +34,7 @@ all: jop
 
 classes:
 	mkdir -p $(CLASSES_DIR) $(BUILD_DIR)
-	find $(APP_SRC) $(TARGET_DIR)/src/jop $(TARGET_DIR)/src/jvm $(TARGET_DIR)/src/jdk -name '*.java' > $(BUILD_DIR)/sources.txt
+	find $(APP_SRC) $(TARGET_SRCS) -name '*.java' $(CONST_EXCLUDE) > $(BUILD_DIR)/sources.txt
 	$(TARGET_JAVAC) -source 1.6 -target 1.6 -d $(CLASSES_DIR) @$(BUILD_DIR)/sources.txt
 
 preprocess: classes

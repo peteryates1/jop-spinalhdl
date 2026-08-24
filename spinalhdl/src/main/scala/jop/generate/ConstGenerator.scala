@@ -396,12 +396,26 @@ object ConstGeneratorMain extends App {
 
   val preset = args.headOption.getOrElse("ep4cgx150Serial")
   val writeToFile = args.contains("--write")
-  val config = JopTopVerilog.resolvePreset(preset, args.filterNot(_ == "--write"))
+  // Same opt-in switch the Verilog generator takes: `buildtree` says WHERE to
+  // write, not WHAT to build, so it is filtered out of both the preset
+  // resolution and the configuration name.
+  val useBuildTree = args.exists(_.equalsIgnoreCase("buildtree"))
+  val cfgArgs = args.filterNot(a => a == "--write" || a.equalsIgnoreCase("buildtree"))
+  val config = JopTopVerilog.resolvePreset(preset, cfgArgs)
 
   val source = ConstGenerator.generate(config)
 
   if (writeToFile) {
-    val path = "java/runtime/src/jop/com/jopdesign/sys/Const.java"
+    // Const.java is PER CONFIGURATION -- ep4cgx150Serial and wukongSmp differ in
+    // SUPPORT_FLOAT alone, and more will follow. Under `buildtree` it goes with
+    // the rest of the configuration's artefacts; the legacy path writes into a
+    // source tree shared by every configuration, where whichever build ran last
+    // wins. See docs/current-status.md item 60.
+    val path =
+      if (useBuildTree)
+        s"${BuildLayout.default.javaDir(preset, cfgArgs.filterNot(_ == preset))}/gen/com/jopdesign/sys/Const.java"
+      else "java/runtime/src/jop/com/jopdesign/sys/Const.java"
+    new java.io.File(path).getParentFile.mkdirs()
     val writer = new java.io.PrintWriter(path)
     writer.print(source)
     writer.close()

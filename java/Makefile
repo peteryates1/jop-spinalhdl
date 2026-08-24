@@ -1,8 +1,14 @@
-# JopConfig preset for Const.java generation (default: ep4cgx150Serial)
-JOP_PRESET ?= ep4cgx150Serial
+# SpinalHDL project root (relative to java/) and the runtime source tree.
+# Both must be set before config.mk is included -- it builds paths from them.
+PROJECT_ROOT := ..
+JAVA_DIR     := .
+TARGET_DIR   := runtime
 
-# Const.java location (generated, not tracked in git)
-CONST_JAVA := runtime/src/jop/com/jopdesign/sys/Const.java
+include config.mk
+
+# Where the classes and .jop images go. Under BUILDTREE=1 they follow Const.java
+# into build/<config>/java/; otherwise they stay in the tree, as before.
+export JOP_PRESET BUILDTREE JOP_CFG_DIR JAVA_OUT GEN_SRC CONST_EXCLUDE
 
 # Records which preset the CURRENT Const.java was generated from. Make cannot
 # depend on the VALUE of a variable, only on files, so the value is written to
@@ -19,10 +25,9 @@ CONST_JAVA := runtime/src/jop/com/jopdesign/sys/Const.java
 # and every .jop built afterwards for the EP4CGX150 carried the Wukong's value.
 # The real fix is per-config generation under build/<config>/; this makes the
 # shared file at least self-invalidating in the meantime.
-CONST_STAMP := runtime/src/jop/com/jopdesign/sys/.const-preset
-
-# SpinalHDL project root (relative to java/)
-PROJECT_ROOT := ..
+# Redundant under BUILDTREE=1 -- there the path itself carries the config -- but
+# kept because the legacy path is still the default.
+CONST_STAMP := $(dir $(CONST_JAVA)).const-preset
 
 .PHONY: all tools runtime apps clean sim-smallest sim-small generate-const FORCE
 
@@ -43,7 +48,7 @@ $(CONST_JAVA): $(CONST_STAMP) \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/generate/ConstGenerator.scala \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/JopConfig.scala \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/JopCoreConfig.scala
-	cd $(PROJECT_ROOT) && sbt -error "runMain jop.generate.ConstGeneratorMain $(JOP_PRESET) --write"
+	cd $(PROJECT_ROOT) && sbt -error "runMain jop.generate.ConstGeneratorMain $(CONST_ARGS)"
 
 tools: $(CONST_JAVA)
 	$(MAKE) -C tools
