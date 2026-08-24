@@ -90,9 +90,11 @@ object QuartusProject {
     g("VHDL_FILE", "../ip/altera_lpm/aram.vhd")
     sb.append("\n")
 
-    sb.append("# Timing constraints -- hand-written, and deliberately so: the\n")
-    sb.append("# asynchronous clock groups are engineering judgement, not config.\n")
-    g("SDC_FILE", s"$revision.sdc")
+    sb.append("# Timing constraints, generated from the same config (TimingConstraints).\n")
+    sb.append("# The clock period comes from the board oscillator and the PLL instance\n")
+    sb.append("# name from PllType.instanceName -- the hand-written file named it `pll`\n")
+    sb.append("# where the design says `dramPll`, and Quartus discarded every group.\n")
+    g("SDC_FILE", s"generated/$revision.sdc")
     sb.append("\n")
 
     sb.append("# Pin assignments, from the board definition in Board.scala\n")
@@ -112,7 +114,11 @@ object QuartusProjectMain extends App {
     if (writeIdx >= 0 && args.length > writeIdx + 1) Some(args(writeIdx + 1)) else None
   private val revIdx = args.indexOf("--revision")
   private val revision = if (revIdx >= 0 && args.length > revIdx + 1) args(revIdx + 1) else "jop"
-  private val consumed = Set(writeIdx, writeIdx + 1, revIdx, revIdx + 1)
+  // Only indices of flags that are actually PRESENT; a missing flag gives
+  // index -1, and -1 + 1 = 0 would consume the preset name.
+  private val consumed =
+    (if (writeIdx >= 0) Set(writeIdx, writeIdx + 1) else Set.empty[Int]) ++
+    (if (revIdx   >= 0) Set(revIdx,   revIdx + 1)   else Set.empty[Int])
   private val presetArgs =
     args.zipWithIndex.filterNot { case (_, i) => consumed.contains(i) }.map(_._1)
 

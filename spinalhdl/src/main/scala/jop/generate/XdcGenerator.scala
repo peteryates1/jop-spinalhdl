@@ -153,8 +153,13 @@ object XdcGeneratorMain extends App {
   private val writeFlag = args.indexOf("--write")
   private val outPath =
     if (writeFlag >= 0 && args.length > writeFlag + 1) Some(args(writeFlag + 1)) else None
+  // NB: guard on writeFlag >= 0. Without it, an absent --write gives
+  // writeFlag = -1 and the test `i == writeFlag + 1` becomes `i == 0`, which
+  // silently DELETES THE PRESET NAME and falls back to the default -- every
+  // preset then renders as wukongSdram.
   private val presetArgs =
-    args.zipWithIndex.filterNot { case (_, i) => i == writeFlag || i == writeFlag + 1 }.map(_._1)
+    if (writeFlag < 0) args
+    else args.zipWithIndex.filterNot { case (_, i) => i == writeFlag || i == writeFlag + 1 }.map(_._1)
 
   val preset = presetArgs.headOption.getOrElse("wukongSdram")
   val config = JopTopVerilog.resolvePreset(preset, presetArgs)

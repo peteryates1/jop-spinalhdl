@@ -231,10 +231,13 @@ build: $(SOF_FILE)
 #
 # Only jop_sdram is converted so far. The exerciser, flash-programmer, dbfpga
 # and smp8-test projects still have hand-written .qsf files.
+generated/jop_sdram.sdc:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.TimingConstraintsMain ep4cgx150Serial --write fpga/qmtech-ep4cgx150-sdram/generated/jop_sdram.sdc"
+
 generated/setup_proj.tcl:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.QuartusProjectMain ep4cgx150Serial --revision jop_sdram --write fpga/qmtech-ep4cgx150-sdram/generated/setup_proj.tcl"
 
-$(QP).qsf: generated/setup_proj.tcl
+$(QP).qsf: generated/setup_proj.tcl generated/jop_sdram.sdc
 	$(QUARTUS_BIN)/quartus_sh -t generated/setup_proj.tcl
 
 # TWO dram_pll.vhd FILES EXIST HERE AND THEY ARE NOT THE SAME PLL.

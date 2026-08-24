@@ -55,6 +55,26 @@ sealed trait PllType {
   /** Instantiate the PLL and return all clock outputs.
     * @param systemIndex differentiates multiple PLL instances in multi-system designs */
   def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0): PllResult
+
+  /** The instance name this PLL gets in the netlist, for timing constraints to
+    * refer to.
+    *
+    * STATED, not inferred. `create` builds the blackbox as a local `val pll`,
+    * which is not a component field, so SpinalHDL cannot see that name and
+    * falls back to the class name -- `DramPll` becomes `dramPll`. Relying on
+    * that implicitly is how `jop_sdram.sdc` came to name the instance `pll`
+    * and have its entire `set_clock_groups` silently discarded:
+    *
+    *   Warning (332049): Ignored set_clock_groups ... could not match any
+    *   element of the following types: ( clk )
+    *
+    * Empty for PLL types whose constraints are not generated yet. */
+  def instanceName: String = ""
+
+  /** Altera megafunction path from the instance to a numbered clock output.
+    * Quartus names altpll outputs `<inst>|altpll_component|auto_generated|pll1|clk[n]`. */
+  def alteraClockPath(n: Int): String =
+    s"$instanceName|altpll_component|auto_generated|pll1|clk[$n]"
 }
 
 object PllType {
@@ -63,6 +83,7 @@ object PllType {
     * SDR: c1=80MHz system, c2=80MHz/-3ns SDRAM, c3=25MHz VGA/Eth.
     * BRAM: c1=100MHz system. */
   case object AlteraDramPll extends PllType {
+    override val instanceName = "dramPll"
     def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
       val pll = DramPll()
       pll.io.inclk0 := inputClock
@@ -147,26 +168,26 @@ object PllType {
     * dual build gets both from one generation with no index dependence. */
   case object XilinxWukong extends PllType {
     def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
-      val instanceName = memType match {
+      val clkWizName = memType match {
         case MemoryType.SDRAM_SDR  => "sdr_clk"
         case MemoryType.SDRAM_DDR3 => "ddr3_clk"
         case _                     => "bram_clk"
       }
       memType match {
         case MemoryType.SDRAM_SDR =>
-          val clkWiz = new SdramExerciserClkWiz(instanceName)
+          val clkWiz = new SdramExerciserClkWiz(clkWizName)
           clkWiz.io.clk_in := inputClock
           clkWiz.io.resetn := True
           PllResult(systemClk = Some(clkWiz.io.clk_100), locked = clkWiz.io.locked,
             sdramClk = Some(clkWiz.io.clk_100_shift), ethClk = Some(clkWiz.io.clk_125))
         case MemoryType.SDRAM_DDR3 =>
-          val clkWiz = new ClkWizBlackBox(instanceName)
+          val clkWiz = new ClkWizBlackBox(clkWizName)
           clkWiz.io.clk_in := inputClock
           clkWiz.io.resetn := !ClockDomain.current.readResetWire
           PllResult(locked = clkWiz.io.locked, migSysClk = Some(clkWiz.io.clk_100),
             migRefClk = Some(clkWiz.io.clk_200), ethClk = Some(clkWiz.io.clk_125))
         case _ =>
-          val clkWiz = new WukongClkWizBlackBox(instanceName)
+          val clkWiz = new WukongClkWizBlackBox(clkWizName)
           clkWiz.io.clk_in := inputClock
           clkWiz.io.resetn := False
           PllResult(systemClk = Some(clkWiz.io.clk_100), locked = clkWiz.io.locked)
