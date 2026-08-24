@@ -118,7 +118,7 @@ object MemoryStyle {
 
   /** @param mifBasePath  Directory containing rom.mif / ram.mif, relative to Quartus project.
     *                      Default suits jop-spinalhdl internal builds (fpga/<board>/ projects). */
-  case class AlteraLpm(mifBasePath: String = "../../asm/generated/serial") extends MemoryStyle {
+  case class AlteraLpm(mifBasePath: String = "../../build/microcode/serial") extends MemoryStyle {
     def createRom(width: Int, addrWidth: Int, depth: Int,
                   combinationalAddr: UInt, registeredAddr: UInt,
                   initBigInt: Option[Seq[BigInt]],

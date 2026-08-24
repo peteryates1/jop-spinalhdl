@@ -159,7 +159,7 @@ build/
 spinalhdl/repro/
 
 # Microcode assembler generated files
-asm/generated/
+# Microcode now lives in build/microcode/<variant>/ (covered by /build/ above).
 
 # Root-level default SpinalHDL output (formal/ad-hoc generation)
 /toplevel.v

@@ -117,8 +117,13 @@ case class JopFloatCuTestHarness(
 object JopFloatCuBramSim extends App {
 
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
-  val romFilePath = "asm/generated/floatcu/mem_rom.dat"
-  val ramFilePath = "asm/generated/floatcu/mem_ram.dat"
+  // DEAD: there is no "floatcu" microcode variant and there never has been --
+  // asm/Makefile builds simulation, serial and flash only, so this simulation
+  // has never run. Left pointing at the variant it wants rather than silently
+  // repointed at the simulation ROM, which would make it run on microcode
+  // nobody has checked it against. See docs/current-status.md item 62.
+  val romFilePath = s"${MicrocodePaths.root}/floatcu/mem_rom.dat"
+  val ramFilePath = s"${MicrocodePaths.root}/floatcu/mem_ram.dat"
   val logFilePath = "spinalhdl/floatcu_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)

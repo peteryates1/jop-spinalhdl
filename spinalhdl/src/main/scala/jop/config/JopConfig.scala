@@ -271,7 +271,7 @@ object BytecodesOverride {
 /** Point the LPM ROM/RAM at their .mif files for a project at a given depth.
   *
   * `MemoryStyle.AlteraLpm` carries `mifBasePath`, and its default
-  * `../../asm/generated/serial` assumes the Quartus project sits two levels
+  * `../../build/microcode/serial` assumes the Quartus project sits two levels
   * below the repo root -- true of the in-tree board directories, false once a
   * project moves under `build/<config>/quartus`. The path is baked into the
   * generated Verilog as the megafunction's LPM_FILE generic, so getting it

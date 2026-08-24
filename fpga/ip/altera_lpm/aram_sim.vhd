@@ -57,7 +57,7 @@ begin
 			LPM_TYPE => "LPM_RAM_DP",
 			LPM_WIDTHAD => addr_width,
 			LPM_NUMWORDS => 2**addr_width,
-			LPM_FILE => "../../asm/generated/simulation/ram.mif",
+			LPM_FILE => "../../build/microcode/simulation/ram.mif",
 			LPM_INDATA => "REGISTERED",
 			LPM_WRADDRESS_CONTROL => "REGISTERED",
 			LPM_RDADDRESS_CONTROL => "REGISTERED",

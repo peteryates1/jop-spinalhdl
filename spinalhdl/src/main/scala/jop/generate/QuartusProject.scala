@@ -95,7 +95,7 @@ object QuartusProject {
     val projectDir = layout.quartusDir(preset, buildArgs)
     def up(p: String) = layout.relativeTo(projectDir, p)
     // The LPM ROM/RAM wrappers name their .mif files with a path relative to
-    // the OLD project location (`../../asm/generated/serial/rom.mif`), baked
+    // the OLD project location (`../../build/microcode/serial/rom.mif`), baked
     // into fpga/ip/altera_lpm/*.vhd. Moving the project changed that depth, so
     // the literal no longer resolves and synthesis fails with
     //   Error (127001): Can't find Memory Initialization File ... rom.mif

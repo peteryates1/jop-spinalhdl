@@ -14,22 +14,24 @@ package jop.config
  * exactly three sets of outputs -- simulation, serial and flash -- which is why
  * this takes a `BootMode` rather than a free-form string.
  *
- * NOTE ON THE SIMULATION LAYOUT. Simulation writes to the tree ROOT while the
- * other modes get a subdirectory, so `dir` is not simply root + dirName. That
- * asymmetry is historical, and it is the reason `generatedDir` needed a special
- * case in the first place; it is preserved here so this change moves nothing,
- * and it is the thing to make uniform when the tree moves.
+ * NOT PER CONFIGURATION, so this does NOT live under `build/<config>/`. The
+ * tree is keyed by boot mode, and its `JumpTableData.scala` siblings are compile
+ * INPUTS to the SpinalHDL build -- `build.sbt` lists them as
+ * `unmanagedSourceDirectories`, so a per-config location would be circular.
+ *
+ * Every mode gets its own directory, simulation included. It used to be written
+ * to the tree root while the others got subdirectories, which is why `JopConfig`
+ * needed a special case and why the two LPM simulation blackboxes in
+ * `fpga/ip/altera_lpm/` referenced `asm/generated/simulation/` -- a path that
+ * never existed. They were right about the layout and wrong about reality.
  */
 object MicrocodePaths {
 
   /** Root of the generated microcode tree, relative to the repository root. */
-  val root: String = "asm/generated"
+  val root: String = "build/microcode"
 
   /** Directory holding one boot mode's ROM/RAM/MIF outputs. */
-  def dir(mode: BootMode): String = mode match {
-    case BootMode.Simulation => root
-    case other               => s"$root/${other.dirName}"
-  }
+  def dir(mode: BootMode): String = s"$root/${mode.dirName}"
 
   def rom(mode: BootMode): String = s"${dir(mode)}/mem_rom.dat"
   def ram(mode: BootMode): String = s"${dir(mode)}/mem_ram.dat"

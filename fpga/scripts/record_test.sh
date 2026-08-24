@@ -10,8 +10,8 @@
 set -euo pipefail
 
 HISTORY_FILE="test-history.tsv"
-ROM_FILE="asm/generated/mem_rom.dat"
-RAM_FILE="asm/generated/mem_ram.dat"
+ROM_FILE="build/microcode/simulation/mem_rom.dat"
+RAM_FILE="build/microcode/simulation/mem_ram.dat"
 
 if [ $# -lt 4 ]; then
     echo "Usage: $0 <test_name> <platform> <result> <jop_file> [notes]"

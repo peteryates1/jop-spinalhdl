@@ -58,11 +58,13 @@ Test / testOptions += Tests.Argument("-oD")  // Show test durations
 Compile / scalaSource := baseDirectory.value / "spinalhdl" / "src" / "main" / "scala"
 Test / scalaSource := baseDirectory.value / "spinalhdl" / "src" / "test" / "scala"
 
-// Microcode-generated Scala files (superset ROMs — 3 boot modes)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated"           // JumpTableData (simulation)
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial" // SerialJumpTableData
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "flash"  // FlashJumpTableData
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "dsp"          // DspJumpTableData
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-dsp"   // SerialDspJumpTableData
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "hwmath"       // HwMathJumpTableData
-Compile / unmanagedSourceDirectories += baseDirectory.value / "asm" / "generated" / "serial-hwmath" // SerialHwMathJumpTableData
+// Microcode-generated Scala files. Keep in step with jop.config.MicrocodePaths.
+//
+// THREE boot modes, and only three: asm/Makefile has no other targets. Four more
+// directories were listed here -- dsp, serial-dsp, hwmath, serial-hwmath -- and
+// none of them has ever existed. sbt ignores a missing source directory, so the
+// dead entries cost nothing and said nothing; they are removed rather than left
+// to imply variants that are not built.
+Compile / unmanagedSourceDirectories += baseDirectory.value / "build" / "microcode" / "simulation" // JumpTableData
+Compile / unmanagedSourceDirectories += baseDirectory.value / "build" / "microcode" / "serial"     // SerialJumpTableData
+Compile / unmanagedSourceDirectories += baseDirectory.value / "build" / "microcode" / "flash"      // FlashJumpTableData

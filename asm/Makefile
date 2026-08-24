@@ -2,6 +2,19 @@ GCC_PARAMS=
 ASM_SRC=jvm
 JVM_TYPE=SIMULATION
 
+# Where the generated microcode goes: build/microcode/<variant>/, one directory
+# per BOOT MODE. This tree is NOT per-configuration -- it is keyed by boot mode,
+# and its JumpTableData.scala siblings are compile INPUTS to the SpinalHDL build
+# (build.sbt lists them as unmanagedSourceDirectories), so it cannot live under
+# build/<config>/ the way generated RTL does. See docs/current-status.md item 60.
+#
+# Every variant now gets its own directory, INCLUDING simulation, which used to
+# be written to the tree root while the others got subdirectories. That
+# asymmetry is why JopConfig needed a special case, and why the two LPM
+# simulation blackboxes in fpga/ip/altera_lpm/ point at a path that never
+# existed -- they already assumed the uniform layout.
+OUT ?= ../build/microcode
+
 # =========================================================================
 # Superset ROM — ALL hardware AND software handlers in one ROM.
 # Per-bytecode config is done via jump table patching at SpinalHDL elaboration.
@@ -18,61 +31,57 @@ JVM_TYPE=SIMULATION
 #   fcmpl, fcmpg, i2f, f2i (float CU only, no _sw variant)
 # =========================================================================
 
-all: simulation serial
+# FLASH IS PART OF `all` NOW. JumpTableInitData references FlashJumpTableData
+# unconditionally, so the SpinalHDL build does not compile without it -- but
+# `all` built only simulation and serial, and the flash directory survived
+# only because someone had once run flash-altera by hand. A clean checkout could
+# not compile. flash-altera is the default of the two flash variants; the
+# Alchitry one differs in FLASH_ADDR_B2 and SKIP_FLASH_RESET and is still built
+# explicitly.
+all: simulation serial flash-altera
 
 # All handlers are unconditional — no preprocessor flags needed.
 # SUPERSET_FLAGS kept empty for future use.
 SUPERSET_FLAGS =
 
 simulation: ../java/tools/dist/jopa.jar
-	mkdir -p generated
-	gcc -x c -E -C -P $(GCC_PARAMS) -D$(JVM_TYPE) $(SUPERSET_FLAGS) src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
-	sed -i '1,35d' generated/$(ASM_SRC).asm
-	java -jar ../java/tools/dist/jopa.jar -s generated -d generated $(ASM_SRC).asm
-	sed -i 's/object JumpTableData {/object JumpTableData extends JumpTableSource {/' generated/JumpTableData.scala
-	@grep -q 'altEntries' generated/JumpTableData.scala || sed -i '/^}/i\  def altEntries: Map[Int, Int] = Map.empty\n  override def dspAltEntries: Map[Int, Int] = Map.empty' generated/JumpTableData.scala
+	mkdir -p $(OUT)/simulation
+	gcc -x c -E -C -P $(GCC_PARAMS) -D$(JVM_TYPE) $(SUPERSET_FLAGS) src/$(ASM_SRC).asm > $(OUT)/simulation/$(ASM_SRC).asm
+	sed -i '1,35d' $(OUT)/simulation/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s $(OUT)/simulation -d $(OUT)/simulation $(ASM_SRC).asm
+	python3 make_ram_mif.py $(OUT)/simulation/mem_ram.dat $(OUT)/simulation/ram.mif
+	sed -i 's/object JumpTableData {/object JumpTableData extends JumpTableSource {/' $(OUT)/simulation/JumpTableData.scala
+	@grep -q 'altEntries' $(OUT)/simulation/JumpTableData.scala || sed -i '/^}/i\  def altEntries: Map[Int, Int] = Map.empty\n  override def dspAltEntries: Map[Int, Int] = Map.empty' $(OUT)/simulation/JumpTableData.scala
 
 serial: ../java/tools/dist/jopa.jar
-	mkdir -p generated/serial
-	gcc -x c -E -C -P $(GCC_PARAMS) -DSERIAL $(SUPERSET_FLAGS) src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
-	sed -i '1,35d' generated/$(ASM_SRC).asm
-	java -jar ../java/tools/dist/jopa.jar -s generated -d generated -n SerialJumpTableData $(ASM_SRC).asm
-	cp generated/mem_rom.dat generated/serial/mem_rom.dat
-	cp generated/mem_ram.dat generated/serial/mem_ram.dat
-	cp generated/rom.mif generated/serial/rom.mif
-	python3 make_ram_mif.py generated/mem_ram.dat generated/serial/ram.mif
-	mv generated/SerialJumpTableData.scala generated/serial/SerialJumpTableData.scala
+	mkdir -p $(OUT)/serial
+	gcc -x c -E -C -P $(GCC_PARAMS) -DSERIAL $(SUPERSET_FLAGS) src/$(ASM_SRC).asm > $(OUT)/serial/$(ASM_SRC).asm
+	sed -i '1,35d' $(OUT)/serial/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s $(OUT)/serial -d $(OUT)/serial -n SerialJumpTableData $(ASM_SRC).asm
+	python3 make_ram_mif.py $(OUT)/serial/mem_ram.dat $(OUT)/serial/ram.mif
 	$(MAKE) simulation
 
 # Flash-boot for Altera (Cyclone IV GX, EPCS64 serial flash)
 # FLASH_ADDR_B2=128 (default); clock divider set by hardware init
 flash-altera: ../java/tools/dist/jopa.jar
-	mkdir -p generated/flash
-	gcc -x c -E -C -P $(GCC_PARAMS) -DFLASH $(SUPERSET_FLAGS) src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
-	sed -i '1,35d' generated/$(ASM_SRC).asm
-	java -jar ../java/tools/dist/jopa.jar -s generated -d generated -n FlashJumpTableData $(ASM_SRC).asm
-	cp generated/mem_rom.dat generated/flash/mem_rom.dat
-	cp generated/mem_ram.dat generated/flash/mem_ram.dat
-	cp generated/rom.mif generated/flash/rom.mif
-	python3 make_ram_mif.py generated/mem_ram.dat generated/flash/ram.mif
-	mv generated/FlashJumpTableData.scala generated/flash/FlashJumpTableData.scala
+	mkdir -p $(OUT)/flash
+	gcc -x c -E -C -P $(GCC_PARAMS) -DFLASH $(SUPERSET_FLAGS) src/$(ASM_SRC).asm > $(OUT)/flash/$(ASM_SRC).asm
+	sed -i '1,35d' $(OUT)/flash/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s $(OUT)/flash -d $(OUT)/flash -n FlashJumpTableData $(ASM_SRC).asm
+	python3 make_ram_mif.py $(OUT)/flash/mem_ram.dat $(OUT)/flash/ram.mif
 	$(MAKE) simulation
 
 # Flash-boot for Xilinx (Artix-7, 4 MB SPI flash, offset 0x240000)
 flash-alchitry: ../java/tools/dist/jopa.jar
-	mkdir -p generated/flash
-	gcc -x c -E -C -P $(GCC_PARAMS) -DFLASH $(SUPERSET_FLAGS) -DFLASH_ADDR_B2=36 -DSKIP_FLASH_RESET src/$(ASM_SRC).asm > generated/$(ASM_SRC).asm
-	sed -i '1,35d' generated/$(ASM_SRC).asm
-	java -jar ../java/tools/dist/jopa.jar -s generated -d generated -n FlashJumpTableData $(ASM_SRC).asm
-	cp generated/mem_rom.dat generated/flash/mem_rom.dat
-	cp generated/mem_ram.dat generated/flash/mem_ram.dat
-	cp generated/rom.mif generated/flash/rom.mif
-	python3 make_ram_mif.py generated/mem_ram.dat generated/flash/ram.mif
-	mv generated/FlashJumpTableData.scala generated/flash/FlashJumpTableData.scala
+	mkdir -p $(OUT)/flash
+	gcc -x c -E -C -P $(GCC_PARAMS) -DFLASH $(SUPERSET_FLAGS) -DFLASH_ADDR_B2=36 -DSKIP_FLASH_RESET src/$(ASM_SRC).asm > $(OUT)/flash/$(ASM_SRC).asm
+	sed -i '1,35d' $(OUT)/flash/$(ASM_SRC).asm
+	java -jar ../java/tools/dist/jopa.jar -s $(OUT)/flash -d $(OUT)/flash -n FlashJumpTableData $(ASM_SRC).asm
+	python3 make_ram_mif.py $(OUT)/flash/mem_ram.dat $(OUT)/flash/ram.mif
 	$(MAKE) simulation
 
 ../java/tools/dist/jopa.jar:
 	cd ../java/tools && $(MAKE) dist/jopa.jar
 
 clean:
-	rm -rf generated
+	rm -rf $(OUT)

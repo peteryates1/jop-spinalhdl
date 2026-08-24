@@ -45,7 +45,7 @@ begin
 			LPM_TYPE => "LPM_ROM",
 			LPM_WIDTHAD => addr_width,
 			LPM_NUMWORDS => 2**addr_width,
-			LPM_FILE => "../../asm/generated/simulation/rom.mif",
+			LPM_FILE => "../../build/microcode/simulation/rom.mif",
 			LPM_ADDRESS_CONTROL => "REGISTERED",
 			LPM_OUTDATA => "UNREGISTERED",
 			LPM_HINT => "USE_EAB=ON")

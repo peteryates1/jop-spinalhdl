@@ -29,7 +29,7 @@ concurrency:
 jobs:
   # ----------------------------------------------------------------
   # Build Java tools + microcode assembly
-  # Produces asm/generated/ (Scala sources + ROM/RAM data files)
+  # Produces build/microcode/<variant>/ (Scala sources + ROM/RAM data files)
   # ----------------------------------------------------------------
   build-microcode:
     runs-on: ubuntu-24.04
@@ -47,13 +47,17 @@ jobs:
         run: make -C java/tools dist/jopa.jar
 
       - name: Build microcode (superset ROM)
-        run: cd asm && make && make serial && make flash-altera
+        # `all` covers simulation, serial and flash-altera. It used to build only
+        # the first two, which is why this named the others explicitly -- and why
+        # a local `make -C asm all` left the flash variant 16 days stale while CI
+        # was fine.
+        run: make -C asm all
 
       - name: Upload microcode artifacts
         uses: actions/upload-artifact@v4
         with:
           name: microcode
-          path: asm/generated/
+          path: build/microcode/
           retention-days: 1
 
   # ----------------------------------------------------------------
@@ -89,7 +93,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: microcode
-          path: asm/generated/
+          path: build/microcode/
 
       - name: SBT compile (main + test)
         run: sbt -J-Xmx4g compile Test/compile
@@ -131,7 +135,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: microcode
-          path: asm/generated/
+          path: build/microcode/
 
       - name: Install yosys build dependencies
         run: |
@@ -258,7 +262,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: microcode
-          path: asm/generated/
+          path: build/microcode/
 
       - name: Install Verilator
         run: sudo apt-get update && sudo apt-get install -y verilator
@@ -431,7 +435,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: microcode
-          path: asm/generated
+          path: build/microcode
 
       - name: Install Verilator
         run: sudo apt-get update && sudo apt-get install -y verilator
@@ -489,9 +493,9 @@ jobs:
           verilator --version
           sha256sum \
             java/apps/JvmTests/DoAll.jop \
-            asm/generated/mem_rom.dat \
-            asm/generated/mem_ram.dat \
-            asm/generated/JumpTableData.scala \
+            build/microcode/simulation/mem_rom.dat \
+            build/microcode/simulation/mem_ram.dat \
+            build/microcode/simulation/JumpTableData.scala \
             java/runtime/src/jop/com/jopdesign/sys/Const.java \
             | tee fingerprints.txt
 
@@ -584,7 +588,7 @@ jobs:
           find simWorkspace \( -name '*.fst' -o -name '*.vcd' \) -size -100M \
             -exec cp {} "$out"/ \; 2>/dev/null || true
           cp java/apps/JvmTests/DoAll.jop "$out"/ 2>/dev/null || true
-          cp asm/generated/mem_rom.dat asm/generated/mem_ram.dat "$out"/ 2>/dev/null || true
+          cp build/microcode/simulation/mem_rom.dat build/microcode/simulation/mem_ram.dat "$out"/ 2>/dev/null || true
           cp java/runtime/src/jop/com/jopdesign/sys/Const.java "$out"/ 2>/dev/null || true
           ls -lR "$out"
           du -sh "$out"
