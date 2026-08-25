@@ -169,7 +169,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[63](#item-63)** — One Wukong SDR startup crash in six runs, not reproduced — recorded so a second sighting is not treated as the first
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
-- **[66](#item-66)** — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942`, not removed — **preset `ep4cgx150DbFull` written back 2026-08-25, pin-identical to the historical project; builds, does NOT close timing at 80 MHz**
+- ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
 - **[67](#item-67)** — `ep4cgx150DbFull` runs with `useStackCache = false`; the original had it true. Revisit once stack-cache SDRAM integration lands
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
@@ -6618,17 +6618,38 @@ reconstruction is faithful.
 | | |
 |---|---|
 | fit | **15,282 LE, 95 pins, Fitter Successful** |
-| setup (Slow 100C) | **−1.812 ns — VIOLATED at 80 MHz** |
-| recovery | −3.749 ns |
 | clocks | `clk_in` 50 MHz, `dramPll` 80 MHz system, `ethPll` **125 MHz** |
 
-So the design is restored but **does not close timing as configured**. Not
-"fixed" by lowering the clock here: the historical configuration ran at 80 MHz,
-so a lower one would hide the difference rather than explain it. Candidates in
-order — the design has grown since March (the 8 KB method-cache default alone is
-850-869 LE per core, item 53), `useStackCache` is off where the original had it
-on (item 67), and the 125 MHz Ethernet domain has not been re-examined since
-`TimingConstraints` started generating the clock groups.
+**TIMING: MET, once a one-word bug was fixed.** The first build reported −1.812
+ns setup and it was not a timing problem at all. Every failing path was
+`StreamCCByToggle` inside `MacTxManagedStreamFifoCc` — the clock-domain crossing
+between the 80 MHz system and the 125 MHz Ethernet TX domain, which is
+asynchronous BY CONSTRUCTION and must be excluded.
+
+`TimingConstraints.forConfig` tested `deviceType.key == "eth"`. The DeviceType
+key is **`ethernet`**; `eth` is only the conventional MAP key a preset happens to
+use. So the predicate was never true on any design, no Ethernet clock group was
+ever emitted, and with fewer than two groups the whole `set_clock_groups` is
+dropped — leaving the CDC paths timed as if synchronous.
+
+| clock | before | after |
+|---|---|---|
+| `dramPll` clk[1] — 80 MHz system | −1.812 (TNS −20.755) | **+0.458** (TNS 0) |
+| `ethPll` clk[0] — 125 MHz Ethernet | −1.503 (TNS −17.161) | **+0.802** (TNS 0) |
+| `dramPll` clk[3] | +0.667 | +0.704 |
+
+15,270 LE, 95 pins, all three clocks MET.
+
+**The same bug, twice, from opposite sides.** The comment beside that predicate
+records an earlier fix: the hand-written `jop_sdram.sdc` named `e_rxc` on a
+UART-only build, Quartus could not match it, and it discarded the whole
+`set_clock_groups`. The replacement stopped naming what does not exist — and
+never matched what does. Both versions produce the same symptom, silently: a
+constraint file that looks right and constrains nothing.
+
+**This was reachable only because a design used Ethernet.** No converted flow had
+one until now, so the dead predicate cost nothing and showed nothing. Restoring
+a capability found a bug in the machinery built to replace it.
 
 One generator gap closed on the way: a board's Ethernet PLL (`pll_125.v`) had no
 route into a generated project, so synthesis stopped with "instantiates

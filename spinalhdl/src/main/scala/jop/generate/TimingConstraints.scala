@@ -129,7 +129,18 @@ object TimingConstraints {
     // so named e_rxc on a UART-only build, which Quartus reported as
     //   Warning (332174): Ignored filter ... e_rxc could not be matched with a clock
     // and then discarded the whole set_clock_groups. Constrain what exists.
-    val hasEth = config.devices.values.exists(_.deviceType.key == "eth")
+    // "ethernet", not "eth". The DeviceType key is `ethernet`; `eth` is only the
+    // conventional MAP key a preset happens to use, so this predicate was never
+    // true and the Ethernet clock group was never emitted. With fewer than two
+    // groups the whole set_clock_groups is dropped, so the asynchronous
+    // StreamCCByToggle paths between the 80 MHz system domain and the 125 MHz
+    // Ethernet domain were timed as if synchronous -- -1.812 ns on a design that
+    // has no real timing problem there.
+    //
+    // Note the comment below: a previous fix here stopped naming e_rxc on a
+    // UART-only build. That was the same bug from the other side, and the
+    // replacement predicate never matched anything.
+    val hasEth = config.devices.values.exists(_.deviceType.key == DeviceType.Ethernet.key)
     val ethGroup =
       if (hasEth && board.hasEthPll) Seq("ethPll|altpll_component|auto_generated|pll1|clk[0]") else Nil
     val phyGroup = if (hasEth) Seq("e_rxc") else Nil
