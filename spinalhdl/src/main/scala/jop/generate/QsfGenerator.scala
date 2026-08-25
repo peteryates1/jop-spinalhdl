@@ -16,10 +16,17 @@ object QsfGenerator {
     
     val clock = PinResolver.clockFpgaPin(assembly)
       .map(PinAssignment(_, "clk_in")).toSeq
-    val sdramClk = PinResolver.sdramClockFpgaPin(assembly)
-      .map(PinAssignment(_, "sdram_clk")).toSeq
-    val leds = PinResolver.ledPins(assembly)
-    val sdram = PinResolver.sdramPins(assembly)
+    val sdramClk =
+      if (config.usesSdr)
+        PinResolver.sdramClockFpgaPin(assembly).map(PinAssignment(_, "sdram_clk")).toSeq
+      else Seq.empty
+    // Both of these must follow the DESIGN, not the assembly -- the same rule
+    // the reset comment below states, which had only ever been applied to
+    // reset. A board offering seven LEDs and an SDRAM chip does not mean this
+    // design has seven LED ports or any sdram_* ports at all.
+    val leds = PinResolver.ledPins(assembly).take(config.ledCount)
+    val sdram =
+      if (config.usesSdr) PinResolver.sdramPins(assembly) else Seq.empty
     val drivers = PinResolver.devicePins(assembly, config.devices)
 
     // The reset button, from the SAME predicate JopTop uses to decide whether

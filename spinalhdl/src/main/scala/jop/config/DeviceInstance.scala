@@ -28,8 +28,15 @@ object DeviceType {
     val addrBits = 1
     val interruptCount = 2
     override val registerNames = Seq((0, "STATUS"), (1, "DATA"))
-    override def verilogPins(p: Map[String, Any]) =
-      Map("ser_txd" -> "TXD", "ser_rxd" -> "RXD")
+    /** `txOnly` for designs that only report -- the SD, SPI and config-flash
+      * exercisers print results and never take input, so they have no ser_rxd
+      * port. Constraining one is not harmless: the tool assigns a pin to a
+      * port that does not exist and says so only in a warning. */
+    override def verilogPins(p: Map[String, Any]) = {
+      val tx = Map("ser_txd" -> "TXD")
+      if (p.getOrElse("txOnly", false).asInstanceOf[Boolean]) tx
+      else tx + ("ser_rxd" -> "RXD")
+    }
     def create(cfg: JopCoreConfig, p: Map[String, Any], ctx: DeviceContext) =
       jop.io.Uart(
         baudRate = p.getOrElse("baudRate", cfg.uartBaudRate).asInstanceOf[Int],

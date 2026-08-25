@@ -825,6 +825,39 @@ case class SdSpiExerciserTop() extends Component {
 /**
  * Generate Verilog for SdSpiExerciserTop
  */
+/**
+ * Which board this design is on -- the thing it could not previously say.
+ *
+ * Its pins existed only inside a hand-written sd_spi_exerciser.qsf, so nothing
+ * connected the design to a board, and the constraint generators had no way to
+ * serve it even though every pin it needs was already in the board data. See
+ * docs/architecture/peripheral-portability-plan.md.
+ *
+ * NOT YET PORTABLE, and the reason is not the SD card. `SdSpiExerciserTop`
+ * instantiates `DramPll()` directly -- an Altera altpll blackbox -- so it is
+ * nailed to one vendor by its CLOCK. The SD pins themselves resolve on the
+ * Wukong and the XC7A100T + DB v5 today (see BoardDesignTest). Taking the PLL
+ * from `Board.pllType` via `Pll.create` is what makes this design cross-family,
+ * and it is a separate change because it alters the netlist.
+ */
+object SdSpiExerciserDesign extends jop.config.BoardDesign {
+  import jop.config._
+  val assembly   = SystemAssembly.qmtechWithDb
+  val entityName = "SdSpiExerciserTop"
+  val designName = "sd-spi-exerciser"
+  val devices    = Map(
+    // Reports only -- the top has ser_txd and no ser_rxd.
+    "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"),
+                             params = Map("txOnly" -> true)),
+    "sd"   -> DeviceInstance(DeviceType.SdSpi, devicePart = Some("SD_CARD")))
+  // The exerciser free-runs; it has no reset input and drives no DRAM.
+  val resetInput = None
+  val usesSdr    = false
+  val memType    = None
+  val fpga       = assembly.fpga
+  val fpgaFamily = assembly.fpgaFamily
+}
+
 object SdSpiExerciserTopVerilog extends App {
   SpinalConfig(
     mode = Verilog,

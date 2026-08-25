@@ -98,7 +98,7 @@ object LpfGenerator {
       sb.append("\n")
     }
 
-    val leds = PinResolver.ledPins(assembly)
+    val leds = PinResolver.ledPins(assembly).take(config.ledCount)
     if (leds.nonEmpty) {
       sb.append("# LEDs\n")
       leds.foreach(p => sb.append(pin(p.verilogPort, p.fpgaPin, io)))
