@@ -20,7 +20,14 @@ import jop.memory.{BmbSdramCtrl32, JopMemoryConfig, SdramDeviceInfo}
  *   T3: Write-then-read same address back-to-back (256 words)
  *   All tests loop continuously, reporting pass/fail via UART.
  */
-case class SdramExerciserTop(md: MemoryDevice) extends Component {
+/** @param md     the SDRAM part to drive.
+  * @param board  which board's PLL to instantiate -- see SdSpiExerciserTop.
+  * @param clkMhz the system clock this design is built for. */
+case class SdramExerciserTop(
+  md: MemoryDevice,
+  board: jop.config.Board = SdramExerciserDesign.assembly.fpgaBoard,
+  clkMhz: Int = SdramExerciserDesign.clkMhz
+) extends Component {
 
   val io = new Bundle {
     val clk_in    = in Bool()
@@ -32,28 +39,30 @@ case class SdramExerciserTop(md: MemoryDevice) extends Component {
 
   noIoPrefix()
 
-  // PLL: 50 MHz -> 100 MHz system, -3ns SDRAM clock
-  val pll = DramPll()
-  pll.io.inclk0 := io.clk_in
-  pll.io.areset := False
-  io.sdram_clk := pll.io.c2
+  // PLL from the BOARD. SDRAM_SDR selects the branch that also yields the
+  // phase-shifted memory clock, which this design needs and the SD exercisers
+  // do not -- the difference is in the spec, not in a different blackbox.
+  val pllResult = jop.system.pll.Pll.create(board, jop.config.MemoryType.SDRAM_SDR, io.clk_in)
+  val sysClk = pllResult.systemClk.get
+  val pllLocked = pllResult.locked
+  io.sdram_clk := pllResult.sdramClk.get
 
   // Reset generator
   val rawClockDomain = ClockDomain(
-    clock = pll.io.c1,
+    clock = sysClk,
     config = ClockDomainConfig(resetKind = BOOT)
   )
   val resetGen = new ClockingArea(rawClockDomain) {
     val res_cnt = Reg(UInt(3 bits)) init (0)
-    when(pll.io.locked && res_cnt =/= 7) {
+    when(pllLocked && res_cnt =/= 7) {
       res_cnt := res_cnt + 1
     }
-    val int_res = !pll.io.locked || !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
+    val int_res = !pllLocked || !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
   }
   val mainClockDomain = ClockDomain(
-    clock = pll.io.c1,
+    clock = sysClk,
     reset = resetGen.int_res,
-    frequency = FixedFrequency(100 MHz),
+    frequency = FixedFrequency(clkMhz MHz),
     config = ClockDomainConfig(resetKind = SYNC, resetActiveLevel = HIGH)
   )
 
@@ -552,14 +561,38 @@ case class SdramExerciserTop(md: MemoryDevice) extends Component {
 /**
  * Generate Verilog for SdramExerciserTop
  */
+/** Which board this design is on, and what it drives.
+  *
+  * The first converted top that USES memory: `usesSdr` is true, so the
+  * generators emit the sdram_* pins and the phase-shifted memory clock that the
+  * SD exercisers correctly do not get. That flag is what tells them apart -- the
+  * board carries the SDRAM either way. */
+object SdramExerciserDesign extends jop.config.BoardDesign {
+  import jop.config._
+  val assembly   = SystemAssembly.qmtechWithDb
+  val entityName = "SdramExerciserTop"
+  val designName = "sdram-exerciser"
+  val devices    = Map(
+    "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"),
+                             params = Map("txOnly" -> true)))
+  val resetInput = None
+  val usesSdr    = true
+  val memType    = Some(MemoryType.SDRAM_SDR)
+  val fpga       = assembly.fpga
+  val fpgaFamily = assembly.fpgaFamily
+  /** 100 MHz -- this exerciser pushes the memory harder than the JOP presets,
+    * which run this board at 60 or 80. */
+  val clkMhz     = 100
+  val memoryDevice = assembly.memoryDevices.head._2
+}
+
 object SdramExerciserTopVerilog extends App {
-  val asm = SystemAssembly.qmtechWithDb
-  val md = asm.memoryDevices.head._2
+  val md = SdramExerciserDesign.memoryDevice
 
   SpinalConfig(
     mode = Verilog,
     targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(100 MHz)
+    defaultClockDomainFrequency = FixedFrequency(SdramExerciserDesign.clkMhz MHz)
   ).generate(InOutWrapper(SdramExerciserTop(md)))
 
   println("Generated: spinalhdl/generated/SdramExerciserTop.v")
