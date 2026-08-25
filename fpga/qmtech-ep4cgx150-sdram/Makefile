@@ -258,9 +258,21 @@ generate-sd-native-exerciser:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.SdNativeExerciserTopVerilog"
 	@echo "=== SD Native Exerciser Verilog generated: $(GENERATED_SD_NATIVE_V) ==="
 
+# CONVERTED (2026-08-25). Everything -- Verilog, the PLL, the SDC and the Quartus
+# project -- is generated from SdSpiExerciserDesign, a BoardDesign, into
+# build/sdSpiExerciser/. The hand-written sd_spi_exerciser.qsf it replaces was
+# proven PIN-IDENTICAL first, then deleted.
+#
+# The design is portable across FPGA families now (its PLL comes from
+# Board.pllType); this target builds the EP4CGX150 arm, which is where the SD
+# card is wired on the DB v4.
+SD_SPI_CFG_DIR = $(PROJECT_ROOT)/build/sdSpiExerciser
+SD_SPI_PRJ     = $(SD_SPI_CFG_DIR)/quartus
+
 generate-sd-spi-exerciser:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.SdSpiExerciserTopVerilog"
-	@echo "=== SD SPI Exerciser Verilog generated: $(GENERATED_SD_SPI_V) ==="
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.SdSpiExerciserBuild"
+	cd $(SD_SPI_PRJ) && $(QUARTUS_BIN)/quartus_sh -t setup_proj.tcl
+	@echo "=== SD SPI Exerciser generated into $(SD_SPI_CFG_DIR) ==="
 
 generate-config-flash-exerciser:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.ConfigFlashExerciserTopVerilog"
@@ -363,7 +375,12 @@ $(SOF_SD_NATIVE_FILE): $(GENERATED_SD_NATIVE_V) $(QP_SD_NATIVE).qsf sd_exerciser
 	$(QUARTUS_BIN)/quartus_sta $(QP_SD_NATIVE)
 	@echo "=== SD Native Exerciser Build complete: $(SOF_SD_NATIVE_FILE) ==="
 
-build-sd-spi-exerciser: $(SOF_SD_SPI_FILE)
+build-sd-spi-exerciser:
+	cd $(SD_SPI_PRJ) && $(QUARTUS_BIN)/quartus_map $(QP_SD_SPI)
+	cd $(SD_SPI_PRJ) && $(QUARTUS_BIN)/quartus_fit $(QP_SD_SPI)
+	cd $(SD_SPI_PRJ) && $(QUARTUS_BIN)/quartus_asm $(QP_SD_SPI)
+	cd $(SD_SPI_PRJ) && $(QUARTUS_BIN)/quartus_sta $(QP_SD_SPI)
+	@echo "=== SD SPI Exerciser built: $(SD_SPI_PRJ)/output_files/$(QP_SD_SPI).sof ==="
 
 $(SOF_SD_SPI_FILE): $(GENERATED_SD_SPI_V) $(QP_SD_SPI).qsf sd_exerciser.sdc dram_pll.vhd
 	$(QUARTUS_BIN)/quartus_map $(QP_SD_SPI)
@@ -510,8 +527,9 @@ $(QP_SD_SPI).cdf: $(SOF_SD_SPI_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program-sd-spi-exerciser: assert-device $(SOF_SD_SPI_FILE) $(QP_SD_SPI).cdf
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SD_SPI).cdf
+program-sd-spi-exerciser: assert-device
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG \
+	    -o "p;$(SD_SPI_PRJ)/output_files/$(QP_SD_SPI).sof"
 	@echo "=== SD SPI Exerciser FPGA programmed ==="
 
 $(QP_CFG_FLASH).cdf: $(SOF_CFG_FLASH_FILE)
