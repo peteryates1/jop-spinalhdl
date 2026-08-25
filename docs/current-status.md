@@ -169,7 +169,8 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[63](#item-63)** — One Wukong SDR startup crash in six runs, not reproduced — recorded so a second sighting is not treated as the first
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
-- **[66](#item-66)** — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942`, not removed — board data, device types, Java stack and apps all survive; only the preset is missing
+- **[66](#item-66)** — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942`, not removed — **preset `ep4cgx150DbFull` written back 2026-08-25, pin-identical to the historical project; builds, does NOT close timing at 80 MHz**
+- **[67](#item-67)** — `ep4cgx150DbFull` runs with `useStackCache = false`; the original had it true. Revisit once stack-cache SDRAM integration lands
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -6607,6 +6608,52 @@ the constraints generate from the config like every other converted flow.
 Worth doing on its own merits: it restores a documented, hardware-proven
 capability, and it is the only EP4CGX150 configuration that would exercise the
 Ethernet path at all.
+
+**WRITTEN BACK 2026-08-25.** `JopConfig.ep4cgx150DbFull` -- the device set mined
+from `IoConfig.qmtechDbFpga` in history, in the modern declarative form taken
+from `xc7a100tDbFull`. Its generated project is **PIN-IDENTICAL to the
+hand-written `jop_dbfpga.qsf`, all 95**, which is the evidence that the
+reconstruction is faithful.
+
+| | |
+|---|---|
+| fit | **15,282 LE, 95 pins, Fitter Successful** |
+| setup (Slow 100C) | **−1.812 ns — VIOLATED at 80 MHz** |
+| recovery | −3.749 ns |
+| clocks | `clk_in` 50 MHz, `dramPll` 80 MHz system, `ethPll` **125 MHz** |
+
+So the design is restored but **does not close timing as configured**. Not
+"fixed" by lowering the clock here: the historical configuration ran at 80 MHz,
+so a lower one would hide the difference rather than explain it. Candidates in
+order — the design has grown since March (the 8 KB method-cache default alone is
+850-869 LE per core, item 53), `useStackCache` is off where the original had it
+on (item 67), and the 125 MHz Ethernet domain has not been re-examined since
+`TimingConstraints` started generating the clock groups.
+
+One generator gap closed on the way: a board's Ethernet PLL (`pll_125.v`) had no
+route into a generated project, so synthesis stopped with "instantiates
+undefined entity". `Board.extraIpFiles` now carries it, emitted only when the
+DESIGN declares an Ethernet device -- the board has the PLL either way. It is
+hand-written IP and a PllSpec candidate.
+
+
+### Item 67 — `ep4cgx150DbFull` has `useStackCache` off; the original had it on
+
+**Raised 2026-08-25** when the DB_FPGA preset was written back (item 66).
+
+`JopDbFpgaTopVerilog`, the configuration that ran the working TCP/IP stack, set
+`useStackCache = true`. The restored preset sets it **false**, matching
+`ep4cgx150Serial`.
+
+That was deliberate: stack-cache SDRAM integration is still open -- it is
+verified in BRAM but needs per-core stack regions -- so turning it on at the
+same time as restoring the peripherals would have made the first build back
+differ from the known-good configuration in TWO places rather than one. If the
+restored build misbehaves, the cause should not have two candidates.
+
+Revisit once the stack cache lands, or sooner if a measurement wants it: the
+original chose it for a reason that is not recorded, and the Ethernet driver
+moving whole frames is the obvious guess.
 
 ## 4. Two workstreams, both largely done
 

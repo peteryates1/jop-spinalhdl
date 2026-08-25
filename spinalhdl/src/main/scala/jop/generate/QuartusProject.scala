@@ -108,6 +108,14 @@ object QuartusProject {
     sb.append("# Sources\n")
     g("VERILOG_FILE", up(s"${layout.rtlDir(preset, buildArgs)}/${config.entityName}.v"))
     g("VHDL_FILE", layout.relativeTo(projectDir, layout.ipDir(preset, buildArgs) + "/dram_pll.vhd"))
+
+    // Board IP beyond the system PLL. Emitted only when the DESIGN needs it:
+    // the Ethernet PLL exists on the board whether or not this configuration
+    // instantiates one, and listing its source unconditionally would put an
+    // unused file in every project.
+    val hasEth = config.devices.values.exists(_.deviceType.key == "ethernet")
+    if (hasEth) config.assembly.boards.flatMap(_.extraIpFiles).distinct
+      .foreach(f => g("VERILOG_FILE", up(f)))
     // SDR needs the tri-state SDRAM controller; every Altera build needs the
     // LPM ROM/RAM the microcode store is built from.
     if (memType.contains(MemoryType.SDRAM_SDR)) {

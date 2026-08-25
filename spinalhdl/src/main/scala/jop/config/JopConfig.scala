@@ -508,6 +508,59 @@ object JopConfig {
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
   /**
+   * EP4CGX150 + DB_FPGA V4 with the daughter board's peripherals: Gigabit
+   * Ethernet, SD card and VGA.
+   *
+   * RESTORES A CAPABILITY THAT WAS LOST, NOT A NEW ONE. This board ran a
+   * poll-based TCP/IP stack over an RTL8211EG at 1 Gbps -- ARP, DHCP, TCP, an
+   * HTTP server -- documented in docs/peripherals/networking.md. The RTL came
+   * from `JopDbFpgaTopVerilog`, an object inside the 920-line hand-written
+   * JopSdramTop.scala, configured by `IoConfig.qmtechDbFpga`:
+   *
+   *   hasEth = true, ethGmii = true, hasSdNative = true, hasVgaText = true
+   *
+   * Commit 7258661 deleted that top in the move to declarative presets, and
+   * 8641942 repointed `make generate-dbfpga` at `ep4cgx150Serial` -- which
+   * declares none of those devices. Nothing replaced it, so jop_dbfpga.qsf has
+   * been assigning 95 pins to a 45-port design ever since. See item 66.
+   *
+   * ONLY WHAT BOTH DB BOARDS CARRY. V4 and V5 share Ethernet, SD, VGA, J10, J11
+   * and JP1; V4 adds a 7-segment display, LEDs and switches, V5 drops those and
+   * adds an RP2040 for JTAG and UART. This preset takes the common set, which is
+   * exactly what the working configuration used -- no 7-segment, no DIP
+   * switches. The UART is the one board-specific part, and `devicePart` already
+   * carries it: CP2102N here, RP2040 on the V5 (see `xc7a100tDbFull`).
+   *
+   * DIFFERS FROM THE ORIGINAL IN ONE KNOWN WAY: `useStackCache` was true in
+   * JopDbFpgaTopVerilog and is left false here, matching `ep4cgx150Serial`.
+   * Stack-cache SDRAM integration is still open (it needs per-core stack
+   * regions), so the first build back differs from the working configuration in
+   * one place rather than two. See item 67.
+   */
+  def ep4cgx150DbFull = JopConfig(
+    assembly = SystemAssembly.qmtechWithDb,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "sdr",
+      bootMode = BootMode.Serial,
+      clkFreq = 80 MHz,
+      coreConfig = JopCoreConfig(
+        memConfig = JopMemoryConfig(hasBackendFill = true, hasCardTable = true,
+          cardTableBudgetBytes = 16 * 1024,
+          // From JopDbFpgaTopVerilog: the Ethernet driver moves whole frames,
+          // so the burst length was raised for it.
+          burstLen = 4, stackRegionWordsPerCore = 1024),
+        useDspMul = true,
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw", "imul" -> "hw")),
+      devices = Map(
+        "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N")),
+        "eth" -> DeviceInstance(DeviceType.Ethernet,
+          params = Map("gmii" -> true, "phyDataWidth" -> 8),
+          devicePart = Some("RTL8211EG")),
+        "vgaText" -> DeviceInstance(DeviceType.VgaText, devicePart = Some("VGA")),
+        "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))))))
+
+  /**
    * EP4CGX150 single core with the object and array caches REMOVED.
    *
    * The A/B half of current-status item 11's cache question: do the caches earn

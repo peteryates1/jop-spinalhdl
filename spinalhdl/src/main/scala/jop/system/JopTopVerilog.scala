@@ -63,6 +63,7 @@ object JopTopVerilog {
     case "ep4cgx150BramSerial" => JopConfig.ep4cgx150BramSerial
     case "ep4cgx150HwMath"     => JopConfig.ep4cgx150HwMath
     case "ep4cgx150McFallback" => JopConfig.ep4cgx150McFallback
+    case "ep4cgx150DbFull"  => JopConfig.ep4cgx150DbFull
     case "ep4cgx150HwFloat"    => JopConfig.ep4cgx150HwFloat
     // ep4cgx150Smp <cores> [clkMhz]. clkMhz drives the generated PLL — see the
     // note on JopConfig.ep4cgx150Smp. 4 cores needs 65; 1-2 run at 80.
@@ -169,6 +170,7 @@ object JopTopVerilog {
       throw new RuntimeException(s"Unknown preset: '$other'. Available: " +
         "ep4cgx150Serial, ep4cgx150Bram, ep4cgx150BramGc, ep4cgx150BramSerial, " +
         "ep4cgx150HwMath, ep4cgx150HwFloat, ep4cgx150Smp, ep4cgx150McFallback, " +
+        "ep4cgx150DbFull, " +
         "cyc5000Serial, auSerial, wukongSdram, wukongDdr3, wukongBram, " +
         "wukongFull, wukongSdrFull, wukongFullSmp, wukongSmp, " +
         "wukongDualIndependent, wukongDualSmp, " +
