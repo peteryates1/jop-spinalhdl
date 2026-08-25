@@ -44,16 +44,41 @@ rediscovered by reading Verilog.
 | `ep4cgx150-bram-serial/jop_bram_serial` | `JopBramSerialTop` | `ep4cgx150BramSerial` | to do |
 | `cyc5000-sdram/jop_cyc5000` | `JopCyc5000Top` | `cyc5000Serial` | to do |
 | `cyc5000-sdram/jop_smp_cyc5000` | `JopSmpCyc5000Top` | `cyc5000Smp(n)` | to do |
-| `generic-ep4ce6/jop_ep4ce6` | `JopEp4ce6SdramTop` | `ep4ce6Sdram` | to do |
+
 | `max1000/jop_max1000` | `JopMax1000SdramTop` | `max1000Sdram` | to do — **no hardware** |
 | `a-e115fb-ddr2/jop_ddr2` | `JopDdr2Ae115fbTop` | `ae115fbDdr2` | to do |
 | `a-e115fb-ddr2/jop_ddr2_smp` | `JopSmpDdr2Ae115fbTop` | `ae115fbDdr2Smp(n)` | to do |
 | `alchitry-au` ddr3 | `JopDdr3Top` | `auSerial` | to do |
 | `dbfpga-v5` ddr3 | `JopDdr3Top` | `xc7a100tDbSerial` / `Full` | to do |
-| `wukong` ddr3 | `JopDdr3WukongTop` | `wukongDdr3` / `wukongFull` | to do |
-| `wukong` ddr3_smp | `JopSmpDdr3WukongTop` | `wukongSmp(n)` | to do |
-| `wukong` jop_sdram_smp | `JopSmpSdramWukongTop` | `wukongSdrSmp(n)` | to do |
-| `wukong` dual | `JopDualWukongTop` | `wukongDualIndependent` | to do |
+| `wukong` ddr3 | `JopDdr3WukongTop` | `wukongDdr3` / `wukongFull` | **done — DoAll 66/66 on `wukongDdr3`** |
+| `wukong` ddr3_smp | `JopSmpDdr3WukongTop` | `wukongSmp(n)` | **done — 4 cores, SMPGC OK on hardware** |
+| `wukong` jop_sdram_smp | `JopSmpSdramWukongTop` | `wukongSdrSmp(n)` | **done — builds; timing violated, as it always has** |
+| `wukong` dual | `JopDualWukongTop` | `wukongDualIndependent` | **done — builds; timing violated, unchanged WNS** |
+
+**The Wukong board directory is complete.** All six flows converted; four
+hardware-verified or build-verified against their known-good figures.
+
+| flow | LUTs | timing | hardware |
+|---|---|---|---|
+| `wukongSdram` | 5,979 | +0.414 | DoAll 66/66 |
+| `wukongDdr3` | 12,448 | +0.642 | **DoAll 66/66** |
+| `wukongFull` | 20,514 | +0.349 | blocked by [item 69](#item-69) |
+| `wukongSmp 4` | 43,414 | +0.176 | **`cores 4, publishers 3` → SMPGC OK** |
+| `wukongSdrSmp 2` | 14,331 | **−2.465** | not run — see below |
+| `wukongDualIndependent` | 18,806 | **−0.364** | not run — see below |
+
+Neither violated build was run on hardware, on this document's own rule: *a
+passing `DoAll` on a violated bitstream proves nothing.* Both violations are
+pre-existing — the recorded 8-core SDR SMP missed by −6.281 ns, and the whole
+SDR family misses at 100 MHz (`wukongSdrAllCu` −0.061, `wukongSdrFull` −0.774).
+
+**One number worth a second look.** The dual build came out at 18,806 LUTs where
+the Aug-19 record says 29,412 — a 36 % difference from a byte-identical
+configuration (same 1+1 cores, clocks, memory, bytecodes, devices), and with the
+SAME WNS of −0.364 ns. The new figure is the self-consistent one: `wukongDdr3`
+(12,448) plus `wukongSdram` (5,979) is 18,427, which the dual build should
+approximate and does. What made the older build 11,000 LUTs larger is not
+recorded in its summary and has not been established.
 
 ## CONVERT — a SpinalHDL top, needs a `BoardDesign`
 
@@ -91,6 +116,7 @@ what gets converted on a tidy-up.
 
 | flow | why |
 |---|---|
+| `generic-ep4ce6` | **retired 2026-08-25** — an experiment to see whether JOP fitted a 6 K-LE part, not a board in use. The `ep4ce6Sdram` preset and `Board.GenericEP4CE6` were LEFT: they cost nothing, are exercisable in simulation, and record the fit experiment. Say if they should go too |
 | `wukong` blink | **`WukongBlink` has no Scala source and no git history of one.** `create_blink_project.tcl` reads RTL that has never been in this repo |
 | `ep4cgx150-sdram/probe_defaults` | no build target; a JTAG-probe helper project |
 | `ep4cgx150-sdram/jop_smp_bram` | entity `JopSmpBramSerialTop`; **no preset produces that name** and there is no build target |
