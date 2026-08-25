@@ -247,9 +247,32 @@ blackboxes collapse, and both hand-written IP files (`dram_pll.vhd`,
 per branch; the instance name comes from the same spec `TimingConstraints`
 reads, so the two cannot disagree; and `build/` stops depending on `fpga/`.
 
-**The real risk, and it is not the refactor.** Generating IP means the
-`generate` step needs a VENDOR TOOL, where today it is pure sbt. CI has no
-vendor tools at all. So either the generated IP is cached and checked against
-the spec, or CI cannot elaborate those designs -- and "CI cannot build it" is
-how the microcode flash variant went 16 days stale. Decide this BEFORE writing
-the generators, not after.
+### CI policy — DECIDED 2026-08-25
+
+Generating IP puts a vendor tool in the `generate` step, which is pure sbt
+today, and CI has none. The split:
+
+| toolchain | CI | why |
+|---|---|---|
+| **Lattice ECP5** — `ecppll` | **generates and diffs** | `fpga-trellis` is a small apt package; CI can install it and regenerate the PLL outright |
+| **Quartus, Vivado** | **skips generation** | licensed, enormous, not installable in CI |
+
+**Skipping generation must not mean skipping verification**, or the closed arms
+get no protection at all -- which is precisely how the flash microcode sat
+sixteen days stale against a changed source.
+
+It does not have to. Generated altpll DECLARES its own multiply and divide, so
+the file can be read back and checked against what the spec computes, with no
+vendor tool involved. `PllSpecConsistencyTest` does this today: emit for 36 / 50
+/ 60 / 80 MHz, read `clk1_multiply_by` and `clk1_divide_by` out of the VHDL, and
+assert `50 × mul / div` is the frequency that was asked for -- plus that the
+SDRAM output (c2) tracks the system output (c1), a divergence that would
+otherwise be invisible until hardware.
+
+That catches a stale IP, a hand-edited one, and a spec that has moved on. What
+it cannot catch is whether the vendor tool would still produce that file, which
+is what the local sweep and `hw_verify.py` are for.
+
+So the rule for the generators: whatever a vendor tool emits must declare enough
+to be checked against its spec by reading it. If a generated artefact cannot be
+verified without the tool that made it, it needs a recorded hash instead.
