@@ -6248,6 +6248,40 @@ images, ~1.8 KB larger than the ones they replace ([item 61](#item-61)). Those
 were the only genuinely new bytes in this work — everything else was verified
 byte-identical — so hardware was the only place they could be checked.
 
+**EP4CGX150 SMP converted 2026-08-25 (`f38fa1b`)** — and the flow was never a
+separate one. It was the same six rules hand-copied with a different config,
+carrying its own project name, its own SDC path and a `dram_pll.vhd` that was
+NOT the one the JOP builds used. It now re-enters the parameterised rules:
+`make smp CORES=n [MHZ=m]`.
+
+| cores | clock | LE | slack (Slow 100C) | hardware |
+|---|---|---|---|---|
+| 2 | 80 MHz (preset default) | 26,906 | **+0.144 ns** | `cores 2` → SMPGC OK |
+| 4 | 60 MHz | 51,935 | **+0.510 ns** | `cores 4, publishers 3` → SMPGC OK |
+| 4 | 80 MHz | 51,701 | **−2.367 ns** | not run — violated |
+
+**RETRACTED: "the 4-core row has decayed."** I built 4 cores at the preset
+default of 80 MHz, got −2.367 ns, and attributed it to the method-cache default
+growing the design (item 53) — the decay pattern that really did break the
+4-core Wukong. It is nothing of the sort. `ep4cgx150Smp(n, clkMhz = 80)`
+defaults to the board's MAXIMUM clock, and the recorded validation for 4 cores
+is **60 MHz**. The STA clock table says so plainly:
+
+```
+clk_in                20.000 ns   50.0 MHz    board oscillator
+dramPll ... clk[1]    12.500 ns   80.0 MHz    ×8/÷5, the system clock
+Fmax                              67.26 MHz   what it achieves
+```
+
+12.5 ns demanded against 14.87 ns achieved IS −2.367 ns. At the validated
+60 MHz it closes with +0.510 ns and passes on hardware. The recorded row was
+right the whole time.
+
+The lesson is the one already written up twice in this document: read the actual
+number before reaching for a story. A pattern that fits ("a global default broke
+a 4-core build") is not evidence that it applies here, and the clock table was
+one grep away.
+
 **THE CONVERSION LOOP, and it is five steps not four (2026-08-24).**
 
 1. point the flow's RTL and outputs at `build/<config>/`
