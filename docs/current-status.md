@@ -170,6 +170,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
+- **[70](#item-70)** — UART baud is stated in THREE places that disagree — preset override, a 2 Mbaud default, and 12 Makefile constants. Pick one rate and derive the rest
 - **[69](#item-69)** — `bytecodes = "*" -> "hw"` forces hardware for `frem`, which has NO hardware implementation anywhere. `DoAll` dies at `FloatTest` on every `*=hw` preset
 - **[68](#item-68)** — EP4CGX150 Ethernet: link comes up at 1 Gbps but NO packets move. DHCP times out against a server that IS on that switch
 - **[67](#item-67)** — `ep4cgx150DbFull` runs with `useStackCache = false`; the original had it true. Revisit once stack-cache SDRAM integration lands
@@ -6773,6 +6774,49 @@ as [item 17](#item-17), where `needs*Compute` predicates understated CU
 reachability and cost ten JVM tests. A `require` at elaboration -- "`*=hw` names
 `frem`, which has no hardware implementation" -- would turn a run-time trap into
 a build-time error.
+
+
+### Item 70 — the UART baud is stated three times and the three disagree
+
+**Raised 2026-08-25**, after two boards in one session refused to download until
+their build's own summary was read.
+
+The rate a bitstream actually uses comes from the CONFIG. It is stated in three
+places:
+
+1. **A preset override** — `params = Map("baudRate" -> n)`. Only four presets set
+   one: `wukongFull` 1 M, `ae115fbDdr2` 2 M, `colorlightI5Bram/Sdram` 1 M.
+2. **A default** — `JopCoreConfig.uartBaudRate` falls back to **2 000 000** for
+   every preset that does not override, which is most of them.
+3. **Twelve Makefile constants** — `BAUD_RATE`, `UART_BAUD`, `DDR3_UART_BAUD`,
+   `BAUD`: seven say 2 M, four say 1 M, and they are what `make download` and
+   `make monitor` pass.
+
+Nothing checks that (3) matches (1)/(2), and the bitstream only listens to
+(1)/(2).
+
+**Two failures from this in one session.** The Wukong DDR3 flow: the Makefile
+says `DDR3_UART_BAUD := 2000000`, `wukongFull` says **1 M**, and downloading at
+2 M produced "FPGA not responding" on BOTH the CH340N and the Pico — which reads
+exactly like a dead board. Then `wukongDdr3` on the same board, same flow, says
+**2 M**, so the correct rate flipped between two presets of the same memory type.
+
+Earlier, the i5's `UartBaudTick` work was prompted by the same class of problem
+from the other end: an integer divider that only produced the requested rate on
+lucky clocks.
+
+**What to do.** One rate everywhere unless a board cannot reach it — the CH340
+boards are the known constraint, and 1 Mbaud is the rate every attached board has
+demonstrated. Then:
+
+- the Makefile constants should be DERIVED, not restated. Each build already
+  emits its baud in `<Top>.summary.txt`, so `make download` can read it rather
+  than carry a constant that is right by coincidence.
+- a preset that overrides the rate should say why, at the override.
+
+**Cheap partial fix available now**: `download.py` and `monitor.py` could take
+the config directory instead of a baud and read the summary. That removes the
+guess at the point where it actually bites, without touching any preset.
 
 ## 4. Two workstreams, both largely done
 
