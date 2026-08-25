@@ -482,9 +482,13 @@ $(QP).cdf: $(SOF_FILE)
 assert-device:
 	@$(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --assert-device ep4cgx150
 
-program: assert-device $(SOF_FILE) $(QP).cdf
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP).cdf
-	@echo "=== FPGA programmed ==="
+# Follows REV like everything else in the parameterised path, and takes the .sof
+# directly -- quartus_pgm accepts an explicit operation, so there is no need for
+# a .cdf. It used to name $(QP).cdf, which is fixed at jop_sdram, so `make
+# program CFG=... REV=jop_dbfpga` would have programmed the wrong bitstream.
+program: assert-device $(SOF_FILE)
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG -o "p;$(SOF_FILE)"
+	@echo "=== FPGA programmed: $(SOF_FILE) ==="
 
 $(QP_SMP).cdf: $(SOF_SMP_FILE)
 	@echo '/* Auto-generated CDF */' > $@
