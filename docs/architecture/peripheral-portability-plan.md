@@ -189,3 +189,67 @@ config flash block work that does not depend on it.
 The same machinery covers the non-JOP designs already in the tree — blink
 projects, UART loopbacks, SDRAM exercisers across every board — which is a
 larger constituency than the flash and SD tops that prompted it.
+
+## The PLL: generate the IP with the vendor's own tool
+
+**Raised 2026-08-25.** Today there are NINE PLL blackboxes for TWO vendor
+primitives:
+
+| primitive | wrappers | differ only by |
+|---|---|---|
+| Altera `altpll` | `DramPll` (4 outputs), `Max1000Pll` (2), `Ep4ce6Pll` (2), `EthPll` (1, and no `areset`) | output count, generated-file name |
+| Xilinx `clk_wiz` | `ClkWizBlackBox`, `WukongClkWizBlackBox`, `SdramExerciserClkWiz` | port set, instance name |
+| Lattice `EHXPLLL` | `I5Pll` | — |
+| Altera Cyclone V | `Cyc5000Pll` | different megafunction |
+
+`DramPll` is named for its first job -- clocking the SDRAM -- but `c1` is the
+SYSTEM clock, so a design with no DRAM instantiates something called `DramPll`.
+And the settings are only half parameterised: `DramPllGen` does not generate the
+VHDL, it reads a **441-line tracked, hand-written**
+`fpga/qmtech-ep4cgx150-sdram/dram_pll.vhd` and text-substitutes the multiply and
+divide. The SHAPE -- how many outputs, at what phases -- is frozen in that file
+and mirrored in the Scala blackbox, which is why each new shape needed a new
+pair.
+
+Three bugs already traced to this: the Wukong BRAM branch ties the clock
+wizard's reset ASSERTED, a `set_clock_groups` was discarded because the netlist
+said `dramPll` where the constraint said `pll`, and a generated config under
+`build/` still reaches back into `fpga/` for that template.
+
+### The tools are already here, and all three work
+
+| family | generator | status |
+|---|---|---|
+| Lattice ECP5 | `ecppll` (`/usr/bin`) | **proven** — regenerating `pll_jop_i5.v` from `--clkin 25 --clkout0 40 --clkout1 40 --phase1 315` is BIT-IDENTICAL to the tracked file |
+| Xilinx | `create_ip` in Vivado | **already the practice** — `create_clk_wiz.tcl` does exactly this |
+| Altera | `ip-generate` with `altpll` (`quartus/sopc_builder/bin`) | **generates** — `altpll` is in the catalog and produced a wrapper; the parameter NAMES still need to be the correct altpll set |
+
+The i5's PLL is already reproducible from three numbers, and its own header
+records the command. It is a generator invocation written down as a file.
+
+### Shape
+
+```scala
+case class PllOutput(role: PllRole, mhz: Int, phaseDeg: Int = 0)
+case class PllSpec(inputMhz: Int, outputs: Seq[PllOutput])
+
+trait PllVendor {                       // one per family, not per board
+  def generateIp(spec: PllSpec, moduleName: String, outDir: String): Unit
+  def blackBox(spec: PllSpec, moduleName: String): PllResult
+}
+```
+
+`Board` carries a `PllSpec`; the vendor follows from `FpgaFamily`. All nine
+blackboxes collapse, and both hand-written IP files (`dram_pll.vhd`,
+`pll_jop_i5.v`) are deleted rather than maintained.
+
+**What it buys beyond tidiness:** the reset polarity is decided once instead of
+per branch; the instance name comes from the same spec `TimingConstraints`
+reads, so the two cannot disagree; and `build/` stops depending on `fpga/`.
+
+**The real risk, and it is not the refactor.** Generating IP means the
+`generate` step needs a VENDOR TOOL, where today it is pure sbt. CI has no
+vendor tools at all. So either the generated IP is cached and checked against
+the spec, or CI cannot elaborate those designs -- and "CI cannot build it" is
+how the microcode flash variant went 16 days stale. Decide this BEFORE writing
+the generators, not after.
