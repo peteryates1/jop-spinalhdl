@@ -125,6 +125,58 @@ def run_app(d, jop, timeout):
     return out
 
 
+# A soak reports progress, not a verdict. GcStressTest prints one line per
+# round: "R345124 f=5313644" -- a round counter and the free-memory count.
+PROGRESS_RE = r"R(?P<round>\d+)\s+f=(?P<free>\d+)"
+
+
+def judge_soak(out, min_rounds, drift, pattern=PROGRESS_RE):
+    """Did it get far enough, and is memory being reclaimed?
+
+    Written because the alternative was `--expect-text "R"`, which matches
+    almost any output and passed while proving nothing. A soak asks two
+    questions a substring cannot answer: did it REACH a meaningful number of
+    rounds, and is the heap holding level?
+
+    WHAT "LEVEL" MEANS, and the first version of this got it wrong. Free memory
+    under a GC is SAWTOOTH -- it climbs when a collection runs and falls as
+    objects allocate. The real i5 soak moves over a 130 KB band across 567
+    distinct values, all of it healthy. Testing `max - min` therefore called a
+    working collector a leak.
+
+    What a leak actually looks like is the FLOOR dropping: each cycle reclaims a
+    little less than the last. So compare the low-water mark of an early window
+    against a late one. Oscillation inside a band is fine; a band that sinks is
+    not.
+    """
+    samples = [(int(m.group("round")), int(m.group("free")))
+               for m in re.finditer(pattern, out)]
+    if not samples:
+        return False, "no progress lines matched -- did the app run?"
+
+    rounds = max(r for r, _ in samples)
+    if rounds < min_rounds:
+        return False, f"reached round {rounds}, wanted at least {min_rounds}"
+
+    # Skip the first tenth: the heap settles before it is meaningfully level.
+    warm = samples[len(samples) // 10:] or samples
+    if len(warm) < 4:
+        return True, f"{rounds} rounds (too few samples to judge the floor)"
+
+    half = len(warm) // 2
+    early_floor = min(f for _, f in warm[:half])
+    late_floor = min(f for _, f in warm[half:])
+    drop = early_floor - late_floor
+    if drop > drift:
+        return False, (f"free floor fell {drop} bytes ({early_floor} -> "
+                       f"{late_floor}) between rounds {warm[0][0]} and "
+                       f"{warm[-1][0]}, allowed {drift} -- possible leak")
+
+    band = max(f for _, f in warm) - min(f for _, f in warm)
+    return True, (f"{rounds} rounds, floor steady at {late_floor} "
+                  f"(drop {drop}, sawtooth band {band})")
+
+
 def judge(out):
     """Count what the JVM said. `ok` lines and an explicit exit are the signal;
     a test name containing 'Exception' is not a failure, which is why this
@@ -149,6 +201,14 @@ def main():
     # cpuCnt says. An SMP build verified with DoAll would prove nothing about
     # the other cores.
     ap.add_argument("--expect-text", default=None)
+    # Soak mode. `--expect-text` cannot express "got far enough and did not
+    # leak", which is the only thing a GC soak is actually asserting.
+    ap.add_argument("--min-rounds", type=int, default=None,
+                    help="soak: require the round counter to reach at least N")
+    ap.add_argument("--max-free-drift", type=int, default=0,
+                    help="soak: bytes the free FLOOR may fall (a sawtooth band is fine)")
+    ap.add_argument("--progress-re", default=PROGRESS_RE,
+                    help="soak: regex with named groups 'round' and 'free'")
     ap.add_argument("--timeout", type=int, default=300)
     a = ap.parse_args()
 
@@ -171,7 +231,12 @@ def main():
         program(d, bitstream)
         out = run_app(d, jop, a.timeout)
         ok, fails, exited, crashed = judge(out)
-        if a.expect_text:
+        detail = ""
+        if a.min_rounds is not None:
+            good, detail = judge_soak(out, a.min_rounds, a.max_free_drift,
+                                      a.progress_re)
+            good = good and crashed == 0
+        elif a.expect_text:
             good = a.expect_text in out and crashed == 0
         else:
             good = ok >= a.expect_ok and fails == 0 and crashed == 0
@@ -186,6 +251,7 @@ def main():
         line = (f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} "
                 f"{a.preset} {a.app} run={i}/{a.runs} "
                 f"{'expect=' + repr(a.expect_text) + ' ' if a.expect_text else ''}"
+                f"{detail + ' ' if detail else ''}"
                 f"ok={ok} fail={fails} exit={exited} crash={crashed} "
                 f"{'PASS' if good else 'FAIL'}")
         with open(log, "a") as f:
