@@ -276,3 +276,27 @@ is what the local sweep and `hw_verify.py` are for.
 So the rule for the generators: whatever a vendor tool emits must declare enough
 to be checked against its spec by reading it. If a generated artefact cannot be
 verified without the tool that made it, it needs a recorded hash instead.
+
+## Hardware result — i5 with an ecppll-generated PLL (2026-08-25)
+
+`fpga/colorlight-i5/pll_jop_i5.v` deleted; the PLL is generated from
+`Board.ColorlightI5.pllType.spec` at build time.
+
+| test | result |
+|---|---|
+| `DoAll` | **66/66**, `JVM exit!` |
+| `CardMarkTest` | **CARD OK** |
+| `GcStressTest` | **345,124 rounds**, free flat at 5,313,644 |
+
+Fit unchanged: 49.40 MHz PASS, 13,938 TRELLIS_COMB, 1 EHXPLLL.
+
+The GC soak is the one that matters here. The regenerated PLL's second output is
+the SDRAM clock at **315 degrees**, and a wrong CPHASE/FPHASE pair is the classic
+way to get a PLL that looks right and corrupts memory under load -- `DoAll`
+touches memory, `GcStressTest` hammers it.
+
+**A weakness in how that was checked**: the soak was run with
+`--expect-text "R"`, which matches nearly any output, so the PASS is close to
+meaningless on its own -- the evidence is the transcript, not the verdict.
+`hw_verify.py` cannot currently express "reached at least N rounds and the free
+count is stable", and a GC soak needs exactly that.
