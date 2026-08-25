@@ -91,7 +91,11 @@ monitor:
 # wukong_ddr3_base.xdc); wukong_ddr3.xdc and rtl8211eg_gmii.xdc stay
 # hand-written because they carry TIMING EXCEPTIONS and the PHY interface,
 # which are not derivable from board data.
-DDR3_CFG      ?= wukongFull
+# wukongDdr3 by default, not wukongFull: wukongFull sets bytecodes "*" -> "hw",
+# which forces hardware for `frem` -- a bytecode with no hardware implementation
+# anywhere -- so DoAll dies at FloatTest on it. wukongDdr3 runs 66/66 on the same
+# board through the same flow. See status item 69.
+DDR3_CFG      ?= wukongDdr3
 DDR3_CFG_DIR   = $(REPO_ROOT)/build/$(DDR3_CFG)
 
 ddr3-generate:

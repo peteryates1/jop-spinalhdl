@@ -6753,9 +6753,19 @@ the board.
 **Affects every `*=hw` preset**: `wukongFull`, `xc7a100tDbFull`, and the
 dual-cluster half at `JopConfig.scala:1301`.
 
-**Not the build-tree conversion.** The converted flow's RTL is byte-identical to
-the legacy path's (checked), and its fit reproduces the known-good 20,514 LUTs /
-+0.349 ns exactly.
+**Not the build-tree conversion, and proved so on hardware.** `wukongDdr3` --
+same board, same DDR3, same generated constraints, same converted flow, and
+`bytecodes = Map("idiv" -> "hw", "irem" -> "hw")` instead of the wildcard --
+runs **DoAll 66/66 with `JVM exit!`**. The only difference between the two is
+`"*" -> "hw"`.
+
+| preset | bytecodes | LUTs | timing | DoAll |
+|---|---|---|---|---|
+| `wukongFull` | `"*" -> "hw"` | 20,514 | +0.349 ns | **dies at FloatTest, `frem`** |
+| `wukongDdr3` | `idiv`, `irem` | 12,448 | +0.642 ns | **66/66** |
+
+The converted flow's RTL is also byte-identical to the legacy path's, and
+`wukongFull`'s fit reproduces the known-good 20,514 LUTs / +0.349 ns exactly.
 
 **The wildcard needs to mean "hardware where one exists".** Silently producing a
 jump-table hole for a bytecode with no implementation is the same failure shape
