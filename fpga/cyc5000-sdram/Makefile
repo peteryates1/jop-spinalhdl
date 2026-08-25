@@ -62,15 +62,29 @@ JOP_FILE ?= ../../java/apps/Smallest/HelloWorld.jop
 # Project paths (sbt runs from repo root)
 PROJECT_ROOT = ../..
 ASM_DIR = ../../asm
-GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopCyc5000Top.v
-GENERATED_SMP_V = $(PROJECT_ROOT)/spinalhdl/generated/JopSmpCyc5000Top.v
 
-# Quartus projects
-QP = jop_cyc5000
-QP_SMP = jop_smp_cyc5000
-OUTPUT_DIR = output_files
-SOF_FILE = $(OUTPUT_DIR)/$(QP).sof
-SOF_SMP_FILE = $(OUTPUT_DIR)/$(QP_SMP).sof
+# CONVERTED (2026-08-25). Verilog, SDC and the Quartus project are generated from
+# the preset into build/<config>/; Quartus writes its own .qsf/.qpf. Both the
+# single-core and SMP flows are the SAME rules with a different CFG/REV, as on
+# the EP4CGX150.
+#
+#   make all                    single core
+#   make smp CORES=2            SMP
+CFG   ?= cyc5000Serial
+REV   ?= jop_cyc5000
+CORES ?= 2
+
+ifeq ($(words $(CFG)),1)
+  CFG_NAME := $(CFG)
+else
+  CFG_NAME := $(shell cd $(PROJECT_ROOT) && sbt "runMain jop.generate.BuildLayoutMain $(CFG)" 2>/dev/null \
+                | sed -n 's|^\[info\] build/\(.*\)$$|\1|p' | tail -1)
+endif
+
+CFG_DIR     = $(PROJECT_ROOT)/build/$(CFG_NAME)
+QUARTUS_PRJ = $(CFG_DIR)/quartus
+GEN_STAMP   = $(CFG_DIR)/rtl/.generated
+SOF_FILE    = $(QUARTUS_PRJ)/output_files/$(REV).sof
 
 .PHONY: all microcode generate generate-smp build build-smp program program-smp download monitor run run-smp full full-smp clean
 
@@ -99,13 +113,30 @@ microcode:
 # SpinalHDL Verilog generation
 # --------------------------------------------------------------------------
 
-generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog cyc5000Serial"
-	@echo "=== Verilog generated: $(GENERATED_V) ==="
+SCALA_SRC := $(shell find $(PROJECT_ROOT)/spinalhdl/src/main/scala -name '*.scala')
+UCODE     := $(wildcard $(PROJECT_ROOT)/build/microcode/serial/mem_*.dat)
 
-generate-smp:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog cyc5000Smp 2"
-	@echo "=== SMP Verilog generated: $(GENERATED_SMP_V) ==="
+$(GEN_STAMP): $(SCALA_SRC) $(UCODE)
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog $(CFG) buildtree"
+	@mkdir -p $(dir $@) && touch $@
+
+$(QUARTUS_PRJ)/$(REV).sdc:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.TimingConstraintsMain $(CFG) --write build/$(CFG_NAME)/quartus/$(REV).sdc"
+
+$(QUARTUS_PRJ)/setup_proj.tcl:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.QuartusProjectMain $(CFG) --revision $(REV) --write build/$(CFG_NAME)/quartus/setup_proj.tcl"
+
+$(QUARTUS_PRJ)/$(REV).qsf: $(QUARTUS_PRJ)/setup_proj.tcl $(QUARTUS_PRJ)/$(REV).sdc
+	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_sh -t setup_proj.tcl
+
+generate: $(GEN_STAMP)
+	@echo "=== Verilog generated into $(CFG_DIR)/rtl ==="
+
+smp:
+	$(MAKE) generate build CFG="cyc5000Smp $(CORES)" REV=jop_smp_cyc5000
+
+smp-program:
+	$(MAKE) program CFG="cyc5000Smp $(CORES)" REV=jop_smp_cyc5000
 
 # --------------------------------------------------------------------------
 # Quartus build
@@ -113,39 +144,31 @@ generate-smp:
 
 build: $(SOF_FILE)
 
-$(SOF_FILE): $(GENERATED_V) $(QP).qsf $(QP).sdc cyc5000_pll.vhd
-	$(QUARTUS_BIN)/quartus_map $(QP)
-	$(QUARTUS_BIN)/quartus_fit $(QP)
-	$(QUARTUS_BIN)/quartus_asm $(QP)
-	$(QUARTUS_BIN)/quartus_sta $(QP)
+$(SOF_FILE): $(GEN_STAMP) $(QUARTUS_PRJ)/$(REV).qsf
+	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_map $(REV)
+	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_fit $(REV)
+	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_asm $(REV)
+	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_sta $(REV)
 	@echo "=== Build complete: $(SOF_FILE) ==="
 
-build-smp: $(SOF_SMP_FILE)
-
-$(SOF_SMP_FILE): $(GENERATED_SMP_V) $(QP_SMP).qsf $(QP).sdc cyc5000_pll.vhd
-	$(QUARTUS_BIN)/quartus_map $(QP_SMP)
-	$(QUARTUS_BIN)/quartus_fit $(QP_SMP)
-	$(QUARTUS_BIN)/quartus_asm $(QP_SMP)
-	$(QUARTUS_BIN)/quartus_sta $(QP_SMP)
-	@echo "=== SMP Build complete: $(SOF_SMP_FILE) ==="
 
 # --------------------------------------------------------------------------
 # FPGA programming
 # --------------------------------------------------------------------------
 
-$(QP).cdf: $(SOF_FILE)
+$(QUARTUS_PRJ)/$(REV).cdf: $(SOF_FILE)
 	@echo '/* Auto-generated CDF */' > $@
 	@echo 'JedecChain;' >> $@
 	@echo '	FileRevision(JESD32A);' >> $@
 	@echo '	DefaultMfr(6E);' >> $@
 	@echo '	P ActionCode(Cfg)' >> $@
-	@echo '		Device PartName(5CEBA2) Path("$(OUTPUT_DIR)/") File("$(QP).sof") MfrSpec(OpMask(1));' >> $@
+	@echo '		Device PartName(5CEBA2) Path("$(QUARTUS_PRJ)/output_files/") File("$(REV).sof") MfrSpec(OpMask(1));' >> $@
 	@echo 'ChainEnd;' >> $@
 	@echo 'AlteraBegin;' >> $@
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-RBF_FILE = $(OUTPUT_DIR)/$(QP).rbf
+RBF_FILE = $(QUARTUS_PRJ)/output_files/$(REV).rbf
 
 $(RBF_FILE): $(SOF_FILE)
 	$(QUARTUS_BIN)/quartus_cpf -c $(SOF_FILE) $(RBF_FILE)
@@ -159,23 +182,23 @@ program: $(RBF_FILE)
 # Needs the two conditions in the JTAG programmer note above (hand-installed
 # libjtag_hw_arrow.so, ftdi_sio unbound from interface 0). Without them this
 # fails with "Unable to scan device chain". `make program` needs neither.
-program-quartus: $(SOF_FILE) $(QP).cdf
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP).cdf
+program-quartus: $(SOF_FILE) $(QUARTUS_PRJ)/$(REV).cdf
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QUARTUS_PRJ)/$(REV).cdf
 
-$(QP_SMP).cdf: $(SOF_SMP_FILE)
+$(REV).cdf: $(SOF_SMP_FILE)
 	@echo '/* Auto-generated CDF */' > $@
 	@echo 'JedecChain;' >> $@
 	@echo '	FileRevision(JESD32A);' >> $@
 	@echo '	DefaultMfr(6E);' >> $@
 	@echo '	P ActionCode(Cfg)' >> $@
-	@echo '		Device PartName(5CEBA2) Path("$(OUTPUT_DIR)/") File("$(QP_SMP).sof") MfrSpec(OpMask(1));' >> $@
+	@echo '		Device PartName(5CEBA2) Path("$(QUARTUS_PRJ)/output_files/") File("$(REV).sof") MfrSpec(OpMask(1));' >> $@
 	@echo 'ChainEnd;' >> $@
 	@echo 'AlteraBegin;' >> $@
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program-smp: $(SOF_SMP_FILE) $(QP_SMP).cdf
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SMP).cdf
+program-smp: $(SOF_SMP_FILE) $(REV).cdf
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(REV).cdf
 	@echo "=== SMP FPGA programmed ==="
 
 # --------------------------------------------------------------------------
@@ -193,5 +216,5 @@ monitor:
 # --------------------------------------------------------------------------
 
 clean:
-	rm -rf output_files db incremental_db $(QP).cdf $(QP_SMP).cdf
+	rm -rf output_files db incremental_db $(QUARTUS_PRJ)/$(REV).cdf $(REV).cdf
 	rm -f *.rpt *.done *.jdi *.sld *.smsg *.summary *.pin

@@ -79,7 +79,13 @@ object QuartusProject {
     g("ENABLE_CONFIGURATION_PINS", "OFF")
     g("ENABLE_BOOT_SEL_PIN", "OFF")
     g("USE_CONFIGURATION_DEVICE", "OFF")
-    g("ACTIVE_SERIAL_CLOCK", "FREQ_40MHZ")
+    // Cyclone IV only. Quartus REFUSES this value on Cyclone V --
+    //   ERROR: Value "FREQ_40MHZ" for "ACTIVE_SERIAL_CLOCK" is illegal
+    // -- and the setting configures the EPCS active-serial clock, which that
+    // family does not have. Every hand-written .qsf that sets it is a Cyclone
+    // IV GX project; the CYC5000's does not.
+    if (fpga.family == FpgaFamily.CycloneIV || fpga.family == FpgaFamily.CycloneIVE)
+      g("ACTIVE_SERIAL_CLOCK", "FREQ_40MHZ")
     g("ENABLE_SIGNALTAP", "OFF")
     sb.append("\n")
 
@@ -107,7 +113,15 @@ object QuartusProject {
 
     sb.append("# Sources\n")
     g("VERILOG_FILE", up(s"${layout.rtlDir(preset, buildArgs)}/${config.entityName}.v"))
-    g("VHDL_FILE", layout.relativeTo(projectDir, layout.ipDir(preset, buildArgs) + "/dram_pll.vhd"))
+    // The system PLL, from the BOARD's PllType. This used to be a hardcoded
+    // "dram_pll.vhd" -- the EP4CGX150's PLL -- so a Cyclone V project named a
+    // file that does not exist for it.
+    config.assembly.fpgaBoard.pllType.flatMap(_.ipFile).foreach {
+      case PllIpFile.Generated(name) =>
+        g("VHDL_FILE", layout.relativeTo(projectDir, layout.ipDir(preset, buildArgs) + "/" + name))
+      case PllIpFile.Static(path) =>
+        g("VHDL_FILE", up(path))
+    }
 
     // Board IP beyond the system PLL. Emitted only when the DESIGN needs it:
     // the Ethernet PLL exists on the board whether or not this configuration

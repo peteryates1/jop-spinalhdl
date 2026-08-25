@@ -51,10 +51,31 @@ import jop.system.{DramPll, Max1000Pll, Ep4ce6Pll, SdramExerciserClkWiz}
 import jop.system.pll.{Cyc5000Pll, WukongClkWizBlackBox, I5Pll, PllResult}
 import jop.ddr3.ClkWizBlackBox
 
+/** Where a PLL's IP file comes from. */
+sealed trait PllIpFile
+object PllIpFile {
+  /** Written per configuration into build/<config>/ip/ by DramPllGen. */
+  case class Generated(name: String) extends PllIpFile
+  /** A hand-written file at a fixed repo-relative path. */
+  case class Static(path: String) extends PllIpFile
+}
+
 sealed trait PllType {
   /** Instantiate the PLL and return all clock outputs.
     * @param systemIndex differentiates multiple PLL instances in multi-system designs */
   def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0): PllResult
+
+  /** The IP file that defines this PLL, if a Quartus project must list one.
+    *
+    * `Generated` means DramPllGen writes it per configuration into
+    * `build/<config>/ip/`; `Static` means a hand-written file at a fixed
+    * repo-relative path. Xilinx and Lattice return None -- their IP is an .xci
+    * the project reads separately, or a module generated beside the design.
+    *
+    * Stated here because the generator hardcoded `dram_pll.vhd`, which is the
+    * EP4CGX150's PLL: a Cyclone V project came out naming a file that does not
+    * exist for it. */
+  def ipFile: Option[PllIpFile] = None
 
   /** What this generator PRODUCES, described without the vendor.
     *
@@ -92,6 +113,7 @@ object PllType {
     * BRAM: c1=100MHz system. */
   case object AlteraDramPll extends PllType {
     override val instanceName = "dramPll"
+    override val ipFile = Some(PllIpFile.Generated("dram_pll.vhd"))
     def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
       val pll = DramPll()
       pll.io.inclk0 := inputClock
@@ -109,6 +131,7 @@ object PllType {
   /** CYC5000 (Cyclone V): altera_pll megafunction.
     * 12 MHz -> outclk_0=80MHz system, outclk_1=80MHz/-2.5ns SDRAM. */
   case object AlteraCyc5000 extends PllType {
+    override val ipFile = Some(PllIpFile.Static("fpga/cyc5000-sdram/cyc5000_pll.vhd"))
     def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
       val pll = Cyc5000Pll()
       pll.io.refclk := inputClock
@@ -153,6 +176,7 @@ object PllType {
 
   /** MAX1000 (MAX10): c0=80MHz system, c1=80MHz/-3ns SDRAM. */
   case object AlteraMax1000 extends PllType {
+    override val ipFile = Some(PllIpFile.Static("fpga/max1000/max1000_pll.vhd"))
     def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
       val pll = Max1000Pll()
       pll.io.inclk0 := inputClock
@@ -164,6 +188,7 @@ object PllType {
 
   /** EP4CE6 (Cyclone IV E): c0=80MHz system, c1=80MHz/-3ns SDRAM. */
   case object AlteraEp4ce6 extends PllType {
+    override val ipFile = Some(PllIpFile.Static("fpga/ip/ep4ce6_pll.vhd"))
     def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
       val pll = Ep4ce6Pll()
       pll.io.inclk0 := inputClock
