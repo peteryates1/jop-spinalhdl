@@ -209,10 +209,20 @@ $(GEN_STAMP): $(SCALA_SRC) $(UCODE)
 generate: $(GEN_STAMP)
 	@echo "=== Verilog generated into $(CFG_DIR)/rtl ==="
 
-# Microcode-fallback coverage build. Same hardware project as `generate`; only
-# the bytecode implementation choices differ, so it reuses build/program/download.
-generate-mc-fallback:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150McFallback"
+# Microcode-fallback coverage build. A different CONFIGURATION of the same
+# hardware project, so it re-enters the parameterised rules rather than carrying
+# its own -- exactly like `smp`. Nothing new was needed to convert it.
+#
+#   make mc-fallback           build it
+#   make mc-fallback-program   program it
+mc-fallback:
+	$(MAKE) generate build CFG=ep4cgx150McFallback REV=jop_sdram
+
+mc-fallback-program:
+	$(MAKE) program CFG=ep4cgx150McFallback REV=jop_sdram
+
+# Kept as an alias: the old name generated Verilog only, into the legacy tree.
+generate-mc-fallback: mc-fallback
 
 # SMP IS NOT A DIFFERENT FLOW. It is the same six rules with a different
 # configuration, so it re-enters them rather than duplicating them:
@@ -242,6 +252,17 @@ generate-smp8:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopSmp8TestVerilog"
 	@echo "=== 8-core SMP test Verilog generated: $(GENERATED_SMP_V) ==="
 
+# NOT CONVERTED, AND NOT CONVERTIBLE AS IT STANDS (checked 2026-08-25).
+#
+# jop_dbfpga.qsf assigns 95 pins -- Ethernet (e_*), VGA (vga_*) and SD (sd_*) --
+# but this target generates `ep4cgx150Serial`, whose top has 45 and none of
+# those: its ports are clk_in, led, sdram_*, ser_rxd and ser_txd. So fifty
+# assignments name ports that do not exist, which Quartus reduces to warnings.
+#
+# There is no preset that would match: NO EP4CGX150 configuration declares an
+# Ethernet or VGA device -- only wukongFull, xc7a100tDbFull and wukongSdrFull do.
+# So this is either a stale project or a preset nobody wrote. Converting it would
+# only make a broken flow tidier. See docs/current-status.md item 66.
 generate-dbfpga:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Serial"
 	@echo "=== DB_FPGA Verilog generated: $(GENERATED_DBFPGA_V) ==="

@@ -169,6 +169,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[63](#item-63)** — One Wukong SDR startup crash in six runs, not reproduced — recorded so a second sighting is not treated as the first
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
+- **[66](#item-66)** — `jop_dbfpga` assigns 95 pins to a 45-pin design; no EP4CGX150 preset has the Ethernet/VGA/SD it constrains
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -6545,6 +6546,32 @@ native, but neither exerciser has been run from a cold card.
 
 Not chased further here -- this session's task was the build port, and the
 conversion is cleared.
+
+
+### Item 66 — `jop_dbfpga` constrains hardware no EP4CGX150 preset has
+
+**Found 2026-08-25** while deciding whether to convert the flow.
+
+`jop_dbfpga.qsf` assigns **95 pins**, including Ethernet (`e_mdc`, `e_mdio`,
+`e_rxd`, `e_txd`, `e_gtxc`, …), VGA (`vga_r/g/b`, `vga_hs`, `vga_vs`) and SD
+(`sd_clk`, `sd_cmd`, `sd_dat_*`, `sd_cd`).
+
+Its `generate-dbfpga` target runs **`ep4cgx150Serial`**, whose top has 45 ports:
+`clk_in`, `led`, `sdram_*`, `ser_rxd`, `ser_txd`. Nothing else. So fifty
+assignments name ports that do not exist — which Quartus reports as warnings and
+otherwise ignores, so the flow "builds" while none of that hardware is driven.
+
+**And no preset would fix it.** No EP4CGX150 configuration declares an Ethernet
+or VGA device at all; the only presets that do are `wukongFull`,
+`xc7a100tDbFull` and `wukongSdrFull`, all on other boards. `generate-dbfpga-vgadma`
+runs the same `ep4cgx150Serial`, so the two dbfpga flows also generate BYTE-
+IDENTICAL RTL and differ only in which hand-written project is built.
+
+So this is a stale project, or a preset nobody wrote. It is **not a conversion
+candidate**: generating its constraints would faithfully reproduce a
+50-assignment mismatch. Decide whether the EP4CGX150 + DB_FPGA V4 combination
+still needs an Ethernet/VGA/SD configuration; if it does, the preset is the
+missing piece and the project follows from it.
 
 ## 4. Two workstreams, both largely done
 
