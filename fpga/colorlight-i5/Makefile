@@ -83,6 +83,7 @@ all: bitstream
 generate:
 	cd $(ROOT) && sbt "runMain jop.system.JopTopVerilog $(PRESET) buildtree"
 	cd $(ROOT) && sbt "runMain jop.generate.LpfGeneratorMain $(PRESET) --write build/$(PRESET)/nextpnr/$(TOP).lpf"
+	cd $(ROOT) && sbt "runMain jop.generate.PllGenMain $(PRESET) --module pll_jop_i5 --out build/$(PRESET)/ip"
 
 # The .v MUST depend on the Scala sources and the microcode. Without this the
 # generated Verilog silently goes stale whenever the preset changes, and the
@@ -100,9 +101,9 @@ $(GENDIR)/$(TOP).v: $(SCALA_SRC) $(UCODE)
 # yosys must run with $(GENDIR) as its working directory: the $readmemb paths in
 # the generated Verilog are bare filenames, resolved relative to the cwd. Hence
 # the absolute output path.
-$(BUILD)/$(TOP).json: $(GENDIR)/$(TOP).v pll_jop_i5.v
+$(BUILD)/$(TOP).json: $(GENDIR)/$(TOP).v
 	mkdir -p $(BUILD)
-	cd $(GENDIR) && yosys -p "read_verilog $(TOP).v $(abspath pll_jop_i5.v); \
+	cd $(GENDIR) && yosys -p "read_verilog $(TOP).v $(abspath $(CFG_DIR))/ip/pll_jop_i5.v; \
 	    synth_ecp5 -top $(TOP) -json $(abspath $(BUILD))/$(TOP).json" \
 	    2>&1 | tee $(abspath $(BUILD))/yosys.log
 

@@ -56,6 +56,14 @@ sealed trait PllType {
     * @param systemIndex differentiates multiple PLL instances in multi-system designs */
   def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0): PllResult
 
+  /** What this generator PRODUCES, described without the vendor.
+    *
+    * Optional while the tree is converted: a PllType that still wires a
+    * hand-written blackbox has no spec to declare, and saying so is better than
+    * inventing one that nothing checks. Where it IS declared, the IP is
+    * generated from it and the declaration is verified against the result. */
+  def spec: Option[PllSpec] = None
+
   /** The instance name this PLL gets in the netlist, for timing constraints to
     * refer to.
     *
@@ -120,6 +128,19 @@ object PllType {
     * kind of difference that makes a working BRAM build stop predicting
     * anything about the SDRAM one. */
   case object LatticeEcp5I5 extends PllType {
+    /** 25 MHz board oscillator -> 40 MHz system + 40 MHz SDRAM at 315 deg.
+      *
+      * 315 deg = -45 deg = -3.1 ns at 40 MHz. Expressed in DEGREES because that
+      * stays correct if the frequency moves; the equivalent nanosecond figure
+      * does not. This is the spec `pll_jop_i5.v` was generated from -- its own
+      * header records the ecppll command -- so the file is now produced from it
+      * rather than kept beside it. */
+    override val spec = Some(PllSpec(
+      inputMhz = 25,
+      outputs = Seq(
+        PllOutput(PllRole.System, 40),
+        PllOutput(PllRole.Sdram, 40, phaseDeg = 315))))
+
     def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
       val pll = I5Pll()
       pll.io.clkin := inputClock
