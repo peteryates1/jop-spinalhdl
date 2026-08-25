@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.lib._
 import spinal.lib.com.uart._
 import jop.io.SdSpi
+import jop.system.pll.Pll
 
 /**
  * SD SPI Mode Exerciser FPGA Top
@@ -21,7 +22,22 @@ import jop.io.SdSpi
  *   T2: WRITE — CMD24, data token, 512 bytes, CRC, check response
  *   T3: READ  — CMD17, wait for data token, 512 bytes, compare
  */
-case class SdSpiExerciserTop() extends Component {
+/**
+ * @param board   which board's PLL to instantiate. Taken from the Board rather
+ *                than hardcoded: `DramPll()` is an Altera altpll blackbox, and
+ *                calling it directly nailed this design to one vendor by its
+ *                CLOCK -- nothing to do with SD, whose pins already resolve on
+ *                the Wukong and the XC7A100T + DB v5.
+ * @param clkMhz  the system clock this design is built for. It used to be
+ *                hardcoded as FixedFrequency(80 MHz) while the project actually
+ *                built against the hand-written 60 MHz dram_pll.vhd -- so the
+ *                SD divider and UART baud were computed from a frequency the
+ *                hardware did not run at.
+ */
+case class SdSpiExerciserTop(
+  board: jop.config.Board = SdSpiExerciserDesign.assembly.fpgaBoard,
+  clkMhz: Int = SdSpiExerciserDesign.clkMhz
+) extends Component {
 
   val io = new Bundle {
     val clk_in     = in Bool()
@@ -36,27 +52,29 @@ case class SdSpiExerciserTop() extends Component {
 
   noIoPrefix()
 
-  // PLL: 50 MHz -> 80 MHz system clock
-  val pll = DramPll()
-  pll.io.inclk0 := io.clk_in
-  pll.io.areset := False
+  // PLL from the BOARD, not a hardcoded vendor primitive. MemoryType.BRAM
+  // selects the no-DRAM branch, which returns exactly what this design needs:
+  // a system clock and a locked signal.
+  val pllResult = Pll.create(board, jop.config.MemoryType.BRAM, io.clk_in)
+  val sysClk = pllResult.systemClk.get
+  val pllLocked = pllResult.locked
 
   // Reset generator
   val rawClockDomain = ClockDomain(
-    clock = pll.io.c1,
+    clock = sysClk,
     config = ClockDomainConfig(resetKind = BOOT)
   )
   val resetGen = new ClockingArea(rawClockDomain) {
     val res_cnt = Reg(UInt(3 bits)) init (0)
-    when(pll.io.locked && res_cnt =/= 7) {
+    when(pllLocked && res_cnt =/= 7) {
       res_cnt := res_cnt + 1
     }
-    val int_res = !pll.io.locked || !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
+    val int_res = !pllLocked || !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
   }
   val mainClockDomain = ClockDomain(
-    clock = pll.io.c1,
+    clock = sysClk,
     reset = resetGen.int_res,
-    frequency = FixedFrequency(80 MHz),
+    frequency = FixedFrequency(clkMhz MHz),
     config = ClockDomainConfig(resetKind = SYNC, resetActiveLevel = HIGH)
   )
 
@@ -856,13 +874,17 @@ object SdSpiExerciserDesign extends jop.config.BoardDesign {
   val memType    = None
   val fpga       = assembly.fpga
   val fpgaFamily = assembly.fpgaFamily
+
+  /** System clock this design is built for. Feeds the generated PLL, the
+    * SpinalHDL clock domain and the SD divider, so all three agree. */
+  val clkMhz = 80
 }
 
 object SdSpiExerciserTopVerilog extends App {
   SpinalConfig(
     mode = Verilog,
     targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(80 MHz)
+    defaultClockDomainFrequency = FixedFrequency(SdSpiExerciserDesign.clkMhz MHz)
   ).generate(SdSpiExerciserTop())
 
   println("Generated: spinalhdl/generated/SdSpiExerciserTop.v")
