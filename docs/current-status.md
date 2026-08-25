@@ -170,6 +170,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
+- **[68](#item-68)** — EP4CGX150 Ethernet: link comes up at 1 Gbps but NO packets move. DHCP times out against a server that IS on that switch
 - **[67](#item-67)** — `ep4cgx150DbFull` runs with `useStackCache = false`; the original had it true. Revisit once stack-cache SDRAM integration lands
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
@@ -6675,6 +6676,45 @@ restored build misbehaves, the cause should not have two candidates.
 Revisit once the stack cache lands, or sooner if a measurement wants it: the
 original chose it for a reason that is not recorded, and the Ethernet driver
 moving whole frames is the obvious guess.
+
+
+### Item 68 — Ethernet links at 1 Gbps but no packets move
+
+**Found 2026-08-25**, first hardware run of the restored `ep4cgx150DbFull`
+(item 66) on the EP4CGX150 + DB_FPGA V4, cable in, switch connected.
+
+| test | result |
+|---|---|
+| `NetTest` | `Link UP 1000M`, `UDP:7`, `TCP:7`, `GARP`, `Ready`, then `Rx=0 Er=0 Dr=0` indefinitely |
+| `DhcpTest` | `Link UP 1000M`, `DHCP: start` → `DHCP: timeout, restart`, repeating |
+
+**The DHCP timeout is a real failure: there IS a DHCP server on that switch.**
+So the board sends DISCOVER and either the frames never reach the wire, or the
+offer comes back and the receive path drops it.
+
+What is established:
+
+- **PHY and MDIO work.** Auto-negotiation reaching 1000M is a conversation with
+  the RTL8211EG over the management interface, so that path is sound.
+- **The MAC sees nothing at all.** `Rx=0` with `Er=0 Dr=0` — not corrupt
+  frames, not dropped frames. Nothing.
+- **The stack drives TX.** GARP on startup, DISCOVER on a retry loop.
+
+What is NOT established: whether frames leave the PHY. Nothing on this host can
+see that segment — it is a NAT'd VM on 192.168.122.0/24 that routes 192.168.0.x
+via the gateway.
+
+**The board cannot ping out**, so that diagnostic is unavailable as things
+stand: `ICMP.java` has no `sendEchoRequest`. `TYPE_ECHO_REQUEST` appears only as
+a constant and in the receive path, and `pingSentCount` counts REPLIES — which
+is also why `NetTest`'s `Tx=0` says nothing about the GARP.
+
+**Where to start.** The counters distinguish the halves cheaply: a host on
+192.168.0.x pinging the board tests RX and the reply path in one step, and a
+capture on that segment shows immediately whether DISCOVER is on the wire. Note
+this configuration is not otherwise identical to the one that worked in March —
+`useStackCache` is off (item 67) and the design has grown since — but neither of
+those would plausibly silence the MAC.
 
 ## 4. Two workstreams, both largely done
 
