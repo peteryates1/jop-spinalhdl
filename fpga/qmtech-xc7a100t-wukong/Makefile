@@ -83,8 +83,20 @@ monitor:
 
 # === JOP DDR3 targets ===
 
+# CONVERTED (2026-08-25). Same shape as the SDR flow: outputs under
+# build/<config>/, keyed by the invocation. DDR3_CFG selects which DDR3 preset
+# -- wukongFull carries Ethernet and SD, wukongDdr3 is the plain one.
+#
+# PINS are generated (ConstraintDriftTest has validated them against
+# wukong_ddr3_base.xdc); wukong_ddr3.xdc and rtl8211eg_gmii.xdc stay
+# hand-written because they carry TIMING EXCEPTIONS and the PHY interface,
+# which are not derivable from board data.
+DDR3_CFG      ?= wukongFull
+DDR3_CFG_DIR   = $(REPO_ROOT)/build/$(DDR3_CFG)
+
 ddr3-generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongFull"
+	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(DDR3_CFG) buildtree"
+	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(DDR3_CFG) --write build/$(DDR3_CFG)/vivado/wukong_ddr3_base.xdc"
 
 ddr3-create-ip:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_ddr3_clk_wiz.tcl
@@ -94,10 +106,10 @@ ddr3-create-project: ddr3-generate
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_ddr3_project.tcl
 
 ddr3-build:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_ddr3_bitstream.tcl
+	$(VIVADO_ENV) && JOP_CFG_DIR=$(DDR3_CFG_DIR) $(VIVADO) -mode batch -source vivado/tcl/build_ddr3_bitstream.tcl
 
 ddr3-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DDR3_BITSTREAM)
+	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DDR3_CFG_DIR)/vivado/build/JopDdr3WukongTop.bit
 
 ddr3-monitor:
 	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(DDR3_UART_BAUD)
@@ -116,28 +128,35 @@ ddr3-redownload:
 
 # === JOP DDR3 SMP targets ===
 
+DDR3_SMP_CORES ?= 4
+DDR3_SMP_CFG    = wukongSmp $(DDR3_SMP_CORES)
+DDR3_SMP_DIR    = $(REPO_ROOT)/build/wukongSmp-$(DDR3_SMP_CORES)
+
 ddr3-smp-generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongSmp 2"
+	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(DDR3_SMP_CFG) buildtree"
 
 ddr3-smp-build:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_ddr3_smp_bitstream.tcl
+	$(VIVADO_ENV) && JOP_CFG_DIR=$(DDR3_SMP_DIR) $(VIVADO) -mode batch -source vivado/tcl/build_ddr3_smp_bitstream.tcl
 
 ddr3-smp-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DDR3_SMP_BITSTREAM)
+	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DDR3_SMP_DIR)/vivado/build/JopSmpDdr3WukongTop.bit
 
 ddr3-smp-monitor:
 	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
 
 # === JOP Dual-cluster (DDR3 + SDR) targets ===
 
+DUAL_CFG     ?= wukongDualIndependent
+DUAL_CFG_DIR  = $(REPO_ROOT)/build/$(DUAL_CFG)
+
 dual-generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongDualIndependent"
+	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(DUAL_CFG) buildtree"
 
 dual-create-ip: ddr3-create-ip
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl
 
 dual-build:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_dual_bitstream.tcl
+	$(VIVADO_ENV) && JOP_CFG_DIR=$(DUAL_CFG_DIR) $(VIVADO) -mode batch -source vivado/tcl/build_dual_bitstream.tcl
 
 dual-program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DUAL_BITSTREAM)
@@ -197,8 +216,14 @@ jop-sdram-build:
 # SMP SDR: the counterpart of ddr3-smp-build, so SDR and DDR3 can be compared on
 # one board with only the memory path differing. Entity is JopSmpSdramWukongTop
 # (cpuCnt >= 2 inserts "Smp"), which the single-core script does not build.
+SDR_SMP_CORES ?= 2
+SDR_SMP_DIR    = $(REPO_ROOT)/build/wukongSdrSmp-$(SDR_SMP_CORES)
+
+jop-sdram-smp-generate:
+	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongSdrSmp $(SDR_SMP_CORES) buildtree"
+
 jop-sdram-smp-build:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_jop_sdram_smp_bitstream.tcl
+	$(VIVADO_ENV) && JOP_CFG_DIR=$(SDR_SMP_DIR) $(VIVADO) -mode batch -source vivado/tcl/build_jop_sdram_smp_bitstream.tcl
 
 jop-sdram-program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(JOP_SDRAM_BITSTREAM)

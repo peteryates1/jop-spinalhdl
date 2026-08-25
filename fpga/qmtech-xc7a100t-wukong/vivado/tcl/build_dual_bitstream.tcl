@@ -3,8 +3,14 @@
 
 set script_dir [file dirname [file normalize [info script]]]
 set repo_root  [file normalize [file join $script_dir ../..]]
-set build_dir  [file normalize [file join $repo_root vivado/build/wukong_jop_dual_np]]
-set rtl_dir    [file normalize [file join $repo_root ../../spinalhdl/generated]]
+if {[info exists ::env(JOP_CFG_DIR)] && $::env(JOP_CFG_DIR) ne ""} {
+    set cfg_dir   [file normalize $::env(JOP_CFG_DIR)]
+    set rtl_dir   [file join $cfg_dir rtl]
+    set build_dir [file join $cfg_dir vivado build]
+} else {
+    set build_dir [file normalize [file join $repo_root vivado/build/wukong_jop_dual_np]]
+    set rtl_dir   [file normalize [file join $repo_root ../../spinalhdl/generated]]
+}
 set ip_root    [file normalize [file join $repo_root vivado/ip]]
 
 file mkdir $build_dir

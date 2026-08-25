@@ -170,6 +170,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
+- **[69](#item-69)** — `bytecodes = "*" -> "hw"` forces hardware for `frem`, which has NO hardware implementation anywhere. `DoAll` dies at `FloatTest` on every `*=hw` preset
 - **[68](#item-68)** — EP4CGX150 Ethernet: link comes up at 1 Gbps but NO packets move. DHCP times out against a server that IS on that switch
 - **[67](#item-67)** — `ep4cgx150DbFull` runs with `useStackCache = false`; the original had it true. Revisit once stack-cache SDRAM integration lands
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
@@ -6726,6 +6727,42 @@ capture on that segment shows immediately whether DISCOVER is on the wire. Note
 this configuration is not otherwise identical to the one that worked in March —
 `useStackCache` is off (item 67) and the design has grown since — but neither of
 those would plausibly silence the MAC.
+
+
+### Item 69 — `"*" -> "hw"` forces hardware for a bytecode that has none
+
+**Found 2026-08-25**, first `DoAll` run on the converted Wukong DDR3 flow:
+
+```
+Conversion ok
+FloatTestni 056818  019109  010  114
+JOP: bytecode 114 not implemented
+```
+
+Bytecode 114 is **`frem`**, and it is implemented NOWHERE — not in
+`asm/src/jvm.asm`, not in Scala. There is no hardware `frem` and no microcode
+`frem`.
+
+`wukongFull` sets `bytecodes = Map("*" -> "hw")`. That forces the HARDWARE
+implementation of every bytecode, including one that has none, so
+`resolveJumpTable` leaves the entry empty and the JVM traps at run time.
+`ep4cgx150Serial` sets only `idiv` and `irem` to `hw`, leaves the rest at their
+defaults, and `DoAll` passes 66/66 there — the difference is the wildcard, not
+the board.
+
+**Affects every `*=hw` preset**: `wukongFull`, `xc7a100tDbFull`, and the
+dual-cluster half at `JopConfig.scala:1301`.
+
+**Not the build-tree conversion.** The converted flow's RTL is byte-identical to
+the legacy path's (checked), and its fit reproduces the known-good 20,514 LUTs /
++0.349 ns exactly.
+
+**The wildcard needs to mean "hardware where one exists".** Silently producing a
+jump-table hole for a bytecode with no implementation is the same failure shape
+as [item 17](#item-17), where `needs*Compute` predicates understated CU
+reachability and cost ten JVM tests. A `require` at elaboration -- "`*=hw` names
+`frem`, which has no hardware implementation" -- would turn a run-time trap into
+a build-time error.
 
 ## 4. Two workstreams, both largely done
 
