@@ -259,10 +259,15 @@ generate-smp8:
 # those: its ports are clk_in, led, sdram_*, ser_rxd and ser_txd. So fifty
 # assignments name ports that do not exist, which Quartus reduces to warnings.
 #
-# There is no preset that would match: NO EP4CGX150 configuration declares an
-# Ethernet or VGA device -- only wukongFull, xc7a100tDbFull and wukongSdrFull do.
-# So this is either a stale project or a preset nobody wrote. Converting it would
-# only make a broken flow tidier. See docs/current-status.md item 66.
+# The .qsf is not stale -- the DESIGN is. This target used to run
+# `jop.system.JopDbFpgaTopVerilog`, a top that carried Ethernet, VGA and SD;
+# commit 8641942 repointed it at ep4cgx150Serial during the move away from
+# hand-written tops, and that preset declares none of them.
+#
+# Everything else survived: the RTL8211EG/VGA/SD_CARD board data, the device
+# types, the 16-file Java TCP/IP stack and NetTest/DhcpTest/HttpServer. Only the
+# PRESET is missing, and xc7a100tDbFull is the template for it -- same device
+# set on the DB v5 assembly. See docs/current-status.md item 66.
 generate-dbfpga:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Serial"
 	@echo "=== DB_FPGA Verilog generated: $(GENERATED_DBFPGA_V) ==="

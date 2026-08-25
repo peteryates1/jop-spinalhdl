@@ -169,7 +169,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[63](#item-63)** — One Wukong SDR startup crash in six runs, not reproduced — recorded so a second sighting is not treated as the first
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
-- **[66](#item-66)** — `jop_dbfpga` assigns 95 pins to a 45-pin design; no EP4CGX150 preset has the Ethernet/VGA/SD it constrains
+- **[66](#item-66)** — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942`, not removed — board data, device types, Java stack and apps all survive; only the preset is missing
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -6548,7 +6548,7 @@ Not chased further here -- this session's task was the build port, and the
 conversion is cleared.
 
 
-### Item 66 — `jop_dbfpga` constrains hardware no EP4CGX150 preset has
+### Item 66 — the EP4CGX150's Ethernet/VGA/SD was lost in a migration, not removed
 
 **Found 2026-08-25** while deciding whether to convert the flow.
 
@@ -6561,17 +6561,52 @@ Its `generate-dbfpga` target runs **`ep4cgx150Serial`**, whose top has 45 ports:
 assignments name ports that do not exist — which Quartus reports as warnings and
 otherwise ignores, so the flow "builds" while none of that hardware is driven.
 
-**And no preset would fix it.** No EP4CGX150 configuration declares an Ethernet
-or VGA device at all; the only presets that do are `wukongFull`,
-`xc7a100tDbFull` and `wukongSdrFull`, all on other boards. `generate-dbfpga-vgadma`
-runs the same `ep4cgx150Serial`, so the two dbfpga flows also generate BYTE-
-IDENTICAL RTL and differ only in which hand-written project is built.
+**CORRECTED — it is not a stale project. This board HAD working Ethernet, and
+the capability was lost in one line.** Commit **`8641942`** (2026-03-14, "Fix
+connector labels and device assignments for QMTECH boards and DB_FPGA"):
 
-So this is a stale project, or a preset nobody wrote. It is **not a conversion
-candidate**: generating its constraints would faithfully reproduce a
-50-assignment mismatch. Decide whether the EP4CGX150 + DB_FPGA V4 combination
-still needs an Ethernet/VGA/SD configuration; if it does, the preset is the
-missing piece and the project follows from it.
+```diff
+ generate-dbfpga:
+-	sbt "runMain jop.system.JopDbFpgaTopVerilog"
++	sbt "runMain jop.system.JopTopVerilog ep4cgx150Serial"
+
+ generate-dbfpga-vgadma:
+-	sbt "runMain jop.system.JopDbFpgaVgaDmaTopVerilog"
++	sbt "runMain jop.system.JopTopVerilog ep4cgx150Serial"
+```
+
+Two DIFFERENT tops -- one carrying Ethernet/VGA/SD, one carrying VGA DMA -- were
+both repointed at a preset that declares none of them, as part of the migration
+away from hand-written tops (`7258661`, "Remove IoConfig and legacy tops"). The
+`.qsf` still describes what the design used to have. That is also why the two
+dbfpga flows now emit byte-identical RTL.
+
+`docs/peripherals/networking.md` documents the working system in detail -- "a
+poll-based TCP/IP stack running on the QMTECH EP4CGX150 + DB_FPGA daughter board
+with RTL8211EG Gigabit Ethernet PHY", 1 Gbps GMII with MDIO, ARP, DHCP, TCP --
+and its build instructions still name `JopDbFpgaTopVerilog`, a main that no
+longer exists.
+
+**Everything except the preset survived:**
+
+| piece | state |
+|---|---|
+| `RTL8211EG`, `VGA`, `SD_CARD` on the DB v4 board | present in `Board.scala` |
+| `ethernet`, `vgadma`, `vgatext`, `sdnative`, `sdspi` device types | present |
+| Java TCP/IP stack | 16 files in `java/net/src/com/jopdesign/net/` |
+| `NetTest`, `DhcpTest`, `HttpServer` | present in `java/apps/Small` |
+| a preset wiring them together | **missing** |
+
+**The fix is a preset, and its template already exists.** `xc7a100tDbFull`
+declares exactly this device set -- `RTL8211EG`, `VGA`, `SD_CARD` -- on the DB
+**v5** assembly. The EP4CGX150 equivalent is the same map on
+`SystemAssembly.qmtechWithDb` with the UART on `CP2102N` rather than `RP2040`.
+Once it exists, `generate-dbfpga` names it, the 95 pins have ports again, and
+the constraints generate from the config like every other converted flow.
+
+Worth doing on its own merits: it restores a documented, hardware-proven
+capability, and it is the only EP4CGX150 configuration that would exercise the
+Ethernet path at all.
 
 ## 4. Two workstreams, both largely done
 
