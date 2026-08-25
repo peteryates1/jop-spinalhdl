@@ -254,9 +254,17 @@ generate-flash-boot:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopCfgFlashTopVerilog"
 	@echo "=== Flash boot Verilog generated: $(GENERATED_FLASH_BOOT_V) ==="
 
+# CONVERTED (2026-08-25), same shape as the SPI exerciser. Its bidirectional
+# pins go through InOutWrapper, which makes them `inout [0:0]`, so they are
+# constrained as sd_cmd[0] and friends -- a property of the design's ports, not
+# of the card, so it is a DeviceInstance param rather than baked into the model.
+SD_NATIVE_CFG_DIR = $(PROJECT_ROOT)/build/sdNativeExerciser
+SD_NATIVE_PRJ     = $(SD_NATIVE_CFG_DIR)/quartus
+
 generate-sd-native-exerciser:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.SdNativeExerciserTopVerilog"
-	@echo "=== SD Native Exerciser Verilog generated: $(GENERATED_SD_NATIVE_V) ==="
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.SdNativeExerciserBuild"
+	cd $(SD_NATIVE_PRJ) && $(QUARTUS_BIN)/quartus_sh -t setup_proj.tcl
+	@echo "=== SD Native Exerciser generated into $(SD_NATIVE_CFG_DIR) ==="
 
 # CONVERTED (2026-08-25). Everything -- Verilog, the PLL, the SDC and the Quartus
 # project -- is generated from SdSpiExerciserDesign, a BoardDesign, into
@@ -366,7 +374,12 @@ $(SOF_FLASH_BOOT_FILE): $(GENERATED_FLASH_BOOT_V) $(QP_FLASH_BOOT).qsf $(QP).sdc
 	$(QUARTUS_BIN)/quartus_sta $(QP_FLASH_BOOT)
 	@echo "=== Flash Boot Build complete: $(SOF_FLASH_BOOT_FILE) ==="
 
-build-sd-native-exerciser: $(SOF_SD_NATIVE_FILE)
+build-sd-native-exerciser:
+	cd $(SD_NATIVE_PRJ) && $(QUARTUS_BIN)/quartus_map $(QP_SD_NATIVE)
+	cd $(SD_NATIVE_PRJ) && $(QUARTUS_BIN)/quartus_fit $(QP_SD_NATIVE)
+	cd $(SD_NATIVE_PRJ) && $(QUARTUS_BIN)/quartus_asm $(QP_SD_NATIVE)
+	cd $(SD_NATIVE_PRJ) && $(QUARTUS_BIN)/quartus_sta $(QP_SD_NATIVE)
+	@echo "=== SD Native Exerciser built: $(SD_NATIVE_PRJ)/output_files/$(QP_SD_NATIVE).sof ==="
 
 $(SOF_SD_NATIVE_FILE): $(GENERATED_SD_NATIVE_V) $(QP_SD_NATIVE).qsf sd_exerciser.sdc dram_pll.vhd
 	$(QUARTUS_BIN)/quartus_map $(QP_SD_NATIVE)
@@ -511,8 +524,9 @@ $(QP_SD_NATIVE).cdf: $(SOF_SD_NATIVE_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program-sd-native-exerciser: assert-device $(SOF_SD_NATIVE_FILE) $(QP_SD_NATIVE).cdf
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SD_NATIVE).cdf
+program-sd-native-exerciser: assert-device
+	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG \
+	    -o "p;$(SD_NATIVE_PRJ)/output_files/$(QP_SD_NATIVE).sof"
 	@echo "=== SD Native Exerciser FPGA programmed ==="
 
 $(QP_SD_SPI).cdf: $(SOF_SD_SPI_FILE)

@@ -19,7 +19,12 @@ import jop.io.SdNative
  *   T2: WRITE — fill FIFO, CMD24 write block 1000
  *   T3: READ  — CMD17 read block 1000, compare data
  */
-case class SdNativeExerciserTop() extends Component {
+/** @param board  which board's PLL to instantiate -- see SdSpiExerciserTop.
+  * @param clkMhz the system clock this design is built for. */
+case class SdNativeExerciserTop(
+  board: jop.config.Board = SdNativeExerciserDesign.assembly.fpgaBoard,
+  clkMhz: Int = SdNativeExerciserDesign.clkMhz
+) extends Component {
 
   val io = new Bundle {
     val clk_in  = in Bool()
@@ -37,26 +42,28 @@ case class SdNativeExerciserTop() extends Component {
   noIoPrefix()
 
   // PLL: 50 MHz -> 80 MHz system clock
-  val pll = DramPll()
-  pll.io.inclk0 := io.clk_in
-  pll.io.areset := False
+  // PLL from the BOARD, not a hardcoded vendor primitive. MemoryType.BRAM
+  // selects the no-DRAM branch: a system clock and a locked signal.
+  val pllResult = jop.system.pll.Pll.create(board, jop.config.MemoryType.BRAM, io.clk_in)
+  val sysClk = pllResult.systemClk.get
+  val pllLocked = pllResult.locked
 
   // Reset generator
   val rawClockDomain = ClockDomain(
-    clock = pll.io.c1,
+    clock = sysClk,
     config = ClockDomainConfig(resetKind = BOOT)
   )
   val resetGen = new ClockingArea(rawClockDomain) {
     val res_cnt = Reg(UInt(3 bits)) init (0)
-    when(pll.io.locked && res_cnt =/= 7) {
+    when(pllLocked && res_cnt =/= 7) {
       res_cnt := res_cnt + 1
     }
-    val int_res = !pll.io.locked || !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
+    val int_res = !pllLocked || !res_cnt(0) || !res_cnt(1) || !res_cnt(2)
   }
   val mainClockDomain = ClockDomain(
-    clock = pll.io.c1,
+    clock = sysClk,
     reset = resetGen.int_res,
-    frequency = FixedFrequency(80 MHz),
+    frequency = FixedFrequency(clkMhz MHz),
     config = ClockDomainConfig(resetKind = SYNC, resetActiveLevel = HIGH)
   )
 
@@ -776,11 +783,33 @@ case class SdNativeExerciserTop() extends Component {
 /**
  * Generate Verilog for SdNativeExerciserTop
  */
+/** Which board this design is on, and what it drives. See
+  * SdSpiExerciserDesign; this is the 4-bit native mode of the same card. */
+object SdNativeExerciserDesign extends jop.config.BoardDesign {
+  import jop.config._
+  val assembly   = SystemAssembly.qmtechWithDb
+  val entityName = "SdNativeExerciserTop"
+  val designName = "sd-native-exerciser"
+  val devices    = Map(
+    "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"),
+                             params = Map("txOnly" -> true)),
+    // InOutWrapper makes the bidirectional pins `inout [0:0]`, so they are
+    // constrained as sd_cmd[0] and friends.
+    "sd"   -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"),
+                             params = Map("tristateIndexed" -> true)))
+  val resetInput = None
+  val usesSdr    = false
+  val memType    = None
+  val fpga       = assembly.fpga
+  val fpgaFamily = assembly.fpgaFamily
+  val clkMhz     = 80
+}
+
 object SdNativeExerciserTopVerilog extends App {
   SpinalConfig(
     mode = Verilog,
     targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(80 MHz)
+    defaultClockDomainFrequency = FixedFrequency(SdNativeExerciserDesign.clkMhz MHz)
   ).generate(InOutWrapper(SdNativeExerciserTop()))
 
   println("Generated: spinalhdl/generated/SdNativeExerciserTop.v")

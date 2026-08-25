@@ -77,11 +77,19 @@ object DeviceType {
     val key = "sdnative"
     val addrBits = 4
     val interruptCount = 1
-    override def verilogPins(p: Map[String, Any]) = Map(
-      "sd_clk" -> "CLK", "sd_cmd" -> "CMD",
-      "sd_dat_0" -> "DAT0", "sd_dat_1" -> "DAT1",
-      "sd_dat_2" -> "DAT2", "sd_dat_3" -> "DAT3",
-      "sd_cd" -> "CD")
+    /** `tristateIndexed` for a design whose bidirectional pins go through
+      * `InOutWrapper`: it turns each `TriState(Bool)` into `inout wire [0:0]`,
+      * so the port Quartus wants is `sd_cmd[0]`, not `sd_cmd`. That is a
+      * property of how the DESIGN declares its ports, not of the SD card, which
+      * is why it is an instance parameter and not baked in here. */
+    override def verilogPins(p: Map[String, Any]) = {
+      val ix = if (p.getOrElse("tristateIndexed", false).asInstanceOf[Boolean]) "[0]" else ""
+      Map(
+        "sd_clk" -> "CLK", s"sd_cmd$ix" -> "CMD",
+        s"sd_dat_0$ix" -> "DAT0", s"sd_dat_1$ix" -> "DAT1",
+        s"sd_dat_2$ix" -> "DAT2", s"sd_dat_3$ix" -> "DAT3",
+        "sd_cd" -> "CD")
+    }
     def create(cfg: JopCoreConfig, p: Map[String, Any], ctx: DeviceContext) =
       jop.io.SdNative(clkDivInit = p.getOrElse("clkDivInit", 99).asInstanceOf[Int])
   }
