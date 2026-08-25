@@ -80,42 +80,42 @@ audit, and has moved down accordingly.
 1. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
 2. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
 3. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
-4. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-5. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
-6. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
-7. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
-8. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
-9. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
-10. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
-11. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
-12. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-13. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
-14. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
-15. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-16. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-17. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-18. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-19. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-20. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-21. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-22. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-23. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
-24. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-25. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-26. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-27. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-28. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
-29. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
-30. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
-31. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
-32. **[#57](#item-57)** — The XDC/QSF generators exist and nothing uses them; constraints are hand-written and have drifted from the config
-33. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
-34. ~~**[#59](#item-59)**~~ — WITHDRAWN: the i5 passes at 49.40 MHz; a post-placement estimate was read instead of the final post-routing figure
-35. **[#60](#item-60)** — Everything generated belongs under `build/<config>/`. Three FPGA flows and the whole Java/JOP tree converted and verified; 48 flows and `asm/` to go
-36. ~~**[#61](#item-61)**~~ — FIXED 2026-08-24: no app in `apps/Small` could be built from clean; every `.jop` there was an unreproducible stale artifact
-37. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
-38. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
-39. **[#64](#item-64)** — `GcStressTest` free memory falls **0.42 bytes/round**, at the SAME rate on two boards and two memory systems. Slow, deterministic, unexplained
+4. **[#64](#item-64)** — `GcStressTest` loses **0.42 bytes/round**, at the same rate on two boards and two memory systems. Deterministic, so it is a defect, not drift — and three candidate causes need ONE measurement to separate
+5. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+6. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
+7. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+8. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
+9. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
+10. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+11. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+12. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
+13. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+14. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
+15. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
+16. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+17. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+18. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+19. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+20. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+21. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+22. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+23. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+24. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
+25. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+26. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+27. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+28. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+29. **[#9](#item-9)** — Pico USB-Blaster needs a level shifter (74LVC8T245 or 2x 74LVC2T45)
+30. **[#10](#item-10)** — pico-usb-blaster protocol bug — low-level shift works, Quartus handshake does not
+31. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+32. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
+33. **[#57](#item-57)** — The XDC/QSF generators exist and nothing uses them; constraints are hand-written and have drifted from the config
+34. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
+35. ~~**[#59](#item-59)**~~ — WITHDRAWN: the i5 passes at 49.40 MHz; a post-placement estimate was read instead of the final post-routing figure
+36. **[#60](#item-60)** — Everything generated belongs under `build/<config>/`. Three FPGA flows and the whole Java/JOP tree converted and verified; 48 flows and `asm/` to go
+37. ~~**[#61](#item-61)**~~ — FIXED 2026-08-24: no app in `apps/Small` could be built from clean; every `.jop` there was an unreproducible stale artifact
+38. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
+39. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
 
 ## 2. All items — summary
 
