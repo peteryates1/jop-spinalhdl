@@ -22,17 +22,18 @@ import jop.config._
  */
 object HwVerifyDescriptor {
 
-  def generate(config: JopConfig, preset: String, args: Seq[String]): String = {
+  def generate(config: BoardDesign, preset: String, args: Seq[String]): String = {
     val assembly = config.assembly
     val board = assembly.boards.head
-    val sys = config.system
     val layout = BuildLayout.default
     val cfgDir = layout.configDir(preset, args)
 
-    val baud = sys.effectiveDevices.values
+    val baud = config.devices.values
       .find(_.deviceType.key == "uart")
       .flatMap(_.params.get("baudRate").map(_.asInstanceOf[Int]))
-      .getOrElse(2000000)
+      // The exercisers declare no baudRate and run at 1 Mbaud, which is what
+      // their Makefiles have always used.
+      .getOrElse(if (config.isInstanceOf[JopConfig]) 2000000 else 1000000)
 
     val family = board.fpga.map(_.family.toString).getOrElse("unknown")
     val tool = if (board.loaderCable.isDefined || board.loaderBoard.isDefined)
@@ -44,7 +45,11 @@ object HwVerifyDescriptor {
     sb.append(s"ENTITY=${config.entityName}\n")
     sb.append(s"BOARD=${board.name}\n")
     sb.append(s"FAMILY=$family\n")
-    sb.append(s"CORES=${sys.cpuCnt}\n")
+    // Cores is a JopConfig notion; an exerciser has none.
+    config match {
+      case j: JopConfig => sb.append(s"CORES=${j.system.cpuCnt}\n")
+      case _            => ()
+    }
     sb.append(s"BAUD=$baud\n")
     sb.append(s"PROGRAM_TOOL=$tool\n")
     board.probeAlias.foreach(a => sb.append(s"PROBE_ALIAS=$a\n"))
@@ -57,14 +62,42 @@ object HwVerifyDescriptor {
 
 object HwVerifyDescriptorMain extends App {
   import jop.system.JopTopVerilog
+
+  /** A design may be named either way:
+    *
+    *   a PRESET      "ep4cgx150Serial"                -> a JopConfig
+    *   a DESIGN      "jop.system.SdramExerciserDesign" -> a BoardDesign object
+    *
+    * The exercisers are not presets -- they are standalone tops with no JOP
+    * core and no .jop to download -- but they are still designs on a board, so
+    * step 5 should reach them. Resolved by reflection because the alternative
+    * is a registry that every new design must remember to join.
+    */
+  private def asObject(name: String): Option[(BoardDesign, String)] =
+    if (!name.contains('.')) None
+    else scala.util.Try {
+      val cls = Class.forName(name + "$")
+      val obj = cls.getField("MODULE$").get(null).asInstanceOf[BoardDesign]
+      (obj, name.split('.').last.stripSuffix("Design"))
+    }.toOption
+
   val preset = args.headOption.getOrElse("ep4cgx150Serial")
   val writeIdx = args.indexOf("--write")
   val outPath = if (writeIdx >= 0 && args.length > writeIdx + 1) Some(args(writeIdx + 1)) else None
   val cfgArgs = args.zipWithIndex.filterNot { case (a, i) =>
     a == "--write" || (writeIdx >= 0 && i == writeIdx + 1)
   }.map(_._1)
-  val config = JopTopVerilog.resolvePreset(preset, cfgArgs)
-  val text = HwVerifyDescriptor.generate(config, preset, cfgArgs.drop(1).toSeq)
+  val (design, cfgKey, jopArgs) = asObject(preset) match {
+    case Some((d, shortName)) =>
+      // build/<shortName with a lowercase initial>/ -- the same key the design's
+      // own Build main uses.
+      val key = shortName.head.toLower + shortName.tail
+      (d, key, Seq.empty[String])
+    case None =>
+      (JopTopVerilog.resolvePreset(preset, cfgArgs): BoardDesign,
+       preset, cfgArgs.drop(1).toSeq)
+  }
+  val text = HwVerifyDescriptor.generate(design, cfgKey, jopArgs)
   outPath match {
     case Some(p) =>
       new java.io.File(p).getParentFile.mkdirs()

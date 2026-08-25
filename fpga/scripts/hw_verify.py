@@ -113,6 +113,20 @@ def program(d, bitstream):
         die("programming failed:\n" + (r.stderr or r.stdout)[-2000:])
 
 
+def monitor_only(d, timeout):
+    """Just listen. A standalone exerciser has no .jop and no download step --
+    it starts running the moment the FPGA is configured, so the only thing to do
+    is read what it says."""
+    tty = resolve("usb_serial_map", "--by-id", d["CONSOLE_ALIAS"], "console")
+    import serial  # only needed on this path
+    port = serial.Serial(tty, int(d["BAUD"]), timeout=1)
+    buf, t0 = b"", time.time()
+    while time.time() - t0 < timeout:
+        buf += port.read(4096)
+    port.close()
+    return buf.decode("ascii", errors="replace")
+
+
 def run_app(d, jop, timeout):
     tty = resolve("usb_serial_map", "--by-id", d["CONSOLE_ALIAS"], "console")
     cmd = ["python3", os.path.join(SCRIPTS, "download.py"), "-e", jop, tty, d["BAUD"]]
@@ -193,6 +207,9 @@ def main():
     ap.add_argument("preset")
     ap.add_argument("args", nargs="*")
     ap.add_argument("--app", default="JvmTests/DoAll")
+    # Exercisers have no .jop: they run as soon as the FPGA is configured.
+    ap.add_argument("--no-app", action="store_true",
+                    help="program and monitor only -- for standalone exercisers")
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--expect-ok", type=int, default=66)
     # Not every app reports as a count of `ok` lines. SmpGcTest prints one
@@ -221,15 +238,17 @@ def main():
 
     cfg_dir = os.path.join(ROOT, d["CONFIG_DIR"])
     bitstream = find_bitstream(cfg_dir)
-    jop = os.path.join(cfg_dir, "java", "apps", a.app + ".jop")
-    if not os.path.exists(jop):
-        die(f"no image at {jop} -- build it with BUILDTREE=1 JOP_PRESET={a.preset}")
+    jop = None
+    if not a.no_app:
+        jop = os.path.join(cfg_dir, "java", "apps", a.app + ".jop")
+        if not os.path.exists(jop):
+            die(f"no image at {jop} -- build it with BUILDTREE=1 JOP_PRESET={a.preset}")
 
     log = os.path.join(cfg_dir, "hw_verify.log")
     passes = 0
     for i in range(1, a.runs + 1):
         program(d, bitstream)
-        out = run_app(d, jop, a.timeout)
+        out = monitor_only(d, a.timeout) if a.no_app else run_app(d, jop, a.timeout)
         ok, fails, exited, crashed = judge(out)
         detail = ""
         if a.min_rounds is not None:
@@ -237,7 +256,10 @@ def main():
                                       a.progress_re)
             good = good and crashed == 0
         elif a.expect_text:
-            good = a.expect_text in out and crashed == 0
+            # The expected text is necessary, not sufficient. Without the
+            # `fails` term a run where T1 failed and T3 passed still went green,
+            # because the string it was told to look for was present.
+            good = a.expect_text in out and fails == 0 and crashed == 0
         else:
             good = ok >= a.expect_ok and fails == 0 and crashed == 0
         passes += good
@@ -249,7 +271,7 @@ def main():
             f.write(out)
 
         line = (f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} "
-                f"{a.preset} {a.app} run={i}/{a.runs} "
+                f"{a.preset} {'(no app)' if a.no_app else a.app} run={i}/{a.runs} "
                 f"{'expect=' + repr(a.expect_text) + ' ' if a.expect_text else ''}"
                 f"{detail + ' ' if detail else ''}"
                 f"ok={ok} fail={fails} exit={exited} crash={crashed} "
