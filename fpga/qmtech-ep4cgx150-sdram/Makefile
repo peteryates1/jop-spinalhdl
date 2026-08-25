@@ -134,7 +134,6 @@ QUARTUS_PRJ = $(CFG_DIR)/quartus
 SOF_FILE = $(QUARTUS_PRJ)/output_files/$(REV).sof
 SOF_SMP_FILE = $(OUTPUT_DIR)/$(QP_SMP).sof
 SOF_SMP8_FILE = $(OUTPUT_DIR)/$(QP_SMP8).sof
-SOF_DBFPGA_FILE = $(OUTPUT_DIR)/$(QP_DBFPGA).sof
 SOF_FLASH_BOOT_FILE = $(OUTPUT_DIR)/$(QP_FLASH_BOOT).sof
 SOF_SD_NATIVE_FILE = $(OUTPUT_DIR)/$(QP_SD_NATIVE).sof
 SOF_SD_SPI_FILE = $(OUTPUT_DIR)/$(QP_SD_SPI).sof
@@ -252,29 +251,31 @@ generate-smp8:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopSmp8TestVerilog"
 	@echo "=== 8-core SMP test Verilog generated: $(GENERATED_SMP_V) ==="
 
-# NOT CONVERTED, AND NOT CONVERTIBLE AS IT STANDS (checked 2026-08-25).
+# CONVERTED (2026-08-25). This flow had been generating the WRONG RTL since
+# commit 8641942: it ran ep4cgx150Serial, whose top has 45 ports, into a project
+# assigning 95 -- Ethernet, VGA and SD that the design did not have. The preset
+# that matches is back (item 66), so both targets now re-enter the parameterised
+# rules like `smp` and `mc-fallback`.
 #
-# jop_dbfpga.qsf assigns 95 pins -- Ethernet (e_*), VGA (vga_*) and SD (sd_*) --
-# but this target generates `ep4cgx150Serial`, whose top has 45 and none of
-# those: its ports are clk_in, led, sdram_*, ser_rxd and ser_txd. So fifty
-# assignments name ports that do not exist, which Quartus reduces to warnings.
+# Both share REV=jop_dbfpga because the PINS are identical -- VGA is VGA whether
+# driven by the text controller or the DMA one -- but they are different CONFIGS,
+# so BuildLayout keeps them in separate directories.
 #
-# The .qsf is not stale -- the DESIGN is. This target used to run
-# `jop.system.JopDbFpgaTopVerilog`, a top that carried Ethernet, VGA and SD;
-# commit 8641942 repointed it at ep4cgx150Serial during the move away from
-# hand-written tops, and that preset declares none of them.
-#
-# Everything else survived: the RTL8211EG/VGA/SD_CARD board data, the device
-# types, the 16-file Java TCP/IP stack and NetTest/DhcpTest/HttpServer. Only the
-# PRESET is missing, and xc7a100tDbFull is the template for it -- same device
-# set on the DB v5 assembly. See docs/current-status.md item 66.
-generate-dbfpga:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Serial"
-	@echo "=== DB_FPGA Verilog generated: $(GENERATED_DBFPGA_V) ==="
+#   make dbfpga            Ethernet + VGA text + SD
+#   make dbfpga-vgadma     Ethernet + VGA DMA  + SD
+#   make dbfpga-program
+dbfpga:
+	$(MAKE) generate build CFG=ep4cgx150DbFull REV=jop_dbfpga
 
-generate-dbfpga-vgadma:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Serial"
-	@echo "=== DB_FPGA VGA DMA Verilog generated: $(GENERATED_DBFPGA_V) ==="
+dbfpga-vgadma:
+	$(MAKE) generate build CFG=ep4cgx150DbVgaDma REV=jop_dbfpga
+
+dbfpga-program:
+	$(MAKE) program CFG=ep4cgx150DbFull REV=jop_dbfpga
+
+# Old names kept as aliases; they used to emit Verilog only, into the legacy tree.
+generate-dbfpga: dbfpga
+generate-dbfpga-vgadma: dbfpga-vgadma
 
 generate-flash-boot:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopCfgFlashTopVerilog"
@@ -380,16 +381,8 @@ $(SOF_SMP8_FILE): $(GENERATED_SMP_V) $(QP_SMP8).qsf $(QP).sdc dram_pll.vhd
 	$(QUARTUS_BIN)/quartus_sta $(QP_SMP8)
 	@echo "=== 8-core SMP test Build complete: $(SOF_SMP8_FILE) ==="
 
-build-dbfpga: $(SOF_DBFPGA_FILE)
 
-$(SOF_DBFPGA_FILE): $(GENERATED_DBFPGA_V) $(QP_DBFPGA).qsf $(QP).sdc dram_pll.vhd
-	$(QUARTUS_BIN)/quartus_map $(QP_DBFPGA)
-	$(QUARTUS_BIN)/quartus_fit $(QP_DBFPGA)
-	$(QUARTUS_BIN)/quartus_asm $(QP_DBFPGA)
-	$(QUARTUS_BIN)/quartus_sta $(QP_DBFPGA)
-	@echo "=== DB_FPGA Build complete: $(SOF_DBFPGA_FILE) ==="
 
-build-dbfpga-vgadma: $(SOF_DBFPGA_FILE)
 
 build-flash-boot: $(SOF_FLASH_BOOT_FILE)
 
@@ -522,24 +515,11 @@ program-smp8: assert-device $(SOF_SMP8_FILE) $(QP_SMP8).cdf
 	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_SMP8).cdf
 	@echo "=== 8-core SMP test FPGA programmed ==="
 
-$(QP_DBFPGA).cdf: $(SOF_DBFPGA_FILE)
-	@echo '/* Auto-generated CDF */' > $@
-	@echo 'JedecChain;' >> $@
-	@echo '	FileRevision(JESD32A);' >> $@
-	@echo '	DefaultMfr(6E);' >> $@
-	@echo '	P ActionCode(Cfg)' >> $@
-	@echo '		Device PartName(EP4CGX150DF27) Path("$(OUTPUT_DIR)/") File("$(QP_DBFPGA).sof") MfrSpec(OpMask(1));' >> $@
-	@echo 'ChainEnd;' >> $@
-	@echo 'AlteraBegin;' >> $@
-	@echo '	ChainType(JTAG);' >> $@
-	@echo 'AlteraEnd;' >> $@
-
-program-dbfpga: assert-device $(SOF_DBFPGA_FILE) $(QP_DBFPGA).cdf
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_DBFPGA).cdf
+program-dbfpga: dbfpga-program
 	@echo "=== DB_FPGA FPGA programmed ==="
 
-program-dbfpga-vgadma: assert-device $(SOF_DBFPGA_FILE) $(QP_DBFPGA).cdf
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP_DBFPGA).cdf
+program-dbfpga-vgadma:
+	$(MAKE) program CFG=ep4cgx150DbVgaDma REV=jop_dbfpga
 	@echo "=== DB_FPGA VGA DMA FPGA programmed ==="
 
 $(QP_SD_NATIVE).cdf: $(SOF_SD_NATIVE_FILE)

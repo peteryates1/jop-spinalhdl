@@ -6641,6 +6641,17 @@ dropped — leaving the CDC paths timed as if synchronous.
 
 15,270 LE, 95 pins, all three clocks MET.
 
+**The VGA DMA sibling is also back (`ep4cgx150DbVgaDma`) and does NOT close.**
+History had two DB_FPGA configurations -- `IoConfig.qmtechDbFpga` (VGA text) and
+`qmtechDbFpgaVgaDma` -- and `8641942` repointed both at `ep4cgx150Serial`, so
+they have produced byte-identical RTL ever since. Restored as a preset variant
+(same 95 pins; VGA is VGA either way), it builds at 14,429 LE but the SYSTEM
+clock misses by **−1.011 ns** while Ethernet passes at +0.619 — so this is not
+the clock-group bug. The failing paths run into `BmbSdramCtrl32` from
+`BmbMemoryController` and `VgaBmbDma`'s CC FIFO: a third BMB master pushing the
+arbiter path over, which is [item 5](#item-5) / [item 31](#item-31) again rather
+than anything specific to VGA.
+
 **The same bug, twice, from opposite sides.** The comment beside that predicate
 records an earlier fix: the hand-written `jop_sdram.sdc` named `e_rxc` on a
 UART-only build, Quartus could not match it, and it discarded the whole
