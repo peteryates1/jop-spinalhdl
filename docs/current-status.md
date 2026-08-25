@@ -115,6 +115,7 @@ audit, and has moved down accordingly.
 36. ~~**[#61](#item-61)**~~ — FIXED 2026-08-24: no app in `apps/Small` could be built from clean; every `.jop` there was an unreproducible stale artifact
 37. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
 38. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
+39. **[#64](#item-64)** — `GcStressTest` free memory falls **0.42 bytes/round**, at the SAME rate on two boards and two memory systems. Slow, deterministic, unexplained
 
 ## 2. All items — summary
 
@@ -166,6 +167,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - ~~**[61](#item-61)**~~ — FIXED 2026-08-24 — no app in `apps/Small` built from clean; the runtime is now bulk-compiled and the app named
 - **[62](#item-62)** — `JopFloatCuBramSim` reads a microcode variant that does not exist, so it has never run
 - **[63](#item-63)** — One Wukong SDR startup crash in six runs, not reproduced — recorded so a second sighting is not treated as the first
+- **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -6460,6 +6462,49 @@ been wrong. What refuted it:
 So there is no regression to bisect, and equally no explanation. Recorded so a
 second sighting is recognised as the second, not the first. Note the design
 meets timing comfortably (WNS +0.414 ns), which argues against a marginal path.
+
+
+### Item 64 — `GcStressTest` free memory falls 0.42 bytes per round, on every board
+
+**Found 2026-08-25** by giving `hw_verify.py` a soak check, and it had been
+sitting in plain sight in two hardware logs.
+
+`GcStressTest` allocates ten `int[32]` per round, all immediate garbage, and
+prints `GC.freeMemory()`. Free memory does not hold level — it declines
+MONOTONICALLY, with no recovery in any window:
+
+| board | memory | rounds | free start → end | rate |
+|---|---|---:|---|---|
+| Colorlight i5 | 8 MB SDR, ECP5 | 345,115 | 5,459,328 → 5,313,644 | **0.422 B/round** |
+| EP4CGX150 | SDR, Cyclone IV GX | 479,784 | 5,459,328 → 5,257,068 | **0.421 B/round** |
+
+Two boards, two memory systems, two FPGA families, and the rate agrees to three
+significant figures. That is deterministic consumption, not measurement noise.
+
+Windowed, the i5 run shows no sawtooth at all — each tenth has a band of about
+14.5 KB and its floor sits below the previous one's:
+
+```
+  win 1   rounds      0.. 34510   min 5444204
+  win 5   rounds 138044..172554   min 5386092
+  win10   rounds 310599..345109   min 5313644
+```
+
+**Why it went unnoticed:** it is slow. 470 MB is allocated over 345k rounds and
+only 146 KB goes missing, so the collector is plainly working — the heap would
+be gone in a few thousand rounds otherwise. At this rate free memory lasts about
+12.6 million rounds, well past any soak anyone has run.
+
+**And it was reported as "free flat" three times in this session.** That claim
+came from `tail -3` of the log, where consecutive rounds do look identical.
+Three lines of a 345,116-line series is not a trend, and a soak whose verdict is
+a substring match cannot see the difference — which is the argument for the
+checker that found it.
+
+Candidates not yet distinguished: handle-table growth (`GC.MAX_HANDLES`),
+fragmentation in the tenured space, or something retaining a few bytes per
+collection. **Measure before choosing** — the rate being identical across memory
+systems points away from anything memory-controller-specific.
 
 ## 4. Two workstreams, both largely done
 
