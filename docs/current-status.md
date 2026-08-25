@@ -168,6 +168,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[62](#item-62)** — `JopFloatCuBramSim` reads a microcode variant that does not exist, so it has never run
 - **[63](#item-63)** — One Wukong SDR startup crash in six runs, not reproduced — recorded so a second sighting is not treated as the first
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
+- **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
 - **[7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
@@ -6505,6 +6506,45 @@ Candidates not yet distinguished: handle-table growth (`GC.MAX_HANDLES`),
 fragmentation in the tenured space, or something retaining a few bytes per
 collection. **Measure before choosing** — the rate being identical across memory
 systems points away from anything memory-controller-specific.
+
+
+### Item 65 — Both SD exercisers fail on hardware, and it is not the conversion
+
+**Found 2026-08-25**, first hardware run of the converted SD exercisers on the
+EP4CGX150 + DB v4 with a card in the slot.
+
+| | T1:DETECT | INIT | T2:WRITE | T3:READ |
+|---|---|---|---|---|
+| SD native (4-bit) | PASS | **FAIL** `0x41` | PASS | PASS |
+| SD over SPI | PASS | **FAIL** | FAIL | FAIL |
+
+`dbgStep 0x41` is **ACMD41 timeout — no response**, after 0xac8 (2760) retries.
+`docs/peripherals/db-fpga-sd-card.md` records all four passing, so this is a
+change from a state that once worked.
+
+**It is NOT the build-tree conversion.** The only functional difference that
+conversion introduced was the clock: the hand-written project built against the
+60 MHz `dram_pll.vhd` while the top declared 80 MHz, and the converted flow
+generates a PLL that matches its declared 80. Rebuilt at **60 MHz** — the
+historical frequency — and the failure is IDENTICAL, same code and same retry
+counts (0x588 then 0xac8). Pins were already proven identical to the
+hand-written `.qsf`, and the SDRAM exerciser on the same board, same generated
+PLL and same generated project passes all three of its tests.
+
+**The odd part, and where to start.** Native reports INIT failed yet WRITE and
+READ then pass — so the card is demonstrably working. Either the ACMD41 check is
+reporting a false failure (the same shape as bug 27, where T2:WRITE reported
+FAIL on a write that had succeeded), or INIT recovers through a later path and
+the verdict is stale. The SPI exerciser failing everything after DETECT is a
+different symptom and may not share a cause.
+
+**Confound worth eliminating first**: an SD card latches SPI mode until it is
+power-cycled, and the SPI exerciser was run before the native one. The native
+result was reproduced on a second run, so it is not order-dependent within
+native, but neither exerciser has been run from a cold card.
+
+Not chased further here -- this session's task was the build port, and the
+conversion is cleared.
 
 ## 4. Two workstreams, both largely done
 
