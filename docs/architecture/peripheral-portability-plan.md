@@ -58,9 +58,39 @@ regular I/O. Those are Quartus **project settings**, not pins, and have no
 Xilinx analogue — so they belong in `QuartusProject`, keyed off "this design
 uses `cfgflash`", not in `Board`.
 
+## Two tracks, not one sequence
+
+**The first version of this plan had a false dependency in it**: it ordered
+2a → 2b → 2c as though the data lift blocked everything. It does not. The gaps
+are per-PERIPHERAL, and the SD designs need none of them.
+
+Proven, not assumed — `BoardDesignTest` resolves SD pins on all three boards
+today, with no new board data and no vendor abstraction:
+
+```
+wukong (Xilinx)             sdspi    -> 5 pins   sd_spi_clk=L4    sd_spi_mosi=J8 ...
+wukong (Xilinx)             sdnative -> 7 pins   sd_clk=L4        sd_cmd=J8 ...
+ep4cgx150+DBv4 (Altera)     sdspi    -> 5 pins   sd_spi_clk=PIN_B21 ...
+ep4cgx150+DBv4 (Altera)     sdnative -> 7 pins   sd_clk=PIN_B21 ...
+xc7a100t+DBv5 (Xilinx)      sdspi    -> 5 pins   sd_spi_clk=A3 ...
+xc7a100t+DBv5 (Xilinx)      sdnative -> 7 pins   sd_clk=A3 ...
+```
+
+So:
+
+| track | needs | blocked by |
+|---|---|---|
+| **SD** (`sdspi`, `sdnative`) | a `BoardDesign` per top — step 2c only | **nothing** |
+| **config flash / SPI** | board data (2a) AND the pad abstraction (2b) | both |
+
+Start the SD track immediately. It delivers the portability claim on real
+hardware across two FPGA families while the flash track's design question is
+still open, and it de-risks 2c before the harder peripheral needs it.
+
 ## Plan
 
 ### 2a — lift the remaining board facts into config
+**Config flash only.** Nothing here blocks the SD track.
 Pure data, no design work, unblocks everything else.
 
 - `BoardDevice` for each board's config-flash part, with its four pins.
@@ -108,10 +138,14 @@ hardware.
 
 ## Why this order
 
-2a is pure data and blocks the rest. 2b is the only real design work and is
-worth isolating so its risk does not contaminate the mechanical steps. 2c is
-cheap once both land. 2d is irreversible, so it goes last and only after
-hardware verification.
+Within the FLASH track, 2a is pure data and blocks the rest, and 2b is the only
+real design work — worth isolating so its risk does not contaminate the
+mechanical steps. 2d is irreversible, so it goes last and only after hardware
+verification.
+
+The SD track runs in parallel and starts at 2c. Treating the two as one
+sequence was the mistake in the first draft: it would have made a data lift for
+config flash block work that does not depend on it.
 
 ## What this is worth beyond the six exercisers
 

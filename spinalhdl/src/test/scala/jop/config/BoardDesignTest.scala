@@ -59,6 +59,44 @@ class BoardDesignTest extends AnyFunSuite {
     assert(!sdc.contains("e_rxc"), "no Ethernet in this design")
   }
 
+  /** SD is ordinary I/O on both families, so a portable SD design needs NOTHING
+    * beyond a BoardDesign -- no vendor abstraction, no new board data. This is
+    * the claim that lets the SD exercisers skip phase 2a entirely; it is a test
+    * rather than a plan bullet so it stays true.
+    *
+    * Note the DB boards are shared between the EP4CGX150 and the XC7A100T, so
+    * the SAME SD_CARD mapping is being resolved behind two different FPGA
+    * families here. */
+  private def sdDesign(asm: SystemAssembly, dt: DeviceType) = new BoardDesign {
+    val assembly   = asm
+    val entityName = "SdExerciserTop"
+    val designName = "sd-exerciser"
+    val devices    = Map("sd" -> DeviceInstance(dt, devicePart = Some("SD_CARD")))
+    val resetInput = None
+    val usesSdr    = false
+    val memType    = None
+    val fpga       = asm.fpga
+    val fpgaFamily = asm.fpgaFamily
+  }
+
+  private val sdBoards = Seq(
+    ("wukong", SystemAssembly.wukong),
+    ("ep4cgx150 + DB v4", SystemAssembly.qmtechWithDb),
+    ("xc7a100t + DB v5", SystemAssembly.xc7a100tWithDbV5))
+
+  for ((label, asm) <- sdBoards) {
+    test(s"SD-over-SPI pins resolve on $label") {
+      val pins = PinResolver.devicePins(asm, sdDesign(asm, DeviceType.SdSpi).devices)
+      assert(pins.size == 5, s"expected 5 SPI pins, got ${pins.map(_.verilogPort)}")
+      assert(pins.forall(_.fpgaPin.nonEmpty))
+    }
+    test(s"SD native 4-bit pins resolve on $label") {
+      val pins = PinResolver.devicePins(asm, sdDesign(asm, DeviceType.SdNative).devices)
+      assert(pins.size == 7, s"expected 7 native pins, got ${pins.map(_.verilogPort)}")
+      assert(pins.forall(_.fpgaPin.nonEmpty))
+    }
+  }
+
   test("JopConfig still satisfies BoardDesign") {
     val jop: BoardDesign = JopConfig.ep4cgx150Serial
     assert(jop.entityName.nonEmpty)
