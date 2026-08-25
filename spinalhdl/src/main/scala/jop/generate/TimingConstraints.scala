@@ -107,10 +107,10 @@ case class TimingConstraints(
 object TimingConstraints {
 
   /** Derive a design's clock constraints from its config. */
-  def forConfig(config: JopConfig): TimingConstraints = {
+  def forConfig(config: BoardDesign): TimingConstraints = {
     val assembly = config.assembly
     val board = assembly.fpgaBoard
-    val memType = config.resolveMemory(config.system).map(_.memType)
+    val memType = config.memType
 
     val boardClock = PinResolver.clockFpgaPin(assembly).map(_ =>
       ClockConstraint("clk_in", assembly.boardClockFreq.toBigDecimal))
@@ -129,7 +129,7 @@ object TimingConstraints {
     // so named e_rxc on a UART-only build, which Quartus reported as
     //   Warning (332174): Ignored filter ... e_rxc could not be matched with a clock
     // and then discarded the whole set_clock_groups. Constrain what exists.
-    val hasEth = config.system.effectiveDevices.values.exists(_.deviceType.key == "eth")
+    val hasEth = config.devices.values.exists(_.deviceType.key == "eth")
     val ethGroup =
       if (hasEth && board.hasEthPll) Seq("ethPll|altpll_component|auto_generated|pll1|clk[0]") else Nil
     val phyGroup = if (hasEth) Seq("e_rxc") else Nil

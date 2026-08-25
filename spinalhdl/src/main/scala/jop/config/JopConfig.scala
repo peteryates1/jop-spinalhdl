@@ -325,7 +325,7 @@ case class JopConfig(
     * None everywhere else. See MigProfile for why this is an enum of measured
     * points rather than a frequency parameter. */
   migProfile: Option[MigProfile] = None
-) {
+) extends BoardDesign {
   require(systems.nonEmpty, "At least one JopSystem required")
 
   // --- Single-system convenience ---
@@ -448,6 +448,15 @@ case class JopConfig(
     systems.flatMap(sys => resolveMemory(sys).map(_.memType)).distinct
 
   /** Entity name derived from Board properties (entityTag, entitySuffix) and memory type */
+  // --- BoardDesign ---------------------------------------------------------
+  // Every one of these was already computed at the point of use inside a
+  // generator; naming them here is what lets a non-JOP design supply them too.
+  def designName: String = system.name
+  def devices: Map[String, DeviceInstance] = system.effectiveDevices
+  def memType: Option[MemoryType] = resolveMemory(system).map(_.memType)
+  def usesSdr: Boolean =
+    systems.exists(s => resolveMemory(s).exists(_.memType == MemoryType.SDRAM_SDR))
+
   def entityName: String = {
     val board = assembly.fpgaBoard
     if (systems.length > 1) {
