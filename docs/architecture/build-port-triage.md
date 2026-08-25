@@ -72,13 +72,22 @@ rediscovered by reading Verilog.
 
 ## INDEPENDENT — bring-up jigs, keep and isolate
 
-| jig | what it is | move to |
-|---|---|---|
-| `A-E115FB/uart-loopback` | `uart_loopback.sv`, RX wired to TX | already isolated; add a README |
-| `wukong` uart loopback | `rtl/WukongUartLoopback.v`, three assigns | `wukong/bringup/uart-loopback/` |
-| `qmtech-ep4cgx150-eth-ref` | third-party Ethernet reference — `ethernet_test.v`, `crc.v`, `ipsend.v`, `udp.v`, `iprecieve.v`, `ram.v`, `pll_125.v` | `ep4cgx150/bringup/eth-ref/` |
+**DONE 2026-08-25.** All three now live under `fpga/bringup/<jig>/`, one
+directory each, self-contained, with a README stating why they are not converted.
+
+| jig | what it is |
+|---|---|
+| `bringup/a-e115fb-uart-loopback` | `uart_loopback.sv`, RX wired to TX |
+| `bringup/wukong-uart-loopback` | `WukongUartLoopback.v`, three assigns — **rebuilt standalone to prove the move**, `LOOPBACK BITSTREAM DONE` |
+| `bringup/ep4cgx150-eth-ref` | third-party Ethernet reference: `ethernet_test.v`, `crc.v`, `ipsend.v`, `udp.v`, `iprecieve.v`, `ram.v`, `pll_125.v` |
+
+A single top-level `fpga/bringup/` rather than one per board: the point is that
+the CATEGORY is unmissable, and a jig buried in a board directory is exactly
+what gets converted on a tidy-up.
 
 ## RETIRE — nothing drives it
+
+**DONE 2026-08-25** — 7 files removed.
 
 | flow | why |
 |---|---|

@@ -355,7 +355,9 @@ $(QUARTUS_PRJ)/$(REV).qsf: $(QUARTUS_PRJ)/setup_proj.tcl $(QUARTUS_PRJ)/$(REV).s
 #
 #   generated/dram_pll.vhd  written by DramPllGen from the preset's clkMhz.
 #                           Used by jop_sdram.qsf, jop_smp_sdram.qsf and
-#                           jop_smp_bram.qsf -- i.e. every JOP build.
+#                           and jop_smp_sdram.qsf -- i.e. every JOP build.
+#                           (jop_smp_bram.qsf retired 2026-08-25: no preset
+#                           produces its entity and it had no build target.)
 #   dram_pll.vhd (here)     hand-written, 60 MHz, still used by the exerciser,
 #                           flash-programmer, dbfpga and smp8-test projects.
 #

@@ -166,3 +166,4 @@ spinalhdl/repro/
 /*.v_toplevel_*
 .cnxerr
 qmegawiz_errors_log.txt
+fpga/bringup/*/build/

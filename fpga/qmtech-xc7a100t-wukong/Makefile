@@ -55,7 +55,6 @@ DUAL_DDR3_UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id w
 .PHONY: dual-generate dual-create-ip dual-build dual-program dual-monitor dual-sdr-monitor dual-sdr-download
 .PHONY: sdram-generate sdram-create-ip sdram-build sdram-program sdram-monitor
 .PHONY: jop-sdram-generate jop-sdram-build jop-sdram-smp-build jop-sdram-program jop-sdram-monitor
-.PHONY: blink-create-project blink-build blink-program
 
 all: build
 
@@ -207,17 +206,9 @@ jop-sdram-program:
 jop-sdram-monitor:
 	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
 
-# === Blink targets (LED blinker for board bring-up) ===
-# Requires pre-generated spinalhdl/generated/WukongBlink.v
-
-blink-create-project:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_blink_project.tcl
-
-blink-build: blink-create-project
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_blink_bitstream.tcl
-
-blink-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) vivado/build/wukong_blink/wukong_blink.runs/impl_1/WukongBlink.bit
-
+# BLINK RETIRED (2026-08-25). `WukongBlink` had no SpinalHDL source and no git
+# history of one -- create_blink_project.tcl read RTL that has never been in
+# this repo. For a genuine bring-up jig on this board see
+# bringup/wukong-uart-loopback/.
 clean:
 	rm -rf vivado/build vivado/ip
