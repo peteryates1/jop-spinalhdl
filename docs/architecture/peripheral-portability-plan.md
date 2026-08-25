@@ -80,8 +80,45 @@ So:
 
 | track | needs | blocked by |
 |---|---|---|
-| **SD** (`sdspi`, `sdnative`) | a `BoardDesign` per top — step 2c only | **nothing** |
+| **SD** (`sdspi`, `sdnative`) | a `BoardDesign` per top; a parameterised PLL to leave Altera | pins: **nothing** |
 | **config flash / SPI** | board data (2a) AND the pad abstraction (2b) | both |
+
+### The real portability blocker is the CLOCK, not the peripheral
+
+Found while starting the SD track, and it reframes the whole phase. Six of these
+tops hardcode a vendor PLL primitive:
+
+```
+ConfigFlashExerciserTop   DramPll()          SdramExerciserTop   DramPll()
+SdNativeExerciserTop      DramPll()          FlashProgrammerTop  DramPll()
+SdSpiExerciserTop         DramPll()          Ddr3ExerciserTop    ClkWizBlackBox
+```
+
+`DramPll()` is an Altera altpll blackbox. So `SdSpiExerciserTop` cannot build on
+the Wukong today — not because of anything to do with SD, whose pins resolve
+there fine, but because its clock source is nailed to one vendor.
+
+**The abstraction for this already exists and these tops simply do not use it.**
+`Board.pllType` carries a `PllType` per board, `Pll.create(board, memType,
+inputClock)` returns a `PllResult`, and `JopTop` has used it all along. For a
+design with no DRAM the non-SDR branch returns exactly what an exerciser needs:
+a system clock and a locked signal.
+
+That collapses phase 2 to ONE pattern with three instances:
+
+| vendor primitive | abstraction | work |
+|---|---|---|
+| PLL | `PllType` — **exists**, unused by these tops | mechanical: call `Pll.create` |
+| config-flash pad | none — Altera direct ports vs Xilinx `STARTUPE2` | **build it** (2b) |
+| SD | none needed — ordinary I/O both families | nothing |
+
+Take vendor primitives from the `Board`, not from a hardcoded call. That is the
+whole of it.
+
+One consequence to watch: each board's PLL produces its own frequency, and these
+tops declare `FixedFrequency(80 MHz)` to match the Altera one. Moving a design to
+another board changes its clock, so the declared frequency has to come from the
+config too rather than being restated in the top.
 
 Start the SD track immediately. It delivers the portability claim on real
 hardware across two FPGA families while the flash track's design question is
