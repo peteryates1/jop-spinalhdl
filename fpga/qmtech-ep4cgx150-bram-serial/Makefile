@@ -1,52 +1,21 @@
-# JOP BRAM Serial - Build & Program
+# JOP BRAM Serial — build & program
 #
-# BRAM-backed JOP with serial download (like SDRAM version but with BRAM)
-# Used to isolate serial download issues from SDRAM controller issues
+# BRAM-backed JOP with serial download. Exists to isolate serial-download
+# problems from SDRAM-controller problems: same boot path, no memory controller.
+#
+# CONVERTED 2026-08-25. Everything below is what is genuinely board-specific;
+# the Quartus flow and the console come from ../quartus.mk.
 
-QUARTUS_DIR ?= /opt/altera/25.1/quartus
-QUARTUS_BIN = $(QUARTUS_DIR)/bin
-BLASTER_TYPE ?= USB-Blaster
-SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id ep4cgx150 2>/dev/null \
-                 || echo /dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_de4cebf79bd1eb11910b7b54e93fd3f1-if00-port0)
-BAUD_RATE = 2000000
+PROJECT_ROOT  = ../..
+CFG          ?= ep4cgx150BramSerial
+REV          ?= jop_bram_serial
+BOARD_ALIAS   = ep4cgx150
+CONSOLE_ALIAS = ep4cgx150
 
-PROJECT_ROOT = ../..
-GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopBramSerialTop.v
-DOWNLOAD_PY = ../scripts/download.py
-MONITOR_PY = ../scripts/monitor.py
+include ../quartus.mk
 
-QP = jop_bram_serial
-OUTPUT_DIR = output_files
-SOF_FILE = $(OUTPUT_DIR)/$(QP).sof
-
-.PHONY: all generate build program download monitor run clean
-
+.PHONY: all run program clean
 all: generate build
-
+program: program-sof
 run: program download monitor
-
-generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150BramSerial"
-
-build: $(SOF_FILE)
-
-$(SOF_FILE): $(GENERATED_V) $(QP).qsf $(QP).sdc
-	$(QUARTUS_BIN)/quartus_map $(QP)
-	$(QUARTUS_BIN)/quartus_fit $(QP)
-	$(QUARTUS_BIN)/quartus_asm $(QP)
-	$(QUARTUS_BIN)/quartus_sta $(QP)
-	@echo "=== Build complete: $(SOF_FILE) ==="
-
-program:
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG -o "p;$(SOF_FILE)"
-	@echo "=== FPGA programmed ==="
-
-download:
-	python3 $(DOWNLOAD_PY) $(PROJECT_ROOT)/java/apps/Small/HelloWorld.jop $(SERIAL_PORT) $(BAUD_RATE)
-
-monitor:
-	python3 $(MONITOR_PY) $(SERIAL_PORT) $(BAUD_RATE)
-
-clean:
-	rm -rf output_files db incremental_db
-	rm -f *.rpt *.done *.jdi *.sld *.smsg *.summary *.pin
+clean: quartus-clean

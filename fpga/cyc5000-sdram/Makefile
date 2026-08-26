@@ -63,74 +63,14 @@ JOP_FILE ?= ../../java/apps/Smallest/HelloWorld.jop
 PROJECT_ROOT = ../..
 ASM_DIR = ../../asm
 
-# CONVERTED (2026-08-25). Verilog, SDC and the Quartus project are generated from
-# the preset into build/<config>/; Quartus writes its own .qsf/.qpf. Both the
-# single-core and SMP flows are the SAME rules with a different CFG/REV, as on
-# the EP4CGX150.
-#
-#   make all                    single core
-#   make smp CORES=2            SMP
-CFG   ?= cyc5000Serial
-REV   ?= jop_cyc5000
-CORES ?= 2
+# CONVERTED 2026-08-25. The Quartus flow and console come from ../quartus.mk.
+CFG          ?= cyc5000Serial
+REV          ?= jop_cyc5000
+CORES        ?= 2
+BOARD_ALIAS   = cyc5000
+CONSOLE_ALIAS = cyc5000
 
-ifeq ($(words $(CFG)),1)
-  CFG_NAME := $(CFG)
-else
-  CFG_NAME := $(shell cd $(PROJECT_ROOT) && sbt "runMain jop.generate.BuildLayoutMain $(CFG)" 2>/dev/null \
-                | sed -n 's|^\[info\] build/\(.*\)$$|\1|p' | tail -1)
-endif
-
-CFG_DIR     = $(PROJECT_ROOT)/build/$(CFG_NAME)
-QUARTUS_PRJ = $(CFG_DIR)/quartus
-GEN_STAMP   = $(CFG_DIR)/rtl/.generated
-SOF_FILE    = $(QUARTUS_PRJ)/output_files/$(REV).sof
-
-.PHONY: all microcode generate generate-smp build build-smp program program-smp download monitor run run-smp full full-smp clean
-
-# Default: microcode + generate + build
-all: microcode generate build
-
-# Full flow: microcode, generate, build, program, download, monitor
-full: microcode generate build run
-
-# SMP full flow
-full-smp: microcode generate-smp build-smp run-smp
-
-# Program + download + monitor
-run: program download monitor
-run-smp: program-smp download monitor
-
-# --------------------------------------------------------------------------
-# Serial-boot microcode
-# --------------------------------------------------------------------------
-
-microcode:
-	cd $(ASM_DIR) && $(MAKE) serial
-	@echo "=== Serial microcode generated ==="
-
-# --------------------------------------------------------------------------
-# SpinalHDL Verilog generation
-# --------------------------------------------------------------------------
-
-SCALA_SRC := $(shell find $(PROJECT_ROOT)/spinalhdl/src/main/scala -name '*.scala')
-UCODE     := $(wildcard $(PROJECT_ROOT)/build/microcode/serial/mem_*.dat)
-
-$(GEN_STAMP): $(SCALA_SRC) $(UCODE)
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog $(CFG) buildtree"
-	@mkdir -p $(dir $@) && touch $@
-
-$(QUARTUS_PRJ)/$(REV).sdc:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.TimingConstraintsMain $(CFG) --write build/$(CFG_NAME)/quartus/$(REV).sdc"
-
-$(QUARTUS_PRJ)/setup_proj.tcl:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.QuartusProjectMain $(CFG) --revision $(REV) --write build/$(CFG_NAME)/quartus/setup_proj.tcl"
-
-$(QUARTUS_PRJ)/$(REV).qsf: $(QUARTUS_PRJ)/setup_proj.tcl $(QUARTUS_PRJ)/$(REV).sdc
-	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_sh -t setup_proj.tcl
-
-generate: $(GEN_STAMP)
-	@echo "=== Verilog generated into $(CFG_DIR)/rtl ==="
+include ../quartus.mk
 
 smp:
 	$(MAKE) generate build CFG="cyc5000Smp $(CORES)" REV=jop_smp_cyc5000
@@ -142,14 +82,7 @@ smp-program:
 # Quartus build
 # --------------------------------------------------------------------------
 
-build: $(SOF_FILE)
 
-$(SOF_FILE): $(GEN_STAMP) $(QUARTUS_PRJ)/$(REV).qsf
-	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_map $(REV)
-	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_fit $(REV)
-	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_asm $(REV)
-	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_sta $(REV)
-	@echo "=== Build complete: $(SOF_FILE) ==="
 
 
 # --------------------------------------------------------------------------
@@ -197,19 +130,12 @@ $(REV).cdf: $(SOF_SMP_FILE)
 	@echo '	ChainType(JTAG);' >> $@
 	@echo 'AlteraEnd;' >> $@
 
-program-smp: $(SOF_SMP_FILE) $(REV).cdf
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(REV).cdf
-	@echo "=== SMP FPGA programmed ==="
 
 # --------------------------------------------------------------------------
 # Serial download and UART monitor
 # --------------------------------------------------------------------------
 
-download:
-	python3 ../scripts/download.py $(JOP_FILE) $(SERIAL_PORT) $(BAUD_RATE)
 
-monitor:
-	python3 ../scripts/monitor.py $(SERIAL_PORT) $(BAUD_RATE)
 
 # --------------------------------------------------------------------------
 # Cleanup

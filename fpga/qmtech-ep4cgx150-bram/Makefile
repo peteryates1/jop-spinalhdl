@@ -1,105 +1,28 @@
+# JOP BRAM — build & program
 #
-# JOP BRAM - QMTECH EP4CGX150 Build & Program
+# BRAM-only JOP: no memory controller, so it isolates core problems from SDRAM
+# ones. `gc` is the same board with a heap large enough to exercise the
+# collector.
 #
-# Targets:
-#   make generate  - Generate Verilog from SpinalHDL
-#   make build     - Quartus compile (map, fit, asm, sta)
-#   make program   - Program FPGA via JTAG
-#   make monitor   - Monitor UART output (1 Mbaud)
-#   make all       - generate + build
-#   make run       - program + monitor
-#   make full      - generate + build + program + monitor
-#
+# CONVERTED 2026-08-25. The Quartus flow and the console come from
+# ../quartus.mk; only what is board-specific is here.
 
-# Quartus installation
-QUARTUS_DIR ?= /opt/altera/25.1/quartus
-QUARTUS_BIN = $(QUARTUS_DIR)/bin
+PROJECT_ROOT  = ../..
+CFG          ?= ep4cgx150Bram
+REV          ?= jop_bram
+BOARD_ALIAS   = ep4cgx150
+CONSOLE_ALIAS = ep4cgx150
 
-# JTAG programmer
-BLASTER_TYPE ?= USB-Blaster
+include ../quartus.mk
 
-# Serial port for UART monitoring
-SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id ep4cgx150 2>/dev/null \
-                 || echo /dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_de4cebf79bd1eb11910b7b54e93fd3f1-if00-port0)
-BAUD_RATE = 2000000
-
-# SpinalHDL project (sbt runs from repo root)
-PROJECT_ROOT = ../..
-GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopBramTop.v
-
-# Quartus project
-QP = jop_bram
-OUTPUT_DIR = output_files
-SOF_FILE = $(OUTPUT_DIR)/$(QP).sof
-
-.PHONY: all generate build program monitor run full clean
-
-# Default: generate + build
+.PHONY: all run program full gc clean
 all: generate build
-
-# Full flow: generate, build, program, monitor
+program: program-sof
+run: program monitor
 full: generate build program monitor
 
-# Generate + program + monitor (skip build if SOF exists)
-run: program monitor
+# A different CONFIGURATION of the same project, so it re-enters the same rules.
+gc:
+	$(MAKE) generate build CFG=ep4cgx150BramGc REV=$(REV)
 
-# --------------------------------------------------------------------------
-# SpinalHDL Verilog generation
-# --------------------------------------------------------------------------
-
-generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150Bram"
-	@echo "=== Verilog generated: $(GENERATED_V) ==="
-
-# Generate with Small GC app (128KB BRAM) for GC debugging
-generate-gc:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog ep4cgx150BramGc"
-	@echo "=== GC Verilog generated: $(GENERATED_V) ==="
-
-# --------------------------------------------------------------------------
-# Quartus build
-# --------------------------------------------------------------------------
-
-build: $(SOF_FILE)
-
-$(SOF_FILE): $(GENERATED_V) $(QP).qsf $(QP).sdc
-	$(QUARTUS_BIN)/quartus_map $(QP)
-	$(QUARTUS_BIN)/quartus_fit $(QP)
-	$(QUARTUS_BIN)/quartus_asm $(QP)
-	$(QUARTUS_BIN)/quartus_sta $(QP)
-	@echo "=== Build complete: $(SOF_FILE) ==="
-
-# --------------------------------------------------------------------------
-# FPGA programming
-# --------------------------------------------------------------------------
-
-$(QP).cdf: $(SOF_FILE)
-	@echo '/* Auto-generated CDF */' > $@
-	@echo 'JedecChain;' >> $@
-	@echo '	FileRevision(JESD32A);' >> $@
-	@echo '	DefaultMfr(6E);' >> $@
-	@echo '	P ActionCode(Cfg)' >> $@
-	@echo '		Device PartName(EP4CGX150DF27) Path("$(OUTPUT_DIR)/") File("$(QP).sof") MfrSpec(OpMask(1));' >> $@
-	@echo 'ChainEnd;' >> $@
-	@echo 'AlteraBegin;' >> $@
-	@echo '	ChainType(JTAG);' >> $@
-	@echo 'AlteraEnd;' >> $@
-
-program: $(SOF_FILE) $(QP).cdf
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG $(QP).cdf
-	@echo "=== FPGA programmed ==="
-
-# --------------------------------------------------------------------------
-# UART monitor (1 Mbaud, 8-N-1)
-# --------------------------------------------------------------------------
-
-monitor:
-	python3 ../scripts/monitor.py $(SERIAL_PORT) $(BAUD_RATE)
-
-# --------------------------------------------------------------------------
-# Cleanup
-# --------------------------------------------------------------------------
-
-clean:
-	rm -rf output_files db incremental_db $(QP).cdf
-	rm -f *.rpt *.done *.jdi *.sld *.smsg *.summary *.pin
+clean: quartus-clean
