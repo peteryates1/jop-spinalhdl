@@ -1,62 +1,56 @@
-# =============================================================================
-# A-E115FB DDR2 exerciser — build / program / monitor
+# JOP DDR2 — A-E115FB (EP4CE115 + 1 GB DDR2 SODIMM)
 #
-# First hardware milestone of the DDR2 bring-up. See
-# docs/boards/ae115fb-ddr2-bringup.md.
+# CONVERTED 2026-08-26. The Quartus flow, the console and the microcode come
+# from ../quartus.mk; what is board-specific stays here.
 #
-#   make generate   SpinalHDL -> Verilog
-#   make ip         link the vendor DDR2 IP into ./ip
-#   make build      Quartus compile
-#   make program    configure the FPGA over JTAG
-#   make monitor    watch the UART report
-#   make all        generate + ip + build
-#   make run        program + monitor
-# =============================================================================
-
-ROOT := ../..
-
-# Quartus 18.1 is the last version that supports Cyclone IV DDR2 ALTMEMPHY. The
-# IP is pre-generated so 25.1 can compile it, but 18.1 is what generated it and
-# is the safer choice until the flow is proven.
-QUARTUS_DIR ?= /opt/altera/18.1/quartus
-QUARTUS_BIN  = $(QUARTUS_DIR)/bin
-
-PROJECT ?= ddr2_exerciser
-
-# The DDR2 controller is REGENERATED from the variation file in ip-src/, which is
-# ~30 KB and under version control; the ~3.7 MB of generated Verilog is derived
-# and is not. Regeneration needs Quartus 18.1 — Intel dropped Cyclone IV DDR2
-# ALTMEMPHY after that, which is the whole reason 18.1 is installed.
+# QUARTUS 18.1, NOT 25.1, and that is not a preference. Intel dropped Cyclone
+# IV DDR2 ALTMEMPHY after 18.1, which is the whole reason 18.1 is installed.
+# 25.1 Lite still supports Cyclone IV E itself, so only the DDR2 path is
+# pinned. quartus.mk takes QUARTUS_DIR with `?=`, so this is all it takes.
 #
-# ip-src/ddr2_64bit.v is the vendor's variation with local_if_drate switched from
-# Full to Half: 256-bit local interface at 83 MHz instead of 128-bit at 166 MHz.
-# The wizard reads its parameters from the "Retrieval info" comments in that file.
+# The Quartus project is GENERATED now, like every other converted board.
+# Proven equivalent before the hand-written one was retired: the generated
+# project and jop_ddr2.qsf carry the SAME 506 pin and instance assignments,
+# zero differences in either direction, and the generated .sdc reproduces
+# jop_ddr2.sdc exactly. DoAll 66/66 on hardware from the generated project.
+#
+# Two things that took finding, both recorded in status item 78:
+#
+#   - The DDR2 pin/PHY assignments are SOURCED from the vendor file, not
+#     transcribed into board data: `Board.constraintFiles`. Only location and
+#     IO_STANDARD are pin facts; the rest are ALTMEMPHY and SODIMM properties.
+#
+#   - The PHY brings its OWN clock constraints (ddr2_64bit_phy_ddr_timing.sdc,
+#     pulled in by its .qip). Generating a second create_clock and
+#     derive_pll_clocks on top re-derived the PHY's internal clocks under ours
+#     and cost 5.4 ns: +0.584 became -4.807. The generated .sdc carries only
+#     the JOP-side I/O false paths.
+
+PROJECT_ROOT  = ../..
+CFG          ?= ae115fbDdr2
+REV          ?= jop_ddr2
+BOARD_ALIAS   = ae115fb
+CONSOLE_ALIAS = ae115fb
+QUARTUS_DIR  ?= /opt/altera/18.1/quartus
+
+include ../quartus.mk
+
+.PHONY: all full program assert-device ip smp exerciser exerciser-program clean
+
+all:  microcode ip generate build
+full: microcode ip generate build program download monitor
+
+# --------------------------------------------------------------------------
+# Vendor DDR2 IP
+#
+# REGENERATED from the variation file in ip-src/, which is ~30 KB and tracked;
+# the ~3.7 MB of generated Verilog is derived and is not. ip-src/ddr2_64bit.v is
+# the vendor's variation with local_if_drate switched Full -> Half: a 256-bit
+# local interface at 83 MHz rather than 128-bit at 166 MHz. The wizard reads its
+# parameters from the "Retrieval info" comments in that file.
+# --------------------------------------------------------------------------
+
 IP_SRC := ip-src/ddr2_64bit.v
-
-# Board selection resolves from the probe's USB serial, since port paths move on
-# every replug — see fpga/scripts/jtag_probe_map.
-CABLE = $(shell $(ROOT)/fpga/scripts/jtag_probe_map --cable ae115fb)
-
-# The board's own CH340, not the Pico (which runs pico-usb-blaster and has no
-# CDC interface). Resolved by alias, since ttyUSBn moves on every replug and
-# this board's CH340 has no serial to key on -- see fpga/scripts/usb_serial_map,
-# whose header explains why these two CH340s need special handling.
-UART_DEV  ?= $(shell $(ROOT)/fpga/scripts/usb_serial_map --by-id ae115fb 2>/dev/null \
-               || echo /dev/serial/by-id/usb-1a86_USB2.0-Serial-if00-port0)
-# NOTE: the JOP preset on this board runs at 1 Mbaud -- 2 Mbaud is UNREACHABLE
-# at 75 MHz (divider 7.5 -> 7, +7.14 %, see docs/boards/ae115fb-ddr2-bringup.md
-# "75 MHz is a good baud clock"). 2000000 is kept here because this Makefile
-# drives the DDR2 EXERCISER, not the JOP preset; if the exerciser also runs at
-# 75 MHz then this is wrong and should be 1000000. Unverified.
-UART_BAUD ?= 2000000
-JOP_FILE  ?= $(ROOT)/java/apps/Smallest/HelloWorld.jop
-
-.PHONY: all generate ip build program run monitor clean assert-device
-
-all: generate ip build
-
-generate:
-	cd $(ROOT) && sbt "runMain jop.system.Ddr2ExerciserTopVerilog"
 
 ip: ip/ddr2_64bit/ddr2_64bit.qip
 
@@ -71,42 +65,56 @@ ip/ddr2_64bit/ddr2_64bit.qip: $(IP_SRC)
 	cd ip/ddr2_64bit && $(QUARTUS_BIN)/qmegawiz -silent ddr2_64bit.v
 	@grep -E "local_if_drate|local_if_dwidth" ip/ddr2_64bit/ddr2_64bit_phy_ddr_timing.sdc | head -2
 
-build:
-	$(QUARTUS_BIN)/quartus_map $(PROJECT)
-	$(QUARTUS_BIN)/quartus_fit $(PROJECT)
-	$(QUARTUS_BIN)/quartus_asm $(PROJECT)
-	$(QUARTUS_BIN)/quartus_sta $(PROJECT)
-	@echo "=== built output_files/$(PROJECT).sof ==="
+# --------------------------------------------------------------------------
+# Programming
+#
+# The Terasic blaster is SHARED with the EP4CGX150 and gets moved between the
+# two boards, so the alias alone cannot say which is on the end of it -- and
+# programming the wrong Altera board succeeds silently. assert-device is a
+# read-only chain scan that refuses unless the IDCODE is the EP4CE115's, which
+# is why `program` wraps quartus.mk's `program-sof` rather than using it.
+# --------------------------------------------------------------------------
 
-# The Terasic blaster is SHARED with the EP4CGX150 and gets moved between the two
-# boards, so the alias alone cannot tell you which one is on the end of it -- and
-# programming the wrong Altera board succeeds silently. This is a read-only JTAG
-# chain scan that fails unless the IDCODE is the EP4CE115's.
 assert-device:
-	@$(ROOT)/fpga/scripts/jtag_probe_map --assert-device ae115fb
+	@$(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --assert-device $(BOARD_ALIAS)
 
-program: assert-device
-	@echo "=== programming via cable: $(CABLE) ==="
-	$(QUARTUS_BIN)/quartus_pgm -c "$(CABLE)" -m JTAG \
-	  -o "p;output_files/$(PROJECT).sof"
+program: assert-device program-sof
 
-# Reset the core over UART, no JTAG and no reprogramming. On DDR2 this is a
-# CORE-ONLY reset: the ALTMEMPHY keeps its calibration (global_reset_n and
-# soft_reset_n stay on the outer reset), so it costs microseconds rather than
-# the seconds a retrain would. Needs a bitstream from 2026-08-18 or later.
-reset:
-	python3 $(ROOT)/fpga/scripts/download.py -R $(UART_DEV) $(UART_BAUD)
+# --------------------------------------------------------------------------
+# Other configurations
+# --------------------------------------------------------------------------
 
-# Swap the running application without reprogramming the FPGA.
-redownload:
-	python3 $(ROOT)/fpga/scripts/download.py -e -r $(JOP_FILE) $(UART_DEV) $(UART_BAUD)
+#   make smp            2 cores
+#   make smp CORES=8
+CORES ?= 2
+smp:
+	$(MAKE) generate build CFG="ae115fbDdr2Smp $(CORES)" REV=jop_ddr2_smp
 
-monitor:
-	@echo "=== $(UART_DEV) @ $(UART_BAUD) — expect 'DDR2 PASS 0000' per pass ==="
-	python3 -c "import serial,sys; s=serial.Serial('$(UART_DEV)',$(UART_BAUD)); \
-	  [sys.stdout.write(s.read(1).decode('ascii','replace')) or sys.stdout.flush() for _ in iter(int,1)]"
+smp-program:
+	$(MAKE) program CFG="ae115fbDdr2Smp $(CORES)" REV=jop_ddr2_smp
 
-run: program monitor
+# --------------------------------------------------------------------------
+# NOT CONVERTED — the DDR2 exerciser
+#
+# The first hardware milestone of the bring-up (docs/boards/ae115fb-ddr2-
+# bringup.md). Still builds in-tree from the hand-written ddr2_exerciser.qsf:
+# it is a standalone Ddr2ExerciserTopVerilog design rather than a JopConfig
+# preset, so converting it means giving it a BoardDesign as the SD and SDRAM
+# exercisers have. Left alone because the JOP path it was written to unblock now
+# works end to end.
+# --------------------------------------------------------------------------
 
+exerciser:
+	cd $(PROJECT_ROOT) && sbt "runMain jop.system.Ddr2ExerciserTopVerilog"
+	$(QUARTUS_BIN)/quartus_map ddr2_exerciser
+	$(QUARTUS_BIN)/quartus_fit ddr2_exerciser
+	$(QUARTUS_BIN)/quartus_asm ddr2_exerciser
+	$(QUARTUS_BIN)/quartus_sta ddr2_exerciser
+
+exerciser-program: assert-device
+	$(QUARTUS_BIN)/quartus_pgm -c "$$($(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --cable $(BOARD_ALIAS))" \
+	    -m JTAG -o "p;output_files/ddr2_exerciser.sof"
+
+# In-tree leftovers only; the generated tree is quartus.mk's `quartus-clean`.
 clean:
-	rm -rf db incremental_db output_files ip
+	rm -rf db incremental_db output_files

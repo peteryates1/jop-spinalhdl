@@ -243,7 +243,7 @@ marking + the I/O interface — no `GC.java` changes.
   wrap the generated Verilog as a SpinalHDL `BlackBox`. Reuse the
   `read_write_1G` test project's IP.
 - **Programmer:** may share the Altera USB-Blaster with the EP4CGX150 board.
-- `fpga/a-e115fb-bram/` currently has only a BRAM Makefile — no DDR2 build yet.
+- **Superseded:** the DDR2 build exists and works (`fpga/a-e115fb-ddr2`, DoAll 66/66 from a generated Quartus project). `fpga/a-e115fb-bram/` was retired on 2026-08-26 — it never had a Quartus project and generated another board's preset.
 
 ## References
 - [Generational GC plan](gc-generational-implementation-plan.md)

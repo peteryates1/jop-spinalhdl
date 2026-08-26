@@ -108,15 +108,14 @@ sudo openFPGALoader -c dirtyJtag design.bit
 
 ### Makefile targets
 
-Each FPGA project Makefile includes a `program-djtag` target:
+A board whose Makefile offers a `program-djtag` target generates the RBF from
+the SOF (if needed) and programs via openFPGALoader.
 
-```bash
-cd fpga/a-e115fb-bram
-make program-djtag
-```
-
-This generates the RBF from the SOF (if needed) and programs via
-openFPGALoader.
+The example here used to be `fpga/a-e115fb-bram`, which was retired on
+2026-08-26: it had no Quartus project and generated `ep4cgx150Bram`, another
+board's preset. That board builds from `fpga/a-e115fb-ddr2` now, and programs
+over the shared Terasic blaster rather than dirtyJtag -- its own Pico drives
+3.3 V into a 1.8 V-banked JTAG and is blocked on level shifters.
 
 ## Tested Boards
 

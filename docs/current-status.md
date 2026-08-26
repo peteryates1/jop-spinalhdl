@@ -7100,9 +7100,13 @@ differences** either way. Timing **MET on every corner** -- +1.050 ns (Slow
 100C), +1.305 (Slow -40C), +1.397 (Fast -40C) -- against the +0.584 ns recorded
 for the hand-built August bitstream. 28,614 LE. It programs.
 
-**NOT hardware-verified**: the board's CH340 console is not patched through, so
-nothing can be read back. Programming succeeds and that is all that is
-established.
+**HARDWARE-VERIFIED**: `DoAll` **66/66, three runs of three**, from the generated
+project. (Written first as "not verified, console not patched through"; the
+console was connected and the runs were done.)
+
+Both CH340s are attached now and separate correctly by `iProduct` -- `ae115fb`
+resolves to `USB2.0-Serial`, `wukong` to `USB Serial` -- which is the only thing
+that distinguishes them, since neither carries a serial number.
 
 **Quartus 18.1 runs the generated Tcl unmodified** -- 0 errors, 0 warnings. That
 was the main risk (Cyclone IV DDR2 ALTMEMPHY is unsupported past 18.1) and it is
@@ -7174,6 +7178,52 @@ The DDR2 `.sta.rpt` is **297,552 lines** of very wide tables and the corner-head
 regex backtracked across all of them -- reading as a hang, on a script whose
 whole purpose is to fail fast. A substring test before the regex: **0.081s**,
 same answer.
+
+
+### Item 79 — the A-E115FB Makefiles: one converted, one retired
+
+**`fpga/a-e115fb-ddr2`** is on `quartus.mk` (2026-08-26), with
+`QUARTUS_DIR ?= /opt/altera/18.1/quartus` -- the include already took it with
+`?=`, so pinning the version cost one line. Cold-rebuilt through the new file:
+fit identical apart from the timestamp, **DoAll 66/66 three runs of three**.
+
+Quartus **25.1 Lite still supports Cyclone IV E**, so only the DDR2 path needs
+18.1, not the device. Worth knowing before pinning anything else to 18.1.
+
+The DDR2 **exerciser** stays in-tree: it is a standalone
+`Ddr2ExerciserTopVerilog` design rather than a preset, so converting it means
+giving it a `BoardDesign` as the SD and SDRAM exercisers have. Left alone
+because the JOP path it existed to unblock now works end to end.
+
+**`fpga/a-e115fb-bram` is RETIRED.** It contained a Makefile and nothing else --
+no `.qsf`, no `.qpf`, so `quartus_map jop_bram` had nothing to compile -- and its
+`generate` target ran:
+
+```
+sbt "runMain jop.system.JopTopVerilog ep4cgx150Bram"
+```
+
+**another board's preset**, a Cyclone IV GX config aimed at a Cyclone IV E
+project. Same shape as item 66, where the dbfpga flow ran `ep4cgx150Serial` into
+a 95-pin project. No `ae115fbBram` preset has ever existed.
+
+Two docs referenced it and both were stale: `stage1-card-table-design.md` still
+said "no DDR2 build yet", and `pico-dirtyjtag-setup.md` used it as the
+`program-djtag` example for a board that programs over the shared Terasic
+blaster, its own Pico being blocked on level shifters. Both corrected.
+
+### Gotcha — the stale baud note that nearly caused a regression
+
+`ae115fbDdr2` declares 2 Mbaud at 75 MHz, and both a memory note and a comment
+in the Makefile said that is impossible: 75/(2 x 5) = 7.5, so the divider
+rounds to 8 and the rate is 7 % off. **Superseded.** `jop.io.UartBaudTick` was
+made FRACTIONAL on 2026-08-18 -- *because of this board* -- and accumulates a
+fractional phase instead of an integer divider, reaching 2 Mbaud within
+0.0006 %. The preset's own comment says so; the Makefile comment next to it did
+not, and even flagged itself "Unverified".
+
+Reading the note instead of the code would have "fixed" a working configuration
+down to 1 Mbaud. DoAll 66/66 at 2 Mbaud settles it.
 
 ## 4. Two workstreams, both largely done
 
