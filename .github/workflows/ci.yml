@@ -108,7 +108,16 @@ jobs:
   formal-verification:
     needs: build-microcode
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # 75, not 45. The proofs themselves take ~19 min, so 45 looked like ample
+    # headroom -- but a COLD yosys cache adds a ~25 min build, and 25 + 19 plus
+    # setup does not fit in 45. That was already true before the install-tree
+    # fix below; it simply never bit until a cache went cold, and then it
+    # presented as a formal timeout rather than as a build cost.
+    #
+    # GitHub evicts a cache after 7 days without a hit, so any quiet week
+    # brings the cold path back. The budget has to cover it or the failure
+    # recurs on a schedule nobody is watching for.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
 
@@ -143,22 +152,39 @@ jobs:
           sudo apt-get install -y build-essential clang bison flex libreadline-dev \
             gawk tcl-dev libffi-dev pkg-config python3 zlib1g-dev
 
-      - name: Cache yosys build
+      # CACHE THE INSTALLED TREE, NOT THE BUILD TREE.
+      #
+      # This cached /tmp/yosys (the build tree) and then ran `make install` on
+      # it. The cache HIT -- 290 MB restored -- and `make install` REBUILT
+      # yosys from source anyway, 307 compiler invocations taking 27 of the
+      # job's 45 minutes and leaving 15 for proofs that need 19. The job then
+      # died on the wall with z3 still running, reporting only "exceeded the
+      # maximum execution time", which reads exactly like a formal regression:
+      # two commits were investigated as one before the log showed the rebuild.
+      #
+      # `make install` re-derives kernel/version_*.cc from the git state, and a
+      # restored tree does not reproduce it, so every object downstream is
+      # stale. Caching the build tree can therefore never be reliable here.
+      # DESTDIR staging is: the install output is a handful of files with no
+      # build rules behind them, so restoring it cannot trigger a rebuild.
+      - name: Cache yosys install
         id: cache-yosys
         uses: actions/cache@v4
         with:
-          path: /tmp/yosys
-          key: yosys-v0.52
+          path: /tmp/yosys-install
+          key: yosys-install-v0.52-2
 
-      - name: Build yosys 0.52 from source
+      - name: Build and stage yosys 0.52 from source
         if: steps.cache-yosys.outputs.cache-hit != 'true'
         run: |
           git clone --branch v0.52 --depth 1 --recursive https://github.com/YosysHQ/yosys.git /tmp/yosys
           cd /tmp/yosys && make config-clang && make -j$(nproc)
+          make install DESTDIR=/tmp/yosys-install PREFIX=/usr/local
 
       - name: Install yosys, z3, and SymbiYosys
         run: |
-          cd /tmp/yosys && sudo make install
+          sudo cp -a /tmp/yosys-install/usr/local/. /usr/local/
+          yosys -V
           # z3 from apt is 4.8.12 (too old for yosys 0.52 SMT2 output)
           # Install z3 4.16.0 from GitHub (apt z3 4.8.12 is too old for yosys 0.52 SMT2)
           curl -L -o /tmp/z3.zip https://github.com/Z3Prover/z3/releases/download/z3-4.16.0/z3-4.16.0-x64-glibc-2.39.zip

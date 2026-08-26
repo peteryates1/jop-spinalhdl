@@ -178,6 +178,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[85](#item-85)** — Build port, phase 2 — the SDRAM exerciser folded onto the shared flow, and the baud it never reported
 - **[86](#item-86)** — Build port, phase 3a — three shared Vivado scripts, proven equivalent by control build; and the DB_FPGA DDR3 build has quietly got 43 % smaller
 - **[87](#item-87)** — Build port, phase 3b — `vivado.mk` finally has a user, and it found a live baud bug and a latent one
+- **[88](#item-88)** — CI "formal verification failure" was a yosys cache that hits and rebuilds anyway — not the push, not the proofs
 - **[78](#item-78)** — the A-E115FB DDR2 project is generated now, and building it found four separate defects
 - **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
@@ -7713,6 +7714,61 @@ Scala; only the flow actually invoked pays for the sbt round trip.
 Verified: all twelve board Makefiles parse, every Wukong target dry-runs, and
 the baud now resolves correctly for four Wukong flows and four other boards
 (including the exerciser's 1 Mbaud, which differs from every other board's).
+
+### Item 88 — The CI formal failure was a build cache, not a proof
+
+The 2026-08-26 push failed `formal-verification` with **"The job has exceeded
+the maximum execution time of 45m0s"**. Every other job passed. It reads as a
+formal regression and was reported as one.
+
+**It was neither the push nor the proofs.**
+
+The push touched 41 files -- docs, FPGA Makefiles and `.qsf`s, four
+config/generator Scala files, `JopTopVerilog`, one config test. **No RTL, no
+formal test, no microcode, no CI config.** The formal suites instantiate
+`jop.core.*` / `jop.memory.*` / `jop.io.*` components, none of which changed, so
+the job's inputs were byte-identical to the previous green run.
+
+Re-running the same commit reproduced it exactly, which ruled out the first
+hypothesis (SMT nondeterminism) -- and the job log then gave it away:
+
+| | green run 03:55 | failing run 14:01 |
+|---|---|---|
+| first `Run sbt` | 03:55:28 | 14:01:52 |
+| next `Run sbt` | 03:56:04 (+36 s) | **14:30:54 (+29 min)** |
+| `Building ...` lines | **1** | **307** |
+| proof window | ~19 min | ~15 min, then killed |
+
+**The yosys cache HIT -- 290 MB restored -- and `make install` rebuilt yosys
+from source anyway**, 27 minutes of it, reaching 88 % before the wall. The
+re-run did the same: 318 `Building` lines, 25.5 minutes. The proofs never got
+their ~19 minutes and were killed mid-flight with z3 still running.
+
+**Why caching the build tree can never work here.** `make install` re-derives
+`kernel/version_*.cc` from the git state, which a restored tree does not
+reproduce, so everything downstream is stale on every restore. Fixed by caching
+the **installed** tree instead (`make install DESTDIR=...`, restore with
+`cp -a`): the install output is a handful of files with no build rules behind
+them, so restoring it cannot trigger a rebuild.
+
+**And the budget was always too small for a cold cache.** 25 min build + 19 min
+proofs + setup does not fit in 45, and GitHub evicts a cache after 7 days
+without a hit -- so any quiet week brings the cold path back, presenting as a
+formal timeout rather than as a build cost. Raised to 75.
+
+**What made this expensive to diagnose** is that the job-level wall reports
+nothing about what was slow. The project already knew the shape of this: the
+comment on `BytecodeFetchStageFormal.withTimeout(900)` says a formal timeout
+"should mean 'this property has become intractable', not 'the runner was
+busy'". That lesson was applied per-proof and never reconciled at the job level
+-- **the per-proof timeouts sum to 400 minutes against a 45-minute budget**, and
+twelve of the twenty-three suites set no timeout at all. So the wall always
+wins, and always anonymously.
+
+**Still open:** splitting `formal-verification` so a genuine blowup names its
+suite. Runtime is dominated by four deep suites (`CacheToMigAdapterFormal` alone
+was 540 s, 47 % of the job); the other ~18 finish in about two minutes and would
+gate a push far faster.
 
 ## 4. Two workstreams, both largely done
 
