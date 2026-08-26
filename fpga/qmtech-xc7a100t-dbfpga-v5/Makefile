@@ -21,6 +21,18 @@ VIVADO_ENV := export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 VIVADO_DIR := vivado
 BUILD_DIR := $(VIVADO_DIR)/build
 
+# The Vivado flow lives in two shared scripts, driven by environment. Six
+# near-identical create/build scripts for the three bring-up jigs below became
+# six invocations of these; see their headers for what the copies had drifted
+# into. Paths are made absolute here because the scripts normalise relative to
+# Vivado's working directory, which is not always this one.
+PART        := xc7a100tfgg676-2
+CREATE_TCL  := $(REPO_ROOT)/fpga/scripts/vivado_create_project.tcl
+BUILD_TCL   := $(REPO_ROOT)/fpga/scripts/vivado_build_project.tcl
+ABS_BUILD   := $(CURDIR)/$(BUILD_DIR)
+CONSTRAINTS := $(CURDIR)/$(VIVADO_DIR)/constraints
+BOARD_RTL   := $(CURDIR)/$(VIVADO_DIR)/rtl
+
 # DirtyJTAG programming (RP2040 on DB_FPGA V5)
 #
 # THERE ARE TWO dirtyJtag PROBES ON THIS HOST -- this board's RP2040 and the
@@ -70,12 +82,17 @@ generate-uart-echo:
 	cd $(REPO_ROOT) && sbt "runMain jop.system.UartEchoTopVerilog"
 
 create-uart-echo: generate-uart-echo
-	cd $(REPO_ROOT)/fpga/qmtech-xc7a100t-dbfpga-v5 && \
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/create_uart_echo_project.tcl
+	$(VIVADO_ENV) && JOP_PROJ=uart_echo JOP_PART=$(PART) JOP_TOP=UartEchoTop \
+	  JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_RTL=$(REPO_ROOT)/spinalhdl/generated/UartEchoTop.v \
+	  JOP_XDC=$(CONSTRAINTS)/uart_echo.xdc \
+	  JOP_GEN_HINT="run: make generate-uart-echo" \
+	  $(VIVADO) -mode batch -source $(CREATE_TCL)
 
 build-uart-echo: create-uart-echo
-	cd $(REPO_ROOT)/fpga/qmtech-xc7a100t-dbfpga-v5 && \
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/build_uart_echo_bitstream.tcl
+	$(VIVADO_ENV) && JOP_PROJ=uart_echo JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_BIT=UartEchoTop.bit \
+	  $(VIVADO) -mode batch -source $(BUILD_TCL)
 
 program-uart-echo:
 	sudo openFPGALoader -c $(CABLE) $(BUSDEV) \
@@ -93,10 +110,16 @@ test-uart-echo:
 # Run uart_loopback.py to verify the full GPIO0→B5→A5→GPIO1 path.
 
 loopback-create:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/create_uart_loopback_project.tcl
+	$(VIVADO_ENV) && JOP_PROJ=uart_loopback JOP_PART=$(PART) JOP_TOP=UartLoopback \
+	  JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_RTL=$(BOARD_RTL)/UartLoopback.v \
+	  JOP_XDC=$(CONSTRAINTS)/uart_loopback.xdc \
+	  $(VIVADO) -mode batch -source $(CREATE_TCL)
 
 loopback-build: loopback-create
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/build_uart_loopback_bitstream.tcl
+	$(VIVADO_ENV) && JOP_PROJ=uart_loopback JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_BIT=UartLoopback.bit \
+	  $(VIVADO) -mode batch -source $(BUILD_TCL)
 
 loopback-program:
 	sudo openFPGALoader -c $(CABLE) $(BUSDEV) \
@@ -111,10 +134,16 @@ uart-loopback: loopback-build loopback-program
 # With UART1 firmware: ttyACM0 should receive 0xAA from P25→GPIO5 (tests J2 path)
 
 txgen-create:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/create_uart_txgen_project.tcl
+	$(VIVADO_ENV) && JOP_PROJ=uart_txgen JOP_PART=$(PART) JOP_TOP=UartTxGen \
+	  JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_RTL=$(BOARD_RTL)/UartTxGen.v \
+	  JOP_XDC=$(CONSTRAINTS)/uart_txgen.xdc \
+	  $(VIVADO) -mode batch -source $(CREATE_TCL)
 
 txgen-build: txgen-create
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/build_uart_txgen_bitstream.tcl
+	$(VIVADO_ENV) && JOP_PROJ=uart_txgen JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_BIT=UartTxGen.bit \
+	  $(VIVADO) -mode batch -source $(BUILD_TCL)
 
 txgen-program:
 	sudo openFPGALoader -c $(CABLE) $(BUSDEV) \
