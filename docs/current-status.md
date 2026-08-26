@@ -170,6 +170,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
+- **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
 - **[75](#item-75)** — `ep4cgx150HwMath` generates byte-identical RTL to `ep4cgx150Serial` — a preset that expresses nothing, with a test that passes trivially
 - **[74](#item-74)** — item 69's scope was too narrow: `"float" -> "hw"` hits the `frem` trap too, not just `"*" -> "hw"` — and `frem` is absent from the bytecode table
@@ -7045,6 +7046,49 @@ hardware without anything failing.
 `BuildLayout` keys on the invocation precisely so two configurations cannot
 collide; it cannot help when the operator hands the two halves of one build
 different invocations.
+
+
+### Item 77 — the EP4CGX150 SDRAM Makefile, 701 lines to 195
+
+Converted 2026-08-26 onto `fpga/quartus.mk`. It was the last board Makefile
+carrying its own copy of the Quartus flow, and the biggest.
+
+**Cold-verified.** `build/ep4cgx150Serial` deleted and rebuilt end to end through
+the new file: fit summary **byte-identical** to the known-good apart from its
+timestamp line, timing +0.626 ns unchanged, and **DoAll 66/66** on hardware.
+
+**The bug that prompted it.** `program-smp` programmed
+`output_files/jop_smp_sdram.sof` -- the pre-build-tree in-tree path, whose newest
+copy was from **23 August** -- while the current bitstream sat in
+`build/<config>/`. The comment on `program` recorded that exact defect being
+fixed *for `program`*; the SMP twin fifteen lines below was left as it was. Now
+an alias for `smp-program`, which re-enters the parameterised rules.
+
+**~150 lines were flows that could not run.** `generate-smp8` invoked
+`jop.system.JopSmp8TestVerilog` and `generate-flash-boot` invoked
+`jop.system.JopCfgFlashTopVerilog`; **both mains were deleted in `7258661` on
+2026-03-13**, five and a half months earlier. Their build, program and full
+targets, and the `flash-image`/`flash-jic`/`program-flash` chain hanging off the
+flash-boot `.sof`, all went with them. `microcode-flash` ran `make flash` in
+`asm/`, where the target is `flash-altera` -- dead the same way.
+
+**Nothing failed, because nothing invoked them.** A Makefile target is only
+checked when someone runs it, so a dead one is indistinguishable from a working
+one until the day you need it. The same is true of the `.qsf` files they
+referenced, which were still tracked.
+
+Also removed: **nine `.cdf` generators**, eleven near-identical lines each.
+`quartus_pgm` takes an explicit operation, so the `.sof` goes to it directly.
+
+**Kept deliberately:** `assert-device` (this board shares the Terasic
+USB-Blaster with the A-E115FB, and programming the wrong one succeeds silently),
+which is why `program` wraps `program-sof` rather than using it; and the
+`config_flash_exerciser` / `flash_programmer` in-tree builds, still blocked on
+the config-flash pad abstraction. `microcode` moved into `quartus.mk` -- it was
+identical on every board.
+
+`uart_test.qsf` is now orphaned here: no target references it, and `UartTestTop`
+still exists. It belongs in `bringup/` with the other jigs.
 
 ## 4. Two workstreams, both largely done
 

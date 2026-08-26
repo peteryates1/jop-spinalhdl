@@ -47,7 +47,17 @@ GEN_STAMP    = $(CFG_DIR)/rtl/.generated
 SCALA_SRC   := $(shell find $(PROJECT_ROOT)/spinalhdl/src/main/scala -name '*.scala')
 UCODE       := $(wildcard $(PROJECT_ROOT)/build/microcode/serial/mem_*.dat)
 
-.PHONY: generate build program-sof quartus-clean
+.PHONY: generate build program-sof quartus-clean microcode
+
+# The microcode is not board-specific in any way -- every Altera board ran the
+# identical two lines -- and `serial` is the mode these flows boot in, which is
+# also what UCODE above watches. The EP4CGX150 copy of this additionally had a
+# `microcode-flash` target invoking `make flash` in asm/, and asm/Makefile has
+# no `flash` target: it is `flash-altera`. Dead, and no one noticed, because
+# nothing depended on it.
+microcode:
+	cd $(PROJECT_ROOT)/asm && $(MAKE) serial
+	@echo "=== Serial microcode in $(PROJECT_ROOT)/build/microcode/serial ==="
 
 $(GEN_STAMP): $(SCALA_SRC) $(UCODE)
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog $(CFG) buildtree"
