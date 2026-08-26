@@ -304,15 +304,17 @@ case class Board(
     * jtag_probe_map reports. */
   loaderCable: Option[String] = None,
   loaderBoard: Option[String] = None,
-  /** Vendor IP this board needs that is not the system PLL, as repo-relative
-    * paths. The Ethernet PLL is the case that exists: a board with
-    * `hasEthPll` instantiates `pll_125`, and without its source Quartus stops
-    * with "instantiates undefined entity".
+  /** Vendor IP this board always needs, beyond the system PLL, as
+    * repo-relative paths. The Quartus assignment is inferred from the
+    * extension -- `.qip` -> QIP_FILE, `.vhd` -> VHDL_FILE, `.v`/`.sv` ->
+    * VERILOG_FILE -- so a new kind of IP needs no new field.
     *
-    * Hand-written today, and a PllSpec candidate -- see
-    * docs/architecture/peripheral-portability-plan.md. Listed here rather than
-    * hardcoded in the generator so the generator stays board-agnostic. */
+    * The A-E115FB's DDR2 controller is the case: without its `.qip` Quartus
+    * stops with "instantiates undefined entity ddr2_64bit". */
   extraIpFiles: Seq[String] = Seq.empty,
+  /** IP needed only when the DESIGN declares an Ethernet device. The board has
+    * the PHY and its PLL either way; a UART-only build must not list them. */
+  ethIpFiles: Seq[String] = Seq.empty,
   /** Ports the generated top HAS but this board does not WIRE.
     *
     * A fixed interface bundle (SdramInterface, say) always presents every
@@ -370,7 +372,7 @@ object Board {
    */
   def QmtechEP4CGX150 = Board(
     name = "qmtech-ep4cgx150",
-    extraIpFiles = Seq("fpga/qmtech-ep4cgx150-sdram/pll_125.v"),
+    ethIpFiles = Seq("fpga/qmtech-ep4cgx150-sdram/pll_125.v"),
     probeAlias = Some("ep4cgx150"),
     consoleAlias = Some("ep4cgx150"),
     fpga = Some(FpgaDevice.EP4CGX150DF27I7),
@@ -616,6 +618,7 @@ object Board {
    */
   def AE115FB = Board(
     name = "a-e115fb",
+    extraIpFiles = Seq("fpga/a-e115fb-ddr2/ip/ddr2_64bit/ddr2_64bit.qip"),
     probeAlias = Some("ae115fb"),
     consoleAlias = Some("ae115fb"),
     fpga = Some(FpgaDevice.EP4CE115F23I7),

@@ -127,9 +127,22 @@ object QuartusProject {
     // the Ethernet PLL exists on the board whether or not this configuration
     // instantiates one, and listing its source unconditionally would put an
     // unused file in every project.
-    val hasEth = config.devices.values.exists(_.deviceType.key == "ethernet")
-    if (hasEth) config.assembly.boards.flatMap(_.extraIpFiles).distinct
-      .foreach(f => g("VERILOG_FILE", up(f)))
+    // The Quartus assignment follows the file's kind, so a board adding a new
+    // sort of IP needs no change here.
+    def ipAssignment(f: String): String = f.split('.').last match {
+      case "qip"        => "QIP_FILE"
+      case "vhd"|"vhdl" => "VHDL_FILE"
+      case "sv"         => "SYSTEMVERILOG_FILE"
+      case _            => "VERILOG_FILE"
+    }
+    config.assembly.boards.flatMap(_.extraIpFiles).distinct
+      .foreach(f => g(ipAssignment(f), up(f)))
+
+    // Ethernet IP only when the DESIGN drives Ethernet -- the board has the PHY
+    // and its PLL whether or not this configuration uses them.
+    val hasEth = config.devices.values.exists(_.deviceType.key == DeviceType.Ethernet.key)
+    if (hasEth) config.assembly.boards.flatMap(_.ethIpFiles).distinct
+      .foreach(f => g(ipAssignment(f), up(f)))
     // SDR needs the tri-state SDRAM controller; every Altera build needs the
     // LPM ROM/RAM the microcode store is built from.
     if (memType.contains(MemoryType.SDRAM_SDR)) {

@@ -46,8 +46,8 @@ rediscovered by reading Verilog.
 | `cyc5000-sdram/jop_smp_cyc5000` | `JopSmpCyc5000Top` | `cyc5000Smp(n)` | to do |
 
 | `max1000/jop_max1000` | `JopMax1000SdramTop` | `max1000Sdram` | to do — **no hardware** |
-| `a-e115fb-ddr2/jop_ddr2` | `JopDdr2Ae115fbTop` | `ae115fbDdr2` | to do |
-| `a-e115fb-ddr2/jop_ddr2_smp` | `JopSmpDdr2Ae115fbTop` | `ae115fbDdr2Smp(n)` | to do |
+| `a-e115fb-ddr2/jop_ddr2` | `JopDdr2Ae115fbTop` | `ae115fbDdr2` | **BLOCKED — board data incomplete, see below** |
+| `a-e115fb-ddr2/jop_ddr2_smp` | `JopSmpDdr2Ae115fbTop` | `ae115fbDdr2Smp(n)` | **BLOCKED — same** |
 | `alchitry-au` ddr3 | `JopDdr3Top` | `auSerial` | to do |
 | `dbfpga-v5` ddr3 | `JopDdr3Top` | `xc7a100tDbSerial` / `Full` | to do |
 | `wukong` ddr3 | `JopDdr3WukongTop` | `wukongDdr3` / `wukongFull` | **done — DoAll 66/66 on `wukongDdr3`** |
@@ -94,6 +94,31 @@ recorded in its summary and has not been established.
 | `ep4cgx150-sdram/flash_programmer` | `FlashProgrammerTop` | **config-flash pad abstraction** |
 | `alchitry-au` spi diagnostic | `SpiDiagnosticTop` | **config-flash pad abstraction** |
 | `alchitry-au` flash programmer (DDR3) | `FlashProgrammerDdr3Top` | **pad abstraction; merges with `FlashProgrammerTop`** |
+
+## Blocked on board data — the A-E115FB
+
+Attempted 2026-08-25 and **reverted**, because converting it left the board
+unable to build. Two things must be fixed first, and neither is a generator
+problem:
+
+1. **Its 118-pin DDR2 interface is not in board data.** `Board.AE115FB` declares
+   about two pin mappings; the DDR2 set lives only in the hand-written
+   `jop_ddr2.qsf` (and `ddr2_pins.qsf`). The generated project therefore emitted
+   6 pins where the design needs 118.
+2. **Its pins lack the `PIN_` prefix.** Every other Altera board stores
+   `PIN_E22`; this one stores `H5`. Quartus rejects the bare form —
+   *"Can't place node ser_txd — illegal location assignment H5"* — so the
+   generator faithfully emitted what the board declared and the tool refused it.
+
+The generator was not at fault either time, which is why the fix is board data
+rather than code. Worth doing when the board's console is reconnected so the
+result can actually be verified; converting a board that cannot be tested and
+cannot be built is the worst of both.
+
+Two generator gaps DID come out of the attempt and were kept: `Board.extraIpFiles`
+now infers the Quartus assignment from the file extension (`.qip` -> QIP_FILE),
+and Ethernet-only IP moved to `ethIpFiles` so a UART-only build does not list a
+PHY PLL it never instantiates.
 
 ## INDEPENDENT — bring-up jigs, keep and isolate
 
