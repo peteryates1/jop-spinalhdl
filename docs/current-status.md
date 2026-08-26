@@ -170,6 +170,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
+- **[80](#item-80)** — `PerfCounterVerifySim` fails on an unassigned ICU register — pre-existing, confirmed by bisect
 - **[78](#item-78)** — the A-E115FB DDR2 project is generated now, and building it found four separate defects
 - **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
@@ -7224,6 +7225,37 @@ not, and even flagged itself "Unverified".
 
 Reading the note instead of the code would have "fixed" a working configuration
 down to 1 Mbaud. DoAll 66/66 at 2 Mbaud settles it.
+
+
+### Item 80 — `PerfCounterVerifySim` fails, and has been failing (OPEN)
+
+`sbt test` on 2026-08-26: **651 succeeded, 1 failed**.
+
+```
+[Warning] UNASSIGNED REGISTER (toplevel/jopSystem/pipeline/cu/icu/resultReg : UInt[64 bits])
+          with init value, please apply the allowUnsetRegToAvoidLatch tag if that's fine
+    at jop.core.IntegerComputeUnit.<init>(IntegerComputeUnit.scala:50)
+```
+
+The ICU's 64-bit `resultReg` has no driver, and elaboration refuses.
+
+**PRE-EXISTING, established by bisect rather than assumed.** It fails identically
+at `c022296`, before any of this session's changes: same register, same message,
+same ~48 s. The failing harness builds `JopCoreConfig` directly with default
+bytecodes, so it never sees the `ep4cgx150HwMath` change that made `imul`
+hardware -- but "it can't be mine" is a hypothesis, and checking it cost one
+worktree.
+
+**The first bisect attempt was worthless and looked conclusive.** The test
+"failed at base" in 37 ms -- because `java/apps/JbeBench/JbeBench.jop` is a
+gitignored artifact that does not exist in a fresh worktree, so it failed on a
+missing file rather than on the defect. A pass/fail comparison across trees is
+meaningless until both trees fail the same WAY. Copying the fixture in gave the
+real answer. This is the gitignored-artifact CI trap wearing a different hat.
+
+**Not diagnosed.** Whether `resultReg` lost its driver or never had one under
+this particular `JopCoreConfig` (no `bytecodes` map, so ICU ops take their
+defaults) is open.
 
 ## 4. Two workstreams, both largely done
 
