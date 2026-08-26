@@ -26,7 +26,8 @@ import jop.memory.{BmbSdramCtrl32, JopMemoryConfig, SdramDeviceInfo}
 case class SdramExerciserTop(
   md: MemoryDevice,
   board: jop.config.Board = SdramExerciserDesign.assembly.fpgaBoard,
-  clkMhz: Int = SdramExerciserDesign.clkMhz
+  clkMhz: Int = SdramExerciserDesign.clkMhz,
+  uartBaud: Int = SdramExerciserDesign.uartBaud
 ) extends Component {
 
   val io = new Bundle {
@@ -86,11 +87,12 @@ case class SdramExerciserTop(
     sdramCtrl.io.fill.cmd := False; sdramCtrl.io.fill.start := 0
     sdramCtrl.io.fill.end := 0; sdramCtrl.io.fill.value := 0
 
-    // UART TX (1 Mbaud)
+    // UART TX -- rate from SdramExerciserDesign.uartBaud, so the summary the
+    // console reads and the divider the hardware uses cannot disagree.
     val uartCtrl = new UartCtrl(UartCtrlGenerics(
       preSamplingSize = 1, samplingSize = 3, postSamplingSize = 1
     ))
-    uartCtrl.io.config.setClockDivider(1000000 Hz)
+    uartCtrl.io.config.setClockDivider(uartBaud Hz)
     uartCtrl.io.config.frame.dataLength := 7
     uartCtrl.io.config.frame.parity := UartParityType.NONE
     uartCtrl.io.config.frame.stop := UartStopType.ONE
@@ -572,9 +574,15 @@ object SdramExerciserDesign extends jop.config.BoardDesign {
   val assembly   = SystemAssembly.qmtechWithDb
   val entityName = "SdramExerciserTop"
   val designName = "sdram-exerciser"
+  // The baud is DECLARED here, not buried as a literal in the UART setup below.
+  // console.mk derives the download rate from the build's own summary rather
+  // than from a Makefile constant (status item 70), and that derivation reads
+  // this field -- so an exerciser that kept its rate as a magic number in the
+  // RTL produced an EMPTY baud and a `make monitor` with no rate at all.
+  val uartBaud   = 1000000
   val devices    = Map(
     "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"),
-                             params = Map("txOnly" -> true)))
+                             params = Map("txOnly" -> true, "baudRate" -> uartBaud)))
   val resetInput = None
   val usesSdr    = true
   val memType    = Some(MemoryType.SDRAM_SDR)

@@ -175,6 +175,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[82](#item-82)** — **Flash boot has been unbuildable on BOTH boards since 2026-03-13** — a working, hardware-verified capability removed as collateral by a refactor (OPEN)
 - **[83](#item-83)** — Build port, phase 1 — the board-by-board flow audit, and a live wrong-board programming hazard on the DB_FPGA V5
 - **[84](#item-84)** — No MAX1000 configuration is known to fit — a 1- or 2-core 10M08 setup is wanted (OPEN)
+- **[85](#item-85)** — Build port, phase 2 — the SDRAM exerciser folded onto the shared flow, and the baud it never reported
 - **[78](#item-78)** — the A-E115FB DDR2 project is generated now, and building it found four separate defects
 - **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
@@ -7492,6 +7493,54 @@ two is arithmetically possible at all.
 **Next action:** run `make -C fpga/max1000 all` for the fit figure. It needs no
 hardware -- that is exactly what this flow is good for while the board is
 elsewhere -- and it converts an open question into a number.
+
+### Item 85 — Build port, phase 2: the exerciser folds in, and the baud it never reported
+
+`fpga/qmtech-ep4cgx150-sdram-test` now includes `quartus.mk`. It was already
+GENERATING everything (item 78: Verilog, PLL, SDC and the Quartus project all
+come from `SdramExerciserDesign`), but it still carried its own copy of the four
+`quartus_*` commands, its own `quartus_pgm` line with a hand-resolved blaster,
+its own `BAUD_RATE = 1000000`, and a monitor pointing at another board's
+`monitor.py`. What let it fold in was `GEN_MAIN` / `GEN_MAKES_PROJECT` from
+phase 0 -- an exerciser is a standalone `BoardDesign`, not a preset, and those
+two knobs are the whole difference. The emitted command sequence is identical.
+
+**The conversion introduced a regression, and catching it produced the better
+fix.** `console.mk` derives `BAUD` from the build's own `*.summary.txt` rather
+than a Makefile constant (item 70). The exercisers **never emitted a summary**,
+so `BAUD` came out EMPTY and `make monitor` would have run with no rate at all
+-- strictly worse than the constant it replaced. The rate itself was a literal
+`1000000 Hz` buried in the UART setup inside `SdramExerciserTop`.
+
+Fixed at the source rather than by reinstating the constant. The baud is now
+DECLARED on the device, where the JOP path already keeps it:
+
+```scala
+val uartBaud = 1000000
+val devices  = Map("uart" -> DeviceInstance(DeviceType.Uart, ...,
+                     params = Map("txOnly" -> true, "baudRate" -> uartBaud)))
+```
+
+The RTL divider reads it, `SdramExerciserBuild` writes it into a summary, and
+`console.mk` finds it. Verified end to end: `BAUD` resolves to 1000000, and the
+generated divider is unchanged at `20'h00013` -- 100 MHz / (1 Mbaud x 5) - 1.
+**The summary and the divider can no longer disagree**, which is the property
+that mattered; a constant that happens to be right is not the same as one that
+cannot be wrong.
+
+**`CONSOLE_TXONLY`.** This design's UART reports results and listens to nothing,
+so `download`, `redownload` and `reset` -- which `console.mk` offers every board
+-- are meaningless here. Overriding the three recipes in the board Makefile
+works but draws `overriding recipe for target` warnings, and **warnings that are
+normal are warnings nobody reads**; the flag is the third of the same shape as
+`GEN_MAKES_PROJECT`. They now fail with the reason instead of a serial timeout.
+
+**Still open in phase 2:** the MAX1000 stays in-tree -- its `jop_max1000.qsf`
+reads `spinalhdl/generated/`, so folding it in needs a MAX1000 `BoardDesign`
+first, not just an include.
+
+All six `quartus.mk` boards dry-run clean; 63/63 config and generator tests pass,
+`ConstraintDriftTest` included.
 
 ## 4. Two workstreams, both largely done
 

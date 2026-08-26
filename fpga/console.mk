@@ -26,12 +26,28 @@ BAUD ?= $(shell grep -h 'UART baud' $(CFG_DIR)/rtl/*.summary.txt 2>/dev/null \
 
 JOP_FILE ?= $(CFG_DIR)/java/apps/Smallest/HelloWorld.jop
 
+# A design whose UART is TRANSMIT-ONLY -- the SDRAM exerciser reports results
+# and listens to nothing -- sets CONSOLE_TXONLY=yes. It still gets `monitor`;
+# download, redownload and reset are meaningless without a receiver, and are
+# replaced by targets that say so. Defining them in the board Makefile instead
+# would work, but every such board would draw "overriding recipe for target"
+# warnings, and warnings that are normal are warnings nobody reads.
+CONSOLE_TXONLY ?= no
+
 .PHONY: download redownload reset monitor console-info
 
 console-info:
 	@echo "console : $(CONSOLE_ALIAS) -> $(SERIAL_PORT)"
 	@echo "baud    : $(BAUD)  (from $(CFG_DIR)/rtl/*.summary.txt)"
 	@echo "image   : $(JOP_FILE)"
+
+ifeq ($(CONSOLE_TXONLY),yes)
+
+download redownload reset:
+	@echo "N/A: this design's UART is transmit-only — use 'make monitor'." >&2
+	@exit 1
+
+else
 
 download:
 	python3 $(PROJECT_ROOT)/fpga/scripts/download.py -e $(JOP_FILE) $(SERIAL_PORT) $(BAUD)
@@ -43,6 +59,8 @@ redownload:
 
 reset:
 	python3 $(PROJECT_ROOT)/fpga/scripts/download.py -R $(SERIAL_PORT) $(BAUD)
+
+endif
 
 monitor:
 	python3 $(PROJECT_ROOT)/fpga/scripts/monitor.py $(SERIAL_PORT) $(BAUD)

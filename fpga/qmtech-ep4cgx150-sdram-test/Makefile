@@ -1,51 +1,52 @@
-# SDRAM Exerciser Test - Build & Program
+# ---------------------------------------------------------------------------
+# SDRAM Exerciser — QMTECH EP4CGX150
+#
+#   make all       generate + build
+#   make run       program + monitor
+#
+# CONVERTED 2026-08-26. The Quartus flow and the console come from
+# ../quartus.mk; this file now holds only what identifies the design.
+#
+# It was already generating everything (2026-08-25: Verilog, PLL, SDC and the
+# Quartus project all come from SdramExerciserDesign, and the hand-written
+# sdram_test.qsf/.qpf/.sdc were proven equivalent and deleted) -- but it still
+# carried its own copy of the four quartus_* commands, its own quartus_pgm line
+# with a hand-resolved blaster, its own BAUD_RATE constant, and a monitor
+# pointing at ../qmtech-ep4cgx150-bram/monitor.py.
+#
+# What let it fold in was `GEN_MAIN` / `GEN_MAKES_PROJECT` in quartus.mk: an
+# exerciser is not a JopConfig preset, it is a standalone BoardDesign whose
+# single Build main emits RTL, PLL, SDC and setup_proj.tcl in one pass. Those
+# two knobs are the whole difference. The cfgName and revision inside
+# SdramExerciserBuild are exactly the CFG and REV set here.
+#
+# BAUD comes from the build's own summary now, not from the BAUD_RATE = 1000000
+# that used to sit here -- see console.mk's header and status item 70.
+# ---------------------------------------------------------------------------
 
-QUARTUS_DIR ?= /opt/altera/25.1/quartus
-QUARTUS_BIN = $(QUARTUS_DIR)/bin
-SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id ep4cgx150 2>/dev/null \
-                 || echo /dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_de4cebf79bd1eb11910b7b54e93fd3f1-if00-port0)
-BAUD_RATE = 1000000
+PROJECT_ROOT      = ../..
+CFG              ?= sdramExerciser
+REV              ?= sdram_test
+BOARD_ALIAS       = ep4cgx150
+CONSOLE_ALIAS     = ep4cgx150
+GEN_MAIN          = jop.system.SdramExerciserBuild
+GEN_ARGS          =
+GEN_MAKES_PROJECT = yes
+# This design's UART reports results and listens to nothing
+# (`txOnly -> true` in SdramExerciserDesign), so console.mk gives it
+# `monitor` and refuses download/redownload/reset.
+CONSOLE_TXONLY    = yes
 
-PROJECT_ROOT = ../..
-MONITOR_PY = ../qmtech-ep4cgx150-bram/monitor.py
+include ../quartus.mk
 
-# CONVERTED (2026-08-25). Verilog, PLL, SDC and the Quartus project are all
-# generated from SdramExerciserDesign into build/sdramExerciser/; Quartus writes
-# its own .qsf/.qpf from setup_proj.tcl. The hand-written sdram_test.qsf/.qpf/
-# .sdc were proven equivalent -- 43 pins and the SDC line for line -- then
-# deleted.
-QP = sdram_test
-CFG_DIR = $(PROJECT_ROOT)/build/sdramExerciser
-QUARTUS_PRJ = $(CFG_DIR)/quartus
-SOF_FILE = $(QUARTUS_PRJ)/output_files/$(QP).sof
-
-# The probe is resolved by SERIAL, like every other flow here -- a bare
-# "USB-Blaster" picks whichever cable enumerated first.
-BLASTER_TYPE := $(shell $(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --cable ep4cgx150 2>/dev/null || echo USB-Blaster)
-
-.PHONY: all generate build program monitor run clean
+.PHONY: all run program clean
 
 all: generate build
-
 run: program monitor
 
-generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.SdramExerciserBuild"
-	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_sh -t setup_proj.tcl
+program: program-sof
 
-build:
-	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_map $(QP)
-	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_fit $(QP)
-	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_asm $(QP)
-	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_sta $(QP)
-	@echo "=== Build complete: $(SOF_FILE) ==="
+# Nothing is generated in-tree for this design, so `clean` is exactly
+# quartus.mk's `quartus-clean`: remove build/<config>/.
+clean: quartus-clean
 
-program:
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG -o "p;$(SOF_FILE)"
-	@echo "=== FPGA programmed ==="
-
-monitor:
-	python3 $(MONITOR_PY) $(SERIAL_PORT) $(BAUD_RATE)
-
-clean:
-	rm -rf $(CFG_DIR)
