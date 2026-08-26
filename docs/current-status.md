@@ -170,6 +170,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
+- **[71](#item-71)** — All three EP4CGX150 **BRAM** presets miss timing badly at 80 MHz (−2.5 to −3.7 ns). One of them "passes" on hardware, which is why it went unnoticed
 - **[70](#item-70)** — UART baud is stated in THREE places that disagree — preset override, a 2 Mbaud default, and 12 Makefile constants. Pick one rate and derive the rest
 - **[69](#item-69)** — `bytecodes = "*" -> "hw"` forces hardware for `frem`, which has NO hardware implementation anywhere. `DoAll` dies at `FloatTest` on every `*=hw` preset
 - **[68](#item-68)** — EP4CGX150 Ethernet: link comes up at 1 Gbps but NO packets move. DHCP times out against a server that IS on that switch
@@ -6817,6 +6818,43 @@ demonstrated. Then:
 **Cheap partial fix available now**: `download.py` and `monitor.py` could take
 the config directory instead of a baud and read the summary. That removes the
 guess at the point where it actually bites, without touching any preset.
+
+
+### Item 71 — the EP4CGX150 BRAM presets do not close timing at 80 MHz
+
+**Found 2026-08-26** while filling in the hardware record for that board.
+
+| preset | setup (Slow 100C) | TNS | on hardware |
+|---|---|---|---|
+| `ep4cgx150BramSerial` | **−2.544 ns** | −170.3 | prints `Hello World!` |
+| `ep4cgx150Bram` | **−3.745 ns** | −447.9 | nothing — no app is embedded |
+| `ep4cgx150BramGc` | **−2.870 ns** | −238.9 | 180 bytes of garbage |
+
+All three run at `clkFreq = 80 MHz`, the board's maximum. The SDRAM presets on
+the same board close comfortably (`ep4cgx150Serial` +0.626 ns), so this is
+specific to the BRAM configurations.
+
+**`BramSerial` passing is the dangerous part.** It downloads and prints
+`Hello World!` on a bitstream missing timing by 2.5 ns, and was recorded here as
+a hardware pass on that basis before anyone looked at the slack. This document
+already says why that is worthless -- *a passing DoAll on a violated bitstream
+proves nothing; it can misbehave arbitrarily and the failure would be
+intermittent* -- and the check was skipped anyway.
+
+**`hw_verify.py` should refuse, or at least warn, on a violated bitstream.** It
+reads the console and nothing else, so it cannot currently tell a real pass from
+a lucky one. The fit summary sits next to the bitstream and states `Timing: MET`
+or `VIOLATED`; reading it is a few lines and would have caught this at the point
+of claiming the result.
+
+**Two smaller things found alongside**, both config rather than conversion:
+
+- `ep4cgx150Bram` embeds NO application. `JopTopVerilog` sets a `jopFile` only
+  for `ep4cgx150BramGc`, so the plain preset produces a bitstream with an empty
+  main memory. It is a fit-measurement configuration, not a runnable one, and
+  nothing said so.
+- `ep4cgx150BramGc`'s garbage output is consistent with the violation rather
+  than a baud error: the clock is 80 MHz and the declared baud 2 M, which agree.
 
 ## 4. Two workstreams, both largely done
 
