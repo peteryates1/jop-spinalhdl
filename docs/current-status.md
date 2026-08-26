@@ -173,6 +173,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[80](#item-80)** — `PerfCounterVerifySim` fails on an unassigned ICU register — pre-existing, confirmed by bisect
 - **[81](#item-81)** — Build port, phase 0 — the ten superseded project files deleted, and three leftovers from my own conversions
 - **[82](#item-82)** — **Flash boot has been unbuildable on BOTH boards since 2026-03-13** — a working, hardware-verified capability removed as collateral by a refactor (OPEN)
+- **[83](#item-83)** — Build port, phase 1 — the board-by-board flow audit, and a live wrong-board programming hazard on the DB_FPGA V5
 - **[78](#item-78)** — the A-E115FB DDR2 project is generated now, and building it found four separate defects
 - **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
@@ -7386,6 +7387,75 @@ explanation instead of a class-not-found, and both flash-boot docs carry a
 REGRESSED banner so the next reader is not misled the way this audit nearly was.
 
 **Not started:** the presets themselves. Neither board has been re-verified.
+
+### Item 83 — Build port, phase 1: auditing the flows before deduplicating them
+
+Three questions per flow: does its generator main exist, does its Tcl exist, is
+there a hardware record. Asked before any conversion work, because ~150 of the
+EP4CGX150's 701 lines turned out to be **dead rather than duplicated** -- and
+deduplicating dead code is worse than leaving it, since the result looks
+maintained.
+
+| board | outcome |
+|---|---|
+| Alchitry Au | 4 flows retired, 252 -> 151 lines, 25 -> 11 Tcl. Flash boot is item 82 |
+| MAX1000 | 4 targets retired; `download` called a nonexistent class in a nonexistent jar |
+| DB_FPGA V5 | **live wrong-board hazard fixed** (below) |
+| Wukong | 3 orphaned `bench_*.tcl`; kept, see below |
+| `ep4cgx150-sdram-test` | foldable onto `quartus.mk` now that `GEN_MAIN` exists (phase 2) |
+| `alchitry-au-ddr3-test` | still on the legacy in-tree path |
+| Colorlight i5 | closed -- no shared include warranted for a single ECP5 |
+
+**The DB_FPGA V5 could program the wrong board, today.** Its `BUSDEV ?=` was
+empty, with a comment instructing the reader to pass the probe selection by
+hand. Two dirtyJtag probes are attached to this host right now -- the Wukong's
+Pico 2 W at `001:014` and this board's RP2040 at `001:039` -- and a bare
+`-c dirtyJtag` takes the lower one. So `make ddr3-program` here programmed the
+**Wukong** unless someone remembered to type the workaround, and three further
+program targets (`uart-echo`, `loopback`, `txgen`) omitted `BUSDEV` entirely.
+Now resolved by serial like every other flow; all four verified selecting
+`1:39`. *A hazard that is only avoided when someone remembers to type the
+workaround is not avoided* -- the comment sat there describing the danger
+accurately while doing nothing about it.
+
+**The MAX1000's `download` was doubly dead:**
+
+```
+java -cp java/tools/dist/jop-tools.jar com.jopdesign.tools.SerialDownload
+```
+
+`java/tools/dist` holds `jopa.jar`, `jopizer.jar` and `jopsim.jar`; there is no
+`jop-tools.jar`, and no `SerialDownload` anywhere in `java/tools/src`. The
+project's downloader has been `fpga/scripts/download.py` for a long time.
+`program` used a bare `-c USB-Blaster` -- the same wrong-board hazard, on a
+board that **does not exist on this host** (10M08, never acquired). Repairing
+three targets against hardware that cannot test them is not worth it, so the
+file now says what it does: a fit check, which is genuinely useful -- 8k LEs
+against the EP4CGX150's 149k catches an area regression early. It grew from 46
+to 56 lines, all of it the explanation.
+
+**A false positive worth recording.** The DB_FPGA's `DDR3_BITSTREAM` names
+`JopDdr3Top.bit`, and `JopDdr3Top.scala` was one of the two files deleted by
+`7258661` -- it reads exactly like the stale paths found elsewhere. It is
+correct: `JopConfig.entityName` *derives* `JopDdr3Top` for that preset, because
+the board sets neither `entityTag` nor `entitySuffix`. **A name surviving its
+file is not evidence of a dead path when the name is computed.** Checking cost
+one `sed`; assuming would have "fixed" a working flow.
+
+**Kept deliberately: the Wukong's `bench_cu.tcl` and `synth_only.tcl`.** No
+Makefile references either, so both matched the orphan pattern -- but they are
+cited by `docs/analysis/compute-unit-timing-benchmark.md` and
+`docs/analysis/wukong-utilization-sweep.md` as the reproduction recipe for
+published tables. **A script referenced only by an analysis document is not
+orphaned; it is the evidence.** `bench_icu`, `bench_dcu_only` and
+`bench_fcu_dcu` are subset variants of the four-unit run and are cited by
+nothing -- flagged, not deleted, pending a decision.
+
+**Also noted:** `docs/boards/flash-boot-artix7.md`,
+`docs/architecture/sd-card-boot-loader.md` and
+`docs/architecture/serial-remote-debug.md` have CRLF line endings. Editing them
+through Python's text mode silently rewrites every line -- an 11-line addition
+came out as a 1,121-line diff before it was caught and redone at byte level.
 
 ## 4. Two workstreams, both largely done
 

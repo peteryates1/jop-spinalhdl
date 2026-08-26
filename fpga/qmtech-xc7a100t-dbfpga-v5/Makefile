@@ -20,15 +20,23 @@ VIVADO := /opt/xilinx/2025.2/Vivado/bin/vivado
 VIVADO_ENV := export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 VIVADO_DIR := vivado
 BUILD_DIR := $(VIVADO_DIR)/build
-GENERATED := $(REPO_ROOT)/spinalhdl/generated
 
 # DirtyJTAG programming (RP2040 on DB_FPGA V5)
-# There can be MORE THAN ONE dirtyJtag probe on the host, and a bare
-# `-c dirtyJtag` then picks whichever it finds first -- i.e. possibly another
-# board. Select explicitly:
-#   make ddr3-program BUSDEV="--busdev-num $$(fpga/scripts/jtag_probe_map --busdev xc7a100t)"
-CABLE := dirtyJtag
-BUSDEV ?=
+#
+# THERE ARE TWO dirtyJtag PROBES ON THIS HOST -- this board's RP2040 and the
+# Wukong's Pico 2 W -- and a bare `-c dirtyJtag` takes whichever enumerated
+# FIRST, which is the Wukong. So every program target here was capable of
+# silently programming the WRONG BOARD.
+#
+# This used to be an empty `BUSDEV ?=` with a comment telling the reader to
+# pass the selection by hand:
+#   make ddr3-program BUSDEV="--busdev-num $$(... --busdev xc7a100t)"
+# A hazard that is only avoided when someone remembers to type the workaround
+# is not avoided. Resolved by SERIAL now, as on the Wukong. Needs the PATCHED
+# openFPGALoader in /usr/local/bin; a bogus `--busdev-num 099:099` must FAIL
+# for the selection to mean anything.
+CABLE  := dirtyJtag
+BUSDEV ?= --busdev-num $(shell $(REPO_ROOT)/fpga/scripts/jtag_probe_map --busdev xc7a100t)
 
 # UART via the RP2040's CDC0 (DB_FPGA V5 UART bridge). THE NUMBER MOVES: it is
 # whichever ttyACM this board's Pico enumerated as, and every other CMSIS-DAP /
@@ -70,7 +78,7 @@ build-uart-echo: create-uart-echo
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/build_uart_echo_bitstream.tcl
 
 program-uart-echo:
-	sudo openFPGALoader -c $(CABLE) \
+	sudo openFPGALoader -c $(CABLE) $(BUSDEV) \
 		$(BUILD_DIR)/uart_echo/uart_echo.runs/impl_1/UartEchoTop.bit
 
 uart-echo: build-uart-echo program-uart-echo
@@ -91,7 +99,7 @@ loopback-build: loopback-create
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/build_uart_loopback_bitstream.tcl
 
 loopback-program:
-	sudo openFPGALoader -c $(CABLE) \
+	sudo openFPGALoader -c $(CABLE) $(BUSDEV) \
 		$(BUILD_DIR)/uart_loopback/uart_loopback.runs/impl_1/UartLoopback.bit
 
 uart-loopback: loopback-build loopback-program
@@ -109,7 +117,7 @@ txgen-build: txgen-create
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/build_uart_txgen_bitstream.tcl
 
 txgen-program:
-	sudo openFPGALoader -c $(CABLE) \
+	sudo openFPGALoader -c $(CABLE) $(BUSDEV) \
 		$(BUILD_DIR)/uart_txgen/uart_txgen.runs/impl_1/UartTxGen.bit
 
 uart-txgen: txgen-build txgen-program
