@@ -50,6 +50,7 @@ debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashin
 cyc5000|ARA30135|arrow-usb-blaster|Arrow CYC5000 (onboard Arrow USB Blaster TEI0050, FT2232H)
 i5|07000001002700424e|cmsis-dap|Colorlight i5 on the ext board (DAPLink, also the UART bridge)
 wukong|0B383D0435D957EC|pico|QMTECH Wukong XC7A100T (Pico 2 W: dirtyJtag, or USB-Blaster emulation under the atari800 supervisor firmware)
+alchitry|000000|ftdi-xilinx|Alchitry Au V2 (XC7A35T + DDR3) — onboard FT2232H, programmed by Vivado hw_server (see fpga/alchitry-au). Shares vid:pid 0403:6010 with the CYC5000's Arrow blaster; the serial and product string are what separate them. fpga/alchitry-au-ddr3-test is a second PROJECT on this same board, not another board
 EOF
 )
 
@@ -67,9 +68,17 @@ probe_kind() {
     09fb:6001) echo "usb-blaster" ;;
     2e8a:000c) echo "cmsis-dap" ;;
     # Arrow's onboard blaster is an FT2232H, so it shares a vid:pid with every
-    # other FTDI dual-UART part. The serial (ARA...) and product string
-    # ("Arrow USB Blaster") are what actually identify it.
-    0403:6010) echo "arrow-usb-blaster" ;;
+    # other FTDI dual-UART part -- including the Alchitry Au V2's. The SERIAL is
+    # what separates them, so this case takes it as a second argument rather
+    # than calling everything on 0403:6010 an Arrow blaster: the listing said
+    # "arrow-usb-blaster" against the Alchitry, which is a different board's
+    # probe. A listing that names the wrong probe is worse than one saying
+    # "unknown", and this one helped conclude the Alchitry was not attached.
+    0403:6010) case "${2:-}" in
+                 ARA*) echo "arrow-usb-blaster" ;;
+                 000000) echo "ftdi-xilinx" ;;
+                 *) echo "ftdi-ft2232h" ;;
+               esac ;;
     0d28:0204) echo "cmsis-dap" ;;
     *) echo "unknown" ;;
   esac
@@ -206,7 +215,7 @@ enumerate() {
     s=$(cat "$d/serial" 2>/dev/null || echo "")
     bus=$(cat "$d/busnum"); dev=$(cat "$d/devnum")
     printf '%s %s:%s %s %s %s %s\n' \
-      "$(basename "$d")" "$v" "$p" "${s:--}" "$bus" "$dev" "$(probe_kind "$v:$p")"
+      "$(basename "$d")" "$v" "$p" "${s:--}" "$bus" "$dev" "$(probe_kind "$v:$p" "${s:-}")"
   done
 }
 
