@@ -63,11 +63,29 @@ ips:
 # Vivado project and bitstream
 # --------------------------------------------------------------------------
 
+# Both flows come from the shared Vivado scripts under fpga/scripts/ -- see
+# their headers for what the per-board copies had drifted into. This board's
+# create_project was the only one that pre-generated the IP output products, so
+# that became an explicit option rather than being dropped or made universal.
+PART       := xc7a35tftg256-2
+CREATE_TCL := $(PROJECT_ROOT)/fpga/scripts/vivado_create_project.tcl
+BUILD_TCL  := $(PROJECT_ROOT)/fpga/scripts/vivado_build_project.tcl
+ABS_BUILD  := $(CURDIR)/vivado/build
+AU_IP      := $(CURDIR)/../alchitry-au/vivado/ip
+
 project:
-	$(RUN_VIVADO) vivado/tcl/create_project.tcl
+	JOP_PROJ=ddr3_test JOP_PART=$(PART) JOP_TOP=Ddr3ExerciserTop \
+	  JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_RTL=$(CURDIR)/$(GENERATED_V) \
+	  JOP_XDC=$(CURDIR)/vivado/constraints/alchitry_au_v2.xdc \
+	  JOP_IP="$(AU_IP)/clk_wiz_0/clk_wiz_0.xci $(AU_IP)/mig_7series_0/mig_7series_0.xci" \
+	  JOP_IP_GEN_TARGET=yes \
+	  JOP_GEN_HINT="run: make generate" \
+	  $(RUN_VIVADO) $(CREATE_TCL)
 
 bitstream:
-	$(RUN_VIVADO) vivado/tcl/build_bitstream.tcl
+	JOP_PROJ=ddr3_test JOP_BUILD_DIR=$(ABS_BUILD) JOP_BIT=Ddr3ExerciserTop.bit \
+	  $(RUN_VIVADO) $(BUILD_TCL)
 
 # --------------------------------------------------------------------------
 # FPGA programming and monitoring

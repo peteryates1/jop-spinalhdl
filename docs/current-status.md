@@ -176,6 +176,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[83](#item-83)** — Build port, phase 1 — the board-by-board flow audit, and a live wrong-board programming hazard on the DB_FPGA V5
 - **[84](#item-84)** — No MAX1000 configuration is known to fit — a 1- or 2-core 10M08 setup is wanted (OPEN)
 - **[85](#item-85)** — Build port, phase 2 — the SDRAM exerciser folded onto the shared flow, and the baud it never reported
+- **[86](#item-86)** — Build port, phase 3a — three shared Vivado scripts, proven equivalent by control build; and the DB_FPGA DDR3 build has quietly got 43 % smaller
 - **[78](#item-78)** — the A-E115FB DDR2 project is generated now, and building it found four separate defects
 - **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
@@ -7541,6 +7542,90 @@ first, not just an include.
 
 All six `quartus.mk` boards dry-run clean; 63/63 config and generator tests pass,
 `ConstraintDriftTest` included.
+
+### Item 86 — Build port, phase 3a: the Vivado flow, once
+
+The Vivado side never had a shared flow. `vivado.mk` existed but was included by
+NO board, so the Make layer was untested -- and the real duplication was never
+in Make anyway: it was **56 Tcl scripts, 2,495 lines**, four boards each
+carrying its own copy of the same five families.
+
+Three shared scripts now under `fpga/scripts/`, all environment-driven the way
+`JOP_CFG_DIR` already reached the non-project builds:
+
+| script | replaces |
+|---|---|
+| `vivado_create_project.tcl` | 9 create-project scripts, 356 lines |
+| `vivado_build_project.tcl` | 8 project-mode builds, 236 lines |
+| `vivado_build_nonproject.tcl` | 7 non-project builds, 429 lines |
+
+**What was normalised and what was NOT.** Four of the eight project-mode builds
+disabled incremental synthesis and four did not:
+
+```tcl
+set_property AUTO_INCREMENTAL_CHECKPOINT 0 [get_runs synth_1]
+```
+
+Incremental synthesis reuses a previous checkpoint when Vivado judges the design
+close enough -- exactly what you do not want when the question is "does this
+still fit and still meet timing", because the answer can come back from a stale
+checkpoint. That divergence was drift, so it is now uniform. The **impl
+directives were left as parameters**, because they are a real per-design choice:
+the SDRAM exerciser runs bare `opt/place/route` with margin to spare, while the
+JOP builds need `Explore` / `ExtraTimingOpt` / `AggressiveExplore` to close.
+Flattening those into one "standard" flow would have silently re-tuned every
+build. Same reasoning gave `JOP_IP_GEN_TARGET` its own flag rather than
+dropping or universalising the one board's `generate_target all`.
+
+Two things could not be fields. `JOP_XDC` is an **ordered** list because XDC
+order is load-bearing (item 58: read `wukong_ddr3.xdc` before
+`rtl8211eg_gmii.xdc` and its `[get_clocks e_rxc]` matches nothing, the
+asynchronous exclusion silently does not apply, and the build reports a
+violation it should not). And `JOP_POST_SYNTH_TCL` sources a file after
+synthesis for the dual-cluster build's `set_max_delay` / `set_clock_groups`,
+which can only be applied to a synthesised netlist -- real per-design Tcl, and
+pretending otherwise would have meant leaving that build unconverted.
+
+**Equivalence was PROVEN, not asserted.** The converted DB_FPGA DDR3 build came
+out at 12,872 LUTs against the on-disk baseline's 22,547 -- a 43 % drop. A Tcl
+change cannot alter a LUT count, so that number was either RTL evolution or
+evidence the script was not equivalent, and the difference is not something to
+settle by reasoning. The original script was restored from git and re-run **on
+byte-identical RTL**:
+
+| | control (original) | shared script |
+|---|---|---|
+| Slice LUTs | 12,872 (20.30 %) | 12,872 (20.30 %) |
+| Slice Regs | 11,505 (9.07 %) | 11,505 (9.07 %) |
+| Block RAM | 22 (16.30 %) | 22 (16.30 %) |
+| Timing | MET, WNS +0.242, WHS +0.052 | MET, WNS +0.242, WHS +0.052 |
+
+The only differing line is the build timestamp.
+
+**So the 43 % is real, and nobody knew.** The DB_FPGA DDR3 build has gone from
+35.56 % to 20.30 % of the part and from WNS +0.010 ns to **+0.242 ns** since
+2026-08-18, purely from RTL work done for other reasons. Block RAM rose 19.5 ->
+22 while LUTs halved, which is the signature of memories moving out of
+distributed RAM. Checked before celebrating: all four compute units and every
+cache module are still present in the generated Verilog -- this project has lost
+10 JVM tests before to CU instantiation being skipped, and a large area drop is
+worth ruling that out rather than assuming a win. This is
+[[fpga-validation-decays-silently]] inverted: the stale record was **pessimistic**,
+and a board nobody had rebuilt in eight days was carrying 15 points of
+utilisation headroom that no plan knew about.
+
+**Converted so far:** DB_FPGA V5 (9 tcl -> 2), `alchitry-au-ddr3-test` (3 -> 1).
+Verified by cold build: `uart_txgen`, `uart_loopback`, and DDR3 against control.
+The Wukong's orphaned `program_bitstream.tcl` also went -- unreferenced by its
+Makefile, which uses openFPGALoader, and it selected `[lindex $hw_targets 0]`,
+the same wrong-board hazard in Vivado form. **Both Alchitry boards still have
+their own copies of that hazard**; neither is attached, so they are recorded
+rather than changed.
+
+**Remaining:** the Wukong -- 5 non-project builds, 2 create-project, and its
+243-line Makefile onto `vivado.mk` (phase 3b, where `vivado.mk` finally gets
+exercised). Also unconverted: the 9 IP-generation scripts, which are genuinely
+per-IP and may not be worth merging.
 
 ## 4. Two workstreams, both largely done
 

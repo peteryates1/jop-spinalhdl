@@ -14,6 +14,7 @@
 #   JOP_IP         space-separated .xci files                (optional)
 #   JOP_BIN_GLOB   glob for BRAM-init .bin sidecars          (optional)
 #   JOP_GEN_HINT   what to run if the RTL is missing         (optional)
+#   JOP_IP_GEN_TARGET  yes => generate_target all on each .xci (optional)
 #
 # WHY THIS EXISTS. Nine create_project scripts across four boards differed only
 # in these fields -- and had drifted apart in the parts that were NOT supposed
@@ -78,6 +79,12 @@ foreach f $ip_files {
     exit 1
   }
   add_files -norecurse $f
+  # Pre-generate the IP output products. Project mode will do this during
+  # launch_runs anyway, so most callers do not ask -- but one did, and whether
+  # a build works without it is not something to settle by assumption.
+  if {[jop_env JOP_IP_GEN_TARGET] eq "yes"} {
+    generate_target all [get_files $f]
+  }
 }
 
 foreach f $xdc_files {

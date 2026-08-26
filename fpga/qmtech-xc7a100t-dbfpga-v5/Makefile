@@ -32,6 +32,9 @@ BUILD_TCL   := $(REPO_ROOT)/fpga/scripts/vivado_build_project.tcl
 ABS_BUILD   := $(CURDIR)/$(BUILD_DIR)
 CONSTRAINTS := $(CURDIR)/$(VIVADO_DIR)/constraints
 BOARD_RTL   := $(CURDIR)/$(VIVADO_DIR)/rtl
+NP_TCL      := $(REPO_ROOT)/fpga/scripts/vivado_build_nonproject.tcl
+IP_DIR      := $(CURDIR)/$(VIVADO_DIR)/ip
+GEN_RTL     := $(REPO_ROOT)/spinalhdl/generated
 
 # DirtyJTAG programming (RP2040 on DB_FPGA V5)
 #
@@ -161,8 +164,21 @@ ddr3-create-ip:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/create_ddr3_clk_wiz.tcl
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/create_mig.tcl
 
+# The directives are this design's, not a house style: PerformanceOptimized +
+# retiming through Explore/ExtraTimingOpt/AggressiveExplore is what closes
+# timing here (WNS +0.117 ns). See vivado_build_nonproject.tcl's header for why
+# they stayed parameters rather than being normalised away.
 ddr3-build: ddr3-generate
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/build_ddr3_bitstream.tcl
+	$(VIVADO_ENV) && JOP_TOP=JopDdr3Top JOP_PART=$(PART) \
+	  JOP_BUILD_DIR=$(ABS_BUILD)/xc7a100t_ddr3 \
+	  JOP_RTL=$(GEN_RTL)/JopDdr3Top.v \
+	  JOP_IP="$(IP_DIR)/clk_wiz_0/clk_wiz_0.xci $(IP_DIR)/mig_7series_0/mig_7series_0.xci" \
+	  JOP_XDC=$(CONSTRAINTS)/xc7a100t_dbv5_base.xdc \
+	  JOP_SYNTH_DIRECTIVE=PerformanceOptimized JOP_SYNTH_RETIMING=yes \
+	  JOP_OPT_DIRECTIVE=Explore JOP_PLACE_DIRECTIVE=ExtraTimingOpt \
+	  JOP_PHYS_OPT_DIRECTIVE=AggressiveExplore JOP_ROUTE_DIRECTIVE=AggressiveExplore \
+	  JOP_SUMMARY=$(GEN_RTL)/JopDdr3Top.summary.txt \
+	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 ddr3-program:
 	sudo openFPGALoader -c $(CABLE) $(BUSDEV) $(DDR3_BITSTREAM)
