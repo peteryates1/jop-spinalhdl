@@ -7622,10 +7622,42 @@ the same wrong-board hazard in Vivado form. **Both Alchitry boards still have
 their own copies of that hazard**; neither is attached, so they are recorded
 rather than changed.
 
-**Remaining:** the Wukong -- 5 non-project builds, 2 create-project, and its
-243-line Makefile onto `vivado.mk` (phase 3b, where `vivado.mk` finally gets
-exercised). Also unconverted: the 9 IP-generation scripts, which are genuinely
-per-IP and may not be worth merging.
+**The Wukong followed: 16 Tcl scripts -> 6** (four IP generators plus the two
+the analysis docs cite). Six non-project builds, one project-mode build and two
+create-project scripts gone.
+
+`create_ddr3_project.tcl` was **worse than vestigial**. The DDR3 flow is
+non-project, so `ddr3-build` never opened the project it created -- and it read
+only `wukong_ddr3.xdc`, missing the GMII and base constraints the real build
+uses. Anyone opening that project in the GUI was looking at a
+differently-constrained design than the one that ships. `ddr3-build` also gained
+a dependency on `ddr3-generate`; it had none, so building without a separate
+generate step used whatever RTL happened to be lying around.
+
+The dual-cluster build's post-synthesis constraints moved to
+`wukong_dual_post_synth.tcl` verbatim -- that escape hatch is what let the
+seventh build share the flow instead of keeping its own 83-line copy.
+
+**Verified against a one-day-old baseline, and it reproduced it exactly:**
+
+| | baseline 2026-08-25 | shared script |
+|---|---|---|
+| Slice LUTs | 12,448 (19.63 %) | 12,448 (19.63 %) |
+| Slice Regs | 11,370 (8.97 %) | 11,370 (8.97 %) |
+| Block RAM | 22 (16.30 %) | 22 (16.30 %) |
+| Timing | MET, WNS +0.642, WHS +0.035 | MET, WNS +0.642, WHS +0.035 |
+
+No control build was needed here: the baseline was fresh enough that RTL had not
+drifted, and the two Wukong-specific risks are both self-announcing -- a
+mis-ordered GMII constraint changes the timing result, and a missing DRC waiver
+fails `write_bitstream`.
+
+**Remaining:** phase 3b, the Wukong's Makefile onto `vivado.mk`, where that file
+finally gets exercised. It is not only tidiness: this board still carries
+`UART_BAUD := 1000000` and `DDR3_UART_BAUD := 2000000` as constants, the exact
+item 70 hazard, and `console.mk` derives the rate from the build instead. Also
+unconverted: the 9 IP-generation scripts, genuinely per-IP and possibly not
+worth merging.
 
 ## 4. Two workstreams, both largely done
 

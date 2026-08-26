@@ -9,11 +9,40 @@ OPENFPGALOADER := openFPGALoader
 # a bogus `--busdev-num 099:099` must FAIL for the selection to mean anything.
 BUSDEV ?= --busdev-num $(shell $(REPO_ROOT)/fpga/scripts/jtag_probe_map --busdev wukong)
 BITSTREAM := vivado/build/wukong_jop_bram/wukong_jop_bram.runs/impl_1/JopBramWukongTop.bit
-DDR3_BITSTREAM := vivado/build/wukong_jop_ddr3_np/JopDdr3WukongTop.bit
-DDR3_SMP_BITSTREAM := vivado/build/wukong_jop_ddr3_smp_np/JopSmpDdr3WukongTop.bit
 SDRAM_BITSTREAM := vivado/build/wukong_sdram_exerciser/SdramExerciserWukongTop.bit
 JOP_SDRAM_BITSTREAM = $(SDRAM_CFG_DIR)/vivado/build/JopSdramWukongTop.bit
-DUAL_BITSTREAM := vivado/build/wukong_jop_dual_np/JopDualWukongTop.bit
+DUAL_BITSTREAM = $(DUAL_CFG_DIR)/vivado/build/JopDualWukongTop.bit
+
+# --------------------------------------------------------------------------
+# The Vivado flow comes from fpga/scripts/, not from seven copies here.
+#
+# This board carried SIX non-project build scripts and one project-mode one --
+# 400 lines running the same nine steps in the same order, differing in the
+# top, the IP, the constraint list and the directives. Those are now arguments.
+# See vivado_build_nonproject.tcl's header for what stayed a parameter (the
+# impl directives, which are a real per-design choice) and what did not.
+#
+# create_ddr3_project.tcl went with them, and was worse than redundant: the
+# DDR3 flow is NON-project, so `ddr3-build` never opened the project it made --
+# and it read only wukong_ddr3.xdc, missing the GMII and base constraints the
+# real build uses. Anyone opening it in the GUI saw a differently-constrained
+# design than the one that ships.
+# --------------------------------------------------------------------------
+PART       := xc7a100tfgg676-2
+CREATE_TCL := $(REPO_ROOT)/fpga/scripts/vivado_create_project.tcl
+PRJ_TCL    := $(REPO_ROOT)/fpga/scripts/vivado_build_project.tcl
+NP_TCL     := $(REPO_ROOT)/fpga/scripts/vivado_build_nonproject.tcl
+IP         := $(CURDIR)/vivado/ip
+XDC        := $(CURDIR)/vivado/constraints
+SHARED_XDC := $(REPO_ROOT)/fpga/constraints
+GEN_RTL    := $(REPO_ROOT)/spinalhdl/generated
+ABS_BUILD  := $(CURDIR)/vivado/build
+
+# Every JOP build here uses the same timing-closure directives; the exercisers
+# and the SDR JOP builds have margin and run the default flow.
+TIMING_DIRECTIVES := JOP_SYNTH_DIRECTIVE=PerformanceOptimized JOP_SYNTH_RETIMING=yes \
+                    JOP_OPT_DIRECTIVE=Explore JOP_PLACE_DIRECTIVE=ExtraTimingOpt \
+                    JOP_PHYS_OPT_DIRECTIVE=AggressiveExplore JOP_ROUTE_DIRECTIVE=AggressiveExplore
 # UART_DEV is the board's own CH340N, and applies to the SINGLE-SYSTEM builds
 # only -- those use SystemAssembly.wukong with DeviceDriver.UartCh340. The
 # DUAL-cluster builds do NOT: the CH340N at E3/F3 is hardwired on the PCB and
@@ -50,7 +79,7 @@ DUAL_DDR3_UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id w
                         || echo /dev/serial/by-id/usb-Jean_THOMAS_Pico_Dirty_JTAG_0B383D0435D957EC-if03)
 
 .PHONY: generate create-ip create-project build program program-flash monitor all clean
-.PHONY: ddr3-generate ddr3-create-ip ddr3-create-project ddr3-build ddr3-program ddr3-monitor ddr3-download ddr3-reset ddr3-redownload
+.PHONY: ddr3-generate ddr3-create-ip ddr3-build ddr3-program ddr3-monitor ddr3-download ddr3-reset ddr3-redownload
 .PHONY: ddr3-smp-generate ddr3-smp-build ddr3-smp-program ddr3-smp-monitor
 .PHONY: dual-generate dual-create-ip dual-build dual-program dual-monitor dual-sdr-monitor dual-sdr-download
 .PHONY: sdram-generate sdram-create-ip sdram-build sdram-program sdram-monitor
@@ -67,10 +96,19 @@ create-ip:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_clk_wiz.tcl
 
 create-project: generate
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_project.tcl
+	$(VIVADO_ENV) && JOP_PROJ=wukong_jop_bram JOP_PART=$(PART) JOP_TOP=JopBramWukongTop \
+	  JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_RTL=$(GEN_RTL)/JopBramWukongTop.v \
+	  JOP_BIN_GLOB='$(GEN_RTL)/JopBramWukongTop*.bin' \
+	  JOP_XDC=$(XDC)/wukong_jop_bram.xdc \
+	  JOP_IP=$(IP)/bram_clk/bram_clk.xci \
+	  JOP_GEN_HINT="run: make generate" \
+	  $(VIVADO) -mode batch -source $(CREATE_TCL)
 
 build: create-project
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_bitstream.tcl
+	$(VIVADO_ENV) && JOP_PROJ=wukong_jop_bram JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_BIT=JopBramWukongTop.bit \
+	  $(VIVADO) -mode batch -source $(PRJ_TCL)
 
 program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(BITSTREAM)
@@ -106,11 +144,20 @@ ddr3-create-ip:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_ddr3_clk_wiz.tcl
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_mig.tcl
 
-ddr3-create-project: ddr3-generate
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_ddr3_project.tcl
-
-ddr3-build:
-	$(VIVADO_ENV) && JOP_CFG_DIR=$(DDR3_CFG_DIR) $(VIVADO) -mode batch -source vivado/tcl/build_ddr3_bitstream.tcl
+# GMII CONSTRAINTS FIRST. rtl8211eg_gmii.xdc does `create_clock -name e_rxc`,
+# and wukong_ddr3.xdc references [get_clocks e_rxc] in its set_clock_groups.
+# Read the other way round that get_clocks matches nothing -- "No clocks matched
+# 'e_rxc'" -- the asynchronous exclusion silently does not apply, and the build
+# reports a violation it should not. JOP_XDC is an ordered list for this reason.
+ddr3-build: ddr3-generate
+	$(VIVADO_ENV) && JOP_TOP=JopDdr3WukongTop JOP_PART=$(PART) \
+	  JOP_BUILD_DIR=$(DDR3_CFG_DIR)/vivado/build \
+	  JOP_RTL=$(DDR3_CFG_DIR)/rtl/JopDdr3WukongTop.v \
+	  JOP_IP="$(IP)/ddr3_clk/ddr3_clk.xci $(IP)/mig_7series_0/mig_7series_0.xci" \
+	  JOP_XDC="$(SHARED_XDC)/rtl8211eg_gmii.xdc $(DDR3_CFG_DIR)/vivado/wukong_ddr3_base.xdc $(XDC)/wukong_ddr3.xdc" \
+	  $(TIMING_DIRECTIVES) JOP_DRC_WAIVE=LUTLP-1 \
+	  JOP_SUMMARY=$(DDR3_CFG_DIR)/rtl/JopDdr3WukongTop.summary.txt \
+	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 ddr3-program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DDR3_CFG_DIR)/vivado/build/JopDdr3WukongTop.bit
@@ -139,8 +186,15 @@ DDR3_SMP_DIR    = $(REPO_ROOT)/build/wukongSmp-$(DDR3_SMP_CORES)
 ddr3-smp-generate:
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(DDR3_SMP_CFG) buildtree"
 
-ddr3-smp-build:
-	$(VIVADO_ENV) && JOP_CFG_DIR=$(DDR3_SMP_DIR) $(VIVADO) -mode batch -source vivado/tcl/build_ddr3_smp_bitstream.tcl
+ddr3-smp-build: ddr3-smp-generate
+	$(VIVADO_ENV) && JOP_TOP=JopSmpDdr3WukongTop JOP_PART=$(PART) \
+	  JOP_BUILD_DIR=$(DDR3_SMP_DIR)/vivado/build \
+	  JOP_RTL=$(DDR3_SMP_DIR)/rtl/JopSmpDdr3WukongTop.v \
+	  JOP_IP="$(IP)/ddr3_clk/ddr3_clk.xci $(IP)/mig_7series_0/mig_7series_0.xci" \
+	  JOP_XDC="$(SHARED_XDC)/rtl8211eg_gmii.xdc $(XDC)/wukong_ddr3_base.xdc $(XDC)/wukong_ddr3.xdc" \
+	  $(TIMING_DIRECTIVES) JOP_DRC_WAIVE=LUTLP-1 \
+	  JOP_SUMMARY=$(DDR3_SMP_DIR)/rtl/JopSmpDdr3WukongTop.summary.txt \
+	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 ddr3-smp-program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DDR3_SMP_DIR)/vivado/build/JopSmpDdr3WukongTop.bit
@@ -159,8 +213,20 @@ dual-generate:
 dual-create-ip: ddr3-create-ip
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl
 
-dual-build:
-	$(VIVADO_ENV) && JOP_CFG_DIR=$(DUAL_CFG_DIR) $(VIVADO) -mode batch -source vivado/tcl/build_dual_bitstream.tcl
+# The only build here needing constraints applied to the SYNTHESISED netlist --
+# set_max_delay / set_clock_groups over the SDR controller, which resolve
+# against the elaborated design. They live in an ordinary file now and are
+# sourced between synth and opt; see wukong_dual_post_synth.tcl.
+dual-build: dual-generate
+	$(VIVADO_ENV) && JOP_TOP=JopDualWukongTop JOP_PART=$(PART) \
+	  JOP_BUILD_DIR=$(DUAL_CFG_DIR)/vivado/build \
+	  JOP_RTL=$(DUAL_CFG_DIR)/rtl/JopDualWukongTop.v \
+	  JOP_IP="$(IP)/ddr3_clk/ddr3_clk.xci $(IP)/sdr_clk/sdr_clk.xci $(IP)/mig_7series_0/mig_7series_0.xci" \
+	  JOP_XDC=$(XDC)/wukong_dual.xdc \
+	  JOP_POST_SYNTH_TCL=$(XDC)/wukong_dual_post_synth.tcl \
+	  $(TIMING_DIRECTIVES) \
+	  JOP_SUMMARY=$(DUAL_CFG_DIR)/rtl/JopDualWukongTop.summary.txt \
+	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 dual-program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DUAL_BITSTREAM)
@@ -191,8 +257,15 @@ sdram-generate:
 sdram-create-ip:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl
 
-sdram-build:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/build_sdram_bitstream.tcl
+# Default directives: this exerciser has timing margin to spare and does not
+# need the closure flow the JOP builds run.
+sdram-build: sdram-generate
+	$(VIVADO_ENV) && JOP_TOP=SdramExerciserWukongTop JOP_PART=$(PART) \
+	  JOP_BUILD_DIR=$(ABS_BUILD)/wukong_sdram_exerciser \
+	  JOP_RTL=$(GEN_RTL)/SdramExerciserWukongTop.v \
+	  JOP_IP=$(IP)/sdr_clk/sdr_clk.xci \
+	  JOP_XDC="$(XDC)/wukong_sdram.xdc $(SHARED_XDC)/sdram_sdr.xdc" \
+	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 sdram-program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(SDRAM_BITSTREAM)
@@ -214,8 +287,15 @@ jop-sdram-generate:
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(SDRAM_CFG) buildtree"
 	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(SDRAM_CFG) --write build/$(SDRAM_CFG)/vivado/wukong_jop_sdram.xdc"
 
-jop-sdram-build:
-	$(VIVADO_ENV) && JOP_CFG_DIR=$(SDRAM_CFG_DIR) $(VIVADO) -mode batch -source vivado/tcl/build_jop_sdram_bitstream.tcl
+jop-sdram-build: jop-sdram-generate
+	$(VIVADO_ENV) && JOP_TOP=JopSdramWukongTop JOP_PART=$(PART) \
+	  JOP_BUILD_DIR=$(SDRAM_CFG_DIR)/vivado/build \
+	  JOP_RTL=$(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.v \
+	  JOP_BIN_GLOB='$(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.v_*.bin' \
+	  JOP_IP=$(IP)/sdr_clk/sdr_clk.xci \
+	  JOP_XDC="$(SDRAM_CFG_DIR)/vivado/wukong_jop_sdram.xdc $(XDC)/wukong_peripherals.xdc" \
+	  JOP_SUMMARY=$(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.summary.txt \
+	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 # SMP SDR: the counterpart of ddr3-smp-build, so SDR and DDR3 can be compared on
 # one board with only the memory path differing. Entity is JopSmpSdramWukongTop
@@ -226,8 +306,15 @@ SDR_SMP_DIR    = $(REPO_ROOT)/build/wukongSdrSmp-$(SDR_SMP_CORES)
 jop-sdram-smp-generate:
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongSdrSmp $(SDR_SMP_CORES) buildtree"
 
-jop-sdram-smp-build:
-	$(VIVADO_ENV) && JOP_CFG_DIR=$(SDR_SMP_DIR) $(VIVADO) -mode batch -source vivado/tcl/build_jop_sdram_smp_bitstream.tcl
+jop-sdram-smp-build: jop-sdram-smp-generate
+	$(VIVADO_ENV) && JOP_TOP=JopSmpSdramWukongTop JOP_PART=$(PART) \
+	  JOP_BUILD_DIR=$(SDR_SMP_DIR)/vivado/build \
+	  JOP_RTL=$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.v \
+	  JOP_BIN_GLOB='$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.v_*.bin' \
+	  JOP_IP=$(IP)/sdr_clk/sdr_clk.xci \
+	  JOP_XDC="$(XDC)/wukong_jop_sdram.xdc $(XDC)/wukong_peripherals.xdc" \
+	  JOP_SUMMARY=$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.summary.txt \
+	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 jop-sdram-program:
 	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(JOP_SDRAM_BITSTREAM)
