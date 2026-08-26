@@ -174,6 +174,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[81](#item-81)** — Build port, phase 0 — the ten superseded project files deleted, and three leftovers from my own conversions
 - **[82](#item-82)** — **Flash boot has been unbuildable on BOTH boards since 2026-03-13** — a working, hardware-verified capability removed as collateral by a refactor (OPEN)
 - **[83](#item-83)** — Build port, phase 1 — the board-by-board flow audit, and a live wrong-board programming hazard on the DB_FPGA V5
+- **[84](#item-84)** — No MAX1000 configuration is known to fit — a 1- or 2-core 10M08 setup is wanted (OPEN)
 - **[78](#item-78)** — the A-E115FB DDR2 project is generated now, and building it found four separate defects
 - **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
@@ -7399,7 +7400,7 @@ maintained.
 | board | outcome |
 |---|---|
 | Alchitry Au | 4 flows retired, 252 -> 151 lines, 25 -> 11 Tcl. Flash boot is item 82 |
-| MAX1000 | 4 targets retired; `download` called a nonexistent class in a nonexistent jar |
+| MAX1000 | `program` and `download` REPAIRED -- `download` called a nonexistent class in a nonexistent jar |
 | DB_FPGA V5 | **live wrong-board hazard fixed** (below) |
 | Wukong | 3 orphaned `bench_*.tcl`; kept, see below |
 | `ep4cgx150-sdram-test` | foldable onto `quartus.mk` now that `GEN_MAIN` exists (phase 2) |
@@ -7427,12 +7428,17 @@ java -cp java/tools/dist/jop-tools.jar com.jopdesign.tools.SerialDownload
 `java/tools/dist` holds `jopa.jar`, `jopizer.jar` and `jopsim.jar`; there is no
 `jop-tools.jar`, and no `SerialDownload` anywhere in `java/tools/src`. The
 project's downloader has been `fpga/scripts/download.py` for a long time.
-`program` used a bare `-c USB-Blaster` -- the same wrong-board hazard, on a
-board that **does not exist on this host** (10M08, never acquired). Repairing
-three targets against hardware that cannot test them is not worth it, so the
-file now says what it does: a fit check, which is genuinely useful -- 8k LEs
-against the EP4CGX150's 149k catches an area regression early. It grew from 46
-to 56 lines, all of it the explanation.
+`program` used a bare `-c USB-Blaster` -- the same wrong-board hazard.
+
+**These were REPAIRED, not retired, and the first attempt got that wrong.** I
+read "no hardware" in the triage table as "no such board" and rewrote the file
+as a fit check only. The boards exist -- they were the project's ORIGINAL target
+and remain one; they are simply not at this site. "Not attached to this host" and
+"cannot be tested, ever" are different facts, and a triage table recording the
+first does not license acting on the second. Both targets are now implemented
+correctly (`download.py`, probe by serial with a fallback) and marked
+UNVERIFIED, which is what they actually are. The fit-check value stands
+alongside: 8k LEs against the EP4CGX150's 149k catches an area regression early.
 
 **A false positive worth recording.** The DB_FPGA's `DDR3_BITSTREAM` names
 `JopDdr3Top.bit`, and `JopDdr3Top.scala` was one of the two files deleted by
@@ -7456,6 +7462,36 @@ nothing -- flagged, not deleted, pending a decision.
 `docs/architecture/serial-remote-debug.md` have CRLF line endings. Editing them
 through Python's text mode silently rewrites every line -- an 11-line addition
 came out as a 1,121-line diff before it was caught and redone at byte level.
+
+### Item 84 — No MAX1000 configuration is known to fit (OPEN)
+
+The Arrow MAX1000 (10M08 + SDRAM) was this project's original target and is
+wanted again: a **1- or 2-core configuration that fits**. Nothing currently
+establishes that one does.
+
+`max1000Sdram` exists -- single-core, 80 MHz, `SystemAssembly.max1000` -- and
+`fpga/max1000/` carries a hand-written `jop_max1000.qsf`, `.sdc` and PLL. There
+is **no recorded fit result** for it, and the board has not been connected to
+this host, so the flow has never been run end to end here.
+
+The part is the constraint: a 10M08 has **8k logic elements** against the
+EP4CGX150's 149k, so this is roughly 5 % of the area the validated
+configurations assume. Two things already measured say where the pressure will
+be. The method cache costs **850-869 LUTs per core** (item 53), and it is
+FRAGMENTATION rather than capacity that matters -- block count beats block size
+(2 KB -> 4 KB/32 blocks gave +34.4 % Kfl). And a 32 KB L2 in front of DRAM buys
+only 3-5 %, so it is the first thing to drop. `ep4cgx150McFallback` shows the
+compute units can go entirely (`bytecodes = "mc"`) with DoAll still passing,
+just slower -- on a part this size that trade is likely mandatory rather than
+optional.
+
+Two cores on 8k LEs is the ambitious end; one core is the thing to establish
+first, since a single-core fit result is also the number that tells us whether
+two is arithmetically possible at all.
+
+**Next action:** run `make -C fpga/max1000 all` for the fit figure. It needs no
+hardware -- that is exactly what this flow is good for while the board is
+elsewhere -- and it converts an open question into a number.
 
 ## 4. Two workstreams, both largely done
 

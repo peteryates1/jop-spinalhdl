@@ -6,7 +6,8 @@ import scala.util.Using
 /**
  * Utilities for loading hex trace files at Verilog generation time.
  *
- * Used by Ddr3TraceReplayerTop to initialize BRAMs with:
+ * Was used by Ddr3TraceReplayerTop, retired 2026-08-26 (status item 83).
+ * Initialises BRAMs with:
  *   - gc_mem_init.hex: one 32-bit hex word per line (memory image)
  *   - gc_bmb_trace.hex: two 32-bit hex words per line (BMB trace entries)
  */
