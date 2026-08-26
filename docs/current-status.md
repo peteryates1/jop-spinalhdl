@@ -179,6 +179,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[86](#item-86)** — Build port, phase 3a — three shared Vivado scripts, proven equivalent by control build; and the DB_FPGA DDR3 build has quietly got 43 % smaller
 - **[87](#item-87)** — Build port, phase 3b — `vivado.mk` finally has a user, and it found a live baud bug and a latent one
 - **[88](#item-88)** — CI "formal verification failure" was a yosys cache that hits and rebuilds anyway — not the push, not the proofs
+- **[89](#item-89)** — Build port — the DB_FPGA V5 was the last board generating in-tree; now on `vivado.mk` and the build tree
 - **[78](#item-78)** — the A-E115FB DDR2 project is generated now, and building it found four separate defects
 - **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
@@ -7769,6 +7770,56 @@ wins, and always anonymously.
 suite. Runtime is dominated by four deep suites (`CacheToMigAdapterFormal` alone
 was 540 s, 47 % of the job); the other ~18 finish in about two minutes and would
 gate a push far faster.
+
+### Item 89 — The last in-tree board
+
+`qmtech-xc7a100t-dbfpga-v5` was the only board still generating into
+`spinalhdl/generated` -- the one remaining place where "everything generated
+lives under `build/<config>/`" was not true. It now includes `vivado.mk`, and
+its JOP flow writes to `build/xc7a100tDbSerial/`.
+
+**Verified against an exact number, not a plausible one.** The in-tree control
+built earlier the same day on identical RTL gave a fit summary to compare
+against line for line:
+
+| | control (in-tree) | build tree |
+|---|---|---|
+| Slice LUTs | 12,872 (20.30 %) | 12,872 (20.30 %) |
+| Slice Regs | 11,505 (9.07 %) | 11,505 (9.07 %) |
+| Block RAM | 22 (16.30 %) | 22 (16.30 %) |
+| Timing | MET, WNS +0.242, WHS +0.052 | MET, WNS +0.242, WHS +0.052 |
+
+Identical excluding the build timestamp. 0 errors, 0 critical warnings.
+
+`UART_BAUD := 2000000` went with it; `console.mk` now derives 2000000 from the
+build's own summary, so the constant was right here -- unlike the Wukong's,
+which was wrong for two flows (item 87). Being right is not the same as being
+checked, and nothing had checked it.
+
+The three bring-up jigs (`uart-echo`, `loopback`, `txgen`) stay in-tree
+deliberately: they are not `JopConfig` presets and have no config directory to
+belong to -- `UartEchoTop` has its own generator main, and `UartLoopback` and
+`UartTxGen` are hand-written Verilog.
+
+**Left in-tree and now stale:** `spinalhdl/generated/JopDdr3Top*`, from the last
+in-tree build. Gitignored, so harmless, but the flow no longer writes there.
+
+### Gotcha — two self-inflicted failures that looked like a Makefile bug
+
+The build-tree conversion was reported as a parse-time Makefile error twice
+before it was one at all. Neither failure was in the Makefile:
+
+1. A backgrounded `make -C fpga/<board>` inherited a working directory from an
+   earlier `cd`, so the relative `-C` resolved inside that same directory.
+2. The retry used `until ! pgrep -f 'runMain jop.system.JopTopVerilog'` as a
+   waiter. **That literal appears in the waiter's own command line**, so
+   `pgrep -f` matched itself and the loop never exited -- the build never ran,
+   and the STALE log from attempt 1 was read as its result.
+
+A foreground run had already succeeded in between, so the evidence was
+contradictory and the older artefact won anyway. The rule that would have
+caught it is already written down: prefer an explicit completion marker in the
+log over process-matching, and use absolute paths for anything backgrounded.
 
 ## 4. Two workstreams, both largely done
 

@@ -16,23 +16,33 @@
 #   make ddr3-monitor     # monitor output on ttyACM0
 
 REPO_ROOT := $(shell cd ../.. && pwd)
-VIVADO := /opt/xilinx/2025.2/Vivado/bin/vivado
-VIVADO_ENV := export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+PROJECT_ROOT = ../..
 VIVADO_DIR := vivado
 BUILD_DIR := $(VIVADO_DIR)/build
 
-# The Vivado flow lives in two shared scripts, driven by environment. Six
-# near-identical create/build scripts for the three bring-up jigs below became
-# six invocations of these; see their headers for what the copies had drifted
-# into. Paths are made absolute here because the scripts normalise relative to
-# Vivado's working directory, which is not always this one.
+# The Vivado flow, the config directory and the console come from ../vivado.mk
+# and ../console.mk; the build itself is in fpga/scripts/vivado_*.tcl.
+CFG          ?= xc7a100tDbSerial
+BOARD_ALIAS   = xc7a100t
+CONSOLE_ALIAS = xc7a100t-pico-0
+
+include ../vivado.mk
+
+# CONVERTED to the build tree 2026-08-26. This was the LAST board still
+# generating into spinalhdl/generated -- the one place the "everything
+# generated lives under build/<config>/" rule was still not true. The JOP flow
+# now writes to build/xc7a100tDbSerial/; the three bring-up jigs below stay
+# in-tree deliberately, because they are not JopConfig presets and have no
+# config directory to belong to (UartEchoTop has its own generator main;
+# UartLoopback and UartTxGen are hand-written Verilog).
+#
+# UART_BAUD := 2000000 is gone with it. console.mk reads the rate the bitstream
+# actually recorded; the identical constant on the Wukong turned out to be
+# WRONG for two of its flows (status item 87), and this one was never checked.
 PART        := xc7a100tfgg676-2
-CREATE_TCL  := $(REPO_ROOT)/fpga/scripts/vivado_create_project.tcl
-BUILD_TCL   := $(REPO_ROOT)/fpga/scripts/vivado_build_project.tcl
 ABS_BUILD   := $(CURDIR)/$(BUILD_DIR)
 CONSTRAINTS := $(CURDIR)/$(VIVADO_DIR)/constraints
 BOARD_RTL   := $(CURDIR)/$(VIVADO_DIR)/rtl
-NP_TCL      := $(REPO_ROOT)/fpga/scripts/vivado_build_nonproject.tcl
 IP_DIR      := $(CURDIR)/$(VIVADO_DIR)/ip
 GEN_RTL     := $(REPO_ROOT)/spinalhdl/generated
 
@@ -50,33 +60,23 @@ GEN_RTL     := $(REPO_ROOT)/spinalhdl/generated
 # is not avoided. Resolved by SERIAL now, as on the Wukong. Needs the PATCHED
 # openFPGALoader in /usr/local/bin; a bogus `--busdev-num 099:099` must FAIL
 # for the selection to mean anything.
-CABLE  := dirtyJtag
-BUSDEV ?= --busdev-num $(shell $(REPO_ROOT)/fpga/scripts/jtag_probe_map --busdev xc7a100t)
+# The cable name and the busdev selection now come from vivado.mk, which
+# resolves the probe from BOARD_ALIAS by serial.
 
-# UART via the RP2040's CDC0 (DB_FPGA V5 UART bridge). THE NUMBER MOVES: it is
-# whichever ttyACM this board's Pico enumerated as, and every other CMSIS-DAP /
-# dirtyJtag probe on the host shifts it. With a second dirtyJtag attached it was
-# ttyACM4, not ttyACM1. Re-map before use:
-#   fpga/scripts/usb_serial_map | grep <this probe's serial>
-# Was /dev/ttyACM1, which is whichever Pico enumerated first -- with the Wukong
-# also attached that number has pointed at the WRONG BOARD's Pico. Resolved from
-# this board's Pico serial instead.
-#
-# The console is the FIRST CDC (if01), verified on hardware 2026-08-22: it
-# carries the 0xAA serial-boot ready pattern at 2 Mbaud and completes a
-# download, while if03 is silent at every baud. An earlier revision guessed
-# if03 from the old /dev/ttyACM1 default -- that guess was wrong, and ttyACM1
-# was simply the second node of whichever Pico enumerated first.
-UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id xc7a100t-pico-0 2>/dev/null \
-              || echo /dev/serial/by-id/usb-Jean_THOMAS_Pico_Dirty_JTAG_E662C876C3506A26-if01)
-UART_BAUD := 2000000
+# THE CONSOLE IS THE FIRST CDC (if01), verified on hardware 2026-08-22: it
+# carries the 0xAA serial-boot ready pattern and completes a download, while
+# if03 is silent at every baud. An earlier revision guessed if03 from an old
+# /dev/ttyACM1 default -- that guess was wrong, and ttyACM1 was simply the
+# second node of whichever Pico enumerated first. That is what CONSOLE_ALIAS
+# xc7a100t-pico-0 names; the ttyACM number itself moves whenever any other
+# CMSIS-DAP or dirtyJtag probe is plugged in (it has been ttyACM4).
 
 # Bitstream paths
-DDR3_BITSTREAM := $(BUILD_DIR)/xc7a100t_ddr3/JopDdr3Top.bit
+DDR3_BITSTREAM = $(CFG_DIR)/vivado/build/JopDdr3Top.bit
 
 .PHONY: generate-uart-echo create-uart-echo build-uart-echo program-uart-echo uart-echo test-uart-echo
 .PHONY: loopback-create loopback-build loopback-program uart-loopback
-.PHONY: ddr3-generate ddr3-create-ip ddr3-build ddr3-program ddr3-monitor ddr3-download
+.PHONY: ddr3-generate ddr3-create-ip ddr3-build ddr3-program ddr3-monitor ddr3-download ddr3-reset ddr3-redownload
 
 
 # === UART Echo Test (board bring-up) ===
@@ -98,8 +98,7 @@ build-uart-echo: create-uart-echo
 	  $(VIVADO) -mode batch -source $(BUILD_TCL)
 
 program-uart-echo:
-	sudo openFPGALoader -c $(CABLE) $(BUSDEV) \
-		$(BUILD_DIR)/uart_echo/uart_echo.runs/impl_1/UartEchoTop.bit
+	$(MAKE) program-bit BIT_FILE=$(ABS_BUILD)/uart_echo/uart_echo.runs/impl_1/UartEchoTop.bit
 
 uart-echo: build-uart-echo program-uart-echo
 	@echo "=== UART echo programmed — test with: make test-uart-echo ==="
@@ -125,8 +124,7 @@ loopback-build: loopback-create
 	  $(VIVADO) -mode batch -source $(BUILD_TCL)
 
 loopback-program:
-	sudo openFPGALoader -c $(CABLE) $(BUSDEV) \
-		$(BUILD_DIR)/uart_loopback/uart_loopback.runs/impl_1/UartLoopback.bit
+	$(MAKE) program-bit BIT_FILE=$(ABS_BUILD)/uart_loopback/uart_loopback.runs/impl_1/UartLoopback.bit
 
 uart-loopback: loopback-build loopback-program
 	@echo "=== UART loopback programmed — test with: python3 ../../fpga/scripts/uart_loopback.py ==="
@@ -149,16 +147,14 @@ txgen-build: txgen-create
 	  $(VIVADO) -mode batch -source $(BUILD_TCL)
 
 txgen-program:
-	sudo openFPGALoader -c $(CABLE) $(BUSDEV) \
-		$(BUILD_DIR)/uart_txgen/uart_txgen.runs/impl_1/UartTxGen.bit
+	$(MAKE) program-bit BIT_FILE=$(ABS_BUILD)/uart_txgen/uart_txgen.runs/impl_1/UartTxGen.bit
 
 uart-txgen: txgen-build txgen-program
 	@echo "=== TX generator programmed — python3 ../../fpga/scripts/uart_loopback.py --rx-only ==="
 
 # === JOP DDR3 (xc7a100tDbSerial preset) ===
 
-ddr3-generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog xc7a100tDbSerial"
+ddr3-generate: generate
 
 ddr3-create-ip:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/create_ddr3_clk_wiz.tcl
@@ -170,26 +166,30 @@ ddr3-create-ip:
 # they stayed parameters rather than being normalised away.
 ddr3-build: ddr3-generate
 	$(VIVADO_ENV) && JOP_TOP=JopDdr3Top JOP_PART=$(PART) \
-	  JOP_BUILD_DIR=$(ABS_BUILD)/xc7a100t_ddr3 \
-	  JOP_RTL=$(GEN_RTL)/JopDdr3Top.v \
+	  JOP_BUILD_DIR=$(CFG_DIR)/vivado/build \
+	  JOP_RTL=$(CFG_DIR)/rtl/JopDdr3Top.v \
 	  JOP_IP="$(IP_DIR)/clk_wiz_0/clk_wiz_0.xci $(IP_DIR)/mig_7series_0/mig_7series_0.xci" \
 	  JOP_XDC=$(CONSTRAINTS)/xc7a100t_dbv5_base.xdc \
 	  JOP_SYNTH_DIRECTIVE=PerformanceOptimized JOP_SYNTH_RETIMING=yes \
 	  JOP_OPT_DIRECTIVE=Explore JOP_PLACE_DIRECTIVE=ExtraTimingOpt \
 	  JOP_PHYS_OPT_DIRECTIVE=AggressiveExplore JOP_ROUTE_DIRECTIVE=AggressiveExplore \
-	  JOP_SUMMARY=$(GEN_RTL)/JopDdr3Top.summary.txt \
+	  JOP_SUMMARY=$(CFG_DIR)/rtl/JopDdr3Top.summary.txt \
 	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 ddr3-program:
-	sudo openFPGALoader -c $(CABLE) $(BUSDEV) $(DDR3_BITSTREAM)
+	$(MAKE) program-bit BIT_FILE=$(DDR3_BITSTREAM)
 
 ddr3-monitor:
-	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
+	$(MAKE) monitor
 
 ddr3-download:
-	python3 $(REPO_ROOT)/fpga/scripts/download.py -e \
-	  $(REPO_ROOT)/java/apps/Smallest/HelloWorld.jop \
-	  $(UART_DEV) $(UART_BAUD)
+	$(MAKE) download
+
+ddr3-reset:
+	$(MAKE) reset
+
+ddr3-redownload:
+	$(MAKE) redownload
 
 clean:
 	rm -rf vivado/build vivado/ip
