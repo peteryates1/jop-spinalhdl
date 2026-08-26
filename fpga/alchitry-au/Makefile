@@ -1,119 +1,72 @@
+# ---------------------------------------------------------------------------
+# JOP DDR3 — Alchitry Au V2 (XC7A35T-2FTG256 + DDR3)
 #
-# JOP DDR3 - Alchitry AU V2 (Artix-7 + DDR3)
+#   make all       microcode + generate + ips + project + bitstream
+#   make run       program + download + monitor
+#   make full      all + run
 #
-# Targets:
-#   make microcode - Build serial-boot microcode
-#   make generate  - Generate Verilog from SpinalHDL
-#   make ips       - Generate Vivado IPs (MIG + ClkWiz)
-#   make project   - Create Vivado project
-#   make bitstream - Full Vivado build (synth + impl + bitstream)
-#   make program   - Program FPGA via JTAG
-#   make download  - Send .jop via serial
-#   make monitor   - Monitor UART output (1 Mbaud)
-#   make all       - microcode + generate + ips + project + bitstream
-#   make run       - program + download + monitor
-#   make full      - all + run
+# Flash boot (autonomous boot from SPI config flash) — see FLASH BOOT below:
+#   make flash-programmer   build and load the UART flash programmer
+#   make program-flash      write flash_image.bin over UART
 #
-# SMP (dual-core DDR3):
-#   make generate-smp  - Generate SMP Verilog
-#   make project-smp   - Create SMP Vivado project
-#   make bitstream-smp - Build SMP bitstream
-#   make program-smp   - Program SMP bitstream
-#   make run-smp       - program-smp + download NCoreHelloWorld + monitor
+# RETIRED 2026-08-26. Three flows and one dead twin went, with 14 of the 25
+# Vivado Tcl scripts:
 #
-# GC Exerciser (DDR3 stress test without JOP):
-#   make generate-exerciser  - Generate exerciser Verilog
-#   make project-exerciser   - Create Vivado project
-#   make bitstream-exerciser - Build exerciser bitstream
+#  1. SMP (generate/project/bitstream/program/run-smp). `JopDdr3SmpTopVerilog`
+#     was deleted by commit 7258661 on 2026-03-13 and there is no `auSmp`
+#     preset to replace it — this board has only auSerial and auMinimal, and an
+#     XC7A35T is the smallest part here anyway.
+#  2. GC exerciser and 3. trace replayer — superseded as diagnostics; their
+#     mains are still live but nothing has run them since the DDR3 bring-up.
+#  4. SPI diagnostic, whose four build scripts included two (build_spi_diagnostic
+#     and build_spi_diag_minimal) that no target ever referenced, alongside
+#     program_exerciser and build_bitstream_flash_launch — also unreferenced.
 #
-# Trace Replayer (DDR3 BMB trace replay from GC sim):
-#   make generate-replayer   - Generate replayer Verilog
-#   make project-replayer    - Create Vivado project
-#   make bitstream-replayer  - Build replayer bitstream
-#   make program-replayer    - Program FPGA
-#
-# Flash Boot (autonomous boot from SPI config flash):
-#   make microcode-flash  - Build flash-boot microcode
-#   make generate-flash   - Generate Verilog with config flash support
-#   make project-flash    - Create Vivado project (with flash constraints)
-#   make bitstream-flash  - Build bitstream + SPI .bin via write_cfgmem
-#   make flash-image      - Combine bitstream .bin + .jop into flash image
-#   make program-flash    - Program SPI flash via Vivado indirect programming
-#   make full-flash-boot  - Full flash boot flow (all of the above)
-#
-# UART Flash Programmer (for SST26VF032B, since Vivado doesn't support it):
-#   make generate-flash-programmer  - Generate flash programmer Verilog
-#   make project-flash-programmer   - Create Vivado project
-#   make bitstream-flash-programmer - Build flash programmer bitstream
-#   make program-flash-programmer   - Load programmer onto FPGA via JTAG
-#   make program-flash              - Program flash via UART (with --sst26)
-#
+# `Ddr3GcExerciserTop.scala`, `Ddr3TraceReplayerTop.scala` and
+# `SpiDiagnosticTop.scala` are now built by nothing. They are left in place
+# deliberately: deleting RTL is a separate decision from deleting the
+# scaffolding around it.
+# ---------------------------------------------------------------------------
 
 SHELL := /usr/bin/env bash
 
-# Vivado installation
 VIVADO_HOME ?= /opt/xilinx/2025.2/Vivado
-RUN_VIVADO := VIVADO_HOME=$(VIVADO_HOME) ./scripts/run_vivado.sh
+RUN_VIVADO  := VIVADO_HOME=$(VIVADO_HOME) ./scripts/run_vivado.sh
 
-# Serial port for UART
 # Was find_alchitry_ports.sh, which matched on vid:pid 0403:6010 alone -- the
 # same id the CYC5000's Arrow blaster uses, so it could return the Arrow's UART.
 # usb_serial_map's alchitry entry also matches the product string.
 SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id alchitry 2>/dev/null \
                  || echo /dev/serial/by-id/usb-Xilinx_Alchitry_Au_V2_000000-if01-port0)
-BAUD_RATE = 2000000
+BAUD_RATE    = 2000000
 
-# JOP application file
-JOP ?= ../../java/apps/Smallest/HelloWorld.jop
+JOP          ?= ../../java/apps/Smallest/HelloWorld.jop
+PROJECT_ROOT  = ../..
+ASM_DIR       = ../../asm
 
-# Project paths (sbt runs from repo root)
-PROJECT_ROOT = ../..
-ASM_DIR = ../../asm
-GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/JopDdr3Top.v
-
-# Flash boot: JOP application offset in flash
 # SST26VF032B = 4 MB total; XC7A35T bitstream ~2.1 MB; offset at 2.25 MB
-JOP_OFFSET ?= 0x240000
+JOP_OFFSET   ?= 0x240000
 
-.PHONY: all microcode generate ips project bitstream program download monitor run full clean check-board find-serial-port generate-exerciser project-exerciser bitstream-exerciser generate-replayer project-replayer bitstream-replayer program-replayer generate-smp project-smp bitstream-smp program-smp run-smp microcode-flash generate-flash project-flash bitstream-flash flash-image program-flash full-flash-boot generate-flash-programmer project-flash-programmer bitstream-flash-programmer program-flash-programmer
+.PHONY: all full run microcode generate ips project bitstream program \
+        download monitor check-board find-serial-port \
+        microcode-flash generate-flash project-flash bitstream-flash flash-image \
+        flash-programmer program-flash clean
 
-# Default: microcode + generate + ips + project + bitstream
-all: microcode generate ips project bitstream
-
-# Full flow
+all:  microcode generate ips project bitstream
 full: all run
-
-# Program + download + monitor
-run: program download monitor
-
-# --------------------------------------------------------------------------
-# Serial-boot microcode
-# --------------------------------------------------------------------------
+run:  program download monitor
 
 microcode:
 	cd $(ASM_DIR) && $(MAKE) serial
 	@echo "=== Serial microcode generated ==="
 
-# --------------------------------------------------------------------------
-# SpinalHDL Verilog generation
-# --------------------------------------------------------------------------
-
 generate:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog auSerial"
-	@echo "=== Verilog generated: $(GENERATED_V) ==="
-
-# --------------------------------------------------------------------------
-# Vivado IP generation
-# --------------------------------------------------------------------------
 
 ips:
 	$(RUN_VIVADO) vivado/tcl/create_clk_wiz.tcl
 	$(RUN_VIVADO) vivado/tcl/create_mig.tcl
 	@echo "=== IPs generated ==="
-
-# --------------------------------------------------------------------------
-# Vivado project and bitstream
-# --------------------------------------------------------------------------
 
 project:
 	$(RUN_VIVADO) vivado/tcl/create_project.tcl
@@ -121,26 +74,14 @@ project:
 bitstream:
 	$(RUN_VIVADO) vivado/tcl/build_bitstream.tcl
 
-# --------------------------------------------------------------------------
-# FPGA programming
-# --------------------------------------------------------------------------
-
 program:
 	$(RUN_VIVADO) vivado/tcl/program_bitstream.tcl
-
-# --------------------------------------------------------------------------
-# Serial download and UART monitor
-# --------------------------------------------------------------------------
 
 download:
 	python3 ../scripts/download.py -e $(JOP) $(SERIAL_PORT) $(BAUD_RATE)
 
 monitor:
 	python3 ../scripts/monitor.py $(SERIAL_PORT) $(BAUD_RATE)
-
-# --------------------------------------------------------------------------
-# Board diagnostics
-# --------------------------------------------------------------------------
 
 check-board:
 	./scripts/check_board.sh
@@ -149,59 +90,28 @@ find-serial-port:
 	./scripts/find_alchitry_ports.sh --serial
 
 # --------------------------------------------------------------------------
-# SMP (dual-core DDR3)
-# --------------------------------------------------------------------------
-
-generate-smp:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopDdr3SmpTopVerilog"
-	@echo "=== SMP Verilog generated ==="
-
-project-smp:
-	$(RUN_VIVADO) vivado/tcl/create_project_smp.tcl
-
-bitstream-smp:
-	$(RUN_VIVADO) vivado/tcl/build_bitstream_smp.tcl
-
-program-smp:
-	$(RUN_VIVADO) vivado/tcl/program_bitstream_smp.tcl
-
-run-smp: program-smp
-	python3 ../scripts/download.py -e ../../java/apps/Small/NCoreHelloWorld.jop $(SERIAL_PORT) $(BAUD_RATE)
-	python3 ../scripts/monitor.py $(SERIAL_PORT) $(BAUD_RATE)
-
-# --------------------------------------------------------------------------
-# GC Exerciser (DDR3 stress test without JOP)
-# --------------------------------------------------------------------------
-
-generate-exerciser:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.Ddr3GcExerciserTopVerilog"
-	@echo "=== Exerciser Verilog generated ==="
-
-project-exerciser:
-	$(RUN_VIVADO) vivado/tcl/create_project_exerciser.tcl
-
-bitstream-exerciser:
-	$(RUN_VIVADO) vivado/tcl/build_bitstream_exerciser.tcl
-
-# --------------------------------------------------------------------------
-# Trace Replayer (DDR3 BMB trace replay without JOP)
-# --------------------------------------------------------------------------
-
-generate-replayer:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.Ddr3TraceReplayerTopVerilog"
-	@echo "=== Replayer Verilog generated ==="
-
-project-replayer:
-	$(RUN_VIVADO) vivado/tcl/create_project_replayer.tcl
-
-bitstream-replayer:
-	$(RUN_VIVADO) vivado/tcl/build_bitstream_replayer.tcl
-
-program-replayer:
-	$(RUN_VIVADO) vivado/tcl/program_replayer.tcl
-
-# --------------------------------------------------------------------------
-# Flash Boot (autonomous boot from SPI config flash)
+# FLASH BOOT — the programmer works; the image it programs cannot be built
+#
+# This board booted autonomously from SPI flash in March 2026 and
+# docs/boards/flash-boot-artix7.md still records every milestone as Done,
+# including "Autonomous boot after power-cycle".
+#
+# It has been unbuildable since 2026-03-13. Commit 7258661 ("Remove IoConfig
+# and legacy tops JopSdramTop/JopDdr3Top") deleted JopDdr3Top.scala, which
+# carried `JopDdr3FlashTopVerilog` -- the main that generated the flash-boot
+# top. The refactor moved every SERIAL flow to JopTopVerilog preset names and
+# provided no flash equivalent: NO JopConfig preset anywhere sets
+# `bootMode = BootMode.Flash`. The capability was removed as collateral and
+# nothing noticed, because no CI job builds an FPGA and the targets stayed.
+#
+# Everything else survived intact: asm/Makefile still builds flash microcode in
+# its `all` (build/microcode/flash/ is populated right now), MicrocodePaths is
+# keyed on the mode, the XDC and the Tcl are here, and the UART flash
+# programmer below is live and unaffected.
+#
+# The fix is a preset, not a Makefile: an `auFlash` with bootMode Flash, which
+# would restore this board and the EP4CGX150 (whose JopCfgFlashTopVerilog went
+# in the same commit) together. Tracked as status item 82.
 # --------------------------------------------------------------------------
 
 microcode-flash:
@@ -209,8 +119,10 @@ microcode-flash:
 	@echo "=== Flash microcode generated (Artix-7, offset $(JOP_OFFSET)) ==="
 
 generate-flash:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopDdr3FlashTopVerilog"
-	@echo "=== Flash-boot Verilog generated ==="
+	@echo "BLOCKED: flash boot needs a JopConfig preset with bootMode = BootMode.Flash." >&2
+	@echo "  JopDdr3FlashTopVerilog was deleted by 7258661 (2026-03-13) and nothing" >&2
+	@echo "  replaced it. See the FLASH BOOT note in this Makefile and status item 82." >&2
+	@exit 1
 
 project-flash:
 	$(RUN_VIVADO) vivado/tcl/create_project_flash.tcl
@@ -223,30 +135,17 @@ flash-image:
 		vivado/build/jop_flash.bin $(JOP) \
 		vivado/build/flash_image.bin --jop-offset $(JOP_OFFSET)
 
-# UART flash programmer (for SST26VF032B — Vivado doesn't support this part)
-generate-flash-programmer:
+# The UART flash programmer itself — LIVE. Vivado cannot program an
+# SST26VF032B, so the FPGA is loaded with a bitstream that does it over UART.
+flash-programmer:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.FlashProgrammerDdr3TopVerilog"
-	@echo "=== Flash programmer Verilog generated ==="
-
-project-flash-programmer:
 	$(RUN_VIVADO) vivado/tcl/create_project_flash_programmer.tcl
-
-bitstream-flash-programmer:
 	$(RUN_VIVADO) vivado/tcl/build_bitstream_flash_programmer.tcl
-
-program-flash-programmer:
 	$(RUN_VIVADO) vivado/tcl/program_flash_programmer.tcl
 
-# Program flash via UART (requires flash programmer bitstream loaded on FPGA)
 program-flash:
 	sudo python3 ../scripts/flash_program.py --sst26 \
 		vivado/build/flash_image.bin --port $(SERIAL_PORT) -v
-
-full-flash-boot: microcode-flash generate-flash project-flash bitstream-flash flash-image program-flash
-
-# --------------------------------------------------------------------------
-# Cleanup
-# --------------------------------------------------------------------------
 
 clean:
 	rm -rf vivado/build .Xil Xil *.jou *.log *.str

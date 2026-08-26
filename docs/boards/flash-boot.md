@@ -7,6 +7,17 @@ power-up with no JTAG connection needed.
 See also: [Artix-7 Flash Boot](flash-boot-artix7.md) for the Alchitry Au V2
 (XC7A35T + DDR3) version, which is also fully working.
 
+> **REGRESSED — unbuildable since 2026-03-13.** Commit `7258661` ("Remove
+> IoConfig and legacy tops JopSdramTop/JopDdr3Top") deleted the two tops that
+> carried the flash-boot generator mains (`JopDdr3FlashTopVerilog` on the
+> Alchitry Au, `JopCfgFlashTopVerilog` on the EP4CGX150) and provided no
+> replacement: **no `JopConfig` preset anywhere sets `bootMode = BootMode.Flash`.**
+> Everything else is intact — the flash microcode is still built by `asm`'s
+> `all` target, `MicrocodePaths` is still keyed on the mode, and both UART flash
+> programmers still work. The milestones recorded below were all genuinely
+> reached; they simply cannot be reproduced from the current tree until a flash
+> preset exists. See status item 82.
+
 ## How It Works
 
 ```

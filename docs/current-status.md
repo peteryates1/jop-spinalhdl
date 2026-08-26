@@ -172,6 +172,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
 - **[80](#item-80)** — `PerfCounterVerifySim` fails on an unassigned ICU register — pre-existing, confirmed by bisect
 - **[81](#item-81)** — Build port, phase 0 — the ten superseded project files deleted, and three leftovers from my own conversions
+- **[82](#item-82)** — **Flash boot has been unbuildable on BOTH boards since 2026-03-13** — a working, hardware-verified capability removed as collateral by a refactor (OPEN)
 - **[78](#item-78)** — the A-E115FB DDR2 project is generated now, and building it found four separate defects
 - **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
@@ -7328,6 +7329,63 @@ eight-step chain.
 two deleted `.qsf` files, and said the PLL frequency is configurable in
 `dram_pll.vhd` -- superseded by `DramPllGen`. A comment explaining why a value
 can be ignored outlives its reason.
+
+### Item 82 — Flash boot was removed as collateral, and the docs still say it works (OPEN)
+
+Found during the phase 1 board audit, from a question that looked like
+bookkeeping: the Alchitry Au keeps its UART flash programmer but the flash-boot
+JOP top it programs lost its main in commit `7258661`. Pulling on that gives a
+much larger answer.
+
+**Both boards booted autonomously from SPI flash, and both were fully verified.**
+`docs/boards/flash-boot-artix7.md` records every milestone as Done, ending with
+"Autonomous boot after power-cycle"; `docs/boards/flash-boot.md` says the
+EP4CGX150 version "boots autonomously ... with no JTAG connection needed" and
+calls the Artix-7 one "also fully working".
+
+**Commit `7258661` (2026-03-13), "Remove IoConfig and legacy tops
+JopSdramTop/JopDdr3Top", deleted both flash entry points.** `JopSdramTop.scala`
+(928 lines) and `JopDdr3Top.scala` (925 lines) carried `JopCfgFlashTopVerilog`
+and `JopDdr3FlashTopVerilog` respectively. The commit message says it moved the
+Makefiles "to use JopTopVerilog preset names" -- and it did, for every SERIAL
+flow. It provided no flash equivalent, and **no `JopConfig` preset anywhere sets
+`bootMode = BootMode.Flash`.**
+
+**Everything around it survived, which is why nothing noticed:**
+
+| piece | state |
+|---|---|
+| `BootMode.Flash`, `JumpTableInitData.flash`, `MicrocodePaths` | live, keyed on the mode |
+| `asm/Makefile` `flash-altera` / `flash-alchitry` | live -- `flash-altera` is in `all` |
+| `build/microcode/flash/` | populated right now |
+| `FlashProgrammerTop`, `FlashProgrammerDdr3Top` | live, unaffected |
+| flash XDC/QSF, Vivado Tcl, `make_flash_image.py`, `flash_program.py` | all present |
+| the two generator mains | **deleted** |
+| a preset selecting flash boot | **never existed** |
+
+So the tree still builds flash microcode on every `asm` run, for a boot mode no
+configuration can select, and has done for five and a half months.
+
+**This is the "validated records decay silently" pattern, one level worse.**
+There the record went stale while the code still worked; here the CODE PATH was
+removed and the record kept asserting success. Both share the root cause: no CI
+job builds an FPGA, so nothing re-derives these claims. The Makefile targets
+surviving their implementation is what made it invisible -- `make generate-flash`
+failed with an sbt "class not found", which reads like a local environment
+problem rather than a deleted feature.
+
+**The fix is a preset, not a Makefile.** An `auFlash` and an `ep4cgx150Flash`
+with `bootMode = BootMode.Flash` restore both boards through the normal
+`JopTopVerilog <preset>` path, and the flash-boot flow becomes ordinary
+config-driven work rather than two bespoke tops. That is the right shape and it
+is exactly what the deleted commit was trying to achieve -- it simply dropped
+this mode on the way.
+
+**Done meanwhile:** `make generate-flash` on the Alchitry now fails with an
+explanation instead of a class-not-found, and both flash-boot docs carry a
+REGRESSED banner so the next reader is not misled the way this audit nearly was.
+
+**Not started:** the presets themselves. Neither board has been re-verified.
 
 ## 4. Two workstreams, both largely done
 
