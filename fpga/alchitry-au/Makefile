@@ -33,16 +33,29 @@ SHELL := /usr/bin/env bash
 VIVADO_HOME ?= /opt/xilinx/2025.2/Vivado
 RUN_VIVADO  := VIVADO_HOME=$(VIVADO_HOME) ./scripts/run_vivado.sh
 
-# Was find_alchitry_ports.sh, which matched on vid:pid 0403:6010 alone -- the
-# same id the CYC5000's Arrow blaster uses, so it could return the Arrow's UART.
-# usb_serial_map's alchitry entry also matches the product string.
-SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id alchitry 2>/dev/null \
-                 || echo /dev/serial/by-id/usb-Xilinx_Alchitry_Au_V2_000000-if01-port0)
-BAUD_RATE    = 2000000
-
-JOP          ?= ../../java/apps/Smallest/HelloWorld.jop
 PROJECT_ROOT  = ../..
 ASM_DIR       = ../../asm
+
+# CONVERTED 2026-08-26. The config directory, the RTL generation, the probe and
+# the console come from ../vivado.mk and ../console.mk; the project and
+# bitstream steps come from fpga/scripts/vivado_*.tcl. Four of this board's
+# eleven Tcl scripts went.
+#
+# BAUD_RATE = 2000000 went too -- console.mk reads the rate the bitstream
+# recorded rather than a constant that is only right until the preset changes.
+# The console alias resolves by product string as well as vid:pid, because the
+# Alchitry's FT2232H shares 0403:6010 with the CYC5000's Arrow blaster and an
+# id-only match could return the Arrow's UART.
+CFG          ?= auSerial
+BOARD_ALIAS   = alchitry
+CONSOLE_ALIAS = alchitry
+
+include ../vivado.mk
+
+PART       := xc7a35tftg256-2
+XDC        := $(CURDIR)/vivado/constraints
+IP         := $(CURDIR)/vivado/ip
+ABS_BUILD  := $(CURDIR)/vivado/build
 
 # SST26VF032B = 4 MB total; XC7A35T bitstream ~2.1 MB; offset at 2.25 MB
 JOP_OFFSET   ?= 0x240000
@@ -60,28 +73,32 @@ microcode:
 	cd $(ASM_DIR) && $(MAKE) serial
 	@echo "=== Serial microcode generated ==="
 
-generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog auSerial"
 
 ips:
 	$(RUN_VIVADO) vivado/tcl/create_clk_wiz.tcl
 	$(RUN_VIVADO) vivado/tcl/create_mig.tcl
 	@echo "=== IPs generated ==="
 
-project:
-	$(RUN_VIVADO) vivado/tcl/create_project.tcl
+project: generate
+	JOP_PROJ=jop_ddr3 JOP_PART=$(PART) JOP_TOP=JopDdr3Top \
+	  JOP_BUILD_DIR=$(CFG_DIR)/vivado/build \
+	  JOP_RTL=$(CFG_DIR)/rtl/JopDdr3Top.v \
+	  JOP_BIN_GLOB='$(CFG_DIR)/rtl/JopDdr3Top*.bin' \
+	  JOP_XDC=$(XDC)/alchitry_au_v2.xdc \
+	  JOP_IP="$(IP)/clk_wiz_0/clk_wiz_0.xci $(IP)/mig_7series_0/mig_7series_0.xci" \
+	  JOP_IP_GEN_TARGET=yes JOP_GEN_HINT="run: make generate" \
+	  $(RUN_VIVADO) $(CREATE_TCL)
 
 bitstream:
-	$(RUN_VIVADO) vivado/tcl/build_bitstream.tcl
+	JOP_PROJ=jop_ddr3 JOP_BUILD_DIR=$(CFG_DIR)/vivado/build \
+	  JOP_BIT=JopDdr3Top.bit \
+	  JOP_SUMMARY=$(CFG_DIR)/rtl/JopDdr3Top.summary.txt \
+	  $(RUN_VIVADO) $(PRJ_TCL)
 
 program:
-	$(RUN_VIVADO) vivado/tcl/program_bitstream.tcl
+	JOP_BIT_FILE=$(CFG_DIR)/vivado/build/jop_ddr3/jop_ddr3.runs/impl_1/JopDdr3Top.bit \
+	  $(RUN_VIVADO) vivado/tcl/program_bitstream.tcl
 
-download:
-	python3 ../scripts/download.py -e $(JOP) $(SERIAL_PORT) $(BAUD_RATE)
-
-monitor:
-	python3 ../scripts/monitor.py $(SERIAL_PORT) $(BAUD_RATE)
 
 check-board:
 	./scripts/check_board.sh
@@ -124,23 +141,43 @@ generate-flash:
 	@echo "  replaced it. See the FLASH BOOT note in this Makefile and status item 82." >&2
 	@exit 1
 
-project-flash:
+# Both depend on generate-flash so they FAIL with the item 82 explanation
+# rather than quietly building whatever RTL happens to be in spinalhdl/generated
+# -- which, now that the main flow writes to build/auSerial/, would be stale
+# bytes from before the conversion. These two scripts are also the only pair
+# left unconverted: build_bitstream_flash.tcl is a third shape (it opens a
+# project but runs the non-project command sequence inside it, plus
+# write_cfgmem), and converting a flow that cannot run is work on dead code.
+project-flash: generate-flash
 	$(RUN_VIVADO) vivado/tcl/create_project_flash.tcl
 
-bitstream-flash:
+bitstream-flash: generate-flash
 	$(RUN_VIVADO) vivado/tcl/build_bitstream_flash.tcl
 
 flash-image:
 	python3 ../scripts/make_flash_image.py --no-bitrev \
-		vivado/build/jop_flash.bin $(JOP) \
+		vivado/build/jop_flash.bin $(JOP_FILE) \
 		vivado/build/flash_image.bin --jop-offset $(JOP_OFFSET)
 
 # The UART flash programmer itself — LIVE. Vivado cannot program an
 # SST26VF032B, so the FPGA is loaded with a bitstream that does it over UART.
+# LIVE, and the half of flash boot that still works. Vivado cannot program an
+# SST26VF032B, so the FPGA is loaded with a bitstream that does it over UART.
+# Its RTL still generates in-tree: FlashProgrammerDdr3Top is a standalone top,
+# not a JopConfig preset, so it has no config directory to belong to.
+FLASH_PRG_RTL = $(PROJECT_ROOT)/spinalhdl/generated
+
 flash-programmer:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.FlashProgrammerDdr3TopVerilog"
-	$(RUN_VIVADO) vivado/tcl/create_project_flash_programmer.tcl
-	$(RUN_VIVADO) vivado/tcl/build_bitstream_flash_programmer.tcl
+	JOP_PROJ=flash_programmer JOP_PART=$(PART) JOP_TOP=FlashProgrammerDdr3Top \
+	  JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_RTL=$(CURDIR)/$(FLASH_PRG_RTL)/FlashProgrammerDdr3Top.v \
+	  JOP_XDC="$(XDC)/alchitry_au_v2.xdc $(XDC)/flash.xdc" \
+	  JOP_GEN_HINT="run: make flash-programmer" \
+	  $(RUN_VIVADO) $(CREATE_TCL)
+	JOP_PROJ=flash_programmer JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_BIT=FlashProgrammerDdr3Top.bit \
+	  $(RUN_VIVADO) $(PRJ_TCL)
 	$(RUN_VIVADO) vivado/tcl/program_flash_programmer.tcl
 
 program-flash:

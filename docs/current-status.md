@@ -180,6 +180,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[87](#item-87)** — Build port, phase 3b — `vivado.mk` finally has a user, and it found a live baud bug and a latent one
 - **[88](#item-88)** — CI "formal verification failure" was a yosys cache that hits and rebuilds anyway — not the push, not the proofs
 - **[89](#item-89)** — Build port — the DB_FPGA V5 was the last board generating in-tree; now on `vivado.mk` and the build tree
+- **[90](#item-90)** — Build port — the Alchitry Au converted; and a cosmetic-warning "fix" that unconstrained the UART
 - **[78](#item-78)** — the A-E115FB DDR2 project is generated now, and building it found four separate defects
 - **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
@@ -7820,6 +7821,69 @@ A foreground run had already succeeded in between, so the evidence was
 contradictory and the older artefact won anyway. The rule that would have
 caught it is already written down: prefer an explicit completion marker in the
 log over process-matching, and use absolute paths for anything backgrounded.
+
+### Item 90 — The Alchitry Au, and a warning that was right to leave alone
+
+`alchitry-au` is on `vivado.mk`, generating into `build/auSerial/`. **11 Tcl
+scripts -> 7.** The main JOP flow and the flash PROGRAMMER (the live half of
+flash boot) now use the shared create/build scripts; `BAUD_RATE = 2000000` is
+gone in favour of the rate the build records.
+
+**Two real defects found by converting:**
+
+- `program_bitstream.tcl` hardcoded `vivado/build/jop_ddr3/...`, the
+  pre-build-tree path. Once the project moved, `make program` would have loaded
+  a **stale bitstream, silently**. It takes the path from the caller now.
+- `project-flash` and `bitstream-flash` had no dependency on `generate-flash`,
+  so they would have built from whatever was left in `spinalhdl/generated` --
+  pre-conversion bytes. Both now depend on it and fail with the item 82
+  explanation instead.
+
+**The probe hazard I flagged was not one, and measuring said so.** Vivado
+enumerates exactly ONE target here (`xilinx_tcf/Xilinx/000000A`, `xc7a35t_0`):
+it claims the Alchitry's FT2232H and ignores the CYC5000's Arrow blaster and
+both dirtyJtag Picos. So `[lindex $hw_targets 0]` is correct -- by accident
+rather than by selection, so both program scripts now refuse and list the
+targets if more than one appears.
+
+**Fit moved the way the DB_FPGA's did:**
+
+| | baseline 2026-08-22 | now |
+|---|---|---|
+| Slice LUTs | 13,407 (64.46 %) | **12,330 (59.28 %)** |
+| Slice Regs | 11,624 (27.94 %) | 11,190 (26.90 %) |
+| Timing | MET, WNS +0.477 | MET, WNS +0.369 |
+
+Five points of LUT headroom recovered on the tightest part in the fleet, from
+RTL work done for other reasons. Same pessimistic-record effect as item 86.
+
+### Gotcha — the four critical warnings are correct, and both "fixes" are worse
+
+This build emits four `set_property expects at least one object` CRITICAL
+WARNINGs. One `.xdc` serves three designs that disagree on UART port names --
+the presets emit `ser_rxd`/`ser_txd`, `FlashProgrammerDdr3Top` and
+`Ddr3ExerciserTop` still use `usb_rx`/`usb_tx` -- so both pairs are constrained
+to P15/P16 and whichever is absent warns.
+
+Both obvious clean-ups are wrong, and **both were attempted on 2026-08-26**:
+
+1. **Delete the unused pair.** It is not unused -- it silently unconstrains the
+   UART on the two designs that still use it. Caught before doing it, by
+   grepping for the names rather than trusting a comment that called them "old".
+2. **Guard with `if {[llength [get_ports -quiet $port]]}`.** This one was
+   actually done, and it BROKE THE BUILD: in project mode the file is evaluated
+   in a pass where `get_ports` does not resolve, so the guard is false and
+   **both** pairs are dropped. `DRC UCIO-1`, two unconstrained ports, no
+   bitstream. Reverted; the fit after reverting is identical to before.
+
+Leave it unconditional. Four harmless warnings beat an unconstrained UART, and
+the reasoning now lives in the `.xdc` so neither attempt gets repeated.
+
+**The wider point**, twice over today: noise is worth reading, not silencing.
+`make`'s "overriding recipe" warnings led to `CONSOLE_TXONLY`, which was a real
+improvement. These led to a broken bitstream. The difference is whether the
+warning is telling you something -- and the only way to find out is to
+understand it before acting, not to make it go away.
 
 ## 4. Two workstreams, both largely done
 
