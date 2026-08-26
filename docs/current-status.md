@@ -171,6 +171,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
 - **[80](#item-80)** — `PerfCounterVerifySim` fails on an unassigned ICU register — pre-existing, confirmed by bisect
+- **[81](#item-81)** — Build port, phase 0 — the ten superseded project files deleted, and three leftovers from my own conversions
 - **[78](#item-78)** — the A-E115FB DDR2 project is generated now, and building it found four separate defects
 - **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
@@ -7256,6 +7257,77 @@ real answer. This is the gitignored-artifact CI trap wearing a different hat.
 **Not diagnosed.** Whether `resultReg` lost its driver or never had one under
 this particular `JopCoreConfig` (no `bytecodes` map, so ICU ops take their
 defaults) is open.
+
+### Item 81 — Build port, phase 0: closing the conversions I left half-open
+
+The five-step conversion loop ends with **delete the hand-written file**. On two
+boards I ran steps 1-3 and 5, proved the generated project equivalent, and then
+did not run step 4 -- leaving a hand-written `.qsf` sitting beside a generated
+one, which is exactly the "which did the build read?" ambiguity this workstream
+exists to remove.
+
+**Ten tracked files deleted**, all with generated equivalents and no Makefile or
+Tcl referencing them:
+
+| board | files |
+|---|---|
+| `a-e115fb-ddr2` | `jop_ddr2.{qsf,sdc,qpf}`, `jop_ddr2_smp.{qsf,qpf}` |
+| `cyc5000-sdram` | `jop_cyc5000.{qsf,sdc,qpf}`, `jop_smp_cyc5000.{qsf,qpf}` |
+
+Both boards' `smp` targets already re-enter `quartus.mk` with the right `REV`,
+so the SMP project regenerates from `setup_proj.tcl`. `ddr2_pins.qsf` stays --
+it is `Board.constraintFiles` now -- as do the exerciser projects.
+
+**Three leftovers from my own conversions, found while checking the above.**
+The CYC5000 conversion was sloppier than the EP4CGX150 one:
+
+- **Four variables nothing read.** `BAUD_RATE = 2000000` was the worst: it
+  *looked* like the authority on the wire rate while `console.mk` was deriving
+  `BAUD` from the build's own summary. Editing it would have changed nothing --
+  the item 70 hazard, re-created by the very commit that removed it elsewhere.
+  `SERIAL_PORT` and `JOP_FILE` were subtler: set with `?=` *before* the include,
+  so they SHADOWED `console.mk` rather than being dead. `JOP_FILE` pointed at
+  the in-tree `java/apps/Smallest/HelloWorld.jop`, not the build tree's copy --
+  a live bug. Deleting all four let `console.mk` do its job; `console-info` now
+  reports the same port and the same 2000000, read from the bitstream.
+- **A second `.cdf` generator rule**, byte-identical to the first, whose
+  prerequisite `$(SOF_SMP_FILE)` was **never defined anywhere**. The whole
+  `.cdf` class is gone now, as on the EP4CGX150: `quartus_pgm` takes an explicit
+  operation, so the `.sof` goes to it directly.
+- **A header advertising six targets that did not exist** -- `all`, `run`,
+  `full`, `full-smp`, `build-smp`, `generate-smp`. `all`, `full` and `run` were
+  dropped by the conversion itself and nothing noticed. Restored; the rest
+  corrected to the real names. 146 -> 106 lines, every target dry-run.
+
+**The `build_exerciser` macro is gone.** The EP4CGX150 commit that deleted nine
+`.cdf` generators added, in the same file, a `define build_exerciser` carrying
+its own copy of `quartus_sh` plus the four `quartus_*` commands -- a SIXTH copy
+of the flow, in the file whose header records removing the other five. What
+genuinely varies between an exerciser and a JOP preset is only which generator
+main runs and whether that main also wrote the project, so `quartus.mk` grew
+exactly two knobs:
+
+```make
+GEN_MAIN          ?= jop.system.JopTopVerilog
+GEN_ARGS          ?= $(CFG) buildtree
+GEN_MAKES_PROJECT ?= no
+```
+
+An exerciser sets all three and re-enters the same rules. The `cfgName` and
+`revision` inside each `*Build` main are exactly the `CFG` and `REV` passed, so
+the two halves cannot drift. Both branches dry-run verified: the exercisers emit
+the identical command sequence the macro did, and programming now goes through
+`program-sof` -- resolving the cable by serial -- instead of a hand-copied
+`quartus_pgm` line.
+
+**Net: 1,509 lines deleted, 122 added.** All five `quartus.mk` boards still
+dry-run clean, and a config with no build directory still fires the full
+eight-step chain.
+
+**Also fixed:** `implementation-notes.md` claimed `make full-smp` and named the
+two deleted `.qsf` files, and said the PLL frequency is configurable in
+`dram_pll.vhd` -- superseded by `DramPllGen`. A comment explaining why a value
+can be ignored outlives its reason.
 
 ## 4. Two workstreams, both largely done
 

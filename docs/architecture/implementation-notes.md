@@ -151,8 +151,8 @@ Optional per-core IEEE 754 single-precision FPU via **FloatComputeUnit** (pipeli
 - **Cache coherency**: A$ and O$ use cross-core snoop invalidation via `CacheSnoopBus`. A$ fill uses burst reads on SDRAM (bug #19 fix) to prevent interleaving corruption.
 - **LED driver**: LED[i]=core i WD bit 0 (active low). 7 on-board LEDs + PMOD for 8+ cores.
 - **Test app**: `NCoreHelloWorld.java` — each core reads `IO_CPU_ID`, core 0 prints + toggles WD, others just toggle WD. Small variant includes GC.
-- **FPGA build**: `make full-smp` in QMTECH or CYC5000 dirs (separate Quartus projects: `jop_smp_sdram.qsf`, `jop_smp_cyc5000.qsf`)
-- **Verified core counts**: 4-core (21% LE, +3.0 ns slack), 8-core (42% LE, +1.9 ns slack) at 100 MHz; 16-core (86% LE, +1.8 ns slack) at 80 MHz on EP4CGX150. 12/16-core fail at 100 MHz (insufficient timing margin). PLL frequency configurable in `dram_pll.vhd` + `JopSdramTop.scala`.
+- **FPGA build**: `make smp CORES=n` in the QMTECH or CYC5000 dirs. The Quartus project is GENERATED into `build/<config>/quartus/` under its own revision name (`jop_smp_sdram`, `jop_smp_cyc5000`) — the hand-written `.qsf` files this line used to name were deleted once the generated ones were proven assignment-identical.
+- **Verified core counts**: 4-core (21% LE, +3.0 ns slack), 8-core (42% LE, +1.9 ns slack) at 100 MHz; 16-core (86% LE, +1.8 ns slack) at 80 MHz on EP4CGX150. 12/16-core fail at 100 MHz (insufficient timing margin). PLL frequency comes from the preset via `DramPllGen`; `dram_pll.vhd` is generated, not hand-edited.
 
 ## SMP GC Stop-the-World
 

@@ -131,32 +131,28 @@ program-dbfpga: dbfpga-program
 # first, then deleted.
 # --------------------------------------------------------------------------
 
-SD_NATIVE_PRJ = $(PROJECT_ROOT)/build/sdNativeExerciser/quartus
-SD_SPI_PRJ    = $(PROJECT_ROOT)/build/sdSpiExerciser/quartus
-
-define build_exerciser
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.$(1)Build"
-	cd $(2) && $(QUARTUS_BIN)/quartus_sh -t setup_proj.tcl
-	cd $(2) && $(QUARTUS_BIN)/quartus_map $(3)
-	cd $(2) && $(QUARTUS_BIN)/quartus_fit $(3)
-	cd $(2) && $(QUARTUS_BIN)/quartus_asm $(3)
-	cd $(2) && $(QUARTUS_BIN)/quartus_sta $(3)
-	@echo "=== Built: $(2)/output_files/$(3).sof ==="
-endef
+# One variable per exerciser, re-entering the SAME rules the JOP builds use.
+# This replaced a `define build_exerciser` macro that carried its own copy of
+# quartus_sh and the four quartus_* commands -- a sixth copy of the flow, in the
+# file whose own header records deleting the other five. quartus.mk grew
+# GEN_MAIN / GEN_MAKES_PROJECT instead; the cfgName and revision in each
+# *Build main are exactly the CFG and REV passed here.
+SD_NATIVE = CFG=sdNativeExerciser REV=sd_native_exerciser \
+            GEN_MAIN=jop.system.SdNativeExerciserBuild GEN_ARGS= GEN_MAKES_PROJECT=yes
+SD_SPI    = CFG=sdSpiExerciser    REV=sd_spi_exerciser \
+            GEN_MAIN=jop.system.SdSpiExerciserBuild    GEN_ARGS= GEN_MAKES_PROJECT=yes
 
 sd-native:
-	$(call build_exerciser,SdNativeExerciser,$(SD_NATIVE_PRJ),sd_native_exerciser)
+	$(MAKE) build $(SD_NATIVE)
 
 sd-spi:
-	$(call build_exerciser,SdSpiExerciser,$(SD_SPI_PRJ),sd_spi_exerciser)
+	$(MAKE) build $(SD_SPI)
 
 program-sd-native: assert-device
-	$(QUARTUS_BIN)/quartus_pgm -c "$$($(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --cable $(BOARD_ALIAS))" \
-	    -m JTAG -o "p;$(SD_NATIVE_PRJ)/output_files/sd_native_exerciser.sof"
+	$(MAKE) program-sof $(SD_NATIVE)
 
 program-sd-spi: assert-device
-	$(QUARTUS_BIN)/quartus_pgm -c "$$($(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --cable $(BOARD_ALIAS))" \
-	    -m JTAG -o "p;$(SD_SPI_PRJ)/output_files/sd_spi_exerciser.sof"
+	$(MAKE) program-sof $(SD_SPI)
 
 # Old names, kept because the docs use them.
 generate-sd-native-exerciser: sd-native

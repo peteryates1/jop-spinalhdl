@@ -18,6 +18,10 @@
 # and may set:
 #   QUARTUS_DIR    default /opt/altera/25.1/quartus
 #   BOARD_ALIAS    for jtag_probe_map, default none (program target is skipped)
+#   CONSOLE_ALIAS  for usb_serial_map, consumed by console.mk
+#   GEN_MAIN       generator main, default jop.system.JopTopVerilog
+#   GEN_ARGS       its arguments, default "$(CFG) buildtree"
+#   GEN_MAKES_PROJECT  yes if GEN_MAIN also writes setup_proj.tcl and the .sdc
 # ---------------------------------------------------------------------------
 
 QUARTUS_DIR ?= /opt/altera/25.1/quartus
@@ -59,9 +63,35 @@ microcode:
 	cd $(PROJECT_ROOT)/asm && $(MAKE) serial
 	@echo "=== Serial microcode in $(PROJECT_ROOT)/build/microcode/serial ==="
 
+# WHICH GENERATOR RUNS, and whether it emits the project itself.
+#
+# Most flows here are JopConfig presets: JopTopVerilog emits the RTL, and the
+# .sdc and setup_proj.tcl come from two further generator mains. The EXERCISERS
+# are not presets -- they are standalone BoardDesigns whose single `<Name>Build`
+# main emits RTL, PLL, .sdc and setup_proj.tcl in one pass -- so they set
+# GEN_MAIN and GEN_MAKES_PROJECT=yes and skip those two rules.
+#
+# This exists because the EP4CGX150 grew a `define build_exerciser` macro
+# carrying its own copy of quartus_sh + the four quartus_* commands: a SIXTH
+# copy of the flow, added by the same commit that deleted the other five. The
+# only thing that genuinely varies is which main runs and whether it wrote the
+# project, so those are the only two things parameterised.
+GEN_MAIN          ?= jop.system.JopTopVerilog
+GEN_ARGS          ?= $(CFG) buildtree
+GEN_MAKES_PROJECT ?= no
+
 $(GEN_STAMP): $(SCALA_SRC) $(UCODE)
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog $(CFG) buildtree"
+	cd $(PROJECT_ROOT) && sbt "runMain $(GEN_MAIN) $(GEN_ARGS)"
 	@mkdir -p $(dir $@) && touch $@
+
+ifeq ($(GEN_MAKES_PROJECT),yes)
+
+# The generator already wrote setup_proj.tcl and the .sdc; only Quartus's own
+# pass over the Tcl remains.
+$(QUARTUS_PRJ)/$(REV).qsf: $(GEN_STAMP)
+	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_sh -t setup_proj.tcl
+
+else
 
 $(QUARTUS_PRJ)/$(REV).sdc:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.TimingConstraintsMain $(CFG) --write build/$(CFG_NAME)/quartus/$(REV).sdc"
@@ -73,6 +103,8 @@ $(QUARTUS_PRJ)/setup_proj.tcl:
 # tool version rather than being frozen by hand.
 $(QUARTUS_PRJ)/$(REV).qsf: $(QUARTUS_PRJ)/setup_proj.tcl $(QUARTUS_PRJ)/$(REV).sdc
 	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_sh -t setup_proj.tcl
+
+endif
 
 generate: $(GEN_STAMP)
 	@echo "=== Generated into $(CFG_DIR)/rtl ==="
