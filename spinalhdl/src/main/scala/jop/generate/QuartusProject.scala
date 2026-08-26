@@ -86,6 +86,23 @@ object QuartusProject {
     // IV GX project; the CYC5000's does not.
     if (fpga.family == FpgaFamily.CycloneIV || fpga.family == FpgaFamily.CycloneIVE)
       g("ACTIVE_SERIAL_CLOCK", "FREQ_40MHZ")
+    // nCEO is a DEDICATED pin that the releases above do not cover, so a board
+    // assigning a user signal to it collides with the configuration scheme --
+    // reported as an unplaceable pin, not as a configuration conflict:
+    //
+    //   Error (176310): Can't place multiple pins assigned to pin location
+    //                   Pin_K22 (IOPAD_X115_Y43_N7)
+    //
+    // BOARD AND FAMILY, both. The board says whether it needs nCEO as user I/O;
+    // the family says whether this assignment exists at all. Neither alone is
+    // enough -- setting it for every Cyclone is not free (the EP4CGX150, which
+    // does not need it, grew 27 LEs and lost 0.084 ns of slack), and emitting
+    // it because a board asked, on a family that has no such setting, is the
+    // ACTIVE_SERIAL_CLOCK mistake above: Quartus REFUSES an illegal value
+    // rather than ignoring it, and the whole project fails to build.
+    val cyclone = fpga.family == FpgaFamily.CycloneIV || fpga.family == FpgaFamily.CycloneIVE
+    if (config.assembly.fpgaBoard.reserveNceoAsIo && cyclone)
+      g("CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION", "\"USE AS REGULAR IO\"")
     g("ENABLE_SIGNALTAP", "OFF")
     sb.append("\n")
 
@@ -138,6 +155,14 @@ object QuartusProject {
     config.assembly.boards.flatMap(_.extraIpFiles).distinct
       .foreach(f => g(ipAssignment(f), up(f)))
 
+    // Vendor constraint files, SOURCED. `source` and not an *_FILE assignment
+    // because these carry instance assignments (a DDR2 PHY's delay-chain
+    // config, output-enable groups, pad-to-core delay), not design sources --
+    // and ipAssignment would classify an unrecognised .qsf as VERILOG_FILE and
+    // hand Quartus a constraint file to compile.
+    config.assembly.boards.flatMap(_.constraintFiles).distinct
+      .foreach(f => sb.append(s"source ${up(f)}\n"))
+
     // Ethernet IP only when the DESIGN drives Ethernet -- the board has the PHY
     // and its PLL whether or not this configuration uses them.
     val hasEth = config.devices.values.exists(_.deviceType.key == DeviceType.Ethernet.key)
@@ -161,7 +186,10 @@ object QuartusProject {
     sb.append("\n")
 
     sb.append("# Pin assignments, from the board definition in Board.scala\n")
-    sb.append(QsfGenerator.toQsf(QsfGenerator.pinAssignments(config))).append("\n\n")
+    val pins = QsfGenerator.pinAssignments(config)
+    sb.append(QsfGenerator.toQsf(pins)).append("\n\n")
+    val ioStds = QsfGenerator.toIoStandards(config, pins)
+    if (ioStds.nonEmpty) sb.append(ioStds).append("\n\n")
 
     sb.append("project_close\n")
     sb.toString

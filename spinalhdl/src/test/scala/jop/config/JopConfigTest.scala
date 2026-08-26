@@ -31,6 +31,19 @@ class JopConfigTest extends AnyFunSuite {
     assert(!config.system.coreConfig.needsFloatCompute)
   }
 
+  // The test above passes for ep4cgx150Serial too, which is how this preset
+  // came to generate byte-identical Verilog to its base for months while a
+  // green test, its name and two doc tables all called it a distinct
+  // configuration (status item 75). A preset test has to assert what the
+  // preset ADDS, not what it inherits.
+  test("ep4cgx150HwMath differs from its base — imul is the whole point") {
+    val hwMath = JopConfig.ep4cgx150HwMath.system.coreConfig
+    val serial = JopConfig.ep4cgx150Serial.system.coreConfig
+    assert(hwMath.needsIntMul, "imul must be Hardware, or this IS ep4cgx150Serial")
+    assert(!serial.needsIntMul, "base changed: it now covers imul, so this preset adds nothing")
+    assert(hwMath.impl("imul") != serial.impl("imul"))
+  }
+
   test("ep4cgx150HwFloat preset has both compute units") {
     val config = JopConfig.ep4cgx150HwFloat
     assert(config.system.coreConfig.needsIntegerCompute)

@@ -288,6 +288,25 @@ case class Board(
   useStackCache: Boolean = false,
   /** Default I/O standard for this board's user I/O. */
   ioStandard: String = "LVCMOS33",
+  /** Release the dedicated nCEO pin as regular I/O (Cyclone families).
+    *
+    * Needed only by a board that assigns a user signal to it -- the A-E115FB
+    * puts `mem_addr[10]` there, and without this Quartus reports the clash as
+    * an unplaceable pin ("Can't place multiple pins assigned to pin location
+    * Pin_K22") rather than as a configuration conflict.
+    *
+    * NOT free, which is why it is opt-in rather than set for every Cyclone
+    * board alongside the other configuration-pin releases: enabling it on the
+    * EP4CGX150, which does not need it, cost 27 logic elements and 0.084 ns of
+    * setup slack (11,112 LE / +0.626 ns became 11,139 / +0.542). */
+  reserveNceoAsIo: Boolean = false,
+  /** Per-PORT I/O standards, where one board-wide default will not do.
+    *
+    * The A-E115FB's clock, reset and LEDs sit in banks shared with the 1.8 V
+    * DDR2 interface while its CH340 is 3.3 V, so the board has no single
+    * answer. Keyed by top-level port name; a bare name covers a bus, so `led`
+    * applies to `led[0]`..`led[3]`. */
+  portIoStandards: Map[String, String] = Map.empty,
   /** This board's alias in `fpga/scripts/jtag_probe_map`, and its CONSOLE alias
     * in `fpga/scripts/usb_serial_map`. The two namespaces differ on purpose:
     * JTAG has one alias per board, but serial needs one per CDC ENDPOINT --
@@ -315,6 +334,25 @@ case class Board(
   /** IP needed only when the DESIGN declares an Ethernet device. The board has
     * the PHY and its PLL either way; a UART-only build must not list them. */
   ethIpFiles: Seq[String] = Seq.empty,
+  /** Vendor constraint files the generated project SOURCES rather than restates.
+    *
+    * For pins this project owns, `QsfGenerator` emits assignments from board
+    * data and that is the right shape. A hard-memory PHY is not that: the
+    * A-E115FB's `ddr2_pins.qsf` carries ~380 instance assignments of six kinds,
+    * and only two of them (`IO_STANDARD`, location) are pin facts. The rest --
+    * `MEM_INTERFACE_DELAY_CHAIN_CONFIG`, `OUTPUT_ENABLE_GROUP`, `CKN_CK_PAIR`,
+    * `PAD_TO_CORE_DELAY`, `CURRENT_STRENGTH_NEW` -- are properties of the
+    * ALTMEMPHY instance and the SODIMM, produced by the vendor tool.
+    *
+    * Transcribing those into Scala would make a SECOND copy of a vendor
+    * artifact, free to drift from the reference project it came from, and the
+    * drift would surface as a memory that trains at one temperature and not
+    * another. Referencing keeps one source of truth -- which is the whole point
+    * -- and it is what the hand-written `jop_ddr2.qsf` did (`source
+    * ddr2_pins.qsf`) before it was generated.
+    *
+    * Repo-root-relative; the generated Tcl rewrites them for the project dir. */
+  constraintFiles: Seq[String] = Seq.empty,
   /** Ports the generated top HAS but this board does not WIRE.
     *
     * A fixed interface bundle (SdramInterface, say) always presents every
@@ -619,22 +657,38 @@ object Board {
   def AE115FB = Board(
     name = "a-e115fb",
     extraIpFiles = Seq("fpga/a-e115fb-ddr2/ip/ddr2_64bit/ddr2_64bit.qip"),
+    // The DDR2 pin, I/O-standard and PHY assignments, lifted verbatim from the
+    // vendor reference (DDR667_read_write/quartus/ddr2_sodimm.qsf). Sourced,
+    // not restated -- see `constraintFiles`.
+    constraintFiles = Seq("fpga/a-e115fb-ddr2/ddr2_pins.qsf"),
     probeAlias = Some("ae115fb"),
     consoleAlias = Some("ae115fb"),
     fpga = Some(FpgaDevice.EP4CE115F23I7),
     entitySuffix = "Ae115fb",
     ledActiveHigh = false,
+    // Clock and reset, both of which this board was MISSING: PinResolver finds
+    // the clock via a CLOCK_* device and the reset via a SWITCH, and AE115FB
+    // declared neither -- so the generated project assigned neither, leaving
+    // the 50 MHz input for the fitter to place wherever it liked. The
+    // hand-written jop_ddr2.qsf had both. Nothing compared the two until the
+    // generated project was diffed against it on 2026-08-26.
+    portIoStandards = Map(
+      "clk_in" -> "1.8 V", "reset" -> "1.8 V", "led" -> "1.8 V",
+      "ser_txd" -> "3.3-V LVTTL", "ser_rxd" -> "3.3-V LVTTL"),
+    reserveNceoAsIo = true,   // mem_addr[10] is on nCEO (K22)
     devices = Seq(
+      BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "PIN_AB11")),
+      BoardDevice("SWITCH", mapping = Map("reset" -> "PIN_N21")),
       BoardDevice("HYS64T128021", role = Some("ddr2")),
       // On-board CH340: FPGA TX -> CH340 RX is H5, CH340 TX -> FPGA RX is N1.
       // Both verified by loopback (commit a32434b), so no Pico bridge is needed
       // here — which is why that board's Pico could be switched to a blaster.
-      BoardDevice("CH340", mapping = Map("TXD" -> "H5", "RXD" -> "N1")),
+      BoardDevice("CH340", mapping = Map("TXD" -> "PIN_H5", "RXD" -> "PIN_N1")),
       // Core-board LEDs D3..D6, active low, in banks shared with the 1.8 V DDR2
       // interface. NOTE: the board auto-loads a factory EPCS demo at power-up
       // that also drives these, so they are unreliable as design status.
       BoardDevice("LED", mapping = Map(
-        "led0" -> "A5", "led1" -> "B5", "led2" -> "C4", "led3" -> "C3"))
+        "led0" -> "PIN_A5", "led1" -> "PIN_B5", "led2" -> "PIN_C4", "led3" -> "PIN_C3"))
     ))
 
   def WukongXC7A100T = Board(

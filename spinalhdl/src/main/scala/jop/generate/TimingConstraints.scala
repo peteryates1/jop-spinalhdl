@@ -43,7 +43,10 @@ case class TimingConstraints(
     * fewer than two entries constrains nothing and is dropped. */
   asyncGroups: Seq[Seq[String]] = Seq.empty,
   /** Altera needs these explicitly; the others infer PLL outputs. */
-  derivePllClocks: Boolean = false) {
+  derivePllClocks: Boolean = false,
+  /** Raw `set_false_path` lines. Asynchronous inputs and status outputs that
+    * have no timing relationship to constrain. */
+  falsePaths: Seq[String] = Seq.empty) {
 
   def toSdc: String = {
     val sb = new StringBuilder
@@ -52,6 +55,10 @@ case class TimingConstraints(
       sb.append(s"create_clock -period ${c.periodNs} -name ${c.clockName} [get_ports ${c.port}]\n")
     }
     if (derivePllClocks) sb.append("\nderive_pll_clocks\nderive_clock_uncertainty\n")
+    if (falsePaths.nonEmpty) {
+      sb.append("\n")
+      falsePaths.foreach(fp => sb.append(fp).append("\n"))
+    }
     val groups = asyncGroups.filter(_.nonEmpty)
     if (groups.size >= 2) {
       sb.append("\n# Mutually asynchronous clock domains. The PLL instance name comes\n")
@@ -145,10 +152,39 @@ object TimingConstraints {
       if (hasEth && board.hasEthPll) Seq("ethPll|altpll_component|auto_generated|pll1|clk[0]") else Nil
     val phyGroup = if (hasEth) Seq("e_rxc") else Nil
 
+    // A VENDOR DRAM PHY BRINGS ITS OWN CLOCK CONSTRAINTS, and adding ours on
+    // top makes things worse, not safer. Altera's DDR2 ALTMEMPHY ships
+    // `ddr2_64bit_phy_ddr_timing.sdc`, pulled in by its .qip, which creates the
+    // board clock and derives every PLL output in the PHY. Generating a second
+    // `create_clock` on the same port plus `derive_pll_clocks` re-derived the
+    // PHY's internal clocks under our constraint instead of its own, and the
+    // A-E115FB went from the **+0.584 ns** its hand-written project achieved to
+    // **-4.807 ns, TNS -14,397** -- on identical RTL and identical pins.
+    //
+    // So for this case the generated .sdc carries only what the PHY does NOT
+    // own: the JOP-side I/O false paths. That is exactly what the hand-written
+    // jop_ddr2.sdc contained, and its header says why in one line -- "the
+    // memory interface is constrained by the IP's own ...sdc".
+    val phyOwnsClocks =
+      memType.contains(MemoryType.SDRAM_DDR2) &&
+      config.fpgaFamily.manufacturer == Manufacturer.Altera
+
+    // Asynchronous in, status out: a button, the UART receive line, the LEDs
+    // and the UART transmit line have no timing relationship worth constraining.
+    val ioFalsePaths =
+      if (!phyOwnsClocks) Nil
+      else Seq(
+        "set_false_path -from [get_ports reset] -to *",
+        "set_false_path -from [get_ports ser_rxd] -to *",
+        "set_false_path -from * -to [get_ports {led[*]}]",
+        "set_false_path -from * -to [get_ports ser_txd]")
+
     TimingConstraints(
-      clocks = boardClock.toSeq,
+      clocks = if (phyOwnsClocks) Nil else boardClock.toSeq,
       asyncGroups = Seq(dramGroup, ethGroup, phyGroup).filter(_.nonEmpty),
-      derivePllClocks = config.fpgaFamily.manufacturer == Manufacturer.Altera)
+      derivePllClocks =
+        !phyOwnsClocks && config.fpgaFamily.manufacturer == Manufacturer.Altera,
+      falsePaths = ioFalsePaths)
   }
 }
 

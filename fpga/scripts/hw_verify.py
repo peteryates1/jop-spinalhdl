@@ -226,7 +226,11 @@ def _quartus_timing(path):
     board gets called clean on the strength of the wrong table."""
     corner, worst, in_tbl = None, None, False
     for line in open(path, errors="replace"):
-        m = re.match(r"^;\s*(.+?)\s+Model Setup Summary\s*;", line)
+        # Substring test BEFORE the regex. A DDR2 report is 297k lines of very
+        # wide tables, and `(.+?)` backtracking across them took 2m09s -- which
+        # reads as a hang, on a script whose whole job is to fail fast.
+        m = (re.match(r"^;\s*(.+?)\s+Model Setup Summary\s*;", line)
+             if "Model Setup Summary" in line else None)
         if m:
             corner, in_tbl = m.group(1), True
             continue

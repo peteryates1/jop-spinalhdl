@@ -170,6 +170,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
+- **[78](#item-78)** — the A-E115FB DDR2 project is generated now, and building it found four separate defects
 - **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
 - **[75](#item-75)** — `ep4cgx150HwMath` generates byte-identical RTL to `ep4cgx150Serial` — a preset that expresses nothing, with a test that passes trivially
@@ -7089,6 +7090,90 @@ identical on every board.
 
 `uart_test.qsf` is now orphaned here: no target references it, and `UartTestTop`
 still exists. It belongs in `bringup/` with the other jigs.
+
+
+### Item 78 — the A-E115FB DDR2 project generates, and what that took
+
+`ae115fbDdr2` builds from a fully generated Quartus project (2026-08-26).
+Assignment-identical to the hand-written `jop_ddr2.qsf`: **506 = 506, zero
+differences** either way. Timing **MET on every corner** -- +1.050 ns (Slow
+100C), +1.305 (Slow -40C), +1.397 (Fast -40C) -- against the +0.584 ns recorded
+for the hand-built August bitstream. 28,614 LE. It programs.
+
+**NOT hardware-verified**: the board's CH340 console is not patched through, so
+nothing can be read back. Programming succeeds and that is all that is
+established.
+
+**Quartus 18.1 runs the generated Tcl unmodified** -- 0 errors, 0 warnings. That
+was the main risk (Cyclone IV DDR2 ALTMEMPHY is unsupported past 18.1) and it is
+cleared.
+
+Five things were wrong, and only the first was expected:
+
+**1. The DDR2 pins are SOURCED, not transcribed.** `ddr2_pins.qsf` holds ~380
+instance assignments of six kinds, and only two of them -- location and
+`IO_STANDARD` -- are pin facts. `MEM_INTERFACE_DELAY_CHAIN_CONFIG`,
+`OUTPUT_ENABLE_GROUP`, `CKN_CK_PAIR`, `PAD_TO_CORE_DELAY` and
+`CURRENT_STRENGTH_NEW` are ALTMEMPHY and SODIMM properties emitted by the vendor
+tool. Transcribing them into Scala would make a second copy of a vendor artifact
+free to drift from its reference. New `Board.constraintFiles` has the generated
+Tcl `source` the file instead -- one source of truth, which is the point.
+
+**2. The board had no clock and no reset.** `PinResolver` finds the clock via a
+`CLOCK_*` device and the reset via a `SWITCH`, and `Board.AE115FB` declared
+neither -- so the generated project assigned neither and left the 50 MHz input
+for the fitter to place wherever it liked. Exactly the floating-SW1 defect of
+item 57. Added `CLOCK_50MHz` -> `PIN_AB11` and `SWITCH` reset -> `PIN_N21`.
+
+**3. `PIN_` prefixes are inconsistent in board data**, and a bare name is not an
+error: `set_location_assignment A5` names a different KIND of location, so the
+pin silently goes unassigned. Altera boards are written both ways because the
+Xilinx and Lattice entries in the same table legitimately use bare names.
+Normalised in `QsfGenerator`, the only generator that emits `.qsf`, so the data
+cannot get it wrong.
+
+**4. The DRAM tops have a reset PORT even though they have no reset BUTTON.**
+`resetInput` returned None for DDR2/DDR3 on the grounds that wiring a button into
+a per-controller reset is real RTL work -- true, and beside the point:
+`ddr2Ctl.io.global_reset_n` is driven from `ClockDomain.current.readResetWire`,
+which SpinalHDL materialises as a top-level `reset` input. The port exists
+regardless, and omitting it left a REQUIRED INPUT unassigned.
+
+**5. nCEO, and the cost of fixing it in the wrong place.** The A-E115FB puts
+`mem_addr[10]` on nCEO, which the configuration-pin releases do not cover, so the
+fit failed with `Can't place multiple pins assigned to pin location Pin_K22`.
+Adding `CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION` for every Cyclone board --
+consistent with the block it sits in -- is **not free**: the EP4CGX150, which
+does not need it, grew 27 LEs and lost 0.084 ns (11,112 / +0.626 became 11,139 /
++0.542). It is gated on **board AND family** now: the board says whether it needs
+it, the family says whether the assignment exists at all. Neither alone is
+enough, since emitting an assignment a family does not have makes Quartus REFUSE
+the project, as `ACTIVE_SERIAL_CLOCK` already does on Cyclone V. EP4CGX150
+re-verified back at 11,112 / +0.626.
+
+### Item 78b — a vendor DRAM PHY owns its own clock constraints
+
+The generated `.sdc` created the board clock and called `derive_pll_clocks`,
+which is right for every other Altera board and wrong here. ALTMEMPHY ships
+`ddr2_64bit_phy_ddr_timing.sdc` (pulled in by its `.qip`) and already does both.
+Doing it again re-derived the PHY's internal clocks under our constraint instead
+of its own, and the board went from the **+0.584 ns** its hand-written project
+achieved to **-4.807 ns, TNS -14,397** -- identical RTL, identical pins.
+
+`TimingConstraints` now emits, for Altera + DDR2, only what the PHY does not own:
+the four JOP-side I/O false paths. That reproduces the hand-written
+`jop_ddr2.sdc` exactly, whose header said so in one line all along.
+
+**Adding a constraint is not conservative.** The instinct that a generated `.sdc`
+should say MORE than a hand-written one had it backwards; here the extra two
+lines cost 5.4 ns.
+
+### Gotcha — `hw_verify.py` took 2m09s on a DDR2 timing report
+
+The DDR2 `.sta.rpt` is **297,552 lines** of very wide tables and the corner-header
+regex backtracked across all of them -- reading as a hang, on a script whose
+whole purpose is to fail fast. A substring test before the regex: **0.081s**,
+same answer.
 
 ## 4. Two workstreams, both largely done
 

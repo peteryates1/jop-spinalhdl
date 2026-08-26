@@ -423,6 +423,22 @@ case class JopConfig(
       val mem = if (singleSystem) resolveMemory(system).map(_.memType) else None
       val dramReset = mem.contains(MemoryType.SDRAM_DDR3) || mem.contains(MemoryType.SDRAM_DDR2)
       if (singleSystem && !dramReset) pin.map(ResetInput("reset_n", _, activeLow))
+      // The DRAM tops have no reset BUTTON, but they do have a reset PORT, and
+      // those are different things. `ddr2Ctl.io.global_reset_n` is driven from
+      // `ClockDomain.current.readResetWire`, which SpinalHDL materialises as a
+      // top-level `reset` input -- so the port exists whether or not anyone
+      // wired a button to it, and leaving it out of the .qsf does not omit a
+      // feature, it leaves a REQUIRED INPUT unassigned for the fitter to place
+      // wherever it likes. That is the same defect as the EP4CGX150's floating
+      // SW1 (item 57), which this generator was written to fix.
+      //
+      // The port is `reset`, not `reset_n`: SpinalHDL names it, not us.
+      // POLARITY IS NOT SETTLED HERE and this does not attempt to settle it --
+      // `activeLow` is carried but the .qsf consumes only pin and port, so this
+      // changes no behaviour beyond giving the port the pin that the
+      // hand-written jop_ddr2.qsf gave it, on a board that ran DoAll 66/66 and
+      // a 537k-round GC soak with exactly that assignment.
+      else if (singleSystem && dramReset) pin.map(ResetInput("reset", _, activeLow))
       else None
     }
   }
@@ -654,7 +670,24 @@ object JopConfig {
       coreConfig = base.system.coreConfig.copy(useCmpSync = cmpSync))))
   }
 
-  /** EP4CGX150 + daughter board — hardware integer math (IntegerComputeUnit) */
+  /**
+   * EP4CGX150 + daughter board — the FULL integer group in hardware.
+   *
+   * The `int` group is exactly `imul`, `idiv`, `irem`. `ep4cgx150Serial` already
+   * puts `idiv` and `irem` on the ICU, so the one this adds is **`imul`**, which
+   * otherwise runs as a microcode shift-add of about 35 cycles against roughly
+   * 22 on the compute unit and 2 on a DSP block.
+   *
+   * IT USED TO SET `idiv`/`irem` AND NOTHING ELSE, which is what the base had
+   * already acquired -- so it generated Verilog byte-identical to
+   * `ep4cgx150Serial` (11,112 LE either way) while its name, two doc tables and
+   * a passing test all described a distinct configuration. The test asserted
+   * only that the preset "has IntegerComputeUnit", which the BASE satisfies, so
+   * nothing caught it. A preset that selects nothing new gives no coverage
+   * while reading as a second configuration -- the mirror of the fallback-
+   * coverage problem, where an implementation no preset selects gets none.
+   * See status item 75.
+   */
   def ep4cgx150HwMath = {
     val base = ep4cgx150Serial
     base.copy(systems = Seq(base.system.copy(
@@ -662,7 +695,7 @@ object JopConfig {
       coreConfig = JopCoreConfig(
         memConfig = base.system.coreConfig.memConfig,
         supersetJumpTable = base.system.coreConfig.supersetJumpTable,
-        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")))))
+        bytecodes = Map("int" -> "hw")))))
   }
 
   /** EP4CGX150 + daughter board — hardware float (FloatComputeUnit) */

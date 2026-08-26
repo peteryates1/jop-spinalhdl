@@ -38,11 +38,39 @@ object QsfGenerator {
     clock ++ sdramClk ++ leds ++ sdram ++ drivers ++ reset
   }
 
+  /** Quartus wants `PIN_A5`; board data does not always say so.
+    *
+    * Altera board entries are written both ways -- `PIN_B14` on the EP4CGX150,
+    * bare `A5` on the A-E115FB -- because the Xilinx and Lattice boards in the
+    * same table legitimately use bare names and the convention blurred. A bare
+    * name is not rejected by Quartus: `set_location_assignment A5` names a
+    * different KIND of location, so the pin silently goes unassigned and the
+    * fitter places the port wherever it likes. Normalised here, in the only
+    * generator that emits .qsf, so the data cannot get it wrong. */
+  private def pinName(p: String): String =
+    if (p.startsWith("PIN_")) p else s"PIN_$p"
+
   /** Format pin assignments as Quartus TCL */
   def toQsf(assignments: Seq[PinAssignment]): String =
     assignments.map { a =>
-      s"set_location_assignment ${a.fpgaPin} -to ${a.verilogPort}"
+      s"set_location_assignment ${pinName(a.fpgaPin)} -to ${a.verilogPort}"
     }.mkString("\n")
+
+  /** Per-port I/O standards, for boards where one default is wrong.
+    *
+    * The A-E115FB is the case that needed it: its clock, reset and LEDs sit in
+    * banks shared with the 1.8 V DDR2 interface while the CH340 is 3.3 V, so a
+    * single board-wide default cannot describe it. Keyed by port name; a bare
+    * name covers a bus, so `led` applies to `led[0]`..`led[3]`. */
+  def toIoStandards(config: BoardDesign, assignments: Seq[PinAssignment]): String = {
+    val stds = config.assembly.boards.flatMap(_.portIoStandards).toMap
+    if (stds.isEmpty) "" else assignments.flatMap { a =>
+      val base = a.verilogPort.takeWhile(_ != '[')
+      stds.get(a.verilogPort).orElse(stds.get(base)).map { std =>
+        s"""set_instance_assignment -name IO_STANDARD "$std" -to ${a.verilogPort}"""
+      }
+    }.mkString("\n")
+  }
 
   /** Generate global assignments (FAMILY, DEVICE, TOP_LEVEL_ENTITY) */
   def globalAssignments(config: BoardDesign): String = {
