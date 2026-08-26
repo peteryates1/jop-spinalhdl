@@ -1,13 +1,14 @@
 REPO_ROOT := $(shell cd ../.. && pwd)
-VIVADO := /opt/xilinx/2025.2/Vivado/bin/vivado
-VIVADO_ENV := export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
-OPENFPGALOADER := openFPGALoader
-# THERE ARE TWO dirtyJtag PROBES ON THIS HOST -- this board's Pico 2 W and the
-# XC7A100T DB board's. A bare `-c dirtyJtag` takes whichever enumerated first,
-# so it can silently program the WRONG BOARD. Resolved by serial, like every
-# other probe and tty here. Needs the PATCHED openFPGALoader in /usr/local/bin;
-# a bogus `--busdev-num 099:099` must FAIL for the selection to mean anything.
-BUSDEV ?= --busdev-num $(shell $(REPO_ROOT)/fpga/scripts/jtag_probe_map --busdev wukong)
+PROJECT_ROOT = ../..
+
+# The probe, the console and the config directory come from ../vivado.mk and
+# ../console.mk. CFG is the flow being driven; each target below that needs a
+# different one re-enters with it, so only the invoked flow resolves a name.
+CFG          ?= wukongDdr3
+BOARD_ALIAS   = wukong
+CONSOLE_ALIAS = wukong
+
+include ../vivado.mk
 BITSTREAM := vivado/build/wukong_jop_bram/wukong_jop_bram.runs/impl_1/JopBramWukongTop.bit
 SDRAM_BITSTREAM := vivado/build/wukong_sdram_exerciser/SdramExerciserWukongTop.bit
 JOP_SDRAM_BITSTREAM = $(SDRAM_CFG_DIR)/vivado/build/JopSdramWukongTop.bit
@@ -43,47 +44,35 @@ ABS_BUILD  := $(CURDIR)/vivado/build
 TIMING_DIRECTIVES := JOP_SYNTH_DIRECTIVE=PerformanceOptimized JOP_SYNTH_RETIMING=yes \
                     JOP_OPT_DIRECTIVE=Explore JOP_PLACE_DIRECTIVE=ExtraTimingOpt \
                     JOP_PHYS_OPT_DIRECTIVE=AggressiveExplore JOP_ROUTE_DIRECTIVE=AggressiveExplore
-# UART_DEV is the board's own CH340N, and applies to the SINGLE-SYSTEM builds
-# only -- those use SystemAssembly.wukong with DeviceDriver.UartCh340. The
-# DUAL-cluster builds do NOT: the CH340N at E3/F3 is hardwired on the PCB and
-# cannot be tapped, so both halves come out of the on-board Pico 2 W instead
-# (DDR3 -> PICO_UART1 F4/H4, SDR -> J11_UART A5/A4). See
+# WHICH CONSOLE EACH FLOW USES.
+#
+# The SINGLE-SYSTEM builds come out of the board's own CH340N -- they use
+# SystemAssembly.wukong with DeviceDriver.UartCh340. The DUAL-cluster builds do
+# NOT: the CH340N at E3/F3 is hardwired on the PCB and cannot be tapped, so both
+# halves come out of the on-board Pico 2 W instead (DDR3 -> PICO_UART1 F4/H4 ->
+# the Pico's SECOND CDC; SDR -> J11_UART A5/A4 -> the first). See
 # docs/architecture/system-configuration.md.
 #
-# Resolved by alias, since ttyUSBn moves on every replug and this board's CH340
-# has no serial to key on -- see fpga/scripts/usb_serial_map, whose header
-# explains why these two CH340s need special handling.
-UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id wukong 2>/dev/null \
-              || echo /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0)
-UART_BAUD := 1000000
-# Exactly 2 Mbaud since 2026-08-18. It used to be 2037000: ui_clk is
-# 91.6758 MHz at Ddr3_366, an integer divisor gave 2.0372 Mbaud, and this
-# constant existed purely to chase that rounding error. jop.io.Uart now uses a
-# fractional baud generator (UartBaudTick), so the wire rate is the requested
-# one on any clock.
-DDR3_UART_BAUD := 2000000
-JOP_FILE ?= $(REPO_ROOT)/java/apps/Smallest/HelloWorld.jop
-# This board's Pico 2 W CDC. There are TWO Pico dirtyJtag probes on this host
-# (this one and the XC7A100T's E662C876C3506A26), so a bare /dev/ttyACM0 is
-# whichever enumerated first -- it can point at the wrong board. The Pico DOES
-# have a serial, so this one resolves the ordinary way.
-DUAL_SDR_UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id wukong-pico-0 2>/dev/null \
-                       || echo /dev/serial/by-id/usb-Jean_THOMAS_Pico_Dirty_JTAG_0B383D0435D957EC-if01)
-# Both dual halves run at 2 Mbaud -- see JopConfig.wukongDualIndependent, where
-# PICO_UART1 and J11_UART both set baudRate 2000000. This said 115200, which no
-# longer matches the preset.
-DUAL_UART_BAUD := 2000000
-DUAL_SDR_UART_BAUD := $(DUAL_UART_BAUD)
-# DDR3 half -> PICO_UART1 -> the Pico's SECOND CDC (if03).
-DUAL_DDR3_UART_DEV ?= $(shell $(REPO_ROOT)/fpga/scripts/usb_serial_map --by-id wukong-pico-1 2>/dev/null \
-                        || echo /dev/serial/by-id/usb-Jean_THOMAS_Pico_Dirty_JTAG_0B383D0435D957EC-if03)
+# All three are resolved by SERIAL through usb_serial_map. The CH340 has no
+# serial number, which is why it needs its own alias -- see that script's
+# header. There are also TWO Pico dirtyJtag probes on this host, so a bare
+# /dev/ttyACM0 can point at the other board.
+CONSOLE_DUAL_DDR3 = wukong-pico-1
+CONSOLE_DUAL_SDR  = wukong-pico-0
 
-.PHONY: generate create-ip create-project build program program-flash monitor all clean
+# THE BAUD IS NOT WRITTEN DOWN HERE ANY MORE. This board carried
+# UART_BAUD := 1000000 and DDR3_UART_BAUD := 2000000 as constants, plus two
+# more for the dual halves -- four numbers that were right only for whichever
+# bitstream was current when someone last edited them, and one of which had
+# already gone stale (115200, against a preset saying 2000000). console.mk
+# reads the rate the build itself recorded. Status item 70.
+
+.PHONY: generate create-ip create-project build program program-flash bram-monitor all clean
 .PHONY: ddr3-generate ddr3-create-ip ddr3-build ddr3-program ddr3-monitor ddr3-download ddr3-reset ddr3-redownload
-.PHONY: ddr3-smp-generate ddr3-smp-build ddr3-smp-program ddr3-smp-monitor
+.PHONY: ddr3-smp-generate ddr3-smp-build ddr3-smp-bitstream ddr3-smp-program ddr3-smp-monitor
 .PHONY: dual-generate dual-create-ip dual-build dual-program dual-monitor dual-sdr-monitor dual-sdr-download
 .PHONY: sdram-generate sdram-create-ip sdram-build sdram-program sdram-monitor
-.PHONY: jop-sdram-generate jop-sdram-build jop-sdram-smp-build jop-sdram-program jop-sdram-monitor
+.PHONY: jop-sdram-generate jop-sdram-build jop-sdram-smp-generate jop-sdram-smp-build jop-sdram-smp-bitstream jop-sdram-program jop-sdram-monitor print-cfg-dir
 
 all: build
 
@@ -111,13 +100,13 @@ build: create-project
 	  $(VIVADO) -mode batch -source $(PRJ_TCL)
 
 program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(BITSTREAM)
+	$(MAKE) program-bit BIT_FILE=$(BITSTREAM)
 
 program-flash:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) --write-flash $(BITSTREAM)
+	sudo openFPGALoader -c $(LOADER_CABLE) $(BUSDEV) --write-flash $(BITSTREAM)
 
-monitor:
-	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
+bram-monitor:
+	$(MAKE) monitor CFG=wukongBram
 
 # === JOP DDR3 targets ===
 
@@ -160,33 +149,43 @@ ddr3-build: ddr3-generate
 	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 ddr3-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DDR3_CFG_DIR)/vivado/build/JopDdr3WukongTop.bit
+	$(MAKE) program-bit BIT_FILE=$(DDR3_CFG_DIR)/vivado/build/JopDdr3WukongTop.bit
 
 ddr3-monitor:
-	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(DDR3_UART_BAUD)
+	$(MAKE) monitor CFG=$(DDR3_CFG)
 
 ddr3-download:
-	python3 $(REPO_ROOT)/fpga/scripts/download.py -e $(JOP_FILE) $(UART_DEV) $(DDR3_UART_BAUD)
+	$(MAKE) download CFG=$(DDR3_CFG)
 
 # Reset the core over UART. On DDR3 this is a CORE-ONLY reset -- the MIG keeps
 # its calibration, so it costs microseconds, not the seconds a retrain would.
 ddr3-reset:
-	python3 $(REPO_ROOT)/fpga/scripts/download.py -R $(UART_DEV) $(DDR3_UART_BAUD)
+	$(MAKE) reset CFG=$(DDR3_CFG)
 
 # Swap the running application without reprogramming the FPGA.
 ddr3-redownload:
-	python3 $(REPO_ROOT)/fpga/scripts/download.py -e -r $(JOP_FILE) $(UART_DEV) $(DDR3_UART_BAUD)
+	$(MAKE) redownload CFG=$(DDR3_CFG)
 
 # === JOP DDR3 SMP targets ===
 
+# THE DIRECTORY IS ASKED FOR, NOT SPELLED OUT. This was
+#     DDR3_SMP_DIR = $(REPO_ROOT)/build/wukongSmp-$(DDR3_SMP_CORES)
+# -- a second copy of BuildLayout.configName's sanitising rules, living in Make.
+# Two copies of a naming rule agree until the day they do not, and the failure
+# is a path silently pointing at a stale directory or none at all. The SMP flows
+# re-enter with their CFG so vivado.mk resolves the name through
+# BuildLayoutMain; only the flow actually invoked pays for the sbt round trip.
 DDR3_SMP_CORES ?= 4
 DDR3_SMP_CFG    = wukongSmp $(DDR3_SMP_CORES)
-DDR3_SMP_DIR    = $(REPO_ROOT)/build/wukongSmp-$(DDR3_SMP_CORES)
+DDR3_SMP_DIR    = $(CFG_DIR)
 
 ddr3-smp-generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(DDR3_SMP_CFG) buildtree"
+	$(MAKE) generate CFG="$(DDR3_SMP_CFG)"
 
-ddr3-smp-build: ddr3-smp-generate
+ddr3-smp-build:
+	$(MAKE) ddr3-smp-bitstream CFG="$(DDR3_SMP_CFG)"
+
+ddr3-smp-bitstream: generate
 	$(VIVADO_ENV) && JOP_TOP=JopSmpDdr3WukongTop JOP_PART=$(PART) \
 	  JOP_BUILD_DIR=$(DDR3_SMP_DIR)/vivado/build \
 	  JOP_RTL=$(DDR3_SMP_DIR)/rtl/JopSmpDdr3WukongTop.v \
@@ -197,10 +196,11 @@ ddr3-smp-build: ddr3-smp-generate
 	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 ddr3-smp-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DDR3_SMP_DIR)/vivado/build/JopSmpDdr3WukongTop.bit
+	$(MAKE) program-bit CFG="$(DDR3_SMP_CFG)" \
+	    BIT_FILE=$$($(MAKE) --no-print-directory print-cfg-dir CFG="$(DDR3_SMP_CFG)")/vivado/build/JopSmpDdr3WukongTop.bit
 
 ddr3-smp-monitor:
-	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
+	$(MAKE) monitor CFG="wukongSmp $(DDR3_SMP_CORES)"
 
 # === JOP Dual-cluster (DDR3 + SDR) targets ===
 
@@ -229,7 +229,7 @@ dual-build: dual-generate
 	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 dual-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(DUAL_BITSTREAM)
+	$(MAKE) program-bit BIT_FILE=$(DUAL_BITSTREAM)
 
 # The dual build's DDR3 half. VERIFIED on hardware 2026-08-22: both halves come
 # out of the Pico's two CDCs at 2 Mbaud, and the CH340 carries nothing at all.
@@ -238,16 +238,14 @@ dual-program:
 # J11_UART). This target used to watch UART_DEV (the CH340) at UART_BAUD
 # (1 Mbaud), so it was wrong in both the port and the rate.
 dual-monitor:
-	$(REPO_ROOT)/fpga/scripts/monitor.py $(DUAL_DDR3_UART_DEV) $(DUAL_UART_BAUD)
+	$(MAKE) monitor CFG=$(DUAL_CFG) CONSOLE_ALIAS=$(CONSOLE_DUAL_DDR3)
 
 # SDR cluster: UART via Pico ttyACM0 at 115200 baud
 dual-sdr-monitor:
-	$(REPO_ROOT)/fpga/scripts/monitor.py $(DUAL_SDR_UART_DEV) $(DUAL_SDR_UART_BAUD)
+	$(MAKE) monitor CFG=$(DUAL_CFG) CONSOLE_ALIAS=$(CONSOLE_DUAL_SDR)
 
 dual-sdr-download:
-	python3 $(REPO_ROOT)/fpga/scripts/download.py -e \
-	  $(REPO_ROOT)/java/apps/Smallest/HelloWorld.jop \
-	  $(DUAL_SDR_UART_DEV) $(DUAL_SDR_UART_BAUD)
+	$(MAKE) download CFG=$(DUAL_CFG) CONSOLE_ALIAS=$(CONSOLE_DUAL_SDR)
 
 # === SDRAM Exerciser targets ===
 
@@ -268,10 +266,10 @@ sdram-build: sdram-generate
 	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 sdram-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(SDRAM_BITSTREAM)
+	$(MAKE) program-bit BIT_FILE=$(SDRAM_BITSTREAM)
 
 sdram-monitor:
-	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
+	$(MAKE) monitor CFG=$(SDRAM_CFG)
 
 # === JOP SDRAM targets ===
 
@@ -301,12 +299,16 @@ jop-sdram-build: jop-sdram-generate
 # one board with only the memory path differing. Entity is JopSmpSdramWukongTop
 # (cpuCnt >= 2 inserts "Smp"), which the single-core script does not build.
 SDR_SMP_CORES ?= 2
-SDR_SMP_DIR    = $(REPO_ROOT)/build/wukongSdrSmp-$(SDR_SMP_CORES)
+SDR_SMP_CFG     = wukongSdrSmp $(SDR_SMP_CORES)
+SDR_SMP_DIR     = $(CFG_DIR)
 
 jop-sdram-smp-generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongSdrSmp $(SDR_SMP_CORES) buildtree"
+	$(MAKE) generate CFG="$(SDR_SMP_CFG)"
 
-jop-sdram-smp-build: jop-sdram-smp-generate
+jop-sdram-smp-build:
+	$(MAKE) jop-sdram-smp-bitstream CFG="$(SDR_SMP_CFG)"
+
+jop-sdram-smp-bitstream: generate
 	$(VIVADO_ENV) && JOP_TOP=JopSmpSdramWukongTop JOP_PART=$(PART) \
 	  JOP_BUILD_DIR=$(SDR_SMP_DIR)/vivado/build \
 	  JOP_RTL=$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.v \
@@ -317,10 +319,10 @@ jop-sdram-smp-build: jop-sdram-smp-generate
 	  $(VIVADO) -mode batch -source $(NP_TCL)
 
 jop-sdram-program:
-	sudo $(OPENFPGALOADER) -c dirtyJtag $(BUSDEV) $(JOP_SDRAM_BITSTREAM)
+	$(MAKE) program-bit BIT_FILE=$(JOP_SDRAM_BITSTREAM)
 
 jop-sdram-monitor:
-	$(REPO_ROOT)/fpga/scripts/monitor.py $(UART_DEV) $(UART_BAUD)
+	$(MAKE) monitor CFG=$(SDRAM_CFG)
 
 # BLINK RETIRED (2026-08-25). `WukongBlink` had no SpinalHDL source and no git
 # history of one -- create_blink_project.tcl read RTL that has never been in

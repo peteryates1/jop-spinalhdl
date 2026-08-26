@@ -3,55 +3,86 @@
 #
 # The board sets:
 #   PROJECT_ROOT   path to the repo root
-#   CFG            preset invocation, e.g. wukongDdr3
-#   BUILD_TCL      the board's build script, relative to the board directory
-#   BITSTREAM      the .bit's name, e.g. JopDdr3WukongTop.bit
+#   CFG            preset invocation, e.g. wukongDdr3 or "wukongSmp 4"
 #   BOARD_ALIAS    for jtag_probe_map
 #   CONSOLE_ALIAS  for usb_serial_map
 # and may set:
+#   VIVADO         default /opt/xilinx/2025.2/Vivado/bin/vivado
 #   LOADER_CABLE   openFPGALoader -c value, default dirtyJtag
+#   GEN_MAIN       generator main, default jop.system.JopTopVerilog
+#   GEN_ARGS       its arguments, default "$(CFG) buildtree"
 #
-# WHY. The Vivado boards each carried their own copy of the Vivado path, the
-# locale export, the openFPGALoader invocation and the JOP_CFG_DIR plumbing. The
-# probe selection is the part that matters: MORE THAN ONE dirtyJtag probe is
-# attached to this host, and a bare `-c dirtyJtag` takes whichever enumerated
-# first -- i.e. possibly another board. One board had no --busdev-num at all.
+# REWRITTEN 2026-08-26. The first version wrapped a per-board BUILD_TCL and a
+# BITSTREAM name, which is the wrong shape now that the build itself lives in
+# fpga/scripts/vivado_build_{project,nonproject}.tcl. What is genuinely shared
+# is what remains here: resolving the config directory, generating the RTL once
+# per change, programming by serial, and the console.
+#
+# It was also included by NO board for two days -- written for the two Xilinx
+# boards and then never wired up, so nothing exercised it. A shared include
+# nobody includes is indistinguishable from a broken one.
+#
+# WHY THE CONFIG DIRECTORY COMES FROM SCALA. `wukongSmp 4` lands in
+# build/wukongSmp-4, and the Wukong Makefile used to spell that out as
+#     DDR3_SMP_DIR = $(REPO_ROOT)/build/wukongSmp-$(DDR3_SMP_CORES)
+# -- a second copy of BuildLayout.configName's sanitising rules, in Make. Two
+# copies of a naming rule stay in step until the day they do not, and the
+# failure is a path that silently points at a stale directory or none at all.
+# BuildLayoutMain is asked instead.
 # ---------------------------------------------------------------------------
 
-VIVADO      ?= /opt/xilinx/2025.2/Vivado/bin/vivado
-VIVADO_ENV  ?= export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+VIVADO       ?= /opt/xilinx/2025.2/Vivado/bin/vivado
+VIVADO_ENV   ?= export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 LOADER_CABLE ?= dirtyJtag
 
+# A bare preset is a Scala identifier, so sanitising it is the identity and
+# costs no call; only a multi-argument invocation pays for the sbt round trip.
 ifeq ($(words $(CFG)),1)
   CFG_NAME := $(CFG)
 else
   CFG_NAME := $(shell cd $(PROJECT_ROOT) && sbt "runMain jop.generate.BuildLayoutMain $(CFG)" 2>/dev/null \
                 | sed -n 's|^\[info\] build/\(.*\)$$|\1|p' | tail -1)
+  ifeq ($(CFG_NAME),)
+    $(error BuildLayoutMain produced no directory for CFG="$(CFG)")
+  endif
 endif
 
-CFG_DIR    = $(PROJECT_ROOT)/build/$(CFG_NAME)
-GEN_STAMP  = $(CFG_DIR)/rtl/.generated
-BIT_FILE   = $(CFG_DIR)/vivado/build/$(BITSTREAM)
-SCALA_SRC := $(shell find $(PROJECT_ROOT)/spinalhdl/src/main/scala -name '*.scala')
-UCODE     := $(wildcard $(PROJECT_ROOT)/build/microcode/serial/mem_*.dat)
+CFG_DIR     = $(PROJECT_ROOT)/build/$(CFG_NAME)
+VIVADO_PRJ  = $(CFG_DIR)/vivado
+VIVADO_BUILD= $(VIVADO_PRJ)/build
 
-# Resolved by SERIAL. A bogus --busdev-num must FAIL for this to mean anything;
-# it does, with the patched openFPGALoader in /usr/local/bin.
-BUSDEV ?= --busdev-num $(shell $(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --busdev $(BOARD_ALIAS))
+# A STAMP, not the .v: the entity name is derived from the config, so naming
+# the file here would restate config in Make and be wrong for every SMP build.
+GEN_STAMP   = $(CFG_DIR)/rtl/.generated
+SCALA_SRC  := $(shell find $(PROJECT_ROOT)/spinalhdl/src/main/scala -name '*.scala')
+UCODE      := $(wildcard $(PROJECT_ROOT)/build/microcode/serial/mem_*.dat)
 
-.PHONY: generate build program-bit vivado-clean
+GEN_MAIN    ?= jop.system.JopTopVerilog
+GEN_ARGS    ?= $(CFG) buildtree
+
+# The shared Vivado scripts. The board passes the design's fields to these
+# rather than keeping its own copy of the flow -- see their headers.
+CREATE_TCL  = $(PROJECT_ROOT)/fpga/scripts/vivado_create_project.tcl
+PRJ_TCL     = $(PROJECT_ROOT)/fpga/scripts/vivado_build_project.tcl
+NP_TCL      = $(PROJECT_ROOT)/fpga/scripts/vivado_build_nonproject.tcl
+
+.PHONY: generate program-bit vivado-clean
 
 $(GEN_STAMP): $(SCALA_SRC) $(UCODE)
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog $(CFG) buildtree"
+	cd $(PROJECT_ROOT) && sbt "runMain $(GEN_MAIN) $(GEN_ARGS)"
 	@mkdir -p $(dir $@) && touch $@
 
 generate: $(GEN_STAMP)
 	@echo "=== Generated into $(CFG_DIR)/rtl ==="
 
-build: generate
-	$(VIVADO_ENV) && JOP_CFG_DIR=$(PROJECT_ROOT)/build/$(CFG_NAME) \
-	    $(VIVADO) -mode batch -source $(BUILD_TCL)
+# Resolved by SERIAL. More than one dirtyJtag probe is attached to this host, so
+# a bare `-c dirtyJtag` takes whichever enumerated first -- i.e. possibly
+# another board. Needs the PATCHED openFPGALoader in /usr/local/bin; a bogus
+# `--busdev-num 099:099` must FAIL for the selection to mean anything.
+BUSDEV ?= --busdev-num $(shell $(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --busdev $(BOARD_ALIAS))
 
+# The board sets BIT_FILE for the flow being programmed; a board with several
+# flows re-enters this with a different one rather than repeating the command.
 program-bit:
 	sudo openFPGALoader -c $(LOADER_CABLE) $(BUSDEV) $(BIT_FILE)
 	@echo "=== programmed: $(BIT_FILE) ==="
@@ -59,4 +90,12 @@ program-bit:
 vivado-clean:
 	rm -rf $(CFG_DIR)
 
+# Must come after CFG_DIR is defined -- it reads the build's own summary for
+# the baud rather than trusting a Makefile constant. See its header, status 70.
 include $(dir $(lastword $(MAKEFILE_LIST)))console.mk
+
+# Lets a board ask for another flow's config directory without restating
+# BuildLayout's naming rules in Make.
+.PHONY: print-cfg-dir
+print-cfg-dir:
+	@echo $(CFG_DIR)

@@ -21,8 +21,18 @@
 # and more than one board of each kind is attached to this host.
 SERIAL_PORT ?= $(shell $(PROJECT_ROOT)/fpga/scripts/usb_serial_map --by-id $(CONSOLE_ALIAS))
 
+# $$NF, not $$3. A single-system summary reads "  UART baud:   2000000" so the
+# rate is field 3, but a MULTI-SYSTEM one prefixes each line with the system
+# name -- "  [ddr3] UART baud:   2000000" -- which shifts it and yielded the
+# literal string "baud:". Nothing caught it because no dual-cluster board used
+# console.mk until the Wukong did. The rate is always the last field.
+#
+# head -1 takes the FIRST system's rate. Both halves of the dual build run at
+# 2 Mbaud (JopConfig.wukongDualIndependent sets PICO_UART1 and J11_UART alike),
+# so this is correct today; if a future dual config gives its halves different
+# rates, this needs to select by system rather than take the first.
 BAUD ?= $(shell grep -h 'UART baud' $(CFG_DIR)/rtl/*.summary.txt 2>/dev/null \
-           | head -1 | awk '{print $$3}')
+           | head -1 | awk '{print $$NF}')
 
 JOP_FILE ?= $(CFG_DIR)/java/apps/Smallest/HelloWorld.jop
 

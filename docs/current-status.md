@@ -177,6 +177,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[84](#item-84)** — No MAX1000 configuration is known to fit — a 1- or 2-core 10M08 setup is wanted (OPEN)
 - **[85](#item-85)** — Build port, phase 2 — the SDRAM exerciser folded onto the shared flow, and the baud it never reported
 - **[86](#item-86)** — Build port, phase 3a — three shared Vivado scripts, proven equivalent by control build; and the DB_FPGA DDR3 build has quietly got 43 % smaller
+- **[87](#item-87)** — Build port, phase 3b — `vivado.mk` finally has a user, and it found a live baud bug and a latent one
 - **[78](#item-78)** — the A-E115FB DDR2 project is generated now, and building it found four separate defects
 - **[77](#item-77)** — the EP4CGX150 SDRAM Makefile is converted: 701 → 195 lines, and ~150 of those lines were flows DEAD since March
 - **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
@@ -7658,6 +7659,60 @@ finally gets exercised. It is not only tidiness: this board still carries
 item 70 hazard, and `console.mk` derives the rate from the build instead. Also
 unconverted: the 9 IP-generation scripts, genuinely per-IP and possibly not
 worth merging.
+
+### Item 87 — Build port, phase 3b: `vivado.mk` finally has a user
+
+`vivado.mk` was written on 2026-08-24 for the two Xilinx boards and then
+included by **none of them**. A shared include nobody includes is
+indistinguishable from a broken one, and this one was in fact the wrong shape:
+it wrapped a per-board `BUILD_TCL` and `BITSTREAM`, which stopped making sense
+once phase 3a moved the build itself into `fpga/scripts/`.
+
+Rewritten around what is actually shared -- resolving the config directory,
+generating the RTL once per change, programming by serial, and the console --
+and the Wukong now includes it.
+
+**It found a live bug.** The Wukong carried four baud constants. `UART_BAUD :=
+1000000` was used by `sdram-monitor` and `jop-sdram-monitor`, and
+`build/wukongSdram`'s own summary says the bitstream runs at **2000000**. So
+monitoring the SDR JOP build listened at half the wire rate and produced
+garbage -- which reads as a dead board, not as a wrong constant. Exactly the
+item 70 failure mode, still present on this board, found by deleting the
+constants and asking the build instead. A fifth constant, `DUAL_UART_BAUD`, had
+already been corrected from 115200 by hand at some earlier point; the others had
+not been.
+
+**And a latent one in `console.mk` itself.** The baud was extracted with
+`awk '{print $3}'`, which is positional:
+
+```
+  UART baud:   2000000            <- single system, rate is field 3
+  [ddr3] UART baud:   2000000     <- MULTI-system, field 3 is "baud:"
+```
+
+The dual-cluster flow therefore resolved `BAUD` to the literal string `baud:`.
+Nothing had caught it because **no multi-system board had ever used
+`console.mk`** -- the Wukong was the first. Now `$NF`, which is right for both.
+`head -1` still takes the first system's rate, correct while both halves run at
+2 Mbaud as `wukongDualIndependent` sets them, and documented as the thing to
+revisit if a future dual config differs.
+
+**The other duplication removed** was a second copy of `BuildLayout`'s naming
+rules living in Make:
+
+```make
+DDR3_SMP_DIR = $(REPO_ROOT)/build/wukongSmp-$(DDR3_SMP_CORES)
+```
+
+Two copies of a naming rule agree until the day they do not, and the failure is
+a path silently pointing at a stale directory or none at all -- which is the
+defect `BuildLayoutMain` exists to prevent, and `quartus.mk` already says so in
+its header. The SMP flows re-enter with their `CFG` so the name is resolved by
+Scala; only the flow actually invoked pays for the sbt round trip.
+
+Verified: all twelve board Makefiles parse, every Wukong target dry-runs, and
+the baud now resolves correctly for four Wukong flows and four other boards
+(including the exerciser's 1 Mbaud, which differs from every other board's).
 
 ## 4. Two workstreams, both largely done
 
