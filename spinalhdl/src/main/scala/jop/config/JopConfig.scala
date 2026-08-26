@@ -783,16 +783,25 @@ object JopConfig {
   /**
    * EP4CGX150 — BRAM, serial download, N cores. THE SIM/HARDWARE BRIDGE.
    *
-   * At 4 cores SmpGcTest passes in simulation on BOTH memory models (BRAM and
-   * the SDRAM model) but STALLS on the board, with one core starving
-   * deterministically. Every other variable has been matched — core count, lock
+   * At 4 cores SmpGcTest passed in simulation on BOTH memory models (BRAM and
+   * the SDRAM model) but STALLED on the board, with one core starving
+   * deterministically. **That no longer reproduces** (2026-08-26): SmpGcTest
+   * prints `SMPGC OK` with all 4 cores at 50 MHz. It was fixed somewhere
+   * between, and which fix is NOT established -- do not assume this preset is
+   * still demonstrating the original defect. Timing closure was tested as the
+   * explanation and REFUTED: the violated 60 MHz build passes too. Every other variable has been matched — core count, lock
    * (Ihlu), GC mode, even the layout (cardShift 4, nurseryBase 1902394) — so the
    * remaining difference is silicon itself. This build keeps Quartus synthesis
    * and the real device while removing the SDRAM controller and the physical
    * memory from the equation, which bisects "silicon" from "the SDRAM path".
    *
-   * 60 MHz, which every BRAM preset now uses -- see ep4cgx150Bram for why the
-   * BRAM read-data path will not close at 80.
+   * 50 MHz by default. The single-core BRAM presets close at 60, but 4 cores do
+   * not: the critical path reverses direction, running from core 3's
+   * `BmbMemoryController.addrReg` INTO the shared `BmbOnChipRam` port-A address
+   * and write-enable registers -- four cores arbitrating for one on-chip
+   * memory, rather than the read-data path out of it that limits the
+   * single-core builds (see ep4cgx150Bram). 4 cores measured -0.629 ns at 60
+   * and +1.906 ns at 50.
    *
    * This note used to justify the 60 differently: that `dram_pll.vhd` was
    * hardwired to 60 and the preset frequency "only feeds the SDC constraint and
@@ -804,7 +813,7 @@ object JopConfig {
    * hasCardTable is required or IO_CARD_SHIFT reads 0, GC.init falls back to the
    * classic collector, and the run exercises nothing generational.
    */
-  def ep4cgx150BramSmp(n: Int, clkMhz: Int = 60) = {
+  def ep4cgx150BramSmp(n: Int, clkMhz: Int = 50) = {
     val base = ep4cgx150BramSerial
     base.copy(systems = Seq(base.system.copy(
       name = s"bram-smp$n",

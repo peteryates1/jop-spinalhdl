@@ -170,6 +170,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
+- **[76](#item-76)** — the 4-core BRAM SMP stall no longer reproduces, and timing was tested as the cause and REFUTED
 - **[75](#item-75)** — `ep4cgx150HwMath` generates byte-identical RTL to `ep4cgx150Serial` — a preset that expresses nothing, with a test that passes trivially
 - **[74](#item-74)** — item 69's scope was too narrow: `"float" -> "hw"` hits the `frem` trap too, not just `"*" -> "hw"` — and `frem` is absent from the bytecode table
 - **[73](#item-73)** — `ep4cgx150DbVgaDma` misses by −1.011 ns on SDRAM command-FIFO arbitration between the core and the VGA DMA — OPEN
@@ -6997,6 +6998,53 @@ separate configuration in two tables.
 bitstream already verified under another name -- coverage that reads as two
 configurations and is one. Either give it a distinguishing setting or retire it;
 that is a decision, not a cleanup.
+
+
+### Item 76 — the 4-core BRAM SMP stall is gone, cause unknown
+
+`ep4cgx150BramSmp` exists to bisect a failure: at 4 cores SmpGcTest passed in
+simulation on both memory models but STALLED on the board with one core starving
+deterministically, and its comment concluded *"the remaining difference is
+silicon itself."* Built and run for the first time under the new tree on
+2026-08-26:
+
+| clock | timing | hardware |
+|---|---|---|
+| 50 MHz | **MET +1.906 ns** | **`SMPGC OK`, 4 cores** |
+| 60 MHz | VIOLATED −0.629 ns | also prints `SMPGC OK` -- NOT a verification |
+
+**The stall does not reproduce.** Something fixed it between then and now and
+**which fix is not established** -- the plausible candidates (the CmpSync
+reentrancy fix, the GC work) were never tested against this preset.
+
+**Timing closure was the obvious explanation and it is REFUTED.** The preset
+defaulted to 60 MHz, which misses by 0.629 ns, and an unclosed design starving
+one core is exactly the right shape of story. So the violated build was run
+deliberately (`--allow-violated`) and it passes too. One run each -- enough to
+kill the hypothesis, not enough to certify the 60 MHz build, which the log
+records as `timing=VIOLATED!OVERRIDDEN` and `NOT A VERIFICATION`.
+
+The default is now **50 MHz**, which closes. The 4-core critical path REVERSES
+direction relative to the single-core BRAM presets: it runs from core 3's
+`BmbMemoryController.addrReg` INTO the shared `BmbOnChipRam` port-A address and
+write-enable registers -- four cores arbitrating for one on-chip memory, not the
+read-data path out of it (item 71).
+
+**Do not treat this preset as still demonstrating the original defect.**
+
+### Gotcha — `JOP_PRESET` must carry the SAME arguments as `CFG`
+
+Building the Java tree with `JOP_PRESET="ep4cgx150BramSmp"` while the RTL was
+built with `CFG="ep4cgx150BramSmp 4 50"` puts the `.jop` under
+`build/ep4cgx150BramSmp/` and the bitstream under
+`build/ep4cgx150BramSmp-4-50/`. Both commands succeed. `hw_verify` then reports
+no image, and the near-miss is worse: a bare preset RESOLVES (to the argument
+defaults), so the app tree is built against a different configuration than the
+hardware without anything failing.
+
+`BuildLayout` keys on the invocation precisely so two configurations cannot
+collide; it cannot help when the operator hands the two halves of one build
+different invocations.
 
 ## 4. Two workstreams, both largely done
 
