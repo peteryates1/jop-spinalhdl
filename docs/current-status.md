@@ -170,6 +170,8 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
+- **[75](#item-75)** — `ep4cgx150HwMath` generates byte-identical RTL to `ep4cgx150Serial` — a preset that expresses nothing, with a test that passes trivially
+- **[74](#item-74)** — item 69's scope was too narrow: `"float" -> "hw"` hits the `frem` trap too, not just `"*" -> "hw"` — and `frem` is absent from the bytecode table
 - **[73](#item-73)** — `ep4cgx150DbVgaDma` misses by −1.011 ns on SDRAM command-FIFO arbitration between the core and the VGA DMA — OPEN
 - **[72](#item-72)** — `JopTopVerilog` gave every FPGA build the SERIAL microcode regardless of the config's boot mode — FIXED
 - **[71](#item-71)** — All three EP4CGX150 **BRAM** presets missed timing at 80 MHz; the BRAM read-data path will not close there — FIXED by reclocking, `hw_verify` now refuses violated bitstreams
@@ -6943,6 +6945,58 @@ SDRAM controller's command FIFO, with the arbitration mux on the critical path.
 Lowering the clock would close it, but that is a workaround for a real
 arbitration path rather than a fix, so it is left open and the preset is
 **unverified**. It is the board's only remaining violated flow.
+
+
+### Item 74 — item 69 is wider than `"*" -> "hw"`
+
+`ep4cgx150HwFloat` was built and run on hardware for the first time on
+2026-08-26 and dies exactly as `wukongFull` does:
+
+```
+FloatTest
+JOP: bytecode 114 not implemented
+```
+
+**It does NOT use the wildcard.** It sets `bytecodes = Map("idiv" -> "hw",
+"irem" -> "hw", "float" -> "hw")`. Item 69 says the defect "affects every `*=hw`
+preset" and names three; the **`float` group key reaches it too**, so the list
+was incomplete and the framing -- *the difference is the wildcard* -- was wrong.
+
+**`frem` (0x72) has no `BytecodeEntry` at all.** Every other float bytecode is in
+`BytecodeConfig.all` -- fadd, fsub, fmul, fdiv, fneg, i2f, f2i, fcmpl, fcmpg --
+and `frem` is simply absent, so nothing in `resolveJumpTable` can reason about
+it. That is the likelier root than either key: a bytecode outside the table
+cannot be given an implementation by a config that only knows about the table.
+The exact mechanism by which `float -> hw` drops it has NOT been traced; what is
+established is the three facts above.
+
+`ep4cgx150HwFloat` is therefore **built and MET (+0.684 ns, 13,714 LE) but
+NOT verified** -- it fails for a real reason, on a defect it shares with
+`wukongFull` and `xc7a100tDbFull`.
+
+### Item 75 — `ep4cgx150HwMath` is a duplicate of `ep4cgx150Serial`
+
+Built for the first time on 2026-08-26. Its generated Verilog is **byte-identical
+to `ep4cgx150Serial`'s** apart from the git-hash comment, and both fit at
+11,112 LE.
+
+```scala
+def ep4cgx150HwMath = base.copy(... bytecodes = Map("idiv" -> "hw", "irem" -> "hw"))
+```
+
+`ep4cgx150Serial` already sets exactly that (`JopConfig.scala:507`). The preset
+meant something when the base did not, and the base changed underneath it.
+
+**It still looks maintained.** `JopConfigTest` asserts *"ep4cgx150HwMath preset
+has IntegerComputeUnit"*, which passes because `ep4cgx150Serial` has one -- the
+test never checks that the preset is DISTINCT from its base, so it would pass if
+the preset were deleted and aliased. `system-configuration.md` lists it as a
+separate configuration in two tables.
+
+**Do not "verify" it on hardware.** A DoAll run would produce a green line for a
+bitstream already verified under another name -- coverage that reads as two
+configurations and is one. Either give it a distinguishing setting or retire it;
+that is a decision, not a cleanup.
 
 ## 4. Two workstreams, both largely done
 

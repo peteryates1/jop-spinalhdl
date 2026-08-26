@@ -393,7 +393,14 @@ def main():
             f.write(line + "\n")
         print(line)
         if not good:
-            tail = "\n".join(out.splitlines()[-15:])
+            # Strip the downloader's progress bar before showing the tail.
+            # It redraws with \r, so `splitlines()[-15:]` returns fifteen
+            # copies of the bar and hides the actual failure -- which cost two
+            # re-runs of ep4cgx150HwFloat before the transcript was read
+            # directly and said `bytecode 114 not implemented` all along.
+            lines = [l for l in out.replace("\r", "\n").splitlines()
+                     if l.strip() and not l.lstrip().startswith("[")]
+            tail = "\n".join(lines[-15:])
             print(f"--- last output ---\n{tail}\n-------------------")
 
     print(f"\n{a.preset}: {passes}/{a.runs} passed   (log: {os.path.relpath(log, ROOT)})")
