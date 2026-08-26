@@ -351,8 +351,15 @@ object JopTopVerilog {
     val layout   = jop.generate.BuildLayout.default
     val bArgs    = args.toSeq.drop(1)
     val prjDir   = layout.quartusDir(preset, bArgs)
+    // The microcode tree is keyed by BOOT MODE, so read the mode off the
+    // config rather than assuming serial. `ep4cgx150BramGc` boots from
+    // preloaded BRAM (BootMode.Simulation) and was handed the SERIAL microcode,
+    // which does not run the preloaded image -- it sits in the download
+    // handshake emitting its sync byte forever. That is the "180 bytes of
+    // garbage" this preset produced: not a corrupt image and not the timing
+    // violation it also had, but the wrong boot ROM.
     val withMif  = jop.config.MifPathOverride(
-      config, layout.relativeTo(prjDir, MicrocodePaths.serialDir))
+      config, layout.relativeTo(prjDir, MicrocodePaths.dir(config.system.bootMode)))
     generate(withMif, jopFilePath = jopFile, presetName = preset, buildArgs = bArgs)
   }
 }

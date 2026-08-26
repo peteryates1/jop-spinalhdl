@@ -170,7 +170,9 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[64](#item-64)** — `GcStressTest` free memory declines monotonically at 0.42 B/round, identically on the i5 and the EP4CGX150
 - **[65](#item-65)** — Both SD exercisers fail on hardware — `ACMD41` times out. NOT the build-tree conversion: identical at the old clock
 - ~~**[66](#item-66)**~~ — The EP4CGX150's Ethernet/VGA/SD was lost in migration `8641942` — **preset written back 2026-08-25, pin-identical to the historical project, 15,270 LE, all clocks MET.** Found a dead `"eth"` vs `"ethernet"` predicate that had silently dropped every `set_clock_groups`
-- **[71](#item-71)** — All three EP4CGX150 **BRAM** presets miss timing badly at 80 MHz (−2.5 to −3.7 ns). One of them "passes" on hardware, which is why it went unnoticed
+- **[73](#item-73)** — `ep4cgx150DbVgaDma` misses by −1.011 ns on SDRAM command-FIFO arbitration between the core and the VGA DMA — OPEN
+- **[72](#item-72)** — `JopTopVerilog` gave every FPGA build the SERIAL microcode regardless of the config's boot mode — FIXED
+- **[71](#item-71)** — All three EP4CGX150 **BRAM** presets missed timing at 80 MHz; the BRAM read-data path will not close there — FIXED by reclocking, `hw_verify` now refuses violated bitstreams
 - **[70](#item-70)** — UART baud is stated in THREE places that disagree — preset override, a 2 Mbaud default, and 12 Makefile constants. Pick one rate and derive the rest
 - **[69](#item-69)** — `bytecodes = "*" -> "hw"` forces hardware for `frem`, which has NO hardware implementation anywhere. `DoAll` dies at `FloatTest` on every `*=hw` preset
 - **[68](#item-68)** — EP4CGX150 Ethernet: link comes up at 1 Gbps but NO packets move. DHCP times out against a server that IS on that switch
@@ -6841,11 +6843,49 @@ already says why that is worthless -- *a passing DoAll on a violated bitstream
 proves nothing; it can misbehave arbitrarily and the failure would be
 intermittent* -- and the check was skipped anyway.
 
-**`hw_verify.py` should refuse, or at least warn, on a violated bitstream.** It
-reads the console and nothing else, so it cannot currently tell a real pass from
-a lucky one. The fit summary sits next to the bitstream and states `Timing: MET`
-or `VIOLATED`; reading it is a few lines and would have caught this at the point
-of claiming the result.
+**FIXED three ways.**
+
+*1. The cause.* The critical path is the BRAM READ-DATA path, identical in all
+three builds: from an M9K address register inside `BmbOnChipRam`, through the
+memory's clock-to-out, through the read mux across the block array, through the
+BMB response fabric and into `BmbMemoryController.rdDataReg` -- and on to the
+UART FIFO -- in ONE combinational cycle. 15.1 ns for a 32-block array, 16.3 ns
+for the 126 blocks the 512KB preset needs, against a 12.5 ns period.
+`ep4cgx150Serial` closes at +0.626 ns on the same device at the same 80 MHz
+because `BmbSdramCtrl32` REGISTERS read data and breaks the path. Array size is
+the SECONDARY term: 32 blocks is already 2.5 ns over.
+
+*2. Why nobody noticed for five months.* `dram_pll.vhd` used to be hardwired to
+60 MHz whatever the preset declared, so the silicon ran at 60 while the `.sdc`
+claimed 80 -- violated on paper, fine in practice. The declared frequency was
+understood to be decorative, and `ep4cgx150BramSmp`'s doc comment says so in as
+many words. `DramPllGen` generates the PLL from the preset now
+(`clk1 = 50 MHz x 8 / 5 = 80`), which made the declared frequency real and the
+violation real with it. **A comment explaining why a value can be ignored
+outlives the reason.**
+
+*3. The fix.* Reclocked, all three now MET, all verified on hardware:
+
+| preset | clock | slack | hardware |
+|---|---|---|---|
+| `ep4cgx150BramSerial` | 60 MHz | **+0.968** | `Hello World!` 3/3 |
+| `ep4cgx150BramGc` | 60 MHz | **+0.745** | `Hello World!` (after item 72) |
+| `ep4cgx150Bram` | 50 MHz | **+0.388** | fit only -- embeds no app |
+
+`ep4cgx150Bram` needs the lower clock for its 126-block array; it still missed by
+0.431 ns at 60 when the others had cleared. `ep4cgx150BramGc` sets 60
+explicitly rather than inheriting, so shrinking the base's memory cannot
+silently reclock it.
+
+**`hw_verify.py` now REFUSES a violated bitstream** (`--allow-violated` to
+override, and the log line records the override). It reads the timing report
+that sits beside the bitstream, for all three toolchains: Quartus `.sta.rpt`
+(worst setup slack over EVERY corner, not a corner picked by name), Vivado
+`fit_summary.txt`, and nextpnr's log -- taking the LAST Fmax verdict per clock,
+never the first, because the post-place estimate and the post-route result
+disagree (32.56 MHz FAIL then 49.40 MHz PASS on the i5). Every log line now
+carries `timing=MET|VIOLATED|unknown`, and a run whose timing is not MET prints
+`NOT A VERIFICATION`.
 
 **Two smaller things found alongside**, both config rather than conversion:
 
@@ -6853,8 +6893,56 @@ of claiming the result.
   for `ep4cgx150BramGc`, so the plain preset produces a bitstream with an empty
   main memory. It is a fit-measurement configuration, not a runnable one, and
   nothing said so.
-- `ep4cgx150BramGc`'s garbage output is consistent with the violation rather
-  than a baud error: the clock is 80 MHz and the declared baud 2 M, which agree.
+- `ep4cgx150BramGc`'s garbage output was NOT this violation -- see item 72. It
+  survived the reclock unchanged. Attributing it here would have been wrong, and
+  plausible.
+
+
+### Item 72 — every FPGA build got the SERIAL microcode, whatever its boot mode
+
+**Found 2026-08-26**, chasing item 71's leftover symptom. `JopTopVerilog`
+resolved the microcode tree with the CONSTANT `MicrocodePaths.serialDir`:
+
+```scala
+val withMif = MifPathOverride(config, layout.relativeTo(prjDir, MicrocodePaths.serialDir))
+```
+
+`MicrocodePaths` is keyed by `BootMode` precisely so this cannot happen, and its
+own doc comment describes `serialDir` as *"the serial directory, which the FPGA
+flows load their microcode from"* -- true of every FPGA preset except the
+`BootMode.Simulation` ones, which is the assumption that made a constant look
+safe. Fixed to `MicrocodePaths.dir(config.system.bootMode)`.
+
+**The symptom was `ep4cgx150BramGc` emitting ~180 identical non-ASCII bytes.**
+It boots from preloaded BRAM, was handed the serial boot ROM, and sat in the
+download handshake emitting its sync byte forever. It now prints `Hello World!`
+from BRAM on hardware.
+
+**Worth noting how nearly this was mis-attributed.** The same preset ALSO missed
+timing by 2.870 ns (item 71), which is a complete and plausible explanation for
+garbage on a UART. Reclocking it to 60 MHz made timing MET and the garbage
+continued unchanged -- only then did the boot ROM come into view. Two independent
+defects on one preset, the louder one fully capable of masking the quieter.
+
+Scope: `ep4cgx150Bram`, `wukongBram`, `wukongBramFull` are the other
+`BootMode.Simulation` presets. None embeds an application, so none could show
+the symptom.
+
+### Item 73 — `ep4cgx150DbVgaDma` misses by −1.011 ns (OPEN)
+
+Not the BRAM path of item 71 -- a different subsystem. The four worst paths all
+END at the same node:
+
+```
+BmbSdramCtrl32|AlteraSdramAdapter|altera_sdram_tri_controller|efifo_module|entry_1[40]
+```
+
+and start from `BmbMemoryController` (`bcFillCount`, `addrReg`) and from
+`VgaBmbDma`'s clock-crossing FIFO. That is two masters arbitrating into the
+SDRAM controller's command FIFO, with the arbitration mux on the critical path.
+Lowering the clock would close it, but that is a workaround for a real
+arbitration path rather than a fix, so it is left open and the preset is
+**unverified**. It is the board's only remaining violated flow.
 
 ## 4. Two workstreams, both largely done
 

@@ -727,22 +727,55 @@ object JopConfig {
         "fneg" -> "mc", "fcmpl" -> "mc", "fcmpg" -> "mc")))))
   }
 
+  /**
+   * EP4CGX150 -- BRAM main memory (512KB), no serial download.
+   *
+   * 60 MHz, NOT the 80 the SDRAM presets use, because the BRAM read-data path
+   * will not close at 80 on this device. From an M9K address register inside
+   * `BmbOnChipRam`, through the memory's clock-to-out, through the read mux
+   * across the block array, through the BMB response fabric and into
+   * `BmbMemoryController.rdDataReg` -- and onward to the UART FIFO -- is ONE
+   * combinational cycle, measured at 15.1 ns for a 32-block array and 16.3 ns
+   * for the 126 blocks this 512KB preset needs, against a 12.5 ns period.
+   * `ep4cgx150Serial` closes at +0.626 ns on the same device at the same 80 MHz
+   * because `BmbSdramCtrl32` REGISTERS read data and breaks the path.
+   *
+   * These presets were at 80 (and 100 before that) since March and never closed
+   * timing; nothing looked, because the board appeared to work. It appeared to
+   * work because `dram_pll.vhd` used to be hardwired to 60 regardless of what
+   * the preset declared, so the silicon ran at 60 while the .sdc claimed 80.
+   * `DramPllGen` builds the PLL from the preset now, so the declared frequency
+   * is the real one and the violation became real with it.
+   *
+   * NOTE the array-size term is secondary: 32 blocks is already 15.1 ns. Making
+   * the memory smaller does not fix this, and lowering the clock is not a
+   * workaround for a marginal path -- the path is 2.5 ns over at its best.
+   */
   def ep4cgx150Bram = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
     systems = Seq(JopSystem(
       name = "bram",
       memory = "bram",
       bootMode = BootMode.Simulation,
-      clkFreq = 80 MHz,
+      // 50, not the 60 the 128KB BRAM presets use. 512KB is 126 M9K blocks
+      // against their 32, and the read mux across the array adds ~1.2 ns: this
+      // preset still missed by 0.431 ns at 60 when the others had cleared it.
+      clkFreq = 50 MHz,
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 512 * 1024),
         memoryStyle = Some(MemoryStyle.Generic)),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
-  /** EP4CGX150 — pre-initialized BRAM (128KB) for GC testing */
+  /** EP4CGX150 — pre-initialized BRAM (128KB) for GC testing.
+    *
+    * Restores the 60 MHz that ep4cgx150Bram gives up for its larger array: at
+    * 128KB the mux is 31 blocks, and this closes at +0.745 ns. Overridden
+    * explicitly rather than inherited, so shrinking the base's memory later
+    * cannot silently reclock this one. */
   def ep4cgx150BramGc = {
     val base = ep4cgx150Bram
     base.copy(systems = Seq(base.system.copy(
+      clkFreq = 60 MHz,
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)))))
   }
@@ -758,10 +791,15 @@ object JopConfig {
    * and the real device while removing the SDRAM controller and the physical
    * memory from the equation, which bisects "silicon" from "the SDRAM path".
    *
-   * 60 MHz by default, NOT the 80 the other presets declare: dram_pll.vhd is
-   * hardwired to 60, and the preset frequency only feeds the SDC constraint and
-   * the UART divider. Matching it means the UART lands on the nominal baud
-   * instead of needing the 1.5 Mbaud scaling workaround.
+   * 60 MHz, which every BRAM preset now uses -- see ep4cgx150Bram for why the
+   * BRAM read-data path will not close at 80.
+   *
+   * This note used to justify the 60 differently: that `dram_pll.vhd` was
+   * hardwired to 60 and the preset frequency "only feeds the SDC constraint and
+   * the UART divider". That was true, and it is why three BRAM presets sat
+   * violated at 80 for months without anyone noticing -- the declared frequency
+   * was understood to be decorative. `DramPllGen` generates the PLL from the
+   * preset now, so it is not.
    *
    * hasCardTable is required or IO_CARD_SHIFT reads 0, GC.init falls back to the
    * classic collector, and the run exercises nothing generational.
@@ -784,7 +822,9 @@ object JopConfig {
       name = "bram-serial",
       memory = "bram",
       bootMode = BootMode.Serial,
-      clkFreq = 80 MHz,
+      // 60, for the read-data path described on ep4cgx150Bram. 2 Mbaud divides
+      // 60 MHz exactly (30), so the console needs no scaling workaround.
+      clkFreq = 60 MHz,
       coreConfig = JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = 128 * 1024)),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))

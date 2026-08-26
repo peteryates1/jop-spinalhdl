@@ -202,6 +202,99 @@ def judge(out):
     return ok, fails, exited, crashed
 
 
+# --------------------------------------------------------------------------
+# Timing, read from the report that sits beside the bitstream.
+#
+# WHY THIS IS HERE. This script read the console and NOTHING else, so it could
+# not tell a real pass from a lucky one. On 2026-08-26 `ep4cgx150BramSerial`
+# printed `Hello World!` and was recorded as a hardware pass; it misses setup by
+# 2.544 ns. This project's own rule is that a pass on a violated bitstream
+# proves nothing -- it can misbehave arbitrarily and the failure is
+# intermittent -- and the rule was applied correctly to the Wukong's violated
+# flows an hour earlier, then skipped here. A judgement that depends on
+# remembering to look something up is one that will be skipped again.
+#
+# The report is always next to the bitstream. Reading it costs nothing.
+# --------------------------------------------------------------------------
+
+def _quartus_timing(path):
+    """Worst setup slack over every corner in a .sta.rpt.
+
+    Takes the MINIMUM across corners rather than a named one. Quartus reports
+    Slow 100C first and it is usually worst, but `usually` is not `always` --
+    Slow -40C wins on some designs -- and picking a corner by name is how a
+    board gets called clean on the strength of the wrong table."""
+    corner, worst, in_tbl = None, None, False
+    for line in open(path, errors="replace"):
+        m = re.match(r"^;\s*(.+?)\s+Model Setup Summary\s*;", line)
+        if m:
+            corner, in_tbl = m.group(1), True
+            continue
+        if in_tbl:
+            if not line.startswith((";", "+")):
+                in_tbl = False
+                continue
+            cells = [c.strip() for c in line.split(";")]
+            if len(cells) >= 4:
+                try:
+                    slack = float(cells[2])
+                except ValueError:
+                    continue
+                if worst is None or slack < worst[0]:
+                    worst = (slack, corner, cells[1])
+    if worst is None:
+        return None, "no setup summary in .sta.rpt"
+    slack, corner, clk = worst
+    verdict = "MET" if slack >= 0 else "VIOLATED"
+    return verdict, f"setup {slack:+.3f} ns ({corner}, {clk})"
+
+
+def _vivado_timing(path):
+    for line in open(path, errors="replace"):
+        m = re.search(r"Timing:\s+(MET|VIOLATED)\s*(\(.*\))?", line)
+        if m:
+            return m.group(1), (m.group(2) or "").strip("() ")
+    return None, "no Timing line in fit_summary.txt"
+
+
+def _nextpnr_timing(path):
+    """LAST verdict per clock, never the first.
+
+    nextpnr prints Fmax twice: a post-PLACE estimate and the post-ROUTE result,
+    and they disagree -- 32.56 MHz FAIL then 49.40 MHz PASS for the same clock
+    on the i5. Grepping the first one invented a board failure and two
+    conclusions drawn from it."""
+    seen = {}
+    for line in open(path, errors="replace"):
+        m = re.search(r"Max frequency for clock\s+'([^']+)':\s*"
+                      r"([\d.]+)\s*MHz\s*\((PASS|FAIL) at ([\d.]+) MHz\)", line)
+        if m:
+            seen[m.group(1)] = (m.group(3), m.group(2), m.group(4))
+    if not seen:
+        return None, "no Max frequency line in nextpnr log"
+    bad = [(c, v) for c, v in seen.items() if v[0] == "FAIL"]
+    if bad:
+        c, (_, got, want) = bad[0]
+        return "VIOLATED", f"{c} {got} MHz < {want} MHz (post-route)"
+    worst = min(seen.items(), key=lambda kv: float(kv[1][1]) - float(kv[1][2]))
+    c, (_, got, want) = worst
+    return "MET", f"{c} {got} MHz >= {want} MHz (post-route)"
+
+
+def timing_status(cfg_dir):
+    """(verdict, detail) -- verdict is 'MET', 'VIOLATED' or None if unknown."""
+    for sub, pat, fn in (("quartus/output_files", ".sta.rpt", _quartus_timing),
+                         ("vivado/build", "fit_summary.txt", _vivado_timing),
+                         ("nextpnr", ".log", _nextpnr_timing)):
+        d = os.path.join(cfg_dir, sub)
+        if not os.path.isdir(d):
+            continue
+        hits = sorted(f for f in os.listdir(d) if f.endswith(pat))
+        if hits:
+            return fn(os.path.join(d, hits[0]))
+    return None, "no timing report found"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("preset")
@@ -227,6 +320,12 @@ def main():
     ap.add_argument("--progress-re", default=PROGRESS_RE,
                     help="soak: regex with named groups 'round' and 'free'")
     ap.add_argument("--timeout", type=int, default=300)
+    # An escape hatch, not a default. Running a violated bitstream on
+    # purpose is legitimate -- to see HOW it fails, or to measure a
+    # board while a fix is in flight. Claiming the result as a pass
+    # afterwards is not, so the log line records the override.
+    ap.add_argument("--allow-violated", action="store_true",
+                    help="run even though the build misses timing")
     a = ap.parse_args()
 
     d = descriptor(a.preset, a.args)
@@ -238,6 +337,18 @@ def main():
 
     cfg_dir = os.path.join(ROOT, d["CONFIG_DIR"])
     bitstream = find_bitstream(cfg_dir)
+
+    tv, td = timing_status(cfg_dir)
+    if tv == "VIOLATED" and not a.allow_violated:
+        die(f"{a.preset} MISSES TIMING -- {td}\n"
+            f"  A pass on a violated bitstream proves nothing: it can misbehave\n"
+            f"  arbitrarily and the failure is intermittent, so a green run is\n"
+            f"  not evidence the design works.\n"
+            f"  Fix the timing, or pass --allow-violated to run it anyway (the\n"
+            f"  log will record that the result is not a verification).")
+    if tv is None:
+        print(f"hw_verify: WARNING -- timing unknown ({td}). "
+              f"This run cannot be counted as a verification.", file=sys.stderr)
     jop = None
     if not a.no_app:
         jop = os.path.join(cfg_dir, "java", "apps", a.app + ".jop")
@@ -270,11 +381,13 @@ def main():
         with open(transcript, "w") as f:
             f.write(out)
 
+        tstr = (f"timing={tv or 'unknown'}"
+                + ("!OVERRIDDEN" if tv == "VIOLATED" else ""))
         line = (f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} "
                 f"{a.preset} {'(no app)' if a.no_app else a.app} run={i}/{a.runs} "
                 f"{'expect=' + repr(a.expect_text) + ' ' if a.expect_text else ''}"
                 f"{detail + ' ' if detail else ''}"
-                f"ok={ok} fail={fails} exit={exited} crash={crashed} "
+                f"ok={ok} fail={fails} exit={exited} crash={crashed} {tstr} "
                 f"{'PASS' if good else 'FAIL'}")
         with open(log, "a") as f:
             f.write(line + "\n")
@@ -284,6 +397,9 @@ def main():
             print(f"--- last output ---\n{tail}\n-------------------")
 
     print(f"\n{a.preset}: {passes}/{a.runs} passed   (log: {os.path.relpath(log, ROOT)})")
+    if tv != "MET":
+        print(f"NOT A VERIFICATION -- timing {tv or 'unknown'} ({td}). "
+              f"The board ran; that is all this shows.")
     sys.exit(0 if passes == a.runs else 1)
 
 
