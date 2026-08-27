@@ -115,7 +115,17 @@ The example here used to be `fpga/a-e115fb-bram`, which was retired on
 2026-08-26: it had no Quartus project and generated `ep4cgx150Bram`, another
 board's preset. That board builds from `fpga/a-e115fb-ddr2` now, and programs
 over the shared Terasic blaster rather than dirtyJtag -- its own Pico drives
-3.3 V into a 1.8 V-banked JTAG and is blocked on level shifters.
+3.3 V into a JTAG bank that is not 3.3 V, and is blocked on level shifters.
+
+Level shifting is now solved by the
+[pico-usb-debug-jtag](https://github.com/peteryates1/pico-usb-debug-jtag)
+carrier: an SN74LVC1T45 per signal referenced to the target's own VTREF (header
+pin 4). Proven on the QMTECH EP4CGX150's **2.5 V** JTAG bank -- detect plus a
+4.88 MB `.sof` configured in 43 s at 6 MHz -- so the same approach should unblock
+the A-E115FB, though that has **not** been tried yet.
+
+Note this file says the A-E115FB bank is 1.8 V while the top-level `README.md`
+says 2.5 V. Neither has been verified; measure VTREF on header pin 4.
 
 ## Tested Boards
 
