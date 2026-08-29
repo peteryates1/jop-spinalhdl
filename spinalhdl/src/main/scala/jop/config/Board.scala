@@ -1070,9 +1070,22 @@ object Board {
    *
    * 12 MHz on-board oscillator, FT2232H USB-UART.
    *
-   * PINS ARE REAL, from the working jopmin project for this board
-   * (/srv/git/jopmin/quartus/max1000/jop.qsf) -- this was the first board JOP
-   * ran on. They were previously described as "placeholders not verified
+   * PINS ARE REAL AND CROSS-CHECKED AGAINST TWO INDEPENDENT SOURCES:
+   * the working jopmin project for this board
+   * (/srv/git/jopmin/quartus/max1000/jop.qsf -- the first board JOP ran on),
+   * and Trenz's own reference design
+   * (TEI0001-test_board .../board_files/4/TEI0001_pin_assignments.tcl).
+   * Every SDRAM, clock, UART and LED pin agrees between them, and Trenz
+   * confirms the package as 10M08SAU169C8G.
+   *
+   * The UART needs its direction read carefully. Trenz names the FT2232H
+   * channel-B pins raw -- BDBUS0=PIN_A4, BDBUS1=PIN_B4 -- and BDBUS0 is the
+   * FT2232H's TXD, i.e. an INPUT to the FPGA. So the FPGA's ser_rxd is A4 and
+   * its ser_txd is B4, which is what jopmin has and the opposite of what this
+   * file said before.
+   *
+   * A[12] exists on the package (PIN_L11) and is deliberately unmapped: the
+   * W9864G6JT is a 12-bit-address part, A0-A11. They were previously described as "placeholders not verified
    * against schematic", and were then deleted for being rejected by the
    * fitter. Both were wrong: the pins were right and the DEVICE was wrong.
    * 10M08SAU169C8G is a 169-ball UBGA; the model named the 144-pin EQFP, whose
