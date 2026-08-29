@@ -57,6 +57,45 @@ GEN_STAMP   = $(CFG_DIR)/rtl/.generated
 SCALA_SRC  := $(shell find $(PROJECT_ROOT)/spinalhdl/src/main/scala -name '*.scala')
 UCODE      := $(wildcard $(PROJECT_ROOT)/build/microcode/serial/mem_*.dat)
 
+# The microcode files the Scala compile actually needs. Deliberately NOT a
+# $(wildcard): a wildcard prerequisite expands to EMPTY when the files are
+# absent, so `$(GEN_STAMP): ... $(UCODE)` said "depend on microcode only once
+# microcode already exists" -- backwards for a cold build. It made
+# cold-buildability depend on whether each board's own `all` happened to list
+# `microcode`, and on 2026-08-29 three boards that did not failed with
+#
+#   object JumpTableData is not a member of package jop
+#
+# These three files are exactly what build.sbt's source roots require. Grouped
+# target (`&:`, GNU make 4.3+) so ONE `asm all` satisfies all three, rather than
+# the recipe running once per missing file.
+UCODE_SCALA := $(PROJECT_ROOT)/build/microcode/simulation/JumpTableData.scala \
+               $(PROJECT_ROOT)/build/microcode/serial/SerialJumpTableData.scala \
+               $(PROJECT_ROOT)/build/microcode/flash/FlashJumpTableData.scala
+
+$(UCODE_SCALA) &:
+	cd $(PROJECT_ROOT)/asm && $(MAKE) all
+
+# THE EMBEDDED PROGRAM. A BRAM design that does not serial-boot bakes a .jop
+# into the bitstream, and nothing in any board flow built it -- so those designs
+# could not be built from a clean clone at all. They only worked because someone
+# had once run `make -C java all` WITHOUT BUILDTREE, leaving the artefact in the
+# source tree. Building it here, into build/<config>/java, is what lets the
+# source tree hold no build products.
+#
+# Cheap when up to date, and it is the same file console.mk downloads, so
+# `make all && make download` now works from cold.
+# Smallest is a STAMP, not necessarily the app this config embeds: `java all`
+# builds Smallest, Small and InterruptTest in one pass, so depending on one of
+# them gets all of them. Which app a preset actually bakes in is decided in
+# JopTopVerilog (`appRel`) and is deliberately not restated here -- that mapping
+# is configuration, and configuration lives in the Scala.
+JOP_APP_FILE = $(CFG_DIR)/java/apps/Smallest/HelloWorld.jop
+
+$(JOP_APP_FILE):
+	cd $(PROJECT_ROOT)/java && $(MAKE) all JOP_PRESET="$(CFG)" BUILDTREE=1
+
+
 GEN_MAIN    ?= jop.system.JopTopVerilog
 GEN_ARGS    ?= $(CFG) buildtree
 
@@ -76,7 +115,7 @@ microcode:
 	cd $(PROJECT_ROOT)/asm && $(MAKE) all
 	@echo "=== Microcode in $(PROJECT_ROOT)/build/microcode ==="
 
-$(GEN_STAMP): $(SCALA_SRC) $(UCODE)
+$(GEN_STAMP): $(SCALA_SRC) $(UCODE) $(UCODE_SCALA) $(JOP_APP_FILE)
 	cd $(PROJECT_ROOT) && sbt "runMain $(GEN_MAIN) $(GEN_ARGS)"
 	@mkdir -p $(dir $@) && touch $@
 

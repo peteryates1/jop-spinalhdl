@@ -74,28 +74,42 @@ CONSOLE_DUAL_SDR  = wukong-pico-0
 .PHONY: sdram-generate sdram-create-ip sdram-build sdram-program sdram-monitor
 .PHONY: jop-sdram-generate jop-sdram-build jop-sdram-smp-generate jop-sdram-smp-build jop-sdram-smp-bitstream jop-sdram-program jop-sdram-monitor print-cfg-dir
 
-all: microcode build
+all: microcode create-ip build
 
 # === JOP BRAM targets ===
+#
+# CONVERTED 2026-08-29. This flow generated into spinalhdl/generated and read
+# its embedded .jop from the in-tree java/apps -- the last main-board target
+# still doing either, and the reason `make all` here could not be built from a
+# clean clone. wukongBram is an ordinary JopConfig preset, so it takes
+# `buildtree` like every other; it had simply been missed.
+BRAM_CFG     = wukongBram
+BRAM_CFG_DIR = $(REPO_ROOT)/build/$(BRAM_CFG)
+BRAM_JOP     = $(BRAM_CFG_DIR)/java/apps/Smallest/HelloWorld.jop
 
-generate:
-	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog wukongBram"
+# This design BAKES the program into the bitstream, so the .jop is a build
+# input, not just something to download afterwards.
+$(BRAM_JOP):
+	cd $(REPO_ROOT)/java && $(MAKE) all JOP_PRESET=$(BRAM_CFG) BUILDTREE=1
+
+generate: $(UCODE_SCALA) $(BRAM_JOP)
+	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(BRAM_CFG) buildtree"
 
 create-ip:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_clk_wiz.tcl
 
 create-project: generate
 	$(VIVADO_ENV) && JOP_PROJ=wukong_jop_bram JOP_PART=$(PART) JOP_TOP=JopBramWukongTop \
-	  JOP_BUILD_DIR=$(ABS_BUILD) \
-	  JOP_RTL=$(GEN_RTL)/JopBramWukongTop.v \
-	  JOP_BIN_GLOB='$(GEN_RTL)/JopBramWukongTop*.bin' \
+	  JOP_BUILD_DIR=$(BRAM_CFG_DIR)/vivado/build \
+	  JOP_RTL=$(BRAM_CFG_DIR)/rtl/JopBramWukongTop.v \
+	  JOP_BIN_GLOB='$(BRAM_CFG_DIR)/rtl/JopBramWukongTop*.bin' \
 	  JOP_XDC=$(XDC)/wukong_jop_bram.xdc \
 	  JOP_IP=$(IP)/bram_clk/bram_clk.xci \
 	  JOP_GEN_HINT="run: make generate" \
 	  $(VIVADO) -mode batch -source $(CREATE_TCL)
 
 build: create-project
-	$(VIVADO_ENV) && JOP_PROJ=wukong_jop_bram JOP_BUILD_DIR=$(ABS_BUILD) \
+	$(VIVADO_ENV) && JOP_PROJ=wukong_jop_bram JOP_BUILD_DIR=$(BRAM_CFG_DIR)/vivado/build \
 	  JOP_BIT=JopBramWukongTop.bit \
 	  $(VIVADO) -mode batch -source $(PRJ_TCL)
 
@@ -125,7 +139,7 @@ bram-monitor:
 DDR3_CFG      ?= wukongDdr3
 DDR3_CFG_DIR   = $(REPO_ROOT)/build/$(DDR3_CFG)
 
-ddr3-generate:
+ddr3-generate: $(UCODE_SCALA)
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(DDR3_CFG) buildtree"
 	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(DDR3_CFG) --write build/$(DDR3_CFG)/vivado/wukong_ddr3_base.xdc"
 
@@ -207,7 +221,7 @@ ddr3-smp-monitor:
 DUAL_CFG     ?= wukongDualIndependent
 DUAL_CFG_DIR  = $(REPO_ROOT)/build/$(DUAL_CFG)
 
-dual-generate:
+dual-generate: $(UCODE_SCALA)
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(DUAL_CFG) buildtree"
 
 dual-create-ip: ddr3-create-ip
@@ -281,7 +295,7 @@ sdram-monitor:
 SDRAM_CFG      ?= wukongSdram
 SDRAM_CFG_DIR   = $(REPO_ROOT)/build/$(SDRAM_CFG)
 
-jop-sdram-generate:
+jop-sdram-generate: $(UCODE_SCALA)
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(SDRAM_CFG) buildtree"
 	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(SDRAM_CFG) --write build/$(SDRAM_CFG)/vivado/wukong_jop_sdram.xdc"
 

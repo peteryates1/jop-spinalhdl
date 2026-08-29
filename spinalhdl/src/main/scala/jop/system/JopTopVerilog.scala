@@ -340,9 +340,22 @@ object JopTopVerilog {
       println("  PERF COUNTERS: enabled (IO_PERFCNT) — measurement build")
     args.find(_.toLowerCase.startsWith("uart="))
       .foreach(a => println(s"  UART part: ${a.substring(5)}"))
-    val jopFile = preset match {
-      case "ep4cgx150BramGc" => Some("java/apps/Small/HelloWorld.jop")
-      case _ => None
+    // THE EMBEDDED PROGRAM, resolved from the CONFIG's java tree rather than
+    // from the source tree. A BRAM design that does not serial-boot has its
+    // .jop baked into the bitstream, and this path used to be the legacy
+    // in-tree `java/apps/...` -- the last build product still read out of the
+    // source tree. Nothing in any board flow produced it, so `ep4cgx150Bram`
+    // and `wukongBram` could not be built from a clean clone at all; they only
+    // worked because someone had once run `make -C java all` without
+    // BUILDTREE. Found 2026-08-29 by cold-cloning.
+    //
+    // Under `buildtree` this now reads build/<config>/java/apps/..., which is
+    // where `make -C java all BUILDTREE=1` puts it and where console.mk
+    // already looks for the download image. The legacy path is kept for a
+    // legacy invocation so the unconverted flows are unaffected.
+    val appRel = preset match {
+      case "ep4cgx150BramGc" => "apps/Small/HelloWorld.jop"
+      case _                 => "apps/Smallest/HelloWorld.jop"
     }
     // The .mif path is relative to the QUARTUS PROJECT, which for a converted
     // config lives under build/<config>/quartus rather than in the board
@@ -360,6 +373,10 @@ object JopTopVerilog {
     // violation it also had, but the wrong boot ROM.
     val withMif  = jop.config.MifPathOverride(
       config, layout.relativeTo(prjDir, MicrocodePaths.dir(config.system.bootMode)))
+    val jopFile =
+      if (bArgs.exists(_.equalsIgnoreCase("buildtree")))
+        Some(s"${layout.javaDir(preset, bArgs.filterNot(_.equalsIgnoreCase("buildtree")))}/$appRel")
+      else Some(s"java/$appRel")
     generate(withMif, jopFilePath = jopFile, presetName = preset, buildArgs = bArgs)
   }
 }
