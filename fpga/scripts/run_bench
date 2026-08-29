@@ -14,8 +14,11 @@
 #     board then looks completely silent, which is indistinguishable from a dead
 #     bitstream and sends you debugging the wrong thing.
 #
-#  2. ASSERT THE DEVICE. The two Altera boards SHARE the Terasic cable and
-#     programming the wrong one succeeds silently.
+#  2. ASSERT THE DEVICE. The two Altera boards have separate cables since
+#     2026-08-29, but quartus_pgm EXITS 0 ON A BROKEN CHAIN, so a powered-off
+#     board still "programs successfully". The scan is the only thing that
+#     notices -- and two blasters are attached, so a mis-resolved cable would
+#     program the other board just as silently.
 #
 #  3. THE BAUD IS PER BOARD. It used to be per board AND not always round:
 #     Wukong DDR3 at MigProfile.Ddr3_366 runs ui_clk at 91.676 MHz, and the old

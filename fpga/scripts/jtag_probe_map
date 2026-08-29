@@ -23,9 +23,10 @@
 #                    NOTE the patch covers dirtyJtag only -- the usb-blaster
 #                    driver still has the same bug.
 #
-# COMING: a second blaster (pico-usb-blaster, once level shifters arrive for the
-# A-E115FB's 1.8V JTAG). Two blasters attached at once means selection must be by
-# USB ADDRESS, not by product name:
+# TWO BLASTERS ARE ATTACHED (since 2026-08-29). The level shifters arrived, and
+# a pico-usb-blaster now drives the EP4CGX150 while the Terasic stays on the
+# A-E115FB, so neither board needs the cable moved any more. Two blasters at
+# once means selection must be by USB ADDRESS, not by product name:
 #   - Quartus is fine. Always pass the PORT-QUALIFIED name from `--cable`
 #     ("USB-Blaster [1-6]"); a bare "USB-Blaster" takes the first product-string
 #     match. Board Makefiles should never hardcode the bare string -- the
@@ -35,6 +36,8 @@
 #     Use Quartus for usb-blaster cables until that is patched too.
 #   - Lucky break: the product strings differ ("USB-Blaster" vs "USB Blaster"),
 #     so the two are distinguishable even before the port path is considered.
+#     Do not lean on it -- --cable reads the product string from sysfs and
+#     appends the port path, which separates two probes of the SAME kind too.
 #
 # Companion to usb_serial_map, which does the same job for serial ports.
 set -euo pipefail
@@ -42,10 +45,10 @@ set -euo pipefail
 # --- board registry ------------------------------------------------------
 # alias|serial|kind|description
 BOARDS=$(cat <<'EOF'
-terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board: move it between boards freely
+terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board; parked on the A-E115FB, so `terasic` and `ae115fb` resolve alike
 xc7a100t|E662C876|pico|QMTECH XC7A100T + DB_FPGA V5 (Pico: dirtyJtag or usb-blaster)
-ae115fb|91d28408|usb-blaster|A-E115FB EP4CE115 + 1GB DDR2 — on the Terasic cable; its Pico (E6616408) is 3.3V into a 1.8V-banked JTAG, blocked on level shifters
-ep4cgx150|91d28408|usb-blaster|QMTECH EP4CGX150 + SDR — also on the Terasic cable; SWAPS with ae115fb, so ALWAYS --assert-device before programming
+ae115fb|91d28408|usb-blaster|A-E115FB EP4CE115 + 1GB DDR2 — on the Terasic cable. Its old Pico (e6616408) drove 3.3V into a 1.8V-banked JTAG; that Pico is now level-shifted and on the EP4CGX150 instead
+ep4cgx150|e6616408|usb-blaster|QMTECH EP4CGX150 + SDR — its own level-shifted pico-usb-blaster (product "USB Blaster", no hyphen). HW-proven 2026-08-29; no longer shares the Terasic
 debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashing Picos)
 cyc5000|ARA30135|arrow-usb-blaster|Arrow CYC5000 (onboard Arrow USB Blaster TEI0050, FT2232H)
 i5|07000001002700424e|cmsis-dap|Colorlight i5 on the ext board (DAPLink, also the UART bridge)
@@ -103,11 +106,12 @@ NOTE: an alias names whatever the SERIAL is attached to. A Pico is soldered to
 one board so its alias names that board; a standalone cable like the Terasic
 moves, so it is named for the cable and you pick the board by plugging it in.
 
-THE TWO ALTERA BOARDS SHARE THE TERASIC CABLE. `ae115fb` and `ep4cgx150` both
-resolve to it, so the alias alone does NOT tell you which board is plugged in,
-and programming the wrong one succeeds silently. Any `program` target for those
-two must run `--assert-device` first; it is a read-only chain scan and
-configures nothing.
+THE TWO ALTERA BOARDS HAVE SEPARATE CABLES since 2026-08-29 -- the Terasic on
+the A-E115FB, a level-shifted pico-usb-blaster on the EP4CGX150 -- so the alias
+does now imply the board. Keep running `--assert-device` anyway: two blasters
+are attached at once, and quartus_pgm EXITS 0 ON A BROKEN CHAIN, so a
+powered-off board otherwise programs "successfully". It is a read-only chain
+scan and configures nothing; fpga/quartus.mk makes `program-sof` depend on it.
 
 Examples:
   quartus_pgm -c "$(jtag_probe_map --cable ep4cgx150)" -m JTAG foo.cdf
@@ -117,13 +121,16 @@ USAGE
 }
 
 # --- expected FPGA per board ---------------------------------------------
-# Only needed for boards that SHARE a cable. An alias normally names a probe
-# soldered to one board, so the alias implies the board. The Terasic blaster is
-# a loose cable serving BOTH Altera boards (the A-E115FB's own Pico drives 3.3V
-# into a 1.8V-banked JTAG and is blocked on level shifters), so `--cable
-# ae115fb` and `--cable ep4cgx150` return the SAME cable and the alias no longer
-# proves which board is on the end of it. Programming the wrong board is
-# otherwise completely silent -- it succeeds.
+# Written for boards that SHARED a cable: the Terasic served BOTH Altera boards
+# until the EP4CGX150 got its own level-shifted Pico (2026-08-29), and until then
+# `--cable ae115fb` and `--cable ep4cgx150` returned the same cable, so the alias
+# did not prove which board was on the end of it.
+#
+# It earns its keep even now they are separate, for a different reason: nothing
+# else in the flow notices a DEAD chain. quartus_pgm prints "Unable to read
+# device chain - JTAG chain broken" and then "was successful. 0 errors", exit 0.
+# Powered-off board, unplugged header, level shifter with no Vref -- every one of
+# them programs "fine" unless this scan runs first.
 #
 # Keyed by JTAG IDCODE, NOT by device name. quartus_pgm reports the whole set of
 # IDCODE-compatible parts and TRUNCATES it -- the A-E115FB's EP4CE115 prints as
@@ -157,9 +164,18 @@ assert_device() {
   [ -x "$qpgm" ] || { echo "quartus_pgm not found at $qpgm (set QUARTUS_PGM)" >&2; return 1; }
   scan=$("$qpgm" -c "$cable" -a 2>/dev/null) || true
   # Chain rows look like:  "  020F70DD   10CL120(Y|Z)/EP3C120/.."
-  found=$(grep -oE '^[[:space:]]*[0-9A-Fa-f]{8}[[:space:]]' <<<"$scan" | tr -d '[:space:]' | head -1)
+  # `|| true` is load-bearing: with `set -e` + `pipefail` a no-match grep makes
+  # this assignment fail, and the function exits HERE -- silently, rc=1, with
+  # none of the diagnosis below ever printed. A powered-off board looked
+  # identical to a missing quartus_pgm.
+  found=$(grep -oE '^[[:space:]]*[0-9A-Fa-f]{8}[[:space:]]' <<<"$scan" | tr -d '[:space:]' | head -1) || true
   if [ -z "$found" ]; then
-    echo "JTAG chain scan on '$cable' found no device -- board powered off, or cable on nothing" >&2
+    echo "JTAG chain scan on '$cable' found no device." >&2
+    grep -q 'chain broken' <<<"$scan" \
+      && echo "  quartus_pgm: JTAG chain broken -- the cable enumerated but TDO came back empty." >&2
+    echo "  Usual cause is the BOARD being powered off; then a JTAG header that is" >&2
+    echo "  unplugged, reversed, or (on a level-shifted cable) missing its Vref." >&2
+    echo "  NOTE quartus_pgm exits 0 on a broken chain, so only this check catches it." >&2
     return 1
   fi
   found=${found^^}
@@ -172,7 +188,7 @@ assert_device() {
     echo "$found  ($label)"
   else
     echo "WRONG BOARD on '$cable': IDCODE $found, expected $expect for alias '$want' ($label)." >&2
-    echo "The Terasic blaster is shared between the two Altera boards -- move the cable." >&2
+    echo "Check which cable is on which board -- \`$0\` lists probe/board pairs." >&2
     return 1
   fi
 }

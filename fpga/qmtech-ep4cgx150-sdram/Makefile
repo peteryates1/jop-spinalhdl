@@ -49,21 +49,12 @@ full: microcode generate build program download monitor
 # Programming
 # --------------------------------------------------------------------------
 
-# This board SHARES the Terasic USB-Blaster with the A-E115FB (that board's own
-# Pico drives 3.3V into a 1.8V-banked JTAG and is blocked on level shifters), so
-# the cable gets moved between the two and programming the wrong one succeeds
-# silently. `assert-device` is a read-only chain scan that catches it, and every
-# program target here blocks on it -- which is why `program` wraps quartus.mk's
-# `program-sof` rather than using it directly.
-#
-# It fails closed while an IDCODE is unrecorded, printing the detected value to
-# paste into the DEVICES table in fpga/scripts/jtag_probe_map. Prompting the fix
-# at the moment the information is available beats letting a wrong-board program
-# succeed quietly until someone notices.
-assert-device:
-	@$(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --assert-device $(BOARD_ALIAS)
-
-program: assert-device program-sof
+# This board now has its OWN cable -- a level-shifted pico-usb-blaster (serial
+# e6616408), proven on hardware 2026-08-29 -- so it no longer shares the Terasic
+# with the A-E115FB. The IDCODE check stayed anyway: it lives in quartus.mk now,
+# `program-sof` depends on it, and it is what catches a powered-off board, since
+# quartus_pgm reports success on a chain it never read.
+program: program-sof
 
 # --------------------------------------------------------------------------
 # Other configurations of this same hardware project

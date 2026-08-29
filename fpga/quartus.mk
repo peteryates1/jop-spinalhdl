@@ -51,7 +51,7 @@ GEN_STAMP    = $(CFG_DIR)/rtl/.generated
 SCALA_SRC   := $(shell find $(PROJECT_ROOT)/spinalhdl/src/main/scala -name '*.scala')
 UCODE       := $(wildcard $(PROJECT_ROOT)/build/microcode/serial/mem_*.dat)
 
-.PHONY: generate build program-sof quartus-clean microcode
+.PHONY: generate build program-sof assert-device quartus-clean microcode
 
 # The microcode is not board-specific in any way -- every Altera board ran the
 # identical two lines -- and `serial` is the mode these flows boot in, which is
@@ -118,13 +118,31 @@ $(SOF_FILE): $(GEN_STAMP) $(QUARTUS_PRJ)/$(REV).qsf
 
 build: $(SOF_FILE)
 
+# A read-only JTAG chain scan that refuses unless the FPGA on the cable is the
+# one BOARD_ALIAS names. Every .sof program blocks on it for TWO reasons:
+#
+#   1. quartus_pgm EXITS 0 ON A BROKEN CHAIN. Powered-off board, JTAG header
+#      unplugged, level shifter with no Vref -- all of them "succeed". This
+#      scan is the only thing in the flow that notices. (Observed 2026-08-29:
+#      both Altera boards were off and every tool reported success.)
+#   2. Two USB-Blasters are attached to this host, so a mis-resolved cable
+#      programs the OTHER board -- also silently.
+#
+# Cheap, configures nothing, and passes with a note for an alias that has no
+# IDCODE recorded. Boards that program some other way (a .rbf through
+# openFPGALoader, say) define their own `program` and should depend on this
+# too.
+assert-device:
+	@test -z "$(BOARD_ALIAS)" \
+	  || $(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --assert-device $(BOARD_ALIAS)
+
 # The cable is resolved by SERIAL, never by a bare "USB-Blaster": more than one
 # blaster is attached to this host and a bare name takes whichever enumerated
 # first. Takes the .sof directly, so no .cdf is needed.
 # Named program-sof, not program: some boards load a .rbf or go through
 # openFPGALoader instead, and they define their own `program`. A board whose
 # programming is just "quartus_pgm the .sof" writes `program: program-sof`.
-program-sof: $(SOF_FILE)
+program-sof: $(SOF_FILE) assert-device
 	$(QUARTUS_BIN)/quartus_pgm \
 	    -c "$$($(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --cable $(BOARD_ALIAS))" \
 	    -m JTAG -o "p;$(SOF_FILE)"

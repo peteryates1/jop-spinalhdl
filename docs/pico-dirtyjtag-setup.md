@@ -114,15 +114,25 @@ the SOF (if needed) and programs via openFPGALoader.
 The example here used to be `fpga/a-e115fb-bram`, which was retired on
 2026-08-26: it had no Quartus project and generated `ep4cgx150Bram`, another
 board's preset. That board builds from `fpga/a-e115fb-ddr2` now, and programs
-over the shared Terasic blaster rather than dirtyJtag -- its own Pico drives
-3.3 V into a JTAG bank that is not 3.3 V, and is blocked on level shifters.
+over the Terasic blaster rather than dirtyJtag -- its own Pico drove
+3.3 V into a JTAG bank that is not 3.3 V.
 
-Level shifting is now solved by the
+Level shifting is solved by the
 [pico-usb-debug-jtag](https://github.com/peteryates1/pico-usb-debug-jtag)
 carrier: an SN74LVC1T45 per signal referenced to the target's own VTREF (header
-pin 4). Proven on the QMTECH EP4CGX150's **2.5 V** JTAG bank -- detect plus a
-4.88 MB `.sof` configured in 43 s at 6 MHz -- so the same approach should unblock
-the A-E115FB, though that has **not** been tried yet.
+pin 4).
+
+**As of 2026-08-29 that Pico (`e6616408`) is level-shifted and permanently on
+the EP4CGX150**, so the two Altera boards no longer share a cable -- Terasic on
+the A-E115FB, Pico on the EP4CGX150, both attached at once. A full
+`jop_sdram.sof` configures the EP4CGX150 in 72 s at 6 MHz and the board then
+runs `HelloWorld` over its UART. The Terasic does the EP4CE115 in 5 s, so the
+Pico cable is correct but roughly an order of magnitude slower; that is the
+trade for never moving a cable between boards.
+
+The same approach should unblock the A-E115FB's own Pico too, but with the
+Terasic parked there permanently that is no longer needed, and it has **not**
+been tried.
 
 Note this file says the A-E115FB bank is 1.8 V while the top-level `README.md`
 says 2.5 V. Neither has been verified; measure VTREF on header pin 4.

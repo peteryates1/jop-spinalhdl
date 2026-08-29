@@ -43,6 +43,7 @@ Usage:
   ./usb_serial_map --tty <alias>     resolve a board alias to /dev/ttyUSBn
   ./usb_serial_map --by-id <alias>   resolve to the stable /dev/serial/by-id path
   ./usb_serial_map --boards          list the board registry
+  ./usb_serial_map --reset <alias>   USB-reset a wedged adapter (see below)
 
 Without a filter, lists USB serial ports and their USB identity.
 With a filter, only matching ports are shown.
@@ -58,6 +59,13 @@ Options:
 
 Prefer --by-id in Makefiles: it is a path that survives a replug, so it can be
 baked into a recipe, whereas --tty is only correct at the moment it is run.
+
+--reset is for an adapter whose control endpoint has STALLED. The node stays in
+/dev and resolves normally, but every open fails with EIO and dmesg repeats
+"failed to send control message: -32". No amount of retrying clears it; a
+USBDEVFS_RESET does, and so does unplugging the cable. Seen on the A-E115FB's
+CH340 on 2026-08-29, where it looked exactly like a dead board -- the FPGA
+programmed over JTAG perfectly while its console refused to open.
 USAGE
 }
 
@@ -185,6 +193,41 @@ byid_for() {
   return 1
 }
 
+# USBDEVFS_RESET on the USB device backing an alias's tty. Re-enumerates it in
+# place, which clears a stalled control endpoint without a physical replug.
+# Needs write access to /dev/bus/usb/BBB/DDD; falls back to a non-interactive
+# sudo rather than failing, and says which one worked.
+reset_alias() {
+  local alias="$1" tty_name dev bus devnum node
+  tty_name="$(resolve_alias "$alias")" || return $?
+  dev="$(readlink -f "/sys/class/tty/$tty_name/device")" || return 1
+  # .../usb1/1-12/1-12:1.0  -- walk up to the directory that has busnum
+  while [ -n "$dev" ] && [ "$dev" != "/" ] && [ ! -f "$dev/busnum" ]; do
+    dev="$(dirname "$dev")"
+  done
+  [ -f "$dev/busnum" ] || { echo "cannot find the USB device behind $tty_name" >&2; return 1; }
+  bus=$(cat "$dev/busnum"); devnum=$(cat "$dev/devnum")
+  node=$(printf '/dev/bus/usb/%03d/%03d' "$bus" "$devnum")
+  local py='
+import fcntl, os, sys
+fd = os.open(sys.argv[1], os.O_WRONLY)
+fcntl.ioctl(fd, (ord("U") << 8) | 20, 0)   # USBDEVFS_RESET
+os.close(fd)'
+  if python3 -c "$py" "$node" 2>/dev/null; then
+    echo "reset $node ($tty_name)"
+  elif sudo -n python3 -c "$py" "$node" 2>/dev/null; then
+    echo "reset $node ($tty_name, via sudo)"
+  else
+    echo "cannot reset $node -- no write access and sudo -n refused." >&2
+    echo "Unplug and replug the adapter instead." >&2
+    return 1
+  fi
+  # Re-enumeration takes a moment and the tty name can CHANGE across it, so
+  # re-resolve rather than echoing the old one back.
+  sleep 2
+  echo "now at /dev/$(resolve_alias "$alias")"
+}
+
 case "${1:-}" in
   --boards)
     list_boards
@@ -200,6 +243,11 @@ case "${1:-}" in
     [[ $# -eq 2 ]] || { usage >&2; exit 1; }
     tty_name="$(resolve_alias "$2")" || exit $?
     byid_for "$tty_name"
+    exit $?
+    ;;
+  --reset)
+    [[ $# -eq 2 ]] || { usage >&2; exit 1; }
+    reset_alias "$2"
     exit $?
     ;;
 esac

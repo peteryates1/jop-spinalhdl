@@ -68,17 +68,13 @@ ip/ddr2_64bit/ddr2_64bit.qip: $(IP_SRC)
 # --------------------------------------------------------------------------
 # Programming
 #
-# The Terasic blaster is SHARED with the EP4CGX150 and gets moved between the
-# two boards, so the alias alone cannot say which is on the end of it -- and
-# programming the wrong Altera board succeeds silently. assert-device is a
-# read-only chain scan that refuses unless the IDCODE is the EP4CE115's, which
-# is why `program` wraps quartus.mk's `program-sof` rather than using it.
+# The Terasic blaster is this board's own cable now that the EP4CGX150 has a
+# level-shifted Pico of its own, but the IDCODE check still guards the program:
+# two blasters are attached at once, and quartus_pgm reports success on a chain
+# it never read. It lives in quartus.mk, and `program-sof` depends on it.
 # --------------------------------------------------------------------------
 
-assert-device:
-	@$(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --assert-device $(BOARD_ALIAS)
-
-program: assert-device program-sof
+program: program-sof
 
 # --------------------------------------------------------------------------
 # Other configurations

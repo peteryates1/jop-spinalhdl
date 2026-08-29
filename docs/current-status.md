@@ -7885,6 +7885,79 @@ improvement. These led to a broken bitstream. The difference is whether the
 warning is telling you something -- and the only way to find out is to
 understand it before acting, not to make it go away.
 
+### Item 91 — Two Altera boards, two cables, and a check that finally has a reason
+
+The level shifters arrived, so the EP4CGX150 now has its own pico-usb-blaster
+(serial `e6616408` -- the very Pico that used to be blocked driving 3.3 V into
+the A-E115FB's 1.8 V-banked JTAG) and the Terasic (`91d28408`) stays on the
+A-E115FB. Both are attached at once and both were proven on hardware today:
+
+| board | cable | Quartus cable name | result |
+|---|---|---|---|
+| EP4CGX150 | pico-usb-blaster | `USB Blaster [1-11]` | IDCODE `028040DD`, configured, `Hello World!` |
+| A-E115FB | Terasic | `USB-Blaster [1-7]` | IDCODE `020F70DD`, configured, `Hello World!` |
+
+Note the product strings differ by one hyphen, which is the only thing that
+made two blasters survivable before the port path was added. `--cable` reads
+the string from sysfs and appends the port path, so it separates two probes of
+the same kind too.
+
+The **negative** test is the one that proves the mapping rather than the wiring.
+Forcing each alias onto the other's cable is refused:
+
+```
+$ jtag_probe_map --assert-device ae115fb "USB Blaster [1-11]"
+WRONG BOARD on 'USB Blaster [1-11]': IDCODE 028040DD, expected 020F70DD ...
+```
+
+**`--assert-device` now has a better justification than the one it was written
+for.** It existed because the two boards shared a cable and programming the
+wrong one was silent. They no longer share a cable -- but the check stayed,
+because of this:
+
+```
+Info (213045): Using programming cable "USB Blaster [1-11]"
+  Unable to read device chain - JTAG chain broken
+Info: Quartus Prime Programmer was successful. 0 errors, 0 warnings
+```
+
+**`quartus_pgm` exits 0 on a chain it never read.** Both boards were powered off
+at the start of the session and every tool in the flow reported success. A
+powered-off board, an unplugged header and a level shifter with no Vref are all
+indistinguishable from a good program unless something scans the chain first.
+So `assert-device` moved out of the two board Makefiles that had hand-copied it
+and into `fpga/quartus.mk`, where `program-sof` depends on it -- which picked up
+the three EP4CGX150 variants and the SDRAM test board, none of which had it.
+
+**A bug in the checker, found by the boards being off.** `assert_device` was
+supposed to print "found no device -- board powered off, or cable on nothing".
+It printed nothing at all, exit 1. Under `set -e` + `pipefail` a no-match `grep`
+makes the `found=$(...)` assignment fail, and the function returns *there* --
+before any of the diagnosis. The entire reason the check exists was unreachable
+in exactly the case it was written for. `|| true` on the assignment.
+
+### Gotcha — a serial adapter can stall in a way that looks like a dead board
+
+The A-E115FB programmed perfectly over JTAG and its console would not open:
+`[Errno 5] Input/output error`, on a `/dev/ttyUSB4` that existed, resolved by
+alias, and had the right permissions. `dmesg`:
+
+```
+usb 1-12: failed to send control message: -32
+ch341-uart ttyUSB4: failed to read modem status: -32
+```
+
+`-32` is `EPIPE`: the CH340's control endpoint had stalled. No amount of
+retrying clears it and nothing in the flow reports anything more useful than
+EIO. A `USBDEVFS_RESET` re-enumerates the device in place and fixes it, which
+is now `usb_serial_map --reset <alias>` (unprivileged if possible, `sudo -n`
+otherwise, then re-resolves because the tty name can change across the reset).
+After that the same download ran first time.
+
+Worth separating the two halves when a board looks dead: **JTAG and UART are
+different cables with different failure modes**, and this one had a working
+FPGA behind a broken adapter.
+
 ## 4. Two workstreams, both largely done
 
 **GC (Stage 3)** — generational GC is on by default and hardware-validated on
@@ -8293,7 +8366,11 @@ Also: `openFPGALoader` refuses a `.sof` for SRAM programming, so the CYC5000
 flow converts to `.rbf` with `quartus_cpf` first.
 
 **Why the Pico USB-Blaster clone cannot configure either Altera board — it has
-no level shifter.** Pin 4 of the Altera 10-pin JTAG header is VCC(TRGT); a
+no level shifter.** (SUPERSEDED 2026-08-29 for the EP4CGX150: the
+[pico-usb-debug-jtag](https://github.com/peteryates1/pico-usb-debug-jtag)
+carrier does exactly what the last paragraph here prescribes, and that board now
+programs and runs from a Pico. The analysis below is why, and still applies to
+any *bare* Pico.) Pin 4 of the Altera 10-pin JTAG header is VCC(TRGT); a
 genuine USB-Blaster powers its output buffers and sets its input thresholds from
 that pin, which is how one cable spans 1.5-5 V targets. The Pico is fixed 3.3 V
 in both directions. The EP4CGX150's JTAG bank is **2.5 V** (TDI/TMS 10 k pull-up
