@@ -161,12 +161,11 @@ cd ../../asm && make
 # 2. Compile SpinalHDL (from project root)
 sbt compile
 
-# 3. Build Java toolchain, runtime, and test apps
-#    `all` builds HelloWorld for Smallest, Small and InterruptTest, which
-#    covers every simulation below except the GC stress test. That one runs a
-#    different program from the same directory, built by name:
-cd java && make all && cd ..
-make -C java/apps/Small APP_NAME=GcStressTest
+# 3. Build Java toolchain, runtime, and every app the simulations load.
+#    `make all` builds only the three HelloWorlds used by steps 4-5; the GC,
+#    SMP, JVM-suite and benchmark simulations each load a different program.
+#    `test-apps` builds all of them, and is what the steps below assume.
+cd java && make test-apps && cd ..
 
 # 4. Run BRAM simulation (prints "Hello World!" in a loop)
 sbt "Test / runMain jop.system.JopCoreBramSim"

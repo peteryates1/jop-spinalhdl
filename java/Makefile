@@ -29,7 +29,7 @@ export JOP_PRESET BUILDTREE JOP_CFG_DIR JAVA_OUT GEN_SRC CONST_EXCLUDE
 # kept because the legacy path is still the default.
 CONST_STAMP := $(dir $(CONST_JAVA)).const-preset
 
-.PHONY: all tools runtime apps clean sim-smallest sim-small generate-const FORCE
+.PHONY: all tools runtime apps test-apps clean sim-smallest sim-small generate-const FORCE
 
 all: tools runtime apps
 
@@ -60,6 +60,25 @@ apps: tools runtime
 	$(MAKE) -C apps/Smallest
 	$(MAKE) -C apps/Small
 	$(MAKE) -C apps/InterruptTest
+
+# EVERY app any documented simulation loads.
+#
+# `apps` above builds three HelloWorlds, which covers the first few README
+# steps and nothing else. The rest of the documented sims -- the SMP ones, the
+# JVM suite, the GC stress test, the performance counters -- each load a
+# different .jop that NO build step produced, so they failed on a missing file
+# for anyone following the README. A cold-newcomer walkthrough on 2026-08-29
+# hit that seven times over; it was one root cause wearing seven hats.
+#
+# Keep this in step with the simulations the README lists. A sim whose .jop is
+# not built here is a sim that a reader cannot run.
+.PHONY: test-apps
+test-apps: apps
+	$(MAKE) -C apps/Small APP_NAME=GcStressTest
+	$(MAKE) -C apps/Small APP_NAME=NCoreHelloWorld
+	$(MAKE) -C apps/JvmTests
+	$(MAKE) -C apps/SmpGcTest
+	$(MAKE) -C apps/JbeBench
 
 sim-smallest: all
 	java -cp tools/dist/jopsim.jar -Dtrace=2 com.jopdesign.tools.JopSim \
