@@ -8051,6 +8051,82 @@ with 2, and later said "completed" while four Quartus processes were still
 running. The `EXIT=` marker in the log was right both times. Read the marker,
 not the notification.
 
+### Item 93 — Every converted board, cold — and six layers of hidden dependency
+
+Item 92 cold-built ONE board per toolchain. Doing all twelve found that the
+shared includes were only the first layer. Four workers, one clone each (three
+in tmpfs), `git clean -xfd` between runs:
+
+| board | result |
+|---|---|
+| a-e115fb-ddr2 | PASS 487s |
+| qmtech-xc7a100t-dbfpga-v5 | PASS 714s |
+| cyc5000-sdram | PASS 253s |
+| colorlight-i5 | PASS 144s |
+| qmtech-ep4cgx150-bram-serial / -sdram-test | PASS after fix |
+| qmtech-ep4cgx150-bram | PASS 477s after fix |
+| qmtech-xc7a100t-wukong (ddr3-build) | PASS 698s after fix |
+| qmtech-xc7a100t-wukong (all / BRAM) | PASS 430s after conversion |
+
+**Six layers, each hidden by the one above it.** Every fix revealed the next:
+
+1. **`UCODE := $(wildcard ...)`.** A wildcard prerequisite expands to EMPTY when
+   the files are absent, so `$(GEN_STAMP): ... $(UCODE)` meant "depend on
+   microcode only once microcode already exists". Cold-buildability was an
+   accident of whether each board's own `all` listed `microcode`.
+2. **The wukong bypasses `vivado.mk`'s `generate`** with four bespoke rules, so
+   the shared fix did not reach it.
+3. **`JopTopVerilog` read the embedded `.jop` from `java/apps/...`** -- a source
+   path, and the last build product read out of the source tree.
+4. **Nothing built that `.jop`.**
+5. **`wukongBram` had never been converted** -- in-tree RTL *and* in-tree `.jop`.
+6. **`make -C java all BUILDTREE=1` never worked cold**: `java/tools` hardcodes
+   `TARGET_SRC=../runtime/src/jop`, the legacy home of the generated
+   `Const.java`.
+
+**And layer 6 had a second bug inside it.** `GEN_SRC` is written relative to
+`java/` while `tools/Makefile` runs in `java/tools/`, so the first fix resolved
+one level short. **javac does not warn about a sourcepath entry that does not
+exist** -- it fails later with `cannot find symbol`, pointing at the symbol
+rather than at the path. The fix looked right and was not; only expanding the
+variable proved it.
+
+**The result that matters.** After a full build in a cold clone:
+
+```
+untracked/modified in java|spinalhdl|asm : 0
+spinalhdl/generated                      : absent
+```
+
+### Gotcha — iterate on the cheap prefix, not the whole build
+
+Five rounds of this were run as `make all`, paying a full Quartus or Vivado
+build (155-714 s) to re-check a failure that surfaces in the first 30 s. Every
+bug in the chain -- microcode, `Const.java`, the embedded `.jop` -- fails during
+`generate`. Iterating on `make generate` (51 s and 69 s) and spending the full
+`all` only on the final confirmation is ~20x faster for the same information.
+
+Cleaning is NOT the cost, and the cold tree is not negotiable: a fresh clone is
+227 ms and `git clean -xfd` is 18 ms. Reusing a dirty tree is what hides these
+bugs in the first place.
+
+### Still generating into the source tree (OPEN)
+
+Nine generators, of which eight remain:
+
+| generator | board | blocker |
+|---|---|---|
+| `SdramExerciserWukongTopVerilog` | wukong | standalone top, needs a `BoardDesign` |
+| `Ddr2ExerciserTopVerilog` | a-e115fb | ditto |
+| `Ddr3ExerciserTopVerilog` | alchitry-ddr3-test | ditto |
+| `FlashProgrammerDdr3TopVerilog` | alchitry-au | ditto |
+| `ConfigFlashExerciserTopVerilog`, `FlashProgrammerTopVerilog` | ep4cgx150-sdram | ditto |
+| `UartEchoTopVerilog` | dbfpga-v5 | ditto |
+| `JopTopVerilog max1000Sdram` | max1000 | a preset, but `jop_max1000.qsf` reads the legacy path |
+
+`sdramExerciser`, `sdNativeExerciser` and `sdSpiExerciser` show the pattern for
+the standalone tops; each needs its own `BoardDesign`.
+
 ## 4. Two workstreams, both largely done
 
 **GC (Stage 3)** — generational GC is on by default and hardware-validated on
