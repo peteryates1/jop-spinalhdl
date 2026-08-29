@@ -7902,6 +7902,43 @@ made two blasters survivable before the port path was added. `--cable` reads
 the string from sysfs and appends the port path, so it separates two probes of
 the same kind too.
 
+#### Why the Pico cable is slower, measured
+
+Not the clock: both cables report **6 MHz**, and both are full-speed USB with
+64-byte bulk endpoints -- the Pico deliberately emulates the FT245 geometry.
+Splitting a run at Quartus's own `Started/Ended Programmer operation`:
+
+| | Terasic | Pico |
+|---|---|---|
+| chain detect (before programming) | 1 s | **31 s** |
+| configuration | 6 s | 43 s |
+| bitstream | 3.57 MB | 4.93 MB |
+| **throughput** | **595 KB/s** | **115 KB/s** |
+| % of the 6 MHz ceiling (750 KB/s) | 79 % | 15 % |
+
+So the ~9.6x wall-clock gap is three effects stacked, and the biggest single
+one is **not throughput** -- it is ~30 s of fixed cost before a byte of
+bitstream moves. That cost is identical under Quartus 18.1 (31.64 s) and 25.1
+(31.77 s), so it belongs to the cable, not the tool.
+
+**The limit is USB latency, not bandwidth and not TCK.** Full-speed carries
+~1.2 MB/s and 6 MHz byte-shift needs only 750 KB/s, so neither is binding. Per
+1 ms USB frame the Terasic moves ~595 bytes (9-10 bulk packets in flight); the
+Pico moves ~115 bytes, about two. A genuine USB-Blaster streams; the Pico's
+emulation round-trips roughly once per frame.
+
+That also explains the 30 s. Chain detection is *many tiny transactions*, the
+worst possible shape for a latency-bound cable -- and with both boards powered
+off, the same scan on both cables returned in ~0 s. No device, no transactions,
+no penalty. It scales with transaction count, not with opening the cable.
+
+**Two corrections to the first numbers recorded here.** The steady-state
+configure is 43 s, not 72 s -- 72 s was the first configuration after power-up
+and has not recurred in three runs since. And "14x" compared different
+bitstreams built by different Quartus versions: the real figures are 9.6x wall
+clock and 5.2x throughput. A cable comparison carries a confound as easily as a
+preset one does.
+
 The **negative** test is the one that proves the mapping rather than the wiring.
 Forcing each alias onto the other's cable is refused:
 

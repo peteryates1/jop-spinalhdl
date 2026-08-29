@@ -125,10 +125,28 @@ pin 4).
 **As of 2026-08-29 that Pico (`e6616408`) is level-shifted and permanently on
 the EP4CGX150**, so the two Altera boards no longer share a cable -- Terasic on
 the A-E115FB, Pico on the EP4CGX150, both attached at once. A full
-`jop_sdram.sof` configures the EP4CGX150 in 72 s at 6 MHz and the board then
-runs `HelloWorld` over its UART. The Terasic does the EP4CE115 in 5 s, so the
-Pico cable is correct but roughly an order of magnitude slower; that is the
-trade for never moving a cable between boards.
+`jop_sdram.sof` configures the EP4CGX150 in 43 s and the board then runs
+`HelloWorld` over its UART.
+
+The Pico cable is correct but slower, and the reason is **not** the clock --
+both cables run 6 MHz and both are full-speed USB with 64-byte bulk endpoints.
+Measured, splitting at Quartus's `Started/Ended Programmer operation`:
+
+| | Terasic | Pico |
+|---|---|---|
+| chain detect | 1 s | 31 s |
+| configuration | 6 s (3.57 MB) | 43 s (4.93 MB) |
+| throughput | 595 KB/s | 115 KB/s |
+
+The ~30 s of fixed detection cost is the largest single term and is independent
+of bitstream size and Quartus version. The limit is USB **latency**: full-speed
+carries ~1.2 MB/s and 6 MHz byte-shift needs 750 KB/s, so neither bandwidth nor
+TCK is binding -- the Terasic keeps 9-10 bulk packets in flight per 1 ms frame,
+the Pico about two. Chain detection is many tiny transactions, which is why it
+suffers worst; with the board powered off (no device, no transactions) the same
+scan returns in ~0 s on both cables.
+
+That is the trade for never moving a cable between boards.
 
 The same approach should unblock the A-E115FB's own Pico too, but with the
 Terasic parked there permanently that is no longer needed, and it has **not**
