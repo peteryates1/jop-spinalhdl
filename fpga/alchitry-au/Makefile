@@ -54,7 +54,11 @@ include ../vivado.mk
 
 PART       := xc7a35tftg256-2
 XDC        := $(CURDIR)/vivado/constraints
-IP         := $(CURDIR)/vivado/ip
+# GENERATED IP lives under build/, board-scoped: one board's IP serves every
+# configuration built from it, so build/<config>/ would be the wrong home.
+# The tracked mig.prj INPUT stays at vivado/ip/ -- same split as the PLL
+# template, where the generator's source is a source and its output is not.
+IP         := $(PROJECT_ROOT)/build/ip/alchitry-au
 # The flash programmer is a standalone top with its own config directory.
 ABS_BUILD  := $(PROJECT_ROOT)/build/flashProgrammerDdr3/vivado/build
 

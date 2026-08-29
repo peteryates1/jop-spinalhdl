@@ -72,7 +72,7 @@ CREATE_TCL := $(PROJECT_ROOT)/fpga/scripts/vivado_create_project.tcl
 BUILD_TCL  := $(PROJECT_ROOT)/fpga/scripts/vivado_build_project.tcl
 # Standalone top: build under its own config directory, not in the board dir.
 ABS_BUILD  := $(PROJECT_ROOT)/build/ddr3Exerciser/vivado/build
-AU_IP      := $(CURDIR)/../alchitry-au/vivado/ip
+AU_IP      := $(PROJECT_ROOT)/build/ip/alchitry-au
 
 project:
 	JOP_PROJ=ddr3_test JOP_PART=$(PART) JOP_TOP=Ddr3ExerciserTop \

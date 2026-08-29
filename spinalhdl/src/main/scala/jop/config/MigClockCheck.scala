@@ -45,7 +45,7 @@ object MigClockCheck {
    * message when the chain is inconsistent.
    */
   def check(boardDir: String, presetClkHz: Long): String = {
-    val genMig  = Paths.get(boardDir, "vivado/ip/generated/mig.prj")
+    val genMig  = Paths.get("build", "ip", Paths.get(boardDir).getFileName.toString, "generated", "mig.prj")
     val migPath = if (Files.exists(genMig)) genMig else Paths.get(boardDir, "vivado/ip/mig.prj")
     val wizPath = Paths.get(boardDir, "vivado/tcl/create_ddr3_clk_wiz.tcl")
     if (!Files.exists(migPath) || !Files.exists(wizPath))
@@ -61,7 +61,7 @@ object MigClockCheck {
     // The clk_wiz frequency now normally arrives as a generated tcl fragment
     // (MigProfile.emit) which the wizard script sources; the literal in the
     // script is only the stock fallback for standalone runs.
-    val genPath = Paths.get(boardDir, "vivado/ip/generated/ddr3_clocks.tcl")
+    val genPath = Paths.get("build", "ip", Paths.get(boardDir).getFileName.toString, "generated", "ddr3_clocks.tcl")
     val wizMhz = (if (Files.exists(genPath))
         readNum(new String(Files.readAllBytes(genPath), "UTF-8"),
                 """set ddr3_clkwiz_mhz ([0-9.]+)""")

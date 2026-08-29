@@ -48,7 +48,9 @@ LOOPBACK_DIR := $(REPO_ROOT)/build/uartLoopback
 TXGEN_DIR    := $(REPO_ROOT)/build/uartTxGen
 CONSTRAINTS := $(CURDIR)/$(VIVADO_DIR)/constraints
 BOARD_RTL   := $(CURDIR)/$(VIVADO_DIR)/rtl
-IP_DIR      := $(CURDIR)/$(VIVADO_DIR)/ip
+# Generated IP under build/, board-scoped. The tracked mig.prj input stays at
+# vivado/ip/ -- input is a source, output is not.
+IP_DIR      := $(REPO_ROOT)/build/ip/qmtech-xc7a100t-dbfpga-v5
 
 # DirtyJTAG programming (RP2040 on DB_FPGA V5)
 #

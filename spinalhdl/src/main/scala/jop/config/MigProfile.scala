@@ -92,8 +92,13 @@ object MigProfile {
    * this only emits the inputs to it.
    */
   def emit(boardDir: String, profile: MigProfile): String = {
+    // The tracked mig.prj is an INPUT and stays with the board; what this
+    // writes is GENERATED and goes under build/, board-scoped -- one board's IP
+    // serves every configuration built from it (the Wukong's serves seven), so
+    // build/<config>/ would be the wrong home. Same split as DramPllGen's
+    // template, which was deleted once for looking like a build product.
     val template = Paths.get(boardDir, "vivado/ip/mig.prj")
-    val outDir   = Paths.get(boardDir, "vivado/ip/generated")
+    val outDir   = Paths.get("build", "ip", Paths.get(boardDir).getFileName.toString, "generated")
     if (!Files.exists(template))
       return s"MIG:         template not found at $template — not generated"
 

@@ -2,10 +2,16 @@
 # Run with: vivado -mode batch -source vivado/tcl/create_mig.tcl
 
 set script_dir [file dirname [file normalize [info script]]]
-set repo_root  [file normalize [file join $script_dir ../..]]
-set ip_root    [file normalize [file join $repo_root vivado/ip]]
+set board_root [file normalize [file join $script_dir ../..]]
+set repo_root  [file normalize [file join $board_root ../..]]
+# INPUTS stay with the board (mig.prj is a tracked source); GENERATED IP goes
+# under build/, like everything else generated. Board-scoped rather than
+# config-scoped because one board's IP serves every configuration built from
+# it -- the Wukong's serves seven.
+set src_ip     [file normalize [file join $board_root vivado/ip]]
+set ip_root    [file normalize [file join $repo_root build/ip [file tail $board_root]]]
 set ip_proj    [file normalize [file join $ip_root managed_ip_project]]
-set mig_prj    [file join $ip_root mig.prj]
+set mig_prj    [file join $src_ip mig.prj]
 set mig_name   "mig_7series_0"
 
 if {![file exists $mig_prj]} {

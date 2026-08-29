@@ -33,7 +33,10 @@ PART       := xc7a100tfgg676-2
 CREATE_TCL := $(REPO_ROOT)/fpga/scripts/vivado_create_project.tcl
 PRJ_TCL    := $(REPO_ROOT)/fpga/scripts/vivado_build_project.tcl
 NP_TCL     := $(REPO_ROOT)/fpga/scripts/vivado_build_nonproject.tcl
-IP         := $(CURDIR)/vivado/ip
+# Generated IP under build/, board-scoped: this board's IP serves SEVEN
+# configurations, so build/<config>/ would either duplicate it or arbitrarily
+# elect one config to own it. The tracked mig.prj input stays at vivado/ip/.
+IP         := $(REPO_ROOT)/build/ip/qmtech-xc7a100t-wukong
 XDC        := $(CURDIR)/vivado/constraints
 SHARED_XDC := $(REPO_ROOT)/fpga/constraints
 # Standalone top: its own config directory, not a preset's.

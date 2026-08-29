@@ -3,8 +3,13 @@
 # The 125 MHz output is pruned by Vivado if unused (non-GMII builds).
 
 set script_dir [file dirname [file normalize [info script]]]
-set repo_root  [file normalize [file join $script_dir ../..]]
-set ip_root    [file normalize [file join $repo_root vivado/ip]]
+set board_root [file normalize [file join $script_dir ../..]]
+set repo_root  [file normalize [file join $board_root ../..]]
+# INPUTS stay with the board (mig.prj is tracked); GENERATED IP goes under
+# build/, board-scoped because one board's IP serves every configuration built
+# from it -- the Wukong's serves seven.
+set src_ip     [file normalize [file join $board_root vivado/ip]]
+set ip_root    [file normalize [file join $repo_root build/ip [file tail $board_root]]]
 set ip_proj    [file normalize [file join $ip_root managed_ip_project]]
 set clk_name   "clk_wiz_0"
 
