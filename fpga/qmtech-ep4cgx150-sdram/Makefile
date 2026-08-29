@@ -155,9 +155,15 @@ full-sd-spi-exerciser: sd-spi program-sd-spi monitor
 # NOT CONVERTED — still build in-tree from hand-written .qsf files
 #
 # Both are blocked on the same thing: the config-flash pads have no device
-# ALL THREE ARE CONVERTED NOW, and the in-tree dram_pll.vhd and
-# sd_exerciser.sdc went with them -- the PLL comes from DramPllGen and the .sdc
-# from TimingConstraints, both into build/<config>/, as for every other flow.
+# ALL THREE ARE CONVERTED NOW. The .sdc comes from TimingConstraints and the
+# PLL from DramPllGen, both into build/<config>/.
+#
+# dram_pll.vhd STAYS, and is not a build product: DramPllGen READS it as the
+# TEMPLATE it rewrites the ratios into (DramPllGen.emit, `Paths.get(boardDir,
+# "dram_pll.vhd")`). Deleting it as "superseded by the generator" broke every
+# EP4CGX150 build -- the primary board -- and was caught by
+# PllSpecConsistencyTest in CI rather than by anything local, because the
+# builds that "passed" had run before the deletion.
 # --------------------------------------------------------------------------
 
 # CONVERTED 2026-08-29. Both now go through quartus.mk like every other flow:

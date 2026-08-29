@@ -162,7 +162,11 @@ cd ../../asm && make
 sbt compile
 
 # 3. Build Java toolchain, runtime, and test apps
+#    `all` builds HelloWorld for Smallest, Small and InterruptTest, which
+#    covers every simulation below except the GC stress test. That one runs a
+#    different program from the same directory, built by name:
 cd java && make all && cd ..
+make -C java/apps/Small APP_NAME=GcStressTest
 
 # 4. Run BRAM simulation (prints "Hello World!" in a loop)
 sbt "Test / runMain jop.system.JopCoreBramSim"
@@ -170,10 +174,12 @@ sbt "Test / runMain jop.system.JopCoreBramSim"
 # 4b. Run unified JopTop BRAM simulation (same output, uses config-driven JopTop)
 sbt "Test / runMain jop.system.JopTopBramSim"
 
-# 5. Run SDRAM simulation
+# 5. Run SDRAM simulation (same Hello World, through the SDRAM controller;
+#    slower to boot than BRAM, so give it time)
 sbt "Test / runMain jop.system.JopCoreWithSdramSim"
 
-# 6. Run GC stress test (allocates arrays, triggers garbage collection)
+# 6. Run GC stress test — needs GcStressTest.jop from step 3.
+#    Prints "PASS: N GC cycles observed"
 sbt "Test / runMain jop.system.JopSmallGcBramSim"
 
 # 7. Run SMP simulation (2-core, NCoreHelloWorld — both cores toggle watchdog)
