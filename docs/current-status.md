@@ -177,6 +177,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[84](#item-84)** — No MAX1000 configuration is known to fit — a 1- or 2-core 10M08 setup is wanted (OPEN)
 - **[85](#item-85)** — Build port, phase 2 — the SDRAM exerciser folded onto the shared flow, and the baud it never reported
 - **[86](#item-86)** — Build port, phase 3a — three shared Vivado scripts, proven equivalent by control build; and the DB_FPGA DDR3 build has quietly got 43 % smaller
+- **[95](#item-95)** — **Four documented simulations are broken and NONE is in CI** — `JopCoreWithSdramSim` stalls, `JopSmpBramSim` fails its own check, `JopInterruptSim` fires 2 of 5 interrupts, `JopDebugProtocolSim` NPEs during elaboration (OPEN)
 - **[87](#item-87)** — Build port, phase 3b — `vivado.mk` finally has a user, and it found a live baud bug and a latent one
 - **[88](#item-88)** — CI "formal verification failure" was a yosys cache that hits and rebuilds anyway — not the push, not the proofs
 - **[89](#item-89)** — Build port — the DB_FPGA V5 was the last board generating in-tree; now on `vivado.mk` and the build tree
@@ -8163,6 +8164,64 @@ spelling.
 
 `uart_test` was a bonus find: a `.qsf` and RTL with **no Makefile target at
 all**, so neither could be built by anything. Converted and given a target.
+
+### Item 95 — Four documented simulations are broken, and none of them is in CI (OPEN)
+
+Found by pointing a cold agent — no project context, no memory, a fresh clone
+from GitHub — at README.md and asking it to build the project and show it
+working. It reached `Hello World!` in about 45 s, so the headline path is
+sound. Everything it found past that is below.
+
+**The four bugs. All pre-existing; none caused by the build port.**
+
+| simulation | symptom |
+|---|---|
+| `JopCoreWithSdramSim` (README step 5) | **stalls** — never reaches "GC done" |
+| `JopSmpBramSim` (README step 8) | runs 100 M cycles, both cores print Hello World, then `FAIL: Did not see 'GC test start'` |
+| `JopInterruptSim` | `FAIL: Expected 'I:TTTTTOK', got 'I:TT'` — 2 of 5 interrupts fire. Deterministic, reproduced twice under different load |
+| `JopDebugProtocolSim` | NPE during **elaboration**: `JopCluster.gcRootRamAddr()` is null (`JopCluster.scala:319`) |
+
+**The SDRAM stall is diagnosed, not merely observed.** `maxCycles = 500000` is
+a hard cap with no other exit, so "no output" could have been a short window.
+It is not:
+
+- the last UART byte is at cycle 42,189; nothing for the remaining 457,811
+- from ~100 k to 500 k the trace visits **exactly three PC values** (`0638`,
+  `02c8`, `02d2`) in a fixed 4:2:1 ratio, near-identical between the
+  100k–110k and 250k–260k windows (137/68/273 vs 138/68/273)
+- the BRAM sim, which does finish, visits **360** distinct PCs
+- BMB cmd/rsp counters keep climbing, so it is issuing real bus traffic
+
+A closed loop in steady state, not slow progress. More cycles will not help.
+
+**THE STRUCTURAL FINDING, which matters more than any one bug.** None of these
+four is in CI, and three are mentioned nowhere in this document. The README
+advertises 13 simulation and test commands; CI runs a different set
+(`testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.*
+jop.config.* jop.sim.*` plus a JVM-suite matrix). **The gap between what the
+README promises and what CI watches is exactly where the rot is.** Same shape
+as the flash microcode nobody built and the PLL tests that `assume`d
+themselves into silence: nothing was watching.
+
+The obvious follow-up is to put the README's own command list under CI, so
+that a documented command that stops working fails a build rather than waiting
+for the next newcomer.
+
+### Gotcha — a cold agent is only cold if the PATH is cold too
+
+The same walkthrough concluded "no Quartus, no Vivado on this machine" and
+chose the Colorlight i5 on that basis. Both vendor tools ARE installed
+(`/opt/altera`, `/opt/xilinx`); they are simply not on the default `PATH`,
+and the board Makefiles supply absolute paths. The conclusion happened to be
+defensible — the i5 is the only board needing no vendor tools — but it was
+reached from a false premise, and a newcomer would draw the same wrong
+conclusion about what this machine can build.
+
+Separately: a subagent gets none of `.claude/settings.local.json`, which is
+gitignored and therefore absent from a fresh clone. So the cold agent had a
+narrower permission set than the session that spawned it, and hardware
+programming was refused for that reason rather than for anything in the docs.
+**The hardware path therefore remains untested by this exercise.**
 
 ## 4. Two workstreams, both largely done
 
