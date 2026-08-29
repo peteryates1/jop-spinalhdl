@@ -171,7 +171,14 @@ case class JopSmpTestHarness(
 object JopSmpBramSim extends App {
   val cpuCnt = 2
 
-  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  // GcStressTest, not HelloWorld. This sim checks for "GC test start", which
+  // only GcStressTest prints -- so it loaded a program that could never satisfy
+  // its own assertion and failed every run with
+  //   FAIL: Did not see 'GC test start'
+  // after ~23 minutes of correct 2-core execution. The README calls this step
+  // the "SMP GC simulation (garbage collection stress test)", which is what it
+  // was always meant to run. Status item 97.
+  val jopFilePath = "java/apps/Small/GcStressTest.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/smp_bram_simulation.log"

@@ -173,10 +173,10 @@ sbt "Test / runMain jop.system.JopCoreBramSim"
 # 4b. Run unified JopTop BRAM simulation (same output, uses config-driven JopTop)
 sbt "Test / runMain jop.system.JopTopBramSim"
 
-# 5. SDRAM simulation — KNOWN BROKEN, and it is not your setup.
-#    It boots, prints "GC init...", and then stalls: the trace settles into a
-#    loop over three PC values and never reaches "Hello World!". Waiting longer
-#    does not help. Tracked as item 96 in docs/current-status.md.
+# 5. SDRAM simulation — same Hello World, through the SDRAM controller.
+#    SLOW: it declares an 8 MB heap against the BRAM sim's 128 KB, so GC.init
+#    has 64x as much memory to clear and does it through SDRAM. Reaches
+#    "Hello World!" at ~9.5M cycles, a couple of minutes.
 sbt "Test / runMain jop.system.JopCoreWithSdramSim"
 
 # 6. Run GC stress test — needs GcStressTest.jop from step 3.

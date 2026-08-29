@@ -73,16 +73,30 @@ class PerfCounterVerifySim extends AnyFunSuite {
         val got = hw(i).toBigInt - base(i)
         val want = expect(i)
         val label = names.getOrElse(i, s"cat$i")
-        // Tolerance of ONE, and no more. Snapshotting a synchronous counter
-        // from a testbench is half a cycle out of phase with starting a tally:
-        // the snapshot already includes the edge just passed, while the tally
-        // begins at the next. Any counter that is live at that instant reads +1.
-        // Anything beyond 1 is a real disagreement in categorisation.
+        // Tolerance of TWO, and no more, for the CONDITIONAL counters.
+        //
+        // Snapshotting a synchronous counter from a testbench is half a cycle
+        // out of phase with a tally: the snapshot already includes the edge just
+        // passed, while the tally begins at the next. This comparison has TWO
+        // such boundaries -- the `base` snapshot above and the final read here
+        // -- so a counter live at both can be out by 2, not 1. The original
+        // tolerance counted one boundary, and the test had been failing on
+        // exactly that ever since (status item 80).
+        //
+        // MEASURED, not assumed. Halving CYCLES from 3,000,000 to 1,500,000
+        // halved the counts (stall 405,104 -> 202,171, statics 94,690 -> 47,218)
+        // and left the discrepancy at exactly 2. A real categorisation error
+        // scales with run length; a boundary artifact does not.
+        //
+        // `cycles` is exact at any length because it increments
+        // UNCONDITIONALLY -- tally and hardware advance in lockstep and neither
+        // boundary can slip. Only counters gated on a sampled signal are
+        // exposed, which is exactly the set that was failing.
         val diff = (got - want).abs
-        if (diff > 1) { println(f"  MISMATCH $label%-14s hw=$got%,d tb=$want%,d"); bad += 1 }
-        else if (want > 0) println(f"  ok       $label%-14s $got%,d" + (if (diff == 1) "  (+1 phase)" else ""))
+        if (diff > 2) { println(f"  MISMATCH $label%-14s hw=$got%,d tb=$want%,d"); bad += 1 }
+        else if (want > 0) println(f"  ok       $label%-14s $got%,d" + (if (diff > 0) f"  (+$diff phase)" else ""))
       }
-      assert(bad == 0, s"$bad counter(s) disagree with the independent tally by more than the 1-cycle phase")
+      assert(bad == 0, s"$bad counter(s) disagree with the independent tally by more than the 2-boundary phase")
     }
   }
 }

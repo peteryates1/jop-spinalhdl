@@ -94,7 +94,21 @@ object JopCoreWithSdramSim extends App {
       logLine("")
 
       // Run simulation
-      val maxCycles = 500000
+      // 12M, not 500k. This harness declares an 8 MB heap (memBytes in
+      // JopCoreWithSdramTestHarness) against the BRAM sim's 128 KB, so GC.init
+      // has 64x as much memory to initialise -- and does it through SDRAM
+      // rather than single-cycle BRAM. It reaches "Hello World!" at ~9.5M
+      // cycles; 500k stopped it a fifth of the way into GC.init and looked
+      // exactly like a hang.
+      //
+      // IT WAS FILED AS A HANG (item 96) ON GOOD-LOOKING EVIDENCE: the trace
+      // visited three PC values in a fixed ratio, identical across two sampling
+      // windows. That is what a tight zeroing loop looks like. The tell was
+      // there and was read backwards -- the BMB counters kept CLIMBING, which
+      // is progress, not a spin. A long loop and a hang are indistinguishable
+      // from inside a sampling window; the only way to tell them apart is to
+      // let it run.
+      val maxCycles = 12000000
       val reportInterval = 10000
       var startTime = System.currentTimeMillis()
 
