@@ -335,13 +335,3 @@ object FlashProgrammerBuild extends App {
   write(s"$cfgDir/quartus/setup_proj.tcl",
         QuartusProject.generate(design, revision, cfgName, Seq.empty))
 }
-
-object FlashProgrammerTopVerilog extends App {
-  SpinalConfig(
-    mode = Verilog,
-    targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(80 MHz)
-  ).generate(FlashProgrammerTop())
-
-  println("Generated: spinalhdl/generated/FlashProgrammerTop.v")
-}

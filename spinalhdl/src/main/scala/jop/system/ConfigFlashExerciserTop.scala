@@ -586,13 +586,3 @@ object ConfigFlashExerciserBuild extends App {
   write(s"$cfgDir/quartus/setup_proj.tcl",
         QuartusProject.generate(design, revision, cfgName, Seq.empty))
 }
-
-object ConfigFlashExerciserTopVerilog extends App {
-  SpinalConfig(
-    mode = Verilog,
-    targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(80 MHz)
-  ).generate(ConfigFlashExerciserTop())
-
-  println("Generated: spinalhdl/generated/ConfigFlashExerciserTop.v")
-}

@@ -49,11 +49,11 @@ case class Ddr2ExerciserTop(
 ) extends Component {
 
   val io = new Bundle {
-    val clk   = in Bool()       // PIN_AB11, 25 MHz core-board oscillator
+    val clk_in = in Bool()       // PIN_AB11, 25 MHz core-board oscillator
     val rst_n = in Bool()       // PIN_N21, KEY1, active low
     val led   = out Bits (4 bits)   // active LOW on this board
-    val uart_tx = out Bool()    // PIN_H5  -> CH340 RX
-    val uart_rx = in Bool()     // PIN_N1  <- CH340 TX
+    val ser_txd = out Bool()    // PIN_H5  -> CH340 RX
+    val ser_rxd = in Bool()     // PIN_N1  <- CH340 TX
 
     // DDR2 SODIMM. mem_ba is 3 bits at the top level to match the board's pin
     // assignments, but this IP was generated with 2 bank bits (2 banks x 2
@@ -81,7 +81,7 @@ case class Ddr2ExerciserTop(
   // the phy_clk domain it produces.
   // ==========================================================================
   val ddr2 = new Ddr2BlackBox
-  ddr2.io.pll_ref_clk    := io.clk
+  ddr2.io.pll_ref_clk    := io.clk_in
   ddr2.io.global_reset_n := io.rst_n
   ddr2.io.soft_reset_n   := io.rst_n
 
@@ -216,7 +216,7 @@ case class Ddr2ExerciserTop(
     uartCtrl.io.config.frame.parity := UartParityType.NONE
     uartCtrl.io.config.frame.stop := UartStopType.ONE
     uartCtrl.io.writeBreak := False
-    uartCtrl.io.uart.rxd := io.uart_rx
+    uartCtrl.io.uart.rxd := io.ser_rxd
 
     val txFifo = StreamFifo(Bits(8 bits), 64)
     uartCtrl.io.write.valid   := txFifo.io.pop.valid
@@ -320,21 +320,70 @@ case class Ddr2ExerciserTop(
     ledReg(3) := sawError                  // sticky failure
   }
 
-  io.uart_tx := core.uartCtrl.io.uart.txd
+  io.ser_txd := core.uartCtrl.io.uart.txd
   io.led := ~core.ledReg                   // board LEDs are active LOW
 }
 
 /** Generate Verilog for the DDR2 exerciser. */
-object Ddr2ExerciserTopVerilog extends App {
+/** The design behind the A-E115FB DDR2 exerciser -- the first hardware
+  * milestone of that board's bring-up (docs/boards/ae115fb-ddr2-bringup.md).
+  *
+  * Its ports were the only ones among the standalone tops not following the
+  * JOP convention: clk, uart_tx, uart_rx. Renamed rather than teaching the
+  * generators an alias, because the pins they resolve to are IDENTICAL to the
+  * ones the converted JOP DDR2 flow already generates for this board --
+  * AB11, H5, N1 and the four LEDs -- as this file's own comments recorded.
+  *
+  * The reset keeps its name: `rst_n` is a port this design reads itself, not
+  * SpinalHDL's implicit reset wire, and BoardDesign lets a design name its own
+  * rather than forcing the JopConfig spelling.
+  */
+object Ddr2ExerciserDesign extends jop.config.BoardDesign {
+  import jop.config._
+  val assembly   = SystemAssembly.ae115fb
+  val entityName = "Ddr2ExerciserTop"
+  val designName = "ddr2-exerciser"
+  val uartBaud   = 115200
+  val devices    = Map(
+    "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340"),
+                             params = Map("baudRate" -> uartBaud)))
+  val resetInput = jop.generate.PinResolver.resetFpgaPin(assembly)
+                     .map(ResetInput("rst_n", _, assembly.fpgaBoard.resetActiveLow))
+  val usesSdr    = false
+  val memType    = Some(MemoryType.SDRAM_DDR2)
+  val fpga       = assembly.fpga
+  val fpgaFamily = assembly.fpgaFamily
+  val clkMhz     = 25
+}
+
+/** Emit everything Quartus needs for the DDR2 exerciser. */
+object Ddr2ExerciserBuild extends App {
+  import jop.generate._
+  val design   = Ddr2ExerciserDesign
+  val cfgName  = "ddr2Exerciser"
+  val revision = "ddr2_exerciser"
+  val layout   = BuildLayout.default
+  val cfgDir   = layout.configDir(cfgName, Seq.empty)
+
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(25 MHz),
-    defaultConfigForClockDomains = ClockDomainConfig(
-      resetKind = ASYNC,
-      resetActiveLevel = LOW
-    )
+    targetDirectory = layout.rtlDir(cfgName, Seq.empty),
+    defaultClockDomainFrequency = FixedFrequency(HertzNumber(design.clkMhz * 1000000L)),
+    defaultConfigForClockDomains = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = LOW)
   ).generate(InOutWrapper(Ddr2ExerciserTop()))
 
-  println("Generated: spinalhdl/generated/Ddr2ExerciserTop.v")
+  StandaloneBuild.summary(cfgName, design.entityName,
+    board = design.assembly.fpgaBoard.name, fpga = design.fpga.name,
+    clkMhz = design.clkMhz, uartBaud = Some(design.uartBaud))
+
+  def write(path: String, body: String): Unit = {
+    val f = new java.io.File(path)
+    Option(f.getParentFile).foreach(_.mkdirs())
+    val w = new java.io.PrintWriter(f)
+    try w.print(body) finally w.close()
+    println(s"Wrote $path")
+  }
+  write(s"$cfgDir/quartus/$revision.sdc", TimingConstraints.forConfig(design).toSdc)
+  write(s"$cfgDir/quartus/setup_proj.tcl",
+        QuartusProject.generate(design, revision, cfgName, Seq.empty))
 }

@@ -93,7 +93,7 @@ header from an old design previously programmed into the flash.
 
 ```bash
 cd /home/peter/jop-spinalhdl
-sbt "runMain jop.system.ConfigFlashExerciserTopVerilog"
+make -C fpga/qmtech-ep4cgx150-sdram config-flash-exerciser
 
 cd fpga/qmtech-ep4cgx150-sdram
 make build-config-flash-exerciser

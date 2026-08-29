@@ -593,15 +593,3 @@ object SdramExerciserDesign extends jop.config.BoardDesign {
   val clkMhz     = 100
   val memoryDevice = assembly.memoryDevices.head._2
 }
-
-object SdramExerciserTopVerilog extends App {
-  val md = SdramExerciserDesign.memoryDevice
-
-  SpinalConfig(
-    mode = Verilog,
-    targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(SdramExerciserDesign.clkMhz MHz)
-  ).generate(InOutWrapper(SdramExerciserTop(md)))
-
-  println("Generated: spinalhdl/generated/SdramExerciserTop.v")
-}

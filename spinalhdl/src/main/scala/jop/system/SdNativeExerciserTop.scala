@@ -804,13 +804,3 @@ object SdNativeExerciserDesign extends jop.config.BoardDesign {
   val fpgaFamily = assembly.fpgaFamily
   val clkMhz     = 80
 }
-
-object SdNativeExerciserTopVerilog extends App {
-  SpinalConfig(
-    mode = Verilog,
-    targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(SdNativeExerciserDesign.clkMhz MHz)
-  ).generate(InOutWrapper(SdNativeExerciserTop()))
-
-  println("Generated: spinalhdl/generated/SdNativeExerciserTop.v")
-}

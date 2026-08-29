@@ -879,13 +879,3 @@ object SdSpiExerciserDesign extends jop.config.BoardDesign {
     * SpinalHDL clock domain and the SD divider, so all three agree. */
   val clkMhz = 80
 }
-
-object SdSpiExerciserTopVerilog extends App {
-  SpinalConfig(
-    mode = Verilog,
-    targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(SdSpiExerciserDesign.clkMhz MHz)
-  ).generate(SdSpiExerciserTop())
-
-  println("Generated: spinalhdl/generated/SdSpiExerciserTop.v")
-}

@@ -8110,22 +8110,59 @@ Cleaning is NOT the cost, and the cold tree is not negotiable: a fresh clone is
 227 ms and `git clean -xfd` is 18 ms. Reusing a dirty tree is what hides these
 bugs in the first place.
 
-### Still generating into the source tree (OPEN)
+### Item 94 — Nothing generates into the source tree any more (CLOSED)
 
-Nine generators, of which eight remain:
+The eight generators listed as OPEN under item 93 are converted. Every FPGA
+flow in the tree now writes to `build/<config>/`, and the legacy
+`*TopVerilog` objects that wrote to `spinalhdl/generated` are deleted rather
+than left as a trap — running one by hand would have recreated the directory.
 
-| generator | board | blocker |
-|---|---|---|
-| `SdramExerciserWukongTopVerilog` | wukong | standalone top, needs a `BoardDesign` |
-| `Ddr2ExerciserTopVerilog` | a-e115fb | ditto |
-| `Ddr3ExerciserTopVerilog` | alchitry-ddr3-test | ditto |
-| `FlashProgrammerDdr3TopVerilog` | alchitry-au | ditto |
-| `ConfigFlashExerciserTopVerilog`, `FlashProgrammerTopVerilog` | ep4cgx150-sdram | ditto |
-| `UartEchoTopVerilog` | dbfpga-v5 | ditto |
-| `JopTopVerilog max1000Sdram` | max1000 | a preset, but `jop_max1000.qsf` reads the legacy path |
+| generator | now |
+|---|---|
+| `UartEcho`, `Ddr3Exerciser`, `FlashProgrammerDdr3`, `SdramExerciserWukong` | `build/<cfg>/rtl` via `StandaloneBuild` |
+| `ConfigFlashExerciser`, `FlashProgrammer`, `UartTest` | generated Quartus project, `.qsf`/`.qpf` deleted |
+| `Ddr2Exerciser` | generated Quartus project, `.qsf`/`.qpf`/`.sdc` deleted |
+| `JopTopVerilog max1000Sdram` | see item 93's MAX1000 entry |
 
-`sdramExerciser`, `sdNativeExerciser` and `sdSpiExerciser` show the pattern for
-the standalone tops; each needs its own `BoardDesign`.
+**Every switch was diffed against the file it replaced before being made**, and
+the diffs are what made it safe:
+
+- config-flash exerciser: all 8 pins identical; programmer: all 9. Builds are
+  637 LEs / 8 pins and 337 LEs / 9 pins.
+- DDR2 exerciser: the 8 board pins identical. The 110 `mem_*` assignments in
+  the old `.qsf` were redundant -- `ddr2_pins.qsf`, which the generated project
+  `source`s, carries them. 7,620 LEs / 118 pins.
+
+**Three generator gaps this exposed, all of the same shape** -- a generator
+encoding one flow's naming as if it were universal:
+
+1. `QuartusProject` emitted `ENABLE_CONFIGURATION_PINS OFF` unconditionally. A
+   design driving the EPCS needs it `ON` plus four `RESERVE_*` lines or its
+   pins stay reserved and it is wired to nothing. Now keyed off whether the
+   DESIGN declares a `cfgflash` device, not off what the board carries.
+2. `Board.QmtechEP4CGX150` had **no config-flash device at all**, so a
+   generated project would silently have dropped all four EPCS pins.
+3. `QsfGenerator.toIoStandards` looked up I/O standards by port name, and
+   boards spell the reset `"reset"`. The DDR2 exerciser calls it `rst_n`, got
+   no standard, and inherited the global 3.3-V LVCMOS on a pin in the 1.8 V
+   DDR2 bank -- `Error (169029): Pin rst_n is incompatible with I/O bank 5`. A
+   reset port now falls back to the board's `"reset"` entry whatever it is
+   called.
+
+**Ports were renamed to the convention rather than aliased in the generators.**
+`flash_*` -> `cf_*` on the two EPCS tops, and `clk`/`uart_tx`/`uart_rx` ->
+`clk_in`/`ser_txd`/`ser_rxd` on the DDR2 exerciser. Justified because the pins
+those names resolve to are *identical* to the ones the board's converted JOP
+flow already generates -- the RTL's own comments recorded them.
+
+**The XDC side is still NOT converted**, and deliberately: `XdcGenerator`
+filters UART pins on `verilogPort.startsWith("ser_")` and emits the clock as
+`clk`, so for the Vivado tops it silently drops pins. See item 93. The Quartus
+generators did not have that problem because those tops already used the JOP
+spelling.
+
+`uart_test` was a bonus find: a `.qsf` and RTL with **no Makefile target at
+all**, so neither could be built by anything. Converted and given a target.
 
 ## 4. Two workstreams, both largely done
 

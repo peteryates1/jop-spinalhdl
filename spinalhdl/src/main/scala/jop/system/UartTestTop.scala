@@ -148,12 +148,3 @@ object UartTestBuild extends App {
   write(s"$cfgDir/quartus/setup_proj.tcl",
         QuartusProject.generate(design, revision, cfgName, Seq.empty))
 }
-
-object UartTestTopVerilog extends App {
-  SpinalConfig(
-    mode = Verilog,
-    targetDirectory = "spinalhdl/generated",
-    defaultClockDomainFrequency = FixedFrequency(80 MHz)
-  ).generate(UartTestTop())
-  println("Generated: spinalhdl/generated/UartTestTop.v")
-}

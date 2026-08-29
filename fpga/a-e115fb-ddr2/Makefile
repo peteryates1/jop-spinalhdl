@@ -90,22 +90,23 @@ smp-program:
 	$(MAKE) program CFG="ae115fbDdr2Smp $(CORES)" REV=jop_ddr2_smp
 
 # --------------------------------------------------------------------------
-# NOT CONVERTED — the DDR2 exerciser
+# The DDR2 exerciser — CONVERTED 2026-08-29
 #
 # The first hardware milestone of the bring-up (docs/boards/ae115fb-ddr2-
-# bringup.md). Still builds in-tree from the hand-written ddr2_exerciser.qsf:
-# it is a standalone Ddr2ExerciserTopVerilog design rather than a JopConfig
-# preset, so converting it means giving it a BoardDesign as the SD and SDRAM
-# exercisers have. Left alone because the JOP path it was written to unblock now
-# works end to end.
+# bringup.md). It now has a BoardDesign, as the SD and SDRAM exercisers do, and
+# builds into build/ddr2Exerciser/ like everything else.
+#
+# Its ports were the only ones among the standalone tops not following the JOP
+# convention -- clk, uart_tx, uart_rx -- and were renamed, because the pins they
+# resolve to are IDENTICAL to the ones this board\'s converted JOP DDR2 flow
+# already generates (AB11, H5, N1, four LEDs), as the RTL\'s own comments said.
+# The 110 mem_* assignments in the old .qsf were redundant: ddr2_pins.qsf, which
+# the generated project sources, carries them.
 # --------------------------------------------------------------------------
 
 exerciser:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.Ddr2ExerciserTopVerilog"
-	$(QUARTUS_BIN)/quartus_map ddr2_exerciser
-	$(QUARTUS_BIN)/quartus_fit ddr2_exerciser
-	$(QUARTUS_BIN)/quartus_asm ddr2_exerciser
-	$(QUARTUS_BIN)/quartus_sta ddr2_exerciser
+	$(MAKE) generate build CFG=ddr2Exerciser REV=ddr2_exerciser \
+	  GEN_MAIN=jop.system.Ddr2ExerciserBuild GEN_ARGS= GEN_MAKES_PROJECT=yes
 
 exerciser-program: assert-device
 	$(QUARTUS_BIN)/quartus_pgm -c "$$($(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --cable $(BOARD_ALIAS))" \

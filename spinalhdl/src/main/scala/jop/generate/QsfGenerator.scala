@@ -64,9 +64,21 @@ object QsfGenerator {
     * name covers a bus, so `led` applies to `led[0]`..`led[3]`. */
   def toIoStandards(config: BoardDesign, assignments: Seq[PinAssignment]): String = {
     val stds = config.assembly.boards.flatMap(_.portIoStandards).toMap
+    // A DESIGN NAMES ITS OWN RESET PORT; the board only knows that the reset
+    // PIN needs a particular I/O standard. Boards spell it "reset", which
+    // matched every JopConfig flow and nothing else -- the DDR2 exerciser calls
+    // it `rst_n`, got no standard, and inherited the global 3.3-V LVCMOS on a
+    // pin sitting in the 1.8 V DDR2 bank:
+    //
+    //   Error (169029): Pin rst_n is incompatible with I/O bank 5
+    //
+    // So a reset port falls back to the board's "reset" entry whatever it is
+    // called.
+    val resetPort = config.resetInput.map(_.port)
     if (stds.isEmpty) "" else assignments.flatMap { a =>
       val base = a.verilogPort.takeWhile(_ != '[')
-      stds.get(a.verilogPort).orElse(stds.get(base)).map { std =>
+      val viaReset = if (resetPort.contains(a.verilogPort)) stds.get("reset") else None
+      stds.get(a.verilogPort).orElse(stds.get(base)).orElse(viaReset).map { std =>
         s"""set_instance_assignment -name IO_STANDARD "$std" -to ${a.verilogPort}"""
       }
     }.mkString("\n")
