@@ -40,7 +40,7 @@ include ../quartus.mk
         smp smp-program smp-verify program-smp \
         dbfpga dbfpga-vgadma dbfpga-program generate-dbfpga generate-dbfpga-vgadma \
         sd-native sd-spi program-sd-native program-sd-spi \
-        config-flash-exerciser flash-programmer clean
+        config-flash-exerciser flash-programmer uart-test clean
 
 all:  microcode generate build
 full: microcode generate build program download monitor
@@ -155,24 +155,30 @@ full-sd-spi-exerciser: sd-spi program-sd-spi monitor
 # NOT CONVERTED — still build in-tree from hand-written .qsf files
 #
 # Both are blocked on the same thing: the config-flash pads have no device
-# abstraction yet, so there is nothing for a generator to emit. They keep the
-# in-tree dram_pll.vhd and sd_exerciser.sdc, which is why those two files are
-# still here when the other hand-written project files are gone.
+# ALL THREE ARE CONVERTED NOW, and the in-tree dram_pll.vhd and
+# sd_exerciser.sdc went with them -- the PLL comes from DramPllGen and the .sdc
+# from TimingConstraints, both into build/<config>/, as for every other flow.
 # --------------------------------------------------------------------------
 
+# CONVERTED 2026-08-29. Both now go through quartus.mk like every other flow:
+# the Build object emits RTL, PLL, .sdc and setup_proj.tcl into
+# build/<config>/, and the hand-written .qsf files are gone. Their generated
+# pins were diffed against those .qsf files first and matched exactly, all
+# eight each.
 config-flash-exerciser:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.ConfigFlashExerciserTopVerilog"
-	$(QUARTUS_BIN)/quartus_map config_flash_exerciser
-	$(QUARTUS_BIN)/quartus_fit config_flash_exerciser
-	$(QUARTUS_BIN)/quartus_asm config_flash_exerciser
-	$(QUARTUS_BIN)/quartus_sta config_flash_exerciser
+	$(MAKE) generate build CFG=configFlashExerciser REV=config_flash_exerciser \
+	  GEN_MAIN=jop.system.ConfigFlashExerciserBuild GEN_ARGS= GEN_MAKES_PROJECT=yes
 
 flash-programmer:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.FlashProgrammerTopVerilog"
-	$(QUARTUS_BIN)/quartus_map flash_programmer
-	$(QUARTUS_BIN)/quartus_fit flash_programmer
-	$(QUARTUS_BIN)/quartus_asm flash_programmer
-	$(QUARTUS_BIN)/quartus_sta flash_programmer
+	$(MAKE) generate build CFG=flashProgrammer REV=flash_programmer \
+	  GEN_MAIN=jop.system.FlashProgrammerBuild GEN_ARGS= GEN_MAKES_PROJECT=yes
+
+# The smallest thing on this board that proves a console end to end. It had a
+# uart_test.qsf and no target at all, so neither the project nor the RTL could
+# be built by anything.
+uart-test:
+	$(MAKE) generate build CFG=uartTest REV=uart_test \
+	  GEN_MAIN=jop.system.UartTestBuild GEN_ARGS= GEN_MAKES_PROJECT=yes
 
 # `clean` removes the in-tree leftovers only. The generated tree is
 # quartus.mk's `quartus-clean`, which removes build/<config>/ for the CFG in

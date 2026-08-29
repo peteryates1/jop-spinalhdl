@@ -90,7 +90,17 @@ $(UCODE_SCALA) &:
 # them gets all of them. Which app a preset actually bakes in is decided in
 # JopTopVerilog (`appRel`) and is deliberately not restated here -- that mapping
 # is configuration, and configuration lives in the Scala.
+# ONLY FOR PRESETS. A standalone top -- an exerciser, a flash programmer --
+# has no JopConfig preset behind it, so `make -C java ... JOP_PRESET=<cfg>`
+# cannot resolve one and ConstGeneratorMain fails; and it embeds no program
+# anyway. Keyed off the generator because that is exactly what distinguishes
+# the two: JopTopVerilog builds a preset, anything else builds a standalone
+# top.
+ifeq ($(GEN_MAIN),jop.system.JopTopVerilog)
 JOP_APP_FILE = $(CFG_DIR)/java/apps/Smallest/HelloWorld.jop
+else
+JOP_APP_FILE =
+endif
 
 $(JOP_APP_FILE):
 	cd $(PROJECT_ROOT)/java && $(MAKE) all JOP_PRESET="$(CFG)" BUILDTREE=1

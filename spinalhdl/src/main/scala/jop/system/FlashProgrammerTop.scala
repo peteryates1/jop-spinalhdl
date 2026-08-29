@@ -25,10 +25,10 @@ case class FlashProgrammerTop() extends Component {
     val ser_rxd    = in Bool()
     val led        = out Bits(2 bits)
     // Direct SPI pins to config flash (active serial pins)
-    val flash_dclk  = out Bool()
-    val flash_ncs   = out Bool()
-    val flash_asdo  = out Bool()
-    val flash_data0 = in Bool()
+    val cf_dclk  = out Bool()
+    val cf_ncs   = out Bool()
+    val cf_asdo  = out Bool()
+    val cf_data0 = in Bool()
   }
 
   noIoPrefix()
@@ -74,10 +74,10 @@ case class FlashProgrammerTop() extends Component {
     val spiRxByte   = Reg(Bits(8 bits)) init (0)
 
     // Direct SPI pin wiring (config flash pins as regular I/O)
-    io.flash_dclk := spiClk
-    io.flash_ncs  := spiCs
-    io.flash_asdo := spiShiftOut.msb
-    val spiMiso = io.flash_data0
+    io.cf_dclk := spiClk
+    io.cf_ncs  := spiCs
+    io.cf_asdo := spiShiftOut.msb
+    val spiMiso = io.cf_data0
 
     // UART (1 Mbaud at 80 MHz) — both TX and RX
     val uartCtrl = new UartCtrl(UartCtrlGenerics(
@@ -281,6 +281,61 @@ case class FlashProgrammerTop() extends Component {
 /**
  * Generate Verilog for FlashProgrammerTop
  */
+/** The design behind flash-programmer, so its Quartus project is generated rather
+  * than hand-written. Both flash tops already used the JOP port convention
+  * (clk_in, ser_txd); only the EPCS ports needed renaming, flash_* -> cf_*,
+  * to match DeviceType.CfgFlash. */
+object FlashProgrammerDesign extends jop.config.BoardDesign {
+  import jop.config._
+  val assembly   = SystemAssembly.qmtechWithDb
+  val entityName = "FlashProgrammerTop"
+  val designName = "flash-programmer"
+  val uartBaud   = 1000000
+  val devices    = Map(
+    "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"),
+                             params = Map("baudRate" -> uartBaud)),
+    "cfgflash" -> DeviceInstance(DeviceType.CfgFlash, devicePart = Some("EPCS")))
+  val resetInput = None
+  val usesSdr    = false
+  val memType    = None
+  val fpga       = assembly.fpga
+  val fpgaFamily = assembly.fpgaFamily
+  val clkMhz     = 80
+}
+
+/** Emit everything Quartus needs for flash-programmer. */
+object FlashProgrammerBuild extends App {
+  import jop.generate._
+  val design   = FlashProgrammerDesign
+  val cfgName  = "flashProgrammer"
+  val revision = "flash_programmer"
+  val layout   = BuildLayout.default
+  val cfgDir   = layout.configDir(cfgName, Seq.empty)
+
+  SpinalConfig(
+    mode = Verilog,
+    targetDirectory = layout.rtlDir(cfgName, Seq.empty),
+    defaultClockDomainFrequency = FixedFrequency(HertzNumber(design.clkMhz * 1000000L))
+  ).generate(FlashProgrammerTop())
+
+  jop.config.DramPllGen.emit("fpga/qmtech-ep4cgx150-sdram", design.clkMhz, cfgDir)
+
+  StandaloneBuild.summary(cfgName, design.entityName,
+    board = design.assembly.fpgaBoard.name, fpga = design.fpga.name,
+    clkMhz = design.clkMhz, uartBaud = Some(design.uartBaud))
+
+  def write(path: String, body: String): Unit = {
+    val f = new java.io.File(path)
+    Option(f.getParentFile).foreach(_.mkdirs())
+    val w = new java.io.PrintWriter(f)
+    try w.print(body) finally w.close()
+    println(s"Wrote $path")
+  }
+  write(s"$cfgDir/quartus/$revision.sdc", TimingConstraints.forConfig(design).toSdc)
+  write(s"$cfgDir/quartus/setup_proj.tcl",
+        QuartusProject.generate(design, revision, cfgName, Seq.empty))
+}
+
 object FlashProgrammerTopVerilog extends App {
   SpinalConfig(
     mode = Verilog,

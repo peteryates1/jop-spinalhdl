@@ -73,12 +73,32 @@ object QuartusProject {
     g("ERROR_CHECK_FREQUENCY_DIVISOR", "1")
     sb.append("\n")
 
+    // DOES THIS DESIGN DRIVE THE CONFIGURATION FLASH? Only two do -- the
+    // config-flash exerciser and the flash programmer -- and only they may
+    // take the dedicated pins as user I/O. Reading it off the DESIGN's devices
+    // rather than the board's is the same rule as everywhere else here: the
+    // board carries an EPCS whether or not this configuration talks to it, and
+    // releasing pins nothing drives is not free.
+    val usesCfgFlash = config.devices.values.exists(_.deviceType == DeviceType.CfgFlash)
+
     sb.append("# Configuration pins -- this board boots from the JTAG/serial path,\n")
     sb.append("# so the dedicated configuration pins are released as user I/O.\n")
     g("ENABLE_OCT_DONE", "OFF")
-    g("ENABLE_CONFIGURATION_PINS", "OFF")
+    g("ENABLE_CONFIGURATION_PINS", if (usesCfgFlash) "ON" else "OFF")
     g("ENABLE_BOOT_SEL_PIN", "OFF")
     g("USE_CONFIGURATION_DEVICE", "OFF")
+
+    // A design that drives the EPCS needs the four config pins handed back to
+    // it after configuration. Without these the pins stay reserved and the
+    // design is wired to nothing -- silently, since reserving a pin is not an
+    // error. Taken from the hand-written flash projects, which are the only
+    // two that ever set them.
+    if (usesCfgFlash) {
+      sb.append("# This design drives the EPCS, so the configuration pins become regular I/O.\n")
+      Seq("DATA0", "DCLK", "DATA1", "FLASH_NCE").foreach { pin =>
+        g(s"RESERVE_${pin}_AFTER_CONFIGURATION", "\"USE AS REGULAR IO\"")
+      }
+    }
 
     // MAX 10 ONLY. This family configures from internal flash, and its default
     // mode has no ERAM -- so any initialised M9K (every microcode ROM here) is

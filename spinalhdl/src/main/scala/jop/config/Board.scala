@@ -445,7 +445,17 @@ object Board {
       // sw1 is the reset button. The key name "reset" is what PinResolver and
       // JopTop look for; sw0 stays free for application use. Both are the
       // core board's user push-buttons, active low.
-      BoardDevice("SWITCH", mapping = Map("sw0" -> "PIN_AD23", "reset" -> "PIN_AD24"))),
+      BoardDevice("SWITCH", mapping = Map("sw0" -> "PIN_AD23", "reset" -> "PIN_AD24")),
+      // EPCS configuration flash, on the DEDICATED configuration pins. Using
+      // them as user I/O is what ENABLE_CONFIGURATION_PINS and the four
+      // RESERVE_*_AFTER_CONFIGURATION settings are for -- QuartusProject emits
+      // those only when a design declares a cfgflash device, because releasing
+      // configuration pins on a board that does not touch them is not free.
+      // Pins from the hand-written config_flash_exerciser.qsf and
+      // flash_programmer.qsf, which are the two designs that drive it.
+      BoardDevice("EPCS", mapping = Map(
+        "DCLK" -> "PIN_F6", "NCS" -> "PIN_D5",
+        "ASDO" -> "PIN_E6", "DATA0" -> "PIN_D6"))),
     connectors = Map(
       // U4: Banks 5, 6, 7 — mates with DB_FPGA J3 when used with daughter board
       "U4" -> Map(
