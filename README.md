@@ -202,12 +202,54 @@ layout, what a board declares versus inherits, and the two things that are never
 constants (the baud comes from the build's own summary; probes and serial ports
 resolve by serial number, never by `/dev/ttyUSB*` path).
 
+#### Start here: Colorlight i5
+
+**If you are running on hardware for the first time, use the Colorlight i5.**
+It is the least you can go wrong with: one USB cable carries both programming
+and the console, the whole toolchain is open source (`yosys`, `nextpnr-ecp5`,
+`ecppack`, `openFPGALoader`) so there is no vendor install, and there is no
+separate JTAG blaster to select — which is the step most likely to bite you on
+the multi-board setups below.
+
 ```bash
-# Primary board — QMTECH EP4CGX150 + SDR SDRAM
+cd fpga/colorlight-i5
+make bitstream program download
+```
+
+Expect, in order: a `nextpnr` timing line, the bitstream loading, then the
+board talking:
+
+```
+Info: Max frequency for clock '$glbnet$i5Pll_clkout0': 49.40 MHz (PASS at 40.00 MHz)
+Loading: [==================================================] 100.00%
+Done
+...
+Hello World!
+Hello World!
+```
+
+**`nextpnr` prints `Max frequency` TWICE** — a post-place estimate first, then
+the post-route figure. They can differ by 17 MHz on this board, and only the
+second one is real. Read the last one.
+
+#### The primary development board: QMTECH EP4CGX150
+
+The board most configurations target, and the one with SMP up to 16 cores. It
+needs Quartus and a JTAG blaster, so it is a bigger first step than the i5.
+
+```bash
 cd fpga/qmtech-ep4cgx150-sdram
 make all                       # microcode + generate + build
 make program download monitor
 make console-info              # which tty, which baud, which image
+```
+
+`download` sends `build/<config>/java/apps/Smallest/HelloWorld.jop` and then
+watches the console, so success looks the same as the i5 above — a boot banner
+followed by `Hello World!` repeating. `program` runs a read-only JTAG chain
+scan first and refuses if the board on the cable is not the one this
+configuration expects; `quartus_pgm` reports success on a chain it never read,
+so that check is the only thing standing between you and a silent no-op.
 
 # Other configurations of the same board — each gets its own build/<config>/
 make smp CORES=4               # 4-core SMP   (also CORES=8, CORES=12 MHZ=36)
@@ -231,13 +273,14 @@ cd fpga/qmtech-xc7a100t-dbfpga-v5 && make ddr3-build ddr3-program ddr3-download
 # A-E115FB — 1 GB DDR2. Needs Quartus 18.1: Intel dropped Cyclone IV DDR2
 # ALTMEMPHY after that version.
 cd fpga/a-e115fb-ddr2 && make all && make program download monitor
+# Verified on hardware 2026-08-29: boots and prints Hello World! over its CH340
+# at 2 Mbaud. If the console will not open (EIO, and dmesg shows "-32"), the
+# adapter's control endpoint has stalled: `fpga/scripts/usb_serial_map --reset
+# ae115fb` clears it without unplugging anything.
 
 # Trenz CYC5000. Quartus cannot see the board's FT2232H "Arrow USB Blaster",
 # so `make program` converts the .sof to .rbf and uses openFPGALoader.
 cd fpga/cyc5000-sdram && make all && make program download monitor
-
-# Colorlight i5 — the only fully open-source toolchain here
-cd fpga/colorlight-i5 && make bitstream program download
 
 # Verify a board end to end, INCLUDING TIMING, in one command. It refuses to
 # call a run a pass if the build missed timing: a bitstream can print the right

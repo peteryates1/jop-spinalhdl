@@ -177,6 +177,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[84](#item-84)** — No MAX1000 configuration is known to fit — a 1- or 2-core 10M08 setup is wanted (OPEN)
 - **[85](#item-85)** — Build port, phase 2 — the SDRAM exerciser folded onto the shared flow, and the baud it never reported
 - **[86](#item-86)** — Build port, phase 3a — three shared Vivado scripts, proven equivalent by control build; and the DB_FPGA DDR3 build has quietly got 43 % smaller
+- **[100](#item-100)** — Newcomer hardware path verified on the i5 and A-E115FB; the EP4CGX150's level-shifted Pico cable has FAILED, diagnosed remotely to the cable itself (OPEN — needs bench time)
 - **[95](#item-95)** — The README advertises 13 simulation commands; CI watches a different set, and the gap is where four broken sims were hiding (OPEN)
 - **[96](#item-96)** — `JopCoreWithSdramSim` **stalls** — a closed loop over three PC values, diagnosed not guessed (OPEN)
 - **[97](#item-97)** — `JopSmpBramSim` runs 100 M cycles, both cores boot, then fails its own `GC test start` check (OPEN)
@@ -6352,11 +6353,13 @@ $ fpga/scripts/hw_verify.py ep4cgx150Serial
 
 Verified on all three converted boards: EP4CGX150 1/1, Wukong 2/2, i5 1/1.
 
-**Coverage.** Six boards carry a probe and console alias and can run step 5:
-EP4CGX150, Wukong, i5, CYC5000, Alchitry Au, XC7A100T DB V5. Two cannot and take
-the four-step path — the **MAX1000** (no hardware) and the **A-E115FB** (its
-JTAG resolves to the same Terasic blaster as the EP4CGX150, so both cannot be
-attached at once, and its CH340 console is not currently plugged in either).
+**Coverage.** SUPERSEDED 2026-08-29 for the A-E115FB. Seven boards carry a probe
+and console alias and can run step 5: EP4CGX150, Wukong, i5, CYC5000, Alchitry
+Au, XC7A100T DB V5, and now the **A-E115FB** — it no longer shares the Terasic
+with the EP4CGX150 (that board has its own level-shifted Pico) and its CH340
+console is plugged in and working, so the "both cannot be attached at once"
+restriction below is gone. Verified end to end on hardware the same day. Only
+the **MAX1000** still takes the four-step path, for want of hardware on site.
 A conversion without step 5 must be recorded as **converted, not
 hardware-verified**; treating the two as the same is the conflation item 60
 already caught once.
@@ -8269,6 +8272,61 @@ Separately: a subagent gets none of `.claude/settings.local.json`, which is
 gitignored and therefore absent from a fresh clone. So the cold agent had a
 narrower permission set than the session that spawned it, and hardware
 programming was refused for that reason rather than for anything in the docs.
+
+### Item 100 — The newcomer hardware path, and a JTAG cable that died mid-test
+
+Continuing the cold-newcomer exercise (items 95-99) onto real hardware. The
+agent derived the command sequence from the documentation alone; the commands
+were then run in a session with the permissions to write to a board, because a
+subagent inherits none of `.claude/settings.local.json` (gitignored, so absent
+from a fresh clone).
+
+**Two boards verified end to end, from their documented sequences:**
+
+| board | toolchain | result |
+|---|---|---|
+| **Colorlight i5** | yosys / nextpnr / ecppack — open source | `49.40 MHz PASS`, bitstream loaded, **`Hello World!`** |
+| **A-E115FB** | Quartus 18.1 | IDCODE asserted, configured, **`Hello World!`** |
+| EP4CGX150 | Quartus | **blocked — cable hardware, not documentation** |
+
+**The i5 is now what the README points a newcomer at.** One USB cable carries
+programming and console, the toolchain is entirely open source, and there is no
+blaster to select — which is the step that cost this exercise an afternoon on
+the EP4CGX150. The EP4CGX150 remains the primary DEVELOPMENT board; those are
+different questions and the README now separates them.
+
+**The EP4CGX150's Pico cable failed between 08:50 and 14:30 the same day**, on
+wiring that had not been touched since it worked. Diagnosed entirely remotely,
+by elimination:
+
+| ruled out | how |
+|---|---|
+| board power | LEDs on, confirmed by eye |
+| USB layer | enumerates, re-enumerates, survives `USBDEVFS_RESET` and a VM reassignment |
+| Pico firmware | restarted over SWD via the Debug Probe — device re-enumerated, no change |
+| Quartus / `jtagd` | **openFPGALoader fails identically** — a different driver stack entirely |
+| host, toolchain, passthrough | the Terasic works through all of it, concurrently |
+
+What remains is the cable hardware: the level-shifter carrier, its Vref pickup
+from header pin 4, or a Pico GPIO. Needs bench time.
+
+**Two remote techniques worth keeping**, both new here:
+
+1. **SWD reset/reflash of a Pico probe** through the Raspberry Pi Debug Probe.
+   `USBDEVFS_RESET` and a VM re-assignment rebuild the USB *link* only; neither
+   restarts RP2040 firmware. SWD does.
+2. **Isolating one of two identical probes without touching cables** — write 0
+   to `/sys/bus/usb/devices/<port>/authorized`. Note that `unbind` does NOT
+   work for this: openFPGALoader reaches the device through libusb, so kernel
+   driver binding is irrelevant and the device stays visible. Deauthorization
+   is what removes it. Both attempts are recorded because the first looked like
+   it had worked, and only checking the precondition showed it had not.
+
+**A diagnostic distinction worth knowing:** `jtagconfig --debug` prints
+`Captured DR after reset = ()`. An EMPTY capture means the cable never
+completed a shift; a capture of ZEROS means it shifted and the target answered
+with nothing. A dead cable on a good board and a good cable on a dead board are
+indistinguishable in `quartus_pgm`'s output, which exits 0 for both.
 
 ## 4. Two workstreams, both largely done
 
