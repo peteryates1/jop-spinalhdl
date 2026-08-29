@@ -74,7 +74,7 @@ CONSOLE_DUAL_SDR  = wukong-pico-0
 .PHONY: sdram-generate sdram-create-ip sdram-build sdram-program sdram-monitor
 .PHONY: jop-sdram-generate jop-sdram-build jop-sdram-smp-generate jop-sdram-smp-build jop-sdram-smp-bitstream jop-sdram-program jop-sdram-monitor print-cfg-dir
 
-all: build
+all: microcode build
 
 # === JOP BRAM targets ===
 

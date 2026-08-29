@@ -59,9 +59,25 @@ UCODE       := $(wildcard $(PROJECT_ROOT)/build/microcode/serial/mem_*.dat)
 # `microcode-flash` target invoking `make flash` in asm/, and asm/Makefile has
 # no `flash` target: it is `flash-altera`. Dead, and no one noticed, because
 # nothing depended on it.
+# `all`, NOT `serial`, even though serial is the mode these flows boot in.
+#
+# build.sbt declares all THREE microcode directories as Scala source roots
+# (simulation, serial, flash) and JumpTable.scala references all three objects
+# unconditionally -- `def flash: JumpTableInitData = from(FlashJumpTableData)`.
+# So every sbt compile needs all three generated, whatever the board boots
+# from. Building only `serial` leaves FlashJumpTableData undefined and the
+# FIRST sbt invocation of a cold build fails:
+#
+#   not found: value FlashJumpTableData
+#
+# Invisible in a working tree, because build/microcode/flash survives from some
+# earlier build and nothing invalidates it. Found 2026-08-29 by cold-building a
+# fresh clone. CI already used `all` for exactly this reason -- its comment even
+# records the flash variant going 16 days stale locally while CI stayed green --
+# so the board flows were the half that never got the fix.
 microcode:
-	cd $(PROJECT_ROOT)/asm && $(MAKE) serial
-	@echo "=== Serial microcode in $(PROJECT_ROOT)/build/microcode/serial ==="
+	cd $(PROJECT_ROOT)/asm && $(MAKE) all
+	@echo "=== Microcode in $(PROJECT_ROOT)/build/microcode ==="
 
 # WHICH GENERATOR RUNS, and whether it emits the project itself.
 #

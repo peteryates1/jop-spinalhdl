@@ -66,7 +66,15 @@ CREATE_TCL  = $(PROJECT_ROOT)/fpga/scripts/vivado_create_project.tcl
 PRJ_TCL     = $(PROJECT_ROOT)/fpga/scripts/vivado_build_project.tcl
 NP_TCL      = $(PROJECT_ROOT)/fpga/scripts/vivado_build_nonproject.tcl
 
-.PHONY: generate program-bit vivado-clean
+.PHONY: generate program-bit vivado-clean microcode
+
+# The Vivado side had NO microcode rule, so a cold build of a Vivado board
+# failed before it reached Vivado at all. See the long note in quartus.mk for
+# why this is `all` and not `serial`: every sbt compile needs all three
+# variants generated, regardless of which one the board boots from.
+microcode:
+	cd $(PROJECT_ROOT)/asm && $(MAKE) all
+	@echo "=== Microcode in $(PROJECT_ROOT)/build/microcode ==="
 
 $(GEN_STAMP): $(SCALA_SRC) $(UCODE)
 	cd $(PROJECT_ROOT) && sbt "runMain $(GEN_MAIN) $(GEN_ARGS)"

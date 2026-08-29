@@ -7995,6 +7995,62 @@ Worth separating the two halves when a board looks dead: **JTAG and UART are
 different cables with different failure modes**, and this one had a working
 FPGA behind a broken adapter.
 
+### Item 92 — The tree did not build from a clean clone, and the working tree hid it
+
+Asked whether the port survives `git clean`, the safe form of that test is a
+fresh clone -- non-destructive, and it answers the same question. It failed:
+
+```
+[error] JumpTable.scala:95:39: not found: value FlashJumpTableData
+[error]   def flash: JumpTableInitData = from(FlashJumpTableData)
+```
+
+**Cause.** `build.sbt` declares all THREE microcode directories as Scala source
+roots (`simulation`, `serial`, `flash`) and `JumpTable.scala` references all
+three objects unconditionally. Every `sbt` compile therefore needs all three
+generated -- but every board flow ran `make -C asm serial`, which builds only
+the first two. The FIRST sbt invocation of a cold build dies.
+
+**Why nobody saw it.** `build/microcode/flash/FlashJumpTableData.scala` survives
+from some earlier `make -C asm all` and nothing invalidates it, so a working
+tree compiles fine forever. And CI has always run `make -C asm all` -- its own
+comment records this exact hazard, "a local `make -C asm all` left the flash
+variant 16 days stale while CI was fine". CI had the fix; the board flows were
+the half that never got it.
+
+Three shapes of one bug:
+
+| | before | after |
+|---|---|---|
+| `quartus.mk` (6 boards) | `asm serial` | `asm all` |
+| `alchitry-au` | own copy, `asm serial` | deleted, inherits `vivado.mk` |
+| `vivado.mk` | **no microcode rule at all** | added |
+| `qmtech-xc7a100t-wukong` | `all: build` | `all: microcode build` |
+
+**Verified.** Fresh clone, `make -C fpga/qmtech-ep4cgx150-sdram all`, exit 0
+through map/fit/asm/sta, and the fit is identical to the working tree's:
+11,112 LE, 5650 registers, 268,416 memory bits, 45 pins.
+
+**The general lesson.** A build tree is a cache of decisions nobody is
+re-checking. Generated state that no rule invalidates makes a broken dependency
+*look* satisfied for months, and the longer it sits the more confident everyone
+becomes. A cold clone is cheap (86 MB here) and is the only thing that reads
+the dependency graph honestly. Worth doing after any build-system change, not
+just when something looks wrong.
+
+Related: `git clean -xfd` would have been the WRONG tool for this. It removes
+`.claude/settings.local.json`, all of `build/`, and 77 MB of generated MIG /
+clock-wizard IP that is regenerable only from the tracked `mig.prj` through the
+slow per-IP scripts. A clone tests more and destroys nothing.
+
+### Gotcha — a backgrounded `( ... ) &` reports its own exit, not the build's
+
+`( make ... ; echo "EXIT=$?" >> log ) &` returns the exit status of the `echo`,
+so the completion notification said "exit code 0" for a build that had failed
+with 2, and later said "completed" while four Quartus processes were still
+running. The `EXIT=` marker in the log was right both times. Read the marker,
+not the notification.
+
 ## 4. Two workstreams, both largely done
 
 **GC (Stage 3)** — generational GC is on by default and hardware-validated on

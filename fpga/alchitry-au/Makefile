@@ -69,9 +69,8 @@ all:  microcode generate ips project bitstream
 full: all run
 run:  program download monitor
 
-microcode:
-	cd $(ASM_DIR) && $(MAKE) serial
-	@echo "=== Serial microcode generated ==="
+# microcode comes from vivado.mk -- this copy ran `asm serial`, which leaves
+# FlashJumpTableData ungenerated and breaks a cold build.
 
 
 ips:
