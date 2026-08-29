@@ -79,6 +79,20 @@ object QuartusProject {
     g("ENABLE_CONFIGURATION_PINS", "OFF")
     g("ENABLE_BOOT_SEL_PIN", "OFF")
     g("USE_CONFIGURATION_DEVICE", "OFF")
+
+    // MAX 10 ONLY. This family configures from internal flash, and its default
+    // mode has no ERAM -- so any initialised M9K (every microcode ROM here) is
+    // rejected outright:
+    //
+    //   Error (16031): Current Internal Configuration mode does not support
+    //   memory initialization or ROM. Select Internal Configuration mode with ERAM.
+    //
+    // The hand-written jop_max1000.qsf carried this line with a comment saying
+    // why; the generator did not, so converting the board reproduced the error
+    // exactly. Family-gated because it is meaningless on Cyclone, which
+    // configures from an external device.
+    if (fpga.family.quartusFamilyName == "MAX 10")
+      g("INTERNAL_FLASH_UPDATE_MODE", "\"SINGLE IMAGE WITH ERAM\"")
     // Cyclone IV only. Quartus REFUSES this value on Cyclone V --
     //   ERROR: Value "FREQ_40MHZ" for "ACTIVE_SERIAL_CLOCK" is illegal
     // -- and the setting configures the EPCS active-serial clock, which that
@@ -137,7 +151,12 @@ object QuartusProject {
       case PllIpFile.Generated(name) =>
         g("VHDL_FILE", layout.relativeTo(projectDir, layout.ipDir(preset, buildArgs) + "/" + name))
       case PllIpFile.Static(path) =>
-        g("VHDL_FILE", up(path))
+        // By EXTENSION, not always VHDL_FILE: the MAX1000's PLL is Verilog, and
+        // calling a .v file VHDL_FILE is the same class of error as pointing at
+        // the wrong path -- Quartus does not read it and the module comes out
+        // "undefined".
+        g(if (path.endsWith(".v") || path.endsWith(".sv")) "VERILOG_FILE" else "VHDL_FILE",
+          up(path))
     }
 
     // Board IP beyond the system PLL. Emitted only when the DESIGN needs it:

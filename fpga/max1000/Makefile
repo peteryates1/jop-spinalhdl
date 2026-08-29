@@ -30,10 +30,33 @@
 #             max1000 ENTRY to fpga/scripts/jtag_probe_map when the board is
 #             next connected.
 #
-# STILL IN-TREE. jop_max1000.qsf reads ../../spinalhdl/generated/, the pre-
-# build-tree location, so `generate` below deliberately omits `buildtree`. The
-# conversion needs a MAX1000 BoardDesign; see docs/architecture/build-port-
-# triage.md.
+# CONVERTED 2026-08-29. The note here said the conversion "needs a MAX1000
+# BoardDesign" -- stale: max1000Sdram is a JopConfig preset, and JopConfig IS a
+# BoardDesign, so QuartusProjectMain generates this project like any other. The
+# hand-written jop_max1000.qsf is gone.
+#
+# THAT QSF HAD ZERO PIN ASSIGNMENTS. Not "some pins missing" -- none at all, so
+# every signal was placed wherever the fitter liked. The generated project has
+# five real ones (clk_in, ser_txd, ser_rxd, led[0..1]).
+#
+# The SDRAM pins are still absent, and deliberately: Board.MAX1000 declares
+# `BoardDevice("W9864G6JT", role = Some("sdr"))` with NO mapping, and its header
+# says the pins are placeholders not verified against a schematic. Inventing
+# them would put signals on the wrong balls and nothing would catch it until
+# hardware. So this remains a FIT CHECK, which is what it was already good for
+# -- a 10M08 has 8k LEs against the EP4CGX150's 149k, so an area regression
+# shows up here first.
+#
+# ITEM 84 NOW HAS ITS NUMBER, and `make all` FAILS ON PURPOSE:
+#
+#   Total logic elements : 10,807 / 8,064 ( 134 % )
+#   Total memory bits    : 137,344 / 387,072 ( 35 % )
+#
+# Single-core max1000Sdram overflows the 10M08 by a third. Memory is fine at
+# 35 %, so the work is LOGIC: a cropped-back core, not a smaller heap. The
+# fitter failing here is the flow WORKING -- it is the first real answer this
+# board has ever produced, because the old hand-written project could not get
+# far enough to be asked.
 # ---------------------------------------------------------------------------
 
 QUARTUS_DIR ?= /opt/altera/25.1/quartus
@@ -41,45 +64,23 @@ QUARTUS_BIN  = $(QUARTUS_DIR)/bin
 PROJECT_ROOT = ../..
 ASM_DIR      = ../../asm
 QP           = jop_max1000
-OUTPUT_DIR   = output_files
 
-# Resolved by serial where possible; the bare name is a fallback for a host
-# where this board has no jtag_probe_map entry yet.
-BLASTER_TYPE ?= $(shell $(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --cable max1000 2>/dev/null \
-                  || echo USB-Blaster)
-SERIAL_PORT  ?= $(shell $(PROJECT_ROOT)/fpga/scripts/usb_serial_map --by-id max1000 2>/dev/null \
-                  || echo /dev/ttyUSB0)
-BAUD_RATE    ?= 2000000
-JOP_FILE     ?= $(PROJECT_ROOT)/java/apps/Smallest/HelloWorld.jop
+PROJECT_ROOT  = ../..
+CFG          ?= max1000Sdram
+REV          ?= jop_max1000
+BOARD_ALIAS   = max1000
+CONSOLE_ALIAS = max1000
 
-.PHONY: all full run microcode generate build program download monitor clean
+include ../quartus.mk
+
+.PHONY: all full run program clean
 
 all:  microcode generate build
 full: all run
 run:  program download monitor
 
-microcode:
-	cd $(ASM_DIR) && $(MAKE) serial
-	@echo "=== Serial microcode generated ==="
+program: program-sof
 
-generate:
-	cd $(PROJECT_ROOT) && sbt "runMain jop.system.JopTopVerilog max1000Sdram"
-	@echo "=== Verilog generated ==="
-
-build:
-	$(QUARTUS_BIN)/quartus_sh --flow compile $(QP)
-	@echo "=== Build complete ==="
-	@grep "Total logic elements" $(OUTPUT_DIR)/$(QP).fit.summary 2>/dev/null || true
-
-program:
-	$(QUARTUS_BIN)/quartus_pgm -c "$(BLASTER_TYPE)" -m JTAG -o "p;$(OUTPUT_DIR)/$(QP).sof"
-	@echo "=== FPGA programmed: $(OUTPUT_DIR)/$(QP).sof ==="
-
-download:
-	python3 $(PROJECT_ROOT)/fpga/scripts/download.py -e $(JOP_FILE) $(SERIAL_PORT) $(BAUD_RATE)
-
-monitor:
-	python3 $(PROJECT_ROOT)/fpga/scripts/monitor.py $(SERIAL_PORT) $(BAUD_RATE)
-
-clean:
-	rm -rf $(OUTPUT_DIR) db incremental_db
+# Nothing is generated in-tree any more, so `clean` is quartus.mk's
+# `quartus-clean`: remove build/<config>/.
+clean: quartus-clean

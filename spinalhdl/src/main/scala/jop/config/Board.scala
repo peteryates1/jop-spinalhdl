@@ -176,7 +176,12 @@ object PllType {
 
   /** MAX1000 (MAX10): c0=80MHz system, c1=80MHz/-3ns SDRAM. */
   case object AlteraMax1000 extends PllType {
-    override val ipFile = Some(PllIpFile.Static("fpga/max1000/max1000_pll.vhd"))
+    // .v, not .vhd: the file on disk is Verilog. Naming it .vhd made the
+    // generated project reference a path that does not exist, and Quartus
+    // reported it as `undefined entity "max1000_pll"` -- a missing FILE
+    // presented as a missing MODULE. (It is still a fit-check stub; see the
+    // header of max1000_pll.v.)
+    override val ipFile = Some(PllIpFile.Static("fpga/max1000/max1000_pll.v"))
     def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
       val pll = Max1000Pll()
       pll.io.inclk0 := inputClock
@@ -1071,11 +1076,25 @@ object Board {
     fpga = Some(FpgaDevice.`10M08SAE144C8G`),
     pllType = Some(PllType.AlteraMax1000),
     entityTag = "Max1000Sdram",
+    // NO PIN MAPPINGS, deliberately. The five that used to be here --
+    // PIN_H6 clock, PIN_A4/B4 UART, PIN_A8/A9 LEDs -- are not merely
+    // "unverified against schematic" as the note above said: Quartus rejects
+    // every one of them on this package.
+    //
+    //   Error (171016): Can't place node "ser_txd" -- illegal location
+    //   assignment PIN_A4
+    //
+    // Nothing had ever caught it because the hand-written jop_max1000.qsf
+    // carried no pin assignments at all, so the fitter placed everything
+    // itself and the wrong data in this file was never consumed. Converting
+    // the board to the generated project is what surfaced it.
+    //
+    // Deleting known-wrong data beats keeping it: with no mapping the fitter
+    // places freely and the FIT CHECK -- the only thing this board is
+    // currently good for -- completes. Real pins have to come from the
+    // MAX1000 schematic. See status item 84.
     devices = Seq(
       BoardDevice("W9864G6JT", role = Some("sdr")),
-      BoardDevice("CLOCK_12MHz", mapping = Map("clock" -> "PIN_H6")),
-      BoardDevice("FT2232H", mapping = Map(
-        "TXD" -> "PIN_A4", "RXD" -> "PIN_B4")),
       // INCOMPLETE: the MAX1000 has EIGHT user LEDs; only two are mapped here.
       // The remaining six pins have not been looked up, and inventing them
       // would be worse than the gap -- a wrong PIN_ assignment places a signal
@@ -1086,8 +1105,7 @@ object Board {
       // Makefile, QSF, SDC and PLL but no outputs) and a 10M08 needs a
       // cropped-back core before geometry or I/O matter -- see the tuning
       // guide. Fix when that board is picked up.
-      BoardDevice("LED", mapping = Map(
-        "led0" -> "PIN_A8", "led1" -> "PIN_A9"))))
+      BoardDevice("LED")))
 
   /**
    * Generic EP4CE6 board (Cyclone IV E EP4CE6E22C8 + W9864G6JT SDR SDRAM).
