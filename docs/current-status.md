@@ -177,7 +177,11 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[84](#item-84)** — No MAX1000 configuration is known to fit — a 1- or 2-core 10M08 setup is wanted (OPEN)
 - **[85](#item-85)** — Build port, phase 2 — the SDRAM exerciser folded onto the shared flow, and the baud it never reported
 - **[86](#item-86)** — Build port, phase 3a — three shared Vivado scripts, proven equivalent by control build; and the DB_FPGA DDR3 build has quietly got 43 % smaller
-- **[95](#item-95)** — **Four documented simulations are broken and NONE is in CI** — `JopCoreWithSdramSim` stalls, `JopSmpBramSim` fails its own check, `JopInterruptSim` fires 2 of 5 interrupts, `JopDebugProtocolSim` NPEs during elaboration (OPEN)
+- **[95](#item-95)** — The README advertises 13 simulation commands; CI watches a different set, and the gap is where four broken sims were hiding (OPEN)
+- **[96](#item-96)** — `JopCoreWithSdramSim` **stalls** — a closed loop over three PC values, diagnosed not guessed (OPEN)
+- **[97](#item-97)** — `JopSmpBramSim` runs 100 M cycles, both cores boot, then fails its own `GC test start` check (OPEN)
+- **[98](#item-98)** — `JopInterruptSim` fires 2 of 5 interrupts — deterministic, reproduced twice (OPEN)
+- **[99](#item-99)** — `JopDebugProtocolSim` NPEs during **elaboration** — `JopCluster.gcRootRamAddr()` is null (OPEN)
 - **[87](#item-87)** — Build port, phase 3b — `vivado.mk` finally has a user, and it found a live baud bug and a latent one
 - **[88](#item-88)** — CI "formal verification failure" was a yosys cache that hits and rebuilds anyway — not the push, not the proofs
 - **[89](#item-89)** — Build port — the DB_FPGA V5 was the last board generating in-tree; now on `vivado.mk` and the build tree
@@ -8165,47 +8169,91 @@ spelling.
 `uart_test` was a bonus find: a `.qsf` and RTL with **no Makefile target at
 all**, so neither could be built by anything. Converted and given a target.
 
-### Item 95 — Four documented simulations are broken, and none of them is in CI (OPEN)
+### Item 95 — The README promises 13 simulations; CI watches a different set (OPEN)
 
 Found by pointing a cold agent — no project context, no memory, a fresh clone
 from GitHub — at README.md and asking it to build the project and show it
 working. It reached `Hello World!` in about 45 s, so the headline path is
-sound. Everything it found past that is below.
+sound. Then it found four broken simulations (items 96-99), and the reason
+they were all still broken is this item.
 
-**The four bugs. All pre-existing; none caused by the build port.**
+**None of the four is in CI, and three were mentioned nowhere in this
+document.** The README advertises 13 simulation and test commands; CI runs
+`testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.*
+jop.config.* jop.sim.*` plus a JVM-suite matrix. Those two sets are not the
+same, and **the difference between them is precisely where the rot is**.
 
-| simulation | symptom |
-|---|---|
-| `JopCoreWithSdramSim` (README step 5) | **stalls** — never reaches "GC done" |
-| `JopSmpBramSim` (README step 8) | runs 100 M cycles, both cores print Hello World, then `FAIL: Did not see 'GC test start'` |
-| `JopInterruptSim` | `FAIL: Expected 'I:TTTTTOK', got 'I:TT'` — 2 of 5 interrupts fire. Deterministic, reproduced twice under different load |
-| `JopDebugProtocolSim` | NPE during **elaboration**: `JopCluster.gcRootRamAddr()` is null (`JopCluster.scala:319`) |
+Same shape as the flash microcode nobody built and the PLL tests that
+`assume`d themselves into silence: nothing was watching, so nothing said
+anything.
 
-**The SDRAM stall is diagnosed, not merely observed.** `maxCycles = 500000` is
-a hard cap with no other exit, so "no output" could have been a short window.
-It is not:
+**Next action:** put the README's own command list under CI, so a documented
+command that stops working fails a build instead of waiting for the next
+newcomer. That is a stronger contract than adding the four sims individually —
+it makes the README executable.
 
-- the last UART byte is at cycle 42,189; nothing for the remaining 457,811
+Related: a seventh symptom of the same class was fixed at the same time — the
+documented simulations load `.jop` files that no documented build step
+produced. See `java`'s `test-apps` target.
+
+### Item 96 — `JopCoreWithSdramSim` stalls (OPEN)
+
+README step 5. Runs, exits cleanly at its `maxCycles = 500000` cap, and never
+prints "GC done" or "Hello World!" — the trace stops after `Small boot / GC
+init...`.
+
+**Diagnosed, not merely observed.** The cap is hard with no other exit, so "no
+output" could have been a short window. It is not:
+
+- last UART byte at cycle 42,189; nothing for the remaining 457,811
 - from ~100 k to 500 k the trace visits **exactly three PC values** (`0638`,
   `02c8`, `02d2`) in a fixed 4:2:1 ratio, near-identical between the
   100k–110k and 250k–260k windows (137/68/273 vs 138/68/273)
 - the BRAM sim, which does finish, visits **360** distinct PCs
 - BMB cmd/rsp counters keep climbing, so it is issuing real bus traffic
 
-A closed loop in steady state, not slow progress. More cycles will not help.
+A closed loop in steady state. **More cycles will not help** — this is a real
+bug in the SDRAM/memory-controller interaction, not a timeout to tune.
 
-**THE STRUCTURAL FINDING, which matters more than any one bug.** None of these
-four is in CI, and three are mentioned nowhere in this document. The README
-advertises 13 simulation and test commands; CI runs a different set
-(`testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.*
-jop.config.* jop.sim.*` plus a JVM-suite matrix). **The gap between what the
-README promises and what CI watches is exactly where the rot is.** Same shape
-as the flash microcode nobody built and the PLL tests that `assume`d
-themselves into silence: nothing was watching.
+Pre-existing: the file was last touched in `4e1c669`, long before the build
+port.
 
-The obvious follow-up is to put the README's own command list under CI, so
-that a documented command that stops working fails a build rather than waiting
-for the next newcomer.
+### Item 97 — `JopSmpBramSim` fails its own GC check (OPEN)
+
+README step 8. Runs the full 100,000,000 cycles in 22m50s, both cores boot and
+print "Hello World!", and then the simulation's own assertion fails:
+
+```
+FAIL: Did not see 'GC test start'
+```
+
+So the cores are alive and the SMP path works; whatever should trigger the GC
+phase of this test does not. Not investigated further.
+
+### Item 98 — `JopInterruptSim` fires 2 of 5 interrupts (OPEN)
+
+```
+FAIL: Expected 'I:TTTTTOK' in output, got: '...I:TT'
+```
+
+Runs its full 4,000,000-cycle cap. **Deterministic** — reproduced twice with
+identical output, once under heavy concurrent load and once on a nearly idle
+machine, so it is not a scheduling flake. The README describes this as "5
+interrupts, ~2.6M cycles", so the expectation is documented and unmet.
+
+### Item 99 — `JopDebugProtocolSim` NPEs during elaboration (OPEN)
+
+Fails in about 2 s, before any simulation starts:
+
+```
+java.lang.NullPointerException: Cannot invoke "spinal.core.Vec.apply(int)"
+because the return value of "jop.system.JopCluster.gcRootRamAddr()" is null
+    at jop.system.JopCluster.$anonfun$debugCtrl$2(JopCluster.scala:319)
+```
+
+An elaboration-time fault, so it is a configuration/wiring problem rather than
+a functional one: the debug controller reaches for a GC root RAM address that
+this configuration never built.
 
 ### Gotcha — a cold agent is only cold if the PATH is cold too
 
@@ -8221,7 +8269,6 @@ Separately: a subagent gets none of `.claude/settings.local.json`, which is
 gitignored and therefore absent from a fresh clone. So the cold agent had a
 narrower permission set than the session that spawned it, and hardware
 programming was refused for that reason rather than for anything in the docs.
-**The hardware path therefore remains untested by this exercise.**
 
 ## 4. Two workstreams, both largely done
 
