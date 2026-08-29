@@ -24,7 +24,7 @@ object SdNativeExerciserBuild extends App {
     defaultClockDomainFrequency = FixedFrequency(HertzNumber(clkMhz * 1000000L))
   ).generate(InOutWrapper(SdNativeExerciserTop(board, clkMhz)))
 
-  DramPllGen.emit("fpga/qmtech-ep4cgx150-sdram", clkMhz, cfgDir)
+  DramPllGen.emit(clkMhz, cfgDir)
 
   def write(path: String, body: String): Unit = {
     val f = new java.io.File(path)

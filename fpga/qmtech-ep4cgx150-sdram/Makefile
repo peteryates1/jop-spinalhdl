@@ -158,12 +158,12 @@ full-sd-spi-exerciser: sd-spi program-sd-spi monitor
 # ALL THREE ARE CONVERTED NOW. The .sdc comes from TimingConstraints and the
 # PLL from DramPllGen, both into build/<config>/.
 #
-# dram_pll.vhd STAYS, and is not a build product: DramPllGen READS it as the
-# TEMPLATE it rewrites the ratios into (DramPllGen.emit, `Paths.get(boardDir,
-# "dram_pll.vhd")`). Deleting it as "superseded by the generator" broke every
-# EP4CGX150 build -- the primary board -- and was caught by
-# PllSpecConsistencyTest in CI rather than by anything local, because the
-# builds that "passed" had run before the deletion.
+# dram_pll.vhd is GONE FROM THIS DIRECTORY. It was never a build product --
+# DramPllGen reads it as the template it rewrites the ratios into -- but sitting
+# here among the build output it looked like one, which is exactly why it got
+# deleted once and broke every EP4CGX150 build. It now lives with its consumer,
+# as spinalhdl/src/main/resources/jop/config/dram_pll.template.vhd, and `emit`
+# no longer takes a board directory (all nine call sites passed the same one).
 # --------------------------------------------------------------------------
 
 # CONVERTED 2026-08-29. Both now go through quartus.mk like every other flow:

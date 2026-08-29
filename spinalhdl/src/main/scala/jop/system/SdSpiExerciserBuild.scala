@@ -30,7 +30,7 @@ object SdSpiExerciserBuild extends App {
   // The PLL is generated for THIS configuration's clock, so the netlist, the
   // constraints and the silicon agree on one frequency -- the thing that was
   // wrong when the top said 80 MHz and the project built a 60 MHz PLL.
-  DramPllGen.emit("fpga/qmtech-ep4cgx150-sdram", design.clkMhz, cfgDir)
+  DramPllGen.emit(design.clkMhz, cfgDir)
 
   def write(path: String, body: String): Unit = {
     val f = new java.io.File(path)

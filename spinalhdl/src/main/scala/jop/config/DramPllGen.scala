@@ -86,7 +86,30 @@ object DramPllGen {
    *
    * Returns a one-line description for the build summary.
    */
-  def emit(boardDir: String, targetMhz: Int, configDir: String): String = {
+  /** The altpll template, as a GENERATOR RESOURCE rather than a board file.
+    *
+    * It used to live at fpga/qmtech-ep4cgx150-sdram/dram_pll.vhd, where it
+    * looked exactly like the build products around it -- so it was deleted as
+    * "superseded by the generator", which broke every EP4CGX150 build, because
+    * the generator is its CONSUMER. Nine call sites all passed that same path,
+    * which is the other half of the evidence that it was never a per-board
+    * thing.
+    *
+    * Kept as a template rather than synthesised in Scala on purpose: it is 441
+    * lines of Quartus megafunction output with 70 generics, and emitting that
+    * from string literals would be the same bytes in a less readable form,
+    * with a transcription error in any one generic silently mis-clocking the
+    * design. What varies with the configuration is five values, and those ARE
+    * generated.
+    */
+  private val templateResource = "/jop/config/dram_pll.template.vhd"
+
+  private def readTemplate(): Option[String] =
+    Option(getClass.getResourceAsStream(templateResource)).map { in =>
+      try new String(in.readAllBytes(), "UTF-8") finally in.close()
+    }
+
+  def emit(targetMhz: Int, configDir: String): String = {
     // PER CONFIGURATION, not per board directory and not per ENTITY either.
     // Keying on entityName was the first fix and was still wrong: that name
     // does not encode the core count, so ep4cgx150Smp 2 and ep4cgx150Smp 12
@@ -99,14 +122,14 @@ object DramPllGen {
     //
     // The PLL is a property of one configuration, so it belongs in that
     // configuration's own directory. What is common lives in JopConfig.
-    val template = Paths.get(boardDir, "dram_pll.vhd")
     val outDir   = Paths.get(configDir, "ip")
     val out      = outDir.resolve("dram_pll.vhd")
-    if (!Files.exists(template))
-      return s"PLL:         template not found at $template — not generated"
+    val loaded   = readTemplate()
+    if (loaded.isEmpty)
+      return s"PLL:         template $templateResource not on the classpath — not generated"
 
     val (mul, div) = ratioFor(targetMhz)
-    var text = new String(Files.readAllBytes(template), "UTF-8")
+    var text = loaded.get
 
     // Assert the template still describes a 50 MHz input before trusting it.
     val inPs = 1000000 / inputMhz   // 20000 ps for 50 MHz
@@ -137,7 +160,7 @@ object DramPllGen {
           |-- System clock: $targetMhz MHz  (${inputMhz} MHz in, multiply $mul, divide $div)
           |-- SDRAM clock:  $targetMhz MHz, $sdramPhasePs ps phase
           |--
-          |-- Template: ../dram_pll.vhd, which stays checked in for the exerciser
+          |-- Template: jop/config/dram_pll.template.vhd (a generator resource)
           |-- projects in this directory that are not driven by a JOP preset.
           |""".stripMargin
 

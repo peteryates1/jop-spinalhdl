@@ -57,6 +57,12 @@ Test / testOptions += Tests.Argument("-oD")  // Show test durations
 // Source directories (under core/spinalhdl/)
 Compile / scalaSource := baseDirectory.value / "spinalhdl" / "src" / "main" / "scala"
 Test / scalaSource := baseDirectory.value / "spinalhdl" / "src" / "test" / "scala"
+// The sources are relocated under spinalhdl/, so the RESOURCES have to be too --
+// otherwise sbt looks in <root>/src/main/resources and a generator asset put
+// beside its code is silently not on the classpath. DramPllGen's altpll
+// template lives here.
+Compile / resourceDirectory := baseDirectory.value / "spinalhdl" / "src" / "main" / "resources"
+Test / resourceDirectory := baseDirectory.value / "spinalhdl" / "src" / "test" / "resources"
 
 // Microcode-generated Scala files. Keep in step with jop.config.MicrocodePaths.
 //

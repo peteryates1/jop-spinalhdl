@@ -35,10 +35,15 @@ class PllSpecConsistencyTest extends AnyFunSuite {
 
   for (mhz <- Seq(36, 50, 60, 80)) {
     test(s"generated altpll implements $mhz MHz as declared") {
-      assume(Files.exists(Paths.get(boardDir, "dram_pll.vhd")),
-             "PLL template not present")
+      // No `assume` guard any more. It used to skip when the board-directory
+      // template was missing, which meant these four cases CANCELLED silently
+      // for as long as it was absent -- the deletion that broke every
+      // EP4CGX150 build showed up here as four quiet cancellations and one
+      // loud failure, and only because the second test lacked the guard. The
+      // template is a classpath resource now, so its absence is a real fault
+      // and should fail, not skip.
       val tmp = Files.createTempDirectory("pllspec").toString
-      DramPllGen.emit(boardDir, mhz, tmp)
+      DramPllGen.emit(mhz, tmp)
 
       val out = Paths.get(tmp, "ip", "dram_pll.vhd")
       assert(Files.exists(out), s"DramPllGen wrote nothing for $mhz MHz")
@@ -58,7 +63,7 @@ class PllSpecConsistencyTest extends AnyFunSuite {
     // They must be the same frequency: the SDRAM clock is the system clock with
     // a phase shift, and a divergence here would be invisible until hardware.
     val tmp = Files.createTempDirectory("pllspec").toString
-    DramPllGen.emit(boardDir, 60, tmp)
+    DramPllGen.emit(60, tmp)
     val vhdl = new String(Files.readAllBytes(Paths.get(tmp, "ip", "dram_pll.vhd")), "UTF-8")
     assert(declaredRatio(vhdl, 1) == declaredRatio(vhdl, 2),
       "system (c1) and SDRAM (c2) clocks must have the same ratio")

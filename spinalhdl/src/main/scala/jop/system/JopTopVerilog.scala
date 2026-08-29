@@ -266,7 +266,7 @@ object JopTopVerilog {
       val mhz  = (sys.clkFreq.toBigDecimal / 1000000).toInt
       val baud = sys.effectiveDevices.values.find(_.deviceType.key == "uart")
         .flatMap(_.params.get("baudRate").map(_.asInstanceOf[Int])).getOrElse(2000000)
-      val pll  = jop.config.DramPllGen.emit("fpga/qmtech-ep4cgx150-sdram", mhz,
+      val pll  = jop.config.DramPllGen.emit(mhz,
                                             jop.generate.BuildLayout.default.configDir(presetName,
                                               buildArgs.filterNot(_.equalsIgnoreCase("buildtree"))))
       val eff  = jop.config.DramPllGen.effectiveBaud(mhz, baud)

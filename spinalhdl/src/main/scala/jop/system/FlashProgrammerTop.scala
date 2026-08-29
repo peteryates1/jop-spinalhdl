@@ -318,7 +318,7 @@ object FlashProgrammerBuild extends App {
     defaultClockDomainFrequency = FixedFrequency(HertzNumber(design.clkMhz * 1000000L))
   ).generate(FlashProgrammerTop())
 
-  jop.config.DramPllGen.emit("fpga/qmtech-ep4cgx150-sdram", design.clkMhz, cfgDir)
+  jop.config.DramPllGen.emit(design.clkMhz, cfgDir)
 
   StandaloneBuild.summary(cfgName, design.entityName,
     board = design.assembly.fpgaBoard.name, fpga = design.fpga.name,

@@ -22,7 +22,7 @@ object SdramExerciserBuild extends App {
     defaultClockDomainFrequency = FixedFrequency(HertzNumber(design.clkMhz * 1000000L))
   ).generate(InOutWrapper(SdramExerciserTop(design.memoryDevice, board, design.clkMhz)))
 
-  DramPllGen.emit("fpga/qmtech-ep4cgx150-sdram", design.clkMhz, cfgDir)
+  DramPllGen.emit(design.clkMhz, cfgDir)
 
   def write(path: String, body: String): Unit = {
     val f = new java.io.File(path)
