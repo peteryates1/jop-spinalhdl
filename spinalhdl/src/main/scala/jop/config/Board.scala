@@ -1069,43 +1069,49 @@ object Board {
    * Arrow MAX1000 (MAX10 10M08SAE144C8G + W9864G6JT-6 SDR SDRAM).
    *
    * 12 MHz on-board oscillator, FT2232H USB-UART.
-   * Pin assignments are placeholders for fit-check — not verified against schematic.
+   *
+   * PINS ARE REAL, from the working jopmin project for this board
+   * (/srv/git/jopmin/quartus/max1000/jop.qsf) -- this was the first board JOP
+   * ran on. They were previously described as "placeholders not verified
+   * against schematic", and were then deleted for being rejected by the
+   * fitter. Both were wrong: the pins were right and the DEVICE was wrong.
+   * 10M08SAU169C8G is a 169-ball UBGA; the model named the 144-pin EQFP, whose
+   * pin names are entirely different, so every assignment was illegal.
    */
   def MAX1000 = Board(
     name = "max1000",
-    fpga = Some(FpgaDevice.`10M08SAE144C8G`),
+    fpga = Some(FpgaDevice.`10M08SAU169C8G`),
     pllType = Some(PllType.AlteraMax1000),
     entityTag = "Max1000Sdram",
-    // NO PIN MAPPINGS, deliberately. The five that used to be here --
-    // PIN_H6 clock, PIN_A4/B4 UART, PIN_A8/A9 LEDs -- are not merely
-    // "unverified against schematic" as the note above said: Quartus rejects
-    // every one of them on this package.
-    //
-    //   Error (171016): Can't place node "ser_txd" -- illegal location
-    //   assignment PIN_A4
-    //
-    // Nothing had ever caught it because the hand-written jop_max1000.qsf
-    // carried no pin assignments at all, so the fitter placed everything
-    // itself and the wrong data in this file was never consumed. Converting
-    // the board to the generated project is what surfaced it.
-    //
-    // Deleting known-wrong data beats keeping it: with no mapping the fitter
-    // places freely and the FIT CHECK -- the only thing this board is
-    // currently good for -- completes. Real pins have to come from the
-    // MAX1000 schematic. See status item 84.
     devices = Seq(
-      BoardDevice("W9864G6JT", role = Some("sdr")),
-      // INCOMPLETE: the MAX1000 has EIGHT user LEDs; only two are mapped here.
-      // The remaining six pins have not been looked up, and inventing them
-      // would be worse than the gap -- a wrong PIN_ assignment places a signal
-      // on the wrong ball and is not caught by anything until hardware.
-      // Compare Board.CYC5000, which maps all eight.
-      //
-      // Not urgent: the MAX1000 has never been built (fpga/max1000 has a
-      // Makefile, QSF, SDC and PLL but no outputs) and a 10M08 needs a
-      // cropped-back core before geometry or I/O matter -- see the tuning
-      // guide. Fix when that board is picked up.
-      BoardDevice("LED")))
+      // SDRAM: W9864G6JT-6, 8 MB, 16-bit. Absent entirely until now, so a
+      // generated project silently left every DRAM pin unplaced.
+      BoardDevice("W9864G6JT", role = Some("sdr"), mapping = Map(
+        "CLK" -> "PIN_M9", "CKE" -> "PIN_M8",
+        "CS_n" -> "PIN_M4", "RAS_n" -> "PIN_M7",
+        "CAS_n" -> "PIN_N7", "WE_n" -> "PIN_K7",
+        "BA0" -> "PIN_N6", "BA1" -> "PIN_K8",
+        "A0" -> "PIN_K6", "A1" -> "PIN_M5", "A2" -> "PIN_N5",
+        "A3" -> "PIN_J8", "A4" -> "PIN_N10", "A5" -> "PIN_M11",
+        "A6" -> "PIN_N9", "A7" -> "PIN_L10", "A8" -> "PIN_M13",
+        "A9" -> "PIN_N8", "A10" -> "PIN_N4", "A11" -> "PIN_M10",
+        "DQ0" -> "PIN_D11", "DQ1" -> "PIN_G10", "DQ2" -> "PIN_F10",
+        "DQ3" -> "PIN_F9", "DQ4" -> "PIN_E10", "DQ5" -> "PIN_D9",
+        "DQ6" -> "PIN_G9", "DQ7" -> "PIN_F8",
+        "DQ8" -> "PIN_F13", "DQ9" -> "PIN_E12", "DQ10" -> "PIN_E13",
+        "DQ11" -> "PIN_D12", "DQ12" -> "PIN_C12", "DQ13" -> "PIN_B12",
+        "DQ14" -> "PIN_B13", "DQ15" -> "PIN_A12",
+        "DQM0" -> "PIN_E9", "DQM1" -> "PIN_F12")),
+      BoardDevice("CLOCK_12MHz", mapping = Map("clock" -> "PIN_H6")),
+      // TXD/RXD were SWAPPED here before: the FT2232H drives ser_rxd on A4 and
+      // receives ser_txd on B4, not the other way round.
+      BoardDevice("FT2232H", mapping = Map(
+        "TXD" -> "PIN_B4", "RXD" -> "PIN_A4")),
+      // All EIGHT, as the board has -- the old entry mapped two and said so.
+      BoardDevice("LED", mapping = Map(
+        "led0" -> "PIN_A8", "led1" -> "PIN_A9", "led2" -> "PIN_A11",
+        "led3" -> "PIN_A10", "led4" -> "PIN_B10", "led5" -> "PIN_C9",
+        "led6" -> "PIN_C10", "led7" -> "PIN_D8"))))
 
   /**
    * Generic EP4CE6 board (Cyclone IV E EP4CE6E22C8 + W9864G6JT SDR SDRAM).

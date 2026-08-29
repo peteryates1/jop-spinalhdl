@@ -74,6 +74,16 @@ object FpgaDevice {
   def `10M08SAE144C8G` = FpgaDevice("10M08SAE144C8G", FpgaFamily.MAX10,
     les = 8000, dspBlocks = 24, bramKbits = 378)
 
+  /** The MAX1000's part: 169-ball UBGA, NOT the 144-pin EQFP above.
+    *
+    * Same die -- 8064 LEs either way -- but a different package, so the two
+    * have entirely different pin names. Board.MAX1000 named the 144-pin part
+    * while carrying 169-ball pin assignments, and every one of them came back
+    * `Error (171016): illegal location assignment`. Nothing caught it because
+    * the hand-written jop_max1000.qsf assigned no pins at all. */
+  def `10M08SAU169C8G` = FpgaDevice("10M08SAU169C8G", FpgaFamily.MAX10,
+    les = 8000, dspBlocks = 24, bramKbits = 378)
+
   def EP4CE6E22C8 = FpgaDevice("EP4CE6E22C8", FpgaFamily.CycloneIV,
     les = 6272, dspBlocks = 0, bramKbits = 276)
 

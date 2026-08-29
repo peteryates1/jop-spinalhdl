@@ -39,17 +39,20 @@
 # every signal was placed wherever the fitter liked. The generated project has
 # five real ones (clk_in, ser_txd, ser_rxd, led[0..1]).
 #
-# The SDRAM pins are still absent, and deliberately: Board.MAX1000 declares
-# `BoardDevice("W9864G6JT", role = Some("sdr"))` with NO mapping, and its header
-# says the pins are placeholders not verified against a schematic. Inventing
-# them would put signals on the wrong balls and nothing would catch it until
-# hardware. So this remains a FIT CHECK, which is what it was already good for
+# PINS ARE REAL NOW, recovered from the working jopmin project for this board
+# (/srv/git/jopmin/quartus/max1000/jop.qsf) -- SDRAM, clock, UART and all eight
+# LEDs. They had been called "placeholders not verified against schematic", and
+# the fitter rejected every one; both readings were wrong. The pins were right
+# and the DEVICE was wrong: the MAX1000 is a 10M08SAU169C8G (169-ball UBGA) and
+# the model named the 144-pin EQFP, whose pin names are entirely different.
+# So this is a FIT CHECK, which is what it was already good for
 # -- a 10M08 has 8k LEs against the EP4CGX150's 149k, so an area regression
 # shows up here first.
 #
 # ITEM 84 NOW HAS ITS NUMBER, and `make all` FAILS ON PURPOSE:
 #
-#   Total logic elements : 10,807 / 8,064 ( 134 % )
+#   Total logic elements : 10,791 / 8,064 ( 134 % )
+#   Total pins           :     49 /   130 (  38 % )
 #   Total memory bits    : 137,344 / 387,072 ( 35 % )
 #
 # Single-core max1000Sdram overflows the 10M08 by a third. Memory is fine at
