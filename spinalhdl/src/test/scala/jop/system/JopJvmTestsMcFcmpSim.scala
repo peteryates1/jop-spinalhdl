@@ -27,7 +27,7 @@ object JopJvmTestsMcFcmpSim extends App {
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/jvmtests_mcfcmp_simulation.log"
+  val logFilePath = "build/sim-logs/jvmtests_mcfcmp_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -44,7 +44,7 @@ object JopJvmTestsMcFcmpSim extends App {
         memConfig = JopMemoryConfig(mainMemSize = bramSize),
         bytecodes = Map("fcmpl" -> "mc", "fcmpg" -> "mc")))))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
       var lineBuffer = new StringBuilder
 

@@ -29,7 +29,7 @@ object JopSmpCacheStressSim extends App {
   val jopFilePath = "java/apps/SmpCacheTest/SmpCacheTest.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/smp_cache_stress_simulation.log"
+  val logFilePath = "build/sim-logs/smp_cache_stress_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -46,7 +46,7 @@ object JopSmpCacheStressSim extends App {
   SimConfig
     .compile(JopSmpTestHarness(cpuCnt, romData, ramData, mainMemData))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
       var lineBuffer = new StringBuilder
 

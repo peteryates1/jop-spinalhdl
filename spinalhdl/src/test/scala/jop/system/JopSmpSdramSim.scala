@@ -218,7 +218,7 @@ object JopSmpSdramNCoreHelloWorldSim extends App {
   val jopFilePath = if (args.length > 2) args(2) else "java/apps/Small/NCoreHelloWorld.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/smp_sdram_ncore_simulation.log"
+  val logFilePath = "build/sim-logs/smp_sdram_ncore_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -236,7 +236,7 @@ object JopSmpSdramNCoreHelloWorldSim extends App {
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .compile(JopSmpSdramTestHarness(cpuCnt, romData, ramData, mainMemData))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
 
       def logLine(msg: String): Unit = {

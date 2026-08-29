@@ -21,7 +21,7 @@ object JopVgaBramSim extends App {
   val jopFilePath = "java/apps/Small/VgaTest.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/joptop_vga_bram_simulation.log"
+  val logFilePath = "build/sim-logs/joptop_vga_bram_simulation.log"
   val bramSize = 256 * 1024  // 256KB
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
@@ -54,7 +54,7 @@ object JopVgaBramSim extends App {
       simulation = true
     ))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       val uartOutput = new StringBuilder
 
       def logLine(msg: String): Unit = {

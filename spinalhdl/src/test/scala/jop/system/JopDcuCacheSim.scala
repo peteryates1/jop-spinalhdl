@@ -24,7 +24,7 @@ object JopDcuCacheSim extends App {
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/dcu_cache_simulation.log"
+  val logFilePath = "build/sim-logs/dcu_cache_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -51,7 +51,7 @@ object JopDcuCacheSim extends App {
       readLatency = 0, writeLatency = 0, coreConfigOverride = Some(fullCuConfig),
       mshrCount = mshrCount))
     .doSim(seed = simSeed) { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
 
       def logLine(msg: String): Unit = {

@@ -235,7 +235,7 @@ object JopGcHaltDeadlockSim extends App {
   val jopFilePath = if (args.length > 3) args(3) else "java/apps/SmpGcTest/SmpGcTest.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/gchalt_deadlock_simulation.log"
+  val logFilePath = "build/sim-logs/gchalt_deadlock_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -265,7 +265,7 @@ object JopGcHaltDeadlockSim extends App {
     // See the note in current-status item 1 about five clean runs after
     // instrumenting GC.java — that inference was drawn without this control.
     .doSim(seed = simSeed) { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       def logLine(s: String): Unit = { log.println(s); log.flush() }
 
       dut.clockDomain.forkStimulus(10)

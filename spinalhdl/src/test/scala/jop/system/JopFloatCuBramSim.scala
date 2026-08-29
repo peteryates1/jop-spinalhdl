@@ -124,7 +124,7 @@ object JopFloatCuBramSim extends App {
   // nobody has checked it against. See docs/current-status.md item 62.
   val romFilePath = s"${MicrocodePaths.root}/floatcu/mem_rom.dat"
   val ramFilePath = s"${MicrocodePaths.root}/floatcu/mem_ram.dat"
-  val logFilePath = "spinalhdl/floatcu_bram_simulation.log"
+  val logFilePath = "build/sim-logs/floatcu_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -138,7 +138,7 @@ object JopFloatCuBramSim extends App {
   SimConfig
     .compile(JopFloatCuTestHarness(romData, ramData, mainMemData))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
       var lineBuffer = new StringBuilder
 

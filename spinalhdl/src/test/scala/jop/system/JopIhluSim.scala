@@ -156,7 +156,7 @@ object JopIhluNCoreHelloWorldSim extends App {
   val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/ihlu_ncore_simulation.log"
+  val logFilePath = "build/sim-logs/ihlu_ncore_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -173,7 +173,7 @@ object JopIhluNCoreHelloWorldSim extends App {
   SimConfig
     .compile(JopIhluTestHarness(cpuCnt, romData, ramData, mainMemData))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
 
       def logLine(msg: String): Unit = {
@@ -327,7 +327,7 @@ object JopIhluGcBramSim extends App {
   val jopFilePath = "java/apps/SmpGcTest/SmpGcTest.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/ihlu_gc_bram_simulation.log"
+  val logFilePath = "build/sim-logs/ihlu_gc_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -343,7 +343,7 @@ object JopIhluGcBramSim extends App {
   SimConfig
     .compile(JopIhluTestHarness(cpuCnt, romData, ramData, mainMemData))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
 
       def logLine(msg: String): Unit = {

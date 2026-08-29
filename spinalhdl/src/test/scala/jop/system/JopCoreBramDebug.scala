@@ -161,7 +161,7 @@ object JopCoreBramDebug extends App {
   val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/bram_debug.log"
+  val logFilePath = "build/sim-logs/bram_debug.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -177,7 +177,7 @@ object JopCoreBramDebug extends App {
   SimConfig
     .compile(JopCoreBramDebugHarness(romData, ramData, mainMemData))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
       var lastPc = -1
       var lastJpc = -1

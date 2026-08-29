@@ -25,7 +25,7 @@ object JopSmallGcHighLatencySim extends App {
   val jopFilePath = "java/apps/Small/HelloWorld.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/small_gc_high_latency_simulation.log"
+  val logFilePath = "build/sim-logs/small_gc_high_latency_simulation.log"
 
   // Parse args: [latMin] [latMax] [burstLen]
   // burstLen=0 matches FPGA config (single-word BC fill); burstLen=8 matches prior sims
@@ -53,7 +53,7 @@ object JopSmallGcHighLatencySim extends App {
   SimConfig
     .compile(JopCoreWithHighLatencyMigHarness(romData, ramData, mainMemData, latMin, latMax, burstLen))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
 
       def logLine(msg: String): Unit = {

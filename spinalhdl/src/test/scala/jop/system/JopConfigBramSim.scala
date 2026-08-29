@@ -34,7 +34,7 @@ object JopConfigBramSim {
     SimConfig
       .compile(JopCoreTestHarness(romData, ramData, mainMemData, coreConfig = Some(coreConfig)))
       .doSim { dut =>
-        val log = new PrintWriter(logFilePath)
+        val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
         dut.clockDomain.forkStimulus(10)
         dut.clockDomain.waitSampling(5)
         var lastPc = -1
@@ -94,7 +94,7 @@ object JopConfigBramSim {
     SimConfig
       .compile(JopCoreTestHarness(romData, ramData, mainMemData, coreConfig = Some(coreConfig)))
       .doSim { dut =>
-        val log = new PrintWriter(logFilePath)
+        val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
         var uartOutput = new StringBuilder
         var lineBuffer = new StringBuilder
 

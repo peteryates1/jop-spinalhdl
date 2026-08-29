@@ -262,7 +262,7 @@ object JopSmallGcCacheSim extends App {
   val jopFilePath = "java/apps/Small/HelloWorld.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/small_gc_cache_simulation.log"
+  val logFilePath = "build/sim-logs/small_gc_cache_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -278,7 +278,7 @@ object JopSmallGcCacheSim extends App {
   SimConfig
     .compile(JopCoreWithCacheTestHarness(romData, ramData, mainMemData))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
 
       def logLine(msg: String): Unit = {

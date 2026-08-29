@@ -236,7 +236,7 @@ object JopSmpDdr3NCoreHelloWorldSim extends App {
     .compile(JopSmpDdr3TestHarness(cpuCnt, romData, ramData, mainMemData,
       useCmpSync = useCmpSync, mshrCount = mshrCount))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
 
       def logLine(msg: String): Unit = {

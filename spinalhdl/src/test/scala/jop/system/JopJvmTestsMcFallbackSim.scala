@@ -34,7 +34,7 @@ object JopJvmTestsMcFallbackSim extends App {
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/jvmtests_mcfallback_simulation.log"
+  val logFilePath = "build/sim-logs/jvmtests_mcfallback_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -76,7 +76,7 @@ object JopJvmTestsMcFallbackSim extends App {
           "lshl" -> "mc", "lshr" -> "mc", "lushr" -> "mc",
           "fneg" -> "mc", "fcmpl" -> "mc", "fcmpg" -> "mc")))))
     .doSim(seed = simSeed) { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
       var lineBuffer = new StringBuilder
 

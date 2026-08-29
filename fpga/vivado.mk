@@ -31,7 +31,17 @@
 # BuildLayoutMain is asked instead.
 # ---------------------------------------------------------------------------
 
-VIVADO       ?= /opt/xilinx/2025.2/Vivado/bin/vivado
+# VIVADO CARRIES ITS OWN LOG PATHS. Vivado writes vivado.jou and vivado.log
+# into its WORKING DIRECTORY, which for these flows is the board directory --
+# 36 files and 2.7 MB of them had accumulated across four boards, plus a set at
+# the repo root. Same disease as everything else here: output landing in the
+# source tree because nothing told it otherwise. `-journal`/`-log` must precede
+# `-mode`, which is why they are folded into the command rather than appended
+# at each of the dozen call sites.
+VIVADO_BIN   ?= /opt/xilinx/2025.2/Vivado/bin/vivado
+VIVADO_LOGS   = $(PROJECT_ROOT)/build/vivado-logs
+VIVADO        = $(shell mkdir -p $(VIVADO_LOGS)) $(VIVADO_BIN) \
+                -journal $(VIVADO_LOGS)/vivado.jou -log $(VIVADO_LOGS)/vivado.log
 VIVADO_ENV   ?= export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 LOADER_CABLE ?= dirtyJtag
 

@@ -20,7 +20,7 @@ object JopTopDcuBramSim extends App {
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/joptop_dcu_bram_simulation.log"
+  val logFilePath = "build/sim-logs/joptop_dcu_bram_simulation.log"
   val bramSize = 4 * 1024 * 1024  // 4MB
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
@@ -51,7 +51,7 @@ object JopTopDcuBramSim extends App {
       simulation = true
     ))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       val uartOutput = new StringBuilder
       var lineBuffer = new StringBuilder
 

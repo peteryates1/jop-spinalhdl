@@ -120,7 +120,7 @@ object JopHwMathBramSim extends App {
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/hwmath_bram_simulation.log"
+  val logFilePath = "build/sim-logs/hwmath_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -134,7 +134,7 @@ object JopHwMathBramSim extends App {
   SimConfig
     .compile(JopHwMathTestHarness(romData, ramData, mainMemData))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
       var lineBuffer = new StringBuilder
 

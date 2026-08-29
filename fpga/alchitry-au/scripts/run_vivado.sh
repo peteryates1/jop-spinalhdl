@@ -27,4 +27,12 @@ fi
 # shellcheck disable=SC1090
 source "$SETTINGS_SH"
 
-exec vivado -mode batch -source "$TCL_SCRIPT" "$@"
+# Vivado writes vivado.jou/vivado.log into the CWD, which for every caller here
+# is a BOARD directory. Point them at the build tree instead; the repo root is
+# two levels above this script's own directory (fpga/<board>/scripts/).
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+LOG_DIR="${JOP_VIVADO_LOGS:-$REPO_ROOT/build/vivado-logs}"
+mkdir -p "$LOG_DIR"
+
+exec vivado -journal "$LOG_DIR/vivado.jou" -log "$LOG_DIR/vivado.log" \
+     -mode batch -source "$TCL_SCRIPT" "$@"

@@ -19,7 +19,7 @@ object JopCoreWithSdramSim extends App {
   val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/sdram_simulation.log"
+  val logFilePath = "build/sim-logs/sdram_simulation.log"
 
   // Load initialization data
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
@@ -38,7 +38,7 @@ object JopCoreWithSdramSim extends App {
     // .withWave  // Uncomment for waveform
     .compile(JopCoreWithSdramTestHarness(romData, ramData, mainMemData))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
       var wdState = false
       var wdToggles = 0

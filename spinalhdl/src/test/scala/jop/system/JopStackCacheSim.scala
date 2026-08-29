@@ -182,7 +182,7 @@ object JopJvmTestsStackCacheBramSim extends App {
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/jvmtests_stackcache_bram_simulation.log"
+  val logFilePath = "build/sim-logs/jvmtests_stackcache_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -196,7 +196,7 @@ object JopJvmTestsStackCacheBramSim extends App {
   SimConfig
     .compile(JopStackCacheTestHarness(romData, ramData, mainMemData, memSize = 512 * 1024))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       val uartOutput = new StringBuilder
       val lineBuffer = new StringBuilder
       var deepRecursionStarted = false

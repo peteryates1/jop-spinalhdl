@@ -226,7 +226,7 @@ object JopDdr3SerialBootSim extends App {
   val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
   val romFilePath = MicrocodePaths.rom(BootMode.Serial)
   val ramFilePath = MicrocodePaths.ram(BootMode.Serial)
-  val logFilePath = "spinalhdl/ddr3_serial_boot_simulation.log"
+  val logFilePath = "build/sim-logs/ddr3_serial_boot_simulation.log"
 
   // Parse args: [latMin] [latMax]
   val argList = args.toList
@@ -277,7 +277,7 @@ object JopDdr3SerialBootSim extends App {
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .compile(JopDdr3SerialBootHarness(romData, ramData, latMin, latMax))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
 
       def logLine(msg: String): Unit = {

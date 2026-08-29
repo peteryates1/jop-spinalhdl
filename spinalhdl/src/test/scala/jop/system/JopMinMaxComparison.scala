@@ -110,7 +110,7 @@ object JopMinMaxSim {
     SimConfig
       .compile(JopConfigTestHarness(romData, ramData, mainMemData, coreConfig))
       .doSim { dut =>
-        val log = new PrintWriter(logFilePath)
+        val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
         var uartOutput = new StringBuilder
         var lineBuffer = new StringBuilder
         var testResults = new scala.collection.mutable.ArrayBuffer[(String, Int)]()

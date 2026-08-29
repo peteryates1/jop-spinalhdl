@@ -33,7 +33,7 @@ object JopJvmTestsSmpBramSim extends App {
   val jopFilePath = "java/apps/JvmTests/DoAll.jop"
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = "spinalhdl/jvmtests_smp_bram_simulation.log"
+  val logFilePath = "build/sim-logs/jvmtests_smp_bram_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
@@ -50,7 +50,7 @@ object JopJvmTestsSmpBramSim extends App {
   SimConfig
     .compile(JopSmpTestHarness(cpuCnt, romData, ramData, mainMemData, memSize = 256 * 1024))
     .doSim { dut =>
-      val log = new PrintWriter(logFilePath)
+      val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
       var lineBuffer = new StringBuilder
 
