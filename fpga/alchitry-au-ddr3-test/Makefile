@@ -70,7 +70,8 @@ ips:
 PART       := xc7a35tftg256-2
 CREATE_TCL := $(PROJECT_ROOT)/fpga/scripts/vivado_create_project.tcl
 BUILD_TCL  := $(PROJECT_ROOT)/fpga/scripts/vivado_build_project.tcl
-ABS_BUILD  := $(CURDIR)/vivado/build
+# Standalone top: build under its own config directory, not in the board dir.
+ABS_BUILD  := $(PROJECT_ROOT)/build/ddr3Exerciser/vivado/build
 AU_IP      := $(CURDIR)/../alchitry-au/vivado/ip
 
 project:

@@ -40,7 +40,12 @@ include ../vivado.mk
 # actually recorded; the identical constant on the Wukong turned out to be
 # WRONG for two of its flows (status item 87), and this one was never checked.
 PART        := xc7a100tfgg676-2
-ABS_BUILD   := $(CURDIR)/$(BUILD_DIR)
+# The two hand-written bring-up designs (UartLoopback, UartTxGen) are not
+# JopConfig presets and have no Build object, but they still get a config
+# directory rather than writing into the board dir -- a name is all
+# build/<name>/ needs.
+LOOPBACK_DIR := $(REPO_ROOT)/build/uartLoopback
+TXGEN_DIR    := $(REPO_ROOT)/build/uartTxGen
 CONSTRAINTS := $(CURDIR)/$(VIVADO_DIR)/constraints
 BOARD_RTL   := $(CURDIR)/$(VIVADO_DIR)/rtl
 IP_DIR      := $(CURDIR)/$(VIVADO_DIR)/ip
@@ -100,7 +105,7 @@ build-uart-echo: create-uart-echo
 	  $(VIVADO) -mode batch -source $(BUILD_TCL)
 
 program-uart-echo:
-	$(MAKE) program-bit BIT_FILE=$(ABS_BUILD)/uart_echo/uart_echo.runs/impl_1/UartEchoTop.bit
+	$(MAKE) program-bit BIT_FILE=$(UART_ECHO_DIR)/vivado/build/uart_echo/uart_echo.runs/impl_1/UartEchoTop.bit
 
 uart-echo: build-uart-echo program-uart-echo
 	@echo "=== UART echo programmed — test with: make test-uart-echo ==="
@@ -115,18 +120,18 @@ test-uart-echo:
 
 loopback-create:
 	$(VIVADO_ENV) && JOP_PROJ=uart_loopback JOP_PART=$(PART) JOP_TOP=UartLoopback \
-	  JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_BUILD_DIR=$(LOOPBACK_DIR)/vivado/build \
 	  JOP_RTL=$(BOARD_RTL)/UartLoopback.v \
 	  JOP_XDC=$(CONSTRAINTS)/uart_loopback.xdc \
 	  $(VIVADO) -mode batch -source $(CREATE_TCL)
 
 loopback-build: loopback-create
-	$(VIVADO_ENV) && JOP_PROJ=uart_loopback JOP_BUILD_DIR=$(ABS_BUILD) \
+	$(VIVADO_ENV) && JOP_PROJ=uart_loopback JOP_BUILD_DIR=$(LOOPBACK_DIR)/vivado/build \
 	  JOP_BIT=UartLoopback.bit \
 	  $(VIVADO) -mode batch -source $(BUILD_TCL)
 
 loopback-program:
-	$(MAKE) program-bit BIT_FILE=$(ABS_BUILD)/uart_loopback/uart_loopback.runs/impl_1/UartLoopback.bit
+	$(MAKE) program-bit BIT_FILE=$(LOOPBACK_DIR)/vivado/build/uart_loopback/uart_loopback.runs/impl_1/UartLoopback.bit
 
 uart-loopback: loopback-build loopback-program
 	@echo "=== UART loopback programmed — test with: python3 ../../fpga/scripts/uart_loopback.py ==="
@@ -138,18 +143,18 @@ uart-loopback: loopback-build loopback-program
 
 txgen-create:
 	$(VIVADO_ENV) && JOP_PROJ=uart_txgen JOP_PART=$(PART) JOP_TOP=UartTxGen \
-	  JOP_BUILD_DIR=$(ABS_BUILD) \
+	  JOP_BUILD_DIR=$(TXGEN_DIR)/vivado/build \
 	  JOP_RTL=$(BOARD_RTL)/UartTxGen.v \
 	  JOP_XDC=$(CONSTRAINTS)/uart_txgen.xdc \
 	  $(VIVADO) -mode batch -source $(CREATE_TCL)
 
 txgen-build: txgen-create
-	$(VIVADO_ENV) && JOP_PROJ=uart_txgen JOP_BUILD_DIR=$(ABS_BUILD) \
+	$(VIVADO_ENV) && JOP_PROJ=uart_txgen JOP_BUILD_DIR=$(TXGEN_DIR)/vivado/build \
 	  JOP_BIT=UartTxGen.bit \
 	  $(VIVADO) -mode batch -source $(BUILD_TCL)
 
 txgen-program:
-	$(MAKE) program-bit BIT_FILE=$(ABS_BUILD)/uart_txgen/uart_txgen.runs/impl_1/UartTxGen.bit
+	$(MAKE) program-bit BIT_FILE=$(TXGEN_DIR)/vivado/build/uart_txgen/uart_txgen.runs/impl_1/UartTxGen.bit
 
 uart-txgen: txgen-build txgen-program
 	@echo "=== TX generator programmed — python3 ../../fpga/scripts/uart_loopback.py --rx-only ==="

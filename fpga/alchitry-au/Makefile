@@ -55,7 +55,8 @@ include ../vivado.mk
 PART       := xc7a35tftg256-2
 XDC        := $(CURDIR)/vivado/constraints
 IP         := $(CURDIR)/vivado/ip
-ABS_BUILD  := $(CURDIR)/vivado/build
+# The flash programmer is a standalone top with its own config directory.
+ABS_BUILD  := $(PROJECT_ROOT)/build/flashProgrammerDdr3/vivado/build
 
 # SST26VF032B = 4 MB total; XC7A35T bitstream ~2.1 MB; offset at 2.25 MB
 JOP_OFFSET   ?= 0x240000

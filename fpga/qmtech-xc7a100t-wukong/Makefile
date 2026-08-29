@@ -38,7 +38,6 @@ XDC        := $(CURDIR)/vivado/constraints
 SHARED_XDC := $(REPO_ROOT)/fpga/constraints
 # Standalone top: its own config directory, not a preset's.
 SDR_EX_DIR := $(REPO_ROOT)/build/sdramExerciserWukong
-ABS_BUILD  := $(CURDIR)/vivado/build
 
 # Every JOP build here uses the same timing-closure directives; the exercisers
 # and the SDR JOP builds have margin and run the default flow.
