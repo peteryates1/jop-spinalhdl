@@ -173,8 +173,10 @@ sbt "Test / runMain jop.system.JopCoreBramSim"
 # 4b. Run unified JopTop BRAM simulation (same output, uses config-driven JopTop)
 sbt "Test / runMain jop.system.JopTopBramSim"
 
-# 5. Run SDRAM simulation (same Hello World, through the SDRAM controller;
-#    slower to boot than BRAM, so give it time)
+# 5. SDRAM simulation — KNOWN BROKEN, and it is not your setup.
+#    It boots, prints "GC init...", and then stalls: the trace settles into a
+#    loop over three PC values and never reaches "Hello World!". Waiting longer
+#    does not help. Tracked as item 96 in docs/current-status.md.
 sbt "Test / runMain jop.system.JopCoreWithSdramSim"
 
 # 6. Run GC stress test — needs GcStressTest.jop from step 3.
@@ -184,7 +186,10 @@ sbt "Test / runMain jop.system.JopSmallGcBramSim"
 # 7. Run SMP simulation (2-core, NCoreHelloWorld — both cores toggle watchdog)
 sbt "Test / runMain jop.system.JopSmpNCoreHelloWorldSim"
 
-# 8. Run SMP GC simulation (2-core, garbage collection stress test)
+# 8. SMP GC simulation (2-core). Takes ~23 minutes. Both cores boot and print
+#    "Hello World!", then the test fails its OWN check with
+#    "FAIL: Did not see 'GC test start'" — a known bug, item 97, not your
+#    setup. The SMP path itself works; step 7 is the one that demonstrates it.
 sbt "Test / runMain jop.system.JopSmpBramSim"
 ```
 
@@ -316,8 +321,14 @@ legacy in-tree location; every board Makefile does this already.
 
 ### Running Tests
 
+**Expect exactly one failure.** `PerfCounterVerifySim` fails on an unassigned
+ICU register — pre-existing, confirmed by bisect, tracked as item 80. A run
+reporting `succeeded 651, failed 1` is the healthy result; anything else is
+worth looking at. Requires `make test-apps` from step 3, or several suites fail
+on missing `.jop` files instead.
+
 ```bash
-# SpinalSim tests (Verilator)
+# SpinalSim tests (Verilator) — ~15 minutes, expect 651 passed / 1 failed
 sbt test
 
 # Formal verification (SymbiYosys + Z3) — 133 properties across 23 suites
@@ -499,6 +510,7 @@ Design notes and investigation logs in `docs/`:
 - [Jopa Tool](docs/architecture/JOPA_TOOL.md) — microcode assembler usage and output formats
 - [Programmer's Guide](docs/programmers-guide.md) — I/O register maps and Java API for all devices (BmbSys, BmbUart, BmbEth, BmbMdio, BmbSdNative, BmbSdSpi, BmbVgaText)
 - [Tuning Guide](docs/architecture/tuning-guide.md) — **what each configuration lever buys and costs**: `blockBits` vs `jpcWidth`, `l2SetCount`, `l2MshrCount`, core count; which resource actually binds (LUTs, not BRAM); how to measure each; and the plausible-sounding conclusions that measurement disproved
+- [Troubleshooting](TROUBLESHOOTING.md) — symptom-first checklist for a board that builds but misbehaves (no UART, watchdog stopped, I/O address mismatch). Work through this before deep-diving
 - [Build Structure](docs/build-structure.md) — **how a build is put together and what to type**: the `build/<config>/` layout, the shared per-toolchain flow, what a board Makefile declares versus inherits, and troubleshooting
 - [System Configuration](docs/architecture/system-configuration.md) — configuration reference: memory layout, JopCoreConfig, JopMemoryConfig, board configs, I/O register map
 - [Configuration-Driven Design](docs/architecture/configuration-driven-design.md) — unified `JopTop(config)` design: JopConfig hierarchy, board/FPGA/memory metadata, PLL/reset/memory controller factories, preset system
