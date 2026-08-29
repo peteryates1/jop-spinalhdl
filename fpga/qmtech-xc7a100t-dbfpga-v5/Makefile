@@ -44,7 +44,6 @@ ABS_BUILD   := $(CURDIR)/$(BUILD_DIR)
 CONSTRAINTS := $(CURDIR)/$(VIVADO_DIR)/constraints
 BOARD_RTL   := $(CURDIR)/$(VIVADO_DIR)/rtl
 IP_DIR      := $(CURDIR)/$(VIVADO_DIR)/ip
-GEN_RTL     := $(REPO_ROOT)/spinalhdl/generated
 
 # DirtyJTAG programming (RP2040 on DB_FPGA V5)
 #
@@ -81,19 +80,22 @@ DDR3_BITSTREAM = $(CFG_DIR)/vivado/build/JopDdr3Top.bit
 
 # === UART Echo Test (board bring-up) ===
 
+# Standalone top, so it has its own config directory rather than a preset's.
+UART_ECHO_DIR = $(REPO_ROOT)/build/uartEcho
+
 generate-uart-echo:
 	cd $(REPO_ROOT) && sbt "runMain jop.system.UartEchoTopVerilog"
 
 create-uart-echo: generate-uart-echo
 	$(VIVADO_ENV) && JOP_PROJ=uart_echo JOP_PART=$(PART) JOP_TOP=UartEchoTop \
-	  JOP_BUILD_DIR=$(ABS_BUILD) \
-	  JOP_RTL=$(REPO_ROOT)/spinalhdl/generated/UartEchoTop.v \
+	  JOP_BUILD_DIR=$(UART_ECHO_DIR)/vivado/build \
+	  JOP_RTL=$(UART_ECHO_DIR)/rtl/UartEchoTop.v \
 	  JOP_XDC=$(CONSTRAINTS)/uart_echo.xdc \
 	  JOP_GEN_HINT="run: make generate-uart-echo" \
 	  $(VIVADO) -mode batch -source $(CREATE_TCL)
 
 build-uart-echo: create-uart-echo
-	$(VIVADO_ENV) && JOP_PROJ=uart_echo JOP_BUILD_DIR=$(ABS_BUILD) \
+	$(VIVADO_ENV) && JOP_PROJ=uart_echo JOP_BUILD_DIR=$(UART_ECHO_DIR)/vivado/build \
 	  JOP_BIT=UartEchoTop.bit \
 	  $(VIVADO) -mode batch -source $(BUILD_TCL)
 

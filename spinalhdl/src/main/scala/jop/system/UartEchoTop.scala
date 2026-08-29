@@ -97,11 +97,14 @@ case class UartEchoTop() extends Component {
   }
 }
 
+
 object UartEchoTopVerilog extends App {
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.StandaloneBuild.rtlDir("uartEcho"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   ).generate(UartEchoTop())
-  println("Generated: spinalhdl/generated/UartEchoTop.v")
+  jop.generate.StandaloneBuild.summary("uartEcho", "UartEchoTop",
+    board = "qmtech-xc7a100t + DB_FPGA V5", fpga = "XC7A100T", clkMhz = 50, uartBaud = Some(115200))
+  println(s"Generated: ${jop.generate.StandaloneBuild.rtlDir("uartEcho")}/UartEchoTop.v")
 }

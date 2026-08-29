@@ -28,7 +28,7 @@ BAUD_RATE = 1000000
 
 # Project paths
 PROJECT_ROOT = ../..
-GENERATED_V = $(PROJECT_ROOT)/spinalhdl/generated/Ddr3ExerciserTop.v
+GENERATED_V = $(PROJECT_ROOT)/build/ddr3Exerciser/rtl/Ddr3ExerciserTop.v
 
 .PHONY: all generate ips project bitstream program monitor run clean
 

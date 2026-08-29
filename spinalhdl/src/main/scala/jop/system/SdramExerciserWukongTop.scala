@@ -574,6 +574,7 @@ case class SdramExerciserWukongTop(md: MemoryDevice) extends Component {
 /**
  * Generate Verilog for SdramExerciserWukongTop
  */
+
 object SdramExerciserWukongTopVerilog extends App {
   val asm = SystemAssembly.wukong
   val bd = asm.findDeviceByRole("sdr").get
@@ -581,9 +582,11 @@ object SdramExerciserWukongTopVerilog extends App {
 
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.StandaloneBuild.rtlDir("sdramExerciserWukong"),
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
   ).generate(InOutWrapper(SdramExerciserWukongTop(md)))
 
-  println("Generated: spinalhdl/generated/SdramExerciserWukongTop.v")
+  jop.generate.StandaloneBuild.summary("sdramExerciserWukong", "SdramExerciserWukongTop",
+    board = "qmtech-wukong-v3", fpga = "XC7A100T", clkMhz = 100, uartBaud = Some(1000000))
+  println(s"Generated: ${jop.generate.StandaloneBuild.rtlDir("sdramExerciserWukong")}/SdramExerciserWukongTop.v")
 }

@@ -164,7 +164,7 @@ flash-image:
 # SST26VF032B, so the FPGA is loaded with a bitstream that does it over UART.
 # Its RTL still generates in-tree: FlashProgrammerDdr3Top is a standalone top,
 # not a JopConfig preset, so it has no config directory to belong to.
-FLASH_PRG_RTL = $(PROJECT_ROOT)/spinalhdl/generated
+FLASH_PRG_RTL = $(PROJECT_ROOT)/build/flashProgrammerDdr3/rtl
 
 flash-programmer:
 	cd $(PROJECT_ROOT) && sbt "runMain jop.system.FlashProgrammerDdr3TopVerilog"

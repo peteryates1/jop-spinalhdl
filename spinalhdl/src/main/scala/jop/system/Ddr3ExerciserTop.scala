@@ -652,7 +652,7 @@ case class Ddr3ExerciserTop() extends Component {
 object Ddr3ExerciserTopVerilog extends App {
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.StandaloneBuild.rtlDir("ddr3Exerciser"),
     defaultClockDomainFrequency = FixedFrequency(100 MHz),
     defaultConfigForClockDomains = ClockDomainConfig(
       resetKind = SYNC,
@@ -660,5 +660,7 @@ object Ddr3ExerciserTopVerilog extends App {
     )
   ).generate(InOutWrapper(Ddr3ExerciserTop()))
 
-  println("Generated: spinalhdl/generated/Ddr3ExerciserTop.v")
+  jop.generate.StandaloneBuild.summary("ddr3Exerciser", "Ddr3ExerciserTop",
+    board = "alchitry-au-v2", fpga = "XC7A35T", clkMhz = 100, uartBaud = Some(1000000))
+  println(s"Generated: ${jop.generate.StandaloneBuild.rtlDir("ddr3Exerciser")}/Ddr3ExerciserTop.v")
 }

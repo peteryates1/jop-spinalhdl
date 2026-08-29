@@ -36,7 +36,8 @@ NP_TCL     := $(REPO_ROOT)/fpga/scripts/vivado_build_nonproject.tcl
 IP         := $(CURDIR)/vivado/ip
 XDC        := $(CURDIR)/vivado/constraints
 SHARED_XDC := $(REPO_ROOT)/fpga/constraints
-GEN_RTL    := $(REPO_ROOT)/spinalhdl/generated
+# Standalone top: its own config directory, not a preset's.
+SDR_EX_DIR := $(REPO_ROOT)/build/sdramExerciserWukong
 ABS_BUILD  := $(CURDIR)/vivado/build
 
 # Every JOP build here uses the same timing-closure directives; the exercisers
@@ -273,8 +274,8 @@ sdram-create-ip:
 # need the closure flow the JOP builds run.
 sdram-build: sdram-generate
 	$(VIVADO_ENV) && JOP_TOP=SdramExerciserWukongTop JOP_PART=$(PART) \
-	  JOP_BUILD_DIR=$(ABS_BUILD)/wukong_sdram_exerciser \
-	  JOP_RTL=$(GEN_RTL)/SdramExerciserWukongTop.v \
+	  JOP_BUILD_DIR=$(SDR_EX_DIR)/vivado/build \
+	  JOP_RTL=$(SDR_EX_DIR)/rtl/SdramExerciserWukongTop.v \
 	  JOP_IP=$(IP)/sdr_clk/sdr_clk.xci \
 	  JOP_XDC="$(XDC)/wukong_sdram.xdc $(SHARED_XDC)/sdram_sdr.xdc" \
 	  $(VIVADO) -mode batch -source $(NP_TCL)

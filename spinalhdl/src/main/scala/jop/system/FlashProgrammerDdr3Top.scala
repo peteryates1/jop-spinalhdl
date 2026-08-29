@@ -268,7 +268,7 @@ case class FlashProgrammerDdr3Top() extends Component {
 object FlashProgrammerDdr3TopVerilog extends App {
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.StandaloneBuild.rtlDir("flashProgrammerDdr3"),
     defaultClockDomainFrequency = FixedFrequency(100 MHz),
     defaultConfigForClockDomains = ClockDomainConfig(
       resetKind = SYNC,
@@ -276,5 +276,7 @@ object FlashProgrammerDdr3TopVerilog extends App {
     )
   ).generate(FlashProgrammerDdr3Top())
 
-  println("Generated: spinalhdl/generated/FlashProgrammerDdr3Top.v")
+  jop.generate.StandaloneBuild.summary("flashProgrammerDdr3", "FlashProgrammerDdr3Top",
+    board = "alchitry-au-v2", fpga = "XC7A35T", clkMhz = 100, uartBaud = None)
+  println(s"Generated: ${jop.generate.StandaloneBuild.rtlDir("flashProgrammerDdr3")}/FlashProgrammerDdr3Top.v")
 }
