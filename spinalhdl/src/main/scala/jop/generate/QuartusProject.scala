@@ -252,7 +252,12 @@ object QuartusProjectMain extends App {
   private val presetArgs =
     args.zipWithIndex.filterNot { case (_, i) => consumed.contains(i) }.map(_._1)
 
-  val preset = presetArgs.headOption.getOrElse("ep4cgx150Serial")
+  val preset = presetArgs.headOption.getOrElse(
+  sys.error(
+    "no preset given. Pass the preset name as the first argument.\n" +
+    "There is deliberately no default: this main writes a constraint or\n" +
+    "project file, and a default silently produces a WELL-FORMED file for\n" +
+    "the wrong board at the path --write names, which then builds."))
   val config = JopTopVerilog.resolvePreset(preset, presetArgs)
   val tcl = QuartusProject.generate(config, revision, preset, presetArgs.drop(1).toSeq)
 

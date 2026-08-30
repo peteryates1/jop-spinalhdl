@@ -394,7 +394,12 @@ object ConstGenerator {
 object ConstGeneratorMain extends App {
   import jop.system.JopTopVerilog
 
-  val preset = args.headOption.getOrElse("ep4cgx150Serial")
+  val preset = args.headOption.getOrElse(
+  sys.error(
+    "no preset given. Pass the preset name as the first argument.\n" +
+    "There is deliberately no default: this main writes a constraint or\n" +
+    "project file, and a default silently produces a WELL-FORMED file for\n" +
+    "the wrong board at the path --write names, which then builds."))
   val writeToFile = args.contains("--write")
   // Same opt-in switch the Verilog generator takes: `buildtree` says WHERE to
   // write, not WHAT to build, so it is filtered out of both the preset

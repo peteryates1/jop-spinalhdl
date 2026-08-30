@@ -104,7 +104,12 @@ object BuildLayout {
  * the same class of defect this layout exists to remove.
  */
 object BuildLayoutMain extends App {
-  val preset = args.headOption.getOrElse("ep4cgx150Serial")
+  val preset = args.headOption.getOrElse(
+  sys.error(
+    "no preset given. Pass the preset name as the first argument.\n" +
+    "There is deliberately no default: this main writes a constraint or\n" +
+    "project file, and a default silently produces a WELL-FORMED file for\n" +
+    "the wrong board at the path --write names, which then builds."))
   val rest = args.drop(1).filterNot(_.equalsIgnoreCase("buildtree"))
   println(BuildLayout.default.configDir(preset, rest))
 }

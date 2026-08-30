@@ -134,7 +134,27 @@ object QsfGenerator {
   * `--write <path>` follows XdcGeneratorMain and ConstGeneratorMain.
   */
 object QsfGeneratorMain extends App {
-  val base = JopConfig.ep4cgx150Serial
+  import jop.system.JopTopVerilog
+  // RESOLVE THE ARGUMENT. This used to be `val base = JopConfig.ep4cgx150Serial`
+  // unconditionally, so every sibling main took a preset name and this one
+  // silently discarded it and emitted EP4CGX150 pins for whatever you asked
+  // for. Nothing invokes it today, which is exactly why it went unnoticed --
+  // and why it is cheap to correct before something does.
+  private val switches = Set("--dbfpga", "--pins-only", "--write")
+  private val presetArgs = {
+    val w = args.indexOf("--write")
+    args.zipWithIndex.filterNot { case (a, i) =>
+      switches.contains(a) || (w >= 0 && i == w + 1)
+    }.map(_._1)
+  }
+  val base = JopTopVerilog.resolvePreset(
+    presetArgs.headOption.getOrElse(
+      sys.error(
+        "no preset given. Pass the preset name as the first argument.\n" +
+        "There is deliberately no default: this main writes a pin file, and a\n" +
+        "default silently produces a WELL-FORMED .qsf for the wrong board at\n" +
+        "the path --write names, which then builds.")),
+    presetArgs)
   // Daughter board peripherals for pin reservation
   val dbPeripherals = Map(
     "eth" -> DeviceInstance(DeviceType.Ethernet,

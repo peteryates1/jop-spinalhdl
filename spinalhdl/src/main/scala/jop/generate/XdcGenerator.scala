@@ -159,7 +159,12 @@ object XdcGeneratorMain extends App {
     if (writeFlag < 0) args
     else args.zipWithIndex.filterNot { case (_, i) => i == writeFlag || i == writeFlag + 1 }.map(_._1)
 
-  val preset = presetArgs.headOption.getOrElse("wukongSdram")
+  val preset = presetArgs.headOption.getOrElse(
+  sys.error(
+    "no preset given. Pass the preset name as the first argument.\n" +
+    "There is deliberately no default: this main writes a constraint or\n" +
+    "project file, and a default silently produces a WELL-FORMED file for\n" +
+    "the wrong board at the path --write names, which then builds."))
   val config = JopTopVerilog.resolvePreset(preset, presetArgs)
   val xdc = XdcGenerator.generate(config)
 
