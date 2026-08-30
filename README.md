@@ -269,6 +269,7 @@ scan first and refuses if the board on the cable is not the one this
 configuration expects; `quartus_pgm` reports success on a chain it never read,
 so that check is the only thing standing between you and a silent no-op.
 
+```bash
 # Other configurations of the same board — each gets its own build/<config>/
 make smp CORES=4               # 4-core SMP   (also CORES=8, CORES=12 MHZ=36)
 make dbfpga                    # + Ethernet / VGA text / SD
