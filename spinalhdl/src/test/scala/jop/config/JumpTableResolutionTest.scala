@@ -111,12 +111,22 @@ class JumpTableResolutionTest extends AnyFunSuite {
     // The constraint column is the declaration; useAlt throwing is the backstop.
     // They must agree, or a bytecode is either silently mis-dispatched (marked
     // JavaOk with no _sw) or needlessly forbidden (marked NoMicrocode with one).
+    //
+    // JavaOnly counts as forbidding microcode too, and more strongly: it forbids
+    // hardware as well. frem and drem are the two, added when frem's absence
+    // from the registry let `"*" -> "hw"` drive SUPPORT_FLOAT false and drop the
+    // SoftFloat library it runs in. The invariant being pinned is "nothing
+    // claims a microcode handler the ROM does not have", so both constraints
+    // satisfy it; keeping the test literal would have made adding a Java-only
+    // bytecode look like a regression.
     val alts = JumpTableInitData.simulation.altEntries.keySet
     val noSw = BytecodeConfig.all.filterNot(e => alts.contains(e.opcode)).map(_.name).toSet
-    val noMc = BytecodeConfig.all.filter(_.constraint == ImpConstraint.NoMicrocode).map(_.name).toSet
+    val noMc = BytecodeConfig.all.filter(e =>
+      e.constraint == ImpConstraint.NoMicrocode ||
+      e.constraint == ImpConstraint.JavaOnly).map(_.name).toSet
     assert(noSw == noMc,
-      s"no _sw but not NoMicrocode: ${(noSw -- noMc).toSeq.sorted.mkString(", ")}; " +
-      s"NoMicrocode but _sw exists: ${(noMc -- noSw).toSeq.sorted.mkString(", ")}")
+      s"no _sw but microcode not forbidden: ${(noSw -- noMc).toSeq.sorted.mkString(", ")}; " +
+      s"microcode forbidden but _sw exists: ${(noMc -- noSw).toSeq.sorted.mkString(", ")}")
   }
 
   test("imul_sw and lmul_sw are mutually exclusive") {

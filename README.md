@@ -293,9 +293,14 @@ make jop-sdram-build           # same board, SDR memory path
 make dual-build                # two independent clusters, DDR3 + SDR
 
 # The compute-unit build. `wukongFull` is the configuration with all four
-# hardware compute units — and it currently FAILS DoAll at FloatTest, because
-# `frem` is forced to hardware and has no hardware implementation. Build it to
-# work on that; use the default above for a board that passes.
+# hardware compute units — and it currently FAILS DoAll at FloatTest. NOT
+# because frem is forced to hardware: frem is absent from the bytecode registry
+# entirely, so `"*" -> "hw"` cannot reach it. It is implemented only in Java
+# (JVM.f_frem -> SoftFloat32.float_rem), and that library is compiled in only
+# when SUPPORT_FLOAT is set, which is derived from whether any REGISTERED float
+# bytecode still resolves to Java. Give the FCU all of them and the library is
+# dropped — including the one float operation that has no hardware form.
+# See status items 69/74. Use the default above for a board that passes.
 make ddr3-build DDR3_CFG=wukongFull
 
 # Alchitry Au V2 (Artix-7 + DDR3)

@@ -570,7 +570,6 @@ val computeBusy =
 
 // Result MUX — latched active unit on sthw, writeback to TOS/NOS when done
 ```
-```
 
 ### Operand mapping
 

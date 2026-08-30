@@ -168,7 +168,9 @@ object MemoryStyle {
 }
 
 // ==========================================================================
-// BytecodeConfig — registry of all 32 configurable bytecodes
+// BytecodeConfig — registry of 34 bytecodes: 32 configurable, plus frem and
+// drem, which exist only in Java and are listed so a wildcard cannot silently
+// drop the software float library they depend on.
 // ==========================================================================
 
 /** Constraint on which Implementations are valid for a bytecode */
@@ -180,6 +182,17 @@ object ImpConstraint {
   case object JavaOk extends ImpConstraint
   /** IMP_JAVA + no microcode handler exists. Only Java or Hardware. */
   case object NoMicrocode extends ImpConstraint
+  /** IMP_JAVA and there is no microcode OR hardware handler. Java is the only
+    * valid implementation.
+    *
+    * These are NOT configurable, and they are in the registry precisely so that
+    * a wildcard cannot pretend they are. `frem` used to be absent entirely, so
+    * `resolve` never saw it -- and because `needsJavaFloat` asks whether any
+    * REGISTERED float bytecode still resolves to Java, `"*" -> "hw"` drove
+    * SUPPORT_FLOAT false, dropped SoftFloat32, and left `JVM.f_frem` falling
+    * through to `JVMHelp.noim()`. Being listed here is what keeps the library.
+    */
+  case object JavaOnly extends ImpConstraint
 }
 
 /** A single configurable bytecode entry */
@@ -211,6 +224,10 @@ object BytecodeConfig {
     BytecodeEntry("f2i",   0x8B, "float",  Java, NoMicrocode),  // no f2i_sw
     BytecodeEntry("fcmpl", 0x95, "float",  Java, JavaOk),   // fcmpl_sw: pure microcode, no FCU
     BytecodeEntry("fcmpg", 0x96, "float",  Java, JavaOk),   // fcmpg_sw: pure microcode, no FCU
+    // Java-only. No microcode handler and no compute unit implements a
+    // remainder; JVM.f_frem calls SoftFloat32.float_rem. Listed so that
+    // needsJavaFloat stays true under `"*" -> "hw"` and the library survives.
+    BytecodeEntry("frem",  0x72, "float",  Java, JavaOnly),
     // Long — IMP_ASM ops have pure microcode handlers; lmul is IMP_JAVA.
     BytecodeEntry("ladd",  0x61, "long",   Microcode, Asm),
     BytecodeEntry("lsub",  0x65, "long",   Microcode, Asm),
@@ -232,7 +249,12 @@ object BytecodeConfig {
     BytecodeEntry("f2d",   0x8D, "double", Java, NoMicrocode),
     BytecodeEntry("d2f",   0x90, "double", Java, NoMicrocode),
     BytecodeEntry("dcmpl", 0x97, "double", Java, NoMicrocode),
-    BytecodeEntry("dcmpg", 0x98, "double", Java, NoMicrocode)
+    BytecodeEntry("dcmpg", 0x98, "double", Java, NoMicrocode),
+    // Java-only, same as frem. SUPPORT_DOUBLE is currently hardcoded true in
+    // ConstGenerator, so SoftFloat64 is never dropped and drem was not broken
+    // the way frem was -- but the CONFIGURATION fact is identical, and stating
+    // it here is what stops `drem -> hw` being accepted as a silent no-op.
+    BytecodeEntry("drem",  0x73, "double", Java, JavaOnly)
   )
 
   private val byName: Map[String, BytecodeEntry] = all.map(e => e.name -> e).toMap
@@ -259,10 +281,20 @@ object BytecodeConfig {
         s"Unknown bytecode key '$key'. Valid: ${validKeys.toSeq.sorted.mkString(", ")}")
     val star = bytecodes.get("*").map(parseImpl)
     all.map { entry =>
-      val impl = bytecodes.get(entry.name).map(parseImpl)
-        .orElse(bytecodes.get(entry.group).map(parseImpl))
-        .orElse(star)
-        .getOrElse(entry.default)
+      // `"*"` and a group key mean "every CONFIGURABLE bytecode". A JavaOnly
+      // entry has exactly one valid implementation, so neither may retarget it
+      // -- otherwise `"*" -> "hw"` silently claims hardware for an operation
+      // that has none, which is how SoftFloat32 came to be dropped. An EXPLICIT
+      // name still resolves, and validate() then refuses it by name.
+      val impl = entry.constraint match {
+        case JavaOnly =>
+          bytecodes.get(entry.name).map(parseImpl).getOrElse(entry.default)
+        case _ =>
+          bytecodes.get(entry.name).map(parseImpl)
+            .orElse(bytecodes.get(entry.group).map(parseImpl))
+            .orElse(star)
+            .getOrElse(entry.default)
+      }
       entry.name -> impl
     }.toMap
   }
@@ -278,6 +310,12 @@ object BytecodeConfig {
         case NoMicrocode =>
           require(impl != Microcode,
             s"${entry.name}: mc is invalid — no SW handler exists. Use java or hw.")
+        case JavaOnly =>
+          require(impl == Java,
+            s"${entry.name}: only java is valid — no microcode handler and no " +
+            s"compute unit implements it. ${entry.name} runs in the software " +
+            "float library; asking for mc or hw would drop that library and " +
+            "leave the bytecode trapping to JVMHelp.noim() at runtime.")
         case JavaOk => // all valid
       }
     }

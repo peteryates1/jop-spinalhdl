@@ -102,12 +102,14 @@ cold-check:
 
 # Structural checks on the build graph, in seconds and with no toolchain: they
 # read make's own rule database and run the guards, rather than building
-# anything. Both guard a defect where the flow SUCCEEDED while being wrong --
-# constraints that never regenerated, and a baud nobody chose.
+# anything. Each guards a defect that let the flow SUCCEED while being wrong:
+# constraints that never regenerated, a baud nobody chose, and a stray code
+# fence that inverted 2,300 lines of a document without changing its source.
 .PHONY: check-build
 check-build:
 	@.github/scripts/check-generated-deps.sh
 	@.github/scripts/check-console-baud.sh
+	@.github/scripts/check-docs-structure.sh
 
 help:
 	@echo "make check-build  assert the build graph's guards hold (seconds)"
