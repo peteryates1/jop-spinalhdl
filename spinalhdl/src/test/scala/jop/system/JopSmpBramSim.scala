@@ -244,10 +244,34 @@ object JopSmpBramSim extends App {
           println(f"\n[$cycle%8d] $pcStr halted=$haltedStr UART: '${uartOutput.toString}'")
         }
 
-        // Exit after multiple GC cycles (mark-compact: heap fills ~R24, so R80 = ~3 GC cycles)
+          // EXIT ON THE EVENT, NOT ON A ROUND NUMBER.
+          //
+          // This used to stop at "R80 f=", a threshold chosen when the heap
+          // filled by ~R24 under mark-compact. It does not any more: the run
+          // reports "GC: generational, 4-word cards", free-at-start is 34,496
+          // bytes and each round consumes ~77.6, so the first collection lands
+          // near R444. The test stopped 5x before the thing it exists to
+          // observe and reported "GC never triggered", having done nothing
+          // wrong.
+          //
+          // Shrinking the heap to make GC fire sooner does NOT work: the card
+          // table requires cardCount to be a power of two, so memSize must be
+          // too, and the next size down (64 KB) is below the ~96,576 bytes the
+          // program and runtime already occupy. 128 KB is the smallest legal
+          // heap here -- `cardCount must be a power of two >= 32` is what you
+          // get for trying 96 KB.
+          //
+          // So stop when a collection has actually happened -- free memory
+          // rising, the same signal the assertion after the loop uses. It ends
+          // as soon as the property is proven rather than at an arbitrary
+          // round, and it cannot silently drift again when allocation rates or
+          // collector strategy change.
         val output = uartOutput.toString
-        if (output.contains("R80 f=")) {
-          println("\n*** Multiple GC cycles completed! ***")
+          val freeSoFar = """R\d+ f=(\d+)""".r.findAllMatchIn(output).map(_.group(1).toInt).toList
+          val sawGc = freeSoFar.length >= 2 &&
+                      freeSoFar.sliding(2).exists { case List(a, b) => b > a case _ => false }
+          if (sawGc) {
+            println(s"\n*** GC observed after ${freeSoFar.length} rounds (free memory rose) ***")
           for (_ <- 0 until 50000) {
             dut.clockDomain.waitSampling()
             if (dut.io.uartTxValid.toBoolean) {
