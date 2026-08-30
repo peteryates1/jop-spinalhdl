@@ -63,6 +63,94 @@ jobs:
   # ----------------------------------------------------------------
   # SBT compile + Verilog generation
   # ----------------------------------------------------------------
+  # THE README IS THE TEST. Both jobs execute the commands in README.md's
+  # "Build and Run Simulation" block rather than a copy of them, so the docs
+  # and CI cannot drift: edit a command there and this runs the edited one.
+  #
+  # Split by step number, not by two lists. Steps 1-7 are ~6 minutes and gate
+  # every push; step 8 (JopSmpBramSim) runs until a collection actually happens,
+  # ~54M cycles, measured at 25 min unloaded and 48 min contended -- too long to
+  # sit in front of a push, so it runs nightly.
+  #
+  # Its first run found that step 2's `sbt compile` executed in asm/ -- step 1
+  # leaves you there and step 2 only said "from project root" in a comment. It
+  # reported success while compiling none of the HDL, and self-healed later
+  # because the runMain steps compile from the root. Two cold-newcomer agents
+  # missed it because they ran the commands sensibly rather than literally. A
+  # script does not.
+  readme-walkthrough:
+    needs: build-microcode
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up SBT
+        uses: sbt/setup-sbt@v1
+
+      - name: Cache SBT
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.sbt
+            ~/.cache/coursier
+            ~/.ivy2/cache
+          key: sbt-${{ hashFiles('build.sbt', 'project/build.properties', 'project/plugins.sbt') }}
+          restore-keys: sbt-
+
+      - name: Install Verilator
+        run: sudo apt-get update && sudo apt-get install -y verilator
+
+      # No microcode download here on purpose: step 1 of the walk-through builds
+      # it, and the point is to prove the README's own sequence works from a
+      # clean checkout.
+      - name: Run the README walk-through (steps 1-7)
+        run: .github/scripts/run-readme-walkthrough.sh 1-7
+
+  # Step 8 only. Nightly and on demand -- see the note above.
+  readme-walkthrough-long:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: build-microcode
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up SBT
+        uses: sbt/setup-sbt@v1
+
+      - name: Cache SBT
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.sbt
+            ~/.cache/coursier
+            ~/.ivy2/cache
+          key: sbt-${{ hashFiles('build.sbt', 'project/build.properties', 'project/plugins.sbt') }}
+          restore-keys: sbt-
+
+      - name: Install Verilator
+        run: sudo apt-get update && sudo apt-get install -y verilator
+
+      # Steps 1-3 build what step 8 needs; 4-7 are covered on every push.
+      - name: Build prerequisites (steps 1-3)
+        run: .github/scripts/run-readme-walkthrough.sh 1-3
+
+      - name: Run the long simulation (step 8)
+        run: .github/scripts/run-readme-walkthrough.sh 8-8
+
   compile-and-generate:
     needs: build-microcode
     runs-on: ubuntu-24.04

@@ -158,8 +158,10 @@ jop/
 cd java/tools && make dist/jopa.jar
 cd ../../asm && make
 
-# 2. Compile SpinalHDL (from project root)
-sbt compile
+# 2. Compile SpinalHDL. The `cd ..` matters: step 1 leaves you in asm/, and
+#    `sbt compile` there builds the asm subproject and reports success while
+#    compiling none of the HDL.
+cd .. && sbt compile
 
 # 3. Build Java toolchain, runtime, and every app the simulations load.
 #    `make all` builds only the three HelloWorlds used by steps 4-5; the GC,
