@@ -90,9 +90,9 @@ causing suboptimal BRAM placement. Critical path goes through BRAM.
 
 **Root cause**: Two copies of jop-spinalhdl exist:
 - `/home/peter/jop-spinalhdl/` (standalone)
-- `/home/peter/atari800-spinalhdl/jop-spinalhdl/` (submodule — USE THIS ONE)
+- `<repo>/` (submodule — USE THIS ONE)
 
-**Check**: `pwd` — must be under `atari800-spinalhdl/jop-spinalhdl/`.
+**Check**: `pwd` — must be the repository root (the directory containing `build.sbt`).
 
 ## 8. quartus_pgm Can't Find USB-Blaster (Occurrences: 1)
 
@@ -127,13 +127,13 @@ set_location_assignment PIN_AE21 -to ser_rxd
 **Symptom**: JOP heartbeat LED blinks but no UART output — no serial ready signal (0xAA),
 no output at any baud rate. Both simulation and hardware affected.
 
-**Root cause**: `asm/src/jvm.asm` was modified but `asm/generated/serial/mem_rom.dat`
+**Root cause**: `asm/src/jvm.asm` was modified but `build/microcode/serial/mem_rom.dat`
 was not regenerated. SpinalHDL embeds stale microcode into the Verilog at elaboration time.
 The old microcode may have incompatible serial boot code or missing handlers.
 
 **Check**: Compare timestamps:
 ```bash
-ls -la asm/src/jvm.asm asm/generated/serial/mem_rom.dat
+ls -la asm/src/jvm.asm build/microcode/serial/mem_rom.dat
 ```
 If `jvm.asm` is newer than `mem_rom.dat`, the microcode is stale.
 

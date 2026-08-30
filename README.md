@@ -113,8 +113,8 @@ jop/
 │   ├── memory/                # Memory controller tests
 │   └── pipeline/              # Pipeline stage tests
 ├── asm/
-│   ├── src/                   # Microcode source (jvm.asm, echo.asm)
-│   └── generated/             # Generated jump tables, ROM/RAM data
+│   └── src/                   # Microcode source (jvm.asm, echo.asm)
+│                              # output goes to build/microcode/<boot mode>/
 ├── fpga/
 │   ├── scripts/               # download.py, monitor.py, make_flash_image.py, flash_program.py
 │   ├── ip/                    # Third-party IP (Altera SDRAM controller)

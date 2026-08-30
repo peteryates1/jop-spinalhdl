@@ -106,6 +106,13 @@ $(UCODE_SCALA) &:
 # anyway. Keyed off the generator because that is exactly what distinguishes
 # the two: JopTopVerilog builds a preset, anything else builds a standalone
 # top.
+# THE DEFAULT MUST PRECEDE THE ifeq BELOW. Make evaluates conditionals at parse
+# time in file order, so testing GEN_MAIN before its `?=` runs compares against
+# an EMPTY value: every preset board fell to the else branch, JOP_APP_FILE came
+# out empty, and the rule that builds the demo .jop never became a prerequisite
+# of anything. Silently -- the builds all succeeded, and only `make download`
+# failed, much later, on a file nothing had created.
+GEN_MAIN    ?= jop.system.JopTopVerilog
 ifeq ($(GEN_MAIN),jop.system.JopTopVerilog)
 JOP_APP_FILE = $(CFG_DIR)/java/apps/Smallest/HelloWorld.jop
 else
@@ -116,7 +123,6 @@ $(JOP_APP_FILE):
 	cd $(PROJECT_ROOT)/java && $(MAKE) all JOP_PRESET="$(CFG)" BUILDTREE=1
 
 
-GEN_MAIN    ?= jop.system.JopTopVerilog
 GEN_ARGS    ?= $(CFG) buildtree
 
 # The shared Vivado scripts. The board passes the design's fields to these
