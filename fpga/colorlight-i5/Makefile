@@ -69,7 +69,16 @@ LOADER_BRD := colorlight-i5
 TTY        := $(shell $(ROOT)/fpga/scripts/usb_serial_map --by-id i5 2>/dev/null \
                 || echo /dev/serial/by-id/usb-ARM_DAPLink_CMSIS-DAP_07000001002700424e00000256304750a5a5a5a597969908-if01)
 BAUD       := 1000000
-APP        := $(ROOT)/java/apps/Smallest/HelloWorld.jop
+# THE APP COMES FROM THIS CONFIG'S OWN JAVA TREE, like every other board.
+# It used to read $(ROOT)/java/apps/... -- the legacy in-tree path -- which is
+# why this was the ONLY board that still worked while the .jop prerequisite was
+# broken everywhere else (2026-08-30): it was reading an artefact the README's
+# software section happens to leave behind, not one this flow produced.
+APP        := $(CFG_DIR)/java/apps/Smallest/HelloWorld.jop
+
+# Built here rather than assumed, so `make bitstream download` works from cold.
+$(APP):
+	cd $(ROOT)/java && $(MAKE) all JOP_PRESET=$(PRESET) BUILDTREE=1
 
 .PHONY: all generate synth pnr bitstream program download clean
 
@@ -80,7 +89,7 @@ all: bitstream
 # with $readmemb. ECP5 uses MemoryStyle.Generic, so there are no vendor memory
 # blackboxes to supply -- unlike the Altera boards, which need arom.vhd/aram.vhd
 # listed in their .qsf or synthesis fails on undefined entities.
-generate:
+generate: $(APP)
 	cd $(ROOT) && sbt "runMain jop.system.JopTopVerilog $(PRESET) buildtree"
 	cd $(ROOT) && sbt "runMain jop.generate.LpfGeneratorMain $(PRESET) --write build/$(PRESET)/nextpnr/$(TOP).lpf"
 	cd $(ROOT) && sbt "runMain jop.generate.PllGenMain $(PRESET) --module pll_jop_i5 --out build/$(PRESET)/ip"
