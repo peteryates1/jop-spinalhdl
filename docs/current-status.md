@@ -178,7 +178,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[85](#item-85)** — Build port, phase 2 — the SDRAM exerciser folded onto the shared flow, and the baud it never reported
 - **[86](#item-86)** — Build port, phase 3a — three shared Vivado scripts, proven equivalent by control build; and the DB_FPGA DDR3 build has quietly got 43 % smaller
 - **[100](#item-100)** — Newcomer hardware path verified on the i5 and A-E115FB; the EP4CGX150's level-shifted Pico cable is INTERMITTENT (3 detections in 10, bursty) — first diagnosed as failed, which single-sample testing made look certain (OPEN)
-- **[95](#item-95)** — The README advertises 13 simulation commands; CI watches a different set, and the gap is where four broken sims were hiding (OPEN)
+- **[95](#item-95)** — The README advertises 13 simulation commands; CI watched a different set, and the gap is where four broken sims were hiding — **CLOSED: CI executes the README itself**
 - **[96](#item-96)** — `JopCoreWithSdramSim` **stalls** — a closed loop over three PC values, diagnosed not guessed (OPEN)
 - **[97](#item-97)** — `JopSmpBramSim` runs 100 M cycles, both cores boot, then fails its own `GC test start` check (OPEN)
 - **[98](#item-98)** — `JopInterruptSim` fires 2 of 5 interrupts — deterministic, reproduced twice (OPEN)
@@ -8190,10 +8190,27 @@ Same shape as the flash microcode nobody built and the PLL tests that
 `assume`d themselves into silence: nothing was watching, so nothing said
 anything.
 
-**Next action:** put the README's own command list under CI, so a documented
-command that stops working fails a build instead of waiting for the next
-newcomer. That is a stronger contract than adding the four sims individually —
-it makes the README executable.
+**DONE 2026-08-30.** `.github/scripts/run-readme-walkthrough.sh` extracts the
+fenced block under "### Build and Run Simulation" from README.md and executes
+it. Two CI jobs call it: `readme-walkthrough` runs steps 1-7 on every push
+(~6 min); `readme-walkthrough-long` runs step 8 nightly (~25-50 min, since it
+runs until a collection actually happens).
+
+**The sync problem is solved by construction, not by discipline.** Listing the
+commands in the workflow would create two lists that drift apart -- the same
+defect this project keeps finding in itself, a constant outliving whatever it
+was copied from. There is ONE list, in the README, and CI runs it.
+
+**It found a defect on its first run**, one that had survived two cold-newcomer
+walkthroughs: step 2's `sbt compile` executed in `asm/`, because step 1 leaves
+you there and step 2 only said "from project root" in a COMMENT. It reported
+success while compiling none of the HDL, then self-healed because the later
+runMain steps compile from the root. Both agents missed it by running the
+commands sensibly rather than literally. **An executable README is stricter
+than a careful reader**, which is the point.
+
+Covers the SIMULATION section only. The FPGA section cannot run in CI, so
+hardware stays with newcomer runs and the bench.
 
 Related: a seventh symptom of the same class was fixed at the same time — the
 documented simulations load `.jop` files that no documented build step
