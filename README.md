@@ -2,7 +2,7 @@
 
 A complete reimplementation of the [Java Optimized Processor](https://github.com/jop-devel/jop) (JOP) in [SpinalHDL](https://spinalhdl.github.io/SpinalDoc-RTD/). JOP is a hardware implementation of the Java Virtual Machine as a soft-core processor for FPGAs, originally developed by Martin Schoeberl. See [jopdesign.com](https://www.jopdesign.com/) for the original project.
 
-This port runs Java programs on FPGA hardware. The primary development platform is the **QMTECH EP4CGX150** (Altera Cyclone IV GX + SDR SDRAM), which supports single-core and SMP (up to 16-core) configurations with stable garbage collection. The **QMTECH Wukong V3** (Xilinx Artix-7 XC7A100T + DDR3) provides the full-featured configuration with all four hardware compute units, and the **A-E115FB** (Cyclone IV E + 1 GB DDR2) is the large-memory platform.
+This port runs Java programs on FPGA hardware. The primary development platform is the **QMTECH EP4CGX150** (Altera Cyclone IV GX + SDR SDRAM), which supports single-core and SMP (up to 16-core) configurations with stable garbage collection. The **QMTECH Wukong V3** (Xilinx Artix-7 XC7A100T + DDR3) hosts the widest range of configurations — seven from one directory, including `wukongFull` with all four hardware compute units, though the default `ddr3-build` is the integer-only `wukongDdr3`, which is what passes DoAll 66/66 on hardware. And the **A-E115FB** (Cyclone IV E + 1 GB DDR2) is the large-memory platform.
 
 **Current state and open work items are tracked in [docs/current-status.md](docs/current-status.md)** — start there rather than here if you are picking the project up.
 
@@ -275,12 +275,27 @@ make dbfpga                    # + Ethernet / VGA text / SD
 make dbfpga-vgadma             # + VGA DMA framebuffer
 make mc-fallback               # microcode fallback coverage build
 
-# Xilinx — the Wukong drives seven configurations from one directory
+# Xilinx — the Wukong drives seven configurations from one directory.
+#
+# `ddr3-create-ip` is a ONE-TIME step per checkout: it generates the MIG and
+# clock-wizard cores into build/ip/. Without it ddr3-build stops with
+# "ERROR: IP not found ... run the board's create-ip target first".
+#
+# This builds wukongDdr3 — single core, integer only. It is the default because
+# it is the configuration that passes DoAll 66/66 on hardware. For the compute
+# units see DDR3_CFG below.
 cd fpga/qmtech-xc7a100t-wukong
+make ddr3-create-ip                          # once per checkout, ~6 min
 make ddr3-build ddr3-program ddr3-download ddr3-monitor
 make ddr3-smp-build DDR3_SMP_CORES=8
 make jop-sdram-build           # same board, SDR memory path
 make dual-build                # two independent clusters, DDR3 + SDR
+
+# The compute-unit build. `wukongFull` is the configuration with all four
+# hardware compute units — and it currently FAILS DoAll at FloatTest, because
+# `frem` is forced to hardware and has no hardware implementation. Build it to
+# work on that; use the default above for a board that passes.
+make ddr3-build DDR3_CFG=wukongFull
 
 # Alchitry Au V2 (Artix-7 + DDR3)
 cd fpga/alchitry-au && make all && make run

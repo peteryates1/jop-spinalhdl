@@ -88,14 +88,23 @@ all: microcode create-ip build
 # `buildtree` like every other; it had simply been missed.
 BRAM_CFG     = wukongBram
 BRAM_CFG_DIR = $(REPO_ROOT)/build/$(BRAM_CFG)
-BRAM_JOP     = $(BRAM_CFG_DIR)/java/apps/Smallest/HelloWorld.jop
+# ONE RULE FOR EVERY CONFIG'S APP, so a flow cannot be forgotten.
+#
+# This board drives seven configurations from bespoke generate rules that
+# bypass vivado.mk, and each needs the .jop of ITS OWN config. The first
+# version wired it to the BRAM flow only: ddr3, dual and sdram got the
+# microcode prerequisite but not this one, so `make ddr3-build` succeeded and
+# `make ddr3-download` then died on
+#   FileNotFoundError: build/wukongDdr3/java/apps/Smallest/HelloWorld.jop
+# A pattern rule takes the config from the path, so adding a flow cannot repeat
+# the omission.
+$(REPO_ROOT)/build/%/java/apps/Smallest/HelloWorld.jop:
+	cd $(REPO_ROOT)/java && $(MAKE) all JOP_PRESET=$* BUILDTREE=1
 
-# This design BAKES the program into the bitstream, so the .jop is a build
-# input, not just something to download afterwards.
-$(BRAM_JOP):
-	cd $(REPO_ROOT)/java && $(MAKE) all JOP_PRESET=$(BRAM_CFG) BUILDTREE=1
+APP_JOP    = $(REPO_ROOT)/build/$(1)/java/apps/Smallest/HelloWorld.jop
 
-generate: $(UCODE_SCALA) $(BRAM_JOP)
+
+generate: $(UCODE_SCALA) $(call APP_JOP,$(BRAM_CFG))
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(BRAM_CFG) buildtree"
 
 create-ip:
@@ -142,7 +151,7 @@ bram-monitor:
 DDR3_CFG      ?= wukongDdr3
 DDR3_CFG_DIR   = $(REPO_ROOT)/build/$(DDR3_CFG)
 
-ddr3-generate: $(UCODE_SCALA)
+ddr3-generate: $(UCODE_SCALA) $(call APP_JOP,$(DDR3_CFG))
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(DDR3_CFG) buildtree"
 	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(DDR3_CFG) --write build/$(DDR3_CFG)/vivado/wukong_ddr3_base.xdc"
 
@@ -224,7 +233,7 @@ ddr3-smp-monitor:
 DUAL_CFG     ?= wukongDualIndependent
 DUAL_CFG_DIR  = $(REPO_ROOT)/build/$(DUAL_CFG)
 
-dual-generate: $(UCODE_SCALA)
+dual-generate: $(UCODE_SCALA) $(call APP_JOP,$(DUAL_CFG))
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(DUAL_CFG) buildtree"
 
 dual-create-ip: ddr3-create-ip
@@ -298,7 +307,7 @@ sdram-monitor:
 SDRAM_CFG      ?= wukongSdram
 SDRAM_CFG_DIR   = $(REPO_ROOT)/build/$(SDRAM_CFG)
 
-jop-sdram-generate: $(UCODE_SCALA)
+jop-sdram-generate: $(UCODE_SCALA) $(call APP_JOP,$(SDRAM_CFG))
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(SDRAM_CFG) buildtree"
 	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(SDRAM_CFG) --write build/$(SDRAM_CFG)/vivado/wukong_jop_sdram.xdc"
 
