@@ -8314,8 +8314,31 @@ pass on a marginal cable hides the thing that wastes the afternoon. **Retry
 buys an honest answer, not a usable cable**: a probe needing four attempts to
 read one 32-bit IDCODE will not carry a 4.9 MB bitstream.
 
-Intermittent at 6 MHz on a level-shifted flying-lead probe points at signal
-integrity -- lead length, coupling, or a borderline Vref on header pin 4.
+**LOWERING THE CLOCK DOES NOT HELP, and that is the useful result.** The
+obvious reading of an intermittent level-shifted flying-lead probe is signal
+integrity, so the clock was dropped 8x and measured:
+
+| firmware | detection rate |
+|---|---|
+| 6 MHz (`JTAG_CLKDIV=5`) | 3/10, later 1/10 |
+| 750 kHz (`JTAG_CLKDIV=40`) | 1/10 |
+| 6 MHz again, after restoring | 1/10 |
+
+Signal integrity cannot survive that: marginal edges, reflections and coupling
+all improve dramatically at an eighth of the speed. The rate is
+CLOCK-INDEPENDENT and drifts over time, which is the fingerprint of an
+intermittent CONNECTION -- a lead not fully seated, a contact making and
+breaking, or Vref on header pin 4 dropping in and out.
+
+**The board was physically moved between the working state and this one.** It
+configured a 4.88 MB .sof reliably on 2026-08-27 at 6 MHz (recorded in
+pico-usb-blaster's `blaster_jtag.pio`, which concludes "the clock was never the
+problem"), was relocated, and now reads one IDCODE in ten. Re-seat the leads
+and check VTREF before touching firmware again.
+
+The clock is a build option (`JTAG_CLKDIV` in pico-usb-blaster/src) and
+rebuild-and-reflash is remote via SWD, so this experiment costs about five
+minutes and is worth repeating only if something changes electrically.
 
 The elimination as originally recorded, which ruled out everything except the
 cable and was right about that much:
