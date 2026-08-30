@@ -70,12 +70,12 @@ CONSOLE_DUAL_SDR  = wukong-pico-0
 # already gone stale (115200, against a preset saying 2000000). console.mk
 # reads the rate the build itself recorded. Status item 70.
 
-.PHONY: generate create-ip create-project build program program-flash bram-monitor all clean
+.PHONY: bram-generate create-ip create-project build program program-flash bram-monitor all clean
 .PHONY: ddr3-generate ddr3-create-ip ddr3-build ddr3-program ddr3-monitor ddr3-download ddr3-reset ddr3-redownload
 .PHONY: ddr3-smp-generate ddr3-smp-build ddr3-smp-bitstream ddr3-smp-program ddr3-smp-monitor
 .PHONY: dual-generate dual-create-ip dual-build dual-program dual-monitor dual-sdr-monitor dual-sdr-download
 .PHONY: sdram-generate sdram-create-ip sdram-build sdram-program sdram-monitor
-.PHONY: jop-sdram-generate jop-sdram-build jop-sdram-smp-generate jop-sdram-smp-build jop-sdram-smp-bitstream jop-sdram-program jop-sdram-monitor print-cfg-dir
+.PHONY: jop-sdram-generate jop-sdram-build sdr-smp-generate jop-sdram-smp-generate jop-sdram-smp-build jop-sdram-smp-bitstream jop-sdram-program jop-sdram-monitor print-cfg-dir
 
 all: microcode create-ip build
 
@@ -104,20 +104,32 @@ $(REPO_ROOT)/build/%/java/apps/Smallest/HelloWorld.jop:
 APP_JOP    = $(REPO_ROOT)/build/$(1)/java/apps/Smallest/HelloWorld.jop
 
 
-generate: $(UCODE_SCALA) $(call APP_JOP,$(BRAM_CFG))
+# NAMED FOR ITS FLOW, not `generate`. This used to redefine `generate:`, which
+# vivado.mk also defines -- make keeps the last recipe but the prerequisites of
+# BOTH, and prints
+#
+#   Makefile:108: warning: overriding recipe for target 'generate'
+#   ../vivado.mk:149: warning: ignoring old recipe for target 'generate'
+#
+# on every build of this board. The consequence was not cosmetic: the SMP flows
+# re-enter with `$(MAKE) generate CFG="wukongSmp 4"`, which satisfied the stamp
+# for that config and then ran THIS recipe, hardcoded to $(BRAM_CFG),
+# elaborating wukongBram on top of it. Renaming lets vivado.mk's CFG-driven
+# `generate` stand, which is what the re-entering targets always meant.
+bram-generate: $(UCODE_SCALA) $(call APP_JOP,$(BRAM_CFG))
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(BRAM_CFG) buildtree"
 
 create-ip:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_clk_wiz.tcl
 
-create-project: generate
+create-project: bram-generate
 	$(VIVADO_ENV) && JOP_PROJ=wukong_jop_bram JOP_PART=$(PART) JOP_TOP=JopBramWukongTop \
 	  JOP_BUILD_DIR=$(BRAM_CFG_DIR)/vivado/build \
 	  JOP_RTL=$(BRAM_CFG_DIR)/rtl/JopBramWukongTop.v \
 	  JOP_BIN_GLOB='$(BRAM_CFG_DIR)/rtl/JopBramWukongTop*.bin' \
 	  JOP_XDC=$(XDC)/wukong_jop_bram.xdc \
 	  JOP_IP=$(IP)/bram_clk/bram_clk.xci \
-	  JOP_GEN_HINT="run: make generate" \
+	  JOP_GEN_HINT="run: make bram-generate" \
 	  $(VIVADO) -mode batch -source $(CREATE_TCL)
 
 build: create-project
@@ -328,19 +340,31 @@ SDR_SMP_CORES ?= 2
 SDR_SMP_CFG     = wukongSdrSmp $(SDR_SMP_CORES)
 SDR_SMP_DIR     = $(CFG_DIR)
 
+# The XDC comes with it. jop-sdram-build regenerates the pin constraints for
+# its config; this flow did not, and then read the TRACKED copy below -- so the
+# single-core and SMP builds of the same design were pinned from two different
+# sources that nothing kept in agreement.
 jop-sdram-smp-generate:
-	$(MAKE) generate CFG="$(SDR_SMP_CFG)"
+	$(MAKE) sdr-smp-generate CFG="$(SDR_SMP_CFG)"
+
+# Runs with CFG ALREADY SET to the SMP config, so $(CFG_NAME) and $(CFG_DIR)
+# resolve to that config's build directory and the paths need no second copy of
+# the naming rule. Doing the XDC generation in the outer target instead would
+# have to reconstruct the directory name by hand -- two copies of a rule agree
+# until the day they do not.
+sdr-smp-generate: generate
+	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(CFG) --write build/$(CFG_NAME)/vivado/wukong_jop_sdram.xdc"
 
 jop-sdram-smp-build:
 	$(MAKE) jop-sdram-smp-bitstream CFG="$(SDR_SMP_CFG)"
 
-jop-sdram-smp-bitstream: generate
+jop-sdram-smp-bitstream: sdr-smp-generate
 	$(VIVADO_ENV) && JOP_TOP=JopSmpSdramWukongTop JOP_PART=$(PART) \
 	  JOP_BUILD_DIR=$(SDR_SMP_DIR)/vivado/build \
 	  JOP_RTL=$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.v \
 	  JOP_BIN_GLOB='$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.v_*.bin' \
 	  JOP_IP=$(IP)/sdr_clk/sdr_clk.xci \
-	  JOP_XDC="$(XDC)/wukong_jop_sdram.xdc $(XDC)/wukong_peripherals.xdc" \
+	  JOP_XDC="$(SDR_SMP_DIR)/vivado/wukong_jop_sdram.xdc $(XDC)/wukong_peripherals.xdc" \
 	  JOP_SUMMARY=$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.summary.txt \
 	  $(VIVADO) -mode batch -source $(NP_TCL)
 

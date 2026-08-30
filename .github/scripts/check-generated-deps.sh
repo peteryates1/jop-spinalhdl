@@ -86,3 +86,43 @@ EOF
 fi
 
 echo "  all Quartus flows regenerate their constraints"
+
+# ---------------------------------------------------------------------------
+# No board may shadow a rule from a shared include.
+#
+# fpga/qmtech-xc7a100t-wukong/Makefile redefined `generate:`, which
+# fpga/vivado.mk also defines. Make keeps the LAST recipe and accumulates the
+# prerequisites of both, so `make ddr3-smp-generate` re-entered with
+# CFG="wukongSmp 4", satisfied the stamp for that config, and then ran the
+# board's own recipe -- hardcoded to $(BRAM_CFG) -- elaborating wukongBram on
+# top. Make had been printing "overriding recipe for target" on every build of
+# that board for as long as it existed, and nobody read it.
+#
+# A warning that is normal is a warning nobody reads, so this makes it fatal.
+# ---------------------------------------------------------------------------
+shadow_fail=0
+for mk in fpga/*/Makefile; do
+  board=$(basename "$(dirname "$mk")")
+  warns=$(make -C "fpga/$board" -n -p 2>&1 >/dev/null \
+          | grep -E 'warning: (overriding|ignoring old) recipe' | head -4)
+  if [ -n "$warns" ]; then
+    echo "  FAIL $board shadows a shared rule:"
+    sed 's/^/       /' <<<"$warns"
+    shadow_fail=1
+  fi
+done
+
+if [ "$shadow_fail" -ne 0 ]; then
+  cat <<'EOF'
+
+A board Makefile redefines a target that a shared include also defines. Make
+keeps the last recipe but the prerequisites of BOTH, so the surviving recipe can
+run against a config it was not written for -- silently, since it succeeds.
+
+Rename the board-local target, or make it honour $(CFG) so the shared rule can
+stand on its own.
+EOF
+  exit 1
+fi
+
+echo "  no board shadows a shared rule"

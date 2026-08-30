@@ -6,13 +6,21 @@ import org.scalatest.funsuite.AnyFunSuite
 import jop.generate.{XdcGenerator, QsfGenerator}
 
 /**
- * Compare the constraints the GENERATORS produce against the hand-written files
- * the board builds actually read.
+ * Compare the constraints the GENERATORS produce against the tracked files that
+ * serve as their ORACLES.
  *
  * WHY THIS EXISTS. `XdcGenerator` and `QsfGenerator` both take a `JopConfig`
- * and resolve pins through `PinResolver`, and **nothing invokes either of
- * them** — no Makefile, no TCL, no test (item 57). So the config is not the
- * source of truth for pins, and the two copies drift with nothing to say so.
+ * and resolve pins through `PinResolver`. This file used to say **nothing
+ * invokes either of them** — true when it was written, false since: the Wukong
+ * and i5 Makefiles call `XdcGeneratorMain` and `LpfGeneratorMain`, the
+ * EP4CGX150 takes a generated `pins.tcl`, and as of 2026-08-30 the Wukong's SMP
+ * SDR flow generates its own XDC too, so no board build reads a tracked
+ * constraint file as an INPUT any more.
+ *
+ * That changes what these files are for, and this test with it. They are no
+ * longer what the build reads; they are the known-good reference the generator
+ * is checked against. Keep them for that reason — deleting them as "unused"
+ * would remove the only thing that would notice the generator drifting.
  *
  * That is not hypothetical. On 2026-08-23 a Wukong DDR3 build was silent on the
  * console for an hour because the config says the UART is the on-board CH340N
