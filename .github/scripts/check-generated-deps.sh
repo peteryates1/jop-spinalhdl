@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+#
+# REGRESSION TEST: a config change must reach the GENERATED CONSTRAINTS, not
+# just the RTL.
+#
+# fpga/quartus.mk wrote the .sdc and setup_proj.tcl from rules with NO
+# PREREQUISITES, so they were build-once artefacts: written on the first build
+# and never regenerated, whatever changed underneath. $(GEN_STAMP) depends on
+# $(SCALA_SRC), so the RTL re-elaborated on any Scala change -- but the two
+# generators producing the PINS, the device string, TOP_LEVEL_ENTITY, the I/O
+# standards and the CLOCK PERIOD did not. Changing a pin in Board.scala and
+# running `make build` therefore SUCCEEDED, fitting new RTL against the previous
+# run's assignments, and quartus_sta reported timing met against the wrong
+# constraint. Nothing in the flow noticed.
+#
+# WHY THIS ASSERTS THE RULE DATABASE AND NOT AN OBSERVED REBUILD. The obvious
+# test -- touch a Scala file, run `make -n`, look for the generators -- passes
+# for the WRONG REASON on a cold tree, where every target is out of date and
+# everything runs regardless. It also passes on a warm tree whose .jop is
+# missing, because $(GEN_STAMP) is then permanently stale and cascades. Both
+# were observed while writing this. `make -p` reports the dependency edge
+# itself, which is the thing that actually has to hold.
+#
+# Usage: .github/scripts/check-generated-deps.sh
+set -uo pipefail
+
+cd "$(dirname "$0")/../.." || exit 2
+fail=0
+
+# Every board that folds onto the shared Quartus flow.
+boards=$(grep -ln 'include ../quartus.mk' fpga/*/Makefile | sed 's|fpga/||;s|/Makefile||')
+
+for board in $boards; do
+  printf '  %-30s ' "$board"
+
+  db=$(make -C "fpga/$board" -p -n 2>/dev/null)
+  if [ -z "$db" ]; then
+    echo "SKIP (make could not read this board)"
+    continue
+  fi
+
+  # Which branch of quartus.mk is live? A board driving a standalone
+  # BoardDesign sets GEN_MAKES_PROJECT=yes and its generator emits the .sdc and
+  # the project Tcl in one pass, so those two rules do not exist -- there the
+  # edge that matters is .qsf -> .generated.
+  sdc_rule=$(grep -E '^[^ |#]*\.sdc:' <<<"$db" | head -1)
+  tcl_rule=$(grep -E '^[^ |#]*setup_proj\.tcl:' <<<"$db" | head -1)
+
+  problems=""
+  if [ -n "$sdc_rule" ] || [ -n "$tcl_rule" ]; then
+    for rule in "$sdc_rule" "$tcl_rule"; do
+      [ -z "$rule" ] && continue
+      target=${rule%%:*}
+      prereqs=${rule#*:}
+      # Whitespace-only prerequisites means the rule fires once and never again.
+      if [ -z "${prereqs// /}" ]; then
+        problems="$problems $(basename "$target")"
+      fi
+    done
+  else
+    qsf_rule=$(grep -E '^[^ |#]*\.qsf:' <<<"$db" | head -1)
+    if [ -n "$qsf_rule" ]; then
+      prereqs=${qsf_rule#*:}
+      [ -z "${prereqs// /}" ] && problems=" $(basename "${qsf_rule%%:*}")"
+    fi
+  fi
+
+  if [ -n "$problems" ]; then
+    echo "FAIL — generated with no prerequisites:$problems"
+    fail=1
+  else
+    echo "ok"
+  fi
+done
+
+if [ "$fail" -ne 0 ]; then
+  cat <<'EOF'
+
+A generated project or constraint file has no prerequisites, so it is written
+once and never regenerated. A later config change will reach the RTL and not
+the constraints, and the build will succeed while being wrong.
+
+Give the rule the same dependency $(GEN_STAMP) carries.
+EOF
+  exit 1
+fi
+
+echo "  all Quartus flows regenerate their constraints"

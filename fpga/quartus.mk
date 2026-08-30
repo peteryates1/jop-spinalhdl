@@ -164,10 +164,27 @@ $(QUARTUS_PRJ)/$(REV).qsf: $(GEN_STAMP)
 
 else
 
-$(QUARTUS_PRJ)/$(REV).sdc:
+# BOTH OF THESE HAD NO PREREQUISITES, so they were build-once artefacts: once
+# written they were never regenerated, whatever changed underneath them.
+#
+# $(GEN_STAMP) depends on $(SCALA_SRC), so the RTL re-elaborated on any Scala
+# change -- but the two generators that produce the PINS, the device string,
+# TOP_LEVEL_ENTITY, the I/O standards and the CLOCK PERIOD did not. Change a pin
+# in Board.scala and `make build` succeeded, fitting new RTL against the previous
+# run's assignments; quartus_sta then reported timing met against the wrong
+# constraint. No generator has to be wrong for this -- the correct one simply is
+# not re-run. A cold clone regenerates everything and looks perfect, which is
+# exactly why cold-check could not see it.
+#
+# The dependency is $(GEN_STAMP) rather than $(SCALA_SRC) for two reasons: it is
+# what the GEN_MAKES_PROJECT=yes branch above already uses, and it SERIALISES
+# these behind the RTL generate. Depending on $(SCALA_SRC) directly would give
+# all three rules the same trigger, and under `make -j` two sbt processes would
+# then fight over target/.
+$(QUARTUS_PRJ)/$(REV).sdc: $(GEN_STAMP)
 	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.TimingConstraintsMain $(CFG) --write build/$(CFG_NAME)/quartus/$(REV).sdc"
 
-$(QUARTUS_PRJ)/setup_proj.tcl:
+$(QUARTUS_PRJ)/setup_proj.tcl: $(GEN_STAMP)
 	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.QuartusProjectMain $(CFG) --revision $(REV) --write build/$(CFG_NAME)/quartus/setup_proj.tcl"
 
 # Quartus writes the .qsf/.qpf itself, from our Tcl, so their format follows the
