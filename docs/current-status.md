@@ -177,7 +177,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[84](#item-84)** — No MAX1000 configuration is known to fit — a 1- or 2-core 10M08 setup is wanted (OPEN)
 - **[85](#item-85)** — Build port, phase 2 — the SDRAM exerciser folded onto the shared flow, and the baud it never reported
 - **[86](#item-86)** — Build port, phase 3a — three shared Vivado scripts, proven equivalent by control build; and the DB_FPGA DDR3 build has quietly got 43 % smaller
-- **[100](#item-100)** — Newcomer hardware path verified on the i5 and A-E115FB; the EP4CGX150's level-shifted Pico cable has FAILED, diagnosed remotely to the cable itself (OPEN — needs bench time)
+- **[100](#item-100)** — Newcomer hardware path verified on the i5 and A-E115FB; the EP4CGX150's level-shifted Pico cable is INTERMITTENT (3 detections in 10, bursty) — first diagnosed as failed, which single-sample testing made look certain (OPEN)
 - **[95](#item-95)** — The README advertises 13 simulation commands; CI watches a different set, and the gap is where four broken sims were hiding (OPEN)
 - **[96](#item-96)** — `JopCoreWithSdramSim` **stalls** — a closed loop over three PC values, diagnosed not guessed (OPEN)
 - **[97](#item-97)** — `JopSmpBramSim` runs 100 M cycles, both cores boot, then fails its own `GC test start` check (OPEN)
@@ -8295,9 +8295,30 @@ blaster to select — which is the step that cost this exercise an afternoon on
 the EP4CGX150. The EP4CGX150 remains the primary DEVELOPMENT board; those are
 different questions and the README now separates them.
 
-**The EP4CGX150's Pico cable failed between 08:50 and 14:30 the same day**, on
-wiring that had not been touched since it worked. Diagnosed entirely remotely,
-by elimination:
+**The EP4CGX150's Pico cable is INTERMITTENT, not failed** -- corrected
+2026-08-30. It detects **3 times in 10**, and the failures are bursty rather
+than independent: with retries at six attempts, two checks of four still failed
+outright, where independent 30 % samples would fail about one time in eight.
+
+**The original diagnosis below was wrong, and the way it was wrong is the
+lesson.** Every check was a SINGLE scan, so a run of unlucky samples read as a
+hard fault. The contradiction was visible hours earlier and explained away:
+`jtagconfig --debug` read a chain that plain `jtagconfig` had just called
+broken, and that was put down to a re-scan effect. The elimination below is
+sound in method and worthless in conclusion -- "openFPGALoader fails too"
+carries almost no weight when one probe is a coin flip.
+
+`jtag_probe_map --assert-device` now scans up to 10 times
+(`JTAG_SCAN_TRIES`) and says so when it needed more than one, because a plain
+pass on a marginal cable hides the thing that wastes the afternoon. **Retry
+buys an honest answer, not a usable cable**: a probe needing four attempts to
+read one 32-bit IDCODE will not carry a 4.9 MB bitstream.
+
+Intermittent at 6 MHz on a level-shifted flying-lead probe points at signal
+integrity -- lead length, coupling, or a borderline Vref on header pin 4.
+
+The elimination as originally recorded, which ruled out everything except the
+cable and was right about that much:
 
 | ruled out | how |
 |---|---|

@@ -162,7 +162,28 @@ assert_device() {
   [ -n "$cable" ] || cable=$("$0" --cable "$want") || return 1
   qpgm=${QUARTUS_PGM:-/opt/altera/18.1/quartus/bin/quartus_pgm}
   [ -x "$qpgm" ] || { echo "quartus_pgm not found at $qpgm (set QUARTUS_PGM)" >&2; return 1; }
-  scan=$("$qpgm" -c "$cable" -a 2>/dev/null) || true
+  # RETRY, because a single scan is not evidence on a marginal cable.
+  #
+  # The EP4CGX150's level-shifted Pico detected 3 times in 10 on 2026-08-30 --
+  # intermittent, not dead. Every check here had been a single scan, so a run of
+  # unlucky samples read as a hard fault, and the message below names a
+  # powered-off board as the usual cause. That is how a WORKING cable came to be
+  # diagnosed as failed hardware.
+  # 10 attempts. At the ~30 % hit rate measured on the EP4CGX150's Pico, six
+  # was not enough: two of four checks still failed outright, so the failures
+  # are BURSTY rather than independent -- which is itself a signal-integrity
+  # fingerprint rather than random noise.
+  #
+  # Retry buys an honest ANSWER, not a usable cable. A probe that needs four
+  # attempts to read one 32-bit IDCODE will not carry a 4.9 MB bitstream; fix
+  # the cable, do not raise this number until it passes.
+  local tries=${JTAG_SCAN_TRIES:-10} attempt=0
+  scan=""
+  while [ "$attempt" -lt "$tries" ]; do
+    attempt=$((attempt + 1))
+    scan=$("$qpgm" -c "$cable" -a 2>/dev/null) || true
+    grep -qE '^[[:space:]]*[0-9A-Fa-f]{8}[[:space:]]' <<<"$scan" && break
+  done
   # Chain rows look like:  "  020F70DD   10CL120(Y|Z)/EP3C120/.."
   # `|| true` is load-bearing: with `set -e` + `pipefail` a no-match grep makes
   # this assignment fail, and the function exits HERE -- silently, rc=1, with
@@ -170,7 +191,7 @@ assert_device() {
   # identical to a missing quartus_pgm.
   found=$(grep -oE '^[[:space:]]*[0-9A-Fa-f]{8}[[:space:]]' <<<"$scan" | tr -d '[:space:]' | head -1) || true
   if [ -z "$found" ]; then
-    echo "JTAG chain scan on '$cable' found no device." >&2
+    echo "JTAG chain scan on '$cable' found no device in $tries attempts." >&2
     grep -q 'chain broken' <<<"$scan" \
       && echo "  quartus_pgm: JTAG chain broken -- the cable enumerated but TDO came back empty." >&2
     echo "  Usual cause is the BOARD being powered off; then a JTAG header that is" >&2
@@ -185,6 +206,14 @@ assert_device() {
     return 1
   fi
   if [ "$found" = "$expect" ]; then
+    if [ "$attempt" -gt 1 ]; then
+      # A cable needing retries is MARGINAL, not working. Saying so is the
+      # point: reporting a plain pass hides the thing that wastes the afternoon.
+      echo "FLAKY CABLE '$cable': chain read on attempt $attempt of $tries." >&2
+      echo "  At 6 MHz on a level-shifted flying-lead probe this is usually" >&2
+      echo "  signal integrity -- lead length, coupling, or a borderline Vref" >&2
+      echo "  on header pin 4. Expect intermittent programming failures." >&2
+    fi
     echo "$found  ($label)"
   else
     echo "WRONG BOARD on '$cable': IDCODE $found, expected $expect for alias '$want' ($label)." >&2
