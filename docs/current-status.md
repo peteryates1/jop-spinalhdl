@@ -8314,9 +8314,30 @@ pass on a marginal cable hides the thing that wastes the afternoon. **Retry
 buys an honest answer, not a usable cable**: a probe needing four attempts to
 read one 32-bit IDCODE will not carry a 4.9 MB bitstream.
 
-**LOWERING THE CLOCK DOES NOT HELP, and that is the useful result.** The
-obvious reading of an intermittent level-shifted flying-lead probe is signal
-integrity, so the clock was dropped 8x and measured:
+**LOWERING THE CLOCK DOES NOT HELP** -- confirmed against a real 4.88 MB
+programming run, not just IDCODE reads. The first version of this conclusion
+was drawn from DETECTION rates alone, which was the wrong measurement:
+detection is a microsecond burst and mostly works, while programming is ~70 s
+of continuous shifting and always fails. Slowing a clock cannot help a short
+read that already succeeds, but it is exactly the fix for errors accumulating
+over a long stream -- so the experiment had to be redone. At 750 kHz a full
+programme still failed, after 410 s.
+
+**AND IT NAMED THE FAULT.** That run reported:
+
+```
+Error (209015): ... Expected JTAG ID code 0x028040DD ... but found 0xFFFFFFFF
+```
+
+All ones is a FLOATING input -- undriven, not corrupted. Interference garbles
+bits randomly; it does not produce a clean 0xFFFFFFFF. That argues against EMI
+and for an open TDO return path, or for VTREF on header pin 4 sagging so the
+level shifter stops driving. It also explains the asymmetry with no extra
+assumptions: short reads land in good windows, long transfers never do.
+
+Check with a meter, in order: VTREF on pin 4, then the TDO conductor.
+
+The clock data as originally gathered (detection only):
 
 | firmware | detection rate |
 |---|---|
