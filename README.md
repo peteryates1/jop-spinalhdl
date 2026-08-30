@@ -147,7 +147,18 @@ jop/
 
 - **Java 11+** and **sbt** (Scala Build Tool)
 - **Verilator** (simulation backend for SpinalSim)
-- **Java 8+**, **gcc**, **make** (for Jopa microcode assembler)
+- **gcc**, **make** (for the Jopa microcode assembler)
+- **A JDK 8 specifically**, for the JOP runtime and applications — not 8+, *8*.
+  The runtime compiles with `-source/-target 1.6`; JDK 9 dropped target 6, and
+  JOPizer's BCEL 5.2 cannot read class files newer than Java 6, so 8 is the
+  only version that satisfies both. Point `TARGET_JDK_HOME` at it:
+
+  ```bash
+  export TARGET_JDK_HOME=/path/to/jdk8      # defaults to /opt/jdk8u492-b09
+  ```
+
+  Without it step 3 fails with `.../bin/javac: No such file or directory`. Your
+  main `JAVA_HOME` stays on 11+ for sbt — only the app compiler is pinned.
 - **Vivado** (for Alchitry Au V2 / Xilinx FPGA synthesis)
 - **Quartus Prime** (for QMTECH EP4CGX150 / Altera FPGA synthesis, optional)
 

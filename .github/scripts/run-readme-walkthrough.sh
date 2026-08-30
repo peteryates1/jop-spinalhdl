@@ -45,7 +45,13 @@ while IFS= read -r line; do
   [[ "$line" =~ ^[[:space:]]*# ]] && continue      # comments are documentation
   [[ -z "${line// }" ]] && continue
   if [ "$step" -ge "$lo" ] && [ "$step" -le "$hi" ]; then
-    script+="echo '>>> [step $step] $line'"$'\n'"$line"$'\n'
+    # EXPLICIT CHECK PER COMMAND, not `set -e`. In `cd java && make x && cd ..`
+    # a failure of `make` is EXEMPT from -e, because -e ignores any command in
+    # an && list except the last. The first version of this ran on past a failed
+    # step 3 and printed step 4 before reporting failure, which is exactly the
+    # confusing log a CI job must not produce.
+    script+="echo '>>> [step $step] $line'"$'\n'
+    script+="if ! { $line ; }; then echo \"!!! step $step FAILED: $line\"; exit 1; fi"$'\n'
     ran=$((ran + 1))
   fi
 done <<< "$block"
@@ -54,7 +60,8 @@ done <<< "$block"
 
 echo "=== README walk-through, steps $RANGE: $ran commands ==="
 # One shell for the lot: the steps `cd` between directories and rely on it.
-bash -euo pipefail -c "$script" || failed=1
+# no -e: each command is checked explicitly above
+bash -uo pipefail -c "$script" || failed=1
 
 if [ "$failed" -ne 0 ]; then
   echo "=== README walk-through FAILED (steps $RANGE) ==="

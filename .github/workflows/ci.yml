@@ -107,10 +107,29 @@ jobs:
       - name: Install Verilator
         run: sudo apt-get update && sudo apt-get install -y verilator
 
+      # JDK 8 for the JOP runtime and apps -- step 3 needs it. The runtime
+      # compiles -source/-target 1.6, JDK 9 dropped target 6 and BCEL 5.2
+      # cannot read newer class files, so 8 is the only version that works.
+      # JAVA_HOME stays on 17 for sbt; only the app compiler is pinned.
+      - name: Set up JDK 8 for the JOP runtime
+        id: jdk8_walk
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Set up JDK 17 (sbt)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
       # No microcode download here on purpose: step 1 of the walk-through builds
       # it, and the point is to prove the README's own sequence works from a
       # clean checkout.
       - name: Run the README walk-through (steps 1-7)
+        env:
+          TARGET_JDK_HOME: ${{ steps.jdk8_walk.outputs.path }}
         run: .github/scripts/run-readme-walkthrough.sh 1-7
 
   # Step 8 only. Nightly and on demand -- see the note above.
@@ -144,11 +163,28 @@ jobs:
       - name: Install Verilator
         run: sudo apt-get update && sudo apt-get install -y verilator
 
+      - name: Set up JDK 8 for the JOP runtime
+        id: jdk8_long
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Set up JDK 17 (sbt)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
       # Steps 1-3 build what step 8 needs; 4-7 are covered on every push.
       - name: Build prerequisites (steps 1-3)
+        env:
+          TARGET_JDK_HOME: ${{ steps.jdk8_long.outputs.path }}
         run: .github/scripts/run-readme-walkthrough.sh 1-3
 
       - name: Run the long simulation (step 8)
+        env:
+          TARGET_JDK_HOME: ${{ steps.jdk8_long.outputs.path }}
         run: .github/scripts/run-readme-walkthrough.sh 8-8
 
   compile-and-generate:
