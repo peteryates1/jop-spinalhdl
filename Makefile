@@ -83,7 +83,7 @@ cold-check:
 	 if [ -n "$$u" ]; then echo "  note: untracked files not included:"; \
 	   echo "$$u" | sed 's/^/    /'; fi
 	@fail=0; \
-	for b in "cyc5000-sdram:generate:cyc5000Serial" \
+	for b in "cyc5000-sdram:constraints:cyc5000Serial" \
 	         "alchitry-au:generate:auSerial" \
 	         "colorlight-i5:generate:colorlightI5Sdram"; do \
 	  board=$${b%%:*}; rest=$${b#*:}; tgt=$${rest%%:*}; cfg=$${rest##*:}; \
@@ -94,6 +94,10 @@ cold-check:
 	  ls $(COLD_DIR)/build/$$cfg/rtl/*.v >/dev/null 2>&1 || miss="$$miss rtl/*.v"; \
 	  ls $(COLD_DIR)/build/microcode/serial/mem_rom.dat >/dev/null 2>&1 || miss="$$miss microcode"; \
 	  ls $(COLD_DIR)/build/$$cfg/java/apps/Smallest/HelloWorld.jop >/dev/null 2>&1 || miss="$$miss java/.../HelloWorld.jop"; \
+	  if [ "$$tgt" = constraints ]; then \
+	    ls $(COLD_DIR)/build/$$cfg/quartus/*.sdc >/dev/null 2>&1 || miss="$$miss quartus/*.sdc"; \
+	    ls $(COLD_DIR)/build/$$cfg/quartus/setup_proj.tcl >/dev/null 2>&1 || miss="$$miss setup_proj.tcl"; \
+	  fi; \
 	  if [ -n "$$miss" ]; then echo "generated, but MISSING:$$miss"; fail=1; \
 	    else echo "ok"; fi; \
 	done; \

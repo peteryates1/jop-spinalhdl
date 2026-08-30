@@ -107,7 +107,7 @@ $(JOP_APP_FILE):
 	cd $(PROJECT_ROOT)/java && $(MAKE) all JOP_PRESET="$(CFG)" BUILDTREE=1
 
 
-.PHONY: generate build program-sof assert-device quartus-clean microcode
+.PHONY: generate constraints build program-sof assert-device quartus-clean microcode
 
 # The microcode is not board-specific in any way -- every Altera board ran the
 # identical two lines -- and `serial` is the mode these flows boot in, which is
@@ -159,6 +159,9 @@ ifeq ($(GEN_MAKES_PROJECT),yes)
 
 # The generator already wrote setup_proj.tcl and the .sdc; only Quartus's own
 # pass over the Tcl remains.
+constraints: $(GEN_STAMP)
+	@echo "=== Constraints in $(QUARTUS_PRJ) (written by $(GEN_MAIN)) ==="
+
 $(QUARTUS_PRJ)/$(REV).qsf: $(GEN_STAMP)
 	cd $(QUARTUS_PRJ) && $(QUARTUS_BIN)/quartus_sh -t setup_proj.tcl
 
@@ -186,6 +189,13 @@ $(QUARTUS_PRJ)/$(REV).sdc: $(GEN_STAMP)
 
 $(QUARTUS_PRJ)/setup_proj.tcl: $(GEN_STAMP)
 	cd $(PROJECT_ROOT) && sbt "runMain jop.generate.QuartusProjectMain $(CFG) --revision $(REV) --write build/$(CFG_NAME)/quartus/setup_proj.tcl"
+
+# THE GENERATED CONSTRAINTS ALONE, no Quartus. Everything above this point is
+# sbt, so a machine with no vendor toolchain can still prove the .sdc and the
+# project Tcl generate -- which is what cold-check needs, since `generate`
+# produces RTL only and left the whole constraint path uncovered.
+constraints: $(QUARTUS_PRJ)/$(REV).sdc $(QUARTUS_PRJ)/setup_proj.tcl
+	@echo "=== Constraints in $(QUARTUS_PRJ) ==="
 
 # Quartus writes the .qsf/.qpf itself, from our Tcl, so their format follows the
 # tool version rather than being frozen by hand.
