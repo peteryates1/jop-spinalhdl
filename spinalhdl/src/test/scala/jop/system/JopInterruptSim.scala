@@ -41,8 +41,18 @@ object JopInterruptSim extends App {
       dut.clockDomain.forkStimulus(10)  // 10ns = 100MHz
       dut.clockDomain.waitSampling(5)
 
-      // Budget: boot (~150k) + 5 interrupts × 500k cycles each + margin
-      val maxCycles = 4000000
+      // Budget: MEASURED, not estimated. The run completes at 5,431,155 cycles,
+      // so 8M gives ~47 % margin.
+      //
+      // It was 4,000,000 on the estimate "boot (~150k) + 5 interrupts x 500k
+      // each". The interrupts actually take ~1.05M cycles apiece, so the budget
+      // ran out after the second one and the test failed with
+      //   FAIL: Expected 'I:TTTTTOK' in output, got: '...I:TT'
+      // deterministically -- which reads exactly like an interrupt controller
+      // dropping events, and was reported as one (status item 98). Nothing was
+      // wrong with the hardware; the estimate was 4x optimistic and outlived
+      // whatever made it true.
+      val maxCycles = 8000000
       val reportInterval = 100000
       var done = false
       var cycle = 0

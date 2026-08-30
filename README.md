@@ -186,10 +186,10 @@ sbt "Test / runMain jop.system.JopSmallGcBramSim"
 # 7. Run SMP simulation (2-core, NCoreHelloWorld — both cores toggle watchdog)
 sbt "Test / runMain jop.system.JopSmpNCoreHelloWorldSim"
 
-# 8. SMP GC simulation (2-core). Takes ~23 minutes. Both cores boot and print
-#    "Hello World!", then the test fails its OWN check with
-#    "FAIL: Did not see 'GC test start'" — a known bug, item 97, not your
-#    setup. The SMP path itself works; step 7 is the one that demonstrates it.
+# 8. SMP GC simulation (2-core), the longest step here — it runs until a
+#    collection actually happens, ~54M cycles and roughly 25 minutes. Prints
+#    allocation rounds "R0 f=..." with free memory falling, then
+#    "GC observed after N rounds (free memory rose)" and PASS.
 sbt "Test / runMain jop.system.JopSmpBramSim"
 ```
 
@@ -321,14 +321,12 @@ legacy in-tree location; every board Makefile does this already.
 
 ### Running Tests
 
-**Expect exactly one failure.** `PerfCounterVerifySim` fails on an unassigned
-ICU register — pre-existing, confirmed by bisect, tracked as item 80. A run
-reporting `succeeded 651, failed 1` is the healthy result; anything else is
-worth looking at. Requires `make test-apps` from step 3, or several suites fail
-on missing `.jop` files instead.
+**Expect a clean run: `succeeded 652, failed 0`.** Anything else is worth
+looking at. Requires `make test-apps` from step 3 — without it several suites
+fail on missing `.jop` files rather than on anything real.
 
 ```bash
-# SpinalSim tests (Verilator) — ~15 minutes, expect 651 passed / 1 failed
+# SpinalSim tests (Verilator) — ~15 minutes, expect 652 passed / 0 failed
 sbt test
 
 # Formal verification (SymbiYosys + Z3) — 133 properties across 23 suites

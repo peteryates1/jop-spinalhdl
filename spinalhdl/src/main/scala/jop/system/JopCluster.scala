@@ -253,6 +253,24 @@ case class JopCluster(
   // Debug Subsystem (optional)
   // ==================================================================
 
+  // DECLARED HERE, ASSIGNED FAR BELOW, and the order matters.
+  //
+  // The debug controller below reads gcRootRamAddr at
+  //   cores(i).io.debugRamAddr := ctrl.io.debugRamAddr(i) | gcRootRamAddr(i)
+  // but the Vec used to be declared several hundred lines further down, with
+  // the cross-core GC root logic that drives it. A Scala `val` read before its
+  // initialiser has run is null, so any configuration with a debugConfig died
+  // during ELABORATION:
+  //
+  //   NullPointerException: Cannot invoke "spinal.core.Vec.apply(int)" because
+  //   the return value of "jop.system.JopCluster.gcRootRamAddr()" is null
+  //
+  // Nothing caught it because no preset enables the debug controller -- only
+  // JopDebugProtocolSim does, and that sim is not in CI. Declaration hoisted;
+  // the single assignment stays with the logic that computes it, since
+  // SpinalHDL rejects a second one as an assignment overlap.
+  val gcRootRamAddr = Vec(UInt(8 bits), cpuCnt)
+
   val debugCtrl: Option[DebugController] = debugConfig.map { cfg =>
     val debugBmbParam = if (cfg.hasMemAccess) Some(inputParam) else None
 
@@ -719,7 +737,7 @@ case class JopCluster(
   // double-assigns whenever cpuCnt > 1, which SpinalHDL rejects as an
   // ASSIGNMENT OVERLAP at elaboration. That slipped through CI once because
   // every CI sim is single-core, where only the default ran.
-  val gcRootRamAddr = Vec(UInt(8 bits), cpuCnt)
+    // gcRootRamAddr is DECLARED above the debug controller; see there.
   for (t <- 0 until cpuCnt) {
     var a = U(0, 8 bits)
     if (cpuCnt > 1) for (r <- 0 until cpuCnt if r != t) {

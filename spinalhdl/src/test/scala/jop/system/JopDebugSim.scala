@@ -32,12 +32,24 @@ case class JopDebugTestHarness(
   mainMemInit: Seq[BigInt],
   memSize: Int = 128 * 1024
 ) extends Component {
-  require(cpuCnt >= 1)
+    require(cpuCnt >= 1)
+
+    // ONE config object: the io bundle below and the JopCluster further down
+    // must agree on every width, and they cannot if each writes its own.
+    val harnessConfig = JopCoreConfig(memConfig = JopMemoryConfig(mainMemSize = memSize))
 
   val io = new Bundle {
     // Per-core pipeline outputs
-    val pc  = out Vec(UInt(11 bits), cpuCnt)
-    val jpc = out Vec(UInt(12 bits), cpuCnt)
+      // WIDTHS FROM THE CONFIG, not literals. These were 11 and 12; pcWidth is
+      // 12 (4K microcode ROM) and jpcWidth 13, so the harness no longer matched
+      // the cluster and elaboration failed with
+      //   WIDTH MISMATCH (11 bits <- 12 bits) on (toplevel/io_pc_0 ...)
+      // once the NullPointerException in front of it was cleared. A literal
+      // here silently goes stale every time a width in JopCoreConfig moves.
+      val pc  = out Vec(UInt(harnessConfig.pcWidth bits), cpuCnt)
+      // jpcWidth + 1: the cluster exposes one bit more than the configured Java
+      // PC width, as JopCoreWithSdramTestHarness also declares it.
+      val jpc = out Vec(UInt((harnessConfig.jpcWidth + 1) bits), cpuCnt)
     val aout = out Vec(Bits(32 bits), cpuCnt)
     val bout = out Vec(Bits(32 bits), cpuCnt)
     val memBusy = out Vec(Bool(), cpuCnt)
