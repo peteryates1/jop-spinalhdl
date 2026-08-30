@@ -100,15 +100,17 @@ cold-check:
 	if [ $$fail -eq 0 ]; then echo "cold-check: clean"; \
 	  else echo "cold-check: FAILURES above"; exit 1; fi
 
-# A structural check on the build graph: does a config change reach the
-# GENERATED CONSTRAINTS, or only the RTL? Seconds, no sbt, no vendor tools --
-# it reads make's own rule database rather than running anything.
-.PHONY: check-deps
-check-deps:
+# Structural checks on the build graph, in seconds and with no toolchain: they
+# read make's own rule database and run the guards, rather than building
+# anything. Both guard a defect where the flow SUCCEEDED while being wrong --
+# constraints that never regenerated, and a baud nobody chose.
+.PHONY: check-build
+check-build:
 	@.github/scripts/check-generated-deps.sh
+	@.github/scripts/check-console-baud.sh
 
 help:
-	@echo "make check-deps   assert generated constraints regenerate (seconds)"
+	@echo "make check-build  assert the build graph's guards hold (seconds)"
 	@echo "make cold-check   clone HEAD to a temp dir and generate on 3 boards (~1 min)"
 	@echo "make clean        remove everything generated, including vendor IP"
 	@echo "make mostlyclean  the same, but keep build/ip (slow to regenerate)"

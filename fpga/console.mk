@@ -44,7 +44,33 @@ JOP_FILE ?= $(CFG_DIR)/java/apps/Smallest/HelloWorld.jop
 # warnings, and warnings that are normal are warnings nobody reads.
 CONSOLE_TXONLY ?= no
 
-.PHONY: download redownload reset monitor console-info
+.PHONY: download redownload reset monitor console-info require-baud
+
+# AN UNKNOWN BAUD MUST STOP THE FLOW, NOT FALL BACK TO A CONSTANT.
+#
+# The BAUD assignment above is a $(shell grep ... 2>/dev/null), so it yields
+# EMPTY whenever the summary is absent or carries no 'UART baud' line -- and
+# StandaloneBuild omits that line by design for a design with no UART. An empty
+# variable expands to nothing, the positional argument vanishes, and
+# download.py substitutes its own 2000000. On a 1 Mbaud design that prints
+# garbage, which is indistinguishable from a board that never booted.
+#
+# That is the exact failure this file's header says it was written to remove:
+# twelve boards each carried their own BAUD_RATE and two of them refused to
+# download in one session because a constant disagreed with the config. The
+# constant was not eliminated by centralising the derivation -- it survived in
+# download.py, out of sight of anyone reading the Makefile.
+#
+# Passing BAUD=<rate> explicitly still works; the point is that it must be a
+# choice someone made, not a value nobody chose.
+require-baud:
+	@if [ -z "$(BAUD)" ]; then \
+	  echo "make: the baud rate is not known for this configuration." >&2; \
+	  echo "  BAUD is read from $(CFG_DIR)/rtl/*.summary.txt, which is either" >&2; \
+	  echo "  missing or carries no 'UART baud' line." >&2; \
+	  echo "  Build this config first, or pass BAUD=<rate> deliberately." >&2; \
+	  exit 1; \
+	fi
 
 console-info:
 	@echo "console : $(CONSOLE_ALIAS) -> $(SERIAL_PORT)"
@@ -59,18 +85,18 @@ download redownload reset:
 
 else
 
-download:
+download: require-baud
 	python3 $(PROJECT_ROOT)/fpga/scripts/download.py -e $(JOP_FILE) $(SERIAL_PORT) $(BAUD)
 
 # Swap the running application without reprogramming the FPGA. Needs a
 # bitstream containing UartResetEscape (2026-08-18 or later).
-redownload:
+redownload: require-baud
 	python3 $(PROJECT_ROOT)/fpga/scripts/download.py -e -r $(JOP_FILE) $(SERIAL_PORT) $(BAUD)
 
-reset:
+reset: require-baud
 	python3 $(PROJECT_ROOT)/fpga/scripts/download.py -R $(SERIAL_PORT) $(BAUD)
 
 endif
 
-monitor:
+monitor: require-baud
 	python3 $(PROJECT_ROOT)/fpga/scripts/monitor.py $(SERIAL_PORT) $(BAUD)

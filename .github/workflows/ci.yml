@@ -187,18 +187,20 @@ jobs:
           TARGET_JDK_HOME: ${{ steps.jdk8_long.outputs.path }}
         run: .github/scripts/run-readme-walkthrough.sh 8-8
 
-  # Seconds, and it needs no toolchain -- it reads make's rule database, not the
-  # tree state. Guards the defect where fpga/quartus.mk wrote the .sdc and
-  # setup_proj.tcl from rules with no prerequisites, so a pin change reached the
-  # RTL and not the constraints and the build succeeded while being wrong.
+  # Seconds, and needs no toolchain -- these read make's rule database and run
+  # the guards, not the tree state. Two defects, both of which let the flow
+  # SUCCEED while being wrong: quartus.mk wrote the .sdc and setup_proj.tcl from
+  # rules with no prerequisites, so a pin change reached the RTL and not the
+  # constraints; and console.mk's derived BAUD could expand to empty, which
+  # download.py then silently replaced with 2000000.
   # Deliberately not gated on build-microcode: nothing here compiles.
-  check-generated-deps:
+  check-build-guards:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Generated constraints must have prerequisites
-        run: make check-deps
+      - name: Build-graph guards
+        run: make check-build
 
   compile-and-generate:
     needs: build-microcode
