@@ -96,13 +96,13 @@ NOS = temp
 
 **Purpose**: Frequently used constant values
 
-**Initialization**: From `asm/generated/mem_ram.dat`
+**Initialization**: From `build/microcode/<variant>/mem_ram.dat`
 
 **Access**: Similar to variables but read-only in practice
 
 ## Stack Buffer Initialization
 
-**File**: `asm/generated/mem_ram.dat`
+**File**: `build/microcode/<variant>/mem_ram.dat`
 
 **Format**: One decimal value per line, one per address
 

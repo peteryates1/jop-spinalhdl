@@ -133,11 +133,19 @@ happens to work on this die at this temperature, not a build that works.
 | `a-e115fb-ddr2` | EP4CE115 + 1 GB DDR2 | Quartus | ✅ |
 | `cyc5000-sdram` | Trenz CYC5000 | Quartus | ✅ |
 | `qmtech-xc7a100t-wukong` | Wukong XC7A100T | Vivado | ✅ |
-| `qmtech-xc7a100t-dbfpga-v5` | XC7A100T + DB_FPGA V5 | Vivado | shared Tcl only |
-| `alchitry-au` | Alchitry Au V2 (XC7A35T) | Vivado | shared Tcl pending |
+| `qmtech-xc7a100t-dbfpga-v5` | XC7A100T + DB_FPGA V5 | Vivado | ✅ |
+| `alchitry-au` | Alchitry Au V2 (XC7A35T) | Vivado | ✅ |
 | `alchitry-au-ddr3-test` | **same board**, DDR3 exerciser project | Vivado | shared Tcl ✅ |
 | `colorlight-i5` | Colorlight i5 (ECP5) | yosys/nextpnr | n/a — sole ECP5 |
-| `max1000` | Arrow MAX1000 (10M08) | Quartus | not yet — needs a `BoardDesign` |
+| `max1000` | Arrow MAX1000 (10M08) | Quartus | ✅ — but no config fits the part yet (item 84) |
+
+Every board now includes `../quartus.mk` or `../vivado.mk`. This table said
+otherwise until 2026-08-31: it was written in `a22705c`, and `3a4e588` ("the
+last in-tree board") and `b4b2e30` both landed after it without updating it.
+The MAX1000 row additionally said the conversion "needs a `BoardDesign`" —
+stale, since `max1000Sdram` is a `JopConfig` preset and `JopConfig` IS a
+`BoardDesign`. What is genuinely open there is that no configuration fits the
+10M08: single-core overflows it by a third.
 
 `alchitry-au-ddr3-test` is a second *project* on the Alchitry Au, not a second
 board; it even shares that directory's IP. Directory count is not board count.

@@ -16,7 +16,8 @@ place-and-route.
 
 Source: `spinalhdl/src/main/scala/jop/system/AlteraUtilSweep.scala`
 Script: `fpga/qmtech-ep4cgx150-sdram/util_sweep.sh`
-Reports: `fpga/qmtech-ep4cgx150-sdram/output_files/util_sweep/*/output_files/util_sweep.map.summary`
+Reports (paths as of the sweep; generated output now lives under
+`build/<config>/quartus/output_files/`): `fpga/qmtech-ep4cgx150-sdram/output_files/util_sweep/*/output_files/util_sweep.map.summary`
 
 ## Results: Absolute Utilization
 

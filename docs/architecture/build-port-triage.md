@@ -1,5 +1,16 @@
 # Build port — flow triage
 
+> **SUPERSEDED — the port is finished.** Every board now includes
+> `../quartus.mk` or `../vivado.mk`, and every "to do" and "BLOCKED" row below
+> has since been done: the A-E115FB DDR2 rows in particular were blocked on
+> board data that arrived, and that board now runs DoAll 66/66 on hardware. The
+> ROW STATES BELOW ARE THE STATE ON 2026-08-25 and are kept for the reasoning,
+> not as a status board. For what is actually converted, read the board
+> Makefiles or the table in `docs/build-structure.md`.
+>
+> The count in "72 hand-written constraint/project files tracked today" is
+> likewise historical; it is 51 under `fpga/` now.
+
 **Compiled 2026-08-25.** Every tracked FPGA flow, sorted into what should happen
 to it. Written because two flows in one session turned out not to be conversion
 candidates at all — `jop_dbfpga` was generating the wrong RTL, and

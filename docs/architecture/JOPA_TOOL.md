@@ -75,7 +75,9 @@ cd asm && make rom      # ROM-only microcode (cocotb tests)
 
 ## Output Files
 
-All outputs generated to: `asm/generated/`
+All outputs generated to: `build/microcode/<variant>/` — one directory per
+variant (`simulation`, `serial`, `flash`). It was `asm/generated/` until the
+build-tree port; `asm/Makefile` sets `OUT ?= ../build/microcode`.
 
 ### 1. JumpTableData.scala - Jump Table (Scala)
 

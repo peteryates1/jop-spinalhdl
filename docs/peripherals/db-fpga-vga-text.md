@@ -288,7 +288,7 @@ Key source files:
 | `spinalhdl/src/main/scala/jop/memory/JopMemoryConfig.scala` | `VGA_TEXT_BASE = 0xC0` address decode |
 | `java/runtime/src/jop/com/jopdesign/sys/Const.java` | `IO_VGA = IO_BASE + 0x40` |
 | `java/apps/Small/src/test/VgaTest.java` | Hardware test app |
-| `fpga/qmtech-ep4cgx150-sdram/jop_dbfpga.qsf` | VGA pin assignments |
+| `build/<config>/quartus/*.qsf` | VGA pin assignments, generated from `Board.scala` |
 | `fpga/qmtech-ep4cgx150-sdram/dram_pll.vhd` | PLL with 25 MHz c3 output |
 
 ## Troubleshooting

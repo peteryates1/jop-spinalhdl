@@ -485,8 +485,8 @@ chip on the board. Wrong device in config silently produces wrong timing.
 |----------|------|-------|-------|
 | `memoryStyle` | `JopCoreConfig.scala:307` | Generic or AlteraLpm | ROM/RAM instantiation style |
 | FPGA family | `Parts.scala:44-50` | CycloneIV → AlteraLpm, Artix7 → Generic | Auto-derived |
-| ROM .mif path | `MemoryStyle.scala:124` | `../../asm/generated/serial/rom.mif` | Hardcoded relative path |
-| RAM .mif path | `MemoryStyle.scala:141` | `../../asm/generated/serial/ram.mif` | Hardcoded relative path |
+| ROM .mif path | `MemoryStyle.scala:124` | `../../build/microcode/serial/rom.mif` | Hardcoded relative path |
+| RAM .mif path | `MemoryStyle.scala:141` | `../../build/microcode/serial/ram.mif` | Hardcoded relative path |
 
 ### What breaks
 

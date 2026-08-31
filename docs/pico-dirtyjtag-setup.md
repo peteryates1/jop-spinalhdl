@@ -108,8 +108,12 @@ sudo openFPGALoader -c dirtyJtag design.bit
 
 ### Makefile targets
 
-A board whose Makefile offers a `program-djtag` target generates the RBF from
-the SOF (if needed) and programs via openFPGALoader.
+**No board offers a `program-djtag` target any more** — `grep program-djtag`
+over every Makefile returns nothing. The Xilinx boards program over dirtyJtag
+through `program-bit` in `fpga/vivado.mk`, which resolves the probe by serial
+(`jtag_probe_map --busdev`); the Altera boards use `program-sof` and
+`quartus_pgm`. Use the openFPGALoader commands above directly for a board with
+no flow of its own.
 
 The example here used to be `fpga/a-e115fb-bram`, which was retired on
 2026-08-26: it had no Quartus project and generated `ep4cgx150Bram`, another
