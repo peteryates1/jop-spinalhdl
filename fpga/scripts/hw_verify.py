@@ -407,7 +407,14 @@ def main():
             tail = "\n".join(lines[-15:])
             print(f"--- last output ---\n{tail}\n-------------------")
 
+    # NAME THE TRANSCRIPTS, not just the index. hw_verify.log is one line per
+    # run by design; someone reading only that concluded the console output was
+    # discarded, filed it as a defect, and reprogrammed a board to "recover"
+    # text that was already on disk (status item 114). The evidence is useless
+    # if the summary does not say where it is.
+    tpat = os.path.relpath(os.path.join(cfg_dir, "hw_verify.run<N>.txt"), ROOT)
     print(f"\n{a.preset}: {passes}/{a.runs} passed   (log: {os.path.relpath(log, ROOT)})")
+    print(f"  console transcript per run: {tpat}")
     if tv != "MET":
         print(f"NOT A VERIFICATION -- timing {tv or 'unknown'} ({td}). "
               f"The board ran; that is all this shows.")
