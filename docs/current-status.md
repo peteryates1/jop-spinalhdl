@@ -8002,8 +8002,9 @@ understand it before acting, not to make it go away.
 ### Item 91 — Two Altera boards, two cables, and a check that finally has a reason
 
 The level shifters arrived, so the EP4CGX150 now has its own pico-usb-blaster
-(serial `e6616408` -- the very Pico that used to be blocked driving 3.3 V into
-the A-E115FB's 1.8 V-banked JTAG) and the Terasic (`91d28408`) stays on the
+(serial `e6616408` -- the Pico then believed to be blocked driving 3.3 V into
+the A-E115FB's JTAG; that bank measured **3.25 V** on 2026-08-31, so it was
+never an over-voltage problem) and the Terasic (`91d28408`) stays on the
 A-E115FB. Both are attached at once and both were proven on hardware today:
 
 | board | cable | Quartus cable name | result |
@@ -8707,6 +8708,43 @@ leading with BRAM invites exactly this error.
 knows whether it embeds an app; Make should not have to guess.
 
 **Workaround until then:** build the apps BEFORE the bitstream, not after.
+
+<a id="item-103"></a>
+
+### Item 103 — ~~the A-E115FB's JTAG bank is not 3.3 V~~ — MEASURED, and it always was
+
+**VTREF on header pin 4 = 3.25 V** (2026-08-31). The bank is 3.3 V nominal. A
+bare Pico clone should have worked on this board all along, with no level
+shifting.
+
+**What the record said instead**, in four places: "its own Pico drove 3.3 V into
+a JTAG bank that is not 3.3 V"; "the A-E115FB's 1.8 V-banked JTAG"; a README row
+saying 2.5 V; and a note in `pico-dirtyjtag-setup.md` saying 1.8 V. The last two
+deferred to EACH OTHER about a number neither had measured — and by 2026-08-30
+one of them no longer contained the figure it was being cited for.
+
+**Where the wrong number came from.** This board genuinely has 1.8 V banks:
+3 to 6 carry the DDR2 interface at SSTL-18, and `clk`, `rst_n` and the LEDs sit
+in banks shared with them, which is why they take a 1.8 V I/O standard. All of
+that is true and is still documented. It was attributed to the JTAG bank, which
+is in neither group.
+
+**What it cost.** The bare Pico's failure on this board was explained by
+over-voltage; `fpga/a-e115fb-bram` was retired partly citing it; and a level
+shifter was designed and built on that premise. The board-side JTAG plug was
+later found loose (see [item 100](#item-100)), which is the leading candidate
+for the original failure.
+
+**The shifter was worth building anyway, for the other board.** The EP4CGX150's
+bank measures 2.53 V, so a fixed-3.3 V Pico really does overdrive it — that
+claim was checked and holds. The two boards' requirements were exactly inverted
+in the documentation: the shifter was built for the board that did not need it
+and turned out to be necessary on the one that did.
+
+**The lesson is the deferral, not the number.** Two documents pointed at each
+other for weeks and neither owned the fact. A measurement nobody had taken read
+as a disagreement between sources, which is the shape that makes it survive
+review.
 ## 4. Two workstreams, both largely done
 
 **GC (Stage 3)** — generational GC is on by default and hardware-validated on

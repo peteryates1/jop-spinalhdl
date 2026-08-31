@@ -117,9 +117,21 @@ no flow of its own.
 
 The example here used to be `fpga/a-e115fb-bram`, which was retired on
 2026-08-26: it had no Quartus project and generated `ep4cgx150Bram`, another
-board's preset. That board builds from `fpga/a-e115fb-ddr2` now, and programs
-over the Terasic blaster rather than dirtyJtag -- its own Pico drove
-3.3 V into a JTAG bank that is not 3.3 V.
+board's preset. That board builds from `fpga/a-e115fb-ddr2` now.
+
+> **The over-voltage explanation was WRONG, and it stood for weeks.** This said
+> the board's own Pico "drove 3.3 V into a JTAG bank that is not 3.3 V".
+> **VTREF on header pin 4 measures 3.25 V** (2026-08-31) — the JTAG bank is
+> 3.3 V nominal, and a bare Pico clone should have worked without any level
+> shifting.
+>
+> The mistake is a plausible one: this board genuinely HAS 1.8 V banks — 3 to 6
+> carry the DDR2 interface at SSTL-18, and `clk`, `rst_n` and the LEDs sit in
+> banks shared with them. That 1.8 V is real, and it was attributed to the JTAG
+> bank, which is in neither group.
+>
+> So the original Pico failure on this board had some other cause. A loose
+> board-side JTAG plug was found on 2026-08-31 and is the leading candidate.
 
 Level shifting is solved by the
 [pico-usb-debug-jtag](https://github.com/peteryates1/pico-usb-debug-jtag)
@@ -156,8 +168,11 @@ The same approach should unblock the A-E115FB's own Pico too, but with the
 Terasic parked there permanently that is no longer needed, and it has **not**
 been tried.
 
-Note this file says the A-E115FB bank is 1.8 V while the top-level `README.md`
-says 2.5 V. Neither has been verified; measure VTREF on header pin 4.
+**MEASURED 2026-08-31: VTREF = 3.25 V.** Both figures this note used to
+compare — 1.8 V here and 2.5 V in `README.md` — were wrong. The bank is 3.3 V
+nominal. Two documents deferred to each other about a number neither had
+measured, and one of them no longer even contained the figure it was being
+cited for.
 
 ## Tested Boards
 
