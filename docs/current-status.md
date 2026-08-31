@@ -4731,10 +4731,36 @@ the "permissive direction" [item 119](#item-119) predicted: `DoAll` reports
 cache is present on `wukongFull` (470 `arrayCache` references in its RTL) and
 is on by default.
 
-**Not yet established:** whether a MISS also skips the check (the miss path does
-enter `HANDLE_READ`, so probably not), and whether the `useAcache = false`
-presets are clean. `ep4cgx150NoCache` is the ready-made control and would settle
-it in one build.
+**Diagnosis completed 2026-08-31.** A MISS is fine: `:687-694` enters
+`HANDLE_READ` and checks. `useAcache = false` is fine: `:696-702` always enters
+`HANDLE_READ`. Only the HIT path is defective, and it has a second half.
+
+**The fill reads past the end of the array.** `:1092-1096` computes
+`alignedIndex = (handleIndex >> fieldBits) << fieldBits` and fills a whole line
+from there, bounded by the LINE, never by the length. For a 3-element array with
+a 4-word line, an in-bounds `ia[0]` fills indices 0,1,2 **and 3** — so the fill
+itself performs the out-of-bounds read, and caches it. The full sequence:
+
+```
+ia[0]  miss -> bound check passes (0 < 3) -> fill reads 0,1,2,3, caching 3
+ia[3]  HIT  -> returns the cached word, no check, no exception
+```
+
+**Why the cheap fix is not available.** Clamping the fill to the length and
+marking the trailing words invalid would fix both halves at source — but
+`ArrayCache.scala:16-17` states a **single valid bit per line**, set on the
+first `wrIal` and covering the whole line, explicitly unlike `ObjectCache`,
+which has per-field valid bits. Partial fills would need per-element validity.
+
+**The fix that fits** is to give the cache the length: capture it at fill time
+(the controller has just read it in `HANDLE_BOUND_WAIT`), store it per line
+alongside the tag, and require `index < length` in the `hit` term. `lineCnt` is
+16, so the storage is small. It does not stop the fill over-reading adjacent
+heap, but the over-read word can then never be returned.
+
+**Scope warning:** this changes `ArrayCache`'s IO and the controller's hit path,
+on a component with 10 formal properties, shared by every board. It wants its
+own verification pass, not a quick edit.
 
 **Test status.** `jvm/Array.java` was disabled twice over — four assertions
 commented out INSIDE a class that was itself commented out of `DoAll.java:42`.
