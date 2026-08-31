@@ -45,10 +45,10 @@ set -euo pipefail
 # --- board registry ------------------------------------------------------
 # alias|serial|kind|description
 BOARDS=$(cat <<'EOF'
-terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board; parked on the A-E115FB, so `terasic` and `ae115fb` resolve alike
+terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board; SWAPPED onto the EP4CGX150 on 2026-08-31, so `terasic` and `ep4cgx150` now resolve alike
 xc7a100t|E662C876|pico|QMTECH XC7A100T + DB_FPGA V5 (Pico: dirtyJtag or usb-blaster)
-ae115fb|91d28408|usb-blaster|A-E115FB EP4CE115 + 1GB DDR2 — on the Terasic cable. Its old Pico (e6616408) drove 3.3V into a 1.8V-banked JTAG; that Pico is now level-shifted and on the EP4CGX150 instead
-ep4cgx150|e6616408|usb-blaster|QMTECH EP4CGX150 + SDR — its own level-shifted pico-usb-blaster (product "USB Blaster", no hyphen). HW-proven 2026-08-29; no longer shares the Terasic
+ae115fb|e6616408|usb-blaster|A-E115FB EP4CE115 + 1GB DDR2 — on the LEVEL-SHIFTED Pico (product "USB Blaster", no hyphen) since the 2026-08-31 swap. The bare Pico that once drove 3.3V into this board's JTAG bank is not this cable; the shifter references VTREF
+ep4cgx150|91d28408|usb-blaster|QMTECH EP4CGX150 + SDR — on the Terasic since the 2026-08-31 swap, to take the intermittent Pico out of the picture while item 101's control build is run (item 100)
 debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashing Picos)
 cyc5000|ARA30135|arrow-usb-blaster|Arrow CYC5000 (onboard Arrow USB Blaster TEI0050, FT2232H)
 i5|07000001002700424e|cmsis-dap|Colorlight i5 on the ext board (DAPLink, also the UART bridge)

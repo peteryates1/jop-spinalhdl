@@ -70,12 +70,12 @@ UCODE_SCALA := $(PROJECT_ROOT)/build/microcode/simulation/JumpTableData.scala \
 $(UCODE_SCALA) &:
 	cd $(PROJECT_ROOT)/asm && $(MAKE) all
 
-# THE EMBEDDED PROGRAM. A BRAM design that does not serial-boot bakes a .jop
-# into the bitstream, and nothing in any board flow built it -- so those designs
-# could not be built from a clean clone at all. They only worked because someone
-# had once run `make -C java all` WITHOUT BUILDTREE, leaving the artefact in the
-# source tree. Building it here, into build/<config>/java, is what lets the
-# source tree hold no build products.
+# THE EMBEDDED PROGRAM. A `BootMode.Simulation` design boots from a preloaded
+# image, so the .jop is baked into the bitstream. Nothing in any board flow built
+# it, so those designs could not be built from a clean clone at all. They only
+# worked because someone had once run `make -C java all` WITHOUT BUILDTREE,
+# leaving the artefact in the source tree. Building it here, into
+# build/<config>/java, is what lets the source tree hold no build products.
 #
 # Cheap when up to date, and it is the same file console.mk downloads, so
 # `make all && make download` now works from cold.

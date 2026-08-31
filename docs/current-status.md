@@ -94,48 +94,47 @@ the registers, so it is now a single named defect rather than a 405-register
 audit, and has moved down accordingly.
 
 1. **[#100](#item-100)** — The EP4CGX150's JTAG cable is INTERMITTENT (3 detections in 10) — it blocks the primary board, and blocks item 101
-2. **[#101](#item-101)** — Every hardware record before 2026-08-26 was taken when the declared clock could differ from the silicon. The 8- and 12-core EP4CGX150 rows are the exposure
-3. **[#82](#item-82)** — Flash boot has been unbuildable since 2026-03-13; a hardware-verified capability deleted as collateral
-4. **[#68](#item-68)** — Ethernet links at 1 Gbps but no packets move
-5. **[#65](#item-65)** — Both SD exercisers fail on hardware, and it is not the conversion
-6. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
-7. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
-8. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
-9. **[#64](#item-64)** — `GcStressTest` loses **0.42 bytes/round**, at the same rate on two boards and two memory systems. Deterministic, so it is a defect, not drift — and three candidate causes need ONE measurement to separate
-10. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-11. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
-12. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
-13. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
-14. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
-15. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
-16. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
-17. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
-18. **[#84](#item-84)** — No MAX1000 configuration fits the 10M08 — single-core overflows it by a third
-19. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
-20. **[#70](#item-70)** — The UART baud is stated three times; console.mk now refuses an unknown one, but the i5 still hardcodes its own
-21. **[#67](#item-67)** — `ep4cgx150DbFull` has `useStackCache` off; gated on item 14
-22. **[#75](#item-75)** — `ep4cgx150HwMath` is a byte-identical duplicate of `ep4cgx150Serial`
-23. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-24. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
-25. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
-26. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-27. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-28. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-29. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-30. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-31. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-32. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-33. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-34. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
-35. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-36. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-37. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-38. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-39. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
-40. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
-41. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
-42. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
-43. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
+2. **[#82](#item-82)** — Flash boot has been unbuildable since 2026-03-13; a hardware-verified capability deleted as collateral
+3. **[#68](#item-68)** — Ethernet links at 1 Gbps but no packets move
+4. **[#65](#item-65)** — Both SD exercisers fail on hardware, and it is not the conversion
+5. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
+6. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
+7. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
+8. **[#64](#item-64)** — `GcStressTest` loses **0.42 bytes/round**, at the same rate on two boards and two memory systems. Deterministic, so it is a defect, not drift — and three candidate causes need ONE measurement to separate
+9. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+10. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
+11. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+12. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
+13. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
+14. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+15. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+16. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
+17. **[#84](#item-84)** — No MAX1000 configuration fits the 10M08 — single-core overflows it by a third
+18. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
+19. **[#70](#item-70)** — The UART baud is stated three times; console.mk now refuses an unknown one, but the i5 still hardcodes its own
+20. **[#67](#item-67)** — `ep4cgx150DbFull` has `useStackCache` off; gated on item 14
+21. **[#75](#item-75)** — `ep4cgx150HwMath` is a byte-identical duplicate of `ep4cgx150Serial`
+22. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+23. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
+24. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
+25. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+26. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+27. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+28. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+29. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+30. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+31. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+32. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+33. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
+34. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+35. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+36. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+37. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+38. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+39. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
+40. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
+41. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
+42. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
 
 ## 2. All items — summary
 
@@ -8426,7 +8425,43 @@ programming was refused for that reason rather than for anything in the docs.
 
 <a id="item-100"></a>
 
-### Item 100 — The newcomer hardware path, and a JTAG cable that died mid-test
+### Item 100 — The newcomer hardware path, and a JTAG cable that was INTERMITTENT
+
+> **2026-08-31 — measured, and it is not the cable.** The two Altera cables were
+> swapped: the Terasic (`91d28408`) onto the EP4CGX150, the level-shifted Pico
+> (`e6616408`) onto the A-E115FB. Ten single-try detections each, retries
+> disabled (`JTAG_SCAN_TRIES=1`, or the built-in retry hides exactly what is
+> being measured):
+>
+> | | Pico `e6616408` | Terasic `91d28408` |
+> |---|---|---|
+> | EP4CGX150 | 3/10 (before swap) | **10/10** |
+> | A-E115FB | **10/10** | worked (before swap) |
+>
+> The Pico is fine. It was 3/10 on the EP4CGX150 and is perfect on the
+> A-E115FB, so the fault travelled with the BOARD END, not the cable — which is
+> the opposite of what the old heading ("a cable that died") asserted.
+>
+> **The experiment alone carries a confound**: the swap changed which cable AND
+> re-seated both connectors, so "the pairing was bad" and "a connector was
+> loose" both fit the numbers. What separates them is not the measurement but a
+> direct observation — the operator reports the **board-side** plug was loose,
+> on the connector that is hard to reach and had been assumed good because it is
+> an ordinary header rather than the breadboard wiring that looks precarious.
+>
+> That account fits every cell: intermittent contact at the EP4CGX150 header
+> gives 3/10, and the swap necessarily re-seated it. It is not proof — the
+> looseness was noticed while removing the plug, so it may have been caused
+> then. The falsifiable prediction is that the Pico would now also read 10/10 on
+> the EP4CGX150; nobody has run that yet.
+>
+> The lesson worth keeping is which end got suspected. Two days of investigation
+> went to the cable, the firmware, the clock rate, the level shifter and the
+> monitor's power supply, because the breadboard end LOOKS unreliable — while
+> the reliable-looking end went unexamined.
+>
+> The EP4CGX150 now has a dependable cable either way, which is what
+> [item 101](#item-101) was blocked on.
 
 Continuing the cold-newcomer exercise (items 95-99) onto real hardware. The
 agent derived the command sequence from the documentation alone; the commands
@@ -8549,7 +8584,46 @@ indistinguishable in `quartus_pgm`'s output, which exits 0 for both.
 
 <a id="item-101"></a>
 
-### Item 101 — every hardware record before 2026-08-26 was taken when the declared clock could differ from the silicon
+### Item 101 — ~~every hardware record before 2026-08-26 was taken when the declared clock could differ from the silicon~~ — LARGELY RESOLVED 2026-08-31
+
+> **The suspicion came from a decoy file, and the decoy is gone.** The sentence
+> that raised this — "confirming whether the 2026-08-15 baseline row was also
+> really 60 MHz, **which its own PLL file suggests**" — was reading
+> `fpga/qmtech-ep4cgx150-sdram/dram_pll.vhd`, a TRACKED but unbuilt file dated
+> 2026-08-15 carrying `clk1 = x6/5` = 60 MHz. Nothing generated from it; the
+> Makefile merely listed it as a prerequisite, so it looked live. It was deleted
+> in `30496e9` when the template moved in with its generator.
+>
+> **12 cores was already settled on 2026-08-23**, by the STA clock table rather
+> than by any file on disk:
+>
+> ```
+> clk_in       Base       20.000 ns  50.0 MHz
+> pll1|clk[1]  Generated  27.777 ns  36.0 MHz   Divide by 25, Multiply by 18
+> ```
+>
+> — with `SMPGC OK`, `cores 12, publishers 11`, `minors 10 verified 192 errors
+> 0` on the `14/5` bitstream. That investigation is recorded in item 34 and
+> explicitly names the decoy as having "produced a confident and wrong
+> conclusion".
+>
+> **8 cores re-validated 2026-08-31** under the generated flow: PLL `x1/÷1` from
+> the 50 MHz input = 50 MHz as declared, timing MET at **+0.532 ns** (Slow
+> 1200mV 100C — the binding corner; the -40C models read +2.755 and +7.735 and
+> reporting those would flatter it fivefold), 94,847/149,760 LE (63 %), and on
+> hardware `cores 8, publishers 7`, `minors 10 verified 192 errors 0`,
+> **`SMPGC OK`**.
+>
+> **What is genuinely unknowable:** what the August bitstreams' hand-maintained
+> PLL actually ran at. Those files are gone. It no longer matters, because both
+> rows have been re-established under a flow where the PLL is generated from the
+> preset.
+>
+> **Left open only as a habit:** any record still citing a pre-2026-08-26 build
+> that has NOT been re-run should say "unverified since", rather than being
+> re-dated.
+
+#### The original filing, kept for the reasoning
 
 **Filed 2026-08-31**, from the build-port review. Split out of the note in item
 34's 12-core section, where it had been sitting since 2026-08-15 as a sentence
@@ -8578,6 +8652,61 @@ to the Terasic blaster.
 
 **Do not simply re-date the old rows.** If they are not re-run, mark them
 "unverified since 2026-08-26" — an honest gap beats a record nobody trusts.
+
+<a id="item-102"></a>
+
+### Item 102 — the bitstream depends on a `.jop` it does not contain
+
+**Filed 2026-08-31**, found by rebuilding the SmpGcTest apps after an 8-core
+bitstream and watching `make smp-program` start a fresh Quartus fit.
+
+The chain in `fpga/quartus.mk`:
+
+```
+$(SOF_FILE):  $(GEN_STAMP) $(QUARTUS_PRJ)/$(REV).qsf
+$(GEN_STAMP): $(SCALA_SRC) $(UCODE) $(UCODE_SCALA) $(JOP_APP_FILE)
+JOP_APP_FILE = $(CFG_DIR)/java/apps/Smallest/HelloWorld.jop
+```
+
+`JOP_APP_FILE` is gated on `GEN_MAIN` being `JopTopVerilog` — on "is this a
+preset?", not on "does this design embed a program".
+
+**For a serial-boot design it embeds nothing.** `ep4cgx150Smp` is
+`BootMode.Serial` with SDR memory; its generated RTL loads no program image and
+every `.bin` beside it is per-core microcode, jump table or JBC RAM. The program
+arrives over UART at download time. Yet rebuilding `HelloWorld.jop` invalidates
+the stamp, and a 30-60 minute refit follows for a file the bitstream never
+contained.
+
+Most presets are serial-boot, so this is the common case, not the corner.
+
+**Why the dependency exists at all:** a **`BootMode.Simulation`** design boots
+from a preloaded image, so the `.jop` IS baked into the bitstream, and there
+`$(SCALA_SRC)` does not cover the change — the app must retrigger generation or
+the bitstream keeps a stale program.
+
+**The discriminator is the boot mode, not BRAM.** Two BRAM presets on the same
+board differ: `ep4cgx150Bram` is Simulation and embeds, `ep4cgx150BramSerial` is
+Serial and downloads. `ep4cgx150BramGc` inherits Simulation from
+`ep4cgx150Bram` by deriving from it and overriding only `clkFreq`, which is easy
+to miss by reading its own definition. `quartus.mk`'s comment says "a BRAM
+design that does not serial-boot" — the operative clause is the second half, and
+leading with BRAM invites exactly this error.
+
+**The two obvious fixes are both wrong.**
+
+- Gating on boot mode restates configuration in Make, which is exactly the
+  duplication this file refuses elsewhere ("two copies of a naming rule agree
+  until the day they do not").
+- Making it order-only (`|`) fixes the serial case and silently breaks the
+  embedded one: a changed program would no longer rebuild the bitstream that
+  contains it. A correctness bug traded for a latency one.
+
+**The shape that fits** is to ask the generator, as `CFG_NAME` already asks
+`BuildLayoutMain` rather than reimplementing the sanitising rules. A preset
+knows whether it embeds an app; Make should not have to guess.
+
+**Workaround until then:** build the apps BEFORE the bitstream, not after.
 ## 4. Two workstreams, both largely done
 
 **GC (Stage 3)** — generational GC is on by default and hardware-validated on
