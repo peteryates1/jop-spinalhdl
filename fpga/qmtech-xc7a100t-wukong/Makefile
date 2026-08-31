@@ -156,10 +156,21 @@ bram-monitor:
 # wukong_ddr3_base.xdc); wukong_ddr3.xdc and rtl8211eg_gmii.xdc stay
 # hand-written because they carry TIMING EXCEPTIONS and the PHY interface,
 # which are not derivable from board data.
-# wukongDdr3 by default, not wukongFull: wukongFull sets bytecodes "*" -> "hw",
-# which forces hardware for `frem` -- a bytecode with no hardware implementation
-# anywhere -- so DoAll dies at FloatTest on it. wukongDdr3 runs 66/66 on the same
-# board through the same flow. See status item 69.
+# wukongDdr3 by default, not wukongFull -- a choice about which config is the
+# routine one, NOT a defect any more. wukongFull passes DoAll 66/66 on hardware
+# as of 2026-08-31 (timing MET, WNS +0.349 ns); it had died at FloatTest until
+# then.
+#
+# THE CAUSE HERE WAS STATED BACKWARDS until 2026-08-31, in this comment and in
+# README alike: nothing "forces hardware for frem". frem was absent from
+# BytecodeConfig.all entirely, and `resolve` only iterates that list, so a
+# wildcard could never reach it. frem is implemented in Java
+# (JVM.f_frem -> SoftFloat32.float_rem), and that library is compiled in only
+# when Const.SUPPORT_FLOAT is set -- which was derived from "does any REGISTERED
+# float bytecode still resolve to Java". Give the FCU all the registered ones
+# and the flag went false, the library was dropped, and frem trapped to
+# JVMHelp.noim(). Fixed by registering frem and drem as ImpConstraint.JavaOnly.
+# See status items 69 and 109.
 DDR3_CFG      ?= wukongDdr3
 DDR3_CFG_DIR   = $(REPO_ROOT)/build/$(DDR3_CFG)
 

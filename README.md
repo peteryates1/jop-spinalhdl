@@ -2,7 +2,7 @@
 
 A complete reimplementation of the [Java Optimized Processor](https://github.com/jop-devel/jop) (JOP) in [SpinalHDL](https://spinalhdl.github.io/SpinalDoc-RTD/). JOP is a hardware implementation of the Java Virtual Machine as a soft-core processor for FPGAs, originally developed by Martin Schoeberl. See [jopdesign.com](https://www.jopdesign.com/) for the original project.
 
-This port runs Java programs on FPGA hardware. The primary development platform is the **QMTECH EP4CGX150** (Altera Cyclone IV GX + SDR SDRAM), which supports single-core and SMP (up to 16-core) configurations with stable garbage collection. The **QMTECH Wukong V3** (Xilinx Artix-7 XC7A100T + DDR3) hosts the widest range of configurations — seven from one directory, including `wukongFull` with all four hardware compute units, though the default `ddr3-build` is the integer-only `wukongDdr3`, which is what passes DoAll 66/66 on hardware. And the **A-E115FB** (Cyclone IV E + 1 GB DDR2) is the large-memory platform.
+This port runs Java programs on FPGA hardware. The primary development platform is the **QMTECH EP4CGX150** (Altera Cyclone IV GX + SDR SDRAM), which supports single-core and SMP (up to 16-core) configurations with stable garbage collection. The **QMTECH Wukong V3** (Xilinx Artix-7 XC7A100T + DDR3) hosts the widest range of configurations — seven from one directory, including `wukongFull` with all four hardware compute units, though the default `ddr3-build` is the integer-only `wukongDdr3`; `wukongFull` passes DoAll 66/66 too, as of 2026-08-31. And the **A-E115FB** (Cyclone IV E + 1 GB DDR2) is the large-memory platform.
 
 **Current state and open work items are tracked in [docs/current-status.md](docs/current-status.md)** — start there rather than here if you are picking the project up.
 
@@ -292,15 +292,17 @@ make ddr3-smp-build DDR3_SMP_CORES=8
 make jop-sdram-build           # same board, SDR memory path
 make dual-build                # two independent clusters, DDR3 + SDR
 
-# The compute-unit build. `wukongFull` is the configuration with all four
-# hardware compute units — and it currently FAILS DoAll at FloatTest. NOT
-# because frem is forced to hardware: frem is absent from the bytecode registry
-# entirely, so `"*" -> "hw"` cannot reach it. It is implemented only in Java
-# (JVM.f_frem -> SoftFloat32.float_rem), and that library is compiled in only
-# when SUPPORT_FLOAT is set, which is derived from whether any REGISTERED float
-# bytecode still resolves to Java. Give the FCU all of them and the library is
-# dropped — including the one float operation that has no hardware form.
-# See status items 69/74. Use the default above for a board that passes.
+# The compute-unit build: all four hardware compute units, `"*" -> "hw"`.
+# PASSES DoAll 66/66 on hardware since 2026-08-31 (timing MET, WNS +0.349 ns) —
+# the first time this preset ever has. It used to die at FloatTest, and the
+# cause was NOT that frem was forced to hardware: frem is absent from the
+# bytecode registry, so the wildcard could never reach it. frem is implemented
+# only in Java (JVM.f_frem -> SoftFloat32.float_rem), and that library is
+# compiled in only when SUPPORT_FLOAT is set — which was derived from whether
+# any REGISTERED float bytecode still resolved to Java. Giving the FCU all of
+# them dropped the library, including the one float operation with no hardware
+# form. Fixed by registering frem/drem as JavaOnly. See status items 69 and 109.
+# Note this preset runs the console at 1 Mbaud, not 2.
 make ddr3-build DDR3_CFG=wukongFull
 
 # Alchitry Au V2 (Artix-7 + DDR3)

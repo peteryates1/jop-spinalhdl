@@ -140,6 +140,24 @@ there precisely because a hardware "pass" was once recorded on a design sitting
 Check **which corner** the number came from, too: Quartus reports Slow 100C by
 default, and a design can be negative there and fine elsewhere, or the reverse.
 
+### `grep ERROR` on a Vivado log always matches
+
+`fpga/scripts/vivado_build_nonproject.tcl` echoes its own source into the build
+log, including the lines that WOULD print an error:
+
+```
+#     puts "ERROR: $name must be set (vivado_build_nonproject.tcl)"
+#     puts "ERROR: IP not found: $f"
+```
+
+So an unanchored `grep -E "ERROR:"` reports three hits on a perfectly clean
+build, and a waiter watching for that pattern fires during synthesis. Anchor it:
+
+```bash
+grep -cE "^ERROR:" build/vivado-logs/vivado.log      # 0 on a clean build
+grep -E  "^  Timing: " build/<config>/vivado/build/fit_summary.txt
+```
+
 ### You programmed a different board
 
 `quartus_pgm` **exits 0 on a broken chain** — a powered-off board, an unplugged
