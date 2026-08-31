@@ -86,3 +86,29 @@ fi
 
 echo "  status index: $(echo "$sections" | wc -w) items, all anchored, no duplicates, all links resolve"
 echo "  priority list: $(echo "$listed" | wc -w) entries, none closed"
+
+# ---------------------------------------------------------------------------
+# Journals split out under docs/status/ must stay reachable and complete.
+#
+# Item 116: current-status.md was 491 KB / 9,671 lines and could not be read --
+# the 2026-08-30 review had to be told not to open it whole. The 18 largest
+# journals moved to docs/status/item-<N>.md, leaving a summary and a link.
+#
+# The anchors stay in current-status.md, so every existing `#item-N` reference
+# in the repo still resolves; that is checked above. What is checked here is
+# that the split did not strand anything: a journal nothing links to is lost,
+# and a link with no journal is worse.
+# ---------------------------------------------------------------------------
+if [ -d docs/status ]; then
+  jfail=0
+  for j in docs/status/item-*.md; do
+    [ -e "$j" ] || continue
+    b=$(basename "$j")
+    grep -qF "status/$b" "$f" || { echo "  FAIL $j is not linked from $f"; jfail=1; }
+  done
+  while IFS= read -r target; do
+    [ -f "docs/$target" ] || { echo "  FAIL $f links to docs/$target, which does not exist"; jfail=1; }
+  done < <(grep -oE 'status/item-[0-9a-z]+\.md' "$f" | sort -u)
+  [ "$jfail" -ne 0 ] && exit 1
+  echo "  journals: $(ls docs/status/item-*.md 2>/dev/null | wc -l) split out, all linked, all present"
+fi
