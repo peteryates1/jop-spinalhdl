@@ -128,59 +128,63 @@ the registers, so it is now a single named defect rather than a 405-register
 audit, and has moved down accordingly.
 
 1. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
-2. **[#111](#item-111)** — Nothing measures whether a test CAN fail. Three guards written this week passed vacuously before being corrected
-3. **[#113](#item-113)** — `cold-check` covers 3 boards of 12, and the primary board is not one of them
-4. **[#112](#item-112)** — `ConstraintDriftTest` covers 2 presets of 46 — the strongest check in the tree, at 4 % coverage
-5. **[#82](#item-82)** — Flash boot has been unbuildable since 2026-03-13; a hardware-verified capability deleted as collateral
-6. **[#68](#item-68)** — Ethernet links at 1 Gbps but no packets move
-7. **[#65](#item-65)** — Both SD exercisers fail on hardware, and it is not the conversion
-8. **[#84](#item-84)** — No MAX1000 configuration fits the 10M08 — single-core overflows it by a third
-9. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
-10. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
-11. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
-12. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
-13. **[#64](#item-64)** — `GcStressTest` loses **0.42 bytes/round**, at the same rate on two boards and two memory systems. Deterministic, so it is a defect, not drift — and three candidate causes need ONE measurement to separate
-14. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-15. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
-16. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
-17. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
-18. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
-19. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
-20. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
-21. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
-22. **[#70](#item-70)** — The UART baud is stated three times; console.mk now refuses an unknown one, but the i5 still hardcodes its own
-23. **[#67](#item-67)** — `ep4cgx150DbFull` has `useStackCache` off; gated on item 14
-24. **[#75](#item-75)** — `ep4cgx150HwMath` is a byte-identical duplicate of `ep4cgx150Serial`
-25. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
-26. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
-27. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-28. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
-29. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-30. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
-31. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
-32. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-33. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-34. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-35. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-36. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-37. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-38. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-39. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-40. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
-41. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-42. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-43. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-44. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-45. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
-46. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
-47. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
-48. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
-49. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
-50. **[#118](#item-118)** — The nightly CI run was cancelled after 1h4m; item 47's failure mode, and its failure mode is silence
-51. **[#108](#item-108)** — README's 16-core claim rests on resource figures README itself withdrew as undated
-52. **[#100](#item-100)** — The EP4CGX150 cable reads 10/10 since the 2026-08-31 swap and blocks nothing. What is left is an unresolved confound: the swap changed the cable AND re-seated both plugs, so put the Pico back on that board to confirm re-seating was the cure
-53. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
-54. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
+2. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
+3. **[#120](#item-120)** — `Const.java`'s Make dependencies omit every file that decides an I/O address, so it goes silently stale — item 60's `.sdc` defect in a second place
+4. **[#121](#item-121)** — Absent devices all resolve to 0x80 and the `HAS_*` flags meant to guard them are read by nothing
+5. **[#122](#item-122)** — `JopCore` and `ConstGenerator` run the I/O allocator over different device sets
+6. **[#111](#item-111)** — Nothing measures whether a test CAN fail. Three guards written this week passed vacuously before being corrected
+7. **[#113](#item-113)** — `cold-check` covers 3 boards of 12, and the primary board is not one of them
+8. **[#112](#item-112)** — `ConstraintDriftTest` covers 2 presets of 46 — the strongest check in the tree, at 4 % coverage
+9. **[#82](#item-82)** — Flash boot has been unbuildable since 2026-03-13; a hardware-verified capability deleted as collateral
+10. **[#68](#item-68)** — Ethernet links at 1 Gbps but no packets move
+11. **[#65](#item-65)** — Both SD exercisers fail on hardware, and it is not the conversion
+12. **[#84](#item-84)** — No MAX1000 configuration fits the 10M08 — single-core overflows it by a third
+13. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
+14. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
+15. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
+16. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
+17. **[#64](#item-64)** — `GcStressTest` loses **0.42 bytes/round**, at the same rate on two boards and two memory systems. Deterministic, so it is a defect, not drift — and three candidate causes need ONE measurement to separate
+18. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+19. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
+20. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+21. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
+22. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
+23. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+24. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+25. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
+26. **[#70](#item-70)** — The UART baud is stated three times; console.mk now refuses an unknown one, but the i5 still hardcodes its own
+27. **[#67](#item-67)** — `ep4cgx150DbFull` has `useStackCache` off; gated on item 14
+28. **[#75](#item-75)** — `ep4cgx150HwMath` is a byte-identical duplicate of `ep4cgx150Serial`
+29. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
+30. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
+31. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
+32. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
+33. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+34. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
+35. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
+36. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+37. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+38. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+39. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+40. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+41. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+42. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+43. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+44. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
+45. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+46. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+47. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+48. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+49. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+50. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
+51. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
+52. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
+53. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
+54. **[#118](#item-118)** — The nightly CI run was cancelled after 1h4m; item 47's failure mode, and its failure mode is silence
+55. **[#108](#item-108)** — README's 16-core claim rests on resource figures README itself withdrew as undated
+56. **[#100](#item-100)** — The EP4CGX150 cable reads 10/10 since the 2026-08-31 swap and blocks nothing. What is left is an unresolved confound: the swap changed the cable AND re-seated both plugs, so put the Pico back on that board to confirm re-seating was the cure
+57. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
+58. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
 
 ## 2. All items — summary
 
@@ -4332,6 +4336,151 @@ Quartus fit being killed on this host, so runner contention or a self-hosted
 resource limit are at least as likely. The point is that a scheduled run did not
 complete and nobody would have noticed: the nightly is the only thing exercising
 the schedule-only jobs, and its failure mode is silence.
+
+<a id="item-119"></a>
+
+### Item 119 — the object handle layout has no single definition and no coverage
+
+**Boundary review B1 (item 110), 2026-08-31.** `GC.java:90` defines the handle
+field offsets. Roughly **25 sites outside it re-express the same layout** across
+four languages, joined only by comments.
+
+**Offset 1 (`OFF_MTAB_ALEN`) is written as a bare literal in:**
+`BmbMemoryController.scala:1259` (`(addrReg + 1) << 2  // handle[1]`),
+`asm/src/jvm.asm:1993`, `jvm_long.inc:333` and `:412` (array length), and
+`jvm_call.inc:168` and `:312` — where the SAME word is read as the **method
+table pointer** for every virtual and interface call. Word 1 has two meanings
+and nothing but the code path discriminates them.
+
+**Offset 0 (`OFF_PTR`) is worse: it is expressed as the ABSENCE of arithmetic**
+in at least 14 places — `BmbMemoryController.scala:1055`, four `stmraf`s in
+`jvm_long.inc`, two in `jvm.asm`, `System.arraycopy`, `Startup.xastore`. There
+is no literal to grep for. Moving it would require an insertion at each, and
+the failure lands in the GC's own handle table.
+
+**A second, deliberately decoupled definition exists.**
+`java/runtime/src/jvm/java/lang/System.java:17` redeclares
+`OFF_MTAB_ALEN = 1`, and line 56 reads `rdMem(srcHandle + /*GC.*/OFF_MTAB_ALEN)`
+— the `GC.` qualifier commented out on purpose. Change GC.java and `arraycopy`
+keeps the old word as its length, then copies that many words. Silent overrun.
+
+**`OFF_MEM = 5` aliases `OFF_GREY = 5`**, both live: `Memory.java:304` reads the
+word `JVM.java:122` writes the grey-list link into. Under the SATB barrier
+`getMemoryArea()` can return a grey-list successor cast to a `Memory`.
+
+**COVERAGE: none.** No elaboration `require` mentions a handle offset. The
+formal suite drives `handle := 0` and proves only state-machine liveness;
+`ArrayCache`/`ObjectCache` treat the handle as an opaque tag.
+`BmbMemoryControllerSdramTest` writes only `handle[0]`. And the tests that would
+exercise the RTL's bounds check —
+`java/apps/JvmTests/src/jvm/Array.java:89,105,113,117` — are **commented out**,
+under a live `println("\tupper bound exception comes too late")` at :78. Only
+the NEGATIVE index case runs, and that exits at `BmbMemoryController.scala:1044`
+without ever reading handle[1].
+
+So the RTL's one and only use of a handle offset has no test, no formal
+property and no elaboration check. In the permissive direction DoAll still
+reports 66/66, `SmpGcTest` still prints `SMPGC OK`, and every out-of-bounds
+array access becomes a silent adjacent-memory read or write.
+
+**`docs/architecture/constant-dependencies.md` names the wrong two sides** —
+it says the layout must agree between GC.java and JOPizer. JOPizer has no stake:
+it never lays out handles (grep over `java/tools/src` finds only BCEL
+`InstructionHandle` noise). The real other sides are the microcode and the RTL,
+which that document omits, and it also omits `OFF_ELEM = 6`.
+
+**The fix that fits** is the one the project already uses for the neighbouring
+class-struct constants: `ConstGenerator` emits `CLASS_HEADR`, `CLASS_SUPER` and
+friends into `Const.java`. The handle offsets are the one constant family it
+does not carry, and the mechanism is already there.
+
+<a id="item-120"></a>
+
+### Item 120 — `Const.java`'s dependencies omit every file that decides an I/O address
+
+**Boundary review B2 (item 110), 2026-08-31.** `java/Makefile:47-52`:
+
+```
+$(CONST_JAVA): $(CONST_STAMP) \
+               .../jop/generate/ConstGenerator.scala \
+               .../jop/config/JopConfig.scala \
+               .../jop/config/JopCoreConfig.scala
+```
+
+Missing: `jop/io/IoAddressAllocator.scala` (the packing rule),
+`jop/io/DeviceTypes.scala` and `jop/config/DeviceInstance.scala` (every device's
+`addrBits`), and `jop/memory/JopMemoryConfig.scala` (`JopIoSpace` — `SYS_BASE`,
+`UART_BASE`, `CARD_BASE`, `ZERO_BASE`).
+
+The RTL is regenerated from Scala on every build. `Const.java` is not. Change
+`SdNative.addrBits`, or move `CARD_BASE`, and the hardware moves while
+`Const.java` reports "Nothing to be done".
+
+**Exactly the shape of item 60's `.sdc`**: a generated artefact whose
+prerequisites omit an input that determines its content, so it is written once
+and then silently stale. The observable failure is `TROUBLESHOOTING.md`'s first
+entry — reads and writes land on the wrong device, the board looks dead, and
+nothing goes red.
+
+Confirmed by reading the Makefile. The stamp at `java/Makefile:29-33` already
+exists to catch preset staleness; this is the same fix over a wider input set.
+
+<a id="item-121"></a>
+
+### Item 121 — absent devices collapse to one address, and the HAS_* flags guarding them are never read
+
+**Boundary review B2 (item 110), 2026-08-31.** `ConstGenerator.scala:47-50`
+resolves an absent device to `"0"`, so on a uart-only preset
+(`build/wukongDdr3/.../Const.java:229-244`):
+
+```
+IO_ETH = IO_BASE + 0;  IO_SD = IO_BASE + 0;  IO_VGA = IO_BASE + 0;
+IO_SD_SPI = IO_BASE + 0;  IO_VGA_DMA = IO_BASE + 0;  IO_CFG_FLASH = IO_BASE + 0;
+```
+
+— all aliasing 0x80, with `IO_MDIO = IO_ETH + 8` and `IO_USB = IO_MDIO`.
+
+The generator's own comment says to use the `HAS_*` flags for runtime checks.
+**Nothing does:** `grep -rn "HAS_ETHERNET\|HAS_SD_CARD\|HAS_VGA" java/ --include=*.java`
+matches only the definitions in `Const.java` itself.
+`java/net/src/com/jopdesign/net/EthDriver.java:116-202` drives `IO_ETH + 0..4`
+unconditionally.
+
+Harmless today because 0x80 decodes to nothing (`ioRdData := 0`,
+`JopCore.scala:377`), so a driver for an absent device reads zeros. It stops
+being harmless if I/O space fills enough for the downward packer to reach 0x80,
+at which point an absent-device driver writes to a real peripheral.
+
+**The pattern that gets this right is already in the tree**: `GC.java:595,638`
+reads `IO_CARD_SHIFT` at run time and derives `genActive = USE_GENERATIONAL &&
+cardShift0 != 0`, with the RTL driving `cardRdData := 0` when the preset has no
+card table. A device that answers proves itself present. It is the only in-band
+probe anywhere, and it is the model the other drivers lack.
+
+<a id="item-122"></a>
+
+### Item 122 — `JopCore` and `ConstGenerator` run the I/O allocator over different device sets
+
+**Boundary review B2 (item 110), 2026-08-31.** Two independent allocation runs
+that must agree:
+
+- `JopCore.scala:315-316` allocates from `config.effectiveDeviceDescriptors(ctx)`
+  — **one core's** devices.
+- `ConstGenerator.scala:41-44` allocates from
+  `config.systems.flatMap(_.effectiveDevices).toMap` — the **superset across all
+  systems**.
+
+Identical only while every system carries the same device set. A dual-system
+preset with different devices per system — the shape `wukongDualSystem` already
+uses at `JopConfig.scala:1033-1042` — would give `Const.java` the superset map
+while each system's RTL used its own. No `require` compares them.
+
+Not currently reachable: cores 1+ get an empty device map
+(`JopConfig.scala:102-107`) and have no auto devices, and the boot-device gap is
+covered by the null-UART mux at `JopCore.scala:380-382`.
+
+**SUSPECTED**, not observed. Filed because the divergence would be silent and
+the preset shape that triggers it already exists.
 ## 4. Two workstreams, both largely done
 
 **GC (Stage 3)** — generational GC is on by default and hardware-validated on
