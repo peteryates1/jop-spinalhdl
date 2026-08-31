@@ -115,6 +115,7 @@ check-build:
 	@.github/scripts/check-console-baud.sh
 	@.github/scripts/check-generator-fallbacks.sh
 	@.github/scripts/check-docs-structure.sh
+	@.github/scripts/check-status-index.sh
 
 help:
 	@echo "make check-build  assert the build graph's guards hold (seconds)"

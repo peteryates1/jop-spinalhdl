@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+#
+# REGRESSION TEST: docs/current-status.md's cross-references must resolve.
+#
+# That file is the project's backlog and the first thing read each session. It
+# carries three indexes -- a priority list, a summary, and the item sections
+# themselves -- and on 2026-08-30 all three disagreed with each other and with
+# the tree:
+#
+#   * anchors existed for items 1-59 only, so 36 numbers were LINKED BUT
+#     UNANCHORED, from docs/ and README.md alike. GitHub's fallback slug is the
+#     full heading text, so none of those links resolved.
+#   * a pasted block defined <a id="item-46"> and <a id="item-47"> a SECOND
+#     time. Renderers bind the first, so the duplicate Item 46 -- which
+#     contradicted the bound one -- was unreachable.
+#   * `see [item 60a](#item-60)` named an item that does not exist.
+#
+# None of that is visible while writing: a broken anchor renders as ordinary
+# text and a duplicate renders as a heading. Only a reader following the link
+# finds out.
+#
+# Usage: .github/scripts/check-status-index.sh
+set -uo pipefail
+
+cd "$(dirname "$0")/../.." || exit 2
+f=docs/current-status.md
+[ -f "$f" ] || { echo "  SKIP ($f not present)"; exit 0; }
+fail=0
+
+# 1. Every item section must have an anchor.
+# Sorted as STRINGS, because comm compares lexicographically and a numeric
+# sort makes it emit "input is not in sorted order" and give wrong answers.
+# [0-9]+[a-z]? because item 78b exists -- and went unanchored and unlinked for
+# days precisely because a plain-integer pattern could not see it.
+sections=$(grep -oE '^### Item [0-9]+[a-z]?' "$f" | grep -oE '[0-9]+[a-z]?$' | sort -u)
+anchors=$(grep -oE '<a id="item-[0-9]+[a-z]?"' "$f" | grep -oE '[0-9]+[a-z]?' | sort -u)
+missing=$(comm -23 <(echo "$sections") <(echo "$anchors") | sort -n | tr '\n' ' ')
+if [ -n "${missing// /}" ]; then
+  echo "  FAIL item sections with no anchor: $missing"
+  fail=1
+fi
+
+# 2. No anchor may be defined twice -- renderers bind the first and the second
+#    becomes unreachable, which is how a contradiction hid in plain sight.
+dupes=$(grep -oE '<a id="item-[0-9]+"' "$f" | sort | uniq -d | grep -oE '[0-9]+' | tr '\n' ' ')
+if [ -n "${dupes// /}" ]; then
+  echo "  FAIL anchors defined more than once: $dupes"
+  fail=1
+fi
+
+# 3. Every #item-N link in the repo must resolve to an anchor that exists.
+linked=$(grep -rhoE '#item-[0-9]+' --include='*.md' . | grep -oE '[0-9]+' | sort -u)
+dangling=$(comm -23 <(echo "$linked") <(echo "$anchors") | sort -n | tr '\n' ' ')
+if [ -n "${dangling// /}" ]; then
+  echo "  FAIL links to items with no anchor: $dangling"
+  fail=1
+fi
+
+if [ "$fail" -ne 0 ]; then
+  cat <<'EOF'
+
+A cross-reference in the backlog does not resolve. Anchors are <a id="item-N">
+immediately before the corresponding `### Item N` heading; a link that has no
+anchor silently renders as plain text on GitHub.
+EOF
+  exit 1
+fi
+
+# 4. Section 1 declares itself the ground truth for what is open, so nothing it
+#    lists may have a struck (closed) heading, and nothing open may be missing
+#    from it. The first half is what actually rotted: items 9, 10, 50, 57, 59,
+#    60 and 61 sat in the priority list for days after closing.
+listed=$(sed -n '/^## 1\. Outstanding now/,/^## 2\./p' "$f" \
+         | grep -oE '^[0-9]+\. \*\*\[#[0-9]+\]' \
+         | grep -oE '#[0-9]+' | tr -d '#' | sort -u)
+stale=""
+for n in $listed; do
+  h=$(grep -m1 "^### Item $n " "$f")
+  case "$h" in *'~~'*) stale="$stale $n";; esac
+done
+if [ -n "${stale// /}" ]; then
+  echo "  FAIL closed items still in the priority list:$stale"
+  echo "       section 1 says it is the ground truth for what is OPEN"
+  exit 1
+fi
+
+echo "  status index: $(echo "$sections" | wc -w) items, all anchored, no duplicates, all links resolve"
+echo "  priority list: $(echo "$listed" | wc -w) entries, none closed"
