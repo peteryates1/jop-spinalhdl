@@ -331,7 +331,12 @@ object JopTopVerilog {
   }
 
   def main(args: Array[String]): Unit = {
-    val preset = args.headOption.getOrElse("ep4cgx150Serial")
+    val preset = args.headOption.getOrElse(
+      sys.error(
+        "no preset given. Pass the preset name as the first argument.\n" +
+        "There is deliberately no default: this main writes the RTL AND the build\n" +
+        "summary, and a default silently produces a complete, correct-looking\n" +
+        "ep4cgx150Serial build for whatever was actually asked for."))
     // `perf` anywhere in the arguments turns on the IO_PERFCNT memory-stall
     // counters. A measurement build, not a production one -- see
     // PerfCountersOverride for why it is a switch and not four preset variants.

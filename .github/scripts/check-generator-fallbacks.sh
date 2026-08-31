@@ -26,7 +26,13 @@ set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2
 fail=0
 
-gen_dir=spinalhdl/src/main/scala/jop/generate
+# SCAN EVERY MAIN THAT WRITES A GENERATED ARTEFACT, not just jop/generate.
+# This globbed only jop/generate and therefore printed "no generator falls back
+# to a named board" while JopTopVerilog.scala:334 -- the main that writes both
+# the Verilog AND the build summary -- carried exactly the forbidden pattern in
+# jop/system. A guard whose claim is wider than its glob is worse than no guard,
+# because it is quoted as evidence. Found by the B4 boundary review, item 110.
+gen_dirs="spinalhdl/src/main/scala/jop/generate spinalhdl/src/main/scala/jop/system"
 
 # 1. No `.getOrElse("<something that looks like a preset>")` when resolving the
 #    preset argument. Matches a quoted identifier, which is what a board name
@@ -37,7 +43,7 @@ while IFS= read -r hit; do
   echo "       a missing preset must fail, not resolve to a named board"
   fail=1
 done < <(grep -nE '(preset|presetArgs|args)[A-Za-z]*\.headOption\.getOrElse\("[A-Za-z][A-Za-z0-9]*"\)' \
-           $gen_dir/*.scala 2>/dev/null)
+           $(for d in $gen_dirs; do echo $d/*.scala; done) 2>/dev/null)
 
 # 2. Every *Main that takes a preset must actually resolve one. A main that
 #    assigns a JopConfig preset directly is ignoring its arguments.
@@ -46,8 +52,13 @@ while IFS= read -r hit; do
   echo "  FAIL $hit"
   echo "       assigns a preset directly — the argument is being discarded"
   fail=1
+# UtilSweep and AlteraUtilSweep are EXEMPT and must stay so: their argument is a
+# sweep LABEL ("baseline", "no_icu", ...), not a preset, so hardcoding the base
+# config is correct rather than a discarded argument. Exempting by name with a
+# reason beats loosening the pattern, which would only misfire somewhere else.
 done < <(grep -nE 'val +(base|config|cfg) += +JopConfig\.[a-zA-Z0-9]+ *$' \
-           $gen_dir/*.scala 2>/dev/null)
+           $(for d in $gen_dirs; do echo $d/*.scala; done) 2>/dev/null \
+         | grep -vE '(UtilSweep|AlteraUtilSweep)\.scala:')
 
 if [ "$fail" -ne 0 ]; then
   cat <<'EOF'
