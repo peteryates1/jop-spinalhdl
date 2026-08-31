@@ -254,7 +254,22 @@ object JopTopVerilog {
     } else None
 
     val summary = configSummary(presetName, jopConfig)
+    // NAME THE ARTEFACT THAT IS ACTUALLY IN THE BITSTREAM.
+    //
+    // On every Altera family `resolvedMemoryStyle` is AlteraLpm, and
+    // AlteraLpmRom/Ram build from "$mifBasePath/rom.mif" while DISCARDING the
+    // initBigInt loaded from romPath. So on those boards the .dat paths below
+    // name files that are not in the bitstream, and the .mif that is was
+    // recorded nowhere -- in the one file that exists to make a build
+    // auditable. Boundary review B3, status item 124.
+    val mifLine = sys.coreConfig.resolvedMemoryStyle match {
+      case lpm: MemoryStyle.AlteraLpm =>
+        f"  MIF:           ${lpm.mifBasePath}/rom.mif, ram.mif  " +
+        f"(THIS is what the bitstream reads; the .dat paths below are not)%n"
+      case _ => ""
+    }
     val romRamLines =
+      mifLine +
       f"  ROM:           ${sys.romPath} (${romData.length} entries)%n" +
       f"  RAM:           ${sys.ramPath} (${ramData.length} entries)%n"
 

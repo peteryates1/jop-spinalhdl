@@ -33,6 +33,9 @@ fail=0
 # The phrase the guard must emit. Deliberately not a substring of any make
 # diagnostic, and not of the target name.
 GUARD_PHRASE='baud rate is not known'
+# Same discipline for the port: a phrase no make diagnostic can produce, and not
+# a substring of the target name.
+PORT_PHRASE='serial port could not be resolved'
 
 # console.mk is included by quartus.mk and vivado.mk as well as directly, so
 # every board folded onto either shared flow has console targets. Listing only
@@ -62,6 +65,28 @@ for board in $boards; do
   # A known baud must pass, or the guard is just breaking the console.
   if ! make -C "fpga/$board" require-baud BAUD=115200 >/dev/null 2>&1; then
     echo "FAIL — a valid BAUD was rejected"
+    fail=1
+    continue
+  fi
+
+  # THE PORT NEEDS THE SAME GUARD. SERIAL_PORT is a $(shell ...) that yields
+  # empty when the board is unplugged, and with it empty `download.py -R
+  # <blank> 1000000` binds the BAUD as the port -- failing with "could not open
+  # port 1000000", which names the baud as the port. Status item 126.
+  out=$(make -C "fpga/$board" require-port SERIAL_PORT= 2>&1)
+  if [ $? -eq 0 ]; then
+    echo "FAIL — an empty SERIAL_PORT was accepted"
+    fail=1
+    continue
+  fi
+  if ! grep -qF "$PORT_PHRASE" <<<"$out"; then
+    echo "FAIL — refused, but not by the port guard:"
+    sed 's/^/      /' <<<"$out" | head -3
+    fail=1
+    continue
+  fi
+  if ! make -C "fpga/$board" require-port SERIAL_PORT=/dev/null >/dev/null 2>&1; then
+    echo "FAIL — a valid SERIAL_PORT was rejected"
     fail=1
     continue
   fi

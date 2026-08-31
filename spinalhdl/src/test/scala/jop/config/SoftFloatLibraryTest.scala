@@ -54,6 +54,42 @@ class SoftFloatLibraryTest extends AnyFunSuite {
       s"the refusal must name frem; got: ${e.getMessage}")
   }
 
+  test("the float group keeps a Java-only bytecode, so SUPPORT_FLOAT cannot go false") {
+    // THE MECHANISM, asserted directly — because the CONSEQUENCE cannot be.
+    //
+    // SUPPORT_FLOAT comes from needsJavaFloat, "any float-group entry resolves
+    // to Java". frem, l2f and f2l are JavaOnly and cannot be retargeted, so
+    // that predicate is a TAUTOLOGY and the flag can never be false. Good — but
+    // it means any test phrased as "assert needsJavaFloat is true" passes
+    // whatever else is broken.
+    //
+    // I wrote that test twice before noticing. The first asserted the predicate
+    // for two presets; the second asserted it per gated bytecode. Both were
+    // green with the d2f fix reverted, because frem alone keeps the predicate
+    // true. Asserting the guarantee's SOURCE is the only version that fails
+    // when the guarantee goes.
+    val javaOnlyFloat = BytecodeConfig.inGroup("float")
+      .filter(_.constraint == ImpConstraint.JavaOnly).map(_.name)
+    assert(javaOnlyFloat.nonEmpty,
+      "no float-group bytecode is JavaOnly, so a config could resolve every one " +
+      "of them to hardware, drive needsJavaFloat false, and drop SoftFloat32 — " +
+      "which is exactly how frem failed (item 69). Expected frem, l2f, f2l.")
+    assert(javaOnlyFloat.toSet == Set("frem", "l2f", "f2l"),
+      s"the Java-only float bytecodes changed: ${javaOnlyFloat.mkString(", ")}. " +
+      "Each has no microcode handler and appears in no compute-unit predicate, " +
+      "so if one gained hardware this set should shrink deliberately.")
+
+    // WHY THERE IS NO d2f TEST HERE. d2f is gated on SUPPORT_FLOAT in JVM.java
+    // but lives in the DOUBLE group, because the DCU implements it
+    // (needsDoubleConvert). needsJavaFloat carries an explicit `|| impl("d2f")
+    // == Java` clause for it — which is UNREACHABLE, because the assertion
+    // above pins the predicate true regardless. A test for that clause cannot
+    // fail, so it is not written; three attempts at one were all green against
+    // a deliberately reverted fix. The clause stays as the defence that would
+    // matter if these JavaOnly entries were ever removed, and this comment is
+    // the record that it is currently belt-and-braces rather than load-bearing.
+  }
+
   /** The property that actually decides whether the library is linked. */
   test("SUPPORT_FLOAT survives every preset that gives everything to hardware") {
     val wildcardPresets = Seq(

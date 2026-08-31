@@ -44,7 +44,7 @@ JOP_FILE ?= $(CFG_DIR)/java/apps/Smallest/HelloWorld.jop
 # warnings, and warnings that are normal are warnings nobody reads.
 CONSOLE_TXONLY ?= no
 
-.PHONY: download redownload reset monitor console-info require-baud
+.PHONY: download redownload reset monitor console-info require-baud require-port
 
 # AN UNKNOWN BAUD MUST STOP THE FLOW, NOT FALL BACK TO A CONSTANT.
 #
@@ -72,6 +72,28 @@ require-baud:
 	  exit 1; \
 	fi
 
+# AN UNRESOLVED PORT MUST STOP THE FLOW TOO.
+#
+# SERIAL_PORT is a $(shell usb_serial_map ...) that yields EMPTY whenever the
+# board is unplugged, the adapter has stalled its control endpoint, or the alias
+# is not in the registry. With it empty the recipe becomes
+#
+#   download.py -R  2000000
+#
+# and download.py binds the BAUD as the positional PORT -- so it fails with
+# "could not open port 2000000", naming the baud as the port. Loud but
+# misleading, and the same shape as the baud defect: a value nobody chose
+# arriving where a real one was expected. Status item 126.
+require-port:
+	@if [ -z "$(SERIAL_PORT)" ]; then \
+	  echo "make: the serial port could not be resolved for '$(CONSOLE_ALIAS)'." >&2; \
+	  echo "  SERIAL_PORT comes from fpga/scripts/usb_serial_map --by-id, which" >&2; \
+	  echo "  found no match. The board may be unplugged, the alias may be" >&2; \
+	  echo "  missing from the registry, or the adapter may have stalled its" >&2; \
+	  echo "  control endpoint (try: usb_serial_map --reset $(CONSOLE_ALIAS))." >&2; \
+	  exit 1; \
+	fi
+
 console-info:
 	@echo "console : $(CONSOLE_ALIAS) -> $(SERIAL_PORT)"
 	@echo "baud    : $(BAUD)  (from $(CFG_DIR)/rtl/*.summary.txt)"
@@ -85,18 +107,18 @@ download redownload reset:
 
 else
 
-download: require-baud
+download: require-baud require-port
 	python3 $(PROJECT_ROOT)/fpga/scripts/download.py -e $(JOP_FILE) $(SERIAL_PORT) $(BAUD)
 
 # Swap the running application without reprogramming the FPGA. Needs a
 # bitstream containing UartResetEscape (2026-08-18 or later).
-redownload: require-baud
+redownload: require-baud require-port
 	python3 $(PROJECT_ROOT)/fpga/scripts/download.py -e -r $(JOP_FILE) $(SERIAL_PORT) $(BAUD)
 
-reset: require-baud
+reset: require-baud require-port
 	python3 $(PROJECT_ROOT)/fpga/scripts/download.py -R $(SERIAL_PORT) $(BAUD)
 
 endif
 
-monitor: require-baud
+monitor: require-baud require-port
 	python3 $(PROJECT_ROOT)/fpga/scripts/monitor.py $(SERIAL_PORT) $(BAUD)

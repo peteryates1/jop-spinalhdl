@@ -228,6 +228,12 @@ object BytecodeConfig {
     // remainder; JVM.f_frem calls SoftFloat32.float_rem. Listed so that
     // needsJavaFloat stays true under `"*" -> "hw"` and the library survives.
     BytecodeEntry("frem",  0x72, "float",  Java, JavaOnly),
+    // Same shape as frem and found the same way (item 123): IMP_JAVA in
+    // JopInstr, no microcode handler, and in NO compute-unit predicate --
+    // needsFloatCompute and needsLongCompute both omit them -- so there is no
+    // hardware to select. Their Java bodies read Const.SUPPORT_FLOAT.
+    BytecodeEntry("l2f",   0x89, "float",  Java, JavaOnly),
+    BytecodeEntry("f2l",   0x8C, "float",  Java, JavaOnly),
     // Long — IMP_ASM ops have pure microcode handlers; lmul is IMP_JAVA.
     BytecodeEntry("ladd",  0x61, "long",   Microcode, Asm),
     BytecodeEntry("lsub",  0x65, "long",   Microcode, Asm),
@@ -472,9 +478,21 @@ case class JopCoreConfig(
   def needsDoubleConvert: Boolean = isHw("i2d", "d2i", "l2d", "d2l", "f2d", "d2f")
   def needsDoubleCmp: Boolean     = isHw("dcmpl", "dcmpg")
 
-  /** True if any float bytecode uses Java (needs SW float class library) */
+  /** True if any bytecode whose Java body needs SoftFloat32 resolves to Java.
+    *
+    * NOT simply "the float group": `d2f` lives in the DOUBLE group, because the
+    * DCU genuinely implements it (`needsDoubleConvert`), yet `JVM.f_d2f` is
+    * gated on `Const.SUPPORT_FLOAT`. So `double -> java` with `float -> hw`
+    * leaves d2f resolved to Java while this predicate — had it asked only about
+    * the float group — reported false, dropped SoftFloat32, and left d2f
+    * trapping to `JVMHelp.noim()`. That is the frem defect in a combination
+    * nobody had tried. Item 123.
+    *
+    * `l2f` and `f2l` need no special case: they are registered in the float
+    * group as JavaOnly, since no compute unit implements them. */
   def needsJavaFloat: Boolean =
-    BytecodeConfig.inGroup("float").exists(e => impl(e.name) == Java)
+    BytecodeConfig.inGroup("float").exists(e => impl(e.name) == Java) ||
+    impl("d2f") == Java
 
   /** Resolve the jump table: patch bytecodes based on their configured Implementation.
     *

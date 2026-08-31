@@ -44,10 +44,23 @@ $(CONST_STAMP): FORCE
 	@mkdir -p $(dir $@)
 	@printf '%s\n' '$(JOP_PRESET)' | cmp -s - $@ || printf '%s\n' '$(JOP_PRESET)' > $@
 
+# EVERYTHING THAT DECIDES AN I/O ADDRESS, not just the generator. The four
+# io/ and memory/ files below were missing (status item 120): the RTL
+# regenerates from Scala on every build, so moving a device or changing an
+# addrBits moved the hardware while Const.java reported "Nothing to be done",
+# and the .jop then addressed the wrong peripheral -- TROUBLESHOOTING.md's
+# first entry, and a board that looks dead.
+#
+# Same defect as fpga/quartus.mk's .sdc, one directory over: a generated
+# artefact whose prerequisites omit an input that determines its content.
 $(CONST_JAVA): $(CONST_STAMP) \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/generate/ConstGenerator.scala \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/JopConfig.scala \
-               $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/JopCoreConfig.scala
+               $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/JopCoreConfig.scala \
+               $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/io/IoAddressAllocator.scala \
+               $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/io/DeviceTypes.scala \
+               $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/DeviceInstance.scala \
+               $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/memory/JopMemoryConfig.scala
 	cd $(PROJECT_ROOT) && sbt -error "runMain jop.generate.ConstGeneratorMain $(CONST_ARGS)"
 
 tools: $(CONST_JAVA)

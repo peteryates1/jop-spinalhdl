@@ -158,3 +158,32 @@ if [ -f "$tcl" ]; then
   fi
   echo "  the MIG clk_wiz fragment is sourced from where it is written"
 fi
+
+# ---------------------------------------------------------------------------
+# Const.java must depend on everything that decides an I/O address.
+#
+# Status item 120, from the B2 boundary review. `java/Makefile` listed
+# ConstGenerator.scala, JopConfig.scala and JopCoreConfig.scala -- and none of
+# the files that actually assign addresses. The RTL regenerates from Scala on
+# every build; Const.java did not, so moving a device or changing an addrBits
+# left the hardware in one place and the constants in another.
+#
+# That is the same defect as the .sdc above, one directory over: a generated
+# artefact whose prerequisites omit an input that determines its content. Its
+# failure is TROUBLESHOOTING.md's first entry -- reads and writes land on the
+# wrong device and the board looks dead.
+# ---------------------------------------------------------------------------
+const_rule=$(make -C java -p -n 2>/dev/null \
+             | grep -E '^[^ |#]*runtime/src/jop/com/jopdesign/sys/Const\.java:' | head -1)
+if [ -n "$const_rule" ]; then
+  missing=""
+  for f in IoAddressAllocator.scala DeviceTypes.scala DeviceInstance.scala JopMemoryConfig.scala; do
+    grep -qF "$f" <<<"$const_rule" || missing="$missing $f"
+  done
+  if [ -n "$missing" ]; then
+    echo "  FAIL Const.java does not depend on:$missing"
+    echo "       these decide I/O addresses; without them it goes silently stale"
+    exit 1
+  fi
+  echo "  Const.java depends on everything that decides an I/O address"
+fi
