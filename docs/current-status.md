@@ -4110,6 +4110,41 @@ elaboration and is consumed by a Python downloader.
 
 **Next review should be scoped by BOUNDARY, not by directory.**
 
+---
+
+**SCOPING EVIDENCE, 2026-08-31.** Two crossings found in about twenty minutes of
+looking, both of the predicted shape — one fact, several languages, nothing
+connecting them.
+
+**B1. The object handle layout.** `GC.java:90` defines `OFF_PTR = 0`,
+`OFF_MTAB_ALEN = 1`, `OFF_SPACE = 2`, `OFF_TYPE = 3`, `OFF_NEXT = 4`,
+`OFF_GREY = 5`. The array-length offset is then restated twice more as a bare
+literal:
+
+```
+asm/src/jvm.asm:1992      ldi 1 / add        // arrayref+1 (in handle)
+BmbMemoryController:1259  ((addrReg + 1) << 2)   // handle[1]
+```
+
+Three languages, three copies of `1`, joined only by comments. Nothing would
+notice a divergence, and changing the layout means finding all three by hand.
+`OFF_PTR = 0` is implicit in the hardware as "read the handle with no offset",
+which is the same dependency wearing no name at all.
+
+**B2. The I/O address space** — historically the first entry in
+`TROUBLESHOOTING.md`, "I/O Address Mismatch". `Const.java` is GENERATED
+(`IO_BASE = -128`) from a Scala allocator that assigns addresses dynamically in
+`0x80-0xFF`. `jvm.asm` carries **12 hand-written** `io_*` constants
+(`io_cnt = -16`, `io_wd = -13`, `io_exc = -12`, ...) that must agree with it and
+are maintained by hand. A mismatch sends reads and writes to the wrong device,
+which is exactly the failure that troubleshooting entry describes.
+
+**Candidate boundaries still unexamined:** boot mode -> microcode variant
+(`ep4cgx150BramGc` was handed the serial ROM once); elaboration -> `summary.txt`
+-> host tooling (`download.py`, `monitor.py`, `console.mk` all consume the baud
+the RTL baked in); and `JopInstr.java`'s IMP_ASM/IMP_JAVA table against
+`BytecodeConfig` in Scala, which is the boundary `frem` fell through.
+
 <a id="item-111"></a>
 
 ### Item 111 — nothing measures whether a test can fail
