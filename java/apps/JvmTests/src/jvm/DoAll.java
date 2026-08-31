@@ -39,7 +39,7 @@ public class DoAll {
 				new Basic2(),
 				new TypeMix(),
 				new Static(),
-//				new Array(),
+				new Array(),
 				new ArrayTest2(),
 				new ArrayTest3(),
 				new ArrayMulti(),
