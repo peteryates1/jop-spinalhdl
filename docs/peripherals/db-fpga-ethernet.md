@@ -171,7 +171,7 @@ Key files:
 - `IoConfig.scala` — `ethGmii` flag, `phyDataWidth` helper
 - `JopSdramTop.scala` — `EthPll` BlackBox, GMII clock domains, TX/RX adapters
 - `JopCore.scala` / `JopCluster.scala` — parameterized `PhyParameter` from `ioConfig.phyDataWidth`
-- `BmbEth.scala` — already parameterized, no GMII-specific changes needed
+- `Eth.scala` — already parameterized, no GMII-specific changes needed
 
 ## SDC Timing Constraints
 

@@ -350,8 +350,8 @@ with both files, and delete with verification. 30 checks total.
 | `java/fat32/test/Fat32SimTest.java` | Simulation test (30 checks, host JVM) |
 | `java/fat32/test/FileBlockDevice.java` | File-backed block device for simulation |
 | `java/fat32/src/test/Fat32Test.java` | Hardware test (JOP FPGA) |
-| `spinalhdl/src/main/scala/jop/io/BmbSdNative.scala` | SD Native controller (RTL) |
-| `spinalhdl/src/main/scala/jop/io/BmbSdSpi.scala` | SD SPI controller (RTL) |
+| `spinalhdl/src/main/scala/jop/io/SdNative.scala` | SD Native controller (RTL) |
+| `spinalhdl/src/main/scala/jop/io/SdSpi.scala` | SD SPI controller (RTL) |
 
 See also:
 - [DB_FPGA SD Card](db-fpga-sd-card.md) — SD controller hardware, pin mapping, bugs found

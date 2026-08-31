@@ -168,7 +168,8 @@ ddr3-generate: $(UCODE_SCALA) $(call APP_JOP,$(DDR3_CFG))
 	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(DDR3_CFG) --write build/$(DDR3_CFG)/vivado/wukong_ddr3_base.xdc"
 
 ddr3-create-ip:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_ddr3_clk_wiz.tcl
+	$(VIVADO_ENV) && JOP_MIG_TCL=$(IP)/generated/ddr3_clocks.tcl \
+	  $(VIVADO) -mode batch -source vivado/tcl/create_ddr3_clk_wiz.tcl
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_mig.tcl
 
 # GMII CONSTRAINTS FIRST. rtl8211eg_gmii.xdc does `create_clock -name e_rxc`,

@@ -5,8 +5,8 @@ exclusive controllers are available:
 
 | Controller | Mode | Data Bus | Config Flag | Java Class |
 |---|---|---|---|---|
-| **BmbSdNative** | Native SD | 4-bit parallel (DAT0-3) | `hasSdNative` | `SdNative` |
-| **BmbSdSpi** | SPI | 1-bit serial (MISO/MOSI) | `hasSdSpi` | `SdSpi` |
+| **SdNative** | Native SD | 4-bit parallel (DAT0-3) | `hasSdNative` | `SdNative` |
+| **SdSpi** | SPI | 1-bit serial (MISO/MOSI) | `hasSdSpi` | `SdSpi` |
 
 Both share the same physical SD card slot on the DB_FPGA board. SD Native
 offers higher throughput (4-bit data bus, hardware CRC). SD SPI is simpler
@@ -36,11 +36,11 @@ These are required because the SD card tri-states these lines when idle.
 
 ---
 
-## SD Native Mode (BmbSdNative)
+## SD Native Mode (SdNative)
 
 ### Architecture
 
-BmbSdNative implements the SD card physical layer in hardware:
+SdNative implements the SD card physical layer in hardware:
 
 - **CMD line**: 48-bit command shift register with CRC7 generation/checking,
   response timeout (64 SD clock edges), short (48-bit) and long (136-bit R2)
@@ -78,7 +78,7 @@ by the SD specification).
 
 ### Bugs Found and Fixed
 
-Two bugs were found in BmbSdNative during hardware verification with the
+Two bugs were found in SdNative during hardware verification with the
 SD Native Exerciser (`SdNativeExerciserTop`). Both passed in simulation
 because the testbench does not model real card timing.
 
@@ -166,11 +166,11 @@ make monitor SERIAL_PORT=/dev/ttyUSB0
 
 ---
 
-## SPI Mode (BmbSdSpi)
+## SPI Mode (SdSpi)
 
 ### Architecture
 
-BmbSdSpi is a raw SPI master. Hardware handles byte-level SPI shifting
+SdSpi is a raw SPI master. Hardware handles byte-level SPI shifting
 and chip-select control. Software handles the full SD protocol.
 
 - **SPI Mode 0**: CPOL=0, CPHA=0. SCLK idles low. Data sampled on rising
@@ -264,8 +264,8 @@ these SD controllers.
 
 | File | Description |
 |------|-------------|
-| `spinalhdl/src/main/scala/jop/io/BmbSdNative.scala` | SD Native controller |
-| `spinalhdl/src/main/scala/jop/io/BmbSdSpi.scala` | SD SPI controller |
+| `spinalhdl/src/main/scala/jop/io/SdNative.scala` | SD Native controller |
+| `spinalhdl/src/main/scala/jop/io/SdSpi.scala` | SD SPI controller |
 | `spinalhdl/src/main/scala/jop/system/SdNativeExerciserTop.scala` | SD Native exerciser |
 | `spinalhdl/src/main/scala/jop/system/SdSpiExerciserTop.scala` | SD SPI exerciser |
 | `java/runtime/src/jop/com/jopdesign/hw/SdNative.java` | SD Native Java API |

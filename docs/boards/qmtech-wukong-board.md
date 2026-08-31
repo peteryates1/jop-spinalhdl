@@ -91,13 +91,28 @@ to match — with everything still building cleanly.
 
 #### Recipe: 6 cores at ui_clk 91.65 MHz (validated 2026-08-16)
 
-1. `vivado/ip/mig.prj` — `TimePeriod` 2500 → **2727**, `InputClkFreq` 100.0 →
-   **97.787**. Change both, or MIG overrides you.
-2. `vivado/tcl/create_ddr3_clk_wiz.tcl` — `CLKOUT1_REQUESTED_OUT_FREQ`
-   100.000 → **97.787**. Achieved 97.764 (50 × 60.125/3 / 10.25), 0.02 % low.
+**Steps 1 and 2 are obsolete — do not hand-edit those files.** Both values now
+come from the preset's `MigProfile`: `JopTopVerilog` calls `MigProfile.emit`,
+which writes a generated `mig.prj` and a `ddr3_clocks.tcl` carrying the header
+*"GENERATED FROM THE PRESET's MigProfile — DO NOT EDIT"*, and
+`create_ddr3_clk_wiz.tcl` sources that fragment so it overrides the literal in
+the script. The tracked `vivado/ip/mig.prj` is the template INPUT, not the knob.
+Kept here as the record of what the numbers were and why:
+
+1. ~~`vivado/ip/mig.prj` — `TimePeriod` 2500 → **2727**, `InputClkFreq` 100.0 →
+   **97.787**.~~ Now from `MigProfile`.
+2. ~~`vivado/tcl/create_ddr3_clk_wiz.tcl` — `CLKOUT1_REQUESTED_OUT_FREQ`
+   100.000 → **97.787**.~~ Achieved 97.764 (50 × 60.125/3 / 10.25), 0.02 % low.
+   Now from the generated `ddr3_clocks.tcl`.
 3. `make ddr3-create-ip` — runs both scripts.
 4. Generate with the matching ui_clk **in Hz**:
    `sbt "runMain jop.system.JopTopVerilog wukongDdr3Smp 6 91650000"`.
+   NOTE: `make ddr3-smp-build` in step 5 builds `wukongSmp $(DDR3_SMP_CORES)`,
+   a DIFFERENT preset in a different `build/<config>/` directory. To build what
+   step 4 generated, pass it through:
+   `make ddr3-smp-bitstream CFG="wukongDdr3Smp 6 91650000"`.
+   See `docs/measurement-presets.md` — `wukongDdr3Smp` is a measurement vehicle
+   that no board target selects.
    91.65 MHz is not an integer MHz, hence Hz. This sets the microsecond
    prescaler and the UART divider; get it wrong and the board goes quiet.
 5. `make ddr3-smp-build`, program, and **download at 2000000 baud**
@@ -568,8 +583,13 @@ the SDRAM exerciser and JOP SDRAM top (`make sdram-create-ip`).
 ```bash
 cd fpga/qmtech-xc7a100t-wukong
 
-# DDR3 full-featured (wukongFull — all compute units + Ethernet + SD)
-make ddr3-generate        # sbt "runMain jop.system.JopTopVerilog wukongFull"
+# DDR3, the default. Makefile:151 sets DDR3_CFG ?= wukongDdr3, the integer-only
+# config that passes DoAll 66/66 on hardware.
+make ddr3-generate        # sbt "runMain jop.system.JopTopVerilog wukongDdr3"
+
+# The full-featured config is NOT what ddr3-generate builds — override DDR3_CFG.
+# It currently fails DoAll at FloatTest; see status items 69/74.
+make ddr3-generate DDR3_CFG=wukongFull
 make ddr3-create-ip       # ClkWiz + MIG IP (once)
 make ddr3-build           # Vivado synth + impl + bitstream
 make ddr3-program         # openFPGALoader via dirtyJtag
@@ -602,8 +622,8 @@ The Wukong board has all peripherals on-board, eliminating the DB_FPGA:
 | 7-segment | No | Yes (3-digit) |
 | PMOD | 4 connectors | 2 connectors |
 
-The Ethernet PHY is the same (RTL8211EG, GMII), so `BmbEth` + `BmbMdio` should
-work directly. The display output is HDMI instead of VGA — `BmbVgaText` would
+The Ethernet PHY is the same (RTL8211EG, GMII), so `Eth` + `Mdio` should
+work directly. The display output is HDMI instead of VGA — `VgaText` would
 need an RGB-to-DVI serializer (available as Xilinx IP or open-source VHDL).
 
 ### Estimated JOP Capacity

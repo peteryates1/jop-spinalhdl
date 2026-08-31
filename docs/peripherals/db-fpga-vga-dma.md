@@ -40,7 +40,7 @@ Same as VGA Text:
 
 ## Architecture
 
-The VGA DMA controller (`BmbVgaDma`) reads an RGB565 framebuffer from SDRAM
+The VGA DMA controller (`VgaBmbDma`) reads an RGB565 framebuffer from SDRAM
 via BMB DMA and outputs it through a CDC FIFO to the 25 MHz pixel clock domain.
 
 ```
@@ -167,7 +167,7 @@ Key source files:
 
 | File | Description |
 |------|-------------|
-| `spinalhdl/src/main/scala/jop/io/BmbVgaDma.scala` | VGA DMA controller (DMA engine, CDC FIFO, pixel output) |
+| `spinalhdl/src/main/scala/jop/io/VgaBmbDma.scala` | VGA DMA controller (DMA engine, CDC FIFO, pixel output) |
 | `spinalhdl/src/main/scala/jop/system/IoConfig.scala` | `hasVgaDma` config flag, `qmtechDbFpgaVgaDma` preset |
 | `spinalhdl/src/main/scala/jop/system/JopSdramTop.scala` | `JopDbFpgaVgaDmaTopVerilog` generation object |
 | `spinalhdl/src/main/scala/jop/memory/JopMemoryConfig.scala` | `VGA_DMA_BASE = 0xAC` address decode |

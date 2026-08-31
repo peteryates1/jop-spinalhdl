@@ -44,8 +44,11 @@ class WukongClkWizBlackBox(instanceName: String = "bram_clk") extends BlackBox {
  *   clkout1 40 MHz SDRAM clock, shifted 315 deg (-3.1 ns), unused by the BRAM
  *           preset
  *
- * The Verilog wrapper (fpga/colorlight-i5/pll_jop_i5.v) is `ecppll` output
- * verbatim, so the divider set is one the tool guarantees will lock:
+ * The Verilog wrapper is GENERATED at build time by `jop.generate.PllGenMain`
+ * into build/<config>/ip/pll_jop_i5.v; it used to be a tracked file in
+ * fpga/colorlight-i5/, which is why an older version of this comment named that
+ * path. It is `ecppll` output verbatim either way, so the divider set is one
+ * the tool guarantees will lock:
  * Fpfd = 25/5 = 5 MHz, Fvco = 5 * 8 * 15 = 600 MHz (legal band 400-800),
  * CLKOP = 600/15 = 40 MHz. Hand-picked dividers are the usual way to get an
  * illegal Fvco and a PLL that never asserts LOCK, which parks the whole core

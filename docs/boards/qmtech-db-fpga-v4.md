@@ -12,10 +12,10 @@ See [DB_FPGA overview](qmtech-db-fpga.md) for version comparison.
 
 | Peripheral | Component | Connector | JOP component |
 |------------|-----------|:---------:|---------------|
-| UART | CP2102N USB-to-UART, Mini USB → `/dev/ttyUSB0` | J2:13/14 | `BmbUart` (up to 2 Mbaud) |
-| Ethernet | RTL8211EG PHY, GMII 8-bit | J3 | `BmbEth` + `BmbMdio` |
-| VGA | Direct RGB 5-6-5, 15-pin D-sub | J3 | `BmbVgaText` (80×30) |
-| SD card | microSD, native 4-bit / SPI | J3 | `BmbSdNative` / `BmbSdSpi` |
+| UART | CP2102N USB-to-UART, Mini USB → `/dev/ttyUSB0` | J2:13/14 | `Uart` (up to 2 Mbaud) |
+| Ethernet | RTL8211EG PHY, GMII 8-bit | J3 | `Eth` + `Mdio` |
+| VGA | Direct RGB 5-6-5, 15-pin D-sub | J3 | `VgaText` (80×30) |
+| SD card | microSD, native 4-bit / SPI | J3 | `SdNative` / `SdSpi` |
 | 7-segment | 3-digit 2352B, multiplexed | J2 | — |
 | LEDs | 5× active-low (LED2-6) | J2 | — |
 | Buttons | SW1 (J3) + SW2-SW5 (J2), active-low, FPGA-accessible | J2/J3 | — |

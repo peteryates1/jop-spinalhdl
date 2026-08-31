@@ -69,9 +69,9 @@ See [V4 doc pin tables](qmtech-db-fpga-v4.md#pin-assignments) — J3 pinout is i
 
 | Peripheral | Connector | JOP component | Notes |
 |------------|:---------:|---------------|-------|
-| Ethernet (RTL8211EG, GMII) | J3 | `BmbEth` + `BmbMdio` | Same J3 pins as V4 |
-| VGA (RGB 5-6-5) | J3 | `BmbVgaText` (80×30) | Same J3 pins as V4 |
-| SD card (native / SPI) | J3 | `BmbSdNative` / `BmbSdSpi` | Same J3 pins as V4 |
+| Ethernet (RTL8211EG, GMII) | J3 | `Eth` + `Mdio` | Same J3 pins as V4 |
+| VGA (RGB 5-6-5) | J3 | `VgaText` (80×30) | Same J3 pins as V4 |
+| SD card (native / SPI) | J3 | `SdNative` / `SdSpi` | Same J3 pins as V4 |
 | PMOD J10, J11, JP1 | J2 | — | Some J2 pins now conflict with RP2040 GPIO6-15 |
 
 Note on PMOD conflicts with RP2040: GPIO6-15 are on J2 pins 38-29, overlapping

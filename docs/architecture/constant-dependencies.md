@@ -325,14 +325,14 @@ the hardware cache held 512 words (2048 bytes at 4 bytes/word) until
 Each I/O device has register bit definitions in both SpinalHDL (hardware)
 and Java (driver). These must match exactly.
 
-### UART (BmbUart.scala ↔ SerialPort.java / Const.java)
+### UART (Uart.scala ↔ SerialPort.java / Const.java)
 
 | Bit | SpinalHDL | Java | Value |
 |-----|-----------|------|-------|
 | TX empty (TDRE) | `txReady` | `MSK_UA_TDRE` | bit 0 |
 | RX full (RDRF) | `rxValid` | `MSK_UA_RDRF` | bit 1 |
 
-### Ethernet MAC (BmbEth.scala ↔ EthMac.java)
+### Ethernet MAC (Eth.scala ↔ EthMac.java)
 
 | Bit | SpinalHDL | Java | Value |
 |-----|-----------|------|-------|
@@ -341,7 +341,7 @@ and Java (driver). These must match exactly.
 | RX flush | status bit 4 | `STATUS_RX_FLUSH` | 1 << 4 |
 | RX valid | status bit 5 | `STATUS_RX_VALID` | 1 << 5 |
 
-### SD Native (BmbSdNative.scala ↔ SdNative.java)
+### SD Native (SdNative.scala ↔ SdNative.java)
 
 | Bit | SpinalHDL | Java | Value |
 |-----|-----------|------|-------|
@@ -356,11 +356,11 @@ and Java (driver). These must match exactly.
 | FIFO full | status bit 9 | `STATUS_FIFO_FULL` | 1 << 9 |
 | FIFO empty | status bit 10 | `STATUS_FIFO_EMPTY` | 1 << 10 |
 
-### VGA Text (BmbVgaText.scala ↔ VgaText.java)
+### VGA Text (VgaText.scala ↔ VgaText.java)
 
 Register offsets and control bit definitions in both files.
 
-### VGA DMA (BmbVgaDma.scala ↔ VgaDma.java)
+### VGA DMA (VgaBmbDma.scala ↔ VgaDma.java)
 
 Status/control bit definitions for framebuffer DMA.
 
@@ -423,7 +423,7 @@ These are architectural constants used by microcode and Java runtime:
 |----------|------|-------|-------|
 | `clkFreq` | `JopConfig` presets | 80 MHz (EP4CGX150), 100 MHz (Wukong/XC7A100T) | Per-board |
 | `uartBaudRate` | `JopCoreConfig.scala:329` | 2000000 (default) | From device params |
-| UART divider | `BmbUart.scala` | clkFreq / baudRate | Derived — must produce integer |
+| UART divider | `Uart.scala` | clkFreq / baudRate | Derived — must produce integer |
 | Sys prescaler | `Sys.scala` | clkFreq / 1 MHz | Microsecond counter |
 | download.py | `fpga/scripts/download.py:232` | 2000000 | **Hardcoded — must match** |
 | monitor.py | `fpga/scripts/monitor.py` | Makefile BAUD_RATE | From Makefile variable |
@@ -442,7 +442,7 @@ Board oscillator (e.g., 50 MHz)
   → PLL (configured per board)
     → System clock (e.g., 80 MHz)
       → JopConfig.clkFreq (must match PLL output)
-        → BmbUart (divider = clkFreq / baudRate)
+        → Uart (divider = clkFreq / baudRate)
         → Sys (prescaler = clkFreq / 1 MHz)
         → Java runtime (reads microsecond counter)
 ```
@@ -646,7 +646,7 @@ Board oscillator
   │
   ├─→ PLL config (vendor IP, manual)
   │     │
-  │     └─→ JopConfig.clkFreq ──→ BmbUart divider
+  │     └─→ JopConfig.clkFreq ──→ Uart divider
   │           │                 └─→ Sys prescaler
   │           │                 └─→ download.py (HARDCODED, no link)
   │           │
@@ -686,7 +686,7 @@ Board oscillator
   │           ├─→ UART_BASE=0xEE ──→ microcode (HARDCODED)
   │           └─→ IoAddressAllocator ──→ ConstGenerator ──→ Const.java
   │
-  ├─→ SpinalHDL device RTL (BmbEth, BmbSdNative, BmbVgaText, ...)
+  ├─→ SpinalHDL device RTL (Eth, SdNative, VgaText, ...)
   │     └─→ Register bit definitions (NO LINK to Java drivers)
   │           └─→ EthMac.java, SdNative.java, VgaText.java, VgaDma.java
   │
@@ -722,11 +722,11 @@ All files containing hardware-dependent constants:
 - `jop/memory/JopMemoryConfig.scala` — addressWidth, mainMemSize, burstLen
 - `jop/memory/JopIoSpace.scala` — SYS_BASE, UART_BASE
 - `jop/memory/MethodCache.scala` — methodSizeBits
-- `jop/io/BmbUart.scala` — UART divider
-- `jop/io/BmbEth.scala` — Ethernet register bits
-- `jop/io/BmbSdNative.scala` — SD register bits
-- `jop/io/BmbVgaText.scala` — VGA register bits
-- `jop/io/BmbVgaDma.scala` — VGA DMA register bits
+- `jop/io/Uart.scala` — UART divider
+- `jop/io/Eth.scala` — Ethernet register bits
+- `jop/io/SdNative.scala` — SD register bits
+- `jop/io/VgaText.scala` — VGA register bits
+- `jop/io/VgaBmbDma.scala` — VGA DMA register bits
 - `jop/generate/ConstGenerator.scala` — generates Const.java
 
 ### Java Tools (must match hardware)

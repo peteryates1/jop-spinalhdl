@@ -126,3 +126,35 @@ EOF
 fi
 
 echo "  no board shadows a shared rule"
+
+# ---------------------------------------------------------------------------
+# A generated fragment must be sourced from where it is written.
+#
+# MigProfile.emit writes the clk_wiz frequency to
+#   build/ip/<board>/generated/ddr3_clocks.tcl
+# while create_ddr3_clk_wiz.tcl sourced
+#   <script dir>/../ip/generated/ddr3_clocks.tcl
+# i.e. fpga/<board>/vivado/ip/generated/ -- a directory that has never existed.
+# The `if {[file exists $_gen]}` guard was therefore always false and the
+# literal `set ddr3_clkwiz_mhz 100.000` always won.
+#
+# Harmless on the default preset, which IS 100 MHz. Live for the three presets
+# that can carry a non-default MigProfile (wukongDdr3Smp, wukongDdr3SmpMshr,
+# wukongDualIndependentSmp): the clk_wiz would be built at 100 MHz while MIG was
+# tuned for another sys_clk, and the memory clock lands off target WHILE STILL
+# BUILDING CLEANLY -- the exact hazard the script's own comment describes.
+# ---------------------------------------------------------------------------
+tcl=fpga/qmtech-xc7a100t-wukong/vivado/tcl/create_ddr3_clk_wiz.tcl
+mk=fpga/qmtech-xc7a100t-wukong/Makefile
+if [ -f "$tcl" ]; then
+  if ! grep -q 'JOP_MIG_TCL' "$tcl"; then
+    echo "  FAIL $tcl does not take the fragment path from the environment"
+    echo "       it must not guess where MigProfile.emit wrote ddr3_clocks.tcl"
+    exit 1
+  fi
+  if ! grep -q 'JOP_MIG_TCL' "$mk"; then
+    echo "  FAIL $mk does not set JOP_MIG_TCL for create_ddr3_clk_wiz.tcl"
+    exit 1
+  fi
+  echo "  the MIG clk_wiz fragment is sourced from where it is written"
+fi

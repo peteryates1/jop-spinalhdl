@@ -590,7 +590,7 @@ Implemented as `FloatArray.java` (faload/fastore with float arrays, 4 elements +
 
 - **Suites**: 22 (SymbiYosys + Z3)
 - **Total properties**: 105
-- **Components covered**: ArrayCache, BmbCacheBridge, BmbMemoryController, BmbProtocol, BmbSdNative, BmbSys, BmbUart, BytecodeFetchStage, CacheToMigAdapter, CmpSync, Crc8Maxim, DebugBreakpoints, DecodeStage, FetchStage, Ihlu, JumpTable, LruCacheCore, MethodCache, ObjectCache, Shift, StackCacheDma, StackStage
+- **Components covered**: ArrayCache, BmbCacheBridge, BmbMemoryController, BmbProtocol, SdNative, Sys, Uart, BytecodeFetchStage, CacheToMigAdapter, CmpSync, Crc8Maxim, DebugBreakpoints, DecodeStage, FetchStage, Ihlu, JumpTable, LruCacheCore, MethodCache, ObjectCache, Shift, StackCacheDma, StackStage
 
 ### Bug Regression Coverage
 

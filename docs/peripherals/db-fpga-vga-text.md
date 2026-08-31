@@ -40,7 +40,7 @@ appears immediately after the test app starts.
 
 ## Architecture
 
-The VGA text controller (`BmbVgaText`) runs in the **25 MHz pixel clock domain**
+The VGA text controller (`VgaText`) runs in the **25 MHz pixel clock domain**
 (PLL output c3) and generates standard 640x480 @ 60Hz VGA timing.
 
 ```
@@ -282,7 +282,7 @@ Key source files:
 
 | File | Description |
 |------|-------------|
-| `spinalhdl/src/main/scala/jop/io/BmbVgaText.scala` | VGA text controller (register map, pixel pipeline, font ROM) |
+| `spinalhdl/src/main/scala/jop/io/VgaText.scala` | VGA text controller (register map, pixel pipeline, font ROM) |
 | `spinalhdl/src/main/scala/jop/system/IoConfig.scala` | `hasVgaText` config flag |
 | `spinalhdl/src/main/scala/jop/system/JopCore.scala` | VGA instantiation and I/O wiring |
 | `spinalhdl/src/main/scala/jop/memory/JopMemoryConfig.scala` | `VGA_TEXT_BASE = 0xC0` address decode |
@@ -298,7 +298,7 @@ the DB_FPGA bitstream (`make program-dbfpga`). Check that the Java app writes
 `1` to `Const.IO_VGA + 0` to enable output.
 
 **Garbled characters**: The pixel pipeline uses a 3-stage look-ahead. If you
-modify `BmbVgaText.scala`, ensure `hLookAhead`, `vLookAhead`, and `bitIndex`
+modify `VgaText.scala`, ensure `hLookAhead`, `vLookAhead`, and `bitIndex`
 all use consistent pipeline delays.
 
 **Image offset/shifted**: Use the monitor's auto-adjust feature after

@@ -1007,7 +1007,7 @@ SystemAssembly: "wukong-dev" (the physical hardware on the desk)
   |     +-- Boot: Serial
   |     +-- Cores: 4
   |     +-- Per-core: imul=Hardware, fadd=Hardware, ...
-  |     +-- Devices: RTL8211EG → BmbEthRgmii, SD_CARD → BmbSdNative
+  |     +-- Devices: RTL8211EG → BmbEthRgmii, SD_CARD → SdNative
   |
   +-- JopSystem: "io" (targets same XC7A100T, uses SDR SDRAM)
   |     +-- Memory: W9825G6JH6
@@ -1039,7 +1039,7 @@ SystemAssembly: "qmtech-dev"
         +-- Memory: W9825G6JH6
         +-- Boot: Serial
         +-- Cores: 1
-        +-- Devices: CP2102N → BmbUart, RTL8211EG → BmbEthRgmii
+        +-- Devices: CP2102N → Uart, RTL8211EG → BmbEthRgmii
 ```
 
 Predefined composite boards (convenience aliases):
@@ -1216,7 +1216,7 @@ object DeviceDriver {
   // UART
   case object Uart extends DeviceDriver {
     val devicePart = "CP2102N"
-    val componentName = "BmbUart"
+    val componentName = "Uart"
   }
 
   // Ethernet — single variant (RGMII)
@@ -1228,21 +1228,21 @@ object DeviceDriver {
   // SD card — two variants
   case object SdSpi extends DeviceDriver {
     val devicePart = "SD_CARD"
-    val componentName = "BmbSdSpi"
+    val componentName = "SdSpi"
   }
   case object SdNative extends DeviceDriver {
     val devicePart = "SD_CARD"
-    val componentName = "BmbSdNative"
+    val componentName = "SdNative"
   }
 
   // VGA — two variants
   case object VgaDma extends DeviceDriver {
     val devicePart = "VGA"
-    val componentName = "BmbVgaDma"
+    val componentName = "VgaBmbDma"
   }
   case object VgaText extends DeviceDriver {
     val devicePart = "VGA"
-    val componentName = "BmbVgaText"
+    val componentName = "VgaText"
   }
 }
 ```

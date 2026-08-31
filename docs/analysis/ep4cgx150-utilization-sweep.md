@@ -65,7 +65,7 @@ Delta measured from the "No ICU" baseline (9,369 LEs).
 1. **SD Native vs SD SPI**: SD Native costs 8,867 LEs — **12x more** than SD SPI
    (742 LEs). The SpinalHDL `SdcardCtrl` implements a full 4-bit native SD
    protocol engine with command/data FSMs, CRC generation, and bus width
-   negotiation. BmbSdSpi is a bare SPI shift register — the SD protocol is
+   negotiation. SdSpi is a bare SPI shift register — the SD protocol is
    handled entirely in software. For resource-constrained builds, SD SPI is the
    clear winner (at the cost of ~4x lower throughput: SPI = 1-bit vs native =
    4-bit).

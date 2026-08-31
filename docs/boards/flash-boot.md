@@ -40,7 +40,7 @@ Java program runs
 ```
 
 The FPGA's built-in Active Serial (AS) controller handles bitstream loading
-automatically. Once JOP is running, the microcode uses the `BmbConfigFlash`
+automatically. Once JOP is running, the microcode uses the `ConfigFlash`
 I/O peripheral to read the `.jop` application from a fixed offset in the
 same flash chip.
 
@@ -169,7 +169,7 @@ data bytes that would otherwise be interpreted as CS control commands.
 ```bash
 cd fpga/qmtech-ep4cgx150-sdram
 make microcode-flash              # Assemble flash boot microcode
-make generate-flash-boot          # Generate Verilog (JopSdramTop with BmbConfigFlash)
+make generate-flash-boot          # Generate Verilog (JopSdramTop with ConfigFlash)
 make build-flash-boot             # Quartus synthesis
 # Or all at once:
 make full-flash-boot
@@ -250,7 +250,7 @@ before starting.
 | File | Description |
 |------|-------------|
 | `spinalhdl/src/main/scala/jop/system/JopSdramTop.scala` | Flash boot top (JopCfgFlashTopVerilog) |
-| `spinalhdl/src/main/scala/jop/io/BmbConfigFlash.scala` | Config flash SPI I/O peripheral |
+| `spinalhdl/src/main/scala/jop/io/ConfigFlash.scala` | Config flash SPI I/O peripheral |
 | `spinalhdl/src/main/scala/jop/system/FlashProgrammerTop.scala` | UART flash programmer FPGA design |
 | `fpga/scripts/make_flash_image.py` | Flash image builder (RPD + .jop) |
 | `fpga/scripts/flash_program.py` | Python flash programmer host script |

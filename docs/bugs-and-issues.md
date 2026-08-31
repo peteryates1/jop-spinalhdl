@@ -162,7 +162,7 @@ investigation.
 
 ## Fixed Bugs — RTL / Hardware
 
-### SD Card Controller (BmbSdNative)
+### SD Card Controller (SdNative)
 
 Three bugs found during hardware verification. All passed in simulation
 because the testbench does not model real card timing.
@@ -175,7 +175,7 @@ because the testbench does not model real card timing.
 
 See [DB_FPGA SD Card](peripherals/db-fpga-sd-card.md) for full details.
 
-### VGA Text Controller (BmbVgaText)
+### VGA Text Controller (VgaText)
 
 | # | Bug | Fix |
 |---|-----|-----|
@@ -266,7 +266,7 @@ See [SDR SDRAM GC Hang](gc/sdr-sdram-gc-hang.md) for the full investigation.
 | 3 | JBC RAM read-write collision (SpinalHDL `readSync` dontCare) | Bytecode fetch corruption |
 | 4 | Pipeline stall missing for high-latency memory | Incorrect memory results |
 | 5 | UartCtrl RX one-cycle valid pulse (not buffered) | Dropped UART bytes |
-| 9 | BmbSys missing IO_LOCK and IO_CPUCNT registers | GC deadlock, SMP failure |
+| 9 | Sys missing IO_LOCK and IO_CPUCNT registers | GC deadlock, SMP failure |
 | 10 | cpuStart NPE on core 1 boot (GC not ready) | SMP boot failure |
 | 13 | SdramCtrl CKE gating creates response pipeline misalignment (simulation only) | Data corruption in sim |
 | 17 | readAcache/readOcache flags persist across I/O reads — cache data returned instead of I/O | UART output 4x expansion |

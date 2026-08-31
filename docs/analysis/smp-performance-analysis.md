@@ -122,13 +122,13 @@ contention on typical code. Beyond 4 cores, contention rises sharply.
 
 CmpSync implements a single global lock shared by all cores. The lock protocol:
 
-1. Core writes `IO_LOCK` (BmbSys addr 5) to set `lockReqReg = True`
+1. Core writes `IO_LOCK` (Sys addr 5) to set `lockReqReg = True`
 2. CmpSync grants to one core (`halted=0`), halts all others (`halted=1`)
 3. Owner writes `IO_UNLOCK` (addr 6) to set `lockReqReg = False`
 4. Round-robin fair arbiter selects next requester immediately (no idle gap)
 
 **Critical property**: When any core holds the lock, ALL other cores' pipelines
-are frozen via `io.halted`. The pipeline stall is wired through BmbSys:
+are frozen via `io.halted`. The pipeline stall is wired through Sys:
 ```
 pipeline.io.memBusy := memCtrl.io.memOut.busy || bmbSys.io.halted || io.debugHalt
 ```
@@ -382,8 +382,8 @@ Each JopCore contains:
   Decode, Stack (256-entry dual-port RAM), Multiplier
 - BmbMemoryController: state machine + MethodCache (16-tag array) +
   ObjectCache (16-entry x 128-word data RAM) + ArrayCache (16-entry x 64-word data RAM)
-- BmbSys: counters, interrupt logic, lock registers
-- BmbUart (core 0 only): UartCtrl + FIFOs
+- Sys: counters, interrupt logic, lock registers
+- Uart (core 0 only): UartCtrl + FIFOs
 
 Estimated per-core resource breakdown:
 
@@ -394,7 +394,7 @@ Estimated per-core resource breakdown:
 | Method cache tags | 200-300 | 0 |
 | Object cache | 300-400 | 1-2 (data RAM) |
 | Array cache | 300-400 | 1-2 (data RAM) |
-| BmbSys + UART | 500-800 | 1 (UART FIFOs) |
+| Sys + UART | 500-800 | 1 (UART FIFOs) |
 | **Total per core** | **~5,000-7,000** | **~7-11** |
 
 ### 6.3 Shared Infrastructure

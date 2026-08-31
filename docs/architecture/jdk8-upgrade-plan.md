@@ -291,9 +291,9 @@ and interface tables.
    ```scala
    case object Flash extends BootMode { val dirName = "flash" }
    ```
-   Generates microcode with `#define FLASH`. Verilog top includes `BmbConfigFlash`.
+   Generates microcode with `#define FLASH`. Verilog top includes `ConfigFlash`.
 
-4. **Hardware**: `BmbConfigFlash` already exists in SpinalHDL. Pin assignments for SPI flash
+4. **Hardware**: `ConfigFlash` already exists in SpinalHDL. Pin assignments for SPI flash
    already in QSF/XDC generators. `HAS_CONFIG_FLASH` flag in IoConfig.
 
 **Boards with flash**:
@@ -302,7 +302,7 @@ and interface tables.
 | QMTECH EP4CGX150 | W25Q128 | 16 MB | 0x800000 (8 MB) | Microcode ready |
 | Wukong XC7A100T | SST26VF032B | 4 MB | 0x240000 (2.25 MB) | Microcode ready |
 | Alchitry Au V2 | (config flash) | varies | TBD | Needs investigation |
-| CYC5000 | EPCQ-L | 4 MB | TBD | No BmbConfigFlash yet |
+| CYC5000 | EPCQ-L | 4 MB | TBD | No ConfigFlash yet |
 
 **Verification**: program .jop binary to QMTECH flash, boot without UART, verify "Hello World".
 
@@ -430,7 +430,7 @@ object BootMode {
 
 **What SdBoot configures**:
 - Microcode: `#define FLASH` (bootstrap still loads from flash)
-- Hardware: enables both `BmbConfigFlash` and `BmbSdNative`/`BmbSdSpi` in IoConfig
+- Hardware: enables both `ConfigFlash` and `SdNative`/`SdSpi` in IoConfig
 - Const.java: `HAS_SD_CARD = true`
 - Makefile: builds split image (bootstrap.bin + APP.JOP)
 
@@ -485,7 +485,7 @@ Included for completeness.
 | **QMTECH EP4CGX150** | W25Q128 @ 8MB offset | SD Native (daughter board) | Both HW ready |
 | **Wukong XC7A100T** | SST26VF032B @ 2.25MB | SD Native (on-board) | Both HW ready |
 | **Alchitry Au V2** | Config flash | No SD slot | Flash only (unless add-on board) |
-| **CYC5000** | EPCQ-L | No SD slot | Needs BmbConfigFlash, no SD |
+| **CYC5000** | EPCQ-L | No SD slot | Needs ConfigFlash, no SD |
 
 ## Implementation Order
 

@@ -665,15 +665,15 @@ Base address: `Const.IO_BASE` (`0xFFFFFF80`). The low 7 bits form an 8-bit
 
 | ioAddr Range | Size | Java Base | Device |
 |---|---|---|---|
-| `0x80`--`0x8F` | 16 regs | `IO_BASE + 0x00` | BmbSys |
-| `0x90`--`0x93` | 4 regs | `IO_BASE + 0x10` | BmbUart |
-| `0x98`--`0x9F` | 8 regs | `IO_BASE + 0x18` | BmbEth |
-| `0xA0`--`0xA7` | 8 regs | `IO_BASE + 0x20` | BmbMdio |
-| `0xA8`--`0xAB` | 4 regs | `IO_BASE + 0x28` | BmbSdSpi |
-| `0xB0`--`0xBF` | 16 regs | `IO_BASE + 0x30` | BmbSdNative |
-| `0xAC`--`0xAF` | 4 regs | `IO_BASE + 0x2C` | BmbVgaDma |
-| `0xC0`--`0xCF` | 16 regs | `IO_BASE + 0x40` | BmbVgaText |
-| `0xD0`--`0xD3` | 4 regs | `IO_BASE + 0x50` | BmbConfigFlash |
+| `0x80`--`0x8F` | 16 regs | `IO_BASE + 0x00` | Sys |
+| `0x90`--`0x93` | 4 regs | `IO_BASE + 0x10` | Uart |
+| `0x98`--`0x9F` | 8 regs | `IO_BASE + 0x18` | Eth |
+| `0xA0`--`0xA7` | 8 regs | `IO_BASE + 0x20` | Mdio |
+| `0xA8`--`0xAB` | 4 regs | `IO_BASE + 0x28` | SdSpi |
+| `0xB0`--`0xBF` | 16 regs | `IO_BASE + 0x30` | SdNative |
+| `0xAC`--`0xAF` | 4 regs | `IO_BASE + 0x2C` | VgaBmbDma |
+| `0xC0`--`0xCF` | 16 regs | `IO_BASE + 0x40` | VgaText |
+| `0xD0`--`0xD3` | 4 regs | `IO_BASE + 0x50` | ConfigFlash |
 | `0xF0`--`0xF3` | 4 regs | `IO_BASE + 0x70` | ~~BmbFpu~~ (removed -- replaced by FloatComputeUnit) |
 
 ### Low-Level Example

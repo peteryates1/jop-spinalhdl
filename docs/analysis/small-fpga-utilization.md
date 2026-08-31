@@ -90,7 +90,7 @@ MAX1000 uses default `JopMemoryConfig` (O$/A$ enabled) — fits at 87%.
 | -- MethodCache | 606 | 0 | Tag-only (16-block FIFO) |
 | **BmbSdramCtrl32** | **593** | **0** | Altera triple-port controller |
 | **UART** | 247 | 256 | TX/RX FIFOs in 2 M9Ks |
-| **BmbSys** | 213 | 0 | Timer, counter, watchdog |
+| **Sys** | 213 | 0 | Timer, counter, watchdog |
 | **Top-level glue** | 43 | 0 | PLL, reset, BMB interconnect |
 
 ### Optimization History

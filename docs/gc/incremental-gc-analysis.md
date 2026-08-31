@@ -379,7 +379,7 @@ allocation.
    intervals
 
 **Integration with JOP's timer interrupts**:
-- JOP has hardware timer interrupts (BmbSys prescaler + timer compare)
+- JOP has hardware timer interrupts (Sys prescaler + timer compare)
 - A timer-triggered GC increment could execute in the interrupt handler
 - The interrupt handler already runs `JVMHelp.interrupt()` which dispatches
   to registered Runnable handlers

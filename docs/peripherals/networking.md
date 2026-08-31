@@ -48,7 +48,7 @@ Gigabit Ethernet PHY.
 │    └── EthMac HW object (volatile I/O registers)                │
 ├──────────────────────────────────────────────────────────────────┤
 │  SpinalHDL RTL                                                   │
-│    ├── BmbEth       (I/O device wrapping MacEth)                │
+│    ├── Eth       (I/O device wrapping MacEth)                │
 │    ├── MacEth       (preamble → CRC → aligner → buffer CDC)    │
 │    └── MacEthNoCrc  (variant without RX CRC, for testing)       │
 ├──────────────────────────────────────────────────────────────────┤
@@ -97,9 +97,9 @@ Gigabit Ethernet PHY.
 
 | File | Purpose |
 |------|---------|
-| `BmbEth.scala` | I/O device wrapping SpinalHDL MacEth (TX/RX streams, control registers) |
+| `Eth.scala` | I/O device wrapping SpinalHDL MacEth (TX/RX streams, control registers) |
 | `MacEthNoCrc.scala` | MacEth variant without RX CRC checker (for testing/mesochronous) |
-| `BmbMdio.scala` | MDIO master for PHY register access |
+| `Mdio.scala` | MDIO master for PHY register access |
 
 ### FPGA (`fpga/qmtech-ep4cgx150-sdram/`)
 
@@ -148,7 +148,7 @@ the networking stack.
 
 ## Hardware Interface
 
-### BmbEth Register Map
+### Eth Register Map
 
 The EthMac hardware object (`com.jopdesign.hw.EthMac`) maps to I/O address
 `Const.IO_ETH`. Five 32-bit registers:
@@ -197,7 +197,7 @@ PHY pins → [I/O block registers] → rxArea single-stage pipeline
     → MacRxChecker  (CRC-32, residue = 0x2144DF1C)
     → MacRxAligner  (pad to 16-bit boundary)
     → MacRxBuffer   (dual-clock FIFO, CDC to system clock)
-    → CPU reads via BmbEth
+    → CPU reads via Eth
 ```
 
 - CRC-32: IEEE 802.3, polynomial 0x04C11DB7, reflected I/O, init 0xFFFFFFFF
@@ -207,7 +207,7 @@ PHY pins → [I/O block registers] → rxArea single-stage pipeline
 ### TX Pipeline (system clock domain → PHY clock domain)
 
 ```
-CPU writes via BmbEth
+CPU writes via Eth
     → MacTxBuffer  (dual-clock FIFO, CDC to PHY clock)
     → MacTxAligner (absorb padding)
     → MacTxPadder  (enforce 60-byte minimum)
@@ -265,7 +265,7 @@ Created during debugging to test whether CRC errors were from real data
 corruption or a checker bug. Result: disabling CRC gave 30% loss (same as
 mesochronous), proving the data was genuinely corrupted. Upper-layer checksums
 (IP/ICMP) caught the same errors. This file exists but is **not used** in the
-current configuration (BmbEth uses standard `MacEth`).
+current configuration (Eth uses standard `MacEth`).
 
 ## Protocol Details
 
@@ -544,7 +544,7 @@ jtcpip was a ~31-file stack using the J2ME `javax.microedition.io` API,
 tightly coupled to the CS8900 ISA bus NIC via the **ejip** embedded IP library.
 
 The port:
-- Replaced ejip/CS8900 link layer with our BmbEth MAC driver
+- Replaced ejip/CS8900 link layer with our Eth MAC driver
 - Replaced J2ME API with standard `java.net` wrappers
 - Fixed bugs (UDP checksum, recursive port allocation, dangling semicolons)
 - Removed `wait()`/`notify()` (unsupported on JOP)

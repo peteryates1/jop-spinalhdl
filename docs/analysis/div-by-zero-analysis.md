@@ -127,11 +127,11 @@ try {
    - The PreLinker replaces this with `jopsys_wrmem` bytecode
    - Microcode: `stmwa` (pop IO_EXCPT address), `stmwd` (pop EXC_DIVZ data),
      `wait`, `wait`, `nop nxt`
-   - The memory controller routes the write to BmbSys (device 0, sub-addr 4)
+   - The memory controller routes the write to Sys (device 0, sub-addr 4)
 
-**Phase 3: Exception trigger in BmbSys**
+**Phase 3: Exception trigger in Sys**
 
-8. BmbSys receives write to addr 4 (IO_EXCPT):
+8. Sys receives write to addr 4 (IO_EXCPT):
    ```scala
    excTypeReg := io.wrData(7 downto 0)  // stores 8 (EXC_DIVZ)
    excPend := True
@@ -209,7 +209,7 @@ interacting issues that make it fragile and prone to failure:
 ### 3.1 Asynchronous exception firing mid-method (PRIMARY CAUSE)
 
 The `Native.wrMem(EXC_DIVZ, IO_EXCPT)` write triggers the exception
-mechanism immediately. The `io.exc` pulse from BmbSys reaches
+mechanism immediately. The `io.exc` pulse from Sys reaches
 BytecodeFetchStage and latches `excPend` within 1-2 cycles. The very next
 bytecode fetch after `jopsys_wrmem` completes is preempted by `sys_exc`.
 
@@ -274,7 +274,7 @@ point could vary.
 ### 3.4 excTypeReg persistence
 
 After `except()` reads `IO_EXCPT` and gets `EXC_DIVZ`, the
-`excTypeReg` register in BmbSys retains the value 8. If any
+`excTypeReg` register in Sys retains the value 8. If any
 subsequent exception fires before a new value is written, the stale
 EXC_DIVZ value could cause confusion. However, this is unlikely to
 be the root cause since the read happens before the throw.
@@ -455,7 +455,7 @@ is needed.
 ### 5.3 EXC_DIVZ constant
 
 `EXC_DIVZ = 8` (Const.java line 144) is documented as a "software generated"
-exception number, outside the hardware range (1-7). Both `BmbSys` and
+exception number, outside the hardware range (1-7). Both `Sys` and
 `JVMHelp.handleException()` correctly handle this value. If Option A is
 implemented, `EXC_DIVZ` becomes unused but can be left in place for
 documentation.
@@ -479,7 +479,7 @@ This test is enabled in `DoAll.java` and passes (all 58 JVM tests pass).
 | `java/runtime/src/jop/com/jopdesign/sys/Native.java` | wrMem() native method declaration |
 | `asm/src/jvm.asm` | sys_noim, sys_exc handlers; commented-out idiv/irem microcode |
 | `asm/generated/JumpTableData.scala` | Jump table: idiv/irem -> 0x0B1 (sys_noim) |
-| `spinalhdl/src/main/scala/jop/io/BmbSys.scala` | IO_EXCPT register, exc pulse generation |
+| `spinalhdl/src/main/scala/jop/io/Sys.scala` | IO_EXCPT register, exc pulse generation |
 | `spinalhdl/src/main/scala/jop/pipeline/BytecodeFetchStage.scala` | excPend latch, sys_exc dispatch |
 | `java/apps/JvmTests/src/jvm/math/DivZero.java` | Disabled test case |
 | `java/apps/JvmTests/src/jvm/DoAll.java` | Test registration (DivZero enabled) |

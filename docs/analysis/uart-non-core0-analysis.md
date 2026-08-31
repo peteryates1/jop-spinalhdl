@@ -9,10 +9,10 @@ When any core executes `Native.rd(Const.IO_UART_STATUS)` (address `0xffffff90`),
 1. **Memory controller** (`BmbMemoryController.scala`): Detects I/O address space, asserts `ioRd` with `ioAddr = 0x10` (lower 8 bits of the address).
 
 2. **JopCore I/O routing** (`JopCore.scala`, lines 224-333): Decodes device ID from `ioAddr(5 downto 4)`:
-   - Device 0 (`ioDeviceId = 0`): BmbSys (system registers)
-   - Device 1 (`ioDeviceId = 1`): BmbUart (UART)
-   - Device 2 (`ioDeviceId = 2`): BmbEth (Ethernet)
-   - Device 3 (`ioDeviceId = 3`): BmbMdio
+   - Device 0 (`ioDeviceId = 0`): Sys (system registers)
+   - Device 1 (`ioDeviceId = 1`): Uart (UART)
+   - Device 2 (`ioDeviceId = 2`): Eth (Ethernet)
+   - Device 3 (`ioDeviceId = 3`): Mdio
 
 3. **UART status address**: `IO_STATUS = IO_BASE + 0x10`, so `ioAddr = 0x10`, giving `ioDeviceId = 1`, `ioSubAddr = 0`.
 
@@ -119,7 +119,7 @@ The practical effect: `JVMHelp.wr()` on cores 1+ does NOT hang. It proceeds to t
 
 Fire a hardware exception (like NPE) when a non-UART core accesses the UART address range.
 
-**Implementation**: In `JopCore.scala`, detect UART I/O access when `hasUart = false` and write an exception type to BmbSys.
+**Implementation**: In `JopCore.scala`, detect UART I/O access when `hasUart = false` and write an exception type to Sys.
 
 **Pros**:
 - Immediately visible -- Java code gets an exception with a stack trace

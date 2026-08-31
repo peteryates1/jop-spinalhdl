@@ -128,7 +128,7 @@ memEnd    ├──────────────────┤  memEnd =
 memWords  └──────────────────┘  Top of physical memory
 ```
 
-The Java runtime reads `IO_MEM_SIZE` (BmbSys register 14) to determine `memEnd`.
+The Java runtime reads `IO_MEM_SIZE` (Sys register 14) to determine `memEnd`.
 When `IO_MEM_SIZE` returns 0, the legacy heap size (`appEnd + 16384`) is used.
 
 ### Stack Cache Spill Addressing
@@ -164,7 +164,7 @@ Unified configuration for a single JOP core. Defined in `jop/config/JopCoreConfi
 |-----------|------|---------|-------------|
 | `memConfig` | JopMemoryConfig | default | Memory system configuration |
 | `ioConfig` | IoConfig | default | I/O device configuration |
-| `clkFreq` | HertzNumber | 100 MHz | System clock frequency (for BmbSys microsecond prescaler) |
+| `clkFreq` | HertzNumber | 100 MHz | System clock frequency (for Sys microsecond prescaler) |
 | `supersetJumpTable` | JumpTableInitData | simulation | Superset jump table (all HW handlers present). Patched by `resolveJumpTable()`. |
 
 ### CPU
@@ -354,12 +354,12 @@ system devices, cores 1+ empty by default; `perCoreConfigs` with explicit device
 
 | Device Type | BMB Component | Description |
 |-------------|--------------|-------------|
-| `uart` | BmbUart | TX/RX with 16-entry FIFOs |
-| `ethernet` | BmbEth + BmbMdio | Ethernet MAC (params: `gmii`, `phyDataWidth`) |
-| `sdspi` | BmbSdSpi | SD card via SPI mode |
-| `sdnative` | BmbSdNative | SD card native 4-bit mode |
-| `vgadma` | BmbVgaDma | VGA framebuffer with DMA |
-| `vgatext` | BmbVgaText | VGA text-mode controller |
+| `uart` | Uart | TX/RX with 16-entry FIFOs |
+| `ethernet` | Eth + Mdio | Ethernet MAC (params: `gmii`, `phyDataWidth`) |
+| `sdspi` | SdSpi | SD card via SPI mode |
+| `sdnative` | SdNative | SD card native 4-bit mode |
+| `vgadma` | VgaBmbDma | VGA framebuffer with DMA |
+| `vgatext` | VgaText | VGA text-mode controller |
 | `cfgflash` | BmbCfgFlash | SPI config flash (W25Q128/SST26) |
 
 ### I/O Address Map
@@ -369,7 +369,7 @@ Addresses are dynamically allocated by `IoAddressAllocator`. Fixed addresses:
 | ioAddr Range | Peripheral | Notes |
 |:---:|---|---|
 | `0xEE–0xEF` | Boot device (UART or cfgFlash) | Fixed |
-| `0xF0–0xFF` | BmbSys (system registers) | Fixed |
+| `0xF0–0xFF` | Sys (system registers) | Fixed |
 | `0x80–0xED` | Other devices | Dynamically allocated |
 
 ## DebugConfig
@@ -393,7 +393,7 @@ L2 write-back cache for DDR3 memory path. Defined in `jop/ddr3/CacheConfig.scala
 | `setCount` | Int | 256 | Cache sets (must be power-of-2) |
 | `wayCount` | Int | 4 | Associativity (1, 2, or 4 way only) |
 
-## BmbSys I/O Register Map
+## Sys I/O Register Map
 
 System I/O device at base address `0xFFFFFF80` (`Const.IO_BASE`).
 4-bit sub-address (registers 0-15).

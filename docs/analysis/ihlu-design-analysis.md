@@ -26,9 +26,9 @@ Signals per core:
 - `SyncIn`: req (lock request), s_in (boot signal), gcHalt (GC halt request)
 - `SyncOut`: halted (pipeline stall), s_out (boot broadcast)
 
-### 1.2 I/O Interface (BmbSys.scala)
+### 1.2 I/O Interface (Sys.scala)
 
-**Source**: `/home/peter/workspaces/jop-spinalhdl/spinalhdl/src/main/scala/jop/io/BmbSys.scala`
+**Source**: `/home/peter/workspaces/jop-spinalhdl/spinalhdl/src/main/scala/jop/io/Sys.scala`
 
 The lock protocol uses two I/O addresses:
 - **IO_LOCK (addr 5)**: Write sets `lockReqReg = true` (acquire). Read returns
@@ -36,7 +36,7 @@ The lock protocol uses two I/O addresses:
 - **IO_UNLOCK (addr 6)**: Write clears `lockReqReg = false` (release). Read
   returns `cpuId`.
 
-BmbSys also provides:
+Sys also provides:
 - **IO_GC_HALT (addr 13)**: Write sets/clears `gcHaltReg`. When set, CmpSync
   halts all other cores' pipelines.
 
@@ -49,7 +49,7 @@ BmbSys also provides:
 2. Increment `lockcnt` (reentrant lock counter in microcode variable)
 3. Write IO_LOCK to acquire global lock (sets `lockReqReg`)
 4. Read IO_LOCK -- pipeline stalls here if another core holds the lock
-   (CmpSync sets `halted=1`, which feeds through BmbSys to stall the pipeline)
+   (CmpSync sets `halted=1`, which feeds through Sys to stall the pipeline)
 5. Check read value: if 0, lock acquired. If non-zero, throw
    IllegalMonitorStateException (exc_mon).
 6. Pop the objectref from the stack (the objectref is **ignored** -- the lock
@@ -461,7 +461,7 @@ monitorexit_no_ena:
     nop nxt
 ```
 
-**BmbSys changes**: The write handler for IO_LOCK (addr 5) and IO_UNLOCK
+**Sys changes**: The write handler for IO_LOCK (addr 5) and IO_UNLOCK
 (addr 6) must route the write data to the IHLU's `data` field and set the
 appropriate `op` bit:
 
@@ -496,7 +496,7 @@ for (i <- 0 until cpuCnt) {
 
 The `SyncIn` and `SyncOut` bundles need to be extended (or a new bundle type
 used) to carry the `op`, `data`, and `status` fields. This is a breaking
-interface change that affects BmbSys, JopCore, and JopCluster.
+interface change that affects Sys, JopCore, and JopCluster.
 
 ## 4. GC Interaction
 
@@ -724,7 +724,7 @@ one cycle after the request data is captured.
 |------|--------|------|
 | Ihlu.scala (core state machine) | 2-3 days | Low (direct VHDL translation) |
 | Extended SyncIn/SyncOut bundles | 0.5 day | Low |
-| BmbSys modifications | 0.5 day | Low |
+| Sys modifications | 0.5 day | Low |
 | JopCluster wiring (replace CmpSync) | 0.5 day | Low |
 | GC halt integration | 1 day | Medium (correctness critical) |
 | Microcode changes (jvm.asm) | 0.5 day | Medium (objectref routing) |

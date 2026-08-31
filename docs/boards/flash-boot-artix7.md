@@ -64,7 +64,7 @@ JOP processor starts in MIG ui_clk domain (100 MHz)
 Microcode polls flashReady (status bit 1) — waits for spiDiagDone
   |
   v
-SPI mux switches from diagnostic FSM to BmbConfigFlash
+SPI mux switches from diagnostic FSM to ConfigFlash
   |
   v
 Microcode sends RSTEN (0x66) + RST (0x99) to reset flash state
@@ -88,13 +88,13 @@ calibration) but no HelloWorld program output. The root cause was a
 1. The board-clock diagnostic FSM runs RSTQIO + RSTEN + RST + JEDEC ID
    read + data read on the SPI bus (~200-300 us).
 2. MIG ui_clk starts during this time, and the JOP microcode begins
-   executing SPI operations via BmbConfigFlash *before* the diagnostic
+   executing SPI operations via ConfigFlash *before* the diagnostic
    FSM completes and the SPI mux switches from the diagnostic path to
-   the BmbConfigFlash path.
+   the ConfigFlash path.
 3. The microcode's SPI commands go nowhere (or collide with the
    diagnostic FSM), resulting in 0xFF reads from flash.
 
-**Fix**: A `flashReady` input was added to `BmbConfigFlash` (exposed as
+**Fix**: A `flashReady` input was added to `ConfigFlash` (exposed as
 status register bit 1). This is driven by `spiDiagDone` from the
 board-clock domain, synchronized to ui_clk via `BufferCC`. The microcode
 polls `flashReady` before starting any flash I/O, ensuring the SPI mux
@@ -138,10 +138,10 @@ Board 100 MHz (N14)
           - SPI diagnostic FSM (RSTQIO + RSTEN + RST, sets spiDiagDone)
 
 MIG ui_clk (100 MHz):
-  - JopCluster (JopCore + BmbConfigFlash + BmbUart)
+  - JopCluster (JopCore + ConfigFlash + Uart)
   - BmbCacheBridge -> LruCacheCore -> CacheToMigAdapter -> MIG -> DDR3
   - STARTUPE2 (USRCCLKO drives CCLK pad)
-  - SPI mux: switches from diagnostic FSM to BmbConfigFlash when spiDiagDone
+  - SPI mux: switches from diagnostic FSM to ConfigFlash when spiDiagDone
 ```
 
 ### SPI Flash: SST26VF032BT-104I/MF
@@ -255,7 +255,7 @@ preprocessor defines:
 9. **Read loop** — Send dummy 0xFF bytes, read MISO data, assemble 32-bit
    words (big-endian, 4 bytes per word), write to DDR3 via memory controller
 
-### I/O Register Map (BmbConfigFlash at 0xD0-0xD3)
+### I/O Register Map (ConfigFlash at 0xD0-0xD3)
 
 | Address | Microcode name | Read | Write |
 |---------|---------------|------|-------|
@@ -385,7 +385,7 @@ cd fpga/alchitry-au
 # Build flash microcode (FLASH_ADDR_B2=36, FLASH_CLK_DIV=15)
 make microcode-flash
 
-# Generate Verilog with STARTUPE2 + BmbConfigFlash
+# Generate Verilog with STARTUPE2 + ConfigFlash
 make generate-flash
 
 # Create Vivado project (includes flash.xdc)
@@ -447,7 +447,7 @@ make full-flash-boot
 | `spinalhdl/src/main/scala/jop/ddr3/StartupE2.scala` | STARTUPE2 BlackBox for Xilinx 7 Series |
 | `spinalhdl/src/main/scala/jop/system/JopDdr3Top.scala` | DDR3 top-level (serial + flash + SMP variants) |
 | `spinalhdl/src/main/scala/jop/system/FlashProgrammerDdr3Top.scala` | UART flash programmer for Artix-7 |
-| `spinalhdl/src/main/scala/jop/io/BmbConfigFlash.scala` | Config flash SPI I/O peripheral (generic) |
+| `spinalhdl/src/main/scala/jop/io/ConfigFlash.scala` | Config flash SPI I/O peripheral (generic) |
 | `fpga/alchitry-au/vivado/constraints/flash.xdc` | Flash pin constraints (J13, J14, L12) |
 | `fpga/alchitry-au/vivado/tcl/create_project_flash.tcl` | Vivado project with flash constraints |
 | `fpga/alchitry-au/vivado/tcl/build_bitstream_flash.tcl` | Build bitstream + write_cfgmem .bin |
@@ -487,9 +487,9 @@ The board-clock diagnostic FSM and the MIG ui_clk JOP microcode both
 need SPI flash access. A hardware mux selects between them based on
 `spiDiagDone`. The race occurs because MIG ui_clk can start and run
 microcode before the diagnostic FSM finishes, causing SPI commands from
-BmbConfigFlash to be muxed to nowhere.
+ConfigFlash to be muxed to nowhere.
 
-Fix: `flashReady` input on BmbConfigFlash (status bit 1), driven by
+Fix: `flashReady` input on ConfigFlash (status bit 1), driven by
 `BufferCC`-synchronized `spiDiagDone`. Microcode polls bit 1 before
 starting flash I/O.
 
@@ -526,7 +526,7 @@ Cyclone IV where Quartus SFL fails).
 STARTUPE2 adds ~65ns of delay on the CCLK output path. With a naive
 single shift register for both TX and RX, MISO sampling can miss the
 correct data window. Fix: split `txShiftReg` and `rxShiftReg` in
-BmbConfigFlash — MOSI shifts on the falling SCLK edge, MISO samples on
+ConfigFlash — MOSI shifts on the falling SCLK edge, MISO samples on
 the rising edge. This is standard SPI Mode 0 and accommodates the
 STARTUPE2 delay.
 
@@ -560,7 +560,7 @@ these are simple, low-frequency circuits.
 
 ### 11. I/O Addresses Are Static
 
-BmbConfigFlash is always at 0xD0-0xD3 regardless of which optional
+ConfigFlash is always at 0xD0-0xD3 regardless of which optional
 peripherals are present (Ethernet, SD card, VGA, etc.). The I/O address
 space is fixed at design time in `JopIoSpace`, not dynamically assigned
 based on `IoConfig` flags.

@@ -36,9 +36,9 @@ pins 1-2, 5-6, 61-62 = GND; pins 3-4 = 3V3/VCCO; pins 63-64 = VIN; pins 7-60 = I
 
 | Peripheral | Connector | JOP component |
 |------------|:---------:|---------------|
-| Ethernet (RTL8211EG, GMII) | J3 | `BmbEth` + `BmbMdio` |
-| VGA (RGB 5-6-5) | J3 | `BmbVgaText` (80×30) |
-| SD card (native 4-bit / SPI) | J3 | `BmbSdNative` / `BmbSdSpi` |
+| Ethernet (RTL8211EG, GMII) | J3 | `Eth` + `Mdio` |
+| VGA (RGB 5-6-5) | J3 | `VgaText` (80×30) |
+| SD card (native 4-bit / SPI) | J3 | `SdNative` / `SdSpi` |
 
 See [V4 doc](qmtech-db-fpga-v4.md#pin-assignments) for full J3 pin tables (J3 pinout is identical on V5).
 

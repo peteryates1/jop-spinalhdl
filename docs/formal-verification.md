@@ -4,29 +4,37 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 
 ## Overview
 
-**105 properties verified** across **22 test suites** covering all major components:
+**133 properties verified** across **23 test suites** covering all major components.
+
+Counted 2026-08-31 by running the suite, not by reading: `sbt "testOnly
+jop.formal.*"` reports 133 tests. ScalaTest says "Suites: completed 24" because
+it also counts `SpinalFormalFunSuite`, the shared base class, which registers no
+properties of its own — and grepping for `test(` gives 135 for the same reason,
+since two of those occurrences are that base class DEFINING the helper. Three
+different numbers were in circulation before this was measured.
 
 | Category | Suite | Tests | Properties |
 |----------|-------|:-----:|------------|
 | **Core Arithmetic** | ShiftFormal | 4 | USHR/SHL/SHR correctness, zero shift identity |
 | **Pipeline Stages** | JumpTableFormal | 3 | Exception > interrupt > normal priority chain |
 | | FetchStageFormal | 4 | PC priority (jfetch > br > jmp), pipeline freeze on wait+busy, default increment |
-| | BytecodeFetchStageFormal | 4 | No double-ack, exception/interrupt ack preconditions, interrupt latching |
+| | BytecodeFetchStageFormal | 5 | No double-ack, exception/interrupt ack preconditions, interrupt latching |
 | | StackStageFormal | 6 | Flag computation (zf, nf, eq), SP increment/decrement/hold |
 | | DecodeStageFormal | 3 | Memory op mutual exclusion, field op mutual exclusion, br/jmp exclusion |
 | **Memory Subsystem** | MethodCacheFormal | 9 | State machine, rdy, find trigger, tag uniqueness, FIFO advance, tag write, hit-after-miss, clear mask |
-| | ObjectCacheFormal | 2 | Uncacheable field rejection, hit implies cacheable |
-| | ArrayCacheFormal | 5 | Hit/tag consistency, FIFO pointer advancement, snoop invalidation, snoop-during-fill gating, fill index auto-increment |
+| | ObjectCacheFormal | 8 | Uncacheable field rejection, hit implies cacheable |
+| | ArrayCacheFormal | 10 | Hit/tag consistency, FIFO pointer advancement, snoop invalidation, snoop-during-fill gating, fill index auto-increment |
 | | StackCacheDmaFormal | 6 | Busy/IDLE equivalence, done pulse, wordsDone bounds, spill WRITE opcode, fill READ opcode, no-deadlock |
 | | BmbMemoryControllerFormal | 9 | Busy correctness, exception/copy returns to IDLE, READ/WRITE_WAIT completion + hold, IDLE stability |
-| **DDR3 Subsystem** | LruCacheCoreFormal | 8 | Busy correctness, memCmd gating, evict/refill commands, error recovery, no-deadlock, **2 bugs found and fixed** (see below) |
-| | CacheToMigAdapterFormal | 6 | Busy correctness, no-deadlock, IDLE stability, MIG signal gating, read data capture, write completion |
-| | BmbCacheBridgeFormal | 5 | pendingRsp blocks commands, burst wordsDone bounded, unsupported cmd returns ERROR, no-deadlock, write rsp zero data |
+| **DDR3 Subsystem** | LruCacheCoreFormal | 12 | Busy correctness, memCmd gating, evict/refill commands, error recovery, no-deadlock, **2 bugs found and fixed** (see below) |
+| | LruCacheCoreInitFormal | 3 | Cache-invalidate-on-init: tags cleared before first use |
+| | CacheToMigAdapterFormal | 7 | Busy correctness, no-deadlock, IDLE stability, MIG signal gating, read data capture, write completion |
+| | BmbCacheBridgeFormal | 8 | pendingRsp blocks commands, burst wordsDone bounded, unsupported cmd returns ERROR, no-deadlock, write rsp zero data |
 | **I/O Subsystem** | CmpSyncFormal | 4 | Lock mutual exclusion, signal broadcast, gcHalt isolation, lock owner exempt from gcHalt |
 | | IhluFormal | 6 | Signal broadcast, gcHalt isolation, lock owner exemption, FSM transitions, lock allocation ownership, queue bounds |
-| | BmbSysFormal | 4 | Clock counter monotonicity, exception pulse, lock acquire/release, halted passthrough |
-| | BmbUartFormal | 4 | TX push gating, RX pop gating, no spurious TX, status register accuracy |
-| | BmbSdNativeFormal | 6 | FIFO occupancy coherence, clock divider toggle, CMD state transitions, DATA state transitions, cmdBusy correctness, FIFO bounded |
+| | SysFormal | 4 | Clock counter monotonicity, exception pulse, lock acquire/release, halted passthrough |
+| | UartFormal | 4 | TX push gating, RX pop gating, no spurious TX, status register accuracy |
+| | SdNativeFormal | 6 | FIFO occupancy coherence, clock divider toggle, CMD state transitions, DATA state transitions, cmdBusy correctness, FIFO bounded |
 | **Debug** | Crc8MaximFormal | 3 | Clear resets CRC, CRC stable when disabled, non-zero byte from zero CRC produces non-zero CRC |
 | | DebugBreakpointsFormal | 5 | queryCount matches enabled sum, halted suppresses hit, hit implies matching slot, set allocates slot, clear disables slot |
 | **BMB Protocol** | BmbProtocolFormal | 4 | rsp.ready always true, cmd.last always true, cmd.valid held until ready, cmd stability while not accepted |
@@ -50,7 +58,7 @@ cd /tmp/sby && sudo make install PREFIX=/usr/local
 ## Running
 
 ```bash
-# Run all 105 formal tests (~3 minutes)
+# Run all 133 formal properties (~7 minutes)
 sbt "testOnly jop.formal.*"
 
 # Run a specific suite
@@ -77,13 +85,14 @@ spinalhdl/src/test/scala/jop/formal/
 ├── StackCacheDmaFormal.scala       # Stack cache DMA controller
 ├── BmbMemoryControllerFormal.scala # Memory controller state machine
 ├── LruCacheCoreFormal.scala        # DDR3 write-back cache (2 bugs found + fixed)
+├── LruCacheCoreInitFormal.scala    # DDR3 cache initialisation
 ├── CacheToMigAdapterFormal.scala   # DDR3 MIG protocol adapter
 ├── BmbCacheBridgeFormal.scala      # DDR3 BMB-to-cache bridge
 ├── CmpSyncFormal.scala             # SMP global lock
 ├── IhluFormal.scala                # IHLU per-object lock unit
-├── BmbSysFormal.scala              # System I/O slave
-├── BmbUartFormal.scala             # UART I/O slave
-├── BmbSdNativeFormal.scala         # SD Native controller (FIFO, clk, CMD/DATA FSM)
+├── SysFormal.scala              # System I/O slave
+├── UartFormal.scala             # UART I/O slave
+├── SdNativeFormal.scala         # SD Native controller (FIFO, clk, CMD/DATA FSM)
 ├── Crc8MaximFormal.scala           # CRC-8/MAXIM calculator
 ├── DebugBreakpointsFormal.scala    # Hardware breakpoint comparators
 └── BmbProtocolFormal.scala         # BMB bus protocol compliance
@@ -202,7 +211,7 @@ With the current `BmbCacheBridge` frontend, these bugs are **unlikely to trigger
 | Ihlu | 4-12 | <0.9s | 2-core, 4-slot config; FSM + lock table properties |
 | CacheToMigAdapter | 8-12 | <1.5s | Small state machine, 128-bit data registers |
 | BmbCacheBridge | 6-8 | <0.5s | BMB-to-cache bridge, rspFifo depth 4 |
-| BmbSdNative | 4 | <1.2s | 128-entry FIFO, shallow BMC for tractability |
+| SdNative | 4 | <1.2s | 128-entry FIFO, shallow BMC for tractability |
 | Crc8Maxim | 3-4 | <0.3s | Purely combinational CRC polynomial |
 | DebugBreakpoints | 4-6 | <0.5s | 4-slot breakpoint comparators |
 

@@ -104,7 +104,7 @@ the host to simplify the loader and reduce SD card read time. The
 
 | Component | Location | Status |
 |-----------|----------|--------|
-| SD native hardware | `spinalhdl/.../BmbSdNative.scala` | Working |
+| SD native hardware | `spinalhdl/.../SdNative.scala` | Working |
 | SD native Java driver | `java/fat32/.../SdNativeBlockDevice.java` | Working |
 | FAT32 filesystem | `java/fat32/.../Fat32FileSystem.java` | Working |
 | FAT32 input stream | `java/fat32/.../Fat32InputStream.java` | Working |

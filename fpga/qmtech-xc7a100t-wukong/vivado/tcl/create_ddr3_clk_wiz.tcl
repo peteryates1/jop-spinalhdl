@@ -3,8 +3,24 @@
 # generated fragment wins when a preset has been generated; the literal below is
 # the stock Ddr3_400 value for standalone runs.
 set ddr3_clkwiz_mhz 100.000
-set _gen [file join [file dirname [info script]] ../ip/generated/ddr3_clocks.tcl]
-if {[file exists $_gen]} { source $_gen ; puts "INFO: clk_wiz from profile: $ddr3_clkwiz_mhz MHz" }
+# THE PATH COMES FROM THE MAKEFILE, not from a guess. This used to resolve
+# ../ip/generated/ddr3_clocks.tcl relative to this script -- i.e.
+# fpga/<board>/vivado/ip/generated/ -- while MigProfile.emit writes to
+# build/ip/<board>/generated/. Those never agreed, so `file exists` was always
+# false and the literal above always won: harmless on the default 100 MHz
+# preset, and silently wrong for any preset carrying another MigProfile, which
+# is exactly the failure the comment above warns about.
+if {[info exists ::env(JOP_MIG_TCL)]} {
+    set _gen $::env(JOP_MIG_TCL)
+    if {[file exists $_gen]} {
+        source $_gen
+        puts "INFO: clk_wiz from profile: $ddr3_clkwiz_mhz MHz ($_gen)"
+    } else {
+        puts "INFO: no generated MIG fragment at $_gen; using $ddr3_clkwiz_mhz MHz"
+    }
+} else {
+    puts "INFO: JOP_MIG_TCL unset; using the stock $ddr3_clkwiz_mhz MHz"
+}
 
 # Clock wizard generation script for JOP DDR3 on QMTECH XC7A100T Wukong.
 # 50 MHz input -> 100 MHz (MIG sys_clk) + 200 MHz (MIG ref_clk) + 125 MHz (ETH GMII).
