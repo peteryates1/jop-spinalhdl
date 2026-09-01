@@ -4804,6 +4804,37 @@ a defect until it is named.
 **Verification.** `sbt test` 666/666 across 66 suites; `ArrayCacheFormal` 11/11;
 `JopJvmTestsBramSim` 67/67 with `Array ok` and no `MISS: iaload-upper`.
 
+**Hardware-validated on TWO boards, 2026-09-01.** `wukongFull` first, because it
+is the board and preset the defect was confirmed on and the only place a fix for
+it can be closed; then the EP4CGX150, which is a different memory system, a
+different toolchain and a different vendor, so a pass there is not the same
+measurement twice.
+
+| board | preset | memory | timing (binding corner) | DoAll |
+|---|---|---|---|---|
+| Wukong XC7A100T | `wukongFull` | DDR3, 1 Mbaud | MET, **WNS +0.235 ns** | **67/67**, `Array ok` |
+| QMTECH EP4CGX150 | `ep4cgx150Serial` | SDR, 2 Mbaud | MET, setup **+0.738 ns**, hold +0.317 ns (Slow 1200mV 100C) | **67/67**, `Array ok` |
+
+The `MISS: iaload-upper` line is gone on both. `MISS: arraylength-NPE` still
+prints on both, which is [item 129](#item-129) and is the point of having split
+it — the two symptoms were filed as one item and only one of them moved.
+
+**It costs slack, and the number is worth keeping.** `wukongFull` closed at
+**WNS +0.235 ns**, against **+0.349 ns** for the same preset on 2026-08-31.
+`io.hit` is combinational and feeds the controller's state decision in the same
+cycle, so the added term is on that path; ~0.11 ns is what a 3-bit compare
+across 16 lines costs there. This is the argument for the count rather than the
+length made concrete — a 24-bit compare in the same place would have cost more,
+and `xc7a100tDbSerial` sits at [+0.001 ns](#item-8) where it would have mattered.
+
+**One path is untested on hardware.** `AC_FILL_CMD`/`AC_FILL_WAIT` branch on
+`burstLen > 0`, and **`ep4cgx150DbFull` is the only preset that sets it**
+(`burstLen = 4`). Every board validated here takes the non-burst branch. The
+burst branch is correct by construction — `acFillElems` is a register the CACHE
+consumes on each `wrIal`, not something the fill loop reads, and both branches
+issue the same `fieldCnt` writes — but that is an argument, not a measurement,
+and `ep4cgx150DbFull` is unbuildable anyway ([item 67](#item-67)).
+
 **Test status.** `jvm/Array.java` was disabled twice over — four assertions
 commented out INSIDE a class that was itself commented out of `DoAll.java:42`.
 The class is back in the suite, and the `iaload-upper` assertion is live again.
