@@ -4804,16 +4804,24 @@ a defect until it is named.
 **Verification.** `sbt test` 666/666 across 66 suites; `ArrayCacheFormal` 11/11;
 `JopJvmTestsBramSim` 67/67 with `Array ok` and no `MISS: iaload-upper`.
 
-**Hardware-validated on TWO boards, 2026-09-01.** `wukongFull` first, because it
-is the board and preset the defect was confirmed on and the only place a fix for
-it can be closed; then the EP4CGX150, which is a different memory system, a
-different toolchain and a different vendor, so a pass there is not the same
-measurement twice.
+**Hardware-validated on THREE boards, 2026-09-01.** `wukongFull` first, because
+it is the board and preset the defect was confirmed on and the only place a fix
+for it can be closed; then the EP4CGX150 and the Colorlight i5. Three vendors,
+three toolchains (Vivado / Quartus / yosys+nextpnr) and three memory systems, so
+these are not the same measurement three times — which is the point, given how
+[often a validated record decays](#item-100) when one board stands in for all.
 
-| board | preset | memory | timing (binding corner) | DoAll |
+| board | preset | memory | timing (binding report) | DoAll |
 |---|---|---|---|---|
 | Wukong XC7A100T | `wukongFull` | DDR3, 1 Mbaud | MET, **WNS +0.235 ns** | **67/67**, `Array ok` |
 | QMTECH EP4CGX150 | `ep4cgx150Serial` | SDR, 2 Mbaud | MET, setup **+0.738 ns**, hold +0.317 ns (Slow 1200mV 100C) | **67/67**, `Array ok` |
+| Colorlight i5 (ECP5) | `colorlightI5Sdram` | SDRAM 8 MB, 1 Mbaud | PASS, **45.77 MHz** at 40 MHz | **67/67**, `Array ok` |
+
+The i5 figure is the **post-route** one. nextpnr prints the post-place estimate
+first — `32.28 MHz (FAIL at 40.00 MHz)` — and reading that line instead has
+already invented one board failure in this project. 13,562 of 24,288
+TRELLIS_COMB (55 %), so the added term did not move the i5 off its
+[EBR-bound](#item-21) shape either.
 
 The `MISS: iaload-upper` line is gone on both. `MISS: arraylength-NPE` still
 prints on both, which is [item 129](#item-129) and is the point of having split
