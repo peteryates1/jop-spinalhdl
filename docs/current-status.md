@@ -127,7 +127,7 @@ the missing resets themselves — but a five-seed sweep found no offender among
 the registers, so it is now a single named defect rather than a 405-register
 audit, and has moved down accordingly.
 
-1. **[#128](#item-128)** — An array-cache HIT skips the bounds check: out-of-range `iaload` returns adjacent memory silently, while `iastore` faults correctly. Hardware-confirmed
+1. **[#129](#item-129)** — `arraylength` has no null check: `null.length` reads word address 1 and returns it as a length, so a loop over a null array runs instead of throwing. Hardware-confirmed
 2. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 3. **[#127](#item-127)** — The boundary review is unfinished: five done, four more named and scoped (class-struct layout, GC↔card-table hardware, JOPizer↔runtime, stack cache↔microcode)
 4. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
@@ -4699,7 +4699,7 @@ a guard written the previous day.
 
 <a id="item-128"></a>
 
-### Item 128 — an array-cache hit skips the bounds check, so out-of-range READS return adjacent memory
+### ~~Item 128~~ — an array-cache hit skipped the bounds check, so out-of-range READS returned adjacent memory — **FIXED 2026-09-01**
 
 **Found 2026-08-31** by re-enabling the tests [item 119](#item-119) reported as
 disabled. Hardware-confirmed on `wukongFull` (Wukong DDR3):
@@ -4752,22 +4752,117 @@ marking the trailing words invalid would fix both halves at source — but
 first `wrIal` and covering the whole line, explicitly unlike `ObjectCache`,
 which has per-field valid bits. Partial fills would need per-element validity.
 
-**The fix that fits** is to give the cache the length: capture it at fill time
-(the controller has just read it in `HANDLE_BOUND_WAIT`), store it per line
-alongside the tag, and require `index < length` in the `hit` term. `lineCnt` is
-16, so the storage is small. It does not stop the fill over-reading adjacent
-heap, but the over-read word can then never be returned.
+**FIXED 2026-09-01 (`4b25831`).** `ArrayCache` now carries, per line, a count of
+how many of its `fieldCnt` elements are inside the array. The controller
+computes it in `HANDLE_CALC` from the `handle[1]` read it has just done in
+`HANDLE_BOUND_WAIT` — `min(fieldCnt, length - alignedBase)` — and `hit` requires
+`idxLower < elems`. An out-of-bounds element reads as a MISS, which routes the
+access to `HANDLE_BOUND_READ` and raises `EXC_AB`.
 
-**Scope warning:** this changes `ArrayCache`'s IO and the controller's hit path,
-on a component with 10 formal properties, shared by every board. It wants its
-own verification pass, not a quick edit.
+**A COUNT, not the length.** `fieldBits+1` bits per line rather than
+`maxIndexBits`, and a 3-bit compare rather than 24 on the *combinational* hit
+path — `io.hit` feeds the controller's state decision in the same cycle. A full
+line carries `fieldCnt` and behaves exactly as before; only a line straddling
+the end of an array is affected. The fill still over-reads adjacent heap; what
+changed is that the over-read word can no longer be returned. Clamping the fill
+at source still needs per-element valid bits, which this cache deliberately does
+not have — that half is unchanged and remains acceptable, because the read is
+within the heap and the word is now unreachable.
+
+**Red before green, and shown to be red.** Three pieces, each of which fails
+against the unfixed RTL:
+
+| vehicle | before | after |
+|---|---|---|
+| `ArrayCacheBoundsTest` (new) — controller-level sim | ia[3] returns the planted `0xDEADDEAD`, `abFire` never asserts | `EXC_AB` raised |
+| `ArrayCacheFormal` — new 11th property | assertion fails | proved |
+| `jvm/Array.java` iaload-upper, live again | `MISS: iaload-upper` | `Array ok`, `DoAll` 67/67 |
+
+Confirmed by reverting **only** the `inBounds` term and re-running: the new
+formal property and both new sim assertions fail; the other nine properties and
+every control pass. That is the check [item 111](#item-111) says nothing
+performs — done by hand here, not by a tool.
+
+**The control case is half the test.** `an out-of-bounds iaload that MISSES
+faults` runs the same read on a COLD cache, where the miss path has always been
+correct, and must pass both before and after. Without it, "no exception fired"
+and "this harness cannot see an exception fire" are the same output, and a
+bounds test that cannot observe a bounds fault passes against any RTL
+whatsoever. The `abFire` watcher samples at every clock edge for the same
+reason: on a cache hit the controller never goes busy, so a busy-gated poll
+would inspect nothing.
+
+**One formal property needed its environment extended, not its statement.** The
+bounds term adds a third way to miss — the region is cached but the index is
+past the end — and left unmodelled the solver satisfies `tag+index uniqueness`'s
+protocol FSM by filling a SECOND line for a `(handle, tagIdx)` already present.
+The controller cannot do that: a bounds miss implies an out-of-bounds access,
+which raises `EXC_AB` and never reaches `AC_FILL_CMD`. Assumed explicitly, with
+that reasoning recorded at the assumption. An environment gap reads exactly like
+a defect until it is named.
+
+**Verification.** `sbt test` 666/666 across 66 suites; `ArrayCacheFormal` 11/11;
+`JopJvmTestsBramSim` 67/67 with `Array ok` and no `MISS: iaload-upper`.
 
 **Test status.** `jvm/Array.java` was disabled twice over — four assertions
 commented out INSIDE a class that was itself commented out of `DoAll.java:42`.
-Both are now partly undone: the class is back in the suite (`DoAll` is 67, and
-`Array ok`), the four assertions that pass are live, and the two that expose
-this defect are disabled **with a comment naming this item** rather than under a
-bare "TODO".
+The class is back in the suite, and the `iaload-upper` assertion is live again.
+One assertion is still disabled — `nulla.length` — and it is a DIFFERENT defect
+with a different cause, now [item 129](#item-129) rather than a loose end of
+this one. Its reporter had to be given its own `caught = false`: with the
+assertion commented out it was reading the *previous* assertion's result, which
+passes, and so stayed silent about an open defect. A disabled assertion that
+reports nothing is how this pair stayed invisible in the first place.
+<a id="item-129"></a>
+
+### Item 129 — `arraylength` has no null check, so `null.length` reads address 1
+
+**Split out of [item 128](#item-128) on 2026-09-01**, where it was filed as a
+second symptom of one defect. It is not: the array cache had nothing to do with
+it, and fixing the cache did not fix this.
+
+Hardware-confirmed on `wukongFull`, and still reproducing in
+`JopJvmTestsBramSim` after the item 128 fix:
+
+```
+Array  MISS: arraylength-NPE     nulla.length does not throw
+```
+
+**Mechanism.** `asm/src/jvm.asm:1990`:
+
+```
+arraylength:
+            ldi 1
+            add             // arrayref+1 (in handle)
+            stmraf          // read ext. mem
+```
+
+`stmraf` is `memIn.rdf` — the PLAIN field-read path. It goes nowhere near
+`HANDLE_READ`, so `BmbMemoryController`'s null check (`addrReg === 0` →
+`EXC_NP`) never runs. On a null reference the microcode computes `0 + 1` and
+reads **word address 1**, returning whatever is there as the array's length.
+
+**Why this is worse than it looks.** The value returned is then used as a bound.
+`for (int i = 0; i < a.length; i++)` over a null `a` does not throw — it runs
+for however many iterations word 1 happens to encode, and every one of those
+iterations does an `iaload` on handle 0, which *does* fault. So the observable
+failure is an NPE at an unrelated place, several statements later, or a very
+long loop first.
+
+**Not yet diagnosed further.** The obvious fix is a null test in the microcode
+before the `add`, but `arraylength` is on the hot path of every array loop and
+the JOP idiom for a cheap null test here has not been checked. The alternative —
+route `arraylength` through the handle path so the hardware check applies — costs
+a state-machine trip on an operation that is currently three instructions.
+**Measure before choosing**: the same reasoning that made the item 128 fix a
+3-bit compare rather than a 24-bit one applies here.
+
+**Test in place, failing.** `jvm/Array.java`'s `nulla.length` assertion is
+commented out with a comment naming this item, and its reporter prints
+`MISS: arraylength-NPE` on every run of `DoAll` so the gap is visible rather
+than silent.
+
+
 ## 4. Two workstreams, both largely done
 
 **GC (Stage 3)** — generational GC is on by default and hardware-validated on
