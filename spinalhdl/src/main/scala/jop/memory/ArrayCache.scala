@@ -16,6 +16,26 @@ import spinal.core._
  * Single valid bit per line (unlike ObjectCache which has per-field valid bits).
  * Valid is set on the first wrIal of a fill and remains set for the entire line.
  *
+ * ARRAY BOUNDS. A line fill is bounded by the LINE, not by the array: filling
+ * for index 0 of a 3-element array fetches indices 0,1,2 AND 3, so the word
+ * past the end of the array is read and cached. That was harmless right up
+ * until it was returned -- on an iaload HIT the memory controller stays in
+ * IDLE and never reaches HANDLE_BOUND_READ, so the cache is the ONLY place the
+ * check can happen, and it had no length to check against (status item 128).
+ *
+ * Hence `fillElems`: how many of the line's fieldCnt elements are actually
+ * inside the array. The controller knows this at fill time -- it has just read
+ * handle[1] in HANDLE_BOUND_WAIT -- and it is stored per line and required by
+ * `hit`. A full line carries fieldCnt and behaves exactly as before; only a
+ * line straddling the end of an array is affected.
+ *
+ * It is a COUNT rather than the length itself on purpose: fieldBits+1 bits per
+ * line against maxIndexBits, and the comparison against `idxLower` is 3 bits
+ * wide instead of 24, on the critical path of a combinational hit. The fill
+ * still over-reads adjacent heap; what changes is that the over-read word can
+ * no longer be returned. Fixing the over-read at source needs per-element valid
+ * bits, which this cache deliberately does not have.
+ *
  * Interface:
  *   - handle/index are wired combinationally from the controller
  *   - chkIal fires in IDLE on iaload (combinational hit detection)
@@ -72,6 +92,7 @@ case class ArrayCache(
     // Update (from memory controller)
     val wrIal    = in Bool()                     // Fill on iaload miss (one pulse per element)
     val wrIas    = in Bool()                     // Update on iastore (cache gates with hitTagReg)
+    val fillElems = in UInt(fieldBits + 1 bits)  // In-bounds elements in the line being filled
     val ialVal   = in Bits(32 bits)              // Data for iaload fill (BMB response)
     val iasVal   = in Bits(32 bits)              // Data for iastore write-through
 
@@ -91,6 +112,11 @@ case class ArrayCache(
   val tag = Vec(Reg(UInt(addrBits bits)) init(0), lineCnt)
   val tagIdx = Vec(Reg(UInt(tagIdxBits bits)) init(0), lineCnt)
   val valid = Vec(Reg(Bool()) init(False), lineCnt)
+
+  // Per line: how many of its fieldCnt elements lie inside the array. Captured
+  // from io.fillElems on fill. Zero at reset, which is safe because valid is
+  // False there too. See the header note on array bounds.
+  val elems = Vec(Reg(UInt(fieldBits + 1 bits)) init(0), lineCnt)
 
   // FIFO replacement pointer
   val nxt = Reg(UInt(wayBits bits)) init(0)
@@ -114,8 +140,13 @@ case class ArrayCache(
   for (i <- 0 until lineCnt) {
     val tagMatch = tag(i) === io.handle && valid(i)
     val idxMatch = tagIdx(i) === idxUpper
+    // The bounds term. Elements at or above the stored count were fetched from
+    // past the end of the array by the line fill and must never be returned;
+    // treating them as a MISS routes the access down the controller's
+    // HANDLE_BOUND_READ path, which raises EXC_AB. Status item 128.
+    val inBounds = elems(i) > idxLower.resize(fieldBits + 1)
     hitTagVec(i) := tagMatch
-    hitVec(i) := tagMatch && idxMatch
+    hitVec(i) := tagMatch && idxMatch && inBounds
   }
 
   io.hit := hitVec.orR
@@ -243,6 +274,12 @@ case class ArrayCache(
     tag(lineReg) := handleReg
     tagIdx(lineReg) := indexReg(maxIndexBits - 1 downto fieldBits)
     valid(lineReg) := True
+    // Only a FILL establishes the bounds count. An iastore write-through is
+    // gated by hitTagReg, so the line already exists and already carries the
+    // right count -- and the controller does not compute one on the store path.
+    when(io.wrIal) {
+      elems(lineReg) := io.fillElems
+    }
   }
 
   // Advance FIFO pointer on first wrIal of a tag miss (VHDL bug fix:

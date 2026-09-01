@@ -269,6 +269,13 @@ case class BmbMemoryController(
   val acFillAddr = if(config.useAcache) Reg(UInt(config.addressWidth bits)) init(0) else null
   val acFillCount = if(config.useAcache) Reg(UInt(config.acacheFieldBits bits)) init(0) else null
   val acFillRequestedIdx = if(config.useAcache) Reg(UInt(config.acacheFieldBits bits)) init(0) else null
+  // Array length from handle[1], latched in HANDLE_BOUND_WAIT, and the count of
+  // in-bounds elements in the line about to be filled. The array cache needs the
+  // second to refuse a hit on a word the fill fetched from past the end of the
+  // array -- on a HIT this state machine never runs, so the check cannot live
+  // here. Status item 128.
+  val arrayLenReg = if(config.useAcache) Reg(UInt(config.addressWidth bits)) init(0) else null
+  val acFillElems = if(config.useAcache) Reg(UInt(config.acacheFieldBits + 1 bits)) init(0) else null
 
   // ==========================================================================
   // Busy Signal
@@ -474,6 +481,7 @@ case class BmbMemoryController(
     ac.io.inval := (if (config.acacheInvalOnStidx) io.memIn.stidx else False) || io.memIn.cinval
     ac.io.wrIal := False   // Driven from AC_FILL_WAIT
     ac.io.wrIas := False   // Driven from HANDLE_DATA_WAIT
+    ac.io.fillElems := acFillElems  // Computed in HANDLE_CALC, stable through the fill
 
     Some(ac)
   } else None
@@ -1091,10 +1099,20 @@ case class BmbMemoryController(
         when(handleIsArray && !handleIsWrite) {
           // iaload A$ miss: fill entire cache line (4 elements from aligned base)
           val fieldBits = config.acacheFieldBits
+          val fieldCnt = 1 << fieldBits
           val alignedIndex = (handleIndex >> fieldBits) << fieldBits
           acFillAddr := handleDataPtr + alignedIndex.resized
           acFillCount := 0
           acFillRequestedIdx := handleIndex(fieldBits - 1 downto 0)
+          // How many of the line's fieldCnt elements are inside the array. This
+          // state is only reachable through HANDLE_BOUND_WAIT with the bounds
+          // check PASSED, so handleIndex < arrayLenReg and hence
+          // arrayLenReg > alignedIndex -- remaining is at least 1 and the
+          // truncating resize below is only taken when it is under fieldCnt.
+          val remaining = arrayLenReg - alignedIndex
+          acFillElems := Mux(remaining >= fieldCnt,
+                             U(fieldCnt, config.acacheFieldBits + 1 bits),
+                             remaining.resize(config.acacheFieldBits + 1))
           state := State.AC_FILL_CMD
         }.otherwise {
           state := State.HANDLE_ACCESS
@@ -1265,6 +1283,10 @@ case class BmbMemoryController(
     is(State.HANDLE_BOUND_WAIT) {
       when(io.bmb.rsp.fire) {
         val arrayLength = io.bmb.rsp.fragment.data(config.addressWidth - 1 downto 0).asUInt
+        // Kept for HANDLE_CALC, which turns it into the array cache's per-line
+        // in-bounds element count. Every array path to HANDLE_CALC comes
+        // through here, so it is always fresh for the array being accessed.
+        if(config.useAcache) { arrayLenReg := arrayLength }
         when(handleIndex >= arrayLength) {
           // Upper bounds violation — write exc_type=3 (EXC_AB)
           io.ioAddr := U(JopIoSpace.SYS_EXC, 8 bits)

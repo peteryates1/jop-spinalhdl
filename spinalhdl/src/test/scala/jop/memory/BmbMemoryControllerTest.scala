@@ -29,6 +29,9 @@ case class BmbMemoryTestHarness(
     val debug = new Bundle {
       val state = out UInt(5 bits)
       val busy  = out Bool()
+      // The array-bounds fault, at the instant it is decided. Exposed so a test
+      // can tell "no exception" apart from "exception the harness cannot see".
+      val abFire = out Bool()
     }
   }
 
@@ -63,6 +66,7 @@ case class BmbMemoryTestHarness(
 
   io.debug.state := memCtrl.io.debug.state
   io.debug.busy := memCtrl.io.debug.busy
+  io.debug.abFire := memCtrl.io.debug.abFire
 }
 
 /**

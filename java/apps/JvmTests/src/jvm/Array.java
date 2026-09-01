@@ -86,17 +86,28 @@ public class Array extends TestCase {
 //		caught = true;
 //		}
 //		ok &= caught;
+		// The reporter has to clear `caught` itself: with the block above
+		// commented out it would otherwise read the result of the PREVIOUS
+		// assertion (which passes) and stay silent about a defect that is
+		// still open. A disabled assertion that reports nothing is how this
+		// one stayed invisible in the first place.
+		caught = false;
 		if (!caught) System.out.println("  MISS: arraylength-NPE");
 
-		// DISABLED — status item 128: iaload cache hit bypasses the bound check.
-		// Re-enable when the RTL is fixed; the other four assertions here pass.
-		//		caught = false;
-//		try {
-//		val = ia[3];
-//		} catch (ArrayIndexOutOfBoundsException e) {
-//		caught = true;
-//		}
-//		ok &= caught;
+		// Re-enabled 2026-09-01 with the item 128 fix. This is the assertion the
+		// array cache used to fail: ia[0] is legal and fills a 4-word line from
+		// a 3-element array, so index 3 -- past the end -- was cached and then
+		// returned on the next access with no bounds check at all. The cache now
+		// carries a per-line in-bounds element count and treats index 3 as a
+		// MISS, which routes it to HANDLE_BOUND_READ and raises EXC_AB.
+		caught = false;
+		try {
+			val = ia[3];
+		} catch (ArrayIndexOutOfBoundsException e) {
+			caught = true;
+		}
+		ok &= caught;
+		if (!caught) System.out.println("  MISS: iaload-upper");
 
 		caught = false;
 		try {

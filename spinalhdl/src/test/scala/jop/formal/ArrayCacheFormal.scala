@@ -21,6 +21,7 @@ import jop.memory.ArrayCache
  * - Fill sets valid bit for filled line
  * - No write-allocate: chkIas does not set incNxtReg
  * - Invalidation clears all valid bits and resets nxt
+ * - Hit implies the index is inside the line's in-bounds element count
  */
 class ArrayCacheFormal extends SpinalFormalFunSuite {
 
@@ -37,6 +38,7 @@ class ArrayCacheFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.chkIas)
     anyseq(dut.io.wrIal)
     anyseq(dut.io.wrIas)
+    anyseq(dut.io.fillElems)
     anyseq(dut.io.ialVal)
     anyseq(dut.io.iasVal)
     anyseq(dut.io.inval)
@@ -104,6 +106,7 @@ class ArrayCacheFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.chkIas)
         anyseq(dut.io.wrIal)
         anyseq(dut.io.wrIas)
+        anyseq(dut.io.fillElems)
         anyseq(dut.io.ialVal)
         anyseq(dut.io.iasVal)
         anyseq(dut.io.inval)
@@ -145,6 +148,7 @@ class ArrayCacheFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.chkIas)
         anyseq(dut.io.wrIal)
         anyseq(dut.io.wrIas)
+        anyseq(dut.io.fillElems)
         anyseq(dut.io.ialVal)
         anyseq(dut.io.iasVal)
         anyseq(dut.io.inval)
@@ -230,9 +234,28 @@ class ArrayCacheFormal extends SpinalFormalFunSuite {
         val proto = Reg(UInt(2 bits)) init(0)
         val fillCnt = Reg(UInt(dut.fieldBits + 1 bits)) init(0)
 
+        // A chkIal that misses ONLY on bounds is never followed by a fill.
+        //
+        // Added with the item 128 bounds term, which introduced a third way to
+        // miss: the region is cached but the index sits past the end of the
+        // array. The controller answers that with EXC_AB from
+        // HANDLE_BOUND_WAIT and never reaches AC_FILL_CMD, so no wrIal follows.
+        // Left unmodelled, the solver fills a SECOND line carrying the same
+        // (handle, tagIdx) as the first and this property fails on a sequence
+        // the hardware cannot produce -- an environment gap, not a defect.
+        //
+        // It is sound because a bounds miss implies an out-of-bounds access:
+        // elems is min(fieldCnt, length - alignedBase) at fill time, so every
+        // index inside the array satisfies idxLower < elems by construction.
+        val regionCached = (0 until dut.lineCnt).map { i =>
+          dut.valid(i) && dut.tag(i) === dut.io.handle &&
+            dut.tagIdx(i) === dut.io.index(dut.maxIndexBits - 1 downto dut.fieldBits)
+        }.reduce(_ || _)
+
         when(proto === 0) {
           assume(!dut.io.wrIal && !dut.io.wrIas)
           assume(!(dut.io.chkIal && dut.io.chkIas))
+          assume(!(dut.io.chkIal && regionCached && !dut.io.hit))
           when(dut.io.chkIal) {
             proto := 1
             fillCnt := 0
@@ -310,6 +333,42 @@ class ArrayCacheFormal extends SpinalFormalFunSuite {
           // nxt must never advance from wrIas alone
           when(past(dut.io.wrIas)) {
             assert(dut.nxt === past(dut.nxt))
+          }
+        }
+      })
+  }
+
+  test("hit implies the index is inside the line's in-bounds element count") {
+    // THE PROPERTY ITEM 128 WAS MISSING. A line fill is bounded by the LINE,
+    // not by the array, so a line straddling the end of an array holds words
+    // fetched from past it. On an iaload HIT the memory controller stays in
+    // IDLE and never reaches HANDLE_BOUND_READ, so if the cache says "hit" on
+    // one of those words it is returned with no bounds check at all.
+    //
+    // Stated over ALL lines rather than "the matching one": hit is an OR across
+    // the line vector, so the obligation is that no line can contribute a hit
+    // while holding the index out of bounds.
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(smallConfig)
+        assumeInitial(ClockDomain.current.isResetActive)
+        setupDut(dut)
+
+        // The controller never fills a line with more elements than it has, and
+        // never with zero -- the fill is only issued after a bounds check that
+        // passed, so at least the requested element is inside. Without this the
+        // solver is free to invent a count of 7 in a 4-element line.
+        assume(dut.io.fillElems <= dut.fieldCnt)
+        assume(dut.io.fillElems =/= 0)
+
+        when(pastValidAfterReset()) {
+          when(dut.io.hit) {
+            val inBounds = (0 until dut.lineCnt).map { i =>
+              !dut.hitVec(i) ||
+                dut.elems(i) > dut.io.index(dut.fieldBits - 1 downto 0).resize(dut.fieldBits + 1)
+            }.reduce(_ && _)
+            assert(inBounds)
           }
         }
       })
