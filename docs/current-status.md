@@ -5102,6 +5102,50 @@ regressed. All three slack figures are slightly BETTER than the same presets
 that morning; that is placement variation, not a gain from adding logic — do not
 read it as one.
 
+**Three TOOLCHAINS, but only TWO memory systems.** The EP4CGX150 and the i5 are
+both SDR — different controllers (`BmbSdramCtrl32`'s 32→16 bridge against
+`BmbSdramCtrlWide`'s 1:1) but the same memory type. An earlier draft of this
+entry said "three memory systems"; it was wrong.
+
+**DDR2 (A-E115FB) is BUILT AND UNTESTED — 2026-09-02.** It is the single most
+valuable board for this change and the one that did not run:
+
+- its `cardTableBudgetBytes` is **64 KB**, not the 16 KB the others use, giving
+  `cardWords32 = 16384` — a **4x longer sweep** than any board above, ~218 µs of
+  stall per minor GC at 75 MHz. It is the worst case for a blocking clear.
+- DDR2 is the one memory path with **no simulation model at all**
+  (`Ddr2BlackBox`, Altera ALTMEMPHY vendor IP), so hardware is the only place it
+  can be exercised.
+
+The build is done and clean: `ae115fbDdr2`, Quartus, timing MET at the binding
+Slow 1200mV 100C corner — **setup +0.779 ns, hold +0.336 ns** (the −40 °C corner
+reports +1.304; take the 100 °C one). `DoAll.jop` and `GcStressTest.jop` are
+built for the preset.
+
+**It could not be programmed.** `quartus_pgm` read the correct IDCODE
+`0x020F70DD` for the EP4CE115, then failed mid-configure with
+`Expected JTAG ID code 0x020F70DD ... but found 0xFFFFFFFF` /
+`Can't access JTAG chain`; `jtag_probe_map --assert-device ae115fb` now reports
+*"found no device in 10 attempts — the cable enumerated but TDO came back
+empty"*. The probe (`e6616408`, the level-shifted Pico) is still enumerated, and
+so is the board's CH340, but the board emits nothing on the UART.
+
+Reading the right IDCODE once and then losing it is a physical-layer signature,
+not a configuration one. On a level-shifted cable VTREF comes from the target,
+so a board that has lost power produces exactly this while the probe stays
+enumerated — [item 100](#item-100) and the 2026-08-31 cable notes cover the
+other candidate, a marginally seated header. **Needs someone at the bench**:
+check the board's power and re-seat the JTAG header, then re-run
+
+```
+make -C fpga/a-e115fb-ddr2 program
+make -C fpga/a-e115fb-ddr2 download JOP_FILE=build/ae115fbDdr2/java/apps/JvmTests/DoAll.jop
+make -C fpga/a-e115fb-ddr2 download JOP_FILE=build/ae115fbDdr2/java/apps/Small/GcStressTest.jop
+```
+
+Recorded rather than quietly skipped, because "validated on every board" and
+"validated on every board that happened to answer" are different claims.
+
 **It also settles [item 64](#item-64), in the negative.** `GcStressTest`'s free
 memory still declines at the same rate with the clear made blocking:
 
