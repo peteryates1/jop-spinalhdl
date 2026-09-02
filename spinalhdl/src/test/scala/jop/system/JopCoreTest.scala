@@ -116,6 +116,12 @@ case class JopCoreTestHarness(
     ct.io.clrIdx := wrData(idxW - 1 downto 0).asUInt
 
     port.rdData := ct.io.rdData
+    // The clear-all sweep stalls the core until the table is clear (status item
+    // 131). This harness wires the card table itself rather than going through
+    // JopCluster, so it has to drive this too -- and because SpinalHDL only
+    // reports NO DRIVER at ELABORATION, adding a port to CardCtrlPort breaks
+    // this file in the sims and never in `sbt test` or `compile`.
+    port.busy := ct.io.clrBusy
   }
 
   // Connect BMB (arbiter if stack DMA present)

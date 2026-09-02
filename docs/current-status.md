@@ -5162,6 +5162,37 @@ exactly the false lead this item warned against treating as evidence. **One
 hypothesis eliminated by measurement rather than argument**, which is what item
 64 asked for.
 
+**THE STALL ITSELF IS NOW PROVEN, 2026-09-02** — `JopCardClearStallSim`, and it
+is the half no board could test. The three-board validation showed nothing broke
+and `GcStressTest` soaked a million rounds, but that would read identically if
+the stall were a cycle short or absent: a dropped mark costs a live object only
+when a cross-generation store lands in the window AND that object has no other
+root. It is rare, statistical and silent. A soak passing is not evidence the
+stall happened.
+
+The sim runs `CardMarkTest` on `JopCoreTestHarness` with a **16 KB** card budget
+— the real EP4CGX150/XC7A100T figure, giving a 4096-cycle sweep, rather than the
+GC sims' 512 B and 128 cycles, which is inside the range an ordinary cache miss
+occupies and would prove nothing:
+
+```
+longest stall BEFORE the clear (ordinary memory):     51 cycles
+longest stall overall:                              4099 cycles
+the sweep should be:                                4096 cycles
+```
+
+Both halves are asserted: the stall must reach the sweep length, AND ordinary
+memory must not — otherwise a slow backend could satisfy it. Removing only
+`|| cardBusy` from `JopCore.scala:337` takes the maximum straight back to 51 and
+fails the test, so it is falsifiable.
+
+**The first version of this test measured the wrong signal and said the fix did
+not work.** It gated on `io.memBusy`, which `JopCore.scala:471` exports as
+`memCtrl.io.memOut.busy` alone — deliberately excluding the other stall terms
+that reach `pipeline.io.memBusy` at `:337`, `cardBusy` among them. A frozen PC
+is the observable that means "not retiring". Recorded because the failure mode
+was a confident, specific, wrong accusation against working RTL.
+
 **REPRODUCED 2026-09-01**, so this was never a source-reading argument. The
 first version of the test marked card 7 eight cycles into the sweep and read
 back `word0=0x0` where `0x80` was expected.
@@ -5608,6 +5639,51 @@ that `METH_STR` is "also in Pipeline method dispatch" is wrong); and
 `jvm_call.inc:238/246`'s super-dispatch literals ARE exercised by `DoAll` via
 `InvokeSuper`/`SuperTest` — the one place in this boundary a divergence would be
 caught.
+
+
+<a id="item-139"></a>
+
+### Item 139 — `JopCoreWithCacheTestHarness` takes `hasCard = true` and contains no card table, so `JopCardMarkSim` cannot elaborate
+
+**Found 2026-09-02** while building the stall test for [item 131](#item-131).
+
+`JopSmallGcCacheSim.scala`'s harness has exactly one occurrence of the string
+`CardTable`, and it is `hasCardTable = hasCard` in the config. There is **no
+`CardTable` component**. But `hasCardTable = true` makes `JopCore` expose
+`io.card`, and nothing drives it:
+
+```
+NO DRIVER ON (toplevel/jopCore/io_card_rdData : in Bits[32 bits])
+```
+
+`JopCardMarkSim` is the only caller that passes `hasCard = true`, and it is the
+sim whose docstring says it verifies the Stage-1 card-marking barrier
+end-to-end and *"Requires CARD OK"*. It cannot have been doing that.
+
+**This is pre-existing, not collateral from item 131.** The harness never had a
+table to drive `rdData` from. Item 131's `busy` port merely added a second
+undriven signal to the same list — which is how it was noticed.
+
+**It is probably [item 115](#item-115).** That item records *"every simulation
+reports `Elaboration failed (2 errors)` and then succeeds; pre-existing,
+deterministic, unexplained"*. This harness now reports **3**, one per undriven
+card signal, and SpinalHDL's message after the count is *"Spinal will restart
+with scala trace to help you to find the problem"* — the two-pass behaviour that
+makes a hard error look like a warning followed by a successful run. Worth
+checking whether the other sims' 2 are the same shape before closing 115.
+
+**The Stage-1 card table IS hardware-validated** — `CardMarkTest` prints
+`CARD OK` on real boards, which is where that claim came from. What is lost is
+the simulation half, and with it any pre-silicon coverage of card marking.
+
+**Note the near-miss.** Diagnosing this, I ran `git stash push` on three files
+that were already committed. Git had nothing to save, silently created no stash,
+and the following `git stash pop` took a **months-old** entry off the stack and
+merged it across 31 files. Nothing was lost — `HEAD` was intact, the three
+pre-existing stashes are still on the stack, and the working tree was restored
+from `HEAD` plus copies — but the before/after comparison it was meant to
+produce was invalid, because both runs still had the fix in. **Use a worktree or
+`git show <rev>:<path>` for a before/after; never `stash` on committed files.**
 
 
 ## 4. Two workstreams, both largely done

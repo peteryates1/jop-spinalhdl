@@ -157,4 +157,69 @@ object CardTableTest extends App {
     println(if (fails == 0) "PASS: CardTable marks losslessly, gates, reads, clears" else s"FAILED ($fails)")
     if (fails != 0) simFailure(s"$fails checks failed")
   }
+
+  // ==========================================================================
+  // THE CLEAR-BUSY CONTRACT AT EVERY GEOMETRY A REAL BOARD USES — item 131.
+  //
+  // The cases above run one small geometry (32 table words) because they are
+  // tuned to cardShift = 2. But the sweep length is `cardWords32`, which varies
+  // 16x across the boards, and it is the ONLY thing about this fix that differs
+  // between them: the stall is a parameter, not a property of the memory system
+  // (CardTable's sole bus contact is `bmb.cmd.fire && isWrite`, above any
+  // backend).
+  //
+  // That matters because the A-E115FB — the board with by far the longest sweep
+  // at 16384 words, ~218 us at 75 MHz — could not be programmed on 2026-09-02
+  // (JTAG chain dead, `Captured DR = ()`). Its geometry is covered here
+  // instead. This is not a substitute for running on DDR2, and the item says
+  // so; it is a substitute for running on DDR2 *to check the sweep length*,
+  // which is what that board would actually have contributed.
+  //
+  // idxWidth is log2Up(cardCount/32), so each geometry exercises a different
+  // counter width and a different terminal-count comparison.
+  // ==========================================================================
+  val geometries = Seq(
+    ("cyc5000Serial      4 KB budget",  32768, 6),
+    ("colorlightI5Sdram  8 KB budget",  65536, 5),
+    ("ep4cgx150Serial   16 KB budget", 131072, 4),
+    ("wukongFull        16 KB budget", 131072, 9),
+    ("ae115fbDdr2       64 KB budget", 524288, 9))
+
+  var geoFails = 0
+  for ((name, cardCnt, shift) <- geometries) {
+    val n = cardCnt / 32
+    SimConfig.compile(new CardTable(cardCnt, shift, 30)).doSim { dut =>
+      dut.clockDomain.forkStimulus(10)
+      dut.io.markValid #= false; dut.io.markAddr #= 0
+      dut.io.baseWord #= 0; dut.io.topWord #= (BigInt(1) << 29)
+      dut.io.rdIdx #= 0; dut.io.clrEn #= false; dut.io.clrIdx #= 0; dut.io.clrAll #= false
+      dut.clockDomain.waitSampling(2)
+
+      // Busy must be high in the request cycle and stay high for the whole
+      // sweep. A gap anywhere is a window in which the core does not stall.
+      dut.io.clrAll #= true
+      dut.clockDomain.waitSampling()
+      val atRequest = dut.io.clrBusy.toBoolean
+      dut.io.clrAll #= false
+      var held = 0
+      while (dut.io.clrBusy.toBoolean && held < n * 3) { dut.clockDomain.waitSampling(); held += 1 }
+
+      // And a mark issued once busy has fallen must land.
+      dut.io.markValid #= true; dut.io.markAddr #= (BigInt(7) << shift)
+      dut.clockDomain.waitSampling()
+      dut.io.markValid #= false
+      dut.clockDomain.waitSampling(4)
+      dut.io.rdIdx #= 0
+      dut.clockDomain.waitSampling(2)
+      val w0 = dut.io.rdData.toLong
+
+      val ok = atRequest && held >= n && w0 == (1L << 7)
+      if (!ok) geoFails += 1
+      println(f"  ${if (ok) "ok  " else "FAIL"} $name%-32s nWords=$n%6d " +
+              f"busyAtRequest=$atRequest held=$held word0=0x$w0%x")
+    }
+  }
+  println(if (geoFails == 0) s"PASS: clrBusy covers the sweep at all ${geometries.size} board geometries"
+          else s"FAILED ($geoFails geometries)")
+  if (geoFails != 0) simFailure(s"$geoFails geometries failed")
 }
