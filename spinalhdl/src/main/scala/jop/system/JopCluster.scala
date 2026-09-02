@@ -671,6 +671,14 @@ case class JopCluster(
 
     // One rdIdx, so every core sees the same word — broadcast is correct.
     ports.foreach(_.rdData := ct.io.rdData)
+
+    // BROADCAST THE SWEEP BUSY TO EVERY CORE, not just the one that asked.
+    // The dangerous mark is another core's: the collector writes IO_CARD_CLEAR
+    // and releases IO_GC_HALT eight statements later, so on SMP the mutators
+    // are marking into the sweep. Stalling all of them makes "the world is
+    // stopped" true for the sweep's duration, which is what the software
+    // already assumes. Status item 131.
+    ports.foreach(_.busy := ct.io.clrBusy)
     Some(ct)
   } else None
 

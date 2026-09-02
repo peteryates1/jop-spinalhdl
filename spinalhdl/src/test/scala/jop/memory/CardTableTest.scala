@@ -104,60 +104,55 @@ object CardTableTest extends App {
     for (i <- 0 until nWords) if (readWord(i) != 0) anySet = true
     check(!anySet, "clrAll: some word non-zero after clear")
 
-    // 6) A MARK ARRIVING DURING THE CLEAR-ALL SWEEP MUST SURVIVE — status item 131.
+    // 6) clrBusy MUST COVER THE WHOLE CLEAR, WITH NO GAP — status item 131.
     //
-    // Every case above waits the sweep out. `clrAll()` is defined at the top of
-    // this file as "assert clrAll, then waitSampling(nWords + 4)", so the whole
-    // suite has only ever marked while the table was idle. The software does
-    // NOT do that: GC.java:2230 starts the sweep with `Native.wr(-1,
-    // IO_CARD_CLEAR)` -- an I/O write that never leaves State.IDLE, so nothing
-    // stalls -- and releases the other cores with `Native.wr(0, IO_GC_HALT)`
-    // eight statements later. The sweep is cardWords32 cycles: 4096 on the
-    // EP4CGX150 and the XC7A100T, 16384 on the A-E115FB. The mutators run for
-    // essentially all of it.
+    // The table has ONE write port and the sweep wins both MUXes
+    // (CardTable.scala), so a mark arriving mid-sweep is silently dropped. That
+    // cannot be fixed inside the component: giving the mark priority still
+    // loses any mark landing on a word the sweep has not yet reached, and
+    // buffering marks for replay is unbounded. The overlap has to be made
+    // impossible instead, which means the PRODUCER must stall — so the whole
+    // guarantee rests on clrBusy being trustworthy.
     //
-    // CardTable has ONE write port, and the sweep wins both MUXes
-    // (CardTable.scala:107-112): a mark reaching stage 2 while clrAllActive has
-    // its index AND its data replaced by the sweep's. No stall, no retry, no
-    // backpressure. `io.clrBusy` is driven at :84 and read by nothing -- the
-    // signal to gate on was built and never wired.
+    // "Trustworthy" means high from the cycle the request is seen. Before the
+    // fix clrBusy was just clrAllActive, a register that sets on the NEXT edge,
+    // so a core sampling it in the cycle it issues `Native.wr(-1,
+    // IO_CARD_CLEAR)` read 0, did not stall, and returned with the entire
+    // 4096-cycle sweep still ahead of it. GC.java:2239 then releases
+    // IO_GC_HALT and every mark for the rest of the sweep is lost.
     //
-    // This is the UNSAFE direction. GC.java:2228 states the safe one: "Leaving
-    // cards dirty is always SAFE, only slower." A dropped mark leaves the card
-    // CLEAN, so the next minor GC never scans the holder and a live object with
-    // no other root is collected.
-    //
-    // The assertion is on the BIT, not on a cycle count, so it stays valid
-    // whichever way the fix goes -- stall the mark pipeline, or have the GC poll
-    // clrBusy before releasing IO_GC_HALT.
+    // This asserts the interface property rather than a cycle count, so it
+    // holds whichever way the stall is plumbed.
     clrAll()
     dut.io.clrAll #= true
     dut.clockDomain.waitSampling()
+    val busyAtRequest = dut.io.clrBusy.toBoolean
     dut.io.clrAll #= false
-    // Mark card 7 in the middle of the sweep. nWords is 32 here, so cycle ~8 of
-    // 32 is comfortably inside it and not at either boundary.
-    dut.clockDomain.waitSampling(8)
-    dut.io.markValid #= true
-    dut.io.markAddr #= cardAddr(7)
-    dut.clockDomain.waitSampling()
-    dut.io.markValid #= false
-    dut.clockDomain.waitSampling(nWords + 4)
-    check(readWord(0) == (1L << 7),
-      f"mark during clrAll was DROPPED: word0=0x${readWord(0)}%x expected 0x80. " +
-      "One write port, and clrAllActive wins both MUXes (CardTable.scala:107-112). " +
-      "io.clrBusy exists and is wired to nothing. Status item 131.")
+    check(busyAtRequest,
+      "clrBusy was LOW in the cycle the clear was requested. A core sampling it " +
+      "then does not stall, returns from the I/O write, and the mutators mark " +
+      "into a sweep that drops them. Status item 131.")
+    var gap = -1
+    var swept = false
+    var c = 0
+    while (!swept && c < nWords * 3) {
+      if (!dut.io.clrBusy.toBoolean) { if (gap < 0) gap = c; swept = true }
+      dut.clockDomain.waitSampling(); c += 1
+    }
+    check(swept, "clrBusy never fell — the sweep did not finish")
+    check(gap >= nWords,
+      s"clrBusy fell after $gap cycles but the sweep needs at least $nWords. " +
+      "Busy must span the drain and the whole sweep, not part of it.")
 
-    // 6b) THE CONTROL. The same mark, the same distance after the sweep has
-    // FINISHED, must land -- otherwise 6 would fail for some unrelated reason
-    // (a bad address, the readback timing, the test's own bookkeeping) and
-    // would prove nothing about the sweep.
-    clrAll()
-    dut.clockDomain.waitSampling(8)
+    // 6b) THE CONTROL, and the contract the fix relies on: a consumer that
+    // honours clrBusy loses nothing. Wait for busy to fall, then mark. This
+    // must pass BOTH before and after the fix — if it ever fails, case 6 says
+    // nothing, because "the mark was lost" would have a second explanation.
+    while (dut.io.clrBusy.toBoolean) dut.clockDomain.waitSampling()
     markAddr(cardAddr(7))
-    dut.clockDomain.waitSampling(nWords + 4)
+    dut.clockDomain.waitSampling(3)
     check(readWord(0) == (1L << 7),
-      f"CONTROL: the same mark clear of the sweep should land; word0=0x${readWord(0)}%x " +
-      "expected 0x80. If this fails, case 6 says nothing about clrAll.")
+      f"CONTROL: a mark issued after clrBusy fell was lost; word0=0x${readWord(0)}%x expected 0x80")
 
     println(if (fails == 0) "PASS: CardTable marks losslessly, gates, reads, clears" else s"FAILED ($fails)")
     if (fails != 0) simFailure(s"$fails checks failed")

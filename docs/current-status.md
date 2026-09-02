@@ -5041,16 +5041,46 @@ be settled by a test, not by the resemblance.
 the exact window the software does not, so a lossless-marking test coexists
 with a lossy design. That is a test shaped around the defect.
 
-**REPRODUCED 2026-09-01**, so this is no longer a source-reading argument.
-`CardTableTest` case 6 marks card 7 eight cycles into the sweep and reads back:
+**FIXED 2026-09-02.** `clrBusy` now covers the request cycle, the mark-pipeline
+drain and the whole sweep, and is routed `CardTable` → `CardCtrlPort.busy` →
+`JopCluster` → every core's `pipeline.io.memBusy`. So `Native.wr(-1,
+IO_CARD_CLEAR)` does not return until the table is clear, exactly as
+`Native.wr(end, IO_ZERO_END)` already waits for the zero-fill DMA.
 
-```
-FAIL: mark during clrAll was DROPPED: word0=0x0 expected 0x80
-```
+Three details that are not obvious:
 
-Case 6b is the control — the same mark, the same distance after the sweep has
-finished — and it passes. Without it a failure could be a bad address or the
-readback timing and would say nothing about `clrAll`.
+- **`io.clrAll` is ORed into `clrBusy`.** Both state registers set on the next
+  edge, so without that term a core sampling busy in the cycle it issues the
+  write reads 0 and does not stall — the defect moved one cycle, not removed.
+- **The sweep waits for the mark pipeline to drain** before it starts. A write
+  already accepted on the BMB is two register stages from the table, so raising
+  busy alone would still lose up to two in-flight marks.
+- **Busy is broadcast to every core, not just the issuer.** The dangerous mark
+  is another core's: on SMP the mutators resume eight statements after the
+  clear. Stalling all of them makes "the world is stopped" true for the sweep's
+  duration, which is what the software already assumed.
+
+`sbt test` 666/666. **Still to do: hardware re-validation** — this changes a
+stall term on every card-table build, and [item 100](#item-100) is this
+project's standing reminder that a validated record decays silently.
+
+**REPRODUCED 2026-09-01**, so this was never a source-reading argument. The
+first version of the test marked card 7 eight cycles into the sweep and read
+back `word0=0x0` where `0x80` was expected.
+
+**That test then had to be rewritten, because it asserted something the fix
+deliberately does not provide.** The component cannot tolerate an overlapping
+mark at all: priority for the mark still loses any mark landing on a word the
+sweep has not yet reached, and buffering for replay is unbounded. The overlap
+has to be made impossible instead, which moves the guarantee to the interface —
+so the test now asserts the property the stall actually rests on: **`clrBusy` is
+high from the cycle the request is seen, with no gap, until the table is
+clear.** That fails against the old `clrBusy = clrAllActive` (low on the request
+cycle) and passes after. Case 6b is the control — a consumer that honours
+`clrBusy` loses nothing — and passes both before and after.
+
+Writing the red test first is what exposed this: the fix and the first test
+disagreed about what the contract was, and the test was wrong.
 
 **The test currently runs nowhere.** `CardTableTest` is in neither
 `.github/workflows/` nor the `Makefile`, which is both why case 6 was never
@@ -5241,6 +5271,49 @@ but `wukongDdr3SmpMshr`-style presets raise it, which voids the stated reason
 for their own `burstLen = 0` — and those are the presets the DDR3 MSHR scaling
 numbers were taken on. **Settle what the corruption actually was before turning
 bursting on or off anywhere.**
+
+
+<a id="item-135"></a>
+
+### Item 135 — the shell's `grep` is a ugrep wrapper that SILENTLY returns nothing for a common invocation
+
+**Found 2026-09-02** by boundary review B6, which caught it only because a
+differently-shaped follow-up search contradicted its own earlier result.
+
+`grep` in this environment is a shell function wrapping **ugrep** with `-G` and
+`--ignore-files`. With `--include=<glob>` and a recursive root of `.` it returns
+**zero hits for files plain grep finds**. Demonstrated here:
+
+```
+$ grep -rn --include=*.java "METHOD_MAX_SIZE" . | wc -l
+0
+$ command grep -rn --include=*.java "METHOD_MAX_SIZE" . | wc -l
+5
+```
+
+It behaves when the root is a subdirectory (`java/` rather than `.`).
+
+**Why this is a project-level problem and not a shell annoyance.** The whole
+boundary-review method rests on one rule — *an absence in one file is not an
+absence* — and its enforcement is an exhaustive search. A search tool that
+answers "nothing, anywhere" when the truth is "five hits" turns that rule
+inside out: it manufactures exactly the false negative the method exists to
+prevent, and it does so silently, with an exit status that looks like a clean
+result. B6 recorded two intermediate conclusions it had to withdraw.
+
+**Already re-verified.** Every absence claim this session was re-run under
+`command grep`, and all three survived: `clrBusy` read by nothing before
+[item 131](#item-131)'s fix; the five `ArrayCache` references behind
+[item 128](#item-128); `spOv` read only by `JopPipelineTestRom` and `StackTest`
+([item 133](#item-133)). The wrapper did not cost a wrong conclusion here, but
+that is luck rather than method.
+
+**How to apply:** use `command grep` for any claim of the form "X appears
+nowhere" or "nothing reads Y". A `--include` glob with a `.` root is the shape
+to distrust. Where the claim is load-bearing, prefer evidence from a generated
+artefact over any search at all — B6's ground truth came from
+`HelloWorld.jop` and the `.link.txt` dump, and [item 130](#item-130)'s came from
+elaborated Verilog; neither can be defeated by a search tool.
 
 
 ## 4. Two workstreams, both largely done

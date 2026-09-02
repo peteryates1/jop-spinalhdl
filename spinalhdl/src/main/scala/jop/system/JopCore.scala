@@ -330,7 +330,11 @@ case class JopCore(
 
   // Pipeline busy: memory busy OR halted OR debug halt OR HW compute OR ext device busy
   val extBusy = ioDevices.values.flatMap(_.busBusy).foldLeft(False: Bool)(_ || _)
-  pipeline.io.memBusy := memCtrl.io.memOut.busy || sys.io.halted || io.debugHalt || pipeline.io.hwBusy || extBusy
+  // The card-table clear-all sweep stalls the pipeline for its duration, so
+  // `Native.wr(-1, IO_CARD_CLEAR)` returns only once the table is clear. Same
+  // treatment the zero-fill DMA gets via notBusy. Status item 131.
+  val cardBusy = io.card.map(_.busy).getOrElse(False)
+  pipeline.io.memBusy := memCtrl.io.memOut.busy || sys.io.halted || io.debugHalt || pipeline.io.hwBusy || extBusy || cardBusy
 
   // Interrupts: auto-wired from all device descriptors
   sys.io.ioInt := 0

@@ -73,15 +73,60 @@ class CardTable(cardCount: Int, cardShift: Int, wordAddrWidth: Int) extends Comp
   val wIdx    = cardIdx(cardBits - 1 downto 5).resize(idxWidth)  // which 32-card word
   val bIdx    = cardIdx(4 downto 0)                              // bit within the word
 
+  // Mark pipeline stage 2 valid. Declared here rather than with its siblings
+  // below because the clear-all sweep needs it to detect a drained pipeline.
+  val s1valid = RegNext(inRange) init (False)
+
   // --- clear-all sweep ---
-  val clrAllActive = RegInit(False)
-  val clrAllCnt    = Reg(UInt(idxWidth bits)) init (0)
-  when(io.clrAll && !clrAllActive) { clrAllActive := True; clrAllCnt := 0 }
+  //
+  // THE SWEEP AND MARKING MUST NOT OVERLAP (status item 131). There is one
+  // write port and the sweep wins both MUXes below, so a mark arriving while
+  // clrAllActive had its index and its data replaced and was silently lost.
+  // That is the UNSAFE direction: GC.java:2228 notes that leaving cards dirty
+  // costs only time, whereas a dropped mark leaves the card CLEAN and the next
+  // minor GC never scans the holder.
+  //
+  // Giving the MARK priority does not fix it, which is worth stating because it
+  // is the obvious repair: a mark landing on a word the sweep has not yet
+  // reached is erased when the sweep gets there. The race is not between two
+  // writers but between a mark and a sweep that has not finished.
+  //
+  // So the sweep is made observable instead, and the core is stalled for its
+  // duration -- the same treatment the zero-fill DMA already gets, where
+  // notBusy excludes ZERO_RUN/ZERO_WAIT (BmbMemoryController.scala:312-317) so
+  // the I/O write returns only when the fill is done.
+  //
+  // clrBusy therefore covers the DRAIN as well as the sweep. A write already
+  // accepted on the BMB is two register stages away from the table (mValid,
+  // then s1valid), so raising busy alone would still lose up to two marks in
+  // flight. The sweep waits for those to land first.
+  val clrAllActive  = RegInit(False)
+  val clrAllPending = RegInit(False)
+  val clrAllCnt     = Reg(UInt(idxWidth bits)) init (0)
+
+  when(io.clrAll && !clrAllActive) { clrAllPending := True }
+
+  // Both mark pipeline stages empty: nothing can still reach the write port.
+  val markInFlight = mValid || s1valid
+  when(clrAllPending && !clrAllActive && !markInFlight) {
+    clrAllActive  := True
+    clrAllPending := False
+    clrAllCnt     := 0
+  }
   when(clrAllActive) {
     clrAllCnt := clrAllCnt + 1
     when(clrAllCnt === U(nWords - 1)) { clrAllActive := False }
   }
-  io.clrBusy := clrAllActive
+
+  // Held from the request until the last word is zeroed. Consumed by JopCluster
+  // -> CardCtrlPort.busy -> JopCore's pipeline stall, so `Native.wr(-1,
+  // IO_CARD_CLEAR)` does not return until the table is actually clear.
+  // io.clrAll is ORed in so busy is high on the REQUEST CYCLE ITSELF, not one
+  // cycle later. Both registers above set on the next edge, so without this
+  // term a consumer sampling busy in the cycle it issues the write sees 0,
+  // does not stall, and returns while the sweep is still to come -- which is
+  // the defect, just moved one cycle.
+  io.clrBusy := clrAllActive || clrAllPending || io.clrAll
 
   // --- read port (mark RMW read has priority over GC readback; never overlap) ---
   // mValid, not io.markValid: the read must be issued for the mark now in
@@ -92,7 +137,8 @@ class CardTable(cardCount: Int, cardShift: Int, wordAddrWidth: Int) extends Comp
   io.rdData := memRead
 
   // --- mark pipeline stage 2 registers (from stage 1 combinational above) ---
-  val s1valid = RegNext(inRange) init (False)
+  // s1valid is declared above the clear-all sweep, which needs it to know when
+  // the mark pipeline has drained.
   val s1widx  = RegNext(wIdx)  init (0)
   val s1bit   = RegNext(bIdx)  init (0)
 
@@ -137,9 +183,13 @@ case class CardCtrlPort() extends Bundle with IMasterSlave {
   val sel    = UInt(3 bits)    // which CARD_* register
   val wrData = Bits(32 bits)
   val rdData = Bits(32 bits)   // DATA: the 32-card word at the current index
+  // High from a CARD_CLEAR-all request until the table is actually clear. The
+  // core stalls on it, so the I/O write does not return early and leave the
+  // mutators marking into a sweep that drops them (status item 131).
+  val busy   = Bool()
 
   override def asMaster(): Unit = {
     out(wr, sel, wrData)
-    in(rdData)
+    in(rdData, busy)
   }
 }
