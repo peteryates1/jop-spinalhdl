@@ -153,7 +153,7 @@ audit, and has moved down accordingly.
 24. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
 25. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
 26. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
-27. **[#64](#item-64)** — `GcStressTest` loses **0.42 bytes/round**, at the same rate on two boards and two memory systems. Deterministic, so it is a defect, not drift — and three candidate causes need ONE measurement to separate
+27. **[#64](#item-64)** — `GcStressTest` loses **~0.42 bytes/round**, now confirmed on THREE boards and three memory systems. Deterministic, so it is a defect, not drift — and [item 131](#item-131)'s dropped card marks are now RULED OUT as the cause (same rate after that fix)
 28. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 29. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
 30. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
@@ -2183,6 +2183,14 @@ meets timing comfortably (WNS +0.414 ns), which argues against a marginal path.
 
 ### Item 64 — `GcStressTest` free memory falls 0.42 bytes per round, on every board
 
+
+**One cause ELIMINATED 2026-09-02.** [Item 131](#item-131) — the card-table
+clear-all silently dropping every concurrent mark — was a strong candidate: it
+is a real defect, it was live on every board here, and it loses references
+exactly the way a slow leak would look. It is not this. With the clear made
+blocking, three boards still decline at **0.4014 / 0.4220 / 0.4229 bytes per
+round** (439k / 360k / 206k rounds), matching the pre-fix 0.42. Ruled out by
+measurement, not by argument.
 **Found 2026-08-25** by giving `hw_verify.py` a soak check, and it had been
 sitting in plain sight in two hardware logs.
 
@@ -5079,9 +5087,36 @@ Three details that are not obvious:
   clear. Stalling all of them makes "the world is stopped" true for the sweep's
   duration, which is what the software already assumed.
 
-`sbt test` 666/666. **Still to do: hardware re-validation** — this changes a
-stall term on every card-table build, and [item 100](#item-100) is this
-project's standing reminder that a validated record decays silently.
+`sbt test` 666/666, and **hardware-validated on all three toolchains 2026-09-02**
+— the change adds a stall term to every card-table build, so one board would not
+have been enough:
+
+| board | preset | card shift | sweep | timing | DoAll | GcStressTest |
+|---|---|---|---|---|---|---|
+| Wukong XC7A100T (Vivado) | `wukongFull` | 512 words | 4096 cyc | MET, WNS **+0.315 ns** | **67/67** | **439,450 rounds** |
+| QMTECH EP4CGX150 (Quartus) | `ep4cgx150Serial` | 16 words | 4096 cyc | MET, setup **+0.824 ns** (Slow 100C) | **67/67** | **359,753 rounds** |
+| Colorlight i5 (yosys/nextpnr) | `colorlightI5Sdram` | 32 words | 2048 cyc | PASS, **53.93 MHz** post-route | **67/67** | **206,451 rounds** |
+
+Three different card shifts, so three different stall durations, and no board
+regressed. All three slack figures are slightly BETTER than the same presets
+that morning; that is placement variation, not a gain from adding logic — do not
+read it as one.
+
+**It also settles [item 64](#item-64), in the negative.** `GcStressTest`'s free
+memory still declines at the same rate with the clear made blocking:
+
+| board | rounds | bytes lost | rate |
+|---|---|---|---|
+| Wukong | 439,449 | 176,412 | **0.4014 B/round** |
+| EP4CGX150 | 359,752 | 151,828 | **0.4220 B/round** |
+| Colorlight i5 | 206,450 | 87,316 | **0.4229 B/round** |
+
+Item 64 records 0.42 B/round on two boards; this is the same rate on three,
+after the fix. So the dropped marks were NOT the cause of that leak, and the
+resemblance noted above — a lost reference that "should" have been marked — was
+exactly the false lead this item warned against treating as evidence. **One
+hypothesis eliminated by measurement rather than argument**, which is what item
+64 asked for.
 
 **REPRODUCED 2026-09-01**, so this was never a source-reading argument. The
 first version of the test marked card 7 eight cycles into the sweep and read
