@@ -104,6 +104,61 @@ object CardTableTest extends App {
     for (i <- 0 until nWords) if (readWord(i) != 0) anySet = true
     check(!anySet, "clrAll: some word non-zero after clear")
 
+    // 6) A MARK ARRIVING DURING THE CLEAR-ALL SWEEP MUST SURVIVE — status item 131.
+    //
+    // Every case above waits the sweep out. `clrAll()` is defined at the top of
+    // this file as "assert clrAll, then waitSampling(nWords + 4)", so the whole
+    // suite has only ever marked while the table was idle. The software does
+    // NOT do that: GC.java:2230 starts the sweep with `Native.wr(-1,
+    // IO_CARD_CLEAR)` -- an I/O write that never leaves State.IDLE, so nothing
+    // stalls -- and releases the other cores with `Native.wr(0, IO_GC_HALT)`
+    // eight statements later. The sweep is cardWords32 cycles: 4096 on the
+    // EP4CGX150 and the XC7A100T, 16384 on the A-E115FB. The mutators run for
+    // essentially all of it.
+    //
+    // CardTable has ONE write port, and the sweep wins both MUXes
+    // (CardTable.scala:107-112): a mark reaching stage 2 while clrAllActive has
+    // its index AND its data replaced by the sweep's. No stall, no retry, no
+    // backpressure. `io.clrBusy` is driven at :84 and read by nothing -- the
+    // signal to gate on was built and never wired.
+    //
+    // This is the UNSAFE direction. GC.java:2228 states the safe one: "Leaving
+    // cards dirty is always SAFE, only slower." A dropped mark leaves the card
+    // CLEAN, so the next minor GC never scans the holder and a live object with
+    // no other root is collected.
+    //
+    // The assertion is on the BIT, not on a cycle count, so it stays valid
+    // whichever way the fix goes -- stall the mark pipeline, or have the GC poll
+    // clrBusy before releasing IO_GC_HALT.
+    clrAll()
+    dut.io.clrAll #= true
+    dut.clockDomain.waitSampling()
+    dut.io.clrAll #= false
+    // Mark card 7 in the middle of the sweep. nWords is 32 here, so cycle ~8 of
+    // 32 is comfortably inside it and not at either boundary.
+    dut.clockDomain.waitSampling(8)
+    dut.io.markValid #= true
+    dut.io.markAddr #= cardAddr(7)
+    dut.clockDomain.waitSampling()
+    dut.io.markValid #= false
+    dut.clockDomain.waitSampling(nWords + 4)
+    check(readWord(0) == (1L << 7),
+      f"mark during clrAll was DROPPED: word0=0x${readWord(0)}%x expected 0x80. " +
+      "One write port, and clrAllActive wins both MUXes (CardTable.scala:107-112). " +
+      "io.clrBusy exists and is wired to nothing. Status item 131.")
+
+    // 6b) THE CONTROL. The same mark, the same distance after the sweep has
+    // FINISHED, must land -- otherwise 6 would fail for some unrelated reason
+    // (a bad address, the readback timing, the test's own bookkeeping) and
+    // would prove nothing about the sweep.
+    clrAll()
+    dut.clockDomain.waitSampling(8)
+    markAddr(cardAddr(7))
+    dut.clockDomain.waitSampling(nWords + 4)
+    check(readWord(0) == (1L << 7),
+      f"CONTROL: the same mark clear of the sweep should land; word0=0x${readWord(0)}%x " +
+      "expected 0x80. If this fails, case 6 says nothing about clrAll.")
+
     println(if (fails == 0) "PASS: CardTable marks losslessly, gates, reads, clears" else s"FAILED ($fails)")
     if (fails != 0) simFailure(s"$fails checks failed")
   }

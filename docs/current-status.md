@@ -5041,10 +5041,42 @@ be settled by a test, not by the resemblance.
 the exact window the software does not, so a lossless-marking test coexists
 with a lossy design. That is a test shaped around the defect.
 
-**Fix shape:** wire `clrBusy` — either stall the mark pipeline while the sweep
-runs, or have the GC poll it before releasing `IO_GC_HALT`. The second is a
-software-only change and testable first. **Write the failing test first**: a
-`CardTableTest` case that marks DURING `clrAll` and asserts the bit survives.
+**REPRODUCED 2026-09-01**, so this is no longer a source-reading argument.
+`CardTableTest` case 6 marks card 7 eight cycles into the sweep and reads back:
+
+```
+FAIL: mark during clrAll was DROPPED: word0=0x0 expected 0x80
+```
+
+Case 6b is the control — the same mark, the same distance after the sweep has
+finished — and it passes. Without it a failure could be a bad address or the
+readback timing and would say nothing about `clrAll`.
+
+**The test currently runs nowhere.** `CardTableTest` is in neither
+`.github/workflows/` nor the `Makefile`, which is both why case 6 was never
+there to be caught and why it can sit red without breaking CI. Adding it to CI
+has to follow the fix, not precede it.
+
+**Fix shape — and the obvious fix is WRONG.** Giving the mark priority over the
+sweep does not work: a mark that lands on a word the sweep has not yet reached
+is erased when it gets there. Priority only helps for the half of the window
+that is already safe. The race is not between two writers, it is between a mark
+and a sweep that has not finished, so the two must not overlap at all.
+
+Two that do work:
+
+1. **Make the clear BLOCKING**, the way the zero-fill DMA already is —
+   `notBusy` excludes `ZERO_RUN`/`ZERO_WAIT` (`BmbMemoryController.scala:312-317`),
+   so `Native.wr(end, IO_ZERO_END)` returns only when the fill is done. The same
+   treatment for `IO_CARD_CLEAR` costs the collecting core 4096 cycles (~41 µs at
+   100 MHz) against a 12-20 ms minor pause, and needs no software change. This
+   matches an existing pattern in the same file and is the recommended one.
+2. **Expose `clrBusy` and poll it** before `Native.wr(0, IO_GC_HALT)`. No RTL
+   behaviour change, but it needs a new I/O register and it leaves the hazard
+   live for anyone who forgets the poll.
+
+Either way the test above is the acceptance criterion, and it asserts the BIT
+rather than a cycle count so it stays valid under both.
 
 <a id="item-132"></a>
 
