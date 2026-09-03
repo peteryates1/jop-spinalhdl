@@ -110,7 +110,8 @@ Optional per-core IEEE 754 single-precision FPU via **FloatComputeUnit** (pipeli
 ## Array Cache
 
 - **ArrayCache** (`jop.memory`): Fully associative FIFO, 16 entries x 4 elements = 64 values, matching VHDL `acache.vhd`
-- **iaload hit**: 0 busy cycles (stays in IDLE, `readArrayCache` selects cached data)
+- **iaload hit**: 0 busy cycles (stays in IDLE, `readArrayCache` selects cached data). **A hit also requires the index to be inside the line's in-bounds element count** — see the bounds note below; without it a hit skipped the array bounds check entirely.
+- **Per-line bounds (2026-09-01)**: each line stores how many of its `fieldCnt` elements are actually inside the array, supplied by the controller at fill time from the `handle[1]` read it has just done in `HANDLE_BOUND_WAIT`. The fill is bounded by the LINE, not the array, so a legal `ia[0]` on a 3-element array fetches index 3 as well; the count is what stops that word ever being returned. A count rather than the length on purpose — `fieldBits+1` bits and a 3-bit compare instead of 24, on the combinational hit path, worth ~0.11 ns of WNS.
 - **iaload miss**: HANDLE_READ → HANDLE_WAIT → HANDLE_CALC → AC_FILL_CMD → AC_FILL_WAIT → IDLE. SDRAM (burstLen>0): single burst read for all 4 elements (holds bus). BRAM (burstLen==0): 4 individual reads looping AC_FILL_CMD↔AC_FILL_WAIT.
 - **iastore**: Normal handle dereference path, write-through on hit via `wrIas` in HANDLE_DATA_WAIT
 - **Invalidation**: `stidx`/`cinval` clears all valid bits (per-core only — no cross-core invalidation)
@@ -291,6 +292,30 @@ Two bugs prevented multi-core SDRAM simulation (SpinalHDL SdramCtrl path, not Al
 1. **CKE gating bug** (bug #13): SpinalHDL's `SdramCtrl` gates CKE when `rsp.ready` is low with reads in-flight. In multi-core configs, the BMB arbiter briefly lowers `rsp.ready` when servicing another core. The 2-cycle `remoteCke` delay creates a command/response misalignment. Fix: `SdramCtrlNoCke` — local copy with `sdramCkeNext := True`.
 
 2. **Burst read response misattribution** (bug #12): When the arbiter switches from a single-word read to a burst read, `burstActive` becomes True while stale single-word responses are still in the CAS pipeline. Those responses incorrectly increment `burstWordsSent`, producing a 1-word data shift (`got[N] = exp[N+1]`). Fix: `isBurst` flag in `SdramContext` — response-side burst counting gated by `burstActive && rsp.context.isBurst`.
+
+3. **Array-cache hit skipped the bounds check** (item 128, fixed 2026-09-01): on an
+   `iaload` that HIT, the controller stays in `IDLE` and returns
+   `arrayCache.io.dout` — it never enters `HANDLE_READ`, so it never reaches
+   `HANDLE_BOUND_READ`, so it never reads `handle[1]`. The line fill made that
+   reachable rather than theoretical: it is bounded by the LINE, so a legal
+   `ia[0]` on a 3-element array caches index 3, and the next `ia[3]` hits on it.
+   `iastore` was unaffected (it always enters `IAST_WAIT`), which is exactly the
+   asymmetry hardware showed. Fix: a per-line in-bounds element count, required
+   by the `hit` term; an out-of-range element reads as a MISS and raises
+   `EXC_AB`. Hardware-validated on three toolchains.
+
+4. **Card-table clear-all dropped every concurrent mark** (item 131, fixed
+   2026-09-02): one write port, and the clear-all sweep won both MUXes, so a
+   mark reaching the write stage during the sweep had its index and data
+   replaced. `io.clrBusy` existed and was wired to nothing. The sweep is
+   1024–16384 cycles depending on the board and `GC.java` releases `IO_GC_HALT`
+   eight statements after starting it, so the mutators ran for nearly all of it —
+   and a dropped mark leaves the card CLEAN, the unsafe direction. Fix:
+   `IO_CARD_CLEAR` blocks until the table is clear, like `IO_ZERO_END` already
+   does for the zero-fill DMA, with busy covering the request cycle and the
+   mark-pipeline drain and broadcast to every core. Note that giving the mark
+   priority does NOT fix it — a mark on a word the sweep has not yet reached is
+   erased when it arrives.
 
 Files:
 - `SdramCtrlNoCke.scala` — local SdramCtrl with CKE disabled

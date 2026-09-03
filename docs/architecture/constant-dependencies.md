@@ -288,7 +288,7 @@ architecture assumptions about class structure and method sizing.
 | `METHOD_MAX_SIZE` | `JOPizer.java` | 2048 | Max method bytecode bytes |
 | `CLS_HEAD` | `ClassStructConstants.java` | 5 | Class header size (words) |
 | `METH_STR` | `ClassStructConstants.java` | 2 | Method table entry size (words) |
-| `IMPORTANT_PTRS` | `ClassStructConstants.java` | 12 | Important pointers offset |
+| `IMPORTANT_PTRS` | `JOPizer.java` | 12 | **Dead** — see the note below |
 
 ### Class structure layout
 
@@ -296,13 +296,40 @@ These offsets define the in-memory layout of JOP class/method structures.
 They are used by both JOPizer (linking) and the GC (scanning). Both must
 agree on the layout.
 
+**Corrected 2026-09-02.** Four of the five rows below named the wrong file, and
+one named a consumer that does not exist. `ClassStructConstants.java` is 44 lines
+and defines exactly **two** constants — `CLS_HEAD` and `METH_STR`. Anyone
+following this table to centralise the layout would have edited the half with no
+effect on the runtime. Verified against the source, not against intent
+([current-status.md item 138](../current-status.md#item-138)).
+
 | Constant | File | Value | Also in |
 |----------|------|-------|---------|
 | `CLS_HEAD` | `ClassStructConstants.java` | 5 | GC.java header scanning |
-| `METH_STR` | `ClassStructConstants.java` | 2 | Pipeline method dispatch |
-| `MTAB2CLINFO` | `ClassStructConstants.java` | -5 | GC.java, Startup.java |
-| `MTAB2GC_INFO` | `ClassStructConstants.java` | -3 | GC.java |
-| `CLINITS_OFFSET` | `ClassStructConstants.java` | 11 | Startup.java class init |
+| `METH_STR` | `ClassStructConstants.java` | 2 | Microcode only (`jvm.asm`'s `dup; add`) — **not** the RTL |
+| `MTAB2CLINFO` | `ConstGenerator.scala` → `Const.java` | -5 | **No consumer anywhere** |
+| `MTAB2GC_INFO` | `ConstGenerator.scala` → `Const.java` | -3 | GC.java |
+| `CLINITS_OFFSET` | `JOPizer.java` | 11 | **Dead, and wrong** — the real offset is 8 |
+
+Three of those corrections carry a warning rather than just a filename:
+
+- **`METH_STR` is not in the RTL.** A search for `meth_str|mtab|iftab` across
+  `spinalhdl/src/main` (excluding the generator) returns nothing. The linker
+  pre-scales the method-table index — `JopClassInfo.java:701`, `* METH_STR << 8`
+  — so the hardware only adds an offset it never interprets. "Pipeline method
+  dispatch" was wrong.
+- **`CLINITS_OFFSET = 11` contradicts the live layout.** The clinit table starts
+  at `special + PTRS` = `special + 8` (`Startup.java:270`, `JOPizer.java:59`).
+  The constant is unused; trusting it shifts the table by three words and the
+  symptom is a garbage method-struct pointer at boot.
+- **`IMPORTANT_PTRS = 12` is dead too**, and sits in a block of six stale
+  constants at `JOPizer.java:61-66`, one of which
+  (`CLASSINFO_REFARRY`) is already self-inconsistent with its neighbours.
+
+The class header's **word 1** — the static-field-block pointer, read at boot by
+`JVMHelp.java:312-313` and `:321-322` as a bare `rdMem(p+1)` — has **no named
+constant in any language**. It is the field a reorder driven by this table would
+silently miss.
 
 ### What breaks
 

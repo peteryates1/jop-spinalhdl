@@ -189,6 +189,41 @@ accelerator:** `IO_CARD_NEXT_DIRTY` backed by a priority encoder over the table,
 making scan cost ∝ *dirty* cards not *total* cards — a big win at 1 GB; leave out
 of the first cut.
 
+#### `IO_CARD_CLEAR` with the all-ones sentinel BLOCKS (2026-09-02)
+
+**The sweep and marking must not overlap, and the write is what enforces it.**
+The table has one write port, and the clear-all sweep wins it: a mark reaching
+the write stage while the sweep runs has its index *and* its data replaced, and
+is silently dropped. That is the unsafe direction — leaving a card dirty costs
+only time, but losing a mark leaves it **clean**, so the next minor GC never
+scans the holder and a live object with no other root is collected.
+
+The sweep is `cardWords32` cycles: 1024 to 16384 depending on the board (4 KB
+budget on the CYC5000 up to 64 KB on the A-E115FB, ~218 µs at 75 MHz). The
+collector releases `IO_GC_HALT` about eight statements after starting the clear,
+so without a stall the mutators run for essentially all of it.
+
+So `IO_CARD_CLEAR` behaves like `IO_ZERO_END`: the write does not return until
+the table is clear. `clrBusy` is held from the request cycle, through the
+mark-pipeline drain, to the last word zeroed, and is routed
+`CardTable` → `CardCtrlPort.busy` → `JopCore` → `pipeline.io.memBusy`, broadcast
+to **every** core rather than just the issuer — the dangerous mark is another
+core's.
+
+Three things a reader of this table should know:
+
+- **Giving the mark priority does not work.** A mark landing on a word the
+  sweep has not yet reached is erased when it gets there. The race is not
+  between two writers; it is between a mark and an unfinished sweep.
+- **Busy covers the request cycle itself.** Both state registers set on the next
+  edge, so without an explicit term a core sampling busy in the cycle it issues
+  the write sees 0 and does not stall.
+- **The single-word clear (`clrEn`) does not block** and does not need to: it
+  writes one word in one cycle, with no window.
+
+Full history, the reproduction, and why the obvious repair fails:
+[current-status.md item 131](../current-status.md#item-131).
+
 ### B.5 GC integration (Stage 2 preview, not built here)
 `minorGc()` will: read `IO_CARD_SHIFT`; for each dirty card in the tenure range,
 scan its `cardWords` words for pointers into the nursery; add found objects to the

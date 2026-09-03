@@ -12,14 +12,30 @@ Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 
 **Working on hardware.** The processor boots and runs Java programs on eight boards, at 40–100 MHz depending on the memory subsystem:
 
+> **The JVM suite is 67 tests as of 2026-08-31**, not 66. `jvm/Array` had been
+> disabled twice over — four assertions commented out inside a class that was
+> itself commented out of `DoAll` — and re-enabling it exposed two real defects
+> in the RTL and the microcode. Figures below are labelled with the suite size
+> they were taken at; a 64/64 or 66/66 is a genuine past result, not a
+> regression. Two fixes came out of that and are validated on three boards
+> (Vivado, Quartus and yosys/nextpnr): an **array-cache hit now bounds-checks**
+> — before, an out-of-range `iaload` returned adjacent memory silently while
+> `iastore` faulted correctly ([item 128](docs/current-status.md#item-128)) —
+> and **`IO_CARD_CLEAR` now blocks until the card table is clear**, where the
+> clear-all sweep had been dropping every mark that arrived during it
+> ([item 131](docs/current-status.md#item-131)). Two defects the suite still
+> reports and nothing yet fixes: `null.length` does not throw
+> ([129](docs/current-status.md#item-129)) and a String **literal** fails
+> `instanceof String` ([136](docs/current-status.md#item-136)).
+
 - **SDRAM + SMP (primary)**: up to 16-core SMP on QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V) — all cores running independently with CmpSync global lock (or optional IHLU per-object locking), round-robin BMB arbitration, and GC stop-the-world halt (halts all other cores during garbage collection)
-- **SDRAM (single-core)**: Serial boot over UART into SDR SDRAM on two boards — QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V, W9864G6JT)
+- **SDRAM (single-core)**: Serial boot over UART into SDR SDRAM on two boards — QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V, W9864G6JT). EP4CGX150 JVM test suite: **67/67 on hardware** (2026-09-02)
 - **BRAM**: Self-contained, program embedded in block RAM (QMTECH EP4CGX150)
 - **DDR3**: Serial boot through write-back cache into DDR3 (Alchitry Au V2, Xilinx Artix-7, full 256MB addressed) — single-core and 2-core SMP verified on hardware with GC (67K+ rounds single-core, NCoreHelloWorld SMP). See [DDR3 notes](docs/gc/ddr3-gc-hang.md).
-- **DB_FPGA (full I/O)**: QMTECH EP4CGX150 + DB_FPGA daughter board at 80 MHz — Ethernet 1Gbps GMII, VGA text 80x30, SD card native 4-bit, TCP/IP networking (ICMP/UDP/TCP echo, DHCP, DNS, HTTP file server), FAT32 filesystem, all verified on hardware. JVM test suite: 64/64 on hardware — a real result from when the suite had 64 tests; it has 66 now and this configuration has not been re-run.
-- **Wukong DDR3 (full-featured)**: All four compute units (IntegerComputeUnit + FloatComputeUnit + LongComputeUnit + DoubleComputeUnit) with DSP imul, Ethernet (GMII 1Gbps), and SD Native. JVM test suite: 66/66 on hardware.
-- **DDR2 (1 GB)**: Serial boot through a 256-bit-line write-back cache into 1 GB DDR2 on the A-E115FB (Cyclone IV E, ALTMEMPHY half-rate at 75 MHz). Memory verified at full capacity (77 passes, ~154 GB, zero errors); JVM suite 66/66 and the full GC suite pass on a ~1.07 GB heap. See [DDR2 bring-up](docs/boards/ae115fb-ddr2-bringup.md).
-- **ECP5 / open-source toolchain**: Colorlight i5 v7.0 — 8 MB SDRAM at 40 MHz, DoAll 66/66, built entirely with yosys + nextpnr-ecp5 + ecppack. The only board here that needs no vendor tools. See [i5 bring-up](docs/boards/colorlight-i5-bringup.md).
+- **DB_FPGA (full I/O)**: QMTECH EP4CGX150 + DB_FPGA daughter board at 80 MHz — Ethernet 1Gbps GMII, VGA text 80x30, SD card native 4-bit, TCP/IP networking (ICMP/UDP/TCP echo, DHCP, DNS, HTTP file server), FAT32 filesystem, all verified on hardware. JVM test suite: 64/64 on hardware — a real result from when the suite had 64 tests; it has **67** now and this configuration has not been re-run.
+- **Wukong DDR3 (full-featured)**: All four compute units (IntegerComputeUnit + FloatComputeUnit + LongComputeUnit + DoubleComputeUnit) with DSP imul, Ethernet (GMII 1Gbps), and SD Native. JVM test suite: **67/67 on hardware** (2026-09-02).
+- **DDR2 (1 GB)**: Serial boot through a 256-bit-line write-back cache into 1 GB DDR2 on the A-E115FB (Cyclone IV E, ALTMEMPHY half-rate at 75 MHz). Memory verified at full capacity (77 passes, ~154 GB, zero errors); JVM suite 66/66 and the full GC suite pass on a ~1.07 GB heap. That 66/66 predates the suite reaching 67, and the board has **not been re-run**: its JTAG chain stopped responding on 2026-09-02 (`Captured DR = ()`, i.e. the cable side — see [item 131](docs/current-status.md#item-131)). See [DDR2 bring-up](docs/boards/ae115fb-ddr2-bringup.md).
+- **ECP5 / open-source toolchain**: Colorlight i5 v7.0 — 8 MB SDRAM at 40 MHz, **DoAll 67/67** (2026-09-02), built entirely with yosys + nextpnr-ecp5 + ecppack. The only board here that needs no vendor tools. See [i5 bring-up](docs/boards/colorlight-i5-bringup.md).
 - **8-core SMP**: Verified on QMTECH EP4CGX150 — all 8 cores running independently with per-core UART, tested via Pico debug probe
 - **GC (generational)**: Generational collector is the default — hardware card-marking write barrier, nursery/tenure split, minor collections bounded by a young-object cap. Verified on four boards, with the minor pause measured on each:
 
