@@ -65,10 +65,10 @@ public class StringLiteral extends TestCase {
 	 * `arraylength` gap. The CONTROLS still fail the test properly: if a control
 	 * breaks, something has regressed in a path that works today.
 	 *
-	 * `strict` flips both to hard failures, and is what the fix must satisfy.
-	 * Turn it on when item 136 lands.
+	 * `strict` is ON since 2026-09-03: items 136 and 141 are both fixed, so every
+	 * case below is a hard failure again. Any MISS line now fails the suite.
 	 */
-	private static final boolean strict = false;
+	private static final boolean strict = true;
 
 	private static boolean miss(String what) {
 		System.out.println("  MISS: " + what);

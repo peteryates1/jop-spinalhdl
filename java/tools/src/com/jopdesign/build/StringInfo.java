@@ -34,7 +34,7 @@ import java.util.*;
 public class StringInfo {
 	
 	// two handles a two word plus reference to char[]
-	final static int STR_OBJ_LEN = 2+2+1;
+	final static int STR_OBJ_LEN = 4+2+1;
 
 	public static HashMap usedStrings = new HashMap();
 	public static List list = new LinkedList();
@@ -114,11 +114,13 @@ public class StringInfo {
 
 		int addr = stringTableAddress+startAddress;
 		commentary(string, addr, out);
-		out.println("\t"+(addr+4)+",\t//\tString handle points to the first field");
-		out.println("\t"+strcli.methodsAddress+",\t//\t pointer to String mtab ");
-		out.println("\t"+(addr+5)+",\t//\tchar[] handle points to the first element");
-		out.println("\t"+string.length()+",\t// array length in the handle");
-		out.println("\t"+(addr+2)+",\t//\tchar ref. points to char[] handle");
+		out.println("\t"+(addr+6)+",\t//\tOFF_PTR -> the `value` field");
+		out.println("\t"+strcli.methodsAddress+",\t//\tOFF_MTAB_ALEN: String mtab");
+		out.println("\t0,\t//\tOFF_SPACE");
+		out.println("\t0,\t//\tOFF_TYPE: IS_OBJ");
+		out.println("\t"+(addr+7)+",\t//\tchar[] handle -> first element");
+		out.println("\t"+string.length()+",\t//\tarray length in the handle");
+		out.println("\t"+(addr+4)+",\t//\t`value` -> the char[] handle");
 			
 		byte chrsp[] = null;
 

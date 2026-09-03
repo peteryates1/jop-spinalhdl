@@ -990,7 +990,23 @@ public class JVM {
 		// snapshot-at-beginning barrier
 			int oldVal = Native.getStatic(addr);
 			// Is it white?
+			// SCREEN THE CANDIDATE AGAINST THE HANDLE AREA -- status item 141.
+			// GC.pushFast/push/pushYoung all do this and say so at GC.java:146;
+			// this barrier open-codes the push and skipped it, so any reference
+			// below mem_start -- every link-time String literal, for instance --
+			// reached the write below and had GREY_END scribbled into
+			// `ref + OFF_GREY`, i.e. into the program image.
+			//
+			// It was a silent no-op only by luck: +5 of a literal is a character
+			// or the next literal's first word, so the `== 0` gate stayed shut.
+			// Item 136's layout puts the char[] length there, which is 0 for "",
+			// and the gate opened.
+			//
+			// Guard inline rather than calling GC.push: that takes GC.mutex,
+			// which is already held here and is NOT reentrant.
 			if (oldVal != 0
+				&& oldVal >= GC.mem_start && oldVal < GC.handleEnd
+				&& (oldVal & 0x7) == 0
 				&& Native.rdMem(oldVal+GC.OFF_SPACE) != GC.toSpace
 				&& Native.rdMem(oldVal+GC.OFF_GREY)==0) {
 				// Mark grey
@@ -1006,7 +1022,23 @@ public class JVM {
 			// snapshot-at-beginning barrier
 			int oldVal = Native.getField(ref, index);
 			// Is it white?
+			// SCREEN THE CANDIDATE AGAINST THE HANDLE AREA -- status item 141.
+			// GC.pushFast/push/pushYoung all do this and say so at GC.java:146;
+			// this barrier open-codes the push and skipped it, so any reference
+			// below mem_start -- every link-time String literal, for instance --
+			// reached the write below and had GREY_END scribbled into
+			// `ref + OFF_GREY`, i.e. into the program image.
+			//
+			// It was a silent no-op only by luck: +5 of a literal is a character
+			// or the next literal's first word, so the `== 0` gate stayed shut.
+			// Item 136's layout puts the char[] length there, which is 0 for "",
+			// and the gate opened.
+			//
+			// Guard inline rather than calling GC.push: that takes GC.mutex,
+			// which is already held here and is NOT reentrant.
 			if (oldVal != 0
+				&& oldVal >= GC.mem_start && oldVal < GC.handleEnd
+				&& (oldVal & 0x7) == 0
 				&& Native.rdMem(oldVal+GC.OFF_SPACE) != GC.toSpace
 				&& Native.rdMem(oldVal+GC.OFF_GREY)==0) {
 				// Mark grey
