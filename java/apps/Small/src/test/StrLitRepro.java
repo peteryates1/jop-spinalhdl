@@ -1,6 +1,7 @@
 package test;
 
 import com.jopdesign.sys.JVMHelp;
+import com.jopdesign.sys.Native;
 import java.text.DecimalFormat;
 
 /**
@@ -21,6 +22,7 @@ public class StrLitRepro {
 	public static void main(String[] args) {
 
 		mark("A start");
+
 
 		// --- plain literal operations, expected fine ---------------------
 		String lit = "42";
@@ -49,9 +51,19 @@ public class StrLitRepro {
 		eb.append(empty);
 		mark("E2 append(empty) ok");
 
+		int la = Native.toInt("");
+		mark("W1 lit@" + la + " w=" + Native.rdMem(la) + "," + Native.rdMem(la+1)
+		     + "," + Native.rdMem(la+2) + "," + Native.rdMem(la+3)
+		     + "," + Native.rdMem(la+4) + "," + Native.rdMem(la+5)
+		     + "," + Native.rdMem(la+6));
 		mark("I before new DecimalFormat");
 		DecimalFormat df = new DecimalFormat("0");
 		mark("J DecimalFormat constructed");
+		mark("W2 lit@" + la + " w=" + Native.rdMem(la) + "," + Native.rdMem(la+1)
+		     + "," + Native.rdMem(la+2) + "," + Native.rdMem(la+3)
+		     + "," + Native.rdMem(la+4) + "," + Native.rdMem(la+5)
+		     + "," + Native.rdMem(la+6));
+		mark("W3 \"\".length()=" + "".length());
 		String s = df.format(42);
 		mark("K format returned");
 		mark("L formatted=" + s);
