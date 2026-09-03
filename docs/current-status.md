@@ -5594,10 +5594,59 @@ nothing), `String` needing more than one field word (it has exactly one),
 and `Startup`'s `<clinit>` interpreter (its "not implemented" message is a
 different string).
 
-**Next step is a MINIMAL REPRODUCER, not more full-suite runs.** A tiny app
-doing `new DecimalFormat("0"); df.format(42)` on a 2 M-cycle sim iterates in
-about two minutes against thirteen for `JopJvmTestsBramSim`. Five wrong
-hypotheses at thirteen minutes each is the actual lesson here.
+**THE REPRODUCER EXISTS AND HAS LOCALISED IT (2026-09-03).**
+`java/apps/Small/src/test/StrLitRepro.java` + `jop.system.StrLitReproSim`
+iterate in ~2 minutes against 13 for `JopJvmTestsBramSim`. The app prints a
+marker per step, so the last marker names the operation that dies. Baseline
+(fix off) runs clean to `Z DONE` while showing the item 136 defect, so the
+vehicle is known-good.
+
+**The symptom, reduced as far as it goes:**
+
+```
+E1 empty.length=0            <- the app's own ""   -> 0, correct
+E2 append(empty) ok
+J DecimalFormat constructed
+[f1][f2][f3][g1][g2 len=-1 same-as-lit=true]
+                             <- DecimalFormat's "" -> -1, and it IS the same
+                                interned object (pfx == "" is true)
+Uncaught exception:
+```
+
+**The same interned literal reports length 0 at one call site and -1 at
+another.** `String.length()` is `value.length` — a `getfield` then
+`arraylength`, no branches. The first statement of
+`DecimalFormat.formatDigitList` is `result.append(positivePrefix)` with
+`positivePrefix = ""`, so the bogus length is used as a copy count and the
+`append` walks off a zero-length array.
+
+**The image is not at fault — verified word by word.** The empty literal at
+24976 emits `OFF_PTR=24982, mtab, 0, 0, char[]ptr=24983, len=0, value=24980`,
+and the next literal begins at 24983 = 24976+7+0. A whole-image check found
+**196 literals, 0 spacing mismatches**.
+
+**Also ruled out: the caches.** Rebuilding with `useOcache = false,
+useAcache = false` gives a byte-identical `len=-1`. So the read path is not
+returning a stale value; the memory genuinely differs between the two reads,
+which means something WRITES to the literal in between.
+
+**The open question is who writes.** The suspicion is a GC field: in the
+`4+2+1` layout the char[]'s length lands at String-handle offset **+5**, which
+is `OFF_GREY`, and +4 is `OFF_NEXT` — both GC list fields, and both harmless
+character data under the old layout. That would explain a length turning into
+-1. It is NOT yet confirmed: giving the String a full 8-word handle
+(`8+2+1`, `OFF_NEXT`/`OFF_GREY` dedicated) made things *worse*, failing during
+class-init instead. The failure moving with every layout change is the
+signature of something scanning memory, not of one bad bytecode.
+
+**Next:** find the writer. `GC.java`'s conservative root filter is
+`v >= mem_start && v < handleEnd && (v & 0x7) == 0` — note 24976 IS 8-aligned,
+so if `mem_start` is lower than assumed the collector would treat literals as
+handles, and the "literals are below mem_start and never traversed" assumption
+that both this item and [item 138](#item-138) rest on would be wrong. Print
+`mem_start` and `handleEnd` from the reproducer and compare against the string
+table's address range; that is one 2-minute run and it either confirms or kills
+the GC theory outright.
 
 **The test is landed and reports without failing.** `jvm/StringLiteral.java`
 covers the four defect cases and four heap-String controls — the controls
