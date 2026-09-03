@@ -767,3 +767,135 @@ jobs:
           path: sim-diagnostics
           retention-days: 14
           if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # Card-table tests (status item 131).
+  #
+  # A SEPARATE JOB, not another entry in jvm-suite-sims, for one reason:
+  # JopCardClearStallSim loads CardMarkTest.jop from java/apps/Small, and that
+  # matrix builds only java/apps/JvmTests. Adding the app there would build it
+  # three times over to serve one entry.
+  #
+  # WHY THESE NEEDED WIRING AT ALL. Both are `App` objects, so CI's unit job --
+  # `testOnly jop.core.* ... jop.memory.* ...` -- cannot see them: testOnly
+  # matches ScalaTest suites only. Until this job existed, the whole of item
+  # 131's coverage ran on a workstation and nowhere else, which is also why
+  # CardTableTest had no case for marking during a sweep for as long as it
+  # didn't.
+  #
+  # Both check CONTENT, never the exit status. An App exits 0 whatever it
+  # printed, and on 2026-09-03 four separate checks in one session reported
+  # success without having executed at all (item 111) -- including a pre-push
+  # sim gate that announced "zero NO DRIVER" for three simulations that never
+  # started, because nothing had elaborated.
+  card-table-tests:
+    needs: [build-microcode, check-recent-commits]
+    if: needs.check-recent-commits.outputs.should-run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache SBT
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.sbt
+            ~/.cache/coursier
+          key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.sbt') }}
+
+      - name: Download microcode
+        uses: actions/download-artifact@v4
+        with:
+          name: microcode
+          path: build/microcode
+
+      - name: Install Verilator
+        run: sudo apt-get update && sudo apt-get install -y verilator
+
+      # Same JDK split as jvm-suite-sims: JDK 8 for the app compile (-target 1.6
+      # plus BCEL 5.2), 17 for sbt and the tools.
+      - name: Set up JDK 8 for the JOP app compile
+        id: jdk8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Set up JDK 17 (sbt, tools, JOPizer)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build JOP tools and CardMarkTest.jop
+        env:
+          TARGET_JDK_HOME: ${{ steps.jdk8.outputs.path }}
+        run: |
+          make -C java tools
+          make -C java runtime
+          make -C java/apps/Small APP_NAME=CardMarkTest APP_PKG=test
+          ls -l java/apps/Small/CardMarkTest.jop
+
+      # CardTableTest needs no .jop and takes seconds. It covers marking,
+      # tenure-window gating, the RMW forwarding path, and -- since item 131 --
+      # that clrBusy spans the request cycle, the mark-pipeline drain and the
+      # whole sweep, at all five real board geometries (1024 to 16384 table
+      # words). The A-E115FB's 16384 is in there because that board could not be
+      # programmed on 2026-09-02 and its sweep length is a parameter, not a
+      # property of its DDR2.
+      - name: CardTable component tests
+        run: sbt "Test/runMain jop.memory.CardTableTest" 2>&1 | tee cardtable.log
+
+      - name: Check CardTable result
+        run: |
+          # An App exits 0 regardless; read the verdict out of the log.
+          # NOT ^PASS: sbt prefixes every line with "[info] ", so an anchored
+          # pattern matches nothing and this check fails a PASSING test.
+          # Verified against a real log before committing.
+          both=$(grep -c 'PASS:' cardtable.log || true)
+          echo "PASS lines=$both (expect 2: the base suite, and the geometry sweep)"
+          if grep -qE 'FAIL:|FAILED \(' cardtable.log; then
+            echo "::error::CardTableTest reported a failure"
+            grep -E 'FAIL:|FAILED \(' cardtable.log
+            exit 1
+          fi
+          # Absence of FAIL is not presence of a run: demand both PASS lines.
+          if [ "$both" -ne 2 ]; then
+            echo "::error::CardTableTest did not run to completion (PASS lines=$both, expected 2)"
+            tail -40 cardtable.log
+            exit 1
+          fi
+
+      # Does IO_CARD_CLEAR actually stall the core? The three-board hardware
+      # validation and a million GcStressTest rounds cannot answer that: a
+      # dropped mark costs a live object only when a cross-generation store
+      # lands in the window AND that object has no other root, so a soak passing
+      # is not evidence the stall happened.
+      - name: Card-clear stall simulation
+        run: sbt "Test/runMain jop.system.JopCardClearStallSim" 2>&1 | tee cardstall.log
+
+      - name: Check stall result
+        run: |
+          if grep -q 'FAIL:' cardstall.log; then
+            echo "::error::the card-clear stall check failed"
+            grep -E 'FAIL:|longest stall|sweep' cardstall.log
+            exit 1
+          fi
+          if ! grep -q 'PASS: IO_CARD_CLEAR stalls the core' cardstall.log; then
+            echo "::error::JopCardClearStallSim produced no verdict — it did not run to completion"
+            tail -40 cardstall.log
+            exit 1
+          fi
+          grep -E 'longest stall|the sweep should be' cardstall.log
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: card-table-diagnostics
+          path: |
+            cardtable.log
+            cardstall.log
+          retention-days: 14
+          if-no-files-found: warn
