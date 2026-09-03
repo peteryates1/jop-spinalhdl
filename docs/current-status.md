@@ -152,7 +152,7 @@ audit, and has moved down accordingly.
 23. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
 24. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
 25. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
-26. **[#64](#item-64)** — `GcStressTest` loses **~0.42 bytes/round**, now confirmed on THREE boards and three memory systems. Deterministic, so it is a defect, not drift — and [item 131](#item-131)'s dropped card marks are now RULED OUT as the cause (same rate after that fix)
+26. **[#64](#item-64)** — `GcStressTest` loses **~0.42 bytes/round** on three boards and three memory systems. Deterministic, so a defect, not drift — and TWO candidates are now RULED OUT by measurement: [item 131](#item-131)'s dropped card marks and [item 141](#item-141)'s stray barrier writes
 27. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 28. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
 29. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
@@ -2182,6 +2182,12 @@ meets timing comfortably (WNS +0.414 ns), which argues against a marginal path.
 
 ### Item 64 — `GcStressTest` free memory falls 0.42 bytes per round, on every board
 
+**A second cause ELIMINATED 2026-09-03.** [Item 141](#item-141) — the write
+barrier scribbling `GREY_END` into the program image — was the strongest
+remaining candidate: a real defect, live on every board, losing data in a way a
+slow leak would look like. It is not this either. With it fixed, the same three
+boards decline at **0.4016 / 0.4218 / 0.4235 bytes per round**, matching the
+pre-fix figures to four decimal places.
 
 **One cause ELIMINATED 2026-09-02.** [Item 131](#item-131) — the card-table
 clear-all silently dropping every concurrent mark — was a strong candidate: it
@@ -5970,9 +5976,30 @@ here, and the global lock is **not reentrant** — the trap that broke the SMP G
 for days.
 
 **Verified.** Reproducer: the literal's words are now byte-identical before and
-after the barrier fires (`W1` == `W2`), `"".length()` stays 0, `Z DONE`. Full
-suite with item 136's layout applied and `StringLiteral` in **strict** mode:
-`DoAll` 68/68, 136 ok lines over two passes, zero failures, `TextFormatTest ok`.
+after the barrier fires (`W1` == `W2`), `"".length()` stays 0, `Z DONE`. Four
+simulations green with `StringLiteral` in **strict** mode — `JopJvmTestsBramSim`
+and `JopJvmTestsMcFallbackSim` at 68/68, `JopDcuCacheSim` 59/59 through the
+cache path, `JopSmallGcBramSim` PASS.
+
+**HARDWARE-VALIDATED ON ALL THREE TOOLCHAINS, 2026-09-03.** A write barrier
+changes when the collector marks, so `GcStressTest` is the exercise that counts;
+`DoAll` barely touches it.
+
+| board | toolchain | DoAll | GcStressTest | drift |
+|---|---|---|---|---|
+| Wukong XC7A100T | Vivado / DDR3 | **68/68** | **434,817 rounds** | 0.4016 B/round |
+| QMTECH EP4CGX150 | Quartus / SDR | **68/68** | **356,911 rounds** | 0.4218 B/round |
+| Colorlight i5 | nextpnr / SDRAM | **68/68** | **204,355 rounds** | 0.4235 B/round |
+
+No bitstream rebuild was needed and none was done — both fixes are Java and
+linker only, and `git diff 9546916..HEAD -- spinalhdl/src/main/scala` is empty,
+so the boards' RTL still matches HEAD. Checked rather than assumed.
+
+**And it eliminates a second candidate for [item 64](#item-64).** The drift is
+unchanged from the pre-fix measurements taken the same day (0.4014 / 0.4220 /
+0.4229), so the barrier writing into the image was not that leak either — as
+[item 131](#item-131)'s dropped card marks were not. Two down, by measurement
+rather than argument.
 
 
 ## 4. Two workstreams, both largely done
