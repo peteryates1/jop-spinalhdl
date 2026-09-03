@@ -40,6 +40,7 @@ public class DoAll {
 				new TypeMix(),
 				new Static(),
 				new Array(),
+				new StringLiteral(),
 				new ArrayTest2(),
 				new ArrayTest3(),
 				new ArrayMulti(),

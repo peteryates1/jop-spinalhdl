@@ -796,6 +796,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # REQUIRED, and easy to miss: the runner image has no sbt. Every other job
+      # in this file pairs setup-sbt with the cache step below; copying only the
+      # cache gives "sbt: not found" at the first `make -C java runtime`, which
+      # shells out to sbt for Const.java.
+      - name: Set up SBT
+        uses: sbt/setup-sbt@v1
+
       - name: Cache SBT
         uses: actions/cache@v4
         with:
