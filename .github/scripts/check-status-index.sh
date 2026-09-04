@@ -70,6 +70,35 @@ fi
 #    lists may have a struck (closed) heading, and nothing open may be missing
 #    from it. The first half is what actually rotted: items 9, 10, 50, 57, 59,
 #    60 and 61 sat in the priority list for days after closing.
+# 4b. THE LIST'S OWN NUMBERING MUST BE 1..N, CONTIGUOUS AND UNIQUE.
+#
+#    Because a COUNT is not evidence. On 2026-09-03 a botched renumbering turned
+#    68 entries into "1. 1. **[#136]..." -- the doubled prefix failed the
+#    extraction regex, so the guard reported `priority list: 1 entries` and
+#    exited 0. That was caught only because a human knew it should be ~68.
+#
+#    But 1 IS a legitimate value: one open item would be excellent news, not a
+#    defect. A count only means something to a reader who already has an
+#    expectation, which is exactly the guarantee a check should not depend on.
+#    The numbering, by contrast, is checkable with no expectation at all --
+#    1..N with no gaps and no repeats is either true or it is not. That is what
+#    would have caught the botched edit on its own. Status item 111.
+seq_raw=$(sed -n '/^## 1\. Outstanding now/,/^## 2\./p' "$f" \
+          | grep -oE '^[0-9]+\. \*\*\[#' | grep -oE '^[0-9]+')
+#    Only the FIRST mismatch is reported: one bad entry makes every later one
+#    disagree too, and 67 cascade lines bury the one that matters.
+expected=1
+first_bad=""
+for n in $seq_raw; do
+  if [ "$n" -ne "$expected" ]; then first_bad="$n (expected $expected)"; break; fi
+  expected=$((expected + 1))
+done
+if [ -n "$first_bad" ]; then
+  echo "  FAIL priority list numbering is not 1..N contiguous: first bad entry $first_bad"
+  echo "       a renumbering went wrong; the entry COUNT alone would not show this"
+  exit 1
+fi
+
 listed=$(sed -n '/^## 1\. Outstanding now/,/^## 2\./p' "$f" \
          | grep -oE '^[0-9]+\. \*\*\[#[0-9]+\]' \
          | grep -oE '#[0-9]+' | tr -d '#' | sort -u)
