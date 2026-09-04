@@ -37,6 +37,13 @@ package jvm;
  *
  * The literal is held in an `Object` local before every check, so javac emits a
  * real checkcast/instanceof rather than folding it away.
+ *
+ * DISCIPLINE: docs/testing-discipline.md. Every defect case is paired with a
+ * heap-String CONTROL, because JOPizer interns literals and every String.equals
+ * in the old suite was literal-vs-literal, short-circuiting on
+ * `this == anObject` before the instanceof -- exactly how "ArrayCastTest 15/15
+ * and DoAll 66/66" validated the commit that introduced item 136. PROVED RED
+ * against the unfixed linker: four MISS lines, all four controls passing.
  */
 public class StringLiteral extends TestCase {
 

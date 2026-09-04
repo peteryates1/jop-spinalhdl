@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 #
+# DISCIPLINE: docs/testing-discipline.md — "verify against the artefact".
+# PROVED RED 2026-09-04 by reintroducing `getOrElse("ep4cgx150Serial")` in JopTopVerilog.scala — it names file:line.
+# If you change this guard, re-prove it: a guard that cannot fail is worse
+# than none, because it gets quoted as evidence.
+#
 # REGRESSION TEST: a generator main must not fall back to a named board.
 #
 # Five constraint generators resolved a missing preset argument to a hard-coded

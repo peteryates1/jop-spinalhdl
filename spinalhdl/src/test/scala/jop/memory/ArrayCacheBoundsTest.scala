@@ -34,6 +34,12 @@ import jop.TestVectorUtils
  * cache, where the miss path has always been correct. It must pass BOTH before
  * and after the fix; the hit case must fail before and pass after. Neither test
  * means anything without the other.
+ *
+ * DISCIPLINE: docs/testing-discipline.md. The control case is not optional
+ * decoration -- "no exception fired" and "this harness cannot see an exception
+ * fire" are the same output. PROVED RED against the unfixed RTL: the hit case
+ * returned the literal 0xDEADDEAD planted past the end of the array, while the
+ * cold-cache control passed. Re-prove both if you change either.
  */
 class ArrayCacheBoundsTest extends AnyFunSuite {
 

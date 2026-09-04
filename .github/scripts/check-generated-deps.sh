@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 #
+# DISCIPLINE: docs/testing-discipline.md — "verify against the artefact".
+# PROVED RED 2026-09-04 by dropping `$(REV).sdc: $(GEN_STAMP)` from fpga/quartus.mk — it named three boards.
+# If you change this guard, re-prove it: a guard that cannot fail is worse
+# than none, because it gets quoted as evidence.
+#
 # REGRESSION TEST: a config change must reach the GENERATED CONSTRAINTS, not
 # just the RTL.
 #

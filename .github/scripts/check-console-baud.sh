@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 #
+# DISCIPLINE: docs/testing-discipline.md — "assert on content, never an exit status".
+# PROVED RED 2026-09-04 by changing console.mk's guard message, so the phrase this asserts no longer appears.
+# If you change this guard, re-prove it: a guard that cannot fail is worse
+# than none, because it gets quoted as evidence.
+#
 # REGRESSION TEST: an unknown baud must STOP the console targets, not fall back
 # to a constant.
 #

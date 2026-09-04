@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 #
+# DISCIPLINE: docs/testing-discipline.md — "assert on content, never an exit status".
+# PROVED RED 2026-09-04 by appending an unclosed ``` fence to docs/current-status.md.
+# If you change this guard, re-prove it: a guard that cannot fail is worse
+# than none, because it gets quoted as evidence.
+#
 # REGRESSION TEST: Markdown code fences must balance.
 #
 # A ``` marker opens a block; the next one closes it. An ODD count leaves the

@@ -39,6 +39,11 @@ import jop.memory.JopMemoryConfig
  * someone retuned the cache.
  *
  *   sbt "Test/runMain jop.system.JopCardClearStallSim"
+ *
+ * DISCIPLINE: docs/testing-discipline.md. Asserts on CONTENT -- a stall length
+ * against a self-calibrated baseline -- never on the exit status, since an App
+ * exits 0 whatever it printed. PROVED RED by removing only `|| cardBusy` from
+ * JopCore.scala:337, which takes the maximum stall from 4099 cycles back to 51.
  */
 object JopCardClearStallSim extends App {
 

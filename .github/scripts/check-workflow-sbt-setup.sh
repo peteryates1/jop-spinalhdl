@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 #
+# DISCIPLINE: docs/testing-discipline.md — "assert the invariant, not the tally".
+# PROVED RED 2026-09-04 by removing a job's `sbt/setup-sbt` step — it names the job.
+# If you change this guard, re-prove it: a guard that cannot fail is worse
+# than none, because it gets quoted as evidence.
+#
 # REGRESSION TEST: a CI job that runs sbt must also install it.
 #
 # The GitHub runner image has NO sbt. Every job here pairs

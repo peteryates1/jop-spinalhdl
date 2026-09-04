@@ -6,6 +6,10 @@ import spinal.core.sim._
 /**
  * Unit sim for CardTable: correct card marking, tenure-window gating, lossless
  * back-to-back same-word marking (the RMW forwarding path), readback, and clear.
+ *
+ * DISCIPLINE: docs/testing-discipline.md. Case 6 asserts the clrBusy INTERFACE
+ * property rather than a cycle count, and 6b is its control. PROVED RED against
+ * the pre-fix `clrBusy = clrAllActive`, which is low in the request cycle.
  */
 object CardTableTest extends App {
   // Small geometry: 1024 cards (32 words), 4 words/card → covers 4096 words.

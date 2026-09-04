@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 #
+# DISCIPLINE: docs/testing-discipline.md — "assert the invariant, not the tally".
+# PROVED RED 2026-09-04 by a "1. 1. **[#140]" renumbering — the entry COUNT could not catch it, because 1 is a legitimate value.
+# If you change this guard, re-prove it: a guard that cannot fail is worse
+# than none, because it gets quoted as evidence.
+#
 # REGRESSION TEST: docs/current-status.md's cross-references must resolve.
 #
 # That file is the project's backlog and the first thing read each session. It
