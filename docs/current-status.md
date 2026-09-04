@@ -1,10 +1,10 @@
-# Where we are — 2026-08-18
+# Where we are
 
 > ## How to read this file
 >
 > | you want | go to |
 > |---|---|
-> | **what to work on next** | [§1 Outstanding now](#1-outstanding-now--in-priority-order) — 57 entries, highest first |
+> | **what to work on next** | [§1 Outstanding now](#1-outstanding-now--in-priority-order) — 65 entries, highest first |
 > | **whether item N is open** | [§2 All items](#2-all-items--summary) — the scannable index |
 > | **why item N is the way it is** | [§3 Item detail](#3-item-detail-and-journals) — summary and gotchas per item |
 > | **the full investigation** | `docs/status/item-N.md` — linked from each item that has one |
@@ -23,6 +23,11 @@
 > every `#item-N` link in the repo resolves, no CLOSED item sits in the priority
 > list, and every journal is present and linked.
 
+
+## 0. Headline results
+
+The findings a newcomer needs before reading anything else. Each is measured
+and links to the item carrying the evidence.
 
 > **2026-08-17/18 — the DRAM multicore scaling ceiling is gone.** `LruCacheCore`
 > was a blocking miss FSM and both DRAM paths stalled at ~1.8x on eight cores
@@ -80,52 +85,16 @@ Detail lives in:
 
 ## 1. Outstanding now — in priority order
 
-One line each. **This section is the ground truth for what is open** —
-outstanding items from other documents belong here, not only there.
-Full reasoning and journals are in [section 3](#3-item-detail-and-journals);
-closed items are in [section 2](#2-all-items--summary).
+One line each, highest first. **This section is the ground truth for what is
+open** — an outstanding item from any other document belongs here too, not only
+there. Reasoning and journals are in [section 3](#3-item-detail-and-journals);
+closed items stay in [section 2](#2-all-items--summary).
 
-The ordering is a proposal, not a decree — it puts measurement that unblocks
-a decision above the work it would unblock, and CI trust above everything,
-on the grounds that a flaky baseline makes every other number arguable.
-**Reordered 2026-08-31, later the same day.** It briefly led with hardware
-blockers "because #100 blocks the primary board and #101 cannot be measured
-until it is fixed". Both clauses died within hours: the cable swap made #100
-10/10 and #101 was resolved from evidence that already existed. The entry for
-#100 still asserted "3 detections in 10 — blocks the primary board" after both
-had happened, which is this document's characteristic failure in miniature.
-
-What leads now is the work that CORRECTS or PROTECTS the record — an overstated
-closure (#109), evidence being thrown away (#114), the corpora no review has
-seen (#110), and the fact that nothing proves a test can fail (#111). Broken
-capabilities (#82, #68, #65) rank below them: they are real, but nothing depends
-on them, and none of them can mislead anyone.
-
-> **Reconciled 2026-08-31.** This list had stopped at item 64 while items 65-101
-> existed only as detail sections — **37 items invisible to the section that
-> calls itself the ground truth**, which is most of what was filed during the
-> build port. Ten genuinely open ones have been slotted in (#100, #101, #82,
-> #68, #65, #84, #73, #70, #67, #75); seven that had since closed were removed
-> (#9, #10, #50, #57, #59, #60, #61). The rest of 65-101 are work records or
-> were already closed, and live in section 2.
->
-> `make check-build` now asserts that every item has an anchor, that no anchor
-> is defined twice, and that every `#item-N` link in the repo resolves — none of
-> which was true before: anchors stopped at 59, `item-46` and `item-47` were
-> each defined twice by a pasted block, and 36 numbers were linked but
-> unanchored.
-
-CI flakiness is **RESOLVED as of 2026-08-18**, and no longer heads this list.
-**#30 and #29 were one bug** — Verilator randomising the ~405 registers in
-this design that have no reset, seeded per run — now zeroed by
-`--x-initial 0` (`jop.utils.JopSimDefaults`). **#32 is not the same story**:
-its pin is retired because the failure no longer reproduces at HEAD even with
-randomisation on, but its cause was never established, so it stays open,
-rescoped. #46 turned out to have been fixed on 2026-08-15 before anyone looked
-at it; #47 (a push cancelling the nightly) is fixed here. #45 was the residue —
-the missing resets themselves — but a five-seed sweep found no offender among
-the registers, so it is now a single named defect rather than a 405-register
-audit, and has moved down accordingly.
+The order is a proposal, not a decree. It puts work that CORRECTS OR PROTECTS
+THE RECORD first — a wrong answer about the product costs one bug, but a wrong
+answer about the evidence costs confidence in every result built on it — then
+correctness defects, then capability gaps, then performance. A broken capability
+nothing depends on ranks below a measurement that could mislead someone.
 
 1. **[#140](#item-140)** — `make -C java/apps/<X>` does not rebuild JOPizer, so a LINKER change silently does not take effect and the build exits 0. Produced an impossible test result during item 136's bisect
 2. **[#137](#item-137)** — `Startup` interprets a `<clinit>` at 256 words, JOPizer marks one un-invokable at 512, and the interpreter cannot run most bytecodes — a 1024-2047 byte static initialiser bricks the board at boot. Reproduced

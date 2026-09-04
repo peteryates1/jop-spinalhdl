@@ -118,6 +118,17 @@ if [ -n "${stale// /}" ]; then
   exit 1
 fi
 
+# 5. The navigation table states how many entries section 1 has. A hand-kept
+#    count drifts silently -- it read "57 entries" on 2026-09-04 when there were
+#    65, having been correct when written. Either the number is checked or it
+#    should not be there; see docs/testing-discipline.md.
+nav_n=$(grep -oE '\[§1 Outstanding now\][^|]*— [0-9]+ entries' "$f" | grep -oE '[0-9]+ entries' | grep -oE '[0-9]+')
+real_n=$(echo "$listed" | wc -w)
+if [ -n "$nav_n" ] && [ "$nav_n" != "$real_n" ]; then
+  echo "  FAIL the 'how to read' table says $nav_n entries; section 1 has $real_n"
+  exit 1
+fi
+
 echo "  status index: $(echo "$sections" | wc -w) items, all anchored, no duplicates, all links resolve"
 echo "  priority list: $(echo "$listed" | wc -w) entries, none closed"
 
