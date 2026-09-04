@@ -332,7 +332,46 @@ jobs:
           cd /tmp/sby && sudo make install PREFIX=/usr/local
 
       - name: Run formal verification
-        run: sbt -J-Xmx4g "testOnly jop.formal.* -- -u target/scalatest-reports"
+        run: |
+          sbt -J-Xmx4g "testOnly jop.formal.* -- -u target/scalatest-reports" 2>&1 | tee suite.log
+          # PIPESTATUS, not $?: the pipe through tee would otherwise report
+          # tee's status and hide an sbt failure entirely (item 111).
+          exit ${PIPESTATUS[0]}
+
+      # THE FILTER MATCHING NOTHING EXITS 0 -- status item 111.
+      #
+      #   $ sbt "testOnly jop.formal.NoSuchSuiteAtAll"
+      #   [info] No tests to run for Test / testOnly
+      #   [success] Total time: 0 s
+      #   $ echo $?
+      #   0
+      #
+      # Measured, not assumed. So a package rename, a moved suite or a typo in
+      # the filter above silently drops EVERY test here and this job stays
+      # green -- the "reported success without executing" shape, which bit four
+      # separate checks on 2026-09-03. sbt's exit status cannot distinguish
+      # "all passed" from "none ran"; the count can.
+      - name: Assert the suite actually ran
+        env:
+          # 134 actually run today (measured 2026-09-04). The floor is set well
+          # below that so legitimately removing a suite does not break the job,
+          # while "the filter stopped matching most things" still fails. The
+          # exact defence is the `No tests to run` check above; this is the
+          # partial-match backstop.
+          MIN_TESTS: 50
+        run: |
+          if grep -q 'No tests to run' suite.log; then
+            echo "::error::the testOnly filter matched NOTHING — sbt exits 0 for this"
+            grep -n 'No tests to run' suite.log
+            exit 1
+          fi
+          n=$(grep -oE 'Tests: succeeded [0-9]+' suite.log | grep -oE '[0-9]+$' | tail -1)
+          n=${n:-0}
+          echo "tests executed: $n (floor $MIN_TESTS)"
+          if [ "$n" -lt "$MIN_TESTS" ]; then
+            echo "::error::only $n test(s) ran, expected at least $MIN_TESTS"
+            exit 1
+          fi
 
       # ScalaTest's -u writer emits XML that is valid often enough to pass
       # locally and fail on a runner — three separate reporting-only breakages
@@ -439,7 +478,41 @@ jobs:
       # JDK 6 — so those three fail in CI while passing locally. Adding the
       # packages wholesale is exactly the mistake that broke this job once.
       - name: Run simulation tests
-        run: sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* jop.config.* jop.sim.* -- -u target/scalatest-reports"
+        run: |
+          sbt -J-Xmx4g "testOnly jop.core.* jop.io.* jop.pipeline.* jop.memory.* jop.ddr3.* jop.config.* jop.sim.* -- -u target/scalatest-reports" 2>&1 | tee suite.log
+          exit ${PIPESTATUS[0]}
+
+      # THE FILTER MATCHING NOTHING EXITS 0 -- status item 111.
+      #
+      #   $ sbt "testOnly jop.formal.NoSuchSuiteAtAll"
+      #   [info] No tests to run for Test / testOnly
+      #   [success] Total time: 0 s
+      #   $ echo $?
+      #   0
+      #
+      # Measured, not assumed. So a package rename, a moved suite or a typo in
+      # the filter above silently drops EVERY test here and this job stays
+      # green -- the "reported success without executing" shape, which bit four
+      # separate checks on 2026-09-03. sbt's exit status cannot distinguish
+      # "all passed" from "none ran"; the count can.
+      - name: Assert the suite actually ran
+        env:
+          # `sbt test` is 666 tests total, of which jop.formal.* is 134, so this
+          # filter covers roughly 500. Floor set with the same headroom rule.
+          MIN_TESTS: 200
+        run: |
+          if grep -q 'No tests to run' suite.log; then
+            echo "::error::the testOnly filter matched NOTHING — sbt exits 0 for this"
+            grep -n 'No tests to run' suite.log
+            exit 1
+          fi
+          n=$(grep -oE 'Tests: succeeded [0-9]+' suite.log | grep -oE '[0-9]+$' | tail -1)
+          n=${n:-0}
+          echo "tests executed: $n (floor $MIN_TESTS)"
+          if [ "$n" -lt "$MIN_TESTS" ]; then
+            echo "::error::only $n test(s) ran, expected at least $MIN_TESTS"
+            exit 1
+          fi
 
       # ScalaTest's -u writer emits XML that is valid often enough to pass
       # locally and fail on a runner — three separate reporting-only breakages

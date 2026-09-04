@@ -4232,10 +4232,37 @@ because the result was *impossible*.
    unfixed code" in a commit message survives; doing it silently does not, and
    six months on nobody can tell which guards were ever seen failing.
 
-**Progress:** (1) landed 2026-09-04 in `check-status-index.sh`;
-`check-workflow-sbt-setup.sh` was written to the same pattern. (2) and (3) are
-practice, not code. (4) is a convention this repository's commit messages have
-mostly followed and should keep.
+**THE FINITE WORK IS DONE, 2026-09-04. The item stays open for the half that
+cannot be finished.**
+
+- **All six guards in `make check-build` proved red**, each by injecting the
+  defect it exists to catch and confirming it fails AND names the problem:
+  `check-status-index` (a `1. 1. **[#140]` renumbering), `check-workflow-sbt-setup`
+  (a removed `setup-sbt` step), `check-docs-structure` (an unclosed fence),
+  `check-generator-fallbacks` (a `getOrElse("ep4cgx150Serial")`),
+  `check-generated-deps` (a dropped `.sdc: $(GEN_STAMP)`), `check-console-baud`
+  (a changed guard message). Two of the *test* steps failed first — a `tail`
+  swallowed an exit status, and an injection patched a string that did not
+  exist, so the guard "passed" against an unmodified file. Both found by reading
+  content.
+- **The structural invariant** is in `check-status-index.sh`: the priority list
+  must be numbered 1..N, contiguous, no repeats. It catches the exact 2026-09-03
+  corruption, which the entry count could not — `1 entries` is a legitimate
+  value.
+- **`sbt testOnly` with a filter matching nothing exits 0** (`No tests to run`),
+  measured on 2026-09-04. `formal-verification` and `simulation-tests` now tee
+  their output and assert both that the phrase is absent and that a floor of
+  tests ran (50 of 134 actual; 200 of ~500). They use `${PIPESTATUS[0]}`, since
+  piping through `tee` otherwise reports tee's status and hides an sbt failure.
+- **The practices are written down** in
+  [docs/testing-discipline.md](testing-discipline.md), where the next person
+  writing a guard will meet them.
+
+**What remains, and why it cannot be closed:** proving a test red when it is
+written, and re-proving one that becomes suspect, is a judgement. Automating it
+is the recursion this item explicitly rejects. So this stays open as a standing
+practice with no further mechanisable work identified — not as a task anyone is
+expected to finish.
 
 <a id="item-112"></a>
 
