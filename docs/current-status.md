@@ -141,6 +141,8 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 
 ### Open
 
+- **[142](#item-142)** — The linked image's `<clinit>` ORDER comes from hash iteration order; correctness rests on a dependency analysis nothing checks
+- **[143](#item-143)** — `setsid` + process-group kill leaks the serial-holding child, which later looks like dead hardware
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
@@ -2049,6 +2051,92 @@ a tool setting the simulator should be handed; it is the machine being
 simulated. It also produces no artefact anything else consumes, so a stale one
 misleads a person reading its output rather than corrupting a build. It keeps
 `build/<config>/java/tools`.
+
+
+<a id="item-142"></a>
+
+### Item 142 — The `<clinit>` order is decided by hash iteration order
+
+**Raised 2026-09-04.** `OldClinitOrder.findOrder()` is a topological sort over
+`clinit`, a Map keyed by `OldClassInfo`:
+
+```java
+Set cliSet = clinit.keySet();     // iteration order is not defined
+```
+
+Classes with no remaining dependencies are appended **in map iteration order**,
+so every tie is broken by hashing rather than by anything meaningful. The result
+is a valid topological order — one of many — and which one you get depends on
+the JVM's iteration order for that map.
+
+**How it surfaced.** Moving `jopizer.jar` out of `java/tools/dist` and giving
+each jar its own classes directory (commit `d31ee3b`) changed what is on the
+tool classpath. That alone permuted the `<clinit>` list and changed **every**
+`.jop` image by 559 bytes — same (address, class) pairs, different order,
+identical file size. A pure build-layout change altered the linked program.
+
+**Why that is only half safe.** Any topological order satisfies the
+dependencies the analyser FOUND. If a `<clinit>` depends on another class in a
+way the analysis misses, the old order was correct by luck and the new one may
+not be. Nothing checks the analysis for completeness, and the failure mode is a
+board that does not boot — after the image has been signed off.
+
+**Measured, not assumed:** the order is deterministic for identical inputs (two
+clones at different paths produced byte-identical images), so this is not
+run-to-run flakiness. It is *input*-sensitive in a way nobody would predict.
+
+**Validated after the change:** DoAll 68/68 on EP4CGX150, Wukong and
+Colorlight i5 with the reordered image, so the current order is good on all
+three. That is evidence, not a guarantee — the next classpath change reshuffles
+it again.
+
+**Fix direction.** Make the tie-break explicit and stable — sort by class name
+before appending, or use a `LinkedHashMap`/`TreeMap` keyed on the name — so the
+image stops depending on hashing. That makes images reproducible across tool
+layouts, and it makes any future change in behaviour a real change rather than a
+reshuffle. Separately, the dependency analysis deserves a check: if the order is
+arbitrary among valid orders, the build should be able to say so.
+
+<a id="item-143"></a>
+
+### Item 143 — `setsid` + process-group kill leaks the child holding the serial port
+
+**Raised 2026-09-04.** Board tests run the downloader as
+
+```
+setsid make download ... &        # then: kill -TERM -$!
+```
+
+`setsid` puts the child in its OWN session and process group, so `kill -$!`
+signals the group the *make* is in, not the group `download.py` ended up in.
+The python survives.
+
+**What that costs.** Three `download.py` processes were found still running
+**7h54m** after their board test finished, each holding a serial port open. The
+next download on the Wukong failed with
+
+```
+serial.serialutil.SerialException: device reports readiness to read but
+returned no data (device disconnected or multiple access on port?)
+```
+
+which reads exactly like a dead board or the stalled CH340 of item 108 — the
+same symptom, an entirely different cause. Nothing in the flow notices, because
+the leaked process is not a child of anything the shell still knows about.
+
+**How to kill it properly:** match the actual process, not the group —
+
+```
+p=$(ps -eo pid,args | awk '/[d]ownload\.py/ {print $1}'); [ -n "$p" ] && kill -9 $p
+```
+
+The bracket in `[d]ownload` keeps the `awk` from matching itself, which is the
+same self-match trap as `pgrep -f`.
+
+**Worth doing:** the board Makefiles' `download` target could take a timeout, or
+the console flow could refuse to start when the port is already held and say by
+what. A leaked holder that presents as broken hardware is expensive to diagnose
+twice.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 
