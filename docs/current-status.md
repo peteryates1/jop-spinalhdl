@@ -98,7 +98,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 58. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
 59. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
 60. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
-61. **[#118](#item-118)** — A failed nightly is SILENT: the 2026-08-31 cancellation went unnoticed until someone looked, and the nightly is the only thing running the schedule-only jobs. Not recurred in four runs since; the missing alert is the item
+61. **[#118](#item-118)** — A CANCELLED nightly is silent (no failure notification); a FAILED one does email. One cancellation in 60 scheduled runs, never a failure. Small bounded gap — may not be worth a workflow change
 62. **[#108](#item-108)** — README's 16-core claim rests on resource figures README itself withdrew as undated
 63. **[#100](#item-100)** — The EP4CGX150 cable reads 10/10 since the 2026-08-31 swap and blocks nothing. What is left is an unresolved confound: the swap changed the cable AND re-seated both plugs, so put the Pico back on that board to confirm re-seating was the cure
 64. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
@@ -4333,7 +4333,7 @@ rather than discovered by an audit months later.
 
 <a id="item-118"></a>
 
-### Item 118 — a failed nightly is silent, and the nightly is the only thing running the schedule-only jobs
+### Item 118 — a CANCELLED nightly is silent; a failed one is not
 
 Run `33377819507`, 2026-08-31T09:28Z, `schedule` on `main`: **cancelled** after
 1h4m13s.
@@ -4354,19 +4354,30 @@ schedule-gated job, reached `success` in each of the last five scheduled runs.
 So the schedule-only coverage is real and is running, which was the thing worth
 establishing.
 
-What has not changed is that **nobody is told when it fails**. The 08-31
-cancellation sat unnoticed until someone went looking, and today's success was
-confirmed the same way — by hand, because it was asked about. A nightly whose
-result is only discovered on enquiry provides assurance nobody is receiving.
+**CORRECTED 2026-09-04.** This item claimed "its failure mode is silence" and
+that was too broad: GitHub emails the workflow's owner when a scheduled run
+FAILS, so a genuine failure does reach a person. That half of the concern was
+wrong.
 
-**Incidental, and worth knowing:** the cron is `0 3 * * *` but the runs land
-between **07:43 and 09:49** — GitHub defers scheduled workflows under load.
-Nothing depends on the hour today, but do not build anything that assumes 03:00.
+**But the run this item was filed for did not fail — it was `cancelled`**
+(verified: run `33377819507`, `event=schedule`, `conclusion=cancelled`), and a
+cancellation produces no failure notification. So the one event that prompted
+this item is precisely the case that stays silent, and it sat unnoticed until
+someone went looking. In 60 runs the only non-success on the schedule is that
+one cancellation; there has never been a scheduled `failure` to test the email
+path against.
 
-**What would close this:** a notification on a failed or cancelled scheduled
-run. Anything that reaches a person — the simplest being a job that runs only
-`if: failure()` on the schedule event. Until then this is assurance that exists
-but is not delivered.
+**Incidental, and worth knowing:** the cron is `0 3 * * *`, but that is when the
+run is QUEUED — it then waits for a runner, and the runs land between **07:43
+and 09:49**. Nothing depends on the hour today, but do not build anything that
+assumes 03:00.
+
+**What would close this:** something that reaches a person on a CANCELLED
+scheduled run, since failure is already covered. The residue is small and may
+not be worth a workflow change — cancellation of a nightly has happened once in
+60 runs, and item 47 already removed the mechanism (a push killing a scheduled
+run) that would have made it systematic. Reasonable to leave as a known,
+bounded gap rather than engineer around it.
 
 <a id="item-119"></a>
 
