@@ -132,8 +132,6 @@ public class JopMethodInfo extends OldMethodInfo implements Serializable {
 			if (len >= Const.METHOD_MAX_SIZE / 4
 					|| mreallocals > Const.METHOD_MAX_LOCALS
 					|| margs > Const.METHOD_MAX_ARGS) {
-				// <clinit> still waived in this commit; removed in the next.
-				if (!m.getName().equals("<clinit>")) {
 				System.err.println("len(max:"
 						+ (Const.METHOD_MAX_SIZE / 4) + ")=" + len
 						+ " mreallocals(max:" + Const.METHOD_MAX_LOCALS + ")=" + mreallocals
@@ -147,7 +145,6 @@ public class JopMethodInfo extends OldMethodInfo implements Serializable {
 							+ " BigInteger.ensureConstants already does.");
 				}
 				throw new Error();
-				}
 			}
 			// System.out.println((mstack+m.getCode().getMaxLocals())+" "+
 			// m.getName()+" maxStack="+mstack+"

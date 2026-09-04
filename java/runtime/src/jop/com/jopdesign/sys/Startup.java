@@ -280,159 +280,23 @@ public class Startup {
 			// int locals = (cp>>>5) & 0x01f;
 			// int args = cp & 0x01f;
 			cp >>>= 10;
-			if (len<256 && len!=0) {	// see JOPizer constant on max. method length
-				Native.invoke(addr);
-			// len=0 means interpret it
-			} else {
-				interpret();
-			}
+			// ALWAYS INVOKE. A <clinit> is an ordinary method now -- status
+			// item 137. It used to be interpreted above a size threshold, by a
+			// ~30-opcode interpreter that printed "bytecode N not implemented"
+			// and spun forever on anything else; and the threshold here (256)
+			// disagreed with JOPizer's (512), so a <clinit> of 1024-2047 bytes
+			// was handed to the interpreter while still perfectly invokable.
+			//
+			// JOPizer now applies the same size and locals limits to <clinit>
+			// as to every other method, so an oversized one is a LINK ERROR
+			// naming the class rather than a board that bricks before main().
+			// Measured across four applications when this changed: 46 <clinit>
+			// methods, largest 55 words against a limit of 512.
+			Native.invoke(addr);
 		}
 	}
 
 
-	// start address is in var
-	static void interpret() {
-
-		pc = 0;
-		sp = 0;
-		int instr, val, idx;
-
-		for (;;) {
-
-//			System.out.print(pc);
-			instr = readBC8u();
-//			System.out.print(" ");
-//			System.out.println(instr);
-
-			switch (instr) {
-				
-				case 0 :		// nop
-					break;
-				case 1 :		// aconst_null
-					stack[++sp] = 0;
-					break;
-				case 2 :		// iconst_m1
-					stack[++sp] = -1;
-					break;
-				case 3 :		// iconst_0
-					stack[++sp] = 0;
-					break;
-				case 4 :		// iconst_1
-					stack[++sp] = 1;
-					break;
-				case 5 :		// iconst_2
-					stack[++sp] = 2;
-					break;
-				case 6 :		// iconst_3
-					stack[++sp] = 3;
-					break;
-				case 7 :		// iconst_4
-					stack[++sp] = 4;
-					break;
-				case 8 :		// iconst_5
-					stack[++sp] = 5;
-					break;
-				case 9 :		// lconst_0
-					stack[++sp] = 0;
-					stack[++sp] = 0;
-					break;
-				case 10 :		// lconst_1
-					stack[++sp] = 0;
-					stack[++sp] = 1;
-					break;
-				case 11 :		// fconst_0
-					stack[++sp] = 0;
-					break;
-				case 12 :		// fconst_1
-					stack[++sp] = 0x3f800000;
-					break;
-				case 13 :		// fconst_2
-					stack[++sp] = 0x40000000;
-					break;
-				case 14 :		// dconst_0
-					stack[++sp] = 0;
-					stack[++sp] = 0;
-					break;
-				case 15 :		// dconst_1
-					stack[++sp] = 0x3ff00000;
-					stack[++sp] = 0x00000000;
-					break;
-				case 16 :		// bipush
-					stack[++sp] = readBC8s();
-					break;
-				case 17 :		// sipush
-					stack[++sp] = readBC16s();
-					break;
-				case 18 :		// ldc
-					stack[++sp] = Native.rdMem(cp+readBC8u());
-					break;
-				case 19 :		// ldc_w
-					stack[++sp] = Native.rdMem(cp+readBC16u());
-					break;
-				case 20 :		// ldc2_w
-					idx = readBC16u();
-					stack[++sp] = Native.rdMem(cp+idx);
-					stack[++sp] = Native.rdMem(cp+idx+1);
-					break;
-				case 83 :		// aastore
-				case 84 :		// bastore
-				case 85 :		// castore
-				case 81 :		// fastore
-				case 79 :		// iastore
-				case 86 :		// sastore
-					xastore();
-					break;
-				case 80 :		// lastore
-				case 82 :		// dastore
-					x2astore();
-					break;
-				case 89 :		// dup
-					val = stack[sp];
-					stack[++sp] = val;
-					break;
-				case 177 :		// return
-					return;
-				case 178 :		// getstatic
-			    case 224 :      // getstatic_ref
-					getstatic();
-					break;
-				case 179 :		// putstatic
-				case 225 :		// putstatic_ref, no concurrent GC during <clinit>!
-					putstatic();
-					break;
-// GETFIELD/PUTFIELD does not make sense without NEW
-// 				case 180 :		// getfield
-// 					getfield();
-// 					break;
-// 				case 181 :		// putfield
-// 				case 227 :		// putfield_ref, no concurrent GC during <clinit>!
-// 					putfield();
-// 					break;
-// NEW does not make sense without INVOKESPECIAL
-// 				case 187 :		// new
-// 					newobj();
-// 					break;
-				case 188 :		// newarray
-					newarray();
-					break;
-				case 189 :		// anewarray
-					anewarray();
-					break;
-			    case 190 :      // arraylength
-					arraylength();
-					break;
-				case 221 :		// jopsys_nop
-					break;
-				default:
-					JVMHelp.wr("JVM interpreter: bytecode ");
-					JVMHelp.intVal(instr);
-					JVMHelp.wr(" not implemented\r\n");
-					for (;;);
-
-			}
-		}
-
-	}
 
 	static int readBC8u() {
 
