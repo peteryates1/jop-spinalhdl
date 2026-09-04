@@ -46,13 +46,13 @@ set -euo pipefail
 # alias|serial|kind|description
 BOARDS=$(cat <<'EOF'
 terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board; SWAPPED onto the EP4CGX150 on 2026-08-31, so `terasic` and `ep4cgx150` now resolve alike
-xc7a100t|E662C876|pico|QMTECH XC7A100T + DB_FPGA V5 (Pico: dirtyJtag or usb-blaster)
+xc7a100t|E662C876C3506A26|pico|QMTECH XC7A100T + DB_FPGA V5. The RP2040 is ON the DB_FPGA V5 itself, so this alias names a BOARD and the serial is permanent. Full 16-char RP2040 serial: `serial_matches` is a bidirectional prefix test, so it still matches the 8 chars pico-usb-blaster reports, whereas an 8-char entry would also match a different Pico sharing that prefix
 ae115fb|e6616408|usb-blaster|A-E115FB EP4CE115 + 1GB DDR2 — on the LEVEL-SHIFTED Pico (product "USB Blaster", no hyphen) since the 2026-08-31 swap. The bare Pico that once drove 3.3V into this board's JTAG bank is not this cable; the shifter references VTREF
 ep4cgx150|91d28408|usb-blaster|QMTECH EP4CGX150 + SDR — on the Terasic since the 2026-08-31 swap, to take the intermittent Pico out of the picture while item 101's control build is run (item 100)
 debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashing Picos)
 cyc5000|ARA30135|arrow-usb-blaster|Arrow CYC5000 (onboard Arrow USB Blaster TEI0050, FT2232H)
 i5|07000001002700424e|cmsis-dap|Colorlight i5 on the ext board (DAPLink, also the UART bridge)
-wukong|0B383D0435D957EC|pico|QMTECH Wukong XC7A100T (Pico 2 W: dirtyJtag, or USB-Blaster emulation under the atari800 supervisor firmware)
+wukong|0B383D0435D957EC|pico|QMTECH Wukong XC7A100T (Pico 2 W: dirtyJtag, or USB-Blaster emulation under the atari800 supervisor firmware). A STANDALONE Pico W -- a cable, not part of the board -- so this alias names whatever it is currently plugged into, the way `terasic` does. Unplugging it and using it elsewhere silently retargets this alias
 alchitry|000000|ftdi-xilinx|Alchitry Au V2 (XC7A35T + DDR3) — onboard FT2232H, programmed by Vivado hw_server (see fpga/alchitry-au). Shares vid:pid 0403:6010 with the CYC5000's Arrow blaster; the serial and product string are what separate them. fpga/alchitry-au-ddr3-test is a second PROJECT on this same board, not another board
 EOF
 )
@@ -142,11 +142,94 @@ USAGE
 #
 # alias|idcode|what it is.  idcode "?" = not yet recorded: the check then prints
 # the detected value and asks for it, rather than guessing.
+#
+# THE VALUE IS WHAT THE SCANNING TOOL PRINTS, and the two tools differ in what
+# they show, so the table stores each board's value as ITS backend reports it.
+# openFPGALoader masks the Xilinx version nibble -- an XC7A100T is 0x13631093
+# in the datasheet and prints as 0x3631093 -- so the recorded value is the
+# masked one. Comparing tool output against a datasheet value would fail on a
+# working board.
+#
+# TWO BOARDS SHARE 03631093: the Wukong and the DB_FPGA V5 both carry an
+# XC7A100T. Each sits on its OWN dirtyJtag probe, and --busdev picks the probe;
+# the IDCODE then confirms the part on the far end is the one the flow expects.
+# It is the Altera pair that needed the IDCODE to separate boards, because those
+# two once shared a cable.
+#
+# WHAT THIS CHECK THEREFORE CANNOT CATCH. The two Picos are not equivalent: the
+# DB_FPGA V5 carries its RP2040 ON the board, so `xc7a100t` names a board and
+# cannot drift; the Wukong is driven by a STANDALONE Pico W, a cable that can
+# be unplugged and used elsewhere. Move that Pico W onto the DB_FPGA V5 and
+# `--assert-device wukong` still PASSES -- same part, same IDCODE -- while
+# pointing at the other board. Only the probe serial distinguishes them, and
+# both Picos report the same USB product string ("Pico Dirty JTAG"), so the
+# serial is the sole discriminator. This check proves the right PART is on the
+# far end of the chosen probe; it does not prove the probe is on the right
+# board.
+#
+# TWO BOARDS ARE DELIBERATELY ABSENT, because a recorded IDCODE would promise
+# a check that cannot run:
+#   alchitry  programmed through Vivado's hw_server, which neither backend
+#             below drives.
+#   cyc5000   quartus_pgm does not enumerate the Arrow USB Blaster at all --
+#             `quartus_pgm -l` on 18.1 and 25.1 lists only the two Altera
+#             blasters and never the Arrow FT2232H, so `-c "Arrow USB Blaster
+#             TEI0050 [1-10]"` returns "Programming hardware cable not
+#             detected" even with the board attached and enumerated on USB.
+#             Measured 2026-09-04; openFPGALoader has an arrow-usb-blaster
+#             cable that may work, and was not tried.
 DEVICES=$(cat <<'EOF'
 ae115fb|020F70DD|EP4CE115 (IDCODE shared with EP3C120 / 10CL120)
 ep4cgx150|028040DD|EP4CGX150 — Cyclone IV GX
+wukong|03631093|XC7A100T — Artix-7 (QMTECH Wukong)
+xc7a100t|03631093|XC7A100T — Artix-7 (QMTECH core board + DB_FPGA V5)
+i5|41111043|LFE5U-25 — ECP5
 EOF
 )
+
+kind_for_alias() {
+  local want="$1"
+  while IFS='|' read -r alias serial kind desc; do
+    [ "$alias" = "$want" ] && { echo "$kind"; return 0; }
+  done <<<"$BOARDS"
+  return 1
+}
+
+# WHICH TOOL CAN READ THIS BOARD'S CHAIN. quartus_pgm speaks to Altera blasters
+# and nothing else, so scanning a Xilinx or Lattice board with it reports an
+# empty chain -- indistinguishable from a powered-off board, and the diagnosis
+# below would blame the hardware. Adding the IDCODEs without this would have
+# turned "nothing to check" (honest) into a confident false failure (worse).
+scan_backend() {
+  case "$(kind_for_alias "$1" || echo unknown)" in
+    usb-blaster|arrow-usb-blaster) echo quartus ;;
+    pico|cmsis-dap)                echo ofl ;;
+    *)                             echo none ;;
+  esac
+}
+
+# openFPGALoader scan. Returns the 8-hex IDCODE on stdout, empty on failure.
+#
+# --busdev-num works for dirtyJtag only (the patched build in /usr/local/bin);
+# the cmsis-dap driver ignores it, so with two CMSIS-DAP probes attached this
+# selects whichever the driver finds first. Today that is unambiguous in
+# practice -- the Debug Probe is SWD-only and exposes no JTAG chain -- but it
+# is a real limitation, not a guarantee.
+ofl_scan() {
+  local want="$1" kind bd out
+  kind=$(kind_for_alias "$want")
+  case "$kind" in
+    pico)      bd=$("$0" --busdev "$want") || return 1
+               out=$(sudo -n timeout 90 openFPGALoader -c dirtyJtag --busdev-num "$bd" --detect 2>&1) || true ;;
+    cmsis-dap) out=$(timeout 90 openFPGALoader -c cmsisdap --detect 2>&1) || true ;;
+    *) return 1 ;;
+  esac
+  # "	idcode 0x3631093" -> 03631093
+  local id
+  id=$(grep -oE 'idcode 0x[0-9A-Fa-f]+' <<<"$out" | head -1 | grep -oE '[0-9A-Fa-f]+$') || true
+  [ -n "$id" ] || return 1
+  printf '%08X\n' "$((16#$id))"
+}
 
 # Scan the JTAG chain and fail unless the expected FPGA is the one attached.
 # Read-only: it configures nothing.
@@ -159,6 +242,34 @@ assert_device() {
   if [ -z "$expect" ]; then
     echo "no expected IDCODE recorded for '$want' -- nothing to check" >&2; return 0
   fi
+
+  # NON-ALTERA BOARDS SCAN WITH openFPGALoader. Same contract as the Quartus
+  # path below -- read-only, compare against the recorded IDCODE, name the
+  # board on a mismatch -- but no retry loop: the flakiness that motivated the
+  # 10 attempts was one marginal level-shifted Pico on the EP4CGX150, and
+  # inventing retries for probes that have never needed them would hide a
+  # genuine fault rather than report it. Raise it here if one proves marginal.
+  local backend; backend=$(scan_backend "$want")
+  if [ "$backend" = ofl ]; then
+    local got
+    if ! got=$(ofl_scan "$want"); then
+      echo "JTAG chain scan for '$want' found no device (openFPGALoader)." >&2
+      echo "  Usual cause is the BOARD being powered off; then an unplugged or" >&2
+      echo "  reversed JTAG header. The probe enumerating on USB proves only" >&2
+      echo "  that the CABLE is alive, not that the target is." >&2
+      return 1
+    fi
+    if [ "$got" = "$expect" ]; then
+      echo "$got  ($label)"; return 0
+    fi
+    echo "WRONG DEVICE for '$want': IDCODE $got, expected $expect ($label)." >&2
+    return 1
+  fi
+  if [ "$backend" = none ]; then
+    echo "no scan backend for '$want' -- neither quartus_pgm nor openFPGALoader drives it" >&2
+    return 0
+  fi
+
   [ -n "$cable" ] || cable=$("$0" --cable "$want") || return 1
   qpgm=${QUARTUS_PGM:-/opt/altera/18.1/quartus/bin/quartus_pgm}
   [ -x "$qpgm" ] || { echo "quartus_pgm not found at $qpgm (set QUARTUS_PGM)" >&2; return 1; }
