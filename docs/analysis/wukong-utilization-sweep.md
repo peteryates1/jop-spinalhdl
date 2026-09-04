@@ -15,6 +15,18 @@ differ slightly from post-implementation due to optimization during P&R).
 
 Source: `spinalhdl/src/main/scala/jop/system/UtilSweep.scala`
 TCL: `fpga/qmtech-xc7a100t-wukong/vivado/tcl/synth_only.tcl`
+
+> Since 2026-09-04 `UtilSweep` writes each variant to its own directory,
+> `build/utilsweep-<label>/rtl`, instead of one shared directory that the
+> caller had to copy out of before generating the next variant. `synth_only.tcl`
+> therefore takes the RTL directory as a second `-tclargs` value and has no
+> default — a default would produce a well-formed report for whichever variant
+> was generated last:
+>
+> ```
+> vivado -mode batch -tclargs JopDdr3WukongTop build/utilsweep-baseline/rtl \
+>        -source vivado/tcl/synth_only.tcl
+> ```
 Reports: `fpga/qmtech-xc7a100t-wukong/vivado/build/util_sweep/*/util.rpt`
 
 ## Results: Absolute Utilization

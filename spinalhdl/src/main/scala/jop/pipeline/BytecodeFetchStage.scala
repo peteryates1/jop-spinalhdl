@@ -411,7 +411,7 @@ object BytecodeFetchStage {
   def main(args: Array[String]): Unit = {
     SpinalConfig(
       mode = Verilog,
-      targetDirectory = "spinalhdl/generated"
+      targetDirectory = jop.generate.BuildLayout.default.standaloneDir("BytecodeFetchStage")
     ).generate(BytecodeFetchStage())
   }
 }

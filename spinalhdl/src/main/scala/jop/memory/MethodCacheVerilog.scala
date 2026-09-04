@@ -24,7 +24,7 @@ object MethodCacheVerilog extends App {
 
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "spinalhdl/generated/ooc",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("MethodCacheVerilog-ooc"),
     defaultConfigForClockDomains = ClockDomainConfig(resetKind = SYNC, resetActiveLevel = LOW)
   ).generate(MethodCache(jpcWidth = jpcWidth, blockBits = blockBits))
    .printPruned()

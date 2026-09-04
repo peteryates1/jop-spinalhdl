@@ -9,7 +9,9 @@ set -e
 REPO_ROOT="$(cd ../.. && pwd)"
 QUARTUS_BIN="${QUARTUS_DIR:-/opt/altera/25.1/quartus}/bin"
 BUILD_DIR="$PWD/output_files/util_sweep"
-RTL_DIR="$REPO_ROOT/spinalhdl/generated"
+# Generated RTL lands under build/<config>/rtl, one directory per sweep
+# label (see jop.system.UtilSweep). Resolved per label inside the loop.
+RTL_ROOT="$REPO_ROOT/build"
 SDRAM_IP="$REPO_ROOT/fpga/ip/altera_sdram_tri_controller"
 PLL_VHDL="$PWD/dram_pll.vhd"
 ETH_PLL="$PWD/pll_125.v"
@@ -32,6 +34,7 @@ for label in $LABELS; do
     echo "--- $label ---"
     cd "$REPO_ROOT"
     sbt -error "runMain jop.system.AlteraUtilSweep $label" 2>&1 | tail -3
+    RTL_DIR="$RTL_ROOT/utilsweep-$label/rtl"
     # Copy the generated .v to a unique name (entity is always JopSdramTop)
     cp "$RTL_DIR/JopSdramTop.v" "$BUILD_DIR/${label}.v"
     # Also copy any .bin files needed (ROM/RAM init data)

@@ -186,11 +186,19 @@ case class JopCoreTraceCaptureHarness(
  */
 object JopGcTraceCaptureSim extends App {
 
-  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "HelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val initHexPath = "spinalhdl/generated/gc_mem_init.hex"
-  val traceHexPath = "spinalhdl/generated/gc_bmb_trace.hex"
+  // The output directory used to be `spinalhdl/generated`, which always existed
+  // because every other generator wrote there too. Its replacement is this
+  // sim's own directory and nothing else creates it, so it has to be made here
+  // -- a PrintWriter onto a missing directory throws FileNotFoundException
+  // naming the FILE, which reads as a permissions problem rather than a missing
+  // parent.
+  private val traceOutDir = jop.generate.BuildLayout.default.standaloneDir("JopGcTraceCaptureSim")
+  new java.io.File(traceOutDir).mkdirs()
+  val initHexPath = s"$traceOutDir/gc_mem_init.hex"
+  val traceHexPath = s"$traceOutDir/gc_bmb_trace.hex"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)

@@ -56,11 +56,11 @@ verification/cocotb/generated/
 *.cf
 work-obj*.cf
 
-# SpinalHDL generated. This is the ONE output directory: as of 2026-08-18
-# every SpinalConfig in spinalhdl/src targets it (the sole exception is
-# JopSmallGcQuestaGen -> verification/questa, a separate Questa flow). It is
-# what the .qsf/.tcl/Makefile board flows read, via ../../spinalhdl/generated.
-spinalhdl/generated/
+# The old SpinalHDL output directory, REMOVED 2026-09-04. Generated RTL now
+# lands under build/<config>/rtl (a preset) or build/standalone/<generator>
+# (a component or testbench belonging to no preset), both covered by the
+# /build/ rule above. Nothing writes into the source tree any more, and
+# check-no-legacy-rtl-path.sh fails the build if anything starts again.
 
 # Backstop. Before the unification there were four conventions -- bare
 # "generated", "generated/verilog", "generated/vhdl", and a dead

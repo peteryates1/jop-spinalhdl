@@ -10,7 +10,15 @@ file mkdir $build_dir
 create_project -force $proj_name [file join $build_dir $proj_name] -part xc7a35tftg256-2
 
 # Add generated RTL (JopDdr3Top.v — same entity name, built with hasConfigFlash)
-set rtl_dir [file normalize [file join $repo_root ../../spinalhdl/generated]]
+# UNREACHABLE UNTIL STATUS ITEM 82. `make generate-flash` fails deliberately --
+# no JopConfig preset sets bootMode = BootMode.Flash since 7258661 deleted
+# JopDdr3FlashTopVerilog -- and project-flash depends on it, so nothing runs
+# this script today. The path is corrected anyway: leaving it pointed at the
+# old source-tree directory would mean that whoever restores flash boot gets a
+# script that silently reads whatever stale netlist is lying around, which is
+# precisely the failure the build-tree move exists to prevent.
+set cfg_name [expr {[info exists ::env(JOP_FLASH_CFG)] ? $::env(JOP_FLASH_CFG) : "auFlash"}]
+set rtl_dir [file normalize [file join $repo_root ../.. build $cfg_name rtl]]
 set rtl_file [file join $rtl_dir JopDdr3Top.v]
 if {[file exists $rtl_file]} {
   add_files -norecurse $rtl_file

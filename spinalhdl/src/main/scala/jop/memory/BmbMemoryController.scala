@@ -1526,6 +1526,6 @@ case class BmbMemoryController(
 object BmbMemoryControllerVerilog extends App {
   SpinalConfig(
     mode = Verilog,
-    targetDirectory = "spinalhdl/generated"
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("BmbMemoryController")
   ).generate(BmbMemoryController())
 }

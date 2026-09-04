@@ -85,7 +85,7 @@ object MainMemorySimTb {
 
     SpinalConfig(
       mode = VHDL,
-      targetDirectory = "spinalhdl/generated"
+      targetDirectory = jop.generate.BuildLayout.default.standaloneDir("MainMemorySimTb")
     ).generate(MainMemorySimTb(
       config = MainMemorySimConfig(memSize = 256),
       testData = Some(testData)

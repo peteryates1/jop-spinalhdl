@@ -152,7 +152,7 @@ object ComputeUnitBenchVerilog {
   def main(args: Array[String]): Unit = {
     val cfg = SpinalConfig(
       mode = Verilog,
-      targetDirectory = "spinalhdl/generated"
+      targetDirectory = jop.generate.BuildLayout.default.standaloneDir("ComputeUnitBench")
     )
     cfg.generate(IntegerCuBench()).printPruned()
     cfg.generate(FloatCuBench()).printPruned()

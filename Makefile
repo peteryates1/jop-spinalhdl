@@ -117,6 +117,7 @@ check-build:
 	@.github/scripts/check-docs-structure.sh
 	@.github/scripts/check-status-index.sh
 	@.github/scripts/check-workflow-sbt-setup.sh
+	@.github/scripts/check-no-legacy-rtl-path.sh
 
 help:
 	@echo "make check-build  assert the build graph's guards hold (seconds)"

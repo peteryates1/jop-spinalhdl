@@ -1119,12 +1119,12 @@ case class StackStage(
  */
 object StackStageVerilog extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("StackStage"),
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
   )
 
   config.generateVerilog(StackStage())
     .printPruned()
 
-  println("StackStage Verilog generated at: spinalhdl/generated/StackStage.v")
+  println(s"StackStage Verilog generated at: ${jop.generate.BuildLayout.default.standaloneDir("StackStage")}/StackStage.v")
 }

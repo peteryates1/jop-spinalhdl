@@ -47,7 +47,8 @@ case class BuildLayout(
   vivado: String = "vivado",
   nextpnr: String = "nextpnr",
   java: String = "java",
-  asm: String = "asm"
+  asm: String = "asm",
+  standalone: String = "standalone"
 ) {
 
   /** Directory name for one invocation. */
@@ -69,6 +70,16 @@ case class BuildLayout(
   def nextpnrDir = sub(nextpnr) _
   def javaDir    = sub(java) _
   def asmDir     = sub(asm) _
+
+  /** Where a STANDALONE top goes -- a single component or testbench emitted on
+    * its own (`Shift`, `MethodCacheTb`, an exerciser), not part of a preset.
+    *
+    * These have no configuration to key on: they are not built from a JopConfig
+    * preset, so `configDir` has nothing to name them with. They still must not
+    * write into the source tree, so they get their own branch of the build
+    * tree, one directory per top so two generators cannot overwrite each
+    * other's output. */
+  def standaloneDir(top: String): String = s"$root/$standalone/${BuildLayout.sanitise(top)}"
 
   /** How many levels below the repo root a directory sits, counted from the
     * path rather than assumed. */

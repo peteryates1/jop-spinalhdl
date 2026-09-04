@@ -47,7 +47,7 @@ class NonDefaultGeometryElabTest extends AnyFunSuite {
   private lazy val ramData = JopFileLoader.loadStackRam(MicrocodePaths.ram(BootMode.Serial))
 
   private def elaborates(name: String, cfg: JopConfig): Unit =
-    JopSpinalConfig(cfg).copy(targetDirectory = "spinalhdl/generated/test")
+    JopSpinalConfig(cfg, jop.generate.BuildLayout.default.standaloneDir("NonDefaultGeometryElabTest"))
       .generate(InOutWrapper(JopTop(
         config = cfg, romInit = romData, ramInit = ramData,
         mainMemInit = None, mainMemSize = 64 * 1024)))

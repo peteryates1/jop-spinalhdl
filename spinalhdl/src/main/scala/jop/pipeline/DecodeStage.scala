@@ -904,12 +904,12 @@ case class DecodeStage(
  */
 object DecodeStageVerilog extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("DecodeStage"),
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
   )
 
   config.generateVerilog(DecodeStage())
     .printPruned()
 
-  println("DecodeStage Verilog generated at: spinalhdl/generated/DecodeStage.v")
+  println(s"DecodeStage Verilog generated at: ${jop.generate.BuildLayout.default.standaloneDir("DecodeStage")}/DecodeStage.v")
 }

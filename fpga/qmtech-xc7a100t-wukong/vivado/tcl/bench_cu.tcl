@@ -6,7 +6,10 @@
 
 set script_dir  [file dirname [file normalize [info script]]]
 set repo_root   [file normalize [file join $script_dir ../../../..]]
-set gen_dir     [file join $repo_root spinalhdl/generated]
+# ComputeUnitBenchVerilog emits the four *CuBench.v tops here -- a standalone
+# generator, so build/standalone/<generator>, not build/<config>/rtl: these
+# benches belong to no JopConfig preset.
+set gen_dir     [file join $repo_root build/standalone/ComputeUnitBench]
 set build_dir   [file normalize [file join $script_dir ../../vivado/build/cu_bench]]
 set part        "xc7a100tfgg676-2"
 set period_ns   10.0

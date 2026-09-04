@@ -125,7 +125,7 @@ object InterruptTestTb {
   def main(args: Array[String]): Unit = {
     SpinalConfig(
       mode = VHDL,
-      targetDirectory = "spinalhdl/generated"
+      targetDirectory = jop.generate.BuildLayout.default.standaloneDir("InterruptTestTb")
     ).generate(InterruptTestTb())
   }
 }

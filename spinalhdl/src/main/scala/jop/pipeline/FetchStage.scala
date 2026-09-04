@@ -380,12 +380,12 @@ case class FetchStage(
  */
 object FetchStageVerilog extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("FetchStage"),
     defaultClockDomainFrequency = FixedFrequency(100 MHz)
   )
 
   config.generateVerilog(FetchStage())
     .printPruned()
 
-  println("FetchStage Verilog generated at: spinalhdl/generated/FetchStage.v")
+  println(s"FetchStage Verilog generated at: ${jop.generate.BuildLayout.default.standaloneDir("FetchStage")}/FetchStage.v")
 }

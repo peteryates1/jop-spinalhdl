@@ -20,7 +20,7 @@ import jop.config.MicrocodePaths
  */
 object JopSmallGcSdramQuestaGen extends App {
 
-  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "HelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val targetDir   = "verification/questa-sdram"

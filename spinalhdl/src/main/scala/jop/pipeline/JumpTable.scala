@@ -185,7 +185,7 @@ object JumpTable {
   def main(args: Array[String]): Unit = {
     SpinalConfig(
       mode = Verilog,
-      targetDirectory = "spinalhdl/generated"
+      targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JumpTable")
     ).generate(JumpTable())
   }
 }

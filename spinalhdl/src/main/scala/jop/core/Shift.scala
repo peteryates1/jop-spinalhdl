@@ -190,11 +190,11 @@ object ShiftType {
 object ShiftVerilog extends App {
   val config = SpinalConfig(
     mode = Verilog,
-    targetDirectory = "spinalhdl/generated"
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("Shift")
   )
 
   config.generate(Shift(32))
-  println("Verilog generation complete: spinalhdl/generated/Shift.v")
+  println(s"Verilog generation complete: ${jop.generate.BuildLayout.default.standaloneDir("Shift")}/Shift.v")
 }
 
 /**
@@ -205,9 +205,9 @@ object ShiftVerilog extends App {
 object ShiftVhdl extends App {
   val config = SpinalConfig(
     mode = VHDL,
-    targetDirectory = "spinalhdl/generated"
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("Shift")
   )
 
   config.generate(Shift(32))
-  println("VHDL generation complete: spinalhdl/generated/Shift.vhd")
+  println(s"VHDL generation complete: ${jop.generate.BuildLayout.default.standaloneDir("Shift")}/Shift.vhd")
 }

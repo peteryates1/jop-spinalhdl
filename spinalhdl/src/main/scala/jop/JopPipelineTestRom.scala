@@ -842,7 +842,7 @@ class JopPipelineTestRom(
  */
 object JopPipelineAluTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -891,7 +891,7 @@ object JopPipelineAluTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineAluTestTb)
-  println("JopPipelineAluTestTb VHDL generated in spinalhdl/generated/JopPipelineAluTestTb.vhd")
+  println(s"JopPipelineAluTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineAluTestTb.vhd")
 }
 
 /**
@@ -899,7 +899,7 @@ object JopPipelineAluTestTbVhdl extends App {
  */
 object JopPipelineShiftTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -948,7 +948,7 @@ object JopPipelineShiftTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineShiftTestTb)
-  println("JopPipelineShiftTestTb VHDL generated in spinalhdl/generated/JopPipelineShiftTestTb.vhd")
+  println(s"JopPipelineShiftTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineShiftTestTb.vhd")
 }
 
 /**
@@ -956,7 +956,7 @@ object JopPipelineShiftTestTbVhdl extends App {
  */
 object JopPipelineLoadStoreTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -1005,7 +1005,7 @@ object JopPipelineLoadStoreTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineLoadStoreTestTb)
-  println("JopPipelineLoadStoreTestTb VHDL generated in spinalhdl/generated/JopPipelineLoadStoreTestTb.vhd")
+  println(s"JopPipelineLoadStoreTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineLoadStoreTestTb.vhd")
 }
 
 /**
@@ -1013,7 +1013,7 @@ object JopPipelineLoadStoreTestTbVhdl extends App {
  */
 object JopPipelineBranchTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -1062,7 +1062,7 @@ object JopPipelineBranchTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineBranchTestTb)
-  println("JopPipelineBranchTestTb VHDL generated in spinalhdl/generated/JopPipelineBranchTestTb.vhd")
+  println(s"JopPipelineBranchTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineBranchTestTb.vhd")
 }
 
 /**
@@ -1070,7 +1070,7 @@ object JopPipelineBranchTestTbVhdl extends App {
  */
 object JopPipelineStackTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -1119,7 +1119,7 @@ object JopPipelineStackTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineStackTestTb)
-  println("JopPipelineStackTestTb VHDL generated in spinalhdl/generated/JopPipelineStackTestTb.vhd")
+  println(s"JopPipelineStackTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineStackTestTb.vhd")
 }
 
 /**
@@ -1127,7 +1127,7 @@ object JopPipelineStackTestTbVhdl extends App {
  */
 object JopPipelineRegStoreTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -1176,7 +1176,7 @@ object JopPipelineRegStoreTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineRegStoreTestTb)
-  println("JopPipelineRegStoreTestTb VHDL generated in spinalhdl/generated/JopPipelineRegStoreTestTb.vhd")
+  println(s"JopPipelineRegStoreTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineRegStoreTestTb.vhd")
 }
 
 /**
@@ -1184,7 +1184,7 @@ object JopPipelineRegStoreTestTbVhdl extends App {
  */
 object JopPipelineRegLoadTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -1233,7 +1233,7 @@ object JopPipelineRegLoadTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineRegLoadTestTb)
-  println("JopPipelineRegLoadTestTb VHDL generated in spinalhdl/generated/JopPipelineRegLoadTestTb.vhd")
+  println(s"JopPipelineRegLoadTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineRegLoadTestTb.vhd")
 }
 
 /**
@@ -1241,7 +1241,7 @@ object JopPipelineRegLoadTestTbVhdl extends App {
  */
 object JopPipelineStoreTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -1290,7 +1290,7 @@ object JopPipelineStoreTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineStoreTestTb)
-  println("JopPipelineStoreTestTb VHDL generated in spinalhdl/generated/JopPipelineStoreTestTb.vhd")
+  println(s"JopPipelineStoreTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineStoreTestTb.vhd")
 }
 
 /**
@@ -1298,7 +1298,7 @@ object JopPipelineStoreTestTbVhdl extends App {
  */
 object JopPipelineLoadTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -1347,7 +1347,7 @@ object JopPipelineLoadTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineLoadTestTb)
-  println("JopPipelineLoadTestTb VHDL generated in spinalhdl/generated/JopPipelineLoadTestTb.vhd")
+  println(s"JopPipelineLoadTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineLoadTestTb.vhd")
 }
 
 /**
@@ -1355,7 +1355,7 @@ object JopPipelineLoadTestTbVhdl extends App {
  */
 object JopPipelineLoadOpdTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -1404,7 +1404,7 @@ object JopPipelineLoadOpdTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineLoadOpdTestTb)
-  println("JopPipelineLoadOpdTestTb VHDL generated in spinalhdl/generated/JopPipelineLoadOpdTestTb.vhd")
+  println(s"JopPipelineLoadOpdTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineLoadOpdTestTb.vhd")
 }
 
 /**
@@ -1412,7 +1412,7 @@ object JopPipelineLoadOpdTestTbVhdl extends App {
  */
 object JopPipelineMmuTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -1461,7 +1461,7 @@ object JopPipelineMmuTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineMmuTestTb)
-  println("JopPipelineMmuTestTb VHDL generated in spinalhdl/generated/JopPipelineMmuTestTb.vhd")
+  println(s"JopPipelineMmuTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineMmuTestTb.vhd")
 }
 
 /**
@@ -1469,7 +1469,7 @@ object JopPipelineMmuTestTbVhdl extends App {
  */
 object JopPipelineControlTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -1518,7 +1518,7 @@ object JopPipelineControlTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineControlTestTb)
-  println("JopPipelineControlTestTb VHDL generated in spinalhdl/generated/JopPipelineControlTestTb.vhd")
+  println(s"JopPipelineControlTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineControlTestTb.vhd")
 }
 
 /**
@@ -1537,7 +1537,7 @@ object JopPipelineControlTestTbVhdl extends App {
  */
 object JopPipelineMultiplierTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -1588,7 +1588,7 @@ object JopPipelineMultiplierTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineMultiplierTestTb)
-  println("JopPipelineMultiplierTestTb VHDL generated in spinalhdl/generated/JopPipelineMultiplierTestTb.vhd")
+  println(s"JopPipelineMultiplierTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineMultiplierTestTb.vhd")
 }
 
 /**
@@ -1619,7 +1619,7 @@ object JopPipelineMultiplierTestTbVhdl extends App {
  */
 object JopPipelineJvmSequencesTestTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -1680,5 +1680,5 @@ object JopPipelineJvmSequencesTestTbVhdl extends App {
   }
 
   config.generateVhdl(new JopPipelineJvmSequencesTestTb)
-  println("JopPipelineJvmSequencesTestTb VHDL generated in spinalhdl/generated/JopPipelineJvmSequencesTestTb.vhd")
+  println(s"JopPipelineJvmSequencesTestTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("JopPipelineTestRom")}/JopPipelineJvmSequencesTestTb.vhd")
 }

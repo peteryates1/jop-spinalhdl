@@ -8,7 +8,9 @@ set -e
 REPO_ROOT="$(cd ../.. && pwd)"
 VIVADO="/opt/xilinx/2025.2/Vivado/bin/vivado"
 BUILD_DIR="$REPO_ROOT/fpga/qmtech-xc7a100t-wukong/vivado/build/util_sweep"
-RTL_DIR="$REPO_ROOT/spinalhdl/generated"
+# Generated RTL lands under build/<config>/rtl, one directory per sweep
+# label (see jop.system.UtilSweep). Resolved per label inside the loop.
+RTL_ROOT="$REPO_ROOT/build"
 IP_ROOT="$REPO_ROOT/fpga/qmtech-xc7a100t-wukong/vivado/ip"
 XDC="$REPO_ROOT/fpga/qmtech-xc7a100t-wukong/vivado/constraints/wukong_ddr3_base.xdc"
 export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
@@ -24,6 +26,7 @@ for label in $LABELS; do
     echo "--- $label ---"
     cd "$REPO_ROOT"
     sbt -error "runMain jop.system.UtilSweep $label" 2>&1 | tail -3
+    RTL_DIR="$RTL_ROOT/utilsweep-$label/rtl"
     mkdir -p "$BUILD_DIR/$label"
     cp "$RTL_DIR/JopDdr3WukongTop.v" "$BUILD_DIR/$label/JopDdr3WukongTop.v"
     cp "$RTL_DIR"/JopDdr3WukongTop.v_*.bin "$BUILD_DIR/$label/" 2>/dev/null || true

@@ -251,7 +251,7 @@ object JopTopVerilog {
 
     // BRAM with pre-initialized memory (not serial boot — serial fills at runtime)
     val mainMemInit = if (isBram && sys.bootMode != BootMode.Serial) {
-      val path = jopFilePath.getOrElse("java/apps/Smallest/HelloWorld.jop")
+      val path = jopFilePath.getOrElse(jop.utils.SimApp.jop("Smallest", "HelloWorld"))
       val data = JopFileLoader.jopFileToMemoryInit(path, bramSize / 4)
       println(s"  BRAM init: $path (${data.length} words, ${bramSize / 1024}KB)")
       Some(data)
@@ -312,22 +312,26 @@ object JopTopVerilog {
     print(romRamLines)
     print(pllLines)
 
-    // WHERE THE VERILOG GOES. Legacy `spinalhdl/generated` unless the flow opts
-    // in with `buildtree`, in which case it lands beside the rest of this
-    // configuration's artefacts. Opt-in rather than a global switch because 51
-    // Makefiles and TCL scripts across ten boards read the legacy path and only
-    // three of those flows can be verified by building them here -- changing it
-    // for all of them at once would be a change nobody could check.
-    val useBuildTree = buildArgs.exists(_.equalsIgnoreCase("buildtree"))
-    // `buildtree` says WHERE to write, not WHAT to build, so it must not appear
-    // in the configuration's name -- otherwise the same design gets two
-    // directories depending on how it was invoked.
+    // WHERE THE VERILOG GOES: always beside the rest of this configuration's
+    // artefacts, under build/<config>/rtl.
+    //
+    // This was opt-in via a `buildtree` argument, defaulting to the source tree
+    // at `spinalhdl/generated`, while ten boards were converted one at a time.
+    // The conversion finished; the default did not follow, and the justifying
+    // comment ("51 Makefiles and TCL scripts across ten boards read the legacy
+    // path") outlived the fact -- by the time it was removed, five auxiliary
+    // scripts did, and every board's main flow had been converted for weeks.
+    // Keeping the legacy branch as the DEFAULT meant anything not explicitly
+    // converted silently wrote generated RTL back into the source tree.
+    //
+    // `buildtree` IS STILL ACCEPTED AND STILL FILTERED. Four board Makefiles
+    // pass it, and it must keep being stripped from the configuration name: it
+    // says WHERE to write, not WHAT to build, so leaving it in would give the
+    // same design two directories depending on how it was invoked.
     val cfgArgs = buildArgs.filterNot(_.equalsIgnoreCase("buildtree"))
-    val rtlDir =
-      if (useBuildTree) jop.generate.BuildLayout.default.rtlDir(presetName, cfgArgs)
-      else "spinalhdl/generated"
-    if (useBuildTree) println(s"  RTL output:  $rtlDir")
-    val spinalConfig = JopSpinalConfig(jopConfig).copy(targetDirectory = rtlDir)
+    val rtlDir = jop.generate.BuildLayout.default.rtlDir(presetName, cfgArgs)
+    println(s"  RTL output:  $rtlDir")
+    val spinalConfig = JopSpinalConfig(jopConfig, rtlDir)
 
     spinalConfig.generate(InOutWrapper(JopTop(
       config = jopConfig,

@@ -9,7 +9,7 @@ import spinal.core._
  */
 object MethodCacheTbVhdl extends App {
   val config = SpinalConfig(
-    targetDirectory = "spinalhdl/generated",
+    targetDirectory = jop.generate.BuildLayout.default.standaloneDir("MethodCacheTb"),
     defaultClockDomainFrequency = FixedFrequency(50 MHz)
   )
 
@@ -59,5 +59,5 @@ object MethodCacheTbVhdl extends App {
   }
 
   config.generateVhdl(new MethodCacheTb)
-  println("MethodCacheTb VHDL generated in spinalhdl/generated/MethodCacheTb.vhd")
+  println(s"MethodCacheTb VHDL generated in ${jop.generate.BuildLayout.default.standaloneDir("MethodCacheTb")}/MethodCacheTb.vhd")
 }
