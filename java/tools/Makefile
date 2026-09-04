@@ -27,11 +27,11 @@ COMMON_TOOLS_OUT ?= $(abspath ../../build/java/tools)
 # so JOPA_JAR was EMPTY and `jopa: $(JOPA_JAR)` became a target with no
 # prerequisite: it built nothing and exited 0. A silent no-op that reports
 # success is worse than the stale jar this split exists to fix.
-JOPIZER_JAR ?= $(TOOLS_OUT)/jopizer.jar
+JOPIZER_JAR ?= $(COMMON_TOOLS_OUT)/jopizer.jar
 JOPSIM_JAR  ?= $(TOOLS_OUT)/jopsim.jar
 JOPA_JAR    ?= $(COMMON_TOOLS_OUT)/jopa.jar
 
-JOPIZER_CLASSES := $(TOOLS_OUT)/classes-jopizer
+JOPIZER_CLASSES := $(COMMON_TOOLS_OUT)/classes-jopizer
 JOPSIM_CLASSES  := $(TOOLS_OUT)/classes-jopsim
 JOPA_CLASSES    := $(COMMON_TOOLS_OUT)/classes-jopa
 TARGET_SRC := ../runtime/src/jop
@@ -61,9 +61,11 @@ LIB_CP := $(LIB_DIR)/bcel-5.2.jar:$(LIB_DIR)/jakarta-regexp-1.3.jar:$(LIB_DIR)/l
 # Include target/src/jop for Const
 COMPILE_CP := $(LIB_CP):$(TARGET_SRC_PATH)
 
-.PHONY: all clean jopa require-tools-out
+.PHONY: all clean jopa jopizer require-tools-out
 
 all: require-tools-out $(JOPIZER_JAR) $(JOPSIM_JAR) $(JOPA_JAR)
+
+jopizer: $(JOPIZER_JAR)
 
 # Convenience for callers that want only the config-independent assembler --
 # asm/ and the CI job that builds microcode before any preset is chosen.
@@ -102,7 +104,10 @@ require-tools-out:
 # layout tomorrow.
 CONST_JAVA_DEP := $(wildcard $(GEN_SRC_HERE)/jop/com/jopdesign/sys/Const.java)
 
-$(JOPIZER_JAR): $(shell find $(SRC_DIR) -name '*.java') $(CONST_JAVA_DEP)
+# NO Const.java PREREQUISITE ANY MORE -- item 140. The linker reads its four
+# configuration values from the generated jop-linker.properties at runtime, so
+# nothing about the target is compiled in and this jar is COMMON.
+$(JOPIZER_JAR): $(shell find $(SRC_DIR) -name '*.java')
 	mkdir -p $(JOPIZER_CLASSES) $(dir $@)
 	$(JAVAC) -encoding Latin1 -d $(JOPIZER_CLASSES) \
 		-classpath $(COMPILE_CP) \

@@ -23,6 +23,7 @@ package com.jopdesign.build;
 
 import com.jopdesign.common.bcel.CustomAttribute;
 
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.io.Serializable;
@@ -247,6 +248,30 @@ public class JOPizer extends OldAppInfo implements Serializable {
 
 			jz.outLinkInfo.close();
 
-		} catch(Exception e) { e.printStackTrace();}
+		} catch(Exception e) {
+			// A FAILED LINK MUST FAIL THE BUILD.
+			//
+			// This was `catch(Exception e) { e.printStackTrace(); }` -- every
+			// link error was printed and then swallowed, so JOPizer exited 0
+			// and left a ZERO-BYTE .jop behind. make saw success, the app build
+			// reported success, and the emptiness was only discoverable by
+			// looking at the file or by the board failing to boot. Found
+			// 2026-09-04 while testing that a missing -Djop.linker.config is
+			// reported: the message appeared and the build still passed.
+			//
+			// The half-written file goes too. Leaving it means the NEXT make
+			// finds a newer-than-its-prerequisites .jop and skips the rebuild,
+			// so one failed link silently poisons every build after it.
+			e.printStackTrace();
+			if (jz != null && jz.outFile != null) {
+				File partial = new File(jz.outFile);
+				if (partial.exists() && !partial.delete()) {
+					System.err.println("WARNING: could not remove the incomplete "
+							+ jz.outFile + " -- delete it before rebuilding.");
+				}
+			}
+			System.err.println("JOPizer: link FAILED -- no .jop written.");
+			System.exit(1);
+		}
 	}
 }

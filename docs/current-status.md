@@ -141,7 +141,6 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 
 ### Open
 
-- **[140](#item-140)** — The Java tools are config-dependent because javac inlines `Const`; they should take the board/config at RUNTIME and be built once
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
@@ -202,6 +201,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 
 ### Closed
 
+- ~~**[140](#item-140)**~~ — The Java tools were config-dependent because javac inlines `Const` — DONE 2026-09-04: JOPizer reads its four values at runtime and is now built once into `build/java/tools`; JopSim stays per-config on purpose
 - ~~**[57](#item-57)**~~ — The XDC/QSF generators exist and nothing uses them — DONE 2026-08-31; every board reads generated constraints, and the tracked files are now ConstraintDriftTest's oracles
 - ~~**[60](#item-60)**~~ — Everything generated belongs under `build/<config>/` — DONE 2026-09-04: boards finished 2026-08-31, but the legacy path stayed the DEFAULT in both trees for four more days; both branches now deleted and guarded
 - ~~**[80](#item-80)**~~ — `PerfCounterVerifySim` fails on an unassigned ICU register — pre-existing, confirmed by bisect
@@ -2007,39 +2007,48 @@ core counts and overrides together). The layout itself is data
 <a id="item-61"></a>
 
 
-### Item 140 — The Java tools are per-configuration only because javac inlines constants
+### Item 140 — ~~The Java tools are per-configuration only because javac inlines constants~~ — DONE
 
-**Raised 2026-09-04.** `jopizer.jar` and `jopsim.jar` are built once per
-configuration, into `build/<config>/java/tools`. That is correct today and it
-is a workaround.
+> **Closed 2026-09-04.** JOPizer is now ONE artefact that is told which machine
+> it is linking for. It lives in `build/java/tools/jopizer.jar` and contains no
+> `Const.class`.
 
-**Why they are config-dependent at all.** `JopMethodInfo` reads
-`Const.METHOD_MAX_SIZE`, which `ConstGenerator` derives from the preset's
-method cache (`jpcWidth`). `Const`'s fields are `static final int`, so **javac
-inlines them into the class file**: the limit is baked into the jar at compile
-time and no runtime lookup can correct a stale one. `JopSim` references `Const`
-the same way — verified by compiling it alone, whose output contains
-`Const.class`, where `Jopa`'s does not.
+**What it was.** `JopMethodInfo` read `Const.METHOD_MAX_SIZE`, derived from the
+preset's method cache. `Const`'s fields are `static final int`, so javac
+**inlines** them: the limit was baked into the class file, jopizer.jar became a
+per-configuration artefact, and in one shared location it went stale in a way
+make could not see — the current config's `Const.java` is older than the jar the
+previous config left behind, so a preset switch rebuilt nothing. Reproduced:
+build A ran 2 compile steps, building B ran **0**, and B linked with A's
+constants.
 
-**What it costs.** A tools rebuild on every preset switch, and two jars per
-configuration on disk. Before the split it cost worse than that: one shared
-`java/tools/dist` meant make compared the jar against the CURRENT config's
-`Const.java`, which is older than the jar the PREVIOUS config left behind, so
-switching preset rebuilt nothing and linked with the other configuration's
-linker. Reproduced 2026-09-04 — build A ran 2 compile steps, building B ran 0,
-and B shipped A's `Const.class`.
+**The whole dependence was four values** — `METHOD_MAX_SIZE`,
+`METHOD_MAX_LOCALS`, `METHOD_MAX_ARGS` (JopMethodInfo) and `MEM_TM_MAGIC`
+(ReplaceAtomicAnnotation). `ConstGenerator` now emits them as data beside
+`Const.java` (`jop-linker.properties`), and `com.jopdesign.build.LinkerConfig`
+reads them at runtime from `-Djop.linker.config=<file>`, which every app
+Makefile passes. **No defaults**: linking with another machine's limits yields
+an image whose methods cannot be invoked, discovered on hardware rather than at
+link time.
 
-**The end state.** The tools should be **config-independent artefacts that take
-the board/configuration as input**: build once into `build/java/tools`, and
-pass the limits in — a properties file emitted beside `Const.java`, or command
-line arguments — read at runtime rather than inlined at compile time. Then
-`jopizer.jar` joins `jopa.jar` in the common tree, a preset switch costs
-nothing, and the class of bug above becomes unrepresentable rather than
-guarded against.
+Verified: every app image is byte-identical to the compiled-in version
+(`DoAll.jop` 2,954,863 bytes), and `jopizer.jar` carries no `Const.class`.
 
-**Scope.** `JOPizer`/`JopMethodInfo` and `JopSim` are the only consumers that
-matter; `Jopa` is already independent. The check is mechanical: a tool is
-config-independent when compiling it alone produces no `Const.class`.
+**A second defect found while testing this, and fixed.** JOPizer ended with
+`catch(Exception e) { e.printStackTrace(); }` — every link error was printed and
+then swallowed, so it **exited 0 and left a zero-byte `.jop`**. The build
+reported success. It now removes the partial file and exits 1: leaving it means
+the next make finds a `.jop` newer than its prerequisites and skips the
+rebuild, so one failed link silently poisons every build after it. Found only
+because the "missing config must fail loudly" test asserted on the exit status
+as well as the message.
+
+**JopSim stays per-configuration, deliberately.** Its 38 `Const` references are
+the I/O map — `IOSimMin` models the addresses the hardware decodes. That is not
+a tool setting the simulator should be handed; it is the machine being
+simulated. It also produces no artefact anything else consumes, so a stale one
+misleads a person reading its output rather than corrupting a build. It keeps
+`build/<config>/java/tools`.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 

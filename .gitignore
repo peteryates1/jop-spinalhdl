@@ -156,9 +156,18 @@ java/apps/*/build/
 # generated HDL, the vendor project, IP, .jop and asm outputs. One directory
 # per build CONFIGURATION (preset plus arguments), so two core counts or two
 # method-cache geometries cannot overwrite each other's artefacts. The layout
-# is parameterised in jop.generate.BuildLayout; the old in-tree locations still
-# work for boards not yet converted, and the two coexist.
-build/
+# is parameterised in jop.generate.BuildLayout.
+#
+# ANCHORED, because a bare `build/` matches a directory of that name at ANY
+# depth -- and one of them is SOURCE: java/tools/src/com/jopdesign/build is a
+# Java package. Its 31 existing files stayed tracked (git does not un-track what
+# it already knows), so the rule was invisible until 2026-09-04, when a NEW file
+# added to that package was silently ignored: it built here and the cold clone
+# failed to compile, because a clone gets only what is tracked.
+#
+# The root build tree is already covered by /build/ at the top of this file, and
+# the per-app ones by java/apps/*/build/ above, so this rule was redundant as
+# well as harmful.
 
 # Kept-aside binaries for a reproduction that is sensitive to code layout: the
 # 4-core generational GC failure only reproduces for a particular image, and any

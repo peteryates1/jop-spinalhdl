@@ -21,7 +21,6 @@
 
 package com.jopdesign.build;
 
-import com.jopdesign.sys.Const;
 import org.apache.bcel.classfile.CodeException;
 import org.apache.bcel.classfile.Method;
 import org.apache.bcel.generic.Type;
@@ -123,19 +122,23 @@ public class JopMethodInfo extends OldMethodInfo implements Serializable {
 			// BigDecimal$StringBuilderHelper.ensureDigitArrays -- move the body
 			// into an ordinary method the initialiser calls.
 			// LIMITS COME FROM THE BUILD, NOT FROM A LITERAL -- status item 137.
-			// Const.java is generated from the preset, so METHOD_MAX_SIZE
-			// follows the method cache this image will actually run on.
 			// JOPizer.METHOD_MAX_SIZE was hardcoded at 2048 and correct only for
 			// a 2 KB cache; the default has been 8 KB (jpcWidth 13, limit 4092)
 			// for some time, so the linker was refusing methods the hardware
 			// could run.
-			if (len >= Const.METHOD_MAX_SIZE / 4
-					|| mreallocals > Const.METHOD_MAX_LOCALS
-					|| margs > Const.METHOD_MAX_ARGS) {
+			//
+			// READ AT RUNTIME, NOT COMPILED IN -- status item 140. These were
+			// Const.METHOD_MAX_*, and Const's `static final int`s are INLINED by
+			// javac, which made jopizer.jar a per-configuration artefact and let
+			// a jar built for one preset silently link another preset's image.
+			final int methodMaxWords = LinkerConfig.methodMaxSize() / 4;
+			if (len >= methodMaxWords
+					|| mreallocals > LinkerConfig.methodMaxLocals()
+					|| margs > LinkerConfig.methodMaxArgs()) {
 				System.err.println("len(max:"
-						+ (Const.METHOD_MAX_SIZE / 4) + ")=" + len
-						+ " mreallocals(max:" + Const.METHOD_MAX_LOCALS + ")=" + mreallocals
-						+ " margs(max:" + Const.METHOD_MAX_ARGS + ")=" + margs);
+						+ methodMaxWords + ")=" + len
+						+ " mreallocals(max:" + LinkerConfig.methodMaxLocals() + ")=" + mreallocals
+						+ " margs(max:" + LinkerConfig.methodMaxArgs() + ")=" + margs);
 				System.err.println("wrong size: "
 						+ getCli().clazz.getClassName() + "." + methodId);
 				if (m.getName().equals("<clinit>")) {

@@ -10,7 +10,7 @@ include config.mk
 # BUILDTREE is still exported so a board Makefile passing BUILDTREE=1 keeps
 # working; nothing reads it any more.
 export JOP_PRESET BUILDTREE JOP_CFG_DIR JAVA_OUT GEN_SRC CONST_EXCLUDE
-export TOOLS_OUT COMMON_TOOLS_OUT JOPIZER_JAR JOPSIM_JAR JOPA_JAR
+export TOOLS_OUT COMMON_TOOLS_OUT JOPIZER_JAR JOPSIM_JAR JOPA_JAR LINKER_PROPS LINKER_FLAG
 
 # THE PRESET STAMP IS GONE, because the thing it worked around is gone.
 #

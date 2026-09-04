@@ -121,9 +121,20 @@ COMMON_TOOLS_OUT := $(abspath $(PROJECT_ROOT)/build/java/tools)
 # Exported HERE, not only in java/Makefile: `make -C java/apps/<X>` includes
 # this file directly and never goes through java/Makefile, so its sub-make of
 # java/tools would otherwise see none of these.
-export TOOLS_OUT COMMON_TOOLS_OUT JOPIZER_JAR JOPSIM_JAR JOPA_JAR
+export TOOLS_OUT COMMON_TOOLS_OUT JOPIZER_JAR JOPSIM_JAR JOPA_JAR LINKER_PROPS LINKER_FLAG
 
-JOPIZER_JAR := $(TOOLS_OUT)/jopizer.jar
+# JOPizer IS NOW COMMON -- status item 140 closed. It read four values from the
+# generated Const.java (three method limits and the RTTM magic), and javac
+# inlines `static final int`, so the jar carried one configuration's limits.
+# Those four are emitted as DATA next to Const.java and read at runtime, so the
+# linker is built once and TOLD which machine it is linking for.
+JOPIZER_JAR := $(COMMON_TOOLS_OUT)/jopizer.jar
+
+# Passed to every JOPizer/PreLinker invocation. No default in the tool: linking
+# with another machine's limits produces an image whose methods cannot be
+# invoked, discovered on hardware rather than at link time.
+LINKER_PROPS := $(abspath $(GEN_SRC)/jop-linker.properties)
+LINKER_FLAG  := -Djop.linker.config=$(LINKER_PROPS)
 JOPSIM_JAR  := $(TOOLS_OUT)/jopsim.jar
 JOPA_JAR    := $(COMMON_TOOLS_OUT)/jopa.jar
 

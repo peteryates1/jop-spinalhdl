@@ -54,12 +54,12 @@ classes:
 
 preprocess: classes
 	mkdir -p $(PP_DIR)
-	$(JAVA) -classpath $(TOOLS_CP) \
+	$(JAVA) $(LINKER_FLAG) -classpath $(TOOLS_CP) \
 		com.jopdesign.build.PreLinker \
 		-c $(CLASSES_DIR) -o $(PP_DIR) $(APP_PKG)/$(APP_NAME)
 
 jop: preprocess
-	$(JAVA) -Dmgci=false -classpath $(TOOLS_CP) \
+	$(JAVA) -Dmgci=false $(LINKER_FLAG) -classpath $(TOOLS_CP) \
 		com.jopdesign.build.JOPizer \
 		-cp $(PP_CLASSES_DIR) -o $(JOP_OUT) $(APP_PKG).$(APP_NAME)
 

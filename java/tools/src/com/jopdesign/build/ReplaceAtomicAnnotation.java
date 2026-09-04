@@ -21,7 +21,6 @@
 package com.jopdesign.build;
 
 import com.jopdesign.common.bcel.AnnotationAttribute;
-import com.jopdesign.sys.Const;
 import org.apache.bcel.Constants;
 import org.apache.bcel.classfile.Attribute;
 import org.apache.bcel.classfile.JavaClass;
@@ -235,7 +234,7 @@ public class ReplaceAtomicAnnotation extends JOPizerVisitor {
 			    BranchInstruction ifeq_44 = InstructionFactory.createBranchInstruction(Constants.IFEQ, null);
 			il.append(ifeq_44);
 			InstructionHandle ih_47 = il.append(new PUSH(_cp, 1));
-			il.append(new PUSH(_cp, Const.MEM_TM_MAGIC));
+			il.append(new PUSH(_cp, LinkerConfig.memTmMagic()));
 			il.append(_factory.createInvoke("com.jopdesign.sys.Native", "wrMem", Type.VOID, new Type[] { Type.INT, Type.INT }, Constants.INVOKESTATIC));
 //			InstructionHandle ih_53 = il.append(_factory.createLoad(Type.INT, transactionLocalsBaseIndex-2+0));
 //			il.append(_factory.createInvoke("rttm.swtest.Transaction", "atomicSection", Type.INT, new Type[] { Type.INT }, Constants.INVOKESTATIC));
@@ -288,7 +287,7 @@ public class ReplaceAtomicAnnotation extends JOPizerVisitor {
 			    BranchInstruction ifeq_59 = InstructionFactory.createBranchInstruction(Constants.IFEQ, null);
 			il.append(ifeq_59);
 			InstructionHandle ih_62 = il.append(new PUSH(_cp, 0));
-			il.append(new PUSH(_cp, Const.MEM_TM_MAGIC));
+			il.append(new PUSH(_cp, LinkerConfig.memTmMagic()));
 			il.append(_factory.createInvoke("com.jopdesign.sys.Native", "wrMem", Type.VOID, new Type[] { Type.INT, Type.INT }, Constants.INVOKESTATIC));
 			InstructionHandle ih_68 = il.append(_factory.createFieldAccess("rttm.internal.Utils", "inTransaction", new ArrayType(Type.BOOLEAN, 1), Constants.GETSTATIC));
 			il.append(new PUSH(_cp, -122));
