@@ -202,7 +202,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 ### Closed
 
 - ~~**[57](#item-57)**~~ — The XDC/QSF generators exist and nothing uses them — DONE 2026-08-31; every board reads generated constraints, and the tracked files are now ConstraintDriftTest's oracles
-- ~~**[60](#item-60)**~~ — Everything generated belongs under `build/<config>/` — three FPGA flows and the Java/JOP tree done and verified, 48 flows and `asm/` to go
+- ~~**[60](#item-60)**~~ — Everything generated belongs under `build/<config>/` — DONE 2026-09-04: boards finished 2026-08-31, but the legacy path stayed the DEFAULT in both trees for four more days; both branches now deleted and guarded
 - ~~**[80](#item-80)**~~ — `PerfCounterVerifySim` fails on an unassigned ICU register — pre-existing, confirmed by bisect
 - ~~**[95](#item-95)**~~ — The README advertises 13 simulation commands; CI watched a different set, and the gap is where four broken sims were hiding — **CLOSED: CI executes the README itself**
 - ~~**[96](#item-96)**~~ — `JopCoreWithSdramSim` stalls — WITHDRAWN 2026-08-30, never a bug: the cycle budget was 19x short, and the three-PC steady state was a slow boot seen through a narrow window
@@ -1968,6 +1968,31 @@ already grepped.
 > is a build directory any more, and `4471933` records the last of it. See also
 > [item 94](#item-94), which states the same completion and disagreed with this
 > heading for six days.
+
+> **Reopened and finished 2026-09-04 — and WHY it read as done when it was
+> not.** Every board flow had been converted, so every *build* landed in the
+> right place. What survived was the DEFAULT: `BUILDTREE ?= 0` in `java/`, and
+> `spinalhdl/generated` unless a caller passed `buildtree`. The correct layout
+> needed a flag and the legacy layout was what you got by not asking, so
+> anything not explicitly converted — a bare `make -C java`, 63 sims, five
+> auxiliary scripts, 22 standalone generators — silently kept writing into the
+> source tree. Both branches are now deleted; there is one layout, and
+> `check-no-legacy-rtl-path.sh` / `check-no-intree-jop-path.sh` fail the build
+> if either comes back.
+>
+> **A conversion is not finished while the old path is still the default.**
+> Counting converted boards measured the wrong thing: the boards were all
+> converted on 2026-08-31 and the source tree was still collecting build
+> products four days later. What made it invisible was `.gitignore` — lifting
+> the rules exposed a `Const.java` holding another configuration's constants,
+> 28 stale `.jop` images and 83 JOPizer sidecars, none of them seen in months.
+> An ignore rule on a path nothing should write is not tidiness; it is how a
+> stale artefact survives.
+>
+> The justifying comment had also gone stale: it claimed 51 Makefiles and TCL
+> scripts across ten boards read the legacy path, and by removal the real count
+> was five auxiliary scripts. Same failure as the EP4CGX150 PLL comment — a
+> reason to keep something outliving the thing that made it true.
 
 **Raised 2026-08-23, in progress.** The goal the user set: *nothing generated or
 built ends up anywhere other than under that build directory*, one directory per
