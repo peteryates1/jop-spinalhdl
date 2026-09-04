@@ -2,9 +2,38 @@ JAVAC ?= javac
 JAR ?= jar
 
 SRC_DIR := src
-DIST_DIR := dist
-CLASSES_DIR := $(DIST_DIR)/classes
 LIB_DIR := ../lib
+
+# WHERE THE JARS GO. Set by java/config.mk and exported by java/Makefile, so
+# the config-dependence rule lives in one place -- see the long note there.
+#   TOOLS_OUT         build/<config>/java/tools   jopizer, jopsim
+#   COMMON_TOOLS_OUT  build/java/tools            jopa
+#
+# COMMON_TOOLS_OUT has a default because jopa is config-independent, so
+# `make -C java/tools jopa` is meaningful with no preset selected -- CI builds
+# it that way, before any configuration exists. The per-config jars have NO
+# default on purpose: a default would silently produce a jar for the wrong
+# configuration at a path something later reads, which is the whole defect
+# this split exists to remove.
+COMMON_TOOLS_OUT ?= $(abspath ../../build/java/tools)
+
+# ONE CLASSES DIRECTORY PER JAR. All three used to share $(DIST_DIR)/classes
+# and pack it whole with `-C $(CLASSES_DIR) .`, so every jar shipped whatever
+# the previous one had compiled: jopa.jar carried Const.class despite Jopa
+# never referencing Const, which made a config-independent tool look
+# config-dependent. Separate directories mean a jar contains what it needs.
+# THE JAR PATHS NEED DEFAULTS HERE TOO. They are normally set by
+# java/config.mk and exported, but `make -C java/tools jopa` includes nothing,
+# so JOPA_JAR was EMPTY and `jopa: $(JOPA_JAR)` became a target with no
+# prerequisite: it built nothing and exited 0. A silent no-op that reports
+# success is worse than the stale jar this split exists to fix.
+JOPIZER_JAR ?= $(TOOLS_OUT)/jopizer.jar
+JOPSIM_JAR  ?= $(TOOLS_OUT)/jopsim.jar
+JOPA_JAR    ?= $(COMMON_TOOLS_OUT)/jopa.jar
+
+JOPIZER_CLASSES := $(TOOLS_OUT)/classes-jopizer
+JOPSIM_CLASSES  := $(TOOLS_OUT)/classes-jopsim
+JOPA_CLASSES    := $(COMMON_TOOLS_OUT)/classes-jopa
 TARGET_SRC := ../runtime/src/jop
 
 # Const.java is GENERATED into the config's own gen tree
@@ -32,9 +61,22 @@ LIB_CP := $(LIB_DIR)/bcel-5.2.jar:$(LIB_DIR)/jakarta-regexp-1.3.jar:$(LIB_DIR)/l
 # Include target/src/jop for Const
 COMPILE_CP := $(LIB_CP):$(TARGET_SRC_PATH)
 
-.PHONY: all clean
+.PHONY: all clean jopa require-tools-out
 
-all: $(DIST_DIR)/jopizer.jar $(DIST_DIR)/jopsim.jar $(DIST_DIR)/jopa.jar
+all: require-tools-out $(JOPIZER_JAR) $(JOPSIM_JAR) $(JOPA_JAR)
+
+# Convenience for callers that want only the config-independent assembler --
+# asm/ and the CI job that builds microcode before any preset is chosen.
+jopa: $(JOPA_JAR)
+
+require-tools-out:
+	@if [ -z "$(TOOLS_OUT)" ]; then \
+	  echo "java/tools: TOOLS_OUT is not set." >&2; \
+	  echo "  jopizer.jar and jopsim.jar are PER CONFIGURATION -- they compile" >&2; \
+	  echo "  against the generated Const.java -- so they cannot be built without" >&2; \
+	  echo "  a preset. Build via 'make -C java tools JOP_PRESET=<preset>', which" >&2; \
+	  echo "  sets it. 'make -C java/tools jopa' needs no preset." >&2; \
+	  exit 1; fi
 
 # Const.java IS A PREREQUISITE, not merely on the sourcepath — status item 137.
 #
@@ -60,33 +102,38 @@ all: $(DIST_DIR)/jopizer.jar $(DIST_DIR)/jopsim.jar $(DIST_DIR)/jopa.jar
 # layout tomorrow.
 CONST_JAVA_DEP := $(wildcard $(GEN_SRC_HERE)/jop/com/jopdesign/sys/Const.java)
 
-$(DIST_DIR)/jopizer.jar: $(shell find $(SRC_DIR) -name '*.java') $(CONST_JAVA_DEP)
-	mkdir -p $(CLASSES_DIR)
-	$(JAVAC) -encoding Latin1 -d $(CLASSES_DIR) \
+$(JOPIZER_JAR): $(shell find $(SRC_DIR) -name '*.java') $(CONST_JAVA_DEP)
+	mkdir -p $(JOPIZER_CLASSES) $(dir $@)
+	$(JAVAC) -encoding Latin1 -d $(JOPIZER_CLASSES) \
 		-classpath $(COMPILE_CP) \
 		-sourcepath $(SRC_DIR):$(TARGET_SRC_PATH) \
 		$(SRC_DIR)/com/jopdesign/build/JOPizer.java \
 		$(SRC_DIR)/com/jopdesign/build/PreLinker.java
-	$(JAR) cfe $(DIST_DIR)/jopizer.jar com.jopdesign.build.JOPizer -C $(CLASSES_DIR) .
+	$(JAR) cfe $@ com.jopdesign.build.JOPizer -C $(JOPIZER_CLASSES) .
 
 # JopSim needs only JopInstr and Const (no BCEL)
 SIM_CP := $(TARGET_SRC_PATH)
 
-$(DIST_DIR)/jopsim.jar: $(shell find $(SRC_DIR)/com/jopdesign/tools -name '*.java')
-	mkdir -p $(CLASSES_DIR)
-	$(JAVAC) -encoding Latin1 -d $(CLASSES_DIR) \
+# CONST_JAVA_DEP HERE TOO. JopSim references Const -- compiling it alone puts
+# Const.class in its output -- so it is per-configuration for the same reason
+# jopizer is, and it was missing the prerequisite entirely: a preset switch
+# regenerated Const.java and this jar did not rebuild.
+$(JOPSIM_JAR): $(shell find $(SRC_DIR)/com/jopdesign/tools -name '*.java') $(CONST_JAVA_DEP)
+	mkdir -p $(JOPSIM_CLASSES) $(dir $@)
+	$(JAVAC) -encoding Latin1 -d $(JOPSIM_CLASSES) \
 		-classpath $(SIM_CP) \
 		-sourcepath $(SRC_DIR):$(TARGET_SRC_PATH) \
 		$(SRC_DIR)/com/jopdesign/tools/JopSim.java
-	$(JAR) cfe $(DIST_DIR)/jopsim.jar com.jopdesign.tools.JopSim -C $(CLASSES_DIR) .
+	$(JAR) cfe $@ com.jopdesign.tools.JopSim -C $(JOPSIM_CLASSES) .
 
-# Jopa needs no external libs — only its own package
-$(DIST_DIR)/jopa.jar: $(shell find $(SRC_DIR)/com/jopdesign/tools -name '*.java')
-	mkdir -p $(CLASSES_DIR)
-	$(JAVAC) -encoding Latin1 -d $(CLASSES_DIR) \
+# Jopa needs no external libs — only its own package, and no Const, which is
+# why this one is COMMON rather than per-config.
+$(JOPA_JAR): $(shell find $(SRC_DIR)/com/jopdesign/tools -name '*.java')
+	mkdir -p $(JOPA_CLASSES) $(dir $@)
+	$(JAVAC) -encoding Latin1 -d $(JOPA_CLASSES) \
 		-sourcepath $(SRC_DIR) \
 		$(SRC_DIR)/com/jopdesign/tools/Jopa.java
-	$(JAR) cfe $(DIST_DIR)/jopa.jar com.jopdesign.tools.Jopa -C $(CLASSES_DIR) .
+	$(JAR) cfe $@ com.jopdesign.tools.Jopa -C $(JOPA_CLASSES) .
 
 clean:
-	rm -rf $(DIST_DIR)
+	rm -rf $(TOOLS_OUT) $(COMMON_TOOLS_OUT)

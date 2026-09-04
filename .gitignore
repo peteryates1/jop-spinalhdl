@@ -148,8 +148,8 @@ mig_trace.csv
 #   java/runtime/src/jop/com/jopdesign/sys/.const-preset   (stamp; removed)
 #   java/apps/*/*.jop
 #   java/apps/*/*.jop.txt  .jop.link.txt  .jop.stats.txt   (JOPizer sidecars)
-java/tools/dist/
-java/runtime/classes/
+#   java/tools/dist/          (jars now in build/<config>/java/tools and
+#   java/runtime/classes/      build/java/tools; classes under build/ too)
 java/apps/*/build/
 
 # ALL generated and transient build products live under build/<config>/ --

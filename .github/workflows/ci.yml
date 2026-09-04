@@ -44,7 +44,7 @@ jobs:
           java-version: 17
 
       - name: Build Java tools (jopa.jar)
-        run: make -C java/tools dist/jopa.jar
+        run: make -C java/tools jopa
 
       - name: Build microcode (superset ROM)
         # `all` covers simulation, serial and flash-altera. It used to build only

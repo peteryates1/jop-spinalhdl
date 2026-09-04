@@ -45,6 +45,22 @@ while IFS= read -r f; do
   fi
 done < <(git ls-files -- 'java/Makefile' 'java/*/Makefile' 'java/*.mk')
 
+# --- 1c. the tools jars are not built into the source tree -------------------
+# jopizer.jar embeds Const.class -- METHOD_MAX_SIZE is derived from the
+# preset's method cache -- so it is a PER-CONFIGURATION artefact. Built into a
+# single java/tools/dist it went stale exactly the way the shared Const.java
+# did: make compares the jar against the CURRENT config's Const.java, which is
+# older than the jar the PREVIOUS config left behind, so switching preset
+# rebuilt nothing and linked with the other configuration's linker.
+# Reproduced 2026-09-04: build A (2 compile steps), build B (0), and B shipped
+# A's Const.class.
+if command grep -qE '^DIST_DIR[[:space:]]*:?=[[:space:]]*dist[[:space:]]*$' java/tools/Makefile; then
+  echo "FAIL: java/tools/Makefile builds into the source tree (DIST_DIR := dist)" >&2
+  echo "      config-dependent tools belong in build/<config>/java/tools," >&2
+  echo "      config-independent ones in build/java/tools" >&2
+  BAD=1
+fi
+
 # --- 2. config.mk has no legacy branch --------------------------------------
 if command grep -qE '^BUILDTREE[[:space:]]*\?=[[:space:]]*0' java/config.mk; then
   echo "FAIL: java/config.mk still defaults BUILDTREE to 0" >&2

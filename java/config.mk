@@ -65,6 +65,50 @@ CONST_ARGS := $(JOP_PRESET) --write buildtree
 # and left every class referencing Const uncompilable.
 CONST_EXCLUDE := ! -path '*/src/jop/com/jopdesign/sys/Const.java'
 
+# WHERE THE TOOLS JARS GO, and why it is two places rather than one.
+#
+# CONFIG-DEPENDENCE decides the location, not convenience:
+#
+#   jopizer.jar  compiles against the generated Const.java. JopMethodInfo reads
+#                Const.METHOD_MAX_SIZE, derived from the preset's method cache,
+#                and javac INLINES a `static final int` -- so the jar carries
+#                one configuration's limit. PER CONFIG.
+#   jopsim.jar   references Const too (verified by compiling it alone: its
+#                classes contain Const.class; Jopa's do not). PER CONFIG.
+#   jopa.jar     the microcode assembler, compiled with -sourcepath $(SRC_DIR)
+#                only. It never sees Const. COMMON.
+#
+# jopa LOOKED config-dependent before this split because all three jars packed
+# a SHARED classes directory with `-C $(CLASSES_DIR) .`, so each jar shipped
+# whatever the previous one had compiled. Each jar now has its own classes
+# directory, so what a jar contains is what it actually needs.
+#
+# WHY IT MATTERS. Built into one shared java/tools/dist, jopizer.jar went stale
+# exactly the way the shared Const.java did, and for the same reason: make
+# compares the jar against the CURRENT config's Const.java, which is OLDER than
+# the jar the PREVIOUS config left behind. Reproduced 2026-09-04 -- build A ran
+# 2 compile steps, building B ran 0, and B linked with A's Const.class. That is
+# status item 140's stale-JOPizer defect one level up, and making the jar
+# depend on Const.java (174d67f) does not reach it: the dependency was right,
+# the location was not.
+#
+# ABSOLUTE, via $(abspath ...). These are read from java/, java/tools/ and
+# java/apps/<X>/, which sit at three different depths; a relative path resolves
+# one level short somewhere, and javac does not warn about a sourcepath entry
+# that does not exist -- it fails later with "cannot find symbol", pointing at
+# the symbol rather than the path.
+TOOLS_OUT        := $(abspath $(JAVA_OUT)/tools)
+COMMON_TOOLS_OUT := $(abspath $(PROJECT_ROOT)/build/java/tools)
+
+# Exported HERE, not only in java/Makefile: `make -C java/apps/<X>` includes
+# this file directly and never goes through java/Makefile, so its sub-make of
+# java/tools would otherwise see none of these.
+export TOOLS_OUT COMMON_TOOLS_OUT JOPIZER_JAR JOPSIM_JAR JOPA_JAR
+
+JOPIZER_JAR := $(TOOLS_OUT)/jopizer.jar
+JOPSIM_JAR  := $(TOOLS_OUT)/jopsim.jar
+JOPA_JAR    := $(COMMON_TOOLS_OUT)/jopa.jar
+
 # Every source directory javac must see, generated code included.
 TARGET_SRCS := $(RUNTIME_SRCS) $(GEN_SRC)
 

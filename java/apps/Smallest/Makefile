@@ -26,7 +26,7 @@ JOP_OUT := $(if $(JAVA_OUT),$(JAVA_OUT)/apps/$(APP_DIR_NAME)/$(APP_NAME).jop,$(A
 
 # Classpath for tools
 LIB_CP := $(LIB_DIR)/bcel-5.2.jar:$(LIB_DIR)/jakarta-regexp-1.3.jar:$(LIB_DIR)/log4j-1.2.15.jar:$(LIB_DIR)/jgrapht-jdk1.5.jar
-TOOLS_CP := $(TOOLS_DIR)/dist/jopizer.jar:$(LIB_CP)
+TOOLS_CP := $(JOPIZER_JAR):$(LIB_CP)
 
 .PHONY: all classes preprocess jop clean
 

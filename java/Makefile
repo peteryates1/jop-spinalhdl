@@ -10,6 +10,7 @@ include config.mk
 # BUILDTREE is still exported so a board Makefile passing BUILDTREE=1 keeps
 # working; nothing reads it any more.
 export JOP_PRESET BUILDTREE JOP_CFG_DIR JAVA_OUT GEN_SRC CONST_EXCLUDE
+export TOOLS_OUT COMMON_TOOLS_OUT JOPIZER_JAR JOPSIM_JAR JOPA_JAR
 
 # THE PRESET STAMP IS GONE, because the thing it worked around is gone.
 #
@@ -91,12 +92,12 @@ test-apps: apps
 # after everything else had moved, and nothing noticed because no CI job runs
 # either target.
 sim-smallest: all
-	java -cp tools/dist/jopsim.jar -Dtrace=2 com.jopdesign.tools.JopSim \
+	java -cp $(JOPSIM_JAR) -Dtrace=2 com.jopdesign.tools.JopSim \
 		-link $(JAVA_OUT)/apps/Smallest/HelloWorld.jop.link.txt \
 		$(JAVA_OUT)/apps/Smallest/HelloWorld.jop
 
 sim-small: all
-	java -cp tools/dist/jopsim.jar -Dtrace=2 com.jopdesign.tools.JopSim \
+	java -cp $(JOPSIM_JAR) -Dtrace=2 com.jopdesign.tools.JopSim \
 		-link $(JAVA_OUT)/apps/Small/HelloWorld.jop.link.txt \
 		$(JAVA_OUT)/apps/Small/HelloWorld.jop
 

@@ -141,6 +141,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 
 ### Open
 
+- **[140](#item-140)** — The Java tools are config-dependent because javac inlines `Const`; they should take the board/config at RUNTIME and be built once
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
@@ -2004,6 +2005,41 @@ core counts and overrides together). The layout itself is data
 
 
 <a id="item-61"></a>
+
+
+### Item 140 — The Java tools are per-configuration only because javac inlines constants
+
+**Raised 2026-09-04.** `jopizer.jar` and `jopsim.jar` are built once per
+configuration, into `build/<config>/java/tools`. That is correct today and it
+is a workaround.
+
+**Why they are config-dependent at all.** `JopMethodInfo` reads
+`Const.METHOD_MAX_SIZE`, which `ConstGenerator` derives from the preset's
+method cache (`jpcWidth`). `Const`'s fields are `static final int`, so **javac
+inlines them into the class file**: the limit is baked into the jar at compile
+time and no runtime lookup can correct a stale one. `JopSim` references `Const`
+the same way — verified by compiling it alone, whose output contains
+`Const.class`, where `Jopa`'s does not.
+
+**What it costs.** A tools rebuild on every preset switch, and two jars per
+configuration on disk. Before the split it cost worse than that: one shared
+`java/tools/dist` meant make compared the jar against the CURRENT config's
+`Const.java`, which is older than the jar the PREVIOUS config left behind, so
+switching preset rebuilt nothing and linked with the other configuration's
+linker. Reproduced 2026-09-04 — build A ran 2 compile steps, building B ran 0,
+and B shipped A's `Const.class`.
+
+**The end state.** The tools should be **config-independent artefacts that take
+the board/configuration as input**: build once into `build/java/tools`, and
+pass the limits in — a properties file emitted beside `Const.java`, or command
+line arguments — read at runtime rather than inlined at compile time. Then
+`jopizer.jar` joins `jopa.jar` in the common tree, a preset switch costs
+nothing, and the class of bug above becomes unrepresentable rather than
+guarded against.
+
+**Scope.** `JOPizer`/`JopMethodInfo` and `JopSim` are the only consumers that
+matter; `Jopa` is already independent. The check is mechanical: a tool is
+config-independent when compiling it alone produces no `Const.class`.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 
