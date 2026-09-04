@@ -98,11 +98,10 @@ nothing depends on ranks below a measurement that could mislead someone.
 58. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
 59. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
 60. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
-61. **[#118](#item-118)** — A CANCELLED nightly is silent (no failure notification); a FAILED one does email. One cancellation in 60 scheduled runs, never a failure. Small bounded gap — may not be worth a workflow change
-62. **[#108](#item-108)** — README's 16-core claim rests on resource figures README itself withdrew as undated
-63. **[#100](#item-100)** — The EP4CGX150 cable reads 10/10 since the 2026-08-31 swap and blocks nothing. What is left is an unresolved confound: the swap changed the cable AND re-seated both plugs, so put the Pico back on that board to confirm re-seating was the cure
-64. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
-65. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
+61. **[#108](#item-108)** — README's 16-core claim rests on resource figures README itself withdrew as undated
+62. **[#100](#item-100)** — The EP4CGX150 cable reads 10/10 since the 2026-08-31 swap and blocks nothing. What is left is an unresolved confound: the swap changed the cable AND re-seated both plugs, so put the Pico back on that board to confirm re-seating was the cure
+63. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
+64. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
 
 ## 2. All items — summary
 
@@ -4333,7 +4332,7 @@ rather than discovered by an audit months later.
 
 <a id="item-118"></a>
 
-### Item 118 — a CANCELLED nightly is silent; a failed one is not
+### ~~Item 118~~ — a CANCELLED nightly is silent; a failed one is not — **CLOSED 2026-09-04**
 
 Run `33377819507`, 2026-08-31T09:28Z, `schedule` on `main`: **cancelled** after
 1h4m13s.
@@ -4372,12 +4371,15 @@ run is QUEUED — it then waits for a runner, and the runs land between **07:43
 and 09:49**. Nothing depends on the hour today, but do not build anything that
 assumes 03:00.
 
-**What would close this:** something that reaches a person on a CANCELLED
-scheduled run, since failure is already covered. The residue is small and may
-not be worth a workflow change — cancellation of a nightly has happened once in
-60 runs, and item 47 already removed the mechanism (a push killing a scheduled
-run) that would have made it systematic. Reasonable to leave as a known,
-bounded gap rather than engineer around it.
+**CLOSED 2026-09-04, as a recorded fact rather than an open task.** Failure is
+covered by email; the residue is that a CANCELLED scheduled run notifies nobody.
+That has happened once in 60 runs, and [item 47](#item-47) already removed the
+mechanism — a push killing a scheduled run — that would have made it systematic.
+
+Nothing here needs attention, and a backlog carrying "we could add a notifier"
+stops being a list of things needing attention. The fact is written down; if a
+second cancellation ever goes unnoticed, this item is the precedent and reopening
+it is the right move.
 
 <a id="item-119"></a>
 
