@@ -8,6 +8,7 @@
 > | **whether item N is open** | [§2 All items](#2-all-items--summary) — the scannable index |
 > | **why item N is the way it is** | [§3 Item detail](#3-item-detail-and-journals) — summary and gotchas per item |
 > | **the full investigation** | `docs/status/item-N.md` — linked from each item that has one |
+> | **where NOT to spend effort** | [item 50](#item-50) and [`architecture/tuning-guide.md`](architecture/tuning-guide.md) — the measured negative results |
 >
 > **Item numbers are stable IDs**, not reading order, and they are referenced
 > from other documents and from commit messages. `#item-N` anchors resolve for
@@ -23,65 +24,6 @@
 > every `#item-N` link in the repo resolves, no CLOSED item sits in the priority
 > list, and every journal is present and linked.
 
-
-## 0. Headline results
-
-The findings a newcomer needs before reading anything else. Each is measured
-and links to the item carrying the evidence.
-
-> **2026-08-17/18 — the DRAM multicore scaling ceiling is gone.** `LruCacheCore`
-> was a blocking miss FSM and both DRAM paths stalled at ~1.8x on eight cores
-> against SDR's 4.45x. It now has an MSHR file, and both memory adapters had to
-> stop serialising with it. Measured on hardware, both boards:
->
-> | board | 8-core before | after | ratio |
-> |---|---|---|---|
-> | A-E115FB DDR2 | 682 kacc/s | **1613** | 1.81x -> **4.28x** |
-> | Wukong DDR3 | 754 kacc/s | **1882** | 1.75x -> **4.38x** |
->
-> **Off by default** (`JopMemoryConfig.l2MshrCount = 1`) — no shipped
-> configuration has changed; the MSHR presets are opt-in
-> (`ae115fbDdr2SmpMshr`, `wukongDdr3SmpMshr`). Neither 8-core build closes
-> timing, so those are measurement vehicles, not shippable bitstreams.
->
-> Full record, including two response-ordering bugs it exposed in the memory
-> adapters and the analysis of what limits things now:
-> [architecture/nonblocking-cache-mshr-plan.md](architecture/nonblocking-cache-mshr-plan.md).
-> Benchmark tables: [../java/apps/JbeBench/README.md](../java/apps/JbeBench/README.md).
->
-> **Memory work is worth doing on real code, and the method cache is the
-> target.** Real applications lose **34-55 % of throughput to memory latency**
-> (Kfl 53.8 %, UdpIp 54.8 %, Lift 34.0 % — item 38), and **62 % of DoApp's
-> memory transactions are bytecode fill** while all array traffic is 4.2 %
-> (item 37). The BMB arbiter caps FREQUENCY, not throughput, and is a worse
-> trade at these numbers — see the retraction in items 5 and 31.
->
-> **And a general-purpose L2 in front of DRAM is NOT the lever** — measured on
-> one die, two memory systems, same clock, run simultaneously: a 32 KB L2 is
-> worth **3-5 %**, and it cannot touch the method cache or handle indirection,
-> which between them own 57-63 % of every stall profile ([item 50](#item-50)).
->
-> Two optimisations that looked worth multiples on `JbeScale` are worth 2.8 %
-> and nothing on real code. **Do not act on any `JbeScale`-derived number**
-> without checking it against DoApp first; that benchmark is a pessimal data
-> probe and real code here is instruction-fetch bound.
-
-Resumption notes covering the GC work, the A-E115FB DDR2 bring-up, SMP, and the
-board/probe setup. Written to be read cold.
-
-Detail lives in:
-- [gc/stage3-followups.md](gc/stage3-followups.md) — GC Stage 3 history: what each
-  change bought, the corrections along the way, and the small leftovers.
-  **This file is authoritative for pause numbers and tuning constants**, not that
-  one — it kept duplicate tables through Stage 3 and they drifted within two days
-- [boards/ae115fb-ddr2-bringup.md](boards/ae115fb-ddr2-bringup.md) — DDR2, including everything that went wrong
-- [bugs-and-issues.md](bugs-and-issues.md) — the defects fixed along the way
-- [gc/copy-phase-redesign.md](gc/copy-phase-redesign.md) — the remaining 79-82% of the minor pause
-- [gc/major-gc-evacuation.md](gc/major-gc-evacuation.md) — design note: drop the address sort from the major GC
-- [architecture/tuning-guide.md](architecture/tuning-guide.md) — **the configuration levers**: what each of `blockBits`, `jpcWidth`, `l2SetCount`, `l2MshrCount` and `cpuCnt` buys, what each costs, which resource binds, and a list of the plausible-sounding conclusions that measurement disproved
-- [architecture/software-cost-model.md](architecture/software-cost-model.md) — what operations cost on JOP, measured (method call ~142 cycles, static read ~22, microcode imul ~775)
-
----
 
 ## 1. Outstanding now — in priority order
 
