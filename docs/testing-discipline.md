@@ -76,7 +76,19 @@ $ command grep -n 'STR_OBJ_LEN =' StringInfo.java  -> 2+2+1 (the source)
 ```
 
 Read the emitted `.jop`, the elaborated Verilog under `build/<preset>/rtl/`, the
-generated constraint file. Note also that this shell's `grep` is a ugrep wrapper
+generated constraint file.
+
+**And test the DEPENDENCY, not just the feature.** On 2026-09-04 the linker's
+method-size limit was made to come from the generated `Const.java`. The feature
+was verified — the limit derived correctly, the override lowered it, an
+excessive value was refused — and all of that passed while the dependency was
+missing: `jopizer.jar`'s prerequisites did not include `Const.java`, and javac
+INLINES a `static final int`, so the limit was baked into the jar with no
+runtime lookup to save it. A single build regenerates `Const` and rebuilds the
+tools in the same invocation, so every feature test passed. **Only switching
+between two values exposed it** — set the limit to 2048, rebuild, and the jar
+still compared against the 4092-byte limit. When a generated input decides an
+artefact's content, change it twice and check the artefact both times. Note also that this shell's `grep` is a ugrep wrapper
 that silently returns nothing for `--include=<glob>` with a `.` root — use
 `command grep` for any "appears nowhere" claim
 ([item 135](current-status.md#item-135)).

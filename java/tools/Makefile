@@ -37,7 +37,26 @@ COMPILE_CP := $(LIB_CP):$(TARGET_SRC_PATH)
 
 all: $(DIST_DIR)/jopizer.jar $(DIST_DIR)/jopsim.jar $(DIST_DIR)/jopa.jar
 
-$(DIST_DIR)/jopizer.jar: $(shell find $(SRC_DIR) -name '*.java')
+# Const.java IS A PREREQUISITE, not merely on the sourcepath — status item 137.
+#
+# JopMethodInfo reads Const.METHOD_MAX_SIZE, which ConstGenerator derives from
+# the preset's method cache. Those are `static final int`, so javac INLINES them
+# into JopMethodInfo.class: the limit is baked into the jar at build time and no
+# runtime lookup can save a stale one.
+#
+# Without this dependency, switching preset (or passing methodmax=) regenerates
+# Const.java, the jar does NOT rebuild, and the linker silently keeps enforcing
+# the PREVIOUS preset's limit. Demonstrated: with Const at 2048 the jar still
+# compared against 1023 words, i.e. the 4092-byte limit.
+#
+# Const.java lives under TARGET_SRC, or under GEN_SRC_HERE for a build-tree
+# build; both are on the sourcepath below, and both belong here. Same defect as
+# item 140 and as Const.java's own missing prerequisites — a generated artefact
+# whose prerequisites omit an input that decides its content.
+CONST_JAVA_DEP := $(firstword $(wildcard $(GEN_SRC_HERE)/jop/com/jopdesign/sys/Const.java) \
+                              $(wildcard $(TARGET_SRC)/com/jopdesign/sys/Const.java))
+
+$(DIST_DIR)/jopizer.jar: $(shell find $(SRC_DIR) -name '*.java') $(CONST_JAVA_DEP)
 	mkdir -p $(CLASSES_DIR)
 	$(JAVAC) -encoding Latin1 -d $(CLASSES_DIR) \
 		-classpath $(COMPILE_CP) \
