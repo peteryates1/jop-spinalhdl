@@ -369,6 +369,17 @@ case class JopCoreConfig(
   jpcWidth:     Int              = 13,
   ramWidth:     Int              = 8,
   blockBits:    Int              = 6,   // 64 blocks -- see jpcWidth above
+  /** Cap the linker's method-size limit BELOW what this hardware could run.
+    *
+    * `Const.METHOD_MAX_SIZE` is normally derived from the method cache, so an
+    * 8 KB build accepts methods a 2 KB build would refuse — and an image built
+    * on the larger one will not run on the smaller. Set this to build a
+    * PORTABLE image: `methodmax=2048` on an 8 KB target produces something the
+    * 2 KB target can also execute.
+    *
+    * Only ever lowers the limit. Raising it past what the cache or the 10-bit
+    * `len` field can express is refused at elaboration — status item 137. */
+  methodMaxSizeOverride: Option[Int] = None,
   memConfig:    JopMemoryConfig  = JopMemoryConfig(),
   supersetJumpTable: JumpTableInitData = JumpTableInitData.simulation,
   cpuId:        Int              = 0,

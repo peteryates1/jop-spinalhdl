@@ -29,6 +29,36 @@ object ConstGenerator {
     // Union of all cores' configs across all systems
     val allCores = config.systems.flatMap(_.coreConfigs)
 
+    // THE LINKER'S METHOD-SIZE LIMIT, DERIVED FROM THE HARDWARE — status item 137.
+    //
+    // Two independent ceilings, and the smaller wins:
+    //
+    //   cache capacity  a method is loaded WHOLE into the method cache, which
+    //                   holds 2^(jpcWidth-2) words.
+    //   struct format   `word1 = codeAddress << 10 | len`, so `len` is 10 bits
+    //                   and cannot express more than 1023 words whatever the
+    //                   cache size.
+    //
+    // JOPizer hardcoded 2048 bytes. That was correct for a 2 KB cache
+    // (jpcWidth 11 gives exactly 512 words = 2048 bytes) and was never updated
+    // when the default became jpcWidth 13 — an 8 KB cache that can hold a
+    // 1023-word method. The linker has been refusing methods the hardware could
+    // run, and one preset uses jpcWidth 15.
+    //
+    // The MINIMUM across cores: a heterogeneous SMP image must run on all of
+    // them, so the smallest cache sets the limit.
+    val minJpcWidth = allCores.map(_.jpcWidth).min
+    val hwMethodMaxWords = math.min(1 << (minJpcWidth - 2), 1023)
+    // An explicit cap builds a PORTABLE image -- see methodMaxSizeOverride. It
+    // may only LOWER the limit; asking for more than the hardware can execute
+    // would produce an image that does not run, so it is refused here rather
+    // than at boot.
+    val overrideWords = allCores.flatMap(_.methodMaxSizeOverride).map(_ / 4)
+    require(overrideWords.forall(_ <= hwMethodMaxWords),
+      s"methodMaxSizeOverride asks for ${overrideWords.max * 4} bytes but this build can " +
+      s"execute at most ${hwMethodMaxWords * 4} (jpcWidth $minJpcWidth). It may only lower the limit.")
+    val methodMaxWords = (hwMethodMaxWords +: overrideWords).min
+
     // Union of all systems' device presence
     val hasEth = config.systems.exists(_.hasDevice(DeviceType.Ethernet))
     val hasSdSpi = config.systems.exists(_.hasDevice(DeviceType.SdSpi))
@@ -123,6 +153,30 @@ object ConstGenerator {
          |	public static final int RAM_CP = 1;
          |	/** Start address of scratchpad RAM */
          |	public static final int SCRATCHPAD_ADDRESS = 0x400000;
+         |
+         |	// ====================================================================
+         |	// Method size limit — DERIVED FROM THIS CONFIGURATION, not hardcoded
+         |	// ====================================================================
+         |
+         |	/**
+         |	 * Largest method this build can execute, in BYTES.
+         |	 *
+         |	 * The smaller of the method cache's capacity (2^(jpcWidth-2) words)
+         |	 * and what the method struct can express (`len` is 10 bits, so 1023
+         |	 * words). JOPizer refuses anything larger, naming the class — a method
+         |	 * over this limit cannot be invoked at all.
+         |	 *
+         |	 * jpcWidth for this build: ${minJpcWidth} (${1 << minJpcWidth} bytes of cache),
+         |	 * hardware ceiling ${hwMethodMaxWords * 4} bytes${if (methodMaxWords < hwMethodMaxWords) s", capped to ${methodMaxWords * 4} by methodMaxSizeOverride" else ""}.
+         |	 */
+         |	public static final int METHOD_MAX_SIZE = ${methodMaxWords * 4};
+         |	/** Locals and args are 5-bit fields in the method struct's word2
+         |	 *  (`cpoolAddress << 10 | mreallocals << 5 | margs`), so 31 is a FORMAT
+         |	 *  limit, not a cache one. Changing it means changing that packing and
+         |	 *  every reader of it — microcode included. Named here so a future
+         |	 *  change is one edit rather than a search. */
+         |	public static final int METHOD_MAX_LOCALS = 31;
+         |	public static final int METHOD_MAX_ARGS = 31;
          |
          |	// ====================================================================
          |	// Feature flags (derived from JopCoreConfig)

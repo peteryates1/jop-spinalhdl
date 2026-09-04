@@ -300,6 +300,24 @@ object MifPathOverride {
     })
 }
 
+/** Method-size limit override: `methodmax=<bytes>`.
+  *
+  * Lowers the linker's limit below what this hardware could run, so the image
+  * also executes on a smaller-cache target. See
+  * `JopCoreConfig.methodMaxSizeOverride`. Status item 137.
+  */
+object MethodMaxOverride {
+  def apply(c: JopConfig, spec: String): JopConfig = {
+    val bytes = spec.toInt
+    require(bytes > 0 && bytes % 4 == 0, s"methodmax=$spec must be a positive multiple of 4 bytes")
+    c.copy(systems = c.systems.map { sys =>
+      def on(cc: JopCoreConfig) = cc.copy(methodMaxSizeOverride = Some(bytes))
+      sys.copy(coreConfig = on(sys.coreConfig),
+               perCoreConfigs = sys.perCoreConfigs.map(_.map(on)))
+    })
+  }
+}
+
 object MCacheOverride {
   def apply(c: JopConfig, spec: String): JopConfig = {
     val parts = spec.split("/")

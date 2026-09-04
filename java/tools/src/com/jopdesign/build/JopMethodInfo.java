@@ -21,6 +21,7 @@
 
 package com.jopdesign.build;
 
+import com.jopdesign.sys.Const;
 import org.apache.bcel.classfile.CodeException;
 import org.apache.bcel.classfile.Method;
 import org.apache.bcel.generic.Type;
@@ -101,17 +102,51 @@ public class JopMethodInfo extends OldMethodInfo implements Serializable {
 			exclen = exctab != null ? exctab.length : 0;
 
 			// TODO: couldn't len=JOP...MAX_SIZE/4 be ok?
-			if (len >= JOPizer.METHOD_MAX_SIZE / 4 || mreallocals > 31
-					|| margs > 31) {
-				// we interprete clinit on JOP - no size restriction
+			//
+			// <clinit> IS NO LONGER WAIVED -- status item 137. It used to be
+			// exempt here ("we interprete clinit on JOP - no size restriction")
+			// and Startup fell back to a ~30-opcode interpreter that spun
+			// forever on anything it did not implement. Worse, the two
+			// thresholds disagreed: this waived at 512 words, Startup
+			// interpreted above 256, so a <clinit> of 1024-2047 bytes was
+			// interpreted while being perfectly invokable, and bricked the
+			// board before main() with a message naming a bytecode rather than
+			// a class.
+			//
+			// The interpreter is gone, so a <clinit> obeys the same limits as
+			// any other method and an oversized one fails HERE, at link time,
+			// naming the class. Measured when this changed: 46 <clinit> methods
+			// across four applications, largest 55 words against this 512-word
+			// limit, so nothing real was relying on the waiver. The fix for a
+			// future one is the same refactor already applied to
+			// BigInteger.ensureConstants and
+			// BigDecimal$StringBuilderHelper.ensureDigitArrays -- move the body
+			// into an ordinary method the initialiser calls.
+			// LIMITS COME FROM THE BUILD, NOT FROM A LITERAL -- status item 137.
+			// Const.java is generated from the preset, so METHOD_MAX_SIZE
+			// follows the method cache this image will actually run on.
+			// JOPizer.METHOD_MAX_SIZE was hardcoded at 2048 and correct only for
+			// a 2 KB cache; the default has been 8 KB (jpcWidth 13, limit 4092)
+			// for some time, so the linker was refusing methods the hardware
+			// could run.
+			if (len >= Const.METHOD_MAX_SIZE / 4
+					|| mreallocals > Const.METHOD_MAX_LOCALS
+					|| margs > Const.METHOD_MAX_ARGS) {
+				// <clinit> still waived in this commit; removed in the next.
 				if (!m.getName().equals("<clinit>")) {
-					System.err.println("len(max:"
-							+ (JOPizer.METHOD_MAX_SIZE / 4) + ")=" + len
-							+ "mreallocals(max:31)=" + mreallocals
-							+ " margs(max:31)=" + margs);
-					System.err.println("wrong size: "
-							+ getCli().clazz.getClassName() + "." + methodId);
-					throw new Error();
+				System.err.println("len(max:"
+						+ (Const.METHOD_MAX_SIZE / 4) + ")=" + len
+						+ " mreallocals(max:" + Const.METHOD_MAX_LOCALS + ")=" + mreallocals
+						+ " margs(max:" + Const.METHOD_MAX_ARGS + ")=" + margs);
+				System.err.println("wrong size: "
+						+ getCli().clazz.getClassName() + "." + methodId);
+				if (m.getName().equals("<clinit>")) {
+					System.err.println("  A <clinit> is invoked like any other method since"
+							+ " item 137 removed the interpreter. Move the body into an"
+							+ " ordinary method the initialiser calls -- as"
+							+ " BigInteger.ensureConstants already does.");
+				}
+				throw new Error();
 				}
 			}
 			// System.out.println((mstack+m.getCode().getMaxLocals())+" "+

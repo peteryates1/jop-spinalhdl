@@ -38,7 +38,8 @@ object JopTopVerilog {
     val positional = args.filterNot(a =>
       a.equalsIgnoreCase("perf") || a.toLowerCase.startsWith("uart=") ||
       a.toLowerCase.startsWith("mcache=") || a.toLowerCase.startsWith("l2sets=") ||
-      a.toLowerCase.startsWith("bc=") || a.equalsIgnoreCase("buildtree"))
+      a.toLowerCase.startsWith("bc=") || a.toLowerCase.startsWith("methodmax=") ||
+      a.equalsIgnoreCase("buildtree"))
     val base = resolveBase(name, positional)
     val withPerf = if (args.exists(_.equalsIgnoreCase("perf"))) PerfCountersOverride(base) else base
     val withUart = args.find(_.toLowerCase.startsWith("uart="))
@@ -50,9 +51,12 @@ object JopTopVerilog {
     val withL2 = args.find(_.toLowerCase.startsWith("l2sets="))
       .map(a => L2SetsOverride(withMCache, a.substring(7)))
       .getOrElse(withMCache)
-    args.find(_.toLowerCase.startsWith("bc="))
+    val withBc = args.find(_.toLowerCase.startsWith("bc="))
       .map(a => BytecodesOverride(withL2, a.substring(3)))
       .getOrElse(withL2)
+    args.find(_.toLowerCase.startsWith("methodmax="))
+      .map(a => MethodMaxOverride(withBc, a.substring(10)))
+      .getOrElse(withBc)
   }
 
   private def resolveBase(name: String, args: Array[String]): JopConfig = name match {
