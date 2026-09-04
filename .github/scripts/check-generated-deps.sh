@@ -192,3 +192,54 @@ if [ -n "$const_rule" ]; then
   fi
   echo "  Const.java depends on everything that decides an I/O address"
 fi
+
+# ---------------------------------------------------------------------------
+# 2. THE APP'S .jop MUST DEPEND ON THE TOOL THAT PRODUCES IT — status item 140.
+#
+# `make -C java/apps/<X>` ran JOPizer from whatever tools/dist/jopizer.jar
+# happened to be on disk. A change under java/tools/src compiled into nothing:
+# timestamps fresh, exit 0, and the .jop emitted by the OLD linker. It cost two
+# wrong conclusions during item 136, and was caught only because a result was
+# impossible.
+#
+# ASSERTED WITHOUT RUNNING MAKE. The obvious check -- `make -pn jop | grep
+# tools-fresh` -- reads the real rule database, but `-pn` still executes
+# sub-makes, so it recurses into java/tools, emits a 200-line dump and gives an
+# ORDER-DEPENDENT answer: it reported PerfTest as failing on one run and passing
+# on the next, with the edge present both times. A guard that is flaky is worse
+# than none. This checks the three facts that produce the edge instead, which is
+# deterministic and needs no build.
+# ---------------------------------------------------------------------------
+echo
+printf '  %-30s ' "java/config.mk"
+if grep -qE '^jop: *tools-fresh' java/config.mk && grep -qE '^tools-fresh:' java/config.mk; then
+  echo "declares jop: tools-fresh"
+else
+  echo "FAIL — java/config.mk no longer declares 'jop: tools-fresh'"
+  echo "       every app links with a jar nothing rebuilds"
+  fail=1
+fi
+
+for mk in java/apps/*/Makefile; do
+  app=$(basename "$(dirname "$mk")")
+  printf '  %-30s ' "$app"
+  if ! grep -qE '^include .*config\.mk' "$mk"; then
+    echo "FAIL — does not include config.mk, so gets no tools dependency"; fail=1; continue
+  fi
+  if ! grep -qE '^jop:' "$mk"; then
+    echo "FAIL — no 'jop' target for config.mk's prerequisite to attach to"; fail=1; continue
+  fi
+  echo "ok"
+done
+
+if [ "$fail" -ne 0 ]; then
+  cat <<'EOF'
+
+An app links with a jar nothing rebuilt. A change to JOPizer or PreLinker will
+compile into nothing, the build will exit 0, and the .jop will be produced by
+the previous linker.
+
+java/config.mk declares `jop: tools-fresh` for every app that includes it.
+EOF
+  exit 1
+fi

@@ -69,3 +69,43 @@ endif
 
 # Every source directory javac must see, generated code included.
 TARGET_SRCS := $(RUNTIME_SRCS) $(GEN_SRC)
+
+# ---------------------------------------------------------------------------
+# THE APP BUILD RUNS JOPizer FROM A JAR IT NEVER BUILDS — status item 140.
+#
+# `make -C java/apps/<X>` links with whatever `tools/dist/jopizer.jar` happens
+# to be on disk. A change under `java/tools/src` therefore compiles into
+# nothing: every timestamp looks fresh, the build exits 0, and the emitted .jop
+# is produced by the OLD linker. It cost two wrong conclusions during item 136,
+# and was noticed only because a result was impossible — a test passing with the
+# defect still present. The image disagreed with its own source:
+#
+#   command grep -c 'OFF_TYPE: IS_OBJ' DoAll.jop     -> 374   (stale jar)
+#   command grep -n 'STR_OBJ_LEN ='   StringInfo.java -> 2+2+1 (the source)
+#
+# The known GOTCHA — `make -C java runtime && make -C java/apps/<X> clean &&
+# make ...` — does NOT help: the staleness is one level up, in the tool that
+# PRODUCES the .jop. `make -C java apps` was fine (it has `apps: tools runtime`);
+# building an app directly, which is what the GOTCHA tells you to do, was not.
+#
+# ASK EVERY TIME. The sub-make is incremental — jopizer.jar is a real file
+# target over `find $(SRC_DIR) -name '*.java'` — so this is a stat and "nothing
+# to be done" when nothing changed, and JOPizer builds in seconds when it has.
+# Cheap enough that correctness wins over cleverness.
+#
+# Declared here rather than in eight app Makefiles: all of them include this
+# file, and a rule with no recipe only ADDS a prerequisite to the `jop` target
+# each defines later.
+.PHONY: tools-fresh
+tools-fresh:
+	@$(MAKE) -s -C $(TOOLS_DIR)
+
+jop: tools-fresh
+
+# AND DO NOT BECOME THE DEFAULT GOAL. A rule defined inside an include becomes
+# the default if it is the first target make sees, and config.mk is included by
+# java/runtime/ as well as by the eight apps -- so the first version of this
+# made `make -C java runtime` try to build the tools, with TOOLS_DIR unset
+# there. Clearing .DEFAULT_GOAL hands the choice back to the including file's
+# own first target, which is what it was before this block existed.
+.DEFAULT_GOAL :=
