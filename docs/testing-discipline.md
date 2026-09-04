@@ -13,6 +13,19 @@ distinguish "I looked and found nothing wrong" from "I did not look."**
 
 ---
 
+## 0. The cheapest invariant is not restating the fact at all
+
+Before writing a check, ask whether the thing being checked should exist.
+
+The navigation table in `current-status.md` said *"57 entries"* against an actual
+65 — correct when written, silently wrong for weeks. The first fix was a guard
+asserting the number matched. The better fix, and the one taken, was to delete
+the number: **the entries are listed directly below it, so restating how many
+can only ever be redundant or wrong.** A derived value copied into prose is a
+second source of truth with no mechanism keeping it honest.
+
+Check what cannot be derived. Delete what can.
+
 ## 1. Assert a structural invariant, not a tally
 
 A count is evidence only to a reader who already knows what to expect.

@@ -4,7 +4,7 @@
 >
 > | you want | go to |
 > |---|---|
-> | **what to work on next** | [§1 Outstanding now](#1-outstanding-now--in-priority-order) — 65 entries, highest first |
+> | **what to work on next** | [§1 Outstanding now](#1-outstanding-now--in-priority-order) — highest first |
 > | **whether item N is open** | [§2 All items](#2-all-items--summary) — the scannable index |
 > | **why item N is the way it is** | [§3 Item detail](#3-item-detail-and-journals) — summary and gotchas per item |
 > | **the full investigation** | `docs/status/item-N.md` — linked from each item that has one |
@@ -13,7 +13,7 @@
 > from other documents and from commit messages. `#item-N` anchors resolve for
 > all of them.
 >
-> **The 18 longest journals live in `docs/status/`** since 2026-08-31 (item 116).
+> **The longest journals live in `docs/status/`** since 2026-08-31 (item 116).
 > This file was 9,671 lines and the review auditing it had to be told not to
 > open it whole. The summary, the verdict and the gotchas stay here; the
 > narrative of how it was found moved out. Nothing was deleted — the split was

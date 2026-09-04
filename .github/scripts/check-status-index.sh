@@ -118,10 +118,14 @@ if [ -n "${stale// /}" ]; then
   exit 1
 fi
 
-# 5. The navigation table states how many entries section 1 has. A hand-kept
-#    count drifts silently -- it read "57 entries" on 2026-09-04 when there were
-#    65, having been correct when written. Either the number is checked or it
-#    should not be there; see docs/testing-discipline.md.
+# 5. INERT BY DESIGN. The navigation table used to say "57 entries" against an
+#    actual 65, having been correct when written. The fix was not to check the
+#    number harder -- it was to DELETE it: the entries are listed immediately
+#    below, so restating how many can only ever be redundant or wrong.
+#
+#    This check remains for the case where someone reinstates a count, because
+#    that is a likely and easy thing to do. It does nothing while none is
+#    present. Prefer no number. See docs/testing-discipline.md.
 nav_n=$(grep -oE '\[§1 Outstanding now\][^|]*— [0-9]+ entries' "$f" | grep -oE '[0-9]+ entries' | grep -oE '[0-9]+')
 real_n=$(echo "$listed" | wc -w)
 if [ -n "$nav_n" ] && [ "$nav_n" != "$real_n" ]; then
