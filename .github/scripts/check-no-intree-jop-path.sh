@@ -30,6 +30,21 @@ while IFS= read -r f; do
   fi
 done < <(git ls-files -- '*.scala')
 
+# --- 1b. no in-tree .jop literals in the Java makefiles ----------------------
+# Missed on the first pass: `sim-smallest` and `sim-small` invoked JopSim on
+# apps/<X>/HelloWorld.jop, a source path, and nothing flagged them because the
+# Scala check above only reads .scala. A recipe naming a path that no longer
+# exists fails loudly rather than silently, but only when someone runs it --
+# and nothing in CI does.
+while IFS= read -r f; do
+  hits=$(sed -e 's:#.*::' "$f" | command grep -nE '(^|[^/A-Za-z])apps/[A-Za-z0-9_]+/[A-Za-z0-9_]+\.jop' || true)
+  if [ -n "$hits" ]; then
+    echo "FAIL: $f names an in-tree .jop path:" >&2
+    printf '%s\n' "$hits" | sed 's/^/    /' >&2
+    BAD=1
+  fi
+done < <(git ls-files -- 'java/Makefile' 'java/*/Makefile' 'java/*.mk')
+
 # --- 2. config.mk has no legacy branch --------------------------------------
 if command grep -qE '^BUILDTREE[[:space:]]*\?=[[:space:]]*0' java/config.mk; then
   echo "FAIL: java/config.mk still defaults BUILDTREE to 0" >&2

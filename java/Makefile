@@ -86,13 +86,19 @@ test-apps: apps
 	$(MAKE) -C apps/SmpGcTest
 	$(MAKE) -C apps/JbeBench
 
+# The image and its link map are build products, so they come from JAVA_OUT --
+# these two recipes still named apps/<X>/HelloWorld.jop in the source tree
+# after everything else had moved, and nothing noticed because no CI job runs
+# either target.
 sim-smallest: all
 	java -cp tools/dist/jopsim.jar -Dtrace=2 com.jopdesign.tools.JopSim \
-		-link apps/Smallest/HelloWorld.jop.link.txt apps/Smallest/HelloWorld.jop
+		-link $(JAVA_OUT)/apps/Smallest/HelloWorld.jop.link.txt \
+		$(JAVA_OUT)/apps/Smallest/HelloWorld.jop
 
 sim-small: all
 	java -cp tools/dist/jopsim.jar -Dtrace=2 com.jopdesign.tools.JopSim \
-		-link apps/Small/HelloWorld.jop.link.txt apps/Small/HelloWorld.jop
+		-link $(JAVA_OUT)/apps/Small/HelloWorld.jop.link.txt \
+		$(JAVA_OUT)/apps/Small/HelloWorld.jop
 
 clean:
 	$(MAKE) -C tools clean
