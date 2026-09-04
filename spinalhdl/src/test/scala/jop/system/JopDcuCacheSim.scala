@@ -21,7 +21,7 @@ object JopDcuCacheSim extends App {
   // completing out of order. Default 1 keeps the CI job on the blocking path.
   val mshrCount = args.headOption.map(_.toInt).getOrElse(1)
 
-  val jopFilePath = "java/apps/JvmTests/DoAll.jop"
+  val jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/dcu_cache_simulation.log"

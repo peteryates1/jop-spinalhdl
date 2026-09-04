@@ -14,7 +14,7 @@ import java.io.PrintWriter
  */
 object JopTopJvmTestsBramSim extends App {
 
-  val jopFilePath = "java/apps/JvmTests/DoAll.jop"
+  val jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/joptop_jvmtests_bram_simulation.log"

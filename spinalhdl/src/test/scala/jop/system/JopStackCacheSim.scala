@@ -179,7 +179,7 @@ case class JopStackCacheTestHarness(
  */
 object JopJvmTestsStackCacheBramSim extends App {
 
-  val jopFilePath = "java/apps/JvmTests/DoAll.jop"
+  val jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/jvmtests_stackcache_bram_simulation.log"
@@ -885,7 +885,7 @@ object JopJvmTestsStackCacheBramSim extends App {
  */
 object JopStackCacheWaveSim extends App {
 
-  val jopFilePath = "java/apps/JvmTests/DoAll.jop"
+  val jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
 

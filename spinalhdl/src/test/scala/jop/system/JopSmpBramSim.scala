@@ -178,7 +178,7 @@ object JopSmpBramSim extends App {
   // after ~23 minutes of correct 2-core execution. The README calls this step
   // the "SMP GC simulation (garbage collection stress test)", which is what it
   // was always meant to run. Status item 97.
-  val jopFilePath = "java/apps/Small/GcStressTest.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "GcStressTest")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/smp_bram_simulation.log"
@@ -326,7 +326,7 @@ object JopSmpBramSim extends App {
 object JopSmpNCoreHelloWorldSim extends App {
   val cpuCnt = if (args.length > 0) args(0).toInt else 2
 
-  val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "NCoreHelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/smp_ncore_simulation.log"
@@ -458,7 +458,7 @@ object JopSmpSmallNCoreDebugSim extends App {
   val cpuCnt = 2
   val bramSize = 128 * 1024  // Test: back to 128KB to confirm crash is reproducible
 
-  val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "NCoreHelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
 

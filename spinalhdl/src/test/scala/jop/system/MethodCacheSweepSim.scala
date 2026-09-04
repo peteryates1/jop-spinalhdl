@@ -41,7 +41,7 @@ object MethodCacheSweepSim extends App {
   // written as many small methods -- where the BLOCK COUNT, which caps how many
   // methods can be resident at once, matters more than total size.
   //   MCACHE_JOP=java/apps/Foo/Foo.jop MCACHE_BENCHES=  (empty = one TOTAL row)
-  val jopPath  = sys.env.getOrElse("MCACHE_JOP", "java/apps/JbeBench/JbeBench.jop")
+  val jopPath  = sys.env.getOrElse("MCACHE_JOP", jop.utils.SimApp.jop("JbeBench", "JbeBench"))
   val mainMemData = JopFileLoader.jopFileToMemoryInit(jopPath, bramSize / 4)
 
   // clkMhz = 5 shrinks DoApp's calibrate-to-one-simulated-second by 20x so all

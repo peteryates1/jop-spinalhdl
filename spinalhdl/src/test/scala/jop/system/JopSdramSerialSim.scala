@@ -97,7 +97,7 @@ case class JopSdramSerialHarness(
  * verifies echo bytes, waits for "Hello World!" output.
  */
 object JopSdramSerialSim extends App {
-  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   val romFilePath = MicrocodePaths.rom(BootMode.Serial)
   val ramFilePath = MicrocodePaths.ram(BootMode.Serial)
 

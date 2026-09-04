@@ -15,7 +15,7 @@ import jop.config.MicrocodePaths
  */
 object JopGenJvmTestsBramSim extends App {
 
-  val jopFilePath = "java/apps/JvmTests/DoAll.jop"
+  val jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll")
   val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
   val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
 

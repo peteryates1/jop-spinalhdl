@@ -215,7 +215,7 @@ object JopSmpSdramNCoreHelloWorldSim extends App {
   // the cores and toggles watchdogs, so passing it says nothing about the heavy
   // GC workload that actually stalls.
   //   argv: [cpuCnt] [maxCycles] [app.jop]
-  val jopFilePath = if (args.length > 2) args(2) else "java/apps/Small/NCoreHelloWorld.jop"
+  val jopFilePath = if (args.length > 2) args(2) else jop.utils.SimApp.jop("Small", "NCoreHelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/smp_sdram_ncore_simulation.log"

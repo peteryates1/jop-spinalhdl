@@ -158,7 +158,7 @@ case class JopCoreBramDebugHarness(
  */
 object JopCoreBramDebug extends App {
 
-  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/bram_debug.log"

@@ -22,7 +22,7 @@ import java.io.PrintWriter
  */
 object JopSmallGcHighLatencySim extends App {
 
-  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "HelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/small_gc_high_latency_simulation.log"

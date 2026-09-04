@@ -214,7 +214,7 @@ object JopSmpDdr3NCoreHelloWorldSim extends App {
   val mshrCount = positionalArgs.drop(1).headOption.map(_.toInt).getOrElse(1)
   val lockType = if (useCmpSync) "CmpSync" else "IHLU"
 
-  val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "NCoreHelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = s"spinalhdl/smp_ddr3_ncore_${lockType.toLowerCase}_simulation.log"

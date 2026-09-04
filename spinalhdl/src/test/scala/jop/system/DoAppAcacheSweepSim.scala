@@ -36,7 +36,7 @@ import jop.utils.JopFileLoader
  */
 object DoAppAcacheSweepSim extends App {
 
-  val jopFilePath = "java/apps/JbeBench/JbeBench.jop"   // entry point is jbe.DoApp
+  val jopFilePath = jop.utils.SimApp.jop("JbeBench", "JbeBench")   // entry point is jbe.DoApp
   val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
   val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
   val bramSize = 2 * 1024 * 1024

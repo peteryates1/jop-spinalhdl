@@ -473,7 +473,7 @@ jobs:
 
       # jop.system.* and jop.utils.* are deliberately NOT here: JopCoreTest,
       # JopCoreWithSdramTest and JopFileLoaderSpec all load
-      # java/apps/Smallest/HelloWorld.jop, which is a gitignored build artifact.
+      # Smallest/HelloWorld.jop, a gitignored build artifact under build/<config>/java.
       # CI builds jopa.jar and the microcode but not the Java apps — those need
       # JDK 6 — so those three fail in CI while passing locally. Adding the
       # packages wholesale is exactly the mistake that broke this job once.
@@ -713,7 +713,7 @@ jobs:
           make -C java tools
           make -C java runtime
           make -C java/apps/JvmTests
-          ls -l java/apps/JvmTests/DoAll.jop
+          ls -l build/ep4cgx150Serial/java/apps/JvmTests/DoAll.jop
 
       # Hash the sim's inputs on EVERY run, passing or failing. Chasing the
       # item 30 intermittent failure, the only evidence that the failing run's
@@ -730,11 +730,11 @@ jobs:
           # (CI 5.020 from noble apt, the workstation 5.032 from Debian).
           verilator --version
           sha256sum \
-            java/apps/JvmTests/DoAll.jop \
+            build/ep4cgx150Serial/java/apps/JvmTests/DoAll.jop \
             build/microcode/simulation/mem_rom.dat \
             build/microcode/simulation/mem_ram.dat \
             build/microcode/simulation/JumpTableData.scala \
-            java/runtime/src/jop/com/jopdesign/sys/Const.java \
+            build/ep4cgx150Serial/java/gen/com/jopdesign/sys/Const.java \
             | tee fingerprints.txt
 
       # --no-colors matters: with ANSI escapes sbt's output lines do not END in
@@ -825,9 +825,9 @@ jobs:
           # small enough to be worth uploading.
           find simWorkspace \( -name '*.fst' -o -name '*.vcd' \) -size -100M \
             -exec cp {} "$out"/ \; 2>/dev/null || true
-          cp java/apps/JvmTests/DoAll.jop "$out"/ 2>/dev/null || true
+          cp build/ep4cgx150Serial/java/apps/JvmTests/DoAll.jop "$out"/ 2>/dev/null || true
           cp build/microcode/simulation/mem_rom.dat build/microcode/simulation/mem_ram.dat "$out"/ 2>/dev/null || true
-          cp java/runtime/src/jop/com/jopdesign/sys/Const.java "$out"/ 2>/dev/null || true
+          cp build/ep4cgx150Serial/java/gen/com/jopdesign/sys/Const.java "$out"/ 2>/dev/null || true
           ls -lR "$out"
           du -sh "$out"
 
@@ -915,7 +915,7 @@ jobs:
           make -C java tools
           make -C java runtime
           make -C java/apps/Small APP_NAME=CardMarkTest APP_PKG=test
-          ls -l java/apps/Small/CardMarkTest.jop
+          ls -l build/ep4cgx150Serial/java/apps/Small/CardMarkTest.jop
 
       # CardTableTest needs no .jop and takes seconds. It covers marking,
       # tenure-window gating, the RMW forwarding path, and -- since item 131 --

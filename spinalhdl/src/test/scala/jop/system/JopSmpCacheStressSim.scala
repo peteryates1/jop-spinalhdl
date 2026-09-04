@@ -26,7 +26,7 @@ import jop.config.MicrocodePaths
 object JopSmpCacheStressSim extends App {
   val cpuCnt = 2
 
-  val jopFilePath = "java/apps/SmpCacheTest/SmpCacheTest.jop"
+  val jopFilePath = jop.utils.SimApp.jop("SmpCacheTest", "SmpCacheTest")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/smp_cache_stress_simulation.log"

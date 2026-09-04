@@ -97,6 +97,11 @@ object UtilSweep extends App {
   })
 
   println(s"=== Generating: $label ===")
-  JopTopVerilog.generate(config)
+  // ONE DIRECTORY PER LABEL. The generator keys its output directory on the
+  // preset name, and this passed none -- so every variant of the sweep wrote to
+  // the same place and was correct only because the caller copied each result
+  // out before generating the next. Naming the label makes the outputs
+  // independent, which is what lets the sweep be interrupted or run a subset.
+  JopTopVerilog.generate(config, presetName = s"utilsweep-$label")
   println(s"=== Done: $label -> ${config.entityName} ===")
 }

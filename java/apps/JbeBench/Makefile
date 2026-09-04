@@ -18,9 +18,9 @@ TOOLS_DIR := $(ROOT)/tools
 TARGET_DIR := $(ROOT)/runtime
 LIB_DIR := $(ROOT)/lib
 
-# Per-configuration build tree (Const.java, classes, .jop). Included AFTER
-# TARGET_DIR is set -- config.mk builds paths from it. Default is the old
-# in-tree layout; BUILDTREE=1 moves the outputs under build/<config>/java/.
+# Per-configuration build tree (Const.java, classes, .jop) under
+# build/<config>/java/. Included AFTER TARGET_DIR is set -- config.mk builds
+# paths from it.
 PROJECT_ROOT := $(ROOT)/..
 include $(ROOT)/config.mk
 

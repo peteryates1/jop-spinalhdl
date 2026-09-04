@@ -153,7 +153,7 @@ case class JopIhluTestHarness(
 object JopIhluNCoreHelloWorldSim extends App {
   val cpuCnt = if (args.length > 0) args(0).toInt else 2
 
-  val jopFilePath = "java/apps/Small/NCoreHelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "NCoreHelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/ihlu_ncore_simulation.log"
@@ -324,7 +324,7 @@ object JopIhluGcBramSim extends App {
   // could not fail for the reason it exists, which is current-status item 2.
   // SmpGcTest is the multi-core allocating workload item 1 needed; reusing it
   // here is what makes this sim mean something.
-  val jopFilePath = "java/apps/SmpGcTest/SmpGcTest.jop"
+  val jopFilePath = jop.utils.SimApp.jop("SmpGcTest", "SmpGcTest")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/ihlu_gc_bram_simulation.log"

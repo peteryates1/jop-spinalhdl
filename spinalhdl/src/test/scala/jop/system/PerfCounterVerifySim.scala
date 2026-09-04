@@ -28,7 +28,7 @@ class PerfCounterVerifySim extends AnyFunSuite {
     val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
     val bramSize = 2 * 1024 * 1024
     val mainMemData =
-      JopFileLoader.jopFileToMemoryInit("java/apps/JbeBench/JbeBench.jop", bramSize / 4)
+      JopFileLoader.jopFileToMemoryInit(jop.utils.SimApp.jop("JbeBench", "JbeBench"), bramSize / 4)
 
     // Same category order as Sys.perf.catOf.
     val IDX_CYCLES = 0; val IDX_STALL = 1

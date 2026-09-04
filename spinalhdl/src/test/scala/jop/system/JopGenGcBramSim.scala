@@ -15,7 +15,7 @@ import jop.config.MicrocodePaths
  */
 object JopGenGcBramSim extends App {
 
-  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "HelloWorld")
   val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
   val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
 

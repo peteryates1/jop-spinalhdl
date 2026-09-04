@@ -118,6 +118,7 @@ check-build:
 	@.github/scripts/check-status-index.sh
 	@.github/scripts/check-workflow-sbt-setup.sh
 	@.github/scripts/check-no-legacy-rtl-path.sh
+	@.github/scripts/check-no-intree-jop-path.sh
 
 help:
 	@echo "make check-build  assert the build graph's guards hold (seconds)"

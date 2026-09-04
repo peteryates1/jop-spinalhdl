@@ -133,16 +133,24 @@ mig_trace.csv
 *.orig
 *_simulation.log
 
-# Java build artifacts
+# Java build artifacts. dist/ and classes/ are still written in-tree; the
+# generated sources and .jop images are not, as of 2026-09-04 -- they live in
+# build/<config>/java/ with the Const.java they are compiled against.
+#
+# THE ENTRIES BELOW WERE DELETED, NOT MOVED. Ignoring a path that nothing
+# should write is how a stale artefact stays invisible: a Const.java left in
+# the source tree by a pre-2026-09-04 build is the OTHER configuration's
+# constants, and an ignore rule guaranteed nobody would ever see it sitting
+# there. It is now untracked and visible, and java/config.mk's CONST_EXCLUDE
+# keeps javac from compiling it even if someone leaves one behind.
+#
+#   java/runtime/src/jop/com/jopdesign/sys/Const.java
+#   java/runtime/src/jop/com/jopdesign/sys/.const-preset   (stamp; removed)
+#   java/apps/*/*.jop
+#   java/apps/*/*.jop.txt  .jop.link.txt  .jop.stats.txt   (JOPizer sidecars)
 java/tools/dist/
 java/runtime/classes/
-java/runtime/src/jop/com/jopdesign/sys/Const.java
-java/runtime/src/jop/com/jopdesign/sys/.const-preset
 java/apps/*/build/
-java/apps/*/*.jop
-java/apps/*/*.jop.txt
-java/apps/*/*.jop.link.txt
-java/apps/*/*.jop.stats.txt
 
 # ALL generated and transient build products live under build/<config>/ --
 # generated HDL, the vendor project, IP, .jop and asm outputs. One directory

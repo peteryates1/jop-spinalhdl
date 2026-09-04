@@ -223,7 +223,7 @@ case class JopDdr3SerialBootHarness(
  */
 object JopDdr3SerialBootSim extends App {
 
-  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   val romFilePath = MicrocodePaths.rom(BootMode.Serial)
   val ramFilePath = MicrocodePaths.ram(BootMode.Serial)
   val logFilePath = "build/sim-logs/ddr3_serial_boot_simulation.log"

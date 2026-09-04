@@ -16,7 +16,7 @@ import jop.config.MicrocodePaths
  */
 object JopGenGcStressSim extends App {
 
-  val jopFilePath = "java/apps/Small/GcStressTest.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "GcStressTest")
   val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
   val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
 

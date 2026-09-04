@@ -18,7 +18,7 @@ import jop.config.MicrocodePaths
  */
 object JopInterruptSim extends App {
 
-  val jopFilePath = "java/apps/InterruptTest/InterruptTest.jop"
+  val jopFilePath = jop.utils.SimApp.jop("InterruptTest", "InterruptTest")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
 

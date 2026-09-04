@@ -98,7 +98,7 @@ case class JopSdramSerialBootHarness(
  */
 object JopSdramSerialBootSim extends App {
 
-  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   val romFilePath = MicrocodePaths.rom(BootMode.Serial)
   val ramFilePath = MicrocodePaths.ram(BootMode.Serial)
 

@@ -47,7 +47,7 @@ import jop.memory.JopMemoryConfig
  */
 object JopCardClearStallSim extends App {
 
-  val jopFilePath = "java/apps/Small/CardMarkTest.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "CardMarkTest")
   val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
   val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
 

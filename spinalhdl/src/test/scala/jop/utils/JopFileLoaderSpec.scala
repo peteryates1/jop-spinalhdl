@@ -10,7 +10,7 @@ import jop.config.MicrocodePaths
 class JopFileLoaderSpec extends AnyFlatSpec with Matchers {
 
   // Path to test files
-  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   val memRomPath = MicrocodePaths.simulationRom
   val memRamPath = MicrocodePaths.simulationRam
 

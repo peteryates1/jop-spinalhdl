@@ -13,7 +13,7 @@ import jop.config.MicrocodePaths
  */
 object JopDdr3FillSim extends App {
 
-  val jopFilePath = "java/apps/Small/FillTest.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "FillTest")
   val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
   val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
   val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 512 * 1024 / 4)

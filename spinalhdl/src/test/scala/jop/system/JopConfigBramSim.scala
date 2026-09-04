@@ -153,7 +153,7 @@ object JopConfigBramSim {
 object JopConfigHelloWorldSim extends App {
   JopConfigBramSim.runSim(
     jopConfig = JopConfig.simulation,
-    jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+    jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   )
 }
 
@@ -166,7 +166,7 @@ object JopConfigHwMathHelloWorldSim extends App {
       bytecodes = Map("idiv" -> "hw", "irem" -> "hw")))))
   JopConfigBramSim.runSim(
     jopConfig = hwMath,
-    jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+    jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   )
 }
 
@@ -180,7 +180,7 @@ object JopConfigSyncCacheHelloWorldSim extends App {
       spillBaseAddrOverride = Some(0)))))
   JopConfigBramSim.runSim(
     jopConfig = syncCache,
-    jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+    jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   )
 }
 
@@ -194,7 +194,7 @@ object JopConfigCacheOnlyHelloWorldSim extends App {
       spillBaseAddrOverride = Some(0)))))
   JopConfigBramSim.runSim(
     jopConfig = cacheOnly,
-    jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+    jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   )
 }
 
@@ -207,7 +207,7 @@ object JopConfigHwFloatHelloWorldSim extends App {
       bytecodes = Map("idiv" -> "hw", "irem" -> "hw", "float" -> "hw")))))
   JopConfigBramSim.runSim(
     jopConfig = hwFloat,
-    jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+    jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   )
 }
 
@@ -239,7 +239,7 @@ object JopConfigJvmTestsSim {
 
     JopConfigBramSim.runSim(
       jopConfig = simConfig,
-      jopFilePath = "java/apps/JvmTests/DoAll.jop",
+      jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll"),
       maxCycles = 60000000,
       logFilePath = s"spinalhdl/jvmtests_${presetName}_simulation.log"
     )

@@ -21,7 +21,7 @@ object JopSmallGcBramSim extends App {
   // past: the file's provenance no longer matched the tree, so the sim was
   // testing a binary nobody could rebuild. Rebuild it with
   //   make -C java/apps/Small APP_NAME=GcStressTest
-  val jopFilePath = "java/apps/Small/GcStressTest.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "GcStressTest")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/small_gc_bram_simulation.log"

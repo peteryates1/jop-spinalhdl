@@ -65,7 +65,7 @@ case class JopCoreWithSdram80MhzHarness(
 }
 
 object JopSdram80MhzSim extends App {
-  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
 

@@ -122,6 +122,8 @@ object AlteraUtilSweep extends App {
   })
 
   println(s"=== Generating: $label ===")
-  JopTopVerilog.generate(config)
+  // ONE DIRECTORY PER LABEL -- see the note in UtilSweep. Without a preset name
+  // every variant shares an output directory.
+  JopTopVerilog.generate(config, presetName = s"utilsweep-$label")
   println(s"=== Done: $label -> ${config.entityName} ===")
 }

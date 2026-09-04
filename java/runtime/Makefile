@@ -9,12 +9,16 @@ SRC_JOP := src/jop
 SRC_JVM := src/jvm
 SRC_JDK := src/jdk
 
-# Compiled classes are a per-configuration artefact once Const.java is: they
-# embed its constants. Under BUILDTREE=1 they go with it.
-CLASSES_DIR := $(if $(JAVA_OUT),$(JAVA_OUT)/runtime/classes,classes)
+# Compiled classes are a per-configuration artefact because Const.java is: they
+# embed its constants, so they go with it under build/<config>/java/. The
+# `$(if $(JAVA_OUT),...,classes)` fallback to an in-tree `classes/` is gone --
+# JAVA_OUT is always set now, so the fallback was unreachable, and an
+# unreachable fallback to the old layout is exactly what let the old layout
+# survive everywhere else.
+CLASSES_DIR := $(JAVA_OUT)/runtime/classes
 
-# GEN_SRC is empty unless BUILDTREE=1, in which case Const.java lives there
-# rather than under src/. It goes FIRST: javac takes the first match on the
+# GEN_SRC is where the generated Const.java lives, rather than under src/.
+# It goes FIRST: javac takes the first match on the
 # sourcepath, and a legacy Const.java left in src/jop from an earlier in-tree
 # build would otherwise win silently -- the generated file would be written,
 # ignored, and the wrong constants compiled in with nothing to show for it.

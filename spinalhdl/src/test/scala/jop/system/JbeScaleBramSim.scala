@@ -32,7 +32,7 @@ object JbeScaleBramSim extends App {
   // Matches jbe.Scale: WORDS x ITERATIONS accesses on one core.
   val ACCESSES = 16384L * 24
 
-  val jopFilePath = "java/apps/JbeBench/JbeScale.jop"
+  val jopFilePath = jop.utils.SimApp.jop("JbeBench", "JbeScale")
   val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
   val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
 

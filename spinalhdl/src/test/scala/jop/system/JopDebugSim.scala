@@ -169,7 +169,7 @@ object JopDebugSim extends App {
   // Load ROM, RAM, and .jop
   val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
   val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
-  val jopData = JopFileLoader.loadJopFile("java/apps/Smallest/HelloWorld.jop")
+  val jopData = JopFileLoader.loadJopFile(jop.utils.SimApp.jop("Smallest", "HelloWorld"))
 
   println(s"JOP Debug Sim: $cpuCnt core(s), TCP port $tcpPort, max $maxCycles cycles")
   println(s"ROM: ${romData.length} words, RAM: ${ramData.length} words, JOP: ${jopData.length} words")

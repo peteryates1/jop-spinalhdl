@@ -12,7 +12,7 @@ import jop.config.MicrocodePaths
  * marker naming the operation that died. Stops early on either.
  */
 object StrLitReproSim extends App {
-  val jopFilePath = "java/apps/Small/StrLitRepro.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "StrLitRepro")
   val romData = JopFileLoader.loadMicrocodeRom(MicrocodePaths.simulationRom)
   val ramData = JopFileLoader.loadStackRam(MicrocodePaths.simulationRam)
   val bramSize = 512 * 1024

@@ -225,7 +225,7 @@ case class JopCoreTestHarness(
 class JopCoreTest extends AnyFunSuite {
 
   // Paths to initialization files
-  val jopFilePath = "java/apps/Smallest/HelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Smallest", "HelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
 

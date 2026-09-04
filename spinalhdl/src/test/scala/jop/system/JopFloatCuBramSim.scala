@@ -116,7 +116,7 @@ case class JopFloatCuTestHarness(
  */
 object JopFloatCuBramSim extends App {
 
-  val jopFilePath = "java/apps/JvmTests/DoAll.jop"
+  val jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll")
   // DEAD: there is no "floatcu" microcode variant and there never has been --
   // asm/Makefile builds simulation, serial and flash only, so this simulation
   // has never run. Left pointing at the variant it wants rather than silently

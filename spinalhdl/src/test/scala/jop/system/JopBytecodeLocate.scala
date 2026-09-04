@@ -20,7 +20,7 @@ import jop.utils.JopFileLoader
  *   sbt "Test/runMain jop.system.JopBytecodeLocate <app.jop> <link.txt> b0,b1,b2..."
  */
 object JopBytecodeLocate extends App {
-  val jopPath  = if (args.length > 0) args(0) else "java/apps/SmpGcTest/SmpGcTest.jop"
+  val jopPath  = if (args.length > 0) args(0) else jop.utils.SimApp.jop("SmpGcTest", "SmpGcTest")
   val linkPath = if (args.length > 1) args(1) else "java/apps/SmpGcTest/SmpGcTest.jop.link.txt"
   // Default: the synchronized-block exception handler found in the bytecode
   // cache at the 4-core wedge —

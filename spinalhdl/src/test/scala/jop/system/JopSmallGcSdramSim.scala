@@ -15,7 +15,7 @@ import jop.config.MicrocodePaths
  */
 object JopSmallGcSdramSim extends App {
 
-  val jopFilePath = "java/apps/Small/HelloWorld.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "HelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/small_gc_sdram_simulation.log"

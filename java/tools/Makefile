@@ -7,16 +7,15 @@ CLASSES_DIR := $(DIST_DIR)/classes
 LIB_DIR := ../lib
 TARGET_SRC := ../runtime/src/jop
 
-# Const.java is GENERATED, and BUILDTREE=1 puts it in the config's own gen tree
-# (build/<config>/java/gen) instead of ../runtime/src/jop. These tools compile
-# against it, so that directory has to be on the sourcepath as well -- otherwise
-# `make -C java all BUILDTREE=1` fails from cold with
+# Const.java is GENERATED into the config's own gen tree
+# (build/<config>/java/gen). These tools compile against it, so that directory
+# has to be on the sourcepath -- otherwise `make -C java all` fails from cold
+# with
 #
 #   ReplaceAtomicAnnotation.java:24: cannot find symbol ... variable Const
 #
-# and works only in a tree where some earlier NON-buildtree build happened to
-# leave a Const.java behind in the runtime source. java/Makefile exports
-# GEN_SRC; it is empty for a legacy build, so that path is unchanged.
+# and works only in a tree where some earlier build happened to leave a
+# Const.java behind in the runtime source. java/Makefile exports GEN_SRC.
 #
 # GEN_SRC is written relative to java/, but this Makefile runs in java/tools/,
 # so using it verbatim resolves one level short (java/build/... instead of
@@ -49,12 +48,17 @@ all: $(DIST_DIR)/jopizer.jar $(DIST_DIR)/jopsim.jar $(DIST_DIR)/jopa.jar
 # the PREVIOUS preset's limit. Demonstrated: with Const at 2048 the jar still
 # compared against 1023 words, i.e. the 4092-byte limit.
 #
-# Const.java lives under TARGET_SRC, or under GEN_SRC_HERE for a build-tree
-# build; both are on the sourcepath below, and both belong here. Same defect as
-# item 140 and as Const.java's own missing prerequisites — a generated artefact
-# whose prerequisites omit an input that decides its content.
-CONST_JAVA_DEP := $(firstword $(wildcard $(GEN_SRC_HERE)/jop/com/jopdesign/sys/Const.java) \
-                              $(wildcard $(TARGET_SRC)/com/jopdesign/sys/Const.java))
+# Const.java is a PREREQUISITE of the jar, not merely something on the
+# sourcepath — same defect as item 140 and as Const.java's own missing
+# prerequisites: a generated artefact whose prerequisites omit an input that
+# decides its content. The linker bakes METHOD_MAX_SIZE in, so a jar built
+# against a stale Const.java enforces the wrong limit and says nothing.
+#
+# The second arm of this used to be $(TARGET_SRC)/com/jopdesign/sys/Const.java,
+# the source-tree copy. Nothing writes there any more, so it could never match;
+# dropping it is a no-op today and stops it becoming a live fallback to the old
+# layout tomorrow.
+CONST_JAVA_DEP := $(wildcard $(GEN_SRC_HERE)/jop/com/jopdesign/sys/Const.java)
 
 $(DIST_DIR)/jopizer.jar: $(shell find $(SRC_DIR) -name '*.java') $(CONST_JAVA_DEP)
 	mkdir -p $(CLASSES_DIR)

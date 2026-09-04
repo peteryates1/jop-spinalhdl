@@ -18,7 +18,7 @@ import java.io.PrintWriter
  */
 object JopVgaBramSim extends App {
 
-  val jopFilePath = "java/apps/Small/VgaTest.jop"
+  val jopFilePath = jop.utils.SimApp.jop("Small", "VgaTest")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/joptop_vga_bram_simulation.log"
