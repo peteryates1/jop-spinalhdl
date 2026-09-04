@@ -98,7 +98,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 58. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
 59. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
 60. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
-61. **[#118](#item-118)** — The nightly CI run was cancelled after 1h4m; item 47's failure mode, and its failure mode is silence
+61. **[#118](#item-118)** — A failed nightly is SILENT: the 2026-08-31 cancellation went unnoticed until someone looked, and the nightly is the only thing running the schedule-only jobs. Not recurred in four runs since; the missing alert is the item
 62. **[#108](#item-108)** — README's 16-core claim rests on resource figures README itself withdrew as undated
 63. **[#100](#item-100)** — The EP4CGX150 cable reads 10/10 since the 2026-08-31 swap and blocks nothing. What is left is an unresolved confound: the swap changed the cable AND re-seated both plugs, so put the Pico back on that board to confirm re-seating was the cure
 64. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
@@ -4333,7 +4333,7 @@ rather than discovered by an audit months later.
 
 <a id="item-118"></a>
 
-### Item 118 — the nightly CI run was cancelled after 1h4m
+### Item 118 — a failed nightly is silent, and the nightly is the only thing running the schedule-only jobs
 
 Run `33377819507`, 2026-08-31T09:28Z, `schedule` on `main`: **cancelled** after
 1h4m13s.
@@ -4344,9 +4344,29 @@ kill a scheduled run. No push of mine landed at 10:32.
 
 **Do not assume the fix regressed.** The cancellation coincides with a 12-core
 Quartus fit being killed on this host, so runner contention or a self-hosted
-resource limit are at least as likely. The point is that a scheduled run did not
-complete and nobody would have noticed: the nightly is the only thing exercising
-the schedule-only jobs, and its failure mode is silence.
+resource limit are at least as likely.
+
+**RESCOPED 2026-09-04. The incident is closed; the silence is the item.**
+
+The cancellation has not recurred — four consecutive successful nightlies since
+(09-01, 09-02, 09-03, 09-04), and `readme-walkthrough-long`, the only
+schedule-gated job, reached `success` in each of the last five scheduled runs.
+So the schedule-only coverage is real and is running, which was the thing worth
+establishing.
+
+What has not changed is that **nobody is told when it fails**. The 08-31
+cancellation sat unnoticed until someone went looking, and today's success was
+confirmed the same way — by hand, because it was asked about. A nightly whose
+result is only discovered on enquiry provides assurance nobody is receiving.
+
+**Incidental, and worth knowing:** the cron is `0 3 * * *` but the runs land
+between **07:43 and 09:49** — GitHub defers scheduled workflows under load.
+Nothing depends on the hour today, but do not build anything that assumes 03:00.
+
+**What would close this:** a notification on a failed or cancelled scheduled
+run. Anything that reaches a person — the simplest being a job that runs only
+`if: failure()` on the schedule event. Until then this is assurance that exists
+but is not delivered.
 
 <a id="item-119"></a>
 
