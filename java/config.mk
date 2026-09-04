@@ -43,11 +43,29 @@ RUNTIME_SRCS := $(TARGET_DIR)/src/jop $(TARGET_DIR)/src/jvm $(TARGET_DIR)/src/jd
 # Exported by java/Makefile so sub-makes reuse it and pay the sbt start once.
 # sbt logs a forked process's stdout at INFO, so the `[info] ` prefix is
 # stripped here; `sbt -error` would suppress the answer along with the noise.
+# READ THE ANSWER FROM A FILE, NOT FROM SBT'S LOG.
+#
+# This used to scrape stdout for `^[info] build/...`. That prefix is not this
+# program's output -- it is sbt re-logging a forked run's stdout at INFO -- so
+# it depends on the sbt version and the log level in force. CI ran at a level
+# where those lines never appeared: sbt SUCCEEDED, printed the directory, and
+# the scrape saw nothing, which was then reported as "produced no directory for
+# preset", pointing the reader at the preset rather than at the parse. Five CI
+# jobs failed that way on 2026-09-04.
+#
+# The stale answer is removed FIRST, so a failed run cannot be read as a
+# success from the previous one, and sbt's output is kept rather than sent to
+# /dev/null -- the old `2>/dev/null` made a real error and an empty parse
+# indistinguishable, which is why the message named the wrong cause.
 ifeq ($(origin JOP_CFG_DIR), undefined)
-  JOP_CFG_DIR := $(shell cd $(PROJECT_ROOT) && sbt "runMain jop.generate.BuildLayoutMain $(JOP_PRESET)" 2>/dev/null \
-                   | sed -n 's/^\[info\] \(build\/.*\)$$/\1/p' | tail -1)
+  JOP_LAYOUT_DIR_FILE := $(PROJECT_ROOT)/build/.buildlayout.dir
+  JOP_LAYOUT_LOG      := $(PROJECT_ROOT)/build/.buildlayout.log
+  JOP_CFG_DIR := $(shell cd $(PROJECT_ROOT) && mkdir -p build && rm -f build/.buildlayout.dir && \
+                   sbt "runMain jop.generate.BuildLayoutMain $(JOP_PRESET) --out build/.buildlayout.dir" \
+                     > build/.buildlayout.log 2>&1; \
+                   cat build/.buildlayout.dir 2>/dev/null)
   ifeq ($(JOP_CFG_DIR),)
-    $(error jop.generate.BuildLayoutMain produced no directory for preset "$(JOP_PRESET)")
+    $(error jop.generate.BuildLayoutMain wrote no directory for preset "$(JOP_PRESET)" -- see $(JOP_LAYOUT_LOG))
   endif
 endif
 

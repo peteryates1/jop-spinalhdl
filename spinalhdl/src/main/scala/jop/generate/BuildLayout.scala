@@ -121,6 +121,28 @@ object BuildLayoutMain extends App {
     "There is deliberately no default: this main writes a constraint or\n" +
     "project file, and a default silently produces a WELL-FORMED file for\n" +
     "the wrong board at the path --write names, which then builds."))
+  // `--out <file>` WRITES THE ANSWER RATHER THAN PRINTING IT.
+  //
+  // Callers used to scrape stdout for a line matching `^[info] build/...`.
+  // That reads sbt's LOG rather than this program's output, and the prefix is
+  // an artefact of sbt forking the run and re-logging the child's stdout at
+  // INFO -- so it depends on the sbt version and on the log level in force.
+  // CI ran at a level where those lines never appeared: sbt succeeded, printed
+  // the directory, and the caller saw nothing, then reported "produced no
+  // directory for preset" as though the preset were unknown. A file cannot be
+  // swallowed by a log level.
+  val outIdx = args.indexWhere(_.equalsIgnoreCase("--out"))
   val rest = args.drop(1).filterNot(_.equalsIgnoreCase("buildtree"))
-  println(BuildLayout.default.configDir(preset, rest))
+                 .filterNot(_.equalsIgnoreCase("--out"))
+                 .filterNot(a => outIdx >= 0 && args.lift(outIdx + 1).contains(a))
+  val dir = BuildLayout.default.configDir(preset, rest.toIndexedSeq)
+  if (outIdx >= 0) {
+    val path = args.lift(outIdx + 1).getOrElse(
+      sys.error("--out needs a file path"))
+    val f = new java.io.File(path)
+    Option(f.getParentFile).foreach(_.mkdirs())
+    val w = new java.io.PrintWriter(f)
+    try w.println(dir) finally w.close()
+  }
+  println(dir)
 }

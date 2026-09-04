@@ -182,7 +182,7 @@ jop/
 
 ```bash
 # 1. Build microcode assembler and generate microcode
-cd java/tools && make dist/jopa.jar
+cd java/tools && make jopa
 cd ../../asm && make
 
 # 2. Compile SpinalHDL. The `cd ..` matters: step 1 leaves you in asm/, and
