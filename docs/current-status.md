@@ -203,7 +203,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 
 - ~~**[137](#item-137)**~~ — the `<clinit>` interpreter — FIXED 2026-09-04 (`a6d428b`), scaffolding removed 2026-09-05: 107 dead lines and 7,784 bytes out of every image
 - ~~**[129](#item-129)**~~ — `arraylength` had no null check — FIXED 2026-09-05, one condition in `BmbMemoryController`; DoAll 68/68 on all three boards, costs ~5.6 MHz on the i5 (still PASS at 40)
-- ~~**[140](#item-140)**~~ — The Java tools were config-dependent because javac inlines `Const` — DONE 2026-09-04: JOPizer reads its four values at runtime and is now built once into `build/java/tools`; JopSim stays per-config on purpose
+- ~~**[144](#item-144)**~~ — The Java tools were config-dependent because javac inlines `Const` — DONE 2026-09-05: JOPizer reads its four values at runtime and is now built once into `build/java/tools`; JopSim stays per-config on purpose
 - ~~**[57](#item-57)**~~ — The XDC/QSF generators exist and nothing uses them — DONE 2026-08-31; every board reads generated constraints, and the tracked files are now ConstraintDriftTest's oracles
 - ~~**[60](#item-60)**~~ — Everything generated belongs under `build/<config>/` — DONE 2026-09-04: boards finished 2026-08-31, but the legacy path stayed the DEFAULT in both trees for four more days; both branches now deleted and guarded
 - ~~**[80](#item-80)**~~ — `PerfCounterVerifySim` fails on an unassigned ICU register — pre-existing, confirmed by bisect
@@ -2009,7 +2009,9 @@ core counts and overrides together). The layout itself is data
 <a id="item-61"></a>
 
 
-### Item 140 — ~~The Java tools are per-configuration only because javac inlines constants~~ — DONE
+<a id="item-144"></a>
+
+### Item 144 — ~~The Java tools are per-configuration only because javac inlines constants~~ — DONE
 
 > **Closed 2026-09-04.** JOPizer is now ONE artefact that is told which machine
 > it is linking for. It lives in `build/java/tools/jopizer.jar` and contains no
@@ -5955,7 +5957,7 @@ the project a working layout test bed that needs no hardware.
 > the same size and locals limits to `<clinit>` as to any other method, so an
 > oversized one is a link error naming the class rather than a board that
 > bricks before `main()` — and the limit comes from the build rather than a
-> literal (see [item 140](#item-140)).
+> literal (see [item 144](#item-144)).
 >
 > **The first fix left the scaffolding behind, and it was not free.** Removing
 > the interpreter's call sites did not remove the interpreter: 107 lines of
