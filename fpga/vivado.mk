@@ -119,7 +119,19 @@ else
 JOP_APP_FILE =
 endif
 
-$(JOP_APP_FILE):
+# ASK EVERY TIME -- the same reasoning as config.mk's `tools-fresh`.
+#
+# This was a file target with NO prerequisites: once the .jop existed, make
+# never re-entered java/ again, so a JOPizer change, a runtime change or a new
+# Const.java was compiled into nothing and the bitstream shipped the PREVIOUS
+# image. That is status item 140's defect one level out, and it is worse here
+# because the stale image is baked into a bitstream rather than merely linked.
+#
+# FORCE rather than a prerequisite list: the inputs are the whole Java tree and
+# the generated Const.java, and enumerating them here would be a second copy of
+# java/'s own dependency graph. The sub-make is incremental, so the cost when
+# nothing changed is one sbt start, against a board build measured in minutes.
+$(JOP_APP_FILE): FORCE
 	cd $(PROJECT_ROOT)/java && $(MAKE) all JOP_PRESET="$(CFG)" BUILDTREE=1
 
 
@@ -172,3 +184,6 @@ include $(dir $(lastword $(MAKEFILE_LIST)))console.mk
 .PHONY: print-cfg-dir
 print-cfg-dir:
 	@echo $(CFG_DIR)
+
+# Always-out-of-date prerequisite; see the note above.
+FORCE:

@@ -102,7 +102,12 @@ require-tools-out:
 # the source-tree copy. Nothing writes there any more, so it could never match;
 # dropping it is a no-op today and stops it becoming a live fallback to the old
 # layout tomorrow.
-CONST_JAVA_DEP := $(wildcard $(GEN_SRC_HERE)/jop/com/jopdesign/sys/Const.java)
+# NO `jop/` SEGMENT. The generated path is build/<config>/java/gen/com/
+# jopdesign/sys/Const.java; this named .../gen/jop/com/... , so $(wildcard)
+# expanded to NOTHING and the prerequisite below was inert -- silently, because
+# a wildcard that matches nothing is not an error. The dependency read as
+# present in the Makefile and did not exist in the rule database.
+CONST_JAVA_DEP := $(wildcard $(GEN_SRC_HERE)/com/jopdesign/sys/Const.java)
 
 # NO Const.java PREREQUISITE ANY MORE -- item 140. The linker reads its four
 # configuration values from the generated jop-linker.properties at runtime, so

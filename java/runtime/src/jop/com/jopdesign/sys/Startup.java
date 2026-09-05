@@ -41,7 +41,13 @@ package com.jopdesign.sys;
  */
 public class Startup {
 	
-	// use static vars, don't waste stack space
+	// use static vars, don't waste stack space.
+	//
+	// msg(), version(), getSpeed() and getRamSize() were removed 2026-09-05:
+	// none had a caller, and JOPizer runs no dead-code elimination, so every
+	// one of them was LINKED into every image. Only boot() is reachable by
+	// name (JOPizer.bootMethod = "boot()V"); everything else here must be
+	// called from somewhere or it is cargo.
 	/** Size of main memory in 32-bit words */
 	static int mem_size;
 	/** Size of scratchpad memory in 32-bit words */
@@ -132,11 +138,6 @@ public class Startup {
 	}
 	
 
-	static void msg() {
-		// Minimal output - just a newline to reset serial state
-		JVMHelp.wr('\r');
-		JVMHelp.wr('\n');
-	}
 	
 	/**
 	 * Add a Runnable for the other CPUs
@@ -147,91 +148,9 @@ public class Startup {
 		cpuStart[index] = r;
 	}
 	
-	/**
-	 * @return RAM size in 32 bit words
-	 */
-	static int getRamSize(int offset) {
-
-		// change for DE2-70 VGA board
-		int size = 0;
-		int firstWord = Native.rd(offset+0);
-		int val;
-		// increment in 512 Bytes
-		for (size=0; ; size+=((512)>>2)) {
-			val = Native.rd(offset+size);
-			Native.wr(0xaaaa5555, offset+size);
-			if (Native.rd(offset+size)!=0xaaaa5555) break;
-			Native.wr(0x12345678, offset+size);
-			if (Native.rd(offset+size)!=0x12345678) break;
-			if (size!=0) {
-				// invalidate cache
-				Native.invalidate();
-				if (Native.rd(offset+0)!=firstWord) break;				
-			}
-			// restore current word
-			Native.wr(val, offset+size);
-		}
-		// restore the first word
-		Native.wr(firstWord, offset+0);
-
-		return size;
-	}
 	
 	
-	/**
-	 * @return Processor speed in MHz
-	 */
-	static int getSpeed() {
-		
-		int start=0, end=0;
-		int val = Native.rd(Const.IO_US_CNT) + 5;
-		
-		while (Native.rd(Const.IO_US_CNT)-val<0) {
-			;
-		}
-		start = Native.rd(Const.IO_CNT);
-		val += 32;	// wait 32 us
-		while (Native.rd(Const.IO_US_CNT)-val<0) {
-			;
-		}
-		end = Native.rd(Const.IO_CNT);
-		
-		// round and divide by 32
-		return (end-start+16)>>5;
-	}
 	
-	static void version() {
-
-		// BTW: why not using System.out.println()?
-		int version = Native.rdIntMem(64-2);
-		if (version==0x12345678) {
-			// not in the new location, try the old one
-			version = Native.rdIntMem(64);
-		}
-		JVMHelp.wr(" V ");
-		// take care with future GC - JVMHelp.intVal allocates
-		// a buffer!
-		if (version==0x12345678) {
-			JVMHelp.wr("pre2005");
-		} else {
-			JVMHelp.intVal(version);
-		}
-		JVMHelp.wr("\r\n");
-		int speed = getSpeed();
-		JVMHelp.intVal(speed);
-		JVMHelp.wr("MHz, ");
-		JVMHelp.intVal(mem_size/1024*4);
-		JVMHelp.wr("KB RAM");
-		if (spm_size!=0) {
-			JVMHelp.wr(", ");
-			JVMHelp.intVal(spm_size*4);
-			JVMHelp.wr("Byte on-chip RAM");
-		}
-		JVMHelp.wr(", ");
-		JVMHelp.intVal(Native.rdMem(Const.IO_CPUCNT));
-		JVMHelp.wr("CPUs");
-		JVMHelp.wr("\r\n");
-	}
 
 	public static void exit() {
 		

@@ -5115,7 +5115,7 @@ iterations does an `iaload` on handle 0, which *does* fault. So the observable
 failure is an NPE at an unrelated place, several statements later, or a very
 long loop first.
 
-**Not yet diagnosed further.** The obvious fix is a null test in the microcode
+**Resolved — see the FIXED note below.** The options considered were a null test in the microcode
 before the `add`, but `arraylength` is on the hot path of every array loop and
 the JOP idiom for a cheap null test here has not been checked. The alternative —
 route `arraylength` through the handle path so the hardware check applies — costs
@@ -5123,7 +5123,7 @@ a state-machine trip on an operation that is currently three instructions.
 **Measure before choosing**: the same reasoning that made the item 128 fix a
 3-bit compare rather than a 24-bit one applies here.
 
-**Test in place, failing.** `jvm/Array.java`'s `nulla.length` assertion is
+**Test in place (was failing, now passes).** `jvm/Array.java`'s `nulla.length` assertion is
 commented out with a comment naming this item, and its reporter prints
 `MISS: arraylength-NPE` on every run of `DoAll` so the gap is visible rather
 than silent.
@@ -5445,7 +5445,7 @@ cycle) and passes after. Case 6b is the control — a consumer that honours
 Writing the red test first is what exposed this: the fix and the first test
 disagreed about what the contract was, and the test was wrong.
 
-**The test currently runs nowhere.** `CardTableTest` is in neither
+**The test ran nowhere WHEN THIS WAS WRITTEN** — both are in CI now (`ci.yml`, `CardTableTest` and `JopCardClearStallSim`). `CardTableTest` is in neither
 `.github/workflows/` nor the `Makefile`, which is both why case 6 was never
 there to be caught and why it can sit red without breaking CI. Adding it to CI
 has to follow the fix, not precede it.
@@ -5753,8 +5753,12 @@ coverage of the path. This is [item 111](#item-111)'s "nothing measures whether
 a test CAN fail" in its purest form: 15/15 and 66/66 were both true and both
 uninformative.
 
-**Not a GC hazard.** Literal String addresses lie below `mem_start`, so the
-conservative handle bound rejects them before any handle word is read.
+**A GC hazard after all — this claim was WRONG.** Literal String addresses lie
+below `mem_start`, and the write barriers did NOT all apply the conservative
+handle bound: two were fixed by [item 141](#item-141) and a third, in
+`f_aastore`, was missed by that fix and corrected 2026-09-05. This sentence is
+what licensed the gap — it asserted the screen existed everywhere rather than
+checking each push site.
 
 **ATTEMPTED 2026-09-03. The fix is identified and validated; it is NOT landed,
 because it breaks `TextFormatTest` for a reason five hypotheses failed to
@@ -5793,7 +5797,7 @@ and `Startup`'s `<clinit>` interpreter (its "not implemented" message is a
 different string).
 
 **THE REPRODUCER EXISTS AND HAS LOCALISED IT (2026-09-03).**
-`java/apps/Small/src/test/StrLitRepro.java` + `jop.system.StrLitReproSim`
+`StrLitRepro.java` + `jop.system.StrLitReproSim` (investigation vehicles, REMOVED 2026-09-05 once `jvm/StringLiteral` carried the coverage permanently)
 iterate in ~2 minutes against 13 for `JopJvmTestsBramSim`. The app prints a
 marker per step, so the last marker names the operation that dies. Baseline
 (fix off) runs clean to `Z DONE` while showing the item 136 defect, so the
@@ -6200,7 +6204,7 @@ String literal at **25090** — comfortably below `mem_start`. The guard should
 have returned. Instead the barrier reached its final gate and wrote
 `GC.GREY_END` (-1) into `literal + OFF_GREY`, i.e. `literal + 5`.
 
-**Reproduced**, `java/apps/Small/src/test/StrLitRepro.java` with item 136's
+**Reproduced** at the time by `StrLitRepro.java` (since removed) with item 136's
 layout applied: the word at `literal+5` is 0 before `positivePrefix = ""` and
 -1 after, and nothing else in the literal changes.
 

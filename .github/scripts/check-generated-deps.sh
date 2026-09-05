@@ -178,8 +178,33 @@ fi
 # failure is TROUBLESHOOTING.md's first entry -- reads and writes land on the
 # wrong device and the board looks dead.
 # ---------------------------------------------------------------------------
-const_rule=$(make -C java -p -n 2>/dev/null \
-             | grep -E '^[^ |#]*runtime/src/jop/com/jopdesign/sys/Const\.java:' | head -1)
+# ABSENCE MUST FAIL, NOT SKIP. This searched for a rule under
+# runtime/src/jop/com/jopdesign/sys/, where Const.java lived before the
+# build-tree move; it now lives at build/<config>/java/gen/com/jopdesign/sys/.
+# The pattern matched nothing, and because the whole block was wrapped in
+# `if [ -n "$const_rule" ]` it skipped in SILENCE -- it did not even print its
+# own ok line, so nothing among the other passes showed it had stopped
+# checking. It has been asserting nothing since the move, while being cited as
+# evidence in item 120's record. A guard that cannot find its subject must say
+# so.
+#
+# JOP_PRESET is passed because config.mk resolves the config directory through
+# sbt when JOP_CFG_DIR is unset; without it an sbt failure yields the same
+# empty result as a missing rule.
+# REQUIRE A PREREQUISITE AFTER THE COLON. `make -p` lists the SAME target once
+# per path spelling it was reached by -- absolute from a sub-make, ../../ from
+# an app directory, ../ from java/ -- and only the last carries the
+# prerequisite list; the others are bare "Implicit rule search" stubs. Taking
+# head -1 of the bare form made this guard report that Const.java depends on
+# nothing, which is a false FAIL on a correct Makefile.
+const_rule=$(make -C java -p -n JOP_PRESET="${JOP_PRESET:-ep4cgx150Serial}" 2>/dev/null \
+             | grep -E '^[^ |#]*/gen/com/jopdesign/sys/Const\.java: +[^ ]' | head -1)
+if [ -z "$const_rule" ]; then
+  echo "  FAIL no rule in the database builds Const.java"
+  echo "       the guard could not find its subject -- the path moved, or the"
+  echo "       config directory did not resolve. It is not passing; it is blind."
+  exit 1
+fi
 if [ -n "$const_rule" ]; then
   missing=""
   for f in IoAddressAllocator.scala DeviceTypes.scala DeviceInstance.scala JopMemoryConfig.scala; do

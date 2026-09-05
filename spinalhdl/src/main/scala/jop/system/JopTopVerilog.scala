@@ -401,10 +401,19 @@ object JopTopVerilog {
     // violation it also had, but the wrong boot ROM.
     val withMif  = jop.config.MifPathOverride(
       config, layout.relativeTo(prjDir, MicrocodePaths.dir(config.system.bootMode)))
+    // THE EMBEDDED IMAGE COMES FROM THE BUILD TREE, ALWAYS.
+    //
+    // This kept an `else Some(s"java/$appRel")` arm -- the source path, which
+    // nothing produces since item 60. A BRAM preset generated without the
+    // `buildtree` argument therefore baked in whatever stale .jop happened to
+    // be lying in the source tree, or failed on a clean clone. It is the same
+    // legacy branch removed everywhere else, and it survived the sweep because
+    // the path is INTERPOLATED: check-no-intree-jop-path.sh matches whole
+    // quoted literals like "java/apps/X/Y.jop" and cannot see s"java/$appRel".
+    // The guard now also rejects a string STARTING java/apps, interpolated or
+    // not.
     val jopFile =
-      if (bArgs.exists(_.equalsIgnoreCase("buildtree")))
-        Some(s"${layout.javaDir(preset, bArgs.filterNot(_.equalsIgnoreCase("buildtree")))}/$appRel")
-      else Some(s"java/$appRel")
+      Some(s"${layout.javaDir(preset, bArgs.filterNot(_.equalsIgnoreCase("buildtree")))}/$appRel")
     generate(withMif, jopFilePath = jopFile, presetName = preset, buildArgs = bArgs)
   }
 }

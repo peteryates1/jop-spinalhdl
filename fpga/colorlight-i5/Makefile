@@ -77,7 +77,19 @@ BAUD       := 1000000
 APP        := $(CFG_DIR)/java/apps/Smallest/HelloWorld.jop
 
 # Built here rather than assumed, so `make bitstream download` works from cold.
-$(APP):
+# ASK EVERY TIME -- the same reasoning as config.mk's `tools-fresh`.
+#
+# This was a file target with NO prerequisites: once the .jop existed, make
+# never re-entered java/ again, so a JOPizer change, a runtime change or a new
+# Const.java was compiled into nothing and the bitstream shipped the PREVIOUS
+# image. That is status item 140's defect one level out, and it is worse here
+# because the stale image is baked into a bitstream rather than merely linked.
+#
+# FORCE rather than a prerequisite list: the inputs are the whole Java tree and
+# the generated Const.java, and enumerating them here would be a second copy of
+# java/'s own dependency graph. The sub-make is incremental, so the cost when
+# nothing changed is one sbt start, against a board build measured in minutes.
+$(APP): FORCE
 	cd $(ROOT)/java && $(MAKE) all JOP_PRESET=$(PRESET) BUILDTREE=1
 
 .PHONY: all generate synth pnr bitstream program download clean
@@ -157,3 +169,6 @@ download:
 # build-tree move this could only reach $(BUILD), leaving stale Verilog behind.
 clean:
 	rm -rf $(CFG_DIR)
+
+# Always-out-of-date prerequisite; see the note above.
+FORCE:

@@ -37,7 +37,16 @@ fail=0
 # sort makes it emit "input is not in sorted order" and give wrong answers.
 # [0-9]+[a-z]? because item 78b exists -- and went unanchored and unlinked for
 # days precisely because a plain-integer pattern could not see it.
-sections=$(grep -oE '^### Item [0-9]+[a-z]?' "$f" | grep -oE '[0-9]+[a-z]?$' | sort -u)
+# BOTH HEADING FORMS. A closed item is written `### ~~Item 140~~ — ...`, and a
+# pattern anchored on "^### Item" cannot see it. Eight items already use the
+# struck form, so every check below was blind to them -- which is how a NEW
+# item took the number 140 while the old item 140 sat five thousand lines away
+# in struck form, and how the scan for "the highest item number" under-reported
+# and produced the collision.
+section_nums() {
+  grep -oE '^### (~~)?Item [0-9]+[a-z]?' "$1" | grep -oE '[0-9]+[a-z]?$'
+}
+sections=$(section_nums "$f" | sort -u)
 anchors=$(grep -oE '<a id="item-[0-9]+[a-z]?"' "$f" | grep -oE '[0-9]+[a-z]?' | sort -u)
 missing=$(comm -23 <(echo "$sections") <(echo "$anchors") | sort -n | tr '\n' ' ')
 if [ -n "${missing// /}" ]; then
@@ -47,7 +56,18 @@ fi
 
 # 2. No anchor may be defined twice -- renderers bind the first and the second
 #    becomes unreachable, which is how a contradiction hid in plain sight.
-dupes=$(grep -oE '<a id="item-[0-9]+"' "$f" | sort | uniq -d | grep -oE '[0-9]+' | tr '\n' ' ')
+# [0-9]+[a-z]? here too: check 1 handles 78b deliberately and this did not, so
+# a duplicated `item-78b` anchor would have passed.
+dupes=$(grep -oE '<a id="item-[0-9]+[a-z]?"' "$f" | sort | uniq -d | grep -oE '[0-9]+[a-z]?' | tr '\n' ' ')
+# A DUPLICATE SECTION HEADING IS THE OTHER HALF, and it is the one that bit.
+# `sections` above is `sort -u`, so two `### Item 142` headings collapse to one
+# and compare equal to a single anchor -- invisible. Count them unsorted.
+dupe_sections=$(section_nums "$f" | sort | uniq -d | tr '\n' ' ')
+if [ -n "${dupe_sections// /}" ]; then
+  echo "  FAIL item numbers used by more than one section: $dupe_sections"
+  echo "       links bind to the first; the second is unreachable"
+  fail=1
+fi
 if [ -n "${dupes// /}" ]; then
   echo "  FAIL anchors defined more than once: $dupes"
   fail=1

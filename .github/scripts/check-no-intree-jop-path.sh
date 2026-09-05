@@ -21,8 +21,14 @@ BAD=0
 
 # --- 1. no in-tree .jop literals in Scala -----------------------------------
 while IFS= read -r f; do
+  # BOTH LITERAL AND INTERPOLATED. This matched only a whole quoted literal
+  # ending .jop -- so `s"java/$appRel"` in JopTopVerilog, which resolved to
+  # exactly such a path at runtime, was invisible, and the last legacy in-tree
+  # branch survived the sweep that removed all the others. Anything that STARTS
+  # a string with java/apps is now rejected however it continues, and the
+  # .link.txt sidecars with it.
   hits=$(sed -e 's://.*::' -e 's:^[[:space:]]*\*.*::' "$f" \
-         | command grep -n '"java/apps/[^"]*\.jop"' || true)
+         | command grep -nE '"java/apps/[^"]*\.jop"|s?"java/apps/|s?"java/\$' || true)
   if [ -n "$hits" ]; then
     echo "FAIL: $f hardcodes an in-tree .jop path:" >&2
     printf '%s\n' "$hits" | sed 's/^/    /' >&2

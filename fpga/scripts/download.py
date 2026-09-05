@@ -307,7 +307,14 @@ def main():
             sys.exit(1)
 
     if reset_only:
-        ser = serial.Serial(port, baud, timeout=2)
+        # exclusive=True -- item 143. pyserial defaults to a NON-exclusive open,
+        # so a second reader (a leaked download.py from an earlier run, a stray
+        # monitor) attaches happily and the two split the byte stream. The
+        # symptom is 'device reports readiness to read but returned no data',
+        # which is indistinguishable from a dead board or a stalled CH340 --
+        # three leaked holders once cost an afternoon of hardware diagnosis.
+        # With TIOCEXCL the second opener fails immediately, naming the port.
+        ser = serial.Serial(port, baud, timeout=2, exclusive=True)
         ser.dtr = True
         print(f"Opened {ser.port} at {ser.baudrate} baud")
         send_reset(ser, baud)
@@ -335,7 +342,8 @@ def main():
 
     data, checksum = pack_words(words)
 
-    ser = serial.Serial(port, baud, timeout=2)
+    # exclusive=True -- see the note above (item 143).
+    ser = serial.Serial(port, baud, timeout=2, exclusive=True)
     ser.dtr = True   # required for RP2040 DirtyJTAG CDC bridge (cdc_uart.c stops on DTR=0)
     ser.reset_input_buffer()
     ser.reset_output_buffer()

@@ -142,6 +142,29 @@ public class StringLiteral extends TestCase {
 			ok = false;
 		}
 
+		// --- aastore OVER AN EXISTING LITERAL ------------------------------
+		//
+		// The write barrier in f_aastore only runs when the slot ALREADY holds
+		// a reference: it reads the old value and greys it. Every aastore case
+		// below stores into a freshly allocated array, so oldVal == 0 and the
+		// barrier is never entered -- which is why the missing handle-range
+		// screen there survived item 141's fix and this suite.
+		//
+		// Overwriting a slot that holds a LITERAL is the case that matters: the
+		// literal lives below mem_start, and without the screen its address is
+		// pushed onto the grey list and GC.grayList is written over the
+		// literal's array length. "" is the sharpest probe -- its OFF_GREY word
+		// IS its length, legitimately 0, so it passes the unscreened test.
+		String[] over = new String[1];
+		over[0] = "";                             // slot now holds a literal
+		over[0] = "x";                            // barrier greys the old value
+		if ("".length() != 0) {
+			ok &= miss("\"\".length() corrupted by an aastore write barrier");
+		}
+		if (!"".equals("")) {
+			ok &= miss("\"\" broken after aastore over a literal");
+		}
+
 		// --- aastore ------------------------------------------------------
 		String[] sa = new String[2];
 		threw = false;

@@ -98,7 +98,19 @@ BRAM_CFG_DIR = $(REPO_ROOT)/build/$(BRAM_CFG)
 #   FileNotFoundError: build/wukongDdr3/java/apps/Smallest/HelloWorld.jop
 # A pattern rule takes the config from the path, so adding a flow cannot repeat
 # the omission.
-$(REPO_ROOT)/build/%/java/apps/Smallest/HelloWorld.jop:
+# ASK EVERY TIME -- the same reasoning as config.mk's `tools-fresh`.
+#
+# This was a file target with NO prerequisites: once the .jop existed, make
+# never re-entered java/ again, so a JOPizer change, a runtime change or a new
+# Const.java was compiled into nothing and the bitstream shipped the PREVIOUS
+# image. That is status item 140's defect one level out, and it is worse here
+# because the stale image is baked into a bitstream rather than merely linked.
+#
+# FORCE rather than a prerequisite list: the inputs are the whole Java tree and
+# the generated Const.java, and enumerating them here would be a second copy of
+# java/'s own dependency graph. The sub-make is incremental, so the cost when
+# nothing changed is one sbt start, against a board build measured in minutes.
+$(REPO_ROOT)/build/%/java/apps/Smallest/HelloWorld.jop: FORCE
 	cd $(REPO_ROOT)/java && $(MAKE) all JOP_PRESET=$* BUILDTREE=1
 
 APP_JOP    = $(REPO_ROOT)/build/$(1)/java/apps/Smallest/HelloWorld.jop
@@ -392,3 +404,6 @@ jop-sdram-monitor:
 # bringup/wukong-uart-loopback/.
 clean:
 	rm -rf vivado/build vivado/ip
+
+# Always-out-of-date prerequisite; see the note above.
+FORCE:

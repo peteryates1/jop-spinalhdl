@@ -163,10 +163,6 @@ public class JopMethodInfo extends OldMethodInfo implements Serializable {
 
 	public void dumpMethodStruct(PrintWriter out, int addr) {
 
-		if (methodId.equals(OldAppInfo.clinitSig)
-				&& len >= JOPizer.METHOD_MAX_SIZE / 4) {
-			out.println("\t// no size for <clinit> - we interpret it and allow larger methods!");
-		}
 		// java_lang_String
 		// 0x01 TODO access
 		// 2 TODO ? stack
@@ -188,13 +184,26 @@ public class JopMethodInfo extends OldMethodInfo implements Serializable {
 		out.println("\t\t//\tlocals: " + (mreallocals + margs) + " args size: "
 				+ margs);
 
+		// THE <clinit> LENGTH IS EMITTED LIKE ANY OTHER METHOD'S.
+		//
+		// This used to zero the length field for a <clinit> at or above
+		// JOPizer.METHOD_MAX_SIZE/4 (512 words), as the signal that
+		// Startup.clazzinit should INTERPRET it rather than invoke it. Item 137
+		// removed the interpreter, so clazzinit always invokes -- and a zeroed
+		// length means MethodCache computes nrOfBlks = 0, fetches no bytecode,
+		// and the core runs whatever was left in the cache. A brick before
+		// main(), with no diagnostic at all: strictly worse than the
+		// "bytecode N not implemented" the interpreter used to print.
+		//
+		// It also disagreed with the size CHECK above, which since item 144
+		// comes from the build (LinkerConfig.methodMaxSize(), 4092 bytes /1023
+		// words on every preset in the tree) rather than this 2048-byte
+		// literal. That left 512..1022 words as a band where a <clinit>
+		// PASSED the check and shipped with no length. Removing the zeroing
+		// closes the band: oversized is now a link error at 1023 words for
+		// <clinit> exactly as for every other method, which is what item 137
+		// claimed and did not deliver.
 		int word1 = codeAddress << 10 | len;
-		// no length on large <clinit> methods
-		// get interpreted at start - see Startup.clazzinit()
-		if (methodId.equals(OldAppInfo.clinitSig)
-				&& len >= JOPizer.METHOD_MAX_SIZE / 4) {
-			word1 = codeAddress << 10;
-		}
 		int word2 = getCli().cpoolAddress << 10 | mreallocals << 5 | margs;
 
 		if (getMethod().isAbstract()) {

@@ -21,7 +21,10 @@ import jop.utils.JopFileLoader
  */
 object JopBytecodeLocate extends App {
   val jopPath  = if (args.length > 0) args(0) else jop.utils.SimApp.jop("SmpGcTest", "SmpGcTest")
-  val linkPath = if (args.length > 1) args(1) else "java/apps/SmpGcTest/SmpGcTest.jop.link.txt"
+  // The sidecar follows the image. Line above was converted to SimApp and this
+  // one was not, so it kept pointing at the source tree; JOPizer writes
+  // <image>.link.txt beside the image, which is now under build/<config>/.
+  val linkPath = if (args.length > 1) args(1) else jop.utils.SimApp.jop("SmpGcTest", "SmpGcTest") + ".link.txt"
   // Default: the synchronized-block exception handler found in the bytecode
   // cache at the 4-core wedge —
   //   monitorenter, goto, 00, 00, astore_1, aload_0, monitorexit, aload_1, athrow

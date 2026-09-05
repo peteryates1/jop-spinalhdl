@@ -12,7 +12,7 @@ Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 
 **Working on hardware.** The processor boots and runs Java programs on eight boards, at 40–100 MHz depending on the memory subsystem:
 
-> **The JVM suite is 67 tests as of 2026-08-31**, not 66. `jvm/Array` had been
+> **The JVM suite is 68 tests as of 2026-09-05.** `jvm/Array` had been
 > disabled twice over — four assertions commented out inside a class that was
 > itself commented out of `DoAll` — and re-enabling it exposed two real defects
 > in the RTL and the microcode. Figures below are labelled with the suite size
@@ -23,10 +23,11 @@ Built with [Claude Code](https://code.claude.com/docs/en/quickstart).
 > `iastore` faulted correctly ([item 128](docs/current-status.md#item-128)) —
 > and **`IO_CARD_CLEAR` now blocks until the card table is clear**, where the
 > clear-all sweep had been dropping every mark that arrived during it
-> ([item 131](docs/current-status.md#item-131)). Two defects the suite still
-> reports and nothing yet fixes: `null.length` does not throw
-> ([129](docs/current-status.md#item-129)) and a String **literal** fails
-> `instanceof String` ([136](docs/current-status.md#item-136)).
+> ([item 131](docs/current-status.md#item-131)). The two defects it went on to
+> report are both fixed now: `null.length` throws
+> ([129](docs/current-status.md#item-129), 2026-09-05) and a String **literal**
+> has a valid `OFF_TYPE` ([136](docs/current-status.md#item-136), 2026-09-03).
+> The suite reports no MISS on any board.
 
 - **SDRAM + SMP (primary)**: up to 16-core SMP on QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V) — all cores running independently with CmpSync global lock (or optional IHLU per-object locking), round-robin BMB arbitration, and GC stop-the-world halt (halts all other cores during garbage collection)
 - **SDRAM (single-core)**: Serial boot over UART into SDR SDRAM on two boards — QMTECH EP4CGX150 (Cyclone IV) and Trenz CYC5000 (Cyclone V, W9864G6JT). EP4CGX150 JVM test suite: **67/67 on hardware** (2026-09-02)
@@ -361,8 +362,10 @@ sbt "runMain jop.system.JopTopVerilog max1000Sdram"      # MAX1000 (fit check on
 sbt "runMain jop.system.JopTopVerilog minimum"           # Minimum resources
 ```
 
-Add `buildtree` to place the output under `build/<config>/` rather than the
-legacy in-tree location; every board Makefile does this already.
+`buildtree` is still accepted as an argument and is now a no-op: there is only
+one output layout, `build/<config>/`. It is kept because four board Makefiles
+pass it, and it is filtered out of the configuration name so the same design
+cannot land in two directories depending on how it was invoked.
 
 > **Flash boot is currently REGRESSED.** Both the EP4CGX150 and the Alchitry Au
 > booted autonomously from SPI flash and were fully hardware-verified, but the

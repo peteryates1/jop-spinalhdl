@@ -116,8 +116,25 @@ public class JVM {
 		synchronized (GC.mutex) {
 			// snapshot-at-beginning barrier
 			int oldVal = Native.arrayLoad(ref, index);
-			// Is it white?
+			// THE SAME HANDLE-RANGE SCREEN AS THE OTHER TWO BARRIERS -- item
+			// 141. This was the THIRD open-coded push to the grey list, and it
+			// was missed when the other two were fixed: the item recorded "it
+			// was a fourth path" and stopped enumerating, so this one kept the
+			// unscreened test.
+			//
+			// It matters because a String LITERAL lives BELOW mem_start (item
+			// 136 gives it a real OFF_TYPE but not a heap address), and under
+			// that layout an overwritten literal passes both original terms --
+			// its OFF_SPACE word is 0, which never equals toSpace (1 or 2), and
+			// for "" the OFF_GREY word is the char[] length, legitimately 0.
+			// The push then writes GC.grayList over the literal's array length
+			// and hands the collector an address it must not trace.
+			//
+			// Inline, and it calls nothing: GC.push() would take GC.mutex,
+			// which this block already holds and which is NOT reentrant.
 			if (oldVal != 0
+				&& oldVal >= GC.mem_start && oldVal < GC.handleEnd
+				&& (oldVal & 0x7) == 0
 				&& Native.rdMem(oldVal+GC.OFF_SPACE) != GC.toSpace
 				&& Native.rdMem(oldVal+GC.OFF_GREY)==0) {
 				// Mark grey

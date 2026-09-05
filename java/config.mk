@@ -121,7 +121,14 @@ COMMON_TOOLS_OUT := $(abspath $(PROJECT_ROOT)/build/java/tools)
 # Exported HERE, not only in java/Makefile: `make -C java/apps/<X>` includes
 # this file directly and never goes through java/Makefile, so its sub-make of
 # java/tools would otherwise see none of these.
+# GEN_SRC AND CONST_EXCLUDE BELONG HERE TOO. java/Makefile exports them, but an
+# app Makefile invoked DIRECTLY (`make -C java/apps/JvmTests`) includes this
+# file and never goes through java/Makefile -- so its sub-make of java/tools saw
+# GEN_SRC empty, put no gen/ directory on the sourcepath, and could not compile
+# anything referencing Const. That is precisely the incantation item 140 exists
+# to protect.
 export TOOLS_OUT COMMON_TOOLS_OUT JOPIZER_JAR JOPSIM_JAR JOPA_JAR LINKER_PROPS LINKER_FLAG
+export GEN_SRC CONST_EXCLUDE
 
 # JOPizer IS NOW COMMON -- status item 140 closed. It read four values from the
 # generated Const.java (three method limits and the RTTM magic), and javac
