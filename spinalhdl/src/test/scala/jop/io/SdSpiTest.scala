@@ -9,7 +9,7 @@ import scala.collection.mutable
 class SdSpiTest extends AnyFunSuite {
 
   val simConfig = SimConfig
-    .workspacePath("simWorkspace")
+    .workspacePath(jop.utils.JopSimDefaults.workspace)
 
   def compileDut() = simConfig.compile(SdSpi(clkDivInit = 199))
 

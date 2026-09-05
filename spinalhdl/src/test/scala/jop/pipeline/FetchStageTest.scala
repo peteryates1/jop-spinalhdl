@@ -112,7 +112,7 @@ class FetchStageTest extends AnyFunSuite {
       ),
       defaultClockDomainFrequency = FixedFrequency(100 MHz)
     ))
-    .workspacePath("simWorkspace"))
+    .workspacePath(jop.utils.JopSimDefaults.workspace))
 
   // Compile DUT once, reuse for all test cases
   lazy val compiled = simConfig.compile(FetchStage())

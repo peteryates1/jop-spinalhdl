@@ -26,7 +26,7 @@ object LongComputeUnitSim extends App {
 
   SimConfig
     .withWave
-    .workspacePath("simWorkspace")
+    .workspacePath(jop.utils.JopSimDefaults.workspace)
     .compile(LongComputeUnit(fullConfig))
     .doSim { dut =>
 

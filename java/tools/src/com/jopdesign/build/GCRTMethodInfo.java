@@ -195,12 +195,19 @@ public class GCRTMethodInfo {
 			mstack = method.getCode().getMaxStack();
 			mreallocals = method.getCode().getMaxLocals() - margs;
       
+      // NO <clinit> WAIVER -- status item 137. This used to exempt <clinit>
+      // from the 31-slot limit, on the rationale "we interprete clinit on JOP -
+      // no size restriction". The interpreter was removed on 2026-09-04 and
+      // clazzinit now always invokes, so an over-large <clinit> is executed
+      // like any other method and the waiver would hand the hardware a frame it
+      // cannot express (locals and args are 5-bit fields in the method struct's
+      // word2). Dormant in practice -- this class is reachable only under
+      // -Dmgci=true and all eight app Makefiles pass -Dmgci=false -- but a
+      // dormant waiver with a stale rationale is exactly how the sibling
+      // waiver in JopMethodInfo survived.
       if ((mreallocals+margs+mstack)>31) {
-        // we interprete clinit on JOP - no size restriction
-        if (!method.getName().equals("<clinit>")) {
-          System.err.println("wrong size: "+method.getName()+" cannot have (mreallocals+margs+mstack)>31");
-          System.exit(-1);          
-        }
+        System.err.println("wrong size: "+method.getName()+" cannot have (mreallocals+margs+mstack)>31");
+        System.exit(-1);
       }
 
 			instCnt = (method.getCode().getCode()).length;

@@ -28,7 +28,7 @@ class LongComputeUnitTest extends AnyFunSuite {
   )
 
   val simConfig = SimConfig
-    .workspacePath("simWorkspace")
+    .workspacePath(jop.utils.JopSimDefaults.workspace)
 
   def compileFull() = simConfig.compile(LongComputeUnit(fullConfig))
 

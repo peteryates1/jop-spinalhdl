@@ -55,8 +55,18 @@ object JopSimDefaults {
       println("Sim X-state: RANDOM (JOP_SIM_XINIT=random) — expect seed-dependent failures")
     else
       println("Sim X-state: zeroed (--x-initial 0; set JOP_SIM_XINIT=random to randomise)")
-    xInitial(SimConfig)
+    xInitial(SimConfig).workspacePath(workspace)
   }
+
+  /** Where Verilator workspaces go.
+    *
+    * `build/simWorkspace`, not the repo root. 19 sims named "simWorkspace"
+    * directly, which put gigabytes of generated Verilator output beside the
+    * source, outside `build/` and therefore outside `make clean` -- invisible
+    * only because .gitignore listed it. Item 60's rule is that everything
+    * generated lives under build/; this is the largest thing that did not.
+    */
+  val workspace: String = "build/simWorkspace"
 
   /**
    * Seed for `doSim`, overridable so a CI failure can be replayed exactly.

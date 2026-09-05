@@ -18,7 +18,17 @@ BUILD := build
 # tracked. If it is not reproducible, it does not belong under build/.
 clean:
 	rm -rf $(BUILD)
-	@echo "removed $(BUILD)/ — next build regenerates IP, microcode, RTL and images"
+	@# simWorkspace is Verilator's scratch, and it is NOT under build/ for most
+	@# sims: only the 11 that go through JopSimDefaults.config get
+	@# build/simWorkspace; the other 89 call SimConfig directly and take
+	@# SpinalHDL's default, which is ./simWorkspace at the repo root. It reached
+	@# 8.1 GB before anyone noticed, because .gitignore hid it and clean did not
+	@# touch it. Removing it here fixes the practical harm; moving all 89 sims
+	@# onto JopSimDefaults.config is the real fix and is a behavioural change
+	@# (it also applies the --x-initial 0 X-state defence), so it is not being
+	@# smuggled into a clean target.
+	rm -rf simWorkspace
+	@echo "removed $(BUILD)/ and simWorkspace/ — next build regenerates IP, microcode, RTL and images"
 
 ## mostlyclean — everything except the generated vendor IP
 #

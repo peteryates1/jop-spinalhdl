@@ -148,6 +148,48 @@ object CardTableTest extends App {
       s"clrBusy fell after $gap cycles but the sweep needs at least $nWords. " +
       "Busy must span the drain and the whole sweep, not part of it.")
 
+    // 6c) THE DRAIN IS PART OF THE GUARANTEE, AND NOTHING ASSERTED IT — the
+    // review of item 131 found that deleting `&& !markInFlight` from
+    // CardTable.scala shortens the stall by exactly one cycle and every
+    // existing assertion still passes (case 6 wants `gap >= nWords`, and the
+    // sweep alone supplies that).
+    //
+    // Why the drain exists: the sweep must not begin while a mark is still in
+    // the two register stages between the arbiter and the table. If it does,
+    // that mark lands in a word the sweep has already passed and survives the
+    // clear — a card marked in a table the collector believes it just emptied.
+    //
+    // The assertion is therefore RELATIVE, not absolute: request the clear with
+    // a mark in flight and the busy window must be strictly longer than the
+    // same request made with the pipeline quiet. A cycle count would be a
+    // second copy of the geometry; a comparison is not.
+    def busyWindow(withMarkInFlight: Boolean): Int = {
+      while (dut.io.clrBusy.toBoolean) dut.clockDomain.waitSampling()
+      dut.clockDomain.waitSampling(3)
+      if (withMarkInFlight) {
+        // Issue the mark and request the clear on the very next edge, so the
+        // mark is still in the pipeline when clrAll is sampled.
+        markAddr(cardAddr(11))
+        dut.io.clrAll #= true
+        dut.clockDomain.waitSampling()
+        dut.io.clrAll #= false
+      } else {
+        dut.io.clrAll #= true
+        dut.clockDomain.waitSampling()
+        dut.io.clrAll #= false
+      }
+      var n = 0
+      while (dut.io.clrBusy.toBoolean && n < nWords * 3) { dut.clockDomain.waitSampling(); n += 1 }
+      n
+    }
+    val quiet   = busyWindow(false)
+    val inFlight = busyWindow(true)
+    check(inFlight > quiet,
+      s"the clear stalled for $inFlight cycles with a mark in flight and $quiet " +
+      "with the pipeline quiet — they should differ, because the sweep must " +
+      "wait for the mark to drain. Equal windows mean `!markInFlight` is not " +
+      "gating the start. Status item 131.")
+
     // 6b) THE CONTROL, and the contract the fix relies on: a consumer that
     // honours clrBusy loses nothing. Wait for busy to fall, then mark. This
     // must pass BOTH before and after the fix — if it ever fails, case 6 says

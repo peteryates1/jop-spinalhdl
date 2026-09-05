@@ -92,7 +92,17 @@ EOF
 fi
 
 # 4. Section 1 declares itself the ground truth for what is open, so nothing it
-#    lists may have a struck (closed) heading, and nothing open may be missing
+#    lists may have a struck (closed) heading.
+#
+#    THE CONVERSE IS NOT CHECKED, deliberately. This comment used to promise
+#    "and nothing open may be missing from it", which was never implemented and
+#    cannot be: an un-struck heading is not the same as an open task. The
+#    document holds three kinds of item -- open defects, closed defects
+#    (struck), and RECORDS of completed work written up as items ("the last
+#    in-tree board", "701 lines to 195"). 27 un-struck sections are records, so
+#    a mechanical "un-struck implies listed" rule would fail on all of them.
+#    Completeness of the list is a human judgement; what is mechanised here is
+#    the half that is decidable. Original wording continued: nothing open may be missing
 #    from it. The first half is what actually rotted: items 9, 10, 50, 57, 59,
 #    60 and 61 sat in the priority list for days after closing.
 # 4b. THE LIST'S OWN NUMBERING MUST BE 1..N, CONTIGUOUS AND UNIQUE.

@@ -603,22 +603,41 @@ case class BmbMemoryController(
         // Memory read (stmra/stmrac/stmraf) - use io.aout DIRECTLY (combinational)
         // NULL `arraylength` -- status item 129.
         //
-        // `rdf` is `stmraf`, and `stmraf` has exactly ONE producer in
-        // asm/src/jvm.asm: `arraylength`, which presents `arrayref + 1` to read
-        // handle[1] (OFF_MTAB_ALEN). It is a PLAIN read, so it never enters
-        // HANDLE_READ and never met the null check that lives there: on a null
-        // reference the microcode computed 0 + 1 and this read returned word
-        // address 1 AS THE ARRAY LENGTH. A loop bounded by it then ran for
-        // however many iterations that word encoded, and each iteration's
+        // `rdf` is `stmraf`. `arraylength` (asm/src/jvm.asm) presents
+        // `arrayref + 1` to read handle[1] (OFF_MTAB_ALEN) as a PLAIN read, so
+        // it never enters HANDLE_READ and never met the null check that lives
+        // there: on a null reference the microcode computed 0 + 1 and this read
+        // returned word address 1 AS THE ARRAY LENGTH. A loop bounded by it ran
+        // for however many iterations that word encoded, and each iteration's
         // `iaload` faulted -- so the observable failure was an NPE somewhere
         // else entirely, or a very long loop first.
         //
-        // The test is therefore `address == 1`, not `== 0`: the microcode has
-        // already added the offset. That is exact rather than approximate --
-        // arrayref+1 == 1 iff arrayref == 0, and a live handle can never sit at
-        // word address 0 because that is what null IS. It holds only because
-        // `rdf` has a single producer; if a second one is ever added, this must
-        // move to a dedicated signal.
+        // `stmraf` HAS TWELVE PRODUCERS, NOT ONE. This comment used to claim a
+        // single producer, from grepping asm/src/jvm.asm alone -- which
+        // `#include`s jvm_call.inc and jvm_long.inc, holding eleven more
+        // (`grep -c stmraf` over the three files: 2 / 3 / 8, one of the two in
+        // jvm.asm being a comment). The emitted build/microcode/*/jvm.asm has
+        // twelve.
+        //
+        // The test is `address == 1`, not `== 0`, because the microcode has
+        // already added the offset: arrayref+1 == 1 iff arrayref == 0, and a
+        // live handle can never sit at word address 0 because that is what null
+        // IS.
+        //
+        // THE REAL INVARIANT, and it is wider than one producer: no `stmraf`
+        // may present word address 1 except a null `arraylength`. The other
+        // eleven satisfy it for reasons OUTSIDE this file, and they are load
+        // bearing:
+        //   - laload/lastore (jvm_long.inc) have the identical
+        //     `ldi 1 / add / stmraf` shape and WOULD present 1 on a null array,
+        //     but sit behind a `bz` whose two delay slots are exactly that
+        //     `ldi 1` and `add`, so the read never issues on null;
+        //   - the invoke paths (jvm_call.inc) sit behind `bnz` pointer checks;
+        //   - the rest read heap addresses that cannot be 1.
+        // So deleting one of those microcode null checks as "redundant now that
+        // the hardware checks nulls" would silently lose the NPE. A second
+        // producer that CAN reach address 1 needs a dedicated signal, not this
+        // shared one.
         //
         // WHY NOT MOVE THE +1 INTO HARDWARE (which would also save two cycles):
         // tried, and it does not work. `rdf` is REGISTERED in DecodeStage, so

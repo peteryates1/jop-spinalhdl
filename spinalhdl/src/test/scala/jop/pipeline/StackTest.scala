@@ -136,7 +136,7 @@ class StackTest extends AnyFunSuite {
         resetActiveLevel = HIGH
       )
     ))
-    .workspacePath("simWorkspace"))
+    .workspacePath(jop.utils.JopSimDefaults.workspace))
 
   // Compile DUT once, reuse for all test cases
   lazy val compiled = simConfig.compile(StackStage())

@@ -30,7 +30,7 @@ object FloatComputeUnitSim extends App {
 
   SimConfig
     .withWave
-    .workspacePath("simWorkspace")
+    .workspacePath(jop.utils.JopSimDefaults.workspace)
     .compile(FloatComputeUnit(fullConfig))
     .doSim { dut =>
 

@@ -28,7 +28,11 @@ APP_PKG := jbe
 APP_NAME ?= DoApp
 APP_SRC := src
 
-BUILD_DIR := $(if $(JAVA_OUT),$(JAVA_OUT)/apps/$(APP_DIR_NAME),build)
+# NO IN-TREE FALLBACK. This was $(if $(JAVA_OUT),...,build): unreachable,
+# because config.mk always sets JAVA_OUT -- but `make ... JAVA_OUT=` put the
+# build straight back beside the source. An unreachable fallback to the old
+# layout is still a way back into it.
+BUILD_DIR := $(JAVA_OUT)/apps/$(APP_DIR_NAME)
 CLASSES_DIR := $(BUILD_DIR)/classes
 PP_DIR := $(BUILD_DIR)/pp
 PP_CLASSES_DIR := $(PP_DIR)/classes

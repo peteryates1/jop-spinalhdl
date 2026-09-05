@@ -99,6 +99,8 @@ nothing depends on ranks below a measurement that could mislead someone.
 59. **[#100](#item-100)** — The EP4CGX150 cable reads 10/10 since the 2026-08-31 swap and blocks nothing. What is left is an unresolved confound: the swap changed the cable AND re-seated both plugs, so put the Pico back on that board to confirm re-seating was the cure
 60. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
 61. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
+62. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
+63. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
 
 ## 2. All items — summary
 
@@ -5140,8 +5142,17 @@ than silent.
 > offset, so a null reference arrives as address 1. That is exact, not
 > approximate — `arrayref+1 == 1` iff `arrayref == 0`, and a live handle can
 > never sit at word address 0 because that is what null IS. It holds because
-> `stmraf`/`rdf` has exactly ONE producer in `jvm.asm`; a second producer would
-> require a dedicated signal, and the code says so.
+> **The "one producer" justification was WRONG, and is corrected in the code.**
+> It came from grepping `asm/src/jvm.asm` alone, which `#include`s
+> `jvm_call.inc` and `jvm_long.inc`; `stmraf` has TWELVE producers. The fix is
+> still correct, for a wider reason: no `stmraf` may present word address 1
+> except a null `arraylength`. `laload`/`lastore` have the identical
+> `ldi 1 / add / stmraf` shape and would present 1 on a null array, but sit
+> behind a `bz` whose delay slots are exactly those two instructions; the invoke
+> paths sit behind `bnz` pointer checks; the rest read heap addresses that
+> cannot be 1. That makes eleven microcode null checks load-bearing for this
+> hardware check — deleting one as "redundant now the hardware checks nulls"
+> would silently lose the NPE.
 >
 > **The cheaper fix does not work, and this is why.** `rdf` has one producer, so
 > the `+1` can move into hardware and the microcode drop `ldi 1; add` — correct
@@ -6221,7 +6232,14 @@ with a zero at +5, turns a no-op into memory corruption of the program image.
 It also means the collector's own invariant — that it only ever touches
 addresses in `[mem_start, handleEnd)` — is not actually holding.
 
-**FOUND AND FIXED 2026-09-03. It was a fourth path.** Not `pushFast`, `push` or
+**FOUND AND FIXED 2026-09-03 — but the enumeration below was WRONG, and that
+is the lesson.** It was called "a fourth path", which implied the set was now
+closed. There are FIVE: `pushFast`, `push`, `pushYoung`, and THREE open-coded
+pushes in `JVM.java` — `f_putstatic_ref`, `f_putfield_ref` and `f_aastore`.
+Only the first two were screened here; `f_aastore` kept the unscreened test
+until 2026-09-05, and a review found it precisely because this sentence had
+declared the search over. Counting the paths you fixed is not counting the
+paths that exist. Original text follows: Not `pushFast`, `push` or
 `pushYoung` — all three screen correctly. `JVM.f_putfield_ref` (`JVM.java:1004`)
 and `f_putstatic_ref` (`:988`) **open-code the grey-list push** and skip the
 screen entirely:

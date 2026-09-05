@@ -50,7 +50,7 @@ class DoubleComputeUnitTest extends AnyFunSuite {
   )
 
   val simConfig = SimConfig
-    .workspacePath("simWorkspace")
+    .workspacePath(jop.utils.JopSimDefaults.workspace)
 
   def compileFull() = simConfig.compile(DoubleComputeUnit(fullConfig))
 

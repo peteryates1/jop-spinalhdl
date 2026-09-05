@@ -38,7 +38,7 @@ object DoubleComputeUnitSim extends App {
 
   SimConfig
     .withWave
-    .workspacePath("simWorkspace")
+    .workspacePath(jop.utils.JopSimDefaults.workspace)
     .compile(DoubleComputeUnit(fullConfig))
     .doSim { dut =>
 

@@ -927,6 +927,23 @@ jobs:
       - name: CardTable component tests
         run: sbt "Test/runMain jop.memory.CardTableTest" 2>&1 | tee cardtable.log
 
+      # The SMP half of item 131. CardTableTest covers the component; this one
+      # covers the WIRING -- that JopCluster gives every core the sweep busy,
+      # not just the core that asked. Cheap: one elaboration, no simulation.
+      - name: Card-clear busy reaches every core
+        run: sbt "Test/runMain jop.memory.CardBusyBroadcastTest" 2>&1 | tee cardbusy.log
+
+      - name: Check broadcast result
+        run: |
+          # An App exits 0 on success and throws on failure, but read the
+          # verdict out of the log anyway -- the tee makes $? sbt's, and a
+          # filter matching nothing would exit 0 with no verdict at all.
+          if ! grep -q 'PASS: the card-clear busy reaches every core' cardbusy.log; then
+            echo "::error::the card-clear busy does not reach every core"
+            grep -E 'appears|assertion failed' cardbusy.log || true
+            exit 1
+          fi
+
       - name: Check CardTable result
         run: |
           # An App exits 0 regardless; read the verdict out of the log.

@@ -122,7 +122,7 @@ class ShiftTest extends AnyFunSuite {
         resetKind = BOOT
       )
     ))
-    .workspacePath("simWorkspace"))
+    .workspacePath(jop.utils.JopSimDefaults.workspace))
 
   // Compile DUT once, reuse for all test cases
   lazy val compiled = simConfig.compile(Shift(32))

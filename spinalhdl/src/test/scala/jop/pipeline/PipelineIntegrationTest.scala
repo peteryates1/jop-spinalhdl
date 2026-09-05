@@ -85,7 +85,7 @@ class PipelineIntegrationTest extends AnyFunSuite {
       ),
       defaultClockDomainFrequency = FixedFrequency(100 MHz)
     ))
-    .workspacePath("simWorkspace"))
+    .workspacePath(jop.utils.JopSimDefaults.workspace))
 
   lazy val compiled = simConfig.compile(FetchDecodeHarness())
 

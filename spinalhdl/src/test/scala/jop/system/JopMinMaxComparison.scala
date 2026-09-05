@@ -97,7 +97,7 @@ object JopMinMaxSim {
     val jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll")
     val romFilePath = MicrocodePaths.simulationRom
     val ramFilePath = MicrocodePaths.simulationRam
-    val logFilePath = s"spinalhdl/${label}_comparison.log"
+    val logFilePath = s"build/sim-logs/${label}_comparison.log"
 
     val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
     val ramData = JopFileLoader.loadStackRam(ramFilePath)

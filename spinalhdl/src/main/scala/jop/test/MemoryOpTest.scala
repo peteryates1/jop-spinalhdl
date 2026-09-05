@@ -27,7 +27,9 @@ object MemoryOpTest extends App {
 
   SimConfig
     .withWave
-    .workspacePath("simWorkspace")
+    // Literal, not JopSimDefaults.workspace: this file is in src/main and
+    // JopSimDefaults is in src/test. Keep the two in step.
+    .workspacePath("build/simWorkspace")
     .compile(JopSimulator(
       jopFilePath = jopFilePath,
       romFilePath = romFilePath,

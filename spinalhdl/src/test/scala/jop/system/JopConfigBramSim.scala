@@ -19,7 +19,7 @@ object JopConfigBramSim {
     jopConfig: JopConfig,
     jopFilePath: String,
     maxCycles: Int = 5000,
-    logFilePath: String = "spinalhdl/config_bram_debug.log"
+    logFilePath: String = "build/sim-logs/config_bram_debug.log"
   ): Unit = {
     val sys = jopConfig.system
     val coreConfig = sys.coreConfig.copy(
@@ -72,7 +72,7 @@ object JopConfigBramSim {
     jopConfig: JopConfig,
     jopFilePath: String,
     maxCycles: Int = 2000000,
-    logFilePath: String = "spinalhdl/config_bram_simulation.log"
+    logFilePath: String = "build/sim-logs/config_bram_simulation.log"
   ): Unit = {
     val sys = jopConfig.system
     val coreConfig = sys.coreConfig.copy(
@@ -241,7 +241,7 @@ object JopConfigJvmTestsSim {
       jopConfig = simConfig,
       jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll"),
       maxCycles = 60000000,
-      logFilePath = s"spinalhdl/jvmtests_${presetName}_simulation.log"
+      logFilePath = s"build/sim-logs/jvmtests_${presetName}_simulation.log"
     )
   }
 }

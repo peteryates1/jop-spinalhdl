@@ -217,7 +217,7 @@ object JopSmpDdr3NCoreHelloWorldSim extends App {
   val jopFilePath = jop.utils.SimApp.jop("Small", "NCoreHelloWorld")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
-  val logFilePath = s"spinalhdl/smp_ddr3_ncore_${lockType.toLowerCase}_simulation.log"
+  val logFilePath = s"build/sim-logs/smp_ddr3_ncore_${lockType.toLowerCase}_simulation.log"
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)

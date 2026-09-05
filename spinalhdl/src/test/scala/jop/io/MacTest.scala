@@ -81,7 +81,7 @@ class EthTest extends AnyFunSuite {
   }
 
   val simConfig = SimConfig
-    .workspacePath("simWorkspace")
+    .workspacePath(jop.utils.JopSimDefaults.workspace)
 
   def compileDut() = simConfig.compile(
     Mac(
