@@ -77,21 +77,17 @@ public class Array extends TestCase {
 		// commented out under a "TODO / upper bound exception comes too late"
 		// banner, which left BmbMemoryController's array bounds check — the RTL's
 		// only use of a handle offset — with no coverage at all.
-		// DISABLED — status item 128: arraylength has no null check.
-		// Re-enable when the RTL is fixed; the other four assertions here pass.
-		//		caught = false;
-//		try {
-//		val = nulla.length;
-//		} catch (NullPointerException e) {
-//		caught = true;
-//		}
-//		ok &= caught;
-		// The reporter has to clear `caught` itself: with the block above
-		// commented out it would otherwise read the result of the PREVIOUS
-		// assertion (which passes) and stay silent about a defect that is
-		// still open. A disabled assertion that reports nothing is how this
-		// one stayed invisible in the first place.
+		// Re-enabled 2026-09-04 for status item 129: `arraylength` had no null
+		// check, so `null.length` read word address 1 and returned whatever was
+		// there as a length. The reporter below stays: it names the gap if this
+		// ever regresses, rather than letting a silent `ok` hide it.
 		caught = false;
+		try {
+			val = nulla.length;
+		} catch (NullPointerException e) {
+			caught = true;
+		}
+		ok &= caught;
 		if (!caught) System.out.println("  MISS: arraylength-NPE");
 
 		// Re-enabled 2026-09-01 with the item 128 fix. This is the assertion the

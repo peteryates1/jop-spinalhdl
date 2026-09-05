@@ -393,6 +393,13 @@ case class BmbMemoryController(
 
   val aoutAddr = io.aout(config.addressWidth - 1 downto 0).asUInt
   val aoutIsIo = JopAddressSpace.isIoAddress(aoutAddr, config.addressWidth)
+
+  // Null `arraylength` -- see the long note at the rdf read below. Computed
+  // here, beside the other address decode, rather than inline in the IDLE
+  // priority chain: it is a comparator on `io.aout`, and hoisting it lets
+  // synthesis evaluate it in parallel with aoutIsIo instead of threading it
+  // through the chain's mux.
+  val rdfNullRef = io.memIn.rdf && aoutAddr === 1
   val addrIsIo = JopAddressSpace.isIoAddress(addrReg, config.addressWidth)
 
   // Memory read request (any variant)
@@ -594,7 +601,37 @@ case class BmbMemoryController(
 
       when(memReadRequested) {
         // Memory read (stmra/stmrac/stmraf) - use io.aout DIRECTLY (combinational)
-        when(aoutIsIo) {
+        // NULL `arraylength` -- status item 129.
+        //
+        // `rdf` is `stmraf`, and `stmraf` has exactly ONE producer in
+        // asm/src/jvm.asm: `arraylength`, which presents `arrayref + 1` to read
+        // handle[1] (OFF_MTAB_ALEN). It is a PLAIN read, so it never enters
+        // HANDLE_READ and never met the null check that lives there: on a null
+        // reference the microcode computed 0 + 1 and this read returned word
+        // address 1 AS THE ARRAY LENGTH. A loop bounded by it then ran for
+        // however many iterations that word encoded, and each iteration's
+        // `iaload` faulted -- so the observable failure was an NPE somewhere
+        // else entirely, or a very long loop first.
+        //
+        // The test is therefore `address == 1`, not `== 0`: the microcode has
+        // already added the offset. That is exact rather than approximate --
+        // arrayref+1 == 1 iff arrayref == 0, and a live handle can never sit at
+        // word address 0 because that is what null IS. It holds only because
+        // `rdf` has a single producer; if a second one is ever added, this must
+        // move to a dedicated signal.
+        //
+        // WHY NOT MOVE THE +1 INTO HARDWARE (which would also save two cycles):
+        // tried, and it does not work. `rdf` is REGISTERED in DecodeStage, so
+        // it arrives a cycle after STMRAF decodes; with `ldi 1; add` ahead of
+        // it, `io.aout` is settled by then, but with `stmraf` as the bytecode's
+        // first instruction it is not the arrayref any more. The machine did
+        // not boot at all. The offset stays in microcode.
+        when(rdfNullRef) {
+          io.ioAddr := U(JopIoSpace.SYS_EXC, 8 bits)
+          io.ioWr := True
+          io.ioWrData := B(2, 32 bits)  // EXC_NP = 2
+          state := State.NP_EXC
+        }.elsewhen(aoutIsIo) {
           // I/O read - combinational, result available immediately
           io.ioAddr := io.aout(7 downto 0).asUInt
           io.ioRd := True
