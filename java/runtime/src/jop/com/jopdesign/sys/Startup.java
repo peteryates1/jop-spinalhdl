@@ -29,23 +29,24 @@ package com.jopdesign.sys;
 /**
  * @author Martin martin@jopdesign.com
  *
- * Starup code and very simple JVM interpreter for large <clinit>
- * methods.
+ * Startup code: brings the JVM up, then runs every <clinit> before main().
+ *
+ * It used to carry a ~30-opcode JVM interpreter for <clinit> methods above a
+ * size threshold, which could not run most bytecodes and printed "bytecode N
+ * not implemented" at boot. Item 137 removed it: JOPizer now applies the same
+ * size and locals limits to <clinit> as to any other method, so an oversized
+ * one is a LINK ERROR naming the class rather than a board that bricks before
+ * main(). The interpreter's stack, program counter and bytecode readers went
+ * with it.
  */
 public class Startup {
 	
 	// use static vars, don't waste stack space
-	static int var;
 	/** Size of main memory in 32-bit words */
 	static int mem_size;
 	/** Size of scratchpad memory in 32-bit words */
 	static int spm_size;
 
-	// a stack for the interpreter mode
-	static int[] stack;
-	final static int MAX_STACK = 100;
-	static int sp, pc, cp;
-	
 	/**
 	 * How needs this field, and why?
 	 */
@@ -262,8 +263,6 @@ public class Startup {
 	}
 	static void clazzinit() {
 
-		stack = new int[MAX_STACK];
-
 		// +8, not +6: two special pointers were appended for the Cloneable and
 		// Serializable class-info addresses. Microcode only reads slots 1 and 2
 		// (jjp/jjhp), so appending is safe, but this offset must follow.
@@ -272,14 +271,11 @@ public class Startup {
 		++table;
 		for (int i=0; i<cnt; ++i) {
 			int addr = Native.rdMem(table+i);
-			// reuse static var for
-			var = Native.rdMem(addr);
-			int len = var & 0x03ff;
-			var >>>= 10;
-			cp = Native.rdMem(addr+1);
-			// int locals = (cp>>>5) & 0x01f;
-			// int args = cp & 0x01f;
-			cp >>>= 10;
+			// THE METHOD STRUCT IS NOT DECODED HERE ANY MORE. This used to
+			// unpack len/locals/args and the constant-pool address to decide
+			// whether to interpret and to seed the interpreter; every one of
+			// those values was then unused once the decision became "always
+			// invoke". Native.invoke reads the struct itself.
 			// ALWAYS INVOKE. A <clinit> is an ordinary method now -- status
 			// item 137. It used to be interpreted above a size threshold, by a
 			// ~30-opcode interpreter that printed "bytecode N not implemented"
@@ -298,111 +294,4 @@ public class Startup {
 
 
 
-	static int readBC8u() {
-
-		int val = Native.rdMem(var + (pc>>2));
-		val >>= (3-(pc&0x03))<<3;
-		val &= 0xff;
-		++pc;
-		return val;
-	}
-
-	static byte readBC8s() {
-
-		int val = Native.rdMem(var + (pc>>2));
-		val >>= (3-(pc&0x03))<<3;
-		++pc;
-		return (byte) val;
-	}
-
-	static short readBC16s() {
-
-		short val = readBC8s();
-		val <<= 8;
-		val |= readBC8s() & 0x0ff;
-		return val;
-	}
-
-	static int readBC16u() {
-
-		int idx = readBC16s();
-		return idx & 0xffff;
-	}
-
-	static void xastore() {
-		int val = stack[sp--];	// value
-		int idx = stack[sp--];	// index
-		int ref = stack[sp--];	// ref
-		// handle:
-		ref = Native.rdMem(ref);
-		Native.wrMem(val, ref+idx);
-	}
-
-	static void x2astore() {
-		int val = stack[sp--];	// value
-		int val2 = stack[sp--];	// value2
-		int idx = stack[sp--] << 1;	// index
-		int ref = stack[sp--];	// ref
-		// handle:
-		ref = Native.rdMem(ref);
-		Native.wrMem(val2, ref+idx);
-		Native.wrMem(val, ref+idx+1);
-	}
-
-	static void putstatic() {
-
-		int addr = readBC16u();
-		Native.putStatic(stack[sp--], addr);
-	}
-
-	static void getstatic() {
-
-		int addr = readBC16u();
-		stack[++sp] = Native.getStatic(addr);
-	}
-
-	static void putfield() {
-
-		int off = readBC16u();
-		int val = stack[sp--];
-		int ref = stack[sp--];
-
-		Native.putField(ref, off, val);
-	}
-
-	static void getfield() {
-
-		int off = readBC16u();
-		int ref = stack[sp];
-
-		stack[sp] = Native.getField(ref, off);
-	}
-
-	static void newobj() {
-
-		int type = readBC16u();			// use typ
-		stack[++sp] = JVM.f_new(type);
-	}
-
-	static void newarray() {
-
-		int type = readBC8u();			// use typ
-		int val = stack[sp];			// count from stack
-		stack[sp] = JVM.f_newarray(val, type);
-	}
-	
-	static void anewarray() {
-		
-		int cons = readBC16u();
-		int val = stack[sp];			// count from stack
-		stack[sp] = JVM.f_anewarray(val, cons);
-		
-	}
-
-	static void arraylength() {
-		
-		int ref = stack[sp];
-
-		stack[sp] = Native.arrayLength(ref);
-	}
 }
