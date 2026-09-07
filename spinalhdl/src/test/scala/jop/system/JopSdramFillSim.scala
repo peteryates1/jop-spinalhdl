@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import jop.memory.SdramDeviceInfo
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.config.MicrocodePaths
 
 /**
@@ -24,7 +24,7 @@ object JopSdramFillSim extends App {
 
   val run = TestHistory.startRun("JopSdramFillSim", "sim-verilator", jopFilePath, "", "")
 
-  SimConfig
+  JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .compile(JopCoreWithSdramTestHarness(romData, ramData, mainMemData, memBytes = 256 * 1024))
     .doSim { dut =>

@@ -2,8 +2,7 @@ package jop.system
 import jop.config._
 
 import spinal.core.sim._
-import jop.utils.JopFileLoader
-
+import jop.utils.{JopFileLoader, JopSimDefaults}
 /**
  * `jbe.DoApp` with memory latency removed — how much of REAL application time
  * is spent waiting for memory at all?
@@ -42,7 +41,7 @@ object DoAppBramSim extends App {
   println(s"jbe.DoApp on BRAM, single core, declared $CLK_MHZ MHz — the zero-latency reference")
   println("hardware for comparison (EP4CGX150 SDR 80 MHz): Kfl 7742, UdpIp 3521, Lift 12690\n")
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopCoreLargeBramHarness(romData, ramData, mainMemData, bramSize, clkMhz = CLK_MHZ))
     .doSim { dut =>
       val uart = new StringBuilder

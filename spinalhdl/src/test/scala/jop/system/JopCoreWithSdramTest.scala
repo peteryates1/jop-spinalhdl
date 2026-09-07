@@ -8,8 +8,7 @@ import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import org.scalatest.funsuite.AnyFunSuite
 import jop.memory.{JopMemoryConfig, SdramDeviceInfo}
-import jop.utils.JopFileLoader
-
+import jop.utils.{JopFileLoader, JopSimDefaults}
 /**
  * Test harness for JopCoreWithSdram with SDRAM simulation model
  *
@@ -129,7 +128,7 @@ class JopCoreWithSdramTest extends AnyFunSuite {
     println(s"Loaded RAM: ${ramData.length} entries")
     println(s"Loaded main memory: ${mainMemData.length} entries")
 
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       // .withWave  // Disabled for faster testing
       .compile(JopCoreWithSdramTestHarness(romData, ramData, mainMemData))
@@ -194,7 +193,7 @@ class JopCoreWithSdramTest extends AnyFunSuite {
     val ramData = JopFileLoader.loadStackRam(ramFilePath)
     val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 64 * 1024 / 4)
 
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       .compile(JopCoreWithSdramTestHarness(romData, ramData, mainMemData))
       .doSim { dut =>

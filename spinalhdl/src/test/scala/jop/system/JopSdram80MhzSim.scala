@@ -7,7 +7,7 @@ import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import jop.config._
 import jop.memory.{JopMemoryConfig, SdramDeviceInfo}
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 
 /**
  * Quick test: run JopCoreWithSdram at 80 MHz to verify SdramCtrlNoCke
@@ -78,7 +78,7 @@ object JopSdram80MhzSim extends App {
 
   val run = TestHistory.startRun("JopSdram80MhzSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
-  SimConfig
+  JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(80 MHz)))
     .compile(JopCoreWithSdram80MhzHarness(romData, ramData, mainMemData))
     .doSim { dut =>

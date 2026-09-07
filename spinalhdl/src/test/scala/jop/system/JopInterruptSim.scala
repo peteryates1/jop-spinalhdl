@@ -2,7 +2,7 @@ package jop.system
 
 import spinal.core._
 import spinal.core.sim._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.config.MicrocodePaths
 
 /**
@@ -34,7 +34,7 @@ object JopInterruptSim extends App {
 
   val run = TestHistory.startRun("JopInterruptSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopCoreLargeBramHarness(romData, ramData, mainMemData, bramSize))
     .doSim { dut =>
       var uartOutput = new StringBuilder

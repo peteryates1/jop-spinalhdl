@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
 
@@ -195,7 +195,7 @@ object JopSmpBramSim extends App {
 
   val run = TestHistory.startRun("JopSmpBramSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopSmpTestHarness(cpuCnt, romData, ramData, mainMemData))
     .doSim { dut =>
       val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
@@ -343,7 +343,7 @@ object JopSmpNCoreHelloWorldSim extends App {
 
   val run = TestHistory.startRun("JopSmpNCoreHelloWorldSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopSmpTestHarness(cpuCnt, romData, ramData, mainMemData))
     .doSim { dut =>
       val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
@@ -472,7 +472,7 @@ object JopSmpSmallNCoreDebugSim extends App {
   println(s"BRAM size: ${bramSize / 1024}KB")
   println(s"CPU count: $cpuCnt")
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopSmpTestHarness(cpuCnt, romData, ramData, mainMemData, memSize = bramSize))
     .doSim { dut =>
       var uartOutput = new StringBuilder

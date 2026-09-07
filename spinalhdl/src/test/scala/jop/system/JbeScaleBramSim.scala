@@ -3,8 +3,7 @@ import jop.config._
 
 import spinal.core._
 import spinal.core.sim._
-import jop.utils.JopFileLoader
-
+import jop.utils.{JopFileLoader, JopSimDefaults}
 /**
  * `jbe.Scale` with the memory latency taken away — the COMPUTE FLOOR.
  *
@@ -43,7 +42,7 @@ object JbeScaleBramSim extends App {
   println(s"jbe.Scale on ${bramSize / 1024} KB BRAM, single core, $ACCESSES accesses")
   println("clkFreq is the JopCoreConfig default 100 MHz, so IO_US_CNT ticks every 100 cycles")
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopCoreLargeBramHarness(romData, ramData, mainMemData, bramSize))
     .doSim { dut =>
       val uart = new StringBuilder

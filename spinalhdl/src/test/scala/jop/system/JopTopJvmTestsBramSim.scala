@@ -3,7 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.core.sim._
 import jop.config._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import java.io.PrintWriter
 
 /**
@@ -30,7 +30,7 @@ object JopTopJvmTestsBramSim extends App {
 
   val config = JopConfig.wukongBram
 
-  SimConfig
+  JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .compile(JopTop(
       config = config,

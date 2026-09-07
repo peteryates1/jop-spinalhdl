@@ -2,8 +2,7 @@ package jop.system
 import jop.config._
 
 import spinal.core.sim._
-import jop.utils.JopFileLoader
-
+import jop.utils.{JopFileLoader, JopSimDefaults}
 /**
  * Where does REAL code's memory traffic go, and does a wider array-cache line
  * earn the elements it fetches but never reads?
@@ -63,7 +62,7 @@ object DoAppAcacheSweepSim extends App {
 
   def run(fieldBits: Int): Result = {
     var res: Result = null
-    SimConfig
+    JopSimDefaults.config
       .compile(JopCoreLargeBramHarness(romData, ramData, mainMemData, bramSize, fieldBits))
       .doSim(s"doapp_af$fieldBits", 42) { dut =>
         val uart = new StringBuilder

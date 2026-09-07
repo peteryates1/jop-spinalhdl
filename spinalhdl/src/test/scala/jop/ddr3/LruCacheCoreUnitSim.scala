@@ -3,6 +3,7 @@ package jop.ddr3
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
+import jop.utils.JopSimDefaults
 
 /**
  * Line-width is selectable so the same functional suite can be run at the widths
@@ -22,7 +23,7 @@ object LruCacheCoreUnitSim extends App {
   val dataBytes = config.dataWidth / 8
   val byteOffsetWidth = log2Up(dataBytes)
 
-  SimConfig
+  JopSimDefaults.config
     .compile(new LruCacheCore(config))
     .doSim { dut =>
       dut.clockDomain.forkStimulus(10)

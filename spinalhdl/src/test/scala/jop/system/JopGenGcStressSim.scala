@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import jop.config.JopCoreConfig
 import jop.memory.JopMemoryConfig
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.config.MicrocodePaths
 
 /**
@@ -29,7 +29,7 @@ object JopGenGcStressSim extends App {
   val run = TestHistory.startRun("JopGenGcStressSim", "sim-verilator", jopFilePath, "", "")
   val ROUND_TARGET = 300
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopCoreTestHarness(romData, ramData, mainMemData, memSize, Some(cfg)))
     .doSim { dut =>
       dut.clockDomain.forkStimulus(10)

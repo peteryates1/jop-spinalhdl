@@ -6,7 +6,7 @@ import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
 import org.scalatest.funsuite.AnyFunSuite
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 
 /**
@@ -239,7 +239,7 @@ class JopCoreTest extends AnyFunSuite {
     println(s"Loaded RAM: ${ramData.length} entries")
     println(s"Loaded main memory: ${mainMemData.length} entries")
 
-    SimConfig
+    JopSimDefaults.config
       // .withWave  // Disabled for faster testing
       .compile(JopCoreTestHarness(romData, ramData, mainMemData))
       .doSim { dut =>

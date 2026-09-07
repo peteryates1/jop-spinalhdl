@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import jop.config._
 import jop.sim.SimDisplay
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import java.io.PrintWriter
 
 /**
@@ -43,7 +43,7 @@ object JopVgaBramSim extends App {
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart), "vga" -> DeviceInstance(DeviceType.VgaText)),
       coreConfig = JopCoreConfig(bytecodes = Map("idiv" -> "hw", "irem" -> "hw")))))
 
-  SimConfig
+  JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .compile(JopTop(
       config = config,

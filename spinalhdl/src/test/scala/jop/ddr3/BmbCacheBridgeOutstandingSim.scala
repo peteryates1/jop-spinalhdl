@@ -6,6 +6,7 @@ import spinal.lib.bus.bmb._
 
 import scala.collection.mutable
 import scala.util.Random
+import jop.utils.JopSimDefaults
 
 /**
  * Does BmbCacheBridge actually overlap requests?
@@ -63,7 +64,7 @@ object BmbCacheBridgeOutstandingSim extends App {
   def run(outstanding: Int, seed: Int): Double = {
     var cyclesPerReq = 0.0
 
-    SimConfig
+    JopSimDefaults.config
       .compile(new BmbCacheBridge(bmbParam, CACHE_ADDR_W, LINE_W, outstanding))
       .doSim(s"outstanding_$outstanding", seed) { dut =>
         dut.clockDomain.forkStimulus(10)

@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.memory.{JopMemoryConfig, BmbLatencyBridge}
 
 /**
@@ -155,7 +155,7 @@ object JopCoreLatencySweep extends App {
     println(s"Running with extraLatency=$lat")
     println(s"${"=" * 60}")
 
-    SimConfig
+    JopSimDefaults.config
       .compile(JopCoreLatencyHarness(romData, ramData, mainMemData, extraLatency = lat))
       .doSim { dut =>
         val uartOutput = new StringBuilder
@@ -261,7 +261,7 @@ object JopCoreLatencyDebug extends App {
     var txns = scala.collection.mutable.ArrayBuffer[BmbTxn]()
     var uart = new StringBuilder
 
-    SimConfig
+    JopSimDefaults.config
       .compile(JopCoreLatencyHarness(romData, ramData, mainMemData, extraLatency = lat))
       .doSim { dut =>
         dut.clockDomain.forkStimulus(10)

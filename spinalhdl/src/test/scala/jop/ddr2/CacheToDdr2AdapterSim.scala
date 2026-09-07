@@ -6,6 +6,7 @@ import spinal.lib._
 
 import scala.collection.mutable
 import scala.util.Random
+import jop.utils.JopSimDefaults
 
 /**
  * Functional check of CacheToDdr2Adapter against a behavioural model of the
@@ -37,7 +38,7 @@ object CacheToDdr2AdapterSim extends App {
   val WORD_BYTES = DATA_W / 8
   val WORD_SHIFT = log2Up(WORD_BYTES)
 
-  SimConfig.compile(new CacheToDdr2Adapter(ADDR_W, DATA_W, rspDepth = 8)).doSim { dut =>
+  JopSimDefaults.config.compile(new CacheToDdr2Adapter(ADDR_W, DATA_W, rspDepth = 8)).doSim { dut =>
     dut.clockDomain.forkStimulus(10)
 
     dut.io.cmd.valid #= false

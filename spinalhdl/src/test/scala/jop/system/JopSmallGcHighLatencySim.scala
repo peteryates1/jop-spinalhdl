@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import jop.ddr3._
 import java.io.PrintWriter
@@ -50,7 +50,7 @@ object JopSmallGcHighLatencySim extends App {
 
   val run = TestHistory.startRun("JopSmallGcHighLatencySim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopCoreWithHighLatencyMigHarness(romData, ramData, mainMemData, latMin, latMax, burstLen))
     .doSim { dut =>
       val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }

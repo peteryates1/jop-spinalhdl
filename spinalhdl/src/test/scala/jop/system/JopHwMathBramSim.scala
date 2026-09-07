@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import jop.pipeline.JumpTableInitData
 import java.io.PrintWriter
@@ -131,7 +131,7 @@ object JopHwMathBramSim extends App {
   println(s"Loaded main memory: ${mainMemData.length} entries")
   println("Math mode: DSP multiply + HW divider")
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopHwMathTestHarness(romData, ramData, mainMemData))
     .doSim { dut =>
       val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }

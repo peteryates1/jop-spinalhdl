@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import jop.pipeline.JumpTableInitData
 import java.io.PrintWriter
@@ -135,7 +135,7 @@ object JopFloatCuBramSim extends App {
   println(s"Loaded main memory: ${mainMemData.length} entries")
   println("Float mode: FloatComputeUnit (pipeline-integrated)")
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopFloatCuTestHarness(romData, ramData, mainMemData))
     .doSim { dut =>
       val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }

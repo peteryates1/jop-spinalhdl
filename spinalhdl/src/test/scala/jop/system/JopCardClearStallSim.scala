@@ -2,7 +2,7 @@ package jop.system
 
 import spinal.core._
 import spinal.core.sim._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.config.{JopCoreConfig, MicrocodePaths}
 import jop.memory.JopMemoryConfig
 
@@ -66,7 +66,7 @@ object JopCardClearStallSim extends App {
   val cfg = JopCoreConfig(memConfig = JopMemoryConfig(
     mainMemSize = memBytes, hasCardTable = true, cardTableBudgetBytes = 16 * 1024))
 
-  SimConfig
+  JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .compile(JopCoreTestHarness(romData, ramData, mainMemData,
                                 memSize = memBytes, coreConfig = Some(cfg)))

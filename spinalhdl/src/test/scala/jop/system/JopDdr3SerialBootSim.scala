@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import jop.pipeline.JumpTableInitData
 import jop.ddr3._
@@ -273,7 +273,7 @@ object JopDdr3SerialBootSim extends App {
 
   val run = TestHistory.startRun("JopDdr3SerialBootSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
-  SimConfig
+  JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .compile(JopDdr3SerialBootHarness(romData, ramData, latMin, latMax))
     .doSim { dut =>

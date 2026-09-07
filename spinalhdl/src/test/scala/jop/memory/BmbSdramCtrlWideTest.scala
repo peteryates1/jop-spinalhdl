@@ -9,6 +9,7 @@ import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import org.scalatest.funsuite.AnyFunSuite
 import jop.config.MemoryDevice
+import jop.utils.JopSimDefaults
 
 /**
  * Test harness for BmbSdramCtrlWide with the SDRAM interface exposed.
@@ -187,7 +188,7 @@ class BmbSdramCtrlWideTest extends AnyFunSuite {
   }
 
   def sim(body: (BmbSdramCtrlWideTestHarness, SdramModel) => Unit): Unit =
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       .compile(BmbSdramCtrlWideTestHarness())
       .doSim { dut =>

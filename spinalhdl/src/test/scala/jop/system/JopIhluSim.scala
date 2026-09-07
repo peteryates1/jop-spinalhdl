@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
 
@@ -170,7 +170,7 @@ object JopIhluNCoreHelloWorldSim extends App {
 
   val run = TestHistory.startRun("JopIhluNCoreHelloWorldSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopIhluTestHarness(cpuCnt, romData, ramData, mainMemData))
     .doSim { dut =>
       val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
@@ -340,7 +340,7 @@ object JopIhluGcBramSim extends App {
 
   val run = TestHistory.startRun("JopIhluGcBramSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopIhluTestHarness(cpuCnt, romData, ramData, mainMemData))
     .doSim { dut =>
       val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }

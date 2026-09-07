@@ -9,6 +9,7 @@ import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import org.scalatest.funsuite.AnyFunSuite
 import jop.config.MemoryDevice
+import jop.utils.JopSimDefaults
 
 /**
  * Test harness for BmbSdramCtrl32 with exposed SDRAM interface
@@ -159,7 +160,7 @@ class BmbSdramCtrl32Test extends AnyFunSuite {
   }
 
   test("BmbSdramCtrl32: read pre-initialized SDRAM data") {
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       .compile(BmbSdramCtrl32TestHarness())
       .doSim { dut =>
@@ -201,7 +202,7 @@ class BmbSdramCtrl32Test extends AnyFunSuite {
   }
 
   test("BmbSdramCtrl32: write then read back") {
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       .compile(BmbSdramCtrl32TestHarness())
       .doSim { dut =>
@@ -239,7 +240,7 @@ class BmbSdramCtrl32Test extends AnyFunSuite {
   }
 
   test("BmbSdramCtrl32: sequential reads (BC_FILL pattern)") {
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       .compile(BmbSdramCtrl32TestHarness())
       .doSim { dut =>
@@ -287,7 +288,7 @@ class BmbSdramCtrl32Test extends AnyFunSuite {
   test("BmbSdramCtrl32: verify actual JOP memory data") {
     // Test with the actual first few words from HelloWorld.jop
     // to ensure the real program data survives the SDRAM roundtrip
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       .compile(BmbSdramCtrl32TestHarness())
       .doSim { dut =>
@@ -328,7 +329,7 @@ class BmbSdramCtrl32Test extends AnyFunSuite {
   }
 
   test("BmbSdramCtrl32: block fill zeroes a range and leaves neighbours intact") {
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       .compile(BmbSdramCtrl32TestHarness())
       .doSim { dut =>

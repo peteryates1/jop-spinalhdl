@@ -6,7 +6,7 @@ import spinal.lib._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import jop.memory.SdramDeviceInfo
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import java.io.PrintWriter
 import jop.config.MicrocodePaths
 
@@ -33,7 +33,7 @@ object JopCoreWithSdramSim extends App {
 
   val run = TestHistory.startRun("JopCoreWithSdramSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
-  SimConfig
+  JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     // .withWave  // Uncomment for waveform
     .compile(JopCoreWithSdramTestHarness(romData, ramData, mainMemData))

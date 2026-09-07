@@ -143,6 +143,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 
 - **[142](#item-142)** — The linked image's `<clinit>` ORDER comes from hash iteration order; correctness rests on a dependency analysis nothing checks
 - **[143](#item-143)** — `setsid` + process-group kill leaks the serial-holding child, which later looks like dead hardware
+- **[146](#item-146)** — ~~64 simulations built a Verilator model without the X-state defence, and one of them flaked CI~~ — **FIXED**
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
@@ -2141,6 +2142,57 @@ same self-match trap as `pgrep -f`.
 the console flow could refuse to start when the port is already held and say by
 what. A leaked holder that presents as broken hardware is expensive to diagnose
 twice.
+
+
+<a id="item-146"></a>
+
+### Item 146 — ~~64 simulations built a Verilator model without the X-state defence~~ — FIXED
+
+**Verilator randomises every unreset register from the simulation seed** — about
+405 of them in this design. An FPGA powers up at zero, so a seed-dependent
+failure is a simulator artefact, not a hardware bug. `--x-initial 0` removes the
+class, and `jop.utils.JopSimDefaults` is where that flag lives.
+
+This was already the SINGLE root cause of three CI flakes — items
+[29](#item-29), [30](#item-30) and [32](#item-32). Each was closed by routing
+**one** sim through the defence. **The class was never closed**: 64 sims still
+built their own config from a bare `SimConfig` and took the randomisation.
+
+**It bit again.** The scheduled run of `44fd48e` (2026-09-07 08:21) failed
+`readme-walkthrough` step 7:
+
+```
+Per-core WD toggles: C0=0 C1=0
+FAIL: Did not see 'NCoreHelloWorld' from core 0
+```
+
+Neither core toggled its watchdog, so nothing ran at all. The same job passed on
+the next push. `JopSmpNCoreHelloWorldSim` is defined in `JopSmpBramSim.scala`,
+which used a bare `SimConfig` at three sites.
+
+**Fixed** by routing all 64 through `JopSimDefaults.config`, and by a guard —
+`.github/scripts/check-sim-xstate.sh`, in `make check-build` — that fails if any
+file which calls `.compile`/`.doSim` reaches `SimConfig` without going through
+`JopSimDefaults` or `TestVectorUtils.simWave`.
+
+**Why a structural guard rather than a seed replay.** A seed names an initial
+state only relative to a fixed netlist *and* a fixed Verilator build; CI runs
+5.020 and a Debian workstation runs 5.032, so CI's seed reproduces nothing
+locally and a clean local sweep proves nothing about CI. Catching a
+probabilistic failure is not a test. The guard is deterministic, runs in a
+second, and cannot pass for the wrong reason. That reasoning is recorded in the
+guard itself, because it is exactly the argument that lost twice before.
+
+**Evidence.** Guard red on the unfixed tree naming 64 files; green after.
+`Test/compile` recompiled exactly those 64. `JopSmpNCoreHelloWorldSim` then ran
+with `Sim X-state: zeroed` and reported `Per-core WD toggles: C0=1 C1=1` /
+`PASS: All 2 cores running` — the same counters that read `C0=0 C1=0` in the
+failure.
+
+**Gotcha — the escape hatch still matters.** `JOP_SIM_XINIT=random` restores
+randomisation. Zeroing hides genuinely missing resets, which are worth fixing on
+their own merits; the point is that CI should be a regression detector, not a
+random number generator.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 

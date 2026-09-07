@@ -7,6 +7,7 @@ import jop.ddr3.{CacheConfig, CacheFrontend, LruCacheCore}
 
 import scala.collection.mutable
 import scala.util.Random
+import jop.utils.JopSimDefaults
 
 /**
  * Integration check of LruCacheCore + CacheToDdr2Adapter against a behavioural
@@ -83,7 +84,7 @@ object CacheDdr2EvictSim extends App {
     io.local_be        := adapter.io.local_be
   }
 
-  SimConfig.compile(new Dut).doSim { dut =>
+  JopSimDefaults.config.compile(new Dut).doSim { dut =>
     dut.clockDomain.forkStimulus(10)
 
     dut.io.frontend.req.valid #= false

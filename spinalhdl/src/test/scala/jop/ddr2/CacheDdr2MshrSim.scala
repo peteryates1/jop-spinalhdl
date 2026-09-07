@@ -7,6 +7,7 @@ import jop.ddr3.{CacheConfig, CacheFrontend, LruCacheCore}
 
 import scala.collection.mutable
 import scala.util.Random
+import jop.utils.JopSimDefaults
 
 /**
  * The exact composition that goes to the A-E115FB: a non-blocking `LruCacheCore`
@@ -102,7 +103,7 @@ object CacheDdr2MshrSim extends App {
 
     val IDS = idsFor(mshrCount)
 
-    SimConfig.compile(new Dut(mshrCount)).doSim(s"ddr2_mshr_$mshrCount", seed) { dut =>
+    JopSimDefaults.config.compile(new Dut(mshrCount)).doSim(s"ddr2_mshr_$mshrCount", seed) { dut =>
       dut.clockDomain.forkStimulus(10)
 
       dut.io.frontend.req.valid #= false

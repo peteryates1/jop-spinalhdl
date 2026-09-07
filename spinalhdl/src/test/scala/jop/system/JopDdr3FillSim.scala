@@ -2,7 +2,7 @@ package jop.system
 
 import spinal.core._
 import spinal.core.sim._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.config.MicrocodePaths
 
 /**
@@ -20,7 +20,7 @@ object JopDdr3FillSim extends App {
 
   val run = TestHistory.startRun("JopDdr3FillSim", "sim-verilator", jopFilePath, "", "")
 
-  SimConfig
+  JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .compile(JopCoreWithCacheTestHarness(romData, ramData, mainMemData, hasFill = true))
     .doSim { dut =>

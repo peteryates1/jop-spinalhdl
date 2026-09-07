@@ -7,7 +7,7 @@ import spinal.lib._
 import spinal.lib.bus.bmb._
 import jop.memory.JopMemoryConfig
 import jop.ddr3._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import java.io.PrintWriter
 
 /**
@@ -231,7 +231,7 @@ object JopSmpDdr3NCoreHelloWorldSim extends App {
 
   val run = TestHistory.startRun(s"JopSmpDdr3NCoreHelloWorldSim-$lockType", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
-  SimConfig
+  JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .compile(JopSmpDdr3TestHarness(cpuCnt, romData, ramData, mainMemData,
       useCmpSync = useCmpSync, mshrCount = mshrCount))

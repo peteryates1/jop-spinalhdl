@@ -7,7 +7,7 @@ import spinal.lib._
 import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import jop.memory.{JopMemoryConfig, SdramDeviceInfo}
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.pipeline.JumpTableInitData
 
 /**
@@ -127,7 +127,7 @@ object JopSdramSerialBootSim extends App {
   // forkStimulus(10) -> 1 clock = 10 sim time units
   val bitPeriod = 1000L  // 100 clocks * 10 sim units = 1000
 
-  SimConfig
+  JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .compile(JopSdramSerialBootHarness(romData, ramData))
     .doSim { dut =>

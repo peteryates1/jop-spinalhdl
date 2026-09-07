@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 
 /**
@@ -98,7 +98,7 @@ object JopEchoSim extends App {
   // forkStimulus(10) -> 1 clock = 10 sim time units
   val bitPeriod = 1000L  // 100 clocks * 10 sim units
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopEchoHarness(romData, ramData))
     .doSim { dut =>
       dut.clockDomain.forkStimulus(10)  // 100 MHz

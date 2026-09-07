@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb.Bmb
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import jop.ddr3._
 import java.io.PrintWriter
@@ -220,7 +220,7 @@ object JopGcTraceCaptureSim extends App {
   initPw.close()
   println(s"Wrote memory init: $initHexPath (${jopWords.length} words, ${jopWords.length * 4 / 1024} KB)")
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopCoreTraceCaptureHarness(romData, ramData, mainMemData))
     .doSim { dut =>
       val uartOutput = new StringBuilder

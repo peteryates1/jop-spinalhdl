@@ -3,7 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.core.sim._
 import jop.config._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import java.io.PrintWriter
 
 /**
@@ -40,7 +40,7 @@ object JopTopDcuBramSim extends App {
     s"ladd=${config.system.coreConfig.impl("ladd")}, " +
     s"dadd=${config.system.coreConfig.impl("dadd")}")
 
-  SimConfig
+  JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .compile(JopTop(
       config = config,

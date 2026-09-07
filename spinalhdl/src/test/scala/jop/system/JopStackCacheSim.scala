@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import jop.MicrocodeNames
 import java.io.PrintWriter
@@ -193,7 +193,7 @@ object JopJvmTestsStackCacheBramSim extends App {
   println(s"Loaded main memory: ${mainMemData.length} entries")
   println(s"Stack cache: ENABLED (3-bank rotating)")
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopStackCacheTestHarness(romData, ramData, mainMemData, memSize = 512 * 1024))
     .doSim { dut =>
       val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
@@ -896,7 +896,7 @@ object JopStackCacheWaveSim extends App {
   println(s"Stack cache waveform capture sim")
   println(s"Loaded ROM: ${romData.length}, RAM: ${ramData.length}, main mem: ${mainMemData.length}")
 
-  SimConfig
+  JopSimDefaults.config
     .withFstWave
     .addSimulatorFlag("-Wno-SYMRSVDWORD")
     .addSimulatorFlag("--public-flat-rw")

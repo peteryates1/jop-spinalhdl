@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import jop.config.JopCoreConfig
 import jop.memory.JopMemoryConfig
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.config.MicrocodePaths
 
 /**
@@ -27,7 +27,7 @@ object JopGenGcBramSim extends App {
 
   val run = TestHistory.startRun("JopGenGcBramSim", "sim-verilator", jopFilePath, "", "")
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopCoreTestHarness(romData, ramData, mainMemData, memSize, Some(cfg)))
     .doSim { dut =>
       dut.clockDomain.forkStimulus(10)

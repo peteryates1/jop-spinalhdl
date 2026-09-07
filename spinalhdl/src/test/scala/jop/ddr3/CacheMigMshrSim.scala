@@ -6,6 +6,7 @@ import spinal.lib._
 
 import scala.collection.mutable
 import scala.util.Random
+import jop.utils.JopSimDefaults
 
 /**
  * The DDR3 twin of `CacheDdr2MshrSim`: a non-blocking `LruCacheCore` on the real
@@ -111,7 +112,7 @@ object CacheMigMshrSim extends App {
     val IDS = idsFor(mshrCount)
     val label = if (tag.nonEmpty) tag else s"mshr=$mshrCount"
 
-    SimConfig.compile(new Dut(mshrCount, adapterOutstanding)).doSim(s"mig_mshr_${mshrCount}_$adapterOutstanding", seed) { dut =>
+    JopSimDefaults.config.compile(new Dut(mshrCount, adapterOutstanding)).doSim(s"mig_mshr_${mshrCount}_$adapterOutstanding", seed) { dut =>
       dut.clockDomain.forkStimulus(10)
 
       dut.io.frontend.req.valid #= false

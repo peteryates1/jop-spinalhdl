@@ -2,7 +2,7 @@ package jop.system
 
 import spinal.core._
 import spinal.core.sim._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.debug.{DebugConfig, DebugMsgType, DebugHaltReason, DebugNakCode}
 import jop.config.MicrocodePaths
 
@@ -56,7 +56,7 @@ object JopDebugProtocolSim extends App {
 
   println(s"Debug Protocol Sim: ROM=${romData.length}, RAM=${ramData.length}, JOP=${jopData.words.length} words")
 
-  val simConfig = SimConfig
+  val simConfig = JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     .allOptimisation
 

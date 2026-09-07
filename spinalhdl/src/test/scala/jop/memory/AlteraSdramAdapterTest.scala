@@ -8,6 +8,7 @@ import jop.config.MemoryDevice
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.collection.mutable
+import jop.utils.JopSimDefaults
 
 /**
  * Unit tests for AlteraSdramAdapter — current-status item 35.
@@ -80,7 +81,7 @@ class AlteraSdramAdapterTest extends AnyFunSuite {
     adapter.io.sdram.DQ.read := 0
   }
 
-  def simConfig = SimConfig.withConfig(SpinalConfig()).allOptimisation
+  def simConfig = JopSimDefaults.config.withConfig(SpinalConfig()).allOptimisation
 
   /** One command the testbench has issued and not yet seen answered. */
   case class Expected(ctx: Int, isWrite: Boolean, addr: Int, data: Long)

@@ -2,6 +2,7 @@ package jop.memory
 
 import spinal.core._
 import spinal.core.sim._
+import jop.utils.JopSimDefaults
 
 /**
  * Unit sim for CardTable: correct card marking, tenure-window gating, lossless
@@ -18,7 +19,7 @@ object CardTableTest extends App {
   val wordAddrWidth = 20
   val nWords = cardCount / 32
 
-  SimConfig.compile(new CardTable(cardCount, cardShift, wordAddrWidth)).doSim { dut =>
+  JopSimDefaults.config.compile(new CardTable(cardCount, cardShift, wordAddrWidth)).doSim { dut =>
     dut.clockDomain.forkStimulus(10)
     var fails = 0
     def check(cond: Boolean, msg: String): Unit = { if (!cond) { println(s"FAIL: $msg"); fails += 1 } }
@@ -234,7 +235,7 @@ object CardTableTest extends App {
   var geoFails = 0
   for ((name, cardCnt, shift) <- geometries) {
     val n = cardCnt / 32
-    SimConfig.compile(new CardTable(cardCnt, shift, 30)).doSim { dut =>
+    JopSimDefaults.config.compile(new CardTable(cardCnt, shift, 30)).doSim { dut =>
       dut.clockDomain.forkStimulus(10)
       dut.io.markValid #= false; dut.io.markAddr #= 0
       dut.io.baseWord #= 0; dut.io.topWord #= (BigInt(1) << 29)

@@ -5,6 +5,7 @@ import spinal.core.sim._
 
 import scala.collection.mutable
 import scala.util.Random
+import jop.utils.JopSimDefaults
 
 /**
  * Does the MSHR file actually overlap misses?
@@ -69,7 +70,7 @@ object LruCacheCoreMshrSim extends App {
     var cyclesPerReq = 0.0
     var errorCount = 0
 
-    SimConfig.compile(new LruCacheCore(cfg(mshrCount))).doSim(s"${name}_$mshrCount", seed) { dut =>
+    JopSimDefaults.config.compile(new LruCacheCore(cfg(mshrCount))).doSim(s"${name}_$mshrCount", seed) { dut =>
       dut.clockDomain.forkStimulus(10)
 
       dut.io.frontend.req.valid #= false

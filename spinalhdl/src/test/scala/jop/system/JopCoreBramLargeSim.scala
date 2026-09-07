@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 
 /**
@@ -155,7 +155,7 @@ object JopCoreBramLargeSim extends App {
 
   val run = TestHistory.startRun("JopCoreBramLargeSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopCoreLargeBramHarness(romData, ramData, mainMemData, bramSize))
     .doSim { dut =>
       var uartOutput = new StringBuilder

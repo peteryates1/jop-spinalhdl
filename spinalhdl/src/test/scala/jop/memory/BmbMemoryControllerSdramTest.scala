@@ -9,6 +9,7 @@ import spinal.lib.memory.sdram.sdr._
 import spinal.lib.memory.sdram.sdr.sim.SdramModel
 import org.scalatest.funsuite.AnyFunSuite
 import jop.config.MemoryDevice
+import jop.utils.JopSimDefaults
 
 /**
  * Test harness: BmbMemoryController connected to BmbSdramCtrl32
@@ -134,7 +135,7 @@ class BmbMemoryControllerSdramTest extends AnyFunSuite {
   }
 
   test("MemCtrl+SDRAM: simple write and read") {
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       .compile(BmbMemCtrlSdramTestHarness())
       .doSim { dut =>
@@ -186,7 +187,7 @@ class BmbMemoryControllerSdramTest extends AnyFunSuite {
   }
 
   test("MemCtrl+SDRAM: BC_FILL loads correct data") {
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       .compile(BmbMemCtrlSdramTestHarness())
       .doSim { dut =>
@@ -275,7 +276,7 @@ class BmbMemoryControllerSdramTest extends AnyFunSuite {
   }
 
   test("MemCtrl+SDRAM: read pre-initialized SDRAM data") {
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       .compile(BmbMemCtrlSdramTestHarness())
       .doSim { dut =>
@@ -327,7 +328,7 @@ class BmbMemoryControllerSdramTest extends AnyFunSuite {
   }
 
   test("MemCtrl+SDRAM: getfield through SDRAM") {
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       .compile(BmbMemCtrlSdramTestHarness())
       .doSim { dut =>
@@ -382,7 +383,7 @@ class BmbMemoryControllerSdramTest extends AnyFunSuite {
   }
 
   test("MemCtrl+SDRAM: multiple sequential operations") {
-    SimConfig
+    JopSimDefaults.config
       .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
       .compile(BmbMemCtrlSdramTestHarness())
       .doSim { dut =>

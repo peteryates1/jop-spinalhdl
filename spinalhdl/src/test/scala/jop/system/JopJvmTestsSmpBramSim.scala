@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
 import jop.config.MicrocodePaths
@@ -47,7 +47,7 @@ object JopJvmTestsSmpBramSim extends App {
 
   val run = TestHistory.startRun("JopJvmTestsSmpBramSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopSmpTestHarness(cpuCnt, romData, ramData, mainMemData, memSize = 256 * 1024))
     .doSim { dut =>
       val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }

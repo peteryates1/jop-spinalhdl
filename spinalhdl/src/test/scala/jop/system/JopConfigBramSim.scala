@@ -3,7 +3,7 @@ package jop.system
 import spinal.core._
 import spinal.core.sim._
 import jop.config._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
 
@@ -31,7 +31,7 @@ object JopConfigBramSim {
     val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 256 * 1024 / 4)
     println(s"=== DEBUG: ${sys.name} useSyncRam=${coreConfig.useSyncRam.getOrElse(false)} useStackCache=${coreConfig.useStackCache} ===")
 
-    SimConfig
+    JopSimDefaults.config
       .compile(JopCoreTestHarness(romData, ramData, mainMemData, coreConfig = Some(coreConfig)))
       .doSim { dut =>
         val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
@@ -91,7 +91,7 @@ object JopConfigBramSim {
     println(s"  imul=${coreConfig.impl("imul")}, idiv=${coreConfig.impl("idiv")}, irem=${coreConfig.impl("irem")}")
     println(s"  needsIntegerCompute=${coreConfig.needsIntegerCompute}, needsFloatCompute=${coreConfig.needsFloatCompute}")
 
-    SimConfig
+    JopSimDefaults.config
       .compile(JopCoreTestHarness(romData, ramData, mainMemData, coreConfig = Some(coreConfig)))
       .doSim { dut =>
         val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }

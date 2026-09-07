@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import jop.ddr3._
+import jop.utils.JopSimDefaults
 
 /**
  * Simple diagnostic test for LruCacheCore with CacheToBramAdapter backend.
@@ -55,7 +56,7 @@ object LruCacheCoreTest extends App {
     backend.mem.init(initData.map(v => B(v, dataWidth bits)))
   }
 
-  SimConfig.compile(CacheTestHarness()).doSim { dut =>
+  JopSimDefaults.config.compile(CacheTestHarness()).doSim { dut =>
     dut.clockDomain.forkStimulus(10)
 
     // Initialize frontend signals

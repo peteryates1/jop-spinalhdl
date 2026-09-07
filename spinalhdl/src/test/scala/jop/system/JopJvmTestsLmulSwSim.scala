@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.{JopFileLoader, TestHistory}
+import jop.utils.{JopFileLoader, TestHistory, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import jop.config.JopCoreConfig
 import java.io.PrintWriter
@@ -45,7 +45,7 @@ object JopJvmTestsLmulSwSim extends App {
   println(s"Loaded RAM: ${ramData.length} entries")
   println(s"Loaded main memory: ${mainMemData.length} entries")
 
-  SimConfig
+  JopSimDefaults.config
     .compile(JopCoreTestHarness(romData, ramData, mainMemData, memSize = bramSize,
       coreConfig = Some(JopCoreConfig(
         memConfig = JopMemoryConfig(mainMemSize = bramSize),

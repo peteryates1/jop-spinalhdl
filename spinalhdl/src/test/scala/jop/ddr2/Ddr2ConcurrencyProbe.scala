@@ -4,6 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import jop.ddr3.{CacheReq, CacheRsp}
 import scala.collection.mutable
+import jop.utils.JopSimDefaults
 
 /**
  * Does the DDR2 memory path go faster when requests OVERLAP?
@@ -40,7 +41,7 @@ object Ddr2ConcurrencyProbe extends App {
   }
   val results = mutable.ArrayBuffer[Point]()
 
-  SimConfig.compile(new CacheToDdr2Adapter(ADDR_W, DATA_W, rspDepth = RSP_DEPTH)).doSim { dut =>
+  JopSimDefaults.config.compile(new CacheToDdr2Adapter(ADDR_W, DATA_W, rspDepth = RSP_DEPTH)).doSim { dut =>
     dut.clockDomain.forkStimulus(10)
 
     dut.io.cmd.valid #= false

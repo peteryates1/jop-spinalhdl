@@ -4,7 +4,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import java.io.PrintWriter
 import jop.config.MicrocodePaths
@@ -33,7 +33,7 @@ object JopSmallGcGhdlSim extends App {
   println(s"Log file: $logFilePath")
   println("Using GHDL backend (event-driven simulator)")
 
-  SimConfig
+  JopSimDefaults.config
     .withGhdl
     .compile(JopCoreTestHarness(romData, ramData, mainMemData))
     .doSim { dut =>

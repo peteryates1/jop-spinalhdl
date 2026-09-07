@@ -5,7 +5,7 @@ import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.utils.JopFileLoader
+import jop.utils.{JopFileLoader, JopSimDefaults}
 import jop.memory.JopMemoryConfig
 import jop.debug.{DebugConfig, DebugTransport}
 import java.net.{ServerSocket, Socket}
@@ -174,7 +174,7 @@ object JopDebugSim extends App {
   println(s"JOP Debug Sim: $cpuCnt core(s), TCP port $tcpPort, max $maxCycles cycles")
   println(s"ROM: ${romData.length} words, RAM: ${ramData.length} words, JOP: ${jopData.length} words")
 
-  val simConfig = SimConfig
+  val simConfig = JopSimDefaults.config
     .withConfig(SpinalConfig(defaultClockDomainFrequency = FixedFrequency(100 MHz)))
     //.withWave
     .allOptimisation
