@@ -197,7 +197,20 @@ fi
 # prerequisite list; the others are bare "Implicit rule search" stubs. Taking
 # head -1 of the bare form made this guard report that Const.java depends on
 # nothing, which is a false FAIL on a correct Makefile.
-const_rule=$(make -C java -p -n JOP_PRESET="${JOP_PRESET:-ep4cgx150Serial}" 2>/dev/null \
+# RESOLVE THE CONFIG DIR WITHOUT sbt. config.mk only shells out to sbt when
+# JOP_CFG_DIR is undefined, and on a cold checkout that run has nothing to
+# resolve against, so config.mk hits its own $(error) and `make -p` emits no
+# database at all -- indistinguishable from a missing rule. That is exactly how
+# this guard failed in CI while passing locally: `check-build-guards` is
+# checkout + `make check-build` with no build step and a 5-minute budget, so it
+# is ALWAYS cold, and every local tree that has ever built is warm.
+#
+# The value is synthetic on purpose. This guard asserts the SHAPE of the rule --
+# which prerequisites sit after the colon -- and that text is identical whatever
+# the config directory is called. Setting it keeps the guard hermetic: no sbt,
+# no network, no dependence on build/ existing.
+const_rule=$(make -C java -p -n JOP_PRESET="${JOP_PRESET:-ep4cgx150Serial}" \
+                  JOP_CFG_DIR="${JOP_CFG_DIR:-build/${JOP_PRESET:-ep4cgx150Serial}}" 2>/dev/null \
              | grep -E '^[^ |#]*/gen/com/jopdesign/sys/Const\.java: +[^ ]' | head -1)
 if [ -z "$const_rule" ]; then
   echo "  FAIL no rule in the database builds Const.java"

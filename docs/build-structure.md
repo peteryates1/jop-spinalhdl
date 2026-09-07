@@ -116,7 +116,7 @@ make bitstream program download
 Verify a board end to end, including timing, in one command:
 
 ```bash
-fpga/scripts/hw_verify.py ep4cgx150Serial --app JvmTests/DoAll --expect-text "66/66"
+fpga/scripts/hw_verify.py ep4cgx150Serial --app JvmTests/DoAll --expect-ok 68
 ```
 
 It refuses to call a run a pass if the build missed timing. A bitstream can

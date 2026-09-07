@@ -357,7 +357,12 @@ def main():
     if not a.no_app:
         jop = os.path.join(cfg_dir, "java", "apps", a.app + ".jop")
         if not os.path.exists(jop):
-            die(f"no image at {jop} -- build it with BUILDTREE=1 JOP_PRESET={a.preset}")
+            die(f"no image at {jop} -- build it with:\n"
+                f"  make -C java JOP_PRESET={a.preset} tools runtime\n"
+                f"  make -C java/apps/{a.app.split('/')[0]} JOP_PRESET={a.preset} clean\n"
+                f"  make -C java/apps/{a.app.split('/')[0]} JOP_PRESET={a.preset}\n"
+                f"(BUILDTREE=1 was the opt-in for the old dual layout; there is\n"
+                f" only one layout now and the variable no longer exists.)")
 
     log = os.path.join(cfg_dir, "hw_verify.log")
     passes = 0

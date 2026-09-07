@@ -106,9 +106,12 @@ NOTE: an alias names whatever the SERIAL is attached to. A Pico is soldered to
 one board so its alias names that board; a standalone cable like the Terasic
 moves, so it is named for the cable and you pick the board by plugging it in.
 
-THE TWO ALTERA BOARDS HAVE SEPARATE CABLES since 2026-08-29 -- the Terasic on
-the A-E115FB, a level-shifted pico-usb-blaster on the EP4CGX150 -- so the alias
-does now imply the board. Keep running `--assert-device` anyway: two blasters
+THE TWO ALTERA BOARDS HAVE SEPARATE CABLES since 2026-08-29, and they were
+SWAPPED on 2026-08-31: the Terasic drives the EP4CGX150, the level-shifted
+pico-usb-blaster drives the A-E115FB. (This paragraph said the opposite until
+2026-09-07, contradicting the registry entries above it -- the swap updated the
+data and left the prose. Trust the table, not this note.)  The alias does imply
+the board. Keep running `--assert-device` anyway: two blasters
 are attached at once, and quartus_pgm EXITS 0 ON A BROKEN CHAIN, so a
 powered-off board otherwise programs "successfully". It is a read-only chain
 scan and configures nothing; fpga/quartus.mk makes `program-sof` depend on it.
