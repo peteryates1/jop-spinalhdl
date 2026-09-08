@@ -216,10 +216,14 @@ sbt "Test / runMain jop.system.JopSmallGcBramSim"
 # 7. Run SMP simulation (2-core, NCoreHelloWorld — both cores toggle watchdog)
 sbt "Test / runMain jop.system.JopSmpNCoreHelloWorldSim"
 
-# 8. SMP GC simulation (2-core), the longest step here — it runs until a
-#    collection actually happens, ~54M cycles and roughly 25 minutes. Prints
-#    allocation rounds "R0 f=..." with free memory falling, then
-#    "GC observed after N rounds (free memory rose)" and PASS.
+# 8. SMP GC simulation (2-core). Runs until a collection actually happens:
+#    prints allocation rounds "R0 f=..." with free memory falling, then
+#    "GC observed after N rounds (free memory rose)" and PASS. On the default
+#    64KB heap that is ~2.7M cycles, under a minute.
+#
+#    For a real soak — 464 rounds of sustained two-core allocation, ~58M
+#    cycles, ~48 minutes — raise the heap. Same assertion, far more endurance:
+#        JOP_SMP_GC_HEAP=131072 sbt "Test / runMain jop.system.JopSmpBramSim"
 sbt "Test / runMain jop.system.JopSmpBramSim"
 ```
 

@@ -14,10 +14,16 @@
 # live in a different job:
 #
 #   run-readme-walkthrough.sh 1-7     every push, ~6 minutes
-#   run-readme-walkthrough.sh 8       nightly, ~25-50 minutes
+#   run-readme-walkthrough.sh 8       nightly, ~1 minute (was 25-50)
 #
-# Step 8 (JopSmpBramSim) runs until a garbage collection actually happens,
-# ~54M cycles. Measured at 25 min unloaded and 48 min on a contended machine.
+# Step 8 (JopSmpBramSim) runs until a garbage collection actually happens.
+# It used to do that on a 128 KB heap: ~54M cycles, 25 min unloaded and 48 min
+# contended, against a 90-minute job wall. Item 137 removed ~190 lines of dead
+# code, which left MORE free heap, which meant MORE rounds before exhaustion --
+# and the job then exceeded its wall three nights running. A cleanup made a
+# test slower. The heap is 64 KB now (~2.7M cycles, under a minute) and the sim
+# carries a cycle budget, so drift fails fast with a message instead of a bare
+# "The operation was canceled". Soak with JOP_SMP_GC_HEAP=131072. Item 147.
 set -uo pipefail
 
 RANGE="${1:-1-7}"

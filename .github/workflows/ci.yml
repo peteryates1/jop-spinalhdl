@@ -137,7 +137,11 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     needs: build-microcode
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 30
+    # Was 90, and step 8 used ~86 of them, so drift showed up as a bare
+    # "The operation was canceled" with no diagnosis. Step 8 is now ~1 minute
+    # (64 KB heap) and the sim carries its own cycle budget, so this wall
+    # should never be what fails first. Item 147.
     steps:
       - uses: actions/checkout@v4
 

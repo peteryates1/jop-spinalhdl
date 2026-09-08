@@ -144,6 +144,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[142](#item-142)** — The linked image's `<clinit>` ORDER comes from hash iteration order; correctness rests on a dependency analysis nothing checks
 - **[143](#item-143)** — `setsid` + process-group kill leaks the serial-holding child, which later looks like dead hardware
 - **[146](#item-146)** — ~~64 simulations built a Verilator model without the X-state defence, and one of them flaked CI~~ — **FIXED**
+- **[147](#item-147)** — ~~The nightly GC sim ends when the heap exhausts, so making the program SMALLER made it slower until it blew CI's 90-minute wall~~ — **FIXED**
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
@@ -2193,6 +2194,58 @@ failure.
 randomisation. Zeroing hides genuinely missing resets, which are worth fixing on
 their own merits; the point is that CI should be a regression detector, not a
 random number generator.
+
+
+<a id="item-147"></a>
+
+### Item 147 — ~~A cleanup made a test slower until it blew CI's wall~~ — FIXED
+
+`JopSmpBramSim` ends at the **first observed GC**, which arrives when the heap
+first exhausts. Its runtime is therefore the time spent **filling** memory, not
+the time spent testing — and filling takes longer when the program is smaller.
+
+Item 137 removed ~190 lines of dead interpreter scaffolding from `Startup`. That
+left **+644 words** of free heap (34748 → 35392), pushing the GC **28 rounds**
+further out — about 6% more cycles. The nightly job had been using **81 of its
+90 minutes**, so 6% was enough, and `readme-walkthrough-long` was cancelled
+three nights running. **A cleanup was punished with a red build.**
+
+**The amplifier.** Free heap is `memSize - image`, a difference of two similar
+quantities, so it magnifies any change in image size. Halving the heap does not
+halve free memory — measured, it cut it 6.1x:
+
+| heap | free at R0 | rounds to GC | cycles | wall |
+|---|---|---|---|---|
+| 128 KB | 35392 | 464 | 58.0M | 48m 23s |
+| 64 KB | 5776 | 16 | 2.7M | 46s |
+
+**The assertion is identical in both** — `1 GC cycles observed` with 2 cores.
+The 464 rounds are the countdown to the assertion, not the assertion. What they
+do buy is soak: sustained two-core allocation.
+
+**Fixed** by making the choice explicit rather than inherited:
+
+- default heap **64 KB** — same assertion, 56x less wall clock, deterministic
+- `JOP_SMP_GC_HEAP=131072` — the deliberate soak, still available
+- a **cycle budget** (10M default) replacing the flat 100M ceiling
+- the CI job's wall cut 90 → 30 minutes
+
+**Gotcha — two failures used to read the same.** Running out of cycles while
+free memory is still *falling* means the test never reached its assertion; the
+collector is not implicated. It now says so, naming the trend and the levers:
+
+```
+FAIL: no GC within the 1000000-cycle budget -- free was still FALLING
+(5776 -> 4496 over 5 rounds). The heap is 64KB; this test ends when the heap
+first exhausts, so a SMALLER program takes LONGER to get here.
+```
+
+Before this, that same condition reached CI as `The operation was canceled` and
+took a log diff against the last good run to identify.
+
+**Evidence.** Red: budget below the GC point fails with the message above.
+Green: default 64 KB passes in 46 s, 2.69M of 10M cycles. Soak: 128 KB via the
+env var reproduces the old 464-round run.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 

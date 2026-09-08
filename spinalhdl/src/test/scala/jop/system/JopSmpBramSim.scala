@@ -195,8 +195,44 @@ object JopSmpBramSim extends App {
 
   val run = TestHistory.startRun("JopSmpBramSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
+  // HEAP SIZE IS THE RUNTIME OF THIS TEST. The assertion is "a GC happens with
+  // N cores running", and it is reached the moment the heap first exhausts --
+  // so the runtime is time spent FILLING memory, not time spent testing:
+  //
+  //     heap    free at R0   rounds to GC   cycles   wall
+  //     128 KB      35392            464     58.0M   48m 23s
+  //      64 KB       5776             16      2.7M       52s
+  //
+  // Same assertion, same pass criterion, 56x the wall clock.
+  //
+  // Note free fell 6.1x for a 2x smaller memory: free is `memSize - image`, a
+  // difference of two similar quantities, so it AMPLIFIES any change in image
+  // size. That is why removing ~190 lines of dead code from Startup (item 137)
+  // pushed this test 28 rounds further out and made the nightly job exceed its
+  // 90-minute wall three nights running -- a cleanup punished with a red build.
+  //
+  // 64 KB is the default: a fast, deterministic nightly signal. 128 KB stays
+  // available as the deliberate soak that 464 rounds of sustained two-core
+  // allocation actually is:
+  //
+  //     JOP_SMP_GC_HEAP=131072 sbt "Test/runMain jop.system.JopSmpBramSim"
+  //
+  // See item 147.
+  val heapBytes = sys.env.get("JOP_SMP_GC_HEAP").map(Integer.decode(_).toInt)
+                    .getOrElse(64 * 1024)
+
+  // A BUDGET, NOT A CEILING. This was a flat 100M cycles -- 37x more than the
+  // default heap needs -- so a test that drifted slower did not fail, it ran
+  // until CI's wall killed the job and the only log line was "The operation was
+  // canceled". Sized to the heap, drift now fails fast and says what happened.
+  val maxCycles = sys.env.get("JOP_SMP_GC_MAX_CYCLES").map(Integer.decode(_).toInt)
+                    .getOrElse(if (heapBytes <= 64 * 1024) 10000000 else 100000000)
+
+  println(s"GC test heap: ${heapBytes / 1024}KB, budget: $maxCycles cycles" +
+          (if (heapBytes > 64 * 1024) "  (SOAK)" else ""))
+
   JopSimDefaults.config
-    .compile(JopSmpTestHarness(cpuCnt, romData, ramData, mainMemData))
+    .compile(JopSmpTestHarness(cpuCnt, romData, ramData, mainMemData, memSize = heapBytes))
     .doSim { dut =>
       val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder
@@ -211,7 +247,6 @@ object JopSmpBramSim extends App {
       dut.clockDomain.forkStimulus(10)  // 10ns = 100MHz
       dut.clockDomain.waitSampling(5)
 
-      val maxCycles = 100000000  // 100M cycles — need enough for multiple GC cycles with mark-compact
       val reportInterval = 100000
       var done = false
       var cycle = 0
@@ -303,6 +338,26 @@ object JopSmpBramSim extends App {
       // Verify GC actually reclaimed memory (free went up at some point)
       val freePattern = """R\d+ f=(\d+)""".r
       val freeVals = freePattern.findAllMatchIn(uartOutput.toString).map(_.group(1).toInt).toList
+      // TWO DIFFERENT FAILURES THAT USED TO READ THE SAME. Exhausting the cycle
+      // budget while free memory is still FALLING means the test never reached
+      // its assertion -- the collector is not implicated at all. Reporting "GC
+      // never triggered" there sends the reader after the collector, which is
+      // the wrong place entirely. On 2026-09-08 that failure reached CI as a
+      // bare 90-minute timeout, and identifying it took a log diff against the
+      // last good run.
+      if (!done) {
+        val trend = if (freeVals.length >= 2 && freeVals.last < freeVals.head)
+                      s"free was still FALLING (${freeVals.head} -> ${freeVals.last} over ${freeVals.length} rounds)"
+                    else s"${freeVals.length} allocation rounds seen"
+        val msg = s"no GC within the $maxCycles-cycle budget -- $trend. The heap is " +
+                  s"${heapBytes / 1024}KB; this test ends when the heap first exhausts, so a " +
+                  s"SMALLER program takes LONGER to get here. Raise JOP_SMP_GC_MAX_CYCLES " +
+                  s"or shrink JOP_SMP_GC_HEAP. See item 147."
+        run.finish("FAIL", msg)
+        println(s"FAIL: $msg")
+        System.exit(1)
+      }
+
       val gcOccurred = freeVals.length >= 2 && freeVals.sliding(2).exists { case List(a, b) => b > a case _ => false }
       if (!gcOccurred) {
         run.finish("FAIL", "GC never triggered (free memory never increased)")
