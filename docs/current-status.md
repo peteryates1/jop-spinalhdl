@@ -96,11 +96,12 @@ nothing depends on ranks below a measurement that could mislead someone.
 56. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
 57. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
 58. **[#108](#item-108)** — README's 16-core claim rests on resource figures README itself withdrew as undated
-59. **[#100](#item-100)** — The EP4CGX150 cable reads 10/10 since the 2026-08-31 swap and blocks nothing. What is left is an unresolved confound: the swap changed the cable AND re-seated both plugs, so put the Pico back on that board to confirm re-seating was the cure
+59. **[#100](#item-100)** — The EP4CGX150 cable reads 10/10 since the 2026-08-31 swap and blocks nothing. What is left is an unresolved confound: the swap changed the cable AND re-seated both plugs. **The proposed resolution — put the Pico back on that board — is BLOCKED: that Pico has since failed ([#148](#item-148))**
 60. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
 61. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
 62. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
 63. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
+64. **[#148](#item-148)** — The A-E115FB is powered off after its Pico blaster failed, so DDR2 has NO hardware coverage; it also blocks item 100's confound experiment, which needs that blaster
 
 ## 2. All items — summary
 
@@ -145,6 +146,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[143](#item-143)** — `setsid` + process-group kill leaks the serial-holding child, which later looks like dead hardware
 - **[146](#item-146)** — ~~64 simulations built a Verilator model without the X-state defence, and one of them flaked CI~~ — **FIXED**
 - **[147](#item-147)** — ~~The nightly GC sim ends when the heap exhausts, so making the program SMALLER made it slower until it blew CI's 90-minute wall~~ — **FIXED**
+- **[148](#item-148)** — The A-E115FB's Pico blaster failed and the board is powered off, so DDR2 has no hardware coverage — and item 100's confound experiment is now impossible
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
@@ -2247,6 +2249,45 @@ took a log diff against the last good run to identify.
 Green: default 64 KB passes in 46 s, 2.69M of 10M cycles. Soak: 128 KB via the
 env var reproduces the old 464-round run.
 
+
+<a id="item-148"></a>
+
+### Item 148 — The DDR2 board is off, and its blaster is what failed
+
+The level-shifted Pico blaster `e6616408` stopped working, and the **A-E115FB
+EP4CE115 + 1 GB DDR2 was powered off** as a result (user, 2026-09-07). This is a
+decision, not an open fault on the board.
+
+**What it costs: DDR2 has no hardware coverage.** The A-E115FB is the only DDR2
+board. Anything touching `CacheToDdr2Adapter`, `ae115fbDdr2` or the DDR2 path is
+**simulation-only** until it returns. That is not a theoretical gap —
+`CacheToDdr2Adapter` has already produced **two** defects that only hardware or
+an ordering-faithful model catches: it never responded to writes at all (the
+first dirty eviction deadlocked `LruCacheCore`), and later it acked writes at
+**accept** time, which corrupts silently once misses overlap. `CacheToDdr2AdapterSim`
+missed the first because it drives the adapter alone; a uniform-latency backend
+model cannot find the second by construction.
+
+Report hardware results accordingly: **"3/3 primary boards pass" covers SDR,
+32-bit SDRAM and DDR3, not DDR2.**
+
+**It also blocks [item 100](#item-100).** That item's remaining question is a
+confound — the 2026-08-31 swap changed the cable *and* re-seated both plugs, and
+the resolution was to put the Pico back on the EP4CGX150 and see whether 3/10
+returned. That experiment needs a working Pico blaster. It cannot be run.
+
+**Gotcha — the failure looks exactly like a fault worth chasing.** Cable
+enumerates, `--assert-device` reports "no device in 10 attempts, TDO came back
+empty", `--health` shows the port re-enumerating, and the CH340 console opens
+cleanly and returns nothing. Every one of those also describes a real dead
+cable, so the diagnosis runs to completion before arriving at a state that was
+already known and intended. `jtag_probe_map`'s registry entry now says so at the
+point of use.
+
+**Open.** Closing it needs either a working blaster on that board (a replacement
+Pico, or the Terasic moved back, which then costs the EP4CGX150 its cable) or a
+second DDR2 target.
+
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 
 **Found 2026-08-24** while establishing a baseline for the build-tree move, and
@@ -3989,6 +4030,11 @@ programming was refused for that reason rather than for anything in the docs.
 > The Pico is fine. It was 3/10 on the EP4CGX150 and is perfect on the
 > A-E115FB, so the fault travelled with the BOARD END, not the cable — which is
 > the opposite of what the old heading ("a cable that died") asserted.
+>
+> **BLOCKED 2026-09-09 — the Pico `e6616408` has since FAILED and the A-E115FB
+> is powered off ([item 148](#item-148)). The confound below cannot be resolved
+> the way it proposes: putting the Pico back on the EP4CGX150 requires a working
+> Pico. Either a replacement blaster, or accept the confound as unresolved.**
 >
 > **The experiment alone carries a confound**: the swap changed which cable AND
 
@@ -6757,7 +6803,7 @@ separated "board broken" from "our design broken".
 |---|---|---|
 | EP4CGX150 (SDR) | Terasic USB-Blaster (`terasic`) | `quartus_pgm -c "$(jtag_probe_map --cable terasic)"` |
 | XC7A100T + DB_FPGA V5 (DDR3) | RP2040 on the DB-V5, pico-dirtyJtag | `openFPGALoader` |
-| A-E115FB (1 GB DDR2) | **Terasic** — its Pico clone cannot configure | `quartus_pgm` |
+| A-E115FB (1 GB DDR2) | **none — board powered off, blaster failed ([item 148](#item-148))** | was `quartus_pgm`; the pre-swap note "its Pico clone cannot configure" referred to a BARE Pico overdriving 3.3 V, superseded by the level-shifted one on 2026-08-31, which then failed |
 | Colorlight i5 (ECP5, 8 MB SDR) | DAPLink on the ext board (`i5`) | `openFPGALoader -b colorlight_i5` — also the UART bridge |
 | CYC5000 (Cyclone V, 8 MB SDR) | on-board Arrow USB Blaster TEI0050 (`cyc5000`) | `openFPGALoader -b cyc5000` on an **.rbf** — see below |
 | Alchitry Au V2 (XC7A35T, DDR3) | on-board FT2232H (`alchitry`) | `make -C fpga/alchitry-au program` (Vivado hw target) |
