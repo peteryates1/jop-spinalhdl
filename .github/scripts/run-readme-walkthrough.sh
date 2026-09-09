@@ -13,8 +13,11 @@
 # is numbered "# N." per step. Steps are selected by number so the long one can
 # live in a different job:
 #
-#   run-readme-walkthrough.sh 1-7     every push, ~6 minutes
-#   run-readme-walkthrough.sh 8       nightly, ~1 minute (was 25-50)
+#   run-readme-walkthrough.sh 1-8     every push, ~13 minutes
+#
+# Ranges still work, and step 8 is still separable -- but CI no longer splits
+# it. It ran as a schedule-only `readme-walkthrough-long` job until 2026-09-09,
+# which is precisely how item 147 hid for three days: no push ever ran it.
 #
 # Step 8 (JopSmpBramSim) runs until a garbage collection actually happens.
 # It used to do that on a 128 KB heap: ~54M cycles, 25 min unloaded and 48 min

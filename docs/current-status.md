@@ -3852,9 +3852,11 @@ anything.
 
 **DONE 2026-08-30.** `.github/scripts/run-readme-walkthrough.sh` extracts the
 fenced block under "### Build and Run Simulation" from README.md and executes
-it. Two CI jobs call it: `readme-walkthrough` runs steps 1-7 on every push
-(~6 min); `readme-walkthrough-long` runs step 8 nightly (~25-50 min, since it
-runs until a collection actually happens).
+it. **One CI job calls it: `readme-walkthrough` runs steps 1-8 on every push**
+(~13 min). It was two jobs until 2026-09-09 — a nightly `readme-walkthrough-long`
+carried step 8, which took 25-50 minutes on a 128 KB heap. Item 147 cut step 8 to
+~1 minute, at which point the "long" job ran 4m15s against this one's 12m37s and
+both rebuilt steps 1-3 to get there, so it was absorbed.
 
 **The sync problem is solved by construction, not by discipline.** Listing the
 commands in the workflow would create two lists that drift apart -- the same
@@ -4618,6 +4620,15 @@ The cancellation has not recurred — four consecutive successful nightlies sinc
 schedule-gated job, reached `success` in each of the last five scheduled runs.
 So the schedule-only coverage is real and is running, which was the thing worth
 establishing.
+
+**Superseded 2026-09-09.** `readme-walkthrough-long` no longer exists — item 147
+made step 8 fast enough to run on every push, and it was merged into
+`readme-walkthrough`. Worth recording *why* that is an improvement and not just
+a tidy-up: being schedule-gated is exactly how item 147 hid. Three days of
+pushes gave no signal because the only job that ran step 8 ran at 03:00, so a
+failure introduced on 09-06 was invisible to every push until someone read a
+nightly. "The schedule-only coverage is real and is running" was true, and still
+left a three-day detection gap.
 
 **CORRECTED 2026-09-04.** This item claimed "its failure mode is silence" and
 that was too broad: GitHub emails the workflow's owner when a scheduled run
