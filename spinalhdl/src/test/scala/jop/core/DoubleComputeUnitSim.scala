@@ -36,9 +36,8 @@ object DoubleComputeUnitSim extends App {
   val L2D   = 10
   val D2L   = 11
 
-  SimConfig
+  jop.utils.JopSimDefaults.config
     .withWave
-    .workspacePath(jop.utils.JopSimDefaults.workspace)
     .compile(DoubleComputeUnit(fullConfig))
     .doSim { dut =>
 

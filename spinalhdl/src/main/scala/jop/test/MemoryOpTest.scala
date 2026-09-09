@@ -27,8 +27,14 @@ object MemoryOpTest extends App {
 
   SimConfig
     .withWave
-    // Literal, not JopSimDefaults.workspace: this file is in src/main and
-    // JopSimDefaults is in src/test. Keep the two in step.
+    // X-STATE DEFENCE, INLINE. This file is in src/main and JopSimDefaults is
+    // in src/test, so it cannot import it -- and until 2026-09-09 the COMMENT
+    // saying so was what exempted this file from check-sim-xstate.sh, leaving
+    // it the one simulation still taking Verilator's randomisation while the
+    // guard reported the fleet clean. The flag is applied directly instead.
+    .addSimulatorFlag("--x-initial 0")
+    // Literal, not JopSimDefaults.workspace, for the same src/main reason.
+    // Keep the two in step.
     .workspacePath("build/simWorkspace")
     .compile(JopSimulator(
       jopFilePath = jopFilePath,

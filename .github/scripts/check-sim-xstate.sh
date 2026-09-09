@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# DISCIPLINE: docs/testing-discipline.md — "assert on content, never an exit status".
+# PROVED RED 2026-09-09 on five cases: a bare `SimConfig`; a file naming
+# JopSimDefaults only in a COMMENT; a file calling JopSimDefaults.workspace but
+# applying no flag; and, as must-not-fire controls, JopSimDefaults.config and a
+# direct `--x-initial 0`. The middle two were live defects in this guard: it
+# exempted 14 real offenders, and a `grep -q` behind `set -o pipefail` reported
+# a FALSE POSITIVE on BytecodeFetchStageTest, which uses simWave correctly.
+# If you change this guard, re-prove it: a guard that cannot fail is worse
+# than none, because it gets quoted as evidence.
 # ---------------------------------------------------------------------------
 # REGRESSION TEST: every Verilator simulation must start its registers at ZERO.
 #
@@ -45,7 +54,33 @@ fail=0
 offenders=""
 while IFS= read -r f; do
   grep -qE '\.compile|\.doSim' "$f" || continue
-  grep -qE 'JopSimDefaults|simWave' "$f" && continue
+  # NON-COMMENT LINES ONLY. This was a plain `grep -qE ... "$f"`, so a file was
+  # exempted by MENTIONING JopSimDefaults in a COMMENT. MemoryOpTest.scala
+  # built a bare SimConfig and was skipped by the comment explaining why it
+  # could not use JopSimDefaults -- the guard printed "every Verilator
+  # simulation starts its registers at zero" while that file randomised.
+  # A guard whose exemption matches prose exempts whatever talks about it.
+  # THE DEFENCE, NOT A MENTION OF IT. Three ways to get it: JopSimDefaults's
+  # `config`/`xInitial`, TestVectorUtils.simWave (which calls xInitial), or the
+  # flag applied directly -- the only option for a file in src/main, since
+  # JopSimDefaults lives in src/test.
+  #
+  # Two earlier spellings of this test were both wrong:
+  #   * a plain `grep -qE 'JopSimDefaults|simWave' "$f"` exempted a file for
+  #     MENTIONING the name IN A COMMENT -- MemoryOpTest.scala was skipped by
+  #     the comment explaining why it could not use JopSimDefaults;
+  #   * matching the bare name `JopSimDefaults` exempts a file that only calls
+  #     `JopSimDefaults.workspace`, which sets the output directory and applies
+  #     no flag at all. SdNativeTest.scala did exactly that.
+  # Match the defence itself.
+  #
+  # NO PIPE INTO `grep -q`. Under `set -o pipefail`, `-q` exits at the first
+  # match, the upstream grep takes SIGPIPE, and the PIPELINE reports non-zero --
+  # so the exemption never fired and BytecodeFetchStageTest.scala, which uses
+  # simWave correctly, was reported as an offender. A false positive still looks
+  # like a working guard: the planted-offender red test passed throughout.
+  body=$(grep -vE '^[[:space:]]*(//|\*|/\*)' "$f")
+  grep -qE 'JopSimDefaults\.(config|xInitial)|simWave\(|--x-initial 0' <<<"$body" && continue
   # a bare `SimConfig` token, not `MainMemorySimConfig` or a local `simConfig` val
   grep -qE '(^|[^A-Za-z0-9_.])SimConfig([^A-Za-z0-9_]|$)' "$f" || continue
   offenders="$offenders $f"

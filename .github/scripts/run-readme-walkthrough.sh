@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# DISCIPLINE: docs/testing-discipline.md — "assert on content, never an exit status".
+# PROVED RED 2026-09-09 by pointing step 4 at a sim object that does not exist;
+# the runner printed `!!! step 4 FAILED` and exited 1 rather than running on.
+# NOTE this is a runner, not a check: it fails when a README command fails.
 #
 # Run the README's own Getting Started commands. THE README IS THE TEST.
 #

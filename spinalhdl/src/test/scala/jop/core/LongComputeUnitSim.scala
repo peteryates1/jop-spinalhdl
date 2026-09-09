@@ -24,9 +24,8 @@ object LongComputeUnitSim extends App {
   val LSHR  = 7
   val LUSHR = 8
 
-  SimConfig
+  jop.utils.JopSimDefaults.config
     .withWave
-    .workspacePath(jop.utils.JopSimDefaults.workspace)
     .compile(LongComputeUnit(fullConfig))
     .doSim { dut =>
 

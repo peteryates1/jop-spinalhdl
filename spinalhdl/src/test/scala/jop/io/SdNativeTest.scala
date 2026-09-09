@@ -111,8 +111,7 @@ class SdNativeTest extends AnyFunSuite {
     dut.io.sdCd #= true        // no card (active low)
   }
 
-  val simConfig = SimConfig
-    .workspacePath(jop.utils.JopSimDefaults.workspace)
+  val simConfig = jop.utils.JopSimDefaults.config
 
   def compileDut() = simConfig.compile(SdNative(clkDivInit = 99))
 

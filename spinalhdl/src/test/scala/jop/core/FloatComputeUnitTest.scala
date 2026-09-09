@@ -32,8 +32,7 @@ class FloatComputeUnitTest extends AnyFunSuite {
     withI2F = true, withF2I = true, withFcmp = true
   )
 
-  val simConfig = SimConfig
-    .workspacePath(jop.utils.JopSimDefaults.workspace)
+  val simConfig = jop.utils.JopSimDefaults.config
 
   def compileFull() = simConfig.compile(FloatComputeUnit(fullConfig))
 

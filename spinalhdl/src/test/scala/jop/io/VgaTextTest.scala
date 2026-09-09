@@ -6,8 +6,7 @@ import spinal.core.sim._
 
 class VgaTextTest extends AnyFunSuite {
 
-  val simConfig = SimConfig
-    .workspacePath(jop.utils.JopSimDefaults.workspace)
+  val simConfig = jop.utils.JopSimDefaults.config
 
   def compileDut() = simConfig.compile(
     VgaText(

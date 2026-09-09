@@ -138,9 +138,16 @@ Level shifting is solved by the
 carrier: an SN74LVC1T45 per signal referenced to the target's own VTREF (header
 pin 4).
 
-**As of 2026-08-29 that Pico (`e6616408`) is level-shifted and permanently on
-the EP4CGX150**, so the two Altera boards no longer share a cable -- Terasic on
-the A-E115FB, Pico on the EP4CGX150, both attached at once. A full
+**As of 2026-08-29 that Pico (`e6616408`) is level-shifted, ending the shared
+cable.** It was on the EP4CGX150 for two days; the boards were SWAPPED on
+2026-08-31, putting the **Terasic on the EP4CGX150** and the **Pico on the
+A-E115FB** -- the opposite of what this paragraph said until 2026-09-09. The
+Pico has since failed and the A-E115FB is powered off (item 148), so the
+Terasic on the EP4CGX150 is the only working Altera blaster.
+
+Note the word this paragraph used to carry: *permanently*. It was wrong within
+two days, and again a week later. `jtag_probe_map --cable <alias>` is the
+authoritative answer; prose about cables decays every time one moves. A full
 `jop_sdram.sof` configures the EP4CGX150 in 43 s and the board then runs
 `HelloWorld` over its UART.
 

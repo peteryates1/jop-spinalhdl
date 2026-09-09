@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+# DISCIPLINE: docs/testing-discipline.md — "assert on content, never an exit status".
+# PROVED RED 2026-09-09 on four probes in a tracked Makefile:
+#   apps/X/Y.jop                      -> exit 1   (rule 1)
+#   java/apps/X/Y.jop                 -> exit 1   (rule 2, ADDED that day)
+#   $(JAVA_OUT)/apps/X/Y.jop          -> exit 0   (legal)
+#   ../../build/cfg/java/apps/X/Y.jop -> exit 0   (legal, under build/)
+# The attempt is what found rule 2 missing: `java/apps/X/Y.jop`, the exact
+# in-tree spelling this guard exists to reject, passed. Proving a guard red is
+# not ceremony -- it is the only thing that distinguishes a guard from a
+# comment that runs.
+# If you change this guard, re-prove it: a guard that cannot fail is worse
+# than none, because it gets quoted as evidence.
 # Two invariants for the Java build tree.
 #
 # 1. NO SIM MAY HARDCODE AN IN-TREE .jop PATH. `java/apps/<X>/<Y>.jop` is a
@@ -43,7 +55,17 @@ done < <(git ls-files -- '*.scala')
 # exists fails loudly rather than silently, but only when someone runs it --
 # and nothing in CI does.
 while IFS= read -r f; do
-  hits=$(sed -e 's:#.*::' "$f" | command grep -nE '(^|[^/A-Za-z])apps/[A-Za-z0-9_]+/[A-Za-z0-9_]+\.jop' || true)
+  # TWO RULES, because one prefix exclusion cannot separate the legal spelling
+  # from the illegal one. `[^/A-Za-z]` before `apps/` was there to allow
+  # `$(JAVA_OUT)/apps/...` -- but it allowed `java/apps/...` too, which is the
+  # in-tree path this guard exists to reject. Found 2026-09-09 while trying to
+  # prove the guard red: `ZZ := java/apps/Smallest/HelloWorld.jop` passed.
+  #   * bare `apps/X/Y.jop`                -> reject (rule 1, unchanged)
+  #   * `java/apps/X/Y.jop`                -> reject (rule 2, new)
+  #   * `$(JAVA_OUT)/apps/X/Y.jop`         -> allow
+  #   * `build/<cfg>/java/apps/X/Y.jop`    -> allow (under build/, so `java` is
+  #                                           preceded by `/` and rule 2 skips it)
+  hits=$(sed -e 's:#.*::' "$f" | command grep -nE '(^|[^/A-Za-z])apps/[A-Za-z0-9_]+/[A-Za-z0-9_]+\.jop|(^|[^/])java/apps/[A-Za-z0-9_]+/[A-Za-z0-9_]+\.jop' || true)
   if [ -n "$hits" ]; then
     echo "FAIL: $f names an in-tree .jop path:" >&2
     printf '%s\n' "$hits" | sed 's/^/    /' >&2

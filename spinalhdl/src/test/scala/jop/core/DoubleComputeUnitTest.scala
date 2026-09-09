@@ -49,8 +49,7 @@ class DoubleComputeUnitTest extends AnyFunSuite {
     withF2D = true, withD2F = true, withDcmp = true
   )
 
-  val simConfig = SimConfig
-    .workspacePath(jop.utils.JopSimDefaults.workspace)
+  val simConfig = jop.utils.JopSimDefaults.config
 
   def compileFull() = simConfig.compile(DoubleComputeUnit(fullConfig))
 

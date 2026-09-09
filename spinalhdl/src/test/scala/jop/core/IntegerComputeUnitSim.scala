@@ -20,9 +20,8 @@ object IntegerComputeUnitSim extends App {
   val IDIV = 1
   val IREM = 2
 
-  SimConfig
+  jop.utils.JopSimDefaults.config
     .withWave
-    .workspacePath(jop.utils.JopSimDefaults.workspace)
     .compile(IntegerComputeUnit(fullConfig))
     .doSim { dut =>
 

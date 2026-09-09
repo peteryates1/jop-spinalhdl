@@ -21,8 +21,7 @@ class VgaBmbDmaTest extends AnyFunSuite {
     invalidation = BmbInvalidationParameter()
   )
 
-  val simConfig = SimConfig
-    .workspacePath(jop.utils.JopSimDefaults.workspace)
+  val simConfig = jop.utils.JopSimDefaults.config
 
   def compileDut() = simConfig.compile(
     VgaBmbDma(

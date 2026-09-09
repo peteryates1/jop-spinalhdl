@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# DISCIPLINE: docs/testing-discipline.md — "assert on content, never an exit status".
+# PROVED RED 2026-09-09 by adding a `spinalhdl/generated` path to a tracked
+# .scala file; the guard named the file and exited 1.
+# If you change this guard, re-prove it: a guard that cannot fail is worse
+# than none, because it gets quoted as evidence.
 # Nothing may READ OR WRITE `spinalhdl/generated` any more.
 #
 # WHY THIS IS A GUARD AND NOT A COMMENT. Generated RTL used to land in the

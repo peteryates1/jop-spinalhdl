@@ -28,9 +28,8 @@ object FloatComputeUnitSim extends App {
   val I2F   = 6
   val F2I   = 7
 
-  SimConfig
+  jop.utils.JopSimDefaults.config
     .withWave
-    .workspacePath(jop.utils.JopSimDefaults.workspace)
     .compile(FloatComputeUnit(fullConfig))
     .doSim { dut =>
 
