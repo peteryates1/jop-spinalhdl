@@ -1913,12 +1913,20 @@ develop on host JDK/sim -> analyser -> .jop + JopConfig for this target
 ### Item 57 — ~~The XDC/QSF generators exist and NOTHING USES THEM~~ — DONE
 
 > **CORRECTED 2026-09-10 (audit of closed items). The headline claim was false
-> when it was written.** This item says *"every board build now reads generated
+> when it was written.** This item said *"every board build now reads generated
 > constraints"* and *"the tracked `.xdc`/`.qsf` files that remain are no longer
-> INPUTS"*. Nine Vivado targets pass **tracked** `.xdc` on the command line,
-> including the flagship DB V5 DDR3 build
-> (`JOP_XDC=$(CONSTRAINTS)/xc7a100t_dbv5_base.xdc`). `git log -L` dates two of
-> those lines to 2026-08-26 — five days before this item closed.
+> INPUTS"*.
+>
+> **As of 2026-08-31**, nine Vivado targets passed **tracked** `.xdc` on the
+> command line, including the flagship DB V5 DDR3 build — and `git log -L` dates
+> two of those lines to 2026-08-26, five days *before* this item closed.
+>
+> **As of 2026-09-10** the DB V5 flagship, the Wukong SMP DDR3 path and
+> `wukong_jop_bram` are converted and the rest are declared: **9 by design,
+> 6 gap**. The live number is whatever `make check-build` prints — this
+> paragraph is dated because the previous version of it said "nine … including
+> the flagship DB V5 build" in the present tense and was false within a day of
+> being written. A count in prose is a snapshot; the guard is the fact.
 >
 > **Why nothing caught it:** `check-generated-deps.sh` enumerates boards by
 > `include ../quartus.mk`, reaching **7 of 12**. Every flow that would have
@@ -1945,6 +1953,10 @@ develop on host JDK/sim -> analyser -> .jop + JopConfig for this target
 > Converted and hardware-proven 2026-09-10: the DB V5 flagship (`DoAll` 3/3),
 > the Wukong SMP DDR3 path, and `wukong_jop_bram` (generated == tracked,
 > diff=0). The six remaining gaps are [item 149](#item-149).
+>
+> Guard: `.github/scripts/check-generated-deps.sh` — an undeclared tracked
+> constraint fails, and so does a declaration nothing reads any more. Both
+> proved red 2026-09-10.
 >
 > **This item stays DONE, and the DONE is honest for its TITLE:** the generators
 > existed and nothing used them; things use them now. What was false is the
