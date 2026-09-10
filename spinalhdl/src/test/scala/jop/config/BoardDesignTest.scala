@@ -84,15 +84,33 @@ class BoardDesignTest extends AnyFunSuite {
     ("ep4cgx150 + DB v4", SystemAssembly.qmtechWithDb),
     ("xc7a100t + DB v5", SystemAssembly.xc7a100tWithDbV5))
 
+  // CARD DETECT IS PER-BOARD. The V4 routes the SD socket's detect switch to
+  // the FPGA; the V5 does NOT -- it moved the console onto the pin V4 used for
+  // CD, so the V5 resolves one pin fewer for each SD mode. Until 2026-09-10 the
+  // V5's board entry was a verbatim copy of the V4's, which put sd_cd and
+  // ser_txd on the SAME FPGA pin (A5) in the generated constraints.
+  //
+  // These counts are the reason that was noticed rather than shipped: they are
+  // hardcoded, so removing the mapping failed here and forced the question of
+  // what happens to the PORT. Dropping only the constraint would have left
+  // sd_cd declared and unconstrained, i.e. floating.
+  // Default 1 (the board routes card-detect). Only the V5 is the exception, so
+  // a board added to sdBoards above does not silently pick up the exception --
+  // keying this map exactly and indexing it directly aborted the whole SUITE on
+  // "key not found: wukong" the first time, which is a worse failure than the
+  // one it was meant to express.
+  val cdPins = Map("xc7a100t + DB v5" -> 0).withDefaultValue(1)
+
   for ((label, asm) <- sdBoards) {
+    val cd = cdPins(label)
     test(s"SD-over-SPI pins resolve on $label") {
       val pins = PinResolver.devicePins(asm, sdDesign(asm, DeviceType.SdSpi).devices)
-      assert(pins.size == 5, s"expected 5 SPI pins, got ${pins.map(_.verilogPort)}")
+      assert(pins.size == 4 + cd, s"expected ${4 + cd} SPI pins, got ${pins.map(_.verilogPort)}")
       assert(pins.forall(_.fpgaPin.nonEmpty))
     }
     test(s"SD native 4-bit pins resolve on $label") {
       val pins = PinResolver.devicePins(asm, sdDesign(asm, DeviceType.SdNative).devices)
-      assert(pins.size == 7, s"expected 7 native pins, got ${pins.map(_.verilogPort)}")
+      assert(pins.size == 6 + cd, s"expected ${6 + cd} native pins, got ${pins.map(_.verilogPort)}")
       assert(pins.forall(_.fpgaPin.nonEmpty))
     }
   }

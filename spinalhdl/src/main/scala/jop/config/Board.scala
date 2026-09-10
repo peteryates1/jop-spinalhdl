@@ -459,36 +459,36 @@ object Board {
     connectors = Map(
       // U4: Banks 5, 6, 7 — mates with DB_FPGA J3 when used with daughter board
       "U4" -> Map(
-        5 -> "PIN_C21",  6 -> "PIN_B22",  7 -> "PIN_B23",  8 -> "PIN_A23",
-        9 -> "PIN_B21",  10 -> "PIN_A22", 11 -> "PIN_C19", 12 -> "PIN_B19",
-        13 -> "PIN_A21", 14 -> "PIN_A20", 15 -> "PIN_A19", 16 -> "PIN_A18",
-        17 -> "PIN_C17", 18 -> "PIN_B18", 19 -> "PIN_C16", 20 -> "PIN_B17",
-        21 -> "PIN_A17", 22 -> "PIN_A16", 23 -> "PIN_B15", 24 -> "PIN_A15",
-        25 -> "PIN_C15", 26 -> "PIN_C14", 27 -> "PIN_C13", 28 -> "PIN_B13",
-        29 -> "PIN_C12", 30 -> "PIN_C11", 31 -> "PIN_A13", 32 -> "PIN_A12",
-        33 -> "PIN_B11", 34 -> "PIN_A11", 35 -> "PIN_B10", 36 -> "PIN_A10",
-        37 -> "PIN_C10", 38 -> "PIN_B9",  39 -> "PIN_A9",  40 -> "PIN_A8",
-        41 -> "PIN_A7",  42 -> "PIN_A6",  43 -> "PIN_B7",  44 -> "PIN_B6",
-        45 -> "PIN_B5",  46 -> "PIN_A5",  47 -> "PIN_B4",  48 -> "PIN_A4",
-        49 -> "PIN_C5",  50 -> "PIN_C4",  51 -> "PIN_A3",  52 -> "PIN_A2",
-        53 -> "PIN_B2",  54 -> "PIN_B1",  55 -> "PIN_D1",  56 -> "PIN_C1",
-        57 -> "PIN_E2",  58 -> "PIN_E1"),
+        7 -> "PIN_C21",  8 -> "PIN_B22",  9 -> "PIN_B23",  10 -> "PIN_A23",
+        11 -> "PIN_B21",  12 -> "PIN_A22", 13 -> "PIN_C19", 14 -> "PIN_B19",
+        15 -> "PIN_A21", 16 -> "PIN_A20", 17 -> "PIN_A19", 18 -> "PIN_A18",
+        19 -> "PIN_C17", 20 -> "PIN_B18", 21 -> "PIN_C16", 22 -> "PIN_B17",
+        23 -> "PIN_A17", 24 -> "PIN_A16", 25 -> "PIN_B15", 26 -> "PIN_A15",
+        27 -> "PIN_C15", 28 -> "PIN_C14", 29 -> "PIN_C13", 30 -> "PIN_B13",
+        31 -> "PIN_C12", 32 -> "PIN_C11", 33 -> "PIN_A13", 34 -> "PIN_A12",
+        35 -> "PIN_B11", 36 -> "PIN_A11", 37 -> "PIN_B10", 38 -> "PIN_A10",
+        39 -> "PIN_C10", 40 -> "PIN_B9",  41 -> "PIN_A9",  42 -> "PIN_A8",
+        43 -> "PIN_A7",  44 -> "PIN_A6",  45 -> "PIN_B7",  46 -> "PIN_B6",
+        47 -> "PIN_B5",  48 -> "PIN_A5",  49 -> "PIN_B4",  50 -> "PIN_A4",
+        51 -> "PIN_C5",  52 -> "PIN_C4",  53 -> "PIN_A3",  54 -> "PIN_A2",
+        55 -> "PIN_B2",  56 -> "PIN_B1",  57 -> "PIN_D1",  58 -> "PIN_C1",
+        59 -> "PIN_E2",  60 -> "PIN_E1"),
       // U5: Banks 3, 4 — mates with DB_FPGA J2 when used with daughter board
       "U5" -> Map(
-        5 -> "PIN_AF24",  6 -> "PIN_AF25",  7 -> "PIN_AC21",  8 -> "PIN_AD21",
-        9 -> "PIN_AE23",  10 -> "PIN_AF23", 11 -> "PIN_AE22", 12 -> "PIN_AF22",
-        13 -> "PIN_AD20", 14 -> "PIN_AE21", 15 -> "PIN_AF20", 16 -> "PIN_AF21",
-        17 -> "PIN_AE19", 18 -> "PIN_AF19", 19 -> "PIN_AC19", 20 -> "PIN_AD19",
-        21 -> "PIN_AE18", 22 -> "PIN_AF18", 23 -> "PIN_AC18", 24 -> "PIN_AD18",
-        25 -> "PIN_AE17", 26 -> "PIN_AF17", 27 -> "PIN_AC17", 28 -> "PIN_AD17",
-        29 -> "PIN_AF15", 30 -> "PIN_AF16", 31 -> "PIN_AC16", 32 -> "PIN_AD16",
-        33 -> "PIN_AE14", 34 -> "PIN_AE15", 35 -> "PIN_AC15", 36 -> "PIN_AD15",
-        37 -> "PIN_AC14", 38 -> "PIN_AD14", 39 -> "PIN_AF11", 40 -> "PIN_AF12",
-        41 -> "PIN_AC10", 42 -> "PIN_AD10", 43 -> "PIN_AE9",  44 -> "PIN_AF9",
-        45 -> "PIN_AF7",  46 -> "PIN_AF8",  47 -> "PIN_AE7",  48 -> "PIN_AF6",
-        49 -> "PIN_AE5",  50 -> "PIN_AE6",  51 -> "PIN_AD5",  52 -> "PIN_AD6",
-        53 -> "PIN_AF4",  54 -> "PIN_AF5",  55 -> "PIN_AD3",  56 -> "PIN_AE3",
-        57 -> "PIN_AC4",  58 -> "PIN_AD4")))
+        7 -> "PIN_AF24",  8 -> "PIN_AF25",  9 -> "PIN_AC21",  10 -> "PIN_AD21",
+        11 -> "PIN_AE23",  12 -> "PIN_AF23", 13 -> "PIN_AE22", 14 -> "PIN_AF22",
+        15 -> "PIN_AD20", 16 -> "PIN_AE21", 17 -> "PIN_AF20", 18 -> "PIN_AF21",
+        19 -> "PIN_AE19", 20 -> "PIN_AF19", 21 -> "PIN_AC19", 22 -> "PIN_AD19",
+        23 -> "PIN_AE18", 24 -> "PIN_AF18", 25 -> "PIN_AC18", 26 -> "PIN_AD18",
+        27 -> "PIN_AE17", 28 -> "PIN_AF17", 29 -> "PIN_AC17", 30 -> "PIN_AD17",
+        31 -> "PIN_AF15", 32 -> "PIN_AF16", 33 -> "PIN_AC16", 34 -> "PIN_AD16",
+        35 -> "PIN_AE14", 36 -> "PIN_AE15", 37 -> "PIN_AC15", 38 -> "PIN_AD15",
+        39 -> "PIN_AC14", 40 -> "PIN_AD14", 41 -> "PIN_AF11", 42 -> "PIN_AF12",
+        43 -> "PIN_AC10", 44 -> "PIN_AD10", 45 -> "PIN_AE9",  46 -> "PIN_AF9",
+        47 -> "PIN_AF7",  48 -> "PIN_AF8",  49 -> "PIN_AE7",  50 -> "PIN_AF6",
+        51 -> "PIN_AE5",  52 -> "PIN_AE6",  53 -> "PIN_AD5",  54 -> "PIN_AD6",
+        55 -> "PIN_AF4",  56 -> "PIN_AF5",  57 -> "PIN_AD3",  58 -> "PIN_AE3",
+        59 -> "PIN_AC4",  60 -> "PIN_AD4")))
 
   /**
    * CYC5000 / Trenz TEI0050 (Cyclone V E + W9864G6JT SDR SDRAM).
@@ -811,40 +811,45 @@ object Board {
       BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3")),   // DDR3 pins managed by MIG IP
       BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "U22")),
       BoardDevice("LED", mapping = Map("led0" -> "T23", "led1" -> "R23")),
-      BoardDevice("SWITCH", mapping = Map("sw2" -> "P4"))),
+      // KEY MUST BE "reset". PinResolver and JopTop look for that name (see the
+      // EP4CGX150 SWITCH entry above); this said "sw2", so nothing ever emitted
+      // the pin and XdcGenerator produced no `resetn` constraint at all for this
+      // board. P4 is the core board's SW2, active low -- the tracked, hardware-
+      // proven xc7a100t_dbv5_base.xdc has constrained it all along. Item 151.
+      BoardDevice("SWITCH", mapping = Map("reset" -> "P4"))),
     connectors = Map(
       // U2: Banks 13, 14, 15 — mates with DB_FPGA J2 when used with daughter board
       "U2" -> Map(
-        5 -> "D26",  6 -> "E26",  7 -> "D25",  8 -> "E25",
-        9 -> "G26",  10 -> "H26", 11 -> "E23", 12 -> "F23",
-        13 -> "F22", 14 -> "G22", 15 -> "J26", 16 -> "J25",
-        17 -> "G21", 18 -> "G20", 19 -> "H22", 20 -> "H21",
-        21 -> "J21", 22 -> "K21", 23 -> "K26", 24 -> "K25",
-        25 -> "K23", 26 -> "K22", 27 -> "M26", 28 -> "N26",
-        29 -> "L23", 30 -> "L22", 31 -> "P26", 32 -> "R26",
-        33 -> "M25", 34 -> "M24", 35 -> "N22", 36 -> "N21",
-        37 -> "P24", 38 -> "P23", 39 -> "P25", 40 -> "R25",
-        41 -> "T25", 42 -> "T24", 43 -> "V21", 44 -> "U21",
-        45 -> "W23", 46 -> "V23", 47 -> "Y23", 48 -> "Y22",
-        49 -> "AA25", 50 -> "Y25", 51 -> "AC24", 52 -> "AB24",
-        53 -> "Y21", 54 -> "W21", 55 -> "Y26", 56 -> "W25",
-        57 -> "AC26", 58 -> "AB26"),
+        7 -> "D26",  8 -> "E26",  9 -> "D25",  10 -> "E25",
+        11 -> "G26",  12 -> "H26", 13 -> "E23", 14 -> "F23",
+        15 -> "F22", 16 -> "G22", 17 -> "J26", 18 -> "J25",
+        19 -> "G21", 20 -> "G20", 21 -> "H22", 22 -> "H21",
+        23 -> "J21", 24 -> "K21", 25 -> "K26", 26 -> "K25",
+        27 -> "K23", 28 -> "K22", 29 -> "M26", 30 -> "N26",
+        31 -> "L23", 32 -> "L22", 33 -> "P26", 34 -> "R26",
+        35 -> "M25", 36 -> "M24", 37 -> "N22", 38 -> "N21",
+        39 -> "P24", 40 -> "P23", 41 -> "P25", 42 -> "R25",
+        43 -> "T25", 44 -> "T24", 45 -> "V21", 46 -> "U21",
+        47 -> "W23", 48 -> "V23", 49 -> "Y23", 50 -> "Y22",
+        51 -> "AA25", 52 -> "Y25", 53 -> "AC24", 54 -> "AB24",
+        55 -> "Y21", 56 -> "W21", 57 -> "Y26", 58 -> "W25",
+        59 -> "AC26", 60 -> "AB26"),
       // U4: Banks 34, 35 — mates with DB_FPGA J3 when used with daughter board
       "U4" -> Map(
-        5 -> "B5",  6 -> "A5",  7 -> "B4",  8 -> "A4",
-        9 -> "A3",  10 -> "A2", 11 -> "D4", 12 -> "C4",
-        13 -> "C2", 14 -> "B2", 15 -> "E5", 16 -> "D5",
-        17 -> "C1", 18 -> "B1", 19 -> "E1", 20 -> "D1",
-        21 -> "F2", 22 -> "E2", 23 -> "G4", 24 -> "F4",
-        25 -> "G2", 26 -> "G1", 27 -> "J4", 28 -> "H4",
-        29 -> "H2", 30 -> "H1", 31 -> "H9", 32 -> "G9",
-        33 -> "M2", 34 -> "L2", 35 -> "L5", 36 -> "K5",
-        37 -> "M4", 38 -> "L4", 39 -> "N3", 40 -> "N2",
-        41 -> "M6", 42 -> "M5", 43 -> "K1", 44 -> "J1",
-        45 -> "R3", 46 -> "P3", 47 -> "T4", 48 -> "T3",
-        49 -> "P6", 50 -> "P5", 51 -> "N1", 52 -> "M1",
-        53 -> "R1", 54 -> "P1", 55 -> "T2", 56 -> "R2",
-        57 -> "U2", 58 -> "U1")))
+        7 -> "B5",  8 -> "A5",  9 -> "B4",  10 -> "A4",
+        11 -> "A3",  12 -> "A2", 13 -> "D4", 14 -> "C4",
+        15 -> "C2", 16 -> "B2", 17 -> "E5", 18 -> "D5",
+        19 -> "C1", 20 -> "B1", 21 -> "E1", 22 -> "D1",
+        23 -> "F2", 24 -> "E2", 25 -> "G4", 26 -> "F4",
+        27 -> "G2", 28 -> "G1", 29 -> "J4", 30 -> "H4",
+        31 -> "H2", 32 -> "H1", 33 -> "H9", 34 -> "G9",
+        35 -> "M2", 36 -> "L2", 37 -> "L5", 38 -> "K5",
+        39 -> "M4", 40 -> "L4", 41 -> "N3", 42 -> "N2",
+        43 -> "M6", 44 -> "M5", 45 -> "K1", 46 -> "J1",
+        47 -> "R3", 48 -> "P3", 49 -> "T4", 50 -> "T3",
+        51 -> "P6", 52 -> "P5", 53 -> "N1", 54 -> "M1",
+        55 -> "R1", 56 -> "P1", 57 -> "T2", 58 -> "R2",
+        59 -> "U2", 60 -> "U1")))
 
   // ========================================================================
   // Carrier / daughter boards (no FPGA)
@@ -862,55 +867,55 @@ object Board {
     devices = Seq(
       // CP2102N USB-UART — on J2 (J2_IO15/IO16)
       BoardDevice("CP2102N", mapping = Map(
-        "TXD" -> "J2:13", "RXD" -> "J2:14")),
+        "TXD" -> "J2:15", "RXD" -> "J2:16")),
       // RTL8211EG Ethernet PHY — full GMII 8-bit on J3
       BoardDevice("RTL8211EG", mapping = Map(
-        "MDC" -> "J3:14", "MDIO" -> "J3:13",
-        "RESET" -> "J3:24",
-        "GTX_CLK" -> "J3:27",              // FPGA 125 MHz TX clock output
-        "TX_CLK" -> "J3:20",               // PHY 25 MHz MII TX clock (unused in GMII)
-        "TX_EN" -> "J3:26", "TX_ER" -> "J3:15",
-        "TXD0" -> "J3:25", "TXD1" -> "J3:23", "TXD2" -> "J3:22", "TXD3" -> "J3:21",
-        "TXD4" -> "J3:19", "TXD5" -> "J3:18", "TXD6" -> "J3:17", "TXD7" -> "J3:16",
-        "RX_CLK" -> "J3:35", "RX_DV" -> "J3:40", "RX_ER" -> "J3:30",
-        "RXD0" -> "J3:39", "RXD1" -> "J3:38", "RXD2" -> "J3:37", "RXD3" -> "J3:36",
-        "RXD4" -> "J3:34", "RXD5" -> "J3:33", "RXD6" -> "J3:32", "RXD7" -> "J3:31")),
+        "MDC" -> "J3:16", "MDIO" -> "J3:15",
+        "RESET" -> "J3:26",
+        "GTX_CLK" -> "J3:29",              // FPGA 125 MHz TX clock output
+        "TX_CLK" -> "J3:22",               // PHY 25 MHz MII TX clock (unused in GMII)
+        "TX_EN" -> "J3:28", "TX_ER" -> "J3:17",
+        "TXD0" -> "J3:27", "TXD1" -> "J3:25", "TXD2" -> "J3:24", "TXD3" -> "J3:23",
+        "TXD4" -> "J3:21", "TXD5" -> "J3:20", "TXD6" -> "J3:19", "TXD7" -> "J3:18",
+        "RX_CLK" -> "J3:37", "RX_DV" -> "J3:42", "RX_ER" -> "J3:32",
+        "RXD0" -> "J3:41", "RXD1" -> "J3:40", "RXD2" -> "J3:39", "RXD3" -> "J3:38",
+        "RXD4" -> "J3:36", "RXD5" -> "J3:35", "RXD6" -> "J3:34", "RXD7" -> "J3:33")),
       // VGA DAC (5R-6G-5B resistor network) — on J3
       BoardDevice("VGA", mapping = Map(
-        "HS" -> "J3:42", "VS" -> "J3:41",
-        "R0" -> "J3:58", "R1" -> "J3:56", "R2" -> "J3:57", "R3" -> "J3:54", "R4" -> "J3:55",
-        "G0" -> "J3:53", "G1" -> "J3:52", "G2" -> "J3:50", "G3" -> "J3:51",
-        "G4" -> "J3:48", "G5" -> "J3:49",
-        "B0" -> "J3:47", "B1" -> "J3:45", "B2" -> "J3:46", "B3" -> "J3:43", "B4" -> "J3:44")),
+        "HS" -> "J3:44", "VS" -> "J3:43",
+        "R0" -> "J3:60", "R1" -> "J3:58", "R2" -> "J3:59", "R3" -> "J3:56", "R4" -> "J3:57",
+        "G0" -> "J3:55", "G1" -> "J3:54", "G2" -> "J3:52", "G3" -> "J3:53",
+        "G4" -> "J3:50", "G5" -> "J3:51",
+        "B0" -> "J3:49", "B1" -> "J3:47", "B2" -> "J3:48", "B3" -> "J3:45", "B4" -> "J3:46")),
       // Micro SD card — on J3
       BoardDevice("SD_CARD", mapping = Map(
-        "CLK" -> "J3:9", "CMD" -> "J3:10",
-        "DAT0" -> "J3:8", "DAT1" -> "J3:7",
-        "DAT2" -> "J3:12", "DAT3" -> "J3:11",
-        "CD" -> "J3:6")),
+        "CLK" -> "J3:11", "CMD" -> "J3:12",
+        "DAT0" -> "J3:10", "DAT1" -> "J3:9",
+        "DAT2" -> "J3:14", "DAT3" -> "J3:13",
+        "CD" -> "J3:8")),
       // 3-digit seven segment display — on J2 (J2_IO25-IO35)
       BoardDevice("SEVEN_SEG", mapping = Map(
-        "SEL0" -> "J2:33", "SEL1" -> "J2:25", "SEL2" -> "J2:31",
-        "A" -> "J2:29", "B" -> "J2:24",
-        "C" -> "J2:26", "D" -> "J2:30",
-        "E" -> "J2:32", "F" -> "J2:27",
-        "G" -> "J2:23", "DP" -> "J2:28")),
+        "SEL0" -> "J2:35", "SEL1" -> "J2:27", "SEL2" -> "J2:33",
+        "A" -> "J2:31", "B" -> "J2:26",
+        "C" -> "J2:28", "D" -> "J2:32",
+        "E" -> "J2:34", "F" -> "J2:29",
+        "G" -> "J2:25", "DP" -> "J2:30")),
       // LEDs (active low) — on J2 (J2_IO36-IO40)
       BoardDevice("LED", mapping = Map(
-        "led2" -> "J2:38", "led3" -> "J2:37",
-        "led4" -> "J2:36", "led5" -> "J2:35", "led6" -> "J2:34")),
+        "led2" -> "J2:40", "led3" -> "J2:39",
+        "led4" -> "J2:38", "led5" -> "J2:37", "led6" -> "J2:36")),
       // PMOD J10 connector — routed through J2 (conflicts with ETH TX path)
       BoardDevice("PMOD_J10", mapping = Map(
-        "pin1" -> "J2:15", "pin2" -> "J2:17",
-        "pin3" -> "J2:19", "pin4" -> "J2:21",
-        "pin7" -> "J2:16", "pin8" -> "J2:18",
-        "pin9" -> "J2:20", "pin10" -> "J2:22")),
+        "pin1" -> "J2:17", "pin2" -> "J2:19",
+        "pin3" -> "J2:21", "pin4" -> "J2:23",
+        "pin7" -> "J2:18", "pin8" -> "J2:20",
+        "pin9" -> "J2:22", "pin10" -> "J2:24")),
       // PMOD J11 connector — routed through J2 (conflicts with SD card)
       BoardDevice("PMOD_J11", mapping = Map(
-        "pin1" -> "J2:5", "pin2" -> "J2:7",
-        "pin3" -> "J2:9", "pin4" -> "J2:11",
-        "pin7" -> "J2:6", "pin8" -> "J2:8",
-        "pin9" -> "J2:10", "pin10" -> "J2:12"))))
+        "pin1" -> "J2:7", "pin2" -> "J2:9",
+        "pin3" -> "J2:11", "pin4" -> "J2:13",
+        "pin7" -> "J2:8", "pin8" -> "J2:10",
+        "pin9" -> "J2:12", "pin10" -> "J2:14"))))
 
   /**
    * Alchitry Io V2 daughter board.
@@ -974,49 +979,76 @@ object Board {
       // UART1 on J2 — does NOT conflict with Ethernet (which is on J3)
       // (V4 CP2102N was on J2:13/14 — V5 RP2040 UART0 uses J3:5/6, different connector!)
       // Firmware: pico-dirtyJtag with BOARD_PICO config, CDC_UART_INTF_COUNT=2
+      // NAMED FROM THE FPGA'S SIDE. "TXD" here means the FPGA's ser_txd, the
+      // convention recorded for the MAX1000's FT2232H below ("TXD/RXD were
+      // SWAPPED here before"). This entry used the RP2040's own directions, so
+      // the generated XDC crossed the console: ser_txd landed on B5, which is
+      // where the RP2040 TRANSMITS. Silence at every baud, indistinguishable
+      // from a design that never boots.
+      //
+      // docs/boards/qmtech-db-fpga-v5.md, verified by hardware loopback:
+      //   RP2040 GPIO0 (TX) -> J3_IO7 -> FPGA B5 = the FPGA's ser_rxd
+      //   RP2040 GPIO1 (RX) -> J3_IO8 -> FPGA A5 = the FPGA's ser_txd
+      //
+      // These ARE physical J3 pin numbers, since 2026-09-10. They used to be two
+      // lower: the U2/U4 connector maps were keyed 5..58 while the QMTECH
+      // invariant is that pins 1/2/5/6/61/62 are GND, 3/4 are 3V3, 63/64 are VIN
+      // and only 7..60 are I/O. Every device mapping carried the same -2, so the
+      // offsets cancelled and every board resolved correctly -- which is why
+      // they all worked, and why "J3:5" (ground) sat here looking plausible.
+      //
+      // Both halves were shifted together and the generated constraints for all
+      // 15 presets came out BYTE-IDENTICAL, which is the only safe way to do it.
+      // If you renumber again, prove that same property.
       BoardDevice("RP2040", mapping = Map(
-        "TXD" -> "J3:5", "RXD" -> "J3:6",
-        "TXD1" -> "J2:40", "RXD1" -> "J2:39")),
+        "TXD" -> "J3:8", "RXD" -> "J3:7",
+        "TXD1" -> "J2:42", "RXD1" -> "J2:41")),
       // RTL8211EG Ethernet PHY — full GMII 8-bit on J3 (same as V4)
       BoardDevice("RTL8211EG", mapping = Map(
-        "MDC" -> "J3:14", "MDIO" -> "J3:13",
-        "RESET" -> "J3:24",
-        "GTX_CLK" -> "J3:27",
-        "TX_CLK" -> "J3:20",
-        "TX_EN" -> "J3:26", "TX_ER" -> "J3:15",
-        "TXD0" -> "J3:25", "TXD1" -> "J3:23", "TXD2" -> "J3:22", "TXD3" -> "J3:21",
-        "TXD4" -> "J3:19", "TXD5" -> "J3:18", "TXD6" -> "J3:17", "TXD7" -> "J3:16",
-        "RX_CLK" -> "J3:35", "RX_DV" -> "J3:40", "RX_ER" -> "J3:30",
-        "RXD0" -> "J3:39", "RXD1" -> "J3:38", "RXD2" -> "J3:37", "RXD3" -> "J3:36",
-        "RXD4" -> "J3:34", "RXD5" -> "J3:33", "RXD6" -> "J3:32", "RXD7" -> "J3:31")),
+        "MDC" -> "J3:16", "MDIO" -> "J3:15",
+        "RESET" -> "J3:26",
+        "GTX_CLK" -> "J3:29",
+        "TX_CLK" -> "J3:22",
+        "TX_EN" -> "J3:28", "TX_ER" -> "J3:17",
+        "TXD0" -> "J3:27", "TXD1" -> "J3:25", "TXD2" -> "J3:24", "TXD3" -> "J3:23",
+        "TXD4" -> "J3:21", "TXD5" -> "J3:20", "TXD6" -> "J3:19", "TXD7" -> "J3:18",
+        "RX_CLK" -> "J3:37", "RX_DV" -> "J3:42", "RX_ER" -> "J3:32",
+        "RXD0" -> "J3:41", "RXD1" -> "J3:40", "RXD2" -> "J3:39", "RXD3" -> "J3:38",
+        "RXD4" -> "J3:36", "RXD5" -> "J3:35", "RXD6" -> "J3:34", "RXD7" -> "J3:33")),
       // VGA DAC (5R-6G-5B resistor network) — on J3 (same as V4)
       BoardDevice("VGA", mapping = Map(
-        "HS" -> "J3:42", "VS" -> "J3:41",
-        "R0" -> "J3:58", "R1" -> "J3:56", "R2" -> "J3:57", "R3" -> "J3:54", "R4" -> "J3:55",
-        "G0" -> "J3:53", "G1" -> "J3:52", "G2" -> "J3:50", "G3" -> "J3:51",
-        "G4" -> "J3:48", "G5" -> "J3:49",
-        "B0" -> "J3:47", "B1" -> "J3:45", "B2" -> "J3:46", "B3" -> "J3:43", "B4" -> "J3:44")),
+        "HS" -> "J3:44", "VS" -> "J3:43",
+        "R0" -> "J3:60", "R1" -> "J3:58", "R2" -> "J3:59", "R3" -> "J3:56", "R4" -> "J3:57",
+        "G0" -> "J3:55", "G1" -> "J3:54", "G2" -> "J3:52", "G3" -> "J3:53",
+        "G4" -> "J3:50", "G5" -> "J3:51",
+        "B0" -> "J3:49", "B1" -> "J3:47", "B2" -> "J3:48", "B3" -> "J3:45", "B4" -> "J3:46")),
       // Micro SD card — on J3 (same as V4)
       BoardDevice("SD_CARD", mapping = Map(
-        "CLK" -> "J3:9", "CMD" -> "J3:10",
-        "DAT0" -> "J3:8", "DAT1" -> "J3:7",
-        "DAT2" -> "J3:12", "DAT3" -> "J3:11",
-        "CD" -> "J3:6")),
+        "CLK" -> "J3:11", "CMD" -> "J3:12",
+        "DAT0" -> "J3:10", "DAT1" -> "J3:9",
+        "DAT2" -> "J3:14", "DAT3" -> "J3:13")),
+      // NO CARD-DETECT ON V5 -- sd_cd is NOT CONNECTED on this daughter
+      // board. This block was copied from V4, where CD is on J3:6 (physical
+      // pin 8). V5 replaced the CP2102N on J2 with the RP2040 on J3 pins 7/8,
+      // so that pin is now the console TX. The copied entry put sd_cd and
+      // ser_txd on the SAME FPGA pin (A5) in the generated constraints --
+      // invisible while this flow read a tracked XDC carrying no SD pins.
+      // Converting it to generated constraints (item 149) is what surfaced it.
       // No 7-segment display on V5 (removed, was on V4)
       // No FPGA-accessible LEDs on V5 (only RP2040 LED on GPIO25)
       // No FPGA-accessible switches on V5 (only RP2040 BOOTSEL + RUN buttons)
       // PMOD J10 connector — routed through J2
       BoardDevice("PMOD_J10", mapping = Map(
-        "pin1" -> "J2:15", "pin2" -> "J2:17",
-        "pin3" -> "J2:19", "pin4" -> "J2:21",
-        "pin7" -> "J2:16", "pin8" -> "J2:18",
-        "pin9" -> "J2:20", "pin10" -> "J2:22")),
+        "pin1" -> "J2:17", "pin2" -> "J2:19",
+        "pin3" -> "J2:21", "pin4" -> "J2:23",
+        "pin7" -> "J2:18", "pin8" -> "J2:20",
+        "pin9" -> "J2:22", "pin10" -> "J2:24")),
       // PMOD J11 connector — routed through J2 (conflicts with SD card on J3 via mating)
       BoardDevice("PMOD_J11", mapping = Map(
-        "pin1" -> "J2:5", "pin2" -> "J2:7",
-        "pin3" -> "J2:9", "pin4" -> "J2:11",
-        "pin7" -> "J2:6", "pin8" -> "J2:8",
-        "pin9" -> "J2:10", "pin10" -> "J2:12"))))
+        "pin1" -> "J2:7", "pin2" -> "J2:9",
+        "pin3" -> "J2:11", "pin4" -> "J2:13",
+        "pin7" -> "J2:8", "pin8" -> "J2:10",
+        "pin9" -> "J2:12", "pin10" -> "J2:14"))))
 
   /**
    * J11 UART adapter — second UART on the Wukong J11 header.

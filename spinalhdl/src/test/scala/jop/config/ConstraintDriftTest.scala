@@ -141,36 +141,29 @@ class ConstraintDriftTest extends AnyFunSuite {
       isQsf = false, knownGaps = Map.empty)
   }
 
-  test("xc7a100tDbSerial XDC — the generator is WRONG for this board") {
-    // ADDED 2026-09-10 (item 149). This does not assert agreement. It records a
-    // DISAGREEMENT, because trying to convert this flow is how it was found and
-    // the gaps must not move unnoticed in either direction.
+  test("xc7a100tDbSerial XDC matches the hand-written constraints") {
+    // GAPS CLOSED 2026-09-10, same day they were recorded. This test was added
+    // as a record of DISAGREEMENT: generating for this board crossed the console
+    // TX/RX and omitted resetn, so converting the +0.117 ns flagship would have
+    // produced a board that looks dead. Two defects in Board.scala, both against
+    // conventions documented in that same file:
     //
-    // The DB V5 `ddr3-build` is the +0.117 ns flagship. Its tracked XDC is
-    // hardware-proven (DoAll 66/66). The generated file:
+    //   * the RP2040 UART was named from the RP2040's side. "TXD" in a board
+    //     mapping means the FPGA's ser_txd -- the rule recorded for the
+    //     MAX1000's FT2232H, "TXD/RXD were SWAPPED here before". Same bug,
+    //     different board, three weeks later.
+    //   * the reset key was "sw2". PinResolver and JopTop look for "reset",
+    //     so nothing emitted P4 and no resetn constraint was generated.
     //
-    //   * CROSSES ser_txd and ser_rxd. The tracked file states the wiring and
-    //     the reason: "RP2040 GPIO0 (TX) -> J3 pin 7 -> FPGA B5 (FPGA rxd)".
-    //     Crossing them gives silence at every baud, which is indistinguishable
-    //     from a design that never boots -- the failure the Wukong's own
-    //     constraint file warns about in a comment.
-    //   * OMITS resetn entirely. The generator emits it for the Wukong, so it
-    //     can; the DB V5 board model does not declare the core board's SW2.
+    // The gap entries did their job: this test failed with "a known gap is GONE
+    // -- ser_txd, ser_rxd, resetn" the moment the fix landed, which is what
+    // forced the conversion to be reconsidered rather than forgotten.
     //
-    // Root cause is unresolved and NOT guessed at: Board.scala maps this UART
-    // as "TXD" -> "J3:5", "RXD" -> "J3:6", while the tracked XDC says J3 pins
-    // 7 and 8. Both resolve to {A5, B5}, oppositely assigned. Two sources
-    // disagree about which connector pins carry the console, and changing pin
-    // assignments on inference is how a board is bricked. Item 151.
-    //
-    // WHEN FIXED this test fails with "a known gap is GONE" -- delete the gap
-    // entries, and only then convert the flow.
+    // Generated and tracked are now identical (16 constraint lines each), and
+    // the RTL is byte-identical either way -- the fix moves pins, not logic.
     check("xc7a100tDbSerial", XdcGenerator.generate(JopConfig.xc7a100tDbSerial),
       "fpga/qmtech-xc7a100t-dbfpga-v5/vivado/constraints/xc7a100t_dbv5_base.xdc",
-      isQsf = false, knownGaps = Map(
-        "ser_txd" -> (Some("B5"), "A5"),
-        "ser_rxd" -> (Some("A5"), "B5"),
-        "resetn"  -> (None,       "P4")))
+      isQsf = false, knownGaps = Map.empty)
   }
 
   // --------------------------------------------------------------- Quartus

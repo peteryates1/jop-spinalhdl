@@ -173,12 +173,21 @@ ddr3-create-ip:
 # retiming through Explore/ExtraTimingOpt/AggressiveExplore is what closes
 # timing here (WNS +0.117 ns). See vivado_build_nonproject.tcl's header for why
 # they stayed parameters rather than being normalised away.
-ddr3-build: ddr3-generate
+# XDC GENERATED, NOT TRACKED (2026-09-10, items 149/151). Until today the
+# generator produced WRONG constraints for this board -- console TX/RX crossed
+# and no resetn -- so this flow read the tracked file. Both defects were in
+# Board.scala (a UART named from the RP2040's side, and a reset key called
+# "sw2" instead of "reset"); generated and tracked are now identical, 16
+# constraint lines each, and ConstraintDriftTest asserts they stay that way.
+ddr3-xdc: ddr3-generate
+	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(CFG) --write build/$(CFG_NAME)/vivado/xc7a100t_dbv5_base.xdc"
+
+ddr3-build: ddr3-xdc
 	$(VIVADO_ENV) && JOP_TOP=JopDdr3Top JOP_PART=$(PART) \
 	  JOP_BUILD_DIR=$(CFG_DIR)/vivado/build \
 	  JOP_RTL=$(CFG_DIR)/rtl/JopDdr3Top.v \
 	  JOP_IP="$(IP_DIR)/clk_wiz_0/clk_wiz_0.xci $(IP_DIR)/mig_7series_0/mig_7series_0.xci" \
-	  JOP_XDC=$(CONSTRAINTS)/xc7a100t_dbv5_base.xdc \
+	  JOP_XDC=$(CFG_DIR)/vivado/xc7a100t_dbv5_base.xdc \
 	  JOP_SYNTH_DIRECTIVE=PerformanceOptimized JOP_SYNTH_RETIMING=yes \
 	  JOP_OPT_DIRECTIVE=Explore JOP_PLACE_DIRECTIVE=ExtraTimingOpt \
 	  JOP_PHYS_OPT_DIRECTIVE=AggressiveExplore JOP_ROUTE_DIRECTIVE=AggressiveExplore \

@@ -65,10 +65,19 @@ object DeviceType {
     val addrBits = 2
     val interruptCount = 1
     override val registerNames = Seq((0, "STATUS"), (1, "DATA"), (2, "CLK_DIV"))
-    override def verilogPins(p: Map[String, Any]) = Map(
-      "sd_spi_clk" -> "CLK", "sd_spi_mosi" -> "CMD",
-      "sd_spi_miso" -> "DAT0", "sd_spi_cs" -> "DAT3",
-      "sd_spi_cd" -> "CD")
+    /** `noCardDetect` for a board that does not route the socket's detect
+      * switch to the FPGA -- the DB_FPGA V5 is one: its SD block was copied
+      * from V4, but V5 moved the console onto the pin V4 used for CD. Leaving
+      * the entry in put sd_spi_cd and ser_txd on the same FPGA pin. Dropping
+      * only the CONSTRAINT would leave the port declared and unconstrained,
+      * i.e. floating, so `topPins` drops the port too. Same shape as `txOnly`. */
+    override def verilogPins(p: Map[String, Any]) = {
+      val base = Map(
+        "sd_spi_clk" -> "CLK", "sd_spi_mosi" -> "CMD",
+        "sd_spi_miso" -> "DAT0", "sd_spi_cs" -> "DAT3")
+      if (p.getOrElse("noCardDetect", false).asInstanceOf[Boolean]) base
+      else base + ("sd_spi_cd" -> "CD")
+    }
     def create(cfg: JopCoreConfig, p: Map[String, Any], ctx: DeviceContext) =
       jop.io.SdSpi(clkDivInit = p.getOrElse("clkDivInit", 199).asInstanceOf[Int])
   }
@@ -84,11 +93,13 @@ object DeviceType {
       * is why it is an instance parameter and not baked in here. */
     override def verilogPins(p: Map[String, Any]) = {
       val ix = if (p.getOrElse("tristateIndexed", false).asInstanceOf[Boolean]) "[0]" else ""
-      Map(
+      val base = Map(
         "sd_clk" -> "CLK", s"sd_cmd$ix" -> "CMD",
         s"sd_dat_0$ix" -> "DAT0", s"sd_dat_1$ix" -> "DAT1",
-        s"sd_dat_2$ix" -> "DAT2", s"sd_dat_3$ix" -> "DAT3",
-        "sd_cd" -> "CD")
+        s"sd_dat_2$ix" -> "DAT2", s"sd_dat_3$ix" -> "DAT3")
+      // See the SdSpi note: `noCardDetect` for a board with no detect line.
+      if (p.getOrElse("noCardDetect", false).asInstanceOf[Boolean]) base
+      else base + ("sd_cd" -> "CD")
     }
     def create(cfg: JopCoreConfig, p: Map[String, Any], ctx: DeviceContext) =
       jop.io.SdNative(clkDivInit = p.getOrElse("clkDivInit", 99).asInstanceOf[Int])

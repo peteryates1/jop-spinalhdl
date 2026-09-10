@@ -1744,7 +1744,11 @@ object JopConfig {
         "eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true, "phyDataWidth" -> 8),
           devicePart = Some("RTL8211EG")),
         "vgaText" -> DeviceInstance(DeviceType.VgaText, devicePart = Some("VGA")),
-        "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))),
+        "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"),
+          // DB_FPGA V5 does not route the SD socket's card-detect switch:
+          // V5 moved the console onto the pin V4 used for CD, so the port is
+          // dropped and SdNative sees "card present". Item 151.
+          params = Map("noCardDetect" -> true))),
       coreConfig = JopCoreConfig(useDspMul = true, bytecodes = Map("*" -> "hw")))))
 
   /** XC7A100T + DB_FPGA V5 — DDR3 SMP */

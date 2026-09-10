@@ -310,9 +310,9 @@ object SdNativeTopWiring extends DeviceTopWiring {
     TopPin("sd_dat_0", TopPinType.TriStateBool),
     TopPin("sd_dat_1", TopPinType.TriStateBool),
     TopPin("sd_dat_2", TopPinType.TriStateBool),
-    TopPin("sd_dat_3", TopPinType.TriStateBool),
-    TopPin("sd_cd", TopPinType.In())
-  )
+    TopPin("sd_dat_3", TopPinType.TriStateBool)
+  ) ++ (if (inst.params.getOrElse("noCardDetect", false).asInstanceOf[Boolean]) Nil
+        else Seq(TopPin("sd_cd", TopPinType.In())))
 
   def wireDevice(
     instanceName: String,
@@ -348,7 +348,12 @@ object SdNativeTopWiring extends DeviceTopWiring {
                  ioPins("sd_dat_1").asInstanceOf[TriState[Bool]].read ##
                  ioPins("sd_dat_0").asInstanceOf[TriState[Bool]].read
 
-    cluster.devicePin[Bool](instanceName, "sdCd") := ioPins("sd_cd").asInstanceOf[Bool]
+    // CARD DETECT IS ACTIVE LOW: SdNative computes `!BufferCC(io.sdCd, True)`,
+    // so driving False means "card present". A board with no detect line cannot
+    // report absence, so present is the only useful assumption -- and it must be
+    // DRIVEN, not left floating.
+    cluster.devicePin[Bool](instanceName, "sdCd") :=
+      ioPins.get("sd_cd").map(_.asInstanceOf[Bool]).getOrElse(False)
   }
 }
 
@@ -360,8 +365,8 @@ object SdSpiTopWiring extends DeviceTopWiring {
     TopPin("sd_spi_mosi", TopPinType.Out()),
     TopPin("sd_spi_miso", TopPinType.In()),
     TopPin("sd_spi_cs", TopPinType.Out()),
-    TopPin("sd_spi_cd", TopPinType.In())
-  )
+  ) ++ (if (inst.params.getOrElse("noCardDetect", false).asInstanceOf[Boolean]) Nil
+        else Seq(TopPin("sd_spi_cd", TopPinType.In())))
 
   def wireDevice(
     instanceName: String,
@@ -376,7 +381,9 @@ object SdSpiTopWiring extends DeviceTopWiring {
     ioPins("sd_spi_mosi").asInstanceOf[Bool] := cluster.devicePin[Bool](instanceName, "mosi")
     ioPins("sd_spi_cs").asInstanceOf[Bool]   := cluster.devicePin[Bool](instanceName, "cs")
     cluster.devicePin[Bool](instanceName, "miso") := ioPins("sd_spi_miso").asInstanceOf[Bool]
-    cluster.devicePin[Bool](instanceName, "cd")   := ioPins("sd_spi_cd").asInstanceOf[Bool]
+    // Active low, as SdNative above: absent detect line => drive present.
+    cluster.devicePin[Bool](instanceName, "cd")   :=
+      ioPins.get("sd_spi_cd").map(_.asInstanceOf[Bool]).getOrElse(False)
   }
 }
 
