@@ -130,6 +130,7 @@ APP_JOP    = $(REPO_ROOT)/build/$(1)/java/apps/Smallest/HelloWorld.jop
 # `generate` stand, which is what the re-entering targets always meant.
 bram-generate: $(UCODE_SCALA) $(call APP_JOP,$(BRAM_CFG))
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(BRAM_CFG) buildtree"
+	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(BRAM_CFG) --write build/$(BRAM_CFG)/vivado/wukong_jop_bram.xdc"
 
 create-ip:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_clk_wiz.tcl
@@ -139,7 +140,7 @@ create-project: bram-generate
 	  JOP_BUILD_DIR=$(BRAM_CFG_DIR)/vivado/build \
 	  JOP_RTL=$(BRAM_CFG_DIR)/rtl/JopBramWukongTop.v \
 	  JOP_BIN_GLOB='$(BRAM_CFG_DIR)/rtl/JopBramWukongTop*.bin' \
-	  JOP_XDC=$(XDC)/wukong_jop_bram.xdc \
+	  JOP_XDC=$(BRAM_CFG_DIR)/vivado/wukong_jop_bram.xdc \
 	  JOP_IP=$(IP)/bram_clk/bram_clk.xci \
 	  JOP_GEN_HINT="run: make bram-generate" \
 	  $(VIVADO) -mode batch -source $(CREATE_TCL)

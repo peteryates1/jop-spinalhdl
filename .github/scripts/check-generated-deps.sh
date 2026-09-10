@@ -123,22 +123,68 @@ if [ -n "$undeclared" ]; then
   echo "       declared_unguarded here and record why in item 149."
   fail=1
 else
-  refs=0
+  # TWO CATEGORIES, BOTH EXPLICIT. A file that is hand-written ON PURPOSE is not
+  # a gap; a file that ought to be generated and is not, is. Item 57 closed
+  # claiming "every board build now reads generated constraints" partly because
+  # those two were never separated -- and this guard repeated the mistake one
+  # level down: it matched only $(CONSTRAINTS)/ and $(XDC)/, so the three
+  # $(SHARED_XDC)/ references to the deliberately hand-written set in
+  # fpga/constraints/ were excluded BY A REGEX rather than by a decision.
+  #
+  # BY DESIGN: nothing in a JopConfig knows these facts.
+  by_design="
+rtl8211eg_gmii.xdc|PHY clock (create_clock e_rxc) and false paths -- a property of the RTL8211EG and the board, not of any JopConfig
+sdram_sdr.xdc|SDR SDRAM interface timing, shared across boards
+wukong_ddr3.xdc|set_clock_groups on e_rxc, a clock rtl8211eg_gmii.xdc creates; reading it before that file gives 'No clocks matched'
+flash.xdc|SPI configuration-flash properties, not pin assignment
+uart_echo.xdc|stand-alone bring-up exerciser, not a JOP build
+uart_loopback.xdc|stand-alone bring-up exerciser, not a JOP build
+uart_txgen.xdc|stand-alone bring-up exerciser, not a JOP build
+"
+  # GAP: should be generated. Each line is remaining work for item 149.
+  gap="
+wukong_peripherals.xdc|no preset generates these peripheral pins yet
+wukong_dual.xdc|XdcGeneratorMain refuses multi-system configs -- 'Use .systems for multi-system configs (have 2 systems)'
+wukong_sdram.xdc|generator emits 9 pin pairs FEWER than the tracked file (measured 2026-09-10)
+alchitry_au_v2.xdc|tracked carries legacy usb_rx/usb_tx aliases on the same pins as ser_rxd/ser_txd; generated adds the clock and bitstream settings. Convertible, but unvalidated on hardware
+"
+
+  declared="$by_design$gap"
+  undeclared=""; seen=""; n_design=0; n_gap=0
   for b in $unguarded; do
-    # STRIP COMMENTS FIRST. Without this the count matched a COMMENT explaining
-    # a conversion and went UP by one the moment a reference was removed --
-    # the same defect as check-sim-xstate.sh's exemption matching prose. A check
-    # that reads comments measures the documentation, not the build.
-    # COUNT REFERENCES, NOT LINES. `grep -c` counts matching LINES, and a
-    # JOP_XDC= line often names two or three files -- so converting one of them
-    # left the count unchanged and item 149's progress was invisible in the one
-    # number reporting it. Count the tracked-path tokens themselves.
-    n=$(sed -e 's:#.*::' "fpga/$b/Makefile" 2>/dev/null \
-        | command grep -oE '\$\(CONSTRAINTS\)/[A-Za-z0-9_]+\.(xdc|lpf)|\$\(XDC\)/[A-Za-z0-9_]+\.(xdc|lpf)' \
-        | wc -l)
-    refs=$(( refs + n ))
+    for f in $(sed -e 's:#.*::' "fpga/$b/Makefile" 2>/dev/null \
+               | command grep -oE '\$\((CONSTRAINTS|XDC|SHARED_XDC)\)/[A-Za-z0-9_]+\.(xdc|lpf)' \
+               | sed 's:.*/::'); do
+      if printf '%s' "$by_design" | command grep -q "^$f|"; then n_design=$(( n_design + 1 ))
+      elif printf '%s' "$gap" | command grep -q "^$f|"; then n_gap=$(( n_gap + 1 ))
+      else undeclared="$undeclared        fpga/$b/Makefile -> $f"$'\n'; fi
+      case " $seen " in *" $f "*) ;; *) seen="$seen $f" ;; esac
+    done
   done
-  echo "  constraint check reaches $(printf '%s\n' "$boards" | wc -l) of $(printf '%s\n' "$all_boards" | wc -l) boards; $(printf '%s\n' "$unguarded" | wc -l) declared outside it, $refs tracked-constraint reference(s) -- item 149"
+
+  if [ -n "$undeclared" ]; then
+    echo "  FAIL tracked constraint file(s) read by a build and NOT declared:"
+    printf '%s' "$undeclared"
+    echo "       Generate it, or add it to by_design (with why it CANNOT be"
+    echo "       generated) or to gap (with what blocks it). Item 149."
+    fail=1
+  fi
+
+  stale=""
+  while IFS='|' read -r f _; do
+    [ -z "$f" ] && continue
+    case " $seen " in *" $f "*) ;; *) stale="$stale $f" ;; esac
+  done <<EOF
+$declared
+EOF
+  if [ -n "$stale" ]; then
+    echo "  FAIL declared constraint(s) no build reads any more:$stale"
+    echo "       Converted? Delete the declaration, so the list stays the gap."
+    fail=1
+  fi
+
+  echo "  constraint check reaches $(printf '%s\n' "$boards" | wc -l) of $(printf '%s\n' "$all_boards" | wc -l) boards; tracked constraints: $n_design by design, $n_gap gap -- item 149"
+
 fi
 
 # ---------------------------------------------------------------------------

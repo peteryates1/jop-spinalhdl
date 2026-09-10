@@ -1925,11 +1925,26 @@ develop on host JDK/sim -> analyser -> .jop + JopConfig for this target
 > contradicted the claim sat outside the guard's own board list. *A guard that
 > enumerates its own subjects decides what it is allowed to find.*
 >
-> The guard now prints the gap and fails if an undeclared board appears. It
-> read `15 tracked-constraint references` when this note was written and reads
-> **13** now — the DB V5 flagship and the Wukong SMP path were converted on
-> 2026-09-10 and are hardware-proven (`DoAll` 3/3 and 68/68). The rest is
-> [item 149](#item-149).
+> **The claim is now CHECKABLE, which is the actual fix.** Every tracked
+> constraint a build reads must be declared in `check-generated-deps.sh`, in one
+> of two categories, and an undeclared one fails the build:
+>
+> | | count | meaning |
+> |---|---|---|
+> | **by design** | 9 | nothing in a `JopConfig` knows these facts — PHY clock and false paths, `set_clock_groups` on an IP-created clock, SPI flash properties, stand-alone bring-up exercisers |
+> | **gap** | 6 | should be generated; each names what blocks it |
+>
+> Separating those two is the point. Item 57 could claim "every board build"
+> only because hand-written-on-purpose and not-yet-generated were never
+> distinguished — and **this guard repeated the mistake one level down**: it
+> matched `$(CONSTRAINTS)/` and `$(XDC)/` but not `$(SHARED_XDC)/`, so the three
+> references to the deliberately hand-written set in `fpga/constraints/` were
+> excluded *by a regex rather than by a decision*. They are declared now, which
+> is why the total went 13 → 15 while the work shrank.
+>
+> Converted and hardware-proven 2026-09-10: the DB V5 flagship (`DoAll` 3/3),
+> the Wukong SMP DDR3 path, and `wukong_jop_bram` (generated == tracked,
+> diff=0). The six remaining gaps are [item 149](#item-149).
 >
 > **This item stays DONE, and the DONE is honest for its TITLE:** the generators
 > existed and nothing used them; things use them now. What was false is the
@@ -2425,9 +2440,22 @@ and shares none of it.
 > difference; XDC order is load-bearing here (the Makefile's own GMII note says
 > so). The unsorted diff is the one that holds.
 
-**Open:** the Alchitry flows, `wukong_jop_bram`, `wukong_dual`, `wukong_sdram`
-— each needs the same generated-vs-tracked diff before any switch, and a
-rebuild with a timing check after.
+**Open — six, each with a named blocker** (declared in
+`check-generated-deps.sh`, so the list cannot rot):
+
+| file | blocker |
+|---|---|
+| `wukong_peripherals.xdc` ×2 | no preset generates these peripheral pins yet |
+| `wukong_dual.xdc` | `XdcGeneratorMain` refuses multi-system configs — *"Use .systems for multi-system configs (have 2 systems)"* |
+| `wukong_sdram.xdc` | generator emits **9 pin pairs fewer** than the tracked file |
+| `alchitry_au_v2.xdc` ×2 | tracked carries legacy `usb_rx`/`usb_tx` aliases on the same pins as `ser_rxd`/`ser_txd`; generated adds the clock and bitstream settings. Convertible, but unvalidated on hardware |
+
+`wukong_jop_bram.xdc` was the fourth candidate and converted cleanly (diff=0).
+
+**Not open, and never will be:** the nine by-design files. PHY timing,
+clock-group exclusions on IP-created clocks, SPI flash configuration and the
+stand-alone bring-up exercisers are hand-written because no `JopConfig` knows
+those facts. Counting them as debt is what made the gap look unbounded.
 
 <a id="item-150"></a>
 
