@@ -74,8 +74,14 @@ while IFS= read -r f; do
 done < <(git ls-files -- 'java/Makefile' 'java/*/Makefile' 'java/*.mk')
 
 # --- 1c. the tools jars are not built into the source tree -------------------
-# jopizer.jar embeds Const.class -- METHOD_MAX_SIZE is derived from the
-# preset's method cache -- so it is a PER-CONFIGURATION artefact. Built into a
+# HISTORICAL, AND NO LONGER THE REASON (corrected 2026-09-10). jopizer.jar USED
+# TO embed Const.class -- METHOD_MAX_SIZE is derived from the preset's method
+# cache -- which made it a PER-CONFIGURATION artefact. Item 144 removed that:
+# the jar now takes its configuration at runtime via -Djop.linker.config and
+# `unzip -l` finds no Const.class in it. The rule below still holds for the
+# reason in the next paragraph; this paragraph describes why it was FIRST
+# needed. Kept because the failure it records is instructive, marked because a
+# guard whose stated reason is false gets quoted as evidence for the opposite. Built into a
 # single java/tools/dist it went stale exactly the way the shared Const.java
 # did: make compares the jar against the CURRENT config's Const.java, which is
 # older than the jar the PREVIOUS config left behind, so switching preset

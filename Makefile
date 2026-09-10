@@ -123,6 +123,7 @@ cold-check:
 check-build:
 	@.github/scripts/check-generated-deps.sh
 	@.github/scripts/check-sim-xstate.sh
+	@.github/scripts/check-guard-discipline.sh
 	@.github/scripts/check-console-baud.sh
 	@.github/scripts/check-generator-fallbacks.sh
 	@.github/scripts/check-docs-structure.sh

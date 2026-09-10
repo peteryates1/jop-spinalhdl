@@ -2,6 +2,13 @@
 #
 # DISCIPLINE: docs/testing-discipline.md — "assert the invariant, not the tally".
 # PROVED RED 2026-09-04 by a "1. 1. **[#140]" renumbering — the entry COUNT could not catch it, because 1 is a legitimate value.
+# PROVED RED 2026-09-10 (check 6) by closing item 150 with no `Guard:` line:
+#   FAIL closed item(s) that name neither a guard nor its absence: 150
+# Green again with either a `Guard:` line or `**No guard.**`. Note two other
+# checks fired first on the way there -- closing an item leaves it in the
+# priority list, and deleting that entry breaks 1..N contiguity -- so the red
+# proof had to close the LAST item to isolate check 6. A guard set that
+# interlocks is good; it also means proving one check red takes care.
 # If you change this guard, re-prove it: a guard that cannot fail is worse
 # than none, because it gets quoted as evidence.
 #
@@ -191,3 +198,63 @@ if [ -d docs/status ]; then
   [ "$jfail" -ne 0 ] && exit 1
   echo "  journals: $(ls docs/status/item-*.md 2>/dev/null | wc -l) split out, all linked, all present"
 fi
+
+# ---------------------------------------------------------------------------
+# 6. A CLOSED ITEM MUST NAME WHAT KEEPS IT TRUE.
+#
+# On 2026-09-10 six agents audited all 59 closed items. Eleven carried claims
+# that had become false, and the pattern was always the same: a class-level
+# statement -- "every sim now does X", "all boards Y", "Z is now the default" --
+# that was true when written, with nothing keeping it true.
+#
+#   item 57  "every board build now reads generated constraints"
+#            -> nine Vivado targets read tracked .xdc, two of those lines
+#               predating the item by five days. FALSE WHEN WRITTEN.
+#   item 111 "every guard carries DISCIPLINE: and PROVED RED"
+#            -> four of ten carried neither, all written after it closed.
+#   item 146 "--x-initial 0 is now the default via JopSimDefaults"
+#            -> false for 64 of ~100 sims; three earlier items had each fixed
+#               ONE sim and the summary read as a class closure.
+#
+# Closing every instance is not closing the class. Only a guard closes a class.
+#
+# So: a closed item numbered >= 149 must either name a guard -- any path under
+# .github/scripts/, spinalhdl/src/test/ or java/apps/ -- on a `Guard:` line, or
+# say `**No guard.**` outright. Saying it has none is a fine answer; not
+# saying is what produced the eleven.
+#
+# THE THRESHOLD IS DELIBERATE. Retrofitting 59 closed items would mean writing
+# 59 lines in one sitting, which is how a practice becomes a formality. 149 is
+# where the rule started.
+#
+# BOTH HEADING FORMS, for the reason in check 1 -- and note the audit's own
+# screen missed the eight `### ~~Item N~~` items on the first pass, which is
+# the same blind spot that produced a duplicate item 140.
+# ---------------------------------------------------------------------------
+FIRST_GUARDED_ITEM=149
+ungoverned=""
+while IFS= read -r n; do
+  [ "$n" -ge "$FIRST_GUARDED_ITEM" ] 2>/dev/null || continue
+  body=$(awk -v want="$n" '
+    /^### (~~Item [0-9]+[a-z]?~~|Item [0-9]+[a-z]? )/ {
+      if (seen) exit
+      hn = $0; gsub(/[^0-9]/, " ", hn); split(hn, a, " ")
+      for (i in a) if (a[i] == want) { seen = 1 }
+      if (seen) { print; next }
+    }
+    seen { print }
+  ' "$f")
+  printf '%s' "$body" | grep -qE '(^|[^A-Za-z])Guard:|\*\*No guard\.\*\*' && continue
+  ungoverned="$ungoverned $n"
+done < <(grep -oE '^### (~~Item [0-9]+~~|Item [0-9]+ ).*~~.*(DONE|FIXED|CLOSED|COMPLETE|RESOLVED|WITHDRAWN|MERGED)' "$f" \
+         | grep -oE 'Item [0-9]+' | grep -oE '[0-9]+' | sort -un)
+
+if [ -n "$ungoverned" ]; then
+  echo "  FAIL closed item(s) that name neither a guard nor its absence:$ungoverned"
+  echo "       A class-level claim with nothing asserting it decays silently --"
+  echo "       eleven did, found 2026-09-10. Add a line to each item:"
+  echo "           Guard: .github/scripts/check-something.sh"
+  echo "       or, if there genuinely is none, say so: **No guard.**"
+  exit 1
+fi
+echo "  closed items from $FIRST_GUARDED_ITEM up all name a guard or its absence"

@@ -93,6 +93,45 @@ fi
 echo "  all Quartus flows regenerate their constraints"
 
 # ---------------------------------------------------------------------------
+# THE GAP IS DECLARED, NOT SILENT.
+#
+# The check above enumerates boards by `include ../quartus.mk`, so it reaches
+# SEVEN of twelve. Item 57 closed on 2026-08-31 claiming "every board build now
+# reads generated constraints" and "the tracked .xdc/.qsf files that remain are
+# no longer INPUTS" -- but the Vivado flows pass tracked .xdc on the command
+# line, and two of those lines predate the item by five days. The claim was
+# already false when it was written, and nothing could say so, because the
+# guard's board list quietly excluded every flow that would have contradicted
+# it. A guard that enumerates its own subjects decides what it is allowed to
+# find.
+#
+# This does not close the gap -- converting the Vivado flows is item 149 -- it
+# makes the gap COUNTABLE and stops it growing unnoticed. A new board outside
+# the Quartus flow must be added here, which is the moment to ask whether it
+# generates its constraints.
+# ---------------------------------------------------------------------------
+declared_unguarded="alchitry-au alchitry-au-ddr3-test colorlight-i5 qmtech-xc7a100t-dbfpga-v5 qmtech-xc7a100t-wukong"
+
+all_boards=$(ls fpga/*/Makefile 2>/dev/null | sed 's|fpga/||;s|/Makefile||' | sort)
+unguarded=$(comm -23 <(printf '%s\n' "$all_boards") <(printf '%s\n' "$boards" | sort))
+undeclared=$(comm -23 <(printf '%s\n' "$unguarded") <(printf '%s\n' $declared_unguarded | sort))
+
+if [ -n "$undeclared" ]; then
+  echo "  FAIL board(s) outside the constraint check and not declared:"
+  printf '%s\n' "$undeclared" | sed 's/^/        /'
+  echo "       Either fold the board onto quartus.mk, or add it to"
+  echo "       declared_unguarded here and record why in item 149."
+  fail=1
+else
+  refs=0
+  for b in $unguarded; do
+    n=$(command grep -cE 'JOP_XDC=|JOP_LPF=|\$\(CONSTRAINTS\)/|\$\(XDC\)/' "fpga/$b/Makefile" 2>/dev/null || true)
+    refs=$(( refs + n ))
+  done
+  echo "  constraint check reaches $(printf '%s\n' "$boards" | wc -l) of $(printf '%s\n' "$all_boards" | wc -l) boards; $(printf '%s\n' "$unguarded" | wc -l) declared outside it, $refs tracked-constraint reference(s) -- item 149"
+fi
+
+# ---------------------------------------------------------------------------
 # No board may shadow a rule from a shared include.
 #
 # fpga/qmtech-xc7a100t-wukong/Makefile redefined `generate:`, which

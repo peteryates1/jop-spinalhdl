@@ -102,6 +102,8 @@ nothing depends on ranks below a measurement that could mislead someone.
 62. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
 63. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
 64. **[#148](#item-148)** — The A-E115FB is powered off after its Pico blaster failed, so DDR2 has NO hardware coverage; it also blocks item 100's confound experiment, which needs that blaster
+65. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
+66. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
 
 ## 2. All items — summary
 
@@ -147,6 +149,8 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[146](#item-146)** — ~~64 simulations built a Verilator model without the X-state defence, and one of them flaked CI~~ — **FIXED**
 - **[147](#item-147)** — ~~The nightly GC sim ends when the heap exhausts, so making the program SMALLER made it slower until it blew CI's 90-minute wall~~ — **FIXED**
 - **[148](#item-148)** — The A-E115FB's Pico blaster failed and the board is powered off, so DDR2 has no hardware coverage — and item 100's confound experiment is now impossible
+- **[149](#item-149)** — Nine Vivado targets still read TRACKED constraints; item 57 claimed otherwise and the guard's board list hid it
+- **[150](#item-150)** — Four test apps and `JopIhluGcBramSim` are referenced by nothing, and four closed items rest on them
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
@@ -274,6 +278,18 @@ way in the item-1 section below, entries (b1)-(b10).
 <a id="item-2"></a>
 
 ### Item 2 — ~~`JopIhluGcBramSim` cannot fail — CLOSED 2026-08-16~~
+
+> **CORRECTED 2026-09-10 (audit of closed items).** This item says generational
+> is active at 2 cores *"now that the guard is `<= 12`"*. **There is no such
+> guard.** `GC.java:638` is `genActive = USE_GENERATIONAL && cardShift0 != 0` —
+> no `cpuCnt` term at all, because [item 1](#item-1) removed it entirely the
+> same week. The conclusion is *more* true than stated; the mechanism cited is
+> gone. Residue: `GC.java:596` still computes an unused `cpuCnt0`.
+>
+> **Still open, and load-bearing:** nothing runs `JopIhluGcBramSim`. The
+> anti-vacuity work this item did — the `verified == 0` check, the stop
+> condition, the minor count — is preserved only by nobody editing the file.
+> See [item 150](#item-150).
 
 ~~**`JopIhluGcBramSim` cannot fail**~~ — **CLOSED 2026-08-16.** It loaded
 `java/apps/Small/HelloWorld.jop`, a single-core app, so core 1 parked in the
@@ -1894,6 +1910,23 @@ develop on host JDK/sim -> analyser -> .jop + JopConfig for this target
 
 ### Item 57 — ~~The XDC/QSF generators exist and NOTHING USES THEM~~ — DONE
 
+> **CORRECTED 2026-09-10 (audit of closed items). The headline claim was false
+> when it was written.** This item says *"every board build now reads generated
+> constraints"* and *"the tracked `.xdc`/`.qsf` files that remain are no longer
+> INPUTS"*. Nine Vivado targets pass **tracked** `.xdc` on the command line,
+> including the flagship DB V5 DDR3 build
+> (`JOP_XDC=$(CONSTRAINTS)/xc7a100t_dbv5_base.xdc`). `git log -L` dates two of
+> those lines to 2026-08-26 — five days before this item closed.
+>
+> **Why nothing caught it:** `check-generated-deps.sh` enumerates boards by
+> `include ../quartus.mk`, reaching **7 of 12**. Every flow that would have
+> contradicted the claim sat outside the guard's own board list. *A guard that
+> enumerates its own subjects decides what it is allowed to find.*
+>
+> The guard now prints the gap (`7 of 12 boards; 5 declared outside it, 15
+> tracked-constraint references`) and fails if an undeclared board appears.
+> Closing it is [item 149](#item-149).
+
 > **Closed 2026-08-31.** Every board build now reads generated constraints. The
 > Wukong and i5 Makefiles invoke `XdcGeneratorMain` / `LpfGeneratorMain`, the
 > EP4CGX150 takes a generated `pins.tcl`, `quartus.mk` generates the `.sdc` and
@@ -2018,6 +2051,13 @@ core counts and overrides together). The layout itself is data
 <a id="item-144"></a>
 
 ### Item 144 — ~~The Java tools are per-configuration only because javac inlines constants~~ — DONE
+
+> **CORRECTED 2026-09-10 (audit of closed items).** The item is sound — the built
+> `jopizer.jar` contains no `Const.class` (`unzip -l` confirms) — but a **guard
+> now argues the opposite**: `check-no-intree-jop-path.sh` still explains itself
+> with *"jopizer.jar embeds Const.class … so it is a PER-CONFIGURATION
+> artefact"*, which this item made false. The guard's assertion still works;
+> only its stated reason misleads. Corrected 2026-09-10.
 
 > **Closed 2026-09-04.** JOPizer is now ONE artefact that is told which machine
 > it is linking for. It lives in `build/java/tools/jopizer.jar` and contains no
@@ -2287,6 +2327,73 @@ point of use.
 **Open.** Closing it needs either a working blaster on that board (a replacement
 Pico, or the Terasic moved back, which then costs the EP4CGX150 its cable) or a
 second DDR2 target.
+
+
+<a id="item-149"></a>
+
+### Item 149 — Nine Vivado targets still read tracked constraints
+
+[Item 57](#item-57) closed 2026-08-31 claiming *"every board build now reads
+generated constraints"* and that the tracked files *"are no longer INPUTS"*.
+Both are false, and were false when written — `git log -L` dates two of the
+offending lines to 2026-08-26.
+
+Still passing tracked `.xdc` on the command line:
+
+| flow | file |
+|---|---|
+| DB V5 `ddr3-build` (the +0.117 ns flagship) | `xc7a100t_dbv5_base.xdc` |
+| Wukong `create-project` / `ddr3-smp-bitstream` / dual / sdram | 4 tracked `.xdc` |
+| Alchitry Au (both flows) | `alchitry_au_v2.xdc`, `flash.xdc` |
+
+Note the split *inside* the Wukong: the non-SMP DDR3 path uses the **generated**
+`wukong_ddr3_base.xdc`, the SMP path the **tracked** one. Two layouts for one
+board is what makes a regression silent — [item 60](#item-60)'s lesson.
+
+**Why nothing caught it.** `check-generated-deps.sh` enumerates boards by
+`include ../quartus.mk`, reaching **7 of 12**. Every flow that would have
+contradicted item 57 sat outside the guard's own board list. *A guard that
+enumerates its own subjects decides what it is allowed to find.*
+
+**Done so far:** the guard now prints the gap and **fails if an undeclared board
+appears**, so it cannot grow silently — `constraint check reaches 7 of 12
+boards; 5 declared outside it, 15 tracked-constraint reference(s)`.
+
+**Open:** convert the Vivado flows to generated constraints. This needs a
+per-board rebuild and timing check, so it is real work, not an edit — the DB V5
+number above is a hardware-validated result that must survive it.
+
+<a id="item-150"></a>
+
+### Item 150 — Four test apps and a sim are referenced by nothing
+
+`MultiDimTest`, `ArrayCastTest`, `MultiArrayGcTest` and `GcObjSizeTest` live in
+`java/apps/Small/src/test/` and are named by **no** Makefile, workflow or sim —
+verified 0 hits across `.github/`, `Makefile`, `java/Makefile`, `fpga/` and
+`spinalhdl/src`. `JopIhluGcBramSim` is the same: `command grep -rn "IhluGc"`
+over the build and CI trees returns nothing.
+
+Four closed items rest on them:
+
+| item | rests on |
+|---|---|
+| [2](#item-2) | `JopIhluGcBramSim` — its `verified == 0` anti-vacuity check |
+| [23](#item-23) | `MultiDimTest` — 3-D/4-D/ref/zero-length after 30k rounds |
+| [24](#item-24) | `GcObjSizeTest` |
+| [26](#item-26) | `ArrayCastTest` — "now **36 checks**" |
+
+`DoAll` does not substitute: item 23 says so explicitly — *"DoAll's
+`MultiArray` passed throughout that defect."*
+
+**The specific decay path.** `ArrayCastTest` prints `fails 0 / ARRAYCAST OK` and
+**no count**, so deleting a check leaves it green and silently falsifies item
+26's "36 checks". That is exactly the vacuity [item 2](#item-2) fixed in a
+different sim by asserting `verified != 0`, and exactly what
+[item 111](#item-111) is about.
+
+**Open.** Either run them (a CI entry, or fold their assertions into `DoAll`) or
+say in each item that its evidence is not executed. The cheap first step is a
+count assertion in each app, so a silently shrinking test cannot pass.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 
@@ -2817,6 +2924,16 @@ arbitration path rather than a fix, so it is left open and the preset is
 <a id="item-74"></a>
 
 ### Item 74 — ~~item 69 is wider than `"*" -> "hw"`~~ — MERGED into [item 69](#item-69), FIXED 2026-08-31
+
+> **CORRECTED 2026-09-10 (audit of closed items).** The body still states
+> *"`frem` (0x72) has no `BytecodeEntry` at all … `frem` is simply absent"*.
+> That was the defect; this item's own fix added it, and
+> `JopCoreConfig.scala:230` now reads
+> `BytecodeEntry("frem", 0x72, "float", Java, JavaOnly)`. The heading is struck
+> through but the body reads as a current statement of the registry.
+>
+> Also unclosed: `ep4cgx150HwFloat` is recorded as built and MET but **not
+> verified on hardware**, and no post-fix record exists.
 
 `ep4cgx150HwFloat` was built and run on hardware for the first time on
 2026-08-26 and dies exactly as `wukongFull` does:
@@ -4398,6 +4515,25 @@ the RTL baked in); and `JopInstr.java`'s IMP_ASM/IMP_JAVA table against
 
 ### ~~Item 111~~ — checks that cannot fail, and checks that never ran — **CLOSED 2026-09-04**
 
+> **CORRECTED 2026-09-10 (audit of closed items) — and the failure was this
+> item's own subject.** The closing paragraph asserts that *every* guard in
+> `.github/scripts/` carries a `DISCIPLINE:` header and a `PROVED RED` line.
+> **Four of ten carried neither**: `check-no-legacy-rtl-path.sh`,
+> `check-no-intree-jop-path.sh`, `check-sim-xstate.sh` and
+> `run-readme-walkthrough.sh` — all written *after* this item closed, so the
+> practice decayed on its first use, including on the guard added for the
+> [item 146](#item-146) X-state class failure.
+>
+> Because the six original guards *are* stamped, spot-checking any one of them
+> confirmed the class while the newest guards were unproved.
+>
+> All ten now carry both, every `PROVED RED` line describes a proof actually
+> run, and `check-guard-discipline.sh` asserts the class. Proving them red found
+> a real defect: `check-no-intree-jop-path.sh` could not see
+> `java/apps/X/Y.jop`, the exact path it exists to reject.
+>
+> Also: this item's *"all six guards in `make check-build`"* is now **nine**.
+
 **NOT a proposal to test the tests.** That was the first reading of this item and
 it is wrong — a guard for every guard never bottoms out, and the regress costs
 more than the defects it would catch. Tests are proved capable of failing **when
@@ -4602,6 +4738,14 @@ already learned what those cost (item 100's `overriding recipe`).
 <a id="item-116"></a>
 
 ### Item 116 — ~~`current-status.md` is 491 KB and cannot be read~~ — DONE 2026-08-31
+
+> **CORRECTED 2026-09-10 (audit of closed items).** The consistency guards hold;
+> **nothing guards size**, and the split has decayed. The file is back to
+> **7,078 lines / 376 KB** from the 4,828 recorded here. The operating rule was
+> that sections ≥100 lines move to `docs/status/item-N.md`; six now violate it
+> in-file — item 141 (**717 lines**), 131 (232), 136 (226), 128 (155), 129
+> (108), 111 (103). Item 141 alone is larger than any of the 18 journals that
+> were split out.
 
 9,200 lines. It is the file every session is told to read first.
 
@@ -5024,6 +5168,14 @@ and by hand.
 
 ### ~~Item 127~~ — the boundary review — **COMPLETE 2026-09-02: nine boundaries, nine with findings**
 
+> **CORRECTED 2026-09-10 (audit of closed items).** The *"Named and not
+> reviewed"* list survives verbatim under a heading that says COMPLETE. All four
+> have since been reviewed and have items: class-struct layout →
+> [item 138](#item-138); GC ↔ card-table → [131](#item-131)/[132](#item-132);
+> JOPizer ↔ runtime → [136](#item-136)/[137](#item-137); stack cache ↔
+> microcode → [133](#item-133). A reader working the backlog would re-run four
+> reviews already done.
+
 **Filed 2026-08-31** so the scoping survives the session. [Item 110](#item-110)
 reviewed five boundaries and every one produced findings — items 119 to 126.
 The approach works and is not exhausted.
@@ -5091,6 +5243,13 @@ a guard written the previous day.
 <a id="item-128"></a>
 
 ### ~~Item 128~~ — an array-cache hit skipped the bounds check, so out-of-range READS returned adjacent memory — **FIXED 2026-09-01**
+
+> **CORRECTED 2026-09-10 (audit of closed items).** *"One assertion is still
+> disabled — `nulla.length`"* is no longer true: [item 129](#item-129) re-enabled
+> it on 2026-09-04 and `jvm/Array.java` now runs it under `ok &= caught`.
+>
+> Still true and unguarded: `ep4cgx150DbFull` is the only preset setting
+> `burstLen = 4`, so the burst fill path has no coverage.
 
 **Found 2026-08-31** by re-enabling the tests [item 119](#item-119) reported as
 disabled. Hardware-confirmed on `wukongFull` (Wukong DDR3):
@@ -5415,6 +5574,14 @@ these four fields is a place where the preset lies.
 <a id="item-131"></a>
 
 ### ~~Item 131~~ — the card-table clear-all dropped every concurrent mark — **FIXED and hardware-validated 2026-09-02**
+
+> **CORRECTED 2026-09-10 (audit of closed items).** *"`CardTableTest` is in
+> neither `.github/workflows/` nor the `Makefile`"* is contradicted two lines
+> earlier in its own paragraph and by `ci.yml`, which runs it. It is in CI.
+>
+> Still open: *"DDR2 (A-E115FB) is BUILT AND UNTESTED"* — no later record closes
+> it, and the board is now powered off ([item 148](#item-148)), so it cannot be
+> closed until a blaster returns.
 
 **Found 2026-09-01** by boundary review B7. **Verified in full**, both halves.
 
@@ -5856,6 +6023,14 @@ elaborated Verilog; neither can be defeated by a search tool.
 
 ### ~~Item 136~~ — a String LITERAL had no valid `OFF_TYPE`, so `instanceof String`, `(String)` and `String[]` stores all failed — **FIXED 2026-09-03**
 
+> **CORRECTED 2026-09-10 (audit of closed items).** *"The only MISS remaining in
+> the suite is `arraylength-NPE`"* was closed by [item 129](#item-129) on
+> 2026-09-04. There is no MISS remaining; `DoAll` is 68/68.
+>
+> Still unguarded: the write barrier's conservative handle bound now holds at
+> **all six** grey-list push sites, but nothing prevents a seventh unscreened
+> copy — which is exactly how [item 141](#item-141) recurred.
+
 **Found 2026-09-02** by boundary review B8, **empirically reproduced with a
 control**, and **verified independently against the shipped image**. This is a
 regression, not an ancient wart.
@@ -6081,6 +6256,14 @@ cases above, with the heap-String control, added to `DoAll`.
 <a id="item-137"></a>
 
 ### Item 137 — ~~`Startup` interprets a `<clinit>` at 256 words; JOPizer only marks one un-invokable at 512~~ — FIXED
+
+> **CORRECTED 2026-09-10 (audit of closed items). This item is marked FIXED over
+> a blocker it names as open.** Its own text lists *"Also blocking:
+> `make -C java sim-smallest` and `sim-small` cannot run at all"* — and both
+> cited lines are unchanged: `java/tools/src/com/jopdesign/tools/JopSim.java:65`
+> is still `static final int MAX_MEM = 1024*1024/4;` and `Startup.java:95` is
+> still `mem_size = appEnd + 262144;`. The 2026-09-04 fix addressed the
+> interpreter only.
 
 **Found 2026-09-02** by boundary review B8, reproduced.
 
