@@ -5,16 +5,26 @@ Summary and current state: [item 57](../current-status.md#item-57).
 
 ---
 
-> **Closed 2026-08-31.** Every board build now reads generated constraints. The
-> Wukong and i5 Makefiles invoke `XdcGeneratorMain` / `LpfGeneratorMain`, the
-> EP4CGX150 takes a generated `pins.tcl`, `quartus.mk` generates the `.sdc` and
-> the project Tcl, and the Wukong's SMP SDR flow — the last one reading a
-> tracked file — was converted the same day.
+> **CORRECTED 2026-09-10 — the two claims below were FALSE when written.** See
+> [item 57](../current-status.md#item-57) for the full correction and
+> [item 149](../current-status.md#item-149) for the remaining work. Kept here in
+> struck form because this journal is the record of what was believed, and the
+> belief is the instructive part.
 >
-> The tracked `.xdc`/`.qsf` files that remain are no longer INPUTS. They are the
-> oracles `ConstraintDriftTest` checks the generators against, and deleting them
-> as "unused" would remove the only thing that would notice the generator
-> drifting.
+> **Closed 2026-08-31.** ~~Every board build now reads generated constraints.~~
+> Nine Vivado targets still passed tracked `.xdc` on the command line, two of
+> them since 2026-08-26 — five days before this was written. What was true:
+> the Wukong and i5 Makefiles invoke `XdcGeneratorMain` / `LpfGeneratorMain`,
+> the EP4CGX150 takes a generated `pins.tcl`, and `quartus.mk` generates the
+> `.sdc` and the project Tcl. ~~the Wukong's SMP SDR flow — the last one
+> reading a tracked file~~ — it was not the last; it was converted 2026-09-10.
+>
+> ~~The tracked `.xdc`/`.qsf` files that remain are no longer INPUTS.~~ Some are
+> oracles, as described — `ConstraintDriftTest` checks the generators against
+> them, and deleting those as "unused" would remove the only thing that would
+> notice the generator drifting. Others were, and some still are, INPUTS named
+> on `JOP_XDC=` command lines. Both kinds share a directory, which is how the
+> distinction was lost.
 
 **Raised 2026-08-23**, after a summary sent the wrong console port and cost an
 hour. `jop.generate.XdcGenerator` and `jop.generate.QsfGenerator` both exist,

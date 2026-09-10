@@ -1925,20 +1925,37 @@ develop on host JDK/sim -> analyser -> .jop + JopConfig for this target
 > contradicted the claim sat outside the guard's own board list. *A guard that
 > enumerates its own subjects decides what it is allowed to find.*
 >
-> The guard now prints the gap (`7 of 12 boards; 5 declared outside it, 15
-> tracked-constraint references`) and fails if an undeclared board appears.
-> Closing it is [item 149](#item-149).
-
-> **Closed 2026-08-31.** Every board build now reads generated constraints. The
-> Wukong and i5 Makefiles invoke `XdcGeneratorMain` / `LpfGeneratorMain`, the
-> EP4CGX150 takes a generated `pins.tcl`, `quartus.mk` generates the `.sdc` and
-> the project Tcl, and the Wukong's SMP SDR flow — the last one reading a
-> tracked file — was converted the same day.
+> The guard now prints the gap and fails if an undeclared board appears. It
+> read `15 tracked-constraint references` when this note was written and reads
+> **13** now — the DB V5 flagship and the Wukong SMP path were converted on
+> 2026-09-10 and are hardware-proven (`DoAll` 3/3 and 68/68). The rest is
+> [item 149](#item-149).
 >
-> The tracked `.xdc`/`.qsf` files that remain are no longer INPUTS. They are the
-> oracles `ConstraintDriftTest` checks the generators against, and deleting them
-> as "unused" would remove the only thing that would notice the generator
-> drifting.
+> **This item stays DONE, and the DONE is honest for its TITLE:** the generators
+> existed and nothing used them; things use them now. What was false is the
+> closing summary below, which generalised from "the flows I converted" to
+> "every board build". Corrected in place rather than left for the next reader
+> to trip over.
+
+> **Closed 2026-08-31.** ~~Every board build now reads generated constraints.~~
+> **FALSE — see the correction above.** What was true on that date: the Wukong
+> and i5 Makefiles invoke `XdcGeneratorMain` / `LpfGeneratorMain`, the EP4CGX150
+> takes a generated `pins.tcl`, and `quartus.mk` generates the `.sdc` and the
+> project Tcl. ~~the Wukong's SMP SDR flow — the last one reading a tracked
+> file~~ — it was not the last: nine Vivado targets still read tracked `.xdc`,
+> two of them since 2026-08-26.
+>
+> ~~The tracked `.xdc`/`.qsf` files that remain are no longer INPUTS.~~ **Also
+> false.** Some are oracles — `ConstraintDriftTest` checks the generators
+> against them, and deleting those as "unused" would remove the only thing that
+> would notice the generator drifting. Others are still INPUTS, named on
+> `JOP_XDC=` command lines. Both kinds live in the same directory, which is
+> exactly why the distinction was easy to lose.
+>
+> And some are correctly hand-maintained and always will be: PHY timing
+> (`create_clock e_rxc`), clock-group exclusions on IP-created clocks, SPI flash
+> configuration, and the stand-alone bring-up exercisers. Nothing in a
+> `JopConfig` knows those exist.
 
 **[Full journal →](status/item-57.md)** — 124 lines of investigation detail.
 
