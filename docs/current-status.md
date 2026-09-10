@@ -2382,10 +2382,25 @@ Generated and tracked are identical for `wukongSmp 4` (16 constraint lines
 each), so this is a change of source, not of content, and
 `ConstraintDriftTest` now asserts it stays that way.
 
-**Blocked:** the DB V5 flagship. Converting it would **cross the console TX/RX
-and drop the reset pin** — see [item 151](#item-151). That is the substantive
-result: the generator is not merely unused on this board, it is wrong for it,
-and the conversion is what exposed it.
+**Done, and HARDWARE-PROVEN 2026-09-10:** the DB V5 `ddr3-build` reads the
+generated file. Converting it first required fixing [item 151](#item-151) — the
+generator crossed the console TX/RX and omitted the reset pin — which the
+conversion is what exposed. `DoAll` **3/3 at 2 Mbaud**, timing MET, WNS
++0.417 ns.
+
+> **Gotcha — the first hardware run FAILED, and it was a flake.** Run 1 gave
+> `ok=0 crash=71` with `GC: generational, -word cards`; a control build from the
+> previous commit then passed, which reads exactly like "the change broke it".
+> It had not: the generated and tracked XDC are byte-identical in **content and
+> order**, and the RTL is byte-identical between the two commits — same ports,
+> zero diff lines. No design difference can produce opposite results, so the
+> variable was elsewhere. Re-running the same bitstream gave 3/3.
+>
+> Two lessons. **One hardware run on this board is not evidence** — it failed
+> once in four with provably identical inputs. And the equivalence check that
+> mattered had been run through `sort`, which would have hidden an ordering
+> difference; XDC order is load-bearing here (the Makefile's own GMII note says
+> so). The unsorted diff is the one that holds.
 
 **Open:** the Alchitry flows, `wukong_jop_bram`, `wukong_dual`, `wukong_sdram`
 — each needs the same generated-vs-tracked diff before any switch, and a
@@ -2465,11 +2480,21 @@ once: `Board.scala:1126` records *"TXD/RXD were SWAPPED here before"* for the
 MAX1000's FT2232H, establishing that `"TXD"` in a board mapping means the
 **FPGA's** `ser_txd`. This is the same defect on a different board.
 
-Guard: `spinalhdl/src/test/scala/jop/config/ConstraintDriftTest.scala` — records
-the three gaps and fails if they change **in either direction**. Proved red by
-deleting the `resetn` entry: `resetn: generated=<omitted> hand=P4`. When the
-generator is fixed the test fails with "a known gap is GONE"; delete the entries
-then, and only then convert the flow.
+**FIXED and HARDWARE-PROVEN 2026-09-10.** Both causes were in `Board.scala`,
+each against a convention documented in that same file: the RP2040 UART was
+named from the BRIDGE's side (`"TXD"` means the FPGA's `ser_txd` — the rule
+recorded at the MAX1000's FT2232H, *"TXD/RXD were SWAPPED here before"*), and
+the reset key was `"sw2"` where `PinResolver` looks for `"reset"`.
+
+`DoAll` 3/3 on the DB V5 at 2 Mbaud with the generated constraints, timing MET.
+
+Guard: `spinalhdl/src/test/scala/jop/config/ConstraintDriftTest.scala` and
+`ConnectorResolutionTest.scala`. The drift test did its job — it fired
+*"a known gap is GONE — ser_txd, ser_rxd, resetn"* the moment the fix landed,
+forcing the conversion to be reconsidered rather than forgotten. The resolution
+test asserts the RESOLVED FPGA pins, so it survives any future renumbering; it
+is red-proved on a crossed console, on a half-migration, and on two ports
+sharing a pin.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 
