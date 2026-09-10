@@ -125,7 +125,17 @@ if [ -n "$undeclared" ]; then
 else
   refs=0
   for b in $unguarded; do
-    n=$(command grep -cE 'JOP_XDC=|JOP_LPF=|\$\(CONSTRAINTS\)/|\$\(XDC\)/' "fpga/$b/Makefile" 2>/dev/null || true)
+    # STRIP COMMENTS FIRST. Without this the count matched a COMMENT explaining
+    # a conversion and went UP by one the moment a reference was removed --
+    # the same defect as check-sim-xstate.sh's exemption matching prose. A check
+    # that reads comments measures the documentation, not the build.
+    # COUNT REFERENCES, NOT LINES. `grep -c` counts matching LINES, and a
+    # JOP_XDC= line often names two or three files -- so converting one of them
+    # left the count unchanged and item 149's progress was invisible in the one
+    # number reporting it. Count the tracked-path tokens themselves.
+    n=$(sed -e 's:#.*::' "fpga/$b/Makefile" 2>/dev/null \
+        | command grep -oE '\$\(CONSTRAINTS\)/[A-Za-z0-9_]+\.(xdc|lpf)|\$\(XDC\)/[A-Za-z0-9_]+\.(xdc|lpf)' \
+        | wc -l)
     refs=$(( refs + n ))
   done
   echo "  constraint check reaches $(printf '%s\n' "$boards" | wc -l) of $(printf '%s\n' "$all_boards" | wc -l) boards; $(printf '%s\n' "$unguarded" | wc -l) declared outside it, $refs tracked-constraint reference(s) -- item 149"

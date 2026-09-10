@@ -247,12 +247,21 @@ ddr3-smp-generate:
 ddr3-smp-build:
 	$(MAKE) ddr3-smp-bitstream CFG="$(DDR3_SMP_CFG)"
 
-ddr3-smp-bitstream: generate
+# XDC GENERATED, NOT TRACKED (2026-09-10, item 149). This target read
+# $(XDC)/wukong_ddr3_base.xdc while `ddr3-build` two targets up read the
+# GENERATED file of the same name -- one board, one filename, two sources. The
+# generated constraints for `wukongSmp 4` are byte-identical to the tracked file
+# once comments are stripped (16 lines each), so this is a change of source, not
+# of content. Runs with CFG already set, like sdr-smp-generate.
+ddr3-smp-xdc: generate
+	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(CFG) --write build/$(CFG_NAME)/vivado/wukong_ddr3_base.xdc"
+
+ddr3-smp-bitstream: ddr3-smp-xdc
 	$(VIVADO_ENV) && JOP_TOP=JopSmpDdr3WukongTop JOP_PART=$(PART) \
 	  JOP_BUILD_DIR=$(DDR3_SMP_DIR)/vivado/build \
 	  JOP_RTL=$(DDR3_SMP_DIR)/rtl/JopSmpDdr3WukongTop.v \
 	  JOP_IP="$(IP)/ddr3_clk/ddr3_clk.xci $(IP)/mig_7series_0/mig_7series_0.xci" \
-	  JOP_XDC="$(SHARED_XDC)/rtl8211eg_gmii.xdc $(XDC)/wukong_ddr3_base.xdc $(XDC)/wukong_ddr3.xdc" \
+	  JOP_XDC="$(SHARED_XDC)/rtl8211eg_gmii.xdc $(DDR3_SMP_DIR)/vivado/wukong_ddr3_base.xdc $(XDC)/wukong_ddr3.xdc" \
 	  $(TIMING_DIRECTIVES) JOP_DRC_WAIVE=LUTLP-1 \
 	  JOP_SUMMARY=$(DDR3_SMP_DIR)/rtl/JopSmpDdr3WukongTop.summary.txt \
 	  $(VIVADO) -mode batch -source $(NP_TCL)

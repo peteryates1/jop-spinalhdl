@@ -127,6 +127,52 @@ class ConstraintDriftTest extends AnyFunSuite {
       isQsf = false, knownGaps = Map.empty)
   }
 
+  test("wukongSmp XDC matches the hand-written constraints") {
+    // ADDED 2026-09-10 (item 149). Measured identical: 16 constraint lines each
+    // once comments are stripped. That is what made it safe to point
+    // `ddr3-smp-bitstream` at the GENERATED file -- until then it read the
+    // tracked one while `ddr3-build`, two targets above it, read the generated
+    // file OF THE SAME NAME. One board, one filename, two sources.
+    //
+    // The tracked file is now an ORACLE, not an input, which is what item 57
+    // claimed for every board and was true for almost none.
+    check("wukongSmp", XdcGenerator.generate(JopConfig.wukongSmp(4)),
+      "fpga/qmtech-xc7a100t-wukong/vivado/constraints/wukong_ddr3_base.xdc",
+      isQsf = false, knownGaps = Map.empty)
+  }
+
+  test("xc7a100tDbSerial XDC — the generator is WRONG for this board") {
+    // ADDED 2026-09-10 (item 149). This does not assert agreement. It records a
+    // DISAGREEMENT, because trying to convert this flow is how it was found and
+    // the gaps must not move unnoticed in either direction.
+    //
+    // The DB V5 `ddr3-build` is the +0.117 ns flagship. Its tracked XDC is
+    // hardware-proven (DoAll 66/66). The generated file:
+    //
+    //   * CROSSES ser_txd and ser_rxd. The tracked file states the wiring and
+    //     the reason: "RP2040 GPIO0 (TX) -> J3 pin 7 -> FPGA B5 (FPGA rxd)".
+    //     Crossing them gives silence at every baud, which is indistinguishable
+    //     from a design that never boots -- the failure the Wukong's own
+    //     constraint file warns about in a comment.
+    //   * OMITS resetn entirely. The generator emits it for the Wukong, so it
+    //     can; the DB V5 board model does not declare the core board's SW2.
+    //
+    // Root cause is unresolved and NOT guessed at: Board.scala maps this UART
+    // as "TXD" -> "J3:5", "RXD" -> "J3:6", while the tracked XDC says J3 pins
+    // 7 and 8. Both resolve to {A5, B5}, oppositely assigned. Two sources
+    // disagree about which connector pins carry the console, and changing pin
+    // assignments on inference is how a board is bricked. Item 151.
+    //
+    // WHEN FIXED this test fails with "a known gap is GONE" -- delete the gap
+    // entries, and only then convert the flow.
+    check("xc7a100tDbSerial", XdcGenerator.generate(JopConfig.xc7a100tDbSerial),
+      "fpga/qmtech-xc7a100t-dbfpga-v5/vivado/constraints/xc7a100t_dbv5_base.xdc",
+      isQsf = false, knownGaps = Map(
+        "ser_txd" -> (Some("B5"), "A5"),
+        "ser_rxd" -> (Some("A5"), "B5"),
+        "resetn"  -> (None,       "P4")))
+  }
+
   // --------------------------------------------------------------- Quartus
 
   // ---------------------------------------------------------------- retired

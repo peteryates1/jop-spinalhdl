@@ -104,6 +104,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 64. **[#148](#item-148)** — The A-E115FB is powered off after its Pico blaster failed, so DDR2 has NO hardware coverage; it also blocks item 100's confound experiment, which needs that blaster
 65. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
 66. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
+67. **[#151](#item-151)** — `XdcGenerator` crosses ser_txd/ser_rxd and omits `resetn` for `xc7a100tDbSerial`; converting the +0.117 ns flagship to generated constraints would give a board that looks dead. Blocks [#149](#item-149)
 
 ## 2. All items — summary
 
@@ -151,6 +152,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[148](#item-148)** — The A-E115FB's Pico blaster failed and the board is powered off, so DDR2 has no hardware coverage — and item 100's confound experiment is now impossible
 - **[149](#item-149)** — Nine Vivado targets still read TRACKED constraints; item 57 claimed otherwise and the guard's board list hid it
 - **[150](#item-150)** — Four test apps and `JopIhluGcBramSim` are referenced by nothing, and four closed items rest on them
+- **[151](#item-151)** — `XdcGenerator` produces WRONG constraints for the DB V5: console TX/RX crossed and `resetn` missing
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
@@ -2359,9 +2361,35 @@ enumerates its own subjects decides what it is allowed to find.*
 appears**, so it cannot grow silently — `constraint check reaches 7 of 12
 boards; 5 declared outside it, 15 tracked-constraint reference(s)`.
 
-**Open:** convert the Vivado flows to generated constraints. This needs a
-per-board rebuild and timing check, so it is real work, not an edit — the DB V5
-number above is a hardware-validated result that must survive it.
+**Progress 2026-09-10.** The conversion is **not** uniformly possible, and
+attempting it found a defect.
+
+**Not everything should be generated.** Classifying all 15 tracked files by what
+they constrain:
+
+| kind | files | verdict |
+|---|---|---|
+| config-derived base (16 lines: clock, reset, UART, LEDs) | `wukong_ddr3_base`, `xc7a100t_dbv5_base`, `wukong_jop_bram` | generatable |
+| PHY timing | `rtl8211eg_gmii` (`create_clock e_rxc`, false paths) | **hand** — not derivable from a `JopConfig` |
+| clock-group exclusions referencing IP clocks | `wukong_ddr3` (74 lines, `set_clock_groups` on `e_rxc`) | **hand** — depends on a clock the GMII file creates |
+| SPI flash configuration | `flash`, `flash_minimal` | **hand** |
+| stand-alone bring-up exercisers | `uart_echo`, `uart_loopback`, `uart_txgen` | **hand** — not JOP builds at all |
+
+**Done:** `ddr3-smp-bitstream` now reads the **generated** base file. It had been
+reading the tracked one while `ddr3-build`, two targets above it, read the
+generated file *of the same name* — one board, one filename, two sources.
+Generated and tracked are identical for `wukongSmp 4` (16 constraint lines
+each), so this is a change of source, not of content, and
+`ConstraintDriftTest` now asserts it stays that way.
+
+**Blocked:** the DB V5 flagship. Converting it would **cross the console TX/RX
+and drop the reset pin** — see [item 151](#item-151). That is the substantive
+result: the generator is not merely unused on this board, it is wrong for it,
+and the conversion is what exposed it.
+
+**Open:** the Alchitry flows, `wukong_jop_bram`, `wukong_dual`, `wukong_sdram`
+— each needs the same generated-vs-tracked diff before any switch, and a
+rebuild with a timing check after.
 
 <a id="item-150"></a>
 
@@ -2394,6 +2422,54 @@ different sim by asserting `verified != 0`, and exactly what
 **Open.** Either run them (a CI entry, or fold their assertions into `DoAll`) or
 say in each item that its evidence is not executed. The cheap first step is a
 count assertion in each app, so a silently shrinking test cannot pass.
+
+
+<a id="item-151"></a>
+
+### Item 151 — `XdcGenerator` is wrong for the DB V5: TX/RX crossed, reset missing
+
+Found 2026-09-10 while attempting [item 149](#item-149). Generating constraints
+for `xc7a100tDbSerial` and diffing against the tracked, **hardware-proven**
+`xc7a100t_dbv5_base.xdc` (the +0.117 ns flagship, DoAll 66/66):
+
+```
+generated:  ser_rxd -> A5    ser_txd -> B5    (no resetn at all)
+tracked:    ser_txd -> A5    ser_rxd -> B5    resetn -> P4
+```
+
+The tracked file states the wiring and why:
+
+```
+# RP2040 GPIO0 (TX) -> J3 pin 7 -> FPGA B5 (FPGA rxd)
+# RP2040 GPIO1 (RX) <- J3 pin 8 <- FPGA A5 (FPGA txd)
+```
+
+**Crossing TX and RX gives silence at every baud**, which is indistinguishable
+from a design that never boots — the exact failure the Wukong's own constraint
+file carries a warning about. Had the conversion gone ahead, the flagship board
+would have come back dead and the constraints would have been the last place
+anyone looked.
+
+`resetn` is a separate omission: the generator **does** emit it for the Wukong,
+so the capability exists; the DB V5 board model does not declare the core
+board's SW2 reset.
+
+**Root cause NOT resolved, deliberately.** `Board.scala:978` maps this UART as
+`"TXD" -> "J3:5", "RXD" -> "J3:6"`, while the tracked XDC says J3 pins **7 and
+8**. Both resolve to `{A5, B5}`, oppositely assigned. Two sources disagree about
+which connector pins carry the console, and this needs the DB_FPGA V5 schematic,
+not inference — changing pin assignments on a guess is how a board is bricked.
+
+Note the convention is already documented elsewhere and was already got wrong
+once: `Board.scala:1126` records *"TXD/RXD were SWAPPED here before"* for the
+MAX1000's FT2232H, establishing that `"TXD"` in a board mapping means the
+**FPGA's** `ser_txd`. This is the same defect on a different board.
+
+Guard: `spinalhdl/src/test/scala/jop/config/ConstraintDriftTest.scala` — records
+the three gaps and fails if they change **in either direction**. Proved red by
+deleting the `resetn` entry: `resetn: generated=<omitted> hand=P4`. When the
+generator is fixed the test fails with "a known gap is GONE"; delete the entries
+then, and only then convert the flow.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 
