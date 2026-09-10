@@ -2388,6 +2388,12 @@ generator crossed the console TX/RX and omitted the reset pin — which the
 conversion is what exposed. `DoAll` **3/3 at 2 Mbaud**, timing MET, WNS
 +0.417 ns.
 
+**EP4CGX150 regression: `DoAll` 68/68, timing MET.** Its constraints changed by
+**zero lines** — the renumber is output-neutral — so this checks that shifting
+216 connector keys and 155 device references did not disturb the Quartus/QSF
+path. Both boards the change can reach are now green; the Wukong is standalone
+and shares none of it.
+
 > **Gotcha — the first hardware run FAILED, and it was a flake.** Run 1 gave
 > `ok=0 crash=71` with `GC: generational, -word cards`; a control build from the
 > previous commit then passed, which reads exactly like "the change broke it".
