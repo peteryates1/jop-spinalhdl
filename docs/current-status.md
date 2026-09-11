@@ -104,8 +104,9 @@ nothing depends on ranks below a measurement that could mislead someone.
 64. **[#148](#item-148)** — The A-E115FB is powered off after its Pico blaster failed, so DDR2 has NO hardware coverage; it also blocks item 100's confound experiment, which needs that blaster
 65. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
 66. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
-67. **[#151](#item-151)** — `XdcGenerator` crosses ser_txd/ser_rxd and omits `resetn` for `xc7a100tDbSerial`; converting the +0.117 ns flagship to generated constraints would give a board that looks dead. Blocks [#149](#item-149)
-68. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
+67. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
+68. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
+69. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
 
 ## 2. All items — summary
 
@@ -153,8 +154,10 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[148](#item-148)** — The A-E115FB's Pico blaster failed and the board is powered off, so DDR2 has no hardware coverage — and item 100's confound experiment is now impossible
 - **[149](#item-149)** — Nine Vivado targets still read TRACKED constraints; item 57 claimed otherwise and the guard's board list hid it
 - **[150](#item-150)** — Four test apps and `JopIhluGcBramSim` are referenced by nothing, and four closed items rest on them
-- **[151](#item-151)** — `XdcGenerator` produces WRONG constraints for the DB V5: console TX/RX crossed and `resetn` missing
+- **[151](#item-151)** — ~~`XdcGenerator` produces WRONG constraints for the DB V5: console TX/RX crossed and `resetn` missing~~ — **FIXED**
 - **[153](#item-153)** — The Alchitry Au's tracked XDC has NO `create_clock`; its top-level clock may be unconstrained
+- **[154](#item-154)** — Item 137 is closed over a blocker it names: `sim-smallest` and `sim-small` still cannot run
+- **[155](#item-155)** — Item 116's split decayed to 7,475 lines and nothing guards section size
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
@@ -2520,7 +2523,7 @@ count assertion in each app, so a silently shrinking test cannot pass.
 
 <a id="item-151"></a>
 
-### Item 151 — `XdcGenerator` is wrong for the DB V5: TX/RX crossed, reset missing
+### Item 151 — ~~`XdcGenerator` is wrong for the DB V5: TX/RX crossed, reset missing~~ — FIXED, hardware-proven 2026-09-10
 
 Found 2026-09-10 while attempting [item 149](#item-149). Generating constraints
 for `xc7a100tDbSerial` and diffing against the tracked, **hardware-proven**
@@ -2608,6 +2611,57 @@ dead — the RTL has zero such ports, and they sit on the same pins as
 **No guard.** Nothing asserts that every top-level clock port carries a
 `create_clock`; that check would be worth having across all boards, and would be
 the durable form of this item.
+
+
+<a id="item-154"></a>
+
+### Item 154 — item 137 was closed over a blocker it names
+
+[Item 137](#item-137) lists, in its own text, *"**Also blocking:**
+`make -C java sim-smallest` and `sim-small` cannot run at all"* — and both cited
+lines are unchanged:
+
+```
+java/tools/src/com/jopdesign/tools/JopSim.java:65   static final int MAX_MEM = 1024*1024/4;
+java/runtime/src/jop/com/jopdesign/sys/Startup.java:95   mem_size = appEnd + 262144;
+```
+
+The 2026-09-04 fix addressed the `<clinit>` interpreter only, and the DONE
+heading then covered a blocker nobody closed. Found by the 2026-09-10 audit,
+which corrected the record — and then **left the work untracked until
+2026-09-11**, which is the same defect one level up.
+
+**No guard.** The honest first step is to run `make -C java sim-smallest` and
+see what it does now, rather than trusting either the item or this one.
+
+<a id="item-155"></a>
+
+### Item 155 — the status file grew back, and nothing guards size
+
+[Item 116](#item-116) split `current-status.md` from 9,671 lines to 4,828 and
+established the rule that sections ≥100 lines move to `docs/status/item-N.md`.
+It is **7,475 lines** now, and seven sections break the rule in-file:
+
+| item | lines |
+|---|---|
+| 141 | **717** |
+| 131 | 240 |
+| 136 | 234 |
+| 128 | 162 |
+| 111 | 122 |
+| 149 | 108 |
+| 129 | 108 |
+
+Item 141 alone is larger than any of the 18 journals that were split out.
+
+**Why it decayed:** `check-status-index.sh` asserts anchors, links, the priority
+list and journal presence — every *consistency* property — and nothing about
+size. The rule lived only in the item that created it.
+
+**Guard to write:** no `### Item N` section may exceed the threshold without a
+`docs/status/item-N.md` link. That is mechanical and would have prevented all
+seven. Note this session added to the file repeatedly while the rule was
+already broken.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 
