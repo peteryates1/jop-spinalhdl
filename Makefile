@@ -132,6 +132,7 @@ check-build:
 	@.github/scripts/check-no-legacy-rtl-path.sh
 	@.github/scripts/check-no-intree-jop-path.sh
 	@.github/scripts/check-probe-selection.sh
+	@python3 fpga/scripts/test_hw_verify.py
 
 help:
 	@echo "make check-build  assert the build graph's guards hold (seconds)"

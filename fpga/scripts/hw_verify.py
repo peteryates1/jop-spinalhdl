@@ -189,6 +189,19 @@ def judge_soak(out, min_rounds, drift, pattern=PROGRESS_RE):
     little less than the last. So compare the low-water mark of an early window
     against a late one. Oscillation inside a band is fine; a band that sinks is
     not.
+
+    BUT THE SAWTOOTH IS NOT ALWAYS THERE, and saying it is hid a finding for a
+    fortnight. Five of the six attached boards produce a series that NEVER rises
+    -- zero upward steps in 1.4 M samples -- while demonstrably reclaiming
+    memory: `GcStressTest` puts ~500 MB through a 5.46 MB heap. On those boards
+    `GC.freeMemory()` (`allocPtr - copyPtr`) simply does not observe the
+    collections, so "band" and "floor" describe an instrument, not a heap.
+    Item 64 reasoned about a 0.42 B/round leak inside a band of exactly zero.
+
+    So the verdict states WHICH SHAPE IT SAW. A tolerance tuned for a sawtooth
+    is not evidence about a staircase, and a one-line verdict that calls both
+    "sawtooth band" is how the difference stayed invisible -- the soak lines
+    read "sawtooth band 135936" for series that never once went up.
     """
     # COMPLETE LINES ONLY. A soak that ends on a timeout is cut mid-line, and
     # the tail is a VALID-LOOKING partial record: `R356153 f=5` is what
@@ -225,8 +238,15 @@ def judge_soak(out, min_rounds, drift, pattern=PROGRESS_RE):
                        f"{warm[-1][0]}, allowed {drift} -- possible leak")
 
     band = max(f for _, f in warm) - min(f for _, f in warm)
+    # Count the recoveries. A collection shows up as free memory going UP; a
+    # series with none of them is a staircase however wide its min-to-max
+    # spread, and calling that spread a "band" invites exactly the reading
+    # item 64 made.
+    ups = sum(1 for i in range(1, len(warm)) if warm[i][1] > warm[i - 1][1])
+    shape = (f"sawtooth band {band} over {ups} recoveries" if ups
+             else f"MONOTONE: free never rose in {len(warm)} samples, spread {band}")
     return True, (f"{rounds} rounds, floor steady at {late_floor} "
-                  f"(drop {drop}, sawtooth band {band})")
+                  f"(drop {drop}, {shape})")
 
 
 def judge(out):
