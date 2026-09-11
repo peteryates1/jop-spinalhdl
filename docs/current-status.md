@@ -38,7 +38,7 @@ answer about the evidence costs confidence in every result built on it — then
 correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
-1. **[#132](#item-132)** — The card-table read port is stolen by ANY write, and the "all cores halted" invariant that makes that safe is deliberately broken by the lock-owner exemption. Verified
+1. **[#158](#item-158)** — `IO_GC_HALT` is write-only and nothing reports whether the other cores stopped, while a lock owner is exempt from it by design. The collector can be moving objects and rewriting handles underneath a running core
 2. **[#133](#item-133)** — The microcode was never taught the stack cache exists: non-resident reads return 0 and non-resident writes are dropped, and the GC root scan, `athrow` and the context switch all walk the whole stack. Live on every single-core DDR3 build
 3. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
 4. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
@@ -160,6 +160,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[154](#item-154)** — Item 137 is closed over a blocker it names: `sim-smallest` and `sim-small` still cannot run
 - **[155](#item-155)** — Item 116's split decayed to 7,475 lines and nothing guards section size
 - **[157](#item-157)** — The stop-the-world leak detector is never incremented, and its zero is printed every SMP GC round as evidence
+- **[158](#item-158)** — Stop-the-world has no acknowledgement and lock owners are exempt, so the collector can compact under a running core
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
@@ -2797,6 +2798,67 @@ constantly instead of never.
 written somewhere — which is close to dead-store analysis and probably not worth
 building. The narrower and more useful rule: a value printed as evidence must
 have a test that makes it non-zero. `SmpGcTest` has no such case.
+
+
+<a id="item-158"></a>
+
+### Item 158 — "stop the world" is a request with no acknowledgement, and the lock-owner exemption guarantees it is sometimes not honoured
+
+**Split out of [item 132](#item-132) on 2026-09-11**, which calls this
+consequence *"a plain stop-the-world violation independent of the RTL"*. Item
+132's card-table half is fixed; this is the half that is not about the card
+table at all.
+
+**`IO_GC_HALT` is write-only, and the collector never learns whether anyone
+stopped.** `Sys.scala:420` sets `gcHaltReg` from the write; `GC.java:2183`
+asserts it and proceeds to mark, move and rewrite handles in the next
+statement. Nothing aggregates the other cores' `halted` outputs into anything
+software can read — `Sys.scala:363` exposes only *this* core's bit, via
+`IO_LOCK`. There is no primitive with which the collector could wait.
+
+**And a lock owner is exempt from the halt, deliberately.**
+
+- `Ihlu.scala:371` — `halted := lockWait || (gcHaltFromOthers && !isLockOwner)`
+- `CmpSync.scala:143` — `halted := False  // Owner: exempt from everything (including gcHalt)`
+
+The exemption is right on its own terms: the owner must finish its critical
+section or the cluster deadlocks. Together the two facts mean the collector can
+be compacting the heap while another core runs.
+
+**Why this outranks the card-table half it came from.** A missed card loses a
+tenure→nursery reference. This loses anything: `GC.java:195-200` says it
+outright — *"the collector moved objects and rewrote handles underneath a
+running core, which explains a lost reference and a wild-pointer crash equally
+well."* A dirty-card re-scan cannot repair a mutator that read a handle
+mid-move, so the fix has to be a halt that actually halts.
+
+**Shape of the fix — two parts, and the second is the one to be careful with.**
+
+1. **An all-halted status bit.** `AND` of the other cores' `halted` into a
+   readable register, with `GC.java` spinning on it after asserting
+   `IO_GC_HALT` and before touching the heap. Small, and it is the primitive
+   that is simply missing today.
+
+2. **A grant rule, or the spin never terminates.** While `gcHalt` is asserted,
+   do not grant a lock to a core that currently owns **nothing**. Waiters are
+   already `halted` (`lockWait`), existing owners drain and then stop, so the
+   halted set becomes monotone.
+
+   The `owns nothing` qualifier is load-bearing. Block *all* grants and a
+   nested `synchronized` inside a critical section needs a grant that never
+   comes: the owner blocks forever and the collector spins forever. This is
+   also the mechanism whose non-reentrancy
+   ([the global lock is not reentrant](#item-1), CmpSync) broke the SMP GC for
+   days and did so as corruption rather than as a hang, so it deserves a sim
+   that reproduces a nested acquire during a halt before anything is built.
+
+**Blocked on [item 157](#item-157) for evidence, not for code.** While
+`haltDeltaMax` is a constant 0, there is no way to demonstrate the violation
+before the fix or its absence after — the soak would print `haltLeak 0` either
+way. Make `mutatorTick` real first, or this lands unfalsifiable.
+
+**No guard.** The durable form is item 157's counter being real and asserted
+non-zero by a test that provokes the violation on purpose.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 
@@ -6238,7 +6300,7 @@ rather than a cycle count so it stays valid under both.
 
 <a id="item-132"></a>
 
-### Item 132 — the card-table read port is stolen by any write, and the invariant that makes that safe is deliberately broken elsewhere
+### ~~Item 132~~ — the card-table read port is stolen by any write, and the invariant that makes that safe is deliberately broken elsewhere — **RTL half FIXED 2026-09-11; the STW half is [item 158](#item-158)**
 
 **Found 2026-09-01** by boundary review B7. Both halves verified; the exploit
 timing is inferred.
@@ -6312,11 +6374,40 @@ because it has an RMW to perform and the read is its own. It passed before and
 after, so case 7 means what it says — had the steal simply been removed, 7b
 would have caught it.
 
-**What is NOT fixed.** The in-range case is untouched and is the half that needs
-a design decision: a second read port, or the stop-the-world invariant actually
-enforced. The lock-owner exemption (`Ihlu.scala:371`, `CmpSync.scala:143`) is
-correct on its own terms — the owner must finish its critical section or the
-cluster deadlocks — so "enforce STW" is not a one-line change either.
+**The in-range half, fixed the same day.** Gating on `inRange` left the case
+where the write *is* in range: the mark genuinely needs its RMW read, so with
+one memory it must win and the collector gets the marked word. That cannot be
+arbitrated away — the read is real work — but it does not need the same
+**copy**. Two mirrored tables take every write together and hold identical
+contents; `memMark` serves the RMW, `memGc` serves the readback, and neither
+ever waits.
+
+Case 7b inverted to assert the new invariant and was PROVED RED against the
+`inRange` MUX:
+
+```
+FAIL: in-range write stole the readback: asked for word3 (0x10), got 0x20
+      — 0x20 is word0, the word that write was marking.
+```
+
+Case 7c is its control — back-to-back marks into one word must still coalesce,
+or "the readback was correct" would just mean the RMW read had been deleted.
+
+Mirroring also **removes the selector from both BRAM address pins**, so the
+registered-`inRange` workaround is no longer needed and `inRange` is back to its
+original combinational form. It feeds only `s1valid` now.
+
+Measured cost on the 8-core EP4CGX150, exactly as predicted: memory bits
+1,201,024 → 1,332,096 (**+131,072 = 16 KB**), M9K 155 → **171 of 720 (24 %)**,
+LEs unchanged. Once, not per core — the table is cluster-level. No uninferred-RAM
+instance names the card table, so both copies are real BRAM.
+
+Worth recording that the unit test does **not** mandate mirroring: pointing the
+second `readSync` at the same `Mem` also passes, because that too is a second
+read port rather than a shared one. The test asserts the property — the readback
+is never disturbed — and leaves the implementation open. Explicit mirroring was
+chosen so the BRAM cost is stated in the source rather than delegated to
+whatever the synthesiser decides to duplicate.
 
 **Timing, and the first version of the fix BROKE IT.** Gating the MUX on a
 combinationally-computed `inRange` puts two `wordAddrWidth` comparators on
@@ -6328,7 +6419,8 @@ combinationally-computed `inRange` puts two `wordAddrWidth` comparators on
 | baseline (Aug 31, on record) | +0.532 | 51.37 | 94,847 | MET |
 | **control — HEAD, same day** | **+0.453** | 51.16 | 96,097 | MET |
 | `Mux(inRange, …)` combinational | **−0.042** | 49.90 | 95,716 | **VIOLATED** |
-| `inRange` registered from the inputs | **+0.391** | 51.00 | 95,907 | MET |
+| `inRange` registered from the inputs | +0.391 | 51.00 | 95,907 | MET |
+| **mirrored tables (shipped)** | **+0.346** | 50.88 | 95,941 | MET |
 
 **The control build is the whole reason this is knowable.** Against the
 11-day-old record alone the change looked like a 0.574 ns regression; a same-day
@@ -6346,8 +6438,14 @@ recomputing it, which makes the MUX select a plain register output — as cheap 
 difference is that `baseWord`/`topWord` are sampled a cycle earlier, and those
 are GC config registers written with every core halted.
 
-**Hardware-validated 2026-09-11**: `SmpGcTest` on the 8-core EP4CGX150 build,
-`SMPGC OK`, `lost 0` on every round, timing MET.
+**Hardware-validated 2026-09-11**, both fixes: `SmpGcTest` on the 8-core
+EP4CGX150, `SMPGC OK`, `lost 0` on every round, timing MET — once for the
+`inRange` gate and again for the mirrored tables.
+
+**What remains is not in the card table.** The stop-the-world violation this
+item's second consequence describes is [item 158](#item-158): `IO_GC_HALT` is
+write-only, nothing reports whether the other cores actually stopped, and a lock
+owner is exempt from the halt by design.
 
 Incidentally, every one of those rounds also printed `haltLeak 0` — which is
 [item 157](#item-157), and means nothing.

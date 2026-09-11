@@ -146,7 +146,15 @@ listed=$(sed -n '/^## 1\. Outstanding now/,/^## 2\./p' "$f" \
          | grep -oE '#[0-9]+' | tr -d '#' | sort -u)
 stale=""
 for n in $listed; do
-  h=$(grep -m1 "^### Item $n " "$f")
+  # BOTH HEADING FORMS, for the same reason section_nums() takes both. This
+  # check is the ONE that looks for `~~`, and it was anchored on "^### Item",
+  # which a struck heading never matches -- so `h` came back EMPTY for every
+  # closed item and the case below could not fire. The check existed to catch
+  # closed items left in the priority list and was blind to all of them.
+  # Found 2026-09-11 when item 132 closed: struck, still listed, still "none
+  # closed". The header above already names this trap; the fix had been applied
+  # to section_nums() and not here.
+  h=$(grep -m1 -E "^### (~~)?Item $n(~~)? " "$f")
   case "$h" in *'~~'*) stale="$stale $n";; esac
 done
 if [ -n "${stale// /}" ]; then

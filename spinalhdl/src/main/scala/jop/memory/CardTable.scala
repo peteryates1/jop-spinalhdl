@@ -49,7 +49,29 @@ class CardTable(cardCount: Int, cardShift: Int, wordAddrWidth: Int) extends Comp
     val clrBusy   = out Bool()
   }
 
-  val mem = Mem(Bits(32 bits), nWords)
+  // TWO MIRRORED COPIES, not one arbitrated memory (status item 132).
+  //
+  // The mark RMW and the GC readback both need a read every cycle they are
+  // active, and with one memory the mark had to win -- it has real work to do,
+  // the collector's read is only observation. That made the collector's
+  // IO_CARD_DATA return the word the mark was touching instead of the word it
+  // asked for, whenever a core was running during the halt (which the lock
+  // owner exemption guarantees is possible; see readMark below).
+  //
+  // It cannot be arbitrated away, because the mark's read is not optional. But
+  // it does not need the same COPY. Both memories take the identical write, so
+  // they hold identical contents at all times; `memMark` serves the RMW and
+  // `memGc` serves the readback, and neither ever waits for the other.
+  //
+  // Cost is one extra table: 4 KB on the CYC5000, 16 KB on the EP4CGX150 and
+  // Wukong, 64 KB on the A-E115FB -- ONCE, because the table is cluster-level,
+  // not per core. The 8-core EP4CGX150 uses 155 of 720 M9K before this.
+  //
+  // It also makes both reads cheaper than the single-memory version was: each
+  // address is now a direct expression rather than a MUX, so nothing computed
+  // from the snoop reaches a BRAM address pin through a selector.
+  val memMark = Mem(Bits(32 bits), nWords)
+  val memGc   = Mem(Bits(32 bits), nWords)
 
   // --- snoop input register (stage 0) ---
   //
@@ -67,32 +89,16 @@ class CardTable(cardCount: Int, cardShift: Int, wordAddrWidth: Int) extends Comp
   val mValid = RegNext(io.markValid) init (False)
   val mAddr  = RegNext(io.markAddr)  init (0)
 
-  // The range decision is REGISTERED ALONGSIDE, not recomputed from mAddr.
-  //
-  // Item 132 needs inRange (not mValid) to select the read-port address, and
-  // computing it combinationally from mAddr put two wordAddrWidth comparators
-  // on `mAddr -> compare -> MUX select -> BRAM address pin`. Measured on the
-  // 8-core 50 MHz EP4CGX150 against a same-day control build: +0.453 -> -0.042
-  // ns, i.e. MET to VIOLATED for one MUX term. The comparators are not on the
-  // reported critical path -- that is the cross-core BMB arbiter round trip in
-  // both builds -- so the cost is placement pressure, which makes it no less
-  // real.
-  //
-  // Registering the compare from the INPUT side makes the MUX select a plain
-  // register output, exactly as cheap as mValid was. The path this creates,
-  // `BMB address -> compare -> D pin`, is shorter than the one the 2026-08-05
-  // registering removed (`zeroCur -> BMB address -> compare + shift -> BRAM
-  // address pin`), because it ends at a flip-flop rather than a memory address.
-  //
-  // Cycle alignment is UNCHANGED: inRange combinational off mAddr sampled
-  // io.markAddr from the previous cycle, and so does this. The one difference
-  // is that baseWord/topWord are now sampled a cycle earlier; they are GC
-  // config registers written with every core halted, so no mark is in flight
-  // when they move.
-  val inRange = RegNext(io.markValid &&
-                        (io.markAddr >= io.baseWord) &&
-                        (io.markAddr < io.topWord)) init (False)
   // --- card index of the marked write ---
+  //
+  // Combinational off the stage-0 registers, and it stays that way. An earlier
+  // attempt at item 132 selected the READ ADDRESS with this signal, which put
+  // two wordAddrWidth comparators on a path ending at a BRAM address pin and
+  // cost 0.495 ns on the 8-core EP4CGX150 -- MET to VIOLATED, measured against
+  // a same-day control build. Registering it recovered that, but the mirrored
+  // memories above removed the selector entirely, so there is nothing left to
+  // pay for and nothing left to work around. inRange feeds only s1valid.
+  val inRange = mValid && (mAddr >= io.baseWord) && (mAddr < io.topWord)
   val cardIdx = (mAddr >> cardShift).resize(cardBits)
   val wIdx    = cardIdx(cardBits - 1 downto 5).resize(idxWidth)  // which 32-card word
   val bIdx    = cardIdx(4 downto 0)                              // bit within the word
@@ -176,13 +182,10 @@ class CardTable(cardCount: Int, cardShift: Int, wordAddrWidth: Int) extends Comp
   // the EP4CGX150, so with an exempt core running a collision was near-certain,
   // and each one silently skipped 32 cards of tenure->nursery references.
   //
-  // This removes the out-of-range collisions for one MUX term. It does NOT
-  // remove the in-range case, which still needs either a second read port or
-  // the stop-the-world invariant actually enforced -- item 132 stays open for
-  // that half.
-  val readAddr = Mux(inRange, wIdx, io.rdIdx)
-  val memRead  = mem.readSync(readAddr)
-  io.rdData := memRead
+  // Each copy has ONE reader and no selector. `inRange` is still computed --
+  // s1valid needs it -- but nothing about the read depends on it any more.
+  val memRead = memMark.readSync(wIdx)
+  io.rdData := memGc.readSync(io.rdIdx)
 
   // --- mark pipeline stage 2 registers (from stage 1 combinational above) ---
   // s1valid is declared above the clear-all sweep, which needs it to know when
@@ -203,7 +206,10 @@ class CardTable(cardCount: Int, cardShift: Int, wordAddrWidth: Int) extends Comp
   val wrEn   = s1valid || io.clrEn || clrAllActive
   val wrIdx  = Mux(clrAllActive, clrAllCnt, Mux(io.clrEn, io.clrIdx, s1widx))
   val wrData = Mux(clrAllActive || io.clrEn, B(0, 32 bits), newWord)
-  mem.write(wrIdx, wrData, enable = wrEn)
+  // BOTH copies take every write, so they are indistinguishable to a reader.
+  // There is no path that writes one and not the other.
+  memMark.write(wrIdx, wrData, enable = wrEn)
+  memGc.write(wrIdx, wrData, enable = wrEn)
 
   prevWrEn   := wrEn
   prevWrIdx  := wrIdx

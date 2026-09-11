@@ -248,17 +248,38 @@ object CardTableTest extends App {
       f"out-of-range write stole the readback: asked for word3 (0x10), got 0x$stolen%x " +
       "— 0x20 is word0, which is where word address 8192 aliases. Status item 132.")
 
-    // 7b) THE CONTROL. An IN-RANGE write legitimately owns the read port: it
-    // has an RMW to perform and the read is for its own benefit. This must
-    // behave the same before and after the fix — if it ever changes, case 7
-    // says nothing, because "the readback was correct" would then just mean the
-    // steal was removed entirely and the RMW path broken with it.
+    // 7b) AND NEITHER MAY AN IN-RANGE WRITE — the other half of item 132.
+    //
+    // Gating the steal on inRange fixed the out-of-range case but left this
+    // one: an in-range write genuinely needs an RMW read, so with one memory
+    // it must take the port and the collector gets the marked word instead of
+    // the one it asked for. The comment that made that acceptable — "the
+    // collector only reads with every core halted" — is false whenever a core
+    // is exempt from gcHalt, which is by design for a lock owner.
+    //
+    // It cannot be arbitrated away: the RMW read is real work. But it does not
+    // need the SAME COPY. Two mirrored tables, written together, let the mark
+    // read one and the collector read the other, and neither ever waits.
     markAddr(cardAddr(5))                       // re-set word 0 bit 5
     dut.clockDomain.waitSampling(3)
-    val duringInRange = readWordDuring(3, cardAddr(0))   // word address 0: in range
-    check(duringInRange == (1L << 5),
-      f"CONTROL: an in-range write no longer takes the read port; got 0x$duringInRange%x " +
-      "expected 0x20 (word0, its own RMW read)")
+    val duringInRange = readWordDuring(3, cardAddr(0))   // word address 0: IN range
+    check(duringInRange == (1L << 4),
+      f"in-range write stole the readback: asked for word3 (0x10), got 0x$duringInRange%x " +
+      "— 0x20 is word0, the word that write was marking. Status item 132.")
+
+    // 7c) THE CONTROL, and it is case 2 restated at this point in the run: the
+    // RMW read must still work. If mirroring were done by simply deleting the
+    // mark's read, back-to-back marks into one word would lose all but the
+    // last, and case 7b above would pass for exactly the wrong reason.
+    clrAll()
+    dut.io.markValid #= true
+    dut.io.markAddr #= cardAddr(8);  dut.clockDomain.waitSampling()
+    dut.io.markAddr #= cardAddr(9);  dut.clockDomain.waitSampling()
+    dut.io.markAddr #= cardAddr(10); dut.clockDomain.waitSampling()
+    dut.io.markValid #= false
+    dut.clockDomain.waitSampling(3)
+    check(readWord(0) == ((1L << 8) | (1L << 9) | (1L << 10)),
+      f"CONTROL: back-to-back marks lost the RMW read; word0=0x${readWord(0)}%x expected 0x700")
 
     println(if (fails == 0) "PASS: CardTable marks losslessly, gates, reads, clears" else s"FAILED ($fails)")
     if (fails != 0) simFailure(s"$fails checks failed")
