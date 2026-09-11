@@ -2600,9 +2600,24 @@ lacks. So converting that board (item 149) and fixing this are the same job —
 and converting it may *surface* a timing failure that was always there rather
 than cause one.
 
-**Not yet confirmed.** This is read from the constraint files, not from a build
-report. Confirming it means building and reading the clock-interaction report
-for an unconstrained clock. That is the first action.
+**CONFIRMED 2026-09-11** from the board's own build report, not from reading
+constraints. Vivado's methodology checks on the Alchitry build say:
+
+```
+1. checking no_clock (197)
+   There are 197 register/latch pins with no clock driven by root clock pin: clk
+4. checking unconstrained_internal_endpoints (491)
+```
+
+So 197 register pins are driven by an unclocked root and 491 endpoints are
+unconstrained. The build still reports `MET, WNS +0.358 ns` — that number covers
+only the subset of paths Vivado could analyse, which is exactly the failure mode
+this item predicted: **a green timing result from a design most of which was
+never timed.**
+
+Worth noting how it survived: the Alchitry had no `probeAlias`, so `hw_verify`
+refused the board and nobody ever programmed it ([item 156](#item-156)). An
+unconstrained clock on a board nothing runs produces no symptom at all.
 
 Incidental, already proven: the tracked file's four `usb_rx`/`usb_tx` lines are
 dead — the RTL has zero such ports, and they sit on the same pins as
@@ -2662,6 +2677,68 @@ size. The rule lived only in the item that created it.
 `docs/status/item-N.md` link. That is mechanical and would have prevented all
 seven. Note this session added to the file repeatedly while the rule was
 already broken.
+
+
+<a id="item-156"></a>
+
+### Item 156 — ~~two attached boards could not be programmed, and nothing noticed~~ — FIXED 2026-09-11
+
+Guard: `.github/scripts/check-probe-selection.sh`
+
+**Found 2026-09-11** while running DoAll and the GC soak on every attached
+board. Two of the six could not be programmed at all, for two different reasons
+with one shape: **Board.scala's probe and tool fields are fallbacks, and a
+fallback that is wrong for a given board cannot announce itself.**
+
+| board | declaration | what happened |
+|---|---|---|
+| Alchitry Au V2 | `consoleAlias` but **no** `probeAlias` | `hw_verify` refused it: *"board 'alchitry-au-v2' has no PROBE_ALIAS in its config"* |
+| CYC5000 | neither `loaderCable` nor `loaderBoard` | `HwVerifyDescriptor` fell back to `PROGRAM_TOOL=quartus`; Quartus never enumerates its Arrow blaster |
+
+**The Alchitry is the more expensive of the two.** It was the ONE attached board
+that could not be hardware-verified, so nothing ever ran it — which is precisely
+why [item 153](#item-153)'s 197 unclocked register pins survived undetected. A
+board that is never tested generates no evidence that anything is wrong with it.
+
+**The CYC5000's failure read as dead hardware.** `openFPGALoader -b cyc5000`
+returned *"Read ID failed"* and *"SPI flash write failed"*. It was in fact
+programming the **Alchitry**: both probes are FTDI parts on vid:pid `0403:6010`,
+so a bare `-b` takes whichever enumerated first. `--detect` settled it —
+*"idcode 0x362d093 manufacturer xilinx family artix a7 35t"* — a Xilinx part
+answering for a Cyclone V. Two more defects sat behind that one:
+
+- `hw_verify.program()` selected the probe by `--busdev-num` only in the
+  `LOADER_CABLE` branch, on the reasoning that *"two dirtyJtag probes are
+  attached"*. Two **FTDI** probes are attached too. Selection now happens in
+  both branches.
+- `find_bitstream` ignored which tool would read the file. openFPGALoader
+  refuses a `.sof` (*"please use rbf or svf file"*), and the resulting
+  *"Failed to claim FPGA device: Error: wrong file"* reads like a probe problem
+  and is a file-format one. It now prefers `.rbf` for openFPGALoader, which also
+  stops the "more than one bitstream" guard firing on a directory that
+  legitimately holds both.
+
+**Why a guard and not four fixes.** `fpga/scripts/jtag_probe_map` already
+records what is physically attached and what *kind* of probe each board has.
+Nothing joined that to Board.scala, so a board could name a probe the registry
+has never heard of, or sit on a tool that cannot drive its probe kind, and the
+first symptom would arrive as a hardware fault months later. The guard asserts
+the join: every board with a `consoleAlias` has a `probeAlias`; every
+`probeAlias` resolves in the registry; and the kind the registry records matches
+the tool `HwVerifyDescriptor` will compute (`usb-blaster` → Quartus, because the
+openFPGALoader busdev patch covers dirtyJtag only; everything else →
+openFPGALoader, because Quartus cannot see it).
+
+Proved red against `Board.scala` at 39611af — it named both defects — and
+against a typo'd alias and a no-parse tripwire. Running that red proof is what
+found the guard's *own* bug: tab-separated records plus `read` (tab is IFS
+whitespace, so a run of them collapses) slid the Alchitry's empty `probeAlias`
+field left, and the guard reported the right board for the wrong reason. A green
+run would never have shown it.
+
+**All six attached boards now pass**, DoAll 68/68 and the GC soak, timing MET:
+EP4CGX150, XC7A100T + DB V5, Wukong, Colorlight i5, CYC5000, Alchitry Au. The
+A-E115FB stays out — its Pico blaster died and the board is powered off.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 
@@ -2772,6 +2849,27 @@ meets timing comfortably (WNS +0.414 ns), which argues against a marginal path.
 
 ### Item 64 — `GcStressTest` free memory falls 0.42 bytes per round, on every board
 
+> **2026-09-11 — the metric, not the leak, is the thing to chase first.** A
+> six-board sweep re-measured this and redirected the item. On the ONE board
+> that visibly collects (Alchitry Au, 58 upward steps in 380,448 samples) the
+> post-collection high-water mark is **flat**: it spans 2,696 bytes over 373,406
+> rounds, slope **−0.00055 B/round**, and its last values are *higher* than its
+> first. A leak cannot look like that.
+>
+> The other five boards record **zero** upward steps in 1.4 M samples — while
+> demonstrably reclaiming memory, since `GcStressTest` puts roughly **500 MB
+> through a heap whose reported free space is 5.46 MB**. `GC.freeMemory()` is
+> `(allocPtr - copyPtr) * 4` (`GC.java:1650`), the gap in the current semispace,
+> which recovers at a flip and not at a minor collection. The instrument is not
+> seeing the collections.
+>
+> **The open question is no longer "where is the leak".** It is why the same
+> metric recovers 58 times on a 266 MB board and never once on `wukongFull` /
+> `xc7a100tDbSerial` at 262 MB — same source, same collector, same app. Until
+> that is answered the 0.42 B/round figure is a property of the instrument as
+> much as of the heap, and this item has reasoned from it since 2026-08-25.
+
+
 **A second cause ELIMINATED 2026-09-03.** [Item 141](#item-141) — the write
 barrier scribbling `GREY_END` into the program image — was the strongest
 remaining candidate: a real defect, live on every board, losing data in a way a
@@ -2826,6 +2924,7 @@ fragmentation in the tenured space, or something retaining a few bytes per
 collection. **Measure before choosing** — the rate being identical across memory
 systems points away from anything memory-controller-specific.
 
+**[Full journal →](status/item-64.md)** — 49 lines of measurement detail.
 
 <a id="item-65"></a>
 
