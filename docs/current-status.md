@@ -105,6 +105,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 65. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
 66. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
 67. **[#151](#item-151)** — `XdcGenerator` crosses ser_txd/ser_rxd and omits `resetn` for `xc7a100tDbSerial`; converting the +0.117 ns flagship to generated constraints would give a board that looks dead. Blocks [#149](#item-149)
+68. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
 
 ## 2. All items — summary
 
@@ -153,6 +154,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[149](#item-149)** — Nine Vivado targets still read TRACKED constraints; item 57 claimed otherwise and the guard's board list hid it
 - **[150](#item-150)** — Four test apps and `JopIhluGcBramSim` are referenced by nothing, and four closed items rest on them
 - **[151](#item-151)** — `XdcGenerator` produces WRONG constraints for the DB V5: console TX/RX crossed and `resetn` missing
+- **[153](#item-153)** — The Alchitry Au's tracked XDC has NO `create_clock`; its top-level clock may be unconstrained
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
@@ -2457,12 +2459,26 @@ and shares none of it.
 
 | file | blocker |
 |---|---|
-| `wukong_peripherals.xdc` ×2 | no preset generates these peripheral pins yet |
-| `wukong_dual.xdc` | `XdcGeneratorMain` refuses multi-system configs — *"Use .systems for multi-system configs (have 2 systems)"* |
-| `wukong_sdram.xdc` | generator emits **9 pin pairs fewer** than the tracked file |
-| `alchitry_au_v2.xdc` ×2 | tracked carries legacy `usb_rx`/`usb_tx` aliases on the same pins as `ser_rxd`/`ser_txd`; generated adds the clock and bitstream settings. Convertible, but unvalidated on hardware |
+| `wukong_dual.xdc` | `XdcGeneratorMain` calls `JopConfig.system`, which *requires* a single-system config (`JopConfig.scala:352`). A dual-cluster preset needs the generator to iterate `.systems` and merge. Generator feature; no hardware risk to develop |
+| `alchitry_au_v2.xdc` ×2 | the tracked file has **no `create_clock` at all**, while the generated one adds one on the top-level `clk`. Converting may expose a pre-existing timing hole — [item 153](#item-153) |
 
-`wukong_jop_bram.xdc` was the fourth candidate and converted cleanly (diff=0).
+**Three closed 2026-09-10, and two of them were not conversions at all:**
+
+- `wukong_peripherals.xdc` ×2 — **deleted, not converted.** It constrains `e_*`
+  and `sd_*`, and neither `wukongSdram` nor `wukongSdrSmp` declares an eth or
+  sdNative device: the generated RTL has **zero** of those 18 ports, so Vivado
+  matched none of them and warned for each. Every port those designs do carry is
+  generated already.
+- `wukong_sdram.xdc` — **reclassified as by-design.** It belongs to
+  `SdramExerciserWukongTop`, a stand-alone bring-up exerciser, not a JOP build.
+  It was called a gap because it had been diffed against the `wukongSdram` JOP
+  preset — a different design entirely, which is why 9 pins looked "missing"
+  (a `j10_led` debug bank and a `clk_in` port no `JopTop` has).
+- `wukong_jop_bram.xdc` — converted cleanly, generated == tracked, diff=0.
+
+The count went **6 → 3** and only one of those three was a conversion. Two were
+a misclassification and a dead reference, which is what happens when a gap list
+is assembled by pattern rather than by reading each case.
 
 **Not open, and never will be:** the nine by-design files. PHY timing,
 clock-group exclusions on IP-created clocks, SPI flash configuration and the
@@ -2558,6 +2574,40 @@ forcing the conversion to be reconsidered rather than forgotten. The resolution
 test asserts the RESOLVED FPGA pins, so it survives any future renumbering; it
 is red-proved on a crossed console, on a half-migration, and on two ports
 sharing a pin.
+
+
+<a id="item-153"></a>
+
+### Item 153 — the Alchitry Au's tracked XDC has no `create_clock`
+
+Found 2026-09-10 while closing [item 149](#item-149)'s gaps.
+`fpga/alchitry-au/vivado/constraints/alchitry_au_v2.xdc` — the only XDC that
+board's build reads — contains **zero** `create_clock` statements.
+
+The clk_wiz IP does `create_clock -period 10.000 [get_ports clk_in]`, but
+`clk_in` is the **IP's own boundary port**, not the design's. The top-level RTL
+port is `clk`. If nothing else constrains it, the Alchitry's 100 MHz input is
+unconstrained and **any timing number reported for that board is meaningless** —
+paths from it would simply not be analysed.
+
+`XdcGenerator` emits the missing constraint
+(`create_clock -period 10.000 -name sys_clk [get_ports {clk}]`) plus `CFGBVS`,
+`CONFIG_VOLTAGE` and `BITSTREAM.GENERAL.COMPRESS`, which the tracked file also
+lacks. So converting that board (item 149) and fixing this are the same job —
+and converting it may *surface* a timing failure that was always there rather
+than cause one.
+
+**Not yet confirmed.** This is read from the constraint files, not from a build
+report. Confirming it means building and reading the clock-interaction report
+for an unconstrained clock. That is the first action.
+
+Incidental, already proven: the tracked file's four `usb_rx`/`usb_tx` lines are
+dead — the RTL has zero such ports, and they sit on the same pins as
+`ser_rxd`/`ser_txd`.
+
+**No guard.** Nothing asserts that every top-level clock port carries a
+`create_clock`; that check would be worth having across all boards, and would be
+the durable form of this item.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 

@@ -357,13 +357,23 @@ jop-sdram-generate: $(UCODE_SCALA) $(call APP_JOP,$(SDRAM_CFG))
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(SDRAM_CFG) buildtree"
 	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(SDRAM_CFG) --write build/$(SDRAM_CFG)/vivado/wukong_jop_sdram.xdc"
 
+# wukong_peripherals.xdc DROPPED 2026-09-10 (item 57). It constrains e_* and
+# sd_*, and neither wukongSdram nor wukongSdrSmp declares an eth or sdNative
+# device -- the generated RTL has ZERO of those 18 ports, so Vivado matched none
+# of them and warned for each. Every port these designs DO carry is generated,
+# and wukongSdrFull generates the peripheral set in full, so nothing is lost.
+#
+# NOTE FOR THE NEXT EDITOR: this comment lives here, not inside the recipe. A
+# `#` line between backslash-continued recipe lines is joined into the SAME
+# shell command, so it comments out everything after it -- including the vivado
+# invocation. `make -n` showed the recipe with no `vivado` in it at all.
 jop-sdram-build: jop-sdram-generate
 	$(VIVADO_ENV) && JOP_TOP=JopSdramWukongTop JOP_PART=$(PART) \
 	  JOP_BUILD_DIR=$(SDRAM_CFG_DIR)/vivado/build \
 	  JOP_RTL=$(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.v \
 	  JOP_BIN_GLOB='$(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.v_*.bin' \
 	  JOP_IP=$(IP)/sdr_clk/sdr_clk.xci \
-	  JOP_XDC="$(SDRAM_CFG_DIR)/vivado/wukong_jop_sdram.xdc $(XDC)/wukong_peripherals.xdc" \
+	  JOP_XDC=$(SDRAM_CFG_DIR)/vivado/wukong_jop_sdram.xdc \
 	  JOP_SUMMARY=$(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.summary.txt \
 	  $(VIVADO) -mode batch -source $(NP_TCL)
 
@@ -398,7 +408,7 @@ jop-sdram-smp-bitstream: sdr-smp-generate
 	  JOP_RTL=$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.v \
 	  JOP_BIN_GLOB='$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.v_*.bin' \
 	  JOP_IP=$(IP)/sdr_clk/sdr_clk.xci \
-	  JOP_XDC="$(SDR_SMP_DIR)/vivado/wukong_jop_sdram.xdc $(XDC)/wukong_peripherals.xdc" \
+	  JOP_XDC=$(SDR_SMP_DIR)/vivado/wukong_jop_sdram.xdc \
 	  JOP_SUMMARY=$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.summary.txt \
 	  $(VIVADO) -mode batch -source $(NP_TCL)
 

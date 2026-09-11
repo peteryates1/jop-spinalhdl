@@ -140,13 +140,12 @@ flash.xdc|SPI configuration-flash properties, not pin assignment
 uart_echo.xdc|stand-alone bring-up exerciser, not a JOP build
 uart_loopback.xdc|stand-alone bring-up exerciser, not a JOP build
 uart_txgen.xdc|stand-alone bring-up exerciser, not a JOP build
+wukong_sdram.xdc|stand-alone bring-up exerciser (SdramExerciserWukongTop) -- j10_led debug bank and a clk_in port no JopTop has
 "
   # GAP: should be generated. Each line is remaining work for item 149.
   gap="
-wukong_peripherals.xdc|no preset generates these peripheral pins yet
-wukong_dual.xdc|XdcGeneratorMain refuses multi-system configs -- 'Use .systems for multi-system configs (have 2 systems)'
-wukong_sdram.xdc|generator emits 9 pin pairs FEWER than the tracked file (measured 2026-09-10)
-alchitry_au_v2.xdc|tracked carries legacy usb_rx/usb_tx aliases on the same pins as ser_rxd/ser_txd; generated adds the clock and bitstream settings. Convertible, but unvalidated on hardware
+wukong_dual.xdc|XdcGeneratorMain calls JopConfig.system, which requires a single-system config (JopConfig.scala:352). A dual-cluster preset needs the generator to iterate .systems and merge. Generator feature, no hardware risk to develop
+alchitry_au_v2.xdc|tracked has NO create_clock at all while the generated file adds one on the top-level `clk` port (the clk_wiz IP constrains `clk_in`, its own boundary). Converting may therefore expose a pre-existing timing hole -- it needs a build and a timing check, not a swap. The 4 usb_rx/usb_tx lines in the tracked file are already dead: the RTL has zero such ports. Item 153
 "
 
   declared="$by_design$gap"
