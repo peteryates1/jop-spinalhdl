@@ -163,8 +163,19 @@ def judge_soak(out, min_rounds, drift, pattern=PROGRESS_RE):
     against a late one. Oscillation inside a band is fine; a band that sinks is
     not.
     """
+    # COMPLETE LINES ONLY. A soak that ends on a timeout is cut mid-line, and
+    # the tail is a VALID-LOOKING partial record: `R356153 f=5` is what
+    # `R356153 f=5311228` looks like when the read stops. That 5 then became the
+    # low-water mark and the judge reported "free floor fell 5378551 bytes --
+    # possible leak" on a board whose free memory had not moved. A parser that
+    # accepts a truncated record invents the worst datum in the set, because a
+    # truncated number is always SMALLER than the real one -- so this fails in
+    # exactly one direction: false leaks, never missed ones.
+    #
+    # Anchoring each match to a following newline drops the partial tail and
+    # nothing else.
     samples = [(int(m.group("round")), int(m.group("free")))
-               for m in re.finditer(pattern, out)]
+               for m in re.finditer(pattern + r"(?=\s*\n)", out)]
     if not samples:
         return False, "no progress lines matched -- did the app run?"
 
