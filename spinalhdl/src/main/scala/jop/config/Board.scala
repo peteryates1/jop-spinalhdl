@@ -499,6 +499,10 @@ object Board {
   def CYC5000 = Board(
     name = "cyc5000",
     probeAlias = Some("cyc5000"),
+    // openFPGALoader, not quartus_pgm: quartus never enumerates this board's
+    // Arrow blaster on 18.1 or 25.1, so a quartus descriptor fails with
+    // "Error (213013): Programming hardware cable not detected".
+    loaderBoard = Some("cyc5000"),
     consoleAlias = Some("cyc5000"),
     pllType = Some(PllType.AlteraCyc5000),
     entityTag = "Cyc5000",
@@ -607,6 +611,15 @@ object Board {
   def AlchitryAuV2 = Board(
     name = "alchitry-au-v2",
     consoleAlias = Some("alchitry"),
+    // ADDED 2026-09-11. Without probeAlias, hw_verify refuses the board
+    // outright ("has no PROBE_ALIAS in its config"), so this was the one
+    // attached board that could not be hardware-verified at all.
+    //
+    // loaderBoard, not the Vivado hw_server path the Makefile uses: this board
+    // shares vid:pid 0403:6010 with the CYC5000's Arrow blaster, so the probe
+    // must be selected by bus:dev like every other board here.
+    probeAlias = Some("alchitry"),
+    loaderBoard = Some("alchitry_au"),
     fpga = Some(FpgaDevice.XC7A35T),
     pllType = Some(PllType.XilinxDdr3ClkWiz),
     ddr3HasCs = true,

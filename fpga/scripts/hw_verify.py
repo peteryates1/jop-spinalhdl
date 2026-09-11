@@ -71,14 +71,31 @@ def resolve(tool, flag, alias, what):
     return val
 
 
-def find_bitstream(cfg_dir):
+def find_bitstream(cfg_dir, tool=None):
+    """The file to program, in the format the chosen TOOL can actually read.
+
+    openFPGALoader REFUSES a .sof -- "please use rbf or svf file" -- so an
+    Altera board programmed by openFPGALoader needs the .rbf that quartus_cpf
+    produces beside it. Ignoring the tool here made the CYC5000 fail with
+    "Failed to claim FPGA device: Error: wrong file", which reads like a probe
+    problem and is a file-format one.
+    """
+    exts = (".rbf", ".sof", ".bit") if tool == "openfpgaloader" else (".sof", ".bit")
     hits = []
     for dirpath, _, files in os.walk(cfg_dir):
         for f in files:
-            if f.endswith((".sof", ".bit")):
+            if f.endswith(exts):
                 hits.append(os.path.join(dirpath, f))
+    # Prefer the first extension the tool can read, rather than tripping the
+    # "more than one bitstream" guard on a directory that legitimately holds
+    # both a .sof and the .rbf converted from it.
+    for e in exts:
+        pref = [h for h in hits if h.endswith(e)]
+        if pref:
+            hits = pref
+            break
     if not hits:
-        die(f"no .sof/.bit under {cfg_dir} -- build it first")
+        die(f"no {'/'.join(exts)} under {cfg_dir} -- build it first")
     if len(hits) > 1:
         die("more than one bitstream under {}:\n  {}".format(cfg_dir, "\n  ".join(hits)))
     return hits[0]
@@ -102,11 +119,21 @@ def program(d, bitstream):
             cmd += ["-b", d["LOADER_BOARD"]]
         else:
             cmd += ["-c", d["LOADER_CABLE"]]
-            # Two dirtyJtag probes are attached to this host. Selecting by
-            # bus:dev is the whole point; a bare -c takes whichever enumerated
-            # first. Needs the patched openFPGALoader in /usr/local/bin.
-            busdev = resolve("jtag_probe_map", "--busdev", d["PROBE_ALIAS"], "JTAG probe")
-            cmd += ["--busdev-num", busdev]
+        # SELECT THE PROBE IN BOTH BRANCHES. This used to guard only the -c
+        # path, on the reasoning that two dirtyJtag probes are attached. But
+        # TWO FTDI PROBES are attached too -- the CYC5000's Arrow blaster and
+        # the Alchitry Au's FT2232H are both 0403:6010 -- and a bare
+        # `-b cyc5000` takes whichever enumerated first. On 2026-09-11 that was
+        # the Alchitry: `--detect` reported "manufacturer xilinx, family artix
+        # a7 35t" while the recipe was aiming a Cyclone V .rbf at it. It failed
+        # with "Read ID failed / SPI flash write failed", which reads like a
+        # dead CYC5000 and is not.
+        #
+        # --busdev-num works for FTDI as well as dirtyJtag with the patched
+        # loader in /usr/local/bin; verified selecting 0x2b150dd (Cyclone V)
+        # rather than 0x362d093 (Artix-7) on the shared vid:pid.
+        busdev = resolve("jtag_probe_map", "--busdev", d["PROBE_ALIAS"], "JTAG probe")
+        cmd += ["--busdev-num", busdev]
         cmd += [bitstream]
     r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     if r.returncode != 0:
@@ -351,7 +378,7 @@ def main():
                 f"  This board cannot be hardware-verified until then.")
 
     cfg_dir = os.path.join(ROOT, d["CONFIG_DIR"])
-    bitstream = find_bitstream(cfg_dir)
+    bitstream = find_bitstream(cfg_dir, d.get("PROGRAM_TOOL"))
 
     tv, td = timing_status(cfg_dir)
     if tv == "VIOLATED" and not a.allow_violated:

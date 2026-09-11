@@ -88,8 +88,18 @@ $(RBF_FILE): $(SOF_FILE)
 
 # openFPGALoader claims the FTDI interface from ftdi_sio itself, so this needs
 # no unbinding — but it does need root for raw USB access.
+# SELECT THE PROBE BY SERIAL. Both the CYC5000's Arrow blaster and the Alchitry
+# Au's FT2232H are 0403:6010, so a bare `-b cyc5000` takes whichever enumerated
+# first. On 2026-09-11 that was the ALCHITRY: `--detect` reported
+# "idcode 0x362d093 manufacturer xilinx family artix a7 35t", and this recipe
+# was aiming a Cyclone V .rbf at a Xilinx part. It failed with "Read ID failed /
+# SPI flash write failed", which reads like a broken CYC5000 and is not.
+#
+# jtag_probe_map resolves board -> serial, the same rule the rest of the tree
+# uses. openFPGALoader's --busdev-num is patched for dirtyJtag only, so FTDI
+# parts are selected by serial.
 program: $(RBF_FILE)
-	sudo $(OFL) -b cyc5000 $(RBF_FILE)
+	sudo $(OFL) -b cyc5000 --ftdi-serial $$($(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --serial cyc5000) -m $(RBF_FILE)
 	@echo "=== FPGA programmed: $(RBF_FILE) ==="
 
 # Needs the two conditions in the note above. Without them this fails with
