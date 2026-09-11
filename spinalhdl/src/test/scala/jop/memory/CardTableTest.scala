@@ -201,6 +201,65 @@ object CardTableTest extends App {
     check(readWord(0) == (1L << 7),
       f"CONTROL: a mark issued after clrBusy fell was lost; word0=0x${readWord(0)}%x expected 0x80")
 
+    // 7) AN OUT-OF-RANGE WRITE MUST NOT STEAL THE GC READBACK PORT — item 132.
+    //
+    // `readAddr = Mux(mValid, wIdx, io.rdIdx)` gates the steal on mValid, which
+    // is ANY BMB write anywhere in memory — not on inRange. A write outside the
+    // tenure window has no RMW to perform (s1valid is RegNext(inRange), so no
+    // write port activity follows) and yet it diverts the read port for that
+    // cycle, so the collector's IO_CARD_DATA read returns a DIFFERENT word than
+    // it asked for.
+    //
+    // The aliasing makes it concrete: with cardCount=1024 the index is 10 bits,
+    // so word address 8192 — well past topWord=4096 — has cardIdx 2048, which
+    // resizes to 0 and reads table word 0. A readback of word 3 comes back
+    // holding word 0's contents.
+    //
+    // Why it matters on real hardware: a core owning a lock is EXEMPT from
+    // gcHalt by design (Ihlu.scala:371, CmpSync.scala:143 — the owner must
+    // finish its critical section or the cluster deadlocks), so the "collector
+    // only reads with every core halted" comment on that Mux does not hold on
+    // SMP. scanCardRange does one write+read pair per table word — 4096 per
+    // minor GC on the EP4CGX150 — so with an exempt core running, a collision
+    // is near-certain, and one collision silently skips 32 cards' worth of
+    // tenure->nursery references.
+    clrAll()
+    markAddr(cardAddr(5))                       // word 0, bit 5  -> 0x20
+    markAddr(cardAddr(100))                     // word 3, bit 4  -> 0x10
+    dut.clockDomain.waitSampling(3)
+    check(readWord(0) == (1L << 5), f"setup: word0=0x${readWord(0)}%x expected 0x20")
+    check(readWord(3) == (1L << 4), f"setup: word3=0x${readWord(3)}%x expected 0x10")
+
+    // Present rdIdx=3 and collide with an OUT-OF-RANGE write. The two words
+    // differ, so a stolen read is visible rather than coincidentally equal.
+    def readWordDuring(idx: Int, wrAddr: Long): Long = {
+      dut.io.rdIdx     #= idx
+      dut.io.markValid #= true
+      dut.io.markAddr  #= wrAddr
+      dut.clockDomain.waitSampling()   // edge A: mValid <= true; read issued for idx
+      dut.io.markValid #= false
+      dut.clockDomain.waitSampling()   // edge B: mValid HIGH this cycle -> steal window
+      dut.clockDomain.waitSampling()   // edge C: rdData = whatever edge B read
+      dut.io.rdData.toLong
+    }
+
+    val stolen = readWordDuring(3, 8192)        // 8192 >= topWord (4096)
+    check(stolen == (1L << 4),
+      f"out-of-range write stole the readback: asked for word3 (0x10), got 0x$stolen%x " +
+      "— 0x20 is word0, which is where word address 8192 aliases. Status item 132.")
+
+    // 7b) THE CONTROL. An IN-RANGE write legitimately owns the read port: it
+    // has an RMW to perform and the read is for its own benefit. This must
+    // behave the same before and after the fix — if it ever changes, case 7
+    // says nothing, because "the readback was correct" would then just mean the
+    // steal was removed entirely and the RMW path broken with it.
+    markAddr(cardAddr(5))                       // re-set word 0 bit 5
+    dut.clockDomain.waitSampling(3)
+    val duringInRange = readWordDuring(3, cardAddr(0))   // word address 0: in range
+    check(duringInRange == (1L << 5),
+      f"CONTROL: an in-range write no longer takes the read port; got 0x$duringInRange%x " +
+      "expected 0x20 (word0, its own RMW read)")
+
     println(if (fails == 0) "PASS: CardTable marks losslessly, gates, reads, clears" else s"FAILED ($fails)")
     if (fails != 0) simFailure(s"$fails checks failed")
   }

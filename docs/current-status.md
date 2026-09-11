@@ -107,6 +107,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 67. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
 68. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
 69. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
+70. **[#157](#item-157)** — `GC.mutatorTick` is incremented by nothing, so the stop-the-world leak detector `haltDeltaMax` is a constant 0 — and `SmpGcTest` prints it every round as `haltLeak 0`. Item 132 cites this instrumentation as its first place to look
 
 ## 2. All items — summary
 
@@ -158,6 +159,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[153](#item-153)** — The Alchitry Au's tracked XDC has NO `create_clock`; its top-level clock may be unconstrained
 - **[154](#item-154)** — Item 137 is closed over a blocker it names: `sim-smallest` and `sim-small` still cannot run
 - **[155](#item-155)** — Item 116's split decayed to 7,475 lines and nothing guards section size
+- **[157](#item-157)** — The stop-the-world leak detector is never incremented, and its zero is printed every SMP GC round as evidence
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
 - **[54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them
@@ -2739,6 +2741,62 @@ run would never have shown it.
 **All six attached boards now pass**, DoAll 68/68 and the GC soak, timing MET:
 EP4CGX150, XC7A100T + DB V5, Wukong, Colorlight i5, CYC5000, Alchitry Au. The
 A-E115FB stays out — its Pico blaster died and the board is powered off.
+
+
+<a id="item-157"></a>
+
+### Item 157 — the stop-the-world leak detector is incremented by nothing, and every SMP GC round prints its zero as evidence
+
+**Found 2026-09-11** while acting on [item 132](#item-132), which names this
+instrumentation as *"the place to look first"* for the second consequence it
+describes. There is nothing there to look at.
+
+`GC.java` reads the counter at both ends of the halt window:
+
+```java
+Native.wr(1, Const.IO_GC_HALT);
+int mtAtHalt = mutatorTick;           // 2185 -- snapshot INSIDE the halt window
+...
+int mtDelta = mutatorTick - mtAtHalt; // 2237 -- "Did anything run while the
+if (mtDelta > haltDeltaMax)           //         world was supposed to be stopped?"
+    haltDeltaMax = mtDelta;
+```
+
+**`mutatorTick` is assigned by nothing, anywhere in the tree.** Those three
+lines — the declaration, and the two reads above — are its only occurrences in
+`java/`. `mtDelta` is therefore always 0, `haltDeltaMax` is always 0, and the
+field's own comment, *"Largest mutator advance seen across a stop-the-world.
+Must stay 0"*, is satisfied by construction rather than by observation.
+
+**And the zero is published as a result.** `SmpGcTest.java:650` prints it every
+round:
+
+```java
+JVMHelp.wr(" haltLeak "); wrInt(GC.haltDeltaMax);
+```
+
+So every SMP GC soak this project has run — including the core-count validation
+runs at 1/4/8/12 on the EP4CGX150 and 4/6/8 on Wukong DDR3 — has emitted
+`haltLeak 0` on every line. That reads as "no mutator advanced during
+stop-the-world", and it is a statement the code cannot make.
+
+This is [item 111](#item-111)'s class exactly — a check that cannot fail — with
+the aggravating detail that this one is *printed*, so it does not merely fail
+silently, it actively reassures. It is also why item 132's second consequence
+has never been looked at: the instrument for it appeared to be reporting clean.
+
+**The fix is not one line, which is probably why it stalled.** A counter only
+detects the violation if it is advanced by a core that is *running while halted*
+— i.e. the lock-owner exemption path. Incrementing it somewhere every core
+touches often (allocation, a bytecode) makes it a shared-memory write on the hot
+path; incrementing it only in the exempt path requires knowing where that is.
+Decide that before writing the increment, or this becomes a check that fires
+constantly instead of never.
+
+**No guard.** The durable form is a check that a field read as a difference is
+written somewhere — which is close to dead-store analysis and probably not worth
+building. The narrower and more useful rule: a value printed as evidence must
+have a test that makes it non-zero. `SmpGcTest` has no such case.
 
 ### Item 61 — ~~`make -C java all` fails at HEAD~~ — FIXED 2026-08-24. It was worse: NO app in `apps/Small` could be built
 
@@ -6217,14 +6275,82 @@ I/O read.
 
 **Same root, second consequence:** an exempt lock owner can also store
 tenure→nursery *after* `scanCards` has read that word — a plain
-stop-the-world violation independent of the RTL. `GC.java`'s
+stop-the-world violation independent of the RTL. ~~`GC.java`'s
 `mutatorTick`/`haltDeltaMax` instrumentation already watches for it and is the
-place to look first.
+place to look first.~~ **That was wrong, and finding out why is
+[item 157](#item-157): `mutatorTick` is incremented by nothing anywhere in the
+tree**, so `haltDeltaMax` is a constant 0 and `SmpGcTest` has printed
+`haltLeak 0` every round as an all-clear it cannot have earned.
 
 **Fix shape:** gate the steal on `inRange`, not `mValid` — an out-of-range write
 has no RMW to do and needs no read. That removes most collisions for one MUX
 term. It does not remove the in-range case, which needs either a second read
 port or the STW invariant actually enforced.
+
+---
+
+**2026-09-11 — the out-of-range half is FIXED; the in-range half stays open.**
+
+Guard: `CardTableTest` cases 7 and 7b (`spinalhdl/src/test/scala/jop/memory/CardTableTest.scala`).
+
+`readAddr = Mux(mValid, wIdx, io.rdIdx)` → `Mux(inRange, wIdx, io.rdIdx)`,
+one MUX term. PROVED RED against the unfixed RTL:
+
+```
+FAIL: out-of-range write stole the readback: asked for word3 (0x10), got 0x20
+      — 0x20 is word0, which is where word address 8192 aliases.
+```
+
+The test makes the aliasing concrete rather than asserting a bare "wrong
+value": with `cardCount = 1024` the index is 10 bits, so word address 8192 —
+comfortably past `topWord = 4096` — has `cardIdx` 2048, which resizes to **0**
+and reads table word 0. The collector asks for word 3 and is handed word 0.
+An out-of-range address does not read garbage; it reads a *plausible* word.
+
+Case 7b is the control: an **in-range** write must still take the read port,
+because it has an RMW to perform and the read is its own. It passed before and
+after, so case 7 means what it says — had the steal simply been removed, 7b
+would have caught it.
+
+**What is NOT fixed.** The in-range case is untouched and is the half that needs
+a design decision: a second read port, or the stop-the-world invariant actually
+enforced. The lock-owner exemption (`Ihlu.scala:371`, `CmpSync.scala:143`) is
+correct on its own terms — the owner must finish its critical section or the
+cluster deadlocks — so "enforce STW" is not a one-line change either.
+
+**Timing, and the first version of the fix BROKE IT.** Gating the MUX on a
+combinationally-computed `inRange` puts two `wordAddrWidth` comparators on
+`mAddr → compare → MUX select → BRAM address pin`. Measured on the 8-core
+50 MHz EP4CGX150, Slow 1200mV 100C:
+
+| build | slack | Fmax | LEs | verdict |
+|---|---:|---:|---:|---|
+| baseline (Aug 31, on record) | +0.532 | 51.37 | 94,847 | MET |
+| **control — HEAD, same day** | **+0.453** | 51.16 | 96,097 | MET |
+| `Mux(inRange, …)` combinational | **−0.042** | 49.90 | 95,716 | **VIOLATED** |
+| `inRange` registered from the inputs | **+0.391** | 51.00 | 95,907 | MET |
+
+**The control build is the whole reason this is knowable.** Against the
+11-day-old record alone the change looked like a 0.574 ns regression; a same-day
+control shows 0.079 ns of that is unrelated drift (the design gained 869 LEs and
+601 registers in 11 days — one MUX term cannot do that) and **0.495 ns is the
+change**. Reasoning would have gone the other way: the card table appears in
+exactly one of the fix build's worst 200 paths, and the binding path is the
+cross-core BMB arbiter round trip in *both* builds, so the cost is placement
+pressure rather than the comparators themselves being critical. That makes it
+no less real.
+
+The fix is to register the range decision alongside `mValid`/`mAddr` instead of
+recomputing it, which makes the MUX select a plain register output — as cheap as
+`mValid` was — and recovers 0.433 ns. Cycle alignment is unchanged; the only
+difference is that `baseWord`/`topWord` are sampled a cycle earlier, and those
+are GC config registers written with every core halted.
+
+**Hardware-validated 2026-09-11**: `SmpGcTest` on the 8-core EP4CGX150 build,
+`SMPGC OK`, `lost 0` on every round, timing MET.
+
+Incidentally, every one of those rounds also printed `haltLeak 0` — which is
+[item 157](#item-157), and means nothing.
 
 <a id="item-133"></a>
 

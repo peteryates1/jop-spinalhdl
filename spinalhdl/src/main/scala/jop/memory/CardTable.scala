@@ -67,8 +67,32 @@ class CardTable(cardCount: Int, cardShift: Int, wordAddrWidth: Int) extends Comp
   val mValid = RegNext(io.markValid) init (False)
   val mAddr  = RegNext(io.markAddr)  init (0)
 
+  // The range decision is REGISTERED ALONGSIDE, not recomputed from mAddr.
+  //
+  // Item 132 needs inRange (not mValid) to select the read-port address, and
+  // computing it combinationally from mAddr put two wordAddrWidth comparators
+  // on `mAddr -> compare -> MUX select -> BRAM address pin`. Measured on the
+  // 8-core 50 MHz EP4CGX150 against a same-day control build: +0.453 -> -0.042
+  // ns, i.e. MET to VIOLATED for one MUX term. The comparators are not on the
+  // reported critical path -- that is the cross-core BMB arbiter round trip in
+  // both builds -- so the cost is placement pressure, which makes it no less
+  // real.
+  //
+  // Registering the compare from the INPUT side makes the MUX select a plain
+  // register output, exactly as cheap as mValid was. The path this creates,
+  // `BMB address -> compare -> D pin`, is shorter than the one the 2026-08-05
+  // registering removed (`zeroCur -> BMB address -> compare + shift -> BRAM
+  // address pin`), because it ends at a flip-flop rather than a memory address.
+  //
+  // Cycle alignment is UNCHANGED: inRange combinational off mAddr sampled
+  // io.markAddr from the previous cycle, and so does this. The one difference
+  // is that baseWord/topWord are now sampled a cycle earlier; they are GC
+  // config registers written with every core halted, so no mark is in flight
+  // when they move.
+  val inRange = RegNext(io.markValid &&
+                        (io.markAddr >= io.baseWord) &&
+                        (io.markAddr < io.topWord)) init (False)
   // --- card index of the marked write ---
-  val inRange = mValid && (mAddr >= io.baseWord) && (mAddr < io.topWord)
   val cardIdx = (mAddr >> cardShift).resize(cardBits)
   val wIdx    = cardIdx(cardBits - 1 downto 5).resize(idxWidth)  // which 32-card word
   val bIdx    = cardIdx(4 downto 0)                              // bit within the word
@@ -130,9 +154,33 @@ class CardTable(cardCount: Int, cardShift: Int, wordAddrWidth: Int) extends Comp
 
   // --- read port (mark RMW read has priority over GC readback; never overlap) ---
   // mValid, not io.markValid: the read must be issued for the mark now in
-  // stage 0, and the GC readback path is unaffected because the collector only
-  // reads with every core halted, so no mark can be in flight.
-  val readAddr = Mux(mValid, wIdx, io.rdIdx)
+  // stage 0.
+  //
+  // inRange, not mValid (status item 132). The steal used to fire on ANY BMB
+  // write anywhere in memory, justified by a comment saying "the collector only
+  // reads with every core halted, so no mark can be in flight". THAT INVARIANT
+  // DOES NOT HOLD: a core owning a lock is exempt from gcHalt by design, and
+  // with a comment saying so -- Ihlu.scala:371
+  // (`halted := lockWait || (gcHaltFromOthers && !isLockOwner)`) and
+  // CmpSync.scala:143 ("Owner: exempt from everything (including gcHalt)").
+  // The exemption is right on its own terms; the owner must finish its critical
+  // section or the cluster deadlocks. But it means a core CAN be writing on the
+  // bus that feeds markValid while the collector reads the table.
+  //
+  // An out-of-range write has no RMW to do -- s1valid is RegNext(inRange), so
+  // no write-port activity follows it -- and stealing the read for it returned
+  // the collector a DIFFERENT card word than it asked for. The index aliases,
+  // too: an address past topWord resizes into the table's own index space, so
+  // the wrong word is a plausible-looking one. scanCardRange does one
+  // write+read pair per table word (GC.java:1977-1980), 4096 per minor GC on
+  // the EP4CGX150, so with an exempt core running a collision was near-certain,
+  // and each one silently skipped 32 cards of tenure->nursery references.
+  //
+  // This removes the out-of-range collisions for one MUX term. It does NOT
+  // remove the in-range case, which still needs either a second read port or
+  // the stop-the-world invariant actually enforced -- item 132 stays open for
+  // that half.
+  val readAddr = Mux(inRange, wIdx, io.rdIdx)
   val memRead  = mem.readSync(readAddr)
   io.rdData := memRead
 
