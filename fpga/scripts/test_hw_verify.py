@@ -150,6 +150,46 @@ def test_a_current_bitstream_is_accepted():
             "a current bitstream was called stale"
 
 
+def test_midstream_corruption_is_not_a_leak():
+    """A UART capture can be corrupted in the MIDDLE, not only at the end.
+
+    The 39611af fix anchored each record to a following newline, which drops a
+    record truncated where the capture stops. It does nothing for this, seen on
+    wukongFull 2026-09-14:
+
+        R704395 f=261779028
+        R704396 f=2            <- truncated, and followed by a newline
+        R704395 f=261779028    <- the round number goes BACKWARDS
+
+    A chunk of the stream was replayed, and the splice left one short record
+    with a newline after it. That 2 became the low-water mark and the judge
+    reported "free floor fell 261900882 bytes" on a board whose free memory had
+    moved by 122 KB.
+
+    One corrupt sample must not be able to define the floor.
+    """
+    # THE CORRUPT SAMPLE MUST LAND IN THE LATE HALF, which is where it was on
+    # wukongFull (round 704396 of 726932, ~97% through). Put it in the early
+    # half and the test passes against the UNFIXED code: judge_soak compares an
+    # early floor against a late one, so a low outlier before the midpoint only
+    # makes the drop negative. That is passing for the wrong reason, and the
+    # first version of this test did exactly that.
+    good = [(r, 261779028) for r in range(0, 40000, 10)]
+    cut = int(len(good) * 0.97)
+    out = soak_log(good[:cut]) + "R38800 f=2\n" + soak_log(good[cut:])
+    ok, msg = hw_verify.judge_soak(out, min_rounds=1000, drift=4096)
+    assert ok, f"one corrupt sample read as a leak: {msg}"
+
+
+def test_replayed_chunk_is_dropped():
+    """Rounds must advance; a replayed chunk is corruption, not data."""
+    good = [(r, 500000) for r in range(0, 40000, 10)]
+    out = soak_log(good) + soak_log(good[:500])      # stream replays its start
+    ok, msg = hw_verify.judge_soak(out, min_rounds=1000, drift=4096)
+    assert ok, f"a replayed chunk was read as a fault: {msg}"
+    assert "39990" in msg, f"the replay should not change the round reached: {msg}"
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     bad = 0

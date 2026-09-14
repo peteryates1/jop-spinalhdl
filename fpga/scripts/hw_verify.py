@@ -253,6 +253,33 @@ def judge_soak(out, min_rounds, drift, pattern=PROGRESS_RE):
     if not samples:
         return False, "no progress lines matched -- did the app run?"
 
+    # AND THE MIDDLE CAN BE CORRUPT TOO, which the anchor above does not cover.
+    # A UART capture can splice: on wukongFull 2026-09-14 a chunk was replayed
+    # and the join left one short record WITH a newline after it --
+    #     R704395 f=261779028
+    #     R704396 f=2            <- truncated, newline follows
+    #     R704395 f=261779028    <- round goes BACKWARDS
+    # -- and that 2 became the low-water mark, reporting "free floor fell
+    # 261900882 bytes" on a board whose free memory had moved by 122 KB.
+    #
+    # Two rules, both about the STREAM rather than the heap:
+    #   rounds advance     GcStressTest prints them strictly increasing, so a
+    #                      record that does not advance is a replay, not data.
+    #   no lone cliff      a truncated decimal is a PREFIX, so it is smaller by
+    #                      orders of magnitude. This workload moves free by
+    #                      ~1.5 KB per round, so a single sample below half its
+    #                      predecessor is corruption. A real collection raises
+    #                      free; it never divides it.
+    clean, last_r, last_f = [], -1, None
+    dropped = 0
+    for r, f in samples:
+        if r <= last_r or (last_f is not None and f * 2 < last_f):
+            dropped += 1
+            continue
+        clean.append((r, f)); last_r, last_f = r, f
+    if clean:
+        samples = clean
+
     rounds = max(r for r, _ in samples)
     if rounds < min_rounds:
         return False, f"reached round {rounds}, wanted at least {min_rounds}"
@@ -279,8 +306,9 @@ def judge_soak(out, min_rounds, drift, pattern=PROGRESS_RE):
     ups = sum(1 for i in range(1, len(warm)) if warm[i][1] > warm[i - 1][1])
     shape = (f"sawtooth band {band} over {ups} recoveries" if ups
              else f"MONOTONE: free never rose in {len(warm)} samples, spread {band}")
+    noise = f", {dropped} corrupt record(s) dropped" if dropped else ""
     return True, (f"{rounds} rounds, floor steady at {late_floor} "
-                  f"(drop {drop}, {shape})")
+                  f"(drop {drop}, {shape}{noise})")
 
 
 def judge(out):
