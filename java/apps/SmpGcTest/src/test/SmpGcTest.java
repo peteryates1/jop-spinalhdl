@@ -146,6 +146,36 @@ public class SmpGcTest {
 	 * 11 entered the publish batch, 12 batch done.
 	 */
 	static int[] pubStep;
+
+	/**
+	 * ITEM 158'S TEST VEHICLE: one lock per publisher, and a sink for the work
+	 * done while holding it.
+	 *
+	 * A core owning ANY lock is EXEMPT from gcHalt by design (Ihlu.scala:371 --
+	 * it must finish its critical section or the cluster deadlocks), so while a
+	 * publisher is inside `synchronized (lockObj[id])` the collector's
+	 * stop-the-world does not stop it. IO_GC_MUTATOR counts the cycles that
+	 * happens, and `haltLeak` below reports it.
+	 *
+	 * WHY A PER-OBJECT LOCK AND NOT THE ALLOCATOR'S. monitorenter writes the
+	 * object reference to IO_LOCK, so these are IHLU per-object locks, held
+	 * independently of the allocator's `mutex`. That matters: minorGc is reached
+	 * only from allocGen, i.e. with `mutex` HELD BY THE COLLECTOR, so a core
+	 * that tried to allocate would block on it -- and a core waiting for a lock
+	 * is `lockWait`, which halts it and hides the case entirely. Nothing inside
+	 * the critical section below allocates, for exactly that reason.
+	 */
+	static Object[] lockObj;
+	static int[] lockSink;
+
+	/**
+	 * Iterations of non-allocating work inside the critical section.
+	 *
+	 * Long enough that core 0's minor GCs land inside the window often enough
+	 * to measure; short enough that the publishers still make progress. This is
+	 * a knob for provoking the violation, not a property of the system.
+	 */
+	static final int LOCK_HOLD_ITERS = 200;
 	/** Which holder slot a publisher was on when it stopped. */
 	static int[] pubSlot;
 
@@ -257,6 +287,9 @@ public class SmpGcTest {
 		pubExcStep = new int[cpuCnt];
 		rawLenBad = new int[cpuCnt];
 		aLenBad = new int[cpuCnt];
+		lockSink = new int[cpuCnt];
+		lockObj  = new Object[cpuCnt];
+		for (int p = 0; p < cpuCnt; p++) lockObj[p] = new Object();
 		liveTickHandle = Native.toInt(liveTick);
 		for (int p = 0; p < cpuCnt; p++) {
 			pubRound[p] = 0; liveTick[p] = 0; pubStep[p] = 0; pubSlot[p] = -1;
@@ -938,6 +971,18 @@ public class SmpGcTest {
 					aLenBad[id] = aLenBad[id] + 1;
 				}
 				liveTick[id] = liveTick[id] + 1;
+
+				// ITEM 158's VEHICLE -- hold a non-allocator lock across work.
+				// Core 0 is churning towards a minor GC throughout this loop,
+				// so some of those collections land inside this window, and
+				// while they do this core keeps running with the world
+				// supposedly stopped. Nothing here allocates; see lockObj.
+				pubStep[id] = 20;
+				synchronized (lockObj[id]) {
+					int acc = 0;
+					for (int k = 0; k < LOCK_HOLD_ITERS; k++) acc += k ^ id;
+					lockSink[id] = acc;
+				}
 				pubStep[id] = 10;
 				int ph = phase;
 				if (ph == 3) return;

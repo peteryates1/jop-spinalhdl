@@ -71,6 +71,40 @@ def resolve(tool, flag, alias, what):
     return val
 
 
+def stale_sources(image, src_dirs, limit=5):
+    """Sources newer than the image that is about to be downloaded.
+
+    hw_verify NEVER REBUILDS: it downloads whatever .jop is present. On
+    2026-09-14 that ran an image built four hours before its source was edited,
+    and the run reported -- credibly -- that a freshly added test vehicle
+    provoked nothing. The rebuilt image reported the violation on its first
+    round.
+
+    A stale image fails in the most expensive direction. It does not error; it
+    produces a clean, plausible result for code that was never executed, and
+    nothing in the transcript says which image ran. The project's own note on
+    this is "verify against the emitted .jop, not the exit code" -- this is
+    that check, done by the tool instead of by memory.
+    """
+    try:
+        img = os.path.getmtime(image)
+    except OSError:
+        return []
+    newer = []
+    for d in src_dirs:
+        for dirpath, _, files in os.walk(d):
+            for f in files:
+                if not f.endswith((".java", ".properties")):
+                    continue
+                p = os.path.join(dirpath, f)
+                try:
+                    if os.path.getmtime(p) > img:
+                        newer.append(os.path.relpath(p, ROOT))
+                except OSError:
+                    pass
+    return sorted(newer)[:limit]
+
+
 def find_bitstream(cfg_dir, tool=None):
     """The file to program, in the format the chosen TOOL can actually read.
 
@@ -421,6 +455,26 @@ def main():
                 f"  make -C java/apps/{a.app.split('/')[0]} JOP_PRESET={a.preset}\n"
                 f"(BUILDTREE=1 was the opt-in for the old dual layout; there is\n"
                 f" only one layout now and the variable no longer exists.)")
+        # PRESET PLUS ITS ARGS. `ep4cgx150Smp 8 50` and `ep4cgx150Smp` are
+        # different configs with different build directories, so a hint naming
+        # only the preset rebuilds the wrong one -- and the next run would then
+        # still be stale, with the message insisting it had been fixed.
+        cfg = " ".join([a.preset] + list(a.args))
+        app_dir = os.path.join(ROOT, "java", "apps", a.app.split("/")[0], "src")
+        rt_dir  = os.path.join(ROOT, "java", "runtime", "src")
+        stale = stale_sources(jop, [d for d in (app_dir, rt_dir) if os.path.isdir(d)])
+        if stale:
+            die("the app image is OLDER than its source -- this run would test\n"
+                "  code that is not in it, and would look like a clean result:\n"
+                "    image  {}\n"
+                "    newer  {}\n"
+                "  rebuild first:\n"
+                "    make -C java runtime JOP_PRESET=\"{}\"\n"
+                "    make -C java/apps/{} clean JOP_PRESET=\"{}\"\n"
+                "    make -C java/apps/{} JOP_PRESET=\"{}\""
+                .format(os.path.relpath(jop, ROOT), "\n           ".join(stale),
+                        cfg, a.app.split("/")[0], cfg,
+                        a.app.split("/")[0], cfg))
 
     log = os.path.join(cfg_dir, "hw_verify.log")
     passes = 0

@@ -2920,13 +2920,34 @@ mid-move, so the fix has to be a halt that actually halts.
    days and did so as corruption rather than as a hang, so it deserves a sim
    that reproduces a nested acquire during a halt before anything is built.
 
-**UNBLOCKED 2026-09-14** — [item 157](#item-157) is fixed, so `haltDeltaMax`
-is a real measurement (`IO_GC_MUTATOR`) rather than a constant, and a fix here
-can be shown to change it. What is still missing is a workload that provokes
-the violation at all: `SmpGcTest` cannot, because the only lock it exercises is
-the allocator's `mutex` and the collector itself holds it. **The first task is
-that test vehicle** — a core holding a different lock across a GC — because
-without it a fix and no fix look identical. Make `mutatorTick` real first, or this lands unfalsifiable.
+**RED PROOF ON HARDWARE, 2026-09-14: `haltLeak 5213`.**
+
+[Item 157](#item-157) made `haltDeltaMax` a real measurement, and the vehicle
+this item needed is now in `SmpGcTest`: each publisher holds a per-object IHLU
+lock across a stretch of work that allocates nothing, while core 0 churns
+towards a minor GC. On the 8-core EP4CGX150 that reports **5,213 cycles** —
+about 104 µs at 50 MHz — of a mutator running inside a window the collector
+believed had stopped the world. Before the vehicle the same build reported 0.
+
+Two details make the vehicle work, and both are the reason the plain test
+cannot:
+
+- **A per-object lock, not the allocator's.** `monitorenter` writes the object
+  reference to `IO_LOCK` (`jvm.asm:2039`), so these are IHLU locks held
+  independently of the allocator's `mutex`. `minorGc` is reached only from
+  `allocGen`, i.e. **with `mutex` held by the collector**, so an allocating core
+  would block on it.
+- **Nothing inside the critical section allocates.** A core waiting for a lock
+  is `lockWait`, which halts it — and a halted core hides the case completely.
+
+**And the run still passes**: `SMPGC OK`, `lost 0` on every round. The hole is
+real and now measured, but this workload does not lose a reference through it.
+That is worth stating precisely, because "the test passes" has been the reason
+to leave this alone, and it is not evidence that the halt is honoured.
+
+**The fix is next, and it is the two parts above.** The measurement now
+discriminates: after the fix this number must be 0 with the vehicle still in
+place, which is a claim that can fail. Make `mutatorTick` real first, or this lands unfalsifiable.
 
 **No guard.** The durable form is item 157's counter being real and asserted
 non-zero by a test that provokes the violation on purpose.

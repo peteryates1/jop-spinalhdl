@@ -75,6 +75,42 @@ def test_oscillating_series_is_still_called_a_sawtooth():
     assert "sawtooth" in msg, f"an oscillating series not described as sawtooth: {msg}"
 
 
+def test_a_stale_image_is_refused(tmp=None):
+    """An app image older than its source must not be run.
+
+    THIS COST A WRONG CONCLUSION on 2026-09-14. A test vehicle was added to
+    SmpGcTest to provoke item 158, hw_verify was run, and the result said the
+    vehicle did not provoke anything. It had run a .jop built four hours before
+    the source was edited: hw_verify downloads whatever image is present and
+    never rebuilds. The rebuilt image reported haltLeak 5213 on the first round.
+
+    A stale image fails in the most expensive direction -- it produces a clean,
+    plausible result for code that was never executed.
+    """
+    import tempfile, time
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "App.java")
+        jop = os.path.join(d, "App.jop")
+        open(jop, "w").write("image")
+        time.sleep(0.01)
+        open(src, "w").write("source")      # source is NEWER
+        stale = hw_verify.stale_sources(jop, [d])
+        assert stale, "a source newer than the image was not reported"
+        assert "App.java" in stale[0], stale
+
+
+def test_a_current_image_is_accepted():
+    """The companion: an image newer than its sources must run."""
+    import tempfile, time
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "App.java")
+        jop = os.path.join(d, "App.jop")
+        open(src, "w").write("source")
+        time.sleep(0.01)
+        open(jop, "w").write("image")       # image is NEWER
+        assert hw_verify.stale_sources(jop, [d]) == [], "a current image was called stale"
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     bad = 0
