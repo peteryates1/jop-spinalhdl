@@ -111,6 +111,45 @@ def test_a_current_image_is_accepted():
         assert hw_verify.stale_sources(jop, [d]) == [], "a current image was called stale"
 
 
+def test_a_stale_bitstream_is_refused():
+    """A bitstream older than the RTL it was built from must not be programmed.
+
+    THIS COST AN AFTERNOON on 2026-09-14. The CYC5000 appeared to hang at its
+    first GC: IO_GC_HALTED read 0 where an identical board read 1, with
+    byte-identical RTL, byte-identical constants and the same .jop. The board
+    was running a .rbf from THREE DAYS EARLIER -- `make all` rebuilds the .sof
+    and only `make program` regenerates the .rbf, while find_bitstream prefers
+    the .rbf for openFPGALoader. So the register being polled did not exist in
+    the bitstream on the chip.
+
+    It cost so much because every artefact that was easy to check was correct.
+    DoAll passed on the stale bitstream, which made it look like a software bug.
+    """
+    import tempfile, time
+    with tempfile.TemporaryDirectory() as d:
+        rtl = os.path.join(d, "rtl"); os.makedirs(rtl)
+        bit = os.path.join(d, "top.rbf")
+        open(bit, "w").write("bitstream")
+        time.sleep(0.01)
+        open(os.path.join(rtl, "Top.v"), "w").write("module")   # RTL is NEWER
+        stale = hw_verify.stale_sources(bit, [rtl], exts=(".v", ".vhd"))
+        assert stale, "RTL newer than the bitstream was not reported"
+        assert "Top.v" in stale[0], stale
+
+
+def test_a_current_bitstream_is_accepted():
+    """The companion: a bitstream newer than its RTL must program."""
+    import tempfile, time
+    with tempfile.TemporaryDirectory() as d:
+        rtl = os.path.join(d, "rtl"); os.makedirs(rtl)
+        bit = os.path.join(d, "top.rbf")
+        open(os.path.join(rtl, "Top.v"), "w").write("module")
+        time.sleep(0.01)
+        open(bit, "w").write("bitstream")                        # bitstream NEWER
+        assert hw_verify.stale_sources(bit, [rtl], exts=(".v", ".vhd")) == [], \
+            "a current bitstream was called stale"
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     bad = 0
