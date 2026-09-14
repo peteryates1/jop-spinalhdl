@@ -1,6 +1,7 @@
 package jop.io
 
 import spinal.core._
+import spinal.core.sim._   // simPublic on the lock table; see below
 
 /**
  * IHLU Configuration.
@@ -104,9 +105,15 @@ case class Ihlu(config: IhluConfig) extends Component {
   // Lock table: per-slot registers
   // ========================================================================
 
+  // simPublic: IhluGcGrantTest reads the table directly to check WHO owns what
+  // during a stop-the-world. The grant rule it tests is invisible from the
+  // syncOut pins alone -- "core 3 was refused" and "core 3 has not asked yet"
+  // look identical from outside.
   val entry      = Vec(Reg(Bits(32 bits)) init(0), lockSlots)       // Lock key
   val valid      = Vec(Reg(Bool()) init(False), lockSlots)          // Slot in use
   val owner      = Vec(Reg(UInt(cpuIdWidth bits)) init(0), lockSlots)
+  // simPublic is per ELEMENT, not on the Vec.
+  entry.foreach(_.simPublic()); valid.foreach(_.simPublic()); owner.foreach(_.simPublic())
   val count      = Vec(Reg(UInt(reentrantBits bits)) init(0), lockSlots)
   val queueHead  = Vec(Reg(UInt(queuePtrWidth bits)) init(0), lockSlots)
   val queueTail  = Vec(Reg(UInt(queuePtrWidth bits)) init(0), lockSlots)
@@ -192,6 +199,41 @@ case class Ihlu(config: IhluConfig) extends Component {
       ptr.resize(queueRamAddrWidth)).resize(queueRamAddrWidth)
   }
 
+  // ========================================================================
+  // DRAIN, BUT DO NOT ADMIT, WHILE A STOP-THE-WORLD IS IN FORCE — item 158.
+  //
+  // A core owning ANY lock is exempt from gcHalt (see the halted output
+  // below), which is deliberate: it must reach its monitorexit or the cluster
+  // deadlocks. The consequence nobody enforced is that the exempt SET must
+  // shrink. Without the rule here a core owning nothing can ask for a free
+  // slot DURING the halt, be granted it, become an owner, and so become exempt
+  // from the halt it just walked into -- so "everyone has stopped" may never
+  // become true, and a collector waiting for it would wait forever.
+  //
+  // THE RULE. While any core asserts gcHalt, service a request only if it
+  //   - is an UNLOCK          (draining is the whole point of the exemption),
+  //   - comes from a core that ALREADY OWNS something (see below), or
+  //   - comes from the core that asked for the halt (the collector itself,
+  //     which is legitimately running, and which holds the allocator's mutex
+  //     across minorGc anyway).
+  //
+  // "ALREADY OWNS SOMETHING" IS LOAD-BEARING, and dropping it deadlocks the
+  // machine. A nested `synchronized` inside a critical section needs a NEW
+  // slot; refuse that and the owner can never reach its monitorexit, never
+  // drops out of the exempt set, and the collector waits on it forever.
+  // IhluGcGrantTest asserts both directions for exactly this reason.
+  //
+  // A core whose request is not serviced keeps hasPending high, which is
+  // lockWait, which HALTS it -- so refusing to admit does not leave it
+  // spinning inside the stop-the-world; it parks it, which is what the halt
+  // wanted in the first place. The request is serviced when the halt lifts.
+  val anyGcHaltReq = (0 until cpuCnt).map(io.syncIn(_).gcHalt).reduce(_ || _)
+  val ownsAny = Vec((0 until cpuCnt).map { i =>
+    (0 until lockSlots).map(s => valid(s) && owner(s) === U(i, cpuIdWidth bits)).reduce(_ || _)
+  })
+  def mayBeServiced(i: Int): Bool =
+    !anyGcHaltReq || opReg(i) || ownsAny(i) || io.syncIn(i).gcHalt
+
   // Scan for next core with pending request (round-robin from cpuPtr)
   val foundPending = Bool()
   val foundCpu = UInt(cpuIdWidth bits)
@@ -202,14 +244,14 @@ case class Ihlu(config: IhluConfig) extends Component {
   // Two-pass scan for round-robin fairness (same as CmpSync)
   // First pass: i <= cpuPtr (lower priority)
   for (i <- cpuCnt - 1 to 0 by -1) {
-    when(U(i, cpuIdWidth bits) <= cpuPtr && hasPending(i)) {
+    when(U(i, cpuIdWidth bits) <= cpuPtr && hasPending(i) && mayBeServiced(i)) {
       foundPending := True
       foundCpu := U(i, cpuIdWidth bits)
     }
   }
   // Second pass: i > cpuPtr (higher priority, overrides)
   for (i <- cpuCnt - 1 to 0 by -1) {
-    when(U(i, cpuIdWidth bits) > cpuPtr && hasPending(i)) {
+    when(U(i, cpuIdWidth bits) > cpuPtr && hasPending(i) && mayBeServiced(i)) {
       foundPending := True
       foundCpu := U(i, cpuIdWidth bits)
     }
@@ -397,4 +439,13 @@ case class Ihlu(config: IhluConfig) extends Component {
   // already make for registering their category decode.
   val violated = RegNext(anyGcHalt && someoneRunning) init (False)
   for (i <- 0 until cpuCnt) io.syncOut(i).haltViolated := violated
+  // THE ACKNOWLEDGEMENT — status item 158. Per core, unlike haltViolated: the
+  // collector asks "is everyone BUT ME stopped?", and the answer differs per
+  // asker. Registered for the same reason `violated` is; one cycle of latency
+  // only makes the collector wait a cycle longer, and it is spinning anyway.
+  for (i <- 0 until cpuCnt) {
+    io.syncOut(i).othersHalted := RegNext(
+      (0 until cpuCnt).filter(_ != i).map(io.syncOut(_).halted).fold(True)(_ && _)
+    ) init (False)
+  }
 }

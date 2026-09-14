@@ -203,4 +203,60 @@ class CmpSyncFormal extends SpinalFormalFunSuite {
       })
   }
 
+  // ==========================================================================
+  // THE ACKNOWLEDGEMENT THE COLLECTOR NEVER HAD — status item 158.
+  //
+  // IO_GC_HALT is write-only: GC.java sets it and proceeds to mark, move and
+  // rewrite handles in the next statement, with no way to learn whether any
+  // core actually stopped. othersHalted is that answer, and these two
+  // properties pin it to the scenario that matters and its opposite.
+  // ==========================================================================
+  test("othersHalted is FALSE while an exempt lock owner is still running") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(CmpSync(cpuCnt))
+        assumeInitial(ClockDomain.current.isResetActive)
+        dut.io.syncIn(0).req := False
+        dut.io.syncIn(0).s_in := False
+        dut.io.syncIn(0).gcHalt := True    // the collector
+        dut.io.syncIn(1).req := True       // holds the lock, so exempt
+        dut.io.syncIn(1).s_in := False
+        dut.io.syncIn(1).gcHalt := False
+
+        // On the PAST condition: othersHalted is registered, so asserting on
+        // the present one passes while the register is still showing the
+        // pre-halt state -- passing for the wrong reason, the same trap the
+        // haltViolated property above documents.
+        when(pastValidAfterReset()) {
+          when(past(dut.nextState === dut.State.LOCKED && dut.nextLockedId === 1)) {
+            // the collector must NOT be told the world has stopped
+            assert(!dut.io.syncOut(0).othersHalted)
+          }
+        }
+      })
+  }
+
+  test("othersHalted is TRUE once the halt is honoured") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(CmpSync(cpuCnt))
+        assumeInitial(ClockDomain.current.isResetActive)
+        // THE CONTROL. Nobody holds a lock, so core 1 is halted and the world
+        // has genuinely stopped. Without this, tying othersHalted to False
+        // would satisfy the property above and hang the collector forever.
+        dut.io.syncIn(0).req := False
+        dut.io.syncIn(0).s_in := False
+        dut.io.syncIn(0).gcHalt := True
+        dut.io.syncIn(1).req := False
+        dut.io.syncIn(1).s_in := False
+        dut.io.syncIn(1).gcHalt := False
+
+        when(pastValidAfterReset()) {
+          assert(dut.io.syncOut(0).othersHalted)
+        }
+      })
+  }
+
 }

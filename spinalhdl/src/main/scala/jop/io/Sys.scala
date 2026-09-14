@@ -379,6 +379,14 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
       io.rdData(31 downto 5) := B(0, 27 bits)
     }
     is(3)  { io.rdData := gcMutatorCnt.asBits }         // IO_GC_MUTATOR (item 157)
+    is(8)  {                                              // IO_GC_HALTED (item 158)
+      // Has the stop-the-world this core asked for actually taken effect?
+      // IO_GC_HALT was write-only: the collector set it and marked, moved and
+      // rewrote handles in the next statement, with no way to know. Bit 0 is
+      // the acknowledgement.
+      io.rdData(0) := io.syncIn.othersHalted
+      io.rdData(31 downto 1) := B(0, 31 bits)
+    }
     is(4)  { io.rdData := excTypeReg.resized }           // IO_EXCEPTION
     is(5)  {                                              // IO_LOCK
       // VHDL: rd_data(0) <= sync_out.halted; rd_data(1) <= sync_out.status

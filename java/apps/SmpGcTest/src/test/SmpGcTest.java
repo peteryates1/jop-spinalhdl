@@ -681,6 +681,8 @@ public class SmpGcTest {
 			wrInt(errors - errBefore);
 			JVMHelp.wr(" haltLeak ");
 			wrInt(GC.haltDeltaMax);
+			JVMHelp.wr(" haltWait ");
+			wrInt(GC.haltWaitMax);
 			JVMHelp.wr("\r\n");
 			// EVERY ROUND, not just at the end and not just on a stall. With the
 			// publisher catch in place a bounds fault no longer wedges anything,

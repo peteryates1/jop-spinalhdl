@@ -317,6 +317,20 @@ object ConstGenerator {
          |	public static final int IO_SIGNAL = IO_BASE + ${ioOffset(JopIoSpace.SYS_SIGNAL)};
          |	/** Interrupt mask for individual interrupts */
          |	public static final int IO_INTMASK = IO_BASE + ${ioOffset(JopIoSpace.SYS_BASE + 8)};
+         |	/**
+         |	 * Bit 0: every OTHER core is halted, i.e. the stop-the-world this
+         |	 * core asked for has actually taken effect.
+         |	 *
+         |	 * READ-ONLY: the free direction of IO_INTMASK, the same trick
+         |	 * IO_ROOT_DATA uses on IO_GC_HALT and IO_GC_MUTATOR on IO_WD.
+         |	 *
+         |	 * Status item 158: IO_GC_HALT was a request with no acknowledgement.
+         |	 * The collector set it and proceeded to mark, move and rewrite handles
+         |	 * in the next statement, while a lock owner -- exempt from gcHalt by
+         |	 * design so it can drain -- kept running. Poll this until it reads
+         |	 * non-zero before touching the heap.
+         |	 */
+         |	public static final int IO_GC_HALTED = IO_BASE + ${ioOffset(JopIoSpace.SYS_BASE + 8)};
          |	/** Clear all pending interrupts */
          |	public static final int IO_INTCLEARALL = IO_BASE + ${ioOffset(JopIoSpace.SYS_BASE + 9)};
          |	/** Deadline/RAM counter */

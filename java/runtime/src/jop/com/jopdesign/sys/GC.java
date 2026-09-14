@@ -217,6 +217,15 @@ public class GC {
 	 */
 	public static int haltDeltaMax;
 
+	/**
+	 * Longest wait, in loop iterations, for the world to actually stop
+	 * (status item 158). Zero means every core was already halted when the
+	 * collector looked; a large value means a lock owner was draining.
+	 *
+	 * Diagnostic, not a fault: the wait is what makes the halt real.
+	 */
+	public static int haltWaitMax;
+
 	public static int copyPtr;
 	/**
 	 * Points to the lowest allocated-but-not-yet-compacted object.
@@ -2196,6 +2205,27 @@ public class GC {
 		// Safe to halt here because minorGc is only reached from allocGen,
 		// i.e. with `mutex` held — the invariant gc() documents.
 		Native.wr(1, Const.IO_GC_HALT);
+		// WAIT FOR IT TO TAKE EFFECT — status item 158.
+		//
+		// IO_GC_HALT is a REQUEST. A core owning any lock is exempt from it by
+		// design (Ihlu, CmpSync) so it can reach its monitorexit, and until
+		// 2026-09-14 nothing here waited: this method went straight on to mark,
+		// move and rewrite handles while such a core was still running. That is
+		// the shape that explains a lost reference and a wild-pointer crash
+		// equally well.
+		//
+		// The wait TERMINATES because the lock manager stops admitting new
+		// owners while gcHalt is asserted (it still services unlocks, and still
+		// lets an existing owner nest, or an owner blocked on a nested
+		// `synchronized` would never drain and this loop would never end). So
+		// the exempt set only shrinks.
+		//
+		// Deliberately unbounded. A bounded wait that gave up and proceeded
+		// would restore the old behaviour silently, on the rare path, which is
+		// the worst of both.
+		int spins = 0;
+		while (Native.rd(Const.IO_GC_HALTED) == 0) spins++;
+		if (spins > haltWaitMax) haltWaitMax = spins;
 		// Snapshot the mutator counter INSIDE the halt window.
 		int mtAtHalt = Native.rd(Const.IO_GC_MUTATOR);
 		if (GEN_TRACE) JVMHelp.wr("[gc");

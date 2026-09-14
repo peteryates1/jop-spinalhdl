@@ -34,6 +34,17 @@ case class SyncOut() extends Bundle {
   // the same value is broadcast to every core, because only the collector
   // reads it and it is asking about the cluster, not about itself.
   val haltViolated = Bool()
+  /**
+   * Every OTHER core is halted — i.e. the world really has stopped, from this
+   * core's point of view (status item 158). PER CORE, unlike haltViolated: the
+   * collector is asking "is everyone but me stopped?", and the answer differs
+   * per asker.
+   *
+   * IO_GC_HALT has always been a request with no acknowledgement: the collector
+   * sets it and marks, moves and rewrites handles in the next statement, never
+   * learning whether anyone stopped. This is the missing acknowledgement.
+   */
+  val othersHalted = Bool()
 }
 
 object SyncOut {
@@ -55,6 +66,7 @@ object SyncOut {
     s.s_out        := False
     s.status       := False
     s.haltViolated := False
+    s.othersHalted := True    // nobody else exists to be running
   }
 }
 
@@ -212,4 +224,13 @@ case class CmpSync(cpuCnt: Int) extends Component {
   // already make for registering their category decode.
   val violated = RegNext(anyGcHalt && someoneRunning) init (False)
   for (i <- 0 until cpuCnt) io.syncOut(i).haltViolated := violated
+  // THE ACKNOWLEDGEMENT — status item 158. Per core, unlike haltViolated: the
+  // collector asks "is everyone BUT ME stopped?", and the answer differs per
+  // asker. Registered for the same reason `violated` is; one cycle of latency
+  // only makes the collector wait a cycle longer, and it is spinning anyway.
+  for (i <- 0 until cpuCnt) {
+    io.syncOut(i).othersHalted := RegNext(
+      (0 until cpuCnt).filter(_ != i).map(io.syncOut(_).halted).fold(True)(_ && _)
+    ) init (False)
+  }
 }
