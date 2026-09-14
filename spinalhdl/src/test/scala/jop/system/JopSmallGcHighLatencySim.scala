@@ -1,4 +1,6 @@
 package jop.system
+
+import jop.io.SyncOut
 import jop.config._
 
 import spinal.core._
@@ -325,9 +327,7 @@ case class JopCoreWithHighLatencyMigHarness(
   // Core I/O
   // ==========================================================================
 
-  jopCore.io.syncIn.halted := False
-  jopCore.io.syncIn.s_out := False
-  jopCore.io.syncIn.status := False
+  SyncOut.tieOff(jopCore.io.syncIn)
   if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := True
   jopCore.io.debugRamAddr := 0
   jopCore.io.debugHalt := False

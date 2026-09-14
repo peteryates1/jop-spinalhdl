@@ -373,4 +373,28 @@ case class Ihlu(config: IhluConfig) extends Component {
     // Status: returns table-full error in bit 0 (read via IO_LOCK)
     io.syncOut(i).status := statusReg(i)
   }
+
+  // IS THE STOP-THE-WORLD ACTUALLY STOPPING ANYONE? — status item 157, and the
+  // same signal CmpSync computes; see the long note there for why it is here
+  // and not in software. IHLU is the SMP default (CmpSync serialises every
+  // lock onto one global lock), so this is the copy that runs on the boards.
+  //
+  // The exemption above is per-core and deliberate: a core owning ANY lock
+  // keeps running through another core's gcHalt so it can drain. That is the
+  // behaviour being observed, not a bug being caught.
+  val anyGcHalt = (0 until cpuCnt).map(io.syncIn(_).gcHalt).reduce(_ || _)
+  val someoneRunning = (0 until cpuCnt)
+    .map(j => !io.syncIn(j).gcHalt && !io.syncOut(j).halted).reduce(_ || _)
+  // REGISTERED BEFORE BROADCAST. Combinationally this is
+  //   nextState -> halted(j) for every core -> OR reduce -> haltViolated ->
+  //   every core's Sys -> 32-bit counter enable
+  // which is a cluster-wide fanout ending at cpuCnt adders, and it cost the
+  // 8-core build its timing: +0.346 ns without it, -0.790 ns with it.
+  // Registering splits the path and costs nothing that matters -- this is a
+  // CYCLE COUNT read as a difference across a window thousands of cycles long,
+  // so a uniform one-cycle shift is invisible and only the first and last cycle
+  // of a window can differ, by one. The same argument the IO_PERFCNT counters
+  // already make for registering their category decode.
+  val violated = RegNext(anyGcHalt && someoneRunning) init (False)
+  for (i <- 0 until cpuCnt) io.syncOut(i).haltViolated := violated
 }

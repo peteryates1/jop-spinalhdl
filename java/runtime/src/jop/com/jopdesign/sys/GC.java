@@ -188,18 +188,33 @@ public class GC {
 	public static boolean cardClearEnabled = true;
 
 	/**
-	 * Bumped freely by a mutator; read by minorGc() to check that the world it
-	 * claims to stop is actually stopped.
+	 * Largest mutator advance seen across a stop-the-world, in CYCLES.
 	 *
-	 * The card for a cross-generation store is provably marked, and the holder
-	 * provably lies in a range scanCards() visits, yet the reference is still
-	 * lost — so the remaining suspect is the halt. If a mutator advances between
-	 * IO_GC_HALT going high and going low, the collector moved objects and
-	 * rewrote handles underneath a running core, which explains a lost reference
-	 * and a wild-pointer crash equally well.
+	 * WHY IT IS MEASURED AT ALL. The card for a cross-generation store is
+	 * provably marked, and the holder provably lies in a range scanCards()
+	 * visits, yet the reference is still lost — so the remaining suspect is the
+	 * halt. If a mutator advances between IO_GC_HALT going high and going low,
+	 * the collector moved objects and rewrote handles underneath a running
+	 * core, which explains a lost reference and a wild-pointer crash equally
+	 * well.
+	 *
+	 * Was a difference of `mutatorTick`, a field NOTHING in the tree ever
+	 * assigned -- so this was a constant 0, its "must stay 0" was true by
+	 * construction, and SmpGcTest printed `haltLeak 0` every round of every SMP
+	 * GC soak as an all-clear it could not have earned (status item 157).
+	 *
+	 * Now read from IO_GC_MUTATOR, a hardware counter of cycles on which a
+	 * gcHalt was in force and some core was neither the requester nor halted.
+	 * A software counter cannot do this cheaply: to mean anything it would have
+	 * to be bumped on a path every core runs often, which is a contended
+	 * shared-memory write on the allocation path. CmpSync/IHLU already compute
+	 * every core's halted state, so in hardware it is free.
+	 *
+	 * IT IS NOT EXPECTED TO BE ZERO. A lock owner is exempt from gcHalt by
+	 * design -- it must finish its critical section or the cluster deadlocks --
+	 * so this measures HOW FAR from a real stop-the-world the system is. Making
+	 * it actually zero is status item 158.
 	 */
-	public static int mutatorTick;
-	/** Largest mutator advance seen across a stop-the-world. Must stay 0. */
 	public static int haltDeltaMax;
 
 	public static int copyPtr;
@@ -2182,7 +2197,7 @@ public class GC {
 		// i.e. with `mutex` held — the invariant gc() documents.
 		Native.wr(1, Const.IO_GC_HALT);
 		// Snapshot the mutator counter INSIDE the halt window.
-		int mtAtHalt = mutatorTick;
+		int mtAtHalt = Native.rd(Const.IO_GC_MUTATOR);
 		if (GEN_TRACE) JVMHelp.wr("[gc");
 		int t0 = 0, t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0, allocBefore = 0;
 		if (GC_TIMING) { t0 = Native.rd(Const.IO_US_CNT); allocBefore = allocPtr; }
@@ -2234,7 +2249,7 @@ public class GC {
 		// must not resume until both the move and the invalidate are done.
 		Native.invalidate();
 		// Did anything run while the world was supposed to be stopped?
-		int mtDelta = mutatorTick - mtAtHalt;
+		int mtDelta = Native.rd(Const.IO_GC_MUTATOR) - mtAtHalt;
 		if (mtDelta > haltDeltaMax) haltDeltaMax = mtDelta;
 		Native.wr(0, Const.IO_GC_HALT);       // resume the other cores
 		if (GC_TIMING) {

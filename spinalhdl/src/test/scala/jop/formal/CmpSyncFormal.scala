@@ -127,4 +127,80 @@ class CmpSyncFormal extends SpinalFormalFunSuite {
       })
   }
 
+  // ==========================================================================
+  // AND THE EXEMPTION MUST BE OBSERVABLE — status item 157.
+  //
+  // The property above PROVES that a lock owner keeps running through another
+  // core's gcHalt. That is by design: the owner must finish its critical
+  // section or the cluster deadlocks. What was missing is any way to know it
+  // happened. `GC.haltDeltaMax` was supposed to be that -- "Largest mutator
+  // advance seen across a stop-the-world. Must stay 0" -- but the counter it
+  // subtracts, `mutatorTick`, is assigned by NOTHING anywhere in the tree, so
+  // the field is a constant 0 and SmpGcTest has printed `haltLeak 0` every
+  // round of every SMP GC soak as an all-clear it cannot have earned.
+  //
+  // Software cannot fix that cheaply: a counter every core bumps often enough
+  // to be meaningful is a contended shared-memory write on the allocation path.
+  // The cluster already knows -- CmpSync computes every core's `halted` -- so
+  // the signal is free here and costs the mutator nothing.
+  //
+  // haltViolated is high on exactly the cycles a stop-the-world is in force and
+  // some core is neither the requester nor halted.
+  // ==========================================================================
+  test("haltViolated is asserted while an exempt lock owner runs through a gcHalt") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(CmpSync(cpuCnt))
+        assumeInitial(ClockDomain.current.isResetActive)
+
+        // Identical stimulus to the exemption property above: core 0 is the
+        // collector asking for the world to stop, core 1 holds the lock.
+        dut.io.syncIn(0).req := False
+        dut.io.syncIn(0).s_in := False
+        dut.io.syncIn(0).gcHalt := True
+        dut.io.syncIn(1).req := True
+        dut.io.syncIn(1).s_in := False
+        dut.io.syncIn(1).gcHalt := False
+
+        // ONE CYCLE BEHIND, and the property says so. haltViolated is
+        // registered before broadcast -- combinationally it fanned out from
+        // nextState through every core's halted to cpuCnt counter enables and
+        // cost the 8-core build its timing. So the assertion is on the PAST
+        // condition; writing it on the present one passes anyway, because the
+        // LOCKED state persists and the register catches up within the BMC
+        // depth, which would be passing for the wrong reason.
+        when(pastValidAfterReset()) {
+          when(past(dut.nextState === dut.State.LOCKED && dut.nextLockedId === 1)) {
+            // core 1 was running (proved above) while core 0 asked for a halt
+            assert(dut.io.syncOut(0).haltViolated)
+            assert(dut.io.syncOut(1).haltViolated)   // global signal, same to all
+          }
+        }
+      })
+  }
+
+  test("haltViolated is LOW when the halt is honoured") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(CmpSync(cpuCnt))
+        assumeInitial(ClockDomain.current.isResetActive)
+
+        // THE CONTROL. Same collector, but nobody holds a lock, so core 1 is
+        // halted and the world really has stopped. Without this the property
+        // above is satisfied by tying haltViolated to the gcHalt request.
+        dut.io.syncIn(0).req := False
+        dut.io.syncIn(0).s_in := False
+        dut.io.syncIn(0).gcHalt := True
+        dut.io.syncIn(1).req := False
+        dut.io.syncIn(1).s_in := False
+        dut.io.syncIn(1).gcHalt := False
+
+        when(pastValidAfterReset()) {
+          assert(!dut.io.syncOut(0).haltViolated)
+        }
+      })
+  }
+
 }

@@ -107,7 +107,6 @@ nothing depends on ranks below a measurement that could mislead someone.
 67. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
 68. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
 69. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
-70. **[#157](#item-157)** — `GC.mutatorTick` is incremented by nothing, so the stop-the-world leak detector `haltDeltaMax` is a constant 0 — and `SmpGcTest` prints it every round as `haltLeak 0`. Item 132 cites this instrumentation as its first place to look
 
 ## 2. All items — summary
 
@@ -159,7 +158,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[153](#item-153)** — The Alchitry Au's tracked XDC has NO `create_clock`; its top-level clock may be unconstrained
 - **[154](#item-154)** — Item 137 is closed over a blocker it names: `sim-smallest` and `sim-small` still cannot run
 - **[155](#item-155)** — Item 116's split decayed to 7,475 lines and nothing guards section size
-- **[157](#item-157)** — The stop-the-world leak detector is never incremented, and its zero is printed every SMP GC round as evidence
+- **[157](#item-157)** — ~~The stop-the-world leak detector is never incremented~~ — FIXED 2026-09-14: `IO_GC_MUTATOR` counts it in hardware
 - **[158](#item-158)** — Stop-the-world has no acknowledgement and lock owners are exempt, so the collector can compact under a running core
 - **[32](#item-32)** — UART corruption on seed 871203250 — no longer reachable at HEAD, CI pin REMOVED; cause never found
 - **[3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -2746,7 +2745,7 @@ A-E115FB stays out — its Pico blaster died and the board is powered off.
 
 <a id="item-157"></a>
 
-### Item 157 — the stop-the-world leak detector is incremented by nothing, and every SMP GC round prints its zero as evidence
+### ~~Item 157~~ — the stop-the-world leak detector is incremented by nothing, and every SMP GC round prints its zero as evidence — **FIXED 2026-09-14, in hardware**
 
 **Found 2026-09-11** while acting on [item 132](#item-132), which names this
 instrumentation as *"the place to look first"* for the second consequence it
@@ -2786,18 +2785,87 @@ the aggravating detail that this one is *printed*, so it does not merely fail
 silently, it actively reassures. It is also why item 132's second consequence
 has never been looked at: the instrument for it appeared to be reporting clean.
 
-**The fix is not one line, which is probably why it stalled.** A counter only
-detects the violation if it is advanced by a core that is *running while halted*
-— i.e. the lock-owner exemption path. Incrementing it somewhere every core
-touches often (allocation, a bytecode) makes it a shared-memory write on the hot
-path; incrementing it only in the exempt path requires knowing where that is.
-Decide that before writing the increment, or this becomes a check that fires
-constantly instead of never.
+**CORRECTION — it was left inert DELIBERATELY, and this item first said
+otherwise.** [Item 1's journal](status/item-1.md) records the decision and the
+reason:
 
-**No guard.** The durable form is a check that a field read as a difference is
-written somewhere — which is close to dead-store analysis and probably not worth
-building. The narrower and more useful rule: a value printed as evidence must
-have a test that makes it non-zero. `SmpGcTest` has no such case.
+> Every attempt to instrument core 1's hot loop made the failure arrive
+> *sooner* — adding a `GC.mutatorTick` bump to the publisher took it from
+> "fails in round 1" to "dies before round 0 finishes". […] The runtime-side
+> half is committed and inert […] Nothing bumps `mutatorTick` by default, so it
+> costs one static read per minor GC and shifts nothing. Wire it up from a
+> mutator only if hardware measurement becomes worthwhile again.
+
+So the software counter was tried, measurably perturbed the thing it was
+measuring, and was parked on purpose. That is a sound call, and this item was
+wrong to imply an oversight. **What was actually wrong is narrower and still
+real: `SmpGcTest` prints the resulting constant every round as `haltLeak`.** An
+inert field is a parked tool; an inert field published each round as a number is
+an all-clear nobody earned.
+
+Item 1 also names the right answer, which is the one taken here — *"measure the
+halt in SIMULATION, not on hardware […] the check is simply: while any core
+asserts `gcHaltReg`, does another core's `pc` advance?"* Doing it in **hardware**
+is the same measurement with the same zero perturbation, and it works on the
+boards as well as in a sim.
+
+---
+
+**FIXED 2026-09-14.** `mutatorTick` is deleted. `haltDeltaMax` now comes from
+`IO_GC_MUTATOR`, a hardware counter of cycles on which a gcHalt was in force and
+some core was neither the requester nor halted.
+
+Guard: `CmpSyncFormal` (2 properties) + `SysFormal` (3 properties).
+
+The chain is proven in three places, because the failure being fixed is
+precisely a value nothing could move:
+
+| what | where | red-proved by |
+|---|---|---|
+| the signal asserts in the scenario that matters | `CmpSyncFormal` | tying `haltViolated` to `False` — the property failed, its control passed |
+| the counter counts, and only then | `SysFormal` ×2 | disabling the counter enable — "advances" failed, "does not advance" passed |
+| the count is readable on `IO_GC_MUTATOR` | `SysFormal` | — (asserts the read mux, independent of counting) |
+
+`CmpSync`/`Ihlu` compute the condition, since they already derive every core's
+`halted`; `Sys` counts it and exposes it on the free READ direction of `IO_WD`,
+the same trick `IO_ROOT_DATA` uses on `IO_GC_HALT`. Free-running and saturating,
+read as a difference either side of the halt window — the same shape the dead
+field had, so the collector's two read sites did not move, only what they read.
+
+**Timing: the signal had to be registered.** Combinationally it fans out from
+`nextState` through every core's `halted`, OR-reduces, and lands on `cpuCnt`
+counter enables — a cluster-wide path that cost the 8-core EP4CGX150 its
+timing. Measured, Slow 1200mV 100C:
+
+| | slack | verdict |
+|---|---:|---|
+| before this item (mirrored card table) | +0.346 | MET |
+| `haltViolated` combinational | **−0.790** | **VIOLATED** |
+| `haltViolated` registered | **+0.167** | MET |
+
+A cycle of latency is free here: the value is read as a difference across a
+window thousands of cycles long, so a uniform shift is invisible and only the
+first and last cycle of a window can differ, by one. The formal property was
+tightened to assert on the *past* condition — written on the present one it
+passes anyway, because LOCKED persists and the register catches up inside the
+BMC depth, which is passing for the wrong reason.
+
+Margin is thinner than before (+0.167 vs +0.346). If it needs recovering, the
+obvious lever is one counter in `JopCluster` broadcast to every `Sys` instead of
+`cpuCnt` separate 32-bit adders counting the same global signal.
+
+**ON HARDWARE IT STILL READS ZERO — and that is now a measurement.** 8-core
+EP4CGX150, `SmpGcTest`: `SMPGC OK`, `haltLeak 0` on every round. The difference
+from before is that 0 is now capable of being something else.
+
+It is also the expected answer for *this* workload, which is worth stating so
+the zero is not read as a proof of the STW invariant. `SmpGcTest` contains no
+`synchronized` of its own; the only lock in play is the allocator's global
+`mutex`, and `minorGc` is reached only from `allocGen` — **with that mutex
+held, by the collector**. So every other core is either blocked on it
+(`lockWait` → halted) or owns nothing (→ halted), and there is no exempt owner
+to run. Provoking a non-zero needs a core holding a *different* lock across a
+GC, which is exactly the test vehicle [item 158](#item-158) needs anyway.
 
 
 <a id="item-158"></a>
@@ -2852,10 +2920,13 @@ mid-move, so the fix has to be a halt that actually halts.
    days and did so as corruption rather than as a hang, so it deserves a sim
    that reproduces a nested acquire during a halt before anything is built.
 
-**Blocked on [item 157](#item-157) for evidence, not for code.** While
-`haltDeltaMax` is a constant 0, there is no way to demonstrate the violation
-before the fix or its absence after — the soak would print `haltLeak 0` either
-way. Make `mutatorTick` real first, or this lands unfalsifiable.
+**UNBLOCKED 2026-09-14** — [item 157](#item-157) is fixed, so `haltDeltaMax`
+is a real measurement (`IO_GC_MUTATOR`) rather than a constant, and a fix here
+can be shown to change it. What is still missing is a workload that provokes
+the violation at all: `SmpGcTest` cannot, because the only lock it exercises is
+the allocator's `mutex` and the collector itself holds it. **The first task is
+that test vehicle** — a core holding a different lock across a GC — because
+without it a fix and no fix look identical. Make `mutatorTick` real first, or this lands unfalsifiable.
 
 **No guard.** The durable form is item 157's counter being real and asserted
 non-zero by a test that provokes the violation on purpose.

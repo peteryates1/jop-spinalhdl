@@ -23,14 +23,18 @@ class SysFormal extends SpinalFormalFunSuite {
 
   val clkFreq = 100 MHz
 
-  def setupDut(dut: Sys): Unit = {
+  /** @param haltViolated drive syncIn.haltViolated, which two properties below
+    *        need HIGH. Taken as a parameter rather than overridden afterwards:
+    *        SyncOut.tieOff already drives every field, and assigning it again
+    *        is a complete overlap that SpinalHDL rejects outright. */
+  def setupDut(dut: Sys, haltViolated: Boolean = false): Unit = {
     anyseq(dut.io.addr)
     anyseq(dut.io.rd)
     anyseq(dut.io.wr)
     anyseq(dut.io.wrData)
-    dut.io.syncIn.halted := False
-    dut.io.syncIn.s_out := False
-    dut.io.syncIn.status := False
+    SyncOut.tieOff(dut.io.syncIn)
+    dut.io.syncIn.haltViolated.removeAssignments()
+    dut.io.syncIn.haltViolated := Bool(haltViolated)
     dut.io.ackIrq := False
     dut.io.ackExc := False
     dut.io.ioInt := 0
@@ -100,6 +104,68 @@ class SysFormal extends SpinalFormalFunSuite {
           // If no write happens to addr 5 or 6, lockReqReg is stable
           when(past(!dut.io.wr) || (past(dut.io.addr =/= 5) && past(dut.io.addr =/= 6))) {
             assert(stable(dut.lockReqReg))
+          }
+        }
+      })
+  }
+
+  // ==========================================================================
+  // THE VIOLATION COUNTER COUNTS, AND IS READABLE — status item 157.
+  //
+  // The CmpSync properties prove haltViolated asserts in the scenario that
+  // matters (an exempt lock owner running through another core's gcHalt). These
+  // prove the rest of the chain: that Sys turns that signal into a number, and
+  // that the number comes back on IO_GC_MUTATOR.
+  //
+  // Both halves are needed. The whole point of this item is that GC.haltDeltaMax
+  // was a value nothing could move, published every round as an all-clear, so
+  // "it reads 0 on hardware" is only meaningful once 0 is a MEASUREMENT.
+  // ==========================================================================
+  test("the stop-the-world violation counter advances while haltViolated is high") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(Sys(cpuId = 0, cpuCnt = 2, clkFreq = clkFreq))
+        assumeInitial(ClockDomain.current.isResetActive)
+        setupDut(dut, haltViolated = true)   // a halt ignored, every cycle
+
+        when(pastValidAfterReset()) {
+          // strictly increasing, one per cycle, until it saturates
+          assert(dut.gcMutatorCnt === past(dut.gcMutatorCnt) + 1)
+        }
+      })
+  }
+
+  test("the violation counter does NOT advance while the halt is honoured") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(Sys(cpuId = 0, cpuCnt = 2, clkFreq = clkFreq))
+        assumeInitial(ClockDomain.current.isResetActive)
+        setupDut(dut)   // tieOff leaves haltViolated False
+
+        when(pastValidAfterReset()) {
+          // THE CONTROL. Without it, a counter wired to increment every cycle
+          // would satisfy the property above and report violations that never
+          // happened -- which is the same defect as reporting none, inverted.
+          assert(dut.gcMutatorCnt === 0)
+        }
+      })
+  }
+
+  test("IO_GC_MUTATOR reads back the violation counter") {
+    formalConfig
+      .withBMC(6)
+      .doVerify(new Component {
+        val dut = FormalDut(Sys(cpuId = 0, cpuCnt = 2, clkFreq = clkFreq))
+        assumeInitial(ClockDomain.current.isResetActive)
+        setupDut(dut, haltViolated = true)
+
+        when(pastValidAfterReset()) {
+          // The value must be reachable from software, or the counter is as
+          // unobservable as the field it replaces.
+          when(dut.io.addr === 3) {
+            assert(dut.io.rdData.asUInt === dut.gcMutatorCnt)
           }
         }
       })

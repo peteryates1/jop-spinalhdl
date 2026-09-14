@@ -1,4 +1,6 @@
 package jop.system
+
+import jop.io.SyncOut
 import jop.config._
 
 import spinal.core._
@@ -105,9 +107,7 @@ case class JopCoreLargeBramHarness(
   ram.io.bus << jopSystem.io.bmb
 
   // Single-core: no CmpSync
-  jopSystem.io.syncIn.halted := False
-  jopSystem.io.syncIn.s_out := False
-  jopSystem.io.syncIn.status := False
+  SyncOut.tieOff(jopSystem.io.syncIn)
 
   // No UART RX
   if (jopSystem.devicePins.contains("uart")) jopSystem.devicePin[Bool]("uart", "rxd") := True

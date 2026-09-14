@@ -1,4 +1,6 @@
 package jop.system
+
+import jop.io.SyncOut
 import jop.config._
 
 import spinal.core._
@@ -56,9 +58,7 @@ case class JopEchoHarness(
   ram.io.bus << jopCore.io.bmb
 
   // Single-core: no CmpSync
-  jopCore.io.syncIn.halted := False
-  jopCore.io.syncIn.s_out := False
-  jopCore.io.syncIn.status := False
+  SyncOut.tieOff(jopCore.io.syncIn)
 
   // UART RX from simulation (bit-serial)
   if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := io.rxd

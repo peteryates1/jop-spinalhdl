@@ -1,10 +1,11 @@
 package jop.system
+
 import jop.config._
 
 import spinal.core._
 import spinal.lib._
 import spinal.lib.bus.bmb._
-import jop.io.{CmpSync, Ihlu, IhluConfig}
+import jop.io.{CmpSync, Ihlu, IhluConfig, SyncOut}
 import jop.memory.CardTable
 import jop.debug._
 
@@ -215,17 +216,15 @@ case class JopCluster(
   val cmpSync: Option[CmpSync] = if (cpuCnt == 1 && !needsArbiter) {
     // Single-core, no arbiter needed: direct BMB connection
     io.bmb <> cores(0).io.bmb
-    cores(0).io.syncIn.halted := False
-    cores(0).io.syncIn.s_out  := False
-    cores(0).io.syncIn.status := False
+    // Single core: no lock manager, and no one to run through a halt.
+    SyncOut.tieOff(cores(0).io.syncIn)
     None
   } else if (cpuCnt == 1) {
     // Single-core but debug needs memory: 2-input arbiter (core + debug)
     // Arbiter is created below after debug subsystem instantiation.
     // Sync tie-offs for single-core:
-    cores(0).io.syncIn.halted := False
-    cores(0).io.syncIn.s_out  := False
-    cores(0).io.syncIn.status := False
+    // Single core: no lock manager, and no one to run through a halt.
+    SyncOut.tieOff(cores(0).io.syncIn)
     None
   } else if (baseConfig.useCmpSync) {
     // SMP with global lock (CmpSync)

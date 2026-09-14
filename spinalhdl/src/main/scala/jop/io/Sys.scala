@@ -277,6 +277,29 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
   io.halted := io.syncIn.halted
 
   // ==========================================================================
+  // STOP-THE-WORLD VIOLATION COUNTER (IO_GC_MUTATOR, SYS_BASE + 3) — item 157.
+  //
+  // Counts cycles on which a gcHalt was in force and some core was neither the
+  // requester nor halted -- i.e. the world was asked to stop and did not.
+  // CmpSync/IHLU compute the condition; see the note in either for why it is
+  // in hardware rather than a counter the mutators bump.
+  //
+  // THE PROTOCOL IS A DIFFERENCE, not an absolute. It free-runs, and GC.java
+  // brackets its halt window with two reads; the delta is the number of cycles
+  // a mutator ran inside THAT window. That is exactly the shape the dead
+  // `mutatorTick` had, so the collector's two read sites do not move -- only
+  // what they read.
+  //
+  // Saturating, so a long soak cannot wrap a real violation back to zero and
+  // report a clean run. 32 bits at 50 MHz is 86 seconds of CONTINUOUS
+  // violation, which no correct system reaches, so saturation is itself a
+  // signal rather than a limitation.
+  val gcMutatorCnt = Reg(UInt(32 bits)) init(0)
+  when(io.syncIn.haltViolated && gcMutatorCnt =/= U(gcMutatorCnt.maxValue)) {
+    gcMutatorCnt := gcMutatorCnt + 1
+  }
+
+  // ==========================================================================
   // Read mux (combinational, matching VHDL sc_sys.vhd)
   // ==========================================================================
 
@@ -355,6 +378,7 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
       io.rdData(4 downto 0) := intNr
       io.rdData(31 downto 5) := B(0, 27 bits)
     }
+    is(3)  { io.rdData := gcMutatorCnt.asBits }         // IO_GC_MUTATOR (item 157)
     is(4)  { io.rdData := excTypeReg.resized }           // IO_EXCEPTION
     is(5)  {                                              // IO_LOCK
       // VHDL: rd_data(0) <= sync_out.halted; rd_data(1) <= sync_out.status

@@ -289,6 +289,22 @@ object ConstGenerator {
          |	public static final int IO_INTNR = IO_SWINT;
          |	/** Watchdog */
          |	public static final int IO_WD = IO_BASE + ${ioOffset(JopIoSpace.SYS_WD)};
+         |	/**
+         |	 * Cycles on which a stop-the-world was in force and some core was
+         |	 * neither the requester nor halted -- i.e. the halt was not honoured.
+         |	 * READ-ONLY: the free direction of IO_WD, the same trick IO_ROOT_DATA
+         |	 * uses on IO_GC_HALT.
+         |	 *
+         |	 * Free-running and saturating; read it either side of a halt window
+         |	 * and the DIFFERENCE is how many cycles a mutator ran inside it. A
+         |	 * lock owner is exempt from gcHalt by design (Ihlu, CmpSync), so this
+         |	 * is not always zero -- it is the measurement of how far from zero.
+         |	 *
+         |	 * Status item 157: the software counter this replaces, GC.mutatorTick,
+         |	 * was assigned by nothing, so GC.haltDeltaMax was a constant 0 and
+         |	 * SmpGcTest printed `haltLeak 0` every round as an all-clear.
+         |	 */
+         |	public static final int IO_GC_MUTATOR = IO_BASE + ${ioOffset(JopIoSpace.SYS_WD)};
          |	/** Exception register */
          |	public static final int IO_EXCPT = IO_BASE + ${ioOffset(JopIoSpace.SYS_EXC)};
          |	/** Lock acquire */

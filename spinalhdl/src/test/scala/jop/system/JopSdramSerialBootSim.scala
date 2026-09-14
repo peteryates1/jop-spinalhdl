@@ -1,4 +1,6 @@
 package jop.system
+
+import jop.io.SyncOut
 import jop.config._
 
 import spinal.core._
@@ -66,9 +68,7 @@ case class JopSdramSerialBootHarness(
   io.sdram <> jopSystem.io.sdram
 
   // Single-core: no CmpSync
-  jopSystem.io.syncIn.halted := False
-  jopSystem.io.syncIn.s_out := False
-  jopSystem.io.syncIn.status := False
+  SyncOut.tieOff(jopSystem.io.syncIn)
 
   // UART RX from simulation (bit-serial)
   jopSystem.io.rxd := io.rxd

@@ -1,4 +1,6 @@
 package jop.system
+
+import jop.io.SyncOut
 import jop.config._
 
 import spinal.core._
@@ -76,9 +78,7 @@ case class JopCoreWithSdramTestHarness(
   io.sdram <> jopSystem.io.sdram
 
   // Single-core: no CmpSync
-  jopSystem.io.syncIn.halted := False
-  jopSystem.io.syncIn.s_out := False
-  jopSystem.io.syncIn.status := False
+  SyncOut.tieOff(jopSystem.io.syncIn)
 
   // No UART RX in test harness
   jopSystem.io.rxd := True

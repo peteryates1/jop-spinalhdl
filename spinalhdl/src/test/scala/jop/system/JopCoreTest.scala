@@ -1,4 +1,6 @@
 package jop.system
+
+import jop.io.SyncOut
 import jop.config._
 
 import spinal.core._
@@ -162,9 +164,7 @@ case class JopCoreTestHarness(
   }
 
   // Single-core: no CmpSync
-  jopCore.io.syncIn.halted := False
-  jopCore.io.syncIn.s_out := False
-  jopCore.io.syncIn.status := False
+  SyncOut.tieOff(jopCore.io.syncIn)
 
   // No UART RX in test harness
   if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := True

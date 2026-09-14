@@ -29,6 +29,33 @@ case class SyncOut() extends Bundle {
   val halted = Bool()  // Core is halted (waiting for lock or GC halt)
   val s_out  = Bool()  // Boot synchronization broadcast
   val status = Bool()  // Lock table full error (IHLU only)
+  // A stop-the-world is in force and some core is neither the requester nor
+  // halted -- i.e. the halt is not being honoured (status item 157). GLOBAL:
+  // the same value is broadcast to every core, because only the collector
+  // reads it and it is asking about the cluster, not about itself.
+  val haltViolated = Bool()
+}
+
+object SyncOut {
+  /**
+   * Tie a core's `syncIn` off for a harness with no lock manager.
+   *
+   * WHY THIS EXISTS. Every single-core sim drives these fields one by one, and
+   * there are nineteen of them. Adding `haltViolated` (status item 157) broke
+   * all nineteen with `NO DRIVER`, and `sbt compile` CANNOT SEE IT -- SpinalHDL
+   * only checks drivers during elaboration, so the failure appears in the sim
+   * jobs and nowhere earlier. Adding a field to SyncOut should not be a
+   * nineteen-file change discovered in CI.
+   *
+   * Use this rather than assigning the fields individually; then the next field
+   * is one edit here.
+   */
+  def tieOff(s: SyncOut): Unit = {
+    s.halted       := False
+    s.s_out        := False
+    s.status       := False
+    s.haltViolated := False
+  }
 }
 
 /**
@@ -146,4 +173,43 @@ case class CmpSync(cpuCnt: Int) extends Component {
       }
     }
   }
+
+  // ==========================================================================
+  // IS THE STOP-THE-WORLD ACTUALLY STOPPING ANYONE? — status item 157.
+  //
+  // The exemption directly above is deliberate and correct: an owner must
+  // finish its critical section or the cluster deadlocks. What was missing was
+  // any way to observe that it happened. GC.java brackets its halt window with
+  // reads of `mutatorTick` and calls the difference `haltDeltaMax`, commented
+  // "Largest mutator advance seen across a stop-the-world. Must stay 0" -- but
+  // nothing in the tree ever assigns mutatorTick, so the difference is always
+  // 0 and SmpGcTest has printed `haltLeak 0` on every round of every SMP GC
+  // soak, including the 1/4/8/12-core validation runs. A published constant
+  // reads as evidence.
+  //
+  // It cannot be fixed cheaply in software: a counter bumped often enough to
+  // mean anything is a contended shared-memory write on the allocation path.
+  // Here it is free -- this component already computes every core's `halted`.
+  //
+  // GLOBAL, not per core. The question is about the cluster ("is anyone
+  // running?"), and only the collector reads it, so the same value goes to
+  // every core rather than each getting its own view.
+  val anyGcHalt = (0 until cpuCnt).map(io.syncIn(_).gcHalt).reduce(_ || _)
+  // A core is running-when-it-should-not-be if it is neither the core that
+  // asked for the halt nor halted. The requester is excluded because the
+  // collector is legitimately running -- it is the one doing the collecting.
+  val someoneRunning = (0 until cpuCnt)
+    .map(j => !io.syncIn(j).gcHalt && !io.syncOut(j).halted).reduce(_ || _)
+  // REGISTERED BEFORE BROADCAST. Combinationally this is
+  //   nextState -> halted(j) for every core -> OR reduce -> haltViolated ->
+  //   every core's Sys -> 32-bit counter enable
+  // which is a cluster-wide fanout ending at cpuCnt adders, and it cost the
+  // 8-core build its timing: +0.346 ns without it, -0.790 ns with it.
+  // Registering splits the path and costs nothing that matters -- this is a
+  // CYCLE COUNT read as a difference across a window thousands of cycles long,
+  // so a uniform one-cycle shift is invisible and only the first and last cycle
+  // of a window can differ, by one. The same argument the IO_PERFCNT counters
+  // already make for registering their category decode.
+  val violated = RegNext(anyGcHalt && someoneRunning) init (False)
+  for (i <- 0 until cpuCnt) io.syncOut(i).haltViolated := violated
 }

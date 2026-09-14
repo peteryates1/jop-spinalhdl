@@ -1,5 +1,7 @@
 package jop.system
 
+import jop.io.SyncOut
+
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
@@ -63,9 +65,7 @@ case class DoAppSdrHarness(
   )
 
   io.sdram <> sys.io.sdram
-  sys.io.syncIn.halted := False
-  sys.io.syncIn.s_out := False
-  sys.io.syncIn.status := False
+  SyncOut.tieOff(sys.io.syncIn)
   sys.io.rxd := True
 
   io.memBusy := sys.io.memBusy

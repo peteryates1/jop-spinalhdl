@@ -1,5 +1,7 @@
 package jop.system
 
+import jop.io.SyncOut
+
 import spinal.core._
 import spinal.core.sim._
 import spinal.lib._
@@ -52,9 +54,7 @@ case class JopCoreWithSdram80MhzHarness(
   )
 
   io.sdram <> jopSystem.io.sdram
-  jopSystem.io.syncIn.halted := False
-  jopSystem.io.syncIn.s_out := False
-  jopSystem.io.syncIn.status := False
+  SyncOut.tieOff(jopSystem.io.syncIn)
   jopSystem.io.rxd := True
 
   io.pc := jopSystem.io.pc
