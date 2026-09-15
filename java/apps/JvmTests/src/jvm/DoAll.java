@@ -137,8 +137,12 @@ public class DoAll {
 
 		// StringBufferTest: too cycle-intensive for BRAM sim (StringBuffer
 		// creates many temporary objects). Run on SDRAM or FPGA targets.
-		// DeepRecursion: only relevant for stack cache configs.
-		// Run via JopStackCacheSim which includes it explicitly.
+		// DeepRecursion: runs from jvm.DeepAll, NOT from here. It needs ~250
+		// stack words and the classic stack has 192 usable, so on a non-cache
+		// config it HANGS rather than failing -- spOv is not wired to EXC_SPOV.
+		// The old comment here said "run via JopStackCacheSim which includes it
+		// explicitly"; that sim ran DoAll, so each side pointed at the other and
+		// the test ran nowhere (status item 133).
 		
 		for (int i=0; i<tc.length; ++i) {
 			System.out.print(tc[i].toString());

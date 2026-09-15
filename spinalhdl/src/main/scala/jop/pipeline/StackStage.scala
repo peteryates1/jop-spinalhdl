@@ -695,9 +695,45 @@ case class StackStage(
     when(bankCoversSmux(1)) { coveringBankIdx := 1 }
     when(bankCoversSmux(0)) { coveringBankIdx := 0 }
 
-    // Need rotation when smux is outside active bank and not in scratch
-    val needsRotation = !smuxInScratch && !smuxInActiveBank && rotState === RotState.IDLE
-    val canInstantSwitch = needsRotation && anyBankCoversSmux
+    // VP IS A ROTATION INPUT TOO — status item 133.
+    //
+    // Rotation used to be driven by smuxSignal alone, which is SP-derived
+    // (sp/spm/spp/A). But the read and write address MUXes also take `vpadd =
+    // vp0 + opd` (:990, :1005, :1085) -- a JVM LOCAL -- and nothing checked
+    // whether that address was resident. A miss there is silent: the read MUX
+    // falls through to `ramDout := 0`.
+    //
+    // Measured on DeepRecursion: vp=1403 sp=1415 with banks 1408/1600/1792.
+    // SP sits SEVEN words above the window base, so the window reaches 568
+    // words above SP and none below, and VP -- only twelve words behind SP --
+    // falls off the bottom. 9181 cycles with VP outside every bank; every
+    // local read in them returned 0, which is why deepSum's locals "do not
+    // survive".
+    //
+    // NOT fixable by victim selection: at the moment of eviction VP was inside
+    // the ACTIVE bank, so there was nothing to protect. VP moved down into the
+    // evicted range afterwards, and a VP decrease triggered no rotation. Tried
+    // and measured to have no effect.
+    //
+    // The window must cover [VP, SP]. VP <= SP always and a frame is far
+    // smaller than the window, so both always fit.
+    val vpInScratch = vp0 < cc.scratchSize
+    val bankCoversVp = Vec(Bool(), cc.numBanks)
+    for (i <- 0 until cc.numBanks) {
+      bankCoversVp(i) := vp0 >= bankBaseVAddr(i) &&
+                          vp0 < (bankBaseVAddr(i) + cc.bankSize) &&
+                          bankResident(i)
+    }
+    val vpResident = vpInScratch || bankCoversVp.reduce(_ || _)
+
+    // SP has priority -- it is where execution is. VP is fetched once SP is
+    // satisfied; an instant switch for SP leaves VP resident, so the VP case
+    // simply comes round again on the next cycle.
+    val rotNeedSmux = !smuxInScratch && !smuxInActiveBank
+    val rotNeedVp = !vpResident
+    val rotAddr = Mux(rotNeedSmux, smuxSignal, vp0)
+    val needsRotation = (rotNeedSmux || rotNeedVp) && rotState === RotState.IDLE
+    val canInstantSwitch = rotNeedSmux && anyBankCoversSmux && rotState === RotState.IDLE
 
     // VICTIM SELECTION BY ADDRESS, not by index — status item 133.
     //
@@ -740,7 +776,9 @@ case class StackStage(
     }
 
     // Is this an underflow (need data from ext mem) or overflow (new range)?
-    val isUnderflow = smuxSignal < activeBase && !smuxInScratch
+    // Keyed on rotAddr, so a VP-driven rotation fetches real data rather than
+    // zero-filling over the caller's locals.
+    val isUnderflow = rotAddr < activeBase && !(rotAddr < cc.scratchSize)
 
     // DMA control defaults
     io.dmaStart.get := False
@@ -768,7 +806,7 @@ case class StackStage(
           rotNeedFill := isUnderflow
 
           // Compute target base for new bank assignment
-          when(smuxSignal >= activeEnd) {
+          when(rotAddr >= activeEnd) {
             rotTargetBase := activeEnd  // Overflow: bank above active
           }.otherwise {
             rotTargetBase := activeBase - cc.bankSize  // Underflow: bank below active
@@ -779,7 +817,7 @@ case class StackStage(
             rotState := RotState.SPILL_START
           }.elsewhen(isUnderflow) {
             // Clean victim, underflow: reassign and fill
-            bankBaseVAddr(victim) := Mux(smuxSignal >= activeEnd, activeEnd,
+            bankBaseVAddr(victim) := Mux(rotAddr >= activeEnd, activeEnd,
                                          activeBase - cc.bankSize)
             bankResident(victim) := False
             rotState := RotState.FILL_START

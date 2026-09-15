@@ -190,7 +190,7 @@ object JopJvmTestsStackCacheBramSim extends App {
   //   Test/runMain jop.system.JopJvmTestsStackCacheBramSim JbeBench JbeBench
   val jopFilePath = jop.utils.SimApp.jop(
     if (args.length > 0) args(0) else "JvmTests",
-    if (args.length > 1) args(1) else "DoAll")
+    if (args.length > 1) args(1) else "DeepAll")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/jvmtests_stackcache_bram_simulation.log"

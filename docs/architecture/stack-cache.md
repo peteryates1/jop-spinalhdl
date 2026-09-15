@@ -128,8 +128,20 @@ address MUXes have other sources, and **`vpadd` is one of them**
 rdaddr := vpadd        // vpadd = vp0 + opd  (:1085) — a JVM local
 ```
 
-So a JVM local outside the resident window does **not** trigger a fill. It
-returns 0, silently, exactly like any other non-resident read.
+**FIXED 2026-09-15.** VP is now a rotation input: the window tracks
+**[VP, SP]**, not SP alone.
+
+```
+rotNeedVp = !vpResident                        // VP outside every resident bank
+rotAddr   = Mux(rotNeedSmux, smuxSignal, vp0)  // SP has priority
+needsRotation = (rotNeedSmux || rotNeedVp) && rotState == IDLE
+```
+
+`isUnderflow` and the target base key on `rotAddr`, so a VP-driven rotation
+FILLS real data rather than zero-filling over the caller's locals. Before this,
+`DeepRecursion` measured 9,181 cycles with VP outside every bank — at
+`vp=1403 sp=1415`, banks 1408/1600/1792, i.e. SP seven words above the window
+base with VP twelve words behind it, falling off the bottom.
 
 Note the two kinds of "local" are different things and only one of them is
 safe:
@@ -155,8 +167,12 @@ chain leaves older frames' locals unreachable with nothing to fetch them back.
 - Either way, if the victim is **dirty** it is **SPILLed first** (:745-748).
 
 State machine: `IDLE -> SPILL_START -> SPILL_WAIT -> {FILL_START|ZERO_FILL} -> IDLE`.
-`prefillThreshold = bankSize/4` — when SP enters the lower quarter of the active
-bank, the previous bank is pre-filled so the switch is free.
+`prefillThreshold = bankSize/4` is **defined and referenced nowhere**
+(`StackStage.scala:53` is its only occurrence in the tree). The pre-fill this
+sentence used to describe does not exist. Without it the window is rebased
+upward on overflow and nothing brings the bank BELOW back until SP itself
+descends — which is how SP came to sit seven words above the window base with
+568 words above it and none below.
 
 ## Consequences for the garbage collector
 

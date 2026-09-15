@@ -6645,14 +6645,69 @@ PROVED RED against the index rule — *"RESIDENT SET NOT CONTIGUOUS at cycle
 standing behind this fix, because `DeepRecursion` fails either way and cannot
 witness it. `sbt test` 678/678.
 
-**Leading remaining suspect: JVM locals do not participate in residency.**
-`needsRotation` sees only `smuxSignal`; `rdaddr`/`wraddr` can be `vpadd`
-(`StackStage.scala:990`, `:1005`) and a local outside the window returns 0 with
-no fill and no signal. ~9 slots per frame against a 576-word window is ~64
-frames; `deepSum(200)` has 200 live. **Next step is a residency assertion** —
-assert every pipeline read lands in scratch or a resident bank and report the
-first violation with address, VP and SP. That confirms or eliminates the VP path
-without having to guess a fix first.
+**FIXED 2026-09-15 — VP is a rotation input.** `DeepRecursion ok`, the first
+time it has passed in this tree.
+
+`needsRotation` saw only `smuxSignal` (SP-derived). The read/write address MUXes
+also take `vpadd = vp0 + opd` — a JVM local — and nothing checked that address
+for residency; a miss returns 0 silently. Measured before the fix: **9,181
+cycles with VP outside every resident bank**, at `vp=1403 sp=1415` with banks
+1408/1600/1792 — SP seven words above the window base, so the window reached 568
+words above SP and none below, and VP twelve words behind SP fell off the
+bottom.
+
+The window now tracks **[VP, SP]**: `rotAddr = Mux(rotNeedSmux, smuxSignal,
+vp0)`, with `isUnderflow` and the target base keyed on it so a VP-driven
+rotation FILLS real data rather than zero-filling over the caller's locals. SP
+keeps priority; VP is fetched once SP is satisfied.
+
+*Tried and measured to have no effect first*: "never evict the bank holding VP".
+At the moment of eviction VP was inside the ACTIVE bank, so there was nothing to
+protect — VP moved down into the evicted range afterwards. The bug was in VP
+movement, not victim selection. Recorded because the reasoning was sound and
+someone will have it again.
+
+**The residency counter does NOT go to zero — 7,710 after the fix — and should
+not be read as "still broken".** It samples "VP outside every bank this cycle",
+which includes the legitimate window between VP moving and the fill completing.
+The pipeline stalls through rotation, so the read gets correct data. A sharper
+assertion would qualify on an actual VP-relative read, which needs a read-enable
+the RTL does not currently expose.
+
+**`DeepRecursion` cannot go in `DoAll`,** and the old comment's reason was
+wrong. Without the stack cache it does not fail, it HANGS: 192 usable words
+against ~250 needed, and `spOv` is not wired to `EXC_SPOV`. It now has its own
+entry point, `jvm.DeepAll`, which `JopStackCacheSim` runs by default — closing
+the circularity where `DoAll` said "run via JopStackCacheSim" and that sim ran
+`DoAll`.
+
+**Still open in this group**: prefill (documented in
+[the architecture note](architecture/stack-cache.md), `prefillThreshold` is
+defined and referenced nowhere), the unbounded spill region, the dangling
+`spOv`, the cross-core scratch aliasing, and the DDR2 waste.
+
+**Microcode scratch, measured** (`Instruction.java:92,107,144,146`): `stm`,
+`ldm` and `ldi` all carry a **5-bit** address field, so scratch is 32 variables
+(0-31) + 32 constants (32-63, via `CONST_ADDR = 32`) = 64 words. That is why
+`require(scratchSize == 64, "fixed by JOP microcode")` exists — it is the sum of
+two 5-bit address spaces, not a layout choice, and widening either region is an
+ISA change (the microcode instruction is 12 bits).
+
+From the generated image: **constants 32/32 — FULL**, highest index 31 used;
+variables 9/32. So the pressure is entirely on the constant half and cannot be
+relieved by moving the scratch boundary.
+
+**Latent trap**: `Jopa.java:560` rejects only `constMap.size() > VER_ADDR -
+CONST_ADDR` = **62**, while `ldi` can address **32**. Constants 33-62 would
+assemble without error and encode into `ldmrd`'s opcode space at 0x0e0. It does
+not bite only because the pool is exactly at 32.
+
+**`bankSize = 192` is a fossil.** `bankPhysicalSize` is 256, so each bank RAM has
+64 idle words — 3×64×32 = 6,144 bits per core. The 192 is the classic layout's
+arithmetic (a 256-word stack RAM minus 64 scratch), carried forward after scratch
+got its own `Mem`. `bankSize = 256` would take the window from 576 to 768 at zero
+BRAM cost, but each rotation moves 33 % more data, so it wants measuring against
+the spill/fill counters rather than assuming.
 
 **Depth on ordinary code, measured**: `DoAll` peaks at SP 216, `JbeBench` at
 169, against a 576-word window; neither rotates. That is not headroom — it
