@@ -6646,7 +6646,9 @@ standing behind this fix, because `DeepRecursion` fails either way and cannot
 witness it. `sbt test` 678/678.
 
 **FIXED 2026-09-15 — VP is a rotation input.** `DeepRecursion ok`, the first
-time it has passed in this tree.
+time it has passed in this tree — **and on hardware**: `xc7a100tDbSerial`, DDR3,
+shipped topology, the same board that printed `DeepRecursion failed!` before the
+fix. `DoAll` still 68/68 there, timing MET (+0.298 ns).
 
 `needsRotation` saw only `smuxSignal` (SP-derived). The read/write address MUXes
 also take `vpadd = vp0 + opd` — a JVM local — and nothing checked that address
@@ -6687,20 +6689,28 @@ defined and referenced nowhere), the unbounded spill region, the dangling
 `spOv`, the cross-core scratch aliasing, and the DDR2 waste.
 
 **Microcode scratch, measured** (`Instruction.java:92,107,144,146`): `stm`,
-`ldm` and `ldi` all carry a **5-bit** address field, so scratch is 32 variables
-(0-31) + 32 constants (32-63, via `CONST_ADDR = 32`) = 64 words. That is why
-`require(scratchSize == 64, "fixed by JOP microcode")` exists — it is the sum of
-two 5-bit address spaces, not a layout choice, and widening either region is an
-ISA change (the microcode instruction is 12 bits).
+`ldm` and `ldi` all carry a **5-bit** operand field (`opdSize`), so scratch is
+32 variables (0-31) + 32 constants (32-63, via `CONST_ADDR = 32`) = 64 words.
+That is why `require(scratchSize == 64, "fixed by JOP microcode")` exists — it
+is the sum of two 5-bit address spaces, not a layout choice, and widening either
+region is an ISA change (the microcode instruction is 12 bits).
 
-From the generated image: **constants 32/32 — FULL**, highest index 31 used;
-variables 9/32. So the pressure is entirely on the constant half and cannot be
-relieved by moving the scratch boundary.
+Occupancy, from the generated image: **variables 23/32, constants 28/32.**
 
-**Latent trap**: `Jopa.java:560` rejects only `constMap.size() > VER_ADDR -
-CONST_ADDR` = **62**, while `ldi` can address **32**. Constants 33-62 would
-assemble without error and encode into `ldmrd`'s opcode space at 0x0e0. It does
-not bite only because the pool is exactly at 32.
+**Count occupancy by the FILL PATTERN, not by non-zero.** `Jopa.java:519`
+pre-fills unused RAM with `0x12345678`, so a "non-zero" scan counts the filler
+and every stack-region initialisation as data. Three separate readings here were
+wrong that way before the method was checked — "9 variables", "61 of 62
+constants", "constants 32/32 FULL", and a non-existent overlap of the constant
+pool into the stack at 64..93. Settled empirically instead: adding a new
+constant placed it at index 27, i.e. the 28th slot.
+
+**`Jopa.java:560` is NOT a trap.** It rejects only `constMap.size() > VER_ADDR -
+CONST_ADDR` = 62, which is looser than the 32 `ldi` can address — but
+`Jopa.java:474` checks every operand against its own `opdSize` mask
+(`if (opVal > mask) error("operand wrong")`) and fires first. A 33rd constant is
+rejected, just with a message naming the instruction rather than the pool. The
+loose check is redundant, not dangerous.
 
 **`bankSize = 192` is a fossil.** `bankPhysicalSize` is 256, so each bank RAM has
 64 idle words — 3×64×32 = 6,144 bits per core. The 192 is the classic layout's
@@ -6790,7 +6800,24 @@ Other findings in the same group, each verified:
   any configuration and `JVMHelp.java:110-113`'s recovery is dead code.
 - **DDR2 reserves 8192 words/core for a stack cache it never enables**
   (`JopTop.scala:502-505` vs `:515`) — the A-E115FB loses 32 KB of heap for
-  nothing.
+  nothing. **AND SO DOES MULTI-CORE DDR3, which is worse and IS testable**
+  (2026-09-15). The reservation is unconditional for `isDdr3 || isDdr2`, while
+  the enable is `(isDdr3 && cpuCnt == 1) || (isSdr && board.useStackCache)`:
+
+  | config | reserves | enables | wasted |
+  |---|---|---|---|
+  | DDR2 A-E115FB | 8192 | no | 32 KB |
+  | DDR3 1 core | 8192 | yes | none |
+  | **DDR3 N cores** | **8192 × N** | **no** | **N × 32 KB** |
+
+  `wukongDdr3Smp-6` loses **192 KB** of heap; an 8-core build 256 KB.
+  **SDR is clean** — that branch gates the reservation on `board.useStackCache`,
+  the same predicate as the enable, so the two cannot disagree. The EP4CGX150
+  reserves nothing (`useStackCache = true` appears once in `Board.scala`, on
+  `WukongXC7A100T`). So this is not "the reservation is wrong": one branch of
+  the same `if` gates it and the other does not. Fix by giving the DDR branch
+  the same predicate; verifiable on Wukong SMP by watching `GC.freeMemory()`
+  rise by N × 32 KB.
 
 ---
 
