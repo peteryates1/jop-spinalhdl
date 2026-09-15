@@ -217,6 +217,7 @@ object JopJvmTestsStackCacheBramSim extends App {
       var alwaysFills = 0
       var alwaysLastRot = -1
       var contigViolations = 0
+      var vpNonResident = 0
       var deepRecursionCycleStart = 0
 
       def logLine(msg: String): Unit = {
@@ -403,6 +404,35 @@ object JopJvmTestsStackCacheBramSim extends App {
           stuckWindowMaxSp = 0
           println(s"  >>> DeepRecursion detected at cycle $cycle <<<")
           printStackCacheState(cycle, "START")
+        }
+
+        // IS VP ITSELF RESIDENT? — status item 133, the vpadd hypothesis.
+        //
+        // Rotation is driven by `smuxSignal`, which is SP-derived only. But the
+        // read address MUX can take `vpadd = vp0 + opd` (StackStage :990,
+        // :1085) -- a JVM LOCAL. Nothing checks residency of that address, and
+        // a non-resident read returns 0 silently.
+        //
+        // So: whenever VP is outside scratch AND outside every resident bank,
+        // a local read at VP+n CANNOT return real data. This computes it from
+        // two real DUT outputs (scVp, scBankBase) rather than from the
+        // testbench's own bank arithmetic -- the existing VP_CHG line prints
+        // `ram[VP+0]=0x00000000` for all 626,323 of its samples, which is a
+        // probe artefact and not something to reason from.
+        {
+          val vpNow = dut.io.scVp.toInt
+          val resident = vpNow < 64 || (0 until 3).exists { i =>
+            val b = dut.io.scBankBase(i).toInt
+            vpNow >= b && vpNow < b + 192
+          }
+          if (!resident) {
+            if (vpNonResident == 0) {
+              val bs = (0 until 3).map(i => dut.io.scBankBase(i).toInt)
+              println(f"  >>> VP NOT RESIDENT at cycle $cycle: vp=$vpNow%d sp=${dut.io.scSp.toInt}%d " +
+                      f"banks ${bs(0)}%d/${bs(1)}%d/${bs(2)}%d pc=${dut.io.pc.toInt}%d <<<")
+            }
+            vpNonResident += 1
+          }
         }
 
         // RESIDENT SET MUST STAY CONTIGUOUS — status item 133.
@@ -927,7 +957,9 @@ object JopJvmTestsStackCacheBramSim extends App {
       }
 
       // Summary
-      println(s"\n  Resident set contiguous: " +
+      println(s"\n  VP resident: " +
+              (if (vpNonResident == 0) "always" else s"NO -- $vpNonResident cycles with VP outside every bank"))
+      println(s"  Resident set contiguous: " +
               (if (contigViolations == 0) "YES (0 violations)" else s"NO -- $contigViolations violations"))
       println(s"  Stack cache (ALWAYS-ON, item 133): maxSp=$alwaysMaxSp spills=$alwaysSpills " +
               s"fills=$alwaysFills  resident window = ${3 * 192} words")
