@@ -37,6 +37,12 @@ class SysFormal extends SpinalFormalFunSuite {
     dut.io.syncIn.haltViolated := Bool(haltViolated)
     dut.io.ackIrq := False
     dut.io.ackExc := False
+    // Stack overflow: anyseq rather than False, so every property below is
+    // proven for BOTH values. Tying it off would prove them only for the case
+    // where no overflow ever occurs -- and the EXC_SPOV raise writes
+    // excTypeReg/excPend, which is exactly what the exception properties are
+    // about. Item 133.
+    anyseq(dut.io.spOv)
     dut.io.ioInt := 0
     // Cross-core GC root data: a free input from the cluster, irrelevant to
     // every property here but it still needs a driver. Left as anyseq rather

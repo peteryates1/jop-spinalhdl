@@ -54,6 +54,9 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
     // Interrupt acknowledge inputs (from bcfetch via JopCore)
     val ackIrq = in Bool()   // Interrupt acknowledged by bcfetch
     val ackExc = in Bool()   // Exception acknowledged by bcfetch
+    /** Stack overflow from StackStage, level. Raises EXC_SPOV on its rising
+      * edge -- see the note where it is consumed. Item 133. */
+    val spOv   = in Bool()
 
     // External I/O interrupt inputs
     val ioInt  = in Bits(numIoInt bits)
@@ -220,6 +223,27 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
   val excTypeReg = Reg(Bits(8 bits)) init(0)
   val excPend = Reg(Bool()) init(False)
   excPend := False  // default: cleared each cycle (set True on write to addr 4)
+
+  // STACK OVERFLOW RAISES EXC_SPOV — status item 133.
+  //
+  // `spOv` is driven by StackStage and, until 2026-09-15, was read by nothing
+  // outside JopPipelineTestRom. So EXC_SPOV was never raised in any
+  // configuration and JVMHelp.java:110-113's recovery could not run. A
+  // non-cache board overflowing its 192 usable stack words did not fault, it
+  // WEDGED: DeepRecursion printed its name and then produced nothing for 60M
+  // cycles, with no exception and no output.
+  //
+  // Rising edge, because spOvReg is sticky once set -- a level would re-raise
+  // every cycle. The threshold leaves headroom deliberately
+  // (`stackOverflowThreshold = (1 << ramWidth) - 1 - 16`), so there are 16
+  // words for the handler to work in; raising an exception on a FULL stack
+  // would have nowhere to go.
+  //
+  // Placed after the write decode below so a hardware overflow wins over a
+  // simultaneous software write to IO_EXCEPTION: the overflow is the more
+  // urgent fact and the software write can be retried.
+  val spOvDly = RegNext(io.spOv) init(False)
+  val spOvRise = io.spOv && !spOvDly
 
   // Exception pulse: single-cycle on rising edge of excPend (matching VHDL)
   val excDly = RegNext(excPend) init(False)
@@ -453,6 +477,14 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
       // Reg 14's WRITE direction is free — its read side is IO_MEM_SIZE.
       is(14) { rootSelReg := io.wrData(13 downto 0) }    // IO_ROOT_SEL
     }
+  }
+
+  // The hardware overflow, raised LAST so it wins a same-cycle software write
+  // to IO_EXCEPTION: the overflow is the more urgent fact, and a software write
+  // can be retried.
+  when(spOvRise) {
+    excTypeReg := B(1, 8 bits)   // EXC_SPOV
+    excPend := True
   }
 
   io.wd := wdReg

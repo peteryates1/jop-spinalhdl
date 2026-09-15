@@ -58,6 +58,11 @@ case class JopPipeline(
 
     // === Pipeline status ===
     val pc         = out UInt(config.pcWidth bits)
+    /** Stack overflow, level. StackStage drives it and until 2026-09-15 NOTHING
+      * read it outside JopPipelineTestRom, so EXC_SPOV was never raised in any
+      * configuration and JVMHelp's recovery was dead code. A non-cache board
+      * overflowing its 192-word stack did not fault -- it wedged. Item 133. */
+    val spOv       = out Bool()
     val jpc        = out UInt((config.jpcWidth + 1) bits)
     val instr      = out Bits(config.instrWidth bits)
     val jfetch     = out Bool()
@@ -303,6 +308,7 @@ case class JopPipeline(
 
   // Pipeline status
   io.pc := fetch.io.pc_out
+  io.spOv := stack.io.spOv
   io.jpc := bcfetch.io.jpc_out
   io.instr := fetch.io.dout
   io.jfetch := fetch.io.nxt

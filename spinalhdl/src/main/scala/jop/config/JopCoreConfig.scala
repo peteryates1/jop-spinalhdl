@@ -549,6 +549,11 @@ case class JopCoreConfig(
     cacheConfig = if (useStackCache) Some(StackCacheConfig(
       burstLen = memConfig.burstLen,
       wordAddrWidth = memConfig.addressWidth - 2,
+      // The region this core owns, so StackStage can fault at its edge instead
+      // of spilling into the next core's. 0 when an override supplies the base,
+      // because then the extent is not ours to know. Item 133.
+      spillWords = if (spillBaseAddrOverride.isDefined) 0
+                   else memConfig.stackRegionWordsPerCore,
       spillBaseAddr = spillBaseAddrOverride.getOrElse {
         val memWords = (memConfig.mainMemSize / 4).toInt
         if (memConfig.stackRegionWordsPerCore > 0) {

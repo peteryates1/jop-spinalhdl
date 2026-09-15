@@ -289,6 +289,7 @@ case class JopCore(
     fpuCapability = if (config.needsFloatCompute) 1 else 0)
   // Stall profiling taps: the same two signals the simulations use, so the
   // hardware table is directly comparable with MemProfile's.
+  sys.io.spOv := pipeline.io.spOv
   sys.io.memState := memCtrl.io.debug.state
   sys.io.memBusy  := memCtrl.io.memOut.busy
 

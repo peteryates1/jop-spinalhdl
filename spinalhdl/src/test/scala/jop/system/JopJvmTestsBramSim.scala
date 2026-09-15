@@ -14,7 +14,12 @@ import jop.config.MicrocodePaths
  */
 object JopJvmTestsBramSim extends App {
 
-  val jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll")
+  // App selectable, so the non-cache path can be pointed at jvm.DeepAll — the
+  // case that HANGS here (192 usable stack words against ~250 needed) because
+  // spOv is not wired to EXC_SPOV. Status item 133.
+  val jopFilePath = jop.utils.SimApp.jop(
+    if (args.length > 0) args(0) else "JvmTests",
+    if (args.length > 1) args(1) else "DoAll")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/jvmtests_bram_simulation.log"

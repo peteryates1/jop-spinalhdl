@@ -6795,9 +6795,36 @@ Other findings in the same group, each verified:
 - **Victim bank chosen by index, not address** (`StackStage.scala:697-702`,
   `(activeBankIdx + 2) % 3`), leaving a 192-word non-resident hole between two
   resident banks after the first rotation.
-- **`spOv` is dangling.** `StackStage.scala:1096` drives it; nothing in
-  `JopPipeline.scala` or `JopCore.scala` reads it. `EXC_SPOV` is never raised in
-  any configuration and `JVMHelp.java:110-113`'s recovery is dead code.
+- ~~**`spOv` is dangling.**~~ **FIXED 2026-09-15.** It was driven by
+  `StackStage` and read by nothing outside `JopPipelineTestRom`, so `EXC_SPOV`
+  was never raised in any configuration and `JVMHelp`'s recovery was dead code.
+  Now routed `StackStage -> JopPipeline -> JopCore -> Sys`, which raises
+  `EXC_SPOV` on its rising edge (sticky level, so an edge; placed after the
+  write decode so a hardware overflow wins a same-cycle software write).
+
+  RED -> GREEN on `jvm.DeepAll` in the non-cache BRAM sim:
+
+  ```
+  before   DeepRecursion                             <- then 60M cycles of nothing
+  after    DeepRecursion Uncaught exception: StackOverflowError
+  ```
+
+  **And the recovery is real, contrary to the "EXC_SPOV can do nothing" worry**:
+  `JVMHelp.except()` resets SP to `Const.STACK_OFF` BEFORE handling, so the
+  handler is not asked to run on a full stack — which is what the 16-word margin
+  in `stackOverflowThreshold = (1 << ramWidth) - 1 - 16` is for. That code had
+  never executed.
+
+- ~~**Spill region unchecked against the 16-bit virtual SP.**~~ **FIXED
+  2026-09-15**, by the same mechanism. `spOv` was computed only in the
+  single-RAM branch, so a CACHED stack had no limit at all: past its region a
+  core's spill address runs into the next core's (bases are carved downward,
+  `memWords - (cpuId+1)*words`) or off the end of memory for core 0 — silently,
+  because a spill is just a DMA write. `StackCacheConfig` now carries
+  `spillWords` from `stackRegionWordsPerCore`, and the cached branch faults at
+  `scratchSize + spillWords - 16`, the same margin the single-RAM threshold
+  leaves. `spillWords = 0` (unbounded) only when `spillBaseAddrOverride` supplies
+  a base whose extent the config cannot know.
 - **DDR2 reserves 8192 words/core for a stack cache it never enables**
   (`JopTop.scala:502-505` vs `:515`) — the A-E115FB loses 32 KB of heap for
   nothing. **AND SO DOES MULTI-CORE DDR3, which is worse and IS testable**

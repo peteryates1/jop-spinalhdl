@@ -30,6 +30,20 @@ case class StackCacheConfig(
   scratchSize: Int = 64,
   virtualSpWidth: Int = 16,
   spillBaseAddr: Int = 0x780000,
+  /** Words of spill region this core owns, from `stackRegionWordsPerCore`.
+    *
+    * THE STACK HAS TO HAVE AN EDGE. The virtual SP is 16 bits, so it can
+    * address 65,472 words above scratch, while the region reserved per core is
+    * 8,192. Nothing checked the two against each other: the only guard is
+    * `stackRegionWordsPerCore > 0` (JopCoreConfig.scala:448). Past the region a
+    * core's spill address runs into the NEXT core's region -- the bases are
+    * carved downward from the top of memory, `memWords - (cpuId+1)*words` -- or
+    * off the end of memory for core 0. Silently, because a spill is just a DMA
+    * write.
+    *
+    * 0 means "unbounded", used only when spillBaseAddrOverride supplies a base
+    * whose extent this config cannot know. Status item 133. */
+  spillWords: Int = 0,
   burstLen: Int = 4,
   wordAddrWidth: Int = 24
 ) {
@@ -1130,10 +1144,26 @@ case class StackStage(
     sp  := smuxSignal
   }
 
-  // Stack overflow detection (only in single-RAM mode)
+  // Stack overflow detection.
+  //
+  // Both modes now have an edge and both raise EXC_SPOV through Sys. Before
+  // 2026-09-15 the cached mode had NO limit at all -- `spOv` was computed only
+  // in the single-RAM branch -- so a cached stack simply ran out of its spill
+  // region and started writing into the next core's.
   if (!useCache) {
     when(sp === U(config.stackOverflowThreshold, spWidth bits)) {
       spOvReg := True
+    }
+  } else {
+    val cc = config.cacheConfig.get
+    if (cc.spillWords > 0) {
+      // Same 16-word margin the single-RAM threshold leaves: the handler resets
+      // SP to STACK_OFF before doing anything (JVMHelp.except()), but it needs
+      // room to get that far.
+      val limit = cc.scratchSize + cc.spillWords - 16
+      when(sp >= U(limit, spWidth bits)) {
+        spOvReg := True
+      }
     }
   }
 
