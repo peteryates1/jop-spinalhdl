@@ -216,6 +216,7 @@ object JopJvmTestsStackCacheBramSim extends App {
       var alwaysSpills = 0
       var alwaysFills = 0
       var alwaysLastRot = -1
+      var contigViolations = 0
       var deepRecursionCycleStart = 0
 
       def logLine(msg: String): Unit = {
@@ -402,6 +403,34 @@ object JopJvmTestsStackCacheBramSim extends App {
           stuckWindowMaxSp = 0
           println(s"  >>> DeepRecursion detected at cycle $cycle <<<")
           printStackCacheState(cycle, "START")
+        }
+
+        // RESIDENT SET MUST STAY CONTIGUOUS — status item 133.
+        //
+        // The whole point of three banks is that when SP sits near a bank
+        // boundary, the banks either side of it are BOTH resident and the third
+        // is the one being spilled or filled. That only holds if the three
+        // bases are consecutive multiples of bankSize. Victim selection used
+        // `(activeBankIdx + 2) % 3`, "farthest from active" in INDEX space,
+        // which evicted the bank ADJACENT to the active one and kept the
+        // farthest: with SP=637 and banks 0[64] 1[256] *2[448] it dropped 256
+        // and the resident set became 64-255 | HOLE | 448-831.
+        //
+        // A read into that hole is silent -- the read MUX falls through to
+        // `ramDout := 0`. DeepRecursion cannot witness this: it fails both with
+        // and without the hole, so this assertion is the ONLY thing standing
+        // behind the victim-selection fix.
+        {
+          val bases = List(dut.io.scBankBase(0).toInt, dut.io.scBankBase(1).toInt,
+                           dut.io.scBankBase(2).toInt).sorted
+          val bankSz = 192
+          if (bases(1) - bases(0) != bankSz || bases(2) - bases(1) != bankSz) {
+            if (contigViolations == 0)
+              println(f"  >>> RESIDENT SET NOT CONTIGUOUS at cycle $cycle: " +
+                      f"bases ${bases(0)}%d ${bases(1)}%d ${bases(2)}%d " +
+                      f"(gaps ${bases(1)-bases(0)}%d ${bases(2)-bases(1)}%d, want $bankSz%d) <<<")
+            contigViolations += 1
+          }
         }
 
         // ALWAYS-ON STACK CACHE COUNTERS — status item 133.
@@ -898,7 +927,9 @@ object JopJvmTestsStackCacheBramSim extends App {
       }
 
       // Summary
-      println(s"\n  Stack cache (ALWAYS-ON, item 133): maxSp=$alwaysMaxSp spills=$alwaysSpills " +
+      println(s"\n  Resident set contiguous: " +
+              (if (contigViolations == 0) "YES (0 violations)" else s"NO -- $contigViolations violations"))
+      println(s"  Stack cache (ALWAYS-ON, item 133): maxSp=$alwaysMaxSp spills=$alwaysSpills " +
               s"fills=$alwaysFills  resident window = ${3 * 192} words")
       println(s"  Stack cache summary: spills=$spillCount fills=$fillCount maxSp=$maxSp spDecreases=$spDecreaseCount wrSnooped=$wrSnoopCount bankMismatches=$mismatchCount ramDoutMismatches=$ramDoutMismatchPrev zeroWrites=$zeroWriteCount")
 

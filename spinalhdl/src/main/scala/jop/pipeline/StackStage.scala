@@ -699,12 +699,44 @@ case class StackStage(
     val needsRotation = !smuxInScratch && !smuxInActiveBank && rotState === RotState.IDLE
     val canInstantSwitch = needsRotation && anyBankCoversSmux
 
-    // Victim selection: (activeBankIdx + 2) % 3 — farthest from active
+    // VICTIM SELECTION BY ADDRESS, not by index — status item 133.
+    //
+    // THE POINT OF THREE BANKS is that when SP sits near a bank boundary, the
+    // banks either side of it are both resident, and the third is the one being
+    // spilled or filled. That only holds if the resident set stays CONTIGUOUS.
+    //
+    // `(activeBankIdx + 2) % 3` is "farthest from active" in INDEX space, which
+    // has nothing to do with where the banks actually are. Measured: with
+    // SP=637 and banks 0[64] 1[256] *2[448], it evicts bank 1 -- the bank
+    // ADJACENT to the active one -- and keeps bank 0 at 64-255, the farthest
+    // away. The resident set becomes 64-255 | HOLE 256-447 | 448-831.
+    //
+    // Nothing detects a read into that hole: a non-resident read falls through
+    // to `ramDout := 0` (see the read MUX above). A JVM local addressed
+    // VP-relative lands there whenever VP trails SP across the evicted range,
+    // reads 0, and DeepRecursion's `deepSum` returns -1 for locals that did not
+    // survive. Note VP is CLOSE to SP here, not far -- contiguity is what the
+    // locals path actually depends on.
+    //
+    // Choosing by distance from the active base keeps the window contiguous:
+    // the bank we drop is the one furthest from where execution is.
     val victimChoice = UInt(2 bits)
+    // Distance of each bank's base from the active base. The stack is
+    // monotonic, so this is just |base - activeBase|.
+    def bankDist(i: Int): UInt =
+      Mux(bankBaseVAddr(i) >= activeBase,
+          bankBaseVAddr(i) - activeBase,
+          activeBase - bankBaseVAddr(i))
+    // Choose between the TWO NON-ACTIVE banks only. Selecting over all three
+    // and then correcting -- `when(victimChoice === activeBankIdx) {
+    // victimChoice := ... }` -- reads and writes the same signal, which
+    // SpinalHDL correctly rejects as a COMBINATORIAL LOOP.
+    def farther(a: Int, b: Int): UInt =
+      Mux(bankDist(a) >= bankDist(b), U(a, 2 bits), U(b, 2 bits))
     switch(activeBankIdx) {
-      is(0) { victimChoice := 2 }
-      is(1) { victimChoice := 0 }
-      default { victimChoice := 1 }
+      is(0)   { victimChoice := farther(1, 2) }
+      is(1)   { victimChoice := farther(0, 2) }
+      default { victimChoice := farther(0, 1) }
     }
 
     // Is this an underflow (need data from ext mem) or overflow (new range)?

@@ -85,10 +85,64 @@ so *arbitrary* stack reads drive rotation, not just SP movement.
 ```
 needsRotation    = !smuxInScratch && !smuxInActiveBank && rotState == IDLE
 canInstantSwitch = needsRotation && some OTHER resident bank already covers smux
-victimChoice     = (activeBankIdx + 2) % 3      // farthest from active
+victimChoice     = the non-active bank whose BASE is farthest from activeBase
 isUnderflow      = smuxSignal < activeBase && !smuxInScratch
 ```
 (:690-712)
+
+### The resident set must stay CONTIGUOUS
+
+Three banks exist so that when SP sits near a bank boundary, the banks **either
+side of it are both resident** and the third is the one being spilled or filled.
+That invariant only holds if the three bases are consecutive multiples of
+`bankSize`.
+
+Victim selection used `(activeBankIdx + 2) % 3`, commented "farthest from
+active" — but that is farthest in INDEX space, which says nothing about where
+the banks are. Measured on 2026-09-15 with SP=637 and banks `0[64] 1[256]
+*2[448]`, it evicted **bank 1 (256-447), adjacent to the active bank**, and kept
+bank 0 at 64-255, the farthest away:
+
+```
+    before   0[  64] 1[ 256] *2[ 448]        resident 64 .. 831
+    after    0[ 640] 1[ 256] *2[ 448]        resident 64-255 | HOLE 256-447 | 448-831
+```
+
+A read into that hole is **silent**: the read MUX has no miss signal and falls
+through to `ramDout := 0` (`StackStage.scala:525`). Choosing the victim by
+distance from `activeBase` keeps the window contiguous.
+
+Guard: `JopStackCacheSim` asserts the three bases are consecutive on every
+cycle and reports the count. PROVED RED against the index rule —
+*"RESIDENT SET NOT CONTIGUOUS at cycle 664906: bases 64 448 640 (gaps 384 192,
+want 192)"*. This assertion is the only thing standing behind the fix:
+`DeepRecursion` fails both with and without the hole, so it cannot witness it.
+
+### What does NOT drive rotation — JVM locals
+
+`smuxSignal` is SP-derived only (`sp`/`spm`/`spp`/`A`). The read and write
+address MUXes have other sources, and **`vpadd` is one of them**
+(`StackStage.scala:990`, `:1005`):
+
+```
+rdaddr := vpadd        // vpadd = vp0 + opd  (:1085) — a JVM local
+```
+
+So a JVM local outside the resident window does **not** trigger a fill. It
+returns 0, silently, exactly like any other non-resident read.
+
+Note the two kinds of "local" are different things and only one of them is
+safe:
+
+| | where | resident? |
+|---|---|---|
+| microcode locals / constants | scratch, addresses 0-63 | ALWAYS — `smuxInScratch` exempts them |
+| JVM locals | the Java stack, addressed `vp0 + offset` | only if they fall in the window |
+
+`vp` itself is a microcode variable; `vp + offset` is a **stack** address. With
+~9 slots per frame and a 576-word window, roughly 64 frames fit — a deeper call
+chain leaves older frames' locals unreachable with nothing to fetch them back.
+**This is unresolved**; see [item 133](../current-status.md#item-133).
 
 - **Instant switch** — another resident bank already covers the target, so just
   move `activeBankIdx` (:763-764). This is the common case and costs nothing;

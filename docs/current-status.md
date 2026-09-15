@@ -6594,7 +6594,100 @@ Incidentally, every one of those rounds also printed `haltLeak 0` — which is
 
 <a id="item-133"></a>
 
-### Item 133 — the microcode was never taught the stack cache exists
+### Item 133 — deep recursion is broken on every stack-cache board, and the cause is not what this item first said
+
+**RE-SCOPED 2026-09-15 after measuring.** The heading and opening sentence below
+were written from code reading on 2026-09-01 and are wrong in three ways that
+matter. Corrected first; the original analysis follows, because most of its
+individual findings hold.
+
+1. **"The microcode was never taught the stack cache exists" is the wrong
+   frame.** `Native.rdIntMem` presents its address in A, `selSmux = 3` routes A
+   into `smuxSignal`, and that DOES drive rotation — see
+   [the architecture note](architecture/stack-cache.md#rotation). The path that
+   does NOT drive rotation is `vpadd`, i.e. **JVM locals**, which is a different
+   and narrower claim.
+
+2. **Microcode locals and JVM locals are different things, and only one is at
+   risk.** Microcode locals and constants live in scratch, addresses 0-63,
+   exempted by `smuxInScratch` and therefore always resident. JVM locals live on
+   the Java stack at `vp0 + offset`. `vp` itself is a microcode variable; `vp +
+   offset` is a stack address. Only the latter can fall outside the window.
+
+3. **It is not latent.** `DeepRecursion` FAILS — in simulation and **on real
+   hardware** (`xc7a100tDbSerial`, DDR3, shipped topology, the board printed
+   `DeepRecursion failed!`). The hardware run was done before any debugging, so
+   this is not an artifact of the sim's `separateStackDmaBus = true` harness.
+
+**What is NOT the cause**, each tested rather than argued:
+
+- *Rotation failing to happen.* It happens and is structurally correct:
+  `maxSp = 1905`, 14 spills / 7 fills, all rotation states reached, bank bases
+  marching 64/256/448 → 640 → … → 1792 and sliding back. 14/7 is right —
+  descending both evicts the top bank and fills the one below.
+- *Bug #29 regressing.* `4ba87fc` replaced `bcfetch.io.stall := stackRotBusy`
+  with `:= fetch.io.frozen`, and `frozen = (pcwait && bsy) || extStall` with
+  `extStall := stackRotBusy` — a strict superset. The protection survives.
+- *The victim-bank hole.* Real, and FIXED below — and `DeepRecursion` still
+  fails with the window contiguous, so it was not the cause either.
+
+**FIXED 2026-09-15 — victim selection by address.** `(activeBankIdx + 2) % 3`
+is "farthest from active" in INDEX space. With SP=637 and banks `0[64] 1[256]
+*2[448]` it evicted bank 1 — *adjacent* to the active bank — and kept bank 0 at
+64-255, the farthest away, leaving `64-255 | HOLE 256-447 | 448-831`. Three
+banks exist so the banks either side of a boundary are both resident; that needs
+the bases consecutive. Now chosen by distance from `activeBase`.
+
+Guard: `JopStackCacheSim` asserts the three bases are consecutive every cycle.
+PROVED RED against the index rule — *"RESIDENT SET NOT CONTIGUOUS at cycle
+664906: bases 64 448 640 (gaps 384 192, want 192)"* — and green with the fix,
+*"Resident set contiguous: YES (0 violations)"*. That assertion is the only thing
+standing behind this fix, because `DeepRecursion` fails either way and cannot
+witness it. `sbt test` 678/678.
+
+**Leading remaining suspect: JVM locals do not participate in residency.**
+`needsRotation` sees only `smuxSignal`; `rdaddr`/`wraddr` can be `vpadd`
+(`StackStage.scala:990`, `:1005`) and a local outside the window returns 0 with
+no fill and no signal. ~9 slots per frame against a 576-word window is ~64
+frames; `deepSum(200)` has 200 live. **Next step is a residency assertion** —
+assert every pipeline read lands in scratch or a resident bank and report the
+first violation with address, VP and SP. That confirms or eliminates the VP path
+without having to guess a fix first.
+
+**Depth on ordinary code, measured**: `DoAll` peaks at SP 216, `JbeBench` at
+169, against a 576-word window; neither rotates. That is not headroom — it
+measures how shallow the test and benchmark code is. The only code that goes
+deep is the code that is broken.
+
+**Without the stack cache `DeepRecursion` HANGS** rather than failing — 60M
+cycles, name printed, nothing after, no exception. That is the dangling `spOv`
+(finding #5 below) biting on every non-stack-cache board including the
+EP4CGX150. Note `EXC_SPOV` can never be real recovery: raising it needs stack
+and the microcode fallback needs stack. The stack cache IS the headroom
+mechanism, which is why the cache outranks the exception.
+
+**"It used to pass" is UNVERIFIED.** `docs/analysis/stack-cache-debug-log.md` is
+headed *"RESOLVED (Bug #29) … DeepRecursion passes. All 58 JVM tests pass"*, but
+that tree cannot be rebuilt today: `4846f31` fails on `PreLinker` and
+`SerialJumpTableData`, `dedda43` on `Const.java` generation. A bisect across the
+build-tree migration returns SKIP at every point tried, so treat the recorded
+pass as a claim, not a baseline.
+
+**Two dead instruments found while measuring this:**
+
+- Every stack-cache counter in `JopStackCacheSim` sat inside
+  `if (deepRecursionStarted)`, set only when the UART prints "Deep" — and
+  DeepRecursion is excluded from DoAll, the app that sim runs. After 30M cycles
+  and 128 passing tests it printed `spills=0 fills=0 maxSp=0` unconditionally.
+- The exclusion comment is circular: `DoAll.java:140` says "Run via
+  JopStackCacheSim which includes it explicitly", and that sim runs `DoAll`.
+
+---
+
+*Original 2026-09-01 analysis follows. Its individual findings (the victim-bank
+hole, the dangling `spOv`, the spill-region bound, the cross-core scratch
+aliasing, the DDR2 waste) stand; the framing above supersedes its opening
+claim.*
 
 **Found 2026-09-01** by boundary review B9. The single sentence that explains
 the whole group: **spill/fill is entirely hardware, and no microcode sequence is
