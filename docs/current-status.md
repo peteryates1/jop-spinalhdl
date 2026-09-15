@@ -6644,6 +6644,62 @@ Other findings in the same group, each verified:
   (`JopTop.scala:502-505` vs `:515`) — the A-E115FB loses 32 KB of heap for
   nothing.
 
+---
+
+**2026-09-15 — MEASURED, and the framing above is wrong in two ways.**
+
+**1. It is a REGRESSION, not an absent feature.**
+`docs/analysis/stack-cache-debug-log.md` is headed *"RESOLVED (Bug #29) … The
+DeepRecursion test (200-level recursion) passes. All 58 JVM tests pass."* The
+fix it names is still present and wired (`bcfetch.io.stall := fetch.io.frozen`,
+`fetch.io.extStall := stackRotBusy`). So this test used to pass and no longer
+does — decay, not absence. First suspect for a bisect: `4ba87fc` "jpc free-runs
+during a memory-wait freeze" and its same-day `470f050` Revert, which touch
+`JopPipeline.scala` and `FetchStage.scala` — exactly the area bug 29 was about.
+
+**2. It fails ON HARDWARE, in the shipped topology.**
+`xc7a100tDbSerial` (DDR3, single core, stack cache on), DoAll with
+`DeepRecursion` inserted: the board printed **`DeepRecursion failed!`**. So the
+`separateStackDmaBus = true` harness is not what makes it fail — that caveat
+mattered and was checked before any debugging began.
+
+**And rotation WORKS.** Sim, `maxSp = 1905`, **14 spills / 7 fills**, states
+SPILL_S/SPILL_W/FILL_S/FILL_W/ZERO_F all reached, bank bases progressing cleanly
+64/256/448 → 640 → 832 → 1024 → 1216 → 1408 → 1600 → 1792 and sliding back down.
+14/7 is *correct*: descending both evicts the top bank and fills the one below.
+The testbench's own `bankMismatches=0 ramDoutMismatches=0`. The cache does its
+job and the recursion still returns the wrong value.
+
+The trace does confirm finding #4 concretely — after the first spill the banks
+hold 64-255, 448-639, 640-831, i.e. a **192-word hole at 256-447**, because the
+victim is chosen by index rather than address.
+
+**Depth on ordinary code, for calibration**: `DoAll` peaks at SP **216**,
+`JbeBench` at **169**, against a 576-word resident window, neither rotating.
+That is NOT evidence of headroom — it measures how shallow the test and
+benchmark code is. The only code that goes deep is the code that is broken.
+
+**Without the stack cache `DeepRecursion` does not fail, it HANGS** — 60M
+cycles, test name printed, nothing after, no exception. That is finding #5
+(`spOv` dangling) biting on *every* non-stack-cache board, the EP4CGX150
+included: stack overflow wedges the core instead of raising `EXC_SPOV`, and
+`JVMHelp.java:110-113`'s recovery cannot run.
+
+Note the architecture argument against prioritising `EXC_SPOV`: raising it needs
+stack, and the microcode fallback needs stack, so it can only ever be "die
+loudly". The stack cache IS the headroom mechanism, which is why the cache bug
+outranks the exception.
+
+**Two dead instruments found while measuring this:**
+
+- Every stack-cache counter in `JopStackCacheSim` sat inside
+  `if (deepRecursionStarted)`, set only when the UART prints "Deep" — and
+  DeepRecursion is excluded from DoAll, which is the app that sim runs. After
+  30M cycles and 128 passing tests it printed `spills=0 fills=0 maxSp=0`
+  unconditionally. Now counted every cycle regardless of app.
+- The exclusion comment is circular: `DoAll.java:140` says "Run via
+  JopStackCacheSim which includes it explicitly", and that sim runs `DoAll`.
+
 **Coverage is zero.** `JopStackCacheSim` is not in CI, and it passes
 `separateStackDmaBus = true` with a private 64 KB spill RAM — a topology no real
 build uses (`JopCluster.scala:47` defaults it false; `JopTop` never sets it). So

@@ -179,7 +179,18 @@ case class JopStackCacheTestHarness(
  */
 object JopJvmTestsStackCacheBramSim extends App {
 
-  val jopFilePath = jop.utils.SimApp.jop("JvmTests", "DoAll")
+  // WHICH APP, as arguments — item 133. This sim was hardwired to
+  // JvmTests/DoAll, and DoAll EXCLUDES DeepRecursion with the comment "Run via
+  // JopStackCacheSim which includes it explicitly". It does not: it runs DoAll.
+  // Each side pointed at the other and the recursion test ran nowhere.
+  //
+  // Depth is the whole question here, and DoAll is bytecode-conformance code
+  // with deliberately flat call graphs -- its peak SP says nothing about what
+  // application code does.
+  //   Test/runMain jop.system.JopJvmTestsStackCacheBramSim JbeBench JbeBench
+  val jopFilePath = jop.utils.SimApp.jop(
+    if (args.length > 0) args(0) else "JvmTests",
+    if (args.length > 1) args(1) else "DoAll")
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/jvmtests_stackcache_bram_simulation.log"
@@ -200,6 +211,11 @@ object JopJvmTestsStackCacheBramSim extends App {
       val uartOutput = new StringBuilder
       val lineBuffer = new StringBuilder
       var deepRecursionStarted = false
+      // Item 133: counted every cycle, independent of any app-specific gate.
+      var alwaysMaxSp = 0
+      var alwaysSpills = 0
+      var alwaysFills = 0
+      var alwaysLastRot = -1
       var deepRecursionCycleStart = 0
 
       def logLine(msg: String): Unit = {
@@ -386,6 +402,32 @@ object JopJvmTestsStackCacheBramSim extends App {
           stuckWindowMaxSp = 0
           println(s"  >>> DeepRecursion detected at cycle $cycle <<<")
           printStackCacheState(cycle, "START")
+        }
+
+        // ALWAYS-ON STACK CACHE COUNTERS — status item 133.
+        //
+        // Everything below this used to live inside `if (deepRecursionStarted)`,
+        // which is set only when the UART prints "Deep". DeepRecursion is
+        // EXCLUDED from DoAll, which is the app this sim runs, so the block
+        // never executed and the summary printed
+        //     spills=0 fills=0 maxSp=0 ...
+        // unconditionally, after 30M cycles and 128 passing tests. SP is
+        // obviously not 0 throughout a JVM run: those zeros were a property of
+        // the gate, not of the design.
+        //
+        // Item 133 says the stack cache has zero coverage. That understates it
+        // -- the one sim that exists reported reassuring zeros, which is worse
+        // than none. These counters are cheap and run for every cycle, so the
+        // summary means something whatever app is loaded.
+        {
+          val sp = dut.io.scSp.toInt
+          if (sp > alwaysMaxSp) alwaysMaxSp = sp
+          val rs = dut.io.scRotState.toInt
+          if (rs != alwaysLastRot) {
+            if (rs == 1) alwaysSpills += 1      // SPILL_START
+            if (rs == 3) alwaysFills  += 1      // FILL_START
+            alwaysLastRot = rs
+          }
         }
 
         // Debug during DeepRecursion
@@ -856,7 +898,9 @@ object JopJvmTestsStackCacheBramSim extends App {
       }
 
       // Summary
-      println(s"\n  Stack cache summary: spills=$spillCount fills=$fillCount maxSp=$maxSp spDecreases=$spDecreaseCount wrSnooped=$wrSnoopCount bankMismatches=$mismatchCount ramDoutMismatches=$ramDoutMismatchPrev zeroWrites=$zeroWriteCount")
+      println(s"\n  Stack cache (ALWAYS-ON, item 133): maxSp=$alwaysMaxSp spills=$alwaysSpills " +
+              s"fills=$alwaysFills  resident window = ${3 * 192} words")
+      println(s"  Stack cache summary: spills=$spillCount fills=$fillCount maxSp=$maxSp spDecreases=$spDecreaseCount wrSnooped=$wrSnoopCount bankMismatches=$mismatchCount ramDoutMismatches=$ramDoutMismatchPrev zeroWrites=$zeroWriteCount")
 
       if (lineBuffer.nonEmpty) {
         println(lineBuffer.toString)

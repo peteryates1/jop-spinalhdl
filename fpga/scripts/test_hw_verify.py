@@ -190,6 +190,35 @@ def test_replayed_chunk_is_dropped():
     assert "39990" in msg, f"the replay should not change the round reached: {msg}"
 
 
+def test_a_failed_test_is_counted_as_a_failure():
+    """`failed!` is what DoAll prints, and the judge could not see it.
+
+    judge() matched `fail` as a whole word, to avoid flagging a test NAMED
+    something like HwExceptionTest. But DoAll.java:149 prints " failed!", and
+    `fail` followed by `ed` fails the trailing word-boundary, so the match never
+    fired. Every hardware run reported fail=0 by construction.
+
+    Found 2026-09-15 when DeepRecursion failed on the DB V5 and hw_verify said
+    "ok=68 fail=0 ... PASS" while the console said "DeepRecursion failed!".
+    """
+    out = "Basic ok\nDeepRecursion failed!\nArray ok\nJVM exit!\n"
+    ok, fails, exited, crashed = hw_verify.judge(out)
+    assert fails == 1, f"a failing test was not counted: fails={fails}"
+    assert ok == 2, f"ok count wrong: {ok}"
+
+
+def test_a_test_named_for_an_exception_is_not_a_failure():
+    """The companion, and the reason the regex was tight in the first place.
+
+    A test NAME is not a failure. Widening the pattern must not start counting
+    HwExceptionTest, or the judge swaps one blind spot for a noisy one.
+    """
+    out = "HwExceptionTest ok\nExcept ok\nNullPointer ok\nJVM exit!\n"
+    ok, fails, exited, crashed = hw_verify.judge(out)
+    assert fails == 0, f"test names counted as failures: fails={fails}"
+    assert ok == 3, f"ok count wrong: {ok}"
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     bad = 0

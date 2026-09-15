@@ -316,7 +316,19 @@ def judge(out):
     a test name containing 'Exception' is not a failure, which is why this
     matches 'fail' as a word rather than searching for scary substrings."""
     ok = len(re.findall(r"\bok\s*$", out, re.M))
-    fails = len(re.findall(r"(?<![A-Za-z])fail(?![A-Za-z])", out, re.I))
+    # `failed` AND `fail`. The original pattern required no letter after "fail",
+    # to avoid flagging a test NAMED for an exception -- but DoAll.java:149
+    # prints " failed!" on every failing test, and `fail` followed by `ed` fails
+    # that trailing boundary. So the one word this needed to catch was the one
+    # word it could not, and every hardware run reported fail=0 by
+    # construction. Found 2026-09-15: DeepRecursion failed on the DB V5 and
+    # hw_verify printed "ok=68 fail=0 ... PASS" while the console said
+    # "DeepRecursion failed!".
+    #
+    # The suffixes are enumerated rather than left open (`fail\w*`) so a test
+    # named for an exception still does not match -- test_a_test_named_for_an_
+    # exception_is_not_a_failure is the control.
+    fails = len(re.findall(r"(?<![A-Za-z])fail(?:ed|ure|s)?(?![A-Za-z])", out, re.I))
     exited = "JVM exit!" in out
     crashed = out.count("Uncaught exception")
     return ok, fails, exited, crashed
