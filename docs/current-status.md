@@ -6783,11 +6783,40 @@ code never pushes SP past the resident window.
 Other findings in the same group, each verified:
 
 - **Cross-core GC root scan reads the 64-word SCRATCH RAM only.**
-  `StackStage.scala:650-655` — the debug port is `scratchRam` and the address is
-  `resize`d to 6 bits — while `GC.java:1893` scans `j` up to
+  `StackStage.scala:665-667` — the debug port is `scratchRam` and the address is
+  `resize`d to 6 bits — while `GC.java` scans `j` from `STACK_OFF` up to
   `STACK_RAM_WORDS = 256`. Indices 64-255 alias onto scratch 0-63, which holds
   the microcode's variables and constant pool. Applies to SDR SMP **with** the
   stack cache, i.e. `wukongSdrSmp(n)`, not to the EP4CGX150.
+
+  **REFUSED AT ELABORATION 2026-09-16** rather than left silent. `wukongSdrSmp(n)`
+  is `wukongSdram` with `cpuCnt = n` and the Wukong board sets `useStackCache`
+  on SDR, so the combination was reachable and elaborated cleanly, producing RTL
+  whose collector reads microcode constants instead of another core's stack.
+  `JopCluster` now `require`s `!(cpuCnt > 1 && useStackCache)` with the reason.
+  Red-proved: `wukongSdrSmp 2` produced RTL before, is refused after; every
+  validated preset (`ep4cgx150Smp`, `wukongDdr3Smp`, `wukongFull`,
+  `xc7a100tDbSerial`, `auSerial`, `wukongSdram`) still builds.
+
+  **Both directions are wrong**, which is why it is refused rather than
+  tolerated: real roots on another core are never seen, so live objects are
+  collected — the exact bug the root port was ADDED to fix, proven by
+  `SmpGcTest`'s STACKROOT probe — and the constants read instead pass the
+  plausibility filter (`v >= mem_start && v < handleEnd && (v & 7) == 0`) often
+  enough to be dereferenced as handles.
+
+  **A wider port is NOT the fix.** A non-resident bank's data is in the spill
+  region in main memory, so a faithful read would need a fill while the target
+  core is halted and the collector waits; and `rootSel` is 14 bits with no spare
+  (13..12 what, 11..8 target, 7..0 index), so exposing bank coverage is a Sys
+  change too. The tractable route is to **flush dirty banks when a core halts**:
+  a halted core's stack is then wholly in main memory and the collector reads it
+  with ordinary loads, no root port for stack words. It composes with
+  [item 158](#item-158) — `halted` would mean "stopped AND flushed", so the
+  collector's existing spin on `IO_GC_HALTED` covers it. A and B stay on the
+  root port; they are registers, not memory. Cost to weigh: up to 3 banks × 192
+  words of DMA per core per halt, on a path item 158 just made synchronous —
+  gate on `bankDirty`, which already exists.
 - **Spill region unchecked against the 16-bit virtual SP.**
   `stackRegionWordsPerCore = 8192` against a hardware range of 65,472; the only
   guard (`JopCoreConfig.scala:437-438`) checks `> 0`. Past SP 8256 the lowest
