@@ -90,40 +90,12 @@ case class JopCluster(
     import jop.io.DeviceTypes
     DeviceTypes.dmaCount(core0Config.effectiveDevices)
   }
-  // SMP + STACK CACHE IS UNSOUND — status item 133. Refused at elaboration
-  // until the cross-core root port can answer for the whole stack.
-  //
-  // A collector scans every OTHER core's stack through the root port
-  // (IO_ROOT_SEL / IO_ROOT_DATA), because a core's stack is private RAM. On a
-  // NON-cache config that port is a real third port on the 256-word stack RAM
-  // and answers for any address. On a CACHE config it reads `scratchRam` with
-  // the address resized to 6 bits (StackStage.scala:665-667), so the collector
-  // asks for stack word 200 and is handed scratch word 8 -- microcode
-  // variables and the constant pool, aliased three times over 64..255.
-  //
-  // Both directions are wrong. Real roots in another core's stack are never
-  // seen, so live objects are collected -- the exact bug the root port was
-  // ADDED to fix, proven by SmpGcTest's STACKROOT probe. And the constants it
-  // reads instead pass the plausibility filter in scanOtherCoreRoots
-  // (`v >= mem_start && v < handleEnd && (v & 7) == 0`) often enough to be
-  // dereferenced as handles.
-  //
-  // This is reachable: `wukongSdrSmp(n)` is wukongSdram with cpuCnt = n, and
-  // the Wukong board sets useStackCache on SDR. It elaborated silently until
-  // 2026-09-16.
-  //
-  // The fix is not a wider port. A non-resident bank's data is in the SPILL
-  // REGION in main memory, so a faithful read would need a fill while the
-  // target core is halted and the collector waits. The tractable route is to
-  // flush dirty banks when a core halts -- then a halted core's stack is
-  // wholly in memory and the collector reads it with ordinary loads, no root
-  // port involved for stack words.
-  require(!(cpuCnt > 1 && baseConfig.useStackCache),
-    s"SMP ($cpuCnt cores) with the stack cache is not supported: the cross-core " +
-    "GC root port reads only the 64-word scratch RAM, so a collector scanning " +
-    "another core's stack gets microcode constants instead of stack words and " +
-    "collects live objects. See status item 133. Use a single core, or build " +
-    "without the stack cache.")
+  // SMP + stack cache was refused here from 2026-09-16 until the flush landed:
+  // the cross-core root port answers only from scratch, so a collector read
+  // another core's microcode constants instead of its stack. Now a halted core
+  // flushes its dirty banks (io.gcFlushReq -> FLUSH_START/FLUSH_WAIT) and
+  // `othersHalted` ANDs in stackFlushed, so the collector reads the stack from
+  // the spill region in main memory. See GC.scanOtherCoreRoots and item 133.
 
   val hasStackDma = baseConfig.useStackCache
   val stackDmaInArbiter = hasStackDma && !separateStackDmaBus

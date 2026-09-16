@@ -38,6 +38,7 @@ object IhluGcGrantTest extends App {
       dut.io.syncIn(i).req     #= false
       dut.io.syncIn(i).s_in    #= false
       dut.io.syncIn(i).gcHalt  #= false
+      dut.io.syncIn(i).stackFlushed #= true   // no cache in this harness
       dut.io.syncIn(i).data    #= 0
       dut.io.syncIn(i).op      #= false
     }

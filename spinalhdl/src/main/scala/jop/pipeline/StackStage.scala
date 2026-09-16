@@ -190,6 +190,14 @@ case class StackStage(
 
     // Outputs
     val spOv    = out Bool()
+    /** A stop-the-world is in force: write every dirty bank out, so this core's
+      * whole stack is readable from main memory by the collector. Status item
+      * 133 -- the cross-core root port can only answer for scratch. */
+    val gcFlushReq  = in Bool()
+    /** No bank holds data that main memory does not. True immediately when the
+      * cache is idle or clean, so a core with nothing to flush does not delay
+      * the collector. */
+    val gcFlushDone = out Bool()
     val zf      = out Bool()
     val nf      = out Bool()
     val eq      = out Bool()
@@ -387,6 +395,8 @@ case class StackStage(
     )
     ramDout := ramOut
     io.debugRamData := debugOut
+    // No cache: the stack IS the RAM, and the root port reads it directly.
+    io.gcFlushDone := True
 
   } else {
     // ------------------------------------------------------------------
@@ -428,12 +438,14 @@ case class StackStage(
 
     // Rotation controller state and registers (declared early for bank write MUX)
     object RotState extends SpinalEnum {
-      val IDLE, SPILL_START, SPILL_WAIT, FILL_START, FILL_WAIT, ZERO_FILL = newElement()
+      val IDLE, SPILL_START, SPILL_WAIT, FILL_START, FILL_WAIT, ZERO_FILL,
+          FLUSH_START, FLUSH_WAIT = newElement()
     }
 
     val rotState = Reg(RotState()) init(RotState.IDLE)
     rotState.simPublic()
     val rotVictimIdx = Reg(UInt(2 bits)) init(0)
+    val flushIdx = Reg(UInt(2 bits)) init(0)
     val rotTargetBase = Reg(UInt(spWidth bits)) init(0)
     val rotNeedFill = Reg(Bool()) init(False)
     val zeroFillCnt = Reg(UInt(8 bits)) init(0)
@@ -789,6 +801,17 @@ case class StackStage(
       default { victimChoice := farther(0, 1) }
     }
 
+    // Dirty-bank bookkeeping for the stop-the-world flush (item 133).
+    val anyDirty = bankDirty.reduce(_ || _)
+    val firstDirty = UInt(2 bits)
+    firstDirty := 0
+    when(bankDirty(2)) { firstDirty := 2 }
+    when(bankDirty(1)) { firstDirty := 1 }
+    when(bankDirty(0)) { firstDirty := 0 }
+    // Done when nothing is dirty AND no transfer is in flight. A core with a
+    // clean cache answers immediately, so it does not delay the collector.
+    io.gcFlushDone := !anyDirty && rotState === RotState.IDLE
+
     // Is this an underflow (need data from ext mem) or overflow (new range)?
     // Keyed on rotAddr, so a VP-driven rotation fetches real data rather than
     // zero-filling over the caller's locals.
@@ -846,6 +869,39 @@ case class StackStage(
           }
         }.elsewhen(canInstantSwitch) {
           activeBankIdx := coveringBankIdx
+        }.elsewhen(io.gcFlushReq && anyDirty) {
+          // FLUSH FOR A STOP-THE-WORLD — status item 133.
+          //
+          // The collector cannot read this core's stack: the cross-core root
+          // port answers only from scratch. Writing every dirty bank out makes
+          // the whole stack readable from main memory with ordinary loads, so
+          // the collector needs no root port for stack words at all.
+          //
+          // Lowest dirty bank first; one per pass, re-entering IDLE between
+          // each so a rotation would still win if one were somehow needed.
+          // Nothing can dirty a bank meanwhile -- the core is halted.
+          //
+          // Unlike a rotation spill this does NOT rebase or evict: the bank
+          // stays exactly where it is and stays resident. Only `dirty` clears,
+          // because memory now matches it.
+          flushIdx := firstDirty
+          rotState := RotState.FLUSH_START
+        }
+      }
+
+      is(RotState.FLUSH_START) {
+        io.dmaStart.get := True
+        io.dmaIsSpill.get := True
+        io.dmaBank.get := flushIdx
+        io.dmaExtAddr.get := extByteAddr(bankBaseVAddr(flushIdx))
+        io.dmaWordCount.get := cc.bankSize
+        rotState := RotState.FLUSH_WAIT
+      }
+
+      is(RotState.FLUSH_WAIT) {
+        when(io.dmaDone.get) {
+          bankDirty(flushIdx) := False   // resident and unchanged; just no longer dirty
+          rotState := RotState.IDLE
         }
       }
 

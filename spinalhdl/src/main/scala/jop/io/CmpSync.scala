@@ -17,6 +17,10 @@ case class SyncIn() extends Bundle {
   val gcHalt   = Bool()    // GC halt request (halts all OTHER cores)
   val data     = Bits(32 bits)  // Lock identifier (IHLU only: object handle address)
   val op       = Bool()         // Lock operation (IHLU only: False=lock, True=unlock)
+  /** This core's stack cache holds nothing main memory does not, so the
+    * collector can read its stack with ordinary loads. ANDed into othersHalted,
+    * so "the world has stopped" means stopped AND readable. Status item 133. */
+  val stackFlushed = Bool()
 }
 
 /**
@@ -45,6 +49,12 @@ case class SyncOut() extends Bundle {
    * learning whether anyone stopped. This is the missing acknowledgement.
    */
   val othersHalted = Bool()
+  /** A stop-the-world is in force and this core is not the one that asked for
+    * it — so it should flush its stack cache, making its stack readable from
+    * main memory by the collector (status item 133). Distinct from `halted`,
+    * which is also true for an ordinary lock wait; flushing on those would cost
+    * a DMA per contention. */
+  val gcHaltActive = Bool()
 }
 
 object SyncOut {
@@ -67,6 +77,7 @@ object SyncOut {
     s.status       := False
     s.haltViolated := False
     s.othersHalted := True    // nobody else exists to be running
+    s.gcHaltActive := False   // single core: nothing to flush for
   }
 }
 
@@ -207,6 +218,11 @@ case class CmpSync(cpuCnt: Int) extends Component {
   // running?"), and only the collector reads it, so the same value goes to
   // every core rather than each getting its own view.
   val anyGcHalt = (0 until cpuCnt).map(io.syncIn(_).gcHalt).reduce(_ || _)
+  // Per core: a halt is in force and this core is not the requester.
+  for (i <- 0 until cpuCnt) {
+    io.syncOut(i).gcHaltActive := (0 until cpuCnt).filter(_ != i)
+      .map(io.syncIn(_).gcHalt).reduce(_ || _)
+  }
   // A core is running-when-it-should-not-be if it is neither the core that
   // asked for the halt nor halted. The requester is excluded because the
   // collector is legitimately running -- it is the one doing the collecting.
@@ -229,8 +245,18 @@ case class CmpSync(cpuCnt: Int) extends Component {
   // asker. Registered for the same reason `violated` is; one cycle of latency
   // only makes the collector wait a cycle longer, and it is spinning anyway.
   for (i <- 0 until cpuCnt) {
+    // STOPPED **AND READABLE** — status item 133 composed onto item 158.
+    //
+    // A halted core's stack cache may still hold dirty banks that main memory
+    // does not have, and the collector cannot read them: the cross-core root
+    // port answers only from scratch. So "the world has stopped" is not enough;
+    // it must also be readable. ANDing stackFlushed here means the collector's
+    // existing spin on IO_GC_HALTED covers the flush for free -- no second
+    // handshake, no new wait in GC.java.
     io.syncOut(i).othersHalted := RegNext(
-      (0 until cpuCnt).filter(_ != i).map(io.syncOut(_).halted).fold(True)(_ && _)
+      (0 until cpuCnt).filter(_ != i)
+        .map(j => io.syncOut(j).halted && io.syncIn(j).stackFlushed)
+        .fold(True)(_ && _)
     ) init (False)
   }
 }

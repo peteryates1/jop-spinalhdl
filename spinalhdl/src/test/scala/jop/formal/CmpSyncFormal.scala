@@ -28,6 +28,9 @@ class CmpSyncFormal extends SpinalFormalFunSuite {
       anyseq(dut.io.syncIn(i).req)
       anyseq(dut.io.syncIn(i).s_in)
       anyseq(dut.io.syncIn(i).gcHalt)
+      // Stack-cache flush state (item 133). anyseq, so every property is proven
+      // for both values rather than only for "already flushed".
+      anyseq(dut.io.syncIn(i).stackFlushed)
     }
   }
 
@@ -85,9 +88,11 @@ class CmpSyncFormal extends SpinalFormalFunSuite {
         dut.io.syncIn(0).req := False
         dut.io.syncIn(0).s_in := False
         dut.io.syncIn(0).gcHalt := True
+        dut.io.syncIn(0).stackFlushed := True
         dut.io.syncIn(1).req := False
         dut.io.syncIn(1).s_in := False
         dut.io.syncIn(1).gcHalt := False
+        dut.io.syncIn(1).stackFlushed := True
 
         when(pastValidAfterReset()) {
           // Core 1 should be halted (gcHalt from core 0)
@@ -108,10 +113,12 @@ class CmpSyncFormal extends SpinalFormalFunSuite {
         // Core 0 sets gcHalt, core 1 holds lock (req=True)
         dut.io.syncIn(0).req := False
         dut.io.syncIn(0).s_in := False
+        dut.io.syncIn(0).stackFlushed := True
         dut.io.syncIn(0).gcHalt := True   // GC core
         dut.io.syncIn(1).req := True       // Lock holder
         dut.io.syncIn(1).s_in := False
         dut.io.syncIn(1).gcHalt := False
+        dut.io.syncIn(1).stackFlushed := True
 
         when(pastValidAfterReset()) {
           // When core 1 holds the lock, it must NOT be halted
@@ -159,9 +166,11 @@ class CmpSyncFormal extends SpinalFormalFunSuite {
         dut.io.syncIn(0).req := False
         dut.io.syncIn(0).s_in := False
         dut.io.syncIn(0).gcHalt := True
+        dut.io.syncIn(0).stackFlushed := True
         dut.io.syncIn(1).req := True
         dut.io.syncIn(1).s_in := False
         dut.io.syncIn(1).gcHalt := False
+        dut.io.syncIn(1).stackFlushed := True
 
         // ONE CYCLE BEHIND, and the property says so. haltViolated is
         // registered before broadcast -- combinationally it fanned out from
@@ -193,9 +202,11 @@ class CmpSyncFormal extends SpinalFormalFunSuite {
         dut.io.syncIn(0).req := False
         dut.io.syncIn(0).s_in := False
         dut.io.syncIn(0).gcHalt := True
+        dut.io.syncIn(0).stackFlushed := True
         dut.io.syncIn(1).req := False
         dut.io.syncIn(1).s_in := False
         dut.io.syncIn(1).gcHalt := False
+        dut.io.syncIn(1).stackFlushed := True
 
         when(pastValidAfterReset()) {
           assert(!dut.io.syncOut(0).haltViolated)
@@ -219,10 +230,12 @@ class CmpSyncFormal extends SpinalFormalFunSuite {
         assumeInitial(ClockDomain.current.isResetActive)
         dut.io.syncIn(0).req := False
         dut.io.syncIn(0).s_in := False
+        dut.io.syncIn(0).stackFlushed := True
         dut.io.syncIn(0).gcHalt := True    // the collector
         dut.io.syncIn(1).req := True       // holds the lock, so exempt
         dut.io.syncIn(1).s_in := False
         dut.io.syncIn(1).gcHalt := False
+        dut.io.syncIn(1).stackFlushed := True
 
         // On the PAST condition: othersHalted is registered, so asserting on
         // the present one passes while the register is still showing the
@@ -249,9 +262,11 @@ class CmpSyncFormal extends SpinalFormalFunSuite {
         dut.io.syncIn(0).req := False
         dut.io.syncIn(0).s_in := False
         dut.io.syncIn(0).gcHalt := True
+        dut.io.syncIn(0).stackFlushed := True
         dut.io.syncIn(1).req := False
         dut.io.syncIn(1).s_in := False
         dut.io.syncIn(1).gcHalt := False
+        dut.io.syncIn(1).stackFlushed := True
 
         when(pastValidAfterReset()) {
           assert(dut.io.syncOut(0).othersHalted)

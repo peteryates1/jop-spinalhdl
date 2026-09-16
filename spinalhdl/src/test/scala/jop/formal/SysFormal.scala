@@ -43,6 +43,9 @@ class SysFormal extends SpinalFormalFunSuite {
     // excTypeReg/excPend, which is exactly what the exception properties are
     // about. Item 133.
     anyseq(dut.io.spOv)
+    // Stack-cache flush handshake (item 133). anyseq for the same reason as
+    // spOv: prove the properties for both values rather than only the quiet one.
+    anyseq(dut.io.gcFlushDone)
     dut.io.ioInt := 0
     // Cross-core GC root data: a free input from the cluster, irrelevant to
     // every property here but it still needs a driver. Left as anyseq rather

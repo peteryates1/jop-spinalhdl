@@ -109,6 +109,24 @@ object ConstGenerator {
     val methodMaxWords = (hwMethodMaxWords +: overrideWords).min
 
     // Union of all systems' device presence
+    // Stack-cache spill geometry, so a collector can read ANOTHER core's stack
+    // from main memory. The cross-core root port answers only from the 64-word
+    // scratch RAM, so on a cached config it cannot serve stack words at all --
+    // status item 133. With the stop-the-world flush in place a halted core's
+    // stack is wholly in its spill region, and these constants say where.
+    //
+    // Core c's region is `memWords - (c+1)*W`, carved downward from the top of
+    // memory, so base(c) = STACK_SPILL_BASE - c*STACK_SPILL_WORDS.
+    // `config.effectiveUseStackCache`, NOT `coreConfig.useStackCache` -- the
+    // latter is the preset's wish and is false on every config that actually
+    // has one (item 130). Asking the wrong one gave STACK_CACHE = 0 for
+    // wukongFull, which has a stack cache.
+    val scSys = config.systems.headOption
+    val scOn = scSys.exists(config.effectiveUseStackCache)
+    val scWords = scSys.map(config.effectiveStackRegionWords).getOrElse(0)
+    val scMemWords = scSys.map(config.effectiveMemWords).getOrElse(0)
+    val scBase = if (scOn && scWords > 0) scMemWords - scWords else 0
+
     val hasEth = config.systems.exists(_.hasDevice(DeviceType.Ethernet))
     val hasSdSpi = config.systems.exists(_.hasDevice(DeviceType.SdSpi))
     val hasSdNative = config.systems.exists(_.hasDevice(DeviceType.SdNative))
@@ -198,6 +216,18 @@ object ConstGenerator {
          |	public static final int STACK_SIZE = 65536;
          |	/** Offset of the real stack in the on-chip RAM (set in jvm.asm) */
          |	public static final int STACK_OFF = 64;
+         |	/**
+         |	 * Non-zero when this build has a stack cache, so another core's stack
+         |	 * must be read from its SPILL REGION in main memory rather than through
+         |	 * the cross-core root port -- that port answers only from the 64-word
+         |	 * scratch RAM (status item 133). Valid only while the target core is
+         |	 * halted, which also means flushed: `othersHalted` ANDs in stackFlushed.
+         |	 */
+         |	public static final int STACK_CACHE = ${if (scOn) 1 else 0};
+         |	/** Word address of core 0's spill region; core c's is
+         |	 *  STACK_SPILL_BASE - c * STACK_SPILL_WORDS. */
+         |	public static final int STACK_SPILL_BASE = $scBase;
+         |	public static final int STACK_SPILL_WORDS = $scWords;
          |	/** Constant pool pointer offset in on-chip stack cache */
          |	public static final int RAM_CP = 1;
          |	/** Start address of scratchpad RAM */

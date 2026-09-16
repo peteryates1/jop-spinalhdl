@@ -1908,14 +1908,45 @@ public class GC {
 		for (int c = 0; c < n; ++c) {
 			if (c == me) continue;
 			int sp = rootRead(c, Const.ROOT_WHAT_SP, 0);
-			// A wild SP would walk the whole 256-word RAM harmlessly, but cap it
-			// anyway: conservative scanning tolerates junk, unbounded loops do not.
-			if (sp > STACK_RAM_WORDS) sp = STACK_RAM_WORDS;
+			// A wild SP would walk the whole RAM harmlessly, but cap it anyway:
+			// conservative scanning tolerates junk, unbounded loops do not.
+			//
+			// The cap depends on where the stack LIVES. Without a stack cache it
+			// is the 256-word RAM. With one it is the spill region, which is
+			// 8192 words per core -- capping at 256 there would silently skip
+			// everything above frame ~28 (status item 133).
+			int spCap = (Const.STACK_CACHE != 0)
+					? Const.STACK_OFF + Const.STACK_SPILL_WORDS
+					: STACK_RAM_WORDS;
+			if (sp > spCap) sp = spCap;
 			lastScanSp = sp;
 			if (sp < minScanSp) minScanSp = sp;
 			if (sp > maxScanSp) maxScanSp = sp;
+			// WHERE ANOTHER CORE'S STACK ACTUALLY IS — status item 133.
+			//
+			// Without a stack cache it is that core's private stack RAM, and the
+			// cross-core root port is a real third port on it.
+			//
+			// WITH a stack cache the root port answers only from the 64-word
+			// scratch RAM, with the index truncated to 6 bits -- ask for stack
+			// word 200 and you get scratch word 8, i.e. microcode variables and
+			// the constant pool. That both misses every real root and offers
+			// constants that pass the plausibility filter below.
+			//
+			// So on a cached build the stack is read from that core's SPILL
+			// REGION in main memory instead. This is sound only because a halted
+			// core is also a FLUSHED one: `othersHalted` ANDs in stackFlushed
+			// (CmpSync/Ihlu), so the collector's spin on IO_GC_HALTED already
+			// waited for every dirty bank to be written out.
+			//
+			// Region base for core c is STACK_SPILL_BASE - c*STACK_SPILL_WORDS,
+			// carved downward from the top of memory, and virtual stack word j
+			// sits at base + (j - STACK_OFF).
+			int spillBase = Const.STACK_SPILL_BASE - c * Const.STACK_SPILL_WORDS;
 			for (int j = Const.STACK_OFF; j <= sp; ++j) {
-				int v = rootRead(c, Const.ROOT_WHAT_STACK, j);
+				int v = (Const.STACK_CACHE != 0)
+						? Native.rdMem(spillBase + j - Const.STACK_OFF)
+						: rootRead(c, Const.ROOT_WHAT_STACK, j);
 				otherRootWords++;
 				if (v != 0 && v >= mem_start && v < handleEnd && (v & 0x7) == 0) {
 					otherRootCands++;

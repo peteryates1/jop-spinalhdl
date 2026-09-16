@@ -512,7 +512,7 @@ case class JopTop(
         ),
         supersetJumpTable = sys.baseJumpTable,
         clkFreq = sys.clkFreq,
-        useStackCache = (isDdr3 && sys.cpuCnt == 1) || (isSdr && board.useStackCache)
+        useStackCache = config.effectiveUseStackCache(sys)   // one place decides; item 130
       ))
 
       // ==============================================================

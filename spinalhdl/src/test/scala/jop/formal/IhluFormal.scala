@@ -35,6 +35,7 @@ class IhluFormal extends SpinalFormalFunSuite {
       dut.io.syncIn(i).req := False
       dut.io.syncIn(i).s_in := False
       dut.io.syncIn(i).gcHalt := False
+      dut.io.syncIn(i).stackFlushed := True
     }
   }
 
@@ -53,6 +54,7 @@ class IhluFormal extends SpinalFormalFunSuite {
           anyseq(dut.io.syncIn(i).s_in)
           dut.io.syncIn(i).req := False
           dut.io.syncIn(i).gcHalt := False
+          dut.io.syncIn(i).stackFlushed := True
         }
 
         when(pastValidAfterReset()) {
@@ -77,6 +79,7 @@ class IhluFormal extends SpinalFormalFunSuite {
           dut.io.syncIn(i).op := False
           dut.io.syncIn(i).req := False
           dut.io.syncIn(i).s_in := False
+          dut.io.syncIn(i).stackFlushed := True
         }
 
         // Core 0 asserts gcHalt, core 1 does not
@@ -161,6 +164,7 @@ class IhluFormal extends SpinalFormalFunSuite {
         dut.io.syncIn(0).req := False
         dut.io.syncIn(0).s_in := False
         dut.io.syncIn(0).gcHalt := False
+        dut.io.syncIn(0).stackFlushed := True
 
         dut.io.syncIn(1).reqPulse := False
         dut.io.syncIn(1).data := 0
@@ -168,6 +172,7 @@ class IhluFormal extends SpinalFormalFunSuite {
         dut.io.syncIn(1).req := False
         dut.io.syncIn(1).s_in := False
         dut.io.syncIn(1).gcHalt := False
+        dut.io.syncIn(1).stackFlushed := True
 
         when(pastValidAfterReset()) {
           // Since only core 0 sends lock requests, any allocated slot must be owned by core 0

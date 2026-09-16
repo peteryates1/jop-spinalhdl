@@ -425,6 +425,11 @@ case class Ihlu(config: IhluConfig) extends Component {
   // keeps running through another core's gcHalt so it can drain. That is the
   // behaviour being observed, not a bug being caught.
   val anyGcHalt = (0 until cpuCnt).map(io.syncIn(_).gcHalt).reduce(_ || _)
+  // Per core: a halt is in force and this core is not the requester.
+  for (i <- 0 until cpuCnt) {
+    io.syncOut(i).gcHaltActive := (0 until cpuCnt).filter(_ != i)
+      .map(io.syncIn(_).gcHalt).reduce(_ || _)
+  }
   val someoneRunning = (0 until cpuCnt)
     .map(j => !io.syncIn(j).gcHalt && !io.syncOut(j).halted).reduce(_ || _)
   // REGISTERED BEFORE BROADCAST. Combinationally this is
@@ -444,8 +449,18 @@ case class Ihlu(config: IhluConfig) extends Component {
   // asker. Registered for the same reason `violated` is; one cycle of latency
   // only makes the collector wait a cycle longer, and it is spinning anyway.
   for (i <- 0 until cpuCnt) {
+    // STOPPED **AND READABLE** — status item 133 composed onto item 158.
+    //
+    // A halted core's stack cache may still hold dirty banks that main memory
+    // does not have, and the collector cannot read them: the cross-core root
+    // port answers only from scratch. So "the world has stopped" is not enough;
+    // it must also be readable. ANDing stackFlushed here means the collector's
+    // existing spin on IO_GC_HALTED covers the flush for free -- no second
+    // handshake, no new wait in GC.java.
     io.syncOut(i).othersHalted := RegNext(
-      (0 until cpuCnt).filter(_ != i).map(io.syncOut(_).halted).fold(True)(_ && _)
+      (0 until cpuCnt).filter(_ != i)
+        .map(j => io.syncOut(j).halted && io.syncIn(j).stackFlushed)
+        .fold(True)(_ && _)
     ) init (False)
   }
 }

@@ -362,6 +362,48 @@ case class JopConfig(
     * Generic for others.  MAX10 requires AlteraLpm because its inference engine
     * does not support MIF initialization from $readmemb.  Cyclone IV inference
     * works but AlteraLpm is more robust and matches proven jopmin approach. */
+  /**
+   * Does this system get a stack cache? THE ONE PLACE THAT DECIDES.
+   *
+   * `JopCoreConfig.useStackCache` is the preset's wish; this is what is
+   * actually built. It used to live only inside `JopTop` (item 130: JopTop
+   * silently overrides preset fields), which meant nothing outside elaboration
+   * could find out -- and `ConstGenerator` needs to know, because on a cached
+   * config the collector must read another core's stack from its spill region
+   * rather than through the cross-core root port (item 133).
+   *
+   * Duplicating the predicate in the generator was the alternative, and it is
+   * exactly the drift item 130 is about.
+   */
+  def effectiveUseStackCache(sys: JopSystem): Boolean = {
+    val mt = resolveMemory(sys).map(_.memType)
+    val board = assembly.boards.head
+    (mt.contains(MemoryType.SDRAM_DDR3) && sys.cpuCnt == 1) ||
+    (mt.contains(MemoryType.SDRAM_SDR) && board.useStackCache)
+  }
+
+  /**
+   * Words of spill region per core, as BUILT. Another of the `memConfig` fields
+   * `JopTop` overrides (item 130): the DDR branch sets 8192 unconditionally,
+   * the SDR branch gates it on the board flag, and the preset's own value
+   * survives only on BRAM.
+   */
+  def effectiveStackRegionWords(sys: JopSystem): Int = {
+    val mt = resolveMemory(sys).map(_.memType)
+    if (mt.contains(MemoryType.SDRAM_DDR3) || mt.contains(MemoryType.SDRAM_DDR2)) 8192
+    else if (mt.contains(MemoryType.BRAM)) sys.coreConfig.memConfig.stackRegionWordsPerCore
+    else if (assembly.boards.head.useStackCache) 8192
+    else 0
+  }
+
+  /** Main memory in WORDS, as built — `JopTop` takes it from the memory device
+    * on the DDR paths, not from the preset. Item 130. */
+  def effectiveMemWords(sys: JopSystem): Int = {
+    val md = resolveMemory(sys)
+    val bytes = md.map(_.sizeBytes).getOrElse(sys.coreConfig.memConfig.mainMemSize.toLong)
+    (bytes / 4).toInt
+  }
+
   lazy val resolvedSystems: Seq[JopSystem] = {
     val needsSync = true
     val autoMemStyle = fpgaFamily.memoryStyle

@@ -63,6 +63,9 @@ case class JopPipeline(
       * configuration and JVMHelp's recovery was dead code. A non-cache board
       * overflowing its 192-word stack did not fault -- it wedged. Item 133. */
     val spOv       = out Bool()
+    /** Stop-the-world stack-cache flush, item 133. */
+    val gcFlushReq  = in Bool()
+    val gcFlushDone = out Bool()
     val jpc        = out UInt((config.jpcWidth + 1) bits)
     val instr      = out Bits(config.instrWidth bits)
     val jfetch     = out Bool()
@@ -309,6 +312,8 @@ case class JopPipeline(
   // Pipeline status
   io.pc := fetch.io.pc_out
   io.spOv := stack.io.spOv
+  stack.io.gcFlushReq := io.gcFlushReq
+  io.gcFlushDone := stack.io.gcFlushDone
   io.jpc := bcfetch.io.jpc_out
   io.instr := fetch.io.dout
   io.jfetch := fetch.io.nxt

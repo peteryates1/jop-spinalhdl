@@ -290,6 +290,8 @@ case class JopCore(
   // Stall profiling taps: the same two signals the simulations use, so the
   // hardware table is directly comparable with MemProfile's.
   sys.io.spOv := pipeline.io.spOv
+  pipeline.io.gcFlushReq := sys.io.gcFlushReq
+  sys.io.gcFlushDone := pipeline.io.gcFlushDone
   sys.io.memState := memCtrl.io.debug.state
   sys.io.memBusy  := memCtrl.io.memOut.busy
 

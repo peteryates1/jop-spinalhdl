@@ -57,6 +57,10 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
     /** Stack overflow from StackStage, level. Raises EXC_SPOV on its rising
       * edge -- see the note where it is consumed. Item 133. */
     val spOv   = in Bool()
+    /** Stop-the-world flush handshake, item 133: the lock manager says a halt
+      * is in force, the stack cache says it has written itself out. */
+    val gcFlushReq  = out Bool()
+    val gcFlushDone = in Bool()
 
     // External I/O interrupt inputs
     val ioInt  = in Bits(numIoInt bits)
@@ -294,6 +298,8 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
   io.syncOut.reqPulse := lockReqPulseReg
   io.syncOut.s_in     := signalReg
   io.syncOut.gcHalt   := gcHaltReg
+  io.syncOut.stackFlushed := io.gcFlushDone
+  io.gcFlushReq := io.syncIn.gcHaltActive
   io.syncOut.data     := lockDataReg
   io.syncOut.op       := lockOpReg
 
