@@ -43,6 +43,8 @@ class StackSpillGeometryTest extends AnyFunSuite {
     "wukongSdram"      -> JopConfig.wukongSdram,      // SDR, stack cache, 1 core
     "wukongSdrSmp 2"   -> JopConfig.wukongSdrSmp(2),  // SDR, stack cache, SMP
     "wukongSdrSmp 4"   -> JopConfig.wukongSdrSmp(4),
+    "wukongSdrSmpSim 2" -> JopConfig.wukongSdrSmpSim(2),  // the sim vehicle, small heap
+    "wukongSdrSmpSim 4" -> JopConfig.wukongSdrSmpSim(4),
     "wukongSdrFull"    -> JopConfig.wukongSdrFull,
     "wukongDdr3"       -> JopConfig.wukongDdr3,       // DDR3 1 core -> stack cache
     "wukongFull"       -> JopConfig.wukongFull,

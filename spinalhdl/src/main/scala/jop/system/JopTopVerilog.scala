@@ -106,6 +106,14 @@ object JopTopVerilog {
       val n = if (args.length > 1) args(1).toInt else 4
       val mhz = args.drop(2).headOption.map(_.toInt).getOrElse(100)
       JopConfig.wukongSdrSmp(n, mhz)
+    // wukongSdrSmpSim <cores> [memBytes] — the SMP + stack-cache simulation
+    // vehicle. Not a board target: its only difference is a heap small enough
+    // for a minor GC to happen inside a sane cycle cap. `make -C java
+    // JOP_PRESET="wukongSdrSmpSim 2"` links the image against its Const.java.
+    case "wukongSdrSmpSim" =>
+      val n = if (args.length > 1) args(1).toInt else 2
+      val mem = args.drop(2).headOption.map(_.toInt).getOrElse(256 * 1024)
+      JopConfig.wukongSdrSmpSim(n, mem)
     case "wukongDdr3Smp" =>
       val n = if (args.length > 1) args(1).toInt else 4
       // argv[2] names a MigProfile, not a frequency: the clock is one of a few

@@ -6789,7 +6789,9 @@ Other findings in the same group, each verified:
   the microcode's variables and constant pool. Applies to SDR SMP **with** the
   stack cache, i.e. `wukongSdrSmp(n)`, not to the EP4CGX150.
 
-  **REFUSED AT ELABORATION 2026-09-16** rather than left silent. `wukongSdrSmp(n)`
+  ~~**REFUSED AT ELABORATION 2026-09-16**~~ — **SUPERSEDED the same day, see
+  below**; the `require` was removed when the flush landed. Kept because the
+  red proof still describes what was wrong. `wukongSdrSmp(n)`
   is `wukongSdram` with `cpuCnt = n` and the Wukong board sets `useStackCache`
   on SDR, so the combination was reachable and elaborated cleanly, producing RTL
   whose collector reads microcode constants instead of another core's stack.
@@ -6817,6 +6819,112 @@ Other findings in the same group, each verified:
   root port; they are registers, not memory. Cost to weigh: up to 3 banks × 192
   words of DMA per core per halt, on a path item 158 just made synchronous —
   gate on `bankDirty`, which already exists.
+
+  **THE REFUSAL WAS LIFTED THE SAME DAY (`6249099`) — the flush above is
+  implemented**, so the paragraph beginning "REFUSED AT ELABORATION" describes a
+  `require` that no longer exists. `StackStage` gained FLUSH_START/FLUSH_WAIT,
+  `othersHalted` now means "halted AND flushed", and `GC.scanOtherCoreRoots`
+  reads another core's stack from its spill region on a cached build. That
+  commit changed no documentation, which is the only reason this section stood
+  for six days saying the opposite of the code.
+
+  **AND THE SPILL BASE WAS WRONG BY 4x — found 2026-09-22, before any
+  simulation ran.** `ConstGenerator` asked `JopConfig.effectiveMemWords`, which
+  took the size from the memory DEVICE whenever one resolved. `JopTop` takes it
+  from the device on the **DDR paths only**; an SDR system keeps the preset's
+  `mainMemSize`, a fact written down two dozen lines away in `JopConfig.scala`
+  itself. The Wukong carries a 32 MB chip and JOP is built for 8 MB, so on
+  `wukongSdrSmp 2` the two generated artefacts disagreed:
+
+  ```
+  Const.java   STACK_SPILL_BASE = 8380416      (32 MB - 8192)
+  RTL          22'h1fe000       = 2088960      ( 8 MB - 8192)
+  ```
+
+  Not merely a different address — 8,380,416 needs 23 bits and the design
+  carries a 22-bit word address, so it truncates. Every cross-core root would
+  have been read from words nothing ever wrote, in the direction that
+  **collects live objects**. It was live on `wukongSdram` (single core) too,
+  where the constant is emitted but unused, so a single-core pass would not
+  have found it.
+
+  Fixed by making the three `effective*` helpers derive from ONE function,
+  `JopConfig.builtCoreConfig`, which is the override block moved out of
+  `JopTop` — both of JopTop's copies now call it, and the generated RTL for
+  `wukongSdrSmp 2`, `xc7a100tDbSerial` and `ep4cgx150Bram` is unchanged but for
+  SpinalHDL's line-number-derived signal names. Guarded by
+  `jop.config.StackSpillGeometryTest`, which compares `Const.java`'s
+  `STACK_SPILL_BASE` against the elaborated `StackCacheConfig.spillBaseAddr`
+  for ten presets and checks the region is inside the addressable range. Red
+  against the unfixed code (`8380416 did not equal 2088960`, on `wukongSdram`).
+
+  **Answering one field at a time is what let this through.** The commit that
+  introduced `effectiveUseStackCache`/`effectiveStackRegionWords`/
+  `effectiveMemWords` did so *because* asking `coreConfig.useStackCache` gave
+  the wrong answer — and then got the third helper wrong in the same way, for
+  the same reason: three transcriptions of one override block, checked against
+  nothing.
+
+  **SIMULATED 2026-09-22 — the collector reads a halted core's stack out of its
+  spill region and finds the root.** `JopSmpStackCacheSdramSim` (2 cores, SDR,
+  stack cache, Ihlu) runs `SmpGcTest`, whose STACKROOT probe parks a reference
+  on core 1's stack and holds it there across minor collections driven by core
+  0:
+
+  ```
+  STACKROOT minors 6 magic 1515851775 OK (other core's stack IS scanned)
+  core1 view: ptr 108218 space 1 type 0 raw 1515851775 field 1515851775
+  core0 after: ptr 108218 space 1 type 0 raw 1515851775 PTR-AGREE
+  scan calls 8 words 164 cands 6 young 1
+    lastYoung 56272 probeHandle 56272 MATCH spMin 64 spMax 90
+  ```
+
+  `MATCH` is the load-bearing line: the one young handle the cross-core scan
+  found IS the probe's, so the words read back from the spill region are the
+  ones core 1 spilled — not a survivor that happened to live. Six minors, the
+  count every recorded STACKROOT result is quoted against.
+
+  **What it does NOT cover: `spMin 64 spMax 90`.** Core 1's stack was ~90 words
+  deep, which sits entirely in the ACTIVE bank, so `FLUSH_START`/`FLUSH_WAIT`
+  walking more than one dirty bank is still unexercised. The probe would have to
+  hold its reference deep inside a recursion, so SP crosses a bank boundary,
+  before the multi-bank walk is tested. Open.
+
+  **A vehicle needs a heap it can finish in, and that is a MEASUREMENT.** At the
+  board's 8 MB nothing collects: `churnUntilMinor` gives up after 20,000
+  allocations, the reference survives having never been at risk, and the probe
+  prints OK — a pass that exercises nothing. Hence `wukongSdrSmpSim(n)`, which
+  differs from `wukongSdrSmp(n)` in `mainMemSize` alone, and hence the sim's
+  `STACKROOT minors >= 1` assertion, which is what makes a resized heap fail
+  loudly instead of passing quietly.
+
+  **`SMPGC OK` was NOT reached, at either size, and the heap is not the lever.**
+
+  | heap | cap | wall | result |
+  |---|---|---|---|
+  | 512 KB | 400M cycles | 1h42m | STACKROOT OK, no `SMPGC` verdict |
+  | 256 KB | 1,000M cycles | 4h13m | STACKROOT OK, no `SMPGC` verdict |
+
+  Shrinking the heap 4x did not move it: the second run passed the first run's
+  cap and kept going for another 600M cycles. So the 8 publish rounds are NOT
+  dominated by heap size the way the tenuring phase is — the item 137
+  amplification argument applies to the churn ahead of STACKROOT and was
+  predicted, wrongly and twice, to apply to the rounds as well.
+
+  **What the rounds are actually spending 1B cycles on is UNKNOWN, and the run
+  cannot say.** `SmpGcTest` prints nothing between the STACKROOT block and its
+  final verdict, so a changing PC on both cores is evidence they are executing
+  and nothing more; round 2 and round 7 look identical from outside. Two things
+  are ruled out and no more: the bounded publisher wait never printed
+  `SMPGC STALLED`, and no exception or array-bounds fault fired.
+
+  **Do not record this as "the rounds are merely slow" — that is the untested
+  hypothesis, not the finding.** The experiment that would settle it is one
+  print per round in `SmpGcTest`, then a short run to measure rounds per 100M
+  cycles: a rate makes it a budget question, a stall makes it a defect. The cost
+  is that `SmpGcTest` is a SHARED fixture — `JopIhluSim`, `JopGcHaltDeadlockSim`
+  and the hardware flows all read its output — so a new line has to be checked
+  against their judging before it is added.
 - **Spill region unchecked against the 16-bit virtual SP.**
   `stackRegionWordsPerCore = 8192` against a hardware range of 65,472; the only
   guard (`JopCoreConfig.scala:437-438`) checks `> 0`. Past SP 8256 the lowest

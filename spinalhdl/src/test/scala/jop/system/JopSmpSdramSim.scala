@@ -29,7 +29,12 @@ case class JopSmpSdramTestHarness(
   cpuCnt: Int,
   romInit: Seq[BigInt],
   ramInit: Seq[BigInt],
-  mainMemInit: Seq[BigInt]
+  mainMemInit: Seq[BigInt],
+  /** Core config to elaborate, for a sim that models a DIFFERENT board than the
+    * EP4CGX150 default below — `JopSmpStackCacheSdramSim` passes the Wukong's,
+    * which is the only SMP configuration that carries a stack cache. It must be
+    * the AS-BUILT config (`JopConfig.builtCoreConfig`), not the preset's wish. */
+  coreCfg: Option[JopCoreConfig] = None
 ) extends Component {
   require(cpuCnt >= 1)
 
@@ -61,7 +66,7 @@ case class JopSmpSdramTestHarness(
   // no Verilog body, so Verilator fails with "Cannot find file containing
   // module: 'rom'". Generic infers the same memories. Everything else — burstLen,
   // hasBackendFill, the caches, addressWidth — is the board's.
-  val boardCfg = JopConfig.ep4cgx150Smp(cpuCnt, 60).system.coreConfig
+  val boardCfg = coreCfg.getOrElse(JopConfig.ep4cgx150Smp(cpuCnt, 60).system.coreConfig)
   val harnessCfg = boardCfg.copy(useCmpSync = false, memoryStyle = Some(MemoryStyle.Generic))
 
   val io = new Bundle {

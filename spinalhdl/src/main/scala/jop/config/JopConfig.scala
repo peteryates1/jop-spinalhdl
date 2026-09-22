@@ -1307,6 +1307,49 @@ object JopConfig {
       name = s"sdrsmp$n", cpuCnt = n, clkFreq = clkMhz MHz)))
   }
 
+  /**
+   * `wukongSdrSmp` with a SIMULATABLE heap — the SMP + stack-cache vehicle.
+   *
+   * It is the only configuration that has both, and the collector's cross-core
+   * stack scan is only sound because a halted core's banks are flushed to its
+   * spill region first (item 133). Simulating that needs a minor GC to actually
+   * HAPPEN, and on the board's 8 MB the nursery outlives `SmpGcTest`'s 20,000-
+   * allocation budget: the STACKROOT probe then reports its reference intact
+   * having survived no collection at all — a pass that proves nothing. Hence
+   * `JopSmpStackCacheSdramSim` asserts `STACKROOT minors >= 1`, and hence this
+   * preset.
+   *
+   * Only `mainMemSize` differs. The spill geometry is the board's — SDR plus
+   * `board.useStackCache` still gives 8192 words per core — so the addresses
+   * under test are computed by the same rule, just nearer the bottom of memory.
+   *
+   * SIZED FOR THE PROBE, NOT FOR THE ROUNDS — measured, and the second half of
+   * that is a negative result. 256 KB leaves ~34k words of heap after the image
+   * (15,366 words) and both cores' spill regions, which gets STACKROOT its six
+   * minor GCs early and cheaply.
+   *
+   * It does NOT get `SmpGcTest` to its `SMPGC` verdict, and neither did 512 KB:
+   *
+   *   512 KB,   400M cycles, 1h42m -> STACKROOT OK, no SMPGC verdict
+   *   256 KB, 1,000M cycles, 4h13m -> STACKROOT OK, no SMPGC verdict
+   *
+   * A 4x smaller heap did not move it — the second run passed the first's cap
+   * and ran another 600M cycles. So the item 137 amplification (free heap is
+   * `memSize - image`, so it amplifies) governs the TENURING CHURN and not the
+   * 8 publish rounds, which is the opposite of what was predicted here twice.
+   * What the rounds spend that time on is unmeasured: `SmpGcTest` prints
+   * nothing between STACKROOT and its verdict, so "slow" and "livelocked" look
+   * identical from outside. Do not shrink this further expecting the rounds to
+   * appear.
+   */
+  def wukongSdrSmpSim(n: Int, memBytes: Int = 256 * 1024, clkMhz: Int = 100) = {
+    val base = wukongSdrSmp(n, clkMhz)
+    base.copy(systems = Seq(base.system.copy(
+      name = s"sdrsmpsim$n",
+      coreConfig = base.system.coreConfig.copy(
+        memConfig = base.system.coreConfig.memConfig.copy(mainMemSize = memBytes)))))
+  }
+
   /** Wukong SDR — all compute units, UART only (no Ethernet/SD) */
   def wukongSdrAllCu = {
     val base = wukongSdram
