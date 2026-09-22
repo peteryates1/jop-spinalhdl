@@ -388,21 +388,56 @@ case class JopConfig(
    * the SDR branch gates it on the board flag, and the preset's own value
    * survives only on BRAM.
    */
-  def effectiveStackRegionWords(sys: JopSystem): Int = {
-    val mt = resolveMemory(sys).map(_.memType)
-    if (mt.contains(MemoryType.SDRAM_DDR3) || mt.contains(MemoryType.SDRAM_DDR2)) 8192
-    else if (mt.contains(MemoryType.BRAM)) sys.coreConfig.memConfig.stackRegionWordsPerCore
-    else if (assembly.boards.head.useStackCache) 8192
-    else 0
+  def effectiveStackRegionWords(sys: JopSystem): Int =
+    builtCoreConfig(sys, sys.coreConfig).memConfig.stackRegionWordsPerCore
+
+  /**
+   * The core config a system is actually BUILT with — `JopTop`'s override block
+   * (item 130), moved to where everything else can see it.
+   *
+   * The `effective*` helpers above answered one field each, and a field-at-a-
+   * time answer is only as good as the reader's memory of the other branches:
+   * `effectiveMemWords` took the size from the memory DEVICE whenever one
+   * resolved, while `JopTop` takes it from the device on the DDR paths ONLY —
+   * an SDR system keeps the preset's `mainMemSize` however large the chip is.
+   * The Wukong carries 32 MB and JOP uses 8, so `STACK_SPILL_BASE` came out at
+   * word 8,380,416 while the RTL spilled to 2,088,960: a collector reading a
+   * halted core's stack would have read words nothing ever wrote. It is
+   * recorded two dozen lines down this same file and still went wrong, which is
+   * the argument for one function rather than three.
+   *
+   * `bramMemSize` is JopTop's own constructor parameter, not a config field, so
+   * a caller outside elaboration cannot know it; BRAM keeps the preset's value
+   * instead. No BRAM system has a stack cache, so the spill geometry is
+   * unaffected either way.
+   */
+  def builtCoreConfig(sys: JopSystem, cc: JopCoreConfig,
+                      bramMemSize: Option[Int] = None): JopCoreConfig = {
+    val md = resolveMemory(sys)
+    val mt = md.map(_.memType)
+    val isDdr = mt.contains(MemoryType.SDRAM_DDR3) || mt.contains(MemoryType.SDRAM_DDR2)
+    val isSdr = mt.contains(MemoryType.SDRAM_SDR)
+    val isBram = mt.contains(MemoryType.BRAM)
+    val burstLen = if (sys.cpuCnt > 1 && isSdr) 4 else 0
+    val memConfig =
+      if (isDdr) cc.memConfig.copy(
+        addressWidth = log2Up((md.get.sizeBytes / 4).toInt) + 2,
+        mainMemSize = md.get.sizeBytes,
+        burstLen = burstLen,
+        stackRegionWordsPerCore = 8192)
+      else if (isBram) cc.memConfig.copy(
+        mainMemSize = bramMemSize.map(BigInt(_)).getOrElse(cc.memConfig.mainMemSize),
+        burstLen = 0)
+      else cc.memConfig.copy(
+        burstLen = burstLen,
+        stackRegionWordsPerCore = if (assembly.boards.head.useStackCache) 8192 else 0)
+    cc.copy(memConfig = memConfig, useStackCache = effectiveUseStackCache(sys))
   }
 
-  /** Main memory in WORDS, as built — `JopTop` takes it from the memory device
-    * on the DDR paths, not from the preset. Item 130. */
-  def effectiveMemWords(sys: JopSystem): Int = {
-    val md = resolveMemory(sys)
-    val bytes = md.map(_.sizeBytes).getOrElse(sys.coreConfig.memConfig.mainMemSize.toLong)
-    (bytes / 4).toInt
-  }
+  /** Main memory in WORDS, as built. Derived from [[builtCoreConfig]] so it
+    * cannot disagree with what elaborates. Item 130. */
+  def effectiveMemWords(sys: JopSystem): Int =
+    (builtCoreConfig(sys, sys.coreConfig).memConfig.mainMemSize / 4).toInt
 
   lazy val resolvedSystems: Seq[JopSystem] = {
     val needsSync = true

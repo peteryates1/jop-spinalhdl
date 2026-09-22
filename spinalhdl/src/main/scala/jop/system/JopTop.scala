@@ -490,30 +490,17 @@ case class JopTop(
 
     val mainArea = new ClockingArea(effectiveMainCd) {
 
-      // Build per-core configs
-      val burstLen = if (sys.cpuCnt > 1 && isSdr) 4
-                     else 0
-
-      val coreConfigs = sys.coreConfigs.map(cc => cc.copy(
-        // DDR2 and DDR3 both take their address width from the memory device
-        // rather than the config default, so 256 MB (28) and 1 GB (30) both
-        // work without per-board constants.
-        memConfig = if (isDdr3 || isDdr2) { val md = memDevice.get; cc.memConfig.copy(
-          addressWidth = log2Up((md.sizeBytes / 4).toInt) + 2,
-          mainMemSize = md.sizeBytes,
-          burstLen = burstLen,
-          stackRegionWordsPerCore = 8192
-        ) } else if (isBram) cc.memConfig.copy(
-          mainMemSize = mainMemSize,
-          burstLen = 0
-        ) else cc.memConfig.copy(
-          burstLen = burstLen,
-          stackRegionWordsPerCore = if (board.useStackCache) 8192 else 0
-        ),
-        supersetJumpTable = sys.baseJumpTable,
-        clkFreq = sys.clkFreq,
-        useStackCache = config.effectiveUseStackCache(sys)   // one place decides; item 130
-      ))
+      // Build per-core configs. The overrides themselves live in
+      // JopConfig.builtCoreConfig — DDR2/DDR3 take the address width and size
+      // from the memory device, so 256 MB (28) and 1 GB (30) both work without
+      // per-board constants; SDR and BRAM keep the preset's size. They used to
+      // live here, which meant nothing outside elaboration could find out what
+      // was built, and ConstGenerator's own answer drifted from this one
+      // (item 130, and the spill-base mismatch in StackSpillGeometryTest).
+      val coreConfigs = sys.coreConfigs.map(cc =>
+        config.builtCoreConfig(sys, cc, bramMemSize = if (isBram) Some(mainMemSize) else None).copy(
+          supersetJumpTable = sys.baseJumpTable,
+          clkFreq = sys.clkFreq))
 
       // ==============================================================
       // JOP Cluster
@@ -756,24 +743,13 @@ case class JopTop(
 
     val boardClk = if (manufacturer.explicitClockPort) io.clk_in else ClockDomain.current.readClockWire
 
-    // Helper: build per-core configs for a system
-    def buildMultiCoreConfigs(s: JopSystem, md: MemoryDevice, isSdr: Boolean, isDdr3: Boolean): Seq[JopCoreConfig] = {
-      val burstLen = if (s.cpuCnt > 1 && isSdr) 4 else 0
-      s.coreConfigs.map(cc => cc.copy(
-        memConfig = if (isDdr3) cc.memConfig.copy(
-          addressWidth = log2Up((md.sizeBytes / 4).toInt) + 2,
-          mainMemSize = md.sizeBytes,
-          burstLen = burstLen,
-          stackRegionWordsPerCore = 8192
-        ) else cc.memConfig.copy(
-          burstLen = burstLen,
-          stackRegionWordsPerCore = if (board.useStackCache) 8192 else 0
-        ),
+    // Helper: build per-core configs for a system. Same derivation as the
+    // single-system path above — this used to be a second hand-written copy of
+    // the override block AND a second copy of the useStackCache predicate.
+    def buildMultiCoreConfigs(s: JopSystem): Seq[JopCoreConfig] =
+      s.coreConfigs.map(cc => config.builtCoreConfig(s, cc).copy(
         supersetJumpTable = s.baseJumpTable,
-        clkFreq = s.clkFreq,
-        useStackCache = (isDdr3 && s.cpuCnt == 1) || (isSdr && board.useStackCache)
-      ))
-    }
+        clkFreq = s.clkFreq))
 
     // ==================================================================
     // System 0 (DDR3): PLL0 -> MIG -> cd0 -> cluster0
@@ -812,7 +788,7 @@ case class JopTop(
     )
 
     val ddr3Area = new ClockingArea(cd0) {
-      val coreConfigs0 = buildMultiCoreConfigs(sys0, memDevice0, isSdr = false, isDdr3 = true)
+      val coreConfigs0 = buildMultiCoreConfigs(sys0)
 
       val cluster = JopCluster(
         cpuCnt = sys0.cpuCnt,
@@ -853,7 +829,7 @@ case class JopTop(
     )
 
     val sdrArea = new ClockingArea(cd1) {
-      val coreConfigs1 = buildMultiCoreConfigs(sys1, memDevice1, isSdr = true, isDdr3 = false)
+      val coreConfigs1 = buildMultiCoreConfigs(sys1)
 
       val cluster = JopCluster(
         cpuCnt = sys1.cpuCnt,
