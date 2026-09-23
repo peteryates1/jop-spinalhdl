@@ -7017,6 +7017,57 @@ Other findings in the same group, each verified:
   `SmpGcTest` uses. The SDR path, the arbiter and both cores' stack caches are
   sound at 75 MHz.
 
+  ### Chased 2026-09-23 — it is NOT where it looked, and STACKROOT PASSES
+
+  **THE STACK-CACHE WORK IS HARDWARE-VALIDATED.** With core 0's spin bounded so
+  a failure yields a number instead of silence, `SmpGcTest` on the board prints
+
+  ```
+  STACKROOT: ready 1 after 0 spins
+  STACKROOT: churn done, minors 6
+  STACKROOT minors 6 magic 1515851775 OK (other core's stack IS scanned)
+    lastYoung 488200 probeHandle 488200 MATCH spMin 64 spMax 90
+  core0 after: ptr 1887895 ... PTR-AGREE
+  ```
+
+  Five of six runs. `MATCH` on hardware means the collector read the words core
+  1's flush actually wrote — the same verdict the simulation gave, now on the
+  real SDRAM at 75 MHz.
+
+  **`ready … after 0 spins` disproves the original reading.** Core 1 had already
+  published before core 0 even entered the loop, so the un-instrumented version
+  was never stuck at `while (stackProbeReady == 0)`. The silence after the
+  `arrays:` line was the run getting FURTHER than its output showed.
+
+  **The remaining hang is in PUBLISH ROUND 0**, and only that. A per-round
+  marker prints `R0` and then nothing — the stack probe completes, the rounds
+  begin, and round 0 does not finish. The rounds are also what never completed
+  in 1,000M simulated cycles, and hardware is ~1500x faster, so the earlier
+  reading of that as a mere budget limit is WRONG: it is a real hang, in both
+  vehicles, specific to SMP + stack cache (`SMPGC OK` is recorded on
+  `ep4cgx150Smp` and `wukongDdr3Smp`).
+
+  **It is INTERMITTENT and layout-sensitive.** One run in six failed earlier,
+  at `STACKROOT ABANDONED (core 1 never published)` — and the only difference
+  from its neighbours was a print inside the LATER rounds loop, which moves
+  code and therefore method-cache behaviour. So core 1 sometimes fails to make
+  progress at all. `publisher()` now writes `pubStep[id]` 11..15 through its
+  prologue so the next occurrence says whether core 1 never ran (0), died in
+  the allocation (11), or got as far as publishing (15).
+
+  **What ruled out the obvious explanations** — `SmpHangProbe`
+  (`java/apps/Small/src/test/SmpHangProbe.java`), a bisect vehicle that
+  reproduces SmpGcTest's prologue step by step on the SAME bitstream, no new
+  RTL. It passes with: core 1 started and allocating; the tenured live set in
+  place; and a minor GC running while core 1 is LIVE with dirty stack-cache
+  banks. That last one matters — it is the flush-on-halt deadlock hypothesis,
+  and it does not reproduce. The mechanism works.
+
+  ---
+
+  **ORIGINAL READING, kept because the reasoning shaped the search and the
+  first two observations still stand:**
+
   **`SmpGcTest` HANGS, reproducibly, twice at the same line.** Core 0 gets as
   far as
 

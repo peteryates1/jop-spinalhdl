@@ -344,10 +344,35 @@ public class SmpGcTest {
 
 		// Run the stack-root test before the main rounds.
 		if (publishers >= 1) {
-			while (stackProbeReady == 0) { }
+			// BOUNDED, and it reports. This was `while (stackProbeReady == 0) {}`
+			// -- an infinite spin, so when the Wukong SMP + stack-cache build
+			// stopped here (item 133) the run produced SILENCE and no way to
+			// tell a core that never started from one that died mid-prologue.
+			// A hang must yield a number, not nothing.
+			int spReady = 0;
+			for (int o = 0; o < 400 && stackProbeReady == 0; o++) {
+				for (int i = 0; i < 100000 && stackProbeReady == 0; i++) { }
+				spReady = o;
+			}
+			JVMHelp.wr("STACKROOT: ready ");
+			wrInt(stackProbeReady);
+			JVMHelp.wr(" after ");
+			wrInt(spReady);
+			JVMHelp.wr(" spins\r\n");
+			if (stackProbeReady == 0) {
+				JVMHelp.wr("STACKROOT ABANDONED, core1 pubStep ");
+				wrInt(pubStep[1]);
+				JVMHelp.wr(" (11=entered 12=allocated 13=getSP 14=toInt 15=published; 0=never ran)\r\n");
+				JVMHelp.wr("SMPGC INCONCLUSIVE (nothing exercised)\r\n");
+				return;
+			}
 			// 3 + 3 minors, matching the `STACKROOT minors 6` run every recorded
 			// result is quoted against. Core 1 holds the reference throughout.
+			JVMHelp.wr("STACKROOT: churning with core 1 live\r\n");
 			int pm = churnUntilMinor(20000, 3) + churnUntilMinor(20000, 3);
+			JVMHelp.wr("STACKROOT: churn done, minors ");
+			wrInt(pm);
+			JVMHelp.wr("\r\n");
 			// Dump core 1's stack RAM while it is still holding the reference.
 			// GATED: this reads a RUNNING core's stack RAM — see PROBE_RUNNING_CORE.
 			int portSp = PROBE_RUNNING_CORE ? GC.rootRead(1, Const.ROOT_WHAT_SP, 0) : -1;
@@ -498,6 +523,9 @@ public class SmpGcTest {
 			// attempt at this question unusable. Here nothing varies but the
 			// flag.
 			GC.cardClearEnabled = (round & 1) == 0;
+			JVMHelp.wr("R");
+			wrInt(round);
+			JVMHelp.wr(" ");
 			publishRound = round;
 			phase = 1;                                  // publishers: store now
 			// Wait for EVERY publisher independently. One shared counter would
@@ -934,16 +962,27 @@ public class SmpGcTest {
 	 * went missing?) and could mask a fault by overwriting it with a good one.
 	 */
 	static void publisher(int id) {
+		// HOW FAR DID IT GET? pubStep is already allocated and already this
+		// core's progress slot. Core 1 intermittently never publishes
+		// stackProbeReady (item 133, Wukong SMP + stack cache), and with no
+		// console on core 1 the only way to tell "never started" from "died in
+		// the prologue" is a marker it writes and core 0 reads. 11..15 so they
+		// cannot be confused with publishOne's 1..5.
+		pubStep[id] = 11;
 		if (id == 1) {
 			Young probe = new Young();
+			pubStep[id] = 12;
 			probe.magic = STACK_PROBE_MAGIC;
 			// Publish this core's own view so core 0 can compare: if core 0
 			// cannot find this exact handle anywhere in the 256-word RAM, the
 			// address space or the read path is wrong; if it finds it above the
 			// SP core 0 reads, the SP is wrong.
 			stackProbeSp = Native.getSP();
+			pubStep[id] = 13;
 			stackProbeHandle = Native.toInt(probe);
+			pubStep[id] = 14;
 			stackProbeReady = 1;
+			pubStep[id] = 15;
 			while (stackProbeGcDone == 0) { }   // reference lives ONLY here
 			// Read the SAME handle three ways before dropping the reference:
 			//   rdMem(h + OFF_*)  raw handle words
