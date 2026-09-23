@@ -66,6 +66,12 @@ public class SmpHangProbe implements Runnable {
 	static volatile int ready;
 	/** Core 1's view, published for core 0 to print. */
 	static volatile int probeSp, probeHandle;
+	/** Core 1's allocation count -- proof it is still running. */
+	static volatile int c1Allocs;
+	/** Incremented AFTER the cross-generation store. If c1Allocs advances and
+	 *  this does not, core 1 is stuck IN the store (the card-table barrier),
+	 *  not in a collection. */
+	static volatile int c1Stores;
 
 	static int cpuId;
 
@@ -158,7 +164,36 @@ public class SmpHangProbe implements Runnable {
 					int pm = churnUntilMinor(20000, 1);
 					JVMHelp.wr("SmpHangProbe: post-release minors ");
 					wrInt(pm);
-					JVMHelp.wr("\r\nSmpHangProbe PASS\r\n");
+					JVMHelp.wr("\r\n");
+
+					// STEP 4. Core 0 stops allocating and only WATCHES. Core 1
+					// is now allocating hard, so the next collection is core
+					// 1's, and core 0 is the one that must halt and flush. If
+					// core 0's heartbeat stops while core 1's allocation count
+					// has frozen too, both are stuck in that handshake.
+					JVMHelp.wr("SmpHangProbe: watching core 1 allocate\r\n");
+					// BISECT STEP 5 — BOTH CORES ALLOCATING AT ONCE.
+					// Step 4 had core 0 idle while core 1 allocated, so every
+					// collection had exactly one requester. SmpGcTest's round 0
+					// has core 0 allocating in its wait loop WHILE core 1
+					// allocates in its publish loop, so both can request a
+					// stop-the-world at the same moment -- each then needing
+					// the other to halt and flush. That is the case no probe
+					// has reached.
+					int prev = -1;
+					for (int w = 0; w < 30; w++) {
+						for (int k = 0; k < 4000; k++) { Object y = new Young(); if (y == null) return; }
+						int a = c1Allocs;
+						JVMHelp.wr("  w");
+						wrInt(w);
+						JVMHelp.wr("=");
+						wrInt(a);
+						JVMHelp.wr("/");
+						wrInt(c1Stores);
+						JVMHelp.wr(a == prev ? " FROZEN\r\n" : "\r\n");
+						prev = a;
+					}
+					JVMHelp.wr("SmpHangProbe PASS (core 0 never froze)\r\n");
 					return;
 				}
 			}
@@ -180,9 +215,30 @@ public class SmpHangProbe implements Runnable {
 		step = 4;
 		ready = 1;
 		step = 5;
-		// Hold the reference, exactly as the real probe does.
+		// BISECT STEP 4 — THE DIRECTION NEVER TESTED.
+		// Steps 1-3 had core 0 doing all the allocating, so every collection
+		// was initiated by core 0 and halted core 1. SmpGcTest's round 0 has
+		// BOTH cores allocating, so a GC can be initiated by CORE 1 and must
+		// halt CORE 0 -- the reverse handshake, and the one that would explain
+		// why core 0 never reaches its own 2,000,000-spin STALL report: a
+		// frozen core does not spin.
+		// BISECT STEP 6 — CROSS-GENERATION STORES, the card-table path.
+		// Every earlier step had core 1 allocating GARBAGE that dies at once,
+		// so a minor GC traces nothing from it. SmpGcTest's publisher stores
+		// each young object into a TENURED holder -- an old->young reference
+		// that the collector can only find through the card table. That is the
+		// machinery items 131/132 are about, and on an SMP stack-cache build it
+		// runs alongside scanOtherCoreRoots.
+		int slot = 0;
 		while (true) {
-			if (probe.magic == 0) JVMHelp.wr("!");
+			Young y = new Young();
+			if (y == null) return;
+			y.magic = 0x5A5A0000 | slot;
+			c1Allocs++;                     // allocation survived
+			holders[slot].ref = y;          // TENURED holder <- NURSERY object
+			c1Stores++;                     // the BARRIER survived
+			slot++;
+			if (slot >= HOLDERS) slot = 0;
 		}
 	}
 

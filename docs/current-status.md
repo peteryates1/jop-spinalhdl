@@ -7092,6 +7092,47 @@ Other findings in the same group, each verified:
   (`BaudOverride`) exists now so a rate can be changed without a new preset.
   The 1 Mbaud build closes timing too: MET +0.146 ns.
 
+  ### Bisected 2026-09-23 — B reproduces on a CROSS-GENERATION STORE, and is layout-sensitive
+
+  `SmpHangProbe` was walked step by step towards `SmpGcTest`'s round 0, on the
+  same bitstream, no new RTL. Each step PASSED until the last:
+
+  | step | core 1 does | result |
+  |---|---|---|
+  | 1 | start, allocate one object, publish | pass |
+  | 2 | + a tenured live set exists | pass |
+  | 3 | + core 0 runs a minor GC while core 1 is LIVE | pass |
+  | 4 | + core 1 allocates hard, so ITS GC halts core 0 | pass |
+  | 5 | + BOTH cores allocate, so either may collect | pass |
+  | 6 | + each object stored into a TENURED holder | **FROZE** |
+
+  Step 6's only change is `holders[slot].ref = y` — an old->young reference,
+  i.e. the hardware card-marking barrier. Core 1 froze at 6,415 allocations and
+  never advanced again through 29 further windows, while **core 0 kept
+  running**. So B is not a mutual deadlock: core 1 alone stops.
+
+  Steps 3, 4 and 5 are worth keeping in mind because of what they RULE OUT: a
+  collection halting a live core, in EITHER direction, and two cores collecting
+  concurrently, all work. The flush-on-halt mechanism this item added is not
+  the fault.
+
+  **AND THEN IT STOPPED REPRODUCING.** Adding one more static increment, to
+  separate "the allocation survived" from "the barrier survived", made it run
+  clean — 2 runs, then 6 more, 30/30 windows each, zero freezes. The counters
+  also show the store keeping pace with the allocation (`7227/7235`), so the
+  barrier is not slow when it runs at all.
+
+  So B is TIMING- OR LAYOUT-SENSITIVE, exactly like defect A, and one static
+  increment is enough to move it. That is a strong hint the two share a root
+  cause, and the shape — behaviour changing with code PLACEMENT — points at the
+  method cache (item 53's territory) rather than at the collector. UNTESTED.
+
+  **Do not read "step 6 froze" as a solved diagnosis.** What is established is
+  that a cross-generation store from core 1 can freeze it on this build, and
+  that a trivial code-layout change hides it. The reproduction is in
+  `java/apps/Small/src/test/SmpHangProbe.java` and is one edit away (move the
+  `c1Allocs++` back below the store and delete `c1Stores`).
+
   **What ruled out the obvious explanations** — `SmpHangProbe`
   (`java/apps/Small/src/test/SmpHangProbe.java`), a bisect vehicle that
   reproduces SmpGcTest's prologue step by step on the SAME bitstream, no new

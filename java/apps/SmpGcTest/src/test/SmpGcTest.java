@@ -360,7 +360,9 @@ public class SmpGcTest {
 			wrInt(spReady);
 			JVMHelp.wr(" spins\r\n");
 			if (stackProbeReady == 0) {
-				JVMHelp.wr("STACKROOT ABANDONED, core1 pubStep ");
+				JVMHelp.wr("STACKROOT ABANDONED, core1 mainSeen ");
+				wrInt(mainSeen1);
+				JVMHelp.wr(" pubStep ");
 				wrInt(pubStep[1]);
 				JVMHelp.wr(" (11=entered 12=allocated 13=getSP 14=toInt 15=published; 0=never ran)\r\n");
 				JVMHelp.wr("SMPGC INCONCLUSIVE (nothing exercised)\r\n");
@@ -797,6 +799,11 @@ public class SmpGcTest {
 	// getYoungRoots()/getStackRoots() can only ever see the collecting core's
 	// stack — nothing in the runtime scans another core's. If that is the bug,
 	// this object is collected and its magic comes back wrong.
+	/** Core 1 reached main(). Splits "never left the microcode cpux_loop /
+	 *  died in Startup" from "ran main but not publisher" -- with pubStep 0
+	 *  alone those are indistinguishable, and they have different causes
+	 *  (item 133 defect A: core 1 never starts, 3 of 12 runs). */
+	static volatile int mainSeen1;
 	static volatile int stackProbeReady;   // core 1 -> core 0: reference is held
 	static volatile int stackProbeGcDone;  // core 0 -> core 1: collections done
 	static volatile int stackProbeMagic;   // core 1 -> core 0: what survived
@@ -1059,6 +1066,8 @@ public class SmpGcTest {
 			publishRound = 0;
 			core0();
 		} else {
+			// FIRST thing core 1 does, before anything that could fault.
+			if (cpuId == 1) mainSeen1 = 1;
 			// EVERY other core publishes. More publishers means more concurrent
 			// cross-core stores between minor GCs, so the window the shared card
 			// table has to cover is wider — and it puts >1 writer on the
