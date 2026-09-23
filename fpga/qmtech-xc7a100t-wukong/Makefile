@@ -74,7 +74,7 @@ CONSOLE_DUAL_SDR  = wukong-pico-0
 .PHONY: ddr3-generate ddr3-create-ip ddr3-build ddr3-program ddr3-monitor ddr3-download ddr3-reset ddr3-redownload
 .PHONY: ddr3-smp-generate ddr3-smp-build ddr3-smp-bitstream ddr3-smp-program ddr3-smp-monitor
 .PHONY: dual-generate dual-create-ip dual-build dual-program dual-monitor dual-sdr-monitor dual-sdr-download
-.PHONY: sdram-generate sdram-create-ip sdram-build sdram-program sdram-monitor
+.PHONY: sdram-generate sdram-create-ip sdram-create-ip-smp sdram-build sdram-program sdram-monitor
 .PHONY: jop-sdram-generate jop-sdram-build sdr-smp-generate jop-sdram-smp-generate jop-sdram-smp-build jop-sdram-smp-bitstream jop-sdram-program jop-sdram-monitor print-cfg-dir
 
 all: microcode create-ip build
@@ -380,9 +380,37 @@ jop-sdram-build: jop-sdram-generate
 # SMP SDR: the counterpart of ddr3-smp-build, so SDR and DDR3 can be compared on
 # one board with only the memory path differing. Entity is JopSmpSdramWukongTop
 # (cpuCnt >= 2 inserts "Smp"), which the single-core script does not build.
+# 75 MHz, NOT the preset's 100. The 2-core build misses setup at 100 by
+# -1.451 ns even on the closure directives, on the combinational ready path
+# core -> memCtrl -> BMB arbiter -> SDRAM controller -> core FSM (items 5, 31).
+# 292 failing endpoints, TNS -224 ns, so it is the arbiter ceiling and not one
+# stray path. The EP4CGX150 met the same wall at 4 cores and was answered the
+# same way: 60 MHz there, measured, not argued.
+#
+# 80 MHz MET that path by +0.027 ns, which is not a margin -- item 8 records
+# +0.001 ns on this very part as "one bad run in seven". 75 MHz buys 0.83 ns
+# of period over 80, and 2 Mbaud is exact at 75 MHz (the A-E115FB runs there,
+# 0.0006 % error), so the console costs nothing to move.
+#
+# The frequency is in the CONFIG, so the generated XDC follows it for free.
+# What does NOT follow is the clk_wiz IP, which is why 80 MHz gets its own
+# IP_SDR_SMP root -- regenerating the shared `sdr_clk` at 80 would leave the
+# single-core SDR and exerciser flows constraining 100 MHz against an 80 MHz
+# part, silently. Status item 70's family of defect.
 SDR_SMP_CORES ?= 2
-SDR_SMP_CFG     = wukongSdrSmp $(SDR_SMP_CORES)
+SDR_SMP_MHZ   ?= 75
+SDR_SMP_CFG     = wukongSdrSmp $(SDR_SMP_CORES) $(SDR_SMP_MHZ)
 SDR_SMP_DIR     = $(CFG_DIR)
+IP_SDR_SMP     := $(REPO_ROOT)/build/ip/qmtech-xc7a100t-wukong-sdr$(SDR_SMP_MHZ)
+
+# The SMP SDR clock wizard, at SDR_SMP_MHZ into its own root. The -3.0 ns
+# SDRAM phase shift is held in NANOSECONDS by the script and converted to
+# degrees for the requested frequency: carrying the ANGLE across frequencies
+# would move the delay (-108 deg is -3.0 ns at 100 MHz but -3.75 ns at 80) and
+# show up as SDRAM read corruption, not as a build error.
+sdram-create-ip-smp:
+	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl \
+	  -tclargs -freq $(SDR_SMP_MHZ) -ip_root $(IP_SDR_SMP) -shift -3.0
 
 # The XDC comes with it. jop-sdram-build regenerates the pin constraints for
 # its config; this flow did not, and then read the TRACKED copy below -- so the
@@ -402,13 +430,24 @@ sdr-smp-generate: generate
 jop-sdram-smp-build:
 	$(MAKE) jop-sdram-smp-bitstream CFG="$(SDR_SMP_CFG)"
 
+# TIMING_DIRECTIVES, unlike the single-core SDR flow above.
+#
+# The note at their definition says the SDR JOP builds "have margin and run the
+# default flow". That was written when SDR meant ONE core. Two cores switch the
+# memory controller to burstLen = 4 (JopConfig.builtCoreConfig: cpuCnt > 1 &&
+# isSdr), which is a different and deeper design, and the first 2-core build
+# missed setup by 2.327 ns on the default flow -- critical path
+# memCtrl/zeroCur_reg -> the controller's FSM state enable, 20 logic levels and
+# 67 % routing. An assumption about margin outlived the configuration it was
+# measured on.
 jop-sdram-smp-bitstream: sdr-smp-generate
 	$(VIVADO_ENV) && JOP_TOP=JopSmpSdramWukongTop JOP_PART=$(PART) \
+	  $(TIMING_DIRECTIVES) \
 	  JOP_BUILD_DIR=$(SDR_SMP_DIR)/vivado/build \
 	  JOP_RTL=$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.v \
 	  JOP_BIN_GLOB='$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.v_*.bin' \
-	  JOP_IP=$(IP)/sdr_clk/sdr_clk.xci \
-	  JOP_XDC=$(SDR_SMP_DIR)/vivado/wukong_jop_sdram.xdc \
+	  JOP_IP=$(IP_SDR_SMP)/sdr_clk/sdr_clk.xci \
+	  JOP_XDC="$(SDR_SMP_DIR)/vivado/wukong_jop_sdram.xdc $(XDC)/wukong_sdr_cdc.xdc" \
 	  JOP_SUMMARY=$(SDR_SMP_DIR)/rtl/JopSmpSdramWukongTop.summary.txt \
 	  $(VIVADO) -mode batch -source $(NP_TCL)
 

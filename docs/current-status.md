@@ -104,8 +104,9 @@ nothing depends on ranks below a measurement that could mislead someone.
 64. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
 65. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
 66. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
-67. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-68. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
+67. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
+68. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
+69. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
 
 ## 2. All items — summary
 
@@ -260,6 +261,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - ~~**[22](#item-22)**~~ — Five `_sw` handlers exist but do not work — RESOLVED. It was two
 - **[52](#item-52)** — The Java tools duplicate the hardware config by hand — three stale copies found while documenting item 51
 - **[53](#item-53)** — The 8 KB method cache default broke 4-core Wukong SMP fit — resolved to `15/6` + `double:java` (hardware-validated); the preset itself is still unfixed
+- **[159](#item-159)** — No asynchronous clock groups in the generated SDR XDC; a 2:1 clock ratio was hiding it
 
 ## 3. Item detail and journals
 
@@ -691,8 +693,88 @@ because it is easy to blame whatever feature was added last:
 | Wukong `wukongDdr3Smp` @100 MHz | 6 | VIOLATED -0.156 ns, 69.6 % LUT |
 | Wukong `wukongDdr3Smp` @100 MHz | 8 | VIOLATED -0.805 ns, 86.9 % LUT |
 | Wukong `wukongDdr3Smp` @91.68 MHz | 6 | **MET +0.018 ns**, 68.4 % LUT — validated |
+| Wukong `wukongSdrSmp` @100 MHz | 2 | **VIOLATED -2.327 ns** (default flow) |
+| Wukong `wukongSdrSmp` @100 MHz | 2 | VIOLATED -1.451 ns (closure directives) |
+| Wukong `wukongSdrSmp` @75 MHz | 2 | **MET +0.315 ns**, 23.7 % LUT |
+
+**SDR SMP joins the pattern, 2026-09-23, and at only TWO cores.** The worst
+path is the combinational ready chain
+`stackStg -> memCtrl -> bmbArbiter -> sdramCtrl -> memCtrl FSM enable`, 20
+logic levels, 67 % routing — it leaves the core, crosses the arbiter AND the
+SDRAM controller, and comes back to gate the core's own state machine.
+TNS -224.5 ns over **292 failing endpoints**, so it is the ceiling and not a
+stray path. Fit is irrelevant here (23.7 % LUT): this is frequency, exactly as
+the 2026-08-18 note says.
+
+Two cores rather than four because SMP SDR switches the memory controller to
+`burstLen = 4` (`JopConfig.builtCoreConfig`: `cpuCnt > 1 && isSdr`), a deeper
+design than the single-core SDR the "SDR builds have margin" assumption in
+`fpga/qmtech-xc7a100t-wukong/Makefile` was measured on. That flow now uses the
+closure directives like every other JOP build on the board; they bought
+0.876 ns, which was not enough on its own.
 
 **[Full journal →](status/item-31.md)** — 121 lines of investigation detail.
+
+<a id="item-159"></a>
+
+### Item 159 — The generated SDR XDC declares no asynchronous clock groups, and a 2:1 clock ratio was hiding it
+
+**Found 2026-09-23 while lowering the Wukong SMP SDR clock to close timing
+([item 31](#item-31)), and it is a measurement-integrity defect rather than a
+functional one.**
+
+The design runs on the MMCM's system output; the board's 50 MHz input
+(`sys_clk`) drives only the reset generator and the hang detector. The debug
+signals the hang detector watches — `pc`, `jpc`, `memBusy`, `uart_txd`,
+`debugMemState` — cross between those domains through SpinalHDL `BufferCC`
+instances, which is the correct structure for an unrelated clock. Nothing ever
+declared the domains asynchronous: `XdcGenerator` emits no `set_clock_groups`
+and no `set_false_path` at all, while the hand-written `wukong_ddr3.xdc` carries
+three.
+
+**Why it never showed.** At 100 MHz the MMCM output is exactly 2x the 50 MHz
+input, so the two clocks are phase-related and every crossing has a clean
+capture relationship. Ask for 80 and the MMCM delivers 79.927, which is
+mutually unrelated to 50 — Vivado then aligns the worst-case edges over the
+common period and demands
+
+```
+Requirement: 0.091 ns   (fetch/romAddrReg_reg -> io_pc_0_buffercc)
+```
+
+which nothing can meet at any frequency. WNS went from -1.451 ns at 100 MHz to
+-3.303 ns at 80: a SLOWER clock with WORSE slack, which is impossible on one
+path and was the clue that it was a different path in a different clock group.
+Split by group, the design path had MET at +0.027 ns and the violation was
+entirely this crossing.
+
+**This is [item 153](#item-153) one board over**: a timing result that looks
+fine because of an accident of the clock setup rather than because the design
+was constrained. It also means the 100 MHz SDR timing numbers were never
+*wrong*, but they were never *evidence* about these crossings either.
+
+**FIXED for the SMP flow only**, by
+`fpga/qmtech-xc7a100t-wukong/vivado/constraints/wukong_sdr_cdc.xdc`, which the
+`jop-sdram-smp-bitstream` target now reads alongside the generated XDC. With it
+the 75 MHz build reports `sys_clk` +15.367 ns and `clk_100_sdr_clk` +0.315 ns.
+
+**STILL OPEN, and this is the item:**
+
+- The single-core SDR flows (`jop-sdram-build`, the SDRAM exerciser) do not
+  read that file. They are safe only while they stay at exactly 2x the input
+  clock, and nothing enforces or records that dependency.
+- The constraint is hand-written per board rather than generated. Every other
+  Vivado board has the same crossing shape and the same silence in
+  `XdcGenerator`. Whether the DB V5 and the Alchitry are exposed is UNCHECKED.
+- Declaring the groups asynchronous MASKS any future crossing added WITHOUT a
+  synchroniser. That is the cost of the fix, and the reason it was scoped to
+  one flow rather than written into the generator — but the scoping is a
+  holding position, not an answer.
+
+**Do not read the fix as closing the class.** Closing every instance is not
+closing the class; only a guard closes a class. Nothing yet checks that a
+board's XDC declares its asynchronous domains, which is the shape a real fix
+would take.
 
 <a id="item-11"></a>
 
@@ -6925,6 +7007,67 @@ Other findings in the same group, each verified:
   is that `SmpGcTest` is a SHARED fixture — `JopIhluSim`, `JopGcHaltDeadlockSim`
   and the hardware flows all read its output — so a new line has to be checked
   against their judging before it is added.
+
+  ### Hardware, 2026-09-23 — `wukongSdrSmp 2 75` on the Wukong
+
+  **The first timing-clean SMP + stack-cache bitstream exists**, and the first
+  hardware evidence that the combination works at all. `SmpCacheTest` **PASS**
+  (T1 array, T2 field, T3 rounds, `JVM exit!`): core 1 runs, its writes are
+  visible to core 0, and the `IO_SIGNAL` release works — on the same mechanism
+  `SmpGcTest` uses. The SDR path, the arbiter and both cores' stack caches are
+  sound at 75 MHz.
+
+  **`SmpGcTest` HANGS, reproducibly, twice at the same line.** Core 0 gets as
+  far as
+
+  ```
+  SmpGcTest: minors after tenuring 2
+  layout: cardShift 5 nurseryBase 1888129
+  arrays: liveTick 539432 ... holders 539344 len 2
+  ```
+
+  and then spins forever on `while (stackProbeReady == 0)`, the flag core 1
+  sets five statements after being released. **The cause is NOT isolated.**
+  What `SmpCacheTest` rules out is core 1 being dead and cross-core visibility
+  being broken; what is left is everything `SmpGcTest` does that it does not —
+  which is the GC.
+
+  **A HYPOTHESIS, and it is only that.** Core 1 is released, runs, and dirties
+  stack-cache banks. This item's own fix redefined `othersHalted` to mean
+  "halted AND flushed", with the flush triggered by `gcHaltActive`. If halting
+  a core stalls the path its flush DMA needs, the flush cannot complete and the
+  collector waits forever for a core that can never report flushed. That would
+  deadlock exactly here: after core 1 starts, at the first GC interaction.
+  Nothing has tested it.
+
+  **The simulation could not have caught it**, which is the coverage gap
+  recorded above: `spMin 64 spMax 90` means core 1's stack sat entirely in the
+  ACTIVE bank, the shallowest case, so a multi-bank flush never ran.
+
+  **NEXT STEP — give core 1 a console.** Only core 0 has a UART, which is why
+  `NCoreHelloWorld` was useless as a control (its core 1 only toggles a
+  watchdog, a pin, invisible over UART) and why the hang cannot be localised
+  from core 0's output alone. Two mechanisms already exist and want joining up:
+
+  - `JopTop` emits `jp1_txd` (per-core TX) and `jp1_wd` (per-core watchdog bit)
+    whenever `sys.hasPerCoreUart` — i.e. when any core above 0 carries a Uart
+    device in `perCoreConfigs`. No RTL work needed, a preset and an XDC pin.
+  - The board's on-board Pico 2 W — the same device as the dirtyJtag probe,
+    serial `0B383D0435D957EC` — exposes TWO CDCs on the J11 header:
+    `wukong-pico-0` = Pico uart0, J11.4/.3 -> GP13/GP12, **verified on hardware
+    2026-08-23**; `wukong-pico-1` = Pico uart1, J11.2/.1 -> GP5/GP4, still
+    unverified. Core 0 can stay on the CH340N while core 1 talks out J11.
+
+  With core 1 printing, "did it reach the allocation" stops being inference.
+
+  **Also observed: UART corruption at 2 Mbaud, mid-line.** Two runs mangled
+  different characters of the same line (`pubStep` came back as `pebStp` then
+  `tubSep`), so it is transmission noise and not a deterministic bug. The baud
+  divider is exact at 75 MHz (0.0006 %), so suspect the CH340 rather than the
+  design. It matters because a corrupted capture can garble the verdict line
+  itself — `judge_soak` already knows a capture can be corrupt in the MIDDLE,
+  not only at the end, and a single mangled verdict must be read as
+  inconclusive rather than as a result.
 - **Spill region unchecked against the 16-bit virtual SP.**
   `stackRegionWordsPerCore = 8192` against a hardware range of 65,472; the only
   guard (`JopCoreConfig.scala:437-438`) checks `> 0`. Past SP 8256 the lowest
