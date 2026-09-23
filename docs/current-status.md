@@ -7056,7 +7056,30 @@ Other findings in the same group, each verified:
     serial `0B383D0435D957EC` — exposes TWO CDCs on the J11 header:
     `wukong-pico-0` = Pico uart0, J11.4/.3 -> GP13/GP12, **verified on hardware
     2026-08-23**; `wukong-pico-1` = Pico uart1, J11.2/.1 -> GP5/GP4, still
-    unverified. Core 0 can stay on the CH340N while core 1 talks out J11.
+    unverified. Core 0 can stay on the CH340N at E3/F3, so all four J11 pins
+    are free.
+
+  **THE PIN PATH IS FULLY DETERMINED — do not re-derive it.** `Board.scala`
+  already carries `"J11" -> Map(1 -> "H4", 2 -> "F4", 3 -> "A4", 4 -> "A5")`
+  and a `PICO_UART1` device on `J11:2`/`J11:1`, and the rig wiring was
+  CONFIRMED against photographs of the board on 2026-09-23: Pico physical pins
+  6/7/16/17 = GP4/GP5/GP12/GP13 land on J11.1/.2/.3/.4, exactly as the comment
+  at `Board.scala:785-788` says. So:
+
+  ```
+  jp1_txd[1] -> FPGA F4 -> J11.2 -> Pico GP5 (UART1 RX) -> CDC1 -> /dev/ttyACM5
+  ```
+
+  The Pico's RX is the target because the FPGA is transmitting; GP12/GP13 are
+  UART0 and GP4/GP5 are UART1, which is what makes two simultaneous consoles
+  possible at all. Remaining work is a `perCoreConfigs` entry giving core 1 a
+  Uart (that alone makes `jp1_txd`/`jp1_wd` appear) and one XDC pin.
+
+  **Verify `wukong-pico-1` FIRST.** It is the one link in that chain nobody has
+  proven — `pico-0` was verified on hardware, `pico-1` never was. Silence from
+  core 1 would otherwise be ambiguous between "core 1 is wedged" and "that CDC
+  was never carrying anything", which is the same trap as reading a dead board
+  off an adapter whose control endpoint had stalled.
 
   With core 1 printing, "did it reach the allocation" stops being inference.
 
