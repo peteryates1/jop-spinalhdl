@@ -7127,6 +7127,41 @@ Other findings in the same group, each verified:
   cause, and the shape — behaviour changing with code PLACEMENT — points at the
   method cache (item 53's territory) rather than at the collector. UNTESTED.
 
+  ### THE METHOD CACHE CONTROLS IT — 2026-09-23, byte-identical software
+
+  The step-6 freeze is DETERMINISTIC on a given build: 8 of 9 valid runs froze
+  at *exactly* 6,415 allocations. Not a timing race — a race varies. So the
+  geometry could be compared properly:
+
+  | method cache | froze | valid runs |
+  |---|---|---|
+  | **13/6** (8 KB, 64 blocks — the default) | **8** | 9, always at 6,415 |
+  | **14/5** (16 KB, 32 blocks) | **0** | 9 |
+
+  **The `.jop` was byte-identical across both arms** — md5
+  `572cd5765b2c8bd0c505e7626bafadac`, verified before the test. That matters
+  because changing `mcache=` also changes `METHOD_MAX_SIZE` in `Const.java` and
+  so RELINKS the image: had each arm run its own build, a moved freeze point
+  could have been the layout rather than the hardware. An image built for an
+  8 KB cache runs safely on a 16 KB one, so the same bytes ran on both. Fisher
+  exact p ~ 0.0004.
+
+  **What this does and does not establish.** It establishes that the method
+  cache geometry CONTROLS defect B with software held constant. It does NOT
+  establish that the method cache is defective: a different geometry changes
+  fill timing and placement throughout the design, so it could equally be
+  exposing a race elsewhere that happens to be sensitive to it. Distinguishing
+  those needs a third and fourth geometry — 13/5 (same size, half the blocks)
+  and 14/6 (double size, same blocks). If only the BLOCK COUNT moves it, that
+  points at block management, which is where item 53's fragmentation result
+  already lives ("block COUNT beats size").
+
+  **This also explains the Heisenbug.** Every attempt to instrument the app
+  hid the freeze — a static increment, a read of `IO_GC_HALTED`, anything.
+  That is what a method-cache-placement dependency looks like from the source
+  level, and it is why further app-side instrumentation is the wrong tool
+  here. The next evidence has to come from the RTL side.
+
   **Do not read "step 6 froze" as a solved diagnosis.** What is established is
   that a cross-generation store from core 1 can freeze it on this build, and
   that a trivial code-layout change hides it. The reproduction is in

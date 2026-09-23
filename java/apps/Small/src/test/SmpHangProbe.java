@@ -68,10 +68,6 @@ public class SmpHangProbe implements Runnable {
 	static volatile int probeSp, probeHandle;
 	/** Core 1's allocation count -- proof it is still running. */
 	static volatile int c1Allocs;
-	/** Incremented AFTER the cross-generation store. If c1Allocs advances and
-	 *  this does not, core 1 is stuck IN the store (the card-table barrier),
-	 *  not in a collection. */
-	static volatile int c1Stores;
 
 	static int cpuId;
 
@@ -188,8 +184,6 @@ public class SmpHangProbe implements Runnable {
 						wrInt(w);
 						JVMHelp.wr("=");
 						wrInt(a);
-						JVMHelp.wr("/");
-						wrInt(c1Stores);
 						JVMHelp.wr(a == prev ? " FROZEN\r\n" : "\r\n");
 						prev = a;
 					}
@@ -234,11 +228,10 @@ public class SmpHangProbe implements Runnable {
 			Young y = new Young();
 			if (y == null) return;
 			y.magic = 0x5A5A0000 | slot;
-			c1Allocs++;                     // allocation survived
 			holders[slot].ref = y;          // TENURED holder <- NURSERY object
-			c1Stores++;                     // the BARRIER survived
 			slot++;
 			if (slot >= HOLDERS) slot = 0;
+			c1Allocs++;
 		}
 	}
 
