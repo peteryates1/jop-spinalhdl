@@ -7055,6 +7055,43 @@ Other findings in the same group, each verified:
   prologue so the next occurrence says whether core 1 never ran (0), died in
   the allocation (11), or got as far as publishing (15).
 
+  ### Soaked 2026-09-23 — TWO defects, and the UART was a third
+
+  Twelve runs at 2 Mbaud, eight more at 1 Mbaud, each a fresh program +
+  download. The single "hang" is really three independent faults:
+
+  **A — CORE 1 NEVER STARTS, 3 of 12 (2 Mbaud) and 1 of 8 (1 Mbaud).** The run
+  reports `STACKROOT ABANDONED, core1 pubStep 0` and exits cleanly. `pubStep`
+  is set to 11 by the FIRST statement of `publisher()`, so **0 means core 1
+  never entered it at all** — not that it died allocating (11) or before
+  publishing (12-14). This is a core-start or `IO_SIGNAL`-release failure and
+  has nothing to do with the GC or the stack cache. It survives the baud change,
+  so it is not a garbled reading. It is also what made the original hang look
+  intermittent.
+
+  **B — PUBLISH ROUND 0 HANGS, 9 of 9 and 7 of 7.** Whenever core 1 DOES start,
+  STACKROOT passes (`minors 6`, `MATCH`) and then `R0` prints and `R1` never
+  does. Deterministic, at both baud rates. The apparent intermittency was
+  entirely defect A.
+
+  **C — THE UART CORRUPTION IS THE FRACTIONAL BAUD DIVIDER, confirmed.** The
+  loopback jig had cleared the CH340 and the physical path; this settles where
+  it actually is:
+
+  | baud | divider at 75 MHz | perfectly-formed verdict lines |
+  |---|---|---|
+  | 2 Mbaud | **37.5 — fractional** | **3 of 9 (33 %)** |
+  | 1 Mbaud | **75.0 — integer** | **7 of 7 (100 %)** |
+
+  Same design, same board, same app, one number changed. `UartBaudTick` has
+  been fractional since 2026-08-18 and 37.5 is exact in AVERAGE RATE, but
+  average rate is not per-bit edge placement, and a 2 Mbaud receiver has no
+  margin to absorb the difference. This affects ANY board running a non-integer
+  divider, not just this one, and it silently corrupts the evidence every
+  hardware result is read from. `JopTopVerilog <preset> baud=<n>`
+  (`BaudOverride`) exists now so a rate can be changed without a new preset.
+  The 1 Mbaud build closes timing too: MET +0.146 ns.
+
   **What ruled out the obvious explanations** — `SmpHangProbe`
   (`java/apps/Small/src/test/SmpHangProbe.java`), a bisect vehicle that
   reproduces SmpGcTest's prologue step by step on the SAME bitstream, no new

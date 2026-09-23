@@ -195,6 +195,33 @@ object UartPartOverride {
   }
 }
 
+/** Change the console baud without duplicating a preset.
+  *
+  * `JopTopVerilog <preset> baud=1000000`. The rate lives in the UART
+  * DeviceInstance's `baudRate` param and defaults to 2,000,000, so until now
+  * trying another rate meant a new preset -- and the console tooling reads the
+  * rate the BUILD recorded (status item 70), so an override here reaches
+  * console.mk and the summary for free.
+  *
+  * Added 2026-09-23 to test whether the mid-line UART corruption on the 75 MHz
+  * SMP SDR build is the FRACTIONAL baud divider: 2 Mbaud is 37.5 clocks at
+  * 75 MHz, 1 Mbaud is exactly 75.0. Same design, same board, one number.
+  */
+object BaudOverride {
+  def apply(c: JopConfig, baud: Int): JopConfig = {
+    require(baud > 0, s"baud must be positive, got $baud")
+    c.copy(systems = c.systems.map { sys =>
+      def onDev(d: DeviceInstance) =
+        if (d.deviceType == DeviceType.Uart) d.copy(params = d.params + ("baudRate" -> baud)) else d
+      def on(cc: JopCoreConfig) = cc.copy(devices = cc.devices.map { case (k, d) => k -> onDev(d) })
+      sys.copy(
+        devices = sys.devices.map { case (k, d) => k -> onDev(d) },
+        coreConfig = on(sys.coreConfig),
+        perCoreConfigs = sys.perCoreConfigs.map(_.map(on)))
+    })
+  }
+}
+
 object PerfCountersOverride {
   def apply(c: JopConfig): JopConfig = c.copy(systems = c.systems.map { sys =>
     def on(cc: JopCoreConfig) = cc.copy(memConfig = cc.memConfig.copy(hasPerfCounters = true))
