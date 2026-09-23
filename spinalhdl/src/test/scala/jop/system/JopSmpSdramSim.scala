@@ -136,6 +136,30 @@ case class JopSmpSdramTestHarness(
     jbcInit = Some(jbcInit)
   )
 
+  // THE TERMS THAT ACTUALLY STALL THE PIPE, per core.
+  //
+  // `cluster.io.halted` is the DEBUG halt (JopCluster wires it from
+  // debugHalted), NOT the lock unit's. JopGcHaltDeadlockSim records the cost of
+  // confusing them: "the first version of this probe reported halted=0/4 while
+  // three cores were in fact frozen by the lock unit". A freeze report built on
+  // it says `halted=false` for a core parked by gcHalt. Read the real ones.
+  for (i <- 0 until cpuCnt) {
+    cluster.cores(i).sys.io.halted.simPublic()      // lock unit / gcHalt park
+    cluster.cores(i).sys.gcHaltReg.simPublic()      // is THIS core the collector
+    cluster.cores(i).sys.io.exc.simPublic()         // hardware exception strobe
+    cluster.cores(i).sys.excTypeReg.simPublic()     // 1=SPOV 2=NP 3=AB 5=MON 8=DIVZ
+    cluster.cores(i).pipeline.fetch.io.bsy.simPublic()
+    cluster.cores(i).pipeline.fetch.pcwait.simPublic()
+    // THE STACK-CACHE ROTATION STATE, per core. extStall := stackRotBusy is the
+    // ONLY term that freezes the fetch PC, so a frozen PC with pcwait=false
+    // means a rotation or a FLUSH that is not completing. rotState says which.
+    // rotBusyDly is RegNext(rotBusy) and already simPublic in StackStage.
+    // extStall := stackRotBusy is the ONLY term that freezes the fetch PC, so
+    // a frozen PC with pcwait=false and this HIGH means the freeze is a stack
+    // rotation or a stop-the-world FLUSH that is not completing.
+    cluster.cores(i).pipeline.stack.rotBusyDly.simPublic()
+  }
+
   // Expose CmpSync internals for simulation debugging
   cluster.cmpSync.foreach { sync =>
     sync.state.simPublic()

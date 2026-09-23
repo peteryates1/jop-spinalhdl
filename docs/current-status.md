@@ -7017,6 +7017,61 @@ Other findings in the same group, each verified:
   `SmpGcTest` uses. The SDR path, the arbiter and both cores' stack caches are
   sound at 75 MHz.
 
+  ### ROOT CAUSE of defect B, found in the RTL 2026-09-23
+
+  **The stop-the-world flush is requested of a core that was never halted, and
+  a lock owner is exactly such a core.**
+
+  `JopSmpStackCacheSdramSim` reproduces the hardware hang — same phases, same
+  `STACKROOT minors 6`, then a stall at `R0` — at only **9.08M cycles**, about
+  2.5 minutes. With a PC-freeze detector reading the terms that actually stall
+  the pipe:
+
+  ```
+  *** CORE PC FROZEN at cycle 9,084,330 ***
+    core 0: pc=02c4  gcHaltReg=TRUE   HALTED=false bsy=false ROTBUSY=false
+    core 1: pc=0207  gcHaltReg=false  HALTED=false bsy=true  ROTBUSY=TRUE
+  ```
+
+  Core 0's PC keeps moving for another 25M cycles, so it is not wedged — it is
+  the collector, spinning on `IO_GC_HALTED`. Core 1's PC has not moved in 2M
+  cycles.
+
+  **THE CHAIN, every link observed:**
+
+  1. Core 1 holds a lock, so `Ihlu` EXEMPTS it from `gcHalt` --
+     `halted := lockWait || (gcHaltFromOthers && !isLockOwner)`. Deliberate,
+     and [item 158](#item-158) documents it.
+  2. Core 0 asserts `gcHalt` to collect.
+  3. `Sys.scala` drives `io.gcFlushReq := io.syncIn.gcHaltActive`, so core 1's
+     stack cache is told to flush **even though core 1 was never halted**.
+  4. The flush does not complete; `stackRotBusy` stays high; and
+     `JopPipeline.scala:204` `fetch.io.extStall := stackRotBusy` is the ONLY
+     term that freezes the fetch PC. Hence a frozen PC with `pcwait=false`.
+  5. Core 0 waits forever for `othersHalted`, which since `6249099` means
+     "halted AND flushed".
+
+  **The code states the assumption it violates.** `StackStage.scala`, in the
+  flush trigger this item added:
+
+  > *"Lowest dirty bank first; one per pass, re-entering IDLE between each so a
+  > rotation would still win if one were somehow needed. **Nothing can dirty a
+  > bank meanwhile -- the core is halted.**"*
+
+  A lock owner is not halted. The exemption and the flush were each correct in
+  isolation and were never considered together.
+
+  **NOT YET DISTINGUISHED:** whether core 1 is livelocking (IDLE -> FLUSH ->
+  IDLE, re-dirtying between passes) or stuck in `FLUSH_WAIT` with a `dmaDone`
+  that never arrives. A PC pinned at exactly `0x0207` for 2M cycles with
+  ROTBUSY continuously high favours the second, since a livelock would advance
+  an instruction per pass — but `rotState` sits in a nested scope and was not
+  sampled, so this is inference.
+
+  **It also explains the method-cache dead end**: no geometry fixed B because B
+  was never a method-cache problem. That result belongs to the probe's freeze,
+  which is a different fault.
+
   ### Chased 2026-09-23 — it is NOT where it looked, and STACKROOT PASSES
 
   **THE STACK-CACHE WORK IS HARDWARE-VALIDATED.** With core 0's spin bounded so

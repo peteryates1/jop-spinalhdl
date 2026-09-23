@@ -125,6 +125,20 @@ object JopSmpStackCacheSdramSim extends App {
       var stackRootSeen = false
       var lastMark = 0
 
+      // FREEZE DETECTOR. On hardware SmpGcTest prints `R0` and then core 1
+      // stops for good (item 133 defect B), with core 0 never reaching its own
+      // 2,000,000-spin STALL report. Four geometries of method cache did not
+      // move it and every app-side probe perturbed it, so the next evidence has
+      // to come from the RTL. This watches each core's PC and, when one stops
+      // advancing, reports what the hardware says it is waiting for:
+      //   memBusy  stalled on a memory transaction that never completed
+      //   halted   parked by gcHalt -- a stop-the-world nobody ended
+      //   neither  spinning in a tight loop (a software wait, not a wedge)
+      val lastPc = Array.fill(cpuCnt)(-1)
+      val stuckFor = Array.fill(cpuCnt)(0)
+      val FREEZE = 2000000     // cycles of an unchanging PC before we call it
+      var frozenReported = false
+
       while (cycle < maxCycles && !done) {
         cycle += 1
         dut.clockDomain.waitSampling()
@@ -148,6 +162,41 @@ object JopSmpStackCacheSdramSim extends App {
                 s.contains("SMPGC STALLED") || s.contains("SMPGC INCONCLUSIVE")) done = true
             lastMark = s.length
           }
+        }
+
+        // Watch for a core whose PC has stopped advancing.
+        if (!frozenReported && stackRootSeen) {
+          for (i <- 0 until cpuCnt) {
+            val pc = dut.io.pc(i).toInt
+            if (pc == lastPc(i)) stuckFor(i) += 1 else { stuckFor(i) = 0; lastPc(i) = pc }
+          }
+          val frozen = (0 until cpuCnt).filter(stuckFor(_) >= FREEZE)
+          if (frozen.nonEmpty) {
+            frozenReported = true
+            val msg = new StringBuilder
+            msg.append(f"\n*** CORE PC FROZEN at cycle $cycle%,d ***\n")
+            for (i <- 0 until cpuCnt) {
+              val c = dut.cluster.cores(i)
+              msg.append(f"  core $i: pc=${dut.io.pc(i).toInt}%04x jpc=${dut.io.jpc(i).toInt}%04x " +
+                         f"stuckFor=${stuckFor(i)}%,d\n")
+              msg.append(f"          memBusy=${dut.io.memBusy(i).toBoolean} " +
+                         f"HALTED=${c.sys.io.halted.toBoolean} " +      // the REAL one
+                         f"gcHaltReg=${c.sys.gcHaltReg.toBoolean} " +
+                         f"bsy=${c.pipeline.fetch.io.bsy.toBoolean} " +
+                         f"pcwait=${c.pipeline.fetch.pcwait.toBoolean} " +
+                         f"exc=${c.sys.io.exc.toBoolean} excType=${c.sys.excTypeReg.toInt} " +
+                         f"debugHalted=${dut.io.halted(i).toBoolean} " +
+                         f"ROTBUSY=${c.pipeline.stack.rotBusyDly.toBoolean}\n")
+            }
+            msg.append(s"  frozen cores: ${frozen.mkString(",")}\n")
+            print(msg.toString); logLine(msg.toString)
+            // Keep running a little so a transient stall is not mistaken for a
+            // wedge -- if it recovers, the second report says so.
+          }
+        }
+        if (frozenReported && cycle % 1000000 == 0) {
+          val moving = (0 until cpuCnt).filter(stuckFor(_) < FREEZE)
+          logLine(f"[$cycle%10d] post-freeze: still-moving cores = ${moving.mkString(",")}")
         }
 
         if (cycle % 5000000 == 0) {
