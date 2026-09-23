@@ -7067,7 +7067,7 @@ Other findings in the same group, each verified:
   at `Board.scala:785-788` says. So:
 
   ```
-  jp1_txd[1] -> FPGA F4 -> J11.2 -> Pico GP5 (UART1 RX) -> CDC1 -> /dev/ttyACM5
+  jp1_txd[1] -> FPGA A5 -> J11.4 -> Pico GP13 (UART0 RX) -> CDC0 -> /dev/ttyACM4
   ```
 
   The Pico's RX is the target because the FPGA is transmitting; GP12/GP13 are
@@ -7075,11 +7075,28 @@ Other findings in the same group, each verified:
   possible at all. Remaining work is a `perCoreConfigs` entry giving core 1 a
   Uart (that alone makes `jp1_txd`/`jp1_wd` appear) and one XDC pin.
 
-  **Verify `wukong-pico-1` FIRST.** It is the one link in that chain nobody has
-  proven — `pico-0` was verified on hardware, `pico-1` never was. Silence from
-  core 1 would otherwise be ambiguous between "core 1 is wedged" and "that CDC
-  was never carrying anything", which is the same trap as reading a dead board
-  off an adapter whose control endpoint had stalled.
+  **UART0, NOT UART1, and the reason matters.** The obvious assignment is
+  `PICO_UART1` on F4/J11.2 — core 0 has uart0 in the dual builds, so uart1
+  looks like "the free one". But core 0 here is on the CH340N at E3/F3, so ALL
+  FOUR J11 pins are free and the choice is ours. `wukong-pico-0` was verified
+  on hardware 2026-08-23 (0xAA at 1 Mbaud, then `DoAll` 66/66); `wukong-pico-1`
+  never has been.
+
+  And it cannot simply be fixed if it turns out to be wrong: the Debug Probe is
+  attached to the OTHER Pico, so the Wukong's Pico 2 W CANNOT be reflashed over
+  SWD (2026-09-23). Whether its firmware bridges uart1 to the second CDC at all
+  is a property we would be stuck with. Spending a synthesis to discover a dead
+  channel, with no way to revive it, is the avoidable mistake here — so put the
+  core we need to HEAR on the channel already proven to carry traffic.
+
+  Same reason the watchdog route is out: `jp1_wd[1]` on a spare J11 pin would
+  need Pico firmware to sample a GPIO and report it. The UART reuses a bridge
+  that already works and needs no firmware change.
+
+  **Have core 1 print a marker as its FIRST action**, before any allocation.
+  Then a first line followed by silence means the channel works and core 1 died
+  later; total silence means something earlier. Even on a verified link that
+  removes the "is it the core or the channel?" ambiguity from the result.
 
   With core 1 printing, "did it reach the allocation" stops being inference.
 
