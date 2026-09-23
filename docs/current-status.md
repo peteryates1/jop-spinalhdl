@@ -7146,15 +7146,34 @@ Other findings in the same group, each verified:
   8 KB cache runs safely on a 16 KB one, so the same bytes ran on both. Fisher
   exact p ~ 0.0004.
 
-  **What this does and does not establish.** It establishes that the method
-  cache geometry CONTROLS defect B with software held constant. It does NOT
-  establish that the method cache is defective: a different geometry changes
-  fill timing and placement throughout the design, so it could equally be
-  exposing a race elsewhere that happens to be sensitive to it. Distinguishing
-  those needs a third and fourth geometry — 13/5 (same size, half the blocks)
-  and 14/6 (double size, same blocks). If only the BLOCK COUNT moves it, that
-  points at block management, which is where item 53's fragmentation result
-  already lives ("block COUNT beats size").
+  **The full matrix, all four geometries, same image throughout:**
+
+  | geometry | size | blocks | froze |
+  |---|---|---|---|
+  | **13/6** | 8 KB | 64 | **8 of 9** |
+  | 13/5 | 8 KB | 32 | 0 of 6 |
+  | 14/5 | 16 KB | 32 | 0 of 9 |
+  | 14/6 | 16 KB | **64** | 0 of 6 |
+
+  **ONLY the default pairing fails, and neither axis explains it.** Not block
+  count — 14/6 carries the same 64 blocks and is clean. Not capacity — 13/5
+  carries the same 8 KB and is clean. So the "block COUNT beats size" framing
+  from item 53 does NOT apply here, and the guess that it would was wrong. What
+  is left is a PLACEMENT interaction: this image's method layout collides in an
+  8 KB/64-block cache specifically, and any of the three other geometries
+  happens to avoid it.
+
+  **AND IT IS PROBABLY NOT THE SAME FAULT AS SmpGcTest's ROUND 0.** `SmpGcTest`
+  was run on the 14/5 bitstream — the geometry that fixes the probe entirely —
+  and it still hangs at `R0`, with no STALL report and no `JVM exit!`. Same
+  image, same hardware that cures the probe. So the probe's freeze should NOT
+  be recorded as a reproduction of B; it is a THIRD phenomenon with similar
+  symptoms (core 1 stops, core 0 continues, a cross-generation store required).
+  An earlier note here called it a reproduction. That was premature.
+
+  A different program has a different method layout, so a geometry that rescues
+  one need not rescue the other — which is consistent with both being
+  placement-sensitive without being the same defect.
 
   **This also explains the Heisenbug.** Every attempt to instrument the app
   hid the freeze — a static increment, a read of `IO_GC_HALTED`, anything.
