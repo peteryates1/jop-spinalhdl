@@ -7017,6 +7017,47 @@ Other findings in the same group, each verified:
   `SmpGcTest` uses. The SDR path, the arbiter and both cores' stack caches are
   sound at 75 MHz.
 
+  ### MULTI-BANK FLUSH — now covered for TWO banks, 2026-09-24
+
+  Every validation of the stop-the-world flush until now reported
+  `spMin 64 spMax 90`. The banks are 3 x 192 words above a 64-word scratch
+  area — **bank 0 is 64..255** — so a 90-word stack lives entirely in ONE bank
+  and the walk across several dirty banks, which is the actual loop, had never
+  run. A single-bank pass proves the mechanism starts, not that it terminates.
+
+  `java/apps/Small/src/test/SmpDeepFlush.java` parks a `Young` object in the
+  DEEPEST frame of a recursion and holds it there — the reference exists
+  nowhere else, so the collector can only keep it alive by scanning the deep
+  stack, and each minor GC must halt core 1 and flush every dirty bank first.
+
+  ```
+  core1 parked at sp 303 depth 30 (spans banks 0,1)
+  minors 6  scanned sp 64..301  words 1430
+  core1 read back magic 1515904751 OK        (= 0x5A5ADEEF)
+  SmpDeepFlush OK (two banks; three untested)
+  ```
+
+  The collector scanned to 301 and the object survived six collections. **The
+  multi-bank walk works for two dirty banks.**
+
+  **THREE BANKS REMAINS UNTESTED, and not for want of trying.** Past roughly
+  `DEPTH 30` core 1 intermittently never reaches `main()` at all — 3 of 5 runs
+  at depth 30, 3 of 4 at depth 50 — while `DEPTH=0` always starts and
+  `SmpHangProbe` always starts on the same bitstream.
+
+  **This is NOT defect A returning.** A's mechanism is fixed and `SmpGcTest`
+  shows 0 in 44. And it cannot be the recursion: `c1Main` is written by the
+  FIRST statement of `main`, before any recursion, so code that runs later
+  cannot prevent `main` being reached. What changes with `DEPTH` is the IMAGE
+  LAYOUT — which puts this with the method-cache placement fault (the probe
+  freeze), not with the flush. Unexplained, and it is what blocks SP > 448.
+
+  Two corrections worth keeping: the failure was called "deterministic" twice
+  before enough runs existed to say so — it is intermittent at every depth
+  tried. And the first version of this test reported the failure with `wrInt`,
+  which allocates, so it truncated mid-print inside a GC — indistinguishable
+  from the bug it was looking for. The failure path is fixed strings only now.
+
   ### DEFECT A WAS THE SAME BUG — fixed by the same line, 2026-09-24
 
   A and B looked unrelated: B was a deterministic stall mid-run, A an
