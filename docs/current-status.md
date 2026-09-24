@@ -7040,7 +7040,41 @@ Other findings in the same group, each verified:
   The collector scanned to 301 and the object survived six collections. **The
   multi-bank walk works for two dirty banks.**
 
-  **THREE BANKS REMAINS UNTESTED, and not for want of trying.** Past roughly
+  **UPDATE, same day — THREE BANKS *AND* ROTATION ARE NOW COVERED.**
+
+  ```
+  core1 parked at sp 478  (spans banks 0,1,2)   scanned 64..476   OK (three banks, no rotation)
+  core1 parked at sp 1171 (3 banks + ROTATION)  scanned 64..1169  OK (three banks + rotation)
+  ```
+
+  The second is the one that mattered. The three banks initially cover
+  **64..639 as one contiguous window**, so an SP of 1171 PROVES the window
+  slid: a rotation evicted and rebased a bank while the stack was dirty. The
+  collector still read all 6,638 words and the object parked in the deepest
+  frame survived six collections. That is the flush's own claim — *"re-entering
+  IDLE between each so a rotation would still win"* — finally exercised.
+  Repeated 4 of 5 runs (the fifth was the startup fault below).
+
+  **How, given the depth limit.** Reaching SP past 639 needs ~80 plain frames,
+  and 7 attempts at `DEPTH 85` never started core 1 at all. So the frames were
+  made BIGGER rather than more numerous: 28 live locals is ~37 words per frame,
+  so 30 frames reach 1171. Fewer frames also disturbs the image layout less,
+  and it started first try.
+
+  **A correction to the framing that prompted this.** Going from one dirty bank
+  to two is the qualitative step — it proves the walk ITERATES and terminates
+  rather than firing once. Three banks is one more pass of the same loop. The
+  genuinely different case was the rotation interaction, and the earlier note
+  here treated "three banks" as the gap. It was not; rotation was.
+
+  **An unexplained anomaly, recorded rather than relied on.** One `DEPTH 55`
+  run printed `sp 478 (spans banks 0,1,2)` and then a verdict requiring
+  `c1Sp > 639`, with `maxScanSp 874` — two reads of a write-once static
+  disagreeing inside one method. Re-reading `c1Sp` at verdict time on the next
+  build gave `478 / maxScanSp 476`, self-consistent, and every run since has
+  agreed with itself. Not reproduced; not used as evidence.
+
+  **THE STARTUP FAULT REMAINS, and not for want of trying.** Past roughly
   `DEPTH 30` core 1 intermittently never reaches `main()` at all — 3 of 5 runs
   at depth 30, 3 of 4 at depth 50 — while `DEPTH=0` always starts and
   `SmpHangProbe` always starts on the same bitstream.

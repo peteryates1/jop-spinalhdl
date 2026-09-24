@@ -86,9 +86,51 @@ public class SmpDeepFlush implements Runnable {
 	 * stays live for the whole window and the collector must find it on the
 	 * deep stack or lose it.
 	 */
+	/**
+	 * WIDE frames, not deep recursion. Reaching SP past the initial 64..639
+	 * window needs ~80 plain frames, and past roughly DEPTH 30 core 1
+	 * intermittently never reaches main() at all -- 7 attempts at DEPTH 85 all
+	 * failed to start. So the frames are made BIGGER instead of more numerous:
+	 * 28 live locals is ~37 words per frame, so 30 frames reach ~1200 and the
+	 * window MUST slide, which is the rotation-during-flush case.
+	 *
+	 * The locals are summed after the recursive call so they stay live across
+	 * it and cannot be folded away.
+	 */
 	static int deep(int depth) {
 		c1Mark = depth;
-		if (depth > 0) return deep(depth - 1) + 1;
+		int w0 = depth + 0;
+		int w1 = depth + 1;
+		int w2 = depth + 2;
+		int w3 = depth + 3;
+		int w4 = depth + 4;
+		int w5 = depth + 5;
+		int w6 = depth + 6;
+		int w7 = depth + 7;
+		int w8 = depth + 8;
+		int w9 = depth + 9;
+		int w10 = depth + 10;
+		int w11 = depth + 11;
+		int w12 = depth + 12;
+		int w13 = depth + 13;
+		int w14 = depth + 14;
+		int w15 = depth + 15;
+		int w16 = depth + 16;
+		int w17 = depth + 17;
+		int w18 = depth + 18;
+		int w19 = depth + 19;
+		int w20 = depth + 20;
+		int w21 = depth + 21;
+		int w22 = depth + 22;
+		int w23 = depth + 23;
+		int w24 = depth + 24;
+		int w25 = depth + 25;
+		int w26 = depth + 26;
+		int w27 = depth + 27;
+		if (depth > 0) {
+			int r = deep(depth - 1);
+			return r + ((w0 + w1 + w2 + w3 + w4 + w5 + w6 + w7 + w8 + w9 + w10 + w11 + w12 + w13 + w14 + w15 + w16 + w17 + w18 + w19 + w20 + w21 + w22 + w23 + w24 + w25 + w26 + w27) & 1);
+		}
 
 		Young probe = new Young();
 		probe.magic = MAGIC;
@@ -140,7 +182,14 @@ public class SmpDeepFlush implements Runnable {
 		JVMHelp.wr(" handle ");
 		wrInt(c1Handle);
 		// The point of the whole exercise: which banks that SP spans.
-		JVMHelp.wr(c1Sp > 448 ? " (spans banks 0,1,2)\r\n"
+		// The three banks initially cover 64..639 as one contiguous window, so
+		// an SP beyond 639 PROVES a rotation happened -- the window had to
+		// slide, evicting and rebasing a bank. That is the case where a
+		// rotation can collide with a flush walk, which the flush claims to
+		// handle ("re-entering IDLE between each so a rotation would still
+		// win") and which nothing had ever exercised.
+		JVMHelp.wr(c1Sp > 639 ? " (3 banks + ROTATION)\r\n"
+				: c1Sp > 448 ? " (spans banks 0,1,2)\r\n"
 				: c1Sp > 256 ? " (spans banks 0,1)\r\n" : " (bank 0 ONLY — no new coverage)\r\n");
 
 		// Each of these halts core 1 and must flush every dirty bank first.
@@ -174,6 +223,16 @@ public class SmpDeepFlush implements Runnable {
 		// Banks are 64..255 / 256..447 / 448..639, so SP past 256 means the
 		// flush had to walk MORE THAN ONE dirty bank -- the loop that every
 		// previous validation (spMax 90) left unexercised.
+		// c1Sp IS WRITTEN ONCE, by core 1 at the deepest frame. A run printed
+		// "sp 478 (spans banks 0,1,2)" and then the verdict for c1Sp > 639, so
+		// it read differently at two points in the same method. Re-read it here
+		// and print it: either the two agree and the first reading was
+		// misparsed, or a static is changing under us, which is its own defect.
+		JVMHelp.wr("c1Sp re-read ");
+		wrInt(c1Sp);
+		JVMHelp.wr(" maxScanSp ");
+		wrInt(GC.maxScanSp);
+		JVMHelp.wr("\r\n");
 		boolean twoBanks = c1Sp > 256;
 		boolean threeBanks = c1Sp > 448;
 		boolean scannedDeep = GC.maxScanSp > 256;
@@ -181,8 +240,9 @@ public class SmpDeepFlush implements Runnable {
 		if (!twoBanks) JVMHelp.wr("SmpDeepFlush INCONCLUSIVE (one bank only — no new coverage)\r\n");
 		else if (!scannedDeep) JVMHelp.wr("SmpDeepFlush FAIL (collector never scanned past bank 0)\r\n");
 		else if (!survived) JVMHelp.wr("SmpDeepFlush FAIL (live object lost from a deep frame)\r\n");
-		else if (threeBanks) JVMHelp.wr("SmpDeepFlush OK (three banks)\r\n");
-		else JVMHelp.wr("SmpDeepFlush OK (two banks; three untested — see DEPTH)\r\n");
+		else if (c1Sp > 639) JVMHelp.wr("SmpDeepFlush OK (three banks + rotation)\r\n");
+		else if (threeBanks) JVMHelp.wr("SmpDeepFlush OK (three banks, no rotation)\r\n");
+		else JVMHelp.wr("SmpDeepFlush OK (two banks)\r\n");
 	}
 
 	public void run() {
