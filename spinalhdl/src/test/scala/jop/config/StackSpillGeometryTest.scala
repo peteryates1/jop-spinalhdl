@@ -47,6 +47,14 @@ class StackSpillGeometryTest extends AnyFunSuite {
     "wukongSdrSmpSim 4" -> JopConfig.wukongSdrSmpSim(4),
     "wukongSdrFull"    -> JopConfig.wukongSdrFull,
     "wukongDdr3"       -> JopConfig.wukongDdr3,       // DDR3 1 core -> stack cache
+    // DDR3 SMP: effectiveUseStackCache is false past one core, so this config
+    // must reserve NOTHING. It reserved 8192 words per core anyway -- the DDR
+    // branch set the reservation unconditionally while the enable was gated,
+    // so wukongDdr3Smp-6 lost 192 KB of heap and an 8-core build 256 KB. The
+    // SDR branch gates both on one predicate and cannot drift; this is the
+    // testable twin of the DDR2 waste, which has no reachable hardware.
+    "wukongDdr3Smp 4"  -> JopConfig.wukongDdr3Smp(4),
+    "wukongDdr3Smp 8"  -> JopConfig.wukongDdr3Smp(8),
     "wukongFull"       -> JopConfig.wukongFull,
     "xc7a100tDbSerial" -> JopConfig.xc7a100tDbSerial, // DDR3, the item 133 board
     "ep4cgx150Serial"  -> JopConfig.ep4cgx150Serial,  // SDR, board flag off
@@ -78,6 +86,14 @@ class StackSpillGeometryTest extends AnyFunSuite {
         case None =>
           assert(base == 0 && words == 0,
             s"$name has no stack cache, but Const carries base=$base words=$words")
+          // RESERVATION AND ENABLE MUST SHARE A PREDICATE. A config with no
+          // stack cache that still reserves a spill region silently loses
+          // stackRegionWordsPerCore * cpuCnt words of heap -- usableMemWords
+          // subtracts it either way.
+          assert(built.memConfig.stackRegionWordsPerCore == 0,
+            s"$name has no stack cache but reserves " +
+            f"${built.memConfig.stackRegionWordsPerCore}%,d words per core — " +
+            f"${built.memConfig.stackRegionWordsPerCore * sys.cpuCnt * 4L / 1024}%,d KB of heap lost")
         case Some(sc) =>
           assert(base == sc.spillBaseAddr,
             s"$name: Const.STACK_SPILL_BASE = $base, the RTL spills core 0 to " +

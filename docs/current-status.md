@@ -7496,6 +7496,39 @@ Other findings in the same group, each verified:
   | **DDR3 N cores** | **8192 × N** | **no** | **N × 32 KB** |
 
   `wukongDdr3Smp-6` loses **192 KB** of heap; an 8-core build 256 KB.
+
+  **FIXED 2026-09-24**, by the prescription this note gave itself — the DDR
+  branch now carries the same predicate as the enable:
+
+  ```scala
+  stackRegionWordsPerCore = if (effectiveUseStackCache(sys)) 8192 else 0
+  ```
+
+  | cores | usable words before | after | recovered |
+  |---|---|---|---|
+  | 4 | 67,076,096 | 67,108,864 | **128 KB** |
+  | 6 | 67,059,712 | 67,108,864 | **192 KB** |
+  | 8 | 67,043,328 | 67,108,864 | **256 KB** |
+
+  Confirmed in the GENERATED RTL, not by arithmetic: `wukongDdr3Smp 4` now
+  emits `32'h04000000` (67,108,864 words) for `IO_MEM_SIZE`, and the reserved
+  value `0x03FF8000` appears nowhere in it.
+
+  RED-PROVED first: `StackSpillGeometryTest` gained `wukongDdr3Smp 4` and
+  `wukongDdr3Smp 8` plus an assertion that a config WITHOUT a stack cache
+  reserves nothing, and failed with *"wukongDdr3Smp 4 has no stack cache, but
+  Const carries base=0 words=8192"*. The preset list had only single-core DDR3
+  before, which is why the guard written earlier in the day did not catch this.
+  `sbt test` 680/680.
+
+  **The DDR2 half is fixed by the same line but CANNOT be verified**: the
+  A-E115FB is powered off ([item 148](#item-148)). `effectiveUseStackCache` is
+  false for DDR2 entirely, so its 32 KB comes back too — recorded as
+  fixed-but-unverified, not folded into the tested claim.
+
+  **Same class as the spill-base defect** found at the start of the same day:
+  one predicate written twice, the copies free to disagree. Both now resolve
+  through `builtCoreConfig`.
   **SDR is clean** — that branch gates the reservation on `board.useStackCache`,
   the same predicate as the enable, so the two cannot disagree. The EP4CGX150
   reserves nothing (`useStackCache = true` appears once in `Board.scala`, on

@@ -451,7 +451,20 @@ case class JopConfig(
         addressWidth = log2Up((md.get.sizeBytes / 4).toInt) + 2,
         mainMemSize = md.get.sizeBytes,
         burstLen = burstLen,
-        stackRegionWordsPerCore = 8192)
+        // RESERVE ONLY IF THE CACHE IS ACTUALLY ENABLED. This was an
+        // unconditional 8192 while the enable is gated
+        // (`effectiveUseStackCache`: DDR3 only at one core, DDR2 never), so a
+        // config with no stack cache still lost 8192 words of heap PER CORE --
+        // `usableMemWords` subtracts the reservation either way.
+        //
+        //   DDR2 A-E115FB   reserved 8192, enabled no   ->  32 KB lost
+        //   DDR3 1 core     reserved 8192, enabled yes  ->  none
+        //   DDR3 N cores    reserved 8192*N, enabled no ->  N * 32 KB lost
+        //
+        // wukongDdr3Smp-6 lost 192 KB; an 8-core build 256 KB. The SDR branch
+        // below always gated both on one predicate and so could not drift --
+        // this gives the DDR branch the same property.
+        stackRegionWordsPerCore = if (effectiveUseStackCache(sys)) 8192 else 0)
       else if (isBram) cc.memConfig.copy(
         mainMemSize = bramMemSize.map(BigInt(_)).getOrElse(cc.memConfig.mainMemSize),
         burstLen = 0)
