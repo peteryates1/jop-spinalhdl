@@ -7074,7 +7074,39 @@ Other findings in the same group, each verified:
   build gave `478 / maxScanSp 476`, self-consistent, and every run since has
   agreed with itself. Not reproduced; not used as evidence.
 
-  **THE STARTUP FAULT REMAINS, and not for want of trying.** Past roughly
+  ### THE STARTUP FAULT — ISOLATED 2026-09-24: a GC while core 1 is parked
+
+  **A minor GC that runs while core 1 is still parked in the microcode
+  `cpux_loop` intermittently stops it EVER starting.**
+
+  | order | started | failed | rate |
+  |---|---|---|---|
+  | gc-then-release | 12 | **7** | **37 %** |
+  | release-then-gc | 17 | **0** | 0 % |
+
+  Fisher one-sided **p = 0.0060**.
+
+  **The experiment had to be paired to mean anything.** This fault's rate
+  depends on IMAGE LAYOUT, so compiling one variant per order and comparing
+  them confounds the question with the thing under test — an early attempt gave
+  8-of-8 against 4-of-5 across two builds, which is worth nothing (p ~ 0.38).
+  Both orders are therefore compiled into ONE image and chosen per run from
+  `IO_US_CNT`'s low bit, so the arms share a layout exactly and differ only in
+  when the collection happens.
+
+  **What this does NOT say.** It is observed only on a stack-cache build, and
+  whether a plain SMP build (`ep4cgx150Smp`, `wukongDdr3Smp`) shows it is
+  UNTESTED — that would separate "the flush of a parked core" from "the halt of
+  a parked core" and needs another bitstream. It is also not defect A: A's
+  mechanism was the flush freezing a NON-halted core, and a parked core owns no
+  lock, so it IS halted during a gcHalt and is flushed legitimately.
+
+  **Next step is the simulation**, which is what cracked defect B in 2.5
+  minutes after the hardware chase had eaten dozens of board runs: run this app
+  under `JopSmpStackCacheSdramSim` and look at core 1's PC and rotation state
+  while core 0 collects.
+
+  **THE DEPTH LIMIT REMAINS, and not for want of trying.** Past roughly
   `DEPTH 30` core 1 intermittently never reaches `main()` at all — 3 of 5 runs
   at depth 30, 3 of 4 at depth 50 — while `DEPTH=0` always starts and
   `SmpHangProbe` always starts on the same bitstream.

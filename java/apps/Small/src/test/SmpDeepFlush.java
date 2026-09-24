@@ -147,11 +147,31 @@ public class SmpDeepFlush implements Runnable {
 		wrInt(Native.rdMem(Const.IO_CPUCNT));
 		JVMHelp.wr(generational() ? ", generational\r\n" : ", CLASSIC GC\r\n");
 
-		int minors = churnUntilMinor(20000, 1) + churnUntilMinor(20000, 1);
-		JVMHelp.wr("SmpDeepFlush: tenuring minors ");
-		wrInt(minors);
-		JVMHelp.wr("\r\n");
+		// PAIRED A/B IN ONE IMAGE. The startup fault's rate depends on image
+		// LAYOUT, so compiling two variants and comparing them confounds the
+		// question with the thing under test: 8-of-8 in one build against
+		// 4-of-5 in another proves nothing (p ~ 0.38). Both orders are
+		// therefore compiled in and chosen per RUN from a hardware counter, so
+		// the two arms share one layout exactly and differ only in order.
+		boolean gcFirst = (Native.rd(Const.IO_US_CNT) & 1) == 0;
+		JVMHelp.wr(gcFirst ? "MODE gc-then-release\r\n" : "MODE release-then-gc\r\n");
+		if (gcFirst) {
+			int pre = churnUntilMinor(20000, 1) + churnUntilMinor(20000, 1);
+			if (pre < 0) return;   // never; defeats dead-code removal
+		}
 
+		// DIAGNOSTIC ORDER: release core 1 BEFORE any collection.
+		//
+		// Core 0 used to run two minor GCs here first, which is exactly the
+		// window in which defect A froze a core still parked in the microcode
+		// cpux_loop. A is fixed, but this app still fails to start core 1
+		// intermittently, so the coincidence is worth removing: if core 1
+		// always starts when released into a heap that has never been
+		// collected, a boot-time GC is implicated; if it still fails, the GC is
+		// exonerated and the cause is elsewhere.
+		//
+		// It costs the test nothing -- core 1 parks deep either way, and core 0
+		// collects afterwards.
 		Native.wr(1, Const.IO_SIGNAL);
 
 		int spins = 0;
