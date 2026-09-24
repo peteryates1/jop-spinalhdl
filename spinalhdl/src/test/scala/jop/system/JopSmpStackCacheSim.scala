@@ -51,8 +51,14 @@ object JopSmpStackCacheSdramSim extends App {
   // On the board's 8 MB the nursery outlives SmpGcTest's 20,000-allocation
   // budget, so no minor GC runs, the probe's reference survives trivially, and
   // the run passes having exercised nothing. See `minors` below.
-  val presetName = "wukongSdrSmpSim"
-  val config = JopConfig.wukongSdrSmpSim(cpuCnt)
+  // argv[3] = "board" models the BOARD config (8 MB) instead of the small-heap
+  // sim preset. The startup fault (item 133) does not reproduce at 256 KB, and
+  // the heap changes how long core 0's collection runs relative to core 1's
+  // boot -- which is the window the fault lives in. Slower, but faithful.
+  val boardCfgMode = args.length > 3 && args(3) == "board"
+  val presetName = if (boardCfgMode) "wukongSdrSmp" else "wukongSdrSmpSim"
+  val config = if (boardCfgMode) JopConfig.wukongSdrSmp(cpuCnt, 75)
+               else JopConfig.wukongSdrSmpSim(cpuCnt)
   val jsys = config.system
   val builtCfg = config.builtCoreConfig(jsys, jsys.coreConfig)
   val sc = builtCfg.stackConfig.cacheConfig.getOrElse(
@@ -138,6 +144,8 @@ object JopSmpStackCacheSdramSim extends App {
       val stuckFor = Array.fill(cpuCnt)(0)
       val FREEZE = 2000000     // cycles of an unchanging PC before we call it
       var frozenReported = false
+      var lastGcHalt = false
+      var gcHaltEdges = 0
 
       while (cycle < maxCycles && !done) {
         cycle += 1
@@ -161,6 +169,29 @@ object JopSmpStackCacheSdramSim extends App {
             if (s.contains("SMPGC OK") || s.contains("SMPGC FAIL") ||
                 s.contains("SMPGC STALLED") || s.contains("SMPGC INCONCLUSIVE")) done = true
             lastMark = s.length
+          }
+        }
+
+        // THE STARTUP FAULT — item 133. A minor GC that runs while core 1 is
+        // still parked in the microcode cpux_loop stops it ever reaching
+        // main(), 37 % of the time on hardware (p = 0.006). Core 0's gcHalt is
+        // the event; what core 1 looks like across it is the question, and
+        // hardware cannot show it. Log both cores at every gcHalt edge.
+        {
+          val gh = dut.cluster.cores(0).sys.gcHaltReg.toBoolean
+          if (gh != lastGcHalt) {
+            lastGcHalt = gh
+            gcHaltEdges += 1
+            if (gcHaltEdges <= 24) {
+              val c1 = dut.cluster.cores(1)
+              logLine(f"[$cycle%9d] gcHalt ${if (gh) "ASSERT" else "clear "} " +
+                      f"c1: pc=${dut.io.pc(1).toInt}%04x jpc=${dut.io.jpc(1).toInt}%04x " +
+                      f"halted=${c1.sys.io.halted.toBoolean} " +
+                      f"rotBusy=${c1.pipeline.stack.rotBusyDly.toBoolean} " +
+                      f"bsy=${c1.pipeline.fetch.io.bsy.toBoolean} " +
+                      f"memBusy=${dut.io.memBusy(1).toBoolean} " +
+                      f"exc=${c1.sys.io.exc.toBoolean}/${c1.sys.excTypeReg.toInt}")
+            }
           }
         }
 

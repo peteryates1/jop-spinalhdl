@@ -7101,10 +7101,41 @@ Other findings in the same group, each verified:
   mechanism was the flush freezing a NON-halted core, and a parked core owns no
   lock, so it IS halted during a gcHalt and is flushed legitimately.
 
-  **Next step is the simulation**, which is what cracked defect B in 2.5
-  minutes after the hardware chase had eaten dozens of board runs: run this app
-  under `JopSmpStackCacheSdramSim` and look at core 1's PC and rotation state
-  while core 0 collects.
+  **THE SIMULATION DOES NOT REPRODUCE IT — three configurations tried.**
+
+  | sim configuration | core 1 started |
+  |---|---|
+  | `wukongSdrSmpSim` (256 KB heap) | yes |
+  | board config (`wukongSdrSmp 2 75`, 8 MB) | yes |
+  | board config + `JOP_SIM_XINIT=random`, 3 seeds | yes, all 3 |
+
+  This is not a matter of re-rolling. The simulation is DETERMINISTIC with
+  X-state zeroed — two runs of the defect-B chase both froze at exactly cycle
+  9,084,330 — so repeating a configuration returns the same answer. Reproducing
+  an intermittent HARDWARE fault in a deterministic simulator means finding the
+  configuration that lands on the failing side, not rolling again.
+
+  **The X-state hypothesis is NOT yet excluded, and 0-of-3 does not exclude
+  it.** A fault that is intermittent on silicon and absent from a zeroed sim is
+  the signature of a register read before it is written — which is
+  [item 45](#item-45), and which `JopSimDefaults` anticipates: *"randomised
+  state that can stop the machine booting is worth fixing on its own merits"*.
+  But at the hardware rate of 37 %, P(0 failures in 3 seeds) = 0.25. Eight
+  seeds are needed for 0.025. Six more are running; until then this is
+  undecided, not refuted.
+
+  **Two sim-only switches exist for this hunt**, both on `FORCE_GC_FIRST` in
+  `SmpDeepFlush`, false for hardware: it pins the failing gc-then-release order
+  (in sim `IO_US_CNT` is deterministic, so the per-run coin flip would pick one
+  arm forever) and it shortens core 0's give-up spin from 400 passes to 12 --
+  40M spin iterations cost under two seconds on the board and HOURS in
+  Verilator, so a failing sim run would otherwise never finish.
+
+  **The cheapest remaining discriminator is not a sim at all**: run this on a
+  build with NO stack cache (`wukongDdr3Smp 2` has none, since
+  `effectiveUseStackCache` is false past one core) on the same board. That
+  separates "the FLUSH of a parked core" from "the HALT of a parked core", and
+  no simulation is needed to answer it.
 
   **THE DEPTH LIMIT REMAINS, and not for want of trying.** Past roughly
   `DEPTH 30` core 1 intermittently never reaches `main()` at all — 3 of 5 runs

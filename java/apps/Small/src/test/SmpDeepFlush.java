@@ -40,6 +40,19 @@ import com.jopdesign.sys.Native;
 public class SmpDeepFlush implements Runnable {
 
 	static final int MAGIC = 0x5A5ADEEF;
+	/**
+	 * SIMULATION SWITCH, false for hardware.
+	 *
+	 * true pins the failing gc-then-release order (in sim `IO_US_CNT` is
+	 * deterministic, so the per-run coin flip would pick one arm forever) AND
+	 * shortens core 0's give-up spin from 400 passes to 12 -- 40M spin
+	 * iterations cost under two seconds on the board and hours in Verilator,
+	 * so a FAILING sim run would otherwise never finish, and the failing run is
+	 * the one worth having.
+	 *
+	 * Left false so the paired A/B on hardware keeps randomising.
+	 */
+	static final boolean FORCE_GC_FIRST = false;
 	/** ~9.5 words per frame, so ~1000 words: past bank 2 and into rotation. */
 	static final int DEPTH = 30;
 
@@ -153,7 +166,10 @@ public class SmpDeepFlush implements Runnable {
 		// 4-of-5 in another proves nothing (p ~ 0.38). Both orders are
 		// therefore compiled in and chosen per RUN from a hardware counter, so
 		// the two arms share one layout exactly and differ only in order.
-		boolean gcFirst = (Native.rd(Const.IO_US_CNT) & 1) == 0;
+		// FORCE_GC_FIRST pins the failing order for SIMULATION, where IO_US_CNT
+		// is deterministic and the random pick would choose one arm forever.
+		// Left false for hardware so the paired A/B above still randomises.
+		boolean gcFirst = FORCE_GC_FIRST || (Native.rd(Const.IO_US_CNT) & 1) == 0;
 		JVMHelp.wr(gcFirst ? "MODE gc-then-release\r\n" : "MODE release-then-gc\r\n");
 		if (gcFirst) {
 			int pre = churnUntilMinor(20000, 1) + churnUntilMinor(20000, 1);
@@ -174,8 +190,13 @@ public class SmpDeepFlush implements Runnable {
 		// collects afterwards.
 		Native.wr(1, Const.IO_SIGNAL);
 
+		// The give-up bound is 400 passes on hardware, where 40M spin iterations
+		// cost under two seconds. In SIMULATION that is hours, so a FAILING run
+		// would never finish -- and a failing run is the one we are hunting.
+		// FORCE_GC_FIRST marks a sim build, so shorten it there.
+		int limit = FORCE_GC_FIRST ? 12 : 400;
 		int spins = 0;
-		for (int o = 0; o < 400 && ready == 0; o++) {
+		for (int o = 0; o < limit && ready == 0; o++) {
 			for (int i = 0; i < 100000 && ready == 0; i++) { }
 			spins = o;
 		}
