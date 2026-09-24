@@ -7017,6 +7017,38 @@ Other findings in the same group, each verified:
   `SmpGcTest` uses. The SDR path, the arbiter and both cores' stack caches are
   sound at 75 MHz.
 
+  ### DEFECT A WAS THE SAME BUG — fixed by the same line, 2026-09-24
+
+  A and B looked unrelated: B was a deterministic stall mid-run, A an
+  intermittent failure where core 1 never reached `main()` at all
+  (`mainSeen 0 pubStep 0`). They are one defect at two different times.
+
+  **The mechanism.** `SmpGcTest` prints `tenuring` and then
+  `minors after tenuring 2` — core 0 runs TWO MINOR GCs while core 1 is still
+  parked in the microcode `cpux_loop` waiting for `IO_SIGNAL`. A parked core is
+  spinning in microcode, NOT `halted` by the lock unit. So pre-fix it received
+  `gcFlushReq` exactly like a draining lock owner, and the same non-completing
+  flush froze it through `extStall` — permanently, before it ever left the boot
+  loop. That is precisely `mainSeen 0`.
+
+  **Measured, with the fix as the only variable.** The 2 Mbaud bitstream had
+  not been rebuilt, so the pre-fix binary was still on disk and could be run
+  against a rebuilt one at the same geometry and the same baud:
+
+  | arm | defect A |
+  |---|---|
+  | pre-fix, 2 Mbaud | **5 of 25** |
+  | post-fix, 2 Mbaud | **0 of 13** |
+  | pooled pre-fix (both bauds) | **6 of 45** |
+  | pooled post-fix | **0 of 44** |
+
+  Fisher one-sided **p = 0.014**.
+
+  This also retires the idea that A was baud-linked. The earlier 3-of-12 at
+  2 Mbaud against 1-of-20 at 1 Mbaud was recorded as suggestive-but-not-claimed
+  (p ~ 0.13); it was sampling noise on a defect whose real driver is whether a
+  boot-time GC catches core 1 in the loop.
+
   ### FIXED 2026-09-24 — `SMPGC OK` on hardware, 6 of 6, and in simulation
 
   **One line.** `Sys.scala`:
@@ -7155,7 +7187,8 @@ Other findings in the same group, each verified:
   Twelve runs at 2 Mbaud, eight more at 1 Mbaud, each a fresh program +
   download. The single "hang" is really three independent faults:
 
-  **A — CORE 1 NEVER STARTS, 3 of 12 (2 Mbaud) and 1 of 8 (1 Mbaud).** The run
+  **A — CORE 1 NEVER STARTS, 3 of 12 (2 Mbaud) and 1 of 8 (1 Mbaud). FIXED
+  2026-09-24 — same one-line cause as B, see above.** The run
   reports `STACKROOT ABANDONED, core1 pubStep 0` and exits cleanly. `pubStep`
   is set to 11 by the FIRST statement of `publisher()`, so **0 means core 1
   never entered it at all** — not that it died allocating (11) or before
