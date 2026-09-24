@@ -299,7 +299,37 @@ case class Sys(clkFreq: HertzNumber, cpuId: Int = 0, cpuCnt: Int = 1, numIoInt: 
   io.syncOut.s_in     := signalReg
   io.syncOut.gcHalt   := gcHaltReg
   io.syncOut.stackFlushed := io.gcFlushDone
-  io.gcFlushReq := io.syncIn.gcHaltActive
+  // FLUSH ONLY A CORE THAT HAS ACTUALLY STOPPED. This used to be
+  // `:= io.syncIn.gcHaltActive` alone, and that deadlocked the cluster.
+  //
+  // A LOCK OWNER IS EXEMPT FROM gcHalt ON PURPOSE (Ihlu.scala:371,
+  // `halted := lockWait || (gcHaltFromOthers && !isLockOwner)`). Status item
+  // 158 chose that deliberately: block every grant instead and a nested
+  // `synchronized` inside a critical section waits for a grant that never
+  // comes. The owner is meant to DRAIN -- finish its critical section, release
+  // the lock, and only then halt, which is what makes the halted set monotone.
+  //
+  // Requesting the stack-cache flush from `gcHaltActive` alone hit that core
+  // mid-drain. The flush raises `stackRotBusy`, and `fetch.io.extStall :=
+  // stackRotBusy` (JopPipeline.scala:204) freezes the fetch PC outright -- so
+  // the one core that MUST keep running to release its lock was frozen before
+  // it could. It never released, never halted, never finished flushing, and
+  // the collector span forever on `othersHalted` (which since 6249099 means
+  // halted AND flushed). Observed in JopSmpStackCacheSdramSim at 9.08M cycles:
+  // core 0 gcHaltReg=1 still running, core 1 ROTBUSY=1 with its PC pinned at
+  // 0x0207 for 2M cycles and HALTED=0.
+  //
+  // ANDing in `halted` restores the assumption the flush code states about
+  // itself -- "Nothing can dirty a bank meanwhile, the core is halted"
+  // (StackStage) -- rather than leaving it aspirational. `halted` covers
+  // `lockWait` too, and a core parked on lockWait is genuinely stopped, so
+  // flushing it is safe.
+  //
+  // Self-correcting if a core does resume: `gcFlushDone` is LIVE
+  // (`!anyDirty && rotState === IDLE`), not a latch, so a re-dirtied bank
+  // simply drops `othersHalted` again and the collector waits longer. It
+  // degrades to waiting, never to a collector running against a live mutator.
+  io.gcFlushReq := io.syncIn.gcHaltActive && io.syncIn.halted
   io.syncOut.data     := lockDataReg
   io.syncOut.op       := lockOpReg
 

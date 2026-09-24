@@ -7017,6 +7017,46 @@ Other findings in the same group, each verified:
   `SmpGcTest` uses. The SDR path, the arbiter and both cores' stack caches are
   sound at 75 MHz.
 
+  ### FIXED 2026-09-24 — `SMPGC OK` on hardware, 6 of 6, and in simulation
+
+  **One line.** `Sys.scala`:
+
+  ```scala
+  - io.gcFlushReq := io.syncIn.gcHaltActive
+  + io.gcFlushReq := io.syncIn.gcHaltActive && io.syncIn.halted
+  ```
+
+  Flush only a core that has ACTUALLY STOPPED. The lock-owner exemption then
+  works as [item 158](#item-158) designed it: the owner drains — finishes its
+  critical section and releases the lock — *then* halts, and only then is its
+  stack cache flushed, at which point nothing can dirty a bank and the flush
+  completes. `othersHalted` goes true and the collector proceeds.
+
+  | | before | after |
+  |---|---|---|
+  | simulation | stalled at `R0` | **`SMPGC OK`**, 13.3M cycles, 3m34s |
+  | hardware | stalled at `R0`, 9 of 9 | **`SMPGC OK`, 6 of 6** |
+  | `lost` / `haltLeak` | — | **0 / 0**, all 48 round-reports |
+  | `sbt test` | 680/680 | 680/680 |
+  | timing | MET +0.146 ns | MET **+0.456 ns** |
+
+  `haltLeak 0` is item 158's own metric — no mutator advanced during a
+  stop-the-world — so the halt is now both SOUND and TERMINATING. Before this
+  it could only be one or the other: honouring the exemption meant a mutator
+  ran during the collection, and freezing the owner meant the collection never
+  finished.
+
+  **This is the first complete `SmpGcTest` on SMP + stack cache, anywhere** —
+  8 publish rounds, `minors 10 verified 192 errors 0`, on the board.
+
+  **Why it took a simulation to see.** The exemption (`Ihlu`), the flush
+  (`StackStage`) and the freeze (`JopPipeline`'s
+  `extStall := stackRotBusy`) are each correct alone and live in three
+  different files; the bug exists only at their intersection. And the flush's
+  own comment ASSERTED the property that was false — "Nothing can dirty a bank
+  meanwhile, the core is halted" — so reading the code confirmed the wrong
+  thing. Only the RTL state at the freeze separated them.
+
   ### ROOT CAUSE of defect B, found in the RTL 2026-09-23
 
   **The stop-the-world flush is requested of a core that was never halted, and
