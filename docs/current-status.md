@@ -7133,11 +7133,37 @@ Other findings in the same group, each verified:
   40M spin iterations cost under two seconds on the board and HOURS in
   Verilator, so a failing sim run would otherwise never finish.
 
-  **The cheapest remaining discriminator is not a sim at all**: run this on a
-  build with NO stack cache (`wukongDdr3Smp 2` has none, since
-  `effectiveUseStackCache` is false past one core) on the same board. That
-  separates "the FLUSH of a parked core" from "the HALT of a parked core", and
-  no simulation is needed to answer it.
+  **THE NO-STACK-CACHE CONTROL WAS TRIED AND IS INCONCLUSIVE (2026-09-25).**
+  `wukongSmp 2` — DDR3, two cores, `effectiveUseStackCache=false`, MET
+  +0.647 ns — was built as the discriminator between "the FLUSH of a parked
+  core" and "the HALT of a parked core". It cannot answer the question:
+
+  - **A stack-depth constraint had to be removed first.** The rotation test's
+    wide frames need ~1171 words, which only fit because the stack cache has an
+    8192-word spill region; a build WITHOUT one has the 256-word stack RAM, so
+    all 12 first runs failed with "stuck mid-recursion" in BOTH arms — an
+    overflow, not the fault. `DEPTH 4` (sp ~241) fits both.
+  - **At `DEPTH 4` the fault still reproduces on the stack-cache build**:
+    3 of 6 gc-then-release failed, 0 of 7 release-then-gc. Consistent with the
+    p = 0.006 result at a different depth, so the shallower probe is valid.
+  - **But the control build fails uniformly for a DIFFERENT reason**: 13 of 13,
+    both arms equally, reporting *"reached the BOTTOM but never published"*.
+    Core 0 sees `c1Mark = 0`, so statics DO propagate; it never sees `ready`,
+    set four statements later, with `new Young()` in between. Core 1 stalls at
+    its FIRST ALLOCATION.
+  - **The build is not simply broken**: `SmpCacheTest` PASSES 3 of 3 on it
+    (T1 array, T2 field, T3 rounds), so core 1 runs and cross-core statics
+    work.
+
+  Uniform failure in both arms cannot discriminate an order-dependent fault, so
+  this is recorded as inconclusive, not as evidence for either side. Note also
+  that `wukongSmp` at TWO cores is outside the validated set — Wukong DDR3 SMP
+  is validated at 4/6/8 — so the allocation stall may be its own defect.
+
+  **A better control is `ep4cgx150Smp`**: SDR, no stack cache (the board flag
+  is false), and validated at 1/4/8/12 cores, so a failure there would be the
+  fault and not the vehicle. Different board and toolchain, so it costs a
+  Quartus build.
 
   **THE DEPTH LIMIT REMAINS, and not for want of trying.** Past roughly
   `DEPTH 30` core 1 intermittently never reaches `main()` at all — 3 of 5 runs

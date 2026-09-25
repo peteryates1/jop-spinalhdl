@@ -54,7 +54,7 @@ public class SmpDeepFlush implements Runnable {
 	 */
 	static final boolean FORCE_GC_FIRST = false;
 	/** ~9.5 words per frame, so ~1000 words: past bank 2 and into rotation. */
-	static final int DEPTH = 30;
+	static final int DEPTH = 4;
 
 	static class Young {
 		int magic;
