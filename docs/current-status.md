@@ -7107,7 +7107,7 @@ Other findings in the same group, each verified:
   |---|---|
   | `wukongSdrSmpSim` (256 KB heap) | yes |
   | board config (`wukongSdrSmp 2 75`, 8 MB) | yes |
-  | board config + `JOP_SIM_XINIT=random`, 3 seeds | yes, all 3 |
+  | board config + `JOP_SIM_XINIT=random`, **9 seeds** | yes, all 9 |
 
   This is not a matter of re-rolling. The simulation is DETERMINISTIC with
   X-state zeroed — two runs of the defect-B chase both froze at exactly cycle
@@ -7120,9 +7120,11 @@ Other findings in the same group, each verified:
   the signature of a register read before it is written — which is
   [item 45](#item-45), and which `JopSimDefaults` anticipates: *"randomised
   state that can stop the machine booting is worth fixing on its own merits"*.
-  But at the hardware rate of 37 %, P(0 failures in 3 seeds) = 0.25. Eight
-  seeds are needed for 0.025. Six more are running; until then this is
-  undecided, not refuted.
+  At the hardware rate of 37 %, P(0 failures in 9 seeds) = **0.025**, so after
+  nine seeds the X-state hypothesis is SUBSTANTIALLY WEAKENED — unreset state
+  is unlikely to be the cause. Note the contrast with defect B, which the
+  simulator reproduced on the FIRST attempt at 9.08M cycles: this fault behaves
+  differently in kind, not merely in degree.
 
   **Two sim-only switches exist for this hunt**, both on `FORCE_GC_FIRST` in
   `SmpDeepFlush`, false for hardware: it pins the failing gc-then-release order
