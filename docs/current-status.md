@@ -7185,13 +7185,35 @@ Other findings in the same group, each verified:
   closed the case where the core was never halted; this is the case where it
   is.
 
-  **A mechanism worth testing, and only a hypothesis:** `rotBusy` drives
-  `extStall`, which freezes the fetch PC and IR outright
-  (`JopPipeline.scala:204`). If that freeze lands on the boot loop's
-  `IO_SIGNAL` read, the sampled value could be lost — which would be
-  intermittent, and would explain why the core never leaves a loop whose
-  release signal is a HELD level and therefore impossible to "miss" by
-  ordinary means.
+  **A FIRST HYPOTHESIS HERE WAS WRONG, and the reason is worth keeping.** It
+  proposed that the `extStall` freeze lands on the boot loop's `IO_SIGNAL` read
+  and the sampled value is lost. **A held level cannot be missed that way** —
+  lose one sample and the next poll picks it up, so nothing about it explains a
+  PERMANENT failure. And the failure is permanent: core 1 never starts, long
+  after core 0's collections have finished. The observation refutes it.
+
+  **THE BETTER HYPOTHESIS: THE FLUSH FSM HANGS.** `extStall := stackRotBusy`
+  freezes the fetch PC and IR for as long as `rotBusy` is high. If the flush
+  enters `FLUSH_WAIT` and `dmaDone` never arrives, `rotState` never returns to
+  `IDLE`, `rotBusy` stays high, and the core is frozen FOREVER — regardless of
+  `gcFlushReq` dropping when the GC ends. That fits every observation:
+  permanent, intermittent (a race on DMA issue/completion), requires the stack
+  cache (p = 0.002), and requires a GC while the core is parked (p = 0.006).
+
+  **This is a loose end left open by defect B's own diagnosis**, which recorded:
+  *"NOT YET DISTINGUISHED: whether core 1 is livelocking (IDLE -> FLUSH -> IDLE,
+  re-dirtying between passes) or stuck in `FLUSH_WAIT` with a `dmaDone` that
+  never arrives."* The sim showed `ROTBUSY=TRUE` with the PC pinned — the same
+  signature inferred here. If the real defect is that the flush FSM CAN HANG,
+  then `&& halted` did not repair it: it removed one TRIGGER (flushing a
+  running lock owner) and a parked core is the trigger that remains. One story
+  covers both, and the fix is incomplete rather than wrong.
+
+  **It is testable WITHOUT reproducing the full-system fault**, which is what
+  has blocked progress — the whole-machine sim never reproduces it. A targeted
+  testbench that asserts `gcFlushReq` at a core sitting in its boot loop, and
+  asserts `rotState` always returns to `IDLE`, exercises the FSM directly in
+  seconds and either hangs or proves the walk terminates.
 
   **Three measurement errors were made getting here, all mine:** `DEPTH 4` was
   chosen as "241 < 256" and is actually sp 261 against an `spOv` threshold of
