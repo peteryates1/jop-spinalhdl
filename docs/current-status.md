@@ -7865,6 +7865,110 @@ so it exercises none of the above.
 **[Item 14](#item-14) is partly stale**: per-core spill bases landed
 (`JopCoreConfig.scala:543-545`). The unbounded region SIZE is the real gap.
 
+---
+
+**2026-09-26 — THE STARTUP FAULT IS LOCALISED. Core 1 is running core 0's
+serial DOWNLOAD HANDSHAKE, and it got there before it was ever released.**
+
+Measured, not argued, and it took no new hardware and no resynthesis. The
+instrument was already in the failing bitstream: `JopCluster` hangs two probe
+banks off the GC root port's spare targets (`8 + core`, `12 + core`), and
+`stateCounters(i)(0)` is core `i`'s **live microcode pc concatenated with its
+jpc** (`JopCluster.scala:535`). Core 0 can read where core 1 actually is, while
+it runs.
+
+`SmpDeepFlush` now does, on its failure path (`probeCore1`). One 12-run soak of
+`wukongSdrSmp 2 75 baud=1000000`:
+
+| arm | runs | failed | core 1 pc when it failed |
+|---|---|---|---|
+| gc-then-release | 7 | **6** | 54, 61, 64, 67, 69, 72, 75 |
+| release-then-gc | 5 | **0** | — |
+
+Fisher one-sided, p = 0.0076, and it reproduces the earlier 5/6 vs 0/6.
+
+**EVERY ONE OF THOSE ADDRESSES IS INSIDE `rdy_poll`** — 0x34..0x4b, i.e. 52..75,
+the serial downloader's "send 0xAA, poll for the host's 0x55 ACK" loop inside
+`cpu0_load`. 54 is `rdy_poll+2` and 75 its timeout tail, so the pc sweeps the
+whole loop: core 1 is EXECUTING, not frozen. `halt` is identical in both
+samples, so it is not being held halted; `exc` is 0, so it never faulted;
+`bmbOut` (BMB commands issued minus responses received) is 0, so no response was
+lost. `jpc` is 0 in every sample — core 1 has never executed a single bytecode.
+
+**AND THE PRE-RELEASE BASELINE IS THE CLINCHER.** The probe samples core 1's pc
+into a static in the instant BEFORE `Native.wr(1, IO_SIGNAL)` (printed later, so
+the measurement does not put UART traffic inside the window whose ordering is
+under test). On all six failures that baseline is ALREADY in `rdy_poll`:
+59, 63, 64, 66, 69, 71. Core 1 had left the park loop and entered the downloader
+**before core 0 wrote the release signal at all.** It escaped a spin on a signal
+that was still zero.
+
+**THE LATCH THAT MAKES IT PERMANENT** — `asm/src/jvm.asm:340-356`, ROM 0x0e-0x20:
+
+```
+cpux_loop:  read io_signal;  bz cpux_loop    // spin while zero
+            read io_signal;  bz cpu0_load    // read AGAIN -- if zero now, BECOME CORE 0
+            jmp cpux_boot
+```
+
+The second read re-samples a level the first read already cleared, and its zero
+case does not go back to waiting: it sends the core into `cpu0_load`, the serial
+download handshake, which loops forever with no exit. **One corrupted read of
+`io_signal` permanently hijacks a core into the downloader.** `cpux_boot`
+(0x11f) goes straight to `invoke_main` and has no path to `rdy_poll`, and
+`cpu0_load` has only two entries — `bz cpu0_load` at 0x0b (the `io_cpu_id` read
+returned 0) and this one at 0x1d — so the route is one of those two.
+
+It is 0x1d, by the arm asymmetry: 0x0b is executed at BOOT, identically in both
+arms, long before core 0 picks an arm in Java. A misread there would fail
+release-then-gc at the same rate. That arm has now failed 0 of 11.
+
+**THE MECHANISM, and every measurement fits it:**
+
+1. Core 1 spins on `io_signal` at 0x0e-0x14; it is still zero.
+2. Core 0's pre-release GC halts core 1 and flushes its stack-cache banks
+   through the shared memory path.
+3. One `ldmrd` returns a **spuriously nonzero** value -- core 1 escapes early.
+4. It re-reads `io_signal`, gets the true zero, and takes `bz cpu0_load`.
+5. It spends the rest of the run sending 0xAA at a host that is not listening.
+
+That accounts for the arm asymmetry (only gc-first collects while core 1 is
+still in the spin), for 0 of 9 failures without a stack cache (no flush, no
+contention), and for nine X-randomised sim seeds finding nothing (a simulated
+memory returns correct data). `bmbOut 0` says the transaction COMPLETED and
+returned the wrong value, which is also why the arbiter-contention testbench
+[the flush testbench note](#item-133) proposed would have found nothing.
+
+**SO THERE ARE TWO DEFECTS, and the second is the root cause:**
+
+- **The latch (microcode).** A transient read error becomes a permanent hang,
+  and the branch target is nonsense for a release protocol. Prescription:
+  `bz cpu0_load` -> `bz cpux_loop` at `jvm.asm:355`, which turns the second read
+  into a genuine debounce -- two consecutive nonzero reads to proceed, zero goes
+  back to waiting. It changes ONE ROM WORD and shifts no addresses, so a
+  rebuilt bitstream is a near-perfect A/B against the 6-of-7 rate above.
+  UNPROVEN until that synthesis runs; not applied yet for exactly that reason.
+- **The corrupted read (memory path).** An `io_signal` read returning the wrong
+  data while the core is halted and its stack cache is being flushed. Same shape
+  as the two `AlteraSdramAdapter` bugs that cost days on item 1 -- a response
+  dropped or misordered **while the consumer is stalled** -- and here the
+  consumer is stalled precisely because it has been halted for the flush.
+
+**WHAT THIS CORRECTS IN THIS DOCUMENT.** The note above proposing a per-core
+UART console for core 1 is superseded: it would have cost a preset, an XDC pin
+(`jp1_txd` is constrained by NOTHING today -- it appears only in
+`JopTop.scala:160`) and a 25-minute synthesis, to learn whether core 1 reached
+Java. The probe banks answered something strictly stronger -- WHERE its pc is --
+for a relink. **An instrument already in the bitstream beats a better instrument
+that needs a build.** Worth checking for one before designing one.
+
+The flush-FSM testbench's negative result also reads differently now. It was not
+wrong, and its suspect ("the arbiter, which this bench does not model") was
+wrong: `bmbOut 0` rules out a lost response. What the bench could not model is
+a response that arrives with the WRONG DATA, which no amount of arbiter
+contention in a single-cycle private RAM will produce.
+
+
 <a id="item-134"></a>
 
 ### Item 134 — the array-cache line fill is 0.0 % of Kfl's stall, and the benchmark that would show otherwise was never reached

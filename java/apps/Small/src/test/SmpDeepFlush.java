@@ -73,11 +73,148 @@ public class SmpDeepFlush implements Runnable {
 	 *  rather than both reading as c1Depth == 0. */
 	static volatile int c1Main;
 
+	/**
+	 * CORE 1'S LIVE PC, SAMPLED IN HARDWARE — the baseline for the probe below.
+	 *
+	 * Taken twice, back to back, in the instant BEFORE core 1 is released, i.e.
+	 * while it is definitely parked in the microcode `cpux_loop`. That is the
+	 * control the failure report needs: on a failing run the question is not
+	 * "where is core 1" but "is it STILL IN THE SAME LOOP, and is it moving".
+	 * Two samples bracket the loop rather than naming one arbitrary point in it.
+	 *
+	 * Sampled into statics and printed LATER, on the failure path only. Printing
+	 * here would put ~200 bytes of UART traffic inside the very window whose
+	 * ordering is under test, and the fault is order-dependent and intermittent:
+	 * the measurement would move the rate it is measuring.
+	 */
+	static int bootPc0, bootPc1;
+
 	static int cpuId;
 
 	static void wrInt(int v) { JVMHelp.wr(Integer.toString(v)); }
 
 	static boolean generational() { return GC.nurseryTop != GC.nurseryBase; }
+
+	/**
+	 * SIX DIGITS, NO ALLOCATION. `wrInt` goes through `Integer.toString`, which
+	 * allocates, and the failure path must not allocate — an allocation there
+	 * can trigger the very collection whose flush is under suspicion.
+	 *
+	 * Masked non-negative before dividing, because two of the values below are
+	 * saturating 32-bit counters that read back as -1 once they top out, and
+	 * `/` on a negative int would print junk. Six digits cannot hold a saturated
+	 * counter anyway: these values are compared between two samples for MOTION,
+	 * and the low digits move first.
+	 */
+	static void wrRaw(int v) {
+		int u = (v & 0x7fffffff) % 1000000;
+		JVMHelp.wr('0' + (u / 100000) % 10);
+		JVMHelp.wr('0' + (u / 10000) % 10);
+		JVMHelp.wr('0' + (u / 1000) % 10);
+		JVMHelp.wr('0' + (u / 100) % 10);
+		JVMHelp.wr('0' + (u / 10) % 10);
+		JVMHelp.wr('0' + u % 10);
+		JVMHelp.wr(' ');
+	}
+
+	/**
+	 * ONE SAMPLE of core 1's hardware state, through the GC root port.
+	 *
+	 * Every value here already exists in the built bitstream — `JopCluster`
+	 * hangs two probe banks off the root port's spare targets, `8 + core` for
+	 * the bus bank and `12 + core` for the state bank. Nothing is resynthesised
+	 * to read them, which is the point: the failing image can be relinked and
+	 * rerun in a minute.
+	 *
+	 * NON-INVASIVE. `gcRootRamAddr(t)` is only driven when the selector's target
+	 * field equals t, so a read of target 9 or 13 leaves BOTH cores' stack-RAM
+	 * read ports alone. That matters because the thing being measured is a core
+	 * that may be mid-stall: a probe that stole its read port would manufacture
+	 * the fault it is looking for. (`SmpGcTest.PROBE_RUNNING_CORE` is false for
+	 * exactly that reason, and it reads with a nonzero index, which does steal.)
+	 *
+	 * Split into its own method because JOPizer caps a method at 512 bytes.
+	 */
+	static void probeSample() {
+		int a = GC.rootRead(13, Const.ROOT_WHAT_STACK, 0);
+		JVMHelp.wr("pc ");
+		wrRaw(a >>> 16);
+		JVMHelp.wr("jpc ");
+		wrRaw(a & 0xffff);
+		// Cycles core 1 has spent HALTED by the lock manager (`Sys.io.halted`,
+		// which carries gcHalt during a stop-the-world). A counter, not a level:
+		// if this MOVES between the two samples the core is still being held,
+		// which is the stuck-flush hypothesis outright — `othersHalted` ANDs in
+		// `stackFlushed`, so a flush that never reports done never releases it.
+		JVMHelp.wr("halt ");
+		wrRaw(GC.rootRead(9, Const.ROOT_WHAT_B, 0));
+		int b = GC.rootRead(13, Const.ROOT_WHAT_B, 0);
+		// Commands issued minus responses received. Bounded and self-clearing in
+		// a healthy core; a value that sits nonzero is a response the arbiter
+		// never returned, which is the one hypothesis the flush-FSM testbench
+		// could not test (its DMA owns a private single-cycle RAM).
+		JVMHelp.wr("bmbOut ");
+		wrRaw(b >>> 8);
+		JVMHelp.wr("exc ");
+		wrRaw(GC.rootRead(13, Const.ROOT_WHAT_A, 0));
+		int e = GC.rootRead(13, Const.ROOT_WHAT_SP, 0);
+		JVMHelp.wr("excAt ");
+		wrRaw(e >>> 16);
+		wrRaw(e & 0xffff);
+		JVMHelp.wr("excType ");
+		wrRaw(b & 0xff);
+		JVMHelp.wr("\r\n");
+	}
+
+	/**
+	 * IS CORE 1 FROZEN, OR IS IT RUNNING AND NOT LEAVING THE LOOP?
+	 *
+	 * The whole investigation is stuck on that one binary question, and no
+	 * instrument so far could answer it: `c1Main`/`c1Depth`/`c1Mark` are written
+	 * by core 1's JAVA code, so they are all zero whenever core 1 never reaches
+	 * Java, which is exactly the failing case. They say "it did not arrive",
+	 * never "it is not moving".
+	 *
+	 * A live PC does. Two samples, a spin apart:
+	 *
+	 *   pc/jpc IDENTICAL, near the boot-loop baseline -> frozen in the microcode
+	 *       loop. `extStall := stackRotBusy` freezes the fetch PC outright
+	 *       (JopPipeline:204) and is the first suspect.
+	 *   pc/jpc MOVING within the boot loop -> executing and the loop test never
+	 *       passes, i.e. the released level is not being seen. A data path
+	 *       problem, not a stall — and a completely different search.
+	 *   pc/jpc elsewhere -> core 1 left the loop and derailed; `exc`/`excAt`
+	 *       name where.
+	 *   halt MOVING -> it is not the core at all, it is still being held halted.
+	 *
+	 * Four outcomes, mutually exclusive, one run each. That is worth more than
+	 * another arm of the rate experiment.
+	 */
+	static void probeCore1() {
+		if (Native.rdMem(Const.IO_CPUCNT) > 4) {
+			// Same bound JopCluster uses (`hasProbeBanks`): above 4 cores the
+			// 4-bit target field has no room for the banks and `12 + core` wraps
+			// onto a real core, which would print convincing nonsense.
+			JVMHelp.wr("  (probe banks omitted above 4 cores)\r\n");
+			return;
+		}
+		JVMHelp.wr("  bootPc ");
+		wrRaw(bootPc0 >>> 16);
+		wrRaw(bootPc0 & 0xffff);
+		wrRaw(bootPc1 >>> 16);
+		wrRaw(bootPc1 & 0xffff);
+		JVMHelp.wr("\r\n  core1 A: ");
+		probeSample();
+		for (int i = 0; i < 200000; i++) { }
+		JVMHelp.wr("  core1 B: ");
+		probeSample();
+		// HAND THE PORT BACK. Every read above uses index 0, the not-reading
+		// sentinel, so nothing is actually held — but the selector is a register
+		// and leaving a nonzero index in it steals the target's read port
+		// forever. Clearing it unconditionally costs one write and removes the
+		// question.
+		Native.wr(0, Const.IO_ROOT_SEL);
+	}
 
 	static int churnUntilMinor(int budget, int wanted) {
 		if (!generational()) return 0;
@@ -188,6 +325,13 @@ public class SmpDeepFlush implements Runnable {
 		//
 		// It costs the test nothing -- core 1 parks deep either way, and core 0
 		// collects afterwards.
+		// THE CONTROL, taken while core 1 is provably still parked. Two reads
+		// back to back so the pair brackets the microcode loop; no printing, so
+		// the release is not delayed. See bootPc0/bootPc1.
+		bootPc0 = GC.rootRead(13, Const.ROOT_WHAT_STACK, 0);
+		bootPc1 = GC.rootRead(13, Const.ROOT_WHAT_STACK, 0);
+		Native.wr(0, Const.IO_ROOT_SEL);
+
 		Native.wr(1, Const.IO_SIGNAL);
 
 		// The give-up bound is 400 passes on hardware, where 40M spin iterations
@@ -212,6 +356,7 @@ public class SmpDeepFlush implements Runnable {
 			else if (c1Mark == DEPTH) JVMHelp.wr("STARTED, still at the TOP frame\r\n");
 			else if (c1Mark > 0) JVMHelp.wr("DESCENDING, stuck mid-recursion\r\n");
 			else JVMHelp.wr("reached the BOTTOM but never published\r\n");
+			probeCore1();
 			JVMHelp.wr("SmpDeepFlush INCONCLUSIVE\r\n");
 			return;
 		}
