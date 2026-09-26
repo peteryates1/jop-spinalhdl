@@ -7209,11 +7209,39 @@ Other findings in the same group, each verified:
   running lock owner) and a parked core is the trigger that remains. One story
   covers both, and the fix is incomplete rather than wrong.
 
-  **It is testable WITHOUT reproducing the full-system fault**, which is what
-  has blocked progress — the whole-machine sim never reproduces it. A targeted
-  testbench that asserts `gcFlushReq` at a core sitting in its boot loop, and
-  asserts `rotState` always returns to `IDLE`, exercises the FSM directly in
-  seconds and either hangs or proves the walk terminates.
+  **BUILT, AND IT EXONERATES THE FSM IN ISOLATION** —
+  `jop.pipeline.StackCacheFlushTest`, 4 tests, all passing in ~4 seconds with
+  no board:
+
+  | test | covers |
+  |---|---|
+  | every dirty-bank combination | all 7 non-empty subsets of the 3 banks |
+  | phase sweep | 40 alignments of `gcFlushReq` against the write stream |
+  | writes across the flush | the LIVELOCK arm — does not happen |
+  | memory stalls mid-transfer | 8 stall depths — the handshake survives |
+
+  So the flush walk TERMINATES: with several dirty banks, at any request phase,
+  with the stack still being written, and with the command channel starved.
+  That settles defect B's undecided question — livelock versus stuck
+  `FLUSH_WAIT` — in favour of NEITHER, at this level, and it weakens the
+  hypothesis above rather than confirming it. Worth more than a confirmation
+  would have been: seconds and no hardware, against a 37 %-of-the-time board
+  reproduction.
+
+  **What the testbench does NOT model is now the suspect.** Its DMA owns a
+  PRIVATE single-cycle RAM; the real one shares the cluster ARBITER with the
+  other core's traffic and is backed by SDRAM. Starving the command channel did
+  not break it, but arbitration is not back-pressure — a response lost or
+  misrouted under contention would be a different failure, and the arbiter is
+  where items 5 and 31 already say the design is under most stress.
+
+  **Two corrections made while building it**, both of which would have made the
+  test lie about its own coverage: `dirAddr` is ramWidth = 8 bits ("Direct RAM
+  address from decode (scratch only)"), so the first version could only ever
+  dirty BANK 0 while claiming three — real multi-bank coverage needs the AR
+  path (`din -> A -> AR`, `selWra = 5`), which is `spWidth` wide; and Verilator
+  rejects an instance named `stack` as a C++ reserved word, which is presumably
+  why `JopPipeline` calls it `stackStg`.
 
   **Three measurement errors were made getting here, all mine:** `DEPTH 4` was
   chosen as "241 < 256" and is actually sp 261 against an `spOv` threshold of
