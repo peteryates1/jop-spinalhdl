@@ -7160,10 +7160,54 @@ Other findings in the same group, each verified:
   that `wukongSmp` at TWO cores is outside the validated set — Wukong DDR3 SMP
   is validated at 4/6/8 — so the allocation stall may be its own defect.
 
-  **A better control is `ep4cgx150Smp`**: SDR, no stack cache (the board flag
-  is false), and validated at 1/4/8/12 cores, so a failure there would be the
-  fault and not the vehicle. Different board and toolchain, so it costs a
-  Quartus build.
+  ### THE CONTROL ANSWERED IT — the STACK CACHE is implicated, 2026-09-26
+
+  `ep4cgx150Smp 2 60` — SDR, **no stack cache** (the board flag is false), no
+  spill region, no flush, timing clean (+1.895 ns worst corner), and on a board
+  validated at 1/4/8/12 cores. Same app, same paired A/B, `DEPTH 2`:
+
+  | build | gc-then-release | release-then-gc |
+  |---|---|---|
+  | **SDR + stack cache** (Wukong) | **5 failed of 6** | 0 failed of 6 |
+  | **no stack cache** (EP4CGX150) | **0 failed of 9** | 0 failed of 7 |
+
+  Fisher one-sided on the gc-first arms, **p = 0.0020**.
+
+  **So the startup fault is the FLUSH of a parked core, not the HALT of one.**
+  A build with no flush at all shows zero failures in exactly the arm where the
+  stack-cache build fails 83 % of the time.
+
+  **This contradicts the reasoning behind the fix.** Post-fix
+  `gcFlushReq = gcHaltActive && halted`, and a core parked in the microcode
+  `cpux_loop` owns no lock, so it IS halted and therefore IS flushed —
+  legitimately, by the new rule. Flushing a HALTED core was assumed safe. It is
+  not, when that core is parked in microcode rather than in Java. The fix
+  closed the case where the core was never halted; this is the case where it
+  is.
+
+  **A mechanism worth testing, and only a hypothesis:** `rotBusy` drives
+  `extStall`, which freezes the fetch PC and IR outright
+  (`JopPipeline.scala:204`). If that freeze lands on the boot loop's
+  `IO_SIGNAL` read, the sampled value could be lost — which would be
+  intermittent, and would explain why the core never leaves a loop whose
+  release signal is a HELD level and therefore impossible to "miss" by
+  ordinary means.
+
+  **Three measurement errors were made getting here, all mine:** `DEPTH 4` was
+  chosen as "241 < 256" and is actually sp 261 against an `spOv` threshold of
+  **239** (`(1 << ramWidth) - 1 - 16` — the 16-word margin exists so the
+  overflow handler can run), so the first two control attempts measured STACK
+  OVERFLOW, not the fault; `make smp-program` re-enters the BUILD, so a loop
+  around it re-ran `quartus_map` and a 120 s timeout left the board
+  unprogrammed ("FPGA not responding"), where programming the `.sof` directly
+  takes 9 s; and `pkill -f` matched its own command line and killed the shell.
+
+  **Also found, incidentally:** `ep4cgx150Smp 2` at its DEFAULT 80 MHz misses
+  the Slow 1200mV 100C corner by **-0.155 ns**. The board Makefile leaves
+  `MHZ` empty, so a plain `make smp CORES=2` produces it. Not a regression —
+  the validated points are 1/4/8/12 cores at 60/60/50/36 MHz, and two cores at
+  80 was never among them — but it is an untested default that reads as
+  validated. 60 MHz closes with +1.895 ns.
 
   **THE DEPTH LIMIT REMAINS, and not for want of trying.** Past roughly
   `DEPTH 30` core 1 intermittently never reaches `main()` at all — 3 of 5 runs
