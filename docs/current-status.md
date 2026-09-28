@@ -7954,6 +7954,91 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-28 (FOUND AND FIXED) — THE FREEZE DESTROYED THE PENDING BRANCH
+TARGET. Two lines in `FetchStage`, red-proved in simulation, and the startup
+fault is explained end to end.**
+
+`brdly` and `jpdly` were the two registers the fetch-stage freeze did not hold:
+
+```scala
+when((pcwait && io.bsy) || io.extStall) {
+  pcMux := pc; romAddrReg := romAddrReg; ir := ir; pcwait := pcwait; pc := pc
+}   // brdly and jpdly NOT held  <- the defect
+```
+
+and leaving them free is not neutral, because `brdly := pc + ir(5 downto 0)` is
+**recomputed every cycle**. During a freeze it is recomputed from the HELD pc and
+the HELD ir — and the held ir is whichever instruction was in flight, which for a
+branch's delay slot is a `nop`, offset 0. So `brdly` becomes `pc + 0`, *"here"*.
+A branch latched before the freeze then applies to the address the core is
+already sitting at, and the next cycle falls through past the delay slots. **The
+branch is not delayed, it is destroyed.**
+
+Everything that looks like the branch mechanism stays intact, which is why this
+survived so long: `decode.io.br` IS held (`brReg` is gated by `when(!io.stall)`,
+`DecodeStage.scala:410`) and `pcMux := brdly` DOES fire when the freeze lifts.
+Only the target has been overwritten.
+
+**THE TRACE, from `MicrocodeParkLoopFreezeTest`** — the real park loop, the real
+serial microcode ROM, freeze asserted at cycle 2:
+
+```
+ 1  pc 0x015  ir 0x1b9  frozen 0  br 0    <- ir = the bz; pc in its delay slot
+ 2  pc 0x016  ir 0x100  frozen 1  br 1    <- br asserted, freeze begins, pc held
+ 3..9         ir 0x100  frozen 1  br 1    <- br stays high for the whole freeze
+10  pc 0x016  ir 0x100  frozen 0  br 1    <- freeze lifts, br STILL high
+11  pc 0x016  ir 0x100  frozen 0  br 0    <- br drops, pc UNCHANGED: target was 0x016
+12  pc 0x017                              <- falls through into the second read
+20  pc 0x01e  ir 0x185                    <- bz cpu0_load
+21            br 1                        <- correctly taken -> the downloader
+```
+
+**RED, then GREEN.** Before the fix: escapes to **0x017** — the second
+`io_signal` read — at phases 8, 18, 28 and 38, i.e. **period 10, one vulnerable
+cycle per lap of the nine-instruction loop**, and identically at freeze lengths
+1, 2, 3, 4, 8, 16 and 32. Length not mattering is the tell: the target is
+destroyed when the freeze BEGINS, not on the un-freeze cycle the old comment
+claimed replays correctly. After holding `brdly`/`jpdly`: **5 of 5 green.**
+
+**TWO CONTROLS, both of which pass, and they carry the argument:**
+
+- *No stimulus at all* — the park loop is a closed cycle, so the sweep is not
+  manufacturing escapes. The previous testbench's lesson was that a bench can be
+  confidently wrong about what it covers; this is the check for that.
+- *The HALT alone, no flush* — clean. `pcwait && io.bsy` can only freeze ON a
+  `wait` instruction, and no branch is ever in flight there, so for that arm
+  clobbering `brdly` is harmless. `extStall` freezes on ANY instruction, which is
+  why the stack cache is what exposed a latent bug in the SHARED freeze.
+
+That second control is the clean version of the `ep4cgx150Smp` comparison the
+entry below flags as confounded. The old control's answer was RIGHT —
+`ep4cgx150Smp` has `useStackCache = false`, so `stackRotBusy` never rises,
+`extStall` is never asserted and the bug cannot fire — but it reached it by
+changing board, toolchain, clock and memory controller at the same time. This
+arm changes one signal in one DUT.
+
+**WHAT IT EXPLAINS.** A parked core knocked out of `cpux_loop` into `cpu0_load`,
+the serial downloader, so core 1 never reaches `main()`: 6 of 7 runs
+gc-then-release, 0 of 11 release-then-gc. No corrupted data anywhere, which is
+what the read verification independently said (0 bad in ~2.7M checks per run).
+`jpc` 0, `exc` 0, `bmbOut` 0, `halt` not advancing — all consistent, because
+nothing was wrong except one register's value.
+
+**SCOPE.** Every stack-cache configuration has this, and so would any future user
+of `extStall`. The wait-stall arm is safe only by the accident that `wait` is the
+only instruction it can freeze on. Not yet validated on hardware: the fix needs a
+resynthesis and a rerun of the 6-of-7 arm, which is the remaining step.
+
+**STILL OPEN, and worth a look now the mechanism is known:** [item
+63](#item-63)'s one unexplained Wukong SDR startup crash in six runs is a
+candidate — same board family, same startup window — but nothing has been
+measured, so it is a candidate and not a diagnosis.
+
+**THE MICROCODE LATCH IS NO LONGER THE FIX** but is still worth hardening:
+`bz cpu0_load` at `jvm.asm:355` turns any transient into a permanent hang, and
+`bz cpux_loop` would make the second read a real debounce. That is defence in
+depth, to be judged on its own, not the repair.
+
 **2026-09-28 (later) — THE FLUSH *IS* INVOLVED, and the mechanism is a FROZEN
 BRANCH. The correction below over-corrected; the measurement it ordered caught
 that.**

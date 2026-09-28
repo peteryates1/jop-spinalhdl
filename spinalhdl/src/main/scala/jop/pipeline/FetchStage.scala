@@ -232,6 +232,36 @@ case class FetchStage(
     ir         := ir          // Hold IR
     pcwait     := pcwait      // Hold pcwait state (preserve, not force True)
     pc         := pc          // Hold PC
+    // HOLD THE PENDING BRANCH AND JUMP TARGETS TOO — status item 133.
+    //
+    // These were the two registers the freeze did not hold, and leaving them
+    // free is not neutral: `brdly := pc + ir(5..0)` is recomputed EVERY cycle,
+    // so during a freeze it is recomputed from the HELD pc and the HELD ir. The
+    // held ir is whichever instruction was in flight when the freeze landed —
+    // for a branch's delay slot that is a `nop`, offset 0 — so `brdly` becomes
+    // `pc + 0`, i.e. "here". A branch latched before the freeze then applies to
+    // the address the core is already sitting at, and the next cycle falls
+    // through to the instruction after the delay slots. The branch is not
+    // delayed, it is DESTROYED.
+    //
+    // `decode.io.br` survives (`brReg` is held by `when(!io.stall)`,
+    // DecodeStage.scala:410) and `pcMux := brdly` does fire when the freeze
+    // lifts, which is what made this so hard to see: everything that looks like
+    // the branch mechanism is intact and only its target has been overwritten.
+    //
+    // WHY THE WAIT-STALL ARM NEVER SHOWED IT. `pcwait && io.bsy` can only
+    // freeze ON A `wait` INSTRUCTION, and no branch is ever in flight there, so
+    // for that arm clobbering brdly is harmless. `extStall` freezes on ANY
+    // instruction — the comment above says so — which is why the stack cache is
+    // what exposed a latent bug in the shared freeze.
+    //
+    // ON HARDWARE this knocked a parked core out of the microcode `cpux_loop`
+    // and into `cpu0_load`, the serial downloader, so core 1 never reached
+    // main(): 6 of 7 runs on the Wukong SMP + stack-cache build. Red-proved by
+    // MicrocodeParkLoopFreezeTest, which drives the real park loop and sweeps
+    // the freeze across every cycle of it.
+    brdly      := brdly       // Hold pending branch target
+    jpdly      := jpdly       // Hold pending jump target
   }
 
   // ==========================================================================
