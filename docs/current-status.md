@@ -7954,6 +7954,67 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-28 (SCOPE CORRECTED, and TWO NEGATIVE RESULTS) — the branch bug needs
+an EXTERNALLY triggered freeze, so it is SMP-only. It is NOT this item's
+`DeepRecursion` failure and NOT [item 63](#item-63).**
+
+The entry below says "every stack-cache configuration has this". **That is too
+broad**, and two controls show why.
+
+**1. `DeepRecursion` was ALREADY GREEN before the fix.** The obvious next thought
+after finding the bug was that it also explained this item's headline failure —
+`DeepRecursion` returning the wrong value while rotation is structurally perfect
+(14 spills / 7 fills, `bankMismatches=0`), which is exactly what a lost branch
+looks like. Measured instead of assumed: `JopJvmTestsStackCacheBramSim` on
+`JvmTests/DeepAll`, run with the fix and then again with the two holds removed:
+
+```
+with the fix     DeepRecursion ok   spills=20 fills=10 maxSp=1905
+WITHOUT the fix  DeepRecursion ok   spills=20 fills=10 maxSp=1905
+```
+
+Byte-identical, same detection cycle (744309). So `DeepRecursion` was repaired by
+one of the September changes — victim-bank-by-address, the `spOv` routing, the
+spill bounds — and **not by this fix**. The hypothesis was wrong, and without the
+red control it would have been recorded as a second success.
+
+**2. WHY ORDINARY ROTATION IS SAFE, which is what that control really shows.**
+Rotation raises `rotBusy` too (`(needsRotation && !canInstantSwitch)` or any
+non-IDLE `rotState`), so the reasoning that "every stack-cache build rotates,
+therefore every stack-cache build is exposed" looked sound. It is not, and the
+phase sweep already contained the answer: exactly **ONE cycle in ten** of the park
+loop is vulnerable — the cycle with a branch in flight. A rotation freeze BEGINS
+on the stack access that triggered it, so it can never begin on that cycle. The
+freeze start is what destroys `brdly`, and rotation's start is synchronised to a
+non-branch instruction by construction.
+
+The stop-the-world flush is different precisely because it is **external**:
+`gcFlushReq` comes from another core's collector and is asynchronous to this
+core's instruction stream, so it can and does land on the branch cycle. That is
+the whole exposure.
+
+**3. SINGLE-CORE BUILDS CANNOT REACH IT AT ALL.** `JopCluster.scala:222-235`
+tie-offs a lone core's sync port, and `SyncOut.tieOff` sets
+`gcHaltActive := False` — *"single core: nothing to flush for"*
+(`CmpSync.scala:80`). `Sys.io.gcFlushReq := gcHaltActive && halted` is therefore
+false forever on every single-core configuration, `rotState` never enters
+`FLUSH_*`, and the only `extStall` source left is rotation, which point 2 shows is
+safe.
+
+**SO THE CORRECT SCOPE IS:** the DEFECT is latent in the shared fetch freeze and
+would bite any future asynchronous freeze source; the EXPOSURE today is **SMP +
+stack cache + the stop-the-world flush**. Nothing single-core is affected, which
+also means this fix should not be expected to change any single-core result.
+
+**AND THEREFORE [ITEM 63](#item-63) IS NOT THIS**, on two independent structural
+grounds rather than on a judgement call. `wukongSdram` is single-core, so
+`gcHaltActive` is hardwired false and no flush can ever run; and even had it been
+SMP, `DoAll` peaks at SP 216 against a 576-word resident window and never rotates.
+The corruption signature agrees: `#"` where `32` belongs is 0x23/0x22 against
+0x33/0x32, **the same bit dropped in two consecutive characters**, which is a
+sampling artefact — a lost branch would produce a wrong NUMBER, still printed as
+digits. Item 63 stays open on its own terms; it has not been explained.
+
 **2026-09-28 (HARDWARE-VALIDATED) — the startup fault is gone on the board, and
 the fix costs 0.213 ns of setup margin.**
 
