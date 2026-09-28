@@ -7954,6 +7954,62 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-28 (later) — THE FLUSH *IS* INVOLVED, and the mechanism is a FROZEN
+BRANCH. The correction below over-corrected; the measurement it ordered caught
+that.**
+
+Core 1's parked SP, read live off the board on three failing runs:
+**66, 66, 67.** `scratchSize` is 64 and is `require`d to be
+(`StackStage.scala:30,52` — fixed by the microcode), so bank 0 is 64..255 and a
+parked core's stack sits two or three words INSIDE it. `bankDirty(i) := True` on
+any pipeline write (`StackStage.scala:633`), and the park loop pushes the `ldi`
+constant and the `ldmrd` result and pops them every iteration. So bank 0 is
+dirty, `anyDirty` is true, the flush DOES run on a parked core, and `rotBusy` ->
+`extStall` IS asserted. The "flush may not be involved" note below is wrong.
+
+**THE RACE, and it predicts the rate.** Three facts that only matter together:
+
+- The halt reaches the core as `bsy` (`fetch.io.bsy := ... || io.memBusy || ...`,
+  `JopPipeline.scala:203`, and `memBusy` carries `sys.io.halted`,
+  `JopCore.scala:340`). `bsy` freezes the fetch stage ONLY at a `wait`
+  instruction — the freeze condition is `pcwait && io.bsy`
+  (`FetchStage.scala:229`). So a halted core keeps executing until it reaches a
+  `wait`.
+- `extStall := stackRotBusy` (`JopPipeline.scala:204`) freezes on **ANY**
+  instruction. Its own comment says so: *"Unlike wait-based stall, this can
+  freeze on any instruction"* (`FetchStage.scala:224-226`).
+- `io.gcFlushReq := io.syncIn.gcHaltActive && io.syncIn.halted` (`Sys.scala`),
+  so the flush starts the SAME cycle the halt lands, not after the core has
+  parked.
+
+The park loop is 0x0e..0x20 and its `wait`s are at 0x10/0x11, so a core halted
+anywhere in 0x12..0x16 is still walking toward them while `extStall` comes up.
+Five of the loop's nine slots are `ldmrd`/`nop`/`bz`/two delay slots — and
+`brdly`, the branch target, is a register that is NOT in the freeze's hold list
+(`FetchStage.scala:229-235` holds `pcMux`, `romAddrReg`, `ir`, `pcwait`, `pc`).
+Its inputs are held, so it is stable while frozen; whether the TAKEN branch
+survives the un-freeze is a precise cycle question, and the freeze comment
+asserts it does ("the frozen instruction replays") without a test.
+
+If it does not, the core falls through 0x15, 0x16 to 0x17, re-reads `io_signal`,
+gets the true zero, and `bz cpu0_load` at 0x1d is CORRECTLY taken. Every
+measurement fits: no corrupted data (0 bad in ~2.7M checks), pc in `rdy_poll`,
+`jpc` 0, `bmbOut` 0, `exc` 0, and ~60% per halt event, which is the right order
+for a 5-in-9 landing window.
+
+`decode.io.stall := stackRotBusy` (`JopPipeline.scala:205`) closes the obvious
+hole — decode freezes with fetch, so decode cannot walk past the branch while
+the PC is held.
+
+**THE DECISIVE TEST, and it needs no hardware and no synthesis.** Drive the REAL
+microcode park loop in a pipeline-level simulation and assert `extStall` at every
+cycle offset within it, asserting the PC never leaves the loop while `io_signal`
+reads 0. That is the same phase sweep `StackCacheFlushTest` does to the DMA,
+aimed at the PIPELINE instead — which is what that testbench should have been:
+its DUT is StackStage + DMA + RAM, with **no fetch stage and no branches at
+all**, so it could not have found this however long it ran.
+`JopPipelineTestRom` already exists as a host for exactly this kind of test.
+
 **2026-09-28 — THE READ HYPOTHESIS IS WRONG, AND SO IS THE TITLE ABOVE.**
 Two questions from the user broke it, and both were right.
 
