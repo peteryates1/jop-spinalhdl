@@ -7954,6 +7954,74 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-28 — THE READ HYPOTHESIS IS WRONG, AND SO IS THE TITLE ABOVE.**
+Two questions from the user broke it, and both were right.
+
+**1. "Core 1 gets a hardcoded cpu id 1, so 0x0b should not be possible."**
+Correct, and more strongly than the entry above argued. `IO_CPU_ID` is
+`io.rdData := B(cpuId, 32 bits)` (`Sys.scala:459`) -- a LITERAL in the read mux,
+fixed at elaboration. There is no memory, no bus and no register in that path to
+corrupt. 0x0b is STRUCTURALLY impossible, not improbable; the arm-asymmetry
+argument reached the right answer for a much weaker reason.
+
+**2. "How do we get that bad read, and do we see bad reads elsewhere?"**
+The read path cannot corrupt the way the entry above claimed. `IO_SIGNAL` reads
+`syncIn.s_out`, which is `io.syncOut(i).s_out := io.syncIn(0).s_in`
+(`CmpSync.scala:178`) -- a PURELY COMBINATIONAL broadcast of core 0's
+`signalReg`, no state and no arbitration -- and an I/O read never leaves the
+core, `memCtrl` decodes it locally. **There is no SDRAM, no arbiter and no DMA
+response anywhere in that read's path**, so "same shape as the
+`AlteraSdramAdapter` bugs" was wrong: that comparison needs a shared response
+channel and there is none here.
+
+**AND A HALTED CORE'S READS ARE CLEAN, measured.** `SmpDeepFlush`'s core 1 now
+verifies four known values every pass of its deep-frame wait, which is exactly
+the window in which core 0 collects:
+
+| runs | reads/run | bad IO_CPU_ID | bad IO_SIGNAL (rd) | bad (rdMem) | bad mem word |
+|---|---|---|---|---|---|
+| 5 | 669k-803k | 0 | 0 | 0 | 0 |
+
+Exposure is **6 minor GCs per run** -- six halt-and-flush events -- against ~2.7M
+checks. The failing window has ~2 halts and fails 6 of 7 runs. Same halts, same
+core, same flush, and a Java read loop never mis-reads.
+
+**WHAT SURVIVES: A LOST BRANCH, NOT A BAD VALUE.** Every JOP branch carries two
+delay slots -- the `nop`s at 0x15/0x16. If the `bz` at 0x14 or one of its delay
+slots is swallowed by a freeze, the core falls through to 0x17, re-reads
+`io_signal`, gets the TRUE zero, and `bz cpu0_load` at 0x1d is CORRECTLY taken.
+Identical destination, no corrupted data anywhere. That is the family
+`extStall := stackRotBusy` makes possible and which an earlier note in this item
+suspected before the read story replaced it.
+
+**THE FLUSH MAY NOT BE INVOLVED AT ALL, which makes the heading above wrong.**
+The FSM is gated `io.gcFlushReq && anyDirty` (`StackStage.scala:872`) and a clean
+cache reports `io.gcFlushDone := !anyDirty && rotState === IDLE` immediately
+(:813), with `rotBusy` never asserted and therefore no `extStall`. A core parked
+in the microcode `cpux_loop` has barely touched its stack, and microcode locals
+live in scratch (0-63), exempt from the cache. If core 1's parked SP is inside
+scratch then NOTHING is dirty, no flush runs, and what is left in the failing
+window is the HALT alone -- `sys.io.halted` OR'd into `memBusy`
+(`JopCore.scala:340`). The probe now samples that SP.
+
+**AND MY OWN TESTBENCH MISSED THE CASE THAT MATTERS.** `StackCacheFlushTest`
+sweeps "all 7 non-empty subsets" of dirty banks. The failing configuration is
+**zero dirty banks**, which it never tests.
+
+**THE STACK-CACHE CONTROL CARRIES A CONFOUND.** The 0-of-9 arm was
+`ep4cgx150Smp 2 60`: different board, different toolchain, different clock,
+different memory controller. That is a BOARD comparison, not a stack-cache
+control, so "stack-cache-dependent, p = 0.002" overstates what was measured --
+the same error [comparison-preset-confounds] already records. The honest control
+is the Wukong with `useStackCache` off, same everything else, and it needs a
+synthesis.
+
+**What this does NOT change:** core 1 demonstrably ends up executing `rdy_poll`
+inside `cpu0_load`, having got there before it was released, and the latch at
+`jvm.asm:355` that turns any transient into a permanent hang is real either way.
+The prescription stands, but it is a MITIGATION, not the fix -- it stops a
+transient from being fatal without saying what the transient is.
+
 **WHAT THIS CORRECTS IN THIS DOCUMENT.** The note above proposing a per-core
 UART console for core 1 is superseded: it would have cost a preset, an XDC pin
 (`jp1_txd` is constrained by NOTHING today -- it appears only in

@@ -88,6 +88,47 @@ public class SmpDeepFlush implements Runnable {
 	 * the measurement would move the rate it is measuring.
 	 */
 	static int bootPc0, bootPc1;
+	/** Core 1's live SP while still parked — see the sample site. */
+	static int bootSp;
+	/**
+	 * DO WE SEE BAD READS ELSEWHERE? -- the question the localisation raised and
+	 * could not answer.
+	 *
+	 * The startup fault needs core 1, parked in the microcode `cpux_loop`, to
+	 * read `io_signal` as NONZERO while it is still zero. `io_signal` reads
+	 * `syncIn.s_out`, which is `io.syncOut(i).s_out := io.syncIn(0).s_in` -- a
+	 * PURELY COMBINATIONAL broadcast of core 0's `signalReg` (CmpSync:178) --
+	 * and an I/O read never leaves the core, so there is no SDRAM, no arbiter
+	 * and no DMA response anywhere in that path. Whatever goes wrong happens
+	 * INSIDE the core, between `stmra` and `ldmrd`.
+	 *
+	 * So: does a halted core mis-read at all? These count it. Core 1 checks
+	 * three values it already knows, in its deep frame, across every collection
+	 * core 0 runs -- which is exactly when it is halted and its banks flushed:
+	 *
+	 *   IO_CPU_ID  -- `B(cpuId, 32 bits)`, a LITERAL in the read mux
+	 *                 (Sys.scala:459). Hardwired 1 on core 1, so any other value
+	 *                 is an I/O read that did not deliver its own mux output.
+	 *                 This is the cleanest detector in the machine.
+	 *   IO_SIGNAL  -- the register actually implicated, 1 by now. Read BOTH ways
+	 *                 because `Native.rd` and `Native.rdMem` are different
+	 *                 microcode sequences and the boot loop uses the latter's
+	 *                 shape (`stmra`/`wait`/`wait`/`ldmrd`); if one is clean and
+	 *                 the other is not, that alone localises it.
+	 *   word 1     -- a real EXTERNAL memory read, snapshotted once and then
+	 *                 re-read. Separates "I/O reads are fine, memory reads are
+	 *                 not" from the reverse. It is `mp`, written at boot by
+	 *                 cpux_boot and constant thereafter.
+	 *
+	 * A nonzero count is the defect caught in the act. All zero across millions
+	 * of reads would mean a halted core's ORDINARY reads are sound and the fault
+	 * needs the specific instant the halt lands mid-read, which the park loop
+	 * hits almost every time because it is nothing but back-to-back reads.
+	 */
+	static volatile int badCpuId, badSigRd, badSigMem, badWord1, verifyLoops;
+	/** Snapshot of word 1, taken by core 1 before the collections start. */
+	static volatile int word1Ref;
+
 
 	static int cpuId;
 
@@ -163,6 +204,8 @@ public class SmpDeepFlush implements Runnable {
 		wrRaw(e & 0xffff);
 		JVMHelp.wr("excType ");
 		wrRaw(b & 0xff);
+		JVMHelp.wr("sp ");
+		wrRaw(GC.rootRead(1, Const.ROOT_WHAT_SP, 0));
 		JVMHelp.wr("\r\n");
 	}
 
@@ -203,6 +246,8 @@ public class SmpDeepFlush implements Runnable {
 		wrRaw(bootPc0 & 0xffff);
 		wrRaw(bootPc1 >>> 16);
 		wrRaw(bootPc1 & 0xffff);
+		JVMHelp.wr("bootSp ");
+		wrRaw(bootSp);
 		JVMHelp.wr("\r\n  core1 A: ");
 		probeSample();
 		for (int i = 0; i < 200000; i++) { }
@@ -286,10 +331,36 @@ public class SmpDeepFlush implements Runnable {
 		probe.magic = MAGIC;
 		c1Sp = Native.getSP();
 		c1Handle = Native.toInt(probe);
+		word1Ref = Native.rdMem(1);
 		ready = 1;
-		while (done == 0) { }
+		// WAS `while (done == 0) { }`. Same wait, same deep frame, but every pass
+		// re-checks three known values, so core 0's collections are now a
+		// measurement instead of an empty spin. No allocation: this frame holds
+		// the only reference to `probe`, and allocating here would change the
+		// very collection under test.
+		verifyDeep();
 		magicSeen = probe.magic;      // survived, or did not
 		return 0;
+	}
+
+	/**
+	 * Core 1's wait, instrumented. Runs in the DEEPEST frame, so the reference
+	 * under test stays live and the flush that copies this frame out is the one
+	 * being measured. Kept separate from run() for JOPizer's 512-byte cap.
+	 */
+	static void verifyDeep() {
+		int n = 0, bc = 0, bs = 0, bm = 0, bw = 0;
+		int ref = word1Ref;
+		while (done == 0) {
+			if (Native.rdMem(Const.IO_CPU_ID) != 1) bc++;
+			if (Native.rd(Const.IO_SIGNAL) == 0) bs++;
+			if (Native.rdMem(Const.IO_SIGNAL) == 0) bm++;
+			if (Native.rdMem(1) != ref) bw++;
+			n++;
+		}
+		// Published once at the end rather than per pass: a volatile store every
+		// iteration would be a memory write inside the window being measured.
+		verifyLoops = n; badCpuId = bc; badSigRd = bs; badSigMem = bm; badWord1 = bw;
 	}
 
 	static void core0() {
@@ -330,6 +401,21 @@ public class SmpDeepFlush implements Runnable {
 		// the release is not delayed. See bootPc0/bootPc1.
 		bootPc0 = GC.rootRead(13, Const.ROOT_WHAT_STACK, 0);
 		bootPc1 = GC.rootRead(13, Const.ROOT_WHAT_STACK, 0);
+		// CAN THE FLUSH EVEN BE INVOLVED? The flush FSM only starts on
+		// `gcFlushReq && anyDirty` (StackStage.scala:872) and a clean cache
+		// reports `gcFlushDone` immediately with `rotBusy` never asserted
+		// (:813), so a core whose stack has not left the 64-word scratch area
+		// is never flushed and never stalled by one. Core 1 parked in the
+		// microcode cpux_loop has barely touched its stack. If this SP is at or
+		// below the scratch size then "the flush of a parked core" is the wrong
+		// title for this fault and what is left is the HALT, which is OR'd into
+		// memBusy (JopCore.scala:340).
+		//
+		// Target 1 with INDEX 0 reads core 1's live SP register and touches no
+		// RAM port: gcRootRamAddr(1) is sel(7..0) = 0, the not-reading
+		// sentinel. (SmpGcTest gates its SP read behind PROBE_RUNNING_CORE
+		// only because it is grouped with stack-WORD reads, which do steal.)
+		bootSp = GC.rootRead(1, Const.ROOT_WHAT_SP, 0);
 		Native.wr(0, Const.IO_ROOT_SEL);
 
 		Native.wr(1, Const.IO_SIGNAL);
@@ -405,6 +491,22 @@ public class SmpDeepFlush implements Runnable {
 		JVMHelp.wr("core1 read back magic ");
 		wrInt(magicSeen);
 		JVMHelp.wr(magicSeen == MAGIC ? " OK\r\n" : " WRONG\r\n");
+
+		// DID A HALTED CORE EVER MIS-READ? See the counter declarations. Printed
+		// unconditionally, including the exposure: "0 bad" means nothing without
+		// the number of reads it is 0 out of.
+		JVMHelp.wr("core1 reads ");
+		wrInt(verifyLoops);
+		JVMHelp.wr(" bad: cpuId ");
+		wrInt(badCpuId);
+		JVMHelp.wr(" sigRd ");
+		wrInt(badSigRd);
+		JVMHelp.wr(" sigMem ");
+		wrInt(badSigMem);
+		JVMHelp.wr(" word1 ");
+		wrInt(badWord1);
+		JVMHelp.wr(badCpuId + badSigRd + badSigMem + badWord1 == 0
+				? " (all clean)\r\n" : " *** MIS-READ ***\r\n");
 
 		// Banks are 64..255 / 256..447 / 448..639, so SP past 256 means the
 		// flush had to walk MORE THAN ONE dirty bank -- the loop that every
