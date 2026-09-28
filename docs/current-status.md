@@ -7954,6 +7954,67 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-28 (HARDWARE-VALIDATED) — the startup fault is gone on the board, and
+the fix costs 0.213 ns of setup margin.**
+
+`wukongSdrSmp 2 75 baud=1000000`, the same board and the same failing
+configuration, with the fix in.
+
+**TIMING FIRST**, because a build can print the right thing while missing timing:
+
+| | baseline | with the fix | delta |
+|---|---|---|---|
+| WNS | +0.456 ns | **+0.243 ns** | **-0.213 ns** |
+| WHS | +0.070 ns | +0.046 ns | -0.024 ns |
+| Slice LUTs | 15,046 | 15,039 | -7 |
+| Slice Regs | 12,626 | 12,626 | 0 |
+
+MET, so it closes. Area is unchanged — registers identical, LUTs slightly DOWN —
+so the cost is routing on the `pcMux` path, not logic. **The remaining margin is
+thin and worth re-checking wherever this is enabled at a higher clock or a higher
+core count**; [item 8](#item-8) records this family closing at +0.001 ns and
+failing one run in seven.
+
+**THE MEASUREMENT.** `SmpDeepFlush`, paired A/B, arm chosen per run from
+`IO_US_CNT`:
+
+| arm | pre-fix | post-fix |
+|---|---|---|
+| gc-then-release | **6 of 7 FAILED** | **0 of 13** |
+| release-then-gc | 0 of 11 | 0 of 11 |
+
+Fisher one-sided on the gc-first arms, 6/7 against 0/13: **p = 1.8e-4**.
+
+**THE A/B IS LAYOUT-PERFECT, which is unusual here.** The relinked
+`SmpDeepFlush.jop` is **byte-identical** to the image the pre-fix runs used
+(`cmp` clean), so the only difference between the two experiments is the
+bitstream's RTL — not the image, the board, the clock, the baud or the arm
+selection. Every earlier attempt at this comparison had a confound of some kind;
+this one has none.
+
+All 24 runs parked core 1 at sp 191 and kept the read verification clean
+(~800k iterations x 4 checks per run, 0 bad), which is consistent with a fault
+that never corrupted data.
+
+**THE ALL-CORES REGRESSION**, because the fix touches the fetch stage of EVERY
+configuration and "the fault is gone" is only half the claim. `SmpGcTest` through
+`hw_verify.py`, 3 runs, `timing=MET crash=0 exit=True` on each:
+
+```
+STACKROOT: ready 1 after 0 spins      <- where it used to hang forever
+R0..R7  lost 0  haltLeak 0  haltWait 355
+minors 10 verified 192 errors 0 caught=0@0,
+SMPGC OK
+```
+
+`sbt test` 689/689 and `make check-build` green before any of this.
+
+**STILL WORTH DOING.** All 24 runs report "one bank only" because `DEPTH = 2` —
+chosen to stay under the `spOv` threshold of 239 while the fault was being
+measured. The multi-bank and rotation coverage this app was written for (sp 1171,
+three banks plus rotation) was validated separately BEFORE the fix and should be
+re-run now, since the fix changes the freeze that coverage exercises.
+
 **2026-09-28 (FOUND AND FIXED) — THE FREEZE DESTROYED THE PENDING BRANCH
 TARGET. Two lines in `FetchStage`, red-proved in simulation, and the startup
 fault is explained end to end.**
