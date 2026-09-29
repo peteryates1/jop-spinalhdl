@@ -501,6 +501,111 @@ class MicrocodeParkLoopFreezeTest extends AnyFunSuite {
       "the freeze destroyed the pending JUMP target (jpdly):\n" + wrong.mkString("\n"))
   }
 
+  /**
+   * IS THE FREEZE TRANSPARENT? — strictly stronger than the sweeps below.
+   *
+   * Those assert the pc never leaves the SET of addresses the loop visits, which
+   * a branch to the wrong address INSIDE that set passes. 0x0e and 0x0f are both
+   * in the set, so an off-by-one target is invisible to them. Given the fault
+   * still reproduces at ~1 in 6 on a deep stack with those sweeps green, a test
+   * they can pass while the machine misbehaves is the first thing to replace.
+   *
+   * THE PROPERTY. A freeze may only insert idle cycles. So the sequence of pcs
+   * observed on NON-FROZEN cycles must be identical to the sequence from a run
+   * with no freeze at all — not a permutation, not a subset, identical.
+   *
+   * That catches every way a freeze can corrupt control flow: a lost branch, a
+   * branch to a stale target, an off-by-one from a pc that advanced during the
+   * un-freeze, a dropped dispatch. It needs no knowledge of which register is at
+   * fault, which is the point — the earlier tests each encoded a specific
+   * mechanism and only found the mechanism they encoded.
+   *
+   * READS ARE SERVED FROM A LATCHED ADDRESS, every cycle. Serving only on the
+   * cycle `memCtrl.rd` fires is what made the first jump test lie: across a long
+   * freeze the `stmra` fires, the core waits, and the `ldmrd` lands much later
+   * reading whatever the input then holds. A latched address driven continuously
+   * is timing-independent, which a transparency test must be or it measures its
+   * own stimulus.
+   */
+  private def transparencyTrial(phase: Int, refSeq: Seq[Int]): Either[String, String] = {
+    val seq = scala.collection.mutable.ArrayBuffer[Int]()
+    var frozeAtAll = false
+    compiled.doSim(s"transp_p$phase") { dut =>
+      val lastAddr = Array(0)
+      def serve(): Unit = {
+        if (dut.io.memRd.toBoolean) lastAddr(0) = dut.io.aout.toLong.toInt
+        dut.io.memRdData #= (if (lastAddr(0) == IO_CPU_ID) BigInt(1) else BigInt(0))
+      }
+      dut.clockDomain.forkStimulus(10)
+      dut.io.memRdData #= 0
+      dut.io.memBusy #= false; dut.io.gcFlushReq #= false
+      dut.io.dmaBusy #= false; dut.io.dmaDone #= false
+      dut.clockDomain.waitRisingEdge(5)
+      for (_ <- 0 until 400) { serve(); dut.clockDomain.waitRisingEdge() }
+
+      val st = Array(0)
+      for (_ <- 0 until phase) {
+        if (!dut.pipeline.fetch.io.frozen.toBoolean) seq += dut.io.pc.toInt
+        stepDma(dut, st, 6); serve(); dut.clockDomain.waitRisingEdge()
+      }
+      dut.io.memBusy #= true; dut.io.gcFlushReq #= true
+      var g = 0
+      while (dut.io.bankDirty.toInt != 0 && g < 3000) {
+        if (dut.pipeline.fetch.io.frozen.toBoolean) frozeAtAll = true
+        else seq += dut.io.pc.toInt
+        stepDma(dut, st, 6); serve(); dut.clockDomain.waitRisingEdge(); g += 1
+      }
+      dut.io.memBusy #= false; dut.io.gcFlushReq #= false
+      for (_ <- 0 until 500) {
+        if (dut.pipeline.fetch.io.frozen.toBoolean) frozeAtAll = true
+        else seq += dut.io.pc.toInt
+        stepDma(dut, st, 6); serve(); dut.clockDomain.waitRisingEdge()
+      }
+    }
+    if (!frozeAtAll) Left(s"phase $phase: never froze")
+    else {
+      val n = math.min(seq.length, refSeq.length)
+      val i = (0 until n).find(k => seq(k) != refSeq(k))
+      i match {
+        case None => Right("")
+        case Some(k) =>
+          val from = math.max(0, k - 4)
+          Left(f"phase $phase%2d: diverges at step $k%4d\n" +
+               f"       ref  ${refSeq.slice(from, k + 6).map(v => f"0x$v%03x").mkString(" ")}\n" +
+               f"       got  ${seq.slice(from, k + 6).map(v => f"0x$v%03x").mkString(" ")}")
+      }
+    }
+  }
+
+  test("THE FREEZE MUST BE TRANSPARENT: same pc sequence, freeze or no freeze") {
+    // The reference: no freeze at all, same stimulus, same length.
+    val refSeq = scala.collection.mutable.ArrayBuffer[Int]()
+    compiled.doSim("transp_ref") { dut =>
+      val lastAddr = Array(0)
+      def serve(): Unit = {
+        if (dut.io.memRd.toBoolean) lastAddr(0) = dut.io.aout.toLong.toInt
+        dut.io.memRdData #= (if (lastAddr(0) == IO_CPU_ID) BigInt(1) else BigInt(0))
+      }
+      dut.clockDomain.forkStimulus(10)
+      dut.io.memRdData #= 0
+      dut.io.memBusy #= false; dut.io.gcFlushReq #= false
+      dut.io.dmaBusy #= false; dut.io.dmaDone #= false
+      dut.clockDomain.waitRisingEdge(5)
+      for (_ <- 0 until 400) { serve(); dut.clockDomain.waitRisingEdge() }
+      for (_ <- 0 until 1400) {
+        if (!dut.pipeline.fetch.io.frozen.toBoolean) refSeq += dut.io.pc.toInt
+        serve(); dut.clockDomain.waitRisingEdge()
+      }
+    }
+    assert(refSeq.length > 800, s"reference too short (${refSeq.length})")
+
+    val bad = (0 until 24).map(p => transparencyTrial(p, refSeq.toSeq)).collect {
+      case Left(m) => m
+    }
+    assert(bad.isEmpty,
+      s"the freeze is NOT transparent (${bad.length} of 24 phases):\n" + bad.take(6).mkString("\n"))
+  }
+
   test("a parked core stays parked across a stop-the-world flush, at every phase") {
     // The loop is nine instructions and the freeze can land on any of them, so
     // the sweep has to cover more than one lap — 40 cycles is four.

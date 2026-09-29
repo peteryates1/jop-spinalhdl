@@ -7954,6 +7954,69 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-29 (LATER) — "ONCE THE STACK IS DEEP" IS WRONG TOO, and the failing
+run's own probe said so. The residual is ~1 in 19 and depth has nothing to do with
+it.**
+
+Three things the entry below gets wrong, all in the explanation rather than the
+measurement:
+
+1. **The depth mechanism is contradicted by the data already in hand.** It claims
+   DEPTH 30 gives "three dirty banks, three flush passes, roughly three times the
+   freeze windows". But the failing run reports **`bootSp 000066`** — core 1 is
+   parked in `cpux_loop` with a SHALLOW stack, one dirty bank, exactly as at
+   DEPTH 2. A core that never reaches `main()` never runs its recursion, so DEPTH
+   cannot change its flush. The mechanism was invented to explain a number.
+2. **The number does not need explaining.** 1 of 6 against 0 of 13 is Fisher
+   one-sided **p = 0.32**. The two are entirely consistent with one underlying
+   rate; there is no depth effect to account for.
+3. **And that comparison carries this item's own confound.** DEPTH is a
+   compile-time constant, so the two arms are DIFFERENT IMAGES — and this item
+   records that the fault's rate depends on image LAYOUT, which is why the paired
+   A/B was built to randomise the arm WITHIN one image. Comparing two images
+   reintroduces exactly what that design removes.
+
+**WHAT IS ACTUALLY ESTABLISHED:**
+
+- The fix works. Pre-fix 6 of 7 against combined post-fix **1 of 19**, Fisher
+  one-sided **p = 2.0e-4**.
+- **The residual is real but small: one failure in 19 post-fix gc-first runs,
+  ~5%.** Not zero, so something remains. Not depth-dependent.
+- **The fetch freeze is now transparent for the park loop**, and that is verified
+  by a property with teeth rather than by inspection: the new
+  "THE FREEZE MUST BE TRANSPARENT" test requires the pc sequence on non-frozen
+  cycles to be IDENTICAL to an unfrozen reference, and with `brdly` removed it
+  red-proves the known bug at 2 of 24 phases with the divergence printed:
+
+  ```
+  ref  ... 0x016 0x00e 0x00f ...   <- branch taken, 0x016 -> 0x00e
+  got  ... 0x016 0x016 0x017 ...   <- branch lost, repeats then falls through
+  ```
+
+  With the fix in, all 24 phases match. This replaces the earlier sweeps'
+  weakness: they assert the pc stays within the SET of loop addresses, which a
+  branch to the wrong address inside that set passes.
+
+**WHAT THE TRANSPARENCY PROPERTY CANNOT SEE, and it is now the leading
+candidate.** It supplies `memRdData` itself, so the value delivered to `ldmrd` is
+the testbench's, not the DUT's. A spurious read result — specifically when a halt
+lands between the `stmra` at 0x0f and the `ldmrd` at 0x12 — would take core 1 out
+of the park loop with the pc sequence never misbehaving, and this DUT cannot
+produce or detect it. The read verification done earlier does NOT cover it: that
+ran in Java, in a RUNNING core's deep frame, 0 bad in ~2.7M checks, and never
+exercised the park loop's stmra-immediately-before-a-halt pattern.
+
+**THE NEXT VEHICLE IS A LEVEL UP.** `JopCore` rather than `JopPipeline`, so
+`BmbMemoryController` and `Sys` are inside the DUT and the read path is the
+design's rather than the harness's. Then the same phase sweep over a halt arriving
+mid-read, asserting the value `ldmrd` receives equals what `Sys` presented.
+
+**AND A PATTERN WORTH NAMING**, three times in one session: a real delta
+(0.213 ns; 1-of-6 vs 0-of-13) got a plausible mechanism attached to it before
+anyone checked whether the delta needed one. Both times the refuting evidence was
+already collected. The rule that keeps being relearned: quantify the difference
+before explaining it.
+
 **2026-09-29 — THE FIX IS NOT COMPLETE. The startup fault still reproduces at
 1 in 6 once the stack is DEEP, and the "gone on the board" claim below is wrong.**
 
