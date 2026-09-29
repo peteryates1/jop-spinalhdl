@@ -7954,6 +7954,71 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-29 — THE FIX IS NOT COMPLETE. The startup fault still reproduces at
+1 in 6 once the stack is DEEP, and the "gone on the board" claim below is wrong.**
+
+Re-running the multi-bank/rotation coverage on the fixed freeze — `DEPTH = 30`,
+sp 1171, three banks plus rotation, which is what this app was written for — put
+the fault back:
+
+| configuration | gc-first runs | failed |
+|---|---|---|
+| pre-fix, DEPTH 2 | 7 | **6** |
+| post-fix, DEPTH 2 | 13 | 0 |
+| post-fix, **DEPTH 30** | 6 | **1** |
+| post-fix, DEPTH 30, release-first | 10 | 0 |
+
+The failing run carries the SAME signature, so this is the same defect and not a
+new one:
+
+```
+core 1 never parked. never reached main()
+bootPc 000053 000069  bootSp 000066   <- 0x35, 0x45: already in rdy_poll
+core1 A: pc 000068 jpc 0 halt 358526 bmbOut 0 exc 0 sp 67
+core1 B: pc 000056 jpc 0 halt 358526 bmbOut 0 exc 0 sp 65
+```
+
+pc inside `rdy_poll` BEFORE the release, moving between samples, no exception, no
+lost bus response, `jpc` 0. Core 1 is in the downloader again.
+
+**WHY DEPTH MATTERS, and why the DEPTH 2 result was not enough.** At DEPTH 2 core
+1's stack is sp 191 — bank 0 only, so ONE dirty bank and ONE flush pass per halt.
+At DEPTH 30 it is sp 1171: three dirty banks, three flush passes, plus rotation.
+Roughly three times the freeze windows per halt, so a small residual per-freeze
+probability becomes visible. **0 of 13 at DEPTH 2 was not evidence of a complete
+fix; it was evidence that the shallow case is a weak detector.** The deep
+configuration is the sensitive one and should be the vehicle from here.
+
+**WHAT IS STILL TRUE.** Fisher one-sided on pre-fix 6/7 against the combined
+post-fix 1/19 gives **p = 2.0e-4**, so holding `brdly` removed the dominant
+vulnerable cycle — the phase sweep's one-in-ten — and that part is real,
+red-proved and hardware-measured. What is wrong is only the word "gone".
+
+**WHAT TO SUSPECT NEXT**, in order of how cheaply it can be tested:
+
+- **`jpdly`, the untested half.** Held by symmetry, and two vehicles could not
+  arm a red proof for it (see the ignored test in
+  `MicrocodeParkLoopFreezeTest`). A deeper stack executes more microcode during
+  each freeze, so a frozen `jmp` is likelier here than in the shallow case.
+- **`jpaddr`/`jfetch`, the bytecode dispatch target.** It has the HIGHEST
+  priority in the pcMux and is not in the freeze's hold list either.
+  `bcfetch.io.stall := fetch.io.frozen` is supposed to hold `jpc`, `jinstr` and
+  `jbcAddr` together, and [item 29](#item-29) records a fix for freezing two of
+  the three — but nothing tests that `io.jpaddr` itself survives a freeze.
+- **A STALE hold rather than a lost one.** Holding is only correct if the register
+  already carries the right target when the freeze starts. If a freeze begins on
+  the cycle a target is being COMPUTED, the hold preserves the previous
+  instruction's target — a wrong jump rather than a missing one. The 40-phase
+  sweep shows this does not happen for the park loop's `bz`; it is unverified for
+  every other branch and jump in the microcode.
+
+**AND THE MEASUREMENT VEHICLE IS READY.** `SmpDeepFlush` at DEPTH 30 reproduces at
+~1 in 6 with the probe already reporting core 1's live pc, so the next
+investigation does not need new instrumentation — only more runs to localise which
+instruction the freeze is landing on. Note the earlier runs all report
+`spills=20 fills=10`-class rotation, so the flush and rotation paths are both
+active in the failing window.
+
 **2026-09-29 — THE 0.213 ns WAS NOT THE FIX. It is placement noise on a path the
 fix is not on, and the critical path is somewhere worth knowing about.**
 

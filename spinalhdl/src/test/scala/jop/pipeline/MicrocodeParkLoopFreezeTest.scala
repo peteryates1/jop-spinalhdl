@@ -133,6 +133,8 @@ class MicrocodeParkLoopFreezeTest extends AnyFunSuite {
     // cycle, so what it holds during a freeze depends on the HELD pc and ir --
     // which is the whole defect.
     pipeline.fetch.brdly.simPublic()
+    pipeline.fetch.jpdly.simPublic()
+    pipeline.decode.io.jmp.simPublic()
 
     // Everything else the pipeline needs tied off. The bank write ports belong
     // to the DMA, which is faked in the testbench, so a spill reads the banks
@@ -302,6 +304,201 @@ class MicrocodeParkLoopFreezeTest extends AnyFunSuite {
       }
     }
     escaped
+  }
+
+  /** `cpux_boot` and `cpu0_load` in the serial ROM — the jump's two outcomes. */
+  private val CPUX_BOOT = 0x11f
+  private val CPU0_LOAD = 0x23
+
+  /**
+   * THE JUMP HALF OF THE FIX, on the real microcode.
+   *
+   * The fix holds TWO registers and only `brdly` was red-proved: the park loop's
+   * backward edge is a `bz`, so every other test here exercises the branch half
+   * and none touches the jump half. `jpdly := jpdly` went in BY ANALOGY, which is
+   * how a fix acquires an untested half — and "identical by symmetry" is the
+   * reasoning that produced two wrong conclusions in this item already.
+   *
+   * A SYNTHETIC ROM CANNOT TEST IT. A nop/jmp loop makes no stack writes, so
+   * `anyDirty` is never true, `gcFlushReq && anyDirty` never fires, `rotBusy`
+   * never rises and nothing freezes. That version of this test reported "the
+   * fetch stage never froze, so nothing was tested" at all 20 phases, which is
+   * the only honest thing it could say.
+   *
+   * THE REAL MICROCODE HAS A BETTER JUMP. The park loop's own exit is
+   * `jmp cpux_boot` at 0x20, and its fall-through is 0x21, 0x22, then **0x23 =
+   * cpu0_load** — the same serial downloader the branch bug ended in. So a
+   * destroyed `jpdly` reaches the identical hardware symptom by a second path,
+   * and the two outcomes are far apart and unambiguous.
+   *
+   * Serve `io_signal` as 1 and the machine leaves the loop through both `bz`s and
+   * executes that jump. Everything here is deterministic, so the freeze can be
+   * swept across the cycles around it; the assertion is on the FIRST of
+   * {cpux_boot, cpu0_load} reached, because after `cpux_boot` the machine reads a
+   * main memory this bench serves as zeroes and then wanders.
+   */
+  private def jumpTrial(phase: Int): Either[String, Int] = {
+    var firstOutcome = -1
+    var armed = false
+    compiled.doSim(s"jump_p$phase") { dut =>
+      dut.clockDomain.forkStimulus(10)
+      dut.io.memRdData #= 0
+      dut.io.memBusy #= false
+      dut.io.gcFlushReq #= false
+      dut.io.dmaBusy #= false
+      dut.io.dmaDone #= false
+      dut.clockDomain.waitRisingEdge(5)
+
+      // Reach the park loop with the signal still zero, so a bank is dirtied and
+      // the flush has something to do -- the arming the synthetic ROM lacked.
+      runTo(dut, 400, observe = false)
+      if (dut.io.bankDirty.toInt != 0) armed = true
+
+      // NOW RELEASE IT, and serve the value UNCONDITIONALLY.
+      //
+      // The first version of this served memRdData only on the cycle `memCtrl.rd`
+      // fired, which is what `runTo` does. Across a freeze that is wrong: the
+      // `stmra` fires, then the core sits in `wait` for the whole flush, and the
+      // `ldmrd` lands ~90 cycles later reading whatever the input happens to hold
+      // by then. The second `io_signal` read came back ZERO, `bz cpu0_load` was
+      // CORRECTLY taken, and the test reported it as the freeze destroying a jump
+      // target. The core did exactly the right thing with the data it was given.
+      //
+      // Both values this program reads want to be 1 -- io_cpu_id (a core above
+      // zero) and io_signal (released) -- so driving 1 flat removes the address
+      // decode and the timing question together.
+      dut.io.memRdData #= 1
+      def serve(): Unit = ()
+      for (_ <- 0 until phase) { serve(); dut.clockDomain.waitRisingEdge() }
+
+      dut.io.memBusy #= true
+      dut.io.gcFlushReq #= true
+      val st = Array(0)
+      var guard = 0
+      while (dut.io.bankDirty.toInt != 0 && guard < 2000) {
+        stepDma(dut, st, 6); serve(); dut.clockDomain.waitRisingEdge(); guard += 1
+      }
+      dut.io.memBusy #= false
+      dut.io.gcFlushReq #= false
+
+      for (_ <- 0 until 900 if firstOutcome < 0) {
+        val pc = dut.io.pc.toInt
+        if (pc == CPUX_BOOT || pc == CPU0_LOAD) firstOutcome = pc
+        stepDma(dut, st, 6); serve(); dut.clockDomain.waitRisingEdge()
+      }
+    }
+    if (!armed) Left("no bank was dirty, so no flush ran and nothing was tested")
+    else if (firstOutcome < 0) Left("reached neither cpux_boot nor cpu0_load")
+    else Right(firstOutcome)
+  }
+
+  /**
+   * The jump trial, ARMED — the freeze must arrive while the jump is IN FLIGHT.
+   *
+   * `jumpTrial` above cannot do that, and the trace says why: the halt parks the
+   * core on the `wait` at 0x1a and it only reaches 0x20 AFTER the flush has
+   * finished, so the freeze and the jump never overlap. Removing
+   * `jpdly := jpdly` left that test green, which is a test with no teeth.
+   *
+   * So this one asserts `gcFlushReq` WITHOUT the halt. That decouples two signals
+   * the real machine couples (`gcFlushReq := gcHaltActive && halted`), and it is
+   * deliberate: the property under test belongs to the FETCH STAGE — "a freeze
+   * must not destroy a pending jump target" — and it is testable independently of
+   * how the freeze came to be asserted. The real machine can still reach it: the
+   * exposed window is between `halted` rising and the core reaching its next
+   * `wait`, and a `jmp` anywhere in that window is as vulnerable as the `bz` at
+   * 0x14 was.
+   *
+   * ARMING IS CHECKED, not assumed: the trial records whether the freeze was up
+   * while the pc sat on the jump, and reports failure to arm rather than passing.
+   */
+  private def armedJumpTrial(phase: Int): Either[String, Int] = {
+    var firstOutcome = -1
+    var frozenOnJump = false
+    compiled.doSim(s"armedjump_p$phase") { dut =>
+      dut.clockDomain.forkStimulus(10)
+      dut.io.memRdData #= 0
+      dut.io.memBusy #= false; dut.io.gcFlushReq #= false
+      dut.io.dmaBusy #= false; dut.io.dmaDone #= false
+      dut.clockDomain.waitRisingEdge(5)
+      runTo(dut, 400, observe = false)
+      dut.io.memRdData #= 1          // io_cpu_id and io_signal both want 1
+
+      val st = Array(0)
+      for (_ <- 0 until phase) { stepDma(dut, st, 6); dut.clockDomain.waitRisingEdge() }
+      dut.io.gcFlushReq #= true      // freeze WITHOUT the halt
+
+      for (_ <- 0 until 140) {
+        if (dut.pipeline.fetch.io.frozen.toBoolean && dut.io.pc.toInt == 0x20) frozenOnJump = true
+        stepDma(dut, st, 6); dut.clockDomain.waitRisingEdge()
+      }
+      dut.io.gcFlushReq #= false
+      for (_ <- 0 until 400 if firstOutcome < 0) {
+        val pc = dut.io.pc.toInt
+        if (pc == CPUX_BOOT || pc == CPU0_LOAD) firstOutcome = pc
+        stepDma(dut, st, 6); dut.clockDomain.waitRisingEdge()
+      }
+    }
+    if (!frozenOnJump) Left("the freeze never overlapped the jump")
+    else if (firstOutcome < 0) Left("reached neither cpux_boot nor cpu0_load")
+    else Right(firstOutcome)
+  }
+
+  /**
+   * IGNORED, AND THE REASON IS THE POINT — two vehicles could not arm this.
+   *
+   * `jpdly := jpdly` is held BY SYMMETRY with `brdly` and is NOT red-proved.
+   * Removing it leaves both jump tests here green, which means neither has teeth,
+   * and an ignored test that says so is worth more than a green one that does not.
+   *
+   * WHY IT WOULD NOT ARM. The flush is a LONG event (~86 cycles) and the park
+   * loop's only `jmp` is passed ONCE, so landing the freeze's first cycle on that
+   * instruction needs cycle-exact alignment. With the halt asserted the core parks
+   * on the `wait` at 0x1a and reaches 0x20 only after the flush has finished;
+   * without the halt it runs past 0x20 before `rotState` leaves IDLE. A 26-phase
+   * sweep hit neither.
+   *
+   * THE RIGHT VEHICLE drives `extStall` DIRECTLY on a FetchStage-level DUT, where
+   * the freeze can be raised for exactly one cycle on exactly the chosen
+   * instruction, instead of through the flush FSM's latency. That is a different
+   * testbench, not a tweak to this one.
+   *
+   * WHAT IS AND IS NOT AT RISK. The line cannot BREAK anything: without it the
+   * register is overwritten with `pc + offset` of a frozen instruction, which is
+   * never a meaningful target, so holding it is strictly no worse. The open
+   * question is only whether it FIXES anything, i.e. whether a freeze can land on
+   * a jump in the real machine. The exposed window is between `halted` rising and
+   * the core reaching its next `wait`, and any `jmp` inside that window is as
+   * vulnerable as the `bz` at 0x14 was.
+   */
+  ignore("the JUMP half, ARMED: a freeze ON the jump must not lose its target") {
+    val results = (0 until 26).map(p => p -> armedJumpTrial(p))
+    val armed = results.collect { case (p, Right(pc)) => p -> pc }
+    val wrong = armed.collect { case (p, pc) if pc == CPU0_LOAD =>
+      f"  phase $p%2d -> fell through to cpu0_load" }
+    assert(armed.nonEmpty,
+      "no phase put the freeze on the jump, so this sweep tested nothing:\n" +
+        results.collect { case (p, Left(m)) => s"  phase $p: $m" }.take(4).mkString("\n"))
+    assert(wrong.isEmpty,
+      s"${armed.size} phase(s) armed; the freeze destroyed the pending JUMP target:\n" +
+        wrong.mkString("\n"))
+  }
+
+  /** Kept as a regression on the jump PATH, not on `jpdly` — see the note above:
+    * it is green with and without the hold, so it proves the path is walked, not
+    * that the target survives a freeze. */
+  test("the jump path: `jmp cpux_boot` reaches cpux_boot, not cpu0_load") {
+    val results = (0 until 30).map(p => p -> jumpTrial(p))
+    val unarmed = results.collect { case (p, Left(m)) => s"  phase $p: $m" }
+    val wrong = results.collect {
+      case (p, Right(pc)) if pc == CPU0_LOAD => f"  phase $p%2d -> fell through to cpu0_load"
+    }
+    // An unarmed phase is not a pass. Say so, the way the synthetic-ROM version
+    // did, rather than counting silence as success.
+    assert(unarmed.size < results.size,
+      "no phase armed, so this sweep tested nothing:\n" + unarmed.take(5).mkString("\n"))
+    assert(wrong.isEmpty,
+      "the freeze destroyed the pending JUMP target (jpdly):\n" + wrong.mkString("\n"))
   }
 
   test("a parked core stays parked across a stop-the-world flush, at every phase") {
