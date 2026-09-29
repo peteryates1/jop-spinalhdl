@@ -7954,6 +7954,63 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-29 (STOPPING POINT) — the read-path vehicle was built and FAILED ITS OWN
+TEETH CHECK, so the read hypothesis is neither confirmed nor eliminated. The
+residual stays unexplained.**
+
+The plan was a `JopCore`-level test, so `BmbMemoryController` and `Sys` are inside
+the DUT and the `io_signal` value comes from the design rather than the harness —
+the one thing the transparency property is structurally blind to. It was built:
+`JopCoreTestHarness` gained an opt-in `extSync` to drive `syncIn.halted` /
+`gcHaltActive`, `cpuId = 1` so the core takes the cpux path, `s_out` held false so
+it parks in `cpux_loop`, and a sweep of 24 phases x 3 hold lengths.
+
+**It passed all 72 trials, and that means nothing**, because the teeth check
+failed: with `brdly := brdly` REMOVED — the defect known to live in that exact
+loop, which the pipeline-level sweep catches at 2 of 24 phases — this vehicle still
+reported 72 clean trials. A test that cannot see a known bug in its own DUT cannot
+be trusted about an unknown one.
+
+**A diagnostic to find out why did not run either** (`scDebugRotState` was not
+present in the compiled model), so whether `rotBusy` ever rises in that harness is
+still unknown. **Both the vehicle and its diagnostic have been reverted rather than
+committed**: an unused capability added for a test that did not work is a liability,
+and a green test that proves nothing is worse than no test.
+
+**WHAT A WORKING VERSION NEEDS**, for whoever picks this up:
+
+- Establish FIRST that the fetch stage freezes at all in that harness — count
+  cycles with `fetch.io.frozen` high and the `rotState` values reached, and fail
+  the test if either is empty. Every vehicle in this item that produced a false
+  result did so by not checking it was armed.
+- The likely reason it is not armed: the halt arrives as `syncIn.halted` ->
+  `Sys.io.halted` -> `memBusy` -> `bsy`, which freezes ONLY at a `wait`. For
+  `extStall` to fire, `gcFlushReq && anyDirty` must hold, and whether the park loop
+  dirties a bank in that config was assumed, not measured — the pipeline bench
+  measured it (`dirty 1` in its traces) and the core-level one did not.
+- Hold lengths of 4/12/40 cycles may all be shorter than the flush needs (~86
+  cycles in the pipeline bench), so the un-halt may land before anything happens.
+
+**WHERE ITEM 133 ACTUALLY STANDS:**
+
+| | state |
+|---|---|
+| fetch freeze destroys pending branch targets | **FIXED**, red-proved, hardware-validated 6/7 -> 1/19 (p = 2.0e-4) |
+| freeze transparency for the park loop | **GUARDED** by a property with teeth (red-proves the old bug at 2 of 24 phases) |
+| `jpdly`, the jump half | held by symmetry, **UNPROVEN** — two vehicles could not arm it |
+| residual ~1 in 19 | **OPEN**, cause unknown, NOT depth-related |
+| read path (spurious `io_signal`) | **UNTESTED** — vehicle failed its teeth check |
+| multi-bank + rotation coverage | **RE-VALIDATED** post-fix: 15 of 16 runs sp 1171, three banks + rotation, OK |
+
+**THE NEXT MOVE IS HARDWARE, NOT SIMULATION.** Four simulation vehicles in this
+item produced plausible results that dissolved under a control (the flush
+testbench's claimed dirty-bank coverage, the synthetic `jmp` ROM that could not
+arm, the jump test that mis-served a read across a freeze and manufactured a
+convincing defect, and this one). The residual is ~5% per gc-first run and the
+probe already reports core 1's live pc, so 40-60 runs at one fixed configuration
+would bound the rate and collect several failing dumps to compare — which is
+cheaper and more honest than a fifth bench.
+
 **2026-09-29 (LATER) — "ONCE THE STACK IS DEEP" IS WRONG TOO, and the failing
 run's own probe said so. The residual is ~1 in 19 and depth has nothing to do with
 it.**
