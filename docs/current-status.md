@@ -7954,6 +7954,59 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-29 (THE REAL RESULT) — THERE ARE TWO MECHANISMS, NOT ONE. The fix
+eliminates the fault on one image and does NOTHING on another, and "the startup
+fault is fixed and hardware-validated" is wrong as stated.**
+
+Same image bytes, same board, same baud, arm randomised per run — only the
+bitstream differs:
+
+| image | pre-fix | post-fix | two-sided p |
+|---|---|---|---|
+| DEPTH 2 | 6 of 7 (86 %) | **0 of 13** | **1.8e-4** |
+| DEPTH 30 | 7 of 21 (33 %) | **12 of 31 (39 %)** | **0.77** |
+
+Both comparisons are individually clean. On the deep image the branch-target fix
+makes **no measurable difference at all**.
+
+**SO THE SYMPTOM HAS TWO CAUSES.** The branch-target defect is real — traced in
+simulation cycle by cycle, red-proved, and its removal took the DEPTH-2 image from
+86 % to zero. On the DEPTH-30 image something else dominates at ~35 % and is
+untouched by it. The second mechanism's signature is identical in all 11 failures:
+core 1 inside `rdy_poll` BEFORE the release, `bootSp` 66-67, live pc moving,
+`exc 0`, `bmbOut 0`, and **0 failures in the release-first arm across 24 runs on
+both bitstreams**.
+
+**WHAT THIS CORRECTS.** Layout does not change the RATE of one bug, as this item
+has assumed since the paired A/B was designed — it changes **WHICH BUG YOU SEE**.
+Every claim of the form "the startup fault is fixed" in the entries below is
+therefore too broad; the supported claim is that ONE MECHANISM of it is fixed,
+verified on one image. And the reason it was not caught sooner is that the
+validation image was chosen for an unrelated reason (DEPTH 2 keeps sp under the
+no-cache `spOv` threshold of 239) and then never revisited when it became the
+evidence.
+
+**WHAT IS LEFT, and it is now well posed.** `cpu0_load` has exactly two entries.
+`bz cpu0_load` at 0x0b tests `io_cpu_id`, which is `B(cpuId, 32 bits)` — a literal
+in the read mux — so core 1 cannot take it. With branch-loss removed by the fix,
+the only remaining route is **`bz cpu0_load` at 0x1d: the SECOND `io_signal` read
+returning zero after the FIRST returned nonzero**. That requires a spurious
+nonzero on the first read — the read-path hypothesis, which no test in this item
+has managed to exercise.
+
+**THE DISCRIMINATING EXPERIMENT IS ALSO THE FIX.** `asm/src/jvm.asm:355` currently
+reads `bz cpu0_load`; making it `bz cpux_loop` turns the second read into a real
+debounce — two consecutive nonzero reads to proceed, and a zero goes back to
+waiting instead of hijacking the core into the downloader. If the failures enter
+via 0x1d, redirecting 0x1d removes them; if they do not, the rate will not move.
+One ROM word, no address shift, and it is a strict improvement regardless: no
+release protocol has a use for "this core saw the signal and then did not, so it
+should become the loader".
+
+**AND THE HUNT NOW HAS WHAT IT NEVER HAD**: a ~35 % reproduction on a known image
+with both bitstreams saved, so a candidate fix is answered by ~25 runs instead of
+by argument.
+
 **2026-09-29 (STOPPING POINT) — the read-path vehicle was built and FAILED ITS OWN
 TEETH CHECK, so the read hypothesis is neither confirmed nor eliminated. The
 residual stays unexplained.**
