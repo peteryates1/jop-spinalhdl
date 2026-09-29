@@ -7954,6 +7954,61 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-29 (SECOND MECHANISM FOUND AND FIXED — one ROM word, 35 % to zero) —
+the startup fault is closed, and the transient behind it is now LATENT rather than
+fatal.**
+
+`asm/src/jvm.asm:356`: the second `io_signal` read's `bz cpu0_load` now reads
+`bz cpux_loop`. Same DEPTH-30 image throughout (`md5 c8fc3303…`), same board, same
+baud, arm randomised per run:
+
+| bitstream | gc-first failures |
+|---|---|
+| pre-fix RTL | 7 of 21 (33 %) |
+| branch-target fix only | 12 of 31 (39 %) |
+| **+ the one ROM word at 0x1d** | **0 of 18** |
+
+One-sided Fisher against the branch-fix-only arm: **p = 1.5e-3**; against the
+pre-fix arm, **p = 7.6e-3**. All 34 runs now report
+`SmpDeepFlush OK (three banks + rotation)`. Exactly ONE ROM word differs
+(0x01d: 0x185 -> 0x1b0, both `bz`, 4096 words, no address shift), timing is
+bit-identical (MET, WNS +0.243 ns, 15,039 LUTs), and the new word was verified
+present in the bitstream's ROM init before the runs — not inferred from the build
+exiting 0.
+
+`SmpGcTest` re-validated on the new ROM, 3 of 3 PASS, `timing=MET crash=0`,
+`STACKROOT: ready 1 after 0 spins`, `minors 10 verified 192 errors 0`, `SMPGC OK`.
+That matters because the ROM changed for **every board**, not only this preset.
+
+**WHAT IS PROVED: THE ROUTE.** Every failure entered through `bz cpu0_load` at
+0x1d. Redirecting that one branch removes the failure completely, so the route is
+measured rather than argued.
+
+**WHAT IS NOT PROVED: WHY THE CORE GOT PAST 0x14.** Reaching 0x1d at all means the
+FIRST `io_signal` read returned nonzero while the signal was zero. Two candidates
+remain and this change is blind to both, because it makes both harmless:
+
+- a genuinely spurious nonzero read (the read-path hypothesis, still untested — the
+  `JopCore` vehicle for it failed its own teeth check), or
+- the `bz cpux_loop` at 0x14 lost by some mechanism the `brdly` hold does not
+  cover; the transparency property covers the park loop under the flush and passes.
+
+So the transient is **real, unexplained, and now LATENT**: a core that mis-reads
+goes back to waiting and boots on the next iteration instead of being hijacked into
+a downloader with no exit. **"The startup fault is fixed" is now supportable. "The
+read path is sound" is not**, and the green soak must not be read as saying so.
+
+**THE SHAPE OF THE WHOLE THING, which is the transferable part.** The microcode
+latch turned any transient into a PERMANENT hang, and that is what made two
+different transients present as one intermittent fault with one signature. Image
+layout then decided which of the two you were looking at — so validating on one
+image and declaring the fault fixed was always going to mislead, and did, twice.
+The latch was identified early in this item and deprioritised as "a mitigation, not
+the repair"; it turned out to be the change that closed the symptom on the image
+where the transient hunt had no measurable effect at all. **Removing a fault's
+ability to latch is worth doing before its cause is known**, both because it is the
+robustness win and because a non-latching fault is far easier to study.
+
 **2026-09-29 (THE REAL RESULT) — THERE ARE TWO MECHANISMS, NOT ONE. The fix
 eliminates the fault on one image and does NOTHING on another, and "the startup
 fault is fixed and hardware-validated" is wrong as stated.**

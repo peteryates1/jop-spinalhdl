@@ -353,7 +353,22 @@ cpux_loop:
 			wait
 			ldmrd
 			nop
-			bz cpu0_load
+// A ZERO HERE MEANS KEEP WAITING, NOT "BECOME CORE 0" — status item 133.
+//
+// This branch used to target cpu0_load, the SERIAL DOWNLOAD HANDSHAKE: it sends
+// 0xAA and polls for the host's ACK, forever, with no exit. So a core above zero
+// that read io_signal as nonzero once and as zero the second time was permanently
+// hijacked into the downloader and never reached main(). On the Wukong SMP +
+// stack-cache build that happened in 7 to 12 runs of every 21 to 31, and the probe
+// caught core 1 executing rdy_poll before core 0 had even written the signal.
+//
+// Re-reading a held level is a reasonable debounce; the fault was in what the
+// second sample DID with a zero. Sending it back to the spin makes the sequence
+// "two consecutive nonzero reads to proceed", strictly stronger than the single
+// read it replaced — and nothing in the release protocol wants the old target:
+// no design decides a core should become the loader because a signal it already
+// saw went away.
+			bz cpux_loop
 			nop
 			nop
 
