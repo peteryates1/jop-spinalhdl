@@ -7954,6 +7954,36 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-29 — THE 0.213 ns WAS NOT THE FIX. It is placement noise on a path the
+fix is not on, and the critical path is somewhere worth knowing about.**
+
+The entry below attributes the WNS drop from +0.456 ns to +0.243 ns to "routing on
+the `pcMux` path". **Wrong**, and asserted three times without looking at the
+report. The worst path in BOTH builds is the memory controller:
+
+| | source | destination | levels | route % |
+|---|---|---|---|---|
+| baseline, +0.456 ns | `cores_0/memCtrl/addrReg_reg[19]` | `cores_0/memCtrl/FSM_sequential_state_9_reg[4]/CE` | 22 | 69.2 % |
+| with fix, +0.243 ns | `cores_1/memCtrl/addrReg_reg[15]` | `cores_1/memCtrl/FSM_sequential_state_9_reg[0]/CE` | 22 | 68.9 % |
+
+Same structure, different core and different bit — i.e. **which instance of that
+path happened to route worst**, which moves run to run. `brdly` and `jpdly` are in
+the fetch stage and appear nowhere in either path. On the evidence available the
+fix is **timing-neutral**, and the board-wide timing re-check its supposed 0.2 ns
+cost would have justified is not needed on its account. The lesson is the one this
+document already records about reading the FINAL report rather than reasoning from
+a number: a plausible mechanism for a delta is not evidence that it caused it.
+
+**AND THE CRITICAL PATH IS A FINDING IN ITSELF.** `wukongSdrSmp 2 75` is limited
+by `BmbMemoryController`'s address register feeding its own FSM state enable — 22
+logic levels and **69 % ROUTE DELAY**, which is a placement problem more than a
+logic-depth one. [Items 5](#item-5) and [31](#item-31) attribute this family's
+clock ceiling to the BMB **arbiter**; on this build the worst path is inside
+`memCtrl`, not the arbiter. One board at one core count does not overturn those
+items — the arbiter may well dominate at higher core counts or on the DRAM paths —
+but it is a measured counter-example and the first place to look if this preset
+ever needs a faster clock.
+
 **2026-09-28 (SCOPE CORRECTED, and TWO NEGATIVE RESULTS) — the branch bug needs
 an EXTERNALLY triggered freeze, so it is SMP-only. It is NOT this item's
 `DeepRecursion` failure and NOT [item 63](#item-63).**
