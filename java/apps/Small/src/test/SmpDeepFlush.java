@@ -88,6 +88,39 @@ public class SmpDeepFlush implements Runnable {
 	 * the measurement would move the rate it is measuring.
 	 */
 	static int bootPc0, bootPc1;
+	/**
+	 * DID CORE 1 BOOT *EARLY*? — the hole the debounce left, status item 133.
+	 *
+	 * The park loop now needs TWO consecutive nonzero `io_signal` reads to
+	 * proceed, so a single spurious nonzero sends the core back to waiting
+	 * instead of into the downloader. But two of them in a row still fall through
+	 * to `jmp cpux_boot`, and if the signal was never set that is an EARLY BOOT:
+	 * core 1 starts main() before core 0 released it.
+	 *
+	 * There is an argument that a halt-correlated transient cannot do that — the
+	 * two reads are separated by a `wait`, a halt raises bsy, so a halted core
+	 * parks INSIDE the first read and cannot reach the second until the halt
+	 * releases, leaving at most one read corrupted. And the transient is
+	 * halt-correlated: 103 release-then-gc runs across every soak, 0 failures.
+	 *
+	 * But that is inference from an arm asymmetry, not knowledge of the
+	 * mechanism, and four mechanism hypotheses have already died in this item.
+	 * `SmpDeepFlush` checks "core 1 never parked"; it has never checked "core 1
+	 * parked TOO SOON", and in this app an early boot would probably still pass
+	 * because the `ready`/`done` handshake absorbs it. So the 0-of-23 result
+	 * says nothing about it either way.
+	 *
+	 * These are sampled in the same instant as bootPc0/bootPc1 — immediately
+	 * before `Native.wr(1, IO_SIGNAL)` — and reported on BOTH paths, because a
+	 * passing run is exactly where an undetected early boot would hide.
+	 *
+	 * Reading: `earlyMain` nonzero means core 1 reached Java before the release,
+	 * which is unambiguous. `bootPc` above the park loop's last address (0x16)
+	 * means it had left the loop FORWARD, heading for cpux_boot or cpu0_load. A
+	 * bootPc BELOW 0x0e is not a fault — in the release-then-gc arm the release
+	 * comes so early that core 1 can still be in the boot prologue.
+	 */
+	static int earlyMain;
 	/** Core 1's live SP while still parked — see the sample site. */
 	static int bootSp;
 	/**
@@ -445,6 +478,7 @@ public class SmpDeepFlush implements Runnable {
 		// sentinel. (SmpGcTest gates its SP read behind PROBE_RUNNING_CORE
 		// only because it is grouped with stack-WORD reads, which do steal.)
 		bootSp = GC.rootRead(1, Const.ROOT_WHAT_SP, 0);
+		earlyMain = c1Main;   // nonzero => core 1 was in Java before the release
 		Native.wr(0, Const.IO_ROOT_SEL);
 
 		Native.wr(1, Const.IO_SIGNAL);
@@ -543,6 +577,15 @@ public class SmpDeepFlush implements Runnable {
 		wrInt(badWord1);
 		JVMHelp.wr(" sigCleared ");
 		wrInt(sigCleared);
+		// THE EARLY-BOOT CHECK, printed on the passing path too -- see earlyMain.
+		JVMHelp.wr("\r\nEARLYBOOT main ");
+		wrInt(earlyMain);
+		JVMHelp.wr(" bootPc ");
+		wrInt(bootPc0 >>> 16);
+		JVMHelp.wr(",");
+		wrInt(bootPc1 >>> 16);
+		JVMHelp.wr((earlyMain == 0 && (bootPc0 >>> 16) <= 0x16 && (bootPc1 >>> 16) <= 0x16)
+				? " (no early boot)" : " *** EARLY BOOT ***");
 		JVMHelp.wr(badCpuId + badSigRd + badSigMem + badWord1 == 0
 				? " (all clean)\r\n" : " *** MIS-READ ***\r\n");
 

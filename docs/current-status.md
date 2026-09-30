@@ -7954,6 +7954,45 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-30 — "MITIGATED SO IT CANNOT HAPPEN" IS NOW MEASURED ON BOTH ROUTES, not
+argued. The debounce's own escape route was untested; it is not any more.**
+
+The debounce needs TWO consecutive nonzero `io_signal` reads to proceed, so a
+single spurious nonzero returns the core to the spin. But two in a row still fall
+through to `jmp cpux_boot`, and with the signal unset that is an **EARLY BOOT** —
+core 1 entering `main()` before core 0 released it. `SmpDeepFlush` checked *"core 1
+never parked"* and had never checked *"core 1 parked TOO SOON"*, and in this app an
+early boot would probably still PASS because the `ready`/`done` handshake absorbs
+it. So 0-of-23 "no hangs" said nothing about it.
+
+There was an argument that it cannot happen — the two reads are separated by a
+`wait`, a halt raises `bsy`, so a halted core parks INSIDE the first read and cannot
+reach the second until the halt releases, leaving at most one read corrupted; and
+the transient is halt-correlated, with **103 release-then-gc runs across every soak
+and 0 failures**. But that is inference from an arm asymmetry, and four mechanism
+hypotheses have already died in this item.
+
+So it is now instrumented: `earlyMain` (was `c1Main` already set?) and the parked
+`bootPc`, both sampled in the instant before `Native.wr(1, IO_SIGNAL)` and printed
+on the PASSING path too, because that is where an early boot would hide.
+
+**34 runs on the shipping bitstream (debounce in, WNS +0.243 ns):**
+
+| | result |
+|---|---|
+| hangs, gc-first | **0 of 17** here; **0 of 40** pooled over all shipping-state runs (95 % upper bound 7.2 %) |
+| early boots | **0 of 34** (95 % upper bound 8.4 %) |
+| `OK (three banks + rotation)` | 34 of 34 |
+| `bootPc` at the release | 15..22 in every run — all inside the park loop 0x0e..0x16 |
+
+That last row is the substantive one: core 1 was demonstrably still parked in
+`cpux_loop` at the moment of release in all 34 runs.
+
+**SO THE ACCURATE CLAIM IS:** the observed failure cannot recur, and the alternative
+route the mitigation could have opened does not occur — both measured rather than
+reasoned. What remains is the underlying transient, unfixed and latent, whose only
+effect now is that a core occasionally takes an extra turn round its wait loop.
+
 **2026-09-30 — THE CLOCK SWEEP IS INCONCLUSIVE, and it caught me quoting an
 inflated baseline. The residual transient is ~14-27 % at every clock that works,
 and resolving the difference is not affordable.**
