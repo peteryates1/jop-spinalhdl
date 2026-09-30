@@ -38,7 +38,7 @@ answer about the evidence costs confidence in every result built on it — then
 correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
-1. **[#133](#item-133)** — The microcode was never taught the stack cache exists: non-resident reads return 0 and non-resident writes are dropped, and the GC root scan, `athrow` and the context switch all walk the whole stack. Live on every single-core DDR3 build
+1. **[#133](#item-133)** — Stack cache: the startup fault and the fetch-freeze defect are FIXED and hardware-validated, and `DeepRecursion` passes. What is left is narrow and untested — `f_athrow` (`JVM.java:743`) and the RT-thread context switch (`Scheduler.java:96-149`) walk the WHOLE stack with no residency check, and `prefillThreshold` (`StackStage.scala:67`) is referenced nowhere
 2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
 3. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 4. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
@@ -6676,7 +6676,30 @@ Incidentally, every one of those rounds also printed `haltLeak 0` — which is
 
 <a id="item-133"></a>
 
-### Item 133 — deep recursion is broken on every stack-cache board, and the cause is not what this item first said
+### Item 133 — stack cache: two defects found, fixed and hardware-validated; `athrow` and the context switch still walk the whole stack
+
+**STATUS AT 2026-09-30 — read this before the journals below.** The journals run
+chronologically and several of their early conclusions were later refuted by
+measurement; this table is what survives.
+
+| | state | evidence |
+|---|---|---|
+| fetch freeze destroyed pending branch targets (`brdly`, `jpdly` not held) | **FIXED** | cycle trace, red -> green in sim, hardware 6 of 7 -> 0 of 13 on the image where it dominated; guarded by a freeze-transparency property that red-proves the old bug at 2 of 24 phases |
+| microcode latched one mis-read into a permanent hang (`bz cpu0_load` into a loop with no exit) | **FIXED**, one ROM word | hardware 35 % -> 0 of 40 gc-first (95 % UB 7.2 %), p = 1.5e-3, `SmpGcTest` 3 of 3, and the mitigation's own escape route (early boot) measured absent 0 of 34 |
+| `DeepRecursion` returning the wrong value | **PASSES** | `JopJvmTestsStackCacheBramSim`, maxSp 1905, 20 spills / 10 fills. Repaired by the September stack-cache work, NOT by the freeze fix — a control with the fix removed is identical |
+| victim bank chosen by index, leaving a non-resident hole | **FIXED** | 2026-09-15 |
+| `spOv` dangling; spill region unbounded | **FIXED** | 2026-09-15, red-proved on `jvm.DeepAll` |
+| DDR2/DDR3 reserving a spill region with no stack cache | **FIXED** | 2026-09-24, confirmed in generated RTL, 256 KB recovered at 8 cores |
+| multi-bank + rotation flush coverage | **VALIDATED** | sp 1171, three banks + rotation, 15 of 16 runs post-fix |
+| the underlying transient that starts it | **OPEN, LATENT** | ~21 % per gc-first run, cause unknown; five hypotheses eliminated by measurement (see the 2026-09-30 entries). A mis-reading core now retries and boots, so it has no observable effect |
+| `f_athrow` walks the whole stack | **OPEN, UNTESTED** | `JVM.java:743`, `while (fp > Const.STACK_OFF+5)`, no residency check |
+| RT-thread context switch copies the whole stack | **OPEN, UNTESTED** | `Scheduler.java:96-99,149`, `int2extMem`/`ext2intMem` over `i - STACK_OFF + 1` words, where "internal memory" is now the cache banks |
+| `prefillThreshold` | **OPEN, DEAD CODE** | declared `StackStage.scala:67`, referenced nowhere |
+
+**The item stays OPEN for the last four rows only.** The two defects it was really
+about are fixed and validated on hardware; what remains is one unexplained transient
+with no observable effect, two microcode/runtime paths that have never been tested
+against a non-resident stack, and a dead threshold.
 
 **RE-SCOPED 2026-09-15 after measuring.** The heading and opening sentence below
 were written from code reading on 2026-09-01 and are wrong in three ways that
