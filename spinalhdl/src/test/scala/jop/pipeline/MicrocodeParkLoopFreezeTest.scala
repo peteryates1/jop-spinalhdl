@@ -606,6 +606,97 @@ class MicrocodeParkLoopFreezeTest extends AnyFunSuite {
       s"the freeze is NOT transparent (${bad.length} of 24 phases):\n" + bad.take(6).mkString("\n"))
   }
 
+  /** The `bz cpux_loop` instruction word at ROM 0x14 in the serial build. */
+  private val BZ_CPUX_LOOP = 0x1b9
+
+  /**
+   * DOES THE READ VALUE REACH A? — the third hypothesis, after two were excluded.
+   *
+   * WHY LOOK HERE. `bz` branches on `zf`, which comes from the **A register**, not
+   * from the read. The park loop is
+   * `ldi io_signal / stmra / wait / wait / ldmrd / nop / bz`, so if a freeze
+   * swallows `ldmrd`'s update of A, A keeps whatever it held before — almost
+   * certainly nonzero — `zf` is false, `bz cpux_loop` is NOT TAKEN, and the core
+   * falls through to the second read. That reaches 0x1d with NO corruption of
+   * anything: the read is correct and the value simply never lands.
+   *
+   * WHAT MADE THIS THE SURVIVOR. Generic read corruption is excluded at
+   * p = 5.6e-58 (612 halt events, 0 bad against ~119 expected). The one-bit
+   * address error that would return `io_cpu_id` instead of `io_signal` — the two
+   * differ in bit 0 of a 4-bit mux select — was not observed once a detector that
+   * could see it was built: 180 halt events, 19.6M reads, 0 bad. And the branch
+   * TARGET fix moved nothing on the image that fails (p = 0.77).
+   *
+   * `StackStage` gates exactly this kind of update on `rotBusy`, and its own
+   * comment describes the failure mode nearly verbatim (:358, :375): *"Without
+   * gating, ramRdaddrReg advances to the stall-trigger instruction's address while
+   * the registered decode stays at the previous instruction's values — causing A
+   * to load data from the wrong stack address."*
+   *
+   * THE PROPERTY. On every cycle the instruction register holds the `bz` at 0x14,
+   * A must be ZERO — that is the `io_signal` value this bench serves. A nonzero A
+   * there means the branch is about to not be taken.
+   *
+   * ARMING IS CHECKED, because four vehicles in this item have passed while
+   * testing nothing: the trial fails if it never saw the `bz` in `ir`, and the
+   * reference arm establishes that A really is 0 there without a freeze.
+   */
+  private def aAtBranch(phase: Int, withFreeze: Boolean): Either[String, Set[Long]] = {
+    val seen = scala.collection.mutable.Set[Long]()
+    var sawBz = false
+    compiled.doSim(s"aAtBz_p${phase}_f$withFreeze") { dut =>
+      val lastAddr = Array(0)
+      def serve(): Unit = {
+        if (dut.io.memRd.toBoolean) lastAddr(0) = dut.io.aout.toLong.toInt
+        dut.io.memRdData #= (if (lastAddr(0) == IO_CPU_ID) BigInt(1) else BigInt(0))
+      }
+      def sample(): Unit =
+        if (dut.pipeline.fetch.ir.toLong == BZ_CPUX_LOOP) {
+          sawBz = true; seen += dut.io.aout.toLong
+        }
+      dut.clockDomain.forkStimulus(10)
+      dut.io.memRdData #= 0
+      dut.io.memBusy #= false; dut.io.gcFlushReq #= false
+      dut.io.dmaBusy #= false; dut.io.dmaDone #= false
+      dut.clockDomain.waitRisingEdge(5)
+      for (_ <- 0 until 400) { serve(); dut.clockDomain.waitRisingEdge() }
+
+      val st = Array(0)
+      for (_ <- 0 until phase) { sample(); stepDma(dut, st, 6); serve(); dut.clockDomain.waitRisingEdge() }
+      if (withFreeze) {
+        dut.io.memBusy #= true; dut.io.gcFlushReq #= true
+        var g = 0
+        while (dut.io.bankDirty.toInt != 0 && g < 3000) {
+          sample(); stepDma(dut, st, 6); serve(); dut.clockDomain.waitRisingEdge(); g += 1
+        }
+        dut.io.memBusy #= false; dut.io.gcFlushReq #= false
+      }
+      for (_ <- 0 until 600) { sample(); stepDma(dut, st, 6); serve(); dut.clockDomain.waitRisingEdge() }
+    }
+    if (!sawBz) Left(s"phase $phase: never saw the bz in ir, so nothing was sampled")
+    else Right(seen.toSet)
+  }
+
+  test("A must hold the read value at the `bz` — reference arm, no freeze") {
+    val r = aAtBranch(0, withFreeze = false)
+    assert(r.isRight, r.left.getOrElse(""))
+    val vals = r.getOrElse(Set.empty)
+    assert(vals == Set(0L),
+      "without any freeze, A at the bz should be 0 (the io_signal value this bench\n" +
+      s"serves); saw ${vals.map(v => f"0x$v%x").mkString(", ")} -- so the property\n" +
+      "itself is wrong and the swept arm below would be meaningless")
+  }
+
+  test("A must hold the read value at the `bz` — across every freeze phase") {
+    val bad = (0 until 24).map(p => p -> aAtBranch(p, withFreeze = true)).collect {
+      case (p, Left(m)) => s"  $m"
+      case (p, Right(v)) if v != Set(0L) =>
+        f"  phase $p%2d: A at the bz was ${v.map(x => f"0x$x%x").mkString(", ")} (expected 0x0)"
+    }
+    assert(bad.isEmpty,
+      "the read value did not reach A at the branch:\n" + bad.take(8).mkString("\n"))
+  }
+
   test("a parked core stays parked across a stop-the-world flush, at every phase") {
     // The loop is nine instructions and the freeze can land on any of them, so
     // the sweep has to cover more than one lap — 40 cycles is four.

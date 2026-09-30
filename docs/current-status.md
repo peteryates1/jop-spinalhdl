@@ -7954,6 +7954,62 @@ returned the wrong value, which is also why the arbiter-contention testbench
   dropped or misordered **while the consumer is stalled** -- and here the
   consumer is stalled precisely because it has been halted for the flush.
 
+**2026-09-30 — THE CLOCK SWEEP IS INCONCLUSIVE, and it caught me quoting an
+inflated baseline. The residual transient is ~14-27 % at every clock that works,
+and resolving the difference is not affordable.**
+
+The question was whether the remaining transient is TIMING-MARGINAL, which would
+explain why no simulation vehicle reproduces it (Verilator has no notion of slack)
+and would move the hunt to timing reports. Matched arms — **byte-identical image**
+(`1ee54287`), identical microcode (ROM 0x1d = 0x185, pre-debounce so the symptom is
+visible), both verified in the bitstream before counting a run:
+
+| clock | WNS | gc-first failures | |
+|---|---|---|---|
+| 75 MHz | +0.243 ns | **4 of 15 (27 %)** | matched control |
+| 70 MHz | +0.862 ns | **2 of 14 (14 %)** | 3.5x the slack |
+
+One-sided Fisher: **p = 0.36**. Nothing supported.
+
+**AND THE BASELINE I HAD BEEN QUOTING WAS INFLATED.** The 12-of-31 (39 %) figure
+came from a DIFFERENT image, taken before the read detector was added. On the
+matched image the same 75 MHz clock gives 27 %, and 39 % vs 27 % is itself p = 0.32
+— i.e. consistent with noise. So the first pass at this sweep ("39 % vs 14 %,
+p = 0.096, suggestive of timing") was an artefact of the image confound, which is
+the THIRD time in this item that comparing against an earlier-recorded number under
+since-changed conditions produced a wrong conclusion. The paired A/B exists to
+prevent exactly that WITHIN a run; it was reintroduced BETWEEN runs three times.
+
+**WHY THIS STOPS HERE.** Distinguishing 27 % from 14 % at 80 % power needs roughly
+150 gc-first runs per arm — about 600 runs at ~45 s each, seven hours of board time
+— for a fault that is now LATENT (the debounce means a mis-reading core retries and
+boots). Pooling the matched arms gives **6 of 29, ~21 %**, and that is the best
+estimate of the transient's rate.
+
+**A REAL BY-PRODUCT: 60 MHz DOES NOT BRING UP THE SDRAM.** That build is otherwise
+healthy — MET at **WNS +1.338 ns**, image byte-identical, ROM verified — but the
+download completes and the board never returns its checksum, so the microcode hangs
+at the end of the transfer. The SDRAM phase is passed as a fixed **-3.0 ns**
+(`Makefile`, `-shift -3.0`), tuned for 75-100 MHz; at 60 MHz it lands elsewhere in
+the data window. **So this board's clock is only bring-up-proven at 70-100 MHz**,
+and any future attempt to reclock it below that needs a phase sweep first. 80 MHz is
+also unusable: it misses timing by **-3.303 ns**.
+
+**WHERE THE TRANSIENT HUNT NOW STANDS — four hypotheses eliminated by measurement:**
+
+| hypothesis | eliminated by |
+|---|---|
+| generic read-path corruption | hardware: 612 halt events, 0 bad of 186.9M checks, p = 5.6e-58 |
+| one-bit address error returning `io_cpu_id` for `io_signal` (they differ in bit 0 of a 4-bit mux select) | hardware: 180 halt events, 19.6M reads, 0 bad, detector proven armed by clearing io_signal first |
+| the read value never reaching A (so `zf` is stale and `bz` is not taken) | sim: A = 0 at the `bz` across 24 freeze phases, reference arm armed |
+| branch target destroyed (`brdly`) | hardware: no effect on the failing image, p = 0.77 |
+| timing-marginal | **inconclusive**, p = 0.36, and not affordable to resolve |
+
+The only vehicle left is CLUSTER-LEVEL simulation — two cores, real arbiter, real
+memory — because that is the entire difference between the benches that cannot
+reproduce it and the hardware that does. That is a significant build, and the
+`JopCore`-level attempt short of it failed its own teeth check.
+
 **2026-09-29 (SECOND MECHANISM FOUND AND FIXED — one ROM word, 35 % to zero) —
 the startup fault is closed, and the transient behind it is now LATENT rather than
 fatal.**

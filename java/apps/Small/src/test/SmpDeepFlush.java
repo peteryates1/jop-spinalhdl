@@ -126,6 +126,29 @@ public class SmpDeepFlush implements Runnable {
 	 * hits almost every time because it is nothing but back-to-back reads.
 	 */
 	static volatile int badCpuId, badSigRd, badSigMem, badWord1, verifyLoops;
+	/**
+	 * Set by core 0 once it has written 0 to IO_SIGNAL — see the clear site.
+	 *
+	 * WHY THE CHECKS NEEDED THIS. `Sys.io.addr` is FOUR BITS and the read mux has
+	 * IO_CPU_ID at 6 and IO_SIGNAL at 7 (Sys.scala:459-460), which differ in BIT 0
+	 * ALONE. So a single-bit error in the I/O read address turns a read of
+	 * io_signal into a read of io_cpu_id — and on core 1 that is 1, exactly the
+	 * spurious nonzero the park loop needs to escape its spin while the signal is
+	 * still zero. Addr 5 is IO_LOCK, whose bit 0 is `syncIn.halted`, also 1 during
+	 * a stop-the-world; it is bit 1 away.
+	 *
+	 * AND THE EARLIER VERSION OF THESE CHECKS COULD NOT SEE ANY OF THAT, because
+	 * every value it compared was 1: io_cpu_id is 1, and io_signal AFTER the
+	 * release is also 1, so a read that returned the neighbouring register
+	 * returned the expected answer. 186.9 million checks across 612 halt events,
+	 * zero bad, and structurally blind to the one mechanism that fits.
+	 *
+	 * Clearing io_signal once both cores are running restores the asymmetry the
+	 * park loop has: the expected value becomes 0, so a neighbour read shows up.
+	 * It is inert to do — `signalReg` is read only by the boot path, and core 1 is
+	 * long past it.
+	 */
+	static volatile int sigCleared;
 	/** Snapshot of word 1, taken by core 1 before the collections start. */
 	static volatile int word1Ref;
 
@@ -353,8 +376,14 @@ public class SmpDeepFlush implements Runnable {
 		int ref = word1Ref;
 		while (done == 0) {
 			if (Native.rdMem(Const.IO_CPU_ID) != 1) bc++;
-			if (Native.rd(Const.IO_SIGNAL) == 0) bs++;
-			if (Native.rdMem(Const.IO_SIGNAL) == 0) bm++;
+			// ONLY MEANINGFUL ONCE CORE 0 HAS CLEARED IT. Until then io_signal
+			// reads 1 and is indistinguishable from io_cpu_id, which is the blind
+			// spot described at `sigCleared`. After the clear a NONZERO here is
+			// the address-glitch signature.
+			if (sigCleared != 0) {
+				if (Native.rd(Const.IO_SIGNAL) != 0) bs++;
+				if (Native.rdMem(Const.IO_SIGNAL) != 0) bm++;
+			}
 			if (Native.rdMem(1) != ref) bw++;
 			n++;
 		}
@@ -464,6 +493,13 @@ public class SmpDeepFlush implements Runnable {
 				: c1Sp > 448 ? " (spans banks 0,1,2)\r\n"
 				: c1Sp > 256 ? " (spans banks 0,1)\r\n" : " (bank 0 ONLY — no new coverage)\r\n");
 
+		// CLEAR io_signal so core 1's checks stop expecting 1 — see `sigCleared`.
+		// Core 1 is parked in Java by now (it published `ready`), and the boot
+		// path that reads this signal is long behind it, so the write is inert to
+		// everything except the detector.
+		Native.wr(0, Const.IO_SIGNAL);
+		sigCleared = 1;
+
 		// Each of these halts core 1 and must flush every dirty bank first.
 		int pm = churnUntilMinor(20000, 3) + churnUntilMinor(20000, 3);
 		JVMHelp.wr("SmpDeepFlush: minors ");
@@ -505,6 +541,8 @@ public class SmpDeepFlush implements Runnable {
 		wrInt(badSigMem);
 		JVMHelp.wr(" word1 ");
 		wrInt(badWord1);
+		JVMHelp.wr(" sigCleared ");
+		wrInt(sigCleared);
 		JVMHelp.wr(badCpuId + badSigRd + badSigMem + badWord1 == 0
 				? " (all clean)\r\n" : " *** MIS-READ ***\r\n");
 
