@@ -51,6 +51,16 @@ case class StackCacheDma(
     val wordCount = in UInt(8 bits)   // Number of words to transfer (up to bankSize=192)
     val bank      = in UInt(2 bits)   // Bank index to spill/fill
 
+    // ONE WORD TO OR FROM A REGISTER, not a bank — status item 133. An
+    // AR-addressed stack access (`Native.rdIntMem`/`wrIntMem`) to a word no
+    // bank holds is served straight from the spill region, without moving the
+    // window. `single` with `isSpill` writes `singleWrData` to `extAddr`;
+    // without it, reads `extAddr` into `singleRdData`. No bank port is used,
+    // and the transfer is one word whatever `burstLen` is.
+    val single       = in Bool()
+    val singleWrData = in Bits(32 bits)
+    val singleRdData = out Bits(32 bits)   // valid from `done` until the next start
+
     // Status
     val busy = out Bool()
     val done = out Bool()   // Single-cycle pulse when transfer completes
@@ -79,6 +89,7 @@ case class StackCacheDma(
   val baseAddr = Reg(UInt(bmbParam.access.addressWidth bits)) init(0)
   val bankIdx = Reg(UInt(2 bits)) init(0)
   val isSpillReg = Reg(Bool()) init(False)
+  val isSingleReg = Reg(Bool()) init(False)
 
   // Spill: data read from bank RAM (1-cycle latency, so we read first then send)
   val spillData = Reg(Bits(32 bits)) init(0)
@@ -121,6 +132,7 @@ case class StackCacheDma(
 
   io.busy := state =/= State.IDLE
   io.done := False
+  io.singleRdData := spillData
 
   // ==========================================================================
   // State Machine Logic
@@ -133,9 +145,19 @@ case class StackCacheDma(
         baseAddr := io.extAddr
         bankIdx := io.bank
         isSpillReg := io.isSpill
+        isSingleReg := io.single
         wordsDone := 0
         burstWordsSent := 0
-        when(io.isSpill) {
+        when(io.single) {
+          totalWords := 1
+          when(io.isSpill) {
+            // The word is already in hand: no bank read, straight to the bus.
+            spillData := io.singleWrData
+            state := State.SPILL_CMD
+          }.otherwise {
+            state := State.FILL_CMD
+          }
+        }.elsewhen(io.isSpill) {
           // Spill: start by reading first word from bank RAM
           io.bankRdAddr := 0
           io.bankSelect := io.bank
@@ -204,6 +226,8 @@ case class StackCacheDma(
         io.bmb.cmd.fragment.address := baseAddr + (wordsDone << 2).resized
         io.bmb.cmd.fragment.length := (burstLen * 4 - 1)
         burstWordsSent := 0
+        // A single-word access reads one word, not a burst.
+        when(isSingleReg) { io.bmb.cmd.fragment.length := 3 }
       } else {
         // Single-word path
         io.bmb.cmd.fragment.address := baseAddr + (wordsDone << 2).resized
@@ -242,6 +266,9 @@ case class StackCacheDma(
             state := State.FILL_WRITE_BURST
           }
         }
+        // The word stays in `spillData` for `singleRdData`; nothing is
+        // written to a bank.
+        when(isSingleReg) { state := State.DONE }
       }
     }
 

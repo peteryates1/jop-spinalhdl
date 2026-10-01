@@ -234,6 +234,11 @@ case class StackStage(
     val dmaExtAddr   = if (useCache) Some(out UInt((config.cacheConfig.get.wordAddrWidth + 2) bits)) else None
     val dmaWordCount = if (useCache) Some(out UInt(8 bits)) else None
     val dmaBank      = if (useCache) Some(out UInt(2 bits)) else None
+    // One word to or from the spill region, for an AR access the window does
+    // not cover (item 133; see the AR controller below)
+    val dmaSingle       = if (useCache) Some(out Bool()) else None
+    val dmaSingleWrData = if (useCache) Some(out Bits(config.width bits)) else None
+    val dmaSingleRdData = if (useCache) Some(in Bits(config.width bits)) else None
 
     // DMA status (from StackCacheDma)
     val dmaBusy = if (useCache) Some(in Bool()) else None
@@ -303,6 +308,19 @@ case class StackStage(
   // stall cycle before gating kicks in.
   val rotBusyDly = RegNext(rotBusy) init(False)
   rotBusyDly.simPublic()
+
+  // An AR access past this core's spill region (item 133): raised as EXC_SPOV
+  // through `spOv`. Only the cached design has a region edge.
+  val arFault = if (useCache) Some(Bool()) else None
+  // How many AR accesses were served from the spill region: proof for the
+  // simulations that the path ran, not only that results came out right.
+  // Members (not block-local) so a testbench can read them; no loads, so
+  // synthesis drops them. Absent without a cache, so a non-cache build's
+  // Verilog is unchanged.
+  val aroundReads  = if (useCache) Some(Reg(UInt(32 bits)) init(0)) else None
+  val aroundWrites = if (useCache) Some(Reg(UInt(32 bits)) init(0)) else None
+  aroundReads.foreach(_.simPublic())
+  aroundWrites.foreach(_.simPublic())
 
   // ==========================================================================
   // Barrel Shifter Instance
@@ -462,6 +480,20 @@ case class StackStage(
     val rotNeedFill = Reg(Bool()) init(False)
     val zeroFillCnt = Reg(UInt(8 bits)) init(0)
 
+    // AR controller state (item 133), declared here because the read MUX
+    // below returns `rdAroundData`. Explained at the controller.
+    object ArState extends SpinalEnum {
+      val IDLE, RD_START, RD_WAIT, WR_START, WR_WAIT = newElement()
+    }
+    val arState = Reg(ArState()) init(ArState.IDLE)
+    arState.simPublic()
+    val rdAroundValid   = Reg(Bool()) init(False)
+    val rdAroundData    = Reg(Bits(config.width bits)) init(0)
+    val rdAroundAddr    = Reg(UInt(spWidth bits)) init(0)
+    val wrAroundPending = Reg(Bool()) init(False)
+    val wrAroundAddr    = Reg(UInt(spWidth bits)) init(0)
+    val wrAroundData    = Reg(Bits(config.width bits)) init(0)
+
     // Zero-fill write signal (asserted during ZERO_FILL state, see rotation controller)
     val zeroFillActive = Bool()
     zeroFillActive := False
@@ -520,7 +552,9 @@ case class StackStage(
 
       // MUX: scratch takes priority, then banks.
       // Write-through bypass is applied later (after pipeWr* variables are defined).
-      ramDout := 0
+      // No RAM hit: the word the AR controller fetched from the spill region
+      // (item 133), which is 0 except on the read it was fetched for.
+      ramDout := rdAroundData
       when(rdIsScratch) {
         ramDout := scratchDout
       }.elsewhen(bankRdHit(0)) {
@@ -556,7 +590,7 @@ case class StackStage(
         bankRdDout(i) := bankRams(i).readAsync(bankRdPhysAddrReg(i))
       }
 
-      ramDout := 0
+      ramDout := rdAroundData   // no RAM hit: see the sync path
       when(rdIsScratch) {
         ramDout := scratchDout
       }.elsewhen(bankRdHit(0)) {
@@ -602,8 +636,13 @@ case class StackStage(
     val pipeWrIsScratch = Reg(Bool()) init(True)
     val pipeWrBankHit = Vec(Reg(Bool()) init(False), cc.numBanks)
     val pipeWrBankPhys = Vec(Reg(UInt(8 bits)) init(0), cc.numBanks)
+    // Was the delayed write addressed by a local (vp0..3, vpadd: st0..3, st)
+    // or by AR (stmi)? selWra < 6; SP-relative and direct writes are not.
+    // Registered with wrAddrDly, for the AR controller (item 133).
+    val pipeWrLocalOrAr = Reg(Bool()) init(False)
     when(!rotBusy) {
       pipeWrIsScratch := wrIsScratchComb
+      pipeWrLocalOrAr := io.selWra.asUInt < 6
       for (i <- 0 until cc.numBanks) {
         pipeWrBankPhys(i) := wrBankPhysComb(i)
         pipeWrBankHit(i) := wrBankHitComb(i)
@@ -753,8 +792,24 @@ case class StackStage(
     // evicted range afterwards, and a VP decrease triggered no rotation. Tried
     // and measured to have no effect.
     //
-    // The window must cover [VP, SP]. VP <= SP always and a frame is far
-    // smaller than the window, so both always fit.
+    // The window must cover [VP, SP] -- WHILE VP <= SP. That is the normal
+    // state and the case this was built for: a frame straddling the window
+    // base, so the rotation is always DOWNWARD and always a fill.
+    //
+    // VP > SP HAPPENS, and rotating for it destroys data. `f_athrow` ends
+    // with `setSP(fp+4); unlock(0); return t` -- SP drops to the handler's
+    // frame while the method still runs in its own, far above. Rotating for
+    // that VP moves the window UP, and an upward rotation ZERO-fills (above
+    // the active bank is assumed dead), so f_athrow's own locals came back as
+    // 0 and `return t` returned garbage: DeepThrow failing at d60, where
+    // f_athrow's frame first sits past the initial window. With VP and SP
+    // more than a window apart the two would also livelock.
+    //
+    // So VP is a rotation input only while VP <= smuxSignal (the SP this
+    // instruction is moving to: during `stsp` the old `sp` register still
+    // reads high). A VP the window does not cover above SP is not rotated
+    // for; its locals are served from the spill region like an AR access
+    // (the AR controller below).
     val vpInScratch = vp0 < cc.scratchSize
     val bankCoversVp = Vec(Bool(), cc.numBanks)
     for (i <- 0 until cc.numBanks) {
@@ -768,7 +823,7 @@ case class StackStage(
     // satisfied; an instant switch for SP leaves VP resident, so the VP case
     // simply comes round again on the next cycle.
     val rotNeedSmux = !smuxInScratch && !smuxInActiveBank
-    val rotNeedVp = !vpResident
+    val rotNeedVp = !vpResident && vp0 <= smuxSignal
     val rotAddr = Mux(rotNeedSmux, smuxSignal, vp0)
     val needsRotation = (rotNeedSmux || rotNeedVp) && rotState === RotState.IDLE
     val canInstantSwitch = rotNeedSmux && anyBankCoversSmux && rotState === RotState.IDLE
@@ -820,9 +875,8 @@ case class StackStage(
     when(bankDirty(2)) { firstDirty := 2 }
     when(bankDirty(1)) { firstDirty := 1 }
     when(bankDirty(0)) { firstDirty := 0 }
-    // Done when nothing is dirty AND no transfer is in flight. A core with a
-    // clean cache answers immediately, so it does not delay the collector.
-    io.gcFlushDone := !anyDirty && rotState === RotState.IDLE
+    // `gcFlushDone` (nothing dirty, no transfer in flight) is assigned after
+    // the AR controller, whose parked write is data memory does not yet have.
 
     // Is this an underflow (need data from ext mem) or overflow (new range)?
     // Keyed on rotAddr, so a VP-driven rotation fetches real data rather than
@@ -846,9 +900,110 @@ case class StackStage(
       ((spillBase + bankOffset) << 2).resize(byteW)
     }
 
+    // ------------------------------------------------------------------
+    // AR-addressed access outside the window — status item 133
+    // ------------------------------------------------------------------
+    //
+    // `ldmi`/`stmi` take their address from AR (`Native.rdIntMem`/`wrIntMem`
+    // are `star / nop / ldmi|stmi`, asm/src/jvm.asm), and AR reaches nothing
+    // above: the window follows SP and VP only. So an AR address the window
+    // did not cover read as the MUX default, 0, and a write to it was dropped,
+    // with no fault. That is every whole-stack walker -- f_athrow, both of the
+    // collector's own-stack root scans, JVMHelp.trace, the RT context switch --
+    // measured by jvm.DeepIntMem / DeepGc / DeepThrow.
+    //
+    // ROTATION CANNOT SERVE IT; two attempts were measured worse and reverted.
+    // The target is `activeBase -/+ bankSize`, ONE bank from the active one,
+    // so a word several banks down is never reached; and an overflow
+    // ZERO-fills, which is right only while everything above the active bank
+    // is dead -- false once the window has been dragged below SP for a walker.
+    //
+    // So the word is served where it lives and the window does not move: one
+    // DMA word to or from the spill region (StackCacheDma `single`). Coherent
+    // because a word no bank holds has its current value in the spill region
+    // -- a bank is spilled whenever it is evicted dirty -- and a word a bank
+    // DOES hold is never served this way.
+    //
+    //   READ (ldmi): detected in its decode cycle and stalled there, like a
+    //     rotation, so the instruction retries once the word is in
+    //     `rdAroundData`, which the read MUX returns when no RAM hits.
+    //   WRITE (stmi): the write happens a cycle after decode (wrEnaDly), which
+    //     is when its data exists, so it is caught THERE and parked. The stall
+    //     that raises freezes the NEXT instruction, exactly as a rotation that
+    //     instruction triggered would.
+    //
+    // ORDER. A parked write goes first -- before any rotation, flush or read
+    // -- because a later fill or read of that address must see it. A read
+    // yields to a rotation, and a flush to a read.
+    //
+    // THE EDGE. An AR address past this core's region is not served: a
+    // write-around there would land in the next core's stack. It raises
+    // EXC_SPOV through `spOv` instead -- the exception for running off the end
+    // with SP. (spillWords = 0 means the extent is unknown; no edge then.)
+    val regionEnd = cc.scratchSize + cc.spillWords
+    def outsideRegion(addr: UInt): Bool =
+      if (cc.spillWords > 0 && regionEnd <= cc.maxVirtualAddr) addr >= U(regionEnd, spWidth bits)
+      else False
+
+    // NOT ONLY AR. The same holds for a LOCAL whenever VP is above SP and
+    // outside the window (see "VP IS A ROTATION INPUT TOO"): `ld0..3`/`ld`
+    // read through vp0..3/vpadd, `st0..3`/`st` write through them. So the
+    // controller serves every read and write that is addressed by a local or
+    // by AR -- selRda/selWra < 6 -- and misses. SP-relative accesses never
+    // miss: the window follows SP.
+    //
+    // The read is keyed on `rdaddr`, using the read path's own translation
+    // (`bankRdHitComb`); `ld0..3`, `ld` and `ldmi` are the only instructions
+    // that select it, and all of them load A from the RAM.
+    val rdLocalOrAr = io.selRda.asUInt < 6
+    val rdResident = rdIsScratchComb || bankRdHitComb.reduce(_ || _)
+    val rdOutside = outsideRegion(rdaddr)
+    val rdAroundNeed = rdLocalOrAr && !rdResident && !rdOutside && !rdAroundValid
+
+    val pipeWrLocalOrArNow = pipeWrEn && pipeWrLocalOrAr
+    val pipeWrOutside = outsideRegion(pipeWrAddr)
+    val wrAroundNow = pipeWrLocalOrArNow && !pipeWrIsScratch &&
+                      !pipeWrBankHit.reduce(_ || _) && !pipeWrOutside
+    when(wrAroundNow) {
+      wrAroundPending := True
+      wrAroundAddr := pipeWrAddr
+      wrAroundData := pipeWrData
+    }
+
+    // THE BANKS RESPECT THE EDGE TOO. Banks sit at 64 + 192k; the region is
+    // `spillWords` long, and when 192 does not divide it -- 8192 on every
+    // hardware config -- the last bank STRADDLES the region's end ([8128,
+    // 8320) against 8256). A whole-bank spill then wrote the part past the
+    // edge into the next core's stack, or, for core 0 at the top of memory,
+    // wrapped to the bottom. No overflow was needed: SP anywhere in
+    // [8128, 8240) is legal and below the spOv limit. So every bank transfer
+    // is clipped at the edge -- a straddling bank moves only its in-region
+    // words -- and a bank wholly past it moves none (only an SP overshoot past
+    // the spOv limit can put one there, and its contents are dead once the
+    // overflow is taken). StackCacheArAccessTest's straddle case.
+    val hasEdge = cc.spillWords > 0 && regionEnd <= cc.maxVirtualAddr
+    def bankWords(base: UInt): UInt =
+      if (!hasEdge) U(cc.bankSize, 8 bits)
+      else {
+        val end = U(regionEnd, spWidth + 1 bits)
+        val b = base.resize(spWidth + 1)
+        Mux(b + cc.bankSize <= end, U(cc.bankSize, 8 bits),
+          Mux(b < end, (end - b).resize(8), U(0, 8 bits)))
+      }
+    // A transfer of zero words is skipped, not started: StackCacheDma counts
+    // to `wordCount - 1` and would wrap to 256.
+    val dmaSkip = Reg(Bool()) init(False)
+
+    // The rotation controller defers while this one has work (see ORDER).
+    val arBusy = arState =/= ArState.IDLE || wrAroundPending || wrAroundNow
+    val rotationStarts = needsRotation && !canInstantSwitch
+
     switch(rotState) {
       is(RotState.IDLE) {
-        when(needsRotation && !canInstantSwitch) {
+        when(arBusy) {
+          // An AR access is being served from the spill region. Wait: a
+          // parked write must reach memory before any fill reads it.
+        }.elsewhen(needsRotation && !canInstantSwitch) {
           // Need DMA: assign victim
           val victim = victimChoice
           rotVictimIdx := victim
@@ -881,7 +1036,7 @@ case class StackStage(
           }
         }.elsewhen(canInstantSwitch) {
           activeBankIdx := coveringBankIdx
-        }.elsewhen(io.gcFlushReq && anyDirty) {
+        }.elsewhen(io.gcFlushReq && anyDirty && !rdAroundNeed) {
           // FLUSH FOR A STOP-THE-WORLD — status item 133.
           //
           // The collector cannot read this core's stack: the cross-core root
@@ -902,16 +1057,18 @@ case class StackStage(
       }
 
       is(RotState.FLUSH_START) {
-        io.dmaStart.get := True
+        val n = bankWords(bankBaseVAddr(flushIdx))
+        io.dmaStart.get := n =/= 0
         io.dmaIsSpill.get := True
         io.dmaBank.get := flushIdx
         io.dmaExtAddr.get := extByteAddr(bankBaseVAddr(flushIdx))
-        io.dmaWordCount.get := cc.bankSize
+        io.dmaWordCount.get := n
+        dmaSkip := n === 0
         rotState := RotState.FLUSH_WAIT
       }
 
       is(RotState.FLUSH_WAIT) {
-        when(io.dmaDone.get) {
+        when(io.dmaDone.get || dmaSkip) {
           bankDirty(flushIdx) := False   // resident and unchanged; just no longer dirty
           rotState := RotState.IDLE
         }
@@ -919,16 +1076,18 @@ case class StackStage(
 
       is(RotState.SPILL_START) {
         // Assert DMA start for 1 cycle (DMA is in IDLE)
-        io.dmaStart.get := True
+        val n = bankWords(bankBaseVAddr(rotVictimIdx))
+        io.dmaStart.get := n =/= 0
         io.dmaIsSpill.get := True
         io.dmaBank.get := rotVictimIdx
         io.dmaExtAddr.get := extByteAddr(bankBaseVAddr(rotVictimIdx))
-        io.dmaWordCount.get := cc.bankSize
+        io.dmaWordCount.get := n
+        dmaSkip := n === 0
         rotState := RotState.SPILL_WAIT
       }
 
       is(RotState.SPILL_WAIT) {
-        when(io.dmaDone.get) {
+        when(io.dmaDone.get || dmaSkip) {
           bankDirty(rotVictimIdx) := False
           bankResident(rotVictimIdx) := False
           bankBaseVAddr(rotVictimIdx) := rotTargetBase
@@ -946,16 +1105,18 @@ case class StackStage(
 
       is(RotState.FILL_START) {
         // Assert DMA start for fill (DMA returned to IDLE after spill DONE)
-        io.dmaStart.get := True
+        val n = bankWords(rotTargetBase)
+        io.dmaStart.get := n =/= 0
         io.dmaIsSpill.get := False
         io.dmaBank.get := rotVictimIdx
         io.dmaExtAddr.get := extByteAddr(rotTargetBase)
-        io.dmaWordCount.get := cc.bankSize
+        io.dmaWordCount.get := n
+        dmaSkip := n === 0
         rotState := RotState.FILL_WAIT
       }
 
       is(RotState.FILL_WAIT) {
-        when(io.dmaDone.get) {
+        when(io.dmaDone.get || dmaSkip) {
           bankResident(rotVictimIdx) := True
           activeBankIdx := rotVictimIdx
           rotState := RotState.IDLE
@@ -979,10 +1140,75 @@ case class StackStage(
       }
     }
 
+    // ---- AR controller (item 133; explained above the rotation controller) ----
+    io.dmaSingle.get := False
+    io.dmaSingleWrData.get := wrAroundData
+
+    switch(arState) {
+      is(ArState.IDLE) {
+        when(wrAroundNow || wrAroundPending) {
+          when(rotState === RotState.IDLE) { arState := ArState.WR_START }
+        }.elsewhen(rdAroundNeed && rotState === RotState.IDLE && !rotationStarts) {
+          rdAroundAddr := rdaddr
+          arState := ArState.RD_START
+        }
+      }
+      is(ArState.RD_START) {
+        io.dmaStart.get := True
+        io.dmaIsSpill.get := False
+        io.dmaSingle.get := True
+        io.dmaExtAddr.get := extByteAddr(rdAroundAddr)
+        io.dmaWordCount.get := 1
+        arState := ArState.RD_WAIT
+      }
+      is(ArState.RD_WAIT) {
+        when(io.dmaDone.get) {
+          rdAroundData := io.dmaSingleRdData.get
+          rdAroundValid := True
+          arState := ArState.IDLE
+        }
+      }
+      is(ArState.WR_START) {
+        io.dmaStart.get := True
+        io.dmaIsSpill.get := True
+        io.dmaSingle.get := True
+        io.dmaExtAddr.get := extByteAddr(wrAroundAddr)
+        io.dmaWordCount.get := 1
+        arState := ArState.WR_WAIT
+      }
+      is(ArState.WR_WAIT) {
+        when(io.dmaDone.get) {
+          wrAroundPending := False
+          arState := ArState.IDLE
+        }
+      }
+    }
+
     // Rotation busy: pipeline stalls during any non-IDLE rotation state
     // Also stall for 1 cycle when rotation is needed but not instant-switchable
+    // -- and while the AR controller serves, or is about to serve, an access.
     rotBusy := (rotState =/= RotState.IDLE) ||
-               (needsRotation && !canInstantSwitch)
+               (needsRotation && !canInstantSwitch) ||
+               arBusy || rdAroundNeed
+
+    // THE RETRY is the first cycle the stall lets the ldmi through. The read
+    // it registers there finds no RAM hit and so returns `rdAroundData`; the
+    // cycle after, the word is consumed and the slot emptied, so any later miss
+    // reads 0 as it always did rather than a stale word.
+    val rdAroundTaken = rdAroundValid && !rotBusy
+    when(rdAroundTaken) { rdAroundValid := False }
+    when(RegNext(rdAroundTaken) init(False)) { rdAroundData := 0 }
+
+    // Nothing dirty, no transfer in flight, and no AR write still parked.
+    io.gcFlushDone := !anyDirty && rotState === RotState.IDLE && !arBusy
+
+    // THE EDGE, raised in the cycle the access executes. One cycle wide, so
+    // `Sys` sees a rising edge each time.
+    arFault.get := RegNext((rdLocalOrAr && rdOutside && !rotBusy) ||
+                           (pipeWrLocalOrArNow && pipeWrOutside)) init(False)
+
+    when(arState === ArState.RD_WAIT && io.dmaDone.get) { aroundReads.get := aroundReads.get + 1 }
+    when(arState === ArState.WR_WAIT && io.dmaDone.get) { aroundWrites.get := aroundWrites.get + 1 }
 
     io.rotationBusy.get := rotBusy
 
@@ -1261,7 +1487,7 @@ case class StackStage(
   // Output Assignments
   // ==========================================================================
 
-  io.spOv := spOvReg
+  io.spOv := arFault.map(spOvReg || _).getOrElse(spOvReg)
   io.aout := a
   io.bout := b
 

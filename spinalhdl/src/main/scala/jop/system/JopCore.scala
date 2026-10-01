@@ -252,6 +252,9 @@ case class JopCore(
     dma.io.extAddr := pipeline.io.dmaExtAddr.get.resized
     dma.io.wordCount := pipeline.io.dmaWordCount.get
     dma.io.bank := pipeline.io.dmaBank.get
+    dma.io.single := pipeline.io.dmaSingle.get
+    dma.io.singleWrData := pipeline.io.dmaSingleWrData.get
+    pipeline.io.dmaSingleRdData.get := dma.io.singleRdData
 
     // Status: DMA → stack stage
     pipeline.io.dmaBusy.get := dma.io.busy

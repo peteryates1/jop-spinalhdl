@@ -249,6 +249,11 @@ public class DeepThrow extends TestCase {
 		// The ladder is kept whole rather than trimmed to the first failure: when
 		// this is fixed, every rung must pass, and the three distinct symptoms
 		// are each worth re-checking.
+		//
+		// FIXED 2026-10-01: every rung passes. The reads needed the AR controller
+		// (served from the spill region); d60 and d100 ALSO needed the VP
+		// rotation restricted to VP <= SP, because f_athrow's tail runs with VP
+		// far above SP and the rotation zero-filled its own frame.
 		ok = throwAt(40) && ok;
 		ok = throwAt(55) && ok;
 		ok = throwAt(58) && ok;

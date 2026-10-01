@@ -152,6 +152,7 @@ class MicrocodeParkLoopFreezeTest extends AnyFunSuite {
     pipeline.io.dmaBankWrData.get := 0
     pipeline.io.dmaBankWrEn.get   := False
     pipeline.io.dmaBankSelect.get := 0
+    pipeline.io.dmaSingleRdData.get := 0
   }
 
   /** `io_cpu_id` and `io_signal`, as the microcode spells them (jvm.asm). */

@@ -26,6 +26,9 @@
       fails the test is wrong, not the cache.
     - deep, no GC: the depth alone must not disturb the Box.
 
+  FIXED 2026-10-01 (StackStage's AR controller serves the evicted words). Red
+  before: `g5+ n100+ g70- g100-`. This test is now the guard.
+
   IN THE FAILING STATE THIS CAN TAKE THE REST OF THE RUN WITH IT. The same scan
   also misses DeepAll.main's own `tc` array and the test objects, so the line
   after this one may be garbage. The verdict is printed here, before returning,

@@ -26,6 +26,10 @@
   CONTROLS. Depth 5 keeps everything resident, so it must pass on any build: if
   it fails, the probe address is wrong and nothing else here means anything. The
   probe address is also checked directly, before recursing.
+
+  FIXED 2026-10-01: such a word is now served from the spill region, one DMA
+  word, without moving the window (StackStage's AR controller). Red before:
+  `d5 rw+`, then `RW-` at every deep rung. This test is now the guard.
 */
 package jvm;
 

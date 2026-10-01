@@ -105,6 +105,10 @@ case class JopPipeline(
     val dmaExtAddr   = if (config.stackConfig.useStackCache) Some(out UInt((config.stackConfig.cacheConfig.get.wordAddrWidth + 2) bits)) else None
     val dmaWordCount = if (config.stackConfig.useStackCache) Some(out UInt(8 bits)) else None
     val dmaBank      = if (config.stackConfig.useStackCache) Some(out UInt(2 bits)) else None
+    // Single-word access for an AR address the window does not cover (item 133)
+    val dmaSingle       = if (config.stackConfig.useStackCache) Some(out Bool()) else None
+    val dmaSingleWrData = if (config.stackConfig.useStackCache) Some(out Bits(config.dataWidth bits)) else None
+    val dmaSingleRdData = if (config.stackConfig.useStackCache) Some(in Bits(config.dataWidth bits)) else None
     // DMA status (from StackCacheDma via JopCore)
     val dmaBusy = if (config.stackConfig.useStackCache) Some(in Bool()) else None
     val dmaDone = if (config.stackConfig.useStackCache) Some(in Bool()) else None
@@ -354,6 +358,9 @@ case class JopPipeline(
     io.dmaExtAddr.get := stack.io.dmaExtAddr.get
     io.dmaWordCount.get := stack.io.dmaWordCount.get
     io.dmaBank.get := stack.io.dmaBank.get
+    io.dmaSingle.get := stack.io.dmaSingle.get
+    io.dmaSingleWrData.get := stack.io.dmaSingleWrData.get
+    stack.io.dmaSingleRdData.get := io.dmaSingleRdData.get
 
     // DMA status: JopCore → stack stage
     stack.io.dmaBusy.get := io.dmaBusy.get

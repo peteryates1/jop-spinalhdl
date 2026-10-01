@@ -38,7 +38,7 @@ answer about the evidence costs confidence in every result built on it — then
 correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
-1. **[#133](#item-133)** — Stack cache: **`Native.rdIntMem`/`wrIntMem`/`int2extMem`/`ext2intMem` address through AR, and AR reaches NO rotation logic** — so every one of them reads 0 and drops writes above the resident window, silently, with no fault. This item's ORIGINAL framing was right and the 2026-09-15 re-scope that narrowed it was wrong, having trusted an architecture-doc claim that is false. Live consequences: `f_athrow`'s unwind (`JVM.java:742-819`) and the RT-thread context switch (`Scheduler.java:96-149`). The two defects the item chased in between (fetch-freeze branch targets, the microcode latch) ARE fixed and hardware-validated
+1. **[#133](#item-133)** — Stack cache: **the AR defect is FIXED IN SIMULATION (2026-10-01) — not by rotation: a stack access the window does not cover is served from the spill region, one DMA word, without moving the window.** Red -> green on `jvm.DeepIntMem` (the primitive), `jvm.DeepGc` (the collector COLLECTED a live object held in an evicted frame) and every `jvm.DeepThrow` rung to d100, plus `StackCacheArAccessTest`. Two more defects found and fixed on the way: `f_athrow`'s tail runs with VP far above SP and the VP rotation ZERO-filled its own frame; and the last bank straddles the spill region's end, so a legal stack 8128-8240 words deep spilled 64 words into the next core's stack (or, for core 0, wrapped to the bottom of memory). An address past the region now faults EXC_SPOV. **Still open:** a run on a stack-cache board (timing first), and the RT context switch, whose test is blocked by [item 160](#item-160)
 2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
 3. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 4. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
@@ -6678,7 +6678,88 @@ Incidentally, every one of those rounds also printed `haltLeak 0` — which is
 
 <a id="item-133"></a>
 
-### Item 133 — stack cache: two defects found, fixed and hardware-validated; `athrow` and the context switch still walk the whole stack
+### Item 133 — stack cache: stack walkers served from the spill region (fixed in sim 2026-10-01); hardware run and the context-switch test outstanding
+
+**2026-10-01 (later) — FIXED IN SIMULATION: a stack access the resident window
+does not cover is now served from the spill region.** Three defects, each proved
+red first.
+
+**1. The original defect — AR-addressed access.** Fixed by serving the word
+where it lives, NOT by rotating. Rotation was tried twice (driven from
+`selRda`/`selWra == 101`, then latched at `enaAr`) and both were measured worse
+(maxSp 11505; 565 fills and maxSp 65462) and reverted. Reading the FSM explains
+both: the target is `activeBase -/+ bankSize`, one bank from the ACTIVE bank
+rather than the bank that missed, so a word several banks down is unreachable;
+and an upward rotation zero-fills, which is wrong once the window has been dragged
+below SP for a walker. The fix is a second small controller beside the rotation
+FSM that moves ONE word between the spill region and a register through the
+stack DMA (`StackCacheDma.single`), stalling the pipeline like a rotation. A read
+retries once the word is in `rdAroundData`; a write is caught in the cycle it
+happens and parked. Coherent because a non-resident word's current value is in
+the spill region. Design: `docs/architecture/stack-cache.md`.
+
+| test | before | after |
+|---|---|---|
+| `jvm.DeepIntMem` — `rdIntMem`/`wrIntMem` of a word in an evicted frame | `d5 rw+` control, then **`RW-` at d60 (SP 651), d70, d100** — read 0, write lost | all `rw+` |
+| `jvm.DeepGc` — live object held only in an evicted frame, full GC from depth | controls `g5+ n100+`, **`g70- g100-`: the object was collected** | all `+` |
+| `jvm.DeepThrow` | d58, d60 failing (d58 "Uncaught exception") | **every rung, d40-d100** |
+| `StackCacheArAccessTest` (RTL: StackStage + StackCacheDma + RAM) | read-around 0x00000000, write-around left the spill copy at 0 | green |
+
+**THE COLLECTOR DEFECT IS THE WORST OF THEM.** `GC.getStackRoots`/`getYoungRoots`
+scan the collector's own stack with `rdIntMem`, so on every stack-cache build a
+collection started more than ~60 frames deep missed every root in the evicted
+frames and freed live objects. In the red run the same scan also freed
+`DeepAll.main`'s own `tc` array: the program then printed `DeepAll done` having
+silently skipped `DeepThrow` — heap corruption changing control flow, with no
+exception anywhere.
+
+**2. Found by the fix's own test: `f_athrow`'s tail runs with VP far ABOVE SP.**
+With the reads fixed, d58 passed and d60 still failed — now with "Uncaught
+exception" printed twice. `f_athrow` ends `setSP(fp+4); unlock(0); return t`, and
+from d60 on its own frame sits past the initial window. `rotNeedVp` then rotated
+the window back UP for VP, and an upward rotation zero-fills, so `t` read back as
+0. VP now drives rotation only while `vp0 <= smuxSignal` (the case it was built
+for, a frame straddling the window base — always a downward fill), and a local
+above SP that the window does not cover is served like an AR access. The new d100
+rung (VP and SP more than a window apart, so no window placement covers both)
+passes.
+
+**3. Found by asking where the region's edge is: the last bank STRADDLES it.**
+Banks sit at `64 + 192k`; the region is 8192 words, which 192 does not divide, so
+the bank at [8128, 8320) straddles the end at 8256. A dirty spill of it wrote 64
+words past this core's region — into the base of the next core's stack, or, for
+core 0 at the top of memory, wrapped to the bottom. NO OVERFLOW NEEDED: SP in
+[8128, 8240) is legal and below the spOv limit. Red: *"128 DMA transfers past the
+region's end (byte 4096)"* on a 1024-word test region. Every bank transfer is now
+clipped at the edge. And an AR or local address past the region now raises
+EXC_SPOV instead of being served — a write-around there would be the same
+corruption by another route.
+
+**Regression, all green:** `DoAll` on `JopJvmTestsStackCacheBramSim` **68/68**
+(it needs an 80M-cycle cap now — the hardwired 30M stopped it in `MathTest`; the
+cap is the third argument) with 0 accesses served and the resident set always
+contiguous; `StackCacheFlushTest` 4/4; `MicrocodeParkLoopFreezeTest` all;
+`StackCacheDmaFormal` 7/7, including a new "single-word transfer never writes a
+bank" proved able to fail by mutation; `JopSmpStackCacheSdramSim 2` (SMP with
+the cache, the one regression where the region's edge is live) PASS, STACKROOT
+over 6 minor GCs, 0 lost. `jvm.DeepAll` serves 1,149 reads and 9 writes (the sim
+prints both). A non-cache build generates IDENTICAL Verilog: the full
+`ep4cgx150Serial` top, diffed against HEAD with SpinalHDL's line-number-derived
+names normalised, 0 lines.
+
+**Measured but not a defect:** the contiguity guard reports 6,936 cycles in
+`DeepAll`, none before `DeepThrow` — the rotation FSM's one-bank-at-a-time walk
+on a multi-bank `setSP` jump holds a duplicate bank for a while. Worked through
+by hand as unobservable under stack discipline (the duplicate is a clean refill of
+words above the new SP); a target computed from the window's ends would remove
+it. Not done.
+
+**STILL OPEN:** (a) hardware — one run of `DeepAll` and `DoAll` on a stack-cache
+board (single-core DDR3: the Wukong is in the primary set), timing checked first;
+(b) the RT context switch — same mechanism, now served, but its test cannot run
+until [item 160](#item-160) right-sizes `RtThread`.
+
+---
 
 **2026-10-01 — `f_athrow` IS BROKEN ON A DEEP STACK, red-proved in simulation with
 a measured threshold. This is the item's ORIGINAL defect, and the vehicle is
@@ -6761,9 +6842,9 @@ measurement; this table is what survives.
 | DDR2/DDR3 reserving a spill region with no stack cache | **FIXED** | 2026-09-24, confirmed in generated RTL, 256 KB recovered at 8 cores |
 | multi-bank + rotation flush coverage | **VALIDATED** | sp 1171, three banks + rotation, 15 of 16 runs post-fix |
 | the underlying transient that starts it | **SPLIT OUT to [item 161](#item-161)** 2026-10-01 | Symptom fixed twice over and measured absent; cause unknown, five hypotheses eliminated. Filed separately so that two concrete unfixed defects in this item are not queued behind a latent one with no observable effect |
-| **AR-addressed stack access does not rotate** | **OPEN — the item's original defect, re-confirmed 2026-09-30** | `selSmux = 3` is selected ONLY by `stsp` 0x01b (`DecodeStage.scala:397`); `rdIntMem`/`wrIntMem`/`int2extMem`/`ext2intMem` all use `star` 0x01a -> AR (`jvm.asm:2190-2193`, `:2230-2233`, `:2269-2272`), and AR appears NOWHERE in `StackStage.scala:700-1000`. Non-resident read returns 0 (`:511`), write dropped (`:622-631`), `spOv` keyed on `sp` alone (`:1215-1222`) so nothing faults |
-| `f_athrow` unwind reads zeros below the window | **OPEN, TEST NOT YET WRITTEN** | `JVM.java:742-819` walks `fp` down with `rdIntMem(fp+1..fp+4)`; wrong once `maxSp >= 640`. `AthrowTest.java` exists but is FLAT, so it never exceeds 639 — which is why this never showed |
-| RT context switch save/restore is wrong above the window | **OPEN, TEST BLOCKED by [item 160](#item-160)** | Mechanism established: `int2extMem`/`ext2intMem` use the same `star` -> AR addressing, and `jvm.DeepThrow` has now confirmed that mechanism empirically for `f_athrow`. The TEST cannot run because a single `RtThread` needs 262 KB against 234 KB free — measured, `ThreadAll` reports INCONCLUSIVE |
+| **AR-addressed stack access does not rotate** | **FIXED in sim 2026-10-01 — served from the spill region, not rotated** (see the top of this item). Was: OPEN — the item's original defect, re-confirmed 2026-09-30 | `selSmux = 3` is selected ONLY by `stsp` 0x01b (`DecodeStage.scala:397`); `rdIntMem`/`wrIntMem`/`int2extMem`/`ext2intMem` all use `star` 0x01a -> AR (`jvm.asm:2190-2193`, `:2230-2233`, `:2269-2272`), and AR appears NOWHERE in `StackStage.scala:700-1000`. Non-resident read returns 0 (`:511`), write dropped (`:622-631`), `spOv` keyed on `sp` alone (`:1215-1222`) so nothing faults |
+| `f_athrow` unwind reads zeros below the window | **FIXED in sim 2026-10-01**, `jvm.DeepThrow` d40-d100 green; it also needed the VP > SP fix. Was: OPEN, TEST NOT YET WRITTEN | `JVM.java:742-819` walks `fp` down with `rdIntMem(fp+1..fp+4)`; wrong once `maxSp >= 640`. `AthrowTest.java` exists but is FLAT, so it never exceeds 639 — which is why this never showed |
+| RT context switch save/restore is wrong above the window | **MECHANISM FIXED with the AR path 2026-10-01; TEST STILL BLOCKED by [item 160](#item-160)** | Mechanism established: `int2extMem`/`ext2intMem` use the same `star` -> AR addressing, and `jvm.DeepThrow` has now confirmed that mechanism empirically for `f_athrow`. The TEST cannot run because a single `RtThread` needs 262 KB against 234 KB free — measured, `ThreadAll` reports INCONCLUSIVE |
 | `prefillThreshold` | **CLOSED 2026-10-01 — deleted** | It was a leftover constant, not a missing feature: the demand path repairs every miss correctly, spilling a dirty victim and filling from memory (`:846-860`) with `rotBusy` freezing fetch and decode (`JopPipeline.scala:204-205`). Prefill would have been a latency optimisation only. Removed rather than left, because a declared threshold nothing reads reads later as a mechanism that exists |
 
 **THE ITEM IS WIDER THAN THE 2026-09-29 VERSION OF THIS TABLE SAID.** Two real

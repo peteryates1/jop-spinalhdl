@@ -188,6 +188,7 @@ object JopJvmTestsStackCacheBramSim extends App {
   // with deliberately flat call graphs -- its peak SP says nothing about what
   // application code does.
   //   Test/runMain jop.system.JopJvmTestsStackCacheBramSim JbeBench JbeBench
+  //   Test/runMain jop.system.JopJvmTestsStackCacheBramSim JvmTests DoAll 80000000
   val jopFilePath = jop.utils.SimApp.jop(
     if (args.length > 0) args(0) else "JvmTests",
     if (args.length > 1) args(1) else "DeepAll")
@@ -218,6 +219,9 @@ object JopJvmTestsStackCacheBramSim extends App {
       var alwaysLastRot = -1
       var contigViolations = 0
       var vpNonResident = 0
+      // VP outside the window while ABOVE SP: legal since the AR controller
+      // serves locals from the spill region (f_athrow's tail, item 133).
+      var vpAboveSpNonResident = 0
       var deepRecursionCycleStart = 0
 
       def logLine(msg: String): Unit = {
@@ -281,7 +285,9 @@ object JopJvmTestsStackCacheBramSim extends App {
       val decodeStg = dut.cluster.cores(0).pipeline.decode
       val pipeStg = dut.cluster.cores(0).pipeline
 
-      val maxCycles = 30000000  // 30M: enough for full JVM test suite including DeepRecursion
+      // 30M was "enough for the full JVM test suite" once; DoAll has since
+      // grown past it and stops in MathTest. Third argument overrides.
+      val maxCycles = if (args.length > 2) args(2).toInt else 30000000
       var zeroWriteCount = 0  // Count of zero-data writes to bank RAM (addr >= 64)
       val reportInterval = 100000
       var lastRotState = 0
@@ -425,7 +431,9 @@ object JopJvmTestsStackCacheBramSim extends App {
             val b = dut.io.scBankBase(i).toInt
             vpNow >= b && vpNow < b + 192
           }
-          if (!resident) {
+          if (!resident && vpNow > dut.io.scSp.toInt) {
+            vpAboveSpNonResident += 1
+          } else if (!resident) {
             if (vpNonResident == 0) {
               val bs = (0 until 3).map(i => dut.io.scBankBase(i).toInt)
               println(f"  >>> VP NOT RESIDENT at cycle $cycle: vp=$vpNow%d sp=${dut.io.scSp.toInt}%d " +
@@ -958,12 +966,19 @@ object JopJvmTestsStackCacheBramSim extends App {
 
       // Summary
       println(s"\n  VP resident: " +
-              (if (vpNonResident == 0) "always" else s"NO -- $vpNonResident cycles with VP outside every bank"))
+              (if (vpNonResident == 0) "always" else s"NO -- $vpNonResident cycles with VP outside every bank") +
+              s" (VP <= SP; a rotation in progress also counts)")
+      println(s"  VP above SP and outside the window: $vpAboveSpNonResident cycles (served from the spill region)")
       println(s"  Resident set contiguous: " +
               (if (contigViolations == 0) "YES (0 violations)" else s"NO -- $contigViolations violations"))
       println(s"  Stack cache (ALWAYS-ON, item 133): maxSp=$alwaysMaxSp spills=$alwaysSpills " +
               s"fills=$alwaysFills  resident window = ${3 * 192} words")
       println(s"  Stack cache summary: spills=$spillCount fills=$fillCount maxSp=$maxSp spDecreases=$spDecreaseCount wrSnooped=$wrSnoopCount bankMismatches=$mismatchCount ramDoutMismatches=$ramDoutMismatchPrev zeroWrites=$zeroWriteCount")
+      // Item 133: AR accesses (rdIntMem/wrIntMem) the window did not cover,
+      // served from the spill region. Zero on a deep-stack app means the
+      // walkers never left the window, so their passing proves nothing.
+      println(s"  AR accesses served from the spill region: reads=${stackStg.aroundReads.get.toLong} " +
+              s"writes=${stackStg.aroundWrites.get.toLong}")
 
       if (lineBuffer.nonEmpty) {
         println(lineBuffer.toString)

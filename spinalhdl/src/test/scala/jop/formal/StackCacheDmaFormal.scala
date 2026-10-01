@@ -19,6 +19,7 @@ import jop.pipeline.StackCacheConfig
  * - spill issues WRITE opcode
  * - fill issues READ opcode
  * - responsive slave completes transfer (no deadlock)
+ * - a single-word transfer never writes a bank
  */
 class StackCacheDmaFormal extends SpinalFormalFunSuite {
 
@@ -54,6 +55,8 @@ class StackCacheDmaFormal extends SpinalFormalFunSuite {
     anyseq(dut.io.wordCount)
     anyseq(dut.io.bank)
     anyseq(dut.io.bankRdData)
+    anyseq(dut.io.single)
+    anyseq(dut.io.singleWrData)
 
     // BMB slave responses
     anyseq(dut.io.bmb.cmd.ready)
@@ -153,6 +156,28 @@ class StackCacheDmaFormal extends SpinalFormalFunSuite {
       })
   }
 
+  /**
+   * A single-word transfer (item 133: an AR or local access the stack cache's
+   * window does not cover) moves one word between the bus and a REGISTER. It
+   * must never write a bank: the word it serves is by definition one no bank
+   * holds, so a bank write there would corrupt whatever the bank does hold.
+   */
+  test("single-word transfer never writes a bank") {
+    formalConfig
+      .withBMC(10)
+      .doVerify(new Component {
+        val dut = FormalDut(StackCacheDma(testCacheConfig, testBmbParam))
+        assumeInitial(ClockDomain.current.isResetActive)
+        setupDut(dut)
+
+        when(pastValidAfterReset()) {
+          when(dut.isSingleReg && dut.state =/= dut.State.IDLE) {
+            assert(!dut.io.bankWrEn)
+          }
+        }
+      })
+  }
+
   test("responsive slave completes transfer (no deadlock)") {
     formalConfig
       .withBMC(15)
@@ -167,6 +192,8 @@ class StackCacheDmaFormal extends SpinalFormalFunSuite {
         anyseq(dut.io.wordCount)
         anyseq(dut.io.bank)
         anyseq(dut.io.bankRdData)
+        anyseq(dut.io.single)
+        anyseq(dut.io.singleWrData)
 
         // Responsive slave: always ready, always responds
         dut.io.bmb.cmd.ready := True

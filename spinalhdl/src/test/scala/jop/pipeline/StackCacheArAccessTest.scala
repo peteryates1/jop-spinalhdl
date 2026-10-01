@@ -129,6 +129,9 @@ class StackCacheArAccessTest extends AnyFunSuite {
     dma.io.extAddr := stackStg.io.dmaExtAddr.get.resized
     dma.io.wordCount := stackStg.io.dmaWordCount.get
     dma.io.bank := stackStg.io.dmaBank.get
+    dma.io.single := stackStg.io.dmaSingle.get
+    dma.io.singleWrData := stackStg.io.dmaSingleWrData.get
+    stackStg.io.dmaSingleRdData.get := dma.io.singleRdData
     stackStg.io.dmaBusy.get := dma.io.busy
     stackStg.io.dmaDone.get := dma.io.done
 
