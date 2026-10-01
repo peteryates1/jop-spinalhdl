@@ -253,6 +253,12 @@ public class DeepThrow extends TestCase {
 		ok = throwAt(55) && ok;
 		ok = throwAt(58) && ok;
 		ok = throwAt(60) && ok;
+		// AND FAR PAST IT. After `setSP(fp+4)` f_athrow still runs in its own
+		// frame, so VP sits far ABOVE SP for its last few bytecodes. At d60
+		// they are under one window apart; here (SP ~984) they are more than a
+		// window apart, so no placement of the window covers both -- the
+		// locals can only be served from the spill region.
+		ok = throwAt(100) && ok;
 		System.out.print(" done]");
 		return ok;
 	}

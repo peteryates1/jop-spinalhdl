@@ -21,6 +21,12 @@ public class DeepAll {
 	public static void main(String[] args) {
 		TestCase tc[] = {
 				new DeepRecursion(),
+				// The AR access path itself, then the collector that depends on
+				// it (status item 133). Both BEFORE DeepThrow: a failing
+				// DeepThrow ends the run with "Uncaught exception", and a failing
+				// DeepGc can corrupt this method's own `tc`.
+				new DeepIntMem(),
+				new DeepGc(),
 				// Throwing from a frame the stack cache is no longer holding
 				// (status item 133). Belongs here rather than in DoAll for the
 				// same reason DeepRecursion does: the depth overflows a
