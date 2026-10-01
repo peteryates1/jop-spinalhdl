@@ -38,7 +38,7 @@ answer about the evidence costs confidence in every result built on it — then
 correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
-1. **[#133](#item-133)** — Stack cache: the startup fault and the fetch-freeze defect are FIXED and hardware-validated, and `DeepRecursion` passes. What is left is narrow and untested — `f_athrow` (`JVM.java:743`) and the RT-thread context switch (`Scheduler.java:96-149`) walk the WHOLE stack with no residency check, and `prefillThreshold` (`StackStage.scala:67`) is referenced nowhere
+1. **[#133](#item-133)** — Stack cache: **`Native.rdIntMem`/`wrIntMem`/`int2extMem`/`ext2intMem` address through AR, and AR reaches NO rotation logic** — so every one of them reads 0 and drops writes above the resident window, silently, with no fault. This item's ORIGINAL framing was right and the 2026-09-15 re-scope that narrowed it was wrong, having trusted an architecture-doc claim that is false. Live consequences: `f_athrow`'s unwind (`JVM.java:742-819`) and the RT-thread context switch (`Scheduler.java:96-149`). The two defects the item chased in between (fetch-freeze branch targets, the microcode latch) ARE fixed and hardware-validated
 2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
 3. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 4. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
@@ -6678,6 +6678,73 @@ Incidentally, every one of those rounds also printed `haltLeak 0` — which is
 
 ### Item 133 — stack cache: two defects found, fixed and hardware-validated; `athrow` and the context switch still walk the whole stack
 
+**2026-10-01 — `f_athrow` IS BROKEN ON A DEEP STACK, red-proved in simulation with
+a measured threshold. This is the item's ORIGINAL defect, and the vehicle is
+`jvm.DeepThrow` in DeepAll.**
+
+| arm | measured bottom SP | result |
+|---|---|---|
+| shallow throw, depth 20 | ~248 | **pass** |
+| deep recursion, NO throw, depth 120 | ~1168 | **pass** |
+| throw at depth 40 | **466** | **pass** |
+| throw at depth 55 | **601** | **pass** |
+| throw at depth 58 | **628** | **FAIL — "Uncaught exception"** |
+| throw at depth 60 | **646** | **FAIL — garbage output** |
+| throw at depth 100 | ~984 | **FAIL — mis-resume: skipped the rest of its own frame** |
+
+**Two controls bound it.** Throwing works (shallow passes) and recursing that deep
+works (deepNoThrow at depth 120 passes, deeper than every failing throw). Only the
+COMBINATION fails. The resident window is stack words 64..639.
+
+**THE CROSSING IS BELOW 639, and the reason matters:** `f_athrow` is itself a Java
+method (`JVM.java:737`) and calls more Java inside the unwind
+(`f_instanceof`, :768), so the unwind runs with SP ABOVE the throw point. That
+higher SP rebases the window and pushes the LOW frames — the ones being unwound —
+out of residency. So the threshold in terms of the throw site's SP sits somewhere in
+(601, 628], not at 639. Do not quote 639 as the trigger depth.
+
+**THREE DISTINCT SYMPTOMS, all consistent with reading zeros for `pc`/`mp`:** the
+handler search finding nothing ("Uncaught exception"), resuming into nonsense
+(garbage on the UART), and resuming mid-frame (depth 100 printed its entry marker
+and never its exit marker, yet the next arm ran).
+
+**MECHANISM, established in RTL independently of this test** (and confirmed by four
+adversarial passes that failed to refute it):
+`JVM.java:745-748` reads each frame's pc/vp/cp/mp with `Native.rdIntMem`, which is
+`star / nop / ldmi` (`asm/src/jvm.asm:2190-2193`). `star` is 0x01a and latches AR.
+Rotation is driven by `smuxSignal`, and `selSmux = 3` — the only case routing an
+ADDRESS rather than SP — is selected solely by `stsp`, 0x01b
+(`DecodeStage.scala:397`, `when(ir === B"10'b0000011011")`). AR appears NOWHERE in
+`StackStage.scala:700-1000`. So the read does not rotate: it returns `ramDout := 0`
+(`:511`, the mux default), the matching write is dropped (`:622-631`), and `spOv` is
+keyed on `sp` alone (`:1215-1222`) so nothing faults.
+
+**WHY IT WAS NEVER SEEN.** `AthrowTest` throws two frames deep, so SP stays far
+inside the window and the whole stack is resident — the unwind is correct there and
+always has been.
+
+**TWO ERRORS OF MINE EN ROUTE, both caught by the controls rather than by
+reasoning, and worth recording because they are the same error twice:**
+- The first `DeepThrow` wedged, and I read that as reproducing the defect. The arm
+  markers showed it wedging in the NO-THROW control, before the unwind was reached:
+  its frames were wider (two params, three locals vs `deepSum`'s one and two) and at
+  200 levels it reached maxSp 21410, past this sim's 16,384-word private spill RAM,
+  so it corrupted memory off the end. Without that control it would have been
+  reported as an `athrow` reproduction.
+- The sweep's "inside the window" point was computed at ~5 slots/frame. The real
+  figure is 9.0, measured from two passing points (466 at d40, 601 at d55), so that
+  point was at SP ~984 and already outside. **Both errors were asserting a quantity
+  instead of measuring it**; the test now reads `Native.getSP()` at the deepest
+  frame and prints it before throwing.
+
+Also: adding two `System.out.print` markers moved maxSp from 21410 to 1905 — the
+method-cache placement sensitivity this item already records, now reproduced in a
+third app.
+
+**NOT YET ON HARDWARE.** This is simulation; item 133's history has sim and hardware
+disagreeing in both directions. Unlike the startup fault this should reproduce
+deterministically, so one run on a stack-cache board settles it.
+
 **STATUS AT 2026-09-30 — read this before the journals below.** The journals run
 chronologically and several of their early conclusions were later refuted by
 measurement; this table is what survives.
@@ -6692,14 +6759,17 @@ measurement; this table is what survives.
 | DDR2/DDR3 reserving a spill region with no stack cache | **FIXED** | 2026-09-24, confirmed in generated RTL, 256 KB recovered at 8 cores |
 | multi-bank + rotation flush coverage | **VALIDATED** | sp 1171, three banks + rotation, 15 of 16 runs post-fix |
 | the underlying transient that starts it | **OPEN, LATENT** | ~21 % per gc-first run, cause unknown; five hypotheses eliminated by measurement (see the 2026-09-30 entries). A mis-reading core now retries and boots, so it has no observable effect |
-| `f_athrow` walks the whole stack | **OPEN, UNTESTED** | `JVM.java:743`, `while (fp > Const.STACK_OFF+5)`, no residency check |
-| RT-thread context switch copies the whole stack | **OPEN, UNTESTED** | `Scheduler.java:96-99,149`, `int2extMem`/`ext2intMem` over `i - STACK_OFF + 1` words, where "internal memory" is now the cache banks |
-| `prefillThreshold` | **OPEN, DEAD CODE** | declared `StackStage.scala:67`, referenced nowhere |
+| **AR-addressed stack access does not rotate** | **OPEN — the item's original defect, re-confirmed 2026-09-30** | `selSmux = 3` is selected ONLY by `stsp` 0x01b (`DecodeStage.scala:397`); `rdIntMem`/`wrIntMem`/`int2extMem`/`ext2intMem` all use `star` 0x01a -> AR (`jvm.asm:2190-2193`, `:2230-2233`, `:2269-2272`), and AR appears NOWHERE in `StackStage.scala:700-1000`. Non-resident read returns 0 (`:511`), write dropped (`:622-631`), `spOv` keyed on `sp` alone (`:1215-1222`) so nothing faults |
+| `f_athrow` unwind reads zeros below the window | **OPEN, TEST NOT YET WRITTEN** | `JVM.java:742-819` walks `fp` down with `rdIntMem(fp+1..fp+4)`; wrong once `maxSp >= 640`. `AthrowTest.java` exists but is FLAT, so it never exceeds 639 — which is why this never showed |
+| RT context switch save/restore is wrong above the window | **OPEN, TEST NOT YET WRITTEN** | `Scheduler.java:96-99,149`. And worse: `startMission` is called NOWHERE outside the runtime and the only app use of `RtThread` is commented out (`JbeBench/.../Control.java:36,55`) — the scheduler has no test at all |
+| `prefillThreshold` | **OPEN, but harmless** | declared `StackStage.scala:67`, referenced nowhere. A leftover constant, NOT a missing feature: the demand path repairs every miss correctly, spilling a dirty victim and filling from memory (`:846-860`) with `rotBusy` freezing fetch and decode (`JopPipeline.scala:204-205`) |
 
-**The item stays OPEN for the last four rows only.** The two defects it was really
-about are fixed and validated on hardware; what remains is one unexplained transient
-with no observable effect, two microcode/runtime paths that have never been tested
-against a non-resident stack, and a dead threshold.
+**THE ITEM IS WIDER THAN THE 2026-09-29 VERSION OF THIS TABLE SAID.** Two real
+defects found along the way are fixed and hardware-validated, and they were worth
+fixing. But the item's ORIGINAL defect — the microcode never being taught the stack
+cache exists — is real, was wrongly dismissed on 2026-09-15, and is re-confirmed
+with RTL evidence on 2026-09-30. Four independent adversarial passes (two lenses x
+two subjects) failed to refute it and found no bound making it unreachable.
 
 **RE-SCOPED 2026-09-15 after measuring.** The heading and opening sentence below
 were written from code reading on 2026-09-01 and are wrong in three ways that

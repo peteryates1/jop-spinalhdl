@@ -78,9 +78,32 @@ overlap the GC heap.
 ## Rotation
 
 Driven by `smuxSignal` — the stack address mux — which is `sp`, `spm`, `spp`, or
-**the A register** when `selSmux = 3` (:301-307). That last case matters: an
-indirect stack access such as `Native.rdIntMem(addr)` presents its address in A,
-so *arbitrary* stack reads drive rotation, not just SP movement.
+**the A register** when `selSmux = 3` (:301-307).
+
+**AND `selSmux = 3` IS SELECTED BY EXACTLY ONE INSTRUCTION: `stsp` (0x01b).**
+`DecodeStage.scala:397` is `when(ir === B"10'b0000011011")`, and 0b0000011011 is
+0x1b. Nothing else reaches it.
+
+> **CORRECTED 2026-09-30, and the old text misdirected status item 133 for two
+> weeks.** This section used to say: *"an indirect stack access such as
+> `Native.rdIntMem(addr)` presents its address in A, so arbitrary stack reads
+> drive rotation, not just SP movement."* The premise is true and the inference
+> is false. `rdIntMem` does not issue `stsp`; it issues **`star` (0x01a)**, which
+> latches the address into **AR**, and then `ldmi` reads at AR
+> (`asm/src/jvm.asm:2190-2193`, assembled at `build/microcode/serial/rom.mif:3106-3112`).
+> `star` and `stsp` differ by one bit and do entirely different things.
+>
+> **AR reaches no part of the rotation controller** — `command grep` for `ar`
+> over `StackStage.scala:700-1000` returns nothing. So an AR-addressed access
+> outside the resident window does not rotate: the read returns **0** silently
+> (`StackStage.scala:511`, `ramDout := 0` as the mux default) and the write is
+> **dropped** (`:622-631`, `isPipeTarget` requires a bank hit). `spOv` is keyed
+> on `sp` alone (`:1215-1222`), so nothing faults either.
+>
+> Every AR-addressed path therefore walks the stack unchecked. The ones that
+> matter: `Native.rdIntMem`/`wrIntMem` (`jopsys_rdint`/`jopsys_wrint`),
+> `Native.int2extMem`/`ext2intMem` (the RT-thread context switch), and through
+> them `f_athrow`'s unwind. See item 133.
 
 ```
 needsRotation    = !smuxInScratch && !smuxInActiveBank && rotState == IDLE

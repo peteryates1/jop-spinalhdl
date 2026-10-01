@@ -21,6 +21,11 @@ public class DeepAll {
 	public static void main(String[] args) {
 		TestCase tc[] = {
 				new DeepRecursion(),
+				// Throwing from a frame the stack cache is no longer holding
+				// (status item 133). Belongs here rather than in DoAll for the
+				// same reason DeepRecursion does: the depth overflows a
+				// non-cache stack.
+				new DeepThrow(),
 		};
 
 		for (int i = 0; i < tc.length; ++i) {
