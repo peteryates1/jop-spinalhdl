@@ -106,7 +106,8 @@ nothing depends on ranks below a measurement that could mislead someone.
 66. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
 67. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
 68. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-69. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
+69. **[#160](#item-160)** — One `RtThread` needs 262 KB because `STACK_SIZE` is a hardcoded 65536 (the virtual SP range) in `ConstGenerator:216`, so RT threading cannot start on any BRAM build — measured `free=234188 need=261888`. And nothing has ever run it: `startMission` appears nowhere outside the runtime. Blocks item 133's context-switch test
+70. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
 
 ## 2. All items — summary
 
@@ -6761,8 +6762,8 @@ measurement; this table is what survives.
 | the underlying transient that starts it | **OPEN, LATENT** | ~21 % per gc-first run, cause unknown; five hypotheses eliminated by measurement (see the 2026-09-30 entries). A mis-reading core now retries and boots, so it has no observable effect |
 | **AR-addressed stack access does not rotate** | **OPEN — the item's original defect, re-confirmed 2026-09-30** | `selSmux = 3` is selected ONLY by `stsp` 0x01b (`DecodeStage.scala:397`); `rdIntMem`/`wrIntMem`/`int2extMem`/`ext2intMem` all use `star` 0x01a -> AR (`jvm.asm:2190-2193`, `:2230-2233`, `:2269-2272`), and AR appears NOWHERE in `StackStage.scala:700-1000`. Non-resident read returns 0 (`:511`), write dropped (`:622-631`), `spOv` keyed on `sp` alone (`:1215-1222`) so nothing faults |
 | `f_athrow` unwind reads zeros below the window | **OPEN, TEST NOT YET WRITTEN** | `JVM.java:742-819` walks `fp` down with `rdIntMem(fp+1..fp+4)`; wrong once `maxSp >= 640`. `AthrowTest.java` exists but is FLAT, so it never exceeds 639 — which is why this never showed |
-| RT context switch save/restore is wrong above the window | **OPEN, TEST NOT YET WRITTEN** | `Scheduler.java:96-99,149`. And worse: `startMission` is called NOWHERE outside the runtime and the only app use of `RtThread` is commented out (`JbeBench/.../Control.java:36,55`) — the scheduler has no test at all |
-| `prefillThreshold` | **OPEN, but harmless** | declared `StackStage.scala:67`, referenced nowhere. A leftover constant, NOT a missing feature: the demand path repairs every miss correctly, spilling a dirty victim and filling from memory (`:846-860`) with `rotBusy` freezing fetch and decode (`JopPipeline.scala:204-205`) |
+| RT context switch save/restore is wrong above the window | **OPEN, TEST BLOCKED by [item 160](#item-160)** | Mechanism established: `int2extMem`/`ext2intMem` use the same `star` -> AR addressing, and `jvm.DeepThrow` has now confirmed that mechanism empirically for `f_athrow`. The TEST cannot run because a single `RtThread` needs 262 KB against 234 KB free — measured, `ThreadAll` reports INCONCLUSIVE |
+| `prefillThreshold` | **CLOSED 2026-10-01 — deleted** | It was a leftover constant, not a missing feature: the demand path repairs every miss correctly, spilling a dirty victim and filling from memory (`:846-860`) with `rotBusy` freezing fetch and decode (`JopPipeline.scala:204-205`). Prefill would have been a latency optimisation only. Removed rather than left, because a declared threshold nothing reads reads later as a mechanism that exists |
 
 **THE ITEM IS WIDER THAN THE 2026-09-29 VERSION OF THIS TABLE SAID.** Two real
 defects found along the way are fixed and hardware-validated, and they were worth
@@ -8810,6 +8811,59 @@ wrong: `bmbOut 0` rules out a lost response. What the bench could not model is
 a response that arrives with the WRONG DATA, which no amount of arbiter
 contention in a single-cycle private RAM will produce.
 
+
+<a id="item-160"></a>
+
+### Item 160 — one RtThread needs 262 KB, so RT threading cannot start on any BRAM build, and has never run anywhere
+
+**Found 2026-10-01** while trying to test item 133's context-switch path. MEASURED,
+not inferred — the test prints both numbers before allocating:
+
+```
+phase1 shallow free=234188 need=261888 CONSTRUCT-THREW
+ThreadAll INCONCLUSIVE (thread construction failed)
+```
+
+**A single `RtThread` cannot be constructed.** `RtThreadImpl.java:170` is
+
+```java
+stack = new int[Const.STACK_SIZE-Const.STACK_OFF];
+```
+
+and `STACK_SIZE` is a **hardcoded literal 65536** in `ConstGenerator.scala:216`,
+emitted identically for every configuration, cache or no cache:
+
+```scala
+|	/** Size of the on-chip stack cache including microcode scratch area */
+|	public static final int STACK_SIZE = 65536;
+```
+
+65536 is the **16-bit virtual SP range**, not any physical stack — the comment
+describes something else entirely. So every thread reserves the maximum addressable
+stack, 65,472 ints = **261,888 bytes**, however little it uses. The vehicle here had
+234,188 free.
+
+**SCOPE: every BRAM configuration in the tree.** Anything with under ~262 KB of free
+heap after its image cannot create one thread. DRAM boards with megabytes would not
+notice, which is why nothing has ever tripped over it.
+
+**AND NOTHING HAS EVER RUN IT.** `startMission` appears nowhere outside the runtime
+(`command grep` over the whole tree), and the only app use of `RtThread` is
+**commented out** (`java/apps/JbeBench/src/jbe/lift/Control.java:36,55`). So
+`Scheduler.run()`, the whole-stack save/restore and `RtThreadImpl`'s swap have never
+executed. Same shape as the `lmul_sw` finding: an implementation nothing selects
+gets no coverage. Note the save/restore ALSO carries item 133's AR defect
+(`int2extMem`/`ext2intMem` address through `star` -> AR), so there are two
+independent problems stacked in that path and this one hides the other.
+
+**Fix shape:** size the save area from the configuration rather than from a
+hardcoded virtual range — the physical stack for a non-cache build, and for a cached
+one the actual spill extent, not 2^16. Until then `java/apps/JvmTests/src/jvm/ThreadAll.java`
+reports INCONCLUSIVE rather than passing, which is the honest state.
+
+**This blocks item 133's context-switch arm.** Not the mechanism — that is
+established in RTL and confirmed empirically for the same AR path by
+`jvm.DeepThrow` — but the test, which cannot run until a thread can exist.
 
 <a id="item-134"></a>
 

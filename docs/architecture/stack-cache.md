@@ -190,9 +190,11 @@ chain leaves older frames' locals unreachable with nothing to fetch them back.
 - Either way, if the victim is **dirty** it is **SPILLed first** (:745-748).
 
 State machine: `IDLE -> SPILL_START -> SPILL_WAIT -> {FILL_START|ZERO_FILL} -> IDLE`.
-`prefillThreshold = bankSize/4` is **defined and referenced nowhere**
-(`StackStage.scala:53` is its only occurrence in the tree). The pre-fill this
-sentence used to describe does not exist. Without it the window is rebased
+`prefillThreshold = bankSize/4` was **defined and referenced nowhere**, and was
+**DELETED 2026-10-01** (item 133) — a declared threshold nothing reads is
+indistinguishable, to a later reader, from a mechanism that exists. The pre-fill it
+named never existed, and its absence costs only latency: the DEMAND path answers
+every miss correctly. Without it the window is rebased
 upward on overflow and nothing brings the bank BELOW back until SP itself
 descends — which is how SP came to sit seven words above the window base with
 568 words above it and none below.

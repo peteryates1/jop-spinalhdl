@@ -63,8 +63,20 @@ case class StackCacheConfig(
   /** Number of DMA bursts to transfer one full bank */
   def burstsPerBank: Int = if (burstLen > 0) bankSize / burstLen else bankSize
 
-  /** Pre-fill threshold: when SP enters lower quarter of active bank, pre-fill previous */
-  def prefillThreshold: Int = bankSize / 4
+  // `prefillThreshold` was declared here (`bankSize / 4`, "when SP enters lower
+  // quarter of active bank, pre-fill previous") and REFERENCED NOWHERE. Deleted
+  // 2026-10-01, status item 133.
+  //
+  // It was a leftover constant, not a missing feature. Prefill would have
+  // anticipated a window miss; every miss is already handled correctly by the
+  // DEMAND path, which reassigns a victim to `activeBase - bankSize` and fills it
+  // from memory, spilling first if dirty (:846-860), with `rotBusy` freezing fetch
+  // and decode throughout (JopPipeline.scala:204-205). So the missing access is
+  // retried against correct data rather than answered wrongly — prefill would
+  // have been a latency optimisation and nothing more.
+  //
+  // Deleted rather than left in place because a declared threshold that nothing
+  // reads is indistinguishable, to a later reader, from a mechanism that exists.
 }
 
 /**
