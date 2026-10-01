@@ -107,7 +107,8 @@ nothing depends on ranks below a measurement that could mislead someone.
 67. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
 68. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
 69. **[#160](#item-160)** — One `RtThread` needs 262 KB because `STACK_SIZE` is a hardcoded 65536 (the virtual SP range) in `ConstGenerator:216`, so RT threading cannot start on any BRAM build — measured `free=234188 need=261888`. And nothing has ever run it: `startMission` appears nowhere outside the runtime. Blocks item 133's context-switch test
-70. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
+70. **[#161](#item-161)** — A core parked in `cpux_loop` occasionally leaves it early when a GC halt lands. Symptom fixed twice over and measured absent (0 of 40 hangs, 0 of 34 early boots); cause unknown with five hypotheses eliminated by measurement. LATENT — no observable effect. Only vehicle left is a cluster-level sim
+71. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
 
 ## 2. All items — summary
 
@@ -6759,7 +6760,7 @@ measurement; this table is what survives.
 | `spOv` dangling; spill region unbounded | **FIXED** | 2026-09-15, red-proved on `jvm.DeepAll` |
 | DDR2/DDR3 reserving a spill region with no stack cache | **FIXED** | 2026-09-24, confirmed in generated RTL, 256 KB recovered at 8 cores |
 | multi-bank + rotation flush coverage | **VALIDATED** | sp 1171, three banks + rotation, 15 of 16 runs post-fix |
-| the underlying transient that starts it | **OPEN, LATENT** | ~21 % per gc-first run, cause unknown; five hypotheses eliminated by measurement (see the 2026-09-30 entries). A mis-reading core now retries and boots, so it has no observable effect |
+| the underlying transient that starts it | **SPLIT OUT to [item 161](#item-161)** 2026-10-01 | Symptom fixed twice over and measured absent; cause unknown, five hypotheses eliminated. Filed separately so that two concrete unfixed defects in this item are not queued behind a latent one with no observable effect |
 | **AR-addressed stack access does not rotate** | **OPEN — the item's original defect, re-confirmed 2026-09-30** | `selSmux = 3` is selected ONLY by `stsp` 0x01b (`DecodeStage.scala:397`); `rdIntMem`/`wrIntMem`/`int2extMem`/`ext2intMem` all use `star` 0x01a -> AR (`jvm.asm:2190-2193`, `:2230-2233`, `:2269-2272`), and AR appears NOWHERE in `StackStage.scala:700-1000`. Non-resident read returns 0 (`:511`), write dropped (`:622-631`), `spOv` keyed on `sp` alone (`:1215-1222`) so nothing faults |
 | `f_athrow` unwind reads zeros below the window | **OPEN, TEST NOT YET WRITTEN** | `JVM.java:742-819` walks `fp` down with `rdIntMem(fp+1..fp+4)`; wrong once `maxSp >= 640`. `AthrowTest.java` exists but is FLAT, so it never exceeds 639 — which is why this never showed |
 | RT context switch save/restore is wrong above the window | **OPEN, TEST BLOCKED by [item 160](#item-160)** | Mechanism established: `int2extMem`/`ext2intMem` use the same `star` -> AR addressing, and `jvm.DeepThrow` has now confirmed that mechanism empirically for `f_athrow`. The TEST cannot run because a single `RtThread` needs 262 KB against 234 KB free — measured, `ThreadAll` reports INCONCLUSIVE |
@@ -8811,6 +8812,61 @@ wrong: `bmbOut 0` rules out a lost response. What the bench could not model is
 a response that arrives with the WRONG DATA, which no amount of arbiter
 contention in a single-cycle private RAM will produce.
 
+
+<a id="item-161"></a>
+
+### Item 161 — a core parked in `cpux_loop` occasionally leaves it early when a GC halt lands; cause unknown, five hypotheses eliminated
+
+**Split out of [item 133](#item-133) on 2026-10-01**, where it had been the
+"startup fault". Its SYMPTOM is fixed twice over and measured absent; what remains
+is that nobody knows why the core leaves the loop.
+
+**WHAT IT IS.** On the Wukong SMP + stack-cache build, a minor GC taken while core 1
+is still parked in the microcode `cpux_loop` sometimes makes it leave the spin while
+`io_signal` is still zero. Before mitigation that hijacked it into `cpu0_load`, the
+serial downloader, which loops forever — so the core never reached `main()`. Rate
+~21 % per gc-then-release run, pooled over the matched arms, and **0 of 103
+release-then-gc runs**: it needs a halt to land while the core is parked.
+
+**WHY IT IS LATENT NOW.** Two independent fixes, both hardware-validated:
+- the fetch-freeze branch-target defect (`brdly`/`jpdly` held, item 133) — 6 of 7
+  failures to 0 of 13 on the image where it dominated
+- the microcode latch (`jvm.asm`, ROM word 0x1d: a zero on the second `io_signal`
+  read now returns to the spin instead of entering the downloader) — 35 % to
+  **0 of 40** gc-first runs, p = 1.5e-3
+Plus the mitigation's own escape route measured absent: **0 of 34** early boots. So a
+core that mis-reads now takes one extra turn round its wait loop and boots. **There
+is no observable effect.**
+
+**FIVE HYPOTHESES ELIMINATED BY MEASUREMENT, not by argument:**
+
+| hypothesis | eliminated by |
+|---|---|
+| generic read-path corruption | 612 halt events, 0 bad of 186.9M checks, p = 5.6e-58 |
+| one-bit address error returning `io_cpu_id` for `io_signal` (adjacent in a 4-bit mux select, and BOTH read 1 on core 1 after release — which is why the first detector was blind) | 180 halt events, 19.6M reads, 0 bad, detector proven armed by clearing `io_signal` first |
+| the read value never reaching A, leaving `zf` stale | A = 0 at the `bz` across 24 freeze phases, reference arm armed |
+| branch target destroyed (`brdly`) | no effect on the failing image, p = 0.77 |
+| timing-marginal | **inconclusive**: matched arms 75 MHz 4/15 vs 70 MHz 2/14, p = 0.36. Separating 27 % from 14 % at 80 % power needs ~150 gc-first runs per arm, about 600 runs and seven hours of board time |
+
+**THE ONLY VEHICLE LEFT is cluster-level simulation** — two cores, a real arbiter,
+real memory — because that is the entire difference between the benches that cannot
+reproduce it and the hardware that does. Three pipeline-level vehicles failed to
+reproduce it, and a `JopCore`-level attempt failed its own teeth check (it could not
+see a bug known to live in its DUT, so its 72 clean trials meant nothing).
+
+**REPRODUCTION, if anyone returns to it.** Revert ROM word 0x1d (`jvm.asm:356`,
+`bz cpux_loop` back to `bz cpu0_load`), rebuild `wukongSdrSmp 2 75 baud=1000000`,
+and run `java/apps/Small` `SmpDeepFlush` at DEPTH 30 — the probe already reports
+core 1's live pc, halt count, `bmbOut` and `exc`, so no new instrumentation is
+needed. Expect ~35 % of gc-then-release runs to show core 1 in `rdy_poll` before the
+release. The pre-fix bitstream and both images are the ones recorded in the item 133
+journals.
+
+**WHY IT IS FILED RATHER THAN CHASED.** It has no observable effect, its cost to
+resolve is a new multi-core testbench or ~600 board runs, and item 133 turned up two
+deterministic defects that are worse and cheaper ([`f_athrow`](#item-133) and
+[item 160](#item-160)). Recorded in full so a second sighting is recognised as the
+second, not the first — the same reason [item 63](#item-63) is filed.
 
 <a id="item-160"></a>
 
