@@ -113,11 +113,28 @@ class BytecodeFetchStageFormal extends SpinalFormalFunSuite {
         val stallD  = RegNext(dut.io.stall) init (False)
         val stallD2 = RegNext(stallD) init (False)
 
+        // EXCEPT A JPC WRITE (item 160). `stjpc`'s write is the registered
+        // effect of the PREVIOUS instruction and lands in its own cycle even if
+        // the next instruction froze the pipeline in that cycle -- gated by the
+        // freeze it was dropped, then re-applied with the wrong A. It is a
+        // REDIRECT, like a fill or a trap, not the stream advancing: jpc takes
+        // exactly the written value, and the read and jpaddr re-settle on it.
+        // That is invisible to the pipeline because the instruction waiting in
+        // decode after a `stjpc` is never a dispatch or an operand fetch --
+        // pinned over every assembled ROM by StjpcFollowerTest.
+        val wroteThisStall = Reg(Bool()) init (False)
+        when(!dut.io.stall) { wroteThisStall := False }
+        when(dut.io.stall && dut.io.jpc_wr) { wroteThisStall := True }
+
         when(pastValidAfterReset() && past(dut.io.stall)) {
-          assert(stable(dut.io.jpc_out))
+          when(past(dut.io.jpc_wr)) {
+            assert(dut.io.jpc_out === past(dut.io.din(dut.io.jpc_out.getWidth - 1 downto 0).asUInt))
+          }.otherwise {
+            assert(stable(dut.io.jpc_out))
+          }
           assert(stable(dut.io.jinstr_out))
         }
-        when(pastValidAfterReset() && stallD && stallD2) {
+        when(pastValidAfterReset() && stallD && stallD2 && !wroteThisStall && !past(wroteThisStall)) {
           // FetchStage does `pcMux := io.jpaddr` when jfetch, so a jpaddr that
           // slides during the stall sends the microcode to the WRONG handler on
           // release — the pending instruction is skipped and its operand byte

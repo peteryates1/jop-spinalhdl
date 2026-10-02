@@ -9033,7 +9033,28 @@ ThreadAll OK
 — a periodic thread ticking while a second one, 896 words deep, is switched out
 from its deepest frame and back, locals intact. That is also item 133's last arm.
 
-**STILL OPEN:** hardware. And `RtThread` still has no other user in the tree.
+**HARDWARE, 2026-10-02 — Wukong DDR3 (stack cache), with all of the above:**
+`ThreadAll` **3/3** (the same `aDdarRaa` interleaving, deep thread at SP 896),
+`DeepAll` **2/2**, `DoAll` **68/68**. Timing MET — but by **+0.006 ns** WNS, down
+from +0.131 ns. The worst path is item 133's spill-region detection chain (the
+decoded `selRda` → `rdaddr` → bank compare → `rotBusy` → the fetch stage's ROM
+address, 14 levels); it was the worst JOP path in the +0.131 ns build too, ending
+one register earlier. How much of the 0.125 ns is the command-clearing logic's
+extra `rotBusy` fanout and how much is placement is not separated. Computing each
+address source's residency from registers, ahead of the `selRda` select, would
+take the address MUX and the compare off that chain; not done.
+
+**The bytecode fetch's freeze proof was refined, not just relaxed.**
+`BytecodeFetchStageFormal`'s "stall freezes jpc, jinstr and the dispatch address"
+failed on the `jpc_wr` change, correctly: a `stjpc` landing during a freeze moves
+`jpc` and so `jpaddr`. It now asserts that jpc moves during a freeze ONLY by
+`jpc_wr`, to exactly the written value, and keeps the dispatch-address invariant
+for every freeze without one. That exception is safe only because the
+instruction waiting after `stjpc` is never a dispatch or an operand fetch, so
+that is now a guard of its own: `StjpcFollowerTest` checks it over every
+assembled ROM (true today: `nop` or `ldm jjhp`).
+
+**STILL OPEN:** `RtThread` has no user in the tree but this test.
 
 ---
 
