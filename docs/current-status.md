@@ -38,7 +38,7 @@ answer about the evidence costs confidence in every result built on it — then
 correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
-1. **[#133](#item-133)** — Stack cache: **the AR defect is FIXED and HARDWARE-VALIDATED (2026-10-02) — not by rotation: a stack access the window does not cover is served from the spill region, one DMA word, without moving the window.** Wukong DDR3, timing MET: `DeepAll` 3/3, `DoAll` 68/68; the pre-fix RTL on the same board with the same image fails exactly as the simulation did (`DeepGc` collects a live object, and the run then silently skips a test). Two more defects fixed on the way: `f_athrow`'s tail runs with VP far above SP and the VP rotation ZERO-filled its own frame; and the last bank straddles the spill region's end, so a legal stack 8128-8240 words deep spilled 64 words into the next core's stack. An address past the region now faults EXC_SPOV. **Only open arm:** the RT context switch — same mechanism, now served, but its test is blocked by [item 160](#item-160)
+1. **[#133](#item-133)** — Stack cache: **the AR defect is FIXED and HARDWARE-VALIDATED (2026-10-02) — not by rotation: a stack access the window does not cover is served from the spill region, one DMA word, without moving the window.** Wukong DDR3, timing MET: `DeepAll` 3/3, `DoAll` 68/68; the pre-fix RTL on the same board with the same image fails exactly as the simulation did (`DeepGc` collects a live object, and the run then silently skips a test). Two more defects fixed on the way: `f_athrow`'s tail runs with VP far above SP and the VP rotation ZERO-filled its own frame; and the last bank straddles the spill region's end, so a legal stack 8128-8240 words deep spilled 64 words into the next core's stack. An address past the region now faults EXC_SPOV. **The last arm, the RT context switch, now passes in simulation** (2026-10-02, via [item 160](#item-160), which also found and fixed a stall defect: commands re-issued through a stack-cache stall). Hardware confirmation of that arm pending
 2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
 3. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 4. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
@@ -106,7 +106,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 66. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
 67. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
 68. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-69. **[#160](#item-160)** — One `RtThread` needs 262 KB because `STACK_SIZE` is a hardcoded 65536 (the virtual SP range) in `ConstGenerator:216`, so RT threading cannot start on any BRAM build — measured `free=234188 need=261888`. And nothing has ever run it: `startMission` appears nowhere outside the runtime. Blocks item 133's context-switch test
+69. **[#160](#item-160)** — **FIXED in simulation 2026-10-02; hardware pending.** `STACK_SIZE` is now the stack SP can reach (256 without a cache, 64 + the spill region with one), so a thread's save area is 768 bytes, not 262 KB, and the RT scheduler has RUN for the first time in this tree (`ThreadAll` phase 1). Phase 2 — a thread 896 words deep switched out and back — then found a pipeline defect: DecodeStage HELD its command strobes through a stack-cache stall, so the memory controller re-issued them every stall cycle (`int2extMem` wrote the saved stack over the program image), the CU re-fired, and `stjpc` before a stall lost its JPC write. Commands now fire once; `ThreadAll OK` on the stack-cache sim
 70. **[#161](#item-161)** — A core parked in `cpux_loop` occasionally leaves it early when a GC halt lands. Symptom fixed twice over and measured absent (0 of 40 hangs, 0 of 34 early boots); cause unknown with five hypotheses eliminated by measurement. LATENT — no observable effect. Only vehicle left is a cluster-level sim
 71. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
 
@@ -6768,8 +6768,8 @@ INCLUDING the silent skip: on silicon too, the collector freed `DeepAll.main`'s
 own array and the program went on to report itself done. The fix costs 277 LUTs
 and 123 registers on this build (+2.2 %), and timing is met either way.
 
-**STILL OPEN:** the RT context switch — same mechanism, now served, but its test
-cannot run until [item 160](#item-160) right-sizes `RtThread`.
+**STILL OPEN:** the RT context switch on hardware. In simulation it passes
+since 2026-10-02 (`jvm.ThreadAll` phase 2, via [item 160](#item-160)).
 
 ---
 
@@ -6856,7 +6856,7 @@ measurement; this table is what survives.
 | the underlying transient that starts it | **SPLIT OUT to [item 161](#item-161)** 2026-10-01 | Symptom fixed twice over and measured absent; cause unknown, five hypotheses eliminated. Filed separately so that two concrete unfixed defects in this item are not queued behind a latent one with no observable effect |
 | **AR-addressed stack access does not rotate** | **FIXED in sim 2026-10-01 — served from the spill region, not rotated** (see the top of this item). Was: OPEN — the item's original defect, re-confirmed 2026-09-30 | `selSmux = 3` is selected ONLY by `stsp` 0x01b (`DecodeStage.scala:397`); `rdIntMem`/`wrIntMem`/`int2extMem`/`ext2intMem` all use `star` 0x01a -> AR (`jvm.asm:2190-2193`, `:2230-2233`, `:2269-2272`), and AR appears NOWHERE in `StackStage.scala:700-1000`. Non-resident read returns 0 (`:511`), write dropped (`:622-631`), `spOv` keyed on `sp` alone (`:1215-1222`) so nothing faults |
 | `f_athrow` unwind reads zeros below the window | **FIXED in sim 2026-10-01**, `jvm.DeepThrow` d40-d100 green; it also needed the VP > SP fix. Was: OPEN, TEST NOT YET WRITTEN | `JVM.java:742-819` walks `fp` down with `rdIntMem(fp+1..fp+4)`; wrong once `maxSp >= 640`. `AthrowTest.java` exists but is FLAT, so it never exceeds 639 — which is why this never showed |
-| RT context switch save/restore is wrong above the window | **MECHANISM FIXED with the AR path 2026-10-01; TEST STILL BLOCKED by [item 160](#item-160)** | Mechanism established: `int2extMem`/`ext2intMem` use the same `star` -> AR addressing, and `jvm.DeepThrow` has now confirmed that mechanism empirically for `f_athrow`. The TEST cannot run because a single `RtThread` needs 262 KB against 234 KB free — measured, `ThreadAll` reports INCONCLUSIVE |
+| RT context switch save/restore is wrong above the window | **PASSES in simulation 2026-10-02** — `jvm.ThreadAll` phase 2, a thread 896 words deep switched out from its deepest frame and back. It needed [item 160](#item-160)'s fixes too: the save area, and decode commands that a stall re-issued (`int2extMem` overwrote the program image). Was: MECHANISM FIXED with the AR path 2026-10-01; TEST BLOCKED by item 160 | Mechanism established: `int2extMem`/`ext2intMem` use the same `star` -> AR addressing, and `jvm.DeepThrow` has now confirmed that mechanism empirically for `f_athrow`. The TEST cannot run because a single `RtThread` needs 262 KB against 234 KB free — measured, `ThreadAll` reports INCONCLUSIVE |
 | `prefillThreshold` | **CLOSED 2026-10-01 — deleted** | It was a leftover constant, not a missing feature: the demand path repairs every miss correctly, spilling a dirty victim and filling from memory (`:846-860`) with `rotBusy` freezing fetch and decode (`JopPipeline.scala:204-205`). Prefill would have been a latency optimisation only. Removed rather than left, because a declared threshold nothing reads reads later as a mechanism that exists |
 
 **THE ITEM IS WIDER THAN THE 2026-09-29 VERSION OF THIS TABLE SAID.** Two real
@@ -8963,7 +8963,81 @@ second, not the first — the same reason [item 63](#item-63) is filed.
 
 <a id="item-160"></a>
 
-### Item 160 — one RtThread needs 262 KB, so RT threading cannot start on any BRAM build, and has never run anywhere
+### Item 160 — RT threads: the save area is right-sized and the scheduler runs (fixed in simulation 2026-10-02); its first run found a pipeline defect
+
+**2026-10-02 — FIXED IN SIMULATION. Three defects, each red first.**
+
+**1. `STACK_SIZE` is the stack SP can reach.** `ConstGenerator` emits `1 << ramWidth`
+without a stack cache and `64 + spillWords` with one, and refuses a cache with no
+spill region. Guard: `StackSpillGeometryTest` — red as *"wukongSdram:
+Const.STACK_SIZE = 65536, but SP can reach at most 8255 ... 261,888 bytes instead
+of 32,768"*.
+
+**2. THE SCHEDULER RUNS.** `jvm.ThreadAll` (rewritten: both threads are created
+BEFORE `startMission`, which sizes the scheduler's arrays; waits are bounded by the
+microsecond counter; the threads print their own progress):
+
+| build | before | after |
+|---|---|---|
+| `JopJvmTestsBramSim` (no cache) | `free=234536 need=523776 (2 x 261888)`, CONSTRUCT-THREW | `need=1536 (2 x 768)`, **`phase1 tickA=4 ok`**, phase 2 skipped (no cache), `ThreadAll OK` |
+| `JopJvmTestsStackCacheBramSim` (cache), image linked for `wukongDdr3` | — | `aDd` then `Uncaught exception` and a flood of `ni` (not-implemented bytecode) |
+
+The second row is the first time a thread deeper than the window was switched
+out. The image is `wukongDdr3`'s because the stack-cache BRAM sim's default image is
+linked for `ep4cgx150Serial`, whose `Const` has no cache; the two `Const.java`
+files differ ONLY in the stack constants (diffed), so the sim now takes the preset as
+its fourth argument.
+
+**3. A stall re-issued the previous instruction's COMMANDS.** DecodeStage registers
+each instruction's controls and applies them the next cycle, and during a
+stack-cache stall it HELD them ("hold previous values"). The stack stage protects
+its own registers from that with `rotBusyDly`; nothing protected the other
+consumers, and they act in EVERY cycle a command is high:
+
+- the memory controller re-latched `addrReg := A` for a held `stmwa`, after
+  `stmwa`'s own pop had changed A. `int2extMem` is `stmwa; ldmi; stmwd` and the
+  `ldmi` stalls (a word served from the spill region), so every word of the saved
+  deep stack was written to address ~= the loop counter: the bottom of memory,
+  where the program image is. That is the `ni` flood. A held `stmra`, `stmwd`,
+  `putfield` or `iastore` re-issues the access.
+- the compute unit re-pushed / re-started / re-popped.
+- the bytecode fetch did the OPPOSITE with `stjpc`: it gated `jpc_wr` with its
+  freeze, so the write was dropped in its own cycle and re-applied after the stall
+  with A changed. `sys_int` is `stjpc; ldm jjhp` and `ldm` pushes: an interrupt
+  arriving with SP one word below a non-resident bank returned to a garbage
+  bytecode address.
+
+Not only the new spill-region path: ANY rotation stall straight after a command
+did this, e.g. `stmwa; stmwd` where `stmwd`'s pop crosses into a non-resident
+bank. The original VHDL pipeline never stalled, so every consumer was written for
+one-shot commands. Commands now clear during a stall (fire once), and `jpc_wr` is
+applied whether or not its cycle is frozen. Guard: `DecodeStrobeStallTest` — red
+as *"asserted for 11 cycles, not 1"* for all ten commands across a 10-cycle
+stall; its no-stall control passes either way.
+
+**And a thrash, found the same way.** On every switch away from a deep thread
+`Scheduler.run()` sets VP to the next thread's stack (~800 words below its own
+SP). `rotNeedVp` rotated for it, but its target is one bank below the active bank,
+so it never arrived: a 192-word fill per instruction until `setSP` followed.
+Correct, and an unbounded cost in a context switch. VP now rotates only within one
+bank of SP (`StackCacheArAccessTest`: one far local cost **769 DMA reads**, now 1).
+
+**After all three:** `ThreadAll` on the stack-cache sim:
+
+```
+aDdarRaaphase1 tickA=4 ok
+phase2 deepRan=1 sp=896 localsOk=1 ok
+ThreadAll OK
+```
+
+— a periodic thread ticking while a second one, 896 words deep, is switched out
+from its deepest frame and back, locals intact. That is also item 133's last arm.
+
+**STILL OPEN:** hardware. And `RtThread` still has no other user in the tree.
+
+---
+
+**2026-10-01 — the item as found:**
 
 **Found 2026-10-01** while trying to test item 133's context-switch path. MEASURED,
 not inferred — the test prints both numbers before allocating:

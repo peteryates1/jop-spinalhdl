@@ -810,6 +810,15 @@ case class StackStage(
     // reads high). A VP the window does not cover above SP is not rotated
     // for; its locals are served from the spill region like an AR access
     // (the AR controller below).
+    //
+    // AND ONLY WITHIN ONE BANK OF SP. The rotation's target is one bank below
+    // the ACTIVE bank (SP's), so it reaches VP in one step exactly when
+    // SP - VP < bankSize -- the straddling frame this was built for. Further
+    // away it cannot arrive: SP's bank snaps back to active between rotations
+    // and the window thrashes, a 192-word fill per instruction. The RT
+    // scheduler does exactly that on every switch away from a deep thread
+    // (`setVP(newSP + 2)` while still on the old stack): measured 769 DMA reads
+    // to serve one local. Such a local is served from the spill region instead.
     val vpInScratch = vp0 < cc.scratchSize
     val bankCoversVp = Vec(Bool(), cc.numBanks)
     for (i <- 0 until cc.numBanks) {
@@ -823,7 +832,7 @@ case class StackStage(
     // satisfied; an instant switch for SP leaves VP resident, so the VP case
     // simply comes round again on the next cycle.
     val rotNeedSmux = !smuxInScratch && !smuxInActiveBank
-    val rotNeedVp = !vpResident && vp0 <= smuxSignal
+    val rotNeedVp = !vpResident && vp0 <= smuxSignal && (smuxSignal - vp0) < cc.bankSize
     val rotAddr = Mux(rotNeedSmux, smuxSignal, vp0)
     val needsRotation = (rotNeedSmux || rotNeedVp) && rotState === RotState.IDLE
     val canInstantSwitch = rotNeedSmux && anyBankCoversSmux && rotState === RotState.IDLE

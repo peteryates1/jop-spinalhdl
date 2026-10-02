@@ -707,6 +707,21 @@ case class DecodeStage(
 
     } // end when(!io.stall)
 
+    // COMMANDS FIRE ONCE — status items 160 and 133. The block above HOLDS its
+    // registers through a stall, which is right for the stack stage's controls
+    // (it gates them itself with rotBusyDly). It is wrong for a COMMAND: its
+    // consumer acts in every cycle it is high, so a held `stjpc`/`stop`/
+    // `sthw`/`ldop` re-fired for the whole stall. A command is high in the one
+    // cycle after its instruction's decode, and a stall that starts in that
+    // cycle clears it at the edge -- DecodeStrobeStallTest.
+    when(io.stall) {
+      enaJpcReg := False
+      cuPushReg := False
+      cuStartReg := False
+      cuPopReg := False
+      dspMulTriggerReg.foreach(_ := False)
+    }
+
     // ========================================================================
     // Output Assignments
     // ========================================================================
@@ -826,6 +841,36 @@ case class DecodeStage(
     }
 
     } // end when(!io.stall) for MMU decode
+
+    // AND THE MEMORY COMMANDS, for the same reason (see "COMMANDS FIRE ONCE"
+    // above) and with the worst consequence: the memory controller re-latched
+    // `addrReg := A` for a held `stmwa` after `stmwa`'s own pop had changed A,
+    // so in `int2extMem` (`stmwa; ldmi; stmwd`, the `ldmi` stalling) every saved
+    // stack word went to address ~= the loop counter -- the program image. A
+    // held `stmra`/`stmwd`/`putfield` re-issues the access. The original VHDL
+    // pipeline never stalled, so every consumer was written for one-shot
+    // commands.
+    when(io.stall) {
+      memRdReg := False
+      memWrReg := False
+      memAddrWrReg := False
+      memBcRdReg := False
+      memStidxReg := False
+      memIaloadReg := False
+      memIastoreReg := False
+      memGetfieldReg := False
+      memPutfieldReg := False
+      memPutrefReg := False
+      memGetstaticReg := False
+      memPutstaticReg := False
+      memRdcReg := False
+      memRdfReg := False
+      memWrfReg := False
+      memCopyReg := False
+      memCinvalReg := False
+      hwWrReg := False
+      wrDlyReg := False
+    }
 
     // ========================================================================
     // Output Assignments

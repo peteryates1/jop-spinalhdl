@@ -159,7 +159,8 @@ rdaddr := vpadd        // vpadd = vp0 + opd  (:1085) — a JVM local
 **[VP, SP]**, not SP alone — **while VP <= SP** (qualified 2026-10-01, below).
 
 ```
-rotNeedVp = !vpResident && vp0 <= smuxSignal   // VP below the window, not above SP
+rotNeedVp = !vpResident && vp0 <= smuxSignal   // VP below the window, not above SP,
+            && smuxSignal - vp0 < bankSize     //   and within one bank of it
 rotAddr   = Mux(rotNeedSmux, smuxSignal, vp0)  // SP has priority
 needsRotation = (rotNeedSmux || rotNeedVp) && rotState == IDLE
 ```
@@ -175,6 +176,14 @@ would also livelock. So VP drives rotation only while it is at or below the SP
 the current instruction is moving to (`smuxSignal`: during `stsp` the `sp`
 register still holds the old, high value); a local above SP that the window
 does not cover is served from the spill region like an AR access.
+
+**And only within one bank of SP** (2026-10-02). The target is one bank below
+the active bank, so one step reaches VP exactly when SP - VP < bankSize: the
+straddling frame. Further away the window THRASHES — SP's bank snaps back to
+active between rotations, a 192-word fill per instruction — which the RT
+scheduler triggers on every switch away from a deep thread (`setVP(newSP + 2)`
+while still on the old stack): one local cost 769 DMA reads. Such a local is now
+served from the spill region.
 
 `isUnderflow` and the target base key on `rotAddr`, so a VP-driven rotation
 FILLS real data rather than zero-filling over the caller's locals. Before this,
@@ -277,6 +286,22 @@ served). A served access is one DMA word, and the window does not move.
 Hardware (2026-10-02, Wukong DDR3, timing met): `jvm.DeepAll` 4/4 and `DoAll`
 68/68; the pre-fix RTL on the same board with the same image fails exactly as
 the simulation does. Area on that build: +277 LUTs, +123 registers.
+
+## A stall must apply every effect exactly once
+
+A rotation, or a word served from the spill region, stalls the pipeline with the
+instruction `I_T` frozen in decode — and the registered controls of `I_{T-1}`
+already latched. Those take effect in the first stall cycle (`rotBusyDly` is
+still low) and must NOT take effect again. The stack stage enforces that for its
+own registers with `rotBusyDly`. Until 2026-10-02 nothing enforced it for the
+rest: DecodeStage HELD its registered commands through the stall, so the memory
+controller re-issued a held `stmwa`/`stmra`/`stmwd`/`putfield`/... in every stall
+cycle, the compute unit re-fired, and the bytecode fetch dropped `stjpc`'s write
+in its own (frozen) cycle and re-applied it later with the wrong A. `int2extMem`
+is `stmwa; ldmi; stmwd` with the `ldmi` stalling, so the RT scheduler's stack save
+wrote the stack over the program image (item 160). Commands now clear during a
+stall, and `jpc_wr` lands regardless of the freeze. Guard:
+`DecodeStrobeStallTest`.
 
 ## The region's edge
 

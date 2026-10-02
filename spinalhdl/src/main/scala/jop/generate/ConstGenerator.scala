@@ -127,6 +127,18 @@ object ConstGenerator {
     val scMemWords = scSys.map(config.effectiveMemWords).getOrElse(0)
     val scBase = if (scOn && scWords > 0) scMemWords - scWords else 0
 
+    // THE STACK A THREAD CAN ACTUALLY HAVE -- status item 160. Its only
+    // consumer is RtThreadImpl, which gives every thread a save area of
+    // STACK_SIZE - STACK_OFF words (the context switch copies [STACK_OFF, SP]
+    // into it). It was a hardcoded 65536, the 16-bit VIRTUAL SP range, so one
+    // thread cost 261,888 bytes and could not be constructed on a BRAM build.
+    // SP can reach: the one stack RAM without a cache; scratch plus this
+    // core's spill region with one, past which the hardware faults.
+    val scRamWidth = scSys.map(s => config.builtCoreConfig(s, s.coreConfig).ramWidth).getOrElse(8)
+    require(!scOn || scWords > 0,
+      "a stack cache with no spill region has no edge, so no thread save area can be sized")
+    val stackSize = if (scOn) 64 + scWords else 1 << scRamWidth
+
     val hasEth = config.systems.exists(_.hasDevice(DeviceType.Ethernet))
     val hasSdSpi = config.systems.exists(_.hasDevice(DeviceType.SdSpi))
     val hasSdNative = config.systems.exists(_.hasDevice(DeviceType.SdNative))
@@ -212,8 +224,13 @@ object ConstGenerator {
          |	// Stack configuration
          |	// ====================================================================
          |
-         |	/** Size of the on-chip stack cache including microcode scratch area */
-         |	public static final int STACK_SIZE = 65536;
+         |	/**
+         |	 * Words of stack SP can reach, scratch area included: the stack RAM
+         |	 * without a stack cache, scratch plus this core's spill region with
+         |	 * one. RtThreadImpl sizes every thread's save area from it (item 160);
+         |	 * it was the 16-bit VIRTUAL range, 65536, which cost 256 KB a thread.
+         |	 */
+         |	public static final int STACK_SIZE = $stackSize;
          |	/** Offset of the real stack in the on-chip RAM (set in jvm.asm) */
          |	public static final int STACK_OFF = 64;
          |	/**

@@ -210,14 +210,24 @@ case class BytecodeFetchStage(
   // JPC Update Logic
   // ==========================================================================
 
-  // Priority: stall > jpc_wr > jmp > jfetch/jopdfetch > hold
+  // Priority: jpc_wr > stall > jmp > jfetch/jopdfetch > hold
   // During pipeline stall (stack cache rotation), freeze JPC to prevent
   // advancing past the current operand bytes.
-  when(!io.stall) {
-    when(io.jpc_wr) {
-      // Method call: load from stack
-      jpc := io.din(config.jpcWidth downto 0).asUInt
-    }.elsewhen(jmp) {
+  //
+  // jpc_wr IS NOT FROZEN — status item 160. It is the REGISTERED effect of the
+  // previous instruction (`stjpc`), and it lands in the cycle after that
+  // instruction's decode whether or not the NEXT instruction has frozen the
+  // pipeline in that same cycle. The decode fires it exactly once
+  // (DecodeStrobeStallTest). Gated by the freeze, it was dropped in that cycle
+  // and then re-applied when the freeze released -- held by the decode, with A
+  // changed by `stjpc`'s own pop -- so the JPC took a wrong value. `sys_int`
+  // is `stjpc; ldm jjhp`, and `ldm` pushes: an interrupt arriving with SP one
+  // word below a non-resident bank returned to a garbage bytecode address.
+  when(io.jpc_wr) {
+    // Method call: load from stack
+    jpc := io.din(config.jpcWidth downto 0).asUInt
+  }.elsewhen(!io.stall) {
+    when(jmp) {
       // Branch taken: load branch target
       jpc := jmp_addr
     }.elsewhen((io.jfetch || io.jopdfetch) && !doAckExc) {
