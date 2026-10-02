@@ -38,7 +38,7 @@ answer about the evidence costs confidence in every result built on it — then
 correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
-1. **[#133](#item-133)** — Stack cache: **the AR defect is FIXED and HARDWARE-VALIDATED (2026-10-02) — not by rotation: a stack access the window does not cover is served from the spill region, one DMA word, without moving the window.** Wukong DDR3, timing MET: `DeepAll` 3/3, `DoAll` 68/68; the pre-fix RTL on the same board with the same image fails exactly as the simulation did (`DeepGc` collects a live object, and the run then silently skips a test). Two more defects fixed on the way: `f_athrow`'s tail runs with VP far above SP and the VP rotation ZERO-filled its own frame; and the last bank straddles the spill region's end, so a legal stack 8128-8240 words deep spilled 64 words into the next core's stack. An address past the region now faults EXC_SPOV. **The last arm, the RT context switch, now passes in simulation** (2026-10-02, via [item 160](#item-160), which also found and fixed a stall defect: commands re-issued through a stack-cache stall). Hardware confirmation of that arm pending
+1. **[#162](#item-162)** — The stack cache's spill-region detection is the Wukong DDR3's critical path: **WNS +0.006 ns** after item 160's fix (+0.131 before). Met, so the hardware runs count, but every cached build carries that chain and only the Wukong DDR3 has been re-built: the DB_FPGA DDR3 and the Wukong SDR/SMP records predate it. Separate fanout from placement with a control build, then take the address MUX and compare off the chain (residency per address source, from registers)
 2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
 3. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 4. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
@@ -106,9 +106,8 @@ nothing depends on ranks below a measurement that could mislead someone.
 66. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
 67. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
 68. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-69. **[#160](#item-160)** — **FIXED in simulation 2026-10-02; hardware pending.** `STACK_SIZE` is now the stack SP can reach (256 without a cache, 64 + the spill region with one), so a thread's save area is 768 bytes, not 262 KB, and the RT scheduler has RUN for the first time in this tree (`ThreadAll` phase 1). Phase 2 — a thread 896 words deep switched out and back — then found a pipeline defect: DecodeStage HELD its command strobes through a stack-cache stall, so the memory controller re-issued them every stall cycle (`int2extMem` wrote the saved stack over the program image), the CU re-fired, and `stjpc` before a stall lost its JPC write. Commands now fire once; `ThreadAll OK` on the stack-cache sim
-70. **[#161](#item-161)** — A core parked in `cpux_loop` occasionally leaves it early when a GC halt lands. Symptom fixed twice over and measured absent (0 of 40 hangs, 0 of 34 early boots); cause unknown with five hypotheses eliminated by measurement. LATENT — no observable effect. Only vehicle left is a cluster-level sim
-71. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
+69. **[#161](#item-161)** — A core parked in `cpux_loop` occasionally leaves it early when a GC halt lands. Symptom fixed twice over and measured absent (0 of 40 hangs, 0 of 34 early boots); cause unknown with five hypotheses eliminated by measurement. LATENT — no observable effect. Only vehicle left is a cluster-level sim
+70. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
 
 ## 2. All items — summary
 
@@ -6678,7 +6677,20 @@ Incidentally, every one of those rounds also printed `haltLeak 0` — which is
 
 <a id="item-133"></a>
 
-### Item 133 — stack cache: stack walkers served from the spill region (fixed 2026-10-01, hardware-validated 2026-10-02); the context-switch test is outstanding
+### Item 133 — ~~stack cache: stack walkers served from the spill region~~ — CLOSED 2026-10-02, every arm hardware-validated
+
+**CLOSED 2026-10-02.** The last arm, the RT context switch, passes on hardware:
+`jvm.ThreadAll` 3/3 on the Wukong DDR3, a thread 896 words deep switched out from
+its deepest frame and back with its locals intact ([item 160](#item-160), which
+also fixed the decode-command defect that run exposed). Every arm below is now
+green in simulation AND on the board. Guards: `jop.pipeline.StackCacheArAccessTest`
+(served read/write, the region-edge fault, the straddling bank, a far local's
+cost), `jvm.DeepIntMem`/`DeepGc`/`DeepThrow` in `jvm.DeepAll`, `jvm.ThreadAll`,
+`StackCacheDmaFormal`, `DecodeStrobeStallTest`. Left behind, as records rather than
+open defects: the critical-path margin it created ([item 162](#item-162)), and the
+multi-bank `setSP` walk's transient duplicate bank (below, "measured but not a
+defect").
+
 
 **2026-10-01 (later) — FIXED IN SIMULATION: a stack access the resident window
 does not cover is now served from the spill region.** Three defects, each proved
@@ -8963,7 +8975,7 @@ second, not the first — the same reason [item 63](#item-63) is filed.
 
 <a id="item-160"></a>
 
-### Item 160 — RT threads: the save area is right-sized and the scheduler runs (fixed in simulation 2026-10-02); its first run found a pipeline defect
+### Item 160 — ~~RT threads could not be constructed, and the scheduler had never run~~ — CLOSED 2026-10-02, ThreadAll 3/3 on hardware
 
 **2026-10-02 — FIXED IN SIMULATION. Three defects, each red first.**
 
@@ -9054,7 +9066,10 @@ instruction waiting after `stjpc` is never a dispatch or an operand fetch, so
 that is now a guard of its own: `StjpcFollowerTest` checks it over every
 assembled ROM (true today: `nop` or `ldm jjhp`).
 
-**STILL OPEN:** `RtThread` has no user in the tree but this test.
+**CLOSED 2026-10-02.** `RtThread` still has no user in the tree but this test,
+which is now the coverage that was missing. Guard: `jvm.ThreadAll` (phase 1 on
+every build, phase 2 where there is a stack cache), `StackSpillGeometryTest`,
+`DecodeStrobeStallTest`, `StjpcFollowerTest`.
 
 ---
 
@@ -9108,6 +9123,38 @@ reports INCONCLUSIVE rather than passing, which is the honest state.
 **This blocks item 133's context-switch arm.** Not the mechanism — that is
 established in RTL and confirmed empirically for the same AR path by
 `jvm.DeepThrow` — but the test, which cannot run until a thread can exist.
+
+<a id="item-162"></a>
+
+### Item 162 — the stack cache's spill-region detection is the Wukong DDR3's critical path: WNS +0.006 ns
+
+**Found 2026-10-02**, building the item 160 fix for hardware. `wukongDdr3`, final
+post-route report (`timing_summary.rpt`): **WNS +0.006 ns**, WHS +0.070 ns, all
+constraints met. The build before item 160's DecodeStage change met by +0.131 ns,
+and the pre-item-133 control by +0.107 ns.
+
+The worst path is item 133's detection chain: `fetch/ir_reg` → the decoded
+`selRda` → the `rdaddr` MUX → the per-bank range compare (two CARRY4) →
+`rotBusy` → the fetch stage's freeze → the microcode ROM address
+(`romAddrReg_reg_rep_1/ADDRARDADDR`), 14 logic levels, 9.376 ns. The +0.131 ns
+build's worst JOP path was the same chain, ending one register earlier
+(`stackStg/..._reg/CE`).
+
+**Not separated:** how much of the 0.125 ns is the command-clearing logic's extra
+`rotBusy` fanout (item 160 added `stall` to ~25 decode registers) and how much is
+placement. A control build — item 160's RTL without the DecodeStage change —
+settles it; reasoning will not.
+
+**Why it matters beyond one board.** Every stack-cache build carries this chain,
+and only `wukongDdr3` has been rebuilt since: the DB_FPGA DDR3
+(`xc7a100tDbSerial`) and the Wukong SDR/SMP timing records predate it. A met
+build at +0.006 ns is a valid result; the same chain on a fuller or faster build
+need not be.
+
+**The obvious fix:** compute each address source's residency (vp0..3, vpadd,
+ar) from registers, in parallel, and select with `selRda` at the end. That takes
+the address MUX and the compare off the decode-to-freeze chain (estimated
+~1.5-2 ns), at the cost of ~36 more 16-bit compares per core. Not done.
 
 <a id="item-134"></a>
 
