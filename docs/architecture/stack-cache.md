@@ -274,6 +274,10 @@ served). A served access is one DMA word, and the window does not move.
 `jvm.DeepAll` serves 1,149 reads and 9 writes; the simulation prints the counts
 (`aroundReads`/`aroundWrites`).
 
+Hardware (2026-10-02, Wukong DDR3, timing met): `jvm.DeepAll` 4/4 and `DoAll`
+68/68; the pre-fix RTL on the same board with the same image fails exactly as
+the simulation does. Area on that build: +277 LUTs, +123 registers.
+
 ## The region's edge
 
 Each core owns `spillWords` (`stackRegionWordsPerCore`, 8192) of spill region.

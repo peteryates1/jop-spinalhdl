@@ -38,7 +38,7 @@ answer about the evidence costs confidence in every result built on it — then
 correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
-1. **[#133](#item-133)** — Stack cache: **the AR defect is FIXED IN SIMULATION (2026-10-01) — not by rotation: a stack access the window does not cover is served from the spill region, one DMA word, without moving the window.** Red -> green on `jvm.DeepIntMem` (the primitive), `jvm.DeepGc` (the collector COLLECTED a live object held in an evicted frame) and every `jvm.DeepThrow` rung to d100, plus `StackCacheArAccessTest`. Two more defects found and fixed on the way: `f_athrow`'s tail runs with VP far above SP and the VP rotation ZERO-filled its own frame; and the last bank straddles the spill region's end, so a legal stack 8128-8240 words deep spilled 64 words into the next core's stack (or, for core 0, wrapped to the bottom of memory). An address past the region now faults EXC_SPOV. **Still open:** a run on a stack-cache board (timing first), and the RT context switch, whose test is blocked by [item 160](#item-160)
+1. **[#133](#item-133)** — Stack cache: **the AR defect is FIXED and HARDWARE-VALIDATED (2026-10-02) — not by rotation: a stack access the window does not cover is served from the spill region, one DMA word, without moving the window.** Wukong DDR3, timing MET: `DeepAll` 3/3, `DoAll` 68/68; the pre-fix RTL on the same board with the same image fails exactly as the simulation did (`DeepGc` collects a live object, and the run then silently skips a test). Two more defects fixed on the way: `f_athrow`'s tail runs with VP far above SP and the VP rotation ZERO-filled its own frame; and the last bank straddles the spill region's end, so a legal stack 8128-8240 words deep spilled 64 words into the next core's stack. An address past the region now faults EXC_SPOV. **Only open arm:** the RT context switch — same mechanism, now served, but its test is blocked by [item 160](#item-160)
 2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
 3. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 4. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
@@ -6678,7 +6678,7 @@ Incidentally, every one of those rounds also printed `haltLeak 0` — which is
 
 <a id="item-133"></a>
 
-### Item 133 — stack cache: stack walkers served from the spill region (fixed in sim 2026-10-01); hardware run and the context-switch test outstanding
+### Item 133 — stack cache: stack walkers served from the spill region (fixed 2026-10-01, hardware-validated 2026-10-02); the context-switch test is outstanding
 
 **2026-10-01 (later) — FIXED IN SIMULATION: a stack access the resident window
 does not cover is now served from the spill region.** Three defects, each proved
@@ -6754,10 +6754,22 @@ by hand as unobservable under stack discipline (the duplicate is a clean refill 
 words above the new SP); a target computed from the window's ends would remove
 it. Not done.
 
-**STILL OPEN:** (a) hardware — one run of `DeepAll` and `DoAll` on a stack-cache
-board (single-core DDR3: the Wukong is in the primary set), timing checked first;
-(b) the RT context switch — same mechanism, now served, but its test cannot run
-until [item 160](#item-160) right-sizes `RtThread`.
+**HARDWARE, 2026-10-02 — Wukong DDR3 (`wukongDdr3`: single core, stack cache,
+generational GC, 100 MHz), `hw_verify.py`, reprogrammed before every run:**
+
+| bitstream | timing (post-route) | LUTs / regs | `DeepAll` | `DoAll` |
+|---|---|---|---|---|
+| **fixed** (`08b19a5`) | MET, WNS +0.131 ns, WHS +0.058 ns | 12,974 / 11,575 | **4/4** — every rung of all four tests (3 runs, then 1 more on a rebuild after the control) | **68/68** |
+| pre-fix CONTROL (`19b2369`'s RTL) | MET, WNS +0.107 ns, WHS +0.055 ns | 12,697 / 11,452 | **FAIL**: `DeepIntMem ... d60s652RW- d70s742RW- d100s1012RW-`, `DeepGc g5+ n100+ g70- g100-`, then `DeepAll done` with `DeepThrow` never run | — |
+
+Same board, same image (download checksum `0x6d806016` in both), so the
+difference is the RTL. The control reproduces the simulation's red run exactly,
+INCLUDING the silent skip: on silicon too, the collector freed `DeepAll.main`'s
+own array and the program went on to report itself done. The fix costs 277 LUTs
+and 123 registers on this build (+2.2 %), and timing is met either way.
+
+**STILL OPEN:** the RT context switch — same mechanism, now served, but its test
+cannot run until [item 160](#item-160) right-sizes `RtThread`.
 
 ---
 
