@@ -189,9 +189,18 @@ object JopJvmTestsStackCacheBramSim extends App {
   // application code does.
   //   Test/runMain jop.system.JopJvmTestsStackCacheBramSim JbeBench JbeBench
   //   Test/runMain jop.system.JopJvmTestsStackCacheBramSim JvmTests DoAll 80000000
+  //
+  // The FOURTH argument names the preset whose image to load. The default image
+  // is linked for ep4cgx150Serial, which has no stack cache, so its Const says
+  // STACK_CACHE = 0 and STACK_SIZE = 256 -- wrong for this hardware wherever a
+  // program sizes something from the stack (RtThread save areas, item 160).
+  // wukongDdr3's Const differs from it ONLY in the stack constants (diffed
+  // 2026-10-02), so its images run here unchanged:
+  //   Test/runMain jop.system.JopJvmTestsStackCacheBramSim JvmTests ThreadAll 30000000 wukongDdr3
   val jopFilePath = jop.utils.SimApp.jop(
     if (args.length > 0) args(0) else "JvmTests",
-    if (args.length > 1) args(1) else "DeepAll")
+    if (args.length > 1) args(1) else "DeepAll",
+    if (args.length > 3) args(3) else jop.utils.SimApp.defaultPreset)
   val romFilePath = MicrocodePaths.simulationRom
   val ramFilePath = MicrocodePaths.simulationRam
   val logFilePath = "build/sim-logs/jvmtests_stackcache_bram_simulation.log"

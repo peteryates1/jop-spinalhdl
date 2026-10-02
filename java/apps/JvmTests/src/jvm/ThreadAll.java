@@ -1,5 +1,5 @@
 /*
-  RT-THREAD BRING-UP, and then the stack-cache question — status item 133.
+  RT-THREAD BRING-UP, and then the stack-cache question — status items 160, 133.
 
   WHY THIS STARTS FROM ZERO. `RtThread.startMission()` is called NOWHERE outside
   the runtime, and the only use of `RtThread` in any app is commented out
@@ -8,34 +8,46 @@
   never been executed by anything in this tree. That is the same shape as the
   `lmul_sw` finding: an implementation nothing selects gets no coverage.
 
+  WHAT STOPPED IT (item 160). Every thread gets a save area of
+  `Const.STACK_SIZE - Const.STACK_OFF` words (RtThreadImpl), and STACK_SIZE was
+  a hardcoded 65536 -- the 16-bit VIRTUAL SP range -- so one thread cost
+  261,888 bytes. Measured on the 512 KB BRAM sim: `free=234188 need=261888`,
+  and construction threw. STACK_SIZE is now the stack SP can actually reach.
+
   WHAT ITEM 133 NEEDS FROM IT. The context switch copies the ENTIRE stack:
 
-      Scheduler.java:96   i = Native.getSP();
-      Scheduler.java:99   Native.int2extMem(Const.STACK_OFF, th.stack, i-Const.STACK_OFF+1);
-      Scheduler.java:149  Native.ext2intMem(th.stack, Const.STACK_OFF, i-Const.STACK_OFF+1);
+      Scheduler.java   i = Native.getSP();
+      Scheduler.java   Native.int2extMem(Const.STACK_OFF, th.stack, i-Const.STACK_OFF+1);
+      Scheduler.java   Native.ext2intMem(th.stack, Const.STACK_OFF, i-Const.STACK_OFF+1);
 
-  `int2extMem`/`ext2intMem` address internal memory through AR (`star`, 0x01a,
-  asm/src/jvm.asm around :2230 and :2269), and AR reaches no part of the rotation
-  controller -- exactly the mechanism `jvm.DeepThrow` has now confirmed
-  empirically for `f_athrow`. So a thread whose SP exceeded the 576-word resident
-  window should have its upper frames saved as ZEROS and restored as garbage.
+  `int2extMem`/`ext2intMem` address internal memory through AR (`star`), the
+  path item 133 found reading 0 and dropping writes outside the resident window
+  -- now served from the spill region. A thread deeper than the window is the
+  test of that.
 
   THE CONTROL COMES FIRST, deliberately. If threading does not work at all here,
-  a deep-stack failure says nothing about the stack cache -- the same reason every
-  sweep in this item carries a no-stimulus arm, and the reason four confident
-  mechanisms died before the controls were added. So:
+  a deep-stack failure says nothing about the stack cache. So:
 
-    PHASE 1 (shallow): two periodic threads, stacks far inside the window, each
-      incrementing its own counter. If both advance, threading works and the
-      context switch is executing. If this fails, the finding is "the RT
-      scheduler does not run", which belongs to its own item, not to 133.
+    PHASE 1 (shallow): a periodic thread increments a counter four times. If it
+      does, threading works and the context switch is executing.
 
-    PHASE 2 (deep): one thread recurses past the window before yielding, then
-      checks its locals survived the round trip. Only meaningful if phase 1
-      passed.
+    PHASE 2 (deep, stack-cache builds only): a second thread recurses past the
+      resident window and waits for its next period FROM THE DEEPEST FRAME, so
+      the switch must save and restore a stack the cache only partly holds;
+      then it checks its locals on the way back up. A build without a cache has
+      a 192-word stack and could not reach the depth at all, so it reports the
+      phase as skipped rather than as a pass.
 
-  Progress is printed BEFORE each phase, because this can wedge: a hang must
-  yield a number rather than silence.
+  BOTH THREADS ARE CREATED BEFORE `startMission()`. The first version created
+  the deep thread afterwards; JOP's mission model sizes the scheduler's thread
+  arrays in startMission (`Scheduler.allocArrays`), so a later thread is never
+  scheduled.
+
+  Waits are bounded by the microsecond counter, not by loop counts, and
+  progress is printed before each step: a hang must yield a number. Once the
+  mission runs, the threads mark their own progress on the same line:
+  `a` per tick, and for the deep thread `D` (started), `d` (at the bottom,
+  about to switch away), `r` (resumed at depth), `R` (back at the top).
 */
 package jvm;
 
@@ -46,26 +58,33 @@ import com.jopdesign.sys.Const;
 
 public class ThreadAll {
 
-	/** Advanced by the shallow threads; volatile so the main thread sees them. */
+	/** 10 ms: short, because a simulation pays for every microsecond. */
+	static final int PERIOD_US = 10000;
+
+	/** Advanced by the shallow thread; volatile so main sees it. */
 	static volatile int tickA;
-	static volatile int tickB;
 
 	/** Phase 2: set by the deep thread, read by main. */
 	static volatile int deepSp;
-	static volatile int deepLocalsOk;
 	static volatile int deepRan;
+	/** 0 = not finished, 1 = locals survived, -1 = they did not. */
+	static volatile int deepLocalsOk;
 
 	/** Frame shape matched to jvm.DeepRecursion.deepSum — 9.0 slots/frame
-	 *  measured, so depth 90 lands near SP 916, past the 639 window. */
+	 *  measured, so depth 90 lands near SP 900, past the 639 window. */
+	static final int DEEP = 90;
+
 	static int descend(int n) {
 		int local1 = n;
 		int local2 = n * 2;
 		if (n <= 0) {
 			deepSp = Native.getSP();
+			System.out.print("d");
 			// YIELD FROM THE DEEPEST FRAME. This is the whole point: the save
 			// must copy a stack that is partly non-resident, and the restore must
 			// put it back.
 			RtThread.currentRtThread().waitForNextPeriod();
+			System.out.print("r");
 			deepRan = 1;
 			return 0;
 		}
@@ -79,121 +98,104 @@ public class ThreadAll {
 
 		System.out.println("ThreadAll start");
 
-		// ---- PHASE 1: does threading work at all? ----
-		System.out.print("phase1 shallow");
+		// Phase 2 needs a stack that can hold ~900 words: only a stack cache
+		// has one. Decided from the build's own constants, not guessed.
+		boolean deep = Const.STACK_CACHE != 0;
 
-		// MEASURE THE HEAP FIRST. My earlier claim that phase 1 died of
-		// out-of-memory from TWO threads was wrong -- one thread fails
-		// identically, at the same sp=185. But the allocation is genuinely
-		// enormous: RtThreadImpl:170 is
-		// `new int[Const.STACK_SIZE-Const.STACK_OFF]`, and STACK_SIZE is a
-		// HARDCODED 65536 in ConstGenerator:216 (the 16-bit virtual SP range,
-		// identical for every config, cache or not), so each thread wants 65,472
-		// ints = 262 KB. Whether that fits is a number, not an opinion, so print
-		// it rather than reason about it.
-		System.out.print(" free=");
+		// MEASURE THE HEAP FIRST. Each RtThread, and main's own entry made by
+		// startMission, gets a save area of STACK_SIZE - STACK_OFF words.
+		int saveBytes = (Const.STACK_SIZE - Const.STACK_OFF) * 4;
+		int threads = (deep ? 2 : 1) + 1;
+		System.out.print("free=");
 		System.out.print(GC.freeMemory());
 		System.out.print(" need=");
-		System.out.print((Const.STACK_SIZE - Const.STACK_OFF) * 4);
+		System.out.print(saveBytes * threads);
+		System.out.print(" (");
+		System.out.print(threads);
+		System.out.print(" x ");
+		System.out.print(saveBytes);
+		System.out.println(")");
 
-		// AND LOCALISE THE FAULT: construction, or startMission?
 		try {
-			new RtThread(10, 20000) {
+			new RtThread(10, PERIOD_US) {
 				public void run() {
 					for (int i = 0; i < 4; ++i) {
 						tickA++;
+						System.out.print("a");
 						waitForNextPeriod();
 					}
 				}
 			};
-			System.out.print(" constructed");
+			if (deep) {
+				new RtThread(9, PERIOD_US) {
+					public void run() {
+						System.out.print("D");
+						int r = descend(DEEP);
+						deepLocalsOk = (r == DEEP * (DEEP + 1) / 2) ? 1 : -1;
+						System.out.print("R");
+					}
+				};
+			}
+			System.out.println("constructed");
 		} catch (Throwable t) {
-			System.out.print(" CONSTRUCT-THREW");
-			System.out.println("");
+			System.out.println("CONSTRUCT-THREW");
 			System.out.println("ThreadAll INCONCLUSIVE (thread construction failed)");
 			return;
 		}
 
-		// ONE THREAD, NOT TWO — and the reason is a finding in itself.
-		// RtThreadImpl:170 is `stack = new int[Const.STACK_SIZE-Const.STACK_OFF]`,
-		// and STACK_SIZE is 65536 (the VIRTUAL SP range, not the physical stack),
-		// so EVERY RtThread allocates 65,472 ints = 262 KB for its save area
-		// however little stack it uses. Two threads is 524 KB against this sim's
-		// 512 KB, which is why the first version of this test died with a
-		// no-name uncaught exception before printing a single tick. tickB is left
-		// in place but unused so the shape of the original test is still visible.
+		System.out.println("startMission");
 		try {
 			RtThread.startMission();
-			System.out.print(" mission-returned");
 		} catch (Throwable t) {
-			System.out.print(" MISSION-THREW");
-			System.out.println("");
+			System.out.println("MISSION-THREW");
 			System.out.println("ThreadAll INCONCLUSIVE (startMission failed)");
 			return;
 		}
+		System.out.println("mission running");
 
-		// Bounded wait, not a spin: a hang must yield a number. ~2M iterations
-		// is comfortably longer than four 20 ms periods in simulation terms, and
-		// the loop exits early once both threads have run.
-		int spins = 0;
-		for (int o = 0; o < 400 && tickA < 4; ++o) {
-			for (int i = 0; i < 20000 && tickA < 4; ++i) { }
-			spins = o;
+		// Bounded wait: 500 ms is fifty periods.
+		int t0 = Native.rd(Const.IO_US_CNT);
+		while (Native.rd(Const.IO_US_CNT) - t0 < 500000) {
+			if (tickA >= 4 && (!deep || deepLocalsOk != 0)) break;
 		}
 
-		System.out.print(" tickA=");
+		System.out.print("phase1 tickA=");
 		System.out.print(tickA);
-		System.out.print(" tickB=");
-		System.out.print(tickB);
-		System.out.print(" spins=");
-		System.out.print(spins);
+		boolean p1 = tickA >= 4;
+		System.out.println(p1 ? " ok" : " FAILED");
 
-		if (tickA < 4) {
-			System.out.println(" PHASE1 FAILED -- the RT scheduler does not run here.");
-			System.out.println("ThreadAll INCONCLUSIVE (threading itself is the finding, not the stack cache)");
-			return;
-		}
-		System.out.println(" phase1 ok");
-
-		// ---- PHASE 2: a deep stack across a context switch ----
-		System.out.print("phase2 deep");
-
-		new RtThread(8, 20000) {
-			public void run() {
-				int r = descend(90);
-				deepLocalsOk = (r == 90 * 91 / 2) ? 1 : 0;
-			}
-		};
-
-		// The new thread needs the mission restarted; if that is not supported
-		// the counters simply stay zero and the bounded wait reports it.
-		int spins2 = 0;
-		for (int o = 0; o < 400 && deepRan == 0; ++o) {
-			for (int i = 0; i < 20000 && deepRan == 0; ++i) { }
-			spins2 = o;
-		}
-
-		System.out.print(" deepRan=");
-		System.out.print(deepRan);
-		System.out.print(" sp=");
-		System.out.print(deepSp);
-		System.out.print(" localsOk=");
-		System.out.print(deepLocalsOk);
-		System.out.print(" spins=");
-		System.out.print(spins2);
-
-		if (deepRan == 0) {
-			System.out.println(" PHASE2 did not complete");
-			System.out.println("ThreadAll INCONCLUSIVE");
-		} else if (deepSp <= 639) {
-			System.out.println(" PHASE2 never left the window -- depth too small to test residency");
-			System.out.println("ThreadAll INCONCLUSIVE");
-		} else if (deepLocalsOk == 1) {
-			System.out.println(" phase2 ok");
-			System.out.println("ThreadAll OK (deep stack survived a context switch)");
+		boolean p2 = true;
+		if (!deep) {
+			System.out.print("phase2 skipped: no stack cache in this build (STACK_SIZE ");
+			System.out.print(Const.STACK_SIZE);
+			System.out.println(")");
 		} else {
-			System.out.println(" PHASE2 FAILED -- locals did not survive");
-			System.out.println("ThreadAll FAIL (context switch lost a non-resident stack)");
+			System.out.print("phase2 deepRan=");
+			System.out.print(deepRan);
+			System.out.print(" sp=");
+			System.out.print(deepSp);
+			System.out.print(" localsOk=");
+			System.out.print(deepLocalsOk);
+			if (deepRan == 0 || deepLocalsOk == 0) {
+				System.out.println(" did not complete");
+				p2 = false;
+			} else if (deepSp <= 639) {
+				System.out.println(" never left the window -- proves nothing");
+				p2 = false;
+			} else if (deepLocalsOk == 1) {
+				System.out.println(" ok");
+			} else {
+				System.out.println(" FAILED -- locals did not survive the switch");
+				p2 = false;
+			}
+		}
+
+		if (!p1) {
+			System.out.println("ThreadAll FAIL (the RT scheduler does not run)");
+		} else if (!p2) {
+			System.out.println("ThreadAll FAIL (a deep stack did not survive a context switch)");
+		} else {
+			System.out.println("ThreadAll OK");
 		}
 	}
 }

@@ -69,6 +69,7 @@ class StackCacheArAccessTest extends AnyFunSuite {
       val selAmux  = in Bool()
       val enaA     = in Bool()
       val enaAr    = in Bool()
+      val enaVp    = in Bool()
       val selRda   = in Bits(3 bits)
       val selWra   = in Bits(3 bits)
       val wrEna    = in Bool()
@@ -109,7 +110,7 @@ class StackCacheArAccessTest extends AnyFunSuite {
     stackStg.io.selWra := io.selWra
     stackStg.io.wrEna := io.wrEna
     stackStg.io.enaB := False
-    stackStg.io.enaVp := False
+    stackStg.io.enaVp := io.enaVp
     stackStg.io.enaAr := io.enaAr
     stackStg.io.debugRamAddr := 0
     stackStg.io.debugRamWrAddr := 0
@@ -172,6 +173,7 @@ class StackCacheArAccessTest extends AnyFunSuite {
     dut.io.selAmux #= false
     dut.io.enaA #= false
     dut.io.enaAr #= false
+    dut.io.enaVp #= false
   }
 
   /**
@@ -203,6 +205,16 @@ class StackCacheArAccessTest extends AnyFunSuite {
   /** star: AR <- A. */
   private def star(dut: ArTb): Unit =
     instr(dut)(()) { dut.io.enaAr #= true }
+
+  /** stvp: VP <- A (vp0..3 follow). */
+  private def setVp(dut: ArTb, v: Int): Unit = {
+    loadA(dut, v)
+    instr(dut)(()) { dut.io.enaVp #= true }
+  }
+
+  /** ld0: A <- stack[VP]. */
+  private def ld0(dut: ArTb): Unit =
+    instr(dut) { dut.io.selRda #= 0 } { dut.io.selLmux #= 2; dut.io.selAmux #= true; dut.io.enaA #= true }
 
   /** stsp: SP <- A, through smux, so the rotation controller sees it. */
   private def stsp(dut: ArTb, target: Int): Unit = {
@@ -336,6 +348,46 @@ class StackCacheArAccessTest extends AnyFunSuite {
       val stray = mon.cmds.drop(before).filter { case (_, a) => a >= regionBytes }
       check(stray.isEmpty,
         "DMA reached past the region: " + stray.map { case (w, a) => f"${if (w) "WR" else "RD"}@0x$a%X" }.mkString(" "))
+
+      assert(failures.isEmpty, failures.mkString("\n  ", "\n  ", ""))
+    }
+  }
+
+  /**
+   * VP FAR BELOW SP — the RT scheduler's context switch. `Scheduler.run()` does
+   * `setVP(newSP + 2)` -- the NEXT thread's stack top -- while it still runs on
+   * the CURRENT thread's stack, so switching away from a deep thread puts VP
+   * ~800 words below SP. Below SP, so `rotNeedVp` asked for a rotation; but the
+   * target is one bank below the ACTIVE bank, never VP's, and SP's bank snaps
+   * back to active between rotations, so it never arrives. It is not a
+   * deadlock -- each instant switch back lets one instruction through, and the
+   * access IS served correctly (this test passed on that RTL) -- it is a
+   * THRASH: a 192-word fill per instruction until `setSP` follows VP down.
+   * Correct, and an unbounded cost in the one place a real-time system cares
+   * about, the context switch. So the cost is asserted, not just the value: a
+   * local that far from SP is one word from the spill region, no bank fills.
+   */
+  test("a local far below SP is served, not rotated for (the scheduler's switch)") {
+    compiled.doSim("vp-far-below-sp") { dut =>
+      val mon = start(dut)
+      val failures = ArrayBuffer[String]()
+      def check(ok: Boolean, what: => String): Unit = if (!ok) failures += what
+
+      writeAr(dut, 122, 0x0A0B0C0DL)     // the next thread's local, resident now
+      stsp(dut, 920)                     // the scheduler's own stack, deep
+      assert(dut.io.sp.toInt == 920, s"stsp did not land: sp=${dut.io.sp.toInt}")
+      val readsBefore = mon.cmds.count { case (w, _) => !w }
+      setVp(dut, 122)                    // Scheduler.run(): setVP(newSP + 2)
+      loadA(dut, 0xDEAD0000L)
+      ld0(dut)                           // read that local through VP
+      drain(dut)
+      val got = dut.io.aout.toLong
+      check(got == 0x0A0B0C0DL, f"ld0 with VP 798 words below SP returned 0x$got%08X")
+      val reads = mon.cmds.count { case (w, _) => !w } - readsBefore
+      check(reads == 1,
+        s"serving one local cost $reads DMA reads -- the window is thrashing (one bank fill is 192)")
+      check(dut.io.sp.toInt == 920, s"SP moved: ${dut.io.sp.toInt}")
+      check(mon.spOvCycles == 0, "spOv raised")
 
       assert(failures.isEmpty, failures.mkString("\n  ", "\n  ", ""))
     }

@@ -107,6 +107,42 @@ class StackSpillGeometryTest extends AnyFunSuite {
   }
 
   /**
+   * `Const.STACK_SIZE` IS THE STACK A THREAD CAN ACTUALLY HAVE — status item 160.
+   *
+   * Its only consumer is `RtThreadImpl`, which gives every thread a save area of
+   * `STACK_SIZE - STACK_OFF` words: the context switch copies the whole stack,
+   * `[STACK_OFF, SP]`, into it. It was a hardcoded 65536 for every config -- the
+   * 16-bit VIRTUAL SP range, not any physical stack -- so one thread cost
+   * 261,888 bytes and could not be constructed on a BRAM build (234,188 free,
+   * measured by `jvm.ThreadAll`).
+   *
+   * What SP can actually reach:
+   *   - no stack cache: the one stack RAM, `1 << ramWidth` words (scratch
+   *     included);
+   *   - a stack cache: scratch plus this core's spill region, beyond which the
+   *     hardware faults (EXC_SPOV for SP, and for an AR access since item 133).
+   * Too small would let the save overrun the array; too large is the bug.
+   */
+  test("Const.STACK_SIZE is the stack a thread can actually have") {
+    for ((name, config) <- presets) {
+      val sys = config.system
+      val built = config.builtCoreConfig(sys, sys.coreConfig)
+      val src = ConstGenerator.generate(config)
+      val re = raw"""public static final int STACK_SIZE = (-?\d+)""".r
+      val got = re.findFirstMatchIn(src)
+        .getOrElse(fail(s"$name: STACK_SIZE is not emitted into Const.java")).group(1).toInt
+      val want = built.stackConfig.cacheConfig match {
+        case None     => 1 << built.ramWidth
+        case Some(sc) => sc.scratchSize + built.memConfig.stackRegionWordsPerCore
+      }
+      assert(got == want,
+        s"$name: Const.STACK_SIZE = $got, but SP can reach at most ${want - 1} " +
+        s"(${if (built.useStackCache) "scratch + spill region" else "1 << ramWidth"}), " +
+        f"so each thread's save area is ${(got - 64) * 4}%,d bytes instead of ${(want - 64) * 4}%,d")
+    }
+  }
+
+  /**
    * The base must be REACHABLE. `wordAddrWidth = addressWidth - 2` bits address
    * main memory, and the mismatch above produced a base one bit wider than that
    * — which truncates rather than faulting, so the read lands somewhere real.
