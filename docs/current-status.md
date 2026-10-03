@@ -38,7 +38,7 @@ answer about the evidence costs confidence in every result built on it — then
 correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
-1. **[#162](#item-162)** — The stack cache's spill-region detection is the Wukong DDR3's critical path: **WNS +0.006 ns** after item 160's fix (+0.131 before). Met, so the hardware runs count, but every cached build carries that chain and only the Wukong DDR3 has been re-built: the DB_FPGA DDR3 and the Wukong SDR/SMP records predate it. Separate fanout from placement with a control build, then take the address MUX and compare off the chain (residency per address source, from registers)
+1. **[#162](#item-162)** — **Every stack-cache build sits within ~0.1 ns of failing timing at 100 MHz, and the Wukong SDR (`wukongSdram`) FAILS: WNS −0.295 ns — and −0.363 ns BEFORE item 133, so it is not this session's regression; it is pre-existing and was unrecorded.** Controls at `7cdc4a7` (pre-133) vs now: Wukong DDR3 +0.107 → +0.006, DB_FPGA DDR3 +0.127 → +0.068, Wukong SDR −0.363 → −0.295 — mixed signs, ±0.1 ns of placement variation. The limiters are the stack cache's same-cycle rotation decisions: victim selection → bank-base update (the SDR's failing family), the SP-mux rotation decision, and item 133's spill-region detection. Fixing one moves the limit to the next (measured)
 2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
 3. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 4. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
@@ -9155,6 +9155,61 @@ need not be.
 ar) from registers, in parallel, and select with `selRda` at the end. That takes
 the address MUX and the compare off the decode-to-freeze chain (estimated
 ~1.5-2 ns), at the cost of ~36 more 16-bit compares per core. Not done.
+
+**2026-10-03 — INVESTIGATED. The margin was never there, and one board has been
+failing all along.**
+
+*Fanout hypothesis: ruled out.* A control build of item 160's RTL WITHOUT the
+DecodeStage change: +0.050 ns, against +0.006 with it — 0.04 ns, inside the
+spread of five closely related Wukong DDR3 builds (+0.006 to +0.131). Vivado is
+deterministic for identical input (the same RTL rebuilt gave +0.006 twice), so the
+spread is placement sensitivity to small netlist changes, ±0.06 ns or so.
+
+*The obvious fix: measured, and it does not pay on its own.* Residency per
+address source, selected last, built: the detection chain fell from 14 levels to
+12, WNS went +0.006 -> **+0.035**, for **+297 LUTs**. The worst path did not go
+away; it became a PRE-EXISTING chain of almost the same depth into the same
+endpoint — IR -> `selSmux` -> `smuxSignal` -> active-bank compare ->
+`needsRotation` -> `rotBusy` -> the fetch freeze -> the microcode ROM address.
+Reverted from `main`; kept on the local branch `item162-per-source-residency` (one commit, not pushed).
+
+*The near-critical population*, `report_timing -max_paths 40` on the routed
+Wukong DDR3, four families, all the stack cache's SAME-CYCLE rotation decisions:
+
+| family | slack | path |
+|---|---|---|
+| A | +0.006 | IR -> selRda -> `rdaddr` -> bank compare -> rotBusy -> fetch ROM address (item 133's detection) |
+| B | +0.121 | `activeBankIdx` -> active base -> victim distance subtract/compare -> victim choice -> bank-base register CE (the September victim-by-address fix) |
+| C | +0.238 | IR -> SP mux -> rotation decision -> bank-base register D |
+| D | +0.270 | IR -> `rdaddr` -> bank RAM read address, selected by rotBusy |
+
+*The other cached builds — the record that had decayed.* Built at the committed
+state and, as CONTROLS, at `7cdc4a7` (the last commit before item 133's RTL):
+
+| build | `7cdc4a7` (pre-133) | `744a22f` (now) | change |
+|---|---|---|---|
+| Wukong DDR3 (`wukongDdr3`) | +0.107 | +0.006 | −0.10 |
+| DB_FPGA DDR3 (`xc7a100tDbSerial`) | +0.127 | +0.068 | −0.06 |
+| **Wukong SDR (`wukongSdram`)** | **−0.363 VIOLATED** | **−0.295 VIOLATED** | +0.07 |
+
+Mixed signs: this session's RTL did not cost a measurable margin. But **the Wukong
+SDR at 100 MHz misses timing, and did BEFORE item 133** — family B, 14 levels,
+bank-base register to bank-base register CE through the victim selection. No timing
+record for it existed in the tree; `hw_verify.py` would refuse that bitstream. The
+DB_FPGA's 2026-09-15 record (+0.298) was stale too: +0.127 before this session.
+
+**What would actually buy margin** — each step moves the limit to the next
+family, so they only pay together:
+1. Family B: do the victim-dependent bank-descriptor updates (base, resident,
+   dirty) in the state AFTER IDLE, from the registered `rotVictimIdx` /
+   `rotTargetBase`, and register the victim choice itself (one settle cycle after
+   any change to `activeBankIdx` or a base). Fixes the SDR's failing family.
+2. Family C and the SP-mux chain: the same per-source treatment for `sp`, `spm`,
+   `spp` and `A` that families A/D get from the reverted patch.
+3. Family A/D: the reverted per-source residency patch.
+
+Or, cheaper: run `wukongSdram` at the 80 MHz that its `sdr80` clock IP already
+provides, and accept ~0.1 ns on the DDR3 boards.
 
 <a id="item-134"></a>
 
