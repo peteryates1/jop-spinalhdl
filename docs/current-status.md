@@ -38,7 +38,7 @@ answer about the evidence costs confidence in every result built on it — then
 correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
-1. **[#162](#item-162)** — **Every stack-cache build sits within ~0.1 ns of failing timing at 100 MHz, and the Wukong SDR (`wukongSdram`) FAILS: WNS −0.295 ns — and −0.363 ns BEFORE item 133, so it is not this session's regression; it is pre-existing and was unrecorded.** Controls at `7cdc4a7` (pre-133) vs now: Wukong DDR3 +0.107 → +0.006, DB_FPGA DDR3 +0.127 → +0.068, Wukong SDR −0.363 → −0.295 — mixed signs, ±0.1 ns of placement variation. The limiters are the stack cache's same-cycle rotation decisions: victim selection → bank-base update (the SDR's failing family), the SP-mux rotation decision, and item 133's spill-region detection. Fixing one moves the limit to the next (measured)
+1. **[#164](#item-164)** — The Wukong SDR's SDRAM interface does NOT run at 80 MHz although every timing constraint is met: the download checksums and the program never prints a line. It has only ever run at 100 MHz with its -3.0 ns clock lead. So the 2-core SDR flow's 75 MHz build (item 31, MET +0.315 ns) has a timing result but has never run on hardware, and may not
 2. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
 3. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 4. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
@@ -108,6 +108,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 68. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
 69. **[#161](#item-161)** — A core parked in `cpux_loop` occasionally leaves it early when a GC halt lands. Symptom fixed twice over and measured absent (0 of 40 hangs, 0 of 34 early boots); cause unknown with five hypotheses eliminated by measurement. LATENT — no observable effect. Only vehicle left is a cluster-level sim
 70. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
+71. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
 
 ## 2. All items — summary
 
@@ -764,6 +765,9 @@ the 75 MHz build reports `sys_clk` +15.367 ns and `clk_100_sdr_clk` +0.315 ns.
 - The single-core SDR flows (`jop-sdram-build`, the SDRAM exerciser) do not
   read that file. They are safe only while they stay at exactly 2x the input
   clock, and nothing enforces or records that dependency.
+  **`jop-sdram-build` READS IT since 2026-10-03** ([item 162](#item-162)): its
+  first 80 MHz build hit exactly this, WNS -3.616 ns on these crossings. The
+  SDRAM exerciser still does not, at an exact 2x.
 - The constraint is hand-written per board rather than generated. Every other
   Vivado board has the same crossing shape and the same silence in
   `XdcGenerator`. Whether the DB V5 and the Alchitry are exposed is UNCHECKED.
@@ -9126,7 +9130,34 @@ established in RTL and confirmed empirically for the same AR path by
 
 <a id="item-162"></a>
 
-### Item 162 — the stack cache's spill-region detection is the Wukong DDR3's critical path: WNS +0.006 ns
+### Item 162 — ~~the stack cache's spill-region detection is the Wukong DDR3's critical path~~ — CLOSED 2026-10-03, the Wukong SDR closes timing at 100 MHz
+
+**CLOSED 2026-10-03 — the cheap option, decided.** The DDR3 boards' ~0.1 ns is
+ACCEPTED; the restructure that would buy real margin is
+[item 163](#item-163), optional. The Wukong SDR, the one build actually failing:
+
+- **80 MHz was tried first and does not run.** The first 80 MHz build reported
+  WNS -3.616 ns — every failing path a debug crossing to the 50 MHz `sys_clk`
+  that the single-core flow never constrained ([item 159](#item-159); it read
+  `wukong_sdr_cdc.xdc` only in the SMP flow). With the constraint: MET
+  +0.282 ns. On hardware: the download checksums, and the program never prints
+  a line, on both clean attempts (a third captured nothing either way). The SDRAM interface has only ever run at 100 MHz
+  with its -3.0 ns clock lead: [item 164](#item-164).
+- **100 MHz on the closure directives instead.** The single-core SDR flow was
+  the one JOP build on this board still on Vivado's DEFAULT flow ("the SDR JOP
+  builds have margin" — measured before the stack cache). With
+  `TIMING_DIRECTIVES`: **MET, WNS +0.026 ns**. On the Wukong SDR, `hw_verify.py`:
+  **DoAll 68/68, DeepAll 2/2, ThreadAll 2/2** — the first passes of this preset
+  on a bitstream that meets timing, and items 133 and 160 confirmed on a second
+  memory path.
+- **The clock IP now follows the build.** The flow linked the shared 100 MHz
+  `sdr_clk` whatever the preset said; it now picks the IP root from the build's
+  own summary and `fpga/scripts/check_clk_ip.py` refuses one at another
+  frequency (red-tested: it rejects the 80 MHz IP for a 100 MHz build).
+
+Guard: `fpga/scripts/test_check_clk_ip.py` (in `make check-build`) for the IP
+check; `hw_verify.py` refuses a timing-violated bitstream. Nothing checks timing
+closure itself until a bitstream is built — the reason this item existed.
 
 **Found 2026-10-02**, building the item 160 fix for hardware. `wukongDdr3`, final
 post-route report (`timing_summary.rpt`): **WNS +0.006 ns**, WHS +0.070 ns, all
@@ -9210,6 +9241,72 @@ family, so they only pay together:
 
 Or, cheaper: run `wukongSdram` at the 80 MHz that its `sdr80` clock IP already
 provides, and accept ~0.1 ns on the DDR3 boards.
+
+<a id="item-163"></a>
+
+### Item 163 — OPTIONAL: restructure the stack cache's same-cycle rotation decisions for timing margin
+
+**Filed 2026-10-03, optional by decision** ([item 162](#item-162) took the cheap
+route). Every stack-cache build sits within ~0.1 ns of failing at 100 MHz —
+Wukong DDR3 +0.006, DB_FPGA DDR3 +0.068, Wukong SDR +0.026 on the closure
+directives (-0.295 on the default flow) — and it is not one path but a FAMILY:
+the stack cache decides, combinationally and in the cycle it is needed, whether
+to rotate, which bank to evict and whether an access must go to the spill
+region, and each decision is 12-14 logic levels.
+
+| family | worst slack (Wukong DDR3) | path |
+|---|---|---|
+| A | +0.006 | IR -> selRda -> `rdaddr` -> bank compare -> rotBusy -> fetch ROM address (item 133's spill-region check) |
+| B | +0.121 | `activeBankIdx` -> active base -> victim distance subtract/compare -> victim choice -> bank-base register CE |
+| C | +0.238 | IR -> SP mux -> rotation decision -> bank-base register D |
+| D | +0.270 | IR -> `rdaddr` -> bank RAM read address, selected by rotBusy |
+
+**Measured: fixing one moves the limit to the next.** Step 3 alone (the
+spill-region check by per-source residency) took family A from 14 levels to 12
+and WNS from +0.006 to +0.035, for +297 LUTs — because a pre-existing chain of
+nearly the same depth (the SP-mux decision) took over. It is kept on the local
+branch `item162-per-source-residency`. The three steps only pay together:
+
+1. **Family B and C — the bank descriptors.** Do the victim-dependent updates
+   (base, resident, dirty) in the state AFTER IDLE, from the registered
+   `rotVictimIdx`/`rotTargetBase`, and register the victim choice itself (one
+   settle cycle after any change to `activeBankIdx` or a base, so it is never
+   used stale). Both failing families end at the bank-base registers.
+2. **The SP-mux decision.** Per-source predicates for `sp`, `spm`, `spp` and
+   `A` (in active bank, covered, VP bound), selected by `selSmux` last.
+3. **Family A and D.** The branch above.
+
+Cost: a few hours on a subtle controller, and LUTs per core (~300 for step 3
+alone); every SMP SDR build pays them per core. The safety net is good now:
+`StackCacheArAccessTest`, `StackCacheFlushTest`, `DecodeStrobeStallTest`,
+`jvm.DeepAll`, `jvm.ThreadAll`, `JopSmpStackCacheSdramSim`. Worth doing if a
+cached build has to run faster, gets fuller, or a margin of ~0.1 ns starts
+costing failed builds.
+
+<a id="item-164"></a>
+
+### Item 164 — the Wukong SDR's SDRAM interface does not run at 80 MHz, although every timing constraint is met
+
+**Found 2026-10-03** trying [item 162](#item-162)'s cheap option. `wukongSdram`
+at 80 MHz: the clock IP is right (80 MHz, SDRAM clock -86.4 deg = -3.0 ns, the
+shift held in nanoseconds), the build MEETS every constraint (+0.282 ns, with
+`wukong_sdr_cdc.xdc`), the console answers at 2 Mbaud (the ready byte arrives),
+and the download checksums (`Download OK (checksum 0xbe053157)`). Then the
+program never prints a line — not the first `Small boot` — in 60 s, on both
+clean attempts (a third captured nothing either way). The identical images run at 100 MHz (DoAll 68/68).
+
+**So static timing says the SDRAM interface works at 80 MHz and the board says
+it does not.** The -3.0 ns SDRAM clock lead has only ever been validated at
+100 MHz. Unestablished: whether reads, writes or both fail (the download
+checksum is computed over the received stream, so it cannot tell), and what the
+constraints are missing. Suspects, none tested: the read-capture relationship
+at a 12.5 ns period, the generated XDC's SDRAM I/O delays, the controller's
+CAS-latency choice at that frequency.
+
+**WHY IT MATTERS BEYOND THIS PRESET.** The 2-core SDR flow runs at 75 MHz
+([item 31](#item-31): MET +0.315 ns) and nothing records it ever running on
+hardware. If the SDRAM interface needs 100 MHz, that flow has a timing result
+and no working board. One `SmpGcTest` run on the 75 MHz bitstream settles it.
 
 <a id="item-134"></a>
 

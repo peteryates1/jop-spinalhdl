@@ -133,6 +133,7 @@ check-build:
 	@.github/scripts/check-no-intree-jop-path.sh
 	@.github/scripts/check-probe-selection.sh
 	@python3 fpga/scripts/test_hw_verify.py
+	@python3 fpga/scripts/test_check_clk_ip.py
 
 help:
 	@echo "make check-build  assert the build graph's guards hold (seconds)"

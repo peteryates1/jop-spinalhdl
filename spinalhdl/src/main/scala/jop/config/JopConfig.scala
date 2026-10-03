@@ -1194,8 +1194,11 @@ object JopConfig {
   // scales with the period, so 70 MHz makes timing at the SDRAM chip worse
   // while leaving the max_delay path (an absolute 5 ns budget on a 3.35 ns
   // OBUFT) essentially unchanged. Measured: 80 -> 70 MHz moved WNS by 0.011 ns.
-  // 100 MHz matches the standalone SDR presets (wukongSdram / wukongSdrAllCu /
-  // wukongSdrFull), all of which run DoAll 66/66 on this board's SDRAM. The
+  // 100 MHz matched the standalone SDR presets (wukongSdram / wukongSdrAllCu /
+  // wukongSdrFull), all of which ran DoAll 66/66 on this board's SDRAM -- but
+  // on the DEFAULT Vivado flow `wukongSdram` missed setup at 100 by 0.295 ns
+  // (0.363 before item 133), so those passes were on violated bitstreams; its
+  // flow now uses the closure directives (status item 162). The
   // dual build previously used 80 MHz while keeping create_sdram_clk_wiz_1's
   // -108 degree shift on sdram_clk. That shift is an absolute setup/hold margin
   // at the SDRAM chip but is specified in degrees, so it scales with the
@@ -1315,7 +1318,17 @@ object JopConfig {
   // Wukong single-system presets
   // ========================================================================
 
-  /** Wukong SDR SDRAM (single-system, 100 MHz) */
+  /**
+   * Wukong SDR SDRAM (single-system, 100 MHz).
+   *
+   * 100 MHz is the only frequency this board's SDRAM interface has run at
+   * (status item 162): at 80 MHz the bitstream MEETS every constraint and the
+   * download checksums, but the program never prints a line. The -3.0 ns
+   * SDRAM clock lead was validated at 100 MHz only. The build closes timing
+   * with the closure directives (the board Makefile), not by lowering the
+   * clock: on the default flow it missed setup by 0.295 ns, in the stack
+   * cache's victim selection (item 163).
+   */
   def wukongSdram = JopConfig(
     assembly = SystemAssembly.wukong,
     systems = Seq(JopSystem(

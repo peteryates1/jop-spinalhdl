@@ -75,7 +75,7 @@ CONSOLE_DUAL_SDR  = wukong-pico-0
 .PHONY: ddr3-smp-generate ddr3-smp-build ddr3-smp-bitstream ddr3-smp-program ddr3-smp-monitor
 .PHONY: dual-generate dual-create-ip dual-build dual-program dual-monitor dual-sdr-monitor dual-sdr-download
 .PHONY: sdram-generate sdram-create-ip sdram-create-ip-smp sdram-build sdram-program sdram-monitor
-.PHONY: jop-sdram-generate jop-sdram-build sdr-smp-generate jop-sdram-smp-generate jop-sdram-smp-build jop-sdram-smp-bitstream jop-sdram-program jop-sdram-monitor print-cfg-dir
+.PHONY: sdram-create-ip-mhz jop-sdram-generate jop-sdram-build sdr-smp-generate jop-sdram-smp-generate jop-sdram-smp-build jop-sdram-smp-bitstream jop-sdram-program jop-sdram-monitor print-cfg-dir
 
 all: microcode create-ip build
 
@@ -367,13 +367,43 @@ jop-sdram-generate: $(UCODE_SCALA) $(call APP_JOP,$(SDRAM_CFG))
 # `#` line between backslash-continued recipe lines is joined into the SAME
 # shell command, so it comments out everything after it -- including the vivado
 # invocation. `make -n` showed the recipe with no `vivado` in it at all.
+#
+# THE CLOCK IP FOLLOWS THE BUILD (status item 162). This flow linked the shared
+# 100 MHz `sdr_clk` whatever the config said, so moving `wukongSdram` to 80 MHz
+# would have timed and run an "80 MHz" design at 100 -- console detuned by 1.25x,
+# no error anywhere. The build's own summary names its frequency; 100 MHz uses
+# the shared IP, any other frequency its own root (the SMP flow's convention,
+# below), and check_clk_ip.py refuses a root whose IP runs at anything else.
+# Create a missing one with `make sdram-create-ip-mhz SDR_MHZ=<n>`.
+#
+# AND THE CLOSURE DIRECTIVES (status item 162). "The SDR JOP builds have margin
+# and run the default flow" was measured before the stack cache: on the default
+# flow `wukongSdram` missed setup by 0.295 ns at 100 MHz (0.363 before item 133),
+# in the stack cache's victim selection. Lowering the clock instead was tried:
+# 80 MHz met every constraint and the board then never printed a line -- the
+# SDRAM interface has only ever run at 100 MHz with its -3.0 ns clock lead.
+#
+# AND IT READS THE CDC CONSTRAINTS, at every frequency (status item 159). The
+# debug crossings to the 50 MHz `sys_clk` (pc, jpc, memState -> the hang
+# detector, all through BufferCC) were only analysable because 100 MHz is
+# exactly 2x the input; at 80 MHz Vivado demands 0.091 ns of them and the first
+# 80 MHz build reported WNS -3.616 ns -- every failing path one of those
+# crossings. The SMP flow below already read the file; this one now does too,
+# so it no longer depends on the 2:1 ratio.
+SDRAM_SUMMARY = $(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.summary.txt
 jop-sdram-build: jop-sdram-generate
+	@mhz=$$(sed -n 's/^ *Clock: *\([0-9]*\) MHz.*/\1/p' $(SDRAM_SUMMARY) | head -1); \
+	if [ "$$mhz" = 100 ]; then root=$(IP); else root=$(REPO_ROOT)/build/ip/qmtech-xc7a100t-wukong-sdr$$mhz; fi; \
+	xci=$$root/sdr_clk/sdr_clk.xci; \
+	[ -f "$$xci" ] || { echo "No $$mhz MHz SDR clock IP at $$root -- create it: make sdram-create-ip-mhz SDR_MHZ=$$mhz"; exit 1; }; \
+	python3 $(REPO_ROOT)/fpga/scripts/check_clk_ip.py $(SDRAM_SUMMARY) $$xci || exit 1; \
 	$(VIVADO_ENV) && JOP_TOP=JopSdramWukongTop JOP_PART=$(PART) \
+	  $(TIMING_DIRECTIVES) \
 	  JOP_BUILD_DIR=$(SDRAM_CFG_DIR)/vivado/build \
 	  JOP_RTL=$(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.v \
 	  JOP_BIN_GLOB='$(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.v_*.bin' \
-	  JOP_IP=$(IP)/sdr_clk/sdr_clk.xci \
-	  JOP_XDC=$(SDRAM_CFG_DIR)/vivado/wukong_jop_sdram.xdc \
+	  JOP_IP=$$xci \
+	  JOP_XDC="$(SDRAM_CFG_DIR)/vivado/wukong_jop_sdram.xdc $(XDC)/wukong_sdr_cdc.xdc" \
 	  JOP_SUMMARY=$(SDRAM_CFG_DIR)/rtl/JopSdramWukongTop.summary.txt \
 	  $(VIVADO) -mode batch -source $(NP_TCL)
 
@@ -411,6 +441,13 @@ IP_SDR_SMP     := $(REPO_ROOT)/build/ip/qmtech-xc7a100t-wukong-sdr$(SDR_SMP_MHZ)
 sdram-create-ip-smp:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl \
 	  -tclargs -freq $(SDR_SMP_MHZ) -ip_root $(IP_SDR_SMP) -shift -3.0
+
+# Any other frequency, into its own root, for the single-core flow above. Same
+# script, same rule for the phase shift (held in ns, converted per frequency).
+SDR_MHZ ?= 80
+sdram-create-ip-mhz:
+	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl \
+	  -tclargs -freq $(SDR_MHZ) -ip_root $(REPO_ROOT)/build/ip/qmtech-xc7a100t-wukong-sdr$(SDR_MHZ) -shift -3.0
 
 # The XDC comes with it. jop-sdram-build regenerates the pin constraints for
 # its config; this flow did not, and then read the TRACKED copy below -- so the
