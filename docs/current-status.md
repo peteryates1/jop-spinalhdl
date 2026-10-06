@@ -106,7 +106,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 66. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
 67. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
 68. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-69. **[#161](#item-161)** — A core parked in `cpux_loop` occasionally leaves it early when a GC halt lands. Symptom fixed twice over and measured absent (0 of 40 hangs, 0 of 34 early boots); cause unknown with five hypotheses eliminated by measurement. LATENT — no observable effect. Only vehicle left is a cluster-level sim
+69. **[#161](#item-161)** — A core parked in `cpux_loop` occasionally left it early when a GC halt landed. **CAUSE FOUND in simulation 2026-10-06**: item 160's held read command re-read memory word 0 during the flush stall (`ParkLoopStallReadTest`, red then green); fixed since `08b5abb`. Open only for hardware confirmation
 70. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
 71. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
 
@@ -8924,7 +8924,48 @@ contention in a single-cycle private RAM will produce.
 
 <a id="item-161"></a>
 
-### Item 161 — a core parked in `cpux_loop` occasionally leaves it early when a GC halt lands; cause unknown, five hypotheses eliminated
+### Item 161 — a core parked in `cpux_loop` occasionally leaves it early when a GC halt lands; CAUSE FOUND in simulation 2026-10-06 — a read command held through the flush stall
+
+**2026-10-06 — THE CAUSE: [item 160](#item-160)'s held read command, proved red
+then green in simulation.** Until `08b5abb`, DecodeStage HELD each instruction's
+registered commands through a stack-cache stall. A held `stmra` keeps `rd` high,
+and `BmbMemoryController` acts on `rd` in every cycle it sees it, at the address
+in A in THAT cycle -- and from the second cycle `stmra` has popped its address,
+so A is the word under it. In the park loop
+
+```
+cpux_loop:  ldi io_signal;  stmra;  wait;  wait;  ldmrd;  nop;  bz cpux_loop
+```
+
+that word is 0. So a flush stall that starts in the one cycle after `stmra`
+re-reads MEMORY WORD 0 -- the image length, never zero on the board -- and `ldmrd`
+takes it: the backward `bz` falls through to the second `io_signal` read at 0x17,
+which under the old ROM word 0x1d was `bz cpu0_load`, the downloader. It has every
+property the measurements below demanded: it needs the FLUSH (the only stall a
+parked core gets; a halt alone freezes it only at a `wait`), it is a per-flush
+rate (one cycle in each turn of the ten-cycle loop), and nothing is corrupted --
+the right read at the wrong address, which none of the five hypotheses was.
+
+The earlier vehicles could not see it: the pipeline bench serves `memRdData` itself
+and answers 0 for every read during the flush, and the reverted `JopCore` attempt
+never armed.
+
+**The vehicle is `jop.system.ParkLoopStallReadTest`**: the real `JopCore` as core 1
+of 2 (serial ROM, `BmbMemoryController`, `Sys`, stack cache + DMA into core 1's
+region), memory word 0 non-zero, the halt and GC halt raised together at 24 phases.
+It learns the loop's PCs and reads and requires neither set to grow, and it
+refuses to pass unarmed: every trial must stall the decode stage, and some trial
+must start that stall while `rd` is high. **Red** with only `memRdReg := False`
+removed from DecodeStage's stall clear -- phases 2, 12, 22 (one per loop turn):
+*"left the park loop for 0x017; read mem byte 0x0, which the loop never reads"*,
+A = `0xfffffff7` then `0x0` during the held read. **Green** with it.
+
+**Open only for hardware confirmation**: the REPRODUCTION recipe below on post-fix
+RTL (pre-fix ~35 % of gc-then-release runs, so ~20 clean runs settle it) -- see
+[item 164](#item-164) before choosing its clock.
+
+---
+
 
 **Split out of [item 133](#item-133) on 2026-10-01**, where it had been the
 "startup fault". Its SYMPTOM is fixed twice over and measured absent; what remains
