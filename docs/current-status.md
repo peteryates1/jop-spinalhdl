@@ -107,7 +107,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 67. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
 68. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
 69. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-70. **[#161](#item-161)** — A core parked in `cpux_loop` occasionally left it early when a GC halt landed. **CAUSE FOUND in simulation 2026-10-06**: item 160's held read command re-read memory word 0 during the flush stall (`ParkLoopStallReadTest`, red then green); fixed since `08b5abb`. Open only for hardware confirmation
+70. **[#161](#item-161)** — A core parked in `cpux_loop` occasionally left it early when a GC halt landed. **CAUSE FOUND 2026-10-06**: item 160's held read command re-read memory word 0 during the flush stall (`ParkLoopStallReadTest`, red then green); fixed since `08b5abb`. Hardware one-line A/B: 5 of 19 gc-first hangs with the held read, 0 of 14 without (p = 0.049)
 71. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
 72. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
 
@@ -8961,9 +8961,28 @@ removed from DecodeStage's stall clear -- phases 2, 12, 22 (one per loop turn):
 *"left the park loop for 0x017; read mem byte 0x0, which the loop never reads"*,
 A = `0xfffffff7` then `0x0` during the held read. **Green** with it.
 
-**Open only for hardware confirmation**: the REPRODUCTION recipe below on post-fix
-RTL (pre-fix ~35 % of gc-then-release runs, so ~20 clean runs settle it) -- see
-[item 164](#item-164) before choosing its clock.
+**HARDWARE, 2026-10-06 -- a one-line A/B on the board.** The REPRODUCTION recipe
+below, built twice from today's RTL: `wukongSdrSmp 2 75 baud=1000000`, ROM word
+0x1d reverted to `bz cpu0_load` in BOTH arms so a spurious read shows as the old
+hang again, one image (`SmpDeepFlush` DEPTH 30, md5 `d67cd2c5`), arm chosen per
+run from `IO_US_CNT`, 40 runs each:
+
+| bitstream | gc-then-release | release-then-gc |
+|---|---|---|
+| C: today's RTL minus `memRdReg := False` | **5 of 19 hung** (26 %) | 0 of 21 |
+| B: today's RTL | **0 of 14** | 0 of 26 |
+
+The two generated netlists differ by exactly one line
+(`mmuControlDecode_memRdReg <= 1'b0;`); both MET (+0.344 / +0.343 ns); ROM word
+0x1d verified 0x185 in both cores' init files before the runs. All five hangs
+carry this item's signature -- core 1 never reached `main()`, its live pc in
+`rdy_poll`, `bmbOut 0`, `exc 0` -- and C's rate matches the pre-fix record
+(21-39 %). Fisher one-sided, 0/14 against 5/19: **p = 0.049**; the per-run coin
+flip gave B only 14 gc-first runs. Afterwards the ROM and RTL were restored and
+the shipping build rebuilt (MET +0.343 ns, word 0x1d = 0x1b0). Bitstreams,
+netlists and every transcript: `build/item161-hw/` (gitignored).
+
+Guard: `spinalhdl/src/test/scala/jop/system/ParkLoopStallReadTest.scala`
 
 ---
 
