@@ -84,6 +84,10 @@ import scala.collection.mutable
  * restored the same three phases still start their stall while `rd` is high,
  * but `rd` is gone after that first cycle and nothing escapes.
  *
+ * ON HARDWARE (2026-10-07), the same one-line A/B on `wukongSdrSmp 2 75` with
+ * ROM word 0x1d reverted in both arms: the held read hung core 1 in 5 of 19
+ * gc-first runs, the fix in 0 of 40 (Fisher p = 0.0023). Status item 161.
+ *
  * THE STALL LENGTHS IT PRINTS are ~770 cycles, or ~1465 at about half the
  * phases: a halted core keeps executing until its next `wait`, so when the halt
  * lands past the loop's `wait`s it pushes again after the first flush and a
