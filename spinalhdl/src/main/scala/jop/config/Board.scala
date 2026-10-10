@@ -638,9 +638,11 @@ object Board {
    * Console: the board has no USB-serial chip. The RP2040-STAMP bridges its
    * uart1 to USB CDC0 (pico-dirtyJtag BOARD_COLORLIGHT_DB): stamp GPIO4 (TX)
    * -> Y21 = FPGA RXD, AB21 = FPGA TXD -> stamp GPIO5 (RX). The same stamp is
-   * the JTAG probe, so one USB cable programs and talks. That bridge has NO
-   * back-pressure -- host writes faster than the baud are dropped -- so a
-   * download must be paced by its protocol, not by the line.
+   * the JTAG probe, so one USB cable programs and talks. Measured: at 1 Mbaud
+   * download.py's full-speed 48 KB stream arrives intact (checksum OK), but a
+   * host flooding the bridge at 115200 lost bytes -- it does not hold off a
+   * host that outruns a slow line. `make reset` (UART break + 'R') works
+   * through it.
    *
    * SDRAM is on the module (U6, M12L64322A, 32 bits wide) with CKE/CS/DQM
    * strapped exactly as on the i5. Those ports are parked on SODIMM 57-67
