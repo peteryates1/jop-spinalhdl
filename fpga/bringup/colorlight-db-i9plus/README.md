@@ -46,3 +46,8 @@ everything modules #2 and #3 did. So it was the pogo seating, not the module.
 If a module's TDO reads a solid 1, re-seat it before suspecting anything else.
 
 All three i9+ modules pass.
+
+Connectors fitted, same day: the RJ1 jack LEDs (T3/T4) flash, confirmed by eye
+(user); `SRAM PASS` and both CDC echoes still clean. Fitting the connectors left
+the module badly seated: a JOP download failed its checksum twice (0 bytes, then
+0xaaaaaaaa), and then the JTAG chain found 0 devices. A re-seat fixed it.
