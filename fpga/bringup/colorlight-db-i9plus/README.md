@@ -40,5 +40,9 @@ we load anything: bytes 00/01/02/04 at 60 Hz (every 16.7 ms), stopping when JTAG
 configuration starts. That is a plausible source of module #2's first-load
 garbage, but not a proven one: there the garbage arrived mid-test.
 
-Module #1 never answered JTAG: TDO stuck at 1 while the pulls on all four pins
-looked right, so its TAP never drove TDO. Still to be re-seated.
+Module #1 did not answer JTAG on its first fitting: TDO stuck at 1 while the
+pulls on all four pins looked right. RE-SEATED, it reads 0362C093 3/3 and passes
+everything modules #2 and #3 did. So it was the pogo seating, not the module.
+If a module's TDO reads a solid 1, re-seat it before suspecting anything else.
+
+All three i9+ modules pass.
