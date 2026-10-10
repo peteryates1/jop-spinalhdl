@@ -84,6 +84,37 @@ object EM638325BK6H {
 }
 
 /**
+ * M12L64322A-6 - ESMT 64Mbit SDR SDRAM (8MB), on the Colorlight i9+ module.
+ *
+ * Same geometry as EM638325BK6H (32-bit, 11-bit row, 8-bit column, 4 banks).
+ * Timings are the -6 column of the datasheet (Colorlight-FPGA-Projects/doc/
+ * M12L64322A(2S).pdf): tRCD/tRP 18, tRAS 42, tRC = tRFC 60 ns.
+ */
+object M12L64322A {
+  /** tREF 32 ms over 2048 rows = 15.6 us between refreshes, which is the
+    * datasheet's own "64 ms, 4K cycle" -- see EM638325BK6H for why the quotient
+    * is what matters.
+    *
+    * Write recovery is specified as tRDL = 2 CLOCKS, not a time. SdramCtrl
+    * waits cWR + ceil(tWR) cycles, so cWR = 2 meets it at every frequency;
+    * cWR = 1 (the i5's value) would meet it only while ceil(6 ns) >= 1 cycle,
+    * i.e. below 166 MHz -- true here, but by luck of the clock, not by design. */
+  def timingGrade6 = SdramTimings(
+    bootRefreshCount =   8,
+    tPOW             = 200 us,
+    tREF             =  32 ms,
+    tRC              =  60 ns,
+    tRFC             =  60 ns,
+    tRAS             =  42 ns,
+    tRP              =  18 ns,
+    tRCD             =  18 ns,
+    cMRD             =  2,
+    tWR              =   6 ns,
+    cWR              =  2
+  )
+}
+
+/**
  * Centralized SDRAM device info — derives layout and timing from MemoryDevice.
  */
 object SdramDeviceInfo {
@@ -104,6 +135,7 @@ object SdramDeviceInfo {
     case "IS42S16160G" => W9825G6JH6.timingGrade7  // Same geometry/timing
     case "W9864G6JT"   => W9864G6JT.timingGrade6
     case "EM638325BK6H" => EM638325BK6H.timingGrade6
+    case "M12L64322A"   => M12L64322A.timingGrade6
     case other => throw new RuntimeException(s"No SDRAM timing for device '$other'")
   }
 }

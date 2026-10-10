@@ -41,6 +41,7 @@ class GeneratedConstraintsTest extends AnyFunSuite {
     "wukongBram"          -> "qmtech-xc7a100t-wukong",
     "auSerial"            -> "alchitry-au",
     "colorlightI5Sdram"   -> "colorlight-i5",
+    "colorlightDbI9PlusSdram" -> "colorlight-db-i9plus",
   )
 
   private def cfgOf(name: String): JopConfig =

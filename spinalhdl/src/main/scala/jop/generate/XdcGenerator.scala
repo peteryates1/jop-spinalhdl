@@ -114,11 +114,44 @@ object XdcGenerator {
       sb.append("\n")
     }
 
+    // Ports the design has but the board does not wire -- see Board.parkedPins.
+    // Gated exactly as LpfGenerator gates them: an sdram_* port exists only
+    // when the system uses SDR, and constraining a port that is not there is a
+    // warning Vivado prints and nobody reads.
+    val parked = assembly.boards.flatMap(_.parkedPins).filterNot {
+      case (port, _) => port.startsWith("sdram_") && !usesSdr
+    }
+    if (parked.nonEmpty) {
+      sb.append("# Ports the design has but this board does not wire -- see\n")
+      sb.append("# Board.parkedPins for why these get a ball at all.\n")
+      parked.sortBy(_._1).foreach { case (port, ball) => sb.append(pinConstraint(ball, port)) }
+      sb.append("\n")
+    }
+
+    // Internal pulls for inputs the board leaves floating -- Board.portPulls.
+    // Only for ports this file places: a pull on a port the design lacks is
+    // the same unread Vivado warning as any other stray constraint.
+    val placed = "PACKAGE_PIN \\S+ \\[get_ports \\{([^}]+)\\}\\]".r
+      .findAllMatchIn(sb.toString).map(_.group(1)).toSet
+    val pulls = assembly.boards.flatMap(_.portPulls).filter { case (port, _) => placed(port) }
+    if (pulls.nonEmpty) {
+      sb.append("# Internal pulls -- see Board.portPulls\n")
+      pulls.sortBy(_._1).foreach { case (port, pull) =>
+        sb.append(s"set_property PULLTYPE $pull [get_ports {$port}]\n")
+      }
+      sb.append("\n")
+    }
+
     // Configuration properties
     sb.append("# Configuration\n")
     sb.append("set_property CFGBVS VCCO [current_design]\n")
     sb.append("set_property CONFIG_VOLTAGE 3.3 [current_design]\n")
     sb.append("set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]\n")
+    // Vivado pulls unused pins DOWN by default. Where another chip drives FPGA
+    // balls this design does not use, that pull fights it -- see
+    // Board.unusedPinsFloat.
+    if (assembly.boards.exists(_.unusedPinsFloat))
+      sb.append("set_property BITSTREAM.CONFIG.UNUSEDPIN PULLNONE [current_design]\n")
 
     sb.toString
   }

@@ -246,6 +246,26 @@ object PllType {
     }
   }
 
+  /** Colorlight i9+ (XC7A50T): the Wukong's SDR clk_wiz SHAPE -- same ports,
+    * same IP name `sdr_clk` -- generated for a 25 MHz input on the 50T by
+    * fpga/colorlight-db-i9plus (create_sdram_clk_wiz.tcl -in_freq 25 -part ...).
+    * clk_100 is the system clock at whatever the preset says (the port name is
+    * not a frequency claim; see that script), clk_100_shift the SDRAM clock.
+    *
+    * SDR only. The module has no other memory JOP can run from, and a BRAM
+    * branch would need a second IP shape for nothing -- refuse instead. */
+  case object XilinxColorlightI9Plus extends PllType {
+    def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
+      require(memType == MemoryType.SDRAM_SDR,
+        s"Colorlight i9+ clocking supports SDR SDRAM only, not $memType")
+      val clkWiz = new SdramExerciserClkWiz("sdr_clk")
+      clkWiz.io.clk_in := inputClock
+      clkWiz.io.resetn := True
+      PllResult(systemClk = Some(clkWiz.io.clk_100), locked = clkWiz.io.locked,
+        sdramClk = Some(clkWiz.io.clk_100_shift))
+    }
+  }
+
   /** Au V2, QmtechXC7A100T (DDR3 ClkWiz):
     * clk_100=MIG sys, clk_200=MIG ref, clk_125=Eth. */
   case object XilinxDdr3ClkWiz extends PllType {
@@ -370,7 +390,18 @@ case class Board(
     *
     * Kept as CONFIG rather than as a comment in a hand-written constraint file,
     * because the constraint file is generated from here. */
-  parkedPins: Map[String, String] = Map.empty
+  parkedPins: Map[String, String] = Map.empty,
+  /** Leave unused I/O FLOATING rather than the vendor default (Vivado pulls
+    * unused pins down). For a board where another chip drives FPGA balls the
+    * design may not use -- the Colorlight base board's RP2040 lands sixteen
+    * GPIOs on the module -- a default pull fights that chip. */
+  unusedPinsFloat: Boolean = false,
+  /** Internal pull per top-level PORT (Vivado PULLTYPE: PULLUP / PULLDOWN /
+    * KEEPER), for an input the board leaves floating. The Colorlight base
+    * board's buttons pull to GND with no resistor on the board, so `resetn`
+    * needs PULLUP or it resets JOP whenever the pin drifts. Applied only to
+    * ports the generated constraints actually place. */
+  portPulls: Map[String, String] = Map.empty
 ) {
   def hasFpga: Boolean = fpga.isDefined
 
@@ -596,6 +627,70 @@ object Board {
       "sdram_CKE" -> "U18", "sdram_CSn" -> "U17",
       "sdram_DQM[0]" -> "P18", "sdram_DQM[1]" -> "N17",
       "sdram_DQM[2]" -> "N18", "sdram_DQM[3]" -> "M18"))
+
+  /**
+   * fpga-db-colorlight-i5 base board (netlist 2026-10-10) carrying a Colorlight
+   * i9+ v6.1 module (XC7A50T-FGG484). The base board takes i5/i9/i9+ modules;
+   * this is the i9+ fit. Pins are i9+ balls: the base board's U5 symbol names
+   * them directly, checked against wuxx colorlight_i9plus_v6.1.md (0
+   * mismatches over 114 signal pins).
+   *
+   * Console: the board has no USB-serial chip. The RP2040-STAMP bridges its
+   * uart1 to USB CDC0 (pico-dirtyJtag BOARD_COLORLIGHT_DB): stamp GPIO4 (TX)
+   * -> Y21 = FPGA RXD, AB21 = FPGA TXD -> stamp GPIO5 (RX). The same stamp is
+   * the JTAG probe, so one USB cable programs and talks. That bridge has NO
+   * back-pressure -- host writes faster than the baud are dropped -- so a
+   * download must be paced by its protocol, not by the line.
+   *
+   * SDRAM is on the module (U6, M12L64322A, 32 bits wide) with CKE/CS/DQM
+   * strapped exactly as on the i5. Those ports are parked on SODIMM 57-67
+   * (U2/U3/V2/V3/W1/Y1), which carry NO net on this base board (netlist).
+   *
+   * LEDs D4-D11 (LED0-7) are active HIGH through 300R to GND. The four
+   * buttons go to GND with no pull-ups and are not used by JOP.
+   *
+   * UNUSED PINS MUST FLOAT. Sixteen RP2040 GPIOs land on FPGA balls; Vivado's
+   * default pulls every unused pin down, which would fight whatever the stamp
+   * drives there.
+   */
+  def ColorlightDbI9Plus = Board(
+    name = "colorlight-db-i9plus",
+    probeAlias = Some("colorlight-db"),
+    consoleAlias = Some("colorlight-db-0"),
+    loaderCable = Some("dirtyJtag"),
+    fpga = Some(FpgaDevice.XC7A50T),
+    pllType = Some(PllType.XilinxColorlightI9Plus),
+    entitySuffix = "I9Plus",
+    ledActiveHigh = true,
+    useStackCache = true,
+    unusedPinsFloat = true,
+    // SW_RESET (SW4) to GND, no board pull-up -- hence PULLUP on the port.
+    portPulls = Map("resetn" -> "PULLUP"),
+    devices = Seq(
+      BoardDevice("CLOCK_25MHz", mapping = Map("clock" -> "K4")),
+      BoardDevice("SWITCH", mapping = Map("reset" -> "P5")),
+      BoardDevice("STAMP_CDC0", mapping = Map("TXD" -> "AB21", "RXD" -> "Y21")),
+      BoardDevice("LED", mapping = Map(
+        "led0" -> "M1", "led1" -> "L1", "led2" -> "K1", "led3" -> "J1",
+        "led4" -> "H3", "led5" -> "U1", "led6" -> "V5", "led7" -> "U5")),
+      BoardDevice("M12L64322A", role = Some("sdr"), mapping = Map(
+        "CLK" -> "E14", "RAS_n" -> "A14", "CAS_n" -> "D14", "WE_n" -> "D17",
+        "BA0" -> "D19", "BA1" -> "B13",
+        "A0" -> "C20", "A1" -> "C19", "A2" -> "C13", "A3" -> "F13",
+        "A4" -> "G13", "A5" -> "G15", "A6" -> "F14", "A7" -> "F18",
+        "A8" -> "E13", "A9" -> "E18", "A10" -> "C14",
+        "DQ0" -> "F21", "DQ1" -> "E22", "DQ2" -> "F20", "DQ3" -> "E21",
+        "DQ4" -> "F19", "DQ5" -> "D22", "DQ6" -> "E19", "DQ7" -> "D21",
+        "DQ8" -> "K21", "DQ9" -> "L21", "DQ10" -> "K22", "DQ11" -> "M21",
+        "DQ12" -> "L20", "DQ13" -> "M22", "DQ14" -> "N20", "DQ15" -> "M20",
+        "DQ16" -> "B18", "DQ17" -> "D20", "DQ18" -> "A19", "DQ19" -> "A21",
+        "DQ20" -> "A20", "DQ21" -> "B21", "DQ22" -> "C22", "DQ23" -> "B22",
+        "DQ24" -> "G21", "DQ25" -> "G22", "DQ26" -> "H20", "DQ27" -> "H22",
+        "DQ28" -> "J20", "DQ29" -> "J22", "DQ30" -> "G20", "DQ31" -> "J21"))),
+    parkedPins = Map(
+      "sdram_CKE" -> "U2", "sdram_CSn" -> "U3",
+      "sdram_DQM[0]" -> "V2", "sdram_DQM[1]" -> "V3",
+      "sdram_DQM[2]" -> "W1", "sdram_DQM[3]" -> "Y1"))
 
   /**
    * Alchitry Au V2 (Artix-7 XC7A35T + MT41K128M16JT DDR3).
@@ -1355,4 +1450,9 @@ object SystemAssembly {
     * carries no devices of its own beyond the DAPLink, whose serial pins are
     * already in the module's pin space) */
   def colorlightI5 = SystemAssembly("colorlight-i5", Seq(Board.ColorlightI5))
+
+  /** fpga-db-colorlight-i5 base board + Colorlight i9+ module, modelled as one
+    * board: the module's SDRAM and the base board's console and LEDs are all
+    * direct FPGA balls, with no connector translation in between. */
+  def colorlightDbI9Plus = SystemAssembly("colorlight-db-i9plus", Seq(Board.ColorlightDbI9Plus))
 }

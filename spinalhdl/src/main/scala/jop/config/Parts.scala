@@ -103,6 +103,13 @@ object FpgaDevice {
     * build here (the EP4CGX150 has 6.5x as much). */
   def LFE5U25F = FpgaDevice("LFE5U-25F-6BG381C", FpgaFamily.ECP5,
     les = 24288, dspBlocks = 28, bramKbits = 1008)
+
+  /** Colorlight i9+ v6.1 module. The SPEED GRADE IS UNKNOWN: the chips sit
+    * under heat sinks that are staying on, so this says -1, the conservative
+    * grade. A -1 bitstream loads on a -2 (same die), and timing closed at -1
+    * holds on either. `les` is logic cells, as XC7A100T above. */
+  def XC7A50T = FpgaDevice("XC7A50T-1FGG484C", FpgaFamily.Artix7,
+    les = 52160, dspBlocks = 120, bramKbits = 2700)
 }
 
 // ==========================================================================
@@ -188,9 +195,24 @@ object MemoryDevice {
     dataWidth = 32, bankWidth = 2, columnWidth = 8, rowWidth = 11,
     casLatency = 2)
 
+  /** Colorlight i9+ on-module SDR SDRAM (U6): 512K x 32 x 4 banks = 8 MB.
+    *
+    * Same geometry as the i5's EM638325BK6H, and wired the same way: CKE to
+    * VCC, CS to GND and all four DQM to GND (wuxx colorlight_i9plus_v6.1.md),
+    * so no byte masking -- safe for the same reason, JOP writes whole words.
+    * Kept as its own part because it IS a different chip (ESMT M12L64322A-6B,
+    * the marking in the wuxx photo), not because anything here differs. */
+  def M12L64322A = MemoryDevice(
+    name = "M12L64322A",
+    memType = MemoryType.SDRAM_SDR,
+    sizeBytes = 8L * 1024 * 1024,
+    dataWidth = 32, bankWidth = 2, columnWidth = 8, rowWidth = 11,
+    casLatency = 2)
+
   /** Lookup by part name */
   def byName(name: String): Option[MemoryDevice] = name match {
     case "EM638325BK6H"        => Some(EM638325BK6H)
+    case "M12L64322A"          => Some(M12L64322A)
     case "W9825G6JH6"          => Some(W9825G6JH6)
     case "W9864G6JT"           => Some(W9864G6JT)
     case "IS42S16160G"         => Some(IS42S16160G)

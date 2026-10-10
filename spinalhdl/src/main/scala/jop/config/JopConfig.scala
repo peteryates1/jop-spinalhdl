@@ -1522,6 +1522,38 @@ object JopConfig {
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("DAPLINK"),
         params = Map("baudRate" -> 1000000))))))
 
+  /**
+   * Colorlight i9+ (XC7A50T) on the fpga-db-colorlight-i5 base board — JOP on
+   * the module's 8 MB SDRAM. The board's 128 KB SRAM is deliberately NOT main
+   * memory; it is kept for a possible small second JOP.
+   *
+   * 50 MHz, a bring-up clock rather than a measured one. The chips' speed
+   * grade is unknown (heat sinks stay on), so the build targets -1. And SDR
+   * clock leads are touchy -- the Wukong's -3.0 ns has only ever run at 100
+   * MHz (item 162) -- so the same -3.0 ns is a starting point here, proven
+   * by this board's own run and by nothing else. Raise the clock once it runs.
+   *
+   * 50 MHz divides 1 Mbaud exactly (UartCtrl: 50e6 / (1e6 x 5) = 10). The
+   * stamp's CDC bridge was verified lossless at 1 Mbaud (RP2040 loopback,
+   * 2026-10-10).
+   *
+   * Core options as the Wukong SDR preset: card table (required by the
+   * generational GC on a real heap -- see colorlightI5Sdram), idiv/irem in
+   * hardware. The stack cache comes from the board.
+   */
+  def colorlightDbI9PlusSdram = JopConfig(
+    assembly = SystemAssembly.colorlightDbI9Plus,
+    systems = Seq(JopSystem(
+      name = "main",
+      memory = "sdr",
+      bootMode = BootMode.Serial,
+      clkFreq = 50 MHz,
+      coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(
+        hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
+        bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
+      devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("STAMP_CDC0"),
+        params = Map("baudRate" -> 1000000))))))
+
   /** Wukong BRAM with all compute units (DCU debug — simulation only) */
   def wukongBramFull = {
     val base = wukongFull

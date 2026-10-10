@@ -5,6 +5,11 @@
 # Run with: vivado -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl
 #           vivado -mode batch -source ... -tclargs -freq 80 -ip_root <dir>
 #
+# -in_freq and -part let another board with the same clk_wiz shape reuse this
+# script: the Colorlight i9+ (fpga/colorlight-db-i9plus) has a 25 MHz input
+# on an xc7a50t. The defaults are the Wukong's and must stay so -- every
+# Wukong flow calls this without them.
+#
 # WHY THE FREQUENCY IS A PARAMETER. The 2-core SMP SDR build does not close
 # timing at 100 MHz -- WNS -1.451 ns even on the closure directives, on the
 # combinational ready path core -> memCtrl -> BMB arbiter -> SDRAM controller
@@ -30,19 +35,23 @@ set ip_root    [file normalize [file join $repo_root build/ip [file tail $board_
 set clk_name   "sdr_clk"
 set sys_mhz    100.000
 set shift_ns   -3.0
+set in_mhz     50.000
+set part       xc7a100tfgg676-2
 
 for {set i 0} {$i < [llength $argv]} {incr i} {
   switch -- [lindex $argv $i] {
     -freq    { set sys_mhz [expr {double([lindex $argv [incr i]])}] }
     -ip_root { set ip_root [file normalize [lindex $argv [incr i]]] }
     -shift   { set shift_ns [expr {double([lindex $argv [incr i]])}] }
+    -in_freq { set in_mhz [expr {double([lindex $argv [incr i]])}] }
+    -part    { set part [lindex $argv [incr i]] }
   }
 }
 
 # Degrees for the requested delay at the requested frequency.
 set period_ns  [expr {1000.0 / $sys_mhz}]
 set shift_deg  [expr {360.0 * $shift_ns / $period_ns}]
-puts "create_sdram_clk_wiz: ${sys_mhz} MHz, SDRAM shift ${shift_ns} ns = ${shift_deg} deg, ip_root ${ip_root}"
+puts "create_sdram_clk_wiz: ${in_mhz} MHz in -> ${sys_mhz} MHz on ${part}, SDRAM shift ${shift_ns} ns = ${shift_deg} deg, ip_root ${ip_root}"
 
 set ip_proj    [file normalize [file join $ip_root managed_ip_project]]
 
@@ -53,7 +62,7 @@ foreach stale [glob -nocomplain [file join $ip_root ${clk_name}*]] {
 }
 file delete -force $ip_proj
 
-create_project -force managed_ip_project $ip_proj -part xc7a100tfgg676-2
+create_project -force managed_ip_project $ip_proj -part $part
 
 create_ip \
   -name clk_wiz \
@@ -73,7 +82,7 @@ set clk_xci [get_property IP_FILE $clk_ip]
 # Left as a wart deliberately. The frequency that DECIDES anything is the
 # preset's, and the XDC is generated from that.
 set_property -dict [list \
-  CONFIG.PRIM_IN_FREQ {50.000} \
+  CONFIG.PRIM_IN_FREQ $in_mhz \
   CONFIG.PRIMARY_PORT {clk_in} \
   CONFIG.NUM_OUT_CLKS {3} \
   CONFIG.CLKOUT1_REQUESTED_OUT_FREQ $sys_mhz \
