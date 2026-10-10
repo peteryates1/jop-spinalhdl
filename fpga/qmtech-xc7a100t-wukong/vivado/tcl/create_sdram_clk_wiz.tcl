@@ -37,6 +37,17 @@ set sys_mhz    100.000
 set shift_ns   -3.0
 set in_mhz     50.000
 set part       xc7a100tfgg676-2
+# MMCM by default -- every validated IP is one. PLL for a frequency where the
+# MMCM solution splits the outputs (see the check after generation).
+set primitive  MMCM
+# The third output, clk_125, exists for the Wukong's GMII. ALL outputs share one
+# VCO, so its frequency constrains the other two: 80 MHz and 125 MHz have no
+# common VCO in range (LCM 2000 MHz), and clk_wiz then compromises -- MMCM with
+# a fractional CLKOUT0 and an integer CLKOUT1 (80.09 / 80.80 MHz, status item
+# 164), or PLL at 80.357 MHz on both. A design with no Ethernet passes
+# -eth_mhz <its own system MHz>: the port stays (the blackbox declares it), the
+# output is unused and optimised away, and it no longer constrains the VCO.
+set eth_mhz    125.000
 
 for {set i 0} {$i < [llength $argv]} {incr i} {
   switch -- [lindex $argv $i] {
@@ -45,6 +56,8 @@ for {set i 0} {$i < [llength $argv]} {incr i} {
     -shift   { set shift_ns [expr {double([lindex $argv [incr i]])}] }
     -in_freq { set in_mhz [expr {double([lindex $argv [incr i]])}] }
     -part    { set part [lindex $argv [incr i]] }
+    -primitive { set primitive [lindex $argv [incr i]] }
+    -eth_mhz { set eth_mhz [expr {double([lindex $argv [incr i]])}] }
   }
 }
 
@@ -82,6 +95,7 @@ set clk_xci [get_property IP_FILE $clk_ip]
 # Left as a wart deliberately. The frequency that DECIDES anything is the
 # preset's, and the XDC is generated from that.
 set_property -dict [list \
+  CONFIG.PRIMITIVE $primitive \
   CONFIG.PRIM_IN_FREQ $in_mhz \
   CONFIG.PRIMARY_PORT {clk_in} \
   CONFIG.NUM_OUT_CLKS {3} \
@@ -94,7 +108,7 @@ set_property -dict [list \
   CONFIG.CLK_OUT2_PORT {clk_100_shift} \
   CONFIG.CLKOUT2_DRIVES {BUFG} \
   CONFIG.CLKOUT3_USED {true} \
-  CONFIG.CLKOUT3_REQUESTED_OUT_FREQ {125.000} \
+  CONFIG.CLKOUT3_REQUESTED_OUT_FREQ $eth_mhz \
   CONFIG.CLK_OUT3_PORT {clk_125} \
   CONFIG.CLKOUT3_DRIVES {BUFG} \
   CONFIG.USE_RESET {true} \
@@ -103,6 +117,23 @@ set_property -dict [list \
   CONFIG.USE_LOCKED {true} \
   CONFIG.LOCKED_PORT {locked} \
 ] $clk_ip
+
+# THE SDRAM CLOCK MUST BE THE SYSTEM CLOCK, SHIFTED -- same frequency, exactly.
+# On a 7-series MMCM only CLKOUT0 has a fractional divide. For some requests
+# (80 MHz from 25 or 50 MHz) clk_wiz picks a fractional VCO with CLKOUT0 /14.125
+# and CLKOUT1 /14, and the two outputs come out at 80.09 and 80.80 MHz. Every
+# timing check passes and every SDRAM access is corrupt (status item 164).
+# Refuse here, so such an IP never exists; check_clk_ip.py checks the same
+# thing again at build time.
+# MMCM_* even for a PLL: clk_wiz keeps its computed settings there for either
+# primitive and leaves PLL_* at defaults (/1) -- reading those passed a check
+# that compared two meaningless 1s.
+set d0 [get_property CONFIG.MMCM_CLKOUT0_DIVIDE_F $clk_ip]
+set d1 [get_property CONFIG.MMCM_CLKOUT1_DIVIDE $clk_ip]
+if {abs($d0 - $d1) > 1e-9} {
+  error "create_sdram_clk_wiz: $primitive divides the system clock by $d0 but the SDRAM clock by $d1 -- different frequencies. Use -primitive PLL (no fractional divide)."
+}
+puts "create_sdram_clk_wiz: $primitive divide $d0 on both system and SDRAM clocks -- ok"
 
 generate_target all $clk_ip
 

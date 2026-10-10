@@ -38,7 +38,7 @@ answer about the evidence costs confidence in every result built on it — then
 correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
-1. **[#164](#item-164)** — The single-core Wukong SDR (`wukongSdram`) does NOT run at 80 MHz although every timing constraint is met: the download checksums and the program never prints a line. NOT an SDRAM-interface limit: the same -3.0 ns clock lead runs at 75 and 70 MHz in the 2-core flow (corrected 2026-10-06)
+1. **[#164](#item-164)** — The single-core Wukong SDR does NOT run at 80 MHz although every timing constraint is met. **ROOT CAUSE FOUND 2026-10-10:** the clk_wiz splits the system and SDRAM clocks at 80 MHz (79.93 vs 80.51 MHz) because its unused 125 MHz GMII output forbids a common VCO; reproduced and FIXED on the Colorlight i9+ (DoAll 2/2 at 80 MHz). Open only for a Wukong re-run with a fixed IP
 2. **[#165](#item-165)** — A halted core keeps executing until its next `wait`, so it can dirty its stack AFTER the stop-the-world flush: measured in simulation, the collector's `halted && flushed` acknowledgement reads true for 2-6 cycles and is then withdrawn while a second flush runs. Whether the collector can act inside that window is unassessed
 3. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
 4. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
@@ -9358,6 +9358,50 @@ costing failed builds.
 <a id="item-164"></a>
 
 ### Item 164 — the single-core Wukong SDR does not run at 80 MHz, although every timing constraint is met
+
+> **ROOT CAUSE FOUND 2026-10-10 — the clock IP gives the SDRAM a different
+> FREQUENCY from the logic.** Not the SDRAM interface, not 80 MHz as a speed.
+> `create_sdram_clk_wiz.tcl` always asks for three outputs on one VCO: system,
+> SDRAM (system, shifted), and `clk_125` for the GMII. 80 and 125 MHz have no
+> common VCO in range (LCM 2000 MHz, against 1200/1600), so clk_wiz
+> compromises: a FRACTIONAL divide on CLKOUT0, the only MMCM output that has
+> one, and an INTEGER divide on CLKOUT1.
+>
+> | IP | VCO | CLKOUT0 (logic) | CLKOUT1 (SDRAM) |
+> |---|---|---|---|
+> | Wukong `-sdr80` (50 MHz in) | 1368.75 MHz | /17.125 = **79.93** | /17 = **80.51** |
+> | i9+ `-sdr80` (25 MHz in), first IP | 1131.25 MHz | /14.125 = **80.09** | /14 = **80.80** |
+> | 50, 75, 100 MHz (both boards) | multiples of 125 too | integer | same integer |
+>
+> Two clocks 0.6-0.9 % apart slip a whole cycle every ~1.4 us, so every SDRAM
+> access lands at a drifting phase. Each is timed as an ideal clock, so STA is
+> MET; the download checksum is computed over the received stream, so it passes;
+> the program then reads its own image back corrupt and never prints. The
+> achieved CLKOUT1 phase (-84.706 / -83.571 deg, not the -86.4 asked) was the
+> visible trace.
+>
+> **Reproduced on a second board**: the Colorlight i9+ (XC7A50T, 25 MHz input,
+> M12L64322A) failed the same way at 80 MHz while 50 and 75 MHz ran. That was the
+> discriminating test: the same failure on different silicon, PLL input and
+> SDRAM chip had to be in something DERIVED from the frequency. The RTL diff
+> between the 75 and 80 MHz builds is six constants, all correct; the MMCM
+> settings were the difference.
+>
+> **Fixed** for that board, red then green:
+> - `check_clk_ip.py` now computes what CLKOUT0 and CLKOUT1 ACTUALLY produce and
+>   refuses an IP where they differ, or where the system clock is off by >0.2 %.
+>   Before the change it passed both broken IPs ("80 MHz ... ok"); after it
+>   refuses them and still accepts 50/75/100. It reads the `MMCM_*` fields even
+>   for a PLL: clk_wiz leaves `PLL_*` at defaults (x4, /1).
+> - `create_sdram_clk_wiz.tcl` refuses to generate such an IP, and gains
+>   `-eth_mhz` (default 125, so the Wukong's IPs are unchanged) and `-primitive`.
+>   The i9+ passes `-eth_mhz <its MHz>`: the port stays, its frequency no longer
+>   constrains the VCO, and 80 MHz comes out 800 MHz / 10 on both outputs.
+> - i9+ at 80 MHz on that IP: DoAll 68/68 2/2, timing MET (+0.208 ns, -1 part).
+>
+> **Still open, for the Wukong only:** regenerate its 80 MHz IP with
+> `-eth_mhz 80` (no GMII in `wukongSdram`) and run DoAll. The prediction is that
+> it runs.
 
 > **CORRECTED 2026-10-06.** Two statements below were wrong when written, and the
 > record to refute them was already in this file. The 2-core SMP flow

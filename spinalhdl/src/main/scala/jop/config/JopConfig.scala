@@ -1533,6 +1533,17 @@ object JopConfig {
    * MHz (item 162) -- so the same -3.0 ns is a starting point here, proven
    * by this board's own run and by nothing else. Raise the clock once it runs.
    *
+   * `clkMhz` (CLI: `colorlightDbI9PlusSdram <MHz>`) exists to find the real
+   * ceiling; each frequency needs its own clock IP (`make create-ip`) and its
+   * own hardware run -- "timing met" is not enough on an SDR board.
+   *
+   * Measured 2026-10-10, -1 part: 50 MHz (default flow) and 80 MHz
+   * (`make CLOSURE=1`) both run DoAll 68/68; 75 MHz runs HelloWorld. 100 MHz
+   * misses by -1.269 ns even on the closure directives (stack-cache victim
+   * selection, 523 endpoints), so the -1 ceiling is ~88 MHz. 80 MHz first
+   * FAILED with timing met: the clock IP had split the system and SDRAM clocks
+   * (80.09 vs 80.80 MHz) -- status item 164's root cause, fixed in the IP flow.
+   *
    * 50 MHz divides 1 Mbaud exactly (UartCtrl: 50e6 / (1e6 x 5) = 10). The
    * stamp's CDC bridge was verified lossless at 1 Mbaud (RP2040 loopback,
    * 2026-10-10).
@@ -1541,13 +1552,13 @@ object JopConfig {
    * generational GC on a real heap -- see colorlightI5Sdram), idiv/irem in
    * hardware. The stack cache comes from the board.
    */
-  def colorlightDbI9PlusSdram = JopConfig(
+  def colorlightDbI9PlusSdram(clkMhz: Int = 50) = JopConfig(
     assembly = SystemAssembly.colorlightDbI9Plus,
     systems = Seq(JopSystem(
       name = "main",
       memory = "sdr",
       bootMode = BootMode.Serial,
-      clkFreq = 50 MHz,
+      clkFreq = clkMhz MHz,
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(
         hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),

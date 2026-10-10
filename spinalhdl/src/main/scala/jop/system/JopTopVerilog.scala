@@ -183,7 +183,9 @@ object JopTopVerilog {
     case "ep4ce6Sdram"      => JopConfig.ep4ce6Sdram
     case "colorlightI5Bram" => JopConfig.colorlightI5Bram
     case "colorlightI5Sdram" => JopConfig.colorlightI5Sdram
-    case "colorlightDbI9PlusSdram" => JopConfig.colorlightDbI9PlusSdram
+    // colorlightDbI9PlusSdram [MHz] -- default 50, the hardware-verified clock
+    case "colorlightDbI9PlusSdram" =>
+      JopConfig.colorlightDbI9PlusSdram(args.drop(1).headOption.map(_.toInt).getOrElse(50))
     case other =>
       throw new RuntimeException(s"Unknown preset: '$other'. Available: " +
         "ep4cgx150Serial, ep4cgx150Bram, ep4cgx150BramGc, ep4cgx150BramSerial, " +

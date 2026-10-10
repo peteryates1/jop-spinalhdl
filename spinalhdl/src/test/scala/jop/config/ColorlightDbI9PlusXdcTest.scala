@@ -22,7 +22,7 @@ import jop.generate.XdcGenerator
  */
 class ColorlightDbI9PlusXdcTest extends AnyFunSuite {
 
-  private lazy val xdc = XdcGenerator.generate(JopConfig.colorlightDbI9PlusSdram)
+  private lazy val xdc = XdcGenerator.generate(JopConfig.colorlightDbI9PlusSdram())
 
   /** port -> ball, from every PACKAGE_PIN line. */
   private lazy val pins: Seq[(String, String)] = {

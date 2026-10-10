@@ -52,16 +52,39 @@ all: build
 $(GEN_XDC): $(GEN_STAMP)
 	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(CFG) --write $(abspath $(GEN_XDC))"
 
+# The clk_wiz's third output (clk_125, the Wukong's GMII clock) is generated at
+# the SYSTEM frequency here: this board has no Ethernet, and at 125 MHz it
+# forced a compromise VCO at 80 MHz that split the system and SDRAM clocks
+# (status item 164). The generator refuses a split IP; PRIMITIVE=PLL is the
+# other lever if one ever turns up.
+PRIMITIVE ?= MMCM
+# SDRAM clock lead in ns. -3.0 is the house value (Wukong, i5, this board at
+# 50/75 MHz). A PLL can only shift in VCO/8 steps; ask for a lead it cannot
+# hit and clk_wiz moves the FREQUENCY to get closer -- at 80 MHz it chose
+# 80.357 MHz for -3.0 ns. -3.125 ns is exactly -90 deg at 80 MHz.
+SHIFT ?= -3.0
+
 create-ip: $(GEN_STAMP)
 	@[ -n "$(MHZ)" ] || { echo "no Clock: line in $(SUMMARY)"; exit 1; }
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(CLK_TCL) \
-	  -tclargs -freq $(MHZ) -in_freq 25 -part $(PART) -shift -3.0 -ip_root $(IP_BASE)$(MHZ)
+	  -tclargs -freq $(MHZ) -in_freq 25 -part $(PART) -shift $(SHIFT) -primitive $(PRIMITIVE) \
+	  -eth_mhz $(MHZ) \
+	  -ip_root $(IP_BASE)$(MHZ)
+
+# The Wukong's closure directives (its Makefile, TIMING_DIRECTIVES): what holds
+# that board's same core at 100 MHz. `make CLOSURE=1` to use them; the 50 MHz
+# build needs none.
+ifeq ($(CLOSURE),1)
+TIMING_DIRECTIVES := JOP_SYNTH_DIRECTIVE=PerformanceOptimized JOP_SYNTH_RETIMING=yes \
+                    JOP_OPT_DIRECTIVE=Explore JOP_PLACE_DIRECTIVE=ExtraTimingOpt \
+                    JOP_PHYS_OPT_DIRECTIVE=AggressiveExplore JOP_ROUTE_DIRECTIVE=AggressiveExplore
+endif
 
 build: $(GEN_STAMP) $(GEN_XDC)
 	@xci=$(IP_BASE)$(MHZ)/sdr_clk/sdr_clk.xci; \
 	[ -f "$$xci" ] || { echo "No $(MHZ) MHz clock IP at $$xci -- run: make create-ip"; exit 1; }; \
 	python3 $(REPO_ROOT)/fpga/scripts/check_clk_ip.py $(SUMMARY) $$xci || exit 1; \
-	$(VIVADO_ENV) && JOP_TOP=$(TOP) JOP_PART=$(PART) \
+	$(VIVADO_ENV) && JOP_TOP=$(TOP) JOP_PART=$(PART) $(TIMING_DIRECTIVES) \
 	  JOP_BUILD_DIR=$(VIVADO_BUILD) \
 	  JOP_RTL=$(CFG_DIR)/rtl/$(TOP).v \
 	  JOP_BIN_GLOB='$(CFG_DIR)/rtl/$(TOP).v_*.bin' \

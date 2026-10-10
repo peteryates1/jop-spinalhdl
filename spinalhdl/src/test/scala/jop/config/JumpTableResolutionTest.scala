@@ -61,7 +61,7 @@ class JumpTableResolutionTest extends AnyFunSuite {
     "ae115fbDdr2"              -> JopConfig.ae115fbDdr2,
     "colorlightI5Bram"         -> JopConfig.colorlightI5Bram,
     "colorlightI5Sdram"        -> JopConfig.colorlightI5Sdram,
-    "colorlightDbI9PlusSdram"  -> JopConfig.colorlightDbI9PlusSdram)
+    "colorlightDbI9PlusSdram"  -> JopConfig.colorlightDbI9PlusSdram())
 
   test("every preset resolves its jump table") {
     val failures = presets.flatMap { case (name, cfg) =>
