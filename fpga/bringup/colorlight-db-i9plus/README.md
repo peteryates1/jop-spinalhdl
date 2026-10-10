@@ -32,3 +32,13 @@ runs; 250/250 single-byte echoes; 10,000 paced random bytes back exact; CDC1
 On the first load only, ~29 garbage bytes arrived during the power-up test and
 CDC0 was then briefly unresponsive. That did not reproduce on a re-load and is
 unexplained.
+
+Module #3, same day: IDCODE 0362C093; boot banner + `SRAM PASS`, then 5 more
+PASS runs, 250/250 single echoes, 10,000 paced bytes exact, CDC1 clean. Its
+capture also showed what a module's FACTORY image does to the console pin before
+we load anything: bytes 00/01/02/04 at 60 Hz (every 16.7 ms), stopping when JTAG
+configuration starts. That is a plausible source of module #2's first-load
+garbage, but not a proven one: there the garbage arrived mid-test.
+
+Module #1 never answered JTAG: TDO stuck at 1 while the pulls on all four pins
+looked right, so its TAP never drove TDO. Still to be re-seated.
