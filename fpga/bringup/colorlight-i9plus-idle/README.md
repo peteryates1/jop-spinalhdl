@@ -16,6 +16,10 @@ The bitstream is compressed and configures at 33 MHz x1, so it boots in well
 under a second. x4 would need the flash's QE bit.
 
     vivado -mode batch -source build.tcl
+    ./flash_idle.sh      # all of the steps below, each checked; prints IDLE IMAGE FLASHED AND BOOTED
+
+By hand:
+
     B=$(../../scripts/jtag_probe_map --busdev colorlight-db)
     # 1. the factory leaves the WHOLE flash block-protected (status 0x3c, BP=0xF):
     #    clear it on its own first -- see the trap below
