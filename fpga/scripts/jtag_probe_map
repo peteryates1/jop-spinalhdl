@@ -53,6 +53,7 @@ debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashin
 cyc5000|ARA30135|arrow-usb-blaster|Arrow CYC5000 (onboard Arrow USB Blaster TEI0050, FT2232H)
 i5|07000001002700424e|cmsis-dap|Colorlight i5 on the ext board (DAPLink, also the UART bridge)
 wukong|0B383D0435D957EC|pico|QMTECH Wukong XC7A100T (Pico 2 W: dirtyJtag, or USB-Blaster emulation under the atari800 supervisor firmware). A STANDALONE Pico W -- a cable, not part of the board -- so this alias names whatever it is currently plugged into, the way `terasic` does. Unplugging it and using it elsewhere silently retargets this alias
+colorlight-db|4636323337058419|pico|fpga-db-colorlight-i5 base board (netlist 2026-10-10): its RP2040-STAMP runs pico-dirtyJtag BOARD_COLORLIGHT_DB, JTAG on GPIO0-3. The stamp is ON the board, so this names a BOARD; the FPGA is whichever Colorlight module (i5/i9/i9+) is in the socket. Pins VERIFIED 2026-10-10 with no module fitted (TMS/TDI static + TCK 50% duty, read back over SWD)
 alchitry|000000|ftdi-xilinx|Alchitry Au V2 (XC7A35T + DDR3) — onboard FT2232H, programmed by Vivado hw_server (see fpga/alchitry-au). Shares vid:pid 0403:6010 with the CYC5000's Arrow blaster; the serial and product string are what separate them. fpga/alchitry-au-ddr3-test is a second PROJECT on this same board, not another board
 EOF
 )
@@ -100,7 +101,7 @@ Usage:
                                     scan the JTAG chain; fail unless the FPGA
                                     on it is the one <alias> expects
 
-Aliases: terasic, xc7a100t, ae115fb, ep4cgx150, debugprobe, cyc5000, i5, wukong
+Aliases: terasic, xc7a100t, ae115fb, ep4cgx150, debugprobe, cyc5000, i5, wukong, colorlight-db
 
 NOTE: an alias names whatever the SERIAL is attached to. A Pico is soldered to
 one board so its alias names that board; a standalone cable like the Terasic
