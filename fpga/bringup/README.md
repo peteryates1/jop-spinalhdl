@@ -29,6 +29,7 @@ Hence: one directory per jig, all under here, each self-contained.
 | `a-e115fb-uart-loopback` | A-E115FB (EP4CE115) | UART wiring: RX looped back to TX |
 | `wukong-uart-loopback` | QMTECH Wukong (XC7A100T) | the same, three assigns of Verilog |
 | `ep4cgx150-eth-ref` | EP4CGX150 + DB_FPGA V4 | a THIRD-PARTY Ethernet reference design on the RTL8211EG PHY |
+| `colorlight-db-i9plus` | fpga-db-colorlight-i5 base board + i9+ (XC7A50T) | LEDs, buttons, both RP2040-STAMP CDC UARTs (one jig console, one wired loopback), and a 4-pass test of the 128K×8 SRAM |
 
 `ep4cgx150-eth-ref` is worth knowing about for a second reason. It is an
 independent implementation against the same PHY as our own MAC, so when the JOP
