@@ -563,43 +563,41 @@ object Board {
         "led3" -> "PIN_N3", "led4" -> "PIN_V2", "led5" -> "PIN_T2",
         "led6" -> "PIN_L1", "led7" -> "PIN_K1"))))
 
+  // ========================================================================
+  // Colorlight SODIMM modules and the boards they plug into
+  //
+  // A module carries the FPGA, its oscillator, its SDRAM and (on the i5) an
+  // LED, and exposes the rest on its DDR2-SODIMM-200 edge as a "SODIMM"
+  // connector (ColorlightSodimm). A base board maps its devices to SODIMM
+  // pins. So any module goes with any base board -- an assembly is just the
+  // pair -- and the same base board yields different balls per module.
+  // ========================================================================
+
   /**
-   * Colorlight i5 v7.0 module + its ext (breakout) board.
+   * Colorlight i5 v7.0 MODULE. FPGA: LFE5U-25F-6BG381C, open-source flow only
+   * (yosys / nextpnr-ecp5 / ecppack), so pins are bare ECP5 balls.
    *
-   * FPGA: LFE5U-25F-6BG381C. Open-source toolchain only (yosys / nextpnr-ecp5 /
-   * ecppack), so pin names are bare ECP5 ball designators as an .lpf wants them,
-   * with no "PIN_" prefix — the Xilinx convention, not the Altera one.
+   * On the module: the 25 MHz oscillator (P3), LED D2 (U16, active LOW --
+   * verified on hardware 2026-05-09; it is also SODIMM pin 41) and the SDRAM.
    *
-   * The UART is the CDC serial of the ext board's ARM mbed DAPLink, which is the
-   * same USB device that carries JTAG. One cable does programming and download.
-   * Pins are from Colorlight's own i5 examples (src/i5/uart_tx/top.lpf and
-   * src/i5/picosoc/top.lpf both agree): TX=J17, RX=H18.
-   *
-   * Do NOT take the UART pins from riscvOnColorlight-5A-75B (U16 / R16). That is
-   * the 5A-75B, a different module: on the i5, U16 is LED D2 and R16 is not
-   * bonded out to the SODIMM at all.
-   *
-   * SDRAM (stage 2) is an EM638325BK-6H, 8 MB, and unusually is **32 bits wide**
-   * with CKE tied high, CS tied low and all four DQM tied low. Two consequences:
+   * SDRAM is an EM638325BK-6H, 8 MB, and unusually is **32 bits wide** with
+   * CKE tied high, CS tied low and all four DQM tied low. Two consequences:
    *   - no byte masking, so any sub-word write needs read-modify-write. JOP's
    *     main memory is word-addressed, so a JOP word is exactly one SDRAM access
-   *     and nothing needs masking — this actually suits it.
+   *     and nothing needs masking -- this actually suits it.
    *   - BmbSdramCtrl32 is a 32-bit-BMB-to-16-bit-SDRAM bridge and is the wrong
    *     shape here; a 32-bit-wide path is needed instead.
+   * The strapped ports are parked by whichever base board the module is on,
+   * because only the base board knows which SODIMM pins are free.
    */
   def ColorlightI5 = Board(
     name = "colorlight-i5",
-    probeAlias = Some("i5"),
-    consoleAlias = Some("i5"),
-    loaderBoard = Some("colorlight-i5"),
     pllType = Some(PllType.LatticeEcp5I5),
     entitySuffix = "I5",
     fpga = Some(FpgaDevice.LFE5U25F),
+    connectors = Map("SODIMM" -> ColorlightSodimm.SodimmI5),
     devices = Seq(
       BoardDevice("CLOCK_25MHz", mapping = Map("clock" -> "P3")),
-      // DAPLink CDC serial on the ext board
-      BoardDevice("DAPLINK", mapping = Map(
-        "TXD" -> "J17", "RXD" -> "H18")),
       BoardDevice("LED", mapping = Map("led0" -> "U16")),
       BoardDevice("EM638325BK6H", role = Some("sdr"), mapping = Map(
         "CLK" -> "B9", "RAS_n" -> "B10", "CAS_n" -> "A9", "WE_n" -> "A10",
@@ -614,67 +612,58 @@ object Board {
         "DQ16" -> "C10", "DQ17" -> "D9", "DQ18" -> "E11", "DQ19" -> "D11",
         "DQ20" -> "C11", "DQ21" -> "D12", "DQ22" -> "E9", "DQ23" -> "C12",
         "DQ24" -> "E14", "DQ25" -> "C15", "DQ26" -> "E13", "DQ27" -> "D15",
-        "DQ28" -> "E12", "DQ29" -> "B17", "DQ30" -> "D14", "DQ31" -> "D13"))),
-    // CKE is strapped to VCC, CS to GND and all four DQM to GND on this board,
-    // so none of them reach the FPGA. Parked on ext-board header balls (SODIMM
-    // 69/71/73/75/77/79) that this design does not otherwise use; nothing is
-    // attached to those headers.
-    //
-    // Consequence of DQM being strapped low: no byte masking exists, so every
-    // write writes all four bytes. Safe only because JOP issues full-word
-    // writes exclusively -- see BmbSdramCtrlWide's header comment.
-    parkedPins = Map(
-      "sdram_CKE" -> "U18", "sdram_CSn" -> "U17",
-      "sdram_DQM[0]" -> "P18", "sdram_DQM[1]" -> "N17",
-      "sdram_DQM[2]" -> "N18", "sdram_DQM[3]" -> "M18"))
+        "DQ28" -> "E12", "DQ29" -> "B17", "DQ30" -> "D14", "DQ31" -> "D13"))))
 
   /**
-   * fpga-db-colorlight-i5 base board (netlist 2026-10-10) carrying a Colorlight
-   * i9+ v6.1 module (XC7A50T-FGG484). The base board takes i5/i9/i9+ modules;
-   * this is the i9+ fit. Pins are i9+ balls: the base board's U5 symbol names
-   * them directly, checked against wuxx colorlight_i9plus_v6.1.md (0
-   * mismatches over 114 signal pins).
+   * Colorlight i5/i9 EXT BOARD -- Colorlight's own breakout for the i5 and i9.
    *
-   * Console: the board has no USB-serial chip. The RP2040-STAMP bridges its
-   * uart1 to USB CDC0 (pico-dirtyJtag BOARD_COLORLIGHT_DB): stamp GPIO4 (TX)
-   * -> Y21 = FPGA RXD, AB21 = FPGA TXD -> stamp GPIO5 (RX). The same stamp is
-   * the JTAG probe, so one USB cable programs and talks. Measured: at 1 Mbaud
-   * download.py's full-speed 48 KB stream arrives intact (checksum OK), but a
-   * host flooding the bridge at 115200 lost bytes -- it does not hold off a
-   * host that outruns a slow line. `make reset` (UART break + 'R') works
-   * through it.
+   * Its ARM mbed DAPLink is both the JTAG probe and the console, so one cable
+   * programs and talks. The console is on SODIMM 84 (FPGA TX) and 86 (FPGA
+   * RX), J17/H18 on an i5, from Colorlight's own i5 examples (src/i5/uart_tx
+   * and src/i5/picosoc agree).
    *
-   * SDRAM is on the module (U6, M12L64322A, 32 bits wide) with CKE/CS/DQM
-   * strapped exactly as on the i5. Those ports are parked on SODIMM 57-67
-   * (U2/U3/V2/V3/W1/Y1), which carry NO net on this base board (netlist).
+   * Do NOT take the UART pins from riscvOnColorlight-5A-75B (U16 / R16). That
+   * is the 5A-75B, a different module: on the i5, U16 is LED D2 and R16 is not
+   * bonded out to the SODIMM at all.
    *
-   * LEDs D4-D11 (LED0-7) are active HIGH through 300R to GND. The four
-   * buttons go to GND with no pull-ups and are not used by JOP.
-   *
-   * UNUSED PINS MUST FLOAT. Sixteen RP2040 GPIOs land on FPGA balls; Vivado's
-   * default pulls every unused pin down, which would fight whatever the stamp
-   * drives there.
+   * The SDRAM's strapped CKE/CS/DQM ports are parked on header pins SODIMM
+   * 69-79, which this design does not otherwise use and which have nothing
+   * attached. Consequence of DQM being strapped low on the module: no byte
+   * masking exists, so every write writes all four bytes. Safe only because
+   * JOP issues full-word writes exclusively -- see BmbSdramCtrlWide's header.
    */
-  def ColorlightDbI9Plus = Board(
-    name = "colorlight-db-i9plus",
-    probeAlias = Some("colorlight-db"),
-    consoleAlias = Some("colorlight-db-0"),
-    loaderCable = Some("dirtyJtag"),
+  def ColorlightI5I9ExtBoard = Board(
+    name = "colorlight-i5-i9-ext",
+    probeAlias = Some("i5"),
+    consoleAlias = Some("i5"),
+    loaderBoard = Some("colorlight-i5"),
+    devices = Seq(
+      BoardDevice("DAPLINK", mapping = Map("TXD" -> "SODIMM:84", "RXD" -> "SODIMM:86"))),
+    parkedPins = Map(
+      "sdram_CKE" -> "SODIMM:69", "sdram_CSn" -> "SODIMM:71",
+      "sdram_DQM[0]" -> "SODIMM:73", "sdram_DQM[1]" -> "SODIMM:75",
+      "sdram_DQM[2]" -> "SODIMM:77", "sdram_DQM[3]" -> "SODIMM:79"))
+
+  /**
+   * Colorlight i9+ v6.1 MODULE (XC7A50T-FGG484). On the module: 25 MHz (K4),
+   * the SDRAM, 2x B50612D Ethernet PHYs, 16 MB SPI flash, and LED D2 on A18.
+   *
+   * D2 is NOT declared as an LED: its polarity is unverified, and the boards
+   * this module has run on drive their own LEDs (SystemAssembly.ledBoard).
+   *
+   * SDRAM (U6, M12L64322A, 32 bits wide) is strapped exactly as on the i5 --
+   * CKE to VCC, CS to GND, all DQM to GND -- so the same parking applies, done
+   * by the base board.
+   */
+  def ColorlightI9Plus = Board(
+    name = "colorlight-i9plus",
     fpga = Some(FpgaDevice.XC7A50T),
     pllType = Some(PllType.XilinxColorlightI9Plus),
     entitySuffix = "I9Plus",
-    ledActiveHigh = true,
     useStackCache = true,
-    unusedPinsFloat = true,
-    // SW_RESET (SW4) to GND, no board pull-up -- hence PULLUP on the port.
-    portPulls = Map("resetn" -> "PULLUP"),
+    connectors = Map("SODIMM" -> ColorlightSodimm.SodimmI9Plus),
     devices = Seq(
       BoardDevice("CLOCK_25MHz", mapping = Map("clock" -> "K4")),
-      BoardDevice("SWITCH", mapping = Map("reset" -> "P5")),
-      BoardDevice("STAMP_CDC0", mapping = Map("TXD" -> "AB21", "RXD" -> "Y21")),
-      BoardDevice("LED", mapping = Map(
-        "led0" -> "M1", "led1" -> "L1", "led2" -> "K1", "led3" -> "J1",
-        "led4" -> "H3", "led5" -> "U1", "led6" -> "V5", "led7" -> "U5")),
       BoardDevice("M12L64322A", role = Some("sdr"), mapping = Map(
         "CLK" -> "E14", "RAS_n" -> "A14", "CAS_n" -> "D14", "WE_n" -> "D17",
         "BA0" -> "D19", "BA1" -> "B13",
@@ -688,11 +677,52 @@ object Board {
         "DQ16" -> "B18", "DQ17" -> "D20", "DQ18" -> "A19", "DQ19" -> "A21",
         "DQ20" -> "A20", "DQ21" -> "B21", "DQ22" -> "C22", "DQ23" -> "B22",
         "DQ24" -> "G21", "DQ25" -> "G22", "DQ26" -> "H20", "DQ27" -> "H22",
-        "DQ28" -> "J20", "DQ29" -> "J22", "DQ30" -> "G20", "DQ31" -> "J21"))),
+        "DQ28" -> "J20", "DQ29" -> "J22", "DQ30" -> "G20", "DQ31" -> "J21"))))
+
+  /**
+   * Colorlight i5/i9/i9+ Atari 800 base board v1.0 (`fpga-db-colorlight-i5`,
+   * netlist 2026-10-10). Takes any of the three modules; every device here is
+   * a SODIMM pin, so the balls follow whichever module is fitted.
+   *
+   * Console: no USB-serial chip. The RP2040-STAMP bridges its uart1 to USB
+   * CDC0 (pico-dirtyJtag BOARD_COLORLIGHT_DB): stamp GPIO4 (TX) -> SODIMM 155
+   * = FPGA RXD, SODIMM 153 = FPGA TXD -> stamp GPIO5 (RX). The same stamp is
+   * the JTAG probe (GPIO0-3 to the module's pads), so one USB cable programs
+   * and talks. Measured: at 1 Mbaud download.py's full-speed 48 KB stream
+   * arrives intact (checksum OK), but a host flooding the bridge at 115200
+   * lost bytes -- it does not hold off a host that outruns a slow line.
+   * `make reset` (UART break + 'R') works through it.
+   *
+   * LEDs D4-D11 (LED0-7, SODIMM 66/64/62/60/58/54/52/50) are active HIGH
+   * through 300R to GND. SW_RESET (SW4, SODIMM 42) goes to GND with NO board
+   * pull-up, hence PULLUP on resetn. The other buttons, the joysticks, HDMI,
+   * audio, RJ45 LEDs and the 128 KB SRAM are not used by JOP yet.
+   *
+   * SODIMM 57-67 carry NO net on this board, so the module's strapped SDRAM
+   * ports are parked there.
+   *
+   * UNUSED PINS MUST FLOAT. Sixteen RP2040 GPIOs land on module balls;
+   * Vivado's default pulls every unused pin down, which would fight whatever
+   * the stamp drives there.
+   */
+  def ColorlightAtari800BaseV1 = Board(
+    name = "colorlight-atari800-base-v1.0",
+    probeAlias = Some("colorlight-db"),
+    consoleAlias = Some("colorlight-db-0"),
+    loaderCable = Some("dirtyJtag"),
+    ledActiveHigh = true,
+    unusedPinsFloat = true,
+    portPulls = Map("resetn" -> "PULLUP"),
+    devices = Seq(
+      BoardDevice("SWITCH", mapping = Map("reset" -> "SODIMM:42")),
+      BoardDevice("STAMP_CDC0", mapping = Map("TXD" -> "SODIMM:153", "RXD" -> "SODIMM:155")),
+      BoardDevice("LED", mapping = Map(
+        "led0" -> "SODIMM:66", "led1" -> "SODIMM:64", "led2" -> "SODIMM:62", "led3" -> "SODIMM:60",
+        "led4" -> "SODIMM:58", "led5" -> "SODIMM:54", "led6" -> "SODIMM:52", "led7" -> "SODIMM:50"))),
     parkedPins = Map(
-      "sdram_CKE" -> "U2", "sdram_CSn" -> "U3",
-      "sdram_DQM[0]" -> "V2", "sdram_DQM[1]" -> "V3",
-      "sdram_DQM[2]" -> "W1", "sdram_DQM[3]" -> "Y1"))
+      "sdram_CKE" -> "SODIMM:57", "sdram_CSn" -> "SODIMM:59",
+      "sdram_DQM[0]" -> "SODIMM:61", "sdram_DQM[1]" -> "SODIMM:63",
+      "sdram_DQM[2]" -> "SODIMM:65", "sdram_DQM[3]" -> "SODIMM:67"))
 
   /**
    * Alchitry Au V2 (Artix-7 XC7A35T + MT41K128M16JT DDR3).
@@ -1315,9 +1345,23 @@ object Board {
 case class SystemAssembly(
   name: String,
   boards: Seq[Board],
-  connectorMating: Map[String, String] = Map.empty
+  connectorMating: Map[String, String] = Map.empty,
+  /** Name of the board whose LEDs drive the design's `led` port.
+    *
+    * None keeps the original rule -- the FPGA board's LED count and polarity,
+    * with LED pins merged across boards by signal name -- which every assembly
+    * from before the Colorlight module/base-board split relies on.
+    *
+    * Set it where the FPGA is on a MODULE and the LEDs worth driving are on
+    * the board it plugs into. Two boards' LEDs cannot simply be merged: both
+    * name theirs led0..ledN, and they need not share a polarity (the i5's
+    * on-module D2 is active low, the Atari 800 base board's eight are active
+    * high). */
+  ledBoard: Option[String] = None
 ) {
   require(boards.exists(_.hasFpga), s"SystemAssembly '$name': at least one board must carry an FPGA")
+  require(ledBoard.forall(n => boards.exists(_.name == n)),
+    s"SystemAssembly '$name': ledBoard ${ledBoard.getOrElse("")} is not one of its boards")
 
   /** All FPGA devices across all boards */
   def fpgaDevices: Seq[FpgaDevice] = boards.flatMap(_.fpga)
@@ -1391,8 +1435,35 @@ case class SystemAssembly(
   /** Board oscillator frequency */
   def boardClockFreq: spinal.core.HertzNumber = fpgaBoard.clockFreq
 
+  /** The board whose LEDs drive the `led` port -- see `ledBoard`. */
+  def ledSourceBoard: Board =
+    ledBoard.flatMap(n => boards.find(_.name == n)).getOrElse(fpgaBoard)
+
   /** LED active-high vs active-low */
-  def ledActiveHigh: Boolean = fpgaBoard.ledActiveHigh
+  def ledActiveHigh: Boolean = ledSourceBoard.ledActiveHigh
+
+  /** Width of the `led` port. */
+  def ledCount: Int = ledSourceBoard.ledCount
+
+  /** Reset-switch polarity, from the board that CARRIES the switch -- on a
+    * module + base board that is the base board, not the FPGA's. Falls back to
+    * the FPGA board, which is where every older assembly has its switch. */
+  def resetActiveLow: Boolean =
+    boards.find(_.devices.exists(d => d.part == "SWITCH" && d.mapping.contains("reset")))
+      .getOrElse(fpgaBoard).resetActiveLow
+
+  /** At most one board may say how this assembly is reached: which JTAG probe,
+    * which console, which loader. On a module + base board the probe and the
+    * console are the BASE board's (an RP2040, a DAPLink), not the FPGA's. */
+  private def unique[T](what: String, f: Board => Option[T]): Option[T] = {
+    val vs = boards.flatMap(f).distinct
+    require(vs.size <= 1, s"SystemAssembly '$name': boards disagree on $what: ${vs.mkString(", ")}")
+    vs.headOption
+  }
+  def probeAlias: Option[String]   = unique("probeAlias", _.probeAlias)
+  def consoleAlias: Option[String] = unique("consoleAlias", _.consoleAlias)
+  def loaderCable: Option[String]  = unique("loaderCable", _.loaderCable)
+  def loaderBoard: Option[String]  = unique("loaderBoard", _.loaderBoard)
 
   /** Total LED count across all boards in assembly */
   def totalLedCount: Int = allDevices.filter(_.part == "LED").flatMap(_.mapping.keys).size
@@ -1448,13 +1519,21 @@ object SystemAssembly {
   /** Generic EP4CE6 standalone */
   def genericEp4ce6 = SystemAssembly("generic-ep4ce6", Seq(Board.GenericEP4CE6))
 
-  /** Colorlight i5 v7.0 module + ext board (modelled as one board: the ext board
-    * carries no devices of its own beyond the DAPLink, whose serial pins are
-    * already in the module's pin space) */
-  def colorlightI5 = SystemAssembly("colorlight-i5", Seq(Board.ColorlightI5))
+  /** Colorlight i5 module on Colorlight's i5/i9 ext board. LEDs: the module's
+    * D2 (the ext board has none of its own). */
+  def colorlightI5 = SystemAssembly("colorlight-i5",
+    Seq(Board.ColorlightI5, Board.ColorlightI5I9ExtBoard))
 
-  /** fpga-db-colorlight-i5 base board + Colorlight i9+ module, modelled as one
-    * board: the module's SDRAM and the base board's console and LEDs are all
-    * direct FPGA balls, with no connector translation in between. */
-  def colorlightDbI9Plus = SystemAssembly("colorlight-db-i9plus", Seq(Board.ColorlightDbI9Plus))
+  /** Colorlight i9+ module on the Atari 800 base board v1.0. LEDs: the base
+    * board's eight. */
+  def colorlightDbI9Plus = SystemAssembly("colorlight-db-i9plus",
+    Seq(Board.ColorlightI9Plus, Board.ColorlightAtari800BaseV1),
+    ledBoard = Some(Board.ColorlightAtari800BaseV1.name))
+
+  /** Colorlight i5 module on the Atari 800 base board v1.0 -- the same base
+    * board, the other module family. Not yet built on hardware; it exists so
+    * the module/base split is exercised both ways (ColorlightModuleSplitTest). */
+  def colorlightDbI5 = SystemAssembly("colorlight-db-i5",
+    Seq(Board.ColorlightI5, Board.ColorlightAtari800BaseV1),
+    ledBoard = Some(Board.ColorlightAtari800BaseV1.name))
 }

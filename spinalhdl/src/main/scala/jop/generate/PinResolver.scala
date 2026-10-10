@@ -52,7 +52,16 @@ object PinResolver {
 
   /** Resolve LED pins, sorted by index */
   def ledPins(assembly: SystemAssembly): Seq[PinAssignment] = {
-    val ledMappings = assembly.allPinMappings("LED")
+    // With SystemAssembly.ledBoard set, ONLY that board's LEDs: a module's own
+    // LED and a base board's both call theirs led0, and merging by name would
+    // let whichever came last win. Unset, the original merge.
+    val ledMappings = assembly.ledBoard match {
+      case Some(_) =>
+        assembly.ledSourceBoard.devices.filter(_.part == "LED").flatMap(_.mapping.flatMap {
+          case (signal, ref) => assembly.resolvePin(ref).map(signal -> _)
+        }).toMap
+      case None => assembly.allPinMappings("LED")
+    }
     ledMappings.toSeq
       .sortBy { case (signal, _) => signal.stripPrefix("led").toInt }
       .map { case (signal, fpgaPin) =>

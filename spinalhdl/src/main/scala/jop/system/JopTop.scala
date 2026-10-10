@@ -45,8 +45,10 @@ case class JopTop(
   private val isMultiSystem = config.systems.length > 1
   private val board = config.assembly.fpgaBoard
   private val manufacturer = config.fpgaFamily.manufacturer
-  private val ledCount = board.ledCount
-  private val activeHigh = board.ledActiveHigh
+  // From the assembly, not the FPGA board: on a module + base board the LEDs
+  // are the base board's (SystemAssembly.ledBoard).
+  private val ledCount = config.assembly.ledCount
+  private val activeHigh = config.assembly.ledActiveHigh
 
   // Single-system fields (null/false when isMultiSystem)
   private val sys: JopSystem = if (!isMultiSystem) config.system else null

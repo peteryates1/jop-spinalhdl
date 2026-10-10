@@ -24,7 +24,9 @@ object HwVerifyDescriptor {
 
   def generate(config: BoardDesign, preset: String, args: Seq[String]): String = {
     val assembly = config.assembly
-    val board = assembly.boards.head
+    // The FPGA's board for its name and family; probe, console and loader from
+    // the ASSEMBLY, which on a module + base board are the base board's.
+    val board = assembly.fpgaBoard
     val layout = BuildLayout.default
     val cfgDir = layout.configDir(preset, args)
 
@@ -36,7 +38,7 @@ object HwVerifyDescriptor {
       .getOrElse(if (config.isInstanceOf[JopConfig]) 2000000 else 1000000)
 
     val family = board.fpga.map(_.family.toString).getOrElse("unknown")
-    val tool = if (board.loaderCable.isDefined || board.loaderBoard.isDefined)
+    val tool = if (assembly.loaderCable.isDefined || assembly.loaderBoard.isDefined)
       "openfpgaloader" else "quartus"
 
     val sb = new StringBuilder
@@ -52,10 +54,10 @@ object HwVerifyDescriptor {
     }
     sb.append(s"BAUD=$baud\n")
     sb.append(s"PROGRAM_TOOL=$tool\n")
-    board.probeAlias.foreach(a => sb.append(s"PROBE_ALIAS=$a\n"))
-    board.consoleAlias.foreach(a => sb.append(s"CONSOLE_ALIAS=$a\n"))
-    board.loaderCable.foreach(c => sb.append(s"LOADER_CABLE=$c\n"))
-    board.loaderBoard.foreach(b => sb.append(s"LOADER_BOARD=$b\n"))
+    assembly.probeAlias.foreach(a => sb.append(s"PROBE_ALIAS=$a\n"))
+    assembly.consoleAlias.foreach(a => sb.append(s"CONSOLE_ALIAS=$a\n"))
+    assembly.loaderCable.foreach(c => sb.append(s"LOADER_CABLE=$c\n"))
+    assembly.loaderBoard.foreach(b => sb.append(s"LOADER_BOARD=$b\n"))
     sb.toString
   }
 }

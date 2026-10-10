@@ -67,7 +67,7 @@ object LpfGenerator {
 
   def generate(config: BoardDesign): String = {
     val assembly = config.assembly
-        val board = assembly.boards.head
+    val board = assembly.fpgaBoard   // FPGA name and I/O standard
     val io = board.ioStandard
     val sb = new StringBuilder
 
@@ -127,8 +127,14 @@ object LpfGenerator {
     // constrains ports that do not exist -- the same trap the SDRAM guard above
     // exists for. Gated on the interface, not merely on the board declaring
     // them.
-    val parked = board.parkedPins.filterNot {
+    // Every board's parked pins, resolved through the assembly: on a module +
+    // base board the base board says which SODIMM pins are free and the module
+    // says which balls those are.
+    val parked = assembly.boards.flatMap(_.parkedPins).filterNot {
       case (port, _) => port.startsWith("sdram_") && !usesSdr
+    }.map { case (port, ref) =>
+      port -> assembly.resolvePin(ref).getOrElse(
+        sys.error(s"parked pin $port -> $ref does not resolve on ${assembly.name}"))
     }
     if (parked.nonEmpty) {
       sb.append("# Ports the design has but this board does not wire -- see\n")

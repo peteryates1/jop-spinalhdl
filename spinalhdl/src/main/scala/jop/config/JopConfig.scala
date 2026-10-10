@@ -176,9 +176,11 @@ case class WatchdogConfig(timeoutMs: Int = 1000) extends MonitorConfig
   */
 object UartPartOverride {
   def apply(c: JopConfig, part: String): JopConfig = {
-    require(c.assembly.fpgaBoard.devices.exists(_.part == part),
-      s"board ${c.assembly.fpgaBoard.name} defines no device part '$part'; " +
-      s"known: ${c.assembly.fpgaBoard.devices.map(_.part).distinct.mkString(", ")}")
+    // Any board of the assembly: on a module + base board the console is the
+    // base board's.
+    require(c.assembly.allDevices.exists(_.part == part),
+      s"assembly ${c.assembly.name} defines no device part '$part'; " +
+      s"known: ${c.assembly.allDevices.map(_.part).distinct.mkString(", ")}")
     c.copy(systems = c.systems.map { sys =>
       def on(cc: JopCoreConfig) = cc.copy(devices = cc.devices.map {
         case (k, d) if d.deviceType == DeviceType.Uart => k -> d.copy(devicePart = Some(part))
@@ -404,7 +406,10 @@ case class JopConfig(
    */
   def effectiveUseStackCache(sys: JopSystem): Boolean = {
     val mt = resolveMemory(sys).map(_.memType)
-    val board = assembly.boards.head
+    // The FPGA's board: whether the stack cache fits is a property of the FPGA
+    // (it was boards.head, which is the same board in every assembly that
+    // predates the module/base-board split).
+    val board = assembly.fpgaBoard
     (mt.contains(MemoryType.SDRAM_DDR3) && sys.cpuCnt == 1) ||
     (mt.contains(MemoryType.SDRAM_SDR) && board.useStackCache)
   }
@@ -470,7 +475,7 @@ case class JopConfig(
         burstLen = 0)
       else cc.memConfig.copy(
         burstLen = burstLen,
-        stackRegionWordsPerCore = if (assembly.boards.head.useStackCache) 8192 else 0)
+        stackRegionWordsPerCore = if (assembly.fpgaBoard.useStackCache) 8192 else 0)
     cc.copy(memConfig = memConfig, useStackCache = effectiveUseStackCache(sys))
   }
 
@@ -549,7 +554,7 @@ case class JopConfig(
     */
   def resetInput: Option[ResetInput] = {
     val pin = jop.generate.PinResolver.resetFpgaPin(assembly)
-    val activeLow = assembly.fpgaBoard.resetActiveLow
+    val activeLow = assembly.resetActiveLow
     if (fpgaFamily.manufacturer == Manufacturer.Xilinx) {
       // Always present: it is the clock domain's own reset.
       pin.map(ResetInput("resetn", _, activeLow))

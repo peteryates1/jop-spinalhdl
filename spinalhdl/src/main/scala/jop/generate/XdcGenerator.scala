@@ -124,7 +124,13 @@ object XdcGenerator {
     if (parked.nonEmpty) {
       sb.append("# Ports the design has but this board does not wire -- see\n")
       sb.append("# Board.parkedPins for why these get a ball at all.\n")
-      parked.sortBy(_._1).foreach { case (port, ball) => sb.append(pinConstraint(ball, port)) }
+      // A parked pin may be a connector reference ("SODIMM:57"): which pins are
+      // free is a fact about the BASE board, which ball that is, the module's.
+      parked.sortBy(_._1).foreach { case (port, ref) =>
+        val ball = assembly.resolvePin(ref).getOrElse(
+          sys.error(s"parked pin $port -> $ref does not resolve on ${assembly.name}"))
+        sb.append(pinConstraint(ball, port))
+      }
       sb.append("\n")
     }
 

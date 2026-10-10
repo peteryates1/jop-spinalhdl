@@ -58,5 +58,5 @@ trait BoardDesign {
     * generators must use the same number or they assign pins that do not exist:
     * on the EP4CGX150 + DB v4 the top has `led[1:0]` while the assembly offers
     * seven, and five assignments were being emitted into thin air. */
-  def ledCount: Int = assembly.fpgaBoard.ledCount
+  def ledCount: Int = assembly.ledCount
 }
