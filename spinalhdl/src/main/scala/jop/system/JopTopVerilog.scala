@@ -93,7 +93,9 @@ object JopTopVerilog {
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.cyc5000Smp(n)
     case "auSerial"         => JopConfig.auSerial
-    case "wukongSdram"      => JopConfig.wukongSdram
+    // wukongSdram [MHz] -- default the preset's own 100
+    case "wukongSdram"      =>
+      args.drop(1).headOption.map(m => JopConfig.wukongSdramAt(m.toInt)).getOrElse(JopConfig.wukongSdram)
     case "wukongSdrAllCu"   => JopConfig.wukongSdrAllCu
     case "wukongDdr3"       => JopConfig.wukongDdr3
     case "wukongDdr3AllCu"  => JopConfig.wukongDdr3AllCu

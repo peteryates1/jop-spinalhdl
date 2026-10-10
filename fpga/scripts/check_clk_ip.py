@@ -93,8 +93,9 @@ def main(argv):
               f"but the system clock at {sys_mhz:.4f} MHz.\n"
               f"  Refusing: they must be the SAME clock, phase-shifted. Different "
               f"frequencies drift through each other and corrupt every SDRAM access "
-              f"while timing still reads MET (status item 164). Regenerate the IP "
-              f"with integer divides (create_sdram_clk_wiz.tcl -primitive PLL).",
+              f"while timing still reads MET (status item 164). Regenerate the IP so "
+              f"no other output constrains the VCO (create_sdram_clk_wiz.tcl "
+              f"-eth_mhz <system MHz> when the design has no GMII).",
               file=sys.stderr)
         return 1
     if abs(sys_mhz - want) / want > 0.002:

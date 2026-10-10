@@ -1321,10 +1321,11 @@ object JopConfig {
   /**
    * Wukong SDR SDRAM (single-system, 100 MHz).
    *
-   * 100 MHz is the only frequency this board's SDRAM interface has run at
-   * (status item 162): at 80 MHz the bitstream MEETS every constraint and the
-   * download checksums, but the program never prints a line. The -3.0 ns
-   * SDRAM clock lead was validated at 100 MHz only. The build closes timing
+   * Runs at 100 MHz, and at 80 MHz (`wukongSdram 80`, DoAll 2/2, 2026-10-10)
+   * once the 80 MHz clock IP stopped splitting the system and SDRAM clocks --
+   * status item 164: its unused 125 MHz output forced 79.93 vs 80.51 MHz, which
+   * met timing and never printed. The -3.0 ns lead also runs at 70/75 MHz in
+   * the SMP flow. The build closes timing
    * with the closure directives (the board Makefile), not by lowering the
    * clock: on the default flow it missed setup by 0.295 ns, in the stack
    * cache's victim selection (item 163).
@@ -1339,6 +1340,14 @@ object JopConfig {
       coreConfig = JopCoreConfig(memConfig = JopMemoryConfig(hasCardTable = true, cardTableBudgetBytes = 8 * 1024),
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some(wukongConsolePart))))))
+
+  /** `wukongSdram` at another clock -- CLI `wukongSdram <MHz>`. Status item 164:
+    * 80 MHz failed only because its clock IP split the system and SDRAM clocks;
+    * a per-frequency IP from `make sdram-create-ip-mhz` is needed. */
+  def wukongSdramAt(clkMhz: Int) = {
+    val base = wukongSdram
+    base.copy(systems = Seq(base.system.copy(clkFreq = clkMhz MHz)))
+  }
 
   /**
    * Wukong SDR — SMP, N cores. The SDR counterpart of `wukongDdr3Smp`, so the

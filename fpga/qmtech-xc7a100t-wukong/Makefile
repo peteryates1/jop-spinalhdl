@@ -341,7 +341,7 @@ sdram-program:
 	$(MAKE) program-bit BIT_FILE=$(SDRAM_BITSTREAM)
 
 sdram-monitor:
-	$(MAKE) monitor CFG=$(SDRAM_CFG)
+	$(MAKE) monitor CFG="$(SDRAM_CFG)"
 
 # === JOP SDRAM targets ===
 
@@ -350,12 +350,31 @@ sdram-monitor:
 # Generated artefacts go under build/<config>/, keyed by the invocation --
 # see jop.generate.BuildLayout. JOP_CFG_DIR tells the Vivado script where; unset,
 # it falls back to the old in-tree layout, so unconverted flows are unaffected.
-SDRAM_CFG      ?= wukongSdram
-SDRAM_CFG_DIR   = $(REPO_ROOT)/build/$(SDRAM_CFG)
+#
+# SDR_JOP_MHZ builds `wukongSdram` at another clock (`wukongSdram <MHz>`), into
+# its own build/wukongSdram-<MHz>. It needs its own clock IP first:
+#   make sdram-create-ip-mhz SDR_MHZ=80 && make jop-sdram-build SDR_JOP_MHZ=80
+# The directory comes from BuildLayoutMain for a multi-word config, as vivado.mk
+# does, rather than from a second copy of its naming rule here. The app is
+# built with JOP_PRESET quoted, which the %-pattern rule above cannot do.
+SDR_JOP_MHZ    ?=
+SDRAM_CFG      ?= wukongSdram$(if $(SDR_JOP_MHZ), $(SDR_JOP_MHZ))
+ifeq ($(words $(SDRAM_CFG)),1)
+SDRAM_CFG_NAME := $(SDRAM_CFG)
+else
+SDRAM_CFG_NAME := $(shell cd $(REPO_ROOT) && sbt "runMain jop.generate.BuildLayoutMain $(SDRAM_CFG)" 2>/dev/null \
+                    | sed -n 's|^\[info\] build/\(.*\)$$|\1|p' | tail -1)
+endif
+SDRAM_CFG_DIR   = $(REPO_ROOT)/build/$(SDRAM_CFG_NAME)
 
-jop-sdram-generate: $(UCODE_SCALA) $(call APP_JOP,$(SDRAM_CFG))
+.PHONY: jop-sdram-app
+jop-sdram-app:
+	cd $(REPO_ROOT)/java && $(MAKE) all JOP_PRESET="$(SDRAM_CFG)" BUILDTREE=1
+
+jop-sdram-generate: $(UCODE_SCALA) jop-sdram-app
+	@[ -n "$(SDRAM_CFG_NAME)" ] || { echo "no build directory for SDRAM_CFG=\"$(SDRAM_CFG)\""; exit 1; }
 	cd $(REPO_ROOT) && sbt "runMain jop.system.JopTopVerilog $(SDRAM_CFG) buildtree"
-	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(SDRAM_CFG) --write build/$(SDRAM_CFG)/vivado/wukong_jop_sdram.xdc"
+	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(SDRAM_CFG) --write build/$(SDRAM_CFG_NAME)/vivado/wukong_jop_sdram.xdc"
 
 # wukong_peripherals.xdc DROPPED 2026-09-10 (item 57). It constrains e_* and
 # sd_*, and neither wukongSdram nor wukongSdrSmp declares an eth or sdNative
@@ -440,14 +459,22 @@ IP_SDR_SMP     := $(REPO_ROOT)/build/ip/qmtech-xc7a100t-wukong-sdr$(SDR_SMP_MHZ)
 # show up as SDRAM read corruption, not as a build error.
 sdram-create-ip-smp:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl \
-	  -tclargs -freq $(SDR_SMP_MHZ) -ip_root $(IP_SDR_SMP) -shift -3.0
+	  -tclargs -freq $(SDR_SMP_MHZ) -ip_root $(IP_SDR_SMP) -shift -3.0 -eth_mhz $(SDR_SMP_MHZ)
 
 # Any other frequency, into its own root, for the single-core flow above. Same
 # script, same rule for the phase shift (held in ns, converted per frequency).
+#
+# -eth_mhz = the system clock (status item 164). These roots serve wukongSdram
+# and wukongSdrSmp, neither of which has a GMII; the 125 MHz output that the
+# shared 100 MHz IP keeps for wukongSdrFull would here only constrain the VCO.
+# At 80 MHz it forced a fractional system divide and an integer SDRAM divide --
+# 79.93 vs 80.51 MHz -- and the program never printed. The script now refuses
+# such an IP, and check_clk_ip.py refuses one at build time.
 SDR_MHZ ?= 80
 sdram-create-ip-mhz:
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_sdram_clk_wiz.tcl \
-	  -tclargs -freq $(SDR_MHZ) -ip_root $(REPO_ROOT)/build/ip/qmtech-xc7a100t-wukong-sdr$(SDR_MHZ) -shift -3.0
+	  -tclargs -freq $(SDR_MHZ) -ip_root $(REPO_ROOT)/build/ip/qmtech-xc7a100t-wukong-sdr$(SDR_MHZ) -shift -3.0 \
+	  -eth_mhz $(SDR_MHZ)
 
 # The XDC comes with it. jop-sdram-build regenerates the pin constraints for
 # its config; this flow did not, and then read the TRACKED copy below -- so the
@@ -492,7 +519,7 @@ jop-sdram-program:
 	$(MAKE) program-bit BIT_FILE=$(JOP_SDRAM_BITSTREAM)
 
 jop-sdram-monitor:
-	$(MAKE) monitor CFG=$(SDRAM_CFG)
+	$(MAKE) monitor CFG="$(SDRAM_CFG)"
 
 # BLINK RETIRED (2026-08-25). `WukongBlink` had no SpinalHDL source and no git
 # history of one -- create_blink_project.tcl read RTL that has never been in
