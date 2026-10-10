@@ -2493,6 +2493,14 @@ board is what makes a regression silent — [item 60](#item-60)'s lesson.
 contradicted item 57 sat outside the guard's own board list. *A guard that
 enumerates its own subjects decides what it is allowed to find.*
 
+**Declared 2026-10-10: `colorlight-db-i9plus`** (Vivado, not `quartus.mk`).
+It caught that board on its first push: the guard did its job. Its PIN
+constraints are GENERATED (`XdcGeneratorMain`, written to an absolute path in
+the build tree). The one tracked file is `constraints/sdr_cdc.xdc`, the
+`set_clock_groups` exclusion naming the clk_wiz's clocks -- the "clock-group
+exclusions referencing IP clocks" kind in the table below, which is **hand**
+by design, the same file the Wukong SDR flows read.
+
 **Done so far:** the guard now prints the gap and **fails if an undeclared board
 appears**, so it cannot grow silently — `constraint check reaches 7 of 12
 boards; 5 declared outside it, 15 tracked-constraint reference(s)`.
