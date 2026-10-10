@@ -188,6 +188,7 @@ ep4cgx150|028040DD|EP4CGX150 — Cyclone IV GX
 wukong|03631093|XC7A100T — Artix-7 (QMTECH Wukong)
 xc7a100t|03631093|XC7A100T — Artix-7 (QMTECH core board + DB_FPGA V5)
 i5|41111043|LFE5U-25 — ECP5
+colorlight-db|0362C093|XC7A50T — Artix-7 (Colorlight i9+ on the fpga-db-colorlight-i5 base board; an i5/i9 module would read differently)
 EOF
 )
 
