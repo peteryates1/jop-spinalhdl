@@ -38,8 +38,9 @@
 // H2 (shared PHY reset) is NOT driven: see README.md.
 // RX: sampled on the FALLING edge of RXC, safe with or without the PHY's
 // internal RGMII delay.
-// After a JTAG load on this board some flip-flops start at 1, not at their
-// INIT value (README). The first sequencer had no default branch, started in
+// A JTAG load by openFPGALoader v1.1.1 lands on an FPGA that has already
+// configured itself from flash, and the design then does not start from its
+// INIT values (README). The first sequencer had no default branch, started in
 // state 31 and never printed; this one records the illegal state and carries on.
 module EthRgmiiTest #(
     parameter integer SEC_CYCLES = 25_000_000,  // clk25 cycles per report

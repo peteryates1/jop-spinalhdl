@@ -23,15 +23,19 @@ any link, RJ1 right = heartbeat.
 - Address 0 is the other PHY; ETH2 has no jack on this board, so no link.
 - Both report ID 0362:5e62 (Broadcom, the BCM5461-family OUI).
 
-## H2 (PHY reset) must not be driven -- unexplained
+## H2 (PHY reset) must not be driven -- unproven
 
 The first version held H2 low for 20 ms, then high (LiteX's `rst_n`). On
 hardware the design ran and printed (its LEDs showed completed lines), yet
 the stamp's RX pin (GPIO5, sampled over SWD) never toggled, and JTAG lost the
 FPGA minutes later; the board needed a power cycle. A variant differing ONLY
 in leaving H2 undriven works, console and JTAG included. The PHYs leave reset
-on their own, so the module must hold the line high. One trial each way; the
-mechanism is not understood. Settle it before an RGMII stage drives H2.
+on their own, so the module must hold the line high. One trial each way.
+
+Both trials were loaded by the stock openFPGALoader, so the designs did not
+start from their INIT values (see "JTAG loads landed on a running FPGA" below),
+and the failure fits that as well. Retest it with a clean load before an RGMII
+stage drives H2.
 
 Also seen on the way: a module that is not fully seated fails the jig's SRAM
 test (every read 0x4A) and drops JTAG; re-seating fixed both.
@@ -42,6 +46,10 @@ test (every read 0x4A) and drops JTAG; re-seating fixed both.
     sim/run.sh                                      # Verilator checks; ALL PASS
     sudo openFPGALoader -c dirtyJtag --busdev-num "$(../../scripts/jtag_probe_map --busdev colorlight-db)" build/EthRgmiiTest.bit
     sudo tcpdump -i <lan> -n -e -X 'udp port 5005 or ether src 02:4a:4f:50:00:01'
+
+The load needs an openFPGALoader that waits at most about 50 ms between
+INIT_B and CFG_IN; v1.1.1 waits 240 ms on dirtyJtag (see "JTAG loads landed
+on a running FPGA" below). A clean start prints `F 00 00 00 00 0d`.
 
 The header of `EthRgmiiTest.v` has the console format, the buttons and the
 LEDs. `make_frame.py` writes `frame.hex`: a UDP broadcast, 192.168.0.250 ->
@@ -58,18 +66,26 @@ LEDs. `make_frame.py` writes `frame.hex`: a UDP broadcast, 192.168.0.250 ->
   at 100 FD (AUX 851c), BMCR reads 1000 and reg 9 0000.
 - **Clocks.** Counted against clk25 each second: PHY0's RXC (no link)
   125,000,000, PHY1's at 100 FD 25,000,08x, steady for 22 minutes.
-- **TX does not reach the LAN yet.** The first version (TXC = inverted clk25
-  from an ODDR, TXD/TX_CTL from fabric flops) sent a frame a second for six
-  minutes; a VM on the same switch saw the router's broadcasts and none of
-  ours. The FCS is right. Suspect: RGMII samples TX_CTL on both TXC edges
-  (TX_EN rising, TX_EN ^ TX_ER falling) and that TXC's falling edge sat within
-  about 2 ns of the TX_CTL transitions, i.e. TX_ER at the frame edges. The
-  current version shifts TXC 90 degrees (MMCM) with the data in IOB flops
-  (sim: TXC edges 10 and 30 ns into the nibble), and START puts PHY1 in MII
-  loopback to show what the PHY takes from our TX. It has not had a clean run
-  on hardware: its one load started with TXC off and loopback on (next section).
+- **TX works** (evening, after a clean load). TXC is clk25 shifted 90 degrees
+  by an MMCM, and TXD/TX_CTL leave IOB flops on clk25 (sim: TXC edges 10 and
+  30 ns into the nibble). A VM on the same switch received the frame once a
+  second, 11 in 12 s, every one intact:
+  `02:4a:4f:50:00:01 > ff:ff:ff:ff:ff:ff ... 192.168.0.250.5005 > 192.168.0.255.5005: UDP, length 42`
+  with the payload `JOP colorlight-db i9+ RGMII stage 2 hello`. Since the switch
+  forwarded the frames, the FCS is right. The console at the same time read
+  `S 79 6d 85 1c 10 00 00 00 00 ad 00 00 00 53 00 ad`: link up at 100 FD,
+  173 frames sent in 173 s, and PHY1 still receiving LAN traffic.
+  `F 00 00 00 00 0d` means no faults, TXC at 90 degrees, TX on, loopback off.
+- **The first TX version's failure is unexplained.** It used TXC = inverted
+  clk25 from an ODDR, with TXD/TX_CTL from fabric flops. It sent a frame a
+  second for six minutes, and the VM saw none of them. The suspect was TXC's
+  falling edge sitting about 2 ns from the TX_CTL transitions: RGMII samples
+  TX_EN ^ TX_ER on that edge, so the PHY would see TX_ER at the frame edges.
+  That load came from the stock openFPGALoader, so its registers did not start
+  from INIT either (next section). Either cause fits. The 270-degree TXC mode
+  (OPTION) is untested.
 
-## After a JTAG load, some flip-flops start at 1 -- open
+## JTAG loads landed on a running FPGA -- flip-flops did not start at INIT
 
 Seen on every load of a stage 2 build (installed openFPGALoader, dirtyJtag):
 
@@ -83,19 +99,48 @@ Seen on every load of a stage 2 build (installed openFPGALoader, dirtyJtag):
 - `txc_mode` started at 3 (only 0-2 are reachable), `lb_want` at 1, `tx_busy`
   at 1 (one frame more than reports). Others started right (uptime, txcount).
 
-The INIT values in the routed checkpoint are right. Not root-caused. One
-hypothesis: the module boots in master SPI mode; after JPROGRAM openFPGALoader
-waits 120,000 TCK (20 ms at 6 MHz) before CFG_IN, and the flash now holds a
-compressed 33 MHz image (`../colorlight-i9plus-idle`) that is part-way
-through loading by then. It fits the timing: JOP passed DoAll on all three
-modules on 2026-10-10, before the idle image went into their flash. A scratch
-openFPGALoader with a 16-TCK wait failed to configure (DONE=0); one with
-10,000 TCK (UG470's figure) is untested. Until this is settled, a design here
-must not rely on INIT values, and JOP on this board needs a re-check.
+The INIT values in the routed checkpoint are right.
 
-The H2 section above predates this. Its failure (the design looked alive, the
-console pin never toggled) is also what an all-ones start produces, so H2 is
-unproven either way.
+**Cause: the flash had already configured the FPGA when the JTAG bitstream
+arrived.** The module boots in master SPI mode, so when INIT_B rises after
+JPROGRAM the FPGA starts loading its flash. Every module's flash now holds the
+idle image (`../colorlight-i9plus-idle`, 217 KB at 33 MHz x1), which finishes
+about 55-60 ms later. openFPGALoader v1.1.1's `program_mem` polls INIT_B and
+then waits `toggleClk(10000*12)` in Run-Test/Idle before CFG_IN. dirtyJtag runs
+that clock at about 0.5 MHz, not the 6 MHz it shifts at, so the wait is
+240 ms, not 20. The flash load finishes first. The JTAG bitstream then
+reconfigures a running device: the load reports DONE=1 and the new design
+runs, but its registers do not start from INIT. The uptime and TX counters
+read 2 s ahead of a clean load's at the same point after it, as if the
+design had already been running for part of the load.
+
+Measured on 2026-10-11 with a scratch openFPGALoader. Its wait comes from an
+environment variable, and it logs the IR capture (DONE, bit 5) just before
+CFG_IN. Wall times were measured, not computed. The same bitstream was used
+throughout:
+
+| wait after INIT_B | DONE before CFG_IN | start-up record |
+|---|---|---|
+| 1-53 ms (16 to 25,000 TCK) | 0 | clean (`F 00 00 00 00 0d`), 14 of 14 loads |
+| 58 ms (27,500 TCK) | 0; the flash load finishes during CFG_IN | faulty |
+| 63 ms to 2.4 s (30,000 to 1,200,000 TCK) | 1 | faulty (`F 00 00 0f 0f 1f`), 10 of 10 |
+
+JOP was tested with the bitstream that passed DoAll on all three modules on
+2026-10-10, before the idle image went into their flash. Running DeepAll:
+- loaded by the stock tool (`hw_verify.py`): 0 of 2 runs; it never got as far
+  as the download's ready signal;
+- loaded by the 10,000-TCK tool (20 ms wait): 2 of 2 runs, 4/4 ok, `JVM exit!`.
+
+**So with the idle image in flash, no JTAG load from the stock openFPGALoader
+on dirtyJtag is trustworthy, JOP included.** The fix is to start CFG_IN well
+inside the flash load's ~55 ms. One line in `program_mem`, `toggleClk(10000*12)`
+-> `toggleClk(10000)`, is the wait UG470 gives for this step. A 16-TCK wait
+works too: the earlier 16-TCK failure (DONE=0) was pogo contact, not the wait.
+The other route is an idle image that boots more slowly than any loader waits,
+for example uncompressed at the default 3 MHz rate.
+
+A loader can detect it: in the IR capture just before CFG_IN, DONE (bit 5)
+must still be 0.
 
 ## Traps
 

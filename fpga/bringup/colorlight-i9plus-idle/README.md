@@ -38,8 +38,17 @@ skipped the unlock, and "erased" and "wrote" a chip that ignored all of it: exit
 and the flash read back byte-identical to the factory image. `--verify` catches it. The
 standalone `--unprotect-flash` (no file) doesn't use that range, so it works.
 
-JTAG loading over it still works as usual (volatile; a power cycle returns to
-this image).
+JTAG loading over it is volatile: a power cycle returns to this image. **But
+this image boots fast enough to break openFPGALoader v1.1.1's JTAG loads on
+dirtyJtag.** After JPROGRAM, the FPGA starts loading this image as soon as
+INIT_B rises, and it is DONE about 55-60 ms later. openFPGALoader waits 240 ms
+before CFG_IN (120,000 TCK, which dirtyJtag clocks at about 0.5 MHz). Its
+bitstream therefore lands on a running FPGA. The load reports DONE=1, but the
+design's registers do not start from INIT, and JOP fails. The measurements and
+the one-line fix (wait 10,000 TCK) are in
+`../colorlight-db-i9plus-eth/README.md`. An image that boots more slowly than
+any loader's wait, for example uncompressed at the default 3 MHz rate, would
+avoid this without changing the loader.
 
 Written 2026-10-10 to the module on the base board: `--verify` passed, an independent
 read-back matched the bitstream from the sync word with the rest of the 256 KB erased,
