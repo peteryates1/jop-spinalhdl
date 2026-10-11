@@ -44,11 +44,11 @@ dirtyJtag.** After JPROGRAM, the FPGA starts loading this image as soon as
 INIT_B rises, and it is DONE about 55-60 ms later. openFPGALoader waits 240 ms
 before CFG_IN (120,000 TCK, which dirtyJtag clocks at about 0.5 MHz). Its
 bitstream therefore lands on a running FPGA. The load reports DONE=1, but the
-design's registers do not start from INIT, and JOP fails. The measurements and
-the one-line fix (wait 10,000 TCK) are in
-`../colorlight-db-i9plus-eth/README.md`. An image that boots more slowly than
-any loader's wait, for example uncompressed at the default 3 MHz rate, would
-avoid this without changing the loader.
+design's registers do not start from INIT, and JOP fails. The installed loader
+has been patched since 2026-10-11: it waits 16 TCK and refuses the load if DONE
+is already set. The measurements are in `../colorlight-db-i9plus-eth/README.md`.
+An image that boots more slowly than any loader's wait, for example uncompressed
+at the default 3 MHz rate, would avoid this on a host with a stock loader.
 
 Written 2026-10-10 to the module on the base board: `--verify` passed, an independent
 read-back matched the bitstream from the sync word with the rest of the 256 KB erased,

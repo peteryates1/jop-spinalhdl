@@ -168,6 +168,12 @@ BUSDEV ?= --busdev-num $(shell $(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --bus
 
 # The board sets BIT_FILE for the flow being programmed; a board with several
 # flows re-enters this with a different one rather than repeating the command.
+# The PATCHED loader also starts CFG_IN 16 TCK after INIT, and refuses the
+# load if the FPGA has already configured itself from flash. Stock v1.1.1
+# waits 120,000 TCK, which is 240 ms on dirtyJtag. A fast flash image (the
+# Colorlight i9+ idle image, ~55 ms) finishes first, and the bitstream lands
+# on a running FPGA: `done 1`, but no flip-flop starts from INIT. See
+# bringup/colorlight-db-i9plus-eth/README.md.
 program-bit:
 	sudo openFPGALoader -c $(LOADER_CABLE) $(BUSDEV) $(BIT_FILE)
 	@echo "=== programmed: $(BIT_FILE) ==="

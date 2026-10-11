@@ -47,9 +47,10 @@ test (every read 0x4A) and drops JTAG; re-seating fixed both.
     sudo openFPGALoader -c dirtyJtag --busdev-num "$(../../scripts/jtag_probe_map --busdev colorlight-db)" build/EthRgmiiTest.bit
     sudo tcpdump -i <lan> -n -e -X 'udp port 5005 or ether src 02:4a:4f:50:00:01'
 
-The load needs an openFPGALoader that waits at most about 50 ms between
-INIT_B and CFG_IN; v1.1.1 waits 240 ms on dirtyJtag (see "JTAG loads landed
-on a running FPGA" below). A clean start prints `F 00 00 00 00 0d`.
+The load needs the patched openFPGALoader in `/usr/local/bin`. A stock v1.1.1
+waits 240 ms between INIT_B and CFG_IN on dirtyJtag, and its loads here are
+faulty (see "JTAG loads landed on a running FPGA" below). A clean start prints
+`F 00 00 00 00 0d`.
 
 The header of `EthRgmiiTest.v` has the console format, the buttons and the
 LEDs. `make_frame.py` writes `frame.hex`: a UDP broadcast, 192.168.0.250 ->
@@ -131,16 +132,30 @@ JOP was tested with the bitstream that passed DoAll on all three modules on
   as the download's ready signal;
 - loaded by the 10,000-TCK tool (20 ms wait): 2 of 2 runs, 4/4 ok, `JVM exit!`.
 
-**So with the idle image in flash, no JTAG load from the stock openFPGALoader
-on dirtyJtag is trustworthy, JOP included.** The fix is to start CFG_IN well
-inside the flash load's ~55 ms. One line in `program_mem`, `toggleClk(10000*12)`
--> `toggleClk(10000)`, is the wait UG470 gives for this step. A 16-TCK wait
-works too: the earlier 16-TCK failure (DONE=0) was pogo contact, not the wait.
-The other route is an idle image that boots more slowly than any loader waits,
-for example uncompressed at the default 3 MHz rate.
+**So with the idle image in flash, no JTAG load from a stock openFPGALoader on
+dirtyJtag is trustworthy, JOP included.**
 
-A loader can detect it: in the IR capture just before CFG_IN, DONE (bit 5)
-must still be 0.
+**Fixed 2026-10-11 in the installed loader.** `/usr/local/bin/openFPGALoader`
+is built from `~/workspaces/openFPGALoader`, with uncommitted changes there:
+the busdev patch, and in `program_mem` the step-8 wait cut from 120,000 to
+16 TCK (as the Spartan-3 path already does). INIT has already been polled, and
+UG470's 10,000 TCK only cover that. It also checks DONE in the IR capture just
+before CFG_IN, and if it is set it stops with "the FPGA configured itself from
+its flash before CFG_IN" and exit 1. The earlier 16-TCK failure (DONE=0) was
+pogo contact, not the wait. Checked with the new binary:
+- this design: 4 of 4 loads clean (3 from the build directory, then 1 through
+  the installed loader with the command above), and the frames reach the LAN;
+- JOP: `make program`, then `hw_verify` DoAll 68/68 and DeepAll 4/4;
+- the Wukong (`wukongSdram 80`, which has its own bootable flash image):
+  DoAll 4 of 5, then 10 of 10 ready, the same as the old loader's 10 of 10;
+- a test build with the old wait: refused 2 of 2 loads, exit 1.
+
+The single Wukong failure was the session's first load. JOP never sent its
+ready byte, and it did not happen again. On 2026-10-03 the old loader's first
+Wukong run failed the same way, so the cause is open.
+
+The other route is an idle image that boots more slowly than any loader waits,
+for example uncompressed at the default 3 MHz rate. Not done.
 
 ## Traps
 
