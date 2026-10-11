@@ -87,9 +87,11 @@ The INIT values in the routed checkpoint are right. Not root-caused. One
 hypothesis: the module boots in master SPI mode; after JPROGRAM openFPGALoader
 waits 120,000 TCK (20 ms at 6 MHz) before CFG_IN, and the flash now holds a
 compressed 33 MHz image (`../colorlight-i9plus-idle`) that is part-way
-through loading by then. A scratch openFPGALoader with a 16-TCK wait failed to
-configure (DONE=0); one with 10,000 TCK (UG470's figure) is untested. Until
-this is settled, a design here must not rely on INIT values.
+through loading by then. It fits the timing: JOP passed DoAll on all three
+modules on 2026-10-10, before the idle image went into their flash. A scratch
+openFPGALoader with a 16-TCK wait failed to configure (DONE=0); one with
+10,000 TCK (UG470's figure) is untested. Until this is settled, a design here
+must not rely on INIT values, and JOP on this board needs a re-check.
 
 The H2 section above predates this. Its failure (the design looked alive, the
 console pin never toggled) is also what an all-ones start produces, so H2 is
