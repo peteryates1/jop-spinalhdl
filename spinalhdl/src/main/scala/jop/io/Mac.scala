@@ -137,6 +137,17 @@ case class Mac(
   // Register Read Mux
   // ========================================================================
 
+  // The two registers whose READ has a side effect -- RX data pops, RX stats
+  // clear -- show, after the rd cycle, the value that read returned, until the
+  // next read. JOP's BmbMemoryController keeps re-latching an I/O read from
+  // the same address, without rd, for as long as the pipeline waits
+  // (ioRdPending, added for an I/O FPU since removed). Showing the live value
+  // there handed the CPU the word AFTER the one it popped: EthDriver's length
+  // read returned the first data word, every frame was dropped, and the stats
+  // read back as zero (status item 68; found on the Colorlight i9+).
+  val readHold = Reg(Bits(32 bits)) init(0)
+  val rxStats = B(0, 16 bits) ## mac.io.ctrl.rx.stats.drops.asBits ## mac.io.ctrl.rx.stats.errors.asBits
+
   bus.rdData := 0
   switch(bus.addr) {
     is(0) {
@@ -152,17 +163,18 @@ case class Mac(
     }
     is(3) {
       // RX data pop (auto-pop on read)
-      bus.rdData := mac.io.ctrl.rx.stream.payload
+      bus.rdData := Mux(bus.rd, mac.io.ctrl.rx.stream.payload, readHold)
       when(bus.rd) {
         mac.io.ctrl.rx.stream.ready := True
+        readHold := mac.io.ctrl.rx.stream.payload
       }
     }
     is(4) {
       // RX stats (auto-clear on read)
-      bus.rdData(7 downto 0)  := mac.io.ctrl.rx.stats.errors.asBits
-      bus.rdData(15 downto 8) := mac.io.ctrl.rx.stats.drops.asBits
+      bus.rdData := Mux(bus.rd, rxStats, readHold)
       when(bus.rd) {
         mac.io.ctrl.rx.stats.clear := True
+        readHold := rxStats
       }
     }
   }

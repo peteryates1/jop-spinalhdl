@@ -192,7 +192,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[72](#item-72)** — `JopTopVerilog` gave every FPGA build the SERIAL microcode regardless of the config's boot mode — FIXED
 - **[71](#item-71)** — All three EP4CGX150 **BRAM** presets missed timing at 80 MHz; the BRAM read-data path will not close there — FIXED by reclocking, `hw_verify` now refuses violated bitstreams
 - **[70](#item-70)** — UART baud is stated in THREE places that disagree — preset override, a 2 Mbaud default, and 12 Makefile constants. Pick one rate and derive the rest
-- **[68](#item-68)** — EP4CGX150 Ethernet: link comes up at 1 Gbps but NO packets move. DHCP times out against a server that IS on that switch
+- **[68](#item-68)** — EP4CGX150 Ethernet: link comes up at 1 Gbps but NO packets move. DHCP times out against a server that IS on that switch — **probable cause found 2026-10-11 on the Colorlight i9+:** the memory controller's I/O read re-latch read the MAC's pop-on-read RX register one word late; fixed in `Mac.scala`, i9+ networking verified, EP4CGX150 not yet re-run
 - **[67](#item-67)** — `ep4cgx150DbFull` runs with `useStackCache = false`; the original had it true. Revisit once stack-cache SDRAM integration lands
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
@@ -3360,6 +3360,35 @@ moving whole frames is the obvious guess.
 <a id="item-68"></a>
 
 ### Item 68 — Ethernet links at 1 Gbps but no packets move
+
+> **Probable cause found 2026-10-11, on the Colorlight i9+ (same MAC, RGMII at
+> 100 Mb/s).** There too the link came up, the board's frames reached the LAN,
+> and nothing came back. `EthRxDiag` showed the MAC receiving every frame
+> intact (no CRC errors or drops), but each read of the RX data register
+> returned the word AFTER the one it popped: the length read gave the first
+> data word, so every frame reached the stack one word late and was dropped.
+> The stats register, cleared on read, always read zero -- the `Er=0 Dr=0`
+> below.
+>
+> The mechanism: `BmbMemoryController` keeps re-latching an I/O read from the
+> same address, without the read strobe, while the pipeline waits
+> (`ioRdPending`). It was added on 2026-03-01 at 21:04 for an I/O FPU (removed
+> on 2026-03-10), seven hours AFTER the networking commits that verified
+> ping/UDP/TCP/DHCP on this board. It is harmless for a register whose read has
+> no side effect, and wrong for one that pops or clears.
+>
+> **Fix:** `Mac.scala` holds the value a popping or clearing read returned
+> until the next read. `Rgmii100Test` "the CPU reads each word once" reads the
+> way the controller does, and it failed with the board's exact symptom
+> (`the length read returned 0xffffffff`) before the fix. The i9+ then passed
+> ping, UDP and TCP echo (50 KB identical), DHCP and DNS
+> (docs/peripherals/networking.md).
+>
+> **Still open:** the EP4CGX150 has not been re-run with the fix. Any other
+> pop-on-read or clear-on-read device is exposed to the same re-latch: the UART
+> RX data register has that shape too, and is untested with a backlog. The
+> class fix is to remove the re-latch, which no device has needed since
+> 2026-03-10; that is a core change and needs the full regression.
 
 **Found 2026-08-25**, first hardware run of the restored `ep4cgx150DbFull`
 (item 66) on the EP4CGX150 + DB_FPGA V4, cable in, switch connected.

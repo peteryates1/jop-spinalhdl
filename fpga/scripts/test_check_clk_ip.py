@@ -20,27 +20,31 @@ CHECK = os.path.join(HERE, "check_clk_ip.py")
 
 def xci(mhz, mmcm=None):
     """A clk_wiz .xci as check_clk_ip reads it. `mmcm` = (input MHz, CLKFBOUT
-    mult, DIVCLK divide, CLKOUT0 divide, CLKOUT1 divide); by default a
-    consistent integer solution at the requested frequency (VCO = 10 x f,
-    both outputs /10), i.e. a well-formed IP."""
-    fin, mult, divclk, d0, d1 = mmcm or (50.0, float(mhz) / 5.0, 1, 10.0, 10)
+    mult, DIVCLK divide, CLKOUT0 divide, CLKOUT1 divide[, CLKOUT2 divide]); by
+    default a consistent integer solution at the requested frequency (VCO =
+    10 x f, both outputs /10), i.e. a well-formed IP."""
+    fin, mult, divclk, d0, d1, *d2 = mmcm or (50.0, float(mhz) / 5.0, 1, 10.0, 10)
     v = lambda x: [{"value": f"{x}"}]
-    return {"ip_inst": {"parameters": {"component_parameters": {
+    p = {
         "CLKOUT1_REQUESTED_OUT_FREQ": v(mhz),
         "PRIM_IN_FREQ": v(fin),
         "MMCM_CLKFBOUT_MULT_F": v(mult),
         "MMCM_DIVCLK_DIVIDE": v(divclk),
         "MMCM_CLKOUT0_DIVIDE_F": v(d0),
-        "MMCM_CLKOUT1_DIVIDE": v(d1)}}}}
+        "MMCM_CLKOUT1_DIVIDE": v(d1)}
+    if d2:
+        p["MMCM_CLKOUT2_DIVIDE"] = v(d2[0])
+    return {"ip_inst": {"parameters": {"component_parameters": p}}}
 
 
-def run(summary_mhz, ip_mhz, summary_line=None, mmcm=None):
+def run(summary_mhz, ip_mhz, summary_line=None, mmcm=None, extra=""):
     with tempfile.TemporaryDirectory() as d:
         s = os.path.join(d, "x.summary.txt")
         x = os.path.join(d, "sdr_clk.xci")
         with open(s, "w") as f:
             f.write("  Cores:       1\n")
             f.write(summary_line if summary_line is not None else f"  Clock:       {summary_mhz} MHz\n")
+            f.write(extra)
         with open(x, "w") as f:
             json.dump(xci(ip_mhz, mmcm), f)
         return subprocess.run([sys.executable, CHECK, s, x], capture_output=True, text=True).returncode
@@ -63,6 +67,18 @@ CASES = [
     # The fix: 50 x 16 = 800 MHz, /10 on both outputs.
     ("the fixed Wukong -sdr80 IP is accepted (800 MHz / 10)",
      run(80, "80.0", mmcm=(50.0, 16.0, 1, 10.0, 10)), 0),
+    # RGMII at 100 Mb/s (Colorlight i9+, jop.io.Rgmii100) clocks TX from the
+    # IP's THIRD output, so a build that says `Eth clock: 50 MHz` needs that
+    # output at 50. The board's first 50 MHz IP has it at 125 (25 x 40 / 8):
+    # harmless while nothing used it, a dead link once something does.
+    ("an Ethernet build refuses an IP whose third output is 125 MHz",
+     run(50, "50.0", mmcm=(25.0, 40.0, 1, 20.0, 20, 8), extra="  Eth clock:   50 MHz\n"), 1),
+    ("an Ethernet build accepts an IP whose third output is 50 MHz",
+     run(50, "50.0", mmcm=(25.0, 40.0, 1, 20.0, 20, 20), extra="  Eth clock:   50 MHz\n"), 0),
+    ("an Ethernet build whose IP has no third output is an error, not a pass",
+     run(50, "50.0", mmcm=(25.0, 40.0, 1, 20.0, 20), extra="  Eth clock:   50 MHz\n"), 2),
+    ("a build without Ethernet does not look at the third output",
+     run(50, "50.0", mmcm=(25.0, 40.0, 1, 20.0, 20, 8)), 0),
 ]
 
 failed = 0

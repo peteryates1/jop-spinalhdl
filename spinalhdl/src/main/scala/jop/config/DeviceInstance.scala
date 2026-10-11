@@ -47,9 +47,17 @@ object DeviceType {
     val key = "ethernet"
     val addrBits = 4
     val interruptCount = 1
+    /** `rgmii` (jop.io.Rgmii100): RGMII at 100 Mb/s, TXC driven by the FPGA.
+      * `noPhyReset`: the design leaves the PHY's reset alone, so there is no
+      * e_resetn port to constrain (EthernetTopWiring.topPins drops it too). */
     override def verilogPins(p: Map[String, Any]) = {
       val gmii = p.getOrElse("gmii", false).asInstanceOf[Boolean]
-      ethBasePins ++ (if (gmii) ethGmiiExtra else ethMiiExtra)
+      val rgmii = p.getOrElse("rgmii", false).asInstanceOf[Boolean]
+      val pins =
+        if (rgmii) ethRgmiiPins
+        else ethBasePins ++ (if (gmii) ethGmiiExtra else ethMiiExtra)
+      if (p.getOrElse("noPhyReset", false).asInstanceOf[Boolean]) pins - "e_resetn"
+      else pins + ("e_resetn" -> "RESET")
     }
     def create(cfg: JopCoreConfig, p: Map[String, Any], ctx: DeviceContext) =
       Eth(
@@ -167,8 +175,17 @@ object DeviceType {
     "vga_b[0]" -> "B0", "vga_b[1]" -> "B1", "vga_b[2]" -> "B2",
     "vga_b[3]" -> "B3", "vga_b[4]" -> "B4")
 
+  private val ethRgmiiPins = Map(
+    "e_mdc" -> "MDC", "e_mdio" -> "MDIO",
+    "e_txc" -> "TXC", "e_txctl" -> "TX_CTL",
+    "e_txd[0]" -> "TXD0", "e_txd[1]" -> "TXD1",
+    "e_txd[2]" -> "TXD2", "e_txd[3]" -> "TXD3",
+    "e_rxc" -> "RXC", "e_rxctl" -> "RX_CTL",
+    "e_rxd[0]" -> "RXD0", "e_rxd[1]" -> "RXD1",
+    "e_rxd[2]" -> "RXD2", "e_rxd[3]" -> "RXD3")
+
   private val ethBasePins = Map(
-    "e_mdc" -> "MDC", "e_mdio" -> "MDIO", "e_resetn" -> "RESET",
+    "e_mdc" -> "MDC", "e_mdio" -> "MDIO",
     "e_txen" -> "TX_EN", "e_txer" -> "TX_ER",
     "e_txd[0]" -> "TXD0", "e_txd[1]" -> "TXD1",
     "e_txd[2]" -> "TXD2", "e_txd[3]" -> "TXD3",

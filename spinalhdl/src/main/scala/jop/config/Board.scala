@@ -253,7 +253,12 @@ object PllType {
     * not a frequency claim; see that script), clk_100_shift the SDRAM clock.
     *
     * SDR only. The module has no other memory JOP can run from, and a BRAM
-    * branch would need a second IP shape for nothing -- refuse instead. */
+    * branch would need a second IP shape for nothing -- refuse instead.
+    *
+    * clk_125 is the Ethernet clock: jop.io.Rgmii100 needs it at 50 MHz
+    * (Rgmii100.TxClockMhz). A build with RGMII says so in its summary, and
+    * check_clk_ip.py holds the IP to it. A build without Ethernet leaves it
+    * unused. */
   case object XilinxColorlightI9Plus extends PllType {
     def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
       require(memType == MemoryType.SDRAM_SDR,
@@ -262,7 +267,7 @@ object PllType {
       clkWiz.io.clk_in := inputClock
       clkWiz.io.resetn := True
       PllResult(systemClk = Some(clkWiz.io.clk_100), locked = clkWiz.io.locked,
-        sdramClk = Some(clkWiz.io.clk_100_shift))
+        sdramClk = Some(clkWiz.io.clk_100_shift), ethClk = Some(clkWiz.io.clk_125))
     }
   }
 
@@ -654,6 +659,15 @@ object Board {
    * SDRAM (U6, M12L64322A, 32 bits wide) is strapped exactly as on the i5 --
    * CKE to VCC, CS to GND, all DQM to GND -- so the same parking applies, done
    * by the base board.
+   *
+   * The two B50612D PHYs talk RGMII. They are named by designator because they
+   * are the same part: U9 answers on MDIO address 1 and drives the SODIMM ETH1
+   * pairs (RJ1 on the Atari base board); U5 answers on address 0 and drives
+   * ETH2 (no jack there). These are LiteX colorlight_i9plus.py `eth` 1 and 0.
+   * Measured 2026-10-11: U9's RX byte-exact and its TX on the LAN at 100 Mb/s
+   * (fpga/bringup/colorlight-db-i9plus-eth). MDC/MDIO and the reset H2 are
+   * shared. MDIO gets an internal pull-up, as the bring-up ran: whether the
+   * module has one of its own is not known.
    */
   def ColorlightI9Plus = Board(
     name = "colorlight-i9plus",
@@ -662,8 +676,21 @@ object Board {
     entitySuffix = "I9Plus",
     useStackCache = true,
     connectors = Map("SODIMM" -> ColorlightSodimm.SodimmI9Plus),
+    portPulls = Map("e_mdio" -> "PULLUP"),
     devices = Seq(
       BoardDevice("CLOCK_25MHz", mapping = Map("clock" -> "K4")),
+      BoardDevice("B50612D_U9", mapping = Map(
+        "TXC" -> "M6", "TX_CTL" -> "N5",
+        "TXD0" -> "M5", "TXD1" -> "M2", "TXD2" -> "N4", "TXD3" -> "P4",
+        "RXC" -> "L3", "RX_CTL" -> "R1",
+        "RXD0" -> "N2", "RXD1" -> "N3", "RXD2" -> "P1", "RXD3" -> "P2",
+        "MDC" -> "G1", "MDIO" -> "G2", "RESET" -> "H2")),
+      BoardDevice("B50612D_U5", mapping = Map(
+        "TXC" -> "A1", "TX_CTL" -> "D1",
+        "TXD0" -> "B2", "TXD1" -> "B1", "TXD2" -> "C2", "TXD3" -> "D2",
+        "RXC" -> "H4", "RX_CTL" -> "F1",
+        "RXD0" -> "E3", "RXD1" -> "E2", "RXD2" -> "E1", "RXD3" -> "F3",
+        "MDC" -> "G1", "MDIO" -> "G2", "RESET" -> "H2")),
       BoardDevice("M12L64322A", role = Some("sdr"), mapping = Map(
         "CLK" -> "E14", "RAS_n" -> "A14", "CAS_n" -> "D14", "WE_n" -> "D17",
         "BA0" -> "D19", "BA1" -> "B13",

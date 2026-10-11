@@ -23,6 +23,16 @@ any link, RJ1 right = heartbeat.
 - Address 0 is the other PHY; ETH2 has no jack on this board, so no link.
 - Both report ID 0362:5e62 (Broadcom, the BCM5461-family OUI).
 
+## JOP networking on these pins
+
+The JOP MAC and the Java TCP/IP stack run on PHY1 (U9) through `jop.io.Rgmii100`,
+which carries this design's TX timing over: TXC 90 degrees from the data, data
+in IOB flops, RX on RXC's falling edge. Preset `colorlightDbI9PlusEth`. On
+2026-10-11: ping, UDP and TCP echo, DHCP and DNS from the LAN; see
+docs/peripherals/networking.md. Getting there also found the probable cause of
+status item 68, JOP's Ethernet RX dead on the EP4CGX150 since March (not yet
+re-run there).
+
 ## H2 (PHY reset) must not be driven -- unproven
 
 The first version held H2 low for 20 ms, then high (LiteX's `rst_n`). On

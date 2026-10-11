@@ -1,8 +1,14 @@
 # JOP Networking — TCP/IP Stack
 
 Comprehensive documentation for the JOP networking module: a poll-based TCP/IP
-stack running on the QMTECH EP4CGX150 + DB_FPGA daughter board with RTL8211EG
-Gigabit Ethernet PHY.
+stack, first run on the QMTECH EP4CGX150 + DB_FPGA daughter board with RTL8211EG
+Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
+100 Mb/s; see [Colorlight i9+](#colorlight-i9-rgmii-at-100-mbs)).
+
+| Board | PHY / interface | Preset | Hardware |
+|-------|-----------------|--------|----------|
+| EP4CGX150 + DB_FPGA V4 | RTL8211EG, GMII 1 Gb/s | `ep4cgx150DbFull` | worked 2026-03-01; the restored preset linked but moved no packets on 2026-08-25 (status item 68), probably the RX read bug fixed 2026-10-11 (below), not yet re-run |
+| Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11) |
 
 ## Status
 
@@ -173,6 +179,20 @@ The EthMac hardware object (`com.jopdesign.hw.EthMac`) maps to I/O address
 1. Check RX valid (status bit 5)
 2. Read offset +3 → frame length in bits
 3. Read offset +3 repeatedly → data words (auto-pop each read)
+
+**Reads with a side effect hold their value.** +3 pops and +4 clears, and
+after the read cycle both show the value that read returned, until the next
+read. JOP's `BmbMemoryController` keeps re-latching an I/O read from the same
+address, without the read strobe, for as long as the pipeline waits
+(`ioRdPending`, added on 2026-03-01 for an I/O FPU that was removed on
+2026-03-10). Before the hold, that re-latch handed the CPU the word AFTER the one
+it popped: the length read returned the first data word, so every frame reached
+the stack one word late and was dropped, and the stats always read zero. The
+symptom was status item 68's: link up, frames on the wire both ways, `Rx=0 Er=0
+Dr=0`. `Rgmii100Test` reads the way the controller does
+(`busReadAsJop`) and failed with the board's exact symptom before the fix.
+`EthRxDiag` (`java/apps/Small`) prints what the MAC hands the CPU, raw, below the
+stack.
 
 ### Frame Format
 
@@ -429,6 +449,45 @@ NetLoop.poll()
 
 Called from the application main loop. **Must be called frequently** — TCP
 retransmit timers and ARP timeouts depend on it.
+
+## Colorlight i9+ (RGMII at 100 Mb/s)
+
+The module's B50612D U9 (MDIO address 1; RJ1 on the fpga-db-colorlight-i5 base
+board), preset `colorlightDbI9PlusEth`, 50 MHz:
+
+- **RGMII:** `jop.io.Rgmii100` in front of the MAC in its 4-bit (MII) mode. TX
+  runs on the clock IP's third output at 50 MHz, enabled every other cycle.
+  TXC comes from an ODDR with both edges 10 ns from any TXD/TX_CTL change,
+  because RGMII samples TX_CTL on both edges. RX is sampled on RXC's falling
+  edge. `Rgmii100Test` checks this at the pins, through the MAC's registers.
+- **PHY reset:** H2 is shared and not driven.
+- **Driver:** `EthDriver` takes the PHY at `Const.ETH_PHY_ADDR` (1). A scan
+  would find U5 first, the PHY with no jack. With `Const.ETH_GIGABIT` false it
+  does not advertise 1000BASE-T. It reads the speed from the standard registers.
+- **Clock IP:** the build summary says `Eth clock: 50 MHz`, and
+  `check_clk_ip.py` refuses an IP that makes anything else on that output.
+
+```bash
+make -C fpga/colorlight-db-i9plus CFG=colorlightDbI9PlusEth create-ip   # clk_125 at 50 MHz
+make -C fpga/colorlight-db-i9plus CFG=colorlightDbI9PlusEth build
+make -C java/apps/Small JOP_PRESET=colorlightDbI9PlusEth APP_NAME=NetTest EXTRA_SRC=../../net/src
+make -C fpga/colorlight-db-i9plus CFG=colorlightDbI9PlusEth program
+python3 fpga/scripts/download.py -e build/colorlightDbI9PlusEth/java/apps/Small/NetTest.jop \
+    "$(fpga/scripts/usb_serial_map --by-id colorlight-db-0)" 1000000
+```
+
+Hardware, 2026-10-11, timing met (WNS +0.767 ns), RJ1 to a gigabit switch,
+tested from a VM on the same LAN:
+
+| Test | Result |
+|------|--------|
+| Link | `Link UP 100M` |
+| ping, 64 bytes | 50/50, about 8 ms |
+| ping, 1400 bytes | 5/5, about 112 ms |
+| UDP echo, port 7 | 22 and 1400 bytes back identical |
+| TCP echo, port 7 | 10 KB and 50 KB of random data back identical |
+| DHCP (`DhcpTest`) | OFFER and BOUND 192.168.0.215 from the router; the leased address answers ping |
+| DNS (`DhcpTest`) | resolved through the leased DNS server |
 
 ## Build and Test
 

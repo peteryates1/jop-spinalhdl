@@ -114,6 +114,26 @@ object XdcGenerator {
       sb.append("\n")
     }
 
+    // Ethernet over RGMII (jop.io.Rgmii100). Its TX clock is the board PLL's
+    // Ethernet output, which Vivado derives; RXC comes in from the PHY and is
+    // asynchronous to everything (the MAC crosses it with CC FIFOs). A single
+    // -group makes it asynchronous to every other clock without naming the
+    // PLL's, which differ per board.
+    val rgmii = config.devices.values.exists(d =>
+      d.deviceType == DeviceType.Ethernet && d.params.getOrElse("rgmii", false) == true)
+    if (rgmii) {
+      sb.append("# Ethernet: RGMII at 100 Mb/s (jop.io.Rgmii100)\n")
+      sb.append("# RXC is constrained at 8 ns, not 40: with no link, or before\n")
+      sb.append("# autonegotiation settles, the PHY runs it at 125 MHz.\n")
+      sb.append("create_clock -period 8.000 -name e_rxc [get_ports {e_rxc}]\n")
+      sb.append("set_clock_groups -asynchronous -group [get_clocks e_rxc]\n")
+      sb.append("# TXD/TX_CTL launch, and RXD/RX_CTL are captured, in IOB flops\n")
+      sb.append("set_property IOB TRUE [get_ports {e_txd[*]}]\n")
+      sb.append("set_property IOB TRUE [get_ports {e_txctl}]\n")
+      sb.append("set_property IOB TRUE [get_ports {e_rxd[*]}]\n")
+      sb.append("set_property IOB TRUE [get_ports {e_rxctl}]\n\n")
+    }
+
     // Ports the design has but the board does not wire -- see Board.parkedPins.
     // Gated exactly as LpfGenerator gates them: an sdram_* port exists only
     // when the system uses SDR, and constraining a port that is not there is a

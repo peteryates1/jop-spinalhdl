@@ -188,6 +188,7 @@ object JopTopVerilog {
     // colorlightDbI9PlusSdram [MHz] -- default 50, the hardware-verified clock
     case "colorlightDbI9PlusSdram" =>
       JopConfig.colorlightDbI9PlusSdram(args.drop(1).headOption.map(_.toInt).getOrElse(50))
+    case "colorlightDbI9PlusEth" => JopConfig.colorlightDbI9PlusEth
     case other =>
       throw new RuntimeException(s"Unknown preset: '$other'. Available: " +
         "ep4cgx150Serial, ep4cgx150Bram, ep4cgx150BramGc, ep4cgx150BramSerial, " +
@@ -197,7 +198,7 @@ object JopTopVerilog {
         "wukongFull, wukongSdrFull, wukongFullSmp, wukongSmp, " +
         "wukongDualIndependent, wukongDualSmp, " +
         "xc7a100tDbSerial, xc7a100tDbFull, xc7a100tDbSmp, ae115fbDdr2, " +
-        "colorlightI5Bram, colorlightI5Sdram, colorlightDbI9PlusSdram, " +
+        "colorlightI5Bram, colorlightI5Sdram, colorlightDbI9PlusSdram, colorlightDbI9PlusEth, " +
         "minimum, max1000Sdram, ep4ce6Sdram")
   }
 
@@ -220,6 +221,10 @@ object JopTopVerilog {
       line(f"${p}Clock:       $mhz MHz")
       line(f"${p}Memory:      ${sys.memory}")
       line(f"${p}Boot mode:   ${sys.bootMode}")
+      // What the clock IP must make on its Ethernet output: check_clk_ip.py
+      // reads this line and refuses an IP that does not.
+      if (sys.ethRgmii)
+        line(f"${p}Eth clock:   ${jop.io.Rgmii100.TxClockMhz} MHz")
       val devs = sys.effectiveDevices
       devs.values.find(_.deviceType.key == "uart").foreach { u =>
         val baud = u.params.get("baudRate").map(_.asInstanceOf[Int]).getOrElse(2000000)

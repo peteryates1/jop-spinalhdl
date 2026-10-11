@@ -19,6 +19,11 @@ picks its IP from the build summary and runs this before Vivado.
 
 The summary is the build's own record (`Clock:  80 MHz`), the same source
 console.mk reads the baud from.
+
+A build that clocks Ethernet TX from the IP's THIRD output (RGMII at 100 Mb/s,
+jop.io.Rgmii100 on the Colorlight i9+) says so with `Eth clock: N MHz`, and
+then that output must run at exactly N. The i9+'s first 50 MHz IP made 125
+there (generated before -eth_mhz existed): nothing used it until Ethernet did.
 """
 import json
 import re
@@ -39,6 +44,27 @@ def xci_mhz(path):
         d = json.load(f)
     p = d["ip_inst"]["parameters"]["component_parameters"]
     return float(p["CLKOUT1_REQUESTED_OUT_FREQ"][0]["value"])
+
+
+def summary_eth_mhz(path):
+    """The frequency the design needs on the IP's third output, or None when
+    the summary has no `Eth clock:` line (no Ethernet clocked from it)."""
+    with open(path) as f:
+        for line in f:
+            m = re.match(r"\s*Eth clock:\s*([0-9.]+)\s*MHz", line)
+            if m:
+                return float(m.group(1))
+    return None
+
+
+def actual_eth_mhz(path):
+    """What the third output (clk_wiz CLKOUT3 = MMCM CLKOUT2) actually makes."""
+    with open(path) as f:
+        d = json.load(f)
+    p = d["ip_inst"]["parameters"]["component_parameters"]
+    v = lambda k: float(p[k][0]["value"])
+    vco = v("PRIM_IN_FREQ") * v("MMCM_CLKFBOUT_MULT_F") / v("MMCM_DIVCLK_DIVIDE")
+    return vco / v("MMCM_CLKOUT2_DIVIDE")
 
 
 def actual_outputs_mhz(path):
@@ -102,8 +128,31 @@ def main(argv):
         print(f"check_clk_ip: {argv[2]}: asked for {want:g} MHz, the IP actually "
               f"makes {sys_mhz:.4f} MHz.", file=sys.stderr)
         return 1
+    eth_note = ""
+    try:
+        eth_want = summary_eth_mhz(argv[1])
+    except OSError as e:
+        print(f"check_clk_ip: cannot read: {e}", file=sys.stderr)
+        return 2
+    if eth_want is not None:
+        try:
+            eth_have = actual_eth_mhz(argv[2])
+        except (KeyError, IndexError, ValueError, ZeroDivisionError) as e:
+            print(f"check_clk_ip: {argv[2]}: the build needs {eth_want:g} MHz on the "
+                  f"third output (Ethernet TX), and the IP's setting for it cannot be "
+                  f"read: {e}", file=sys.stderr)
+            return 2
+        if abs(eth_have - eth_want) > 1e-6:
+            print(f"check_clk_ip: {argv[2]}: the third output (clk_125, the Ethernet TX "
+                  f"clock) runs at {eth_have:.4f} MHz, but this build needs "
+                  f"{eth_want:g} MHz.\n"
+                  f"  Refusing: RGMII would be clocked at the wrong rate and no frame "
+                  f"would reach the LAN. Regenerate the IP (make create-ip, i.e. "
+                  f"create_sdram_clk_wiz.tcl -eth_mhz {eth_want:g}).", file=sys.stderr)
+            return 1
+        eth_note = f", Ethernet TX {eth_have:.4f} MHz"
     print(f"check_clk_ip: {have:g} MHz clock IP for a {want:g} MHz build -- ok "
-          f"(system and SDRAM both {sys_mhz:.4f} MHz)")
+          f"(system and SDRAM both {sys_mhz:.4f} MHz{eth_note})")
     return 0
 
 

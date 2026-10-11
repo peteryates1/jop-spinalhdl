@@ -140,6 +140,15 @@ object ConstGenerator {
     val stackSize = if (scOn) 64 + scWords else 1 << scRamWidth
 
     val hasEth = config.systems.exists(_.hasDevice(DeviceType.Ethernet))
+    // What EthDriver needs to know about the PHY. A board whose PHY address is
+    // not stated scans (-1): that took the FIRST PHY to answer, which on the
+    // Colorlight i9+ is U5 at address 0 -- the one with no jack. And only a
+    // GMII MAC can carry 1000BASE-T: an MII or RGMII-100 build that let the PHY
+    // advertise it would link at a speed the MAC cannot run.
+    val ethInst = config.systems.flatMap(_.effectiveDevices.values)
+      .find(_.deviceType == DeviceType.Ethernet)
+    val ethPhyAddr = ethInst.flatMap(_.params.get("phyAddr")).map(_.asInstanceOf[Int]).getOrElse(-1)
+    val ethGigabit = ethInst.exists(_.params.getOrElse("gmii", false).asInstanceOf[Boolean])
     val hasSdSpi = config.systems.exists(_.hasDevice(DeviceType.SdSpi))
     val hasSdNative = config.systems.exists(_.hasDevice(DeviceType.SdNative))
     val hasVgaDma = config.systems.exists(_.hasDevice(DeviceType.VgaDma))
@@ -548,6 +557,10 @@ object ConstGenerator {
          |
          |	/** Board has Ethernet PHY */
          |	public static final boolean HAS_ETHERNET = $hasEth;
+         |	/** MDIO address of the PHY EthDriver uses; -1 = the first that answers */
+         |	public static final int ETH_PHY_ADDR = $ethPhyAddr;
+         |	/** The MAC runs 1000 Mb/s (GMII); when false, never advertise 1000BASE-T */
+         |	public static final boolean ETH_GIGABIT = $ethGigabit;
          |	/** Board has SD card interface (SPI or Native) */
          |	public static final boolean HAS_SD_CARD = ${hasSdSpi || hasSdNative};
          |	/** Board has VGA output (DMA or Text) */

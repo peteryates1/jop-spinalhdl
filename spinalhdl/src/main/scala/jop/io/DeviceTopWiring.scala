@@ -112,8 +112,25 @@ object EthernetTopWiring extends DeviceTopWiring {
 
   override def topPins(inst: DeviceInstance, manufacturer: Manufacturer): Seq[TopPin] = {
     val gmii = inst.params.getOrElse("gmii", false).asInstanceOf[Boolean]
+    val rgmii = inst.params.getOrElse("rgmii", false).asInstanceOf[Boolean]
     val dataWidth = inst.params.getOrElse("phyDataWidth", if (gmii) 8 else 4).asInstanceOf[Int]
-    Seq(
+    // A design that leaves the PHY's reset alone has no port for it -- a
+    // declared but unconstrained port would float (see DeviceType.Ethernet).
+    val reset =
+      if (inst.params.getOrElse("noPhyReset", false).asInstanceOf[Boolean]) Nil
+      else Seq(TopPin("e_resetn", TopPinType.Out()))
+    val mdio = Seq(
+      TopPin("e_mdc", TopPinType.Out()),
+      TopPin("e_mdio", TopPinType.TriStateBool))
+    if (rgmii) Seq(
+      TopPin("e_txc", TopPinType.Out()),
+      TopPin("e_txd", TopPinType.Out(4)),
+      TopPin("e_txctl", TopPinType.Out()),
+      TopPin("e_rxc", TopPinType.In()),
+      TopPin("e_rxd", TopPinType.In(4)),
+      TopPin("e_rxctl", TopPinType.In())
+    ) ++ mdio ++ reset
+    else Seq(
       TopPin("e_txd", TopPinType.Out(dataWidth)),
       TopPin("e_txen", TopPinType.Out()),
       TopPin("e_txer", TopPinType.Out()),
@@ -121,11 +138,8 @@ object EthernetTopWiring extends DeviceTopWiring {
       TopPin("e_rxd", TopPinType.In(dataWidth)),
       TopPin("e_rxdv", TopPinType.In()),
       TopPin("e_rxer", TopPinType.In()),
-      TopPin("e_rxc", TopPinType.In()),
-      TopPin("e_mdc", TopPinType.Out()),
-      TopPin("e_mdio", TopPinType.TriStateBool),
-      TopPin("e_resetn", TopPinType.Out())
-    ) ++ (if (!gmii) Seq(TopPin("e_txc", TopPinType.In())) else Seq.empty)
+      TopPin("e_rxc", TopPinType.In())
+    ) ++ mdio ++ reset ++ (if (!gmii) Seq(TopPin("e_txc", TopPinType.In())) else Seq.empty)
   }
 
   override def createClockDomains(
@@ -136,9 +150,15 @@ object EthernetTopWiring extends DeviceTopWiring {
 
     val sys = ctx.config.system
 
-    // TX clock source
+    // TX clock source. RGMII: the PLL's Ethernet output at Rgmii100.TxClockMhz,
+    // which Rgmii100.txDomain below slows to the nibble rate.
     val ethTxClk =
-      if (sys.ethGmii && ctx.ethPll != null) ctx.ethPll.io.c0
+      if (sys.ethRgmii) {
+        require(ctx.pllResult != null && ctx.pllResult.ethClk.isDefined,
+          "RGMII needs an Ethernet clock from the board's PLL (PllResult.ethClk)")
+        ctx.pllResult.ethClk.get
+      }
+      else if (sys.ethGmii && ctx.ethPll != null) ctx.ethPll.io.c0
       else if (sys.ethGmii && ctx.pllResult != null && ctx.pllResult.ethClk.isDefined) ctx.pllResult.ethClk.get
       else ioPins.get("e_txc").map(_.asInstanceOf[Bool]).orNull
 
@@ -150,11 +170,12 @@ object EthernetTopWiring extends DeviceTopWiring {
         inputPolarity = HIGH,
         outputPolarity = HIGH
       )
-      ClockDomain(
+      val raw = ClockDomain(
         clock = ethTxClk,
         reset = txReset,
         config = ClockDomainConfig(resetKind = ASYNC, resetActiveLevel = HIGH)
       )
+      if (sys.ethRgmii) Rgmii100.txDomain(raw) else raw
     }
 
     val ethRxClk = ioPins("e_rxc").asInstanceOf[Bool]
@@ -188,6 +209,43 @@ object EthernetTopWiring extends DeviceTopWiring {
     val sys = ctx.config.system
     val dataWidth = sys.phyDataWidth
 
+    // MDIO
+    ioPins("e_mdc").asInstanceOf[Bool] := cluster.devicePin[Bool](instanceName, "mdc")
+    val mdio = ioPins("e_mdio").asInstanceOf[TriState[Bool]]
+    mdio.write := cluster.devicePin[Bool](instanceName, "mdioOut")
+    mdio.writeEnable := cluster.devicePin[Bool](instanceName, "mdioOe")
+    cluster.devicePin[Bool](instanceName, "mdioIn") := mdio.read
+
+    // PHY hardware reset, unless the design leaves it alone (noPhyReset)
+    if (ioPins.contains("e_resetn")) {
+      val phyRstCnt = Reg(UInt(20 bits)) init(0)
+      val phyRstDone = phyRstCnt.andR
+      when(!phyRstDone) { phyRstCnt := phyRstCnt + 1 }
+      ioPins("e_resetn").asInstanceOf[Bool] := phyRstDone && cluster.devicePin[Bool](instanceName, "phyReset")
+    }
+
+    // PHY interface
+    val ethPhyIo = cluster.devicePins(instanceName).elements.find(_._1 == "phy").get._2.asInstanceOf[PhyIo]
+
+    // RGMII: the whole pin side is Rgmii100 (TX inter-frame gap, TXC, the RX
+    // framing), clocked by the domains createClockDomains made.
+    if (sys.ethRgmii) {
+      val rgmii = Rgmii100(clockDomains.ethTxCd.get, clockDomains.ethRxCd.get)
+      rgmii.io.phy.tx << ethPhyIo.tx
+      ethPhyIo.rx << rgmii.io.phy.rx
+      ethPhyIo.colision := rgmii.io.phy.colision
+      ethPhyIo.busy := rgmii.io.phy.busy
+      ioPins("e_txc").asInstanceOf[Bool] := rgmii.io.txc
+      ioPins("e_txd").asInstanceOf[Bits] := rgmii.io.txd
+      ioPins("e_txctl").asInstanceOf[Bool] := rgmii.io.txCtl
+      rgmii.io.rxd := ioPins("e_rxd").asInstanceOf[Bits]
+      rgmii.io.rxCtl := ioPins("e_rxctl").asInstanceOf[Bool]
+      return
+    }
+
+    ethPhyIo.colision := False
+    ethPhyIo.busy := False
+
     // GTX clock
     if (sys.ethGmii) {
       val ethTxClk =
@@ -198,24 +256,6 @@ object EthernetTopWiring extends DeviceTopWiring {
     } else {
       ioPins("e_gtxc").asInstanceOf[Bool] := False
     }
-
-    // MDIO
-    ioPins("e_mdc").asInstanceOf[Bool] := cluster.devicePin[Bool](instanceName, "mdc")
-    val mdio = ioPins("e_mdio").asInstanceOf[TriState[Bool]]
-    mdio.write := cluster.devicePin[Bool](instanceName, "mdioOut")
-    mdio.writeEnable := cluster.devicePin[Bool](instanceName, "mdioOe")
-    cluster.devicePin[Bool](instanceName, "mdioIn") := mdio.read
-
-    // PHY interface
-    val ethPhyIo = cluster.devicePins(instanceName).elements.find(_._1 == "phy").get._2.asInstanceOf[PhyIo]
-    ethPhyIo.colision := False
-    ethPhyIo.busy := False
-
-    // PHY hardware reset
-    val phyRstCnt = Reg(UInt(20 bits)) init(0)
-    val phyRstDone = phyRstCnt.andR
-    when(!phyRstDone) { phyRstCnt := phyRstCnt + 1 }
-    ioPins("e_resetn").asInstanceOf[Bool] := phyRstDone && cluster.devicePin[Bool](instanceName, "phyReset")
 
     // TX adapter
     val ethTxCd = clockDomains.ethTxCd.get

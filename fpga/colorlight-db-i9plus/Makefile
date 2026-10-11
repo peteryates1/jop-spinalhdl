@@ -3,10 +3,15 @@
 # running from the module's 8 MB SDRAM.
 #
 #   make create-ip   the clk_wiz for this build's frequency (once per MHz)
-#   make             generate RTL + XDC, then Vivado (non-project)
+#   make build       generate RTL + XDC, then Vivado (non-project). A bare
+#                    `make` does NOT build: vivado.mk's microcode rule comes
+#                    first and becomes the default goal (also on the Wukong).
 #   make program     load the .bit through the board's RP2040-STAMP (dirtyJtag)
 #   make download    send HelloWorld.jop over the stamp's CDC0 (console.mk)
 #   make monitor
+#
+# With Ethernet (RJ1, RGMII at 100 Mb/s): CFG=colorlightDbI9PlusEth on each
+# of the above; docs/peripherals/networking.md has the steps and results.
 #
 # The flow is the shared one (../vivado.mk, fpga/scripts/vivado_build_
 # nonproject.tcl). What is board-specific is only: the part, the clock IP and
@@ -53,10 +58,13 @@ $(GEN_XDC): $(GEN_STAMP)
 	cd $(REPO_ROOT) && sbt "runMain jop.generate.XdcGeneratorMain $(CFG) --write $(abspath $(GEN_XDC))"
 
 # The clk_wiz's third output (clk_125, the Wukong's GMII clock) is generated at
-# the SYSTEM frequency here: this board has no Ethernet, and at 125 MHz it
-# forced a compromise VCO at 80 MHz that split the system and SDRAM clocks
-# (status item 164). The generator refuses a split IP; PRIMITIVE=PLL is the
-# other lever if one ever turns up.
+# the SYSTEM frequency here: at 125 MHz it forced a compromise VCO at 80 MHz
+# that split the system and SDRAM clocks (status item 164). The generator
+# refuses a split IP; PRIMITIVE=PLL is the other lever if one ever turns up.
+# The Ethernet build (CFG=colorlightDbI9PlusEth, 50 MHz only) clocks RGMII TX
+# from that output at 50 MHz, i.e. the system frequency; its summary says
+# `Eth clock: 50 MHz` and check_clk_ip.py refuses an IP that makes anything
+# else -- the first 50 MHz IP made 125 there, from before -eth_mhz existed.
 PRIMITIVE ?= MMCM
 # SDRAM clock lead in ns. -3.0 is the house value (Wukong, i5, this board at
 # 50/75 MHz). A PLL can only shift in VCO/8 steps; ask for a lead it cannot

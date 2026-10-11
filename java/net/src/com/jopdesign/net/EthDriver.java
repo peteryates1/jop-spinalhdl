@@ -78,9 +78,13 @@ public class EthDriver {
 		Native.wr(0, Const.IO_MDIO + 3);
 		for (int i = 0; i < 30; i++) { delay(500000); toggleWd(); }
 
-		// Scan MDIO bus for PHY
+		// Find the PHY. A board that names its PHY's address
+		// (Const.ETH_PHY_ADDR) gets that one: the Colorlight i9+ has two,
+		// and the first to answer, at address 0, is the one with no jack.
+		// Otherwise the first PHY on the bus.
 		phyAddr = -1;
 		for (int a = 0; a < 32; a++) {
+			if (Const.ETH_PHY_ADDR >= 0 && a != Const.ETH_PHY_ADDR) continue;
 			toggleWd();
 			int id1 = mdioRead(a, 2);
 			int id2 = mdioRead(a, 3);
@@ -93,8 +97,10 @@ public class EthDriver {
 			return false;
 		}
 
-		// Enable 1 Gbps (GMII) autonegotiation
-		mdioWrite(phyAddr, 9, 0x0200);    // Advertise 1000BASE-T FD
+		// Autonegotiate. 1000BASE-T only where the MAC can carry it (GMII,
+		// Const.ETH_GIGABIT): a MII or RGMII-100 MAC on a gigabit link would
+		// move nothing, so it must not be advertised there.
+		mdioWrite(phyAddr, 9, Const.ETH_GIGABIT ? 0x0200 : 0x0000);  // 1000BASE-T FD, or none
 		mdioWrite(phyAddr, 4, 0x01E1);    // Advertise 10/100M all modes
 		mdioWrite(phyAddr, 0, 0x1200);    // Auto-negotiate restart
 
@@ -130,16 +136,23 @@ public class EthDriver {
 	}
 
 	/**
-	 * Read PHY-specific status register (RTL8211EG reg 17).
-	 * Returns negotiated speed: 1000, 100, or 10. Returns -1 on error.
+	 * The negotiated speed: 1000, 100 or 10; -1 on error. Taken from the
+	 * standard registers -- what both ends advertised (IEEE 802.3 clause 22,
+	 * registers 4/5 and 9/10) -- so it holds for any PHY. Register 17, read
+	 * here before, is the RTL8211EG's own; the Colorlight i9+'s B50612D keeps
+	 * its speed in AUX status (0x19).
 	 */
 	public static int getLinkSpeed() {
 		if (phyAddr == -1) return -1;
-		int reg17 = mdioRead(phyAddr, 17);
-		if (reg17 == -1) return -1;
-		int speed = (reg17 >>> 14) & 3;
-		if (speed == 2) return 1000;
-		if (speed == 1) return 100;
+		int ctl1000 = mdioRead(phyAddr, 9);
+		int stat1000 = mdioRead(phyAddr, 10);
+		int anar = mdioRead(phyAddr, 4);
+		int anlpar = mdioRead(phyAddr, 5);
+		if (ctl1000 == -1 || stat1000 == -1 || anar == -1 || anlpar == -1) return -1;
+		// 1000BASE-T FD/HD: ours in register 9 bits 9:8, the partner's in 10 bits 11:10
+		if ((ctl1000 & (stat1000 >>> 2) & 0x0300) != 0) return 1000;
+		// 100BASE-TX FD/HD, register 4 and 5 bits 8:7
+		if ((anar & anlpar & 0x0180) != 0) return 100;
 		return 10;
 	}
 

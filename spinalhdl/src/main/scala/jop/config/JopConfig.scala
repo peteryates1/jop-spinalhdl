@@ -128,6 +128,11 @@ case class JopSystem(
       .flatMap(_.params.get("gmii"))
       .exists(_.asInstanceOf[Boolean])
   def phyDataWidth: Int = if (ethGmii) 8 else 4
+  /** RGMII at 100 Mb/s through jop.io.Rgmii100 (the MAC in its 4-bit mode). */
+  def ethRgmii: Boolean =
+    effectiveDevices.values.find(_.deviceType == DeviceType.Ethernet)
+      .flatMap(_.params.get("rgmii"))
+      .exists(_.asInstanceOf[Boolean])
 }
 
 // ==========================================================================
@@ -1578,6 +1583,30 @@ object JopConfig {
         bytecodes = Map("idiv" -> "hw", "irem" -> "hw")),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("STAMP_CDC0"),
         params = Map("baudRate" -> 1000000))))))
+
+  /**
+   * `colorlightDbI9PlusSdram` with Ethernet: the module's B50612D U9 (MDIO
+   * address 1), which on this base board is RJ1. RGMII at 100 Mb/s through
+   * jop.io.Rgmii100. The MAC runs in its 4-bit (MII) mode, so the PHY must not
+   * advertise gigabit; `ETH_GIGABIT = false` tells EthDriver.
+   *
+   * 50 MHz only. Rgmii100 clocks TX from the clock IP's third output, which
+   * the board's IP flow makes at the system frequency (`-eth_mhz $(MHZ)`).
+   * At 50 MHz that is the 50 MHz the adapter needs. Another system frequency
+   * needs an IP with that output at 50, and check_clk_ip.py refuses one
+   * without it (the summary's `Eth clock:` line).
+   *
+   * H2, the PHYs' shared reset, is NOT driven (`noPhyReset`): driving it was
+   * never shown safe on this module (fpga/bringup/colorlight-db-i9plus-eth,
+   * README), and the PHYs leave reset on their own.
+   */
+  def colorlightDbI9PlusEth = {
+    val base = colorlightDbI9PlusSdram(50)
+    base.copy(systems = Seq(base.system.copy(devices = base.system.devices +
+      ("eth" -> DeviceInstance(DeviceType.Ethernet,
+        params = Map("rgmii" -> true, "phyAddr" -> 1, "noPhyReset" -> true),
+        devicePart = Some("B50612D_U9"))))))
+  }
 
   /** Wukong BRAM with all compute units (DCU debug — simulation only) */
   def wukongBramFull = {
