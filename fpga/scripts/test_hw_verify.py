@@ -8,6 +8,13 @@
 #                                       — red against judge_soak as it stood:
 #                                         the verdict read "sawtooth band 1000"
 #                                         for a series that never once rose.
+# PROVED RED 2026-10-12:
+#   test_a_spliced_forward_jump_does_not_end_the_soak, test_a_round_no_32_bit_
+#   counter_can_print_is_dropped -- red against judge_soak's "rounds must
+#   advance" alone: the merged record became the round reached and every later
+#   record was dropped as a replay.
+#   test_a_merged_free_value_does_not_end_the_soak -- red with only the round
+#   rules: the grown free value became the cliff reference.
 # If you change these, re-prove them.
 # ---------------------------------------------------------------------------
 # hw_verify decides whether a hardware run counts as a pass, and until now
@@ -188,6 +195,56 @@ def test_replayed_chunk_is_dropped():
     ok, msg = hw_verify.judge_soak(out, min_rounds=1000, drift=4096)
     assert ok, f"a replayed chunk was read as a fault: {msg}"
     assert "39990" in msg, f"the replay should not change the round reached: {msg}"
+
+
+def test_a_spliced_forward_jump_does_not_end_the_soak():
+    """A lost burst can MERGE two lines into a record whose round runs AHEAD.
+
+    The A-E115FB soak, 2026-10-12 (CH340 at 2 Mbaud, 3.37 M rounds) lost about
+    37 bytes here and joined what was left:
+
+        R53097 f=1067378748
+        R53053100 f=1067378748     <- "R530" + "53100": two lines merged
+        R53101 f=1067378748
+
+    "Rounds must advance" took 53053100 as the new high-water mark, so every
+    later record looked like a replay: 3,315,314 of 3,368,293 samples were
+    thrown away and the verdict, "free floor fell 399872 bytes between rounds
+    5307 and 102849328495", was judged on the 2 % that survived. Dropping
+    data that freely can hide a leak as easily as invent one.
+
+    A record out of order with two neighbours that agree with each other is
+    the corrupt one, not everything after it.
+    """
+    good = [(r, 500000) for r in range(0, 40000)]
+    cut = len(good) // 2
+    out = soak_log(good[:cut]) + "R20053100 f=500000\n" + soak_log(good[cut:])
+    ok, msg = hw_verify.judge_soak(out, min_rounds=1000, drift=4096)
+    assert ok, f"a spliced record failed the soak: {msg}"
+    assert msg.startswith("39999 rounds"), f"the splice should not set the round reached: {msg}"
+    assert "1 corrupt record(s) dropped" in msg, f"only the spliced record should go: {msg}"
+
+
+def test_a_round_no_32_bit_counter_can_print_is_dropped():
+    """GcStressTest's counter is a Java int; a longer number is a merge."""
+    good = [(r, 500000) for r in range(0, 40000)]
+    out = soak_log(good[:30000]) + "R102849328495 f=500000\n" + soak_log(good[30000:])
+    ok, msg = hw_verify.judge_soak(out, min_rounds=1000, drift=4096)
+    assert ok and msg.startswith("39999 rounds"), f"an impossible round was taken as data: {msg}"
+
+
+def test_a_merged_free_value_does_not_end_the_soak():
+    """The same loss can merge the FREE value instead: the A-E115FB soak had
+    "R137554 f=10673444956" between two records of f=1067344956. A value that
+    grew passes the cliff rule (which catches truncation, i.e. shrinking) and
+    becomes the reference, after which every real record is "below half" of it
+    and is dropped. Under 2**31 here, so only the neighbour rule can see it."""
+    good = [(r, 150000000) for r in range(0, 40000)]
+    cut = len(good) // 2
+    out = soak_log(good[:cut]) + "R20000 f=1500000000\n" + soak_log(good[cut + 1:])
+    ok, msg = hw_verify.judge_soak(out, min_rounds=1000, drift=4096)
+    assert ok and msg.startswith("39999 rounds"), f"a merged free value ended the soak: {msg}"
+    assert "1 corrupt record(s) dropped" in msg, f"only the merged record should go: {msg}"
 
 
 def test_a_failed_test_is_counted_as_a_failure():

@@ -270,9 +270,40 @@ def judge_soak(out, min_rounds, drift, pattern=PROGRESS_RE):
     #                      ~1.5 KB per round, so a single sample below half its
     #                      predecessor is corruption. A real collection raises
     #                      free; it never divides it.
-    clean, last_r, last_f = [], -1, None
+    #
+    # And a lost burst can MERGE two lines into a record whose round runs
+    # AHEAD -- the A-E115FB soak, 2026-10-12: "R53097", then "R53053100"
+    # ("R530" + "53100"), then "R53101". Taken as the new high-water mark, it
+    # made every later record look like a replay: 98 % of 3.37 M samples were
+    # dropped, and the floor was judged on what was left. So two more rules
+    # run first, each on one record and its raw neighbours:
+    #   32 bits            the counter is a Java int; a longer number is a merge
+    #   lone outlier       a record out of order with two neighbours that agree
+    #                      with each other is the corrupt one. (A replay is not
+    #                      an outlier: its neighbours disagree too, and the
+    #                      advance rule below drops it.)
+    # The free value gets the same two: the soak also printed
+    # "R137554 f=10673444956" between two records of f=1067344956. A value that
+    # GREW passes the cliff rule below, which only catches shrinking, and then
+    # every real record after it reads as "below half". A free value more than
+    # double or under half of two neighbours that agree to 1 % is the merge or
+    # the truncation, not a collection: a real recovery agrees with the record
+    # after it.
+    rs = [r for r, _ in samples]
+    fs = [f for _, f in samples]
     dropped = 0
-    for r, f in samples:
+    plausible = []
+    for i, (r, f) in enumerate(samples):
+        inner = 0 < i < len(samples) - 1
+        lone_r = inner and rs[i - 1] < rs[i + 1] and not rs[i - 1] < r < rs[i + 1]
+        lone_f = (inner and abs(fs[i - 1] - fs[i + 1]) * 100 <= fs[i - 1]
+                  and (f * 2 < fs[i - 1] or f > fs[i - 1] * 2))
+        if r > 0x7FFFFFFF or f > 0x7FFFFFFF or lone_r or lone_f:
+            dropped += 1
+            continue
+        plausible.append((r, f))
+    clean, last_r, last_f = [], -1, None
+    for r, f in plausible:
         if r <= last_r or (last_f is not None and f * 2 < last_f):
             dropped += 1
             continue
