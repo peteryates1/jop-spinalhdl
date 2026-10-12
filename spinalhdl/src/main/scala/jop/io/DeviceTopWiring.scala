@@ -275,12 +275,22 @@ object EthernetTopWiring extends DeviceTopWiring {
       unbuffered.data  := ioPins("e_rxd").asInstanceOf[Bits]
       unbuffered.error := ioPins("e_rxer").asInstanceOf[Bool]
 
-      val buffered = unbuffered.stage()
+      // EVERY PIN FEEDS ONE REGISTER. `captured` is the pins' only load, so it
+      // can sit in the I/O element (QsfGenerator.ethRxCapture), and `last` comes
+      // from it rather than from the raw RX_DV. Reading the pin here fanned it
+      // out through the fabric to the preamble detector, the CRC checker and the
+      // RX buffer's cleanup, each at its own delay: re-timed on the EP4CGX150
+      // with RX_DV changing on the clock edge, those loads spanned -0.91 to
+      // +0.90 ns of hold slack, so they could disagree about where a frame ends.
+      // Hygiene, not a measured fix -- that board's 3-5 % CRC loss did not move
+      // (status item 166). One more cycle at 125 MHz; GmiiRxCaptureTest.
+      val captured = unbuffered.stage()
+      val buffered = captured.stage()
 
       val rxFlow = Flow(Fragment(PhyRx(dataWidth)))
       rxFlow.valid          := buffered.valid
       rxFlow.fragment       := buffered.payload
-      rxFlow.last           := !unbuffered.valid && buffered.valid
+      rxFlow.last           := !captured.valid && buffered.valid
 
       ethPhyIo.rx << rxFlow.toStream
     }
