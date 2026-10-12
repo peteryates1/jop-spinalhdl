@@ -7,6 +7,20 @@ Summary and current state: [item 64](../current-status.md#item-64).
 
 ---
 
+## 2026-10-12 — a seventh board, the 1 GB DDR2 one, says the same
+
+The A-E115FB, back after a month off, row added to the table below: 3.37 M
+rounds in 30 minutes, free memory 1,067,400,128 -> 1,066,051,644, **zero upward
+steps**, 0.4000 B/round -- the same staircase at the Xilinx boards' rate
+(0.4003 / 0.4004), on a heap four times theirs. The largest heap does not make
+the metric recover.
+
+The capture was lossy -- the CH340 at 2 Mbaud dropped bytes from about one line
+in 200 -- and `hw_verify` first judged the run on 2 % of it (a merged round or
+free value became the reference and every later record was dropped). Fixed in
+`judge_soak` (lone outliers and impossible values go first; 18ed4fe); the
+statistics here are from the whole transcript.
+
 ## 2026-09-11 — six boards, and the metric is the thing to chase first
 
 A six-board sweep (every attached board) re-measured this, and the result
@@ -21,6 +35,7 @@ remembered — `build/<preset>/hw_verify.run1.txt`:
 | wukongFull | 435,192 | **0** | 0.4003 | — |
 | xc7a100tDbSerial | 429,303 | **0** | 0.4004 | — |
 | auSerial (Alchitry) | 380,448 | **58** | 0.3000 | **flat** |
+| ae115fbDdr2 (2026-10-12) | 3,360,612 | **0** | 0.4000 | — never recovers |
 
 **On the one board that visibly collects, there is no leak.** The Alchitry's 58
 upward steps let the right statistic be computed — the post-collection

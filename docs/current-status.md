@@ -1140,6 +1140,8 @@ ns/handle, copy **87%** of the pause (the other boards are 79-82%), major
 `MAJOR OK` with retained 64/64 and `corrupt 0`, free 262 MB.
 `GcMajorPauseTest` at 36k live: **681.2 ms**, the best of the four boards
 measured — sort never runs. (The CYC5000 was measured too — see item 24.)
+The A-E115FB DDR2, 2026-10-12: **779.0 ms** at 36k live (mark 447.1, compact
+330.3), linear from 223.2 ms at 6k, corrupt 0.
 
 <a id="item-16"></a>
 
@@ -3213,6 +3215,11 @@ meets timing comfortably (WNS +0.414 ns), which argues against a marginal path.
 
 ### Item 64 — `GcStressTest` free memory falls 0.42 bytes per round, on every board
 
+> **2026-10-12 — a seventh board, the same staircase.** The 1 GB A-E115FB:
+> 3.37 M rounds, zero upward steps, **0.4000 B/round**
+> ([journal](status/item-64.md)). A heap four times the others' does not make
+> the metric recover.
+>
 > **2026-09-11 — the metric, not the leak, is the thing to chase first.** A
 > six-board sweep re-measured this and redirected the item. On the ONE board
 > that visibly collects (Alchitry Au, 58 upward steps in 380,448 samples) the
@@ -6537,9 +6544,14 @@ these four fields is a place where the preset lies.
 > neither `.github/workflows/` nor the `Makefile`"* is contradicted two lines
 > earlier in its own paragraph and by `ci.yml`, which runs it. It is in CI.
 >
-> Still open: *"DDR2 (A-E115FB) is BUILT AND UNTESTED"* — no later record closes
-> it, and the board is now powered off ([item 148](#item-148)), so it cannot be
-> closed until a blaster returns.
+> ~~Still open: *"DDR2 (A-E115FB) is BUILT AND UNTESTED"*~~ — **CLOSED
+> 2026-10-12**, the board back on the Terasic ([item 148](#item-148)). `ae115fbDdr2`
+> at HEAD, timing met: DoAll 68/68 (on `ae115fbDdr2Eth`), `CardMarkTest` CARD OK,
+> and a 30-minute `GcStressTest` soak of **3,370,278 rounds** with no fault --
+> thousands of minor collections, each clearing this board's 64 KB card table,
+> the worst case for the fix. Free memory fell as item 64's staircase does on
+> every board (0.400 B/round). `GcPauseTest` and `GcMajorPauseTest` pass too
+> (corrupt 0).
 
 **Found 2026-09-01** by boundary review B7. **Verified in full**, both halves.
 
@@ -10641,6 +10653,15 @@ separated "board broken" from "our design broken".
 
    All four now inside the 20 ms target, and `copy` is the dominant phase on
    every one of them (79-82%).
+
+   **Re-measured on the A-E115FB 2026-10-12** (HEAD, board back on the
+   Terasic): worst **14.963 ms**, mean 14.940 over 63 collections, still inside
+   the target. Copy 12.825 ms (was 11.300, **+13.5 %**), card scan 1.293 (was
+   1.931), stack and statics 0.339 (was 0.647), mark 0.285, card clear 0.221;
+   sweep 2003 ns/handle (was 1766). The pause repeats to 0.2 %, so the copy
+   rise is real. Not isolated: the August `LruCacheCore` restructure for MSHRs
+   is one candidate (measured ~6.5 % slower single-core at one MSHR, this
+   board's default).
 
    | board | before | after | swept | status |
    |---|---:|---:|---:|---|
