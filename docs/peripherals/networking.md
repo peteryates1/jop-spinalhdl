@@ -10,6 +10,7 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 | EP4CGX150 + DB_FPGA V4 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbFull` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content, DoAll 68/68 (2026-10-12, below); at 1 Gb/s, GMII, 3-5 % of received frames failed CRC, a hardware limit of this module (status item 166) |
 | EP4CGX150 + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbV5Mii` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content (2026-10-12, below) |
 | Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68 |
+| A-E115FB (EP4CE115 + DDR2) | 88E1111, GMII 1 Gb/s | `ae115fbDdr2Eth` | ping, UDP and TCP echo, DHCP, DNS at 1000M, no receive errors on any content, DoAll 68/68 (2026-10-12, below) |
 | QMTECH Wukong V3 | RTL8211EG, GMII 1 Gb/s | `wukongFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12), DoAll 68/68; the same build with the re-latch restored: `Link UP 1000M` and nothing received (below) |
 
 ## Status
@@ -592,6 +593,45 @@ this board:
 With the re-latch the board's gratuitous ARPs reached the LAN and the host's
 63 frames to it went unanswered: status item 68's symptom, on this board, with
 nothing else different.
+
+## A-E115FB (GMII at 1 Gb/s)
+
+`ae115fbDdr2Eth` (DDR2, 75 MHz, console 2 Mbaud on the CH340). The bottom
+board's Marvell 88E1111, GMII on the core board's JTAG-side connector, pins from
+`docs/boards/ep4ce115-ddr2-board.md`. The connector carries no RX_ER or TX_ER,
+so the preset sets `noErPins`; GTX_CLK comes from `fpga/a-e115fb-ddr2/pll_125.v`,
+25 MHz to 125 MHz. Quartus 18.1, for the DDR2 PHY.
+
+```bash
+make -C fpga/a-e115fb-ddr2 eth
+make -C java/apps/Small JOP_PRESET=ae115fbDdr2Eth APP_NAME=NetTest EXTRA_SRC=../../net/src
+fpga/scripts/jtag_probe_map --assert-device ae115fb &&   # quartus_pgm exits 0 on a broken chain
+quartus_pgm -c "$(fpga/scripts/jtag_probe_map --cable ae115fb)" -m JTAG \
+    -o "p;build/ae115fbDdr2Eth/quartus/output_files/jop_ddr2_eth.sof"
+python3 fpga/scripts/download.py -e build/ae115fbDdr2Eth/java/apps/Small/NetTest.jop \
+    "$(fpga/scripts/usb_serial_map --by-id ae115fb)" 2000000
+```
+
+Hardware, 2026-10-12, link UP 1000M, timing met (setup +0.742 ns, hold
++0.082 ns, no unconstrained clocks):
+
+| Test | Result |
+|------|--------|
+| 400 raw frames each of nine payloads, incl. the DHCP offer, 00/ff and random | 0 errors, every frame received |
+| 4,000 each of random, the offer and 00/ff | 0 errors, every frame received |
+| ping flood, 2,010 x 98 B + 505 x 1442 B | 0 CRC errors |
+| NetTest | 50/50 + 5/5 pings, UDP 22/1400 B and TCP 10/50 KB identical, `Er=0 Dr=0` |
+| DhcpTest | BOUND on the first offer, DNS resolved, the lease answers 10/10 |
+| DoAll | 68/68 |
+
+RX_CLK is on an ordinary pin here too (P5, which no PLL can take), like the
+EP4CGX150's B10 (status item 166), and this board receives cleanly. One known
+difference: every connector signal here passes a 22 ohm series pack on the core
+board, where the DB_FPGA's RXD lines have none; whether that is what matters is
+not established. Round trips are slower than on the other boards -- about 5.5 ms
+for 64 bytes and 76 ms for 1400, against the Wukong's 1.4 and 15.8 -- and that is
+not investigated. The preset carries the MAC's RX capture (`EthCapDiag`) from the
+bring-up.
 
 ## Build and Test
 

@@ -99,14 +99,13 @@ nothing depends on ranks below a measurement that could mislead someone.
 59. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
 60. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
 61. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
-62. **[#148](#item-148)** — The A-E115FB is powered off after its Pico blaster failed, so DDR2 has NO hardware coverage; it also blocks item 100's confound experiment, which needs that blaster
-63. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
-64. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
-65. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
-66. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
-67. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-68. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
-69. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
+62. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
+63. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
+64. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
+65. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
+66. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
+67. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
+68. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
 
 ## 2. All items — summary
 
@@ -151,7 +150,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[143](#item-143)** — `setsid` + process-group kill leaks the serial-holding child, which later looks like dead hardware
 - **[146](#item-146)** — ~~64 simulations built a Verilator model without the X-state defence, and one of them flaked CI~~ — **FIXED**
 - **[147](#item-147)** — ~~The nightly GC sim ends when the heap exhausts, so making the program SMALLER made it slower until it blew CI's 90-minute wall~~ — **FIXED**
-- **[148](#item-148)** — The A-E115FB's Pico blaster failed and the board is powered off, so DDR2 has no hardware coverage — and item 100's confound experiment is now impossible
+- **[148](#item-148)** — ~~The A-E115FB's Pico blaster failed and the board is powered off, so DDR2 has no hardware coverage~~ — **BACK** 2026-10-12 on the Terasic: DoAll 68/68 and Ethernet at 1 Gb/s. Item 100's confound experiment still needs a working Pico
 - **[149](#item-149)** — Nine Vivado targets still read TRACKED constraints; item 57 claimed otherwise and the guard's board list hid it
 - **[150](#item-150)** — Four test apps and `JopIhluGcBramSim` are referenced by nothing, and four closed items rest on them
 - **[151](#item-151)** — ~~`XdcGenerator` produces WRONG constraints for the DB V5: console TX/RX crossed and `resetn` missing~~ — **FIXED**
@@ -2430,7 +2429,16 @@ env var reproduces the old 464-round run.
 
 <a id="item-148"></a>
 
-### Item 148 — The DDR2 board is off, and its blaster is what failed
+### Item 148 — ~~The DDR2 board is off, and its blaster is what failed~~ — BACK 2026-10-12 on the Terasic blaster
+
+> **BACK 2026-10-12.** The Terasic blaster moved from the EP4CGX150 (which has
+> no cable now) to the A-E115FB, and `ae115fbDdr2Eth` passes **DoAll 68/68**:
+> DDR2 has hardware coverage again, on a bitstream built at HEAD after a month
+> of changes, including the I/O-read re-latch removal (item 68). The same
+> build brought up the bottom board's Ethernet at 1 Gb/s
+> (`docs/peripherals/networking.md`). Its console CH340 is "USB2.0-Serial" as
+> before. The Pico `e6616408` is still dead, so [item 100](#item-100)'s
+> experiment stays blocked.
 
 The level-shifted Pico blaster `e6616408` stopped working, and the **A-E115FB
 EP4CE115 + 1 GB DDR2 was powered off** as a result (user, 2026-09-07). This is a
@@ -3616,6 +3624,13 @@ path family as the V5 MII build's -0.670 ns. No pin was placed by the fitter.
 **For future boards:** 22-33 ohm series resistors on RXD0-7 (and RX_DV, RX_ER)
 at the PHY; RX_CLK on a clock-capable pin; ground pins between RX_CLK and the
 RXD lines on the connector.
+
+**A counterpoint, 2026-10-12: an ordinary RX_CLK pin is not enough by itself.**
+The A-E115FB also clocks GMII receive from a pin no PLL can take (P5, error
+176554), and at 1 Gb/s it received every frame of the same payloads clean -- 400
+of each of nine, then 4,000 each of random, the offer and 0x00/0xFF, no errors,
+none lost (`ae115fbDdr2Eth`). One known difference: every signal on its core
+board's connectors passes a 22 ohm series pack.
 
 
 <a id="item-69"></a>

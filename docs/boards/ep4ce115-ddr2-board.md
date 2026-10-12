@@ -83,6 +83,23 @@ Reference files: `/srv/git/cycloneEthernet/`
 DDR2 pins use FPGA I/O banks 3-6 at 1.8V SSTL-18. Full pin assignment
 TCL script: `ddr2_64bit_pin_assignments.tcl`
 
+### I/O Bank Voltages (jumpers J1, J2)
+
+Banks 1/2 and 7/8 are jumper-selected on the core board: **J2** sets banks 1
+and 2, **J1** banks 7 and 8, each to 3.3, 2.5 or 1.8 V. Both were at **2.5 V**
+when checked on 2026-10-12, and the generated project declares those banks'
+pins -- console, Ethernet, LEDs -- at 2.5 V to match. Banks 3-6 are the DDR2's,
+fixed at 1.8 V.
+
+The FPGA's JTAG pins run from bank 1 (Cyclone IV E; Cyclone IV handbook, "I/O
+Voltage Support in a JTAG Chain"), so J2 also sets the JTAG level. The JTAG
+header's VTREF measured 3.25 V (2026-08-31): it is tied to 3.3 V, not to bank
+1, so every cable drives 3.3 V into the 2.5 V JTAG bank -- which the handbook
+allows (JTAG inputs to 4.1 V AC at VCCIO 2.5-3.3 V; it recommends cable VCC =
+2.5 V). A bare 3.3 V Pico is no worse than a USB-Blaster here and needs no
+level shifter. Moving J2 to 3.3 V would also move bank 2, where the Ethernet
+PHY's pins are.
+
 ### 2.54mm Connectors
 
 Each side of the core board has two connectors:
@@ -310,6 +327,11 @@ based on bottom board PE connector topology.
 - RXD[7:0]: D6, R5, R1, R2, U1, U2, M5, N5
 - RX_DV: N6, RX_CLK: P5
 - Link LED: C3 (core board LED D6, directly wired, not on connector)
+- No RX_ER, TX_ER, COL or CRS on the connector. One RJ45 on this board.
+- Works with JOP at 1 Gb/s, 2026-10-12: `ae115fbDdr2Eth`, see
+  `docs/peripherals/networking.md`. RX_CLK (P5) cannot feed a PLL (Quartus
+  error 176554). The 100 MHz clock on A11 can (PLL_3); AB11 can feed a second
+  PLL besides the DDR2 PHY's, landing remote and uncompensated (PLL_1).
 
 **VGA (ADV7123)** — 30 pins on JTAG-side connector (confirmed from QSF):
 - Red R[2:9]: A3, B3, E4, E3, H7, G3, B2, B1
