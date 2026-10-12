@@ -7,7 +7,7 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 
 | Board | PHY / interface | Preset | Hardware |
 |-------|-----------------|--------|----------|
-| EP4CGX150 + DB_FPGA V4 | RTL8211EG, GMII 1 Gb/s | `ep4cgx150DbFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12) after two fixes, the read re-latch and an untimed receive clock (below); 3-5 % of received frames fail CRC, a hardware limit of this module at 1 Gb/s (status item 166) |
+| EP4CGX150 + DB_FPGA V4 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbFull` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content, DoAll 68/68 (2026-10-12, below); at 1 Gb/s, GMII, 3-5 % of received frames failed CRC, a hardware limit of this module (status item 166) |
 | EP4CGX150 + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbV5Mii` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content (2026-10-12, below) |
 | Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68 |
 | QMTECH Wukong V3 | RTL8211EG, GMII 1 Gb/s | `wukongFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12), DoAll 68/68; the same build with the re-latch restored: `Link UP 1000M` and nothing received (below) |
@@ -16,10 +16,10 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Link layer (EthDriver) | Working | 1Gbps GMII, MDIO PHY management |
+| Link layer (EthDriver) | Working | GMII 1 Gb/s; MII and RGMII 100 Mb/s; MDIO PHY management |
 | ARP | Working | 8-entry cache, snooping, gratuitous ARP |
 | IPv4 | Working | No fragmentation (MTU 1500 sufficient) |
-| ICMP echo (ping) | Working | ~2.5% loss at 1Gbps (timing margin) |
+| ICMP echo (ping) | Working | No loss; the EP4CGX150's 3-5 % at 1 Gb/s was its RX clock (status item 166) |
 | UDP | Working | Echo tested on port 7 |
 | TCP | Working | Echo verified on port 7; large payload (10KB+) with backpressure |
 | DHCP | Working | Client state machine, lease renewal, optional (NetConfig.useDhcp) |
@@ -496,12 +496,13 @@ removed (WNS +0.597 ns): ping 50/50 at 64 bytes and 5/5 at 1400, UDP and TCP
 echo identical (22 and 1400 bytes; 10 KB and 50 KB), DHCP BOUND, DNS resolved,
 DoAll 68/68.
 
-## QMTECH EP4CGX150 + DB_FPGA (GMII at 1 Gb/s loses frames; MII at 100 Mb/s works)
+## QMTECH EP4CGX150 + DB_FPGA (MII at 100 Mb/s; GMII at 1 Gb/s loses frames)
 
-`ep4cgx150DbFull` (SDR, console 2 Mbaud on the CP2102N), GMII to the DB_FPGA's
-RTL8211EG. Program the `.sof` with `quartus_pgm` directly after building an
-app: building one can leave the generate stamp stale, and `dbfpga-program`
-then rebuilds the bitstream first.
+`ep4cgx150DbFull` (SDR, console 2 Mbaud on the CP2102N), MII at 100 Mb/s to the
+DB_FPGA V4's RTL8211EG since 2026-10-12, GMII at 1 Gb/s before that (below).
+Program the `.sof` with `quartus_pgm` directly after building an app: building
+one can leave the generate stamp stale, and `dbfpga-program` then rebuilds the
+bitstream first.
 
 ```bash
 make -C fpga/qmtech-ep4cgx150-sdram dbfpga
@@ -511,7 +512,7 @@ python3 fpga/scripts/download.py -e build/ep4cgx150DbFull/java/apps/Small/NetTes
     "$(fpga/scripts/usb_serial_map --by-id ep4cgx150)" 2000000
 ```
 
-Hardware, 2026-10-12. Removing the read re-latch was not enough here: the
+At 1 Gb/s, GMII, 2026-10-12. Removing the read re-latch was not enough here: the
 generated SDC named the PHY's receive clock in a clock group without creating
 it, so Quartus never timed the 125 MHz receive domain and the receive buffer's
 placement failed hold by 1.763 ns (status item 68). Each row adds one change:
@@ -523,7 +524,7 @@ placement failed hold by 1.763 ns (status item 68). Each row adds one change:
 | + receive capture in the I/O element | 48/50 | identical | 3.1-3.2 % / 2.8-5.8 % |
 | + one register per receive pin (current) | 48/50 | identical | 3.8 % / 7.8 % |
 
-The current build also passes DHCP (BOUND, DNS, the lease answers 10/10) and
+The last GMII build also passed DHCP (BOUND, DNS, the lease answers 10/10) and
 UDP echo, at setup +0.306 ns with no unconstrained clocks. The remaining loss
 is older than any of this -- "~2.5 %" when GMII receive first worked here in
 March -- and not on the wire: the PHY's error counters stay at zero through a
@@ -535,8 +536,9 @@ whenever six or more RXD lines rise together, and that byte arrives twice. The
 loss followed the module onto the DB_FPGA V5, where the XC7A100T is clean, and it
 depends on content: the router's DHCP offer failed every time. No PLL can take
 B10, so the FPGA cannot clean the clock. At 100 Mb/s MII never switches more
-than four data lines, and `ep4cgx150DbV5Mii` (EP4CGX150 on the V5, console 2 Mbaud
-on the RP2040) runs clean:
+than four data lines, and both EP4CGX150 presets now use it: `ep4cgx150DbFull`
+above, and `ep4cgx150DbV5Mii` (EP4CGX150 on the V5, console 2 Mbaud on the
+RP2040):
 
 ```bash
 make -C fpga/qmtech-ep4cgx150-sdram generate build CFG=ep4cgx150DbV5Mii REV=jop_dbv5mii
@@ -548,15 +550,18 @@ python3 fpga/scripts/download.py -e build/ep4cgx150DbV5Mii/java/apps/Small/NetTe
     "$(fpga/scripts/usb_serial_map --by-id xc7a100t-pico-0)" 2000000
 ```
 
-| Test, 2026-10-12, link 100M | Result |
-|------|--------|
-| 400 raw frames each of eight payloads, incl. the offer and 00/ff | 0 errors, every frame received |
-| ping flood, 2,004 x 98 B + 500 x 1442 B | 0 CRC errors |
-| NetTest | 50/50 + 5/5 pings, UDP and TCP 10/50 KB echo identical, `Er=0` |
-| DhcpTest | BOUND on the first offer, DNS, the lease answers 10/10 |
+| Test, 2026-10-12, link 100M | V4, `ep4cgx150DbFull` | V5, `ep4cgx150DbV5Mii` |
+|------|--------|--------|
+| 400 raw frames each of nine payloads, incl. the offer, 00/ff and random | 0 errors, every frame received | the same (eight payloads) |
+| ping flood, ~2,000 x 98 B + ~500 x 1442 B | 0 CRC errors | 0 CRC errors |
+| NetTest | 50/50 + 5/5 pings, UDP and TCP 10/50 KB echo identical, `Er=0` | the same |
+| DhcpTest | BOUND on the first offer, DNS, the lease answers 10/10 | the same |
 
-The preset also carries the MAC's RX capture (`rxCapture`, read with
-`EthCapDiag`), the logic analyser that found the extra edges.
+On the V4 at 1 Gb/s the same payloads failed CRC at 2.5-72 %, and random and
+alternating ones mostly vanished (status item 166). `ep4cgx150DbV5Mii` carries
+the MAC's RX capture (`rxCapture`, read with `EthCapDiag`), the logic analyser
+that found the extra edges; `ep4cgx150DbV5Eth` keeps GMII and the capture to
+reproduce the fault.
 
 ## QMTECH Wukong V3 (GMII at 1 Gb/s)
 

@@ -81,6 +81,11 @@ See [DB_FPGA overview](qmtech-db-fpga.md) for version comparison.
 
 GMII TX requires 125 MHz clock on GTX_CLK (FPGA PLL). RX_CLK is source-synchronous from PHY.
 
+With the EP4CGX150 core this PHY runs at 100 Mb/s, MII: TXD[3:0] and RXD[3:0],
+both clocks from the PHY, GTX_CLK unused (`ep4cgx150DbFull`, 2026-10-12). At
+1 Gb/s the module's RX_CLK ball, B10, picks up an extra edge when six or more
+RXD lines rise together, and 3-5 % of frames failed CRC (status item 166).
+
 ### VGA (RGB 5-6-5) — on J3
 
 ![VGA schematic (V4, on J3)](images/dbfpga-v4-vga.png)

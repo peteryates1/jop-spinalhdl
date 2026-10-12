@@ -50,64 +50,63 @@ nothing depends on ranks below a measurement that could mislead someone.
 10. **[#113](#item-113)** — `cold-check` covers 3 boards of 12, and the primary board is not one of them
 11. **[#112](#item-112)** — `ConstraintDriftTest` covers 2 presets of 46 — the strongest check in the tree, at 4 % coverage
 12. **[#82](#item-82)** — Flash boot has been unbuildable since 2026-03-13; a hardware-verified capability deleted as collateral
-13. **[#166](#item-166)** — EP4CGX150 Ethernet at 1 Gb/s loses frames: CAUSE FOUND 2026-10-12, a hardware limit -- the module's RX_CLK gets an extra edge when six or more RXD lines rise together. 100 Mb/s MII (`ep4cgx150DbV5Mii`) verified clean. Open: whether `ep4cgx150DbFull` moves to MII
-14. **[#65](#item-65)** — Both SD exercisers fail on hardware, and it is not the conversion
-15. **[#84](#item-84)** — No MAX1000 configuration fits the 10M08 — single-core overflows it by a third
-16. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
-17. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
-18. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
-19. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
-20. **[#64](#item-64)** — `GcStressTest` loses **~0.42 bytes/round** on three boards and three memory systems. Deterministic, so a defect, not drift — and TWO candidates are now RULED OUT by measurement: [item 131](#item-131)'s dropped card marks and [item 141](#item-141)'s stray barrier writes
-21. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
-22. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
-23. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
-24. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
-25. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
-26. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
-27. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
-28. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
-29. **[#70](#item-70)** — The UART baud is stated three times; console.mk now refuses an unknown one, but the i5 still hardcodes its own
-30. **[#67](#item-67)** — `ep4cgx150DbFull` has `useStackCache` off; gated on item 14
-31. **[#75](#item-75)** — `ep4cgx150HwMath` is a byte-identical duplicate of `ep4cgx150Serial`
-32. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
-33. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
-34. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-35. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
-36. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
-37. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
-38. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
-39. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
-40. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
-41. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
-42. **[#20](#item-20)** — Decide whether the double group gets microcode at all
-43. **[#27](#item-27)** — The `aastore` type check's cost was never measured
-44. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
-45. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
-46. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
-47. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
-48. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
-49. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
-50. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
-51. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
-52. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
-53. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
-54. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
-55. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
-56. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
-57. **[#108](#item-108)** — README's 16-core claim rests on resource figures README itself withdrew as undated
-58. **[#100](#item-100)** — The EP4CGX150 cable reads 10/10 since the 2026-08-31 swap and blocks nothing. What is left is an unresolved confound: the swap changed the cable AND re-seated both plugs. **The proposed resolution — put the Pico back on that board — is BLOCKED: that Pico has since failed ([#148](#item-148))**
-59. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
-60. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
-61. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
-62. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
-63. **[#148](#item-148)** — The A-E115FB is powered off after its Pico blaster failed, so DDR2 has NO hardware coverage; it also blocks item 100's confound experiment, which needs that blaster
-64. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
-65. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
-66. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
-67. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
-68. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-69. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
-70. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
+13. **[#65](#item-65)** — Both SD exercisers fail on hardware, and it is not the conversion
+14. **[#84](#item-84)** — No MAX1000 configuration fits the 10M08 — single-core overflows it by a third
+15. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
+16. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
+17. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
+18. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
+19. **[#64](#item-64)** — `GcStressTest` loses **~0.42 bytes/round** on three boards and three memory systems. Deterministic, so a defect, not drift — and TWO candidates are now RULED OUT by measurement: [item 131](#item-131)'s dropped card marks and [item 141](#item-141)'s stray barrier writes
+20. **[#4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
+21. **[#39](#item-39)** — The L2 hit path is serial — 3 cycles per hit, 58-61 % of the DRAM access interval. **[50](#item-50) raises the priority of this**: bytecode fill is a sequential burst and improved only 3 % with a 32 KB L2 in front of DDR3, which is what a 3-cycle hit would predict
+22. **[#44](#item-44)** — The compute floor C is per-configuration; re-measure it before trusting any per-operation cost
+23. **[#45](#item-45)** — ONE unidentified register is read before it is written; the other ~401 look benign
+24. **[#32](#item-32)** — UART corruption on seed 871203250 — no longer reachable, pin removed; cause never found
+25. **[#5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
+26. **[#31](#item-31)** — The BMB arbiter caps TIMING CLOSURE on both FPGA families (not throughput — see 2026-08-18 note)
+27. **[#41](#item-41)** — Neither 8-core DRAM build closes timing, MSHRs or not
+28. **[#70](#item-70)** — The UART baud is stated three times; console.mk now refuses an unknown one, but the i5 still hardcodes its own
+29. **[#67](#item-67)** — `ep4cgx150DbFull` has `useStackCache` off; gated on item 14
+30. **[#75](#item-75)** — `ep4cgx150HwMath` is a byte-identical duplicate of `ep4cgx150Serial`
+31. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
+32. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
+33. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
+34. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
+35. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
+36. **[#53](#item-53)** — 4-core Wukong takes `15/6` + `double:java` (64 blocks, DoAll 66/66, 68.5 % LUT). **The preset still does not build at defaults** — threshold needs the 8/12-core data
+37. **[#52](#item-52)** — The Java tools hold hand-copied duplicates of the hardware config. Generate them from the preset instead
+38. **[#17](#item-17)** — `needs*Compute` predicates understate compute-unit reachability
+39. **[#18](#item-18)** — Software/microcode fallback coverage is uneven — 18 of 32 configurables
+40. **[#19](#item-19)** — Write the missing `_sw` microcode handlers
+41. **[#20](#item-20)** — Decide whether the double group gets microcode at all
+42. **[#27](#item-27)** — The `aastore` type check's cost was never measured
+43. **[#12](#item-12)** — `LongComputeUnitConfig` has no enable flag for its base 64-bit ALU
+44. **[#7](#item-7)** — Root-scan floor: 2.2 / 4.7 / 8.5 ms across SDR / DDR3 / DDR2
+45. **[#8](#item-8)** — XC7A100T timing margin is +0.001 ns — one bad run in seven
+46. **[#14](#item-14)** — Stack cache SDRAM integration — 3-bank rotation verified in BRAM, needs per-core regions
+47. **[#40](#item-40)** — A leaner MSHR entry — each holds a full cache line of write data a read miss never uses
+48. **[#42](#item-42)** — Secondary-hit merging is not implemented — a request to a line being filled replays
+49. **[#21](#item-21)** — Colorlight i5 is EBR-bound in BRAM-only builds, not logic-bound
+50. **[#11](#item-11)** — Application benchmark exists (`java/apps/JbeBench`) — remaining questions it should answer
+51. **[#13](#item-13)** — `java/apps/Small` `make clean` deletes `HelloWorld.jop`
+52. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
+53. **[#58](#item-58)** — `source` inside an XDC is silently ignored — SDRAM IOB packing and Ethernet GMII constraints have never been applied
+54. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
+55. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
+56. **[#108](#item-108)** — README's 16-core claim rests on resource figures README itself withdrew as undated
+57. **[#100](#item-100)** — The EP4CGX150 cable reads 10/10 since the 2026-08-31 swap and blocks nothing. What is left is an unresolved confound: the swap changed the cable AND re-seated both plugs. **The proposed resolution — put the Pico back on that board — is BLOCKED: that Pico has since failed ([#148](#item-148))**
+58. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
+59. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
+60. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
+61. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
+62. **[#148](#item-148)** — The A-E115FB is powered off after its Pico blaster failed, so DDR2 has NO hardware coverage; it also blocks item 100's confound experiment, which needs that blaster
+63. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
+64. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
+65. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
+66. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
+67. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
+68. **[#155](#item-155)** — `current-status.md` is back to 7,475 lines from the 4,828 item 116 recorded; seven sections exceed the 100-line split threshold in-file, item 141 at 717. The consistency guards hold; nothing guards SIZE
+69. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
 
 ## 2. All items — summary
 
@@ -193,7 +192,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[71](#item-71)** — All three EP4CGX150 **BRAM** presets missed timing at 80 MHz; the BRAM read-data path will not close there — FIXED by reclocking, `hw_verify` now refuses violated bitstreams
 - **[70](#item-70)** — UART baud is stated in THREE places that disagree — preset override, a 2 Mbaud default, and 12 Makefile constants. Pick one rate and derive the rest
 - **[68](#item-68)** — ~~EP4CGX150 Ethernet: link comes up at 1 Gbps but NO packets move~~ — **FIXED** 2026-10-12: two causes. `BmbMemoryController` re-latched every I/O read after its strobe, so the MAC's pop-on-read RX register reached the CPU one word late (every board; Wukong A/B). And on the EP4CGX150 the generated SDC named `e_rxc` in a clock group but never created it: the receive domain went untimed and its placement failed hold by -1.763 ns. ping, UDP, TCP, DHCP and DNS on both GMII boards
-- **[166](#item-166)** — EP4CGX150 Ethernet at 1 Gb/s loses frames -- CAUSE FOUND 2026-10-12: extra RX_CLK edges when six or more RXD lines rise together (a hardware limit; no PLL can take the pin). 100 Mb/s MII verified clean
+- **[166](#item-166)** — ~~EP4CGX150 Ethernet at 1 Gb/s loses frames~~ -- **WORKED AROUND** 2026-10-12: extra RX_CLK edges when six or more RXD lines rise together (a hardware limit; no PLL can take the pin), so both EP4CGX150 presets run MII at 100 Mb/s, verified clean on the DB_FPGA V4 and V5
 - **[67](#item-67)** — `ep4cgx150DbFull` runs with `useStackCache = false`; the original had it true. Revisit once stack-cache SDRAM integration lands
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
@@ -3480,16 +3479,17 @@ those would plausibly silence the MAC.
 
 <a id="item-166"></a>
 
-### Item 166 — EP4CGX150 Ethernet at 1 Gb/s loses received frames: the module's RX clock picks up extra edges — CAUSE FOUND 2026-10-12; 100 Mb/s MII works
+### Item 166 — ~~EP4CGX150 Ethernet at 1 Gb/s loses received frames~~ — WORKED AROUND 2026-10-12: the module's RX clock picks up extra edges, so both EP4CGX150 presets run MII at 100 Mb/s
 
 > **CAUSE FOUND 2026-10-12, a hardware limit.** At 1 Gb/s the EP4CGX150 core
 > module's RX_CLK gets an extra edge whenever six or more RXD lines rise
 > together, and that byte arrives twice. Nothing in the FPGA design can remove
 > it: the pin cannot feed a PLL, and moving the sampling point does not help.
-> **Way round, verified on hardware:** Ethernet at 100 Mb/s, MII
-> (`ep4cgx150DbV5Mii`): no errors on any content pattern, and NetTest, DHCP and
-> DNS are clean. Whether `ep4cgx150DbFull` (the V4 preset) moves to MII too is
-> open.
+> **Way round, verified on hardware:** Ethernet at 100 Mb/s, MII: no errors on
+> any content pattern, and NetTest, DHCP and DNS are clean -- `ep4cgx150DbV5Mii`
+> on the DB_FPGA V5, then `ep4cgx150DbFull`, the V4 preset, which moved to MII
+> the same day ([below](#item-166-v4)). `ep4cgx150DbV5Eth` keeps GMII to
+> reproduce the fault.
 
 **Found 2026-10-12**, closing [item 68](#item-68): with every fix in,
 `ep4cgx150DbFull` lost 3-5 % of received frames to CRC errors (2.5 % when GMII
@@ -3575,6 +3575,43 @@ by retransmission. The build needed two generator fixes, both test-first in
 `GeneratedConstraintsTest`. The SDC now creates the PHY's TX clock `e_txc` and
 names the Ethernet PLL only in a GMII design. An MII design also no longer
 declares GMII's `e_gtxc`: the fitter had put it on J3:31, the PHY's COL pin.
+
+<a id="item-166-v4"></a>
+
+**The V4 preset moved to MII** (`ep4cgx150DbFull`, 2026-10-12), measured on the
+module's own board before and after, same cable and switch port. The 1 Gb/s
+build was the item-68 bitstream, whose RTL differs from the commit before the
+move only in port order and generated names. At 1 Gb/s the V4 shows the same
+content dependence as the V5 with a different mix: the offer fails less often,
+and random payloads mostly vanish instead of failing CRC.
+
+| 400 raw frames each | GMII 1 Gb/s: counted, failed CRC | MII 100 Mb/s |
+|---------|-------------------|---------------|
+| the router's DHCP offer | 400, 68.5 % | 400, 0 |
+| the offer with a counter | 400, 71.5 % | 400, 0 |
+| 0x00/0xFF alternating | 1 | 400, 0 |
+| 0x55/0xAA alternating | 1 | 400, 0 |
+| constant 0x00 | 336, 3.6 % | 400, 0 |
+| constant 0xFF | 400, 5.7 % | 400, 0 |
+| one data line toggling | 400, 3.0 % | 400, 0 |
+| one data line high | 400, 2.5 % | 400, 0 |
+| random | 35, then 23 on a repeat | 400, 0 |
+
+Not the switch: between and after the random bursts the 1 Gb/s board went on
+receiving other payloads, and at 100 Mb/s the same port delivered all 400
+random frames.
+
+| Test, link 100M | Result |
+|------|--------|
+| ping flood, 2,003 x 98 B + 524 x 1442 B | 0 CRC errors (1 Gb/s: 3.75 % and 4.96 %) |
+| NetTest | 50/50 + 5/5 pings, UDP 22/1400 B and TCP 10/50 KB identical, `Er=0` |
+| DhcpTest | BOUND on the first offer, DNS resolved, the lease answers 10/10 |
+| DoAll | 68/68 (`hw_verify`) |
+
+Timing: setup and hold met at every corner, both PHY clocks included; the one
+miss is recovery, -0.243 ns at Slow 100C, on the reset synchroniser into the
+VGA domain (`ResetGenerator` to `BufferCC asyncAssertSyncDeassert`), the same
+path family as the V5 MII build's -0.670 ns. No pin was placed by the fitter.
 
 **For future boards:** 22-33 ohm series resistors on RXD0-7 (and RX_DV, RX_ER)
 at the PHY; RX_CLK on a clock-capable pin; ground pins between RX_CLK and the

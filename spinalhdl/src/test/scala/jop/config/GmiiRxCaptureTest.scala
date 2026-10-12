@@ -9,7 +9,7 @@ import jop.utils.JopFileLoader
 /**
  * Every GMII receive pin feeds ONE register -- its capture flop, which the
  * generated project puts in the I/O element (QsfGenerator.ethRxCapture) -- and
- * nothing else.
+ * nothing else. MII shares the receive adapter, so it is held to the same.
  *
  * `rxFlow.last` was computed from the raw RX_DV pin, so the pin also fanned out
  * through the fabric to the preamble detector, the CRC checker and the RX
@@ -47,11 +47,10 @@ class GmiiRxCaptureTest extends AnyFunSuite {
       case l                            => Seq(l)
     }
 
-  test("every GMII receive pin feeds one register and nothing else") {
-    val cfg = JopConfig.ep4cgx150DbFull
+  private def receivePinLoads(cfg: JopConfig, name: String): Unit = {
     val rom = JopFileLoader.loadMicrocodeRom(MicrocodePaths.rom(BootMode.Serial))
     val ram = JopFileLoader.loadStackRam(MicrocodePaths.ram(BootMode.Serial))
-    val dir = jop.generate.BuildLayout.default.standaloneDir("GmiiRxCaptureTest")
+    val dir = jop.generate.BuildLayout.default.standaloneDir(s"GmiiRxCaptureTest_$name")
     val report = JopSpinalConfig(cfg, dir).generate(InOutWrapper(JopTop(config = cfg,
       romInit = rom, ramInit = ram, mainMemInit = None, mainMemSize = 64 * 1024)))
     val src = scala.io.Source.fromFile(s"$dir/${report.toplevelName}.v")
@@ -60,8 +59,16 @@ class GmiiRxCaptureTest extends AnyFunSuite {
     for (pin <- Seq("e_rxdv", "e_rxer", "e_rxd")) {
       val l = loads(lines, pin)
       assert(l.size == 1 && l.head.matches(raw"\S+ <= \S+;"),
-        s"$pin reaches ${l.size} load(s); it must reach exactly one register:\n" +
+        s"$name: $pin reaches ${l.size} load(s); it must reach exactly one register:\n" +
         l.mkString("\n"))
     }
+  }
+
+  test("every GMII receive pin feeds one register and nothing else") {
+    receivePinLoads(JopConfig.ep4cgx150DbV5Eth, "gmii")
+  }
+
+  test("every MII receive pin feeds one register and nothing else") {
+    receivePinLoads(JopConfig.ep4cgx150DbFull, "mii")
   }
 }

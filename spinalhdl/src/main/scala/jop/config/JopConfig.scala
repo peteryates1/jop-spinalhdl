@@ -669,8 +669,15 @@ object JopConfig {
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N"))))))
 
   /**
-   * EP4CGX150 + DB_FPGA V4 with the daughter board's peripherals: Gigabit
-   * Ethernet, SD card and VGA.
+   * EP4CGX150 + DB_FPGA V4 with the daughter board's peripherals: Ethernet,
+   * SD card and VGA.
+   *
+   * ETHERNET IS 100 Mb/s MII, NOT GIGABIT. At 1 Gb/s this module's RX_CLK
+   * (ball B10, an ordinary pin no PLL can take) picks up an extra edge whenever
+   * six or more RXD lines rise together, and that byte arrives twice: on this
+   * board 3.75 % of 98-byte pings failed CRC, the router's DHCP offer about 70 %,
+   * and random payloads mostly vanished. MII switches at most four lines. Status
+   * item 166; `ep4cgx150DbV5Eth` keeps GMII to reproduce it.
    *
    * RESTORES A CAPABILITY THAT WAS LOST, NOT A NEW ONE. This board ran a
    * poll-based TCP/IP stack over an RTL8211EG at 1 Gbps -- ARP, DHCP, TCP, an
@@ -716,25 +723,26 @@ object JopConfig {
       devices = Map(
         "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CP2102N")),
         "eth" -> DeviceInstance(DeviceType.Ethernet,
-          params = Map("gmii" -> true, "phyDataWidth" -> 8),
+          params = Map("phyDataWidth" -> 4),
           devicePart = Some("RTL8211EG")),
         "vgaText" -> DeviceInstance(DeviceType.VgaText, devicePart = Some("VGA")),
         "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))))))
 
   /** EP4CGX150 core on DB_FPGA V5 -- `ep4cgx150DbFull` with only what the V5
     * forces changed: the console is the RP2040's UART0, and the SD socket's
-    * card-detect is not routed (item 151). The module-swap half of status item
-    * 166: the V5 carries the same RTL8211EG on the same J3 pins as the V4, so
-    * against `ep4cgx150DbFull` the daughter board is what changes. It also
-    * carries the MAC's RX capture (`rxCapture`, four M9Ks), the logic analyser
-    * that item 166's lost frames are read with: `EthCapDiag`. */
+    * card-detect is not routed (item 151) -- and Ethernet at 1 Gb/s, GMII, which
+    * the V4 preset gave up. The module-swap half of status item 166: the V5
+    * carries the same RTL8211EG on the same J3 pins as the V4, so it reproduces
+    * the fault on the other board. It also carries the MAC's RX capture
+    * (`rxCapture`, four M9Ks), the logic analyser that item 166's lost frames
+    * are read with: `EthCapDiag`. */
   def ep4cgx150DbV5Eth = {
     val base = ep4cgx150DbFull
     val devs = base.system.devices
     base.copy(assembly = SystemAssembly.qmtechWithDbV5,
       systems = Seq(base.system.copy(devices = devs ++ Map(
         "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("RP2040")),
-        "eth" -> devs("eth").copy(params = devs("eth").params + ("rxCapture" -> true)),
+        "eth" -> devs("eth").copy(params = Map("gmii" -> true, "phyDataWidth" -> 8, "rxCapture" -> true)),
         "sdNative" -> devs("sdNative").copy(params = Map("noCardDetect" -> true))))))
   }
 

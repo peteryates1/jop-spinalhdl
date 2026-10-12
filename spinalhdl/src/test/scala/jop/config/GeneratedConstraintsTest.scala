@@ -1,7 +1,7 @@
 package jop.config
 
 import org.scalatest.funsuite.AnyFunSuite
-import jop.generate.{TimingConstraints, QsfGenerator, QuartusProject, XdcGenerator}
+import jop.generate.{ConstGenerator, TimingConstraints, QsfGenerator, QuartusProject, XdcGenerator}
 import jop.system.JopTopVerilog
 
 /**
@@ -33,6 +33,7 @@ class GeneratedConstraintsTest extends AnyFunSuite {
     "cyc5000Serial"       -> "cyc5000-sdram",
     "ep4cgx150Serial"     -> "qmtech-ep4cgx150-sdram",
     "ep4cgx150DbFull"     -> "qmtech-ep4cgx150-sdram",
+    "ep4cgx150DbV5Eth"    -> "qmtech-ep4cgx150-sdram",
     "ep4cgx150DbV5Mii"    -> "qmtech-ep4cgx150-sdram",
     "ep4cgx150Bram"       -> "qmtech-ep4cgx150-bram",
     "ep4cgx150BramSerial" -> "qmtech-ep4cgx150-bram-serial",
@@ -150,17 +151,25 @@ class GeneratedConstraintsTest extends AnyFunSuite {
   // domain nobody times (item 68). And the Ethernet PLL exists only in a GMII
   // design (JopTop: ethGmii && hasEthPll), so an MII .sdc must not name it --
   // the "creates or derives" test above passes any PLL-shaped name, and a group
-  // naming a clock that does not exist is dropped whole.
+  // naming a clock that does not exist is dropped whole. Both DB_FPGA presets
+  // the EP4CGX150 is used on are MII; `ep4cgx150DbV5Eth` keeps GMII, the fault
+  // reproduced for the RX capture.
   test("an MII design creates the PHY's TX clock and names no Ethernet PLL") {
-    val mii = TimingConstraints.forConfig(cfgOf("ep4cgx150DbV5Mii")).toSdc
-    assert(mii.contains("create_clock -period 8.000 -name e_rxc [get_ports e_rxc]"), mii)
-    assert(mii.contains("create_clock -period 8.000 -name e_txc [get_ports e_txc]"), mii)
-    assert(!mii.contains("ethPll"), s"no Ethernet PLL in an MII design\n$mii")
-    val groups = raw"-group\s+\{([^}]*)\}".r.findAllMatchIn(mii).map(_.group(1).trim).toSet
-    assert(groups("e_rxc") && groups("e_txc"),
-      s"each PHY clock asynchronous to everything, including the other\n$mii")
+    for (preset <- Seq("ep4cgx150DbV5Mii", "ep4cgx150DbFull")) {
+      val mii = TimingConstraints.forConfig(cfgOf(preset)).toSdc
+      assert(mii.contains("create_clock -period 8.000 -name e_rxc [get_ports e_rxc]"), s"$preset\n$mii")
+      assert(mii.contains("create_clock -period 8.000 -name e_txc [get_ports e_txc]"), s"$preset\n$mii")
+      assert(!mii.contains("ethPll"), s"$preset: no Ethernet PLL in an MII design\n$mii")
+      val groups = raw"-group\s+\{([^}]*)\}".r.findAllMatchIn(mii).map(_.group(1).trim).toSet
+      assert(groups("e_rxc") && groups("e_txc"),
+        s"$preset: each PHY clock asynchronous to everything, including the other\n$mii")
+      // A PHY that still advertised 1000BASE-T would link at 1 Gb/s, which an
+      // MII MAC cannot receive.
+      assert(ConstGenerator.generate(cfgOf(preset)).contains(
+        "public static final boolean ETH_GIGABIT = false;"), s"$preset: ETH_GIGABIT")
+    }
 
-    val gmii = TimingConstraints.forConfig(cfgOf("ep4cgx150DbFull")).toSdc
+    val gmii = TimingConstraints.forConfig(cfgOf("ep4cgx150DbV5Eth")).toSdc
     assert(gmii.contains("ethPll|altpll_component") && !gmii.contains("e_txc"),
       s"GMII transmits on the PLL and has no e_txc port\n$gmii")
   }
@@ -177,9 +186,10 @@ class GeneratedConstraintsTest extends AnyFunSuite {
       raw"FAST_INPUT_REGISTER ON -to (\S+)".r.findAllMatchIn(tcl).map(_.group(1)).toSet
     }
     val gmiiRx = ((0 until 8).map(i => s"e_rxd[$i]") ++ Seq("e_rxdv", "e_rxer")).toSet
-    assert(fastInputs("ep4cgx150DbFull") == gmiiRx)
+    assert(fastInputs("ep4cgx150DbV5Eth") == gmiiRx)
     val miiRx = ((0 until 4).map(i => s"e_rxd[$i]") ++ Seq("e_rxdv", "e_rxer")).toSet
     assert(fastInputs("ep4cgx150DbV5Mii") == miiRx)
+    assert(fastInputs("ep4cgx150DbFull") == miiRx)
     assert(fastInputs("ep4cgx150Serial").isEmpty,
       "a design without Ethernet has no e_rx* ports to assign")
   }

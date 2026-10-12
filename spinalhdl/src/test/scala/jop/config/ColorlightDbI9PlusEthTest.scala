@@ -77,7 +77,7 @@ class ColorlightDbI9PlusEthTest extends AnyFunSuite {
   }
 
   test("a GMII board still scans for its PHY and advertises gigabit") {
-    val c = ConstGenerator.generate(JopConfig.ep4cgx150DbFull)
+    val c = ConstGenerator.generate(JopConfig.ep4cgx150DbV5Eth)
     assert(c.contains("public static final int ETH_PHY_ADDR = -1;"), "ETH_PHY_ADDR")
     assert(c.contains("public static final boolean ETH_GIGABIT = true;"), "ETH_GIGABIT")
   }
