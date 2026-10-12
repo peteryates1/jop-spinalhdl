@@ -160,11 +160,16 @@ object XdcGenerator {
       // whose RXC IS clock-capable this line would hide a real misplacement.
       if (eth.params.getOrElse("rxClkNotClockCapable", false) == true)
         sb.append("set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets e_rxc_IBUF]\n")
-      sb.append("set_false_path -from [get_ports {e_rxd[*] e_rxdv e_rxer}]\n")
-      sb.append("set_false_path -to [get_ports {e_gtxc e_txd[*] e_txen e_txer}]\n")
+      // Without RX_ER and TX_ER on the board there are no such ports to name.
+      val er = eth.params.getOrElse("noErPins", false) != true
+      val rxEr = if (er) " e_rxer" else ""
+      val txEr = if (er) " e_txer" else ""
+      sb.append(s"set_false_path -from [get_ports {e_rxd[*] e_rxdv$rxEr}]\n")
+      sb.append(s"set_false_path -to [get_ports {e_gtxc e_txd[*] e_txen$txEr}]\n")
       sb.append("set_property IOB TRUE [get_ports {e_rxd[*]}]\n")
       sb.append("set_property IOB TRUE [get_ports {e_rxdv}]\n")
-      sb.append("set_property IOB TRUE [get_ports {e_rxer}]\n\n")
+      if (er) sb.append("set_property IOB TRUE [get_ports {e_rxer}]\n")
+      sb.append("\n")
     }
 
     // Ports the design has but the board does not wire -- see Board.parkedPins.

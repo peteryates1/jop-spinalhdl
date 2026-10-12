@@ -152,6 +152,7 @@ object JopTopVerilog {
     case "wukongDdr3Fcu"    => JopConfig.wukongDdr3Fcu
     case "wukongDdr3Lcu"    => JopConfig.wukongDdr3Lcu
     case "ae115fbDdr2" => JopConfig.ae115fbDdr2
+    case "ae115fbDdr2Eth" => JopConfig.ae115fbDdr2Eth
     case "ae115fbDdr2Smp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.ae115fbDdr2Smp(n)
@@ -200,7 +201,7 @@ object JopTopVerilog {
         "cyc5000Serial, auSerial, wukongSdram, wukongDdr3, wukongBram, " +
         "wukongFull, wukongSdrFull, wukongFullSmp, wukongSmp, " +
         "wukongDualIndependent, wukongDualSmp, " +
-        "xc7a100tDbSerial, xc7a100tDbFull, xc7a100tDbSmp, ae115fbDdr2, " +
+        "xc7a100tDbSerial, xc7a100tDbFull, xc7a100tDbSmp, ae115fbDdr2, ae115fbDdr2Eth, " +
         "colorlightI5Bram, colorlightI5Sdram, colorlightDbI9PlusSdram, colorlightDbI9PlusEth, " +
         "minimum, max1000Sdram, ep4ce6Sdram")
   }

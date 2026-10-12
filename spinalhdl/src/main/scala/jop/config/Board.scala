@@ -833,12 +833,32 @@ object Board {
    * pin script (fpga/a-e115fb-ddr2/ddr2_pins.qsf), so they are not mapped here —
    * same arrangement as the DDR3 boards, whose pins the MIG owns.
    *
-   * LEDs are active low, and note they are wired into 1.8 V banks shared with
-   * DDR2. See docs/boards/ep4ce115-ddr2-board.md.
+   * LEDs are active low. See docs/boards/ep4ce115-ddr2-board.md -- the pin
+   * source of truth for this board, from photos and tracing; the vendor
+   * schematics in /srv/git/cycloneEthernet describe other board versions.
+   *
+   * BANK VOLTAGES ARE JUMPERS. J2 sets banks 1 and 2, J1 banks 7 and 8, each
+   * to 3.3, 2.5 or 1.8 V; both read 2.5 V on 2026-10-12. Banks 3-6 are the
+   * DDR2's, fixed at 1.8 V. The console (H5, N1), the Ethernet PHY (bank 2,
+   * plus RXD7 on D6 in bank 8) and the LEDs (bank 8) are all on the jumpered
+   * banks, so their standards below follow the jumpers, and one standard per
+   * bank: Quartus refuses a bank whose pins imply two VCCIOs. The JTAG pins
+   * run from bank 1 as well.
+   *
+   * ETHERNET: a Marvell 88E1111 on the bottom board, GMII on the JTAG-side
+   * connector, pins 3-32. The connector carries no RX_ER, TX_ER, COL or CRS,
+   * hence `noErPins`. RX_CLK lands on P5, which cannot feed a PLL (Quartus
+   * error 176554), like the EP4CGX150's B10 (status item 166); every
+   * connector signal passes a 22 ohm series pack on the core board. GTX_CLK
+   * comes from `pll_125`, 25 MHz to 125 MHz on AB11 -- the pin the DDR2 PLL
+   * also takes, so this second PLL lands remote, uncompensated (176598), which
+   * a forwarded transmit clock does not mind.
    */
   def AE115FB = Board(
     name = "a-e115fb",
     extraIpFiles = Seq("fpga/a-e115fb-ddr2/ip/ddr2_64bit/ddr2_64bit.qip"),
+    ethIpFiles = Seq("fpga/a-e115fb-ddr2/pll_125.v"),
+    hasEthPll = true,
     // The DDR2 pin, I/O-standard and PHY assignments, lifted verbatim from the
     // vendor reference (DDR667_read_write/quartus/ddr2_sodimm.qsf). Sourced,
     // not restated -- see `constraintFiles`.
@@ -855,8 +875,14 @@ object Board {
     // hand-written jop_ddr2.qsf had both. Nothing compared the two until the
     // generated project was diffed against it on 2026-08-26.
     portIoStandards = Map(
-      "clk_in" -> "1.8 V", "reset" -> "1.8 V", "led" -> "1.8 V",
-      "ser_txd" -> "3.3-V LVTTL", "ser_rxd" -> "3.3-V LVTTL"),
+      "clk_in" -> "1.8 V", "reset" -> "1.8 V",
+      // The jumpered banks, at 2.5 V (J1, J2). These read "1.8 V" and
+      // "3.3-V LVTTL" until 2026-10-12: neither matched the jumpers, and
+      // bank 8 holds no DDR2 pin, so nothing forced 1.8 V there.
+      "led" -> "2.5 V", "ser_txd" -> "2.5 V", "ser_rxd" -> "2.5 V",
+      "e_mdc" -> "2.5 V", "e_mdio" -> "2.5 V", "e_resetn" -> "2.5 V",
+      "e_gtxc" -> "2.5 V", "e_txc" -> "2.5 V", "e_txen" -> "2.5 V", "e_txd" -> "2.5 V",
+      "e_rxc" -> "2.5 V", "e_rxdv" -> "2.5 V", "e_rxd" -> "2.5 V"),
     reserveNceoAsIo = true,   // mem_addr[10] is on nCEO (K22)
     devices = Seq(
       BoardDevice("CLOCK_50MHz", mapping = Map("clock" -> "PIN_AB11")),
@@ -870,7 +896,17 @@ object Board {
       // interface. NOTE: the board auto-loads a factory EPCS demo at power-up
       // that also drives these, so they are unreliable as design status.
       BoardDevice("LED", mapping = Map(
-        "led0" -> "PIN_A5", "led1" -> "PIN_B5", "led2" -> "PIN_C4", "led3" -> "PIN_C3"))
+        "led0" -> "PIN_A5", "led1" -> "PIN_B5", "led2" -> "PIN_C4", "led3" -> "PIN_C3")),
+      // Bottom-board 88E1111, GMII. Pins from the board document's JTAG-side
+      // DOWN connector table (pins 3-32); no RX_ER, TX_ER, COL or CRS.
+      BoardDevice("88E1111", mapping = Map(
+        "MDC" -> "PIN_Y1", "MDIO" -> "PIN_V4", "RESET" -> "PIN_Y2",
+        "GTX_CLK" -> "PIN_V2", "TX_CLK" -> "PIN_V1", "TX_EN" -> "PIN_W1",
+        "TXD0" -> "PIN_W2", "TXD1" -> "PIN_P3", "TXD2" -> "PIN_P4", "TXD3" -> "PIN_R3",
+        "TXD4" -> "PIN_R4", "TXD5" -> "PIN_T5", "TXD6" -> "PIN_T4", "TXD7" -> "PIN_T3",
+        "RX_CLK" -> "PIN_P5", "RX_DV" -> "PIN_N6",
+        "RXD0" -> "PIN_N5", "RXD1" -> "PIN_M5", "RXD2" -> "PIN_U2", "RXD3" -> "PIN_U1",
+        "RXD4" -> "PIN_R2", "RXD5" -> "PIN_R1", "RXD6" -> "PIN_R5", "RXD7" -> "PIN_D6"))
     ))
 
   def WukongXC7A100T = Board(

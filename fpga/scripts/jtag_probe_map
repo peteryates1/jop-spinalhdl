@@ -45,10 +45,10 @@ set -euo pipefail
 # --- board registry ------------------------------------------------------
 # alias|serial|kind|description
 BOARDS=$(cat <<'EOF'
-terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board; SWAPPED onto the EP4CGX150 on 2026-08-31, so `terasic` and `ep4cgx150` now resolve alike
+terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board; on the EP4CGX150 from 2026-08-31, MOVED to the A-E115FB on 2026-10-12, so `terasic` and `ae115fb` now resolve alike
 xc7a100t|E662C876C3506A26|pico|QMTECH XC7A100T + DB_FPGA V5. The RP2040 is ON the DB_FPGA V5 itself, so this alias names a BOARD and the serial is permanent. Full 16-char RP2040 serial: `serial_matches` is a bidirectional prefix test, so it still matches the 8 chars pico-usb-blaster reports, whereas an 8-char entry would also match a different Pico sharing that prefix
-ae115fb|e6616408|usb-blaster|A-E115FB EP4CE115 + 1GB DDR2 — **OFFLINE: this Pico blaster STOPPED WORKING and the board was powered off (2026-09-07). A failed scan here is EXPECTED, not a fault to chase** — the symptom (cable enumerates, TDO empty, port re-enumerating, CH340 console opens but silent) is identical to a real failure, so it costs an hour to re-diagnose. Was on the LEVEL-SHIFTED Pico (product "USB Blaster", no hyphen) since the 2026-08-31 swap; the shifter references VTREF, and the bare Pico that once drove 3.3V into this board's JTAG bank is not this cable
-ep4cgx150|91d28408|usb-blaster|QMTECH EP4CGX150 + SDR — on the Terasic since the 2026-08-31 swap, to take the intermittent Pico out of the picture while item 101's control build is run (item 100)
+ae115fb|91d28408|usb-blaster|A-E115FB EP4CE115 + 1GB DDR2 — on the Terasic since 2026-10-12 (Ethernet bring-up). Its own level-shifted Pico blaster, e6616408, STOPPED WORKING on 2026-09-07: the symptom was cable enumerates, TDO empty, port re-enumerating, CH340 console opens but silent. The JTAG pins run from bank 1, whose VCCIO is jumper J2 (found at 2.5 V on 2026-10-12)
+ep4cgx150|91d28408|usb-blaster|QMTECH EP4CGX150 + SDR — **NO CABLE since 2026-10-12**: the Terasic it had since 2026-08-31 moved to the A-E115FB. The entry still names the Terasic, so `--assert-device ep4cgx150` fails on the EP4CE115's IDCODE rather than programming the wrong board; point it at the next cable attached
 debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashing Picos)
 cyc5000|ARA30135|arrow-usb-blaster|Arrow CYC5000 (onboard Arrow USB Blaster TEI0050, FT2232H)
 i5|07000001002700424e|cmsis-dap|Colorlight i5 on the ext board (DAPLink, also the UART bridge)

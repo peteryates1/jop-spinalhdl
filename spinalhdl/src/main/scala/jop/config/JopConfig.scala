@@ -1986,6 +1986,21 @@ object JopConfig {
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("CH340"),
         params = Map("baudRate" -> 2000000))))))
 
+  /** A-E115FB + the bottom board's Ethernet: `ae115fbDdr2` plus a Marvell
+    * 88E1111 on GMII at 1 Gb/s, transmitting on `pll_125` (25 MHz to 125 MHz).
+    * The connector carries no RX_ER or TX_ER (`noErPins`). RX_CLK is on an
+    * ordinary pin, as on the EP4CGX150 whose 1 Gb/s receive picks up extra
+    * clock edges (status item 166), so this carries the MAC's RX capture
+    * (`rxCapture`, read with `EthCapDiag`) to see whether this board does too.
+    * The board's TX_CLK is wired, so MII at 100 Mb/s remains open. */
+  def ae115fbDdr2Eth = {
+    val base = ae115fbDdr2
+    base.copy(systems = Seq(base.system.copy(devices = base.system.devices +
+      ("eth" -> DeviceInstance(DeviceType.Ethernet,
+        params = Map("gmii" -> true, "phyDataWidth" -> 8, "noErPins" -> true, "rxCapture" -> true),
+        devicePart = Some("88E1111"))))))
+  }
+
   /** A-E115FB EP4CE115 + 1 GB DDR2 — SMP.
     *
     * The third memory architecture in the scaling study, and the one that

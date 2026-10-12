@@ -122,6 +122,8 @@ object EthernetTopWiring extends DeviceTopWiring {
     val mdio = Seq(
       TopPin("e_mdc", TopPinType.Out()),
       TopPin("e_mdio", TopPinType.TriStateBool))
+    // A board that routes neither RX_ER nor TX_ER has neither port (noErPins).
+    val er = !inst.params.getOrElse("noErPins", false).asInstanceOf[Boolean]
     if (rgmii) Seq(
       TopPin("e_txc", TopPinType.Out()),
       TopPin("e_txd", TopPinType.Out(4)),
@@ -135,11 +137,11 @@ object EthernetTopWiring extends DeviceTopWiring {
     // declared port without a pin is placed by the fitter wherever it likes.
     else Seq(
       TopPin("e_txd", TopPinType.Out(dataWidth)),
-      TopPin("e_txen", TopPinType.Out()),
-      TopPin("e_txer", TopPinType.Out()),
+      TopPin("e_txen", TopPinType.Out())) ++
+    (if (er) Seq(TopPin("e_txer", TopPinType.Out())) else Nil) ++ Seq(
       TopPin("e_rxd", TopPinType.In(dataWidth)),
-      TopPin("e_rxdv", TopPinType.In()),
-      TopPin("e_rxer", TopPinType.In()),
+      TopPin("e_rxdv", TopPinType.In())) ++
+    (if (er) Seq(TopPin("e_rxer", TopPinType.In())) else Nil) ++ Seq(
       TopPin("e_rxc", TopPinType.In())
     ) ++ mdio ++ reset ++
       (if (gmii) Seq(TopPin("e_gtxc", TopPinType.Out())) else Seq(TopPin("e_txc", TopPinType.In())))
@@ -265,7 +267,7 @@ object EthernetTopWiring extends DeviceTopWiring {
       interframe.io.input << ethPhyIo.tx
       ioPins("e_txen").asInstanceOf[Bool] := RegNext(interframe.io.output.valid) init(False)
       ioPins("e_txd").asInstanceOf[Bits]  := RegNext(interframe.io.output.fragment.data) init(0)
-      ioPins("e_txer").asInstanceOf[Bool] := False
+      ioPins.get("e_txer").foreach(_.asInstanceOf[Bool] := False)
     }
 
     // RX adapter
@@ -274,7 +276,9 @@ object EthernetTopWiring extends DeviceTopWiring {
       val unbuffered = Flow(PhyRx(dataWidth))
       unbuffered.valid := ioPins("e_rxdv").asInstanceOf[Bool]
       unbuffered.data  := ioPins("e_rxd").asInstanceOf[Bits]
-      unbuffered.error := ioPins("e_rxer").asInstanceOf[Bool]
+      // No RX_ER on the board (noErPins): the PHY's errors still corrupt the
+      // frame, and the CRC check catches them there.
+      unbuffered.error := ioPins.get("e_rxer").map(_.asInstanceOf[Bool]).getOrElse(False)
 
       // EVERY PIN FEEDS ONE REGISTER. `captured` is the pins' only load, so it
       // can sit in the I/O element (QsfGenerator.ethRxCapture), and `last` comes

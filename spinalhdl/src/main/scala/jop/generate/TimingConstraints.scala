@@ -42,6 +42,13 @@ case class TimingConstraints(
   /** Groups of clock names mutually asynchronous to each other. A group with
     * fewer than two entries constrains nothing and is dropped. */
   asyncGroups: Seq[Seq[String]] = Seq.empty,
+  /** Groups each cut from EVERY other clock, one set_clock_groups apiece: a
+    * lone -group means "this against everything else", named or not. For a
+    * design whose system clock only a vendor PHY's .sdc names (DDR2). */
+  isolatedGroups: Seq[Seq[String]] = Seq.empty,
+  /** The PLL output clocks are derived by a vendor DRAM PHY's own .sdc, which
+    * Quartus reads before this one, rather than by this file. */
+  pllClocksFromPhy: Boolean = false,
   /** Altera needs these explicitly; the others infer PLL outputs. */
   derivePllClocks: Boolean = false,
   /** Raw `set_false_path` lines. Asynchronous inputs and status outputs that
@@ -67,6 +74,15 @@ case class TimingConstraints(
       sb.append(groups.map(g => "    -group {" + g.mkString(" ") + "}").mkString(" \\\n"))
       sb.append("\n")
     }
+    val isolated = isolatedGroups.filter(_.nonEmpty)
+    if (isolated.nonEmpty) {
+      sb.append("\n# Each cut from every other clock -- including the DRAM PHY's, which only\n")
+      sb.append("# its own .sdc names.")
+      if (pllClocksFromPhy)
+        sb.append(" It derives every PLL's clocks too, ours included,\n# and Quartus reads it first: the project lists the PHY's .qip first.")
+      sb.append("\n")
+      isolated.foreach(g => sb.append("set_clock_groups -asynchronous -group {" + g.mkString(" ") + "}\n"))
+    }
     sb.toString
   }
 
@@ -83,6 +99,8 @@ case class TimingConstraints(
         "    -group [get_clocks {" + g.mkString(" ") + "}]").mkString(" \\\n"))
       sb.append("\n")
     }
+    isolatedGroups.filter(_.nonEmpty).foreach(g =>
+      sb.append("set_clock_groups -asynchronous -group [get_clocks {" + g.mkString(" ") + "}]\n"))
     sb.toString
   }
 
@@ -206,11 +224,21 @@ object TimingConstraints {
         "set_false_path -from * -to [get_ports {led[*]}]",
         "set_false_path -from * -to [get_ports ser_txd]")
 
+    // With a vendor DRAM PHY the system clock is one only the PHY's .sdc names,
+    // so it cannot be listed in a group -- and a clock left out of a
+    // multi-group set_clock_groups stays related to every clock in it. Each
+    // Ethernet clock is cut from everything instead, on its own.
+    val ethGroups = Seq(ethGroup, phyGroup, phyTxGroup).filter(_.nonEmpty)
+
     TimingConstraints(
       // A vendor DRAM PHY owns the board clock and its PLL, not the Ethernet
       // PHY's receive clock: e_rxc is ours either way.
       clocks = (if (phyOwnsClocks) Nil else boardClock.toSeq) ++ phyRxClock ++ phyTxClock,
-      asyncGroups = Seq(dramGroup, ethGroup, phyGroup, phyTxGroup).filter(_.nonEmpty),
+      asyncGroups =
+        if (phyOwnsClocks) Nil
+        else Seq(dramGroup, ethGroup, phyGroup, phyTxGroup).filter(_.nonEmpty),
+      isolatedGroups = if (phyOwnsClocks) ethGroups else Nil,
+      pllClocksFromPhy = phyOwnsClocks,
       derivePllClocks =
         !phyOwnsClocks && config.fpgaFamily.manufacturer == Manufacturer.Altera,
       falsePaths = ioFalsePaths)

@@ -38,6 +38,7 @@ class GeneratedConstraintsTest extends AnyFunSuite {
     "ep4cgx150Bram"       -> "qmtech-ep4cgx150-bram",
     "ep4cgx150BramSerial" -> "qmtech-ep4cgx150-bram-serial",
     "ae115fbDdr2"         -> "a-e115fb-ddr2",
+    "ae115fbDdr2Eth"      -> "a-e115fb-ddr2",
     "max1000Sdram"        -> "max1000",
     "wukongDdr3"          -> "qmtech-xc7a100t-wukong",
     "wukongSdram"         -> "qmtech-xc7a100t-wukong",
@@ -49,6 +50,18 @@ class GeneratedConstraintsTest extends AnyFunSuite {
 
   private def cfgOf(name: String): JopConfig =
     JopTopVerilog.resolvePreset(name, Array(name))
+
+  /** The Verilog port names a set of top pins becomes, one per bit of a bus. */
+  private def portNames(pins: Seq[jop.io.TopPin]): Set[String] = {
+    import jop.io.TopPinType
+    pins.flatMap { p =>
+      p.pinType match {
+        case TopPinType.Out(w) if w > 1 => (0 until w).map(i => s"${p.name}[$i]")
+        case TopPinType.In(w) if w > 1  => (0 until w).map(i => s"${p.name}[$i]")
+        case _                          => Seq(p.name)
+      }
+    }.toSet
+  }
 
   test("every board preset emits a clock constraint at its declared period") {
     for ((name, board) <- boardPresets) {
@@ -124,10 +137,13 @@ class GeneratedConstraintsTest extends AnyFunSuite {
     for ((name, board) <- boardPresets) {
       val cfg = cfgOf(name)
       if (cfg.fpgaFamily.manufacturer == Manufacturer.Altera) {
-        val sdc = TimingConstraints.forConfig(cfg).toSdc
+        val tc = TimingConstraints.forConfig(cfg)
+        val sdc = tc.toSdc
         val created = raw"create_clock\b[^\n]*-name\s+(\S+)".r
           .findAllMatchIn(sdc).map(_.group(1)).toSet
-        val derives = sdc.contains("derive_pll_clocks")
+        // A DDR2 PHY's own .sdc derives every PLL's clocks, ours included, and
+        // Quartus reads it first (the DDR2 test below holds the project order).
+        val derives = sdc.linesIterator.exists(_.trim == "derive_pll_clocks") || tc.pllClocksFromPhy
         val grouped = raw"-group\s+\{([^}]*)\}".r
           .findAllMatchIn(sdc).flatMap(_.group(1).trim.split("\\s+")).toSeq
         for (clk <- grouped) {
@@ -209,6 +225,13 @@ class GeneratedConstraintsTest extends AnyFunSuite {
     }
     assert(!XdcGenerator.generate(cfgOf("xc7a100tDbSerial")).contains("e_rxc"),
       "a design without Ethernet has no e_rxc to constrain")
+    // A board without RX_ER and TX_ER (noErPins) has no such ports to name.
+    val wk = cfgOf("wukongFull")
+    val noEr = wk.copy(systems = Seq(wk.system.copy(devices = wk.system.devices +
+      ("eth" -> wk.system.devices("eth").copy(params = wk.system.devices("eth").params + ("noErPins" -> true))))))
+    val xdc = XdcGenerator.generate(noEr)
+    assert(xdc.contains("set_property IOB TRUE [get_ports {e_rxdv}]") &&
+      !xdc.contains("e_rxer") && !xdc.contains("e_txer"), xdc)
   }
 
   // THE TRANSMIT CLOCK TOO. A GMII MAC on a Xilinx board transmits on the clock
@@ -244,26 +267,68 @@ class GeneratedConstraintsTest extends AnyFunSuite {
   // places, EthernetTopWiring.topPins and DeviceType.Ethernet.verilogPins; hold
   // them together for every mode.
   test("every port an Ethernet design declares is a pin its board constrains") {
-    import jop.io.{EthernetTopWiring, TopPinType}
+    import jop.io.EthernetTopWiring
     val modes = Seq(
       "GMII" -> Map[String, Any]("gmii" -> true, "phyDataWidth" -> 8),
       "MII" -> Map[String, Any]("phyDataWidth" -> 4),
       "RGMII" -> Map[String, Any]("rgmii" -> true, "noPhyReset" -> true),
-      "MII, no PHY reset" -> Map[String, Any]("noPhyReset" -> true))
+      "MII, no PHY reset" -> Map[String, Any]("noPhyReset" -> true),
+      "GMII, no error pins" -> Map[String, Any]("gmii" -> true, "phyDataWidth" -> 8, "noErPins" -> true))
     for ((mode, params) <- modes) {
       val inst = DeviceInstance(DeviceType.Ethernet, params = params)
-      val declared = EthernetTopWiring.topPins(inst, Manufacturer.Altera).flatMap { p =>
-        p.pinType match {
-          case TopPinType.Out(w) if w > 1 => (0 until w).map(i => s"${p.name}[$i]")
-          case TopPinType.In(w) if w > 1  => (0 until w).map(i => s"${p.name}[$i]")
-          case _                          => Seq(p.name)
-        }
-      }.toSet
+      val declared = portNames(EthernetTopWiring.topPins(inst, Manufacturer.Altera))
       val constrained = DeviceType.Ethernet.verilogPins(params).keySet
       assert(declared == constrained,
         s"$mode: declared but unconstrained ${(declared -- constrained).toSeq.sorted}, " +
         s"constrained but undeclared ${(constrained -- declared).toSeq.sorted}")
+      // A connector without RX_ER and TX_ER (the A-E115FB's) has neither port.
+      if (params.contains("noErPins"))
+        assert(!declared("e_rxer") && !declared("e_txer"), s"$mode: $declared")
     }
+  }
+
+  // THE BOARD HALF OF THE SAME TRAP. The test above holds a design's ports to
+  // its device type's pin list; this holds them to what the BOARD routes. A
+  // signal the board does not map resolves to no pin, silently
+  // (PinResolver.devicePins skips it), and the fitter then places the port
+  // wherever it likes. The A-E115FB's connector carries no RX_ER or TX_ER:
+  // a plain GMII preset there would declare both and leave them floating.
+  test("every Ethernet port a board preset declares lands on a pin") {
+    import jop.io.EthernetTopWiring
+    for ((name, board) <- boardPresets) {
+      val cfg = cfgOf(name)
+      if (cfg.fpgaFamily.manufacturer == Manufacturer.Altera) {
+        val pinned = QsfGenerator.pinAssignments(cfg).map(_.verilogPort).toSet
+        for (inst <- cfg.devices.values if inst.deviceType == DeviceType.Ethernet) {
+          val declared = portNames(EthernetTopWiring.topPins(inst, Manufacturer.Altera))
+          assert((declared -- pinned).isEmpty,
+            s"$name ($board): declared without a pin ${(declared -- pinned).toSeq.sorted}")
+        }
+      }
+    }
+  }
+
+  // A VENDOR DRAM PHY OWNS THE SYSTEM CLOCK, AND ITS NAME. On the A-E115FB the
+  // system runs on the DDR2 PHY's PLL, which only the PHY's own .sdc creates
+  // (`phyOwnsClocks`), so no group of ours names it -- and a clock left out of
+  // a multi-group set_clock_groups stays related to every clock in it: each
+  // crossing between the 75 MHz system and the 125 MHz Ethernet domains would
+  // be timed as synchronous. One -group alone cuts that group from every other
+  // clock ("including clocks that are created in the future", Quartus's help),
+  // which says exactly that without naming the PHY's clocks.
+  test("a DDR2 design cuts each Ethernet clock from every other clock") {
+    val sdc = TimingConstraints.forConfig(cfgOf("ae115fbDdr2Eth")).toSdc
+    assert(sdc.contains("create_clock -period 8.000 -name e_rxc [get_ports e_rxc]"), sdc)
+    for (clk <- Seq("ethPll|altpll_component|auto_generated|pll1|clk[0]", "e_rxc"))
+      assert(sdc.contains(s"set_clock_groups -asynchronous -group {$clk}\n"),
+        s"$clk in a group of its own\n$sdc")
+    assert(!sdc.linesIterator.exists(_.trim.startsWith("derive_pll_clocks")),
+      s"the DDR2 PHY's .sdc derives the PLLs\n$sdc")
+    // ...and it must run first: a group naming a clock not yet derived is dropped.
+    val tcl = QuartusProject.generate(cfgOf("ae115fbDdr2Eth"), "test_rev", "ae115fbDdr2Eth", Seq("ae115fbDdr2Eth"))
+    val qip = tcl.indexOf("QIP_FILE")
+    val ours = tcl.indexOf("SDC_FILE")
+    assert(qip >= 0 && ours > qip, s"the PHY's .qip is listed before our .sdc\n$tcl")
   }
 
   test("every Altera board preset emits pins and the right device") {

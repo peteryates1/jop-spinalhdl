@@ -35,7 +35,7 @@ QUARTUS_DIR  ?= /opt/altera/18.1/quartus
 
 include ../quartus.mk
 
-.PHONY: all full program assert-device ip smp exerciser exerciser-program clean
+.PHONY: all full program assert-device ip smp eth eth-program exerciser exerciser-program clean
 
 all:  microcode ip generate build
 full: microcode ip generate build program download monitor
@@ -88,6 +88,13 @@ smp:
 
 smp-program:
 	$(MAKE) program CFG="ae115fbDdr2Smp $(CORES)" REV=jop_ddr2_smp
+
+#   make eth            the bottom board's 88E1111, GMII (ae115fbDdr2Eth)
+eth:
+	$(MAKE) generate build CFG=ae115fbDdr2Eth REV=jop_ddr2_eth
+
+eth-program:
+	$(MAKE) program CFG=ae115fbDdr2Eth REV=jop_ddr2_eth
 
 # --------------------------------------------------------------------------
 # The DDR2 exerciser — CONVERTED 2026-08-29

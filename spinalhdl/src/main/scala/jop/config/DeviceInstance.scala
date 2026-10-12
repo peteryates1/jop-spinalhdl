@@ -50,6 +50,9 @@ object DeviceType {
     /** `rgmii` (jop.io.Rgmii100): RGMII at 100 Mb/s, TXC driven by the FPGA.
       * `noPhyReset`: the design leaves the PHY's reset alone, so there is no
       * e_resetn port to constrain (EthernetTopWiring.topPins drops it too).
+      * `noErPins`: the board routes neither RX_ER nor TX_ER (the A-E115FB's
+      * connector), so there is no e_rxer or e_txer port; the MAC sees no
+      * receive errors and transmits none.
       * `rxCapture`: the MAC's RX capture, a diagnostic (jop.io.Mac). */
     override def verilogPins(p: Map[String, Any]) = {
       val gmii = p.getOrElse("gmii", false).asInstanceOf[Boolean]
@@ -57,8 +60,11 @@ object DeviceType {
       val pins =
         if (rgmii) ethRgmiiPins
         else ethBasePins ++ (if (gmii) ethGmiiExtra else ethMiiExtra)
-      if (p.getOrElse("noPhyReset", false).asInstanceOf[Boolean]) pins - "e_resetn"
-      else pins + ("e_resetn" -> "RESET")
+      val withEr =
+        if (p.getOrElse("noErPins", false).asInstanceOf[Boolean]) pins - "e_rxer" - "e_txer"
+        else pins
+      if (p.getOrElse("noPhyReset", false).asInstanceOf[Boolean]) withEr - "e_resetn"
+      else withEr + ("e_resetn" -> "RESET")
     }
     def create(cfg: JopCoreConfig, p: Map[String, Any], ctx: DeviceContext) =
       Eth(
