@@ -18,6 +18,14 @@ import spinal.lib.com.eth._
  *   0x3 read  — RX data pop (first read = bit count, then data words; auto-pop)
  *   0x4 read  — RX stats (auto-clear): bits [7:0]=errors, [15:8]=drops
  *
+ * With `rxCapture` (a diagnostic, see the RX capture section):
+ *   0x5 write — arm; bit 0 = mode (0: the next frame, 1: the next frame the MAC
+ *               rejects or never commits)
+ *   0x5 read  — bit 0 done, bit 1 mode, bit 2 commit seen, bit 3 error seen,
+ *               [27:16] entries
+ *   0x6 read  — index of the first entry; 0x6 write — read pointer
+ *   0x7 read  — the entry at the read pointer, which then advances
+ *
  * TX protocol: Write frame length in bits to addr 2, then write ceil(length/32)
  * data words. MacTxBuffer auto-commits after the correct number of words.
  *
@@ -31,6 +39,7 @@ import spinal.lib.com.eth._
  * @param phyRxDataWidth PHY RX data width (4 for MII, 8 for GMII)
  * @param rxBufferByteSize RX buffer size in bytes
  * @param txBufferByteSize TX buffer size in bytes
+ * @param rxCapture add the RX capture (2048 entries, four M9K/BRAM blocks)
  */
 case class Mac(
   txCd: ClockDomain,
@@ -38,7 +47,8 @@ case class Mac(
   phyTxDataWidth: Int = 4,
   phyRxDataWidth: Int = 4,
   rxBufferByteSize: Int = 2048,
-  txBufferByteSize: Int = 2048
+  txBufferByteSize: Int = 2048,
+  rxCapture: Boolean = false
 ) extends Component with HasBusIo {
 
   val macParam = MacEthParameter(
@@ -120,6 +130,111 @@ case class Mac(
   mac.io.ctrl.rx.stats.clear := False
 
   // ========================================================================
+  // RX capture (rxCapture -- a diagnostic, status item 166)
+  // ========================================================================
+
+  /**
+   * A logic analyser on the receive stream as it enters MacEth: one entry per
+   * RX clock -- bits 7:0 RXD, 8 RX_DV, 9 RX_ER, 10 last -- with the MAC's
+   * verdict as it happens: 11 commit, 12 error, 13 drop. From arming, a ring
+   * buffer records every clock. A capture opens when RX_DV rises after 4 idle
+   * clocks, keeping the 8 entries before it, and closes after 32 idle clocks --
+   * so a frame whose RX_DV drops for a clock stays one capture -- or when the
+   * ring is full. Mode 0 keeps the first capture. Mode 1 keeps the first one
+   * the MAC committed with its error flag, or never committed at all: a frame
+   * that vanishes without counting as an error.
+   */
+  class RxCapture extends Area {
+    val depth = 2048
+    val pre = 8
+    val tail = 32
+    val addrWidth = log2Up(depth)
+    val ram = Mem(Bits(16 bits), depth)
+
+    val armToggle = RegInit(False)
+    val mode = RegInit(False)
+
+    val rxReset = ResetCtrl.asyncAssertSyncDeassert(
+      input = ClockDomain.current.isResetActive,
+      clockDomain = rxCd
+    )
+
+    val rx = new ClockingArea(rxCd.copy(reset = rxReset)) {
+      val arm = BufferCC(armToggle, init = False)
+      val armed = arm =/= RegNext(arm).init(False)
+      val keepRejected = BufferCC(mode, init = False)
+
+      val s = io.phy.rx
+      val commitNow = mac.io.sim.commit
+      val errorNow = commitNow && mac.io.sim.error
+      val entry = B(0, 2 bits) ## mac.io.sim.drop ## mac.io.sim.error ## commitNow ##
+        s.payload.last ## s.payload.fragment.error ## s.valid ## s.payload.fragment.data.resize(8)
+
+      val running = RegInit(False)
+      val open = RegInit(False)
+      val done = RegInit(False)
+      val wrAddr = Reg(UInt(addrWidth bits)) init(0)
+      val start = Reg(UInt(addrWidth bits)) init(0)
+      val length = Reg(UInt(addrWidth + 1 bits)) init(0)
+      val idle = Reg(UInt(log2Up(tail) bits)) init(0) // RX_DV low before this clock
+      val sawCommit = RegInit(False)
+      val sawError = RegInit(False)
+
+      when(s.valid) {
+        idle := 0
+      } elsewhen (idle =/= tail - 1) {
+        idle := idle + 1
+      }
+
+      ram.write(wrAddr, entry, enable = running)
+      when(running) {
+        wrAddr := wrAddr + 1
+        when(!open) {
+          when(s.valid && idle >= 4) {
+            open := True
+            start := wrAddr - pre
+            length := pre + 1
+            sawCommit := False
+            sawError := False
+          }
+        } otherwise {
+          length := length + 1
+          when(commitNow) { sawCommit := True }
+          when(errorNow) { sawError := True }
+          when((!s.valid && idle === tail - 1) || length === depth - 1) {
+            open := False
+            when(!keepRejected || sawError || errorNow || !(sawCommit || commitNow)) {
+              running := False
+              done := True
+            }
+          }
+        }
+      }
+      when(armed) {
+        running := True
+        open := False
+        done := False
+      }
+    }
+
+    // Read side. start, length and the flags hold still once done is set.
+    val done = BufferCC(rx.done, init = False)
+    val start = RegNext(rx.start).addTag(crossClockDomain)
+    val length = RegNext(rx.length).addTag(crossClockDomain)
+    val sawCommit = RegNext(rx.sawCommit).addTag(crossClockDomain)
+    val sawError = RegNext(rx.sawError).addTag(crossClockDomain)
+
+    val rdPtr = Reg(UInt(addrWidth bits)) init(0)
+    val rdPtrNext = CombInit(rdPtr)
+    rdPtr := rdPtrNext
+    // Addressed by the NEXT pointer, so the entry is ready the clock after a
+    // read or a pointer write, whichever clock the CPU reads in.
+    val rdEntry = ram.readSync(rdPtrNext, clockCrossing = true)
+  }
+
+  val capture = rxCapture generate new RxCapture
+
+  // ========================================================================
   // Interrupt Generation
   // ========================================================================
 
@@ -165,6 +280,24 @@ case class Mac(
         mac.io.ctrl.rx.stats.clear := True
       }
     }
+    if (rxCapture) {
+      is(5) {
+        bus.rdData(0) := capture.done
+        bus.rdData(1) := capture.mode
+        bus.rdData(2) := capture.sawCommit
+        bus.rdData(3) := capture.sawError
+        bus.rdData(27 downto 16) := capture.length.asBits
+      }
+      is(6) {
+        bus.rdData := capture.start.asBits.resized
+      }
+      is(7) {
+        bus.rdData := capture.rdEntry.resized
+        when(bus.rd) {
+          capture.rdPtrNext := capture.rdPtr + 1
+        }
+      }
+    }
   }
 
   // ========================================================================
@@ -182,6 +315,15 @@ case class Mac(
         // TX data push — register valid and payload
         txPushValid := True
         txPushPayload := bus.wrData
+      }
+      if (rxCapture) {
+        is(5) {
+          capture.mode := bus.wrData(0)
+          capture.armToggle := !capture.armToggle
+        }
+        is(6) {
+          capture.rdPtrNext := bus.wrData.asUInt.resized
+        }
       }
     }
   }

@@ -49,7 +49,8 @@ object DeviceType {
     val interruptCount = 1
     /** `rgmii` (jop.io.Rgmii100): RGMII at 100 Mb/s, TXC driven by the FPGA.
       * `noPhyReset`: the design leaves the PHY's reset alone, so there is no
-      * e_resetn port to constrain (EthernetTopWiring.topPins drops it too). */
+      * e_resetn port to constrain (EthernetTopWiring.topPins drops it too).
+      * `rxCapture`: the MAC's RX capture, a diagnostic (jop.io.Mac). */
     override def verilogPins(p: Map[String, Any]) = {
       val gmii = p.getOrElse("gmii", false).asInstanceOf[Boolean]
       val rgmii = p.getOrElse("rgmii", false).asInstanceOf[Boolean]
@@ -65,7 +66,8 @@ object DeviceType {
         rxCd = ctx.ethRxCd.get,
         phyTxDataWidth = p.getOrElse("phyDataWidth", 4).asInstanceOf[Int],
         phyRxDataWidth = p.getOrElse("phyDataWidth", 4).asInstanceOf[Int],
-        mdioClkDivider = p.getOrElse("mdioClkDivider", 40).asInstanceOf[Int])
+        mdioClkDivider = p.getOrElse("mdioClkDivider", 40).asInstanceOf[Int],
+        rxCapture = p.getOrElse("rxCapture", false).asInstanceOf[Boolean])
   }
 
   case object SdSpi extends DeviceType {

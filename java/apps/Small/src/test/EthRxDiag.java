@@ -14,7 +14,11 @@ import com.jopdesign.net.*;
  * read (the length in bits) and up to eight data words, as read. Twice a
  * second: "S" with the MAC status (IO_ETH+0: bit 1 TX ready, bit 4 RX flush,
  * bit 5 RX valid), the RX errors and drops since the last line (IO_ETH+4,
- * cleared by the read) and the frame count.
+ * cleared by the read) and the frame count. Each S line also sends a 60-byte
+ * broadcast (EtherType 0x88B5, IEEE local experimental, which other stations
+ * ignore) so the switch keeps this board's MAC in its table: an unknown-unicast
+ * flood can be rate-limited, and frames sent to the board then vanish before
+ * they reach its PHY.
  */
 public class EthRxDiag {
 
@@ -37,6 +41,12 @@ public class EthRxDiag {
 		JVMHelp.wr(up ? "Link UP " : "Link DOWN ");
 		wrInt(EthDriver.getLinkSpeed());
 		JVMHelp.wr("M\n");
+
+		Packet keepalive = new Packet();
+		EthDriver.setDstMac(keepalive, EthDriver.BCAST_MAC_HI, EthDriver.BCAST_MAC_LO);
+		EthDriver.setSrcMac(keepalive);
+		EthDriver.setEtherType(keepalive, 0x88B5);
+		keepalive.len = 60;
 
 		int frames = 0;
 		int wd = 0;
@@ -74,6 +84,7 @@ public class EthRxDiag {
 			JVMHelp.wr(" frames=");
 			wrInt(frames);
 			JVMHelp.wr('\n');
+			EthDriver.send(keepalive);
 		}
 	}
 }

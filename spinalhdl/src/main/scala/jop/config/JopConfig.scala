@@ -725,13 +725,16 @@ object JopConfig {
     * forces changed: the console is the RP2040's UART0, and the SD socket's
     * card-detect is not routed (item 151). The module-swap half of status item
     * 166: the V5 carries the same RTL8211EG on the same J3 pins as the V4, so
-    * against `ep4cgx150DbFull` the daughter board is what changes. */
+    * against `ep4cgx150DbFull` the daughter board is what changes. It also
+    * carries the MAC's RX capture (`rxCapture`, four M9Ks), the logic analyser
+    * that item 166's lost frames are read with: `EthCapDiag`. */
   def ep4cgx150DbV5Eth = {
     val base = ep4cgx150DbFull
     val devs = base.system.devices
     base.copy(assembly = SystemAssembly.qmtechWithDbV5,
       systems = Seq(base.system.copy(devices = devs ++ Map(
         "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("RP2040")),
+        "eth" -> devs("eth").copy(params = devs("eth").params + ("rxCapture" -> true)),
         "sdNative" -> devs("sdNative").copy(params = Map("noCardDetect" -> true))))))
   }
 
