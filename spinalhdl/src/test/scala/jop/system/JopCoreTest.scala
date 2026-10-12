@@ -23,7 +23,8 @@ case class JopCoreTestHarness(
   ramInit: Seq[BigInt],
   mainMemInit: Seq[BigInt],
   memSize: Int = 256 * 1024,  // default 256KB; increase for large .jop files
-  coreConfig: Option[JopCoreConfig] = None  // override core config (default: JopCoreConfig())
+  coreConfig: Option[JopCoreConfig] = None,  // override core config (default: JopCoreConfig())
+  uartRx: Boolean = false  // drive the UART's rxd from io.rxd (needs a UART in coreConfig)
 ) extends Component {
 
   val config = coreConfig.getOrElse(JopCoreConfig(
@@ -62,6 +63,9 @@ case class JopCoreTestHarness(
 
     // Stack RAM debug probe (read-only; address hardwired to 0 internally)
     val debugRamData = out Bits(config.dataWidth bits)
+
+    // UART RX, bit-serial from the testbench (uartRx only)
+    val rxd = uartRx generate (in Bool())
   }
 
   // JBC RAM starts empty — microcode fills it from main memory on demand
@@ -166,8 +170,10 @@ case class JopCoreTestHarness(
   // Single-core: no CmpSync
   SyncOut.tieOff(jopCore.io.syncIn)
 
-  // No UART RX in test harness
-  if (jopCore.devicePins.contains("uart")) jopCore.devicePin[Bool]("uart", "rxd") := True
+  // UART RX idles high unless the testbench drives it
+  if (jopCore.devicePins.contains("uart"))
+    jopCore.devicePin[Bool]("uart", "rxd") := (if (uartRx) io.rxd else True)
+  require(!uartRx || jopCore.devicePins.contains("uart"), "uartRx needs a UART device in coreConfig")
 
   // Debug RAM probe: hardwire to 0 to avoid readSync MUX corruption in simulation.
   // When debugRamAddr is an external IO port, Verilator leaves it uninitialized (X),
@@ -199,7 +205,6 @@ case class JopCoreTestHarness(
   jopCore.memCtrl.memReadRequested.simPublic()
   jopCore.memCtrl.rdDataReg.simPublic()
   jopCore.io.debugRdDataReg.simPublic()
-  jopCore.memCtrl.ioRdPending.simPublic()
 
   // Outputs
   io.pc := jopCore.io.pc

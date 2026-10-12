@@ -50,7 +50,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 10. **[#113](#item-113)** — `cold-check` covers 3 boards of 12, and the primary board is not one of them
 11. **[#112](#item-112)** — `ConstraintDriftTest` covers 2 presets of 46 — the strongest check in the tree, at 4 % coverage
 12. **[#82](#item-82)** — Flash boot has been unbuildable since 2026-03-13; a hardware-verified capability deleted as collateral
-13. **[#68](#item-68)** — Ethernet links at 1 Gbps but no packets move
+13. **[#68](#item-68)** — Ethernet links at 1 Gbps but no packets move — cause found and FIXED 2026-10-12 (the I/O read re-latch; Wukong GMII A/B); only the EP4CGX150 re-run is left, waiting for its cable
 14. **[#65](#item-65)** — Both SD exercisers fail on hardware, and it is not the conversion
 15. **[#84](#item-84)** — No MAX1000 configuration fits the 10M08 — single-core overflows it by a third
 16. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
@@ -192,7 +192,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[72](#item-72)** — `JopTopVerilog` gave every FPGA build the SERIAL microcode regardless of the config's boot mode — FIXED
 - **[71](#item-71)** — All three EP4CGX150 **BRAM** presets missed timing at 80 MHz; the BRAM read-data path will not close there — FIXED by reclocking, `hw_verify` now refuses violated bitstreams
 - **[70](#item-70)** — UART baud is stated in THREE places that disagree — preset override, a 2 Mbaud default, and 12 Makefile constants. Pick one rate and derive the rest
-- **[68](#item-68)** — EP4CGX150 Ethernet: link comes up at 1 Gbps but NO packets move. DHCP times out against a server that IS on that switch — **probable cause found 2026-10-11 on the Colorlight i9+:** the memory controller's I/O read re-latch read the MAC's pop-on-read RX register one word late; fixed in `Mac.scala`, i9+ networking verified, EP4CGX150 not yet re-run
+- **[68](#item-68)** — EP4CGX150 Ethernet: link comes up at 1 Gbps but NO packets move — **cause confirmed and FIXED 2026-10-12:** `BmbMemoryController` re-latched every I/O read after its strobe, so the MAC's pop-on-read RX register reached the CPU one word late. Removed; Wukong `wukongFull` (same PHY, GMII) A/B: `Link UP 1000M` and nothing received with it, ping/UDP/TCP/DHCP/DNS and DoAll without. EP4CGX150 re-run pending (its cable is on the i9+)
 - **[67](#item-67)** — `ep4cgx150DbFull` runs with `useStackCache = false`; the original had it true. Revisit once stack-cache SDRAM integration lands
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
@@ -3361,34 +3361,39 @@ moving whole frames is the obvious guess.
 
 ### Item 68 — Ethernet links at 1 Gbps but no packets move
 
-> **Probable cause found 2026-10-11, on the Colorlight i9+ (same MAC, RGMII at
-> 100 Mb/s).** There too the link came up, the board's frames reached the LAN,
-> and nothing came back. `EthRxDiag` showed the MAC receiving every frame
-> intact (no CRC errors or drops), but each read of the RX data register
-> returned the word AFTER the one it popped: the length read gave the first
-> data word, so every frame reached the stack one word late and was dropped.
-> The stats register, cleared on read, always read zero -- the `Er=0 Dr=0`
-> below.
+> **CAUSE CONFIRMED AND FIXED 2026-10-12.** `BmbMemoryController` re-latched
+> every I/O read from the same address, without the read strobe, until the next
+> memory operation (`ioRdPending`, added on 2026-03-01 at 21:04 for an I/O FPU
+> that was removed on 2026-03-10 -- seven hours AFTER the networking commits that
+> verified ping/UDP/TCP/DHCP on this board). The MAC's RX data register pops its
+> FIFO on the strobe, so `ldmrd` got the NEXT word: the length read returned the
+> first data word, every frame reached the stack one word late and was dropped,
+> and the clear-on-read stats always read zero -- the `Rx=0 Er=0 Dr=0` below. The
+> re-latch is gone; an I/O read is answered once, in its read cycle.
 >
-> The mechanism: `BmbMemoryController` keeps re-latching an I/O read from the
-> same address, without the read strobe, while the pipeline waits
-> (`ioRdPending`). It was added on 2026-03-01 at 21:04 for an I/O FPU (removed
-> on 2026-03-10), seven hours AFTER the networking commits that verified
-> ping/UDP/TCP/DHCP on this board. It is harmless for a register whose read has
-> no side effect, and wrong for one that pops or clears.
+> - **Wukong `wukongFull`** (RTL8211EG, GMII at 1000M: this item's PHY and
+>   interface), same day, same tree, only the re-latch differing. With it:
+>   `Link UP 1000M`, the board's gratuitous ARPs on the wire, 0/50 ping, no UDP
+>   or TCP -- this item's symptom. Without it: ping 50/50, UDP and TCP echo
+>   identical (10 KB and 50 KB), DHCP BOUND, DNS, DoAll 68/68.
+> - **Colorlight i9+** (RGMII at 100M), where it was found on 2026-10-11 with
+>   `EthRxDiag`: ping/UDP/TCP/DHCP/DNS and DoAll 68/68 on the fixed controller.
+> - **The UART RX data register has the same shape.** A burst read back with
+>   consecutive `Native.rd(IO_UART)` came back one byte late with the last byte
+>   twice, 6 of 6 bursts, on the i9+ and the Wukong with the re-latch; 6 of 6
+>   intact without it on all three boards (`UartBacklog`).
+> - **Tests**: `BmbMemoryControllerTest` ("an I/O read returns what the device
+>   presented in the read cycle") and `JopUartBacklogTest` (real pipeline,
+>   microcode and Uart) failed before the fix and pass after.
+> - The one reader that could have relied on the re-latch, IHLU's lock status in
+>   `monitorenter`, was measured in a 2-core sim: the read lands 9 cycles after
+>   the lock write, once IHLU has answered (74 of 74 read 0 in their own read
+>   cycle).
 >
-> **Fix:** `Mac.scala` holds the value a popping or clearing read returned
-> until the next read. `Rgmii100Test` "the CPU reads each word once" reads the
-> way the controller does, and it failed with the board's exact symptom
-> (`the length read returned 0xffffffff`) before the fix. The i9+ then passed
-> ping, UDP and TCP echo (50 KB identical), DHCP and DNS
-> (docs/peripherals/networking.md).
->
-> **Still open:** the EP4CGX150 has not been re-run with the fix. Any other
-> pop-on-read or clear-on-read device is exposed to the same re-latch: the UART
-> RX data register has that shape too, and is untested with a backlog. The
-> class fix is to remove the re-latch, which no device has needed since
-> 2026-03-10; that is a core change and needs the full regression.
+> **EP4CGX150 itself: not yet re-run.** Its RJ45 had no link partner on
+> 2026-10-12 (PHY answers on MDIO, BMSR 7949, LPA 0000): its cable is on the
+> i9+. The fixed `ep4cgx150DbFull` passes DoAll 68/68 and reads UART bursts
+> intact; NetTest/DhcpTest wait for the cable.
 
 **Found 2026-08-25**, first hardware run of the restored `ep4cgx150DbFull`
 (item 66) on the EP4CGX150 + DB_FPGA V4, cable in, switch connected.

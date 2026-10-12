@@ -123,19 +123,6 @@ class Rgmii100Test extends AnyFunSuite {
     v
   }
 
-  /** A read as JOP's BmbMemoryController really does it: it latches the value
-    * in the rd cycle, and then, for as long as the pipeline waits, keeps
-    * re-latching from the same address WITHOUT rd (ioRdPending). The CPU gets
-    * the last re-latched value. */
-  def busReadAsJop(dut: Harness, addr: Int, waits: Int = 3): Long = {
-    dut.io.addr #= addr
-    dut.io.rd #= true
-    dut.clockDomain.waitSampling()
-    dut.io.rd #= false
-    dut.clockDomain.waitSampling(waits)
-    dut.io.rdData.toLong & 0xFFFFFFFFL
-  }
-
   /** Drive `bytes` onto the RGMII RX pins as the B50612D does: a new nibble
     * right after each RXC rising edge, low nibble first, RX_CTL high. */
   def driveRx(dut: Harness, bytes: Seq[Int]): Unit = {
@@ -149,29 +136,18 @@ class Rgmii100Test extends AnyFunSuite {
     dut.io.rxd #= 0
   }
 
-  test("RX: the CPU reads each word once, although the memory controller re-reads I/O") {
-    // On hardware every frame reached EthDriver one word late -- the length
-    // read returned the first data word -- because the re-latch saw the RX
-    // FIFO's NEXT word after the pop, and the stats read saw them cleared.
-    // The stack dropped everything (status item 68).
+  test("RX: a frame with a bad FCS is counted in the clear-on-read stats") {
+    // The stats read clears them in the same cycle. Status item 68's `Er=0`
+    // was the memory controller re-reading the register after that clear
+    // (its I/O re-latch, removed 2026-10-11; BmbMemoryControllerTest).
     compiled.doSim { dut =>
       start(dut)
       busRead(dut, 4)
-      driveRx(dut, wire)
-      var tries = 0
-      while ((busRead(dut, 0) & 0x20) == 0) { tries += 1; assert(tries < 2000, "no frame reached the MAC") }
-      val bitLen = busReadAsJop(dut, 3)
-      assert(bitLen == (frame.size + 4) * 8, s"the length read returned 0x${bitLen.toHexString}")
-      val got = (0 until (frame.size + 4) / 4).map(_ => busReadAsJop(dut, 3))
-        .flatMap(w => (0 until 4).map(i => ((w >> (8 * i)) & 0xFF).toInt))
-      assert(got == frame ++ fcs(frame), s"\n got  ${hex(got)}\n want ${hex(frame ++ fcs(frame))}")
-
-      // A frame with a bad FCS counts one error; the clear-on-read must not
-      // hand the CPU the cleared value.
       driveRx(dut, wire.dropRight(1) :+ (wire.last ^ 0xFF))
       dut.clockDomain.waitSampling(200)
-      val stats = busReadAsJop(dut, 4)
+      val stats = busRead(dut, 4)
       assert((stats & 0xFF) == 1, f"RX stats read as 0x$stats%04x, want one error")
+      assert(busRead(dut, 4) == 0, "the stats read did not clear them")
     }
   }
 

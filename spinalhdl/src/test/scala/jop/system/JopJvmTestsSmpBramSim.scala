@@ -37,7 +37,11 @@ object JopJvmTestsSmpBramSim extends App {
 
   val romData = JopFileLoader.loadMicrocodeRom(romFilePath)
   val ramData = JopFileLoader.loadStackRam(ramFilePath)
-  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, 256 * 1024 / 4)
+  // 512 KB, as JopJvmTestsBramSim: DoAll.jop outgrew 256 KB (74,938 words,
+  // 293 KB, on 2026-10-12), and a truncated image boots to no output at all --
+  // this sim reported "No tests completed" for that reason, not a core fault.
+  val bramSize = 512 * 1024
+  val mainMemData = JopFileLoader.jopFileToMemoryInit(jopFilePath, bramSize / 4)
 
   println(s"Loaded ROM: ${romData.length} entries")
   println(s"Loaded RAM: ${ramData.length} entries")
@@ -48,7 +52,7 @@ object JopJvmTestsSmpBramSim extends App {
   val run = TestHistory.startRun("JopJvmTestsSmpBramSim", "sim-verilator", jopFilePath, romFilePath, ramFilePath)
 
   JopSimDefaults.config
-    .compile(JopSmpTestHarness(cpuCnt, romData, ramData, mainMemData, memSize = 256 * 1024))
+    .compile(JopSmpTestHarness(cpuCnt, romData, ramData, mainMemData, memSize = bramSize))
     .doSim { dut =>
       val log = { new java.io.File(logFilePath).getParentFile.mkdirs(); new PrintWriter(logFilePath) }
       var uartOutput = new StringBuilder

@@ -8,7 +8,8 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 | Board | PHY / interface | Preset | Hardware |
 |-------|-----------------|--------|----------|
 | EP4CGX150 + DB_FPGA V4 | RTL8211EG, GMII 1 Gb/s | `ep4cgx150DbFull` | worked 2026-03-01; the restored preset linked but moved no packets on 2026-08-25 (status item 68), probably the RX read bug fixed 2026-10-11 (below), not yet re-run |
-| Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11) |
+| Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68 |
+| QMTECH Wukong V3 | RTL8211EG, GMII 1 Gb/s | `wukongFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12), DoAll 68/68; the same build with the re-latch restored: `Link UP 1000M` and nothing received (below) |
 
 ## Status
 
@@ -180,19 +181,19 @@ The EthMac hardware object (`com.jopdesign.hw.EthMac`) maps to I/O address
 2. Read offset +3 → frame length in bits
 3. Read offset +3 repeatedly → data words (auto-pop each read)
 
-**Reads with a side effect hold their value.** +3 pops and +4 clears, and
-after the read cycle both show the value that read returned, until the next
-read. JOP's `BmbMemoryController` keeps re-latching an I/O read from the same
-address, without the read strobe, for as long as the pipeline waits
-(`ioRdPending`, added on 2026-03-01 for an I/O FPU that was removed on
-2026-03-10). Before the hold, that re-latch handed the CPU the word AFTER the one
-it popped: the length read returned the first data word, so every frame reached
-the stack one word late and was dropped, and the stats always read zero. The
-symptom was status item 68's: link up, frames on the wire both ways, `Rx=0 Er=0
-Dr=0`. `Rgmii100Test` reads the way the controller does
-(`busReadAsJop`) and failed with the board's exact symptom before the fix.
-`EthRxDiag` (`java/apps/Small`) prints what the MAC hands the CPU, raw, below the
-stack.
+**Reads with a side effect are answered once.** +3 pops and +4 clears on the
+read strobe, and the CPU gets what the MAC presented in that cycle:
+`BmbMemoryController` latches an I/O read in its read cycle and keeps the value
+until the next memory operation. Until 2026-10-11 it went on re-latching the same
+address, without the strobe, while the pipeline waited (`ioRdPending`, added on
+2026-03-01 for an I/O FPU that was removed on 2026-03-10). That handed the CPU
+the word AFTER the one it popped: the length read returned the first data word,
+so every frame reached the stack one word late and was dropped, and the stats
+always read zero. The symptom was status item 68's: link up, frames on the wire
+both ways, `Rx=0 Er=0 Dr=0`. The UART's RX data register has the same shape and
+read a queued burst one byte late. `BmbMemoryControllerTest` and
+`JopUartBacklogTest` pin the fix. `EthRxDiag` (`java/apps/Small`) prints what
+the MAC hands the CPU, raw, below the stack.
 
 ### Frame Format
 
@@ -488,6 +489,41 @@ tested from a VM on the same LAN:
 | TCP echo, port 7 | 10 KB and 50 KB of random data back identical |
 | DHCP (`DhcpTest`) | OFFER and BOUND 192.168.0.215 from the router; the leased address answers ping |
 | DNS (`DhcpTest`) | resolved through the leased DNS server |
+
+Re-run 2026-10-12 with the memory controller fix and the MAC's read hold
+removed (WNS +0.597 ns): ping 50/50 at 64 bytes and 5/5 at 1400, UDP and TCP
+echo identical (22 and 1400 bytes; 10 KB and 50 KB), DHCP BOUND, DNS resolved,
+DoAll 68/68.
+
+## QMTECH Wukong V3 (GMII at 1 Gb/s)
+
+`wukongFull` (DDR3, 100 MHz, console 1 Mbaud on the CH340). The same MAC as the
+EP4CGX150, GMII to an on-board RTL8211EG.
+
+```bash
+make -C fpga/qmtech-xc7a100t-wukong ddr3-build DDR3_CFG=wukongFull
+make -C java/apps/Small JOP_PRESET=wukongFull APP_NAME=NetTest EXTRA_SRC=../../net/src
+make -C fpga/qmtech-xc7a100t-wukong ddr3-program DDR3_CFG=wukongFull
+python3 fpga/scripts/download.py -e build/wukongFull/java/apps/Small/NetTest.jop \
+    "$(fpga/scripts/usb_serial_map --by-id wukong)" 1000000
+```
+
+Hardware, 2026-10-12, timing met (WNS +0.093 ns), the first network test on
+this board:
+
+| Test | Fixed controller | Same tree, re-latch restored (WNS +0.208 ns) |
+|------|------------------|----------------------------------------------|
+| Link | `Link UP 1000M` | `Link UP 1000M` |
+| ping, 64 bytes | 50/50, about 1.4 ms | 0/50 |
+| ping, 1400 bytes | 5/5, about 15.8 ms | 0/5 |
+| UDP echo | 22 and 1400 bytes identical | nothing back |
+| TCP echo | 10 KB and 50 KB identical | nothing back |
+| DHCP / DNS | BOUND 192.168.0.215, DNS resolved | -- |
+| DoAll | 68/68 | -- |
+
+With the re-latch the board's gratuitous ARPs reached the LAN and the host's
+63 frames to it went unanswered: status item 68's symptom, on this board, with
+nothing else different.
 
 ## Build and Test
 

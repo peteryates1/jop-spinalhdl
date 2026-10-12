@@ -261,4 +261,65 @@ class BmbMemoryControllerTest extends AnyFunSuite {
       println("=== Test PASSED ===")
     }
   }
+
+  // A READ WITH A SIDE EFFECT IS ANSWERED ONCE -- status item 68.
+  //
+  // The UART and Ethernet RX data registers pop their FIFO on the read strobe,
+  // and the FIFO's output moves to the next entry the cycle after. The pipeline
+  // reads I/O with `stmra; wait; wait; ldmrd`, so `ldmrd` takes rdDataReg a few
+  // cycles after the read. The controller used to keep re-latching rdDataReg
+  // from the same address, without the strobe, until the next memory operation
+  // (`ioRdPending`, added for an I/O FPU that was removed on 2026-03-10), and so
+  // handed the CPU the NEXT entry: the Ethernet stack got every frame one word
+  // late (item 68), and a UART read with bytes queued behind it got the
+  // following byte (JopUartBacklogTest).
+  test("BmbMemoryController: an I/O read returns what the device presented in the read cycle") {
+    compiled.doSim { dut =>
+      dut.clockDomain.forkStimulus(10)
+
+      dut.io.memIn.rd #= false
+      dut.io.memIn.rdc #= false
+      dut.io.memIn.rdf #= false
+      dut.io.memIn.wr #= false
+      dut.io.memIn.wrf #= false
+      dut.io.memIn.addrWr #= false
+      dut.io.memIn.bcRd #= false
+      dut.io.memIn.stidx #= false
+      dut.io.memIn.iaload #= false
+      dut.io.memIn.iastore #= false
+      dut.io.memIn.getfield #= false
+      dut.io.memIn.putfield #= false
+      dut.io.memIn.putref #= false
+      dut.io.memIn.getstatic #= false
+      dut.io.memIn.putstatic #= false
+      dut.io.memIn.copy #= false
+      dut.io.memIn.cinval #= false
+      dut.io.memIn.bcopd #= 0
+      dut.io.aout #= 0
+      dut.io.bout #= 0
+      dut.io.bcopd #= 0
+      dut.io.ioRdData #= 0
+
+      dut.clockDomain.waitSampling(5)
+
+      // stmra: IO_UART (-17), the device presenting the head of its FIFO.
+      dut.io.aout #= 0xFFFFFFEFL
+      dut.io.ioRdData #= 0x41
+      dut.io.memIn.rd #= true
+      dut.clockDomain.waitSampling()
+
+      // The read popped the FIFO: from here on the device presents the byte
+      // queued behind it. stmra has also popped its address, so A holds
+      // whatever was under it.
+      dut.io.memIn.rd #= false
+      dut.io.aout #= 0
+      dut.io.ioRdData #= 0x42
+
+      dut.clockDomain.waitSampling(3)   // wait; wait; ldmrd
+      val got = dut.io.memOut.rdData.toLong & 0xFFFFFFFFL
+      assert(got == 0x41,
+        f"the read returned 0x$got%x: the value the device presented AFTER its read " +
+        "cycle (0x42, the next FIFO entry), not the one it answered the read with (0x41)")
+    }
+  }
 }

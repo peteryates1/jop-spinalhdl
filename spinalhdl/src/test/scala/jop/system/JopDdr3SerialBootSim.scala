@@ -450,8 +450,13 @@ object JopDdr3SerialBootSim extends App {
               val msg = f"[$cycle%8d] Checksum: 0x$cs%08x expected=0x$expectedChecksum%08x $result"
               println(s"\n$msg"); logLine(msg)
               if (checksumMatch) {
-                // ACK so FPGA jumps to downloaded code
-                fork { sendByte(0x55) }
+                // ACK so FPGA jumps to downloaded code. 0x00, as download.py
+                // sends it: the boot loader (jvm.asm ser_wait_ack) takes any
+                // NON-zero byte as a NACK and restarts the handshake. This sent
+                // 0x55 from the ACK/NACK protocol's arrival (869e99a,
+                // 2026-03-11) until 2026-10-12, so the sim sat in rdy_send
+                // after every good download and timed out.
+                fork { sendByte(0x00) }
                 logLine(s"  ACK sent: FPGA should jump to HelloWorld")
               } else {
                 logLine(s"  CHECKSUM MISMATCH -- download corrupted, aborting")
