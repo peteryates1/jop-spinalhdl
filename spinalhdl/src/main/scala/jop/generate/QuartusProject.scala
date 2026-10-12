@@ -229,6 +229,11 @@ object QuartusProject {
     sb.append(QsfGenerator.toQsf(pins)).append("\n\n")
     val ioStds = QsfGenerator.toIoStandards(config, pins)
     if (ioStds.nonEmpty) sb.append(ioStds).append("\n\n")
+    val rxCapture = QsfGenerator.ethRxCapture(config, pins)
+    if (rxCapture.nonEmpty) {
+      sb.append("# GMII receive capture in the I/O element (QsfGenerator.ethRxCapture)\n")
+      sb.append(rxCapture).append("\n\n")
+    }
 
     sb.append("project_close\n")
     sb.toString

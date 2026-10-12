@@ -7,7 +7,7 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 
 | Board | PHY / interface | Preset | Hardware |
 |-------|-----------------|--------|----------|
-| EP4CGX150 + DB_FPGA V4 | RTL8211EG, GMII 1 Gb/s | `ep4cgx150DbFull` | worked 2026-03-01; the restored preset linked but moved no packets on 2026-08-25 (status item 68), probably the RX read bug fixed 2026-10-11 (below), not yet re-run |
+| EP4CGX150 + DB_FPGA V4 | RTL8211EG, GMII 1 Gb/s | `ep4cgx150DbFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12) after two fixes, the read re-latch and an untimed receive clock (below); 3-5 % of received frames still fail CRC (status item 166) |
 | Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68 |
 | QMTECH Wukong V3 | RTL8211EG, GMII 1 Gb/s | `wukongFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12), DoAll 68/68; the same build with the re-latch restored: `Link UP 1000M` and nothing received (below) |
 
@@ -494,6 +494,39 @@ Re-run 2026-10-12 with the memory controller fix and the MAC's read hold
 removed (WNS +0.597 ns): ping 50/50 at 64 bytes and 5/5 at 1400, UDP and TCP
 echo identical (22 and 1400 bytes; 10 KB and 50 KB), DHCP BOUND, DNS resolved,
 DoAll 68/68.
+
+## QMTECH EP4CGX150 + DB_FPGA (GMII at 1 Gb/s)
+
+`ep4cgx150DbFull` (SDR, console 2 Mbaud on the CP2102N), GMII to the DB_FPGA's
+RTL8211EG. Program the `.sof` with `quartus_pgm` directly after building an
+app: building one can leave the generate stamp stale, and `dbfpga-program`
+then rebuilds the bitstream first.
+
+```bash
+make -C fpga/qmtech-ep4cgx150-sdram dbfpga
+make -C java/apps/Small JOP_PRESET=ep4cgx150DbFull APP_NAME=NetTest EXTRA_SRC=../../net/src
+make -C fpga/qmtech-ep4cgx150-sdram dbfpga-program
+python3 fpga/scripts/download.py -e build/ep4cgx150DbFull/java/apps/Small/NetTest.jop \
+    "$(fpga/scripts/usb_serial_map --by-id ep4cgx150)" 2000000
+```
+
+Hardware, 2026-10-12. Removing the read re-latch was not enough here: the
+generated SDC named the PHY's receive clock in a clock group without creating
+it, so Quartus never timed the 125 MHz receive domain and the receive buffer's
+placement failed hold by 1.763 ns (status item 68). Each row adds one change:
+
+| Build | ping 64 B | TCP 50 KB | CRC errors, 98 / 1442 B frames |
+|-------|-----------|-----------|--------------------------------|
+| re-latch removed | 0/50 | nothing back | every frame scrambled |
+| + `e_rxc` created at 8 ns | 47/50 | 44,976 B back | 4.6 % / 6.0 % |
+| + receive capture in the I/O element | 48/50 | identical | 3.1-3.2 % / 2.8-5.8 % |
+| + one register per receive pin (current) | 48/50 | identical | 3.8 % / 7.8 % |
+
+The current build also passes DHCP (BOUND, DNS, the lease answers 10/10) and
+UDP echo, at setup +0.306 ns with no unconstrained clocks. The remaining loss
+is older than any of this -- "~2.5 %" when GMII receive first worked here in
+March -- and not on the wire: the PHY's error counters stay at zero through a
+flood (status item 166).
 
 ## QMTECH Wukong V3 (GMII at 1 Gb/s)
 

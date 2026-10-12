@@ -29,12 +29,13 @@ The JOP MAC and the Java TCP/IP stack run on PHY1 (U9) through `jop.io.Rgmii100`
 which carries this design's TX timing over: TXC 90 degrees from the data, data
 in IOB flops, RX on RXC's falling edge. Preset `colorlightDbI9PlusEth`. On
 2026-10-11: ping, UDP and TCP echo, DHCP and DNS from the LAN; see
-docs/peripherals/networking.md. Getting there also found the cause of status
-item 68, JOP's Ethernet RX dead on the EP4CGX150 since March: the memory
+docs/peripherals/networking.md. Getting there also found the first of two causes
+of status item 68, JOP's Ethernet RX dead on the EP4CGX150: the memory
 controller re-latched every I/O read after its strobe, so the MAC's pop-on-read
 RX register reached the CPU one word late. Fixed in `BmbMemoryController` on
 2026-10-12; with the re-latch restored, the Wukong's GMII build links at 1000M
-and receives nothing, and without it passes everything.
+and receives nothing, and without it passes everything. The EP4CGX150 also had
+a receive clock its generated SDC never created (item 68 again).
 
 ## H2 (PHY reset) must not be driven -- unproven
 

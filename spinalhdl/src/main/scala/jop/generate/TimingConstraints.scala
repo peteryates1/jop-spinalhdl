@@ -151,6 +151,18 @@ object TimingConstraints {
     val ethGroup =
       if (hasEth && board.hasEthPll) Seq("ethPll|altpll_component|auto_generated|pll1|clk[0]") else Nil
     val phyGroup = if (hasEth) Seq("e_rxc") else Nil
+    // A GROUP THAT NAMES A CLOCK NOTHING CREATES IS DROPPED. This file put
+    // e_rxc in the groups above and never created it, which left only
+    //   Warning (332174): Ignored filter ... e_rxc could not be matched with a clock
+    // and a 125 MHz receive domain nobody timed: on the EP4CGX150 the fitter
+    // routed e_rxc locally with 2.8 ns of skew and fixed no hold (-1.763 ns
+    // inside the MAC), and every frame came out scrambled behind a CRC check
+    // that passed (item 68). The hand-written
+    // rtl8211eg_gmii.sdc creates it, but no Quartus project ever read that file.
+    // 8 ns for RGMII too: the PHY runs RXC at 125 MHz until autonegotiation
+    // settles (XdcGenerator says the same).
+    val phyRxClock =
+      if (hasEth) Seq(ClockConstraint("e_rxc", BigDecimal("125000000"))) else Nil
 
     // A VENDOR DRAM PHY BRINGS ITS OWN CLOCK CONSTRAINTS, and adding ours on
     // top makes things worse, not safer. Altera's DDR2 ALTMEMPHY ships
@@ -180,7 +192,9 @@ object TimingConstraints {
         "set_false_path -from * -to [get_ports ser_txd]")
 
     TimingConstraints(
-      clocks = if (phyOwnsClocks) Nil else boardClock.toSeq,
+      // A vendor DRAM PHY owns the board clock and its PLL, not the Ethernet
+      // PHY's receive clock: e_rxc is ours either way.
+      clocks = (if (phyOwnsClocks) Nil else boardClock.toSeq) ++ phyRxClock,
       asyncGroups = Seq(dramGroup, ethGroup, phyGroup).filter(_.nonEmpty),
       derivePllClocks =
         !phyOwnsClocks && config.fpgaFamily.manufacturer == Manufacturer.Altera,

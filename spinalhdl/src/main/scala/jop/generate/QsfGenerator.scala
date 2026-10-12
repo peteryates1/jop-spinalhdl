@@ -84,6 +84,31 @@ object QsfGenerator {
     }.mkString("\n")
   }
 
+  /** GMII/MII receive inputs, captured in the I/O element.
+    *
+    * The PHY launches RXD, RX_DV and RX_ER on RX_CLK and the MAC captures them
+    * on the next edge: a source-synchronous bus whose margin is whatever the
+    * capture path does not spend. FAST_INPUT_REGISTER puts each capture flop
+    * in its pin's I/O element, so every bit sees the same short, fixed delay;
+    * left to the fitter they sit in the fabric at whatever distance it chose.
+    *
+    * The hand-written project sourced rtl8211eg_gmii.qsf for this (ffa1982,
+    * 2026-03-01) and the generated one dropped it (9dfd889, 2026-08-26); the
+    * Wukong's rtl8211eg_gmii.xdc still does the same with IOB TRUE.
+    *
+    * GMII and MII only: RGMII is captured on both edges, in DDIO registers,
+    * which this assignment does not describe. Keyed off the pin assignments,
+    * so it names only ports the design has. */
+  def ethRxCapture(config: BoardDesign, assignments: Seq[PinAssignment]): String = {
+    val singleEdgeRx = config.devices.values.exists(d =>
+      d.deviceType == DeviceType.Ethernet && d.params.getOrElse("rgmii", false) != true)
+    if (!singleEdgeRx) ""
+    else assignments.map(_.verilogPort)
+      .filter(p => p.startsWith("e_rxd[") || p == "e_rxdv" || p == "e_rxer")
+      .map(p => s"set_instance_assignment -name FAST_INPUT_REGISTER ON -to $p")
+      .mkString("\n")
+  }
+
   /** Generate global assignments (FAMILY, DEVICE, TOP_LEVEL_ENTITY) */
   def globalAssignments(config: BoardDesign): String = {
     val fpga = config.fpga

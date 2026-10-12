@@ -32,6 +32,7 @@ class GeneratedConstraintsTest extends AnyFunSuite {
   private val boardPresets: Seq[(String, String)] = Seq(
     "cyc5000Serial"       -> "cyc5000-sdram",
     "ep4cgx150Serial"     -> "qmtech-ep4cgx150-sdram",
+    "ep4cgx150DbFull"     -> "qmtech-ep4cgx150-sdram",
     "ep4cgx150Bram"       -> "qmtech-ep4cgx150-bram",
     "ep4cgx150BramSerial" -> "qmtech-ep4cgx150-bram-serial",
     "ae115fbDdr2"         -> "a-e115fb-ddr2",
@@ -106,6 +107,58 @@ class GeneratedConstraintsTest extends AnyFunSuite {
         }
       }
     }
+  }
+
+  // ITEM 68, THE EP4CGX150 HALF. The generator named the PHY's receive clock in
+  // set_clock_groups and never created it. Quartus answers a group that names
+  // no clock with a warning and nothing else:
+  //   Warning (332174): Ignored filter at jop_dbfpga.sdc(10): e_rxc could not be matched with a clock
+  // so the whole 125 MHz receive domain went untimed. The fitter left e_rxc on
+  // local routing, 2.8 ns of skew across its 136 registers, and fixed no hold
+  // in it: timed at 8 ns afterwards, that placement fails hold by 1.763 ns.
+  // On hardware the MAC handed over frames whose words were out of order, with
+  // wrong top bytes -- behind a CRC check that passed.
+  test("every clock a generated .sdc groups is a clock it creates or derives") {
+    for ((name, board) <- boardPresets) {
+      val cfg = cfgOf(name)
+      if (cfg.fpgaFamily.manufacturer == Manufacturer.Altera) {
+        val sdc = TimingConstraints.forConfig(cfg).toSdc
+        val created = raw"create_clock\b[^\n]*-name\s+(\S+)".r
+          .findAllMatchIn(sdc).map(_.group(1)).toSet
+        val derives = sdc.contains("derive_pll_clocks")
+        val grouped = raw"-group\s+\{([^}]*)\}".r
+          .findAllMatchIn(sdc).flatMap(_.group(1).trim.split("\\s+")).toSeq
+        for (clk <- grouped) {
+          val pllOutput = clk.contains("|altpll_component|")
+          assert(created(clk) || (derives && pllOutput),
+            s"$name ($board): set_clock_groups names $clk, which this .sdc " +
+            "neither creates nor derives -- Quartus drops it with a warning and " +
+            s"that domain is never timed.\n$sdc")
+        }
+      }
+    }
+  }
+
+  test("an Ethernet design constrains the PHY receive clock at 125 MHz") {
+    val sdc = TimingConstraints.forConfig(cfgOf("ep4cgx150DbFull")).toSdc
+    assert(sdc.contains("create_clock -period 8.000 -name e_rxc [get_ports e_rxc]"), sdc)
+  }
+
+  // THE OTHER HALF OF THE OLD GMII FILES. rtl8211eg_gmii.qsf put the receive
+  // capture flops in the I/O element, and the generated project lost it along
+  // with the hand-written .qsf (9dfd889, 2026-08-26). The Wukong's
+  // rtl8211eg_gmii.xdc does the same with IOB TRUE. On the EP4CGX150 it took
+  // the CRC loss on 98-byte frames from 4.6 % to about 3.1 % and a 50 KB TCP
+  // echo from cut short to identical; the rest is status item 166.
+  test("a GMII design captures its receive inputs in the I/O element") {
+    def fastInputs(preset: String): Set[String] = {
+      val tcl = QuartusProject.generate(cfgOf(preset), "test_rev", preset, Seq(preset))
+      raw"FAST_INPUT_REGISTER ON -to (\S+)".r.findAllMatchIn(tcl).map(_.group(1)).toSet
+    }
+    val gmiiRx = ((0 until 8).map(i => s"e_rxd[$i]") ++ Seq("e_rxdv", "e_rxer")).toSet
+    assert(fastInputs("ep4cgx150DbFull") == gmiiRx)
+    assert(fastInputs("ep4cgx150Serial").isEmpty,
+      "a design without Ethernet has no e_rx* ports to assign")
   }
 
   test("every Altera board preset emits pins and the right device") {
