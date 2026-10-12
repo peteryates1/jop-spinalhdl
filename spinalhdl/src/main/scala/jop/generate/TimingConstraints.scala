@@ -148,9 +148,20 @@ object TimingConstraints {
     // UART-only build. That was the same bug from the other side, and the
     // replacement predicate never matched anything.
     val hasEth = config.devices.values.exists(_.deviceType.key == DeviceType.Ethernet.key)
+    def ethParam(key: String) = config.devices.values.exists(d =>
+      d.deviceType.key == DeviceType.Ethernet.key && d.params.getOrElse(key, false) == true)
+    // MII: the PHY drives TX_CLK as well as RX_CLK. GMII transmits on the
+    // Ethernet PLL, RGMII on the board PLL's Ethernet output.
+    val mii = hasEth && !ethParam("gmii") && !ethParam("rgmii")
+    // The Ethernet PLL exists only where JopTop instantiates it -- a GMII design
+    // on a board that has one. Naming it in an MII design's groups would name a
+    // clock nothing creates, and Quartus drops the whole set_clock_groups.
     val ethGroup =
-      if (hasEth && board.hasEthPll) Seq("ethPll|altpll_component|auto_generated|pll1|clk[0]") else Nil
+      if (hasEth && ethParam("gmii") && board.hasEthPll)
+        Seq("ethPll|altpll_component|auto_generated|pll1|clk[0]")
+      else Nil
     val phyGroup = if (hasEth) Seq("e_rxc") else Nil
+    val phyTxGroup = if (mii) Seq("e_txc") else Nil
     // A GROUP THAT NAMES A CLOCK NOTHING CREATES IS DROPPED. This file put
     // e_rxc in the groups above and never created it, which left only
     //   Warning (332174): Ignored filter ... e_rxc could not be matched with a clock
@@ -163,6 +174,10 @@ object TimingConstraints {
     // settles (XdcGenerator says the same).
     val phyRxClock =
       if (hasEth) Seq(ClockConstraint("e_rxc", BigDecimal("125000000"))) else Nil
+    // MII's TX_CLK runs at 25 MHz (2.5 at 10 Mb/s); constrained at 8 ns like
+    // e_rxc, which costs nothing -- the same MAC logic meets 125 MHz in GMII.
+    val phyTxClock =
+      if (mii) Seq(ClockConstraint("e_txc", BigDecimal("125000000"))) else Nil
 
     // A VENDOR DRAM PHY BRINGS ITS OWN CLOCK CONSTRAINTS, and adding ours on
     // top makes things worse, not safer. Altera's DDR2 ALTMEMPHY ships
@@ -194,8 +209,8 @@ object TimingConstraints {
     TimingConstraints(
       // A vendor DRAM PHY owns the board clock and its PLL, not the Ethernet
       // PHY's receive clock: e_rxc is ours either way.
-      clocks = (if (phyOwnsClocks) Nil else boardClock.toSeq) ++ phyRxClock,
-      asyncGroups = Seq(dramGroup, ethGroup, phyGroup).filter(_.nonEmpty),
+      clocks = (if (phyOwnsClocks) Nil else boardClock.toSeq) ++ phyRxClock ++ phyTxClock,
+      asyncGroups = Seq(dramGroup, ethGroup, phyGroup, phyTxGroup).filter(_.nonEmpty),
       derivePllClocks =
         !phyOwnsClocks && config.fpgaFamily.manufacturer == Manufacturer.Altera,
       falsePaths = ioFalsePaths)

@@ -33,6 +33,7 @@ class GeneratedConstraintsTest extends AnyFunSuite {
     "cyc5000Serial"       -> "cyc5000-sdram",
     "ep4cgx150Serial"     -> "qmtech-ep4cgx150-sdram",
     "ep4cgx150DbFull"     -> "qmtech-ep4cgx150-sdram",
+    "ep4cgx150DbV5Mii"    -> "qmtech-ep4cgx150-sdram",
     "ep4cgx150Bram"       -> "qmtech-ep4cgx150-bram",
     "ep4cgx150BramSerial" -> "qmtech-ep4cgx150-bram-serial",
     "ae115fbDdr2"         -> "a-e115fb-ddr2",
@@ -144,6 +145,26 @@ class GeneratedConstraintsTest extends AnyFunSuite {
     assert(sdc.contains("create_clock -period 8.000 -name e_rxc [get_ports e_rxc]"), sdc)
   }
 
+  // MII AT 100 Mb/s -- the EP4CGX150's way round status item 166. The PHY drives
+  // BOTH clocks, so TX_CLK must be created like RX_CLK: an uncreated clock is a
+  // domain nobody times (item 68). And the Ethernet PLL exists only in a GMII
+  // design (JopTop: ethGmii && hasEthPll), so an MII .sdc must not name it --
+  // the "creates or derives" test above passes any PLL-shaped name, and a group
+  // naming a clock that does not exist is dropped whole.
+  test("an MII design creates the PHY's TX clock and names no Ethernet PLL") {
+    val mii = TimingConstraints.forConfig(cfgOf("ep4cgx150DbV5Mii")).toSdc
+    assert(mii.contains("create_clock -period 8.000 -name e_rxc [get_ports e_rxc]"), mii)
+    assert(mii.contains("create_clock -period 8.000 -name e_txc [get_ports e_txc]"), mii)
+    assert(!mii.contains("ethPll"), s"no Ethernet PLL in an MII design\n$mii")
+    val groups = raw"-group\s+\{([^}]*)\}".r.findAllMatchIn(mii).map(_.group(1).trim).toSet
+    assert(groups("e_rxc") && groups("e_txc"),
+      s"each PHY clock asynchronous to everything, including the other\n$mii")
+
+    val gmii = TimingConstraints.forConfig(cfgOf("ep4cgx150DbFull")).toSdc
+    assert(gmii.contains("ethPll|altpll_component") && !gmii.contains("e_txc"),
+      s"GMII transmits on the PLL and has no e_txc port\n$gmii")
+  }
+
   // THE OTHER HALF OF THE OLD GMII FILES. rtl8211eg_gmii.qsf put the receive
   // capture flops in the I/O element, and the generated project lost it along
   // with the hand-written .qsf (9dfd889, 2026-08-26). The Wukong's
@@ -157,6 +178,8 @@ class GeneratedConstraintsTest extends AnyFunSuite {
     }
     val gmiiRx = ((0 until 8).map(i => s"e_rxd[$i]") ++ Seq("e_rxdv", "e_rxer")).toSet
     assert(fastInputs("ep4cgx150DbFull") == gmiiRx)
+    val miiRx = ((0 until 4).map(i => s"e_rxd[$i]") ++ Seq("e_rxdv", "e_rxer")).toSet
+    assert(fastInputs("ep4cgx150DbV5Mii") == miiRx)
     assert(fastInputs("ep4cgx150Serial").isEmpty,
       "a design without Ethernet has no e_rx* ports to assign")
   }
@@ -201,6 +224,36 @@ class GeneratedConstraintsTest extends AnyFunSuite {
     val waiver = "set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets e_rxc_IBUF]"
     assert(XdcGenerator.generate(cfgOf("xc7a100tDbEth")).contains(waiver))
     assert(!XdcGenerator.generate(cfgOf("wukongFull")).contains("CLOCK_DEDICATED_ROUTE"))
+  }
+
+  // A DECLARED PORT WITH NO PIN IS PLACED BY THE FITTER, ANYWHERE. The first MII
+  // build declared GMII's e_gtxc, which only GMII constrains; Quartus put it on
+  // C12 -- the DB_FPGA's J3:31, the RTL8211EG's COL/Mode -- and drove it low
+  // (Critical Warning 169085, "No exact pin location assignment(s) for 1 pins").
+  // The ports a design declares and the pins its board constrains come from two
+  // places, EthernetTopWiring.topPins and DeviceType.Ethernet.verilogPins; hold
+  // them together for every mode.
+  test("every port an Ethernet design declares is a pin its board constrains") {
+    import jop.io.{EthernetTopWiring, TopPinType}
+    val modes = Seq(
+      "GMII" -> Map[String, Any]("gmii" -> true, "phyDataWidth" -> 8),
+      "MII" -> Map[String, Any]("phyDataWidth" -> 4),
+      "RGMII" -> Map[String, Any]("rgmii" -> true, "noPhyReset" -> true),
+      "MII, no PHY reset" -> Map[String, Any]("noPhyReset" -> true))
+    for ((mode, params) <- modes) {
+      val inst = DeviceInstance(DeviceType.Ethernet, params = params)
+      val declared = EthernetTopWiring.topPins(inst, Manufacturer.Altera).flatMap { p =>
+        p.pinType match {
+          case TopPinType.Out(w) if w > 1 => (0 until w).map(i => s"${p.name}[$i]")
+          case TopPinType.In(w) if w > 1  => (0 until w).map(i => s"${p.name}[$i]")
+          case _                          => Seq(p.name)
+        }
+      }.toSet
+      val constrained = DeviceType.Ethernet.verilogPins(params).keySet
+      assert(declared == constrained,
+        s"$mode: declared but unconstrained ${(declared -- constrained).toSeq.sorted}, " +
+        s"constrained but undeclared ${(constrained -- declared).toSeq.sorted}")
+    }
   }
 
   test("every Altera board preset emits pins and the right device") {

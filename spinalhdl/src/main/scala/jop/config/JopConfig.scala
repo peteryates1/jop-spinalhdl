@@ -738,6 +738,19 @@ object JopConfig {
         "sdNative" -> devs("sdNative").copy(params = Map("noCardDetect" -> true))))))
   }
 
+  /** `ep4cgx150DbV5Eth` with Ethernet at 100 Mb/s: MII, four data lines at
+    * 25 MHz, both clocks from the PHY. Status item 166: at 1 Gb/s this module's
+    * RX_CLK (ball B10, an ordinary pin that no PLL can take) gets an extra edge
+    * whenever six or more RXD lines rise together -- the RX capture showed the
+    * byte arriving twice -- and MII never switches more than five. Keeps the RX
+    * capture. ConstGenerator stops the PHY advertising 1000BASE-T. */
+  def ep4cgx150DbV5Mii = {
+    val base = ep4cgx150DbV5Eth
+    val devs = base.system.devices
+    base.copy(systems = Seq(base.system.copy(devices = devs +
+      ("eth" -> devs("eth").copy(params = Map("phyDataWidth" -> 4, "rxCapture" -> true))))))
+  }
+
   /**
    * `ep4cgx150DbFull` with VGA DMA in place of VGA text.
    *
@@ -2041,7 +2054,7 @@ object JopConfig {
         // The DB_FPGA routes RX_CLK to J3:37 -- L5 on this core board, not a
         // clock-capable pin (Vivado Place 30-574), so the clock takes a general
         // route to its BUFG. On the EP4CGX150 the same J3 pin is B10, also an
-        // ordinary I/O: the suspect for status item 166.
+        // ordinary I/O -- and there it picks up extra edges (status item 166).
         params = Map("gmii" -> true, "phyDataWidth" -> 8, "rxClkNotClockCapable" -> true),
         devicePart = Some("RTL8211EG"))))))
   }

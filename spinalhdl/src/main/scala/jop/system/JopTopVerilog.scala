@@ -73,6 +73,7 @@ object JopTopVerilog {
     case "ep4cgx150McFallback" => JopConfig.ep4cgx150McFallback
     case "ep4cgx150DbFull"  => JopConfig.ep4cgx150DbFull
     case "ep4cgx150DbV5Eth" => JopConfig.ep4cgx150DbV5Eth
+    case "ep4cgx150DbV5Mii" => JopConfig.ep4cgx150DbV5Mii
     case "ep4cgx150DbVgaDma" => JopConfig.ep4cgx150DbVgaDma
     case "ep4cgx150HwFloat"    => JopConfig.ep4cgx150HwFloat
     // ep4cgx150Smp <cores> [clkMhz]. clkMhz drives the generated PLL — see the

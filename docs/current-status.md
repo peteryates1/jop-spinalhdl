@@ -50,7 +50,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 10. **[#113](#item-113)** — `cold-check` covers 3 boards of 12, and the primary board is not one of them
 11. **[#112](#item-112)** — `ConstraintDriftTest` covers 2 presets of 46 — the strongest check in the tree, at 4 % coverage
 12. **[#82](#item-82)** — Flash boot has been unbuildable since 2026-03-13; a hardware-verified capability deleted as collateral
-13. **[#166](#item-166)** — EP4CGX150 Ethernet: 3-5 % of received frames fail CRC where the Wukong, same PHY and MAC, loses none. Present since March; not the wire (PHY counters clean), not the sampling phase, not RX_DV's fan-out. Leading suspect: `e_rxc` on an ordinary pin and local routing
+13. **[#166](#item-166)** — EP4CGX150 Ethernet at 1 Gb/s loses frames: CAUSE FOUND 2026-10-12, a hardware limit -- the module's RX_CLK gets an extra edge when six or more RXD lines rise together. 100 Mb/s MII (`ep4cgx150DbV5Mii`) verified clean. Open: whether `ep4cgx150DbFull` moves to MII
 14. **[#65](#item-65)** — Both SD exercisers fail on hardware, and it is not the conversion
 15. **[#84](#item-84)** — No MAX1000 configuration fits the 10M08 — single-core overflows it by a third
 16. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
@@ -193,7 +193,7 @@ count rather than capping the count), **3** (presets lacking `hasCardTable`),
 - **[71](#item-71)** — All three EP4CGX150 **BRAM** presets missed timing at 80 MHz; the BRAM read-data path will not close there — FIXED by reclocking, `hw_verify` now refuses violated bitstreams
 - **[70](#item-70)** — UART baud is stated in THREE places that disagree — preset override, a 2 Mbaud default, and 12 Makefile constants. Pick one rate and derive the rest
 - **[68](#item-68)** — ~~EP4CGX150 Ethernet: link comes up at 1 Gbps but NO packets move~~ — **FIXED** 2026-10-12: two causes. `BmbMemoryController` re-latched every I/O read after its strobe, so the MAC's pop-on-read RX register reached the CPU one word late (every board; Wukong A/B). And on the EP4CGX150 the generated SDC named `e_rxc` in a clock group but never created it: the receive domain went untimed and its placement failed hold by -1.763 ns. ping, UDP, TCP, DHCP and DNS on both GMII boards
-- **[166](#item-166)** — EP4CGX150 Ethernet RX: 3-5 % of frames still fail CRC; the Wukong, same PHY and MAC, loses none. Since March; not the wire, not the sampling phase
+- **[166](#item-166)** — EP4CGX150 Ethernet at 1 Gb/s loses frames -- CAUSE FOUND 2026-10-12: extra RX_CLK edges when six or more RXD lines rise together (a hardware limit; no PLL can take the pin). 100 Mb/s MII verified clean
 - **[67](#item-67)** — `ep4cgx150DbFull` runs with `useStackCache = false`; the original had it true. Revisit once stack-cache SDRAM integration lands
 - **[4](#item-4)** — Copy phase — 79-82% of the minor pause and the dominant remaining term
 - **[5](#item-5)** — The BMB arbiter sets the clock ceiling — FREQUENCY, not core count
@@ -3480,38 +3480,105 @@ those would plausibly silence the MAC.
 
 <a id="item-166"></a>
 
-### Item 166 — EP4CGX150 Ethernet: 3-5 % of received frames fail CRC; the Wukong, same PHY and MAC, loses none
+### Item 166 — EP4CGX150 Ethernet at 1 Gb/s loses received frames: the module's RX clock picks up extra edges — CAUSE FOUND 2026-10-12; 100 Mb/s MII works
 
-**Found 2026-10-12**, closing [item 68](#item-68). With every fix in,
-`ep4cgx150DbFull` runs ping, UDP and TCP echo (50 KB identical), DHCP and DNS,
-but `EthRxDiag` flooded with 2,500 frames counts 3-5 % failing CRC, and NetTest
-loses 2 of 50 pings (`Er=4`). The Wukong's `wukongFull` -- RTL8211EG, GMII at
-1000M, the same MAC and receive adapter -- runs the same NetTest at `Er=0 Dr=0`.
-Not new: the commit that made GMII receive work on this board (ffa1982,
-2026-03-01) reported "now ~2.5 %".
+> **CAUSE FOUND 2026-10-12, a hardware limit.** At 1 Gb/s the EP4CGX150 core
+> module's RX_CLK gets an extra edge whenever six or more RXD lines rise
+> together, and that byte arrives twice. Nothing in the FPGA design can remove
+> it: the pin cannot feed a PLL, and moving the sampling point does not help.
+> **Way round, verified on hardware:** Ethernet at 100 Mb/s, MII
+> (`ep4cgx150DbV5Mii`): no errors on any content pattern, and NetTest, DHCP and
+> DNS are clean. Whether `ep4cgx150DbFull` (the V4 preset) moves to MII too is
+> open.
 
-What it is NOT, measured 2026-10-12:
+**Found 2026-10-12**, closing [item 68](#item-68): with every fix in,
+`ep4cgx150DbFull` lost 3-5 % of received frames to CRC errors (2.5 % when GMII
+receive first worked here, ffa1982, March), while the Wukong's `wukongFull` --
+the same RTL8211EG, MAC and receive adapter -- lost none.
 
-- **Not the wire.** Through a 2,500-frame flood the PHY's receive error counter
-  (register 0x18) and the 1000BASE-T idle error count (register 10, bits 7:0)
-  stayed at 0, link 1000 FD.
-- **Not the sampling phase.** Capturing on `e_rxc`'s falling edge, half a period
-  later, gave the same NetTest: 48/50 pings, `Er=4`, a 50 KB TCP echo cut short.
-- **Not RX_DV's fan-out.** One register per receive pin left the rate within
-  run-to-run noise ([item 68](#item-68), last table row).
-- **Not the drain.** `dr=0` throughout; the receive buffer never fills.
-- **Mostly per frame, not per bit.** 98-byte and 1442-byte frames fail at
-  similar rates (3.1-4.6 % and 2.8-7.8 % across runs). Random bit errors would
-  make the long frames about 15 times likelier to fail.
+**It follows the core module, not the DB board.** The EP4CGX150 and the XC7A100T
+swapped onto the other's DB_FPGA, same RJ45 cable and switch port, ping flood
+counted below the stack by `EthRxDiag`:
 
-Leading suspect: `e_rxc` itself. It enters on PIN_B10, an ordinary I/O pin,
-and reaches its ~146 registers over local routing rather than a global clock;
-a ringing or slow edge there would upset the MAC wherever the data are sampled.
-Next steps, cheapest first: put `e_rxc` on a global (`GLOBAL_SIGNAL`); scope RXC
-at the FPGA pin; count RX_ER and frame starts in the FPGA, or SignalTap the GMII
-bus around a failing frame. `EthRxDiag` plus a static neighbour entry on the
-host measures the rate below the stack -- and every other board on the LAN must
-be running nothing, because they all answer as 192.168.0.123.
+| Module + board | 98 B frames | 1442 B frames |
+|----------------|-------------|---------------|
+| EP4CGX150 + DB V4 | 3-5 % | 6 % |
+| EP4CGX150 + DB V5 | 7.9 % | 8.4 % |
+| XC7A100T + DB V5 | 1 lost in 2,162 frames overall | |
+
+(The XC7A100T build missed timing on its TX clock crossing, which a
+receive-only flood does not use; the generator now groups that clock, and
+`xc7a100tDbEth` is down to -0.058 ns on a core fetch path.)
+
+**It depends on content, not length.** 400 raw frames of each payload from the
+host (`EthRxDiag`, EP4CGX150 + V5):
+
+| Payload | Failed CRC |
+|---------|------------|
+| the router's DHCP offer (also with a counter changing its FCS) | 99-100 % |
+| constant 0x00 or 0xFF | 8-13 % |
+| one data line toggling, or one held high | 5-8 % |
+| constant 0x55 | 4-5 % |
+| random | 2-3 % |
+| 0x00/0xFF or 0x55/0xAA alternating (all 8 lines toggle each byte) | frames VANISH: 1-5 of 400 counted at all |
+
+The offer is byte-identical every time (the JOP client's transaction ID is
+fixed), so on the V5 DHCP never bound; on the V4 it took seven tries.
+
+**The RX capture shows the mechanism.** `rxCapture` (jop.io.Mac, a logic
+analyser on the receive stream as it enters the MAC; `MacRxCaptureTest`,
+`EthCapDiag`) recorded the failing frames clock by clock:
+
+- **Duplicated bytes, every time after rising lines.** All 19 duplicated bytes
+  followed a transition where 6-8 RXD lines rose and none fell (`00->ff`,
+  `01->ff`, `04->ff`, `00->7f`); falling transitions never duplicated a byte.
+  The offer's IP broadcast address arrived as five 0xFF bytes, an alternating
+  0x00/0xFF frame with about 160 extra bytes. One capture had RX_DV fall with no
+  `last` flag, which a clean two-register pipeline cannot do: flip-flops
+  disagreed about a clock edge, and that is how whole frames vanish.
+- **Marginal sampling on two lines.** 15 of 21 bit flips were RXD[1] or RXD[2]
+  keeping their old value while changing.
+
+**Why this module.** RX_CLK (J3:37) lands on ball B10, an ordinary I/O
+(DIFFIO_T31p). Its differential partner A10 carries RXD3, and every neighbouring
+ball is an RXD line. The DB_FPGA drives RXD0-7 with no series resistors (only
+RXCLK has one, 20 ohms, R83). QMTECH publish no Ethernet example for this
+module; their GMII example is for the EP4CE15, which also clocks RX from an
+ordinary pin (M22), so the pin type alone is not the difference -- the module's
+routing is.
+
+**What cannot fix it, measured:**
+
+- **Timing.** Met at every corner, `e_rxc` hold +0.193 ns. The ten capture
+  registers sample within 0.13 ns of each other.
+- **The sampling point.** Capturing on `e_rxc`'s falling edge lost as many
+  frames: an extra clock edge is not a sampling-phase problem.
+- **A PLL to clean the clock.** Quartus refuses one fed from B10: error 176554
+  directly or through a clock-control block, and 15065 through logic -- "must be
+  driven by a non-inverted input pin or another PLL, optionally through a Clock
+  Control block". A Cyclone IV PLL takes only a dedicated clock pin.
+- Not the wire (PHY receive error counters stay 0), not RX_DV's fan-out, not
+  the drain (`dr=0`).
+
+**MII at 100 Mb/s** (`ep4cgx150DbV5Mii`, EP4CGX150 + DB V5, link UP 100M): at most
+four data lines switch, against the six that trigger the extra edge.
+
+| Test | Result |
+|------|--------|
+| 400 frames each: offer, offer with counter, 00/ff, 55/aa, 0x00, 0xFF, one line, random | 0 errors, every frame received |
+| ping flood, 2,004 x 98 B + 500 x 1442 B | 0 CRC errors |
+| NetTest | 50/50 + 5/5 pings, UDP 22/1400 B and TCP 10/50 KB identical, `Er=0` |
+| DhcpTest | BOUND on the first offer, DNS resolved, the lease answers 10/10 |
+
+`Dr=7` in NetTest is the receive buffer overflowing during TCP bursts, recovered
+by retransmission. The build needed two generator fixes, both test-first in
+`GeneratedConstraintsTest`. The SDC now creates the PHY's TX clock `e_txc` and
+names the Ethernet PLL only in a GMII design. An MII design also no longer
+declares GMII's `e_gtxc`: the fitter had put it on J3:31, the PHY's COL pin.
+
+**For future boards:** 22-33 ohm series resistors on RXD0-7 (and RX_DV, RX_ER)
+at the PHY; RX_CLK on a clock-capable pin; ground pins between RX_CLK and the
+RXD lines on the connector.
 
 
 <a id="item-69"></a>

@@ -130,16 +130,19 @@ object EthernetTopWiring extends DeviceTopWiring {
       TopPin("e_rxd", TopPinType.In(4)),
       TopPin("e_rxctl", TopPinType.In())
     ) ++ mdio ++ reset
+    // The TX clock: GMII drives GTX_CLK, MII takes TX_CLK from the PHY. Only the
+    // one the mode uses is a port -- the board constrains only that one, and a
+    // declared port without a pin is placed by the fitter wherever it likes.
     else Seq(
       TopPin("e_txd", TopPinType.Out(dataWidth)),
       TopPin("e_txen", TopPinType.Out()),
       TopPin("e_txer", TopPinType.Out()),
-      TopPin("e_gtxc", TopPinType.Out()),
       TopPin("e_rxd", TopPinType.In(dataWidth)),
       TopPin("e_rxdv", TopPinType.In()),
       TopPin("e_rxer", TopPinType.In()),
       TopPin("e_rxc", TopPinType.In())
-    ) ++ mdio ++ reset ++ (if (!gmii) Seq(TopPin("e_txc", TopPinType.In())) else Seq.empty)
+    ) ++ mdio ++ reset ++
+      (if (gmii) Seq(TopPin("e_gtxc", TopPinType.Out())) else Seq(TopPin("e_txc", TopPinType.In())))
   }
 
   override def createClockDomains(
@@ -246,15 +249,13 @@ object EthernetTopWiring extends DeviceTopWiring {
     ethPhyIo.colision := False
     ethPhyIo.busy := False
 
-    // GTX clock
+    // GTX clock -- GMII only; an MII design has no e_gtxc port (topPins)
     if (sys.ethGmii) {
       val ethTxClk =
         if (ctx.ethPll != null) ctx.ethPll.io.c0
         else if (ctx.pllResult != null && ctx.pllResult.ethClk.isDefined) ctx.pllResult.ethClk.get
         else null
       ioPins("e_gtxc").asInstanceOf[Bool] := ethTxClk
-    } else {
-      ioPins("e_gtxc").asInstanceOf[Bool] := False
     }
 
     // TX adapter

@@ -7,7 +7,8 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 
 | Board | PHY / interface | Preset | Hardware |
 |-------|-----------------|--------|----------|
-| EP4CGX150 + DB_FPGA V4 | RTL8211EG, GMII 1 Gb/s | `ep4cgx150DbFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12) after two fixes, the read re-latch and an untimed receive clock (below); 3-5 % of received frames still fail CRC (status item 166) |
+| EP4CGX150 + DB_FPGA V4 | RTL8211EG, GMII 1 Gb/s | `ep4cgx150DbFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12) after two fixes, the read re-latch and an untimed receive clock (below); 3-5 % of received frames fail CRC, a hardware limit of this module at 1 Gb/s (status item 166) |
+| EP4CGX150 + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbV5Mii` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content (2026-10-12, below) |
 | Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68 |
 | QMTECH Wukong V3 | RTL8211EG, GMII 1 Gb/s | `wukongFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12), DoAll 68/68; the same build with the re-latch restored: `Link UP 1000M` and nothing received (below) |
 
@@ -495,7 +496,7 @@ removed (WNS +0.597 ns): ping 50/50 at 64 bytes and 5/5 at 1400, UDP and TCP
 echo identical (22 and 1400 bytes; 10 KB and 50 KB), DHCP BOUND, DNS resolved,
 DoAll 68/68.
 
-## QMTECH EP4CGX150 + DB_FPGA (GMII at 1 Gb/s)
+## QMTECH EP4CGX150 + DB_FPGA (GMII at 1 Gb/s loses frames; MII at 100 Mb/s works)
 
 `ep4cgx150DbFull` (SDR, console 2 Mbaud on the CP2102N), GMII to the DB_FPGA's
 RTL8211EG. Program the `.sof` with `quartus_pgm` directly after building an
@@ -526,7 +527,36 @@ The current build also passes DHCP (BOUND, DNS, the lease answers 10/10) and
 UDP echo, at setup +0.306 ns with no unconstrained clocks. The remaining loss
 is older than any of this -- "~2.5 %" when GMII receive first worked here in
 March -- and not on the wire: the PHY's error counters stay at zero through a
-flood (status item 166).
+flood.
+
+**Why, and the way round (status item 166).** At 1 Gb/s this module's RX_CLK
+(ball B10, an ordinary pin surrounded by the RXD balls) gets an extra edge
+whenever six or more RXD lines rise together, and that byte arrives twice. The
+loss followed the module onto the DB_FPGA V5, where the XC7A100T is clean, and it
+depends on content: the router's DHCP offer failed every time. No PLL can take
+B10, so the FPGA cannot clean the clock. At 100 Mb/s MII never switches more
+than four data lines, and `ep4cgx150DbV5Mii` (EP4CGX150 on the V5, console 2 Mbaud
+on the RP2040) runs clean:
+
+```bash
+make -C fpga/qmtech-ep4cgx150-sdram generate build CFG=ep4cgx150DbV5Mii REV=jop_dbv5mii
+make -C java/apps/Small JOP_PRESET=ep4cgx150DbV5Mii APP_NAME=NetTest EXTRA_SRC=../../net/src
+fpga/scripts/jtag_probe_map --assert-device ep4cgx150 &&   # quartus_pgm exits 0 on a broken chain
+quartus_pgm -c "$(fpga/scripts/jtag_probe_map --cable ep4cgx150)" -m JTAG \
+    -o "p;build/ep4cgx150DbV5Mii/quartus/output_files/jop_dbv5mii.sof"
+python3 fpga/scripts/download.py -e build/ep4cgx150DbV5Mii/java/apps/Small/NetTest.jop \
+    "$(fpga/scripts/usb_serial_map --by-id xc7a100t-pico-0)" 2000000
+```
+
+| Test, 2026-10-12, link 100M | Result |
+|------|--------|
+| 400 raw frames each of eight payloads, incl. the offer and 00/ff | 0 errors, every frame received |
+| ping flood, 2,004 x 98 B + 500 x 1442 B | 0 CRC errors |
+| NetTest | 50/50 + 5/5 pings, UDP and TCP 10/50 KB echo identical, `Er=0` |
+| DhcpTest | BOUND on the first offer, DNS, the lease answers 10/10 |
+
+The preset also carries the MAC's RX capture (`rxCapture`, read with
+`EthCapDiag`), the logic analyser that found the extra edges.
 
 ## QMTECH Wukong V3 (GMII at 1 Gb/s)
 
