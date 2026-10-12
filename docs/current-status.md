@@ -10810,9 +10810,9 @@ separated "board broken" from "our design broken".
 
 | board | cable | how it is programmed |
 |---|---|---|
-| EP4CGX150 (SDR) | Terasic USB-Blaster (`terasic`) | `quartus_pgm -c "$(jtag_probe_map --cable terasic)"` |
+| EP4CGX150 (SDR) | **none since 2026-10-12** — its Terasic moved to the A-E115FB | attach a cable and point `ep4cgx150` in `jtag_probe_map` at it; `--assert-device ep4cgx150` refuses the Terasic meanwhile |
 | XC7A100T + DB_FPGA V5 (DDR3) | RP2040 on the DB-V5, pico-dirtyJtag | `openFPGALoader` |
-| A-E115FB (1 GB DDR2) | **none — board powered off, blaster failed ([item 148](#item-148))** | was `quartus_pgm`; the pre-swap note "its Pico clone cannot configure" referred to a BARE Pico overdriving 3.3 V, superseded by the level-shifted one on 2026-08-31, which then failed |
+| A-E115FB (1 GB DDR2) | Terasic USB-Blaster (`ae115fb`, since 2026-10-12) | `quartus_pgm -c "$(jtag_probe_map --cable ae115fb)"`, after `--assert-device ae115fb`. The JTAG bank is bank 1 at 2.5 V (jumper J2); the header's VTREF is 3.3 V, so a bare Pico would also do |
 | Colorlight i5 (ECP5, 8 MB SDR) | DAPLink on the ext board (`i5`) | `openFPGALoader -b colorlight_i5` — also the UART bridge |
 | CYC5000 (Cyclone V, 8 MB SDR) | on-board Arrow USB Blaster TEI0050 (`cyc5000`) | `openFPGALoader -b cyc5000` on an **.rbf** — see below |
 | Alchitry Au V2 (XC7A35T, DDR3) | on-board FT2232H (`alchitry`) | `make -C fpga/alchitry-au program` (Vivado hw target) |
