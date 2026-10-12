@@ -72,6 +72,7 @@ object JopTopVerilog {
     case "ep4cgx150HwMath"     => JopConfig.ep4cgx150HwMath
     case "ep4cgx150McFallback" => JopConfig.ep4cgx150McFallback
     case "ep4cgx150DbFull"  => JopConfig.ep4cgx150DbFull
+    case "ep4cgx150DbV5Eth" => JopConfig.ep4cgx150DbV5Eth
     case "ep4cgx150DbVgaDma" => JopConfig.ep4cgx150DbVgaDma
     case "ep4cgx150HwFloat"    => JopConfig.ep4cgx150HwFloat
     // ep4cgx150Smp <cores> [clkMhz]. clkMhz drives the generated PLL — see the
@@ -160,6 +161,7 @@ object JopTopVerilog {
       JopConfig.ae115fbDdr2SmpMshr(n, k)
     case "xc7a100tDbSerial" => JopConfig.xc7a100tDbSerial
     case "xc7a100tDbFull"   => JopConfig.xc7a100tDbFull
+    case "xc7a100tDbEth"    => JopConfig.xc7a100tDbEth
     case "xc7a100tDbSmp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.xc7a100tDbSmp(n)

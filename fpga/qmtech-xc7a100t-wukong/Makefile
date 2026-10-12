@@ -166,9 +166,11 @@ bram-monitor:
 # -- wukongFull carries Ethernet and SD, wukongDdr3 is the plain one.
 #
 # PINS are generated (ConstraintDriftTest has validated them against
-# wukong_ddr3_base.xdc); wukong_ddr3.xdc and rtl8211eg_gmii.xdc stay
-# hand-written because they carry TIMING EXCEPTIONS and the PHY interface,
-# which are not derivable from board data.
+# wukong_ddr3_base.xdc), and so, since 2026-10-12, is the GMII PHY interface:
+# XdcGenerator writes e_rxc's clock and IOB capture into the base file for any
+# GMII design. The hand-written rtl8211eg_gmii.xdc it replaced was read by this
+# flow only -- the DB_FPGA V5 flow never read it (status item 68).
+# wukong_ddr3.xdc stays hand-written: it carries the TIMING EXCEPTIONS.
 # wukongDdr3 by default, not wukongFull -- a choice about which config is the
 # routine one, NOT a defect any more. wukongFull passes DoAll 66/66 on hardware
 # as of 2026-08-31 (timing MET, WNS +0.349 ns); it had died at FloatTest until
@@ -196,17 +198,18 @@ ddr3-create-ip:
 	  $(VIVADO) -mode batch -source vivado/tcl/create_ddr3_clk_wiz.tcl
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source vivado/tcl/create_mig.tcl
 
-# GMII CONSTRAINTS FIRST. rtl8211eg_gmii.xdc does `create_clock -name e_rxc`,
-# and wukong_ddr3.xdc references [get_clocks e_rxc] in its set_clock_groups.
-# Read the other way round that get_clocks matches nothing -- "No clocks matched
-# 'e_rxc'" -- the asynchronous exclusion silently does not apply, and the build
-# reports a violation it should not. JOP_XDC is an ordered list for this reason.
+# BASE FILE FIRST. For a GMII design wukong_ddr3_base.xdc does
+# `create_clock -name e_rxc`, and wukong_ddr3.xdc references [get_clocks e_rxc]
+# in its set_clock_groups. Read the other way round that get_clocks matches
+# nothing -- "No clocks matched 'e_rxc'" -- the asynchronous exclusion silently
+# does not apply, and the build reports a violation it should not. JOP_XDC is
+# an ordered list for this reason.
 ddr3-build: ddr3-generate
 	$(VIVADO_ENV) && JOP_TOP=JopDdr3WukongTop JOP_PART=$(PART) \
 	  JOP_BUILD_DIR=$(DDR3_CFG_DIR)/vivado/build \
 	  JOP_RTL=$(DDR3_CFG_DIR)/rtl/JopDdr3WukongTop.v \
 	  JOP_IP="$(IP)/ddr3_clk/ddr3_clk.xci $(IP)/mig_7series_0/mig_7series_0.xci" \
-	  JOP_XDC="$(SHARED_XDC)/rtl8211eg_gmii.xdc $(DDR3_CFG_DIR)/vivado/wukong_ddr3_base.xdc $(XDC)/wukong_ddr3.xdc" \
+	  JOP_XDC="$(DDR3_CFG_DIR)/vivado/wukong_ddr3_base.xdc $(XDC)/wukong_ddr3.xdc" \
 	  $(TIMING_DIRECTIVES) JOP_DRC_WAIVE=LUTLP-1 \
 	  JOP_SUMMARY=$(DDR3_CFG_DIR)/rtl/JopDdr3WukongTop.summary.txt \
 	  $(VIVADO) -mode batch -source $(NP_TCL)
@@ -262,7 +265,7 @@ ddr3-smp-bitstream: ddr3-smp-xdc
 	  JOP_BUILD_DIR=$(DDR3_SMP_DIR)/vivado/build \
 	  JOP_RTL=$(DDR3_SMP_DIR)/rtl/JopSmpDdr3WukongTop.v \
 	  JOP_IP="$(IP)/ddr3_clk/ddr3_clk.xci $(IP)/mig_7series_0/mig_7series_0.xci" \
-	  JOP_XDC="$(SHARED_XDC)/rtl8211eg_gmii.xdc $(DDR3_SMP_DIR)/vivado/wukong_ddr3_base.xdc $(XDC)/wukong_ddr3.xdc" \
+	  JOP_XDC="$(DDR3_SMP_DIR)/vivado/wukong_ddr3_base.xdc $(XDC)/wukong_ddr3.xdc" \
 	  $(TIMING_DIRECTIVES) JOP_DRC_WAIVE=LUTLP-1 \
 	  JOP_SUMMARY=$(DDR3_SMP_DIR)/rtl/JopSmpDdr3WukongTop.summary.txt \
 	  $(VIVADO) -mode batch -source $(NP_TCL)

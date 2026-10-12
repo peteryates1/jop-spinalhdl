@@ -134,6 +134,39 @@ object XdcGenerator {
       sb.append("set_property IOB TRUE [get_ports {e_rxctl}]\n\n")
     }
 
+    // Ethernet over GMII (RTL8211EG: the Wukong, the DB_FPGA boards). These are
+    // the lines the hand-written rtl8211eg_gmii.xdc carried, which only the
+    // Wukong's Makefile ever read: the DB_FPGA V5 flow reads this file alone,
+    // so its GMII build had no e_rxc clock -- the defect that left the
+    // EP4CGX150's receive domain untimed (status item 68). The PHY's
+    // source-synchronous timing is not modelled: the inputs are captured in
+    // IOB flops and false-pathed, the outputs leave with the PLL's GTX clock.
+    val gmii = config.devices.values.find(d =>
+      d.deviceType == DeviceType.Ethernet && d.params.getOrElse("gmii", false) == true)
+    gmii.foreach { eth =>
+      sb.append("# Ethernet: GMII at 1 Gb/s (RTL8211EG)\n")
+      sb.append("create_clock -period 8.000 -name e_rxc [get_ports {e_rxc}]\n")
+      sb.append("set_clock_groups -asynchronous -group [get_clocks e_rxc]\n")
+      // The MAC transmits on the clock wizard's clk_125 output, which Vivado
+      // names clk_125_<IP> -- clk_125_clk_wiz_0 on the DB_FPGA V5,
+      // clk_125_ddr3_clk on the Wukong -- and reaches it through CC FIFOs, so it
+      // is asynchronous to everything too. Ungrouped, the V5 timed those
+      // crossings as synchronous and missed by 2.591 ns (xc7a100tDbEth).
+      sb.append("set_clock_groups -asynchronous -group [get_clocks clk_125_*]\n")
+      // A board that routes RX_CLK to a pin that is not clock-capable (the
+      // DB_FPGA: J3:37 is L5 on the XC7A100T core) gets no dedicated IBUF->BUFG
+      // path, and Vivado stops at Place 30-574 unless the design says a general
+      // route is acceptable. Declared per preset, never assumed: on a board
+      // whose RXC IS clock-capable this line would hide a real misplacement.
+      if (eth.params.getOrElse("rxClkNotClockCapable", false) == true)
+        sb.append("set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets e_rxc_IBUF]\n")
+      sb.append("set_false_path -from [get_ports {e_rxd[*] e_rxdv e_rxer}]\n")
+      sb.append("set_false_path -to [get_ports {e_gtxc e_txd[*] e_txen e_txer}]\n")
+      sb.append("set_property IOB TRUE [get_ports {e_rxd[*]}]\n")
+      sb.append("set_property IOB TRUE [get_ports {e_rxdv}]\n")
+      sb.append("set_property IOB TRUE [get_ports {e_rxer}]\n\n")
+    }
+
     // Ports the design has but the board does not wire -- see Board.parkedPins.
     // Gated exactly as LpfGenerator gates them: an sdram_* port exists only
     // when the system uses SDR, and constraining a port that is not there is a

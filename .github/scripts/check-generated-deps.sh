@@ -133,9 +133,8 @@ else
   #
   # BY DESIGN: nothing in a JopConfig knows these facts.
   by_design="
-rtl8211eg_gmii.xdc|PHY clock (create_clock e_rxc) and false paths -- a property of the RTL8211EG and the board, not of any JopConfig
 sdram_sdr.xdc|SDR SDRAM interface timing, shared across boards
-wukong_ddr3.xdc|set_clock_groups on e_rxc, a clock rtl8211eg_gmii.xdc creates; reading it before that file gives 'No clocks matched'
+wukong_ddr3.xdc|timing exceptions, incl. set_clock_groups on e_rxc -- a clock the generated base file creates for a GMII design; reading it first gives 'No clocks matched'
 flash.xdc|SPI configuration-flash properties, not pin assignment
 uart_echo.xdc|stand-alone bring-up exerciser, not a JOP build
 uart_loopback.xdc|stand-alone bring-up exerciser, not a JOP build

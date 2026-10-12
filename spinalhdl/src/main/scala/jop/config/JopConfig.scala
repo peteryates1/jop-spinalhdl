@@ -721,6 +721,20 @@ object JopConfig {
         "vgaText" -> DeviceInstance(DeviceType.VgaText, devicePart = Some("VGA")),
         "sdNative" -> DeviceInstance(DeviceType.SdNative, devicePart = Some("SD_CARD"))))))
 
+  /** EP4CGX150 core on DB_FPGA V5 -- `ep4cgx150DbFull` with only what the V5
+    * forces changed: the console is the RP2040's UART0, and the SD socket's
+    * card-detect is not routed (item 151). The module-swap half of status item
+    * 166: the V5 carries the same RTL8211EG on the same J3 pins as the V4, so
+    * against `ep4cgx150DbFull` the daughter board is what changes. */
+  def ep4cgx150DbV5Eth = {
+    val base = ep4cgx150DbFull
+    val devs = base.system.devices
+    base.copy(assembly = SystemAssembly.qmtechWithDbV5,
+      systems = Seq(base.system.copy(devices = devs ++ Map(
+        "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("RP2040")),
+        "sdNative" -> devs("sdNative").copy(params = Map("noCardDetect" -> true))))))
+  }
+
   /**
    * `ep4cgx150DbFull` with VGA DMA in place of VGA text.
    *
@@ -2009,6 +2023,25 @@ object JopConfig {
           // dropped and SdNative sees "card present". Item 151.
           params = Map("noCardDetect" -> true))),
       coreConfig = JopCoreConfig(useDspMul = true, bytecodes = Map("*" -> "hw")))))
+
+  /** XC7A100T + DB_FPGA V5 — `xc7a100tDbSerial` plus GMII Ethernet, nothing else.
+    *
+    * The board-swap comparison for status item 166: DB_FPGA V4 and V5 carry the
+    * same RTL8211EG on the same J3 pins, so this and `ep4cgx150DbFull` differ in
+    * the core module, not the PHY wiring. Built on the hardware-validated serial
+    * preset rather than `xc7a100tDbFull`, which does not elaborate: its VGA needs
+    * a pixel clock the DDR3 clock wizard does not have (`pllResult.vgaClk`). */
+  def xc7a100tDbEth = {
+    val base = xc7a100tDbSerial
+    base.copy(systems = Seq(base.system.copy(
+      devices = base.system.devices + ("eth" -> DeviceInstance(DeviceType.Ethernet,
+        // The DB_FPGA routes RX_CLK to J3:37 -- L5 on this core board, not a
+        // clock-capable pin (Vivado Place 30-574), so the clock takes a general
+        // route to its BUFG. On the EP4CGX150 the same J3 pin is B10, also an
+        // ordinary I/O: the suspect for status item 166.
+        params = Map("gmii" -> true, "phyDataWidth" -> 8, "rxClkNotClockCapable" -> true),
+        devicePart = Some("RTL8211EG"))))))
+  }
 
   /** XC7A100T + DB_FPGA V5 — DDR3 SMP */
   def xc7a100tDbSmp(n: Int) = {

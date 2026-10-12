@@ -28,8 +28,9 @@
 # synthesis divergence in vivado_build_project.tcl, which was drift nobody chose.
 #
 # XDC ORDER IS LOAD-BEARING, so JOP_XDC is an ordered list and is read in the
-# order given. rtl8211eg_gmii.xdc does `create_clock -name e_rxc`, and
-# wukong_ddr3.xdc then references [get_clocks e_rxc] in a set_clock_groups.
+# order given. A GMII design's generated base file does `create_clock -name
+# e_rxc`, and wukong_ddr3.xdc then references [get_clocks e_rxc] in a
+# set_clock_groups.
 # Read the other way round that get_clocks matches nothing -- "WARNING: [Vivado
 # 12-627] No clocks matched 'e_rxc'" -- the asynchronous exclusion silently does
 # not apply, and the build reports a violation it should not. See status item 58.

@@ -1,7 +1,7 @@
 package jop.config
 
 import org.scalatest.funsuite.AnyFunSuite
-import jop.generate.{TimingConstraints, QsfGenerator, QuartusProject}
+import jop.generate.{TimingConstraints, QsfGenerator, QuartusProject, XdcGenerator}
 import jop.system.JopTopVerilog
 
 /**
@@ -159,6 +159,48 @@ class GeneratedConstraintsTest extends AnyFunSuite {
     assert(fastInputs("ep4cgx150DbFull") == gmiiRx)
     assert(fastInputs("ep4cgx150Serial").isEmpty,
       "a design without Ethernet has no e_rx* ports to assign")
+  }
+
+  // THE XILINX HALF. XdcGenerator constrained e_rxc only for RGMII; the GMII
+  // facts lived in the hand-written rtl8211eg_gmii.xdc, which only the Wukong's
+  // Makefile read. The DB_FPGA V5 flow reads the generated file alone, so
+  // `xc7a100tDbFull` would have built with its receive domain untimed -- the
+  // EP4CGX150's defect, on the board meant to compare against it.
+  test("a GMII design's XDC creates the receive clock and captures in the IOBs") {
+    for (preset <- Seq("xc7a100tDbFull", "wukongFull")) {
+      val xdc = XdcGenerator.generate(cfgOf(preset))
+      assert(xdc.contains("create_clock -period 8.000 -name e_rxc [get_ports {e_rxc}]"),
+        s"$preset\n$xdc")
+      for (p <- Seq("e_rxd[*]", "e_rxdv", "e_rxer"))
+        assert(xdc.contains(s"set_property IOB TRUE [get_ports {$p}]"), s"$preset: $p\n$xdc")
+    }
+    assert(!XdcGenerator.generate(cfgOf("xc7a100tDbSerial")).contains("e_rxc"),
+      "a design without Ethernet has no e_rxc to constrain")
+  }
+
+  // THE TRANSMIT CLOCK TOO. A GMII MAC on a Xilinx board transmits on the clock
+  // wizard's clk_125 output, which Vivado names clk_125_<IP> (clk_125_clk_wiz_0
+  // on the DB_FPGA V5, clk_125_ddr3_clk on the Wukong), and reaches it through
+  // CC FIFOs. The Wukong's hand-written XDC grouped it; the V5's generated file
+  // did not, and `xc7a100tDbEth` missed timing by 2.591 ns on exactly those
+  // crossings -- clk_pll_i to clk_125_clk_wiz_0, timed as if synchronous.
+  test("a GMII design's XDC makes the clock wizard's Ethernet clock asynchronous") {
+    val group = "set_clock_groups -asynchronous -group [get_clocks clk_125_*]"
+    for (preset <- Seq("xc7a100tDbEth", "wukongFull"))
+      assert(XdcGenerator.generate(cfgOf(preset)).contains(group), preset)
+    assert(!XdcGenerator.generate(cfgOf("xc7a100tDbSerial")).contains("clk_125"),
+      "a design without Ethernet does not name the Ethernet clock")
+  }
+
+  // THE DB_FPGA PUTS RX_CLK ON AN ORDINARY PIN: J3:37 is L5 on the XC7A100T core
+  // board, not clock-capable, and Vivado refuses the IBUF->BUFG route
+  // (Place 30-574) unless the design says it may take a general one. Only a
+  // preset that declares it gets the override: on the Wukong RXC is on a
+  // clock-capable pin, and the same line there would hide a real misplacement.
+  test("only a board that routes RX_CLK to an ordinary pin waives the dedicated route") {
+    val waiver = "set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets e_rxc_IBUF]"
+    assert(XdcGenerator.generate(cfgOf("xc7a100tDbEth")).contains(waiver))
+    assert(!XdcGenerator.generate(cfgOf("wukongFull")).contains("CLOCK_DEDICATED_ROUTE"))
   }
 
   test("every Altera board preset emits pins and the right device") {
