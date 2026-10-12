@@ -1721,6 +1721,25 @@ The DDR2 case cannot be fixed by lowering the clock: `mem_if_clk_mhz` 150.0
 at half rate floors the system clock at 62.5 MHz against the ~61 MHz needed.
 The shared root cause is the `BmbMemoryController -> cmdFifo` path — item 5.
 
+**2026-10-12, the A-E115FB back: both DDR2 builds are WORSE than August's, and
+`SmpGcTest` passes on both anyway.**
+
+| build | logic | WNS, Slow 100C (August) |
+|---|---|---|
+| `ae115fbDdr2SmpMshr 4 4` | 73,335 LE (64 %) | **-3.231 ns** (-1.524) |
+| `ae115fbDdr2SmpMshr 8 4` | does not fit: 7,259 LABs of 7,155 ([item 53](#item-53)) | -- |
+| `ae115fbDdr2SmpMshr 8 4 mcache=12/5` | 104,687 LE (91 %) | **-5.189 ns** (-3.056) |
+
+The worst paths are the item-5 family, about 2 ns deeper: a core's `StackStage`
+A register through the memory controller and arbiter into `LruCacheCore`'s
+`cmdFifo` and `CardTable.mAddr` (four cores) or `BmbCacheBridge.burstAddr`
+(eight). Not isolated; the logic grew ~3,000 LE at four cores since August.
+
+`SmpGcTest` at room temperature: **`SMPGC OK`** at 4 and at 8 cores, eight
+rounds each, `lost 0`, `haltLeak 0`, and the other cores' stacks scanned -- the
+first multi-core GC run on DDR2. On violating bitstreams, so measurements, not
+verifications; the 8-core one with the 4 KB method cache August had.
+
 <a id="item-42"></a>
 
 ### Item 42 — Secondary-hit merging is not implemented — a request to a line being filled replays
@@ -1905,6 +1924,11 @@ on **2026-08-16**. The 8 KB/64-block method cache became the default on
 regression sat undetected for two days.
 
 **[Full journal →](status/item-53.md)** — 147 lines of investigation detail.
+
+**The A-E115FB's 8-core DDR2 stopped fitting too** (2026-10-12):
+`ae115fbDdr2SmpMshr 8 4` needs 7,259 LABs and the EP4CE115 has 7,155 (99 % of
+LEs); August's 8-core, with the 4 KB cache, used 93 %. `mcache=12/5` fits it at
+91 % ([item 41](#item-41)).
 
 
 <a id="item-54"></a>
