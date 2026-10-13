@@ -24,20 +24,25 @@ All hardware object classes are in `java/runtime/src/jop/com/jopdesign/hw/`.
 
 ## Available Devices
 
-| Class | Device | Java Constant | Config Flag |
+| Class | Device | Java Constant | Preset device |
 |---|---|---|---|
 | `SysDevice` | System registers | `IO_BASE + 0x00` | always |
-| `SerialPort` | UART serial port | `IO_UART` | `hasUart` |
-| `EthMac` | Ethernet MAC | `IO_ETH` | `hasEth` |
-| `Mdio` | MDIO PHY management | `IO_MDIO` | `hasEth` |
-| `SdSpi` | SD card (SPI mode) | `IO_SD_SPI` | `hasSdSpi` |
-| `SdNative` | SD card (native 4-bit) | `IO_SD` | `hasSdNative` |
-| `VgaText` | VGA text controller | `IO_VGA` | `hasVgaText` |
-| `VgaDma` | VGA DMA framebuffer | `IO_VGA_DMA` | `hasVgaDma` |
+| `SerialPort` | UART serial port | `IO_UART` | `DeviceType.Uart` |
+| `EthMac` | Ethernet MAC | `IO_ETH` | `DeviceType.Ethernet` |
+| `Mdio` | MDIO PHY management | `IO_MDIO` | `DeviceType.Ethernet` |
+| `SdSpi` | SD card (SPI mode) | `IO_SD_SPI` | `DeviceType.SdSpi` |
+| `SdNative` | SD card (native 4-bit) | `IO_SD` | `DeviceType.SdNative` |
+| `VgaText` | VGA text controller | `IO_VGA` | `DeviceType.VgaText` |
+| `VgaDma` | VGA DMA framebuffer | `IO_VGA_DMA` | `DeviceType.VgaDma` |
 
-Device presence is controlled by `IoConfig` flags. Devices not present in the
-build return 0 on read. SD SPI and SD Native are mutually exclusive. VGA Text
-and VGA DMA are mutually exclusive (same output pins).
+A device is present when the preset lists it in its `devices` map, e.g.
+`"eth" -> DeviceInstance(DeviceType.Ethernet, ...)` in `JopConfig.scala`. The
+generated `Const.java` gives every device an address, and the optional ones a
+presence flag (`HAS_ETHERNET`, `HAS_SD_CARD`, `HAS_VGA`, `HAS_CONFIG_FLASH`). An
+absent device's address resolves to `IO_BASE + 0`, which decodes to nothing and
+reads 0, so check the flag before driving one (status
+[item 121](current-status.md#item-121)). SD SPI and SD Native are mutually
+exclusive. VGA Text and VGA DMA are mutually exclusive (same output pins).
 
 ---
 
@@ -134,7 +139,13 @@ EthMac eth = EthMac.getInstance();
 | `rxData` | +3 | RX data pop | -- |
 | `rxStats` | +4 | Errors/drops (auto-clear) | -- |
 
-Supports MII (100Mbps) and GMII (1Gbps). See [db-fpga-ethernet.md](peripherals/db-fpga-ethernet.md).
+Registers +5 to +7 exist only in a build with the MAC's receive capture
+(`rxCapture`, a diagnostic; see `Mac.scala`).
+
+The register interface is the same whatever the PHY link: GMII at 1 Gb/s, MII at
+100 Mb/s, or RGMII at 100 Mb/s; the preset decides. Which board runs which, and
+how to test it: [networking.md](peripherals/networking.md); the DB_FPGA's PHY:
+[db-fpga-ethernet.md](peripherals/db-fpga-ethernet.md).
 
 ### Status Bits
 
@@ -477,8 +488,10 @@ Reads an RGB565 framebuffer from SDRAM via DMA and outputs 640x480@60Hz VGA.
 Two RGB565 pixels per 32-bit word: low 16 bits = first pixel, high 16 bits =
 second pixel. Default framebuffer size: 640x480x2 = 614,400 bytes.
 
-**Mutually exclusive** with VGA Text (same output pins). Controlled by
-`IoConfig.hasVgaDma`. Build with `make build-dbfpga-vgadma`.
+**Mutually exclusive** with VGA Text (same output pins). Present in the
+`ep4cgx150DbVgaDma` preset, which swaps `ep4cgx150DbFull`'s VGA text device for
+`DeviceType.VgaDma`. Build with `make -C fpga/qmtech-ep4cgx150-sdram dbfpga-vgadma`.
+That preset misses timing by 1.011 ns (status [item 73](current-status.md#item-73)).
 
 ### Status Bits (read)
 
@@ -703,5 +716,5 @@ Source files: `JopMemoryConfig.scala` (`JopIoSpace`), `JopCore.scala`.
 - [DB_FPGA SD Card](peripherals/db-fpga-sd-card.md) -- SD Native and SPI mode, pin mapping, clock constraints
 - [DB_FPGA VGA Text](peripherals/db-fpga-vga-text.md) -- VGA text setup guide and troubleshooting
 - [DB_FPGA VGA DMA](peripherals/db-fpga-vga-dma.md) -- VGA DMA framebuffer setup guide
-- [System Configuration](architecture/system-configuration.md) -- IoConfig, board configs
+- [System Configuration](architecture/system-configuration.md) -- presets, device maps, board configs
 - [Implementation Notes](architecture/implementation-notes.md) -- Architecture details

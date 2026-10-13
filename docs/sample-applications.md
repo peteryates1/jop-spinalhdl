@@ -27,26 +27,34 @@ All apps use the same build system:
 
 ```bash
 cd java/apps/Small
-make clean && make all APP_NAME=<name> [EXTRA_SRC="<paths>"]
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=<name> [EXTRA_SRC="<paths>"]
 ```
+
+**`JOP_PRESET` must match the bitstream the app will run on.** The generated
+`Const.java` gives each device its I/O address, and on a preset without the
+device that address points at nothing (status
+[item 121](current-status.md#item-121)). It defaults to `ep4cgx150Serial`,
+which has only the UART, so every app below that touches the DB_FPGA needs
+`ep4cgx150DbFull` (or `ep4cgx150DbVgaDma` for `VgaDmaTest`). The image lands in
+`build/<preset>/java/apps/Small/<name>.jop`.
 
 ### Examples
 
 ```bash
 # Simple apps (no extra modules)
-make clean && make all APP_NAME=HelloWorld
-make clean && make all APP_NAME=VgaTest
-make clean && make all APP_NAME=SdTest
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=HelloWorld
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=VgaTest
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=SdTest
 
 # Fat32 (needs fat32 module)
-make clean && make all APP_NAME=Fat32Test EXTRA_SRC=../../fat32/src
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=Fat32Test EXTRA_SRC=../../fat32/src
 
 # Networking (needs net module)
-make clean && make all APP_NAME=NetTest EXTRA_SRC=../../net/src
-make clean && make all APP_NAME=DhcpTest EXTRA_SRC=../../net/src
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=NetTest EXTRA_SRC=../../net/src
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=DhcpTest EXTRA_SRC=../../net/src
 
 # HTTP server (needs both net and fat32)
-make clean && make all APP_NAME=HttpServer "EXTRA_SRC=../../net/src ../../fat32/src"
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=HttpServer "EXTRA_SRC=../../net/src ../../fat32/src"
 ```
 
 ## Download and Run
@@ -54,12 +62,16 @@ make clean && make all APP_NAME=HttpServer "EXTRA_SRC=../../net/src ../../fat32/
 ```bash
 cd fpga/qmtech-ep4cgx150-sdram
 
-# Program FPGA (if not already configured)
-make program-dbfpga
+# Build and load the DB_FPGA bitstream (if not already configured)
+make dbfpga dbfpga-program
 
-# Download app via serial
-make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/<name>.jop
+# Download the app. The console port and baud are resolved from the build;
+# never pass a /dev/tty path, they renumber on every replug.
+make download CFG=ep4cgx150DbFull JOP_FILE=../../build/ep4cgx150DbFull/java/apps/Small/<name>.jop
 ```
+
+The Ethernet on this build runs MII at 100 Mb/s
+([networking](peripherals/networking.md)).
 
 The download script monitors UART output after transfer. Press Ctrl+C to exit.
 
@@ -67,11 +79,11 @@ The download script monitors UART output after transfer. Press Ctrl+C to exit.
 
 Some apps require specific FPGA builds due to mutually exclusive peripherals:
 
-| Config | Build Target | Peripherals |
+| Preset | Build Target | Peripherals |
 |--------|-------------|-------------|
-| `IoConfig.qmtechDbFpga` | `make build-dbfpga` | VGA text, SD, Ethernet |
-| `IoConfig.qmtechDbFpgaVgaDma` | `make full-dbfpga-vgadma` | VGA DMA, SD, Ethernet |
-| 8-core SMP test | `make build-smp8` | UART only (8 cores, per-core TX on JP1) |
+| `ep4cgx150DbFull` | `make dbfpga` | VGA text, SD, Ethernet (MII) |
+| `ep4cgx150DbVgaDma` | `make dbfpga-vgadma` | VGA DMA, SD, Ethernet (MII); misses timing by 1.011 ns (status [item 73](current-status.md#item-73)) |
+| `ep4cgx150Smp 8` | `make smp CORES=8` | UART only (8 cores) |
 
 VGA text and VGA DMA share the same pins and cannot be used simultaneously.
 
@@ -89,7 +101,7 @@ FAT32 SD card. Tests: mount, directory listing, file create, read, write,
 long file names (LFN), short 8.3 names, file size tracking.
 
 ```bash
-make clean && make all APP_NAME=Fat32Test EXTRA_SRC=../../fat32/src
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=Fat32Test EXTRA_SRC=../../fat32/src
 ```
 
 ### NetTest
@@ -98,7 +110,7 @@ UDP and TCP echo server on port 7 with ICMP ping support. Prints periodic
 diagnostics (RX/TX counts, MAC errors/drops). Uses static IP 192.168.0.123.
 
 ```bash
-make clean && make all APP_NAME=NetTest EXTRA_SRC=../../net/src
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=NetTest EXTRA_SRC=../../net/src
 
 # Test from host
 ping 192.168.0.123
@@ -112,7 +124,7 @@ DHCP client test — obtains IP from network DHCP server, resolves a hostname
 via DNS, then runs UDP+TCP echo on port 7.
 
 ```bash
-make clean && make all APP_NAME=DhcpTest EXTRA_SRC=../../net/src
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=DhcpTest EXTRA_SRC=../../net/src
 ```
 
 ### HttpServer
@@ -124,7 +136,7 @@ Features: GET requests, subdirectory traversal, content-type detection,
 backpressure-aware streaming, pre-built error responses (400/404/500).
 
 ```bash
-make clean && make all APP_NAME=HttpServer "EXTRA_SRC=../../net/src ../../fat32/src"
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=HttpServer "EXTRA_SRC=../../net/src ../../fat32/src"
 
 # Test from host
 curl http://192.168.0.123/
@@ -140,7 +152,8 @@ positioning, character writing, scrolling, attributes. Requires DB_FPGA build.
 
 VGA DMA framebuffer test — 640x480@60Hz RGB565 from SDRAM. Draws test patterns
 using `Native.wrMem()` direct memory writes. Requires the VGA DMA FPGA build
-(`make full-dbfpga-vgadma`).
+(`make dbfpga-vgadma`, preset `ep4cgx150DbVgaDma`, which misses timing by
+1.011 ns: status [item 73](current-status.md#item-73)).
 
 ### SmpUartTest
 
@@ -149,7 +162,14 @@ using `Native.wrMem()` direct memory writes. Requires the VGA DMA FPGA build
 serial port (CP2102N). All 8 TXD lines are routed to JP1 header pins for
 readout by a Pico debug probe.
 
-Requires the 8-core SMP test FPGA build (`make build-smp8`).
+**No bitstream can run this today.** It needs a build that gives every core
+its own UART, and the only one, `JopSmp8TestVerilog`, was deleted in `7258661`
+(2026-03-13). No current preset gives cores 1..N a UART (none sets
+`perCoreConfigs`), and the `generate-smp8` / `build-smp8` / `program-smp8`
+targets below were retired with it — see the note at the top of
+`fpga/qmtech-ep4cgx150-sdram/Makefile`. The steps are kept as the record of how
+it ran. To exercise every core today, use `SmpGcTest`:
+`make smp smp-verify CORES=8` in `fpga/qmtech-ep4cgx150-sdram`.
 
 ```bash
 # Build FPGA (generate + compile)

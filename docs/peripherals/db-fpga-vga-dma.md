@@ -6,23 +6,24 @@ VGA framebuffer output for the QMTECH DB_FPGA daughter board.
 ## Quick Start
 
 ```bash
-# 1. Build FPGA bitstream (VGA DMA variant -- mutually exclusive with VGA Text)
+# 1. Build FPGA bitstream (VGA DMA variant -- mutually exclusive with VGA Text).
+#    It misses timing by 1.011 ns (status item 73).
 cd fpga/qmtech-ep4cgx150-sdram
-make full-dbfpga-vgadma
+make dbfpga-vgadma
 
-# 2. Program FPGA
-make program-dbfpga-vgadma
+# 2. Program FPGA (no dedicated target: name the config)
+make program CFG=ep4cgx150DbVgaDma REV=jop_dbfpga
 
-# 3. Build the VGA DMA test app
+# 3. Build the VGA DMA test app, for the same preset as the bitstream
 cd ../../java/apps/Small
-make clean && make all APP_NAME=VgaDmaTest
+make clean all JOP_PRESET=ep4cgx150DbVgaDma APP_NAME=VgaDmaTest
 
-# 4. Download and run
+# 4. Download and run (the console port and baud come from the build)
 cd ../../fpga/qmtech-ep4cgx150-sdram
-make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/VgaDmaTest.jop
+make download CFG=ep4cgx150DbVgaDma JOP_FILE=../../build/ep4cgx150DbVgaDma/java/apps/Small/VgaDmaTest.jop
 
 # 5. Monitor UART output (progress messages)
-make monitor SERIAL_PORT=/dev/ttyUSB0
+make monitor CFG=ep4cgx150DbVgaDma
 ```
 
 Connect a VGA monitor to the DB_FPGA daughter board VGA port. Test patterns
@@ -153,12 +154,18 @@ The DMA reads directly from SDRAM, not from cache.
 
 ## SpinalHDL Configuration
 
-VGA DMA uses `IoConfig.hasVgaDma = true`. This is **mutually exclusive** with
-`hasVgaText` (same VGA output pins):
+VGA DMA is a device in the `ep4cgx150DbVgaDma` preset, which is
+`ep4cgx150DbFull` with the VGA text device swapped for it. The two are
+**mutually exclusive** (same VGA output pins):
 
 ```scala
-IoConfig.qmtechDbFpgaVgaDma  // hasVgaDma=true, hasEth=true, hasSdNative=true
+// JopConfig.ep4cgx150DbVgaDma
+sys.devices - "vgaText" + ("vgaDma" -> DeviceInstance(DeviceType.VgaDma, devicePart = Some("VGA")))
 ```
+
+Build it with `make -C fpga/qmtech-ep4cgx150-sdram dbfpga-vgadma`. It misses
+timing by 1.011 ns, on SDRAM command-FIFO arbitration between the core and the
+DMA (status [item 73](../current-status.md#item-73)).
 
 The VGA DMA variant uses the same Quartus project and pin assignments as
 VGA Text (same physical VGA pins). Only the FPGA bitstream differs.
@@ -168,17 +175,16 @@ Key source files:
 | File | Description |
 |------|-------------|
 | `spinalhdl/src/main/scala/jop/io/VgaBmbDma.scala` | VGA DMA controller (DMA engine, CDC FIFO, pixel output) |
-| `spinalhdl/src/main/scala/jop/system/IoConfig.scala` | `hasVgaDma` config flag, `qmtechDbFpgaVgaDma` preset |
-| `spinalhdl/src/main/scala/jop/system/JopSdramTop.scala` | `JopDbFpgaVgaDmaTopVerilog` generation object |
-| `spinalhdl/src/main/scala/jop/memory/JopMemoryConfig.scala` | `VGA_DMA_BASE = 0xAC` address decode |
-| `java/runtime/src/jop/com/jopdesign/sys/Const.java` | `IO_VGA_DMA = IO_BASE + 0x2C` |
+| `spinalhdl/src/main/scala/jop/config/JopConfig.scala` | The `ep4cgx150DbVgaDma` preset |
+| `spinalhdl/src/main/scala/jop/io/IoAddressAllocator.scala` | I/O address allocation |
+| `build/ep4cgx150DbVgaDma/java/gen/com/jopdesign/sys/Const.java` | Generated per preset: `IO_VGA_DMA` |
 | `java/runtime/src/jop/com/jopdesign/hw/VgaDma.java` | Java hardware object |
 | `java/apps/Small/src/test/VgaDmaTest.java` | Hardware test app |
 
 ## Troubleshooting
 
 **No image**: Verify the FPGA is programmed with the VGA DMA bitstream
-(`make program-dbfpga-vgadma`), not the standard DB_FPGA bitstream (which has
+(`make program CFG=ep4cgx150DbVgaDma REV=jop_dbfpga`), not the standard DB_FPGA bitstream (which has
 VGA Text). Check that the Java app enables DMA output by writing `1` to
 register +0.
 

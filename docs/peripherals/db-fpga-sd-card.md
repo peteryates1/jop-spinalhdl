@@ -158,10 +158,9 @@ LOOP 00000001
 cd fpga/qmtech-ep4cgx150-sdram
 make full-sd-native-exerciser
 # Or step by step:
-make generate-sd-native-exerciser
-make build-sd-native-exerciser
-make program-sd-native-exerciser
-make monitor SERIAL_PORT=/dev/ttyUSB0
+make sd-native             # generate and build
+make program-sd-native
+make monitor
 ```
 
 ---
@@ -231,10 +230,9 @@ LOOP 00000001
 cd fpga/qmtech-ep4cgx150-sdram
 make full-sd-spi-exerciser
 # Or step by step:
-make generate-sd-spi-exerciser
-make build-sd-spi-exerciser
-make program-sd-spi-exerciser
-make monitor SERIAL_PORT=/dev/ttyUSB0
+make sd-spi             # generate and build
+make program-sd-spi
+make monitor
 ```
 
 ---
@@ -248,10 +246,13 @@ make monitor SERIAL_PORT=/dev/ttyUSB0
 | Max tested clock | 10 MHz | 20 MHz |
 | Throughput | ~4 MB/s (10 MHz x 4 bits) | ~2.5 MB/s (20 MHz x 1 bit) |
 | Protocol complexity | Hardware handles CMD/DATA framing | Software handles everything |
-| Config flag | `hasSdNative` | `hasSdSpi` |
+| Preset device | `DeviceType.SdNative` | `DeviceType.SdSpi` |
 
-SD Native is the default for `IoConfig.qmtechDbFpga` (the standard DB_FPGA
-build). SD SPI requires a custom IoConfig with `hasSdSpi = true`.
+SD Native is the one the standard DB_FPGA build has (`ep4cgx150DbFull`). No JOP
+preset includes SD SPI today; the SPI controller is exercised by the stand-alone
+SD SPI exerciser (`make sd-spi` in `fpga/qmtech-ep4cgx150-sdram`), and both
+SD exercisers currently fail on hardware (status
+[item 65](../current-status.md#item-65)).
 
 ---
 

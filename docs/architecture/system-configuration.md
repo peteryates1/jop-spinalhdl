@@ -17,7 +17,8 @@ JopConfig                               # Top-level: assembly + systems
 │       ├── clkFreq: HertzNumber        # System clock frequency (after PLL)
 │       ├── cpuCnt: Int                 # Number of CPU cores
 │       ├── coreConfig: JopCoreConfig   # Default core configuration
-│       └── drivers: Seq[DeviceDriver]  # Device drivers to instantiate
+│       ├── perCoreConfigs: Option[Seq[JopCoreConfig]]  # Per-core overrides
+│       └── devices: Map[String, DeviceInstance]  # I/O devices (DeviceType + params + board part); core 0 gets them
 ├── interconnect: Option[InterconnectConfig]  # Cross-system (multi-system only)
 └── monitors: Seq[MonitorConfig]        # Hardware monitors (watchdog, etc.)
 
@@ -32,7 +33,7 @@ JopCluster                             # Instantiated by JopTop
 ├── cpuCnt: Int                        # Number of CPU cores
 ├── baseConfig: JopCoreConfig          # Shared core configuration
 │   ├── memConfig: JopMemoryConfig     # Memory layout and bus parameters
-│   ├── ioConfig: IoConfig             # I/O device presence and parameters
+│   ├── devices: Map[String, DeviceInstance]  # This core's I/O devices (empty: core 0 takes the system's)
 │   ├── useStackCache: Boolean         # 3-bank rotating stack cache with DMA spill/fill
 │   └── useIhlu: Boolean               # Per-object hardware locking (vs global lock)
 ├── debugConfig: DebugConfig           # Optional on-chip debug subsystem
@@ -65,9 +66,20 @@ sbt "runMain jop.system.JopTopVerilog <preset> [args]"
 | `wukongSmp N` | Wukong XC7A100T | DDR3 | `JopSmpDdr3WukongTop` |
 | `wukongDualIndependent` | Wukong XC7A100T | DDR3 + SDR | `JopDualWukongTop` |
 | `wukongDualSmp N` | Wukong XC7A100T | DDR3 + SDR | `JopDualWukongTop` |
+| `ep4cgx150DbFull` | QMTECH EP4CGX150 + DB_FPGA V4 | SDR SDRAM | `JopSdramTop` |
+| `ep4cgx150DbV5Mii`, `ep4cgx150DbV5Eth` | QMTECH EP4CGX150 + DB_FPGA V5 | SDR SDRAM | `JopSdramTop` |
+| `ae115fbDdr2`, `ae115fbDdr2Eth` | A-E115FB EP4CE115 | DDR2 | `JopDdr2Ae115fbTop` |
+| `xc7a100tDbSerial`, `xc7a100tDbEth` | QMTECH XC7A100T + DB_FPGA V5 | DDR3 | `JopDdr3Top` |
+| `colorlightI5Sdram` | Colorlight i5 (ECP5) | SDR SDRAM | `JopSdramI5Top` |
+| `colorlightDbI9PlusSdram`, `colorlightDbI9PlusEth` | Colorlight i9+ (XC7A50T) on its base board | SDR SDRAM | `JopSdramI9PlusTop` |
 | `minimum` | QMTECH EP4CGX150 | SDR SDRAM | `JopSdramTop` |
 | `max1000Sdram` | Arrow MAX1000 | SDR SDRAM | `JopMax1000SdramTop` |
 | `ep4ce6Sdram` | Generic EP4CE6 | SDR SDRAM | `JopEp4ce6SdramTop` |
+
+This is a selection: the `match` in `JopTopVerilog.scala` is the complete list
+(about fifty presets). The entity name is derived, not chosen —
+`JopConfig.entityName` builds `Jop[Smp]<memory><board>Top` — so presets for one
+board share it.
 
 The `max1000Sdram` and `ep4ce6Sdram` presets use `smallFpgaMemConfig` which disables
 object and array caches (`useOcache = false`, `useAcache = false`) to save ~1,900 LEs.
@@ -163,7 +175,7 @@ Unified configuration for a single JOP core. Defined in `jop/config/JopCoreConfi
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `memConfig` | JopMemoryConfig | default | Memory system configuration |
-| `ioConfig` | IoConfig | default | I/O device configuration |
+| `devices` | Map[String, DeviceInstance] | empty | This core's I/O devices, e.g. `"eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true))`. Empty on core 0 means the system's `devices` |
 | `clkFreq` | HertzNumber | 100 MHz | System clock frequency (for Sys microsecond prescaler) |
 | `supersetJumpTable` | JumpTableInitData | simulation | Superset jump table (all HW handlers present). Patched by `resolveJumpTable()`. |
 

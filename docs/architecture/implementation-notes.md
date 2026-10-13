@@ -138,7 +138,7 @@ Optional per-core IEEE 754 single-precision FPU via **FloatComputeUnit** (pipeli
 
 ## SMP Architecture
 
-- **Unified via `cpuCnt`**: `JopSdramTop(cpuCnt=N)` / `JopCyc5000Top(cpuCnt=N)` — N `JopCore`s + round-robin BMB arbiter + shared SDRAM + per-core I/O. cpuCnt=1 uses direct BMB (no arbiter, no CmpSync).
+- **Unified via `cpuCnt`**: a preset's `JopSystem(cpuCnt = N)` (e.g. `ep4cgx150Smp N`, `cyc5000Smp N`), elaborated by `JopTop` and `JopCluster` — N `JopCore`s + round-robin BMB arbiter + shared SDRAM + per-core I/O. cpuCnt=1 uses direct BMB (no arbiter, no CmpSync).
 - **BMB Arbiter**: `BmbArbiter` with `lowerFirstPriority=false` (round-robin), source width expanded by `log2Up(cpuCnt)` bits for response routing
 - **CmpSync** (`jop.io`): Global lock for `monitorenter`/`monitorexit` + GC halt
   - States: IDLE / LOCKED. Round-robin fair arbiter (two-pass scan)
@@ -155,7 +155,7 @@ Optional per-core IEEE 754 single-precision FPU via **FloatComputeUnit** (pipeli
 - **LED driver**: LED[i]=core i WD bit 0 (active low). 7 on-board LEDs + PMOD for 8+ cores.
 - **Test app**: `NCoreHelloWorld.java` — each core reads `IO_CPU_ID`, core 0 prints + toggles WD, others just toggle WD. Small variant includes GC.
 - **FPGA build**: `make smp CORES=n` in the QMTECH or CYC5000 dirs. The Quartus project is GENERATED into `build/<config>/quartus/` under its own revision name (`jop_smp_sdram`, `jop_smp_cyc5000`) — the hand-written `.qsf` files this line used to name were deleted once the generated ones were proven assignment-identical.
-- **Verified core counts**: 4-core (21% LE, +3.0 ns slack), 8-core (42% LE, +1.9 ns slack) at 100 MHz; 16-core (86% LE, +1.8 ns slack) at 80 MHz on EP4CGX150. 12/16-core fail at 100 MHz (insufficient timing margin). PLL frequency comes from the preset via `DramPllGen`; `dram_pll.vhd` is generated, not hand-edited.
+- **Verified core counts** (`SmpGcTest`, `SMPGC OK`): 1, 4, 8 and 12 cores on the EP4CGX150 at 60, 60, 50 and 36 MHz, the clock set by the BMB arbiter path (status item 5); 4, 6 and 8 on the Wukong's DDR3. 16 cores do not fit the EP4CGX150 (182,501 of 149,760 LE). The undated figures this line used to give — 4 and 8 cores at 100 MHz, 16 cores at 86 % LE and +1.8 ns at 80 MHz — have no support in the tree (status item 108). PLL frequency comes from the preset via `DramPllGen`; `dram_pll.vhd` is generated, not hand-edited.
 
 ## SMP GC Stop-the-World
 

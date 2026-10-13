@@ -267,18 +267,18 @@ Build and run `Fat32Test.java` on the FPGA:
 ```bash
 cd java/apps/Small
 
-# Build with FAT32 module
-make clean && make all APP_NAME=Fat32Test EXTRA_SRC=../../fat32/src
+# Build with FAT32 module, for the DB_FPGA preset
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=Fat32Test EXTRA_SRC=../../fat32/src
 
-# Program FPGA (if not already running)
+# Build and program the FPGA (if not already running)
 cd ../../fpga/qmtech-ep4cgx150-sdram
-make program-dbfpga
+make dbfpga dbfpga-program
 
-# Download and run
-make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/dist/bin/Fat32Test.jop
+# Download and run (the console port and baud come from the build)
+make download CFG=ep4cgx150DbFull JOP_FILE=../../build/ep4cgx150DbFull/java/apps/Small/Fat32Test.jop
 
 # Monitor UART output
-make monitor SERIAL_PORT=/dev/ttyUSB0
+make monitor CFG=ep4cgx150DbFull
 ```
 
 Expected output:

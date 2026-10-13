@@ -157,24 +157,16 @@ See [QMTECH DB_FPGA Daughter Board](qmtech-db-fpga.md) for pin assignments.
 
 ## JOP Configuration
 
-From `JopSdramTop.scala`:
+The single-core configuration is the `ep4cgx150Serial` preset in
+`spinalhdl/src/main/scala/jop/config/JopConfig.scala`: SDR SDRAM, serial boot,
+80 MHz, console on the CP2102N, card table and backend fill on. The DB_FPGA
+presets (`ep4cgx150DbFull` and the V5 variants) add Ethernet, VGA and SD.
 
-```scala
-JopCoreConfig(
-  memConfig = JopMemoryConfig(burstLen = 4),  // addressWidth=25 (default, 32 MB)
-  clkFreqHz = 80000000L,                      // 80 MHz (100 MHz for 1-8 cores)
-  ioConfig = ioConfig                         // DB_FPGA peripherals when present
-)
-```
-
-| Parameter | Value | Notes |
-|-----------|-------|-------|
-| `addressWidth` | 25 (default) | 23-bit physical word + 2 type bits = 32 MB |
-| `mainMemSize` | 0 (auto) | Auto-derives to 32 MB from addressWidth |
-| `burstLen` | 4 | 4-word SDRAM page-mode burst |
-| `stackRegionWordsPerCore` | 8192 | 32 KB per-core stack region |
-| System clock | 80 MHz | 100 MHz for <=8 cores |
-| SDRAM clock | 80/100 MHz, -3ns phase | Matched to system clock |
+What a build actually contains is printed in its summary,
+`build/<config>/rtl/<Entity>.summary.txt` — preset, clock, PLL (generated per
+build into `build/<config>/ip/dram_pll.vhd`), baud, devices and microcode. Read
+that rather than restating values here: `JopTop` overrides some `memConfig`
+fields a preset declares (status [item 130](../current-status.md#item-130)).
 
 ### Address Flow
 
@@ -186,27 +178,26 @@ JOP pipeline → BmbMemoryController → BMB bus → BmbSdramCtrl32 → SDRAM
 
 ## SMP Scaling
 
-The EP4CGX150 is the highest-capacity Cyclone IV GX available. SMP scaling
-has been verified on hardware:
+Validated on hardware with `SmpGcTest` (`SMPGC OK`), each core count at the
+clock its own preset sets (`make smp CORES=N`, plus `MHZ=36` at 12):
 
-| Cores | Fmax | LEs | LE % | Timing | Status |
-|:-----:|:----:|----:|:----:|--------|--------|
-| 1 | 100 MHz | ~5,400 | 4% | +10 ns slack | Working |
-| 2 | 100 MHz | ~11,000 | 7% | +6 ns slack | Working |
-| 4 | 100 MHz | ~22,000 | 15% | +3 ns slack | Working |
-| 8 | 100 MHz | ~44,000 | 29% | +1.9 ns slack | Working |
-| 16 | 80 MHz | ~129,000 | 86% | +1.8 ns slack | Working |
+| Cores | Clock | Status |
+|:-----:|:-----:|--------|
+| 1 | 60 MHz | `SMPGC OK` |
+| 4 | 60 MHz | `SMPGC OK` |
+| 8 | 50 MHz | `SMPGC OK` |
+| 12 | 36 MHz | `SMPGC OK`; routes only with the method cache cut to `mcache=14/5` |
+| 16 | — | **does not fit**: 182,501 LE against the device's 149,760 |
 
-At 16 cores the FPGA is near capacity. 8 cores at 100 MHz is the practical
-sweet spot — comfortable resource headroom and no clock downgrade needed.
+The clock falls with core count because the BMB arbiter sets the critical path
+(status [item 5](../current-status.md#item-5)). Measured there: 1 core 7,870 LE,
+2 cores 19,439 LE, 4 cores 38,372 LE. `JopCluster`'s `require(cpuCnt <= 16)` is
+an architectural ceiling (the GC root port's core field is 4 bits), not a fit
+result. Two cores at the 80 MHz default miss timing by 0.155 ns; 60 MHz closes.
 
-### Resource Budget (per core, approximate)
-
-| Resource | Per Core | Shared Overhead |
-|----------|:--------:|:---------------:|
-| LEs | ~5,400 | ~3,000 (arbiter, CmpSync, SDRAM ctrl) |
-| M9K blocks | ~3 | ~2 (SDRAM ctrl FIFOs) |
-| Multipliers | 1 | 0 |
+Until 2026-10-13 this section listed 1-16 cores as "Working" at 80-100 MHz, 16
+of them at 86 % LE; nothing in the tree supports those figures, and 16 has never
+been built successfully (status [item 108](../current-status.md#item-108)).
 
 ### SDRAM Bandwidth Under SMP
 
@@ -226,7 +217,10 @@ reads (BC fill = 4 words = 8 SDRAM accesses) amortize row-activation overhead.
 
 **JTAG programming**: USB-Blaster via JTAG header on core board.
 
-**Flash boot**: EPCS128 serial configuration flash. The flash holds both the
+**Flash boot**: EPCS128 serial configuration flash. **It cannot currently be
+built**: the tops that generated flash-boot bitstreams were deleted in `7258661`
+(2026-03-13) and no preset sets `BootMode.Flash` (status
+[item 82](../current-status.md#item-82)). What it did — the flash holds both the
 FPGA bitstream and the JOP application binary:
 - Offset 0x000000: FPGA bitstream (.rpd format)
 - Offset 0x800000: JOP application (.jop binary)
@@ -251,19 +245,23 @@ All build files are in `fpga/qmtech-ep4cgx150-sdram/`.
 
 | Target | Command | Description |
 |--------|---------|-------------|
-| Single-core | `make full` | microcode + generate + build + program + download |
-| SMP (2-core default) | `make full-smp` | SMP microcode + generate + build + program + download |
-| DB_FPGA | `make full-dbfpga` | With Ethernet + VGA + SD card |
-| Flash boot | `make full-flash-boot` | Build for autonomous flash boot |
-| Flash program | `make program-flash` | Write bitstream + .jop to flash |
+| Single-core | `make all` | microcode + generate + build (`ep4cgx150Serial`) |
+| Single-core, end to end | `make full` | the above + program + download + monitor |
+| SMP | `make smp CORES=N`, `make smp-program`, `make smp-verify` | `ep4cgx150Smp N`; `smp-verify` runs `SmpGcTest` through `hw_verify` |
+| DB_FPGA | `make dbfpga`, `make dbfpga-program` | `ep4cgx150DbFull`: Ethernet (MII, 100 Mb/s) + VGA text + SD |
+| DB_FPGA, VGA DMA | `make dbfpga-vgadma` | `ep4cgx150DbVgaDma`; misses timing by 1.011 ns (status item 73) |
+| Microcode fallbacks | `make mc-fallback` | `ep4cgx150McFallback`, coverage for the microcode implementations |
 
-Timing constraints: `jop_sdram.sdc` — 50 MHz input, PLL-derived clocks,
-asynchronous clock groups for Ethernet PLL and PHY RX clock.
+Everything is generated into `build/<config>/`, including the constraints:
+`build/<config>/quartus/*.sdc` (50 MHz input, PLL-derived clocks, the PHY clocks
+created and grouped) and the pin assignments in the `.qsf`. The flash-boot
+targets are gone with flash boot itself (status item 82).
 
 ## SignalTap Debug
 
-The QSF includes a 96-signal SignalTap II configuration (commented out by
-default). Signals include memory controller state, BMB bus handshake, SDRAM
+The hand-written QSF this section describes is gone: projects are generated
+now, with `ENABLE_SIGNALTAP OFF` and no SignalTap configuration. What it had —
+a 96-signal SignalTap II configuration (commented out by default). Signals include memory controller state, BMB bus handshake, SDRAM
 bus, microcode PC, and Java bytecode PC. Useful for debugging SDRAM timing
 issues and pipeline stalls. Enable by uncommenting the SignalTap section in
 `jop_sdram.qsf`.
@@ -421,11 +419,11 @@ peripheral details and pin assignments.
 | Memory size | 32 MB | 1 GB | 256 MB |
 | Memory bus | 16-bit | 64-bit | 16-bit |
 | Peak BW | 200 MB/s | 5.3 GB/s | 3.2 GB/s |
-| Max JOP cores | 16 (verified) | ~12 (estimated) | 2-3 (estimated) |
-| JOP Fmax | 80-100 MHz | TBD | 100 MHz |
-| Status | Primary platform | Future | GC working |
+| Max JOP cores | 12 (validated; 16 does not fit) | 8 run `SmpGcTest`, on builds that miss timing | 2-3 (estimated) |
+| JOP Fmax | 80 MHz single-core; 36-60 MHz SMP | 75 MHz | 100 MHz |
+| Status | Primary platform | 1 GB DDR2 platform, on hardware | GC working |
 
-The EP4CGX150's advantage is logic capacity (16-core SMP verified). The EP4CE115
+The EP4CGX150's advantage is logic capacity (12-core SMP validated). The EP4CE115
 and XC7A35T have far more memory bandwidth but fewer logic resources. The ideal
 large-scale JOP platform would be an EP4CE115-class FPGA (or larger) with DDR2/DDR3
 and the DB_FPGA daughter board for I/O.

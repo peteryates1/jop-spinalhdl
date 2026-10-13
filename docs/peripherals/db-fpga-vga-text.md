@@ -8,23 +8,23 @@ VGA text-mode output for the QMTECH DB_FPGA daughter board.
 ## Quick Start
 
 ```bash
-# 1. Build FPGA bitstream (includes VGA text controller)
+# 1. Build the FPGA bitstream (includes the VGA text controller)
 cd fpga/qmtech-ep4cgx150-sdram
-make full-dbfpga
+make dbfpga
 
 # 2. Program FPGA
-make program-dbfpga
+make dbfpga-program
 
-# 3. Build the VGA test app
+# 3. Build the VGA test app, for the same preset as the bitstream
 cd ../../java/apps/Small
-make clean && make all APP_NAME=VgaTest
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=VgaTest
 
-# 4. Download and run
+# 4. Download and run (the console port and baud come from the build)
 cd ../../fpga/qmtech-ep4cgx150-sdram
-make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/VgaTest.jop
+make download CFG=ep4cgx150DbFull JOP_FILE=../../build/ep4cgx150DbFull/java/apps/Small/VgaTest.jop
 
 # 5. Monitor UART output (progress messages)
-make monitor SERIAL_PORT=/dev/ttyUSB0
+make monitor CFG=ep4cgx150DbFull
 ```
 
 Connect a VGA monitor to the DB_FPGA daughter board VGA port. Text output
@@ -231,14 +231,14 @@ public class YourApp {
 
 ```bash
 cd java/apps/Small
-make clean && make all APP_NAME=YourApp
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=YourApp
 ```
 
 ### 3. Download and Run
 
 ```bash
 cd fpga/qmtech-ep4cgx150-sdram
-make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/YourApp.jop
+make download CFG=ep4cgx150DbFull JOP_FILE=../../build/ep4cgx150DbFull/java/apps/Small/YourApp.jop
 ```
 
 The FPGA must already be programmed with the DB_FPGA bitstream
@@ -269,27 +269,24 @@ display as blank.
 
 ## SpinalHDL Configuration
 
-VGA text is enabled via `IoConfig.hasVgaText = true`:
+VGA text is a device in the preset — `ep4cgx150DbFull` lists
+`"vgaText" -> DeviceInstance(DeviceType.VgaText, devicePart = Some("VGA"))`.
 
-```scala
-IoConfig.qmtechDbFpga  // sets hasVgaText=true (plus Ethernet, SD)
-```
-
-The VGA pixel clock domain (25 MHz) is provided by PLL output c3
-in `JopSdramTop`, passed to `JopCore` / `JopCluster` as `vgaCd`.
+The VGA pixel clock domain (25 MHz) is output c3 of the board's generated PLL
+(`DramPllGen`), handed to the device as `vgaCd` by `DeviceTopWiring`.
 
 Key source files:
 
 | File | Description |
 |------|-------------|
 | `spinalhdl/src/main/scala/jop/io/VgaText.scala` | VGA text controller (register map, pixel pipeline, font ROM) |
-| `spinalhdl/src/main/scala/jop/system/IoConfig.scala` | `hasVgaText` config flag |
-| `spinalhdl/src/main/scala/jop/system/JopCore.scala` | VGA instantiation and I/O wiring |
-| `spinalhdl/src/main/scala/jop/memory/JopMemoryConfig.scala` | `VGA_TEXT_BASE = 0xC0` address decode |
-| `java/runtime/src/jop/com/jopdesign/sys/Const.java` | `IO_VGA = IO_BASE + 0x40` |
+| `spinalhdl/src/main/scala/jop/config/JopConfig.scala` | The `ep4cgx150DbFull` preset that includes it |
+| `spinalhdl/src/main/scala/jop/io/DeviceTopWiring.scala` | Pixel clock domain and pin wiring |
+| `spinalhdl/src/main/scala/jop/io/IoAddressAllocator.scala` | I/O address allocation |
+| `build/<config>/java/gen/com/jopdesign/sys/Const.java` | Generated per preset: `IO_VGA = IO_BASE + 0x40` on `ep4cgx150DbFull` |
 | `java/apps/Small/src/test/VgaTest.java` | Hardware test app |
 | `build/<config>/quartus/*.qsf` | VGA pin assignments, generated from `Board.scala` |
-| `fpga/qmtech-ep4cgx150-sdram/dram_pll.vhd` | PLL with 25 MHz c3 output |
+| `spinalhdl/src/main/scala/jop/config/DramPllGen.scala` | The generated PLL, with the 25 MHz c3 output |
 
 ## Troubleshooting
 

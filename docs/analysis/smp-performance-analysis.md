@@ -4,6 +4,13 @@ Analysis of SMP scaling bottlenecks for JOP on QMTECH EP4CGX150 (SDR SDRAM), cov
 memory bandwidth, arbitration overhead, lock contention, cache effectiveness, GC scaling,
 and FPGA resource utilization. Based on source code analysis of the SpinalHDL implementation.
 
+> **Read the 16-core figures here as unsupported (2026-10-13).** They are
+> undated — 16 cores at ~86 % LE and 80 MHz — and contradicted: 16 cores need
+> 182,501 LE against the EP4CGX150's 149,760 and have never been built
+> successfully. What is validated is 1, 4, 8 and 12 cores at 60, 60, 50 and
+> 36 MHz (`current-status.md` items 5 and 108). The models and reasoning below
+> stand as analysis; the resource figures are assumptions, not measurements.
+
 ## 1. Memory Bandwidth Model
 
 ### 1.1 Theoretical SDRAM Bandwidth

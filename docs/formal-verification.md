@@ -4,14 +4,16 @@ The JOP SpinalHDL implementation includes comprehensive formal verification usin
 
 ## Overview
 
-**133 properties verified** across **23 test suites** covering all major components.
+**142 properties verified** across **23 test suites** covering all major components.
 
-Counted 2026-08-31 by running the suite, not by reading: `sbt "testOnly
-jop.formal.*"` reports 133 tests. ScalaTest says "Suites: completed 24" because
-it also counts `SpinalFormalFunSuite`, the shared base class, which registers no
-properties of its own — and grepping for `test(` gives 135 for the same reason,
-since two of those occurrences are that base class DEFINING the helper. Three
-different numbers were in circulation before this was measured.
+Counted 2026-10-13 by running the suite, not by reading: the full `sbt test`
+run reports 142 tests in the 23 `jop.formal` suites. It was 133 when first
+counted on 2026-08-31; items 128, 133, 157 and 158 added the nine since.
+ScalaTest says "Suites: completed 24" because it also counts
+`SpinalFormalFunSuite`, the shared base class, which registers no properties of
+its own — and grepping for `test(` over-counts for the same reason, since the
+base class DEFINES the helper. Three different numbers were in circulation
+before this was first measured.
 
 | Category | Suite | Tests | Properties |
 |----------|-------|:-----:|------------|
@@ -23,16 +25,16 @@ different numbers were in circulation before this was measured.
 | | DecodeStageFormal | 3 | Memory op mutual exclusion, field op mutual exclusion, br/jmp exclusion |
 | **Memory Subsystem** | MethodCacheFormal | 9 | State machine, rdy, find trigger, tag uniqueness, FIFO advance, tag write, hit-after-miss, clear mask |
 | | ObjectCacheFormal | 8 | Uncacheable field rejection, hit implies cacheable |
-| | ArrayCacheFormal | 10 | Hit/tag consistency, FIFO pointer advancement, snoop invalidation, snoop-during-fill gating, fill index auto-increment |
-| | StackCacheDmaFormal | 6 | Busy/IDLE equivalence, done pulse, wordsDone bounds, spill WRITE opcode, fill READ opcode, no-deadlock |
+| | ArrayCacheFormal | 11 | Hit/tag consistency, FIFO pointer advancement, snoop invalidation, snoop-during-fill gating, fill index auto-increment, a hit's index is inside the line's in-bounds elements (item 128) |
+| | StackCacheDmaFormal | 7 | Busy/IDLE equivalence, done pulse, wordsDone bounds, spill WRITE opcode, fill READ opcode, a single-word transfer never writes a bank (item 133), no-deadlock |
 | | BmbMemoryControllerFormal | 9 | Busy correctness, exception/copy returns to IDLE, READ/WRITE_WAIT completion + hold, IDLE stability |
 | **DDR3 Subsystem** | LruCacheCoreFormal | 12 | Busy correctness, memCmd gating, evict/refill commands, error recovery, no-deadlock, **2 bugs found and fixed** (see below) |
 | | LruCacheCoreInitFormal | 3 | Cache-invalidate-on-init: tags cleared before first use |
 | | CacheToMigAdapterFormal | 7 | Busy correctness, no-deadlock, IDLE stability, MIG signal gating, read data capture, write completion |
 | | BmbCacheBridgeFormal | 8 | pendingRsp blocks commands, burst wordsDone bounded, unsupported cmd returns ERROR, no-deadlock, write rsp zero data |
-| **I/O Subsystem** | CmpSyncFormal | 4 | Lock mutual exclusion, signal broadcast, gcHalt isolation, lock owner exempt from gcHalt |
+| **I/O Subsystem** | CmpSyncFormal | 8 | Lock mutual exclusion, signal broadcast, gcHalt isolation, lock owner exempt from gcHalt; the stop-the-world acknowledgement: `haltViolated` and `othersHalted` track whether the halt is honoured (items 157, 158) |
 | | IhluFormal | 6 | Signal broadcast, gcHalt isolation, lock owner exemption, FSM transitions, lock allocation ownership, queue bounds |
-| | SysFormal | 4 | Clock counter monotonicity, exception pulse, lock acquire/release, halted passthrough |
+| | SysFormal | 7 | Clock counter increments every cycle, lock request set/cleared/held, the stop-the-world violation counter advances only while the halt is violated and reads back through `IO_GC_MUTATOR` (item 157) |
 | | UartFormal | 4 | TX push gating, RX pop gating, no spurious TX, status register accuracy |
 | | SdNativeFormal | 6 | FIFO occupancy coherence, clock divider toggle, CMD state transitions, DATA state transitions, cmdBusy correctness, FIFO bounded |
 | **Debug** | Crc8MaximFormal | 3 | Clear resets CRC, CRC stable when disabled, non-zero byte from zero CRC produces non-zero CRC |
@@ -58,7 +60,7 @@ cd /tmp/sby && sudo make install PREFIX=/usr/local
 ## Running
 
 ```bash
-# Run all 133 formal properties (~7 minutes)
+# Run all 142 formal properties (~7 minutes)
 sbt "testOnly jop.formal.*"
 
 # Run a specific suite

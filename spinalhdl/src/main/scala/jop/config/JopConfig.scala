@@ -652,7 +652,9 @@ object JopConfig {
   // Single-system presets (common case)
   // ========================================================================
 
-  /** EP4CGX150 + daughter board — full drivers (UART + Ethernet + SD) */
+  /** EP4CGX150 single-core, the primary board's default: UART only, though the
+    * assembly includes the daughter board. Its Ethernet, VGA and SD are in
+    * `ep4cgx150DbFull`. */
   def ep4cgx150Serial = JopConfig(
     assembly = SystemAssembly.qmtechWithDb,
     systems = Seq(JopSystem(

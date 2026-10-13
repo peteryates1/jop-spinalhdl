@@ -93,8 +93,9 @@ object QsfGenerator {
     * left to the fitter they sit in the fabric at whatever distance it chose.
     *
     * The hand-written project sourced rtl8211eg_gmii.qsf for this (ffa1982,
-    * 2026-03-01) and the generated one dropped it (9dfd889, 2026-08-26); the
-    * Wukong's rtl8211eg_gmii.xdc still does the same with IOB TRUE.
+    * 2026-03-01) and the generated one dropped it (9dfd889, 2026-08-26). On
+    * Vivado, XdcGenerator does the same with IOB TRUE (the hand-written
+    * rtl8211eg_gmii.* files are gone since f7e435f).
     *
     * GMII and MII only: RGMII is captured on both edges, in DDIO registers,
     * which this assignment does not describe. Keyed off the pin assignments,

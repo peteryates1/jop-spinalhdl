@@ -6,6 +6,34 @@ each bug, see [Implementation Notes](architecture/implementation-notes.md).
 
 ---
 
+## Fixed since mid-August — indexed by status item
+
+The numbered tables further down stop before mid-August 2026. Defects fixed
+since are recorded as items in [current-status.md](current-status.md), with the
+evidence; this is their index.
+
+| Fixed | Defect | Record |
+|---|---|---|
+| 2026-08-15 | `AlteraSdramAdapter` dropped read data when the consumer stalled, and let write responses answer outstanding reads with 0 — the cause of the >2-core SMP GC failure (`ef36d99`) | [item 1](current-status.md#item-1), [item 35](current-status.md#item-35) |
+| 2026-08-17 | `CacheToDdr2Adapter` acked a write before an earlier read had answered: silent corruption once misses overlap (`4ab36ee`) | [item 148](current-status.md#item-148) |
+| 2026-08-31 | `"*" -> "hw"` dropped the SoftFloat library that `frem` runs in, so `wukongFull` died at `FloatTest` | [item 69](current-status.md#item-69) |
+| 2026-09-01 | An array-cache hit skipped the bounds check, so out-of-range reads returned adjacent memory | [item 128](current-status.md#item-128) |
+| 2026-09-02 | The card-table clear-all dropped every mark that arrived during it | [item 131](current-status.md#item-131) |
+| 2026-09-03 | A String literal had no valid `OFF_TYPE` | [item 136](current-status.md#item-136) |
+| 2026-09-03 | The GC write barrier pushed references below `mem_start` onto the grey list | [item 141](current-status.md#item-141) |
+| 2026-09-05 | `arraylength` had no null check | [item 129](current-status.md#item-129) |
+| 2026-09-11 | The card-table read port could be stolen by any write (the RTL half) | [item 132](current-status.md#item-132) |
+| 2026-09-14 | Stop-the-world had no acknowledgement, and its leak detector was never incremented | [item 157](current-status.md#item-157), [item 158](current-status.md#item-158) |
+| 2026-10-02 | Stack walkers were not served from the stack cache's spill region; RT threads could not be constructed | [item 133](current-status.md#item-133), [item 160](current-status.md#item-160) |
+| 2026-10-07 | A core parked in `cpux_loop` left it early: a read command was held through the flush stall | [item 161](current-status.md#item-161) |
+| 2026-10-10 | The Wukong's clock IP gave the SDRAM a different frequency from the logic at 80 MHz | [item 164](current-status.md#item-164) |
+| 2026-10-12 | `BmbMemoryController` re-latched every I/O read, so pop-on-read registers returned the next value (Ethernet RX one word late, UART bursts one byte late); and the GMII receive clock was never created, so it went untimed | [item 68](current-status.md#item-68) |
+
+Still open: a halted core can dirty its stack after the stop-the-world flush
+([item 165](current-status.md#item-165)).
+
+---
+
 ## JVM Runtime Issues (All Fixed)
 
 These were limitations in the JOP JVM runtime. All have been fixed.
@@ -347,9 +375,14 @@ SDRAM response data — also visible in Ethernet (`za_data → MacRxBuffer` at
 -1.8 ns). Not stack-cache-specific; needs a pipeline register in
 BmbSdramCtrl32's response path.
 
-**Status**: Stack cache disabled in `JopDbFpgaTopVerilog` pending BmbSdramCtrl32
-response pipeline. Works in BRAM simulation (52/58 JVM tests pass; 6
-pre-existing float/long/double failures without HW compute units).
+**Status**: the figures above are from the original EP4CGX150 work, on
+`JopDbFpgaTopVerilog`, which was disabled pending a BmbSdramCtrl32 response
+pipeline. Its successor preset, `ep4cgx150DbFull`, still runs without the stack
+cache ([item 67](current-status.md#item-67)). The stack cache itself has passed
+on hardware since 2026-10-02 — DoAll, `DeepAll` and `ThreadAll` on the Wukong's
+DDR3 and SDR ([item 133](current-status.md#item-133)); whether this SDR response
+path still misses on the EP4CGX150 has not been re-measured. The cache's own
+timing margin is [item 163](current-status.md#item-163).
 
 ---
 
