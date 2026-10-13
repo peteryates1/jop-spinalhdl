@@ -144,6 +144,11 @@ public class DoAll {
 		// explicitly"; that sim ran DoAll, so each side pointed at the other and
 		// the test ran nowhere (status item 133).
 		
+		// The count, so a harness can tell "every test passed" from "some never
+		// printed": fpga/scripts/hw_verify.py requires this many `ok` lines.
+		// Its own default was a hardcoded 66 that stayed 66 when the suite grew.
+		System.out.println("DoAll: " + tc.length + " tests");
+
 		for (int i=0; i<tc.length; ++i) {
 			System.out.print(tc[i].toString());
 			if (tc[i].test()) {

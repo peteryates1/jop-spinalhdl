@@ -365,6 +365,30 @@ def judge(out):
     return ok, fails, exited, crashed
 
 
+# "DoAll: 68 tests" -- the app's own statement of how many tests it runs.
+ANNOUNCE_RE = re.compile(r"^\s*\w+: (\d+) tests\s*$", re.M)
+
+
+def judge_count(out, expect_ok=None):
+    """Verdict for an app that prints one `ok` line per test (DoAll).
+
+    THE BAR COMES FROM THE APP. `--expect-ok` defaulted to 66, the suite's size
+    when the default was written; DoAll grew to 68 and the default did not, so
+    a run in which two tests printed nothing still passed. DoAll now prints
+    "DoAll: N tests" (N = tc.length) before it starts, and every announced test
+    must print `ok`. --expect-ok can raise that bar, never lower it: a flag
+    written into a doc goes stale exactly as the default did. With neither, no
+    number of `ok` lines is a pass.
+    """
+    ok, fails, exited, crashed = judge(out)
+    m = ANNOUNCE_RE.search(out)
+    counts = [n for n in (int(m.group(1)) if m else None, expect_ok) if n is not None]
+    if not counts:
+        return False, "no-count (the app announced none; pass --expect-ok)"
+    want = max(counts)
+    return ok >= want and fails == 0 and crashed == 0, f"want={want}"
+
+
 # --------------------------------------------------------------------------
 # Timing, read from the report that sits beside the bitstream.
 #
@@ -471,7 +495,9 @@ def main():
     ap.add_argument("--no-app", action="store_true",
                     help="program and monitor only -- for standalone exercisers")
     ap.add_argument("--runs", type=int, default=1)
-    ap.add_argument("--expect-ok", type=int, default=66)
+    ap.add_argument("--expect-ok", type=int, default=None,
+                    help="ok lines required; DoAll announces its own count, "
+                         "and this can only raise it")
     # Not every app reports as a count of `ok` lines. SmpGcTest prints one
     # verdict, "SMPGC OK", and it is the ONLY test that runs all cores --
     # nothing in JvmTests writes IO_SIGNAL, so DoAll runs on core 0 whatever
@@ -584,7 +610,7 @@ def main():
             # because the string it was told to look for was present.
             good = a.expect_text in out and fails == 0 and crashed == 0
         else:
-            good = ok >= a.expect_ok and fails == 0 and crashed == 0
+            good, detail = judge_count(out, a.expect_ok)
         passes += good
         # Keep the console text for EVERY run, pass or fail. A bare "PASS" with
         # nothing behind it is not evidence, and this is the only record that

@@ -116,8 +116,11 @@ make bitstream program download
 Verify a board end to end, including timing, in one command:
 
 ```bash
-fpga/scripts/hw_verify.py ep4cgx150Serial --app JvmTests/DoAll --expect-ok 68
+fpga/scripts/hw_verify.py ep4cgx150Serial --app JvmTests/DoAll
 ```
+
+DoAll announces its own test count (`DoAll: 68 tests`) and `hw_verify` requires
+that many `ok` lines.
 
 It refuses to call a run a pass if the build missed timing. A bitstream can
 print the right answer while failing setup by 2.5 ns — that is a build that

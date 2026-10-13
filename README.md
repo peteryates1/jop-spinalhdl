@@ -365,9 +365,10 @@ cd fpga/cyc5000-sdram && make all && make program download monitor
 
 # Verify a board end to end, INCLUDING TIMING, in one command. It refuses to
 # call a run a pass if the build missed timing: a bitstream can print the right
-# answer while failing setup by 2.5 ns. DoAll prints one "<test> ok" line per
-# test and NO summary line, so count the ok lines; a summary text never appears.
-fpga/scripts/hw_verify.py ep4cgx150Serial --app JvmTests/DoAll --expect-ok 68
+# answer while failing setup by 2.5 ns. DoAll prints "DoAll: N tests" before it
+# starts, and hw_verify requires that many "<test> ok" lines; --expect-ok can
+# raise that bar, never lower it.
+fpga/scripts/hw_verify.py ep4cgx150Serial --app JvmTests/DoAll
 ```
 
 Verilog can also be generated directly for any preset:
@@ -426,8 +427,9 @@ sbt "Test / runMain jop.system.JopInterruptSim"
 # Debug protocol test (39 checks: ping, halt, step, registers, memory, breakpoints)
 sbt "Test / runMain jop.system.JopDebugProtocolSim"
 
-# JVM test suite — DoAll, 68 tests, all pass. The sim runs a fixed 60M cycles,
-# which fits more than one pass, so count "failed!" lines (0), not "ok" lines.
+# JVM test suite — DoAll, 68 tests, all pass: "DoAll: 68 tests", 68 "ok" lines,
+# 0 "failed!". The sim prints the console again as "Full output:" when it ends,
+# so a grep of the whole log finds every line twice.
 sbt "Test / runMain jop.system.JopJvmTestsBramSim"
 
 # JVM test suite on 2-core SMP — expect "PASS: 68 tests passed". It finished at

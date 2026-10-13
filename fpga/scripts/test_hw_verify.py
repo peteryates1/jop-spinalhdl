@@ -15,6 +15,12 @@
 #   record was dropped as a replay.
 #   test_a_merged_free_value_does_not_end_the_soak -- red with only the round
 #   rules: the grown free value became the cliff reference.
+# PROVED RED 2026-10-13:
+#   test_a_run_missing_two_tests_is_not_a_pass, test_an_explicit_count_cannot_
+#   lower_the_announced_one, test_no_count_at_all_is_not_a_pass and
+#   test_doall_announces_its_count_in_the_format_judged -- red against the
+#   verdict as it stood (ok >= --expect-ok, default 66), which was first moved
+#   unchanged out of main() into judge_count so the tests could reach it.
 # If you change these, re-prove them.
 # ---------------------------------------------------------------------------
 # hw_verify decides whether a hardware run counts as a pass, and until now
@@ -275,6 +281,60 @@ def test_a_test_named_for_an_exception_is_not_a_failure():
     assert fails == 0, f"test names counted as failures: fails={fails}"
     assert ok == 3, f"ok count wrong: {ok}"
 
+
+
+# --------------------------------------------------------------------------
+# How many `ok` lines make a pass. --expect-ok defaulted to 66, which was the
+# suite's size when the default was written; DoAll grew to 68 and the default
+# did not, so a run in which two tests never printed anything still passed.
+# The count now comes from the app: DoAll prints "DoAll: N tests" (N =
+# tc.length) before it starts, and that is the bar.
+# --------------------------------------------------------------------------
+
+def doall_log(announced, oks):
+    head = f"DoAll: {announced} tests\n" if announced is not None else ""
+    return head + "".join(f"T{i} ok\n" for i in range(oks)) + "JVM exit!\n"
+
+
+def test_a_run_missing_two_tests_is_not_a_pass():
+    """66 of 68 announced tests printed `ok`: two never ran, or their output was
+    lost. Under the old default of 66 this was a pass."""
+    good, _ = hw_verify.judge_count(doall_log(68, 66))
+    assert not good, "66 ok lines against 68 announced tests was judged a pass"
+
+
+def test_every_announced_test_passing_is_a_pass():
+    good, _ = hw_verify.judge_count(doall_log(68, 68))
+    assert good, "68 ok lines against 68 announced tests was not a pass"
+
+
+def test_an_explicit_count_cannot_lower_the_announced_one():
+    """`--expect-ok 68` is written in the README. When the suite grows to 69 the
+    flag must not become the next stale 66: the announced count is a floor."""
+    good, _ = hw_verify.judge_count(doall_log(69, 68), expect_ok=68)
+    assert not good, "--expect-ok 68 let 68 ok lines pass against 69 announced"
+
+
+def test_no_count_at_all_is_not_a_pass():
+    """No announcement and no --expect-ok: nothing says how many should pass, so
+    no number of `ok` lines is enough."""
+    good, _ = hw_verify.judge_count(doall_log(None, 70))
+    assert not good, "a run with no expected count was judged a pass"
+
+
+def test_an_explicit_count_serves_an_app_that_announces_none():
+    good, _ = hw_verify.judge_count(doall_log(None, 3), expect_ok=3)
+    assert good, "--expect-ok 3 with 3 ok lines and no announcement was not a pass"
+
+
+def test_doall_announces_its_count_in_the_format_judged():
+    """The app and the judge must agree on the line, or the bar disappears: the
+    first test would then read as an app that announces nothing."""
+    src = open(os.path.join(hw_verify.ROOT, "java/apps/JvmTests/src/jvm/DoAll.java")).read()
+    assert 'System.out.println("DoAll: " + tc.length + " tests");' in src, \
+        "DoAll.java does not print its test count"
+    good, _ = hw_verify.judge_count("DoAll: 2 tests\nA ok\nB ok\nJVM exit!\n")
+    assert good, "an announced 2-test run with 2 ok lines was not a pass"
 
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
