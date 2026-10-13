@@ -164,6 +164,12 @@ case class JopCoreWithCacheTestHarness(
     jbcInit = Some(jbcInit)
   )
 
+  // With hasCard the core exposes a card port, and this harness used to drive
+  // none of it, so JopCardMarkSim could not elaborate (status item 139). The
+  // same wiring as JopCoreTestHarness: marks snoop the core's BMB port, which
+  // is upstream of the cache bridge here too.
+  CardTableTestWiring(jopCore, config)
+
   // ==========================================================================
   // Cache Memory Path (matching DDR3 top-level architecture)
   // ==========================================================================

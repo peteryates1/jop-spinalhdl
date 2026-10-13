@@ -938,6 +938,27 @@ jobs:
           fi
           grep -E 'longest stall|the sweep should be' cardstall.log
 
+      # The end-to-end card-marking check through the CACHE harness -- the path
+      # the DRAM boards take. It could not elaborate until 2026-10-13: the
+      # harness took hasCard = true, exposed the card port and drove none of it,
+      # and nothing noticed because nothing ran it (status item 139).
+      # CardMarkTest.jop is built in the step above.
+      - name: Card-marking barrier through the cache harness
+        run: sbt "Test/runMain jop.system.JopCardMarkSim" 2>&1 | tee cardmark.log
+
+      - name: Check card-marking result
+        run: |
+          if grep -q 'FAIL:' cardmark.log; then
+            echo "::error::JopCardMarkSim: the barrier marked the wrong cards"
+            grep -E 'FAIL:|CARD' cardmark.log
+            exit 1
+          fi
+          if ! grep -q 'PASS: HW card-marking barrier marks the right cards' cardmark.log; then
+            echo "::error::JopCardMarkSim produced no verdict -- it did not run to completion"
+            tail -40 cardmark.log
+            exit 1
+          fi
+
       - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
@@ -946,5 +967,6 @@ jobs:
           path: |
             cardtable.log
             cardstall.log
+            cardmark.log
           retention-days: 14
           if-no-files-found: warn

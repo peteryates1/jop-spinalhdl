@@ -78,11 +78,14 @@ apps: tools runtime
 # hit that seven times over; it was one root cause wearing seven hats.
 #
 # Keep this in step with the simulations the README lists. A sim whose .jop is
-# not built here is a sim that a reader cannot run.
+# not built here is a sim that a reader cannot run. CardMarkTest is for
+# JopCardMarkSim and JopCardClearStallSim; it was missing until 2026-10-13
+# (status item 139), and CI's card-table job builds it for itself.
 .PHONY: test-apps
 test-apps: apps
 	$(MAKE) -C apps/Small APP_NAME=GcStressTest
 	$(MAKE) -C apps/Small APP_NAME=NCoreHelloWorld
+	$(MAKE) -C apps/Small APP_NAME=CardMarkTest
 	$(MAKE) -C apps/JvmTests
 	$(MAKE) -C apps/SmpGcTest
 	$(MAKE) -C apps/JbeBench
