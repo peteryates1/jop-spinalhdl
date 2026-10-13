@@ -30,12 +30,14 @@ Hence: one directory per jig, all under here, each self-contained.
 | `wukong-uart-loopback` | QMTECH Wukong (XC7A100T) | the same, three assigns of Verilog |
 | `ep4cgx150-eth-ref` | EP4CGX150 + DB_FPGA V4 | a THIRD-PARTY Ethernet reference design on the RTL8211EG PHY |
 | `colorlight-db-i9plus` | fpga-db-colorlight-i5 base board + i9+ (XC7A50T) | LEDs, buttons, both RP2040-STAMP CDC UARTs (one jig console, one wired loopback), and a 4-pass test of the 128K×8 SRAM |
+| `colorlight-db-i9plus-eth` | the same base board + i9+ | RJ1, its magnetics and the module's B50612D PHYs: an MDIO probe (stage 1), then RGMII receive and transmit at 100 Mb/s (stage 2, `EthRgmiiTest.v`) |
+| `colorlight-i9plus-idle` | an i9+ module, on any carrier | not a test: the module's power-up flash image, which drives nothing off the module, so whatever carrier it lands on is safe |
 
 `ep4cgx150-eth-ref` is worth knowing about for a second reason. It is an
 independent implementation against the same PHY as our own MAC, so when the JOP
-Ethernet links but passes no packets (status item 68), it separates "the board,
-PHY and cable are fine" from "our MAC is at fault" — which nothing else here can
-do.
+Ethernet links but passes no packets, as it did until status item 68 was fixed,
+it separates "the board, PHY and cable are fine" from "our MAC is at fault" —
+which nothing else here can do.
 
 ## Rules
 

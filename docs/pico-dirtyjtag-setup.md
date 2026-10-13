@@ -119,16 +119,19 @@ The example here used to be `fpga/a-e115fb-bram`, which was retired on
 2026-08-26: it had no Quartus project and generated `ep4cgx150Bram`, another
 board's preset. That board builds from `fpga/a-e115fb-ddr2` now.
 
-> **The over-voltage explanation was WRONG, and it stood for weeks.** This said
-> the board's own Pico "drove 3.3 V into a JTAG bank that is not 3.3 V".
-> **VTREF on header pin 4 measures 3.25 V** (2026-08-31) — the JTAG bank is
-> 3.3 V nominal, and a bare Pico clone should have worked without any level
-> shifting.
+> **The over-voltage explanation was WRONG, and so was its first correction.**
+> This said the board's own Pico "drove 3.3 V into a JTAG bank that is not
+> 3.3 V". **VTREF on header pin 4 measures 3.25 V** (2026-08-31), and that was
+> read as "the JTAG bank is 3.3 V nominal". It is not: VTREF is tied to 3.3 V,
+> while the FPGA's JTAG pins run from bank 1, which jumper J2 sets — 2.5 V on
+> this board (checked 2026-10-12;
+> [board doc](boards/ep4ce115-ddr2-board.md#io-bank-voltages-jumpers-j1-j2)).
+> A bare Pico is still fine: Cyclone IV JTAG inputs take up to 4.1 V AC at
+> VCCIO 2.5-3.3 V, so a 3.3 V cable is within rating.
 >
-> The mistake is a plausible one: this board genuinely HAS 1.8 V banks — 3 to 6
-> carry the DDR2 interface at SSTL-18, and `clk`, `rst_n` and the LEDs sit in
-> banks shared with them. That 1.8 V is real, and it was attributed to the JTAG
-> bank, which is in neither group.
+> The board genuinely HAS 1.8 V banks — 3 to 6 carry the DDR2 interface at
+> SSTL-18 — and that 1.8 V was once attributed to the JTAG bank, which is not
+> among them.
 >
 > So the original Pico failure on this board had some other cause. A loose
 > board-side JTAG plug was found on 2026-08-31 and is the leading candidate.
@@ -141,12 +144,13 @@ pin 4).
 **As of 2026-08-29 that Pico (`e6616408`) is level-shifted, ending the shared
 cable.** It was on the EP4CGX150 for two days; the boards were SWAPPED on
 2026-08-31, putting the **Terasic on the EP4CGX150** and the **Pico on the
-A-E115FB** -- the opposite of what this paragraph said until 2026-09-09. The
-Pico has since failed and the A-E115FB is powered off (item 148), so the
-Terasic on the EP4CGX150 is the only working Altera blaster.
+A-E115FB** -- the opposite of what this paragraph said until 2026-09-09. That
+Pico has since failed (item 148). **On 2026-10-12 the Terasic moved to the
+A-E115FB**, which is back on hardware; the EP4CGX150 has had no cable since,
+and the Terasic is the only working Altera blaster.
 
 Note the word this paragraph used to carry: *permanently*. It was wrong within
-two days, and again a week later. `jtag_probe_map --cable <alias>` is the
+two days, again a week later, and again on 2026-10-12. `jtag_probe_map --cable <alias>` is the
 authoritative answer; prose about cables decays every time one moves. A full
 `jop_sdram.sof` configures the EP4CGX150 in 43 s and the board then runs
 `HelloWorld` over its UART.
@@ -171,15 +175,16 @@ scan returns in ~0 s on both cables.
 
 That is the trade for never moving a cable between boards.
 
-The same approach should unblock the A-E115FB's own Pico too, but with the
-Terasic parked there permanently that is no longer needed, and it has **not**
-been tried.
+The A-E115FB has no Pico of its own at present: the shifted one failed, and the
+Terasic serves it since 2026-10-12. It needs no shifter (see the note above),
+so a bare Pico would do; that has **not** been tried.
 
-**MEASURED 2026-08-31: VTREF = 3.25 V.** Both figures this note used to
-compare — 1.8 V here and 2.5 V in `README.md` — were wrong. The bank is 3.3 V
-nominal. Two documents deferred to each other about a number neither had
-measured, and one of them no longer even contained the figure it was being
-cited for.
+**MEASURED 2026-08-31: VTREF = 3.25 V. CORRECTED 2026-10-13: VTREF is not the
+JTAG bank.** This note once compared 1.8 V here with 2.5 V in `README.md`, and
+the VTREF reading was taken to settle it at 3.3 V. The 1.8 V was wrong; the
+2.5 V was right for the pins — bank 1, set by J2 — while VTREF is tied to
+3.3 V. Two documents deferred to each other about a number neither had
+measured, and then a measurement of a different node settled it.
 
 ## Tested Boards
 

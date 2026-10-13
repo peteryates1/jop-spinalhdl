@@ -57,14 +57,15 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 │    └── EthMac HW object (volatile I/O registers)                │
 ├──────────────────────────────────────────────────────────────────┤
 │  SpinalHDL RTL                                                   │
-│    ├── Eth       (I/O device wrapping MacEth)                │
-│    ├── MacEth       (preamble → CRC → aligner → buffer CDC)    │
-│    └── MacEthNoCrc  (variant without RX CRC, for testing)       │
+│    ├── Eth       (I/O device: Mac + Mdio)                       │
+│    ├── Mac       (registers around MacEth; optional RX capture) │
+│    ├── MacEth    (preamble → CRC → aligner → buffer CDC)        │
+│    └── Rgmii100  (RGMII at 100 Mb/s, Colorlight i9+ only)       │
 ├──────────────────────────────────────────────────────────────────┤
 │  FPGA Hardware                                                   │
-│    ├── pll_125.v    (50 MHz → 125 MHz TX clock)                 │
-│    ├── FAST_INPUT_REGISTER on e_rxd/e_rxdv/e_rxer              │
-│    └── RTL8211EG PHY (1000BASE-T, GMII, autoneg)               │
+│    ├── pll_125.v    (125 MHz GMII TX clock, Altera boards)      │
+│    ├── RX capture in I/O registers (generated constraints)      │
+│    └── PHY: RTL8211EG, 88E1111 or B50612D (GMII/MII/RGMII)      │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -106,17 +107,18 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 
 | File | Purpose |
 |------|---------|
-| `Eth.scala` | I/O device wrapping SpinalHDL MacEth (TX/RX streams, control registers) |
-| `MacEthNoCrc.scala` | MacEth variant without RX CRC checker (for testing/mesochronous) |
+| `Eth.scala` | The Ethernet I/O device: `Mac` and `Mdio` behind one address range |
+| `Mac.scala` | The MAC registers around SpinalHDL's `MacEth` (TX/RX buffers, control, stats); optional receive-stream capture (`rxCapture`) |
+| `Rgmii100.scala` | RGMII at 100 Mb/s in front of the MAC's 4-bit mode (Colorlight i9+) |
 | `Mdio.scala` | MDIO master for PHY register access |
 
-### FPGA (`fpga/qmtech-ep4cgx150-sdram/`)
+### FPGA
 
 | File | Purpose |
 |------|---------|
-| `pll_125.v` | Altera altpll: 50 MHz → 125 MHz (GMII TX clock) |
-| `jop_sdram.sdc` | Timing constraints: clock groups, false paths for Ethernet |
-| `jop_dbfpga.qsf` | Pin assignments + FAST_INPUT_REGISTER for RX pins |
+| `fpga/qmtech-ep4cgx150-sdram/pll_125.v` | Altera altpll: 50 MHz → 125 MHz (GMII TX clock) |
+| `fpga/a-e115fb-ddr2/pll_125.v` | the same from the A-E115FB's 25 MHz |
+| `build/<config>/quartus/*.sdc` and `*.qsf`; `build/<config>/vivado/*.xdc` | Pins, clocks, clock groups and RX capture, generated from the preset (`TimingConstraints`, `QsfGenerator`, `XdcGenerator`); no hand-written Ethernet constraints remain |
 
 ### Test Applications
 
@@ -242,7 +244,8 @@ CPU writes via Eth
 
 ## GMII Clocking
 
-Three asynchronous clock domains:
+Three asynchronous clock domains (the EP4CGX150 + DB_FPGA figures; the other
+GMII boards differ only in where the 125 MHz comes from):
 
 | Clock | Source | Frequency | Use |
 |-------|--------|-----------|-----|
@@ -256,7 +259,8 @@ The PHY's `e_rxc` is a CDR-recovered clock — it is **not** phase-locked to
 the FPGA oscillator. Source-synchronous capture with I/O block registers is
 the correct approach.
 
-**Key constraint** in `jop_dbfpga.qsf`:
+**Key constraint**, generated into the project's `.qsf` (`QsfGenerator`; on
+Vivado, `IOB TRUE` from `XdcGenerator`):
 ```
 set_instance_assignment -name FAST_INPUT_REGISTER ON -to e_rxd[0]
 ... (all 8 data bits, e_rxdv, e_rxer)
@@ -265,7 +269,7 @@ set_instance_assignment -name FAST_INPUT_REGISTER ON -to e_rxd[0]
 This places the first register stage in the I/O block, providing ~6ns setup
 margin at 125 MHz (8ns period minus ~2ns PHY output delay).
 
-**Tested approaches** (200-packet ICMP ping at 1Gbps):
+**Tested approaches** (200-packet ICMP ping at 1Gbps, February 2026):
 
 | Approach | ICMP Loss | Notes |
 |----------|-----------|-------|
@@ -273,22 +277,26 @@ margin at 125 MHz (8ns period minus ~2ns PHY output delay).
 | PLL mesochronous 90° | 14% | Best mesochronous result |
 | PLL mesochronous 180° | 34% | Worst mesochronous result |
 | CRC disabled (mesochronous) | 30% | Proved data genuinely corrupted |
-| **Source-sync rising + FAST_INPUT_REGISTER** | **2.5%** | **Current configuration** |
+| **Source-sync rising + FAST_INPUT_REGISTER** | **2.5%** | **The GMII configuration since** |
 | Source-sync falling + FAST_INPUT_REGISTER | 16% | Wrong edge for data eye |
 
-**Note**: `e_rxc` is on PIN_B10 (Column I/O), which cannot reach the FPGA's
-global clock network. It uses the bank-local clock routing instead. The
-residual ~2.5% CRC error rate is from timing margin limits on this routing.
-TCP retransmission handles this easily.
+**The residual 2.5 % was not timing margin.** `e_rxc` is on PIN_B10 (Column
+I/O), which cannot reach the FPGA's global clock network, and the loss was put
+down to that routing at the time. It was the board: B10 picks up extra edges
+when six or more RXD lines rise together, so the loss depends on frame content
+and the router's DHCP offer was among the worst cases (status item 166, below).
+The EP4CGX150 now runs MII at 100 Mb/s. The A-E115FB runs this GMII capture at
+1 Gb/s with 0 CRC errors in a ping flood, and the Wukong answered every ping
+and echo it was sent.
 
 ### MacEthNoCrc
 
-`MacEthNoCrc.scala` is a copy of MacEth with the `MacRxChecker` stage removed.
-Created during debugging to test whether CRC errors were from real data
+`MacEthNoCrc.scala` was a copy of MacEth with the `MacRxChecker` stage removed,
+created during debugging to test whether CRC errors were from real data
 corruption or a checker bug. Result: disabling CRC gave 30% loss (same as
 mesochronous), proving the data was genuinely corrupted. Upper-layer checksums
-(IP/ICMP) caught the same errors. This file exists but is **not used** in the
-current configuration (Eth uses standard `MacEth`).
+(IP/ICMP) caught the same errors. The file was deleted on 2026-03-08
+(`7de7055`).
 
 ## Protocol Details
 
@@ -628,47 +636,50 @@ RX_CLK is on an ordinary pin here too (P5, which no PLL can take), like the
 EP4CGX150's B10 (status item 166), and this board receives cleanly. One known
 difference: every connector signal here passes a 22 ohm series pack on the core
 board, where the DB_FPGA's RXD lines have none; whether that is what matters is
-not established. Round trips are slower than on the other boards -- about 5.5 ms
-for 64 bytes and 76 ms for 1400, against the Wukong's 1.4 and 15.8 -- and that is
-not investigated. The preset carries the MAC's RX capture (`EthCapDiag`) from the
-bring-up.
+not established. Round trips are about 5.5 ms for 64 bytes and 76 ms for 1400:
+between the Wukong's 1.4 and 15.8 (`wukongFull`: 100 MHz, DDR3, every compute
+unit in hardware) and the i9+'s 8 and 112 (50 MHz, SDRAM, 100 Mb/s). The presets
+differ in clock, memory and compute units at once, so this compares
+configurations, not links, and where the time goes has not been measured. The
+preset carries the MAC's RX capture (`EthCapDiag`) from the bring-up.
 
 ## Build and Test
 
 ### Build
 
+The per-board sections above carry the exact commands for each preset. On the
+EP4CGX150 + DB_FPGA V4:
+
 ```bash
-# Build networking test app
+# Build the networking test app for the preset the bitstream is built from;
+# Const.java, and with it the Ethernet I/O address, is generated per preset
 cd java/apps/Small
-make clean && make all APP_NAME=NetTest EXTRA_SRC=../../net/src
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=NetTest EXTRA_SRC=../../net/src
 
-# Generate Verilog (if RTL changed)
-cd /home/peter/jop-spinalhdl
-sbt "runMain jop.system.JopDbFpgaTopVerilog"
+# Build and program the FPGA (generates the Verilog and constraints first)
+cd ../../fpga/qmtech-ep4cgx150-sdram
+make dbfpga dbfpga-program
 
-# Build FPGA
-cd fpga/qmtech-ep4cgx150-sdram
-make build-dbfpga
-
-# Program and download
-make program-dbfpga
-make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/NetTest.jop
+# Download (the console port and baud come from the build)
+make download CFG=ep4cgx150DbFull JOP_FILE=../../build/ep4cgx150DbFull/java/apps/Small/NetTest.jop
 ```
 
 ### Build DHCP Test App
 
 ```bash
 cd java/apps/Small
-make clean && make all APP_NAME=DhcpTest EXTRA_SRC=../../net/src
-make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/DhcpTest.jop
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=DhcpTest EXTRA_SRC=../../net/src
+cd ../../fpga/qmtech-ep4cgx150-sdram
+make download CFG=ep4cgx150DbFull JOP_FILE=../../build/ep4cgx150DbFull/java/apps/Small/DhcpTest.jop
 ```
 
 ### Build HTTP Server
 
 ```bash
 cd java/apps/Small
-make clean && make all APP_NAME=HttpServer "EXTRA_SRC=../../net/src ../../fat32/src"
-make download SERIAL_PORT=/dev/ttyUSB0 JOP_FILE=../../java/apps/Small/HttpServer.jop
+make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=HttpServer "EXTRA_SRC=../../net/src ../../fat32/src"
+cd ../../fpga/qmtech-ep4cgx150-sdram
+make download CFG=ep4cgx150DbFull JOP_FILE=../../build/ep4cgx150DbFull/java/apps/Small/HttpServer.jop
 ```
 
 ### DHCP Server Setup (on test host)

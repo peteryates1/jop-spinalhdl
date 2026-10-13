@@ -489,7 +489,10 @@ Entity names are backward-compatible with existing Vivado projects.
 
 JOP running on DDR3 via MIG at **100 MHz** with all four compute units
 (ICU + FCU + LCU + DCU) and DSP imul. Ethernet (GMII) and SD Native enabled.
-JVM test suite: **59/59 DoAll.jop on hardware**.
+On hardware 2026-10-12: **DoAll 68/68**, and Ethernet at 1 Gb/s with ping, UDP
+and TCP echo, DHCP and DNS
+([networking](../peripherals/networking.md#qmtech-wukong-v3-gmii-at-1-gbs)).
+The console runs at 1 Mbaud, not 2.
 
 - **Preset**: `JopConfig.wukongFull`
 - **Generate**: `sbt "runMain jop.system.JopTopVerilog wukongFull"`
@@ -497,7 +500,7 @@ JVM test suite: **59/59 DoAll.jop on hardware**.
 - **Memory**: 256 MB DDR3 (MT41K128M16JT), 32KB write-back L2 cache
 - **Compute**: IntegerComputeUnit (imul DSP + idiv + irem) + FloatComputeUnit (8 ops) + LongComputeUnit (8 ops) + DoubleComputeUnit (12 ops)
 - **I/O**: UART (CH340N) + Ethernet (GMII 1Gbps) + SD Native
-- **Build**: `make ddr3-generate && make ddr3-build`
+- **Build**: `make ddr3-build DDR3_CFG=wukongFull` (a bare `ddr3-build` builds the default, `wukongDdr3`)
 
 ### JopSdramWukongTop — SDR SDRAM (wukongSdram)
 
@@ -583,12 +586,13 @@ the SDRAM exerciser and JOP SDRAM top (`make sdram-create-ip`).
 ```bash
 cd fpga/qmtech-xc7a100t-wukong
 
-# DDR3, the default. Makefile:151 sets DDR3_CFG ?= wukongDdr3, the integer-only
-# config that passes DoAll 66/66 on hardware.
+# DDR3, the default. The Makefile sets DDR3_CFG ?= wukongDdr3, the integer-only
+# config that first passed DoAll on hardware.
 make ddr3-generate        # sbt "runMain jop.system.JopTopVerilog wukongDdr3"
 
 # The full-featured config is NOT what ddr3-generate builds — override DDR3_CFG.
-# It currently fails DoAll at FloatTest; see status items 69/74.
+# It passes DoAll since 2026-08-31 (status item 69: it used to die at FloatTest),
+# and is the Wukong's Ethernet build.
 make ddr3-generate DDR3_CFG=wukongFull
 make ddr3-create-ip       # ClkWiz + MIG IP (once)
 make ddr3-build           # Vivado synth + impl + bitstream

@@ -137,6 +137,7 @@ happens to work on this die at this temperature, not a build that works.
 | `alchitry-au` | Alchitry Au V2 (XC7A35T) | Vivado | ✅ |
 | `alchitry-au-ddr3-test` | **same board**, DDR3 exerciser project | Vivado | shared Tcl ✅ |
 | `colorlight-i5` | Colorlight i5 (ECP5) | yosys/nextpnr | n/a — sole ECP5 |
+| `colorlight-db-i9plus` | Colorlight i9+ (XC7A50T) on the fpga-db-colorlight-i5 base board | Vivado | ✅ |
 | `max1000` | Arrow MAX1000 (10M08) | Quartus | ✅ — but no config fits the part yet (item 84) |
 
 Every board now includes `../quartus.mk` or `../vivado.mk`. This table said

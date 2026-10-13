@@ -1,7 +1,22 @@
-# DB_FPGA Daughter Board — Ethernet (1Gbps GMII)
+# DB_FPGA Daughter Board — Ethernet (RTL8211EG)
 
-Ethernet support for the QMTECH DB_FPGA daughter board with RTL8211EG PHY,
-running at **1Gbps over GMII** (8-bit, 125 MHz).
+Ethernet on the QMTECH DB_FPGA daughter board's RTL8211EG PHY, which speaks
+GMII at 1 Gb/s (8-bit, 125 MHz) and MII at 100 Mb/s (4-bit, 25 MHz) on the
+same J3 pins.
+
+**On the EP4CGX150 core board JOP runs it at 100 Mb/s, MII** — `ep4cgx150DbFull`
+on the DB_FPGA V4 and `ep4cgx150DbV5Mii` on the V5, both verified 2026-10-12
+with ping, UDP and TCP echo, DHCP and DNS, and no receive errors on any
+payload. At 1 Gb/s this core board's RX_CLK pin (B10) picks up extra edges when
+six or more RXD lines rise together, so received frames are lost depending on
+their content — the router's DHCP offer 68-100 % of the time. No PLL can take
+that pin, so the FPGA cannot clean the clock up
+([status item 166](../current-status.md#item-166)). `ep4cgx150DbV5Eth` keeps
+GMII to reproduce it, and `xc7a100tDbEth` drives the same PHY at GMII from the
+XC7A100T core board on the V5.
+
+Build steps, per-board results and the TCP/IP stack are in
+[networking.md](networking.md).
 
 ## Pin Mapping
 
@@ -65,6 +80,11 @@ only the FPGA pin names differ.
 *Note: Pin 15 was originally transcribed as A17 (same as pin 19) due to a
 PDF text-extraction error. Corrected to C17 per the U4 header table.*
 
+In MII mode only `e_txd[3:0]` and `e_rxd[3:0]` carry data, the PHY supplies
+the transmit clock on `e_txc`, and `e_gtxc` is not declared at all. The pin
+assignments a build uses are generated from `QmtechFpgaDbV4` and
+`QmtechFpgaDbV5` in `Board.scala`.
+
 ## Full U4 Header Pin Table (EP4CGX150)
 
 ### Odd Pins (1, 3, 5, ..., 55, 57)
@@ -101,37 +121,40 @@ PDF text-extraction error. Corrected to C17 per the U4 header table.*
 - SELRGV: 1 (3.3V I/O)
 - COL/Mode: 0 (GMII interface)
 
-## GMII Architecture
+## Clocking
 
-The Ethernet subsystem uses three asynchronous clock domains:
+Three clock domains, asynchronous to each other:
 
 | Clock | Source | Frequency | Domain |
 |-------|--------|-----------|--------|
-| c1 (pll\|clk[1]) | DRAM PLL | 80 MHz | System: CPU, memory, I/O read MUX |
-| ethPll clk[0] | Ethernet PLL (pll_125.v) | 125 MHz | TX: MacTxBuffer pop side, GMII output, drives `e_gtxc` |
-| e_rxc | PHY pin | 125 MHz | RX: MacRxBuffer push side, byte packing |
+| system | DRAM PLL output c1 | 80 MHz on `ep4cgx150DbFull` | CPU, memory, I/O read mux |
+| TX | GMII: the FPGA's Ethernet PLL (`pll_125.v`, 50 MHz × 5/2), driven out on `e_gtxc`. MII: the PHY, on `e_txc` | 125 / 25 MHz | `MacTxBuffer` pop side, PHY TX |
+| RX | the PHY, on `e_rxc` | 125 / 25 MHz | `MacRxBuffer` push side, byte packing |
 
-In GMII mode (`IoConfig.ethGmii = true`):
+The dual-port RAMs in `MacRxBuffer` and `MacTxBuffer` cross between the PHY
+clock domains and the system clock.
 
-- **TX clock**: FPGA generates 125 MHz via `pll_125.v` (50 MHz × 5/2),
-  output to PHY on `e_gtxc`. The `e_txc` pin is unused.
-- **RX clock**: PHY provides 125 MHz on `e_rxc` (source-synchronous with
-  RX data). FPGA captures RX data using I/O block registers
-  (`FAST_INPUT_REGISTER ON` constraint) clocked by `e_rxc`.
-- **Data width**: 8 bits (vs 4 bits in MII mode). `PhyParameter(txDataWidth=8, rxDataWidth=8)`.
-- PHY auto-negotiates 1000BASE-T FD via MDIO registers 0, 4, 9.
+**GMII** (the Ethernet device's `gmii` parameter): 8 data bits each way. The
+FPGA makes the 125 MHz transmit clock and drives it to the PHY on `e_gtxc`;
+`e_txc` is unused. The PHY returns a source-synchronous 125 MHz on `e_rxc`, and
+the receive data is captured in I/O-element registers clocked by it. The
+driver advertises 1000BASE-T FD (MDIO registers 0, 4, 9) because
+`Const.ETH_GIGABIT`, which the generator derives from `gmii`, is true.
 
-The dual-port RAMs in MacRxBuffer and MacTxBuffer cross between PHY
-clock domains (e_rxc / ethPll) and the system clock (c1).
+**MII** (no `gmii`; `phyDataWidth` 4): 4 data bits each way, both clocks from
+the PHY at 25 MHz, and no `e_gtxc` port — when an MII design still declared
+one, the fitter placed it on a pin the PHY drives (item 166).
+`Const.ETH_GIGABIT` is false, so the driver advertises no 1000BASE-T and the
+link comes up at 100 Mb/s even on a gigabit switch.
 
-### RX Clocking: Source-Synchronous vs Mesochronous
+### RX clocking at 1 Gb/s: source-synchronous, not mesochronous
 
 The PHY's `e_rxc` is a clock-data-recovery (CDR) recovered clock — it is
 **not** phase-locked to the FPGA's reference oscillator. This makes
 mesochronous clocking (using a PLL-generated 125 MHz) unreliable for
 data capture.
 
-Tested approaches and results (100-packet ping tests at 1Gbps):
+Tested approaches and results (100-packet ping tests at 1 Gb/s, February 2026):
 
 | Approach | ICMP Ping Loss |
 |----------|----------------|
@@ -147,63 +170,94 @@ has a random and drifting phase relationship with the PHY's recovered clock.
 Disabling CRC checking confirmed the data was genuinely corrupted (not a
 CRC checker bug) — upper-layer checksums (IP/ICMP) caught the same errors.
 
-The correct approach uses `e_rxc` directly as the capture clock with
-`FAST_INPUT_REGISTER ON` constraints in the `.qsf` file to place the
-input registers in the I/O block. Sampling on the **rising edge**
-provides the best results (~2.5% ICMP loss); falling edge was worse (16%).
+The correct approach uses `e_rxc` directly as the capture clock, with the input
+registers in the I/O element (`FAST_INPUT_REGISTER`). Sampling on the **rising
+edge** gave the best result (~2.5% ICMP loss); falling edge was worse (16%).
 
-The remaining ~2.5% loss at 1Gbps is from residual timing margin issues
-on the Column I/O clock routing. This is easily handled by TCP
-retransmission and is acceptable for embedded networking.
+**The remaining ~2.5 % was not timing margin, and it was not harmless.** It was
+put down to the column I/O clock routing at the time. Item 68 (2026-10-12)
+then found the receive domain had gone untimed in the generated project; with
+that fixed, the EP4CGX150 still lost 3-5 % of received frames. Item 166 traced
+it to the board: `e_rxc` on PIN_B10 picks up extra edges when six or more RXD
+lines rise together, so the loss depends on frame content, and the router's
+DHCP offer was among the worst cases — DHCP could not bind. B10 is a column I/O
+pin that cannot reach the global clock network, and no PLL can take it either
+(Quartus error 176554), so the clock cannot be cleaned up inside the FPGA. That
+is why the EP4CGX150 presets run MII.
 
-Note: `e_rxc` is on PIN_B10, a Column I/O pin that cannot reach the
-global clock network. This is fine for source-synchronous capture —
-the I/O block registers only need the bank-local clock routing.
+## Configuration
 
-### SpinalHDL Configuration
+The Ethernet device is part of the preset (`JopConfig.scala`):
 
 ```scala
-IoConfig.qmtechDbFpga  // sets hasEth=true, ethGmii=true
-// IoConfig.phyDataWidth returns 8 for GMII, 4 for MII
+// ep4cgx150DbFull -- the DB_FPGA V4, MII at 100 Mb/s
+"eth" -> DeviceInstance(DeviceType.Ethernet,
+  params = Map("phyDataWidth" -> 4),
+  devicePart = Some("RTL8211EG"))
+
+// ep4cgx150DbV5Eth -- the V5, GMII at 1 Gb/s, kept to reproduce item 166
+"eth" -> devs("eth").copy(params = Map("gmii" -> true, "phyDataWidth" -> 8, "rxCapture" -> true))
 ```
 
-Key files:
-- `IoConfig.scala` — `ethGmii` flag, `phyDataWidth` helper
-- `JopSdramTop.scala` — `EthPll` BlackBox, GMII clock domains, TX/RX adapters
-- `JopCore.scala` / `JopCluster.scala` — parameterized `PhyParameter` from `ioConfig.phyDataWidth`
-- `Eth.scala` — already parameterized, no GMII-specific changes needed
+`rxCapture` adds the MAC's receive-stream capture, the logic analyser that
+found the extra RX_CLK edges (`Mac.scala`; read out by the `EthCapDiag` app).
 
-## SDC Timing Constraints
+Key files, under `spinalhdl/src/main/scala/jop/`:
+- `config/JopConfig.scala` — the presets above
+- `config/Board.scala` — the DB_FPGA's J3 pins (`QmtechFpgaDbV4`, `QmtechFpgaDbV5`)
+- `io/DeviceTopWiring.scala` — the PHY clock domains, the 125 MHz PLL for GMII, the TX/RX adapters
+- `io/Eth.scala` — the device: `Mac` (TX/RX buffers around SpinalHDL's `MacEth`) plus `Mdio`
+- `generate/TimingConstraints.scala`, `generate/QsfGenerator.scala`, `generate/XdcGenerator.scala` — the constraints
+
+## Constraints
+
+Generated from the preset into `build/<config>/quartus/`; there is no
+hand-written constraint file any more. `ep4cgx150DbV5Eth` (GMII) gets:
 
 ```sdc
-# 50 MHz input clock
 create_clock -period 20.000 -name clk_in [get_ports clk_in]
-
+create_clock -period 8.000 -name e_rxc [get_ports e_rxc]
 derive_pll_clocks
 derive_clock_uncertainty
-
-# PLL 125 MHz for GMII TX is auto-derived by derive_pll_clocks
-
-# Ethernet PHY RX clock (125 MHz GMII, source-synchronous with RX data)
-create_clock -period 8.000 -name e_rxc [get_ports e_rxc]
-
-# All clock domains are asynchronous to each other
 set_clock_groups -asynchronous \
-    -group {pll|altpll_component|auto_generated|pll1|clk[1] \
-            pll|altpll_component|auto_generated|pll1|clk[2] \
-            pll|altpll_component|auto_generated|pll1|clk[3]} \
+    -group {dramPll|altpll_component|auto_generated|pll1|clk[1] dramPll|altpll_component|auto_generated|pll1|clk[2] dramPll|altpll_component|auto_generated|pll1|clk[3]} \
     -group {ethPll|altpll_component|auto_generated|pll1|clk[0]} \
     -group {e_rxc}
-
-# PHY RX data: source-synchronous with e_rxc, captured by I/O block registers
-set_false_path -from [get_ports {e_rxd[*] e_rxdv e_rxer}]
-
-# GMII TX: clock and data from same PLL output
-set_false_path -to [get_ports {e_gtxc}]
-set_false_path -to [get_ports {e_txd[*] e_txen e_txer}]
 ```
 
+plus `FAST_INPUT_REGISTER ON` for every receive pin in the `.qsf`, so each is
+captured in its I/O element. An MII design (`ep4cgx150DbFull`) creates `e_txc`
+as well, in a group of its own, and names no Ethernet PLL; both PHY clocks are
+created at 8 ns, tighter than MII's 40 ns needs.
+
+**Every clock a group names must be created.** Quartus drops a group that names
+a clock nobody created, with only a warning (332174) — which is how the GMII
+receive domain went untimed until 2026-10-12 (item 68).
+`GeneratedConstraintsTest` now requires every grouped clock to be created or
+derived, and `GmiiRxCaptureTest` that every receive pin feeds one register.
+
 ## Historical Issues
+
+### RX_CLK picks up extra edges at 1 Gb/s (worked around 2026-10-12, status item 166)
+
+With item 68 fixed, 3-5 % of received frames still failed, depending on their
+content. A capture of the MAC's receive stream (`rxCapture`) showed a byte
+arriving twice whenever six or more RXD lines rose together: extra edges on
+`e_rxc`. The loss followed the EP4CGX150 core onto the DB_FPGA V5, where the
+XC7A100T lost 1 frame in 2,162. Both EP4CGX150 presets moved to MII at
+100 Mb/s: every payload received, DHCP and TCP working.
+
+### The receive domain went untimed, and I/O reads came back one word late (fixed 2026-10-12, status item 68)
+
+The link came up at 1 Gb/s and no packets moved. Two causes, and the EP4CGX150
+had both. `BmbMemoryController` re-latched every I/O read after its strobe, so
+the MAC's pop-on-read RX register reached the CPU one word late — on every
+board. And the generated SDC named `e_rxc` in a clock group without creating
+it: Quartus dropped the group with only a warning, the receive domain went
+untimed, and that placement failed hold by 1.763 ns inside the MAC. Frames
+arrived with words out of order behind a CRC check that passed. The same
+missing `create_clock` as the 2026-02-25 entry below, this time in generated
+constraints.
 
 ### Missing `create_clock` for PHY clocks (fixed 2026-02-25)
 
