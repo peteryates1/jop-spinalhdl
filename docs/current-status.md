@@ -22,7 +22,8 @@
 >
 > `make check-build` asserts every item is anchored, no anchor is defined twice,
 > every `#item-N` link in the repo resolves, no CLOSED item sits in the priority
-> list, and every journal is present and linked.
+> list, every journal is present and linked, and §2 lists every item exactly
+> once with its Open list equal to §1 (since 2026-10-13).
 
 
 ## 1. Outstanding now — in priority order
@@ -10247,7 +10248,8 @@ and the JVM dies. That is why only `DecimalFormat` broke: `positivePrefix` and
 
 **Acceptance:** `StringLiteral` runs with `strict = true` — all eight cases hard
 failures — and `DoAll` is **68/68, 136 ok lines over two passes, zero
-failures**, with `TextFormatTest ok`. The only MISS remaining in the suite is
+failures** (corrected 2026-10-13: ONE pass; `JopJvmTestsBramSim` prints the
+console again as `Full output:` when it ends, so every line appears twice), with `TextFormatTest ok`. The only MISS remaining in the suite is
 `arraylength-NPE`, which is [item 129](#item-129) and unrelated.
 
 **What this cost, and what it bought.** Six wrong hypotheses at 13 minutes each

@@ -2,6 +2,11 @@
 #
 # DISCIPLINE: docs/testing-discipline.md — "assert the invariant, not the tally".
 # PROVED RED 2026-09-04 by a "1. 1. **[#140]" renumbering — the entry COUNT could not catch it, because 1 is a legitimate value.
+# PROVED RED 2026-10-13 (check 7) against the status file as it stood before
+#   that day's review (fcdaafd): 53 items unindexed in §2, 25 under its Open
+#   that §1 does not list, 22 in §1 not under Open. And by three edits to the
+#   current file, each named: an Open entry deleted (167), an entry duplicated
+#   into Closed (165), item 139's heading struck while it stayed under Records.
 # PROVED RED 2026-09-10 (check 6) by closing item 150 with no `Guard:` line:
 #   FAIL closed item(s) that name neither a guard nor its absence: 150
 # Green again with either a `Guard:` line or `**No guard.**`. Note two other
@@ -266,3 +271,53 @@ if [ -n "$ungoverned" ]; then
   exit 1
 fi
 echo "  closed items from $FIRST_GUARDED_ITEM up all name a guard or its absence"
+
+# ---------------------------------------------------------------------------
+# 7. SECTION 2 INDEXES EVERY ITEM ONCE, AND ITS OPEN LIST IS SECTION 1.
+#
+# §2 calls itself the scannable index, and nothing above reads it. On
+# 2026-10-13 it listed 112 of 164 items, filed closed items under "Open" (68,
+# 146-148, 151, 157, 158, 166) and open ones under "Closed" (52, 53, 159), and
+# three struck entries still said "(OPEN)". Every item filed or closed without
+# touching §2 had made it a little less true.
+#
+#   a. every item section has exactly one §2 entry, and no entry names an item
+#      that does not exist;
+#   b. the Open list is exactly the §1 set -- §1 is the ground truth for open;
+#   c. an item whose heading is struck is not filed under "Records".
+#
+# An entry's OWN item is the link that opens it, `- **[N](#item-N)**` or
+# `- ~~**[N](#item-N)**~~`; links further along the line are references.
+# ---------------------------------------------------------------------------
+s2_ids() {   # $1 = the §2 sub-heading that starts the list
+  sed -n '/^## 2\. All items/,/^## 3\. Item detail/p' "$f" \
+    | awk -v h="$1" 'index($0, "### ") == 1 { on = (index($0, h) == 1); next } on' \
+    | grep -oE '^- (~~)?\*\*\[[0-9]+[a-z]?\]\(#item-' | grep -oE '[0-9]+[a-z]?' || true
+}
+s2_open=$(s2_ids "### Open" | sort)
+s2_closed=$(s2_ids "### Closed" | sort)
+s2_records=$(s2_ids "### Records" | sort)
+s2_all=$(printf '%s\n%s\n%s\n' "$s2_open" "$s2_closed" "$s2_records" | grep -v '^$' | sort)
+s2fail=0
+twice=$(echo "$s2_all" | uniq -d | sort -n | tr '\n' ' ')
+unindexed=$(comm -23 <(echo "$sections") <(echo "$s2_all" | sort -u) | sort -n | tr '\n' ' ')
+phantom=$(comm -13 <(echo "$sections") <(echo "$s2_all" | sort -u) | sort -n | tr '\n' ' ')
+open_not_s1=$(comm -23 <(echo "$s2_open") <(echo "$listed" | sort) | sort -n | tr '\n' ' ')
+s1_not_open=$(comm -13 <(echo "$s2_open") <(echo "$listed" | sort) | sort -n | tr '\n' ' ')
+struck_records=""
+for n in $s2_records; do
+  h=$(grep -m1 -E "^### (~~)?Item $n(~~)? " "$f")
+  case "$h" in *'~~'*) struck_records="$struck_records $n";; esac
+done
+[ -n "${twice// /}" ]       && { echo "  FAIL §2 lists these items more than once: $twice"; s2fail=1; }
+[ -n "${unindexed// /}" ]   && { echo "  FAIL §2 does not list these items: $unindexed"; s2fail=1; }
+[ -n "${phantom// /}" ]     && { echo "  FAIL §2 lists items that have no section: $phantom"; s2fail=1; }
+[ -n "${open_not_s1// /}" ] && { echo "  FAIL §2 Open lists items §1 does not: $open_not_s1"; s2fail=1; }
+[ -n "${s1_not_open// /}" ] && { echo "  FAIL §1 lists items §2 does not file under Open: $s1_not_open"; s2fail=1; }
+[ -n "${struck_records// /}" ] && { echo "  FAIL closed (struck) items filed under Records:$struck_records"; s2fail=1; }
+if [ "$s2fail" -ne 0 ]; then
+  echo "       Filing an item: a §1 line and a §2 Open entry. Closing one: strike"
+  echo "       the heading, drop the §1 line, move the §2 entry to Closed."
+  exit 1
+fi
+echo "  §2: $(echo "$s2_all" | wc -l) items indexed once each; Open matches §1 ($(echo "$s2_open" | grep -c .))"
