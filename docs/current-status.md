@@ -96,7 +96,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 55. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
 56. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
 57. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
-58. **[#100](#item-100)** — The EP4CGX150's 2026-08-31 cable swap left a confound unresolved: it changed the cable AND re-seated both plugs. The board has had **no cable at all since 2026-10-12** (the Terasic moved to the A-E115FB), and the Pico that could settle it has failed ([#148](#item-148)), so it needs a working blaster first
+58. **[#100](#item-100)** — The EP4CGX150's 2026-08-31 cable swap left a confound unresolved: it changed the cable AND re-seated both plugs. Since 2026-10-15 a level-shifted Pico blaster drives the EP4CGX150 again (the pico-usb-debug-jtag carrier, J5), so the experiment can run: ten single-try detections on it
 59. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
 60. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
 61. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
@@ -185,7 +185,7 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[75](#item-75)** — `ep4cgx150HwMath` generates byte-identical RTL to `ep4cgx150Serial` — a preset that expresses nothing, with a test that passes trivially
 - **[82](#item-82)** — **Flash boot has been unbuildable on BOTH boards since 2026-03-13** — a working, hardware-verified capability removed as collateral by a refactor (OPEN)
 - **[84](#item-84)** — No MAX1000 configuration is known to fit — a 1- or 2-core 10M08 setup is wanted (OPEN)
-- **[100](#item-100)** — Newcomer hardware path verified on the i5 and A-E115FB; the EP4CGX150's level-shifted Pico cable is INTERMITTENT (3 detections in 10, bursty) — first diagnosed as failed, which single-sample testing made look certain (OPEN; no cable on the EP4CGX150 at all since 2026-10-12)
+- **[100](#item-100)** — Newcomer hardware path verified on the i5 and A-E115FB; the EP4CGX150's level-shifted Pico cable is INTERMITTENT (3 detections in 10, bursty) — first diagnosed as failed, which single-sample testing made look certain (OPEN; a level-shifted Pico blaster is on the EP4CGX150 again since 2026-10-15, so it can be tested)
 - **[102](#item-102)** — the bitstream depends on a `.jop` it does not contain
 - **[104](#item-104)** — the generators restate board facts as literals
 - **[105](#item-105)** — assembly navigation assumes the first board is the FPGA
@@ -5247,6 +5247,12 @@ programming was refused for that reason rather than for anything in the docs.
 
 ### Item 100 — The newcomer hardware path, and a JTAG cable that was INTERMITTENT
 
+> **2026-10-15 — a Pico blaster is back on the EP4CGX150.** JTAG0 (J5) of the
+> pico-usb-debug-jtag carrier: a level-shifted pico-usb-blaster, serial
+> `e66440a2`. It configured `jop_dbfpga.sof` in ~72 s and DoAll ran 68/68. A
+> different Pico on a PCB rather than a breadboard, so the confound below can be
+> tested again, by the same ten single-try detections.
+>
 > **2026-10-12 — the EP4CGX150 has no cable at all now.** The Terasic moved to
 > the A-E115FB, which is back on hardware ([item 148](#item-148)). The confound
 > below stays unresolved until a working blaster is attached to the EP4CGX150.
@@ -11044,7 +11050,7 @@ separated "board broken" from "our design broken".
 
 | board | cable | how it is programmed |
 |---|---|---|
-| EP4CGX150 (SDR) | **none since 2026-10-12** — its Terasic moved to the A-E115FB | attach a cable and point `ep4cgx150` in `jtag_probe_map` at it; `--assert-device ep4cgx150` refuses the Terasic meanwhile |
+| EP4CGX150 (SDR) | **pico-usb-debug-jtag carrier, JTAG0 (J5)** since 2026-10-15 — a level-shifted Pico running pico-usb-blaster, serial `e66440a2`, Quartus name `USB Blaster` (space) | `jtag_probe_map --cable ep4cgx150`; configures in ~72 s, DoAll 68/68 after it |
 | XC7A100T + DB_FPGA V5 (DDR3) | RP2040 on the DB-V5, pico-dirtyJtag | `openFPGALoader` |
 | A-E115FB (1 GB DDR2) | Terasic USB-Blaster (`ae115fb`, since 2026-10-12) | `quartus_pgm -c "$(jtag_probe_map --cable ae115fb)"`, after `--assert-device ae115fb`. The JTAG bank is bank 1 at 2.5 V (jumper J2); the header's VTREF is 3.3 V, so a bare Pico would also do |
 | Colorlight i5 (ECP5, 8 MB SDR) | DAPLink on the ext board (`i5`) | `openFPGALoader -b colorlight_i5` — also the UART bridge |

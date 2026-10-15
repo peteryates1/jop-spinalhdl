@@ -146,8 +146,9 @@ cable.** It was on the EP4CGX150 for two days; the boards were SWAPPED on
 2026-08-31, putting the **Terasic on the EP4CGX150** and the **Pico on the
 A-E115FB** -- the opposite of what this paragraph said until 2026-09-09. That
 Pico has since failed (item 148). **On 2026-10-12 the Terasic moved to the
-A-E115FB**, which is back on hardware; the EP4CGX150 has had no cable since,
-and the Terasic is the only working Altera blaster.
+A-E115FB**, which is back on hardware. The EP4CGX150 had no cable until
+2026-10-15, when JTAG0 of the pico-usb-debug-jtag carrier — a level-shifted
+Pico running pico-usb-blaster, serial `e66440a2` — took it over.
 
 Note the word this paragraph used to carry: *permanently*. It was wrong within
 two days, again a week later, and again on 2026-10-12. `jtag_probe_map --cable <alias>` is the
