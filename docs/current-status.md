@@ -96,18 +96,17 @@ nothing depends on ranks below a measurement that could mislead someone.
 55. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
 56. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
 57. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
-58. **[#100](#item-100)** — The EP4CGX150's 2026-08-31 cable swap left a confound unresolved: it changed the cable AND re-seated both plugs. Since 2026-10-15 a level-shifted Pico blaster drives the EP4CGX150 again (the pico-usb-debug-jtag carrier, J5): 30/30 single-try detections and 10/10 configurations, so a Pico cable is reliable on this board. Whether August's 3/10 was the old cable or the loose plug can no longer be separated, since that Pico is dead; a candidate to close
-59. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
-60. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
-61. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
-62. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
-63. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
-64. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
-65. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
-66. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
-67. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
-68. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
-69. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
+58. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
+59. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
+60. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
+61. **[#143](#item-143)** — `setsid` + process-group kill leaks the downloader holding the serial port; the leftover reader then looks exactly like dead hardware
+62. **[#149](#item-149)** — Nine Vivado targets read TRACKED constraints, including the DB V5 flagship; item 57 claimed the opposite and the constraint guard reaches only 7 of 12 boards
+63. **[#150](#item-150)** — Four test apps and `JopIhluGcBramSim` are executed by nothing, and items 2, 23, 24 and 26 cite them as evidence
+64. **[#153](#item-153)** — The Alchitry Au V2's tracked XDC contains no `create_clock`, so its top-level `clk` may be entirely unconstrained; the clk_wiz IP constrains only its own `clk_in` boundary. Any reported timing on that board is suspect until checked
+65. **[#159](#item-159)** — The generated Wukong SDR XDC declares no asynchronous clock groups, so every core-to-`sys_clk` crossing is timed; the single-core SDR flows get away with it only because the MMCM happens to give exactly 2x the input clock. Fixed for the SMP flow, latent for the rest
+66. **[#154](#item-154)** — `make -C java sim-smallest` and `sim-small` cannot run at all — `JopSim.java:65` caps `MAX_MEM` at 1 MB while `Startup.java:95` asks for `appEnd + 262144`. Item 137 names this as blocking and was closed anyway
+67. **[#155](#item-155)** — `current-status.md` is past **11,000 lines** (2026-10-13), from the 4,828 item 116 left, and many sections exceed the 100-line split threshold in-file. The consistency guards hold; nothing guards SIZE
+68. **[#163](#item-163)** — OPTIONAL: restructure the stack cache's same-cycle rotation decisions (victim selection, the SP-mux decision, the spill-region check) so every cached build gets real timing margin instead of ~0.1 ns. Three steps that only pay together; measured, not done
 
 ## 2. All items — summary
 
@@ -185,7 +184,6 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[75](#item-75)** — `ep4cgx150HwMath` generates byte-identical RTL to `ep4cgx150Serial` — a preset that expresses nothing, with a test that passes trivially
 - **[82](#item-82)** — **Flash boot has been unbuildable on BOTH boards since 2026-03-13** — a working, hardware-verified capability removed as collateral by a refactor (OPEN)
 - **[84](#item-84)** — No MAX1000 configuration is known to fit — a 1- or 2-core 10M08 setup is wanted (OPEN)
-- **[100](#item-100)** — Newcomer hardware path verified on the i5 and A-E115FB; the EP4CGX150's level-shifted Pico cable is INTERMITTENT (3 detections in 10, bursty) — first diagnosed as failed, which single-sample testing made look certain (OPEN; a level-shifted Pico blaster is on the EP4CGX150 again since 2026-10-15, so it can be tested)
 - **[102](#item-102)** — the bitstream depends on a `.jop` it does not contain
 - **[104](#item-104)** — the generators restate board facts as literals
 - **[105](#item-105)** — assembly navigation assumes the first board is the FPGA
@@ -267,6 +265,7 @@ Marked closed in the heading or here, sorted by ID.
 - ~~**[97](#item-97)**~~ — `JopSmpBramSim` runs 100 M cycles, both cores boot, then fails its own `GC test start` check
 - ~~**[98](#item-98)**~~ — `JopInterruptSim` fires 2 of 5 interrupts — deterministic, reproduced twice
 - ~~**[99](#item-99)**~~ — `JopDebugProtocolSim` NPEs during **elaboration** — `JopCluster.gcRootRamAddr()` is null
+- ~~**[100](#item-100)**~~ — The EP4CGX150's intermittent level-shifted Pico cable — **CLOSED 2026-10-15**: a Pico cable on the pico-usb-debug-jtag carrier reads 30/30 single-try and configures 10/10; the old cable-or-plug confound died with that Pico
 - **[101](#item-101)** — ~~every hardware record before 2026-08-26 was taken when the declared clock could differ from the silicon~~ — LARGELY RESOLVED 2026-08-31
 - **[103](#item-103)** — ~~the A-E115FB's JTAG bank is not 3.3 V~~ — CORRECTED 2026-10-13: VTREF is 3.3 V, the JTAG pins run at 2.5 V, and a bare Pico is fine either way
 - ~~**[108](#item-108)**~~ — README's 16-core claim rested on figures README itself withdrew — **CLOSED 2026-10-13**: the README and the board doc state the validated 12 and that 16 does not fit
@@ -291,7 +290,7 @@ Marked closed in the heading or here, sorted by ID.
 - ~~**[144](#item-144)**~~ — The Java tools were config-dependent because javac inlines `Const` — DONE 2026-09-05: JOPizer reads its four values at runtime and is now built once into `build/java/tools`; JopSim stays per-config on purpose
 - **[146](#item-146)** — ~~64 simulations built a Verilator model without the X-state defence, and one of them flaked CI~~ — **FIXED**
 - **[147](#item-147)** — ~~The nightly GC sim ends when the heap exhausts, so making the program SMALLER made it slower until it blew CI's 90-minute wall~~ — **FIXED**
-- **[148](#item-148)** — ~~The A-E115FB's Pico blaster failed and the board is powered off, so DDR2 has no hardware coverage~~ — **BACK** 2026-10-12 on the Terasic: DoAll 68/68 and Ethernet at 1 Gb/s. Item 100's confound experiment still needs a working Pico
+- **[148](#item-148)** — ~~The A-E115FB's Pico blaster failed and the board is powered off, so DDR2 has no hardware coverage~~ — **BACK** 2026-10-12 on the Terasic: DoAll 68/68 and Ethernet at 1 Gb/s.
 - **[151](#item-151)** — ~~`XdcGenerator` produces WRONG constraints for the DB V5: console TX/RX crossed and `resetn` missing~~ — **FIXED**
 - **[156](#item-156)** — ~~two attached boards could not be programmed, and nothing noticed~~ — FIXED 2026-09-11
 - **[157](#item-157)** — ~~The stop-the-world leak detector is never incremented~~ — FIXED 2026-09-14: `IO_GC_MUTATOR` counts it in hardware
@@ -5245,7 +5244,17 @@ programming was refused for that reason rather than for anything in the docs.
 
 <a id="item-100"></a>
 
-### Item 100 — The newcomer hardware path, and a JTAG cable that was INTERMITTENT
+### Item 100 — ~~The newcomer hardware path, and a JTAG cable that was INTERMITTENT~~ — CLOSED 2026-10-15: a level-shifted Pico cable is reliable on the EP4CGX150
+
+> **CLOSED 2026-10-15.** The question that mattered — can a level-shifted Pico
+> cable be relied on for the EP4CGX150 — is answered yes: 30/30 single-try chain
+> scans and 10/10 configurations on the pico-usb-debug-jtag carrier (note
+> below). The narrower confound, whether August's 3/10 was the breadboard cable
+> or the loose board-side plug, cannot be separated now that that Pico is dead,
+> and nothing depends on it. Guard: `fpga/scripts/jtag_probe_map
+> --assert-device` runs before every program and reports any cable that needs
+> a retry as FLAKY.
+>
 
 > **2026-10-15 — a Pico blaster is back on the EP4CGX150.** JTAG0 (J5) of the
 > pico-usb-debug-jtag carrier: a level-shifted pico-usb-blaster, serial
