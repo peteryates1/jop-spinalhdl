@@ -96,7 +96,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 55. **[#56](#item-56)** — WBNI: derive the hardware config from the application. **JOPizer static profile DONE**; the remaining bulk is a measurement FRAMEWORK (preferably Java) across the hardware set
 56. **[#117](#item-117)** — Nothing prevents an eighth preset that no flow selects
 57. **[#115](#item-115)** — Every simulation reports `Elaboration failed (2 errors)` and then succeeds; pre-existing, deterministic, unexplained
-58. **[#100](#item-100)** — The EP4CGX150's 2026-08-31 cable swap left a confound unresolved: it changed the cable AND re-seated both plugs. Since 2026-10-15 a level-shifted Pico blaster drives the EP4CGX150 again (the pico-usb-debug-jtag carrier, J5), so the experiment can run: ten single-try detections on it
+58. **[#100](#item-100)** — The EP4CGX150's 2026-08-31 cable swap left a confound unresolved: it changed the cable AND re-seated both plugs. Since 2026-10-15 a level-shifted Pico blaster drives the EP4CGX150 again (the pico-usb-debug-jtag carrier, J5): 30/30 single-try detections and 10/10 configurations, so a Pico cable is reliable on this board. Whether August's 3/10 was the old cable or the loose plug can no longer be separated, since that Pico is dead; a candidate to close
 59. **[#63](#item-63)** — One unexplained Wukong SDR startup crash in six runs; not reproduced, cause unknown
 60. **[#62](#item-62)** — `JopFloatCuBramSim` reads a `floatcu` microcode variant that has never been generated, so it has never run
 61. **[#142](#item-142)** — The linked image's `<clinit>` ORDER is decided by hash iteration order in `OldClinitOrder.findOrder()`; any classpath change reshuffles it, and correctness then rests on a dependency analysis that misses `invokeinterface`
@@ -5252,6 +5252,13 @@ programming was refused for that reason rather than for anything in the docs.
 > `e66440a2`. It configured `jop_dbfpga.sof` in ~72 s and DoAll ran 68/68. A
 > different Pico on a PCB rather than a breadboard, so the confound below can be
 > tested again, by the same ten single-try detections.
+>
+> **Tested the same day, ten full cycles:** 30/30 single-try chain scans (ten
+> before, one per cycle, ten after; `JTAG_SCAN_TRIES=1`), 10/10 configurations at
+> 74-75 s each, DoAll 68/68 after every one, and the cable never re-enumerated.
+> A level-shifted Pico at 6 MHz is reliable on this board, so the August 3/10
+> was that breadboard cable or the loose plug. Which of the two cannot be
+> separated now: that Pico is dead.
 >
 > **2026-10-12 — the EP4CGX150 has no cable at all now.** The Terasic moved to
 > the A-E115FB, which is back on hardware ([item 148](#item-148)). The confound
