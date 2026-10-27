@@ -4,6 +4,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import spinal.core._
 import spinal.core.sim._
 import jop.TestVectorUtils
+import jop.config.Manufacturer
 import scala.collection.mutable.ArrayBuffer
 
 /**
@@ -20,13 +21,21 @@ import scala.collection.mutable.ArrayBuffer
  *
  * Clocks in sim time units; only the ratios matter: the 50 MHz Ethernet clock
  * 20, RXC 40 (25 MHz), and the system clock 16, asynchronous to both.
+ *
+ * Two vendors' TX: the Xilinx build makes TXC with an ODDR (TXD/TX_CTL in IOB
+ * flops), the ECP5 build passes TXC, TXD and TX_CTL all through ODDRX1F cells
+ * (the Colorlight i5). The TX test runs on both, each with its own primitive's
+ * model, and checks the same thing at the pins.
  */
 class Rgmii100Test extends AnyFunSuite {
 
   val TxRawPeriod = 20
   val RxcPeriod = 40
   val SysPeriod = 16
-  val oddrModel = "spinalhdl/src/test/resources/xilinx_oddr_model.v"
+  def oddrModel(vendor: Manufacturer): String = vendor match {
+    case Manufacturer.Lattice => "spinalhdl/src/test/resources/lattice_oddrx1f_model.v"
+    case _                    => "spinalhdl/src/test/resources/xilinx_oddr_model.v"
+  }
 
   def crc32(data: Seq[Int]): Long = {
     var crc = 0xFFFFFFFFL
@@ -55,7 +64,7 @@ class Rgmii100Test extends AnyFunSuite {
   /** On the wire: preamble, SFD, the frame, its FCS. */
   val wire: Seq[Int] = Seq.fill(7)(0x55) ++ Seq(0xD5) ++ frame ++ fcs(frame)
 
-  case class Harness() extends Component {
+  case class Harness(vendor: Manufacturer = Manufacturer.Xilinx) extends Component {
     val io = new Bundle {
       val addr   = in UInt(4 bits)
       val rd     = in Bool()
@@ -72,7 +81,7 @@ class Rgmii100Test extends AnyFunSuite {
     val rxc = ClockDomain.external("rxc")
     val txCd = Rgmii100.txDomain(txRaw)
     val mac = Mac(txCd, rxc)
-    val rgmii = Rgmii100(txCd, rxc)
+    val rgmii = Rgmii100(txCd, rxc, vendor)
     mac.io.phy <> rgmii.io.phy
     mac.bus.addr := io.addr
     mac.bus.rd := io.rd
@@ -86,7 +95,17 @@ class Rgmii100Test extends AnyFunSuite {
     rgmii.io.rxCtl := io.rxCtl
   }
 
-  lazy val compiled = TestVectorUtils.simWave(SimConfig).addRtl(oddrModel).compile(Harness())
+  def compileFor(vendor: Manufacturer) = TestVectorUtils.simWave(SimConfig)
+    .workspaceName(s"Rgmii100Test_$vendor").addRtl(oddrModel(vendor)).compile(Harness(vendor))
+  lazy val compiled = compileFor(Manufacturer.Xilinx)
+  lazy val compiledLattice = compileFor(Manufacturer.Lattice)
+
+  /** The Verilog a vendor's harness elaborates to, for structural checks. */
+  def verilogOf(vendor: Manufacturer): String = {
+    val dir = java.nio.file.Files.createTempDirectory(s"rgmii100_$vendor").toString
+    SpinalConfig(targetDirectory = dir).generateVerilog(Harness(vendor))
+    new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(dir, "Harness.v")), "UTF-8")
+  }
 
   def start(dut: Harness): Unit = {
     dut.clockDomain.forkStimulus(SysPeriod)
@@ -151,7 +170,29 @@ class Rgmii100Test extends AnyFunSuite {
     }
   }
 
-  test("TX: a frame written to the MAC leaves on the RGMII pins as the PHY samples it") {
+  test("an ECP5 build makes TXC with ODDRX1F, a Xilinx build with ODDR, never the other's") {
+    // yosys would accept neither the other vendor's cell name nor its ports;
+    // the failure would come at synthesis, as an undefined module.
+    val lattice = verilogOf(Manufacturer.Lattice)
+    val xilinx = verilogOf(Manufacturer.Xilinx)
+    val oddr = "(?m)^\\s*ODDR\\b".r
+    val oddrx1f = "(?m)^\\s*ODDRX1F\\b".r
+    assert(oddrx1f.findAllIn(lattice).size == 6,
+      s"ECP5: want 6 ODDRX1F (TXC, TX_CTL, TXD[3:0]), got ${oddrx1f.findAllIn(lattice).size}")
+    assert(oddr.findFirstIn(lattice).isEmpty, "ECP5 build instantiates the Xilinx ODDR")
+    assert(oddr.findAllIn(xilinx).size == 1, "Xilinx build: want one ODDR, for TXC")
+    assert(oddrx1f.findFirstIn(xilinx).isEmpty, "Xilinx build instantiates ODDRX1F")
+  }
+
+  test("TX (Xilinx ODDR): a frame written to the MAC leaves on the RGMII pins as the PHY samples it") {
+    txFrameTest(compiled)
+  }
+
+  test("TX (ECP5 ODDRX1F): a frame written to the MAC leaves on the RGMII pins as the PHY samples it") {
+    txFrameTest(compiledLattice)
+  }
+
+  def txFrameTest(compiled: SimCompiled[Harness]): Unit = {
     compiled.doSim { dut =>
       start(dut)
       val samples = ArrayBuffer[(Long, Boolean, Int, Boolean)]()

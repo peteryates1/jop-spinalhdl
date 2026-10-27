@@ -235,7 +235,8 @@ object EthernetTopWiring extends DeviceTopWiring {
     // RGMII: the whole pin side is Rgmii100 (TX inter-frame gap, TXC, the RX
     // framing), clocked by the domains createClockDomains made.
     if (sys.ethRgmii) {
-      val rgmii = Rgmii100(clockDomains.ethTxCd.get, clockDomains.ethRxCd.get)
+      val rgmii = Rgmii100(clockDomains.ethTxCd.get, clockDomains.ethRxCd.get,
+        ctx.config.fpgaFamily.manufacturer)
       rgmii.io.phy.tx << ethPhyIo.tx
       ethPhyIo.rx << rgmii.io.phy.rx
       ethPhyIo.colision := rgmii.io.phy.colision

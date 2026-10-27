@@ -25,6 +25,23 @@ class XilinxOddr extends BlackBox {
   setDefinitionName("ODDR")
 }
 
+/** Lattice ECP5 ODDRX1F: D0 and D1 are both taken on the rising edge of SCLK;
+  * Q shows D0 for the high half of that cycle and D1 for the low half -- the
+  * Xilinx ODDR's SAME_EDGE timing, D1/D2 renamed D0/D1. yosys maps it to the
+  * I/O cell; tests supply a behavioural model,
+  * spinalhdl/src/test/resources/lattice_oddrx1f_model.v. */
+class LatticeOddrx1f extends BlackBox {
+  val io = new Bundle {
+    val D0   = in Bool()
+    val D1   = in Bool()
+    val SCLK = in Bool()
+    val RST  = in Bool()
+    val Q    = out Bool()
+  }
+  noIoPrefix()
+  setDefinitionName("ODDRX1F")
+}
+
 object Rgmii100 {
   /** The clock `txDomain` is built on: twice the 25 MHz nibble rate. */
   val TxClockMhz = 50
@@ -64,13 +81,24 @@ object Rgmii100 {
  * low again to 40 ns. Both edges are 10 ns from any change. No second clock is
  * needed, and so no change to the clock IP the Wukong shares.
  *
+ * ECP5 (`vendor` Lattice, the Colorlight i5): there are no IOB flops to pack
+ * TXD/TX_CTL into, and the ODDRX1F's own latency is not in anything we have
+ * (yosys ships no model of the cell). So EVERY TX pin leaves an ODDRX1F on the
+ * raw clock, and whatever that latency is, TXC and the data share it. The data
+ * cells take the txCd registers one raw cycle after those change, so TXC's
+ * pattern is the Xilinx one inverted, (D0, D1) = (enable, !enable): high from
+ * 10 ns after a (delayed) data change to 10 ns before the next, both edges 10
+ * ns clear. The i5's RGMII bring-up ran with every TX pin through ODDRX1F the
+ * same way (fpga/bringup/colorlight-db-i5-eth, 2026-10-27).
+ *
  * RX: `rxCd` is RXC (25 MHz at 100 Mb/s). RXD/RX_CTL are sampled on its
  * FALLING edge, mid-nibble whether or not the PHY delays RXC; this is how they
  * were verified byte-exact on hardware. RX_CTL there is RX_DV ^ RX_ER, which
  * is RX_DV for any frame without a receive error, and an errored frame fails
  * its CRC.
  */
-case class Rgmii100(txCd: ClockDomain, rxCd: ClockDomain) extends Component {
+case class Rgmii100(txCd: ClockDomain, rxCd: ClockDomain,
+                    vendor: jop.config.Manufacturer = jop.config.Manufacturer.Xilinx) extends Component {
   val io = new Bundle {
     val phy   = slave(PhyIo(PhyParameter(txDataWidth = 4, rxDataWidth = 4)))
     val txc   = out Bool()
@@ -88,17 +116,33 @@ case class Rgmii100(txCd: ClockDomain, rxCd: ClockDomain) extends Component {
     val txd = RegNext(interframe.io.output.fragment.data) init(0)
     val txCtl = RegNext(interframe.io.output.valid) init(False)
   }
-  io.txd := tx.txd
-  io.txCtl := tx.txCtl
 
-  val txcOut = new XilinxOddr
-  txcOut.io.C := txCd.readClockWire
-  txcOut.io.CE := True
-  txcOut.io.D1 := !txCd.readClockEnableWire
-  txcOut.io.D2 := txCd.readClockEnableWire
-  txcOut.io.R := False
-  txcOut.io.S := False
-  io.txc := txcOut.io.Q
+  vendor match {
+    case jop.config.Manufacturer.Lattice =>
+      def cell(d0: Bool, d1: Bool): Bool = {
+        val c = new LatticeOddrx1f
+        c.io.SCLK := txCd.readClockWire
+        c.io.RST := False
+        c.io.D0 := d0
+        c.io.D1 := d1
+        c.io.Q
+      }
+      io.txc := cell(txCd.readClockEnableWire, !txCd.readClockEnableWire)
+      io.txCtl := cell(tx.txCtl, tx.txCtl)
+      for (i <- 0 until 4) io.txd(i) := cell(tx.txd(i), tx.txd(i))
+
+    case _ =>
+      io.txd := tx.txd
+      io.txCtl := tx.txCtl
+      val txcOut = new XilinxOddr
+      txcOut.io.C := txCd.readClockWire
+      txcOut.io.CE := True
+      txcOut.io.D1 := !txCd.readClockEnableWire
+      txcOut.io.D2 := txCd.readClockEnableWire
+      txcOut.io.R := False
+      txcOut.io.S := False
+      io.txc := txcOut.io.Q
+  }
 
   val rx = new ClockingArea(rxCd) {
     val capture = new ClockingArea(rxCd.withRevertedClockEdge()) {
