@@ -552,9 +552,9 @@ at 50, RXC 100.15 at 25), RJ1 to a gigabit switch, tested from a VM on the LAN:
 | `EthRxDiag` | 13 frames, 0 errors, 0 drops, byte-exact; its broadcasts reach the LAN |
 | DoAll | 68/68 on the same bitstream |
 
-`NetTest` itself crashes at start on this build -- and on `xc7a100tDbEth` --
-for a reason that is not the network or the board (status item 169): with two
-bytes of its image changed (`NUM_INTERRUPTS` 4 -> 5 in `JVMHelp.init`) it
+`NetTest` crashed at start on the first try here and on `xc7a100tDbEth`; that
+was status item 169, stray bytes in the serial-boot handshake corrupting the
+microcode's constants, not the network or the board. With a clean download it
 passes everything above.
 
 ## QMTECH EP4CGX150 + DB_FPGA (MII at 100 Mb/s; GMII at 1 Gb/s loses frames)

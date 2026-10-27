@@ -40,7 +40,7 @@ correctness defects, then capability gaps, then performance. A broken capability
 nothing depends on ranks below a measurement that could mislead someone.
 
 1. **[#165](#item-165)** — A halted core keeps executing until its next `wait`, so it can dirty its stack AFTER the stop-the-world flush: measured in simulation, the collector's `halted && flushed` acknowledgement reads true for 2-6 cycles and is then withdrawn while a second flush runs. Whether the collector can act inside that window is unassessed
-2. **[#169](#item-169)** — Two bytes of NOT-YET-EXECUTED bytecode decide whether NetTest boots on `xc7a100tDbEth` and `colorlightDbI5Eth`: with `NUM_INTERRUPTS` 4 in `JVMHelp.init` its GC start-up prints digits with bits missing and dies, with 5 it runs, and the failing image runs on the Wukong. A core fault that depends on image content and bitstream -- not timing (the i5 build meets it), not the network
+2. **[#169](#item-169)** — The serial-boot microcode's stack is unbalanced: every byte the ready handshake receives drops SP one word, and the checksum send-back leaks three. With ~8 or more stray bytes before the host's 0x55 the leak lands on the stack RAM's constant table -- i2c's 65535 at RAM[56] with 10 -- and the booted program computes garbage. Reproduced on demand on the i5; every serial-boot board is exposed. (First filed as "two never-executed bytes decide whether NetTest boots": wrong, see the item)
 3. **[#130](#item-130)** — `JopTop` silently overrides four `memConfig` fields the preset declares, so presets, summaries and harnesses describe a different machine than the one built. Verified against elaborated RTL
 4. **[#110](#item-110)** — Three corpora have never been reviewed (~106k lines: runtime, tools, RTL, microcode). The frem defect lived on a boundary a single-corpus review cannot see
 5. **[#119](#item-119)** — The object handle layout is re-expressed in ~25 places across four languages, and the RTL's only use of it has no test, no formal property and no elaboration check
@@ -215,7 +215,7 @@ Exactly the items in [§1](#1-outstanding-now--in-priority-order), sorted by ID.
 - **[165](#item-165)** — a halted core can dirty its stack after the stop-the-world flush, so the collector's "halted and flushed" acknowledgement can be withdrawn
 - **[167](#item-167)** — REGRESSION: the A-E115FB's minor-GC copy phase is 13.5 % slower than in August
 - **[168](#item-168)** — `xc7a100tDbEth` misses timing by 0.058 ns, on a core path
-- **[169](#item-169)** — two never-executed bytes decide whether NetTest boots, on two builds: a core fault, not timing or the network
+- **[169](#item-169)** — stray bytes in the serial-boot handshake shift the microcode stack, and the checksum leak then overwrites the constant table
 
 ### Closed
 
@@ -3801,60 +3801,67 @@ verification): DoAll 68/68 twice (`hw_verify --allow-violated`), and
 EthRxDiag shows the Ethernet clean both ways at 1000M -- 19 frames received
 byte-exact with no errors, its broadcasts on the LAN. NetTest crashes at start
 here, but that is [item 169](#item-169), not this miss: the same crash happens
-on a timing-clean ECP5 build, and on this bitstream the Wukong's NetTest, two
-bytes different, runs.
+on a timing-clean ECP5 build, and it comes from the serial-boot handshake, not
+the bitstream.
 
 <a id="item-169"></a>
 
-### Item 169 — Two bytes of not-yet-executed bytecode decide whether NetTest boots, on two builds
+### Item 169 — Stray bytes in the serial-boot handshake shift the microcode stack, and the checksum send-back then overwrites the constant table
 
-**Found 2026-10-27**, checking every stack board's Ethernet. On
-`xc7a100tDbEth` (XC7A100T + DB_FPGA V5, DDR3, GMII; misses timing, item 168)
-and `colorlightDbI5Eth` (Colorlight i5, SDR, RGMII; timing MET on every clock)
-NetTest prints `GC: generational, ` and then the card size with bits missing,
-and then `Uncaught exception:` without end. Each computed character comes out
-ANDed with a constant: `04 00 00` for `512` on the XC7A100T (mask 0x04), `21
-20` for `32` on the i5 (mask 0x21). The literal strings around it print
-correctly. The digits are computed -- `(char)('0' + d)` in `GC.wrIntG`, an
-i2c -- so something on that path is wrong. All of this is during GC
-start-up, before class initialisation and before `JVMHelp.init` runs.
+**Found 2026-10-27**, checking every stack board's Ethernet: NetTest on
+`xc7a100tDbEth` and on `colorlightDbI5Eth` printed `GC: generational, ` and
+then the card size with bits missing, then `Uncaught exception:` without end.
+Each computed character came out ANDed with a constant -- `04 00 00` for `512`
+(mask 0xc4), `21 20` for `32` (mask 0x61) -- while the literal strings around it
+printed correctly.
 
-**The deciding difference is two bytes that have not run.** The XC7A100T's
-image differs from `wukongFull`'s working NetTest in two words of 18117, both
-`Const.NUM_INTERRUPTS` (4 against 5) at the start of `JVMHelp.init`:
-`10fbd307` / `1b07a200` against `10fbd308` / `1b08a200`, i.e. `iconst_4`
-against `iconst_5`. The images are the same size, so nothing moves. Crossed
-over:
+**The first diagnosis was wrong, and was pushed; kept here so it can be read
+against the right one.** It said two never-executed bytes of the image decide
+it: the XC7A100T's NetTest differs from the Wukong's working one only in
+`NUM_INTERRUPTS` (`iconst_4` against `iconst_5` in `JVMHelp.init`), and crossed
+images and bitstreams seemed to show that only that pairing failed. Every arm
+was ONE run. The same "failing" i5 image then booted cleanly twice with nothing
+sent to the board first. What varied was the serial line, not the image.
 
-| image \\ bitstream | xc7a100tDbEth | wukongFull |
-|---|---|---|
-| xc7a100tDbEth's NetTest (`iconst_4`) | **crashes** | runs, `Link UP 1000M` |
-| wukongFull's NetTest (`iconst_5`) | runs, `Link UP 1000M` | runs |
+**The mechanism** (`asm/src/jvm.asm`; `bz`/`bnz` pop their operand -- the
+download loop's `dup` before `bnz` depends on it):
+- **The ready handshake loses a word per byte received.** `rdy_got_byte`
+  pops the deadline, XORs the byte with 0x55, and `bz rdy_done` pops the
+  result; then BOTH exits pop again (`rdy_done: pop`, and `pop` before
+  `jmp rdy_send` on a non-ACK byte), from an empty stack. Each stray byte
+  before the host's 0x55, and the 0x55 itself, drops SP one word below
+  `stack_init` (64).
+- **The checksum send-back leaks three words.** Bytes 3, 2 and 1 each compute
+  `(b >> n) & 255` before the TX-ready loop and again after it; the first copy
+  is never popped. Byte 0 does not, which marks the others as leftovers.
+- **The ACK wait pops one word too many** (`pop` after `bnz ser_retry`, and in
+  `ser_retry`).
 
-On the i5 the same two words patched to `iconst_5` (words 4935 and 4943 of
-`colorlightDbI5Eth`'s NetTest; `JVMHelp.init` starts one word later there)
-pass everything: link 100M, ping 20/20 and 5/5, UDP and TCP 10 KB and 50 KB
-echo identical.
+With enough stray bytes, the three leaked checksum bytes land on the stack
+RAM's constant table (RAM[32..59] in the serial build). With ten, the top byte
+lands on RAM[56] -- `ldi 65535`, i2c's mask -- and every computed char is ANDed
+with it: 0xc4 is the top byte of the XC7A100T image's checksum `0xc40b142d`,
+0x61 of the i5 image's `0x614857ae`. The neighbouring constants go with it and
+the program dies.
 
-What it is not:
-- **timing**: the i5 build meets timing on every clock (system 46.99 MHz at 40,
-  TX 81.57 at 50, RXC 100.15 at 25);
-- **the bitstream in general**: DoAll is 68/68 on both (twice on the
-  XC7A100T), and HelloWorld, EthRxDiag and DhcpTest boot cleanly on them;
-- **a stale image**: the XC7A100T's NetTest rebuilt from the 2026-10-27 tree
-  is byte-identical to the 2026-10-12 one, and its generated Const equals the
-  bitstream's;
-- **the network stack**: DhcpTest, the same stack, runs on the i5 build --
-  BOUND, ping, UDP and TCP echo.
+**Reproduced on demand on the i5** (`colorlightDbI5Eth`, the same NetTest
+image every time; N non-ACK bytes sent one per 0xAA, then a normal download):
 
-So bytes of a method that has not executed change how earlier code computes,
-on some bitstreams and not others. `JVMHelp.init` follows
-`JVMHelp.handleException` and `JVMHelp.noim` in the image -- `noim` is the
-trap for bytecodes these builds leave to Java (they make only idiv and irem in
-hardware; the Wukong makes everything) -- so a fetch that runs past a method's
-end, or the method cache, are the first suspects. Next: run the failing image
-in simulation on a failing configuration, where it is deterministic and every
-fetch is visible, against the `iconst_5` copy.
+| stray bytes | result |
+|---|---|
+| 0, 4, 6 | clean boot, `main()` runs |
+| 8, 9 | banner correct, then the exception loop |
+| 10 | the original failure exactly: `GC: generational, ! -word cards` |
+| 11, 12 | banner garbled differently, exception loop |
+
+Every serial-boot board is exposed: the microcode is shared. The stray bytes in
+the two original runs came from the line; both boards' console and JTAG share
+one dirtyJtag Pico, but the source was not pinned down -- and once the
+microcode is balanced it should not matter.
+
+**Next:** balance the three places, test-first: a serial-boot simulation that
+sends N stray bytes before the 0x55 must leave SP at `stack_init` and the
+constant table intact at the jump to `cpux_boot` -- red on today's microcode.
 
 <a id="item-69"></a>
 
