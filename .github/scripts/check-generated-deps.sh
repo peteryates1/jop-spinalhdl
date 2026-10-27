@@ -110,7 +110,7 @@ echo "  all Quartus flows regenerate their constraints"
 # the Quartus flow must be added here, which is the moment to ask whether it
 # generates its constraints.
 # ---------------------------------------------------------------------------
-declared_unguarded="alchitry-au alchitry-au-ddr3-test colorlight-db-i9plus colorlight-i5 qmtech-xc7a100t-dbfpga-v5 qmtech-xc7a100t-wukong"
+declared_unguarded="alchitry-au alchitry-au-ddr3-test colorlight-db-i5 colorlight-db-i9plus colorlight-i5 qmtech-xc7a100t-dbfpga-v5 qmtech-xc7a100t-wukong"
 
 all_boards=$(ls fpga/*/Makefile 2>/dev/null | sed 's|fpga/||;s|/Makefile||' | sort)
 unguarded=$(comm -23 <(printf '%s\n' "$all_boards") <(printf '%s\n' "$boards" | sort))

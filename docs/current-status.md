@@ -2637,6 +2637,12 @@ the build tree). The one tracked file is `constraints/sdr_cdc.xdc`, the
 exclusions referencing IP clocks" kind in the table below, which is **hand**
 by design, the same file the Wukong SDR flows read.
 
+**Declared 2026-10-27: `colorlight-db-i5`** (nextpnr, not `quartus.mk`). The
+guard caught it before its first push. Like `colorlight-i5` it reads no tracked
+constraint file at all: its LPF is GENERATED (`LpfGeneratorMain`, written into
+the build tree), and since the same day the generator places its Ethernet pins
+and applies `Board.portPulls`, which it did not before.
+
 **Done so far:** the guard now prints the gap and **fails if an undeclared board
 appears**, so it cannot grow silently — `constraint check reaches 7 of 12
 boards; 5 declared outside it, 15 tracked-constraint reference(s)`.
