@@ -45,10 +45,10 @@ set -euo pipefail
 # --- board registry ------------------------------------------------------
 # alias|serial|kind|description
 BOARDS=$(cat <<'EOF'
-terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board; on the EP4CGX150 from 2026-08-31, MOVED to the A-E115FB on 2026-10-12, so `terasic` and `ae115fb` now resolve alike
+terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board; on the EP4CGX150 from 2026-08-31, MOVED to the A-E115FB on 2026-10-12, and BACK to the EP4CGX150 on 2026-10-27, so `terasic` and `ep4cgx150` now resolve alike
 xc7a100t|E662C876C3506A26|pico|QMTECH XC7A100T + DB_FPGA V5. The RP2040 is ON the DB_FPGA V5 itself, so this alias names a BOARD and the serial is permanent. Full 16-char RP2040 serial: `serial_matches` is a bidirectional prefix test, so it still matches the 8 chars pico-usb-blaster reports, whereas an 8-char entry would also match a different Pico sharing that prefix
-ae115fb|91d28408|usb-blaster|A-E115FB EP4CE115 + 1GB DDR2 — on the Terasic since 2026-10-12 (Ethernet bring-up). Its own level-shifted Pico blaster, e6616408, STOPPED WORKING on 2026-09-07: the symptom was cable enumerates, TDO empty, port re-enumerating, CH340 console opens but silent. The JTAG pins run from bank 1, whose VCCIO is jumper J2 (found at 2.5 V on 2026-10-12)
-ep4cgx150|e66440a2|usb-blaster|QMTECH EP4CGX150 + SDR — on the pico-usb-debug-jtag carrier's JTAG0 (J5) since 2026-10-15: an RP2040 Pico running pico-usb-blaster BOARD_DEBUG_JTAG0, every line through an SN74LVC1T45 referenced to the target's VTREF (2.5 V here); Quartus shows it as "USB Blaster" (space). The carrier is a CABLE, not part of the board, like the Terasic. Its first bring-up was blocked by a solder bridge across R15 (GP11 DIR pull-down): DIR read 0.72 V and the outbound shifters ran B->A
+ae115fb|e66440a2|usb-blaster|A-E115FB EP4CE115 + 1GB DDR2 — on the pico-usb-debug-jtag carrier's JTAG0 (J5) since 2026-10-27, swapped with the EP4CGX150's cable; Quartus shows the carrier as "USB Blaster" (space), and it configures this board in ~41 s. On the Terasic (2026-10-12 to 10-27) IDCODE scans passed 20/20 but the chain dropped mid-stream: a 5.2 Mbit BYPASS test failed 2 runs in 3 with TDO all ones, so every configuration failed. After the swap both cables passed 3/3, so it was that pairing or its seating, not either part. Its own level-shifted Pico blaster, e6616408, STOPPED WORKING on 2026-09-07: the symptom was cable enumerates, TDO empty, port re-enumerating, CH340 console opens but silent. The JTAG pins run from bank 1, whose VCCIO is jumper J2 (found at 2.5 V on 2026-10-12)
+ep4cgx150|91d28408|usb-blaster|QMTECH EP4CGX150 + SDR — on the Terasic since 2026-10-27 (swapped with the A-E115FB's cable; configures in ~10 s). From 2026-10-15 to 10-27 it was on the pico-usb-debug-jtag carrier's JTAG0 (J5): an RP2040 Pico running pico-usb-blaster BOARD_DEBUG_JTAG0, every line through an SN74LVC1T45 referenced to the target's VTREF (2.5 V here); Quartus shows it as "USB Blaster" (space). The carrier is a CABLE, not part of the board, like the Terasic. Its first bring-up was blocked by a solder bridge across R15 (GP11 DIR pull-down): DIR read 0.72 V and the outbound shifters ran B->A
 debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashing Picos)
 cyc5000|ARA30135|arrow-usb-blaster|Arrow CYC5000 (onboard Arrow USB Blaster TEI0050, FT2232H)
 i5|07000001002700424e|cmsis-dap|Colorlight i5 on the ext board (DAPLink, also the UART bridge)
@@ -107,10 +107,11 @@ NOTE: an alias names whatever the SERIAL is attached to. A Pico is soldered to
 one board so its alias names that board; a standalone cable like the Terasic
 moves, so it is named for the cable and you pick the board by plugging it in.
 
-THE TWO ALTERA BOARDS HAVE SEPARATE CABLES again since 2026-10-15: the Terasic
-drives the A-E115FB, and JTAG0 of the pico-usb-debug-jtag carrier (a level-
-shifted pico-usb-blaster) drives the EP4CGX150. The cables have moved four
-times since 2026-08-29, and this paragraph has lagged the table before. Trust
+THE TWO ALTERA BOARDS SWAPPED CABLES on 2026-10-27: the Terasic drives the
+EP4CGX150, and JTAG0 of the pico-usb-debug-jtag carrier (a level-shifted
+pico-usb-blaster) drives the A-E115FB, whose chain the Terasic dropped
+mid-stream. The cables have moved five times since 2026-08-29, and this
+paragraph has lagged the table before. Trust
 the table, not this note.  The alias does imply the board. Keep running `--assert-device` anyway: two blasters
 are attached at once, and quartus_pgm EXITS 0 ON A BROKEN CHAIN, so a
 powered-off board otherwise programs "successfully". It is a read-only chain

@@ -148,7 +148,9 @@ A-E115FB** -- the opposite of what this paragraph said until 2026-09-09. That
 Pico has since failed (item 148). **On 2026-10-12 the Terasic moved to the
 A-E115FB**, which is back on hardware. The EP4CGX150 had no cable until
 2026-10-15, when JTAG0 of the pico-usb-debug-jtag carrier — a level-shifted
-Pico running pico-usb-blaster, serial `e66440a2` — took it over.
+Pico running pico-usb-blaster, serial `e66440a2` — took it over. **On
+2026-10-27 the two swapped again**: the Terasic back to the EP4CGX150 and the
+carrier to the A-E115FB, whose chain the Terasic was dropping mid-stream.
 
 Note the word this paragraph used to carry: *permanently*. It was wrong within
 two days, again a week later, and again on 2026-10-12. `jtag_probe_map --cable <alias>` is the

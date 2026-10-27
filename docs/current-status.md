@@ -11066,9 +11066,9 @@ separated "board broken" from "our design broken".
 
 | board | cable | how it is programmed |
 |---|---|---|
-| EP4CGX150 (SDR) | **pico-usb-debug-jtag carrier, JTAG0 (J5)** since 2026-10-15 — a level-shifted Pico running pico-usb-blaster, serial `e66440a2`, Quartus name `USB Blaster` (space) | `jtag_probe_map --cable ep4cgx150`; configures in ~72 s, DoAll 68/68 after it |
+| EP4CGX150 (SDR) | **Terasic USB-Blaster** (`ep4cgx150`, since 2026-10-27; on the carrier's JTAG0 from 2026-10-15 to 10-27) | `jtag_probe_map --cable ep4cgx150`; configures in ~10 s (~72 s on the carrier), NetTest clean after the swap |
 | XC7A100T + DB_FPGA V5 (DDR3) | RP2040 on the DB-V5, pico-dirtyJtag | `openFPGALoader` |
-| A-E115FB (1 GB DDR2) | Terasic USB-Blaster (`ae115fb`, since 2026-10-12) | `quartus_pgm -c "$(jtag_probe_map --cable ae115fb)"`, after `--assert-device ae115fb`. The JTAG bank is bank 1 at 2.5 V (jumper J2); the header's VTREF is 3.3 V, so a bare Pico would also do |
+| A-E115FB (1 GB DDR2) | **pico-usb-debug-jtag carrier, JTAG0 (J5)** (`ae115fb`, since 2026-10-27) — a level-shifted Pico running pico-usb-blaster, serial `e66440a2`, Quartus name `USB Blaster` (space). On the Terasic (2026-10-12 to 10-27) the chain dropped mid-stream and every configuration failed | `quartus_pgm -c "$(jtag_probe_map --cable ae115fb)"`, after `--assert-device ae115fb`; configures in ~41 s. The JTAG bank is bank 1 at 2.5 V (jumper J2); the header's VTREF is 3.3 V, so a bare Pico would also do |
 | Colorlight i5 (ECP5, 8 MB SDR) | DAPLink on the ext board (`i5`) | `openFPGALoader -b colorlight_i5` — also the UART bridge |
 | CYC5000 (Cyclone V, 8 MB SDR) | on-board Arrow USB Blaster TEI0050 (`cyc5000`) | `openFPGALoader -b cyc5000` on an **.rbf** — see below |
 | Alchitry Au V2 (XC7A35T, DDR3) | on-board FT2232H (`alchitry`) | `make -C fpga/alchitry-au program` (Vivado hw target) |
