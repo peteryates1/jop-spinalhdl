@@ -11,8 +11,9 @@ import jop.generate.{LpfGenerator, PinResolver, XdcGenerator}
  *
  *   i5  module on the i5/i9 ext board      -- colorlightI5Sdram, on hardware
  *   i9+ module on the Atari 800 base board -- colorlightDbI9PlusSdram, on hardware
- *   i5  module on the Atari 800 base board -- NOT yet built; the balls below
- *       come from the two SODIMM tables, nothing else
+ *   i5  module on the Atari 800 base board -- colorlightDbI5Sdram, on the
+ *       SECOND base board (its own stamp, so its own aliases); the balls come
+ *       from the two SODIMM tables
  *
  * The split itself was checked by regenerating RTL, constraints, summary and
  * hw_verify descriptor for the four existing configs before and after: the
@@ -29,14 +30,10 @@ class ColorlightModuleSplitTest extends AnyFunSuite {
   private def lpfPins(lpf: String): Map[String, String] =
     lpfPin.findAllMatchIn(lpf).map(m => m.group(1) -> m.group(2)).toMap
 
-  /** The i5 on the Atari base board, as a preset would build it: the i5's own
-    * SDRAM preset with the base board's console. */
-  private def i5OnAtariBase = {
-    val base = JopConfig.colorlightI5Sdram
-    base.copy(assembly = SystemAssembly.colorlightDbI5,
-      systems = Seq(base.system.copy(devices = Map("uart" -> DeviceInstance(DeviceType.Uart,
-        devicePart = Some("STAMP_CDC0"), params = Map("baudRate" -> 1000000))))))
-  }
+  /** The i5 on the Atari base board: its preset, looked up by name so that,
+    * before the preset existed, this failed at run time rather than not
+    * compiling. */
+  private def i5OnAtariBase = jop.system.JopTopVerilog.resolvePreset("colorlightDbI5Sdram")
 
   test("every base-board pin resolves on every module it can carry") {
     val pairs = Seq(SystemAssembly.colorlightI5, SystemAssembly.colorlightDbI9Plus, SystemAssembly.colorlightDbI5)
@@ -86,6 +83,10 @@ class ColorlightModuleSplitTest extends AnyFunSuite {
     assert(!p.values.exists(_ == "U16"), s"the i5's on-module LED leaked in: $p")
     val a = SystemAssembly.colorlightDbI5
     assert(a.ledCount == 8 && a.ledActiveHigh)
+    // The second base board: its own stamp, so its own probe and console.
+    assert(a.probeAlias.contains("colorlight-db-i5") && a.consoleAlias.contains("colorlight-db-i5-0"),
+      s"${a.probeAlias} / ${a.consoleAlias}")
+    assert(i5OnAtariBase.assembly.name == a.name)
   }
 
   test("the LED source follows ledBoard, not the order the boards are listed in") {

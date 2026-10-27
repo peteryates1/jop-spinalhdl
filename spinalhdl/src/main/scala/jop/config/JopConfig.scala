@@ -1582,6 +1582,37 @@ object JopConfig {
         params = Map("baudRate" -> 1000000))))))
 
   /**
+   * Colorlight i5 (ECP5) on the fpga-db-colorlight-i5 base board -- its SECOND
+   * unit, with its own stamp (SystemAssembly.colorlightDbI5).
+   * `colorlightI5Sdram` with the base board in place of the ext board: the same
+   * 40 MHz, SDRAM and compute units; the console is the stamp's CDC0 at 1 Mbaud
+   * (as on the i9+ board), not the DAPLink. Flow: fpga/colorlight-db-i5.
+   */
+  def colorlightDbI5Sdram = {
+    val base = colorlightI5Sdram
+    base.copy(assembly = SystemAssembly.colorlightDbI5,
+      systems = Seq(base.system.copy(devices = Map("uart" -> DeviceInstance(DeviceType.Uart,
+        devicePart = Some("STAMP_CDC0"), params = Map("baudRate" -> 1000000))))))
+  }
+
+  /**
+   * `colorlightDbI5Sdram` with Ethernet: the module's B50612D U28 (MDIO address
+   * 1), which is RJ1 on this base board -- measured by the RGMII bring-up
+   * (fpga/bringup/colorlight-db-i5-eth, 2026-10-27). RGMII at 100 Mb/s through
+   * jop.io.Rgmii100 on ECP5 output cells, TX on the PLL's 50 MHz Eth output
+   * (PllType.LatticeEcp5I5). The MAC runs in its 4-bit mode, so the PHY must
+   * not advertise gigabit; `ETH_GIGABIT = false` tells EthDriver. P4, the
+   * PHYs' shared reset, is NOT driven (`noPhyReset`), as H2 is not on the i9+.
+   */
+  def colorlightDbI5Eth = {
+    val base = colorlightDbI5Sdram
+    base.copy(systems = Seq(base.system.copy(devices = base.system.devices +
+      ("eth" -> DeviceInstance(DeviceType.Ethernet,
+        params = Map("rgmii" -> true, "phyAddr" -> 1, "noPhyReset" -> true),
+        devicePart = Some("B50612D_U28"))))))
+  }
+
+  /**
    * Colorlight i9+ (XC7A50T) on the fpga-db-colorlight-i5 base board — JOP on
    * the module's 8 MB SDRAM. The board's 128 KB SRAM is deliberately NOT main
    * memory; it is kept for a possible small second JOP.

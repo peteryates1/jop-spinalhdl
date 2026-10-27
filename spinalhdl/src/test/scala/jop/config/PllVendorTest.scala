@@ -61,14 +61,15 @@ class PllVendorTest extends AnyFunSuite {
   }
 
   test("the generated module keeps the ports its blackbox declares") {
-    // I5Pll wires clkin / clkout0 / clkout1 / locked. ecppll will happily name
-    // them something else, and the mismatch appears only at synthesis.
+    // I5Pll wires clkin / clkout0 / clkout1 / clkout2 / locked (clkout2: the
+    // 50 MHz RGMII TX clock). ecppll will happily name them something else,
+    // and the mismatch appears only at synthesis.
     assume(ecppllPresent, "ecppll not installed")
     val spec = Board.ColorlightI5.pllType.flatMap(_.spec).get
     val dir = Files.createTempDirectory("ecppll").toString
     val v = new String(Files.readAllBytes(
       Paths.get(LatticeEcpPll.generate(spec, "pll_jop_i5", dir))), "UTF-8")
-    Seq("clkin", "clkout0", "clkout1", "locked").foreach { port =>
+    Seq("clkin", "clkout0", "clkout1", "clkout2", "locked").foreach { port =>
       assert(v.contains(port), s"generated PLL has no '$port' port")
     }
   }

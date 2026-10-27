@@ -43,6 +43,8 @@ class WukongClkWizBlackBox(instanceName: String = "bram_clk") extends BlackBox {
  *   clkout0 40 MHz JOP system clock
  *   clkout1 40 MHz SDRAM clock, shifted 315 deg (-3.1 ns), unused by the BRAM
  *           preset
+ *   clkout2 50 MHz RGMII TX clock (jop.io.Rgmii100.TxClockMhz), unused by a
+ *           build without Ethernet
  *
  * The Verilog wrapper is GENERATED at build time by `jop.generate.PllGenMain`
  * into build/<config>/ip/pll_jop_i5.v; it used to be a tracked file in
@@ -50,7 +52,7 @@ class WukongClkWizBlackBox(instanceName: String = "bram_clk") extends BlackBox {
  * path. It is `ecppll` output verbatim either way, so the divider set is one
  * the tool guarantees will lock:
  * Fpfd = 25/5 = 5 MHz, Fvco = 5 * 8 * 15 = 600 MHz (legal band 400-800),
- * CLKOP = 600/15 = 40 MHz. Hand-picked dividers are the usual way to get an
+ * CLKOP = 600/15 = 40 MHz, CLKOS2 = 600/12 = 50 MHz. Hand-picked dividers are the usual way to get an
  * illegal Fvco and a PLL that never asserts LOCK, which parks the whole core
  * in reset with no other symptom.
  */
@@ -61,6 +63,7 @@ case class I5Pll() extends BlackBox {
     val clkin   = in Bool()
     val clkout0 = out Bool()
     val clkout1 = out Bool()
+    val clkout2 = out Bool()
     val locked  = out Bool()
   }
 
@@ -80,7 +83,8 @@ case class I5Pll() extends BlackBox {
  * @param sdramClk      Phase-shifted SDRAM clock (SDR only)
  * @param migSysClk     100 MHz for MIG sys_clk_i (DDR3 only)
  * @param migRefClk     200 MHz for MIG clk_ref_i (DDR3 only)
- * @param ethClk        125 MHz for Ethernet GMII TX (EP4CGX150 only)
+ * @param ethClk        Ethernet TX: 125 MHz for GMII, 50 MHz for RGMII at 100 Mb/s
+ *                      (jop.io.Rgmii100.TxClockMhz)
  * @param vgaClk        25 MHz for VGA pixel clock (EP4CGX150 only)
  */
 case class PllResult(

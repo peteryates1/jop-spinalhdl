@@ -190,8 +190,21 @@ object TimingConstraints {
     // rtl8211eg_gmii.sdc creates it, but no Quartus project ever read that file.
     // 8 ns for RGMII too: the PHY runs RXC at 125 MHz until autonegotiation
     // settles (XdcGenerator says the same).
+    //
+    // EXCEPT RGMII ON AN ECP5 (the Colorlight i5): 25 MHz. The 125 MHz RXC
+    // exists only while the PHY is still at 1000BASE-T, before EthDriver.init
+    // drops it to 100 Mb/s, and all that time MacEth holds its whole receive
+    // domain in reset (rx.flush asynchronously asserts it; the MAC starts
+    // flushed, and the driver releases it once the link is up at 100). In
+    // front of it Rgmii100's capture is pass-through registers that drain in a
+    // few cycles. The ECP5's MAC receive path reaches ~100 MHz post-route
+    // (colorlightDbI5Eth, 2026-10-27), so 125 cannot pass there, and nothing
+    // needs it. The Xilinx RGMII build keeps 8 ns: it meets it, validated so.
+    val rgmiiOnLattice = ethParam("rgmii") && config.fpgaFamily.manufacturer == Manufacturer.Lattice
     val phyRxClock =
-      if (hasEth) Seq(ClockConstraint("e_rxc", BigDecimal("125000000"))) else Nil
+      if (hasEth) Seq(ClockConstraint("e_rxc",
+        if (rgmiiOnLattice) BigDecimal("25000000") else BigDecimal("125000000")))
+      else Nil
     // MII's TX_CLK runs at 25 MHz (2.5 at 10 Mb/s); constrained at 8 ns like
     // e_rxc, which costs nothing -- the same MAC logic meets 125 MHz in GMII.
     val phyTxClock =

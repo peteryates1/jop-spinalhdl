@@ -151,18 +151,25 @@ object PllType {
     * kind of difference that makes a working BRAM build stop predicting
     * anything about the SDRAM one. */
   case object LatticeEcp5I5 extends PllType {
-    /** 25 MHz board oscillator -> 40 MHz system + 40 MHz SDRAM at 315 deg.
+    /** 25 MHz board oscillator -> 40 MHz system + 40 MHz SDRAM at 315 deg,
+      * plus 50 MHz for RGMII TX (jop.io.Rgmii100.TxClockMhz).
       *
       * 315 deg = -45 deg = -3.1 ns at 40 MHz. Expressed in DEGREES because that
       * stays correct if the frequency moves; the equivalent nanosecond figure
       * does not. This is the spec `pll_jop_i5.v` was generated from -- its own
       * header records the ecppll command -- so the file is now produced from it
-      * rather than kept beside it. */
+      * rather than kept beside it.
+      *
+      * The Eth output was added 2026-10-27 for the i5's B50612D (RGMII at 100
+      * Mb/s on the base board). ecppll keeps the VCO at 600 MHz and every
+      * existing divider and phase -- PllVendorTest's hardware-validated set --
+      * and adds CLKOS2 = 600 / 12. A build without Ethernet leaves it unused. */
     override val spec = Some(PllSpec(
       inputMhz = 25,
       outputs = Seq(
         PllOutput(PllRole.System, 40),
-        PllOutput(PllRole.Sdram, 40, phaseDeg = 315))))
+        PllOutput(PllRole.Sdram, 40, phaseDeg = 315),
+        PllOutput(PllRole.Eth, jop.io.Rgmii100.TxClockMhz))))
 
     def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
       val pll = I5Pll()
@@ -170,7 +177,8 @@ object PllType {
       PllResult(
         systemClk = Some(pll.io.clkout0),
         locked = pll.io.locked,
-        sdramClk = Some(pll.io.clkout1))
+        sdramClk = Some(pll.io.clkout1),
+        ethClk = Some(pll.io.clkout2))
     }
   }
 
@@ -594,6 +602,17 @@ object Board {
    *     shape here; a 32-bit-wide path is needed instead.
    * The strapped ports are parked by whichever base board the module is on,
    * because only the base board knows which SODIMM pins are free.
+   *
+   * Two B50612D PHYs talk RGMII, wired straight to the module's own balls (none
+   * is on the SODIMM edge). Named by designator, as on the i9+: wuxx
+   * Colorlight-FPGA-Projects "ETH-PHY0 (U28)" / "ETH-PHY1 (U29)", which LiteX's
+   * colorlight_i5.py numbers the other way round (its eth 1 / eth 0); the two
+   * agree ball for ball. U28 answers on MDIO address 1 and drives the SODIMM
+   * ETH1 pairs -- RJ1 on the Atari base board, MEASURED: the RGMII bring-up
+   * received the LAN's frames on U28's pins and its TX reached the LAN
+   * (fpga/bringup/colorlight-db-i5-eth, 2026-10-27). U29 is MDIO 0, ETH2 (no
+   * jack there). MDC/MDIO and the reset P4 are shared; P4 is never driven (the
+   * PHYs answered with it undriven). MDIO gets an internal pull-up, as on the i9+.
    */
   def ColorlightI5 = Board(
     name = "colorlight-i5",
@@ -601,9 +620,22 @@ object Board {
     entitySuffix = "I5",
     fpga = Some(FpgaDevice.LFE5U25F),
     connectors = Map("SODIMM" -> ColorlightSodimm.SodimmI5),
+    portPulls = Map("e_mdio" -> "PULLUP"),
     devices = Seq(
       BoardDevice("CLOCK_25MHz", mapping = Map("clock" -> "P3")),
       BoardDevice("LED", mapping = Map("led0" -> "U16")),
+      BoardDevice("B50612D_U28", mapping = Map(
+        "TXC" -> "U19", "TX_CTL" -> "P19",
+        "TXD0" -> "U20", "TXD1" -> "T19", "TXD2" -> "T20", "TXD3" -> "R20",
+        "RXC" -> "L19", "RX_CTL" -> "M20",
+        "RXD0" -> "P20", "RXD1" -> "N19", "RXD2" -> "N20", "RXD3" -> "M19",
+        "MDC" -> "N5", "MDIO" -> "P5", "RESET" -> "P4")),
+      BoardDevice("B50612D_U29", mapping = Map(
+        "TXC" -> "G1", "TX_CTL" -> "K1",
+        "TXD0" -> "G2", "TXD1" -> "H1", "TXD2" -> "J1", "TXD3" -> "J3",
+        "RXC" -> "H2", "RX_CTL" -> "P2",
+        "RXD0" -> "K2", "RXD1" -> "L1", "RXD2" -> "N1", "RXD3" -> "P1",
+        "MDC" -> "N5", "MDIO" -> "P5", "RESET" -> "P4")),
       BoardDevice("EM638325BK6H", role = Some("sdr"), mapping = Map(
         "CLK" -> "B9", "RAS_n" -> "B10", "CAS_n" -> "A9", "WE_n" -> "A10",
         "BA0" -> "B11", "BA1" -> "C8",
@@ -739,17 +771,47 @@ object Board {
     loaderCable = Some("dirtyJtag"),
     ledActiveHigh = true,
     unusedPinsFloat = true,
-    portPulls = Map("resetn" -> "PULLUP"),
-    devices = Seq(
-      BoardDevice("SWITCH", mapping = Map("reset" -> "SODIMM:42")),
-      BoardDevice("STAMP_CDC0", mapping = Map("TXD" -> "SODIMM:153", "RXD" -> "SODIMM:155")),
-      BoardDevice("LED", mapping = Map(
-        "led0" -> "SODIMM:66", "led1" -> "SODIMM:64", "led2" -> "SODIMM:62", "led3" -> "SODIMM:60",
-        "led4" -> "SODIMM:58", "led5" -> "SODIMM:54", "led6" -> "SODIMM:52", "led7" -> "SODIMM:50"))),
-    parkedPins = Map(
-      "sdram_CKE" -> "SODIMM:57", "sdram_CSn" -> "SODIMM:59",
-      "sdram_DQM[0]" -> "SODIMM:61", "sdram_DQM[1]" -> "SODIMM:63",
-      "sdram_DQM[2]" -> "SODIMM:65", "sdram_DQM[3]" -> "SODIMM:67"))
+    portPulls = atari800BaseV1Pulls,
+    devices = atari800BaseV1Devices,
+    parkedPins = atari800BaseV1Parked)
+
+  /**
+   * The SECOND unit of the same base board (assembled 2026-10-26), carrying
+   * the i5. The same PCB, so the same devices, pulls and parking; what differs
+   * is its RP2040-STAMP. The stamps are socketed and each unit keeps its own
+   * (user, 2026-10-27), and an alias names a stamp's serial, so this unit has
+   * aliases of its own. Per the user only the Ethernet jack, the reset button
+   * and the stamp are fitted here; the LED pins it drives have no parts behind
+   * them.
+   */
+  def ColorlightAtari800BaseV1Unit2 = Board(
+    name = "colorlight-atari800-base-v1.0-unit2",
+    probeAlias = Some("colorlight-db-i5"),
+    consoleAlias = Some("colorlight-db-i5-0"),
+    loaderCable = Some("dirtyJtag"),
+    ledActiveHigh = true,
+    unusedPinsFloat = true,
+    portPulls = atari800BaseV1Pulls,
+    devices = atari800BaseV1Devices,
+    parkedPins = atari800BaseV1Parked)
+
+  // Both units' devices and parking (one PCB). Not `def ... = Board(`, so the
+  // probe-selection guard, which reads those blocks, sees exactly the two units.
+  private def atari800BaseV1Devices = Seq(
+    BoardDevice("SWITCH", mapping = Map("reset" -> "SODIMM:42")),
+    BoardDevice("STAMP_CDC0", mapping = Map("TXD" -> "SODIMM:153", "RXD" -> "SODIMM:155")),
+    BoardDevice("LED", mapping = Map(
+      "led0" -> "SODIMM:66", "led1" -> "SODIMM:64", "led2" -> "SODIMM:62", "led3" -> "SODIMM:60",
+      "led4" -> "SODIMM:58", "led5" -> "SODIMM:54", "led6" -> "SODIMM:52", "led7" -> "SODIMM:50")))
+  // SW_RESET has no board pull-up. JOP names the reset input `resetn` on a
+  // Xilinx top and `reset_n` on the others (JopConfig.resetInput), so both are
+  // listed; each generator applies only the pulls for ports it places. Until
+  // 2026-10-27 only `resetn` was, which no ECP5 build could match.
+  private def atari800BaseV1Pulls = Map("resetn" -> "PULLUP", "reset_n" -> "PULLUP")
+  private def atari800BaseV1Parked = Map(
+    "sdram_CKE" -> "SODIMM:57", "sdram_CSn" -> "SODIMM:59",
+    "sdram_DQM[0]" -> "SODIMM:61", "sdram_DQM[1]" -> "SODIMM:63",
+    "sdram_DQM[2]" -> "SODIMM:65", "sdram_DQM[3]" -> "SODIMM:67")
 
   /**
    * Alchitry Au V2 (Artix-7 XC7A35T + MT41K128M16JT DDR3).
@@ -1594,9 +1656,10 @@ object SystemAssembly {
     ledBoard = Some(Board.ColorlightAtari800BaseV1.name))
 
   /** Colorlight i5 module on the Atari 800 base board v1.0 -- the same base
-    * board, the other module family. Not yet built on hardware; it exists so
-    * the module/base split is exercised both ways (ColorlightModuleSplitTest). */
+    * board design, the other module family, on the board's SECOND unit (its
+    * own stamp, so its own probe and console aliases). Presets
+    * colorlightDbI5Sdram / colorlightDbI5Eth, flow fpga/colorlight-db-i5. */
   def colorlightDbI5 = SystemAssembly("colorlight-db-i5",
-    Seq(Board.ColorlightI5, Board.ColorlightAtari800BaseV1),
-    ledBoard = Some(Board.ColorlightAtari800BaseV1.name))
+    Seq(Board.ColorlightI5, Board.ColorlightAtari800BaseV1Unit2),
+    ledBoard = Some(Board.ColorlightAtari800BaseV1Unit2.name))
 }

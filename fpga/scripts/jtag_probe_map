@@ -53,7 +53,8 @@ debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashin
 cyc5000|ARA30135|arrow-usb-blaster|Arrow CYC5000 (onboard Arrow USB Blaster TEI0050, FT2232H)
 i5|07000001002700424e|cmsis-dap|Colorlight i5 on the ext board (DAPLink, also the UART bridge)
 wukong|0B383D0435D957EC|pico|QMTECH Wukong XC7A100T (Pico 2 W: dirtyJtag, or USB-Blaster emulation under the atari800 supervisor firmware). A STANDALONE Pico W -- a cable, not part of the board -- so this alias names whatever it is currently plugged into, the way `terasic` does. Unplugging it and using it elsewhere silently retargets this alias
-colorlight-db|4636323337051B1B|pico|fpga-db-colorlight-i5 base board (netlist 2026-10-10) carrying the i9+: its RP2040-STAMP runs pico-dirtyJtag BOARD_COLORLIGHT_DB, JTAG on GPIO0-3. The stamp is SOCKETED, so this serial names a STAMP, and the board only while the stamp stays in it. Since 2026-10-26 it is the SECOND stamp: the first (4636323337058419, pins verified 2026-10-10 with no module fitted) went to the second base board, the one with the i5, whose USB is faulty. This stamp VERIFIED here 2026-10-26: IDCODE 0362C093 5/5, and the i9+ bitstream loaded through it
+colorlight-db|4636323337051B1B|pico|fpga-db-colorlight-i5 base board (netlist 2026-10-10) carrying the i9+: its RP2040-STAMP runs pico-dirtyJtag BOARD_COLORLIGHT_DB, JTAG on GPIO0-3. The stamp is SOCKETED, so this serial names a STAMP, and the board only while the stamp stays in it. Since 2026-10-26 it is the SECOND stamp: the first (4636323337058419, pins verified 2026-10-10 with no module fitted) went to the second base board, the one with the i5 (alias colorlight-db-i5), whose USB was faulty until 2026-10-27 (a VBUS-to-D- leak at J4, reworked and cleaned). This stamp VERIFIED here 2026-10-26: IDCODE 0362C093 5/5, and the i9+ bitstream loaded through it
+colorlight-db-i5|4636323337058419|pico|fpga-db-colorlight-i5 base board, its SECOND unit, carrying the i5 (ECP5). Its RP2040-STAMP is socketed and stays in this unit (user, 2026-10-27); it was the first unit's stamp until 2026-10-26, and runs that board's pico-dirtyJtag BOARD_COLORLIGHT_DB image (build-colorlight-pico), JTAG on GPIO0-3. The unit's USB was faulty until 2026-10-27 (VBUS-to-D- leak at J4, reworked and cleaned). VERIFIED 2026-10-27 through it: IDCODE 41111043 500/500, the i5's flash written (idle image), the RGMII bring-up loaded
 alchitry|000000|ftdi-xilinx|Alchitry Au V2 (XC7A35T + DDR3) — onboard FT2232H, programmed by Vivado hw_server (see fpga/alchitry-au). Shares vid:pid 0403:6010 with the CYC5000's Arrow blaster; the serial and product string are what separate them. fpga/alchitry-au-ddr3-test is a second PROJECT on this same board, not another board
 EOF
 )
@@ -101,7 +102,7 @@ Usage:
                                     scan the JTAG chain; fail unless the FPGA
                                     on it is the one <alias> expects
 
-Aliases: terasic, xc7a100t, ae115fb, ep4cgx150, debugprobe, cyc5000, i5, wukong, colorlight-db
+Aliases: terasic, xc7a100t, ae115fb, ep4cgx150, debugprobe, cyc5000, i5, wukong, colorlight-db, colorlight-db-i5
 
 NOTE: an alias names whatever the SERIAL is attached to. A Pico is soldered to
 one board so its alias names that board; a standalone cable like the Terasic
@@ -189,6 +190,7 @@ wukong|03631093|XC7A100T — Artix-7 (QMTECH Wukong)
 xc7a100t|03631093|XC7A100T — Artix-7 (QMTECH core board + DB_FPGA V5)
 i5|41111043|LFE5U-25 — ECP5
 colorlight-db|0362C093|XC7A50T — Artix-7 (Colorlight i9+ on the fpga-db-colorlight-i5 base board; an i5/i9 module would read differently)
+colorlight-db-i5|41111043|LFE5U-25 — ECP5 (Colorlight i5 on the second fpga-db-colorlight-i5 base board)
 EOF
 )
 

@@ -505,6 +505,58 @@ removed (WNS +0.597 ns): ping 50/50 at 64 bytes and 5/5 at 1400, UDP and TCP
 echo identical (22 and 1400 bytes; 10 KB and 50 KB), DHCP BOUND, DNS resolved,
 DoAll 68/68.
 
+## Colorlight i5 (RGMII at 100 Mb/s)
+
+The i5 module's B50612D U28 (MDIO address 1; RJ1 on the SECOND
+fpga-db-colorlight-i5 base board), preset `colorlightDbI5Eth`, 40 MHz, ECP5
+through yosys and nextpnr:
+
+- **RGMII:** `jop.io.Rgmii100` with `vendor` Lattice. The ECP5 has no IOB
+  flops, and its ODDRX1F's latency is not in anything we have, so every TX
+  pin (TXC, TX_CTL, TXD[3:0]) leaves an ODDRX1F on the same 50 MHz clock and
+  shares whatever that latency is. TXC's pattern is the Xilinx one inverted,
+  because the data cells take the registers one raw cycle late. Rgmii100Test
+  runs its TX check on both vendors' cells.
+- **Clocks:** TX on the i5 PLL's third output, 50 MHz
+  (`PllType.LatticeEcp5I5`; ecppll keeps the validated 40 MHz dividers and
+  adds CLKOS2 = 600/12). RXC is constrained at 25 MHz, not 125: the PHY runs
+  it at 125 MHz only while still at 1000BASE-T, before `EthDriver.init`
+  drops it to 100 Mb/s, and all that time MacEth holds its receive domain in
+  reset (`rx.flush`). The ECP5's MAC receive path reaches ~100 MHz.
+- **Pins:** wuxx's README and LiteX's colorlight_i5.py agree ball for ball;
+  RJ1 = U28 was measured by the bring-up (`fpga/bringup/colorlight-db-i5-eth`).
+  P4, the PHYs' shared reset, is not driven (`noPhyReset`).
+- **Constraints:** `LpfGenerator` places the device pins and applies
+  `Board.portPulls` since 2026-10-27 (`e_mdio`, and the base board's reset
+  `reset_n`); before that an ECP5 build had no `e_*` pins at all.
+
+```bash
+make -C fpga/colorlight-db-i5 CFG=colorlightDbI5Eth           # generate + yosys + nextpnr
+make -C java/apps/Small JOP_PRESET=colorlightDbI5Eth APP_NAME=DhcpTest EXTRA_SRC=../../net/src
+make -C fpga/colorlight-db-i5 CFG=colorlightDbI5Eth program   # --assert-device, then the stamp
+python3 fpga/scripts/download.py -e build/colorlightDbI5Eth/java/apps/Small/DhcpTest.jop \
+    "$(fpga/scripts/usb_serial_map --by-id colorlight-db-i5-0)" 1000000
+```
+
+Hardware, 2026-10-27, timing met post-route (system 46.99 MHz at 40, TX 81.57
+at 50, RXC 100.15 at 25), RJ1 to a gigabit switch, tested from a VM on the LAN:
+
+| Test | Result |
+|------|--------|
+| Link | `Link UP 100M` |
+| DHCP (`DhcpTest`) | OFFER and BOUND 192.168.0.215, gateway and DNS from the router |
+| ping, 64 bytes | 20/20, about 9.9 ms (the i9+'s 8 ms at 50 MHz, scaled by 50/40) |
+| ping, 1400 bytes | 5/5, about 140 ms |
+| UDP echo, port 7 | 22 and 1400 bytes back identical |
+| TCP echo, port 7 | 10 KB and 50 KB back identical |
+| `EthRxDiag` | 13 frames, 0 errors, 0 drops, byte-exact; its broadcasts reach the LAN |
+| DoAll | 68/68 on the same bitstream |
+
+`NetTest` itself crashes at start on this build -- and on `xc7a100tDbEth` --
+for a reason that is not the network or the board (status item 169): with two
+bytes of its image changed (`NUM_INTERRUPTS` 4 -> 5 in `JVMHelp.init`) it
+passes everything above.
+
 ## QMTECH EP4CGX150 + DB_FPGA (MII at 100 Mb/s; GMII at 1 Gb/s loses frames)
 
 `ep4cgx150DbFull` (SDR, console 2 Mbaud on the CP2102N), MII at 100 Mb/s to the
