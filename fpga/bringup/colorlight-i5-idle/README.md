@@ -71,6 +71,8 @@ Written 2026-10-27 to the i5 on the second base board, through its stamp:
   rest of the erased 128 KB blank.
 - After the write's REFRESH, and again after a read's REFRESH, USERCODE read
   `0x1D1E0005` with DONE set.
+- After a cold power cycle of the board, D2 blinked, and `make check` passed
+  (USERCODE `0x1D1E0005`, DONE set).
 
 Only 0 to 0x20000 was erased. The rest of the old image is still in the flash
 above that, and the FPGA never reads it.
