@@ -1,0 +1,48 @@
+# fpga-db-colorlight-i5 + Colorlight i5 v7.0: Ethernet stage 1 (MDIO).
+# Module pins: wuxx Colorlight-FPGA-Projects README (ETH-PHY0 U28, ETH-PHY1 U29)
+# and LiteX colorlight_i5.py (_io_v7_0) agree ball for ball. Base-board pins
+# are SODIMM pins from the 2026-10-10 netlist, turned into i5 balls by the
+# repo's ColorlightSodimm.SodimmI5 (wuxx's i5 v7.0 table).
+LOCATE COMP "clk25" SITE "P3";
+IOBUF PORT "clk25" IO_TYPE=LVCMOS33;
+FREQUENCY PORT "clk25" 25 MHZ;
+LOCATE COMP "led_n" SITE "U16";             # module LED D2 (also SODIMM 41: no net here)
+IOBUF PORT "led_n" IO_TYPE=LVCMOS33;
+
+# module PHYs (shared MDIO bus). P4, the shared PHY reset, is NOT driven.
+LOCATE COMP "mdc" SITE "N5";
+IOBUF PORT "mdc" IO_TYPE=LVCMOS33;
+LOCATE COMP "mdio" SITE "P5";
+IOBUF PORT "mdio" IO_TYPE=LVCMOS33 PULLMODE=UP;
+LOCATE COMP "phy_tx_en[0]" SITE "K1";       # U29 TX_EN (wuxx PHY1, LiteX eth 0)
+LOCATE COMP "phy_tx_en[1]" SITE "P19";      # U28 TX_EN (wuxx PHY0, LiteX eth 1)
+LOCATE COMP "phy_gtxclk[0]" SITE "G1";      # U29 GTXCLK
+LOCATE COMP "phy_gtxclk[1]" SITE "U19";     # U28 GTXCLK
+IOBUF PORT "phy_tx_en[0]" IO_TYPE=LVCMOS33;
+IOBUF PORT "phy_tx_en[1]" IO_TYPE=LVCMOS33;
+IOBUF PORT "phy_gtxclk[0]" IO_TYPE=LVCMOS33;
+IOBUF PORT "phy_gtxclk[1]" IO_TYPE=LVCMOS33;
+
+# base board, by SODIMM pin
+LOCATE COMP "uart_tx" SITE "E1";            # SODIMM 153 = GPIO5, stamp uart1 RX (CDC0)
+IOBUF PORT "uart_tx" IO_TYPE=LVCMOS33;
+LOCATE COMP "led[0]" SITE "T3";             # SODIMM 66 = LED0
+LOCATE COMP "led[1]" SITE "M3";             # SODIMM 64 = LED1
+LOCATE COMP "led[2]" SITE "T2";             # SODIMM 62 = LED2
+LOCATE COMP "led[3]" SITE "N3";             # SODIMM 60 = LED3
+LOCATE COMP "led[4]" SITE "N2";             # SODIMM 58 = LED4
+LOCATE COMP "led[5]" SITE "M1";             # SODIMM 54 = LED5
+LOCATE COMP "led[6]" SITE "V1";             # SODIMM 52 = LED6
+LOCATE COMP "led[7]" SITE "W1";             # SODIMM 50 = LED7
+LOCATE COMP "eth_led[0]" SITE "K18";        # SODIMM 49 = ETH1_LED-L+ (RJ1 left)
+LOCATE COMP "eth_led[1]" SITE "C18";        # SODIMM 51 = ETH1_LED-R+ (RJ1 right)
+IOBUF PORT "led[0]" IO_TYPE=LVCMOS33;
+IOBUF PORT "led[1]" IO_TYPE=LVCMOS33;
+IOBUF PORT "led[2]" IO_TYPE=LVCMOS33;
+IOBUF PORT "led[3]" IO_TYPE=LVCMOS33;
+IOBUF PORT "led[4]" IO_TYPE=LVCMOS33;
+IOBUF PORT "led[5]" IO_TYPE=LVCMOS33;
+IOBUF PORT "led[6]" IO_TYPE=LVCMOS33;
+IOBUF PORT "led[7]" IO_TYPE=LVCMOS33;
+IOBUF PORT "eth_led[0]" IO_TYPE=LVCMOS33;
+IOBUF PORT "eth_led[1]" IO_TYPE=LVCMOS33;

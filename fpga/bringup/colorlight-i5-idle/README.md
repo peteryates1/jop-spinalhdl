@@ -1,10 +1,12 @@
 # Colorlight i5 idle image (module flash)
 
 The power-up image for a Colorlight i5 module's SPI flash (GD25Q16, 2 MB, JEDEC
-`C8 40 15`). It drives nothing outside the module: the module's 25 MHz clock
-(P3) in, and the module LED D2 (U16) blinking at about 0.75 Hz out. Every other
-ball is unused, so it is an input. Its USERCODE is `0x1D1E0005` ("IDLE", i5),
-so a JTAG read proves that this image is the one running.
+`C8 40 15`). It drives one ball: the module LED D2 (U16), blinking at about
+0.75 Hz from the module's 25 MHz clock (P3). U16 also reaches SODIMM pin 41,
+which has no net on the fpga-db-colorlight-i5 base board; the ext-board JOP
+build drives it as its LED. Every other ball is unused, so it is an input. Its
+USERCODE is `0x1D1E0005` ("IDLE", i5), so a JTAG read proves that this image is
+the one running.
 
 Why: the flash image travels with the MODULE. On 2026-10-27 the i5 went onto the
 second fpga-db-colorlight-i5 base board and booted an unknown image from its
@@ -14,7 +16,7 @@ one of ours. On that board the RP2040-STAMP drives GPIO4 (SODIMM 155) and GPIO16
 (SODIMM 127), and the reset button pulls SODIMM 42 to GND, so any design that
 drives one of those balls fights. The same thing happened with the i9+, whose
 factory image drove the console pin; see `../colorlight-i9plus-idle`. This
-image is safe on any carrier.
+image is safe on both carriers; on any other, check SODIMM 41.
 
     make                                              # build/I5Idle.bit
     make check CABLE="-c dirtyJtag --busdev-num B:D"  # read-only: USERCODE + DONE

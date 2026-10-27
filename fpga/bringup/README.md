@@ -32,7 +32,8 @@ Hence: one directory per jig, all under here, each self-contained.
 | `colorlight-db-i9plus` | fpga-db-colorlight-i5 base board + i9+ (XC7A50T) | LEDs, buttons, both RP2040-STAMP CDC UARTs (one jig console, one wired loopback), and a 4-pass test of the 128K×8 SRAM |
 | `colorlight-db-i9plus-eth` | the same base board + i9+ | RJ1, its magnetics and the module's B50612D PHYs: an MDIO probe (stage 1), then RGMII receive and transmit at 100 Mb/s (stage 2, `EthRgmiiTest.v`) |
 | `colorlight-i9plus-idle` | an i9+ module, on any carrier | not a test: the module's power-up flash image, which drives nothing off the module, so whatever carrier it lands on is safe |
-| `colorlight-i5-idle` | a Colorlight i5 module, on any carrier | not a test: the same idea for the i5 (LED D2 blinks, nothing off the module is driven); USERCODE `0x1D1E0005`, checked over JTAG by `make check` |
+| `colorlight-i5-idle` | a Colorlight i5 module, on either carrier | not a test: the same idea for the i5 (only LED D2 is driven; its ball also reaches SODIMM 41, which has no net on the base board); USERCODE `0x1D1E0005`, checked over JTAG by `make check` |
+| `colorlight-db-i5-eth` | the fpga-db-colorlight-i5 base board + i5 (ECP5) | RJ1, its magnetics and the module's B50612D PHYs: the i9+ MDIO probe (stage 1) on the i5's own PHY pins. RJ1 = MDIO address 1, 1000BASE-T FD (2026-10-27). No RGMII stage yet |
 
 `ep4cgx150-eth-ref` is worth knowing about for a second reason. It is an
 independent implementation against the same PHY as our own MAC, so when the JOP
