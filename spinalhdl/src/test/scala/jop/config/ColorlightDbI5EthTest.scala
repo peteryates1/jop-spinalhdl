@@ -103,11 +103,12 @@ class ColorlightDbI5EthTest extends AnyFunSuite {
   }
 
   test("this base board is reached through its own stamp, not the i9+ board's") {
-    val a = cfg.assembly
-    assert(a.probeAlias.contains("colorlight-db-i5") && a.consoleAlias.contains("colorlight-db-i5-0"),
-      s"${a.probeAlias} / ${a.consoleAlias}")
-    assert(a.loaderCable.contains("dirtyJtag"))
-    val i9 = SystemAssembly.colorlightDbI9Plus
+    // Both units are board instances of one base board design (item 174).
+    val i5 = jop.setup.Instances.forAssembly(cfg.assembly).map(_.access).get
+    assert(i5.probeAlias.contains("colorlight-db-i5") && i5.consoleAlias.contains("colorlight-db-i5-0"),
+      s"${i5.probeAlias} / ${i5.consoleAlias}")
+    assert(i5.loaderCable.contains("dirtyJtag"))
+    val i9 = jop.setup.Instances.forAssembly(SystemAssembly.colorlightDbI9Plus).map(_.access).get
     assert(i9.probeAlias.contains("colorlight-db") && i9.consoleAlias.contains("colorlight-db-0"))
   }
 

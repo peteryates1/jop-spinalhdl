@@ -1,6 +1,6 @@
 # Board instances
 
-**Status: proposed 2026-10-28; step 1 not started.** Tracked as status item
+**Status: step 1 done 2026-10-28; steps 2-4 open.** Tracked as status item
 [174](../current-status.md#item-174). The layering it starts is item
 [173](../current-status.md#item-173).
 
@@ -96,6 +96,17 @@ Each step is test-first.
    `ColorlightAtari800BaseV1Unit2` removed. Tests: every instance's MAC is
    unique, unicast and locally administered; every preset an instance builds
    uses only fitted devices.
+
+   **Done 2026-10-28.** `jop.setup.Instance` and `Instances` hold `jop-i9-1`
+   (02:4a:4f:50:00:01) and `jop-i5-1` (02:4a:4f:50:00:02; LEDs not fitted).
+   The base board is one design again. How a unit is reached is a
+   `UnitAccess`: `HwVerifyDescriptor` takes one, and only its entry point reads
+   the registry, so the generic layer still never imports `jop.setup`.
+   `check-probe-selection.sh` reads the instances too: without that the move
+   would have dropped them from it silently, 9 units checked becoming 7. It was
+   proved red on a mistyped instance alias, a console with no probe, and the
+   no-parse tripwire. `InstanceTest` failed first on the base board design
+   still naming jop-i9-1's probe.
 2. **MAC and hostname into the generated constants**, with `NetConfig`'s
    defaults taken from them.
 3. **The DHCP client**: option 12, a transaction ID seeded from the MAC, and

@@ -66,7 +66,10 @@ class ColorlightModuleSplitTest extends AnyFunSuite {
     assert(p.get("resetn").contains("P5"), p)
     val a = SystemAssembly.colorlightDbI9Plus
     assert(a.ledCount == 8 && a.ledActiveHigh)
-    assert(a.probeAlias.contains("colorlight-db") && a.consoleAlias.contains("colorlight-db-0"))
+    // Its unit's probe and console are the instance's, not the design's.
+    val unit = jop.setup.Instances.forAssembly(a).map(_.access).get
+    assert(unit.probeAlias.contains("colorlight-db") && unit.consoleAlias.contains("colorlight-db-0"))
+    assert(a.access == UnitAccess(), s"the shared design names a unit: ${a.access}")
     assert(a.fpgaBoard.name == "colorlight-i9plus")
   }
 
@@ -83,9 +86,11 @@ class ColorlightModuleSplitTest extends AnyFunSuite {
     assert(!p.values.exists(_ == "U16"), s"the i5's on-module LED leaked in: $p")
     val a = SystemAssembly.colorlightDbI5
     assert(a.ledCount == 8 && a.ledActiveHigh)
-    // The second base board: its own stamp, so its own probe and console.
-    assert(a.probeAlias.contains("colorlight-db-i5") && a.consoleAlias.contains("colorlight-db-i5-0"),
-      s"${a.probeAlias} / ${a.consoleAlias}")
+    // The second base board: its own stamp, so its own probe and console --
+    // board instance jop-i5-1's, on the same base board design.
+    val unit = jop.setup.Instances.forAssembly(a).map(_.access).get
+    assert(unit.probeAlias.contains("colorlight-db-i5") && unit.consoleAlias.contains("colorlight-db-i5-0"),
+      s"${unit.probeAlias} / ${unit.consoleAlias}")
     assert(i5OnAtariBase.assembly.name == a.name)
   }
 
@@ -115,8 +120,9 @@ class ColorlightModuleSplitTest extends AnyFunSuite {
   }
 
   test("boards that disagree on how an assembly is reached are refused") {
-    val other = Board.ColorlightAtari800BaseV1.copy(name = "other", probeAlias = Some("elsewhere"))
-    val a = SystemAssembly("bad", Seq(Board.ColorlightI9Plus, Board.ColorlightAtari800BaseV1, other))
+    val here = Board.ColorlightAtari800BaseV1.copy(probeAlias = Some("here"))
+    val other = here.copy(name = "other", probeAlias = Some("elsewhere"))
+    val a = SystemAssembly("bad", Seq(Board.ColorlightI9Plus, here, other))
     intercept[IllegalArgumentException](a.probeAlias)
   }
 }

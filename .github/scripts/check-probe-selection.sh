@@ -11,6 +11,13 @@
 # was tab-separated, bash collapsed the Alchitry's empty probeAlias field, and
 # the guard flagged the right board with the wrong reason. Reading a green run
 # would never have shown that.
+# EXTENDED 2026-10-28 (status item 174): board INSTANCES (jop.setup.Instances)
+# now carry the unit facts of the boards they cover, so the guard reads them
+# too. Moving the two Atari-800 units there would otherwise have dropped them
+# from this guard silently -- 9 boards checked became 7, and nothing failed.
+# PROVED RED the same day on an instance alias missing from the registry and
+# on the instances no-parse tripwire (BOARD_SCALA / INSTANCES / REGISTRY can
+# point at copies for exactly that).
 # If you change this guard, re-prove it: a guard that cannot fail is worse
 # than none, because it gets quoted as evidence.
 # ---------------------------------------------------------------------------
@@ -47,10 +54,11 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2
 
-BOARD_SCALA=spinalhdl/src/main/scala/jop/config/Board.scala
-REGISTRY=fpga/scripts/jtag_probe_map
+BOARD_SCALA=${BOARD_SCALA:-spinalhdl/src/main/scala/jop/config/Board.scala}
+INSTANCES=${INSTANCES:-spinalhdl/src/main/scala/jop/setup/Instances.scala}
+REGISTRY=${REGISTRY:-fpga/scripts/jtag_probe_map}
 
-for f in "$BOARD_SCALA" "$REGISTRY"; do
+for f in "$BOARD_SCALA" "$INSTANCES" "$REGISTRY"; do
   [ -r "$f" ] || { echo "  FAIL cannot read $f"; exit 2; }
 done
 
@@ -77,6 +85,8 @@ tool_for_kind() {
 fail=0
 problems=""
 checked=0
+boards=0
+instances=0
 
 note() { problems="$problems        $1"$'\n'; fail=1; }
 
@@ -90,7 +100,7 @@ note() { problems="$problems        $1"$'\n'; fail=1; }
 # made `read` slide its consoleAlias into $probe, and this guard reported the
 # right board for the wrong reason -- a tool mismatch rather than the missing
 # probeAlias that was actually there.
-while IFS='|' read -r bname probe console loader; do
+while IFS='|' read -r kind bname probe console loader; do
   [ -n "$bname" ] || continue
 
   # A board with a serial console is a board someone talks to, i.e. one that is
@@ -102,6 +112,7 @@ while IFS='|' read -r bname probe console loader; do
 
   [ -n "$probe" ] || continue
   checked=$(( checked + 1 ))
+  if [ "$kind" = instance ]; then instances=$(( instances + 1 )); else boards=$(( boards + 1 )); fi
 
   kind=$(kind_of "$probe")
   if [ -z "$kind" ]; then
@@ -121,7 +132,8 @@ while IFS='|' read -r bname probe console loader; do
       note "$bname — probe '$probe' is kind $kind, tool is openfpgaloader; the busdev patch does not cover usb-blaster, so it takes whichever probe enumerated first. Drop loaderBoard/loaderCable and use quartus."
     fi
   fi
-done < <(awk '
+done < <({
+awk '
   /^  def [A-Za-z0-9_]+ = Board\(/ {
     if (name != "") print name "|" probe "|" console "|" loader
     name = $2; probe = ""; console = ""; loader = ""
@@ -134,11 +146,33 @@ done < <(awk '
   /^    loaderBoard[[:space:]]*=/ { if (match($0, /"[^"]*"/)) loader = substr($0, RSTART+1, RLENGTH-2) }
   /^    loaderCable[[:space:]]*=/ { if (match($0, /"[^"]*"/)) loader = substr($0, RSTART+1, RLENGTH-2) }
   END { if (name != "") print name "|" probe "|" console "|" loader }
-' "$BOARD_SCALA")
+' "$BOARD_SCALA" | command sed 's/^/board|/'
+# Board instances: `  val x = Instance(` blocks, `name = ".."` at four spaces,
+# the UnitAccess fields at six.
+awk '
+  /^  val [A-Za-z0-9_]+ = Instance\(/ {
+    if (name != "") print name "|" probe "|" console "|" loader
+    name = "?"; probe = ""; console = ""; loader = ""
+    next
+  }
+  name == "" { next }
+  /^    name[[:space:]]*=/          { if (match($0, /"[^"]*"/)) name = substr($0, RSTART+1, RLENGTH-2) }
+  /^      probeAlias[[:space:]]*=/  { if (match($0, /"[^"]*"/)) probe = substr($0, RSTART+1, RLENGTH-2) }
+  /^      consoleAlias[[:space:]]*=/{ if (match($0, /"[^"]*"/)) console = substr($0, RSTART+1, RLENGTH-2) }
+  /^      loaderBoard[[:space:]]*=/ { if (match($0, /"[^"]*"/)) loader = substr($0, RSTART+1, RLENGTH-2) }
+  /^      loaderCable[[:space:]]*=/ { if (match($0, /"[^"]*"/)) loader = substr($0, RSTART+1, RLENGTH-2) }
+  END { if (name != "") print name "|" probe "|" console "|" loader }
+' "$INSTANCES" | command sed 's/^/instance|/'
+})
 
-if [ "$checked" -eq 0 ]; then
+if [ "$boards" -eq 0 ]; then
   echo "  FAIL parsed no boards with a probeAlias out of $BOARD_SCALA"
   echo "       The awk block above stopped matching. It is asserting nothing."
+  exit 1
+fi
+if [ "$instances" -eq 0 ]; then
+  echo "  FAIL parsed no board instances with a probeAlias out of $INSTANCES"
+  echo "       The instances awk block stopped matching. It is asserting nothing."
   exit 1
 fi
 
@@ -153,4 +187,4 @@ if [ "$fail" -ne 0 ]; then
   exit 1
 fi
 
-echo "  $checked boards with a probe, all reachable and on a tool that can drive it"
+echo "  $boards boards and $instances board instances with a probe, all reachable and on a tool that can drive it"

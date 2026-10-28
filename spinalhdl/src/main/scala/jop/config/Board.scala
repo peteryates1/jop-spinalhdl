@@ -306,6 +306,18 @@ object PllType {
  *                   QMTECH 2x32 headers: pins 1-6 (power/GND) and 61+ (NC/VIN) excluded;
  *                   signal pins are 5-58. Alchitry DF40C: per-connector pin numbering.
  */
+/** How one physical unit is reached: its JTAG probe's alias in
+  * `fpga/scripts/jtag_probe_map`, its console's in `usb_serial_map`, and, for
+  * openFPGALoader, the cable or board name. A fact about a UNIT, not a design:
+  * board instances carry it (`jop.setup`, status item 174); a Board's own
+  * `probeAlias` and friends are where it still sits for boards no instance
+  * covers yet (item 173). */
+case class UnitAccess(
+  probeAlias: Option[String] = None,
+  consoleAlias: Option[String] = None,
+  loaderCable: Option[String] = None,
+  loaderBoard: Option[String] = None)
+
 case class Board(
   name: String,
   fpga: Option[FpgaDevice] = None,
@@ -763,40 +775,22 @@ object Board {
    * UNUSED PINS MUST FLOAT. Sixteen RP2040 GPIOs land on module balls;
    * Vivado's default pulls every unused pin down, which would fight whatever
    * the stamp drives there.
+   *
+   * A DESIGN, shared by every unit of it. Which stamp a unit has (so its probe
+   * and console), what is fitted on it and its MAC are that unit's facts, in
+   * its board instance: `jop.setup.Instances` (status item 174).
    */
   def ColorlightAtari800BaseV1 = Board(
     name = "colorlight-atari800-base-v1.0",
-    probeAlias = Some("colorlight-db"),
-    consoleAlias = Some("colorlight-db-0"),
-    loaderCable = Some("dirtyJtag"),
     ledActiveHigh = true,
     unusedPinsFloat = true,
     portPulls = atari800BaseV1Pulls,
     devices = atari800BaseV1Devices,
     parkedPins = atari800BaseV1Parked)
 
-  /**
-   * The SECOND unit of the same base board (assembled 2026-10-26), carrying
-   * the i5. The same PCB, so the same devices, pulls and parking; what differs
-   * is its RP2040-STAMP. The stamps are socketed and each unit keeps its own
-   * (user, 2026-10-27), and an alias names a stamp's serial, so this unit has
-   * aliases of its own. Per the user only the Ethernet jack, the reset button
-   * and the stamp are fitted here; the LED pins it drives have no parts behind
-   * them.
-   */
-  def ColorlightAtari800BaseV1Unit2 = Board(
-    name = "colorlight-atari800-base-v1.0-unit2",
-    probeAlias = Some("colorlight-db-i5"),
-    consoleAlias = Some("colorlight-db-i5-0"),
-    loaderCable = Some("dirtyJtag"),
-    ledActiveHigh = true,
-    unusedPinsFloat = true,
-    portPulls = atari800BaseV1Pulls,
-    devices = atari800BaseV1Devices,
-    parkedPins = atari800BaseV1Parked)
-
-  // Both units' devices and parking (one PCB). Not `def ... = Board(`, so the
-  // probe-selection guard, which reads those blocks, sees exactly the two units.
+  // The base board's devices and parking. Two units of it existed as two Board
+  // copies until 2026-10-28 (the second was ColorlightAtari800BaseV1Unit2);
+  // they are board instances now, jop-i9-1 and jop-i5-1.
   private def atari800BaseV1Devices = Seq(
     BoardDevice("SWITCH", mapping = Map("reset" -> "SODIMM:42")),
     BoardDevice("STAMP_CDC0", mapping = Map("TXD" -> "SODIMM:153", "RXD" -> "SODIMM:155")),
@@ -1591,6 +1585,8 @@ case class SystemAssembly(
   def consoleAlias: Option[String] = unique("consoleAlias", _.consoleAlias)
   def loaderCable: Option[String]  = unique("loaderCable", _.loaderCable)
   def loaderBoard: Option[String]  = unique("loaderBoard", _.loaderBoard)
+  /** The four together, as the assembly's boards state them. */
+  def access: UnitAccess = UnitAccess(probeAlias, consoleAlias, loaderCable, loaderBoard)
 
   /** Total LED count across all boards in assembly */
   def totalLedCount: Int = allDevices.filter(_.part == "LED").flatMap(_.mapping.keys).size
@@ -1658,10 +1654,10 @@ object SystemAssembly {
     ledBoard = Some(Board.ColorlightAtari800BaseV1.name))
 
   /** Colorlight i5 module on the Atari 800 base board v1.0 -- the same base
-    * board design, the other module family, on the board's SECOND unit (its
-    * own stamp, so its own probe and console aliases). Presets
+    * board design, the other module family. Its unit (the second base board,
+    * with its own stamp) is board instance jop-i5-1. Presets
     * colorlightDbI5Sdram / colorlightDbI5Eth, flow fpga/colorlight-db-i5. */
   def colorlightDbI5 = SystemAssembly("colorlight-db-i5",
-    Seq(Board.ColorlightI5, Board.ColorlightAtari800BaseV1Unit2),
-    ledBoard = Some(Board.ColorlightAtari800BaseV1Unit2.name))
+    Seq(Board.ColorlightI5, Board.ColorlightAtari800BaseV1),
+    ledBoard = Some(Board.ColorlightAtari800BaseV1.name))
 }

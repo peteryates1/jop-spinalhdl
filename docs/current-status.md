@@ -58,7 +58,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 17. **[#168](#item-168)** — `xc7a100tDbEth` closes timing by luck: -0.058 ns on 10-12, +0.007 ns on the 10-28 rebuild, the same core fetch path with the same directives, so any rebuild can miss again
 18. **[#170](#item-170)** — The XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s whenever the data toggles -- 28 of 400 random frames, 0 of 400 alternating -- and each loss blacks the receiver out for seconds; TCP fails there. MII at 100 Mb/s (`xc7a100tDbMii`) passes every check, DoAll 68/68. Open: bounding a frame in the MAC so one glitch costs one frame, and a changed TCP echo at 1 Gb/s that passed the stack's checksum
 19. **[#171](#item-171)** — NetTest's TCP echo never serves again after one connection that does not close cleanly, so a single lost frame makes every later TCP check on that boot fail
-20. **[#174](#item-174)** — Every JOP image has the same MAC and IP, so two boards cannot share the LAN, and a second unit of a board design has to be a copied board. Planned: board instances (`docs/architecture/board-instances.md`)
+20. **[#174](#item-174)** — Every JOP image has the same MAC and IP, so two boards cannot share the LAN, and a second unit of a board design has to be a copied board. Board instances, `docs/architecture/board-instances.md`: step 1 of 4 done (the registry, both Atari-800 units); next, the MAC and hostname into the build
 21. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
 22. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
 23. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
@@ -4110,6 +4110,14 @@ i9+ modules on Atari-800-derived base boards. Three layers:
 Board instances (item 174) are the first piece of the setup layer, and start
 outside `Board.scala`.
 
+**Agreed order (2026-10-28):** untangle inside this repo first -- the three
+layers as packages or sbt subprojects, with a guard that dependencies point
+only downward. Separate repos may follow: the user wants the layers usable
+on their own, so that JOP is easier to get running on new hardware (getting
+the original JOP running took years). If so, the setup layer would move first,
+to its own private repo, since this repo is public. A generic/hardware split
+would come only when they stop changing together.
+
 **Next:** decide the setup layer's form and home -- a Scala package, or a data
 file that Scala and the Python tools both read (TOML needs no new package in
 Python 3.13, one small library in Scala). Then move the existing facts into
@@ -4134,6 +4142,14 @@ IP comes from DHCP; whether the router's DNS resolves the names is to be
 measured. The DHCP client needs the hostname option (12), a transaction ID
 seeded from the MAC, and a check of the reply's hardware address: today every
 board starts from the same ID, `0x4A4F5001`, and matches replies on it alone.
+
+**Step 1 done 2026-10-28:** the instance registry, `jop.setup.Instances`, with
+`jop-i9-1` and `jop-i5-1`; `ColorlightAtari800BaseV1Unit2` is gone, and both
+units are instances of one base board design. `InstanceTest` failed first on
+the shared design still naming a unit's probe. `check-probe-selection.sh`
+reads the instances, proved red three ways. The i5 unit passed DoAll through
+`hw_verify`, which now finds its probe and console via the instance. Next:
+the MAC and hostname into the generated constants (step 2).
 
 <a id="item-69"></a>
 
