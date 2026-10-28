@@ -462,7 +462,7 @@ object Board {
     ethIpFiles = Seq("fpga/qmtech-ep4cgx150-sdram/pll_125.v"),
     probeAlias = Some("ep4cgx150"),
     consoleAlias = Some("ep4cgx150"),
-    fpga = Some(FpgaDevice.EP4CGX150DF27I7),
+    fpga = Some(FpgaDevice.EP4CGX150DF27.withGrade(7, 'I')),   // EP4CGX150DF27I7, docs/boards/qmtech-ep4cgx150-board.md
     pllType = Some(PllType.AlteraDramPll),
     hasEthPll = true,
     devices = Seq(
@@ -550,7 +550,7 @@ object Board {
     consoleAlias = Some("cyc5000"),
     pllType = Some(PllType.AlteraCyc5000),
     entityTag = "Cyc5000",
-    fpga = Some(FpgaDevice.`5CEBA2U15C8`),
+    fpga = Some(FpgaDevice.`5CEBA2U15`),   // 5CEBA2U15C8, the default (slowest) grade
     devices = Seq(
       BoardDevice("W9864G6JT", role = Some("sdr"), mapping = Map(
         "CLK" -> "PIN_P16", "CKE" -> "PIN_T14",
@@ -836,7 +836,9 @@ object Board {
     // must be selected by bus:dev like every other board here.
     probeAlias = Some("alchitry"),
     loaderBoard = Some("alchitry_au"),
-    fpga = Some(FpgaDevice.XC7A35T),
+    // -2: what its flows build and the two docs with build results say (ddr3-gc-hang.md,
+    // artix7-core-estimates.md). There is no board doc, and the chip marking is unread.
+    fpga = Some(FpgaDevice.XC7A35T.withGrade(2)),
     pllType = Some(PllType.XilinxDdr3ClkWiz),
     ddr3HasCs = true,
     devices = Seq(
@@ -927,7 +929,7 @@ object Board {
     constraintFiles = Seq("fpga/a-e115fb-ddr2/ddr2_pins.qsf"),
     probeAlias = Some("ae115fb"),
     consoleAlias = Some("ae115fb"),
-    fpga = Some(FpgaDevice.EP4CE115F23I7),
+    fpga = Some(FpgaDevice.EP4CE115F23.withGrade(7, 'I')),   // EP4CE115F23I7, docs/boards/ep4ce115-ddr2-board.md
     entitySuffix = "Ae115fb",
     ledActiveHigh = false,
     // Clock and reset, both of which this board was MISSING: PinResolver finds
@@ -976,7 +978,7 @@ object Board {
     probeAlias = Some("wukong"),
     consoleAlias = Some("wukong"),
     loaderCable = Some("dirtyJtag"),
-    fpga = Some(FpgaDevice.XC7A100T),
+    fpga = Some(FpgaDevice.XC7A100T.withGrade(2)),   // -2: docs/boards/qmtech-wukong-board.md
     pllType = Some(PllType.XilinxWukong),
     entitySuffix = "Wukong",
     ledActiveHigh = true,
@@ -1070,7 +1072,7 @@ object Board {
     probeAlias = Some("xc7a100t"),
     consoleAlias = Some("xc7a100t-pico-0"),
     loaderCable = Some("dirtyJtag"),
-    fpga = Some(FpgaDevice.XC7A100T),
+    fpga = Some(FpgaDevice.XC7A100T.withGrade(2)),   // -2: docs/boards/qmtech-xc7a100t-board.md
     pllType = Some(PllType.XilinxDdr3ClkWiz),
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3")),   // DDR3 pins managed by MIG IP
@@ -1400,7 +1402,7 @@ object Board {
    */
   def MAX1000 = Board(
     name = "max1000",
-    fpga = Some(FpgaDevice.`10M08SAU169C8G`),
+    fpga = Some(FpgaDevice.`10M08SAU169`),   // 10M08SAU169C8G, the default (slowest) grade
     pllType = Some(PllType.AlteraMax1000),
     entityTag = "Max1000Sdram",
     devices = Seq(
@@ -1441,7 +1443,7 @@ object Board {
    */
   def GenericEP4CE6 = Board(
     name = "generic-ep4ce6",
-    fpga = Some(FpgaDevice.EP4CE6E22C8),
+    fpga = Some(FpgaDevice.EP4CE6E22),   // EP4CE6E22C8, the default (slowest) grade
     pllType = Some(PllType.AlteraEp4ce6),
     entityTag = "Ep4ce6Sdram",
     devices = Seq(

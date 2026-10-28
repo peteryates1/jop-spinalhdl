@@ -55,23 +55,86 @@ object FpgaFamily {
   case object ECP5       extends FpgaFamily { val manufacturer = Manufacturer.Lattice }
 }
 
-/** A concrete FPGA device */
+/** A speed grade with its temperature grade, as an ordering code spells them:
+  * Xilinx XC7A100T-2FGG676C, Altera EP4CGX150DF27I7, Lattice LFE5U-25F-6BG381C.
+  * `temp` is C (commercial), I (industrial) or A (automotive). */
+case class SpeedGrade(speed: Int, temp: Char = 'C') {
+  override def toString: String = s"$temp$speed"
+}
+
+/** A concrete FPGA device: a die in a package, at one of the grades it is sold in.
+  *
+  * A die and package come in several grades, listed in `grades`, and the
+  * entries below default to the SLOWEST commercial one: timing closed there
+  * holds on every faster grade of the same die, and the bitstream loads on
+  * them. A Board that knows its chip overrides the default from its board doc
+  * with `withGrade`, and a grade the device is not sold in fails at
+  * elaboration instead of naming a part that does not exist.
+  *
+  * WHY THE GRADE MOVED HERE (2026-10-28, status item 168's rebuild). Each entry
+  * used to be one fixed ordering code. The single XC7A100T was -1, shared by the
+  * Wukong and the QMTECH core board, whose board docs both say -2. Vivado
+  * built both for -2 from a PART constant in each Makefile, and the build
+  * summary reported -1. Three of the four Vivado boards disagreed with their
+  * Board; FpgaPartTest holds every flow to its board now.
+  *
+  * `name` is the ordering code, printed on the chip and taken by Quartus as
+  * DEVICE. `vivadoPart` is the part Vivado builds and times for. The speed
+  * number runs opposite ways by vendor: Xilinx and Lattice count UP to faster
+  * (-1 is the slowest Artix-7, -6 the slowest ECP5), while Altera counts up to
+  * SLOWER (8 is the slowest Cyclone IV). The grade lists follow the vendors'
+  * ordering tables; they exist to reject a grade the die is not sold in.
+  */
 case class FpgaDevice(
-  name: String,            // "EP4CGX150DF27I7"
+  die: String,             // "XC7A100T", "EP4CGX150", "LFE5U-25F"
   family: FpgaFamily,
+  pkg: String,             // "FGG676", "DF27", "BG381"
+  grades: Seq[SpeedGrade], // what the vendor sells for this die and package
+  grade: SpeedGrade,       // this device's: the slowest by default, a board's own if it says so
+  suffix: String = "",     // Altera's trailing letters, e.g. MAX 10's "G"
   les: Int = 0,            // logic elements (0 = unknown)
   dspBlocks: Int = 0,      // DSP blocks (0 = unknown)
   bramKbits: Int = 0       // block RAM in Kbits (0 = unknown)
-)
+) {
+  require(grades.contains(grade),
+    s"$die $pkg is not sold in grade $grade (it comes in ${grades.mkString(", ")})")
+
+  /** The ordering code: EP4CGX150DF27I7, XC7A100T-2FGG676C, LFE5U-25F-6BG381C. */
+  def name: String = family.manufacturer match {
+    case Manufacturer.Altera => s"$die$pkg${grade.temp}${grade.speed}$suffix"
+    case _                   => s"$die-${grade.speed}$pkg${grade.temp}$suffix"
+  }
+
+  /** What Vivado builds and times for: xc7a100tfgg676-2. Xilinx devices only. */
+  def vivadoPart: Option[String] =
+    if (family.manufacturer == Manufacturer.Xilinx) Some(s"$die$pkg-${grade.speed}".toLowerCase)
+    else None
+
+  /** This device at another grade it is sold in; the temperature grade stays
+    * unless given. Fails if the device is not sold in that grade. */
+  def withGrade(speed: Int, temp: Char = grade.temp): FpgaDevice =
+    copy(grade = SpeedGrade(speed, temp))
+}
 
 object FpgaDevice {
-  def EP4CGX150DF27I7 = FpgaDevice("EP4CGX150DF27I7", FpgaFamily.CycloneIV,
+  private def g(spec: String*): Seq[SpeedGrade] = spec.map(s => SpeedGrade(s.tail.toInt, s.head))
+
+  // Ordering-table grades per family, temperature letter first as Altera
+  // writes them.
+  private val artix7 = g("C1", "C2", "C3", "I1", "I2")
+  private val ecp5   = g("C6", "C7", "C8", "I6", "I7", "I8")
+
+  /** QMTECH EP4CGX150 core board: the board is I7 (`Board.QmtechEP4CGX150`). */
+  def EP4CGX150DF27 = FpgaDevice("EP4CGX150", FpgaFamily.CycloneIV, "DF27",
+    g("C7", "C8", "I7"), SpeedGrade(8),
     les = 149760, dspBlocks = 360, bramKbits = 6480)
 
-  def `5CEBA2U15C8` = FpgaDevice("5CEBA2U15C8", FpgaFamily.CycloneV,
+  def `5CEBA2U15` = FpgaDevice("5CEBA2", FpgaFamily.CycloneV, "U15",
+    g("C7", "C8", "I7", "A7"), SpeedGrade(8),
     les = 25000, dspBlocks = 50, bramKbits = 1760)
 
-  def `10M08SAE144C8G` = FpgaDevice("10M08SAE144C8G", FpgaFamily.MAX10,
+  def `10M08SAE144` = FpgaDevice("10M08SA", FpgaFamily.MAX10, "E144",
+    g("C7", "C8", "I7", "A7"), SpeedGrade(8), suffix = "G",
     les = 8000, dspBlocks = 24, bramKbits = 378)
 
   /** The MAX1000's part: 169-ball UBGA, NOT the 144-pin EQFP above.
@@ -81,34 +144,38 @@ object FpgaDevice {
     * while carrying 169-ball pin assignments, and every one of them came back
     * `Error (171016): illegal location assignment`. Nothing caught it because
     * the hand-written jop_max1000.qsf assigned no pins at all. */
-  def `10M08SAU169C8G` = FpgaDevice("10M08SAU169C8G", FpgaFamily.MAX10,
+  def `10M08SAU169` = FpgaDevice("10M08SA", FpgaFamily.MAX10, "U169",
+    g("C7", "C8", "I7", "A7"), SpeedGrade(8), suffix = "G",
     les = 8000, dspBlocks = 24, bramKbits = 378)
 
-  def EP4CE6E22C8 = FpgaDevice("EP4CE6E22C8", FpgaFamily.CycloneIV,
+  def EP4CE6E22 = FpgaDevice("EP4CE6", FpgaFamily.CycloneIV, "E22",
+    g("C6", "C7", "C8", "I7", "A7"), SpeedGrade(8),
     les = 6272, dspBlocks = 0, bramKbits = 276)
 
-  /** A-E115FB board: EP4CE115 + 1 GB DDR2 SODIMM. See docs/boards/ep4ce115-ddr2-board.md */
-  def EP4CE115F23I7 = FpgaDevice("EP4CE115F23I7", FpgaFamily.CycloneIVE,
+  /** A-E115FB board: EP4CE115 + 1 GB DDR2 SODIMM; the board is I7. See
+    * docs/boards/ep4ce115-ddr2-board.md */
+  def EP4CE115F23 = FpgaDevice("EP4CE115", FpgaFamily.CycloneIVE, "F23",
+    g("C7", "C8", "I7"), SpeedGrade(8),
     les = 114480, dspBlocks = 266, bramKbits = 3888)
 
-  def XC7A35T = FpgaDevice("XC7A35T-1FTG256C", FpgaFamily.Artix7,
+  def XC7A35T = FpgaDevice("XC7A35T", FpgaFamily.Artix7, "FTG256", artix7, SpeedGrade(1),
     les = 33280, dspBlocks = 90, bramKbits = 1800)
 
-  def XC7A100T = FpgaDevice("XC7A100T-1FGG676C", FpgaFamily.Artix7,
+  def XC7A100T = FpgaDevice("XC7A100T", FpgaFamily.Artix7, "FGG676", artix7, SpeedGrade(1),
     les = 101440, dspBlocks = 240, bramKbits = 4860)
 
   /** Colorlight i5 v7.0 module. `les` is LUT4 count, not Altera LEs — the two are
     * not comparable, so don't read across to the Cyclone entries above.
     * EBR is 56 x 18 Kbit = 1008 Kbit = 126 KB, which is what bounds a BRAM-only
     * build here (the EP4CGX150 has 6.5x as much). */
-  def LFE5U25F = FpgaDevice("LFE5U-25F-6BG381C", FpgaFamily.ECP5,
+  def LFE5U25F = FpgaDevice("LFE5U-25F", FpgaFamily.ECP5, "BG381", ecp5, SpeedGrade(6),
     les = 24288, dspBlocks = 28, bramKbits = 1008)
 
   /** Colorlight i9+ v6.1 module. The SPEED GRADE IS UNKNOWN: the chips sit
-    * under heat sinks that are staying on, so this says -1, the conservative
-    * grade. A -1 bitstream loads on a -2 (same die), and timing closed at -1
-    * holds on either. `les` is logic cells, as XC7A100T above. */
-  def XC7A50T = FpgaDevice("XC7A50T-1FGG484C", FpgaFamily.Artix7,
+    * under heat sinks that are staying on, so the board keeps the default, -1,
+    * the conservative grade. A -1 bitstream loads on a -2 (same die), and
+    * timing closed at -1 holds on either. `les` is logic cells, as XC7A100T above. */
+  def XC7A50T = FpgaDevice("XC7A50T", FpgaFamily.Artix7, "FGG484", artix7, SpeedGrade(1),
     les = 52160, dspBlocks = 120, bramKbits = 2700)
 }
 
