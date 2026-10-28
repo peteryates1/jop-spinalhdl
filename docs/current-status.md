@@ -56,7 +56,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 15. **[#84](#item-84)** — No MAX1000 configuration fits the 10M08 — single-core overflows it by a third
 16. **[#73](#item-73)** — `ep4cgx150DbVgaDma` misses timing by −1.011 ns
 17. **[#168](#item-168)** — `xc7a100tDbEth` closes timing by luck: -0.058 ns on 10-12, +0.007 ns on the 10-28 rebuild, the same core fetch path with the same directives, so any rebuild can miss again
-18. **[#170](#item-170)** — The XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s whenever the data toggles -- 28 of 400 random frames, 0 of 400 alternating -- and each loss blacks the receiver out for seconds, which stalls TCP. Constant payloads, zeros and pings pass, which is how it hid; the Wukong passes everything. MII at 100 Mb/s, item 166's workaround, is untried here
+18. **[#170](#item-170)** — The XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s whenever the data toggles -- 28 of 400 random frames, 0 of 400 alternating -- and each loss blacks the receiver out for seconds; TCP fails there. MII at 100 Mb/s (`xc7a100tDbMii`) passes every check, DoAll 68/68. Open: bounding a frame in the MAC so one glitch costs one frame, and a changed TCP echo at 1 Gb/s that passed the stack's checksum
 19. **[#171](#item-171)** — NetTest's TCP echo never serves again after one connection that does not close cleanly, so a single lost frame makes every later TCP check on that boot fail
 20. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
 21. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
@@ -305,6 +305,7 @@ Marked closed in the heading or here, sorted by ID.
 - **[164](#item-164)** — ~~the single-core Wukong SDR does not run at 80 MHz, although every timing constraint is met~~ — CLOSED 2026-10-10: the clock IP gave the SDRAM a different frequency from the logic
 - **[166](#item-166)** — ~~EP4CGX150 Ethernet at 1 Gb/s loses frames~~ -- **WORKED AROUND** 2026-10-12: extra RX_CLK edges when six or more RXD lines rise together (a hardware limit; no PLL can take the pin), so both EP4CGX150 presets run MII at 100 Mb/s, verified clean on the DB_FPGA V4 and V5
 - **[169](#item-169)** — ~~stray bytes in the serial-boot handshake shift the microcode stack, and the checksum leak then overwrites the constant table~~ — CLOSED 2026-10-28: the loader's stack is balanced, test-first (`SerialBootStackTest`); the i5 boots cleanly through 10 and 20 stray bytes
+- **[172](#item-172)** — ~~Parts.scala named every Artix-7 at speed grade -1, and three Vivado boards build -2~~ — CLOSED 2026-10-28: a part lists its grades with the slowest as default, each board sets its own; `FpgaPartTest`
 
 ### Records
 
@@ -3969,14 +3970,46 @@ The capture phase does not look like the main lever. Two builds placed apart
 differ only on the incrementing payload; the toggling ones fail on both. Item
 166 found that sampling on the other clock edge lost as many frames.
 
+**MII at 100 Mb/s works here (2026-10-28, `xc7a100tDbMii`).** It was
+test-first: GeneratedConstraintsTest's new MII case failed until XdcGenerator
+learnt MII, which it never had. An MII design on a Xilinx board got neither
+PHY clock. Both clocks reach ordinary balls on this core board: RX_CLK is L5
+and TX_CLK is D1 (`IO_L23N_T3_35`), neither clock-capable by Vivado's pin
+data. Each is created at 8 ns and allowed a general route. Timing met,
++0.013 ns (-0.278 after placement, recovered in routing), with both PHY clocks
+timed: `e_rxc` +1.061 ns, `e_txc` +1.493 ns.
+- EthRxDiag, the table above at 100 Mb/s: every payload received (400 or more
+  counted; the rest are other broadcasts), 0 CRC errors, 0 drops.
+- NetTest: ping 20/20 and 5/5; UDP 22/1400 B and TCP 10/50 KB identical (50 KB
+  in 6.8 s); `Er=0`. `Dr=6-9` is the receive buffer overflowing in TCP bursts,
+  recovered by retransmission, as on the EP4CGX150.
+- DoAll 68/68 through `hw_verify`, timing MET.
+
+**A test trap, and what it changes above.** Every JOP image transmits from
+02:00:00:00:00:01: NetTest's periodic gratuitous ARP, EthRxDiag's keepalive.
+So a second JOP board on the LAN pulls that MAC to its own switch port, and
+unicast frames for the board under test go there instead. The first MII
+NetTest run, with EthRxDiag still running on the Wukong from the control,
+received almost nothing (`Er=0 Dr=0`). Broadcasts reach every port, so the
+EthRxDiag tables are unaffected, but the 1 Gb/s NetTest runs above were taken
+before this was checked. Rerun with no frame from that MAC for 12 s before
+boot, 1 Gb/s still fails, differently: ping, UDP and TCP 10 KB pass, and the
+50 KB echo came back CHANGED -- 48,716 of 51,200 bytes, not a prefix of what
+was sent, `Er=1`. The stack verifies TCP checksums on receive (`TCP.java:130`),
+so how changed data reached the echo is not known. The earlier pre-check --
+ping .123 while the board sits in its handshake -- cannot catch any of this:
+with a cached ARP entry those pings go unicast to whichever port last carried
+the MAC.
+
 **Next:**
-1. MII at 100 Mb/s on the V5, item 166's workaround, clean there for every
-   pattern with the EP4CGX150 module: an MII variant of `xc7a100tDbEth`. It
-   needs the PHY's TX_CLK on this module's ball (the EP4CGX150 MII build
-   already uses that J3 pin).
-2. Bound a frame in the MAC's receive path, by a maximum length or by RX_DV
+1. Bound a frame in the MAC's receive path, by a maximum length or by RX_DV
    falling, so that one glitch costs one frame rather than seconds of traffic.
    That helps every board.
+2. The changed 50 KB echo at 1 Gb/s: a frame that passed both the CRC and the
+   TCP checksum, or the stack's own retransmission. Unexplained.
+
+The 1 Gb/s cause on the V5 is still unseparated; with MII working there it
+matters only if 1 Gb/s on this board does.
 
 The probe for this is scratchpad tooling, not in the tree: `rx_patterns.py`
 (the sender and S-line attribution) driving `EthRxDiag`.
@@ -4003,6 +4036,45 @@ looked like a TCP fault until the board was rebooted between checks. Fix:
 abort and free a client that makes no progress for some seconds, or let a new
 connection displace a dead one. The JOP TCP stack itself is not implicated by
 this capture. It could not receive.
+
+<a id="item-172"></a>
+
+### Item 172 — ~~Parts.scala named every Artix-7 at speed grade -1, and three of the four Vivado boards build -2~~ — CLOSED 2026-10-28: a part lists its grades and defaults to the slowest; each board sets its own
+
+**Found 2026-10-28** with item 168's rebuild. The build summary said
+`FPGA: XC7A100T-1FGG676C` while Vivado built and timed for `xc7a100tfgg676-2`.
+Parts.scala held one fixed ordering code per device, so the single XC7A100T,
+-1, served both the Wukong and the QMTECH core board, whose board docs say -2.
+Each Vivado flow carried its own `PART` constant, and three of the four
+boards disagreed with their Board: the Wukong, the QMTECH XC7A100T core and
+the Alchitry Au V2. All three flows build -2. Only the i9+ matched (-1). A
+timing pass at -2 says nothing about a -1 chip.
+
+**The fix.** `FpgaDevice` is now a die, a package, the
+grades the vendor sells it in, and one grade. The grade defaults to the
+slowest commercial one: -1 on Artix-7, -6 on ECP5, 8 on the Cyclones. Timing
+closed there holds on every faster grade of the die. `name` (the ordering
+code, Quartus's DEVICE) and `vivadoPart` are derived from those fields. A Board
+sets its chip's grade with `withGrade`, and a grade the die is not sold in
+fails at elaboration. The boards:
+- the Wukong and the QMTECH XC7A100T core: -2, from their board docs;
+- the Alchitry Au V2: -2, from its flows and the two docs with build results.
+  It has no board doc, and the chip marking is unread;
+- the i9+: keeps -1, since its grade is unknown under the heat sinks.
+
+Every Altera and Lattice name is byte-identical to before. The EP4CGX150 and
+EP4CE115 boards get I7 by override.
+
+**Not done: a single source for the part.** The Vivado Makefiles keep their
+`PART` constants. The bring-up designs need a part where no build summary
+exists: the UART echo, loopback and TX generator, the DDR3 and SDRAM
+exercisers, the flash programmer, and the i9+'s clock IP. The guard holds
+every constant to its board instead.
+
+Guard: `spinalhdl/src/test/scala/jop/config/FpgaPartTest.scala` -- every
+fpga/*/Makefile that sets PART is mapped to its board and must match it, every
+board's ordering code exactly, the slowest default and the refused grade. Red
+before the fix on the four mismatched flows.
 
 <a id="item-69"></a>
 

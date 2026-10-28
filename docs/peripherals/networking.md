@@ -9,6 +9,7 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 |-------|-----------------|--------|----------|
 | EP4CGX150 + DB_FPGA V4 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbFull` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content, DoAll 68/68 (2026-10-12, below); at 1 Gb/s, GMII, 3-5 % of received frames failed CRC, a hardware limit of this module (status item 166) |
 | EP4CGX150 + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `ep4cgx150DbV5Mii` | ping, UDP and TCP echo, DHCP, DNS at 100M, no receive errors on any content (2026-10-12, below) |
+| XC7A100T + DB_FPGA V5 | RTL8211EG, MII 100 Mb/s | `xc7a100tDbMii` | ping, UDP and TCP echo at 100M, no receive errors on any content, DoAll 68/68 (2026-10-28); at 1 Gb/s (`xc7a100tDbEth`) frames whose data toggles are lost and TCP fails (status item 170) |
 | Colorlight i9+ on fpga-db-colorlight-i5 | B50612D U9, RGMII 100 Mb/s | `colorlightDbI9PlusEth` | ping, UDP and TCP echo, DHCP, DNS (2026-10-11); again 2026-10-12 after the controller fix, DoAll 68/68 |
 | A-E115FB (EP4CE115 + DDR2) | 88E1111, GMII 1 Gb/s | `ae115fbDdr2Eth` | ping, UDP and TCP echo, DHCP, DNS at 1000M, no receive errors on any content, DoAll 68/68 (2026-10-12, below) |
 | QMTECH Wukong V3 | RTL8211EG, GMII 1 Gb/s | `wukongFull` | ping, UDP and TCP echo, DHCP, DNS at 1000M (2026-10-12), DoAll 68/68; the same build with the re-latch restored: `Link UP 1000M` and nothing received (below) |
@@ -596,7 +597,9 @@ flood.
 **Why, and the way round (status item 166).** At 1 Gb/s this module's RX_CLK
 (ball B10, an ordinary pin surrounded by the RXD balls) gets an extra edge
 whenever six or more RXD lines rise together, and that byte arrives twice. The
-loss followed the module onto the DB_FPGA V5, where the XC7A100T is clean, and it
+loss followed the module onto the DB_FPGA V5, where the XC7A100T looked clean under
+ping floods -- with toggling data it fails at 1 Gb/s too, and runs MII as well
+(`xc7a100tDbMii`, status item 170) -- and it
 depends on content: the router's DHCP offer failed every time. No PLL can take
 B10, so the FPGA cannot clean the clock. At 100 Mb/s MII never switches more
 than four data lines, and both EP4CGX150 presets now use it: `ep4cgx150DbFull`
