@@ -323,6 +323,16 @@ if [ -n "$const_rule" ]; then
     exit 1
   fi
   echo "  Const.java depends on everything that decides an I/O address"
+  # A UNIT'S NETWORK IDENTITY TOO (status item 174, step 2): its MAC and
+  # hostname come from its board instance, so a changed MAC must regenerate
+  # Const.java -- the same class of defect as item 120, for a different input.
+  if ! grep -qF "jop/setup/Instances.scala" <<<"$const_rule"; then
+    echo "  FAIL Const.java does not depend on jop/setup/Instances.scala"
+    echo "       a unit's MAC and hostname come from there; without it a changed"
+    echo "       MAC leaves every image with the old one"
+    exit 1
+  fi
+  echo "  Const.java depends on the board instances that give a unit its MAC"
 fi
 
 # ---------------------------------------------------------------------------

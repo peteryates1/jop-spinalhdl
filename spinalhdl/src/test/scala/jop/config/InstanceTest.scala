@@ -1,7 +1,7 @@
 package jop.config
 
 import org.scalatest.funsuite.AnyFunSuite
-import jop.generate.HwVerifyDescriptorMain
+import jop.generate.{ConstGeneratorMain, HwVerifyDescriptorMain}
 import jop.setup.{Instance, Instances, MacAddress}
 import jop.system.JopTopVerilog
 
@@ -79,5 +79,36 @@ class InstanceTest extends AnyFunSuite {
                        "LOADER_CABLE=dirtyJtag", "PROGRAM_TOOL=openfpgaloader"))
         assert(d.linesIterator.contains(line), s"$preset: no $line in\n$d")
     }
+  }
+
+  // STEP 2: each unit's image carries its own network identity. Const.java is
+  // what the Java build compiles against, and javac inlines its constants, so
+  // this is where a unit's MAC and hostname must land -- through the real
+  // entry point, which is what `make -C java` runs.
+  private def constFor(preset: String): String = {
+    val out = new java.io.ByteArrayOutputStream
+    Console.withOut(out)(ConstGeneratorMain.main(Array(preset)))
+    out.toString
+  }
+
+  test("each unit's Const.java carries its own MAC and hostname") {
+    val expected = Seq(
+      "colorlightDbI5Eth"     -> ("0x024a", "0x4f500002", "jop-i5-1"),
+      "colorlightDbI9PlusEth" -> ("0x024a", "0x4f500001", "jop-i9-1"))
+    for ((preset, (hi, lo, host)) <- expected) {
+      val c = constFor(preset)
+      for (line <- Seq(s"public static final int ETH_MAC_HI = $hi;",
+                       s"public static final int ETH_MAC_LO = $lo;",
+                       s"""public static final String ETH_HOSTNAME = "$host";"""))
+        assert(c.contains(line), s"$preset: no `$line` in Const.java")
+    }
+  }
+
+  test("a board no instance covers keeps the shared MAC and sends no hostname") {
+    // Until item 173 moves the other boards' unit facts, nothing changes there.
+    val c = constFor("wukongFull")
+    assert(c.contains("public static final int ETH_MAC_HI = 0x0200;") &&
+           c.contains("public static final int ETH_MAC_LO = 0x00000001;"), "wukongFull's MAC moved")
+    assert(c.contains("""public static final String ETH_HOSTNAME = "";"""), "wukongFull names a host")
   }
 }

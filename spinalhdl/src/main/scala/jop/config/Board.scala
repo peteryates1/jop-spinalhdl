@@ -318,6 +318,23 @@ case class UnitAccess(
   loaderCable: Option[String] = None,
   loaderBoard: Option[String] = None)
 
+/** A unit's network identity: its MAC as six octets, and its hostname ("" for
+  * none). Another unit fact: a board instance gives it (`jop.setup`, status
+  * item 174), and `ConstGenerator` writes it into the unit's `Const.java`. */
+case class NetIdentity(mac: Seq[Int], hostname: String) {
+  require(mac.size == 6 && mac.forall(o => o >= 0 && o <= 0xff), s"not a MAC address: $mac")
+  /** The top 16 bits, as `NetConfig.macHi` holds them. */
+  def macHi: Int = (mac(0) << 8) | mac(1)
+  /** The low 32 bits, as `NetConfig.macLo` holds them. */
+  def macLo: Long = (mac(2).toLong << 24) | (mac(3) << 16) | (mac(4) << 8) | mac(5)
+}
+
+object NetIdentity {
+  /** What every image had before board instances, and what a board no instance
+    * covers still gets: 02:00:00:00:00:01, shared by all of them, and no hostname. */
+  val shared = NetIdentity(Seq(0x02, 0x00, 0x00, 0x00, 0x00, 0x01), "")
+}
+
 case class Board(
   name: String,
   fpga: Option[FpgaDevice] = None,

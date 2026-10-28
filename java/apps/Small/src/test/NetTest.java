@@ -67,6 +67,16 @@ public class NetTest {
 	public static void main(String[] args) {
 		JVMHelp.wr("NetTest v2\n");
 
+		// This unit's MAC: its board instance's, via Const (status item 174)
+		JVMHelp.wr("MAC=");
+		for (int i = 0; i < 6; i++) {
+			if (i > 0) JVMHelp.wr(':');
+			int b = NetConfig.getMacByte(i);
+			JVMHelp.wr(hexChars[(b >>> 4) & 0xF]);
+			JVMHelp.wr(hexChars[b & 0xF]);
+		}
+		JVMHelp.wr('\n');
+
 		// Configure IP (default: 192.168.0.123)
 		JVMHelp.wr("IP=");
 		wrIp(NetConfig.ip);

@@ -71,7 +71,9 @@ object ConstGenerator {
     if (offset == 0) "0" else f"0x$offset%02x"
 
   /** Generate complete Const.java source */
-  def generate(config: JopConfig): String = {
+  /** `identity` is the unit's MAC and hostname, from its board instance if one
+    * covers it; `NetIdentity.shared` otherwise (status item 174). */
+  def generate(config: JopConfig, identity: NetIdentity = NetIdentity.shared): String = {
     // Union of all cores' configs across all systems
     val allCores = config.systems.flatMap(_.coreConfigs)
 
@@ -561,6 +563,13 @@ object ConstGenerator {
          |	public static final int ETH_PHY_ADDR = $ethPhyAddr;
          |	/** The MAC runs 1000 Mb/s (GMII); when false, never advertise 1000BASE-T */
          |	public static final boolean ETH_GIGABIT = $ethGigabit;
+         |	/** This unit's MAC address, top 16 and low 32 bits: its board instance's
+         |	 *  (status item 174), or 02:00:00:00:00:01, shared, where no instance
+         |	 *  covers the board. NetConfig takes its defaults from these. */
+         |	public static final int ETH_MAC_HI = ${f"0x${identity.macHi}%04x"};
+         |	public static final int ETH_MAC_LO = ${f"0x${identity.macLo}%08x"};
+         |	/** This unit's hostname, for DHCP (option 12); empty = send none */
+         |	public static final String ETH_HOSTNAME = "${identity.hostname}";
          |	/** Board has SD card interface (SPI or Native) */
          |	public static final boolean HAS_SD_CARD = ${hasSdSpi || hasSdNative};
          |	/** Board has VGA output (DMA or Text) */
@@ -601,7 +610,11 @@ object ConstGeneratorMain extends App {
   val cfgArgs = args.filterNot(a => a == "--write" || a.equalsIgnoreCase("buildtree"))
   val config = JopTopVerilog.resolvePreset(preset, cfgArgs)
 
-  val source = ConstGenerator.generate(config)
+  // An entry point, so it may read the setup layer: the unit this build is
+  // for, if an instance covers its assembly, gives the image its MAC and
+  // hostname. java/Makefile lists jop/setup/ among Const.java's inputs.
+  val unit = jop.setup.Instances.forAssembly(config.assembly)
+  val source = ConstGenerator.generate(config, unit.map(_.netIdentity).getOrElse(NetIdentity.shared))
 
   if (writeToFile) {
     // Const.java is PER CONFIGURATION -- ep4cgx150Serial and wukongSmp differ in

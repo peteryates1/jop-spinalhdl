@@ -1,6 +1,6 @@
 # Board instances
 
-**Status: step 1 done 2026-10-28; steps 2-4 open.** Tracked as status item
+**Status: steps 1 and 2 done 2026-10-28; steps 3 and 4 open.** Tracked as status item
 [174](../current-status.md#item-174). The layering it starts is item
 [173](../current-status.md#item-173).
 
@@ -109,6 +109,17 @@ Each step is test-first.
    still naming jop-i9-1's probe.
 2. **MAC and hostname into the generated constants**, with `NetConfig`'s
    defaults taken from them.
+
+   **Done 2026-10-28.** `ConstGenerator` writes `ETH_MAC_HI`, `ETH_MAC_LO` and
+   `ETH_HOSTNAME` from a `NetIdentity`, a generic type. Its entry point passes
+   the instance's, and `NetConfig` defaults from them. `java/Makefile` lists
+   `jop/setup/` among `Const.java`'s inputs, so a changed MAC regenerates it;
+   `check-generated-deps.sh` asserts that edge and went red first. On the i5
+   unit, NetTest prints `MAC=02:4A:4F:50:00:02`. 123 frames went out from that
+   MAC and none from the shared one, the host's neighbour entry took it, and
+   every network check passed. Boards no instance covers keep
+   02:00:00:00:00:01 and an empty hostname. Note that only `make -C java`
+   regenerates `Const.java`; an app build alone compiles against the old one.
 3. **The DHCP client**: option 12, a transaction ID seeded from the MAC, and
    the hardware-address check. Then measure whether the router resolves the
    names.

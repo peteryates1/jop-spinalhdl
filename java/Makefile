@@ -45,6 +45,9 @@ generate-const: $(CONST_JAVA)
 # and the .jop then addressed the wrong peripheral -- TROUBLESHOOTING.md's
 # first entry, and a board that looks dead.
 #
+# The board instances too (jop/setup/, status item 174): a unit's MAC and
+# hostname are in Const.java, so a changed MAC must regenerate it.
+#
 # Same defect as fpga/quartus.mk's .sdc, one directory over: a generated
 # artefact whose prerequisites omit an input that determines its content.
 $(CONST_JAVA): \
@@ -54,7 +57,8 @@ $(CONST_JAVA): \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/io/IoAddressAllocator.scala \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/io/DeviceTypes.scala \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/DeviceInstance.scala \
-               $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/memory/JopMemoryConfig.scala
+               $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/memory/JopMemoryConfig.scala \
+               $(wildcard $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/setup/*.scala)
 	cd $(PROJECT_ROOT) && sbt -error "runMain jop.generate.ConstGeneratorMain $(CONST_ARGS)"
 
 tools: $(CONST_JAVA)

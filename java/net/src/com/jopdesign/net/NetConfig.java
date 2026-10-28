@@ -1,5 +1,7 @@
 package com.jopdesign.net;
 
+import com.jopdesign.sys.Const;
+
 /**
  * Static network configuration.
  *
@@ -9,11 +11,17 @@ package com.jopdesign.net;
  */
 public class NetConfig {
 
-	/** Our MAC address high 16 bits (e.g. 0x0200 for 02:00:...) */
-	public static int macHi = 0x0200;
+	/** Our MAC address high 16 bits (e.g. 0x024A for 02:4a:...). This unit's,
+	 *  from its board instance via Const (status item 174); 02:00:00:00:00:01,
+	 *  shared, on a board no instance covers yet. */
+	public static int macHi = Const.ETH_MAC_HI;
 
-	/** Our MAC address low 32 bits (e.g. 0x00000001 for ...:00:00:00:01) */
-	public static int macLo = 0x00000001;
+	/** Our MAC address low 32 bits (e.g. 0x4F500002 for ...:4f:50:00:02) */
+	public static int macLo = Const.ETH_MAC_LO;
+
+	/** Our hostname, sent in DHCP requests (option 12); empty = send none.
+	 *  The board instance's name, via Const. */
+	public static String hostname = Const.ETH_HOSTNAME;
 
 	/** Our IP address (default 192.168.0.123) */
 	public static int ip = (192 << 24) | (168 << 16) | (0 << 8) | 123;

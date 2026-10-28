@@ -1,6 +1,6 @@
 package jop.setup
 
-import jop.config.{SystemAssembly, UnitAccess}
+import jop.config.{NetIdentity, SystemAssembly, UnitAccess}
 
 /** A MAC address: six octets, written 02:4a:4f:50:00:01. */
 case class MacAddress(octets: Seq[Int]) {
@@ -56,4 +56,7 @@ case class Instance(
 
   /** Fitted, and working. */
   def usable(part: String): Boolean = !notFitted(part) && !broken(part)
+
+  /** Its MAC, and its name as its hostname: what its image's Const.java carries. */
+  def netIdentity: NetIdentity = NetIdentity(mac.octets, name)
 }
