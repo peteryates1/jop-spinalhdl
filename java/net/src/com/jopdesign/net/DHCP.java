@@ -47,7 +47,8 @@ public class DHCP {
 
 	// State
 	static int state = STATE_INIT;
-	static int xid = 0x4A4F5001;   // "JOP\x01"
+	static int xid = 0x4A4F5001;   // "JOP\x01"; the first start() replaces it with a hash of our MAC
+	static boolean xidSeeded = false;
 	static int retryCount = 0;
 	static int lastSendTime = 0;
 
@@ -76,6 +77,15 @@ public class DHCP {
 		NetConfig.ip = 0;
 		NetConfig.dhcpActive = true;
 		NetConfig.dhcpOfferedIp = 0;
+		// Seed the transaction ID from our MAC (status item 174). Every board used
+		// to start from the same ID and matched replies on it alone, so two units
+		// booting together could take each other's offers. Knuth's multiplicative
+		// constant spreads MACs that differ by one, so successive xid++ values of
+		// two units do not meet either.
+		if (!xidSeeded) {
+			xid = (NetConfig.macLo * 0x9E3779B1) ^ (NetConfig.macHi << 16) ^ 0x4A4F5001;
+			xidSeeded = true;
+		}
 		xid++;
 		retryCount = 0;
 		lastSendTime = 0;
@@ -171,6 +181,12 @@ public class DHCP {
 
 		int rxXid = pkt.getInt(off + 4);
 		if (rxXid != xid) return;
+
+		// ...and our hardware address: transaction IDs are only 32 bits, and the
+		// server broadcasts its replies to every unit (status item 174).
+		for (int i = 0; i < 6; i++) {
+			if (pkt.getByte(off + 28 + i) != NetConfig.getMacByte(i)) return;
+		}
 
 		// Verify magic cookie
 		int cookie = pkt.getInt(off + DHCP_HEADER);
@@ -293,6 +309,9 @@ public class DHCP {
 		// Option 53: DHCP Message Type = DISCOVER
 		optOff = putOption(pkt, optOff, 53, 1, DHCPDISCOVER);
 
+		// Option 12: Host Name
+		optOff = putHostName(pkt, optOff);
+
 		// Option 55: Parameter Request List
 		pkt.setByte(optOff++, 55);
 		pkt.setByte(optOff++, 4);
@@ -350,6 +369,9 @@ public class DHCP {
 
 		// Option 53: DHCP Message Type = REQUEST
 		optOff = putOption(pkt, optOff, 53, 1, DHCPREQUEST);
+
+		// Option 12: Host Name -- the same as in the DISCOVER (RFC 2131 4.3.1)
+		optOff = putHostName(pkt, optOff);
 
 		// Option 50: Requested IP (only in REQUESTING state)
 		if (state == STATE_REQUESTING) {
@@ -451,6 +473,25 @@ public class DHCP {
 		for (int i = 0; i < 6; i++) {
 			pkt.setByte(off + 28 + i, NetConfig.getMacByte(i));
 		}
+	}
+
+	/**
+	 * Write option 12, Host Name: NetConfig.hostname, which is the unit's board
+	 * instance name, so the server can name its lease (status item 174). Writes
+	 * nothing when the hostname is empty, as on a board no instance covers.
+	 * Returns the new offset after the option.
+	 */
+	private static int putHostName(Packet pkt, int off) {
+		String h = NetConfig.hostname;
+		int n = h.length();
+		if (n == 0) return off;
+		if (n > 63) n = 63;  // one DNS label
+		pkt.setByte(off++, 12);
+		pkt.setByte(off++, n);
+		for (int i = 0; i < n; i++) {
+			pkt.setByte(off++, h.charAt(i) & 0xFF);
+		}
+		return off;
 	}
 
 	/**

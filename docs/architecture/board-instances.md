@@ -1,6 +1,6 @@
 # Board instances
 
-**Status: steps 1 and 2 done 2026-10-28; steps 3 and 4 open.** Tracked as status item
+**Status: steps 1-3 done 2026-10-28; step 4 and name resolution open.** Tracked as status item
 [174](../current-status.md#item-174). The layering it starts is item
 [173](../current-status.md#item-173).
 
@@ -123,11 +123,47 @@ Each step is test-first.
 3. **The DHCP client**: option 12, a transaction ID seeded from the MAC, and
    the hardware-address check. Then measure whether the router resolves the
    names.
+
+   **Done 2026-10-28.** DISCOVER and REQUEST carry option 12, which is
+   `NetConfig.hostname`, the instance name. The transaction ID is seeded once
+   from a hash of the MAC (Knuth's multiplicative constant), so two units' IDs
+   differ even when their MACs differ by one. A reply must match our hardware
+   address as well as the ID.
+
+   Tested on the wire. `dhcp_check.py` (scratchpad) failed on the old client
+   -- no hostname, and the shared ID 0x4a4f5002 -- and passed after. Then both
+   Atari-800 units booted DhcpTest at the same moment: `jop-i9-1` used xid
+   0x0c8229b1 and got lease .238; `jop-i5-1` used 0xaabba364 and got .239.
+   No automated test covers the DHCP client, since no simulation drives the
+   net stack; the check is that script, on hardware.
+
+   **The router as DNS, measured.** It does register each unit's hostname: a
+   reverse lookup at 192.168.0.1 gives .238 -> `jop-i9-1` and .239 ->
+   `jop-i5-1`. But forward lookups fail:
+   - a bare local name gets no reply, not even the router's own name or this
+     VM's;
+   - `.lan`, `.home`, `.local`, `.localdomain` and `.home.arpa` give NXDOMAIN;
+   - its DHCP hands clients the ISP's DNS (194.168.4.100) rather than itself.
+
+   So name -> address needs something else (open question below).
 4. **The tools by instance**: the alias tables generated from, or checked
    against, the instances, and `hw_verify` and download taking an instance
    name. This changes the flow scripts, so it needs a separate go-ahead.
 
 ## Open questions
+
+- **Name -> address**, since the router does not resolve local names. Options:
+  - **The boards answer for their own names on the link.** The host's
+    systemd-resolved already multicasts an LLMNR query (224.0.0.252:5355) for
+    a bare name such as `jop-i5-1`, and nothing answers it. A small LLMNR
+    responder in the net stack would make the name resolve here with no
+    server and no host change. mDNS (`jop-i5-1.local`) is the more common
+    standard, but this host would need avahi or resolved's mDNS turned on.
+  - **The Pi 4 as the LAN's DNS** (dnsmasq): conventional, but it is not
+    configured for this network, and it would need the names (static entries
+    plus reservations, or the Pi serving DHCP too).
+  - **The test tools read the lease from the console**: DhcpTest already
+    prints it. That works today, but only for scripts.
 
 - **The setup layer's form** (item 173): a Scala package, or a data file that
   Scala and the Python tools both read. TOML would need no new package in
