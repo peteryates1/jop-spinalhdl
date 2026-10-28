@@ -2115,6 +2115,22 @@ object JopConfig {
         devicePart = Some("RTL8211EG"))))))
   }
 
+  /** `xc7a100tDbEth` at 100 Mb/s: MII, four data lines at 25 MHz, both clocks
+    * from the PHY. Status item 170: at 1 Gb/s this board loses most received
+    * frames whose data toggles (0 of 400 alternating, 28 of 400 random), and
+    * each loss blacks the receiver out; MII is item 166's workaround for the
+    * EP4CGX150 on the same board. BOTH PHY clocks reach ordinary pins on this
+    * core board -- RX_CLK J3:37 is L5 (IO_L4P_T0_34), TX_CLK J3:22 is D1
+    * (IO_L23N_T3_35), neither clock-capable -- so both take a general route.
+    * ConstGenerator stops the PHY advertising 1000BASE-T. */
+  def xc7a100tDbMii = {
+    val base = xc7a100tDbEth
+    val devs = base.system.devices
+    base.copy(systems = Seq(base.system.copy(devices = devs +
+      ("eth" -> devs("eth").copy(params = Map("phyDataWidth" -> 4,
+        "rxClkNotClockCapable" -> true, "txClkNotClockCapable" -> true))))))
+  }
+
   /** XC7A100T + DB_FPGA V5 — DDR3 SMP */
   def xc7a100tDbSmp(n: Int) = {
     val base = xc7a100tDbSerial

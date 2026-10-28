@@ -164,6 +164,7 @@ object JopTopVerilog {
     case "xc7a100tDbSerial" => JopConfig.xc7a100tDbSerial
     case "xc7a100tDbFull"   => JopConfig.xc7a100tDbFull
     case "xc7a100tDbEth"    => JopConfig.xc7a100tDbEth
+    case "xc7a100tDbMii"    => JopConfig.xc7a100tDbMii
     case "xc7a100tDbSmp" =>
       val n = args.drop(1).headOption.map(_.toInt).getOrElse(2)
       JopConfig.xc7a100tDbSmp(n)

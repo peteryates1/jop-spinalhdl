@@ -259,6 +259,32 @@ class GeneratedConstraintsTest extends AnyFunSuite {
     assert(!XdcGenerator.generate(cfgOf("wukongFull")).contains("CLOCK_DEDICATED_ROUTE"))
   }
 
+  // MII ON THE XC7A100T + DB_FPGA V5 (status item 170). At 1 Gb/s this board
+  // loses most received frames whose data toggles; item 166's workaround is MII
+  // at 100 Mb/s. XdcGenerator wrote constraints for GMII and RGMII only, so an
+  // MII design on a Xilinx board got neither PHY clock: both domains untimed,
+  // and placement stops at Place 30-574 on the V5, where BOTH clocks reach
+  // ordinary pins -- RX_CLK J3:37 is L5 (IO_L4P_T0_34), TX_CLK J3:22 is D1
+  // (IO_L23N_T3_35), neither clock-capable by Vivado's own pin data.
+  test("an MII design's XDC creates both PHY clocks; the V5 lets both take a general route") {
+    val cfg = cfgOf("xc7a100tDbMii")
+    val xdc = XdcGenerator.generate(cfg)
+    for ((clk, ball) <- Seq("e_rxc" -> "L5", "e_txc" -> "D1")) {
+      assert(xdc.contains(s"set_property PACKAGE_PIN $ball [get_ports {$clk}]"), s"$clk on $ball\n$xdc")
+      assert(xdc.contains(s"create_clock -period 8.000 -name $clk [get_ports {$clk}]"), s"$clk\n$xdc")
+      assert(xdc.contains(s"set_clock_groups -asynchronous -group [get_clocks $clk]"), s"$clk\n$xdc")
+      assert(xdc.contains(s"set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets ${clk}_IBUF]"),
+        s"$clk reaches an ordinary pin here\n$xdc")
+    }
+    for (p <- Seq("e_rxd[*]", "e_rxdv", "e_rxer"))
+      assert(xdc.contains(s"set_property IOB TRUE [get_ports {$p}]"), s"$p\n$xdc")
+    assert(!xdc.contains("e_gtxc") && !xdc.contains("clk_125"),
+      s"MII transmits on the PHY's TX_CLK, not the clock wizard's 125 MHz\n$xdc")
+    // A PHY still advertising 1000BASE-T would link at 1 Gb/s, which an MII MAC
+    // cannot receive.
+    assert(ConstGenerator.generate(cfg).contains("public static final boolean ETH_GIGABIT = false;"))
+  }
+
   // A DECLARED PORT WITH NO PIN IS PLACED BY THE FITTER, ANYWHERE. The first MII
   // build declared GMII's e_gtxc, which only GMII constrains; Quartus put it on
   // C12 -- the DB_FPGA's J3:31, the RTL8211EG's COL/Mode -- and drove it low

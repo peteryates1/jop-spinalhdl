@@ -172,6 +172,39 @@ object XdcGenerator {
       sb.append("\n")
     }
 
+    // Ethernet over MII at 100 Mb/s (status items 166, 170): an Ethernet device
+    // that is neither GMII nor RGMII, as TimingConstraints decides it. Both
+    // clocks come from the PHY, so both are created here, each asynchronous to
+    // everything; there is no clock wizard output to group. 8 ns, not 40, as in
+    // TimingConstraints: the PHY runs its clocks at 125 MHz until
+    // autonegotiation settles, and the MAC logic meets 125 MHz in GMII anyway.
+    // Without this an MII design on a Xilinx board had neither clock: both
+    // domains untimed, and Place 30-574 on the V5, where both are ordinary pins.
+    val mii = config.devices.values.find(d =>
+      d.deviceType == DeviceType.Ethernet && d.params.getOrElse("gmii", false) != true &&
+        d.params.getOrElse("rgmii", false) != true)
+    mii.foreach { eth =>
+      sb.append("# Ethernet: MII at 100 Mb/s (RTL8211EG), both clocks from the PHY\n")
+      for (clk <- Seq("e_rxc", "e_txc")) {
+        sb.append(s"create_clock -period 8.000 -name $clk [get_ports {$clk}]\n")
+        sb.append(s"set_clock_groups -asynchronous -group [get_clocks $clk]\n")
+      }
+      // Declared per preset, never assumed -- the same rule as GMII's RX_CLK.
+      if (eth.params.getOrElse("rxClkNotClockCapable", false) == true)
+        sb.append("set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets e_rxc_IBUF]\n")
+      if (eth.params.getOrElse("txClkNotClockCapable", false) == true)
+        sb.append("set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets e_txc_IBUF]\n")
+      val er = eth.params.getOrElse("noErPins", false) != true
+      val rxEr = if (er) " e_rxer" else ""
+      val txEr = if (er) " e_txer" else ""
+      sb.append(s"set_false_path -from [get_ports {e_rxd[*] e_rxdv$rxEr}]\n")
+      sb.append(s"set_false_path -to [get_ports {e_txd[*] e_txen$txEr}]\n")
+      sb.append("set_property IOB TRUE [get_ports {e_rxd[*]}]\n")
+      sb.append("set_property IOB TRUE [get_ports {e_rxdv}]\n")
+      if (er) sb.append("set_property IOB TRUE [get_ports {e_rxer}]\n")
+      sb.append("\n")
+    }
+
     // Ports the design has but the board does not wire -- see Board.parkedPins.
     // Gated exactly as LpfGenerator gates them: an sdram_* port exists only
     // when the system uses SDR, and constraining a port that is not there is a
