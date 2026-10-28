@@ -410,8 +410,16 @@ cpu0_load:
 // then sends 0x55. Both sides retry with timeouts.
 //
 // TX FIFO is guaranteed empty at boot, so no TX-ready check needed.
-// Timeout counter on stack: ~78 poll iterations before resend.
+// Resend deadline on stack while polling (see rdy_send).
 // Stack discipline: rdy_send enters/exits with empty stack.
+//
+// bz/bnz POP THEIR OPERAND -- status item 169. This loader used to pop the
+// tested value a second time after both of rdy_got_byte's branches and both
+// of ser_wait_ack's, and left three checksum bytes behind in ser_checksum.
+// Every byte the handshake received, stray or the 0x55 itself, took one word
+// off an empty stack, and Java started its stack that far down, on top of
+// the constant table: ten stray bytes put a checksum byte over i2c's 65535.
+// SerialBootStackTest holds SP at stack_init from the first 0xAA to cpux_boot.
 //
 
 rdy_send:
@@ -485,20 +493,19 @@ rdy_got_byte:
 			wait
 			ldmrd
 
-			// Is it 0x55 (ACK)?
+			// Is it 0x55 (ACK)? bz pops the XOR result, leaving the stack
+			// empty on both paths.
 			ldi	rdy_ack
 			xor
 			nop
 			bz	rdy_done
 			nop
 			nop
-			pop					// not ACK, discard and resend
-			jmp	rdy_send
+			jmp	rdy_send		// not ACK: resend
 			nop
 			nop
 
 rdy_done:
-			pop					// discard XOR result (0)
 
 #endif // SERIAL
 
@@ -942,12 +949,10 @@ not_first:
 // On NACK, reset and retry the entire download.
 //
 ser_checksum:
+// Each byte is computed AFTER its TX-ready loop, straight into stmwd, so the
+// stack is empty between bytes (bytes 3-1 used to be computed before the loop
+// as well, and those copies were left on the stack -- item 169).
 // Send checksum byte 3 (MSB)
-			ldm	b
-			ldi	24
-			shr				// b >> 24
-			ldi	255
-			and				// mask to byte
 ser_ck_tx3:
 			ldi	io_status
 			stmra
@@ -972,11 +977,6 @@ ser_ck_tx3:
 			wait
 
 // Send checksum byte 2
-			ldm	b
-			ldi	16
-			shr
-			ldi	255
-			and
 ser_ck_tx2:
 			ldi	io_status
 			stmra
@@ -1001,11 +1001,6 @@ ser_ck_tx2:
 			wait
 
 // Send checksum byte 1
-			ldm	b
-			ldi	8
-			shr
-			ldi	255
-			and
 ser_ck_tx1:
 			ldi	io_status
 			stmra
@@ -1072,16 +1067,14 @@ ser_wait_ack:
 			ldmrd			// ACK byte on stack
 
 			nop
-			bnz	ser_retry	// non-zero = NACK, retry
+			bnz	ser_retry	// non-zero = NACK, retry (bnz pops the byte)
 			nop
 			nop
-			pop
 			jmp	cpux_boot	// ACK (0x00) = success, boot
 			nop
 			nop
 
 ser_retry:
-			pop
 			ldi	0
 			stm	heap		// reset word counter
 			ldi	0

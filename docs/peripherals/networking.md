@@ -554,8 +554,10 @@ at 50, RXC 100.15 at 25), RJ1 to a gigabit switch, tested from a VM on the LAN:
 
 `NetTest` crashed at start on the first try here and on `xc7a100tDbEth`; that
 was status item 169, stray bytes in the serial-boot handshake corrupting the
-microcode's constants, not the network or the board. With a clean download it
-passes everything above.
+microcode's constants, not the network or the board. Fixed 2026-10-28: a
+bitstream built since then ignores them -- this one, rebuilt, passes the ping,
+UDP and TCP checks above after 20 stray bytes -- while one built before needs a
+clean download.
 
 ## QMTECH EP4CGX150 + DB_FPGA (MII at 100 Mb/s; GMII at 1 Gb/s loses frames)
 
