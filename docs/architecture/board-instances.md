@@ -1,6 +1,6 @@
 # Board instances
 
-**Status: steps 1-3 done 2026-10-28; step 4 and name resolution open.** Tracked as status item
+**Status: steps 1-3 done 2026-10-28, names resolve since 2026-10-29; step 4 open.** Tracked as status item
 [174](../current-status.md#item-174). The layering it starts is item
 [173](../current-status.md#item-173).
 
@@ -146,13 +146,31 @@ Each step is test-first.
    - its DHCP hands clients the ISP's DNS (194.168.4.100) rather than itself.
 
    So name -> address needs something else (open question below).
+
+   **Answered 2026-10-29 by Pi-hole.** The user moved DHCP and DNS to Pi-hole
+   in Docker on the Pi 4 (192.168.0.2), with the router's DHCP off. Both units
+   booted DhcpTest at the same moment again:
+   - Pi-hole served both and handed out itself as DNS, with the router as the
+     gateway.
+   - It offered **the same address, .227, to both** units. `jop-i9-1` took it;
+     `jop-i5-1`'s REQUEST got a NAK, so it restarted with a new transaction ID
+     and bound .228. That is the race the per-unit IDs and the hardware-address
+     check exist for.
+   - Forward lookups at Pi-hole now work: `jop-i9-1` -> .227 and `jop-i5-1` ->
+     .228. Reverse gives `jop-i9-1.local` and `jop-i5-1.local`, since Pi-hole's
+     domain is `local`; `.lan` names do not exist.
+   - The units' own DNS client resolves through it too (DhcpTest's lookup of
+     example.com).
+
+   A host on an old router lease keeps the ISP's DNS until it renews.
 4. **The tools by instance**: the alias tables generated from, or checked
    against, the instances, and `hw_verify` and download taking an instance
    name. This changes the flow scripts, so it needs a separate go-ahead.
 
 ## Open questions
 
-- **Name -> address**, since the router does not resolve local names. Options:
+- **Name -> address**, since the router does not resolve local names. Settled
+  by Pi-hole (2026-10-29, step 3 above). The alternatives stay on record:
   - **The boards answer for their own names on the link.** The host's
     systemd-resolved already multicasts an LLMNR query (224.0.0.252:5355) for
     a bare name such as `jop-i5-1`, and nothing answers it. A small LLMNR
