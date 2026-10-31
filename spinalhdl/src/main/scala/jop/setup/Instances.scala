@@ -16,7 +16,17 @@ import jop.config.{SystemAssembly, UnitAccess}
  * images keep the shared MAC 02:00:00:00:00:01 with no hostname.
  *
  * Names are jop-<module>-<n>, unique in the lab, and each is also the unit's
- * DHCP hostname; MACs are numbered in the order units were listed.
+ * DHCP hostname. MACs are numbered in the order they were issued, one per
+ * Ethernet port in use, and only units on the LAN have any; a number is never
+ * reused (07-09 went unissued
+ * when the Au and the CYC5000 turned out to have no network connection and
+ * the ext-board i5 to have no module).
+ *
+ * NOT a unit: Colorlight's i5/i9 ext board. It is here, and its DAPLink is
+ * still in the probe and serial registries (`i5`), but no module is fitted --
+ * the only i5 is jop-i5-1's, and that base board may take an i9+ instead, to
+ * test two i9+ units at once (user, 2026-10-31). A module fitted there is a
+ * new unit: access probe/console `i5`, loaderBoard `colorlight-i5`.
  */
 object Instances {
 
@@ -26,7 +36,7 @@ object Instances {
   val jopI9Plus_1 = Instance(
     name = "jop-i9plus-1",
     assemblies = Seq(SystemAssembly.colorlightDbI9Plus),
-    mac = MacAddress.jop(1),
+    macs = Seq(MacAddress.jop(1)),
     access = UnitAccess(
       probeAlias = Some("colorlight-db"),
       consoleAlias = Some("colorlight-db-0"),
@@ -40,7 +50,7 @@ object Instances {
   val jopI5_1 = Instance(
     name = "jop-i5-1",
     assemblies = Seq(SystemAssembly.colorlightDbI5),
-    mac = MacAddress.jop(2),
+    macs = Seq(MacAddress.jop(2)),
     access = UnitAccess(
       probeAlias = Some("colorlight-db-i5"),
       consoleAlias = Some("colorlight-db-i5-0"),
@@ -54,7 +64,7 @@ object Instances {
   val jopEp4cgx150_1 = Instance(
     name = "jop-ep4cgx150-1",
     assemblies = Seq(SystemAssembly.qmtechWithDb, SystemAssembly.qmtechWithDbV5),
-    mac = MacAddress.jop(3),
+    macs = Seq(MacAddress.jop(3)),
     access = UnitAccess(
       probeAlias = Some("ep4cgx150"),
       consoleAlias = Some("ep4cgx150")))
@@ -64,7 +74,7 @@ object Instances {
   val jopXc7a100t_1 = Instance(
     name = "jop-xc7a100t-1",
     assemblies = Seq(SystemAssembly.xc7a100tWithDbV5),
-    mac = MacAddress.jop(4),
+    macs = Seq(MacAddress.jop(4)),
     access = UnitAccess(
       probeAlias = Some("xc7a100t"),
       consoleAlias = Some("xc7a100t-pico-0"),
@@ -75,7 +85,7 @@ object Instances {
   val jopWukong_1 = Instance(
     name = "jop-wukong-1",
     assemblies = Seq(SystemAssembly.wukong, SystemAssembly.wukongWithJ11Uart),
-    mac = MacAddress.jop(5),
+    macs = Seq(MacAddress.jop(5)),
     access = UnitAccess(
       probeAlias = Some("wukong"),
       consoleAlias = Some("wukong"),
@@ -86,7 +96,7 @@ object Instances {
   val jopAe115fb_1 = Instance(
     name = "jop-ae115fb-1",
     assemblies = Seq(SystemAssembly.ae115fb),
-    mac = MacAddress.jop(6),
+    macs = Seq(MacAddress.jop(6)),
     access = UnitAccess(
       probeAlias = Some("ae115fb"),
       consoleAlias = Some("ae115fb")))
@@ -100,7 +110,7 @@ object Instances {
   val jopAu_1 = Instance(
     name = "jop-au-1",
     assemblies = Seq(SystemAssembly.alchitryAuV2),
-    mac = MacAddress.jop(7),
+    // no network connection (user, 2026-10-31), so no MAC
     access = UnitAccess(
       probeAlias = Some("alchitry"),
       consoleAlias = Some("alchitry"),
@@ -112,25 +122,14 @@ object Instances {
   val jopCyc5000_1 = Instance(
     name = "jop-cyc5000-1",
     assemblies = Seq(SystemAssembly.cyc5000),
-    mac = MacAddress.jop(8),
+    // no network connection (user, 2026-10-31), so no MAC
     access = UnitAccess(
       probeAlias = Some("cyc5000"),
       consoleAlias = Some("cyc5000"),
       loaderBoard = Some("cyc5000")))
 
-  /** A Colorlight i5 on Colorlight's own i5/i9 ext board, whose DAPLink is
-    * both probe and console. */
-  val jopI5ext_1 = Instance(
-    name = "jop-i5ext-1",
-    assemblies = Seq(SystemAssembly.colorlightI5),
-    mac = MacAddress.jop(9),
-    access = UnitAccess(
-      probeAlias = Some("i5"),
-      consoleAlias = Some("i5"),
-      loaderBoard = Some("colorlight-i5")))
-
   val all: Seq[Instance] = Seq(jopI9Plus_1, jopI5_1, jopEp4cgx150_1, jopXc7a100t_1,
-    jopWukong_1, jopAe115fb_1, jopAu_1, jopCyc5000_1, jopI5ext_1)
+    jopWukong_1, jopAe115fb_1, jopAu_1, jopCyc5000_1)
 
   /** The unit a design on this assembly is built for: the one NAMED (status
     * item 174, step 4: `--instance`, `JOP_INSTANCE=`), which must exist, be

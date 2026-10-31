@@ -621,7 +621,7 @@ object ConstGeneratorMain extends App {
   // for, if an instance covers its assembly, gives the image its MAC and
   // hostname. java/Makefile lists jop/setup/ among Const.java's inputs.
   val unit = jop.setup.Instances.select(instanceName, config.assembly, preset)
-  val source = ConstGenerator.generate(config, unit.map(_.netIdentity).getOrElse(NetIdentity.shared))
+  val source = ConstGenerator.generate(config, unit.flatMap(_.netIdentity).getOrElse(NetIdentity.shared))
 
   if (writeToFile) {
     // Const.java is PER CONFIGURATION -- ep4cgx150Serial and wukongSmp differ in

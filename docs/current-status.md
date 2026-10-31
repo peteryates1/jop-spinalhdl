@@ -4120,10 +4120,14 @@ would come only when they stop changing together.
 
 **Board designs cleaned 2026-10-31:** every unit's probe, console and loader
 moved off `Board.scala` into `jop.setup.Instances`, and `Board` lost the four
-fields. Nine units, each with its own MAC (`02:4a:4f:50:00:01`..`09`) and
-hostname: `jop-i9plus-1`, `jop-i5-1`, `jop-ep4cgx150-1`, `jop-xc7a100t-1`,
-`jop-wukong-1`, `jop-ae115fb-1`, `jop-au-1`, `jop-cyc5000-1` and `jop-i5ext-1`
-(the i5 on Colorlight's ext board, whose DAPLink is still registered). A unit
+fields. Eight units: `jop-i9plus-1`, `jop-i5-1`, `jop-ep4cgx150-1`,
+`jop-xc7a100t-1`, `jop-wukong-1` and `jop-ae115fb-1` are on the LAN, with
+MACs `02:4a:4f:50:00:01`..`06` and their names as hostnames; `jop-au-1` and
+`jop-cyc5000-1` have no network connection, so no MAC. A unit has one MAC
+per Ethernet port in use and its image carries port 0's: the Colorlight
+modules have a second PHY that JOP may drive later (user). Colorlight's i5/i9 ext board is NOT a unit: no module is fitted
+(the only i5 is jop-i5-1's, and that base board may take a second i9+), so
+the `colorlightI5*` presets reach nothing until one is. A unit
 may be built as several assemblies -- the EP4CGX150 with either daughter
 board, the Wukong with or without its J11 adapter. Test first: `InstanceTest`
 holds every preset's descriptor (probe, console, loader, tool) to what it said
@@ -4195,9 +4199,9 @@ still per preset), and `make download INSTANCE=`. Test first in Scala and
 through `make -p`; `jop-i5-1` and `jop-i9plus-1` passed DoAll 68/68 by name.
 
 **Every unit has its own MAC, 2026-10-31** ([item 173](#item-173)): the
-EP4CGX150, XC7A100T, Wukong, A-E115FB, Au, CYC5000 and the ext-board i5 are
-instances too, so every attached board's image now has a MAC and hostname of
-its own; only boards with no unit at all keep 02:00:00:00:00:01. What is
+EP4CGX150, XC7A100T, Wukong and A-E115FB are instances too, so every board on
+the LAN has a MAC and hostname of its own (checked on the wire for
+jop-xc7a100t-1); boards off the LAN or with no unit keep 02:00:00:00:00:01. What is
 left of this item: NetTest still uses the static .123.
 
 **Renamed 2026-10-31:** the i9+ unit is `jop-i9plus-1` (it is an i9+, not an i9); the measurements above were taken under its old name, `jop-i9-1`.

@@ -56,7 +56,8 @@ class ColorlightModuleSplitTest extends AnyFunSuite {
     assert(SystemAssembly.colorlightI5.ledCount == 1 && !SystemAssembly.colorlightI5.ledActiveHigh)
     assert(Seq("sdram_CKE" -> "U18", "sdram_CSn" -> "U17", "sdram_DQM[0]" -> "P18",
       "sdram_DQM[3]" -> "M18").forall { case (k, v) => p.get(k).contains(v) }, p)
-    assert(jop.setup.Instances.forAssembly(SystemAssembly.colorlightI5).flatMap(_.access.probeAlias).contains("i5"))
+    // The ext board has no module fitted (the only i5 is on the Atari base), so no unit.
+    assert(jop.setup.Instances.forAssembly(SystemAssembly.colorlightI5).isEmpty)
   }
 
   test("i9+ on the Atari base: the base board's console, eight LEDs, reset and aliases") {

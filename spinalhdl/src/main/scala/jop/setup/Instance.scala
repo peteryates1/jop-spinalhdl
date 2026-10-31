@@ -33,7 +33,11 @@ object MacAddress {
  *     where this lab builds one unit as more than one assembly -- a core board
  *     with either daughter board, or the Wukong with or without its J11
  *     adapter. Its access and MAC are the same in each.
- *   - `mac`: its own, from the JOP block (`MacAddress.jop`).
+ *   - `macs`: its own, from the JOP block (`MacAddress.jop`), one per
+ *     Ethernet port in use, port 0 first; empty for a unit without a network
+ *     connection, which gets no hostname either and whose images keep the
+ *     shared fallback. Images carry port 0's: JOP drives one port today, and
+ *     the Colorlight modules' second PHY may come later (user, 2026-10-31).
  *   - `access`: how it is reached -- the probe and console aliases, which
  *     `jtag_probe_map` and `usb_serial_map` resolve to serials, and the loader.
  *   - `presets`: the presets built for it, or empty for every preset on its
@@ -45,13 +49,14 @@ object MacAddress {
 case class Instance(
   name: String,
   assemblies: Seq[SystemAssembly],
-  mac: MacAddress,
+  macs: Seq[MacAddress] = Seq.empty,
   access: UnitAccess,
   presets: Seq[String] = Seq.empty,
   notFitted: Set[String] = Set.empty,
   broken: Set[String] = Set.empty
 ) {
   require(assemblies.nonEmpty, s"instance $name has no assembly")
+  require(macs.distinct.size == macs.size, s"instance $name repeats a MAC: ${macs.mkString(", ")}")
   private val parts: Set[String] =
     assemblies.flatMap(_.boards.flatMap(_.devices.map(_.part))).toSet
   require((notFitted ++ broken).subsetOf(parts),
@@ -66,6 +71,7 @@ case class Instance(
   /** Fitted, and working. */
   def usable(part: String): Boolean = !notFitted(part) && !broken(part)
 
-  /** Its MAC, and its name as its hostname: what its image's Const.java carries. */
-  def netIdentity: NetIdentity = NetIdentity(mac.octets, name)
+  /** Its MAC, and its name as its hostname: what its image's Const.java
+    * carries. None for a unit off the LAN. */
+  def netIdentity: Option[NetIdentity] = macs.headOption.map(m => NetIdentity(m.octets, name))
 }

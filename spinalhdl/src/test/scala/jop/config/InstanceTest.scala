@@ -25,11 +25,11 @@ class InstanceTest extends AnyFunSuite {
   }
 
   test("every instance has its own unicast, locally administered MAC in the JOP block") {
-    val macs = Instances.all.map(_.mac)
+    val macs = Instances.all.flatMap(_.macs)
     assert(macs.distinct.size == macs.size, s"shared MACs: ${macs.diff(macs.distinct)}")
-    for (i <- Instances.all) {
-      assert(i.mac.isUnicast && i.mac.isLocallyAdministered, s"${i.name}: ${i.mac}")
-      assert(i.mac.toString.startsWith("02:4a:4f:50:"), s"${i.name}: ${i.mac} is outside the JOP block")
+    for (i <- Instances.all; m <- i.macs) {
+      assert(m.isUnicast && m.isLocallyAdministered, s"${i.name}: $m")
+      assert(m.toString.startsWith("02:4a:4f:50:"), s"${i.name}: $m is outside the JOP block")
     }
   }
 
@@ -102,6 +102,10 @@ class InstanceTest extends AnyFunSuite {
   // said BEFORE (dumped 2026-10-31 at 5fecd67), so the move must keep it green:
   // a unit that lost its probe, console or loader would show here, not on the
   // bench. The loader decides the tool -- openFPGALoader with one, else Quartus.
+  // `host` is the unit's hostname, "" for a unit off the LAN. Changed since
+  // the dump on purpose (user, 2026-10-31): the Colorlight ext board has no
+  // module (the only i5 is jop-i5-1), so colorlightI5* reach nothing; the Au
+  // and the CYC5000 have no network connection, so no MAC and no hostname.
   // Not here: wukongDualIndependent and wukongDualSmp, two-system presets the
   // descriptor cannot describe at all (its CORES= line asks for one system).
   private case class Reach(probe: String, console: String, loader: Option[String], host: String)
@@ -150,11 +154,11 @@ class InstanceTest extends AnyFunSuite {
     "ae115fbDdr2Eth" -> Reach("ae115fb", "ae115fb", None, "jop-ae115fb-1"),
     "ae115fbDdr2Smp" -> Reach("ae115fb", "ae115fb", None, "jop-ae115fb-1"),
     "ae115fbDdr2SmpMshr" -> Reach("ae115fb", "ae115fb", None, "jop-ae115fb-1"),
-    "auSerial" -> Reach("alchitry", "alchitry", Some("alchitry_au"), "jop-au-1"),
-    "cyc5000Serial" -> Reach("cyc5000", "cyc5000", Some("cyc5000"), "jop-cyc5000-1"),
-    "cyc5000Smp" -> Reach("cyc5000", "cyc5000", Some("cyc5000"), "jop-cyc5000-1"),
-    "colorlightI5Bram" -> Reach("i5", "i5", Some("colorlight-i5"), "jop-i5ext-1"),
-    "colorlightI5Sdram" -> Reach("i5", "i5", Some("colorlight-i5"), "jop-i5ext-1"),
+    "auSerial" -> Reach("alchitry", "alchitry", Some("alchitry_au"), ""),
+    "cyc5000Serial" -> Reach("cyc5000", "cyc5000", Some("cyc5000"), ""),
+    "cyc5000Smp" -> Reach("cyc5000", "cyc5000", Some("cyc5000"), ""),
+    "colorlightI5Bram" -> Reach.none,
+    "colorlightI5Sdram" -> Reach.none,
     "colorlightDbI5Eth" -> Reach("colorlight-db-i5", "colorlight-db-i5-0", Some("dirtyJtag"), "jop-i5-1"),
     "colorlightDbI5Sdram" -> Reach("colorlight-db-i5", "colorlight-db-i5-0", Some("dirtyJtag"), "jop-i5-1"),
     "colorlightDbI9PlusEth" -> Reach("colorlight-db", "colorlight-db-0", Some("dirtyJtag"), "jop-i9plus-1"),
@@ -196,11 +200,30 @@ class InstanceTest extends AnyFunSuite {
     assert(macOf.map(_._2).distinct.size == macOf.size, s"units share a MAC: $macOf")
   }
 
-  test("a board without a unit keeps the shared MAC and sends no hostname") {
-    val c = constFor("max1000Sdram")
-    assert(c.contains("public static final int ETH_MAC_HI = 0x0200;") &&
-           c.contains("public static final int ETH_MAC_LO = 0x00000001;"), "max1000Sdram's MAC moved")
-    assert(c.contains("""public static final String ETH_HOSTNAME = "";"""), "max1000Sdram names a host")
+  test("a board without a unit, or a unit off the LAN, keeps the shared MAC and sends no hostname") {
+    for (p <- Seq("max1000Sdram", "colorlightI5Sdram", "auSerial", "cyc5000Serial")) {
+      val c = constFor(p)
+      assert(c.contains("public static final int ETH_MAC_HI = 0x0200;") &&
+             c.contains("public static final int ETH_MAC_LO = 0x00000001;"), s"$p has a MAC of its own")
+      assert(c.contains("""public static final String ETH_HOSTNAME = "";"""), s"$p names a host")
+    }
+  }
+
+  test("a unit has one MAC per Ethernet port; its image carries the first") {
+    // The Colorlight modules have two PHYs; JOP drives one today (user,
+    // 2026-10-31: a second port may come later).
+    val i9 = Instances.jopI9Plus_1
+    val two = i9.copy(macs = i9.macs :+ MacAddress.jop(98))
+    assert(two.netIdentity == i9.netIdentity, "the second port's MAC leaked into the image")
+    intercept[IllegalArgumentException](i9.copy(macs = Seq(i9.macs.head, i9.macs.head)))
+  }
+
+  test("every preset with Ethernet is built for a unit on the LAN") {
+    for ((preset, r) <- reach) {
+      val cfg = JopTopVerilog.resolvePreset(preset, Array(preset))
+      if (cfg.system.devices.values.exists(_.deviceType == DeviceType.Ethernet))
+        assert(r.host.nonEmpty, s"$preset has Ethernet but its unit has no MAC")
+    }
   }
 
   test("one unit can be built as several assemblies: a module on either base board") {
@@ -214,7 +237,7 @@ class InstanceTest extends AnyFunSuite {
   // (more i9+ modules are coming) need it; one unit per assembly does not.
   test("selecting a unit: by name, or the assembly's only one") {
     val i5 = Instances.forAssembly(SystemAssembly.colorlightDbI5).get
-    val i5b = i5.copy(name = "jop-i5-2", mac = MacAddress.jop(99))
+    val i5b = i5.copy(name = "jop-i5-2", macs = Seq(MacAddress.jop(99)))
     val two = Seq(i5, i5b)
     val a = SystemAssembly.colorlightDbI5
     val e = intercept[IllegalArgumentException](Instances.select(None, a, "colorlightDbI5Eth", two))

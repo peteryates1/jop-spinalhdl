@@ -122,7 +122,7 @@ object HwVerifyDescriptorMain extends App {
   // built for, if an instance covers its assembly.
   val unit = jop.setup.Instances.select(instanceName, design.assembly, preset)
   val text = HwVerifyDescriptor.generate(design, cfgKey, jopArgs, unit.map(_.access),
-    instanceName, unit.map(_.netIdentity))
+    instanceName, unit.flatMap(_.netIdentity))
   outPath match {
     case Some(p) =>
       new java.io.File(p).getParentFile.mkdirs()

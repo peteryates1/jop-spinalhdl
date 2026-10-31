@@ -2,8 +2,8 @@
 
 **Status: all four steps done (2026-10-28 to 10-31).** Tracked as status item
 [174](../current-status.md#item-174). The layering it starts is item
-[173](../current-status.md#item-173). Since 2026-10-31 every attached unit is an instance -- nine of
-them, each with its own MAC and hostname -- and board designs carry no unit
+[173](../current-status.md#item-173). Since 2026-10-31 every attached unit is an instance -- eight of
+them, the six on the LAN with their own MAC and hostname -- and board designs carry no unit
 facts at all (`Board` has no alias fields; a unit may be built as several
 assemblies).
 
