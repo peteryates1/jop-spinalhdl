@@ -4067,6 +4067,16 @@ build with the old `accept()`, so that retry is what keeps the port served.
 to `close()` a socket even after `isClosed()`. The aborted-listener path is not
 exercised: a host cannot send an RST mid-handshake without raw sockets.
 
+**HttpServer, 2026-10-31**, on `jop-ep4cgx150-1` (`ep4cgx150DbFull`, rebuilt:
+its bitstream predated item 169). It serves one client at a time and dropped an
+aborted connection without `close()`. Red on the old server: `http-reset` was
+refused at the 5th connection and for good after it, and `http-idle` (a GET
+behind a silent client) timed out, the server refusing every connection after
+it. It now closes aborted connections, drops a client silent for 30 s, and
+replaces a listener aborted mid-handshake; and it takes a DHCP lease like
+NetTest, with no static fallback. Green: `http`, `http-reset` (20 RSTs),
+`http-idle`, all by name (`jop-ep4cgx150-1.lan`).
+
 Guard: `fpga/scripts/net_echo_check.py` (hardware, not CI).
 
 <a id="item-172"></a>
@@ -4237,7 +4247,7 @@ stops (no static fallback, by the user's call). Red first on hardware: the v2
 image on `jop-xc7a100t-1` never printed `DHCP: BOUND`. v3 bound 192.168.0.229
 (gw .1, DNS .2); Pi-hole resolved `jop-xc7a100t-1.lan` to it, and ping, UDP echo and TCP echo all answered by
 name. The no-lease path has not run on hardware (it needs a LAN without
-DHCP). HttpServer still uses the static address.
+DHCP). HttpServer moved to DHCP too, under item 171.
 
 Guard: `spinalhdl/src/test/scala/jop/config/InstanceTest.scala` (each unit's
 MAC and hostname in its image, every Ethernet preset on a unit with a MAC),

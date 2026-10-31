@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
-"""TCP echo checks against NetTest (port 7) -- status item 171.
+"""TCP server checks against NetTest/DhcpTest (echo, port 7) and HttpServer
+(port 80) -- status item 171.
 
-Each check ends with a fresh echo round trip, so a check fails if the board
+Each check ends with a fresh round trip, so a check fails if the board
 stops serving after it, not only if the check's own connection misbehaves.
 
-  echo     one clean 10 KB round trip
-  reset    N connections the client aborts with an RST mid-transfer
-  idle     a connection held open and silent while another client echoes
-  dead     every slot held by silent clients; served again after the
-           board's idle timeout (slow: --dead-wait seconds)
+  echo        one clean 10 KB round trip
+  reset       N connections the client aborts with an RST mid-transfer
+  idle        a connection held open and silent while another client echoes
+  dead        every slot held by silent clients; served again after the
+              board's idle timeout (slow: --dead-wait seconds)
+  http        GET / answers 200 with a body
+  http-reset  N requests the client aborts with an RST half-sent, then a GET
+  http-idle   a silent connection holds the one-client server; a GET must
+              still be answered once the board drops it (slow: up to 45 s)
 
 Usage:
   net_echo_check.py <host> [--checks echo,reset,idle] [--dead-wait 40]
+  net_echo_check.py <host> --checks http,http-reset,http-idle
 Exit 0 when every check passes.
 """
 import argparse
@@ -22,6 +28,7 @@ import sys
 import time
 
 PORT = 7
+HTTP_PORT = 80
 
 
 def echo(host, size=10240, timeout=10.0):
@@ -129,8 +136,61 @@ def check_dead(host, args):
             s.close()
 
 
+def http_get(host, timeout=10.0):
+    """GET / and return (status line, body length)."""
+    with socket.create_connection((host, HTTP_PORT), timeout=timeout) as s:
+        s.settimeout(timeout)
+        s.sendall(b"GET / HTTP/1.0\r\nHost: jop\r\n\r\n")
+        resp = bytearray()
+        while True:
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            resp += chunk
+    head, _, body = bytes(resp).partition(b"\r\n\r\n")
+    return head.split(b"\r\n")[0].decode(errors="replace"), len(body)
+
+
+def get_ok(host, label, timeout=10.0):
+    try:
+        status, n = http_get(host, timeout)
+    except OSError as e:
+        return False, "%s: GET: %s" % (label, e)
+    return status.startswith("HTTP/1.0 200") and n > 0, \
+        "%s: GET -> %r, %d body bytes" % (label, status, n)
+
+
+def check_http(host, args):
+    return get_ok(host, "http")
+
+
+def check_http_reset(host, args):
+    for i in range(args.resets):
+        try:
+            s = socket.create_connection((host, HTTP_PORT), timeout=5)
+        except OSError as e:
+            return False, "http-reset: connect %d of %d: %s" % (i + 1, args.resets, e)
+        s.sendall(b"GET / HT")
+        time.sleep(0.3)
+        rst_close(s)
+        time.sleep(0.3)
+    return get_ok(host, "http-reset: after %d RSTs" % args.resets)
+
+
+def check_http_idle(host, args):
+    held = socket.create_connection((host, HTTP_PORT), timeout=5)
+    try:
+        time.sleep(0.5)
+        # The board serves one client at a time; the GET waits behind the
+        # silent one until the board's idle timeout (30 s) drops it.
+        return get_ok(host, "http-idle: behind a silent client", timeout=45.0)
+    finally:
+        held.close()
+
+
 CHECKS = {"echo": check_echo, "reset": check_reset, "idle": check_idle,
-          "dead": check_dead}
+          "dead": check_dead, "http": check_http, "http-reset": check_http_reset,
+          "http-idle": check_http_idle}
 
 
 def main():

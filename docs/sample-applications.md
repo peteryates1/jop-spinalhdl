@@ -139,7 +139,9 @@ make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=DhcpTest EXTRA_SRC=../../net/
 ### HttpServer
 
 HTTP/1.0 file server serving static files from FAT32 SD card on TCP port 80.
-Auto-creates a default `index.htm` on the SD card if missing.
+Auto-creates a default `index.htm` on the SD card if missing. Takes its address
+from DHCP like NetTest (no static fallback). One client at a time; a client
+silent for 30 s is dropped.
 
 Features: GET requests, subdirectory traversal, content-type detection,
 backpressure-aware streaming, pre-built error responses (400/404/500).
@@ -148,8 +150,9 @@ backpressure-aware streaming, pre-built error responses (400/404/500).
 make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=HttpServer "EXTRA_SRC=../../net/src ../../fat32/src"
 
 # Test from host
-curl http://192.168.0.123/
-curl http://192.168.0.123/index.htm
+curl http://jop-ep4cgx150-1.lan/
+curl http://jop-ep4cgx150-1.lan/index.htm
+fpga/scripts/net_echo_check.py jop-ep4cgx150-1.lan --checks http,http-reset,http-idle
 ```
 
 ### VgaTest

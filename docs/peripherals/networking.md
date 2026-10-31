@@ -132,7 +132,8 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 ## Default Configuration
 
 ```
-IP address:    192.168.0.123   (static; NetTest and DhcpTest use DHCP first)
+IP address:    192.168.0.123   static default; NetTest, DhcpTest and HttpServer
+               take a DHCP lease instead (no fallback), reached as <unit>.lan
 Subnet mask:   255.255.255.0
 Gateway:       192.168.0.1
 MAC address:   the unit's, from its board instance (02:4a:4f:50:00:nn);
@@ -753,18 +754,23 @@ sudo dnsmasq --no-daemon --no-resolv \
 ### Test from Host
 
 ```bash
-# Ping (ICMP echo) — use DHCP-assigned IP
-ping 192.168.0.123  # or DHCP-assigned IP
+# By the unit's name where the DHCP server registers it (Pi-hole here), else
+# by the IP= the console printed
+ping jop-ep4cgx150-1.lan
 
 # UDP echo (port 7)
-echo "hello" | nc -u -w1 192.168.0.123 7
+echo "hello" | nc -u -w1 jop-ep4cgx150-1.lan 7
 
 # TCP echo (port 7)
-echo "hello" | nc -w1 192.168.0.123 7
+echo "hello" | nc -w1 jop-ep4cgx150-1.lan 7
 
 # HTTP server (serves files from SD card)
-curl http://192.168.0.123/
-curl http://192.168.0.123/index.htm
+curl http://jop-ep4cgx150-1.lan/
+curl http://jop-ep4cgx150-1.lan/index.htm
+
+# The servers keep serving after RSTs, silent and dead clients (item 171)
+fpga/scripts/net_echo_check.py jop-ep4cgx150-1.lan                 # echo
+fpga/scripts/net_echo_check.py jop-ep4cgx150-1.lan --checks http,http-reset,http-idle
 
 # Monitor DHCP traffic
 tcpdump -i enp2s0 -n port 67 or port 68

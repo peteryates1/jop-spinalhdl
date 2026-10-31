@@ -9,15 +9,24 @@ import java.io.IOException;
  * HTTP/1.0 file server for JOP.
  *
  * Serves static files from the FAT32 SD card over TCP port 80.
- * Single-connection, poll-based design matching JOP constraints.
+ * Single-connection, poll-based design matching JOP constraints: a second
+ * client completes its handshake and waits for the first to finish.
+ *
+ * Address: DHCP, sending the unit's name as hostname (Const.ETH_HOSTNAME);
+ * no static fallback -- with no lease in DHCP_WAIT_MS it prints
+ * "DHCP: no lease" and stops.
+ *
+ * A client that sends nothing for TCP_IDLE_MS is dropped, and a connection
+ * the stack aborted is closed, which returns its pool slot (status item 171).
  *
  * Build:
  *   cd java/apps/Small
  *   make clean && make all APP_NAME=HttpServer "EXTRA_SRC=../../net/src ../../fat32/src"
  *
  * Test:
- *   curl http://192.168.0.123/
- *   curl http://192.168.0.123/index.htm
+ *   curl http://jop-ep4cgx150-1.lan/              (or the IP= it printed)
+ *   curl http://jop-ep4cgx150-1.lan/index.htm
+ *   fpga/scripts/net_echo_check.py jop-ep4cgx150-1.lan --checks http,http-reset,http-idle
  */
 public class HttpServer {
 
@@ -59,6 +68,13 @@ public class HttpServer {
 
 	// --- Stats ---
 	static int requestCount = 0;
+
+	/** How long to wait for a DHCP lease before giving up. */
+	static final int DHCP_WAIT_MS = 30000;
+
+	/** A client that sends nothing for this long is dropped: a peer that
+	 * vanished without FIN or RST would otherwise block the server for good. */
+	static final int TCP_IDLE_MS = 30000;
 
 	// --- Watchdog ---
 	static int wd = 0;
@@ -233,7 +249,7 @@ public class HttpServer {
 	// ==================== Main ====================
 
 	public static void main(String[] args) {
-		JVMHelp.wr("HTTP Server v1\n");
+		JVMHelp.wr("HTTP Server v2\n");
 
 		// --- Init SD card ---
 		JVMHelp.wr("SD init...\n");
@@ -263,6 +279,8 @@ public class HttpServer {
 		RESP_500 = buildErrorResponse(500, "Internal Server Error", "Error reading file.");
 
 		// --- Init networking ---
+		// DHCP only. Must be set before NetLoop.init(), which starts discovery.
+		NetConfig.useDhcp = true;
 		JVMHelp.wr("Net init...\n");
 		boolean linkUp = NetLoop.init();
 		if (!linkUp) {
@@ -270,7 +288,16 @@ public class HttpServer {
 		}
 		JVMHelp.wr("Link UP ");
 		wrInt(EthDriver.getLinkSpeed());
-		JVMHelp.wr("M\nIP=");
+		JVMHelp.wr("M\n");
+		int t0 = NumFunctions.now();
+		while (NetConfig.dhcpActive || NetConfig.ip == 0) {
+			toggleWd();
+			NetLoop.poll();
+			if (NumFunctions.now() - t0 > DHCP_WAIT_MS) {
+				halt("DHCP: no lease");
+			}
+		}
+		JVMHelp.wr("IP=");
 		wrIp(NetConfig.ip);
 		JVMHelp.wr('\n');
 		toggleWd();
@@ -317,6 +344,12 @@ public class HttpServer {
 				}
 			}
 
+			// A handshake the stack aborted leaves the listener CLOSED but
+			// holding its pool slot: release it.
+			if (tcpListen != null && tcpListen.state == TCPConnection.STATE_CLOSED) {
+				tcpListen.close();
+				tcpListen = null;
+			}
 			// Re-create listener if it was consumed and no client active
 			if (tcpListen == null && tcpClient == null) {
 				tcpListen = TCP.listen(80);
@@ -326,6 +359,13 @@ public class HttpServer {
 			if (tcpClient != null) {
 				// Check for unexpected close
 				if (tcpClient.state == TCPConnection.STATE_CLOSED) {
+					cleanupConnection();
+					continue;
+				}
+				// Drop a client that has gone silent
+				if (NumFunctions.now() - tcpClient.timeLastRemoteActivity > TCP_IDLE_MS) {
+					tcpClient.abort();
+					JVMHelp.wr("I\n");
 					cleanupConnection();
 					continue;
 				}
@@ -651,11 +691,16 @@ public class HttpServer {
 	}
 
 	/** Clean up on unexpected connection close. */
+	/** Drop the client whose connection is no longer usable (the stack
+	 * aborted it, or it is otherwise not ESTABLISHED/CLOSE_WAIT). close()
+	 * releases the pool slot of an aborted connection, which stays allocated
+	 * until then. */
 	static void cleanupConnection() {
 		if (fileIn != null) {
 			fileIn.close();
 			fileIn = null;
 		}
+		tcpClient.close();
 		tcpClient = null;
 		connState = ST_IDLE;
 		pendingByte = -1;
