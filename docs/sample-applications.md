@@ -107,15 +107,18 @@ make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=Fat32Test EXTRA_SRC=../../fat
 ### NetTest
 
 UDP and TCP echo server on port 7 with ICMP ping support. Prints periodic
-diagnostics (RX/TX counts, MAC errors/drops). Uses static IP 192.168.0.123.
+diagnostics (RX/TX counts, MAC errors/drops). Takes its address from DHCP,
+sending its unit's name as hostname (its board instance, `jop.setup.Instances`),
+and prints `IP=`; with no lease in 30 s it falls back to static 192.168.0.123.
 
 ```bash
 make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=NetTest EXTRA_SRC=../../net/src
 
-# Test from host
-ping 192.168.0.123
-echo "hello" | nc -u -w1 192.168.0.123 7    # UDP echo
-echo "hello" | nc -w1 192.168.0.123 7       # TCP echo
+# Test from host -- by name where the DHCP server registers names (Pi-hole
+# here, domain lan), else by the IP= the console printed
+ping jop-ep4cgx150-1.lan
+echo "hello" | nc -u -w1 jop-ep4cgx150-1.lan 7    # UDP echo
+echo "hello" | nc -w1 jop-ep4cgx150-1.lan 7       # TCP echo
 ```
 
 ### DhcpTest

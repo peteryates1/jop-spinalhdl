@@ -10,14 +10,24 @@ import com.jopdesign.net.*;
  *   cd java/apps/Small
  *   make clean && make all APP_NAME=NetTest EXTRA_SRC=../../net/src
  *
+ * Address: DHCP, sending the unit's name as its hostname (Const.ETH_HOSTNAME,
+ * from its board instance -- status item 174), so a unit on a LAN whose DHCP
+ * server registers names (Pi-hole here) is reached by name. With no lease
+ * within DHCP_WAIT_MS it falls back to the static NetConfig address,
+ * 192.168.0.123, and says so. The console prints the address either way.
+ *
  * Test from host:
- *   ping 192.168.0.123
- *   echo "hello" | nc -u -w1 192.168.0.123 7
- *   echo "hello" | nc -w1 192.168.0.123 7
+ *   ping jop-xc7a100t-1.lan                  (or the IP= the console printed)
+ *   echo "hello" | nc -u -w1 jop-xc7a100t-1.lan 7
+ *   echo "hello" | nc -w1 jop-xc7a100t-1.lan 7
  */
 public class NetTest {
 
 	static int wd = 0;
+
+	/** How long to wait for a lease before the static fallback. The client
+	 * restarts discovery after 4 retries 4 s apart, so this allows one restart. */
+	static final int DHCP_WAIT_MS = 30000;
 
 	static char[] hexChars = {'0','1','2','3','4','5','6','7',
 	                          '8','9','A','B','C','D','E','F'};
@@ -65,7 +75,7 @@ public class NetTest {
 	}
 
 	public static void main(String[] args) {
-		JVMHelp.wr("NetTest v2\n");
+		JVMHelp.wr("NetTest v3\n");
 
 		// This unit's MAC: its board instance's, via Const (status item 174)
 		JVMHelp.wr("MAC=");
@@ -77,10 +87,10 @@ public class NetTest {
 		}
 		JVMHelp.wr('\n');
 
-		// Configure IP (default: 192.168.0.123)
-		JVMHelp.wr("IP=");
-		wrIp(NetConfig.ip);
-		JVMHelp.wr('\n');
+		// DHCP first; the static address is the fallback. Must be set before
+		// NetLoop.init(), which starts discovery (and zeroes NetConfig.ip).
+		int staticIp = NetConfig.ip;
+		NetConfig.useDhcp = true;
 
 		// Initialize networking stack
 		JVMHelp.wr("Init...\n");
@@ -92,6 +102,24 @@ public class NetTest {
 		JVMHelp.wr("Link UP ");
 		wrInt(EthDriver.getLinkSpeed());
 		JVMHelp.wr("M\n");
+
+		// Wait for a lease, polling the stack; without one, stop the client
+		// (DHCP.poll runs only while useDhcp is set) and take the static address.
+		int t0 = NumFunctions.now();
+		while (NetConfig.dhcpActive || NetConfig.ip == 0) {
+			toggleWd();
+			NetLoop.poll();
+			if (NumFunctions.now() - t0 > DHCP_WAIT_MS) {
+				NetConfig.useDhcp = false;
+				NetConfig.dhcpActive = false;
+				NetConfig.ip = staticIp;
+				JVMHelp.wr("DHCP: no lease, static\n");
+				break;
+			}
+		}
+		JVMHelp.wr("IP=");
+		wrIp(NetConfig.ip);
+		JVMHelp.wr('\n');
 
 		// Open UDP echo server on port 7
 		UDPConnection udpEcho = UDPConnection.open(7);

@@ -132,10 +132,12 @@ Gigabit Ethernet PHY, and since 2026-10-11 on the Colorlight i9+ (RGMII at
 ## Default Configuration
 
 ```
-IP address:    192.168.0.123
+IP address:    192.168.0.123   (static; NetTest and DhcpTest use DHCP first)
 Subnet mask:   255.255.255.0
 Gateway:       192.168.0.1
-MAC address:   02:00:00:00:00:01
+MAC address:   the unit's, from its board instance (02:4a:4f:50:00:nn);
+               02:00:00:00:00:01 for a board with no unit on the LAN
+Hostname:      the unit's name (DHCP option 12), e.g. jop-xc7a100t-1
 ```
 
 Configured in `NetConfig.java`. All addresses stored in network byte order
