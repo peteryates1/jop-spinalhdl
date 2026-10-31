@@ -807,7 +807,7 @@ object Board {
 
   // The base board's devices and parking. Two units of it existed as two Board
   // copies until 2026-10-28 (the second was ColorlightAtari800BaseV1Unit2);
-  // they are board instances now, jop-i9-1 and jop-i5-1.
+  // they are board instances now, jop-i9plus-1 and jop-i5-1.
   private def atari800BaseV1Devices = Seq(
     BoardDevice("SWITCH", mapping = Map("reset" -> "SODIMM:42")),
     BoardDevice("STAMP_CDC0", mapping = Map("TXD" -> "SODIMM:153", "RXD" -> "SODIMM:155")),

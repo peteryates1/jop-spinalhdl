@@ -18,8 +18,8 @@ object Instances {
   /** The Colorlight i9+ on the first Atari-800 base board: every connector fitted.
     * Its HDMI is fitted but BROKEN; the base board design does not model its HDMI
     * connector yet, so it cannot be named in `broken`. */
-  val jopI9_1 = Instance(
-    name = "jop-i9-1",
+  val jopI9Plus_1 = Instance(
+    name = "jop-i9plus-1",
     assembly = SystemAssembly.colorlightDbI9Plus,
     mac = MacAddress.jop(1),
     access = UnitAccess(
@@ -43,7 +43,7 @@ object Instances {
     presets = Seq("colorlightDbI5Sdram", "colorlightDbI5Eth"),
     notFitted = Set("LED"))
 
-  val all: Seq[Instance] = Seq(jopI9_1, jopI5_1)
+  val all: Seq[Instance] = Seq(jopI9Plus_1, jopI5_1)
 
   /** The unit a design on this assembly is built for, or None if no instance
     * covers the assembly (its board then still carries its own unit facts).

@@ -38,7 +38,7 @@ Instances are the first piece of the setup layer, so they start outside
 
 One entry per physical unit:
 
-- **name**: unique and stable. It is also the DHCP hostname, e.g. `jop-i9-1`.
+- **name**: unique and stable. It is also the DHCP hostname, e.g. `jop-i9plus-1`.
 - **assembly**: which module on which base board, by design.
 - **fitted**: for each device of its boards, fitted, not fitted, or fitted but
   broken. A preset built for the instance may use only fitted devices;
@@ -97,7 +97,7 @@ Each step is test-first.
    unique, unicast and locally administered; every preset an instance builds
    uses only fitted devices.
 
-   **Done 2026-10-28.** `jop.setup.Instance` and `Instances` hold `jop-i9-1`
+   **Done 2026-10-28.** `jop.setup.Instance` and `Instances` hold `jop-i9plus-1`
    (02:4a:4f:50:00:01) and `jop-i5-1` (02:4a:4f:50:00:02; LEDs not fitted).
    The base board is one design again. How a unit is reached is a
    `UnitAccess`: `HwVerifyDescriptor` takes one, and only its entry point reads
@@ -106,7 +106,7 @@ Each step is test-first.
    would have dropped them from it silently, 9 units checked becoming 7. It was
    proved red on a mistyped instance alias, a console with no probe, and the
    no-parse tripwire. `InstanceTest` failed first on the base board design
-   still naming jop-i9-1's probe.
+   still naming jop-i9plus-1's probe.
 2. **MAC and hostname into the generated constants**, with `NetConfig`'s
    defaults taken from them.
 
@@ -132,13 +132,13 @@ Each step is test-first.
 
    Tested on the wire. `dhcp_check.py` (scratchpad) failed on the old client
    -- no hostname, and the shared ID 0x4a4f5002 -- and passed after. Then both
-   Atari-800 units booted DhcpTest at the same moment: `jop-i9-1` used xid
+   Atari-800 units booted DhcpTest at the same moment: `jop-i9plus-1` used xid
    0x0c8229b1 and got lease .238; `jop-i5-1` used 0xaabba364 and got .239.
    No automated test covers the DHCP client, since no simulation drives the
    net stack; the check is that script, on hardware.
 
    **The router as DNS, measured.** It does register each unit's hostname: a
-   reverse lookup at 192.168.0.1 gives .238 -> `jop-i9-1` and .239 ->
+   reverse lookup at 192.168.0.1 gives .238 -> `jop-i9plus-1` and .239 ->
    `jop-i5-1`. But forward lookups fail:
    - a bare local name gets no reply, not even the router's own name or this
      VM's;
@@ -152,12 +152,12 @@ Each step is test-first.
    booted DhcpTest at the same moment again:
    - Pi-hole served both and handed out itself as DNS, with the router as the
      gateway.
-   - It offered **the same address, .227, to both** units. `jop-i9-1` took it;
+   - It offered **the same address, .227, to both** units. `jop-i9plus-1` took it;
      `jop-i5-1`'s REQUEST got a NAK, so it restarted with a new transaction ID
      and bound .228. That is the race the per-unit IDs and the hardware-address
      check exist for.
-   - Forward lookups at Pi-hole now work: `jop-i9-1` -> .227 and `jop-i5-1` ->
-     .228. Reverse gives `jop-i9-1.local` and `jop-i5-1.local`, since Pi-hole's
+   - Forward lookups at Pi-hole now work: `jop-i9plus-1` -> .227 and `jop-i5-1` ->
+     .228. Reverse gives `jop-i9plus-1.local` and `jop-i5-1.local`, since Pi-hole's
      domain is `local`; `.lan` names do not exist.
    - The units' own DNS client resolves through it too (DhcpTest's lookup of
      example.com).

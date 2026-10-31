@@ -19,8 +19,8 @@ class InstanceTest extends AnyFunSuite {
 
   test("the Atari-800 base board's two units are instances") {
     val names = Instances.all.map(_.name).toSet
-    assert(Set("jop-i9-1", "jop-i5-1").subsetOf(names), names)
-    assert(Instances.forAssembly(SystemAssembly.colorlightDbI9Plus).map(_.name).contains("jop-i9-1"))
+    assert(Set("jop-i9plus-1", "jop-i5-1").subsetOf(names), names)
+    assert(Instances.forAssembly(SystemAssembly.colorlightDbI9Plus).map(_.name).contains("jop-i9plus-1"))
     assert(Instances.forAssembly(SystemAssembly.colorlightDbI5).map(_.name).contains("jop-i5-1"))
   }
 
@@ -94,7 +94,7 @@ class InstanceTest extends AnyFunSuite {
   test("each unit's Const.java carries its own MAC and hostname") {
     val expected = Seq(
       "colorlightDbI5Eth"     -> ("0x024a", "0x4f500002", "jop-i5-1"),
-      "colorlightDbI9PlusEth" -> ("0x024a", "0x4f500001", "jop-i9-1"))
+      "colorlightDbI9PlusEth" -> ("0x024a", "0x4f500001", "jop-i9plus-1"))
     for ((preset, (hi, lo, host)) <- expected) {
       val c = constFor(preset)
       for (line <- Seq(s"public static final int ETH_MAC_HI = $hi;",

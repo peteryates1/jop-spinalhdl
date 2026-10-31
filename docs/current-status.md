@@ -4144,7 +4144,7 @@ seeded from the MAC, and a check of the reply's hardware address: today every
 board starts from the same ID, `0x4A4F5001`, and matches replies on it alone.
 
 **Step 1 done 2026-10-28:** the instance registry, `jop.setup.Instances`, with
-`jop-i9-1` and `jop-i5-1`; `ColorlightAtari800BaseV1Unit2` is gone, and both
+`jop-i9plus-1` and `jop-i5-1`; `ColorlightAtari800BaseV1Unit2` is gone, and both
 units are instances of one base board design. `InstanceTest` failed first on
 the shared design still naming a unit's probe. `check-probe-selection.sh`
 reads the instances, proved red three ways. The i5 unit passed DoAll through
@@ -4161,14 +4161,16 @@ instance covers still share 02:00:00:00:00:01.
 **Step 3 done 2026-10-28:** the DHCP client sends the instance name (option
 12), seeds its transaction ID from a hash of the MAC, and checks the reply's
 hardware address. Checked on the wire, red first: both units booted DhcpTest
-at once and got their own leases (`jop-i9-1` .238, `jop-i5-1` .239). The router
+at once and got their own leases (`jop-i9plus-1` .238, `jop-i5-1` .239). The router
 names each lease, but only in reverse: forward lookups of local names go
 unanswered, and its DHCP hands out the ISP's DNS. Name -> address is therefore
 open. The cheapest route measured: this host already multicasts LLMNR queries
 for bare names, and a small responder in the net stack would answer them.
 
+**Renamed 2026-10-31:** the i9+ unit is `jop-i9plus-1` (it is an i9+, not an i9); the measurements above were taken under its old name, `jop-i9-1`.
+
 **Names resolve, 2026-10-29:** the user moved DHCP and DNS to Pi-hole on the Pi
-4 (192.168.0.2), with the router's DHCP off. Pi-hole resolves `jop-i9-1` ->
+4 (192.168.0.2), with the router's DHCP off. Pi-hole resolves `jop-i9plus-1` ->
 .227 and `jop-i5-1` -> .228. On a simultaneous boot it offered both units the
 same address; the second REQUEST got a NAK, and that client restarted with a
 new transaction ID and bound .228 -- the race step 3's fixes are for.
