@@ -333,6 +333,23 @@ if [ -n "$const_rule" ]; then
     exit 1
   fi
   echo "  Const.java depends on the board instances that give a unit its MAC"
+  # A NAMED UNIT GETS ITS OWN JAVA TREE (status item 174, step 4): its image
+  # carries its MAC, so two units of one preset must not share one. With
+  # JOP_INSTANCE set, Const.java must be written under java/<instance>/ and
+  # generated for that instance.
+  inst_db=$(make -C java -p -n JOP_PRESET="${JOP_PRESET:-ep4cgx150Serial}" \
+                 JOP_CFG_DIR="${JOP_CFG_DIR:-build/${JOP_PRESET:-ep4cgx150Serial}}" \
+                 JOP_INSTANCE=jop-check-unit 2>/dev/null)
+  if ! grep -qE '^[^ |#]*/java/jop-check-unit/gen/com/jopdesign/sys/Const\.java: +[^ ]' <<<"$inst_db"; then
+    echo "  FAIL JOP_INSTANCE does not move Const.java into the unit's own Java tree"
+    echo "       two units of one preset would overwrite each other's MAC"
+    exit 1
+  fi
+  if ! grep -qE '^CONST_ARGS :?= .*--instance jop-check-unit' <<<"$inst_db"; then
+    echo "  FAIL JOP_INSTANCE is not passed to ConstGeneratorMain as --instance"
+    exit 1
+  fi
+  echo "  a named unit's Const.java goes into its own Java tree, for that unit"
 fi
 
 # ---------------------------------------------------------------------------

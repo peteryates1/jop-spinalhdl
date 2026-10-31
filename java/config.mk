@@ -69,10 +69,16 @@ ifeq ($(origin JOP_CFG_DIR), undefined)
   endif
 endif
 
-JAVA_OUT   := $(PROJECT_ROOT)/$(JOP_CFG_DIR)/java
+# A BOARD INSTANCE GETS ITS OWN JAVA TREE (status item 174, step 4). The image
+# carries the unit's MAC and hostname (Const.java), so two units of one preset
+# cannot share a tree; the bitstream is still the preset's. JOP_INSTANCE=<name>
+# (a name from jop.setup.Instances) selects build/<config>/java/<name>/. Unset,
+# the tree is the preset's, as before, and the one unit of an assembly is
+# picked up automatically.
+JAVA_OUT   := $(PROJECT_ROOT)/$(JOP_CFG_DIR)/java$(if $(JOP_INSTANCE),/$(JOP_INSTANCE))
 GEN_SRC    := $(JAVA_OUT)/gen
 CONST_JAVA := $(GEN_SRC)/com/jopdesign/sys/Const.java
-CONST_ARGS := $(JOP_PRESET) --write buildtree
+CONST_ARGS := $(JOP_PRESET) --write buildtree$(if $(JOP_INSTANCE), --instance $(JOP_INSTANCE))
 
 # A legacy Const.java left in runtime/src from an earlier in-tree build would be
 # a DUPLICATE definition of the same class, not a harmless leftover. Drop it

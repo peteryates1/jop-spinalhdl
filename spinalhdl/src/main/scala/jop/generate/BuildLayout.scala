@@ -69,6 +69,11 @@ case class BuildLayout(
   def vivadoDir  = sub(vivado) _
   def nextpnrDir = sub(nextpnr) _
   def javaDir    = sub(java) _
+  /** A board instance's own Java tree, under its preset's (status item 174,
+    * step 4): its image carries its MAC, so two units of one preset cannot
+    * share one; the bitstream is still the preset's. Unnamed: the preset's. */
+  def instanceJavaDir(preset: String, args: Seq[String], instance: Option[String]): String =
+    instance.fold(javaDir(preset, args))(i => s"${javaDir(preset, args)}/$i")
   def asmDir     = sub(asm) _
 
   /** Where a STANDALONE top goes -- a single component or testbench emitted on

@@ -45,15 +45,30 @@ object Instances {
 
   val all: Seq[Instance] = Seq(jopI9Plus_1, jopI5_1)
 
-  /** The unit a design on this assembly is built for, or None if no instance
-    * covers the assembly (its board then still carries its own unit facts).
-    * Several units of one assembly need the instance named, which the tools
-    * cannot do yet (board-instances.md, step 4). */
-  def forAssembly(assembly: SystemAssembly): Option[Instance] = {
-    val units = all.filter(_.assembly.name == assembly.name)
-    require(units.size <= 1,
-      s"${units.size} units of ${assembly.name} (${units.map(_.name).mkString(", ")}): naming one " +
-        "is not supported yet (docs/architecture/board-instances.md, step 4)")
-    units.headOption
+  /** The unit a design on this assembly is built for: the one NAMED (status
+    * item 174, step 4: `--instance`, `JOP_INSTANCE=`), which must exist, sit on
+    * this assembly and build this preset; or, unnamed, the assembly's only
+    * unit. Several units of one assembly cannot be told apart without a name,
+    * so that is an error listing them. None when no instance covers the
+    * assembly -- its board then still carries its own unit facts (item 173). */
+  def select(name: Option[String], assembly: SystemAssembly, preset: String,
+             units: Seq[Instance] = all): Option[Instance] = name match {
+    case Some(n) =>
+      val unit = units.find(_.name == n).getOrElse(throw new IllegalArgumentException(
+        s"no board instance named $n (there are: ${units.map(_.name).mkString(", ")})"))
+      require(unit.assembly.name == assembly.name,
+        s"instance $n is a ${unit.assembly.name}, but preset $preset builds a ${assembly.name}")
+      require(unit.presets.contains(preset),
+        s"instance $n does not build preset $preset (it builds ${unit.presets.mkString(", ")})")
+      Some(unit)
+    case None =>
+      val on = units.filter(_.assembly.name == assembly.name)
+      require(on.size <= 1,
+        s"${on.size} units of ${assembly.name} -- ${on.map(_.name).mkString(", ")}: " +
+          "name one (--instance, or JOP_INSTANCE= for the Java build)")
+      on.headOption
   }
+
+  /** The assembly's only unit, or None; `select` without a name. */
+  def forAssembly(assembly: SystemAssembly): Option[Instance] = select(None, assembly, "")
 }

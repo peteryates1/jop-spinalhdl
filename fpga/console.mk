@@ -17,6 +17,23 @@
 # BAUD may still be overridden on the command line for a deliberate experiment.
 # ---------------------------------------------------------------------------
 
+# A NAMED UNIT (status item 174, step 4). INSTANCE=<name> from
+# jop.setup.Instances overrides the board Makefile's CONSOLE_ALIAS with that
+# unit's console, and takes the image from that unit's own Java tree (built
+# with JOP_INSTANCE=<name>). The descriptor does the choosing -- it refuses a
+# unit that is not on this preset's assembly -- at the cost of one sbt start,
+# paid only when a unit is named. Without INSTANCE nothing changes.
+ifneq ($(INSTANCE),)
+  INSTANCE_DESC := $(shell cd $(PROJECT_ROOT) && sbt "runMain jop.generate.HwVerifyDescriptorMain $(CFG) --instance $(INSTANCE)" 2>&1 | \
+                     command sed -n 's/^\(\[info\] \)\{0,1\}\(CONSOLE_ALIAS\|JAVA_DIR\)=/\2=/p')
+  CONSOLE_ALIAS := $(patsubst CONSOLE_ALIAS=%,%,$(filter CONSOLE_ALIAS=%,$(INSTANCE_DESC)))
+  INSTANCE_JAVA_DIR := $(patsubst JAVA_DIR=%,%,$(filter JAVA_DIR=%,$(INSTANCE_DESC)))
+  ifeq ($(CONSOLE_ALIAS)$(INSTANCE_JAVA_DIR),)
+    $(error INSTANCE=$(INSTANCE) did not resolve for $(CFG) -- run: sbt "runMain jop.generate.HwVerifyDescriptorMain $(CFG) --instance $(INSTANCE)")
+  endif
+  JOP_FILE ?= $(PROJECT_ROOT)/$(INSTANCE_JAVA_DIR)/apps/Smallest/HelloWorld.jop
+endif
+
 # Resolved by SERIAL, never by /dev/ttyUSBn: the numbers move on every replug,
 # and more than one board of each kind is attached to this host.
 SERIAL_PORT ?= $(shell $(PROJECT_ROOT)/fpga/scripts/usb_serial_map --by-id $(CONSOLE_ALIAS))

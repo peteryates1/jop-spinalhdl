@@ -1,6 +1,6 @@
 # Board instances
 
-**Status: steps 1-3 done 2026-10-28, names resolve since 2026-10-29; step 4 open.** Tracked as status item
+**Status: all four steps done (2026-10-28 to 10-31).** Tracked as status item
 [174](../current-status.md#item-174). The layering it starts is item
 [173](../current-status.md#item-173).
 
@@ -166,6 +166,33 @@ Each step is test-first.
 4. **The tools by instance**: the alias tables generated from, or checked
    against, the instances, and `hw_verify` and download taking an instance
    name. This changes the flow scripts, so it needs a separate go-ahead.
+
+   **Done 2026-10-31** (option 2a: a Java tree per unit, the bitstream per
+   preset):
+   - `Instances.select` picks the unit. A named one must exist, be on the
+     preset's assembly and build that preset; unnamed, it is the assembly's
+     only unit, and several units of one assembly are an error that lists
+     them.
+   - `--instance NAME` on `HwVerifyDescriptorMain` and `ConstGeneratorMain`.
+     The descriptor gains `JAVA_DIR`, `INSTANCE` and `HOSTNAME`.
+   - `JOP_INSTANCE=NAME` in `java/config.mk` moves the whole Java tree --
+     constants, tools, runtime, apps -- to `build/<config>/java/<name>/` and
+     generates for that unit.
+   - `hw_verify.py --instance NAME` downloads from that tree, and its log line
+     records `@NAME`.
+   - `make download INSTANCE=NAME` (console.mk) uses that unit's console and
+     image, and stops if the unit is not on the Makefile's preset.
+
+   Test first: `InstanceTest` (the selection rules, with a fake second i5
+   unit for the ambiguity, and the descriptor through its real main) and
+   `check-generated-deps.sh` (the `JOP_INSTANCE` edge, through `make -p`)
+   both failed before the change. A download naming the wrong unit used to
+   go silently to the Makefile's own console; now it stops. On hardware, by
+   name: `jop-i5-1` and `jop-i9plus-1` both passed DoAll 68/68 from their own
+   trees.
+
+   Not covered: no second unit of one assembly exists yet, so the ambiguity
+   error is tested only in Scala. Network checks still address a unit by IP.
 
 ## Open questions
 

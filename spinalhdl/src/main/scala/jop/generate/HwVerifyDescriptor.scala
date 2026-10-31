@@ -25,7 +25,8 @@ object HwVerifyDescriptor {
   /** `access` is how the unit is reached, from its board instance if one covers
     * it; without one, the assembly's boards say (status items 173, 174). */
   def generate(config: BoardDesign, preset: String, args: Seq[String],
-               access: Option[UnitAccess] = None): String = {
+               access: Option[UnitAccess] = None,
+               instance: Option[String] = None, identity: Option[NetIdentity] = None): String = {
     val assembly = config.assembly
     val reach = access.getOrElse(assembly.access)
     // The FPGA's board for its name and family; probe, console and loader from
@@ -62,6 +63,10 @@ object HwVerifyDescriptor {
     reach.consoleAlias.foreach(a => sb.append(s"CONSOLE_ALIAS=$a\n"))
     reach.loaderCable.foreach(c => sb.append(s"LOADER_CABLE=$c\n"))
     reach.loaderBoard.foreach(b => sb.append(s"LOADER_BOARD=$b\n"))
+    // Where the app images are: a named unit has its own Java tree (step 4).
+    sb.append(s"JAVA_DIR=${layout.instanceJavaDir(preset, args, instance)}\n")
+    instance.foreach(i => sb.append(s"INSTANCE=$i\n"))
+    identity.filter(_.hostname.nonEmpty).foreach(id => sb.append(s"HOSTNAME=${id.hostname}\n"))
     sb.toString
   }
 }
@@ -93,10 +98,15 @@ object HwVerifyDescriptorMain extends App {
     "There is deliberately no default: this main writes a constraint or\n" +
     "project file, and a default silently produces a WELL-FORMED file for\n" +
     "the wrong board at the path --write names, which then builds."))
+  // --instance NAME: the board instance this run is for (status item 174, step 4).
+  val instIdx = args.indexOf("--instance")
+  val instanceName = if (instIdx >= 0) Some(args.lift(instIdx + 1).getOrElse(
+    sys.error("--instance needs a name"))) else None
   val writeIdx = args.indexOf("--write")
   val outPath = if (writeIdx >= 0 && args.length > writeIdx + 1) Some(args(writeIdx + 1)) else None
   val cfgArgs = args.zipWithIndex.filterNot { case (a, i) =>
-    a == "--write" || (writeIdx >= 0 && i == writeIdx + 1)
+    a == "--write" || (writeIdx >= 0 && i == writeIdx + 1) ||
+    a == "--instance" || (instIdx >= 0 && i == instIdx + 1)
   }.map(_._1)
   val (design, cfgKey, jopArgs) = asObject(preset) match {
     case Some((d, shortName)) =>
@@ -110,8 +120,9 @@ object HwVerifyDescriptorMain extends App {
   }
   // An entry point, so it may read the setup layer: the unit this design is
   // built for, if an instance covers its assembly.
-  val unit = jop.setup.Instances.forAssembly(design.assembly)
-  val text = HwVerifyDescriptor.generate(design, cfgKey, jopArgs, unit.map(_.access))
+  val unit = jop.setup.Instances.select(instanceName, design.assembly, preset)
+  val text = HwVerifyDescriptor.generate(design, cfgKey, jopArgs, unit.map(_.access),
+    instanceName, unit.map(_.netIdentity))
   outPath match {
     case Some(p) =>
       new java.io.File(p).getParentFile.mkdirs()

@@ -111,4 +111,37 @@ class InstanceTest extends AnyFunSuite {
            c.contains("public static final int ETH_MAC_LO = 0x00000001;"), "wukongFull's MAC moved")
     assert(c.contains("""public static final String ETH_HOSTNAME = "";"""), "wukongFull names a host")
   }
+
+  // STEP 4: a unit is named on the command line. Several units of one assembly
+  // (more i9+ modules are coming) need it; one unit per assembly does not.
+  test("selecting a unit: by name, or the assembly's only one") {
+    val i5 = Instances.forAssembly(SystemAssembly.colorlightDbI5).get
+    val i5b = i5.copy(name = "jop-i5-2", mac = MacAddress.jop(99))
+    val two = Seq(i5, i5b)
+    val a = SystemAssembly.colorlightDbI5
+    val e = intercept[IllegalArgumentException](Instances.select(None, a, "colorlightDbI5Eth", two))
+    assert(e.getMessage.contains("jop-i5-1") && e.getMessage.contains("jop-i5-2"), e.getMessage)
+    assert(Instances.select(Some("jop-i5-2"), a, "colorlightDbI5Eth", two).map(_.name).contains("jop-i5-2"))
+    assert(Instances.select(None, a, "colorlightDbI5Eth").map(_.name).contains("jop-i5-1"))
+    intercept[IllegalArgumentException](Instances.select(Some("jop-i9plus-1"), a, "colorlightDbI5Eth"))
+    intercept[IllegalArgumentException](Instances.select(Some("jop-i5-1"), a, "colorlightDbI5Fancy"))
+    intercept[IllegalArgumentException](Instances.select(Some("no-such-unit"), a, "colorlightDbI5Eth"))
+  }
+
+  private def descriptorFor(args: String*): Map[String, String] = {
+    val out = new java.io.ByteArrayOutputStream
+    Console.withOut(out)(HwVerifyDescriptorMain.main(args.toArray))
+    out.toString.linesIterator.filter(_.contains("=")).map { l =>
+      val i = l.indexOf('='); l.take(i) -> l.drop(i + 1) }.toMap
+  }
+
+  test("a named unit's descriptor carries its name, hostname and own Java tree") {
+    val d = descriptorFor("colorlightDbI5Eth", "--instance", "jop-i5-1")
+    assert(d.get("INSTANCE").contains("jop-i5-1") && d.get("HOSTNAME").contains("jop-i5-1"), d)
+    assert(d.get("JAVA_DIR").contains("build/colorlightDbI5Eth/java/jop-i5-1"), d)
+    assert(d.get("CONFIG_DIR").contains("build/colorlightDbI5Eth"), "the bitstream stays per preset")
+    // Unnamed, the image stays where every flow already looks for it.
+    assert(descriptorFor("colorlightDbI5Eth").get("JAVA_DIR").contains("build/colorlightDbI5Eth/java"))
+    intercept[IllegalArgumentException](descriptorFor("colorlightDbI5Eth", "--instance", "jop-i9plus-1"))
+  }
 }

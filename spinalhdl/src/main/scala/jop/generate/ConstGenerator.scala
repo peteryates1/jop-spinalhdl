@@ -607,13 +607,20 @@ object ConstGeneratorMain extends App {
   // write, not WHAT to build, so it is filtered out of both the preset
   // resolution and the configuration name.
   val useBuildTree = args.exists(_.equalsIgnoreCase("buildtree"))
-  val cfgArgs = args.filterNot(a => a == "--write" || a.equalsIgnoreCase("buildtree"))
+  // --instance NAME (status item 174, step 4): this unit's MAC and hostname,
+  // into its own Java tree; java/config.mk passes it for JOP_INSTANCE=.
+  val instIdx = args.indexOf("--instance")
+  val instanceName = if (instIdx >= 0) Some(args.lift(instIdx + 1).getOrElse(
+    sys.error("--instance needs a name"))) else None
+  val cfgArgs = args.zipWithIndex.filterNot { case (a, i) =>
+    a == "--write" || a.equalsIgnoreCase("buildtree") ||
+    a == "--instance" || (instIdx >= 0 && i == instIdx + 1) }.map(_._1)
   val config = JopTopVerilog.resolvePreset(preset, cfgArgs)
 
   // An entry point, so it may read the setup layer: the unit this build is
   // for, if an instance covers its assembly, gives the image its MAC and
   // hostname. java/Makefile lists jop/setup/ among Const.java's inputs.
-  val unit = jop.setup.Instances.forAssembly(config.assembly)
+  val unit = jop.setup.Instances.select(instanceName, config.assembly, preset)
   val source = ConstGenerator.generate(config, unit.map(_.netIdentity).getOrElse(NetIdentity.shared))
 
   if (writeToFile) {
@@ -627,7 +634,7 @@ object ConstGeneratorMain extends App {
     // by every configuration, where whichever build ran last won. `buildtree`
     // is now the only layout, and every caller passes it, so the fallback was
     // unreachable from the build and survived only as a way back in.
-    val javaDir = BuildLayout.default.javaDir(preset, cfgArgs.filterNot(_ == preset))
+    val javaDir = BuildLayout.default.instanceJavaDir(preset, cfgArgs.filterNot(_ == preset), instanceName)
     val path = s"$javaDir/gen/com/jopdesign/sys/Const.java"
     new java.io.File(path).getParentFile.mkdirs()
     val writer = new java.io.PrintWriter(path)

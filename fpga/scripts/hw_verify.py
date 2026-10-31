@@ -513,6 +513,11 @@ def main():
     ap.add_argument("--progress-re", default=PROGRESS_RE,
                     help="soak: regex with named groups 'round' and 'free'")
     ap.add_argument("--timeout", type=int, default=300)
+    # Which physical unit (status item 174, step 4): a name from
+    # jop.setup.Instances. Needed when an assembly has several units; the
+    # image then comes from that unit's own Java tree (JOP_INSTANCE=).
+    ap.add_argument("--instance", default=None,
+                    help="board instance name, e.g. jop-i5-1")
     # An escape hatch, not a default. Running a violated bitstream on
     # purpose is legitimate -- to see HOW it fails, or to measure a
     # board while a fix is in flight. Claiming the result as a pass
@@ -521,7 +526,7 @@ def main():
                     help="run even though the build misses timing")
     a = ap.parse_args()
 
-    d = descriptor(a.preset, a.args)
+    d = descriptor(a.preset, list(a.args) + (["--instance", a.instance] if a.instance else []))
     for key in ("PROBE_ALIAS", "CONSOLE_ALIAS"):
         if key not in d:
             die(f"board '{d['BOARD']}' has no {key} in its config.\n"
@@ -564,19 +569,23 @@ def main():
               f"This run cannot be counted as a verification.", file=sys.stderr)
     jop = None
     if not a.no_app:
-        jop = os.path.join(cfg_dir, "java", "apps", a.app + ".jop")
+        # The descriptor says where this unit's images are: its own Java tree
+        # when an instance is named, the preset's otherwise.
+        java_dir = os.path.join(ROOT, d["JAVA_DIR"]) if "JAVA_DIR" in d else os.path.join(cfg_dir, "java")
+        jop = os.path.join(java_dir, "apps", a.app + ".jop")
+        inst = f" JOP_INSTANCE={a.instance}" if a.instance else ""
         if not os.path.exists(jop):
             die(f"no image at {jop} -- build it with:\n"
-                f"  make -C java JOP_PRESET={a.preset} tools runtime\n"
-                f"  make -C java/apps/{a.app.split('/')[0]} JOP_PRESET={a.preset} clean\n"
-                f"  make -C java/apps/{a.app.split('/')[0]} JOP_PRESET={a.preset}\n"
+                f"  make -C java JOP_PRESET={a.preset}{inst} tools runtime\n"
+                f"  make -C java/apps/{a.app.split('/')[0]} JOP_PRESET={a.preset}{inst} clean\n"
+                f"  make -C java/apps/{a.app.split('/')[0]} JOP_PRESET={a.preset}{inst}\n"
                 f"(BUILDTREE=1 was the opt-in for the old dual layout; there is\n"
                 f" only one layout now and the variable no longer exists.)")
         # PRESET PLUS ITS ARGS. `ep4cgx150Smp 8 50` and `ep4cgx150Smp` are
         # different configs with different build directories, so a hint naming
         # only the preset rebuilds the wrong one -- and the next run would then
         # still be stale, with the message insisting it had been fixed.
-        cfg = " ".join([a.preset] + list(a.args))
+        cfg = " ".join([a.preset] + list(a.args)) + inst
         app_dir = os.path.join(ROOT, "java", "apps", a.app.split("/")[0], "src")
         rt_dir  = os.path.join(ROOT, "java", "runtime", "src")
         stale = stale_sources(jop, [d for d in (app_dir, rt_dir) if os.path.isdir(d)])
@@ -622,7 +631,8 @@ def main():
         tstr = (f"timing={tv or 'unknown'}"
                 + ("!OVERRIDDEN" if tv == "VIOLATED" else ""))
         line = (f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} "
-                f"{a.preset} {'(no app)' if a.no_app else a.app} run={i}/{a.runs} "
+                f"{a.preset} {'@' + d['INSTANCE'] + ' ' if 'INSTANCE' in d else ''}"
+                f"{'(no app)' if a.no_app else a.app} run={i}/{a.runs} "
                 f"{'expect=' + repr(a.expect_text) + ' ' if a.expect_text else ''}"
                 f"{detail + ' ' if detail else ''}"
                 f"ok={ok} fail={fails} exit={exited} crash={crashed} {tstr} "

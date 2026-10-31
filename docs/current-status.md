@@ -58,7 +58,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 17. **[#168](#item-168)** — `xc7a100tDbEth` closes timing by luck: -0.058 ns on 10-12, +0.007 ns on the 10-28 rebuild, the same core fetch path with the same directives, so any rebuild can miss again
 18. **[#170](#item-170)** — The XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s whenever the data toggles -- 28 of 400 random frames, 0 of 400 alternating -- and each loss blacks the receiver out for seconds; TCP fails there. MII at 100 Mb/s (`xc7a100tDbMii`) passes every check, DoAll 68/68. Open: bounding a frame in the MAC so one glitch costs one frame, and a changed TCP echo at 1 Gb/s that passed the stack's checksum
 19. **[#171](#item-171)** — NetTest's TCP echo never serves again after one connection that does not close cleanly, so a single lost frame makes every later TCP check on that boot fail
-20. **[#174](#item-174)** — Every JOP image has the same MAC and IP, so two boards cannot share the LAN, and a second unit of a board design has to be a copied board. Board instances, `docs/architecture/board-instances.md`: steps 1-3 of 4 done -- the registry, each image's own MAC, and a DHCP client two units can share a LAN with; names resolve through Pi-hole since 2026-10-29. Open: the tools by instance (step 4)
+20. **[#174](#item-174)** — Every JOP image has the same MAC and IP, so two boards cannot share the LAN, and a second unit of a board design has to be a copied board. Board instances, `docs/architecture/board-instances.md`, all four steps done: the registry, each unit's own MAC and Java tree, a DHCP client two units can share a LAN with (names via Pi-hole), and the tools by instance name. Left: boards without an instance still share one MAC (item 173), and NetTest's static .123
 21. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
 22. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
 23. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
@@ -4166,6 +4166,14 @@ names each lease, but only in reverse: forward lookups of local names go
 unanswered, and its DHCP hands out the ISP's DNS. Name -> address is therefore
 open. The cheapest route measured: this host already multicasts LLMNR queries
 for bare names, and a small responder in the net stack would answer them.
+
+**Step 4 done 2026-10-31:** the tools work by instance name. `--instance`
+on hw_verify and the descriptor and constant mains, `JOP_INSTANCE=` for a
+Java tree of the unit's own (`build/<config>/java/<name>/`, the bitstream
+still per preset), and `make download INSTANCE=`. Test first in Scala and
+through `make -p`; `jop-i5-1` and `jop-i9plus-1` passed DoAll 68/68 by name. What is left of
+this item: boards no instance covers still share 02:00:00:00:00:01 (item
+173), and NetTest still uses the static .123.
 
 **Renamed 2026-10-31:** the i9+ unit is `jop-i9plus-1` (it is an i9+, not an i9); the measurements above were taken under its old name, `jop-i9-1`.
 
