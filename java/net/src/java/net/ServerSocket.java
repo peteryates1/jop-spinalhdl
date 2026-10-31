@@ -44,24 +44,27 @@ public class ServerSocket {
 	 * After a successful accept, a new listen is opened automatically.
 	 */
 	public Socket accept() {
-		if (listenConn == null) return null;
+		// A handshake the stack aborted (RST during SYN_RCVD) leaves the
+		// listener CLOSED but holding its pool slot: release it. Then listen
+		// again; that fails while the pool is full, so retry on every call
+		// rather than giving up on the port (status item 171).
+		if (listenConn != null && listenConn.state == TCPConnection.STATE_CLOSED) {
+			listenConn.close();
+			listenConn = null;
+		}
+		if (listenConn == null) {
+			listenConn = TCP.listen(localPort);
+			if (listenConn == null) return null;
+		}
 
 		// Check if the listen connection has progressed past LISTEN
 		if (listenConn.state == TCPConnection.STATE_ESTABLISHED
 				|| listenConn.state == TCPConnection.STATE_CLOSE_WAIT) {
 			Socket s = new Socket(listenConn);
-			// Open a new listen
+			// Open a new listen (null while the pool is full; retried above)
 			listenConn = TCP.listen(localPort);
 			return s;
 		}
-
-		// Also check SYN_RCVD — handshake in progress
-		if (listenConn.state != TCPConnection.STATE_LISTEN
-				&& listenConn.state != TCPConnection.STATE_SYN_RCVD) {
-			// Connection went to unexpected state — re-listen
-			listenConn = TCP.listen(localPort);
-		}
-
 		return null;
 	}
 

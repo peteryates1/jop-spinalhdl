@@ -2,6 +2,9 @@ package test;
 
 import com.jopdesign.sys.*;
 import com.jopdesign.net.*;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
 
 /**
  * DHCP + DNS network test — entry point.
@@ -9,6 +12,11 @@ import com.jopdesign.net.*;
  * Enables DHCP to obtain IP/gateway/DNS from a DHCP server,
  * then runs UDP+TCP echo on port 7 (same as NetTest).
  * Optionally resolves a hostname via DNS.
+ *
+ * The TCP echo is written on java.net.ServerSocket / Socket, the only
+ * application that exercises them on hardware (NetTest uses the stack's
+ * TCPConnection directly). Like NetTest it serves a client in every pool slot,
+ * and drops a client silent for TCP_IDLE_MS (status item 171).
  *
  * Build:
  *   cd java/apps/Small
@@ -24,10 +32,20 @@ import com.jopdesign.net.*;
  *   ping <assigned-ip>
  *   echo "hello" | nc -u -w1 <assigned-ip> 7
  *   echo "hello" | nc -w1 <assigned-ip> 7
+ *   fpga/scripts/net_echo_check.py <assigned-ip>   (RST, idle, dead clients)
  */
 public class DhcpTest {
 
 	static int wd = 0;
+
+	/** A client that sends nothing for this long is dropped: a peer that
+	 * vanished without FIN or RST would otherwise hold its slot for good. */
+	static final int TCP_IDLE_MS = 30000;
+
+	/** TCP echo clients, one per pool slot, and the byte each could not yet
+	 * echo (-1 = none). */
+	static Socket[] clients = new Socket[NetConfig.MAX_TCP_CONN];
+	static int[] pendingBytes = new int[NetConfig.MAX_TCP_CONN];
 
 	static void wrInt(int val) {
 		if (val < 0) {
@@ -65,8 +83,51 @@ public class DhcpTest {
 		}
 	}
 
+	/**
+	 * Echo what client i sent. Returns false once the client is gone; its
+	 * socket is then closed, which hands the slot back to the pool.
+	 */
+	static boolean echo(int i) {
+		Socket c = clients[i];
+		if (c.isClosed()) {
+			c.close();
+			JVMHelp.wr("TA\n");
+			return false;
+		}
+		if (c.idleTime() > TCP_IDLE_MS) {
+			c.abort();
+			JVMHelp.wr("TI\n");
+			return false;
+		}
+		TCPInputStream in = c.getInputStream();
+		TCPOutputStream out = c.getOutputStream();
+		// Retry the pending byte first, then copy input to output
+		int pending = pendingBytes[i];
+		if (pending >= 0 && out.write(pending) == 0) {
+			pending = -1;
+		}
+		if (pending < 0) {
+			int b = in.read();
+			while (b != -1) {
+				if (out.write(b) != 0) {
+					pending = b;
+					break;
+				}
+				b = in.read();
+			}
+		}
+		pendingBytes[i] = pending;
+		// Only close when all data has been echoed
+		if (pending < 0 && c.isPeerClosed()) {
+			c.close();
+			JVMHelp.wr("TX\n");
+			return false;
+		}
+		return true;
+	}
+
 	public static void main(String[] args) {
-		JVMHelp.wr("DhcpTest v1\n");
+		JVMHelp.wr("DhcpTest v2\n");
 
 		// Enable DHCP — must set before NetLoop.init()
 		NetConfig.useDhcp = true;
@@ -125,16 +186,15 @@ public class DhcpTest {
 		}
 
 		// Open TCP echo server on port 7
-		TCPConnection tcpListen = TCP.listen(7);
-		if (tcpListen == null) {
-			JVMHelp.wr("TCP fail\n");
-		} else {
+		ServerSocket echoServer = null;
+		try {
+			echoServer = new ServerSocket(7);
 			JVMHelp.wr("TCP:7\n");
+		} catch (SocketException e) {
+			JVMHelp.wr("TCP fail\n");
 		}
 
 		byte[] udpBuf = new byte[1472];
-		TCPConnection tcpClient = null;
-		int pendingByte = -1;
 		int rxErrors = 0;
 		int rxDrops = 0;
 
@@ -165,48 +225,25 @@ public class DhcpTest {
 			}
 
 			// --- TCP echo ---
-			if (tcpListen == null && tcpClient == null) {
-				tcpListen = TCP.listen(7);
-			}
-			if (tcpListen != null && tcpClient == null) {
-				if (tcpListen.state == TCPConnection.STATE_ESTABLISHED
-						|| tcpListen.state == TCPConnection.STATE_CLOSE_WAIT) {
-					tcpClient = tcpListen;
-					JVMHelp.wr("TC\n");
-					tcpListen = TCP.listen(7);
+			if (echoServer != null) {
+				Socket s = echoServer.accept();
+				if (s != null) {
+					// Every accepted socket holds a pool slot, so a free entry
+					// always exists; abort is only a guard.
+					int i = 0;
+					while (i < clients.length && clients[i] != null) i++;
+					if (i < clients.length) {
+						clients[i] = s;
+						pendingBytes[i] = -1;
+						JVMHelp.wr("TC\n");
+					} else {
+						s.abort();
+					}
 				}
 			}
-
-			if (tcpClient != null) {
-				if (tcpClient.state == TCPConnection.STATE_ESTABLISHED
-						|| tcpClient.state == TCPConnection.STATE_CLOSE_WAIT) {
-					// Retry pending byte first
-					if (pendingByte >= 0) {
-						if (tcpClient.oStream.write(pendingByte) == 0) {
-							pendingByte = -1;
-						}
-					}
-					// Echo: read from iStream, write to oStream
-					if (pendingByte < 0) {
-						int b = tcpClient.iStream.read();
-						while (b != -1) {
-							if (tcpClient.oStream.write(b) != 0) {
-								pendingByte = b;
-								break;
-							}
-							b = tcpClient.iStream.read();
-						}
-					}
-					// Only close when all data has been echoed
-					if (pendingByte < 0
-							&& tcpClient.state == TCPConnection.STATE_CLOSE_WAIT) {
-						tcpClient.close();
-						JVMHelp.wr("TX\n");
-						tcpClient = null;
-					}
-				} else if (tcpClient.state == TCPConnection.STATE_CLOSED) {
-					pendingByte = -1;
-					tcpClient = null;
+			for (int i = 0; i < clients.length; i++) {
+				if (clients[i] != null && !echo(i)) {
+					clients[i] = null;
 				}
 			}
 

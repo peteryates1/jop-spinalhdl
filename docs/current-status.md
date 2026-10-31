@@ -4055,8 +4055,17 @@ the connections the stack aborted, and aborts a client silent for 30 s
 (all 4 slots held by silent clients, echo again after 40 s). `dead` is red on
 a control build with the timeout disabled, so the timeout is what frees them.
 
-Not fixed: `DhcpTest` has NetTest's old echo loop, and `HttpServer` and
-`java.net.Socket` lean on the same abort contract; neither was checked.
+**DhcpTest and `java.net`, 2026-10-31.** DhcpTest had NetTest's old echo
+loop, and was red the same way (`idle` 0 bytes, `reset` refused at the 4th
+connection). Its echo is now written on `ServerSocket`/`Socket` -- their only
+hardware user -- with the same three fixes, and passes all five checks.
+`ServerSocket.accept()` gave up on its port for good when a re-listen found
+the pool full, and leaked a listener aborted mid-handshake; it now releases
+that listener and retries the listen on every call. `dead` is red on a control
+build with the old `accept()`, so that retry is what keeps the port served.
+`Socket` gained `isPeerClosed()`, `idleTime()` and `abort()`, and its doc says
+to `close()` a socket even after `isClosed()`. The aborted-listener path is not
+exercised: a host cannot send an RST mid-handshake without raw sockets.
 
 Guard: `fpga/scripts/net_echo_check.py` (hardware, not CI).
 

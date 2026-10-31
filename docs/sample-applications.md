@@ -128,7 +128,9 @@ fpga/scripts/net_echo_check.py jop-ep4cgx150-1.lan   # TCP echo survives RSTs,
 ### DhcpTest
 
 DHCP client test — obtains IP from network DHCP server, resolves a hostname
-via DNS, then runs UDP+TCP echo on port 7.
+via DNS, then runs UDP+TCP echo on port 7. The TCP echo is written on
+`java.net.ServerSocket`/`Socket` and behaves like NetTest's
+(`fpga/scripts/net_echo_check.py`).
 
 ```bash
 make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=DhcpTest EXTRA_SRC=../../net/src

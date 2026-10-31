@@ -5,6 +5,7 @@ import com.jopdesign.net.TCPConnection;
 import com.jopdesign.net.TCPInputStream;
 import com.jopdesign.net.TCPOutputStream;
 import com.jopdesign.net.NetLoop;
+import com.jopdesign.net.NumFunctions;
 
 /**
  * TCP client socket for JOP.
@@ -69,14 +70,48 @@ public class Socket {
 	}
 
 	/**
-	 * Check if the connection is closed.
+	 * Check if the connection is closed -- by close(), or by the stack
+	 * aborting it (an RST, or retransmits exhausted). Call close() even then:
+	 * an aborted connection keeps its pool slot until close() releases it.
 	 */
 	public boolean isClosed() {
 		return conn == null || conn.state == TCPConnection.STATE_CLOSED;
 	}
 
 	/**
-	 * Close the socket. Initiates TCP close (FIN).
+	 * Check if the peer has closed its side (FIN received, CLOSE_WAIT): no
+	 * more data will arrive, but what was received can still be read and
+	 * replies written before close().
+	 */
+	public boolean isPeerClosed() {
+		return conn != null && conn.state == TCPConnection.STATE_CLOSE_WAIT;
+	}
+
+	/**
+	 * Milliseconds since the peer last sent a segment. The stack never times
+	 * out an idle connection with nothing unacknowledged, so a server uses
+	 * this to drop a peer that vanished without FIN or RST.
+	 */
+	public int idleTime() {
+		if (conn == null) return 0;
+		return NumFunctions.now() - conn.timeLastRemoteActivity;
+	}
+
+	/**
+	 * Drop the connection at once and release its pool slot, without the
+	 * FIN exchange -- for a peer that is gone.
+	 */
+	public void abort() {
+		if (conn != null) {
+			conn.abort();
+			conn.close();
+			conn = null;
+		}
+	}
+
+	/**
+	 * Close the socket. Initiates TCP close (FIN); on a connection that is
+	 * already closed it releases the pool slot.
 	 */
 	public void close() {
 		if (conn != null) {
