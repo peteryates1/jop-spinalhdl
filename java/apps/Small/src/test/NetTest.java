@@ -20,6 +20,7 @@ import com.jopdesign.net.*;
  *   ping jop-xc7a100t-1.lan                  (or the IP= the console printed)
  *   echo "hello" | nc -u -w1 jop-xc7a100t-1.lan 7
  *   echo "hello" | nc -w1 jop-xc7a100t-1.lan 7
+ *   fpga/scripts/net_echo_check.py jop-xc7a100t-1.lan  (RST, idle, dead clients)
  */
 public class NetTest {
 
@@ -28,6 +29,16 @@ public class NetTest {
 	/** How long to wait for a lease before giving up. The client
 	 * restarts discovery after 4 retries 4 s apart, so this allows one restart. */
 	static final int DHCP_WAIT_MS = 30000;
+
+	/** A client that sends nothing for this long is dropped (status item 171):
+	 * a peer that vanished without FIN or RST would otherwise hold its pool
+	 * slot for the rest of the boot. */
+	static final int TCP_IDLE_MS = 30000;
+
+	/** TCP echo clients, one per pool slot, and the byte each could not yet
+	 * echo (-1 = none). */
+	static TCPConnection[] tcpClients = new TCPConnection[NetConfig.MAX_TCP_CONN];
+	static int[] pendingBytes = new int[NetConfig.MAX_TCP_CONN];
 
 	static char[] hexChars = {'0','1','2','3','4','5','6','7',
 	                          '8','9','A','B','C','D','E','F'};
@@ -72,6 +83,54 @@ public class NetTest {
 		for (int i = 0; i < n; i++) {
 			// busy wait
 		}
+	}
+
+	/**
+	 * Echo what client i sent. Returns false once the client is gone; its
+	 * connection is then closed, which hands the slot back to the pool -- a
+	 * connection the stack aborted (RST, retransmits exhausted) stays CLOSED
+	 * but allocated until close() is called on it.
+	 */
+	static boolean echo(int i) {
+		TCPConnection c = tcpClients[i];
+		if (c.state == TCPConnection.STATE_CLOSED) {
+			c.close();
+			JVMHelp.wr("TA\n");
+			return false;
+		}
+		if (c.state != TCPConnection.STATE_ESTABLISHED
+				&& c.state != TCPConnection.STATE_CLOSE_WAIT) {
+			return true;
+		}
+		if (NumFunctions.now() - c.timeLastRemoteActivity > TCP_IDLE_MS) {
+			c.abort();
+			c.close();
+			JVMHelp.wr("TI\n");
+			return false;
+		}
+		// Retry the pending byte first, then read from iStream to oStream
+		int pending = pendingBytes[i];
+		if (pending >= 0 && c.oStream.write(pending) == 0) {
+			pending = -1;
+		}
+		if (pending < 0) {
+			int b = c.iStream.read();
+			while (b != -1) {
+				if (c.oStream.write(b) != 0) {
+					pending = b;
+					break;
+				}
+				b = c.iStream.read();
+			}
+		}
+		pendingBytes[i] = pending;
+		// Only close when all data has been echoed
+		if (pending < 0 && c.state == TCPConnection.STATE_CLOSE_WAIT) {
+			c.close();
+			JVMHelp.wr("TX\n");
+			return false;
+		}
+		return true;
 	}
 
 	public static void main(String[] args) {
@@ -133,8 +192,6 @@ public class NetTest {
 		}
 
 		byte[] udpBuf = new byte[1472];
-		TCPConnection tcpClient = null;
-		int pendingByte = -1;
 		int rxErrors = 0;
 		int rxDrops = 0;
 
@@ -168,48 +225,33 @@ public class NetTest {
 			}
 
 			// --- TCP echo ---
-			if (tcpListen == null && tcpClient == null) {
+			// Every pool slot can be a client, so one stalled connection does
+			// not block the next. The listener is reopened whenever a slot is
+			// free; one aborted (RST during the handshake) is released first.
+			if (tcpListen != null
+					&& tcpListen.state == TCPConnection.STATE_CLOSED) {
+				tcpListen.close();
+				tcpListen = null;
+			}
+			if (tcpListen == null) {
 				tcpListen = TCP.listen(7);
 			}
-			if (tcpListen != null && tcpClient == null) {
-				if (tcpListen.state == TCPConnection.STATE_ESTABLISHED
-						|| tcpListen.state == TCPConnection.STATE_CLOSE_WAIT) {
-					tcpClient = tcpListen;
-					JVMHelp.wr("TC\n");
-					tcpListen = TCP.listen(7);
+			if (tcpListen != null
+					&& (tcpListen.state == TCPConnection.STATE_ESTABLISHED
+					|| tcpListen.state == TCPConnection.STATE_CLOSE_WAIT)) {
+				for (int i = 0; i < tcpClients.length; i++) {
+					if (tcpClients[i] == null) {
+						tcpClients[i] = tcpListen;
+						pendingBytes[i] = -1;
+						tcpListen = null;
+						JVMHelp.wr("TC\n");
+						break;
+					}
 				}
 			}
-
-			if (tcpClient != null) {
-				if (tcpClient.state == TCPConnection.STATE_ESTABLISHED
-						|| tcpClient.state == TCPConnection.STATE_CLOSE_WAIT) {
-					// Retry pending byte first
-					if (pendingByte >= 0) {
-						if (tcpClient.oStream.write(pendingByte) == 0) {
-							pendingByte = -1;
-						}
-					}
-					// Echo: read from iStream, write to oStream
-					if (pendingByte < 0) {
-						int b = tcpClient.iStream.read();
-						while (b != -1) {
-							if (tcpClient.oStream.write(b) != 0) {
-								pendingByte = b;
-								break;
-							}
-							b = tcpClient.iStream.read();
-						}
-					}
-					// Only close when all data has been echoed
-					if (pendingByte < 0
-							&& tcpClient.state == TCPConnection.STATE_CLOSE_WAIT) {
-						tcpClient.close();
-						JVMHelp.wr("TX\n");
-						tcpClient = null;
-					}
-				} else if (tcpClient.state == TCPConnection.STATE_CLOSED) {
-					pendingByte = -1;
-					tcpClient = null;
+			for (int i = 0; i < tcpClients.length; i++) {
+				if (tcpClients[i] != null && !echo(i)) {
+					tcpClients[i] = null;
 				}
 			}
 

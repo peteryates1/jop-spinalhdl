@@ -110,7 +110,8 @@ UDP and TCP echo server on port 7 with ICMP ping support. Prints periodic
 diagnostics (RX/TX counts, MAC errors/drops). Takes its address from DHCP,
 sending its unit's name as hostname (its board instance, `jop.setup.Instances`),
 and prints `IP=`. There is no static fallback: with no lease in 30 s it prints
-`DHCP: no lease` and stops.
+`DHCP: no lease` and stops. The TCP echo serves one client per connection-pool
+slot (`NetConfig.MAX_TCP_CONN`, 4) and drops a client silent for 30 s.
 
 ```bash
 make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=NetTest EXTRA_SRC=../../net/src
@@ -120,6 +121,8 @@ make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=NetTest EXTRA_SRC=../../net/s
 ping jop-ep4cgx150-1.lan
 echo "hello" | nc -u -w1 jop-ep4cgx150-1.lan 7    # UDP echo
 echo "hello" | nc -w1 jop-ep4cgx150-1.lan 7       # TCP echo
+fpga/scripts/net_echo_check.py jop-ep4cgx150-1.lan   # TCP echo survives RSTs,
+                                                     # idle and dead clients
 ```
 
 ### DhcpTest
