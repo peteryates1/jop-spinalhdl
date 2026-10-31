@@ -58,7 +58,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 17. **[#168](#item-168)** — `xc7a100tDbEth` closes timing by luck: -0.058 ns on 10-12, +0.007 ns on the 10-28 rebuild, the same core fetch path with the same directives, so any rebuild can miss again
 18. **[#170](#item-170)** — The XC7A100T on the DB_FPGA V5 loses received frames at 1 Gb/s whenever the data toggles -- 28 of 400 random frames, 0 of 400 alternating -- and each loss blacks the receiver out for seconds; TCP fails there. MII at 100 Mb/s (`xc7a100tDbMii`) passes every check, DoAll 68/68. Open: bounding a frame in the MAC so one glitch costs one frame, and a changed TCP echo at 1 Gb/s that passed the stack's checksum
 19. **[#171](#item-171)** — NetTest's TCP echo never serves again after one connection that does not close cleanly, so a single lost frame makes every later TCP check on that boot fail
-20. **[#174](#item-174)** — Every JOP image has the same MAC and IP, so two boards cannot share the LAN, and a second unit of a board design has to be a copied board. Board instances, `docs/architecture/board-instances.md`, all four steps done: the registry, each unit's own MAC and Java tree, a DHCP client two units can share a LAN with (names via Pi-hole), and the tools by instance name. Left: boards without an instance still share one MAC (item 173), and NetTest's static .123
+20. **[#174](#item-174)** — Every JOP image has the same MAC and IP, so two boards cannot share the LAN, and a second unit of a board design has to be a copied board. Board instances, `docs/architecture/board-instances.md`, all four steps done: the registry, each unit's own MAC and Java tree, a DHCP client two units can share a LAN with (names via Pi-hole), and the tools by instance name; since 2026-10-31 every attached unit is an instance with its own MAC (item 173). Left: NetTest's static .123
 21. **[#54](#item-54)** — Statics are Kfl's largest stall category (41 %) and no cache touches them. Count the accesses before designing anything
 22. **[#55](#item-55)** — The core stalls on writes whose result it never uses — `idle/direct`, 39 % of Kfl stall. Needs read-after-write forwarding and an SMP story
 23. **[#37](#item-37)** — The method cache dominates real memory traffic — 62 % of DoApp's BMB transactions, and [50](#item-50) confirms it in TIME on real memory: bytecode fill is 47-63 % of stall on Kfl and UdpIp
@@ -78,7 +78,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 37. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 38. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 39. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-40. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated: probe and console serials, cables, host toolchain paths and the network identity live in board designs, generic tools and the net stack. Meanwhile, no new setup facts go into those layers
+40. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated: probe and console serials, cables, host toolchain paths and the network identity live in generic tools and flow defaults. The board designs are clean since 2026-10-31 (every unit is a board instance); no new setup facts go into those layers
 41. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
 42. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
 43. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -4118,10 +4118,31 @@ the original JOP running took years). If so, the setup layer would move first,
 to its own private repo, since this repo is public. A generic/hardware split
 would come only when they stop changing together.
 
-**Next:** decide the setup layer's form and home -- a Scala package, or a data
-file that Scala and the Python tools both read (TOML needs no new package in
-Python 3.13, one small library in Scala). Then move the existing facts into
-it, guarded so that they cannot creep back.
+**Board designs cleaned 2026-10-31:** every unit's probe, console and loader
+moved off `Board.scala` into `jop.setup.Instances`, and `Board` lost the four
+fields. Nine units, each with its own MAC (`02:4a:4f:50:00:01`..`09`) and
+hostname: `jop-i9plus-1`, `jop-i5-1`, `jop-ep4cgx150-1`, `jop-xc7a100t-1`,
+`jop-wukong-1`, `jop-ae115fb-1`, `jop-au-1`, `jop-cyc5000-1` and `jop-i5ext-1`
+(the i5 on Colorlight's ext board, whose DAPLink is still registered). A unit
+may be built as several assemblies -- the EP4CGX150 with either daughter
+board, the Wukong with or without its J11 adapter. Test first: `InstanceTest`
+holds every preset's descriptor (probe, console, loader, tool) to what it said
+before the move, green on both sides, and failed first on `Board` still
+declaring the fields, on unit-less Ethernet presets, and on a unit spanning
+two assemblies. `check-probe-selection.sh` now reads only the instances and
+fails if `Board.scala` declares a unit fact again (proved red four ways).
+`UnitAccess` and `NetIdentity` moved to `config/UnitFacts.scala`, which
+`Const.java` now depends on (red first in `check-generated-deps.sh`; Board.scala,
+their old home, never was a prerequisite). Found on the way: the descriptor
+cannot describe a two-system preset (`wukongDualIndependent`, `wukongDualSmp`
+die on `CORES=`), so hw_verify has never run them. Only the MAX1000 and the
+generic EP4CE6 have no unit; neither has Ethernet.
+
+**Next:** the remaining setup facts are the serial registries
+(`jtag_probe_map`, `usb_serial_map`) and the host toolchain paths. Decide the
+setup layer's form for them -- the Scala package the instances are in, or a
+data file that Scala and the Python tools both read (TOML needs no new package
+in Python 3.13, one small library in Scala) -- guarded so they cannot creep back.
 
 <a id="item-174"></a>
 
@@ -4171,9 +4192,13 @@ for bare names, and a small responder in the net stack would answer them.
 on hw_verify and the descriptor and constant mains, `JOP_INSTANCE=` for a
 Java tree of the unit's own (`build/<config>/java/<name>/`, the bitstream
 still per preset), and `make download INSTANCE=`. Test first in Scala and
-through `make -p`; `jop-i5-1` and `jop-i9plus-1` passed DoAll 68/68 by name. What is left of
-this item: boards no instance covers still share 02:00:00:00:00:01 (item
-173), and NetTest still uses the static .123.
+through `make -p`; `jop-i5-1` and `jop-i9plus-1` passed DoAll 68/68 by name.
+
+**Every unit has its own MAC, 2026-10-31** ([item 173](#item-173)): the
+EP4CGX150, XC7A100T, Wukong, A-E115FB, Au, CYC5000 and the ext-board i5 are
+instances too, so every attached board's image now has a MAC and hostname of
+its own; only boards with no unit at all keep 02:00:00:00:00:01. What is
+left of this item: NetTest still uses the static .123.
 
 **Renamed 2026-10-31:** the i9+ unit is `jop-i9plus-1` (it is an i9+, not an i9); the measurements above were taken under its old name, `jop-i9-1`.
 

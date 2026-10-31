@@ -56,7 +56,7 @@ class ColorlightModuleSplitTest extends AnyFunSuite {
     assert(SystemAssembly.colorlightI5.ledCount == 1 && !SystemAssembly.colorlightI5.ledActiveHigh)
     assert(Seq("sdram_CKE" -> "U18", "sdram_CSn" -> "U17", "sdram_DQM[0]" -> "P18",
       "sdram_DQM[3]" -> "M18").forall { case (k, v) => p.get(k).contains(v) }, p)
-    assert(SystemAssembly.colorlightI5.probeAlias.contains("i5"))
+    assert(jop.setup.Instances.forAssembly(SystemAssembly.colorlightI5).flatMap(_.access.probeAlias).contains("i5"))
   }
 
   test("i9+ on the Atari base: the base board's console, eight LEDs, reset and aliases") {
@@ -69,7 +69,6 @@ class ColorlightModuleSplitTest extends AnyFunSuite {
     // Its unit's probe and console are the instance's, not the design's.
     val unit = jop.setup.Instances.forAssembly(a).map(_.access).get
     assert(unit.probeAlias.contains("colorlight-db") && unit.consoleAlias.contains("colorlight-db-0"))
-    assert(a.access == UnitAccess(), s"the shared design names a unit: ${a.access}")
     assert(a.fpgaBoard.name == "colorlight-i9plus")
   }
 
@@ -117,12 +116,5 @@ class ColorlightModuleSplitTest extends AnyFunSuite {
       val clash = base.filter(module)
       assert(clash.isEmpty, s"${a.name}: base-board pins on module balls: $clash")
     }
-  }
-
-  test("boards that disagree on how an assembly is reached are refused") {
-    val here = Board.ColorlightAtari800BaseV1.copy(probeAlias = Some("here"))
-    val other = here.copy(name = "other", probeAlias = Some("elsewhere"))
-    val a = SystemAssembly("bad", Seq(Board.ColorlightI9Plus, here, other))
-    intercept[IllegalArgumentException](a.probeAlias)
   }
 }

@@ -529,9 +529,10 @@ def main():
     d = descriptor(a.preset, list(a.args) + (["--instance", a.instance] if a.instance else []))
     for key in ("PROBE_ALIAS", "CONSOLE_ALIAS"):
         if key not in d:
-            die(f"board '{d['BOARD']}' has no {key} in its config.\n"
-                f"  Add it to Board.{d['BOARD']} -- see Board.probeAlias.\n"
-                f"  This board cannot be hardware-verified until then.")
+            die(f"board '{d['BOARD']}' has no {key}: no board instance covers this unit.\n"
+                f"  Add one to spinalhdl/src/main/scala/jop/setup/Instances.scala\n"
+                f"  (UnitAccess: probe, console, loader). This board cannot be\n"
+                f"  hardware-verified until then.")
 
     cfg_dir = os.path.join(ROOT, d["CONFIG_DIR"])
     bitstream = find_bitstream(cfg_dir, d.get("PROGRAM_TOOL"))

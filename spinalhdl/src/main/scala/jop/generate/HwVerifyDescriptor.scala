@@ -22,15 +22,15 @@ import jop.config._
  */
 object HwVerifyDescriptor {
 
-  /** `access` is how the unit is reached, from its board instance if one covers
-    * it; without one, the assembly's boards say (status items 173, 174). */
+  /** `access` is how the unit is reached, from its board instance (status
+    * items 173, 174); without one there is no probe or console to name. */
   def generate(config: BoardDesign, preset: String, args: Seq[String],
                access: Option[UnitAccess] = None,
                instance: Option[String] = None, identity: Option[NetIdentity] = None): String = {
     val assembly = config.assembly
-    val reach = access.getOrElse(assembly.access)
-    // The FPGA's board for its name and family; probe, console and loader from
-    // the ASSEMBLY, which on a module + base board are the base board's.
+    val reach = access.getOrElse(UnitAccess())
+    // The FPGA's board for its name and family; probe, console and loader are
+    // the unit's.
     val board = assembly.fpgaBoard
     val layout = BuildLayout.default
     val cfgDir = layout.configDir(preset, args)

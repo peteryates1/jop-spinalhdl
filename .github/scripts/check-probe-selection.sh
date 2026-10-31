@@ -18,6 +18,13 @@
 # PROVED RED the same day on an instance alias missing from the registry and
 # on the instances no-parse tripwire (BOARD_SCALA / INSTANCES / REGISTRY can
 # point at copies for exactly that).
+# NARROWED 2026-10-31 (status item 173): every unit's facts moved to
+# Instances.scala and Board lost the fields, so the Board.scala parse went. A
+# board design that grew them back would be checked by nobody -- hence the
+# tripwire below, which fails on any of them declared in Board.scala.
+# PROVED RED the same day four ways: an alias added back to a board design, an
+# instance alias missing from the registry, a CYC5000 unit with no loader (the
+# Quartus fallback), and the instances no-parse tripwire.
 # If you change this guard, re-prove it: a guard that cannot fail is worse
 # than none, because it gets quoted as evidence.
 # ---------------------------------------------------------------------------
@@ -85,7 +92,7 @@ tool_for_kind() {
 fail=0
 problems=""
 checked=0
-boards=0
+
 instances=0
 
 note() { problems="$problems        $1"$'\n'; fail=1; }
@@ -112,7 +119,7 @@ while IFS='|' read -r kind bname probe console loader; do
 
   [ -n "$probe" ] || continue
   checked=$(( checked + 1 ))
-  if [ "$kind" = instance ]; then instances=$(( instances + 1 )); else boards=$(( boards + 1 )); fi
+  instances=$(( instances + 1 ))
 
   kind=$(kind_of "$probe")
   if [ -z "$kind" ]; then
@@ -133,20 +140,6 @@ while IFS='|' read -r kind bname probe console loader; do
     fi
   fi
 done < <({
-awk '
-  /^  def [A-Za-z0-9_]+ = Board\(/ {
-    if (name != "") print name "|" probe "|" console "|" loader
-    name = $2; probe = ""; console = ""; loader = ""
-    next
-  }
-  name == "" { next }
-  /^    name[[:space:]]*=/        { if (match($0, /"[^"]*"/)) name = substr($0, RSTART+1, RLENGTH-2) }
-  /^    probeAlias[[:space:]]*=/  { if (match($0, /"[^"]*"/)) probe = substr($0, RSTART+1, RLENGTH-2) }
-  /^    consoleAlias[[:space:]]*=/{ if (match($0, /"[^"]*"/)) console = substr($0, RSTART+1, RLENGTH-2) }
-  /^    loaderBoard[[:space:]]*=/ { if (match($0, /"[^"]*"/)) loader = substr($0, RSTART+1, RLENGTH-2) }
-  /^    loaderCable[[:space:]]*=/ { if (match($0, /"[^"]*"/)) loader = substr($0, RSTART+1, RLENGTH-2) }
-  END { if (name != "") print name "|" probe "|" console "|" loader }
-' "$BOARD_SCALA" | command sed 's/^/board|/'
 # Board instances: `  val x = Instance(` blocks, `name = ".."` at four spaces,
 # the UnitAccess fields at six.
 awk '
@@ -165,9 +158,12 @@ awk '
 ' "$INSTANCES" | command sed 's/^/instance|/'
 })
 
-if [ "$boards" -eq 0 ]; then
-  echo "  FAIL parsed no boards with a probeAlias out of $BOARD_SCALA"
-  echo "       The awk block above stopped matching. It is asserting nothing."
+# Unit facts belong to instances (UnitFacts.scala defines their type), and
+# no board design may carry one, nor may Board declare the fields.
+leaked=$(command grep -nE '(probeAlias|consoleAlias|loaderCable|loaderBoard)[[:space:]]*(=|:)' "$BOARD_SCALA")
+if [ -n "$leaked" ]; then
+  echo "  FAIL $BOARD_SCALA carries unit facts again -- they belong to an instance in $INSTANCES:"
+  printf '        %s\n' "$leaked"
   exit 1
 fi
 if [ "$instances" -eq 0 ]; then
@@ -180,11 +176,11 @@ if [ "$fail" -ne 0 ]; then
   echo "  FAIL board probe/tool declarations do not match the probe registry:"
   printf '%s' "$problems"
   echo "       $REGISTRY records what is physically attached and what kind of"
-  echo "       probe each board has. Board.scala's tool choice is a FALLBACK --"
-  echo "       a board naming neither loaderCable nor loaderBoard silently"
-  echo "       becomes a quartus board -- so a mismatch surfaces as a hardware"
+  echo "       probe each board has. An instance's tool choice is a FALLBACK --"
+  echo "       a unit naming neither loaderCable nor loaderBoard silently"
+  echo "       becomes a quartus unit -- so a mismatch surfaces as a hardware"
   echo "       fault, not a config error. The CYC5000's read as a dead board."
   exit 1
 fi
 
-echo "  $boards boards and $instances board instances with a probe, all reachable and on a tool that can drive it"
+echo "  $instances board instances with a probe, all reachable and on a tool that can drive it"

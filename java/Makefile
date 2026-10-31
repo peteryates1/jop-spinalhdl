@@ -58,6 +58,7 @@ $(CONST_JAVA): \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/io/DeviceTypes.scala \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/DeviceInstance.scala \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/memory/JopMemoryConfig.scala \
+               $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/UnitFacts.scala \
                $(wildcard $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/setup/*.scala)
 	cd $(PROJECT_ROOT) && sbt -error "runMain jop.generate.ConstGeneratorMain $(CONST_ARGS)"
 

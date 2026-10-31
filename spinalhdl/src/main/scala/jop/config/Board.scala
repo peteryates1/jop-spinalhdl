@@ -306,35 +306,6 @@ object PllType {
  *                   QMTECH 2x32 headers: pins 1-6 (power/GND) and 61+ (NC/VIN) excluded;
  *                   signal pins are 5-58. Alchitry DF40C: per-connector pin numbering.
  */
-/** How one physical unit is reached: its JTAG probe's alias in
-  * `fpga/scripts/jtag_probe_map`, its console's in `usb_serial_map`, and, for
-  * openFPGALoader, the cable or board name. A fact about a UNIT, not a design:
-  * board instances carry it (`jop.setup`, status item 174); a Board's own
-  * `probeAlias` and friends are where it still sits for boards no instance
-  * covers yet (item 173). */
-case class UnitAccess(
-  probeAlias: Option[String] = None,
-  consoleAlias: Option[String] = None,
-  loaderCable: Option[String] = None,
-  loaderBoard: Option[String] = None)
-
-/** A unit's network identity: its MAC as six octets, and its hostname ("" for
-  * none). Another unit fact: a board instance gives it (`jop.setup`, status
-  * item 174), and `ConstGenerator` writes it into the unit's `Const.java`. */
-case class NetIdentity(mac: Seq[Int], hostname: String) {
-  require(mac.size == 6 && mac.forall(o => o >= 0 && o <= 0xff), s"not a MAC address: $mac")
-  /** The top 16 bits, as `NetConfig.macHi` holds them. */
-  def macHi: Int = (mac(0) << 8) | mac(1)
-  /** The low 32 bits, as `NetConfig.macLo` holds them. */
-  def macLo: Long = (mac(2).toLong << 24) | (mac(3) << 16) | (mac(4) << 8) | mac(5)
-}
-
-object NetIdentity {
-  /** What every image had before board instances, and what a board no instance
-    * covers still gets: 02:00:00:00:00:01, shared by all of them, and no hostname. */
-  val shared = NetIdentity(Seq(0x02, 0x00, 0x00, 0x00, 0x00, 0x01), "")
-}
-
 case class Board(
   name: String,
   fpga: Option[FpgaDevice] = None,
@@ -374,22 +345,6 @@ case class Board(
     * answer. Keyed by top-level port name; a bare name covers a bus, so `led`
     * applies to `led[0]`..`led[3]`. */
   portIoStandards: Map[String, String] = Map.empty,
-  /** This board's alias in `fpga/scripts/jtag_probe_map`, and its CONSOLE alias
-    * in `fpga/scripts/usb_serial_map`. The two namespaces differ on purpose:
-    * JTAG has one alias per board, but serial needs one per CDC ENDPOINT --
-    * a Pico presents two, and there are two Picos, so the XC7A100T's console is
-    * `xc7a100t-pico-0` while its probe is `xc7a100t`.
-    *
-    * Named here so a preset knows its own hardware. Guessing an alias from the
-    * board name silently yields nothing, and an empty string reads as "not
-    * attached" -- which has twice been mistaken for a broken board. */
-  probeAlias: Option[String] = None,
-  consoleAlias: Option[String] = None,
-  /** openFPGALoader `-c` cable or `-b` board profile. Empty on Altera boards,
-    * which are programmed with quartus_pgm using the cable NAME that
-    * jtag_probe_map reports. */
-  loaderCable: Option[String] = None,
-  loaderBoard: Option[String] = None,
   /** Vendor IP this board always needs, beyond the system PLL, as
     * repo-relative paths. The Quartus assignment is inferred from the
     * extension -- `.qip` -> QIP_FILE, `.vhd` -> VHDL_FILE, `.v`/`.sv` ->
@@ -489,8 +444,6 @@ object Board {
   def QmtechEP4CGX150 = Board(
     name = "qmtech-ep4cgx150",
     ethIpFiles = Seq("fpga/qmtech-ep4cgx150-sdram/pll_125.v"),
-    probeAlias = Some("ep4cgx150"),
-    consoleAlias = Some("ep4cgx150"),
     fpga = Some(FpgaDevice.EP4CGX150DF27.withGrade(7, 'I')),   // EP4CGX150DF27I7, docs/boards/qmtech-ep4cgx150-board.md
     pllType = Some(PllType.AlteraDramPll),
     hasEthPll = true,
@@ -571,12 +524,6 @@ object Board {
    */
   def CYC5000 = Board(
     name = "cyc5000",
-    probeAlias = Some("cyc5000"),
-    // openFPGALoader, not quartus_pgm: quartus never enumerates this board's
-    // Arrow blaster on 18.1 or 25.1, so a quartus descriptor fails with
-    // "Error (213013): Programming hardware cable not detected".
-    loaderBoard = Some("cyc5000"),
-    consoleAlias = Some("cyc5000"),
     pllType = Some(PllType.AlteraCyc5000),
     entityTag = "Cyc5000",
     fpga = Some(FpgaDevice.`5CEBA2U15`),   // 5CEBA2U15C8, the default (slowest) grade
@@ -700,9 +647,6 @@ object Board {
    */
   def ColorlightI5I9ExtBoard = Board(
     name = "colorlight-i5-i9-ext",
-    probeAlias = Some("i5"),
-    consoleAlias = Some("i5"),
-    loaderBoard = Some("colorlight-i5"),
     devices = Seq(
       BoardDevice("DAPLINK", mapping = Map("TXD" -> "SODIMM:84", "RXD" -> "SODIMM:86"))),
     parkedPins = Map(
@@ -837,16 +781,6 @@ object Board {
    */
   def AlchitryAuV2 = Board(
     name = "alchitry-au-v2",
-    consoleAlias = Some("alchitry"),
-    // ADDED 2026-09-11. Without probeAlias, hw_verify refuses the board
-    // outright ("has no PROBE_ALIAS in its config"), so this was the one
-    // attached board that could not be hardware-verified at all.
-    //
-    // loaderBoard, not the Vivado hw_server path the Makefile uses: this board
-    // shares vid:pid 0403:6010 with the CYC5000's Arrow blaster, so the probe
-    // must be selected by bus:dev like every other board here.
-    probeAlias = Some("alchitry"),
-    loaderBoard = Some("alchitry_au"),
     // -2: what its flows build and the two docs with build results say (ddr3-gc-hang.md,
     // artix7-core-estimates.md). There is no board doc, and the chip marking is unread.
     fpga = Some(FpgaDevice.XC7A35T.withGrade(2)),
@@ -938,8 +872,6 @@ object Board {
     // vendor reference (DDR667_read_write/quartus/ddr2_sodimm.qsf). Sourced,
     // not restated -- see `constraintFiles`.
     constraintFiles = Seq("fpga/a-e115fb-ddr2/ddr2_pins.qsf"),
-    probeAlias = Some("ae115fb"),
-    consoleAlias = Some("ae115fb"),
     fpga = Some(FpgaDevice.EP4CE115F23.withGrade(7, 'I')),   // EP4CE115F23I7, docs/boards/ep4ce115-ddr2-board.md
     entitySuffix = "Ae115fb",
     ledActiveHigh = false,
@@ -986,9 +918,6 @@ object Board {
 
   def WukongXC7A100T = Board(
     name = "qmtech-wukong-xc7a100t",
-    probeAlias = Some("wukong"),
-    consoleAlias = Some("wukong"),
-    loaderCable = Some("dirtyJtag"),
     fpga = Some(FpgaDevice.XC7A100T.withGrade(2)),   // -2: docs/boards/qmtech-wukong-board.md
     pllType = Some(PllType.XilinxWukong),
     entitySuffix = "Wukong",
@@ -1080,9 +1009,6 @@ object Board {
    */
   def QmtechXC7A100T = Board(
     name = "qmtech-xc7a100t",
-    probeAlias = Some("xc7a100t"),
-    consoleAlias = Some("xc7a100t-pico-0"),
-    loaderCable = Some("dirtyJtag"),
     fpga = Some(FpgaDevice.XC7A100T.withGrade(2)),   // -2: docs/boards/qmtech-xc7a100t-board.md
     pllType = Some(PllType.XilinxDdr3ClkWiz),
     devices = Seq(
@@ -1589,21 +1515,6 @@ case class SystemAssembly(
   def resetActiveLow: Boolean =
     boards.find(_.devices.exists(d => d.part == "SWITCH" && d.mapping.contains("reset")))
       .getOrElse(fpgaBoard).resetActiveLow
-
-  /** At most one board may say how this assembly is reached: which JTAG probe,
-    * which console, which loader. On a module + base board the probe and the
-    * console are the BASE board's (an RP2040, a DAPLink), not the FPGA's. */
-  private def unique[T](what: String, f: Board => Option[T]): Option[T] = {
-    val vs = boards.flatMap(f).distinct
-    require(vs.size <= 1, s"SystemAssembly '$name': boards disagree on $what: ${vs.mkString(", ")}")
-    vs.headOption
-  }
-  def probeAlias: Option[String]   = unique("probeAlias", _.probeAlias)
-  def consoleAlias: Option[String] = unique("consoleAlias", _.consoleAlias)
-  def loaderCable: Option[String]  = unique("loaderCable", _.loaderCable)
-  def loaderBoard: Option[String]  = unique("loaderBoard", _.loaderBoard)
-  /** The four together, as the assembly's boards state them. */
-  def access: UnitAccess = UnitAccess(probeAlias, consoleAlias, loaderCable, loaderBoard)
 
   /** Total LED count across all boards in assembly */
   def totalLedCount: Int = allDevices.filter(_.part == "LED").flatMap(_.mapping.keys).size

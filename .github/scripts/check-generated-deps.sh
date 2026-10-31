@@ -332,6 +332,15 @@ if [ -n "$const_rule" ]; then
     echo "       MAC leaves every image with the old one"
     exit 1
   fi
+  # And the type that formats it, with the shared MAC every unit-less image
+  # gets (status item 173, 2026-10-31: moved out of Board.scala, which was
+  # never a prerequisite, so a changed fallback MAC went stale until then).
+  if ! grep -qF "jop/config/UnitFacts.scala" <<<"$const_rule"; then
+    echo "  FAIL Const.java does not depend on jop/config/UnitFacts.scala"
+    echo "       NetIdentity -- the MAC format and the shared fallback MAC -- is"
+    echo "       there; without it a changed fallback leaves images stale"
+    exit 1
+  fi
   echo "  Const.java depends on the board instances that give a unit its MAC"
   # A NAMED UNIT GETS ITS OWN JAVA TREE (status item 174, step 4): its image
   # carries its MAC, so two units of one preset must not share one. With
