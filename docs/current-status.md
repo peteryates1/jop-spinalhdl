@@ -4203,11 +4203,11 @@ the LAN has a MAC and hostname of its own (checked on the wire for
 jop-xc7a100t-1); boards off the LAN or with no unit keep 02:00:00:00:00:01.
 
 **NetTest on DHCP, 2026-10-31 -- item closed.** NetTest v3 takes a lease,
-sending its unit's name, and falls back to the static .123 after 30 s without
-one. Red first on hardware: the v2 image on `jop-xc7a100t-1` never printed
-`DHCP: BOUND`. v3 bound 192.168.0.229 (gw .1, DNS .2); Pi-hole resolved
-`jop-xc7a100t-1.lan` to it, and ping, UDP echo and TCP echo all answered by
-name. The static fallback has not run on hardware (it needs a LAN without
+sending its unit's name; with no lease in 30 s it prints `DHCP: no lease` and
+stops (no static fallback, by the user's call). Red first on hardware: the v2
+image on `jop-xc7a100t-1` never printed `DHCP: BOUND`. v3 bound 192.168.0.229
+(gw .1, DNS .2); Pi-hole resolved `jop-xc7a100t-1.lan` to it, and ping, UDP echo and TCP echo all answered by
+name. The no-lease path has not run on hardware (it needs a LAN without
 DHCP). HttpServer still uses the static address.
 
 Guard: `spinalhdl/src/test/scala/jop/config/InstanceTest.scala` (each unit's

@@ -109,7 +109,8 @@ make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=Fat32Test EXTRA_SRC=../../fat
 UDP and TCP echo server on port 7 with ICMP ping support. Prints periodic
 diagnostics (RX/TX counts, MAC errors/drops). Takes its address from DHCP,
 sending its unit's name as hostname (its board instance, `jop.setup.Instances`),
-and prints `IP=`; with no lease in 30 s it falls back to static 192.168.0.123.
+and prints `IP=`. There is no static fallback: with no lease in 30 s it prints
+`DHCP: no lease` and stops.
 
 ```bash
 make clean all JOP_PRESET=ep4cgx150DbFull APP_NAME=NetTest EXTRA_SRC=../../net/src

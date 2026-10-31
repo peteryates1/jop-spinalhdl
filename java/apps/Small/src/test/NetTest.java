@@ -12,9 +12,9 @@ import com.jopdesign.net.*;
  *
  * Address: DHCP, sending the unit's name as its hostname (Const.ETH_HOSTNAME,
  * from its board instance -- status item 174), so a unit on a LAN whose DHCP
- * server registers names (Pi-hole here) is reached by name. With no lease
- * within DHCP_WAIT_MS it falls back to the static NetConfig address,
- * 192.168.0.123, and says so. The console prints the address either way.
+ * server registers names (Pi-hole here) is reached by name. There is no
+ * static fallback: with no lease within DHCP_WAIT_MS it prints
+ * "DHCP: no lease" and stops. The console prints the leased address.
  *
  * Test from host:
  *   ping jop-xc7a100t-1.lan                  (or the IP= the console printed)
@@ -25,7 +25,7 @@ public class NetTest {
 
 	static int wd = 0;
 
-	/** How long to wait for a lease before the static fallback. The client
+	/** How long to wait for a lease before giving up. The client
 	 * restarts discovery after 4 retries 4 s apart, so this allows one restart. */
 	static final int DHCP_WAIT_MS = 30000;
 
@@ -87,9 +87,8 @@ public class NetTest {
 		}
 		JVMHelp.wr('\n');
 
-		// DHCP first; the static address is the fallback. Must be set before
-		// NetLoop.init(), which starts discovery (and zeroes NetConfig.ip).
-		int staticIp = NetConfig.ip;
+		// DHCP only. Must be set before NetLoop.init(), which starts
+		// discovery (and zeroes NetConfig.ip).
 		NetConfig.useDhcp = true;
 
 		// Initialize networking stack
@@ -103,18 +102,14 @@ public class NetTest {
 		wrInt(EthDriver.getLinkSpeed());
 		JVMHelp.wr("M\n");
 
-		// Wait for a lease, polling the stack; without one, stop the client
-		// (DHCP.poll runs only while useDhcp is set) and take the static address.
+		// Wait for a lease, polling the stack; without one, report it and stop.
 		int t0 = NumFunctions.now();
 		while (NetConfig.dhcpActive || NetConfig.ip == 0) {
 			toggleWd();
 			NetLoop.poll();
 			if (NumFunctions.now() - t0 > DHCP_WAIT_MS) {
-				NetConfig.useDhcp = false;
-				NetConfig.dhcpActive = false;
-				NetConfig.ip = staticIp;
-				JVMHelp.wr("DHCP: no lease, static\n");
-				break;
+				JVMHelp.wr("DHCP: no lease\n");
+				for (;;) { toggleWd(); delay(500000); }
 			}
 		}
 		JVMHelp.wr("IP=");
