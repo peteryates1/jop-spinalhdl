@@ -822,6 +822,57 @@ class SdNativeTest extends AnyFunSuite {
   }
 
   // ==========================================================================
+  // The Java driver's status-bit constants against this RTL
+  // ==========================================================================
+
+  /** java/runtime/.../hw/SdNative.java restates the status register as
+    * STATUS_* constants. It named bit 8 CARD_PRESENT -- the RTL's bit 8 is
+    * fifoEmpty, card presence is bit 7 -- so isCardPresent() was true whenever
+    * the FIFO was empty, card or not; and it named bit 7 DATA_DONE, a bit the
+    * RTL does not have (status item 65). Every constant is checked here, by
+    * behaviour where the simulation can show it, else against the RTL's
+    * register map; a constant this test does not know fails it. */
+  test("SdNative_java_status_bits_match_rtl") {
+    val src = new String(java.nio.file.Files.readAllBytes(
+      jop.TestVectorUtils.findProjectRoot().resolve(
+        "java/runtime/src/jop/com/jopdesign/hw/SdNative.java")))
+    val javaBits = """STATUS_(\w+)\s*=\s*1\s*<<\s*(\d+)""".r
+      .findAllMatchIn(src).map(m => m.group(1) -> m.group(2).toInt).toMap
+    // SdNative.scala's status read (addr 0), for bits not driven below
+    val rtlMap = Map("CMD_BUSY" -> 0, "CMD_RESP_VALID" -> 1, "CMD_RESP_ERR" -> 2,
+      "CMD_TIMEOUT" -> 3, "DATA_BUSY" -> 4, "DATA_CRC_ERR" -> 5,
+      "DATA_TIMEOUT" -> 6, "FIFO_FULL" -> 9)
+    val byBehaviour = Set("CARD_PRESENT", "FIFO_EMPTY", "FIFO_HAS_DATA")
+    val unknown = javaBits.keySet -- rtlMap.keySet -- byBehaviour
+    assert(unknown.isEmpty, s"SdNative.java names status bits the RTL lacks: $unknown")
+    for ((name, bit) <- rtlMap if javaBits.contains(name))
+      assert(javaBits(name) == bit, s"STATUS_$name is bit ${javaBits(name)}, RTL bit $bit")
+    for (name <- byBehaviour)
+      assert(javaBits.contains(name), s"SdNative.java lacks STATUS_$name")
+
+    compileDut().doSim(seed = 42) { dut =>
+      implicit val cd: ClockDomain = dut.clockDomain
+      cd.forkStimulus(10)
+      initIo(dut)
+      cd.waitSampling(10)
+      def has(name: String) = (ioRead(dut, 0) & (1L << javaBits(name))) != 0
+
+      // No card, FIFO empty
+      assert(!has("CARD_PRESENT"), "no card, but STATUS_CARD_PRESENT reads set")
+      assert(has("FIFO_EMPTY"), "empty FIFO, but STATUS_FIFO_EMPTY reads clear")
+      assert(!has("FIFO_HAS_DATA"), "empty FIFO, but STATUS_FIFO_HAS_DATA reads set")
+
+      // Card in, one word in the FIFO
+      dut.io.sdCd #= false
+      ioWrite(dut, 5, 0x12345678L)
+      cd.waitSampling(5)
+      assert(has("CARD_PRESENT"), "card in, but STATUS_CARD_PRESENT reads clear")
+      assert(!has("FIFO_EMPTY"), "a word in the FIFO, but STATUS_FIFO_EMPTY reads set")
+      assert(has("FIFO_HAS_DATA"), "a word in the FIFO, but STATUS_FIFO_HAS_DATA reads clear")
+    }
+  }
+
+  // ==========================================================================
   // Test 6: Card detect
   // ==========================================================================
 

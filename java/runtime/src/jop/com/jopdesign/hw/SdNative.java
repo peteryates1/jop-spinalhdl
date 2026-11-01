@@ -23,7 +23,9 @@ import com.jopdesign.sys.Const;
  */
 public final class SdNative extends HardwareObject {
 
-	// Status bits (addr 0, read)
+	// Status bits (addr 0, read) -- as SdNative.scala drives them; held to it
+	// by SdNativeTest's SdNative_java_status_bits_match_rtl (status item 65).
+	// Bit 8 duplicates FIFO_EMPTY in the RTL and has no name here.
 	public static final int STATUS_CMD_BUSY       = 1 << 0;
 	public static final int STATUS_CMD_RESP_VALID  = 1 << 1;
 	public static final int STATUS_CMD_RESP_ERR    = 1 << 2;
@@ -31,8 +33,7 @@ public final class SdNative extends HardwareObject {
 	public static final int STATUS_DATA_BUSY       = 1 << 4;
 	public static final int STATUS_DATA_CRC_ERR    = 1 << 5;
 	public static final int STATUS_DATA_TIMEOUT    = 1 << 6;
-	public static final int STATUS_DATA_DONE       = 1 << 7;
-	public static final int STATUS_CARD_PRESENT    = 1 << 8;
+	public static final int STATUS_CARD_PRESENT    = 1 << 7;
 	public static final int STATUS_FIFO_FULL       = 1 << 9;
 	public static final int STATUS_FIFO_EMPTY      = 1 << 10;
 	public static final int STATUS_FIFO_HAS_DATA   = 1 << 11;
