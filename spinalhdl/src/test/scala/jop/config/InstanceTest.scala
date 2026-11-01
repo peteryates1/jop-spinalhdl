@@ -256,6 +256,28 @@ class InstanceTest extends AnyFunSuite {
       val i = l.indexOf('='); l.take(i) -> l.drop(i + 1) }.toMap
   }
 
+  // STEP 3 of item 173: a unit has one console per UART connector, and a
+  // build talks through the one its UART is wired to. The Wukong's CH340N is
+  // the default; its Pico 2 W's CDCs carry PICO_UART0 / J11_UART (the first)
+  // and PICO_UART1 (the second) -- usb_serial_map's wukong-pico-0 / -1.
+  test("a uart= override reaches the console its UART is wired to") {
+    assert(descriptorFor("wukongDdr3").get("CONSOLE_ALIAS").contains("wukong"))
+    assert(descriptorFor("wukongDdr3", "uart=PICO_UART0").get("CONSOLE_ALIAS").contains("wukong-pico-0"))
+  }
+
+  // A two-system preset has two consoles. The descriptor died on these
+  // (`system` refuses a multi-system config), so hw_verify and the Make flows
+  // could not describe them; the Wukong Makefile named the halves' consoles
+  // by hand.
+  test("a two-system preset names each system's console") {
+    val d = descriptorFor("wukongDualIndependent")
+    assert(d.get("SYSTEMS").contains("ddr3,sdr"), d)
+    assert(d.get("CONSOLE_ALIAS_ddr3").contains("wukong-pico-1"), d)
+    assert(d.get("CONSOLE_ALIAS_sdr").contains("wukong-pico-0"), d)
+    assert(d.get("CONSOLE_ALIAS").contains("wukong-pico-1"), "the unsuffixed console is the first system's")
+    assert(d.get("PROBE_ALIAS").contains("wukong"), d)
+  }
+
   test("a named unit's descriptor carries its name, hostname and own Java tree") {
     val d = descriptorFor("colorlightDbI5Eth", "--instance", "jop-i5-1")
     assert(d.get("INSTANCE").contains("jop-i5-1") && d.get("HOSTNAME").contains("jop-i5-1"), d)

@@ -23,7 +23,8 @@ and read one row per line, fields separated by '|':
     jop_setup.py table devices    alias|idcode|device   (probes with an idcode)
     jop_setup.py table consoles   alias|vid:pid|product|serial|interface|description
     jop_setup.py table units      name|assemblies|macs|probe|console|loader-cable|
-                                  loader-board|presets|not-fitted|broken
+                                  loader-board|presets|not-fitted|broken|consoles
+                                  (consoles as PART=alias,PART=alias)
     jop_setup.py unit NAME FACT   one fact of one unit, one line per item
 
 An empty field means the entry leaves it out ("do not care" for a console's
@@ -59,7 +60,8 @@ CONSOLE_KEYS = {"vidpid": (True, str), "product": (False, str), "serial": (False
                 "interface": (False, str), "description": (False, str)}
 UNIT_KEYS = {"assemblies": (True, list), "macs": (False, list), "probe": (False, str),
              "console": (False, str), "loader-cable": (False, str), "loader-board": (False, str),
-             "presets": (False, list), "not-fitted": (False, list), "broken": (False, list)}
+             "presets": (False, list), "not-fitted": (False, list), "broken": (False, list),
+             "consoles": (False, dict)}
 MAC = re.compile(r"[0-9a-f]{2}(:[0-9a-f]{2}){5}")
 
 
@@ -100,7 +102,12 @@ def _checked(path, alias, entry, keys):
     out = {}
     for k, (_, kind) in keys.items():
         v = entry.get(k, kind())
-        if kind is list:
+        if kind is dict:
+            if not isinstance(v, dict) or not all(isinstance(x, str) for x in v.values()):
+                raise SetupError(f"{path}: [{alias}] {k} must be a table of strings, not {v!r}")
+            if any(sep in x for kv in v.items() for x in kv for sep in "|,="):
+                raise SetupError(f"{path}: [{alias}] {k} holds '|', ',' or '=', a field separator")
+        elif kind is list:
             if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
                 raise SetupError(f"{path}: [{alias}] {k} must be a list of strings, not {v!r}")
             v = [" ".join(x.split()) for x in v]
@@ -157,8 +164,9 @@ def units(d=None):
         u = _checked(path, name, entry, UNIT_KEYS)
         if u["probe"] and u["probe"] not in known_probes:
             raise SetupError(f"{path}: [{name}] probe '{u['probe']}' is not in probes.toml")
-        if u["console"] and u["console"] not in known_consoles:
-            raise SetupError(f"{path}: [{name}] console '{u['console']}' is not in consoles.toml")
+        for c in [u["console"]] + list(u["consoles"].values()):
+            if c and c not in known_consoles:
+                raise SetupError(f"{path}: [{name}] console '{c}' is not in consoles.toml")
         u["macs"] = [m.lower() for m in u["macs"]]
         for m in u["macs"]:
             if not MAC.fullmatch(m):
@@ -181,9 +189,12 @@ def table(name, d=None):
                 for a, c in consoles(d).items()]
     if name == "units":
         cols = ("assemblies", "macs", "probe", "console", "loader-cable", "loader-board",
-                "presets", "not-fitted", "broken")
-        return ["|".join([n] + [",".join(u[c]) if isinstance(u[c], list) else u[c] for c in cols])
-                for n, u in units(d).items()]
+                "presets", "not-fitted", "broken", "consoles")
+        def cell(v):
+            if isinstance(v, dict):
+                return ",".join(f"{k}={x}" for k, x in v.items())
+            return ",".join(v) if isinstance(v, list) else v
+        return ["|".join([n] + [cell(u[c]) for c in cols]) for n, u in units(d).items()]
     raise SetupError(f"unknown table '{name}' (tables: probes, devices, consoles, units)")
 
 
@@ -196,6 +207,8 @@ def unit_fact(name, key, d=None):
     if key not in UNIT_KEYS:
         raise SetupError(f"a unit has no fact '{key}' (facts: {', '.join(UNIT_KEYS)})")
     v = us[name][key]
+    if isinstance(v, dict):
+        return [f"{k}={x}" for k, x in v.items()]
     return v if isinstance(v, list) else [v] if v else []
 
 

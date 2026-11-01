@@ -21,6 +21,9 @@
 #                modules' second PHY may come later (user, 2026-10-31).
 #   probe        its alias in probes.toml
 #   console      its alias in consoles.toml
+#   consoles     { UART part = console alias }: where a unit has a console
+#                per UART connector, the one a build's UART part is wired to;
+#                `console` serves every part not listed
 #   loader-cable openFPGALoader's -c; loader-board its -b. With neither, the
 #                unit is programmed by quartus_pgm through the cable NAME
 #                jtag_probe_map reports.
@@ -90,12 +93,16 @@ console = "xc7a100t-pico-0"
 loader-cable = "dirtyJtag"
 
 # The QMTECH Wukong, alone or with its J11 UART adapter (the dual-system
-# builds). Probe: its Pico 2 W running dirtyJtag; console: its CH340N.
+# builds). Probe: its Pico 2 W running dirtyJtag. Console: its CH340N, unless
+# the build's UART is on J11, which the Pico 2 W is jumpered to: PICO_UART0
+# and the adapter's J11_UART reach its first CDC, PICO_UART1 its second
+# (hardware-verified 2026-08-22 and 09-23; see consoles.toml).
 [jop-wukong-1]
 assemblies = ["wukong-xc7a100t", "wukong-xc7a100t-dual"]
 macs = ["02:4a:4f:50:00:05"]
 probe = "wukong"
 console = "wukong"
+consoles = { PICO_UART0 = "wukong-pico-0", J11_UART = "wukong-pico-0", PICO_UART1 = "wukong-pico-1" }
 loader-cable = "dirtyJtag"
 
 # The A-E115FB. Probe: the pico-usb-debug-jtag carrier's JTAG0 since

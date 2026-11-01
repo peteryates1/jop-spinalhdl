@@ -5,8 +5,7 @@ PROJECT_ROOT = ../..
 # ../console.mk. CFG is the flow being driven; each target below that needs a
 # different one re-enters with it, so only the invoked flow resolves a name.
 CFG          ?= wukongDdr3
-BOARD_ALIAS   = wukong
-CONSOLE_ALIAS = wukong
+# The probe and console are the unit's: fpga/unit.mk asks setup/units.toml.
 
 include ../vivado.mk
 BITSTREAM := vivado/build/wukong_jop_bram/wukong_jop_bram.runs/impl_1/JopBramWukongTop.bit
@@ -56,12 +55,10 @@ TIMING_DIRECTIVES := JOP_SYNTH_DIRECTIVE=PerformanceOptimized JOP_SYNTH_RETIMING
 # the Pico's SECOND CDC; SDR -> J11_UART A5/A4 -> the first). See
 # docs/architecture/system-configuration.md.
 #
-# All three are resolved by SERIAL through usb_serial_map. The CH340 has no
-# serial number, which is why it needs its own alias -- see that script's
-# header. There are also TWO Pico dirtyJtag probes on this host, so a bare
-# /dev/ttyACM0 can point at the other board.
-CONSOLE_DUAL_DDR3 = wukong-pico-1
-CONSOLE_DUAL_SDR  = wukong-pico-0
+# Which console each half talks through is the UNIT's (setup/units.toml, its
+# `consoles` routes by UART part), and fpga/unit.mk picks it per system:
+# SYSTEM=ddr3 or SYSTEM=sdr. Until 2026-11-01 this file named the two aliases
+# itself (status item 173, step 3).
 
 # THE BAUD IS NOT WRITTEN DOWN HERE ANY MORE. This board carried
 # UART_BAUD := 1000000 and DDR3_UART_BAUD := 2000000 as constants, plus two
@@ -313,14 +310,14 @@ dual-program:
 # J11_UART). This target used to watch UART_DEV (the CH340) at UART_BAUD
 # (1 Mbaud), so it was wrong in both the port and the rate.
 dual-monitor:
-	$(MAKE) monitor CFG=$(DUAL_CFG) CONSOLE_ALIAS=$(CONSOLE_DUAL_DDR3)
+	$(MAKE) monitor CFG=$(DUAL_CFG) SYSTEM=ddr3
 
 # SDR cluster: UART via Pico ttyACM0 at 115200 baud
 dual-sdr-monitor:
-	$(MAKE) monitor CFG=$(DUAL_CFG) CONSOLE_ALIAS=$(CONSOLE_DUAL_SDR)
+	$(MAKE) monitor CFG=$(DUAL_CFG) SYSTEM=sdr
 
 dual-sdr-download:
-	$(MAKE) download CFG=$(DUAL_CFG) CONSOLE_ALIAS=$(CONSOLE_DUAL_SDR)
+	$(MAKE) download CFG=$(DUAL_CFG) SYSTEM=sdr
 
 # === SDRAM Exerciser targets ===
 

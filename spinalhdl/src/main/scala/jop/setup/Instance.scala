@@ -62,6 +62,9 @@ case class Instance(
   require((notFitted ++ broken).subsetOf(parts),
     s"instance $name names parts its assemblies ${assemblies.map(_.name).mkString(", ")} do not have: " +
       s"${((notFitted ++ broken) -- parts).toSeq.sorted.mkString(", ")}")
+  require(access.consoles.keySet.subsetOf(parts),
+    s"instance $name routes consoles from parts its assemblies ${assemblies.map(_.name).mkString(", ")} " +
+      s"do not have: ${(access.consoles.keySet -- parts).toSeq.sorted.mkString(", ")}")
   require((notFitted & broken).isEmpty,
     s"instance $name lists ${(notFitted & broken).mkString(", ")} as both not fitted and broken")
 

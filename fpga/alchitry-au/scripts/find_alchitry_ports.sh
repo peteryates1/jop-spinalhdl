@@ -14,12 +14,13 @@ hw_tcl="$repo_root/vivado/tcl/check_hw_target.tcl"
 mode="summary"
 case "${1:-}" in
   --serial)
-    exec "$repo_root/../scripts/usb_serial_map" --by-id alchitry
+    # The alias is the unit's console (setup/units.toml); the Makefile passes it.
+    exec "$repo_root/../scripts/usb_serial_map" --by-id "${2:?--serial needs the console alias (make find-serial-port passes the unit's)}"
     ;;
   --programming) mode="programming" ;;
   --help|-h)
     cat <<'USAGE'
-Usage: scripts/find_alchitry_ports.sh [--serial|--programming]
+Usage: scripts/find_alchitry_ports.sh [--serial <console alias>|--programming]
 
 Modes:
   --serial       Print the recommended UART tty node only (e.g. /dev/ttyUSB1)

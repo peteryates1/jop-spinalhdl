@@ -35,12 +35,26 @@ object HwVerifyDescriptor {
     val layout = BuildLayout.default
     val cfgDir = layout.configDir(preset, args)
 
-    val baud = config.devices.values
-      .find(_.deviceType.key == "uart")
+    // Each system's devices and core count. A JopConfig has one system or
+    // more -- the Wukong dual builds have two, each with its own UART -- and
+    // `config.devices` refuses the latter, which is why this used to die on
+    // them; an exerciser has devices and no cores.
+    val systems: Seq[(String, Map[String, DeviceInstance], Option[Int])] = config match {
+      case j: JopConfig => j.resolvedSystems.map(s => (s.name, s.effectiveDevices, Some(s.cpuCnt)))
+      case d            => Seq(("", d.devices, None))
+    }
+    def uart(devices: Map[String, DeviceInstance]) = devices.values.find(_.deviceType.key == "uart")
+    def baudOf(devices: Map[String, DeviceInstance]) = uart(devices)
       .flatMap(_.params.get("baudRate").map(_.asInstanceOf[Int]))
       // The exercisers declare no baudRate and run at 1 Mbaud, which is what
       // their Makefiles have always used.
       .getOrElse(if (config.isInstanceOf[JopConfig]) 2000000 else 1000000)
+    // The console a system talks through is the one wired to its UART part
+    // (status item 173, step 3): `uart=PICO_UART0` moves a Wukong build off
+    // the CH340N onto its Pico's first CDC.
+    def consoleOf(devices: Map[String, DeviceInstance]) = reach.consoleFor(uart(devices).flatMap(_.devicePart))
+    val (_, firstDevices, firstCores) = systems.head
+    val baud = baudOf(firstDevices)
 
     val family = board.fpga.map(_.family.toString).getOrElse("unknown")
     val tool = if (reach.loaderCable.isDefined || reach.loaderBoard.isDefined)
@@ -52,15 +66,22 @@ object HwVerifyDescriptor {
     sb.append(s"ENTITY=${config.entityName}\n")
     sb.append(s"BOARD=${board.name}\n")
     sb.append(s"FAMILY=$family\n")
-    // Cores is a JopConfig notion; an exerciser has none.
-    config match {
-      case j: JopConfig => sb.append(s"CORES=${j.system.cpuCnt}\n")
-      case _            => ()
-    }
+    // Cores is a JopConfig notion; an exerciser has none. The unsuffixed
+    // CORES, BAUD and CONSOLE_ALIAS are the first system's; a multi-system
+    // design also lists every system's, suffixed by its name.
+    firstCores.foreach(n => sb.append(s"CORES=$n\n"))
     sb.append(s"BAUD=$baud\n")
     sb.append(s"PROGRAM_TOOL=$tool\n")
     reach.probeAlias.foreach(a => sb.append(s"PROBE_ALIAS=$a\n"))
-    reach.consoleAlias.foreach(a => sb.append(s"CONSOLE_ALIAS=$a\n"))
+    consoleOf(firstDevices).foreach(a => sb.append(s"CONSOLE_ALIAS=$a\n"))
+    if (systems.size > 1) {
+      sb.append(s"SYSTEMS=${systems.map(_._1).mkString(",")}\n")
+      for ((name, devices, cores) <- systems) {
+        cores.foreach(n => sb.append(s"CORES_$name=$n\n"))
+        sb.append(s"BAUD_$name=${baudOf(devices)}\n")
+        consoleOf(devices).foreach(a => sb.append(s"CONSOLE_ALIAS_$name=$a\n"))
+      }
+    }
     reach.loaderCable.foreach(c => sb.append(s"LOADER_CABLE=$c\n"))
     reach.loaderBoard.foreach(b => sb.append(s"LOADER_BOARD=$b\n"))
     // Where the app images are: a named unit has its own Java tree (step 4).

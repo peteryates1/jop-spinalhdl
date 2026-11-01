@@ -75,7 +75,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 34. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 35. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 36. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated: 13 board Makefiles name unit aliases, and flow defaults name host toolchain paths. Since 2026-11-01 the setup is TOML in `setup/` -- the probe and console serials (step 1) and the units (step 2); no new setup facts go into the other layers
+37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated: flow defaults still name this host's toolchain paths (step 4). Since 2026-11-01 the setup is TOML in `setup/` -- probe and console serials, units -- and no board Makefile names how its unit is reached; no new setup facts go into the other layers
 38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
 39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
 40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -4271,10 +4271,50 @@ from `jop-i5-1` (...02), and the sim's frame check reads `frame.hex` instead
 of hardcoding the bytes; its 18 checks pass, and the frame check fails
 against the old frame.
 
-**Next:** step 3, the 13 board
-Makefiles that set `BOARD_ALIAS`/`CONSOLE_ALIAS` -- unit facts in the hardware
-layer, duplicating the instances -- take them from the unit through
-`jop_setup.py`. Step 4: the host's toolchain paths (the `/opt` defaults in
+**Step 3 done 2026-11-01: the flows.** No board Makefile says how its board
+is reached. `fpga/unit.mk` (included by `quartus.mk`, `vivado.mk` and
+`console.mk`) asks the descriptor -- hw_verify's own selection -- for the unit
+the preset in `CFG` is built for, or the one `INSTANCE=` names. The answer is
+cached per config in `build/<config>/unit.desc` and remade when `units.toml`
+or the config sources change: one sbt start, then a sed. The user chose this
+over Makefiles declaring their assemblies for a sbt-free lookup. An
+exerciser's descriptor comes from its design object (`GEN_MAIN=...Build` ->
+`...Design`). `make unit-info` shows the answer. Thirteen board Makefiles lost
+`BOARD_ALIAS`/`CONSOLE_ALIAS`. Five files that handed the registry tools a
+literal alias now take it from the unit, or as an argument. One was
+`alchitry-au-ddr3-test`, which also fell back to a hardcoded by-id path.
+
+A unit may route consoles by UART part (`consoles` in `units.toml`, the
+user's choice). The Wukong's CH340N is its default; its Pico 2 W's CDCs carry
+PICO_UART0/J11_UART and PICO_UART1. The descriptor picks per system, and no
+longer dies on a two-system preset: `SYSTEMS=` and `CONSOLE_ALIAS_<system>`.
+The Wukong's dual targets take `SYSTEM=ddr3`/`sdr` instead of naming the
+CDCs. Red first, against the old descriptor: `wukongDdr3 uart=PICO_UART0` got
+the CH340's alias, and `wukongDualIndependent` died in `.system`.
+
+Every board directory resolves the probe and console it did before, for its
+default `CFG` and the alternates tried (DbV5Eth, DbFull, xc7a100tDbMii, the
+Colorlight Eth presets). Three differences, all intended:
+- `max1000` now has none. It has no unit; before, it named a `max1000` probe
+  alias that does not exist.
+- The Colorlight ext board has none, since no module is fitted.
+- `wukongDualIndependent` without `SYSTEM` gets its first system's Pico CDC,
+  not the CH340, which carries nothing in a dual build.
+
+On hardware, through the new flow and without rebuilding (`make -o`): the
+EP4CGX150 (Quartus; `assert-device` read 028040DD through the unit's probe)
+and the XC7A100T (Vivado, dirtyJtag busdev 1:5) each programmed and printed
+`Hello World!` through the unit's console. The Wukong's dual halves resolved
+to the Pico's if03 (ddr3) and if01 (sdr).
+
+`check-setup-layer.sh` now also fails on a board Makefile that sets the
+aliases, or on a literal alias handed to a registry tool. It was red first on
+13 Makefiles, the Wukong's `CONSOLE_DUAL_*` pair, `console.mk`'s INSTANCE
+override and six literal aliases. A `SERIAL_PORT` given on the command line
+skips the unit lookup, so `check-console-baud.sh` starts no sbt. `make
+check-build` with no cached descriptors takes 11 s.
+
+**Next:** step 4: the host's toolchain paths (the `/opt` defaults in
 about 20 Makefiles and scripts) go to `setup/host.toml`. Lab-specific TESTS
 (`InstanceTest`'s descriptor table) stay in `spinalhdl/src/test` for now; they
 would move with the setup if it gets a repository of its own.

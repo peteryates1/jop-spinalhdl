@@ -16,7 +16,15 @@ case class UnitAccess(
   probeAlias: Option[String] = None,
   consoleAlias: Option[String] = None,
   loaderCable: Option[String] = None,
-  loaderBoard: Option[String] = None)
+  loaderBoard: Option[String] = None,
+  consoles: Map[String, String] = Map.empty) {
+
+  /** The console a build talks through: the one wired to its UART part, when
+    * the unit routes that part (`consoles`: the Wukong's Pico CDCs carry
+    * PICO_UART0/1 and J11_UART), else the unit's default. Status item 173. */
+  def consoleFor(uartPart: Option[String]): Option[String] =
+    uartPart.flatMap(consoles.get).orElse(consoleAlias)
+}
 
 /** A unit's network identity: its MAC as six octets, and its hostname ("" for
   * none). Another unit fact: a board instance gives it (`jop.setup`, status

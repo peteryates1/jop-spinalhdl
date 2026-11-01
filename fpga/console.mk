@@ -2,8 +2,8 @@
 # The serial console, once. Toolchain-independent: included by quartus.mk and
 # usable directly by the Vivado and nextpnr boards.
 #
-# The board sets CONSOLE_ALIAS (a name from fpga/scripts/usb_serial_map) and
-# gets SERIAL_PORT, BAUD, download, redownload, reset and monitor.
+# The board gets SERIAL_PORT, BAUD, download, redownload, reset and monitor;
+# the console alias is the unit's (fpga/unit.mk).
 #
 # THE BAUD COMES FROM THE BUILD, NOT FROM A CONSTANT. Every board Makefile used
 # to carry its own BAUD_RATE / UART_BAUD / DDR3_UART_BAUD -- twelve of them,
@@ -17,21 +17,14 @@
 # BAUD may still be overridden on the command line for a deliberate experiment.
 # ---------------------------------------------------------------------------
 
-# A NAMED UNIT (status item 174, step 4). INSTANCE=<name> from
-# setup/units.toml overrides the board Makefile's CONSOLE_ALIAS with that
-# unit's console, and takes the image from that unit's own Java tree (built
-# with JOP_INSTANCE=<name>). The descriptor does the choosing -- it refuses a
-# unit that is not on this preset's assembly -- at the cost of one sbt start,
-# paid only when a unit is named. Without INSTANCE nothing changes.
+# THE CONSOLE IS THE UNIT'S (status item 173, step 3): fpga/unit.mk gets
+# CONSOLE_ALIAS from the unit the preset is built for -- the console wired to
+# the preset's UART -- or from the unit INSTANCE=<name> names, whose image then
+# comes from its own Java tree (built with JOP_INSTANCE=<name>). The board
+# Makefile no longer says which console it has.
+include $(dir $(lastword $(MAKEFILE_LIST)))unit.mk
 ifneq ($(INSTANCE),)
-  INSTANCE_DESC := $(shell cd $(PROJECT_ROOT) && sbt "runMain jop.generate.HwVerifyDescriptorMain $(CFG) --instance $(INSTANCE)" 2>&1 | \
-                     command sed -n 's/^\(\[info\] \)\{0,1\}\(CONSOLE_ALIAS\|JAVA_DIR\)=/\2=/p')
-  CONSOLE_ALIAS := $(patsubst CONSOLE_ALIAS=%,%,$(filter CONSOLE_ALIAS=%,$(INSTANCE_DESC)))
-  INSTANCE_JAVA_DIR := $(patsubst JAVA_DIR=%,%,$(filter JAVA_DIR=%,$(INSTANCE_DESC)))
-  ifeq ($(CONSOLE_ALIAS)$(INSTANCE_JAVA_DIR),)
-    $(error INSTANCE=$(INSTANCE) did not resolve for $(CFG) -- run: sbt "runMain jop.generate.HwVerifyDescriptorMain $(CFG) --instance $(INSTANCE)")
-  endif
-  JOP_FILE ?= $(PROJECT_ROOT)/$(INSTANCE_JAVA_DIR)/apps/Smallest/HelloWorld.jop
+  JOP_FILE ?= $(PROJECT_ROOT)/$(call unit_fact,JAVA_DIR)/apps/Smallest/HelloWorld.jop
 endif
 
 # Resolved by SERIAL, never by /dev/ttyUSBn: the numbers move on every replug,
@@ -101,9 +94,17 @@ require-baud:
 # "could not open port 2000000", naming the baud as the port. Loud but
 # misleading, and the same shape as the baud defect: a value nobody chose
 # arriving where a real one was expected. Status item 126.
-require-port:
+#
+# A SERIAL_PORT given on the command line is used as it is, so the unit is not
+# looked up at all (and no sbt starts): check-console-baud.sh relies on that.
+require-port: $(if $(filter command line,$(origin SERIAL_PORT)),,$(UNIT_DESC))
 	@if [ -z "$(SERIAL_PORT)" ]; then \
 	  echo "make: the serial port could not be resolved for '$(CONSOLE_ALIAS)'." >&2; \
+	  if [ -z "$(CONSOLE_ALIAS)" ]; then \
+	    echo "  No unit has a console for CFG=$(CFG)$(if $(SYSTEM), SYSTEM=$(SYSTEM)): the console" >&2; \
+	    echo "  is the unit's, in setup/units.toml (fpga/unit.mk)." >&2; \
+	    exit 1; \
+	  fi; \
 	  echo "  SERIAL_PORT comes from fpga/scripts/usb_serial_map --by-id, which" >&2; \
 	  echo "  found no match. The board may be unplugged, the alias may be" >&2; \
 	  echo "  missing from the registry, or the adapter may have stalled its" >&2; \
@@ -111,7 +112,7 @@ require-port:
 	  exit 1; \
 	fi
 
-console-info:
+console-info: $(UNIT_DESC)
 	@echo "console : $(CONSOLE_ALIAS) -> $(SERIAL_PORT)"
 	@echo "baud    : $(BAUD)  (from $(CFG_DIR)/rtl/*.summary.txt)"
 	@echo "image   : $(JOP_FILE)"

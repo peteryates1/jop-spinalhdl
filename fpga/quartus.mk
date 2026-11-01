@@ -17,8 +17,9 @@
 #   REV            Quartus revision name, e.g. jop_sdram
 # and may set:
 #   QUARTUS_DIR    default /opt/altera/25.1/quartus
-#   BOARD_ALIAS    for jtag_probe_map, default none (program target is skipped)
-#   CONSOLE_ALIAS  for usb_serial_map, consumed by console.mk
+# The probe (BOARD_ALIAS) and console (CONSOLE_ALIAS) are NOT the board's to
+# set: they are the unit's, and fpga/unit.mk gets them (status item 173). A
+# design no unit covers has neither, and assert-device skips.
 #   GEN_MAIN       generator main, default jop.system.JopTopVerilog
 #   GEN_ARGS       its arguments, default "$(CFG) buildtree"
 #   GEN_MAKES_PROJECT  yes if GEN_MAIN also writes setup_proj.tcl and the .sdc
@@ -41,6 +42,7 @@ else
 endif
 
 CFG_DIR      = $(PROJECT_ROOT)/build/$(CFG_NAME)
+include $(dir $(lastword $(MAKEFILE_LIST)))unit.mk
 QUARTUS_PRJ  = $(CFG_DIR)/quartus
 SOF_FILE     = $(QUARTUS_PRJ)/output_files/$(REV).sof
 
@@ -242,7 +244,7 @@ build: $(SOF_FILE)
 # IDCODE recorded. Boards that program some other way (a .rbf through
 # openFPGALoader, say) define their own `program` and should depend on this
 # too.
-assert-device:
+assert-device: $(UNIT_DESC)
 	@test -z "$(BOARD_ALIAS)" \
 	  || $(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --assert-device $(BOARD_ALIAS)
 

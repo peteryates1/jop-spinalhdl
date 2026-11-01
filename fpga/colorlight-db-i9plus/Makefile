@@ -30,8 +30,7 @@ REPO_ROOT    := $(shell cd ../.. && pwd)
 PROJECT_ROOT  = ../..
 
 CFG          ?= colorlightDbI9PlusSdram
-BOARD_ALIAS   = colorlight-db
-CONSOLE_ALIAS = colorlight-db-0
+# The probe and console are the unit's: fpga/unit.mk asks setup/units.toml.
 
 include ../vivado.mk
 

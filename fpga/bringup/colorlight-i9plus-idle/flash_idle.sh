@@ -2,9 +2,11 @@
 # Write the idle image into the i9+ module on the colorlight-db base board and
 # prove it: unprotect, write with --verify, read back independently, reload from
 # flash, check DONE/CRC. See README.md for why each step is there.
+# Usage: flash_idle.sh <probe alias> -- the unit's probe, which is the setup's:
+#   ./flash_idle.sh "$(../../scripts/jop_setup.py unit <unit> probe)"
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-B=$("$here/../../scripts/jtag_probe_map" --busdev colorlight-db)
+B=$("$here/../../scripts/jtag_probe_map" --busdev "${1:?usage: flash_idle.sh <probe alias> (jop_setup.py unit <unit> probe)}")
 OFL=(sudo openFPGALoader -c dirtyJtag --busdev-num "$B" --fpga-part xc7a50tfgg484)
 tmp=$(mktemp -d)
 bit="$here/build/I9PlusIdle.bit"

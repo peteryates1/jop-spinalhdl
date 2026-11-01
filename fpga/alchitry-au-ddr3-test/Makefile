@@ -21,13 +21,18 @@ SHELL := /usr/bin/env bash
 VIVADO_HOME ?= /opt/xilinx/2025.2/Vivado
 RUN_VIVADO := VIVADO_HOME=$(VIVADO_HOME) ../alchitry-au/scripts/run_vivado.sh
 
-# Serial port for UART
-SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id alchitry 2>/dev/null \
-                 || echo /dev/serial/by-id/usb-Xilinx_Alchitry_Au_V2_000000-if01-port0)
-BAUD_RATE = 1000000
-
 # Project paths
 PROJECT_ROOT = ../..
+
+# Serial port for UART: the console of the unit this board is, found as the
+# unit an auSerial build runs on (fpga/unit.mk; status item 173). No fallback
+# path: a console that does not resolve must stop `monitor`, not guess.
+CFG      ?= auSerial
+CFG_NAME := $(CFG)
+CFG_DIR   = $(PROJECT_ROOT)/build/$(CFG_NAME)
+include ../unit.mk
+SERIAL_PORT ?= $(shell ../scripts/usb_serial_map --by-id $(CONSOLE_ALIAS) 2>/dev/null)
+BAUD_RATE = 1000000
 GENERATED_V = $(PROJECT_ROOT)/build/ddr3Exerciser/rtl/Ddr3ExerciserTop.v
 
 .PHONY: all generate ips project bitstream program monitor run clean
@@ -95,7 +100,8 @@ bitstream:
 program:
 	$(RUN_VIVADO) vivado/tcl/program_bitstream.tcl
 
-monitor:
+monitor: $(UNIT_DESC)
+	@test -n "$(SERIAL_PORT)" || { echo "make: console '$(CONSOLE_ALIAS)' did not resolve" >&2; exit 1; }
 	python3 ../alchitry-au/monitor.py $(SERIAL_PORT) $(BAUD_RATE)
 
 # --------------------------------------------------------------------------

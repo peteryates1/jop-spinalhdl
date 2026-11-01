@@ -16,7 +16,8 @@ The bitstream is compressed and configures at 33 MHz x1, so it boots in well
 under a second. x4 would need the flash's QE bit.
 
     vivado -mode batch -source build.tcl
-    ./flash_idle.sh      # all of the steps below, each checked; prints IDLE IMAGE FLASHED AND BOOTED
+    ./flash_idle.sh "$(../../scripts/jop_setup.py unit jop-i9plus-1 probe)"
+                         # all of the steps below, each checked; prints IDLE IMAGE FLASHED AND BOOTED
 
 By hand:
 

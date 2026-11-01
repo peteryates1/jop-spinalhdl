@@ -8,8 +8,10 @@ facts at all (`Board` has no alias fields; a unit may be built as several
 assemblies). **Since 2026-11-01 the instances are data, `setup/units.toml`**
 (item 173, step 2): the generators read it through `jop.setup.UnitsFile`
 (tomlj), the bash tools through `fpga/scripts/jop_setup.py`, and
-`UnitsFileTest` holds the two readers to one answer. The steps below
-describe the Scala registry they replaced.
+`UnitsFileTest` holds the two readers to one answer. Board Makefiles name no
+unit fact either: `fpga/unit.mk` caches the descriptor's answer per config
+(`make unit-info`), and a unit may route consoles by UART part (`consoles`).
+The steps below describe the Scala registry they replaced.
 
 ## Why
 

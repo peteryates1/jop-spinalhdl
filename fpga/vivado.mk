@@ -4,8 +4,8 @@
 # The board sets:
 #   PROJECT_ROOT   path to the repo root
 #   CFG            preset invocation, e.g. wukongDdr3 or "wukongSmp 4"
-#   BOARD_ALIAS    for jtag_probe_map
-#   CONSOLE_ALIAS  for usb_serial_map
+# The probe (BOARD_ALIAS) and console (CONSOLE_ALIAS) are the unit's, from
+# fpga/unit.mk (status item 173), not the board's.
 # and may set:
 #   VIVADO         default /opt/xilinx/2025.2/Vivado/bin/vivado
 #   LOADER_CABLE   openFPGALoader -c value, default dirtyJtag
@@ -58,6 +58,7 @@ else
 endif
 
 CFG_DIR     = $(PROJECT_ROOT)/build/$(CFG_NAME)
+include $(dir $(lastword $(MAKEFILE_LIST)))unit.mk
 VIVADO_PRJ  = $(CFG_DIR)/vivado
 VIVADO_BUILD= $(VIVADO_PRJ)/build
 
@@ -174,7 +175,8 @@ BUSDEV ?= --busdev-num $(shell $(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --bus
 # Colorlight i9+ idle image, ~55 ms) finishes first, and the bitstream lands
 # on a running FPGA: `done 1`, but no flip-flop starts from INIT. See
 # bringup/colorlight-db-i9plus-eth/README.md.
-program-bit:
+program-bit: $(UNIT_DESC)
+	@test -n "$(BOARD_ALIAS)" || { echo "make: no unit has a probe for CFG=$(CFG) (setup/units.toml)" >&2; exit 1; }
 	sudo openFPGALoader -c $(LOADER_CABLE) $(BUSDEV) $(BIT_FILE)
 	@echo "=== programmed: $(BIT_FILE) ==="
 

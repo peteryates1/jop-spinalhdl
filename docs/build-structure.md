@@ -57,10 +57,15 @@ A board Makefile declares what is *specific to it* and inherits the rest:
 PROJECT_ROOT  = ../..
 CFG          ?= ep4cgx150Serial     # which preset
 REV          ?= jop_sdram           # Quartus revision name
-BOARD_ALIAS   = ep4cgx150           # for jtag_probe_map  (JTAG probe, by serial)
-CONSOLE_ALIAS = ep4cgx150           # for usb_serial_map  (tty, by serial)
 include ../quartus.mk
 ```
+
+It does NOT say how its board is reached. The probe and console are the
+unit's -- `setup/units.toml` -- and `fpga/unit.mk` asks the descriptor which
+unit the preset is built for, caching the answer in `build/<config>/unit.desc`
+(one sbt start when the units or the configs change). `make unit-info` shows
+it; `INSTANCE=<name>` picks one of several units, and `SYSTEM=<name>` one
+system's console in a multi-system build.
 
 Optional knobs, each added because one board genuinely needed it:
 

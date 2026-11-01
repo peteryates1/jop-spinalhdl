@@ -71,8 +71,7 @@ QP           = jop_max1000
 PROJECT_ROOT  = ../..
 CFG          ?= max1000Sdram
 REV          ?= jop_max1000
-BOARD_ALIAS   = max1000
-CONSOLE_ALIAS = max1000
+# The probe and console are the unit's: fpga/unit.mk asks setup/units.toml.
 
 include ../quartus.mk
 

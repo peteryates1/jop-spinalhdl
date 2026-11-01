@@ -27,8 +27,7 @@
 PROJECT_ROOT      = ../..
 CFG              ?= sdramExerciser
 REV              ?= sdram_test
-BOARD_ALIAS       = ep4cgx150
-CONSOLE_ALIAS     = ep4cgx150
+# The probe and console are the unit's: fpga/unit.mk asks setup/units.toml.
 GEN_MAIN          = jop.system.SdramExerciserBuild
 GEN_ARGS          =
 GEN_MAKES_PROJECT = yes

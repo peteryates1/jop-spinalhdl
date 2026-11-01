@@ -23,8 +23,7 @@ BUILD_DIR := $(VIVADO_DIR)/build
 # The Vivado flow, the config directory and the console come from ../vivado.mk
 # and ../console.mk; the build itself is in fpga/scripts/vivado_*.tcl.
 CFG          ?= xc7a100tDbSerial
-BOARD_ALIAS   = xc7a100t
-CONSOLE_ALIAS = xc7a100t-pico-0
+# The probe and console are the unit's: fpga/unit.mk asks setup/units.toml.
 
 include ../vivado.mk
 

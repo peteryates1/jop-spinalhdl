@@ -190,6 +190,7 @@ not-fitted = ["LED"]
 assemblies = ["asm-3"]
 probe = "alpha"
 console = "ch340"
+consoles = { UART_B = "board-0" }
 '''
 
 
@@ -199,8 +200,8 @@ def units_setup(units=UNITS):
 
 def test_unit_rows_join_lists_with_commas_and_keep_the_files_order():
     assert jop_setup.table("units", units_setup()) == [
-        "jop-x-1|asm-1,asm-2|02:12:34:56:78:01|zed|board-0|dirtyJtag||p1,p2|LED|",
-        "jop-y-1|asm-3||alpha|ch340|||||",
+        "jop-x-1|asm-1,asm-2|02:12:34:56:78:01|zed|board-0|dirtyJtag||p1,p2|LED||",
+        "jop-y-1|asm-3||alpha|ch340||||||UART_B=board-0",
     ]
 
 
@@ -219,6 +220,18 @@ def test_a_unit_naming_a_probe_the_setup_lacks_is_refused():
 def test_a_unit_naming_a_console_the_setup_lacks_is_refused():
     d = units_setup(UNITS.replace('console = "ch340"', 'console = "ch341"'))
     refused(lambda: jop_setup.table("units", d), "jop-y-1", "ch341")
+
+
+def test_a_console_route_to_a_console_the_setup_lacks_is_refused():
+    """`consoles` maps a UART part to the console wired to it (the Wukong's
+    Pico CDCs); a route to nothing would read as a silent board."""
+    d = units_setup(UNITS.replace('UART_B = "board-0"', 'UART_B = "board-9"'))
+    refused(lambda: jop_setup.table("units", d), "jop-y-1", "board-9")
+
+
+def test_console_routes_written_as_a_list_are_refused():
+    d = units_setup(UNITS.replace('consoles = { UART_B = "board-0" }', 'consoles = ["board-0"]'))
+    refused(lambda: jop_setup.table("units", d), "jop-y-1", "consoles")
 
 
 def test_a_unit_with_no_assembly_is_refused():

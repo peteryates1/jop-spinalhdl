@@ -9,8 +9,7 @@
 PROJECT_ROOT  = ../..
 CFG          ?= ep4cgx150BramSerial
 REV          ?= jop_bram_serial
-BOARD_ALIAS   = ep4cgx150
-CONSOLE_ALIAS = ep4cgx150
+# The probe and console are the unit's: fpga/unit.mk asks setup/units.toml.
 
 include ../quartus.mk
 

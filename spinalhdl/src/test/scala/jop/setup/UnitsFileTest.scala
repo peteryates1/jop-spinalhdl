@@ -30,6 +30,12 @@ class UnitsFileTest extends AnyFunSuite {
        |assemblies = ["qmtech-ep4cgx150-db-v4", "qmtech-ep4cgx150-db-v5"]
        |probe = "p-x"
        |console = "c-x"
+       |
+       |[jop-w-1]
+       |assemblies = ["wukong-xc7a100t", "wukong-xc7a100t-dual"]
+       |probe = "p-w"
+       |console = "c-w"
+       |consoles = { PICO_UART1 = "c-w1", J11_UART = "c-w0" }
        |""".stripMargin
 
   private def parse(text: String) = UnitsFile.parse(text, "test.toml")
@@ -41,7 +47,7 @@ class UnitsFileTest extends AnyFunSuite {
 
   test("units keep the file's order and every field") {
     val u = parse(two)
-    assert(u.map(_.name) == Seq("jop-y-1", "jop-x-1"))
+    assert(u.map(_.name) == Seq("jop-y-1", "jop-x-1", "jop-w-1"))
     val y = u.head
     assert(y.assemblies.map(_.name) == Seq("colorlight-db-i5"))
     assert(y.macs == Seq(MacAddress("02:12:34:56:78:01")))
@@ -50,6 +56,27 @@ class UnitsFileTest extends AnyFunSuite {
     val x = u(1)
     assert(x.assemblies.map(_.name) == Seq("qmtech-ep4cgx150-db-v4", "qmtech-ep4cgx150-db-v5"))
     assert(x.macs.isEmpty && x.presets.isEmpty && x.access.loaderCable.isEmpty)
+    assert(u(2).access.consoles == Map("PICO_UART1" -> "c-w1", "J11_UART" -> "c-w0"))
+  }
+
+  // A unit may have several consoles, one per UART connector: the Wukong's
+  // CH340N, and its Pico 2 W's two CDCs (status item 173, step 3). A build
+  // talks through the one its preset's UART is wired to.
+  test("a build's console follows its UART part, else the unit's default") {
+    val w = parse(two)(2).access
+    assert(w.consoleFor(Some("PICO_UART1")).contains("c-w1"))
+    assert(w.consoleFor(Some("J11_UART")).contains("c-w0"))
+    assert(w.consoleFor(Some("CH340N")).contains("c-w"))
+    assert(w.consoleFor(None).contains("c-w"))
+  }
+
+  test("a console route keyed on a part the unit's assemblies lack is refused") {
+    refused(two.replace("J11_UART = ", "J12_UART = "), "jop-w-1", "J12_UART")
+  }
+
+  test("console routes written as a list are refused") {
+    refused(two.replace("""consoles = { PICO_UART1 = "c-w1", J11_UART = "c-w0" }""", """consoles = ["c-w1"]"""),
+      "jop-w-1", "consoles")
   }
 
   test("a misspelt key is refused: a unit naming no loader silently becomes a quartus unit") {
@@ -109,9 +136,10 @@ class UnitsFileTest extends AnyFunSuite {
       assert(f(0) == i.name)
       assert(list(f(1)) == i.assemblies.map(_.name), i.name)
       assert(list(f(2)) == i.macs.map(_.toString), i.name)
-      assert(i.access == UnitAccess(opt(f(3)), opt(f(4)), opt(f(5)), opt(f(6))), i.name)
+      assert(i.access.copy(consoles = Map.empty) == UnitAccess(opt(f(3)), opt(f(4)), opt(f(5)), opt(f(6))), i.name)
       assert(list(f(7)) == i.presets, i.name)
       assert(list(f(8)).toSet == i.notFitted && list(f(9)).toSet == i.broken, i.name)
+      assert(list(f(10)).map { r => val Array(k, v) = r.split("=", 2); k -> v }.toMap == i.access.consoles, i.name)
     }
   }
 }

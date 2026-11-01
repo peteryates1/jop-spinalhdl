@@ -47,8 +47,7 @@ ASM_DIR       = ../../asm
 # Alchitry's FT2232H shares 0403:6010 with the CYC5000's Arrow blaster and an
 # id-only match could return the Arrow's UART.
 CFG          ?= auSerial
-BOARD_ALIAS   = alchitry
-CONSOLE_ALIAS = alchitry
+# The probe and console are the unit's: fpga/unit.mk asks setup/units.toml.
 
 include ../vivado.mk
 
@@ -107,8 +106,8 @@ program:
 check-board:
 	./scripts/check_board.sh
 
-find-serial-port:
-	./scripts/find_alchitry_ports.sh --serial
+find-serial-port: $(UNIT_DESC)
+	./scripts/find_alchitry_ports.sh --serial $(CONSOLE_ALIAS)
 
 # --------------------------------------------------------------------------
 # FLASH BOOT — the programmer works; the image it programs cannot be built
@@ -184,7 +183,7 @@ flash-programmer:
 	  $(RUN_VIVADO) $(PRJ_TCL)
 	$(RUN_VIVADO) vivado/tcl/program_flash_programmer.tcl
 
-program-flash:
+program-flash: $(UNIT_DESC)
 	sudo python3 ../scripts/flash_program.py --sst26 \
 		vivado/build/flash_image.bin --port $(SERIAL_PORT) -v
 

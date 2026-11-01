@@ -19,8 +19,7 @@
 # power cycle returns to it.
 # ---------------------------------------------------------------------------
 CFG           ?= colorlightDbI5Sdram
-BOARD_ALIAS    = colorlight-db-i5
-CONSOLE_ALIAS  = colorlight-db-i5-0
+# The probe and console are the unit's: fpga/unit.mk asks setup/units.toml.
 TOP           := JopSdramI5Top
 
 ROOT          := ../..
@@ -28,6 +27,8 @@ PROJECT_ROOT   = ../..
 # Assigned before any rule uses them: Make expands a rule's prerequisites when
 # it reads the rule (see ../colorlight-i5/Makefile).
 CFG_DIR       := $(ROOT)/build/$(CFG)
+CFG_NAME      := $(CFG)
+include ../unit.mk
 GENDIR        := $(CFG_DIR)/rtl
 BUILD         := $(CFG_DIR)/nextpnr
 LPF           := $(BUILD)/$(TOP).lpf
@@ -95,7 +96,8 @@ bitstream: $(BIT)
 # --assert-device first: it proves the probe reaches an ECP5 (41111043) before
 # anything is sent. The patched openFPGALoader in /usr/local/bin honours
 # --busdev-num for dirtyJtag; two stamps are attached to this host.
-program: $(BIT)
+program: $(BIT) $(UNIT_DESC)
+	@test -n "$(BOARD_ALIAS)" || { echo "make: no unit has a probe for CFG=$(CFG) (setup/units.toml)" >&2; exit 1; }
 	$(SCRIPTS)/jtag_probe_map --assert-device $(BOARD_ALIAS)
 	sudo openFPGALoader -c dirtyJtag --busdev-num $$($(SCRIPTS)/jtag_probe_map --busdev $(BOARD_ALIAS)) $(BIT)
 	@echo "=== programmed: $(BIT) ==="

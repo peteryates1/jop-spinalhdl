@@ -24,8 +24,7 @@ PROJECT_ROOT  = ../..
 CFG          ?= cyc5000Serial
 REV          ?= jop_cyc5000
 CORES        ?= 2
-BOARD_ALIAS   = cyc5000
-CONSOLE_ALIAS = cyc5000
+# The probe and console are the unit's: fpga/unit.mk asks setup/units.toml.
 
 # Serial console and baud are console.mk's job -- it resolves the port from
 # CONSOLE_ALIAS by serial and reads the rate the bitstream actually recorded.
@@ -98,8 +97,8 @@ $(RBF_FILE): $(SOF_FILE)
 # jtag_probe_map resolves board -> serial, the same rule the rest of the tree
 # uses. openFPGALoader's --busdev-num is patched for dirtyJtag only, so FTDI
 # parts are selected by serial.
-program: $(RBF_FILE)
-	sudo $(OFL) -b cyc5000 --ftdi-serial $$($(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --serial cyc5000) -m $(RBF_FILE)
+program: $(RBF_FILE) $(UNIT_DESC)
+	sudo $(OFL) -b cyc5000 --ftdi-serial $$($(PROJECT_ROOT)/fpga/scripts/jtag_probe_map --serial $(BOARD_ALIAS)) -m $(RBF_FILE)
 	@echo "=== FPGA programmed: $(RBF_FILE) ==="
 
 # Needs the two conditions in the note above. Without them this fails with

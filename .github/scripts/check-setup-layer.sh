@@ -10,6 +10,12 @@
 # with setup/units.toml written but jop/setup/Instances.scala still defining
 # the eight units (it named Instances.scala's quoted unit names), and on a
 # unit's MAC pasted into a board Makefile.
+# EXTENDED 2026-11-01 (item 173, step 3): the flows too. PROVED RED on the tree
+# before step 3 -- 13 board Makefiles setting BOARD_ALIAS/CONSOLE_ALIAS, the
+# Wukong's CONSOLE_DUAL_* pair, console.mk's INSTANCE override, and six
+# literal aliases handed to the registry tools (alchitry-au-ddr3-test,
+# colorlight-i5 twice, cyc5000-sdram, find_alchitry_ports.sh, flash_idle.sh).
+# Usage text and READMEs may name an alias as an example.
 # If you change this guard, re-prove it: a guard that cannot fail is worse
 # than none, because it gets quoted as evidence.
 # ---------------------------------------------------------------------------
@@ -33,6 +39,11 @@
 #     definition, and stays legal. The scope leaves out spinalhdl/src/test:
 #     tests that pin this lab's units (InstanceTest) are the setup's
 #     acceptance tests, and would move with it.
+#   - no flow names how a unit is reached. A board Makefile sets no
+#     BOARD_ALIAS or CONSOLE_ALIAS (fpga/unit.mk takes them from the unit the
+#     preset is built for), and nothing under fpga/ hands jtag_probe_map or
+#     usb_serial_map a LITERAL alias: the alias is an argument or a variable,
+#     so the unit decides it.
 # ---------------------------------------------------------------------------
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2
@@ -93,4 +104,21 @@ if [ -n "$defs" ]; then
   exit 1
 fi
 
-echo "  $n setup serials and $u units, none outside setup/"
+flows=$(git grep --untracked -n -E \
+          '^[[:space:]]*(BOARD_ALIAS|CONSOLE_ALIAS|CONSOLE_DUAL_[A-Z0-9_]*)[[:space:]]*[:?+]?=' \
+          -- 'fpga/*Makefile' 'fpga/*.mk' ':!fpga/unit.mk' 2>/dev/null)
+literal=$(git grep --untracked -n -E \
+          '(jtag_probe_map|usb_serial_map)"?[[:space:]]+--(cable|busdev|serial|assert-device|by-id|tty|reset)[[:space:]]+[^$"[:space:]]' \
+          -- fpga ':!*.md' ':!fpga/scripts/jtag_probe_map' ':!fpga/scripts/usb_serial_map' 2>/dev/null |
+          command grep -vE '^[^:]+:[0-9]+:[[:space:]]*#')
+if [ -n "$flows$literal" ]; then
+  echo "  FAIL flows that name how a unit is reached -- that is the unit's, in setup/units.toml:"
+  [ -n "$flows" ] && printf '        %s\n' "$flows"
+  [ -n "$literal" ] && printf '        %s\n' "$literal" | cut -c1-200
+  echo "       A board Makefile gets BOARD_ALIAS and CONSOLE_ALIAS from fpga/unit.mk,"
+  echo "       which asks the unit the preset is built for; a script takes the alias"
+  echo "       as an argument."
+  exit 1
+fi
+
+echo "  $n setup serials and $u units, none outside setup/; no flow names an alias"

@@ -38,7 +38,8 @@ object SetupDir {
 object UnitsFile {
   private val stringKeys = Seq("probe", "console", "loader-cable", "loader-board")
   private val listKeys = Seq("assemblies", "macs", "presets", "not-fitted", "broken")
-  private val keys = listKeys ++ stringKeys
+  private val tableKeys = Seq("consoles")
+  private val keys = listKeys ++ stringKeys ++ tableKeys
   private val macText = "[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}"
 
   def load(file: File): Seq[Instance] =
@@ -71,6 +72,16 @@ object UnitsFile {
           items.map(_.asInstanceOf[String])
         }
 
+      def table(k: String): Map[String, String] =
+        if (!t.contains(key(k))) Map.empty
+        else {
+          require(t.isTable(key(k)), s"$where $k must be a table of strings")
+          val m = t.getTable(key(k))
+          val entries = m.keySet.asScala.toSeq.sortBy(e => m.inputPositionOf(key(e)).line)
+          require(entries.forall(e => m.isString(key(e))), s"$where $k must be a table of strings")
+          entries.map(e => e -> m.getString(key(e))).toMap
+        }
+
       val assemblyNames = list("assemblies")
       require(assemblyNames.nonEmpty, s"$where has no assemblies")
       val assemblies = assemblyNames.map(n => SystemAssembly.named(n).getOrElse(
@@ -81,7 +92,7 @@ object UnitsFile {
         MacAddress(m)
       }
       try Instance(name, assemblies, macs,
-        UnitAccess(str("probe"), str("console"), str("loader-cable"), str("loader-board")),
+        UnitAccess(str("probe"), str("console"), str("loader-cable"), str("loader-board"), table("consoles")),
         list("presets"), list("not-fitted").toSet, list("broken").toSet)
       catch { case e: IllegalArgumentException =>
         throw new IllegalArgumentException(s"$origin: ${e.getMessage}", e) }
