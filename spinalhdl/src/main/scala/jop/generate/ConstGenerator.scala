@@ -619,7 +619,8 @@ object ConstGeneratorMain extends App {
 
   // An entry point, so it may read the setup layer: the unit this build is
   // for, if an instance covers its assembly, gives the image its MAC and
-  // hostname. java/Makefile lists jop/setup/ among Const.java's inputs.
+  // hostname. java/Makefile lists setup/units.toml and jop/setup/ among
+  // Const.java's inputs.
   val unit = jop.setup.Instances.select(instanceName, config.assembly, preset)
   val source = ConstGenerator.generate(config, unit.flatMap(_.netIdentity).getOrElse(NetIdentity.shared))
 

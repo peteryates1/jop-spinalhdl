@@ -11,6 +11,10 @@ libraryDependencies ++= Seq(
   compilerPlugin("com.github.spinalhdl" %% "spinalhdl-idsl-plugin" % "1.12.2")
 )
 
+// The setup layer (status item 173): this lab's units are TOML in setup/,
+// which the generators read. Python reads the same files with tomllib.
+libraryDependencies += "org.tomlj" % "tomlj" % "1.1.1"
+
 // Testing dependencies
 libraryDependencies ++= Seq(
   "org.scalatest" %% "scalatest" % "3.2.17" % Test,

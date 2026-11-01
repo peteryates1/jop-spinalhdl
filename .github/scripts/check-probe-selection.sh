@@ -30,6 +30,12 @@
 # same day on a setup copy with the `wukong` probe deleted (named the
 # jop-wukong-1 instance) and with its kind changed to usb-blaster (named the
 # tool mismatch).
+# MOVED AGAIN 2026-11-01 (step 2): the units are setup/units.toml, read
+# through jop_setup.py, so the awk parse of Instances.scala went. PROVED RED
+# the same day on a setup copy whose jop-cyc5000-1 lost its loader-board (the
+# Quartus fallback, named), one whose units.toml had no unit with a probe (the
+# tripwire), and one naming a probe the registry lacks (jop_setup.py refuses
+# it before this guard runs).
 # If you change this guard, re-prove it: a guard that cannot fail is worse
 # than none, because it gets quoted as evidence.
 # ---------------------------------------------------------------------------
@@ -68,16 +74,17 @@ set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2
 
 BOARD_SCALA=${BOARD_SCALA:-spinalhdl/src/main/scala/jop/config/Board.scala}
-INSTANCES=${INSTANCES:-spinalhdl/src/main/scala/jop/setup/Instances.scala}
 # The probe registry is the setup's (status item 173): setup/probes.toml, or
 # $JOP_SETUP/probes.toml -- point JOP_SETUP at a copy to prove this red.
 REGISTRY="$(python3 fpga/scripts/jop_setup.py where 2>/dev/null || echo setup)/probes.toml"
 
-for f in "$BOARD_SCALA" "$INSTANCES"; do
-  [ -r "$f" ] || { echo "  FAIL cannot read $f"; exit 2; }
-done
+INSTANCES="${REGISTRY%probes.toml}units.toml"
+
+[ -r "$BOARD_SCALA" ] || { echo "  FAIL cannot read $BOARD_SCALA"; exit 2; }
 PROBES=$(python3 fpga/scripts/jop_setup.py table probes) || {
   echo "  FAIL cannot read the probe registry ($REGISTRY)"; exit 2; }
+UNITS=$(python3 fpga/scripts/jop_setup.py table units) || {
+  echo "  FAIL cannot read the units ($INSTANCES)"; exit 2; }
 
 # --- probe registry: alias -> kind ----------------------------------------
 # `alias|serial|kind|description` rows, one per probe.
@@ -147,24 +154,13 @@ while IFS='|' read -r kind bname probe console loader; do
       note "$bname — probe '$probe' is kind $kind, tool is openfpgaloader; the busdev patch does not cover usb-blaster, so it takes whichever probe enumerated first. Drop loaderBoard/loaderCable and use quartus."
     fi
   fi
-done < <({
-# Board instances: `  val x = Instance(` blocks, `name = ".."` at four spaces,
-# the UnitAccess fields at six.
-awk '
-  /^  val [A-Za-z0-9_]+ = Instance\(/ {
-    if (name != "") print name "|" probe "|" console "|" loader
-    name = "?"; probe = ""; console = ""; loader = ""
-    next
-  }
-  name == "" { next }
-  /^    name[[:space:]]*=/          { if (match($0, /"[^"]*"/)) name = substr($0, RSTART+1, RLENGTH-2) }
-  /^      probeAlias[[:space:]]*=/  { if (match($0, /"[^"]*"/)) probe = substr($0, RSTART+1, RLENGTH-2) }
-  /^      consoleAlias[[:space:]]*=/{ if (match($0, /"[^"]*"/)) console = substr($0, RSTART+1, RLENGTH-2) }
-  /^      loaderBoard[[:space:]]*=/ { if (match($0, /"[^"]*"/)) loader = substr($0, RSTART+1, RLENGTH-2) }
-  /^      loaderCable[[:space:]]*=/ { if (match($0, /"[^"]*"/)) loader = substr($0, RSTART+1, RLENGTH-2) }
-  END { if (name != "") print name "|" probe "|" console "|" loader }
-' "$INSTANCES" | command sed 's/^/instance|/'
-})
+done < <(
+# The units, as jop_setup.py reads setup/units.toml:
+# name|assemblies|macs|probe|console|loader-cable|loader-board|...
+# -> instance|name|probe|console|loader
+cut -d'|' -f1,4,5,6,7 <<<"$UNITS" |
+  awk -F'|' '{ print "instance|" $1 "|" $2 "|" $3 "|" $4 $5 }'
+)
 
 # Unit facts belong to instances (UnitFacts.scala defines their type), and
 # no board design may carry one, nor may Board declare the fields.
@@ -175,8 +171,8 @@ if [ -n "$leaked" ]; then
   exit 1
 fi
 if [ "$instances" -eq 0 ]; then
-  echo "  FAIL parsed no board instances with a probeAlias out of $INSTANCES"
-  echo "       The instances awk block stopped matching. It is asserting nothing."
+  echo "  FAIL read no units with a probe out of $INSTANCES"
+  echo "       It is asserting nothing."
   exit 1
 fi
 

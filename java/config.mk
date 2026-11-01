@@ -72,7 +72,7 @@ endif
 # A BOARD INSTANCE GETS ITS OWN JAVA TREE (status item 174, step 4). The image
 # carries the unit's MAC and hostname (Const.java), so two units of one preset
 # cannot share a tree; the bitstream is still the preset's. JOP_INSTANCE=<name>
-# (a name from jop.setup.Instances) selects build/<config>/java/<name>/. Unset,
+# (a name from setup/units.toml) selects build/<config>/java/<name>/. Unset,
 # the tree is the preset's, as before, and the one unit of an assembly is
 # picked up automatically.
 JAVA_OUT   := $(PROJECT_ROOT)/$(JOP_CFG_DIR)/java$(if $(JOP_INSTANCE),/$(JOP_INSTANCE))

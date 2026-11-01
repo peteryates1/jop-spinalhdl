@@ -75,7 +75,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 34. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 35. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 36. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated: the instances are Scala, 13 board Makefiles name unit aliases, and flow defaults name host toolchain paths. Since 2026-11-01 the setup is TOML in `setup/`, and the probe and console serials are there (step 1); no new setup facts go into the other layers
+37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated: 13 board Makefiles name unit aliases, and flow defaults name host toolchain paths. Since 2026-11-01 the setup is TOML in `setup/` -- the probe and console serials (step 1) and the units (step 2); no new setup facts go into the other layers
 38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
 39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
 40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -4246,13 +4246,38 @@ Makefiles (a hardcoded by-id fallback in `colorlight-i5`, a serial in a
 `cyc5000-sdram` comment). `check-probe-selection.sh` now reads the registry
 through the setup; re-proved red two ways.
 
-**Next:** step 2, the instances: `jop.setup.Instances` becomes
-`setup/units.toml`, read by Scala with one small TOML library, and
-`InstanceTest` holds every preset's descriptor unchanged. Step 3: the 13 board
+**Step 2 done 2026-11-01: the units.** The eight units are
+`setup/units.toml`; `jop.setup.Instances` keeps only the lookups, over what
+`UnitsFile` reads (tomlj 1.1.1, the one new dependency). Assemblies are named
+by `SystemAssembly.name`, found by reflection (`SystemAssembly.all`) so that a
+new design cannot be left out. Both readers refuse an unknown key (a misspelt
+`loader-cable` would make a unit a quartus unit, the CYC5000 class), a wrong
+type and a MAC two units share. Scala also refuses an assembly or part the
+designs lack, and Python a probe or console the registries lack.
+`UnitsFileTest` (12 tests) was written first: red because it did not compile,
+then red on tomlj's `containsStrings`, which TOML 1.0 deprecates. Its last
+test holds Scala's reading of the lab's units to `jop_setup.py table units`.
+`InstanceTest` held every preset's descriptor, MAC and hostname unchanged
+(43/43 with the Colorlight suites). `java/Makefile` makes `Const.java` depend
+on `units.toml`: red first in `check-generated-deps.sh`.
+`check-setup-layer.sh` now also fails on a unit DEFINED outside `setup/` -- its
+name as a whole string literal outside the tests, or one of its MACs. It was
+red first on the eight names in `Instances.scala`, and on a MAC pasted into a
+Makefile. `check-probe-selection.sh` reads the units through `jop_setup.py`;
+re-proved red three ways. Found on the way: the i5 Ethernet bring-up frame
+(`make_frame.py`, 2026-10-26) sent from `...:00:05`, picked before units had
+MACs and since issued to `jop-wukong-1`. Its MAC is now an argument, taken
+from `jop-i5-1` (...02), and the sim's frame check reads `frame.hex` instead
+of hardcoding the bytes; its 18 checks pass, and the frame check fails
+against the old frame.
+
+**Next:** step 3, the 13 board
 Makefiles that set `BOARD_ALIAS`/`CONSOLE_ALIAS` -- unit facts in the hardware
 layer, duplicating the instances -- take them from the unit through
 `jop_setup.py`. Step 4: the host's toolchain paths (the `/opt` defaults in
-about 20 Makefiles and scripts) go to `setup/host.toml`.
+about 20 Makefiles and scripts) go to `setup/host.toml`. Lab-specific TESTS
+(`InstanceTest`'s descriptor table) stay in `spinalhdl/src/test` for now; they
+would move with the setup if it gets a repository of its own.
 
 <a id="item-174"></a>
 

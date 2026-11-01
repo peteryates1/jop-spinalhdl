@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """Build the stage-2 test frame: a UDP broadcast, preamble+SFD+frame+FCS, one
-byte per line as hex for $readmemh. Run: python3 make_frame.py > frame.hex"""
+byte per line as hex for $readmemh. Run, with the MAC of the unit it is for:
+    python3 make_frame.py "$(../../scripts/jop_setup.py unit <unit> macs | head -1)" > frame.hex
+The MAC is the unit's (setup/units.toml), not this design's: until 2026-11-01
+it was a constant, ...05, picked before the units had MACs -- and then issued
+to the Wukong, so the bring-up image and a Wukong JOP shared one."""
 import struct, sys, zlib
 
-SRC_MAC = bytes.fromhex("024a4f500005")      # locally administered; ...05 = i5
+if len(sys.argv) != 2:
+    sys.exit(__doc__)
+SRC_MAC = bytes.fromhex(sys.argv[1].replace(":", ""))
+assert len(SRC_MAC) == 6 and SRC_MAC[0] & 0x03 == 0x02, "a locally administered unicast MAC"
 DST_MAC = b"\xff" * 6
 SRC_IP, DST_IP = bytes([192, 168, 0, 251]), bytes([192, 168, 0, 255])
 SPORT = DPORT = 5005

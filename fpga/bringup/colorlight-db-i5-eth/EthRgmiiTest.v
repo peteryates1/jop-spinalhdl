@@ -21,7 +21,7 @@
 //           falling), so neither edge may sit on a data transition; at 90
 //           degrees TXC's edges land 10 ns and 30 ns into the nibble.
 //   SELECT  toggles TX: once a second, frame.hex (a UDP broadcast,
-//           192.168.0.251 -> 192.168.0.255:5005 from 02:4a:4f:50:00:05, by
+//           192.168.0.251 -> 192.168.0.255:5005 from the unit's MAC, by
 //           make_frame.py) on BOTH PHYs' RGMII TX.
 //   START   toggles PHY1's MII loopback: BMCR <- 0x6100 (loopback, 100 FD),
 //           so its RX returns what it took from our TX, cable and switch

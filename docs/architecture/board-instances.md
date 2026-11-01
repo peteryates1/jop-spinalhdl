@@ -5,7 +5,11 @@
 [173](../current-status.md#item-173). Since 2026-10-31 every attached unit is an instance -- eight of
 them, the six on the LAN with their own MAC and hostname -- and board designs carry no unit
 facts at all (`Board` has no alias fields; a unit may be built as several
-assemblies).
+assemblies). **Since 2026-11-01 the instances are data, `setup/units.toml`**
+(item 173, step 2): the generators read it through `jop.setup.UnitsFile`
+(tomlj), the bash tools through `fpga/scripts/jop_setup.py`, and
+`UnitsFileTest` holds the two readers to one answer. The steps below
+describe the Scala registry they replaced.
 
 ## Why
 
@@ -35,7 +39,8 @@ but the ECP5 has no fabric-readable ID and the Cyclone IV has none at all.
 | setup | one lab's physical units | instances: which module on which base board, fitted parts, probe and console serials, MACs, hostnames; the host's toolchain paths |
 
 Instances are the first piece of the setup layer, so they start outside
-`Board.scala`.
+`Board.scala`. The setup layer is TOML in `setup/` (or `$JOP_SETUP`):
+`units.toml`, `probes.toml` and `consoles.toml`, with `host.toml` to come.
 
 ## What an instance is
 
@@ -216,8 +221,9 @@ Each step is test-first.
 
 - **The setup layer's form** (item 173): a Scala package, or a data file that
   Scala and the Python tools both read. Answered 2026-11-01 (user): TOML files
-  in `setup/` (or `$JOP_SETUP`), read by `fpga/scripts/jop_setup.py`; the
-  probes and consoles moved first, and the instances follow.
+  in `setup/` (or `$JOP_SETUP`), read by `fpga/scripts/jop_setup.py` and, for
+  the units, by `jop.setup.UnitsFile` (tomlj). The probes and consoles moved
+  first, the instances the same day.
 - **Where the per-instance Java images go** in the build tree.
 - **Scope of step 1:** only the two Atari-800 units first, or every board's
   unit facts at once. Answered: the two units first, the rest on 2026-10-31.

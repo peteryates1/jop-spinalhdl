@@ -326,10 +326,18 @@ if [ -n "$const_rule" ]; then
   # A UNIT'S NETWORK IDENTITY TOO (status item 174, step 2): its MAC and
   # hostname come from its board instance, so a changed MAC must regenerate
   # Const.java -- the same class of defect as item 120, for a different input.
-  if ! grep -qF "jop/setup/Instances.scala" <<<"$const_rule"; then
-    echo "  FAIL Const.java does not depend on jop/setup/Instances.scala"
+  # Since 2026-11-01 (status item 173, step 2) the units are setup/units.toml
+  # -- or $JOP_SETUP/units.toml -- and jop/setup/*.scala is only their reader.
+  # PROVED RED that day on java/Makefile still listing Instances.scala alone.
+  if ! grep -qE "(^|[ /])setup/units\.toml( |$)" <<<"$const_rule"; then
+    echo "  FAIL Const.java does not depend on setup/units.toml"
     echo "       a unit's MAC and hostname come from there; without it a changed"
     echo "       MAC leaves every image with the old one"
+    exit 1
+  fi
+  if ! grep -qF "jop/setup/Instances.scala" <<<"$const_rule"; then
+    echo "  FAIL Const.java does not depend on jop/setup/Instances.scala"
+    echo "       it reads the units; a change to how it reads them must regenerate"
     exit 1
   fi
   # And the type that formats it, with the shared MAC every unit-less image

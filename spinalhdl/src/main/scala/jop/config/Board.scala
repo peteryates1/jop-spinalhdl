@@ -739,7 +739,7 @@ object Board {
    *
    * A DESIGN, shared by every unit of it. Which stamp a unit has (so its probe
    * and console), what is fitted on it and its MAC are that unit's facts, in
-   * its board instance: `jop.setup.Instances` (status item 174).
+   * its board instance in setup/units.toml (status items 173 and 174).
    */
   def ColorlightAtari800BaseV1 = Board(
     name = "colorlight-atari800-base-v1.0",
@@ -1588,4 +1588,16 @@ object SystemAssembly {
   def colorlightDbI5 = SystemAssembly("colorlight-db-i5",
     Seq(Board.ColorlightI5, Board.ColorlightAtari800BaseV1),
     ledBoard = Some(Board.ColorlightAtari800BaseV1.name))
+
+  /** Every assembly design above. A unit in the setup names its assemblies by
+    * `name` (setup/units.toml, status item 173), so the list is found by
+    * reflection -- every parameterless def here returning a SystemAssembly --
+    * and a new design cannot be left out of it. */
+  lazy val all: Seq[SystemAssembly] =
+    getClass.getMethods.toSeq
+      .filter(m => m.getParameterCount == 0 && m.getReturnType == classOf[SystemAssembly])
+      .sortBy(_.getName)
+      .map(_.invoke(this).asInstanceOf[SystemAssembly])
+
+  def named(name: String): Option[SystemAssembly] = all.find(_.name == name)
 }

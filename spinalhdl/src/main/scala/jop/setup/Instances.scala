@@ -1,135 +1,30 @@
 package jop.setup
 
-import jop.config.{SystemAssembly, UnitAccess}
+import java.io.File
+import jop.config.SystemAssembly
 
 /**
  * THIS LAB'S UNITS -- the setup layer (status items 173 and 174).
  *
  * Board designs, assemblies and presets are hardware support anyone with the
- * same boards can use. What follows is one lab's physical copies of them, so
- * nothing in the generic or hardware layers may depend on it; only entry points
- * read it (`HwVerifyDescriptorMain`).
+ * same boards can use; the units are one lab's physical copies of them, so
+ * nothing in the generic or hardware layers may depend on them, and only
+ * entry points read them (`HwVerifyDescriptorMain`, `ConstGeneratorMain`).
  *
- * Every unit's facts are here (item 173 moved the last of them off the board
- * designs on 2026-10-31). A design with no unit listed -- the MAX1000, the
- * generic EP4CE6 -- has no probe or console, so hw_verify refuses it, and its
- * images keep the shared MAC 02:00:00:00:00:01 with no hostname.
- *
- * Names are jop-<module>-<n>, unique in the lab, and each is also the unit's
- * DHCP hostname. MACs are numbered in the order they were issued, one per
- * Ethernet port in use, and only units on the LAN have any; a number is never
- * reused (07-09 went unissued
- * when the Au and the CYC5000 turned out to have no network connection and
- * the ext-board i5 to have no module).
- *
- * NOT a unit: Colorlight's i5/i9 ext board. It is here, and its DAPLink is
- * still in the probe and serial registries (`i5`), but no module is fitted --
- * the only i5 is jop-i5-1's, and that base board may take an i9+ instead, to
- * test two i9+ units at once (user, 2026-10-31). A module fitted there is a
- * new unit: access probe/console `i5`, loaderBoard `colorlight-i5`.
+ * The units are DATA, not code, since 2026-11-01: setup/units.toml (or
+ * $JOP_SETUP/units.toml), read by `UnitsFile`. Until then they were defined
+ * here. A lab with no setup has no units: every design is then unit-less, so
+ * hw_verify refuses it and its images keep the shared MAC 02:00:00:00:00:01.
  */
 object Instances {
 
-  /** The Colorlight i9+ on the first Atari-800 base board: every connector fitted.
-    * Its HDMI is fitted but BROKEN; the base board design does not model its HDMI
-    * connector yet, so it cannot be named in `broken`. */
-  val jopI9Plus_1 = Instance(
-    name = "jop-i9plus-1",
-    assemblies = Seq(SystemAssembly.colorlightDbI9Plus),
-    macs = Seq(MacAddress.jop(1)),
-    access = UnitAccess(
-      probeAlias = Some("colorlight-db"),
-      consoleAlias = Some("colorlight-db-0"),
-      loaderCable = Some("dirtyJtag")),
-    presets = Seq("colorlightDbI9PlusSdram", "colorlightDbI9PlusEth"))
+  /** The units, in the file's order; empty without a setup. */
+  lazy val all: Seq[Instance] =
+    SetupDir.current.map(new File(_, "units.toml")).filter(_.isFile).map(UnitsFile.load).getOrElse(Seq.empty)
 
-  /** The Colorlight i5 on the second Atari-800 base board (assembled
-    * 2026-10-26). Only the RP2040-STAMP, the reset button and the Ethernet jack
-    * are fitted (user, 2026-10-27): the LED pins it drives have no parts behind
-    * them. Its stamp is its own, so it has its own probe and console. */
-  val jopI5_1 = Instance(
-    name = "jop-i5-1",
-    assemblies = Seq(SystemAssembly.colorlightDbI5),
-    macs = Seq(MacAddress.jop(2)),
-    access = UnitAccess(
-      probeAlias = Some("colorlight-db-i5"),
-      consoleAlias = Some("colorlight-db-i5-0"),
-      loaderCable = Some("dirtyJtag")),
-    presets = Seq("colorlightDbI5Sdram", "colorlightDbI5Eth"),
-    notFitted = Set("LED"))
-
-  /** The QMTECH EP4CGX150 core board, built with either QMTECH daughter board.
-    * Probe: the Terasic USB-Blaster since 2026-10-27 (Quartus); console: its
-    * CP2102N. */
-  val jopEp4cgx150_1 = Instance(
-    name = "jop-ep4cgx150-1",
-    assemblies = Seq(SystemAssembly.qmtechWithDb, SystemAssembly.qmtechWithDbV5),
-    macs = Seq(MacAddress.jop(3)),
-    access = UnitAccess(
-      probeAlias = Some("ep4cgx150"),
-      consoleAlias = Some("ep4cgx150")))
-
-  /** The QMTECH XC7A100T core board on DB_FPGA V5, whose RP2040 is both the
-    * probe (dirtyJtag) and the console (its first CDC). */
-  val jopXc7a100t_1 = Instance(
-    name = "jop-xc7a100t-1",
-    assemblies = Seq(SystemAssembly.xc7a100tWithDbV5),
-    macs = Seq(MacAddress.jop(4)),
-    access = UnitAccess(
-      probeAlias = Some("xc7a100t"),
-      consoleAlias = Some("xc7a100t-pico-0"),
-      loaderCable = Some("dirtyJtag")))
-
-  /** The QMTECH Wukong, alone or with its J11 UART adapter (the dual-system
-    * builds). Probe: its Pico 2 W running dirtyJtag; console: its CH340N. */
-  val jopWukong_1 = Instance(
-    name = "jop-wukong-1",
-    assemblies = Seq(SystemAssembly.wukong, SystemAssembly.wukongWithJ11Uart),
-    macs = Seq(MacAddress.jop(5)),
-    access = UnitAccess(
-      probeAlias = Some("wukong"),
-      consoleAlias = Some("wukong"),
-      loaderCable = Some("dirtyJtag")))
-
-  /** The A-E115FB. Probe: the pico-usb-debug-jtag carrier's JTAG0 since
-    * 2026-10-27 (Quartus); console: its CH340. */
-  val jopAe115fb_1 = Instance(
-    name = "jop-ae115fb-1",
-    assemblies = Seq(SystemAssembly.ae115fb),
-    macs = Seq(MacAddress.jop(6)),
-    access = UnitAccess(
-      probeAlias = Some("ae115fb"),
-      consoleAlias = Some("ae115fb")))
-
-  /** The Alchitry Au V2. Its probe was added 2026-09-11: without one hw_verify
-    * refused the board outright, so it was the one attached board that could
-    * not be hardware-verified at all. openFPGALoader (`-b alchitry_au`), not
-    * the Vivado hw_server path its Makefile uses: it shares vid:pid 0403:6010
-    * with the CYC5000's Arrow blaster, so its probe must be selected by bus:dev
-    * like every other one here. */
-  val jopAu_1 = Instance(
-    name = "jop-au-1",
-    assemblies = Seq(SystemAssembly.alchitryAuV2),
-    // no network connection (user, 2026-10-31), so no MAC
-    access = UnitAccess(
-      probeAlias = Some("alchitry"),
-      consoleAlias = Some("alchitry"),
-      loaderBoard = Some("alchitry_au")))
-
-  /** The Arrow CYC5000. openFPGALoader, not quartus_pgm: Quartus never
-    * enumerates its Arrow blaster on 18.1 or 25.1 ("Error (213013): Programming
-    * hardware cable not detected"). */
-  val jopCyc5000_1 = Instance(
-    name = "jop-cyc5000-1",
-    assemblies = Seq(SystemAssembly.cyc5000),
-    // no network connection (user, 2026-10-31), so no MAC
-    access = UnitAccess(
-      probeAlias = Some("cyc5000"),
-      consoleAlias = Some("cyc5000"),
-      loaderBoard = Some("cyc5000")))
-
-  val all: Seq[Instance] = Seq(jopI9Plus_1, jopI5_1, jopEp4cgx150_1, jopXc7a100t_1,
-    jopWukong_1, jopAe115fb_1, jopAu_1, jopCyc5000_1)
+  /** The unit with this name. */
+  def named(name: String): Instance = all.find(_.name == name).getOrElse(throw new IllegalArgumentException(
+    s"no board instance named $name (there are: ${all.map(_.name).mkString(", ")})"))
 
   /** The unit a design on this assembly is built for: the one NAMED (status
     * item 174, step 4: `--instance`, `JOP_INSTANCE=`), which must exist, be

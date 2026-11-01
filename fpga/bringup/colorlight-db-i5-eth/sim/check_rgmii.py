@@ -43,7 +43,12 @@ check("RESET clears the record", all(f == ["00", "00", "00", "00"][:3] or f[:3] 
 w2 = [x[1] for x in W if x[0] > 400]
 check("START again: BMCR=1200 (loopback off)", len(w2) == 2 and "reg 0 = 1200" in w2[1], str(w2))
 check("loopback off in mode (09)", any(v == "09" for k, v in m.items() if k > 440), str(m))
-lb = [l for l in log if "UART: 0 55 55 55 55 55 55 55 d5 ff ff ff ff ff ff 02 4a 4f 50 00 05" in l]
+# The frame's first 20 bytes -- preamble, SFD, destination, source MAC -- as
+# frame.hex holds them: the source MAC is the unit's (make_frame.py), so it is
+# read, not written here.
+import os
+head = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frame.hex")).read().split()[:20]
+lb = [l for l in log if ("UART: 0 " + " ".join(head)) in l]
 check("PHY0 loop captures the frame", len(lb) > 0)
 print("ALL PASS" if ok else "SOME FAILED")
 sys.exit(0 if ok else 1)

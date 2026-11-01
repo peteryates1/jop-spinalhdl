@@ -6,6 +6,10 @@
 # colorlight-i5/Makefile (a hardcoded by-id fallback) and cyc5000-sdram/Makefile
 # (a serial in a comment). Also red on the no-parse tripwire (JOP_SETUP at an
 # empty directory).
+# EXTENDED 2026-11-01 (item 173, step 2): units too. PROVED RED on the tree
+# with setup/units.toml written but jop/setup/Instances.scala still defining
+# the eight units (it named Instances.scala's quoted unit names), and on a
+# unit's MAC pasted into a board Makefile.
 # If you change this guard, re-prove it: a guard that cannot fail is worse
 # than none, because it gets quoted as evidence.
 # ---------------------------------------------------------------------------
@@ -19,9 +23,16 @@
 # as heredoc tables inside jtag_probe_map and usb_serial_map, and leaked from
 # there into board Makefiles.
 #
-# The check: no serial number the setup lists appears in any file outside
-# setup/ and the records (docs/, *.md). Serials shorter than 8 characters are
-# skipped: the Alchitry's FT2232H reports 000000, which names nothing.
+# The checks:
+#   - no serial number the setup lists appears in any file outside setup/ and
+#     the records (docs/, *.md). Serials shorter than 8 characters are
+#     skipped: the Alchitry's FT2232H reports 000000, which names nothing.
+#   - no unit is DEFINED outside setup/: none of its MACs appears there, and
+#     its name appears in no source as a whole string literal ("jop-x-1").
+#     A name in a comment or a usage example is a reference, not a
+#     definition, and stays legal. The scope leaves out spinalhdl/src/test:
+#     tests that pin this lab's units (InstanceTest) are the setup's
+#     acceptance tests, and would move with it.
 # ---------------------------------------------------------------------------
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2
@@ -56,4 +67,30 @@ if [ -n "$leaks" ]; then
   exit 1
 fi
 
-echo "  $n setup serials, none outside setup/"
+urows=$(python3 "$SETUP_TOOL" table units) || { echo "  FAIL $SETUP_TOOL could not read the units"; exit 1; }
+names=$(cut -d'|' -f1 <<<"$urows" | command grep .)
+macs=$(cut -d'|' -f3 <<<"$urows" | tr ',' '\n' | command grep .)
+u=$(command grep -c . <<<"$names" || true)
+if [ "$u" -eq 0 ]; then
+  echo "  FAIL read no units from the setup -- this check is asserting nothing"
+  exit 1
+fi
+defs=""
+while read -r name; do
+  hits=$(git grep --untracked -n -F -e "\"$name\"" -- . ':!setup/' ':!docs/' ':!*.md' ':!spinalhdl/src/test/' 2>/dev/null)
+  [ -n "$hits" ] && defs="$defs$(command sed "s/^/        [$name] /" <<<"$hits")"$'\n'
+done <<<"$names"
+while read -r mac; do
+  [ -n "$mac" ] || continue
+  hits=$(git grep --untracked -n -i -F -e "$mac" -- . ':!setup/' ':!docs/' ':!*.md' ':!spinalhdl/src/test/' 2>/dev/null)
+  [ -n "$hits" ] && defs="$defs$(command sed "s/^/        [$mac] /" <<<"$hits")"$'\n'
+done <<<"$macs"
+if [ -n "$defs" ]; then
+  echo "  FAIL units defined outside the setup layer -- they belong in setup/units.toml:"
+  printf '%s' "$defs" | cut -c1-200
+  echo "       Code reaches a unit through jop.setup.Instances (Scala) or"
+  echo "       fpga/scripts/jop_setup.py, which read setup/units.toml."
+  exit 1
+fi
+
+echo "  $n setup serials and $u units, none outside setup/"

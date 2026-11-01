@@ -1,0 +1,128 @@
+# THIS LAB'S UNITS -- the setup layer (status items 173 and 174).
+#
+# Board designs, assemblies and presets are hardware support anyone with the
+# same boards can use. These are one lab's physical copies of them. Read by the
+# generators (jop.setup.Instances, through tomlj) and by
+# fpga/scripts/jop_setup.py; both refuse an unknown key, and the Scala reader
+# also refuses an assembly or part the designs do not have. Only entry points
+# read them (HwVerifyDescriptorMain, ConstGeneratorMain), never a design.
+#
+# One table per unit, named jop-<module>-<n>: unique in the lab, and also the
+# unit's DHCP hostname.
+#
+#   assemblies   SystemAssembly names: which module on which base board.
+#                Usually one; several where this lab builds one unit as more
+#                than one assembly (a core board with either daughter board).
+#                Its access and MAC are the same in each.
+#   macs         one per Ethernet port in use, port 0 first; left out for a
+#                unit with no network connection, which then gets no hostname
+#                and whose images keep the shared 02:00:00:00:00:01. Images
+#                carry port 0's: JOP drives one port today, and the Colorlight
+#                modules' second PHY may come later (user, 2026-10-31).
+#   probe        its alias in probes.toml
+#   console      its alias in consoles.toml
+#   loader-cable openFPGALoader's -c; loader-board its -b. With neither, the
+#                unit is programmed by quartus_pgm through the cable NAME
+#                jtag_probe_map reports.
+#   presets      the presets built for it; left out = every preset on its
+#                assemblies.
+#   not-fitted   board device parts this unit lacks
+#   broken       parts it has but cannot use. Everything else its boards
+#                declare is fitted, and a preset may put a device only on a
+#                part usable here.
+#
+# A design with no unit -- the MAX1000, the generic EP4CE6 -- has no probe or
+# console, so hw_verify refuses it, and its images keep the shared MAC.
+#
+# MACs come from the JOP block, 02:4a:4f:50:nn:nn ("JOP", locally
+# administered unicast), assigned explicitly per unit so they do not depend on
+# the FPGA: the ECP5 has no ID its fabric can read, and the Cyclone IV none at
+# all. They are numbered in the order issued, and a number is never reused
+# (07-09 went unissued when the Au and the CYC5000 turned out to have no
+# network connection and the ext-board i5 to have no module).
+#
+# NOT a unit: Colorlight's i5/i9 ext board. It is here, and its DAPLink is
+# still a probe and a console (`i5`), but no module is fitted -- the only i5 is
+# jop-i5-1's, and that base board may take an i9+ instead, to test two i9+
+# units at once (user, 2026-10-31). A module fitted there is a new unit:
+# probe/console `i5`, loader-board `colorlight-i5`.
+
+# The Colorlight i9+ on the first Atari-800 base board: every connector fitted.
+# Its HDMI is fitted but BROKEN; the base board design does not model its HDMI
+# connector yet, so it cannot be named in `broken`.
+[jop-i9plus-1]
+assemblies = ["colorlight-db-i9plus"]
+macs = ["02:4a:4f:50:00:01"]
+probe = "colorlight-db"
+console = "colorlight-db-0"
+loader-cable = "dirtyJtag"
+presets = ["colorlightDbI9PlusSdram", "colorlightDbI9PlusEth"]
+
+# The Colorlight i5 on the second Atari-800 base board (assembled 2026-10-26).
+# Only the RP2040-STAMP, the reset button and the Ethernet jack are fitted
+# (user, 2026-10-27): the LED pins it drives have no parts behind them. Its
+# stamp is its own, so it has its own probe and console.
+[jop-i5-1]
+assemblies = ["colorlight-db-i5"]
+macs = ["02:4a:4f:50:00:02"]
+probe = "colorlight-db-i5"
+console = "colorlight-db-i5-0"
+loader-cable = "dirtyJtag"
+presets = ["colorlightDbI5Sdram", "colorlightDbI5Eth"]
+not-fitted = ["LED"]
+
+# The QMTECH EP4CGX150 core board, built with either QMTECH daughter board.
+# Probe: the Terasic USB-Blaster since 2026-10-27 (Quartus); console: its
+# CP2102N.
+[jop-ep4cgx150-1]
+assemblies = ["qmtech-ep4cgx150-db-v4", "qmtech-ep4cgx150-db-v5"]
+macs = ["02:4a:4f:50:00:03"]
+probe = "ep4cgx150"
+console = "ep4cgx150"
+
+# The QMTECH XC7A100T core board on DB_FPGA V5, whose RP2040 is both the probe
+# (dirtyJtag) and the console (its first CDC).
+[jop-xc7a100t-1]
+assemblies = ["qmtech-xc7a100t-db-v5"]
+macs = ["02:4a:4f:50:00:04"]
+probe = "xc7a100t"
+console = "xc7a100t-pico-0"
+loader-cable = "dirtyJtag"
+
+# The QMTECH Wukong, alone or with its J11 UART adapter (the dual-system
+# builds). Probe: its Pico 2 W running dirtyJtag; console: its CH340N.
+[jop-wukong-1]
+assemblies = ["wukong-xc7a100t", "wukong-xc7a100t-dual"]
+macs = ["02:4a:4f:50:00:05"]
+probe = "wukong"
+console = "wukong"
+loader-cable = "dirtyJtag"
+
+# The A-E115FB. Probe: the pico-usb-debug-jtag carrier's JTAG0 since
+# 2026-10-27 (Quartus); console: its CH340.
+[jop-ae115fb-1]
+assemblies = ["a-e115fb"]
+macs = ["02:4a:4f:50:00:06"]
+probe = "ae115fb"
+console = "ae115fb"
+
+# The Alchitry Au V2; no network connection (user, 2026-10-31), so no MAC. Its
+# probe was added 2026-09-11: without one hw_verify refused the board outright,
+# so it was the one attached board that could not be hardware-verified at all.
+# openFPGALoader (`-b alchitry_au`), not the Vivado hw_server path its Makefile
+# uses: it shares vid:pid 0403:6010 with the CYC5000's Arrow blaster, so its
+# probe must be selected by bus:dev like every other one here.
+[jop-au-1]
+assemblies = ["alchitry-au-v2"]
+probe = "alchitry"
+console = "alchitry"
+loader-board = "alchitry_au"
+
+# The Arrow CYC5000; no network connection (user, 2026-10-31), so no MAC.
+# openFPGALoader, not quartus_pgm: Quartus never enumerates its Arrow blaster
+# on 18.1 or 25.1 ("Error (213013): Programming hardware cable not detected").
+[jop-cyc5000-1]
+assemblies = ["cyc5000"]
+probe = "cyc5000"
+console = "cyc5000"
+loader-board = "cyc5000"

@@ -176,8 +176,95 @@ def test_the_cli_refuses_an_unknown_table():
     assert rc != 0 and "probez" in err.getvalue(), (rc, err.getvalue())
 
 
+UNITS = '''
+[jop-x-1]
+assemblies = ["asm-1", "asm-2"]
+macs = ["02:12:34:56:78:01"]
+probe = "zed"
+console = "board-0"
+loader-cable = "dirtyJtag"
+presets = ["p1", "p2"]
+not-fitted = ["LED"]
+
+[jop-y-1]
+assemblies = ["asm-3"]
+probe = "alpha"
+console = "ch340"
+'''
+
+
+def units_setup(units=UNITS):
+    return setup_with(probes=PROBES, consoles=CONSOLES, units=units)
+
+
+def test_unit_rows_join_lists_with_commas_and_keep_the_files_order():
+    assert jop_setup.table("units", units_setup()) == [
+        "jop-x-1|asm-1,asm-2|02:12:34:56:78:01|zed|board-0|dirtyJtag||p1,p2|LED|",
+        "jop-y-1|asm-3||alpha|ch340|||||",
+    ]
+
+
+def test_a_misspelt_loader_key_is_refused():
+    """The CYC5000 class (items 156/157): a unit naming no loader silently
+    becomes a quartus unit, and the failure reads as dead hardware."""
+    d = units_setup(UNITS.replace("loader-cable", "loader_cable"))
+    refused(lambda: jop_setup.table("units", d), "jop-x-1", "loader_cable")
+
+
+def test_a_unit_naming_a_probe_the_setup_lacks_is_refused():
+    d = units_setup(UNITS.replace('probe = "zed"', 'probe = "zedd"'))
+    refused(lambda: jop_setup.table("units", d), "jop-x-1", "zedd")
+
+
+def test_a_unit_naming_a_console_the_setup_lacks_is_refused():
+    d = units_setup(UNITS.replace('console = "ch340"', 'console = "ch341"'))
+    refused(lambda: jop_setup.table("units", d), "jop-y-1", "ch341")
+
+
+def test_a_unit_with_no_assembly_is_refused():
+    d = units_setup(UNITS.replace('assemblies = ["asm-3"]\n', ""))
+    refused(lambda: jop_setup.table("units", d), "jop-y-1", "assemblies")
+
+
+def test_a_list_written_as_a_string_is_refused():
+    d = units_setup(UNITS.replace('assemblies = ["asm-3"]', 'assemblies = "asm-3"'))
+    refused(lambda: jop_setup.table("units", d), "jop-y-1", "assemblies")
+
+
+def test_a_malformed_mac_is_refused():
+    d = units_setup(UNITS.replace('"02:12:34:56:78:01"', '"02:12:34:56:78"'))
+    refused(lambda: jop_setup.table("units", d), "jop-x-1", "02:12:34:56:78")
+
+
+def test_two_units_sharing_a_mac_is_refused():
+    """Two live boards with one MAC steal each other's frames (item 174)."""
+    d = units_setup(UNITS.replace('probe = "alpha"', 'macs = ["02:12:34:56:78:01"]\nprobe = "alpha"'))
+    refused(lambda: jop_setup.table("units", d), "02:12:34:56:78:01", "jop-x-1", "jop-y-1")
+
+
+def test_the_cli_answers_one_fact_of_one_unit():
+    d = units_setup()
+    out = io.StringIO()
+    with redirect_stdout(out):
+        rc = jop_setup.main(["--setup", d, "unit", "jop-x-1", "assemblies"])
+    assert rc == 0 and out.getvalue() == "asm-1\nasm-2\n", (rc, out.getvalue())
+    out = io.StringIO()
+    with redirect_stdout(out):
+        rc = jop_setup.main(["--setup", d, "unit", "jop-y-1", "loader-cable"])
+    assert rc == 0 and out.getvalue() == "", "an unset fact prints nothing"
+
+
+def test_the_cli_refuses_an_unknown_unit_or_fact():
+    d = units_setup()
+    for argv, word in ((["unit", "jop-z-1", "macs"], "jop-z-1"), (["unit", "jop-x-1", "mac"], "mac")):
+        err = io.StringIO()
+        with redirect_stderr(err), redirect_stdout(io.StringIO()):
+            rc = jop_setup.main(["--setup", d] + argv)
+        assert rc != 0 and word in err.getvalue(), (argv, rc, err.getvalue())
+
+
 def test_this_labs_setup_loads():
-    for name in ("probes", "devices", "consoles"):
+    for name in ("probes", "devices", "consoles", "units"):
         assert jop_setup.table(name), f"the lab setup has no {name}"
 
 

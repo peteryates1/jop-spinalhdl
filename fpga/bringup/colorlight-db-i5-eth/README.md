@@ -90,8 +90,15 @@ the buttons and the LEDs. The Xilinx parts are replaced:
   I/O register. That is one clk25 of latency more, the same on all of them.
 
 `make_frame.py` writes `frame.hex`: a UDP broadcast, 192.168.0.251 ->
-192.168.0.255:5005 from 02:4a:4f:50:00:05 (the i9+ uses .250 and ...01), with
-the FCS checked by the CRC residue. The payload is kept at 42 bytes, so
+192.168.0.255:5005 from the unit's own MAC, with the FCS checked by the CRC
+residue:
+
+    python3 make_frame.py "$(../../scripts/jop_setup.py unit jop-i5-1 macs | head -1)" > frame.hex
+
+Until 2026-11-01 the source MAC was a constant, 02:4a:4f:50:00:05, chosen
+before the units had MACs; 05 then went to jop-wukong-1, so this image and a
+Wukong JOP would have shared one. It is jop-i5-1's (...02) now, and
+`sim/check_rgmii.py` reads the expected bytes from `frame.hex`. The payload is kept at 42 bytes, so
 FRAME_LEN stays 96.
 
 The testbench models ODDRX1F and EHXPLLL. The PLL model takes CLKOS's phase

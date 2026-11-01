@@ -514,7 +514,7 @@ def main():
                     help="soak: regex with named groups 'round' and 'free'")
     ap.add_argument("--timeout", type=int, default=300)
     # Which physical unit (status item 174, step 4): a name from
-    # jop.setup.Instances. Needed when an assembly has several units; the
+    # setup/units.toml. Needed when an assembly has several units; the
     # image then comes from that unit's own Java tree (JOP_INSTANCE=).
     ap.add_argument("--instance", default=None,
                     help="board instance name, e.g. jop-i5-1")
@@ -530,8 +530,8 @@ def main():
     for key in ("PROBE_ALIAS", "CONSOLE_ALIAS"):
         if key not in d:
             die(f"board '{d['BOARD']}' has no {key}: no board instance covers this unit.\n"
-                f"  Add one to spinalhdl/src/main/scala/jop/setup/Instances.scala\n"
-                f"  (UnitAccess: probe, console, loader). This board cannot be\n"
+                f"  Add one to setup/units.toml (or $JOP_SETUP/units.toml):\n"
+                f"  probe, console, loader. This board cannot be\n"
                 f"  hardware-verified until then.")
 
     cfg_dir = os.path.join(ROOT, d["CONFIG_DIR"])

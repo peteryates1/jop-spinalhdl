@@ -45,8 +45,10 @@ generate-const: $(CONST_JAVA)
 # and the .jop then addressed the wrong peripheral -- TROUBLESHOOTING.md's
 # first entry, and a board that looks dead.
 #
-# The board instances too (jop/setup/, status item 174): a unit's MAC and
-# hostname are in Const.java, so a changed MAC must regenerate it.
+# The board instances too (status items 173 and 174): a unit's MAC and
+# hostname are in Const.java, so a changed MAC must regenerate it. They are
+# setup/units.toml (or $JOP_SETUP/units.toml), read by jop/setup/*.scala. A lab
+# with no setup has no units, and its images keep the shared MAC.
 #
 # Same defect as fpga/quartus.mk's .sdc, one directory over: a generated
 # artefact whose prerequisites omit an input that determines its content.
@@ -59,7 +61,8 @@ $(CONST_JAVA): \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/DeviceInstance.scala \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/memory/JopMemoryConfig.scala \
                $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/config/UnitFacts.scala \
-               $(wildcard $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/setup/*.scala)
+               $(wildcard $(PROJECT_ROOT)/spinalhdl/src/main/scala/jop/setup/*.scala) \
+               $(wildcard $(or $(JOP_SETUP),$(PROJECT_ROOT)/setup)/units.toml)
 	cd $(PROJECT_ROOT) && sbt -error "runMain jop.generate.ConstGeneratorMain $(CONST_ARGS)"
 
 tools: $(CONST_JAVA)

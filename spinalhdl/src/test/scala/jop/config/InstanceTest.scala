@@ -212,7 +212,7 @@ class InstanceTest extends AnyFunSuite {
   test("a unit has one MAC per Ethernet port; its image carries the first") {
     // The Colorlight modules have two PHYs; JOP drives one today (user,
     // 2026-10-31: a second port may come later).
-    val i9 = Instances.jopI9Plus_1
+    val i9 = Instances.named("jop-i9plus-1")
     val two = i9.copy(macs = i9.macs :+ MacAddress.jop(98))
     assert(two.netIdentity == i9.netIdentity, "the second port's MAC leaked into the image")
     intercept[IllegalArgumentException](i9.copy(macs = Seq(i9.macs.head, i9.macs.head)))

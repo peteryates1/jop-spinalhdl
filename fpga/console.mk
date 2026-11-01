@@ -18,7 +18,7 @@
 # ---------------------------------------------------------------------------
 
 # A NAMED UNIT (status item 174, step 4). INSTANCE=<name> from
-# jop.setup.Instances overrides the board Makefile's CONSOLE_ALIAS with that
+# setup/units.toml overrides the board Makefile's CONSOLE_ALIAS with that
 # unit's console, and takes the image from that unit's own Java tree (built
 # with JOP_INSTANCE=<name>). The descriptor does the choosing -- it refuses a
 # unit that is not on this preset's assembly -- at the cost of one sbt start,
