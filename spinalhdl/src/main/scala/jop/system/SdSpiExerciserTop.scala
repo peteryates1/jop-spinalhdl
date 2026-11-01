@@ -142,7 +142,9 @@ case class SdSpiExerciserTop(
       val m7 = "\r\n"
       // 67: "LOOP "            (5)
       val m8 = "LOOP "
-      (m0 + m1 + m2 + m3 + m4 + m5 + m6 + m7 + m8).map(_.toInt)
+      // 72: "FAIL "            (5) - INIT failure, then step/response hex
+      val m9 = "FAIL "
+      (m0 + m1 + m2 + m3 + m4 + m5 + m6 + m7 + m8 + m9).map(_.toInt)
     }
     val msgRom = Mem(Bits(8 bits), initialContent = msgBytes.map(c => B(c & 0xFF, 8 bits)))
 
@@ -175,7 +177,7 @@ case class SdSpiExerciserTop(
       val INIT_CMD55_PREP, INIT_CMD55_GOT = newElement()
       val INIT_ACMD41_PREP, INIT_ACMD41_CHECK = newElement()
       // Fast clock
-      val INIT_SETDIV, INIT_RESULT = newElement()
+      val INIT_SETDIV, INIT_RESULT, INIT_FAIL_HEX, INIT_FAIL_CRLF = newElement()
 
       // T2: Write
       val T2_LABEL, T2_CMD24_PREP, T2_CMD24_GOT = newElement()
@@ -230,6 +232,17 @@ case class SdSpiExerciserTop(
 
     // ACMD41 retry counter
     val acmd41Cnt = Reg(UInt(16 bits)) init (0)
+
+    // INIT failure report, first failure only: the step (0x00 CMD0 no R1,
+    // 0x01 CMD0 R1 not idle, 0x08 CMD8 no R1, 0x18 CMD8 echo wrong, 0x55
+    // CMD55 no R1, 0x41 ACMD41 no R1, 0x42 ACMD41 never ready) and the last
+    // response byte. Printed as step, response, ACMD41 count (item 65).
+    val dbgStep = Reg(Bits(8 bits)) init (0)
+    val dbgResp = Reg(Bits(8 bits)) init (0)
+    def initFail(step: Int): Unit = {
+      when(testPass) { dbgStep := step; dbgResp := respByte }
+      testPass := False
+    }
 
     // CMD8 R7 extra bytes counter
     val r7ByteIdx = Reg(UInt(3 bits)) init (0)
@@ -452,14 +465,14 @@ case class SdSpiExerciserTop(
             // Still 0xFF
             respCnt := respCnt + 1
             when(respCnt >= 100) {
-              testPass := False; state := S.INIT_RESULT
+              initFail(0x00); state := S.INIT_RESULT
             } otherwise {
               xferRetState := S.INIT_CMD0_CHECK
               state := S.SPI_XFER_SEND
             }
           } otherwise {
             // Got R1; should be 0x01
-            when(respByte =/= 0x01) { testPass := False }
+            when(respByte =/= 0x01) { initFail(0x01) }
             state := S.INIT_CMD8_PREP
           }
         }
@@ -482,7 +495,7 @@ case class SdSpiExerciserTop(
           when(respByte(7)) {
             respCnt := respCnt + 1
             when(respCnt >= 100) {
-              testPass := False; state := S.INIT_RESULT
+              initFail(0x08); state := S.INIT_RESULT
             } otherwise {
               xferRetState := S.INIT_CMD8_CHECK
               state := S.SPI_XFER_SEND
@@ -508,7 +521,7 @@ case class SdSpiExerciserTop(
       }
       is(S.INIT_CMD8_R7_DONE) {
         when(r7Data(11 downto 0) =/= B(0x1AA, 12 bits)) {
-          testPass := False
+          initFail(0x18)
         }
         state := S.INIT_CMD55_PREP
       }
@@ -531,7 +544,7 @@ case class SdSpiExerciserTop(
           when(respByte(7)) {
             respCnt := respCnt + 1
             when(respCnt >= 100) {
-              testPass := False; state := S.INIT_RESULT
+              initFail(0x55); state := S.INIT_RESULT
             } otherwise {
               xferRetState := S.INIT_CMD55_GOT
               state := S.SPI_XFER_SEND
@@ -559,7 +572,7 @@ case class SdSpiExerciserTop(
           when(respByte(7)) {
             respCnt := respCnt + 1
             when(respCnt >= 100) {
-              testPass := False; state := S.INIT_RESULT
+              initFail(0x41); state := S.INIT_RESULT
             } otherwise {
               xferRetState := S.INIT_ACMD41_CHECK
               state := S.SPI_XFER_SEND
@@ -572,7 +585,7 @@ case class SdSpiExerciserTop(
               // Still idle (0x01), retry
               acmd41Cnt := acmd41Cnt + 1
               when(acmd41Cnt >= 1000) {
-                testPass := False; state := S.INIT_RESULT
+                initFail(0x42); state := S.INIT_RESULT
               } otherwise {
                 state := S.INIT_CMD55_PREP
               }
@@ -592,9 +605,17 @@ case class SdSpiExerciserTop(
           msgBase := 53; msgLen := 6; msgIdx := 0
           retState := S.T2_LABEL; state := S.PRINT_MSG
         } otherwise {
-          msgBase := 59; msgLen := 6; msgIdx := 0
-          retState := S.T2_LABEL; state := S.PRINT_MSG
+          msgBase := 72; msgLen := 5; msgIdx := 0 // "FAIL "
+          retState := S.INIT_FAIL_HEX; state := S.PRINT_MSG
         }
+      }
+      is(S.INIT_FAIL_HEX) {
+        hexVal := dbgStep ## dbgResp ## acmd41Cnt.asBits; hexNib := 0
+        retState := S.INIT_FAIL_CRLF; state := S.PRINT_HEX
+      }
+      is(S.INIT_FAIL_CRLF) {
+        msgBase := 65; msgLen := 2; msgIdx := 0 // "\r\n"
+        retState := S.T2_LABEL; state := S.PRINT_MSG
       }
 
       // ================================================================

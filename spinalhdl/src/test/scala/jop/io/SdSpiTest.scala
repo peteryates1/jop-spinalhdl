@@ -98,10 +98,9 @@ class SdSpiTest extends AnyFunSuite {
       // Fork a thread to drive MISO and capture MOSI on SCLK edges.
       //
       // SPI Mode 0 timing: MOSI is valid while SCLK is low (set up before
-      // rising edge). The DUT updates shiftReg on the system clock edge
-      // where sclkReg transitions 0->1, so after waitSampling we see the
-      // *post-shift* MOSI. We must capture MOSI on the cycle *before* the
-      // rising edge (i.e., when SCLK is still low), saving it each cycle.
+      // the rising edge) and holds across it; the DUT shifts on the falling
+      // edge. Capture MOSI on the cycle before the rising edge. That MOSI also
+      // holds THROUGH the edge is SdSpi_mosi_holds_across_sclk_rise's job.
       val monitorThread = fork {
         var prevSclk = false
         var prevMosi = false
@@ -157,6 +156,52 @@ class SdSpiTest extends AnyFunSuite {
         assert(mosiBits(i) == expectedBit,
           s"MOSI bit $i: expected $expectedBit, got ${mosiBits(i)}")
       }
+    }
+  }
+
+  /** SPI mode 0: the card samples MOSI on the SCLK rising edge, so MOSI must
+    * hold across it. The engine used to shift its register on the very system
+    * clock edge that raised SCLK, so MOSI changed at the same instant: zero
+    * hold time at the card, which then read garbled commands and never
+    * answered CMD0 on the EP4CGX150 + DB V4 (status item 65). */
+  test("SdSpi_mosi_holds_across_sclk_rise") {
+    simConfig.compile(SdSpi(clkDivInit = 1)).doSim(seed = 42) { dut =>
+      implicit val cd: ClockDomain = dut.clockDomain
+      cd.forkStimulus(10)
+      SimTimeout(500000)
+
+      initIo(dut)
+      cd.waitSampling(10)
+      ioWrite(dut, 0, 0x01)
+
+      var rises = 0
+      var violations = 0
+      val monitor = fork {
+        var prevSclk = dut.io.sclk.toBoolean
+        var prevMosi = dut.io.mosi.toBoolean
+        while (true) {
+          cd.waitSampling()
+          val sclk = dut.io.sclk.toBoolean
+          val mosi = dut.io.mosi.toBoolean
+          if (sclk && !prevSclk) {
+            rises += 1
+            if (mosi != prevMosi) violations += 1
+          }
+          prevSclk = sclk
+          prevMosi = mosi
+        }
+      }
+
+      // 0x55 and 0xAA toggle MOSI on every bit
+      for (b <- Seq(0x55, 0xAA)) {
+        ioWrite(dut, 1, b)
+        var timeout = 5000
+        while ((ioRead(dut, 0) & 1) != 0 && timeout > 0) timeout -= 1
+        assert(timeout > 0, "transfer never completed")
+      }
+      assert(rises == 16, s"expected 16 SCLK rising edges, saw $rises")
+      assert(violations == 0,
+        s"MOSI changed on the same clock edge as SCLK rose at $violations of $rises edges")
     }
   }
 

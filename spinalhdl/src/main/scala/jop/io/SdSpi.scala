@@ -11,7 +11,8 @@ import spinal.lib._
  * SPI shifting and chip-select control.
  *
  * SPI Mode 0: CPOL=0, CPHA=0. SCLK idles low. Data is sampled on the
- * rising edge and shifted out on the falling edge. MSB first.
+ * rising edge and shifted out on the falling edge, so MOSI holds across the
+ * edge the card samples it on. MSB first.
  *
  * Pin mapping (directly on SD card):
  *   sd_clk      -> SCLK output
@@ -79,6 +80,8 @@ case class SdSpi(clkDivInit: Int = 199) extends Component with HasBusIo {
   val rxData = Reg(Bits(8 bits)) init(0)
   val bitCounter = Reg(UInt(4 bits)) init(0)
   val divCounter = Reg(UInt(16 bits)) init(0)
+  // MISO as sampled on the last rising edge; shifted in on the falling edge
+  val misoBit = Reg(Bool()) init(True)
 
   // SCLK idles low when not busy
   io.sclk := sclkReg
@@ -91,19 +94,23 @@ case class SdSpi(clkDivInit: Int = 199) extends Component with HasBusIo {
       divCounter := 0
       sclkReg := !sclkReg
 
+      // The card samples MOSI on the rising edge, so MOSI (shiftReg's MSB)
+      // may change only on the falling edge. Shifting on the rising edge, as
+      // this engine once did, moved MOSI on the same clock edge that raised
+      // SCLK -- zero hold time at the card (status item 65).
       when(!sclkReg) {
-        // Rising edge of SCLK: sample MISO into shift register LSB
-        shiftReg := shiftReg(6 downto 0) ## io.miso
+        // Rising edge of SCLK: sample MISO; MOSI holds
+        misoBit := io.miso
       } otherwise {
-        // Falling edge of SCLK: advance bit counter
+        // Falling edge of SCLK: shift -- next MOSI bit out, sampled bit in
+        val shifted = shiftReg(6 downto 0) ## misoBit
+        shiftReg := shifted
         bitCounter := bitCounter + 1
         when(bitCounter === 7) {
-          // 8 bits done: latch received byte, end transfer.
-          // shiftReg already contains all 8 received bits from the
-          // preceding 8 rising edges (MSB = first bit received).
+          // 8 bits done: latch received byte (MSB = first bit received)
           busy := False
           sclkReg := False
-          rxData := shiftReg
+          rxData := shifted
         }
       }
     }
