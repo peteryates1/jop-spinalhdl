@@ -144,7 +144,11 @@ case class SdSpiExerciserTop(
       val m8 = "LOOP "
       // 72: "FAIL "            (5) - INIT failure, then step/response hex
       val m9 = "FAIL "
-      (m0 + m1 + m2 + m3 + m4 + m5 + m6 + m7 + m8 + m9).map(_.toInt)
+      // 77: " "                (1) - separates the INIT response log
+      val m10 = " "
+      // 78: "PASS "            (5) - T3, then the data-token wait count
+      val m11 = "PASS "
+      (m0 + m1 + m2 + m3 + m4 + m5 + m6 + m7 + m8 + m9 + m10 + m11).map(_.toInt)
     }
     val msgRom = Mem(Bits(8 bits), initialContent = msgBytes.map(c => B(c & 0xFF, 8 bits)))
 
@@ -159,7 +163,7 @@ case class SdSpiExerciserTop(
       val SPI_XFER_SEND, SPI_XFER_POLL, SPI_XFER_READRX = newElement()
 
       // Shared command send sub-routine: send 6 bytes
-      val CMD_SEND_BYTE, CMD_SEND_POLL = newElement()
+      val CMD_GAP_SEND, CMD_GAP_POLL, CMD_SEND_BYTE, CMD_SEND_POLL = newElement()
 
       // T1: Detect
       val T1_LABEL, T1_READ_STATUS, T1_RESULT = newElement()
@@ -178,6 +182,7 @@ case class SdSpiExerciserTop(
       val INIT_ACMD41_PREP, INIT_ACMD41_CHECK = newElement()
       // Fast clock
       val INIT_SETDIV, INIT_RESULT, INIT_FAIL_HEX, INIT_FAIL_CRLF = newElement()
+      val INIT_LOG_NEXT, INIT_LOG_HEX = newElement()
 
       // T2: Write
       val T2_LABEL, T2_CMD24_PREP, T2_CMD24_GOT = newElement()
@@ -193,7 +198,7 @@ case class SdSpiExerciserTop(
       val T3_TOKEN_POLL, T3_TOKEN_CHECK = newElement()
       val T3_DATA_XFER, T3_DATA_CHECK = newElement()
       val T3_CRC1_SEND, T3_CRC1_POLL, T3_CRC2_SEND, T3_CRC2_POLL = newElement()
-      val T3_RESULT = newElement()
+      val T3_RESULT, T3_TOKEN_HEX, T3_CRLF = newElement()
 
       // Loop
       val LOOP_MSG, LOOP_HEX, LOOP_CRLF = newElement()
@@ -225,6 +230,7 @@ case class SdSpiExerciserTop(
 
     // Shared SPI xfer result: the received byte
     val respByte = Reg(Bits(8 bits)) init (0xFF)
+
     val xferRetState = Reg(S()) // where to go after SPI xfer complete
 
     // Response/token polling
@@ -244,6 +250,15 @@ case class SdSpiExerciserTop(
       testPass := False
     }
 
+    // INIT response log: every byte other than 0xFF the card returns during
+    // INIT, tagged with the command it answers ({cmd, byte}), first 16 only.
+    // Printed after a failed INIT's step report, 4 hex digits each.
+    val curCmd = Reg(Bits(8 bits)) init (0)
+    val inInit = Reg(Bool()) init (False)
+    val logMem = Vec(Reg(Bits(16 bits)) init (0), 16)
+    val logCnt = Reg(UInt(5 bits)) init (0)
+    val logIdx = Reg(UInt(5 bits)) init (0)
+
     // CMD8 R7 extra bytes counter
     val r7ByteIdx = Reg(UInt(3 bits)) init (0)
     val r7Data = Reg(Bits(32 bits)) init (0)
@@ -252,7 +267,7 @@ case class SdSpiExerciserTop(
     val dataIdx = Reg(UInt(10 bits)) init (0)
 
     // Token poll counter
-    val tokenCnt = Reg(UInt(16 bits)) init (0)
+    val tokenCnt = Reg(UInt(20 bits)) init (0)
 
     // LED
     val ledReg = Reg(Bits(2 bits)) init (0)
@@ -354,8 +369,29 @@ case class SdSpiExerciserTop(
       is(S.SPI_XFER_READRX) {
         // Read RX byte (addr=1 only)
         sd.bus.addr := 1; sd.bus.rd := True
-        respByte := sd.bus.rdData(7 downto 0)
+        val raw = sd.bus.rdData(7 downto 0)
+        respByte := raw
+        when(inInit && raw =/= 0xFF && logCnt < 16) {
+          logMem(logCnt.resized) := curCmd ## sd.bus.rdData(7 downto 0)
+          logCnt := logCnt + 1
+        }
         state := xferRetState
+      }
+
+      // One 0xFF byte (8 clocks) before every command, as working SPI hosts
+      // (FatFs, Linux) clock. Without it, on a cold card, CMD0 answered but
+      // CMD8 came back 0x05 (illegal), the following responses arrived 2-3
+      // bits off the byte boundary, and the card then answered nothing until
+      // power-off. With it, every response is byte-aligned (item 65).
+      is(S.CMD_GAP_SEND) {
+        sd.bus.addr := 1; sd.bus.wr := True; sd.bus.wrData := 0xFF
+        state := S.CMD_GAP_POLL
+      }
+      is(S.CMD_GAP_POLL) {
+        sd.bus.addr := 0; sd.bus.rd := True
+        when(!sd.bus.rdData(0)) {
+          state := S.CMD_SEND_BYTE
+        }
       }
 
       // ================================================================
@@ -410,6 +446,7 @@ case class SdSpiExerciserTop(
       is(S.INIT_LABEL) {
         testPass := True
         acmd41Cnt := 0
+        inInit := True; logCnt := 0
         msgBase := 23; msgLen := 10; msgIdx := 0
         retState := S.INIT_DEASSERT_CS; state := S.PRINT_MSG
       }
@@ -443,11 +480,12 @@ case class SdSpiExerciserTop(
 
       // --- CMD0: GO_IDLE_STATE ---
       is(S.INIT_CMD0_PREP) {
+        curCmd := 0
         prepareCmd(0, 0x00000000L, 0x95)
         cmdByteIdx := 0
         cmdRetState := S.INIT_CMD0_CHECK
         respCnt := 0
-        state := S.CMD_SEND_BYTE
+        state := S.CMD_GAP_SEND
       }
       // After CMD0 sent, poll for R1 response
       is(S.INIT_CMD0_CHECK) {
@@ -480,11 +518,12 @@ case class SdSpiExerciserTop(
 
       // --- CMD8: SEND_IF_COND ---
       is(S.INIT_CMD8_PREP) {
+        curCmd := 8
         prepareCmd(8, 0x000001AAL, 0x87)
         cmdByteIdx := 0
         cmdRetState := S.INIT_CMD8_CHECK
         respCnt := 0
-        state := S.CMD_SEND_BYTE
+        state := S.CMD_GAP_SEND
       }
       is(S.INIT_CMD8_CHECK) {
         when(respCnt === 0) {
@@ -528,11 +567,12 @@ case class SdSpiExerciserTop(
 
       // --- CMD55+ACMD41 loop ---
       is(S.INIT_CMD55_PREP) {
+        curCmd := 55
         prepareCmd(55, 0x00000000L, 0x01)
         cmdByteIdx := 0
         cmdRetState := S.INIT_CMD55_GOT
         respCnt := 0
-        state := S.CMD_SEND_BYTE
+        state := S.CMD_GAP_SEND
       }
       // Poll for CMD55 R1 response
       is(S.INIT_CMD55_GOT) {
@@ -557,11 +597,12 @@ case class SdSpiExerciserTop(
       }
 
       is(S.INIT_ACMD41_PREP) {
+        curCmd := 41
         prepareCmd(41, 0x40000000L, 0x01)
         cmdByteIdx := 0
         cmdRetState := S.INIT_ACMD41_CHECK
         respCnt := 0
-        state := S.CMD_SEND_BYTE
+        state := S.CMD_GAP_SEND
       }
       is(S.INIT_ACMD41_CHECK) {
         when(respCnt === 0) {
@@ -583,8 +624,12 @@ case class SdSpiExerciserTop(
               state := S.INIT_SETDIV
             } otherwise {
               // Still idle (0x01), retry
+              // The SD spec gives a card up to 1 s to leave idle. One CMD55 +
+              // ACMD41 round is about 0.7 ms at 200 kHz, so 2000 rounds is
+              // ~1.4 s; 1000 (~0.7 s) cut off this card, which took 118 to over
+              // 1000 rounds (item 65).
               acmd41Cnt := acmd41Cnt + 1
-              when(acmd41Cnt >= 1000) {
+              when(acmd41Cnt >= 2000) {
                 initFail(0x42); state := S.INIT_RESULT
               } otherwise {
                 state := S.INIT_CMD55_PREP
@@ -601,6 +646,7 @@ case class SdSpiExerciserTop(
       }
 
       is(S.INIT_RESULT) {
+        inInit := False
         when(testPass) {
           msgBase := 53; msgLen := 6; msgIdx := 0
           retState := S.T2_LABEL; state := S.PRINT_MSG
@@ -611,11 +657,28 @@ case class SdSpiExerciserTop(
       }
       is(S.INIT_FAIL_HEX) {
         hexVal := dbgStep ## dbgResp ## acmd41Cnt.asBits; hexNib := 0
-        retState := S.INIT_FAIL_CRLF; state := S.PRINT_HEX
+        logIdx := 0
+        retState := S.INIT_LOG_NEXT; state := S.PRINT_HEX
       }
+      // The response log: " ccrr" per entry
+      is(S.INIT_LOG_NEXT) {
+        when(logIdx < logCnt) {
+          msgBase := 77; msgLen := 1; msgIdx := 0 // " "
+          retState := S.INIT_LOG_HEX; state := S.PRINT_MSG
+        } otherwise {
+          state := S.INIT_FAIL_CRLF
+        }
+      }
+      is(S.INIT_LOG_HEX) {
+        hexVal := logMem(logIdx.resized) ## B(0, 16 bits); hexNib := 4 // 4 digits
+        logIdx := logIdx + 1
+        retState := S.INIT_LOG_NEXT; state := S.PRINT_HEX
+      }
+      // A failed INIT skips T2/T3: commands to an uninitialised card prove
+      // nothing, and may leave it in a state the next INIT cannot clear.
       is(S.INIT_FAIL_CRLF) {
         msgBase := 65; msgLen := 2; msgIdx := 0 // "\r\n"
-        retState := S.T2_LABEL; state := S.PRINT_MSG
+        retState := S.LOOP_MSG; state := S.PRINT_MSG
       }
 
       // ================================================================
@@ -632,7 +695,7 @@ case class SdSpiExerciserTop(
         cmdByteIdx := 0
         cmdRetState := S.T2_CMD24_GOT
         respCnt := 0
-        state := S.CMD_SEND_BYTE
+        state := S.CMD_GAP_SEND
       }
       // Poll for CMD24 R1 response
       is(S.T2_CMD24_GOT) {
@@ -740,7 +803,7 @@ case class SdSpiExerciserTop(
       // T3: Read block (CMD17)
       // ================================================================
       is(S.T3_LABEL) {
-        testPass := True; dataIdx := 0
+        testPass := True; dataIdx := 0; tokenCnt := 0
         msgBase := 43; msgLen := 10; msgIdx := 0
         retState := S.T3_CMD17_PREP; state := S.PRINT_MSG
       }
@@ -750,7 +813,7 @@ case class SdSpiExerciserTop(
         cmdByteIdx := 0
         cmdRetState := S.T3_CMD17_GOT
         respCnt := 0
-        state := S.CMD_SEND_BYTE
+        state := S.CMD_GAP_SEND
       }
       // Poll for CMD17 R1 response
       is(S.T3_CMD17_GOT) {
@@ -783,8 +846,12 @@ case class SdSpiExerciserTop(
           xferRetState := S.T3_DATA_CHECK
           state := S.SPI_XFER_SEND
         } otherwise {
+          // The SD spec allows an SDHC read up to 100 ms before its data
+          // token. One poll is ~0.45 us at the 20 MHz data clock, so 2^19
+          // polls is ~240 ms; 10000 (~5 ms) failed this card's first read
+          // after power-up (item 65).
           tokenCnt := tokenCnt + 1
-          when(tokenCnt >= 10000) {
+          when(tokenCnt >= (1 << 19)) {
             testPass := False; state := S.T3_RESULT
           } otherwise {
             xferRetState := S.T3_TOKEN_CHECK
@@ -827,14 +894,22 @@ case class SdSpiExerciserTop(
         when(!sd.bus.rdData(0)) { state := S.T3_RESULT }
       }
 
+      // PASS or FAIL, then how many polls the data token took
       is(S.T3_RESULT) {
         when(testPass) {
-          msgBase := 53; msgLen := 6; msgIdx := 0
-          retState := S.LOOP_MSG; state := S.PRINT_MSG
+          msgBase := 78; msgLen := 5; msgIdx := 0 // "PASS "
         } otherwise {
-          msgBase := 59; msgLen := 6; msgIdx := 0
-          retState := S.LOOP_MSG; state := S.PRINT_MSG
+          msgBase := 72; msgLen := 5; msgIdx := 0 // "FAIL "
         }
+        retState := S.T3_TOKEN_HEX; state := S.PRINT_MSG
+      }
+      is(S.T3_TOKEN_HEX) {
+        hexVal := tokenCnt.asBits.resized; hexNib := 0
+        retState := S.T3_CRLF; state := S.PRINT_HEX
+      }
+      is(S.T3_CRLF) {
+        msgBase := 65; msgLen := 2; msgIdx := 0 // "\r\n"
+        retState := S.LOOP_MSG; state := S.PRINT_MSG
       }
 
       // ================================================================

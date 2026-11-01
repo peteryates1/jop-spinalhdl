@@ -130,6 +130,26 @@ existing `dataTimeoutCnt` counter.
 
 Found during FAT32 filesystem testing (sequential write-then-read patterns).
 
+#### 4. Write Start Bit Sent Inside NWR (2026-11-01, status item 65)
+
+**Bug**: `startWrite` drove the data start bit on the next SD clock falling
+edge, so a host that wrote it the moment `cmdBusy` cleared put the start bit
+one clock after the CMD24 response's end bit. The SD spec's NWR asks for at
+least two. The Java driver never hit it -- software is slow; the exerciser's
+state machine always did, and every write came back with a CRC error status.
+
+**Fix**: `SEND_START` lets two falling edges pass, lines released, before the
+start bit. `SdNativeTest`'s `SdNative_write_waits_nwr` holds it (red before:
+the start bit was sampled 2 rising edges after the end bit; NWR needs >= 3).
+
+The same day the exerciser's own checks were found to pass a silent card: T2
+looked only at the data CRC flag, and T3 compared the FIFO memory, which T2
+had just filled with the expected pattern and a read that receives nothing
+leaves alone. T2 now also fails on a CMD24 or data timeout, T3 on a CMD17 or
+data timeout or a short FIFO, and each prints the status register (or the
+first wrong word) after FAIL. T3 calls `startRead` before CMD17, as the Java
+driver does.
+
 ### Hardware Verification
 
 The SD Native Exerciser (`SdNativeExerciserTop`) runs continuously on the
@@ -183,6 +203,33 @@ and chip-select control. Software handles the full SD protocol.
 - **No hardware CRC**: SPI mode CRC is optional (disabled by default after
   CMD0). The exerciser sends dummy CRC bytes (0xFF).
 
+### Bugs Found and Fixed (2026-11-01, status item 65)
+
+From August to November the SPI exerciser failed INIT on every loop. Four
+causes, found in this order on the EP4CGX150 + DB V4 with a cold card:
+
+1. **MOSI moved with SCLK.** SdSpi shifted its register on the system clock
+   edge that raised SCLK, so MOSI changed at the instant the card samples it:
+   zero hold time. It now samples MISO on the rising edge and shifts on the
+   falling one. `SdSpiTest`'s `SdSpi_mosi_holds_across_sclk_rise` (red: MOSI
+   moved with SCLK at 15 of 16 edges).
+2. **No idle byte before a command.** The exerciser sent each command straight
+   after the last response byte. On a cold card CMD0 answered, CMD8 came back
+   `0x05` (illegal), later responses arrived 2-3 bits off the byte boundary,
+   and the card then answered nothing until power-off. One `0xFF` byte before
+   every command -- as FatFs and Linux clock -- and every response is
+   byte-aligned.
+3. **ACMD41 gave up too soon.** 1000 rounds is ~0.7 s at 200 kHz; this card
+   took 118 to over 1000 rounds to leave idle, and the spec allows 1 s. Now
+   2000 (~1.4 s).
+4. **The read-token wait was ~5 ms.** The spec allows an SDHC read 100 ms; the
+   first read after power-up failed. Now 2^19 polls (~240 ms).
+
+A failed INIT prints its first failing step, the last response byte and the
+ACMD41 count, then every non-`0xFF` byte the card returned, tagged with its
+command (`ccrr`), and skips T2/T3. A card left in SPI mode stays there until
+power-off (a native exerciser then fails INIT).
+
 ### SPI Pin Mapping
 
 In SPI mode, the SD card pins are used as follows:
@@ -209,6 +256,9 @@ performing this test sequence in a loop:
 | T2: WRITE | CMD24, data token (0xFE), 512 bytes, data response check | PASS |
 | T3: READ | CMD17, wait for data token (0xFE), 512 bytes, compare | PASS |
 
+Verified 2026-11-01: 3028 loops, every test PASS. T3 prints how many polls
+its data token took (about 0x320, ~0.35 ms, on this card).
+
 The SPI exerciser uses divider=1 (~20 MHz) for data transfers after
 initialization. Unlike native mode, SPI write succeeds at 20 MHz because
 the data response is received on MISO (a dedicated input), not on a
@@ -220,7 +270,7 @@ SD SPI TEST
 T1:DETECT PASS
 INIT      PASS
 T2:WRITE  PASS
-T3:READ   PASS
+T3:READ   PASS 00000314
 LOOP 00000001
 ```
 
