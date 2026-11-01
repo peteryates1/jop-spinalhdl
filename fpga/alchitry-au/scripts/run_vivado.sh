@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Override with: VIVADO_HOME=/path/to/Vivado
-VIVADO_HOME="${VIVADO_HOME:-/opt/xilinx/2025.2/Vivado}"
+# Override with: VIVADO_HOME=/path/to/Vivado. Otherwise where this host keeps
+# Vivado 2025.2 (setup/host.toml).
+VIVADO_HOME="${VIVADO_HOME:-$(python3 "$(dirname -- "${BASH_SOURCE[0]}")/../../scripts/jop_setup.py" host vivado 2025.2)}"
 SETTINGS_SH="$VIVADO_HOME/settings64.sh"
 
 if [[ ! -f "$SETTINGS_SH" ]]; then

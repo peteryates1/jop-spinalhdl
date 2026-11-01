@@ -12,6 +12,7 @@ directory, so that the generic and hardware layers never name a serial number:
     setup/consoles.toml   serial consoles, by alias  (usb_serial_map)
     setup/units.toml      the physical units: assemblies, MACs, probe, console
                           (the generators read it too, through tomlj)
+    setup/host.toml       this host's tools: [tool] "version" = "/its/directory"
 
 The directory is `setup/` at the repository root unless JOP_SETUP names
 another, or --setup is given. It can therefore live in a repository of its own.
@@ -26,6 +27,10 @@ and read one row per line, fields separated by '|':
                                   loader-board|presets|not-fitted|broken|consoles
                                   (consoles as PART=alias,PART=alias)
     jop_setup.py unit NAME FACT   one fact of one unit, one line per item
+    jop_setup.py table host       tool|version|directory
+    jop_setup.py host TOOL VER    one tool's directory
+    jop_setup.py host-mk          the tools as Make variables, JOP_HOST_<tool>_<ver>
+                                  (host.mk caches this; no host.toml = none)
 
 An empty field means the entry leaves it out ("do not care" for a console's
 product, serial and interface). Descriptions are joined onto one line; a
@@ -178,6 +183,53 @@ def units(d=None):
     return out
 
 
+NAME = re.compile(r"[A-Za-z0-9._-]+")
+
+
+def hosts(d=None, path=None):
+    """(tool, version) -> directory, in file order. `path` reads that file."""
+    if path is None:
+        path, data = _load("host", d)
+    else:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    out = {}
+    for tool, versions in data.items():
+        if not isinstance(versions, dict) or not NAME.fullmatch(tool):
+            raise SetupError(f"{path}: [{tool}] must be a table of \"version\" = \"/directory\"")
+        for ver, where in versions.items():
+            if not isinstance(where, str) or not NAME.fullmatch(ver):
+                raise SetupError(f"{path}: [{tool}] {ver} = {where!r}: a version names a directory, "
+                                 f"both as strings")
+            if not os.path.isabs(where):
+                raise SetupError(f"{path}: [{tool}] {ver} = '{where}' is not an absolute path")
+            out[(tool, ver)] = where
+    return out
+
+
+def host(tool, version, d=None):
+    """Where this host has `tool` `version` installed."""
+    h = hosts(d)
+    if (tool, version) not in h:
+        raise SetupError(f"this host has no {tool} {version}: add it to "
+                         f"{os.path.join(setup_dir(d), 'host.toml')} as [{tool}] \"{version}\" = \"/its/dir\"")
+    return h[(tool, version)]
+
+
+def host_mk(d=None):
+    """host.toml as Make: JOP_HOST_<tool>_<version> := <directory>. A setup
+    without host.toml (or no setup) gives a fragment that defines nothing."""
+    try:
+        path = os.path.join(setup_dir(d), "host.toml")
+    except SetupError as e:
+        return f"# {e}\n"
+    if not os.path.isfile(path):
+        return f"# no {path}: this host's tools come from the environment\n"
+    lines = [f"# made from {path} by jop_setup.py host-mk -- do not edit"]
+    lines += [f"JOP_HOST_{t}_{v} := {w}" for (t, v), w in hosts(path=path).items()]
+    return "\n".join(lines) + "\n"
+
+
 def table(name, d=None):
     """The rows of one table, as the bash tools read them."""
     if name == "probes":
@@ -195,7 +247,9 @@ def table(name, d=None):
                 return ",".join(f"{k}={x}" for k, x in v.items())
             return ",".join(v) if isinstance(v, list) else v
         return ["|".join([n] + [cell(u[c]) for c in cols]) for n, u in units(d).items()]
-    raise SetupError(f"unknown table '{name}' (tables: probes, devices, consoles, units)")
+    if name == "host":
+        return [f"{t}|{v}|{w}" for (t, v), w in hosts(d).items()]
+    raise SetupError(f"unknown table '{name}' (tables: probes, devices, consoles, units, host)")
 
 
 def unit_fact(name, key, d=None):
@@ -212,8 +266,10 @@ def unit_fact(name, key, d=None):
     return v if isinstance(v, list) else [v] if v else []
 
 
-USAGE = """usage: jop_setup.py [--setup DIR] table probes|devices|consoles|units
+USAGE = """usage: jop_setup.py [--setup DIR] table probes|devices|consoles|units|host
        jop_setup.py [--setup DIR] unit NAME FACT     e.g. unit jop-x-1 macs
+       jop_setup.py [--setup DIR] host TOOL VERSION  e.g. host quartus 25.1
+       jop_setup.py [--setup DIR] host-mk
        jop_setup.py [--setup DIR] where"""
 
 
@@ -229,6 +285,12 @@ def main(argv):
         if argv[:1] == ["unit"] and len(argv) == 3:
             for line in unit_fact(argv[1], argv[2], d):
                 print(line)
+            return 0
+        if argv[:1] == ["host"] and len(argv) == 3:
+            print(host(argv[1], argv[2], d))
+            return 0
+        if argv == ["host-mk"]:
+            sys.stdout.write(host_mk(d))
             return 0
         if argv == ["where"]:
             print(setup_dir(d))

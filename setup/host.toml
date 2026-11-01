@@ -1,0 +1,26 @@
+# THIS HOST'S TOOLS -- the setup layer (status item 173, step 4).
+#
+# Where each tool is installed: one table per tool, "version" = "directory".
+# The flows pick the VERSION (quartus.mk 25.1, the A-E115FB 18.1, ...); where
+# that version lives is this host's fact, so it is here and nowhere else.
+# Read through fpga/scripts/jop_setup.py: Make through host.mk (a cache in
+# build/setup/, remade when this file changes), the scripts with
+# `jop_setup.py host <tool> <version>`. A variable set in the environment or
+# on the command line (QUARTUS_DIR, VIVADO_BIN, TARGET_JDK_HOME, ...) still
+# wins; CI sets TARGET_JDK_HOME that way.
+
+[quartus]
+"25.1" = "/opt/altera/25.1/quartus"
+"18.1" = "/opt/altera/18.1/quartus"
+
+[questa]
+"25.1" = "/opt/altera/25.1/questa_fse"
+
+[vivado]
+"2025.2" = "/opt/xilinx/2025.2/Vivado"
+
+# The JOP target code is compiled by JDK 8's javac (it sets the image size);
+# the tools run on JDK 17 in CI (java/apps/JvmTests/Makefile).
+[jdk]
+"8" = "/opt/jdk8u492-b09"
+"17" = "/opt/jdk-17.0.19+10"

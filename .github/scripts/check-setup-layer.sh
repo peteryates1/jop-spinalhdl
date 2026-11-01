@@ -16,6 +16,11 @@
 # literal aliases handed to the registry tools (alchitry-au-ddr3-test,
 # colorlight-i5 twice, cyc5000-sdram, find_alchitry_ports.sh, flash_idle.sh).
 # Usage text and READMEs may name an alias as an example.
+# EXTENDED 2026-11-01 (item 173, step 4): the host's tools. PROVED RED on the
+# tree before step 4 -- 26 lines in 23 files naming a directory host.toml
+# holds (/opt/altera/..., /opt/xilinx/..., the JDKs). And on the Scala
+# direction: PROVED RED with `jop.setup.Instances.all` added to `object Board`
+# (named Board.scala and the object), the same day.
 # If you change this guard, re-prove it: a guard that cannot fail is worse
 # than none, because it gets quoted as evidence.
 # ---------------------------------------------------------------------------
@@ -44,6 +49,12 @@
 #     preset is built for), and nothing under fpga/ hands jtag_probe_map or
 #     usb_serial_map a LITERAL alias: the alias is an argument or a variable,
 #     so the unit decides it.
+#   - the generators read the setup only at their entry points: code outside
+#     jop/setup/ that refers to jop.setup sits in an `object ...Main`, never in
+#     a design, a preset or a generator a design depends on.
+#   - no file outside setup/ and the records names a directory setup/host.toml
+#     holds: a flow names the tool and VERSION it needs, and host.mk or
+#     `jop_setup.py host` says where this host keeps it.
 # ---------------------------------------------------------------------------
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2
@@ -121,4 +132,39 @@ if [ -n "$flows$literal" ]; then
   exit 1
 fi
 
-echo "  $n setup serials and $u units, none outside setup/; no flow names an alias"
+# Each reference to jop.setup outside its package, with the object it is in.
+upward=$(git grep --untracked -n -E 'jop\.setup|UnitsFile|SetupDir' -- 'spinalhdl/src/main/*.scala' \
+           ':!spinalhdl/src/main/scala/jop/setup/' 2>/dev/null |
+         command grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)' |
+         while IFS=: read -r f l _; do
+           obj=$(head -n "$l" "$f" | command grep -oE '^(case )?(object|class|trait) [A-Za-z0-9_]+' | tail -1)
+           case "$obj" in *Main) ;; *) echo "$f:$l (in ${obj:-no object})" ;; esac
+         done)
+if [ -n "$upward" ]; then
+  echo "  FAIL the setup is read outside an entry point -- only a ...Main may refer to jop.setup:"
+  printf '        %s\n' "$upward"
+  echo "       A design or generator that reads the units would build differently per lab."
+  exit 1
+fi
+
+hrows=$(python3 "$SETUP_TOOL" table host) || { echo "  FAIL $SETUP_TOOL could not read the host's tools"; exit 1; }
+dirs=$(cut -d'|' -f3 <<<"$hrows" | command grep .)
+h=$(command grep -c . <<<"$dirs" || true)
+if [ "$h" -eq 0 ]; then
+  echo "  FAIL read no tools from the setup's host.toml -- this check is asserting nothing"
+  exit 1
+fi
+paths=""
+while read -r dir; do
+  hits=$(git grep --untracked -n -F -e "$dir" -- . ':!setup/' ':!docs/' ':!*.md' 2>/dev/null)
+  [ -n "$hits" ] && paths="$paths$(command sed "s|^|        [$dir] |" <<<"$hits")"$'\n'
+done <<<"$dirs"
+if [ -n "$paths" ]; then
+  echo "  FAIL this host's tool directories outside the setup layer -- they belong in setup/host.toml:"
+  printf '%s' "$paths" | cut -c1-200
+  echo "       A flow names the tool and version: \$(call host_tool,quartus,25.1,QUARTUS_DIR)"
+  echo "       in Make (host.mk), \`jop_setup.py host quartus 25.1\` in a script."
+  exit 1
+fi
+
+echo "  $n setup serials, $u units and $h host tools, none outside setup/; no flow names an alias"

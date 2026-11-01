@@ -1,6 +1,9 @@
 # JDK 6 for target compilation, system Java for running tools
-TARGET_JDK_HOME ?= /opt/jdk8u492-b09
-TARGET_JAVAC := $(TARGET_JDK_HOME)/bin/javac
+# JDK 8's javac compiles the target code; where this host keeps it is the
+# setup's (setup/host.toml, through host.mk). TARGET_JDK_HOME= still wins.
+include ../../../host.mk
+TARGET_JDK_HOME ?= $(call host_tool,jdk,8,TARGET_JDK_HOME)
+TARGET_JAVAC = $(TARGET_JDK_HOME)/bin/javac
 JAVA ?= java
 
 ROOT := ../..

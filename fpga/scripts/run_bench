@@ -58,7 +58,8 @@ echo "=== $BOARD  uart=$UART @ $BAUD"
 case "$KIND" in
   quartus)
     CABLE=$(./fpga/scripts/jtag_probe_map --cable "$BOARD")
-    /opt/altera/18.1/quartus/bin/quartus_pgm -c "$CABLE" -m JTAG -o "p;$BIT" 2>&1 | tail -2 ;;
+    "${QUARTUS_PGM:-$(python3 ./fpga/scripts/jop_setup.py host quartus 18.1)/bin/quartus_pgm}" \
+      -c "$CABLE" -m JTAG -o "p;$BIT" 2>&1 | tail -2 ;;
   openfpgaloader)
     BUSDEV=$(./fpga/scripts/jtag_probe_map --busdev "$BOARD")
     openFPGALoader -c dirtyJtag --busdev-num "$BUSDEV" "$BIT" 2>&1 | tail -1 ;;

@@ -6,7 +6,7 @@
 set -e
 
 REPO_ROOT="$(cd ../.. && pwd)"
-VIVADO="/opt/xilinx/2025.2/Vivado/bin/vivado"
+VIVADO="${VIVADO_HOME:-$(python3 "$REPO_ROOT/fpga/scripts/jop_setup.py" host vivado 2025.2)}/bin/vivado"
 BUILD_DIR="$REPO_ROOT/fpga/qmtech-xc7a100t-wukong/vivado/build/util_sweep"
 # Generated RTL lands under build/<config>/rtl, one directory per sweep
 # label (see jop.system.UtilSweep). Resolved per label inside the loop.

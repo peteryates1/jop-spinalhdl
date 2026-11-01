@@ -14,10 +14,13 @@
 #
 # Verified 2026-08-09: javac 8u492 + tools JDK 17.0.19 reproduces CI's
 # DoAll.jop byte for byte. For a CI-identical build:
-#   JAVA_HOME=/opt/jdk-17.0.19+10 PATH=/opt/jdk-17.0.19+10/bin:$PATH \
-#     TARGET_JDK_HOME=/opt/jdk8u492-b09 make
-TARGET_JDK_HOME ?= /opt/jdk8u492-b09
-TARGET_JAVAC := $(TARGET_JDK_HOME)/bin/javac
+#   J17=$(../../../fpga/scripts/jop_setup.py host jdk 17)
+#   JAVA_HOME=$J17 PATH=$J17/bin:$PATH make     # javac 8 is the host.toml default
+# JDK 8's javac compiles the target code; where this host keeps it is the
+# setup's (setup/host.toml, through host.mk). TARGET_JDK_HOME= still wins.
+include ../../../host.mk
+TARGET_JDK_HOME ?= $(call host_tool,jdk,8,TARGET_JDK_HOME)
+TARGET_JAVAC = $(TARGET_JDK_HOME)/bin/javac
 JAVA ?= java
 
 ROOT := ../..

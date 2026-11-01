@@ -16,7 +16,8 @@
 #   CFG            preset invocation, e.g. ep4cgx150Serial or "ep4cgx150Smp 4"
 #   REV            Quartus revision name, e.g. jop_sdram
 # and may set:
-#   QUARTUS_DIR    default /opt/altera/25.1/quartus
+#   QUARTUS_VERSION  default 25.1; QUARTUS_DIR defaults to where this host
+#                  keeps that version (setup/host.toml, through ../host.mk)
 # The probe (BOARD_ALIAS) and console (CONSOLE_ALIAS) are NOT the board's to
 # set: they are the unit's, and fpga/unit.mk gets them (status item 173). A
 # design no unit covers has neither, and assert-device skips.
@@ -25,7 +26,12 @@
 #   GEN_MAKES_PROJECT  yes if GEN_MAIN also writes setup_proj.tcl and the .sdc
 # ---------------------------------------------------------------------------
 
-QUARTUS_DIR ?= /opt/altera/25.1/quartus
+# This file's directory, taken before any include: an include appends to
+# MAKEFILE_LIST, so `lastword` names this file only until then.
+JOP_FPGA_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include $(JOP_FPGA_DIR)../host.mk
+QUARTUS_VERSION ?= 25.1
+QUARTUS_DIR ?= $(call host_tool,quartus,$(QUARTUS_VERSION),QUARTUS_DIR)
 QUARTUS_BIN  = $(QUARTUS_DIR)/bin
 
 # The config directory name comes from BuildLayout, never from a second copy of
@@ -42,7 +48,7 @@ else
 endif
 
 CFG_DIR      = $(PROJECT_ROOT)/build/$(CFG_NAME)
-include $(dir $(lastword $(MAKEFILE_LIST)))unit.mk
+include $(JOP_FPGA_DIR)unit.mk
 QUARTUS_PRJ  = $(CFG_DIR)/quartus
 SOF_FILE     = $(QUARTUS_PRJ)/output_files/$(REV).sof
 
@@ -265,7 +271,7 @@ quartus-clean:
 
 # The console is not Quartus-specific, but every board that uses this flow needs
 # it, and it must come after CFG_DIR is defined -- it reads the build's summary.
-include $(dir $(lastword $(MAKEFILE_LIST)))console.mk
+include $(JOP_FPGA_DIR)console.mk
 
 # Always-out-of-date prerequisite; see the note above.
 FORCE:

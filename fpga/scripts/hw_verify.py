@@ -32,6 +32,7 @@ of being averaged into a boolean.
 """
 
 import argparse, os, re, subprocess, sys, time
+import jop_setup  # this host's tools (setup/host.toml); same directory
 from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -145,7 +146,13 @@ def program(d, bitstream):
             cmd = ["quartus_pgm", "-c", cable, "-m", "JTAG", "-o", op]
         else:
             cmd = ["quartus_pgm", "-c", cable, "-m", "JTAG", cdf]
-        qdir = os.environ.get("QUARTUS_BIN", "/opt/altera/25.1/quartus/bin")
+        # Where this host keeps Quartus 25.1 is the setup's (setup/host.toml).
+        qdir = os.environ.get("QUARTUS_BIN")
+        if not qdir:
+            try:
+                qdir = os.path.join(jop_setup.host("quartus", "25.1"), "bin")
+            except jop_setup.SetupError as e:
+                die(f"{e}\n  (or set QUARTUS_BIN)")
         cmd[0] = os.path.join(qdir, "quartus_pgm")
     else:
         cmd = ["sudo", "openFPGALoader"]

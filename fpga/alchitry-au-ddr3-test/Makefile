@@ -18,8 +18,9 @@
 SHELL := /usr/bin/env bash
 
 # Vivado installation
-VIVADO_HOME ?= /opt/xilinx/2025.2/Vivado
-RUN_VIVADO := VIVADO_HOME=$(VIVADO_HOME) ../alchitry-au/scripts/run_vivado.sh
+include ../../host.mk
+VIVADO_HOME ?= $(call host_tool,vivado,2025.2,VIVADO_HOME)
+RUN_VIVADO   = VIVADO_HOME=$(VIVADO_HOME) ../alchitry-au/scripts/run_vivado.sh
 
 # Project paths
 PROJECT_ROOT = ../..

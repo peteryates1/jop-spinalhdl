@@ -13,7 +13,8 @@ MIG_RTL     = $(MIG_IP_BASE)/user_design/rtl
 MIG_SIM     = $(MIG_IP_BASE)/example_design/sim
 
 # Vivado tools
-VIVADO_HOME  ?= /opt/xilinx/2025.2/Vivado
+include ../../host.mk
+VIVADO_HOME  ?= $(call host_tool,vivado,2025.2,VIVADO_HOME)
 VIVADO_DIR   ?= $(VIVADO_HOME)
 VIVADO_BIN   = $(VIVADO_HOME)/bin
 XVLOG        = $(VIVADO_BIN)/xvlog

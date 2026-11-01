@@ -7,7 +7,7 @@
 set -e
 
 REPO_ROOT="$(cd ../.. && pwd)"
-QUARTUS_BIN="${QUARTUS_DIR:-/opt/altera/25.1/quartus}/bin"
+QUARTUS_BIN="${QUARTUS_DIR:-$(python3 "$REPO_ROOT/fpga/scripts/jop_setup.py" host quartus 25.1)}/bin"
 BUILD_DIR="$PWD/output_files/util_sweep"
 # Generated RTL lands under build/<config>/rtl, one directory per sweep
 # label (see jop.system.UtilSweep). Resolved per label inside the loop.

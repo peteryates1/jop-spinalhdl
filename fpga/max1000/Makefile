@@ -62,7 +62,6 @@
 # far enough to be asked.
 # ---------------------------------------------------------------------------
 
-QUARTUS_DIR ?= /opt/altera/25.1/quartus
 QUARTUS_BIN  = $(QUARTUS_DIR)/bin
 PROJECT_ROOT = ../..
 ASM_DIR      = ../../asm

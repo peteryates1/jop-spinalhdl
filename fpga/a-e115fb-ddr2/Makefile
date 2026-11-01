@@ -30,7 +30,7 @@ PROJECT_ROOT  = ../..
 CFG          ?= ae115fbDdr2
 REV          ?= jop_ddr2
 # The probe and console are the unit's: fpga/unit.mk asks setup/units.toml.
-QUARTUS_DIR  ?= /opt/altera/18.1/quartus
+QUARTUS_VERSION = 18.1
 
 include ../quartus.mk
 

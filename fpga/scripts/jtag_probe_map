@@ -228,7 +228,7 @@ assert_device() {
   fi
 
   [ -n "$cable" ] || cable=$("$0" --cable "$want") || return 1
-  qpgm=${QUARTUS_PGM:-/opt/altera/18.1/quartus/bin/quartus_pgm}
+  qpgm=${QUARTUS_PGM:-$(python3 "$SCRIPT_DIR/jop_setup.py" host quartus 18.1)/bin/quartus_pgm}
   [ -x "$qpgm" ] || { echo "quartus_pgm not found at $qpgm (set QUARTUS_PGM)" >&2; return 1; }
   # RETRY, because a single scan is not evidence on a marginal cable.
   #

@@ -276,8 +276,65 @@ def test_the_cli_refuses_an_unknown_unit_or_fact():
         assert rc != 0 and word in err.getvalue(), (argv, rc, err.getvalue())
 
 
+HOST = '''
+[quartus]
+"25.1" = "/tools/altera/25.1/quartus"
+"18.1" = "/tools/altera/18.1/quartus"
+
+[jdk]
+"8" = "/tools/jdk8"
+'''
+
+
+def test_a_tool_is_found_by_name_and_version():
+    d = setup_with(host=HOST)
+    assert jop_setup.host("quartus", "18.1", d) == "/tools/altera/18.1/quartus"
+    assert jop_setup.host("jdk", "8", d) == "/tools/jdk8"
+
+
+def test_a_tool_the_host_lacks_says_what_to_add():
+    d = setup_with(host=HOST)
+    refused(lambda: jop_setup.host("vivado", "2025.2", d), "vivado", "2025.2", "host.toml")
+    refused(lambda: jop_setup.host("quartus", "24.1", d), "quartus", "24.1", "host.toml")
+
+
+def test_a_relative_tool_path_is_refused():
+    """A flow runs tools from many directories; a relative path is right in one."""
+    d = setup_with(host=HOST.replace('"/tools/jdk8"', '"tools/jdk8"'))
+    refused(lambda: jop_setup.host("jdk", "8", d), "jdk", "tools/jdk8")
+
+
+def test_a_version_given_as_a_number_is_refused():
+    d = setup_with(host=HOST.replace('"8" = "/tools/jdk8"', '8 = 8'))
+    refused(lambda: jop_setup.host("jdk", "8", d), "jdk")
+
+
+def test_host_mk_gives_make_one_variable_per_tool_version():
+    d = setup_with(host=HOST)
+    mk = jop_setup.host_mk(d)
+    for line in ("JOP_HOST_quartus_25.1 := /tools/altera/25.1/quartus",
+                 "JOP_HOST_quartus_18.1 := /tools/altera/18.1/quartus",
+                 "JOP_HOST_jdk_8 := /tools/jdk8"):
+        assert line in mk.splitlines(), f"no `{line}` in\n{mk}"
+
+
+def test_host_mk_without_a_host_file_defines_nothing():
+    """A lab with no host.toml can still run make; a tool it then needs
+    stops make where it is used, naming the variable to set."""
+    d = setup_with(probes=PROBES)
+    assert not [l for l in jop_setup.host_mk(d).splitlines() if not l.startswith("#")]
+
+
+def test_the_cli_prints_a_tools_directory():
+    d = setup_with(host=HOST)
+    out = io.StringIO()
+    with redirect_stdout(out):
+        rc = jop_setup.main(["--setup", d, "host", "quartus", "25.1"])
+    assert rc == 0 and out.getvalue() == "/tools/altera/25.1/quartus\n", (rc, out.getvalue())
+
+
 def test_this_labs_setup_loads():
-    for name in ("probes", "devices", "consoles", "units"):
+    for name in ("probes", "devices", "consoles", "units", "host"):
         assert jop_setup.table(name), f"the lab setup has no {name}"
 
 

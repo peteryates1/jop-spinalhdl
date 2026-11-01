@@ -30,8 +30,10 @@
 
 SHELL := /usr/bin/env bash
 
-VIVADO_HOME ?= /opt/xilinx/2025.2/Vivado
-RUN_VIVADO  := VIVADO_HOME=$(VIVADO_HOME) ./scripts/run_vivado.sh
+# Where this host keeps Vivado: setup/host.toml, through ../host.mk (vivado.mk
+# includes it below; both of these are expanded only when used).
+VIVADO_HOME ?= $(call host_tool,vivado,$(VIVADO_VERSION),VIVADO_HOME)
+RUN_VIVADO   = VIVADO_HOME=$(VIVADO_HOME) ./scripts/run_vivado.sh
 
 PROJECT_ROOT  = ../..
 ASM_DIR       = ../../asm

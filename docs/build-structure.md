@@ -90,6 +90,13 @@ setup, not the tools': `setup/probes.toml` and `setup/consoles.toml`
 (`JOP_SETUP` names another directory), and `check-setup-layer.sh` fails on a
 serial written anywhere else.
 
+**Tools are found through the host's setup, never a hardcoded path.** A flow
+names the tool and the version it needs -- `QUARTUS_VERSION ?= 25.1` in
+`quartus.mk`, `18.1` for the A-E115FB -- and `host.mk` (repository root) says
+where this host keeps it, from `setup/host.toml`. Setting `QUARTUS_DIR`,
+`VIVADO_BIN`, `TARGET_JDK_HOME` or `QUESTA_HOME` still wins. Scripts ask
+`fpga/scripts/jop_setup.py host <tool> <version>`.
+
 ```bash
 fpga/scripts/jtag_probe_map              # list attached probes and their boards
 fpga/scripts/jtag_probe_map --boards     # known aliases

@@ -75,7 +75,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 34. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 35. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 36. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated: flow defaults still name this host's toolchain paths (step 4). Since 2026-11-01 the setup is TOML in `setup/` -- probe and console serials, units -- and no board Makefile names how its unit is reached; no new setup facts go into the other layers
+37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: generic and hardware support still share packages (`jop.config` holds both)
 38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
 39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
 40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -4314,8 +4314,44 @@ override and six literal aliases. A `SERIAL_PORT` given on the command line
 skips the unit lookup, so `check-console-baud.sh` starts no sbt. `make
 check-build` with no cached descriptors takes 11 s.
 
-**Next:** step 4: the host's toolchain paths (the `/opt` defaults in
-about 20 Makefiles and scripts) go to `setup/host.toml`. Lab-specific TESTS
+**Step 4 done 2026-11-01: the host's tools.** `setup/host.toml` maps each
+tool and version to its directory: Quartus 25.1 and 18.1, Questa 25.1,
+Vivado 2025.2, JDK 8 and 17. The flows name the version they need --
+`QUARTUS_VERSION ?= 25.1` in `quartus.mk`, `18.1` for the A-E115FB,
+`VIVADO_VERSION ?= 2025.2` -- and `host.mk` (repository root) supplies the
+directory. It reads a cache in `build/setup/`, remade when `host.toml`
+changes, and defines `$(call host_tool,<tool>,<version>,<VARIABLE>)` as each
+variable's default. An environment or command-line setting still wins; CI
+sets `TARGET_JDK_HOME` that way. Scripts ask `jop_setup.py host <tool>
+<version>`. With neither a setting nor an entry, the first use stops make with
+`this host has no quartus 25.1: add it to .../host.toml ..., or set
+QUARTUS_DIR`; `TARGET_JAVAC` became deferred, so `make clean` does not need a
+JDK.
+
+26 lines in 23 files lost their `/opt` paths: 9 Java Makefiles, the Quartus
+and Vivado fragments and boards, both verification flows, `hw_verify`,
+`jtag_probe_map`, `run_bench`, two `util_sweep.sh` and `run_vivado.sh`.
+`test_jop_setup.py` (35 tests) gained 7 host tests, written first. Verified:
+- `make check-build` passes. Its first run also caught `MAKEFILE_LIST` now
+  ending in the cache, which pointed `quartus.mk`'s later includes into
+  `build/setup/`.
+- A full Java build compiled with the host's javac 8. `Const.java` was
+  regenerated (units.toml had changed) with the same MAC and hostname.
+- `assert-device` scanned with 18.1's `quartus_pgm`.
+- The EP4CGX150 programmed through 25.1's and printed `Hello World!`.
+- `make -n` names the host's Vivado.
+
+`check-setup-layer.sh` now also fails on a `host.toml` directory anywhere
+outside `setup/` (red first on all 26 lines). It also fails on `jop.setup`
+read outside an entry point: red with `jop.setup.Instances.all` planted in
+`object Board`.
+
+**What is left:** the setup layer is done. Every fact the 2026-10-28 list
+put in the wrong layer -- the board designs' aliases, the serial registries,
+the network identity and the host's paths -- is in `setup/`, and the guard
+holds it there. Generic JOP and hardware support still share packages
+(`jop.config` holds both the core's types and the board designs and
+presets), so the agreed in-repo split of those two is not done. Lab-specific TESTS
 (`InstanceTest`'s descriptor table) stay in `spinalhdl/src/test` for now; they
 would move with the setup if it gets a repository of its own.
 

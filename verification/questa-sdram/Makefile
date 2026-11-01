@@ -9,7 +9,8 @@
 # that SpinalHDL's SdramModel does NOT enforce. This is the key difference
 # from Verilator-based simulation.
 
-QUESTA_HOME ?= /opt/altera/25.1/questa_fse
+include ../../host.mk
+QUESTA_HOME ?= $(call host_tool,questa,25.1,QUESTA_HOME)
 VLOG  = $(QUESTA_HOME)/bin/vlog
 VSIM  = $(QUESTA_HOME)/bin/vsim
 VLIB  = $(QUESTA_HOME)/bin/vlib

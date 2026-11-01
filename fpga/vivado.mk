@@ -7,7 +7,8 @@
 # The probe (BOARD_ALIAS) and console (CONSOLE_ALIAS) are the unit's, from
 # fpga/unit.mk (status item 173), not the board's.
 # and may set:
-#   VIVADO         default /opt/xilinx/2025.2/Vivado/bin/vivado
+#   VIVADO_VERSION default 2025.2; VIVADO_BIN defaults to that version's
+#                  vivado where this host keeps it (setup/host.toml, ../host.mk)
 #   LOADER_CABLE   openFPGALoader -c value, default dirtyJtag
 #   GEN_MAIN       generator main, default jop.system.JopTopVerilog
 #   GEN_ARGS       its arguments, default "$(CFG) buildtree"
@@ -38,7 +39,12 @@
 # source tree because nothing told it otherwise. `-journal`/`-log` must precede
 # `-mode`, which is why they are folded into the command rather than appended
 # at each of the dozen call sites.
-VIVADO_BIN   ?= /opt/xilinx/2025.2/Vivado/bin/vivado
+# This file's directory, taken before any include: an include appends to
+# MAKEFILE_LIST, so `lastword` names this file only until then.
+JOP_FPGA_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include $(JOP_FPGA_DIR)../host.mk
+VIVADO_VERSION ?= 2025.2
+VIVADO_BIN   ?= $(call host_tool,vivado,$(VIVADO_VERSION),VIVADO_BIN)/bin/vivado
 VIVADO_LOGS   = $(PROJECT_ROOT)/build/vivado-logs
 VIVADO        = $(shell mkdir -p $(VIVADO_LOGS)) $(VIVADO_BIN) \
                 -journal $(VIVADO_LOGS)/vivado.jou -log $(VIVADO_LOGS)/vivado.log
@@ -58,7 +64,7 @@ else
 endif
 
 CFG_DIR     = $(PROJECT_ROOT)/build/$(CFG_NAME)
-include $(dir $(lastword $(MAKEFILE_LIST)))unit.mk
+include $(JOP_FPGA_DIR)unit.mk
 VIVADO_PRJ  = $(CFG_DIR)/vivado
 VIVADO_BUILD= $(VIVADO_PRJ)/build
 
@@ -185,7 +191,7 @@ vivado-clean:
 
 # Must come after CFG_DIR is defined -- it reads the build's own summary for
 # the baud rather than trusting a Makefile constant. See its header, status 70.
-include $(dir $(lastword $(MAKEFILE_LIST)))console.mk
+include $(JOP_FPGA_DIR)console.mk
 
 # Lets a board ask for another flow's config directory without restating
 # BuildLayout's naming rules in Make.
