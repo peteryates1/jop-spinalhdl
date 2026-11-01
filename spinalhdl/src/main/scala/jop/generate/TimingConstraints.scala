@@ -141,13 +141,25 @@ object TimingConstraints {
       ClockConstraint("clk_in", assembly.boardClockFreq.toBigDecimal))
 
     // Which PLL outputs this design actually uses. AlteraDramPll drives the
-    // system from c1, and on SDR additionally the SDRAM (c2) and VGA/Eth (c3).
-    val pllOutputs =
-      if (memType.contains(MemoryType.SDRAM_SDR)) Seq(1, 2, 3) else Seq(1)
+    // system from c1, and on SDR additionally the SDRAM (c2) and VGA (c3).
+    // c2 is the SDRAM chip's copy of c1 and is timed with it.
+    //
+    // c3 IS ITS OWN DOMAIN. The VGA side is built asynchronous -- a reset
+    // synchronizer, BufferCC on vBlank -- and grouping c3 with c1 had Quartus
+    // time every crossing against the 2.5 ns edge relationship of 80 and 25 MHz:
+    // ep4cgx150DbFull's 2026-11-01 rebuild missed it by 0.259 ns on the reset
+    // synchronizer's own input (status item 65). Named only when a VGA device
+    // uses it: a group naming a clock nothing drives is dropped whole.
+    val sdr = memType.contains(MemoryType.SDRAM_SDR)
+    val hasVga = config.devices.values.exists(d =>
+      d.deviceType.key == DeviceType.VgaText.key || d.deviceType.key == DeviceType.VgaDma.key)
+    val pllOutputs = if (sdr) Seq(1, 2) else Seq(1)
 
-    val dramGroup = board.pllType.toSeq.flatMap { pt =>
-      if (pt.instanceName.isEmpty) Nil else pllOutputs.map(pt.alteraClockPath)
+    def alteraPll(outputs: Seq[Int]) = board.pllType.toSeq.flatMap { pt =>
+      if (pt.instanceName.isEmpty) Nil else outputs.map(pt.alteraClockPath)
     }
+    val dramGroup = alteraPll(pllOutputs)
+    val vgaGroup = if (sdr && hasVga) alteraPll(Seq(3)) else Nil
     // The Ethernet PLL and the PHY's receive clock are separate domains -- but
     // only when the DESIGN instantiates Ethernet, not merely when the board
     // carries the chip. The hand-written jop_sdram.sdc keyed off the board and
@@ -249,7 +261,7 @@ object TimingConstraints {
       clocks = (if (phyOwnsClocks) Nil else boardClock.toSeq) ++ phyRxClock ++ phyTxClock,
       asyncGroups =
         if (phyOwnsClocks) Nil
-        else Seq(dramGroup, ethGroup, phyGroup, phyTxGroup).filter(_.nonEmpty),
+        else Seq(dramGroup, vgaGroup, ethGroup, phyGroup, phyTxGroup).filter(_.nonEmpty),
       isolatedGroups = if (phyOwnsClocks) ethGroups else Nil,
       pllClocksFromPhy = phyOwnsClocks,
       derivePllClocks =

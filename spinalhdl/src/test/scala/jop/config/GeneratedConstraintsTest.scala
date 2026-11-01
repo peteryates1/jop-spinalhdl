@@ -170,6 +170,29 @@ class GeneratedConstraintsTest extends AnyFunSuite {
   // naming a clock that does not exist is dropped whole. Both DB_FPGA presets
   // the EP4CGX150 is used on are MII; `ep4cgx150DbV5Eth` keeps GMII, the fault
   // reproduced for the RX capture.
+  // THE VGA PIXEL CLOCK IS ITS OWN DOMAIN. On the EP4CGX150 the DRAM PLL's c3
+  // drives only VGA (Ethernet has its own PLL), and the VGA side is built
+  // asynchronous: a reset synchronizer, BufferCC on vBlank. The .sdc grouped c3
+  // with the 80 MHz system clock, so Quartus timed every crossing against the
+  // 2.5 ns edge relationship of 80 and 25 MHz; ep4cgx150DbFull's 2026-11-01
+  // rebuild missed it by 0.259 ns on the reset synchronizer's own input
+  // (status item 65 found it). c2 -- the SDRAM's copy of c1 -- stays with c1.
+  test("a VGA design's pixel clock is asynchronous to the system clock") {
+    def pll(n: Int) = s"dramPll|altpll_component|auto_generated|pll1|clk[$n]"
+    for (preset <- Seq("ep4cgx150DbFull", "ep4cgx150DbV5Eth", "ep4cgx150DbV5Mii",
+                       "ep4cgx150DbVgaDma")) {
+      val sdc = TimingConstraints.forConfig(cfgOf(preset)).toSdc
+      val groups = raw"-group\s+\{([^}]*)\}".r.findAllMatchIn(sdc)
+        .map(_.group(1).trim.split("\\s+").toSet).toSeq
+      val sys = groups.find(_(pll(1)))
+      assert(sys.exists(_(pll(2))), s"$preset: the SDRAM clock stays with the system clock\n$sdc")
+      assert(sys.exists(g => !g(pll(3))), s"$preset: VGA's clk[3] grouped with the system clock\n$sdc")
+      assert(groups.exists(_ == Set(pll(3))), s"$preset: no asynchronous group for clk[3]\n$sdc")
+    }
+    val serial = TimingConstraints.forConfig(cfgOf("ep4cgx150Serial")).toSdc
+    assert(!serial.contains("clk[3]"), s"no VGA, so no clk[3] to name\n$serial")
+  }
+
   test("an MII design creates the PHY's TX clock and names no Ethernet PLL") {
     for (preset <- Seq("ep4cgx150DbV5Mii", "ep4cgx150DbFull")) {
       val mii = TimingConstraints.forConfig(cfgOf(preset)).toSdc
