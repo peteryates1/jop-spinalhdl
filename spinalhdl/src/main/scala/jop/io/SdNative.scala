@@ -363,6 +363,12 @@ case class SdNative(clkDivInit: Int = 99) extends Component with HasBusIo {
   val dataBitsInWord = Reg(UInt(6 bits)) init(0)
   val dataTimeoutCnt = Reg(UInt(20 bits)) init(0)
 
+  // NWR: the SD spec puts at least 2 clock cycles between the end bit of the
+  // CMD24 response and the start bit of the data block. startWrite may come
+  // the cycle cmdBusy clears, so SEND_START lets 2 falling edges pass, lines
+  // released, before driving the start bit (status item 65).
+  val nwrCnt = Reg(UInt(2 bits)) init(0)
+
   // DAT output registers
   val datOutBits = Reg(Bits(4 bits)) init(B"1111")
   val datOutEn   = Reg(Bits(4 bits)) init(B"0000")
@@ -535,22 +541,26 @@ case class SdNative(clkDivInit: Int = 99) extends Component with HasBusIo {
   when(sdClkFall) {
     switch(dataState) {
       is(DataState.SEND_START) {
-        when(busWidth4) {
-          datOutBits := B"0000"
-          datOutEn := B"1111"
+        when(nwrCnt =/= 2) {
+          nwrCnt := nwrCnt + 1
         } otherwise {
-          datOutBits := B"0000"
-          datOutEn := B"0001"
+          when(busWidth4) {
+            datOutBits := B"0000"
+            datOutEn := B"1111"
+          } otherwise {
+            datOutBits := B"0000"
+            datOutEn := B"0001"
+          }
+          dataState := DataState.SENDING
+          dataBitCount := 0
+          dataBitsInWord := 0
+          for (i <- 0 until 4) { dataCrc16(i) := 0 }
+          // Load first word from FIFO (readSync result available this cycle
+          // because fifoRdPtr was set when startWrite was issued)
+          datTxShift := fifoRdData
+          fifoPopValid := True
+          datTxBitsLeft := 32
         }
-        dataState := DataState.SENDING
-        dataBitCount := 0
-        dataBitsInWord := 0
-        for (i <- 0 until 4) { dataCrc16(i) := 0 }
-        // Load first word from FIFO (readSync result available this cycle
-        // because fifoRdPtr was set when startWrite was issued)
-        datTxShift := fifoRdData
-        fifoPopValid := True
-        datTxBitsLeft := 32
       }
 
       is(DataState.SENDING) {
@@ -813,6 +823,7 @@ case class SdNative(clkDivInit: Int = 99) extends Component with HasBusIo {
           dataCrcFlags := 0
           dataTimeoutCnt := 0
           dataState := DataState.SEND_START
+          nwrCnt := 0
         }
       }
       is(8) {

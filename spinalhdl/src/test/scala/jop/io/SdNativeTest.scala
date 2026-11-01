@@ -724,6 +724,104 @@ class SdNativeTest extends AnyFunSuite {
   }
 
   // ==========================================================================
+  // NWR: a write's start bit waits 2 clocks after the CMD24 response
+  // ==========================================================================
+
+  /** The SD spec's NWR is at least 2 clock cycles between the end bit of the
+    * CMD24 response and the start bit of the data block. A host that calls
+    * startWrite as soon as cmdBusy clears -- as the hardware SD exerciser does,
+    * and unlike the Java driver, which is slow enough never to -- got its
+    * start bit sampled on the very next rising edge (status item 65). */
+  test("SdNative_write_waits_nwr") {
+    simConfig.compile(SdNative(clkDivInit = 1)).doSim(seed = 42) { dut =>
+      implicit val cd: ClockDomain = dut.clockDomain
+      cd.forkStimulus(10)
+      SimTimeout(2000000)
+
+      initIo(dut)
+      cd.waitSampling(10)
+      ioWrite(dut, 8, 0)   // 1-bit
+      ioWrite(dut, 9, 16)  // 16-byte block
+      for (w <- 0 until 4) ioWrite(dut, 5, 0x5A5A0000L + w)
+
+      // R1 response to CMD24: start, dir 0, index 24, card status, CRC7, end
+      val content = mutable.ArrayBuffer[Int](0)
+      for (i <- 5 to 0 by -1) content += ((24 >> i) & 1)
+      for (i <- 31 to 0 by -1) content += ((0x00000900 >> i) & 1)
+      val crc = computeCrc7(content.toSeq)
+      val rsp = (Seq(0) ++ content ++ (6 to 0 by -1).map(i => (crc >> i) & 1) ++ Seq(1)).toArray
+      assert(rsp.length == 48)
+
+      // Rising-edge counter, the edge the card's end bit is sampled at, and
+      // the edge the host's data start bit is sampled at.
+      var rise = 0
+      var endBitDriven = false
+      var endEdge = -1
+      var startEdge = -1
+      fork {
+        var last = dut.io.sdClk.toBoolean
+        while (true) {
+          cd.waitSampling()
+          val cur = dut.io.sdClk.toBoolean
+          if (!last && cur) {
+            rise += 1
+            if (endBitDriven && endEdge < 0) endEdge = rise
+            if (startEdge < 0 && (dut.io.sdDat.writeEnable.toLong & 1) != 0
+                && (dut.io.sdDat.write.toLong & 1) == 0) startEdge = rise
+          }
+          last = cur
+        }
+      }
+
+      // Card: take the 48 command bits, wait NCR = 2 clocks, answer on
+      // falling edges, release CMD.
+      fork {
+        var last = dut.io.sdClk.toBoolean
+        var got = 0
+        while (got < 48) {
+          cd.waitSampling()
+          val cur = dut.io.sdClk.toBoolean
+          if (!last && cur && dut.io.sdCmd.writeEnable.toBoolean) got += 1
+          last = cur
+        }
+        var falls = 0
+        var idx = 0
+        while (idx <= rsp.length) {
+          cd.waitSampling()
+          val cur = dut.io.sdClk.toBoolean
+          if (last && !cur) {
+            falls += 1
+            if (falls > 2) {
+              if (idx < rsp.length) dut.io.sdCmd.read #= (rsp(idx) == 1)
+              else dut.io.sdCmd.read #= true
+              if (idx == rsp.length - 1) endBitDriven = true
+              idx += 1
+            }
+          }
+          last = cur
+        }
+      }
+
+      // Host: CMD24 with a response, then startWrite the moment cmdBusy clears
+      ioWrite(dut, 1, 0)
+      ioWrite(dut, 2, 24 | (1 << 6))
+      ioWrite(dut, 0, 1)
+      var timeout = 20000
+      while ((ioRead(dut, 0) & 1) != 0 && timeout > 0) timeout -= 1
+      assert(timeout > 0, "cmdBusy never cleared")
+      assert((ioRead(dut, 0) & 0x0C) == 0, "CMD24 response should be valid")
+      ioWrite(dut, 7, 2)
+
+      timeout = 20000
+      while (startEdge < 0 && timeout > 0) { cd.waitSampling(); timeout -= 1 }
+      assert(endEdge > 0 && startEdge > 0, s"endEdge=$endEdge startEdge=$startEdge")
+      assert(startEdge - endEdge >= 3,
+        s"data start bit sampled ${startEdge - endEdge} clock(s) after the response " +
+        s"end bit; NWR needs at least 2 idle clocks between them (>= 3)")
+    }
+  }
+
+  // ==========================================================================
   // Test 6: Card detect
   // ==========================================================================
 

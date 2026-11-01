@@ -18,6 +18,12 @@ import jop.io.SdNative
  *   INIT    — CMD0/CMD8/ACMD41/CMD2/CMD3/CMD7 initialization sequence
  *   T2: WRITE — fill FIFO, CMD24 write block 1000
  *   T3: READ  — CMD17 read block 1000, compare data
+ *
+ * A failing T2 or T3 prints the status register (or, for a T3 data mismatch,
+ * the first wrong word; for a short read, the FIFO occupancy). Until
+ * 2026-11-01 T2 checked only the data CRC flag and T3 only the FIFO contents,
+ * which T2 had just filled with the expected pattern: with a card that never
+ * answered, both passed (status item 65).
  */
 /** @param board  which board's PLL to instantiate -- see SdSpiExerciserTop.
   * @param clkMhz the system clock this design is built for. */
@@ -174,12 +180,13 @@ case class SdNativeExerciserTop(
       // T2: Write block
       val T2_LABEL, T2_FILL_FIFO = newElement()
       val T2_CMD24_ARG, T2_CMD24_IDX, T2_CMD24_SEND, T2_CMD24_WAIT = newElement()
-      val T2_START_WRITE, T2_WRITE_WAIT, T2_RESULT = newElement()
+      val T2_START_WRITE, T2_WRITE_WAIT, T2_RESULT, T2_FAIL_HEX, T2_FAIL_CRLF = newElement()
 
       // T3: Read block
       val T3_LABEL = newElement()
-      val T3_CMD17_ARG, T3_CMD17_IDX, T3_CMD17_SEND, T3_CMD17_WAIT = newElement()
-      val T3_START_READ, T3_READ_WAIT, T3_VERIFY, T3_VERIFY_SETTLE, T3_RESULT = newElement()
+      val T3_CMD17_ARG, T3_CMD17_IDX, T3_CMD17_SEND, T3_CMD17_WAIT, T3_ABORT = newElement()
+      val T3_START_READ, T3_READ_WAIT, T3_CHECK_OCC, T3_VERIFY, T3_VERIFY_SETTLE, T3_RESULT = newElement()
+      val T3_FAIL_HEX, T3_FAIL_CRLF = newElement()
 
       // Loop
       val LOOP_MSG, LOOP_HEX, LOOP_CRLF = newElement()
@@ -612,7 +619,7 @@ case class SdNativeExerciserTop(
       // T2: Write block
       // ================================================================
       is(S.T2_LABEL) {
-        testPass := True; fifoIdx := 0; verifyFail := False
+        testPass := True; fifoIdx := 0; verifyFail := False; dbgStatus := 0
         // Set block length to 512 bytes
         sdWrite(U(9, 4 bits), B(512, 32 bits))
         msgBase := 36; msgLen := 10; msgIdx := 0 // "T2:WRITE  "
@@ -646,7 +653,13 @@ case class SdNativeExerciserTop(
       is(S.T2_CMD24_WAIT) {
         sdRead(U(0, 4 bits))
         when(!sd.bus.rdData(0)) { // cmdBusy cleared
-          state := S.T2_START_WRITE
+          when(sd.bus.rdData(3)) { // cmdTimeout: no response, no write
+            testPass := False
+            dbgStatus := sd.bus.rdData
+            state := S.T2_RESULT
+          } otherwise {
+            state := S.T2_START_WRITE
+          }
         }
       }
 
@@ -660,8 +673,11 @@ case class SdNativeExerciserTop(
         // Poll status for dataBusy (bit 4) to clear
         sdRead(U(0, 4 bits))
         when(!sd.bus.rdData(4)) {
-          // Check for data CRC error (bit 5) when dataBusy clears
-          when(sd.bus.rdData(5)) { testPass := False }
+          // Data CRC error (bit 5) or data timeout (bit 6)
+          when(sd.bus.rdData(5) || sd.bus.rdData(6)) {
+            testPass := False
+            dbgStatus := sd.bus.rdData
+          }
           state := S.T2_RESULT
         }
       }
@@ -671,18 +687,28 @@ case class SdNativeExerciserTop(
           msgBase := 56; msgLen := 6; msgIdx := 0 // "PASS\r\n"
           retState := S.T3_LABEL; state := S.PRINT_MSG
         } otherwise {
-          msgBase := 62; msgLen := 6; msgIdx := 0 // "FAIL\r\n"
-          retState := S.T3_LABEL; state := S.PRINT_MSG
+          msgBase := 75; msgLen := 5; msgIdx := 0 // "FAIL "
+          retState := S.T2_FAIL_HEX; state := S.PRINT_MSG
         }
+      }
+      is(S.T2_FAIL_HEX) {
+        hexVal := dbgStatus; hexNib := 0
+        retState := S.T2_FAIL_CRLF; state := S.PRINT_HEX
+      }
+      is(S.T2_FAIL_CRLF) {
+        msgBase := 68; msgLen := 2; msgIdx := 0 // "\r\n"
+        retState := S.T3_LABEL; state := S.PRINT_MSG
       }
 
       // ================================================================
       // T3: Read block
       // ================================================================
+      // startRead BEFORE CMD17, as the Java driver does: the card may start
+      // the data block before its response to CMD17 has finished.
       is(S.T3_LABEL) {
-        testPass := True; fifoIdx := 0; verifyFail := False
+        testPass := True; fifoIdx := 0; verifyFail := False; dbgStatus := 0
         msgBase := 46; msgLen := 10; msgIdx := 0 // "T3:READ   "
-        retState := S.T3_CMD17_ARG; state := S.PRINT_MSG
+        retState := S.T3_START_READ; state := S.PRINT_MSG
       }
 
       // CMD17: READ_SINGLE_BLOCK (block 1000)
@@ -701,27 +727,51 @@ case class SdNativeExerciserTop(
       is(S.T3_CMD17_WAIT) {
         sdRead(U(0, 4 bits))
         when(!sd.bus.rdData(0)) { // cmdBusy cleared
-          state := S.T3_START_READ
+          when(sd.bus.rdData(3)) { // cmdTimeout: no data will come
+            testPass := False
+            dbgStatus := sd.bus.rdData
+            state := S.T3_ABORT
+          } otherwise {
+            state := S.T3_READ_WAIT
+          }
         }
+      }
+
+      // Stop the data receiver that is waiting for a block
+      is(S.T3_ABORT) {
+        sdWrite(U(0, 4 bits), B(2, 32 bits))
+        state := S.T3_RESULT
       }
 
       // Start data read
       is(S.T3_START_READ) {
         // Write reg 7 bit 0 = startRead
         sdWrite(U(7, 4 bits), B(1, 32 bits))
-        state := S.T3_READ_WAIT
+        state := S.T3_CMD17_ARG
       }
       is(S.T3_READ_WAIT) {
         // Poll status for dataBusy (bit 4) to clear
         sdRead(U(0, 4 bits))
         when(!sd.bus.rdData(4)) {
-          // Check for data CRC error (bit 5)
-          when(sd.bus.rdData(5)) {
+          // Data CRC error (bit 5) or data timeout (bit 6)
+          when(sd.bus.rdData(5) || sd.bus.rdData(6)) {
             testPass := False
+            dbgStatus := sd.bus.rdData
           }
-          fifoIdx := 0
-          state := S.T3_VERIFY
+          state := S.T3_CHECK_OCC
         }
+      }
+
+      // All 128 words must have arrived: the FIFO memory still holds T2's
+      // pattern, so a read that received nothing would otherwise verify.
+      is(S.T3_CHECK_OCC) {
+        sdRead(U(6, 4 bits))
+        when(sd.bus.rdData(15 downto 0) =/= B(128, 16 bits) && testPass) {
+          testPass := False
+          dbgStatus := sd.bus.rdData
+        }
+        fifoIdx := 0
+        state := S.T3_VERIFY
       }
 
       // Read and verify 128 words from FIFO
@@ -730,6 +780,7 @@ case class SdNativeExerciserTop(
         sdRead(U(5, 4 bits)) // Read from data FIFO (addr 5) — pops FIFO
         val expected = (fifoIdx.resize(32) * U(0x01010101L, 32 bits)).resize(32).asBits ^ B(0xDEADBEEFL, 32 bits)
         when(sd.bus.rdData =/= expected) {
+          when(testPass) { dbgStatus := sd.bus.rdData } // first wrong word
           testPass := False
         }
         fifoIdx := fifoIdx + 1
@@ -751,9 +802,17 @@ case class SdNativeExerciserTop(
           msgBase := 56; msgLen := 6; msgIdx := 0 // "PASS\r\n"
           retState := S.LOOP_MSG; state := S.PRINT_MSG
         } otherwise {
-          msgBase := 62; msgLen := 6; msgIdx := 0 // "FAIL\r\n"
-          retState := S.LOOP_MSG; state := S.PRINT_MSG
+          msgBase := 75; msgLen := 5; msgIdx := 0 // "FAIL "
+          retState := S.T3_FAIL_HEX; state := S.PRINT_MSG
         }
+      }
+      is(S.T3_FAIL_HEX) {
+        hexVal := dbgStatus; hexNib := 0
+        retState := S.T3_FAIL_CRLF; state := S.PRINT_HEX
+      }
+      is(S.T3_FAIL_CRLF) {
+        msgBase := 68; msgLen := 2; msgIdx := 0 // "\r\n"
+        retState := S.LOOP_MSG; state := S.PRINT_MSG
       }
 
       // ================================================================
