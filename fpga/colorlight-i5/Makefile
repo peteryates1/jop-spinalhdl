@@ -65,9 +65,10 @@ LOADER_BRD := colorlight-i5
 # DAPLink CDC serial. Addressed by serial number, not /dev/ttyACMn: the ACM
 # numbers renumber across replugs and there are other CMSIS-DAP/CDC devices on
 # this host (see fpga/scripts/usb_serial_map). Interface -if01 is the CDC data
-# endpoint; -if00 is the HID debug endpoint openFPGALoader uses.
-TTY        := $(shell $(ROOT)/fpga/scripts/usb_serial_map --by-id i5 2>/dev/null \
-                || echo /dev/serial/by-id/usb-ARM_DAPLink_CMSIS-DAP_07000001002700424e00000256304750a5a5a5a597969908-if01)
+# endpoint; -if00 is the HID debug endpoint openFPGALoader uses. Empty when the
+# DAPLink is not attached: the serial itself is the setup's (setup/consoles.toml),
+# so there is no hardcoded fallback.
+TTY        := $(shell $(ROOT)/fpga/scripts/usb_serial_map --by-id i5 2>/dev/null)
 BAUD       := 1000000
 # THE APP COMES FROM THIS CONFIG'S OWN JAVA TREE, like every other board.
 # It used to read $(ROOT)/java/apps/... -- the legacy in-tree path -- which is
@@ -163,6 +164,7 @@ program: $(BUILD)/$(TOP).bit
 # The FPGA must be reprogrammed before each download -- the serial bootloader
 # only listens once, right after configuration.
 download:
+	@[ -n "$(TTY)" ] || { echo "console 'i5' is not attached (fpga/scripts/usb_serial_map --by-id i5)" >&2; exit 1; }
 	python3 $(ROOT)/fpga/scripts/download.py -e $(APP) $(TTY) $(BAUD)
 
 # Removes the whole configuration -- RTL, place-and-route, bitstream. Before the

@@ -25,6 +25,11 @@
 # PROVED RED the same day four ways: an alias added back to a board design, an
 # instance alias missing from the registry, a CYC5000 unit with no loader (the
 # Quartus fallback), and the instances no-parse tripwire.
+# MOVED 2026-11-01 (status item 173): the registry is read from the setup
+# through jop_setup.py instead of from jtag_probe_map's heredoc. PROVED RED the
+# same day on a setup copy with the `wukong` probe deleted (named the
+# jop-wukong-1 instance) and with its kind changed to usb-blaster (named the
+# tool mismatch).
 # If you change this guard, re-prove it: a guard that cannot fail is worse
 # than none, because it gets quoted as evidence.
 # ---------------------------------------------------------------------------
@@ -54,27 +59,30 @@
 # never "the config is wrong". The CYC5000's read as "Read ID failed / SPI
 # flash write failed", i.e. dead hardware. It was not.
 #
-# jtag_probe_map is the registry of what is PHYSICALLY attached and what kind
-# of probe each board has. This guard is the join between that physical truth
-# and Board.scala's declarations.
+# The probe registry (setup/probes.toml since 2026-11-01, jtag_probe_map's own
+# heredoc before) records what is PHYSICALLY attached and what kind of probe
+# each unit has. This guard is the join between that physical truth and the
+# instances' declarations.
 # ---------------------------------------------------------------------------
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2
 
 BOARD_SCALA=${BOARD_SCALA:-spinalhdl/src/main/scala/jop/config/Board.scala}
 INSTANCES=${INSTANCES:-spinalhdl/src/main/scala/jop/setup/Instances.scala}
-REGISTRY=${REGISTRY:-fpga/scripts/jtag_probe_map}
+# The probe registry is the setup's (status item 173): setup/probes.toml, or
+# $JOP_SETUP/probes.toml -- point JOP_SETUP at a copy to prove this red.
+REGISTRY="$(python3 fpga/scripts/jop_setup.py where 2>/dev/null || echo setup)/probes.toml"
 
-for f in "$BOARD_SCALA" "$INSTANCES" "$REGISTRY"; do
+for f in "$BOARD_SCALA" "$INSTANCES"; do
   [ -r "$f" ] || { echo "  FAIL cannot read $f"; exit 2; }
 done
+PROBES=$(python3 fpga/scripts/jop_setup.py table probes) || {
+  echo "  FAIL cannot read the probe registry ($REGISTRY)"; exit 2; }
 
 # --- probe registry: alias -> kind ----------------------------------------
-# The registry's BOARDS heredoc is `alias|serial|kind|description`. Read it as
-# data rather than sourcing the script, which would run its argument parsing.
+# `alias|serial|kind|description` rows, one per probe.
 kind_of() {
-  command sed -n '/^BOARDS=\$(cat <</,/^EOF$/p' "$REGISTRY" |
-    command grep -E "^$1\|" | cut -d'|' -f3
+  command grep -E "^$1\|" <<<"$PROBES" | cut -d'|' -f3
 }
 
 # Which tool can drive which kind. `usb-blaster` is the odd one out: the

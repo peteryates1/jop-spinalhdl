@@ -46,8 +46,9 @@ One entry per physical unit:
 - **fitted**: for each device of its boards, fitted, not fitted, or fitted but
   broken. A preset built for the instance may use only fitted devices;
   anything else fails at elaboration.
-- **probe** and **console**: the serials that `jtag_probe_map` and
-  `usb_serial_map` hold by hand today.
+- **probe** and **console**: aliases of entries in `setup/probes.toml` and
+  `setup/consoles.toml`, which hold the serials (read by `jtag_probe_map` and
+  `usb_serial_map`).
 - **FPGA grade**: it belongs to the physical chip, so `withGrade` belongs here
   (one i9+ may be -1, another -2). The default comes from the module design.
 - **DNA** (optional, Xilinx only): an extra check that a probe reaches the
@@ -214,9 +215,9 @@ Each step is test-first.
     prints it. That works today, but only for scripts.
 
 - **The setup layer's form** (item 173): a Scala package, or a data file that
-  Scala and the Python tools both read. TOML would need no new package in
-  Python 3.13 but one small library in Scala. Step 1 uses a package so the
-  choice stays open.
+  Scala and the Python tools both read. Answered 2026-11-01 (user): TOML files
+  in `setup/` (or `$JOP_SETUP`), read by `fpga/scripts/jop_setup.py`; the
+  probes and consoles moved first, and the instances follow.
 - **Where the per-instance Java images go** in the build tree.
 - **Scope of step 1:** only the two Atari-800 units first, or every board's
   unit facts at once. Answered: the two units first, the rest on 2026-10-31.

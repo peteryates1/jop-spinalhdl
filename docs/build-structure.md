@@ -80,7 +80,10 @@ wrong, and a wrong baud reads as a *dead board*, not as a wrong number.
 
 **Probes and serial ports are resolved by SERIAL, never by path.** `ttyUSB3` and
 `ttyACM0` renumber on every replug, and more than one probe of each kind is
-attached here. Use the alias:
+attached here. Use the alias. The aliases and their serials are the lab's
+setup, not the tools': `setup/probes.toml` and `setup/consoles.toml`
+(`JOP_SETUP` names another directory), and `check-setup-layer.sh` fails on a
+serial written anywhere else.
 
 ```bash
 fpga/scripts/jtag_probe_map              # list attached probes and their boards

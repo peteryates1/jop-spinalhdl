@@ -6,27 +6,15 @@
 # 1-9/busdev 1:19/ttyUSB3. Nothing here or in a board Makefile should hardcode
 # them. Companion to jtag_probe_map, which does the same job for JTAG probes.
 #
-# MOST devices are resolved by USB SERIAL NUMBER. Two are not:
+# WHICH CONSOLES EXIST IS THIS LAB'S FACT, NOT THIS TOOL'S. The aliases and
+# the USB identity of each are the setup layer (status item 173):
+# setup/consoles.toml, read through fpga/scripts/jop_setup.py (JOP_SETUP names
+# another lab's setup). Before 2026-11-01 they were a heredoc in this file.
 #
-#   The Wukong and the A-E115FB both use a CH340 (1a86:7523) and NEITHER has an
-#   iSerialNumber at all. That is also why mapping them into a VM by serial
-#   fails -- there is nothing to key on. They are separable only because their
-#   iProduct strings happen to differ:
-#
-#     Wukong     "USB Serial"     bcdDevice 0232
-#     A-E115FB   "USB2.0-Serial"  bcdDevice 0254
-#
-#   Established 2026-08-22 by ELIMINATION -- unplug one board, see which device
-#   survives -- not by reading descriptors. Guessing from bcdDevice is
-#   unreliable: "0254 is the newer part and the Wukong is documented as a
-#   CH340N, so 0254 is the Wukong" was wrong, exactly backwards.
-#
-#   This is luck, not design. A third CH340 reporting either string collides on
-#   the same by-id name, and then this stops working; the fix at that point is a
-#   udev rule keyed on the physical port (KERNELS==).
-#
-# Same species as the two USB-Blasters, whose product strings also differ
-# ("USB-Blaster" vs "USB Blaster") -- see jtag_probe_map's header.
+# MOST devices are resolved by USB SERIAL NUMBER. An adapter with no
+# iSerialNumber (a CH340, typically) can only be told apart by its iProduct
+# string, which works only while no two attached adapters share one; past that
+# the fix is a udev rule keyed on the physical port (KERNELS==).
 #
 # A SERIAL NUMBER IS NOT ENOUGH ON ITS OWN when one device exposes several
 # ports. Each dirtyJtag Pico presents TWO CDC ACM ports, and a CDC port costs
@@ -35,6 +23,8 @@
 # every such entry pins an interface number and resolve_alias REFUSES a match
 # that is not unique rather than picking the first.
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<'USAGE'
@@ -70,26 +60,9 @@ USAGE
 }
 
 # --- board registry ------------------------------------------------------
-# alias|vid:pid|product|serial|iface|description
-# Empty product/serial means "do not care". Every entry below was verified
-# against this host; do not add one from a datasheet.
-BOARDS=$(cat <<'EOF'
-wukong|1a86:7523|USB Serial||00|QMTECH Wukong -- on-board CH340N at E3/F3. THE DEFAULT CONSOLE for every single-system build, DDR3 included, since 2026-08-23 (JopConfig.wukongConsolePart). A build generated with `uart=PICO_UART0` comes out of wukong-pico-0 instead, and the DUAL builds always do (one CH340N cannot serve two systems). Check the build's own fit_summary.txt: its Console: line names the connector
-ae115fb|1a86:7523|USB2.0-Serial||00|A-E115FB EP4CE115 + 1GB DDR2 -- the board's own CH340, not its Pico
-wukong-pico-0|1209:c0ca||0B383D0435D957EC|01|Wukong's on-board Pico 2 W, FIRST CDC (if00 control + if01 data) = Pico uart0, J11.4/.3 -> GP13/GP12. Used by builds generated with `uart=PICO_UART0`, and by the dual build's SDR half. VERIFIED on hardware 2026-08-23 (0xAA ready at 1 Mbaud, then DoAll 66/66 on a 4-core DDR3 build, which defaulted here at the time)
-wukong-pico-1|1209:c0ca||0B383D0435D957EC|03|Wukong's on-board Pico 2 W, SECOND CDC (if02 control + if03 data) = Pico uart1, J11.2/.1 -> GP5/GP4. For the DUAL build's DDR3 half only -- a single-system DDR3 build comes out of wukong-pico-0, not here. VERIFIED 2026-09-23 with the wukong-uart-loopback jig: echoes cleanly at 115200 and at 2 Mbaud, and still echoes with the J10 candidate pairs driven to a constant, which is what proves the Pico is jumpered to J11 (H4/F4/A4/A5) and not J10 (D5/G5/G7/G8)
-i5|0d28:0204||07000001002700424e00000256304750a5a5a5a597969908|01|Colorlight i5 ext board DAPLink CDC (if00 is the HID debug endpoint)
-cyc5000|0403:6010||ARA30135|01|Arrow CYC5000 on-board Arrow USB Blaster -- console is if01, if00 is JTAG
-alchitry|0403:6010|Alchitry Au V2||01|Alchitry Au V2 -- if01 is the UART, if00 is JTAG. The product string is REQUIRED: 0403:6010 is shared with the CYC5000's Arrow blaster, and matching on vid:pid alone picks whichever enumerated first
-xc7a100t-pico-0|1209:c0ca||E662C876C3506A26|01|QMTECH XC7A100T + DB_FPGA V5, its Pico's FIRST CDC (if00 control + if01 data). THIS IS THE CONSOLE -- verified on hardware 2026-08-22 at 2 Mbaud (0xAA ready pattern, then a HelloWorld download)
-ep4cgx150|10c4:ea60||de4cebf79bd1eb11910b7b54e93fd3f1|00|QMTECH EP4CGX150 + SDR -- its CP2102N. Unlike the CH340 boards this has a real unique serial, so it needs no product-string trick. Runs at 2 Mbaud
-xc7a100t-pico-1|1209:c0ca||E662C876C3506A26|03|QMTECH XC7A100T + DB_FPGA V5, its Pico's SECOND CDC (if02 control + if03 data). NOT the console -- silent at every baud when the board is running. Registered so the pair is addressable, not because anything uses it
-colorlight-db-0|1209:c0ca||4636323337051B1B|01|fpga-db-colorlight-i5 base board carrying the i9+, RP2040-STAMP FIRST CDC = stamp uart1 on GPIO4 (TX) / GPIO5 (RX) -> i9+ balls Y21 / AB21 (SODIMM 155/153). THE JOP CONSOLE. The stamp is socketed: since 2026-10-26 this is the second stamp (see colorlight-db in jtag_probe_map). VERIFIED 2026-10-26 by RP2040 internal loopback (UARTCR.LBE over SWD, 4096 B exact at 115200 and 1 Mbaud) and through the FPGA (JOP download + DoAll 68/68 at 1 Mbaud)
-colorlight-db-1|1209:c0ca||4636323337051B1B|03|fpga-db-colorlight-i5 base board carrying the i9+, RP2040-STAMP SECOND CDC = stamp uart0 on GPIO16 (TX) / GPIO17 (RX) -> i9+ balls P14 / R14 (SODIMM 127/125). Loopback-verified like colorlight-db-0 (2026-10-26); not yet through the FPGA
-colorlight-db-i5-0|1209:c0ca||4636323337058419|01|fpga-db-colorlight-i5 base board, SECOND unit, carrying the i5: RP2040-STAMP FIRST CDC = stamp uart1 on GPIO4 (TX) / GPIO5 (RX) -> i5 balls F2 / E1 (SODIMM 155/153). THE JOP CONSOLE. VERIFIED 2026-10-27 by RP2040 internal loopback (UARTCR.LBE over SWD: 4096 B at 115200 and 65536 B at 1 Mbaud exact, twice -- with VBUS cut, then on a normal cable after the J4 fix) and through the FPGA (the i5 Ethernet bring-up's console)
-colorlight-db-i5-1|1209:c0ca||4636323337058419|03|fpga-db-colorlight-i5 base board, SECOND unit, carrying the i5: RP2040-STAMP SECOND CDC = stamp uart0 on GPIO16 (TX) / GPIO17 (RX) -> i5 balls A18 / C17 (SODIMM 127/125). Loopback-verified like colorlight-db-i5-0 (2026-10-27); not yet through the FPGA
-EOF
-)
+# alias|vid:pid|product|serial|iface|description, from the setup
+# (setup/consoles.toml). An empty product, serial or iface means "do not care".
+BOARDS=$(python3 "$SCRIPT_DIR/jop_setup.py" table consoles)
 
 list_boards() {
   printf '%-14s %-9s %-16s %-18s %-4s %s\n' ALIAS VID:PID PRODUCT SERIAL IF DESCRIPTION

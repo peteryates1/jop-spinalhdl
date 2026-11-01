@@ -73,7 +73,7 @@ smp-program:
 #      (substitute the real port path; fpga/scripts/jtag_probe_map shows it).
 #      Leave interface 1 bound — that one is the UART.
 #   Then `pkill jtagd` so the daemon rescans. Verified 2026-08-07: jtagconfig
-#   then lists "Arrow-USB-Blaster [ARA30135-TEI0050]" with device 5CE(BA2|FA2).
+#   then lists "Arrow-USB-Blaster [<serial>-TEI0050]" with device 5CE(BA2|FA2).
 #
 # openFPGALoader will not take a .sof for SRAM programming ("please use rbf or
 # svf file"), so the sof is converted with quartus_cpf first.

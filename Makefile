@@ -132,7 +132,9 @@ check-build:
 	@.github/scripts/check-no-legacy-rtl-path.sh
 	@.github/scripts/check-no-intree-jop-path.sh
 	@.github/scripts/check-probe-selection.sh
+	@.github/scripts/check-setup-layer.sh
 	@python3 fpga/scripts/test_hw_verify.py
+	@python3 fpga/scripts/test_jop_setup.py
 	@python3 fpga/scripts/test_check_clk_ip.py
 
 help:

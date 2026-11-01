@@ -75,7 +75,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 34. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 35. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 36. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated: probe and console serials, cables, host toolchain paths and the network identity live in generic tools and flow defaults. The board designs are clean since 2026-10-31 (every unit is a board instance); no new setup facts go into those layers
+37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated: the instances are Scala, 13 board Makefiles name unit aliases, and flow defaults name host toolchain paths. Since 2026-11-01 the setup is TOML in `setup/`, and the probe and console serials are there (step 1); no new setup facts go into the other layers
 38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
 39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
 40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -4221,11 +4221,38 @@ cannot describe a two-system preset (`wukongDualIndependent`, `wukongDualSmp`
 die on `CORES=`), so hw_verify has never run them. Only the MAX1000 and the
 generic EP4CE6 have no unit; neither has Ethernet.
 
-**Next:** the remaining setup facts are the serial registries
-(`jtag_probe_map`, `usb_serial_map`) and the host toolchain paths. Decide the
-setup layer's form for them -- the Scala package the instances are in, or a
-data file that Scala and the Python tools both read (TOML needs no new package
-in Python 3.13, one small library in Scala) -- guarded so they cannot creep back.
+**Form decided 2026-11-01 (user): TOML files in `setup/`** at the
+repository root (`JOP_SETUP` names another directory), read only through
+`fpga/scripts/jop_setup.py`: Python imports it, bash and Make run it. Chosen
+over a Scala package because Make, bash, Python and Scala all need these
+facts, a lookup must not start sbt, and the directory can move to a private
+repository as it is.
+
+**Step 1 done 2026-11-01: probes and consoles.** `setup/probes.toml` (11
+probes, with the expected IDCODEs folded in) and `setup/consoles.toml` (14
+consoles) replace the heredoc tables in `jtag_probe_map` and `usb_serial_map`,
+and take the lab history out of their comments. The reader refuses what bash
+would misread without a sound: a `|` inside a field, an unknown key (a
+misspelt `idcode` would drop a board's chain check), an unknown probe kind,
+and an IDCODE that is not eight hex digits. `test_jop_setup.py` (16 tests) was
+written first and red against a reader that only joined fields. Every
+registry answer that does not touch a chain -- `--boards`, both listings,
+`--serial`/`--cable`/`--busdev` for 12 aliases, `--tty`/`--by-id` for 15 --
+was identical before and after; only the usage text changed. `--assert-device`
+read the EP4CGX150 (Quartus) and the XC7A100T (openFPGALoader) through the new
+table. Guard: `check-setup-layer.sh` fails on any setup serial outside
+`setup/` and the records. It was red first on the two tools and on two board
+Makefiles (a hardcoded by-id fallback in `colorlight-i5`, a serial in a
+`cyc5000-sdram` comment). `check-probe-selection.sh` now reads the registry
+through the setup; re-proved red two ways.
+
+**Next:** step 2, the instances: `jop.setup.Instances` becomes
+`setup/units.toml`, read by Scala with one small TOML library, and
+`InstanceTest` holds every preset's descriptor unchanged. Step 3: the 13 board
+Makefiles that set `BOARD_ALIAS`/`CONSOLE_ALIAS` -- unit facts in the hardware
+layer, duplicating the instances -- take them from the unit through
+`jop_setup.py`. Step 4: the host's toolchain paths (the `/opt` defaults in
+about 20 Makefiles and scripts) go to `setup/host.toml`.
 
 <a id="item-174"></a>
 

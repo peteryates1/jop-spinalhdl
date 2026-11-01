@@ -27,8 +27,8 @@
 #             enumerated first -- and more than one is attached to this host.
 #             Resolved by SERIAL like every other flow, with a fallback so the
 #             target still runs where jtag_probe_map has no entry yet. ADD A
-#             max1000 ENTRY to fpga/scripts/jtag_probe_map when the board is
-#             next connected.
+#             max1000 PROBE to setup/probes.toml (and a unit to the instances)
+#             when the board is next connected.
 #
 # CONVERTED 2026-08-29. The note here said the conversion "needs a MAX1000
 # BoardDesign" -- stale: max1000Sdram is a JopConfig preset, and JopConfig IS a

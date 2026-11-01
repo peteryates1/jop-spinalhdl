@@ -23,10 +23,13 @@
 #                    NOTE the patch covers dirtyJtag only -- the usb-blaster
 #                    driver still has the same bug.
 #
-# TWO BLASTERS ARE ATTACHED (since 2026-08-29). The level shifters arrived, and
-# a pico-usb-blaster now drives the EP4CGX150 while the Terasic stays on the
-# A-E115FB, so neither board needs the cable moved any more. Two blasters at
-# once means selection must be by USB ADDRESS, not by product name:
+# WHICH PROBES EXIST IS THIS LAB'S FACT, NOT THIS TOOL'S. The aliases, serials,
+# kinds and expected IDCODEs are the setup layer (status item 173):
+# setup/probes.toml, read through fpga/scripts/jop_setup.py (JOP_SETUP names
+# another lab's setup). Before 2026-11-01 they were a heredoc in this file.
+#
+# SEVERAL PROBES OF ONE KIND MAY BE ATTACHED, so selection is by USB address,
+# never by product name:
 #   - Quartus is fine. Always pass the PORT-QUALIFIED name from `--cable`
 #     ("USB-Blaster [1-6]"); a bare "USB-Blaster" takes the first product-string
 #     match. Board Makefiles should never hardcode the bare string -- the
@@ -34,30 +37,15 @@
 #   - openFPGALoader is NOT fine: the patch above covers dirtyJtag only, so its
 #     usb-blaster driver still ignores --busdev-num and grabs the first match.
 #     Use Quartus for usb-blaster cables until that is patched too.
-#   - Lucky break: the product strings differ ("USB-Blaster" vs "USB Blaster"),
-#     so the two are distinguishable even before the port path is considered.
-#     Do not lean on it -- --cable reads the product string from sysfs and
-#     appends the port path, which separates two probes of the SAME kind too.
 #
 # Companion to usb_serial_map, which does the same job for serial ports.
 set -euo pipefail
 
-# --- board registry ------------------------------------------------------
-# alias|serial|kind|description
-BOARDS=$(cat <<'EOF'
-terasic|91d28408|usb-blaster|Terasic USB-Blaster — a CABLE, not a board; on the EP4CGX150 from 2026-08-31, MOVED to the A-E115FB on 2026-10-12, and BACK to the EP4CGX150 on 2026-10-27, so `terasic` and `ep4cgx150` now resolve alike
-xc7a100t|E662C876C3506A26|pico|QMTECH XC7A100T + DB_FPGA V5. The RP2040 is ON the DB_FPGA V5 itself, so this alias names a BOARD and the serial is permanent. Full 16-char RP2040 serial: `serial_matches` is a bidirectional prefix test, so it still matches the 8 chars pico-usb-blaster reports, whereas an 8-char entry would also match a different Pico sharing that prefix
-ae115fb|e66440a2|usb-blaster|A-E115FB EP4CE115 + 1GB DDR2 — on the pico-usb-debug-jtag carrier's JTAG0 (J5) since 2026-10-27, swapped with the EP4CGX150's cable; Quartus shows the carrier as "USB Blaster" (space), and it configures this board in ~41 s. On the Terasic (2026-10-12 to 10-27) IDCODE scans passed 20/20 but the chain dropped mid-stream: a 5.2 Mbit BYPASS test failed 2 runs in 3 with TDO all ones, so every configuration failed. After the swap both cables passed 3/3, so it was that pairing or its seating, not either part. Its own level-shifted Pico blaster, e6616408, STOPPED WORKING on 2026-09-07: the symptom was cable enumerates, TDO empty, port re-enumerating, CH340 console opens but silent. The JTAG pins run from bank 1, whose VCCIO is jumper J2 (found at 2.5 V on 2026-10-12)
-ep4cgx150|91d28408|usb-blaster|QMTECH EP4CGX150 + SDR — on the Terasic since 2026-10-27 (swapped with the A-E115FB's cable; configures in ~10 s). From 2026-10-15 to 10-27 it was on the pico-usb-debug-jtag carrier's JTAG0 (J5): an RP2040 Pico running pico-usb-blaster BOARD_DEBUG_JTAG0, every line through an SN74LVC1T45 referenced to the target's VTREF (2.5 V here); Quartus shows it as "USB Blaster" (space). The carrier is a CABLE, not part of the board, like the Terasic. Its first bring-up was blocked by a solder bridge across R15 (GP11 DIR pull-down): DIR read 0.72 V and the outbound shifters ran B->A
-debugprobe|E6647C740343412F|cmsis-dap|Raspberry Pi Debug Probe (SWD, for flashing Picos)
-cyc5000|ARA30135|arrow-usb-blaster|Arrow CYC5000 (onboard Arrow USB Blaster TEI0050, FT2232H)
-i5|07000001002700424e|cmsis-dap|Colorlight i5 on the ext board (DAPLink, also the UART bridge)
-wukong|0B383D0435D957EC|pico|QMTECH Wukong XC7A100T (Pico 2 W: dirtyJtag, or USB-Blaster emulation under the atari800 supervisor firmware). A STANDALONE Pico W -- a cable, not part of the board -- so this alias names whatever it is currently plugged into, the way `terasic` does. Unplugging it and using it elsewhere silently retargets this alias
-colorlight-db|4636323337051B1B|pico|fpga-db-colorlight-i5 base board (netlist 2026-10-10) carrying the i9+: its RP2040-STAMP runs pico-dirtyJtag BOARD_COLORLIGHT_DB, JTAG on GPIO0-3. The stamp is SOCKETED, so this serial names a STAMP, and the board only while the stamp stays in it. Since 2026-10-26 it is the SECOND stamp: the first (4636323337058419, pins verified 2026-10-10 with no module fitted) went to the second base board, the one with the i5 (alias colorlight-db-i5), whose USB was faulty until 2026-10-27 (a VBUS-to-D- leak at J4, reworked and cleaned). This stamp VERIFIED here 2026-10-26: IDCODE 0362C093 5/5, and the i9+ bitstream loaded through it
-colorlight-db-i5|4636323337058419|pico|fpga-db-colorlight-i5 base board, its SECOND unit, carrying the i5 (ECP5). Its RP2040-STAMP is socketed and stays in this unit (user, 2026-10-27); it was the first unit's stamp until 2026-10-26, and runs that board's pico-dirtyJtag BOARD_COLORLIGHT_DB image (build-colorlight-pico), JTAG on GPIO0-3. The unit's USB was faulty until 2026-10-27 (VBUS-to-D- leak at J4, reworked and cleaned). VERIFIED 2026-10-27 through it: IDCODE 41111043 500/500, the i5's flash written (idle image), the RGMII bring-up loaded
-alchitry|000000|ftdi-xilinx|Alchitry Au V2 (XC7A35T + DDR3) — onboard FT2232H, programmed by Vivado hw_server (see fpga/alchitry-au). Shares vid:pid 0403:6010 with the CYC5000's Arrow blaster; the serial and product string are what separate them. fpga/alchitry-au-ddr3-test is a second PROJECT on this same board, not another board
-EOF
-)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# --- probe registry --------------------------------------------------------
+# alias|serial|kind|description, from the setup (setup/probes.toml)
+BOARDS=$(python3 "$SCRIPT_DIR/jop_setup.py" table probes)
 
 # vid:pid values we recognise as JTAG probes
 is_probe_id() {
@@ -102,19 +90,15 @@ Usage:
                                     scan the JTAG chain; fail unless the FPGA
                                     on it is the one <alias> expects
 
-Aliases: terasic, xc7a100t, ae115fb, ep4cgx150, debugprobe, cyc5000, i5, wukong, colorlight-db, colorlight-db-i5
+Aliases: see --boards. They are this lab's, in setup/probes.toml (or
+$JOP_SETUP/probes.toml).
 
 NOTE: an alias names whatever the SERIAL is attached to. A Pico is soldered to
 one board so its alias names that board; a standalone cable like the Terasic
 moves, so it is named for the cable and you pick the board by plugging it in.
 
-THE TWO ALTERA BOARDS SWAPPED CABLES on 2026-10-27: the Terasic drives the
-EP4CGX150, and JTAG0 of the pico-usb-debug-jtag carrier (a level-shifted
-pico-usb-blaster) drives the A-E115FB, whose chain the Terasic dropped
-mid-stream. The cables have moved five times since 2026-08-29, and this
-paragraph has lagged the table before. Trust
-the table, not this note.  The alias does imply the board. Keep running `--assert-device` anyway: two blasters
-are attached at once, and quartus_pgm EXITS 0 ON A BROKEN CHAIN, so a
+Keep running `--assert-device` before programming: several blasters may be
+attached at once, and quartus_pgm EXITS 0 ON A BROKEN CHAIN, so a
 powered-off board otherwise programs "successfully". It is a read-only chain
 scan and configures nothing; fpga/quartus.mk makes `program-sof` depend on it.
 
@@ -145,8 +129,8 @@ USAGE
 # unambiguous, and it separates the two boards that share this cable, which is
 # all this check has to do.
 #
-# alias|idcode|what it is.  idcode "?" = not yet recorded: the check then prints
-# the detected value and asks for it, rather than guessing.
+# alias|idcode|what it is, from the setup: a probe's `idcode` and `device` in
+# setup/probes.toml. A probe with no idcode is not checked.
 #
 # THE VALUE IS WHAT THE SCANNING TOOL PRINTS, and the two tools differ in what
 # they show, so the table stores each board's value as ITS backend reports it.
@@ -155,44 +139,9 @@ USAGE
 # masked one. Comparing tool output against a datasheet value would fail on a
 # working board.
 #
-# TWO BOARDS SHARE 03631093: the Wukong and the DB_FPGA V5 both carry an
-# XC7A100T. Each sits on its OWN dirtyJtag probe, and --busdev picks the probe;
-# the IDCODE then confirms the part on the far end is the one the flow expects.
-# It is the Altera pair that needed the IDCODE to separate boards, because those
-# two once shared a cable.
-#
-# WHAT THIS CHECK THEREFORE CANNOT CATCH. The two Picos are not equivalent: the
-# DB_FPGA V5 carries its RP2040 ON the board, so `xc7a100t` names a board and
-# cannot drift; the Wukong is driven by a STANDALONE Pico W, a cable that can
-# be unplugged and used elsewhere. Move that Pico W onto the DB_FPGA V5 and
-# `--assert-device wukong` still PASSES -- same part, same IDCODE -- while
-# pointing at the other board. Only the probe serial distinguishes them, and
-# both Picos report the same USB product string ("Pico Dirty JTAG"), so the
-# serial is the sole discriminator. This check proves the right PART is on the
-# far end of the chosen probe; it does not prove the probe is on the right
-# board.
-#
-# TWO BOARDS ARE DELIBERATELY ABSENT, because a recorded IDCODE would promise
-# a check that cannot run:
-#   alchitry  programmed through Vivado's hw_server, which neither backend
-#             below drives.
-#   cyc5000   quartus_pgm does not enumerate the Arrow USB Blaster at all --
-#             `quartus_pgm -l` on 18.1 and 25.1 lists only the two Altera
-#             blasters and never the Arrow FT2232H, so `-c "Arrow USB Blaster
-#             TEI0050 [1-10]"` returns "Programming hardware cable not
-#             detected" even with the board attached and enumerated on USB.
-#             Measured 2026-09-04; openFPGALoader has an arrow-usb-blaster
-#             cable that may work, and was not tried.
-DEVICES=$(cat <<'EOF'
-ae115fb|020F70DD|EP4CE115 (IDCODE shared with EP3C120 / 10CL120)
-ep4cgx150|028040DD|EP4CGX150 — Cyclone IV GX
-wukong|03631093|XC7A100T — Artix-7 (QMTECH Wukong)
-xc7a100t|03631093|XC7A100T — Artix-7 (QMTECH core board + DB_FPGA V5)
-i5|41111043|LFE5U-25 — ECP5
-colorlight-db|0362C093|XC7A50T — Artix-7 (Colorlight i9+ on the fpga-db-colorlight-i5 base board; an i5/i9 module would read differently)
-colorlight-db-i5|41111043|LFE5U-25 — ECP5 (Colorlight i5 on the second fpga-db-colorlight-i5 base board)
-EOF
-)
+# Which boards share an IDCODE, and which probes have none on purpose, is
+# recorded with the probes in setup/probes.toml.
+DEVICES=$(python3 "$SCRIPT_DIR/jop_setup.py" table devices)
 
 kind_for_alias() {
   local want="$1"
@@ -247,7 +196,8 @@ assert_device() {
     [ "$a" = "$want" ] && { expect="$i"; label="$d"; break; }
   done <<<"$DEVICES"
   if [ -z "$expect" ]; then
-    echo "no expected IDCODE recorded for '$want' -- nothing to check" >&2; return 0
+    echo "no expected IDCODE recorded for '$want' -- nothing to check" >&2
+    echo "(give its probe an idcode in $(python3 "$SCRIPT_DIR/jop_setup.py" where)/probes.toml)" >&2; return 0
   fi
 
   # NON-ALTERA BOARDS SCAN WITH openFPGALoader. Same contract as the Quartus
@@ -318,11 +268,6 @@ assert_device() {
     return 1
   fi
   found=${found^^}
-  if [ "$expect" = "?" ]; then
-    echo "IDCODE for '$want' is not recorded yet. Detected $found on '$cable'." >&2
-    echo "If that is the $label, add it to the DEVICES table in $0." >&2
-    return 1
-  fi
   if [ "$found" = "$expect" ]; then
     if [ "$attempt" -gt 1 ]; then
       # A cable needing retries is MARGINAL, not working. Saying so is the
