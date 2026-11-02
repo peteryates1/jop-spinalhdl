@@ -52,7 +52,7 @@ object FpgaFamily {
   case object CycloneIVE extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone IV E" ; override def pll = Some(AlteraAltpll(quartusFamilyName)) }
   case object CycloneV   extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "Cyclone V" }
   case object MAX10      extends FpgaFamily { val manufacturer = Manufacturer.Altera; override def memoryStyle = MemoryStyle.AlteraLpm(); override val quartusFamilyName = "MAX 10" ; override def pll = Some(AlteraAltpll(quartusFamilyName)) }
-  case object Artix7     extends FpgaFamily { val manufacturer = Manufacturer.Xilinx }
+  case object Artix7     extends FpgaFamily { val manufacturer = Manufacturer.Xilinx; override def pll = Some(XilinxClkWiz) }
   case object ECP5       extends FpgaFamily { val manufacturer = Manufacturer.Lattice; override def pll = Some(LatticeEcpPll) }
 }
 

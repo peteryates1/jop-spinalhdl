@@ -77,12 +77,14 @@ object Pll {
   }
 
   /** The PLL `d` defines, fed from `clock` (its reference) on `inputClock`,
-    * built by `family`'s builder; its outputs are handed out by role. */
-  def build(d: PllDefinition, family: FpgaFamily, clock: BoardClock, inputClock: Bool): PllResult = {
+    * built by `family`'s builder; its outputs are handed out by role. `reset`
+    * holds it in reset (active high), where the family's PLL takes one. */
+  def build(d: PllDefinition, family: FpgaFamily, clock: BoardClock, inputClock: Bool,
+            reset: Option[Bool]): PllResult = {
     val vendor = family.pll.getOrElse(throw new IllegalArgumentException(
       s"PLL ${d.module}: $family has no PLL builder yet, so its boards still declare their PLLs"))
     val spec   = d.spec(clock)
-    val clocks = vendor.instantiate(spec, d.module, d.instance, inputClock)
+    val clocks = vendor.instantiate(spec, d.module, d.instance, inputClock, reset)
     def out(r: PllRole): Option[Bool] =
       Some(spec.outputs.indexWhere(_.role == r)).filter(_ >= 0).map(clocks.outputs)
     PllResult(systemClk = out(PllRole.System), locked = clocks.locked, sdramClk = out(PllRole.Sdram),
@@ -95,9 +97,10 @@ object Pll {
     * that), and `locked` is the system clock's PLL's, so the reset waits on the
     * clock it releases, as with one PLL. Where none makes the system clock --
     * the A-E115FB's DDR2 design defines only its GMII PLL -- the first's. */
-  def build(ds: Seq[PllDefinition], family: FpgaFamily, assembly: SystemAssembly, inputClock: Bool): PllResult = {
+  def build(ds: Seq[PllDefinition], family: FpgaFamily, assembly: SystemAssembly, inputClock: Bool,
+            reset: Option[Bool] = None): PllResult = {
     require(ds.nonEmpty, "no PLLs to build")
-    val built = ds.map(d => build(d, family, assembly.clock(d.reference), inputClock))
+    val built = ds.map(d => build(d, family, assembly.clock(d.reference), inputClock, reset))
     def one(role: String, f: PllResult => Option[Bool]): Option[Bool] = built.flatMap(f(_)) match {
       case Seq()  => None
       case Seq(c) => Some(c)
@@ -121,7 +124,7 @@ object Pll {
     val clock = board.clocks.find(_.name == d.reference).getOrElse(throw new IllegalArgumentException(
       s"PLL ${d.module} takes ${d.reference}; board '${board.name}' offers " +
         board.clocks.map(_.name).mkString(", ")))
-    build(d, family, clock, inputClock)
+    build(d, family, clock, inputClock, None)
   }
 
   /** A PLL making only a system clock at `mhz` from `clock`: what a design on

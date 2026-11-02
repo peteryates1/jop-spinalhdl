@@ -159,7 +159,7 @@ class AlteraDesignPllTest extends AnyFunSuite {
       m <- JopConfig.getClass.getMethods.toSeq
       if m.getParameterCount == 0 && m.getReturnType == classOf[JopConfig]
       cfg = m.invoke(JopConfig).asInstanceOf[JopConfig]
-      if cfg.fpgaFamily.pll.exists(_.generatedWithVerilog)
+      if cfg.fpgaFamily.pll.exists(_.isInstanceOf[AlteraAltpll])
     } yield (m.getName, cfg)
     val names = onAltpll.map(_._1)
     assert(names.contains("ae115fbDdr2Eth") && names.contains("ep4cgx150DbV5Eth") &&

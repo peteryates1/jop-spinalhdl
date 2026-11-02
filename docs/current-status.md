@@ -4562,6 +4562,26 @@ predates this step. On `jop-ae115fb-1`: DoAll 68/68; NetTest linked at
 1000M, took a DHCP lease, answered ping 10/10 and UDP and TCP echo, and passed
 `net_echo_check.py`'s three checks. The board is parked in its handshake.
 
+**Step 8a, Xilinx's clk_wiz (2026-11-02): the builder.** Artix-7 builds the
+PLLs its designs define (`XilinxClkWiz`); no design uses it yet. `generate`
+writes the IP's definition, a Tcl file that creates the clk_wiz, for the
+Vivado flow to source in the build that uses it. Its configuration is the
+hand-written scripts' (held by `XilinxClkWizTest`), with outputs named by role
+(`clk_sys`, `clk_sdram`, `clk_eth`, `clk_mig_sys`, `clk_mig_ref`) and one reset
+convention (`reset`, active high). The definition reads back the MMCM Vivado
+chose and refuses any output further from its request than the design allows:
+an output is exact unless it states a tolerance (`PllOutput.tolerancePpm`), and
+its frequency may be fractional, for MIG's 97.787 MHz. Run through Vivado
+2025.2, the item-164 split (80 MHz from 25 beside 125) is refused at 79.927 MHz,
+912 ppm off. Every validated shape gets the hand-made IPs' MMCM settings: M 20
+for SDR and DDR3 at 100 MHz, M 16 and -85.5 deg at 80, M 40 for the i9+ at 50.
+One generated IP synthesised in a non-project session (`synth_ip`). The
+Ddr3_366 MIG clocks cannot be exact from 50 MHz (97.826 and 200.893 MHz), so
+those designs will state tolerances. A PLL builder may take a reset now; ECP5
+and ALTPLL refuse one rather than drop it. Next (8b): the Wukong's designs
+define their PLLs, the flows source the definitions (`JOP_PLL_TCL`), and the
+create-ip scripts, per-frequency IP roots and `check_clk_ip.py` go.
+
 **What is left:** the setup layer is done. Every fact the 2026-10-28 list
 put in the wrong layer -- the board designs' aliases, the serial registries,
 the network identity and the host's paths -- is in `setup/`, and the guard

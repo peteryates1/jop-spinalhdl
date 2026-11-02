@@ -19,7 +19,7 @@ object PllRole {
 }
 
 /**
- * One PLL output: what it is for, how fast, and at what phase.
+ * One PLL output: what it is for, how fast, at what phase, and how exactly.
  *
  * A phase is an angle or a delay, and they are different statements. An angle
  * stays the same fraction of a cycle when the frequency changes; a delay stays
@@ -28,20 +28,37 @@ object PllRole {
  * delay makes no measurable difference there, so it was kept rather than
  * re-derived per clock (DramPllGen, 2026-08). Each states the one it means.
  *
- * @param phaseDeg degrees, positive = later
- * @param phasePs  picoseconds, positive = later; at most one of the two
+ * The frequency is in megahertz and need not be whole: the Xilinx MIG
+ * dictates its input clock from a table, 97.787 MHz for a 2727 ps memory
+ * period (MigProfile.Ddr3_366).
+ *
+ * The TOLERANCE is the design's statement of how far the clock it gets may be
+ * from the one it asks for. Exact by default: a system clock off by a little
+ * detunes the UART and the timers, an SDRAM clock off by a little drifts
+ * through the system clock (status item 164), and GMII allows 100 ppm. Only
+ * a clock whose user takes what it is given says otherwise -- MIG's input,
+ * which one VCO cannot make exactly beside its 200 MHz reference. A builder
+ * whose counters always make the ratio exactly (ALTPLL) meets any tolerance;
+ * one that picks the nearest it can (clk_wiz) is held to it.
+ *
+ * @param phaseDeg     degrees, positive = later
+ * @param phasePs      picoseconds, positive = later; at most one of the two
+ * @param tolerancePpm how far the made frequency may be from `mhz`, in ppm
  */
-case class PllOutput(role: PllRole, mhz: Int, phaseDeg: Int = 0, phasePs: Int = 0) {
+case class PllOutput(role: PllRole, mhz: BigDecimal, phaseDeg: Int = 0, phasePs: Int = 0,
+                     tolerancePpm: Int = 0) {
   require(mhz > 0, s"$role output: frequency must be positive, got $mhz MHz")
   require(phaseDeg == 0 || phasePs == 0,
     s"$role output: a phase in degrees ($phaseDeg) or in picoseconds ($phasePs), not both")
+  require(tolerancePpm >= 0, s"$role output: a tolerance cannot be negative, got $tolerancePpm ppm")
 
   /** The phase as a delay at this output's frequency, in picoseconds. */
   def shiftPs: BigDecimal =
     if (phasePs != 0) BigDecimal(phasePs) else BigDecimal(phaseDeg) * 1000000 / mhz / 360
 
   def describe: String = s"$role $mhz MHz" + (
-    if (phasePs != 0) s" @ $phasePs ps" else if (phaseDeg != 0) s" @ $phaseDeg deg" else "")
+    if (phasePs != 0) s" @ $phasePs ps" else if (phaseDeg != 0) s" @ $phaseDeg deg" else "") + (
+    if (tolerancePpm != 0) s" (within $tolerancePpm ppm)" else "")
 }
 
 /**
@@ -56,8 +73,10 @@ case class PllOutput(role: PllRole, mhz: Int, phaseDeg: Int = 0, phasePs: Int = 
  * was the SYSTEM clock, so a design with no DRAM instantiated something called
  * `DramPll` (until 2026-11-02, status item 173).
  *
- * Three bugs trace to that: the Wukong's no-DRAM branch ties the clock wizard's
- * reset ASSERTED (each branch hand-wires its own reset), a `set_clock_groups`
+ * Three bugs trace to that: each branch hand-wires its own reset, and the
+ * Wukong's no-DRAM branch ties a port called `resetn` low -- deasserted only
+ * because that IP's reset is active HIGH under that name (the SDR IP's is
+ * active low), so the port's name says the opposite of what it does; a `set_clock_groups`
  * was discarded because the netlist said `dramPll` where the constraint said
  * `pll`, and a generated config under `build/` still reaches into `fpga/` for
  * the template.
@@ -71,7 +90,7 @@ case class PllSpec(inputMhz: Int, outputs: Seq[PllOutput]) {
   require(outputs.nonEmpty, "a PLL with no outputs is not a PLL")
 
   def of(role: PllRole): Option[PllOutput] = outputs.find(_.role == role)
-  def systemMhz: Option[Int] = of(PllRole.System).map(_.mhz)
+  def systemMhz: Option[BigDecimal] = of(PllRole.System).map(_.mhz)
 }
 
 /**

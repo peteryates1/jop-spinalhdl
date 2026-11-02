@@ -74,7 +74,8 @@ class BoardClockTest extends AnyFunSuite {
       "the ALTPLL builder writes inclk0_input_frequency from a design's definition, checked below through it",
     "spinalhdl/src/test/scala/jop/config/AlteraAltpllTest.scala" -> "the builder's test, asserting on what it writes",
     "spinalhdl/src/test/scala/jop/config/AlteraDesignPllTest.scala" -> "asserts on the generated PLLs' inputs",
-    "spinalhdl/src/test/scala/jop/config/BoardClockTest.scala" -> "this test")
+    "spinalhdl/src/test/scala/jop/config/BoardClockTest.scala" -> "this test",
+    "spinalhdl/src/test/scala/jop/config/XilinxClkWizTest.scala" -> "the clk_wiz builder's test, asserting on what it writes")
 
   private lazy val boards: Map[String, Board] =
     SystemAssembly.all.flatMap(_.boards).map(b => b.name -> b).toMap

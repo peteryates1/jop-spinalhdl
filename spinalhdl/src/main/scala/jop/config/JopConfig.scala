@@ -96,7 +96,7 @@ case class JopSystem(
   // clkFreq feeds the UART divider and the timers, so a PLL running the system
   // at another frequency detunes them -- which reads as a dead board.
   for (p <- plls; o <- p.outputs.find(_.role == PllRole.System))
-    require(BigDecimal(o.mhz) * 1000000 == clkFreq.toBigDecimal,
+    require(o.mhz * 1000000 == clkFreq.toBigDecimal,
       s"System '$name' is built for ${clkFreq.toBigDecimal / 1000000} MHz, " +
         s"but its PLL ${p.module} makes the system clock ${o.mhz} MHz")
   perCoreConfigs.foreach(pcc =>
