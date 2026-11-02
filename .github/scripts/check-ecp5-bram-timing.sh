@@ -66,7 +66,10 @@ for mk in $subjects; do
     *" $mk "*) printf '  %-44s declared (bring-up)\n' "$mk"; continue ;;
   esac
   printf '  %-44s ' "$mk"
-  db=$(make -C "$(dirname "$mk")" -p -n 2>/dev/null)
+  # A no-op goal: with the default one, a stale tree dry-runs its `$(MAKE)
+  # generate`, which prints a second database (seen 2026-11-02 -- every rule
+  # twice, and this guard failed on a correct flow).
+  db=$(make -C "$(dirname "$mk")" -p -n --eval '.jop-database: ;' .jop-database 2>/dev/null)
   if [ -z "$db" ]; then
     echo "FAIL (make could not read it)"; fail=1; continue
   fi
