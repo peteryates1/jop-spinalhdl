@@ -4430,8 +4430,13 @@ CLK25M and CLK100M; its presets and the DDR2 exerciser name CLK25M, and the
 exerciser's `clkMhz` now comes from that clock instead of a literal 25.
 
 Nothing built changes. The generated constraints of all 45 presets and the 7
-exerciser designs are identical before and after, except the A-E115FB
-designs' XDC clock period (20 -> 40 ns), a file its Quartus flow never reads.
+exerciser designs are identical before and after. The one difference was in
+an XDC the comparison made the Xilinx generator write for the A-E115FB
+designs (sys_clk 20 -> 40 ns) -- no flow writes one, since the A-E115FB is a
+Quartus board -- and the generators now refuse another vendor's part
+(GeneratedConstraintsTest, red first on exactly that XDC). That refusal also
+caught `ConnectorResolutionTest` reading the Altera preset `ep4cgx150DbFull`'s
+pins through the XDC generator; it reads the Quartus assignments now.
 The Verilog of `ep4cgx150Serial`, `wukongDdr3`, `colorlightI5Sdram`,
 `ae115fbDdr2` and `ae115fbDdr2Eth` is byte-identical, so the wrong 50 MHz
 never reached a bitstream. The A-E115FB board doc's "27 MHz DDR2 reference",
