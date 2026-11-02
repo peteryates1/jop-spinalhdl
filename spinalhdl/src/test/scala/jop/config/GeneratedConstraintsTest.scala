@@ -1,7 +1,7 @@
 package jop.config
 
 import org.scalatest.funsuite.AnyFunSuite
-import jop.generate.{ConstGenerator, TimingConstraints, QsfGenerator, QuartusProject, XdcGenerator}
+import jop.generate.{ConstGenerator, LpfGenerator, TimingConstraints, QsfGenerator, QuartusProject, XdcGenerator}
 import jop.system.JopTopVerilog
 
 /**
@@ -410,5 +410,28 @@ class GeneratedConstraintsTest extends AnyFunSuite {
           s"$name ($board): project script does not name ${cfg.entityName}")
       }
     }
+  }
+
+  // A generator writes ONE toolchain's constraints. Given another vendor's
+  // part it wrote them anyway: XdcGenerator turned the A-E115FB (Cyclone IV E,
+  // a Quartus board) into an XDC with a sys_clk. No flow asked it to -- each
+  // board Makefile runs its own vendor's generator -- but nothing refused it
+  // (status item 173, 2026-11-02).
+  test("each constraint generator refuses a design on another vendor's FPGA") {
+    val altera  = cfgOf("ae115fbDdr2")
+    val xilinx  = cfgOf("wukongDdr3")
+    val lattice = cfgOf("colorlightI5Sdram")
+    def refused(generator: String, d: BoardDesign)(f: => Any): Unit = {
+      val e = intercept[IllegalArgumentException](f)
+      assert(e.getMessage.contains(generator) && e.getMessage.contains(d.fpga.name), e.getMessage)
+    }
+    for (d <- Seq(altera, lattice)) refused("XdcGenerator", d)(XdcGenerator.generate(d))
+    for (d <- Seq(xilinx, lattice)) refused("QsfGenerator", d)(QsfGenerator.generate(d))
+    for (d <- Seq(xilinx, lattice)) refused("QsfGenerator", d)(QsfGenerator.pinAssignments(d))
+    for (d <- Seq(altera, xilinx))  refused("LpfGenerator", d)(LpfGenerator.generate(d))
+    // and each still writes its own
+    assert(XdcGenerator.generate(xilinx).nonEmpty)
+    assert(QsfGenerator.generate(altera).nonEmpty)
+    assert(LpfGenerator.generate(lattice).nonEmpty)
   }
 }

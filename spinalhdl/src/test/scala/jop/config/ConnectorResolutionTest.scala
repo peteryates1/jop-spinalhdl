@@ -1,7 +1,7 @@
 package jop.config
 
 import org.scalatest.funsuite.AnyFunSuite
-import jop.generate.XdcGenerator
+import jop.generate.{QsfGenerator, XdcGenerator}
 
 /**
  * REGRESSION TEST: connector-relative device pins must resolve to the FPGA pins
@@ -91,8 +91,15 @@ class ConnectorResolutionTest extends AnyFunSuite {
       "wukongSdram"      -> JopConfig.wukongSdram,
       "wukongFull"       -> JopConfig.wukongFull)
 
+    // Each preset's pins from its own toolchain's generator. ep4cgx150DbFull
+    // is an Altera preset, and until 2026-11-02 this read it through the XDC
+    // generator, which wrote Vivado constraints for any part.
+    def portPins(cfg: JopConfig): Map[String, String] = cfg.fpgaFamily.manufacturer match {
+      case Manufacturer.Altera => QsfGenerator.pinAssignments(cfg).map(a => a.verilogPort -> a.fpgaPin).toMap
+      case _                   => pins(XdcGenerator.generate(cfg))
+    }
     val clashes = presets.flatMap { case (name, cfg) =>
-      val byPin = pins(XdcGenerator.generate(cfg)).groupBy(_._2)
+      val byPin = portPins(cfg).groupBy(_._2)
       byPin.collect { case (pin, ports) if ports.size > 1 =>
         s"$name: ${ports.keys.toSeq.sorted.mkString(" and ")} both on $pin"
       }

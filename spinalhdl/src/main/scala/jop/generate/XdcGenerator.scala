@@ -21,6 +21,11 @@ object XdcGenerator {
 
   /** Generate complete XDC constraint file */
   def generate(config: BoardDesign): String = {
+    // Vivado's constraints, so a Xilinx part's: given the A-E115FB it wrote
+    // an XDC for a Cyclone IV E (status item 173).
+    require(config.fpgaFamily.manufacturer == Manufacturer.Xilinx,
+      s"XdcGenerator writes Vivado constraints, for Xilinx parts; ${config.designName} is on " +
+        s"${config.fpga.name} (${config.fpgaFamily.manufacturer})")
     val assembly = config.assembly
         val sb = new StringBuilder
 

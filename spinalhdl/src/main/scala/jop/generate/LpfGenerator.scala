@@ -84,6 +84,9 @@ object LpfGenerator {
     locate(port, site) + iobuf(port, ioStandard, boardPull)
 
   def generate(config: BoardDesign): String = {
+    require(config.fpgaFamily.manufacturer == Manufacturer.Lattice,
+      s"LpfGenerator writes nextpnr constraints, for Lattice parts; ${config.designName} is on " +
+        s"${config.fpga.name} (${config.fpgaFamily.manufacturer})")
     val assembly = config.assembly
     val board = assembly.fpgaBoard   // FPGA name and I/O standard
     val io = board.ioStandard

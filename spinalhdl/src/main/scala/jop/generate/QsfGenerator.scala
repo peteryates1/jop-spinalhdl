@@ -12,6 +12,9 @@ object QsfGenerator {
 
   /** Generate all pin assignments for a JopConfig */
   def pinAssignments(config: BoardDesign): Seq[PinAssignment] = {
+    require(config.fpgaFamily.manufacturer == Manufacturer.Altera,
+      s"QsfGenerator writes Quartus assignments, for Altera parts; ${config.designName} is on " +
+        s"${config.fpga.name} (${config.fpgaFamily.manufacturer})")
     val assembly = config.assembly
     
     val clock = Seq(PinAssignment(PinResolver.clockFpgaPin(config), "clk_in"))
