@@ -4420,9 +4420,12 @@ a PLL's input -- altpll files, the DDR2 MegaWizard variation, the clk_wiz
 scripts, the i9+ Makefile's `-in_freq` -- to the board clock that feeds it,
 and was red on exactly the A-E115FB's two. It refuses a PLL input anywhere in
 the tree that no row covers (proved red by dropping the i9+ row). It pins two
-files no row can check: the MAX1000's `max1000_pll.v` is a pass-through, and
+files no row can check. The MAX1000's `max1000_pll.v` is a fit-check stub
+that passes its 12 MHz input straight through, while `max1000Sdram` assumes
+80 MHz: an image built today would run its UART and timers 6.7x slow. And
 `fpga/ip/ep4ce6_pll.vhd`, which `PllType.AlteraEp4ce6` names, has never been
-committed, so the generic EP4CE6 cannot be built. The A-E115FB declares
+committed, so the generic EP4CE6 cannot be built. Neither board is a unit
+here; the Altera PLL builder is what fixes both. The A-E115FB declares
 CLK25M and CLK100M; its presets and the DDR2 exerciser name CLK25M, and the
 exerciser's `clkMhz` now comes from that clock instead of a literal 25.
 

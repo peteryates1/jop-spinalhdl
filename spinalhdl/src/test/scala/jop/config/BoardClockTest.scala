@@ -70,7 +70,9 @@ class BoardClockTest extends AnyFunSuite {
   /** PLL files no row can check, each with the reason; the last test holds
     * the reason, so a change to it brings the file back here. */
   private val unchecked = Map(
-    "fpga/max1000/max1000_pll.v" -> "a pass-through (assign c0 = inclk0): no PLL, so no input to state",
+    "fpga/max1000/max1000_pll.v" ->
+      ("a fit-check stub passing the 12 MHz input through (assign c0 = inclk0), so it states no input; " +
+       "max1000Sdram assumes 80 MHz, so a MAX1000 image runs 6.7x slow until a real PLL is built"),
     "fpga/ip/ep4ce6_pll.vhd"     -> "named by PllType.AlteraEp4ce6 but never committed: the generic EP4CE6 has no flow")
 
   /** Files that mention a PLL input without stating one a design is built with. */
