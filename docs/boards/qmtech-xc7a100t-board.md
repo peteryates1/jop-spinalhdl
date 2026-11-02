@@ -405,7 +405,7 @@ DDR3, single-core. Post-route WNS ≈ +0.07 ns.
 ```bash
 cd fpga/qmtech-xc7a100t-dbfpga-v5
 
-# One-time: generate clk_wiz + MIG IPs
+# One-time: generate the MIG IP (the PLL is the design's, built with it)
 make ddr3-create-ip
 
 # Generate Verilog + build bitstream

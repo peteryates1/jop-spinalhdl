@@ -54,15 +54,17 @@ generate:
 # Vivado IP generation (share with alchitry-au)
 # --------------------------------------------------------------------------
 
+# The Au's MIG IP, shared with ../alchitry-au. The clock IP is this design's
+# own (Ddr3ExerciserTop.pll, status item 173): `make generate` writes its
+# clk_wiz definition, and the project creates it (JOP_PLL_TCL). This target
+# looked for both IPs under ../alchitry-au/vivado/ip/, where nothing has
+# written them since the IP moved under build/ (2026-08), so it rebuilt them
+# every time.
 ips:
-	@if [ -f ../alchitry-au/vivado/ip/clk_wiz_0/clk_wiz_0.xci ] && \
-	    [ -f ../alchitry-au/vivado/ip/mig_7series_0/mig_7series_0.xci ]; then \
-	  echo "=== IPs already generated (from alchitry-au) ==="; \
+	@if [ -f $(AU_IP)/mig_7series_0/mig_7series_0.xci ]; then \
+	  echo "=== MIG IP already generated (from alchitry-au) ==="; \
 	else \
-	  echo "=== Generating IPs... ==="; \
-	  $(RUN_VIVADO) ../alchitry-au/vivado/tcl/create_clk_wiz.tcl; \
 	  $(RUN_VIVADO) ../alchitry-au/vivado/tcl/create_mig.tcl; \
-	  echo "=== IPs generated ==="; \
 	fi
 
 # --------------------------------------------------------------------------
@@ -85,7 +87,8 @@ project:
 	  JOP_BUILD_DIR=$(ABS_BUILD) \
 	  JOP_RTL=$(CURDIR)/$(GENERATED_V) \
 	  JOP_XDC=$(CURDIR)/vivado/constraints/alchitry_au_v2.xdc \
-	  JOP_IP="$(AU_IP)/clk_wiz_0/clk_wiz_0.xci $(AU_IP)/mig_7series_0/mig_7series_0.xci" \
+	  JOP_IP=$(AU_IP)/mig_7series_0/mig_7series_0.xci \
+	  JOP_PLL_TCL="$(wildcard $(PROJECT_ROOT)/build/ddr3Exerciser/ip/*.tcl)" \
 	  JOP_IP_GEN_TARGET=yes \
 	  JOP_GEN_HINT="run: make generate" \
 	  $(RUN_VIVADO) $(CREATE_TCL)

@@ -7,22 +7,19 @@ import jop.generate.{DesignPlls, XdcGenerator}
 
 /**
  * Xilinx designs define their PLLs, and the clk_wiz builder makes them (status
- * item 173, step 8b): the Wukong and the Colorlight i9+, whose flows created
- * their clock IP by hand with `make create-ip`, from scripts that knew nothing
- * of the preset, into one directory per frequency.
+ * item 173, step 8): the Wukong and the Colorlight i9+ (8b), the XC7A100T and
+ * the Alchitry Au (8c), whose flows created their clock IP by hand with
+ * `make create-ip`, from scripts that knew nothing of the preset.
  */
 class XilinxDesignPllTest extends AnyFunSuite {
 
   private def read(p: String) = new String(Files.readAllBytes(Paths.get(p)), "UTF-8")
 
-  /** The boards converted so far; step 8c adds the XC7A100T and the Au. */
-  private val converted = Set(Board.WukongXC7A100T.name, Board.ColorlightI9Plus.name)
-
   private def presets: Seq[(String, JopConfig)] = for {
     m <- JopConfig.getClass.getMethods.toSeq
     if m.getParameterCount == 0 && m.getReturnType == classOf[JopConfig]
     cfg = m.invoke(JopConfig).asInstanceOf[JopConfig]
-    if converted(cfg.assembly.fpgaBoard.name)
+    if cfg.fpgaFamily == FpgaFamily.Artix7
   } yield (m.getName, cfg)
 
   /** Parameterised points the flows build: the clocks a design moves to. */
@@ -33,7 +30,8 @@ class XilinxDesignPllTest extends AnyFunSuite {
     "wukongDdr3SmpMshr 4" -> JopConfig.wukongDdr3SmpMshr(4),
     "wukongDualIndependentSmp 2 80 Ddr3_366" ->
       JopConfig.wukongDualIndependentSmp(2, 80, MigProfile.Ddr3_366),
-    "colorlightDbI9PlusSdram 80" -> JopConfig.colorlightDbI9PlusSdram(80))
+    "colorlightDbI9PlusSdram 80" -> JopConfig.colorlightDbI9PlusSdram(80),
+    "xc7a100tDbSmp 2" -> JopConfig.xc7a100tDbSmp(2))
 
   /** The -3.0 ns SDRAM clock lead every SDR board here runs (Wukong, i5,
     * i9+): a delay, so it holds at every clock. */
@@ -46,31 +44,39 @@ class XilinxDesignPllTest extends AnyFunSuite {
     Seq(PllOutput(PllRole.MigSys, BigDecimal(p.migInputMhz), tolerancePpm = 1000),
         PllOutput(PllRole.MigRef, 200, tolerancePpm = 50000))
 
-  test("the Wukong's and the i9+'s PLLs are their designs', not their boards'") {
-    assert(Board.WukongXC7A100T.pllType.isEmpty, "the Wukong still declares a PLL")
-    assert(Board.ColorlightI9Plus.pllType.isEmpty, "the i9+ still declares a PLL")
+  test("no Artix-7 board declares a PLL: every design on one defines its own") {
+    val artix = SystemAssembly.all.flatMap(_.boards).filter(_.fpga.exists(_.family == FpgaFamily.Artix7))
+    assert(artix.map(_.name).distinct.size == 4, artix.map(_.name))
+    for (b <- artix) assert(b.pllType.isEmpty, s"${b.name} still declares a PLL")
     val names = presets.map(_._1)
     for (n <- Seq("wukongSdram", "wukongDdr3", "wukongFull", "wukongBram", "wukongSdrFull",
-                  "wukongDualIndependent", "colorlightDbI9PlusEth"))
+                  "wukongDualIndependent", "colorlightDbI9PlusEth", "xc7a100tDbSerial", "xc7a100tDbEth",
+                  "xc7a100tDbMii", "xc7a100tDbFull", "auSerial", "auMinimal"))
       assert(names.contains(n), names)
+    // The blackboxes that stood in for them, matched to IPs by name only.
+    for (c <- Seq("jop.ddr3.ClkWizBlackBox", "jop.system.SdramExerciserClkWiz",
+                  "jop.system.pll.WukongClkWizBlackBox", "jop.config.PllType$XilinxDdr3ClkWiz$"))
+      assert(scala.util.Try(Class.forName(c)).isFailure, s"$c is back")
   }
 
   test("each design's PLL makes exactly the clocks it uses, from the board's clock") {
     // SDR: the system clock and its SDRAM copy; DDR3: MIG's two; BRAM: the
     // system clock. Plus the Ethernet transmit clock where the design has
-    // one -- GMII's 125 MHz, RGMII's 50 (jop.io.Rgmii100) -- and no unused
-    // output, which constrains the shared VCO for nothing (status item 164).
+    // one -- GMII's 125 MHz, RGMII's 50 (jop.io.Rgmii100) -- and the 25 MHz
+    // pixel clock where it has VGA, and no unused output, which constrains
+    // the shared VCO for nothing (status item 164).
     for ((name, cfg) <- presets ++ points; s <- cfg.systems) {
       val mem = cfg.resolveMemory(s).map(_.memType)
       val eth =
         if (s.ethGmii) Seq(PllOutput(PllRole.Eth, 125))
         else if (s.ethRgmii) Seq(PllOutput(PllRole.Eth, jop.io.Rgmii100.TxClockMhz))
         else Nil
+      val vga = if (s.hasDevice(DeviceType.VgaText)) Seq(PllOutput(PllRole.Vga, 25)) else Nil
       val mhz = s.clkFreq.toBigDecimal / 1000000
       val want = mem match {
-        case Some(MemoryType.SDRAM_SDR)  => sdr(mhz) ++ eth
-        case Some(MemoryType.SDRAM_DDR3) => mig(cfg.migProfile.getOrElse(MigProfile.Ddr3_400)) ++ eth
-        case _                           => Seq(PllOutput(PllRole.System, mhz)) ++ eth
+        case Some(MemoryType.SDRAM_SDR)  => sdr(mhz) ++ eth ++ vga
+        case Some(MemoryType.SDRAM_DDR3) => mig(cfg.migProfile.getOrElse(MigProfile.Ddr3_400)) ++ eth ++ vga
+        case _                           => Seq(PllOutput(PllRole.System, mhz)) ++ eth ++ vga
       }
       assert(s.plls.size == 1, s"$name/${s.name}: ${s.plls}")
       assert(s.plls.head.outputs == want, s"$name/${s.name}: ${s.plls.head.outputs}")
@@ -111,11 +117,19 @@ class XilinxDesignPllTest extends AnyFunSuite {
   }
 
   test("the generated XDC groups the GMII transmit clock by the name Vivado derives from the design's PLL") {
-    for ((cfg, clk) <- Seq(JopConfig.wukongFull -> "clk_eth_ddr3_clk", JopConfig.wukongSdrFull -> "clk_eth_sdr_clk")) {
+    for ((cfg, clk) <- Seq(JopConfig.wukongFull -> "clk_eth_ddr3_clk", JopConfig.wukongSdrFull -> "clk_eth_sdr_clk",
+                           JopConfig.xc7a100tDbEth -> "clk_eth_ddr3_clk")) {
       val xdc = XdcGenerator.generate(cfg)
       assert(xdc.contains(s"set_clock_groups -asynchronous -group [get_clocks $clk]"), xdc)
       assert(!xdc.contains("clk_125"), "the clock is named for its role now")
     }
+    // With no Ethernet output to name, the group would match nothing and the
+    // crossings would be timed as synchronous (2.591 ns on xc7a100tDbEth,
+    // status item 58): refused, not guessed.
+    val base = JopConfig.xc7a100tDbEth
+    val noEthClock = base.copy(systems = Seq(base.system.copy(
+      plls = base.system.plls.map(p => p.copy(outputs = p.outputs.filterNot(_.role == PllRole.Eth))))))
+    assertThrows[IllegalArgumentException](XdcGenerator.generate(noEthClock))
   }
 
   test("Verilog generation writes each design's clk_wiz definition into its ip/") {
@@ -154,15 +168,23 @@ class XilinxDesignPllTest extends AnyFunSuite {
     assert("""\.reset\s*\(\s*1'b0\s*\)""".r.findFirstIn(sdr).isDefined, sdr)
   }
 
-  test("the SDRAM exerciser on the Wukong defines its PLL") {
+  test("the exercisers on clk_wiz define their PLLs: the Wukong's SDRAM, the Au's DDR3") {
     assert(jop.system.SdramExerciserWukongTop.pll ==
       PllDefinition("CLK50M", sdr(100), module = "sdr_clk", instance = "clkWiz"))
+    assert(jop.system.Ddr3ExerciserTop.pll ==
+      PllDefinition("CLK100M", mig(MigProfile.Ddr3_400), module = "ddr3_clk", instance = "clkWiz"))
   }
 
   // The flows. A clk_wiz made by hand -- `make create-ip`, from a script that
   // knew nothing of the preset -- is what this step removes; every Vivado run
   // that builds a design sources the definitions generated with it.
-  private val flows = Seq("fpga/qmtech-xc7a100t-wukong/Makefile", "fpga/colorlight-db-i9plus/Makefile")
+  private val flows = Seq("fpga/qmtech-xc7a100t-wukong/Makefile", "fpga/colorlight-db-i9plus/Makefile",
+    "fpga/qmtech-xc7a100t-dbfpga-v5/Makefile", "fpga/alchitry-au/Makefile", "fpga/alchitry-au-ddr3-test/Makefile")
+
+  /** Builds with no PLL: the DB_FPGA V5's bring-up jigs, and the Au's flash
+    * programmer, which runs on the board's 100 MHz clock. */
+  private val noPll = Seq("JOP_TOP=UartEchoTop", "JOP_TOP=UartLoopback", "JOP_TOP=UartTxGen",
+                          "JOP_TOP=FlashProgrammerDdr3Top")
 
   /** A Makefile's logical lines: backslash continuations joined. */
   private def logical(path: String): Seq[String] =
@@ -170,7 +192,8 @@ class XilinxDesignPllTest extends AnyFunSuite {
 
   test("every Vivado build in the converted flows sources the design's PLL definitions") {
     for (f <- flows) {
-      val runs = logical(f).filter(l => l.contains("$(NP_TCL)") || l.contains("$(CREATE_TCL)"))
+      val runs = logical(f).filter(l => (l.contains("$(NP_TCL)") || l.contains("$(CREATE_TCL)")) &&
+        !noPll.exists(l.contains))
       assert(runs.nonEmpty, s"$f runs no Vivado build")
       val missing = runs.filterNot(_.contains("JOP_PLL_TCL="))
       assert(missing.isEmpty, s"$f: a build that does not source its PLL definitions:\n${missing.mkString("\n")}")
@@ -182,8 +205,9 @@ class XilinxDesignPllTest extends AnyFunSuite {
     for (f <- flows; l <- logical(f) if !l.trim.startsWith("#"))
       assert(!l.matches(""".*(create_\w*clk_wiz|check_clk_ip|sdr_clk\.xci|ddr3_clk\.xci|bram_clk\.xci).*"""),
         s"$f: $l")
-    for (s <- Seq("create_clk_wiz.tcl", "create_ddr3_clk_wiz.tcl", "create_sdram_clk_wiz.tcl"))
-      assert(!Files.exists(Paths.get("fpga/qmtech-xc7a100t-wukong/vivado/tcl", s)), s"$s is back")
+    import scala.sys.process._
+    val scripts = Seq("git", "ls-files", "fpga").lineStream_!.filter(_.matches(""".*create_\w*clk_wiz\.tcl"""))
+    assert(scripts.isEmpty, s"clk_wiz made by hand again: ${scripts.mkString(", ")}")
     assert(!Files.exists(Paths.get("fpga/scripts/check_clk_ip.py")), "check_clk_ip.py is back")
   }
 

@@ -94,6 +94,9 @@ SdNativeExerciserTop      DramPll()          FlashProgrammerTop  DramPll()
 SdSpiExerciserTop         DramPll()          Ddr3ExerciserTop    ClkWizBlackBox
 ```
 
+(Since 2026-11-02 none does: each defines its PLL and its FPGA family builds
+it, status item 173.)
+
 `DramPll()` is an Altera altpll blackbox. So `SdSpiExerciserTop` cannot build on
 the Wukong today — not because of anything to do with SD, whose pins resolve
 there fine, but because its clock source is nailed to one vendor.
@@ -198,7 +201,7 @@ primitives:
 | primitive | wrappers | differ only by |
 |---|---|---|
 | Altera `altpll` | none since 2026-11-02: `DramPll`, `Max1000Pll`, `Ep4ce6Pll` and `EthPll` are the ALTPLL families' builder, `AlteraAltpll.instantiate` (item 173) | output count, generated-file name |
-| Xilinx `clk_wiz` | `ClkWizBlackBox`, `WukongClkWizBlackBox`, `SdramExerciserClkWiz` | port set, instance name |
+| Xilinx `clk_wiz` | none since 2026-11-02: `ClkWizBlackBox`, `WukongClkWizBlackBox` and `SdramExerciserClkWiz` are the Artix-7 builder, `XilinxClkWiz.instantiate` (item 173) | port set, instance name |
 | Lattice `EHXPLLL` | `I5Pll` (since 2026-11-02 none: the ECP5 family's builder, `LatticeEcpPll.instantiate`, item 173) | — |
 | Altera Cyclone V | `Cyc5000Pll` | different megafunction |
 
@@ -211,17 +214,19 @@ divide. The SHAPE -- how many outputs, at what phases -- is frozen in that file
 and mirrored in the Scala blackbox, which is why each new shape needed a new
 pair.
 
-Three bugs already traced to this: the Wukong BRAM branch ties the clock
-wizard's reset ASSERTED, a `set_clock_groups` was discarded because the netlist
-said `dramPll` where the constraint said `pll`, and a generated config under
-`build/` still reaches back into `fpga/` for that template.
+Three bugs already traced to this: the Wukong BRAM branch ties a clock-wizard
+port called `resetn` low (deasserted only because that IP's reset is active
+HIGH under that name -- the SDR IP's was active low), a `set_clock_groups` was
+discarded because the netlist said `dramPll` where the constraint said `pll`,
+and a generated config under `build/` still reaches back into `fpga/` for that
+template.
 
 ### The tools are already here, and all three work
 
 | family | generator | status |
 |---|---|---|
 | Lattice ECP5 | `ecppll` (`/usr/bin`) | **proven** — regenerating `pll_jop_i5.v` from `--clkin 25 --clkout0 40 --clkout1 40 --phase1 315` is BIT-IDENTICAL to the tracked file |
-| Xilinx | `create_ip` in Vivado | **already the practice** — `create_clk_wiz.tcl` does exactly this |
+| Xilinx | `create_ip` in Vivado | **the practice** — since 2026-11-02 `XilinxClkWiz` writes each design's definition and the build runs it (item 173); the hand-run `create_clk_wiz.tcl` scripts are gone |
 | Altera | `ip-generate` with `altpll` (`quartus/sopc_builder/bin`) | **generates** — `altpll` is in the catalog and produced a wrapper; the parameter NAMES still need to be the correct altpll set |
 
 The i5's PLL is already reproducible from three numbers, and its own header

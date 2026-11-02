@@ -315,9 +315,10 @@ make mc-fallback               # microcode fallback coverage build
 
 # Xilinx — the Wukong drives seven configurations from one directory.
 #
-# `ddr3-create-ip` is a ONE-TIME step per checkout: it generates the MIG and
-# clock-wizard cores into build/ip/. Without it ddr3-build stops with
-# "ERROR: IP not found ... run the board's create-ip target first".
+# `ddr3-create-ip` is a ONE-TIME step per checkout: it generates the MIG core
+# into build/ip/. Without it ddr3-build stops with "ERROR: IP not found ... run
+# the board's create-ip target first". The clock wizard is each design's own,
+# created in its build from the design's PLL definition.
 #
 # This builds wukongDdr3 — single core, integer only. It became the default as
 # the configuration that passed DoAll on hardware (66/66, when the suite had 66

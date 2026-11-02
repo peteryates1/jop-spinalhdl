@@ -49,13 +49,15 @@ case class Ddr3ExerciserTop() extends Component {
   noIoPrefix()
 
   // ========================================================================
-  // Clock Wizard: Board 100 MHz -> 100 MHz (MIG sys) + 200 MHz (MIG ref)
+  // Its PLL (status item 173): board 100 MHz -> 100 MHz (MIG sys) + 200 MHz
+  // (MIG ref), built by clk_wiz from the definition below, and held in reset
+  // with the board's reset as the hand-made wizard was.
   // ========================================================================
 
-  val clkWiz = new ClkWizBlackBox
-  clkWiz.io.clk_in := ClockDomain.current.readClockWire
-  // ClkWiz reset is active-HIGH despite port name "resetn"
-  clkWiz.io.resetn := !ClockDomain.current.readResetWire
+  private val board = jop.config.Board.AlchitryAuV2
+  val clkWiz = jop.system.pll.Pll.build(Ddr3ExerciserTop.pll, board.fpga.get.family,
+    board.clocks.find(_.name == Ddr3ExerciserTop.pll.reference).get,
+    ClockDomain.current.readClockWire, Some(!ClockDomain.current.readResetWire))
 
   // ========================================================================
   // MIG DDR3 Controller
@@ -81,9 +83,9 @@ case class Ddr3ExerciserTop() extends Component {
   io.ddr3_odt     := mig.io.ddr3_odt
 
   // MIG clock inputs
-  mig.io.sys_clk_i := clkWiz.io.clk_100
-  mig.io.clk_ref_i := clkWiz.io.clk_200
-  mig.io.sys_rst   := !clkWiz.io.locked
+  mig.io.sys_clk_i := clkWiz.migSysClk.get
+  mig.io.clk_ref_i := clkWiz.migRefClk.get
+  mig.io.sys_rst   := !clkWiz.locked
 
   // Disable optional maintenance requests
   mig.io.app_sr_req  := False
@@ -649,6 +651,13 @@ case class Ddr3ExerciserTop() extends Component {
 /**
  * Generate Verilog for Ddr3ExerciserTop
  */
+object Ddr3ExerciserTop {
+  /** Its PLL: what the Au's hand-made `clk_wiz_0` gave it, less the 125 MHz
+    * output it never used (status item 173). */
+  val pll = jop.config.JopConfig.migPll("CLK100M", jop.config.MigProfile.Ddr3_400, gmii = false,
+    instance = "clkWiz")
+}
+
 object Ddr3ExerciserTopVerilog extends App {
   SpinalConfig(
     mode = Verilog,
@@ -659,6 +668,10 @@ object Ddr3ExerciserTopVerilog extends App {
       resetActiveLevel = LOW
     )
   ).generate(InOutWrapper(Ddr3ExerciserTop()))
+  // The clk_wiz definition the flow sources (JOP_PLL_TCL), beside the RTL.
+  jop.config.XilinxClkWiz.generate(
+    Ddr3ExerciserTop.pll.spec(jop.config.SystemAssembly.alchitryAuV2), Ddr3ExerciserTop.pll.module,
+    jop.generate.BuildLayout.default.ipDir("ddr3Exerciser", Seq.empty))
 
   jop.generate.StandaloneBuild.summary("ddr3Exerciser", "Ddr3ExerciserTop",
     board = "alchitry-au-v2", fpga = "XC7A35T", clkMhz = 100, uartBaud = Some(1000000))

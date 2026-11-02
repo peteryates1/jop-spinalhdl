@@ -758,8 +758,9 @@ object JopConfig {
 
   /**
    * A MIG design's PLL (status item 173): MIG's input at what `mig` demands,
-   * the 200 MHz IDELAYCTRL reference, and GMII's 125 MHz where the design has
-   * it. There is no system output: a DDR3 design runs on MIG's ui_clk.
+   * the 200 MHz IDELAYCTRL reference, GMII's 125 MHz where the design has it,
+   * and VGA's 25 MHz pixel clock where it has that. There is no system output:
+   * a DDR3 design runs on MIG's ui_clk.
    *
    * The two MIG clocks state tolerances, the only outputs here that do. MIG
    * takes the input it is given -- the memory clock and ui_clk scale with it --
@@ -769,12 +770,13 @@ object JopConfig {
    * nominal ui_clk, far inside a UART's margin. IDELAYCTRL takes its reference
    * at 200 +- 10 MHz (DS181); the same IP makes 200.893.
    */
-  def migPll(reference: String, mig: MigProfile, gmii: Boolean,
+  def migPll(reference: String, mig: MigProfile, gmii: Boolean, vga: Boolean = false,
              module: String = "ddr3_clk", instance: String = "pll"): PllDefinition =
     PllDefinition(reference,
       Seq(PllOutput(PllRole.MigSys, BigDecimal(mig.migInputMhz), tolerancePpm = 1000),
           PllOutput(PllRole.MigRef, 200, tolerancePpm = 50000)) ++
-        (if (gmii) Seq(PllOutput(PllRole.Eth, 125)) else Nil),
+        (if (gmii) Seq(PllOutput(PllRole.Eth, 125)) else Nil) ++
+        (if (vga) Seq(PllOutput(PllRole.Vga, 25)) else Nil),
       module = module, instance = instance)
 
   def ep4cgx150Serial = JopConfig(
@@ -1227,6 +1229,7 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,  // MIG ui_clk = 100 MHz (4:1, DDR3-800)
+      plls = Seq(migPll("CLK100M", MigProfile.Ddr3_400, gmii = false)),
       // 4 KB L2 (64 sets), not the 512-set/32 KB default. The XC7A35T is the
       // smallest part in the set at 20800 LUTs and this preset does NOT fit
       // with the default: measured 2026-08-22, the L2 alone was 12450 LUTs --
@@ -1264,6 +1267,7 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = HertzNumber(BigDecimal(250000000) / 3),
+      plls = Seq(migPll("CLK100M", MigProfile.Ddr3_400, gmii = false)),
       coreConfig = JopCoreConfig(memConfig = noCacheMemConfig),
       devices = Map("uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("FT2232H"))))))
 
@@ -2133,6 +2137,7 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
+      plls = Seq(migPll("CLK50M", MigProfile.Ddr3_400, gmii = false)),
       // hasBackendFill: DDR3 backend zeroes GC free space via full-line 128-bit
       // cache writes (no refill) instead of the controller's per-word loop.
       // JopTop overrides addressWidth/mainMemSize from the device but preserves
@@ -2266,6 +2271,9 @@ object JopConfig {
       memory = "ddr3",
       bootMode = BootMode.Serial,
       clkFreq = 100 MHz,
+      // The VGA's 25 MHz pixel clock too, which the hand-made clock wizard
+      // never had: this preset did not elaborate until 2026-11-02.
+      plls = Seq(migPll("CLK50M", MigProfile.Ddr3_400, gmii = true, vga = true)),
       devices = Map(
         "uart" -> DeviceInstance(DeviceType.Uart, devicePart = Some("RP2040")),
         "eth" -> DeviceInstance(DeviceType.Ethernet, params = Map("gmii" -> true, "phyDataWidth" -> 8),
@@ -2283,11 +2291,13 @@ object JopConfig {
     * The board-swap comparison for status item 166: DB_FPGA V4 and V5 carry the
     * same RTL8211EG on the same J3 pins, so this and `ep4cgx150DbFull` differ in
     * the core module, not the PHY wiring. Built on the hardware-validated serial
-    * preset rather than `xc7a100tDbFull`, which does not elaborate: its VGA needs
-    * a pixel clock the DDR3 clock wizard does not have (`pllResult.vgaClk`). */
+    * preset rather than `xc7a100tDbFull`, which did not elaborate until the
+    * designs defined their PLLs: its VGA needed a pixel clock the hand-made
+    * clock wizard did not have. */
   def xc7a100tDbEth = {
     val base = xc7a100tDbSerial
     base.copy(systems = Seq(base.system.copy(
+      plls = Seq(migPll("CLK50M", MigProfile.Ddr3_400, gmii = true)),
       devices = base.system.devices + ("eth" -> DeviceInstance(DeviceType.Ethernet,
         // The DB_FPGA routes RX_CLK to J3:37 -- L5 on this core board, not a
         // clock-capable pin (Vivado Place 30-574), so the clock takes a general
@@ -2310,7 +2320,9 @@ object JopConfig {
     val devs = base.system.devices
     base.copy(systems = Seq(base.system.copy(devices = devs +
       ("eth" -> devs("eth").copy(params = Map("phyDataWidth" -> 4,
-        "rxClkNotClockCapable" -> true, "txClkNotClockCapable" -> true))))))
+        "rxClkNotClockCapable" -> true, "txClkNotClockCapable" -> true))),
+      // Both MII clocks come from the PHY: no transmit clock from the PLL.
+      plls = withoutEth(base.system))))
   }
 
   /** XC7A100T + DB_FPGA V5 — DDR3 SMP */

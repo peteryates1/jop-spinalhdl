@@ -156,13 +156,13 @@ object XdcGenerator {
       // CC FIFOs, so it is asynchronous to everything too. Ungrouped, the V5
       // timed those crossings as synchronous and missed by 2.591 ns
       // (xc7a100tDbEth). Vivado names a clock it derives from a clk_wiz output
-      // <port>_<module>: for a PLL the design defines, `clk_eth_<module>`
-      // (XilinxClkWiz); the hand-made IP still on the DB_FPGA V5 calls it
-      // clk_125_clk_wiz_0.
-      val ethClock = config.plls.find(_.outputs.exists(_.role == PllRole.Eth))
-        .map(p => s"${XilinxClkWiz.port(PllRole.Eth)}_${p.module}")
-        .getOrElse("clk_125_*")
-      sb.append(s"set_clock_groups -asynchronous -group [get_clocks $ethClock]\n")
+      // <port>_<module>: `clk_eth_<module>` (XilinxClkWiz, status item 173). A
+      // design whose PLLs make no Ethernet clock is refused: the group would
+      // match nothing and Vivado would only warn.
+      val ethPll = config.plls.find(_.outputs.exists(_.role == PllRole.Eth)).getOrElse(
+        throw new IllegalArgumentException(s"${config.designName} has GMII Ethernet, but none of its PLLs " +
+          "makes the transmit clock (PllRole.Eth)"))
+      sb.append(s"set_clock_groups -asynchronous -group [get_clocks ${XilinxClkWiz.port(PllRole.Eth)}_${ethPll.module}]\n")
       // A board that routes RX_CLK to a pin that is not clock-capable (the
       // DB_FPGA: J3:37 is L5 on the XC7A100T core) gets no dedicated IBUF->BUFG
       // path, and Vivado stops at Place 30-574 unless the design says a general

@@ -9,7 +9,7 @@
 #   make uart-echo
 #
 # JOP DDR3 bring-up:
-#   make ddr3-create-ip   # generate clk_wiz + MIG IPs (once)
+#   make ddr3-create-ip   # generate the MIG IP (once); the PLL is the design's
 #   make ddr3-build       # generate Verilog + build bitstream
 #   make ddr3-program     # program via DirtyJTAG
 #   make ddr3-download    # download HelloWorld.jop via ttyACM0
@@ -47,8 +47,11 @@ LOOPBACK_DIR := $(REPO_ROOT)/build/uartLoopback
 TXGEN_DIR    := $(REPO_ROOT)/build/uartTxGen
 CONSTRAINTS := $(CURDIR)/$(VIVADO_DIR)/constraints
 BOARD_RTL   := $(CURDIR)/$(VIVADO_DIR)/rtl
-# Generated IP under build/, board-scoped. The tracked mig.prj input stays at
-# vivado/ip/ -- input is a source, output is not.
+# Generated MIG IP under build/, board-scoped. The tracked mig.prj input stays
+# at vivado/ip/ -- input is a source, output is not. The clock IP is the
+# design's (status item 173): generating the design writes its clk_wiz
+# definition into build/<config>/ip/, and the build creates it (JOP_PLL_TCL).
+# Until 2026-11-02 create_ddr3_clk_wiz.tcl made one shared clk_wiz_0 by hand.
 IP_DIR      := $(REPO_ROOT)/build/ip/qmtech-xc7a100t-dbfpga-v5
 
 # DirtyJTAG programming (RP2040 on DB_FPGA V5)
@@ -165,7 +168,6 @@ uart-txgen: txgen-build txgen-program
 ddr3-generate: generate
 
 ddr3-create-ip:
-	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/create_ddr3_clk_wiz.tcl
 	$(VIVADO_ENV) && $(VIVADO) -mode batch -source $(VIVADO_DIR)/tcl/create_mig.tcl
 
 # The directives are this design's, not a house style: PerformanceOptimized +
@@ -185,7 +187,8 @@ ddr3-build: ddr3-xdc
 	$(VIVADO_ENV) && JOP_TOP=JopDdr3Top JOP_PART=$(PART) \
 	  JOP_BUILD_DIR=$(CFG_DIR)/vivado/build \
 	  JOP_RTL=$(CFG_DIR)/rtl/JopDdr3Top.v \
-	  JOP_IP="$(IP_DIR)/clk_wiz_0/clk_wiz_0.xci $(IP_DIR)/mig_7series_0/mig_7series_0.xci" \
+	  JOP_IP=$(IP_DIR)/mig_7series_0/mig_7series_0.xci \
+	  JOP_PLL_TCL="$(wildcard $(CFG_DIR)/ip/*.tcl)" \
 	  JOP_XDC=$(CFG_DIR)/vivado/xc7a100t_dbv5_base.xdc \
 	  JOP_SYNTH_DIRECTIVE=PerformanceOptimized JOP_SYNTH_RETIMING=yes \
 	  JOP_OPT_DIRECTIVE=Explore JOP_PLACE_DIRECTIVE=ExtraTimingOpt \

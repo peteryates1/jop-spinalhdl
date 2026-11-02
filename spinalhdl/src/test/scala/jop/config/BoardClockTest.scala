@@ -35,7 +35,6 @@ class BoardClockTest extends AnyFunSuite {
 
   // How each kind of source states its input, in MHz.
   private val altpllPs  = """inclk0_input_frequency\s*(?:=>|=|\()\s*(\d+)""".r  // picoseconds
-  private val clkWizTcl = """PRIM_IN_FREQ\s*\{([0-9.]+)\}""".r
   private val memPhyRef = """name\s*=\s*"pll_ref_clk_mhz"\s+value\s*=\s*"([0-9.]+)"""".r
 
   private def altpll(path: String)   = stated(path, altpllPs).map(ps => BigDecimal(1000000) / ps)
@@ -49,11 +48,9 @@ class BoardClockTest extends AnyFunSuite {
     // variation: the generated IP under ip/ is not in the tree.
     Source("fpga/a-e115fb-ddr2/ip-src/ddr2_64bit.v", megahertz(memPhyRef), "a-e115fb", "CLK25M"),
     Source("fpga/cyc5000-sdram/cyc5000_pll.vhd", altpll, "cyc5000", "CLK12M"),
-    Source("fpga/alchitry-au/vivado/tcl/create_clk_wiz.tcl", megahertz(clkWizTcl), "alchitry-au-v2", "CLK100M"),
-    Source("fpga/qmtech-xc7a100t-dbfpga-v5/vivado/tcl/create_ddr3_clk_wiz.tcl", megahertz(clkWizTcl),
-      "qmtech-xc7a100t", "CLK50M"),
-    // The Wukong's three clk_wiz scripts and the i9+ Makefile's -in_freq left
-    // in step 8b: their designs define their PLLs, built by clk_wiz.
+    // Every clk_wiz script left in step 8: the Wukong's three and the i9+
+    // Makefile's -in_freq (8b), the XC7A100T's and the Au's (8c). Their
+    // designs define their PLLs, built by clk_wiz.
   )
 
   /** Files that mention a PLL input without stating one a design is built with. */

@@ -549,6 +549,9 @@ after a USB replug. Always check `ls /dev/ttyUSB*`.
 The ClkWiz BlackBox port is named `resetn` but is actually **active-HIGH**
 internally (`assign reset_high = resetn;` feeds MMCM RST). JopDdr3Top
 correctly inverts the board reset: `clkWiz.io.resetn := !readResetWire`.
+(Since 2026-11-02 the clock wizard is built from the design's PLL definition,
+and its reset port is named `reset`, active high, on every IP -- status item
+173.)
 
 ### 10. No create_clock on Board Clock
 

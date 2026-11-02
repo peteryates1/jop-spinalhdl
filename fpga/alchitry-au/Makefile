@@ -55,10 +55,12 @@ include ../vivado.mk
 
 PART       := xc7a35tftg256-2
 XDC        := $(CURDIR)/vivado/constraints
-# GENERATED IP lives under build/, board-scoped: one board's IP serves every
-# configuration built from it, so build/<config>/ would be the wrong home.
-# The tracked mig.prj INPUT stays at vivado/ip/ -- same split as the PLL
-# template, where the generator's source is a source and its output is not.
+# The generated MIG IP lives under build/, board-scoped: one board's IP serves
+# every configuration built from it, so build/<config>/ would be the wrong
+# home. The tracked mig.prj INPUT stays at vivado/ip/. The clock IP is the
+# design's (status item 173): generating the design writes its clk_wiz
+# definition into build/<config>/ip/, and the project creates it
+# (JOP_PLL_TCL). Until 2026-11-02 `make ips` made one clk_wiz_0 by hand.
 IP         := $(PROJECT_ROOT)/build/ip/alchitry-au
 # The flash programmer is a standalone top with its own config directory.
 ABS_BUILD  := $(PROJECT_ROOT)/build/flashProgrammerDdr3/vivado/build
@@ -80,9 +82,8 @@ run:  program download monitor
 
 
 ips:
-	$(RUN_VIVADO) vivado/tcl/create_clk_wiz.tcl
 	$(RUN_VIVADO) vivado/tcl/create_mig.tcl
-	@echo "=== IPs generated ==="
+	@echo "=== MIG IP generated ==="
 
 project: generate
 	JOP_PROJ=jop_ddr3 JOP_PART=$(PART) JOP_TOP=JopDdr3Top \
@@ -90,7 +91,8 @@ project: generate
 	  JOP_RTL=$(CFG_DIR)/rtl/JopDdr3Top.v \
 	  JOP_BIN_GLOB='$(CFG_DIR)/rtl/JopDdr3Top*.bin' \
 	  JOP_XDC=$(XDC)/alchitry_au_v2.xdc \
-	  JOP_IP="$(IP)/clk_wiz_0/clk_wiz_0.xci $(IP)/mig_7series_0/mig_7series_0.xci" \
+	  JOP_IP=$(IP)/mig_7series_0/mig_7series_0.xci \
+	  JOP_PLL_TCL="$(wildcard $(CFG_DIR)/ip/*.tcl)" \
 	  JOP_IP_GEN_TARGET=yes JOP_GEN_HINT="run: make generate" \
 	  $(RUN_VIVADO) $(CREATE_TCL)
 

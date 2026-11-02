@@ -69,7 +69,6 @@ case class BoardClock(name: String, freq: spinal.core.HertzNumber, pin: String) 
 
 import spinal.core._
 import jop.system.pll.{Cyc5000Pll, PllResult}
-import jop.ddr3.ClkWizBlackBox
 
 /** Where a board-declared PLL's IP file comes from. A PLL a design defines is
   * written by its family's builder instead (DesignPlls, status item 173). */
@@ -85,8 +84,7 @@ sealed trait PllType {
   def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0): PllResult
 
   /** The IP file that defines this PLL, if a Quartus project must list one:
-    * a hand-written file at a fixed repo-relative path. Xilinx returns None --
-    * its IP is an .xci the project reads separately.
+    * a hand-written file at a fixed repo-relative path.
     *
     * Stated here because the generator hardcoded `dram_pll.vhd`, which was the
     * EP4CGX150's PLL: a Cyclone V project came out naming a file that does not
@@ -106,19 +104,6 @@ object PllType {
       pll.io.rst := False
       PllResult(systemClk = Some(pll.io.outclk_0), locked = pll.io.locked,
         sdramClk = Some(pll.io.outclk_1))
-    }
-  }
-
-  /** Au V2, QmtechXC7A100T (DDR3 ClkWiz):
-    * clk_100=MIG sys, clk_200=MIG ref, clk_125=Eth. */
-  case object XilinxDdr3ClkWiz extends PllType {
-    def create(memType: MemoryType, inputClock: Bool, systemIndex: Int = 0) = {
-      val instanceName = if (systemIndex == 0) "clk_wiz_0" else s"clk_wiz_$systemIndex"
-      val clkWiz = new ClkWizBlackBox(instanceName)
-      clkWiz.io.clk_in := inputClock
-      clkWiz.io.resetn := !ClockDomain.current.readResetWire
-      PllResult(locked = clkWiz.io.locked, migSysClk = Some(clkWiz.io.clk_100),
-        migRefClk = Some(clkWiz.io.clk_200), ethClk = Some(clkWiz.io.clk_125))
     }
   }
 }
@@ -608,7 +593,8 @@ object Board {
     // -2: what its flows build and the two docs with build results say (ddr3-gc-hang.md,
     // artix7-core-estimates.md). There is no board doc, and the chip marking is unread.
     fpga = Some(FpgaDevice.XC7A35T.withGrade(2)),
-    pllType = Some(PllType.XilinxDdr3ClkWiz),
+    // No pllType: its designs define their PLL from CLK100M and clk_wiz builds
+    // it (JopConfig.migPll, status item 173).
     ddr3HasCs = true,
     clocks = Seq(BoardClock("CLK100M", 100 MHz, "N14")),
     devices = Seq(
@@ -841,7 +827,8 @@ object Board {
   def QmtechXC7A100T = Board(
     name = "qmtech-xc7a100t",
     fpga = Some(FpgaDevice.XC7A100T.withGrade(2)),   // -2: docs/boards/qmtech-xc7a100t-board.md
-    pllType = Some(PllType.XilinxDdr3ClkWiz),
+    // No pllType: its designs define their PLL from CLK50M and clk_wiz builds
+    // it (JopConfig.migPll, status item 173).
     clocks = Seq(BoardClock("CLK50M", 50 MHz, "U22")),
     devices = Seq(
       BoardDevice("MT41K128M16JT-125:K", role = Some("ddr3")),   // DDR3 pins managed by MIG IP

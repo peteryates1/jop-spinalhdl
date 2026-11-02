@@ -75,7 +75,7 @@ nothing depends on ranks below a measurement that could mislead someone.
 34. **[#104](#item-104)** — The generators restate board facts as literals: one board's PLL shape, a device-wide I/O standard, a clock port spelled three ways
 35. **[#105](#item-105)** — Assembly navigation uses `boards.head` where it means `fpgaBoard`; safe only because every composite lists the core board first
 36. **[#106](#item-106)** — The device map is keyed by raw strings in three places — the surviving family of the `"eth"`/`"ethernet"` bug
-37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02). Boards now declare their clocks and designs pick one (step 5, 2026-11-02); designs define their PLLs and the ECP5, ALTPLL and clk_wiz families build them (steps 6-8b: the i5, MAX1000, EP4CE6, EP4CGX150, the GMII designs' 125 MHz PLLs, the Wukong and the i9+); next the XC7A100T and the Au (8c), then Cyclone V
+37. **[#173](#item-173)** — Generic JOP, hardware support and one lab's setup are not separated. The SETUP layer is done (2026-11-01): `setup/*.toml` -- probes, consoles, units, host tools -- read through `jop_setup.py` and tomlj, guarded by `check-setup-layer.sh`. Open: the HARDWARE layer -- boards, modules and FPGA families (with their PLL builders) usable by any SpinalHDL project, not only JOP (model agreed 2026-11-02). Boards now declare their clocks and designs pick one (step 5, 2026-11-02); designs define their PLLs and the ECP5, ALTPLL and clk_wiz families build them (steps 6-8: the i5, MAX1000, EP4CE6, EP4CGX150, the GMII designs' 125 MHz PLLs, and every Artix-7 design); next Cyclone V
 38. **[#107](#item-107)** — `alchitry-au`'s `bitstream` has no prerequisite on `project` — racy under `make -j`
 39. **[#102](#item-102)** — Every preset's generate step depends on `HelloWorld.jop` (`quartus.mk:101`, `vivado.mk:117`), so rebuilding it forces a 30-60 minute refit of serial-boot bitstreams that never contain it. The fix is to ask the generator whether a preset embeds an app
 40. **[#3](#item-3)** — Sixteen presets still run classic GC. Safe but slow
@@ -4641,6 +4641,41 @@ checks. `jop-wukong-1` passes DoAll 68/68 on `wukongSdram` and on `wukongFull`,
 whose NetTest linked at 1000M with the same results; both halves of the dual
 download and run HelloWorld. Both boards are parked in their handshakes.
 
+**Step 8c (2026-11-02): the XC7A100T's and the Au's designs define their
+PLLs -- every Artix-7 design does now.** The XC7A100T + DB_FPGA V5 presets
+and the Au's take `JopConfig.migPll` from their board clocks (CLK50M,
+CLK100M); `xc7a100tDbMii` drops the Ethernet output (MII's clocks come from
+the PHY), and `xc7a100tDbFull` adds VGA's 25 MHz pixel clock -- which the
+hand-made wizard never had, so that preset had never elaborated; it does now.
+The Au's DDR3 exerciser defines its own, reset from the board as before. The
+two boards' flows source the definitions (`JOP_PLL_TCL`); the Au's run in
+project mode, through `vivado_create_project.tcl`. Gone:
+`create_ddr3_clk_wiz.tcl` (XC7A100T), `create_clk_wiz.tcl` (Au), their
+create-ip steps, `PllType.XilinxDdr3ClkWiz` and `jop.ddr3.ClkWizBlackBox`; no
+Artix-7 board declares a PLL. The generated XDC now refuses a GMII design
+whose PLLs make no Ethernet clock, where it fell back to a pattern that could
+match nothing. The Au DDR3 test's `ips` target looked for the IP under
+`../alchitry-au/vivado/ip/`, where nothing has written it since August, so it
+regenerated both every time; it checks `build/ip/alchitry-au` now.
+
+`XilinxDesignPllTest` grew to cover the four boards first and was red on 7
+tests; its flow check found a build it did not know, the Au's flash
+programmer, which runs on the board's 100 MHz clock with no PLL. Dumped
+before and after, the 22 Xilinx presets' XDCs differ only in two GMII
+clock-group lines (`xc7a100tDbEth`, `xc7a100tDbFull`).
+
+Built with Vivado 2025.2, each definition reported both MIG clocks exact:
+- `xc7a100tDbSerial`: WNS +0.002 ns, WHS +0.026; DoAll 68/68 on
+  `jop-xc7a100t-1`, which is parked in its handshake.
+- `Ddr3ExerciserTop` (Au, project mode): +0.793, WHS +0.067.
+- `auSerial` (project mode): misses by 0.344 ns (TNS -4.807) on the fetch
+  stage's `ir_reg` -> `romAddrReg`, the path `wukongDdr3` misses by 24 ps.
+  A control build at the previous commit, with the Au's hand-made
+  `clk_wiz_0`, misses too (-0.329, TNS -3.755) at 12,938 LUTs (62 %): the
+  Au's DDR3 preset stopped meeting 100 MHz with the design's growth since its
+  last met build (9,211 LUTs on 2026-08-22, WNS +0.477), not with this step.
+  The Au is not attached here, so neither Au build ran on hardware.
+
 **What is left:** the setup layer is done. Every fact the 2026-10-28 list
 put in the wrong layer -- the board designs' aliases, the serial registries,
 the network identity and the host's paths -- is in `setup/`, and the guard
@@ -4649,9 +4684,8 @@ and designs pick one (step 5), the ECP5 family builds the PLLs its designs
 define (step 6), and so do the ALTPLL families (step 7): the MAX1000, the
 EP4CE6, the EP4CGX150 and the GMII designs' 125 MHz PLLs -- every PLL the
 Cyclone IV and MAX 10 designs instantiate themselves (the A-E115FB's DDR2
-PHY keeps its own, inside the vendor IP) -- and Artix-7 builds the Wukong's
-and the i9+'s (step 8b). Next, the XC7A100T and the Au on clk_wiz (8c), then
-Cyclone V's. Then the last
+PHY keeps its own, inside the vendor IP) -- and Artix-7 builds every one
+its designs define (step 8). Next, Cyclone V's. Then the last
 `PllType`s leave `Board`, which is the only code in `Board.scala` that needs
 JOP, and the hardware layer becomes an sbt subproject that does not depend on
 JOP, so the compiler holds the direction. Lab-specific TESTS (`InstanceTest`'s
